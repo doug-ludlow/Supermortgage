@@ -44,4 +44,22 @@ export function applyEscrowTimerOverrides(reg: TimerRegistry): void {
   o("FNMA_LL2026_05_ESCROW_EVENT_0300ET", { trigger: "`ledger.entries.posted{account=escrow}`", why: "§3.7 timer table: `ledger_entries` posted to `escrow` (processed date D) → event next `fannie_et` BD 03:00 ET (LL-2026-05)." });
   o("ESC_WAIVER_DECISION_SLA_10BD", { trigger: "`escrow.waiver.requested`", why: "§3.8 timer table: `escrow_waiver` case opened → decision within 10 `business_days_servicer`." });
   o("STATE_IOE_ACCRUAL_DAILY", { trigger: "`schedule.tick{cadence=daily}`", offset: "daily", why: "§3.9 timer table: interest-on-escrow accrual each calendar day while eligible." });
+
+  // ---- satisfaction: rows whose `satisfied` column is prose get the event the domain emits, gates get evaluators ----------
+  o("REGX_1024_17F1_ADVANCE_DEFICIENCY_ANALYSIS_GATE", { evaluator: "3.6.interimAnalysisBeforeDemand", why: "§3.2/3.6 timer table: gate opens on the interim `escrow.analysis.completed` — condition-shaped." });
+  o("ESC_NEW_PAYMENT_NOTICE_MIN_30", { evaluator: "3.2.newPaymentAtLeast30DaysAfterStatement", why: "§3.2 timer table: policy not-before gate — the new payment is effective ≥ 30 days after the statement." });
+  o("REGX_1024_17C5_CUSHION_CAP_GATE", { evaluator: "3.4.cushionCap", why: "§3.4 timer table: `cap_check_passed=true` — an analysis invariant, so an evaluator." });
+  o("REGX_1024_17C6_PREACCRUAL_GATE", { evaluator: "3.4.preaccrual", why: "§3.4 timer table: `preaccrual_check_passed=true`." });
+  o("ESC_REFUND_FINAL_DISBURSEMENT_HOLD_5BD", { satisfied: "`escrow.final_disbursements.settled`", why: "§3.5 timer table: release or cancellation of in-flight disbursements after payoff." });
+  o("FNMA_B101_DISBURSE_BEFORE_PENALTY_0", { satisfied: "`escrow.disbursement.released`", why: "§3.7 timer table: 'same' — the disbursement releases by the penalty date." });
+  o("FNMA_LL2026_05_ESCROW_EVENT_0300ET", { satisfied: "`escrow.event.accepted`", why: "§3.7 timer table: `investor_events.status ∈ {accepted, accepted_warning}` — the escrow event ack." });
+  o("FNMA_LL2026_05_ESCROW_PERIOD_CLOSE_BD2_1700ET", { trigger: "`period.month_end`", satisfied: "`escrow.period.closed{all_accepted=true}`", why: "§3.7 timer table: month end → all period events accepted by BD2 17:00 ET." });
+  o("FNMA_LL2026_05_ESCROW_SETUP_CUTOVER", { trigger: "`feature_flag.enabled{flag=investor_reporting.escrow_events}`", satisfied: "`escrow.setup_events.accepted{pct=100}`", why: "§3.7 timer table: Setup events accepted for 100% of escrowed loans at cutover." });
+  o("STATE_IL_765ILCS910_15_TAX_PAID_NOTICE_45BD", { satisfied: "`notice.sent{template=NTC_IL_765_910_15_TAX_PAID}`", why: "§3.7 timer table: 765 ILCS 910/15 tax-paid notice within 45 business days." });
+  o("ESC_NONESCROW_TAX_DELINQ_FOLLOWUP_30", { satisfied: "`escrow.nonescrow.tax_delinquency.resolved{outcome∈{proof_of_payment, advance_and_revocation}}`", why: "§3.7 timer table: borrower proof of payment, or advance + waiver revocation (3.8)." });
+  o("REGZ_1026_35B3_HPML_ESCROW_5Y_GATE", { trigger: "`escrow.waiver.requested{hpml=true}`", evaluator: "3.8.hpmlFiveYears", why: "§3.8 timer table: HPML escrow cancellation not before consummation + 5 years (§1026.35(b)(3))." });
+  o("ESC_WAIVER_REFUND_30", { satisfied: "`escrow.waiver.refund_issued`", why: "§3.8 timer table: 'refund issued / credited' after the account closes." });
+  o("STATE_MN_47_20_DISCONTINUE_NOTICE_60", { trigger: "`loan.anniversary{years=5}`", satisfied: "`notice.sent{template=NTC_MN_47_20_9_DISCONTINUE_RIGHT}`", why: "§3.8 timer table: 5th anniversary of the mortgage date → Minn. Stat. 47.20 subd. 9 notice within 60 days." });
+  o("STATE_IOE_ACCRUAL_DAILY", { satisfied: "`escrow.interest.accrued`", why: "§3.9 timer table: 'accrual row for the day' — the daily accrual summary event." });
+  o("IRS_1099INT_EFILE_0331", { trigger: "`period.year_end`", satisfied: "`tax.1099int.filed`", why: "§3.9 timer table: tax year end → e-file by March 31; satisfied by `filed_at`." });
 }

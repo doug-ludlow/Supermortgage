@@ -11,6 +11,7 @@ import { NoticeRegistry, type NoticeTemplate, type ChannelPolicy, type ContentRu
 import { plainDate as D } from "../kernel/calendar/date.ts";
 import { publishCheck } from "./checklist.ts";
 import { SECTION_01_VERSIONS } from "./authored/section01.ts";
+import { SECTION_03_VERSIONS } from "./authored/section03.ts";
 
 interface CatalogEntry { readonly code: string; readonly owner_process: string; readonly mentions: readonly string[]; readonly context: string; }
 
@@ -59,6 +60,7 @@ const OVERRIDES: Record<string, Partial<NoticeTemplate>> = {
   INS_FPI_REMINDER_NOINFO_MS3B: { citation: "12 CFR 1024.37(d)(2)(i); Appendix MS-3(B)" },
   INS_FPI_REMINDER_INSUFF_MS3C: { citation: "12 CFR 1024.37(d)(2)(ii); Appendix MS-3(C)" },
   NTC_REGX_1024_33B_HELLO_MS2: { citation: "12 CFR 1024.33(b); Appendix MS-2", mayCombineWith: ["NTC_REGP_1016_4_INITIAL_PRIVACY", "NTC_REGX_1024_17G_INITIAL_ESCROW_STMT"] },
+  NTC_SM_ESCROW_VOLUNTARY_LUMPSUM_INSERT: { separateDocument: true, mayCombineWith: ["NTC_REGX_1024_17I_ANNUAL_ESCROW_STMT"], citation: "CFPB escrow FAQ; 12 CFR 1024.17(f)(3)" },
   NTC_REGX_41B2_ACK_INCOMPLETE: { citation: "12 CFR 1024.41(b)(2)(i)(B)" },
   NTC_REGX_41B2_ACK_COMPLETE: { citation: "12 CFR 1024.41(b)(2)(i)(B)" },
 };
@@ -218,4 +220,5 @@ export const AUTHORED_VERSIONS: readonly VersionInput[] = [
   V("NTC_REGZ_20D_ARM_INITIAL", ARM_D_SOURCE, ARM_D_RULES, ARM_D_SAMPLE, "regz.arm_notices.2013", "H-4(D)(3)"),
   V("NTC_REGX_41B2_ACK_INCOMPLETE", ACK_SOURCE, ACK_RULES, ACK_SAMPLE, "regx.lossmit.2013", "12.1 rule 5 worked example"),
   ...SECTION_01_VERSIONS,
+  ...SECTION_03_VERSIONS,
 ];

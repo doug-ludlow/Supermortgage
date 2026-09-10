@@ -1,53 +1,53 @@
 {
- "brief": "spec units built 2323/4597 (50.5%): tids 713/1253, tables 433/449, timers 768/1365, notices 15/248, tools 120/658, figures 274/624; processes at 100%: 12/114",
+ "brief": "spec units built 2490/4597 (54.2%): tids 802/1253, tables 434/449, timers 789/1365, notices 29/248, tools 154/658, figures 282/624; processes at 100%: 18/114",
  "totals": {
   "tids": {
    "spec": 1253,
-   "built": 713
+   "built": 802
   },
   "tables": {
    "spec": 449,
-   "built": 433
+   "built": 434
   },
   "timers": {
    "spec": 1365,
-   "built": 768
+   "built": 789
   },
   "notices": {
    "spec": 248,
-   "built": 15
+   "built": 29
   },
   "tools": {
    "spec": 658,
-   "built": 120
+   "built": 154
   },
   "figures": {
    "spec": 624,
-   "built": 274
+   "built": 282
   },
   "units": {
    "spec": 4597,
-   "built": 2323
+   "built": 2490
   }
  },
  "sections": {
   "1": {
    "spec": 250,
-   "built": 249,
+   "built": 250,
    "processes": 7,
-   "done": 6
+   "done": 7
   },
   "2": {
    "spec": 223,
-   "built": 222,
+   "built": 223,
    "processes": 7,
-   "done": 6
+   "done": 7
   },
   "3": {
    "spec": 334,
-   "built": 160,
+   "built": 323,
    "processes": 9,
-   "done": 0
+   "done": 4
   },
   "4": {
    "spec": 205,
@@ -105,7 +105,7 @@
   },
   "13": {
    "spec": 353,
-   "built": 133,
+   "built": 135,
    "processes": 9,
    "done": 0
   },
@@ -153,12 +153,18 @@
   "1.4",
   "1.5",
   "1.6",
+  "1.7",
   "2.1",
   "2.2",
   "2.3",
   "2.4",
   "2.5",
-  "2.7"
+  "2.6",
+  "2.7",
+  "3.1",
+  "3.4",
+  "3.5",
+  "3.9"
  ],
  "processes": [
   {
@@ -423,11 +429,9 @@
    },
    "timers": {
     "spec": 13,
-    "built": 12,
+    "built": 13,
     "armable": 13,
-    "missing": [
-     "REGX_1024_41F1_120_DAY_GATE"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 6,
@@ -446,9 +450,9 @@
    },
    "units": {
     "spec": 41,
-    "built": 40
+    "built": 41
    },
-   "pct": 97.6
+   "pct": 100.0
   },
   {
    "process": "2.1",
@@ -671,11 +675,9 @@
    },
    "timers": {
     "spec": 8,
-    "built": 7,
+    "built": 8,
     "armable": 8,
-    "missing": [
-     "REGX_1024_41G_TRIAL_PERFORMING_FC_GATE"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -694,9 +696,9 @@
    },
    "units": {
     "spec": 24,
-    "built": 23
+    "built": 24
    },
-   "pct": 95.8
+   "pct": 100.0
   },
   {
    "process": "2.7",
@@ -744,18 +746,9 @@
    "title": "Initial escrow account statement",
    "tids": {
     "spec": 9,
-    "built": 1,
-    "todo": 8,
-    "missing": [
-     1,
-     2,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9
-    ]
+    "built": 9,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 4,
@@ -775,17 +768,8 @@
    },
    "tools": {
     "spec": 8,
-    "built": 0,
-    "missing": [
-     "readBoardingFile",
-     "runEscrowAnalysis",
-     "approveAnalysis",
-     "renderStatement",
-     "sendNotice",
-     "openCase",
-     "escalate",
-     "emitEscrowEvent"
-    ]
+    "built": 8,
+    "missing": []
    },
    "figures": {
     "spec": 2,
@@ -794,26 +778,18 @@
    },
    "units": {
     "spec": 26,
-    "built": 10
+    "built": 26
    },
-   "pct": 38.5
+   "pct": 100.0
   },
   {
    "process": "3.2",
    "title": "Annual escrow analysis",
    "tids": {
     "spec": 17,
-    "built": 10,
-    "todo": 7,
-    "missing": [
-     11,
-     12,
-     13,
-     14,
-     15,
-     16,
-     17
-    ]
+    "built": 17,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 5,
@@ -822,12 +798,9 @@
    },
    "timers": {
     "spec": 6,
-    "built": 4,
+    "built": 6,
     "armable": 6,
-    "missing": [
-     "ESC_NEW_PAYMENT_NOTICE_MIN_30",
-     "REGX_1024_17F1_ADVANCE_DEFICIENCY_ANALYSIS_GATE"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -836,12 +809,8 @@
    },
    "tools": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "compareBillToPriorYear",
-     "lookupParcel",
-     "readPolicyDeclarations"
-    ]
+    "built": 3,
+    "missing": []
    },
    "figures": {
     "spec": 34,
@@ -856,31 +825,18 @@
    },
    "units": {
     "spec": 65,
-    "built": 48
+    "built": 60
    },
-   "pct": 73.8
+   "pct": 92.3
   },
   {
    "process": "3.3",
    "title": "Annual escrow account statement",
    "tids": {
     "spec": 12,
-    "built": 0,
-    "todo": 12,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 3,
@@ -895,23 +851,13 @@
    },
    "notices": {
     "spec": 5,
-    "built": 0,
-    "missing": [
-     "NTC_REGX_1024_17F_SHORTAGE",
-     "NTC_REGX_1024_17I4_SHORT_YEAR_TRANSFEROR",
-     "NTC_REGX_1024_17I_ANNUAL_ESCROW_STMT",
-     "NTC_REGX_1024_17I_POST_EXEMPTION_HISTORY",
-     "NTC_SM_ESCROW_VOLUNTARY_LUMPSUM_INSERT"
-    ]
+    "built": 5,
+    "missing": []
    },
    "tools": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "renderStatement",
-     "validateChecklist",
-     "sendNotice"
-    ]
+    "built": 3,
+    "missing": []
    },
    "figures": {
     "spec": 15,
@@ -924,25 +870,18 @@
    },
    "units": {
     "spec": 45,
-    "built": 22
+    "built": 42
    },
-   "pct": 48.9
+   "pct": 93.3
   },
   {
    "process": "3.4",
    "title": "Cushion enforcement",
    "tids": {
     "spec": 7,
-    "built": 1,
-    "todo": 6,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     7
-    ]
+    "built": 7,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 0,
@@ -951,12 +890,9 @@
    },
    "timers": {
     "spec": 3,
-    "built": 1,
+    "built": 3,
     "armable": 3,
-    "missing": [
-     "REGX_1024_17C5_CUSHION_CAP_GATE",
-     "REGX_1024_17C6_PREACCRUAL_GATE"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -965,44 +901,28 @@
    },
    "tools": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "validateCushion"
-    ]
+    "built": 1,
+    "missing": []
    },
    "figures": {
     "spec": 8,
-    "built": 6,
-    "missing": [
-     "$1,800.00",
-     "$968.35"
-    ]
+    "built": 8,
+    "missing": []
    },
    "units": {
     "spec": 19,
-    "built": 8
+    "built": 19
    },
-   "pct": 42.1
+   "pct": 100.0
   },
   {
    "process": "3.5",
    "title": "Surplus refund",
    "tids": {
     "spec": 10,
-    "built": 0,
-    "todo": 10,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10
-    ]
+    "built": 10,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 1,
@@ -1011,64 +931,39 @@
    },
    "timers": {
     "spec": 4,
-    "built": 3,
+    "built": 4,
     "armable": 4,
-    "missing": [
-     "ESC_REFUND_FINAL_DISBURSEMENT_HOLD_5BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "NTC_SM_ESCROW_SURPLUS_REFUND"
-    ]
+    "built": 1,
+    "missing": []
    },
    "tools": {
     "spec": 7,
-    "built": 0,
-    "missing": [
-     "issueRefund",
-     "verifyAddress",
-     "reissueDisbursement",
-     "stopCheck",
-     "recordConsent",
-     "emitEscrowEvent",
-     "escalate"
-    ]
+    "built": 7,
+    "missing": []
    },
    "figures": {
     "spec": 6,
-    "built": 5,
-    "missing": [
-     "$612.40"
-    ]
+    "built": 6,
+    "missing": []
    },
    "units": {
     "spec": 29,
-    "built": 9
+    "built": 29
    },
-   "pct": 31.0
+   "pct": 100.0
   },
   {
    "process": "3.6",
    "title": "Shortage repayment",
    "tids": {
     "spec": 10,
-    "built": 0,
-    "todo": 10,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10
-    ]
+    "built": 10,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 1,
@@ -1077,27 +972,19 @@
    },
    "timers": {
     "spec": 6,
-    "built": 5,
+    "built": 6,
     "armable": 6,
-    "missing": [
-     "REGX_1024_17F1_ADVANCE_DEFICIENCY_ANALYSIS_GATE"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "NTC_SM_ESCROW_ADVANCE"
-    ]
+    "built": 1,
+    "missing": []
    },
    "tools": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "createRepaymentPlan",
-     "recordBorrowerElection",
-     "postEscrowLumpSum"
-    ]
+    "built": 3,
+    "missing": []
    },
    "figures": {
     "spec": 16,
@@ -1108,105 +995,61 @@
    },
    "units": {
     "spec": 37,
-    "built": 21
+    "built": 36
    },
-   "pct": 56.8
+   "pct": 97.3
   },
   {
    "process": "3.7",
    "title": "Tax disbursement",
    "tids": {
     "spec": 15,
-    "built": 1,
-    "todo": 14,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     11,
-     12,
-     13,
-     14,
-     15
-    ]
+    "built": 15,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 6,
-    "built": 5,
-    "missing": [
-     "payees"
-    ]
+    "built": 6,
+    "missing": []
    },
    "timers": {
     "spec": 12,
-    "built": 6,
+    "built": 12,
     "armable": 12,
-    "missing": [
-     "ESC_NONESCROW_TAX_DELINQ_FOLLOWUP_30",
-     "FNMA_B101_DISBURSE_BEFORE_PENALTY_0",
-     "FNMA_LL2026_05_ESCROW_EVENT_0300ET",
-     "FNMA_LL2026_05_ESCROW_PERIOD_CLOSE_BD2_1700ET",
-     "FNMA_LL2026_05_ESCROW_SETUP_CUTOVER",
-     "STATE_IL_765ILCS910_15_TAX_PAID_NOTICE_45BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "NTC_IL_765_910_15_TAX_PAID",
-     "NTC_SM_ESCROW_HAZARD_ADVANCE",
-     "NTC_SM_NONESCROW_TAX_DELINQUENCY"
-    ]
+    "built": 3,
+    "missing": []
    },
    "tools": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "scheduleDisbursement",
-     "releaseDisbursement",
-     "postAdvance"
-    ]
+    "built": 3,
+    "missing": []
    },
    "figures": {
     "spec": 7,
-    "built": 5,
+    "built": 6,
     "missing": [
-     "$15.20",
-     "$810.00"
+     "$15.20"
     ]
    },
    "units": {
     "spec": 46,
-    "built": 17
+    "built": 45
    },
-   "pct": 37.0
+   "pct": 97.8
   },
   {
    "process": "3.8",
    "title": "Escrow waiver administration",
    "tids": {
     "spec": 10,
-    "built": 0,
-    "todo": 10,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10
-    ]
+    "built": 10,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 1,
@@ -1215,68 +1058,41 @@
    },
    "timers": {
     "spec": 12,
-    "built": 9,
+    "built": 12,
     "armable": 12,
-    "missing": [
-     "ESC_WAIVER_REFUND_30",
-     "REGZ_1026_35B3_HPML_ESCROW_5Y_GATE",
-     "STATE_MN_47_20_DISCONTINUE_NOTICE_60"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 4,
-    "built": 0,
-    "missing": [
-     "NTC_MN_47_20_9_DISCONTINUE_RIGHT",
-     "NTC_REGX_1024_17I4_SHORT_YEAR_RESET",
-     "NTC_SM_ESCROW_WAIVER_DECISION",
-     "NTC_SM_ESCROW_WAIVER_REVOCATION"
-    ]
+    "built": 4,
+    "missing": []
    },
    "tools": {
     "spec": 2,
-    "built": 0,
-    "missing": [
-     "evaluateWaiver",
-     "approveWaiver"
-    ]
+    "built": 2,
+    "missing": []
    },
    "figures": {
     "spec": 3,
-    "built": 0,
+    "built": 2,
     "missing": [
-     "$1,206.68",
-     "$210.00",
      "$240,000.00"
     ]
    },
    "units": {
     "spec": 32,
-    "built": 10
+    "built": 31
    },
-   "pct": 31.2
+   "pct": 96.9
   },
   {
    "process": "3.9",
    "title": "State interest-on-escrow",
    "tids": {
     "spec": 12,
-    "built": 0,
-    "todo": 12,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 3,
@@ -1285,12 +1101,9 @@
    },
    "timers": {
     "spec": 4,
-    "built": 2,
+    "built": 4,
     "armable": 4,
-    "missing": [
-     "IRS_1099INT_EFILE_0331",
-     "STATE_IOE_ACCRUAL_DAILY"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -1299,27 +1112,19 @@
    },
    "tools": {
     "spec": 4,
-    "built": 0,
-    "missing": [
-     "evaluateInterestEligibility",
-     "verifyRate",
-     "postInterestCredit",
-     "prorateInterest"
-    ]
+    "built": 4,
+    "missing": []
    },
    "figures": {
     "spec": 12,
-    "built": 10,
-    "missing": [
-     "$10.00",
-     "$2.55"
-    ]
+    "built": 12,
+    "missing": []
    },
    "units": {
     "spec": 35,
-    "built": 15
+    "built": 35
    },
-   "pct": 42.9
+   "pct": 100.0
   },
   {
    "process": "4.1",
@@ -5021,11 +4826,10 @@
    },
    "timers": {
     "spec": 7,
-    "built": 3,
+    "built": 4,
     "armable": 7,
     "missing": [
      "FNMA_D1301_DISASTER_FC_APPROVAL_GATE",
-     "REGX_1024_41F1_120_DAY_GATE",
      "REGX_1024_41F2_PRE_FILING_APP_GATE",
      "SCRA_3953C_FC_PROTECTION_GATE"
     ]
@@ -5055,9 +4859,9 @@
    },
    "units": {
     "spec": 29,
-    "built": 10
+    "built": 11
    },
-   "pct": 34.5
+   "pct": 37.9
   },
   {
    "process": "13.2",
@@ -5082,13 +4886,12 @@
    },
    "timers": {
     "spec": 13,
-    "built": 7,
+    "built": 8,
     "armable": 13,
     "missing": [
      "FNMA_E3401_EXPEDITED_REVIEW_CERT",
      "FNMA_E3401_SHORTSALE_MARKETING_45",
      "REGX_1024_41G_DUAL_TRACK_GATE",
-     "REGX_1024_41G_TRIAL_PERFORMING_FC_GATE",
      "STATE_CA_2924_18_DUAL_TRACK_GATE",
      "STATE_MN_582_043_DUAL_TRACK_GATE"
     ]
@@ -5120,9 +4923,9 @@
    },
    "units": {
     "spec": 35,
-    "built": 15
+    "built": 16
    },
-   "pct": 42.9
+   "pct": 45.7
   },
   {
    "process": "13.3",

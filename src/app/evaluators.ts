@@ -8,7 +8,7 @@
  * assert them at the boundary; the timer engine records the ref on the
  * armed instance; tests prove every ref the overrides name is registered.
  */
-import { daysBetween, addDays, type PlainDate } from "../kernel/calendar/date.ts";
+import { daysBetween, addDays, addYears, type PlainDate } from "../kernel/calendar/date.ts";
 
 export interface GateResult { readonly open: boolean; readonly reason?: string; }
 export type Facts = Record<string, unknown>;
@@ -39,6 +39,12 @@ export const EVALUATORS: Record<string, Evaluator> = {
   "1.6.loanReconciledBeforeBoard": (f) => (s(f, "recon_status") === "reconciled" ? ok : no(`loan is ${s(f, "recon_status") || "unreconciled"}; boardLoan needs reconciled`)),
   "1.7.noFirstFilingBeforeReasonableDate": (f) => (s(f, "today") > s(f, "reasonable_date") ? ok : no(`no first notice/filing before the reasonable date ${s(f, "reasonable_date")} on the incomplete-application acknowledgment (§1024.41(k)(2))`)),
   "1.7.forbearanceCumulativeWithin12Months": (f) => (b(f, "fnma_exception_approved") || n(f, "cumulative_months") + n(f, "requested_months") <= 12 ? ok : no(`cumulative forbearance ${n(f, "cumulative_months")} + ${n(f, "requested_months")} > 12 months without Fannie Mae exception approval (LL-2026-01)`)),
+  // ---- §3 escrow
+  "3.2.newPaymentAtLeast30DaysAfterStatement": (f) => (s(f, "effective_on") >= addDays(s(f, "statement_sent_on") as PlainDate, 30) ? ok : no(`new escrow payment effective ${s(f, "effective_on")} is less than 30 days after the statement sent ${s(f, "statement_sent_on")} (3.2 R9)`)),
+  "3.4.cushionCap": (f) => (b(f, "cap_check_passed") ? ok : no("cushion exceeds 1/6 of annual disbursements (§1024.17(c)(5), (d)(2)(ii))")),
+  "3.4.preaccrual": (f) => (b(f, "preaccrual_check_passed") ? ok : no("a projected disbursement precedes the bill's availability date or follows its penalty date (§1024.17(c)(6))")),
+  "3.6.interimAnalysisBeforeDemand": (f) => (b(f, "analysis_done") ? ok : no("a deficiency from a servicer advance may not be demanded before the interim analysis (§1024.17(f)(1)(ii))")),
+  "3.8.hpmlFiveYears": (f) => (!b(f, "hpml") || s(f, "today") >= addYears(s(f, "consummation_date") as PlainDate, 5) ? ok : no(`HPML escrow may not be cancelled before ${addYears(s(f, "consummation_date") as PlainDate, 5)} (§1026.35(b)(3))`)),
   // ---- §2 cashiering
   "2.1.noPostingBacklog": (f) => atMost(n(f, "items_received_or_identified_on_or_before_gate_date"), 0, "posting backlog"),
   "2.2.fiftyRuleCount": (f) => atMost(n(f, "partial_count_12m"), 3, "$50-rule applications in the trailing 12 months (C-1.1-02: max 3)"),

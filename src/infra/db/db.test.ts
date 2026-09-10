@@ -40,7 +40,7 @@ test("migrations: every file under db/migrations is applied to the test database
   execFileSync(fileURLToPath(new URL("../../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL);
   const [m] = await db.query<{ c: bigint }>(`SELECT count(*)::bigint AS c FROM schema_migrations`);
-  assert.equal(m!.c, 24n);
+  assert.equal(m!.c, 25n);
   const [t] = await db.query<{ c: bigint }>(`SELECT count(*)::bigint AS c FROM information_schema.tables WHERE table_schema IN ('public', 'restricted_fl') AND table_type = 'BASE TABLE'`);
   assert.equal(t!.c, 439n);
 });

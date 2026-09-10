@@ -8,10 +8,10 @@ import { type PlainDate, addDays } from "../../kernel/calendar/date.ts";
 import { addBusinessDays, servicer } from "../../kernel/calendar/business.ts";
 import { zonedEpochMs } from "../../kernel/calendar/zoned.ts";
 
-export type LiveStatus = "open" | "satisfied_live" | "satisfied_good_faith" | "satisfied_ongoing_lossmit" | "cancelled_paid" | "exempt_bk" | "exempt_discharge" | "exempt_investment" | "breached";
+export type LiveStatus = "open" | "satisfied_live" | "satisfied_good_faith" | "satisfied_ongoing_lossmit" | "cancelled_paid" | "exempt_bk" | "exempt_discharge" | "exempt_investment" | "breached" | "breached_at_boarding";
 export type NoticeStatus = "open" | "sent" | "satisfied_by_prior_180" | "cancelled_paid" | "exempt_bk" | "exempt_discharge" | "exempt_investment" | "deferred_transferee" | "breached" | "breached_at_boarding";
 
-export interface Window { readonly due_date: PlainDate; readonly live_due_at: PlainDate; readonly notice_due_at: PlainDate; readonly principal_residence: boolean; live: LiveStatus; notice: NoticeStatus; live_basis?: string; covering_cycle_id?: string; }
+export interface Window { readonly due_date: PlainDate; readonly live_due_at: PlainDate; readonly notice_due_at: PlainDate; readonly principal_residence: boolean; live: LiveStatus; notice: NoticeStatus; live_basis?: string; covering_cycle_id?: string; cancel_reason?: string | null; }
 export interface Cycle { readonly id: string; readonly provided_on: PlainDate; readonly variant: "standard" | "fdcpa" | "bk"; readonly cycle_end_at: PlainDate; }
 
 export const LIVE_DAYS = 36, NOTICE_DAYS = 45, CYCLE_DAYS = 180, FDCPA_CYCLE_DAYS = 190, BK_NOTICE_DAYS = 45;
@@ -29,8 +29,18 @@ export function liveDueMs(w: Window, loanTz: string): number { return zonedEpoch
 
 /** Comment 39(a)-1: paying the missed installment on/before day 36 (45) removes that duty; later payment leaves the obligation standing. */
 export function installmentPaid(w: Window, creditedAsOf: PlainDate): void {
-  if (w.live === "open" && creditedAsOf <= w.live_due_at) w.live = "cancelled_paid";
-  if (w.notice === "open" && creditedAsOf <= w.notice_due_at) w.notice = "cancelled_paid";
+  if (w.live === "open" && creditedAsOf <= w.live_due_at) { w.live = "cancelled_paid"; w.cancel_reason = "paid_before_36"; }
+  if (w.notice === "open" && creditedAsOf <= w.notice_due_at) { w.notice = "cancelled_paid"; w.cancel_reason = w.cancel_reason ?? "paid_before_45"; }
+}
+/** 11.1-T24 — a reversal (NSF) re-opens the installment: cancelled legs are reinstated with their original due dates. */
+export function reinstateOnReversal(w: Window): { live_reinstated: boolean; notice_reinstated: boolean } {
+  const l = w.live === "cancelled_paid", n = w.notice === "cancelled_paid";
+  if (l) w.live = "open"; if (n) w.notice = "open"; w.cancel_reason = null;
+  return { live_reinstated: l, notice_reinstated: n };
+}
+/** 11.1-T20 — windows seeded at boarding from the transferor's unpaid due dates; past deadlines are `breached_at_boarding`. */
+export function seedWindowsAtBoarding(unpaidDueDates: readonly PlainDate[], boardedOn: PlainDate, principalResidence = true): Window[] {
+  return unpaidDueDates.map((d) => { const w = openWindow(d, { principal_residence: principalResidence }); if (w.live === "open" && w.live_due_at < boardedOn) w.live = "breached_at_boarding"; if (w.notice === "open" && w.notice_due_at < boardedOn) w.notice = "breached_at_boarding"; return w; });
 }
 /** Any qualifying contact/effort dated inside (D, D+36] satisfies every open window containing that date. */
 export function applyContact(windows: Window[], contactOn: PlainDate, kind: "live" | "good_faith" | "ongoing_lossmit", basis = "outbound"): Window[] {

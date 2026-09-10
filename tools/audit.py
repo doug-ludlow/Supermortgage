@@ -44,7 +44,7 @@ def tids_in(text):
     return out
 impl_tids = tids_in(tests_live)
 todo_tids = tids_in(tests_all) - impl_tids
-created = set(re.findall(r'CREATE (?:TABLE|VIEW)\s+(?:IF NOT EXISTS\s+)?(?:restricted_fl\.)?(\w+)', '\n'.join(read(f) for f in glob.glob(os.path.join(root, 'db/migrations/*.sql')))))
+created = set(re.findall(r'CREATE (?:TABLE|VIEW|MATERIALIZED VIEW)\s+(?:IF NOT EXISTS\s+)?(?:restricted_fl\.)?(\w+)', '\n'.join(read(f) for f in glob.glob(os.path.join(root, 'db/migrations/*.sql')))))
 lint = json.loads(subprocess.run(['node', '--experimental-strip-types', 'tools/lint-registry.ts', '--json'], cwd=root, capture_output=True, text=True, check=True).stdout)
 timer_ok = {t['code'] for t in lint if t['armable'] and t['satisfiable']}
 timer_armable = {t['code'] for t in lint if t['armable']}

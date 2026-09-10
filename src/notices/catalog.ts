@@ -17,6 +17,7 @@ import { SECTION_07_VERSIONS } from "./authored/section07.ts";
 import { SECTION_08_VERSIONS } from "./authored/section08.ts";
 import { SECTION_09_VERSIONS } from "./authored/section09.ts";
 import { SECTION_10_VERSIONS } from "./authored/section10.ts";
+import { SECTION_11_VERSIONS } from "./authored/section11.ts";
 
 interface CatalogEntry { readonly code: string; readonly owner_process: string; readonly mentions: readonly string[]; readonly context: string; }
 
@@ -80,6 +81,10 @@ const OVERRIDES: Record<string, Partial<NoticeTemplate>> = {
   NTC_HPA_4904B_AUTO_NOT_CURRENT: { citation: "12 U.S.C. 4904(b)(2); B-8.1-04" },
   NTC_HPA_4905C2_LPMI_OPTIONS: { citation: "12 U.S.C. 4905(c)(2)" },
   NTC_MI_REFUND_ADVICE: { citation: "12 U.S.C. 4902(f); 10.5 outputs" },
+  NTC_REGX_39D_EARLY_INTERVENTION_FDCPA: { mayCombineWith: ["NTC_FNMA_D2204_SOLICITATION_PACKAGE", "NTC_REGF_1006_34_VALIDATION_B1"], citation: "12 CFR 1024.39(d)(3); Appendix MS-4(D); comment 39(b)(2)-3" },
+  NTC_REGX_39CD_EARLY_INTERVENTION_BK_FDCPA: { channelPolicy: "mail_only", citation: "12 CFR 1024.39(c)(1)(iii), (d)(3)" },
+  NTC_FNMA_D2204_SOLICITATION_PACKAGE: { mayCombineWith: ["NTC_REGX_39B_EARLY_INTERVENTION", "NTC_REGX_39D_EARLY_INTERVENTION_FDCPA"], citation: "D2-2-04; 11.2-Q4 combined mailing" },
+  NTC_REGF_1006_34_VALIDATION_B1: { mayCombineWith: ["NTC_REGX_1024_33B_HELLO_MS2", "NTC_REGX_39B_EARLY_INTERVENTION"], citation: "12 CFR 1006.34; 11.4-Q3 (enclosed with the hello letter)" },
   NTC_REGX_41B2_ACK_INCOMPLETE: { citation: "12 CFR 1024.41(b)(2)(i)(B)" },
   NTC_REGX_41B2_ACK_COMPLETE: { citation: "12 CFR 1024.41(b)(2)(i)(B)" },
 };
@@ -245,4 +250,5 @@ export const AUTHORED_VERSIONS: readonly VersionInput[] = [
   ...SECTION_08_VERSIONS,
   ...SECTION_09_VERSIONS,
   ...SECTION_10_VERSIONS,
+  ...SECTION_11_VERSIONS,
 ];

@@ -63,4 +63,46 @@ export function applyEarlyInterventionTimerOverrides(reg: TimerRegistry): void {
   o("SM_ID_REVIEWER_SLA_2BD", { trigger: "`imminent_default.reviewer_pending`", why: "§11.5 timer table: `reviewer_pending` → reviewer decision within 2 `business_days_servicer`." });
   o("FNMA_D2101_FORM182_ADVERSE_30", { trigger: "`smdu.case.declined{current_at_evaluation=true, counteroffer_accepted=false}`", why: "§11.5 timer table: `smdu_declined` for a borrower current at evaluation (no accepted counteroffer) → Form 182 within 30 calendar days (D2-1-01)." });
   o("REGB_1002_9_ADVERSE_ACTION_30", { trigger: "`lossmit.application.completed{outcome=adverse}`", anchorField: "brp_complete_at", why: "§11.5 timer table: completed application (`brp_complete_at`) with an adverse outcome → adverse action notice within 30 calendar days (Reg B §1002.9)." });
+  applyEarlyInterventionSatisfiedOverrides(reg);
+}
+
+/** Satisfaction events / evaluators for the §11 rows whose "Satisfied by" column is prose or empty. */
+export function applyEarlyInterventionSatisfiedOverrides(reg: TimerRegistry): void {
+  const o = reg.override.bind(reg);
+  // ---- 11.1
+  o("FNMA_D2202_CEASE_PRE_SALE_30NJ", { evaluator: "11.1.preSaleContactAllowed", why: "§11.1 timer table: outbound attempts blocked from sale − 30 (non-judicial) unless `jurisdiction_rules.contact_required_through_sale` (D2-2-02)." });
+  o("FNMA_D2202_CONTINUE_AFTER_210", { satisfied: "`contact.attempted{direction=outbound}`", why: "§11.1 timer table: 'same as EVERY_7' — the next outbound attempt." });
+  o("REGF_1006_14_POST_CONVERSATION_7", { evaluator: "11.1.postConversationCooloff", why: "§11.1 timer table: consent-based callback exception (`regf_exclusion=consent_within_7d`) or 7 days elapsed (Reg F §1006.14(b)(2)(ii))." });
+  o("REGX_1024_39A_LIVE_CONTACT_36_WARN_28", { satisfied: "`contact.live.established`", why: "§11.1 timer table: 'same' as REGX_1024_39A_LIVE_CONTACT_36 — live contact in the window." });
+  o("REGX_1024_39A_RESUME_AFTER_BK_NEXT_DUE", { satisfied: "`loan.delinquency.window_opened{after_bk_resume=true}`", why: "§11.1 timer table: 'windows re-open from that due date' (§1024.39(c)(2)(i))." });
+  o("SM_LIVE_CONTACT_HUMAN_FALLBACK_5CD", { satisfied: "`contact.attempted{mode=human_voice}`", why: "§11.1 timer table: 'human attempt logged (`mode=human_voice`)'." });
+  o("TCPA_64_1200_A10_REVOCATION_HONOR_10BD", { satisfied: "`consent.revocation.honored`", why: "§11.1 timer table: 'channel blocked for that number/address' — honored at commit (47 CFR 64.1200(a)(10))." });
+  // ---- 11.2
+  o("FNMA_D2204_BSP_AFTER_QRPC_3BD", { satisfied: "`solicitation_package.sent{kind=bsp}`", why: "§11.2/11.3 timer tables: '`solicitation_packages{kind=bsp}.sent_at`' (D2-2-04)." });
+  o("REGX_1024_39C2II_DISCHARGE_PAYMENT_REARM", { satisfied: "`payment.applied{received_after_petition=true}`", why: "§11.2 timer table: (b) re-arms on the first post-petition `payment.applied` (§1024.39(c)(2)(ii))." });
+  o("REGX_1024_39C_ONCE_PER_CASE_GATE", { evaluator: "11.2.onceBkNoticePerCase", why: "§11.2 timer table: a second bk notice for the same case (reopened included) is refused (comment 39(c)(2)-1)." });
+  o("REGX_1024_39C_RESUME_NEXT_DUE", { satisfied: "`loan.delinquency.window_opened{after_bk_resume=true}`", why: "§11.2 timer table: 'windows from that due date follow the standard rules' (§1024.39(c)(2)(i))." });
+  // ---- 11.3
+  o("FNMA_D2210_INSPECTION_SUSPEND_30", { evaluator: "11.3.qrpcWithin30Days", why: "§11.3 timer table: informational gate read by the inspection scheduler — QRPC within the last 30 days on an occupied property (D2-2-10)." });
+  o("SM_QRPC_HUMAN_VERIFY_1BD", { satisfied: "`contact.qrpc.reviewed{outcome∈{qrpc_verified, qrpc_rejected}}`", why: "§11.3 timer table: '`qrpc_verified` or `qrpc_rejected` (with human call task)'." });
+  o("SM_QRPC_STALE_30", { satisfied: "`contact.qrpc.established`", why: "§11.3 timer table: 'new QRPC, plan active, or resolution' — a fresh QRPC re-arms the recurring policy clock." });
+  // ---- 11.4
+  o("REGF_1006_100_RETENTION_3Y", { satisfied: "`records.retention.expired{class=regf_3y}`", why: "§11.4 timer table: retention rule — subsumed by `life_of_loan_plus_4y` (Reg F §1006.100)." });
+  o("REGF_1006_30A_FURNISH_GATE_14", { satisfied: "`fdcpa.furnishing_gate.opened`", why: "§11.4 timer table: '`furnishing_gate_open_at` set' (Reg F §1006.30(a))." });
+  o("REGF_1006_34_ASSUMED_RECEIPT_5D", { satisfied: "`fdcpa.validation_notice.assumed_received`", why: "§11.4 timer table: rule row — `assumed_receipt_on` computed (Reg F §1006.34(b)(5))." });
+  o("REGF_1006_34_VALIDATION_PERIOD_30", { satisfied: "`fdcpa.validation_period.ended`", why: "§11.4 timer table: 'period end' (Reg F §1006.34(b)(5))." });
+  o("REGF_1006_38_OC_REQUEST_GATE", { satisfied: "`notice.sent{code=NTC_REGF_1006_38_ORIGINAL_CREDITOR}`", why: "§11.4 timer table: '`NTC_REGF_1006_38_ORIGINAL_CREDITOR` sent' (Reg F §1006.38(c))." });
+  o("REGF_1006_6B2_ATTORNEY_GATE", { satisfied: "`fdcpa.attorney_gate.released{reason∈{consent, nonresponse_30d}}`", why: "§11.4 timer table: 'until attorney consents or fails to respond for 30 calendar days' (Reg F §1006.6(b)(2))." });
+  o("REGF_1006_6C_CEASE_GATE", { satisfied: "`fdcpa.cease.withdrawn{written=true}`", why: "§11.4 timer table: 'permanent (unless withdrawn in writing)' (Reg F §1006.6(c))." });
+  o("SM_REGF_VERIFICATION_RESPONSE_30", { satisfied: "`notice.sent{code=NTC_REGF_1006_38_VERIFICATION}`", why: "§11.4 timer table: 'verification sent'." });
+  // ---- 11.5
+  o("FNMA_D2101_FORM182_ADVERSE_30", { satisfied: "`notice.sent{code=NTC_FNMA_A42106_FORM182_ADVERSE_ACTION}`", why: "§11.5 timer table: '`NTC_FNMA_A42106_FORM182_ADVERSE_ACTION` sent' (D2-1-01)." });
+  o("FNMA_D2205_ACCEPT_14", { satisfied: "`lossmit.offer.accepted`", why: "§11.5 timer table (12.2 owns): 'acceptance (verbal/written/payment)' (D2-2-05)." });
+  o("FNMA_D2205_DECISION_5D_30D", { satisfied: "`lossmit.evaluation_notice.sent`", why: "§11.5 timer table (12.2 owns): 'Evaluation Notice' (D2-2-05)." });
+  o("FNMA_D2205_INCOME_DOC_90", { evaluator: "11.5.incomeDocsFresh", why: "§11.5 timer table: validation — oldest income document ≤90 days at `brp_complete_at` (180 disaster) (D2-2-05)." });
+  o("FNMA_SMDU_PORTAL_TASK_1BD", { satisfied: "`human_portal_task.completed{kind=smdu}`", why: "§11.5 timer table: 'task completed with decision attached'." });
+  o("REGB_1002_9_ADVERSE_ACTION_30", { satisfied: "`notice.sent{code=NTC_FNMA_A42106_FORM182_ADVERSE_ACTION}`", why: "§11.5 timer table: 'adverse-action notice (combined with Form 182 / 12.2 denial notice)' (Reg B §1002.9)." });
+  o("REGX_1024_41B2_LM_ACK_5", { satisfied: "`notice.sent{code∈{NTC_REGX_41B2_ACK_COMPLETE, NTC_REGX_41B2_ACK_INCOMPLETE}}`", why: "§11.5 timer table (12.1 owns): 'acknowledgment sent' (§1024.41(b)(2))." });
+  o("REGX_1024_41C1_EVALUATE_30", { satisfied: "`lossmit.evaluation_notice.sent`", why: "§11.5 timer table (12.2 owns): 'evaluation notice sent' (§1024.41(c)(1))." });
+  o("SM_ID_SMDU_SUBMIT_2BD", { satisfied: "`smdu.submission.acknowledged`", why: "§11.5 timer table: 'SMDU ack / portal task complete'." });
 }

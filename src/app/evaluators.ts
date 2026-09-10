@@ -112,6 +112,11 @@ export const EVALUATORS: Record<string, Evaluator> = {
   "11.5.cashReserveBelow25000": (f) => (c(f, "cash_reserves_cents") < 2_500_000n || (b(f, "pcs_over_50_miles") && s(f, "track") === "liquidation") ? ok : no("cash reserves ≥ $25,000 (D2-1-01) — not imminent default")),
   "11.5.delinquentUnder60": (f) => (n(f, "regx_days_delinquent") < 60 ? ok : no("imminent-default evaluation requires < 60 days delinquent")),
   "11.5.ficoFresh": (f) => atMost(daysBetween(s(f, "fico_date") as PlainDate, s(f, "evaluation_date") as PlainDate), 90, "FICO age in days"),
+  "11.1.preSaleContactAllowed": (f) => (n(f, "days_until_sale") > (b(f, "judicial") ? 60 : 30) || b(f, "contact_required_through_sale") ? ok : no("outbound attempts stop 60 (judicial) / 30 (non-judicial) days before the sale (D2-2-02)")),
+  "11.1.postConversationCooloff": (f) => (n(f, "days_since_conversation") >= 7 || b(f, "callback_consent_within_7d") ? ok : no("no call within 7 days after a conversation (Reg F §1006.14(b)(2)(ii))")),
+  "11.2.onceBkNoticePerCase": (f) => (b(f, "bk_notice_sent_for_case") ? no("a second bankruptcy-modified notice for the same case is refused (comment 39(c)(2)-1)") : ok),
+  "11.3.qrpcWithin30Days": (f) => (b(f, "occupied") && n(f, "days_since_qrpc") <= 30 ? ok : no("no QRPC in the last 30 days on an occupied property (D2-2-10)")),
+  "11.5.incomeDocsFresh": (f) => atMost(n(f, "oldest_income_doc_age_days"), b(f, "disaster_impacted") ? 180 : 90, "income document age at completeness (D2-2-05)"),
   // ---- §12 loss mitigation
   "12.3.reviewerIndependent": (f) => (s(f, "reviewer_id") !== s(f, "evaluator_id") && s(f, "reviewer_run_id") !== s(f, "evaluator_run_id") ? ok : no("appeal reviewer must be independent of the evaluator (§1024.41(h)(3))")),
   "12.4.incrementMax3Months": (f) => atMost(n(f, "term_months"), 3, "forbearance increment months (D2-3.2-01)"),

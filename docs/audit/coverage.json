@@ -1,33 +1,33 @@
 {
- "brief": "spec units built 3271/4584 (71.4%): tids 968/1253, tables 440/449, timers 983/1365, notices 129/235, tools 345/658, figures 406/624; processes at 100%: 64/114",
+ "brief": "spec units built 3425/4583 (74.7%): tids 1022/1253, tables 441/448, timers 1017/1365, notices 146/235, tools 374/658, figures 425/624; processes at 100%: 69/114",
  "totals": {
   "tids": {
    "spec": 1253,
-   "built": 968
+   "built": 1022
   },
   "tables": {
-   "spec": 449,
-   "built": 440
+   "spec": 448,
+   "built": 441
   },
   "timers": {
    "spec": 1365,
-   "built": 983
+   "built": 1017
   },
   "notices": {
    "spec": 235,
-   "built": 129
+   "built": 146
   },
   "tools": {
    "spec": 658,
-   "built": 345
+   "built": 374
   },
   "figures": {
    "spec": 624,
-   "built": 406
+   "built": 425
   },
   "units": {
-   "spec": 4584,
-   "built": 3271
+   "spec": 4583,
+   "built": 3425
   }
  },
  "sections": {
@@ -92,14 +92,14 @@
    "done": 6
   },
   "11": {
-   "spec": 252,
-   "built": 99,
+   "spec": 251,
+   "built": 251,
    "processes": 5,
-   "done": 0
+   "done": 5
   },
   "12": {
    "spec": 425,
-   "built": 156,
+   "built": 158,
    "processes": 9,
    "done": 0
   },
@@ -210,7 +210,12 @@
   "10.3",
   "10.4",
   "10.5",
-  "10.6"
+  "10.6",
+  "11.1",
+  "11.2",
+  "11.3",
+  "11.4",
+  "11.5"
  ],
  "processes": [
   {
@@ -2842,58 +2847,25 @@
    "title": "Live contact",
    "tids": {
     "spec": 24,
-    "built": 6,
-    "todo": 18,
-    "missing": [
-     5,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15,
-     16,
-     17,
-     18,
-     19,
-     20,
-     21,
-     22,
-     23,
-     24
-    ]
+    "built": 24,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
-    "spec": 9,
-    "built": 7,
-    "missing": [
-     "frequency_counters",
-     "mode"
-    ]
+    "spec": 8,
+    "built": 8,
+    "missing": []
    },
    "timers": {
     "spec": 17,
-    "built": 10,
+    "built": 17,
     "armable": 17,
-    "missing": [
-     "FNMA_D2202_CEASE_PRE_SALE_30NJ",
-     "FNMA_D2202_CONTINUE_AFTER_210",
-     "REGF_1006_14_POST_CONVERSATION_7",
-     "REGX_1024_39A_LIVE_CONTACT_36_WARN_28",
-     "REGX_1024_39A_RESUME_AFTER_BK_NEXT_DUE",
-     "SM_LIVE_CONTACT_HUMAN_FALLBACK_5CD",
-     "TCPA_64_1200_A10_REVOCATION_HONOR_10BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 2,
-    "built": 0,
-    "missing": [
-     "NTC_SM_CALLBACK_CONFIRMATION",
-     "NTC_SM_CONTACT_REQUEST_LETTER"
-    ]
+    "built": 2,
+    "missing": []
    },
    "tools": {
     "spec": 0,
@@ -2902,41 +2874,23 @@
    },
    "figures": {
     "spec": 9,
-    "built": 0,
-    "missing": [
-     "$1,200.00",
-     "$1,650.00",
-     "$2,000.00",
-     "$2,400.00",
-     "$350.00",
-     "$4,000.00",
-     "$4,165.00",
-     "$400.00",
-     "$82.50"
-    ]
+    "built": 9,
+    "missing": []
    },
    "units": {
-    "spec": 61,
-    "built": 23
+    "spec": 60,
+    "built": 60
    },
-   "pct": 37.7
+   "pct": 100.0
   },
   {
    "process": "11.2",
    "title": "Written early intervention notice",
    "tids": {
     "spec": 15,
-    "built": 8,
-    "todo": 7,
-    "missing": [
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15
-    ]
+    "built": 15,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 4,
@@ -2945,44 +2899,19 @@
    },
    "timers": {
     "spec": 13,
-    "built": 9,
+    "built": 13,
     "armable": 13,
-    "missing": [
-     "FNMA_D2204_BSP_AFTER_QRPC_3BD",
-     "REGX_1024_39C2II_DISCHARGE_PAYMENT_REARM",
-     "REGX_1024_39C_ONCE_PER_CASE_GATE",
-     "REGX_1024_39C_RESUME_NEXT_DUE"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 5,
-    "built": 0,
-    "missing": [
-     "NTC_FNMA_D2204_SOLICITATION_LETTER_745",
-     "NTC_FNMA_D2204_SOLICITATION_PACKAGE",
-     "NTC_REGX_39CD_EARLY_INTERVENTION_BK_FDCPA",
-     "NTC_REGX_39C_EARLY_INTERVENTION_BK",
-     "NTC_REGX_39D_EARLY_INTERVENTION_FDCPA"
-    ]
+    "built": 5,
+    "missing": []
    },
    "tools": {
     "spec": 13,
-    "built": 0,
-    "missing": [
-     "windows.list",
-     "cycle.compute",
-     "bk.status",
-     "fdcpa.status",
-     "continuity.assignment.get",
-     "lossmit.options.list",
-     "notice.render",
-     "checklist.verify",
-     "print.request",
-     "edeliver.send",
-     "fnma.action.emit",
-     "decision.record",
-     "escalate"
-    ]
+    "built": 13,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -2991,27 +2920,18 @@
    },
    "units": {
     "spec": 50,
-    "built": 21
+    "built": 50
    },
-   "pct": 42.0
+   "pct": 100.0
   },
   {
    "process": "11.3",
    "title": "Quality Right Party Contact (QRPC)",
    "tids": {
     "spec": 14,
-    "built": 6,
-    "todo": 8,
-    "missing": [
-     5,
-     6,
-     7,
-     8,
-     10,
-     11,
-     13,
-     14
-    ]
+    "built": 14,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 3,
@@ -3020,81 +2940,39 @@
    },
    "timers": {
     "spec": 11,
-    "built": 7,
+    "built": 11,
     "armable": 11,
-    "missing": [
-     "FNMA_D2204_BSP_AFTER_QRPC_3BD",
-     "FNMA_D2210_INSPECTION_SUSPEND_30",
-     "SM_QRPC_HUMAN_VERIFY_1BD",
-     "SM_QRPC_STALE_30"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "NTC_SM_QRPC_SUMMARY"
-    ]
+    "built": 1,
+    "missing": []
    },
    "tools": {
     "spec": 16,
-    "built": 0,
-    "missing": [
-     "identity.verify",
-     "disclosure.play",
-     "ledger.balances",
-     "payments.history",
-     "lossmit_facts.get",
-     "qrpc.capture",
-     "promise.record",
-     "payment.schedule",
-     "lossmit.request.create",
-     "lossmit.streamlined.evaluate",
-     "authorization.record",
-     "preference.set",
-     "dispute.intake",
-     "human.transfer",
-     "contact.log",
-     "decision.record"
-    ]
+    "built": 16,
+    "missing": []
    },
    "figures": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "$2,000.00",
-     "$4,165.00",
-     "$82.50"
-    ]
+    "built": 3,
+    "missing": []
    },
    "units": {
     "spec": 48,
-    "built": 16
+    "built": 48
    },
-   "pct": 33.3
+   "pct": 100.0
   },
   {
    "process": "11.4",
    "title": "FDCPA compliance",
    "tids": {
     "spec": 16,
-    "built": 3,
-    "todo": 13,
-    "missing": [
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15,
-     16
-    ]
+    "built": 16,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 4,
@@ -3103,30 +2981,14 @@
    },
    "timers": {
     "spec": 20,
-    "built": 12,
+    "built": 20,
     "armable": 20,
-    "missing": [
-     "REGF_1006_100_RETENTION_3Y",
-     "REGF_1006_30A_FURNISH_GATE_14",
-     "REGF_1006_34_ASSUMED_RECEIPT_5D",
-     "REGF_1006_34_VALIDATION_PERIOD_30",
-     "REGF_1006_38_OC_REQUEST_GATE",
-     "REGF_1006_6B2_ATTORNEY_GATE",
-     "REGF_1006_6C_CEASE_GATE",
-     "SM_REGF_VERIFICATION_RESPONSE_30"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 6,
-    "built": 0,
-    "missing": [
-     "NTC_REGF_1006_18E_DISCLOSURE",
-     "NTC_REGF_1006_34_VALIDATION_B1",
-     "NTC_REGF_1006_38_DUPLICATIVE",
-     "NTC_REGF_1006_38_ORIGINAL_CREDITOR",
-     "NTC_REGF_1006_38_VERIFICATION",
-     "NTC_REGF_1006_6C_CEASE_ACK"
-    ]
+    "built": 6,
+    "missing": []
    },
    "tools": {
     "spec": 0,
@@ -3140,27 +3002,18 @@
    },
    "units": {
     "spec": 51,
-    "built": 24
+    "built": 51
    },
-   "pct": 47.1
+   "pct": 100.0
   },
   {
    "process": "11.5",
    "title": "Imminent default evaluation",
    "tids": {
     "spec": 14,
-    "built": 6,
-    "todo": 8,
-    "missing": [
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14
-    ]
+    "built": 14,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 2,
@@ -3169,28 +3022,14 @@
    },
    "timers": {
     "spec": 15,
-    "built": 6,
+    "built": 15,
     "armable": 15,
-    "missing": [
-     "FNMA_D2101_FORM182_ADVERSE_30",
-     "FNMA_D2205_ACCEPT_14",
-     "FNMA_D2205_DECISION_5D_30D",
-     "FNMA_D2205_INCOME_DOC_90",
-     "FNMA_SMDU_PORTAL_TASK_1BD",
-     "REGB_1002_9_ADVERSE_ACTION_30",
-     "REGX_1024_41B2_LM_ACK_5",
-     "REGX_1024_41C1_EVALUATE_30",
-     "SM_ID_SMDU_SUBMIT_2BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "NTC_CO_AI_ACT_PRE_DECISION",
-     "NTC_FNMA_A42106_FORM182_ADVERSE_ACTION",
-     "NTC_SM_ID_ELIGIBILITY_RESULT"
-    ]
+    "built": 3,
+    "missing": []
    },
    "tools": {
     "spec": 0,
@@ -3199,22 +3038,14 @@
    },
    "figures": {
     "spec": 8,
-    "built": 1,
-    "missing": [
-     "$1,650.00",
-     "$150.00",
-     "$2,412.50",
-     "$5,600.00",
-     "$6,031.25",
-     "$612.50",
-     "$8,400.00"
-    ]
+    "built": 8,
+    "missing": []
    },
    "units": {
     "spec": 42,
-    "built": 15
+    "built": 42
    },
-   "pct": 35.7
+   "pct": 100.0
   },
   {
    "process": "12.1",
@@ -3242,13 +3073,12 @@
    },
    "timers": {
     "spec": 13,
-    "built": 8,
+    "built": 9,
     "armable": 13,
     "missing": [
      "FNMA_D2205_BRP_ACK_5BD",
      "NY_419_7D_ACK_5BD",
      "REGX_1024_41B1_DILIGENCE_FOLLOWUP_7",
-     "REGX_1024_41B2_LM_ACK_5",
      "SM_LM_DOC_STALENESS_SWEEP"
     ]
    },
@@ -3291,9 +3121,9 @@
    },
    "units": {
     "spec": 52,
-    "built": 19
+    "built": 20
    },
-   "pct": 36.5
+   "pct": 38.5
   },
   {
    "process": "12.2",
@@ -3320,14 +3150,13 @@
    },
    "timers": {
     "spec": 17,
-    "built": 7,
+    "built": 8,
     "armable": 17,
     "missing": [
      "CA_CIV_2923_6E_NOD_NOS_HOLD_31",
      "FNMA_D2205_EVAL_NOTICE_5_AFTER_DECISION",
      "FNMA_E3401_POST_NOTICE_LEGAL_DELAY_14",
      "NY_419_7G_ACCEPT_30",
-     "REGB_1002_9_ADVERSE_ACTION_30",
      "REGX_1024_41C1_EVALUATE_NOTIFY_30",
      "REGX_1024_41C4IIA2_SIGNIFICANT_PERIOD",
      "REGX_1024_41C4_THIRD_PARTY_HEIGHTEN_30",
@@ -3368,9 +3197,9 @@
    },
    "units": {
     "spec": 49,
-    "built": 17
+    "built": 18
    },
-   "pct": 34.7
+   "pct": 36.7
   },
   {
    "process": "12.3",

@@ -41,8 +41,8 @@ def tables(text):
     if m:
         for n in re.findall(r'(?:^|\n)\s*[-*]\s*\*{0,2}`([a-z][a-z0-9_]{3,})`', m.group(1)):
             if not n.endswith(('_id', '_at', '_on', '_cents', '_pct', '_date', '_flag')) and '.' not in n: names.add(n)
-        for n, tail in re.findall(r'`([a-z][a-z0-9_]{3,})`\s*\((baseline|new|extended|append-only)[^)]*\)', m.group(1)):
-            if 'retention class' not in tail: names.add(n)
+        for n, tail in re.findall(r'`([a-z][a-z0-9_]{3,})`\s*\(((?:baseline|new|extended|append-only)[^)]*)\)', m.group(1)):
+            if 'retention class' not in tail and 'enum' not in tail: names.add(n)
         # `x` (new retention class …) / `mode` ∈ {…} are classes and enums, not tables
         for n in list(names):
             if re.search(r'`' + re.escape(n) + r'`\s*\((?:new )?retention class', m.group(1)) or re.search(r'`' + re.escape(n) + r'`\s*[∈=]', m.group(1)): names.discard(n)

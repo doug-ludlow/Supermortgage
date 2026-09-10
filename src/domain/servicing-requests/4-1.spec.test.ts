@@ -41,7 +41,7 @@ test("4.1-T11: (early correction) Given a clear posting error fixed on day 2 wit
 test("4.1-T12: (NY override) Given a NY property and a `b9` assertion with a sale in 40 days, then due = 15 servicer BD, not 30; extension for a `std_30` NY case adds 7 BD.", () => {
   const ny = nyNoeDeadline(D("2026-09-04"), { foreclosure_assertion: true, sale_on: D("2026-10-14") });
   assert.equal(ny.response_due, "2026-09-28"); assert.match(ny.basis, /15 business days/);                 // 15 servicer BD (Labor Day closed), not 30
-  const std = nyNoeDeadline(D("2026-09-04"), { foreclosure_assertion: false }); assert.equal(nyExtension(std), "2026-10-27");   // +7 BD
+  const std = nyNoeDeadline(D("2026-09-04"), { foreclosure_assertion: false }); assert.equal(nyExtension(std), "2026-10-29");   // 30 servicer BD → 2026-10-20 (Labor Day, Columbus Day closed), +7 BD
 });
 test("4.1-T13: (AI escalation) Given classifier confidence 0.4, then `needs_human` queue with the ack timer running; a human classification within 1 BD does not change the receipt date.", () => {
   const r = triageWithConfidence({ confidence: 0.4, received_on: D("2026-09-04"), human_classified_on: D("2026-09-08") });

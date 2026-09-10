@@ -16,7 +16,7 @@ import { PgTimerRepository } from "./timers.ts";
 import { PgDecisionRepository } from "./decisions.ts";
 import { PgLoanRepository, type Fixture } from "./loans.ts";
 import { PgUnitOfWork } from "./unit-of-work.ts";
-import { SYSTEM, FixedClock } from "../../kernel/events/index.ts";
+import { SYSTEM, FixedClock, MemoryEventStore } from "../../kernel/events/index.ts";
 import { MemoryLedger } from "../../kernel/ledger/ledger.ts";
 import { plainDate as D, addMonths } from "../../kernel/calendar/date.ts";
 import { loadOverriddenRegistry } from "../../domain/timer-overrides.ts";
@@ -201,4 +201,28 @@ test("outbox on Postgres: integration_messages dedupes by (adapter, direction, k
   assert.ok(open.some((t) => t.integrationMessageId === a.message.id));
   await tasks.complete(r!.task!.id, "operator-1", null, "2026-09-03T15:00:00.000Z");
   assert.ok(!(await tasks.open_("fnma_portal_operator")).some((t) => t.id === r!.task!.id));
+});
+
+test("notice registry on Postgres: templates and approved versions persist; a notice row's content is immutable and its checklist and deliveries are recorded", { skip }, async () => {
+  const { buildRegistry, publishAuthored } = await import("../../notices/catalog.ts");
+  const { NoticeService } = await import("../../notices/service.ts");
+  const { PgNoticeRepository } = await import("./notices.ts");
+  const { FakePrintMail, FakeEdelivery } = await import("../integrations/delivery.ts");
+  const reg = buildRegistry(); publishAuthored(reg);
+  const repo = new PgNoticeRepository(db);
+  await db.tx(async (q) => { for (const t of reg.all()) await repo.upsertTemplate(t, q); for (const t of reg.all()) for (const v of reg.versionsOf(t.code)) await repo.saveVersion(v, q); });
+  const [c] = await db.query<{ c: bigint }>(`SELECT count(*)::bigint AS c FROM notice_templates`);
+  assert.ok(c!.c >= 248n);
+  const f = await fixture(db);
+  const clock = new FixedClock("2026-10-17T05:00:00.000Z");
+  const svc = new NoticeService({ registry: reg, events: new MemoryEventStore(clock), clock, printMail: new FakePrintMail(), edelivery: new FakeEdelivery() });
+  const v = reg.activeVersion("INS_FPI_FIRST_MS3A", D("2026-10-05"))!;
+  const n = svc.render({ templateCode: "INS_FPI_FIRST_MS3A", loanId: f.loanId, recipients: [{ partyId: f.partnerPartyId, name: "B", mailingAddress: "1 Test St" }], payload: v.samplePayload, asOf: D("2026-10-05") });
+  await svc.send(n.id);
+  await db.tx((q) => repo.saveNotice(n, q));
+  assert.equal((await repo.statusOf(n.id))?.status, "sent");
+  await assert.rejects(db.query(`UPDATE notices SET payload = '{}'::jsonb WHERE id = $1`, [n.id]), /append-only; supersede/);
+  await assert.rejects(db.query(`DELETE FROM notices WHERE id = $1`, [n.id]), /append-only/);
+  const [d] = await db.query<{ c: bigint }>(`SELECT count(*)::bigint AS c FROM notice_deliveries WHERE notice_id = $1`, [n.id]);
+  assert.equal(d!.c, 1n);
 });

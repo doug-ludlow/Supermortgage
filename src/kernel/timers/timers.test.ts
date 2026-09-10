@@ -149,3 +149,16 @@ test("computeDue: calendar-day and window offsets resolve against the anchor mon
   // Evaluator offsets carry no clock — the domain asserts them
   assert.deepEqual(computeDue(parseOffset("evaluator:12.4.incrementMax3Months"), D("2026-10-01"), 0), { evaluator: "12.4.incrementMax3Months" });
 });
+
+test("a later override that leaves the anchor alone keeps the anchor field an earlier override set", () => {
+  const reg = loadRegistry();
+  const code = reg.unique().find((t) => t.anchorField === null && t.satisfiedPattern !== null)!.code;
+  const first = reg.override(code, { anchorField: "sent_on", why: "test: computed anchor" });
+  assert.equal(first.anchorField, "sent_on");
+  const second = reg.override(code, { satisfied: "`notice.sent{template=X}`", why: "test: satisfied only" });
+  assert.equal(second.anchorField, "sent_on");
+  assert.equal(second.satisfiedPattern?.type, "notice.sent");
+  // Re-pointing the anchor text re-parses the field; an explicit anchorField still wins.
+  assert.equal(reg.override(code, { anchor: "`received_on`" }).anchorField, "received_on");
+  assert.equal(reg.override(code, { anchor: "receipt", anchorField: "assumed_receipt_on" }).anchorField, "assumed_receipt_on");
+});

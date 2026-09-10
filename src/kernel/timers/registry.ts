@@ -117,7 +117,10 @@ export class TimerRegistry {
     const offset = o.evaluator !== undefined ? `evaluator:${o.evaluator}` : o.offset;
     const merged = toTimerDef({ ...cur, ...(o.trigger !== undefined ? { trigger: o.trigger } : {}), ...(o.satisfied !== undefined ? { satisfied: o.satisfied } : {}),
       ...(o.anchor !== undefined ? { anchor: o.anchor } : {}), ...(offset !== undefined ? { offset } : {}) });
-    const next: TimerDef = { ...merged, ...(o.anchorField !== undefined ? { anchorField: o.anchorField } : {}), ...(o.why !== undefined ? { overrideWhy: o.why } : {}) };
+    // A later override that touches neither `anchor` nor `anchorField` keeps the anchor field an
+    // earlier override set (toTimerDef would otherwise re-parse it from the raw anchor text).
+    const anchorField = o.anchorField !== undefined ? o.anchorField : o.anchor === undefined ? cur.anchorField : merged.anchorField;
+    const next: TimerDef = { ...merged, anchorField, ...(o.why !== undefined ? { overrideWhy: o.why } : {}) };
     this.byCode.set(code, next);
     return next;
   }

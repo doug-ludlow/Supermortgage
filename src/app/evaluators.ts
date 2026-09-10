@@ -17,6 +17,94 @@ import { SECTION_16_EVALUATORS } from "../domain/payoff/evaluators.ts";
 import { SECTION_17_EVALUATORS } from "../domain/transfers/evaluators.ts";
 import { SECTION_18_EVALUATORS } from "../domain/qc-audit/evaluators.ts";
 import { SECTION_19_EVALUATORS } from "../domain/data-security/evaluators.ts";
+// ---- §1–§13 process-owned files (scaffolded by tools/workflows/wire.py)
+import { EVALUATORS_1_1 } from "../domain/boarding/evaluators-1-1.ts";
+import { EVALUATORS_1_2 } from "../domain/transfers/evaluators-1-2.ts";
+import { EVALUATORS_1_3 } from "../domain/transfers/evaluators-1-3.ts";
+import { EVALUATORS_1_4 } from "../domain/transfers/evaluators-1-4.ts";
+import { EVALUATORS_1_5 } from "../domain/transfers/evaluators-1-5.ts";
+import { EVALUATORS_1_6 } from "../domain/transfers/evaluators-1-6.ts";
+import { EVALUATORS_1_7 } from "../domain/transfers/evaluators-1-7.ts";
+import { EVALUATORS_2_1 } from "../domain/cashiering/evaluators-2-1.ts";
+import { EVALUATORS_2_2 } from "../domain/cashiering/evaluators-2-2.ts";
+import { EVALUATORS_2_3 } from "../domain/cashiering/evaluators-2-3.ts";
+import { EVALUATORS_2_4 } from "../domain/cashiering/evaluators-2-4.ts";
+import { EVALUATORS_2_5 } from "../domain/cashiering/evaluators-2-5.ts";
+import { EVALUATORS_2_6 } from "../domain/cashiering/evaluators-2-6.ts";
+import { EVALUATORS_2_7 } from "../domain/cashiering/evaluators-2-7.ts";
+import { EVALUATORS_3_1 } from "../domain/escrow/evaluators-3-1.ts";
+import { EVALUATORS_3_2 } from "../domain/escrow/evaluators-3-2.ts";
+import { EVALUATORS_3_3 } from "../domain/escrow/evaluators-3-3.ts";
+import { EVALUATORS_3_4 } from "../domain/escrow/evaluators-3-4.ts";
+import { EVALUATORS_3_5 } from "../domain/escrow/evaluators-3-5.ts";
+import { EVALUATORS_3_6 } from "../domain/escrow/evaluators-3-6.ts";
+import { EVALUATORS_3_7 } from "../domain/escrow/evaluators-3-7.ts";
+import { EVALUATORS_3_8 } from "../domain/escrow/evaluators-3-8.ts";
+import { EVALUATORS_3_9 } from "../domain/escrow/evaluators-3-9.ts";
+import { EVALUATORS_4_1 } from "../domain/servicing-requests/evaluators-4-1.ts";
+import { EVALUATORS_4_2 } from "../domain/servicing-requests/evaluators-4-2.ts";
+import { EVALUATORS_4_3 } from "../domain/servicing-requests/evaluators-4-3.ts";
+import { EVALUATORS_4_4 } from "../domain/servicing-requests/evaluators-4-4.ts";
+import { EVALUATORS_4_5 } from "../domain/servicing-requests/evaluators-4-5.ts";
+import { EVALUATORS_5_1 } from "../domain/investor/evaluators-5-1.ts";
+import { EVALUATORS_5_2 } from "../domain/investor/evaluators-5-2.ts";
+import { EVALUATORS_5_3 } from "../domain/investor/evaluators-5-3.ts";
+import { EVALUATORS_5_4 } from "../domain/investor/evaluators-5-4.ts";
+import { EVALUATORS_5_5 } from "../domain/investor/evaluators-5-5.ts";
+import { EVALUATORS_5_6 } from "../domain/investor/evaluators-5-6.ts";
+import { EVALUATORS_5_7 } from "../domain/investor/evaluators-5-7.ts";
+import { EVALUATORS_6_1 } from "../domain/custodial/evaluators-6-1.ts";
+import { EVALUATORS_6_2 } from "../domain/custodial/evaluators-6-2.ts";
+import { EVALUATORS_6_3 } from "../domain/custodial/evaluators-6-3.ts";
+import { EVALUATORS_6_4 } from "../domain/custodial/evaluators-6-4.ts";
+import { EVALUATORS_6_5 } from "../domain/custodial/evaluators-6-5.ts";
+import { EVALUATORS_7_1 } from "../domain/notices/evaluators-7-1.ts";
+import { EVALUATORS_7_2 } from "../domain/notices/evaluators-7-2.ts";
+import { EVALUATORS_7_3 } from "../domain/notices/evaluators-7-3.ts";
+import { EVALUATORS_7_4 } from "../domain/notices/evaluators-7-4.ts";
+import { EVALUATORS_7_5 } from "../domain/notices/evaluators-7-5.ts";
+import { EVALUATORS_7_6 } from "../domain/notices/evaluators-7-6.ts";
+import { EVALUATORS_8_1 } from "../domain/credit-reporting/evaluators-8-1.ts";
+import { EVALUATORS_8_2 } from "../domain/credit-reporting/evaluators-8-2.ts";
+import { EVALUATORS_8_3 } from "../domain/credit-reporting/evaluators-8-3.ts";
+import { EVALUATORS_9_1 } from "../domain/insurance/evaluators-9-1.ts";
+import { EVALUATORS_9_2 } from "../domain/insurance/evaluators-9-2.ts";
+import { EVALUATORS_9_3 } from "../domain/insurance/evaluators-9-3.ts";
+import { EVALUATORS_9_4 } from "../domain/insurance/evaluators-9-4.ts";
+import { EVALUATORS_9_5 } from "../domain/insurance/evaluators-9-5.ts";
+import { EVALUATORS_9_6 } from "../domain/insurance/evaluators-9-6.ts";
+import { EVALUATORS_9_7 } from "../domain/insurance/evaluators-9-7.ts";
+import { EVALUATORS_9_8 } from "../domain/insurance/evaluators-9-8.ts";
+import { EVALUATORS_9_9 } from "../domain/insurance/evaluators-9-9.ts";
+import { EVALUATORS_10_1 } from "../domain/pmi/evaluators-10-1.ts";
+import { EVALUATORS_10_2 } from "../domain/pmi/evaluators-10-2.ts";
+import { EVALUATORS_10_3 } from "../domain/pmi/evaluators-10-3.ts";
+import { EVALUATORS_10_4 } from "../domain/pmi/evaluators-10-4.ts";
+import { EVALUATORS_10_5 } from "../domain/pmi/evaluators-10-5.ts";
+import { EVALUATORS_10_6 } from "../domain/pmi/evaluators-10-6.ts";
+import { EVALUATORS_11_1 } from "../domain/early-intervention/evaluators-11-1.ts";
+import { EVALUATORS_11_2 } from "../domain/early-intervention/evaluators-11-2.ts";
+import { EVALUATORS_11_3 } from "../domain/early-intervention/evaluators-11-3.ts";
+import { EVALUATORS_11_4 } from "../domain/early-intervention/evaluators-11-4.ts";
+import { EVALUATORS_11_5 } from "../domain/early-intervention/evaluators-11-5.ts";
+import { EVALUATORS_12_1 } from "../domain/lossmit/evaluators-12-1.ts";
+import { EVALUATORS_12_2 } from "../domain/lossmit/evaluators-12-2.ts";
+import { EVALUATORS_12_3 } from "../domain/lossmit/evaluators-12-3.ts";
+import { EVALUATORS_12_4 } from "../domain/lossmit/evaluators-12-4.ts";
+import { EVALUATORS_12_5 } from "../domain/lossmit/evaluators-12-5.ts";
+import { EVALUATORS_12_6 } from "../domain/lossmit/evaluators-12-6.ts";
+import { EVALUATORS_12_7 } from "../domain/lossmit/evaluators-12-7.ts";
+import { EVALUATORS_12_8 } from "../domain/lossmit/evaluators-12-8.ts";
+import { EVALUATORS_12_9 } from "../domain/lossmit/evaluators-12-9.ts";
+import { EVALUATORS_13_1 } from "../domain/foreclosure/evaluators-13-1.ts";
+import { EVALUATORS_13_2 } from "../domain/foreclosure/evaluators-13-2.ts";
+import { EVALUATORS_13_3 } from "../domain/foreclosure/evaluators-13-3.ts";
+import { EVALUATORS_13_4 } from "../domain/foreclosure/evaluators-13-4.ts";
+import { EVALUATORS_13_5 } from "../domain/foreclosure/evaluators-13-5.ts";
+import { EVALUATORS_13_6 } from "../domain/foreclosure/evaluators-13-6.ts";
+import { EVALUATORS_13_7 } from "../domain/foreclosure/evaluators-13-7.ts";
+import { EVALUATORS_13_8 } from "../domain/foreclosure/evaluators-13-8.ts";
+import { EVALUATORS_13_9 } from "../domain/foreclosure/evaluators-13-9.ts";
 
 export const EVALUATORS: Record<string, Evaluator> = {
   // ---- §1 transfers in
@@ -31,17 +119,17 @@ export const EVALUATORS: Record<string, Evaluator> = {
   "1.7.noFirstFilingBeforeReasonableDate": (f) => (s(f, "today") > s(f, "reasonable_date") ? ok : no(`no first notice/filing before the reasonable date ${s(f, "reasonable_date")} on the incomplete-application acknowledgment (§1024.41(k)(2))`)),
   "1.7.forbearanceCumulativeWithin12Months": (f) => (b(f, "fnma_exception_approved") || n(f, "cumulative_months") + n(f, "requested_months") <= 12 ? ok : no(`cumulative forbearance ${n(f, "cumulative_months")} + ${n(f, "requested_months")} > 12 months without Fannie Mae exception approval (LL-2026-01)`)),
   // ---- §3 escrow
-  "3.2.newPaymentAtLeast30DaysAfterStatement": (f) => (s(f, "effective_on") >= addDays(s(f, "statement_sent_on") as PlainDate, 30) ? ok : no(`new escrow payment effective ${s(f, "effective_on")} is less than 30 days after the statement sent ${s(f, "statement_sent_on")} (3.2 R9)`)),
+  "3.2.newPaymentAtLeast30DaysAfterStatement": (f) => (["payoff", "transfer", "mi_termination"].includes(s(f, "reason")) || b(f, "payment_decreased") || s(f, "effective_on") >= addDays(s(f, "statement_sent_on") as PlainDate, 30) ? ok : no(`new escrow payment effective ${s(f, "effective_on")} is less than 30 days after the statement sent ${s(f, "statement_sent_on")} (3.2 R9; bypassed only for payoff, transfer, mi_termination or a decrease)`)),
   "3.4.cushionCap": (f) => (b(f, "cap_check_passed") ? ok : no("cushion exceeds 1/6 of annual disbursements (§1024.17(c)(5), (d)(2)(ii))")),
   "3.4.preaccrual": (f) => (b(f, "preaccrual_check_passed") ? ok : no("a projected disbursement precedes the bill's availability date or follows its penalty date (§1024.17(c)(6))")),
   "3.6.interimAnalysisBeforeDemand": (f) => (b(f, "analysis_done") ? ok : no("a deficiency from a servicer advance may not be demanded before the interim analysis (§1024.17(f)(1)(ii))")),
   "3.8.hpmlFiveYears": (f) => (!b(f, "hpml") || s(f, "today") >= addYears(s(f, "consummation_date") as PlainDate, 5) ? ok : no(`HPML escrow may not be cancelled before ${addYears(s(f, "consummation_date") as PlainDate, 5)} (§1026.35(b)(3))`)),
   // ---- §2 cashiering
   "2.1.noPostingBacklog": (f) => atMost(n(f, "items_received_or_identified_on_or_before_gate_date"), 0, "posting backlog"),
-  "2.2.fiftyRuleCount": (f) => atMost(n(f, "partial_count_12m"), 3, "$50-rule applications in the trailing 12 months (C-1.1-02: max 3)"),
+  "2.2.fiftyRuleCount": (f) => atMost(n(f, "partial_count_12m"), 2, "$50-rule applications already made in the trailing 12 months (C-1.1-02: max 3 — a fourth short payment is an ordinary partial)"),
   "2.2.statementSuspenseDisclosure": (f) => (c(f, "suspense_unapplied_cents") <= 0n || (b(f, "d3_amount_shown") && b(f, "d5_instructions_shown")) ? ok : no("statement must carry the (d)(3) unapplied amount and (d)(5) instructions while suspense > 0")),
   "2.3.settlementWithinGrace": (f) => (s(f, "settlement_date") <= addDays(s(f, "due_date") as PlainDate, n(f, "grace_days") || 15) ? ok : no("settlement date is after due date + grace")),
-  "2.3.reinitiationLimit": (f) => atMost(n(f, "reinitiations_within_180_days"), 2, "R01/R09 reinitiations in 180 days (Nacha)"),
+  "2.3.reinitiationLimit": (f) => atMost(n(f, "reinitiations_within_180_days"), 1, "prior R01/R09 reinitiations in 180 days (Nacha: at most two — a third attempt is refused)"),
   "2.3.accountValidated": (f) => (/^validated_/.test(s(f, "validation_status")) ? ok : no(`validation_status ${s(f, "validation_status") || "none"} — WEB/TEL debits need validated_*`)),
   "2.4.dueInstallmentsFirst": (f) => (c(f, "unpaid_installments_cents") === 0n || b(f, "installments_satisfied_by_funds") ? ok : no("curtailment funds must satisfy due installments first (C-1.2-01)")),
   "2.4.nibOrder": (f) => { const amt = c(f, "amount_cents"), ib = c(f, "interest_bearing_upb_cents"); const expect = amt < ib ? "ib_only" : "nib_then_ib"; return s(f, "allocation_order") === expect ? ok : no(`amount ${amt < ib ? "<" : "≥"} IB UPB requires ${expect}`); },
@@ -58,7 +146,7 @@ export const EVALUATORS: Record<string, Evaluator> = {
   "2.7.courtesyWaiverLimit": (f) => atMost(n(f, "courtesy_waivers_rolling_12m"), 0, "courtesy waivers already granted in the rolling 12 months (max 1)"),
   // ---- §3 escrow
   "3.6.workoutSpread60": (f) => (n(f, "plan_months") === 60 || (n(f, "plan_months") >= 12 && b(f, "borrower_election_evidenced")) ? ok : no("workout shortage spread is 60 months unless a ≥12-month borrower election is evidenced")),
-  "3.6.shortageMinSpread": (f) => (c(f, "shortage_cents") < c(f, "one_month_escrow_cents") || n(f, "plan_months") >= 12 ? ok : no("shortage ≥ one month requires plan.months ≥ 12 (§1024.17(f)(3))")),
+  "3.6.shortageMinSpread": (f) => (n(f, "plan_months") >= 12 || (c(f, "shortage_cents") < c(f, "one_month_escrow_cents") && n(f, "plan_months") <= 1) ? ok : no("a shortage spread is at least 12 months (§1024.17(f)(3)); under one month only allow (0) or the 30-day option (1) may be shorter")),
   "3.6.deficiencyMinInstallments": (f) => atLeast(n(f, "plan_months"), 2, "deficiency repayment installments (§1024.17(f)(4))"),
   "3.8.floodEscrowMandatory": (f) => (b(f, "flood_escrow_mandatory") && b(f, "has_flood_line") ? no("flood escrow is mandatory (12 CFR 22.5); waiver refused") : ok),
   "3.8.miMonthlyEscrowRequired": (f) => (b(f, "borrower_paid_mi_monthly") ? no("monthly borrower-paid MI requires escrow (B-1-01)") : ok),
@@ -66,7 +154,7 @@ export const EVALUATORS: Record<string, Evaluator> = {
   "3.8.hpmlLtvAndCurrent": (f) => (n(f, "ltv_bps") < 8000 && n(f, "regx_days_delinquent") === 0 ? ok : no("HPML waiver needs UPB < 80% of original value and a current loan (§1026.35(b)(3)(ii))")),
   "3.8.illinoisTerminationRight": (f) => every(f, ["balance_at_or_below_65pct_by_timely_payments", "not_in_default", "not_government_insured", "hpml_rules_satisfied"], "765 ILCS 910/5 termination right"),
   // ---- §5–§7
-  "5.7.managementActionRecorded": (f) => (s(f, "management_action_code") && s(f, "evidence_event_id") ? ok : no("delinquency requires a management action code with an evidence event id (D2-4-01)")),
+  "5.7.managementActionRecorded": (f) => { const omitted = arr<string>(f, "loans_with_management_action").filter((l) => !arr<string>(f, "loans_in_file").includes(l)); return omitted.length ? no(`loans with a delinquency-management action in the month are missing from the file even though current: ${omitted.join(", ")} (D2-4-01)`) : ok; },
   "6.1.activeAccountsForEveryRemittanceType": (f) => { const missing = arr<string>(f, "remittance_types").filter((t) => !arr<string>(f, "active_pi_account_types").includes(t) || !arr<string>(f, "active_ti_account_types").includes(t)); return missing.length ? no(`no active P&I + T&I account for ${missing.join(", ")}`) : ok; },
   "6.4.form496aReviewedWithZeroOrExplainedVariance": (f) => (["under_review", "approved", "submitted"].includes(s(f, "form_496a_status")) && (c(f, "attestation_variance_cents") === 0n || b(f, "variance_explained")) ? ok : no("Form 496A must be under review or later with a zero or explained variance")),
   "7.2.dualCalculationMatches": (f) => (c(f, "engine_a_payment_cents") === c(f, "engine_b_payment_cents") && s(f, "engine_a_rate") === s(f, "engine_b_rate") ? ok : no("second engine result differs (rate/payment must match to the cent)")),
@@ -77,17 +165,17 @@ export const EVALUATORS: Record<string, Evaluator> = {
   "7.6.payoffStatementAccuracy": (f) => every(f, ["calc_version_current", "no_pending_items_older_than_cutoff", "arm_adjustment_reflected"], "payoff statement accuracy gate"),
   // ---- §9 insurance
   "9.2.firstNoticeAndReminderSent": (f) => every(f, ["first_notice_sent", "reminder_sent"], "LPI purchase (B-6-01) needs both notices"),
-  "9.2.escrowedAdvanceBeforeForcePlacement": (f) => (b(f, "escrowed") && n(f, "regx_days_delinquent") <= 30 ? no("escrowed and ≤30 days delinquent: advance/renew under §1024.17(k)(5), never force-place") : ok),
+  "9.2.escrowedAdvanceBeforeForcePlacement": (f) => (!b(f, "escrowed") ? ok : n(f, "regx_days_delinquent") <= 30 ? no("escrowed and ≤30 days delinquent: pay/advance the renewal under §1024.17(k)(1)–(2), never force-place") : b(f, "vacant") || (s(f, "cancellation_reason") !== "" && s(f, "cancellation_reason") !== "nonpayment") ? ok : no("escrowed and >30 days delinquent: §1024.17(k)(5) permits LPI only with documented inability to disburse — cancellation for reasons other than nonpayment, or vacancy (comment 17(k)(5)(ii)(A)-1); advance the premium instead")),
   "9.4.promptChargeAllowed": (f) => (b(f, "lpi_prompt_charge_prohibited") ? no("jurisdiction prohibits a prompt gap charge") : ok),
   // ---- §11 early intervention
   "11.1.variedAttemptTimes": (f) => (n(f, "evening_or_weekend_attempts_3_cycles") >= 1 && n(f, "distinct_daypart_slots_3_cycles") >= 2 ? ok : no("A4-2.1-04: ≥1 evening/weekend attempt and ≥2 daypart slots per 3 cycles")),
   "11.1.callCap7in7": (f) => atMost(within(f, "counted_call_attempts_at", 7, s(f, "now")) + 1, 7, "Reg F §1006.14(b) counted calls in 7 days including this one"),
-  "11.1.quietHours": (f) => { const t = s(f, "consumer_local_time"); const mode = s(f, "mode"); const end = mode === "voice" ? "20:30" : mode === "sms" || mode === "email" ? "20:00" : "21:00"; return t >= "08:00" && t <= end ? ok : no(`outside ${mode || "contact"} window 08:00–${end} consumer-local`); },
+  "11.1.quietHours": (f) => { const t = s(f, "consumer_local_time"); const mode = s(f, "mode"); const end = mode === "voice" ? "20:30" : mode === "sms" || mode === "email" ? "20:00" : "21:00"; return t > "08:00" && t <= end ? ok : no(`outside ${mode || "contact"} window after 08:00 through ${end} consumer-local (11.1-T12: 08:00 is refused)`); },
   "11.1.tcpaConsentUnrevoked": (f) => (b(f, s(f, "mode") === "sms" ? "tcpa_sms_consent_active" : "tcpa_voice_consent_active") ? ok : no("no unrevoked TCPA consent for this channel (47 CFR 64.1200(a)(1))")),
   "11.1.landlineAi3in30": (f) => atMost(within(f, "ai_voice_attempts_at", 30, s(f, "now")) + 1, 3, "AI-voice attempts to a landline in 30 days without written consent"),
   "11.2.delinquentAtLeast30OrImminentDefault": (f) => (n(f, "regx_days_delinquent") >= 30 || b(f, "imminent_default_requested") ? ok : no("no solicitation before 30 days delinquent absent an imminent-default request (D2-1-01)")),
   "11.2.checklistComplete": (f) => (b(f, "checklist_passed") ? ok : no("early-intervention notice checklist has failing items")),
-  "11.3.cessationOnQrpc": (f) => (["qrpc_workout", "qrpc_no_interest"].includes(s(f, "plan_status")) ? ok : no("plan must be ceased{qrpc_workout|qrpc_no_interest} once QRPC is established")),
+  "11.3.cessationOnQrpc": (f) => (["qrpc_workout", "qrpc_no_interest", "ptp_pending"].includes(s(f, "plan_status")) || (s(f, "plan_status") === "active" && ["promise_to_pay_partial", "callback_only", "refused"].includes(s(f, "commitment_kind"))) ? ok : no("plan must be ceased{qrpc_workout|qrpc_no_interest|ptp_pending} once QRPC is established, or stay active only on a partial/callback-only commitment (D2-2-02)")),
   "11.3.promiseWithin30Days": (f) => atMost(daysBetween(s(f, "recorded_on") as PlainDate, s(f, "due_on") as PlainDate), 30, "promise-to-pay days (D2-2-02)"),
   "11.3.qrpcReasonPresent": (f) => (s(f, "reason_type") ? ok : no("QRPC event requires a reason type (LL-2026-05)")),
   "11.3.licensedNegotiator": (f) => (!b(f, "mlo_licensing_for_lossmit") || b(f, "licensed_specialist_on_call") ? ok : no("jurisdiction requires a licensed specialist to discuss modification terms")),
@@ -113,7 +201,7 @@ export const EVALUATORS: Record<string, Evaluator> = {
   "12.8.valuationFresh90": (f) => atMost(n(f, "valuation_age_days"), 90, "valuation age at evaluation (F-1-27: ≤90 days)"),
   "12.8.noTrialFailureWithin12Months": (f) => (s(f, "last_trial_failed_on") === "" || daysBetween(s(f, "last_trial_failed_on") as PlainDate, s(f, "today") as PlainDate) >= 365 ? ok : no(`a trial failed on ${s(f, "last_trial_failed_on")} — no new trial within 12 months (D2-3.2-06)`)),
   "12.9.valuationFresh90": (f) => atMost(n(f, "valuation_age_days"), 90, "valuation age at approval (F-1-14: ≤90 days)"),
-  "12.3.reviewerIndependent": (f) => (s(f, "reviewer_id") !== s(f, "evaluator_id") && s(f, "reviewer_run_id") !== s(f, "evaluator_run_id") ? ok : no("appeal reviewer must be independent of the evaluator (§1024.41(h)(3))")),
+  "12.3.reviewerIndependent": (f) => (s(f, "reviewer_id") !== s(f, "evaluator_id") && s(f, "reviewer_run_id") !== s(f, "evaluator_run_id") && !arr<string>(f, "excluded_ids").includes(s(f, "reviewer_id")) ? ok : no("appeal reviewer must be independent of the evaluator, the original approving reviewer, anyone who edited reason codes and a directly involved supervisor (§1024.41(h)(3); 12.3 rule 4 excluded_ids)")),
   "12.4.incrementMax3Months": (f) => atMost(n(f, "term_months"), 3, "forbearance increment months (D2-3.2-01)"),
   "12.4.termEndBeforeLastScheduledPayment": (f) => (s(f, "term_end") <= s(f, "last_scheduled_payment_date") ? ok : no("MBS forbearance term end is after the last scheduled payment date")),
   "12.4.cumulativeMax12Months": (f) => atMost(n(f, "cumulative_months") + n(f, "term_months"), 12, "cumulative forbearance months (LL-2026-01)"),
@@ -129,7 +217,7 @@ export const EVALUATORS: Record<string, Evaluator> = {
   "12.7.contractualPaymentInSolicitationMonth": (f) => (b(f, "full_contractual_payment_received_in_month") ? ok : no("full contractual payment not received in the solicitation/processing month (D2-3.2-05)")),
   "12.7.disasterEligibility": (f) => { const m = n(f, "months_delinquent"); const issues: string[] = []; if (!b(f, "fema_disaster_basis")) issues.push("no FEMA registry basis"); if (!b(f, "current_or_under_2_months_at_disaster") && !b(f, "fnma_approval")) issues.push("not current/<2 months at disaster"); if (m < 1 || m > 12) issues.push(`delinquency ${m} months not in 1–12`); if (b(f, "prior_same_event_deferral")) issues.push("prior deferral for the same event"); if (n(f, "months_to_maturity") <= 36) issues.push("maturity ≤ 36 months"); if (b(f, "conflicting_arrangement")) issues.push("conflicting arrangement"); return issues.length ? no(`D2-3.2-05: ${issues.join("; ")}`) : ok; },
   "12.8.noSaleWithinSolicitationWindow": (f) => { const win = s(f, "foreclosure_type") === "judicial" ? 60 : 30; const d = f["days_to_sale"]; return d === null || d === undefined || Number(d) > win ? ok : no(`scheduled sale within ${win} days (${s(f, "foreclosure_type")})`); },
-  "12.9.listedFiveConsecutiveDays": (f) => atLeast(n(f, "consecutive_days_listed"), 5, "consecutive MLS days incl. Sat+Sun (D2-3.3-01)"),
+  "12.9.listedFiveConsecutiveDays": (f) => (n(f, "consecutive_days_listed") >= 5 && b(f, "includes_saturday") && b(f, "includes_sunday") ? ok : no(`MLS listing: ${n(f, "consecutive_days_listed")} consecutive days, Saturday ${b(f, "includes_saturday")}, Sunday ${b(f, "includes_sunday")} — needs ≥5 consecutive calendar days including a Saturday and a Sunday (D2-3.3-01)`)),
   "12.9.miWrittenAgreement": (f) => (!b(f, "mi_non_delegated") || b(f, "mi_written_agreement_received") ? ok : no("non-delegated MI needs the insurer's written agreement")),
   // ---- §13 foreclosure
   "13.1.preFilingAppGateOpen": (f) => (!b(f, "complete_app_before_first_notice") || ["ineligible_no_appeal", "appeal_denied", "all_offers_rejected", "agreement_defaulted"].includes(s(f, "exit")) || b(f, "duplicative_41i") ? ok : no("§1024.41(f)(2): a complete application received before the first notice holds the first notice until an (f)(2)(i)–(iii) exit")),
@@ -144,7 +232,7 @@ export const EVALUATORS: Record<string, Evaluator> = {
   "13.7.litigationHoldReleased": (f) => (!b(f, "litigation_hold") || ["proceed", "resolved"].includes(s(f, "fnma_direction")) ? ok : no("LITIGATION_HOLD: foreclosure steps wait for Fannie Mae direction or resolution")),
   "13.8.protectionGateOpen": (f) => (!b(f, "active_duty") && (s(f, "protection_ends_on") === "" || s(f, "today") > s(f, "protection_ends_on")) ? ok : b(f, "court_order_at_fnma_direction") || b(f, "section_3918_agreement_reviewed") ? ok : no("50 U.S.C. 3953(c): no sale/seizure during service or the 1-year tail absent a court order or a §3918 agreement")),
   "13.9.feesInsideCap": (f) => (c(f, "fee_cents") === 0n || b(f, "bona_fide_insurance") || b(f, "fee_forgiven_under_cap") ? ok : no("50 U.S.C. 3937(d): fees and charges during the cap count as interest — forgive or refund them")),
-  "13.1.preForeclosureReviewPeriodElapsed": (f) => (b(f, "small_servicer_exempt") || n(f, "regx_days_delinquent") > 120 || b(f, "non_principal_residence") ? ok : no(`loan is ${n(f, "regx_days_delinquent")} days delinquent; no first notice/filing before day 121 (§1024.41(f)(1))`)),
+  "13.1.preForeclosureReviewPeriodElapsed": (f) => (n(f, "regx_days_delinquent") > 120 || b(f, "non_principal_residence") ? ok : no(`loan is ${n(f, "regx_days_delinquent")} days delinquent; no first notice/filing before day 121 (§1024.41(f)(1); the 1024.30(b) small-servicer exemption never applies — Fannie Mae is the assignee)`)),
   "13.2.trialPerformingNoSale": (f) => (!b(f, "trial_active") || b(f, "trial_defaulted") ? ok : no("borrower is performing under a trial period plan: no foreclosure sale or first notice (§1024.41(g); 2.6)")),
   "13.2.saleAtLeast7DaysAfterMafNotice": (f) => atLeast(daysBetween(s(f, "maf_notified_on") as PlainDate, s(f, "sale_date") as PlainDate), 7, "days from MAF notice to sale (E-3.2-07)"),
   "13.4.breachLetterAndSolicitationExpired": (f) => every(f, ["breach_letter_expired", "solicitation_deadline_expired"], "E-3.2-01 preconditions"),
@@ -175,6 +263,8 @@ export const EVALUATORS: Record<string, Evaluator> = {
   "19.4.fairLendingRowPresent": (f) => (["validated", "not_obtained"].includes(s(f, "fl_row_status")) && (s(f, "fl_row_status") !== "not_obtained" || s(f, "not_obtained_evidence_id")) ? ok : no("FL row must be validated, or not_obtained with evidence, for note_date ≥ 2023-03-01")),
   // ---- per-section maps (§14–§19 build their gates in src/domain/<section>/evaluators.ts)
   ...SECTION_14_EVALUATORS, ...SECTION_15_EVALUATORS, ...SECTION_16_EVALUATORS, ...SECTION_17_EVALUATORS, ...SECTION_18_EVALUATORS, ...SECTION_19_EVALUATORS,
+  // ---- §1–§13 process-owned maps (spread last: a key here supersedes the inline definition above)
+  ...EVALUATORS_1_1, ...EVALUATORS_1_2, ...EVALUATORS_1_3, ...EVALUATORS_1_4, ...EVALUATORS_1_5, ...EVALUATORS_1_6, ...EVALUATORS_1_7, ...EVALUATORS_2_1, ...EVALUATORS_2_2, ...EVALUATORS_2_3, ...EVALUATORS_2_4, ...EVALUATORS_2_5, ...EVALUATORS_2_6, ...EVALUATORS_2_7, ...EVALUATORS_3_1, ...EVALUATORS_3_2, ...EVALUATORS_3_3, ...EVALUATORS_3_4, ...EVALUATORS_3_5, ...EVALUATORS_3_6, ...EVALUATORS_3_7, ...EVALUATORS_3_8, ...EVALUATORS_3_9, ...EVALUATORS_4_1, ...EVALUATORS_4_2, ...EVALUATORS_4_3, ...EVALUATORS_4_4, ...EVALUATORS_4_5, ...EVALUATORS_5_1, ...EVALUATORS_5_2, ...EVALUATORS_5_3, ...EVALUATORS_5_4, ...EVALUATORS_5_5, ...EVALUATORS_5_6, ...EVALUATORS_5_7, ...EVALUATORS_6_1, ...EVALUATORS_6_2, ...EVALUATORS_6_3, ...EVALUATORS_6_4, ...EVALUATORS_6_5, ...EVALUATORS_7_1, ...EVALUATORS_7_2, ...EVALUATORS_7_3, ...EVALUATORS_7_4, ...EVALUATORS_7_5, ...EVALUATORS_7_6, ...EVALUATORS_8_1, ...EVALUATORS_8_2, ...EVALUATORS_8_3, ...EVALUATORS_9_1, ...EVALUATORS_9_2, ...EVALUATORS_9_3, ...EVALUATORS_9_4, ...EVALUATORS_9_5, ...EVALUATORS_9_6, ...EVALUATORS_9_7, ...EVALUATORS_9_8, ...EVALUATORS_9_9, ...EVALUATORS_10_1, ...EVALUATORS_10_2, ...EVALUATORS_10_3, ...EVALUATORS_10_4, ...EVALUATORS_10_5, ...EVALUATORS_10_6, ...EVALUATORS_11_1, ...EVALUATORS_11_2, ...EVALUATORS_11_3, ...EVALUATORS_11_4, ...EVALUATORS_11_5, ...EVALUATORS_12_1, ...EVALUATORS_12_2, ...EVALUATORS_12_3, ...EVALUATORS_12_4, ...EVALUATORS_12_5, ...EVALUATORS_12_6, ...EVALUATORS_12_7, ...EVALUATORS_12_8, ...EVALUATORS_12_9, ...EVALUATORS_13_1, ...EVALUATORS_13_2, ...EVALUATORS_13_3, ...EVALUATORS_13_4, ...EVALUATORS_13_5, ...EVALUATORS_13_6, ...EVALUATORS_13_7, ...EVALUATORS_13_8, ...EVALUATORS_13_9,
 };
 
 export class UnknownEvaluator extends Error { constructor(ref: string) { super(`no evaluator registered for ${ref}`); this.name = "UnknownEvaluator"; } }

@@ -5,9 +5,11 @@
  * --json prints one row per unique code after the section overrides, for tools/audit.py:
  *   armable     = the engine can arm it (non-prose offset + dotted event trigger)
  *   satisfiable = it can also be satisfied (dotted satisfied-event pattern, or an evaluator-backed gate)
+ *   emitted     = something outside the override files names the satisfied event (and its conditioned fields); triggered = same for the trigger
  */
 import { loadRegistry } from "../src/kernel/timers/registry.ts";
 import { applyAllTimerOverrides } from "../src/domain/timer-overrides.ts";
+import { lintEmission } from "./lint-emission.ts";
 
 const reg = loadRegistry();
 const rows = reg.all();
@@ -22,7 +24,10 @@ const isSatisfiable = (t: (typeof rows)[number]) => t.offsetParsed.kind === "eva
 const armable = uniq.filter(isArmable);
 
 if (asJson) {
-  const out = uniq.map((t) => ({ code: t.code, process: t.process, armable: isArmable(t), satisfiable: isSatisfiable(t) }));
+  // emitted/triggered: some non-test, non-override source names the satisfied / trigger event type (tools/lint-emission.ts).
+  const em = new Map(lintEmission(uniq).map((r) => [r.code, r]));
+  const out = uniq.map((t) => ({ code: t.code, process: t.process, armable: isArmable(t), satisfiable: isSatisfiable(t),
+    emitted: em.get(t.code)!.emitted, triggered: em.get(t.code)!.triggered }));
   process.stdout.write(JSON.stringify(out) + "\n");
 } else {
   const offsetKinds = new Map<string, number>();

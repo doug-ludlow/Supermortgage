@@ -132,7 +132,8 @@ test("evaluators: every evaluator ref named by the section timer overrides is re
   assert.equal(evaluateGate("11.1.callCap7in7", { now: "2026-09-10T15:00:00.000Z", counted_call_attempts_at: Array.from({ length: 6 }, (_, i) => `2026-09-0${4 + (i % 6)}T10:00:00.000Z`) }).open, true);
   assert.equal(evaluateGate("11.1.callCap7in7", { now: "2026-09-10T15:00:00.000Z", counted_call_attempts_at: Array.from({ length: 7 }, (_, i) => `2026-09-0${4 + (i % 6)}T1${i}:00:00.000Z`) }).open, false);
   assert.equal(evaluateGate("11.1.quietHours", { mode: "voice", consumer_local_time: "20:31" }).open, false);
-  assert.equal(evaluateGate("11.1.quietHours", { mode: "voice", consumer_local_time: "08:00" }).open, true);
+  assert.equal(evaluateGate("11.1.quietHours", { mode: "voice", consumer_local_time: "08:00" }).open, false);   // 11.1-T12: 08:00 consumer-local is refused; 08:01 is permitted
+  assert.equal(evaluateGate("11.1.quietHours", { mode: "voice", consumer_local_time: "08:01" }).open, true);
   assert.equal(evaluateGate("12.5.paymentCap150", { expected_total_cents: 450_000n, contractual_cents: 300_000n }).open, true);
   assert.equal(evaluateGate("12.5.paymentCap150", { expected_total_cents: 450_001n, contractual_cents: 300_000n }).open, false);
   assert.match(evaluateGate("12.6.eligibilityCriteria4to11", { months_delinquent: 7, seasoning_months: 24, months_since_prior_deferral: 24, cumulative_deferred_months: 0, months_to_maturity: 200 }).reason!, /delinquency 7 months not in 2–6/);

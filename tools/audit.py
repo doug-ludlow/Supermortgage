@@ -13,6 +13,9 @@
   python3 tools/audit.py --check      exit 1 if any total fell below docs/audit/baseline.json or a process
                                       listed there as done is below 100%  (npm test runs this)
   python3 tools/audit.py --baseline   rewrite baseline.json to the current totals (keeps its done list)
+  python3 tools/audit.py --strict     stricter units (the target measure): a T-id counts only when a non-todo node:test is titled
+                                      exactly "<pid>-T<n>: <spec text>"; a timer only when its satisfied and trigger events are also
+                                      emitted somewhere (tools/lint-emission.ts). Prints the brief and per-process gaps; writes nothing.
   python3 tools/audit.py --brief      one line
   python3 tools/audit.py --hook EVENT emit Claude Code hook JSON (SessionStart | UserPromptSubmit | Stop)
 """
@@ -42,11 +45,17 @@ def tids_in(text):
     for m in re.finditer(r'\b(\d{1,2}\.\d{1,2})-T(\d+)\s*(?:[–-]|\.\.|…)\s*T(\d+)', text):
         for i in range(int(m.group(2)), int(m.group(3)) + 1): out.add((m.group(1), i))
     return out
+STRICT = '--strict' in sys.argv
+def verbatim_titles(text):
+    """Titles of non-todo node:tests, e.g. test("2.5-T1: Given …", …) — one line each."""
+    return {m.group(2) for m in re.finditer(r'\btest\(\s*(["\'`])(.*?)\1\s*,', text)}
+live_titles = verbatim_titles(tests_live)
 impl_tids = tids_in(tests_live)
+if STRICT: impl_tids = {(p['process'], t['n']) for p in manifest for t in p['tids'] if f"{p['process']}-T{t['n']}: {t['text']}" in live_titles}
 todo_tids = tids_in(tests_all) - impl_tids
 created = set(re.findall(r'CREATE (?:TABLE|VIEW|MATERIALIZED VIEW)\s+(?:IF NOT EXISTS\s+)?(?:restricted_fl\.)?(\w+)', '\n'.join(read(f) for f in glob.glob(os.path.join(root, 'db/migrations/*.sql')))))
 lint = json.loads(subprocess.run(['node', '--experimental-strip-types', 'tools/lint-registry.ts', '--json'], cwd=root, capture_output=True, text=True, check=True).stdout)
-timer_ok = {t['code'] for t in lint if t['armable'] and t['satisfiable']}
+timer_ok = {t['code'] for t in lint if t['armable'] and t['satisfiable'] and (not STRICT or (t['emitted'] and t['triggered']))}
 timer_armable = {t['code'] for t in lint if t['armable']}
 authored = set(re.findall(r'\bV\("([A-Z0-9_]+)"', '\n'.join(read(f) for f in glob.glob(os.path.join(root, 'src/notices/**/*.ts'), recursive=True) if not f.endswith('.test.ts'))))
 # tools on the bus: (process, spec tool string) pairs that src/app/tools registers (tools/list-tools.ts)
@@ -134,6 +143,15 @@ if '--hook' in args:
     print(json.dumps(out)); sys.exit(0)
 if '--brief' in args:
     print(brief); sys.exit(0)
+if STRICT:
+    print('STRICT ' + brief)
+    print('  by section: ' + '  '.join(f"§{k}:{s['built']}/{s['spec']}" for k, s in by_section.items()))
+    if '--json' in args: print(json.dumps({'brief': brief, 'totals': totals, 'processes': rows}))
+    else:
+        for r in rows:
+            if r['units']['built'] != r['units']['spec']:
+                print(f"  {r['process']:5} {frac(r['units'])}  " + '  '.join(f"{u} {frac(r[u])}" for u in UNITS if r[u]['built'] != r[u]['spec']))
+    sys.exit(0)
 
 json.dump({'brief': brief, 'totals': totals, 'sections': {str(k): v for k, v in by_section.items()}, 'done': done, 'processes': rows}, open(os.path.join(AUDIT, 'coverage.json'), 'w'), indent=1)
 with open(os.path.join(AUDIT, 'COVERAGE.md'), 'w') as f:

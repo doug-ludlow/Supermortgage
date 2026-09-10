@@ -20,6 +20,8 @@ business-day deadlines across a federal holiday.
 | 10.1 current-value example | 75.62% | 75.61% | R3 floors LTV at basis points; the prose rounded |
 | 10.1-T4 | 35 days late | 35 days late only if the next installment is also paid late | FIFO application (rule R5) would otherwise satisfy the October installment with the on-time November receipt |
 | 10.6 payment-history renewal date | 2029-11-06 | 2029-11-06 (implemented as paid date + 12 months + 1 day) | the window definition in R5 keys on due dates, which would clear on 2029-10-02 |
+| 12.1-T4 | (c)(3) notice by Oct 14, 2026 "(5 BD from Oct 7)" | Oct 15 | Columbus Day |
+| 12.9-T1 | offer acknowledgment by Oct 12, 2026 "(5 BD from Oct 5)" | Oct 13 | Columbus Day |
 | 15.1-T4 | exception due Oct 12 "(3 BD; Oct 11 holiday)" | Oct 13 | Oct 8, 12, 13 are the three fannie_et business days |
 | 15.1 rule 8 | interest 11 × $1,245.44 = $13,699.87 | same (end-rounded) | per-month rounding would give $13,699.84; the engine rounds at the end as the example does, while 15.3 rounds per month as *its* example does |
 | 15.2 rule 9 | credit 166/365 × $1,450 | same | the term 2027-03-20 → 2028-03-20 has 366 days; the engine uses 365 as the example does |

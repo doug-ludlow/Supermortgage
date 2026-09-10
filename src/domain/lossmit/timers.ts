@@ -104,4 +104,75 @@ export function applyLossmitTimerOverrides(reg: TimerRegistry): void {
   o("FNMA_F127_CAPITALIZATION_DATE", { trigger: "`lossmit.agreement.servicer_executed`", anchorField: "effective_date", why: "§12.8 timer table: `servicer_executed` → capitalization posted effective date − 1 month (F-1-27)." });
   o("FNMA_D23206_NO_NEW_TRIAL_12M", { trigger: "`lossmit.trial.failed`", anchorField: "failed_on", why: "§12.8 timer table: `tpp_failed` → no new trial for 12 months (D2-3.2-06)." });
   o("FNMA_F114_SS_VALUATION_MAX_AGE_90", { trigger: "`shortsale.approval_requested`", anchorField: "valuation_date", why: "§12.9 timer table: approval → valuation ≤90 calendar days old (F-1-14)." });
+  applyLossmitSatisfiedOverrides(reg);
+}
+
+/** Satisfaction events / evaluators for the §12 rows whose "Satisfied by" column is prose, "same", or empty. */
+export function applyLossmitSatisfiedOverrides(reg: TimerRegistry): void {
+  const o = reg.override.bind(reg);
+  // ---- 12.1 applications
+  o("FNMA_D2205_BRP_ACK_5BD", { satisfied: "`notice.sent{code∈{NTC_REGX_41B2_ACK_COMPLETE, NTC_REGX_41B2_ACK_INCOMPLETE}}`", why: "§12.1 timer table: 'same notice (dual-cited template)' — the §1024.41(b)(2) acknowledgment carries the D2-2-05 BRP content." });
+  o("NY_419_7D_ACK_5BD", { satisfied: "`notice.sent{code∈{NTC_REGX_41B2_ACK_COMPLETE, NTC_REGX_41B2_ACK_INCOMPLETE}, state=NY}`", why: "§12.1 timer table: 'ack notice with NY content' (3 NYCRR 419.7(d))." });
+  o("REGX_1024_41B1_DILIGENCE_FOLLOWUP_7", { satisfied: "`lossmit.application.status_changed{status∈{complete, withdrawn, closed_incomplete}}`", why: "§12.1 timer table: 'status change' — follow-ups stop when the application completes, is withdrawn or is closed." });
+  o("SM_LM_DOC_STALENESS_SWEEP", { evaluator: "12.1.documentStale", why: "§12.1 timer table: 're-request before staleness; stale status' — per-document evaluator (90 days income, 180 disaster)." });
+  // ---- 12.2 evaluation
+  o("REGX_1024_41C1_EVALUATE_NOTIFY_30", { satisfied: "`notice.provided{code∈{NTC_REGX_41C1_OFFER, NTC_REGX_41C1_DENIAL}}`", why: "§12.2 timer table: `notice.provided{NTC_REGX_41C1_OFFER | NTC_REGX_41C1_DENIAL}`." });
+  o("FNMA_D2205_EVAL_NOTICE_5_AFTER_DECISION", { satisfied: "`notice.provided{code∈{NTC_REGX_41C1_OFFER, NTC_REGX_41C1_DENIAL}}`", why: "§12.2 timer table: 'same notice' as REGX_1024_41C1_EVALUATE_NOTIFY_30 (D2-2-05)." });
+  o("REGX_1024_41C4_THIRD_PARTY_HEIGHTEN_30", { trigger: "`lossmit.application.completed{third_party_item_outstanding=true}`", satisfied: "`lossmit.third_party_item.received`", why: "§12.2 timer table: 'item received, or NTC_REGX_41C4IIB_THIRD_PARTY_DELAY sent + heightened-effort contact logged' — the delay-notice alternative is `ops.thirdPartyDelay` on the same clock (§1024.41(c)(4)(ii))." });
+  o("REGX_1024_41C4IIA2_SIGNIFICANT_PERIOD", { trigger: "`notice.sent{code=NTC_REGX_41C4IIB_THIRD_PARTY_DELAY}`", satisfied: "`lossmit.third_party_item.received`", why: "§12.2 timer table: 'item received' (§1024.41(c)(4)(ii)(A)(2), policy 30 days)." });
+  o("REGX_1024_41E1_ACCEPT_7", { trigger: "`lossmit.offer.sent{tier=lt_90}`", satisfied: "`lossmit.offer.responded{response∈{accepted, rejected}}`", why: "§12.2 timer table: 'same' — borrower acceptance or rejection of the offer (§1024.41(e)(1))." });
+  o("NY_419_7G_ACCEPT_30", { satisfied: "`lossmit.offer.responded{response∈{accepted, rejected}}`", why: "§12.2 timer table: 'same' — acceptance/rejection (3 NYCRR 419.7(g))." });
+  o("REGX_1024_41E2II_TRIAL_OTHER_REQS_REASONABLE", { trigger: "`lossmit.trial.first_payment_received{other_acceptance_items_missing=true}`", satisfied: "`lossmit.offer.acceptance_items.received`", why: "§12.2 timer table: 'items received' (§1024.41(e)(2)(ii); policy 14 days)." });
+  o("CA_CIV_2923_6E_NOD_NOS_HOLD_31", { satisfied: "`timer.lapsed{code=CA_CIV_2923_6E_NOD_NOS_HOLD_31}`", why: "§12.2 timer table: 'timer lapse' — hold released by lapse only (Cal. Civ. Code §2923.6(e))." });
+  o("FNMA_E3401_POST_NOTICE_LEGAL_DELAY_14", { satisfied: "`lossmit.offer.responded{response=accepted}`", why: "§12.2 timer table: 'lapse or acceptance' (E-3.4-01)." });
+  // ---- 12.3 appeals
+  o("CA_CIV_2923_6D_APPEAL_WINDOW_30", { trigger: "`notice.provided{code=NTC_REGX_41C1_DENIAL, state=CA}`", satisfied: "`lossmit.appeal.received`", why: "§12.3 timer table: 'same' as REGX_1024_41H2_APPEAL_WINDOW_14 — an appeal received in the window (Cal. Civ. Code §2923.6(d))." });
+  o("NY_419_7H_APPEAL_WINDOW_14_POSTMARK", { trigger: "`notice.provided{code=NTC_REGX_41C1_DENIAL, state=NY}`", anchorField: "postmark_on", satisfied: "`lossmit.appeal.received`", why: "§12.3 timer table: 'same' — appeal received (3 NYCRR 419.7(h), postmark anchor)." });
+  o("REGX_1024_41H4_APPEAL_DECIDE_30", { satisfied: "`notice.provided{code∈{NTC_REGX_41H4_APPEAL_GRANTED, NTC_REGX_41H4_APPEAL_DENIED}}`", why: "§12.3 timer table: `notice.provided{NTC_REGX_41H4_*}`." });
+  o("FNMA_D2207_APPEAL_DECIDE_30", { trigger: "`lossmit.appeal.received{eligible=true}`", satisfied: "`notice.provided{code∈{NTC_REGX_41H4_APPEAL_GRANTED, NTC_REGX_41H4_APPEAL_DENIED}}`", why: "§12.3 timer table: 'same' as REGX_1024_41H4_APPEAL_DECIDE_30 (D2-2-07)." });
+  o("REGX_1024_41E2III_ORIGINAL_OFFER_EXTENDED", { trigger: "`lossmit.appeal.received{original_offer_pending=true}`", anchorField: "appeal_notice_provided_on", satisfied: "`lossmit.offer.responded{response=accepted}`", why: "§12.3 timer table: 'acceptance' — the original offer stays open 14 days after the (h)(4) notice (§1024.41(e)(2)(iii))." });
+  o("CA_CIV_2923_6E_POST_APPEAL_HOLD_15", { trigger: "`notice.provided{code=NTC_REGX_41H4_APPEAL_DENIED, state=CA}`", satisfied: "`timer.lapsed{code=CA_CIV_2923_6E_POST_APPEAL_HOLD_15}`", why: "§12.3 timer table: 'lapse' (Cal. Civ. Code §2923.6(e))." });
+  o("FNMA_D2207_TPP_FIRST_DUE_15TH_RULE", { satisfied: "`lossmit.trial.schedule_created`", why: "§12.3 timer table: 'trial schedule created' — `12.8.tppFirstDue` computes the 15th-rule anchor (D2-2-07)." });
+  // ---- 12.4 forbearance
+  o("FNMA_D23201_FORB_PREEXPIRY_CONTACT_30", { satisfied: "`contact.attempted{purpose=forb_preexpiry}`", why: "§12.4 timer table: '`contact` attempt logged with `purpose=forb_preexpiry`' (D2-3.2-01)." });
+  o("REGX_1024_41C2III_PERFORMANCE_HOLD", { trigger: "`workout_plan.activated`", satisfied: "`workout_plan.ended{status∈{terminated, expired, completed}}`", why: "§12.4/12.5 timer tables: '`workout_plan.terminated/expired`' (§1024.41(c)(2)(iii))." });
+  o("REGX_1024_41B1_DILIGENCE_RESUME", { trigger: "`workout_plan.payment.missed`", offset: "0 calendar_days", satisfied: "`contact.attempted{purpose=lossmit_diligence}`", why: "§12.4 timer table: 'diligence contact logged' — resume immediately on a missed plan payment or assistance request (comment 41(b)(1)-4.iii)." });
+  o("FNMA_F121_STATUS_09_BD2", { satisfied: "`investor.event.accepted{status_code=09}`", why: "§12.4 timer table: 'investor event accepted (5.x)' — delinquency status code 09 (F-1-21)." });
+  o("FNMA_LL202601_FORB_EXCEPTION_RESPONSE", { trigger: "`fnma_exception_request.submitted`", satisfied: "`fnma_exception_request.decided`", why: "§12.4 timer table: 'decision recorded' (LL-2026-01; policy 10 BD follow-up)." });
+  // ---- 12.5 repayment
+  o("FNMA_D23202_REPAY_PAYMENT_EOM", { trigger: "`workout_plan_schedule.row_due`", satisfied: "`workout_plan.payment.received{covers_expected_total=true}`", why: "§12.5 timer table: '`received ≥ expected_total`' — `12.5.installmentMet` compares receipts to the schedule row (D2-3.2-02)." });
+  o("FNMA_F121_STATUS_12_BD2", { satisfied: "`investor.event.accepted{status_code=12}`", why: "§12.5 timer table: 'investor event accepted (5.x)' — status code 12 (F-1-21)." });
+  o("FNMA_F202_REPAY_INCENTIVE_CLAIM", { satisfied: "`investor.event.accepted{kind=incentive, workout=repayment_plan}`", why: "§12.5 timer table: '`investor_events{incentive}`' — the $500 claim in the following cycle (F-2-02)." });
+  // ---- 12.6 deferral
+  o("SM_DEFERRAL_SOLICIT_ACCEPT_WINDOW", { trigger: "`notice.sent{code∈{NTC_FNMA_D23204_SOLICIT_POST_FORB, NTC_FNMA_D23204_SOLICIT_POST_REPAY}}`", satisfied: "`payment_deferral.accepted`", why: "§12.6 timer table: 'acceptance' — window through the last day of the solicitation month (policy, ≥14 days)." });
+  o("FNMA_F122_DEFERRAL_LAR_BEFORE_EOM_1BD", { satisfied: "`investor.event.accepted{kind=contractual_payments}`", why: "§12.6 timer table: 'contractual-payment LAR/event accepted (5.x FNMA_IRM_DEFERRAL_LAR_BEFORE_EOM_1BD)'." });
+  o("FNMA_D23204_PROCESSING_MONTH_ELECTION_15TH", { trigger: "`lossmit.evaluation.decided{option=payment_deferral}`", satisfied: "`smdu.case.completed{workout=payment_deferral}`", why: "§12.6 timer table: 'completion or `processing_month=true`' — `12.6.processingMonthElected` covers the election (D2-3.2-04)." });
+  o("FNMA_D23204_RECORDED_ORIGINAL_5BD", { satisfied: "`custodian.delivery.confirmed{document=recorded_original}`", why: "§12.6 timer table: 'custodian delivery of original' (D2-3.2-04 / F-1-27)." });
+  o("FNMA_F202_DEFERRAL_INCENTIVE_CLAIM", { satisfied: "`investor.event.accepted{kind=incentive, workout=payment_deferral}`", why: "§12.6 timer table: '`investor_events{incentive}`' (F-2-02)." });
+  // ---- 12.7 disaster deferral
+  o("FNMA_D1301_DISASTER_FLEX_ROUTE", { satisfied: "`lossmit.evaluation.started{option=flex_mod, criteria=disaster}`", why: "§12.7 timer table: '12.8 evaluation started' — Flex Mod under the reduced disaster criteria (D1-3-01)." });
+  // ---- 12.8 Flex Mod
+  o("FNMA_D23206_FLEX_SOLICIT_STEP_60_75", { trigger: "`loan.delinquency.day_reached{day=60, step_rate_adjusted_within_12m=true}`", satisfied: "`notice.sent{code=NTC_FNMA_D23206_SOLICIT_STREAMLINED}`", why: "§12.8 timer table: 'same' as FNMA_D23206_FLEX_SOLICIT_90_105 — the streamlined solicitation letter by day 75 (D2-3.2-06)." });
+  o("FNMA_F127_VALUATION_MAX_AGE_90", { evaluator: "12.8.valuationFresh90", why: "§12.8 timer table: valuation ≤90 days old at evaluation — a gate on the TPP case submission (F-1-27)." });
+  o("FNMA_D23206_TPP_FIRST_DUE_15TH_RULE", { satisfied: "`lossmit.trial.schedule_created`", why: "§12.8 timer table: 'schedule created' — `12.8.tppFirstDue` computes the anchor (D2-3.2-06)." });
+  o("FNMA_E3401_FC_SUSPEND_DURING_TRIAL", { trigger: "`lossmit.trial.activated`", satisfied: "`lossmit.trial.ended{status∈{failed, cancelled, converted}}`", why: "§12.8 timer table: '`lossmit.trial.failed/cancelled`' (E-3.4-01)." });
+  o("FNMA_D23206_FORM3179_SERVICER_EXECUTE_BEFORE_EFFECTIVE", { trigger: "`lossmit.trial.final_payment_cleared{borrower_executed=true}`", satisfied: "`modification.servicer_executed`", why: "§12.8 timer table: '`signing_officer` execution (`officer_signature_date`)' (D2-3.2-06)." });
+  o("FNMA_D23102_MBS_RECLASS_BEFORE_EXECUTION", { satisfied: "`smdu.case.reclassified`", why: "§12.8 timer table: offset is the reclassification event itself — servicer execution waits for it (D2-3.1-02)." });
+  o("FNMA_F127_CAPITALIZATION_DATE", { satisfied: "`ledger.posted{rule_ref=12.8.capitalization}`", why: "§12.8 timer table: 'ledger postings' — the capitalization set balanced under rule_ref 12.8.capitalization (F-1-27)." });
+  o("FNMA_F127_RECORDED_ORIGINAL_5BD", { satisfied: "`custodian.delivery.confirmed{document=recorded_original}`", why: "§12.8 timer table: 'custodian delivery' (F-1-27)." });
+  o("FNMA_IRM_MOD_LOAN_DATA_CHANGE", { trigger: "`modification.effective`", satisfied: "`investor.event.accepted{kind=loan_data_change}`", why: "§12.8 timer table: '5.x ack' — LAR 83 / loan-data change accepted by the reporting cycle (Investor Reporting Manual)." });
+  o("FNMA_D23206_NO_NEW_TRIAL_12M", { evaluator: "12.8.noTrialFailureWithin12Months", why: "§12.8 timer table: no new trial within 12 months of a failed TPP — a gate on solicitation/offer (D2-3.2-06)." });
+  // ---- 12.9 liquidation
+  o("FNMA_F114_SS_VALUATION_MAX_AGE_90", { evaluator: "12.9.valuationFresh90", why: "§12.9 timer table: valuation ≤90 days old at approval — a gate on the approval (F-1-14)." });
+  o("FNMA_D23301_SS_DECISION_30", { trigger: "`liquidation.offer.received{initial=true, brp_complete=true}`", satisfied: "`notice.sent{code∈{NTC_FNMA_D23301_SS_APPROVAL, NTC_FNMA_D23301_SS_COUNTER, NTC_FNMA_D23301_SS_DECLINE}}`", why: "§12.9 timer table: '`notice.sent{approval | counter | decline}`' (D2-3.3-01)." });
+  o("FNMA_D23301_SS_REVISED_OFFER_10BD", { trigger: "`liquidation.offer.received{initial=false}`", satisfied: "`notice.sent{code∈{NTC_FNMA_D23301_SS_APPROVAL, NTC_FNMA_D23301_SS_COUNTER, NTC_FNMA_D23301_SS_DECLINE}}`", why: "§12.9 timer table: 'decision notice' (D2-3.3-01)." });
+  o("FNMA_E3401_SS_MARKETING_HOLD", { trigger: "`lossmit.application.completed{path=short_sale, principal_residence=true}`", offset: "60 calendar_days", satisfied: "`notice.sent{code∈{NTC_FNMA_D23301_SS_APPROVAL, NTC_FNMA_D23301_SS_COUNTER, NTC_FNMA_D23301_SS_DECLINE}}`", why: "§12.9 timer table: 'lapse/decision' — 45-day submission window + 15-day review (E-3.4-01)." });
+  o("FNMA_E3401_SS_APPROVED_HOLD_60", { trigger: "`liquidation.case.approved`", satisfied: "`liquidation.case.closed`", why: "§12.9 timer table: 'closing / deed recorded' (E-3.4-01)." });
+  o("REGX_1024_41G3_SS_LISTING_PERFORMANCE", { trigger: "`liquidation.listing.started`", satisfied: "`liquidation.case.status_changed{status∈{approved, closed, listing_expired}}`", why: "§12.9 timer table: '`liquidation_cases.status ∈ {approved, closed}` or expiry' (§1024.41(g)(3))." });
+  o("FNMA_D23302_DIL_DOCS_60", { satisfied: "`dil.documents.complete`", why: "§12.9 timer table: 'all required items received' (D2-3.3-02)." });
+  o("FNMA_D23302_DIL_WEEKLY_UPDATE_7", { trigger: "`dil.documents.extended`", satisfied: "`dil.weekly_update.logged`", why: "§12.9 timer table: 'update logged' (D2-3.3-02)." });
+  o("FNMA_D23302_DIL_DEED_BEFORE_SALE_30", { trigger: "`foreclosure.sale_scheduled{dil_case_open=true}`", offset: "-30 calendar_days", satisfied: "`dil.deed.received`", why: "§12.9 timer table: executed deed received ≥30 days before the sale, else Fannie Mae prior approval (`12.9.deedTiming`) (D2-3.3-02)." });
+  o("FNMA_D23302_DIL_LIEN_RELEASE_30BD", { trigger: "`dil.inspection.confirmed{vacant=true, secure=true}`", satisfied: "`lien_release.recorded`", why: "§12.9 timer table: 'lien release recorded (16.x/`signing_officer`)' (D2-3.3-02)." });
+  o("FNMA_F202_LIQUIDATION_INCENTIVE_CLAIM", { satisfied: "`investor.event.accepted{kind=incentive, workout∈{short_sale, mortgage_release}}`", why: "§12.9 timer table: 'claim filed (15.2)' — tier by delinquency days (F-2-02)." });
+  o("CA_CIV_2924_11C_RESCIND_NOD", { trigger: "`liquidation.case.approved{state=CA, proof_of_funds=true}`", offset: "5 business_days_servicer", satisfied: "`foreclosure.nod.rescinded`", why: "§12.9 timer table: 'rescission recorded / sale cancelled' (Cal. Civ. Code §2924.11(c); policy 5 BD)." });
 }

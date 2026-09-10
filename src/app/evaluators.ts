@@ -118,6 +118,10 @@ export const EVALUATORS: Record<string, Evaluator> = {
   "11.3.qrpcWithin30Days": (f) => (b(f, "occupied") && n(f, "days_since_qrpc") <= 30 ? ok : no("no QRPC in the last 30 days on an occupied property (D2-2-10)")),
   "11.5.incomeDocsFresh": (f) => atMost(n(f, "oldest_income_doc_age_days"), b(f, "disaster_impacted") ? 180 : 90, "income document age at completeness (D2-2-05)"),
   // ---- §12 loss mitigation
+  "12.1.documentStale": (f) => { const max = b(f, "disaster") ? 180 : 90; const age = n(f, "document_age_days"); return age <= max ? ok : no(`income document is ${age} days old (> ${max}; ${b(f, "disaster") ? "disaster" : "standard"} staleness) — re-request`); },
+  "12.8.valuationFresh90": (f) => atMost(n(f, "valuation_age_days"), 90, "valuation age at evaluation (F-1-27: ≤90 days)"),
+  "12.8.noTrialFailureWithin12Months": (f) => (s(f, "last_trial_failed_on") === "" || daysBetween(s(f, "last_trial_failed_on") as PlainDate, s(f, "today") as PlainDate) >= 365 ? ok : no(`a trial failed on ${s(f, "last_trial_failed_on")} — no new trial within 12 months (D2-3.2-06)`)),
+  "12.9.valuationFresh90": (f) => atMost(n(f, "valuation_age_days"), 90, "valuation age at approval (F-1-14: ≤90 days)"),
   "12.3.reviewerIndependent": (f) => (s(f, "reviewer_id") !== s(f, "evaluator_id") && s(f, "reviewer_run_id") !== s(f, "evaluator_run_id") ? ok : no("appeal reviewer must be independent of the evaluator (§1024.41(h)(3))")),
   "12.4.incrementMax3Months": (f) => atMost(n(f, "term_months"), 3, "forbearance increment months (D2-3.2-01)"),
   "12.4.termEndBeforeLastScheduledPayment": (f) => (s(f, "term_end") <= s(f, "last_scheduled_payment_date") ? ok : no("MBS forbearance term end is after the last scheduled payment date")),

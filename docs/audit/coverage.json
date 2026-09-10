@@ -1,33 +1,33 @@
 {
- "brief": "spec units built 3425/4583 (74.7%): tids 1022/1253, tables 441/448, timers 1017/1365, notices 146/235, tools 374/658, figures 425/624; processes at 100%: 69/114",
+ "brief": "spec units built 3692/4583 (80.6%): tids 1078/1253, tables 444/448, timers 1075/1365, notices 187/235, tools 444/658, figures 464/624; processes at 100%: 78/114",
  "totals": {
   "tids": {
    "spec": 1253,
-   "built": 1022
+   "built": 1078
   },
   "tables": {
    "spec": 448,
-   "built": 441
+   "built": 444
   },
   "timers": {
    "spec": 1365,
-   "built": 1017
+   "built": 1075
   },
   "notices": {
    "spec": 235,
-   "built": 146
+   "built": 187
   },
   "tools": {
    "spec": 658,
-   "built": 374
+   "built": 444
   },
   "figures": {
    "spec": 624,
-   "built": 425
+   "built": 464
   },
   "units": {
    "spec": 4583,
-   "built": 3425
+   "built": 3692
   }
  },
  "sections": {
@@ -99,9 +99,9 @@
   },
   "12": {
    "spec": 425,
-   "built": 158,
+   "built": 425,
    "processes": 9,
-   "done": 0
+   "done": 9
   },
   "13": {
    "spec": 353,
@@ -215,7 +215,16 @@
   "11.2",
   "11.3",
   "11.4",
-  "11.5"
+  "11.5",
+  "12.1",
+  "12.2",
+  "12.3",
+  "12.4",
+  "12.5",
+  "12.6",
+  "12.7",
+  "12.8",
+  "12.9"
  ],
  "processes": [
   {
@@ -3052,67 +3061,30 @@
    "title": "Acknowledge loss-mit application",
    "tids": {
     "spec": 12,
-    "built": 6,
-    "todo": 6,
-    "missing": [
-     4,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 7,
-    "built": 5,
-    "missing": [
-     "lossmit_contact_attempts",
-     "lossmit_notices"
-    ]
+    "built": 7,
+    "missing": []
    },
    "timers": {
     "spec": 13,
-    "built": 9,
+    "built": 13,
     "armable": 13,
-    "missing": [
-     "FNMA_D2205_BRP_ACK_5BD",
-     "NY_419_7D_ACK_5BD",
-     "REGX_1024_41B1_DILIGENCE_FOLLOWUP_7",
-     "SM_LM_DOC_STALENESS_SWEEP"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 9,
-    "built": 0,
-    "missing": [
-     "NTC_CA_2924_10_ACK",
-     "NTC_FNMA_D2204_SOLICITATION",
-     "NTC_FNMA_D2205_LATE_BRP_PLAN",
-     "NTC_REGX_41B2_INCOMPLETE_CLOSED",
-     "NTC_REGX_41B2_SUPPLEMENTAL_REQUEST",
-     "NTC_REGX_41C2III_SHORTTERM_TERMS",
-     "NTC_REGX_41C3_COMPLETE",
-     "NTC_REGX_41I_DUPLICATIVE",
-     "NTC_REGX_41_NPRM_RFA_RECEIVED"
-    ]
+    "built": 9,
+    "missing": []
    },
    "tools": {
     "spec": 11,
-    "built": 0,
-    "missing": [
-     "lossmit.application.open/update",
-     "documents.classify_extract",
-     "requirements.compute",
-     "calendar.federal_bd",
-     "notice.render_send",
-     "contacts.log",
-     "timers.start",
-     "foreclosure_holds.set",
-     "fnma.status_code.report",
-     "sii.lookup",
-     "transfer.lossmit_file.get"
-    ]
+    "built": 11,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -3121,27 +3093,18 @@
    },
    "units": {
     "spec": 52,
-    "built": 20
+    "built": 52
    },
-   "pct": 38.5
+   "pct": 100.0
   },
   {
    "process": "12.2",
    "title": "Complete-application evaluation",
    "tids": {
     "spec": 13,
-    "built": 5,
-    "todo": 8,
-    "missing": [
-     3,
-     5,
-     6,
-     8,
-     10,
-     11,
-     12,
-     13
-    ]
+    "built": 13,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 5,
@@ -3150,45 +3113,19 @@
    },
    "timers": {
     "spec": 17,
-    "built": 8,
+    "built": 17,
     "armable": 17,
-    "missing": [
-     "CA_CIV_2923_6E_NOD_NOS_HOLD_31",
-     "FNMA_D2205_EVAL_NOTICE_5_AFTER_DECISION",
-     "FNMA_E3401_POST_NOTICE_LEGAL_DELAY_14",
-     "NY_419_7G_ACCEPT_30",
-     "REGX_1024_41C1_EVALUATE_NOTIFY_30",
-     "REGX_1024_41C4IIA2_SIGNIFICANT_PERIOD",
-     "REGX_1024_41C4_THIRD_PARTY_HEIGHTEN_30",
-     "REGX_1024_41E1_ACCEPT_7",
-     "REGX_1024_41E2II_TRIAL_OTHER_REQS_REASONABLE"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "NTC_FNMA_EVAL_NOTICE_STREAMLINED",
-     "NTC_REGB_1002_9_LM_ADVERSE_ACTION",
-     "NTC_REGX_41C4IIB_THIRD_PARTY_DELAY"
-    ]
+    "built": 3,
+    "missing": []
    },
    "tools": {
     "spec": 11,
-    "built": 0,
-    "missing": [
-     "lossmit.evaluation.*",
-     "hierarchy.walk",
-     "smdu.case.submit/poll",
-     "valuation.order",
-     "mi.decision.get",
-     "credit.report.pull",
-     "notice.render_send",
-     "foreclosure_holds.set/release",
-     "attorney.instruct",
-     "timers.*",
-     "escalation.file"
-    ]
+    "built": 11,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -3197,24 +3134,18 @@
    },
    "units": {
     "spec": 49,
-    "built": 18
+    "built": 49
    },
-   "pct": 36.7
+   "pct": 100.0
   },
   {
    "process": "12.3",
    "title": "Appeal handling",
    "tids": {
     "spec": 10,
-    "built": 5,
-    "todo": 5,
-    "missing": [
-     2,
-     3,
-     4,
-     8,
-     10
-    ]
+    "built": 10,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 2,
@@ -3223,25 +3154,14 @@
    },
    "timers": {
     "spec": 13,
-    "built": 6,
+    "built": 13,
     "armable": 13,
-    "missing": [
-     "CA_CIV_2923_6D_APPEAL_WINDOW_30",
-     "CA_CIV_2923_6E_POST_APPEAL_HOLD_15",
-     "FNMA_D2207_APPEAL_DECIDE_30",
-     "FNMA_D2207_TPP_FIRST_DUE_15TH_RULE",
-     "NY_419_7H_APPEAL_WINDOW_14_POSTMARK",
-     "REGX_1024_41E2III_ORIGINAL_OFFER_EXTENDED",
-     "REGX_1024_41H4_APPEAL_DECIDE_30"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 2,
-    "built": 0,
-    "missing": [
-     "NTC_REGX_41H_APPEAL_ACK",
-     "NTC_REGX_41H_APPEAL_INELIGIBLE"
-    ]
+    "built": 2,
+    "missing": []
    },
    "tools": {
     "spec": 0,
@@ -3255,25 +3175,18 @@
    },
    "units": {
     "spec": 27,
-    "built": 13
+    "built": 27
    },
-   "pct": 48.1
+   "pct": 100.0
   },
   {
    "process": "12.4",
    "title": "Forbearance plan",
    "tids": {
     "spec": 10,
-    "built": 4,
-    "todo": 6,
-    "missing": [
-     4,
-     5,
-     6,
-     7,
-     9,
-     10
-    ]
+    "built": 10,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 4,
@@ -3282,40 +3195,19 @@
    },
    "timers": {
     "spec": 17,
-    "built": 12,
+    "built": 17,
     "armable": 17,
-    "missing": [
-     "FNMA_D23201_FORB_PREEXPIRY_CONTACT_30",
-     "FNMA_F121_STATUS_09_BD2",
-     "FNMA_LL202601_FORB_EXCEPTION_RESPONSE",
-     "REGX_1024_41B1_DILIGENCE_RESUME",
-     "REGX_1024_41C2III_PERFORMANCE_HOLD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 4,
-    "built": 0,
-    "missing": [
-     "NTC_FNMA_D23201_FORB_EXPIRY_OPTIONS",
-     "NTC_FNMA_D23201_FORB_EXTENSION",
-     "NTC_FNMA_D23201_FORB_PLAN",
-     "NTC_FNMA_D23201_FORB_TERMINATION"
-    ]
+    "built": 4,
+    "missing": []
    },
    "tools": {
     "spec": 9,
-    "built": 0,
-    "missing": [
-     "workout_plan.*",
-     "calendar.months",
-     "delinquency.project",
-     "notice.render_send",
-     "fees.suppress",
-     "fnma.status_code.report",
-     "exception_request.prepare",
-     "contacts.*",
-     "timers.*"
-    ]
+    "built": 9,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -3324,26 +3216,18 @@
    },
    "units": {
     "spec": 44,
-    "built": 20
+    "built": 44
    },
-   "pct": 45.5
+   "pct": 100.0
   },
   {
    "process": "12.5",
    "title": "Repayment plan",
    "tids": {
     "spec": 9,
-    "built": 2,
-    "todo": 7,
-    "missing": [
-     2,
-     3,
-     4,
-     5,
-     7,
-     8,
-     9
-    ]
+    "built": 9,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 3,
@@ -3352,76 +3236,39 @@
    },
    "timers": {
     "spec": 13,
-    "built": 9,
+    "built": 13,
     "armable": 13,
-    "missing": [
-     "FNMA_D23202_REPAY_PAYMENT_EOM",
-     "FNMA_F121_STATUS_12_BD2",
-     "FNMA_F202_REPAY_INCENTIVE_CLAIM",
-     "REGX_1024_41C2III_PERFORMANCE_HOLD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "NTC_FNMA_D23202_REPAY_COMPLETED",
-     "NTC_FNMA_D23202_REPAY_FAILED",
-     "NTC_FNMA_D23202_REPAY_PLAN"
-    ]
+    "built": 3,
+    "missing": []
    },
    "tools": {
     "spec": 8,
-    "built": 0,
-    "missing": [
-     "workout_plan.*",
-     "ledger.arrears",
-     "calc.repayment_schedule",
-     "fees.suppress/waive",
-     "notice.render_send",
-     "fnma.status_code.report",
-     "fnma.f116_package.prepare",
-     "timers.*"
-    ]
+    "built": 8,
+    "missing": []
    },
    "figures": {
     "spec": 13,
-    "built": 2,
-    "missing": [
-     "$1,580.17",
-     "$126.00",
-     "$2,100.00",
-     "$2,635.50",
-     "$2,903.25",
-     "$3,171.00",
-     "$535.50",
-     "$6,300.00",
-     "$6,426.00",
-     "$63.00",
-     "$63.21"
-    ]
+    "built": 13,
+    "missing": []
    },
    "units": {
     "spec": 49,
-    "built": 16
+    "built": 49
    },
-   "pct": 32.7
+   "pct": 100.0
   },
   {
    "process": "12.6",
    "title": "Payment Deferral",
    "tids": {
     "spec": 10,
-    "built": 4,
-    "todo": 6,
-    "missing": [
-     4,
-     6,
-     7,
-     8,
-     9,
-     10
-    ]
+    "built": 10,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 2,
@@ -3430,74 +3277,39 @@
    },
    "timers": {
     "spec": 15,
-    "built": 10,
+    "built": 15,
     "armable": 15,
-    "missing": [
-     "FNMA_D23204_PROCESSING_MONTH_ELECTION_15TH",
-     "FNMA_D23204_RECORDED_ORIGINAL_5BD",
-     "FNMA_F122_DEFERRAL_LAR_BEFORE_EOM_1BD",
-     "FNMA_F202_DEFERRAL_INCENTIVE_CLAIM",
-     "SM_DEFERRAL_SOLICIT_ACCEPT_WINDOW"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 4,
-    "built": 0,
-    "missing": [
-     "NTC_FNMA_D23204_DEFERRAL_COMPLETED",
-     "NTC_FNMA_D23204_DEFERRAL_OFFER",
-     "NTC_FNMA_D23204_SOLICIT_POST_FORB",
-     "NTC_FNMA_D23204_SOLICIT_POST_REPAY"
-    ]
+    "built": 4,
+    "missing": []
    },
    "tools": {
     "spec": 10,
-    "built": 0,
-    "missing": [
-     "deferral.screen",
-     "ledger.arrears_breakdown",
-     "escrow.analysis.run",
-     "smdu.case.submit",
-     "investor.report_contractual_payments",
-     "notice.render_send",
-     "esign.send",
-     "erecording.submit",
-     "custodian.deliver",
-     "timers.*"
-    ]
+    "built": 10,
+    "missing": []
    },
    "figures": {
     "spec": 9,
-    "built": 3,
-    "missing": [
-     "$1,050.00",
-     "$1,580.17",
-     "$1,860.00",
-     "$252.00",
-     "$520.00",
-     "$63.00"
-    ]
+    "built": 9,
+    "missing": []
    },
    "units": {
     "spec": 50,
-    "built": 19
+    "built": 50
    },
-   "pct": 38.0
+   "pct": 100.0
   },
   {
    "process": "12.7",
    "title": "Disaster Payment Deferral",
    "tids": {
     "spec": 8,
-    "built": 3,
-    "todo": 5,
-    "missing": [
-     1,
-     3,
-     5,
-     6,
-     7
-    ]
+    "built": 8,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 0,
@@ -3506,60 +3318,39 @@
    },
    "timers": {
     "spec": 8,
-    "built": 7,
+    "built": 8,
     "armable": 8,
-    "missing": [
-     "FNMA_D1301_DISASTER_FLEX_ROUTE"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "NTC_FNMA_D23205_DISASTER_DEFERRAL_OFFER",
-     "NTC_FNMA_D23205_SOLICIT_POST_DISASTER_FORB",
-     "NTC_FNMA_D23205_SOLICIT_POST_REPAY"
-    ]
+    "built": 3,
+    "missing": []
    },
    "tools": {
     "spec": 2,
-    "built": 0,
-    "missing": [
-     "disaster.registry.lookup",
-     "insurance.claim.get"
-    ]
+    "built": 2,
+    "missing": []
    },
    "figures": {
     "spec": 5,
-    "built": 2,
-    "missing": [
-     "$1,580.17",
-     "$14,221.53",
-     "$2,300.00"
-    ]
+    "built": 5,
+    "missing": []
    },
    "units": {
     "spec": 26,
-    "built": 12
+    "built": 26
    },
-   "pct": 46.2
+   "pct": 100.0
   },
   {
    "process": "12.8",
    "title": "Fannie Mae Flex Modification",
    "tids": {
     "spec": 12,
-    "built": 5,
-    "todo": 7,
-    "missing": [
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 3,
@@ -3568,150 +3359,60 @@
    },
    "timers": {
     "spec": 22,
-    "built": 11,
+    "built": 22,
     "armable": 22,
-    "missing": [
-     "FNMA_D23102_MBS_RECLASS_BEFORE_EXECUTION",
-     "FNMA_D23206_FLEX_SOLICIT_STEP_60_75",
-     "FNMA_D23206_FORM3179_SERVICER_EXECUTE_BEFORE_EFFECTIVE",
-     "FNMA_D23206_NO_NEW_TRIAL_12M",
-     "FNMA_D23206_TPP_FIRST_DUE_15TH_RULE",
-     "FNMA_E3401_FC_SUSPEND_DURING_TRIAL",
-     "FNMA_F127_CAPITALIZATION_DATE",
-     "FNMA_F127_RECORDED_ORIGINAL_5BD",
-     "FNMA_F127_VALUATION_MAX_AGE_90",
-     "FNMA_IRM_MOD_LOAN_DATA_CHANGE",
-     "REGX_1024_41E2II_TRIAL_OTHER_REQS_REASONABLE"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 5,
-    "built": 0,
-    "missing": [
-     "NTC_FNMA_D23206_MOD_COMPLETED",
-     "NTC_FNMA_D23206_SOLICIT_STREAMLINED",
-     "NTC_FNMA_D23206_TPP_FAILED",
-     "NTC_FNMA_D23206_TPP_OFFER",
-     "NTC_FNMA_D23206_TPP_REMINDER"
-    ]
+    "built": 5,
+    "missing": []
    },
    "tools": {
     "spec": 2,
-    "built": 0,
-    "missing": [
-     "flexmod.waterfall",
-     "valuation.order/get"
-    ]
+    "built": 2,
+    "missing": []
    },
    "figures": {
     "spec": 20,
-    "built": 1,
-    "missing": [
-     "$1,264.13",
-     "$1,282.48",
-     "$1,471.87",
-     "$1,580.17",
-     "$1,815.13",
-     "$1,860.00",
-     "$10,259.84",
-     "$106,405.31",
-     "$180.00",
-     "$215,921.99",
-     "$236,765.47",
-     "$251,405.31",
-     "$290,000.00",
-     "$35,483.32",
-     "$4,200.00",
-     "$505.68",
-     "$520.00",
-     "$63.21",
-     "$75,421.59"
-    ]
+    "built": 20,
+    "missing": []
    },
    "units": {
     "spec": 64,
-    "built": 20
+    "built": 64
    },
-   "pct": 31.2
+   "pct": 100.0
   },
   {
    "process": "12.9",
    "title": "Short sale / Mortgage Release (DIL)",
    "tids": {
     "spec": 12,
-    "built": 6,
-    "todo": 6,
-    "missing": [
-     1,
-     3,
-     6,
-     9,
-     10,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 5,
-    "built": 4,
-    "missing": [
-     "dil_cases"
-    ]
+    "built": 5,
+    "missing": []
    },
    "timers": {
     "spec": 22,
-    "built": 10,
+    "built": 22,
     "armable": 22,
-    "missing": [
-     "CA_CIV_2924_11C_RESCIND_NOD",
-     "FNMA_D23301_SS_DECISION_30",
-     "FNMA_D23301_SS_REVISED_OFFER_10BD",
-     "FNMA_D23302_DIL_DEED_BEFORE_SALE_30",
-     "FNMA_D23302_DIL_DOCS_60",
-     "FNMA_D23302_DIL_LIEN_RELEASE_30BD",
-     "FNMA_D23302_DIL_WEEKLY_UPDATE_7",
-     "FNMA_E3401_SS_APPROVED_HOLD_60",
-     "FNMA_E3401_SS_MARKETING_HOLD",
-     "FNMA_F114_SS_VALUATION_MAX_AGE_90",
-     "FNMA_F202_LIQUIDATION_INCENTIVE_CLAIM",
-     "REGX_1024_41G3_SS_LISTING_PERFORMANCE"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 8,
-    "built": 0,
-    "missing": [
-     "NTC_FNMA_D23301_SS_APPROVAL",
-     "NTC_FNMA_D23301_SS_COUNTER",
-     "NTC_FNMA_D23301_SS_DECLINE",
-     "NTC_FNMA_D23301_SS_ELIGIBILITY",
-     "NTC_FNMA_D23301_SS_OFFER_ACK",
-     "NTC_FNMA_D23302_DIL_ACCEPTED",
-     "NTC_FNMA_D23302_DIL_COMPLETED",
-     "NTC_FNMA_D23302_DIL_OFFER"
-    ]
+    "built": 8,
+    "missing": []
    },
    "tools": {
     "spec": 17,
-    "built": 0,
-    "missing": [
-     "liquidation.case.*",
-     "ratio.compute",
-     "contribution.compute",
-     "valuation.order/get",
-     "title.order/get",
-     "inspection.order/get",
-     "smdu.case.submit/poll",
-     "offer.evaluate",
-     "notice.render_send",
-     "closing.instructions.send",
-     "settlement.review",
-     "erecording.submit",
-     "lien_release.request",
-     "mi.claim.prepare",
-     "reogram.watch",
-     "timers.*",
-     "attorney.instruct"
-    ]
+    "built": 17,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -3720,9 +3421,9 @@
    },
    "units": {
     "spec": 64,
-    "built": 20
+    "built": 64
    },
-   "pct": 31.2
+   "pct": 100.0
   },
   {
    "process": "13.1",

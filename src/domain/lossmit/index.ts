@@ -1,1 +1,1 @@
-export * as application from "./application.ts"; export * as evaluation from "./evaluation.ts"; export * as plans from "./plans.ts"; export * as deferral from "./deferral.ts"; export * as flexmod from "./flexmod.ts"; export * as liquidation from "./liquidation.ts";
+export * as application from "./application.ts"; export * as evaluation from "./evaluation.ts"; export * as plans from "./plans.ts"; export * as deferral from "./deferral.ts"; export * as flexmod from "./flexmod.ts"; export * as liquidation from "./liquidation.ts"; export * as ops from "./ops.ts";

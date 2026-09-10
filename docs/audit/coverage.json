@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 3945/4583 (86.1%): tids 1139/1253, tables 444/448, timers 1175/1365, notices 205/235, tools 488/658, figures 494/624; processes at 100%: 87/114",
+ "brief": "spec units built 3957/4583 (86.3%): tids 1144/1253, tables 444/448, timers 1182/1365, notices 205/235, tools 488/658, figures 494/624; processes at 100%: 89/114",
  "totals": {
   "tids": {
    "spec": 1253,
-   "built": 1139
+   "built": 1144
   },
   "tables": {
    "spec": 448,
@@ -11,7 +11,7 @@
   },
   "timers": {
    "spec": 1365,
-   "built": 1175
+   "built": 1182
   },
   "notices": {
    "spec": 235,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 4583,
-   "built": 3945
+   "built": 3957
   }
  },
  "sections": {
@@ -135,9 +135,9 @@
   },
   "18": {
    "spec": 181,
-   "built": 116,
+   "built": 128,
    "processes": 7,
-   "done": 0
+   "done": 2
   },
   "19": {
    "spec": 225,
@@ -233,7 +233,9 @@
   "13.6",
   "13.7",
   "13.8",
-  "13.9"
+  "13.9",
+  "18.3",
+  "18.6"
  ],
  "processes": [
   {
@@ -5113,12 +5115,9 @@
    "title": "STAR performance measurement",
    "tids": {
     "spec": 9,
-    "built": 7,
-    "todo": 2,
-    "missing": [
-     3,
-     9
-    ]
+    "built": 9,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 5,
@@ -5127,11 +5126,9 @@
    },
    "timers": {
     "spec": 5,
-    "built": 4,
+    "built": 5,
     "armable": 5,
-    "missing": [
-     "SM_STAR_PARTNER_REPORT_MONTHLY"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -5150,9 +5147,9 @@
    },
    "units": {
     "spec": 19,
-    "built": 16
+    "built": 19
    },
-   "pct": 84.2
+   "pct": 100.0
   },
   {
    "process": "18.4",
@@ -5266,13 +5263,9 @@
    "title": "Reg AB / USAP attestation",
    "tids": {
     "spec": 7,
-    "built": 4,
-    "todo": 3,
-    "missing": [
-     3,
-     5,
-     6
-    ]
+    "built": 7,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 4,
@@ -5281,16 +5274,9 @@
    },
    "timers": {
     "spec": 7,
-    "built": 1,
+    "built": 7,
     "armable": 7,
-    "missing": [
-     "REGAB_1122_2VII_RECON_ITEMS_90",
-     "REGAB_1122_ASSESSMENT_PSA_DUE",
-     "REGAB_1123_STATEMENT_PSA_DUE",
-     "SM_ATTEST_EVIDENCE_COMPILE_FYE_15",
-     "SM_ATTEST_MANAGEMENT_ASSERTION_FYE_45",
-     "SM_MATERIAL_NONCOMPLIANCE_PARTNER_1BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -5309,9 +5295,9 @@
    },
    "units": {
     "spec": 18,
-    "built": 9
+    "built": 18
    },
-   "pct": 50.0
+   "pct": 100.0
   },
   {
    "process": "18.7",

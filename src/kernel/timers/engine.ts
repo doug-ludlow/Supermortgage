@@ -156,8 +156,10 @@ export class TimerEngine {
   byCode(code: string): readonly TimerInstance[] { return this.instances.filter((i) => i.code === code); }
 
   private onEvent(e: DomainEvent): void {
-    // 1. Satisfy anything waiting on this event (same subject).
-    for (const inst of this.instances) {
+    // 1. Satisfy anything waiting on this event (same subject). Iterate a snapshot: satisfying a
+    //    recurring row re-arms it (arm() pushes onto this.instances) and the fresh instance must not
+    //    be visited — and satisfied, and re-armed — by the same pass.
+    for (const inst of [...this.instances]) {
       if (inst.status !== "armed" && inst.status !== "breached") continue;
       const def = this.registry.get(inst.code);
       if (!def?.satisfiedPattern || !eventMatches(def.satisfiedPattern, e)) continue;

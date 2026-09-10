@@ -26,7 +26,9 @@ import { eventDeadlineMs, fannieBusinessDay } from "../investor/period.ts";
 import { deadlines as noeDeadlines, exceptionNoticeDue, type AssertionType, type Deadlines } from "../servicing-requests/noe.ts";
 import { outboundSchedule, finalPeriodCloseMs, transfereeRequestDue, finalAccountingDue, expectedWires, type LoanBalances } from "./reconciliation.ts";
 import { mersTransaction, mersClocks, form2009Overdue } from "./custody-mers.ts";
-import type { MersTxnRow, MersTxnType } from "./inbound.ts";
+// MERS transaction shapes (1.5 `mers_transactions` rows); inbound.ts exports the same types once 1.5's process build lands.
+type MersTxnType = "min_update_subservicer" | "tos_initiate" | "tos_confirm" | "tob_confirm" | "registration" | "deactivation" | "min_update_other";
+interface MersTxnRow { readonly min: string; readonly loan_id: string | null; readonly txn_type: MersTxnType; readonly effective_date: PlainDate; readonly submitted_by_org_id: string; readonly status: "prepared"; }
 import { forwardBy } from "./respa.ts";
 import { SUPERMORTGAGE_ORG_ID } from "./inbound.ts";
 import type { TransferType } from "./batch.ts";

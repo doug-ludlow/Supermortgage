@@ -162,3 +162,16 @@ test("a later override that leaves the anchor alone keeps the anchor field an ea
   assert.equal(reg.override(code, { anchor: "`received_on`" }).anchorField, "received_on");
   assert.equal(reg.override(code, { anchor: "receipt", anchorField: "assumed_receipt_on" }).anchorField, "assumed_receipt_on");
 });
+
+test("satisfying a recurring timer re-arms it once for the next cycle (no re-arm loop)", () => {
+  const reg = loadRegistry();
+  const def = reg.unique().find((t) => t.kindNorm === "recurring" && t.offsetParsed.kind === "recurring" && t.triggerPattern && t.satisfiedPattern && t.satisfiedPattern.type !== t.triggerPattern.type)!;
+  const events = new MemoryEventStore();
+  const engine = new TimerEngine(reg, events, { processes: [def.process] });
+  const trigger = events.append({ type: def.triggerPattern!.type, actor: SYSTEM, aggregate: { kind: "global", id: "*" }, payload: Object.fromEntries((def.triggerPattern!.conditions ?? []).map((c) => [c.field, Array.isArray(c.value) ? c.value[0] : c.value === "true" ? true : c.value])) });
+  const armed = engine.byCode(def.code).filter((i) => i.status === "armed");
+  assert.equal(armed.length, 1, `${def.code} arms once on ${trigger.type}`);
+  events.append({ type: def.satisfiedPattern!.type, actor: SYSTEM, aggregate: { kind: "global", id: "*" }, causationId: trigger.id, payload: Object.fromEntries((def.satisfiedPattern!.conditions ?? []).map((c) => [c.field, Array.isArray(c.value) ? c.value[0] : c.value === "true" ? true : c.value])) });
+  const after = engine.byCode(def.code);
+  assert.deepEqual(after.map((i) => i.status).sort(), ["armed", "satisfied"], `${def.code}: one satisfied instance and exactly one re-armed instance`);
+});

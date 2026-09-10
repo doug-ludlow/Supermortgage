@@ -13,8 +13,9 @@ import { SECTION_02_TOOLS } from "./section02.ts";
 import { SECTION_03_TOOLS } from "./section03.ts";
 import { SECTION_04_TOOLS } from "./section04.ts";
 import { SECTION_05_TOOLS } from "./section05.ts";
+import { SECTION_06_TOOLS } from "./section06.ts";
 
-export const ALL_TOOLS: readonly ToolDef[] = [...SECTION_01_TOOLS, ...SECTION_02_TOOLS, ...SECTION_03_TOOLS, ...SECTION_04_TOOLS, ...SECTION_05_TOOLS];
+export const ALL_TOOLS: readonly ToolDef[] = [...SECTION_01_TOOLS, ...SECTION_02_TOOLS, ...SECTION_03_TOOLS, ...SECTION_04_TOOLS, ...SECTION_05_TOOLS, ...SECTION_06_TOOLS];
 
 export function bindTools(rt: ToolRuntime, agents: AgentRegistry, defs: readonly ToolDef[] = ALL_TOOLS): Map<string, CommandSpec<ToolInput, unknown>> {
   const escalates = new Map(loadAgentsFile().processes.map((p) => [p.process, p.escalates_to] as const));

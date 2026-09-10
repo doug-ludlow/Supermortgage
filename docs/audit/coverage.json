@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 2793/4597 (60.8%): tids 868/1253, tables 439/449, timers 893/1365, notices 61/248, tools 212/658, figures 320/624; processes at 100%: 35/114",
+ "brief": "spec units built 2863/4597 (62.3%): tids 886/1253, tables 439/449, timers 903/1365, notices 61/248, tools 247/658, figures 327/624; processes at 100%: 40/114",
  "totals": {
   "tids": {
    "spec": 1253,
-   "built": 868
+   "built": 886
   },
   "tables": {
    "spec": 449,
@@ -11,7 +11,7 @@
   },
   "timers": {
    "spec": 1365,
-   "built": 893
+   "built": 903
   },
   "notices": {
    "spec": 248,
@@ -19,15 +19,15 @@
   },
   "tools": {
    "spec": 658,
-   "built": 212
+   "built": 247
   },
   "figures": {
    "spec": 624,
-   "built": 320
+   "built": 327
   },
   "units": {
    "spec": 4597,
-   "built": 2793
+   "built": 2863
   }
  },
  "sections": {
@@ -63,9 +63,9 @@
   },
   "6": {
    "spec": 169,
-   "built": 100,
+   "built": 169,
    "processes": 5,
-   "done": 0
+   "done": 5
   },
   "7": {
    "spec": 206,
@@ -123,7 +123,7 @@
   },
   "16": {
    "spec": 197,
-   "built": 81,
+   "built": 82,
    "processes": 4,
    "done": 0
   },
@@ -181,7 +181,12 @@
   "5.4",
   "5.5",
   "5.6",
-  "5.7"
+  "5.7",
+  "6.1",
+  "6.2",
+  "6.3",
+  "6.4",
+  "6.5"
  ],
  "processes": [
   {
@@ -1624,11 +1629,9 @@
    "title": "Establish P&I custodial account (Form 1013)",
    "tids": {
     "spec": 8,
-    "built": 7,
-    "todo": 1,
-    "missing": [
-     7
-    ]
+    "built": 8,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 1,
@@ -1637,11 +1640,9 @@
    },
    "timers": {
     "spec": 9,
-    "built": 8,
+    "built": 9,
     "armable": 9,
-    "missing": [
-     "FNMA_F103_FORM1013_IN_EFFECT_GATE"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -1650,18 +1651,8 @@
    },
    "tools": {
     "spec": 9,
-    "built": 0,
-    "missing": [
-     "depository.evaluate",
-     "fdic.lookup",
-     "ratings.read",
-     "custodial.plan_accounts",
-     "cbam.prepare_package",
-     "documents.write",
-     "escalation.create",
-     "timer.start/satisfy",
-     "email.send"
-    ]
+    "built": 9,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -1670,21 +1661,18 @@
    },
    "units": {
     "spec": 27,
-    "built": 16
+    "built": 27
    },
-   "pct": 59.3
+   "pct": 100.0
   },
   {
    "process": "6.2",
    "title": "Establish T&I custodial account (Form 1014)",
    "tids": {
     "spec": 6,
-    "built": 4,
-    "todo": 2,
-    "missing": [
-     4,
-     6
-    ]
+    "built": 6,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 0,
@@ -1693,11 +1681,9 @@
    },
    "timers": {
     "spec": 5,
-    "built": 4,
+    "built": 5,
     "armable": 5,
-    "missing": [
-     "FNMA_F103_FORM1014_IN_EFFECT_GATE"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -1706,12 +1692,8 @@
    },
    "tools": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "ledger.post",
-     "escrow.read_balances",
-     "jurisdiction.read"
-    ]
+    "built": 3,
+    "missing": []
    },
    "figures": {
     "spec": 4,
@@ -1720,26 +1702,18 @@
    },
    "units": {
     "spec": 18,
-    "built": 12
+    "built": 18
    },
-   "pct": 66.7
+   "pct": 100.0
   },
   {
    "process": "6.3",
    "title": "Monthly P&I reconciliation (Form 496)",
    "tids": {
     "spec": 14,
-    "built": 7,
-    "todo": 7,
-    "missing": [
-     3,
-     5,
-     10,
-     11,
-     12,
-     13,
-     14
-    ]
+    "built": 14,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 1,
@@ -1748,14 +1722,9 @@
    },
    "timers": {
     "spec": 15,
-    "built": 11,
+    "built": 15,
     "armable": 15,
-    "missing": [
-     "FNMA_F120_SA_FUNDS_AVAILABLE_20TH",
-     "SM_RECON_ITEM_AGE_30",
-     "SM_RECON_ITEM_AGE_60",
-     "SM_RECON_ITEM_AGE_90_FUND_OR_CLEAR"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -1764,48 +1733,28 @@
    },
    "tools": {
     "spec": 11,
-    "built": 0,
-    "missing": [
-     "bank.read_statement",
-     "ledger.read",
-     "ledger.post_reclass",
-     "fnma.read_cash_position",
-     "fnma.read_draft_notifications",
-     "crs.prepare_batch",
-     "form496.generate",
-     "documents.write",
-     "escalation.create",
-     "timer.*",
-     "partner.notify"
-    ]
+    "built": 11,
+    "missing": []
    },
    "figures": {
     "spec": 14,
-    "built": 10,
-    "missing": [
-     "$1,000.00",
-     "$1,000.01",
-     "$25,000.00",
-     "$25.00"
-    ]
+    "built": 14,
+    "missing": []
    },
    "units": {
     "spec": 55,
-    "built": 29
+    "built": 55
    },
-   "pct": 52.7
+   "pct": 100.0
   },
   {
    "process": "6.4",
    "title": "T&I custodial reconciliation (Form 496A)",
    "tids": {
     "spec": 8,
-    "built": 6,
-    "todo": 2,
-    "missing": [
-     7,
-     8
-    ]
+    "built": 8,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 0,
@@ -1830,33 +1779,23 @@
    },
    "figures": {
     "spec": 12,
-    "built": 10,
-    "missing": [
-     "$1,911,432.50",
-     "$121,500.00"
-    ]
+    "built": 12,
+    "missing": []
    },
    "units": {
     "spec": 29,
-    "built": 25
+    "built": 29
    },
-   "pct": 86.2
+   "pct": 100.0
   },
   {
    "process": "6.5",
    "title": "Unidentified/unapplied funds management",
    "tids": {
     "spec": 10,
-    "built": 4,
-    "todo": 6,
-    "missing": [
-     1,
-     2,
-     3,
-     6,
-     8,
-     9
-    ]
+    "built": 10,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 2,
@@ -1865,13 +1804,9 @@
    },
    "timers": {
     "spec": 14,
-    "built": 11,
+    "built": 14,
     "armable": 14,
-    "missing": [
-     "SM_OVERPAYMENT_REFUND_10BD",
-     "SM_SUSPENSE_AGE_90_ESCALATE",
-     "SM_UNIDENTIFIED_RETURN_60"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -1880,34 +1815,19 @@
    },
    "tools": {
     "spec": 12,
-    "built": 0,
-    "missing": [
-     "suspense.read/write",
-     "payments.history",
-     "borrowers.search",
-     "lockbox.image_ocr",
-     "ledger.apply_via_cashiering",
-     "nacha.originate_credit",
-     "check.issue",
-     "contact.request",
-     "unclaimed_property.compute",
-     "naupa.generate",
-     "escalation.create",
-     "timer.*"
-    ]
+    "built": 12,
+    "missing": []
    },
    "figures": {
     "spec": 2,
-    "built": 1,
-    "missing": [
-     "$1,500.00"
-    ]
+    "built": 2,
+    "missing": []
    },
    "units": {
     "spec": 40,
-    "built": 18
+    "built": 40
    },
-   "pct": 45.0
+   "pct": 100.0
   },
   {
    "process": "7.1",
@@ -5860,13 +5780,12 @@
    },
    "timers": {
     "spec": 20,
-    "built": 7,
+    "built": 8,
     "armable": 20,
     "missing": [
      "FNMA_F109_ADVANCE_REPAY_30",
      "FNMA_F120_PAYOFF_SA_CD20",
      "FNMA_F120_PAYOFF_SS_CD18",
-     "SM_OVERPAYMENT_REFUND_10BD",
      "SM_PAYOFF_AUTODRAFT_STOP_T0",
      "SM_PAYOFF_CREDIT_REPORT_NEXT_CYCLE",
      "SM_PAYOFF_INSURANCE_INTEREST_REMOVE_5BD",
@@ -5917,9 +5836,9 @@
    },
    "units": {
     "spec": 59,
-    "built": 23
+    "built": 24
    },
-   "pct": 39.0
+   "pct": 40.7
   },
   {
    "process": "16.3",

@@ -28,4 +28,14 @@ export function applyCustodialTimerOverrides(reg: TimerRegistry): void {
   // ---- pseudo-trigger rows -----------------------------------------------------
   o("SM_RECON_ITEM_AGE_60", { trigger: "`reconciliation_item.opened`", why: "§6.3 timer table: 'same' as SM_RECON_ITEM_AGE_30 → `reconciliation_item.opened`; 60 calendar days." });
   o("SM_UNIDENTIFIED_RETURN_60", { trigger: "`suspense.item.created{category=unidentified}`", why: "§6.5 timer table: 'same' as SM_UNIDENTIFIED_RESEARCH_30 → `suspense.item.created` (unidentified_*); return at 60 calendar days." });
+  // ---- satisfaction events (spec "Satisfied by" prose → event patterns) ----
+  o("FNMA_F103_FORM1013_IN_EFFECT_GATE", { satisfied: "`custodial.form.in_effect{kind=1013}`", why: "§6.1 timer table: the gate opens on `custodial.form.in_effect` (Form 1013) — the executed-document verification (6.1-T7) emits it." });
+  o("FNMA_F103_FORM1014_IN_EFFECT_GATE", { satisfied: "`custodial.form.in_effect{kind=1014}`", why: "§6.2 timer table: the gate opens on `custodial.form.in_effect` with matching remittance types (Form 1014)." });
+  o("SM_RECON_ITEM_AGE_30", { satisfied: "`reconciliation_item.resolved{status∈{cleared, posted, funded}}`", why: "§6.3 timer table: item `cleared`/`posted`/`funded`." });
+  o("SM_RECON_ITEM_AGE_60", { satisfied: "`reconciliation_item.resolved{status∈{cleared, posted, funded}}`", why: "§6.3 timer table: 'same' as SM_RECON_ITEM_AGE_30." });
+  o("SM_RECON_ITEM_AGE_90_FUND_OR_CLEAR", { satisfied: "`reconciliation_item.resolved{status∈{funded, cleared}}`", why: "§6.3 timer table: `funded` or `cleared` (cash-shortfall items)." });
+  o("FNMA_F120_SA_FUNDS_AVAILABLE_20TH", { satisfied: "`custodial.draft.coverage_confirmed{remittance_type=sa}`", why: "§6.3 timer table: 'same' as FNMA_F120_SS_FUNDS_AVAILABLE_18TH → `custodial.draft.coverage_confirmed` (F-1-20 S/A on the 20th)." });
+  o("SM_UNIDENTIFIED_RETURN_60", { satisfied: "`suspense.item.returned`", why: "§6.5 timer table: `returned` (payer known) — otherwise the item moves to `escheat_pending` at breach." });
+  o("SM_SUSPENSE_AGE_90_ESCALATE", { satisfied: "`suspense.item.closed{status∈{applied, returned, refunded, escheated, transferred, applied_to_oldest}}`", why: "§6.5 timer table: 'terminal status'." });
+  o("SM_OVERPAYMENT_REFUND_10BD", { satisfied: "`suspense.item.closed{status∈{refunded, applied}}`", why: "§6.5/16.2 timer tables: `refunded` or `applied` (borrower elected curtailment)." });
 }

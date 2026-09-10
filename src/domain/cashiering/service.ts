@@ -91,7 +91,7 @@ export class CashieringService {
     if (!p.loan_id) throw new Error("payment not identified");
     const state = this.deps.loans.get(p.loan_id);
     if (!state) throw new RangeError(`no loan cash state ${p.loan_id}`);
-    const plan = allocate(state, { payment_id: p.id, amount_cents: p.amount_cents, received_on: p.received_on, credited_as_of: p.credited_as_of, designation: p.designation ?? "unspecified", ...(p.borrower_instruction_text ? { instruction_text: p.borrower_instruction_text } : {}) });
+    const plan = allocate(state, { payment_id: p.id, amount_cents: p.amount_cents, received_on: p.received_on, credited_as_of: p.credited_as_of, designation: p.designation ?? "unspecified", ...(p.borrower_instruction_text ? { instruction_text: p.borrower_instruction_text } : {}), ...(p.curtailment_cents !== undefined ? { curtailment_cents: p.curtailment_cents } : {}) });
     const heldOutcome = plan.hold !== undefined || plan.outcome === "payoff_routed";
     const t1 = paymentMachine.attempt(p.status, "payment.allocate", CASHIERING_AGENT, { hasLoan: true, held: heldOutcome });
     if (!t1.ok) throw new Error(t1.reason);
@@ -118,7 +118,13 @@ export class CashieringService {
         payload: { type: inst.kind === "prepaid" ? "payment.prepaid" : "payment.contractual", mode: "event", sequence: seq, effective_date: p.received_on, processed_at: this.deps.clock.now(), lpi_date: inst.due_date, upb_cents: inst.upb_after_cents.toString(), interest_cents: inst.interest_cents.toString(), principal_cents: inst.principal_cents.toString(), rate_pct: state.note_rate_pct, pi_cents: (inst.interest_cents + inst.principal_cents).toString() } });
       p.investor_event_ids.push(inv.id);
     }
-    if (plan.curtailment_cents > 0n) this.deps.events.append({ type: "payment.curtailment.applied", loanId: p.loan_id, aggregate: { kind: "payment", id: p.id }, actor: CASHIERING_AGENT, payload: { payment_id: p.id, amount_cents: plan.curtailment_cents.toString(), upb_after_cents: plan.next.upb_cents.toString() } });
+    if (plan.curtailment_cents > 0n) {
+      const ev = this.deps.events.append({ type: "payment.curtailment.applied", loanId: p.loan_id, aggregate: { kind: "payment", id: p.id }, actor: CASHIERING_AGENT, payload: { payment_id: p.id, amount_cents: plan.curtailment_cents.toString(), nib_cents: plan.curtailment_nib_cents.toString(), upb_after_cents: plan.next.upb_cents.toString(), nib_after_cents: ((plan.next.deferred_principal_cents ?? 0n) + (plan.next.forborne_principal_cents ?? 0n)).toString() } });
+      const seq = (this.investorSeq.get(p.loan_id) ?? 0) + 1; this.investorSeq.set(p.loan_id, seq);
+      p.investor_event_ids.push(this.deps.events.append({ type: "investor_events.created", loanId: p.loan_id, aggregate: { kind: "payment", id: p.id }, actor: CASHIERING_AGENT, causationId: ev.id,
+        payload: { type: "payment.curtailment", mode: "event", sequence: seq, effective_date: p.received_on, processed_at: this.deps.clock.now(), upb_cents: plan.next.upb_cents.toString(), nib_cents: ((plan.next.deferred_principal_cents ?? 0n) + (plan.next.forborne_principal_cents ?? 0n)).toString(), amount_cents: plan.curtailment_cents.toString() } }).id);
+    }
+    if (plan.redirected_curtailment) this.deps.events.append({ type: "notice.queued", loanId: p.loan_id, aggregate: { kind: "payment", id: p.id }, actor: CASHIERING_AGENT, payload: { template: "CURTAIL-REDIRECT-v1", payment_id: p.id, held_cents: plan.to_suspense_cents.toString() } });
     if (plan.late_charge_cents > 0n) this.deps.events.append({ type: "fee.collected", loanId: p.loan_id, aggregate: { kind: "payment", id: p.id }, actor: CASHIERING_AGENT, payload: { payment_id: p.id, fee_type: "late_charge", amount_cents: plan.late_charge_cents.toString() } });
     if (plan.installments.some((i) => i.escrow_cents > 0n)) this.deps.events.append({ type: "escrow.deposit", loanId: p.loan_id, aggregate: { kind: "payment", id: p.id }, actor: CASHIERING_AGENT, payload: { payment_id: p.id, amount_cents: plan.installments.reduce((s, i) => s + i.escrow_cents, 0n).toString() } });
     if (plan.hold) this.deps.events.append({ type: "payment.held", loanId: p.loan_id, aggregate: { kind: "payment", id: p.id }, actor: CASHIERING_AGENT, payload: { payment_id: p.id, hold: plan.hold, amount_cents: p.amount_cents.toString() } });

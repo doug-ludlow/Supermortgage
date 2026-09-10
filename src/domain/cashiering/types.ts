@@ -49,6 +49,8 @@ export interface PaymentInput {
   readonly custodial_account_id?: string;
   readonly trace_number?: string;
   readonly check_number?: string;
+  /** Portion the borrower/contractor designated as additional principal (2.4). */
+  readonly curtailment_cents?: Cents;
 }
 
 export interface Allocation {
@@ -110,6 +112,50 @@ export interface LoanCashState {
   plan_active: boolean;                          // repayment/forbearance plan (12.4/12.5)
   partial_count_12m: number;
   opted_out_of_50_rule: boolean;
+  // ---- fields read by 2.2–2.7 (optional so older fixtures stay valid; see `cashCfg`) ----
+  deferred_principal_cents?: Cents;             // non-interest-bearing (NIB) balances, 2.4 rule 4
+  forborne_principal_cents?: Cents;
+  late_30_count_12m?: number;                   // 2.2 four-condition test (ii)
+  nsf_count_12m?: number;                       // 2.2 (iii)
+  fc_referred?: boolean;                        // 13.3 referral exists
+  partial_payment_fc_risk?: boolean;            // jurisdiction_rules.partial_payment_fc_risk
+  mbs_pool?: boolean;                           // 2.4 rule 5: MBS loans cannot reapply prepayments
+  late_charge_pct?: string;                     // "5" = 5% of basis
+  late_charge_grace_days?: number;              // 15 → last timely day = due + 15
+  late_charge_cap_cents?: Cents | null;
+  late_charge_basis?: "pi" | "piti";
+  fees?: Fee[];                                 // 2.7 per-installment late-charge state + NSF fees
+  overlays?: Overlay[];                         // 2.7 rule 3 overlays in force
+  courtesy_waivers_12m?: number;
+  transfer_shield_until?: PlainDate | null;     // §1024.33(c)(1) 60-day window (1.3)
+}
+
+export type LateChargeState = "not_due" | "evaluating" | "assessed" | "accrued_suspended" | "not_assessed" | "collected" | "waived" | "reversed" | "written_off";
+
+export interface Fee {
+  readonly id: string;
+  readonly fee_type: "late_charge" | "nsf_fee";
+  readonly installment_due_date: PlainDate | null;
+  amount_cents: Cents;
+  state: LateChargeState;
+  readonly assessed_on: PlainDate;
+  readonly grace_end_on?: PlainDate;
+  suppression?: string;                        // e.g. trial_pending_waiver, bankruptcy_active
+  collected_cents: Cents;
+  waived_reason?: string;
+}
+
+export type OverlayKind = "transfer_window_60" | "forbearance_active" | "scra_reduced_rate" | "bankruptcy_active" | "repayment_plan_pending_waiver" | "trial_pending_waiver" | "foreclosure_referred" | "noe_dispute" | "posting_backlog";
+export interface Overlay { readonly kind: OverlayKind; readonly from: PlainDate; readonly to?: PlainDate | null; readonly defaulted_on?: PlainDate | null; readonly installment_due_date?: PlainDate; }
+
+/** Resolved defaults for the optional 2.2–2.7 fields. */
+export function cashCfg(s: LoanCashState) {
+  return {
+    deferred: s.deferred_principal_cents ?? 0n, forborne: s.forborne_principal_cents ?? 0n,
+    late30: s.late_30_count_12m ?? 0, nsf12: s.nsf_count_12m ?? 0, fcReferred: s.fc_referred ?? false, fcRisk: s.partial_payment_fc_risk ?? false,
+    mbs: s.mbs_pool ?? false, lcPct: s.late_charge_pct ?? "5", grace: s.late_charge_grace_days ?? 15, lcCap: s.late_charge_cap_cents ?? null, basis: s.late_charge_basis ?? "pi",
+    fees: s.fees ?? [], overlays: s.overlays ?? [], courtesy: s.courtesy_waivers_12m ?? 0, shieldUntil: s.transfer_shield_until ?? null,
+  };
 }
 
 export function instrumentProfile(instrumentDate: PlainDate): InstrumentProfile {

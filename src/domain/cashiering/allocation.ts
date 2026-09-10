@@ -6,7 +6,7 @@
 import { type PlainDate } from "../../kernel/calendar/date.ts";
 import { monthlyInterest, ratePercent } from "../../kernel/money/cents.ts";
 import type { Cents } from "../../kernel/money/cents.ts";
-import { type LoanCashState, type Allocation, type AllocationOutcome, type Designation, type InstallmentProjection, type HoldType, instrumentProfile, BUCKET_ORDER } from "./types.ts";
+import { type LoanCashState, type Allocation, type AllocationOutcome, type Designation, type InstallmentProjection, type HoldType, instrumentProfile, BUCKET_ORDER, cashCfg } from "./types.ts";
 
 export const RULE_SET = "cashiering.allocation.v1";
 export const FIFTY_RULE_MAX_SHORTFALL = 5_000n;
@@ -18,6 +18,10 @@ export interface AllocationRequest {
   readonly credited_as_of: PlainDate;
   readonly designation: Designation;
   readonly instruction_text?: string;
+  /** Explicit curtailment amount carried on the item (portal "additional principal" field, contractor addenda "PRIN n"). */
+  readonly curtailment_cents?: Cents;
+  /** 2.2 rule 4 / 2.6: applying already-held funds — overlays were evaluated when the funds were held. */
+  readonly bypass_overlays?: boolean;
 }
 
 export interface InstallmentApplication {
@@ -38,7 +42,9 @@ export interface AllocationPlan {
   readonly nsf_fee_cents: Cents;
   readonly other_fee_cents: Cents;
   readonly curtailment_cents: Cents;
+  readonly curtailment_nib_cents: Cents;             // portion applied to deferred/forborne principal (2.4 rule 4)
   readonly to_suspense_cents: Cents;                 // remainder parked (or the whole amount when held)
+  readonly redirected_curtailment: boolean;          // 2.4 rule 3: designated principal used for unpaid installments instead
   readonly hold?: HoldType | "trial" | "plan";
   readonly refused_instruction?: { text: string; reason: string; cite: string };
   readonly next: LoanCashState;
@@ -46,7 +52,7 @@ export interface AllocationPlan {
 }
 
 function cloneState(s: LoanCashState): LoanCashState {
-  return { ...s, installments: s.installments.map((i) => ({ ...i })), holds: [...s.holds] };
+  return { ...s, installments: s.installments.map((i) => ({ ...i })), holds: [...s.holds], ...(s.fees ? { fees: s.fees.map((f) => ({ ...f })) } : {}), ...(s.overlays ? { overlays: [...s.overlays] } : {}) };
 }
 
 const HOLD_OUTCOME: Record<HoldType, AllocationOutcome> = {
@@ -74,18 +80,18 @@ export function allocate(state: LoanCashState, req: AllocationRequest): Allocati
 
   // Overlays first (rule 5): holds, payoff.
   const held: AllocationPlan = {
-    outcome: "unapplied", allocations, installments: [], late_charge_cents: 0n, nsf_fee_cents: 0n, other_fee_cents: 0n, curtailment_cents: 0n, to_suspense_cents: req.amount_cents, next, rule_path: path,
+    outcome: "unapplied", allocations, installments: [], late_charge_cents: 0n, nsf_fee_cents: 0n, other_fee_cents: 0n, curtailment_cents: 0n, curtailment_nib_cents: 0n, to_suspense_cents: req.amount_cents, redirected_curtailment: false, next, rule_path: path,
     ...(refused ? { refused_instruction: refused } : {}),
   };
   if (req.designation === "payoff") { path.push("overlay.payoff→16.2"); return { ...held, outcome: "payoff_routed" }; }
-  if (state.holds.length > 0) {
+  if (!req.bypass_overlays && state.holds.length > 0) {
     const h = state.holds[0]!;
     path.push(`overlay.hold:${h}`);
     next.suspense_unapplied_cents += req.amount_cents;
     push("suspense", req.amount_cents, null, `2.1:hold:${h}`);
     return { ...held, outcome: HOLD_OUTCOME[h], hold: h };
   }
-  if (state.trial_active) { path.push("overlay.trial→2.6"); next.suspense_unapplied_cents += req.amount_cents; push("suspense", req.amount_cents, null, "2.6:trial_hold"); return { ...held, outcome: "held_trial", hold: "trial" }; }
+  if (!req.bypass_overlays && state.trial_active) { path.push("overlay.trial→2.6"); next.suspense_unapplied_cents += req.amount_cents; push("suspense", req.amount_cents, null, "2.6:trial_hold"); return { ...held, outcome: "held_trial", hold: "trial" }; }
 
   // Available funds A = payment + open suspense not under a hold.
   let pool = req.amount_cents + state.suspense_unapplied_cents;
@@ -139,17 +145,34 @@ export function allocate(state: LoanCashState, req: AllocationRequest): Allocati
       path.push("2.2:partial→suspense");
       next.suspense_unapplied_cents = pool;
       push("suspense", pool, null, "2.2:partial_hold");
-      return { outcome: "unapplied", allocations, installments: [], late_charge_cents: 0n, nsf_fee_cents: 0n, other_fee_cents: 0n, curtailment_cents: 0n, to_suspense_cents: pool, next, rule_path: path, ...(refused ? { refused_instruction: refused } : {}) };
+      return { outcome: "unapplied", allocations, installments: [], late_charge_cents: 0n, nsf_fee_cents: 0n, other_fee_cents: 0n, curtailment_cents: 0n, curtailment_nib_cents: 0n, to_suspense_cents: pool, redirected_curtailment: false, next, rule_path: path, ...(refused ? { refused_instruction: refused } : {}) };
     }
   }
 
-  // Remainder R (rule 5): curtailment if instructed, else outstanding late charges / fees, else suspense.
-  let curtailment = 0n, lc = 0n, nsf = 0n, other = 0n;
-  const principalInstruction = req.designation === "curtailment" || (!!req.instruction_text && !refused && /principal|curtail/i.test(req.instruction_text));
-  if (pool > 0n && principalInstruction) {
-    curtailment = pool; pool = 0n;
-    next.upb_cents -= curtailment;
-    push("curtailment", curtailment, null, "2.4:curtailment");
+  // Remainder R (rule 5): curtailment if designated, else outstanding late charges / fees, else suspense.
+  let curtailment = 0n, curtailmentNib = 0n, lc = 0n, nsf = 0n, other = 0n, redirected = false;
+  const principalInstruction = req.designation === "curtailment" || (req.curtailment_cents ?? 0n) > 0n || (!!req.instruction_text && !refused && /principal|curtail/i.test(req.instruction_text));
+  const stillDue = next.installments.some((i) => i.status === "due" && i.due_date <= req.received_on);
+  if (pool > 0n && principalInstruction && stillDue) {
+    // 2.4 rule 3: on a delinquent loan designated principal cures installments first; what is left is held toward the next, never curtailed.
+    redirected = true; path.push("2.4:r3:redirected_to_cure");
+  } else if (pool > 0n && principalInstruction) {
+    curtailment = req.curtailment_cents && req.curtailment_cents < pool ? req.curtailment_cents : pool;
+    pool -= curtailment;
+    // 2.4 rule 4 NIB order: amount < IB UPB → all to IB; amount ≥ IB UPB → NIB first, then IB.
+    const nib = cashCfg(next).deferred + cashCfg(next).forborne;
+    if (nib > 0n && curtailment >= next.upb_cents) {
+      curtailmentNib = curtailment < nib ? curtailment : nib;
+      let left = curtailmentNib;
+      const d = cashCfg(next).deferred, useD = left < d ? left : d; next.deferred_principal_cents = d - useD; left -= useD;
+      const f = cashCfg(next).forborne, useF = left < f ? left : f; next.forborne_principal_cents = f - useF;
+      next.upb_cents -= curtailment - curtailmentNib;
+      if (curtailmentNib) push("deferred_principal", curtailmentNib, null, "2.4:r4:nib_first");
+      if (curtailment - curtailmentNib) push("curtailment", curtailment - curtailmentNib, null, "2.4:curtailment");
+    } else {
+      next.upb_cents -= curtailment;
+      push("curtailment", curtailment, null, "2.4:curtailment");
+    }
     path.push(`remainder.curtailment:${curtailment}`);
     if (!applied.length) outcome = "curtailment";
   } else if (pool > 0n) {
@@ -163,5 +186,5 @@ export function allocate(state: LoanCashState, req: AllocationRequest): Allocati
   if (pool > 0n) { next.suspense_unapplied_cents += pool; push("suspense", pool, null, "2.1:remainder_under_p"); path.push(`remainder.suspense:${pool}`); }
   if (applied.length && applied.every((a) => a.kind === "prepaid")) outcome = "prepaid";
 
-  return { outcome, allocations, installments: applied, late_charge_cents: lc, nsf_fee_cents: nsf, other_fee_cents: other, curtailment_cents: curtailment, to_suspense_cents: pool, next, rule_path: path, ...(refused ? { refused_instruction: refused } : {}) };
+  return { outcome, allocations, installments: applied, late_charge_cents: lc, nsf_fee_cents: nsf, other_fee_cents: other, curtailment_cents: curtailment, curtailment_nib_cents: curtailmentNib, to_suspense_cents: pool, redirected_curtailment: redirected, next, rule_path: path, ...(refused ? { refused_instruction: refused } : {}) };
 }

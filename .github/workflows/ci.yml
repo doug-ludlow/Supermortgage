@@ -26,3 +26,29 @@ jobs:
           sudo apt-get install -y -q postgresql-client >/dev/null
           db/migrate.sh
           db/migrate.sh | grep -c skip
+  image:
+    # The container image the deploy workflow ships: build it, then run all three modes against Postgres.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_USER: sm, POSTGRES_PASSWORD: sm, POSTGRES_DB: supermortgage }
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U sm" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://sm:sm@localhost:5432/supermortgage
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t supermortgage:ci .
+      - name: migrate, sweep, serve
+        run: |
+          docker run --rm --network host -e DATABASE_URL supermortgage:ci migrate
+          docker run --rm --network host -e DATABASE_URL -e API_TOKEN=ci supermortgage:ci sweep
+          docker run -d --name api --network host -e DATABASE_URL -e API_TOKEN=ci -e PORT=8080 supermortgage:ci serve
+          for i in $(seq 1 30); do curl -sf http://localhost:8080/healthz >/dev/null && break; sleep 1; done
+          curl -sf http://localhost:8080/healthz
+          curl -sf http://localhost:8080/readyz
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/v1/tools)" = 401
+          curl -sf -H 'authorization: Bearer ci' http://localhost:8080/v1/tools | head -c 300; echo
+          docker logs api | tail -n 5
+          docker rm -f api

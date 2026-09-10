@@ -52,6 +52,21 @@ npm run test:db           # database-backed acceptance tests (needs Postgres; `n
 DATABASE_URL=postgresql://sm:sm@localhost/supermortgage db/migrate.sh
 ```
 
+## Hosted runtime
+
+The same tree runs as a service: `src/runtime/main.ts` is the container entrypoint (`Dockerfile`), with three modes on one image.
+
+```sh
+export DATABASE_URL=postgresql://sm:sm@localhost/supermortgage API_TOKEN=dev-token
+npm run migrate           # db/migrate.sh through the entrypoint (what the Cloud Run `migrate` job runs)
+npm start                 # HTTP API + ops console on $PORT (default 8080): GET /healthz, /readyz, /v1/tools, POST /v1/loans/{uuid}/tools/{process}/{name}
+npm run sweep             # one pass over due timers and the outbox backlog, then exit (Cloud Scheduler runs this every minute)
+```
+
+Every route but the two probes needs `Authorization: Bearer $API_TOKEN`. A tool call hydrates the loan's entity rows, events, ledger and open timers, runs through the command bus (allowlists, roles, guardrails, decision record) and commits everything in one transaction (`src/runtime/app.ts`); refusals answer 409 with the guardrail's code and citation. `INTEGRATIONS=fake` (the only mode today) wires every vendor port to its test double.
+
+Google Cloud hosting — Cloud Run, Cloud SQL, Secret Manager, a load balancer with Cloud Armor, deploys from GitHub Actions over Workload Identity Federation — is in `infra/` and documented step by step in [docs/DEPLOY.md](docs/DEPLOY.md).
+
 ## Status
 
 These numbers come from `npm run audit` (`tools/audit.py`), which measures the tree against `spec/registry/manifest.json`, the spec in its own units. They are regenerated into [docs/audit/COVERAGE.md](docs/audit/COVERAGE.md) on every run and ratcheted by `npm test` against [docs/audit/baseline.json](docs/audit/baseline.json). The platform spine (kernel, timer engine, migrations, outbox and adapters, Notice Registry, command bus, ops console, persistence) exists and is tested; the table says how much of the spec's content sits on it.

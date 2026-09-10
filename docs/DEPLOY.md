@@ -1,0 +1,288 @@
+# Deploying Supermortgage to Google Cloud (nonprod)
+
+This is the owner's runbook. It assumes you have never used Google Cloud. Follow
+the steps in order; each one tells you exactly what to click or paste.
+
+What you end up with, in one Google Cloud project:
+
+| Piece | What it is |
+|---|---|
+| Cloud Run service `supermortgage-api` | the HTTP server (`serve` mode), 1..10 instances |
+| Cloud Run job `supermortgage-migrate` | applies `db/migrations/*.sql`; run before every deploy |
+| Cloud Run job `supermortgage-sweep` | one pass over due timers and the outbox; Cloud Scheduler runs it every minute |
+| Cloud SQL (PostgreSQL 16) `supermortgage-nonprod` | the database, encrypted with a customer-managed key, daily backups + point-in-time recovery |
+| Secret Manager | `supermortgage-database-url`, `supermortgage-api-token` |
+| Artifact Registry `supermortgage` | container images built by GitHub Actions |
+| Global HTTPS load balancer + Cloud Armor | `api.supermortgage.com` and `console.supermortgage.com`, Google-managed certificate, rate limiting |
+
+Everything is created by Terraform (`infra/terraform/`) from a GitHub Actions
+workflow (`.github/workflows/deploy.yml`). The only thing you run by hand is a
+one-time bootstrap script.
+
+---
+
+## 1. Create a Google Cloud project and attach billing
+
+1. Open <https://console.cloud.google.com/projectcreate>. Sign in with the
+   Google account that should own the environment.
+2. **Project name**: `Supermortgage nonprod`. Click **Edit** next to the
+   generated project ID and set it to `supermortgage-nonprod` (project IDs are
+   global; if that one is taken, use e.g. `supermortgage-nonprod-1`). Write the
+   final ID down: it is `PROJECT_ID` everywhere below.
+3. Click **Create** and wait for the notification.
+4. Attach billing: open
+   <https://console.cloud.google.com/billing/linkedaccount> with the new
+   project selected in the top bar, click **Link a billing account**, and pick
+   (or create) one. Nothing below can be created until this is done.
+
+Rough nonprod cost with the defaults: Cloud SQL `db-custom-1-3840` zonal
+(about $50/month), one always-on Cloud Run instance (about $30/month), the load
+balancer forwarding rules (about $18/month), plus cents for the rest.
+
+## 2. Run the bootstrap script in Cloud Shell
+
+Cloud Shell is a terminal in your browser that is already logged in as you.
+
+1. Open <https://shell.cloud.google.com> (or click the `>_` icon at the top
+   right of the Cloud Console). Wait for the prompt.
+2. Paste this, replacing the project ID if yours differs, and press Enter:
+
+   ```sh
+   curl -fsSL https://raw.githubusercontent.com/doug-ludlow/Supermortgage/claude/mortgage-subservicer-builder-y9nr7e/infra/bootstrap.sh \
+     | PROJECT_ID=supermortgage-nonprod bash
+   ```
+
+   Alternative, if you prefer to see the script first:
+
+   ```sh
+   git clone -b claude/mortgage-subservicer-builder-y9nr7e https://github.com/doug-ludlow/Supermortgage.git
+   cd Supermortgage
+   PROJECT_ID=supermortgage-nonprod bash infra/bootstrap.sh
+   ```
+
+   Optional inputs: `REGION` (default `us-central1`), `GITHUB_REPO` (default
+   `doug-ludlow/Supermortgage`), `TF_STATE_BUCKET` (default
+   `<PROJECT_ID>-supermortgage-tfstate`).
+
+3. The first time, Cloud Shell asks you to **Authorize** gcloud; click it.
+4. The script takes one to two minutes. It is safe to run again if it stops
+   part-way (every step checks whether its resource already exists).
+
+What it did: enabled the Google APIs, created the Terraform state bucket,
+created the `supermortgage-deployer` service account, and set up Workload
+Identity Federation so GitHub Actions can act as that service account with no
+downloaded key file.
+
+## 3. Set the five GitHub repository variables
+
+The script ends with a block like this:
+
+```
+   Name               Value
+   -----------------  ------------------------------------------------------------
+   GCP_PROJECT_ID     supermortgage-nonprod
+   GCP_REGION         us-central1
+   GCP_WIF_PROVIDER   projects/123456789012/locations/global/workloadIdentityPools/github/providers/github
+   GCP_DEPLOYER_SA    supermortgage-deployer@supermortgage-nonprod.iam.gserviceaccount.com
+   TF_STATE_BUCKET    supermortgage-nonprod-supermortgage-tfstate
+```
+
+Open <https://github.com/doug-ludlow/Supermortgage/settings/variables/actions>,
+click **New repository variable**, and add each of the five, name and value
+exactly as printed. These are *Variables*, not *Secrets*: none of them is
+sensitive, and there are no keys to store anywhere.
+
+## 4. Run the deploy workflow
+
+Either push a commit to `main` or to
+`claude/mortgage-subservicer-builder-y9nr7e`, or run it by hand:
+
+1. Open <https://github.com/doug-ludlow/Supermortgage/actions/workflows/deploy.yml>.
+2. Click **Run workflow**, leave `environment` as `nonprod`, click the green
+   **Run workflow** button.
+
+The jobs run in order: `preflight` (checks the variables), `terraform`
+(creates everything in Google Cloud; the first run takes 15-25 minutes, mostly
+Cloud SQL), `build image`, `migrate database`, `deploy`.
+
+The `deploy` job's **Summary** (click the run, then the summary at the top)
+prints the load balancer IP and the DNS records for the next step. The
+"Smoke test" step is expected to show a warning on the first run: it cannot
+pass until DNS and the certificate are in place.
+
+## 5. Point DNS at the load balancer (GoDaddy)
+
+Only two hostnames move to Google Cloud. The apex `supermortgage.com`, `www`,
+email and anything else on the domain stay exactly where they are.
+
+1. Log in at <https://dcc.godaddy.com/manage/> (My Products), find
+   **supermortgage.com** and click **DNS** (on the cPanel-hosted product page it
+   is **Domain -> Manage DNS**).
+2. Click **Add New Record** twice and enter, using the IP from the workflow
+   summary (or `terraform output load_balancer_ip`):
+
+   | Type | Name | Value | TTL |
+   |---|---|---|---|
+   | A | `api` | `<load balancer IP>` | 600 seconds |
+   | A | `console` | `<load balancer IP>` | 600 seconds |
+
+   If an `api` or `console` record already exists, edit it instead of adding a
+   duplicate.
+3. Wait. DNS propagates in a few minutes; the Google-managed certificate then
+   provisions itself, which takes anywhere from 10 to 60 minutes. Check with:
+
+   ```sh
+   gcloud compute ssl-certificates describe supermortgage-cert \
+     --project supermortgage-nonprod --format 'value(managed.status,managed.domainStatus)'
+   ```
+
+   You want `ACTIVE` and both domains `ACTIVE`. `PROVISIONING` means keep
+   waiting; `FAILED_NOT_VISIBLE` means the DNS records are not pointing at the
+   load balancer yet.
+
+## 6. Verify
+
+From any machine:
+
+```sh
+curl -i https://api.supermortgage.com/healthz     # HTTP/2 200
+curl -i https://api.supermortgage.com/readyz      # 200 once Postgres answers
+curl -i https://api.supermortgage.com/            # 401 without a token
+```
+
+Read the API token (generated by Terraform and stored in Secret Manager) in
+Cloud Shell:
+
+```sh
+gcloud secrets versions access latest --secret supermortgage-api-token --project supermortgage-nonprod
+```
+
+and use it:
+
+```sh
+TOKEN="$(gcloud secrets versions access latest --secret supermortgage-api-token --project supermortgage-nonprod)"
+curl -H "Authorization: Bearer ${TOKEN}" https://api.supermortgage.com/
+```
+
+The console is at <https://console.supermortgage.com/> and needs the same
+bearer token.
+
+Useful commands:
+
+```sh
+# logs from the API service (last 30 minutes)
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="supermortgage-api"' \
+  --project supermortgage-nonprod --freshness 30m --limit 100 --format 'value(timestamp,textPayload,jsonPayload.msg)'
+
+# is the sweep running every minute?
+gcloud run jobs executions list --job supermortgage-sweep --region us-central1 --project supermortgage-nonprod --limit 5
+
+# database console (Cloud SQL Studio) — or connect with the Cloud SQL Auth Proxy
+gcloud sql connect supermortgage-nonprod --user sm --database supermortgage --project supermortgage-nonprod
+```
+
+## 7. What is and is not real in nonprod
+
+- **`INTEGRATIONS=fake`.** Every vendor integration (lockbox/BAI2, e-OSCAR,
+  P360/SMDU/LSDU, print-and-mail, e-vault, MERS) is a test double inside the
+  container. Nothing leaves the environment; nothing is reported to a bureau or
+  to Fannie Mae. `fake` is the only value that exists today.
+- **Do not load borrower data.** Nonprod has no data-classification controls,
+  its access is a single shared bearer token, and its logs are readable by
+  everyone with project Viewer. Use synthetic loans only.
+- **The deployer role set is broad** (`roles/editor` plus several admin roles)
+  so the first Terraform run can create everything. That is acceptable for a
+  throwaway nonprod project and not for anything holding real data.
+- **Cloud Armor WAF rules are in preview**: SQLi/XSS signatures are logged,
+  not enforced. The rate limit (300 requests/minute per IP) is enforced.
+- **Cloud SQL has a public IP with no authorized networks.** Only the Cloud
+  Run socket path (IAM-authorized, TLS-only) can reach it. Prod should not
+  have a public IP at all.
+
+### Path to prod
+
+A separate project (`supermortgage-prod`), a second run of `bootstrap.sh`
+there, and the same workflow with `environment=prod`, plus:
+
+1. Cloud SQL on private IP only (`ipv4_enabled = false`, a VPC + Private
+   Service Access, Cloud Run Direct VPC egress), `availability_type = "REGIONAL"`.
+2. IAP or the identity provider in front of `console.supermortgage.com`;
+   per-user identities in place of the shared bearer token.
+3. Narrow the deployer: drop `roles/editor`, keep only the admin roles for the
+   resource types Terraform manages, and consider a separate, read-only plan
+   identity for pull requests.
+4. CMEK on the Artifact Registry repository and on any Cloud Storage buckets
+   the application gains.
+5. Cloud Armor rules out of preview, with an allowlist for known partner IPs.
+6. Real `INTEGRATIONS` adapters, each behind its own secret and egress rule.
+7. Org policies: `iam.allowedPolicyMemberDomains`, `sql.restrictPublicIp`,
+   `compute.requireShieldedVm`, and audit-log sinks to a locked bucket.
+
+## Troubleshooting
+
+**"Billing is not enabled" from bootstrap.sh.** Step 1.4 was skipped. Link a
+billing account at
+<https://console.cloud.google.com/billing/linkedaccount?project=supermortgage-nonprod>
+and re-run the script.
+
+**Terraform fails with `constraints/iam.allowedPolicyMemberDomains`** on
+`google_cloud_run_v2_service_iam_member.public_invoker`. Your Google Cloud
+organization has the "Domain restricted sharing" policy on, which forbids
+granting `allUsers` anything. The load balancer needs the Cloud Run service to
+be invokable without an identity token (ingress is still restricted to the load
+balancer, and the application enforces the bearer token). Remedy, as an
+organization admin:
+
+```sh
+gcloud resource-manager org-policies disable-enforce constraints/iam.allowedPolicyMemberDomains \
+  --project supermortgage-nonprod
+```
+
+then re-run the workflow. (Projects created under a personal Google account
+have no organization and never hit this.)
+
+**Certificate stuck in `PROVISIONING` / `FAILED_NOT_VISIBLE`.** DNS is not
+pointing at the load balancer yet, or only one of the two names is. Check
+`dig +short api.supermortgage.com` and `dig +short console.supermortgage.com`
+both return the load balancer IP, then wait up to 60 minutes. The certificate
+retries on its own; nothing needs re-running.
+
+**Smoke test warning in the deploy job.** Same cause as above; it is
+`continue-on-error` for that reason. Re-run the workflow (or just `curl`) once
+the certificate is `ACTIVE`.
+
+**`migrate database` job fails.** Read the job's logs:
+
+```sh
+gcloud run jobs executions list --job supermortgage-migrate --region us-central1 --project supermortgage-nonprod --limit 1
+gcloud logging read 'resource.type="cloud_run_job" AND resource.labels.job_name="supermortgage-migrate"' \
+  --project supermortgage-nonprod --freshness 1h --limit 200 --format 'value(timestamp,textPayload)'
+```
+
+Common causes: a migration SQL error (fix the migration in a new file, never by
+editing an applied one), or `/readyz`-style connectivity problems, which show
+as `could not connect to server` and mean the Cloud SQL instance is still
+starting or the runtime service account lost `roles/cloudsql.client`.
+
+**Service revision fails to become ready.** Usually the image cannot read a
+secret or the database. Check
+`gcloud run services describe supermortgage-api --region us-central1 --format 'value(status.conditions)'`
+and the service logs above. `/healthz` must answer 200 within 60 seconds of
+container start or the startup probe fails.
+
+**Destroying everything.** Cloud SQL is protected against accidental
+destruction. In `infra/terraform`, authenticated as yourself in Cloud Shell:
+
+```sh
+terraform init -backend-config="bucket=supermortgage-nonprod-supermortgage-tfstate" \
+               -backend-config="prefix=supermortgage/nonprod"
+terraform apply   -var project_id=supermortgage-nonprod -var db_deletion_protection=false
+terraform destroy -var project_id=supermortgage-nonprod -var db_deletion_protection=false
+```
+
+Then delete the project itself at
+<https://console.cloud.google.com/iam-admin/settings> (**Shut down**), which
+also removes the state bucket, the deployer service account and the Workload
+Identity pool that `bootstrap.sh` created. Note that a destroyed KMS key
+cannot be recovered, so a destroyed database cannot be restored from its
+backups either.

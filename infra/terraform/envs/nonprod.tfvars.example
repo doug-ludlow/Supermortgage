@@ -1,0 +1,23 @@
+# Copy to envs/nonprod.tfvars (git-ignored) for local runs; the GitHub deploy
+# workflow passes project_id/region/environment on the command line instead.
+project_id  = "supermortgage-nonprod"
+region      = "us-central1"
+environment = "nonprod"
+
+domain           = "supermortgage.com"
+api_hostname     = "api.supermortgage.com"
+console_hostname = "console.supermortgage.com"
+
+# Leave at the placeholder for the first apply; the deploy workflow supplies
+# the real image and Terraform ignores it afterwards.
+image = "us-docker.pkg.dev/cloudrun/container/hello"
+
+db_tier                = "db-custom-1-3840"
+db_deletion_protection = true
+
+min_instances = 1
+max_instances = 10
+
+# Leave empty to let Terraform generate a 48-character token and store it in
+# Secret Manager (supermortgage-api-token).
+api_token = ""

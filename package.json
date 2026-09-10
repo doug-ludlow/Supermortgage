@@ -8,6 +8,9 @@
     "node": ">=22.18"
   },
   "scripts": {
+    "start": "node --experimental-strip-types src/runtime/main.ts serve",
+    "sweep": "node --experimental-strip-types src/runtime/main.ts sweep",
+    "migrate": "node --experimental-strip-types src/runtime/main.ts migrate",
     "test": "node --test --experimental-strip-types 'src/**/*.test.ts' && python3 tools/audit.py --check",
     "typecheck": "tsc --noEmit",
     "spec:extract": "python3 tools/extract_spec.py",

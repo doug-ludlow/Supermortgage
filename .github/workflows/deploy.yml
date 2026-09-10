@@ -1,0 +1,286 @@
+# Deploys Supermortgage to Google Cloud.
+#
+# Prerequisite (once per project): infra/bootstrap.sh, which prints the five
+# repository VARIABLES this workflow reads (vars.GCP_PROJECT_ID, vars.GCP_REGION,
+# vars.GCP_WIF_PROVIDER, vars.GCP_DEPLOYER_SA, vars.TF_STATE_BUCKET).
+# No GitHub secrets are needed: authentication is Workload Identity Federation.
+#
+# Order: preflight -> terraform -> build -> migrate -> deploy.
+name: deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to deploy (matches the Terraform state prefix)
+        required: true
+        default: nonprod
+        type: string
+  push:
+    branches:
+      - main
+      - claude/mortgage-subservicer-builder-y9nr7e
+
+permissions:
+  contents: read
+  id-token: write # required to mint the OIDC token Workload Identity Federation exchanges
+
+env:
+  ENVIRONMENT: ${{ github.event.inputs.environment || 'nonprod' }}
+  TF_VERSION: 1.9.8
+
+# One deploy per environment at a time; a newer run waits for the older one.
+concurrency:
+  group: deploy-${{ github.event.inputs.environment || 'nonprod' }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: preflight
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - name: Check the bootstrap variables are set
+        id: check
+        env:
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION }}
+          GCP_WIF_PROVIDER: ${{ vars.GCP_WIF_PROVIDER }}
+          GCP_DEPLOYER_SA: ${{ vars.GCP_DEPLOYER_SA }}
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+        run: |
+          missing=0
+          for v in GCP_PROJECT_ID GCP_REGION GCP_WIF_PROVIDER GCP_DEPLOYER_SA TF_STATE_BUCKET; do
+            if [ -z "${!v}" ]; then
+              echo "::warning::Repository variable $v is not set."
+              missing=1
+            fi
+          done
+          if [ "$missing" = 1 ]; then
+            echo "::warning::Deploy skipped: run infra/bootstrap.sh in Google Cloud Shell and set the variables it prints at https://github.com/${GITHUB_REPOSITORY}/settings/variables/actions (see docs/DEPLOY.md)."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+          echo "Deploying to project ${GCP_PROJECT_ID} (${GCP_REGION}), environment ${ENVIRONMENT}."
+
+  terraform:
+    name: terraform
+    needs: preflight
+    # Until the bootstrap variables exist the pipeline stops here, quietly, instead of failing every push.
+    if: needs.preflight.outputs.configured == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform
+    outputs:
+      artifact_repo: ${{ steps.out.outputs.artifact_repo }}
+      lb_ip: ${{ steps.out.outputs.lb_ip }}
+      sql_connection_name: ${{ steps.out.outputs.sql_connection_name }}
+      api_hostname: ${{ steps.out.outputs.api_hostname }}
+      console_hostname: ${{ steps.out.outputs.console_hostname }}
+      dns_records: ${{ steps.out.outputs.dns_records }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false # the wrapper breaks `terraform output -raw`
+
+      - name: terraform init
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="prefix=supermortgage/${ENVIRONMENT}"
+
+      - name: terraform fmt -check
+        run: terraform fmt -check -recursive -diff
+
+      - name: terraform validate
+        run: terraform validate
+
+      - name: terraform apply
+        run: |
+          terraform apply -auto-approve -input=false \
+            -var "project_id=${{ vars.GCP_PROJECT_ID }}" \
+            -var "region=${{ vars.GCP_REGION }}" \
+            -var "environment=${ENVIRONMENT}"
+
+      - name: Collect outputs
+        id: out
+        run: |
+          {
+            echo "artifact_repo=$(terraform output -raw artifact_registry_repo)"
+            echo "lb_ip=$(terraform output -raw load_balancer_ip)"
+            echo "sql_connection_name=$(terraform output -raw sql_connection_name)"
+            echo "api_hostname=$(terraform output -raw api_url | sed 's#^https://##')"
+            echo "console_hostname=$(terraform output -raw console_url | sed 's#^https://##')"
+            echo "dns_records=$(terraform output -json godaddy_dns_records | jq -c .)"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    name: build image
+    needs: terraform
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.tags.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure docker for Artifact Registry
+        run: gcloud auth configure-docker "${{ vars.GCP_REGION }}-docker.pkg.dev" --quiet
+
+      - name: Compute image tags
+        id: tags
+        env:
+          REPO: ${{ needs.terraform.outputs.artifact_repo }}
+        run: |
+          # Branch slug: lowercase, anything outside [a-z0-9._-] becomes '-', max 63 chars.
+          slug="$(echo "${GITHUB_REF_NAME}" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+//; s/-+$//' | cut -c1-63)"
+          {
+            echo "image=${REPO}/api:${GITHUB_SHA}"
+            echo "branch_image=${REPO}/api:${slug}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: docker build
+        run: |
+          docker build \
+            -t "${{ steps.tags.outputs.image }}" \
+            -t "${{ steps.tags.outputs.branch_image }}" \
+            .
+
+      - name: docker push
+        run: |
+          docker push "${{ steps.tags.outputs.image }}"
+          docker push "${{ steps.tags.outputs.branch_image }}"
+
+  migrate:
+    name: migrate database
+    needs: [terraform, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate to Google Cloud (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Point the migrate job at the new image
+        run: |
+          gcloud run jobs update supermortgage-migrate \
+            --image "${{ needs.build.outputs.image }}" \
+            --region "${{ vars.GCP_REGION }}" \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --quiet
+
+      - name: Run migrations (db/migrate.sh inside the container)
+        run: |
+          gcloud run jobs execute supermortgage-migrate \
+            --region "${{ vars.GCP_REGION }}" \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --wait
+
+  deploy:
+    name: deploy
+    needs: [terraform, build, migrate]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate to Google Cloud (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Point the sweep job at the new image
+        run: |
+          gcloud run jobs update supermortgage-sweep \
+            --image "${{ needs.build.outputs.image }}" \
+            --region "${{ vars.GCP_REGION }}" \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --quiet
+
+      - name: Deploy the API service
+        run: |
+          gcloud run deploy supermortgage-api \
+            --image "${{ needs.build.outputs.image }}" \
+            --region "${{ vars.GCP_REGION }}" \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --quiet
+
+      - name: Service URL
+        run: |
+          url="$(gcloud run services describe supermortgage-api \
+            --region "${{ vars.GCP_REGION }}" \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --format 'value(status.url)')"
+          echo "Cloud Run URL (ingress is load-balancer only, so this is not reachable directly): ${url}"
+
+      # Ingress is restricted to the load balancer, so the only honest smoke
+      # test is through it. --resolve pins the hostname to the LB IP so the
+      # test works before DNS propagates; TLS is still fully verified, which is
+      # why this step passes only once the GoDaddy A records exist AND the
+      # Google-managed certificate has finished provisioning (up to ~60 minutes
+      # after DNS). Until then it fails without failing the deploy.
+      - name: Smoke test /healthz through the load balancer
+        continue-on-error: true
+        env:
+          API_HOSTNAME: ${{ needs.terraform.outputs.api_hostname }}
+          LB_IP: ${{ needs.terraform.outputs.lb_ip }}
+        run: |
+          echo "::notice::Smoke test passes only once the GoDaddy DNS records exist and the managed certificate has provisioned (up to 60 minutes after DNS)."
+          curl --fail --silent --show-error \
+            --retry 10 --retry-delay 15 --retry-all-errors \
+            --resolve "${API_HOSTNAME}:443:${LB_IP}" \
+            "https://${API_HOSTNAME}/healthz"
+          echo
+          echo "healthz OK via ${LB_IP}"
+
+      - name: Job summary (DNS records to enter at GoDaddy)
+        env:
+          DNS_RECORDS: ${{ needs.terraform.outputs.dns_records }}
+          LB_IP: ${{ needs.terraform.outputs.lb_ip }}
+          API_HOSTNAME: ${{ needs.terraform.outputs.api_hostname }}
+          CONSOLE_HOSTNAME: ${{ needs.terraform.outputs.console_hostname }}
+          IMAGE: ${{ needs.build.outputs.image }}
+          SQL: ${{ needs.terraform.outputs.sql_connection_name }}
+        run: |
+          {
+            echo "## Supermortgage deployed (${ENVIRONMENT})"
+            echo
+            echo "- Image: \`${IMAGE}\`"
+            echo "- Cloud SQL: \`${SQL}\`"
+            echo "- Load balancer IP: \`${LB_IP}\`"
+            echo
+            echo "### DNS records to enter at GoDaddy (supermortgage.com -> DNS -> Add New Record)"
+            echo
+            echo "| Type | Name | Value | TTL |"
+            echo "|---|---|---|---|"
+            echo "${DNS_RECORDS}" | jq -r '.[] | "| \(.type) | \(.name) | \(.value) | \(.ttl) |"'
+            echo
+            echo "Once both records resolve, the managed certificate provisions (up to 60 minutes) and these answer:"
+            echo
+            echo "- https://${API_HOSTNAME}/healthz"
+            echo "- https://${CONSOLE_HOSTNAME}/"
+            echo
+            echo "API token: \`gcloud secrets versions access latest --secret supermortgage-api-token --project ${{ vars.GCP_PROJECT_ID }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,13 @@
+.git
+.github
+.claude
+node_modules
+docs
+infra
+tools
+spec/sections
+spec/*.md
+**/*.test.ts
+**/*.md
+.dockerignore
+Dockerfile

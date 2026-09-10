@@ -13,7 +13,7 @@
 import { MemoryEventStore, type DomainEvent, type Clock, systemClock } from "../../kernel/events/index.ts";
 import { MemoryLedger, type EntrySet } from "../../kernel/ledger/ledger.ts";
 import { TimerEngine, type TimerInstance, type TimerRegistry, type TimerEngineOptions } from "../../kernel/timers/index.ts";
-import type { Db } from "./client.ts";
+import type { Db, Queryable } from "./client.ts";
 import { PgEventRepository } from "./events.ts";
 import { PgLedgerRepository } from "./ledger.ts";
 import { PgTimerRepository } from "./timers.ts";
@@ -40,6 +40,8 @@ export interface UowResult<T> {
 export interface UowOptions {
   readonly clock?: Clock;
   readonly timerOptions?: Omit<TimerEngineOptions, "calendars"> & { calendars?: TimerEngineOptions["calendars"] };
+  /** Extra writes committed in the same transaction as the command's events, ledger sets, timers and decisions (the runtime's entity records and escalations). */
+  readonly commit?: (q: Queryable) => Promise<void>;
 }
 
 export class PgUnitOfWork {
@@ -83,6 +85,7 @@ export class PgUnitOfWork {
       await this.timers.save(changedTimers, q);
       const decisions: DecisionRecord[] = [];
       for (const d of queued) decisions.push(await this.decisions.record(d, q));
+      if (opts.commit) await opts.commit(q);
       return { result, events: persisted, entrySets: newSets, timers: changedTimers, decisions };
     });
   }

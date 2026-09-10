@@ -32,4 +32,12 @@ export function applyNoticeTimerOverrides(reg: TimerRegistry): void {
   o("REGZ_1026_20C_FREQ_ADJ_NOTICE_25", { trigger: "`arm.schedule.row_created{frequent_adjuster=true}`", why: "§7.2 timer table: `arm_schedule` row → notice by −25 for frequent adjusters (§1026.20(c)(2))." });
   o("REGZ_1026_20D_INITIAL_NOTICE_NOT_BEFORE_240", { trigger: "`arm.schedule.row_created{initial=true}`", why: "§7.3 timer table: `arm_schedule` (initial) → not before −240 (§1026.20(d))." });
   o("REGZ_1026_20D_INITIAL_NOTICE_210", { trigger: "`arm.schedule.row_created{initial=true}`", why: "§7.3 timer table: `arm_schedule` (initial) → deliver/mail by −210 (§1026.20(d))." });
+  // ---- satisfaction events (spec "Satisfied by" prose → event patterns) ----
+  o("REGZ_1026_41E6_CHARGEOFF_NOTICE_30", { satisfied: "`notice.sent{template=NTC_REGZ_41E6_CHARGEOFF_SUSPENSION}`", why: "§7.1 timer table: `NTC_REGZ_41E6_CHARGEOFF_SUSPENSION` sent (§1026.41(e)(6))." });
+  o("REGZ_1026_41E3IV_COUPON_DELQ_NOTICE", { satisfied: "`notice.sent{template=NTC_REGZ_41E3IV_COUPON_DELQ_NOTICE}`", why: "§7.1 timer table: `NTC_REGZ_41E3IV_COUPON_DELQ_NOTICE` sent (§1026.41(e)(3)(iv))." });
+  o("IRS_1098_EFURNISH_ACCESS_1015", { satisfied: "`portal.availability.checked{document=form_1098, available=true}`", why: "§7.1 timer table: 'portal availability check daily' through Oct 15 (Pub. 1179)." });
+  o("REGZ_1026_20C_ADJ_NOTICE_NOT_BEFORE_120", { satisfied: "`arm.notice.window_opened{kind=c}`", why: "§7.2 timer table: 'gate opens' at first_new_payment_due − 120 (§1026.20(c)(2))." });
+  o("REGZ_1026_20D_INITIAL_NOTICE_NOT_BEFORE_240", { satisfied: "`arm.notice.window_opened{kind=d}`", why: "§7.3 timer table: 'gate opens' at first_new_payment_due − 240 (§1026.20(d)(1))." });
+  o("SM_EMAIL_BOUNCE_SUSPECT_1BD", { satisfied: "`notice.sent{channel=mail, reason=bounce_fallback}`", why: "§7.4 timer table: 'paper copy mailed; consent `suspect`; re-verification invite' — the paper fallback send is the satisfying act (rule 8)." });
+  o("SM_PAYOFF_DELAY_ACK_2BD", { satisfied: "`notice.sent{template=NTC_PAYOFF_REQUEST_ACK_DELAY}`", why: "§7.6 timer table: `NTC_PAYOFF_REQUEST_ACK_DELAY` sent (reasonable-time path)." });
 }

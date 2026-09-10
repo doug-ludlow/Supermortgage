@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 2863/4597 (62.3%): tids 886/1253, tables 439/449, timers 903/1365, notices 61/248, tools 247/658, figures 327/624; processes at 100%: 40/114",
+ "brief": "spec units built 2961/4597 (64.4%): tids 921/1253, tables 439/449, timers 910/1365, notices 92/248, tools 249/658, figures 350/624; processes at 100%: 46/114",
  "totals": {
   "tids": {
    "spec": 1253,
-   "built": 886
+   "built": 921
   },
   "tables": {
    "spec": 449,
@@ -11,23 +11,23 @@
   },
   "timers": {
    "spec": 1365,
-   "built": 903
+   "built": 910
   },
   "notices": {
    "spec": 248,
-   "built": 61
+   "built": 92
   },
   "tools": {
    "spec": 658,
-   "built": 247
+   "built": 249
   },
   "figures": {
    "spec": 624,
-   "built": 327
+   "built": 350
   },
   "units": {
    "spec": 4597,
-   "built": 2863
+   "built": 2961
   }
  },
  "sections": {
@@ -69,9 +69,9 @@
   },
   "7": {
    "spec": 206,
-   "built": 108,
+   "built": 206,
    "processes": 6,
-   "done": 0
+   "done": 6
   },
   "8": {
    "spec": 131,
@@ -186,7 +186,13 @@
   "6.2",
   "6.3",
   "6.4",
-  "6.5"
+  "6.5",
+  "7.1",
+  "7.2",
+  "7.3",
+  "7.4",
+  "7.5",
+  "7.6"
  ],
  "processes": [
   {
@@ -1834,20 +1840,9 @@
    "title": "Periodic statement",
    "tids": {
     "spec": 15,
-    "built": 5,
-    "todo": 10,
-    "missing": [
-     4,
-     5,
-     6,
-     7,
-     8,
-     11,
-     12,
-     13,
-     14,
-     15
-    ]
+    "built": 15,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 9,
@@ -1856,28 +1851,14 @@
    },
    "timers": {
     "spec": 10,
-    "built": 7,
+    "built": 10,
     "armable": 10,
-    "missing": [
-     "IRS_1098_EFURNISH_ACCESS_1015",
-     "REGZ_1026_41E3IV_COUPON_DELQ_NOTICE",
-     "REGZ_1026_41E6_CHARGEOFF_NOTICE_30"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 11,
-    "built": 2,
-    "missing": [
-     "NTC_FNMA_D2_2_03_PAYMENT_REMINDER",
-     "NTC_IRS_1098",
-     "NTC_IRS_1098_CORRECTED",
-     "NTC_REGZ_41E3IV_COUPON_DELQ_NOTICE",
-     "NTC_REGZ_41E6_CHARGEOFF_SUSPENSION",
-     "NTC_REGZ_41_STMT_AVAIL_EMAIL",
-     "NTC_REGZ_41_STMT_BK12_13",
-     "NTC_REGZ_41_STMT_BK7_11",
-     "NTC_REGZ_41_STMT_TPP"
-    ]
+    "built": 11,
+    "missing": []
    },
    "tools": {
     "spec": 0,
@@ -1886,42 +1867,23 @@
    },
    "figures": {
     "spec": 11,
-    "built": 1,
-    "missing": [
-     "$1,446.79",
-     "$1,500.00",
-     "$2,334.29",
-     "$2,946.79",
-     "$233.42",
-     "$5,893.58",
-     "$6,010.29",
-     "$6,127.00",
-     "$612.50",
-     "$9,073.79"
-    ]
+    "built": 11,
+    "missing": []
    },
    "units": {
     "spec": 56,
-    "built": 24
+    "built": 56
    },
-   "pct": 42.9
+   "pct": 100.0
   },
   {
    "process": "7.2",
    "title": "ARM interest rate adjustment notice",
    "tids": {
     "spec": 14,
-    "built": 7,
-    "todo": 7,
-    "missing": [
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14
-    ]
+    "built": 14,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 5,
@@ -1930,66 +1892,39 @@
    },
    "timers": {
     "spec": 11,
-    "built": 10,
+    "built": 11,
     "armable": 11,
-    "missing": [
-     "REGZ_1026_20C_ADJ_NOTICE_NOT_BEFORE_120"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 5,
-    "built": 0,
-    "missing": [
-     "NTC_ARM_INQUIRY_INTERIM_20",
-     "NTC_FNMA_C2_1_02_BUYDOWN_STEP_90",
-     "NTC_FNMA_C2_1_02_RATE_CHANGE",
-     "NTC_FNMA_C2_2_01_ARM_CORRECTION",
-     "NTC_REGZ_20C_ARM_ADJ"
-    ]
+    "built": 5,
+    "missing": []
    },
    "tools": {
     "spec": 2,
-    "built": 0,
-    "missing": [
-     "computeArmAdjustment",
-     "verifyArmAdjustment"
-    ]
+    "built": 2,
+    "missing": []
    },
    "figures": {
     "spec": 9,
-    "built": 1,
-    "missing": [
-     "$1.00",
-     "$2,334.29",
-     "$2,802.64",
-     "$2,946.79",
-     "$3,088.94",
-     "$371,048.86",
-     "$400,000.00",
-     "$612.50"
-    ]
+    "built": 9,
+    "missing": []
    },
    "units": {
     "spec": 46,
-    "built": 23
+    "built": 46
    },
-   "pct": 50.0
+   "pct": 100.0
   },
   {
    "process": "7.3",
    "title": "ARM initial adjustment notice",
    "tids": {
     "spec": 9,
-    "built": 3,
-    "todo": 6,
-    "missing": [
-     3,
-     4,
-     5,
-     7,
-     8,
-     9
-    ]
+    "built": 9,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 2,
@@ -1998,11 +1933,9 @@
    },
    "timers": {
     "spec": 5,
-    "built": 4,
+    "built": 5,
     "armable": 5,
-    "missing": [
-     "REGZ_1026_20D_INITIAL_NOTICE_NOT_BEFORE_240"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 1,
@@ -2016,30 +1949,23 @@
    },
    "figures": {
     "spec": 3,
-    "built": 1,
-    "missing": [
-     "$2,334.29",
-     "$371,048.86"
-    ]
+    "built": 3,
+    "missing": []
    },
    "units": {
     "spec": 20,
-    "built": 11
+    "built": 20
    },
-   "pct": 55.0
+   "pct": 100.0
   },
   {
    "process": "7.4",
    "title": "E-SIGN consent for e-delivery",
    "tids": {
     "spec": 11,
-    "built": 8,
-    "todo": 3,
-    "missing": [
-     7,
-     8,
-     11
-    ]
+    "built": 11,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 4,
@@ -2048,25 +1974,14 @@
    },
    "timers": {
     "spec": 8,
-    "built": 7,
+    "built": 8,
     "armable": 8,
-    "missing": [
-     "SM_EMAIL_BOUNCE_SUSPECT_1BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 8,
-    "built": 0,
-    "missing": [
-     "NTC_EDELIVERY_BOUNCE_PAPER_RESUME",
-     "NTC_ESIGN_7001C_DISCLOSURE",
-     "NTC_ESIGN_CONSENT_CONFIRMATION",
-     "NTC_ESIGN_HWSW_CHANGE_RECONSENT",
-     "NTC_ESIGN_VERIFICATION_EMAIL",
-     "NTC_ESIGN_WITHDRAWAL_CONFIRMATION",
-     "NTC_IRS_ESTATEMENT_CONSENT_DISCLOSURE",
-     "NTC_TCPA_CONSENT_CONFIRMATION"
-    ]
+    "built": 8,
+    "missing": []
    },
    "tools": {
     "spec": 0,
@@ -2080,23 +1995,18 @@
    },
    "units": {
     "spec": 31,
-    "built": 19
+    "built": 31
    },
-   "pct": 61.3
+   "pct": 100.0
   },
   {
    "process": "7.5",
    "title": "GLBA privacy notice",
    "tids": {
     "spec": 9,
-    "built": 5,
-    "todo": 4,
-    "missing": [
-     6,
-     7,
-     8,
-     9
-    ]
+    "built": 9,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 2,
@@ -2111,14 +2021,8 @@
    },
    "notices": {
     "spec": 5,
-    "built": 0,
-    "missing": [
-     "NTC_REGP_1016_4_INITIAL",
-     "NTC_REGP_1016_5_ANNUAL",
-     "NTC_REGP_1016_8_REVISED",
-     "NTC_REGP_OPT_OUT_CONFIRMATION",
-     "NTC_STATE_CA_FIPA"
-    ]
+    "built": 5,
+    "missing": []
    },
    "tools": {
     "spec": 0,
@@ -2132,24 +2036,18 @@
    },
    "units": {
     "spec": 22,
-    "built": 13
+    "built": 22
    },
-   "pct": 59.1
+   "pct": 100.0
   },
   {
    "process": "7.6",
    "title": "Payoff statement",
    "tids": {
     "spec": 11,
-    "built": 6,
-    "todo": 5,
-    "missing": [
-     2,
-     5,
-     9,
-     10,
-     11
-    ]
+    "built": 11,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 2,
@@ -2158,21 +2056,14 @@
    },
    "timers": {
     "spec": 7,
-    "built": 6,
+    "built": 7,
     "armable": 7,
-    "missing": [
-     "SM_PAYOFF_DELAY_ACK_2BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 4,
-    "built": 0,
-    "missing": [
-     "NTC_PAYOFF_AUTHORIZATION_REQUEST",
-     "NTC_PAYOFF_REQUEST_ACK_DELAY",
-     "NTC_PAYOFF_UPDATED_STMT",
-     "NTC_REGZ_36C3_PAYOFF_STMT"
-    ]
+    "built": 4,
+    "missing": []
    },
    "tools": {
     "spec": 0,
@@ -2181,18 +2072,14 @@
    },
    "figures": {
     "spec": 7,
-    "built": 4,
-    "missing": [
-     "$1,830.00",
-     "$371,048.86",
-     "$371,602.55"
-    ]
+    "built": 7,
+    "missing": []
    },
    "units": {
     "spec": 31,
-    "built": 18
+    "built": 31
    },
-   "pct": 58.1
+   "pct": 100.0
   },
   {
    "process": "8.1",

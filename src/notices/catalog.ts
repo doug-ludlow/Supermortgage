@@ -13,6 +13,7 @@ import { publishCheck } from "./checklist.ts";
 import { SECTION_01_VERSIONS } from "./authored/section01.ts";
 import { SECTION_03_VERSIONS } from "./authored/section03.ts";
 import { SECTION_04_VERSIONS } from "./authored/section04.ts";
+import { SECTION_07_VERSIONS } from "./authored/section07.ts";
 
 interface CatalogEntry { readonly code: string; readonly owner_process: string; readonly mentions: readonly string[]; readonly context: string; }
 
@@ -53,8 +54,13 @@ const OVERRIDES: Record<string, Partial<NoticeTemplate>> = {
   NTC_REGZ_20C_ARM_ADJ: { citation: "12 CFR 1026.20(c); H-4(D)(1)/(2)" },
   NTC_REGX_39B_EARLY_INTERVENTION: { mayCombineWith: ["NTC_FNMA_D2_2_05_BSP_FORM745"], citation: "12 CFR 1024.39(b); Appendix MS-4(A)" },
   NTC_REGX_39C_EARLY_INTERVENTION_BK: { channelPolicy: "mail_only", citation: "12 CFR 1024.39(c)(1)(iii)" },
-  NTC_REGZ_41_STMT_BK12_13: { citation: "12 CFR 1026.41(f); H-30(F)" },
-  NTC_REGZ_41_STMT_BK7_11: { citation: "12 CFR 1026.41(f); H-30(E)" },
+  NTC_REGZ_41_STMT_BK12_13: { citation: "12 CFR 1026.41(f); H-30(F)", channelPolicy: "mail_only" },
+  NTC_REGZ_41_STMT_BK7_11: { citation: "12 CFR 1026.41(f); H-30(E)", channelPolicy: "mail_only" },
+  NTC_ESIGN_WITHDRAWAL_CONFIRMATION: { channelPolicy: "mail_only", citation: "15 U.S.C. 7001(c); 7.4 rule 7" },
+  NTC_EDELIVERY_BOUNCE_PAPER_RESUME: { channelPolicy: "mail_only", citation: "7.4 rule 8" },
+  NTC_ESIGN_VERIFICATION_EMAIL: { channelPolicy: "electronic_ok_without_esign", citation: "15 U.S.C. 7001(c)(1)(C)(ii)" },
+  NTC_ESIGN_CONSENT_CONFIRMATION: { channelPolicy: "electronic_ok_without_esign", citation: "15 U.S.C. 7001(c)" },
+  NTC_TCPA_CONSENT_CONFIRMATION: { channelPolicy: "electronic_ok_without_esign", citation: "47 CFR 64.1200" },
   NTC_REGZ_41_STMT_TPP: { citation: "12 CFR 1026.41(d); comment 41(d)(1)-2" },
   NTC_REGZ_41_STMT_AVAIL_EMAIL: { channelPolicy: "electronic_ok_without_esign", citation: "comment 41(c)-3" },
   INS_FPI_FIRST_MS3A: { citation: "12 CFR 1024.37(c)(2); Appendix MS-3(A)", channelPolicy: "esign_or_mail" },
@@ -223,4 +229,5 @@ export const AUTHORED_VERSIONS: readonly VersionInput[] = [
   ...SECTION_01_VERSIONS,
   ...SECTION_03_VERSIONS,
   ...SECTION_04_VERSIONS,
+  ...SECTION_07_VERSIONS,
 ];

@@ -55,13 +55,20 @@ two roots — everything else reads loans that boarding created and cash that
 cashiering posted.
 
 1. ✅ §1.1 boarding intake · ✅ §2.1 posting (+ §2.2 partials)
-2. §2.7 late charges · §2.3 ACH autodraft · §2.4 curtailments — closes the payment loop
-3. §5.1 investor events/LAR · §5.2 remittance · §6.x custodial — Fannie Mae reporting off the events 2.1 already emits
-4. §3.x escrow analysis and disbursement
-5. §11.x early intervention (the 11.1/11.2 windows boarding already seeds) · §7.x periodic statements/notices
-6. §12 loss mitigation · §13 foreclosure · §14 bankruptcy
-7. §16 payoff · §17 transfer-out · §1.2–1.7 the rest of boarding
-8. §8 credit reporting · §9/§10 insurance & MI · §15 REO/claims · §18 QC · §19 data & security (cross-cutting; parts land with each section)
+2. ✅ §2.7 late charges · §2.3 ACH autodraft · §2.4 curtailments — closes the payment loop
+3. ✅ §5.1 investor events/LAR · §5.2 remittance · §6.x custodial — Fannie Mae reporting off the events 2.1 already emits
+4. ✅ §3.x escrow analysis and disbursement
+5. ✅ §11.x early intervention (the 11.1/11.2 windows boarding already seeds) · §7.x periodic statements/notices · §4.x servicing requests
+6. ✅ §12 loss mitigation · §13 foreclosure · §14 bankruptcy
+7. ✅ §16 payoff · §17 transfer-out · §1.2–1.7 the rest of boarding
+8. ✅ §8 credit reporting · §9/§10 insurance & MI · §15 REO/claims · §18 QC · §19 data & security
+
+All 114 processes now have a domain module under `src/domain/`. What is *not*
+built yet, in the order it should land: (a) persistence for the domain tables
+each section's "Data model" subsection names (only the baseline and boarding
+schemas exist), (b) the integration adapters each section calls (e-OSCAR,
+P360/SMDU/LSDU, lockbox/BAI2, print/mail, e-vault), (c) the agent layer and
+the ops console, (d) the end-of-build audit against `docs/AUDIT-NOTES.md`.
 
 ## Adding a section
 

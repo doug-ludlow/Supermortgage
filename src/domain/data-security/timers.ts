@@ -3,6 +3,10 @@
  * lending, AI governance) timers whose spec rows are prose.
  */
 import type { TimerRegistry } from "../../kernel/timers/registry.ts";
+import { applySatisfiedOverrides_19_1 } from "./timers-19-1.ts";
+import { applySatisfiedOverrides_19_2 } from "./timers-19-2.ts";
+import { applySatisfiedOverrides_19_3 } from "./timers-19-3.ts";
+import { applySatisfiedOverrides_19_4 } from "./timers-19-4.ts";
 
 export function applyDataSecurityTimerOverrides(reg: TimerRegistry): void {
   const o = reg.override.bind(reg);
@@ -56,4 +60,6 @@ export function applyDataSecurityTimerOverrides(reg: TimerRegistry): void {
   o("SM_FAIR_SERVICING_REGRESSION_QUARTERLY", { trigger: "`period.quarter_end`", offset: "+20 calendar_days", why: "§19.4 timer table: schedule → quarterly regression at quarter end + 20 days." });
   o("SM_FAIR_SERVICING_BOARD_REPORT_365", { trigger: "`board.report.delivered{kind=security}`", offset: "annual", why: "§19.4 timer table: annual with the 19.2 board cycle." });
   o("SM_FL_DATA_QUALITY_MONTHLY", { trigger: "`period.month_end`", offset: "monthly", why: "§19.4 timer table: monthly FL data quality review." });
+  // per-process satisfaction overrides (§19.x), applied last so they win the merge
+  applySatisfiedOverrides_19_1(reg); applySatisfiedOverrides_19_2(reg); applySatisfiedOverrides_19_3(reg); applySatisfiedOverrides_19_4(reg);
 }

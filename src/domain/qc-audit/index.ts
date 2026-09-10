@@ -6,3 +6,4 @@ export * from "./form582.ts";
 export * from "./fraud.ts";
 export * from "./regab.ts";
 export * from "./networth.ts";
+export * from "./ops.ts";

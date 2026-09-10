@@ -4,6 +4,10 @@
  * anchors resolved from `jurisdiction_rules`.
  */
 import type { TimerRegistry } from "../../kernel/timers/registry.ts";
+import { applySatisfiedOverrides_16_1 } from "./timers-16-1.ts";
+import { applySatisfiedOverrides_16_2 } from "./timers-16-2.ts";
+import { applySatisfiedOverrides_16_3 } from "./timers-16-3.ts";
+import { applySatisfiedOverrides_16_4 } from "./timers-16-4.ts";
 
 export function applyPayoffTimerOverrides(reg: TimerRegistry): void {
   const o = reg.override.bind(reg);
@@ -31,4 +35,6 @@ export function applyPayoffTimerOverrides(reg: TimerRegistry): void {
   o("STATE_LIEN_RELEASE_DEADLINE", { anchorField: "statutory_release_due", offset: "0", why: "§16.3 timer table: per `jurisdiction_rules.release.deadline_days` (calendar days; no weekend roll-forward) from payoff date — computed by `16.3.statutoryReleaseDue`." });
   // ---- 16.4 MERS -----------------------------------------------------------
   o("SM_MERS_NO_DEACTIVATE_BEFORE_RELEASE_GATE", { trigger: "`mers.deactivation.requested`", evaluator: "16.4.allCountiesRecorded", why: "§16.4 timer table: `release_tasks.status ∈ {recorded, third_party_recorded}` for all counties before deactivation submit." });
+  // per-process satisfaction overrides (§16.x), applied last so they win the merge
+  applySatisfiedOverrides_16_1(reg); applySatisfiedOverrides_16_2(reg); applySatisfiedOverrides_16_3(reg); applySatisfiedOverrides_16_4(reg);
 }

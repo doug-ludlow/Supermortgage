@@ -5,6 +5,10 @@
  * domain evaluator that asserts them.
  */
 import type { TimerRegistry } from "../../kernel/timers/registry.ts";
+import { applySatisfiedOverrides_17_1 } from "./timers-17-1.ts";
+import { applySatisfiedOverrides_17_2 } from "./timers-17-2.ts";
+import { applySatisfiedOverrides_17_3 } from "./timers-17-3.ts";
+import { applySatisfiedOverrides_17_4 } from "./timers-17-4.ts";
 
 export function applyTransferTimerOverrides(reg: TimerRegistry): void {
   const o = reg.override.bind(reg);
@@ -95,4 +99,6 @@ export function applyTransferTimerOverrides(reg: TimerRegistry): void {
   o("SM_XFER_OUT_CUSTODIAL_CLOSE_60", { trigger: "`transfer.custodial_recon.acked{adjustment_window_closed=true, open_variance=false}`", why: "§17.3 timer table: `FNMA_F1_11_CUSTODIAL_RECON_5BD` satisfied and the T+30 adjustment window closed with no open variance → +60 calendar days." });
   o("SM_XFER_OUT_VENDOR_NOTICE_T1", { trigger: "`transfer.batch.approved{direction=out}`", why: "§17.3 timer table: 'same' as SM_XFER_OUT_INSURER_ENDORSEMENT_T1 → `transfer.batch.approved{direction=out}`; −1 servicer BD." });
   o("SM_XFER_OUT_TAXING_AUTHORITY_NOTICE_T1", { trigger: "`transfer.batch.approved{direction=out}`", why: "§17.3 timer table: 'same' as SM_XFER_OUT_INSURER_ENDORSEMENT_T1; −1 servicer BD." });
+  // per-process satisfaction overrides (§17.x), applied last so they win the merge
+  applySatisfiedOverrides_17_1(reg); applySatisfiedOverrides_17_2(reg); applySatisfiedOverrides_17_3(reg); applySatisfiedOverrides_17_4(reg);
 }

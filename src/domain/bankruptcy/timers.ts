@@ -3,6 +3,10 @@
  * prose.
  */
 import type { TimerRegistry } from "../../kernel/timers/registry.ts";
+import { applySatisfiedOverrides_14_1 } from "./timers-14-1.ts";
+import { applySatisfiedOverrides_14_2 } from "./timers-14-2.ts";
+import { applySatisfiedOverrides_14_3 } from "./timers-14-3.ts";
+import { applySatisfiedOverrides_14_4 } from "./timers-14-4.ts";
 
 export function applyBankruptcyTimerOverrides(reg: TimerRegistry): void {
   const o = reg.override.bind(reg);
@@ -37,6 +41,8 @@ export function applyBankruptcyTimerOverrides(reg: TimerRegistry): void {
   o("FRBP_3002_1G4_MOTION_RESPONSE_28", { trigger: "`bankruptcy.docket.event.received{kind=motion_410c13_m2}`", anchorField: "served_at", offset: "+28 calendar_days", why: "§14.2 timer table: docket `motion_410c13_m2` → response 28 (+3) calendar days (FRBP 3002.1(g)(4))." });
   o("SM_BK_3002_1_RELIEF_CEASE_CHECK", { trigger: "`bankruptcy.docket.event.received{kind=relief_order_entered}`", evaluator: "14.2.rule3002_1NoticesCeaseAfterRelief", why: "§14.2 timer table: `relief_order_entered` → Rule 3002.1 notices cease check." });
   applyBankruptcySatisfiedOverrides(reg);
+  // per-process satisfaction overrides (§14.x), applied last so they win the merge
+  applySatisfiedOverrides_14_1(reg); applySatisfiedOverrides_14_2(reg); applySatisfiedOverrides_14_3(reg); applySatisfiedOverrides_14_4(reg);
 }
 
 /** Satisfaction events / evaluators for the §14 rows whose "Satisfied by" column is prose or empty. */

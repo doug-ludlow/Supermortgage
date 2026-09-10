@@ -4,6 +4,13 @@
  * quarter anchors are `period.fiscal_year_end` / `period.quarter_end` events.
  */
 import type { TimerRegistry } from "../../kernel/timers/registry.ts";
+import { applySatisfiedOverrides_18_1 } from "./timers-18-1.ts";
+import { applySatisfiedOverrides_18_2 } from "./timers-18-2.ts";
+import { applySatisfiedOverrides_18_3 } from "./timers-18-3.ts";
+import { applySatisfiedOverrides_18_4 } from "./timers-18-4.ts";
+import { applySatisfiedOverrides_18_5 } from "./timers-18-5.ts";
+import { applySatisfiedOverrides_18_6 } from "./timers-18-6.ts";
+import { applySatisfiedOverrides_18_7 } from "./timers-18-7.ts";
 
 export function applyQcAuditTimerOverrides(reg: TimerRegistry): void {
   const o = reg.override.bind(reg);
@@ -58,4 +65,6 @@ export function applyQcAuditTimerOverrides(reg: TimerRegistry): void {
   o("SM_ATTEST_MANAGEMENT_ASSERTION_FYE_45", { trigger: "`period.fiscal_year_end`", why: "§18.6 timer table: FYE → management assertion within 45 calendar days." });
   o("SM_PARTNER_UPB_REPORT_MONTHLY_BD5", { trigger: "`period.month_end`", offset: "BD5", why: "§18.7 timer table: month-end → partner UPB report by BD5." });
   o("CSBS_PRUDENTIAL_APPLICABILITY_CHECK_Q", { trigger: "`period.quarter_end`", why: "§18.7 timer table: quarter-end → CSBS prudential standards applicability check." });
+  // per-process satisfaction overrides (§18.x), applied last so they win the merge
+  applySatisfiedOverrides_18_1(reg); applySatisfiedOverrides_18_2(reg); applySatisfiedOverrides_18_3(reg); applySatisfiedOverrides_18_4(reg); applySatisfiedOverrides_18_5(reg); applySatisfiedOverrides_18_6(reg); applySatisfiedOverrides_18_7(reg);
 }

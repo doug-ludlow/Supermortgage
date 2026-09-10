@@ -3,6 +3,10 @@
  * timers whose spec rows are prose.
  */
 import type { TimerRegistry } from "../../kernel/timers/registry.ts";
+import { applySatisfiedOverrides_15_1 } from "./timers-15-1.ts";
+import { applySatisfiedOverrides_15_2 } from "./timers-15-2.ts";
+import { applySatisfiedOverrides_15_3 } from "./timers-15-3.ts";
+import { applySatisfiedOverrides_15_4 } from "./timers-15-4.ts";
 
 export function applyReoTimerOverrides(reg: TimerRegistry): void {
   const o = reg.override.bind(reg);
@@ -68,4 +72,6 @@ export function applyReoTimerOverrides(reg: TimerRegistry): void {
   o("SM_P360_ACH_MATCH_3BD", { trigger: "`p360.claim.status_changed{status=paid}`", anchorField: "paid_at", why: "§15.2 timer table: claim `Paid` → ACH matched within 3 `business_days_fannie_et` (+2 BD tolerance)." });
   o("MI_MP_LATE_DENY_120", { trigger: "`liquidation_facts.processed{mi_insured=true}`", anchorField: "claim_anchor_date", why: "§15.3 timer table: claim_anchor_date + 120 calendar days → insurer may deny late claims (master policy)." });
   o("MI_MP_SETTLEMENT_60", { trigger: "`mi.claim.perfected`", anchorField: "perfected_at", offset: "+60 calendar_days", why: "§15.3 timer table: `perfected_at` → `settlement_days` calendar days (master policy default 60)." });
+  // per-process satisfaction overrides (§15.x), applied last so they win the merge
+  applySatisfiedOverrides_15_1(reg); applySatisfiedOverrides_15_2(reg); applySatisfiedOverrides_15_3(reg); applySatisfiedOverrides_15_4(reg);
 }

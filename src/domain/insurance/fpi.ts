@@ -48,6 +48,7 @@ export function lpiCoverage(i: LpiCoverageInput): { coverage_cents: Cents; deduc
     const diff = i.last_known_cents > i.rcv_cents ? i.last_known_cents - i.rcv_cents : i.rcv_cents - i.last_known_cents;
     if (diff * 100n <= i.rcv_cents * 15n) { cov = i.last_known_cents; basis = "last_known_within_15pct"; }
   }
+  if (cov > i.rcv_cents) { cov = i.rcv_cents; basis = "rcv_over_insurance_cap"; }     // B-2-01: never above replacement value
   if (cov < i.upb_cents && i.rcv_cents >= i.upb_cents) { cov = i.upb_cents; basis = "upb_floor"; }
   if (i.state_cap_cents !== null && cov > i.state_cap_cents) { cov = i.state_cap_cents; basis = "state_cap"; }
   return { coverage_cents: cov, deductible_cents: tierDeductible(cov), basis };

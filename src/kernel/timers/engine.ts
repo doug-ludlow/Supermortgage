@@ -149,6 +149,8 @@ export class TimerEngine {
   }
 
   all(): readonly TimerInstance[] { return this.instances; }
+  /** Hydrate persisted instances (typically the open ones for a subject) so events can satisfy them. */
+  restore(persisted: readonly TimerInstance[]): void { for (const i of persisted) if (!this.instances.some((x) => x.id === i.id)) this.instances.push(i); }
   open(): readonly TimerInstance[] { return this.instances.filter((i) => i.status === "armed" || i.status === "breached"); }
   forSubject(kind: string, id: string): readonly TimerInstance[] { return this.instances.filter((i) => i.subject.kind === kind && i.subject.id === id); }
   byCode(code: string): readonly TimerInstance[] { return this.instances.filter((i) => i.code === code); }

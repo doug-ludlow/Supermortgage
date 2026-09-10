@@ -100,6 +100,19 @@ export class MemoryLedger implements Ledger {
     return set;
   }
 
+  /** Hydrate persisted entry sets (balances and line index rebuilt; nothing re-validated — the store already did). */
+  seed(history: readonly EntrySet[]): void {
+    for (const set of history) {
+      this.entrySets.push(set);
+      for (const l of set.lines) {
+        const k = accountKey(l.account);
+        this.balances.set(k, (this.balances.get(k) ?? 0n) + l.amountCents);
+        let arr = this.lineIndex.get(k); if (!arr) { arr = []; this.lineIndex.set(k, arr); }
+        arr.push(l);
+      }
+    }
+  }
+
   /** Reversal = a new set with every line negated. Ledgers are never edited (spec: "never an edit"). */
   reverse(setId: string, effectiveDate: PlainDate, reason: string, postedAt?: string): EntrySet {
     const orig = this.entrySets.find((s) => s.id === setId);

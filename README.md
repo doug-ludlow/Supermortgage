@@ -23,6 +23,7 @@ src/kernel/               cross-cutting primitives every section builds on
   ledger/                 double-entry entry sets that must balance; reversal-not-edit
   timers/                 registry loader, offset grammar, arm/satisfy/breach engine
 src/domain/               one directory per spec section/process
+src/infra/db/             Postgres repositories + loan-scoped unit of work over db/migrations
   boarding/               §1.1 loan data intake & validation (HF/W gate, MIN, Reg X delinquency, opening ledger)
   cashiering/             §2.1 accept & post periodic payments (+ the §2.2 $50 rule)
 db/migrations/            Postgres schema (bigint cents; immutable event log, ledger, decisions)
@@ -38,6 +39,7 @@ npm install
 npm test                  # node:test, all sections
 npm run typecheck
 npm run spec:lint         # how much of the timer registry is mechanically executable
+npm run test:db           # database-backed acceptance tests (needs Postgres; `npm test` skips them when none answers)
 DATABASE_URL=postgresql://sm:sm@localhost/supermortgage db/migrate.sh
 ```
 
@@ -49,6 +51,7 @@ DATABASE_URL=postgresql://sm:sm@localhost/supermortgage db/migrate.sh
 | Kernel (money, calendars, events, FSM, ledger, timers) | ✅ tested |
 | Timer registry | ✅ 1,365 rows loaded (1,206 unique codes); 774 armable purely from the registry, the other 616 via cited overrides in each section's `timers.ts` (`src/domain/timer-overrides.ts` applies all 19; 109 are evaluator-backed gates) — 1,206/1,206 armable |
 | Postgres schema | ✅ 22 migrations, 437 tables covering every section's "Data model" subsection; append-only/immutability triggers, restricted `restricted_fl` schema |
+| Persistence layer | ✅ `src/infra/db`: `pg` client (bigint cents), repositories for `loan_events`, ledger sets/lines, `timers`, `agent_decisions`, loan fixtures; `PgUnitOfWork` hydrates a loan's history into the kernel stores, runs the synchronous domain command, and commits events + ledger + timers + decisions in one transaction. DB-backed acceptance tests (2.1-T1 end to end) via `npm run test:db` |
 | §1 Boarding & transfers in (1.1–1.7) | ✅ `src/domain/boarding`, `src/domain/transfers` |
 | §2 Cashiering (2.1–2.7) | ✅ `src/domain/cashiering` |
 | §3 Escrow (3.1–3.9) | ✅ `src/domain/escrow` |

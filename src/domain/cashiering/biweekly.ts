@@ -33,3 +33,18 @@ export function designatedPrincipalFromAddenda(addenda: string | undefined): Cen
 
 /** The 30-day return clock does not run while the arrangement is active and the loan is ≤ 30 days delinquent. */
 export function returnClockSuspended(a: Arrangement, daysDelinquent: number): boolean { return a.status === "active" && daysDelinquent <= 30; }
+
+/** 2.5 rule 3 / T4: a late charge on a contractor-timed remittance is explained with the THIRDPARTY-BIWEEKLY-INFO-v1 context the borrower already received. */
+export const THIRDPARTY_INFO_TEMPLATE = "THIRDPARTY-BIWEEKLY-INFO-v1";
+export function lateChargeExplanation(a: Arrangement, fee: { amount_cents: Cents; installment_due_date: PlainDate; grace_end_on: PlainDate }, settledOn: PlainDate): { text: string; context_template: string } {
+  return { context_template: THIRDPARTY_INFO_TEMPLATE, text: `Your ${a.contractor_company_id} remittance for the ${fee.installment_due_date} installment settled ${settledOn}, after the grace period ended ${fee.grace_end_on}; under your note a late charge of ${fee.amount_cents} cents applies. As explained in ${THIRDPARTY_INFO_TEMPLATE}, Supermortgage is not party to the arrangement and the contractor's timing is your risk; the free in-house split option is available.` };
+}
+/** 2.5 rule 6 / T7: what the voice agent says about a contractor's program — the non-endorsement statement and the free in-house option, always. */
+export const NON_ENDORSEMENT_STATEMENT = "Supermortgage does not endorse, market or receive compensation from any third-party biweekly payment program.";
+export const FREE_INHOUSE_OPTION = "You can split your payment for free with Supermortgage's in-house biweekly option; there is no fee and no third party.";
+export function contractorProgramAnswer(question: string, facts: { contractor_fee_cents?: Cents; late_charges_follow_note?: boolean } = {}): { transcript: string[]; non_endorsement: true; free_inhouse_option: true } {
+  const lines = [NON_ENDORSEMENT_STATEMENT];
+  if (facts.contractor_fee_cents !== undefined) lines.push(`The program charges you ${facts.contractor_fee_cents} cents; halves are held until a full payment accumulates, and late charges follow your note regardless of the contractor's timing.`);
+  lines.push(FREE_INHOUSE_OPTION);
+  return { transcript: [`Q: ${question}`, ...lines.map((l) => `A: ${l}`)], non_endorsement: true, free_inhouse_option: true };
+}

@@ -75,6 +75,21 @@ export function applyTransferTimerOverrides(reg: TimerRegistry): void {
     why: "§17.4 timer table: `case.noe/rfi/complaint.opened` before T — Supermortgage remains owner; 4.1/4.2 clocks unchanged." });
   o("SM_PAYOFF_REQUEST_OPEN_7BD", { trigger: "`payoff.request.received{before_transfer=true}`", why: "§17.4 timer table: payoff request received before T; +7 BD (Reg Z §1026.36(c)(3))." });
   o("SM_SII_PENDING_HANDOFF_T1", { trigger: "`case_handoffs.inventoried{case_kind=sii}`", why: "§17.4 timer table: `case_handoffs.inventoried{sii pending}`; −1 servicer BD." });
+  // ---- satisfaction: rows whose `satisfied` column is prose get the event the domain emits ----------
+  o("REGX_1024_33B3_EXCEPTION_30", { satisfied: "`notice.sent{template∈{NTC_REGX_1024_33B_HELLO_MS2, NTC_REGX_1024_33B_COMBINED_MS2}}`", why: "§1.3 timer table: 'notice mailed' — the §1024.33(b)(3) exception notice is the hello/combined MS-2 notice." });
+  o("REGX_1024_33C1_LATE_FEE_PROTECTION_60", { satisfied: "`transfer.protection_window.expired`", why: "§1.3 timer table: 'expires day 61' — the day-61 sweep emits `transfer.protection_window.expired` for the batch." });
+  o("FNMA_DTJA_RECERT_ISALE_30", { satisfied: "`custody.recert.completed{code_type=I}`", why: "§1.4 timer table: 'same' as the D-code recert — the custodian's Complete file acknowledgment." });
+  o("FNMA_F1_11_ENOTE_SERVICING_AGENT_T0", { satisfied: "`enote.eregistry.verified{servicing_agent=1009999}`", why: "§1.4 timer table: `enote.eregistry.verified{servicing_agent=Supermortgage Org ID}` — Org ID 1009999 (inbound.ts SUPERMORTGAGE_ORG_ID)." });
+  o("MERS_RULE7_LOCKOUT_WARNING_30", { satisfied: "`mers.lockout.remediated{penalties_paid=true}`", why: "§1.5 timer table: 'remediation + penalties paid'." });
+  o("REGX_1024_41K2_TRANSFEREE_ACK_10", { satisfied: "`notice.sent{template∈{NTC_REGX_41B2_ACK_INCOMPLETE, NTC_REGX_41B2_ACK_COMPLETE}}`", why: "§1.7 / 12.1: the (k)(2) acknowledgment is the §1024.41(b)(2)(i)(B) notice pair; `notice.sent` carries `template`." });
+  o("REGX_1024_41B2_ACK_5_DEEMED_T0", { satisfied: "`notice.sent{template∈{NTC_REGX_41B2_ACK_INCOMPLETE, NTC_REGX_41B2_ACK_COMPLETE}}`", why: "§1.7 timer table: 'acknowledgment sent (12.1)'." });
+  o("REGX_1024_41K3_COMPLETE_APP_EVAL_30", { satisfied: "`notice.sent{template∈{NTC_REGX_41C1_OFFER, NTC_REGX_41C1_DENIAL}}`", why: "§1.7 timer table: the §1024.41(c)(1) determination pair (12.2)." });
+  o("REGX_1024_41C1_EVAL_30_CARRYOVER", { satisfied: "`notice.sent{template∈{NTC_REGX_41C1_OFFER, NTC_REGX_41C1_DENIAL}}`", why: "§1.7 timer table: the §1024.41(c)(1) determination pair (12.2)." });
+  o("REGX_1024_41K4_APPEAL_DETERMINATION_30", { satisfied: "`notice.sent{template∈{NTC_REGX_41H4_APPEAL_GRANTED, NTC_REGX_41H4_APPEAL_DENIED}}`", why: "§1.7 timer table: the §1024.41(h)(4) appeal determination pair (12.3)." });
+  o("REGX_1024_41K5_OFFER_ACCEPTANCE_BALANCE", { satisfied: "`lossmit.offer.closed{outcome∈{accepted, rejected, expired}}`", why: "§1.7 timer table: `lossmit.offer.accepted/rejected` or expiry — one closing event with the outcome." });
+  o("REGX_1024_41H_APPEAL_WINDOW_14", { satisfied: "`lossmit.appeal_window.closed{outcome∈{appeal_received, expired}}`", why: "§1.7 timer table: 'appeal received or expiry'." });
+  o("REGX_1024_41K2_NO_FIRST_FILING_GATE", { evaluator: "1.7.noFirstFilingBeforeReasonableDate", why: "§1.7 timer table: `assertGateOpen` in `foreclosure.referral`/first-filing commands — condition-shaped, so an evaluator over {today, reasonable_date}." });
+  o("FNMA_LL_2026_01_FORBEARANCE_CUMULATIVE_12M", { evaluator: "1.7.forbearanceCumulativeWithin12Months", why: "§1.7 timer table: `assertGateOpen` on forbearance extension — cumulative ≤ 12 months unless Fannie Mae approves an exception (LL-2026-01)." });
   // ---- pseudo-trigger rows (bare tokens copied from prose) ------------------
   o("MERS_ANNUAL_REPORT_1231", { trigger: "`period.year_end`", why: "§1.5 timer table: 'calendar' — MERS annual report anchored Dec 31 each year." });
   o("SM_XFER_OUT_CUSTODIAL_CLOSE_60", { trigger: "`transfer.custodial_recon.acked{adjustment_window_closed=true, open_variance=false}`", why: "§17.3 timer table: `FNMA_F1_11_CUSTODIAL_RECON_5BD` satisfied and the T+30 adjustment window closed with no open variance → +60 calendar days." });

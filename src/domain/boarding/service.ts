@@ -186,6 +186,13 @@ export class BoardingService {
       items: this.openHardFailures(bl).map((v) => ({ rule_code: v.code, message: v.message ?? "", expected: v.expected, actual: v.actual, money_field: v.money_field })) };
   }
 
+  /** 1.5 rule 2 / W-016: warnings the partner (not the transferor) corrects go to the partner as a query; boarding proceeds. */
+  partnerQuery(batchLoanId: string): TransferorQuery {
+    const bl = this.batchLoan(batchLoanId);
+    return { batch_loan_id: bl.id, transferor_loan_number: bl.staged.transferor_loan_number, fnma_loan_number: bl.staged.fnma_loan_number,
+      items: this.openWarnings(bl).filter((v) => v.code === "W-016").map((v) => ({ rule_code: v.code, message: v.message ?? "", expected: v.expected, actual: v.actual, money_field: v.money_field })) };
+  }
+
   // ───────── waivers (every waiver needs a human; money fields need an officer) ─────────
   proposeWaiver(batchLoanId: string, ruleCode: string, actor: Actor, reason: string, evidenceDocumentIds: readonly string[] = []): WaiverResult {
     const bl = this.loans.get(batchLoanId);

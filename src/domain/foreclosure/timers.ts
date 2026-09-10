@@ -9,6 +9,8 @@ export function applyForeclosureTimerOverrides(reg: TimerRegistry): void {
   const o = reg.override.bind(reg);
   // ---- 13.1 referral timing -----------------------------------------------
   o("FNMA_E1202_NONPR_REFER_BY_120", { trigger: "`loan.delinquency.day_reached{fnma_day=90, principal_residence=false}`", anchorField: "earliest_unpaid_due_date", why: "§13.1 timer table: non-principal-residence loan reaches day 90 → refer by earliest unpaid due date +120 calendar days; suspension ladder per E-1.2-02 / E-3.2-04 applied by `13.1.referralSuspension`." });
+  o("REGX_1024_41F1_120_DAY_GATE", { evaluator: "13.1.preForeclosureReviewPeriodElapsed", why: "§13.1 timer table: `assertGateOpen` by `foreclosure.refer` / `foreclosure.first_notice.authorize` — condition-shaped over the §1024.31 delinquency counter (day 121; non-principal-residence and small-servicer exemptions)." });
+  o("REGX_1024_41G_TRIAL_PERFORMING_FC_GATE", { trigger: "`lossmit.trial.started`", evaluator: "13.2.trialPerformingNoSale", why: "§13.2 timer table: trial active and performing → no FC sale/first notice until `lossmit.agreement.defaulted`; asserted by the sale/first-notice commands." });
   // ---- 13.2 holds ----------------------------------------------------------
   o("FNMA_E3207_MAF_NOTICE_7", { evaluator: "13.2.saleAtLeast7DaysAfterMafNotice", why: "§13.2 timer table: sale must be ≥7 days after MAF notice to permit postponement (E-3.2-07)." });
   o("FNMA_E3401_EXPEDITED_REVIEW_CERT", { anchorField: "certification_window_opens_on", offset: "−1 calendar_days", why: "§13.2 timer table: complete before `foreclosure.sale.certification_window.opened` (sale − 15 days) (E-3.4-01)." });

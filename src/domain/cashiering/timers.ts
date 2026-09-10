@@ -70,4 +70,27 @@ export function applyCashieringTimerOverrides(reg: TimerRegistry): void {
   o("SM_LC_COURTESY_WAIVER_LIMIT_12M", { evaluator: "2.7.courtesyWaiverLimit", why: "§2.7 timer table: max 1 courtesy waiver per loan per rolling 12 months (policy)." });
   // ---- pseudo-trigger rows -----------------------------------------------------
   o("NOTE_6A_LATE_CHARGE_GRACE_GATE", { trigger: "`installment.due_date_reached`", anchorField: "grace_end_on", offset: "0 (rolled to the next servicer business day)", why: "§2.7 timer table: trigger 'installment `due_date`' → `installment.due_date_reached`; grace end computed as due + `late_charge_grace_days`." });
+
+  // ---- satisfaction: rows whose `satisfied` column is prose get the event the domain emits ----------
+  o("REGZ_1026_36C1III_NONCONFORMING_5CD", { satisfied: "`payment.posted`", why: "§2.1 timer table: 'posting' — `payment.posted` closes the 5-day nonconforming-credit rule." });
+  o("FNMA_LL202605_EVENT_NEXTBD_0300", { satisfied: "`investor_events.submitted`", why: "§2.1/5.1 timer table: 'submitted' — the LL-2026-05 event submission." });
+  o("FNMA_C1102_50_RULE_COUNT_12M", { evaluator: "2.2.fiftyRuleCount", why: "§2.2 timer table: 'max 3' $50-rule applications in 12 months (C-1.1-02) — a counter gate." });
+  o("SM_SUSPENSE_REEVAL_ON_TERMS_CHANGE_0", { satisfied: "`suspense.accumulation.reevaluated`", why: "§2.2 timer table: 'accumulation re-evaluated' in the same transaction as `loan_terms.activated`." });
+  o("REGE_1005_10C_STOP_PAYMENT_3BD_GATE", { satisfied: "`ach.entry.cancelled`", why: "§2.3 timer table: 'entry cancelled' (nacha.cancel_entry emits it)." });
+  o("NACHA_PRENOTE_WAIT_3BANKING_DAYS", { satisfied: "`autodraft.validation.completed{status=validated_prenote}`", why: "§2.3 timer table: 'no return → validated_prenote'." });
+  o("NACHA_R11_CORRECTED_REINITIATION_60", { satisfied: "`ach.r11.resolved{outcome∈{corrected_reinitiated, not_reinitiated}}`", why: "§2.3 timer table: 'corrected entry transmitted (or decision not to)'." });
+  o("NACHA_AUTH_RETENTION_2Y_POST_REVOCATION", { satisfied: "`retention.class_applied{class=tpsc_2y_post_revocation}`", why: "§2.3 timer table: 'retention class applied' (19.1 applies `tpsc_2y_post_revocation`)." });
+  o("NACHA_RETURN_RATE_MONTHLY_WATCH", { satisfied: "`report.produced{report=nacha_return_rate}`", why: "§2.3 timer table: 'report produced'." });
+  o("REGE_1005_10C_WRITTEN_CONFIRMATION_14", { satisfied: "`autodraft.revocation.confirmed_in_writing`", why: "§2.3 timer table: optional written confirmation of an oral revocation (default not required)." });
+  o("SM_REAMORT_FORM181_DELIVERY_10BD", { satisfied: "`custodian.delivery.evidenced{document=form_181}`", why: "§2.4 timer table: 'custodian (and eVault for eMortgages) delivery evidence'." });
+  o("SM_BIWEEKLY_HALF_STALE_45", { satisfied: "`suspense.item.closed{outcome∈{matched, applied, reclassified}}`", why: "§2.5 timer table: 'matched/applied' — the stale half is reclassified to partial_payment at day 45 (2.5-T5)." });
+  o("SM_INHOUSE_SPLIT_APPLY_ON_DUE_DATE_0", { satisfied: "`payment.posted{arrangement=inhouse_split}`", why: "§2.5 timer table: `payment.applied{credited_as_of ≤ grace end}` — the posting of the accumulated halves." });
+  o("SM_CONTRACTOR_DORMANT_60", { satisfied: "`arrangement.updated{status∈{active, ended}}`", why: "§2.5 timer table: 'new remittance or ended' — either re-activates or ends the arrangement." });
+  o("FNMA_F122_TRIAL_PAYMENT_SMDU_REPORT_1BD", { satisfied: "`smdu.trial_payment.reported`", why: "§2.6 timer table: `smdu_reported_at` (B2B ack or human_portal_task.completed) — one event either way." });
+  o("FNMA_D23206_LC_WAIVE_ON_CONVERSION_0", { satisfied: "`late_charges.all_waived{reason=trial_conversion}`", why: "§2.6 timer table: 'all late_charge fees on the loan waived' (waiveAll emits it)." });
+  o("SM_TRIAL_FAILED_FUNDS_RESOLVE_30", { satisfied: "`trial.held_funds.resolved{outcome∈{applied, successor_workout, returned}}`", why: "§2.6 timer table: 'funds applied (if ≥ PITI), applied to a successor workout, or returned'." });
+  o("NOTE_6A_LATE_CHARGE_GRACE_GATE", { evaluator: "2.7.graceGateOpen", why: "§2.7 timer table: not-before gate on the grace period — condition-shaped (run_on > grace end)." });
+  o("FNMA_D23201_FORBEARANCE_NO_ACCRUAL_GATE", { evaluator: "2.7.forbearanceNoAccrual", why: "§2.7 timer table: no accrual through plan end (or default date) — condition-shaped." });
+  o("FNMA_A2304_LC_COLLECTED_REPORT_MONTHLY", { satisfied: "`investor_events.acked{type=fees.collected}`", why: "§2.7 timer table: 'accepted' — the LAR/event carrying `fees.collected` is accepted (5.1)." });
+  o("FNMA_D2203_PAYMENT_REMINDER_CD20", { satisfied: "`notice.sent{template=NTC_FNMA_D2_2_03_PAYMENT_REMINDER}`", why: "§2.7 timer table: 'notice sent (states late charges due)' — the D2-2-03 payment reminder (7.1/11.x)." });
 }

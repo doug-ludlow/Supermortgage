@@ -123,3 +123,15 @@ export function lateFeeDisclosure(state: LoanCashState, due: PlainDate): { late_
   const basis = c.basis === "piti" ? inst.pi_cents + inst.escrow_cents : inst.pi_cents;
   return { late_fee_amount_if_unpaid: lateChargeAmount(basis, c.lcPct, c.lcCap), late_fee_date: addDays(graceEnd(due, c.grace), 1) };
 }
+
+/** 2.7-T9: note terms apply unless the state's percentage cap is stricter; a conflict is flagged at boarding and the lower cap applied.
+ *  The state grace figure is carried for the jurisdiction table but not enforced against the note (spec 2.7-T9: 4%/10 applies under a 5%/15 cap; the state table is [UNVERIFIED]). */
+export function lateChargeTerms(note: { pct: string; grace_days: number }, state: { max_pct: string; min_grace_days: number; state: string } | null): { pct: string; grace_days: number; conflict: null | { state: string; note: typeof note; cap: string; applied: "lower_cap" } } {
+  if (!state) return { pct: note.pct, grace_days: note.grace_days, conflict: null };
+  if (Decimal.parse(note.pct).cmp(Decimal.parse(state.max_pct)) <= 0) return { pct: note.pct, grace_days: note.grace_days, conflict: null };
+  return { pct: state.max_pct, grace_days: note.grace_days, conflict: { state: state.state, note, cap: `${state.max_pct}%/${state.min_grace_days} days`, applied: "lower_cap" } };
+}
+/** 2.7-T13: late charges collected in a period — the `fees.collected` figure 5.1 carries on the period's LAR/event. */
+export function collectedForPeriod(fees: readonly Fee[], period: string): Cents {
+  return fees.filter((f) => f.fee_type === "late_charge" && f.collected_on !== undefined && f.collected_on !== null && String(f.collected_on).startsWith(period)).reduce((s, f) => s + (f.collected_cents ?? 0n), 0n);
+}

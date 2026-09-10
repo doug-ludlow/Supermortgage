@@ -142,6 +142,7 @@ export interface Fee {
   readonly grace_end_on?: PlainDate;
   suppression?: string;                        // e.g. trial_pending_waiver, bankruptcy_active
   collected_cents: Cents;
+  collected_on?: PlainDate | null;             // date the charge was collected (2.7-T13: Σ collected per period → fees.collected)
   waived_reason?: string;
 }
 

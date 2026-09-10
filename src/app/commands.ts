@@ -61,7 +61,9 @@ export class CommandBus {
     const now = opts.now ?? uow.clock.now();
     const ctx: CommandContext = { ...uow, actor, now, ...(opts.run ? { run: opts.run } : {}) };
     const refuse = (code: string, citation: string, reason: string): never => {
-      uow.events.append({ type: "command.refused", loanId: uow.loanId, actor, payload: { command: cmd.name, code, citation, reason } });
+      const ref = input as { paymentId?: unknown; id?: unknown; batchLoanId?: unknown; noticeId?: unknown } | undefined;
+      const subjectId = ref?.paymentId ?? ref?.id ?? ref?.batchLoanId ?? ref?.noticeId ?? null;
+      uow.events.append({ type: "command.refused", loanId: uow.loanId, actor, payload: { command: cmd.name, code, citation, reason, subject_id: subjectId === null ? null : String(subjectId) } });
       throw new CommandRefused(cmd.name, code, citation, reason);
     };
     // 1. AI path gates

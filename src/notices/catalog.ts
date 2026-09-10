@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { NoticeRegistry, type NoticeTemplate, type ChannelPolicy, type ContentRule, type VersionInput } from "./registry.ts";
 import { plainDate as D } from "../kernel/calendar/date.ts";
 import { publishCheck } from "./checklist.ts";
+import { SECTION_01_VERSIONS } from "./authored/section01.ts";
 
 interface CatalogEntry { readonly code: string; readonly owner_process: string; readonly mentions: readonly string[]; readonly context: string; }
 
@@ -216,4 +217,5 @@ export const AUTHORED_VERSIONS: readonly VersionInput[] = [
   V("NTC_REGX_39B_EARLY_INTERVENTION", EI_SOURCE, EI_RULES, EI_SAMPLE, "regx.early_intervention.2016", "Appendix MS-4(A)"),
   V("NTC_REGZ_20D_ARM_INITIAL", ARM_D_SOURCE, ARM_D_RULES, ARM_D_SAMPLE, "regz.arm_notices.2013", "H-4(D)(3)"),
   V("NTC_REGX_41B2_ACK_INCOMPLETE", ACK_SOURCE, ACK_RULES, ACK_SAMPLE, "regx.lossmit.2013", "12.1 rule 5 worked example"),
+  ...SECTION_01_VERSIONS,
 ];

@@ -11,7 +11,7 @@ import { parseBai2, lockboxItems, type Bai2File, type LockboxItem } from "./code
 import { parseAchReturns, type AchReturn } from "./codecs/nacha.ts";
 
 export interface LockboxFile { readonly name: string; readonly content: string; readonly receivedAt: string; }
-export interface LockboxIngest { readonly fileHash: string; readonly status: "ingested" | "duplicate" | "changed_items"; readonly items: readonly LockboxItem[]; readonly changed: readonly string[]; readonly file: Bai2File; }
+export interface LockboxIngest { readonly fileHash: string; readonly status: "ingested" | "duplicate" | "changed_items"; readonly items: readonly LockboxItem[]; readonly changed: readonly string[]; readonly duplicates: readonly string[]; readonly file: Bai2File; }
 export interface LockboxPort {
   /** Files posted since the last fetch (SFTP/PGP in production). */
   fetch(now: string): Promise<readonly LockboxFile[]>;
@@ -19,25 +19,30 @@ export interface LockboxPort {
 
 export class LockboxIngestor {
   private readonly seen = new Map<string, Map<string, string>>();   // batchId → itemKey → item hash
+  private readonly imagesSeen = new Map<string, string>();           // item hash (amount|scanline|bank ref) → first key: the same image in a later file is a duplicate
   private readonly files = new Set<string>();
   ingest(content: string): LockboxIngest {
     const fileHash = createHash("sha256").update(content).digest("hex");
     const file = parseBai2(content);
     const items = lockboxItems(file);
-    if (this.files.has(fileHash)) return { fileHash, status: "duplicate", items: [], changed: [], file };
-    const changed: string[] = [];
+    if (this.files.has(fileHash)) return { fileHash, status: "duplicate", items: [], changed: [], duplicates: items.map((it) => `${it.batchId}#${it.sequence}`), file };
+    const changed: string[] = []; const duplicates: string[] = [];
     const fresh: LockboxItem[] = [];
     for (const it of items) {
       const key = `${it.batchId}#${it.sequence}`;
       const h = `${it.amountCents}|${it.scanline}|${it.bankReference}`;
       let batch = this.seen.get(it.batchId); if (!batch) { batch = new Map(); this.seen.set(it.batchId, batch); }
       const prev = batch.get(key);
-      if (prev === undefined) { batch.set(key, h); fresh.push(it); }
+      if (prev === undefined) {
+        if (this.imagesSeen.has(h)) { duplicates.push(key); continue; }   // same image resubmitted in a later file (2.2-T11)
+        batch.set(key, h); this.imagesSeen.set(h, key); fresh.push(it);
+      }
       else if (prev !== h) changed.push(key);
+      else duplicates.push(key);
     }
     this.files.add(fileHash);
-    if (changed.length) return { fileHash, status: "changed_items", items: fresh, changed, file };
-    return { fileHash, status: "ingested", items: fresh, changed: [], file };
+    if (changed.length) return { fileHash, status: "changed_items", items: fresh, changed, duplicates, file };
+    return { fileHash, status: "ingested", items: fresh, changed: [], duplicates, file };
   }
 }
 

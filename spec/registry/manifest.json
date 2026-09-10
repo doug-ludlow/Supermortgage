@@ -755,8 +755,7 @@
    "autodraft_enrollments",
    "autodraft_notices",
    "consents",
-   "fraud_monitor_findings",
-   "tpsc_2y_post_revocation"
+   "fraud_monitor_findings"
   ],
   "timers": [
    "FNMA_C1103_DRAFT_BY_PENALTY_FREE_DATE_GATE",

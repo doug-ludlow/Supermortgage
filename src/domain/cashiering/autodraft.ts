@@ -59,6 +59,7 @@ export interface Enrollment {
   readonly id: string; readonly loan_id: string; status: EnrollmentStatus; authorization: Authorization; draft_day: number;
   extra_principal_cents: Cents; include_fees: boolean; next_draft_on: PlainDate | null; validation_status: "pending" | "validated" | "failed";
   reinitiations: PlainDate[]; returns_on_current_installment: number; last_debit_cents: Cents | null; notices: { template: string; sent_on: PlainDate; amount_cents: Cents; debit_on: PlainDate }[];
+  terminated_on?: PlainDate; termination_reason?: "transfer_out" | "borrower" | "returns" | "payoff";
 }
 
 /** 2.3 rule 3: chosen day 1–16 and never later than due + grace (C-1.1-03). */
@@ -132,4 +133,25 @@ export function unauthorizedReturnRateAlert(unauthorizedReturns: number, debits:
 
 export function newEnrollment(loanId: string, a: Authorization, draftDay: number, extra: Cents = 0n): Enrollment {
   return { id: randomUUID(), loan_id: loanId, status: "requested", authorization: a, draft_day: draftDay, extra_principal_cents: extra, include_fees: false, next_draft_on: null, validation_status: "pending", reinitiations: [], returns_on_current_installment: 0, last_debit_cents: null, notices: [] };
+}
+
+/** 2.3-T10: on a voice/chat enrollment the AI disclosure must be logged before any account data is requested; the recording and the written confirmation are linked to the consent. */
+export interface TranscriptEvent { readonly at: string; readonly kind: "ai_disclosure" | "human_offered" | "account_data_requested" | "authorization_read" | "consent_given" | "other"; readonly text?: string; }
+export function voiceEnrollmentEvidence(transcript: readonly TranscriptEvent[], links: { recording_id: string | null; written_confirmation_id: string | null }): { ok: boolean; disclosure_before_account_data: boolean; problems: string[]; consent_links: { recording_id: string | null; written_confirmation_id: string | null } } {
+  const sorted = [...transcript].sort((a, b) => (a.at < b.at ? -1 : 1));
+  const firstDisclosure = sorted.findIndex((e) => e.kind === "ai_disclosure");
+  const firstAccount = sorted.findIndex((e) => e.kind === "account_data_requested");
+  const before = firstDisclosure >= 0 && (firstAccount < 0 || firstDisclosure < firstAccount);
+  const problems: string[] = [];
+  if (!before) problems.push("AI disclosure must be logged before any account data is requested");
+  if (!sorted.some((e) => e.kind === "human_offered")) problems.push("a human must be offered at the start of every voice/chat enrollment");
+  if (!links.recording_id) problems.push("recording not linked to the consent");
+  if (!links.written_confirmation_id) problems.push("written confirmation not linked to the consent");
+  return { ok: problems.length === 0, disclosure_before_account_data: before, problems, consent_links: links };
+}
+
+/** 2.3-T11: a transfer-out cutover terminates the enrollment; no file built after the cutover may contain the loan. */
+export function terminateOnTransferOut(e: Enrollment, cutoverOn: PlainDate): Enrollment { e.status = "terminated"; e.next_draft_on = null; e.terminated_on = cutoverOn; e.termination_reason = "transfer_out"; return e; }
+export function fileLoans(enrollments: readonly Enrollment[], buildOn: PlainDate): string[] {
+  return enrollments.filter((e) => e.status === "active" && !(e.terminated_on && e.terminated_on <= buildOn)).map((e) => e.loan_id);
 }

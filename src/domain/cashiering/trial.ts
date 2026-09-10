@@ -73,3 +73,17 @@ export function bookingGate(state: LoanCashState): { ok: true } | { ok: false; r
 }
 
 export function trialMonthFor(trial: TrialOverlay, d: PlainDate): TrialMonth | undefined { const { y, m } = parts(d); return trial.months.find((t) => t.due_on.startsWith(`${y}-${String(m).padStart(2, "0")}`)); }
+
+/** 2.6 edge case / T7: a returned trial item reduces the month's `received_cents`; the borrower is contacted the same day so replacement funds can arrive before month-end. */
+export function trialReturn(trial: TrialOverlay, amount: Cents, returnedOn: PlainDate): { trial_month: TrialMonth | null; contact_borrower_on: PlainDate; month_short_cents: Cents } {
+  const tm = trial.months.find((m) => monthOf(m.due_on) === monthOf(returnedOn)) ?? null;
+  if (tm) { tm.received_cents -= amount; if (tm.received_cents < tm.amount_cents && tm.status === "satisfied") tm.status = "pending"; }
+  trial.held_cents -= amount;
+  return { trial_month: tm, contact_borrower_on: returnedOn, month_short_cents: tm ? (tm.amount_cents > tm.received_cents ? tm.amount_cents - tm.received_cents : 0n) : 0n };
+}
+/** 2.6-T5: held trial funds are disclosed on the periodic statement with instructions (§1026.41(d)(3)/(d)(5)). */
+export function trialStatementDisclosure(trial: TrialOverlay): { suspense_held_cents: Cents; suspense_instructions: string } {
+  const next = trial.months.find((m) => m.status === "pending");
+  const need = next ? next.amount_cents - next.received_cents : 0n;
+  return { suspense_held_cents: trial.held_cents, suspense_instructions: `We are holding ${trial.held_cents} cents received under your trial period plan. ${need > 0n ? `We need ${need} cents more to satisfy the trial payment due ${next!.due_on}.` : "Your current trial payment is satisfied."} Funds are applied when the trial completes or a full contractual payment accumulates.` };
+}

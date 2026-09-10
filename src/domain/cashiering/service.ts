@@ -65,7 +65,12 @@ export class CashieringService {
     assertCreditedAsOfPermitted(dates.received_on, dates.credited_as_of, dates.conforming);
     const key = idempotencyKey(input, dates.received_on);
     const existing = this.byIdem.get(key);
-    if (existing) return { payment: this.payment(existing), duplicate: true };
+    if (existing) {
+      // 2.2-T11: a resubmitted item is rejected as a duplicate and the exception is logged, never posted twice.
+      this.deps.events.append({ type: "payment.duplicate.rejected", ...(input.loan_id ? { loanId: input.loan_id } : {}), aggregate: { kind: "payment", id: existing }, actor: CASHIERING_AGENT,
+        payload: { payment_id: existing, idempotency_key: key, channel: input.channel, amount_cents: input.amount_cents.toString(), source_item_id: input.source_item_id ?? null, exception: "duplicate_item" } });
+      return { payment: this.payment(existing), duplicate: true };
+    }
     const { loan_id, ...rest } = input;
     const p: Payment = { ...rest, ...(loan_id !== undefined ? { loan_id } : {}), id: randomUUID(), idempotency_key: key, ...dates, status: "received", allocations: [], ledger_entry_set_ids: [], investor_event_ids: [], decision_ids: [] };
     this.payments.set(p.id, p); this.byIdem.set(key, p.id);

@@ -5,8 +5,8 @@
   T-ids     acceptance tests: a T-id is implemented when a non-todo node:test names it ("2.1-T3: ...").
   tables    Data-model tables that a migration creates.
   timers    unique timer codes the engine can arm AND satisfy (tools/lint-registry.ts --json).
-  notices   NTC_/INS_ codes with an authored template version (src/notices/catalog.ts).
-  tools     agent tools registered as commands on the bus (src/app/catalog.ts, "<agent>.<tool>").
+  notices   NTC_/INS_ codes with an authored template version (src/notices/**, V("CODE", …)).
+  tools     agent tools registered on the bus for the process (src/app/tools/*, spec tool string verbatim).
   figures   worked-example money figures from "Business rules" that a test of the section reproduces.
 
   python3 tools/audit.py              write docs/audit/coverage.json + COVERAGE.md, print the summary
@@ -48,8 +48,9 @@ created = set(re.findall(r'CREATE (?:TABLE|VIEW)\s+(?:IF NOT EXISTS\s+)?(?:restr
 lint = json.loads(subprocess.run(['node', '--experimental-strip-types', 'tools/lint-registry.ts', '--json'], cwd=root, capture_output=True, text=True, check=True).stdout)
 timer_ok = {t['code'] for t in lint if t['armable'] and t['satisfiable']}
 timer_armable = {t['code'] for t in lint if t['armable']}
-authored = set(re.findall(r'V\("([A-Z0-9_]+)"', read(os.path.join(root, 'src/notices/catalog.ts'))))
-commands = set(re.findall(r'name: "([a-z\-]+\.[A-Za-z]+)"', read(os.path.join(root, 'src/app/catalog.ts'))))
+authored = set(re.findall(r'\bV\("([A-Z0-9_]+)"', '\n'.join(read(f) for f in glob.glob(os.path.join(root, 'src/notices/**/*.ts'), recursive=True) if not f.endswith('.test.ts'))))
+# tools on the bus: (process, spec tool string) pairs that src/app/tools registers (tools/list-tools.ts)
+bus_tools = {(t['process'], t['name']) for t in json.loads(subprocess.run(['node', '--experimental-strip-types', 'tools/list-tools.ts'], cwd=root, capture_output=True, text=True, check=True).stdout)}
 def cents(s): return int(round(float(s.replace('$', '').replace(',', '')) * 100))
 
 rows = []
@@ -61,7 +62,7 @@ for p in manifest:
     tables_ok = [n for n in p['tables'] if n in created or n + 's' in created]
     timers_ok = [c for c in p['timers'] if c in timer_ok]
     notices_ok = [c for c in p['notices'] if c in authored]
-    tools_ok = [t for t in p['tools'] if f"{p['agent']}.{t}" in commands]
+    tools_ok = [t for t in p['tools'] if (pid, t) in bus_tools]
     body = read(os.path.join(root, 'spec', p['path']))
     m = re.search(r'#### Business rules(.*?)(?=\n#### )', body, re.S)
     figs = sorted({f for f in re.findall(r'\$[\d,]{1,12}\.\d{2}', m.group(1) if m else '')})

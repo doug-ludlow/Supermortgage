@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 3176/4584 (69.3%): tids 945/1253, tables 440/449, timers 973/1365, notices 116/235, tools 312/658, figures 390/624; processes at 100%: 58/114",
+ "brief": "spec units built 3271/4584 (71.4%): tids 968/1253, tables 440/449, timers 983/1365, notices 129/235, tools 345/658, figures 406/624; processes at 100%: 64/114",
  "totals": {
   "tids": {
    "spec": 1253,
-   "built": 945
+   "built": 968
   },
   "tables": {
    "spec": 449,
@@ -11,23 +11,23 @@
   },
   "timers": {
    "spec": 1365,
-   "built": 973
+   "built": 983
   },
   "notices": {
    "spec": 235,
-   "built": 116
+   "built": 129
   },
   "tools": {
    "spec": 658,
-   "built": 312
+   "built": 345
   },
   "figures": {
    "spec": 624,
-   "built": 390
+   "built": 406
   },
   "units": {
    "spec": 4584,
-   "built": 3176
+   "built": 3271
   }
  },
  "sections": {
@@ -87,9 +87,9 @@
   },
   "10": {
    "spec": 198,
-   "built": 103,
+   "built": 198,
    "processes": 6,
-   "done": 0
+   "done": 6
   },
   "11": {
    "spec": 252,
@@ -204,7 +204,13 @@
   "9.6",
   "9.7",
   "9.8",
-  "9.9"
+  "9.9",
+  "10.1",
+  "10.2",
+  "10.3",
+  "10.4",
+  "10.5",
+  "10.6"
  ],
  "processes": [
   {
@@ -2590,13 +2596,9 @@
    "title": "Borrower-requested cancellation @80% LTV",
    "tids": {
     "spec": 12,
-    "built": 9,
-    "todo": 3,
-    "missing": [
-     3,
-     7,
-     8
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 6,
@@ -2605,69 +2607,39 @@
    },
    "timers": {
     "spec": 13,
-    "built": 10,
+    "built": 13,
     "armable": 13,
-    "missing": [
-     "FNMA_F102_VALUATION_FEE_GATE",
-     "MN_47_207_RESPONSE_30",
-     "SM_MI_INSURER_CANCEL_TARGET_2BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "NTC_HPA_4902A_ACK_EVIDENCE",
-     "NTC_HPA_4904A_CANCELLED",
-     "NTC_HPA_4904B_DENIAL"
-    ]
+    "built": 3,
+    "missing": []
    },
    "tools": {
     "spec": 10,
-    "built": 0,
-    "missing": [
-     "pmi.*",
-     "smdu.*",
-     "mi_insurer.cancel",
-     "notices.render/send",
-     "escrow.interim_analysis.request",
-     "ledger.post",
-     "investor_events.emit",
-     "case.*",
-     "contacts.log",
-     "documents.store"
-    ]
+    "built": 10,
+    "missing": []
    },
    "figures": {
     "spec": 7,
-    "built": 5,
-    "missing": [
-     "$2,401.86",
-     "$370,522.40"
-    ]
+    "built": 7,
+    "missing": []
    },
    "units": {
     "spec": 51,
-    "built": 30
+    "built": 51
    },
-   "pct": 58.8
+   "pct": 100.0
   },
   {
    "process": "10.2",
    "title": "Automatic termination @78% LTV",
    "tids": {
     "spec": 11,
-    "built": 4,
-    "todo": 7,
-    "missing": [
-     1,
-     2,
-     3,
-     6,
-     7,
-     8,
-     11
-    ]
+    "built": 11,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 1,
@@ -2676,60 +2648,39 @@
    },
    "timers": {
     "spec": 12,
-    "built": 11,
+    "built": 12,
     "armable": 12,
-    "missing": [
-     "SM_MI_LAR89_INTERNAL_TARGET_NEXTBD_2000"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 2,
-    "built": 0,
-    "missing": [
-     "NTC_HPA_4904B_AUTO_NOT_CURRENT",
-     "NTC_HPA_4905C2_LPMI_OPTIONS"
-    ]
+    "built": 2,
+    "missing": []
    },
    "tools": {
     "spec": 7,
-    "built": 0,
-    "missing": [
-     "pmi.schedule.rebuild",
-     "pmi.terminate",
-     "notices.*",
-     "escrow.interim_analysis.request",
-     "investor_events.emit",
-     "mi_insurer.cancel",
-     "ledger.post"
-    ]
+    "built": 7,
+    "missing": []
    },
    "figures": {
     "spec": 6,
-    "built": 1,
-    "missing": [
-     "$1,873.46",
-     "$2,157.60",
-     "$2,596.45",
-     "$312,000.00",
-     "$351,350.17"
-    ]
+    "built": 6,
+    "missing": []
    },
    "units": {
     "spec": 39,
-    "built": 17
+    "built": 39
    },
-   "pct": 43.6
+   "pct": 100.0
   },
   {
    "process": "10.3",
    "title": "Final termination @ midpoint",
    "tids": {
     "spec": 7,
-    "built": 6,
-    "todo": 1,
-    "missing": [
-     7
-    ]
+    "built": 7,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 0,
@@ -2754,33 +2705,23 @@
    },
    "figures": {
     "spec": 2,
-    "built": 1,
-    "missing": [
-     "$2,833.18"
-    ]
+    "built": 2,
+    "missing": []
    },
    "units": {
     "spec": 14,
-    "built": 12
+    "built": 14
    },
-   "pct": 85.7
+   "pct": 100.0
   },
   {
    "process": "10.4",
    "title": "Annual PMI disclosure",
    "tids": {
     "spec": 9,
-    "built": 2,
-    "todo": 7,
-    "missing": [
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     9
-    ]
+    "built": 9,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 1,
@@ -2789,59 +2730,39 @@
    },
    "timers": {
     "spec": 6,
-    "built": 4,
+    "built": 6,
     "armable": 6,
-    "missing": [
-     "CA_2954_6_NOTICE_WITH_STATEMENT",
-     "MN_47_207_ANNUAL_NOTICE_12M"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 5,
-    "built": 0,
-    "missing": [
-     "NTC_FNMA_MI_ANNUAL_INFO",
-     "NTC_HPA_4903A3_ANNUAL",
-     "NTC_HPA_4903A3_ANNUAL_CA",
-     "NTC_HPA_4903A3_ANNUAL_MN",
-     "NTC_HPA_4903B_ANNUAL_LEGACY"
-    ]
+    "built": 5,
+    "missing": []
    },
    "tools": {
     "spec": 4,
-    "built": 0,
-    "missing": [
-     "notices.compose/send",
-     "pmi.projection",
-     "consents.check",
-     "documents.store"
-    ]
+    "built": 4,
+    "missing": []
    },
    "figures": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "$365,400.00"
-    ]
+    "built": 1,
+    "missing": []
    },
    "units": {
     "spec": 26,
-    "built": 7
+    "built": 26
    },
-   "pct": 26.9
+   "pct": 100.0
   },
   {
    "process": "10.5",
    "title": "Unearned premium refund",
    "tids": {
     "spec": 10,
-    "built": 7,
-    "todo": 3,
-    "missing": [
-     4,
-     9,
-     10
-    ]
+    "built": 10,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 1,
@@ -2850,62 +2771,39 @@
    },
    "timers": {
     "spec": 7,
-    "built": 5,
+    "built": 7,
     "armable": 7,
-    "missing": [
-     "LL_2026_05_ESCROW_EVENT_3AM",
-     "SM_MI_REFUND_VARIANCE_5BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "NTC_MI_REFUND_ADVICE"
-    ]
+    "built": 1,
+    "missing": []
    },
    "tools": {
     "spec": 7,
-    "built": 0,
-    "missing": [
-     "pmi.refund.estimate",
-     "ledger.post",
-     "disbursements.issue",
-     "custodial.match",
-     "mi_insurer.refund_status",
-     "escrow.interim_analysis.request",
-     "notices.*"
-    ]
+    "built": 7,
+    "missing": []
    },
    "figures": {
     "spec": 11,
-    "built": 5,
-    "missing": [
-     "$114.00",
-     "$2,701.86",
-     "$2,891.86",
-     "$76.00",
-     "$868.27",
-     "$950.00"
-    ]
+    "built": 11,
+    "missing": []
    },
    "units": {
     "spec": 37,
-    "built": 18
+    "built": 37
    },
-   "pct": 48.6
+   "pct": 100.0
   },
   {
    "process": "10.6",
    "title": "Denial notice",
    "tids": {
     "spec": 10,
-    "built": 8,
-    "todo": 2,
-    "missing": [
-     6,
-     10
-    ]
+    "built": 10,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 1,
@@ -2914,44 +2812,30 @@
    },
    "timers": {
     "spec": 8,
-    "built": 6,
+    "built": 8,
     "armable": 8,
-    "missing": [
-     "MN_47_207_RESPONSE_30",
-     "SM_MI_DENIAL_SEND_5BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 2,
-    "built": 0,
-    "missing": [
-     "NTC_MI_CASE_CLOSED",
-     "NTC_MI_INFO_REQUEST"
-    ]
+    "built": 2,
+    "missing": []
    },
    "tools": {
     "spec": 5,
-    "built": 0,
-    "missing": [
-     "notices.*",
-     "pmi.evaluation.get",
-     "case.noe.open",
-     "smdu.valuation.appeal",
-     "documents.deliver"
-    ]
+    "built": 5,
+    "missing": []
    },
    "figures": {
     "spec": 5,
-    "built": 4,
-    "missing": [
-     "$370,522.40"
-    ]
+    "built": 5,
+    "missing": []
    },
    "units": {
     "spec": 31,
-    "built": 19
+    "built": 31
    },
-   "pct": 61.3
+   "pct": 100.0
   },
   {
    "process": "11.1",

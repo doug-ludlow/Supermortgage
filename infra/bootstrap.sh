@@ -106,6 +106,13 @@ else
     --display-name "Supermortgage deployer (GitHub Actions via Workload Identity Federation)"
   ok "service account created"
 fi
+# A new service account takes a few seconds to become visible to IAM; binding a role
+# before then fails with "Service account ... does not exist". Wait until it is visible.
+for attempt in $(seq 1 30); do
+  if gcloud iam service-accounts describe "${DEPLOYER_SA}" --project "${PROJECT_ID}" >/dev/null 2>&1; then break; fi
+  [[ "${attempt}" -eq 30 ]] && die "service account ${DEPLOYER_SA} is still not visible after 60s; re-run the script in a minute"
+  sleep 2
+done
 
 # These roles are broad ON PURPOSE for the nonprod bootstrap: Terraform must
 # create every kind of resource in the project on the first run. Narrow them
@@ -132,11 +139,18 @@ for role in "${DEPLOYER_ROLES[@]}"; do
   if grep -qx "${role}" <<<"${EXISTING_ROLES}"; then
     skip "${role} already bound"
   else
-    gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
-      --member "serviceAccount:${DEPLOYER_SA}" \
-      --role "${role}" \
-      --condition=None \
-      --quiet >/dev/null
+    # IAM propagation for a just-created account is eventually consistent: retry with backoff.
+    bound=0
+    for attempt in 1 2 3 4 5 6; do
+      if gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+        --member "serviceAccount:${DEPLOYER_SA}" \
+        --role "${role}" \
+        --condition=None \
+        --quiet >/dev/null 2>"${TMPDIR:-/tmp}/sm-bind.err"; then bound=1; break; fi
+      skip "${role}: binding not accepted yet (attempt ${attempt}/6), retrying in $((attempt * 5))s"
+      sleep $((attempt * 5))
+    done
+    [[ "${bound}" -eq 1 ]] || { cat "${TMPDIR:-/tmp}/sm-bind.err" >&2; die "could not bind ${role} to ${DEPLOYER_SA}; re-run the script"; }
     ok "${role}"
   fi
 done
@@ -188,11 +202,17 @@ if gcloud iam service-accounts get-iam-policy "${DEPLOYER_SA}" --project "${PROJ
      --format='value(bindings.members)' | grep -q .; then
   skip "workloadIdentityUser binding already present"
 else
-  gcloud iam service-accounts add-iam-policy-binding "${DEPLOYER_SA}" \
-    --project "${PROJECT_ID}" \
-    --role roles/iam.workloadIdentityUser \
-    --member "${WIF_PRINCIPAL}" \
-    --quiet >/dev/null
+  bound=0
+  for attempt in 1 2 3 4 5 6; do
+    if gcloud iam service-accounts add-iam-policy-binding "${DEPLOYER_SA}" \
+      --project "${PROJECT_ID}" \
+      --role roles/iam.workloadIdentityUser \
+      --member "${WIF_PRINCIPAL}" \
+      --quiet >/dev/null 2>"${TMPDIR:-/tmp}/sm-bind.err"; then bound=1; break; fi
+    skip "binding not accepted yet (attempt ${attempt}/6), retrying in $((attempt * 5))s"
+    sleep $((attempt * 5))
+  done
+  [[ "${bound}" -eq 1 ]] || { cat "${TMPDIR:-/tmp}/sm-bind.err" >&2; die "could not bind roles/iam.workloadIdentityUser on ${DEPLOYER_SA}; re-run the script"; }
   ok "binding added"
 fi
 

@@ -226,3 +226,35 @@ test("notice registry on Postgres: templates and approved versions persist; a no
   const [d] = await db.query<{ c: bigint }>(`SELECT count(*)::bigint AS c FROM notice_deliveries WHERE notice_id = $1`, [n.id]);
   assert.equal(d!.c, 1n);
 });
+
+test("ops console on Postgres: queues, loan record and dashboard read the same tables the agents write; completion is role-checked", { skip }, async () => {
+  const { PgConsoleStore } = await import("../../console/pg-store.ts");
+  const { PgEscalationRepository, EscalationService } = await import("../../app/escalations.ts");
+  const { AgentRegistry } = await import("../../app/agents.ts");
+  const { loadOverriddenRegistry } = await import("../../domain/timer-overrides.ts");
+  const f = await fixture(db);
+  const clock = new FixedClock("2026-10-17T15:00:00.000Z");
+  const esc = new EscalationService(new MemoryEventStore(clock), clock);
+  const e = esc.open({ kind: "officer", loanId: f.loanId, severity: "sev-2", payload: { command: "cashiering.writeOff" } }, { kind: "agent", id: "cashiering" });
+  await new PgEscalationRepository(db).save(e);
+  const store = new PgConsoleStore(db, loadOverriddenRegistry(), new AgentRegistry());
+  const q = await store.queue({ role: "officer", now: clock.now(), loanId: f.loanId });
+  assert.equal(q.length, 1); assert.equal(q[0]!.kind, "escalation"); assert.equal(q[0]!.ownerRole, "officer");
+  assert.equal((await store.queue({ role: "attorney", now: clock.now(), loanId: f.loanId })).length, 0);
+  const l = (await store.loan(f.loanId, clock.now()))!;
+  assert.equal(l.fnmaLoanNumber.length, 10); assert.ok(Array.isArray(l.events));
+  assert.equal((await store.searchLoans(l.fnmaLoanNumber)).length, 1);
+  const d = await store.dashboard(clock.now());
+  assert.ok(d.queues.escalation >= 1); assert.equal(d.agents.length, 20);
+  const denied = await store.completeEscalation(e.id, { kind: "human", id: "u-att", role: "attorney" }, null, clock.now());
+  assert.equal(denied.ok, false);
+  const badEvidence = await store.completeEscalation(e.id, { kind: "human", id: "u-off", role: "officer" }, "doc-1", clock.now());
+  assert.equal(badEvidence.ok, false);
+  const ok = await store.completeEscalation(e.id, { kind: "human", id: "u-off", role: "officer" }, null, clock.now());
+  assert.equal(ok.ok, true);
+  assert.equal((await store.queue({ role: "officer", now: clock.now(), loanId: f.loanId })).length, 0);
+  const examiner = `examiner-${randomUUID()}`;
+  await store.logAccess({ at: clock.now(), actor: { kind: "human", id: examiner, role: "examiner" }, method: "GET", path: "/api/dashboard" });
+  const [a] = await db.query<{ c: bigint }>(`SELECT count(*)::bigint AS c FROM access_log WHERE actor_id = $1 AND table_name = 'ops_console'`, [examiner]);
+  assert.equal(a!.c, 1n);
+});

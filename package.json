@@ -12,11 +12,13 @@
     "typecheck": "tsc --noEmit",
     "spec:extract": "python3 tools/extract_spec.py",
     "spec:lint": "node --experimental-strip-types tools/lint-registry.ts",
-    "test:db": "REQUIRE_DB=1 node --test --experimental-strip-types 'src/infra/db/*.test.ts'"
+    "test:db": "REQUIRE_DB=1 node --test --experimental-strip-types 'src/infra/db/*.test.ts'",
+    "console": "node --experimental-strip-types tools/console.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "@types/pg": "^8.23.1",
+    "playwright-core": "^1.63.0",
     "typescript": "^5.7.2"
   },
   "dependencies": {

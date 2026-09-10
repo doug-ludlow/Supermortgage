@@ -27,6 +27,7 @@ src/infra/db/             Postgres repositories + loan-scoped unit of work over 
 src/infra/integrations/   outbox, adapter ports and fakes for every counterparty the spec names
 src/notices/              Notice Registry: catalog, template versions, content-rule checklists, channel decision, delivery service
 src/app/                  command bus, agent registry + kill switch, role gates, gate evaluators, escalations
+src/console/              ops console: JSON API, in-memory and Postgres stores, single-page UI
   boarding/               §1.1 loan data intake & validation (HF/W gate, MIN, Reg X delinquency, opening ledger)
   cashiering/             §2.1 accept & post periodic payments (+ the §2.2 $50 rule)
 db/migrations/            Postgres schema (bigint cents; immutable event log, ledger, decisions)
@@ -44,6 +45,9 @@ npm run typecheck
 npm run spec:lint         # how much of the timer registry is mechanically executable
 python3 tools/extract_notices.py   # regenerate spec/registry/notices.json (notice codes) from the spec
 python3 tools/extract_agents.py    # regenerate spec/registry/agents.json (agents, tools, guardrails) from the spec
+npm run console -- --demo          # ops console on a seeded in-memory scenario at http://127.0.0.1:8787/
+npm run console                    # ops console over Postgres (DATABASE_URL); actor from x-actor-id / x-actor-role headers
+node --experimental-strip-types tools/console-screenshots.ts   # regenerate docs/console/*.png with headless Chromium
 npm run test:db           # database-backed acceptance tests (needs Postgres; `npm test` skips them when none answers)
 DATABASE_URL=postgresql://sm:sm@localhost/supermortgage db/migrate.sh
 ```
@@ -59,6 +63,7 @@ DATABASE_URL=postgresql://sm:sm@localhost/supermortgage db/migrate.sh
 | Integration framework | ✅ `src/infra/integrations`: idempotent outbox over `integration_messages` (dedupe by adapter+direction+key, backoff retry, dead-letter → `human_portal_tasks`), failure vocabulary (transient / unavailable-with-fallback / permanent rejection), BAI2 and Nacha codecs, and typed ports with behaviour-faithful fakes for fnma-lsdu (hard/soft/invalid/missing, head-of-line), fnma-servicing-events, SMDU, P360, CRS file builder, Connect, MERS, custodian, WORM e-vault, lockbox, custodial-bank, ODFI, print/mail, e-delivery, telephony, Metro 2, e-OSCAR, LPI tracking, flood, tax service, MI, PACER, DMDC, e-recording |
 | Notice Registry | ✅ `src/notices`: all 248 NTC_/INS_ codes the spec names (`spec/registry/notices.json` via `tools/extract_notices.py`) registered with class/channel policy; immutable effective-dated template versions with machine-checkable content, data and layout rules; publish gate (a failing block rule cannot be published); dependency-free renderer; channel decision per 7.4 (consent class, mail-only, bounce → same-day mail, split parties); `NoticeService` render → checklist → hold/send → proof of delivery with events; authored, rule-checked versions for the H-30 statements, MS-3(A) force-placed notice, MS-4(A) early-intervention notice, H-4(D)(3) ARM initial notice and the §1024.41(b)(2) acknowledgment |
 | Application layer | ✅ `src/app`: command bus every state change goes through (AI kill switch / AI-off routing, per-agent tool allowlists from `spec/registry/agents.json`, role gates, money-field protection, guardrails that refuse before anything runs, automatic `agent_decisions` rows with rule set / model / prompt / approver, `command.executed` / `command.refused` events); the 20 agents the spec defines with their processes, tools and escalation roles; 109 gate evaluators resolving every `evaluator:` ref the timer overrides name; escalations with role-checked completion |
+| Ops console | ✅ `src/console`: the human path — role-scoped work queues (escalations, human portal tasks, held notices, dead letters, breached timers), loan record (events, ledger, timers, decisions, notices, open items), Compliance Sentinel dashboard, Agents & AI-path toggles; JSON API over a `ConsoleStore` with in-memory and Postgres implementations; read-only auditor/examiner roles; every request access-logged. `npm run console` (Postgres) or `npm run console -- --demo`; screenshots in `docs/console/` |
 | Persistence layer | ✅ `src/infra/db`: `pg` client (bigint cents), repositories for `loan_events`, ledger sets/lines, `timers`, `agent_decisions`, loan fixtures; `PgUnitOfWork` hydrates a loan's history into the kernel stores, runs the synchronous domain command, and commits events + ledger + timers + decisions in one transaction. DB-backed acceptance tests (2.1-T1 end to end) via `npm run test:db` |
 | §1 Boarding & transfers in (1.1–1.7) | ✅ `src/domain/boarding`, `src/domain/transfers` |
 | §2 Cashiering (2.1–2.7) | ✅ `src/domain/cashiering` |
@@ -88,3 +93,14 @@ the agent layer are the next build phases.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how a section is added and
 which conventions are non-negotiable.
+
+## Ops console
+
+The console is the spec's "human path": when an agent's AI path is off (18.1 kill switch or an operator toggle) the same queues are worked by people with the same commands and rule codes. Roles come from `x-actor-id` / `x-actor-role` (set at the edge by the 19.2 identity provider; the UI's role picker in development). `auditor` and `examiner` are read-only and every request is written to `access_log`.
+
+| Screen | |
+|---|---|
+| Compliance Sentinel | ![dashboard](docs/console/dashboard.png) |
+| My queue (officer) | ![queue](docs/console/my-queue.png) |
+| Loan record → decisions | ![loan](docs/console/loan-decisions.png) |
+| Agents & AI path | ![agents](docs/console/agents.png) |

@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Supermortgage Ops Console</title>
+<style>
+:root{--bg:#f6f7f9;--panel:#fff;--ink:#1c2430;--muted:#66717f;--line:#e2e6ec;--accent:#1f5fbf;--accent-ink:#fff;--warn:#b7791f;--bad:#b42323;--good:#1f7a3a;--chip:#eef2f7;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color-scheme:light dark}
+@media (prefers-color-scheme:dark){:root{--bg:#121721;--panel:#1a2130;--ink:#e6eaf0;--muted:#98a2b3;--line:#2a3344;--accent:#6ea0ff;--accent-ink:#0b1220;--warn:#e0a94a;--bad:#ef6b6b;--good:#5bc47c;--chip:#242d3d}}
+*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;background:var(--bg);color:var(--ink);font-size:14px}
+header{display:flex;align-items:center;gap:16px;padding:10px 20px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:2}
+header h1{font-size:15px;margin:0;letter-spacing:.2px}header h1 span{color:var(--muted);font-weight:400}
+.actor{margin-left:auto;display:flex;gap:8px;align-items:center;color:var(--muted)}
+input,select,button,textarea{font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 9px}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);cursor:pointer}button.primary:disabled{opacity:.5;cursor:not-allowed}
+button.ghost{cursor:pointer}
+.layout{display:grid;grid-template-columns:220px 1fr;min-height:calc(100vh - 53px)}
+nav{border-right:1px solid var(--line);background:var(--panel);padding:12px 0}
+nav a{display:flex;justify-content:space-between;padding:8px 18px;color:var(--ink);text-decoration:none}nav a.active{background:var(--chip);border-right:3px solid var(--accent)}
+nav .count{color:var(--muted);font-variant-numeric:tabular-nums}nav h3{font-size:11px;text-transform:uppercase;color:var(--muted);margin:14px 18px 6px;letter-spacing:.6px}
+main{padding:18px 22px;max-width:1300px}
+h2{font-size:18px;margin:0 0 12px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:18px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}.tile .k{color:var(--muted);font-size:12px}.tile .v{font-size:26px;font-variant-numeric:tabular-nums;margin-top:4px}.tile .v.bad{color:var(--bad)}.tile .v.warn{color:var(--warn)}
+table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}th{font-size:12px;color:var(--muted);font-weight:600;background:var(--chip)}tr:last-child td{border-bottom:0}
+.chip{display:inline-block;padding:2px 8px;border-radius:999px;background:var(--chip);font-size:12px;color:var(--muted)}.chip.sev-1,.chip.bad{color:var(--bad);border:1px solid var(--bad)}.chip.sev-2,.chip.warn{color:var(--warn);border:1px solid var(--warn)}.chip.good{color:var(--good);border:1px solid var(--good)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.muted{color:var(--muted)}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+details{margin-top:4px}details summary{cursor:pointer;color:var(--muted)}pre{margin:6px 0 0;background:var(--chip);padding:8px;border-radius:6px;white-space:pre-wrap;word-break:break-word;font-size:12px}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:10px 0}.tabs button{border:0;background:none;padding:8px 12px;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent}.tabs button.active{color:var(--ink);border-bottom-color:var(--accent)}
+.toast{position:fixed;bottom:18px;right:18px;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--good);padding:10px 14px;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.15)}.toast.bad{border-left-color:var(--bad)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media (max-width:900px){.layout{grid-template-columns:1fr}nav{display:flex;overflow:auto}nav h3{display:none}.grid2{grid-template-columns:1fr}}
+.empty{padding:30px;text-align:center;color:var(--muted);background:var(--panel);border:1px dashed var(--line);border-radius:10px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Supermortgage <span>ops console</span></h1>
+  <div class="actor">
+    <label>Acting as <input id="actorId" size="14" placeholder="user id"></label>
+    <select id="actorRole"></select>
+    <span id="readonly" class="chip" hidden>read-only</span>
+  </div>
+</header>
+<div class="layout">
+  <nav id="nav"></nav>
+  <main id="main"></main>
+</div>
+<div id="toast" class="toast" hidden></div>
+<script>
+(() => {
+const $ = (s, el = document) => el.querySelector(s);
+const state = { view: "dashboard", kind: null, loanId: null, tab: "events", roles: [], readOnly: false, counts: {} };
+const KINDS = [["queue", "My queue"], ["escalation", "Escalations"], ["portal_task", "Portal tasks"], ["held_notice", "Held notices"], ["dead_letter", "Dead letters"], ["breached_timer", "Breached timers"]];
+const money = (c) => { const n = BigInt(c); const neg = n < 0n; const a = neg ? -n : n; return (neg ? "-$" : "$") + (a / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + "." + (a % 100n).toString().padStart(2, "0"); };
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const when = (iso) => iso ? new Date(iso).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : "";
+function actor() { return { id: $("#actorId").value.trim() || "ops-user", role: $("#actorRole").value }; }
+async function api(path, opts = {}) {
+  const a = actor();
+  const res = await fetch(path, { ...opts, headers: { "content-type": "application/json", "x-actor-id": a.id, "x-actor-role": a.role, ...(opts.headers || {}) } });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || data.reason || res.statusText);
+  return data;
+}
+function toast(msg, bad) { const t = $("#toast"); t.textContent = msg; t.className = "toast" + (bad ? " bad" : ""); t.hidden = false; clearTimeout(t._h); t._h = setTimeout(() => (t.hidden = true), 3500); }
+function nav() {
+  const n = $("#nav"); const c = state.counts;
+  n.innerHTML = `<h3>Work</h3>` + KINDS.map(([k, label]) => `<a href="#" data-view="${k === "queue" ? "queue" : "kind"}" data-kind="${k}" class="${(state.view === "queue" && k === "queue") || (state.view === "kind" && state.kind === k) ? "active" : ""}">${label}<span class="count">${k === "queue" ? "" : (c[k] ?? "")}</span></a>`).join("")
+    + `<h3>Records</h3><a href="#" data-view="loans" class="${state.view === "loans" || state.view === "loan" ? "active" : ""}">Loans</a><h3>Oversight</h3><a href="#" data-view="dashboard" class="${state.view === "dashboard" ? "active" : ""}">Compliance Sentinel</a><a href="#" data-view="agents" class="${state.view === "agents" ? "active" : ""}">Agents &amp; AI path</a>`;
+  n.querySelectorAll("a").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); state.view = a.dataset.view; state.kind = a.dataset.kind || null; render(); }));
+}
+async function refreshCounts() { try { const d = await api("/api/dashboard"); state.counts = d.queues; state.dash = d; } catch (e) { /* unauthenticated until a role is chosen */ } nav(); }
+function actionsFor(item) {
+  if (state.readOnly) return `<span class="muted">read-only</span>`;
+  switch (item.kind) {
+    case "escalation": return `<button class="primary" data-act="escalation" data-id="${item.id}">Complete with evidence</button>`;
+    case "portal_task": return `<button class="primary" data-act="portal_task" data-id="${item.id}">Mark completed</button>`;
+    case "held_notice": return `<button class="primary" data-act="held_notice" data-id="${item.id}">Supersede with corrected notice</button>`;
+    case "dead_letter": return `<button class="primary" data-act="dead_letter" data-id="${item.id}">Requeue</button>`;
+    default: return `<span class="muted">work the loan</span>`;
+  }
+}
+async function act(btn) {
+  const id = btn.dataset.id; const kind = btn.dataset.act;
+  try {
+    if (kind === "escalation") { const ev = prompt("Evidence document id (required for a completed escalation):"); if (ev === null) return; await api("/api/escalations/complete", { method: "POST", body: JSON.stringify({ id, evidenceDocumentId: ev || null }) }); }
+    if (kind === "portal_task") { const ev = prompt("Confirmation / evidence document id:"); if (ev === null) return; await api("/api/portal-tasks/complete", { method: "POST", body: JSON.stringify({ id, evidenceDocumentId: ev || null }) }); }
+    if (kind === "held_notice") { const r = prompt("Id of the corrected notice that supersedes this one:"); if (!r) return; await api("/api/notices/supersede", { method: "POST", body: JSON.stringify({ id, replacementId: r }) }); }
+    if (kind === "dead_letter") await api("/api/outbox/requeue", { method: "POST", body: JSON.stringify({ id }) });
+    toast("Done — recorded as " + actor().role + ":" + actor().id); await refreshCounts(); render();
+  } catch (e) { toast(e.message, true); }
+}
+function queueTable(items) {
+  if (!items.length) return `<div class="empty">Nothing in this queue.</div>`;
+  return `<table><thead><tr><th>Opened</th><th>Item</th><th>Owner</th><th>Loan</th><th>Detail</th><th></th></tr></thead><tbody>` + items.map((i) => `<tr><td class="muted">${when(i.openedAt)}${i.dueAt ? `<br><span class="chip warn">due ${when(i.dueAt)}</span>` : ""}</td><td><b>${esc(i.title)}</b><br><span class="chip">${i.kind.replace("_", " ")}</span> ${i.severity ? `<span class="chip ${esc(i.severity)}">${esc(i.severity)}</span>` : ""}</td><td>${esc(i.ownerRole)}</td><td>${i.loanId ? `<a href="#" data-loan="${esc(i.loanId)}" class="mono">${esc(i.loanId).slice(0, 8)}…</a>` : "—"}</td><td><details><summary>detail</summary><pre>${esc(JSON.stringify(i.detail, null, 1))}</pre></details></td><td>${actionsFor(i)}</td></tr>`).join("") + `</tbody></table>`;
+}
+async function render() {
+  nav(); const m = $("#main");
+  try {
+    if (state.view === "dashboard") {
+      const d = state.dash || await api("/api/dashboard"); state.dash = d;
+      m.innerHTML = `<h2>Compliance Sentinel <span class="muted">as of ${when(d.asOf)}</span></h2><div class="tiles">
+        <div class="tile"><div class="k">Timers armed</div><div class="v">${d.timers.armed}</div></div>
+        <div class="tile"><div class="k">Timers breached</div><div class="v ${d.timers.breached ? "bad" : ""}">${d.timers.breached}</div></div>
+        <div class="tile"><div class="k">Due in next 24h</div><div class="v ${d.timers.dueNext24h ? "warn" : ""}">${d.timers.dueNext24h}</div></div>
+        <div class="tile"><div class="k">Open escalations</div><div class="v">${d.queues.escalation}</div></div>
+        <div class="tile"><div class="k">Portal tasks</div><div class="v">${d.queues.portal_task}</div></div>
+        <div class="tile"><div class="k">Held notices</div><div class="v ${d.notices.held ? "warn" : ""}">${d.notices.held}</div></div>
+        <div class="tile"><div class="k">Dead letters</div><div class="v ${d.queues.dead_letter ? "bad" : ""}">${d.queues.dead_letter}</div></div>
+        <div class="tile"><div class="k">Notices sent, 7d</div><div class="v">${d.notices.sentLast7d}</div></div></div>
+        <div class="grid2"><div><h2>Breaches by severity</h2>${table(Object.entries(d.timers.breachedBySeverity), ["Severity", "Breached"])}</div><div><h2>Breaches by section</h2>${table(Object.entries(d.timers.breachedBySection).sort((a, b) => Number(a[0]) - Number(b[0])), ["Section", "Breached"])}</div></div>`;
+    } else if (state.view === "queue" || state.view === "kind") {
+      const items = await api(state.view === "queue" ? "/api/queue" : `/api/queue?kind=${state.kind}`);
+      m.innerHTML = `<h2>${state.view === "queue" ? `My queue <span class="muted">— ${actor().role}</span>` : KINDS.find(([k]) => k === state.kind)[1]}</h2>` + queueTable(items);
+    } else if (state.view === "loans") {
+      m.innerHTML = `<h2>Loans</h2><div class="row"><input id="q" placeholder="Fannie Mae loan number, servicer number or id" size="40"><button class="primary" id="go">Search</button></div><div id="results"></div>`;
+      const go = async () => { const rows = await api(`/api/loans?q=${encodeURIComponent($("#q").value)}`); $("#results").innerHTML = rows.length ? `<table><thead><tr><th>Fannie Mae #</th><th>Servicer #</th><th>Status</th><th>Boarded</th><th></th></tr></thead><tbody>` + rows.map((l) => `<tr><td class="mono">${esc(l.fnmaLoanNumber)}</td><td class="mono">${esc(l.servicerLoanNumber)}</td><td><span class="chip">${esc(l.status)}</span></td><td class="muted">${when(l.boardedAt)}</td><td><a href="#" data-loan="${esc(l.id)}">open</a></td></tr>`).join("") + `</tbody></table>` : `<div class="empty">No loans match.</div>`; };
+      $("#go").addEventListener("click", go); $("#q").addEventListener("keydown", (e) => e.key === "Enter" && go()); go();
+    } else if (state.view === "loan") {
+      const l = await api(`/api/loans/${encodeURIComponent(state.loanId)}`);
+      const open = await api(`/api/queue?loanId=${encodeURIComponent(state.loanId)}&kind=`);
+      const tabs = [["events", `Events (${l.events.length})`], ["ledger", "Ledger"], ["timers", `Timers (${l.timers.length})`], ["decisions", `Decisions (${l.decisions.length})`], ["notices", `Notices (${l.notices.length})`], ["queue", `Open items (${open.length})`]];
+      let body = "";
+      if (state.tab === "events") body = table(l.events.map((e) => [e.sequence, esc(e.type), when(e.occurredAt), esc(e.actor), `<details><summary>payload</summary><pre>${esc(JSON.stringify(e.payload, null, 1))}</pre></details>`]), ["#", "Event", "At", "Actor", ""]);
+      if (state.tab === "ledger") body = l.balances.length ? table(l.balances.map((b) => [esc(b.account), money(b.cents)]), ["Account", "Balance (debit +)"]) : `<div class="empty">No ledger activity.</div>`;
+      if (state.tab === "timers") body = table(l.timers.map((t) => [`<span class="mono">${esc(t.code)}</span>`, `<span class="chip ${t.status === "breached" ? "bad" : t.status === "armed" ? "" : "good"}">${esc(t.status)}</span>`, t.dueAt ? when(t.dueAt) : (t.dueDate || "—"), esc(t.note || "")]), ["Timer", "Status", "Due", "Note"]);
+      if (state.tab === "decisions") body = table(l.decisions.map((d) => [when(d.createdAt), esc(d.agent), esc(d.action), esc(d.ruleCode || ""), d.confidence === null ? "—" : d.confidence.toFixed(2), d.approvedBy ? `${esc(d.approvedBy)} (${esc(d.approvedRole)})` : "<span class='muted'>agent</span>", esc(d.rationale)]), ["At", "Agent", "Action", "Rule", "Conf.", "Approved by", "Rationale"]);
+      if (state.tab === "notices") body = table(l.notices.map((n) => [`<span class="mono">${esc(n.template)}@${esc(n.version)}</span>`, `<span class="chip ${n.status === "held" ? "warn" : ""}">${esc(n.status)}</span>`, when(n.producedAt), when(n.sentAt), esc(n.heldReason || "")]), ["Template", "Status", "Produced", "Sent", "Held reason"]);
+      if (state.tab === "queue") body = queueTable(open);
+      m.innerHTML = `<h2>Loan <span class="mono">${esc(l.fnmaLoanNumber)}</span> <span class="muted">${esc(l.servicerLoanNumber)}</span> <span class="chip">${esc(l.status)}</span></h2><div class="tabs">${tabs.map(([k, t]) => `<button data-tab="${k}" class="${state.tab === k ? "active" : ""}">${t}</button>`).join("")}</div>${body}`;
+      m.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => { state.tab = b.dataset.tab; render(); }));
+    } else if (state.view === "agents") {
+      const d = await api("/api/dashboard"); state.dash = d;
+      m.innerHTML = `<h2>Agents &amp; AI path</h2><p class="muted">When an agent's AI path is off, its queue is worked here by people with the same commands and rule codes (18.1 kill switch, operator AI-off).</p>` + table(d.agents.map((a) => [esc(a.agent), esc(a.tier), a.off ? `<span class="chip bad">off</span> <span class="muted">${esc(a.why || "")}</span>` : `<span class="chip good">on</span>`, a.decisionsLast7d, state.readOnly ? "" : (a.off ? `<button class="ghost" data-ai="${esc(a.agent)}" data-on="1">Enable AI path</button>` : `<button class="ghost" data-ai="${esc(a.agent)}">Set AI off</button>`)]), ["Agent", "Tier", "AI path", "Decisions, 7d", ""]);
+      m.querySelectorAll("[data-ai]").forEach((b) => b.addEventListener("click", async () => { try { const why = b.dataset.on ? null : prompt("Reason for switching the AI path off:"); if (!b.dataset.on && !why) return; await api("/api/agents/ai-off", { method: "POST", body: JSON.stringify({ agent: b.dataset.ai, why }) }); toast("Recorded"); render(); } catch (e) { toast(e.message, true); } }));
+    }
+  } catch (e) { m.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}
+$("#main").addEventListener("click", (e) => {
+  const loan = e.target.closest("[data-loan]"); if (loan) { e.preventDefault(); state.view = "loan"; state.loanId = loan.dataset.loan; state.tab = "events"; render(); return; }
+  const btn = e.target.closest("[data-act]"); if (btn) act(btn);
+});
+function table(rows, headers) { if (!rows.length) return `<div class="empty">None.</div>`; return `<table><thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody></table>`; }
+async function boot() {
+  const r = await fetch("/api/roles").then((x) => x.json());
+  const sel = $("#actorRole"); sel.innerHTML = r.roles.map((x) => `<option>${x}</option>`).join("");
+  try { const saved = JSON.parse(localStorage.getItem("sm.actor") || "null"); if (saved) { $("#actorId").value = saved.id; sel.value = saved.role; } } catch {}
+  const onActor = async () => { try { localStorage.setItem("sm.actor", JSON.stringify(actor())); } catch {} state.readOnly = r.readOnly.includes(actor().role); $("#readonly").hidden = !state.readOnly; state.dash = null; await refreshCounts(); render(); };
+  sel.addEventListener("change", onActor); $("#actorId").addEventListener("change", onActor);
+  onActor();
+}
+boot();
+})();
+</script>
+</body>
+</html>

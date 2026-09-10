@@ -69,7 +69,8 @@ each section's "Data model" subsection names (only the baseline and boarding
 schemas exist), (b) the integration adapters each section calls (e-OSCAR,
 P360/SMDU/LSDU, lockbox/BAI2, print/mail, e-vault) — built in `src/infra/integrations`,
 (c) the agent layer — built in `src/app` (command bus, agent registry, evaluators,
-escalations); the ops console UI remains, (d) the end-of-build audit against
+escalations) with the ops console in `src/console` (role-scoped queues, loan record,
+Compliance Sentinel, AI-path toggles), (d) the end-of-build audit against
 `docs/AUDIT-NOTES.md`.
 
 ## Adding a section

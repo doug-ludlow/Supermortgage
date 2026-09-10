@@ -19,6 +19,7 @@ import { SECTION_09_VERSIONS } from "./authored/section09.ts";
 import { SECTION_10_VERSIONS } from "./authored/section10.ts";
 import { SECTION_11_VERSIONS } from "./authored/section11.ts";
 import { SECTION_12_VERSIONS } from "./authored/section12.ts";
+import { SECTION_13_VERSIONS } from "./authored/section13.ts";
 
 interface CatalogEntry { readonly code: string; readonly owner_process: string; readonly mentions: readonly string[]; readonly context: string; }
 
@@ -89,6 +90,16 @@ const OVERRIDES: Record<string, Partial<NoticeTemplate>> = {
   NTC_CA_2924_10_ACK: { channelPolicy: "mail_only", citation: "Cal. Civ. Code §2924.10 (written acknowledgment)" },
   NTC_FNMA_D2204_SOLICITATION: { mayCombineWith: ["NTC_REGX_39B_EARLY_INTERVENTION"], citation: "D2-2-04; 11.2-Q4 combined mailing" },
   NTC_FNMA_D23206_SOLICIT_STREAMLINED: { citation: "D2-3.2-06; 12 CFR 1024.41(c)(2)(ii) (incomplete-application disclosures when an application is open)" },
+  NTC_STATE_PREFC_NY_1304: { channelPolicy: "mail_only", separateDocument: true, citation: "RPAPL §1304(2): separate envelope, registered/certified + first-class mail" },
+  NTC_STATE_PREFC_NJ_NOI: { channelPolicy: "mail_only", citation: "N.J.S.A. 2A:50-56(b)" },
+  NTC_STATE_PREFC_MA_35A: { channelPolicy: "mail_only", citation: "M.G.L. c.244 §35A(g)" },
+  NTC_STATE_PREFC_TX_51002D: { channelPolicy: "mail_only", citation: "Tex. Prop. Code §51.002(d)" },
+  NTC_STATE_PREFC_MD_NOI: { channelPolicy: "mail_only", citation: "Md. Real Prop. §7-105.1(c)" },
+  NTC_STATE_PREFC_CA_2923_5_LETTER: { channelPolicy: "mail_only", citation: "Cal. Civ. Code §2923.5(e)(2)" },
+  NTC_STATE_PREFC_WA_61_24_031_LETTER: { channelPolicy: "mail_only", citation: "RCW 61.24.031(5)" },
+  NTC_STATE_PREFC_NV_107_5XX: { channelPolicy: "mail_only", citation: "NRS 107.510" },
+  NTC_STATE_PREFC_GA_162_2: { channelPolicy: "mail_only", citation: "O.C.G.A. §44-14-162.2(a)" },
+  NTC_SCRA_3953_STAY_CONFIRMATION: { channelPolicy: "mail_only", citation: "13.8 notices: mail" },
   NTC_REGF_1006_34_VALIDATION_B1: { mayCombineWith: ["NTC_REGX_1024_33B_HELLO_MS2", "NTC_REGX_39B_EARLY_INTERVENTION"], citation: "12 CFR 1006.34; 11.4-Q3 (enclosed with the hello letter)" },
   NTC_REGX_41B2_ACK_INCOMPLETE: { citation: "12 CFR 1024.41(b)(2)(i)(B)" },
   NTC_REGX_41B2_ACK_COMPLETE: { citation: "12 CFR 1024.41(b)(2)(i)(B)" },
@@ -257,4 +268,5 @@ export const AUTHORED_VERSIONS: readonly VersionInput[] = [
   ...SECTION_10_VERSIONS,
   ...SECTION_11_VERSIONS,
   ...SECTION_12_VERSIONS,
+  ...SECTION_13_VERSIONS,
 ];

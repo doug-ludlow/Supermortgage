@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 3692/4583 (80.6%): tids 1078/1253, tables 444/448, timers 1075/1365, notices 187/235, tools 444/658, figures 464/624; processes at 100%: 78/114",
+ "brief": "spec units built 3907/4583 (85.2%): tids 1139/1253, tables 444/448, timers 1137/1365, notices 205/235, tools 488/658, figures 494/624; processes at 100%: 87/114",
  "totals": {
   "tids": {
    "spec": 1253,
-   "built": 1078
+   "built": 1139
   },
   "tables": {
    "spec": 448,
@@ -11,23 +11,23 @@
   },
   "timers": {
    "spec": 1365,
-   "built": 1075
+   "built": 1137
   },
   "notices": {
    "spec": 235,
-   "built": 187
+   "built": 205
   },
   "tools": {
    "spec": 658,
-   "built": 444
+   "built": 488
   },
   "figures": {
    "spec": 624,
-   "built": 464
+   "built": 494
   },
   "units": {
    "spec": 4583,
-   "built": 3692
+   "built": 3907
   }
  },
  "sections": {
@@ -105,9 +105,9 @@
   },
   "13": {
    "spec": 353,
-   "built": 139,
+   "built": 353,
    "processes": 9,
-   "done": 0
+   "done": 9
   },
   "14": {
    "spec": 224,
@@ -129,7 +129,7 @@
   },
   "17": {
    "spec": 204,
-   "built": 102,
+   "built": 103,
    "processes": 4,
    "done": 0
   },
@@ -224,7 +224,16 @@
   "12.6",
   "12.7",
   "12.8",
-  "12.9"
+  "12.9",
+  "13.1",
+  "13.2",
+  "13.3",
+  "13.4",
+  "13.5",
+  "13.6",
+  "13.7",
+  "13.8",
+  "13.9"
  ],
  "processes": [
   {
@@ -3430,17 +3439,9 @@
    "title": "120-day pre-foreclosure prohibition",
    "tids": {
     "spec": 10,
-    "built": 3,
-    "todo": 7,
-    "missing": [
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10
-    ]
+    "built": 10,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 5,
@@ -3449,13 +3450,9 @@
    },
    "timers": {
     "spec": 7,
-    "built": 4,
+    "built": 7,
     "armable": 7,
-    "missing": [
-     "FNMA_D1301_DISASTER_FC_APPROVAL_GATE",
-     "REGX_1024_41F2_PRE_FILING_APP_GATE",
-     "SCRA_3953C_FC_PROTECTION_GATE"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -3464,16 +3461,8 @@
    },
    "tools": {
     "spec": 7,
-    "built": 0,
-    "missing": [
-     "loan.get",
-     "delinquency.counters.get",
-     "lossmit.case.get",
-     "contacts.search",
-     "inspection.get",
-     "foreclosure.gates.evaluate",
-     "escalation.create"
-    ]
+    "built": 7,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -3482,25 +3471,18 @@
    },
    "units": {
     "spec": 29,
-    "built": 12
+    "built": 29
    },
-   "pct": 41.4
+   "pct": 100.0
   },
   {
    "process": "13.2",
    "title": "Dual-tracking restriction",
    "tids": {
     "spec": 10,
-    "built": 4,
-    "todo": 6,
-    "missing": [
-     2,
-     4,
-     6,
-     7,
-     9,
-     10
-    ]
+    "built": 10,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 4,
@@ -3509,35 +3491,19 @@
    },
    "timers": {
     "spec": 13,
-    "built": 8,
+    "built": 13,
     "armable": 13,
-    "missing": [
-     "FNMA_E3401_EXPEDITED_REVIEW_CERT",
-     "FNMA_E3401_SHORTSALE_MARKETING_45",
-     "REGX_1024_41G_DUAL_TRACK_GATE",
-     "STATE_CA_2924_18_DUAL_TRACK_GATE",
-     "STATE_MN_582_043_DUAL_TRACK_GATE"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "NTC_FNMA_E3401_EXPEDITED_RESULT"
-    ]
+    "built": 1,
+    "missing": []
    },
    "tools": {
     "spec": 7,
-    "built": 0,
-    "missing": [
-     "lossmit.case.get",
-     "foreclosure.case.get",
-     "attorney.instruction.send",
-     "attorney.instruction.status",
-     "dra.snapshot.get",
-     "timer.create",
-     "escalation.create"
-    ]
+    "built": 7,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -3546,28 +3512,18 @@
    },
    "units": {
     "spec": 35,
-    "built": 16
+    "built": 35
    },
-   "pct": 45.7
+   "pct": 100.0
   },
   {
    "process": "13.3",
    "title": "Foreclosure referral",
    "tids": {
     "spec": 12,
-    "built": 3,
-    "todo": 9,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 6,
@@ -3576,32 +3532,14 @@
    },
    "timers": {
     "spec": 23,
-    "built": 18,
+    "built": 23,
     "armable": 23,
-    "missing": [
-     "FNMA_E1202_REFER_NO_EARLIER_121",
-     "FNMA_E3205_ADVANCE_REQUEST_10BD",
-     "FNMA_E3205_BID_INSTRUCTIONS_5BD",
-     "FNMA_E3206_OUTREACH_STOP_60_30",
-     "FNMA_E3502_TPS_DEPOSIT_REMIT_5BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 11,
-    "built": 0,
-    "missing": [
-     "NTC_SM_FC_REFERRAL_ADVICE",
-     "NTC_SM_FC_REINSTATEMENT_QUOTE",
-     "NTC_STATE_PREFC_CA_2923_5_LETTER",
-     "NTC_STATE_PREFC_GA_162_2",
-     "NTC_STATE_PREFC_MA_35A",
-     "NTC_STATE_PREFC_MD_NOI",
-     "NTC_STATE_PREFC_NJ_NOI",
-     "NTC_STATE_PREFC_NV_107_5XX",
-     "NTC_STATE_PREFC_NY_1304",
-     "NTC_STATE_PREFC_TX_51002D",
-     "NTC_STATE_PREFC_WA_61_24_031_LETTER"
-    ]
+    "built": 11,
+    "missing": []
    },
    "tools": {
     "spec": 0,
@@ -3610,48 +3548,23 @@
    },
    "figures": {
     "spec": 16,
-    "built": 2,
-    "missing": [
-     "$1,420.11",
-     "$1,487.50",
-     "$1,975.00",
-     "$19,054.79",
-     "$2,150.00",
-     "$250,000.00",
-     "$270,000.00",
-     "$284.02",
-     "$290,000.00",
-     "$3,105.40",
-     "$6,842.17",
-     "$60.00",
-     "$612.00",
-     "$8,520.66"
-    ]
+    "built": 16,
+    "missing": []
    },
    "units": {
     "spec": 68,
-    "built": 29
+    "built": 68
    },
-   "pct": 42.6
+   "pct": 100.0
   },
   {
    "process": "13.4",
    "title": "Prereferral review",
    "tids": {
     "spec": 10,
-    "built": 1,
-    "todo": 9,
-    "missing": [
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10
-    ]
+    "built": 10,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 2,
@@ -3660,15 +3573,9 @@
    },
    "timers": {
     "spec": 12,
-    "built": 7,
+    "built": 12,
     "armable": 12,
-    "missing": [
-     "FNMA_D1301_DISASTER_FC_APPROVAL_GATE",
-     "FNMA_E3204_NONPR_FIRST_PAYMENT_EOM",
-     "FNMA_E3204_NONPR_OFFER_14",
-     "SM_DISASTER_FC_RESPONSE_FOLLOWUP_10BD",
-     "SM_PREREFERRAL_RE_REVIEW_DAILY"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -3677,20 +3584,8 @@
    },
    "tools": {
     "spec": 11,
-    "built": 0,
-    "missing": [
-     "lossmit.case.get",
-     "contacts.search",
-     "notices.search",
-     "inspection.get",
-     "dmdc.verify",
-     "bk.scrub",
-     "title.status.get",
-     "custodian.request",
-     "mi.status.get",
-     "insurance.status.get",
-     "disaster.lookup"
-    ]
+    "built": 11,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -3699,25 +3594,18 @@
    },
    "units": {
     "spec": 35,
-    "built": 10
+    "built": 35
    },
-   "pct": 28.6
+   "pct": 100.0
   },
   {
    "process": "13.5",
    "title": "Allowable timeframes / compensatory fees",
    "tids": {
     "spec": 9,
-    "built": 3,
-    "todo": 6,
-    "missing": [
-     4,
-     5,
-     6,
-     7,
-     8,
-     9
-    ]
+    "built": 9,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 4,
@@ -3726,16 +3614,9 @@
    },
    "timers": {
     "spec": 7,
-    "built": 1,
+    "built": 7,
     "armable": 7,
-    "missing": [
-     "FNMA_A14202_RESCISSION_FEE_EXPOSURE",
-     "FNMA_E3215_TIMEFRAME_WARNING_70",
-     "FNMA_EXHIBIT_METHOD_DEVIATION_FORM20_GATE",
-     "FNMA_F121_STATUS_CODE_TIMELY_BD2",
-     "SM_COMP_FEE_BILL_REBUTTAL_30",
-     "SM_EXHIBIT_WATCH_MONTHLY"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -3744,42 +3625,28 @@
    },
    "tools": {
     "spec": 6,
-    "built": 0,
-    "missing": [
-     "fc.timeframe.get",
-     "status.history.get",
-     "dra.snapshot.get",
-     "attorney.instruction.send",
-     "documents.bundle",
-     "fnma_connect.report.pull"
-    ]
+    "built": 6,
+    "missing": []
    },
    "figures": {
     "spec": 3,
-    "built": 2,
-    "missing": [
-     "$46.71"
-    ]
+    "built": 3,
+    "missing": []
    },
    "units": {
     "spec": 29,
-    "built": 10
+    "built": 29
    },
-   "pct": 34.5
+   "pct": 100.0
   },
   {
    "process": "13.6",
    "title": "Default-related law-firm management",
    "tids": {
     "spec": 10,
-    "built": 6,
-    "todo": 4,
-    "missing": [
-     5,
-     7,
-     8,
-     10
-    ]
+    "built": 10,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 10,
@@ -3788,21 +3655,9 @@
    },
    "timers": {
     "spec": 15,
-    "built": 4,
+    "built": 15,
     "armable": 15,
-    "missing": [
-     "FNMA_A4201_FORM200_RESPONSE_15BD",
-     "FNMA_A4201_RECORDS_7Y",
-     "FNMA_A4202_FIRM_ESCALATION_2BD",
-     "FNMA_A4204_SUSPENSION_NOTICE_5BD",
-     "FNMA_E1101_BULK_TRANSFER_NOTICE_5BD",
-     "FNMA_F105_EXPENSE_CLAIM_60",
-     "SM_DRA_EVENT_EXPECTED_2BD",
-     "SM_DRA_RECONCILE_DAILY",
-     "SM_FIRM_EO_EXPIRY_30",
-     "SM_INVOICE_PAY_30",
-     "SM_INVOICE_REVIEW_10BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -3811,49 +3666,28 @@
    },
    "tools": {
     "spec": 6,
-    "built": 0,
-    "missing": [
-     "firm.get",
-     "documents.extract",
-     "fee_schedule.get",
-     "invoice.review",
-     "dra.snapshot.import",
-     "attorney.message.send"
-    ]
+    "built": 6,
+    "missing": []
    },
    "figures": {
     "spec": 7,
-    "built": 0,
-    "missing": [
-     "$1,462.50",
-     "$1,912.50",
-     "$2,250.00",
-     "$22.00",
-     "$38.00",
-     "$412.75",
-     "$450.00"
-    ]
+    "built": 7,
+    "missing": []
    },
    "units": {
     "spec": 48,
-    "built": 20
+    "built": 48
    },
-   "pct": 41.7
+   "pct": 100.0
   },
   {
    "process": "13.7",
    "title": "Environmental hazard / non-routine litigation",
    "tids": {
     "spec": 10,
-    "built": 5,
-    "todo": 5,
-    "missing": [
-     5,
-     6,
-     7,
-     8,
-     9
-    ]
+    "built": 10,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 3,
@@ -3862,20 +3696,9 @@
    },
    "timers": {
     "spec": 13,
-    "built": 3,
+    "built": 13,
     "armable": 13,
-    "missing": [
-     "FNMA_E1301_PLEADING_REVIEW_GATE",
-     "FNMA_E1301_WORKOUT_NOTIFY_COUNSEL_GATE",
-     "FNMA_E1302_FORM20_EXCEPTION_TRIGGER",
-     "FNMA_F108_ENV_LITIGATION_FORM20_0",
-     "FNMA_F108_ENV_NO_FORECLOSURE_GATE",
-     "FNMA_F108_LEAD_PAINT_NOTIFY_30",
-     "LITIGATION_HOLD",
-     "SM_ENV_SERVICING_REP_REPORT_2BD",
-     "SM_FORM20_RESPONSE_FOLLOWUP_10BD",
-     "SM_LITIGATION_STATUS_UPDATE_MONTHLY"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -3884,13 +3707,8 @@
    },
    "tools": {
     "spec": 4,
-    "built": 0,
-    "missing": [
-     "documents.extract",
-     "litigation.classify",
-     "foreclosure.case.get",
-     "attorney.message.send"
-    ]
+    "built": 4,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -3899,28 +3717,18 @@
    },
    "units": {
     "spec": 30,
-    "built": 11
+    "built": 30
    },
-   "pct": 36.7
+   "pct": 100.0
   },
   {
    "process": "13.8",
    "title": "SCRA foreclosure protection",
    "tids": {
     "spec": 12,
-    "built": 3,
-    "todo": 9,
-    "missing": [
-     1,
-     3,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 3,
@@ -3929,37 +3737,19 @@
    },
    "timers": {
     "spec": 14,
-    "built": 5,
+    "built": 14,
     "armable": 14,
-    "missing": [
-     "SCRA_3931G_DEFAULT_JUDGMENT_REOPEN_90",
-     "SCRA_3953C_FC_PROTECTION_GATE",
-     "SCRA_3953_TAIL_1Y",
-     "SM_DMDC_PERIODIC_ACTIVE_FC_90",
-     "SM_DMDC_VERIFY_DAY45",
-     "SM_DMDC_VERIFY_PRESALE_30",
-     "SM_DMDC_VERIFY_PRESALE_7",
-     "SM_DMDC_VERIFY_PRE_EVICTION_30",
-     "SM_DMDC_VERIFY_PRE_FIRST_NOTICE_30"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "NTC_FNMA_D23401_SCRA_RIGHTS",
-     "NTC_FNMA_D23401_SCRA_STATUS_CHECK_90",
-     "NTC_SCRA_3953_STAY_CONFIRMATION"
-    ]
+    "built": 3,
+    "missing": []
    },
    "tools": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "dmdc.batch.prepare",
-     "dmdc.results.import",
-     "scra.case.get/open/close"
-    ]
+    "built": 3,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -3968,25 +3758,18 @@
    },
    "units": {
     "spec": 35,
-    "built": 11
+    "built": 35
    },
-   "pct": 31.4
+   "pct": 100.0
   },
   {
    "process": "13.9",
    "title": "SCRA 6% interest cap",
    "tids": {
     "spec": 11,
-    "built": 5,
-    "todo": 6,
-    "missing": [
-     5,
-     6,
-     7,
-     8,
-     9,
-     10
-    ]
+    "built": 11,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 5,
@@ -3995,26 +3778,14 @@
    },
    "timers": {
     "spec": 12,
-    "built": 5,
+    "built": 12,
     "armable": 12,
-    "missing": [
-     "FNMA_F119_ARM_TXN83",
-     "FNMA_F119_MBS_UPLOAD_CD15",
-     "FNMA_F119_MI_DISBURSEMENT_CHECK_M2",
-     "FNMA_F119_SUBSIDY_ADJUST_12M",
-     "SCRA_3937B1_NOTICE_WINDOW_180",
-     "SCRA_3937_FEES_IN_CAP_GATE",
-     "SM_SCRA_OVERPAYMENT_ELECTION_30"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "NTC_SCRA_3937_OVERPAYMENT_ELECTION",
-     "NTC_SCRA_3937_RATE_CONFIRMATION",
-     "NTC_SCRA_3937_RATE_END"
-    ]
+    "built": 3,
+    "missing": []
    },
    "tools": {
     "spec": 0,
@@ -4023,23 +3794,14 @@
    },
    "figures": {
     "spec": 13,
-    "built": 5,
-    "missing": [
-     "$1,463.03",
-     "$1,645.91",
-     "$1,767.83",
-     "$2,046.53",
-     "$213.43",
-     "$278.70",
-     "$292,606.60",
-     "$293,975.18"
-    ]
+    "built": 13,
+    "missing": []
    },
    "units": {
     "spec": 44,
-    "built": 20
+    "built": 44
    },
-   "pct": 45.5
+   "pct": 100.0
   },
   {
    "process": "14.1",
@@ -5231,12 +4993,11 @@
    },
    "timers": {
     "spec": 23,
-    "built": 10,
+    "built": 11,
     "armable": 23,
     "missing": [
      "FNMA_F1_27_TRIAL_PAYMENT_EOM",
      "REGX_1024_41B2_ACK_5",
-     "REGX_1024_41G_DUAL_TRACK_GATE",
      "REGX_1024_41H_APPEAL_DETERMINATION_30",
      "SM_BK_HANDOFF_T1",
      "SM_CLAIM_HANDOFF_T1",
@@ -5276,9 +5037,9 @@
    },
    "units": {
     "spec": 47,
-    "built": 19
+    "built": 20
    },
-   "pct": 40.4
+   "pct": 42.6
   },
   {
    "process": "18.1",

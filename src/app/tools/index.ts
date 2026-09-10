@@ -20,8 +20,9 @@ import { SECTION_09_TOOLS } from "./section09.ts";
 import { SECTION_10_TOOLS } from "./section10.ts";
 import { SECTION_11_TOOLS } from "./section11.ts";
 import { SECTION_12_TOOLS } from "./section12.ts";
+import { SECTION_13_TOOLS } from "./section13.ts";
 
-export const ALL_TOOLS: readonly ToolDef[] = [...SECTION_01_TOOLS, ...SECTION_02_TOOLS, ...SECTION_03_TOOLS, ...SECTION_04_TOOLS, ...SECTION_05_TOOLS, ...SECTION_06_TOOLS, ...SECTION_07_TOOLS, ...SECTION_08_TOOLS, ...SECTION_09_TOOLS, ...SECTION_10_TOOLS, ...SECTION_11_TOOLS, ...SECTION_12_TOOLS];
+export const ALL_TOOLS: readonly ToolDef[] = [...SECTION_01_TOOLS, ...SECTION_02_TOOLS, ...SECTION_03_TOOLS, ...SECTION_04_TOOLS, ...SECTION_05_TOOLS, ...SECTION_06_TOOLS, ...SECTION_07_TOOLS, ...SECTION_08_TOOLS, ...SECTION_09_TOOLS, ...SECTION_10_TOOLS, ...SECTION_11_TOOLS, ...SECTION_12_TOOLS, ...SECTION_13_TOOLS];
 
 export function bindTools(rt: ToolRuntime, agents: AgentRegistry, defs: readonly ToolDef[] = ALL_TOOLS): Map<string, CommandSpec<ToolInput, unknown>> {
   const escalates = new Map(loadAgentsFile().processes.map((p) => [p.process, p.escalates_to] as const));

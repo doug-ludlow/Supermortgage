@@ -67,4 +67,78 @@ export function applyForeclosureTimerOverrides(reg: TimerRegistry): void {
   o("FNMA_F119_SUBSIDY_ADJUST_12M", { trigger: "`scra.subsidy.activated`", why: "§13.9 timer table: subsidy method active → recalculated + letter every 12 months (F-1-19)." });
   // ---- pseudo-trigger rows -----------------------------------------------------
   o("FNMA_E3215_TIMEFRAME_WARNING_70", { trigger: "`foreclosure.referral.sent`", anchorField: "allowable_timeframe_warning_on", offset: "0", why: "§13.5 timer table: 'same' as FNMA_E3215_ALLOWABLE_TIMEFRAME_STATE → `foreclosure.referral.sent`; 70% elapsed (E-3.2-15)." });
+  applyForeclosureSatisfiedOverrides(reg);
+}
+
+/** Satisfaction events / evaluators for the §13 rows whose "Satisfied by" column is prose, "same", or empty. */
+export function applyForeclosureSatisfiedOverrides(reg: TimerRegistry): void {
+  const o = reg.override.bind(reg);
+  // ---- 13.1 gates
+  o("REGX_1024_41F2_PRE_FILING_APP_GATE", { evaluator: "13.1.preFilingAppGateOpen", why: "§13.1 timer table: closed from a complete application received before the first notice until an (f)(2)(i)–(iii) exit event (§1024.41(f)(2))." });
+  o("FNMA_D1301_DISASTER_FC_APPROVAL_GATE", { evaluator: "13.1.disasterApprovalOnFile", why: "§13.1/13.4 timer tables: 'until fnma.disaster_fc.approved' — the gate opens only on Fannie Mae's written approval (D1-3-01)." });
+  o("SCRA_3953C_FC_PROTECTION_GATE", { evaluator: "13.8.protectionGateOpen", why: "§13.1/13.8 timer tables: service_end_on + 1 calendar year inclusive (or court order/§3918 agreement) — 13.8 owns the gate (50 U.S.C. 3953(c))." });
+  // ---- 13.2 dual tracking
+  o("REGX_1024_41G_DUAL_TRACK_GATE", { evaluator: "13.2.dualTrackGateOpen", why: "§13.2 timer table: closed until an (g)(1)–(3) exit; asserted by judgment_motion.authorize / sale.certify / sale.conduct.authorize (§1024.41(g))." });
+  o("FNMA_E3401_EXPEDITED_REVIEW_CERT", { satisfied: "`notice.sent{code=NTC_FNMA_E3401_EXPEDITED_RESULT}`", why: "§13.2 timer table: 'determination sent' before the certification window opens (E-3.4-01)." });
+  o("FNMA_E3401_SHORTSALE_MARKETING_45", { satisfied: "`liquidation.case.status_changed{status∈{approved, closed, listing_expired, declined}}`", why: "§13.2 timer table: '12.x events' — the short-sale case leaves the marketing/review window (E-3.4-01)." });
+  o("STATE_MN_582_043_DUAL_TRACK_GATE", { evaluator: "13.2.mnDualTrackGateOpen", why: "§13.2 timer table: refer blocked while an MN application (complete or not) is pending; sale halted if received before the 7th business day before sale (Minn. Stat. §582.043)." });
+  o("STATE_CA_2924_18_DUAL_TRACK_GATE", { evaluator: "13.2.caDualTrackGateOpen", why: "§13.2 timer table: NOD/NOS blocked while a complete first-lien application is pending on an owner-occupied loan (Cal. Civ. Code §2924.18)." });
+  // ---- 13.3 referral
+  o("FNMA_E1202_REFER_NO_EARLIER_121", { satisfied: "`foreclosure.referral.sent`", why: "§13.3 timer table: 'assertGateOpen by foreclosure.refer' — the referral itself, on or after day 121 (E-1.2-02)." });
+  o("FNMA_E3205_ADVANCE_REQUEST_10BD", { satisfied: "`attorney.advance.decided{result∈{funded, declined}}`", why: "§13.3 timer table: '`attorney.advance.funded/declined`' (E-3.2-05)." });
+  o("FNMA_E3206_OUTREACH_STOP_60_30", { satisfied: "`outreach.campaign.closed{reason=sale_proximity}`", why: "§13.3 timer table: 'outreach campaign closed' at sale − 60 (judicial) / − 30 (non-judicial) (E-3.2-06)." });
+  o("FNMA_E3205_BID_INSTRUCTIONS_5BD", { satisfied: "`attorney.instruction.acknowledged{kind=BID_INSTRUCTIONS}`", why: "§13.3 timer table: 'bid_instructions.issued ∧ firm_ack' — the firm's acknowledgment of the bid instruction (E-3.3-05)." });
+  o("FNMA_E3502_TPS_DEPOSIT_REMIT_5BD", { satisfied: "`remittance.sent{kind=tps_deposit}`", why: "§13.3 timer table: 'deposit remitted' (E-3.5-02)." });
+  // ---- 13.4 prereferral review
+  o("FNMA_E3204_NONPR_OFFER_14", { satisfied: "`lossmit.offer.responded{response∈{accepted, rejected, expired}}`", why: "§13.4 timer table: 'acceptance / expiry' of the retention offer (E-3.2-04)." });
+  o("FNMA_E3204_NONPR_FIRST_PAYMENT_EOM", { satisfied: "`workout_plan.payment.received{first=true}`", why: "§13.4 timer table: 'first payment received → hold_performing' (E-3.2-04)." });
+  o("SM_DISASTER_FC_RESPONSE_FOLLOWUP_10BD", { satisfied: "`fnma.disaster_fc.responded`", why: "§13.4 timer table: 'Fannie Mae response recorded' (D1-3-01; policy follow-up)." });
+  o("SM_PREREFERRAL_RE_REVIEW_DAILY", { satisfied: "`prereferral.review.completed{outcome∈{refer, refer_expedited}}`", why: "§13.4 timer table: 'outcome changes' — the daily re-review ends when a hold resolves to refer." });
+  // ---- 13.5 timeframes
+  o("FNMA_E3215_TIMEFRAME_WARNING_70", { satisfied: "`foreclosure.sale.held`", why: "§13.5 timer table: the 70% warning is informational; the clock closes with the sale (E-3.2-15)." });
+  o("FNMA_F121_STATUS_CODE_TIMELY_BD2", { satisfied: "`investor.event.accepted{kind=delinquency_status}`", why: "§13.5 timer table: 'accepted status event' (F-1-21)." });
+  o("FNMA_A14202_RESCISSION_FEE_EXPOSURE", { trigger: "`foreclosure.sale.rescinded{cause=servicer_error}`", offset: "0 calendar_days", satisfied: "`comp_fee_exposure.booked{kind=rescission}`", why: "§13.5 timer table: informational — $1,000 + third-party costs booked as exposure on rescission (A1-4.2-02)." });
+  o("FNMA_EXHIBIT_METHOD_DEVIATION_FORM20_GATE", { evaluator: "13.5.methodDeviationApproved", why: "§13.5 timer table: a non-preferred method needs Regional Counsel approval via Form 20 before first-notice authorization (Allowable Foreclosure Attorney Fees Exhibit)." });
+  o("SM_COMP_FEE_BILL_REBUTTAL_30", { trigger: "`comp_fee_bill.received`", satisfied: "`comp_fee_bill.resolved{result∈{rebutted, accepted}}`", why: "§13.5 timer table: 'rebuttal submitted or bill accepted' (A1-4.2-02; 30-day window [UNVERIFIED])." });
+  o("SM_EXHIBIT_WATCH_MONTHLY", { trigger: "`schedule.tick{cadence=monthly}`", offset: "monthly", satisfied: "`exhibit.checked{exhibit=allowable_timeframes}`", why: "§13.5 timer table: monthly exhibit hash check (second Wednesday + LL feed)." });
+  // ---- 13.6 firms
+  o("FNMA_A4201_FORM200_RESPONSE_15BD", { trigger: "`form200.submitted`", satisfied: "`form200.responded`", why: "§13.6 timer table: 'Fannie Mae response' — No Objection expected within 15 BD (A4-2.2-01)." });
+  o("FNMA_A4202_FIRM_ESCALATION_2BD", { trigger: "`attorney_escalation.discovered`", satisfied: "`firm.escalation.sent{to=loanservicing}`", why: "§13.6 timer table: 'email to loanservicing@ sent (tracked)' (A4-2.2-02)." });
+  o("FNMA_A4204_SUSPENSION_NOTICE_5BD", { trigger: "`firm.suspension.proposed`", satisfied: "`fnma.notified{kind=firm_suspension, plan_attached=true}`", why: "§13.6 timer table: 'Fannie Mae notified with plan' 5 BD before implementation (A4-2.2-04)." });
+  o("FNMA_E1101_BULK_TRANSFER_NOTICE_5BD", { satisfied: "`fnma.notified{kind=bulk_matter_transfer}`", why: "§13.6 timer table: 'notified' (E-1.1-01)." });
+  o("SM_FIRM_EO_EXPIRY_30", { trigger: "`firm.eo_policy.expiring`", anchorField: "eo_expires_on", offset: "-30 calendar_days", satisfied: "`firm.eo_policy.renewed`", why: "§13.6 timer table: 'renewal evidence'; referrals pause at expiry (F-2-04)." });
+  o("SM_INVOICE_REVIEW_10BD", { trigger: "`firm.invoice.received`", satisfied: "`firm.invoice.reviewed`", why: "§13.6 timer table: 'review result' (E-5-05)." });
+  o("SM_INVOICE_PAY_30", { trigger: "`firm.invoice.approved`", satisfied: "`firm.invoice.paid`", why: "§13.6 timer table: 'payment sent'." });
+  o("FNMA_F105_EXPENSE_CLAIM_60", { trigger: "`claim.milestone.reached{kind∈{sale, reinstatement, payoff, workout}}`", satisfied: "`claim.filed{system=p360}`", why: "§13.6 timer table: 'claim filed in P360' within 60 days (F-1-05)." });
+  o("SM_DRA_RECONCILE_DAILY", { trigger: "`schedule.tick{cadence=daily}`", offset: "daily", satisfied: "`dra.snapshot.imported`", why: "§13.6 timer table: 'snapshot imported' (07:00 ET business days)." });
+  o("SM_DRA_EVENT_EXPECTED_2BD", { trigger: "`attorney.instruction.acknowledged`", satisfied: "`dra.event.matched`", why: "§13.6 timer table: 'matching DRA event' within 2 BD; absence raises the exception (13.6-T7)." });
+  o("FNMA_A4201_RECORDS_7Y", { satisfied: "`records.retention.released{kind=firm_selection}`", why: "§13.6 timer table: 7-year retention of firm selection records — closes on the retention release (A4-2.2-01)." });
+  // ---- 13.7 litigation / environmental
+  o("FNMA_E1302_FORM20_EXCEPTION_TRIGGER", { trigger: "`litigation.trigger{event∈{summary_judgment_motion, briefing, trial}}`", offset: "0 calendar_days", satisfied: "`form20.submitted`", why: "§13.7 timer table: the Form 20 exception trigger for standing/MERS/HAMP matters is the trigger event itself (E-1.3-02)." });
+  o("FNMA_F108_ENV_LITIGATION_FORM20_0", { trigger: "`litigation.notice.received{environmental=true}`", offset: "0 calendar_days", satisfied: "`form20.submitted{environmental=true}`", why: "§13.7 timer table: 'Form 20 submitted' the same day (F-1-08 'immediately')." });
+  o("FNMA_F108_ENV_NO_FORECLOSURE_GATE", { evaluator: "13.7.environmentalDirectionToProceed", why: "§13.7 timer table: '`environmental_hazards.fnma_direction=proceed`' (F-1-08)." });
+  o("FNMA_F108_LEAD_PAINT_NOTIFY_30", { satisfied: "`fnma.servicing_rep.notified{kind=lead_paint}`", why: "§13.7 timer table: Servicing Representative notified with value, debt, children <8 and documentation (F-1-08)." });
+  o("SM_ENV_SERVICING_REP_REPORT_2BD", { satisfied: "`fnma.servicing_rep.notified{kind=environmental_hazard}`", why: "§13.7 timer table: 'report sent' (F-1-08)." });
+  o("FNMA_E1301_PLEADING_REVIEW_GATE", { evaluator: "13.7.pleadingDraftGivenInTime", why: "§13.7 timer table: Fannie Mae given the draft ≥5 BD before the deadline (E-1.3-01; policy)." });
+  o("FNMA_E1301_WORKOUT_NOTIFY_COUNSEL_GATE", { evaluator: "13.7.counselNotifiedOfWorkout", why: "§13.7 timer table: 'counsel ack' before a deferral/modification offer leaves on a litigated loan (E-1.3-01)." });
+  o("LITIGATION_HOLD", { evaluator: "13.7.litigationHoldReleased", why: "§13.7 timer table: 'until direction/resolution' — the hold releases on Fannie Mae direction or resolution." });
+  o("SM_FORM20_RESPONSE_FOLLOWUP_10BD", { trigger: "`form20.submitted`", satisfied: "`form20.responded`", why: "§13.7 timer table: 'Fannie Mae direction recorded' (policy follow-up)." });
+  o("SM_LITIGATION_STATUS_UPDATE_MONTHLY", { trigger: "`litigation.matter.opened{routine=false}`", offset: "monthly", satisfied: "`litigation.status_update.sent`", why: "§13.7 timer table: 'update sent to Fannie Mae' (E-1.3-01 'periodically')." });
+  // ---- 13.8 SCRA foreclosure protection
+  o("SM_DMDC_VERIFY_DAY45", { trigger: "`loan.delinquency.day_reached{day=45}`", offset: "0 calendar_days", satisfied: "`dmdc.verification.completed`", why: "§13.8 timer table: 'verification' at delinquency day 45." });
+  o("SM_DMDC_VERIFY_PRE_FIRST_NOTICE_30", { trigger: "`foreclosure.first_notice.authorize.requested`", offset: "0 calendar_days", satisfied: "`dmdc.verification.completed{age_days_le=30}`", why: "§13.8 timer table: a verification ≤30 days old before first-notice authorization." });
+  o("SM_DMDC_VERIFY_PRESALE_30", { satisfied: "`dmdc.verification.completed{purpose=presale_30}`", why: "§13.8 timer table: 'verification' at sale − 30." });
+  o("SM_DMDC_VERIFY_PRESALE_7", { satisfied: "`dmdc.verification.completed{purpose=presale_7}`", why: "§13.8 timer table: 'verification' at sale − 7, re-run on each reschedule." });
+  o("SM_DMDC_VERIFY_PRE_EVICTION_30", { trigger: "`eviction.referral.requested`", offset: "-30 calendar_days", satisfied: "`dmdc.verification.completed{purpose=pre_eviction}`", why: "§13.8 timer table: 'verification' before eviction referral." });
+  o("SCRA_3953_TAIL_1Y", { satisfied: "`timer.lapsed{code=SCRA_3953_TAIL_1Y}`", why: "§13.8 timer table: 'tail expiry → gate open on the following day' — the tail is satisfied only by lapse (50 U.S.C. 3953(c); Feb 29 clamps to Feb 28)." });
+  o("SM_DMDC_PERIODIC_ACTIVE_FC_90", { trigger: "`foreclosure.case.opened`", offset: "90 calendar_days", satisfied: "`dmdc.verification.completed{purpose=periodic_90}`", why: "§13.8 timer table: 'verification' every 90 days while a case is open." });
+  o("SCRA_3931G_DEFAULT_JUDGMENT_REOPEN_90", { satisfied: "`judgment.reopen.decided`", why: "§13.8 timer table: the §3931(g) reopening window closes on the court's decision or lapse (50 U.S.C. 3931(g))." });
+  // ---- 13.9 SCRA interest cap
+  o("SCRA_3937B1_NOTICE_WINDOW_180", { satisfied: "`scra.request.received`", why: "§13.9 timer table: 'request received' within 180 days after release (50 U.S.C. 3937(b)(1))." });
+  o("SCRA_3937_FEES_IN_CAP_GATE", { evaluator: "13.9.feesInsideCap", why: "§13.9 timer table: fees and charges (other than bona fide insurance) count as interest through cap_ends_on (50 U.S.C. 3937(d))." });
+  o("FNMA_F119_MBS_UPLOAD_CD15", { trigger: "`scra.rate_reduction.applied{mbs=true}`", satisfied: "`fnma.upload.accepted{kind=form_1022}`", why: "§13.9 timer table: 'upload accepted' by CD15 of the following month (F-1-19)." });
+  o("FNMA_F119_ARM_TXN83", { satisfied: "`investor.event.accepted{kind=lar_83}`", why: "§13.9 timer table: 'LAR/event accepted' for the ARM adjustment during the cap (F-1-19; 5.1)." });
+  o("FNMA_F119_SUBSIDY_ADJUST_12M", { satisfied: "`scra.subsidy.recalculated`", why: "§13.9 timer table: 'payment recalculated + letter' at least annually (F-1-19)." });
+  o("FNMA_F119_MI_DISBURSEMENT_CHECK_M2", { satisfied: "`custodial.receipt.matched{kind=scra_subsidy}`", why: "§13.9 timer table: 'custodial receipt matched' monthly (F-1-19)." });
+  o("SM_SCRA_OVERPAYMENT_ELECTION_30", { trigger: "`notice.sent{code=NTC_SCRA_3937_OVERPAYMENT_ELECTION}`", satisfied: "`scra.overpayment.election_recorded`", why: "§13.9 timer table: 'election recorded'; the default election applies at lapse (decision 13.9-3)." });
 }

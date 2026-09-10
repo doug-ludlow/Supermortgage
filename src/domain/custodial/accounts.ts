@@ -47,7 +47,23 @@ export function accountPlan(portfolio: readonly { remittance_type: AccountUse; p
   out.push({ kind: "ti", is_drafting_account: false });
   return out;
 }
-export function titleString(servicerName: string, kind: "pi" | "ti"): string { return `${servicerName}, as servicer and/or agent for Fannie Mae and/or various owners of interest in mortgage loans, ${kind === "pi" ? "Principal and Interest" : "Taxes and Insurance"} Custodial Account`; }
+/**
+ * F-1-03 (05/13/2026) titling, verbatim — P&I: "(Name of servicer), as agent, trustee, and/or bailee for the benefit of Fannie Mae
+ * and/or payments of various mortgagors and/or various owners of interests in mortgage-backed securities (Custodial Account)";
+ * T&I (6.2): "(Name of servicer), as agent and/or trustee for the benefit of Fannie Mae and payments of various mortgagors,
+ * respectively (Custodial Account)". The 2019 Form 1013 job aid names a subservicer "(Name of Subservicer) as subservicer for
+ * (Name of Master Servicer)". 6.1 rule 3 compares this string byte-for-byte to the signature card / statement header.
+ */
+export function titleString(servicerName: string, kind: "pi" | "ti", masterServicerName?: string): string {
+  const name = masterServicerName ? `${servicerName} as subservicer for ${masterServicerName}` : servicerName;
+  return kind === "pi"
+    ? `${name}, as agent, trustee, and/or bailee for the benefit of Fannie Mae and/or payments of various mortgagors and/or various owners of interests in mortgage-backed securities (Custodial Account)`
+    : `${name}, as agent and/or trustee for the benefit of Fannie Mae and payments of various mortgagors, respectively (Custodial Account)`;
+}
+/** 6.1 rule 3: the generated title is compared byte-for-byte to the depository's signature card / statement header; a mismatch is the `title_mismatch` exception. */
+export function titleMatches(expected: string, observed: string): { ok: true } | { ok: false; exception: "title_mismatch"; expected: string; observed: string } {
+  return expected === observed ? { ok: true } : { ok: false, exception: "title_mismatch", expected, observed };
+}
 
 export type FormStatus = "in_draft" | "pending_signatures" | "signatures_declined" | "fully_signed" | "in_effect" | "pending_replacement" | "closed_reported";
 export const formMachine = new Machine<FormStatus, { effective_reached?: boolean }>({
@@ -60,11 +76,13 @@ export const formMachine = new Machine<FormStatus, { effective_reached?: boolean
     { from: ["in_draft", "pending_signatures", "signatures_declined", "fully_signed", "in_effect", "pending_replacement"], to: "closed_reported", on: "close" },
   ],
 });
+/** A blocked deposit opens the portal work the operator needs: a CBAM Change/Replace when the executed Form 1014 does not list the loan's remittance type (6.2-T1), a signature chase while the form is pending. */
+export interface DepositGateTask { readonly kind: "human_portal_task"; readonly role: "fnma_portal_operator"; readonly action: "cbam_change_replace" | "cbam_form_signature"; readonly form_kind: "1013" | "1014"; readonly add_remittance_types: readonly AccountUse[]; }
 /** Gate: deposits only into accounts whose form is in effect (and, for T&I, whose remittance types cover the loan). */
-export function depositGate(form: { status: FormStatus; remittance_types?: readonly AccountUse[]; kind: "1013" | "1014" }, loanType?: AccountUse): { ok: true } | { ok: false; gate: string; reason: string } {
+export function depositGate(form: { status: FormStatus; remittance_types?: readonly AccountUse[]; kind: "1013" | "1014" }, loanType?: AccountUse): { ok: true } | { ok: false; gate: string; reason: string; task: DepositGateTask | null } {
   const gate = form.kind === "1013" ? "FNMA_F103_FORM1013_IN_EFFECT_GATE" : "FNMA_F103_FORM1014_IN_EFFECT_GATE";
-  if (form.status !== "in_effect" && form.status !== "pending_replacement") return { ok: false, gate, reason: `form status ${form.status}` };
-  if (form.kind === "1014" && loanType && form.remittance_types && !form.remittance_types.includes(loanType)) return { ok: false, gate, reason: `Form 1014 does not cover ${loanType}; Change/Replace task required` };
+  if (form.status !== "in_effect" && form.status !== "pending_replacement") return { ok: false, gate, reason: `form status ${form.status}`, task: form.status === "pending_signatures" || form.status === "fully_signed" ? { kind: "human_portal_task", role: "fnma_portal_operator", action: "cbam_form_signature", form_kind: form.kind, add_remittance_types: [] } : null };
+  if (form.kind === "1014" && loanType && form.remittance_types && !form.remittance_types.includes(loanType)) return { ok: false, gate, reason: `Form 1014 does not cover ${loanType}; Change/Replace task required`, task: { kind: "human_portal_task", role: "fnma_portal_operator", action: "cbam_change_replace", form_kind: "1014", add_remittance_types: [loanType] } };
   return { ok: true };
 }
 /** 6.1 rule 5: Fannie Mae must be notified within 3 Fannie business days of an ineligibility detection (17:00 ET). */

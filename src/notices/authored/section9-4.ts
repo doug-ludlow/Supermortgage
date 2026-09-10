@@ -6,4 +6,7 @@
 import type { NoticeTemplate, VersionInput } from "../registry.ts";
 
 export const VERSIONS_9_4: VersionInput[] = [];
-export const OVERRIDES_9_4: Record<string, Partial<NoticeTemplate>> = {};
+// 9.4 outputs: "Notice `INS_FPI_RENEWAL_MS3D` … first-class mail; always mailed" and §1024.37(f) — the mailed copy anchors the
+// 45-day gate (`fpi.renewal_notice.sent` is recorded from the print-mail proof of mailing), so the template never goes
+// electronic-only even with active E-SIGN consent (an e-delivered notice would never emit `notice.mailed`).
+export const OVERRIDES_9_4: Record<string, Partial<NoticeTemplate>> = { INS_FPI_RENEWAL_MS3D: { channelPolicy: "mail_only" } };

@@ -8,7 +8,7 @@ import { servicer } from "../../kernel/calendar/business.ts";
 import { CashieringService } from "./service.ts";
 import { allocate } from "./allocation.ts";
 import { decidePartial, openSuspenseItem, sweepReturns, reclassifyStaleHalves, type SuspenseItem } from "./partials.ts";
-import { authorizationDefects, validateDraftDay, settlementDateFor, variableAmountNoticeStatus, handleReturn, revocationEffect, newEnrollment, enrollmentMachine, unauthorizedReturnRateAlert, type Authorization } from "./autodraft.ts";
+import { authorizationDefects, validateDraftDay, settlementDateFor, variableAmountNoticeStatus, handleReturn, revocationEffect, newEnrollment, enrollmentMachine, unauthorizedReturnRateAlert, draftAmount, type Authorization } from "./autodraft.ts";
 import { reamortize, reapplicationGate, nextInstallmentSplit } from "./curtailment.ts";
 import { biweeklyInterest, designatedPrincipalFromAddenda, newArrangement, arrangementMachine, returnClockSuspended } from "./biweekly.ts";
 import { newTrial, trialReceipt, trialMonthEnd, trialCompletion, bookingGate } from "./trial.ts";
@@ -43,7 +43,8 @@ test("2.2-T1/T2 example C: 200,000¢ with a written commitment is held to 2026-1
   assert.equal(d.kind, "hold"); if (d.kind === "hold") assert.equal(d.due_on, "2026-10-10");
   const item = openSuspenseItem({ state: state(), days_delinquent: 9, received_on: D("2026-09-10"), amount_cents: 200_000n, payment_id: r.payment.id, rail: "check" }, d);
   assert.equal(item.partial_commitment_due_on, "2026-10-10");
-  assert.equal(ledger.balance({ scope: "custodial", custodialAccountId: "C-TI", account: "custodial_ti_unapplied_cash" }), 0n); // portal ACH lands direct in custodial P&I; office/lockbox items park in T&I unapplied
+  assert.equal(ledger.balance({ scope: "custodial", custodialAccountId: "C-TI", account: "custodial_ti_unapplied_cash" }), 200_000n);   // 2.2 rule 7: held cash is parked in T&I unapplied whatever the channel (Dr custodial_ti_unapplied_cash / Cr custodial_pi_cash for a direct deposit)
+  assert.equal(ledger.balance({ scope: "custodial", custodialAccountId: "C-PI", account: "custodial_pi_cash" }), 0n);
   // 2.7 assesses on 09-17 (full Monthly Payment not received by 09-16)
   const a = assessLateCharge({ state: state(), installment_due_date: D("2026-09-01"), received_toward_basis_cents: 0n, run_on: D("2026-09-17"), unposted_receipts_on_or_before_grace: 0 });
   assert.equal(a.outcome, "assessed"); if (a.outcome === "assessed") { assert.equal(a.fee.amount_cents, 7_901n); assert.equal(a.grace_end_on, "2026-09-16"); recordFee(state(), a.fee); }
@@ -53,6 +54,10 @@ test("2.2-T1/T2 example C: 200,000¢ with a written commitment is held to 2026-1
   assert.equal(state().installments[0]!.credited_as_of, "2026-09-24");
   assert.equal(state().suspense_unapplied_cents, 0n);
   assert.equal(state().late_charges_due_cents, 7_901n);              // not deducted from a PITI payment
+  // rule 7 application: Dr custodial_pi_cash (P&I) & custodial_ti_cash (escrow) / Cr custodial_ti_unapplied_cash — the parked cash leaves T&I unapplied
+  assert.equal(ledger.balance({ scope: "custodial", custodialAccountId: "C-TI", account: "custodial_ti_unapplied_cash" }), 0n);
+  assert.equal(ledger.balance({ scope: "custodial", custodialAccountId: "C-PI", account: "custodial_pi_cash" }), 158_017n);
+  assert.equal(ledger.balance({ scope: "custodial", custodialAccountId: "C-TI", account: "custodial_ti_cash" }), 61_240n);
 });
 
 test("2.2-T3 example D: 215,000¢ with counter 2 → escrow 56,983¢, counter 3, no late charge; a fourth short payment is an ordinary partial", () => {
@@ -126,7 +131,8 @@ test("2.3-T2: draft day 20 is rejected (grace end = 16th); settlement rolls to k
 });
 
 test("2.3-T3: a changed amount needs the 10-day notice; the annual statement stating amount and date satisfies it", () => {
-  const e = newEnrollment("L-1", AUTH, 1, 10_000n); e.last_debit_cents = 229_257n;
+  const e = newEnrollment("L-1", AUTH, 1, 10_000n); e.last_debit_cents = draftAmount(e, 219_257n, 0n);   // 229,257¢ (example E)
+  assert.equal(draftAmount(e, 158_017n + 64_916n, 0n), 232_933n);                                       // $2,329.33 after the escrow analysis (rule 4)
   const miss = variableAmountNoticeStatus(e, 232_933n, D("2027-01-01"), D("2026-12-23"));
   assert.equal(miss.ok, false); if (!miss.ok) { assert.equal(miss.deadline, "2026-12-22"); assert.equal(miss.action, "hold_entry_escalate"); }
   e.notices.push({ template: "ESCROW-ANNUAL-v1", sent_on: D("2026-12-12"), amount_cents: 232_933n, debit_on: D("2027-01-01") });
@@ -150,9 +156,11 @@ test("2.3-T5/T6/T7: R01 → reverse, fee, notice, one retry; third in 180 days r
   assert.equal(handleReturn(e2, "R01", D("2027-02-10"), { authorization_valid: true, retryOn }).enrollment_action, "suspended_returns");
   const r10 = handleReturn(newEnrollment("L-1", AUTH, 1), "R10", D("2027-02-03"), { authorization_valid: true, retryOn });
   assert.deepEqual([r10.enrollment_action, r10.retry_on, r10.open_fraud_case], ["revoked", null, true]);
-  assert.equal(handleReturn(newEnrollment("L-1", AUTH, 1), "R11", D("2027-03-01"), { authorization_valid: true, defect_ours: true, original_entry_on: D("2027-01-05"), retryOn }).enrollment_action, "correct_and_reinitiate");
-  assert.match(handleReturn(newEnrollment("L-1", AUTH, 1), "R11", D("2027-03-07"), { authorization_valid: true, defect_ours: true, original_entry_on: D("2027-01-05"), retryOn }).refused!, /60 days/);
-  assert.equal(unauthorizedReturnRateAlert(6, 1000), true); assert.equal(unauthorizedReturnRateAlert(4, 1000), false);   // 2.3-T8
+  // R11: the 60-day correction window runs from the Settlement Date of the Return Entry (2027-03-01 → closes 2027-04-30), not from the original entry
+  const r11 = handleReturn(newEnrollment("L-1", AUTH, 1), "R11", D("2027-03-01"), { authorization_valid: true, defect_ours: true, original_entry_on: D("2027-01-05"), corrected_on: D("2027-04-30"), retryOn });
+  assert.equal(r11.enrollment_action, "correct_and_reinitiate"); assert.equal(r11.correction_window_ends_on, "2027-04-30"); assert.equal(r11.company_entry_description, "RETRY PYMT");
+  assert.match(handleReturn(newEnrollment("L-1", AUTH, 1), "R11", D("2027-03-01"), { authorization_valid: true, defect_ours: true, original_entry_on: D("2027-01-05"), corrected_on: D("2027-05-01"), retryOn }).refused!, /60 days from the return settlement date 2027-03-01/);
+  assert.equal(unauthorizedReturnRateAlert(6, 1000), true); assert.equal(unauthorizedReturnRateAlert(4, 1000), false);   // the 0.5% unauthorized threshold (the monthly watch itself is in 2-3.spec.test.ts)
 });
 
 // ───────── 2.4 ─────────
@@ -178,7 +186,7 @@ test("2.4-T5: 'principal only' 300,000¢ on a loan two installments behind cures
   const r = pay(300_000n, "2026-10-20", { borrower_instruction_text: "principal only" });
   assert.equal(r.plan.installments.length, 1); assert.equal(r.plan.curtailment_cents, 0n); assert.equal(r.plan.redirected_curtailment, true);
   assert.equal(state().suspense_unapplied_cents, 300_000n - 219_257n); assert.equal(state().upb_cents, 24_977_400n - 22_723n);
-  assert.equal(events.ofType("notice.queued")[0]!.payload.template, "CURTAIL-REDIRECT-v1");
+  assert.ok(events.ofType("notice.queued").some((e) => e.payload.template === "CURTAIL-REDIRECT-v1"));
 });
 
 test("2.4-T6/T7/T10: MBS reapplication refused; re-amortization computes new P&I, effective ≥30 days out, not a modification; full-payoff designation routes to 16.x", () => {

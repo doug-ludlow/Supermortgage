@@ -44,14 +44,14 @@ export function receiptDates(p: PaymentInput, cfg: ChannelConfig, servicerCal: C
     case "ach_credit_inbound":
     case "wire":
       received_on = p.settlement_date ?? wallClock(Date.parse(p.received_at), "America/New_York").date; break;
-    case "transferor_forward":                             // §1024.33(c): transferor's receipt date
+    case "transferor_forward":                             // §1024.33(c): our receipt date stays `received_on`; the item is *credited* as of the transferor's receipt (2.1 example L)
       if (!p.transferor_received_on) throw new RangeError("transferor_forward requires transferor_received_on");
-      received_on = p.transferor_received_on; break;
+      received_on = datedByCutoff(p.received_at, cfg, servicerCal); break;
     default:
       received_on = datedByCutoff(p.received_at, cfg, servicerCal);
   }
   const conforming = cfg.conforming;
-  const credited_as_of = conforming ? received_on : addDays(received_on, cfg.nonconforming_credit_days);
+  const credited_as_of = p.channel === "transferor_forward" ? p.transferor_received_on! : conforming ? received_on : addDays(received_on, cfg.nonconforming_credit_days);
   return { received_on, credited_as_of, conforming, ...(conforming ? {} : { nonconforming_reason: `channel ${p.channel} is not a specified payment channel` }), requirements_version: cfg.requirements_version };
 }
 

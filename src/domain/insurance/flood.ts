@@ -61,6 +61,12 @@ export function placementAllowed(c: FloodNoticeClocks, on: PlainDate, sufficient
   return !sufficientEvidence && on >= c.borrower_deadline;
 }
 
+/** Rule 5 — on t0 + 45 with no sufficient evidence, bind LPI flood; binding emits `flood.lpi.bound` and verifies coverage for the Fannie 120-day timer (B-3-01). */
+export function bindFloodLpi(c: FloodNoticeClocks, on: PlainDate, sufficientEvidence: boolean, effective: PlainDate): { bound: boolean; reason: string | null; effective: PlainDate | null; events: readonly string[]; fannie_120_satisfied: boolean | null } {
+  if (!placementAllowed(c, on, sufficientEvidence)) return { bound: false, reason: sufficientEvidence ? "sufficient evidence on file" : `FDPA_4012A_E_FLOOD_FPI_NOTICE_45 open until ${c.borrower_deadline}`, effective: null, events: [], fannie_120_satisfied: null };
+  return { bound: true, reason: null, effective, events: ["flood.lpi.bound", "flood.coverage.verified"], fannie_120_satisfied: c.fannie_120 === null ? null : on <= c.fannie_120 };
+}
+
 /** Placement effective the lapse date, or the remap effective date (9.6-Q1 default). */
 export function placementEffective(lapseDate: PlainDate | null, remapEffective: PlainDate | null): PlainDate {
   return lapseDate ?? remapEffective ?? (() => { throw new Error("no lapse or remap date"); })();
@@ -74,6 +80,10 @@ export function nfipEffectiveDate(purchasedOn: PlainDate, remapEffective: PlainD
 
 /** 9.6-T9 — Fannie Mae evidence request: 10 fannie_et business days. */
 export function fnmaEvidenceDue(requestedOn: PlainDate, cal: Calendar = fannieEt): PlainDate { return addBusinessDays(requestedOn, 10, cal); }
+/** B-3-01 evidence package the agent assembles for a Fannie Mae request (sent by `fnma_portal_operator`); the 10-BD clock is `FNMA_B301_FLOOD_EVIDENCE_TO_FNMA_10BD`. */
+export function fnmaEvidencePackage(requestedOn: PlainDate, policy: { policy_number: string; nfip: boolean; building_coverage_cents: Cents }, cal: Calendar = fannieEt): { due: PlainDate; documents: readonly string[]; assembled_by: "insurance-property"; sent_by: "fnma_portal_operator" } {
+  return { due: fnmaEvidenceDue(requestedOn, cal), documents: [`${policy.nfip ? "NFIP" : "private flood"} declarations page ${policy.policy_number} (building ${policy.building_coverage_cents} cents)`, "SFHDF (FEMA FF-206-FY-21-116) and life-of-loan enrolment proof", "premium payment / escrow disbursement evidence"], assembled_by: "insurance-property", sent_by: "fnma_portal_operator" };
+}
 
 /** 9.6-T8 — vendor heartbeat silent ≥ 36 days. */
 export function floodVendorSeverity(lastHeartbeat: PlainDate, today: PlainDate): "ok" | "sev2" { return addDays(lastHeartbeat, 36) <= today ? "sev2" : "ok"; }

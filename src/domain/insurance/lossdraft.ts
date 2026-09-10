@@ -55,6 +55,43 @@ export function progressReleaseDelinquent(total: Cents, releasedSoFar: Cents, in
   return { cents, refused: null };
 }
 
+/** Rule 1 — a delinquent-track (or abandoned/FC-sale) claim opens a 12.x workout evaluation (D2-3.1-01). */
+export function workoutEvaluationRequired(track: LossDraftTrack): boolean { return track === "delinquent_31plus" || track === "abandoned_or_fc_sale"; }
+
+export type ReleaseKind = "contents_ale" | "initial" | "progress" | "final" | "prepaid_reimbursement" | "upb_application" | "remit_fnma_332" | "interest_payout" | "refund_to_borrower";
+export interface ReleaseCheck {
+  readonly kind: ReleaseKind; readonly release: ReleaseInput;
+  readonly initial_cents?: Cents | null; readonly released_so_far_cents: Cents; readonly inspected: boolean; readonly final_inspection: boolean; readonly pct_complete?: string;
+}
+export interface ReleaseLimit { readonly cents: Cents | null; readonly refused: string | null; readonly basis: string; }
+
+/**
+ * Rule 2 formula limits for every sized release kind. `final` is the last release of the claim: on the delinquent track it
+ * needs an inspection, the final inspection, and stays ≤ 25% of total (B-5-01 "always … conduct a final inspection"); on
+ * the current track it is the remainder with no final inspection required (the remote final check is policy). Kinds without
+ * a formula (contents/ALE, remittances, interest, refunds) return `cents: null` — no cap here.
+ */
+export function releaseLimit(c: ReleaseCheck): ReleaseLimit {
+  const r = c.release, total = r.total_cents, released = c.released_so_far_cents;
+  if (c.kind === "initial") { const init = initialRelease(r); return { cents: init.cents, refused: r.track === "not_rebuildable" ? "NOT_REBUILDABLE_APPLY_TO_UPB" : null, basis: `initial (${r.track})` }; }
+  if (c.kind !== "progress" && c.kind !== "final") return { cents: null, refused: null, basis: "no formula" };
+  if (r.track === "not_rebuildable") return { cents: 0n, refused: "NOT_REBUILDABLE_APPLY_TO_UPB", basis: "rule 1" };
+  const remaining = maxC(0n, total - released);
+  if (r.track === "current_lt31") {
+    if (c.kind === "final") return { cents: remaining, refused: null, basis: "current final: remainder; no final inspection required (B-5-01)" };
+    const init = c.initial_cents ?? initialRelease(r).cents;
+    return { cents: progressReleaseCurrent(total, init, released, c.pct_complete ?? "0"), refused: null, basis: "current progress: cumulative ≤ initial + pct_complete × remainder" };
+  }
+  // delinquent_31plus and abandoned_or_fc_sale: ≤ 25% per inspected increment; final inspection before the last release
+  if (!c.inspected) return { cents: 0n, refused: "INSPECTION_REQUIRED", basis: "delinquent: inspection before every release" };
+  if (c.kind === "final") {
+    if (!c.final_inspection) return { cents: 0n, refused: "FINAL_INSPECTION_REQUIRED", basis: "delinquent: final inspection before the last release" };
+    return { cents: minC(pct(total, "0.25"), remaining), refused: null, basis: "delinquent final: ≤ 25% of total after the final inspection" };
+  }
+  const p = progressReleaseDelinquent(total, released, true, c.final_inspection);
+  return { cents: p.cents, refused: p.refused, basis: "delinquent progress: ≤ 25% of total per inspected increment" };
+}
+
 /** Rule 5 — daily balance × rate ÷ 365. */
 export function custodialInterest(balance: Cents, ratePct: string, days: number): Cents {
   return Decimal.fromBigInt(balance).mul(Decimal.parse(ratePct).div(Decimal.fromInt(100))).mul(Decimal.fromInt(days)).div(Decimal.fromInt(365)).toScaledInt(0, "HALF_UP");

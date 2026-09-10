@@ -16,10 +16,19 @@ export function amountDue(a: AmountDue): { amount_due_cents: Cents; shortfall_to
   const due = a.current_payment_cents + a.past_due_cents + a.late_charges_cents + a.fees_cents;   // suspense never netted
   return { amount_due_cents: due, shortfall_to_complete_cents: a.suspense_cents > 0n ? a.current_payment_cents - a.suspense_cents : null, suspense_disclosed_cents: a.suspense_cents };
 }
+/** 7.1 rule 2: the contractual payment shown as "current" = P&I from the active `loan_terms` version + the escrow portion. */
+export function contractualPayment(piCents: Cents, escrowCents: Cents): Cents { return piCents + escrowCents; }
+/** 7.1 rule 4 (d)(8)(vi): the total amount needed to bring the account current = past due + late charges + fees (+ allowable costs when accelerated, 13.x). */
+export function reinstatementAmount(f: { past_due_cents: Cents; late_charges_cents: Cents; fees_cents: Cents; allowable_costs_cents?: Cents }): Cents { return f.past_due_cents + f.late_charges_cents + f.fees_cents + (f.allowable_costs_cents ?? 0n); }
 export function lateFeeLine(piCents: Cents, pct: string, cap: Cents | null): Cents { const v = divRound(piCents * Decimal.parse(pct).unscaled, 100n * Decimal.ONE.unscaled, "HALF_UP"); return cap !== null && v > cap ? cap : v; }
-export function delinquencyBox(statementDate: PlainDate, earliestUnpaidDue: PlainDate | null): { include: boolean; regx_days: number; began_on: PlainDate | null } {
+/**
+ * (d)(8) delinquency box. `regx_days` counts from the day after the earliest unpaid due date (comment 41(d)(8)-2:
+ * "using February 2 as the first day of delinquency"), so `began_on` = that due date + 1 (7.1 rule 4) while the
+ * (d)(8)(i) sentence names the due date itself ("your first unpaid payment was due Sept. 1, 2026") — `first_unpaid_due`.
+ */
+export function delinquencyBox(statementDate: PlainDate, earliestUnpaidDue: PlainDate | null): { include: boolean; regx_days: number; began_on: PlainDate | null; first_unpaid_due: PlainDate | null } {
   const days = earliestUnpaidDue ? daysBetween(earliestUnpaidDue, statementDate) : 0;
-  return { include: days > 45, regx_days: days, began_on: earliestUnpaidDue ? addDays(earliestUnpaidDue, 1) : null };
+  return { include: days > 45, regx_days: days, began_on: earliestUnpaidDue ? addDays(earliestUnpaidDue, 1) : null, first_unpaid_due: earliestUnpaidDue };
 }
 export type Variant = "charged_off" | "bk_exempt" | "bk_modified_7_11" | "bk_modified_12_13" | "successor_unacknowledged" | "tpp" | "accelerated" | "delinquent" | "standard";
 export function variant(f: { charged_off: boolean; bk_chapter: "7" | "11" | "12" | "13" | null; bk_exempt: boolean; successor_unacknowledged: boolean; tpp_active: boolean; accelerated: boolean; regx_days: number }): Variant {

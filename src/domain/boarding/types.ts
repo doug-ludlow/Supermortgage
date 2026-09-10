@@ -6,6 +6,7 @@
  */
 import type { PlainDate } from "../../kernel/calendar/date.ts";
 import type { Cents } from "../../kernel/money/cents.ts";
+import type { InheritedLossmitFile } from "../transfers/ops-1-7.ts";
 
 export type RemittanceType = "A/A" | "S/A" | "S/S";
 export type InterestMethod = "30_360" | "actual_360" | "actual_365" | "daily_simple";
@@ -53,7 +54,8 @@ export interface StagedLoan {
   readonly nib_separated: boolean;
   readonly bankruptcy: { readonly active: boolean; readonly chapter?: string | null; readonly case_number?: string | null; readonly filed_on?: PlainDate | null };
   readonly foreclosure: { readonly active: boolean; readonly referral_date?: PlainDate | null; readonly attorney?: string | null };
-  readonly lossmit: { readonly in_process: boolean; readonly application_status?: string | null; readonly received_on?: PlainDate | null };
+  /** `inherited_file`: the transferor's loss-mit file from the `lossmit` tape (1.7 inflightBoardingFacts reads it onto `loan.boarded`). */
+  readonly lossmit: { readonly in_process: boolean; readonly application_status?: string | null; readonly received_on?: PlainDate | null; readonly inherited_file?: InheritedLossmitFile | null };
   readonly scra: { readonly active: boolean; readonly rate_cap_reason?: string | null };
   readonly borrower: { readonly legal_name: string | null; readonly tin: string | null; readonly phone?: string | null; readonly email?: string | null; readonly preferred_language?: string | null };
   readonly property: { readonly address_line1: string | null; readonly city: string | null; readonly state: string | null; readonly postal_code: string | null; readonly occupancy?: string | null };
@@ -109,7 +111,7 @@ export interface ExternalPositions {
   onPlatform(kind: "fnma_loan_number" | "min", value: string): boolean;
 }
 
-export type Severity = "hard" | "warning";
+export type Severity = "hard" | "warning" | "info";
 
 export interface RuleResult {
   readonly code: string;

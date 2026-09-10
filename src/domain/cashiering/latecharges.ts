@@ -5,6 +5,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { type PlainDate, addDays } from "../../kernel/calendar/date.ts";
+import { rollForward, servicer, type Calendar } from "../../kernel/calendar/business.ts";
 import { divRound, Decimal } from "../../kernel/money/decimal.ts";
 import type { Cents } from "../../kernel/money/cents.ts";
 import type { Actor } from "../../kernel/events/types.ts";
@@ -13,8 +14,8 @@ import { type LoanCashState, type Fee, type Overlay, cashCfg } from "./types.ts"
 export interface AssessmentInput {
   readonly state: LoanCashState;
   readonly installment_due_date: PlainDate;
-  /** Funds credited toward the installment's basis with credited_as_of ≤ grace end. */
-  readonly received_toward_basis_cents: Cents;
+  /** Funds credited toward the installment's basis with credited_as_of ≤ grace end. Omitted → derived from the loan state (`receivedTowardBasis`, rule 1). */
+  readonly received_toward_basis_cents?: Cents;
   readonly run_on: PlainDate;
   /** Receipts dated ≤ grace end that are not yet posted (SM_CASHIERING_POSTING_BACKLOG_GATE). */
   readonly unposted_receipts_on_or_before_grace: number;
@@ -24,7 +25,17 @@ export type AssessmentResult =
   | { outcome: "not_assessed"; reason: string; grace_end_on: PlainDate }
   | { outcome: "assessed" | "accrued_suspended"; fee: Fee; grace_end_on: PlainDate };
 
-export function graceEnd(due: PlainDate, graceDays: number): PlainDate { return addDays(due, graceDays); }
+/**
+ * Last timely day for the installment (Note ¶6(A): due + `late_charge_grace_days`). `NOTE_6A_LATE_CHARGE_GRACE_GATE`: "if that day is
+ * not a `servicer` business day the gate opens the next business day (policy)" — 2.7 decision 2 extends the grace end to the next
+ * servicer business day by default; `roll=false` computes strictly on calendar days for states that require it.
+ */
+export function graceEnd(due: PlainDate, graceDays: number, roll = true, cal: Calendar = servicer): PlainDate {
+  const end = addDays(due, graceDays);
+  return roll ? rollForward(end, cal) : end;
+}
+/** The grace end for a loan's own terms (rolled per its jurisdiction setting). */
+export function graceEndFor(state: LoanCashState, due: PlainDate, cal: Calendar = servicer): PlainDate { const c = cashCfg(state); return graceEnd(due, c.grace, c.graceRoll, cal); }
 
 export function lateChargeAmount(basisCents: Cents, pct: string, cap: Cents | null): Cents {
   const raw = divRound(basisCents * Decimal.parse(pct).unscaled, 100n * Decimal.ONE.unscaled, "HALF_UP");
@@ -35,17 +46,39 @@ function activeOverlay(overlays: readonly Overlay[], kind: Overlay["kind"], due:
   return overlays.find((o) => o.kind === kind && o.from <= due && (o.to == null || o.to >= due));
 }
 
+/** The installment's basis amount (rule 2: P&I by default; PITI only where the boarded note says so). */
+export function basisCents(state: LoanCashState, inst: { pi_cents: Cents; escrow_cents: Cents }): Cents { return cashCfg(state).basis === "piti" ? inst.pi_cents + inst.escrow_cents : inst.pi_cents; }
+
+/**
+ * 2.7 rule 1, the credited-funds test the engine runs itself: funds credited toward the installment's basis with
+ * `credited_as_of ≤ grace end`. A `satisfied`/`prepaid` installment whose `credited_as_of` is inside the grace counts in
+ * full; funds held in suspense attributable to the installment count too (decision 2.7-Q1, borrower-favorable reading);
+ * a partial credited amount the projection does not carry must be passed explicitly (`received_toward_basis_cents`).
+ */
+export function receivedTowardBasis(state: LoanCashState, due: PlainDate, cal: Calendar = servicer): Cents {
+  const inst = state.installments.find((x) => x.due_date === due);
+  if (!inst) throw new RangeError(`no installment ${due}`);
+  const basis = basisCents(state, inst);
+  const graceEndOn = graceEndFor(state, due, cal);
+  if ((inst.status === "satisfied" || inst.status === "prepaid") && (inst.credited_as_of === undefined || inst.credited_as_of <= graceEndOn)) return basis;
+  if (inst.status === "deferred" || inst.status === "forborne") return basis;   // nothing is due on a deferred/forborne installment
+  const held = state.suspense_unapplied_cents;
+  return held > basis ? basis : held;
+}
+
 /** 2.7 rule 1 + rule 3 (overlays in precedence order). */
 export function assessLateCharge(i: AssessmentInput): AssessmentResult {
   const c = cashCfg(i.state);
   const inst = i.state.installments.find((x) => x.due_date === i.installment_due_date);
   if (!inst) throw new RangeError(`no installment ${i.installment_due_date}`);
-  const grace_end_on = graceEnd(inst.due_date, c.grace);
+  const grace_end_on = graceEnd(inst.due_date, c.grace, c.graceRoll);
   if (i.run_on <= grace_end_on) return { outcome: "not_assessed", reason: "not_due: before grace end", grace_end_on };
   if (c.fees.some((f) => f.fee_type === "late_charge" && f.installment_due_date === inst.due_date && f.state !== "reversed")) return { outcome: "not_assessed", reason: "already evaluated (once per installment)", grace_end_on };
   if (i.unposted_receipts_on_or_before_grace > 0) return { outcome: "deferred_backlog", grace_end_on };
-  const basis = c.basis === "piti" ? inst.pi_cents + inst.escrow_cents : inst.pi_cents;
-  if (i.received_toward_basis_cents >= basis) return { outcome: "not_assessed", reason: "paid within grace", grace_end_on };
+  const basis = basisCents(i.state, inst);
+  const received = i.received_toward_basis_cents ?? receivedTowardBasis(i.state, inst.due_date);
+  // §1026.36(c)(2) no pyramiding: a periodic payment credited by grace end is never charged because prior fees are unpaid.
+  if (received >= basis) return { outcome: "not_assessed", reason: i.state.late_charges_due_cents > 0n ? "paid within grace (no pyramiding on prior fees, §1026.36(c)(2))" : "paid within grace", grace_end_on };
   const ov = c.overlays;
   if (c.shieldUntil && inst.due_date <= c.shieldUntil || activeOverlay(ov, "transfer_window_60", inst.due_date)) return { outcome: "not_assessed", reason: "transfer_window_60 shield (§1024.33(c)(1))", grace_end_on };
   const fb = ov.find((o) => o.kind === "forbearance_active" && o.from <= inst.due_date);
@@ -97,7 +130,7 @@ export function releaseSuspended(state: LoanCashState, suppression: string): Fee
 export function reverseOnRedate(state: LoanCashState, installmentDueDate: PlainDate, newCreditedAsOf: PlainDate): { reversed: Fee | null; refund_cents: Cents; credit_reporting_correction: boolean } {
   const c = cashCfg(state);
   const fee = (state.fees ?? []).find((f) => f.fee_type === "late_charge" && f.installment_due_date === installmentDueDate && (f.state === "assessed" || f.state === "collected"));
-  if (!fee || newCreditedAsOf > graceEnd(installmentDueDate, c.grace)) return { reversed: null, refund_cents: 0n, credit_reporting_correction: false };
+  if (!fee || newCreditedAsOf > graceEnd(installmentDueDate, c.grace, c.graceRoll)) return { reversed: null, refund_cents: 0n, credit_reporting_correction: false };
   const refund = fee.collected_cents;
   if (fee.state === "assessed") state.late_charges_due_cents -= fee.amount_cents - fee.collected_cents;
   fee.state = "reversed";
@@ -108,12 +141,13 @@ export interface NsfJurisdiction { readonly allowed: boolean; readonly cap_cents
 export const NSF_POLICY_CENTS = 2_500n;
 
 /** 2.7 rule 7. */
-export function nsfFee(state: LoanCashState, j: NsfJurisdiction, opts: { our_error: boolean; returned_on: PlainDate }): Fee | null {
+export function nsfFee(state: LoanCashState, j: NsfJurisdiction, opts: { our_error: boolean; returned_on: PlainDate; payment_id?: string }): Fee | null {
   const c = cashCfg(state);
   if (!j.allowed || opts.our_error) return null;
   if (c.overlays.some((o) => (o.kind === "bankruptcy_active" || o.kind === "scra_reduced_rate" || o.kind === "forbearance_active") && o.from <= opts.returned_on && (o.to == null || o.to >= opts.returned_on))) return null;
+  if (opts.payment_id && c.fees.some((f) => f.fee_type === "nsf_fee" && f.returned_payment_id === opts.payment_id && f.state !== "reversed")) return null;   // once per returned item
   const amount = j.cap_cents !== null && j.cap_cents < NSF_POLICY_CENTS ? j.cap_cents : NSF_POLICY_CENTS;
-  return { id: randomUUID(), fee_type: "nsf_fee", installment_due_date: null, amount_cents: amount, state: "assessed", assessed_on: opts.returned_on, collected_cents: 0n };
+  return { id: randomUUID(), fee_type: "nsf_fee", installment_due_date: null, amount_cents: amount, state: "assessed", assessed_on: opts.returned_on, collected_cents: 0n, ...(opts.payment_id ? { returned_payment_id: opts.payment_id } : {}) };
 }
 
 /** 2.7 rule 9: statement/reminder data for an unpaid installment. */
@@ -121,7 +155,7 @@ export function lateFeeDisclosure(state: LoanCashState, due: PlainDate): { late_
   const c = cashCfg(state);
   const inst = state.installments.find((x) => x.due_date === due)!;
   const basis = c.basis === "piti" ? inst.pi_cents + inst.escrow_cents : inst.pi_cents;
-  return { late_fee_amount_if_unpaid: lateChargeAmount(basis, c.lcPct, c.lcCap), late_fee_date: addDays(graceEnd(due, c.grace), 1) };
+  return { late_fee_amount_if_unpaid: lateChargeAmount(basis, c.lcPct, c.lcCap), late_fee_date: addDays(graceEnd(due, c.grace, c.graceRoll), 1) };
 }
 
 /** 2.7-T9: note terms apply unless the state's percentage cap is stricter; a conflict is flagged at boarding and the lower cap applied.

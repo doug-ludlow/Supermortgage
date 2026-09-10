@@ -9,5 +9,10 @@ import type { TimerRegistry } from "../../kernel/timers/registry.ts";
 
 export function applySatisfiedOverrides_11_5(reg: TimerRegistry): void {
   const o = reg.override.bind(reg);
-  void o; // no 11.5 overrides yet — add `o(code, { … , why })` rows here.
+  // §11.5 inputs: "`lossmit.brp.complete` (12.1) — starts the evaluation clock"; timer table (12.2 owns): trigger `lossmit.brp.complete`,
+  // anchor "complete date", 30 calendar_days, satisfied "evaluation notice sent". The 12.1 completeness determination is spelled
+  // `lossmit.application.completed{complete_date}` on the platform (emitted by the 12.1 tool `lossmit.application.open/update`,
+  // src/app/tools/section12.ts, when the BRP is verified complete) — the same event FNMA_D2205_INCOME_DOC_90 arms on.
+  o("REGX_1024_41C1_EVALUATE_30", { trigger: "`lossmit.application.completed`", anchorField: "complete_date",
+    why: "§11.5 timer table (12.2 owns): `lossmit.brp.complete` → evaluation notice within 30 calendar_days of the complete date (§1024.41(c)(1)); the platform spells 12.1's complete-BRP determination `lossmit.application.completed{complete_date}` (section12.ts lossmit.application.open/update)." });
 }

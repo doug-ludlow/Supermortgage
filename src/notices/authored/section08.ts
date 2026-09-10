@@ -13,8 +13,21 @@ export const MODEL_B2 = "We have told a credit bureau about a late payment, miss
 const CONTACT = `{{#block "contact" page=1 y=0.9 pt=10}}Supermortgage · {{servicer_phone}} (toll-free) · {{servicer_address}}{{/block}}`;
 const CONTACT_SAMPLE = { servicer_phone: "(800) 555-0100", servicer_address: "PO Box 1, Testville TX 75001" };
 
-const B1_SOURCE = `{{#block "b1" page=1 y=0.8 pt=11 bold}}${MODEL_B1}{{/block}}`;
-const B1_RULES: ContentRule[] = [R("model-text", "12 CFR 1022 App. B, Model B-1; 15 U.S.C. §1681s-2(a)(7)(A)", "presence", MODEL_B1.replace(/[.]/g, "\\."), "Model B-1 text verbatim"), R("per-account", "§1681s-2(a)(7)(A)(i)", "data_equality", "account_last4", "one notice per account", { predicate: { present: "account_last4" } })];
+/**
+ * The B-1 block as it rides on its carrier documents — the RESPA hello notice
+ * (1.3) and the first periodic statement (7.1) embed this same block (8.1
+ * Outputs: "B-1 travels with its carrier document"); the standalone version
+ * below is the template of record the checklist validates.
+ */
+export const B1_CARRIER_BLOCK = `{{#block "b1" page=1 y=0.8 pt=11 bold}}${MODEL_B1}{{/block}}`;
+const B1_SOURCE = `${B1_CARRIER_BLOCK}
+{{#block "b1_account" page=1 y=0.85 pt=10}}This notice applies to your mortgage loan ending {{account_last4}}.{{/block}}`;
+const B1_RULES: ContentRule[] = [
+  R("model-text", "12 CFR 1022 App. B, Model B-1; 15 U.S.C. §1681s-2(a)(7)(A)", "presence", MODEL_B1.replace(/[.]/g, "\\."), "Model B-1 text verbatim"),
+  R("clear-and-conspicuous", "§1681s-2(a)(7)(A)(i), (B)(ii): the notice must be clear and conspicuous", "layout", "b1", "B-1 block on page 1, bold, at least 10pt", { layout: { page: 1, bold: true, minPt: 10 } }),
+  R("per-account", "§1681s-2(a)(7)(A)(i): one notice per account suffices for subsequent negative information", "data_equality", "prior_b1_notices_for_account", "one notice per account: the account is identified and no earlier B-1 is on file for it", { predicate: { and: [{ present: "account_last4" }, { "==": [{ var: "prior_b1_notices_for_account" }, 0] }] } }),
+  R("account-identified", "§1681s-2(a)(7)(A)(i) (per account)", "presence", "loan ending \\d{4}", "the account the notice covers is identified"),
+];
 const B2_SOURCE = `{{#block "b2" page=1 y=0.1 pt=11 bold}}${MODEL_B2}{{/block}}
 {{#block "account" page=1 y=0.2 pt=10}}Loan number ending {{account_last4}}. Information was first furnished on {{date first_furnished_on}}.{{/block}}
 ${CONTACT}`;
@@ -34,7 +47,7 @@ const ACK_SOURCE = `{{#block "body" page=1 y=0.1 pt=11}}We received your credit 
 ${CONTACT}`;
 const ACK_RULES: ContentRule[] = [R("received", "8.2 (optional acknowledgment; policy)", "presence", "received your credit reporting dispute on", "acknowledges receipt"), R("results-date", "§1022.43(e)", "presence", "send you the results by", "states the results date")];
 
-const S = { account_last4: "1234", first_furnished_on: "2027-04-05", days_after_furnishing: 10, dispute_address: "PO Box 2, Testville TX 75001", portal_url: "https://portal.example.com/messages", received_on: "2027-09-03", items: [{ item: "February 2027 payment reported late", determination: "verified as reported", reason: "our records show the February 1 installment was not received until the deferral in August" }], corrections: [], adverse_ai: true, human_review_offered: true, days_after_receipt: 25, reason: "it is a repeat of a dispute we already investigated and contains no new information", required_information: ["the specific account information you dispute", "why you believe it is inaccurate", "supporting documents such as a cleared check image"], business_days_after_determination: 5, determined_by_human: true, results_due: "2027-10-03", ...CONTACT_SAMPLE };
+const S = { account_last4: "1234", prior_b1_notices_for_account: 0, first_furnished_on: "2027-04-05", days_after_furnishing: 10, dispute_address: "PO Box 2, Testville TX 75001", portal_url: "https://portal.example.com/messages", received_on: "2027-09-03", items: [{ item: "February 2027 payment reported late", determination: "verified as reported", reason: "our records show the February 1 installment was not received until the deferral in August" }], corrections: [], adverse_ai: true, human_review_offered: true, days_after_receipt: 25, reason: "it is a repeat of a dispute we already investigated and contains no new information", required_information: ["the specific account information you dispute", "why you believe it is inaccurate", "supporting documents such as a cleared check image"], business_days_after_determination: 5, determined_by_human: true, results_due: "2027-10-03", ...CONTACT_SAMPLE };
 
 export const SECTION_08_VERSIONS: readonly VersionInput[] = [
   V("NTC_FCRA_1681S2A7_B1", B1_SOURCE, B1_RULES, S, "fcra.regv.2026-09", "12 CFR 1022 Appendix B, Model B-1"),

@@ -5,7 +5,9 @@ import { period, nextMonth, calendarDraftDate } from "./period.ts";
 import { scheduleForward, gfeeCheckFigure, type ScheduledMonth } from "./remittance.ts";
 
 export type SdaStatus = "not_applicable" | "predicted" | "active" | "exited";
-export interface SdaState { status: SdaStatus; predicted_entry_period: string | null; fm_pi_receivable_cents: Cents; servicer_advances_outstanding_cents: Cents; advances: { period: string; amount_cents: Cents; draft_date: PlainDate; status: "outstanding" | "reimbursed_by_fnma" }[]; }
+/** 5.4 data model `advances.status`. */
+export type AdvanceStatus = "outstanding" | "recovered_from_borrower" | "reimbursed_by_fnma" | "written_off";
+export interface SdaState { status: SdaStatus; predicted_entry_period: string | null; fm_pi_receivable_cents: Cents; servicer_advances_outstanding_cents: Cents; advances: { period: string; amount_cents: Cents; draft_date: PlainDate; status: AdvanceStatus }[]; }
 
 /** Consecutive unpaid installments at period end from LPI (5.4 rule 2). */
 export function consecutiveMonthsDelinquent(lpi: PlainDate, periodEnd: PlainDate): number { let n = 0; let d = addMonths(lpi, 1); while (d <= periodEnd) { n++; d = addMonths(d, 1); } return n; }
@@ -27,11 +29,28 @@ export function advanceSchedule(lpi: PlainDate, scheduledUpb: Cents, noteRate: s
   return { months, drafts, total_cents: drafts.reduce((s, d) => s + d.amount_cents, 0n) };
 }
 
-/** During SDA a contractual payment's P&I is drafted by Fannie Mae as recovery against fm_pi_receivable first; the servicer then retains against its own advances (FIFO). */
+/** 5.4 rule 3–4: while Stop Advance is set Fannie Mae's receivable grows by the scheduled P&I of each period it credits; a contractual payment's recovery draft equals the receivable for the periods it clears. */
+export function fmReceivableForPeriods(months: readonly ScheduledMonth[]): Cents { return months.reduce((s, m) => s + m.fnma_interest_cents + m.fnma_principal_cents, 0n); }
+/** Only full contractual payments count during SDA (partials sit in suspense): n × P&I. */
+export function contractualPaymentsTotal(piCents: Cents, count: number): Cents { return piCents * BigInt(count); }
+/** 5.4-T1: the funding gate excludes the loan from the first CD18 draft after Fannie Mae's report shows `active`. */
+export function firstExcludedDraft(fnmaActiveReportedOn: PlainDate): PlainDate { const cd18 = calendarDraftDate(fnmaActiveReportedOn, 18); return cd18 > fnmaActiveReportedOn ? cd18 : calendarDraftDate(nextMonth(fnmaActiveReportedOn), 18); }
+/** 5.4-T1 boundary: if Fannie Mae credits an earlier draft than the four-advance model predicts, flag the boundary and reverse that period's advance. */
+export function sdaBoundaryReconciliation(f: { predicted_first_excluded_draft: PlainDate; fnma_credited_draft: PlainDate; advances: readonly { period: string; draft_date: PlainDate }[] }): { boundary_flagged: boolean; reverse_advance_period: string | null } {
+  if (f.fnma_credited_draft >= f.predicted_first_excluded_draft) return { boundary_flagged: false, reverse_advance_period: null };
+  const hit = f.advances.find((a) => a.draft_date === f.fnma_credited_draft);
+  return { boundary_flagged: true, reverse_advance_period: hit?.period ?? null };
+}
+
+/**
+ * F-1-20: a contractual payment collected during SDA is drafted by Fannie Mae first to recover its own advances (`fm_pi_receivable`);
+ * once that is zero the servicer retains subsequent payments to recover its delinquency advances, FIFO by period — those rows move
+ * to `recovered_from_borrower` (5.4 data model), never `reimbursed_by_fnma`, which is the reclass/deferral/liquidation exit path.
+ */
 export function applyRecovery(st: SdaState, recoveryCents: Cents): { to_fnma_receivable_cents: Cents; to_servicer_advances_cents: Cents } {
   const a = recoveryCents < st.fm_pi_receivable_cents ? recoveryCents : st.fm_pi_receivable_cents; st.fm_pi_receivable_cents -= a;
   let left = recoveryCents - a; let b = 0n;
-  for (const adv of st.advances) { if (left <= 0n) break; if (adv.status === "outstanding") { const take = left < adv.amount_cents ? left : adv.amount_cents; if (take === adv.amount_cents) adv.status = "reimbursed_by_fnma"; left -= take; b += take; } }
+  for (const adv of st.advances) { if (left <= 0n) break; if (adv.status === "outstanding") { const take = left < adv.amount_cents ? left : adv.amount_cents; if (take === adv.amount_cents) adv.status = "recovered_from_borrower"; left -= take; b += take; } }
   st.servicer_advances_outstanding_cents -= b;
   return { to_fnma_receivable_cents: a, to_servicer_advances_cents: b };
 }

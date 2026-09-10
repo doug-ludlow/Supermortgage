@@ -157,6 +157,12 @@ export function buildSnapshot(state: CreditLoanState, policy: CreditPolicy = DEF
   let k4: Metro2Snapshot["k4"] = null;
   let final = false;
   const c = state.condition;
+  /** Rule 7 / 8.1-T7: the Payment Rating on a terminal status is the delinquency bucket *at the closing date*, not at the snapshot date. */
+  const ratingAtClosing = (closedOn: PlainDate): PaymentRating => {
+    const atClose = deriveDelinquency(state.installments, closedOn);
+    trail.push(`payment rating: ${atClose.days} days past due at closing ${closedOn}`);
+    return paymentRatingForDays(atClose.days);
+  };
 
   switch (c.kind) {
     case "none": break;
@@ -181,18 +187,18 @@ export function buildSnapshot(state: CreditLoanState, policy: CreditPolicy = DEF
       k4 = { specialized_payment_indicator: "01", balloon_due_on: state.maturity_date, balloon_amount_cents: state.deferred_principal_cents };
       break;
     case "foreclosure_sale":
-      status = "94"; paymentRating = paymentRatingForDays(dq.days); closed = c.closed_on; final = true; apd = 0n;
+      status = "94"; paymentRating = ratingAtClosing(c.closed_on); closed = c.closed_on; final = true; apd = 0n;
       if (!c.deficiency_pursued) balance = 0n;
       break;
-    case "deed_in_lieu": status = "89"; paymentRating = paymentRatingForDays(dq.days); closed = c.closed_on; balance = 0n; apd = 0n; final = true; break;
+    case "deed_in_lieu": status = "89"; paymentRating = ratingAtClosing(c.closed_on); closed = c.closed_on; balance = 0n; apd = 0n; final = true; break;
     case "short_sale":
-      status = c.foreclosure_started ? "65" : "13"; paymentRating = paymentRatingForDays(dq.days); special = "AU";
+      status = c.foreclosure_started ? "65" : "13"; paymentRating = ratingAtClosing(c.closed_on); special = "AU";
       closed = c.closed_on; balance = 0n; apd = 0n; final = true; break;
     case "paid_in_full":
-      status = "13"; paymentRating = paymentRatingForDays(dq.days); if (c.by_refinance) special = "AS";
+      status = "13"; paymentRating = ratingAtClosing(c.closed_on); if (c.by_refinance) special = "AS";
       closed = c.closed_on; balance = 0n; apd = 0n; final = true; break;
     case "charge_off": status = "97"; closed = c.closed_on; chargeOff = c.charge_off_cents; final = true; break;
-    case "transfer_out": status = "05"; paymentRating = paymentRatingForDays(dq.days); special = "BA"; closed = c.transfer_date; final = true; break;
+    case "transfer_out": status = "05"; paymentRating = ratingAtClosing(c.transfer_date); special = "BA"; closed = c.transfer_date; final = true; break;
   }
   if (!final && state.foreclosure_referred && special === "") special = "BO";
   if (!final && state.disaster_case_open && special === "") special = "AW";      // AW yields to CP (8.3-Q2)
@@ -251,7 +257,8 @@ export function validateSnapshot(s: Metro2Snapshot): string[] {
   if (RATING_REQUIRED.has(s.account_status) && s.payment_rating === null) errs.push("PAYMENT_RATING_REQUIRED");
   if (s.php.length !== 24) errs.push("PHP_LENGTH");
   if (s.amount_past_due_cents > 0n && (s.account_status === "13" || s.account_status === "94" || s.account_status === "89")) errs.push("APD_WITH_CLOSED_STATUS");
-  if (s.k3.min !== null && !/^\d{18}$/.test(s.k3.min)) errs.push("MIN_NOT_18_DIGITS");
+  if (s.k3.min === null) errs.push("K3_MIN_MISSING");                          // rule 6: the K3 MIN is mandatory on every loan; rule 9: "K3 missing" is a hard error
+  else if (!/^\d{18}$/.test(s.k3.min)) errs.push("MIN_NOT_18_DIGITS");
   if (!/^\d{10}$/.test(s.k3.fnma_loan_number)) errs.push("K3_FNMA_LOAN_NUMBER");
   if (s.consumers.length === 0) errs.push("NO_CONSUMER_SEGMENT");
   if (s.account_status === "97" && s.original_charge_off_cents <= 0n) errs.push("CHARGE_OFF_AMOUNT_REQUIRED");

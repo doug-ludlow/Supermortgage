@@ -46,13 +46,34 @@ export function preSaleInspection(saleDate: PlainDate): { order_by: PlainDate; c
   return { order_by: addDays(saleDate, -21), complete_by: addDays(saleDate, -7), window_from: addDays(saleDate, -35), window_to: addDays(saleDate, -1) };
 }
 
-export const INSPECTION_CAPS: Readonly<Record<InspectionType, Cents>> = { curbside: 3_000n, exterior: 4_500n, interior: 6_000n };
+/** F-1-05 Defined Expense Reimbursement Limits (as extracted 2026-09-09): interior $45, exterior $30 (a curbside counts as exterior), insured-loss repair $60 per inspection. */
+export const INSPECTION_CAPS: Readonly<Record<InspectionType, Cents>> = { curbside: 3_000n, exterior: 3_000n, interior: 4_500n };
+export const INSURED_LOSS_REPAIR_INSPECTION_CAP: Cents = 6_000n;
 
-/** Rule 7 — servicer-ordered inspections claimed at caps within 60 days of the milestone; program inspections not claimed. */
+/** Rule 7 — servicer-ordered inspections claimed at ≤ $30/$45 caps within 60 days of the milestone; program inspections not claimed. */
 export function inspectionClaim(mode: InspectionMode, type: InspectionType, cost: Cents, milestoneOn: PlainDate): { claim_cents: Cents; due: PlainDate } | null {
   if (mode === "pfpip") return null;
   const cap = INSPECTION_CAPS[type];
   return { claim_cents: cost < cap ? cost : cap, due: addDays(milestoneOn, 60) };
+}
+
+/** 9.7 rule 10 / F-1-05 — insured-loss repair inspections at ≤ $60; current-loan costs claimed within one year (FNMA_F105_INSURED_LOSS_INSPECT_CLAIM_365). */
+export function repairInspectionClaim(cost: Cents, incurredOn: PlainDate, delinquent: boolean): { claim_cents: Cents; due: PlainDate | null } {
+  return { claim_cents: cost < INSURED_LOSS_REPAIR_INSPECTION_CAP ? cost : INSURED_LOSS_REPAIR_INSPECTION_CAP, due: delinquent ? null : addDays(incurredOn, 365) };
+}
+
+export type InspectionPurpose = "delinquency" | "vacancy_confirmation" | "occupancy_check" | "pre_sale_35" | "disaster" | "insured_loss_repair" | "disrepair" | "code_violation" | "other";
+/** FNMA_D2210_INSPECT_ORDER_DAY90 — no order before day 90 except vacancy checks (D2-2-10; vacancy inspections have no day-90 floor). */
+export function inspectionOrderAllowed(purpose: InspectionPurpose | string, day: number): { allowed: boolean; reason: string | null } {
+  if (purpose === "vacancy_confirmation" || purpose === "occupancy_check" || purpose === "disaster" || purpose === "insured_loss_repair") return { allowed: true, reason: null };
+  if (!Number.isFinite(day)) return { allowed: false, reason: "delinquency day count required (fnma_days_delinquent from the earliest unpaid due date)" };
+  return day >= 90 ? { allowed: true, reason: null } : { allowed: false, reason: `day ${day}: the first inspection is ordered on or after the 90th day of delinquency (D2-2-10)` };
+}
+
+/** FNMA_P360_PFPIP_SUBMIT_EXCEPTION_DAY45 — the vacancy exception submission is due at delinquency day 45 (earliest unpaid due date + 45) or when vacancy is confirmed, whichever is later. */
+export function pfpipExceptionSubmitOn(earliestUnpaidDue: PlainDate, vacancyConfirmedOn: PlainDate): PlainDate {
+  const day45 = addDays(earliestUnpaidDue, 45);
+  return day45 > vacancyConfirmedOn ? day45 : vacancyConfirmedOn;
 }
 
 /** 9.8-T5 / T3 — PFPIP submission and occupancy updates within 2 business days. */

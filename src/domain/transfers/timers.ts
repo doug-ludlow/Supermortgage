@@ -13,6 +13,12 @@ import { applySatisfiedOverrides_17_4 } from "./timers-17-4.ts";
 export function applyTransferTimerOverrides(reg: TimerRegistry): void {
   const o = reg.override.bind(reg);
   // ---- 1.2 transfer intake ------------------------------------------------
+  o("SM_FORM629_INTERNAL_BUFFER_7", { anchor: "`form629_deadline`", anchorField: "form629_deadline",
+    why: "§1.2 timer table: anchor 'Form 629 deadline' — the 30/60-day deadline `proposeBatch` computes (batch.ts form629Clocks) and carries on `transfer.batch.proposed`." });
+  o("FNMA_A2_7_03_FORM629_SERVICING_60", { anchor: "`form629_anchor_date`", anchorField: "form629_anchor_date",
+    why: "§1.2 timer table: anchor 'earlier of `sale_date`,`transfer_date`' — computed by `proposeBatch` as `form629_anchor_date` (1.2-T3: Sept 15 sale → July 17)." });
+  o("FNMA_QX_LOAN_LIST_FREEZE_CD25", { anchor: "`loan_list_freeze_on`", anchorField: "loan_list_freeze_on",
+    why: "§1.2 timer table: anchor '25th calendar day of month before `transfer_date`' (offset 0) — `transfer.batch.approved` carries it as `loan_list_freeze_on` (inbound.ts approvedPayload)." });
   o("FNMA_A2_1_07_FORM101_INCEPTION", { trigger: "`transfer.batch.proposed{first_batch_for_partner=true}`", evaluator: "1.2.form101Present",
     why: "§1.2 timer table: trigger `transfer.batch.proposed{first batch for this partner}`; gate = `form101_document_id` present (A2-1-07)." });
   o("FNMA_A2_1_07_FORMS_1013_1014_GATE", { trigger: "`transfer.batch.proposed{first_batch_for_partner=true}`", evaluator: "1.2.forms1013And1014Executed",
@@ -26,13 +32,38 @@ export function applyTransferTimerOverrides(reg: TimerRegistry): void {
     why: "§1.3 timer table: window days 1–60 (calendar) from `respa_effective_date`; expires day 61 (§1024.33(c)(1))." });
   o("SM_TOLLFREE_LIVE_GATE", { evaluator: "1.3.tollFreeAndIvrDisclosureLive",
     why: "§1.3 timer table: toll-free number and IVR/AI disclosure verified live before `transfer_notice_run.planned` proceeds." });
+  // The registry's "template=NTC_…_MS2 or COMBINED" reads as an equality against the literal string; the row means either template.
+  // "for every loan" is the run-level `notice.mailed` the notice run emits on the batch once every loan's proof of mailing is in (inbound.ts noticeRunMailed).
+  o("REGX_1024_33B3_GOODBYE_15", { satisfied: "`notice.mailed{template∈{NTC_REGX_1024_33B_GOODBYE_MS2, NTC_REGX_1024_33B_COMBINED_MS2}, every_loan=true}`",
+    why: "§1.3 timer table: '`notice.mailed{template=NTC_REGX_1024_33B_GOODBYE_MS2 or COMBINED}` for every loan' (§1024.33(b)(3)(i))." });
+  o("REGX_1024_33B3_HELLO_15", { satisfied: "`notice.mailed{template∈{NTC_REGX_1024_33B_HELLO_MS2, NTC_REGX_1024_33B_COMBINED_MS2}, every_loan=true}`",
+    why: "§1.3 timer table: '`notice.mailed{template=NTC_REGX_1024_33B_HELLO_MS2 or COMBINED}`' — the hello run mailed for the batch (§1024.33(b)(3)(i))." });
+  o("REGX_1024_33B3_COMBINED_15", { satisfied: "`notice.mailed{template=NTC_REGX_1024_33B_COMBINED_MS2, every_loan=true}`",
+    why: "§1.3 timer table: '`notice.mailed{template=NTC_REGX_1024_33B_COMBINED_MS2}`' — the combined run mailed for every loan of the batch (1.3-T1)." });
+  o("FNMA_A2_7_03_RETURNED_NOTICE_SKIP_TRACE_5", { trigger: "`mail.returned{template∈{NTC_REGX_1024_33B_GOODBYE_MS2, NTC_REGX_1024_33B_HELLO_MS2, NTC_REGX_1024_33B_COMBINED_MS2}}`",
+    why: "§1.3 timer table: '`mail.returned{template∈RESPA}`' — the RESPA templates are the three MS-2 codes (A2-7-03 skip trace on a returned RESPA notice)." });
   // ---- 1.4 custody ---------------------------------------------------------
   o("SM_CUSTODY_RECORD_GATE", { evaluator: "1.4.custodyRecordPresent", why: "§1.4 timer table: custody record present on `loan.staged`; satisfied by `HF-018` pass." });
+  o("FNMA_DTJA_RECERT_EXTENSION_15", { anchor: "`recert_deadline`", anchorField: "recert_deadline",
+    why: "§1.4 timer table: anchor 'recert deadline' (−15 calendar days) — the agent forecast `custody.recert.at_risk` carries `recert_deadline` (inbound.ts recertForecast; Document Transfers Job Aid v5)." });
   // ---- 1.5 MERS ------------------------------------------------------------
   o("SM_MERS_INVESTOR_FNMA_CHECK", { trigger: "`loan.staged{min is not null}`", evaluator: "1.5.mersInvestorIsFannieMae",
     why: "§1.5 timer table: investor/note owner on MERS = Fannie Mae Org ID; satisfied by `W-016` pass." });
+  // The registry's `mers.txn.accepted{min_update_subservicer}` parses as a truthy key; the acknowledgment carries the transaction type in `txn_type`
+  // (1.5 data model mers_transactions.txn_type). "for all MINs" / "100% of MINs" is the batch-level event the ack/snapshot ingestion emits once every MIN is in.
+  o("MERS_PROC_SUBSERVICER_MIN_UPDATE_T0", { satisfied: "`mers.txn.accepted{txn_type=min_update_subservicer, all_mins=true}`",
+    why: "§1.5 timer table: '`mers.txn.accepted{min_update_subservicer}` for all MINs' (Procedures Manual: Subservicer named on the MIN records)." });
+  o("MERS_PROC_REGISTER_UNREGISTERED_7", { satisfied: "`mers.txn.accepted{txn_type=registration}`",
+    why: "§1.5 timer table: '`mers.txn.accepted{registration}`' (the 1.1 row's `mers.registration.confirmed` is the same acknowledgment; Procedures Manual 7-day registration)." });
+  o("MERS_PROC_TOS_CONFIRM_7", { satisfied: "`mers.txn.confirmed{txn_type=tos_confirm}`", why: "§1.5 timer table: '`mers.txn.confirmed{tos_confirm}`' — the buyer-side confirmation acknowledgment." });
+  o("SM_MERS_POST_TRANSFER_VERIFY_3", { satisfied: "`mers.snapshot.verified{all_mins=true}`",
+    why: "§1.5 timer table: '`mers.snapshot.verified` for 100% of MINs' — the batch-level verification event (Servicer = partner, Subservicer = Supermortgage, Investor = Fannie Mae for every MIN)." });
   // ---- 1.6 reconciliation --------------------------------------------------
   o("SM_RECON_LOAN_LEVEL_T0", { evaluator: "1.6.loanReconciledBeforeBoard", why: "§1.6 timer table: loan must be `reconciled` before `boardLoan` (T0 = `transfer_date`)." });
+  o("REGX_1024_17E_INITIAL_ESCROW_STMT_60", { satisfied: "`notice.sent{template=NTC_REGX_1024_17G_INITIAL_ESCROW_STMT}`",
+    why: "§1.6 timer table: '`notice.sent{NTC_REGX_1024_17G_INITIAL_ESCROW_STMT}` (3.1)' — the column names the template; `notice.sent` carries it in `template` (§1024.17(e)(1) initial escrow statement within 60 days of transfer)." });
+  o("SM_RECON_FNMA_POSITION_EOM", { anchor: "`fnma_position_deadline`", anchorField: "fnma_position_deadline",
+    why: "§1.6 timer table: anchor 'last `business_days_fannie_et` of transfer month' (offset 0) — `transfer.batch.cutover_completed` carries it as `fnma_position_deadline` (reconciliation.ts fnmaPositionLagDeadline; 1.6-T7 Oct 30, 2026)." });
   // ---- 1.7 in-flight loss mitigation --------------------------------------
   o("REGX_1024_41B2_ACK_5_DEEMED_T0", { trigger: "`loan.boarded{lossmit_application_open=true, prior_1024_41_subject=false}`",
     why: "§1.7 timer table: `loan.boarded{application not previously subject to §1024.41}`; deemed receipt on `transfer_date` (+5 federal BD, §1024.41(k)(1))." });
@@ -42,6 +73,8 @@ export function applyTransferTimerOverrides(reg: TimerRegistry): void {
     why: "§1.7 timer table: `loan.boarded{incomplete app with reasonable date}`; anchor `transferor_reasonable_date` (§1024.41(k)(2))." });
   o("REGX_1024_41K2_TRANSFEREE_ACK_10", { trigger: "`loan.boarded{lossmit_ack_unexpired=true, lossmit_ack_sent=false}`",
     why: "§1.7 timer table: `loan.boarded{lossmit ack unexpired & not sent}` (+10 federal BD from `transfer_date`, §1024.41(k)(2))." });
+  o("REGX_1024_41K4_APPEAL_DETERMINATION_30", { trigger: "`lossmit.appeal.*`", anchor: "`k4_anchor_date`", anchorField: "k4_anchor_date",
+    why: "§1.7 timer table: trigger `lossmit.appeal.pending_at_transfer` or `lossmit.appeal.received` (timely, post-transfer); anchor 'later of `transfer_date`, `appeal_received_at`' — carried as `k4_anchor_date` (inbound.ts appealReceived; §1024.41(k)(4)(i), 1.7-T3 Nov 4, 2026)." });
   o("REGX_1024_41K5_OFFER_ACCEPTANCE_BALANCE", { trigger: "`loan.boarded{lossmit_offer_pending=true}`", anchorField: "acceptance_deadline",
     why: "§1.7 timer table: `loan.boarded{offer pending}`; anchor = original `acceptance_deadline`, offset 0 (§1024.41(k)(5) unexpired balance)." });
   o("SM_SMDU_CASE_ACCESS_T0", { trigger: "`loan.boarded{lossmit_status∈{lossmit_in_process, trial_in_progress}}`",

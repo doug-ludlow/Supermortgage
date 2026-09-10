@@ -2,7 +2,7 @@
  * 9.9 Property preservation (vacant) — initial scope timing, allowable
  * checks with BATF/bid splits, registrations, tarps and carrier notice.
  */
-import { type PlainDate, addDays } from "../../kernel/calendar/date.ts";
+import { type PlainDate, addDays, addMonths } from "../../kernel/calendar/date.ts";
 import { type Calendar, addBusinessDays, servicer } from "../../kernel/calendar/business.ts";
 import type { Cents } from "../../kernel/money/cents.ts";
 
@@ -14,6 +14,11 @@ export function preservationMode(i: { pfpip: boolean; permission: string; chapte
 
 /** Rule 2 — initial securing/services due ≤ FTV + 14. */
 export function initialServicesDue(ftv: PlainDate): PlainDate { return addDays(ftv, 14); }
+/** FNMA_PPM_INITIAL_SECURE_14 — a completion on/before FTV + 14 satisfies; later completions breach (sev-1) and the file must carry the documented reason. */
+export function initialSecuringStatus(ftv: PlainDate, completedOn: PlainDate): { due: PlainDate; on_time: boolean; breach: "sev1" | null; reason_required: boolean } {
+  const due = initialServicesDue(ftv); const late = completedOn > due;
+  return { due, on_time: !late, breach: late ? "sev1" : null, reason_required: late };
+}
 
 export type ItemKind = "lock_change" | "boarding" | "yard_initial" | "debris" | "winterization" | "posting" | "grass_cut" | "roof_patch" | "other";
 
@@ -66,11 +71,18 @@ export function winterizationRequired(state: string): boolean { return !NO_WINTE
 export function tarpDeadline(installedOn: PlainDate): PlainDate { return addDays(installedOn, 60); }
 export function damageDisposition(estimateCents: Cents): "patch" | "tarp_and_bid" { return estimateCents <= 125_000n ? "patch" : "tarp_and_bid"; }
 
-/** Rule 7 — vacant-property registration from jurisdiction rules. */
-export function registrationClocks(triggerOn: PlainDate, rule: { within_days: number; renewal_months: number | null } | null): { file_by: PlainDate; renew_on: PlainDate | null } | null {
+/** Rule 7 — vacant-property registration from jurisdiction rules: file by trigger + ordinance days; the renewal (`JUR_VACANT_REGISTRATION_RENEWAL_<id>`) runs the ordinance period from `filed_at` — until the filing is recorded, from the filing deadline as the latest date it could run from. */
+export function registrationClocks(triggerOn: PlainDate, rule: { within_days: number; renewal_months: number | null } | null, filedOn: PlainDate | null = null): { file_by: PlainDate; renew_on: PlainDate | null; renewal_anchor: "filed_at" | "filing_deadline" } | null {
   if (rule === null) return null;
   const fileBy = addDays(triggerOn, rule.within_days);
-  return { file_by: fileBy, renew_on: rule.renewal_months === null ? null : addDays(fileBy, Math.round(rule.renewal_months * 30.4375)) };
+  const anchor = filedOn ?? fileBy;
+  return { file_by: fileBy, renew_on: rule.renewal_months === null ? null : addMonths(anchor, rule.renewal_months), renewal_anchor: filedOn === null ? "filing_deadline" : "filed_at" };
+}
+
+/** Rule 3 — the over-allowable bid package for HomeTracker (`human_portal_task` for `fnma_portal_operator`): Form 1095 fields, itemized bid, dated photos ≤ 30 days old. */
+export function bidPackage(discoveredOn: PlainDate, photosTakenOn: readonly PlainDate[], submittedOn: PlainDate): { due: PlainDate; channel: "hometracker"; human_task: "human_portal_task"; owner_role: "fnma_portal_operator"; form: "1095"; photos_fresh: boolean; stale_photos: PlainDate[] } {
+  const stale = photosTakenOn.filter((p) => !photosFresh(p, submittedOn));
+  return { due: bidDue(discoveredOn), channel: "hometracker", human_task: "human_portal_task", owner_role: "fnma_portal_operator", form: "1095", photos_fresh: photosTakenOn.length > 0 && stale.length === 0, stale_photos: stale };
 }
 
 /** Rule 8 — code violations within caps ($1,000 per, $3,000 life). */

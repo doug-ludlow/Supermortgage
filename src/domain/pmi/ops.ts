@@ -61,6 +61,7 @@ export function smduOutageFallback(i: { outage_hours: number; case_day: number; 
 export interface TerminationActions {
   readonly event: "mi.terminated" | "mi.cancelled";
   readonly effective: PlainDate;
+  readonly premium_stop_from: PlainDate;       // HPA_4902E_STOP_PREMIUM_30 anchor
   readonly lar89: { code: Lar89Code; action_date: string; line: string; due_ms: number };
   readonly insurer_message: { queued: true; reason: string; due: PlainDate };
   readonly escrow_interim_analysis: { requested: true; due: PlainDate };
@@ -71,7 +72,7 @@ export interface TerminationActions {
 export function terminationActions(loanId: string, clocks: FinalizationClocks, kind: "automatic_78" | "automatic_midpoint" | "borrower" = "automatic_78"): TerminationActions {
   const e = clocks.effective_on;
   return {
-    event: kind === "borrower" ? "mi.cancelled" : "mi.terminated", effective: e,
+    event: kind === "borrower" ? "mi.cancelled" : "mi.terminated", effective: e, premium_stop_from: clocks.premium_stop_from,
     lar89: { code: clocks.lar89.code, action_date: clocks.lar89.action_date, line: `89 0 ${loanId} ${clocks.lar89.code} ${clocks.lar89.action_date}`, due_ms: lar89Clocks(e).period_close_ms },
     insurer_message: { queued: true, reason: kind === "borrower" ? "HPA_borrower_cancellation" : kind === "automatic_midpoint" ? "FNMA_midpoint" : "HPA_automatic_termination", due: clocks.insurer_notice_due },
     escrow_interim_analysis: { requested: true, due: clocks.escrow_interim_analysis_due },
@@ -122,9 +123,9 @@ export function lar89AckStatus(i: { effective: PlainDate; acked_at_ms: number | 
   return { status: "open", clocks, timer_breached: i.now_ms >= clocks.internal_target_ms ? "SM_MI_LAR89_INTERNAL_TARGET_NEXTBD_2000" : null, human_portal_task: null, escalation: null };
 }
 
-/** 10.2-T8 — no installment due after the premium-stop date may carry the MI escrow component. */
-export function statementMiGuard(i: { installment_due: PlainDate; effective: PlainDate; includes_mi: boolean }): { blocked: boolean; gate: "HPA_4902E_STOP_PREMIUM_30"; premium_stop_by: PlainDate; alert: { role: "officer"; severity: 1 } | null } {
-  const stop = addDays(i.effective, 30);
+/** 10.2-T8 — no installment due after the premium-stop date may carry the MI escrow component (`premium_stop_from` overrides the anchor for borrower cancellations, 4902(e)(1)). */
+export function statementMiGuard(i: { installment_due: PlainDate; effective: PlainDate; includes_mi: boolean; premium_stop_from?: PlainDate }): { blocked: boolean; gate: "HPA_4902E_STOP_PREMIUM_30"; premium_stop_by: PlainDate; alert: { role: "officer"; severity: 1 } | null } {
+  const stop = addDays(i.premium_stop_from ?? i.effective, 30);
   const blocked = i.includes_mi && i.installment_due > stop;
   return { blocked, gate: "HPA_4902E_STOP_PREMIUM_30", premium_stop_by: stop, alert: blocked ? { role: "officer", severity: 1 } : null };
 }

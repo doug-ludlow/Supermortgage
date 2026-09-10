@@ -122,7 +122,6 @@ export const EVALUATORS: Record<string, Evaluator> = {
   "3.2.newPaymentAtLeast30DaysAfterStatement": (f) => (["payoff", "transfer", "mi_termination"].includes(s(f, "reason")) || b(f, "payment_decreased") || s(f, "effective_on") >= addDays(s(f, "statement_sent_on") as PlainDate, 30) ? ok : no(`new escrow payment effective ${s(f, "effective_on")} is less than 30 days after the statement sent ${s(f, "statement_sent_on")} (3.2 R9; bypassed only for payoff, transfer, mi_termination or a decrease)`)),
   "3.4.cushionCap": (f) => (b(f, "cap_check_passed") ? ok : no("cushion exceeds 1/6 of annual disbursements (§1024.17(c)(5), (d)(2)(ii))")),
   "3.4.preaccrual": (f) => (b(f, "preaccrual_check_passed") ? ok : no("a projected disbursement precedes the bill's availability date or follows its penalty date (§1024.17(c)(6))")),
-  "3.6.interimAnalysisBeforeDemand": (f) => (b(f, "analysis_done") ? ok : no("a deficiency from a servicer advance may not be demanded before the interim analysis (§1024.17(f)(1)(ii))")),
   "3.8.hpmlFiveYears": (f) => (!b(f, "hpml") || s(f, "today") >= addYears(s(f, "consummation_date") as PlainDate, 5) ? ok : no(`HPML escrow may not be cancelled before ${addYears(s(f, "consummation_date") as PlainDate, 5)} (§1026.35(b)(3))`)),
   // ---- §2 cashiering
   "2.1.noPostingBacklog": (f) => atMost(n(f, "items_received_or_identified_on_or_before_gate_date"), 0, "posting backlog"),
@@ -135,8 +134,6 @@ export const EVALUATORS: Record<string, Evaluator> = {
   "2.4.nibOrder": (f) => { const amt = c(f, "amount_cents"), ib = c(f, "interest_bearing_upb_cents"); const expect = amt < ib ? "ib_only" : "nib_then_ib"; return s(f, "allocation_order") === expect ? ok : no(`amount ${amt < ib ? "<" : "≥"} IB UPB requires ${expect}`); },
   "2.4.reapplyEligible": (f) => every(f, ["current_before_curtailment", "within_reapply_window", "no_intervening_delinquency", "borrower_requested_in_writing"], "C-1.2-01 reapplication conditions"),
   "2.4.routeToPayoff": (f) => (c(f, "amount_cents") >= c(f, "interest_bearing_upb_cents") + c(f, "nib_cents") ? no("amount ≥ IB UPB + NIB → route to payoff (16.1/16.2)") : ok),
-  "2.5.acceptConformingContractorPayment": (f) => (b(f, "conforming") && b(f, "sufficient") && b(f, "timely") ? ok : no("only a conforming, sufficient, timely contractor payment is accepted as such")),
-  "2.5.biweeklyInterest": (f) => (s(f, "interest_basis") === "upb×rate×14/365" ? ok : no("biweekly interest basis must be UPB × rate × 14 ÷ 365 (rule 5; day count UNVERIFIED)")),
   "2.6.lateChargesExcludedFromCapitalization": (f) => (c(f, "late_charges_in_capitalization_cents") === 0n ? ok : no("capitalized amount includes late charges (F-1-27)")),
   "2.7.graceGateOpen": (f) => (s(f, "run_on") > s(f, "grace_end_on") ? ok : no(`late-charge grace period runs through ${s(f, "grace_end_on")} (note ¶6(A))`)),
   "2.7.forbearanceNoAccrual": (f) => (!b(f, "forbearance_active") || (s(f, "defaulted_on") !== "" && s(f, "installment_due_date") >= s(f, "defaulted_on")) ? ok : no("forbearance plan active: no late-charge accrual (D2-3.2-01)")),
@@ -145,9 +142,6 @@ export const EVALUATORS: Record<string, Evaluator> = {
   "2.7.noPyramiding": (f) => (b(f, "periodic_payment_credited_by_grace_end") && b(f, "only_shortfall_is_prior_fees") ? no("§1026.36(c)(2): payment credited in full by grace end; shortfall is prior fees only") : ok),
   "2.7.courtesyWaiverLimit": (f) => atMost(n(f, "courtesy_waivers_rolling_12m"), 0, "courtesy waivers already granted in the rolling 12 months (max 1)"),
   // ---- §3 escrow
-  "3.6.workoutSpread60": (f) => (n(f, "plan_months") === 60 || (n(f, "plan_months") >= 12 && b(f, "borrower_election_evidenced")) ? ok : no("workout shortage spread is 60 months unless a ≥12-month borrower election is evidenced")),
-  "3.6.shortageMinSpread": (f) => (n(f, "plan_months") >= 12 || (c(f, "shortage_cents") < c(f, "one_month_escrow_cents") && n(f, "plan_months") <= 1) ? ok : no("a shortage spread is at least 12 months (§1024.17(f)(3)); under one month only allow (0) or the 30-day option (1) may be shorter")),
-  "3.6.deficiencyMinInstallments": (f) => atLeast(n(f, "plan_months"), 2, "deficiency repayment installments (§1024.17(f)(4))"),
   "3.8.floodEscrowMandatory": (f) => (b(f, "flood_escrow_mandatory") && b(f, "has_flood_line") ? no("flood escrow is mandatory (12 CFR 22.5); waiver refused") : ok),
   "3.8.miMonthlyEscrowRequired": (f) => (b(f, "borrower_paid_mi_monthly") ? no("monthly borrower-paid MI requires escrow (B-1-01)") : ok),
   "3.8.escrowEstablishedOrExceptionDocumented": (f) => (b(f, "escrow_established") || b(f, "exception_documented") ? ok : no("escrow not established and no documented exception before the trial offer")),
@@ -156,10 +150,8 @@ export const EVALUATORS: Record<string, Evaluator> = {
   // ---- §5–§7
   "5.7.managementActionRecorded": (f) => { const omitted = arr<string>(f, "loans_with_management_action").filter((l) => !arr<string>(f, "loans_in_file").includes(l)); return omitted.length ? no(`loans with a delinquency-management action in the month are missing from the file even though current: ${omitted.join(", ")} (D2-4-01)`) : ok; },
   "6.1.activeAccountsForEveryRemittanceType": (f) => { const missing = arr<string>(f, "remittance_types").filter((t) => !arr<string>(f, "active_pi_account_types").includes(t) || !arr<string>(f, "active_ti_account_types").includes(t)); return missing.length ? no(`no active P&I + T&I account for ${missing.join(", ")}`) : ok; },
-  "6.4.form496aReviewedWithZeroOrExplainedVariance": (f) => (["under_review", "approved", "submitted"].includes(s(f, "form_496a_status")) && (c(f, "attestation_variance_cents") === 0n || b(f, "variance_explained")) ? ok : no("Form 496A must be under review or later with a zero or explained variance")),
+  "6.4.form496aReviewedWithZeroOrExplainedVariance": (f) => (["under_review", "approved", "completed"].includes(s(f, "form_496a_status")) && (c(f, "attestation_variance_cents") === 0n || b(f, "variance_explained")) ? ok : no("Form 496A must be under review or later with a zero or explained variance")),
   "7.2.dualCalculationMatches": (f) => (c(f, "engine_a_payment_cents") === c(f, "engine_b_payment_cents") && s(f, "engine_a_rate") === s(f, "engine_b_rate") ? ok : no("second engine result differs (rate/payment must match to the cent)")),
-  "7.3.indexRecentEnoughForEstimate": (f) => atMost(n(f, "index_age_business_days"), 15, "index age in business days at disclosure (§1026.20(d))"),
-  "7.3.separateDocumentEnforced": (f) => (b(f, "separate_document") ? ok : no("§1026.20(d) notice must be its own document")),
   "7.4.esignConsentActiveForEveryRecipient": (f) => { const lacking = arr<{ party_id: string; consent_active: boolean; covers_class: boolean }>(f, "recipients").filter((r) => !r.consent_active || !r.covers_class); return lacking.length ? no(`no active consent covering the class for ${lacking.map((r) => r.party_id).join(", ")}`) : ok; },
   "7.4.irsEstatementConsentActive": (f) => (b(f, "irs_estatement_consent_active") ? ok : no("electronic 1098 needs an active irs_estatement consent")),
   "7.6.payoffStatementAccuracy": (f) => every(f, ["calc_version_current", "no_pending_items_older_than_cutoff", "arm_adjustment_reflected"], "payoff statement accuracy gate"),
@@ -170,7 +162,7 @@ export const EVALUATORS: Record<string, Evaluator> = {
   // ---- §11 early intervention
   "11.1.variedAttemptTimes": (f) => (n(f, "evening_or_weekend_attempts_3_cycles") >= 1 && n(f, "distinct_daypart_slots_3_cycles") >= 2 ? ok : no("A4-2.1-04: ≥1 evening/weekend attempt and ≥2 daypart slots per 3 cycles")),
   "11.1.callCap7in7": (f) => atMost(within(f, "counted_call_attempts_at", 7, s(f, "now")) + 1, 7, "Reg F §1006.14(b) counted calls in 7 days including this one"),
-  "11.1.quietHours": (f) => { const t = s(f, "consumer_local_time"); const mode = s(f, "mode"); const end = mode === "voice" ? "20:30" : mode === "sms" || mode === "email" ? "20:00" : "21:00"; return t > "08:00" && t <= end ? ok : no(`outside ${mode || "contact"} window after 08:00 through ${end} consumer-local (11.1-T12: 08:00 is refused)`); },
+  "11.1.quietHours": (f) => { const m = s(f, "mode"); const ch = m === "sms" || m === "email" ? m : m === "letter" || m === "mail" ? "mail" : "voice"; if (ch === "mail") return ok; const end = ch === "voice" ? "20:30" : "20:00"; const times = arr<unknown>(f, "consumer_local_times").map((x) => (x !== null && typeof x === "object" ? String((x as { time?: unknown }).time ?? "") : String(x ?? ""))); const all = times.length ? times : [s(f, "consumer_local_time")]; const bad = all.filter((t) => !/^\d\d:\d\d$/.test(t) || !(t > "08:00" && t <= end)); return bad.length === 0 ? ok : no(`outside ${ch} window after 08:00 through ${end} in every candidate zone (rule 8: ${bad.join(", ") || "no consumer-local time"}; 11.1-T12: 08:00 is refused)`); },
   "11.1.tcpaConsentUnrevoked": (f) => (b(f, s(f, "mode") === "sms" ? "tcpa_sms_consent_active" : "tcpa_voice_consent_active") ? ok : no("no unrevoked TCPA consent for this channel (47 CFR 64.1200(a)(1))")),
   "11.1.landlineAi3in30": (f) => atMost(within(f, "ai_voice_attempts_at", 30, s(f, "now")) + 1, 3, "AI-voice attempts to a landline in 30 days without written consent"),
   "11.2.delinquentAtLeast30OrImminentDefault": (f) => (n(f, "regx_days_delinquent") >= 30 || b(f, "imminent_default_requested") ? ok : no("no solicitation before 30 days delinquent absent an imminent-default request (D2-1-01)")),

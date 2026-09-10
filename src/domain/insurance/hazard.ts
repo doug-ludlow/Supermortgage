@@ -78,11 +78,34 @@ export function isLpiCurable(d: Deficiency): boolean {
   return d === "coverage_basis" || d === "coverage_form" || d === "wind_gap" || d === "master_lapse";
 }
 
+export type PolicyStatus = "pending_verification" | "verified" | "deficient";
+export interface PolicyVerification { readonly status: PolicyStatus; readonly adequacy: AdequacyResult; readonly last_known_coverage_cents: Cents | null; readonly reason: string | null; }
+
+/** State machine: `verified` only on an adequacy PASS with a confirmed evidence record (9.1 guardrail); FAIL → `deficient`; PASS without confirmed evidence stays `pending_verification`. */
+export function verifyPolicy(p: HazardPolicy, titleHolders: readonly string[], evidenceConfirmed: boolean): PolicyVerification {
+  const adequacy = evaluateAdequacy(p, titleHolders);
+  if (!adequacy.pass) return { status: "deficient", adequacy, last_known_coverage_cents: null, reason: adequacy.deficiencies.join(",") };
+  if (!evidenceConfirmed) return { status: "pending_verification", adequacy, last_known_coverage_cents: null, reason: "no confirmed evidence record" };
+  return { status: "verified", adequacy, last_known_coverage_cents: p.coverage_dwelling_cents, reason: null };
+}
+
 /** Rule 3 — renewal evidence silent on basis: compare to last known coverage. */
 export function renewalShortcut(coverage: Cents, lastKnown: Cents | null, basisStated: boolean): "verified" | "coverage_decrease_unconfirmed" {
   if (basisStated) return "verified";
   if (lastKnown === null || coverage < lastKnown) return "coverage_decrease_unconfirmed";
   return "verified";
+}
+
+/** Rule 3 — a `coverage_decrease_unconfirmed` finding opens the agent's "additional steps" task (B-2-02), recorded in the decision record. */
+export function coverageDecreaseFollowUp(result: ReturnType<typeof renewalShortcut>): { task: "carrier_confirmation"; steps: readonly string[]; documented_in: "decision_record" } | null {
+  if (result === "verified") return null;
+  return { task: "carrier_confirmation", steps: ["carrier/agent confirmation call (AI voice, disclosed)", "request the policy jacket / replacement-cost endorsement page", "record the steps and outcome"], documented_in: "decision_record" };
+}
+
+/** 9.1-T8 / B7-3-08 — an invalid mortgagee clause (MERS named, partner ISAOA/ATIMA missing) raises a change request to the carrier/agent. */
+export function mortgageeChangeRequest(p: HazardPolicy): { to: "carrier_or_agent"; clause: string; remove_mers: boolean } | null {
+  const bad = !p.mortgagee_clause.names_partner_isaoa || !p.mortgagee_clause.co_servicer || p.mortgagee_clause.names_mers;
+  return bad ? { to: "carrier_or_agent", clause: "[Partner legal name], its successors and/or assigns, c/o Supermortgage", remove_mers: p.mortgagee_clause.names_mers } : null;
 }
 
 export const EXTRACTION_CONFIDENCE_MIN = 0.9;
@@ -113,6 +136,9 @@ export function lapseDetectedOn(expiration: PlainDate, renewalEvidence: boolean)
 export function annualReminderDue(lastSentOn: PlainDate | null, today: PlainDate): boolean {
   return lastSentOn === null || addDays(lastSentOn, 365) <= today;
 }
+/** FNMA_B201_ANNUAL_INSURANCE_REMINDER_365 re-arms from the reminder just sent (LL-2026-03: mandatory from 2027-01-01). */
+export const ANNUAL_REMINDER_MANDATORY_FROM: PlainDate = "2027-01-01" as PlainDate;
+export function annualReminderNextDue(sentOn: PlainDate): PlainDate { return addDays(sentOn, 365); }
 
 /** 9.1-T9 — vendor feed silent for 3 business days → sev-2. */
 export function vendorFeedSeverity(lastHeartbeat: PlainDate, today: PlainDate, cal: Calendar = servicer): "ok" | "sev2" {

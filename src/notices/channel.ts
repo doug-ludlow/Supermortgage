@@ -24,7 +24,7 @@ export function decideChannel(t: NoticeTemplate, recipients: readonly Recipient[
     if (ctx.stateMandatedMail) return mailed("state-mandated mail (7.4-T10)");
     const c = r.consent;
     if (t.channelPolicy === "electronic_ok_without_esign") {
-      if (r.email) return { partyId: r.partyId, channel: "email_link", reason: "electronic permitted without E-SIGN consent", satisfiesTimer: true };
+      if (r.email) return { partyId: r.partyId, channel: "email_link", reason: "electronic permitted without E-SIGN consent", consentId: `policy:${t.channelPolicy}`, satisfiesTimer: true };
       return mailed("no email address on file");
     }
     if (!c) return mailed("no E-SIGN consent (7.4 rule 1)");

@@ -22,13 +22,12 @@ import { type PlainDate, addDays, addYears, max as maxDate } from "../../kernel/
 import { addBusinessDays, servicer } from "../../kernel/calendar/business.ts";
 import { wallClock } from "../../kernel/calendar/zoned.ts";
 import type { Cents } from "../../kernel/money/cents.ts";
+import type { EntrySetInput, LineInput } from "../../kernel/ledger/ledger.ts";
 import { eventDeadlineMs, fannieBusinessDay } from "../investor/period.ts";
 import { deadlines as noeDeadlines, exceptionNoticeDue, type AssertionType, type Deadlines } from "../servicing-requests/noe.ts";
 import { outboundSchedule, finalPeriodCloseMs, transfereeRequestDue, finalAccountingDue, expectedWires, type LoanBalances } from "./reconciliation.ts";
 import { mersTransaction, mersClocks, form2009Overdue } from "./custody-mers.ts";
-// MERS transaction shapes (1.5 `mers_transactions` rows); inbound.ts exports the same types once 1.5's process build lands.
-type MersTxnType = "min_update_subservicer" | "tos_initiate" | "tos_confirm" | "tob_confirm" | "registration" | "deactivation" | "min_update_other";
-interface MersTxnRow { readonly min: string; readonly loan_id: string | null; readonly txn_type: MersTxnType; readonly effective_date: PlainDate; readonly submitted_by_org_id: string; readonly status: "prepared"; }
+import type { MersTxnRow, MersTxnType } from "./inbound.ts";
 import { forwardBy } from "./respa.ts";
 import { SUPERMORTGAGE_ORG_ID } from "./inbound.ts";
 import type { TransferType } from "./batch.ts";
@@ -47,6 +46,28 @@ export const DELIVERABLE_KINDS: Readonly<Record<DeliverableKind, string>> = {
 };
 /** The status ladder per deliverable: planned → generated → validated → attested → delivered → acked (or exception → resolved). */
 export const DELIVERABLE_NEXT: Readonly<Record<DeliverableStatus, readonly DeliverableStatus[]>> = { planned: ["generated"], generated: ["validated", "exception"], validated: ["attested", "exception"], attested: ["delivered"], delivered: ["acked", "exception"], acked: [], exception: ["resolved"], resolved: ["generated"] };
+export const DELIVERABLE_RECIPIENTS: readonly DeliverableRecipient[] = ["transferee", "transferee_custodian", "transferor_custodian", "fnma", "mi", "insurer", "vendor", "law_firm", "trustee"];
+/** Regeneration follows the ladder (planned / resolved → generated); an acknowledged deliverable is regenerated only as an explicit correction — the transferee's load report showed differences (Bulletin 2020-02 preliminary QC: "a corrected preliminary"), so the corrected file climbs the ladder again and is acknowledged again. */
+export function regenerationAllowed(from: DeliverableStatus, corrected: boolean): { allowed: boolean; refusal: string | null } {
+  if (DELIVERABLE_NEXT[from].includes("generated")) return { allowed: true, refusal: null };
+  if (from === "acked" && corrected) return { allowed: true, refusal: null };
+  if (from === "acked") return { allowed: false, refusal: "deliverable is acked; regenerate it only as a correction (corrected=true) when the transferee's load report or exception file showed differences" };
+  return { allowed: false, refusal: `deliverable is ${from}; cannot generate (planned → generated → validated → attested → delivered → acked; exception → resolved → generated)` };
+}
+// ============================================================ batch population facts (the timer conditions the spec keys on)
+/** The listed loans' facts the 17.3 timer conditions read: foreclosure/litigation (SM_XFER_OUT_LAW_FIRM_NOTICE_T1), bankruptcy (SM_XFER_OUT_BK_TRUSTEE_NOTICE_T1), eNotes (FNMA_F1_11_ENOTE_SERVICING_AGENT_T0), participation pools (FNMA_F1_11_PARTICIPATION_NOTES_30) and the MI insurers (MI_MGIC_TRANSFER_NOTICE_60). */
+export interface ListedLoanFacts { readonly loan_id: string; readonly foreclosure?: boolean; readonly litigation?: boolean; readonly bankruptcy?: boolean; readonly enote?: boolean; readonly mi?: string | null; readonly participation_pool?: boolean; }
+export interface BatchPopulationFacts { readonly loan_count: number; readonly fc_or_litigation: number; readonly bk: number; readonly emortgage_count: number; readonly participation_pool: number; readonly mi_insurers: readonly string[]; }
+/** Counts from the attested loan list (17.1); an explicit count wins over the derived one (the loan list may be summarized). */
+export function batchPopulationFacts(loans: readonly ListedLoanFacts[], explicit: Partial<BatchPopulationFacts> = {}): BatchPopulationFacts {
+  const n = (v: number | undefined, derived: number): number => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : derived);
+  const insurers = [...new Set([...(explicit.mi_insurers ?? []), ...loans.map((l) => l.mi).filter((m): m is string => typeof m === "string" && m !== "")])];
+  return { loan_count: n(explicit.loan_count, loans.length), fc_or_litigation: n(explicit.fc_or_litigation, loans.filter((l) => l.foreclosure || l.litigation).length), bk: n(explicit.bk, loans.filter((l) => l.bankruptcy).length), emortgage_count: n(explicit.emortgage_count, loans.filter((l) => l.enote).length), participation_pool: n(explicit.participation_pool, loans.filter((l) => l.participation_pool).length), mi_insurers: insurers };
+}
+/** MGIC (Mar 12, 2026): "Notify us within 60 days of acquiring or selling servicing rights" — due T+60 (policy: sent at T−1 servicer BD); other insurers per master policy [UNVERIFIED — default: notify before T]. One pending notice per insurer of the batch; the MGIC one is the MI_MGIC_TRANSFER_NOTICE_60 row. */
+export function miTransferNotices(transferDate: PlainDate, insurers: readonly string[]): { mi: string; due: PlainDate; send_by: PlainDate; timer: "MI_MGIC_TRANSFER_NOTICE_60" | "SM_XFER_OUT_MI_NOTICE_T1"; event: { type: "transfer.mi_transfer_notice.pending"; mi: string; transfer_date: PlainDate } }[] {
+  return [...new Set(insurers)].map((mi) => ({ mi, due: addDays(transferDate, 60), send_by: addBusinessDays(transferDate, -1, servicer), timer: mi === "MGIC" ? "MI_MGIC_TRANSFER_NOTICE_60" : "SM_XFER_OUT_MI_NOTICE_T1", event: { type: "transfer.mi_transfer_notice.pending", mi, transfer_date: transferDate } }));
+}
 export interface PlannedDeliverable { readonly kind: DeliverableKind; readonly name: string; readonly as_of: PlainDate; readonly due: PlainDate; readonly recipient: DeliverableRecipient; readonly channel: "sftp" | "edelivery_mers" | "custodian_portal" | "email" | "portal" | "restricted"; readonly status: "planned"; }
 /** Rule 17.3 deliverable schedule: as-of and due dates for every F-1-11 deliverable from the transfer date (test T−30, preliminary T−14, final/trial balance COB T−1 delivered T+1 BD, images T+5 BD, custodial recons T+5 BD, final accounting T+30). */
 export function planDeliverables(T: PlainDate): PlannedDeliverable[] {
@@ -110,6 +131,12 @@ export function postTransferReceipt(r: PostTransferReceipt): { payment_received_
   return { payment_received_event: null, investor_event: null, misdirected_payment: { direction: "out", loan_id: r.loan_id, received_on: r.received_on, amount_cents: r.amount_cents, channel: r.channel, status: "pending_forward" }, forwarding_file_date: forwardBy(r.received_on), gate: "SM_XFER_OUT_POST_T_EVENT_GATE",
     refusal: `payment.received refused: ${r.loan_id} received ${r.received_on} ≥ transfer date ${r.transfer_date} — misdirected payment forwarded on ${forwardBy(r.received_on)}; no investor event with an activity date ≥ T` };
 }
+/** The `misdirected_payments{direction=out}` row (0019 DDL) for a post-T receipt: received by Supermortgage, instrument from the channel, forwarded on the next servicer business day's file. */
+export const INSTRUMENT_BY_CHANNEL: Readonly<Record<PostTransferReceipt["channel"], "check" | "ach" | "card" | "wire" | "cash">> = { lockbox: "check", ach: "ach", web: "ach", branch: "check", trustee: "check", wire: "wire" };
+export function misdirectedPaymentRow(r: PostTransferReceipt & { payment_id: string }): { loan_id: string; direction: "out"; received_by: "supermortgage"; transferor_received_at: null; received_at: PlainDate; amount_cents: Cents; instrument: "check" | "ach" | "card" | "wire" | "cash"; forwarded_at: null; forward_reference: null; payment_id: string; protected: false; disposition: null; forwarding_file_date: PlainDate } | null {
+  const p = postTransferReceipt(r); if (!p.misdirected_payment) return null;
+  return { loan_id: r.loan_id, direction: "out", received_by: "supermortgage", transferor_received_at: null, received_at: r.received_on, amount_cents: r.amount_cents, instrument: INSTRUMENT_BY_CHANNEL[r.channel], forwarded_at: null, forward_reference: null, payment_id: r.payment_id, protected: false, disposition: null, forwarding_file_date: p.forwarding_file_date! };
+}
 /** The daily forwarding file (D32): every misdirected receipt not yet forwarded whose forwarding date is the file date. */
 export function forwardingFile(fileDate: PlainDate, items: readonly { loan_id: string; received_on: PlainDate; amount_cents: Cents; forwarded_on?: PlainDate | null }[]): { file_date: PlainDate; kind: "D32"; rows: { loan_id: string; received_on: PlainDate; amount_cents: Cents }[]; total_cents: Cents } {
   const rows = items.filter((x) => !x.forwarded_on && forwardBy(x.received_on) <= fileDate).map((x) => ({ loan_id: x.loan_id, received_on: x.received_on, amount_cents: x.amount_cents }));
@@ -164,11 +191,13 @@ export function minUpdateFile(i: { type: TransferType; mins: readonly { min: str
   const rows = i.mins.map((m) => ({ min: m.min, subservicer_before: m.subservicer_org_id, subservicer_after: tx === "none" ? m.subservicer_org_id : after }));
   return { transaction: tx, submitted_by: "partner", rows, remaining_supermortgage: rows.filter((r) => r.subservicer_after === SUPERMORTGAGE_ORG_ID).length };
 }
-/** SM_MERS_POST_TRANSFER_VERIFY_3: the T+3 servicer-BD snapshot must show no MIN with Supermortgage in the Subservicer field. */
-export function verifyMersSnapshot(i: { transfer_date: PlainDate; snapshot_on: PlainDate; snapshot: readonly { min: string; subservicer_org_id: string | null }[] }): { verify_by: PlainDate; on_time: boolean; remaining_with_supermortgage: string[]; ok: boolean; event: "mers.snapshot.verified" | null } {
-  const verifyBy = mersClocks(i.transfer_date).verify_by; const remaining = i.snapshot.filter((r) => r.subservicer_org_id === SUPERMORTGAGE_ORG_ID).map((r) => r.min);
-  const ok = remaining.length === 0;
-  return { verify_by: verifyBy, on_time: i.snapshot_on <= verifyBy, remaining_with_supermortgage: remaining, ok, event: ok ? "mers.snapshot.verified" : null };
+/** SM_MERS_POST_TRANSFER_VERIFY_3: the T+3 servicer-BD snapshot must cover every MIN of the batch (1.5: "100% of MINs") and show none with Supermortgage in the Subservicer field — a snapshot missing MINs verifies nothing. */
+export function verifyMersSnapshot(i: { transfer_date: PlainDate; snapshot_on: PlainDate; mins: readonly string[]; snapshot: readonly { min: string; subservicer_org_id: string | null }[] }): { verify_by: PlainDate; on_time: boolean; expected: number; missing_from_snapshot: string[]; remaining_with_supermortgage: string[]; ok: boolean; event: "mers.snapshot.verified" | null } {
+  const verifyBy = mersClocks(i.transfer_date).verify_by; const expected = [...new Set(i.mins)];
+  const seen = new Set(i.snapshot.map((r) => r.min)); const missing = expected.filter((m) => !seen.has(m));
+  const remaining = i.snapshot.filter((r) => expected.includes(r.min) && r.subservicer_org_id === SUPERMORTGAGE_ORG_ID).map((r) => r.min);
+  const ok = expected.length > 0 && missing.length === 0 && remaining.length === 0;
+  return { verify_by: verifyBy, on_time: i.snapshot_on <= verifyBy, expected: expected.length, missing_from_snapshot: missing, remaining_with_supermortgage: remaining, ok, event: ok ? "mers.snapshot.verified" : null };
 }
 
 // ============================================================ T9 transferee requests
@@ -191,12 +220,12 @@ export function postTransferNoe(i: { transfer_date: PlainDate; received_on: Plai
 }
 
 // ============================================================ T11 Form 2009 hand-off
-/** Document Transfers Job Aid: executed Form 2009s for open non-liquidation releases go to the transferee custodian by T; the custodian's 90-day report responsibility passes with them. */
-export function form2009Handoff(i: { transfer_date: PlainDate; releases: readonly { loan_id: string; opened_on: PlainDate; liquidation: boolean; executed_form2009_document_id: string | null }[]; delivered_on: PlainDate | null }): { due: PlainDate; items: { loan_id: string; report_due: PlainDate; overdue_at_transfer: boolean; responsibility_after_transfer: "transferee_custodian"; executed: boolean }[]; delivered_by_transfer: boolean; signing_officer_required: string[]; event: "custody.form2009.handed_off" | null; recipient: "transferee_custodian" } {
+/** Document Transfers Job Aid: executed Form 2009s for open non-liquidation releases go to the transferee custodian by T; the custodian's 90-day report responsibility passes with them — only with them: an unsigned or undelivered Form 2009 leaves the 90-day report with the transferor custodian. */
+export function form2009Handoff(i: { transfer_date: PlainDate; releases: readonly { loan_id: string; opened_on: PlainDate; liquidation: boolean; executed_form2009_document_id: string | null }[]; delivered_on: PlainDate | null }): { due: PlainDate; items: { loan_id: string; report_due: PlainDate; overdue_at_transfer: boolean; responsibility_after_transfer: "transferee_custodian" | "transferor_custodian"; executed: boolean }[]; delivered_by_transfer: boolean; signing_officer_required: string[]; event: "custody.form2009.handed_off" | null; recipient: "transferee_custodian" } {
   const open = i.releases.filter((r) => !r.liquidation);
-  const items = open.map((r) => ({ loan_id: r.loan_id, report_due: addDays(r.opened_on, 90), overdue_at_transfer: form2009Overdue(r.opened_on, i.transfer_date, r.liquidation), responsibility_after_transfer: "transferee_custodian" as const, executed: Boolean(r.executed_form2009_document_id) }));
-  const unsigned = items.filter((x) => !x.executed).map((x) => x.loan_id);
+  const unsigned = open.filter((r) => !r.executed_form2009_document_id).map((r) => r.loan_id);
   const delivered = i.delivered_on !== null && i.delivered_on <= i.transfer_date && unsigned.length === 0;
+  const items = open.map((r) => ({ loan_id: r.loan_id, report_due: addDays(r.opened_on, 90), overdue_at_transfer: form2009Overdue(r.opened_on, i.transfer_date, r.liquidation), responsibility_after_transfer: delivered ? ("transferee_custodian" as const) : ("transferor_custodian" as const), executed: Boolean(r.executed_form2009_document_id) }));
   return { due: i.transfer_date, items, delivered_by_transfer: delivered, signing_officer_required: unsigned, event: delivered ? "custody.form2009.handed_off" : null, recipient: "transferee_custodian" };
 }
 
@@ -296,6 +325,14 @@ export function custodialAccountDisposition(i: { account_id: string; recon_acked
 }
 
 // ============================================================ funds: ledger at freeze (worked example)
+/** Fannie Mae's Stop Delinquency Advance policy (15.4; the 17.3 worked example "scheduled P&I advanced to Fannie Mae under Stop Delinquency Advance rules for 3 months"): on a scheduled/scheduled loan Supermortgage advances the scheduled P&I for each delinquent installment through the fourth consecutive month, after which advances stop — the receivable billed to the transferee is `months advanced × scheduled P&I` (3 × 161,603 = 484,809). */
+export const STOP_DELINQUENCY_ADVANCE_MONTHS = 4;
+export function piAdvancesReceivable(i: { scheduled_pi_cents: Cents; installments_delinquent: number }): { months_advanced: number; receivable_cents: Cents; advances_stopped: boolean } {
+  if (!Number.isInteger(i.installments_delinquent) || i.installments_delinquent < 0) throw new RangeError("installments_delinquent is a whole number of installments");
+  if (i.scheduled_pi_cents <= 0n) throw new RangeError("scheduled_pi_cents must be positive");
+  const months = Math.min(i.installments_delinquent, STOP_DELINQUENCY_ADVANCE_MONTHS);
+  return { months_advanced: months, receivable_cents: BigInt(months) * i.scheduled_pi_cents, advances_stopped: i.installments_delinquent >= STOP_DELINQUENCY_ADVANCE_MONTHS };
+}
 export interface LedgerLine { readonly account: string; readonly side: "Dr" | "Cr"; readonly amount_cents: Cents; readonly rule_ref: string; }
 export interface EntrySet { readonly description: string; readonly lines: readonly LedgerLine[]; readonly balanced: boolean; }
 const set = (description: string, lines: readonly Omit<LedgerLine, "rule_ref">[], rule_ref: string): EntrySet => { const dr = lines.filter((l) => l.side === "Dr").reduce((a, l) => a + l.amount_cents, 0n), cr = lines.filter((l) => l.side === "Cr").reduce((a, l) => a + l.amount_cents, 0n); return { description, lines: lines.map((l) => ({ ...l, rule_ref })), balanced: dr === cr }; };
@@ -308,6 +345,33 @@ export function ledgerAtFreeze(loans: readonly LoanBalances[]): { wires: ReturnT
     pi_wire: set("forwardable P&I wired to the transferee", [{ account: "suspense_unapplied", side: "Dr", amount_cents: unapplied }, { account: "fnma_remittance_payable_next_period", side: "Dr", amount_cents: prepaid }, { account: "custodial_pi_cash", side: "Cr", amount_cents: w.pi_wire_cents }], "17.3 funds: F-1-11 P&I forwardable"),
     advances_on_ack: set("advances receivable recognized on the final-accounting ack", [{ account: "due_from_transferee", side: "Dr", amount_cents: w.final_accounting_receivable_cents }, { account: "servicer_advance_receivable", side: "Cr", amount_cents: w.pi_advances_receivable_cents }, { account: "escrow_advances", side: "Cr", amount_cents: w.escrow_advances_receivable_cents }, { account: "corporate_advances", side: "Cr", amount_cents: w.corporate_advances_receivable_cents }], "17.3 funds: F-1-11 advances reimbursement"),
     reimbursement: set("transferee reimbursement received", [{ account: "custodial_pi_cash", side: "Dr", amount_cents: w.final_accounting_receivable_cents }, { account: "due_from_transferee", side: "Cr", amount_cents: w.final_accounting_receivable_cents }], "17.3 funds: advance_reimbursement_in") };
+}
+/** The same sets on the kernel ledger (src/kernel/ledger accounts): per-loan `escrow` / `suspense_unapplied` (loan scope), the prepaid next-period P&I on the corporate `fnma_payable` (the spec's `fnma_remittance_payable`), the custodial P&I / T&I cash accounts (custodial scope). Zero lines are dropped; a wire with nothing to move posts nothing. */
+export interface WireLoan extends LoanBalances { readonly loan_id: string; }
+export function wireLedgerSets(i: { loans: readonly WireLoan[]; pi_custodial_account_id: string; ti_custodial_account_id: string; effective_date: PlainDate; batch_id: string }): { ti: EntrySetInput | null; pi: EntrySetInput | null; ti_wire_cents: Cents; pi_wire_cents: Cents } {
+  const rule = (k: string): string => `17.3 funds: F-1-11 ${k}`;
+  const ti: LineInput[] = [], pi: LineInput[] = []; let tiTotal = 0n, piTotal = 0n, prepaid = 0n;
+  for (const l of i.loans) {
+    const w = expectedWires([l], true);
+    if (w.ti_wire_cents > 0n) { ti.push({ account: { scope: "loan", loanId: l.loan_id, account: "escrow" }, amountCents: w.ti_wire_cents, ruleRef: rule("T&I"), memo: "escrow balance incl. interest through T−1 wired to the transferee" }); tiTotal += w.ti_wire_cents; }
+    if (l.unapplied_cents > 0n) { pi.push({ account: { scope: "loan", loanId: l.loan_id, account: "suspense_unapplied" }, amountCents: l.unapplied_cents, ruleRef: rule("P&I forwardable"), memo: "unapplied funds forwarded" }); piTotal += l.unapplied_cents; }
+    const p = (l.prepaid_next_period_pi_cents ?? 0n) + (l.unremitted_pi_cents ?? 0n); prepaid += p; piTotal += p;
+  }
+  if (prepaid > 0n) pi.push({ account: { scope: "corporate", account: "fnma_payable" }, amountCents: prepaid, ruleRef: rule("P&I forwardable"), memo: "fnma_remittance_payable: next-period P&I belonging to the transferee's period" });
+  if (tiTotal > 0n) ti.push({ account: { scope: "custodial", custodialAccountId: i.ti_custodial_account_id, account: "custodial_ti_cash" }, amountCents: -tiTotal, ruleRef: rule("T&I"), memo: "T&I wire to the transferee" });
+  if (piTotal > 0n) pi.push({ account: { scope: "custodial", custodialAccountId: i.pi_custodial_account_id, account: "custodial_pi_cash" }, amountCents: -piTotal, ruleRef: rule("P&I forwardable"), memo: "P&I forwardable wire to the transferee" });
+  return { ti: tiTotal > 0n ? { effectiveDate: i.effective_date, description: `T&I custodial balances wired to the transferee (batch ${i.batch_id})`, lines: ti } : null, pi: piTotal > 0n ? { effectiveDate: i.effective_date, description: `forwardable P&I wired to the transferee (batch ${i.batch_id})`, lines: pi } : null, ti_wire_cents: tiTotal, pi_wire_cents: piTotal };
+}
+/** On the final-accounting ack: the escrow and corporate advances on the loans become the receivable from the transferee (corporate `advance_receivable`, the spec's `due_from_transferee`); the P&I advanced to Fannie Mae already sits in `advance_receivable` (15.4 Stop Delinquency Advance postings), so it is claimed, not reclassified. */
+export function advancesOnAckLedgerSet(i: { loans: readonly WireLoan[]; effective_date: PlainDate; batch_id: string }): { set: EntrySetInput | null; reclassified_cents: Cents; pi_advances_claimed_cents: Cents; due_from_transferee_cents: Cents } {
+  const rule = "17.3 funds: F-1-11 advances reimbursement"; const lines: LineInput[] = []; let reclass = 0n;
+  for (const l of i.loans) {
+    if (l.escrow_cents < 0n) { lines.push({ account: { scope: "loan", loanId: l.loan_id, account: "escrow_advance" }, amountCents: l.escrow_cents, ruleRef: rule, memo: "escrow advance billed to the transferee" }); reclass += -l.escrow_cents; }
+    if (l.corporate_advances_cents > 0n) { lines.push({ account: { scope: "loan", loanId: l.loan_id, account: "corporate_advance" }, amountCents: -l.corporate_advances_cents, ruleRef: rule, memo: "corporate advances billed to the transferee (recoverable from the borrower per the note)" }); reclass += l.corporate_advances_cents; }
+  }
+  if (reclass > 0n) lines.unshift({ account: { scope: "corporate", account: "advance_receivable" }, amountCents: reclass, ruleRef: rule, memo: "due_from_transferee" });
+  const w = expectedWires(i.loans, true);
+  return { set: reclass > 0n ? { effectiveDate: i.effective_date, description: `advances receivable from the transferee recognized on the final-accounting ack (batch ${i.batch_id})`, lines } : null, reclassified_cents: reclass, pi_advances_claimed_cents: w.pi_advances_receivable_cents, due_from_transferee_cents: w.final_accounting_receivable_cents };
 }
 
 // ============================================================ support window / archive / debrief
@@ -327,13 +391,14 @@ export function buildDebrief(i: { transfer_date: PlainDate; deliverables: readon
 }
 
 // ============================================================ acknowledgment conditions (F-1-11 rows; the ingestTransfereeAck tool)
-export interface AckInput { readonly kind: DeliverableKind; readonly stored: { readonly status?: unknown; readonly as_of?: unknown } | null; readonly as_of: PlainDate | null; readonly load_report: unknown; readonly index_count: number | null; readonly document_count: number | null; readonly custodial_accounts: readonly string[]; readonly accounts_acked: readonly string[]; }
-/** Rule 17.3 per-deliverable ack: only a `delivered` deliverable can be acknowledged (planned → generated → validated → attested → delivered → acked); D04 carries `as_of = T−1` (FNMA_F1_11_TRIAL_BALANCE_T1); D02 comes with the transferee load report (SM_XFER_OUT_PRELIM_TAPE_14); D28's index reconciles to the document count (SM_XFER_OUT_IMAGES_5); D08 covers every Supermortgage custodial account holding funds for the population (FNMA_F1_11_CUSTODIAL_RECON_5BD). */
+export interface AckInput { readonly kind: DeliverableKind; readonly stored: { readonly status?: unknown; readonly as_of?: unknown } | null; readonly as_of: PlainDate | null; readonly transfer_date: PlainDate | null; readonly load_report: unknown; readonly index_count: number | null; readonly document_count: number | null; readonly custodial_accounts: readonly string[]; readonly accounts_acked: readonly string[]; }
+/** Rule 17.3 per-deliverable ack: only a `delivered` deliverable can be acknowledged (planned → generated → validated → attested → delivered → acked); D04 carries `as_of = T−1` — the transfer date's eve, not merely the date the file was generated as of (FNMA_F1_11_TRIAL_BALANCE_T1); D02 comes with the transferee load report (SM_XFER_OUT_PRELIM_TAPE_14); D28's index reconciles to the document count (SM_XFER_OUT_IMAGES_5); D08 covers every Supermortgage custodial account holding funds for the population (FNMA_F1_11_CUSTODIAL_RECON_5BD). */
 export function ackConditions(i: AckInput): { ok: boolean; refusal: string | null; every_account: boolean | null; ladder_violation: boolean } {
   const from = (typeof i.stored?.status === "string" ? (i.stored.status as DeliverableStatus) : "planned");
   if (!DELIVERABLE_NEXT[from]?.includes("acked")) return { ok: false, refusal: `deliverable ${i.kind} is ${from}; only a delivered deliverable can be acknowledged (planned → generated → validated → attested → delivered → acked)`, every_account: null, ladder_violation: true };
   const storedAsOf = typeof i.stored?.as_of === "string" ? i.stored.as_of : null;
-  if (i.kind === "D04" && (!i.as_of || !storedAsOf || i.as_of !== storedAsOf)) return { ok: false, refusal: `D04 trial balance ack must carry as_of = transfer_date − 1 (${storedAsOf ?? "unplanned"}); got ${i.as_of ?? "none"} (F-1-11: trial balances as of close of business the day before transfer)`, every_account: null, ladder_violation: false };
+  const tMinus1 = i.transfer_date ? addDays(i.transfer_date, -1) : storedAsOf;
+  if (i.kind === "D04" && (!i.as_of || !tMinus1 || i.as_of !== tMinus1 || (storedAsOf !== null && i.as_of !== storedAsOf))) return { ok: false, refusal: `D04 trial balance ack must carry as_of = transfer_date − 1 (${tMinus1 ?? "unplanned"}${storedAsOf && storedAsOf !== tMinus1 ? `; generated as of ${storedAsOf}` : ""}); got ${i.as_of ?? "none"} (F-1-11: trial balances as of close of business the day before transfer)`, every_account: null, ladder_violation: false };
   if (i.kind === "D02" && !i.load_report) return { ok: false, refusal: "D02 preliminary ack comes with the transferee load report (SM_XFER_OUT_PRELIM_TAPE_14; Bulletin 2020-02 preliminary QC)", every_account: null, ladder_violation: false };
   if (i.kind === "D28" && (i.index_count === null || i.document_count === null || i.index_count !== i.document_count)) return { ok: false, refusal: `D28 image index (${i.index_count ?? "?"} rows) must reconcile to the document count (${i.document_count ?? "?"})`, every_account: null, ladder_violation: false };
   if (i.kind === "D08") {

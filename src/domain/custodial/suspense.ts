@@ -57,3 +57,30 @@ export function escheat(dormancyStart: PlainDate, state: string): { presumed_aba
   return { presumed_abandoned_on: pa, cycle: `FY${cycleEndYear}`, report_due_on, due_diligence_window: [addDays(report_due_on, -180), addDays(report_due_on, -60)], officer_verification_on: addDays(report_due_on, -47) };
 }
 export function agingDays(receivedOn: PlainDate, today: PlainDate): number { return Math.max(0, (Date.parse(today) - Date.parse(receivedOn)) / 86_400_000); }
+
+/** 6.5 state machine terminal statuses (`applied_to_oldest` is 2.5's biweekly outcome carried on the same register). */
+export const SUSPENSE_TERMINAL_STATUSES: readonly string[] = ["applied", "returned", "refunded", "escheated", "transferred", "written_off", "applied_to_oldest"];
+export const isSuspenseTerminal = (status: string): boolean => SUSPENSE_TERMINAL_STATUSES.includes(status);
+/**
+ * 6.5 state machine / guardrail / T10: `written_off` only by `officer`; ≤ $5.00 rounding items pass, above the
+ * limit the officer must override with a reason ("rejected (limit $5.00) unless `officer` overrides with reason").
+ */
+export function suspenseWriteOff(f: { amount_cents: Cents; actor_is_officer: boolean; override_reason: string }): { allowed: boolean; refusal: string | null; limit_cents: Cents; officer_override: boolean } {
+  const abs = f.amount_cents < 0n ? -f.amount_cents : f.amount_cents;
+  if (!f.actor_is_officer) return { allowed: false, refusal: `written_off is an officer act (limit $5.00; ${abs} cents requested)`, limit_cents: WRITE_OFF_LIMIT_CENTS, officer_override: false };
+  if (abs <= WRITE_OFF_LIMIT_CENTS) return { allowed: true, refusal: null, limit_cents: WRITE_OFF_LIMIT_CENTS, officer_override: false };
+  if (!f.override_reason.trim()) return { allowed: false, refusal: `write-off of ${abs} cents rejected (limit $5.00) — an officer override needs a reason`, limit_cents: WRITE_OFF_LIMIT_CENTS, officer_override: false };
+  return { allowed: true, refusal: null, limit_cents: WRITE_OFF_LIMIT_CENTS, officer_override: true };
+}
+/**
+ * 6.5 rule 4 / T5: an unidentified receipt is researched ≤ 30 days; with a known remitter it is returned by
+ * day 60 at the latest (refund check to the address on the image / ACH credit to the originator); with no
+ * remitter data it goes `escheat_pending` and the unclaimed-property clock starts at `received_on`.
+ */
+export function unidentifiedReceiptTrack(f: { received_on: PlainDate; matched_on: PlainDate | null; remitter_known: boolean; rail: "check" | "ach"; today: PlainDate }): { research_by: PlainDate; return_by: PlainDate; status: "researching" | "matched_pending" | "returned" | "escheat_pending"; return_rail: "refund_check_to_remitter_address" | "ach_credit_to_originator" | null; dormancy_start_on: PlainDate | null; unclaimed_property_item: boolean } {
+  const d = researchDeadlines(f.received_on);
+  if (f.matched_on !== null && f.matched_on <= d.research_by) return { ...d, status: "matched_pending", return_rail: null, dormancy_start_on: null, unclaimed_property_item: false };
+  if (f.today <= d.research_by) return { ...d, status: "researching", return_rail: null, dormancy_start_on: null, unclaimed_property_item: false };
+  if (f.remitter_known) return { ...d, status: "returned", return_rail: f.rail === "check" ? "refund_check_to_remitter_address" : "ach_credit_to_originator", dormancy_start_on: null, unclaimed_property_item: false };
+  return { ...d, status: "escheat_pending", return_rail: null, dormancy_start_on: f.received_on, unclaimed_property_item: true };
+}

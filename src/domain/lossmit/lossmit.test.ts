@@ -19,7 +19,8 @@ test("12.1-T1/T2/T3/T5/T6/T7: ack due (Labor Day, Thanksgiving), reasonable date
 test("12.2-T1/T2/T4/T7/T9 and 12.3-T1/T5/T6/T7/T9: tiers, deadlines, ranking reason, appeals", () => {
   assert.equal(EV.tier(D("2026-10-07"), null), "ge_90"); assert.equal(EV.tier(D("2026-11-01"), D("2027-01-15")), "lt_90"); assert.equal(EV.tier(D("2026-12-20"), D("2027-01-15")), "le_37");
   const d = EV.evaluationDeadlines(D("2026-10-07"), D("2026-11-02"), "ge_90"); assert.deepEqual([d.decision_due, d.accept_by, d.appeal_rights, d.deemed_rejected_on], ["2026-11-06", "2026-11-16", true, "2026-11-21"]);
-  assert.equal(EV.evaluationDeadlines(D("2026-10-07"), D("2026-11-02"), "ge_90", "NY").accept_by, "2026-12-02"); assert.equal(EV.evaluationDeadlines(D("2026-11-01"), D("2026-11-20"), "lt_90").accept_by, "2026-11-27");
+  assert.equal(EV.evaluationDeadlines(D("2026-10-07"), D("2026-11-02"), "ge_90", "NY").accept_by, "2026-12-02");
+  const seven = EV.evaluationDeadlines(D("2026-11-01"), D("2026-11-20"), "lt_90"); assert.equal(seven.accept_by, "2026-11-27"); assert.equal(seven.grace_days, 3); assert.equal(seven.deemed_rejected_on, "2026-11-30");   // 7-day tier: 3-day policy grace
   assert.equal(EV.fnmaNoticeCheck(D("2026-10-30"), D("2026-11-02")), true);
   assert.equal(EV.rankingReasonAllowed("payment_deferral", "flex_mod"), true); assert.equal(EV.rankingReasonAllowed("flex_mod", "payment_deferral"), false);
   assert.equal(EV.hierarchyWalk({ can_reinstate: false, hardship_temporary_unresolved: false, can_afford_repayment: false, deferral_eligible: true, flexmod_eligible: true }).offered, "payment_deferral");
@@ -58,8 +59,9 @@ test("12.6-T1/T2/T3/T5 and 12.7-T2/T4/T8: deferral screen, NIB $7,370.68 and $16
   assert.equal(DF.screen({ months_delinquent: 4, origination_date: D("2021-10-01"), evaluation_date: D("2026-09-20"), prior_deferral_effective: D("2025-11-01"), prior_deferral_was_disaster: true, cumulative_deferred_months: 0, months_to_maturity: 348 }).eligible, true);
   const capped = DF.screen({ months_delinquent: 4, origination_date: D("2021-10-01"), evaluation_date: D("2026-09-20"), cumulative_deferred_months: 9, months_to_maturity: 348 }); assert.ok(capped.eligible && capped.contractual_payment_required && capped.months_deferred === 3);
   assert.equal(DF.nib(cents("1580.17"), 4, cents("1050"), 0n), cents("7370.68")); assert.deepEqual(DF.newPayment(cents("1580.17"), cents("520"), cents("1860")), { shortage_monthly_cents: 3_100n, payment_cents: cents("2131.17") });
-  const tl = DF.timeline(D("2026-09-20"), D("2026-09-22")); assert.equal(tl.processing_month, true); assert.equal(tl.entry_deadline, "2026-10-31"); assert.equal(tl.effective, "2026-11-01");
-  const tl2 = DF.timeline(D("2026-09-10")); assert.deepEqual([tl2.processing_month, tl2.entry_deadline, tl2.lar_deadline, tl2.effective], [false, "2026-09-30", "2026-09-29", "2026-10-01"]);
+  // 12.6-T1 with the spec's own dates: evaluation 2026-09-20, completed 2026-09-22 → evaluation-month clocks (no processing month elected); 12.6-T5: an election after the 15th moves them a month.
+  const tl = DF.timeline(D("2026-09-20"), { completion_on: D("2026-09-22") }); assert.deepEqual([tl.processing_month, tl.entry_deadline, tl.lar_deadline, tl.effective, tl.agreement_by, tl.custodian_by], [false, "2026-09-30", "2026-09-29", "2026-10-01", "2026-09-27", "2026-10-26"]);
+  const tl2 = DF.timeline(D("2026-09-18"), { processing_month_elected: true }); assert.deepEqual([tl2.processing_month, tl2.entry_deadline, tl2.lar_deadline, tl2.effective], [true, "2026-10-31", "2026-10-30", "2026-11-01"]);
   assert.equal(DF.screen({ months_delinquent: 9, origination_date: D("2021-10-01"), evaluation_date: D("2026-12-20"), cumulative_deferred_months: 0, months_to_maturity: 300, disaster: { delinquency_months_at_disaster: 0, same_event_deferred_before: false } }).eligible, true);
   assert.equal((DF.screen({ months_delinquent: 3, origination_date: D("2021-10-01"), evaluation_date: D("2026-12-20"), cumulative_deferred_months: 0, months_to_maturity: 300, disaster: { delinquency_months_at_disaster: 2, same_event_deferred_before: false } }) as { next: string }).next, "fnma_prior_approval");
   assert.equal(DF.nib(cents("1580.17"), 9, cents("2300"), 0n), cents("16521.53")); assert.equal(DF.newPayment(cents("1580.17"), cents("520"), cents("2400")).shortage_monthly_cents, 4_000n);
@@ -85,9 +87,9 @@ test("12.8-T1/T2/T3/T4/T5: Flex Mod waterfall worked example, cap (c), P&I rule,
 });
 
 test("12.9-T2/T4/T5/T7/T8/T11: contribution $8,400, negotiation, listing rule, clocks, deed timing, incentive tiers", () => {
-  assert.deepEqual(LQ.contribution(cents("18400"), cents("2100"), cents("41000")), { required: true, request_cents: cents("8400") }); assert.equal(LQ.contribution(cents("1500"), cents("100"), cents("41000")).required, false);
+  const c = LQ.contribution(cents("18400"), cents("2100"), cents("41000")); assert.equal(c.required, true); assert.equal(c.request_cents, cents("8400")); assert.equal(LQ.contribution(cents("1500"), cents("100"), cents("41000")).required, false);
   assert.equal(LQ.negotiated(cents("8400"), cents("5000")), "accepted"); assert.equal(LQ.negotiated(cents("8400"), cents("4000")), "fnma_referral"); assert.equal(LQ.relocation(true, 0n), 0n); assert.equal(LQ.relocation(false, cents("1000")), cents("6500"));
-  assert.equal(LQ.listingRuleMet(4), false); assert.equal(LQ.listingRuleMet(5), true);
+  assert.equal(LQ.listingRuleMet(D("2026-10-05"), D("2026-10-08")), false); assert.equal(LQ.listingRuleMet(D("2026-10-07"), D("2026-10-11")), true); assert.equal(LQ.listingRuleMet(D("2026-10-05"), D("2026-10-09")), false);   // five weekdays without a Saturday and Sunday do not satisfy D2-3.3-01
   assert.deepEqual(LQ.shortSaleClocks(D("2026-10-05"), D("2026-11-04")), { ack_by: "2026-10-13", decision_by: "2026-11-04", close_by: "2027-01-03" });
   assert.deepEqual(LQ.dilClocks(D("2026-10-15")), { documents_by: "2026-12-14", extended_by: "2027-01-13" });
   assert.equal(LQ.deedTiming(D("2026-11-05"), D("2026-12-01")), "fnma_prior_approval"); assert.equal(LQ.deedTiming(D("2026-10-30"), D("2026-12-01")), "allowed");

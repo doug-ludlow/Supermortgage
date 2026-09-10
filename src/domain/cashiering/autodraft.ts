@@ -60,6 +60,17 @@ export interface Enrollment {
   extra_principal_cents: Cents; include_fees: boolean; next_draft_on: PlainDate | null; validation_status: "pending" | "validated" | "failed";
   reinitiations: PlainDate[]; returns_on_current_installment: number; last_debit_cents: Cents | null; notices: { template: string; sent_on: PlainDate; amount_cents: Cents; debit_on: PlainDate }[];
   terminated_on?: PlainDate; termination_reason?: "transfer_out" | "borrower" | "returns" | "payoff";
+  /** 2.3-T8: enrollments from a channel whose unauthorized return rate breached the Nacha threshold are held for review — no file includes them until released. */
+  held_for_review?: { reason: "return_rate_review"; since: PlainDate; channel: SecCode } | null;
+  authorized_on?: PlainDate;
+}
+
+/** 2.3 guardrail "cannot originate a debit without an `active` enrollment [and] a passed validation gate" (NACHA_WEB_ACCOUNT_VALIDATION_GATE). */
+export function canOriginateDebit(e: Enrollment): { ok: true } | { ok: false; reason: string; gate: "ENROLLMENT_ACTIVE" | "NACHA_WEB_ACCOUNT_VALIDATION_GATE" | "RETURN_RATE_REVIEW" } {
+  if (e.status !== "active") return { ok: false, reason: `enrollment is ${e.status}, not active`, gate: "ENROLLMENT_ACTIVE" };
+  if (e.validation_status !== "validated") return { ok: false, reason: `validation_status is ${e.validation_status}; WEB/TEL debits need validated_* (Nacha WEB debit rule)`, gate: "NACHA_WEB_ACCOUNT_VALIDATION_GATE" };
+  if (e.held_for_review) return { ok: false, reason: `enrollment held for review since ${e.held_for_review.since} (${e.held_for_review.reason})`, gate: "RETURN_RATE_REVIEW" };
+  return { ok: true };
 }
 
 /** 2.3 rule 3: chosen day 1–16 and never later than due + grace (C-1.1-03). */
@@ -94,30 +105,48 @@ export function variableAmountNoticeStatus(e: Enrollment, nextAmount: Cents, deb
 }
 
 export type ReturnCode = "R01" | "R09" | "R02" | "R03" | "R04" | "R20" | "R05" | "R07" | "R10" | "R29" | "R11" | "R08" | "R16" | "R17";
-export interface ReturnDisposition { readonly reverse_payment: boolean; readonly assess_nsf_fee: boolean; readonly notice: string | null; readonly retry_on: PlainDate | null; readonly enrollment_action: "none" | "suspended_returns" | "terminated" | "revoked" | "paused" | "correct_and_reinitiate"; readonly open_fraud_case: boolean; readonly refused?: string; }
+export const UNAUTHORIZED_RETURN_CODES: readonly ReturnCode[] = ["R05", "R07", "R10", "R11", "R29"];   // Nacha: R11 counts toward the unauthorized return rate
+export const ADMINISTRATIVE_RETURN_CODES: readonly ReturnCode[] = ["R02", "R03", "R04"];
+export interface ReturnDisposition {
+  readonly reverse_payment: boolean; readonly assess_nsf_fee: boolean; readonly notice: string | null; readonly retry_on: PlainDate | null;
+  readonly enrollment_action: "none" | "suspended_returns" | "terminated" | "revoked" | "paused" | "correct_and_reinitiate"; readonly open_fraud_case: boolean; readonly refused?: string;
+  /** "RETRY PYMT" on reinitiations (Nacha network-quality rule); null when nothing is reinitiated. */
+  readonly company_entry_description: "RETRY PYMT" | null;
+  /** R11 only: the corrected entry may be transmitted without re-authorization through this date — 60 calendar days from the Settlement Date of the Return Entry. */
+  readonly correction_window_ends_on?: PlainDate;
+}
 
-/** 2.3 rule 7 — return handling. `bankingDaysLater` supplies the retry date (3–5 banking days). */
-export function handleReturn(e: Enrollment, code: ReturnCode, returnedOn: PlainDate, opts: { authorization_valid: boolean; defect_ours?: boolean; original_entry_on?: PlainDate; retryOn: (from: PlainDate) => PlainDate }): ReturnDisposition {
+/** R11 window (Nacha "Differentiating Unauthorized Return Reasons"): 60 calendar days from the Settlement Date of the Return Entry — anchored on the return, never on the original entry. */
+export function r11CorrectionWindowEnd(returnSettlementDate: PlainDate): PlainDate { return addDays(returnSettlementDate, 60); }
+
+/**
+ * 2.3 rule 7 — return handling. `retryOn` supplies the reinitiation date (3–5 banking days later). For R11, `corrected_on` is the
+ * date the corrected entry is (or will be) transmitted; it defaults to the retry date and must fall within 60 days of the return.
+ */
+export function handleReturn(e: Enrollment, code: ReturnCode, returnedOn: PlainDate, opts: { authorization_valid: boolean; defect_ours?: boolean; original_entry_on?: PlainDate; corrected_on?: PlainDate; retryOn: (from: PlainDate) => PlainDate }): ReturnDisposition {
   const within180 = e.reinitiations.filter((d) => daysBetween(d, returnedOn) <= 180).length;
   switch (code) {
     case "R01": case "R09": {
       e.returns_on_current_installment += 1;
-      if (e.returns_on_current_installment >= 2) return { reverse_payment: true, assess_nsf_fee: true, notice: "AUTODRAFT-RETURN-v1", retry_on: null, enrollment_action: "suspended_returns", open_fraud_case: false };
-      if (within180 >= 2) return { reverse_payment: true, assess_nsf_fee: true, notice: "AUTODRAFT-RETURN-v1", retry_on: null, enrollment_action: "none", open_fraud_case: false, refused: "at most two reinitiations within 180 days (Nacha)" };
+      if (e.returns_on_current_installment >= 2) return { reverse_payment: true, assess_nsf_fee: true, notice: "AUTODRAFT-RETURN-v1", retry_on: null, enrollment_action: "suspended_returns", open_fraud_case: false, company_entry_description: null };
+      if (within180 >= 2) return { reverse_payment: true, assess_nsf_fee: true, notice: "AUTODRAFT-RETURN-v1", retry_on: null, enrollment_action: "none", open_fraud_case: false, refused: "at most two reinitiations within 180 days (Nacha)", company_entry_description: null };
       const retry = opts.retryOn(returnedOn); e.reinitiations.push(retry);
-      return { reverse_payment: true, assess_nsf_fee: true, notice: "AUTODRAFT-RETURN-v1", retry_on: retry, enrollment_action: "none", open_fraud_case: false };
+      return { reverse_payment: true, assess_nsf_fee: true, notice: "AUTODRAFT-RETURN-v1", retry_on: retry, enrollment_action: "none", open_fraud_case: false, company_entry_description: "RETRY PYMT" };
     }
     case "R02": case "R03": case "R04": case "R20":
-      return { reverse_payment: true, assess_nsf_fee: false, notice: "AUTODRAFT-ACCOUNT-v1", retry_on: null, enrollment_action: "terminated", open_fraud_case: false };
+      return { reverse_payment: true, assess_nsf_fee: false, notice: "AUTODRAFT-SUSPENDED-v1", retry_on: null, enrollment_action: "terminated", open_fraud_case: false, company_entry_description: null };
     case "R05": case "R07": case "R10": case "R29":
-      return { reverse_payment: true, assess_nsf_fee: false, notice: "AUTODRAFT-CANCELLED-v1", retry_on: null, enrollment_action: "revoked", open_fraud_case: opts.authorization_valid };
+      return { reverse_payment: true, assess_nsf_fee: false, notice: "AUTODRAFT-REVOKED-v1", retry_on: null, enrollment_action: "revoked", open_fraud_case: opts.authorization_valid, company_entry_description: null };
     case "R11": {
-      const ok = opts.defect_ours && opts.original_entry_on && daysBetween(opts.original_entry_on, returnedOn) <= 60;
-      return ok ? { reverse_payment: true, assess_nsf_fee: false, notice: null, retry_on: opts.retryOn(returnedOn), enrollment_action: "correct_and_reinitiate", open_fraud_case: false }
-                : { reverse_payment: true, assess_nsf_fee: false, notice: "AUTODRAFT-CANCELLED-v1", retry_on: null, enrollment_action: "revoked", open_fraud_case: false, refused: opts.defect_ours ? "R11 correction window is 60 days" : "defect not ours → treated as revoked" };
+      const windowEnd = r11CorrectionWindowEnd(returnedOn);
+      const correctedOn = opts.corrected_on ?? opts.retryOn(returnedOn);
+      const ok = opts.defect_ours === true && correctedOn <= windowEnd;
+      return ok ? { reverse_payment: true, assess_nsf_fee: false, notice: null, retry_on: correctedOn, enrollment_action: "correct_and_reinitiate", open_fraud_case: false, company_entry_description: "RETRY PYMT", correction_window_ends_on: windowEnd }
+                : { reverse_payment: true, assess_nsf_fee: false, notice: "AUTODRAFT-REVOKED-v1", retry_on: null, enrollment_action: "revoked", open_fraud_case: false, company_entry_description: null, correction_window_ends_on: windowEnd,
+                    refused: opts.defect_ours ? `R11 correction window is 60 days from the return settlement date ${returnedOn} (closed ${windowEnd}); new authorization required` : "defect not ours → treated as revoked" };
     }
-    case "R08": return { reverse_payment: true, assess_nsf_fee: false, notice: "AUTODRAFT-STOP-v1", retry_on: null, enrollment_action: "paused", open_fraud_case: false };
-    case "R16": case "R17": return { reverse_payment: true, assess_nsf_fee: false, notice: null, retry_on: null, enrollment_action: "terminated", open_fraud_case: true };
+    case "R08": return { reverse_payment: true, assess_nsf_fee: false, notice: "AUTODRAFT-SUSPENDED-v1", retry_on: null, enrollment_action: "paused", open_fraud_case: false, company_entry_description: null };
+    case "R16": case "R17": return { reverse_payment: true, assess_nsf_fee: false, notice: null, retry_on: null, enrollment_action: "terminated", open_fraud_case: true, company_entry_description: null };
   }
 }
 
@@ -130,6 +159,35 @@ export function revocationEffect(revokedOn: PlainDate, fileTransmittedOn: PlainD
 
 /** Nacha network-quality threshold watch (2.3-T8): unauthorized return rate ≥ 0.5% is the administrative threshold. */
 export function unauthorizedReturnRateAlert(unauthorizedReturns: number, debits: number): boolean { return debits > 0 && unauthorizedReturns / debits >= 0.005; }
+
+/** Nacha Network Risk thresholds (basis points): unauthorized 0.5%, administrative 3.0%, overall 15.0% — 60-day look-back. */
+export const RETURN_RATE_THRESHOLDS_BPS = { unauthorized: 50, administrative: 300, overall: 1500 } as const;
+export interface ReturnRateStats { readonly channel: SecCode; readonly debits: number; readonly unauthorized_returns: number; readonly administrative_returns: number; readonly total_returns: number; }
+export interface ReturnRateReport {
+  readonly period_end: PlainDate; readonly lookback_days: 60;
+  readonly channels: readonly { channel: SecCode; debits: number; unauthorized_bps: number; administrative_bps: number; overall_bps: number; breaches: ("unauthorized" | "administrative" | "overall")[] }[];
+  readonly breached_channels: readonly SecCode[];
+}
+const bps = (n: number, d: number): number => (d > 0 ? Math.round((n / d) * 10_000) : 0);
+/** 2.3 `NACHA_RETURN_RATE_MONTHLY_WATCH`: the monthly report over a 60-day look-back per channel, with the thresholds each channel breaches. */
+export function returnRateReport(stats: readonly ReturnRateStats[], periodEnd: PlainDate): ReturnRateReport {
+  const channels = stats.map((s) => {
+    const unauthorized_bps = bps(s.unauthorized_returns, s.debits), administrative_bps = bps(s.administrative_returns, s.debits), overall_bps = bps(s.total_returns, s.debits);
+    const breaches: ("unauthorized" | "administrative" | "overall")[] = [];
+    if (unauthorized_bps > RETURN_RATE_THRESHOLDS_BPS.unauthorized) breaches.push("unauthorized");
+    if (administrative_bps > RETURN_RATE_THRESHOLDS_BPS.administrative) breaches.push("administrative");
+    if (overall_bps > RETURN_RATE_THRESHOLDS_BPS.overall) breaches.push("overall");
+    return { channel: s.channel, debits: s.debits, unauthorized_bps, administrative_bps, overall_bps, breaches };
+  });
+  return { period_end: periodEnd, lookback_days: 60, channels, breached_channels: channels.filter((c) => c.breaches.length > 0).map((c) => c.channel) };
+}
+/** 2.3-T8: enrollments from a breaching channel are held for review (no file includes them) until the officer releases them. */
+export function holdChannelForReview(enrollments: readonly Enrollment[], channel: SecCode, since: PlainDate): Enrollment[] {
+  const held: Enrollment[] = [];
+  for (const e of enrollments) if (e.authorization.sec === channel && (e.status === "active" || e.status === "authorized" || e.status === "validating") && !e.held_for_review) { e.held_for_review = { reason: "return_rate_review", since, channel }; held.push(e); }
+  return held;
+}
+export function releaseFromReview(e: Enrollment): Enrollment { e.held_for_review = null; return e; }
 
 export function newEnrollment(loanId: string, a: Authorization, draftDay: number, extra: Cents = 0n): Enrollment {
   return { id: randomUUID(), loan_id: loanId, status: "requested", authorization: a, draft_day: draftDay, extra_principal_cents: extra, include_fees: false, next_draft_on: null, validation_status: "pending", reinitiations: [], returns_on_current_installment: 0, last_debit_cents: null, notices: [] };
@@ -153,5 +211,5 @@ export function voiceEnrollmentEvidence(transcript: readonly TranscriptEvent[], 
 /** 2.3-T11: a transfer-out cutover terminates the enrollment; no file built after the cutover may contain the loan. */
 export function terminateOnTransferOut(e: Enrollment, cutoverOn: PlainDate): Enrollment { e.status = "terminated"; e.next_draft_on = null; e.terminated_on = cutoverOn; e.termination_reason = "transfer_out"; return e; }
 export function fileLoans(enrollments: readonly Enrollment[], buildOn: PlainDate): string[] {
-  return enrollments.filter((e) => e.status === "active" && !(e.terminated_on && e.terminated_on <= buildOn)).map((e) => e.loan_id);
+  return enrollments.filter((e) => e.status === "active" && !e.held_for_review && !(e.terminated_on && e.terminated_on <= buildOn)).map((e) => e.loan_id);
 }

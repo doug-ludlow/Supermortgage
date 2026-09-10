@@ -7,6 +7,11 @@
  */
 import type { ContentRule, VersionInput } from "../registry.ts";
 import { V } from "./section01.ts";
+import { plainDate as D } from "../../kernel/calendar/date.ts";
+
+/** A later, effective-dated version of a template whose 1.0.0 lives in the catalog: the registry picks the latest `effectiveFrom` ≤ asOf, so 1.1.0 (effective 2026-09-02) supersedes without editing the approved 1.0.0. */
+const V2 = (templateCode: string, version: string, effectiveFrom: string, source: string, contentRules: ContentRule[], samplePayload: Record<string, unknown>, ruleSet: string, sampleFormBasis: string): VersionInput =>
+  ({ templateCode, version, effectiveFrom: D(effectiveFrom), source, contentRules: contentRules.filter((r) => r.kind !== "layout"), layoutRules: contentRules.filter((r) => r.kind === "layout"), samplePayload, ruleSet, sampleFormBasis });
 
 const R = (rule_id: string, citation: string, kind: ContentRule["kind"], selector: string, message: string, extra: Partial<ContentRule> = {}): ContentRule => ({ rule_id, citation, kind, selector, severity: "block", message, ...extra });
 const CONTACT = `{{#block "contact" page=1 y=0.92 pt=10}}Supermortgage · {{servicer_phone}} (toll-free) · {{servicer_address}} · Notices of error and requests for information: {{exclusive_address}}{{/block}}`;
@@ -18,7 +23,8 @@ const REMINDER_SOURCE = `{{#block "heading" page=1 y=0.05 pt=14 bold}}Payment re
 {{#block "body" page=1 y=0.12 pt=11}}{{borrower_name}}, our records show that your payment due {{date due_date}} has not been received. We want to work with you to preserve homeownership. Late charges due: {{money late_charges_due_cents}}. Free HUD-approved housing counseling is available at HUD.gov or (800) 569-4287, and additional educational resources are at Fannie Mae's consumer website knowyouroptions.com.{{/block}}
 ${CONTACT}`;
 const REMINDER_RULES: ContentRule[] = [
-  R("name", "D2-2-03 item 1", "presence", "^\\s*\\S.*, our records show", "addresses the borrower by name"),
+  R("name", "D2-2-03 item 1", "presence", "Payment reminder [A-Za-z][^,]*, our records show", "addresses the borrower by name (an empty name leaves 'Payment reminder , our records show' and fails)"),
+  R("name-data", "D2-2-03 item 1", "data_equality", "borrower_name", "borrower name present on the payload", { predicate: { present: "borrower_name" } }),
   R("work-with", "D2-2-03 item 2", "presence", "We want to work with you to preserve homeownership", "desire to work with the borrower"),
   R("late-charges", "D2-2-03 item 3", "presence", "Late charges due: \\$[\\d,]+\\.\\d{2}", "late charges due"),
   R("hud", "D2-2-03 item 4", "presence", "HUD\\.gov", "HUD-approved counseling"),
@@ -41,12 +47,13 @@ const F1098_RULES = (corrected: boolean): ContentRule[] => [
   R("box5", "Form 1098 box 5", "presence", "Box 5 Mortgage insurance premiums", "MI premiums"),
   R("box10", "Form 1098 box 10; 7.1 rule 11", "presence", "Box 10 Other \\(real estate taxes paid\\)", "informational real-estate taxes"),
   R("tin", "C-4.2-01: filed in the servicer's own name and TIN", "presence", "TIN \\d{2}-\\d{7}", "servicer TIN"),
-  R("threshold", "Form 1098 instructions ($600 filing threshold; policy: furnish to all)", "data_range", "box1_cents_number", "box 1 ≥ $600 when filed", { range: { min: 60000 } }),
+  R("threshold", "Form 1098 instructions ($600 filing threshold); 7.1 rule 11 / decision 5: furnish to all payers regardless, file only ≥ $600", "data_range", "box1_cents_number", "box 1 ≥ $600 when the form is filed with the IRS (a furnish-only form below $600 is not held)", { range: { min: 60000 }, when: { "==": [{ var: "filed_with_irs" }, true] } }),
+  R("file-flag", "7.1 rule 11", "data_equality", "filed_with_irs", "filing decision recorded (box 1 ≥ $600 → filed)", { predicate: { or: [{ "==": [{ var: "filed_with_irs" }, true] }, { "==": [{ var: "filed_with_irs" }, false] }] } }),
   R("furnish-jan31", "IRC §6050H(d)", "presence", "Furnished to the payer by January 31, \\d{4}", "furnish by January 31"),
   ...(corrected ? [R("corrected", "Form 1098 instructions (corrected returns)", "presence", "CORRECTED", "corrected box marked")] : [R("not-corrected", "7.1 rule 11", "absence", "CORRECTED", "original form carries no corrected marker")]),
   CONTACT_RULE,
 ];
-const F1098_SAMPLE = { tax_year: 2026, servicer_name: "Supermortgage LLC", servicer_tin: "12-3456789", payer_name: "Bea Borrower", account_number: "0001234", property_address: "1 Test St, Testville TX 75001", box1_cents: 2341255n, box1_cents_number: 2341255, box2_as_of: "2026-01-01", box2_cents: 37104886n, box3_origination_date: "2021-11-01", box4_cents: 0n, box5_cents: 0n, box6_cents: 0n, box10_cents: 612500n, box11_acquisition_date: null, furnish_by: "2027-01-31", ...CONTACT_SAMPLE };
+const F1098_SAMPLE = { tax_year: 2026, servicer_name: "Supermortgage LLC", servicer_tin: "12-3456789", payer_name: "Bea Borrower", account_number: "0001234", property_address: "1 Test St, Testville TX 75001", box1_cents: 2341255n, box1_cents_number: 2341255, box2_as_of: "2026-01-01", box2_cents: 37104886n, box3_origination_date: "2021-11-01", box4_cents: 0n, box5_cents: 0n, box6_cents: 0n, box10_cents: 612500n, box11_acquisition_date: null, furnish_by: "2027-01-31", filed_with_irs: true, ...CONTACT_SAMPLE };
 
 // ------------------------------------------------------------------ 7.1 (e)(3)(iv) coupon-book delinquency notice ((d)(8) items in writing)
 const COUPON_DELQ_SOURCE = `{{#block "heading" page=1 y=0.05 pt=14 bold}}Delinquency information{{/block}}
@@ -67,7 +74,7 @@ const COUPON_DELQ_SAMPLE = { statement_date: "2026-10-17", days_delinquent: 46, 
 
 // ------------------------------------------------------------------ 7.1 (e)(6) charge-off suspension
 const CHARGEOFF_SOURCE = `{{#block "title" page=1 y=0.05 pt=14 bold}}Suspension of Statements & Notice of Charge Off — Retain This Copy for Your Records{{/block}}
-{{#block "body" page=1 y=0.15 pt=11}}Loan number ending {{account_last4}}. Effective {{date chargeoff_date}}: (1) your mortgage loan has been charged off and we will not charge any additional fees or interest on the account; (2) we will no longer provide you a periodic statement for each billing cycle; (3) the lien on the property remains in place and you remain liable for the mortgage loan obligation and any obligations arising from or related to the property, which may include property taxes; (4) you may be required to pay the balance on the account in the future, for example upon sale of the property; (5) the balance on the account, {{money balance_cents}}, is not being canceled or forgiven; (6) the loan may be purchased, assigned, or transferred; (7) you may request a payoff statement at any time by contacting us.{{/block}}
+{{#block "body" page=1 y=0.15 pt=11}}Loan number ending {{account_last4}}. Effective {{date chargeoff_date}}: (1) your mortgage loan has been charged off and we will not charge any additional fees or interest on the account; (2) we will no longer provide you a periodic statement for each billing cycle; (3) the lien on the property remains in place and you remain liable for the mortgage loan obligation and any obligations arising from or related to the property, which may include property taxes; (4) you may be required to pay the balance on the account in the future, for example upon sale of the property; (5) the balance on the account, {{money balance_cents}}, is not being canceled or forgiven; (6) the loan may be purchased, assigned, or transferred; (7) if any fee or interest is charged on the account after this notice, we will resume sending periodic statements, and no fee or interest charged during the suspension will be assessed retroactively.{{/block}}
 ${CONTACT}`;
 const CHARGEOFF_RULES: ContentRule[] = [
   R("title-exact", "§1026.41(e)(6)(i)(B)", "presence", "Suspension of Statements & Notice of Charge Off — Retain This Copy for Your Records", "exact title"),
@@ -77,7 +84,7 @@ const CHARGEOFF_RULES: ContentRule[] = [
   R("item-4", "§1026.41(e)(6)(i)(B)", "presence", "may be required to pay the balance on the account in the future", "future payment"),
   R("item-5", "§1026.41(e)(6)(i)(B)", "presence", "is not being canceled or forgiven", "balance not forgiven"),
   R("item-6", "§1026.41(e)(6)(i)(B)", "presence", "may be purchased, assigned, or transferred", "transfer"),
-  R("item-7", "7.1 rule 5; §1026.36(c)(3)", "presence", "request a payoff statement", "payoff statement availability"),
+  R("item-7", "§1026.41(e)(6)(ii) (the seventh item of 7.1-T7: (e)(6)(i)(B) itself lists six explanations — audit notes)", "presence", "resume sending periodic statements, and no fee or interest charged during the suspension will be assessed retroactively", "resumption and no retroactive fees/interest"),
   R("within-30", "§1026.41(e)(6)(i)(B)", "data_range", "days_after_chargeoff", "sent within 30 days of charge-off", { range: { max: 30 } }),
   CONTACT_RULE,
 ];
@@ -161,11 +168,12 @@ const ARM_C_RULES: ContentRule[] = [
   R("vi-balance", "§1026.20(c)(2)(vi)", "presence", "expected loan balance .* remaining term is \\d+ months", "expected balance and remaining term"),
   R("vi-amortization", "§1026.20(c)(2)(vi)", "presence", "fully repay the loan over the remaining term", "amortization statement"),
   R("vii-prepay", "§1026.20(c)(2)(vii)", "presence", "prepayment penalty", "prepayment penalty statement"),
-  R("timing-window", "§1026.20(c)(2); comment 20(c)(2)-1", "data_range", "days_before_first_payment", "sent 60–120 days before the first new payment", { range: { min: 60, max: 120 } }),
+  R("timing-window", "§1026.20(c)(2); comment 20(c)(2)-1", "data_range", "days_before_first_payment", "sent 60–120 days before the first new payment (standard plans)", { range: { min: 60, max: 120 }, when: { "!": { in: [{ var: "notice_kind" }, ["c_25_120", "c_first_25"]] } } }),
+  R("timing-window-25", "§1026.20(c)(2) (adjustments every 60 days or more frequently; pre-2015 <45-day look-back; first adjustment within 60 days of consummation after an estimated (d)); 7.2 rule 4", "data_range", "days_before_first_payment", "sent 25–120 days before the first new payment (25-day cases)", { range: { min: 25, max: 120 }, when: { in: [{ var: "notice_kind" }, ["c_25_120", "c_first_25"]] } }),
   R("dual-engine", "7.2 agent design", "data_equality", "engines_agree", "both engines agree to the cent", { predicate: { "==": [{ var: "engines_agree" }, true] } }),
   CONTACT_RULE,
 ];
-const ARM_C_SAMPLE = { change_date: "2026-11-01", schedule_sentence: "every six months thereafter", current_rate_pct: "5.750", new_rate_pct: "6.375", current_pi_cents: 233429n, new_pi_cents: 247644n, first_new_payment_due: "2026-12-01", interest_only: false, index_name: "30-day Average SOFR", index_source: "the Federal Reserve Bank of New York (newyorkfed.org)", index_value: "3.64883", index_date: "2026-09-17", margin_pct: "2.750", cap_this_change_pct: "2.000", lifetime_cap_pct: "10.750", floor_pct: "2.750", cap_applied: false, uncapped_rate_pct: "6.375", expected_upb_cents: 37104886n, remaining_term_months: 300, escrow_cents: 61250n, total_payment_cents: 308894n, current_total_cents: 294679n, next_change_date: "2027-05-01", days_before_first_payment: 75, engines_agree: true, ...CONTACT_SAMPLE };
+const ARM_C_SAMPLE = { change_date: "2026-11-01", schedule_sentence: "every six months thereafter", current_rate_pct: "5.750", new_rate_pct: "6.375", current_pi_cents: 233429n, new_pi_cents: 247644n, first_new_payment_due: "2026-12-01", interest_only: false, index_name: "30-day Average SOFR", index_source: "the Federal Reserve Bank of New York (newyorkfed.org)", index_value: "3.64883", index_date: "2026-09-17", margin_pct: "2.750", cap_this_change_pct: "2.000", lifetime_cap_pct: "10.750", floor_pct: "2.750", cap_applied: false, uncapped_rate_pct: "6.375", expected_upb_cents: 37104886n, remaining_term_months: 300, escrow_cents: 61250n, total_payment_cents: 308894n, current_total_cents: 294679n, next_change_date: "2027-05-01", days_before_first_payment: 75, notice_kind: "c_60_120", engines_agree: true, ...CONTACT_SAMPLE };
 
 // ------------------------------------------------------------------ 7.2 Fannie Mae rate-change / buydown / correction / interim
 const RATE_CHANGE_SOURCE = `{{#block "heading" page=1 y=0.05 pt=14 bold}}Notice of change to your mortgage loan effective {{date effective_date}}{{/block}}
@@ -302,11 +310,13 @@ const PAYOFF_RULES: ContentRule[] = [
   R("updated", "7.6 rule 4", "presence", "written updated payoff statement will be provided on request", "updated statement on request"),
   R("fl-no-disclaimer", "Fla. Stat. §701.04", "conditional", "state", "no reservations or disclaimers in Florida", { when: { "==": [{ var: "state" }, "FL"] }, predicate: { "!": { matches: ["state_text", "(reserve the right|subject to change|disclaim)"] } } }),
   R("ca-2943", "Cal. Civ. Code §2943", "conditional", "state", "California statement elements and fee line", { when: { "==": [{ var: "state" }, "CA"] }, predicate: { matches: ["state_text", "Civil Code section 2943"] } }),
-  R("within-7bd", "§1026.36(c)(3)", "data_range", "business_days_after_request", "sent within 7 business days of the written request", { range: { max: 7 } }),
+  R("within-7bd", "§1026.36(c)(3)", "data_range", "business_days_after_request", "sent within 7 business days of the written request", { range: { max: 7 }, when: { "!": { in: [{ var: "reasonable_time_reason" }, ["bankruptcy", "foreclosure", "disaster", "similar"]] } } }),
+  R("within-10bd-reasonable-time", "§1026.36(c)(3) (reasonable time); 7.6 rule 3 / REGZ_1026_36C3_PAYOFF_REASONABLE_10BD", "data_range", "business_days_after_request", "sent within 10 business days on the documented reasonable-time path", { range: { max: 10 }, when: { in: [{ var: "reasonable_time_reason" }, ["bankruptcy", "foreclosure", "disaster", "similar"]] } }),
+  R("reasonable-time-evidence", "7.6 rule 3", "conditional", "reasonable_time_evidence_document_id", "reasonable-time path carries recorded evidence", { when: { in: [{ var: "reasonable_time_reason" }, ["bankruptcy", "foreclosure", "disaster", "similar"]] }, predicate: { present: "reasonable_time_evidence_document_id" } }),
   R("engine", "7.6 guardrail: figures only from the 16.1 engine", "data_equality", "calc_source", "figures from the 16.1 engine", { predicate: { "==": [{ var: "calc_source" }, "16.1"] } }),
   CONTACT_RULE,
 ];
-const PAYOFF_SAMPLE = { good_through: "2026-11-20", requester_name: "Refi Lender Inc.", borrower_names: "Bea Borrower", loan_number_display: "****1234", property_address: "1 Test St, Testville TX 75001", statement_date: "2026-10-15", total_cents: 37234499n, upb_cents: 37104886n, paid_through: "2026-10-31", rate_pct: "6.375", days: 20, per_diem_cents: 6481n, interest_cents: 129613n, nib_cents: 0n, late_charges_cents: 0n, fees_advances_cents: 0n, recording_fee_cents: 0n, credits_cents: 0n, escrow_balance_cents: 183000n, mi_proration_cents: null, alternative_text: "If funds arrive before the November 1, 2026 payment is received, the unpaid principal balance is $371,602.55 with interest at 5.750% from October 1 through October 31, 2026 and 6.375% from November 1, 2026.", wire_bank: "Custodial Bank N.A.", wire_aba: "021000021", wire_account_masked: "****5678", state: "TX", state_text: null, business_days_after_request: 2, calc_source: "16.1", ...CONTACT_SAMPLE };
+const PAYOFF_SAMPLE = { good_through: "2026-11-20", requester_name: "Refi Lender Inc.", borrower_names: "Bea Borrower", loan_number_display: "****1234", property_address: "1 Test St, Testville TX 75001", statement_date: "2026-10-15", total_cents: 37234499n, upb_cents: 37104886n, paid_through: "2026-10-31", rate_pct: "6.375", days: 20, per_diem_cents: 6481n, interest_cents: 129613n, nib_cents: 0n, late_charges_cents: 0n, fees_advances_cents: 0n, recording_fee_cents: 0n, credits_cents: 0n, escrow_balance_cents: 183000n, mi_proration_cents: null, alternative_text: "If funds arrive before the November 1, 2026 payment is received, the unpaid principal balance is $371,602.55 with interest at 5.750% from October 1 through October 31, 2026 and 6.375% from November 1, 2026.", wire_bank: "Custodial Bank N.A.", wire_aba: "021000021", wire_account_masked: "****5678", state: "TX", state_text: null, business_days_after_request: 2, reasonable_time_reason: "none", reasonable_time_evidence_document_id: null, calc_source: "16.1", ...CONTACT_SAMPLE };
 const PAYOFF_ACK_SOURCE = `{{#block "body" page=1 y=0.1 pt=11}}We received your written payoff request on {{date received_on}}. Because {{reason_text}}, we cannot provide the payoff statement within seven business days; we expect to send it by {{date expected_on}}. Nothing else about your loan changes in the meantime.{{/block}}
 ${CONTACT}`;
 const PAYOFF_ACK_RULES: ContentRule[] = [R("reason", "§1026.36(c)(3) (reasonable time); 7.6 rule 3", "presence", "Because .*, we cannot provide the payoff statement within seven business days", "reason stated"), R("expected", "7.6 rule 3", "presence", "expect to send it by", "expected date"), R("reason-category", "7.6 rule 3", "data_equality", "reason", "one of the permitted categories", { predicate: { in: [{ var: "reason" }, ["bankruptcy", "foreclosure", "disaster", "similar"]] } }), R("within-2bd", "SM_PAYOFF_DELAY_ACK_2BD", "data_range", "business_days_after_request", "acknowledged within 2 business days", { range: { max: 2 } }), CONTACT_RULE];
@@ -320,6 +330,101 @@ const PAYOFF_AUTH_SOURCE = `{{#block "body" page=1 y=0.1 pt=11}}We received a pa
 ${CONTACT}`;
 const PAYOFF_AUTH_RULES: ContentRule[] = [R("third-party", "7.6 rule 2; §1016.14", "presence", "cannot release the payoff statement to a third party without the borrower's authorization", "authorization required"), R("what", "7.6 rule 2", "presence", "Please provide .* by", "authorization requested with a date"), R("fallback", "7.6 rule 2 (clock not tolled)", "presence", "sent to the borrower of record by", "borrower-of-record fallback"), R("same-day", "7.6 rule 2 (request the same day)", "data_range", "days_after_request", "sent the same day", { range: { max: 0 } }), CONTACT_RULE];
 const PAYOFF_AUTH_SAMPLE = { received_on: "2026-10-13", requester_name: "Title Co. LLC", requester_type: "title/escrow company", borrower_names: "Bea Borrower", authorization_needed: "a borrower-signed authorization or the escrow instructions naming you", respond_by: "2026-10-20", federal_due: "2026-10-22", days_after_request: 0, ...CONTACT_SAMPLE };
+
+// ------------------------------------------------------------------ 7.1 periodic statement v1.1.0 (H-30(A)/(B)) — the spec's machine-checkable rule excerpt
+// Supersedes the catalog's 1.0.0 (effective 2026-09-01) from 2026-09-02: (d)(1)(iii) prominence at ≥ 1.6× body and bold,
+// REGZ_41_D3_YTD_LEDGER, REGZ_41_D4_LATE_FEE_DESC, REGZ_41_D6_TOLLFREE_P1, FNMA_D2_2_03_PANEL and the seven (d)(8) items;
+// the (d)(8)(i) sentence names the first unpaid due date (`delinquency.first_unpaid_due`), not day 1 of delinquency.
+const STATEMENT_V11_SOURCE = `{{#block "amount_due" page=1 y=0.05 pt=16 bold}}Amount due {{money amount_due_cents}} — payment due date {{date due_date}}{{/block}}
+{{#block "late_fee" page=1 y=0.1 pt=10}}If payment is received after {{date late_fee_after_date}}, a late fee of {{money late_fee_cents}} will be charged.{{/block}}
+{{#block "explanation" page=1 y=0.15 pt=10}}Explanation of amount due: principal {{money principal_cents}}, interest {{money interest_cents}}, escrow {{money escrow_cents}}; fees and charges since last statement {{money fees_since_last_cents}}; past due {{money past_due_cents}}; total {{money amount_due_cents}}.{{/block}}
+{{#block "past_payments" page=1 y=0.27 pt=10}}Payments received since last statement: {{money payments_since_last.total_cents}} (principal {{money payments_since_last.principal_cents}}, interest {{money payments_since_last.interest_cents}}, escrow {{money payments_since_last.escrow_cents}}, fees {{money payments_since_last.fees_cents}}, unapplied {{money payments_since_last.suspense_cents}}). Year to date: {{money ytd.total_cents}} (principal {{money ytd.principal_cents}}, interest {{money ytd.interest_cents}}, escrow {{money ytd.escrow_cents}}, fees {{money ytd.fees_cents}}); unapplied funds currently held {{money ytd.suspense_held_cents}}.{{/block}}
+{{#if suspense_instructions}}{{#block "suspense" page=1 y=0.38 pt=10}}{{suspense_instructions}}{{/block}}{{/if}}
+{{#block "transactions" page=2 y=0.1 pt=10}}Transaction activity: {{#each transactions}}{{date date}} {{description}} {{money amount_cents}}; {{/each}}{{/block}}
+{{#block "contact" page=1 y=0.02 pt=10}}Supermortgage · {{servicer_phone}} (toll-free) · {{servicer_address}} · Notices of error and requests for information: {{exclusive_address}}{{/block}}
+{{#block "account" page=1 y=0.03 pt=10}}Loan number ending {{account_last4}} · Unpaid principal balance {{money upb_cents}} · Interest rate {{pct rate_pct}}{{#if next_rate_change_date}} · Next rate change {{date next_rate_change_date}}{{/if}} · {{#if prepay_penalty}}A prepayment penalty may apply{{else}}No prepayment penalty{{/if}}{{/block}}
+{{#block "counselor" page=2 y=0.9 pt=10}}Housing counselor information: {{counselor_url}} · HUD {{hud_phone}}{{/block}}
+{{#if delinquency}}{{#block "delinquency" page=1 y=0.5 pt=10 bold}}As of {{date statement_date}} you are {{delinquency.days}} days delinquent; your first unpaid payment was due {{date delinquency.first_unpaid_due}}. If you do not bring your loan current you may face foreclosure and additional expenses. Account history (last six months): {{#each delinquency.history}}{{month}}: {{status}}; {{/each}}{{#if delinquency.lossmit_program}}Loss mitigation program you have agreed to: {{delinquency.lossmit_program}}.{{else}}No loss mitigation program is in place.{{/if}} {{#if delinquency.first_notice_filed}}We have made the first notice or filing for foreclosure.{{else}}No foreclosure filing has been made.{{/if}} Amount to bring the loan current: {{money delinquency.reinstatement_cents}}. Housing counselor information: {{counselor_url}} · HUD {{hud_phone}}.{{/block}}{{/if}}
+{{#if reminder_panel}}{{#block "reminder" page=1 y=0.72 pt=10}}{{borrower_name}}, we want to work with you to preserve homeownership. Late charges due: {{money late_charges_due_cents}}. Free HUD-approved counseling: HUD.gov · Fannie Mae's consumer website knowyouroptions.com{{/block}}{{/if}}
+{{#block "body" page=1 y=0.85 pt=10}}Questions? Call {{servicer_phone}}.{{/block}}`;
+const MONTH = "(January|February|March|April|May|June|July|August|September|October|November|December) \\d{1,2}, \\d{4}";
+const GT45 = { ">": [{ var: "regx_days_delinquent" }, 45] };
+const STATEMENT_V11_RULES: ContentRule[] = [
+  R("d1-group-top", "§1026.41(d)(1) — REGZ_41_D1_GROUP_TOP_P1", "layout", "amount_due", "amount-due group on page 1, top 25%", { layout: { page: 1, maxYFraction: 0.25 } }),
+  R("d1-amount-due", "§1026.41(d)(1)(iii) — REGZ_41_D1_III_PROMINENT", "layout", "amount_due", "amount due shown more prominently than other disclosures: font ≥ 1.6× body, bold", { layout: { page: 1, minFontRatio: 1.6, bold: true } }),
+  R("d1-late-fee", "§1026.41(d)(1)(ii)", "presence", "If payment is received after " + MONTH + ", a late fee of \\$[\\d,]+\\.\\d{2} will be charged", "late-fee amount and the date it will be imposed"),
+  R("d2-explanation", "§1026.41(d)(2)", "presence", "Explanation of amount due: principal \\$[\\d,]+\\.\\d{2}, interest \\$[\\d,]+\\.\\d{2}, escrow \\$[\\d,]+\\.\\d{2}; fees and charges since last statement \\$[\\d,]+\\.\\d{2}; past due \\$[\\d,]+\\.\\d{2}", "breakdown of P&I, escrow, fees since last statement, past due"),
+  R("amount-due-ties", "7.1 rule 2 — REGZ_41_D2_SUM", "data_equality", "amount_due_cents", "amount due = current payment + past due + late charges + fees", { predicate: { "==": [{ var: "amount_due_cents" }, { var: "computed_amount_due_cents" }] } }),
+  R("d3-past-payments", "§1026.41(d)(3)", "presence", "Payments received since last statement: \\$[\\d,]+\\.\\d{2} \\(principal .* unapplied \\$[\\d,]+\\.\\d{2}\\)", "past payment breakdown incl. unapplied funds"),
+  R("d3-ytd-suspense", "comment 41(d)(3)-1", "presence", "unapplied funds currently held \\$[\\d,]+\\.\\d{2}", "YTD suspense currently held"),
+  R("d3-ytd-ledger", "§1026.41(d)(3)(ii); 7.1 rule 9 — REGZ_41_D3_YTD_LEDGER", "data_equality", "ytd.total_cents", "YTD totals tie to Σ payment_allocations for the calendar year", { predicate: { "==": [{ var: "ytd.total_cents" }, { var: "ytd_ledger_total_cents" }] } }),
+  R("d4-transactions", "§1026.41(d)(4)", "presence", "Transaction activity: ", "every credit/debit since the last statement with date, description and amount"),
+  R("d4-late-fee-desc", "comment 41(d)(4)-2 — REGZ_41_D4_LATE_FEE_DESC", "presence", MONTH + " Late fee \\$[\\d,]+\\.\\d{2}", "each late-fee debit shows its date, amount and that a late fee was imposed", { when: { ">": [{ var: "late_fee_debits" }, 0] } }),
+  R("d5-suspense", "§1026.41(d)(5) — REGZ_41_D5_SUSPENSE_TEXT", "conditional", "suspense_instructions", "partial-payment instructions when funds are in suspense", { when: { ">": [{ var: "ytd.suspense_held_cents" }, 0] }, predicate: { present: "suspense_instructions" } }),
+  R("d6-tollfree", "§1026.41(d)(6) — REGZ_41_D6_TOLLFREE_P1", "presence", "\\(8(?:00|33|44|55|66|77|88)\\) \\d{3}-\\d{4} \\(toll-free\\)", "toll-free telephone number on the front page"),
+  R("d6-contact-p1", "§1026.41(d)(6)", "layout", "contact", "contact block on page 1", { layout: { page: 1 } }),
+  R("d6-contact", "§1026.41(d)(6); comment 35(c)-2", "presence", "Notices of error and requests for information: ", "exclusive NoE/RFI address"),
+  R("d7-account", "§1026.41(d)(7)", "presence", "Unpaid principal balance \\$[\\d,]+\\.\\d{2} · Interest rate \\d+\\.\\d{3}% .* (No prepayment penalty|prepayment penalty may apply)", "account information: UPB, rate, prepayment penalty"),
+  R("d7-next-rate-change", "§1026.41(d)(7)(iii)", "conditional", "next_rate_change_date", "next rate change date for ARMs", { when: { present: "next_rate_change_date" }, predicate: { present: "next_rate_change_date" } }),
+  R("counselor", "§1026.41(d)(7)(iv) — REGZ_41_D7_COUNSELOR", "presence", "Housing counselor information: consumerfinance\\.gov/find-a-housing-counselor · HUD \\(800\\) 569-4287", "CFPB counselor URL and HUD toll-free number"),
+  R("d8-delinquency", "§1026.41(d)(8)(i)–(vii) — REGZ_41_D8_BOX_IF_GT45", "presence", "days delinquent; your first unpaid payment was due " + MONTH + "\\. If you do not bring your loan current you may face foreclosure and additional expenses\\. Account history \\(last six months\\):.*(Loss mitigation program you have agreed to|No loss mitigation program is in place)\\..*(first notice or filing for foreclosure|No foreclosure filing has been made)\\. Amount to bring the loan current: \\$[\\d,]+\\.\\d{2}\\. Housing counselor information", "the seven (d)(8) items when more than 45 days delinquent", { when: GT45 }),
+  R("d8-delinquency-layout", "§1026.41(d)(8) — REGZ_41_D8_BOX_IF_GT45", "layout", "delinquency", "delinquency box on the front page", { layout: { page: 1 }, when: GT45 }),
+  R("d8-absent-le45", "§1026.41(d)(8) — REGZ_41_D8_BOX_IF_GT45", "conditional", "delinquency", "no delinquency box at 45 days or less", { when: { "<=": [{ var: "regx_days_delinquent" }, 45] }, predicate: { "!": { present: "delinquency" } } }),
+  R("fnma-d2-2-03-panel", "D2-2-03; 7.1 rule 10 — FNMA_D2_2_03_PANEL", "presence", "we want to work with you to preserve homeownership\\. Late charges due: \\$[\\d,]+\\.\\d{2}\\. .* HUD\\.gov .* knowyouroptions\\.com", "reminder panel when the month's payment is unpaid", { when: { "==": [{ var: "reminder_panel" }, true] } }),
+  R("no-suspense-netting", "7.1 rule 2", "absence", "less (funds|amounts?) held in suspense", "suspense is disclosed, never netted against amount due", { severity: "warn" }),
+];
+const HISTORY_6M = [{ month: "May", status: "credited as paid May 1, 2026" }, { month: "Jun", status: "credited as paid June 1, 2026" }, { month: "Jul", status: "credited as paid July 1, 2026" }, { month: "Aug", status: "credited as paid August 1, 2026" }, { month: "Sep", status: "$2,946.79 remaining" }, { month: "Oct", status: "$2,946.79 remaining" }];
+const STATEMENT_V11_DELQ_SAMPLE: Record<string, unknown> = {
+  statement_date: "2026-10-17", due_date: "2026-11-01", amount_due_cents: 907_379n, computed_amount_due_cents: 907_379n, late_fee_after_date: "2026-11-16", late_fee_cents: 11_671n,
+  principal_cents: 41_750n, interest_cents: 191_679n, escrow_cents: 61_250n, fees_since_last_cents: 11_671n, past_due_cents: 589_358n, late_charges_due_cents: 23_342n,
+  payments_since_last: { total_cents: 150_000n, principal_cents: 0n, interest_cents: 0n, escrow_cents: 0n, fees_cents: 0n, suspense_cents: 150_000n },
+  ytd: { total_cents: 2_357_432n, principal_cents: 334_000n, interest_cents: 1_533_432n, escrow_cents: 490_000n, fees_cents: 0n, suspense_held_cents: 150_000n }, ytd_ledger_total_cents: 2_357_432n,
+  suspense_instructions: "We received $1,500.00, which is being held. We need $1,446.79 more to apply a full payment.",
+  transactions: [{ date: "2026-10-09", description: "Payment received — held in suspense", amount_cents: 150_000n }, { date: "2026-10-17", description: "Late fee", amount_cents: 11_671n }], late_fee_debits: 1,
+  servicer_phone: "(800) 555-0100", servicer_address: "PO Box 1, Testville TX 75001", exclusive_address: "PO Box 2, Testville TX 75001", account_last4: "1234",
+  upb_cents: 37_160_255n, rate_pct: "5.750", next_rate_change_date: "2026-11-01", prepay_penalty: false, counselor_url: "consumerfinance.gov/find-a-housing-counselor", hud_phone: "(800) 569-4287",
+  regx_days_delinquent: 46, borrower_name: "Bea Borrower", reminder_panel: true,
+  delinquency: { days: 46, began_on: "2026-09-02", first_unpaid_due: "2026-09-01", history: HISTORY_6M, lossmit_program: null, first_notice_filed: false, reinstatement_cents: 612_700n },
+};
+const STATEMENT_V11_STD_SAMPLE: Record<string, unknown> = {
+  ...STATEMENT_V11_DELQ_SAMPLE, statement_date: "2026-09-17", due_date: "2026-10-01", late_fee_after_date: "2026-10-16", amount_due_cents: 601_029n, computed_amount_due_cents: 601_029n, past_due_cents: 294_679n, late_charges_due_cents: 11_671n,
+  transactions: [{ date: "2026-09-09", description: "Payment received — held in suspense", amount_cents: 150_000n }, { date: "2026-09-17", description: "Late fee", amount_cents: 11_671n }],
+  regx_days_delinquent: 16, reminder_panel: false, delinquency: null,
+};
+
+// ------------------------------------------------------------------ 7.3 ARM initial (d) notice v1.1.0 (H-4(D)(3)/(4)) — adds (d)(2)(i) disclosure date and the (d)(2)(iv)(A) source of information about the index
+export const ARM_D_V11_SOURCE = `{{#block "date" page=1 y=0.02 pt=11}}Date of this disclosure: {{date disclosure_date}}{{/block}}
+{{#block "heading" page=1 y=0.05 pt=14 bold}}Important notice: your interest rate and payment will change on {{date change_date}}{{/block}}
+{{#block "schedule" page=1 y=0.15 pt=11}}Under the terms of your adjustable-rate mortgage the period during which your rate and payment are fixed is ending: your rate will change on {{date change_date}} and {{schedule_sentence}}; the first payment at the new rate is due {{date first_new_payment_due}}.{{/block}}
+{{#block "estimate" page=1 y=0.25 pt=11}}Estimated new rate {{pct estimated_rate_pct}} (estimated) based on the {{index_name}} published {{date index_date}} by {{index_source}} of {{index_value}} plus a margin of {{pct margin_pct}}; estimated new payment {{money estimated_payment_cents}} (estimated) versus your current payment {{money current_payment_cents}}.{{/block}}
+{{#block "caps" page=1 y=0.4 pt=11}}Your rate cannot increase or decrease by more than {{pct first_cap_pct}} at this change, by more than {{pct periodic_cap_pct}} at later changes, or ever exceed {{pct lifetime_cap_pct}}; it will never fall below {{pct floor_pct}}.{{/block}}
+{{#block "balance" page=1 y=0.5 pt=11}}Expected balance {{money expected_upb_cents}} over {{remaining_term_months}} months. No prepayment penalty.{{/block}}
+{{#block "alternatives" page=1 y=0.6 pt=11}}If you are unable to afford the new payment, you may: refinance your loan with us or another lender; sell your home and use the proceeds to pay off your current loan; modify the terms of your loan with us; seek payment forbearance from us; or contact a housing counselor. Call {{toll_free}}. CFPB: {{cfpb_url}} · HUD (800) 569-4287 · {{state_hfa_contact}}{{/block}}
+{{#block "body" page=1 y=0.9 pt=11}}The actual rate and payment will be sent between two and four months before {{date first_new_payment_due}}.{{/block}}`;
+export const ARM_D_V11_RULES: ContentRule[] = [
+  R("i-date", "§1026.20(d)(2)(i); comment 20(d)(2)(i)-1", "presence", "Date of this disclosure: " + MONTH, "date of the disclosure (the date the servicer generates the notice)"),
+  R("ii-schedule", "§1026.20(d)(2)(ii)", "presence", "every (six|6) months thereafter", "schedule sentence"),
+  R("ii-period-ending", "§1026.20(d)(2)(ii)", "presence", "period during which your rate and payment are fixed is ending", "statement that the fixed period is ending"),
+  R("iii-estimated", "§1026.20(d)(2)(iii)", "presence", "\\(estimated\\)", "estimates are labeled"),
+  R("iv-index", "§1026.20(d)(2)(iv)", "presence", "based on the .* published", "index and source"),
+  R("iv-index-source", "§1026.20(d)(2)(iv)(A)", "presence", "published " + MONTH + " by .* \\((?:[a-z0-9-]+\\.)+(?:org|gov|com)\\)", "a source of information about the index (publisher and where it is published)"),
+  R("v-caps", "§1026.20(d)(2)(v)", "presence", "cannot increase or decrease by more than", "caps and floor"),
+  R("vi-balance", "§1026.20(d)(2)(vi)", "presence", "Expected balance", "balance and term"),
+  R("viii-prepay", "§1026.20(d)(2)(viii)", "presence", "prepayment penalty", "prepayment penalty statement"),
+  R("ix-phone", "§1026.20(d)(2)(ix)", "presence", "Call \\(\\d{3}\\) \\d{3}-\\d{4}", "toll-free number"),
+  R("x-alternatives", "§1026.20(d)(2)(x)", "presence", "refinance your loan .* sell your home .* modify the terms .* forbearance .* housing counselor", "alternatives verbatim"),
+  R("xi-cfpb-hud-hfa", "§1026.20(d)(2)(xi)", "presence", "HUD \\(800\\) 569-4287", "CFPB URL, HUD number, state HFA"),
+  R("follow-up", "§1026.20(d)(2) (estimate → actual notice between two and four months before)", "presence", "actual rate and payment will be sent between two and four months before", "the follow-up sentence when the figures are estimates", { when: { "==": [{ var: "is_estimate" }, true] } }),
+  R("index-recency", "§1026.20(d); 7.3 rule 3", "data_range", "index_age_business_days", "index within 15 business days of disclosure", { range: { max: 15 } }),
+  R("timing-window", "§1026.20(d)(1)", "data_range", "days_before_first_payment", "sent 210–240 days before the first new payment", { range: { min: 210, max: 240 } }),
+];
+export const ARM_D_V11_SAMPLE: Record<string, unknown> = { disclosure_date: "2026-04-20", change_date: "2026-11-01", first_new_payment_due: "2026-12-01", schedule_sentence: "every six months thereafter", is_estimate: true, estimated_rate_pct: "6.375", index_name: "30-day Average SOFR", index_date: "2026-04-20", index_source: "the Federal Reserve Bank of New York (newyorkfed.org)", index_value: "3.64381", margin_pct: "2.750", estimated_payment_cents: 247_644n, current_payment_cents: 233_429n, first_cap_pct: "2.000", periodic_cap_pct: "1.000", lifetime_cap_pct: "10.750", floor_pct: "2.750", expected_upb_cents: 37_104_886n, remaining_term_months: 300, toll_free: "(800) 555-0100", cfpb_url: "consumerfinance.gov", state_hfa_contact: "Texas Department of Housing and Community Affairs (800) 792-1119", index_age_business_days: 0, days_before_first_payment: 224 };
+
+const SECTION_07_SUPERSEDING_VERSIONS: readonly VersionInput[] = [
+  V2("NTC_REGZ_41_STMT_STD", "1.1.0", "2026-09-02", STATEMENT_V11_SOURCE, STATEMENT_V11_RULES, STATEMENT_V11_STD_SAMPLE, "regz.periodic_statement.2018", "H-30(A), 2018 edition; 7.1 rule excerpt"),
+  V2("NTC_REGZ_41_STMT_DELQ", "1.1.0", "2026-09-02", STATEMENT_V11_SOURCE, STATEMENT_V11_RULES, STATEMENT_V11_DELQ_SAMPLE, "regz.periodic_statement.2018", "H-30(B), 2018 edition; 7.1 rule excerpt"),
+  V2("NTC_REGZ_20D_ARM_INITIAL", "1.1.0", "2026-09-02", ARM_D_V11_SOURCE, ARM_D_V11_RULES, ARM_D_V11_SAMPLE, "regz.arm_notices.2013", "H-4(D)(3)/(4); 7.3 worked example"),
+];
 
 export const SECTION_07_VERSIONS: readonly VersionInput[] = [
   V("NTC_FNMA_D2_2_03_PAYMENT_REMINDER", REMINDER_SOURCE, REMINDER_RULES, REMINDER_SAMPLE, "fnma.d2_2_03.2025-08", "D2-2-03 (SVC-2025-05)"),
@@ -353,4 +458,5 @@ export const SECTION_07_VERSIONS: readonly VersionInput[] = [
   V("NTC_PAYOFF_REQUEST_ACK_DELAY", PAYOFF_ACK_SOURCE, PAYOFF_ACK_RULES, PAYOFF_ACK_SAMPLE, "regz.payoff.2014", "7.6 rule 3"),
   V("NTC_PAYOFF_UPDATED_STMT", PAYOFF_UPDATED_SOURCE, PAYOFF_UPDATED_RULES, PAYOFF_UPDATED_SAMPLE, "regz.payoff.2014", "7.6 rule 5"),
   V("NTC_PAYOFF_AUTHORIZATION_REQUEST", PAYOFF_AUTH_SOURCE, PAYOFF_AUTH_RULES, PAYOFF_AUTH_SAMPLE, "regz.payoff.2014", "7.6 rule 2"),
+  ...SECTION_07_SUPERSEDING_VERSIONS,
 ];

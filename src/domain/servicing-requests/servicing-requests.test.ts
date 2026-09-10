@@ -34,7 +34,8 @@ test("4.3-T1/T3/T6/T7/T9: assignment day 45, not required for investment, releas
   C.onPayment(e, true, true); assert.equal(e.status, "assigned"); C.onPayment(e, true, true); assert.equal(e.status, "released");
   const e2: C.Episode = { status: "assigned", consecutive_on_time: 1, mode: "ai_first_named_human", team: "default" }; C.onPayment(e2, false, true); assert.equal(e2.consecutive_on_time, 0); assert.equal(e2.status, "assigned");
   const e3: C.Episode = { status: "assigned", consecutive_on_time: 0, mode: "ai_first_named_human", team: "default" }; C.onPayment(e3, true, false); C.onPayment(e3, true, false); assert.equal(e3.status, "assigned");   // trial payments don't count
-  assert.equal(C.caSpocDue(D("2026-10-09")), "2026-10-14");   // Fri 10-09 + 2 servicer BD, Columbus Day 10-12 closed assert.equal(C.bankruptcyReassign(e3).team, "bankruptcy_specialist");
+  assert.equal(C.caSpocDue(D("2026-10-09")), "2026-10-14");   // Fri 10-09 + 2 servicer BD, Columbus Day 10-12 closed
+  assert.equal(C.bankruptcyReassign(e3).team, "bankruptcy_specialist"); assert.equal(e3.status, "assigned");
 });
 
 test("4.4-T1/T2/T3/T4/T5: successor timeline (10-08, 11-03), no probate for joint tenancy, no deed for divorce, additional documents, arm's-length sale", () => {
@@ -47,7 +48,8 @@ test("4.4-T1/T2/T3/T4/T5: successor timeline (10-08, 11-03), no probate for join
 
 test("4.5-T1/T2/T3/T4/T6/T10: CFPB 15/60, NY 5/30 (15 foreclosure), triage, population remediation $18,600, 48h email", () => {
   assert.deepEqual(CP.cfpbDeadlines(D("2026-09-10")), { response_by: "2026-09-25", final_by: "2026-11-09" });
-  assert.deepEqual(CP.nyDeadlines(D("2026-09-10"), false), { ack_by: "2026-09-17", response_by: "2026-10-23" });   // 30 BD, Columbus Day excluded assert.equal(CP.nyDeadlines(D("2026-09-10"), true).response_by, "2026-10-01");
+  assert.deepEqual(CP.nyDeadlines(D("2026-09-10"), false), { ack_by: "2026-09-17", response_by: "2026-10-23", extendable: true });   // 30 BD, Columbus Day excluded
+  assert.equal(CP.nyDeadlines(D("2026-09-10"), true).response_by, "2026-10-01");                                                     // 15 BD if foreclosure-related
   const oral = CP.triage({ text: "you people keep charging me late fees", complaints_90d: 0, channel: "oral" }); assert.equal(oral.opens_noe, false); assert.equal(oral.script_1024_38b5, true);
   const written = CP.triage({ text: "you charged me a late fee I don't owe", complaints_90d: 2, channel: "written" }); assert.equal(written.opens_noe, true); assert.equal(written.repeat, true);
   assert.equal(CP.triage({ text: "my foreclosure sale is tomorrow", complaints_90d: 0, channel: "oral" }).severity, "critical");

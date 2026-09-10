@@ -48,3 +48,9 @@ export function noeAckDue(receivedOn: PlainDate, cal: Calendar = servicer): Plai
 
 /** 10.6-T9 — a denial must link an evaluation row. */
 export function denialSendAllowed(evaluationId: string | null): boolean { return evaluationId !== null; }
+
+/** 10.6 R4 / T8 — a human-review reversal grants as of the date the borrower originally qualified and refunds every premium collected since (10.5). */
+export function reversalGrant(i: { qualified_on: PlainDate; premiums_collected: readonly { on: PlainDate; amount_cents: Cents }[] }): { effective_on: PlainDate; refund_cents: Cents; refunded: readonly { on: PlainDate; amount_cents: Cents }[]; route: "10.1 finalization (R-F1…R-F6)"; refund_process: "10.5" } {
+  const refunded = i.premiums_collected.filter((p) => p.on >= i.qualified_on);
+  return { effective_on: i.qualified_on, refund_cents: refunded.reduce((a, p) => a + p.amount_cents, 0n), refunded, route: "10.1 finalization (R-F1…R-F6)", refund_process: "10.5" };
+}

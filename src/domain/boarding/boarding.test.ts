@@ -194,8 +194,10 @@ test("1.1-T7: escrowed loan boarded Dec 2, 2026 16:00 ET → EscrowSetup due 03:
   assert.equal(breaches.length, 1);
   assert.equal(breaches[0]!.severity, 2);
   assert.ok(breaches[0]!.escalateTo.includes("investor-reporting"));
-  // The ack, when it finally lands, closes it late.
-  events.append({ type: "investor_events.acked", loanId: bl!.id, actor: { kind: "external", id: "fnma" }, payload: { type: "EscrowSetup" } });
+  // The acks, when they finally land, close it late — only once every escrow category (county_tax → tax, hazard) is acknowledged.
+  assert.equal(svc.recordEscrowSetupAck(bl!.id, "tax").every_category, false);
+  assert.equal(setup[0]!.status, "breached");
+  assert.equal(svc.recordEscrowSetupAck(bl!.id, "hazard").every_category, true);
   assert.equal(setup[0]!.status, "satisfied_late");
 });
 

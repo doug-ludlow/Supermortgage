@@ -22,18 +22,28 @@ const MS2_BODY = `{{#block "heading" page=1 y=0.05 pt=14 bold}}NOTICE OF SERVICI
 {{#block "terms" page=1 y=0.55 pt=11}}The transfer of servicing does not affect any term or condition of the mortgage documents, other than terms directly related to the servicing of your loan.{{/block}}
 {{#block "sixty_day" page=1 y=0.62 pt=11 bold}}Under Federal law, during the 60-day period following the effective date of the transfer of the loan servicing, a loan payment received by your old servicer on or before its due date may not be treated by the new servicer as late, and a late fee may not be imposed on you.{{/block}}
 {{#block "body" page=1 y=0.75 pt=11}}Loan number ending {{account_last4}}. Property: {{property_address}}. {{#if master_servicer_name}}{{transferee_name}} services this loan as subservicer for {{master_servicer_name}}.{{/if}}{{/block}}`;
+// Every (b)(4) element is checked against the payload the notice was rendered from (a template literal cannot prove a missing address or number), and the rendered text is checked for the element's shape.
+const present = (...paths: string[]): Record<string, unknown> => ({ and: paths.map((p) => ({ present: p })) });
 const MS2_RULES = (who: "transferor" | "transferee" | "both"): ContentRule[] => [
   R("b4-i-effective-date", "§1024.33(b)(4)(i)", "presence", "effective (January|February|March|April|May|June|July|August|September|October|November|December) \\d{1,2}, \\d{4}", "effective date of the transfer"),
-  R("b4-ii-transferee-block", "§1024.33(b)(4)(ii)", "presence", "will collect your payments going forward", "name, address and toll-free number of the transferee"),
+  R("b4-i-effective-date-data", "§1024.33(b)(4)(i); 12 U.S.C. 2605(i)(1)", "data_equality", "effective_date", "effective date = first payment due to the transferee", { predicate: { matches: ["effective_date", "^\\d{4}-\\d{2}-\\d{2}$"] } }),
+  R("b4-ii-transferee-block", "§1024.33(b)(4)(ii)", "data_equality", "transferee_name,transferee_address,transferee_tollfree", "name, address and a collect-call or toll-free number of the transferee's contact", { predicate: present("transferee_name", "transferee_address", "transferee_tollfree") }),
+  R("b4-ii-transferee-address", "§1024.33(b)(4)(ii)", "presence", "will collect your payments going forward\\..*\\(toll-free\\), \\S[^.]*\\d{5}", "transferee mailing address (street/PO box, city, state, ZIP)"),
   R("b4-ii-transferee-tollfree", "§1024.33(b)(4)(ii)", "presence", "will collect your payments going forward.*\\(\\d{3}\\) \\d{3}-\\d{4} \\(toll-free\\)", "transferee toll-free number"),
+  R("b4-iii-transferor-block", "§1024.33(b)(4)(iii)", "data_equality", "transferor_name,transferor_address,transferor_tollfree", "name, address and a collect-call or toll-free number of the transferor's contact", { predicate: present("transferor_name", "transferor_address", "transferor_tollfree") }),
+  R("b4-iii-transferor-address", "§1024.33(b)(4)(iii)", "presence", "is now collecting your payments\\..*\\(toll-free\\), \\S[^.]*\\d{5}", "transferor mailing address (street/PO box, city, state, ZIP)"),
   R("b4-iii-transferor-tollfree", "§1024.33(b)(4)(iii)", "presence", "is now collecting your payments.*\\(\\d{3}\\) \\d{3}-\\d{4} \\(toll-free\\)", "transferor toll-free number"),
-  R("b4-iv-stop-start", "§1024.33(b)(4)(iv)", "presence", "will stop accepting payments received from you after .* will start accepting payments received from you on", "transferor stop date and transferee start date"),
+  R("b4-iv-stop-start", "§1024.33(b)(4)(iv)", "presence", "will stop accepting payments received from you after (January|February|March|April|May|June|July|August|September|October|November|December) \\d{1,2}, \\d{4}\\..*will start accepting payments received from you on (January|February|March|April|May|June|July|August|September|October|November|December) \\d{1,2}, \\d{4}", "transferor stop date and transferee start date"),
+  R("b4-iv-stop-start-data", "§1024.33(b)(4)(iv)", "data_equality", "transferor_stop_date,transferee_start_date", "stop and start dates carried on the notice", { predicate: present("transferor_stop_date", "transferee_start_date") }),
   R("b4-iv-consecutive", "§1024.33(b)(4)(iv); 1.3 rule 2", "data_range", "stop_start_gap_days", "stop and start dates are consecutive", { range: { min: 1, max: 1 } }),
-  R("b4-v-insurance", "§1024.33(b)(4)(v)", "presence", "optional insurance", "optional-insurance paragraph"),
-  R("b4-vi-terms", "§1024.33(b)(4)(vi)", "presence", "does not affect any term or condition of the mortgage documents", "terms-unchanged statement"),
+  R("b4-v-insurance", "§1024.33(b)(4)(v); 1.3 decision 4", "data_equality", "optional_insurance", "optional-insurance paragraph: either 'no change' (flag explicitly false) or the effect and the action the borrower must take", { predicate: { or: [{ "==": [{ var: "optional_insurance" }, false] }, { and: [{ "==": [{ var: "optional_insurance" }, true] }, { present: "optional_insurance_action" }] }] } }),
+  R("b4-v-insurance-text", "§1024.33(b)(4)(v)", "presence", "optional insurance", "optional-insurance paragraph rendered"),
+  R("b4-vi-terms", "§1024.33(b)(4)(vi)", "presence", "does not affect any term or condition of the mortgage documents, other than terms directly related to the servicing", "terms-unchanged statement"),
   R("ms2-60-day", "§1024.33(c)(1); Appendix MS-2", "layout", "sixty_day", "60-day statement, prominent", { layout: { page: 1, bold: true } }),
-  R("remittance-address", "1.3 checklist", "presence", "Send all payments due on or after .* to .* at ", "transferee remittance address"),
-  R("both-contacts", "1.3 checklist", "presence", "Contact .* at .*Contact .* at ", "both servicers' contact blocks"),
+  R("remittance-address", "1.3 checklist", "data_equality", "transferee_remittance_address", "transferee remittance address", { predicate: { and: [{ present: "transferee_remittance_address" }, { matches: ["transferee_remittance_address", "\\d{5}"] }] } }),
+  R("remittance-address-text", "1.3 checklist", "presence", "Send all payments due on or after .* to .* at \\S[^.]*\\d{5}", "remittance address rendered with a ZIP"),
+  R("both-contacts", "1.3 checklist", "data_equality", "transferee_tollfree,transferor_tollfree,transferee_address,transferor_address", "both servicers' contact blocks", { predicate: present("transferee_tollfree", "transferor_tollfree", "transferee_address", "transferor_address") }),
+  R("channel-mail", "1.3 outputs: 'Channel: mail always (no reliance on inherited E-SIGN consent)'", "data_equality", "channel", "delivered by mail (W-002 loans board with unverified transferor consents)", { predicate: { or: [{ "!": [{ present: "channel" }] }, { "==": [{ var: "channel" }, "mail"] }] } }),
   R("timing", who === "transferor" ? "§1024.33(b)(3)(i)" : who === "transferee" ? "§1024.33(b)(3)(ii)" : "§1024.33(b)(3)(iii)", "data_range", "days_from_effective_date", who === "transferor" ? "mailed ≥ 15 days before the effective date" : who === "transferee" ? "mailed ≤ 15 days after the effective date" : "combined notice ≥ 15 days before the effective date", who === "transferee" ? { range: { min: 0, max: 15 } } : { range: { max: -15 } }),
 ];
 const MS2_SAMPLE = (who: "transferor" | "transferee" | "both"): Record<string, unknown> => ({
@@ -69,6 +79,15 @@ const ESCROW_INITIAL_SAMPLE: Record<string, unknown> = {
   starting_balance_cents: 184_250n, low_point_cents: 10_210n, account_last4: "1234", servicer_phone: "(800) 555-0100", days_after_trigger: 45,
 };
 
+// ------------------------------------------------------------------ 1.7 carry-over: §1024.41(k) timing replaces the transferor's clocks on inherited cases
+/** `transfer_carryover=true` on the payload marks a notice on a case inherited under §1024.41(k); the ordinary (b)(2)/(c)(1)/(h)(4) clocks are then replaced by the (k)(2)/(k)(3)/(k)(4) ones. */
+const CARRYOVER = { "==": [{ var: "transfer_carryover" }, true] };
+const NOT_CARRYOVER = { "!": [CARRYOVER] };
+/** (k)(3): a complete application pending at transfer is determined within 30 days of the transfer date (worked date Oct 31, 2026 "regardless of the transferor's original Oct. 20 deadline"). */
+const K3_TIMING = R("timing-k3-30", "§1024.41(k)(3); 1.7-T2", "data_range", "days_after_transfer", "determination within 30 days of the transfer date for an application complete at transfer", { range: { max: 30 }, when: CARRYOVER });
+/** (k)(4)(i): the appeal determination is due within 30 days of the transfer date or 30 days of the appeal, whichever is later (worked date Nov 4, 2026). */
+const K4_TIMING = R("timing-k4-30", "§1024.41(k)(4)(i); 1.7-T3", "data_equality", "days_after_transfer,days_after_appeal", "appeal determination within the later of 30 days of the transfer date and 30 days of the appeal", { when: CARRYOVER, predicate: { or: [{ "<=": [{ var: "days_after_transfer" }, 30] }, { "<=": [{ var: "days_after_appeal" }, 30] }] } });
+
 // ------------------------------------------------------------------ 12.1 acknowledgment — complete application (§1024.41(b)(2)(i)(B))
 const CONTACT_BLOCK = `{{#block "contact" page=1 y=0.8 pt=11}}Your single point of contact: {{spoc_name}}, {{spoc_phone}}. Write to us at {{servicer_address}}. Notices of error and requests for information: {{exclusive_address}}. Housing counselors: {{hud_counselor_url}} · HUD {{hud_phone}} · HOPE hotline {{hope_hotline}}.{{/block}}
 {{#if ai_notice}}{{#block "ai_notice" page=1 y=0.9 pt=10}}{{ai_notice}}{{/block}}{{/if}}`;
@@ -87,7 +106,9 @@ const ACK_COMPLETE_RULES: ContentRule[] = [
   R("noe-address", "comment 35(c)-2", "presence", "Notices of error and requests for information", "exclusive NoE/RFI address"),
   R("counselor-hope", "D2-2-05", "presence", "HUD \\(\\d{3}\\) \\d{3}-\\d{4} · HOPE hotline", "HUD counselor and HOPE hotline"),
   R("ai-notice", "Colorado AI pre-decision notice (jurisdiction_rules.ai_notice)", "conditional", "ai_notice", "AI notice paragraph where the jurisdiction requires it", { when: { "==": [{ var: "ai_notice_required" }, true] }, predicate: { present: "ai_notice" } }),
-  R("sent-within-5bd", "§1024.41(b)(2)(i)(B)", "data_range", "business_days_after_receipt", "sent within 5 business days of receipt", { range: { max: 5 } }),
+  R("sent-within-5bd", "§1024.41(b)(2)(i)(B)", "data_range", "business_days_after_receipt", "sent within 5 business days of receipt", { range: { max: 5 }, when: NOT_CARRYOVER }),
+  // 1.7 / §1024.41(k)(2)(i): an inherited application whose ack period was unexpired at transfer is acknowledged within 10 federal business days of the transfer date (REGX_1024_41K2_TRANSFEREE_ACK_10; worked date Oct 16, 2026).
+  R("sent-within-k2-10bd", "§1024.41(k)(2)(i); 1.7-T1", "data_range", "business_days_after_transfer", "transferee acknowledgment within 10 business days (federal) of the transfer date", { range: { max: 10 }, when: CARRYOVER }),
 ];
 const ACK_COMPLETE_SAMPLE: Record<string, unknown> = { received_date: "2026-09-20", complete_date: "2026-09-20", determination_due: "2026-10-20", other_lien_servicer: null, spoc_name: "Team 4", spoc_phone: "(800) 555-0177", servicer_address: "PO Box 1, Testville TX 75001", exclusive_address: "PO Box 2, Testville TX 75001", hud_counselor_url: "hud.gov/counseling", hud_phone: "(800) 569-4287", hope_hotline: "(888) 995-4673", ai_notice_required: true, ai_notice: "An automated system helped review your application; a person made the decision. You may request a human review.", business_days_after_receipt: 3 };
 
@@ -108,7 +129,8 @@ const OFFER_RULES: ContentRule[] = [
   R("spoc", "§1024.40", "presence", "Your single point of contact", "SPOC block"),
   R("counselor-hope", "D2-2-05", "presence", "HOPE hotline", "counselor/HOPE hotline"),
   R("ecoa", "Reg B §1002.9(b)(1)", "presence", "Equal Credit Opportunity Act", "ECOA statement"),
-  R("timing-30", "§1024.41(c)(1)", "data_range", "days_after_complete", "provided within 30 days of the complete application", { range: { max: 30 } }),
+  R("timing-30", "§1024.41(c)(1)", "data_range", "days_after_complete", "provided within 30 days of the complete application", { range: { max: 30 }, when: NOT_CARRYOVER }),
+  K3_TIMING,
 ];
 const OFFER_SAMPLE: Record<string, unknown> = { complete_date: "2026-09-20", offered: [{ name: "Flex Modification trial period plan", payment_cents: 199_480n, first_due: "2026-11-01", duration_months: 3, current_at_end: true, capitalized_cents: 612_700n, fees_cents: 0n }], acceptance_steps: "make the first trial payment", accept_by: "2026-11-01", acceptance_days: 14,
   denied: [{ name: "Payment deferral", reason: "the loan has already received a payment deferral within the last 12 months (Fannie Mae D2-3.2-05)" }], appeal_by: "2026-11-01", appeal_how: "writing to the exclusive address below", other_options: [{ name: "Repayment plan", determination: "not offered: unaffordable at 31% DTI" }],
@@ -132,7 +154,8 @@ const DENIAL_RULES: ContentRule[] = [
   R("fcra", "FCRA §615", "conditional", "credit_score_used", "FCRA block when a consumer report was used", { when: { "==": [{ var: "credit_score_used" }, true] }, predicate: { present: "fcra_block" } }),
   R("ny-dfs", "NY 419.7(f)(2)", "conditional", "state_block", "DFS complaint statement for NY", { when: { "==": [{ var: "state" }, "NY"] }, predicate: { present: "state_block" } }),
   R("spoc", "§1024.40", "presence", "Your single point of contact", "SPOC block"),
-  R("timing-30", "§1024.41(c)(1)", "data_range", "days_after_complete", "within 30 days of the complete application", { range: { max: 30 } }),
+  R("timing-30", "§1024.41(c)(1)", "data_range", "days_after_complete", "within 30 days of the complete application", { range: { max: 30 }, when: NOT_CARRYOVER }),
+  K3_TIMING,
 ];
 const DENIAL_SAMPLE: Record<string, unknown> = { complete_date: "2026-09-20", denied: [{ name: "Flex Modification", reason: "the modified payment would not reduce your payment and the loan is not 60+ days delinquent", investor_name: "Fannie Mae", investor_requirement: "Servicing Guide D2-3.2-07 eligibility: payment reduction or 60+ days delinquent" }], investor_based: true, investor_name: "Fannie Mae", not_evaluated_other_criteria: true,
   appeal_days: 14, appeal_by: "2026-11-01", appeal_how: "writing to the exclusive address below", other_available: ["repayment plan", "short sale", "Mortgage Release"], next_steps: "call your single point of contact", credit_score_used: false, state: "TX", state_block: null, days_after_complete: 28,
@@ -150,7 +173,8 @@ const APPEAL_GRANTED_RULES: ContentRule[] = [
   R("original-offer", "§1024.41(h)(4); D2-2-07", "conditional", "original_offer_reinstated", "original-offer reinstatement statement where an offer stood", { when: { "==": [{ var: "original_offer_reinstated" }, true] }, predicate: { present: "original_offer_date" } }),
   R("tpp-first-due", "12.3 checklist", "presence", "first trial period payment is due", "TPP first due date"),
   R("no-further-appeal", "§1024.41(h)(4)", "layout", "final", "'no further appeal' statement", { layout: { page: 1, bold: true } }),
-  R("timing-30", "§1024.41(h)(4)", "data_range", "days_after_appeal", "within 30 days of the appeal", { range: { max: 30 } }),
+  R("timing-30", "§1024.41(h)(4)", "data_range", "days_after_appeal", "within 30 days of the appeal", { range: { max: 30 }, when: NOT_CARRYOVER }),
+  K4_TIMING,
 ];
 const APPEAL_GRANTED_SAMPLE: Record<string, unknown> = { appeal_received: "2026-10-05", granted: [{ name: "Flex Modification trial period plan", payment_cents: 189_910n, first_due: "2026-12-01" }], acceptance_steps: "make the first trial payment", accept_by: "2026-11-18", acceptance_days: 14, original_offer_reinstated: true, original_offer_date: "2026-09-24", tpp_first_due: "2026-12-01", days_after_appeal: 30,
   spoc_name: "Team 4", spoc_phone: "(800) 555-0177", servicer_address: "PO Box 1, Testville TX 75001", exclusive_address: "PO Box 2, Testville TX 75001", hud_counselor_url: "hud.gov/counseling", hud_phone: "(800) 569-4287", hope_hotline: "(888) 995-4673", ai_notice_required: false };
@@ -170,7 +194,8 @@ const APPEAL_DENIED_RULES: ContentRule[] = [
   R("ny-dfs", "NY 419.7", "conditional", "state_block", "DFS complaint statement for NY", { when: { "==": [{ var: "state" }, "NY"] }, predicate: { present: "state_block" } }),
   R("human-decided", "Colorado explanation block", "presence", "A person .* decided", "human reviewer decided; AI contribution described"),
   R("counselor-hope", "D2-2-07", "presence", "HOPE hotline", "counselor/HOPE hotline"),
-  R("timing-30", "§1024.41(h)(4)", "data_range", "days_after_appeal", "within 30 days of the appeal", { range: { max: 30 } }),
+  R("timing-30", "§1024.41(h)(4)", "data_range", "days_after_appeal", "within 30 days of the appeal", { range: { max: 30 }, when: NOT_CARRYOVER }),
+  K4_TIMING,
 ];
 const APPEAL_DENIED_SAMPLE: Record<string, unknown> = { appeal_received: "2026-10-05", denied: [{ name: "Flex Modification", reason: "the modified payment would exceed the pre-modification payment", investor_name: "Fannie Mae", investor_requirement: "Servicing Guide D2-3.2-07: a Flex Modification must produce a payment reduction for loans less than 60 days delinquent" }], other_available: ["short sale", "Mortgage Release"], foreclosure_consequence: "a foreclosure sale may be scheduled no earlier than 15 days after this notice", state: "TX", state_block: null,
   decision_explanation: "A person on the appeals team decided this appeal; an automated system contributed the affordability calculation, which the reviewer checked.", days_after_appeal: 30,

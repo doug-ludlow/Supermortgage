@@ -79,7 +79,7 @@ export function decide(i: AnalysisInputs): Decision {
   const deficiency = pa < 0n ? -pa : 0n; const shortage = pa < 0n ? target : target - pa;
   let months = i.workout ? 60 : 12;
   if (i.workout && i.borrower_election_months != null) months = Math.max(12, i.borrower_election_months);
-  if (!i.workout && i.instrument_shortage_max_months != null) months = Math.min(months, i.instrument_shortage_max_months);
+  if (!i.workout && i.instrument_shortage_max_months != null) months = Math.max(12, Math.min(months, i.instrument_shortage_max_months));   // (c)(8): an instrument cap below Reg X's 12-month floor ((f)(3)) does not control
   const inst = divRound(shortage, BigInt(months), "HALF_UP"); const final = shortage - inst * BigInt(months - 1);
   const dm = i.deficiency_installments ?? 12; const dinst = deficiency > 0n ? divRound(deficiency, BigInt(dm), "HALF_UP") : 0n; const dfinal = deficiency > 0n ? deficiency - dinst * BigInt(dm - 1) : 0n;
   return { kind: "shortage", shortage_cents: shortage, deficiency_cents: deficiency, months, installment_cents: inst, final_installment_cents: final, deficiency_installment_cents: dinst, deficiency_final_cents: dfinal, lump_sum_option_offered: current && shortage < oneMonth && !i.workout };

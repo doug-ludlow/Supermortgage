@@ -16,12 +16,14 @@ import { addBusinessDays, rollBack, fannieEt, fannieEtObserved } from "../../ker
 import { zonedEpochMs, wallClock } from "../../kernel/calendar/zoned.ts";
 import { divRound } from "../../kernel/money/decimal.ts";
 import type { Cents } from "../../kernel/money/cents.ts";
-import { monthInterest, gfeeCheckFigure, fundingDecision, CRS_AA_THRESHOLD_CENTS } from "./remittance.ts";
-import { bd2CloseMs, eventDeadlineMs, larDeadlineMs, calendarDraftDate, fundingGateMs, fannieBusinessDay, nextMonth, firstOfMonth } from "./period.ts";
+import { monthInterest, gfeeCheckFigure, fundingDecision, compensatoryFee, crsAaRequest, CRS_AA_THRESHOLD_CENTS } from "./remittance.ts";
+import { bd2CloseMs, eventDeadlineMs, larDeadlineMs, calendarDraftDate, fundingGateMs, fannieBusinessDay, nextMonth, firstOfMonth, iredSweepDate, iredSweepRunMs, iredDeadlineMs, periodEndOf, periodStart, surplusResolveDueOn, bulkCutoffMs, removalCorrectionCloseMs, nonRemovalCorrectionCloseMs } from "./period.ts";
+import { validateF121Layout } from "./delinquency-status.ts";
+export { validateF121Layout };
 import { actionCode, type LiquidationKind, type InsuredFlag } from "./liquidation.ts";
-import { predictSda, sdaApplies, consecutiveMonthsDelinquent, type SdaStatus } from "./sda.ts";
-import { mmddyy, zoned } from "./lar.ts";
-import type { ChannelMode, RemittanceType } from "./types.ts";
+import { predictSda, sdaApplies, consecutiveMonthsDelinquent, type SdaStatus, type AdvanceStatus } from "./sda.ts";
+import { mmddyy, zoned, projectLar96, type Lar96 } from "./lar.ts";
+import type { ChannelMode, RemittanceType, LarPayload, EventFamily } from "./types.ts";
 
 export const ET = "America/New_York";
 const HOUR = 3_600_000;
@@ -32,18 +34,24 @@ export function perDiemInterest(upb: Cents, ratePct: string): Cents { return div
 // ---------------------------------------------------------------------------
 // 5.1 — reject loop, head-of-line, finality, escrow routing, bulk ack, toggle-off, soft rejects
 // ---------------------------------------------------------------------------
-export interface QueuedEvent { readonly id: string; readonly loan_id: string; readonly sequence: number; readonly status: string; readonly supersedes_event_id?: string | null; }
-/** Per-loan sequencing (5.1 rule 1/8): the lowest-sequence unresolved event per loan is sendable; later ones wait behind it. */
+export interface QueuedEvent { readonly id: string; readonly loan_id: string; readonly sequence: number; readonly status: string; readonly supersedes_event_id?: string | null; /** The reject was waived with a reason (state machine: "until the reject is superseded or waived with reason"). */ readonly waived_reason?: string | null; }
+const SENDABLE = new Set(["pending", "projected", "queued"]);
+/**
+ * 5.1 state machine, head-of-line rule: a loan with an open `rejected_hard`/`invalid` event blocks submission of
+ * later-sequence events for that loan until the reject is superseded or waived with reason. The correcting event
+ * (`supersedes_event_id` → the open reject) is what clears it, so it is always sendable; ordinary unresolved events
+ * travel together in sequence order (5.1-T10: two events for one loan in the same file, rule 8's LAR 96 + LAR 97 pair).
+ */
 export function headOfLine(queue: readonly QueuedEvent[]): { sendable: QueuedEvent[]; blocked: QueuedEvent[] } {
-  const resolved = new Set(["accepted", "accepted_with_warnings", "superseded", "cancelled"]);
   const byLoan = new Map<string, QueuedEvent[]>();
   for (const e of [...queue].sort((a, b) => a.sequence - b.sequence)) byLoan.set(e.loan_id, [...(byLoan.get(e.loan_id) ?? []), e]);
   const sendable: QueuedEvent[] = []; const blocked: QueuedEvent[] = [];
   for (const events of byLoan.values()) {
-    let headSeen = false;
+    const openRejects = events.filter((e) => (e.status === "rejected_hard" || e.status === "invalid") && !e.waived_reason);
     for (const e of events) {
-      if (resolved.has(e.status)) continue;
-      if (!headSeen) { sendable.push(e); headSeen = true; } else blocked.push(e);
+      if (!SENDABLE.has(e.status)) continue;
+      const blocker = openRejects.find((r) => r.sequence < e.sequence && r.id !== e.supersedes_event_id);
+      if (blocker) blocked.push(e); else sendable.push(e);
     }
   }
   const order = (a: QueuedEvent, b: QueuedEvent) => a.loan_id.localeCompare(b.loan_id) || a.sequence - b.sequence;
@@ -190,7 +198,7 @@ export function tpsProceeds(f: { bid_cents: Cents; received_on: PlainDate; sched
 // ---------------------------------------------------------------------------
 // 5.4 — reimbursement matching, deselection window, status variance, Form 496, SDA payoff, fee component
 // ---------------------------------------------------------------------------
-export interface AdvanceRow { readonly period: string; readonly amount_cents: Cents; readonly status: "outstanding" | "reimbursed_by_fnma" | "recovered"; }
+export interface AdvanceRow { readonly period: string; readonly amount_cents: Cents; readonly status: AdvanceStatus; }
 /** 5.4 rule 5(b)/(e): reimbursement credits are matched FIFO to `advances` rows; all rows must reach `reimbursed_by_fnma` within two draft cycles or the Investor Reporting Representative package escalates. */
 export function matchReimbursements(f: { advances: readonly AdvanceRow[]; credits: readonly Cents[]; cycles_elapsed: number }): { advances: AdvanceRow[]; all_reimbursed: boolean; unmatched_credit_cents: Cents; escalation: "irr_package" | null } {
   let pool = f.credits.reduce((a, b) => a + b, 0n);
@@ -310,12 +318,117 @@ export function amnTransmission(f: { period_month: PlainDate; transmitted_at_ms:
   const period = f.period_month.slice(0, 7);
   return { due_ms: due, late, escalation: late ? "officer" : null, compfee_instance: late ? { kind: "late_delinquency_file", period, minutes_late: Math.round((f.transmitted_at_ms - due) / 60_000) } : null, sentinel_line: late ? `F-1-21 delinquency file for ${period} transmitted ${Math.round((f.transmitted_at_ms - due) / 60_000)} minutes after BD2 17:00 ET (${f.record_count} records) — potential compensatory-fee instance` : null };
 }
-/** F-1-21 layout check (5.7 tool `validateF121Layout`): fixed-width status line fields. */
-export function validateF121Layout(line: { status: string; reason: string; effective: string; completion: string }): string[] {
-  const errs: string[] = [];
-  if (!/^[0-9A-Z]{2}$/.test(line.status)) errs.push("status code must be 2 alphanumerics");
-  if (!/^[0-9A-Z]{3}$/.test(line.reason)) errs.push("reason code must be 3 characters");
-  if (!/^(\d{8}|\s{8})$/.test(line.effective)) errs.push("effective date must be YYYYMMDD or 8 spaces");
-  if (!/^(\d{8}|\s{8})$/.test(line.completion)) errs.push("completion date must be YYYYMMDD or 8 spaces");
-  return errs;
+/** 5.7-T7 / rule 7: a line that fails a consistency check is blocked from the file and escalated before the BD2 17:00 ET transmission deadline. */
+export function consistencyBlock(f: { loan_id: string; period_month: PlainDate; errors: readonly string[] }): { blocked: boolean; escalation: { role: "investor-reporting"; severity: "sev2"; loan_id: string; before_ms: number; errors: readonly string[] } | null } {
+  if (!f.errors.length) return { blocked: false, escalation: null };
+  return { blocked: true, escalation: { role: "investor-reporting", severity: "sev2", loan_id: f.loan_id, before_ms: bd2CloseMs(nextMonth(f.period_month)), errors: f.errors } };
+}
+/** 5.7 guardrail: confidence < 0.85 → the line is flagged for `human_agent` review before BD2; the file still transmits on time with the best code and a correction follows by CD10 if the review changes it. */
+export function lineReviewFlag(f: { confidence: number; period_month: PlainDate; published_cd10?: PlainDate }): { flagged: boolean; role: "human_agent" | null; review_before_ms: number; transmits_on_time: true; correction_by_ms: number } {
+  const next = nextMonth(f.period_month); const { y, m } = parts(next);
+  const cd10 = rollBack(f.published_cd10 ?? ymd(y, m, 10), fannieEt);
+  return { flagged: f.confidence < 0.85, role: f.confidence < 0.85 ? "human_agent" : null, review_before_ms: bd2CloseMs(next), transmits_on_time: true, correction_by_ms: zonedEpochMs(cd10, "17:00", ET) };
+}
+
+// ---------------------------------------------------------------------------
+// 5.1 — IRED "no activity" projection, period-close checklist, exception events
+// ---------------------------------------------------------------------------
+export interface NoActivityProjection { readonly event_type: "payment.none"; readonly payload: LarPayload; readonly lar: Lar96 | null; readonly json_event: { "Loan Identifier": string; "Loan Actual UPB Amount": string; "Loan Last Paid Installment Due Date": string | null; "Loan Event Sequence Number": number } | null; readonly sweep_run_ms: number; readonly submit_by_ms: number }
+/** 5.1 rule 4: on the IRED sweep every summary-reporting loan without an accepted `payment.*` event in the period gets `payment.none` — LAR 96 with unchanged LPI/UPB, zero interest/principal, action `00` (or the No Payment Event under `mode=event`). */
+export function noActivityProjection(f: { month_of: PlainDate; mode: ChannelMode; servicer_number: string; fnma_loan_number: string; sequence: number; position: { lpi_date: PlainDate | null; upb_cents: Cents; nib_cents: Cents } }): NoActivityProjection {
+  const sweepOn = iredSweepDate(f.month_of);
+  const payload: LarPayload = { lpi_date: f.position.lpi_date, upb_cents: f.position.upb_cents, nib_cents: f.position.nib_cents, interest_cents: 0n, principal_cents: 0n, other_fees_cents: 0n, action_code: "00", action_date: sweepOn };
+  const lar = f.mode === "event" ? null : projectLar96(f.servicer_number, f.fnma_loan_number, payload);
+  const json = f.mode === "legacy" ? null : { "Loan Identifier": f.fnma_loan_number, "Loan Actual UPB Amount": (Number(f.position.upb_cents) / 100).toFixed(2), "Loan Last Paid Installment Due Date": f.position.lpi_date, "Loan Event Sequence Number": f.sequence };
+  return { event_type: "payment.none", payload, lar, json_event: json, sweep_run_ms: iredSweepRunMs(f.month_of), submit_by_ms: iredDeadlineMs(f.month_of) };
+}
+/** The IRED sweep over a period: loans with an accepted payment event are left alone; the rest are projected `payment.none` between the 18:00 ET run and the 20:00 ET deadline. */
+export function iredSweep(f: { month_of: PlainDate; loans: readonly { loan_id: string; accepted_payment_event: boolean }[] }): { sweep_on: PlainDate; run_ms: number; deadline_ms: number; project_none_for: string[] } {
+  return { sweep_on: iredSweepDate(f.month_of), run_ms: iredSweepRunMs(f.month_of), deadline_ms: iredDeadlineMs(f.month_of), project_none_for: f.loans.filter((l) => !l.accepted_payment_event).map((l) => l.loan_id) };
+}
+export interface PeriodCloseFacts {
+  readonly period: string; readonly active_loans: number; readonly loans_with_accepted_event_or_none: number; readonly open_hard_or_invalid_rejects: number;
+  /** Removal events of the period: when they were processed and (if at all) submitted. */
+  readonly removals: readonly { event_id: string; processed_at_ms: number; submitted_at_ms: number | null }[];
+  readonly trial_balance_diff_loans: number; readonly soft_rejects_without_triage: number; readonly cash_position_variance_cents: Cents; readonly delinquency_file_accepted: boolean; readonly escrow_attestation_prepared: boolean | "not_required";
+}
+export interface PeriodCloseChecklist { readonly close_ms: number; readonly bulk_cutoff_ms: number; readonly items: readonly { id: "i" | "ii" | "iii" | "iv" | "v" | "vi" | "vii" | "viii"; ok: boolean; detail: string }[]; readonly complete: boolean; readonly status: "closed" | "open"; readonly escalation: "officer" | null }
+/**
+ * 5.1 rule 10 — the BD2 close checklist. Item (iii) is where the removal clock's "17:00 ET if that day is BD2" lives for the
+ * engine: every removal processed on/before BD1 must be submitted by BD2 17:00 ET (bulk by 15:00), otherwise the period cannot
+ * close clean and the `officer` escalation opens (the registry grammar can only express the general next-BD 20:00 rule).
+ */
+export function periodCloseChecklist(f: PeriodCloseFacts): PeriodCloseChecklist {
+  const start = periodStart(f.period); const next = nextMonth(start);
+  const closeMs = bd2CloseMs(next); const bulkMs = bulkCutoffMs(f.period);
+  const bd1 = fannieBusinessDay(next, 1);
+  const lateRemovals = f.removals.filter((r) => { const processedOn = wallClock(r.processed_at_ms, ET).date; if (processedOn > bd1) return false; const due = larDeadlineMs(r.processed_at_ms, true); return r.submitted_at_ms === null || r.submitted_at_ms > Math.min(due, closeMs); });
+  const items: PeriodCloseChecklist["items"] = [
+    { id: "i", ok: f.loans_with_accepted_event_or_none >= f.active_loans, detail: `${f.loans_with_accepted_event_or_none}/${f.active_loans} active loans have an accepted event or accepted payment.none` },
+    { id: "ii", ok: f.open_hard_or_invalid_rejects === 0, detail: `${f.open_hard_or_invalid_rejects} open hard/invalid rejects` },
+    { id: "iii", ok: lateRemovals.length === 0, detail: lateRemovals.length ? `removals processed on/before BD1 not reported by BD2 17:00 ET: ${lateRemovals.map((r) => r.event_id).join(", ")}` : "all removals processed on/before BD1 reported by the BD2 17:00 ET clock" },
+    { id: "iv", ok: f.trial_balance_diff_loans === 0, detail: `LSDU trial balance diff = ${f.trial_balance_diff_loans} loans` },
+    { id: "v", ok: f.soft_rejects_without_triage === 0, detail: `${f.soft_rejects_without_triage} soft rejects without a triage record` },
+    { id: "vi", ok: f.cash_position_variance_cents === 0n, detail: `cash-position preview variance ${f.cash_position_variance_cents}¢ (tolerance $0.00 for S/S and S/A drafts)` },
+    { id: "vii", ok: f.delinquency_file_accepted, detail: f.delinquency_file_accepted ? "delinquency file accepted (5.7)" : "delinquency file not accepted (5.7)" },
+    { id: "viii", ok: f.escrow_attestation_prepared === true || f.escrow_attestation_prepared === "not_required", detail: f.escrow_attestation_prepared === "not_required" ? "escrow attestation not required before Dec. 2026" : f.escrow_attestation_prepared ? "escrow attestation package prepared" : "escrow attestation package missing" },
+  ];
+  const complete = items.every((i) => i.ok);
+  return { close_ms: closeMs, bulk_cutoff_ms: bulkMs, items, complete, status: complete ? "closed" : "open", escalation: complete ? null : "officer" };
+}
+/** Builds the `investor_event_exceptions.detected` event the correction timers arm on: `family`, the activity period's `period_end` anchor and the domain-computed correction close. */
+export function exceptionDetectedEvent(f: { event_id: string; loan_id: string; family: EventFamily; activity_period: string; severity: "hard" | "soft" | "invalid" | "missing" | "fatal" | "warning" | "notification"; code: string; detected_at_ms: number }): { type: "investor_event_exceptions.detected"; loanId: string; payload: { event_id: string; family: EventFamily; severity: string; code: string; activity_period: string; period_end: PlainDate; detected_at: string; correction_due_at: string; triage_due_at: string } } {
+  const due = f.family === "removal" ? removalCorrectionCloseMs(f.activity_period) : nonRemovalCorrectionCloseMs(f.activity_period);
+  return { type: "investor_event_exceptions.detected", loanId: f.loan_id, payload: { event_id: f.event_id, family: f.family, severity: f.severity, code: f.code, activity_period: f.activity_period, period_end: periodEndOf(periodStart(f.activity_period)), detected_at: new Date(f.detected_at_ms).toISOString(), correction_due_at: new Date(due).toISOString(), triage_due_at: new Date(f.detected_at_ms + 4 * HOUR).toISOString() } };
+}
+
+// ---------------------------------------------------------------------------
+// 5.2 — A/A sweep batch, auto-draft clock, S/S payoff shortfall, draft-debit reconciliation, Form 472, comp-fee instances
+// ---------------------------------------------------------------------------
+/** F-1-20 / 5.2-T3: the 15:00 ET sweep prepares a CRS code-001 batch within 10 minutes when net collections exceed $2,500 (or on the last work day); the portal upload task is due 16:00 ET the same day and settlement defaults to the next Federal Reserve business day. */
+export function aaSweepBatch(f: { sweep_at_ms: number; net_collected_cents: Cents; servicer_number: string; last_work_day_of_month: boolean }): { instruct: boolean; code: "001"; prepare_by_ms: number; portal_task_due_ms: number; settlement_date: PlainDate | null; line: { servicer_number: string; remittance_code: "001"; amount_cents: Cents; settlement_date: PlainDate } | null } {
+  const on = wallClock(f.sweep_at_ms, ET).date;
+  const r = crsAaRequest(f.net_collected_cents, on, f.last_work_day_of_month);
+  return { instruct: r.instruct, code: "001", prepare_by_ms: f.sweep_at_ms + 10 * 60_000, portal_task_due_ms: zonedEpochMs(on, "16:00", ET), settlement_date: r.settlement_date, line: r.instruct && r.settlement_date ? { servicer_number: f.servicer_number, remittance_code: "001", amount_cents: f.net_collected_cents, settlement_date: r.settlement_date } : null };
+}
+/** LL-2026-05 A/A auto-draft (5.2 worked example 5 / T5): event by next BD 03:00 ET, pre-draft notification the next BD, draft two BDs after processing, custodial funding gate at draft −1 BD 16:00 ET. */
+export function aaAutoDraftSchedule(processedAtMs: number): { event_by_ms: number; predraft_notice_on: PlainDate; draft_on: PlainDate; funding_gate_ms: number } {
+  const on = wallClock(processedAtMs, ET).date;
+  const draft = addBusinessDays(on, 2, fannieEt);
+  return { event_by_ms: eventDeadlineMs(processedAtMs), predraft_notice_on: addBusinessDays(on, 1, fannieEt), draft_on: draft, funding_gate_ms: fundingGateMs(draft) };
+}
+/** 5.2 rule 2 / T6: for an S/S payoff the servicer funds the gap between a full month at PTR and the PTR-equivalent interest collected; it is booked to `servicer_advance_receivable` with reason `ss_payoff_interest`. */
+export function ssPayoffShortfallEntries(f: { full_month_cents: Cents; collected_ptr_interest_cents: Cents; loan_id: string; custodial_account_id: string }): { shortfall_cents: Cents; reason: "ss_payoff_interest"; lines: { account: string; scope: "custodial" | "corporate"; amountCents: Cents; ruleRef: string; memo: string }[] } {
+  const short = f.full_month_cents - f.collected_ptr_interest_cents;
+  const amt = short > 0n ? short : 0n;
+  const lines = amt > 0n ? [{ account: "servicer_advance_receivable", scope: "corporate" as const, amountCents: amt, ruleRef: "5.2 rule 2 ss_payoff_interest", memo: `ss_payoff_interest ${f.loan_id}` }, { account: "custodial_pi_cash", scope: "custodial" as const, amountCents: -amt, ruleRef: "5.2 rule 2 ss_payoff_interest", memo: `ss_payoff_interest ${f.loan_id} → ${f.custodial_account_id}` }] : [];
+  return { shortfall_cents: amt, reason: "ss_payoff_interest", lines };
+}
+export interface DraftDebitReconciliation { readonly status: "matched" | "variance" | "unmatched"; readonly variance_cents: Cents; readonly entry_set: { effectiveDate: PlainDate; description: string; lines: { account: { scope: "custodial"; custodialAccountId: string; account: string }; amountCents: Cents; ruleRef: string }[] } | null; readonly decision: { action: "remittance.variance"; remittance_id: string; expected: string; drafted: string; variance: string; classification: "unknown"; confidence: number } | null; readonly alert: "sev1" | null }
+/** 5.2 rule 8 / T9: a Fannie Mae-originated bank debit is matched to the remittance by amount/date/originator; the balanced set posts Dr `fnma_remittance_payable` / Cr `custodial_pi_cash`; any difference is `variance` with a decision record. */
+export function reconcileDraftDebit(f: { remittance_id: string; expected_cents: Cents; draft_date: PlainDate; debit_cents: Cents; debit_date: PlainDate; originator: string; custodial_account_id: string }): DraftDebitReconciliation {
+  const fannie = /fannie/i.test(f.originator);
+  if (!fannie || f.debit_date !== f.draft_date) return { status: "unmatched", variance_cents: f.debit_cents - f.expected_cents, entry_set: null, decision: null, alert: "sev1" };
+  const v = f.debit_cents - f.expected_cents;
+  const entry_set = { effectiveDate: f.debit_date, description: `Fannie Mae draft ${f.remittance_id}`, lines: [{ account: { scope: "custodial" as const, custodialAccountId: f.custodial_account_id, account: "fnma_remittance_payable" }, amountCents: f.debit_cents, ruleRef: "5.2 rule 8 draft" }, { account: { scope: "custodial" as const, custodialAccountId: f.custodial_account_id, account: "custodial_pi_cash" }, amountCents: -f.debit_cents, ruleRef: "5.2 rule 8 draft" }] };
+  if (v === 0n) return { status: "matched", variance_cents: 0n, entry_set, decision: null, alert: null };
+  return { status: "variance", variance_cents: v, entry_set, decision: { action: "remittance.variance", remittance_id: f.remittance_id, expected: f.expected_cents.toString(), drafted: f.debit_cents.toString(), variance: v.toString(), classification: "unknown", confidence: 1 }, alert: null };
+}
+/** 5.2 rule 9 / T10: Schedule 3 (Form 472) — closing = opening + cash remitted − P&I reported, explained to zero; a surplus must be resolved within 90 calendar days of first appearing. */
+export function form472Schedule3(f: { period: string; opening_cents: Cents; remitted_cents: Cents; reported_pi_cents: Cents; explained_items: readonly { kind: string; amount_cents: Cents; note: string }[]; surplus_first_seen: PlainDate | null }): { closing_cents: Cents; explained_cents: Cents; unexplained_cents: Cents; kind: "surplus" | "shortage" | "balanced"; surplus_resolve_due_on: PlainDate | null; explanation: string; artifact: { form: "472"; schedule: "3"; period: string; lines: { label: string; amount_cents: Cents }[] } } {
+  const closing = f.opening_cents + f.remitted_cents - f.reported_pi_cents;
+  const explained = f.explained_items.reduce((a, i) => a + i.amount_cents, 0n);
+  const unexplained = closing - explained;
+  const kind = unexplained > 0n ? "surplus" : unexplained < 0n ? "shortage" : "balanced";
+  const due = kind === "surplus" && f.surplus_first_seen ? surplusResolveDueOn(f.surplus_first_seen) : null;
+  const explanation = kind === "balanced" ? "cumulative cash remitted equals P&I reported after timing items" : `${kind} of ${unexplained}¢ after explained items: ${f.explained_items.map((i) => `${i.kind} ${i.amount_cents}¢ (${i.note})`).join("; ") || "none"}${due ? `; surplus first seen ${f.surplus_first_seen} — resolve by ${due} (FNMA_IRM_SURPLUS_RESOLVE_90)` : ""}`;
+  return { closing_cents: closing, explained_cents: explained, unexplained_cents: unexplained, kind, surplus_resolve_due_on: due, explanation, artifact: { form: "472", schedule: "3", period: f.period, lines: [{ label: "opening shortage/surplus", amount_cents: f.opening_cents }, { label: "cash remitted", amount_cents: f.remitted_cents }, { label: "P&I reported (accepted LARs)", amount_cents: -f.reported_pi_cents }, ...f.explained_items.map((i) => ({ label: `explained: ${i.kind}`, amount_cents: i.amount_cents })), { label: "closing (unexplained)", amount_cents: unexplained }] } };
+}
+/** A1-4.2-01 ladder (5.2 rule 11 / T12): the minimum is $250 for the first instance, $500 for the second and $1,000 for each subsequent instance within a year; the instance is recorded in `compfee_instances`. */
+export function compensatoryFeeInstance(f: { amount_cents: Cents; days_late: number; prime_pct: string; prior_instances_within_year: number; kind?: string }): { fee_cents: Cents; minimum_cents: Cents; formula_cents: Cents; instance_number: number; instance: { kind: string; amount_cents: Cents; days_late: number; fee_cents: Cents } } {
+  const n = f.prior_instances_within_year + 1;
+  const minimum = n === 1 ? 25_000n : n === 2 ? 50_000n : 100_000n;
+  const formula = compensatoryFee(f.amount_cents, f.days_late, f.prime_pct, 0n);
+  const fee = compensatoryFee(f.amount_cents, f.days_late, f.prime_pct, minimum);
+  return { fee_cents: fee, minimum_cents: minimum, formula_cents: formula, instance_number: n, instance: { kind: f.kind ?? "late_remittance", amount_cents: f.amount_cents, days_late: f.days_late, fee_cents: fee } };
 }

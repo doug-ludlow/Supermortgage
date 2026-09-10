@@ -1,8 +1,32 @@
 /** Deterministic fixtures for boarding tests and demos. */
 import { plainDate as D, addMonths, type PlainDate } from "../../kernel/calendar/date.ts";
 import { cents, levelPayment, ratePercent } from "../../kernel/money/cents.ts";
+import { MemoryEventStore, FixedClock } from "../../kernel/events/index.ts";
+import { MemoryLedger } from "../../kernel/ledger/ledger.ts";
+import { loadRegistry, TimerEngine } from "../../kernel/timers/index.ts";
 import { makeMin } from "./min.ts";
+import { BoardingService } from "./service.ts";
+import { applyBoardingTimerOverrides } from "./timers.ts";
+import { applySatisfiedOverrides_1_1 } from "./timers-1-1.ts";
+import { EscalationService } from "../../app/escalations.ts";
 import type { StagedLoan, FnmaPosition, MersRecord, ExternalPositions, BatchContext, Installment, HistoricalPayment } from "./types.ts";
+
+/** A boarding service over in-memory stores with the 1.1 timers armed — the harness the 1.1 acceptance tests run in. */
+export function boardingHarness(nowIso: string, transferDate: PlainDate = D("2026-10-01"), processes: readonly string[] = ["1.1", "11.1", "11.2"]) {
+  const clock = new FixedClock(nowIso);
+  const events = new MemoryEventStore(clock);
+  const ledger = new MemoryLedger();
+  const registry = loadRegistry();
+  applyBoardingTimerOverrides(registry);
+  applySatisfiedOverrides_1_1(registry);                                        // process overrides run after the section's and win
+  const timers = new TimerEngine(registry, events, { processes: [...processes] });
+  const ext = new FakePositions();
+  const svc = new BoardingService({ events, ledger, ext, clock, clearingAccountId: "CUST-CLEARING" });
+  const esc = new EscalationService(events, clock);
+  const batch = batchContext({ transfer_date: transferDate });
+  svc.openBatch(batch);
+  return { clock, events, ledger, timers, ext, svc, esc, batch, registry };
+}
 
 export const PARTNER_ORG = "1000123";
 export const TRANSFEROR_ORG = "1000456";

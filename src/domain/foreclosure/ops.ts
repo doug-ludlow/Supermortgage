@@ -16,14 +16,14 @@
 import { type PlainDate, addDays, addMonths, daysBetween, endOfMonth, parts, ymd, addYears } from "../../kernel/calendar/date.ts";
 import { addBusinessDays, servicer, fannieEt, federal } from "../../kernel/calendar/business.ts";
 import type { Cents } from "../../kernel/money/cents.ts";
-import { gate120, preFilingAppGate, certificationWindow, pendingMotionInstruction, nonPrDeadline, type GateState } from "./gates.ts";
+import { gate120, preFilingAppGate, certificationWindow, pendingMotionInstruction, nonPrDeadline, tierAtReceipt, ladderSuspension, regxDays, BLOCKED_BY_HOLD, type GateState, type Tier, type Rung } from "./gates.ts";
 import { referralEligible, reviewOutcome, type Gates as ReferralGates } from "./referral.ts";
-import { RESCISSION_EXPOSURE_CENTS, atRisk, creditedDays, type Delay } from "./timeframes.ts";
-import { feeEarned, suspensionEffective, draEventLate } from "./firms.ts";
-import { motionDraftDue } from "./litigation.ts";
-import { protectionEndsOn, dmdcFresh, preServiceObligation, capEffectivePaymentDue, form1022Due, requestWithinStatute } from "./scra.ts";
+import { RESCISSION_EXPOSURE_CENTS, atRisk, creditDelays, type Delay } from "./timeframes.ts";
+import { earnedPct, suspensionEffective, draEventLate, eoShortfalls, eoTierFor, form200Expectation, escalationDue, transferNoticeGate, type EoTier, type Method as FirmMethod, type Confirmation } from "./firms.ts";
+import { motionDraftDue, classify, form20Due, litigationHold, exceptionTrigger, environmental, leadPaintNoticeDue } from "./litigation.ts";
+import { protectionEndsOn, dmdcFresh, preServiceObligation, capEffectivePaymentDue, form1022Due, requestWithinStatute, capEndsOn, restorationInstallment, endDateLetterDue, armCappedRate } from "./scra.ts";
 
-export interface Escalation { readonly kind: "officer" | "attorney" | "human_agent" | "fnma_portal_operator" | "signing_officer" | "lossmit_reviewer"; readonly severity?: "sev1" | "sev2" | "sev3" | "sev4"; readonly reason: string; }
+export interface Escalation { readonly kind: "officer" | "attorney" | "human_agent" | "fnma_portal_operator" | "signing_officer" | "lossmit_reviewer" | "compliance_sentinel"; readonly severity?: "sev1" | "sev2" | "sev3" | "sev4"; readonly reason: string; }
 export interface Instruction { readonly kind: string; readonly to: "attorney_network" | "firm"; readonly due: PlainDate; readonly sent: boolean; }
 
 // ============================================================ 13.1 120-day prohibition
@@ -62,7 +62,7 @@ export function nyFirstNoticeGate(i: { today: PlainDate; earliest_unpaid_due: Pl
 
 /** Rule 13.1: a referral attempt against a closed gate is refused, recorded, escalated sev-1, and nothing leaves for the attorney network. */
 export function refusedReferral(i: { gate: string; opens_on: PlainDate | null; attempted_on: PlainDate; actor: string }): { refused: true; event: { type: "foreclosure.gate.refused"; gate: string; attempted_on: PlainDate; actor: string }; escalation: Escalation; attorney_message_sent: false } {
-  return { refused: true, event: { type: "foreclosure.gate.refused", gate: i.gate, attempted_on: i.attempted_on, actor: i.actor }, escalation: { kind: "officer", severity: "sev1", reason: `referral attempted ${i.attempted_on} while ${i.gate} closed${i.opens_on ? ` (opens ${i.opens_on})` : ""}` }, attorney_message_sent: false };
+  return { refused: true, event: { type: "foreclosure.gate.refused", gate: i.gate, attempted_on: i.attempted_on, actor: i.actor }, escalation: { kind: "compliance_sentinel", severity: "sev1", reason: `referral attempted ${i.attempted_on} while ${i.gate} closed${i.opens_on ? ` (opens ${i.opens_on})` : ""} — attempt logged (13.1 timer table: refused command → Compliance Sentinel)` }, attorney_message_sent: false };
 }
 
 /** Rule 13.1 rule 6: the rule-set swap is a versioned gate definition; evaluations after the effective date carry the new codes and a diff is produced. */
@@ -80,9 +80,10 @@ export function transferredFirstFiling(i: { transferor_first_notice_filed_at: Pl
 }
 
 // ============================================================ 13.2 dual tracking
-/** Rule 13.2 §1024.41(g): an ineligible determination without appeal rights closes the hold the day it is sent; certification is permitted only inside sale − 15 … sale − 7. */
-export function holdExitAndCertification(i: { determination_sent_on: PlainDate; appeal_available: boolean; sale_on: PlainDate; certify_on: PlainDate }): { hold_closes_on: PlainDate; window: { opens: PlainDate; closes: PlainDate }; certification_permitted: boolean } {
-  const closes = i.appeal_available ? addDays(i.determination_sent_on, 14) : i.determination_sent_on; const w = certificationWindow(i.sale_on);
+/** Rule 13.2 §1024.41(g)(1): an ineligible determination without appeal rights closes the hold the day it is sent; with appeal rights the hold closes the day after the 14-day appeal window (determination + 15 — the same "window expiry" day 13.1-T5 uses) unless the appeal is denied earlier; certification is permitted only inside sale − 15 … sale − 7. */
+export function holdExitAndCertification(i: { determination_sent_on: PlainDate; appeal_available: boolean; sale_on: PlainDate; certify_on: PlainDate; appeal_denied_on?: PlainDate | null }): { hold_closes_on: PlainDate; window: { opens: PlainDate; closes: PlainDate }; certification_permitted: boolean } {
+  const windowEnd = i.appeal_available ? addDays(i.determination_sent_on, 15) : i.determination_sent_on;
+  const closes = i.appeal_denied_on && i.appeal_denied_on < windowEnd ? i.appeal_denied_on : windowEnd; const w = certificationWindow(i.sale_on);
   return { hold_closes_on: closes, window: w, certification_permitted: i.certify_on >= closes && i.certify_on >= w.opens && i.certify_on <= w.closes };
 }
 
@@ -100,11 +101,11 @@ export function mnReferralGate(i: { state: string; application_status: "pending_
   return { allowed: !blocked, refusal: blocked ? "foreclosure.refer refused: STATE_MN_582_043_DUAL_TRACK_GATE — an application is pending (Minn. Stat. §582.043)" : null };
 }
 
-/** Rule 13.2: a POSTPONE_SALE instruction unacknowledged after 1 BD → attorney escalation + phone task; DRA reconciliation flags a missing postponement event after 2 BD. */
-export function unacknowledgedPostponement(i: { instruction_sent_on: PlainDate; acknowledged_on: PlainDate | null; dra_postponement_event_on: PlainDate | null; today: PlainDate }): { ack_due: PlainDate; escalation: Escalation | null; phone_task: boolean; dra_expected_by: PlainDate; dra_exception: boolean } {
+/** Rule 13.2 (`REGX_1024_41G_INSTRUCT_COUNSEL_1BD` breach): a HOLD_DISPOSITIVE/POSTPONE_SALE instruction unacknowledged after 1 BD → sev 1 `attorney` escalation with the `officer` informed, plus a phone task; DRA reconciliation flags a missing postponement event after 2 BD. */
+export function unacknowledgedPostponement(i: { instruction_sent_on: PlainDate; acknowledged_on: PlainDate | null; dra_postponement_event_on: PlainDate | null; today: PlainDate }): { ack_due: PlainDate; escalation: Escalation | null; officer_informed: boolean; phone_task: boolean; dra_expected_by: PlainDate; dra_exception: boolean } {
   const ackDue = addBusinessDays(i.instruction_sent_on, 1, servicer); const unack = !i.acknowledged_on && i.today > ackDue;
   const draBy = addBusinessDays(i.instruction_sent_on, 2, servicer);
-  return { ack_due: ackDue, escalation: unack ? { kind: "attorney", severity: "sev2", reason: `POSTPONE_SALE sent ${i.instruction_sent_on} not acknowledged by ${ackDue}` } : null, phone_task: unack, dra_expected_by: draBy, dra_exception: i.dra_postponement_event_on === null && i.today > draBy };
+  return { ack_due: ackDue, escalation: unack ? { kind: "attorney", severity: "sev1", reason: `POSTPONE_SALE sent ${i.instruction_sent_on} not acknowledged by ${ackDue} (REGX_1024_41G_INSTRUCT_COUNSEL_1BD breach: sev 1 → attorney; officer informed)` } : null, officer_informed: unack, phone_task: unack, dra_expected_by: draBy, dra_exception: i.dra_postponement_event_on === null && i.today > draBy };
 }
 
 /** Rule 13.2/13.8: a DMDC re-check inside the certification window showing active duty withholds certification and instructs postponement. */
@@ -192,7 +193,8 @@ export function nonPrLadder(i: { earliest_unpaid_due: PlainDate; complete_brp_on
   return { outcome: "postpone_e3204", offer_expires_on: null, held_until: null, state: "brp_pending" };
 }
 
-export const DISASTER_REQUEST_ELEMENTS = ["recommendation", "property_condition_and_inspection", "borrower_contact_and_hardship_status", "loss_mitigation_history", "loan_status_and_delinquency"] as const;
+/** D1-3-01 (LL-2026-01): the recommendation "to initiate or continue foreclosure proceedings", the disaster event date, "status of any repairs to the property", "Insurance loss claim date, status, and the amount of proceeds", and the borrower engagement summary (QRPC, intent) — spelled as ops-13-4 DISASTER_REQUEST_CONTENT. */
+export const DISASTER_REQUEST_ELEMENTS = ["recommendation", "disaster_event_date", "repair_status", "insurance_claim", "borrower_engagement"] as const;
 /** Rule 13.4 D1-3-01: disaster impact → hold; the request goes within 5 days with all five elements; approval → refer. */
 export function disasterHold(i: { fema_ia: boolean; inspection_damage: boolean; review_completed_on: PlainDate; request: Record<string, unknown> | null; fnma_approval_id?: string | null }): { outcome: "hold_disaster_approval" | "refer"; request_due: PlainDate; elements_present: string[]; elements_missing: string[]; gate: "closed" | "open" } {
   const impacted = i.fema_ia && i.inspection_damage;
@@ -257,11 +259,10 @@ export function rescissionExposure(i: { cause: "missed_dmdc_check" | "dual_track
   return { exposure_cents: servicerErr ? RESCISSION_EXPOSURE_CENTS + i.third_party_costs_cents : 0n, root_cause: rc[i.cause]!, servicer_error: servicerErr };
 }
 
-/** Rule 13.5: a second contested period earns no additional credit and needs a "reasonable explanation" note. */
-export function contestedCredits(delays: readonly Delay[]): { credited: number; notes: string[] } {
-  let seen = 0; let credited = 0; const notes: string[] = [];
-  for (const d of delays) { if (d.category === "contested") { seen++; if (seen > 1) { notes.push(`second contested period ${d.from}..${d.to}: no additional credit — document a reasonable explanation (A1-4.2-02)`); continue; } } credited += creditedDays(d).credited; }
-  return { credited, notes };
+/** Rule 13.5: a second contested period earns no additional credit (first-occurrence scope) and needs a "reasonable explanation" note — the same scoped engine `exposure()` and `fc.timeframe.get` use. */
+export function contestedCredits(delays: readonly Delay[], ctx: { lpi_due?: PlainDate | null } = {}): { credited: number; notes: string[] } {
+  const c = creditDelays(delays, ctx);
+  return { credited: c.credited_days, notes: c.notes };
 }
 
 /** Rule 13.5: a compensatory-fee bill starts the 30-day rebuttal clock, drafts the package and escalates to the officer. */
@@ -289,12 +290,11 @@ export function draPostponementCheck(i: { acknowledged_on: PlainDate; dra_event_
   return { expected_by: by, exception: late, firm_call_task: late, credit_status: late ? "DRA unverified" : "verified" };
 }
 
-/** Rule 13.6 E-5-04: 100% of the fee is earned only through confirmation; before that the sale-held 95% cap holds. */
-export function feeApproval(i: { method: "non_judicial" | "judicial"; milestone: "sale_held" | "confirmation" | "first_legal" | "service_complete" | "judgment"; allowable_cents: Cents }): { pct: number; approved_cents: Cents; note: string | null } {
-  const ms = i.milestone === "confirmation" ? "sale_held" : i.milestone; const base = feeEarned(i.method, ms, i.allowable_cents);
-  if (i.milestone === "confirmation") return { pct: 100, approved_cents: i.allowable_cents, note: null };
-  if (i.milestone === "sale_held") return { pct: 95, approved_cents: (i.allowable_cents * 95n + 50n) / 100n, note: "the final 5% cannot be considered to be earned until confirmation (E-5-04)" };
-  return { pct: Math.round(Number(base * 100n) / Number(i.allowable_cents)), approved_cents: base, note: null };
+/** Rule 13.6 E-5-04/E-5-05: the schedule's 100% step (sale held / documents recorded) is earned only once any post-sale confirmation or ratification is completed; before that the prior 95% step holds. */
+export function feeApproval(i: { method: FirmMethod; milestone: string; allowable_cents: Cents; confirmation?: Confirmation }): { pct: number; approved_cents: Cents; note: string | null } {
+  const pct = earnedPct(i.method, i.milestone, i.confirmation ?? "pending");
+  const capped = i.milestone !== "confirmation" && pct === 95 && (i.confirmation ?? "pending") === "pending" && earnedPct(i.method, i.milestone, "completed") === 100;
+  return { pct, approved_cents: (i.allowable_cents * BigInt(pct) + 50n) / 100n, note: capped ? "the final 5% cannot be considered to be earned until confirmation (E-5-04)" : null };
 }
 
 /** Rule 13.6 rule 7: two consecutive months in the bottom scorecard band → risk-triggered review, officer informed. */
@@ -338,10 +338,11 @@ export function boardingDmdc(i: { boarded_on: PlainDate; results: readonly { bor
 }
 
 /** Rule 13.8 D2-3.4-01: DMDC Y on a pre-service obligation opens the SCRA case: gate closed, status 32, late charges waived, SCRA_STAY within 1 BD, quarterly contact. */
-export function openScraCase(i: { dmdc_status: "Y" | "N" | "Z"; origination_on: PlainDate; service_begin_on: PlainDate; verified_on: PlainDate; late_charges_since_service_cents: Cents }): { opened: boolean; event: "scra.case.opened" | null; gate: "closed" | "open"; status_code: "32" | null; late_charges_waived_cents: Cents; firm_instruction: Instruction | null; quarterly_timer: "SM_DMDC_PERIODIC_ACTIVE_FC_90" | null; refusal: string | null } {
-  if (i.dmdc_status !== "Y") return { opened: false, event: null, gate: "open", status_code: null, late_charges_waived_cents: 0n, firm_instruction: null, quarterly_timer: null, refusal: `DMDC ${i.dmdc_status}: no case` };
-  if (!preServiceObligation(i.origination_on, i.service_begin_on)) return { opened: false, event: null, gate: "open", status_code: null, late_charges_waived_cents: 0n, firm_instruction: null, quarterly_timer: null, refusal: "obligation originated during service — §3953 does not apply (attorney review for other protections)" };
-  return { opened: true, event: "scra.case.opened", gate: "closed", status_code: "32", late_charges_waived_cents: i.late_charges_since_service_cents, firm_instruction: { kind: "SCRA_STAY", to: "firm", due: addBusinessDays(i.verified_on, 1, servicer), sent: true }, quarterly_timer: "SM_DMDC_PERIODIC_ACTIVE_FC_90", refusal: null };
+export function openScraCase(i: { dmdc_status: "Y" | "N" | "Z"; origination_on: PlainDate; service_begin_on: PlainDate; verified_on: PlainDate; late_charges_since_service_cents: Cents }): { opened: boolean; event: "scra.case.opened" | null; gate: "closed" | "open"; status_code: "32" | null; late_charges_waived_cents: Cents; firm_instruction: Instruction | null; quarterly_timer: "FNMA_D23401_SM_CONTACT_90" | null; timers: readonly string[]; next_contact_on: PlainDate | null; refusal: string | null } {
+  if (i.dmdc_status !== "Y") return { opened: false, event: null, gate: "open", status_code: null, late_charges_waived_cents: 0n, firm_instruction: null, quarterly_timer: null, timers: [], next_contact_on: null, refusal: `DMDC ${i.dmdc_status}: no case` };
+  if (!preServiceObligation(i.origination_on, i.service_begin_on)) return { opened: false, event: null, gate: "open", status_code: null, late_charges_waived_cents: 0n, firm_instruction: null, quarterly_timer: null, timers: [], next_contact_on: null, refusal: "obligation originated during service — §3953 does not apply (attorney review for other protections)" };
+  // D2-3.4-01: contact the servicemember "at a minimum, every three months" (FNMA_D23401_SM_CONTACT_90); the DMDC re-verification cadence (SM_DMDC_PERIODIC_ACTIVE_FC_90) is a separate timer that runs while a foreclosure case is open.
+  return { opened: true, event: "scra.case.opened", gate: "closed", status_code: "32", late_charges_waived_cents: i.late_charges_since_service_cents, firm_instruction: { kind: "SCRA_STAY", to: "firm", due: addBusinessDays(i.verified_on, 1, servicer), sent: true }, quarterly_timer: "FNMA_D23401_SM_CONTACT_90", timers: ["FNMA_D23401_SM_CONTACT_90", "SM_DMDC_PERIODIC_ACTIVE_FC_90"], next_contact_on: addDays(i.verified_on, 90), refusal: null };
 }
 
 /** Rule 13.8 §3931: a default-judgment motion needs a signing-officer affidavit on certificates ≤30 days; the motion instruction releases only on filing evidence. */
@@ -427,5 +428,188 @@ export function assertedServiceWithoutEvidence(i: { written_assertion: boolean; 
 export function lateRequest(i: { release_on: PlainDate; request_on: PlainDate; service_verified: boolean; service_begin_on: PlainDate; mbs: boolean }): { statutory: boolean; honored: boolean; cap_from_due: PlainDate; cap_ends_on: PlainDate; retroactive: boolean; form_1022: { channel: "email_bd9" | "upload_cd15" } | null } {
   const w = requestWithinStatute(i.release_on, i.request_on); const honored = w.statutory || (w.honored && i.service_verified);
   return { statutory: w.statutory, honored, cap_from_due: capEffectivePaymentDue(i.service_begin_on), cap_ends_on: addYears(i.release_on, 1), retroactive: honored, form_1022: honored ? { channel: form1022Due(i.request_on, i.mbs).channel } : null };
+}
+
+// ============================================================ 13.1 gate sweep and the non-PR deadline ladder
+/** Rule 13.1 T1: the daily sweep projects the gate and emits `foreclosure.gate.opened` once — on the day it first opens, never again while it stays open. */
+export function gateSweep(i: { today: PlainDate; earliest_unpaid_due: PlainDate | null; principal_residence: boolean | null; previous_state: GateState | null }): { state: GateState; opens_on: PlainDate | null; days: number; events: { type: "foreclosure.gate.opened" | "foreclosure.gate.closed"; code: "REGX_1024_41F1_120_DAY_GATE"; on: PlainDate }[] } {
+  const g = gate120(i.today, i.earliest_unpaid_due, i.principal_residence, null);
+  const events: { type: "foreclosure.gate.opened" | "foreclosure.gate.closed"; code: "REGX_1024_41F1_120_DAY_GATE"; on: PlainDate }[] = [];
+  if (g.state === "open" && i.previous_state !== "open") events.push({ type: "foreclosure.gate.opened", code: "REGX_1024_41F1_120_DAY_GATE", on: i.today });
+  if (g.state === "closed" && i.previous_state === "open") events.push({ type: "foreclosure.gate.closed", code: "REGX_1024_41F1_120_DAY_GATE", on: i.today });
+  return { state: g.state, opens_on: g.opens_on, days: g.days, events };
+}
+
+export type LadderEvent = { readonly kind: "complete_brp" | "retention_offer" | "accepted_with_first_payment_due" | "first_payment_received" | "inquiry" | "incomplete_brp" | "determination_no_offer" | "offer_window_expired" | "plan_breached" | "referral_sent"; readonly on: PlainDate; readonly first_payment_due?: PlainDate; readonly event_id?: string };
+/** One `foreclosure_deadline_suspensions` row: the E-3.2-04 rung, the arming event and the resume condition. */
+export interface DeadlineSuspension { readonly timer: "FNMA_E1202_NONPR_REFER_BY_120"; readonly rung: Rung; readonly armed_by_event_id: string; readonly from: PlainDate; readonly resume_condition: string; readonly resumes_on: PlainDate | "on_breach"; readonly ended_on: PlainDate | null; readonly end_reason: string | null }
+/** Rule 13.1 rule 5 / E-1.2-02 BRP exception: the non-PR day-120 deadline is suspended (never breached) while an E-3.2-04 rung is open; an inquiry or an incomplete BRP never suspends; an offer window that expires unaccepted ends the suspension that day (E-3.2-01); a breach fires sev 2 to foreclosure-ops with the 13.5 exposure flag. */
+export function nonPrDeadlineLadder(i: { earliest_unpaid_due: PlainDate; events: readonly LadderEvent[]; today: PlainDate }): { timer: "FNMA_E1202_NONPR_REFER_BY_120"; deadline: PlainDate; day: number; suspensions: DeadlineSuspension[]; suspended: boolean; referred: boolean; breached: boolean; breach: { severity: "sev2"; to: "foreclosure-ops"; comp_fee_exposure_flag: true } | null; status: "running" | "suspended" | "referred" | "breached" } {
+  const deadline = nonPrDeadline(i.earliest_unpaid_due); const rows: DeadlineSuspension[] = []; let referred = false;
+  const open = (): DeadlineSuspension | null => { const last = rows[rows.length - 1]; return last && last.ended_on === null ? last : null; };
+  const close = (idx: number, on: PlainDate, why: string): void => { const r = rows[idx]!; rows[idx] = { ...r, ended_on: on, end_reason: why }; };
+  const sorted = [...i.events].filter((e) => e.on <= i.today).sort((a, b) => (a.on < b.on ? -1 : a.on > b.on ? 1 : 0));
+  for (const e of sorted) {
+    const cur = open(); const idx = rows.length - 1;
+    if (cur && cur.resumes_on !== "on_breach" && cur.resumes_on < e.on) close(idx, cur.resumes_on, "rung window expired without the next rung (E-3.2-01: no delay once the response time frame has expired)");
+    if (e.kind === "referral_sent") { referred = true; const o = open(); if (o) close(rows.length - 1, e.on, "referred"); continue; }
+    if (e.kind === "determination_no_offer" || e.kind === "offer_window_expired" || e.kind === "plan_breached") { const o = open(); if (o) close(rows.length - 1, e.on, e.kind === "plan_breached" ? "lossmit.plan.breached — referral resumes" : e.kind === "offer_window_expired" ? "offer window expired unaccepted (E-3.2-01)" : "determination sent with no offer — referral resumes"); continue; }
+    const rung = ladderSuspension(e.kind === "accepted_with_first_payment_due" ? { kind: e.kind, on: e.on, first_payment_due: e.first_payment_due! } : { kind: e.kind, on: e.on });
+    if (!rung) continue;   // inquiries and incomplete BRPs never postpone (E-3.2-04)
+    const o = open(); if (o) close(rows.length - 1, e.on, `next rung ${rung.rung} armed`);
+    const cond = rung.rung === "a_eval_30" ? "lossmit.determination.sent (≤30-day evaluation)" : rung.rung === "b_offer_14" ? "acceptance or expiry of the 14-day response window" : rung.rung === "c_accepted_month_end" ? "first payment received by the last day of the month it is due" : "lossmit.plan.breached";
+    rows.push({ timer: "FNMA_E1202_NONPR_REFER_BY_120", rung: rung.rung, armed_by_event_id: e.event_id ?? `${e.kind}@${e.on}`, from: e.on, resume_condition: cond, resumes_on: rung.resume_on, ended_on: null, end_reason: null });
+  }
+  const cur = open();
+  if (cur && cur.resumes_on !== "on_breach" && cur.resumes_on < i.today) close(rows.length - 1, cur.resumes_on, "rung window expired without the next rung (E-3.2-01)");
+  const suspended = open() !== null;
+  const breached = !referred && !suspended && i.today >= deadline;
+  return { timer: "FNMA_E1202_NONPR_REFER_BY_120", deadline, day: regxDays(i.today, i.earliest_unpaid_due), suspensions: rows, suspended, referred, breached, breach: breached ? { severity: "sev2", to: "foreclosure-ops", comp_fee_exposure_flag: true } : null, status: referred ? "referred" : suspended ? "suspended" : breached ? "breached" : "running" };
+}
+
+// ============================================================ 13.2 hold opening, performing hold, protection snapshot
+/** Rule 13.2 T1/T3: a complete application after the first filing opens `regx_g_dual_track` when received >37 days before the sale (HOLD_DISPOSITIVE within 1 BD, REGX_1024_41G_INSTRUCT_COUNSEL_1BD); 15–37 days ⇒ no Reg X hold, Fannie Mae expedited review due before the certification window opens and certification withheld until the determination is sent. */
+export function dualTrackHoldOpen(i: { first_notice_filed_on: PlainDate; sale_on: PlainDate | null; received_on: PlainDate; acknowledged_on?: PlainDate | null; determination_sent_on?: PlainDate | null }): { tier: ReturnType<typeof tierAtReceipt>; hold: { kind: "regx_g_dual_track"; scope: readonly string[]; opened_at: PlainDate; rule_citation: "12 CFR 1024.41(g)" } | null; fnma_hold: { kind: "fnma_e3401_evaluation"; scope: readonly string[]; opened_at: PlainDate; rule_citation: "FNMA E-3.4-01" } | null; instruction: Instruction | null; timer: "REGX_1024_41G_INSTRUCT_COUNSEL_1BD" | null; acknowledged: boolean; expedited_review_due_before: PlainDate | null; certification_withheld: boolean; refusal: string | null } {
+  if (i.received_on < i.first_notice_filed_on) return { tier: tierAtReceipt(i.received_on, i.sale_on), hold: null, fnma_hold: null, instruction: null, timer: null, acknowledged: false, expedited_review_due_before: null, certification_withheld: false, refusal: "received before the first notice or filing — §1024.41(f)(2) (13.1), not (g)" };
+  const tier = tierAtReceipt(i.received_on, i.sale_on);
+  if (tier.regx !== "none") {
+    const due = addBusinessDays(i.received_on, 1, servicer);
+    return { tier, hold: { kind: "regx_g_dual_track", scope: BLOCKED_BY_HOLD.hold_evaluation, opened_at: i.received_on, rule_citation: "12 CFR 1024.41(g)" }, fnma_hold: null, instruction: { kind: "HOLD_DISPOSITIVE", to: "firm", due, sent: true }, timer: "REGX_1024_41G_INSTRUCT_COUNSEL_1BD", acknowledged: Boolean(i.acknowledged_on) && i.acknowledged_on! <= due, expedited_review_due_before: null, certification_withheld: true, refusal: null };
+  }
+  if (tier.fnma === "fnma_15_to_37") {
+    const w = certificationWindow(i.sale_on!);
+    return { tier, hold: null, fnma_hold: { kind: "fnma_e3401_evaluation", scope: BLOCKED_BY_HOLD.fnma_e3401_evaluation, opened_at: i.received_on, rule_citation: "FNMA E-3.4-01" }, instruction: null, timer: null, acknowledged: false, expedited_review_due_before: w.opens, certification_withheld: !i.determination_sent_on || i.determination_sent_on >= w.opens, refusal: null };
+  }
+  return { tier, hold: null, fnma_hold: null, instruction: null, timer: null, acknowledged: false, expedited_review_due_before: null, certification_withheld: false, refusal: null };
+}
+
+/** Rule 13.2 T5: an accepted offer with the first trial payment received holds `hold_performing` (first notice, judgment motion, sale scheduling and conduct) until `lossmit.trial.failed`; a failure on the last day of the month due reopens sale scheduling the next day. */
+export function performingHold(i: { accepted_on: PlainDate; first_payment_received_on: PlainDate; trial_failed_on?: PlainDate | null }): { hold: "hold_performing"; kind: "fnma_trial_performing"; blocks: readonly string[]; until: "lossmit.trial.failed"; closed_on: PlainDate | null; sale_schedule_reopens_on: PlainDate | null; stepAllowedOn: (step: string, on: PlainDate) => boolean } {
+  const closed = i.trial_failed_on ?? null; const reopens = closed ? addDays(closed, 1) : null;
+  const blocks = BLOCKED_BY_HOLD.hold_performing;
+  return { hold: "hold_performing", kind: "fnma_trial_performing", blocks, until: "lossmit.trial.failed", closed_on: closed, sale_schedule_reopens_on: reopens, stepAllowedOn: (step, on) => !blocks.includes(step) || (reopens !== null && on >= reopens) };
+}
+
+/** Rule 13.2 rule 1 / 1024.41(b)(3): the protection snapshot is written once at receipt — no sale scheduled ⇒ `g_full_90` (appeal rights, 14-day acceptance) — and a sale set later does not recompute it. */
+export function protectionSnapshot(i: { received_on: PlainDate; sale_at_receipt: PlainDate | null; later_sale_on?: PlainDate | null }): { tier: Tier; appeal: boolean; acceptance_days: 14 | 7 | 0; days_before_sale: number | null; sale_at_receipt: PlainDate | null; recomputed: false; note: string } {
+  const t = tierAtReceipt(i.received_on, i.sale_at_receipt);
+  return { tier: t.regx, appeal: t.appeal, acceptance_days: t.acceptance_days, days_before_sale: t.days_before_sale, sale_at_receipt: i.sale_at_receipt, recomputed: false, note: i.later_sale_on ? `sale later set ${i.later_sale_on}: protections fixed as of receipt (comment 41(b)(3)-2) — tier stays ${t.regx}` : "written once at receipt (1024.41(b)(3))" };
+}
+
+// ============================================================ 13.3 reinstatement and third-party sale settlement
+/** Rule 13.3 rule 4 / E-3.2-08: a full tender before the sale is accepted; the firm is notified within 2 BD (target same day; E-3.2-06), the sale cancelled, the original note returned via Form 2009 when it was pulled, and the status code updated. */
+export function reinstatementAccepted(i: { tendered_on: PlainDate; sale_on: PlainDate; quote_cents: Cents; tendered_cents: Cents; note_pulled: boolean }): { accepted: boolean; refusal: string | null; event: "loan.reinstated" | null; firm_notify_by: PlainDate | null; firm_notify_target: PlainDate | null; timer: "FNMA_E3206_WORKOUT_NOTIFY_FIRM_2BD" | null; instruction: Instruction | null; sale_cancelled: boolean; note_return: "Form 2009" | null; status_code_update: boolean } {
+  const ok = i.tendered_on < i.sale_on && i.tendered_cents >= i.quote_cents;
+  if (!ok) return { accepted: false, refusal: i.tendered_on >= i.sale_on ? "tender after the sale — payoff/redemption path (16.x)" : `tender ${i.tendered_cents} short of the quote ${i.quote_cents} — partial reinstatement only if it makes the borrower eligible for a workout (12.x)`, event: null, firm_notify_by: null, firm_notify_target: null, timer: null, instruction: null, sale_cancelled: false, note_return: null, status_code_update: false };
+  return { accepted: true, refusal: null, event: "loan.reinstated", firm_notify_by: addBusinessDays(i.tendered_on, 2, servicer), firm_notify_target: i.tendered_on, timer: "FNMA_E3206_WORKOUT_NOTIFY_FIRM_2BD", instruction: { kind: "CANCEL_SALE", to: "firm", due: i.tendered_on, sent: true }, sale_cancelled: true, note_return: i.note_pulled ? "Form 2009" : null, status_code_update: true };
+}
+
+/** The event that closes the TPS proceeds clock on the platform: 15.1's CRS special remittance settlement (`remittance.special.settled{code∈{311, 351}}`) — the 13.3 row's `remittance.special.sent{action_code=71}` names the 5.x removal action code, which is reported in the sale month, not the remittance; `timers.ts` overrides the row to this event so the timer can close. */
+export const TPS_PROCEEDS_SETTLED = "`remittance.special.settled{code∈{311, 351}}`";
+/** Rule 13.3 rule 6: a third-party sale above indebtedness books the surplus to `tps_surplus_payable`; proceeds are remitted within 5 BD of final payment (fannie_et) under `FNMA_E3502_TPS_PROCEEDS_REMIT_5BD` (armed by 15.1's `tps.proceeds.received{kind=final_payment}`, satisfied by `TPS_PROCEEDS_SETTLED`), Action Code 71 in the sale month, closing statement to SF CPM the same day. The deposit clock `FNMA_E3502_TPS_DEPOSIT_REMIT_5BD` belongs to a sale that fails to finalize (`sale.failed_to_finalize`), never to a completed sale. */
+export function thirdPartySaleSettlement(i: { sale_on: PlainDate; winning_bid_cents: Cents; total_indebtedness_cents: Cents; final_payment_on: PlainDate }): { surplus_cents: Cents; shortfall_cents: Cents; surplus_account: "tps_surplus_payable" | null; remit_by: PlainDate; timer: "FNMA_E3502_TPS_PROCEEDS_REMIT_5BD"; satisfied_by: typeof TPS_PROCEEDS_SETTLED; action_code: "71"; action_code_period: string; closing_statement_due: PlainDate; mi_claim: boolean } {
+  const d = i.winning_bid_cents - i.total_indebtedness_cents; const surplus = d > 0n ? d : 0n; const short = d < 0n ? -d : 0n;
+  return { surplus_cents: surplus, shortfall_cents: short, surplus_account: surplus > 0n ? "tps_surplus_payable" : null, remit_by: addBusinessDays(i.final_payment_on, 5, fannieEt), timer: "FNMA_E3502_TPS_PROCEEDS_REMIT_5BD", satisfied_by: TPS_PROCEEDS_SETTLED, action_code: "71", action_code_period: i.sale_on.slice(0, 7), closing_statement_due: i.final_payment_on, mi_claim: short > 0n };
+}
+
+// ============================================================ 13.6 firm selection, retention, escalation, transfers
+/** Rule 13.6 rule 1 / F-2-04: due diligence checks the E&O tier minimums for the firm's annual foreclosure volume; a passing file yields the Form 200 package for the partner officer's signature (the certification is the officer's). */
+export function firmDueDiligence(i: { annual_foreclosures: number; eo_per_occurrence_cents: Cents; eo_aggregate_cents: Cents; qualifying_attorneys?: number }): { tier: EoTier; passed: boolean; failing: string[]; form200_package: { for_signature_by: "officer"; certifies: "F-2-04 minimum requirements"; status: "form200_pending" } | null } {
+  const tier = eoTierFor(i.annual_foreclosures); const failing = eoShortfalls(tier, i.eo_per_occurrence_cents, i.eo_aggregate_cents);
+  if (i.qualifying_attorneys !== undefined && i.qualifying_attorneys < 2) failing.push("fewer than two Qualifying Attorneys in the jurisdiction (F-2-04)");
+  return { tier, passed: failing.length === 0, failing, form200_package: failing.length === 0 ? { for_signature_by: "officer", certifies: "F-2-04 minimum requirements", status: "form200_pending" } : null };
+}
+
+/** Rule 13.6 rule 1 / A4-2.2-01: Form 200 → 15-BD response expectation (fannie_et); "No Objection" + training + LRA ⇒ `retained`; a referral to a non-retained firm is refused (FNMA_A4201_RETAINED_FIRM_GATE). */
+export function firmRetention(i: { form200_submitted_on: PlainDate; response: "no_objection" | "objection" | "info_requested" | null; training_completed_on?: PlainDate | null; lra_executed_on?: PlainDate | null; eo_expires_on?: PlainDate | null; today?: PlainDate }): { expectation_due: PlainDate; timer: "FNMA_A4201_FORM200_RESPONSE_15BD"; status: "form200_pending" | "no_objection" | "rejected" | "retained"; referral_allowed: boolean; refusal: string | null } {
+  const due = form200Expectation(i.form200_submitted_on);
+  const status = i.response === "objection" ? "rejected" : i.response === "no_objection" ? (i.training_completed_on && i.lra_executed_on ? "retained" : "no_objection") : "form200_pending";
+  const eoOk = !i.eo_expires_on || !i.today || i.eo_expires_on >= i.today;
+  const allowed = status === "retained" && eoOk;
+  return { expectation_due: due, timer: "FNMA_A4201_FORM200_RESPONSE_15BD", status, referral_allowed: allowed, refusal: allowed ? null : `referral refused by FNMA_A4201_RETAINED_FIRM_GATE: firm is ${status}${eoOk ? "" : " with expired E&O"} (A4-2.2-01)` };
+}
+
+/** Rule 13.6 rule 4 / A4-2.2-02: an escalation category (bar complaint, sanctions, breach, fraud …) goes by email to loanservicing@fanniemae.com within 2 BD of discovery — same day for breaches/fraud — naming points of contact; the decision record and message id are stored. */
+export function firmEscalation(i: { firm_id: string; category: string; discovered_on: PlainDate; pocs: readonly string[]; sent_on?: PlainDate | null }): { due: PlainDate; timer: "FNMA_A4202_FIRM_ESCALATION_2BD"; channel: "email:loanservicing@fanniemae.com"; message_id: string; pocs: readonly string[]; on_time: boolean | null; record: { firm_id: string; category: string; discovered_at: PlainDate; sent_to_fnma_at: PlainDate | null; decision: { action: "escalate"; rule_results: string[] } }; refusal: string | null } {
+  const sameDay = /breach|fraud/i.test(i.category); const due = escalationDue(i.discovered_on, sameDay);
+  const messageId = `msg-${i.firm_id}-${i.category.replace(/\W+/g, "_")}-${i.discovered_on}`;
+  return { due, timer: "FNMA_A4202_FIRM_ESCALATION_2BD", channel: "email:loanservicing@fanniemae.com", message_id: messageId, pocs: i.pocs, on_time: i.sent_on ? i.sent_on <= due : null, record: { firm_id: i.firm_id, category: i.category, discovered_at: i.discovered_on, sent_to_fnma_at: i.sent_on ?? null, decision: { action: "escalate", rule_results: [`A4-2.2-02 within two business days of discovery${sameDay ? " (sooner: circumstances warrant)" : ""}`] } }, refusal: i.pocs.length === 0 ? "escalation email must name points of contact (A4-2.2-02)" : null };
+}
+
+/** Rule 13.6 rule 5 / E-1.1-01: the transfer that makes ≥30 in 6 months (same state, from-firm → to-firm) is blocked until Fannie Mae has had 5 BD notice; a post-sale transfer needs prior approval. */
+export function matterTransferGate(i: { state: string; from_firm: string; to_firm: string; transfers_in_6m_including_this: number; fnma_notified_on?: PlainDate | null; transfer_on: PlainDate; post_sale?: boolean; fnma_approval_document_id?: string | null }): { notice_required: boolean; gate: "FNMA_E1101_BULK_TRANSFER_NOTICE_5BD" | "FNMA_E1101_POST_SALE_TRANSFER_APPROVAL_GATE" | null; earliest: PlainDate | null; allowed: boolean; refusal: string | null } {
+  if (i.post_sale && !i.fnma_approval_document_id) return { notice_required: false, gate: "FNMA_E1101_POST_SALE_TRANSFER_APPROVAL_GATE", earliest: null, allowed: false, refusal: "post-sale matter transfer needs Fannie Mae prior approval (E-1.1-01)" };
+  const req = transferNoticeGate(i.transfers_in_6m_including_this);
+  if (!req) return { notice_required: false, gate: null, earliest: i.transfer_on, allowed: true, refusal: null };
+  if (!i.fnma_notified_on) return { notice_required: true, gate: "FNMA_E1101_BULK_TRANSFER_NOTICE_5BD", earliest: null, allowed: false, refusal: `transfer ${i.from_firm}→${i.to_firm} (${i.state}) is the ${i.transfers_in_6m_including_this}th in 6 months — blocked until Fannie Mae is notified 5 BD ahead (E-1.1-01)` };
+  const earliest = addBusinessDays(i.fnma_notified_on, 5, servicer);
+  return { notice_required: true, gate: "FNMA_E1101_BULK_TRANSFER_NOTICE_5BD", earliest, allowed: i.transfer_on >= earliest, refusal: i.transfer_on >= earliest ? null : `transfer blocked until ${earliest} (5 BD after Fannie Mae notice; E-1.1-01)` };
+}
+
+// ============================================================ 13.7 litigation intake, exception triggers, environmental, lead paint
+/** Rule 13.7 rules 1, 3, 4: intake classifies the pleading, computes the 2-BD Form 20 deadline from receipt, and opens `LITIGATION_HOLD` on judgment/sale when enforceability/standing/priority is attacked or an injunction is sought. */
+export function litigationIntake(i: { served_on: PlainDate; damages_against_fnma: boolean; attacks_validity_priority_enforceability: boolean; enumerated_risk: boolean; damages_claim: boolean; confidence: number; seeks_injunction?: boolean; damages_only?: boolean; form20_submitted_on?: PlainDate | null }): { classification: "non_routine" | "routine" | "attorney_confirmation_required"; category: 1 | 2 | 3 | null; form20: { required: boolean; due: PlainDate; task: "human_portal_task{kind=form20}"; submitted_on: PlainDate | null; on_time: boolean | null }; hold: { code: "LITIGATION_HOLD"; steps: readonly ["judgment_motion", "sale_conduct"]; opened_on: PlainDate } | null; status_code: "33"; escalation: Escalation | null } {
+  const c = classify({ damages_against_fnma: i.damages_against_fnma, attacks_validity_priority_enforceability: i.attacks_validity_priority_enforceability, enumerated_risk: i.enumerated_risk, damages_claim: i.damages_claim, confidence: i.confidence });
+  const due = form20Due(i.served_on); const required = c.classification !== "routine";
+  const hold = c.classification === "non_routine" && litigationHold({ category: c.category, seeks_injunction: i.seeks_injunction ?? false, damages_only: i.damages_only ?? false });
+  return { classification: c.classification, category: c.category, form20: { required, due, task: "human_portal_task{kind=form20}", submitted_on: i.form20_submitted_on ?? null, on_time: i.form20_submitted_on ? i.form20_submitted_on <= due : null }, hold: hold ? { code: "LITIGATION_HOLD", steps: ["judgment_motion", "sale_conduct"], opened_on: i.served_on } : null, status_code: "33", escalation: c.classification === "attorney_confirmation_required" ? { kind: "attorney", reason: `classification confirmation required before "routine" is accepted (confidence ${i.confidence}${i.damages_claim ? ", damages claim present" : ""})` } : null };
+}
+/** Rule 13.7 rule 2 / E-1.3-02: standing/MERS/HAMP matters file Form 20 only on the trigger (summary judgment, briefing, trial), within 2 BD of it; an answer alone is no trigger. */
+export function form20ExceptionTrigger(i: { matter: "standing" | "mers" | "hamp"; event: "answer" | "summary_judgment_motion" | "briefing" | "trial"; on: PlainDate }): { form20_required: boolean; due: PlainDate | null; timer: "FNMA_E1302_FORM20_EXCEPTION_TRIGGER" | null } {
+  const t = exceptionTrigger(i.matter, i.event);
+  return { form20_required: t, due: t ? form20Due(i.on) : null, timer: t ? "FNMA_E1302_FORM20_EXCEPTION_TRIGGER" : null };
+}
+export const ENVIRONMENTAL_REPORT_ELEMENTS = ["value", "debt", "occupancy", "children_under_8", "documentation", "recommendation"] as const;
+/** Rule 13.7 rule 5 / F-1-08: a suspected hazard opens a 10-day confirmation task; confirmed ⇒ gate closed (referral/first notice/judgment/sale refused), Servicing Representative report within 2 BD with the report elements. */
+export function environmentalHazard(i: { state: "suspected" | "confirmed"; on: PlainDate; report?: Partial<Record<(typeof ENVIRONMENTAL_REPORT_ELEMENTS)[number], unknown>> | null }): { confirmation_task: { due: PlainDate } | null; gate: "FNMA_F108_ENV_NO_FORECLOSURE_GATE"; gate_closed: boolean; referral_allowed: boolean; report_by: PlainDate | null; report_elements_missing: string[]; refusal: string | null } {
+  const e = environmental(i.state, i.on);
+  const missing = i.state === "confirmed" ? ENVIRONMENTAL_REPORT_ELEMENTS.filter((k) => !i.report || i.report[k] === undefined || i.report[k] === null || i.report[k] === "") : [];
+  return { confirmation_task: e.confirm_by ? { due: e.confirm_by } : null, gate: "FNMA_F108_ENV_NO_FORECLOSURE_GATE", gate_closed: e.gate_closed, referral_allowed: !e.gate_closed, report_by: e.report_by, report_elements_missing: [...missing], refusal: e.gate_closed ? "foreclosure.refer refused: FNMA_F108_ENV_NO_FORECLOSURE_GATE — environmental hazard confirmed; wait for Fannie Mae's direction to proceed (F-1-08)" : null };
+}
+export const LEAD_PAINT_ELEMENTS = ["property_value_cents", "total_debt_cents", "children_under_8", "documentation_ids"] as const;
+/** Rule 13.7 rule 5 / F-1-08: a lead-paint citation on a referred 1–4 unit property is reported to the Servicing Representative within 30 days of referral with value, debt, children under 8 and documentation. */
+export function leadPaintNotification(i: { referral_on: PlainDate; units: number; notification: Partial<Record<(typeof LEAD_PAINT_ELEMENTS)[number], unknown>> | null; sent_on?: PlainDate | null }): { applies: boolean; due: PlainDate; timer: "FNMA_F108_LEAD_PAINT_NOTIFY_30"; elements_missing: string[]; complete: boolean; on_time: boolean | null } {
+  const missing = LEAD_PAINT_ELEMENTS.filter((k) => !i.notification || i.notification[k] === undefined || i.notification[k] === null || i.notification[k] === "" || (Array.isArray(i.notification[k]) && (i.notification[k] as unknown[]).length === 0));
+  const due = leadPaintNoticeDue(i.referral_on);
+  return { applies: i.units >= 1 && i.units <= 4, due, timer: "FNMA_F108_LEAD_PAINT_NOTIFY_30", elements_missing: [...missing], complete: missing.length === 0, on_time: i.sent_on ? i.sent_on <= due : null };
+}
+
+// ============================================================ 13.8 affidavit records review and evidenced case close
+export interface AffidavitChecklist { readonly certificate_ids: readonly string[]; readonly certificate_on: PlainDate; readonly party_match: boolean; readonly conflicting_assertions: boolean; readonly future_call_up: boolean }
+/** Rule 13.8 rule 5: an affidavit is executed only by a `signing_officer` after the recorded records review — certificate ids ≤30 days, party matching, no conflicting assertions, no unresolved Future Call-Up. */
+export function scraAffidavit(i: { judicial: boolean; today: PlainDate; executed_by_role: string | null; checklist: AffidavitChecklist; kind: "non_military_affidavit" | "unable_to_determine" | "military_status_declaration"; filing_evidence_document_id?: string | null }): { allowed: boolean; refusal: string | null; records_review: { passed: boolean; failing: string[] }; motion_instruction_released: boolean; gate: "SCRA_3931_AFFIDAVIT_GATE" } {
+  const failing: string[] = [];
+  if (i.checklist.certificate_ids.length === 0) failing.push("no DMDC certificate ids");
+  if (!i.checklist.party_match) failing.push("parties do not match the certificates");
+  if (i.checklist.conflicting_assertions) failing.push("conflicting assertions of service on file");
+  if (i.checklist.future_call_up) failing.push("unresolved Future Call-Up flag");
+  const g = affidavitGate({ judicial: i.judicial, certificate_on: i.checklist.certificate_on, today: i.today, executed_by_role: i.executed_by_role, filing_evidence_document_id: i.filing_evidence_document_id ?? null });
+  if (i.judicial && !g.affidavit_valid && g.refusal) failing.push(g.refusal);
+  const ok = failing.length === 0;
+  return { allowed: ok, refusal: ok ? null : `affidavit refused (SCRA_3931_AFFIDAVIT_GATE): ${failing.join("; ")}`, records_review: { passed: ok, failing }, motion_instruction_released: ok && g.motion_instruction_released, gate: "SCRA_3931_AFFIDAVIT_GATE" };
+}
+/** Rule 13.8: a period ends only on evidence — orders, the DMDC "Left Active Duty" flag or borrower confirmation — never on the agent's say-so; the tail then runs a calendar year and the gate opens the day after. */
+export function scraCaseClose(i: { service_end_on: PlainDate; evidence: { orders_document_id?: string | null; dmdc_certificate_id?: string | null; borrower_confirmation_contact_id?: string | null } }): { allowed: boolean; refusal: string | null; basis: "orders" | "dmdc_left_active_duty" | "borrower_confirmation" | null; status: "open_tail_12m" | null; protection_ends_on: PlainDate | null; gate_opens_on: PlainDate | null; timer: "SCRA_3953_TAIL_1Y" | null } {
+  const basis = i.evidence.orders_document_id ? "orders" : i.evidence.dmdc_certificate_id ? "dmdc_left_active_duty" : i.evidence.borrower_confirmation_contact_id ? "borrower_confirmation" : null;
+  if (!basis) return { allowed: false, refusal: "service end needs evidence: orders, the DMDC Left-Active-Duty certificate, or the borrower's confirmation (13.8 inputs) — the gate stays closed", basis: null, status: null, protection_ends_on: null, gate_opens_on: null, timer: null };
+  const t = protectionTail(i.service_end_on);
+  return { allowed: true, refusal: null, basis, status: "open_tail_12m", protection_ends_on: t.protection_ends_on, gate_opens_on: t.gate_opens_on, timer: "SCRA_3953_TAIL_1Y" };
+}
+
+// ============================================================ 13.9 cap tail, ARM adjustments, fees inside the cap
+/** Rule 13.9 rule 9: the cap ends `addYears(service_end_on, 1)` inclusive; restoration is the first installment due after; the end-date letter goes out 60 days before restoration. */
+export function capTail(i: { service_end_on: PlainDate; restored_payment_cents: Cents }): { cap_ends_on: PlainDate; timer: "SCRA_3937A1_CAP_TAIL_1Y"; restoration_due: PlainDate; restored_payment_cents: Cents; end_letter_due: PlainDate; notice: "NTC_SCRA_3937_RATE_END"; capInForceOn: (d: PlainDate) => boolean } {
+  const ends = capEndsOn(i.service_end_on);
+  return { cap_ends_on: ends, timer: "SCRA_3937A1_CAP_TAIL_1Y", restoration_due: restorationInstallment(ends), restored_payment_cents: i.restored_payment_cents, end_letter_due: endDateLetterDue(ends), notice: "NTC_SCRA_3937_RATE_END", capInForceOn: (d) => d <= ends };
+}
+/** Rule 13.9 rule 3: an ARM adjustment during the cap applies min(6%, adjusted rate) and emits Transaction 83 / the rate_payment.change servicing event. */
+export function armAdjustment(i: { adjusted_rate_pct: string; scheduled_on: PlainDate; cap_active: boolean }): { applied_rate_pct: string; capped: boolean; event: { type: "investor.event"; kind: "lar_83"; servicing_event: "rate_payment.change"; on: PlainDate }; timer: "FNMA_F119_ARM_TXN83" } {
+  const applied = i.cap_active ? armCappedRate(i.adjusted_rate_pct) : i.adjusted_rate_pct;
+  return { applied_rate_pct: applied, capped: applied !== i.adjusted_rate_pct, event: { type: "investor.event", kind: "lar_83", servicing_event: "rate_payment.change", on: i.scheduled_on }, timer: "FNMA_F119_ARM_TXN83" };
+}
+/** Rule 13.9 rule 5 / §3937(d): a fee assessed on or before `cap_ends_on` counts as interest and is forgiven; the gate runs through the tail. */
+export function feeInsideCap(i: { assessed_on: PlainDate; cap_effective_due: PlainDate; cap_ends_on: PlainDate }): { inside: boolean; gate: "SCRA_3937_FEES_IN_CAP_GATE"; disposition: "forgive" | "collectible" } {
+  const inside = i.assessed_on >= i.cap_effective_due && i.assessed_on <= i.cap_ends_on;
+  return { inside, gate: "SCRA_3937_FEES_IN_CAP_GATE", disposition: inside ? "forgive" : "collectible" };
 }
 export const federalBusinessDays = (d: PlainDate, n: number): PlainDate => addBusinessDays(d, n, federal);

@@ -1,5 +1,5 @@
 /** §12.1 Acknowledge loss-mit application — classification, 45-day test, completeness, reasonable date, duplicative test. */
-import { type PlainDate, addDays } from "../../kernel/calendar/date.ts";
+import { type PlainDate, addDays, daysBetween } from "../../kernel/calendar/date.ts";
 import { addBusinessDays, federal, servicer } from "../../kernel/calendar/business.ts";
 import { zonedEpochMs } from "../../kernel/calendar/zoned.ts";
 
@@ -9,6 +9,13 @@ export function ackDue(receivedOn: PlainDate, loanTz = "America/New_York"): { du
 export function fortyFiveDayTest(receivedOn: PlainDate, saleOn: PlainDate | null): { b2_applies: boolean; d2205_notice_due: PlainDate | null } {
   if (saleOn && receivedOn > addDays(saleOn, -45)) return { b2_applies: false, d2205_notice_due: addBusinessDays(receivedOn, 5, servicer) };
   return { b2_applies: true, d2205_notice_due: null };
+}
+/** 12.1 `lossmit_applications.protection_tier` at receipt: ≥90 days before a scheduled sale (or no sale) → ge_90; >37 → gt_37; else le_37 (§1024.41(c)(1), (e)(1), (h)(1)). */
+export type ProtectionTier = "ge_90" | "gt_37" | "le_37";
+export function protectionTier(receivedOn: PlainDate, saleOn: PlainDate | null): { protection_tier: ProtectionTier; days_before_sale: number | null } {
+  if (!saleOn) return { protection_tier: "ge_90", days_before_sale: null };
+  const d = daysBetween(receivedOn, saleOn);
+  return { protection_tier: d >= 90 ? "ge_90" : d > 37 ? "gt_37" : "le_37", days_before_sale: d };
 }
 export interface ReasonableDateInputs { readonly ack_sent_on: PlainDate; readonly earliest_unpaid_due: PlainDate | null; readonly sale_on: PlainDate | null; readonly oldest_doc_date: PlainDate | null; }
 export function reasonableDate(i: ReasonableDateInputs): { date: PlainDate; basis: string; milestone_conflict: boolean } {

@@ -4,6 +4,7 @@
  * theft, FDCPA gate) applied on top of an 8.1 snapshot.
  */
 import { type PlainDate, addDays, daysBetween, endOfMonth, startOfMonth } from "../../kernel/calendar/date.ts";
+import { type Calendar, addBusinessDays, servicer } from "../../kernel/calendar/business.ts";
 import { type Cents, levelPayment, monthlyInterest, ratePercent, sumCents } from "../../kernel/money/cents.ts";
 import { Decimal } from "../../kernel/money/decimal.ts";
 import type { AppliedInstallment } from "../boarding/delinquency.ts";
@@ -201,13 +202,31 @@ export function deceasedOverlay(s: Metro2Snapshot, partyId: string): Metro2Snaps
 
 export interface IdentityTheftEvent { readonly party_id: string; readonly received_on: PlainDate; readonly never_liable: boolean; }
 
-export interface IdentityTheftResponse { readonly suppression: Suppression; readonly aud_due: PlainDate; readonly fraud_case: true; readonly resumption_requires: readonly string[]; }
+/** Rule 7(b) / 8.3-T9: furnishing for the consumer resumes only on `officer` approval with a BRR (8.2) and the CRA's block rescission (§1681c-2(c)) — never automatically. */
+export const IDENTITY_THEFT_RESUMPTION: readonly ["officer_approval", "brr_with_evidence", "cra_block_rescission"] = ["officer_approval", "brr_with_evidence", "cra_block_rescission"];
+/** `SM_CR_OVERLAY_URGENT_AUD_BD2`: 2 `business_days_servicer` from the block/report. */
+export const URGENT_AUD_BUSINESS_DAYS = 2;
+export type UrgentOverlayKind = "identity_theft_block" | "scra_adverse_correction" | "deceased_in_error";
 
-/** Rule 7: omit (or ECOA Z) immediately, AUD within 2 BD, fraud case; resumption needs officer + BRR / CRA rescission. */
-export function identityTheftResponse(ev: IdentityTheftEvent, audDue: PlainDate): IdentityTheftResponse {
+export interface IdentityTheftResponse {
+  readonly suppression: Suppression;
+  /** The consumer is omitted from the cycle whose `as_of` is the month-end of receipt (rule 7: "immediately"). */
+  readonly omitted_from_cycle_as_of: PlainDate;
+  readonly aud_due: PlainDate;
+  /** The trigger the 8.3 timer table names for `SM_CR_OVERLAY_URGENT_AUD_BD2`. */
+  readonly urgent_event: { readonly type: "credit.overlay.urgent"; readonly kind: "identity_theft_block" };
+  readonly fraud_case: true;
+  readonly resumption_requires: typeof IDENTITY_THEFT_RESUMPTION;
+}
+
+/** Rule 7: omit (or ECOA Z) immediately, AUD within 2 servicer business days, fraud case; resumption needs officer + BRR / CRA rescission. */
+export function identityTheftResponse(ev: IdentityTheftEvent, cal: Calendar = servicer): IdentityTheftResponse {
   return {
     suppression: { reason: "identity_theft", mechanism: ev.never_liable ? "delete_consumer" : "omit_account", party_id: ev.party_id, starts_on: ev.received_on, ends_on: null, codes: ev.never_liable ? ["ECOA Z"] : [] },
-    aud_due: audDue, fraud_case: true, resumption_requires: ["officer_approval", "brr_with_evidence", "cra_block_rescission"],
+    omitted_from_cycle_as_of: endOfMonth(ev.received_on),
+    aud_due: addBusinessDays(ev.received_on, URGENT_AUD_BUSINESS_DAYS, cal),
+    urgent_event: { type: "credit.overlay.urgent", kind: "identity_theft_block" },
+    fraud_case: true, resumption_requires: IDENTITY_THEFT_RESUMPTION,
   };
 }
 

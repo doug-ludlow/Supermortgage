@@ -5,14 +5,31 @@ import type { Cents } from "../../kernel/money/cents.ts";
 import { lateChargeAmount } from "../cashiering/latecharges.ts";
 
 export type AssertionType = "b1" | "b2" | "b3" | "b4" | "b5" | "b6" | "b7" | "b8" | "b9" | "b10" | "b11";
+/** (b)(9)/(10): the foreclosure assertions that carry the sale-or-30 clock, the FC gate and the (f)(2) good-faith path. */
+export const isForeclosureAssertion = (t: AssertionType): boolean => t === "b9" || t === "b10";
+/** 4.1 rule 9: assertions touching a payment (b1–b3, b5 late-fee disputes, b11 delinquency disputes) write the §1024.35(i) suppression row. */
+export const isPaymentRelated = (t: AssertionType): boolean => t === "b1" || t === "b2" || t === "b3" || t === "b5" || t === "b11";
+/** 4.1 guardrails: corrections above `case.correction.max_cents` (default 500,000¢ = $5,000) need human (officer) approval. */
+export const CORRECTION_MAX_CENTS: Cents = 500_000n;
+
 export interface Deadlines { readonly profile: "payoff_7" | "fc_before_sale" | "fc_within_7_days_goodfaith" | "std_30"; readonly ack_due: PlainDate | null; readonly response_due: PlainDate; readonly extendable: boolean; readonly credit_reporting_bar_through: PlainDate; readonly document_copies_due: PlainDate; }
+/**
+ * §1024.35(e)(3)(i)(B): a (b)(9)/(10) assertion is answered "prior to the date of a foreclosure sale or within 30 days,
+ * whichever is earlier" — the computed anchor `noe_fc_response_due` of REGX_1024_35E_NOE_FC_RESPONSE_SALE_OR_30 (and, with
+ * 15 servicer BD, of NY_419_6_NOE_FC_RESPONSE_15BD via ops.nyNoeDeadline); recomputed on `foreclosure.sale.rescheduled`.
+ */
+export function noeForeclosureDue(receivedOn: PlainDate, saleOn?: PlainDate | null): PlainDate {
+  const std = federalDays(receivedOn, 30);
+  if (!saleOn) return std;
+  const beforeSale = addDays(saleOn, -1);
+  return beforeSale < std ? beforeSale : std;
+}
 export function deadlines(type: AssertionType, receivedOn: PlainDate, o: { sale_date?: PlainDate | null } = {}): Deadlines {
   const ack = federalDays(receivedOn, 5), docs = federalDays(receivedOn, 15), bar = addDays(receivedOn, 60);
   if (type === "b6") return { profile: "payoff_7", ack_due: ack, response_due: federalDays(receivedOn, 7), extendable: false, credit_reporting_bar_through: bar, document_copies_due: docs };
-  if ((type === "b9" || type === "b10") && o.sale_date) {
+  if (isForeclosureAssertion(type) && o.sale_date) {
     if (addDays(o.sale_date, -7) <= receivedOn) return { profile: "fc_within_7_days_goodfaith", ack_due: null, response_due: addDays(o.sale_date, -1), extendable: false, credit_reporting_bar_through: bar, document_copies_due: docs };
-    const std = federalDays(receivedOn, 30); const beforeSale = addDays(o.sale_date, -1);
-    return { profile: "fc_before_sale", ack_due: ack, response_due: beforeSale < std ? beforeSale : std, extendable: false, credit_reporting_bar_through: bar, document_copies_due: docs };
+    return { profile: "fc_before_sale", ack_due: ack, response_due: noeForeclosureDue(receivedOn, o.sale_date), extendable: false, credit_reporting_bar_through: bar, document_copies_due: docs };
   }
   return { profile: "std_30", ack_due: ack, response_due: federalDays(receivedOn, 30), extendable: true, credit_reporting_bar_through: bar, document_copies_due: docs };
 }
@@ -27,7 +44,8 @@ export function exception(f: { similarity_to_prior: number; new_material_info: b
   if (!f.identifiable) return "overbroad";
   return null;
 }
-export function exceptionNoticeDue(receivedOn: PlainDate): PlainDate { return federalDays(receivedOn, 5); }
+/** §1024.35(g)(2): the exception notice is due within 5 federal BD of the *determination* (REGX_1024_35G2_NOE_EXCEPTION_NOTICE_5 anchors on `case.noe.exception_determined`), not of receipt. */
+export function exceptionNoticeDue(determinedOn: PlainDate): PlainDate { return federalDays(determinedOn, 5); }
 /** 4.1 rule 6 worked example: payment received 3/01 posted 3/17 → late charge 5% × P&I reversed on re-dating. */
 export function misappliedPaymentCorrection(piCents: Cents, pct: string, actualReceipt: PlainDate): { late_charge_reversed_cents: Cents; repost_effective_date: PlainDate; entries: { account: string; cents: Cents }[] } {
   const lc = lateChargeAmount(piCents, pct, null);

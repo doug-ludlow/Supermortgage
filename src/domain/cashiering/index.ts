@@ -8,3 +8,4 @@ export * from "./curtailment.ts";
 export * from "./biweekly.ts";
 export * from "./trial.ts";
 export * from "./latecharges.ts";
+export * from "./ops.ts";

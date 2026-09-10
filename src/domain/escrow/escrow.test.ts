@@ -17,14 +17,14 @@ import { eventDeadlineMs } from "../investor/period.ts";
 const E = [{ line_type: "school_tax", amount_cents: cents("360"), disburse_on: D("2026-09-15") }, { line_type: "county_tax", amount_cents: cents("500"), disburse_on: D("2026-07-15") }, { line_type: "county_tax", amount_cents: cents("700"), disburse_on: D("2026-12-15") }];
 const A = [{ line_type: "county_tax", amount_cents: cents("520"), disburse_on: D("2027-07-15") }, { line_type: "county_tax", amount_cents: cents("760"), disburse_on: D("2027-12-15") }, { line_type: "school_tax", amount_cents: cents("380"), disburse_on: D("2027-09-15") }];
 
-test("3.1-T3 / 3.2-T1: Appendix E replay — base $130, cushion $260, start $1,040, December target $260", () => {
+test("Appendix E replay — base $130, cushion $260, start $1,040, December target $260 (golden; the T-ids live in 3-1/3-2.spec.test.ts)", () => {
   const p = project(E, D("2026-07-01"));
   assert.equal(p.base_payment_cents, 13_000n); assert.equal(p.required_start_cents, 78_000n); assert.equal(p.cushion_cents, 26_000n); assert.equal(p.target_at_start_cents, 104_000n);
   assert.deepEqual(p.step1.map(Number), [-37000, -24000, -47000, -34000, -21000, -78000, -65000, -52000, -39000, -26000, -13000, 0]);
   assert.equal(p.targets[5], 26_000n); assert.equal(p.cap_ok, true); assert.equal(settlementDepositCeiling(p), 104_000n);
 });
 
-test("3.2-T2..T5: annual example — base $138.33, target $1,106.68, shortage $406.68 → $33.89, payment $172.22; surplus and deficiency variants", () => {
+test("annual example — base $138.33, target $1,106.68, shortage $406.68 → $33.89, payment $172.22; surplus and deficiency variants (golden)", () => {
   const p = project(A, D("2027-07-01"));
   assert.equal(p.base_payment_cents, 13_833n); assert.equal(p.step1[5], -83_002n); assert.equal(p.step1[11], -4n); assert.equal(p.required_start_cents, 83_002n); assert.equal(p.cushion_cents, 27_666n); assert.equal(p.target_at_start_cents, 110_668n);
   const d = decide({ projection: p, projected_actual_cents: cents("700"), as_of: D("2027-05-16"), regx_days_delinquent: 0 });
@@ -32,7 +32,7 @@ test("3.2-T2..T5: annual example — base $138.33, target $1,106.68, shortage $4
   assert.equal(newPayment(p, d).payment_cents, 17_222n); assert.equal(effectiveDate(D("2027-07-01"), D("2027-05-20")), "2027-07-01"); assert.equal(effectiveDate(D("2027-07-01"), D("2027-06-10")), "2027-08-01");
   const s = decide({ projection: p, projected_actual_cents: cents("1250"), as_of: D("2027-05-16"), regx_days_delinquent: 0 });
   assert.deepEqual(s, { kind: "refund", surplus_cents: 14_332n, due_on: "2027-06-15" }); assert.equal(newPayment(p, s).payment_cents, 13_833n);
-  // Spec 3.2-T4 states "projected actual $1,080.00 → surplus $26.68"; against the $1,106.68 target that is a $26.68 *shortage*.
+  // The spec's $1,080.00 variant ("surplus $26.68") is a $26.68 *shortage* against the $1,106.68 target (see the 3.2 spec test for T4).
   // The surplus branch it describes requires $1,133.36 — used here; flagged for the audit.
   const c = decide({ projection: p, projected_actual_cents: cents("1133.36"), as_of: D("2027-05-16"), regx_days_delinquent: 0 });
   assert.deepEqual(c, { kind: "credit", surplus_cents: 2_668n, credit_monthly_cents: 222n, first_month_extra_cents: 4n }); assert.equal(newPayment(p, c).payment_cents, 13_611n); assert.equal(newPayment(p, c).first_month_cents, 13_607n);
@@ -41,7 +41,7 @@ test("3.2-T2..T5: annual example — base $138.33, target $1,106.68, shortage $4
   assert.equal(newPayment(p, def).payment_cents, 24_305n); assert.equal(newPayment(p, def).final_month_cents, 24_309n);
 });
 
-test("3.2-T6..T10 / 3.4: decision edges, delinquency retention, workout spread, cushion sources", () => {
+test("decision edges, delinquency retention, workout spread, cushion sources, multi-year low point (golden)", () => {
   const p = project(A, D("2027-07-01"));
   const exact = decide({ projection: p, projected_actual_cents: p.target_at_start_cents - 13_833n, as_of: D("2027-05-16"), regx_days_delinquent: 0 }); if (exact.kind === "shortage") assert.equal(exact.lump_sum_option_offered, false);
   const small = decide({ projection: p, projected_actual_cents: p.target_at_start_cents - 10_000n, as_of: D("2027-05-16"), regx_days_delinquent: 0 }); if (small.kind === "shortage") assert.equal(small.lump_sum_option_offered, true);
@@ -52,7 +52,7 @@ test("3.2-T6..T10 / 3.4: decision edges, delinquency retention, workout spread, 
   const we = decide({ projection: p, projected_actual_cents: 0n, as_of: D("2027-05-16"), regx_days_delinquent: 90, workout: true, borrower_election_months: 24 }); if (we.kind === "shortage") assert.equal(we.months, 24);
   assert.deepEqual([cushion(166_000n, {}).cents, cushion(166_000n, { instrument_months: 1 }).cents, cushion(166_000n, { instrument_months: 1 }).source, cushion(166_000n, { state_max_months: 1.5 }).cents, cushion(166_000n, { state_max_months: 1.5 }).source], [27_666n, 13_833n, "instrument", 20_750n, "state"]);
   const pi = project(A, D("2027-07-01"), { instrument_months: 1 }); assert.equal(pi.target_at_start_cents, 83_002n + 13_833n);
-  // 3.4-T6: a 3-year premium due in year 2 contributes $50/month every year; the low-point flag is set in the years the bill does not fall.
+  // a 3-year premium due in year 2 contributes $50/month every year; the low-point flag is set in the years the bill does not fall.
   const floodYr2 = project([...A, { line_type: "flood", amount_cents: cents("1800"), disburse_on: D("2028-03-01"), cycle_years: 3 }], D("2027-07-01"));
   assert.equal(floodYr2.annual_cents, 166_000n + 60_000n); assert.equal(floodYr2.cap_cents, 37_666n); assert.equal(floodYr2.multi_year_low_point_flag, false);
   const floodYr1 = project([...A, { line_type: "flood", amount_cents: cents("1800"), disburse_on: D("2029-03-01"), cycle_years: 3 }], D("2027-07-01"));
@@ -95,13 +95,14 @@ test("3.6: plans — 12 × $33.89; $100 → $8.33/$8.37; deficiency 12 × $12.50
 
 test("3.7: scheduling with discount capture, advances, installment choice, hazard overlay, event deadline, IL notice", () => {
   const bill = { amount_cents: cents("760"), due_on: D("2027-12-10"), received_on: D("2027-11-01"), discount: { pct: "2", by: D("2027-11-30") } };
-  const s = schedule(bill, "check", cents("810"), 0n); assert.deepEqual([s.release_on, s.amount_cents, s.discount_captured], ["2027-11-26", 74_480n, true]);
-  const s2 = schedule(bill, "check", cents("500"), 0n); assert.equal(s2.discount_captured, false); assert.equal(s2.amount_cents, 76_000n); assert.equal(s2.release_on, "2027-12-08");
+  const s = schedule(bill, "tax_service_bulk", cents("810"), 0n); assert.deepEqual([s.release_on, s.amount_cents, s.discount_captured], ["2027-11-26", 74_480n, true]);   // 10 BD before 12/10
+  const s2 = schedule(bill, "tax_service_bulk", cents("500"), 0n); assert.equal(s2.discount_captured, false); assert.equal(s2.amount_cents, 76_000n); assert.equal(s2.release_on, "2027-11-26");
+  assert.equal(schedule(bill, "check", cents("500"), 0n).release_on, "2027-12-01"); assert.equal(schedule(bill, "wire", cents("500"), 0n).release_on, "2027-12-09");   // 7 BD / 1 BD leads
   assert.deepEqual(fundsCheck(cents("760"), cents("500"), 0n), { release: true, advance_cents: 26_000n, escrow_after_cents: -26_000n });
   assert.equal(installmentChoice({ annual_discount_pct: null, installment_fee: false }, true), "installments"); assert.equal(installmentChoice({ annual_discount_pct: "3", installment_fee: false }, true), "annual"); assert.equal(installmentChoice({ annual_discount_pct: "3", installment_fee: false }, true, "installments"), "installments");
   assert.deepEqual(hazardDecision(45, null, false), { pay: true, inability_to_disburse: false, lpi_gate_open: false }); assert.deepEqual(hazardDecision(45, "underwriting", false), { pay: false, inability_to_disburse: true, lpi_gate_open: true }); assert.equal(hazardDecision(45, "non_payment", false).pay, true);
   const ET = "America/New_York"; assert.equal(toIso(eventDeadlineMs(zonedEpochMs(D("2027-07-15"), "18:00", ET))), toIso(zonedEpochMs(D("2027-07-16"), "03:00", ET))); assert.equal(toIso(eventDeadlineMs(zonedEpochMs(D("2027-07-16"), "10:00", ET))), toIso(zonedEpochMs(D("2027-07-19"), "03:00", ET)));
-  // Spec 3.7-T10 hand-counts 2027-08-06; excluding both Juneteenth (obs. Fri 6/18) and Independence Day (obs. Mon 7/5) gives 8/09. Flagged for the audit.
+  // The spec's Illinois example hand-counts 2027-08-06; excluding both Juneteenth (obs. Fri 6/18) and Independence Day (obs. Mon 7/5) gives 8/09 (see 3-7.spec.test.ts).
   assert.equal(ilTaxPaidNoticeDue(D("2027-06-03")), "2027-08-09");
 });
 

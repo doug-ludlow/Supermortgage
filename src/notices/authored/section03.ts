@@ -14,8 +14,9 @@ const CONTACT = `{{#block "contact" page=2 y=0.9 pt=10}}Questions? Call {{servic
 // ------------------------------------------------------------------ 3.3 annual statement (§1024.17(i)(1)(i)–(viii))
 const HISTORY = `{{#block "history" page=1 y=0.45 pt=10}}Account history {{date year_start}} to {{date year_end}}: {{#each history}}{{month}} deposits {{money deposits_cents}} disbursements {{money disbursements_cents}} balance {{money balance_cents}}{{#if assumed}} (assumed){{/if}}; {{/each}}{{/block}}`;
 const ANNUAL_SOURCE = `{{#block "heading" page=1 y=0.05 pt=14 bold}}ANNUAL ESCROW ACCOUNT DISCLOSURE STATEMENT{{/block}}
+{{#if legend}}{{#block "legend" page=1 y=0.09 pt=10}}{{legend}}{{/block}}{{/if}}
 {{#block "i_ii" page=1 y=0.12 pt=11}}(i) Your new monthly mortgage payment is {{money new_payment_cents}}, of which {{money new_escrow_portion_cents}} goes to escrow. (ii) Your past year's monthly payment was {{money prior_payment_cents}}, of which {{money prior_escrow_portion_cents}} went to escrow.{{/block}}
-{{#block "iii_v" page=1 y=0.25 pt=11}}(iii) Total paid into your escrow account during the year: {{money deposits_total_cents}}. (iv) Total paid out: county tax {{money out_tax_cents}}, hazard insurance {{money out_insurance_cents}}, other {{money out_other_cents}}. (v) Balance at the end of the computation year: {{money ending_balance_cents}}. Interest credited: {{money interest_credited_cents}}.{{/block}}
+{{#block "iii_v" page=1 y=0.25 pt=11}}(iii) Total paid into your escrow account during the year: {{money deposits_total_cents}}. (iv) Total paid out {{money out_total_cents}}, separately identified: {{#each disbursements_by_line}}{{line}} {{money amount_cents}}; {{/each}} (v) Balance at the end of the computation year: {{money ending_balance_cents}}. Interest credited: {{money interest_credited_cents}}.{{/block}}
 ${HISTORY}
 {{#block "vi_vii" page=1 y=0.62 pt=11}}(vi) {{decision_text}} (vii) {{plan_text}}{{/block}}
 {{#block "viii" page=1 y=0.72 pt=11}}(viii) Why your actual low balance differed from the projection: {{#each low_point_explanation}}{{this}}; {{/each}}{{/block}}
@@ -24,15 +25,21 @@ ${HISTORY}
 ${CONTACT}`;
 const ANNUAL_RULES: ContentRule[] = [
   R("i-new-payment", "§1024.17(i)(1)(i)", "presence", "\\(i\\) Your new monthly mortgage payment is \\$[\\d,]+\\.\\d{2}, of which \\$[\\d,]+\\.\\d{2} goes to escrow", "current payment and escrow portion"),
-  R("ii-prior-payment", "§1024.17(i)(1)(ii)", "presence", "\\(ii\\) Your past year's monthly payment was", "past year's payment and escrow portion"),
-  R("iii-deposits", "§1024.17(i)(1)(iii)", "presence", "\\(iii\\) Total paid into your escrow account", "total deposits"),
-  R("iv-disbursements", "§1024.17(i)(1)(iv)", "presence", "\\(iv\\) Total paid out: county tax .* hazard insurance .* other", "disbursements by type"),
-  R("v-balance", "§1024.17(i)(1)(v)", "presence", "\\(v\\) Balance at the end of the computation year", "ending balance"),
-  R("vi-handling", "§1024.17(i)(1)(vi)", "presence", "\\(vi\\) ", "surplus/shortage/deficiency handling"),
-  R("vii-plan", "§1024.17(i)(1)(vii)", "presence", "\\(vii\\) ", "repayment plan statement"),
-  R("viii-low-point", "§1024.17(i)(1)(viii)", "presence", "\\(viii\\) Why your actual low balance differed", "low-point explanation"),
-  R("history", "§1024.17(i)(1); 3.3 rule 1", "presence", "Account history .* to ", "month-by-month history"),
-  R("prior-projection", "§1024.17(i); 3.3 rule 8", "layout", "projection", "prior projection attached", { layout: { page: 2 } }),
+  // `{{money}}` renders nothing for a missing value, so every money regex below fails on an incomplete payload.
+  R("ii-prior-payment", "§1024.17(i)(1)(ii)", "presence", "\\(ii\\) Your past year's monthly payment was \\$[\\d,]+\\.\\d{2}, of which \\$[\\d,]+\\.\\d{2} went to escrow", "past year's payment and escrow portion"),
+  R("iii-deposits", "§1024.17(i)(1)(iii)", "presence", "\\(iii\\) Total paid into your escrow account during the year: \\$[\\d,]+\\.\\d{2}", "total deposits"),
+  R("iv-disbursements", "§1024.17(i)(1)(iv)", "presence", "\\(iv\\) Total paid out \\$[\\d,]+\\.\\d{2}, separately identified: (?:[A-Za-z][^;$]* \\$[\\d,]+\\.\\d{2}; )+\\(v\\)", "total paid out for taxes, insurance premiums and other charges, one line per payee/line (item (iv) 'as separately identified')"),
+  // 3.1 format rule (h)(3) / 3.3 rule 1: each taxing authority / insurer is named ("County Taxes," "School Taxes," "Hazard Insurance," "Flood Insurance"); an "other" bucket is not separate identification.
+  R("iv-separately-identified", "§1024.17(i)(1)(iv); §1024.17(h)(3)", "absence", "separately identified:[^()]*\\b(other|misc|miscellaneous|sundry)\\b[^;]* \\$[\\d,]+\\.\\d{2};", "no lumped 'other' bucket among the separately identified disbursements"),
+  R("v-balance", "§1024.17(i)(1)(v)", "presence", "\\(v\\) Balance at the end of the computation year: -?\\$[\\d,]+\\.\\d{2}", "ending balance"),
+  // (vi)/(vii) are rendered from the analysis decision and the plan (ops.decisionText / planText), never free text.
+  R("vi-handling", "§1024.17(i)(1)(vi)", "presence", "\\(vi\\) Your account has (a surplus of \\$[\\d,]+\\.\\d{2}|a shortage of \\$[\\d,]+\\.\\d{2}|a deficiency of \\$[\\d,]+\\.\\d{2}|no surplus, shortage or deficiency)", "surplus/shortage/deficiency handling from the analysis decision"),
+  R("vii-plan", "§1024.17(i)(1)(vii)", "presence", "\\(vii\\) (\\$[\\d,]+\\.\\d{2} per month for \\d+ months beginning \\d{2}/\\d{2}/\\d{4}|No repayment is required)", "repayment plan statement (installment, months, start)"),
+  R("viii-low-point", "§1024.17(i)(1)(viii)", "conditional", "low_point_explanation", "the reasons the projected low balance was not reached, when it was not", { when: { "==": [{ var: "low_point_not_reached" }, true] }, predicate: { present: "low_point_explanation.0" } }),
+  R("history", "§1024.17(i)(1); 3.3 rule 1", "presence", "Account history .* to .*: \\w{3} \\d{4} deposits \\$[\\d,]+\\.\\d{2} disbursements \\$[\\d,]+\\.\\d{2} balance -?\\$[\\d,]+\\.\\d{2}", "month-by-month history with at least one rendered month"),
+  R("prior-projection", "§1024.17(i); 3.3 rule 8", "conditional", "prior_projection_date", "the previous year's projection accompanies the statement", { predicate: { and: [{ present: "prior_projection_date" }, { present: "projection.0" }] } }),
+  R("prior-projection-page", "§1024.17(i); 3.3 rule 8", "layout", "projection", "prior projection attached as page 2", { layout: { page: 2 } }),
+  R("bk-legend", "3.3 rule 5; Section 14 (open question 1: send with legend)", "conditional", "legend", "bankruptcy legend when a bankruptcy case is open", { when: { "==": [{ var: "bankruptcy_open" }, true] }, predicate: { present: "legend" } }),
   R("computation-year", "3.3 checklist", "presence", "Account history (January|February|March|April|May|June|July|August|September|October|November|December) \\d{1,2}, \\d{4} to", "computation-year dates"),
   R("interest-credited", "3.9 rule 10", "presence", "Interest credited: \\$[\\d,]+\\.\\d{2}", "interest credited for the year"),
   R("no-lump-sum-demand", "3.3 rule 4; CFPB FAQ", "conditional", "shortage_at_least_one_month", "no lump-sum wording when the shortage is ≥ one month", { when: { "==": [{ var: "shortage_at_least_one_month" }, true] }, predicate: { "!": { present: "lump_sum_text" } } }),
@@ -41,28 +48,60 @@ const ANNUAL_RULES: ContentRule[] = [
   R("state-supplement", "3.3 checklist (UT/MD/VT/ME)", "conditional", "state_supplement", "state supplement where required", { when: { "==": [{ var: "state_supplement_required" }, true] }, predicate: { present: "state_supplement" } }),
 ];
 const ANNUAL_SAMPLE: Record<string, unknown> = {
-  new_payment_cents: 175_239n, new_escrow_portion_cents: 17_222n, prior_payment_cents: 171_017n, prior_escrow_portion_cents: 13_000n, deposits_total_cents: 156_000n, out_tax_cents: 154_000n, out_insurance_cents: 0n, out_other_cents: 36_000n, ending_balance_cents: 70_000n, interest_credited_cents: 0n,
+  new_payment_cents: 175_239n, new_escrow_portion_cents: 17_222n, prior_payment_cents: 171_017n, prior_escrow_portion_cents: 13_000n, deposits_total_cents: 156_000n, out_total_cents: 190_000n, disbursements_by_line: [{ line: "County tax", amount_cents: 128_000n }, { line: "School tax", amount_cents: 36_000n }, { line: "supplemental tax", amount_cents: 26_000n }], ending_balance_cents: 70_000n, interest_credited_cents: 0n,
   year_start: "2026-07-01", year_end: "2027-06-30", history: [{ month: "Jul 2026", deposits_cents: 13_000n, disbursements_cents: 52_000n, balance_cents: 65_000n }, { month: "Jun 2027", deposits_cents: 13_000n, disbursements_cents: 0n, balance_cents: 70_000n, assumed: true }],
-  decision_text: "Your account has a shortage of $406.68.", plan_text: "$33.89 per month for 12 months beginning 07/01/2027.", shortage_at_least_one_month: true,
+  decision_text: "Your account has a shortage of $406.68.", plan_text: "$33.89 per month for 12 months beginning 07/01/2027.", shortage_at_least_one_month: true, bankruptcy_open: false, legend: null, low_point_not_reached: true,
   low_point_explanation: ["County tax paid 07/2026 was $520.00 vs $500.00 projected", "county tax paid 12/2026 was $760.00 vs $700.00 projected", "a supplemental tax bill of $260.00 was paid 03/2027 (not projected)", "low balance $180.00 vs $260.00 projected"],
   prior_projection_date: "2026-05-15", projection: [{ month: "Jul 2027", target_cents: 72_501n }, { month: "Dec 2027", target_cents: 27_666n }], state_supplement_required: false, days_after_year_end: 22, servicer_phone: "(800) 555-0100", exclusive_address: "PO Box 2, Testville TX 75001",
 };
 
 // ------------------------------------------------------------------ 3.3 short-year statements (§1024.17(i)(4)) and post-exemption history ((i)(2))
-const SHORT_YEAR_SOURCE = (kind: "transfer" | "reset") => `{{#block "heading" page=1 y=0.05 pt=14 bold}}SHORT-YEAR ESCROW ACCOUNT STATEMENT{{/block}}
-{{#block "reason" page=1 y=0.12 pt=11}}This statement covers {{date year_start}} to {{date period_end}} because ${kind === "transfer" ? "the servicing of your loan transferred to {{transferee_name}} effective {{date period_end}}" : "your escrow computation year was reset effective {{date period_end}}"}.{{/block}}
+type ShortYearKind = "transfer" | "reset" | "payoff";
+const SHORT_YEAR_REASON: Record<ShortYearKind, string> = {
+  transfer: "the servicing of your loan transferred to {{transferee_name}} effective {{date period_end}}",
+  reset: "your escrow computation year was reset effective {{date period_end}}",
+  payoff: "your loan was paid in full; we received the payoff funds on {{date period_end}}",
+};
+const SHORT_YEAR_CLOSE: Record<ShortYearKind, string> = {
+  transfer: " Your new servicer will project the coming year.",
+  reset: " Your new monthly escrow payment is {{money new_escrow_portion_cents}} effective {{date new_payment_effective_on}}.",
+  payoff: " Disposition of the closing balance: {{refund_disposition}}.",
+};
+/** §1024.17(i)(1)(i)–(iv) on the transferor statement (notices.json: "checklist = §1024.17(i)(1) annual-statement items + transfer date + transferee escrow contact"). */
+const SHORT_YEAR_ITEMS = `{{#block "items" page=1 y=0.2 pt=11}}(i) Your monthly mortgage payment is {{money current_payment_cents}}, of which {{money current_escrow_portion_cents}} goes to escrow. (ii) Your past year's monthly payment was {{money prior_payment_cents}}, of which {{money prior_escrow_portion_cents}} went to escrow. (iii) Total paid into your escrow account during the period: {{money deposits_total_cents}}. (iv) Total paid out {{money out_total_cents}}, separately identified: {{#each disbursements_by_line}}{{line}} {{money amount_cents}}; {{/each}}{{/block}}`;
+const SHORT_YEAR_SOURCE = (kind: ShortYearKind) => `{{#block "heading" page=1 y=0.05 pt=14 bold}}SHORT-YEAR ESCROW ACCOUNT STATEMENT{{/block}}
+{{#block "reason" page=1 y=0.12 pt=11}}This statement covers {{date year_start}} to {{date period_end}} because ${SHORT_YEAR_REASON[kind]}.{{/block}}
+${kind === "transfer" ? SHORT_YEAR_ITEMS : ""}
 ${HISTORY}
-{{#block "balance" page=1 y=0.6 pt=11}}Balance at {{date period_end}}: {{money ending_balance_cents}}.${kind === "transfer" ? " Your new servicer will project the coming year." : " Your new monthly escrow payment is {{money new_escrow_portion_cents}} effective {{date new_payment_effective_on}}."}{{/block}}
+{{#block "balance" page=1 y=0.6 pt=11}}Balance at {{date period_end}}: {{money ending_balance_cents}}.${SHORT_YEAR_CLOSE[kind]}{{/block}}
+${kind === "transfer" ? `{{#block "transferee" page=1 y=0.68 pt=11}}Transfer date: {{date period_end}}. Escrow questions after the transfer go to your new servicer, {{transferee_name}}, at {{transferee_phone}}, {{transferee_address}}.{{/block}}` : ""}
 ${kind === "reset" ? `{{#block "projection" page=2 y=0.1 pt=10}}Coming year projection: {{#each projection}}{{month}} target {{money target_cents}}; {{/each}}{{/block}}` : ""}
 ${CONTACT}`;
-const SHORT_YEAR_RULES = (kind: "transfer" | "reset"): ContentRule[] => [
-  R("period", "§1024.17(i)(4)", "presence", "This statement covers .* to ", "short-year period stated"),
-  R("history", "§1024.17(i)(4)(i)", "presence", "Account history", "history to the short-year end"),
-  R("balance", "§1024.17(i)(4)", "presence", "Balance at .*: \\$[\\d,]+\\.\\d{2}", "closing balance"),
-  ...(kind === "transfer" ? [R("no-projection", "3.3 rule 7", "absence", "Coming year projection", "the transferor makes no projection; the transferee projects")] : [R("projection", "3.3 rule 7", "presence", "Coming year projection", "reset statement carries the new projection")]),
-  R("timing-60", "§1024.17(i)(4)(i)–(ii)", "data_range", "days_after_event", "within 60 days of the transfer / reset", { range: { max: 60 } }),
+const SHORT_YEAR_RULES = (kind: ShortYearKind): ContentRule[] => [
+  R("period", "§1024.17(i)(4)", "presence", "This statement covers \\w+ \\d{1,2}, \\d{4} to \\w+ \\d{1,2}, \\d{4} because", "short-year period stated"),
+  R("history", "§1024.17(i)(4)(i)", "presence", "Account history .*: \\w{3} \\d{4} deposits \\$[\\d,]+\\.\\d{2}", "history to the short-year end"),
+  R("balance", "§1024.17(i)(4)", "presence", "Balance at \\w+ \\d{1,2}, \\d{4}: -?\\$[\\d,]+\\.\\d{2}", "closing balance"),
+  ...(kind === "reset" ? [R("projection", "3.3 rule 7", "presence", "Coming year projection: \\w{3} \\d{4} target \\$[\\d,]+\\.\\d{2}", "reset statement carries the new projection")] : [R("no-projection", "3.3 rule 7", "absence", "Coming year projection", kind === "transfer" ? "the transferor makes no projection; the transferee projects" : "a payoff statement carries no projection")]),
+  ...(kind === "payoff" ? [R("refund-disposition", "3.3 rule 7; §1024.34(b)", "presence", "Disposition of the closing balance: (refund|credit to new loan|netted) [^.]*\\$[\\d,]+\\.\\d{2}", "refund / credit disposition of the closing balance (3.5 / Section 16)")] : []),
+  ...(kind === "transfer" ? [
+    R("i-ii-payment", "§1024.17(i)(4)(ii) → (i)(1)(i)–(ii)", "presence", "\\(i\\) Your monthly mortgage payment is \\$[\\d,]+\\.\\d{2}, of which \\$[\\d,]+\\.\\d{2} goes to escrow\\. \\(ii\\) Your past year's monthly payment was \\$[\\d,]+\\.\\d{2}, of which \\$[\\d,]+\\.\\d{2} went to escrow", "current and past year's payment with the escrow portions"),
+    R("iii-deposits", "§1024.17(i)(1)(iii)", "presence", "\\(iii\\) Total paid into your escrow account during the period: \\$[\\d,]+\\.\\d{2}", "total deposits to the transfer date"),
+    R("iv-disbursements", "§1024.17(i)(1)(iv)", "presence", "\\(iv\\) Total paid out \\$[\\d,]+\\.\\d{2}, separately identified: (?:[A-Za-z][^;$]* \\$[\\d,]+\\.\\d{2}; )+", "disbursements to the transfer date, separately identified"),
+    R("transfer-date", "§1024.17(i)(4)(ii); 3.3 rule 7", "presence", "Transfer date: (January|February|March|April|May|June|July|August|September|October|November|December) \\d{1,2}, \\d{4}\\.", "transfer effective date"),
+    R("transferee-contact", "§1024.17(i)(4)(ii); 17.2 checklist", "presence", "your new servicer, [^,]+, at \\(?\\d{3}\\)? ?\\d{3}-\\d{4}, .+\\.", "transferee escrow contact (name, phone, address)"),
+  ] : []),
+  R("timing-60", "§1024.17(i)(4)(i)–(iii)", "data_range", "days_after_event", "within 60 days of the transfer / reset / payoff funds", { range: { max: 60 } }),
 ];
-const SHORT_YEAR_SAMPLE = (kind: "transfer" | "reset"): Record<string, unknown> => ({ year_start: "2026-07-01", period_end: kind === "transfer" ? "2027-03-01" : "2027-09-30", transferee_name: "Next Servicer LLC", history: [{ month: "Jul 2026", deposits_cents: 13_000n, disbursements_cents: 52_000n, balance_cents: 65_000n }], ending_balance_cents: 91_000n, new_escrow_portion_cents: 13_833n, new_payment_effective_on: "2027-11-01", projection: [{ month: "Nov 2027", target_cents: 60_000n }], days_after_event: 20, servicer_phone: "(800) 555-0100", exclusive_address: "PO Box 2, Testville TX 75001" });
+const SHORT_YEAR_SAMPLE = (kind: ShortYearKind): Record<string, unknown> => ({ year_start: "2026-07-01", period_end: kind === "transfer" ? "2027-03-01" : kind === "payoff" ? "2027-02-10" : "2027-09-30", transferee_name: "Next Servicer LLC", transferee_phone: "(800) 555-0200", transferee_address: "PO Box 9, Nextville OH 43001", history: [{ month: "Jul 2026", deposits_cents: 13_000n, disbursements_cents: 52_000n, balance_cents: 65_000n }], ending_balance_cents: kind === "payoff" ? 61_240n : 91_000n, refund_disposition: "refund of $612.40 by check within 20 days (excluding Saturdays, Sundays and legal public holidays) of the payoff", new_escrow_portion_cents: 13_833n, new_payment_effective_on: "2027-11-01", projection: [{ month: "Nov 2027", target_cents: 60_000n }], days_after_event: 20,
+  current_payment_cents: 171_017n, current_escrow_portion_cents: 13_000n, prior_payment_cents: 171_017n, prior_escrow_portion_cents: 13_000n, deposits_total_cents: 104_000n, out_total_cents: 128_000n, disbursements_by_line: [{ line: "County tax", amount_cents: 52_000n }, { line: "School tax", amount_cents: 36_000n }, { line: "County tax (December)", amount_cents: 40_000n }],
+  servicer_phone: "(800) 555-0100", exclusive_address: "PO Box 2, Testville TX 75001" });
+/**
+ * `NTC_REGX_1024_17I4_SHORT_YEAR_PAYOFF` (§1024.17(i)(4)(iii); 3.3 rule 7: history to the payoff date, closing balance,
+ * refund/credit disposition, no projection). The spec names it as the third short-year registry row, but
+ * spec/registry/notices.json carries no row for it, and `NoticeRegistry.draft` refuses a version for an unregistered
+ * code — so it is authored here and exported for the catalog once the registry row lands (it is not in SECTION_03_VERSIONS).
+ */
+export const SHORT_YEAR_PAYOFF_VERSION: VersionInput = V("NTC_REGX_1024_17I4_SHORT_YEAR_PAYOFF", SHORT_YEAR_SOURCE("payoff"), SHORT_YEAR_RULES("payoff"), SHORT_YEAR_SAMPLE("payoff"), "regx.escrow.2014", "§1024.17(i)(4)(iii)");
 
 const POST_EXEMPTION_SOURCE = `{{#block "heading" page=1 y=0.05 pt=14 bold}}ESCROW ACCOUNT HISTORY{{/block}}
 {{#block "reason" page=1 y=0.12 pt=11}}Annual statements were not sent while your loan was {{exemption_reason}}. This history covers {{date year_start}} to {{date period_end}}, since your last statement.{{/block}}
@@ -122,18 +161,32 @@ const IL_TAX_PAID_RULES: ContentRule[] = [R("payment-date", "765 ILCS 910/15", "
 const IL_TAX_PAID_SAMPLE: Record<string, unknown> = { paid_on: "2027-06-03", amount_cents: 74_480n, property_address: "1 Test St, Chicago IL 60601", parcel: "14-21-101-001", business_days_after_payment: 20, servicer_phone: "(800) 555-0100", exclusive_address: "PO Box 2, Testville TX 75001" };
 
 // ------------------------------------------------------------------ 3.8 waiver decision, revocation, Minnesota right
-const WAIVER_DECISION_SOURCE = `{{#block "body" page=1 y=0.1 pt=11}}Your request to waive your escrow account received {{date requested_on}} is {{decision}}.{{#if approved}} The waiver is effective {{date effective_on}}; any remaining balance will be refunded within 30 days and a short-year statement will follow.{{else}} Reasons: {{#each reasons}}{{this}}; {{/each}}You may request again on or after {{date re_request_on}}. Basis: Fannie Mae Servicing Guide B-1-01; 12 CFR 1026.35(b); 42 U.S.C. 4012a (flood, where applicable).{{/if}}{{/block}}
+const WAIVER_DECISION_SOURCE = `{{#block "body" page=1 y=0.1 pt=11}}Your request to waive your escrow account received {{date requested_on}} is {{decision}}.{{#if approved}} The waiver is effective {{date effective_on}}; any remaining balance will be refunded within 30 days and a short-year statement will follow.{{else}} Reasons: {{#each reasons}}{{this}}; {{/each}}{{#if re_request_on}}You may request again on or after {{date re_request_on}}.{{else}}This reason is permanent under the Fannie Mae Servicing Guide (B-1-01): a new request will not change the outcome while it applies.{{/if}} Basis: Fannie Mae Servicing Guide B-1-01; 12 CFR 1026.35(b); 42 U.S.C. 4012a (flood, where applicable).{{/if}}{{/block}}
 {{#block "ai" page=1 y=0.5 pt=10}}{{ai_explanation}} You may ask for a person to review this decision by calling {{servicer_phone}}.{{/block}}
 ${CONTACT}`;
 const WAIVER_DECISION_RULES: ContentRule[] = [
   R("decision", "3.8 rule 3", "presence", "is (approved|denied|partially approved)", "approve/deny stated"),
   R("reasons", "3.8 rule 3", "conditional", "reasons", "all failed reasons in plain language when denied", { when: { "==": [{ var: "approved" }, false] }, predicate: { present: "reasons.0" } }),
-  R("re-request", "3.8 rule 3", "conditional", "re_request_on", "earliest re-request date when denied", { when: { "==": [{ var: "approved" }, false] }, predicate: { present: "re_request_on" } }),
+  // 3.8 rule 3: the earliest re-request date where one exists; a permanent B-1-01 reason (prior modification / prior waiver with missed payments, instrument prohibits) has none and says so.
+  R("re-request", "3.8 rule 3", "conditional", "re_request_on", "earliest re-request date when denied, or the permanent-reason statement", { when: { "==": [{ var: "approved" }, false] }, predicate: { or: [{ present: "re_request_on" }, { "==": [{ var: "permanent_denial" }, true] }] } }),
+  R("re-request-text", "3.8 rule 3", "presence", "(You may request again on or after (January|February|March|April|May|June|July|August|September|October|November|December) \\d{1,2}, \\d{4}\\.|This reason is permanent under the Fannie Mae Servicing Guide|The waiver is effective)", "the re-request date or the permanent-reason statement is rendered, never a blank date"),
   R("basis", "B-1-01; §1026.35(b); 22.5", "conditional", "approved", "basis retained on denials", { when: { "==": [{ var: "approved" }, false] }, predicate: { present: "reasons" } }),
   R("ai-explanation", "Colorado AI Act; LL-2026-04", "presence", "ask for a person to review this decision", "explanation and human-review path"),
   R("sla-10bd", "3.8 timer table ESC_WAIVER_DECISION_SLA_10BD", "data_range", "business_days_after_request", "decided within 10 business days", { range: { max: 10 } }),
 ];
-const WAIVER_DECISION_SAMPLE: Record<string, unknown> = { requested_on: "2027-03-02", decision: "denied", approved: false, effective_on: null, reasons: ["your loan balance of $240,000.00 is not below 80% of the original property value of $300,000.00 (higher-priced mortgage loan rule)"], re_request_on: "2027-06-01", ai_explanation: "An automated rule check contributed to this decision; a person reviewed it.", business_days_after_request: 7, servicer_phone: "(800) 555-0100", exclusive_address: "PO Box 2, Testville TX 75001" };
+const WAIVER_DECISION_SAMPLE: Record<string, unknown> = { requested_on: "2027-03-02", decision: "denied", approved: false, effective_on: null, reasons: ["your loan balance of $240,000.00 is not below 80% of the original property value of $300,000.00 (higher-priced mortgage loan rule)"], re_request_on: "2027-06-01", permanent_denial: false, ai_explanation: "An automated rule check contributed to this decision; a person reviewed it.", business_days_after_request: 7, servicer_phone: "(800) 555-0100", exclusive_address: "PO Box 2, Testville TX 75001" };
+/** The notice payload for an engine decision (3.8 rule 3): reasons in plain language, the re-request date where one exists, `permanent_denial` when B-1-01 gives none. */
+export const WAIVER_REASON_TEXT: Record<string, string> = {
+  PRIOR_MOD_OR_WAIVER_MISSED: "the loan was modified previously, or a prior escrow waiver ended with missed payments (Fannie Mae Servicing Guide B-1-01 — a permanent reason)",
+  DELINQ_12M: "a payment was received more than 30 days late within the last 12 months", DELINQ_60D_24M: "a payment was received more than 60 days late within the last 24 months",
+  LTV_GE_80_ORIG_APPRAISED: "your loan balance is not below 80% of the original appraised value", HPML_LT_5Y: "your loan is a higher-priced mortgage loan and five years have not passed since it was made (12 CFR 1026.35(b)(3))",
+  HPML_LTV_GE_80_ORIG_VALUE: "your loan balance is not below 80% of the original property value (higher-priced mortgage loan rule)", HPML_DELINQUENT: "your loan is not current (higher-priced mortgage loan rule)",
+  FLOOD_MANDATORY: "flood insurance must be escrowed for this loan (12 CFR 22.5)", MI_MONTHLY: "monthly mortgage insurance must be escrowed (Fannie Mae Servicing Guide B-1-01)", INSTRUMENT_PROHIBITS: "your loan documents do not permit an escrow waiver (a permanent reason)", OTHER: "another rule was not met",
+};
+export function waiverDecisionPayload(d: { decision: "approved" | "partial" | "denied"; reasons: readonly string[]; re_request_on: string | null; effective_on: string | null }, requestedOn: string, businessDaysAfterRequest: number, contact: { servicer_phone: string; exclusive_address: string }, aiExplanation = "An automated rule check contributed to this decision; a person reviewed it."): Record<string, unknown> {
+  const approved = d.decision !== "denied";
+  return { requested_on: requestedOn, decision: d.decision === "partial" ? "partially approved" : d.decision, approved, effective_on: d.effective_on, reasons: d.reasons.map((r) => WAIVER_REASON_TEXT[r] ?? r), re_request_on: d.re_request_on, permanent_denial: !approved && d.re_request_on === null, ai_explanation: aiExplanation, business_days_after_request: businessDaysAfterRequest, ...contact };
+}
 
 const WAIVER_REVOCATION_SOURCE = `{{#block "body" page=1 y=0.1 pt=11}}On {{date advanced_on}} we advanced {{money advance_cents}} to pay your {{item}}, which was unpaid at its penalty date. Under your loan documents your escrow waiver is revoked as of {{date revoked_on}} and an escrow account has been established. Your new monthly escrow payment is {{money new_escrow_payment_cents}}, which includes {{money deficiency_installment_cents}} per month toward the advance over {{months}} months at no interest. An initial escrow account statement will follow within 45 days.{{/block}}
 ${CONTACT}`;
@@ -148,7 +201,7 @@ const MN_DISCONTINUE_SAMPLE: Record<string, unknown> = { mortgage_date: "2022-03
 export const SECTION_03_VERSIONS: readonly VersionInput[] = [
   V("NTC_REGX_1024_17I_ANNUAL_ESCROW_STMT", ANNUAL_SOURCE, ANNUAL_RULES, ANNUAL_SAMPLE, "regx.escrow.2014", "3.3 worked example"),
   V("NTC_REGX_1024_17I4_SHORT_YEAR_TRANSFEROR", SHORT_YEAR_SOURCE("transfer"), SHORT_YEAR_RULES("transfer"), SHORT_YEAR_SAMPLE("transfer"), "regx.escrow.2014", "§1024.17(i)(4)(i)"),
-  V("NTC_REGX_1024_17I4_SHORT_YEAR_RESET", SHORT_YEAR_SOURCE("reset"), SHORT_YEAR_RULES("reset"), SHORT_YEAR_SAMPLE("reset"), "regx.escrow.2014", "§1024.17(i)(4)(iii)"),
+  V("NTC_REGX_1024_17I4_SHORT_YEAR_RESET", SHORT_YEAR_SOURCE("reset"), SHORT_YEAR_RULES("reset"), SHORT_YEAR_SAMPLE("reset"), "regx.escrow.2014", "§1024.17(i)(4)(i)"),
   V("NTC_REGX_1024_17I_POST_EXEMPTION_HISTORY", POST_EXEMPTION_SOURCE, POST_EXEMPTION_RULES, POST_EXEMPTION_SAMPLE, "regx.escrow.2014", "§1024.17(i)(2)"),
   V("NTC_REGX_1024_17F_SHORTAGE", SHORTAGE_SOURCE, SHORTAGE_RULES, SHORTAGE_SAMPLE, "regx.escrow.2014", "§1024.17(f)(5)"),
   V("NTC_SM_ESCROW_VOLUNTARY_LUMPSUM_INSERT", LUMPSUM_INSERT_SOURCE, LUMPSUM_INSERT_RULES, LUMPSUM_INSERT_SAMPLE, "sm.escrow.policy", "CFPB escrow FAQ"),

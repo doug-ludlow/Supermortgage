@@ -59,18 +59,75 @@ export function acdvClocks(receivedOn: PlainDate, responseDue: PlainDate, craRec
   };
 }
 
-/** Reviewer conditions (8.2-T12): confidence below the threshold, or any listed condition, waits for a human. */
-export const REVIEW_CONFIDENCE = 0.8;
-export interface ReviewInput { readonly determination: Determination; readonly confidence: number; readonly identifier_mismatch?: boolean; readonly pre_boarding_period?: boolean; readonly adverse_ai_generated?: boolean; }
+/** Reviewer conditions (8.2 AI agent design, policy defaults all on; 8.2-Q1): condition (1) `verified_as_reported` with confidence < 0.85 → `human_agent`. */
+export const REVIEW_CONFIDENCE = 0.85;
+export type DisputeCategory = "not_mine" | "identity_theft" | "mixed_file" | "liability" | "terms" | "status_or_rating" | "payment_history" | "balance" | "amount_past_due" | "dates" | "special_comment_or_ccc" | "bankruptcy_cii" | "deceased" | "scra" | "transfer_duplicate" | "other";
+/** Condition (2): categories that go to the `officer`. */
+export const OFFICER_CATEGORIES: ReadonlySet<DisputeCategory> = new Set<DisputeCategory>(["identity_theft", "mixed_file", "not_mine", "deceased", "bankruptcy_cii", "scra"]);
+export type DisputeContext = "litigation" | "attorney" | "cfpb_complaint" | "state_regulator_complaint";
+export interface ReviewInput {
+  readonly determination: Determination;
+  readonly confidence: number;
+  readonly category?: DisputeCategory;
+  readonly channel?: DisputeChannel;
+  /** (3) reinsertion of deleted data / a BRR. */
+  readonly reinsertion_or_brr?: boolean;
+  /** (4) direct-dispute (b) out-of-scope determination; `repeat_basis` = frivolous on a repeat-dispute basis. */
+  readonly out_of_scope?: boolean;
+  readonly repeat_basis?: boolean;
+  /** (5) litigation / attorney / CFPB / state-regulator complaint context. */
+  readonly context?: readonly DisputeContext[];
+  /** (6) disputes on the same item within 12 months, this one included. */
+  readonly disputes_same_item_12m?: number;
+  /** (7) pre-boarding period; `prior_servicer_records_complete=false` → human_agent. */
+  readonly pre_boarding_period?: boolean;
+  readonly prior_servicer_records_complete?: boolean;
+  /** (8) discrimination or fair-lending allegation. */
+  readonly fair_lending_allegation?: boolean;
+  /** Rule 3(iv): ACDV identifiers do not match ours. */
+  readonly identifier_mismatch?: boolean;
+  readonly adverse_ai_generated?: boolean;
+}
+export interface ReviewDecision { readonly required: boolean; readonly approver: "human_agent" | "officer" | null; readonly reasons: string[]; readonly conditions: number[]; readonly fair_lending_log: boolean; }
 
-export function requiresHumanReview(r: ReviewInput): { required: boolean; approver: "human_agent" | "officer" | null; reasons: string[] } {
-  const reasons: string[] = [];
-  if (r.confidence < REVIEW_CONFIDENCE) reasons.push(`confidence ${r.confidence} < ${REVIEW_CONFIDENCE}`);
-  if (r.identifier_mismatch) reasons.push("consumer identifier mismatch");
-  if (r.determination === "frivolous") reasons.push("frivolous determinations are human-made");
-  const officer = r.determination === "deleted_account" || r.determination === "deleted_consumer";
-  if (officer) reasons.push("delete codes require officer approval");
-  return { required: reasons.length > 0, approver: officer ? "officer" : reasons.length > 0 ? "human_agent" : null, reasons };
+/** The eight reviewer conditions as code (8.2-T12). The strictest approver wins: any `officer` condition routes to the officer. */
+export function requiresHumanReview(r: ReviewInput): ReviewDecision {
+  const reasons: string[] = []; const conditions: number[] = []; let officer = false;
+  const hit = (n: number, why: string, toOfficer: boolean): void => { conditions.push(n); reasons.push(`(${n}) ${why}`); if (toOfficer) officer = true; };
+  if (r.determination === "verified_as_reported" && r.confidence < REVIEW_CONFIDENCE) hit(1, `verified_as_reported with confidence ${r.confidence} < ${REVIEW_CONFIDENCE}`, false);
+  if (r.category && OFFICER_CATEGORIES.has(r.category)) hit(2, `category ${r.category}`, true);
+  if (r.determination === "deleted_account" || r.determination === "deleted_consumer" || r.reinsertion_or_brr) hit(3, "deletion (DA/DF, ECOA Z) or reinsertion/BRR", true);
+  if (r.channel !== "acdv" && (r.determination === "frivolous" || r.out_of_scope)) hit(4, r.repeat_basis ? "direct-dispute frivolous determination on a repeat-dispute basis" : "direct-dispute frivolous/irrelevant or (b) out-of-scope determination", r.repeat_basis === true);
+  if (r.context && r.context.length > 0) hit(5, `${r.context.join("/")} context`, true);
+  if ((r.disputes_same_item_12m ?? 0) >= 3) hit(6, `${r.disputes_same_item_12m} disputes on the same item within 12 months`, true);
+  if (r.pre_boarding_period && r.prior_servicer_records_complete !== true) hit(7, "pre-boarding period with incomplete prior-servicer records", false);
+  if (r.fair_lending_allegation) hit(8, "discrimination or fair-lending allegation (19.4 log)", true);
+  if (r.identifier_mismatch) { reasons.push("rule 3(iv): consumer identifier mismatch (potential mixed file)"); }
+  if (r.determination === "frivolous" && r.channel === "acdv") { reasons.push("an ACDV is never frivolous (guardrail)"); officer = true; }
+  return { required: reasons.length > 0, approver: officer ? "officer" : reasons.length > 0 ? "human_agent" : null, reasons, conditions, fair_lending_log: r.fair_lending_allegation === true };
+}
+
+/** e-OSCAR status a furnisher must never let a case end in (8.2 guardrail: "never let a due date lapse"; 8.2-T3). */
+export const ACDV_NO_RESPONSE_STATUS = "RESOLVED-NORESPONSEPROVIDED";
+export const ACDV_SUBMITTED_STATUS = "RESOLVED-SENDINGTOAGENCY";
+export const ACDV_RETURNED_STATUS = "RESOLVED-RETURNEDTOAGENCY";
+export interface DueDatePlan { readonly escalate_to: "officer" | null; readonly submit_best_available: boolean; readonly determination: Determination; readonly follow_up_correction: boolean; readonly never: typeof ACDV_NO_RESPONSE_STATUS; }
+/**
+ * 8.2-T3 due-date breach prevention: no reviewer action by 90% of the Response
+ * Due Date → the case auto-escalates to `officer`; absent action by the due date
+ * the agent submits a best-available response (a modify/delete in the
+ * consumer's favour with a follow-up correction) — never RESOLVED-NORESPONSEPROVIDED.
+ */
+export function dueDatePlan(c: AcdvClocks, today: PlainDate, reviewed: boolean, draft: Determination): DueDatePlan {
+  const dueReached = today >= c.response_due;
+  const bestAvailable = !reviewed && dueReached;
+  const determination: Determination = bestAvailable && draft === "verified_as_reported" ? "modified" : draft;
+  return { escalate_to: !reviewed && today >= c.escalate_on ? "officer" : null, submit_best_available: bestAvailable, determination, follow_up_correction: bestAvailable && determination !== draft, never: ACDV_NO_RESPONSE_STATUS };
+}
+/** 8.2-T1: the case closes only on RESOLVED-RETURNEDTOAGENCY, with the closing CCC scheduled for the next cycle (rule 6). */
+export function acdvCaseClose(eoscarStatus: string, determination: Determination, continuingDisagreement = false): { closed: boolean; ccc_next_cycle: Ccc | null; reason: string | null } {
+  if (eoscarStatus !== ACDV_RETURNED_STATUS) return { closed: false, ccc_next_cycle: null, reason: `e-OSCAR status ${eoscarStatus}; close requires ${ACDV_RETURNED_STATUS}` };
+  return { closed: true, ccc_next_cycle: cccOnClose(determination, continuingDisagreement), reason: null };
 }
 
 /** CCC on receipt: XB (rule 6). Whether to AUD depends on distance to the next cycle. */

@@ -41,12 +41,12 @@ test("13.3-T5/T6/T7 and 13.4-T1: bid $281,509.46, reserve cases, surplus $8,490.
 });
 
 test("13.5-T1/T2/T3: F-2-03 examples $3,461.64 and $0; NJ 993 days, credited 165, excess 18, exposure $840.82; NYC 2,190", () => {
-  assert.equal(T.exposure({ lpi_due: D("2023-02-01"), sale_on: D("2025-10-14"), allowable: 720, delays: [], upb_cents: cents("100000"), ptr_pct: "4.75" }).actual_days, 986);
-  const ex1 = T.exposure({ lpi_due: D("2023-02-01"), sale_on: D("2025-10-14"), allowable: 720, delays: [], upb_cents: cents("100000"), ptr_pct: "4.75" }); assert.equal(ex1.excess_days, 266); assert.equal(ex1.exposure_cents, cents("3461.64"));
-  assert.equal(T.exposure({ lpi_due: D("2024-01-01"), sale_on: D("2025-03-03"), allowable: 540, delays: [{ category: "contested", from: D("2024-06-01"), to: D("2024-07-01"), reported_timely: true }], upb_cents: cents("100000"), ptr_pct: "4.75" }).exposure_cents, 0n);
-  const nj = T.exposure({ lpi_due: D("2024-05-01"), sale_on: D("2027-01-19"), allowable: T.allowableDays("NJ"), delays: [{ category: "bankruptcy", from: D("2025-09-03"), to: D("2026-01-21"), reported_timely: true }, { category: "contested", from: D("2026-03-02"), to: D("2026-04-11"), reported_timely: true }], upb_cents: cents("310000"), ptr_pct: "5.50" });
+  assert.equal(T.exposure({ lpi_due: D("2023-02-01"), sale_on: D("2025-10-14"), allowable: T.allowableDays("FL"), delays: [], upb_cents: cents("100000"), ptr_pct: "4.75" }).actual_days, 986);
+  const ex1 = T.exposure({ lpi_due: D("2023-02-01"), sale_on: D("2025-10-14"), allowable: T.allowableDays("FL"), delays: [], upb_cents: cents("100000"), ptr_pct: "4.75" }); assert.equal(ex1.excess_days, 266); assert.equal(ex1.exposure_cents, cents("3461.64"));
+  const ex2 = T.exposure({ lpi_due: D("2024-10-01"), sale_on: D("2025-12-02"), allowable: T.allowableDays("CO"), delays: [{ category: "contested", from: D("2025-03-01"), to: D("2025-03-31"), reported_timely: true }], upb_cents: cents("200000"), ptr_pct: "5.25" }); assert.equal(ex2.exposure_cents, 0n); assert.equal(ex2.status, "closed_within");
+  const nj = T.exposure({ lpi_due: D("2024-05-01"), sale_on: D("2027-01-19"), allowable: T.allowableDays("NJ"), delays: [{ category: "bk13", from: D("2025-09-03"), to: D("2026-01-21"), reported_timely: true }, { category: "contested", from: D("2026-03-02"), to: D("2026-04-11"), reported_timely: true }], upb_cents: cents("310000"), ptr_pct: "5.50" });
   assert.deepEqual([nj.actual_days, nj.credited_days, nj.excess_days, nj.exposure_cents, nj.status], [993, 165, 18, cents("840.82"), "closed_over"]);
-  assert.equal(T.creditedDays({ category: "bankruptcy", from: D("2025-09-03"), to: D("2026-01-21"), reported_timely: false }).at_risk, true);
+  assert.equal(T.creditedDays({ category: "bk13", from: D("2025-09-03"), to: D("2026-01-21"), reported_timely: false }).at_risk, true);
   assert.equal(T.allowableDays("NY", "Kings"), 2190); assert.equal(T.allowableDays("NY", "Westchester"), 1740); assert.equal(T.atRisk(700, 810, 165), true);
 });
 

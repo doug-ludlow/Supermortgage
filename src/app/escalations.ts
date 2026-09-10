@@ -31,6 +31,8 @@ export class EscalationService {
     this.events.append({ type: "escalation.created", ...(e.loanId ? { loanId: e.loanId } : {}), aggregate: { kind: "escalation", id: e.id }, actor: by, payload: { escalation_id: e.id, kind: e.kind, owner_role: e.ownerRole, severity: e.severity ?? null, ...e.payload } });
     return e;
   }
+  /** Every escalation opened through this service (open and completed), oldest first. */
+  list(): readonly Escalation[] { return this.opened; }
   complete(id: string, by: Actor, evidenceDocumentId?: string): Escalation {
     const e = this.opened.find((x) => x.id === id); if (!e) throw new RangeError(`no escalation ${id}`);
     if (by.kind !== "human" || by.role !== e.ownerRole) throw new RangeError(`escalation ${id} is completed by role ${e.ownerRole}, not ${by.kind}:${by.id}${by.role ? ` (${by.role})` : ""}`);

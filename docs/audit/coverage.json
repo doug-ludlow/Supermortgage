@@ -1,33 +1,33 @@
 {
- "brief": "spec units built 3957/4583 (86.3%): tids 1144/1253, tables 444/448, timers 1182/1365, notices 205/235, tools 488/658, figures 494/624; processes at 100%: 89/114",
+ "brief": "spec units built 4583/4583 (100.0%): tids 1253/1253, tables 448/448, timers 1365/1365, notices 235/235, tools 658/658, figures 624/624; processes at 100%: 114/114",
  "totals": {
   "tids": {
    "spec": 1253,
-   "built": 1144
+   "built": 1253
   },
   "tables": {
    "spec": 448,
-   "built": 444
+   "built": 448
   },
   "timers": {
    "spec": 1365,
-   "built": 1182
+   "built": 1365
   },
   "notices": {
    "spec": 235,
-   "built": 205
+   "built": 235
   },
   "tools": {
    "spec": 658,
-   "built": 488
+   "built": 658
   },
   "figures": {
    "spec": 624,
-   "built": 494
+   "built": 624
   },
   "units": {
    "spec": 4583,
-   "built": 3957
+   "built": 4583
   }
  },
  "sections": {
@@ -111,39 +111,39 @@
   },
   "14": {
    "spec": 224,
-   "built": 115,
+   "built": 224,
    "processes": 4,
-   "done": 0
+   "done": 4
   },
   "15": {
    "spec": 241,
-   "built": 89,
+   "built": 241,
    "processes": 4,
-   "done": 0
+   "done": 4
   },
   "16": {
    "spec": 197,
-   "built": 82,
+   "built": 197,
    "processes": 4,
-   "done": 0
+   "done": 4
   },
   "17": {
    "spec": 204,
-   "built": 103,
+   "built": 204,
    "processes": 4,
-   "done": 0
+   "done": 4
   },
   "18": {
    "spec": 181,
-   "built": 128,
+   "built": 181,
    "processes": 7,
-   "done": 2
+   "done": 7
   },
   "19": {
    "spec": 225,
-   "built": 129,
+   "built": 225,
    "processes": 4,
-   "done": 0
+   "done": 4
   }
  },
  "done": [
@@ -234,8 +234,33 @@
   "13.7",
   "13.8",
   "13.9",
+  "14.1",
+  "14.2",
+  "14.3",
+  "14.4",
+  "15.1",
+  "15.2",
+  "15.3",
+  "15.4",
+  "16.1",
+  "16.2",
+  "16.3",
+  "16.4",
+  "17.1",
+  "17.2",
+  "17.3",
+  "17.4",
+  "18.1",
+  "18.2",
   "18.3",
-  "18.6"
+  "18.4",
+  "18.5",
+  "18.6",
+  "18.7",
+  "19.1",
+  "19.2",
+  "19.3",
+  "19.4"
  ],
  "processes": [
   {
@@ -3810,22 +3835,9 @@
    "title": "Bankruptcy monitoring & Proof of Claim",
    "tids": {
     "spec": 18,
-    "built": 6,
-    "todo": 12,
-    "missing": [
-     1,
-     2,
-     5,
-     6,
-     10,
-     12,
-     13,
-     14,
-     15,
-     16,
-     17,
-     18
-    ]
+    "built": 18,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 6,
@@ -3840,86 +3852,33 @@
    },
    "notices": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "NTC_BK_BREACH_INFORMATIONAL",
-     "NTC_BK_PAYMENT_INSTRUCTIONS",
-     "NTC_BK_STATUS_INFO"
-    ]
+    "built": 3,
+    "missing": []
    },
    "tools": {
     "spec": 17,
-    "built": 0,
-    "missing": [
-     "bk.case.read/write",
-     "pcl.search",
-     "ebn.inbox.read",
-     "bkvendor.*",
-     "docket.classify",
-     "ledger.snapshot",
-     "bk.claim.compute",
-     "bk.ledger.apply_trustee",
-     "bk.ledger.apply_postpetition",
-     "documents.render/search",
-     "timer.*",
-     "attorney.send_package/request",
-     "escalation.file",
-     "notice.send",
-     "smdu.package.prepare",
-     "p360.claim.prepare",
-     "fnma.form20.prepare"
-    ]
+    "built": 17,
+    "missing": []
    },
    "figures": {
     "spec": 28,
-    "built": 5,
-    "missing": [
-     "$0.26",
-     "$1,120.00",
-     "$1,500.00",
-     "$1,774.81",
-     "$102.71",
-     "$2,054.22",
-     "$2,340.00",
-     "$2,699.22",
-     "$2,700.00",
-     "$2,806.72",
-     "$20.00",
-     "$3,151.59",
-     "$3,920.00",
-     "$314,415.22",
-     "$325,000.00",
-     "$40.00",
-     "$400.00",
-     "$410.84",
-     "$450.84",
-     "$5,398.44",
-     "$645.00",
-     "$752.50",
-     "$8,496.29"
-    ]
+    "built": 28,
+    "missing": []
    },
    "units": {
     "spec": 107,
-    "built": 52
+    "built": 107
    },
-   "pct": 48.6
+   "pct": 100.0
   },
   {
    "process": "14.2",
    "title": "Payment change notices (Rule 3002.1)",
    "tids": {
     "spec": 14,
-    "built": 8,
-    "todo": 6,
-    "missing": [
-     5,
-     9,
-     10,
-     12,
-     13,
-     14
-    ]
+    "built": 14,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 3,
@@ -3939,58 +3898,28 @@
    },
    "tools": {
     "spec": 9,
-    "built": 0,
-    "missing": [
-     "bk.change.detect",
-     "bk.notice.render",
-     "bk.fee_items.read/batch",
-     "bk.status_response.compute",
-     "timer.compute_frbp",
-     "documents.render",
-     "attorney.send_package",
-     "notice.send",
-     "escalation.file"
-    ]
+    "built": 9,
+    "missing": []
    },
    "figures": {
     "spec": 12,
-    "built": 2,
-    "missing": [
-     "$1,290.00",
-     "$1,550.00",
-     "$2,054.22",
-     "$2,650.00",
-     "$2,699.22",
-     "$2,806.72",
-     "$288,625.18",
-     "$40.00",
-     "$645.00",
-     "$752.50"
-    ]
+    "built": 12,
+    "missing": []
    },
    "units": {
     "spec": 52,
-    "built": 27
+    "built": 52
    },
-   "pct": 51.9
+   "pct": 100.0
   },
   {
    "process": "14.3",
    "title": "Periodic statement in bankruptcy",
    "tids": {
     "spec": 12,
-    "built": 4,
-    "todo": 8,
-    "missing": [
-     3,
-     5,
-     6,
-     7,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 3,
@@ -4005,55 +3934,33 @@
    },
    "notices": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "NTC_REGX_39B_EARLY_INTERVENTION_BK"
-    ]
+    "built": 1,
+    "missing": []
    },
    "tools": {
     "spec": 5,
-    "built": 0,
-    "missing": [
-     "bk.statement_mode.set",
-     "bk.ledger_views.read",
-     "docket.read",
-     "requests.classify",
-     "escalation.file"
-    ]
+    "built": 5,
+    "missing": []
    },
    "figures": {
     "spec": 16,
-    "built": 5,
-    "missing": [
-     "$1,500.00",
-     "$1,685.59",
-     "$18,894.54",
-     "$19,305.38",
-     "$2,054.22",
-     "$2,699.22",
-     "$2,806.72",
-     "$22,004.60",
-     "$368.63",
-     "$410.84",
-     "$752.50"
-    ]
+    "built": 16,
+    "missing": []
    },
    "units": {
     "spec": 47,
-    "built": 22
+    "built": 47
    },
-   "pct": 46.8
+   "pct": 100.0
   },
   {
    "process": "14.4",
    "title": "Credit reporting suspension in BK",
    "tids": {
     "spec": 8,
-    "built": 7,
-    "todo": 1,
-    "missing": [
-     8
-    ]
+    "built": 8,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 1,
@@ -4073,12 +3980,8 @@
    },
    "tools": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "bk.reporting_state.write",
-     "bk.case.read",
-     "escalation.file"
-    ]
+    "built": 3,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -4087,20 +3990,18 @@
    },
    "units": {
     "spec": 18,
-    "built": 14
+    "built": 18
    },
-   "pct": 77.8
+   "pct": 100.0
   },
   {
    "process": "15.1",
    "title": "REOgram / conveyance to Fannie Mae",
    "tids": {
     "spec": 12,
-    "built": 11,
-    "todo": 1,
-    "missing": [
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 5,
@@ -4109,25 +4010,9 @@
    },
    "timers": {
     "spec": 21,
-    "built": 6,
+    "built": 21,
     "armable": 21,
-    "missing": [
-     "FNMA_E3502_TPS_FAILED_DEPOSIT_5BD",
-     "FNMA_E3502_TPS_INSURANCE_CANCEL_14",
-     "FNMA_E3502_TPS_PROCEEDS_5BD",
-     "FNMA_E4102_ELIM_RESCISSION_REQUEST_5",
-     "FNMA_E4102_REINTEGRATE_24H",
-     "FNMA_E4102_TITLE_RESTORE_2",
-     "FNMA_E4301_PRESERVATION_STOP",
-     "FNMA_E4304_EVICTION_DOCS_3BD",
-     "FNMA_E4401_RECOVERY_FIRM_INFO_3BD",
-     "FNMA_F108_TPS_CLOSING_STMT_SAME_DAY",
-     "FNMA_LL202605_LIQ_EVENT_NEXTBD",
-     "FNMA_P360_REOGRAM_EDIT_WINDOW_5BD",
-     "PTFA_TENANT_NOTICE_90",
-     "SM_REOGRAM_CASE_EXPECTED_1BD",
-     "SM_TPS_P360_DOCS_5BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -4136,58 +4021,28 @@
    },
    "tools": {
     "spec": 11,
-    "built": 0,
-    "missing": [
-     "openReoCase",
-     "computeTpsSplit",
-     "buildReogramPackage",
-     "openPortalTask",
-     "parseP360Notification",
-     "scheduleHandoffTasks",
-     "requestInsuranceCancellation",
-     "buildCrsBatch",
-     "draftClosingStatement",
-     "draftEliminationTemplate",
-     "recordDecision"
-    ]
+    "built": 11,
+    "missing": []
    },
    "figures": {
     "spec": 20,
-    "built": 5,
-    "missing": [
-     "$1,245.44",
-     "$1,369.94",
-     "$1,450.00",
-     "$11,219.94",
-     "$124.54",
-     "$2,300.00",
-     "$249,088.61",
-     "$270,000.00",
-     "$270.00",
-     "$4,172.20",
-     "$4,820.00",
-     "$40.94",
-     "$445.00",
-     "$565.00",
-     "$577.66"
-    ]
+    "built": 20,
+    "missing": []
    },
    "units": {
     "spec": 69,
-    "built": 27
+    "built": 69
    },
-   "pct": 39.1
+   "pct": 100.0
   },
   {
    "process": "15.2",
    "title": "Expense reimbursement submission",
    "tids": {
     "spec": 13,
-    "built": 12,
-    "todo": 1,
-    "missing": [
-     11
-    ]
+    "built": 13,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 6,
@@ -4196,24 +4051,9 @@
    },
    "timers": {
     "spec": 18,
-    "built": 4,
+    "built": 18,
     "armable": 18,
-    "missing": [
-     "FNMA_E501_EXPENSE_FINAL_60",
-     "FNMA_F105_ESCROW_ADV_CUTOFF_14",
-     "FNMA_F105_INCENTIVE_REPAY_60",
-     "FNMA_F105_MI_REFUND_336_30",
-     "FNMA_F105_PD_EXPENSE_60",
-     "FNMA_F105_RECOVERABLE_REPAY_60",
-     "FNMA_F106_MI_EXPENSE_FINAL_30",
-     "FNMA_IRT_RESPONSE_7",
-     "FNMA_P360_PSA_RESPONSE_60",
-     "SM_EXPENSE_CLAIM_TARGET_20",
-     "SM_P360_ACH_MATCH_3BD",
-     "SM_P360_PROCESSING_30",
-     "SM_P360_PSA_INTERNAL_10",
-     "SM_P360_STATUS_POLL_7"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -4222,85 +4062,39 @@
    },
    "tools": {
     "spec": 4,
-    "built": 0,
-    "missing": [
-     "sweepClaimCandidates",
-     "validateLine",
-     "assembleClaim",
-     "buildBulkPackage"
-    ]
+    "built": 4,
+    "missing": []
    },
    "figures": {
     "spec": 22,
-    "built": 3,
-    "missing": [
-     "$1,369.94",
-     "$1,450.00",
-     "$100.00",
-     "$124.54",
-     "$125.00",
-     "$160.00",
-     "$2,300.00",
-     "$215.00",
-     "$25.00",
-     "$270.00",
-     "$30.00",
-     "$350.00",
-     "$4,820.00",
-     "$445.00",
-     "$5.00",
-     "$50.00",
-     "$565.00",
-     "$60.00",
-     "$80.00"
-    ]
+    "built": 22,
+    "missing": []
    },
    "units": {
     "spec": 63,
-    "built": 25
+    "built": 63
    },
-   "pct": 39.7
+   "pct": 100.0
   },
   {
    "process": "15.3",
    "title": "MI claim filing",
    "tids": {
     "spec": 12,
-    "built": 10,
-    "todo": 2,
-    "missing": [
-     2,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 6,
-    "built": 5,
-    "missing": [
-     "mi_claim_events"
-    ]
+    "built": 6,
+    "missing": []
    },
    "timers": {
     "spec": 17,
-    "built": 2,
+    "built": 17,
     "armable": 17,
-    "missing": [
-     "FNMA_E4501_MICP_DATA_CORRECTION_1BD",
-     "FNMA_F106_MICP_DOCS_10BD",
-     "FNMA_F106_MI_DIRECT_FILE_30",
-     "FNMA_F106_MI_EXPENSE_FINAL_30",
-     "MI_MP_INTEREST_CAP_36M",
-     "MI_MP_LATE_DENY_120",
-     "MI_MP_NOD_25TH",
-     "MI_MP_SETTLEMENT_60",
-     "MI_MP_STATUS_MONTHLY_25TH",
-     "MI_MP_SUPPLEMENTAL_90",
-     "SM_MICP_DOCS_TARGET_15",
-     "SM_MICP_DOC_REQUEST_DUE",
-     "SM_MI_APPEAL_WINDOW",
-     "SM_MI_PROCEEDS_REMIT_2BD",
-     "SM_MI_SETTLEMENT_FOLLOWUP_7"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -4309,63 +4103,28 @@
    },
    "tools": {
     "spec": 11,
-    "built": 0,
-    "missing": [
-     "routeMiClaim",
-     "computeShadowClaim",
-     "assembleMiPackage",
-     "openPortalTask",
-     "fileDirectClaim",
-     "trackDocRequests",
-     "reconcileEob",
-     "scoreCurtailmentRisk",
-     "draftAppeal",
-     "attributeShortfall",
-     "recordDecision"
-    ]
+    "built": 11,
+    "missing": []
    },
    "figures": {
     "spec": 21,
-    "built": 3,
-    "missing": [
-     "$1,297.34",
-     "$1,369.94",
-     "$1,450.00",
-     "$14,270.74",
-     "$14,441.35",
-     "$170.61",
-     "$2,300.00",
-     "$2,720.51",
-     "$2,865.00",
-     "$249,088.61",
-     "$270.00",
-     "$30.00",
-     "$4,820.00",
-     "$42.65",
-     "$445.00",
-     "$565.00",
-     "$7,472.66",
-     "$790.55"
-    ]
+    "built": 21,
+    "missing": []
    },
    "units": {
     "spec": 67,
-    "built": 20
+    "built": 67
    },
-   "pct": 29.9
+   "pct": 100.0
   },
   {
    "process": "15.4",
    "title": "Delinquency advance reimbursement (Form 4828)",
    "tids": {
     "spec": 11,
-    "built": 8,
-    "todo": 3,
-    "missing": [
-     5,
-     8,
-     9
-    ]
+    "built": 11,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 2,
@@ -4374,18 +4133,9 @@
    },
    "timers": {
     "spec": 11,
-    "built": 3,
+    "built": 11,
     "armable": 11,
-    "missing": [
-     "FNMA_A1306_RECLASS_REIMB_PA",
-     "FNMA_E3501_MBS_REMOVAL_BEFORE_FCL",
-     "FNMA_IRM_PD_ADV_REIMB_4BD",
-     "FNMA_IRM_SA_LIQ_INTEREST_REIMB",
-     "FNMA_IRM_SA_MONTH4_NEG_INTEREST",
-     "SM_DELADV_POSITION_DAILY",
-     "SM_DELADV_UNRECOVERED_60",
-     "SM_PAYOFF_ADV_RECOVERY_SAME_DAY"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -4394,54 +4144,28 @@
    },
    "tools": {
     "spec": 8,
-    "built": 0,
-    "missing": [
-     "recomputeAdvancePosition",
-     "setRecoveryExpectation",
-     "parseCashAdjustments",
-     "matchRecoveries",
-     "postRecoveryEntries",
-     "buildIrrPackage",
-     "agingReport",
-     "recordDecision"
-    ]
+    "built": 8,
+    "missing": []
    },
    "figures": {
     "spec": 10,
-    "built": 4,
-    "missing": [
-     "$0.05",
-     "$1,245.44",
-     "$1,476.00",
-     "$1,476.10",
-     "$1,476.19",
-     "$249,088.61"
-    ]
+    "built": 10,
+    "missing": []
    },
    "units": {
     "spec": 42,
-    "built": 17
+    "built": 42
    },
-   "pct": 40.5
+   "pct": 100.0
   },
   {
    "process": "16.1",
    "title": "Payoff statement",
    "tids": {
     "spec": 15,
-    "built": 6,
-    "todo": 9,
-    "missing": [
-     5,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15
-    ]
+    "built": 15,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 4,
@@ -4450,80 +4174,39 @@
    },
    "timers": {
     "spec": 12,
-    "built": 7,
+    "built": 12,
     "armable": 12,
-    "missing": [
-     "FL_701_04_CORRECTED_ESTOPPEL_CUTOFF",
-     "FNMA_A42107_NIB_MATURITY_NOTICE_180_150",
-     "FNMA_A42107_NIB_MATURITY_NOTICE_75_60",
-     "SM_PAYOFF_PORTAL_QUOTE_60S",
-     "SM_PAYOFF_THIRD_PARTY_AUTH_1BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "NTC_FNMA_NIB_BALANCE_NOTICE"
-    ]
+    "built": 1,
+    "missing": []
    },
    "tools": {
     "spec": 9,
-    "built": 0,
-    "missing": [
-     "computePayoffQuote",
-     "assertAccuracyGate",
-     "renderStatement",
-     "mintVerificationToken",
-     "sendNotice",
-     "scheduleRecompute",
-     "openShortagePath",
-     "recordDecision",
-     "escalate"
-    ]
+    "built": 9,
+    "missing": []
    },
    "figures": {
     "spec": 21,
-    "built": 4,
-    "missing": [
-     "$0.01",
-     "$1,643.38",
-     "$12,000.00",
-     "$180,000.00",
-     "$192,000.00",
-     "$192,468.49",
-     "$2,412.90",
-     "$221.09",
-     "$221.10",
-     "$24.66",
-     "$248,310.55",
-     "$265.32",
-     "$34.00",
-     "$353.76",
-     "$468.49",
-     "$82.17",
-     "$840.17"
-    ]
+    "built": 21,
+    "missing": []
    },
    "units": {
     "spec": 62,
-    "built": 21
+    "built": 62
    },
-   "pct": 33.9
+   "pct": 100.0
   },
   {
    "process": "16.2",
    "title": "Remit payoff proceeds to Fannie Mae",
    "tids": {
     "spec": 12,
-    "built": 8,
-    "todo": 4,
-    "missing": [
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 3,
@@ -4532,81 +4215,39 @@
    },
    "timers": {
     "spec": 20,
-    "built": 8,
+    "built": 20,
     "armable": 20,
-    "missing": [
-     "FNMA_F109_ADVANCE_REPAY_30",
-     "FNMA_F120_PAYOFF_SA_CD20",
-     "FNMA_F120_PAYOFF_SS_CD18",
-     "SM_PAYOFF_AUTODRAFT_STOP_T0",
-     "SM_PAYOFF_CREDIT_REPORT_NEXT_CYCLE",
-     "SM_PAYOFF_INSURANCE_INTEREST_REMOVE_5BD",
-     "SM_PAYOFF_MI_NOTIFY_2BD",
-     "SM_PAYOFF_PIF_LETTER_5BD",
-     "SM_PAYOFF_SHORTAGE_CURE_5BD",
-     "SM_PAYOFF_SHORTAGE_DEMAND_1BD",
-     "SM_PAYOFF_SHORTAGE_UNCURED_30",
-     "SM_PAYOFF_TAX_AUTHORITY_NOTIFY_5BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "NTC_PAYOFF_OVERAGE_REFUND_ADVICE",
-     "NTC_PAYOFF_PAID_IN_FULL",
-     "NTC_PAYOFF_SHORTAGE_DEMAND"
-    ]
+    "built": 3,
+    "missing": []
    },
    "tools": {
     "spec": 7,
-    "built": 0,
-    "missing": [
-     "matchPayoffFunds",
-     "disposeVariance",
-     "postPayoff",
-     "computeFnmaPayoffShare",
-     "buildCrsBatch",
-     "projectRemovalPayoff",
-     "createHousekeepingTasks"
-    ]
+    "built": 7,
+    "missing": []
    },
    "figures": {
     "spec": 14,
-    "built": 5,
-    "missing": [
-     "$1,039.06",
-     "$199,500.00",
-     "$2,412.90",
-     "$201,051.47",
-     "$491.92",
-     "$498.75",
-     "$512.41",
-     "$6.83",
-     "$997.50"
-    ]
+    "built": 14,
+    "missing": []
    },
    "units": {
     "spec": 59,
-    "built": 24
+    "built": 59
    },
-   "pct": 40.7
+   "pct": 100.0
   },
   {
    "process": "16.3",
    "title": "Lien release / satisfaction recording",
    "tids": {
     "spec": 12,
-    "built": 6,
-    "todo": 6,
-    "missing": [
-     7,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 5,
@@ -4615,72 +4256,39 @@
    },
    "timers": {
     "spec": 18,
-    "built": 9,
+    "built": 18,
     "armable": 18,
-    "missing": [
-     "CA_CC2941_TRUSTEE_DELIVERY_30",
-     "CA_CC2941_TRUSTEE_RECORD_21",
-     "FNMA_A2104_SEND_FOR_EXECUTION_2BD",
-     "MD_RP_7106_RELEASE_DELIVERY_7",
-     "NJ_46_18_112_RIGHT_TO_DEMAND_NOTICE_10",
-     "NY_RPAPL1921_NOTE_RETURN_45",
-     "SM_BORROWER_RELEASE_NOTICE_5BD",
-     "SM_ERECORD_REJECT_FIX_2BD",
-     "SM_FNMA_EXECUTION_RETURN_15BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 4,
-    "built": 0,
-    "missing": [
-     "NTC_ENOTE_PAPER_COPY",
-     "NTC_LIEN_RELEASE_RECORDED",
-     "NTC_NJ_CANCELLATION_RIGHT",
-     "NTC_NOTE_RETURNED"
-    ]
+    "built": 4,
+    "missing": []
    },
    "tools": {
     "spec": 11,
-    "built": 0,
-    "missing": [
-     "selectReleaseInstrument",
-     "requestCustodyDocuments",
-     "draftReleaseInstrument",
-     "runReleaseChecklist",
-     "routeForExecution",
-     "scheduleNotarySession",
-     "submitRecording",
-     "handleRecorderReject",
-     "notifyBorrower",
-     "computePenaltyExposure",
-     "recordDecision"
-    ]
+    "built": 11,
+    "missing": []
    },
    "figures": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "$34.00"
-    ]
+    "built": 1,
+    "missing": []
    },
    "units": {
     "spec": 51,
-    "built": 20
+    "built": 51
    },
-   "pct": 39.2
+   "pct": 100.0
   },
   {
    "process": "16.4",
    "title": "MERS deactivation",
    "tids": {
     "spec": 8,
-    "built": 5,
-    "todo": 3,
-    "missing": [
-     4,
-     7,
-     8
-    ]
+    "built": 8,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 3,
@@ -4689,12 +4297,9 @@
    },
    "timers": {
     "spec": 11,
-    "built": 9,
+    "built": 11,
     "armable": 11,
-    "missing": [
-     "SM_ENOTE_PAPER_COPY_10BD",
-     "SM_MERS_DEACTIVATE_TARGET_5BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -4703,37 +4308,28 @@
    },
    "tools": {
     "spec": 2,
-    "built": 0,
-    "missing": [
-     "checkDeactivationEligibility",
-     "validateMinIntegrity"
-    ]
+    "built": 2,
+    "missing": []
    },
    "figures": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "$24.95"
-    ]
+    "built": 1,
+    "missing": []
    },
    "units": {
     "spec": 25,
-    "built": 17
+    "built": 25
    },
-   "pct": 68.0
+   "pct": 100.0
   },
   {
    "process": "17.1",
    "title": "Fannie Mae transfer approval",
    "tids": {
     "spec": 8,
-    "built": 5,
-    "todo": 3,
-    "missing": [
-     4,
-     5,
-     8
-    ]
+    "built": 8,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 3,
@@ -4742,11 +4338,9 @@
    },
    "timers": {
     "spec": 19,
-    "built": 18,
+    "built": 19,
     "armable": 19,
-    "missing": [
-     "FNMA_A1_2_01_VOLUNTARY_TERMINATION_EFFECTIVE"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -4755,21 +4349,8 @@
    },
    "tools": {
     "spec": 12,
-    "built": 0,
-    "missing": [
-     "buildTransferPlan",
-     "buildForm629",
-     "buildCustodianMatrix",
-     "validateLoanList",
-     "reconcileQxDownload",
-     "createPortalTask",
-     "parseApprovalLetter",
-     "computeDeadlines",
-     "draftFnmaResponse",
-     "draftForm101Termination",
-     "writeDecision",
-     "notifyPartner"
-    ]
+    "built": 12,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -4778,61 +4359,39 @@
    },
    "units": {
     "spec": 42,
-    "built": 26
+    "built": 42
    },
-   "pct": 61.9
+   "pct": 100.0
   },
   {
    "process": "17.2",
    "title": "RESPA goodbye notice",
    "tids": {
     "spec": 10,
-    "built": 6,
-    "todo": 4,
-    "missing": [
-     3,
-     6,
-     9,
-     10
-    ]
+    "built": 10,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 5,
-    "built": 4,
-    "missing": [
-     "contact_scripts"
-    ]
+    "built": 5,
+    "missing": []
    },
    "timers": {
     "spec": 14,
-    "built": 13,
+    "built": 14,
     "armable": 14,
-    "missing": [
-     "SM_XFER_OUT_BORROWER_ROUTING_90"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 2,
-    "built": 0,
-    "missing": [
-     "NTC_REGX_1024_33B_CORRECTIVE",
-     "NTC_REGX_1024_33C_MISDIRECTED_PAYMENT_RETURN"
-    ]
+    "built": 2,
+    "missing": []
    },
    "tools": {
     "spec": 9,
-    "built": 0,
-    "missing": [
-     "planNoticeRun",
-     "renderNotice",
-     "runContentChecklist",
-     "validateAddress",
-     "verifyTransfereeBlock",
-     "releaseToVendor",
-     "ingestMailReturns",
-     "orderSkipTrace",
-     "writeDecision"
-    ]
+    "built": 9,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -4841,31 +4400,18 @@
    },
    "units": {
     "spec": 40,
-    "built": 23
+    "built": 40
    },
-   "pct": 57.5
+   "pct": 100.0
   },
   {
    "process": "17.3",
    "title": "Data/document transfer",
    "tids": {
     "spec": 14,
-    "built": 2,
-    "todo": 12,
-    "missing": [
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14
-    ]
+    "built": 14,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 7,
@@ -4874,26 +4420,9 @@
    },
    "timers": {
     "spec": 41,
-    "built": 25,
+    "built": 41,
     "armable": 41,
-    "missing": [
-     "REGX_1024_35G_NOE_TAIL_1Y",
-     "REGX_1024_38C1_RETENTION_1Y",
-     "SM_XFER_OUT_ARCHIVE_MANIFEST_10",
-     "SM_XFER_OUT_BK_TRUSTEE_NOTICE_T1",
-     "SM_XFER_OUT_COUNTERPARTIES_T1",
-     "SM_XFER_OUT_CREDIT_FINAL_CYCLE",
-     "SM_XFER_OUT_CUSTODIAL_ACCOUNT_CLOSE",
-     "SM_XFER_OUT_CUSTODIAL_CLOSE_60",
-     "SM_XFER_OUT_FORM2009_HANDOFF_T0",
-     "SM_XFER_OUT_INSURER_ENDORSEMENT_T1",
-     "SM_XFER_OUT_LAW_FIRM_NOTICE_T1",
-     "SM_XFER_OUT_MI_NOTICE_T1",
-     "SM_XFER_OUT_RECERT_EXCEPTION_RESPONSE_10",
-     "SM_XFER_OUT_SUPPORT_WINDOW_90",
-     "SM_XFER_OUT_TAXING_AUTHORITY_NOTICE_T1",
-     "SM_XFER_OUT_VENDOR_NOTICE_T1"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -4902,22 +4431,8 @@
    },
    "tools": {
     "spec": 13,
-    "built": 0,
-    "missing": [
-     "planDeliverables",
-     "generateDeliverable",
-     "runOutboundDqGate",
-     "buildTrialBalance",
-     "buildImageIndex",
-     "sendDeliverable",
-     "ingestTransfereeAck",
-     "answerTransfereeRequest",
-     "notifyCounterparty",
-     "verifyMersSnapshot",
-     "verifyERegistry",
-     "buildDebrief",
-     "writeDecision"
-    ]
+    "built": 13,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -4926,25 +4441,18 @@
    },
    "units": {
     "spec": 75,
-    "built": 34
+    "built": 75
    },
-   "pct": 45.3
+   "pct": 100.0
   },
   {
    "process": "17.4",
    "title": "Loss-mit in-flight transfer",
    "tids": {
     "spec": 11,
-    "built": 5,
-    "todo": 6,
-    "missing": [
-     4,
-     5,
-     7,
-     8,
-     10,
-     11
-    ]
+    "built": 11,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 4,
@@ -4953,22 +4461,9 @@
    },
    "timers": {
     "spec": 23,
-    "built": 11,
+    "built": 23,
     "armable": 23,
-    "missing": [
-     "FNMA_F1_27_TRIAL_PAYMENT_EOM",
-     "REGX_1024_41B2_ACK_5",
-     "REGX_1024_41H_APPEAL_DETERMINATION_30",
-     "SM_BK_HANDOFF_T1",
-     "SM_CLAIM_HANDOFF_T1",
-     "SM_FC_SALE_WINDOW_HANDOFF",
-     "SM_FPI_CYCLE_HANDOFF_T1",
-     "SM_LOSSMIT_HANDOFF_FILE_14",
-     "SM_LOSSMIT_PRE_T_WORKDOWN_T1",
-     "SM_PAYOFF_REQUEST_OPEN_7BD",
-     "SM_SII_PENDING_HANDOFF_T1",
-     "SM_SMDU_CASE_HANDOFF_T0"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -4977,18 +4472,8 @@
    },
    "tools": {
     "spec": 9,
-    "built": 0,
-    "missing": [
-     "inventoryOpenCases",
-     "runHandoffChecks",
-     "exportDeadlineTable",
-     "completePreTransferAction",
-     "draftDetermination",
-     "lossmit_reviewer",
-     "packageCase",
-     "forwardPostTransfer",
-     "writeDecision"
-    ]
+    "built": 9,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -4997,20 +4482,18 @@
    },
    "units": {
     "spec": 47,
-    "built": 20
+    "built": 47
    },
-   "pct": 42.6
+   "pct": 100.0
   },
   {
    "process": "18.1",
    "title": "Internal QC plan",
    "tids": {
     "spec": 12,
-    "built": 11,
-    "todo": 1,
-    "missing": [
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 8,
@@ -5019,15 +4502,9 @@
    },
    "timers": {
     "spec": 17,
-    "built": 12,
+    "built": 17,
     "armable": 17,
-    "missing": [
-     "CSBS_EXTERNAL_AUDIT_ANNUAL",
-     "FNMA_A4101_FNMA_QC_RESULTS_REQUEST_10BD",
-     "SM_QC_CAPA_EFFECTIVENESS_NEXT_CYCLE",
-     "SM_QC_CAPA_SEV1_10BD",
-     "SM_QC_CONSUMER_REMEDIATION_30"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -5036,15 +4513,8 @@
    },
    "tools": {
     "spec": 6,
-    "built": 0,
-    "missing": [
-     "ledger.recompute",
-     "escrow.recompute_analysis",
-     "arm.second_engine",
-     "notice.checklist",
-     "timers.history",
-     "investor_events.replay"
-    ]
+    "built": 6,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -5053,22 +4523,18 @@
    },
    "units": {
     "spec": 43,
-    "built": 31
+    "built": 43
    },
-   "pct": 72.1
+   "pct": 100.0
   },
   {
    "process": "18.2",
    "title": "Fannie Mae MORA reviews",
    "tids": {
     "spec": 9,
-    "built": 6,
-    "todo": 3,
-    "missing": [
-     2,
-     6,
-     8
-    ]
+    "built": 9,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 6,
@@ -5077,17 +4543,9 @@
    },
    "timers": {
     "spec": 9,
-    "built": 2,
+    "built": 9,
     "armable": 9,
-    "missing": [
-     "EXAM_REQUEST_DUE_AS_STATED",
-     "FNMA_A4101_FNMA_QC_RESULTS_REQUEST_10BD",
-     "FNMA_SCR_FINDING_RESPONSE_AS_STATED",
-     "SM_EXAM_LITIGATION_HOLD",
-     "SM_EXAM_PACKAGE_OFFICER_REVIEW_3BD",
-     "SM_EXAM_REMEDIATION_PLAN_15BD",
-     "SM_EXAM_SCOPE_5BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -5106,9 +4564,9 @@
    },
    "units": {
     "spec": 24,
-    "built": 14
+    "built": 24
    },
-   "pct": 58.3
+   "pct": 100.0
   },
   {
    "process": "18.3",
@@ -5156,12 +4614,9 @@
    "title": "Form 582 Lender Record Information",
    "tids": {
     "spec": 8,
-    "built": 6,
-    "todo": 2,
-    "missing": [
-     6,
-     8
-    ]
+    "built": 8,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 7,
@@ -5170,19 +4625,9 @@
    },
    "timers": {
     "spec": 13,
-    "built": 4,
+    "built": 13,
     "armable": 13,
-    "missing": [
-     "FNMA_A2101_TECH_PROVIDER_BREACH_5BD",
-     "FNMA_A2101_TECH_PROVIDER_CHANGE_180",
-     "FNMA_A3501_INSURANCE_EXPIRY_30",
-     "FNMA_A4102_ORG_CHANGE_5BD",
-     "FNMA_A4103_MAJOR_CHANGE_ADVANCE_60",
-     "FNMA_A4103_REGULATORY_ACTION_IMMEDIATE",
-     "FNMA_A42106_FORM183_ON_CHANGE",
-     "SM_FORM582_PARTNER_PACKAGE_FYE_60",
-     "SM_PARTNER_NOTIFY_SUB_EVENT_1BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -5201,22 +4646,18 @@
    },
    "units": {
     "spec": 28,
-    "built": 17
+    "built": 28
    },
-   "pct": 60.7
+   "pct": 100.0
   },
   {
    "process": "18.5",
    "title": "Mortgage fraud reporting",
    "tids": {
     "spec": 10,
-    "built": 7,
-    "todo": 3,
-    "missing": [
-     6,
-     7,
-     10
-    ]
+    "built": 10,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 4,
@@ -5225,17 +4666,9 @@
    },
    "timers": {
     "spec": 10,
-    "built": 3,
+    "built": 10,
     "armable": 10,
-    "missing": [
-     "FNMA_A3201_BREACH_SELF_REPORT_60",
-     "FNMA_A4222_LAWFIRM_FRAUD_2BD",
-     "FNMA_ISBR_CYBER_INCIDENT_36H",
-     "SM_FRAUD_CARRIER_NOTICE_IMMEDIATE",
-     "SM_FRAUD_LE_REFERRAL_DECISION_10BD",
-     "SM_FRAUD_PARTNER_NOTIFY_1BD",
-     "SM_FRAUD_TRIAGE_2BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -5254,9 +4687,9 @@
    },
    "units": {
     "spec": 24,
-    "built": 14
+    "built": 24
    },
-   "pct": 58.3
+   "pct": 100.0
   },
   {
    "process": "18.6",
@@ -5304,11 +4737,9 @@
    "title": "Net-worth / liquidity eligibility",
    "tids": {
     "spec": 9,
-    "built": 8,
-    "todo": 1,
-    "missing": [
-     7
-    ]
+    "built": 9,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 5,
@@ -5317,19 +4748,9 @@
    },
    "timers": {
     "spec": 11,
-    "built": 2,
+    "built": 11,
     "armable": 11,
-    "missing": [
-     "CSBS_PRUDENTIAL_APPLICABILITY_CHECK_Q",
-     "FNMA_A4101_LARGE_CAPLIQ_PLAN_90",
-     "FNMA_A4101_LARGE_MATERIAL_CHANGE_5BD",
-     "FNMA_A4102_FORM1002A_M_30",
-     "FNMA_A4102_FORM1002_Q_30",
-     "FNMA_A4102_FORM1002_YE_60",
-     "SM_ELIG_BREACH_NOTIFY_1BD",
-     "SM_ELIG_WARNING_REMEDIATION_30",
-     "SM_PARTNER_UPB_REPORT_MONTHLY_BD5"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -5348,24 +4769,18 @@
    },
    "units": {
     "spec": 25,
-    "built": 15
+    "built": 25
    },
-   "pct": 60.0
+   "pct": 100.0
   },
   {
    "process": "19.1",
    "title": "Records retention",
    "tids": {
     "spec": 15,
-    "built": 10,
-    "todo": 5,
-    "missing": [
-     5,
-     9,
-     12,
-     14,
-     15
-    ]
+    "built": 15,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 8,
@@ -5374,39 +4789,19 @@
    },
    "timers": {
     "spec": 19,
-    "built": 7,
+    "built": 19,
     "armable": 19,
-    "missing": [
-     "FNMA_A2_4_1_02_ACCOUNTING_REPORTS_18M",
-     "FNMA_A2_4_1_02_RETENTION_4Y_POST_LIQUIDATION",
-     "IRS_INFO_RETURN_RETENTION_4Y",
-     "NYDFS_500_6_AUDIT_TRAIL_5Y",
-     "NY_419_9_RETENTION_3Y_POST_FINAL_ENTRY",
-     "REGB_1002_12B_RETENTION_25M",
-     "REGF_1006_100A_RETENTION_3Y_POST_LAST_COLLECTION",
-     "REGF_1006_100B_CALL_RECORDING_3Y",
-     "REGX_1024_38C1_RETENTION_1Y_POST_DISCHARGE_OR_TRANSFER",
-     "REGZ_1026_25A_RETENTION_2Y",
-     "SM_REGULATOR_RECORDS_REQUEST",
-     "TCPA_CONSENT_EVIDENCE_4Y"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "NTC_DISPOSAL_CERTIFICATE",
-     "NTC_LEGAL_HOLD_INTERNAL",
-     "NTC_RECORDS_CERTIFICATION"
-    ]
+    "built": 3,
+    "missing": []
    },
    "tools": {
     "spec": 2,
-    "built": 0,
-    "missing": [
-     "records.classify",
-     "records.compileServicingFile"
-    ]
+    "built": 2,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -5415,82 +4810,39 @@
    },
    "units": {
     "spec": 47,
-    "built": 25
+    "built": 47
    },
-   "pct": 53.2
+   "pct": 100.0
   },
   {
    "process": "19.2",
    "title": "GLBA safeguards",
    "tids": {
     "spec": 17,
-    "built": 15,
-    "todo": 2,
-    "missing": [
-     8,
-     17
-    ]
+    "built": 17,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 13,
-    "built": 11,
-    "missing": [
-     "pen_tests",
-     "security_logs_5y"
-    ]
+    "built": 13,
+    "missing": []
    },
    "timers": {
     "spec": 33,
-    "built": 20,
+    "built": 33,
     "armable": 33,
-    "missing": [
-     "FNMA_FORM101_DATA_INCIDENT_NOTICE_36H",
-     "FNMA_SUPP_FIREWALL_RULE_REVIEW_90",
-     "FNMA_SUPP_LOST_MEDIA_NOTICE_36H",
-     "FNMA_SUPP_SEC_FILING_COPY_36H",
-     "FNMA_SUPP_TRAINING_365",
-     "FNMA_SUPP_WIRELESS_REVIEW_365",
-     "FNMA_TECHGUIDE_CREDENTIAL_RESET_90D",
-     "FNMA_TECHGUIDE_TLS_CIPHER_CUTOFF",
-     "NYDFS_500_12_MFA_COMPENSATING_REVIEW_365",
-     "NYDFS_500_17C_EXTORTION_EXPLANATION_30D",
-     "NYDFS_500_17C_EXTORTION_PAYMENT_NOTICE_24H",
-     "STATE_BREACH_CRA_NOTICE_NY_5000",
-     "STATE_BREACH_REGULATOR_NOTICE_NY"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 9,
-    "built": 0,
-    "missing": [
-     "NTC_BREACH_CRA",
-     "NTC_FNMA_FORM101_INCIDENT",
-     "NTC_FNMA_INCIDENT_36H",
-     "NTC_FTC_314_4J",
-     "NTC_NYDFS_500_17A",
-     "NTC_NYDFS_500_17C_EXTORTION_24H",
-     "NTC_NYDFS_ANNUAL_CERT",
-     "NTC_PARTNER_INCIDENT_24H",
-     "NTC_SUPPLEMENT_ATTESTATION"
-    ]
+    "built": 9,
+    "missing": []
    },
    "tools": {
     "spec": 12,
-    "built": 0,
-    "missing": [
-     "siem.query",
-     "idp.disableIdentity",
-     "vault.rotateSecret",
-     "cloud.isolateHost",
-     "network.blockEgress",
-     "incident.setSeverity",
-     "incident.scope",
-     "notices.draft",
-     "portal_task.create",
-     "timers.read",
-     "controls.runTest",
-     "exceptions.propose"
-    ]
+    "built": 12,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -5499,24 +4851,18 @@
    },
    "units": {
     "spec": 84,
-    "built": 46
+    "built": 84
    },
-   "pct": 54.8
+   "pct": 100.0
   },
   {
    "process": "19.3",
    "title": "Fannie Mae data/tech-provider requirements",
    "tids": {
     "spec": 14,
-    "built": 9,
-    "todo": 5,
-    "missing": [
-     9,
-     11,
-     12,
-     13,
-     14
-    ]
+    "built": 14,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 12,
@@ -5525,42 +4871,19 @@
    },
    "timers": {
     "spec": 18,
-    "built": 12,
+    "built": 18,
     "armable": 18,
-    "missing": [
-     "FNMA_582_THIRD_PARTY_PACKAGE_30D",
-     "FNMA_LL2026_04_DISCLOSURE_PROMPT_5BD",
-     "FNMA_SUPP_PROGRAM_REQUEST_10BD",
-     "SM_CONTRACT_EXPIRY_WARNING_180",
-     "SM_PORTFOLIO_THRESHOLD_MONITOR_DAILY",
-     "SM_VENDOR_INCIDENT_NOTICE_SLA"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 4,
-    "built": 0,
-    "missing": [
-     "NTC_FNMA_A2101_CONTRACT_COPIES_5BD",
-     "NTC_FNMA_A2101_CONTRACT_EVENT_5BD",
-     "NTC_FNMA_A2101_TECH_PROVIDER_CHANGE_180",
-     "NTC_FNMA_LL2026_04_DISCLOSURE"
-    ]
+    "built": 4,
+    "missing": []
    },
    "tools": {
     "spec": 10,
-    "built": 0,
-    "missing": [
-     "contracts.extractClauses",
-     "contracts.checklist",
-     "vendors.assess",
-     "vendors.setStatus",
-     "notices.draft",
-     "fnma_notices.recordSent",
-     "portfolio.count",
-     "ai_systems.upsert",
-     "timers.read",
-     "portal_task.create"
-    ]
+    "built": 10,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -5569,25 +4892,18 @@
    },
    "units": {
     "spec": 58,
-    "built": 33
+    "built": 58
    },
-   "pct": 56.9
+   "pct": 100.0
   },
   {
    "process": "19.4",
    "title": "Fair lending data elements",
    "tids": {
     "spec": 16,
-    "built": 10,
-    "todo": 6,
-    "missing": [
-     3,
-     4,
-     5,
-     6,
-     14,
-     16
-    ]
+    "built": 16,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 6,
@@ -5596,15 +4912,9 @@
    },
    "timers": {
     "spec": 14,
-    "built": 9,
+    "built": 14,
     "armable": 14,
-    "missing": [
-     "REGB_1002_12B_RETENTION_25M",
-     "SM_AI_BIAS_TEST_QUARTERLY_90",
-     "SM_FAIR_SERVICING_BOARD_REPORT_365",
-     "SM_FAIR_SERVICING_REGRESSION_QUARTERLY",
-     "SM_FL_DATA_QUALITY_MONTHLY"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -5623,9 +4933,9 @@
    },
    "units": {
     "spec": 36,
-    "built": 25
+    "built": 36
    },
-   "pct": 69.4
+   "pct": 100.0
   }
  ]
 }

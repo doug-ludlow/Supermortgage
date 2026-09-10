@@ -45,6 +45,10 @@ export interface AllocationPlan {
   readonly curtailment_cents: Cents;
   readonly curtailment_nib_cents: Cents;             // portion applied to deferred/forborne principal (2.4 rule 4)
   readonly to_suspense_cents: Cents;                 // remainder parked (or the whole amount when held)
+  /** Open unapplied funds consumed by this allocation (2.2 rule 4 accumulation) — cash the ledger moves out of `custodial_ti_unapplied_cash`. */
+  readonly suspense_used_cents: Cents;
+  /** 2.2 rule 3: a partial (n = 0) held under the four-condition matrix — `SUSP-PARTIAL-HOLD-v1` goes within 1 BD. */
+  readonly partial_hold: boolean;
   readonly redirected_curtailment: boolean;          // 2.4 rule 3: designated principal used for unpaid installments instead
   readonly hold?: HoldType | "trial" | "plan";
   readonly refused_instruction?: { text: string; reason: string; cite: string };
@@ -81,7 +85,7 @@ export function allocate(state: LoanCashState, req: AllocationRequest): Allocati
 
   // Overlays first (rule 5): holds, payoff.
   const held: AllocationPlan = {
-    outcome: "unapplied", allocations, installments: [], late_charge_cents: 0n, nsf_fee_cents: 0n, other_fee_cents: 0n, curtailment_cents: 0n, curtailment_nib_cents: 0n, to_suspense_cents: req.amount_cents, redirected_curtailment: false, next, rule_path: path,
+    outcome: "unapplied", allocations, installments: [], late_charge_cents: 0n, nsf_fee_cents: 0n, other_fee_cents: 0n, curtailment_cents: 0n, curtailment_nib_cents: 0n, to_suspense_cents: req.amount_cents, suspense_used_cents: 0n, partial_hold: false, redirected_curtailment: false, next, rule_path: path,
     ...(refused ? { refused_instruction: refused } : {}),
   };
   if (req.designation === "payoff") { path.push("overlay.payoff→16.2"); return { ...held, outcome: "payoff_routed" }; }
@@ -121,17 +125,27 @@ export function allocate(state: LoanCashState, req: AllocationRequest): Allocati
     applied.push({ due_date: inst.due_date, interest_cents: interest, principal_cents: principal, escrow_cents: escrow, upb_after_cents: next.upb_cents, kind, ...(escrowShort > 0n ? { fifty_rule_shortfall_cents: escrowShort } : {}) });
   };
 
-  // n installments oldest-first while the pool covers the full periodic payment P for that installment.
+  // F-1-09: a curtailment "submitted separately" on a current loan is applied first — it never prepays installments (2.4 rule 2, example H);
+  // one that equals the full payoff is routed to 16.x instead (SM_CURTAILMENT_PAYOFF_ROUTE_GATE, 2.4-T10).
+  const current = !next.installments.some((i) => i.status === "due" && i.due_date <= req.received_on);
+  const separateCurtailment = req.designation === "curtailment" && current && open.length > 0;
+  if (separateCurtailment && pool >= next.upb_cents + cashCfg(next).deferred + cashCfg(next).forborne) { path.push("2.4:payoff_route_gate→16.x"); return { ...held, outcome: "payoff_routed" }; }
+  // n installments oldest-first while the pool covers the full periodic payment P for that installment. The amount the item
+  // designates as principal (`curtailment_cents`: portal field, contractor addenda "PRIN n") is never used to prepay a future
+  // installment — it curtails once the due installments are satisfied (2.4 rule 2; 2.5 rule 2, worked example I: 438,514¢ with
+  // "PRIN 219257" received 2027-03-28 is the 2027-04-01 installment plus a 219,257¢ curtailment, not two prepaid installments).
+  const reservedPrincipal = req.curtailment_cents ?? 0n;
   for (const inst of open) {
+    if (separateCurtailment) break;
     const P = inst.pi_cents + inst.escrow_cents;
-    if (pool < P) break;
+    if ((inst.due_date > req.received_on ? pool - reservedPrincipal : pool) < P) break;
     pool -= P; applyInstallment(inst, 0n);
   }
   let outcome: AllocationOutcome = applied.length ? "applied" : "unapplied";
   if (applied.length) path.push(`installments.applied:${applied.length}`);
 
   // Partial (n = 0) → 2.2: the $50 rule first, deterministic.
-  if (applied.length === 0 && open.length > 0) {
+  if (applied.length === 0 && open.length > 0 && !separateCurtailment) {
     const inst = open[0]!;
     const P = inst.pi_cents + inst.escrow_cents;
     const shortfall = P - pool;
@@ -146,7 +160,8 @@ export function allocate(state: LoanCashState, req: AllocationRequest): Allocati
       path.push("2.2:partial→suspense");
       next.suspense_unapplied_cents = pool;
       push("suspense", pool, null, "2.2:partial_hold");
-      return { outcome: "unapplied", allocations, installments: [], late_charge_cents: 0n, nsf_fee_cents: 0n, other_fee_cents: 0n, curtailment_cents: 0n, curtailment_nib_cents: 0n, to_suspense_cents: pool, redirected_curtailment: false, next, rule_path: path, ...(refused ? { refused_instruction: refused } : {}) };
+      // The new receipt is parked; the previously open balance stays parked (nothing moves between custodial accounts for it).
+      return { outcome: "unapplied", allocations, installments: [], late_charge_cents: 0n, nsf_fee_cents: 0n, other_fee_cents: 0n, curtailment_cents: 0n, curtailment_nib_cents: 0n, to_suspense_cents: req.amount_cents, suspense_used_cents: 0n, partial_hold: req.designation !== "biweekly_half", redirected_curtailment: false, next, rule_path: path, ...(refused ? { refused_instruction: refused } : {}) };
     }
   }
 
@@ -187,5 +202,5 @@ export function allocate(state: LoanCashState, req: AllocationRequest): Allocati
   if (pool > 0n) { next.suspense_unapplied_cents += pool; push("suspense", pool, null, "2.1:remainder_under_p"); path.push(`remainder.suspense:${pool}`); }
   if (applied.length && applied.every((a) => a.kind === "prepaid")) outcome = "prepaid";
 
-  return { outcome, allocations, installments: applied, late_charge_cents: lc, nsf_fee_cents: nsf, other_fee_cents: other, curtailment_cents: curtailment, curtailment_nib_cents: curtailmentNib, to_suspense_cents: pool, redirected_curtailment: redirected, next, rule_path: path, ...(refused ? { refused_instruction: refused } : {}) };
+  return { outcome, allocations, installments: applied, late_charge_cents: lc, nsf_fee_cents: nsf, other_fee_cents: other, curtailment_cents: curtailment, curtailment_nib_cents: curtailmentNib, to_suspense_cents: pool, suspense_used_cents: suspenseUsed, partial_hold: false, redirected_curtailment: redirected, next, rule_path: path, ...(refused ? { refused_instruction: refused } : {}) };
 }

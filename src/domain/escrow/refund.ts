@@ -15,5 +15,6 @@ export function refundMethod(consents: { refund_ach?: boolean; credit_to_new_loa
   if (consents.credit_to_new_loan && newLoanSettlesOn && consentOn && newLoanSettlesOn >= consentOn) return "credit_to_new_loan";
   return consents.refund_ach ? "ach" : "check";
 }
+/** 3.5 guardrails: "refunds > $25,000 or to a newly changed address require `officer` dual approval" (open question 3 default). */
 export const DUAL_APPROVAL_CENTS = 2_500_000n;
-export function needsDualApproval(refund: Cents): boolean { return refund >= DUAL_APPROVAL_CENTS; }
+export function needsDualApproval(refund: Cents, addressChangedRecently = false): boolean { return refund > DUAL_APPROVAL_CENTS || addressChangedRecently; }

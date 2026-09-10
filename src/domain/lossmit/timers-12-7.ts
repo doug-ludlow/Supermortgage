@@ -9,5 +9,9 @@ import type { TimerRegistry } from "../../kernel/timers/registry.ts";
 
 export function applySatisfiedOverrides_12_7(reg: TimerRegistry): void {
   const o = reg.override.bind(reg);
-  void o; // no 12.7 overrides yet — add `o(code, { … , why })` rows here.
+  o("FNMA_LL202601_DISASTER_FC_PRIOR_APPROVAL_5", {
+    trigger: "`prereferral.review.completed{outcome=hold_disaster_approval}`",
+    satisfied: "`fnma.approval.received{kind=disaster_foreclosure}`",
+    why: "§12.7 timer table: trigger `foreclosure.prereferral_review.completed{disaster=true}` (13.4), anchor 'review completion', 5 `calendar_days` to submit to hazard_loss@fanniemae.com, satisfied by `fnma.approval.received` (LL-2026-01: \"Fannie Mae's prior written approval is required before referring a disaster-impacted loan to foreclosure — submission … within 5 days of completing the pre-referral review\"). The 13.4 `complete_review` handler spells completion `prereferral.review.completed{review_id, outcome, items}` and a disaster-impacted loan's outcome is `hold_disaster_approval` (foreclosure/referral.ts `reviewOutcome`); the event date is the review completion. The approval is the hazard_loss@ reply ops-12-7.ts `ingestFnmaDisasterForeclosureApproval` records as `fnma.approval.received{kind=disaster_foreclosure, approval_id}` — the `kind` condition keeps other Fannie Mae approvals (12.5 extension, 12.9 liquidation) from satisfying this clock.",
+  });
 }

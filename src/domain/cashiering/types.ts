@@ -51,6 +51,9 @@ export interface PaymentInput {
   readonly check_number?: string;
   /** Portion the borrower/contractor designated as additional principal (2.4). */
   readonly curtailment_cents?: Cents;
+  /** 2.5 case 3: an in-house split-autodraft half (`SM_INHOUSE_SPLIT_APPLY_ON_DUE_DATE_0` keys on `payment.posted{arrangement=inhouse_split}`). */
+  readonly arrangement?: "inhouse_split" | "third_party_contractor";
+  readonly split_half?: "first" | "second";
 }
 
 export interface Allocation {
@@ -129,9 +132,13 @@ export interface LoanCashState {
   overlays?: Overlay[];                         // 2.7 rule 3 overlays in force
   courtesy_waivers_12m?: number;
   transfer_shield_until?: PlainDate | null;     // §1024.33(c)(1) 60-day window (1.3)
+  /** 2.7 open question 2 (default on): a grace end on a non-business day rolls to the next `servicer` business day; off for states computing strictly on calendar days. */
+  late_charge_grace_business_day_extension?: boolean;
+  /** 2.4 rule 6: effective-dated `loan_terms` versions; a re-amortization books a new one. */
+  loan_terms_version?: number;
 }
 
-export type LateChargeState = "not_due" | "evaluating" | "assessed" | "accrued_suspended" | "not_assessed" | "collected" | "waived" | "reversed" | "written_off";
+export type LateChargeState = "not_due" | "evaluating" | "assessed" | "accrued_suspended" | "not_assessed" | "collected" | "partially_collected" | "waived" | "reversed" | "written_off";
 
 export interface Fee {
   readonly id: string;
@@ -145,10 +152,14 @@ export interface Fee {
   collected_cents: Cents;
   collected_on?: PlainDate | null;             // date the charge was collected (2.7-T13: Σ collected per period → fees.collected)
   waived_reason?: string;
+  /** NSF fees: the returned item the fee was assessed for (2.7 rule 7: once per returned item). */
+  returned_payment_id?: string;
+  /** 2.7 rule 3(iii)/example O: a pre-service charge held `no_collection` during the SCRA reduced-rate period (the suppression reason). */
+  collection_hold?: string | null;
 }
 
 export type OverlayKind = "transfer_window_60" | "forbearance_active" | "scra_reduced_rate" | "bankruptcy_active" | "repayment_plan_pending_waiver" | "trial_pending_waiver" | "foreclosure_referred" | "noe_dispute" | "posting_backlog";
-export interface Overlay { readonly kind: OverlayKind; readonly from: PlainDate; readonly to?: PlainDate | null; readonly defaulted_on?: PlainDate | null; readonly installment_due_date?: PlainDate; }
+export interface Overlay { readonly kind: OverlayKind; readonly from: PlainDate; readonly to?: PlainDate | null; readonly defaulted_on?: PlainDate | null; readonly installment_due_date?: PlainDate; /** `late_charge_suppressions.source_case_id` (2.7 data model). */ readonly source_case_id?: string; }
 
 /** Resolved defaults for the optional 2.2–2.7 fields. */
 export function cashCfg(s: LoanCashState) {
@@ -157,6 +168,7 @@ export function cashCfg(s: LoanCashState) {
     late30: s.late_30_count_12m ?? 0, nsf12: s.nsf_count_12m ?? 0, fcReferred: s.fc_referred ?? false, fcRisk: s.partial_payment_fc_risk ?? false,
     mbs: s.mbs_pool ?? false, lcPct: s.late_charge_pct ?? "5", grace: s.late_charge_grace_days ?? 15, lcCap: s.late_charge_cap_cents ?? null, basis: s.late_charge_basis ?? "pi",
     fees: s.fees ?? [], overlays: s.overlays ?? [], courtesy: s.courtesy_waivers_12m ?? 0, shieldUntil: s.transfer_shield_until ?? null,
+    graceRoll: s.late_charge_grace_business_day_extension ?? true, termsVersion: s.loan_terms_version ?? 1,
   };
 }
 

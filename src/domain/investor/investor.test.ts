@@ -107,7 +107,7 @@ test("5.4-T1/T2/T3 and 5.5: SDA prediction, four advances $5,904.58 with rolled 
   assert.deepEqual(adv.drafts.map((d) => d.draft_date), ["2027-01-15", "2027-02-18", "2027-03-18", "2027-04-16"]);
   const s: typeof st = { ...st, status: "active", fm_pi_receivable_cents: 295_286n, servicer_advances_outstanding_cents: 590_458n, advances: adv.drafts.map((d) => ({ period: d.period, amount_cents: d.amount_cents, draft_date: d.draft_date, status: "outstanding" as const })) };
   const r = applyRecovery(s, 295_286n); assert.deepEqual([r.to_fnma_receivable_cents, r.to_servicer_advances_cents, s.fm_pi_receivable_cents], [295_286n, 0n, 0n]);
-  const r2 = applyRecovery(s, 147_600n); assert.equal(r2.to_servicer_advances_cents, 147_600n); assert.equal(s.advances[0]!.status, "reimbursed_by_fnma");
+  const r2 = applyRecovery(s, 147_600n); assert.equal(r2.to_servicer_advances_cents, 147_600n); assert.equal(s.advances[0]!.status, "recovered_from_borrower");   // F-1-20: the servicer retains the borrower's payment; `reimbursed_by_fnma` is the reclass/deferral/liquidation exit
   assert.deepEqual(gfeeSchedule(cents("250000"), "6.500", "6.000", cents("1580.17"), "0.250", 4), [5_208n, 5_204n, 5_199n, 5_194n]);
   assert.equal(gfeeCheckFigure(cents("250000"), "0.250"), 5_208n);
 });

@@ -3,11 +3,21 @@
  * merge — see src/domain/bankruptcy/timers-14-1.ts for the pattern). One `reg.override(code, { trigger?, satisfied |
  * evaluator, anchorField?, offset?, why })` per 12.6 registry row whose trigger/satisfied column names an event the
  * platform spells differently or a condition the column grammar drops; `why` quotes the spec. Wired by
- * src/domain/timer-overrides.ts.
+ * src/domain/timer-overrides.ts. The emitters are the 12.6 operating functions in ./ops-12-6.ts (called by the 12.6
+ * tools in src/app/tools/section12.ts) and the Notice Registry (`notice.sent{template}`).
  */
 import type { TimerRegistry } from "../../kernel/timers/registry.ts";
 
 export function applySatisfiedOverrides_12_6(reg: TimerRegistry): void {
   const o = reg.override.bind(reg);
-  void o; // no 12.6 overrides yet — add `o(code, { … , why })` rows here.
+  // Evaluation Notice on the BRP basis: the trigger is the offer decision `ops-12-6.offerDeferral` records (`payment_deferral.offered{basis, decided_on}`); the Notice Registry spells a sent template `notice.sent{template}`.
+  o("FNMA_D2205_EVAL_NOTICE_DEFERRAL_5", { trigger: "`payment_deferral.offered{basis=brp}`", anchorField: "decided_on", satisfied: "`notice.sent{template=NTC_FNMA_D23204_DEFERRAL_OFFER}`", why: "§12.6 timer table: `payment_deferral.offered` (BRP basis) → 5 calendar days from the decision → `notice.sent{NTC_FNMA_D23204_DEFERRAL_OFFER}`; D2-3.2-04: \"Evaluation Notice per D2-2-05 required only when a complete BRP was submitted (otherwise optional)\". The decision is `deferral.screen`'s `payment_deferral.offered{basis=brp, decided_on}` (ops-12-6.offerDeferral); the Notice Registry emits `notice.sent{template}`." });
+  // LAR one Fannie Mae business day before the completion month-end: the acceptance event anchors on the completion month-end it carries (`payment_deferral.accepted{completion_month_end}`; the 12.2 `lossmit.offer.responded` row falls back to its own date until it carries the field).
+  o("FNMA_F122_DEFERRAL_LAR_BEFORE_EOM_1BD", { anchorField: "completion_month_end", why: "§12.6 timer table: anchor 'last day of completion month', −1 `business_days_fannie_et` (F-1-22: the full monthly contractual payment reported via LAR before completing the deferral, at least one business day before month-end). `ops-12-6.acceptDeferral` carries `completion_month_end` on `payment_deferral.accepted`; the acceptance trigger stays the 12.2 `lossmit.offer.responded{response=accepted}`." });
+  // Custodian: the recorder's return of the original is spelled `erecording.recorded_document.received{received_on}` by ops-12-6.recordedOriginalReceived (and 12.8's e-recording ingestion).
+  o("FNMA_D23204_RECORDED_ORIGINAL_5BD", { anchorField: "received_on", why: "§12.6 timer table: `erecording.recorded_document.received` → the original to the custodian within 5 `business_days_servicer` of receipt (D2-3.2-04: \"the original from the recorder within 5 business days of receipt\"); the receipt date is the event's `received_on`." });
+  // Texas §50(a)(6): the 4.5 allegation carries the borrower's notice date; the Form 20 filing is `fnma.legal.notified{form=form_20}` (ops-12-6.notifyFnmaLegal).
+  o("TX_50A6_DEFERRAL_NOTICE_7BD", { anchorField: "notice_date", satisfied: "`fnma.legal.notified{form=form_20}`", why: "§12.6 timer table: borrower notice of §50(a)(6) violation (TX) → Form 20 to Fannie Mae Legal within 7 `business_days_servicer` (+60-day cure), satisfied by `fnma.legal.notified`. The 4.5 `complaint.tx_50a6_defect.alleged{notice_date}` is the receipt; the Form 20 filing is `fnma.legal.notified{form=form_20, notified_on, cure_by}`." });
+  // Post-deferral re-delinquency: the 12.6 watcher over the 11.1 day-60 milestone emits `payment_deferral.redelinquent` (a bare `loan.delinquency.day_reached{fnma_day=60}` would also re-arm the 13.3 custodian rows); the streamlined letter is a Notice Registry template.
+  o("FNMA_D23206_POSTDEFERRAL_FLEX_SOLICIT_75", { trigger: "`payment_deferral.redelinquent{fnma_day=60, post_deferral_within_6m=true, qrpc=false}`", anchorField: "day_60_date", offset: "+15 calendar_days", satisfied: "`notice.sent{template=NTC_FNMA_D23206_SOLICIT_STREAMLINED}`", why: "§12.6 timer table: loan 60+ days delinquent within 6 months of the deferral effective date, no QRPC → anchor day 60 → by day 75 of delinquency → `notice.sent{NTC_FNMA_D23206_SOLICIT_STREAMLINED}` (D2-3.2-06). ops-12-6.postDeferralRedelinquency derives `payment_deferral.redelinquent{fnma_day, post_deferral_within_6m, qrpc, day_60_date}` from the 11.1 `loan.delinquency.day_reached{fnma_day=60}` milestone for a loan with an effective deferral; the Notice Registry emits `notice.sent{template}`." });
 }

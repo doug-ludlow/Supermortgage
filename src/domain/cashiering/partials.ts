@@ -5,6 +5,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { type PlainDate, addDays } from "../../kernel/calendar/date.ts";
+import { addBusinessDays, servicer, type Calendar } from "../../kernel/calendar/business.ts";
 import type { Cents } from "../../kernel/money/cents.ts";
 import { type LoanCashState, cashCfg } from "./types.ts";
 
@@ -15,7 +16,9 @@ export interface SuspenseItem {
   readonly id: string; readonly loan_id: string; readonly payment_id: string;
   amount_cents: Cents; readonly received_on: PlainDate; reason_code: SuspenseReason; status: SuspenseStatus;
   partial_commitment_due_on: PlainDate | null; rule_path: string; decision_cite?: string; return_rail?: "ach_credit" | "check";
+  /** `foreclosure_hold` items: the foreclosure case owner decides accept-and-apply vs return within 2 BD (2.2 rule 3). */
   fc_decision_due_on?: PlainDate;
+  fc_decision?: { decision: "accept_and_apply" | "return"; decided_on: PlainDate; decided_by: string; on_time: boolean };
 }
 
 export interface Commitment { readonly kind: "coupon_note" | "portal_note" | "history_completes_partials" | "active_workout_case" | "contact_intent"; readonly stated_date?: PlainDate | null; }
@@ -28,15 +31,19 @@ export type PartialDecision =
   | { kind: "foreclosure_hold"; decision_due_bd: 2; rule_path: string; cite: string }
   | { kind: "contact_pending"; rule_path: string; cite: string };
 
+/** 2.2 rule 3 (i)–(iv) as the four booleans the `partial_payment_evaluations` row records (ops-2-2.ts). */
+export function partialConditions(ctx: PartialContext): { commitment: boolean; not_habitual: boolean; no_nsf_history: boolean; thirty_day_commitment: boolean } {
+  const c = cashCfg(ctx.state);
+  return { commitment: !!ctx.commitment || ctx.state.plan_active || ctx.state.trial_active, not_habitual: c.late30 < 3, no_nsf_history: c.nsf12 === 0,
+    thirty_day_commitment: !!ctx.commitment && (ctx.commitment.kind !== "coupon_note" && ctx.commitment.kind !== "portal_note" ? true : !ctx.commitment.stated_date || ctx.commitment.stated_date <= addDays(ctx.received_on, 30)) };
+}
+
 /** 2.2 rule 3 — the four-condition test, with the platform's hold-not-return default. */
 export function decidePartial(ctx: PartialContext): PartialDecision {
   const c = cashCfg(ctx.state);
   const cite = "Servicing Guide C-1.1-02";
   if (c.fcReferred && c.fcRisk) return { kind: "foreclosure_hold", decision_due_bd: 2, rule_path: "2.2:r3:foreclosure_hold", cite };
-  const commitment = !!ctx.commitment || ctx.state.plan_active || ctx.state.trial_active;
-  const notHabitual = c.late30 < 3;
-  const noNsf = c.nsf12 === 0;
-  const thirty = !!ctx.commitment && (ctx.commitment.kind !== "coupon_note" && ctx.commitment.kind !== "portal_note" ? true : !ctx.commitment.stated_date || ctx.commitment.stated_date <= addDays(ctx.received_on, 30));
+  const { commitment, not_habitual: notHabitual, no_nsf_history: noNsf, thirty_day_commitment: thirty } = partialConditions(ctx);
   const due_on = addDays(ctx.received_on, 30);
   if (commitment && notHabitual && noNsf && thirty) return { kind: "hold", due_on, rule_path: "2.2:r3:four_conditions", cite };
   if (!commitment) return { kind: "contact_pending", rule_path: "2.2:r3:commitment_needed", cite };
@@ -45,9 +52,18 @@ export function decidePartial(ctx: PartialContext): PartialDecision {
   return { kind: "foreclosure_hold", decision_due_bd: 2, rule_path: "2.2:r3:return_path_referred", cite };
 }
 
-export function openSuspenseItem(ctx: PartialContext, d: PartialDecision, reason: SuspenseReason = "partial_payment"): SuspenseItem {
+export function openSuspenseItem(ctx: PartialContext, d: PartialDecision, reason: SuspenseReason = "partial_payment", cal: Calendar = servicer): SuspenseItem {
   return { id: randomUUID(), loan_id: ctx.state.loan_id, payment_id: ctx.payment_id, amount_cents: ctx.amount_cents, received_on: ctx.received_on, reason_code: d.kind === "foreclosure_hold" ? "foreclosure_hold" : reason,
-    status: d.kind === "contact_pending" ? "contact_pending" : "open", partial_commitment_due_on: d.kind === "hold" || d.kind === "hold_policy_override" ? d.due_on : null, rule_path: d.rule_path, decision_cite: d.cite, return_rail: ctx.rail };
+    status: d.kind === "contact_pending" ? "contact_pending" : "open", partial_commitment_due_on: d.kind === "hold" || d.kind === "hold_policy_override" ? d.due_on : null, rule_path: d.rule_path, decision_cite: d.cite, return_rail: ctx.rail,
+    ...(d.kind === "foreclosure_hold" ? { fc_decision_due_on: addBusinessDays(ctx.received_on, d.decision_due_bd, cal) } : {}) };
+}
+
+/** 2.2 rule 3 / T6: the foreclosure case owner's decision on a `foreclosure_hold` item, recorded against its 2-BD clock. */
+export function recordForeclosureHoldDecision(item: SuspenseItem, decision: "accept_and_apply" | "return", decidedOn: PlainDate, decidedBy: string): SuspenseItem {
+  if (item.reason_code !== "foreclosure_hold" || !item.fc_decision_due_on) throw new RangeError("not a foreclosure_hold item");
+  item.fc_decision = { decision, decided_on: decidedOn, decided_by: decidedBy, on_time: decidedOn <= item.fc_decision_due_on };
+  item.status = decision === "return" ? "returned" : "applied_to_oldest";
+  return item;
 }
 
 /** 2.2 rule 6 — day-30 sweep: items past their commitment date with the balance still short are returned by the original rail. */

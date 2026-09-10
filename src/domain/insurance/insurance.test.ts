@@ -227,7 +227,7 @@ test("9.8-T2/T4/T6/T7/T8/T9 exceptions, pre-sale window, modes, claims", () => {
   assert.equal(inspectionMode({ conventional_first_lien: true, recourse: true, enrolled: true, fnma_rejected: false }), "servicer");
   assert.equal(pfpipPermission({ bankruptcy_active: true, preserve_allowed: true }), "Do curbside inspection and no preserv.");
   assert.ok(servicerBackstopOrder("pfpip", false, 110));
-  assert.deepEqual(inspectionClaim("servicer", "exterior", cents("55"), d("2027-04-01")), { claim_cents: cents("45"), due: d("2027-05-31") });
+  assert.deepEqual(inspectionClaim("servicer", "exterior", cents("55"), d("2027-04-01")), { claim_cents: cents("30"), due: d("2027-05-31") });   // F-1-05: exterior $30, interior $45
   assert.equal(inspectionClaim("pfpip", "exterior", cents("55"), d("2027-04-01")), null);
   assert.equal(inspectionType({ vacant: true, interior_entry_allowed: true, legal_constraint_reason: null }), "interior");
 });

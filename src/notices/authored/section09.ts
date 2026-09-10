@@ -30,25 +30,96 @@ ${CONTACT}`;
 const EOI_RULES: ContentRule[] = [R("expiration", "9.1 (courtesy request at −30 days)", "presence", "expires on", "expiration date"), R("courtesy", "9.1", "presence", "As a courtesy", "courtesy framing"), R("no-fpi-language", "9.1: must not contain FPI language", "absence", "(purchase insurance on your property at your expense|force-placed|lender-placed)", "no §1024.37 language"), CONTACT_RULE];
 
 // ------------------------------------------------------------------ 9.3 / 9.4 force-placed reminders (MS-3(B), MS-3(C)) and renewal (MS-3(D))
-const C2_BLOCK = `Loan number ending {{account_last4}}. Our records show that your {{insurance_type}} insurance {{status_phrase}} on {{date coverage_event_date}}. You must provide us with insurance information. We will purchase insurance on your property at your expense if you do not provide evidence of {{insurance_type}} insurance. The insurance we buy may cost significantly more than insurance you can buy yourself and may provide less coverage. To provide insurance information, contact us at {{servicer_phone}} or {{servicer_address}}; you may also send it to {{insurance_email}}. Property: {{property_address}}.`;
-const MS3B_SOURCE = `{{#block "heading" page=1 y=0.05 pt=14 bold}}SECOND AND FINAL NOTICE ABOUT YOUR {{upper insurance_type}} INSURANCE — PLEASE READ{{/block}}
-{{#block "body" page=1 y=0.15 pt=12}}{{date notice_date}}. This is the second and final notice. ${C2_BLOCK}{{/block}}
-{{#block "bold_items" page=1 y=0.55 pt=12 bold}}This is the second and final notice. The insurance we buy will cost {{money annual_premium_cents}} annually{{#if premium_is_estimate}} (an estimate){{/if}}. You must provide insurance information within 15 days.{{/block}}
+// Layout: every sentence §1024.37(c)(3)/(d)(3)/(e)(3) requires in bold sits in its own bold block, so the checklist's layout
+// rule fails when the block is missing or not bold, and the 9.2 (c)(4)/(d)(4)/(e)(4) sentence classifier (fpi.ts
+// noticeChecklist) finds nothing on the pages but the required items and the account number. The physical address is
+// printed in a non-bold block ((c)(3): "(iv) … except the address itself").
+const MS3_HEADER = `{{#block "header" page=1 y=0.11 pt=11}}{{date notice_date}}. From: Supermortgage, {{servicer_address}}. To: {{borrower_name}}, {{borrower_address}}. Loan number ending {{account_last4}}.{{/block}}`;
+const MS3_BOLD_WARNINGS = (y: string) => `{{#block "bold_warnings" page=1 y=${y} pt=12 bold}}The insurance we buy may cost significantly more than insurance you can buy yourself and may not provide as much coverage as an insurance policy you buy yourself.{{/block}}`;
+const MS3_BOLD_COST = (y: string) => `{{#block "bold_cost" page=1 y=${y} pt=12 bold}}The insurance we buy will cost {{money annual_premium_cents}} annually{{#if premium_is_estimate}} (an estimate){{/if}}.{{/block}}`;
+const MS3_HOW = (y: string, lead: string) => `{{#block "how" page=1 y=${y} pt=11}}${lead} please provide the information promptly, and in writing: send a declarations page, certificate or policy showing continuous coverage to {{insurance_email}} or {{servicer_address}}, or upload it through your borrower portal. If you have any questions, contact us at {{servicer_phone}}. {{#if additional_information}}Please review the additional information enclosed in the same envelope.{{/if}}{{/block}}`;
+const MS3B_SOURCE = `{{#block "subject" page=1 y=0.05 pt=13 bold}}Subject: Second and final notice about your {{insurance_type}} insurance — please provide insurance information for {{property_address}}{{/block}}
+${MS3_HEADER}
+{{#block "body" page=1 y=0.18 pt=12}}Dear {{borrower_name}}: Our records show that your {{insurance_type}} insurance {{status_phrase}} on {{date coverage_event_date}}, and we do not have evidence that you have had {{insurance_type}} insurance on the property listed above since then.{{/block}}
+{{#block "bold_second_final" page=1 y=0.27 pt=12 bold}}This is the second and final notice.{{/block}}
+{{#block "bold_request" page=1 y=0.31 pt=12 bold}}You must immediately provide us with your {{insurance_type}} insurance information for the property at:{{/block}}
+{{#block "property" page=1 y=0.35 pt=12}}Property: {{property_address}}.{{/block}}
+{{#block "bold_expense" page=1 y=0.39 pt=12 bold}}Because {{insurance_type}} insurance is required on your property, we will purchase insurance on your property at your expense. You must pay us for any period during which the insurance we buy is in effect but you do not have insurance.{{/block}}
+${MS3_BOLD_COST("0.49")}
+${MS3_BOLD_WARNINGS("0.54")}
+${MS3_HOW("0.62", "To avoid being charged,")}
 ${CONTACT}`;
-const MS3C_SOURCE = `{{#block "heading" page=1 y=0.05 pt=14 bold}}SECOND AND FINAL NOTICE ABOUT YOUR {{upper insurance_type}} INSURANCE — PLEASE READ{{/block}}
-{{#block "body" page=1 y=0.15 pt=12}}{{date notice_date}}. This is the second and final notice. Loan number ending {{account_last4}}. We received the insurance information you provided, but we have not received evidence that you had {{insurance_type}} insurance continuously in force. Please send us evidence of coverage for {{#each unverified_ranges}}{{date start}} to {{date end}}; {{/each}}You will be charged for insurance we purchased for any period we cannot verify coverage. You must provide us with insurance information. We will purchase insurance on your property at your expense if you do not provide evidence of {{insurance_type}} insurance. The insurance we buy may cost significantly more than insurance you can buy yourself and may provide less coverage. To provide insurance information, contact us at {{servicer_phone}} or {{servicer_address}}; you may also send it to {{insurance_email}}. Property: {{property_address}}.{{/block}}
-{{#block "bold_items" page=1 y=0.6 pt=12 bold}}This is the second and final notice. The insurance we buy will cost {{money annual_premium_cents}} annually{{#if premium_is_estimate}} (an estimate){{/if}}.{{/block}}
+const MS3C_SOURCE = `{{#block "subject" page=1 y=0.05 pt=13 bold}}Subject: Second and final notice about your {{insurance_type}} insurance — please provide insurance information for {{property_address}}{{/block}}
+${MS3_HEADER}
+{{#block "body" page=1 y=0.18 pt=12}}Dear {{borrower_name}}: We received the insurance information you provided. However, we are unable to verify that you had {{insurance_type}} insurance on the property listed above for the following period(s): {{#each unverified_ranges}}{{date start}} to {{date end}}; {{/each}}{{/block}}
+{{#block "bold_second_final" page=1 y=0.27 pt=12 bold}}This is the second and final notice.{{/block}}
+{{#block "bold_request" page=1 y=0.31 pt=12 bold}}If you had {{insurance_type}} insurance for the period(s) stated above, you must immediately provide us with your insurance information for the property at:{{/block}}
+{{#block "property" page=1 y=0.36 pt=12}}Property: {{property_address}}.{{/block}}
+{{#block "charged" page=1 y=0.4 pt=12}}You will be charged for insurance we purchased for any period during which we cannot verify that you had {{insurance_type}} insurance.{{/block}}
+${MS3_BOLD_COST("0.46")}
+${MS3_BOLD_WARNINGS("0.51")}
+${MS3_HOW("0.6", "To avoid being charged for those period(s),")}
 ${CONTACT}`;
-const MS3_COMMON: ContentRule[] = [DATE_RULE, R("second-final", "§1024.37(d)(2)(i)(B)", "presence", "This is the second and final notice", "second and final notice statement"), R("cost", "§1024.37(d)(2)(i)(D)", "presence", "will cost \\$[\\d,]+\\.\\d{2} annually", "cost as an annual premium"), R("estimate-label", "§1024.37(d)(2)(i)(D) (identified as an estimate)", "conditional", "premium_is_estimate", "estimate identified", { when: { "==": [{ var: "premium_is_estimate" }, true] }, predicate: { "==": [{ var: "estimate_basis_present" }, true] } }), R("bold", "§1024.37(d)(3)", "layout", "bold_items", "statements in bold", { layout: { bold: true, page: 1 } }), R("timing", "§1024.37(d)(1)", "data_range", "days_after_first_notice", "not earlier than 30 days after the first notice", { range: { min: 30 } }), R("no-extra", "§1024.37(d)(4)", "absence", "(agent list|Spanish|enclosed brochure)", "nothing else on the notice pages"), CONTACT_RULE];
-const MS3B_RULES: ContentRule[] = [...MS3_COMMON, R("c2-block", "§1024.37(d)(2)(i)(C)", "presence", "will purchase insurance on your property at your expense", "the (c)(2)(ii)–(xi) content")];
-const MS3C_RULES: ContentRule[] = [...MS3_COMMON, R("received", "§1024.37(d)(2)(ii)(D)", "presence", "We received the insurance information you provided", "acknowledgment of information received"), R("ranges", "§1024.37(d)(2)(ii)(E)", "presence", "evidence of coverage for (January|February|March|April|May|June|July|August|September|October|November|December) \\d{1,2}, \\d{4} to", "request for the missing period(s)"), R("charge-unverified", "§1024.37(d)(2)(ii)(F)", "presence", "charged for insurance we purchased for any period we cannot verify coverage", "will-be-charged statement")];
-const MS3_SAMPLE = { ...BASE, insurance_type: "hazard", status_phrase: "expired", coverage_event_date: "2026-10-01", annual_premium_cents: 219000n, premium_is_estimate: true, estimate_basis_present: true, days_after_first_notice: 30, unverified_ranges: [{ start: "2026-10-01", end: "2026-10-14" }] };
-const MS3D_SOURCE = `{{#block "heading" page=1 y=0.05 pt=14 bold}}NOTICE ABOUT RENEWING THE INSURANCE WE PURCHASED FOR YOUR PROPERTY{{/block}}
-{{#block "body" page=1 y=0.15 pt=12}}{{date notice_date}}. Loan number ending {{account_last4}}. Because we did not receive evidence of {{insurance_type}} insurance, we purchased insurance on your property effective {{date placement_effective}}, and we will renew it on {{date anniversary}} unless you provide evidence of your own insurance. The insurance we buy will cost {{money annual_premium_cents}} annually. It may cost significantly more than insurance you can buy yourself and may provide less coverage. You may buy your own insurance at any time; if you do, send the declarations page to {{insurance_email}} or {{servicer_address}} and we will cancel the insurance we bought and refund any premium for the period you were covered. Property: {{property_address}}.{{/block}}
-{{#block "bold_items" page=1 y=0.55 pt=12 bold}}We will charge you for the renewed insurance. You may provide your own insurance at any time.{{/block}}
+const MS3_BOLD_RULES: ContentRule[] = [
+  R("bold-second-final", "§1024.37(d)(3) — (d)(2)(i)(B) in bold", "layout", "bold_second_final", "'second and final notice' in bold", { layout: { bold: true, page: 1 } }),
+  R("bold-request", "§1024.37(d)(3) via (c)(3) — (c)(2)(iv) request in bold (address itself excepted)", "layout", "bold_request", "request for insurance information in bold", { layout: { bold: true, page: 1 } }),
+  R("bold-cost", "§1024.37(d)(3) — (d)(2)(i)(D) in bold", "layout", "bold_cost", "annual premium in bold", { layout: { bold: true, page: 1 } }),
+  R("bold-warnings", "§1024.37(d)(3) via (c)(3) — (c)(2)(ix)(A)–(B) in bold", "layout", "bold_warnings", "cost and coverage warnings in bold", { layout: { bold: true, page: 1 } }),
+];
+const MS3_COMMON: ContentRule[] = [DATE_RULE,
+  R("servicer", "§1024.37(c)(2)(ii)", "presence", "From: Supermortgage, ", "servicer name and mailing address"),
+  R("borrower", "§1024.37(c)(2)(iii)", "presence", "To: [^,.]+, .+", "borrower name and mailing address"),
+  R("second-final", "§1024.37(d)(2)(i)(B)", "presence", "This is the second and final notice", "second and final notice statement"),
+  R("request", "§1024.37(c)(2)(iv)", "presence", "immediately provide us with your .*insurance information for the property at", "request for insurance information, property by physical address"),
+  R("property", "§1024.37(c)(2)(iv)", "presence", "Property: ", "physical address of the property"),
+  R("warnings", "§1024.37(c)(2)(ix)(A)–(B)", "presence", "may cost significantly more .* may not provide as much coverage", "cost and coverage warnings"),
+  R("prompt-writing", "§1024.37(c)(2)(vii)–(viii)", "presence", "promptly, and in writing", "prompt request; description of the information and how to provide it, in writing"),
+  R("phone", "§1024.37(c)(2)(x)", "presence", "contact us at \\(\\d{3}\\) \\d{3}-\\d{4}", "servicer telephone number"),
+  R("cost", "§1024.37(d)(2)(i)(D)", "presence", "will cost \\$[\\d,]+\\.\\d{2} annually", "cost as an annual premium"),
+  R("estimate-label", "§1024.37(d)(2)(i)(D) (identified as an estimate)", "conditional", "premium_is_estimate", "estimate identified", { when: { "==": [{ var: "premium_is_estimate" }, true] }, predicate: { "==": [{ var: "estimate_basis_present" }, true] } }),
+  ...MS3_BOLD_RULES,
+  R("timing", "§1024.37(d)(1)", "data_range", "days_after_first_notice", "not earlier than 30 days after the first notice", { range: { min: 30 } }),
+  R("no-extra", "§1024.37(d)(4)", "absence", "(agent list|Spanish|enclosed brochure|special offer|home warranty)", "nothing else on the notice pages (inserts on separate sheets)"), CONTACT_RULE];
+const MS3B_RULES: ContentRule[] = [...MS3_COMMON,
+  R("v-statement", "§1024.37(c)(2)(v)(A)–(B)", "presence", "insurance (is expiring|expired|provides insufficient coverage) on .* we do not have evidence", "expiring/expired/insufficient statement and lack of evidence"),
+  R("bold-expense", "§1024.37(d)(3) via (c)(3) — (c)(2)(vi) in bold", "layout", "bold_expense", "required insurance / purchase at the borrower's expense in bold", { layout: { bold: true, page: 1 } }),
+  R("expense", "§1024.37(c)(2)(vi)", "presence", "insurance is required on your property, we will purchase insurance on your property at your expense", "hazard insurance is required; the servicer will purchase at the borrower's expense")];
+const MS3C_RULES: ContentRule[] = [...MS3_COMMON,
+  R("received", "§1024.37(d)(2)(ii)(C)", "presence", "We received the insurance information you provided", "acknowledgment of information received"),
+  R("ranges", "§1024.37(d)(2)(ii)(D)", "presence", "unable to verify .* for the following period\\(s\\): (January|February|March|April|May|June|July|August|September|October|November|December) \\d{1,2}, \\d{4} to (January|February|March|April|May|June|July|August|September|October|November|December) \\d{1,2}, \\d{4}", "request for the missing period(s) as [Date Range]"),
+  R("charge-unverified", "§1024.37(d)(2)(ii)(E)", "presence", "charged for insurance we purchased for any period during which we cannot verify", "will-be-charged statement for unverified periods")];
+const MS3_SAMPLE = { ...BASE, borrower_name: "Bea Borrower", borrower_address: "1 Test St, Testville TX 75001", insurance_type: "hazard", status_phrase: "expired", coverage_event_date: "2026-10-01", annual_premium_cents: 219000n, premium_is_estimate: true, estimate_basis_present: true, days_after_first_notice: 30, unverified_ranges: [{ start: "2026-10-01", end: "2026-10-14" }], additional_information: false };
+const MS3D_SOURCE = `{{#block "subject" page=1 y=0.05 pt=13 bold}}Subject: Notice about renewing the insurance we purchased for your property — please update the insurance information for {{property_address}}{{/block}}
+${MS3_HEADER}
+{{#block "body" page=1 y=0.18 pt=12}}Dear {{borrower_name}}: Because we did not have evidence that you had {{insurance_type}} insurance on the property listed above, we previously purchased insurance on your property at your expense, effective {{date placement_effective}}. The insurance we bought {{#if expired}}expired{{else}}is expiring{{/if}} on {{date anniversary}}.{{/block}}
+{{#block "bold_required" page=1 y=0.28 pt=12 bold}}Because {{insurance_type}} insurance is required on your property, we intend to maintain insurance on your property by renewing or replacing the insurance we bought. You must pay us for any period during which the insurance we buy is in effect but you do not have insurance.{{/block}}
+{{#block "bold_request" page=1 y=0.37 pt=12 bold}}You must immediately provide us with updated {{insurance_type}} insurance information for the property at:{{/block}}
+{{#block "property" page=1 y=0.41 pt=12}}Property: {{property_address}}.{{/block}}
+${MS3_BOLD_WARNINGS("0.45")}
+${MS3_BOLD_COST("0.51")}
+${MS3_HOW("0.58", "If you buy your own insurance,")}
 ${CONTACT}`;
-const MS3D_RULES: ContentRule[] = [DATE_RULE, R("renewal", "§1024.37(e)(2)(ii)–(iii)", "presence", "we will renew it on", "renewal statement with the date"), R("cost", "§1024.37(e)(2)(iv)", "presence", "will cost \\$[\\d,]+\\.\\d{2} annually", "cost as an annual premium"), R("own-insurance", "§1024.37(e)(2)(v)–(vi)", "presence", "You may buy your own insurance at any time", "the borrower may provide own insurance"), R("cancel-refund", "§1024.37(g)", "presence", "cancel the insurance we bought and refund", "cancellation and refund"), R("bold", "§1024.37(e)(3)", "layout", "bold_items", "bold items", { layout: { bold: true, page: 1 } }), R("timing", "§1024.37(e)(1)(iii)", "data_range", "days_before_anniversary", "mailed at least 45 days before the charge", { range: { min: 45 } }), R("annual", "§1024.37(e)(5)", "data_range", "days_since_last_renewal_notice", "one per year", { range: { min: 365 } }), CONTACT_RULE];
-const MS3D_SAMPLE = { ...BASE, notice_date: "2027-08-02", insurance_type: "hazard", placement_effective: "2026-10-01", anniversary: "2027-10-01", annual_premium_cents: 225000n, days_before_anniversary: 60, days_since_last_renewal_notice: 400 };
+const MS3D_RULES: ContentRule[] = [DATE_RULE,
+  R("servicer", "§1024.37(e)(2)(ii)", "presence", "From: Supermortgage, ", "servicer name and mailing address"),
+  R("borrower", "§1024.37(e)(2)(iii)", "presence", "To: [^,.]+, .+", "borrower name and mailing address"),
+  R("request", "§1024.37(e)(2)(iv)", "presence", "immediately provide us with updated .*insurance information for the property at", "request to update the insurance information, property by physical address"),
+  R("property", "§1024.37(e)(2)(iv)", "presence", "Property: ", "physical address of the property"),
+  R("previously-purchased", "§1024.37(e)(2)(v)", "presence", "we previously purchased insurance on your property at your expense", "previously purchased at the borrower's expense for lack of evidence"),
+  R("expiring", "§1024.37(e)(2)(vi)(A)", "presence", "The insurance we bought (expired|is expiring) on", "LPI expired or expiring, as applicable"),
+  R("required-maintain", "§1024.37(e)(2)(vi)(B)", "presence", "insurance is required on your property, we intend to maintain insurance on your property by renewing or replacing", "'because hazard insurance is required' the servicer intends to maintain it by renewing or replacing"),
+  R("warnings", "§1024.37(e)(2)(vii)(A)–(B)", "presence", "may cost significantly more .* may not provide as much coverage", "cost and coverage warnings"),
+  R("cost", "§1024.37(e)(2)(vii)(C)", "presence", "will cost \\$[\\d,]+\\.\\d{2} annually", "cost as an annual premium"),
+  R("estimate-label", "§1024.37(e)(2)(vii)(C); comment 37(e)(2)(vii)-1", "conditional", "premium_is_estimate", "estimate identified", { when: { "==": [{ var: "premium_is_estimate" }, true] }, predicate: { "==": [{ var: "estimate_basis_present" }, true] } }),
+  R("prompt-writing", "§1024.37(e)(2)(viii)–(ix)", "presence", "If you buy your own insurance, please provide the information promptly, and in writing", "provide promptly; description of the information and how to provide it, in writing"),
+  R("phone", "§1024.37(e)(2)(x)", "presence", "contact us at \\(\\d{3}\\) \\d{3}-\\d{4}", "servicer telephone number"),
+  R("bold-request", "§1024.37(e)(3) — (e)(2)(iv) in bold (address itself excepted)", "layout", "bold_request", "request in bold", { layout: { bold: true, page: 1 } }),
+  R("bold-required", "§1024.37(e)(3) — (e)(2)(vi)(B) in bold", "layout", "bold_required", "'because hazard insurance is required' statement in bold", { layout: { bold: true, page: 1 } }),
+  R("bold-warnings", "§1024.37(e)(3) — (e)(2)(vii)(A)–(B) in bold", "layout", "bold_warnings", "warnings in bold", { layout: { bold: true, page: 1 } }),
+  R("bold-cost", "§1024.37(e)(3) — (e)(2)(vii)(C) in bold", "layout", "bold_cost", "annual premium in bold", { layout: { bold: true, page: 1 } }),
+  R("timing", "§1024.37(e)(1)(i); 9.4 rule 2 (target A − 60; a later mailing only delays the charge to t2 + 45)", "data_range", "days_before_anniversary", "mailed at least 45 days before the anniversary charge", { range: { min: 45 }, severity: "warn" }),
+  R("annual", "§1024.37(e)(5)", "data_range", "days_since_last_renewal_notice", "one per year", { range: { min: 365 } }),
+  R("no-extra", "§1024.37(e)(4)", "absence", "(agent list|Spanish|enclosed brochure|special offer|home warranty|refund)", "nothing else on the notice pages (inserts on separate sheets)"), CONTACT_RULE];
+const MS3D_SAMPLE = { ...BASE, notice_date: "2027-08-02", borrower_name: "Bea Borrower", borrower_address: "1 Test St, Testville TX 75001", insurance_type: "hazard", placement_effective: "2026-10-01", anniversary: "2027-10-01", expired: false, annual_premium_cents: 225000n, premium_is_estimate: false, estimate_basis_present: true, days_before_anniversary: 60, days_since_last_renewal_notice: 400, additional_information: false };
 
 // ------------------------------------------------------------------ 9.5 cancellation / refund confirmation
 const CANCEL_SOURCE = `{{#block "body" page=1 y=0.1 pt=11}}{{date notice_date}}. Loan number ending {{account_last4}}. We received evidence on {{date evidence_received_on}} that you have had {{insurance_type}} insurance since {{date borrower_coverage_start}}. We cancelled the insurance we purchased effective {{date cancellation_effective}} and removed {{money removed_cents}} of charges for the {{overlap_days}} days both policies overlapped. {{#if refund_cents}}A refund of {{money refund_cents}} for the amount you paid toward those charges is being sent by {{rail}}.{{else}}No refund is due because you had not paid toward the removed charges.{{/if}} {{#if retained_cents}}Charges of {{money retained_cents}} remain for {{date gap_start}} to {{date gap_end}}, when we could not verify coverage.{{/if}}{{/block}}

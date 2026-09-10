@@ -80,6 +80,14 @@ export function valueCheck(avm: Cents | null, originalValueCents: Cents, units: 
   return { status: "value_check_needed", options: [{ type: "bpo", fee_cents: 19_000n }, { type: "restricted_appraisal", fee_cents: 45_000n }, ...(units > 1 ? [{ type: "appraisal_2_4_unit", fee_cents: 75_000n }] : [])] };
 }
 export function valuationValidUntil(deliveredOn: PlainDate): PlainDate { return addDays(deliveredOn, 120); }
+/** 10.1-T12 / FNMA_SMDU_VALUATION_VALID_120 — a decision after `valid_until` is refused pending a new valuation (borrower re-pays). */
+export function valuationExpired(deliveredOn: PlainDate | null, decisionOn: PlainDate | null): boolean {
+  return deliveredOn !== null && decisionOn !== null && decisionOn > valuationValidUntil(deliveredOn);
+}
+/** 12 U.S.C. 4902(e)(1) — no premium may be required more than 30 days after the later of receipt and the evidence-satisfied date (10.1 timer table anchor of HPA_4902E_STOP_PREMIUM_30). */
+export function premiumStopAnchor(receivedOn: PlainDate, evidenceSatisfiedOn: PlainDate | null): PlainDate {
+  return evidenceSatisfiedOn !== null && evidenceSatisfiedOn > receivedOn ? evidenceSatisfiedOn : receivedOn;
+}
 
 export interface CancellationRequest {
   readonly received_on: PlainDate;
@@ -101,7 +109,8 @@ export interface CancellationRequest {
 }
 
 export interface CancellationDecision {
-  readonly result: "eligible" | "ineligible" | "value_check_needed";
+  /** `refused` = the decision cannot be made yet (10.1-T12: the delivered valuation expired before the decision date; a new order is required). */
+  readonly result: "eligible" | "ineligible" | "value_check_needed" | "refused";
   readonly reasons: readonly string[];
   readonly ltv_bps: number;
   readonly threshold_bps: number | null;
@@ -123,6 +132,10 @@ export function evaluateCancellation(r: CancellationRequest): CancellationDecisi
   const D = r.threshold_reached_on !== null && r.threshold_reached_on > r.received_on ? r.threshold_reached_on : r.received_on;
   const history = paymentHistory(r.installments, D, r.disaster_excluded ?? new Set(), seasoningMonths(r.consummation, r.received_on));
   const cur = isCurrentForRequest(r.installments, r.received_on, r.decision_on);
+  // 10.1-T12 — a delivered valuation is valid 120 days (SMDU FAQ Q9); a decision attempted after that is refused pending a new valuation.
+  if (r.valuation_cents !== null && valuationExpired(r.valuation_delivered_on, r.decision_on)) {
+    return { result: "refused", reasons: ["VALUATION_EXPIRED"], ltv_bps: 0, threshold_bps: null, effective_on: null, lar89_action_code: null, decision_due: due, history };
+  }
   let threshold: number | null, ltv: number, value: Cents;
   if (r.path === "original_value") {
     threshold = originalValueThresholdBps(r.property_class); value = r.original_value_cents;

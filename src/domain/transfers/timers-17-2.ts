@@ -1,11 +1,39 @@
 /**
- * §17.2 timer satisfaction overrides: for every 17.2 registry row whose "Satisfied by"
- * column is prose, a `reg.override(code, { satisfied | evaluator, trigger?, offset?, anchorField?, why })`
- * (see src/domain/foreclosure/timers.ts applyForeclosureSatisfiedOverrides for the pattern).
- * Called from this section's timers.ts after the section-level overrides.
+ * §17.2 timer overrides: for every 17.2 registry row whose trigger / anchor / "Satisfied by" column is
+ * prose, or whose shared §1.3/§1.6 definition describes the transfer-IN view, a
+ * `reg.override(code, { trigger?, anchorField?, satisfied | evaluator, offset?, why })` (see
+ * src/domain/foreclosure/timers.ts applyForeclosureSatisfiedOverrides for the pattern). Called from this
+ * section's timers.ts after the section-level overrides, so these win the merge.
+ *
+ * Every satisfying event named here is emitted by a function in ./ops-17-2.ts (cited in `why`); the
+ * registry keeps one definition per code, so the rows §17.2 shares with §1.3/§1.6 carry the transferor's
+ * own duty here (Supermortgage is the RESPA transferor servicer, 12 U.S.C. 2605(i)(2)–(3)).
  */
 import type { TimerRegistry } from "../../kernel/timers/registry.ts";
 
 export function applySatisfiedOverrides_17_2(reg: TimerRegistry): void {
-  void reg;
+  const o = reg.override.bind(reg);
+  // ---- goodbye run --------------------------------------------------------------------------------
+  o("REGX_1024_33B3_EXCEPTION_30", { satisfied: "`notice.mailed{template∈{NTC_REGX_1024_33B_GOODBYE_MS2, NTC_REGX_1024_33B_HELLO_MS2, NTC_REGX_1024_33B_COMBINED_MS2}, every_loan=true}`",
+    why: "§17.2 timer table: 'Satisfied by: goodbye mailed' (§1.3 row: 'notice mailed' — the hello/combined on the transfer-in side). Both views are the run-level `notice.mailed{template, every_loan=true}` the notice run emits on the batch once every loan's proof of mailing is in (inbound.ts noticeRunMailed): the goodbye MS-2 when Supermortgage is the transferor (ops-17-2 planGoodbyeRun → timer REGX_1024_33B3_EXCEPTION_30, fnma_directed for-cause only, officer-confirmed), the hello MS-2 when it is the transferee. The registry trigger of REGX_1024_33B3_GOODBYE_15 (`transfer.batch.approved{direction=out}`) is unconditional and arms the −15 clock next to this one; relying on the exception (ops-17-2 relyOnExceptionB3ii, from planNoticeRun) cancels the −15 clock and its T−20 data milestone with reason `exception_b3ii` ('transfer date slips one month unless (b)(3)(ii) applies')." });
+  o("SM_TOLLFREE_LIVE_GATE", { evaluator: "1.3.tollFreeAndIvrDisclosureLive",
+    why: "§17.2 timer table: 'toll-free/IVR scripts verified' → `contact_center.ready`; 'run cannot be released'. The gate is the §1.3 evaluator over {toll_free_live, ivr_ai_disclosure_verified}; ops-17-2 contactCenterReady emits `contact_center.ready` for the batch only when both hold, and releaseToVendor (src/app/tools/section17-2.ts) evaluates the same facts before a run leaves qc_passed." });
+  o("SM_XFER_OUT_CORRECTIVE_NOTICE_5", { trigger: "`transfer.batch.*{reason∈{transfer_cancelled, transfer_date_changed}, goodbye_mailed=true}`", satisfied: "`notice.mailed{template=NTC_REGX_1024_33B_CORRECTIVE}`",
+    why: "§17.2 timer table: trigger '`transfer.batch.cancelled/date_changed` after goodbye mailed' — one pattern over both events: ops-17-2 cancelTransferOut emits `transfer.batch.cancelled{reason=transfer_cancelled, goodbye_mailed}` and changeTransferOutDate emits `transfer.batch.date_changed{reason=transfer_date_changed, goodbye_mailed}`; `goodbye_mailed=true` is the 'after goodbye mailed' condition (nothing mailed → no corrective notice owed). Satisfied by '`notice.mailed{NTC_REGX_1024_33B_CORRECTIVE}`; a new goodbye ≥15 days before any new date' — `notice.mailed` carries the template; the new goodbye is a fresh REGX_1024_33B3_GOODBYE_15 armed by the re-approval (correctiveNotice.new_goodbye_due)." });
+  // ---- misdirected payments and the forwarding file (§1024.33(c)) --------------------------------
+  o("SM_1024_33C2_FORWARD_PROMPT_1", { trigger: "`payment.received{loan.status='transferred_out'}`", anchor: "`received_at`", anchorField: "received_at", satisfied: "`misdirected_payment.*{disposition∈{forwarded, returned_to_payor}}`",
+    why: "§17.2 timer table (the transferor's own §1024.33(c)(2) duty; the §1.3 row `payment.received{received_by='transferor'}` → `payment.posted` is the same one-business-day duty seen from the transferee side): trigger `payment.received{loan.status='transferred_out'}`, anchor `received_at`, +1 business_days_servicer ('promptly'); satisfied by '`misdirected_payment.forwarded` or `.returned` with notice'. ops-17-2 receiveMisdirectedPayment emits the trigger on the loan; disposeMisdirectedPayment emits `misdirected_payment.forwarded{disposition=forwarded}` or `misdirected_payment.returned{disposition=returned_to_payor, return_notice_id}` and refuses a return without its NTC_REGX_1024_33C_MISDIRECTED_PAYMENT_RETURN notice id." });
+  o("REGX_1024_33C1_LATE_FEE_PROTECTION_60", { satisfied: "`transfer.protection_window.expired`",
+    why: "§17.2 timer table: window days 1–60 calendar from `respa_effective_date`, 'expires day 61'; 'payments received in-window are classified `protected` and the forwarding file carries the receipt date' (ops-17-2 misdirectedPayment / forwardingFile). The day-61 sweep ops-17-2 postTransferSweep emits `transfer.protection_window.expired` for the batch." });
+  o("SM_XFER_OUT_FORWARD_FILE_DAILY", { offset: "every 1 business_days_servicer", satisfied: "`transferee.forward_file.acked`",
+    why: "§17.2 timer table: 'each servicer business day, 17:00 local | daily through day 90 (support window)' — a servicer-business-day recurrence (the offset grammar has no clock-time form for a recurrence; the 17:00 local cut is the file build in ops-17-2 forwardingFile). Satisfied by `transferee.forward_file.acked` (ops-17-2 recordForwardFileAck on the transferee's SFTP acknowledgment, validated against the file id the platform built). The registry kind is `recurring`: the engine satisfies the day's instance with the ack and re-arms the next servicer-business-day recurrence from it (src/kernel/timers/engine.ts onEvent iterates a snapshot of its instances, so the re-armed instance is not re-satisfied by the same ack); the day-90 sweep (postTransferSweep) cancels the recurrence with reason `support_window_closed`." });
+  // ---- short-year statement, autodraft stop, skip trace, routing window ---------------------------
+  o("REGX_1024_17I4_TRANSFEROR_SHORT_YEAR_60", { satisfied: "`notice.mailed{template=NTC_REGX_1024_17I4_SHORT_YEAR_TRANSFEROR, every_loan=true}`",
+    why: "§17.2 timer table ('1.6; now owned'): trigger `transfer.batch.cutover_completed` (escrowed loans), `respa_effective_date` +60 calendar_days, satisfied by `notice.mailed{NTC_REGX_1024_17I4_SHORT_YEAR_TRANSFEROR}` (§1024.17(i)(4)(ii): the transferor submits the short-year statement within 60 days of the effective date). The §1.6 row's `transfer.short_year_statement.copy_received` is the transfer-in view (the partner's copy). ops-17-2 planShortYearRun selects the escrowed loans and shortYearRunMailed emits the batch-level `notice.mailed{template, every_loan=true}` once every escrowed loan has its proof of mailing." });
+  o("SM_XFER_OUT_AUTODRAFT_STOP_T0", { satisfied: "`autodraft.schedule.terminated{every_loan=true}`",
+    why: "§17.2 timer table: '`autodraft.schedule.terminated` for every drafted loan' — ops-17-2 stopAutodrafts cancels every debit with settlement ≥ T at T−3 BD through `nacha` (2.3), emits the per-loan events and the batch-level `autodraft.schedule.terminated{every_loan=true}`; a debit that settles on/after T raises `autodraft.debit.refund_due` (refund within 1 BD, reported in the forwarding file, QA finding)." });
+  o("FNMA_A2_7_03_RETURNED_NOTICE_SKIP_TRACE_5", { satisfied: "`skiptrace.completed{result∈{remailed, undeliverable_documented}}`",
+    why: "§17.2 timer table: '`skiptrace.completed` + remail/documented' (A2-7-03: a returned RESPA notice must start a skip trace) — ops-17-2 completeSkipTrace emits `skiptrace.completed{result}` on the loan with the original proof of mailing preserved, plus `notice.remailed` on a remail." });
+  o("SM_XFER_OUT_BORROWER_ROUTING_90", { satisfied: "`transfer.support_window.closed`",
+    why: "§17.2 timer table: '`borrower-comms` scripts active; after day 90 calls are referred with the transferee's number only' — the day-90 sweep ops-17-2 postTransferSweep emits `transfer.support_window.closed` for the batch (decision 3: 90-day support window), the event that ends the recurring window; on a live engine the sweep first closes the open recurrence with reason `support_window_closed` (the kernel would re-arm a recurring row from its own satisfying event). borrowerRoutingWindow phases the scripts (live from T−15, active days 1–90, refer_only after)." });
 }

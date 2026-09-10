@@ -8,11 +8,41 @@ import {
   buildSnapshot, renderBase, metro2Money, statusForDays, carryPhp, phpPosition, validateSnapshot, anomalyGate, transmissionClocks,
   negativeInfoNoticeDue, correctDofd, DofdReageBlocked, handoffHistory, boardingMonthReporter, deriveDelinquency,
   type CreditLoanState, type PriorHistory, type LoanCondition, type Metro2Snapshot,
-  directDisputeClocks, supplementationOpensNewCase, frivolousNoticeDue, frivolousEligible, acdvClocks, requiresHumanReview,
+  directDisputeClocks, supplementationOpensNewCase, frivolousNoticeDue, frivolousEligible, acdvClocks, requiresHumanReview, REVIEW_CONFIDENCE,
+  dueDatePlan, acdvCaseClose, ACDV_NO_RESPONSE_STATUS, ACDV_RETURNED_STATUS, ACDV_SUBMITTED_STATUS,
   cccOnReceipt, cccOnClose, correctionFanOut, AcdvSubmitGuard, preBoardingDetermination,
   resolveSuppression, applyNoeBar, noeBarEnd, bankruptcyOverlay, scraReducedPayment, scraOverlay, disasterOverlay, deceasedOverlay,
   identityTheftResponse, fdcpaGateIncludes, fdcpaGateOpensOn, sampleVerification, courtesyRequest, type Suppression,
 } from "./index.ts";
+import { buildCycle, phpAfterOmission, CreditCycleRunner, CreditReportingRefused, applyOverlayCodes, type BureauConfig } from "./ops.ts";
+import { applyCreditReportingTimerOverrides } from "./timers.ts";
+import { MemoryEventStore, FixedClock, eventMatches, type Actor } from "../../kernel/events/index.ts";
+import { TimerEngine, loadRegistry } from "../../kernel/timers/index.ts";
+import { MemoryLedger } from "../../kernel/ledger/ledger.ts";
+import { CommandBus, CommandRefused, type CommandSpec } from "../../app/commands.ts";
+import { AgentRegistry, loadAgentsFile } from "../../app/agents.ts";
+import { RoleDenied } from "../../app/roles.ts";
+import { EscalationService } from "../../app/escalations.ts";
+import { EntityStore, toolCommand, type ToolRuntime, type ToolInput } from "../../app/tools.ts";
+import { SECTION_08_TOOLS } from "../../app/tools/section08.ts";
+import { FakeEoscar } from "../../infra/integrations/credit.ts";
+import type { UowContext } from "../../infra/db/unit-of-work.ts";
+import type { Bureau } from "./disputes.ts";
+
+const AGENT: Actor = { kind: "agent", id: "credit-reporting" };
+const OFFICER: Actor = { kind: "human", id: "u-officer", role: "officer" };
+const CONFIG: Record<Bureau, BureauConfig> = { equifax: { program_identifier: "EFX-PROG", subscriber_code: "EFX123", file_naming: "SM_{cycle}_{bureau}.m2" }, experian: { program_identifier: "EXP-PROG", subscriber_code: "EXP123", file_naming: "SM_{cycle}_{bureau}.m2" }, transunion: { program_identifier: "TU-PROG", subscriber_code: "TU123", file_naming: "SM_{cycle}_{bureau}.m2" }, innovis: { program_identifier: "INV-PROG", subscriber_code: "INV123", file_naming: "SM_{cycle}_{bureau}.m2" } };
+const SHA256 = /^[0-9a-f]{64}$/;
+/** The §8 registry with only this section's overrides applied (what tools/lint-registry.ts counts for 8.x). */
+const creditRegistry = () => { const reg = loadRegistry(); applyCreditReportingTimerOverrides(reg); return reg; };
+/** Bind just the §8 tools to a runtime (what `bindTools` in src/app/tools/index.ts does for every section). */
+function bindSection08(rt: ToolRuntime, agents: AgentRegistry): Map<string, CommandSpec<ToolInput, unknown>> {
+  const escalates = new Map(loadAgentsFile().processes.map((p) => [p.process, p.escalates_to] as const));
+  const out = new Map<string, CommandSpec<ToolInput, unknown>>();
+  for (const d of SECTION_08_TOOLS) { const cmd = toolCommand(d, rt, escalates.get(d.process) ?? []); agents.registerTool(d.agent, cmd.name); out.set(`${d.process} ${d.name}`, cmd); }
+  return out;
+}
+const toolKey = (process: string, name: string): string => `${process} ${name}`;
 
 // ---- SM-1001 fixture (8.1 rule 13) ------------------------------------------
 const PI = cents("1847.15"), ESCROW = cents("612.40"), PITI = PI + ESCROW;
@@ -51,6 +81,23 @@ test("8.1-T1 happy path: 2027-01-31 current → 11, balance 000293063, PHP 0…0
   assert.equal(r.payment_history_profile, "0000000000000000000000BB");
   assert.equal(s.k3.min, "100012345678901234");
   assert.deepEqual(validateSnapshot(s), []);
+  // …and four files are transmitted by the 3rd servicer business day with hashes recorded (rule 10/11; SM_METRO2_TRANSMIT_ALL4_BD3).
+  const events = new MemoryEventStore(new FixedClock("2027-02-01T05:05:00.000Z"));
+  const runner = new CreditCycleRunner(events, AGENT);
+  runner.open("2027-01", d("2027-01-31"));
+  const b = runner.build({ cycle_id: "2027-01", as_of: d("2027-01-31"), records: [{ snapshot: s, prior_status: "11", b1_on_file: true }], config: CONFIG });
+  assert.equal(b.status, "validated"); assert.equal(b.record_count, 1); assert.deepEqual(b.omitted, []);
+  assert.equal(b.transmit_by.target, d("2027-02-03"));                            // Sun 01-31 → Mon 02-01, Tue 02-02, Wed 02-03
+  assert.equal(b.files.length, 4); for (const f of b.files) assert.match(f.hash, SHA256);
+  assert.equal(new Set(b.files.map((f) => f.hash)).size, 4, "the hash keys (cycle_id, bureau) — one per bureau file");
+  const t = runner.transmit(b, "2027-02-03T14:00:00.000Z");
+  assert.equal(t.on_time, true); assert.equal(t.transmitted.length, 4);
+  const tx = events.ofType("metro2.file.transmitted");
+  assert.equal(tx.length, 5, "one per bureau plus the all-bureaus cycle event");
+  assert.deepEqual(tx.filter((e) => e.payload.all_bureaus === false).map((e) => e.payload.bureau).sort(), ["equifax", "experian", "innovis", "transunion"]);
+  assert.ok(tx.filter((e) => e.payload.all_bureaus === false).every((e) => SHA256.test(String(e.payload.hash))));
+  assert.deepEqual(events.ofType("credit.cycle.opened").map((e) => e.payload.as_of_date), ["2027-01-31"]);
+  assert.equal(events.ofType("metro2.loan.furnished")[0]!.payload.negative_information, false);
 });
 
 test("8.1-T2 delinquency buckets: 02-28 → 11 (27 days); 03-31 → 71 DOFD 02012027; 04-30 → 78; APD 2459/4919/7378", () => {
@@ -190,6 +237,23 @@ test("8.1-T9 validation blocks 71 with blank DOFD; next month's PHP shows D for 
   assert.ok(validateSnapshot(s).includes("DOFD_REQUIRED"));
   const next = carryPhp({ php: s.php, status: null, dofd: null, omitted: true });
   assert.equal(next[0], "D");
+  // Rule 9: the record is excluded from the file, an exception is routed to the agent, and the four files carry only the clean record.
+  const ok = aprSnapshot();
+  const b = buildCycle({ cycle_id: "2027-04", as_of: d("2027-04-30"), records: [{ snapshot: s }, { snapshot: { ...ok, loan_id: "SM-1002" } }], config: CONFIG });
+  assert.deepEqual(b.exceptions, [{ loan_id: "SM-1001", errors: ["DOFD_REQUIRED"], routed_to: "credit-reporting", sla: "same_day", resolution: "omitted_from_file", php_next_month: "D" }]);
+  assert.deepEqual(b.omitted, [{ loan_id: "SM-1001", reason: "hard_error:DOFD_REQUIRED" }]);
+  assert.deepEqual(b.included.map((x) => x.loan_id), ["SM-1002"]);
+  assert.ok(b.files.every((f) => f.header.record_count === 1 && f.trailer.total_base_records === 1));
+  assert.equal(phpAfterOmission(s)[0], "D");
+  // a null MIN is a hard error too (rule 6: K3 MIN on every loan; rule 9: "K3 missing")
+  assert.ok(validateSnapshot({ ...ok, k3: { ...ok.k3, min: null } }).includes("K3_MIN_MISSING"));
+  assert.ok(validateSnapshot({ ...ok, k3: { ...ok.k3, min: "12345" } }).includes("MIN_NOT_18_DIGITS"));
+  // the runner records the exception event and refuses to furnish a record whose error is unresolved
+  const events = new MemoryEventStore(new FixedClock("2027-05-01T05:05:00.000Z"));
+  const runner = new CreditCycleRunner(events, AGENT);
+  runner.build({ cycle_id: "2027-04", as_of: d("2027-04-30"), records: [{ snapshot: s }], config: CONFIG });
+  assert.equal(events.ofType("credit.cycle.exception").length, 1);
+  assert.throws(() => runner.transmit({ ...b, included: [s] }, "2027-05-03T14:00:00.000Z"), (e: unknown) => e instanceof CreditReportingRefused && e.code === "UNRESOLVED_HARD_ERROR");
 });
 
 test("8.1-T10 anomaly hold: 3% unexplained status improvements holds the cycle", () => {
@@ -200,6 +264,22 @@ test("8.1-T10 anomaly hold: 3% unexplained status improvements holds the cycle",
   assert.ok(g.held);
   assert.match(g.reasons[0]!, /improvements 3\.00%/);
   assert.equal(anomalyGate(recs.map((r) => ({ ...r, explained_by_event: true }))).held, false);
+  // …and only `officer` can release it: the agent's release and transmission are refused; the officer's release validates the cycle.
+  const apr = aprSnapshot();
+  const records = Array.from({ length: 100 }, (_, i) => ({ snapshot: i < 3 ? { ...apr, loan_id: `L${i}`, account_status: "11" as const, dofd: null, amount_past_due_cents: 0n } : { ...apr, loan_id: `L${i}`, account_status: "71" as const }, prior_status: "71" as const, explained_by_event: false }));
+  const events = new MemoryEventStore(new FixedClock("2027-05-01T05:05:00.000Z"));
+  const runner = new CreditCycleRunner(events, AGENT);
+  const held = runner.build({ cycle_id: "2027-04", as_of: d("2027-04-30"), records, config: CONFIG });
+  assert.equal(held.status, "held"); assert.match(held.held_reasons[0]!, /improvements 3\.00%/);
+  assert.equal(events.ofType("credit.cycle.held").length, 1);
+  assert.throws(() => runner.release(held, AGENT, "looks fine"), (e: unknown) => e instanceof CreditReportingRefused && e.code === "OFFICER_REQUIRED");
+  assert.throws(() => runner.release(held, { kind: "human", id: "u-analyst", role: "ops_analyst" }, "looks fine"), (e: unknown) => e instanceof CreditReportingRefused && e.code === "OFFICER_REQUIRED");
+  assert.throws(() => runner.transmit(held, "2027-05-03T14:00:00.000Z"), (e: unknown) => e instanceof CreditReportingRefused && e.code === "CYCLE_HELD");
+  assert.equal(events.ofType("metro2.file.transmitted").length, 0, "a refusal writes nothing");
+  const released = runner.release(held, OFFICER, "improvements traced to the March lockbox re-post");
+  assert.equal(released.status, "validated"); assert.equal(released.approved_by, "u-officer");
+  assert.equal(events.ofType("credit.cycle.released")[0]!.actor.role, "officer");
+  assert.equal(runner.transmit(released, "2027-05-04T14:00:00.000Z").transmitted.length, 4);
 });
 
 test("8.1-T11 transmission deadlines: as_of 2027-01-31 with a servicer holiday Feb 2 → BD3 2027-02-04; hard stop 2027-02-10", () => {
@@ -222,7 +302,13 @@ test("8.1-T14 DOFD never later without evidence → DOFD_REAGE_BLOCKED; earlier 
 test("8.1-T15 boarding history: hand-off PHP carried; no hand-off → B×24; reporter of the boarding month by the 15th rule", () => {
   const h = handoffHistory("000010000000000000000000", null, "11");
   const s = buildSnapshot(state("2027-01-31", ledger("2027-01-01"), h));
+  // The hand-off is the transferor's *prior-month* snapshot (rule 14: its final 05 covers the boarding month only when the
+  // transfer date is after the 15th), so our first cycle carries that PHP shifted one position with the transferor's last
+  // status (11 → `0`) in position 1 (rule 4: position 1 = the month before as_of, never recomputed from the ledger).
   assert.equal(s.php, "0" + "000010000000000000000000".slice(0, 23));
+  assert.equal(s.php.slice(1), "000010000000000000000000".slice(0, 23), "the hand-off history is carried, not recomputed");
+  assert.equal(s.dofd, null, "DOFD blank carried from the hand-off (the loan is current)");
+  assert.equal(renderBase(s).date_of_first_delinquency, "00000000");
   assert.equal(carryPhp(null), "B".repeat(24));
   assert.equal(boardingMonthReporter(d("2027-02-10")), "supermortgage");
   assert.equal(boardingMonthReporter(d("2027-02-20")), "transferor");
@@ -278,6 +364,17 @@ test("8.2-T1/T3 ACDV clocks: received 09-15, due 10-01 → internal target 09-22
   assert.equal(c.internal_target, d("2027-09-22"));
   assert.equal(c.outer_bound, d("2027-10-12"));
   assert.equal(c.escalate_on, d("2027-09-29"));       // 16-day window × 0.9 = 14 days
+  // T1: submitted 09-22 (RESOLVED-SENDINGTOAGENCY); the case closes only on RESOLVED-RETURNEDTOAGENCY, with XH scheduled for the next cycle.
+  assert.equal(acdvCaseClose(ACDV_SUBMITTED_STATUS, "verified_as_reported").closed, false);
+  assert.deepEqual(acdvCaseClose(ACDV_RETURNED_STATUS, "verified_as_reported"), { closed: true, ccc_next_cycle: "XH", reason: null });
+  assert.equal(acdvCaseClose(ACDV_RETURNED_STATUS, "modified").ccc_next_cycle, "XR");
+  // T3: no reviewer action by 90% (09-29) → auto-escalates to officer; absent action by the due date → best-available response, never RESOLVED-NORESPONSEPROVIDED.
+  assert.deepEqual(dueDatePlan(c, d("2027-09-22"), true, "verified_as_reported"), { escalate_to: null, submit_best_available: false, determination: "verified_as_reported", follow_up_correction: false, never: ACDV_NO_RESPONSE_STATUS });
+  assert.equal(dueDatePlan(c, d("2027-09-28"), false, "verified_as_reported").escalate_to, null);
+  assert.equal(dueDatePlan(c, d("2027-09-29"), false, "verified_as_reported").escalate_to, "officer");
+  const lapse = dueDatePlan(c, d("2027-10-01"), false, "verified_as_reported");
+  assert.equal(lapse.submit_best_available, true); assert.equal(lapse.determination, "modified"); assert.equal(lapse.follow_up_correction, true);
+  assert.equal(lapse.never, "RESOLVED-NORESPONSEPROVIDED");
 });
 
 test("8.2-T4 view-before-submit guard", () => {
@@ -311,6 +408,22 @@ test("8.2-T8 unverifiable pre-boarding item; 8.2-T12 reviewer conditions; 8.2-T9
   assert.equal(requiresHumanReview({ determination: "verified_as_reported", confidence: 0.7 }).approver, "human_agent");
   assert.equal(requiresHumanReview({ determination: "verified_as_reported", confidence: 0.9 }).required, false);
   assert.equal(requiresHumanReview({ determination: "deleted_consumer", confidence: 0.99 }).approver, "officer");
+  // the eight reviewer conditions (8.2 AI agent design; 8.2-Q1 default: confidence < 0.85 for "verified")
+  assert.equal(REVIEW_CONFIDENCE, 0.85);
+  assert.deepEqual(requiresHumanReview({ determination: "verified_as_reported", confidence: 0.84 }).conditions, [1]);
+  assert.equal(requiresHumanReview({ determination: "verified_as_reported", confidence: 0.85 }).required, false);
+  assert.equal(requiresHumanReview({ determination: "modified", confidence: 0.5 }).required, false, "(1) applies to verified only");
+  assert.deepEqual(requiresHumanReview({ determination: "verified_as_reported", confidence: 0.93, category: "identity_theft" }).conditions, [2]);
+  assert.equal(requiresHumanReview({ determination: "verified_as_reported", confidence: 0.93, category: "mixed_file" }).approver, "officer");
+  assert.equal(requiresHumanReview({ determination: "modified", confidence: 0.93, reinsertion_or_brr: true }).approver, "officer");
+  assert.equal(requiresHumanReview({ determination: "frivolous", confidence: 0.93, channel: "direct_mail" }).approver, "human_agent");
+  assert.equal(requiresHumanReview({ determination: "frivolous", confidence: 0.93, channel: "direct_mail", repeat_basis: true }).approver, "officer");
+  assert.equal(requiresHumanReview({ determination: "verified_as_reported", confidence: 0.93, context: ["attorney"] }).approver, "officer");
+  assert.equal(requiresHumanReview({ determination: "verified_as_reported", confidence: 0.93, disputes_same_item_12m: 2 }).required, false);
+  assert.equal(requiresHumanReview({ determination: "verified_as_reported", confidence: 0.93, disputes_same_item_12m: 3 }).approver, "officer");
+  assert.equal(requiresHumanReview({ determination: "verified_as_reported", confidence: 0.93, pre_boarding_period: true, prior_servicer_records_complete: false }).approver, "human_agent");
+  const fl = requiresHumanReview({ determination: "verified_as_reported", confidence: 0.93, fair_lending_allegation: true });
+  assert.equal(fl.approver, "officer"); assert.equal(fl.fair_lending_log, true); assert.deepEqual(fl.conditions, [8]);
 });
 
 // ---- 8.3 suppression --------------------------------------------------------
@@ -444,11 +557,22 @@ test("8.3-T8 deceased co-borrower B → ECOA X on B's segment only; successor ne
 });
 
 test("8.3-T9 identity theft block 2027-05-03: omit C, AUD by 05-05, fraud case, resumption requires officer + BRR", () => {
-  const r = identityTheftResponse({ party_id: "C", received_on: d("2027-05-03"), never_liable: false }, d("2027-05-05"));
+  const r = identityTheftResponse({ party_id: "C", received_on: d("2027-05-03"), never_liable: false });
   assert.equal(r.suppression.mechanism, "omit_account");
-  assert.equal(r.aud_due, d("2027-05-05"));
-  assert.ok(r.resumption_requires.includes("officer_approval") && r.resumption_requires.includes("brr_with_evidence"));
-  assert.equal(identityTheftResponse({ party_id: "C", received_on: d("2027-05-03"), never_liable: true }, d("2027-05-05")).suppression.mechanism, "delete_consumer");
+  assert.equal(r.aud_due, d("2027-05-05"), "2 business_days_servicer from Mon 2027-05-03 (SM_CR_OVERLAY_URGENT_AUD_BD2)");
+  assert.equal(r.omitted_from_cycle_as_of, d("2027-05-31"));
+  assert.deepEqual(r.urgent_event, { type: "credit.overlay.urgent", kind: "identity_theft_block" });
+  assert.equal(r.fraud_case, true);
+  assert.deepEqual(r.resumption_requires, ["officer_approval", "brr_with_evidence", "cra_block_rescission"]);
+  assert.equal(identityTheftResponse({ party_id: "C", received_on: d("2027-05-03"), never_liable: true }).suppression.mechanism, "delete_consumer");
+  assert.equal(identityTheftResponse({ party_id: "C", received_on: d("2027-05-07"), never_liable: false }).aud_due, d("2027-05-11"), "Fri 05-07 → Mon 05-10, Tue 05-11");
+  // C (a J1 co-borrower) is omitted from the May cycle: the record furnishes A's segment only; a suppressed base consumer omits the record.
+  const may = { ...buildSnapshot(state("2027-05-31", ledger("2027-05-01"), JAN_PRIOR, { consumers: [{ party_id: "A", position: 1, same_address_as_base: true, liability: "joint" }, { party_id: "C", position: 2, same_address_as_base: true, liability: "joint" }] })) };
+  const b = buildCycle({ cycle_id: "2027-05", as_of: d("2027-05-31"), records: [{ snapshot: may, suppressions: [r.suppression] }], config: CONFIG });
+  assert.deepEqual(b.included[0]!.consumers.map((c) => c.party_id), ["A"]);
+  assert.deepEqual(b.overlay_decisions[0], { loan_id: "SM-1001", mechanism: "omit_account", codes: [], reasons: ["identity_theft"] });
+  const base = identityTheftResponse({ party_id: "A", received_on: d("2027-05-03"), never_liable: false });
+  assert.deepEqual(buildCycle({ cycle_id: "2027-05", as_of: d("2027-05-31"), records: [{ snapshot: may, suppressions: [base.suppression] }], config: CONFIG }).omitted, [{ loan_id: "SM-1001", reason: "omit_account:identity_theft" }]);
 });
 
 test("8.3-T10 FDCPA gate: notice 02-12 with no undeliverability → included in Feb-28 cycle; undeliverable 02-20 → omitted until live contact", () => {
@@ -478,4 +602,127 @@ test("8.3-T12/T13/T14: no courtesy suppression; sample verification thresholds; 
 test("8.1 rule 13 arithmetic: P&I 1,847.15 from the note terms", () => {
   assert.equal(levelPayment(cents("300000"), RATE, 360), cents("1847.15"));
   assert.equal(deriveDelinquency(ledger("2027-01-01"), d("2027-04-30")).amount_past_due_cents, cents("7378.65"));
+});
+
+test("8.1 timers arm and satisfy from the cycle runner's events (registry rows after the §8 overrides)", () => {
+  const clock = new FixedClock("2027-02-01T05:05:00.000Z");
+  const events = new MemoryEventStore(clock);
+  const engine = new TimerEngine(creditRegistry(), events, { processes: ["8.1", "8.2", "8.3"] });
+  const runner = new CreditCycleRunner(events, AGENT);
+  const armed = (code: string) => engine.byCode(code).filter((t) => t.status === "armed");
+  const satisfied = (code: string) => engine.byCode(code).filter((t) => t.status === "satisfied" || t.status === "satisfied_late");
+  // credit.cycle.opened → BD3 / CD10 anchored on as_of_date
+  runner.open("2027-01", d("2027-01-31"));
+  assert.equal(armed("SM_METRO2_TRANSMIT_ALL4_BD3")[0]!.dueDate, d("2027-02-03"));
+  assert.equal(armed("SM_METRO2_TRANSMIT_HARD_CD10")[0]!.dueDate, d("2027-02-10"));
+  // one current loan and one 71 loan without B-1 evidence
+  const led = ledger("2027-01-01");
+  const jan = buildSnapshot(state("2027-01-31", led, JAN_PRIOR));
+  const dq = { ...buildSnapshot(state("2027-03-31", led, buildSnapshot(state("2027-02-28", led, jan)))), loan_id: "SM-1002", as_of: d("2027-01-31") };
+  const b = runner.build({ cycle_id: "2027-01", as_of: d("2027-01-31"), records: [{ snapshot: jan, b1_on_file: true }, { snapshot: dq, b1_on_file: false }], config: CONFIG });
+  assert.equal(b.status, "validated");
+  assert.equal(armed("SM_APPX_E_SAMPLE_VERIFY_MONTHLY").length, 1, "credit.cycle.validated arms the Appendix E sample verification");
+  clock.set("2027-02-03T14:00:00.000Z");
+  runner.transmit(b, "2027-02-03T14:00:00.000Z");
+  assert.equal(satisfied("SM_METRO2_TRANSMIT_ALL4_BD3").length, 1); assert.equal(satisfied("SM_METRO2_TRANSMIT_HARD_CD10").length, 1);
+  assert.equal(armed("SM_METRO2_ACK_EXPECTED_BD").length, 4, "one per bureau file");
+  assert.equal(armed("SM_METRO2_ACK_EXPECTED_BD")[0]!.dueDate, d("2027-02-10"));       // 5 servicer BD from Wed 02-03
+  const neg = armed("FCRA_1681S2A7_NEG_INFO_NOTICE_30");
+  assert.equal(neg.length, 1); assert.equal(neg[0]!.loanId, "SM-1002"); assert.equal(neg[0]!.dueDate, d("2027-03-05"));
+  events.append({ type: "notice.sent", loanId: "SM-1002", actor: AGENT, payload: { template: "NTC_ESCROW_ANNUAL", notice_id: "n-1" } });
+  assert.equal(satisfied("FCRA_1681S2A7_NEG_INFO_NOTICE_30").length, 0, "an unrelated notice does not close the B-2 deadline");
+  events.append({ type: "notice.sent", loanId: "SM-1002", actor: AGENT, payload: { template: "NTC_FCRA_1681S2A7_B2", notice_id: "n-2" } });
+  assert.equal(satisfied("FCRA_1681S2A7_NEG_INFO_NOTICE_30").length, 1);
+  // Appendix E control run on the cycle: only the E-III-d run satisfies the (recurring) sample-verification row. Matched
+  // against the pattern rather than appended: src/kernel/timers/engine.ts re-arms a recurring row from its satisfying
+  // event while iterating the live instance list, so an event-satisfied recurring timer re-satisfies itself without end.
+  const sampleVerify = creditRegistry().get("SM_APPX_E_SAMPLE_VERIFY_MONTHLY")!.satisfiedPattern!;
+  const side = new MemoryEventStore(clock);
+  assert.equal(eventMatches(sampleVerify, side.append({ type: "accuracy_program.control_run", aggregate: { kind: "metro2_cycle", id: "2027-01" }, actor: AGENT, payload: { control_id: "E-III-l" } })), false);
+  assert.equal(eventMatches(sampleVerify, side.append({ type: "accuracy_program.control_run", aggregate: { kind: "metro2_cycle", id: "2027-01" }, actor: AGENT, payload: { control_id: "E-III-d" } })), true);
+  // ack with rejects: ACK_EXPECTED satisfied for that file; REJECT_RESOLVE_BD5 armed from the ack date; resolved by the 5-BD loop
+  const expFile = events.ofType("metro2.file.transmitted").find((e) => e.payload.bureau === "experian")!.payload.file_id as string;
+  const rejects = [{ line: 100, code: "INVALID_MIN", message: "MIN invalid", loan_id: "SM-1002", field: "min" }];
+  const loans = { "SM-1002": { min: "100012345678901234", fnma_loan_number: "1234567890" } };
+  runner.ingestAck({ bureau: "experian", file_id: expFile, received_on: d("2027-02-05"), rejects, loans });
+  assert.equal(satisfied("SM_METRO2_ACK_EXPECTED_BD").length, 1); assert.equal(armed("SM_METRO2_ACK_EXPECTED_BD").length, 3);
+  assert.equal(armed("SM_METRO2_REJECT_RESOLVE_BD5")[0]!.dueDate, d("2027-02-12"));
+  assert.equal(runner.resolveAckItems({ bureau: "experian", file_id: expFile, received_on: d("2027-02-05"), rejects, loans, resubmitted_on: d("2027-02-09") }).resolved, true);
+  assert.equal(satisfied("SM_METRO2_REJECT_RESOLVE_BD5").length, 1);
+  // a determination of inaccuracy → CORRECTION_PROMPT_BD2 from the determination date, satisfied by the AUD
+  runner.createCorrection({ loan_id: "SM-1002", source: "ack_reject", fields_changed: [{ field: "min", before: null, after: "100012345678901234" }], determined_on: d("2027-02-05") });
+  assert.equal(armed("FCRA_1681S2A2_CORRECTION_PROMPT_BD2")[0]!.dueDate, d("2027-02-09"));
+  events.append({ type: "eoscar.aud.submitted", loanId: "SM-1002", actor: AGENT, payload: { aud_id: "U-1", bureau: "experian" } });
+  assert.equal(satisfied("FCRA_1681S2A2_CORRECTION_PROMPT_BD2").length, 1);
+  // DOFD_90: a 97 furnished without DOFD (unreachable through the generator, so emitted directly) is closed by an AUD carrying the DOFD
+  events.append({ type: "metro2.loan.furnished", loanId: "SM-1003", actor: AGENT, payload: { account_status: "97", dofd: null, negative_information: true, b1_on_file: true, transmitted_at: "2027-02-03T14:00:00.000Z" } });
+  assert.equal(armed("FCRA_1681S2A5_DOFD_90")[0]!.dueDate, d("2027-05-04"));
+  events.append({ type: "credit.dofd.furnished", loanId: "SM-1003", actor: AGENT, payload: { via: "aud", dofd: "2026-11-01" } });
+  assert.equal(satisfied("FCRA_1681S2A5_DOFD_90").length, 1);
+  // guardrails on corrections: DOFD later without evidence, DA/DF or ECOA Z without an officer
+  assert.throws(() => runner.createCorrection({ loan_id: "SM-1002", source: "qc", fields_changed: [{ field: "date_of_first_delinquency", before: "2027-02-01", after: "2027-03-01" }], determined_on: d("2027-02-05") }), DofdReageBlocked);
+  assert.throws(() => runner.createCorrection({ loan_id: "SM-1002", source: "dispute_acdv", fields_changed: [{ field: "ecoa", before: "2", after: "Z" }], determined_on: d("2027-02-05") }), (e: unknown) => e instanceof CreditReportingRefused && e.code === "OFFICER_REQUIRED");
+  assert.equal(runner.createCorrection({ loan_id: "SM-1002", source: "dispute_acdv", fields_changed: [{ field: "account_status", before: "71", after: "DF" }], determined_on: d("2027-02-05") }, OFFICER).correction.requires_officer, true);
+  assert.throws(() => runner.transmit(b, "2027-02-04T14:00:00.000Z", { resubmission_of: expFile }), (e: unknown) => e instanceof CreditReportingRefused && e.code === "OFFICER_REQUIRED");
+  assert.equal(runner.transmit(b, "2027-02-04T14:00:00.000Z", { resubmission_of: expFile, approver: OFFICER }).transmitted.length, 4);
+});
+
+test("8.3 overlay codes are applied before rendering: CII/ECOA per consumer, CCC, Special Comment priority CP > AW", () => {
+  const s = buildSnapshot(state("2027-01-31", ledger("2027-01-01"), JAN_PRIOR, { consumers: [{ party_id: "A", position: 1, same_address_as_base: true, liability: "joint" }, { party_id: "B", position: 2, same_address_as_base: true, liability: "joint" }] }));
+  const o = applyOverlayCodes(s, { mechanism: "freeze_status", codes: ["CII D", "XB", "AW"], reasons: ["bankruptcy", "dispute_open", "disaster"] }, "A");
+  assert.deepEqual(o.consumers.map((c) => [c.party_id, c.cii, c.ccc, c.ecoa]), [["A", "D", "XB", "2"], ["B", "", "", "2"]]);
+  assert.equal(o.special_comment, "AW");
+  assert.equal(applyOverlayCodes(o, { mechanism: "freeze_status", codes: ["CP"], reasons: ["forbearance"] }).special_comment, "CP", "CP takes the single Special Comment field over AW");
+  assert.equal(applyOverlayCodes(o, { mechanism: "flag_only", codes: ["ECOA X"], reasons: ["deceased"] }, "B").consumers[1]!.ecoa, "X");
+});
+
+test("§8 bus guardrails: officer approvals are the actor's role, never a flag the caller asserts; identity-theft releases are checked on the stored suppression", async () => {
+  const agents = new AgentRegistry();
+  const clock = new FixedClock("2027-05-03T12:00:00.000Z");
+  const events = new MemoryEventStore(clock);
+  const ctx: UowContext = { loanId: "SM-1001", events, ledger: new MemoryLedger(), timers: new TimerEngine(loadRegistry(), events, { processes: [] }), clock, decide: () => {} };
+  const eoscar = new FakeEoscar();
+  const rt: ToolRuntime = { store: new EntityStore(), escalations: new EscalationService(events, clock), services: {}, ports: { eoscar } };
+  const cmds = bindSection08(rt, agents); const bus = new CommandBus(agents);
+  const sup = cmds.get(toolKey("8.3", "credit.suppression.create/release"))!;
+  const evidence = { trigger_event_id: "ev-block-1", evidence_document_id: "doc-block-notice" };
+  // delete_consumer needs an officer — `officer_approved: true` from the agent does not count
+  await assert.rejects(bus.execute(sup, AGENT, { id: "sup-z", reason: "identity_theft", mechanism: "delete_consumer", party_id: "C", officer_approved: true, ...evidence }, ctx), (e: unknown) => e instanceof CommandRefused && e.code === "DELETE_NEEDS_OFFICER");
+  assert.equal(rt.store.get("credit_reporting_suppressions", "sup-z"), undefined, "a refusal writes nothing");
+  await bus.execute(sup, OFFICER, { id: "sup-z", reason: "identity_theft", mechanism: "delete_consumer", party_id: "C", codes: ["ECOA Z"], ...evidence }, ctx);
+  assert.equal(rt.store.get("credit_reporting_suppressions", "sup-z")!.data.mechanism, "delete_consumer");
+  // no suppression without a triggering event and evidence
+  await assert.rejects(bus.execute(sup, AGENT, { id: "sup-x", reason: "bankruptcy", mechanism: "freeze_status" }, ctx), (e: unknown) => e instanceof CommandRefused && e.code === "SUPPRESSION_NEEDS_EVENT_AND_EVIDENCE");
+  // the agent may omit the consumer immediately (rule 7) — and that emits the urgent-AUD trigger
+  await bus.execute(sup, AGENT, { id: "sup-c", reason: "identity_theft", mechanism: "omit_account", party_id: "C", ...evidence }, ctx);
+  assert.deepEqual(events.ofType("credit.overlay.urgent").map((e) => e.payload.kind), ["identity_theft_block", "identity_theft_block"]);
+  // releasing it: the agent cannot (even claiming approval and hiding the reason); the officer can, with evidence
+  await assert.rejects(bus.execute(sup, AGENT, { op: "release", id: "sup-c", officer_approved: true }, ctx), (e: unknown) => e instanceof RoleDenied);
+  await assert.rejects(bus.execute(sup, AGENT, { op: "release", id: "sup-c", reason: "identity_theft" }, ctx), (e: unknown) => e instanceof CommandRefused && e.code === "DELETE_NEEDS_OFFICER");
+  assert.equal(rt.store.get("credit_reporting_suppressions", "sup-c")!.data.status, "active");
+  await assert.rejects(bus.execute(sup, OFFICER, { op: "release", id: "sup-c" }, ctx), /evidence_document_id is required/);
+  await bus.execute(sup, OFFICER, { op: "release", id: "sup-c", evidence_document_id: "doc-brr-rescission" }, ctx);
+  assert.equal(rt.store.get("credit_reporting_suppressions", "sup-c")!.data.status, "released");
+  assert.deepEqual(events.ofType("credit.identity_theft.released").map((e) => e.payload.by), ["officer"]);
+  // SCRA adverse change during the gate needs an officer; a plain SCRA freeze does not
+  await assert.rejects(bus.execute(sup, AGENT, { id: "sup-s", reason: "scra", mechanism: "freeze_status", adverse_change: true, officer_approved: true, ...evidence }, ctx), (e: unknown) => e instanceof CommandRefused && e.code === "SCRA_ADVERSE_NEEDS_OFFICER");
+  await bus.execute(sup, AGENT, { id: "sup-s", reason: "scra", mechanism: "freeze_status", party_id: "A", ...evidence }, ctx);
+  // 8.2: delete responses need an officer; a due date never lapses; oral follow-ups disclose automation
+  const acdv = cmds.get(toolKey("8.2", "eoscar.acdv.find/view/validate/submit"))!;
+  eoscar.post({ controlNumber: "C1", bureau: "experian", consumer: { name: "B", ssnLast4: "1234" }, accountNumber: "A1", disputeCodes: ["112"], receivedAt: "2027-05-01T00:00:00.000Z", responseDueOn: "2027-05-17", images: [], fcraRelevantInfo: false });
+  await bus.execute(acdv, AGENT, { op: "view", control_number: "C1" }, ctx);
+  await assert.rejects(bus.execute(acdv, AGENT, { op: "submit", determination: "deleted_account", officer_approved: true, response: { controlNumber: "C1", responseCode: "02", accountFields: { account_status: "DA" } } }, ctx), (e: unknown) => e instanceof CommandRefused && e.code === "DELETE_NEEDS_OFFICER");
+  await assert.rejects(bus.execute(acdv, AGENT, { op: "submit", determination: "modified", response: { controlNumber: "C1", responseCode: "02", accountFields: { ecoa: "Z" } } }, ctx), (e: unknown) => e instanceof CommandRefused && e.code === "DELETE_NEEDS_OFFICER");
+  await assert.rejects(bus.execute(acdv, AGENT, { op: "submit", response: { controlNumber: "C1", responseCode: "RESOLVED-NORESPONSEPROVIDED", accountFields: {} } }, ctx), (e: unknown) => e instanceof CommandRefused && e.code === "DUE_DATE_NEVER_LAPSES");
+  await assert.rejects(bus.execute(acdv, AGENT, { op: "find", follow_up_channel: "oral", automation_disclosed: false }, ctx), (e: unknown) => e instanceof CommandRefused && e.code === "ORAL_FOLLOWUP_DISCLOSES_AUTOMATION");
+  await bus.execute(acdv, AGENT, { op: "submit", determination: "modified", response: { controlNumber: "C1", responseCode: "02", accountFields: { account_status: "11" } } }, ctx);
+  assert.equal(events.ofType("credit.dispute.acdv.responded").length, 1);
+  // the AUD tool emits the event the registry rows wait on, and the DOFD it carries
+  const aud = cmds.get(toolKey("8.2", "eoscar.aud.validate/submit"))!;
+  await assert.rejects(bus.execute(aud, AGENT, { op: "submit", reinsertion: true, officer_approved: true, evidence_document_id: "d1", certification_document_id: "d2", aud: { audId: "U-r", bureau: "experian", accountNumber: "A1", fields: { account_status: "71" }, reason: "reinsertion" } }, ctx), (e: unknown) => e instanceof CommandRefused && e.code === "REINSERTION_NEEDS_OFFICER");
+  await assert.rejects(bus.execute(aud, OFFICER, { op: "submit", reinsertion: true, aud: { audId: "U-r", bureau: "experian", accountNumber: "A1", fields: { account_status: "71" }, reason: "reinsertion" } }, ctx), (e: unknown) => e instanceof CommandRefused && e.code === "NO_REINSERTION_WITHOUT_CERT");
+  await bus.execute(aud, AGENT, { op: "submit", aud: { audId: "U-1", bureau: "experian", accountNumber: "A1", fields: { date_of_first_delinquency: "02012027", account_status: "71" }, reason: "correction" } }, ctx);
+  assert.deepEqual(events.ofType("eoscar.aud.submitted").map((e) => e.payload.aud_id), ["U-1"]);
+  assert.deepEqual(events.ofType("credit.dofd.furnished").map((e) => e.payload.via), ["aud"]);
+  assert.equal(events.ofType("credit.aud.submitted").length, 0, "the old event name nothing waited on is gone");
 });

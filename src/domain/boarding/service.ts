@@ -14,6 +14,8 @@ import { applyFifo, earliestUnpaidDueDate, regxDaysDelinquent, fnmaDelinquencySt
 import { runRules, ALL_RULES, RULE_SET_VERSION } from "./rules.ts";
 import { boardingMachine, type BoardingStatus } from "./machine.ts";
 import type { StagedLoan, BatchContext, ExternalPositions, RuleResult } from "./types.ts";
+import { fnmaPositionLagDeadline } from "../transfers/reconciliation.ts";
+import { inflightBoardingFacts } from "../transfers/ops-1-7.ts";
 
 export const BOARDING_AGENT: Actor = { kind: "agent", id: "boarding" };
 
@@ -27,7 +29,8 @@ export interface Validation extends RuleResult { readonly id: number; readonly r
 export interface BatchLoan {
   readonly id: string;
   readonly batch_id: string;
-  readonly staged: StagedLoan;
+  /** Canonical row; replaced (never edited in place) by `applyCorrection`, which re-applies the FIFO history. */
+  staged: StagedLoan;
   status: BoardingStatus;
   loan_id?: string;
   boarding_hold: boolean;
@@ -62,6 +65,9 @@ export interface TransferorQuery {
 export type WaiverResult =
   | { ok: true; decision: AgentDecision }
   | { ok: false; code: "ROLE_DENIED" | "NOT_FOUND" | "NOT_FAILED"; reason: string };
+export type CorrectionResult =
+  | { ok: true; fields: readonly (keyof StagedLoan)[]; money_fields: readonly (keyof StagedLoan)[]; decision: AgentDecision; status: BoardingStatus }
+  | { ok: false; code: "NOT_FOUND" | "NOT_CORRECTABLE" | "MONEY_FIELD_GUARD" | "EVIDENCE_REQUIRED"; reason: string };
 
 export interface BoardingDeps {
   readonly events: EventStore;
@@ -101,9 +107,47 @@ export class BoardingService {
     if (existing) return { status: "duplicate", tape_id: existing.id, sha256, received_at: existing.received_at };
     const tape: Tape = { id: randomUUID(), batch_id: batchId, kind, sha256, row_count: rowCount, received_at: this.deps.clock.now() };
     this.tapes.set(sha256, tape);
+    // `transfer_date` rides along for the timers anchored on it (SM_LOSSMIT_FILE_VERIFY_T0 on `transfer.tape.received{kind=lossmit}`).
+    const b = this.batches.get(batchId);
     this.deps.events.append({ type: "transfer.tape.received", aggregate: { kind: "transfer_batch", id: batchId }, actor: { kind: "external", id: "transferor_sftp" },
-      payload: { kind, tape_id: tape.id, sha256, row_count: rowCount } });
+      payload: { kind, tape_id: tape.id, sha256, row_count: rowCount, batch_id: batchId, ...(b ? { transfer_date: b.transfer_date } : {}) } });
     return { status: "accepted", tape_id: tape.id, sha256, received_at: tape.received_at };
+  }
+
+  /** `transfer.batch.cutover_completed` (1.1 state machine "cutover (transfer date)"): every staged loan of the batch has boarded or left the list, on or after the transfer date. */
+  completeCutover(batchId: string, extra: { respa_effective_date?: PlainDate; code_type?: "D" | "I" | "C" | "none"; notice_mode?: "separate" | "combined"; type?: string; last_batch_for_partner?: boolean } = {}): DomainEvent {
+    const b = this.batch(batchId);
+    const now = this.deps.clock.now();
+    if (plainDate(now.slice(0, 10)) < b.transfer_date) throw new RangeError(`cutover for ${batchId} cannot complete before the transfer date ${b.transfer_date}`);
+    const loans = this.batchLoans(batchId);
+    const pending = loans.filter((l) => l.status === "staged" || l.status === "validated" || l.status === "exception");
+    if (pending.length) throw new RangeError(`${pending.length} loan(s) of ${batchId} are still ${[...new Set(pending.map((l) => l.status))].join("/")}; cutover incomplete`);
+    const boarded = loans.filter((l) => l.status === "boarded" || l.status === "reconciled" || l.status === "active").length;
+    return this.deps.events.append({ type: "transfer.batch.cutover_completed", aggregate: { kind: "transfer_batch", id: batchId }, actor: BOARDING_AGENT, payload: {
+      batch_id: batchId, type: extra.type ?? "master_to_sub", transfer_date: b.transfer_date, respa_effective_date: extra.respa_effective_date ?? b.transfer_date, ted: b.transfer_date, code_type: extra.code_type ?? "none", notice_mode: extra.notice_mode ?? "separate",
+      loan_count: loans.length, boarded_count: boarded, withdrawn_count: loans.length - boarded, last_batch_for_partner: extra.last_batch_for_partner ?? false, fnma_position_deadline: fnmaPositionLagDeadline(b.transfer_date), cutover_at: now } });
+  }
+
+  // ───────── LL-2026-05 Escrow Setup acknowledgments ("for every escrow category") ─────────
+  /** Escrow item category types on the boarded loan (LL-2026-05 "each applicable escrow item category type"), from its escrow lines. */
+  static escrowCategoriesOf(s: StagedLoan): string[] {
+    const map = (t: string): string => (/tax/i.test(t) ? "tax" : /hazard|homeowner|wind|hail/i.test(t) ? "hazard" : /flood/i.test(t) ? "flood" : /\bmi\b|mortgage_ins|pmi/i.test(t) ? "mi" : "other");
+    return s.escrowed ? [...new Set(s.escrow_lines.map((l) => map(l.line_type)))] : [];
+  }
+  private readonly escrowAcks = new Map<string, Set<string>>();
+  /**
+   * Fannie Mae's acknowledgment of one Escrow Setup event. The ack is appended as `investor_events.acked{type=EscrowSetup, category}`;
+   * the one that completes the loan's category set carries `every_category=true`, which is what LL_2026_05_ESCROW_SETUP_ACQUIRED_BD1 waits for.
+   */
+  recordEscrowSetupAck(batchLoanId: string, category: string, ackedAt: string = this.deps.clock.now()): { acked: string[]; expected: string[]; every_category: boolean; event: DomainEvent } {
+    const bl = this.batchLoan(batchLoanId);
+    const expected = BoardingService.escrowCategoriesOf(bl.staged);
+    let acked = this.escrowAcks.get(batchLoanId); if (!acked) { acked = new Set(); this.escrowAcks.set(batchLoanId, acked); }
+    acked.add(category);
+    const every = expected.length > 0 && expected.every((c) => acked!.has(c));
+    const event = this.deps.events.append({ type: "investor_events.acked", loanId: bl.id, actor: { kind: "external", id: "fnma" }, occurredAt: ackedAt,
+      payload: { type: "EscrowSetup", category, acked_categories: [...acked], expected_categories: expected, every_category: every, loan_id: bl.loan_id ?? null } });
+    return { acked: [...acked], expected, every_category: every, event };
   }
 
   // ───────── staging ─────────
@@ -129,7 +173,8 @@ export class BoardingService {
   }
 
   // ───────── validation (nightly `boarding.stage.validate`) ─────────
-  validate(batchId: string): Scorecard {
+  /** Run the gate over the batch (or `only` these batch-loan ids, after a correction). A hard failure raises `loan.boarding_exception.raised{severity=hard}` once — the nightly re-run does not re-raise an open one, so SM_BOARD_EXCEPTION_SLA_2 keeps its first `raised_at`. */
+  validate(batchId: string, only?: ReadonlySet<string>): Scorecard {
     const b = this.batch(batchId);
     const loans = this.batchLoans(batchId);
     const loanNumbers = new Map<string, number>(), mins = new Map<string, number>();
@@ -140,12 +185,16 @@ export class BoardingService {
     const run_id = randomUUID();
     for (const bl of loans) {
       if (bl.status !== "staged" && bl.status !== "exception" && bl.status !== "validated") continue;
+      if (only && !only.has(bl.id)) continue;
       const prevWaived = new Map(bl.validations.filter((v) => v.waived).map((v) => [v.code, v.waived!]));
+      const prevOpenHard = new Set(this.openHardFailures(bl).map((v) => v.code));
       const results = runRules({ loan: bl.staged, batch: b, ext: this.deps.ext, batchCounts: { loanNumbers, mins } }, ALL_RULES);
-      bl.validations = results.map((r) => {
+      const ruleCodes = new Set(results.map((r) => r.code));
+      const raisedByAgent = bl.validations.filter((v) => !ruleCodes.has(v.code));   // `raiseException` rows are not the rule set's to clear
+      bl.validations = [...results.map((r) => {
         const w = prevWaived.get(r.code);
         return { ...r, id: ++this.validationSeq, run_id, ...(w ? { waived: w } : {}) };
-      });
+      }), ...raisedByAgent];
       const openHard = this.openHardFailures(bl);
       const t = boardingMachine.attempt(bl.status, "validate", BOARDING_AGENT, { openHardFailures: openHard.length, transferDateReached: false, finalTapeReconciled: false, onApprovedList: true });
       if (!t.ok) continue;
@@ -156,7 +205,7 @@ export class BoardingService {
           payload: { batch_loan_id: bl.id, run_id, warnings: bl.validations.filter((v) => v.severity === "warning" && v.result === "fail" && !v.waived).map((v) => v.code), prior_status: prior } });
         if (prior === "exception") this.deps.events.append({ type: "loan.boarding_exception.resolved", loanId: bl.id, actor: BOARDING_AGENT, payload: { batch_loan_id: bl.id, run_id } });
       } else {
-        for (const v of openHard) this.deps.events.append({ type: "loan.boarding_exception.raised", loanId: bl.id, aggregate: { kind: "transfer_batch", id: batchId }, actor: BOARDING_AGENT,
+        for (const v of openHard) if (!prevOpenHard.has(v.code)) this.deps.events.append({ type: "loan.boarding_exception.raised", loanId: bl.id, aggregate: { kind: "transfer_batch", id: batchId }, actor: BOARDING_AGENT,
           payload: { batch_loan_id: bl.id, rule_code: v.code, severity: "hard", money_field: v.money_field, raised_at: this.deps.clock.now(), run_id, expected: v.expected ?? null, actual: v.actual ?? null } });
       }
     }
@@ -191,6 +240,68 @@ export class BoardingService {
     const bl = this.batchLoan(batchLoanId);
     return { batch_loan_id: bl.id, transferor_loan_number: bl.staged.transferor_loan_number, fnma_loan_number: bl.staged.fnma_loan_number,
       items: this.openWarnings(bl).filter((v) => v.code === "W-016").map((v) => ({ rule_code: v.code, message: v.message ?? "", expected: v.expected, actual: v.actual, money_field: v.money_field })) };
+  }
+
+  // ───────── corrections and agent-raised exceptions (1.1 agent design: applyCorrection / raiseException) ─────────
+  /** Money fields (UPB, escrow, suspense, advances, fees, P&I, rate; HF-016 non-interest-bearing balances) — never agent-corrected. */
+  static readonly MONEY_FIELDS: readonly (keyof StagedLoan)[] = ["upb_cents", "scheduled_upb_cents", "original_upb_cents", "escrow_balance_cents", "escrow_payment_cents", "escrow_lines",
+    "unapplied_cents", "corporate_advances_cents", "fees_advances_cents", "late_charges_due_cents", "late_charge_pct", "pi_cents", "note_rate_pct", "deferred_principal_cents", "forborne_principal_cents"];
+  /**
+   * Apply a correction to the canonical row and re-run the gate on the loan. Guardrails (1.1 agent design): money fields are
+   * "never agent-corrected — only transferor-corrected or `officer`-waived": a money change needs `provenance="transferor"`
+   * with the correction file/letter as evidence, whoever keys it; an officer resolves a money discrepancy by `proposeWaiver`.
+   * Non-money fields (formatting, enumerations, derived fields) are the agent's to correct, with a decision record. The row
+   * is replaced, never edited; a loan already boarded is corrected as a new `loan_terms` version / ledger reversal (edge cases), not here.
+   */
+  applyCorrection(batchLoanId: string, changes: Partial<StagedLoan>, actor: Actor, opts: { provenance: "transferor" | "agent"; evidence_document_ids?: readonly string[]; rationale?: string; confidence?: number | null; rule_code?: string }): CorrectionResult {
+    const bl = this.loans.get(batchLoanId);
+    if (!bl) return { ok: false, code: "NOT_FOUND", reason: `no batch loan ${batchLoanId}` };
+    const fields = Object.keys(changes) as (keyof StagedLoan)[];
+    if (!fields.length) throw new RangeError("applyCorrection needs at least one changed field");
+    if (bl.status !== "staged" && bl.status !== "validated" && bl.status !== "exception") return { ok: false, code: "NOT_CORRECTABLE", reason: `loan is ${bl.status}: post-boarding corrections are a new loan_terms version or ledger reversal entries, never a tape edit` };
+    const money = fields.filter((f) => (BoardingService.MONEY_FIELDS as readonly string[]).includes(f));
+    const evidence = [...(opts.evidence_document_ids ?? [])];
+    if (money.length && opts.provenance !== "transferor") return { ok: false, code: "MONEY_FIELD_GUARD", reason: `${money.join(", ")}: money fields are never agent-corrected — only transferor-corrected (provenance=transferor with the correction file) or officer-waived (proposeWaiver)` };
+    if (opts.provenance === "transferor" && !evidence.length) return { ok: false, code: "EVIDENCE_REQUIRED", reason: "a transferor correction cites its correction file / letter (evidence_document_ids); the agent cannot assert provenance for it" };
+    const staged: StagedLoan = { ...bl.staged, ...changes };
+    const decision: AgentDecision = { id: randomUUID(), agent: actor.kind === "agent" ? actor.id : "boarding", batch_loan_id: bl.id, rule_code: opts.rule_code ?? "", action: opts.provenance === "transferor" ? "transferor_corrected" : "agent_corrected",
+      evidence_document_ids: evidence, confidence: opts.confidence ?? null, rule_set_version: RULE_SET_VERSION, model_version: null, prompt_version: null, rationale: opts.rationale ?? `${fields.join(", ")} corrected (${opts.provenance})`,
+      ...(actor.kind === "human" ? { approved_by: actor.id, approved_role: actor.role ?? "" } : {}), created_at: this.deps.clock.now() };
+    this.decisions.push(decision);
+    bl.staged = staged;
+    bl.applied = applyFifo(staged.installments, staged.payments).installments;
+    // A correction that cites the agent-raised exception it cures closes that row (the rule set cannot re-check it).
+    if (opts.rule_code) bl.validations = bl.validations.map((v) => (v.code === opts.rule_code && !ALL_RULES.some((r) => r.code === v.code) ? { ...v, result: "pass" as const, message: `corrected: ${decision.rationale}` } : v));
+    this.deps.events.append({ type: "boarding.correction.applied", loanId: bl.id, aggregate: { kind: "transfer_batch", id: bl.batch_id }, actor,
+      payload: { batch_loan_id: bl.id, fields, money_fields: money, provenance: opts.provenance, evidence_document_ids: evidence, decision_id: decision.id, rule_code: opts.rule_code ?? null } });
+    this.validate(bl.batch_id, new Set([bl.id]));
+    return { ok: true, fields, money_fields: money, decision, status: bl.status };
+  }
+
+  /**
+   * The agent's own exception — a defect the rule set cannot see (document review, transferor correspondence). Recorded as a
+   * validation row; a `hard` one moves a `staged`/`validated` loan to `exception` and its event arms SM_BOARD_EXCEPTION_SLA_2
+   * (`loan.boarding_exception.raised{severity=hard}`, anchored on `raised_at`). Cleared by `applyCorrection(rule_code)` or a waiver.
+   */
+  raiseException(batchLoanId: string, x: { rule_code: string; severity: "hard" | "warning" | "info"; money_field?: boolean; message?: string; expected?: unknown; actual?: unknown; evidence_document_ids?: readonly string[] }, actor: Actor): { validation: Validation; status: BoardingStatus; event: DomainEvent } {
+    const bl = this.batchLoan(batchLoanId);
+    if (!x.rule_code) throw new RangeError("raiseException needs rule_code");
+    if (x.severity === "hard" && bl.status !== "staged" && bl.status !== "validated" && bl.status !== "exception") throw new RangeError(`a hard exception cannot be raised on a ${bl.status} loan`);
+    const run_id = randomUUID();
+    const validation: Validation = { id: ++this.validationSeq, run_id, code: x.rule_code, severity: x.severity, result: "fail", money_field: x.money_field ?? false,
+      ...(x.message ? { message: x.message } : {}), ...(x.expected !== undefined ? { expected: x.expected } : {}), ...(x.actual !== undefined ? { actual: x.actual } : {}) };
+    const already = bl.validations.some((v) => v.code === x.rule_code && v.severity === "hard" && v.result === "fail" && !v.waived);
+    bl.validations = [...bl.validations.filter((v) => v.code !== x.rule_code), validation];
+    if (x.severity === "hard" && bl.status !== "exception") {
+      const t = boardingMachine.attempt(bl.status, "validate", actor, { openHardFailures: this.openHardFailures(bl).length, transferDateReached: false, finalTapeReconciled: false, onApprovedList: true });
+      if (t.ok) bl.status = t.to;
+    }
+    const raised_at = this.deps.clock.now();
+    const event = already
+      ? this.deps.events.append({ type: "loan.boarding_exception.updated", loanId: bl.id, aggregate: { kind: "transfer_batch", id: bl.batch_id }, actor, payload: { batch_loan_id: bl.id, rule_code: x.rule_code, severity: x.severity, run_id } })
+      : this.deps.events.append({ type: "loan.boarding_exception.raised", loanId: bl.id, aggregate: { kind: "transfer_batch", id: bl.batch_id }, actor,
+          payload: { batch_loan_id: bl.id, rule_code: x.rule_code, severity: x.severity, money_field: validation.money_field, raised_at, run_id, expected: x.expected ?? null, actual: x.actual ?? null, raised_by: `${actor.kind}:${actor.id}`, evidence_document_ids: [...(x.evidence_document_ids ?? [])] } });
+    return { validation, status: bl.status, event };
   }
 
   // ───────── waivers (every waiver needs a human; money fields need an officer) ─────────
@@ -248,8 +359,10 @@ export class BoardingService {
         min: s.min, mers_eligible: s.mers_eligible, escrowed: s.escrowed, remittance_type: s.remittance_type,
         regx_days_delinquent: regx, fnma_delinquency_status: fnmaStatus, earliest_unpaid_due_date: earliestUnpaid,
         default_status_at_boarding: bl.default_status_at_boarding, fdcpa_debt_collector_flag: bl.fdcpa_debt_collector_flag,
-        bk_active: s.bankruptcy.active, fc_active: s.foreclosure.active, lossmit_in_process: s.lossmit.in_process, scra_active: s.scra.active,
+        bk_active: s.bankruptcy.active, fc_active: s.foreclosure.active, scra_active: s.scra.active,               // lossmit_in_process rides with the 1.7 facts below
         opening_entry_set_id: set.id, warnings: this.openWarnings(bl).map((v) => v.code),
+        // 1.7: the inherited loss-mit facts the §1024.41(k) clocks arm on (ack period, completeness, offer, appeal window, forbearance, SMDU case).
+        ...inflightBoardingFacts(s.lossmit, b.transfer_date),
       } });
       // 11.1 rule 2: transfer-in delinquency is seeded from the transferor's history — one window per unpaid installment.
       for (const inst of bl.applied) if (isUnpaidAsOf(inst, b.transfer_date) && inst.due_date < b.transfer_date) {

@@ -43,6 +43,7 @@ export type Lar89Code = "51" | "52" | "53" | "54";
 export interface FinalizationClocks {
   readonly effective_on: PlainDate;
   readonly notice_due: PlainDate;              // HPA_4904A_TERMINATION_NOTICE_30
+  readonly premium_stop_from: PlainDate;       // HPA_4902E_STOP_PREMIUM_30 anchor (4902(e))
   readonly premium_stop_by: PlainDate;         // HPA_4902E_STOP_PREMIUM_30
   readonly refund_due: PlainDate;              // HPA_4902F1_REFUND_45
   readonly insurer_notice_due: PlainDate;      // 2 BD
@@ -50,11 +51,15 @@ export interface FinalizationClocks {
   readonly lar89: { readonly code: Lar89Code; readonly action_date: string };
 }
 
-/** R4 R-F1…R-F6 shared pipeline. */
-export function finalizationClocks(effective: PlainDate, code: Lar89Code, cal: Calendar = servicer): FinalizationClocks {
+/**
+ * R4 R-F1…R-F6 shared pipeline. `premiumStopFrom` is the HPA_4902E_STOP_PREMIUM_30 anchor: the effective date for
+ * automatic terminations (4902(e)(2)/(3)); for borrower cancellations the later of receipt and the evidence-satisfied
+ * date (4902(e)(1); 10.1 timer table) — which can precede the effective date when a curtailment posts after the request.
+ */
+export function finalizationClocks(effective: PlainDate, code: Lar89Code, cal: Calendar = servicer, premiumStopFrom: PlainDate = effective): FinalizationClocks {
   const { y, m, d } = parts(effective);
   return {
-    effective_on: effective, notice_due: addDays(effective, 30), premium_stop_by: addDays(effective, 30), refund_due: addDays(effective, 45),
+    effective_on: effective, notice_due: addDays(effective, 30), premium_stop_from: premiumStopFrom, premium_stop_by: addDays(premiumStopFrom, 30), refund_due: addDays(effective, 45),
     insurer_notice_due: addBusinessDays(effective, 2, cal), escrow_interim_analysis_due: addBusinessDays(effective, 10, cal),
     lar89: { code, action_date: `${String(m).padStart(2, "0")}${String(d).padStart(2, "0")}${String(y % 100).padStart(2, "0")}` },
   };
@@ -84,6 +89,6 @@ export function pendingTriggerDate(scheduled78: PlainDate | null, midpointTermin
 export function lpmiOptionsNoticeDue(equivTerminationDate: PlainDate): PlainDate { return addDays(equivTerminationDate, 30); }
 
 /** 10.3 pre-1999 loans boarded past their midpoint: terminate on boarding with an officer restitution escalation. */
-export function legacyBoardingTermination(midpointTermination: PlainDate, boardedOn: PlainDate, miActive: boolean, current: boolean): { terminate_on: PlainDate; escalate_officer: true } | null {
-  return miActive && current && midpointTermination <= boardedOn ? { terminate_on: boardedOn, escalate_officer: true } : null;
+export function legacyBoardingTermination(midpointTermination: PlainDate, boardedOn: PlainDate, miActive: boolean, current: boolean): { terminate_on: PlainDate; escalate_officer: true; sentinel_exception: "self-identified HPA exception (prior servicer period)"; restitution_review: true } | null {
+  return miActive && current && midpointTermination <= boardedOn ? { terminate_on: boardedOn, escalate_officer: true, sentinel_exception: "self-identified HPA exception (prior servicer period)", restitution_review: true } : null;
 }

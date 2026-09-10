@@ -53,7 +53,8 @@ export function trialSchedule(noticeSentOn: PlainDate, count: 3 | 4, tiMonthly: 
   const { y, m, d } = parts(noticeSentOn); const first = addMonths(ymd(y, m, 1), d <= 15 ? 1 : 2);
   const dues = Array.from({ length: count }, (_, k) => addMonths(first, k)); const last = dues[count - 1]!;
   const eff = addMonths(last, processingMonth ? 2 : 1);
-  return { due_dates: dues, trial_payment_cents: pi + tiMonthly + shortageMonthly, capitalization_date: last, effective: eff, form_3179_by: last, incentive_deadline: endOfMonth(addMonths(eff, 1)) };
+  // F-2-02: the $1,000 incentive needs the SMDU close within two months of the last day of the month in which the final trial payment is due (independent of a processing month).
+  return { due_dates: dues, trial_payment_cents: pi + tiMonthly + shortageMonthly, capitalization_date: last, effective: eff, form_3179_by: last, incentive_deadline: endOfMonth(addMonths(last, 2)) };
 }
 export function trialMonthMet(receivedOn: PlainDate, dueOn: PlainDate, amount: Cents, trialAmount: Cents): boolean { return amount >= trialAmount && receivedOn <= endOfMonth(dueOn); }
 export function solicitationAllowed(saleOn: PlainDate | null, today: PlainDate, judicial: boolean): boolean { if (!saleOn) return true; const days = (Date.parse(saleOn) - Date.parse(today)) / 86_400_000; return days > (judicial ? 60 : 30); }

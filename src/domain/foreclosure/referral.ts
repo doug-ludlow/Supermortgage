@@ -25,9 +25,12 @@ export function totalIndebtedness(b: { upb_cents: Cents; note_rate_pct: string; 
   const interest = divRound(b.upb_cents * Decimal.parse(b.note_rate_pct).unscaled * BigInt(days), 100n * 365n * Decimal.ONE.unscaled, "HALF_UP");
   return { days, interest_cents: interest, total_cents: b.upb_cents + interest + b.escrow_advances_cents + b.corporate_advances_cents + b.attorney_fees_cents + b.costs_cents + (b.late_charges_cents ?? 0n) - (b.insurance_claims_cents ?? 0n) };
 }
-export function bid(totalIndebtednessCents: Cents, reservePriceCents: Cents | null, transferTaxNoExemption = false): { opening_bid_cents: Cents; max_bid_cents: Cents; basis: "reserve" | "indebtedness" } {
-  const max = reservePriceCents !== null && reservePriceCents < totalIndebtednessCents ? reservePriceCents : totalIndebtednessCents;
-  return { opening_bid_cents: transferTaxNoExemption ? 10_000n : max, max_bid_cents: max, basis: reservePriceCents !== null && reservePriceCents < totalIndebtednessCents ? "reserve" : "indebtedness" };
+/** E-3.3-05 bid = lesser of the reserve price and total indebtedness. 13.3 guardrail: a bid below total indebtedness is refused unless it rests on an *unexpired* reserve price — pass the reserve's expiry and the sale date to enforce it (an expired reserve falls back to indebtedness through `13.3 reserveFallback`, never to a lower bid). */
+export function bid(totalIndebtednessCents: Cents, reservePriceCents: Cents | null, transferTaxNoExemption = false, reserve: { expires_on: PlainDate | null; sale_on: PlainDate } | null = null): { opening_bid_cents: Cents; max_bid_cents: Cents; basis: "reserve" | "indebtedness" } {
+  const belowIndebtedness = reservePriceCents !== null && reservePriceCents < totalIndebtednessCents;
+  if (belowIndebtedness && reserve && (reserve.expires_on === null || reserve.expires_on < reserve.sale_on)) throw new RangeError(`bid below total indebtedness refused: the reserve price ${reservePriceCents} ${reserve.expires_on === null ? "carries no expiry" : `expired ${reserve.expires_on}`} before the sale on ${reserve.sale_on} — refresh it or bid total indebtedness (13.3 guardrail; E-3.3-05)`);
+  const max = belowIndebtedness ? reservePriceCents : totalIndebtednessCents;
+  return { opening_bid_cents: transferTaxNoExemption ? 10_000n : max, max_bid_cents: max, basis: belowIndebtedness ? "reserve" : "indebtedness" };
 }
 export function thirdPartySale(winningBid: Cents, totalIndebtedness: Cents): { surplus_cents: Cents; shortfall_cents: Cents } { const d = winningBid - totalIndebtedness; return { surplus_cents: d > 0n ? d : 0n, shortfall_cents: d < 0n ? -d : 0n }; }
 export function firmDocumentSla(requestedOn: PlainDate): PlainDate { return addBusinessDays(requestedOn, 3, servicer); }

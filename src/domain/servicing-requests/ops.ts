@@ -12,24 +12,25 @@
 import type { Cents } from "../../kernel/money/cents.ts";
 import { type PlainDate, addDays, addYears } from "../../kernel/calendar/date.ts";
 import { addBusinessDays, servicer, federal } from "../../kernel/calendar/business.ts";
-import { deadlines, type AssertionType, type Deadlines } from "./noe.ts";
+import { SYSTEM, type Actor, type EventStore } from "../../kernel/events/index.ts";
+import { deadlines, exceptionNoticeDue, type AssertionType, type Deadlines } from "./noe.ts";
 import { federalDays } from "./clocks.ts";
 import { itemDeadlines } from "./rfi.ts";
-import { assignmentDue, type Episode } from "./continuity.ts";
+import { assignmentDue, caSpocDue, caSpocPersists, type Episode } from "./continuity.ts";
 import { rightsOnConfirmation } from "./successor.ts";
 
 // ---------------------------------------------------------------- 4.1 NoE
-/** (f)(2) good-faith path (T5): received ≤ 7 days before the sale → a good-faith contact logged before the sale; no acknowledgment timer. */
-export function goodFaithResponse(receivedOn: PlainDate, saleOn: PlainDate, contactOn: PlainDate, mode: "oral" | "written"): { profile: Deadlines["profile"]; ack_timer: null; contact: { on: PlainDate; mode: string; before_sale: boolean }; satisfied: boolean } {
+/** (f)(2) good-faith path (T5): received ≤ 7 days before the sale → a good-faith contact logged before the sale; the ack timer is whatever the profile carries (none on the (f)(2) path). */
+export function goodFaithResponse(receivedOn: PlainDate, saleOn: PlainDate, contactOn: PlainDate, mode: "oral" | "written"): { profile: Deadlines["profile"]; ack_timer: PlainDate | null; contact: { on: PlainDate; mode: string; before_sale: boolean }; satisfied: boolean } {
   const d = deadlines("b10", receivedOn, { sale_date: saleOn });
-  return { profile: d.profile, ack_timer: null, contact: { on: contactOn, mode, before_sale: contactOn < saleOn }, satisfied: d.profile === "fc_within_7_days_goodfaith" && contactOn < saleOn };
+  return { profile: d.profile, ack_timer: d.ack_due, contact: { on: contactOn, mode, before_sale: contactOn < saleOn }, satisfied: d.profile === "fc_within_7_days_goodfaith" && contactOn < saleOn };
 }
 export interface Assertion { readonly id: string; readonly type: AssertionType | "unidentifiable"; readonly text: string; }
-/** (g)(1)(ii) carve-out (T7): identifiable assertions are investigated; only the residue is overbroad, and the (g)(2) notice states the basis and what was carved out. */
-export function splitOverbroad(assertions: readonly Assertion[], receivedOn: PlainDate): { investigate: Assertion[]; overbroad_residue: Assertion[]; exception_notice: { template: "NTC_REGX_35G2_EXCEPTION"; basis: "overbroad"; due_on: PlainDate; carved_out: string[] } | null; response_due: PlainDate } {
+/** (g)(1)(ii) carve-out (T7): identifiable assertions are investigated; only the residue is overbroad, and the (g)(2) notice states the basis and what was carved out, due 5 federal BD after the determination (day 0 when determined at triage). */
+export function splitOverbroad(assertions: readonly Assertion[], receivedOn: PlainDate, determinedOn: PlainDate = receivedOn): { investigate: Assertion[]; overbroad_residue: Assertion[]; exception_notice: { template: "NTC_REGX_35G2_EXCEPTION"; basis: "overbroad"; due_on: PlainDate; carved_out: string[] } | null; response_due: PlainDate } {
   const investigate = assertions.filter((a) => a.type !== "unidentifiable"); const residue = assertions.filter((a) => a.type === "unidentifiable");
   const dueMax = investigate.map((a) => deadlines(a.type as AssertionType, receivedOn).response_due).sort().pop() ?? federalDays(receivedOn, 30);
-  return { investigate, overbroad_residue: residue, exception_notice: residue.length ? { template: "NTC_REGX_35G2_EXCEPTION", basis: "overbroad", due_on: federalDays(receivedOn, 5), carved_out: investigate.map((a) => a.id) } : null, response_due: dueMax };
+  return { investigate, overbroad_residue: residue, exception_notice: residue.length ? { template: "NTC_REGX_35G2_EXCEPTION", basis: "overbroad", due_on: exceptionNoticeDue(determinedOn), carved_out: investigate.map((a) => a.id) } : null, response_due: dueMax };
 }
 /** (e)(4) document copies (T10): snapshots within 15 federal BD of the request; privileged items withheld with the written notice in the same window. */
 export function documentRequest(requestedOn: PlainDate, docs: readonly { id: string; privileged?: boolean; relied_on: boolean }[]): { copies_due: PlainDate; provided: { id: string; kind: "snapshot" }[]; withheld: { id: string; notice: "NTC_REGX_35E4_WITHHELD"; basis: "privileged" }[]; notice: "NTC_REGX_35E4_DOCS" } {
@@ -41,16 +42,24 @@ export function earlyCorrection(receivedOn: PlainDate, fixedOn: PlainDate, lette
   const q = fixedOn <= letterMailedOn && letterMailedOn <= federalDays(receivedOn, 5);
   return { qualifies: q, cancel_reason: q ? "early_correction" : null, timers_cancelled: q ? ["REGX_1024_35D_NOE_ACK_5", "REGX_1024_35E_NOE_RESPONSE_30"] : [], notice: "NTC_REGX_35F1_EARLY_CORRECTION" };
 }
-/** NY 3 NYCRR 419.6 override (T12): a foreclosure-related NoE with a sale ≤ 60 days out is due in 15 servicer BD; a std_30 NY extension adds 7 BD. */
+/**
+ * NY 3 NYCRR 419.6 override (T12): a foreclosure-related NoE is answered "before sale or within 15 business days, whichever
+ * is earlier" — min(15 servicer BD, sale − 1), the computed anchor `ny_noe_fc_response_due` of NY_419_6_NOE_FC_RESPONSE_15BD;
+ * other assertions 30 servicer BD; a std_30 NY extension adds 7 BD (NY_419_6_NOE_EXTENSION_7BD).
+ */
 export function nyNoeDeadline(receivedOn: PlainDate, f: { foreclosure_assertion: boolean; sale_on?: PlainDate | null }): { response_due: PlainDate; basis: string; extension_days: 7 } {
-  const fc = f.foreclosure_assertion && f.sale_on && f.sale_on <= addDays(receivedOn, 60);
-  return { response_due: fc ? addBusinessDays(receivedOn, 15, servicer) : addBusinessDays(receivedOn, 30, servicer), basis: fc ? "419.6(c): foreclosure-related, sale within 60 days → 15 business days" : "419.6: 30 business days", extension_days: 7 };
+  if (!f.foreclosure_assertion) return { response_due: addBusinessDays(receivedOn, 30, servicer), basis: "419.6: 30 business days", extension_days: 7 };
+  const bd = addBusinessDays(receivedOn, 15, servicer); const beforeSale = f.sale_on ? addDays(f.sale_on, -1) : null;
+  const saleFirst = beforeSale !== null && beforeSale < bd;
+  return { response_due: saleFirst ? beforeSale : bd, basis: saleFirst ? "419.6: foreclosure-related → before the sale (earlier than 15 business days)" : "419.6: foreclosure-related → 15 business days (before the sale, whichever is earlier)", extension_days: 7 };
 }
 export function nyExtension(d: { response_due: PlainDate }): PlainDate { return addBusinessDays(d.response_due, 7, servicer); }
-/** AI triage (T13): confidence < 0.7 → needs_human with the ack timer running; a later human classification never moves the receipt date. */
-export function triageWithConfidence(f: { confidence: number; received_on: PlainDate; human_classified_on?: PlainDate | null }): { queue: "needs_human" | "auto"; receipt_date: PlainDate; ack_due: PlainDate; human_within_1bd: boolean | null } {
-  const needsHuman = f.confidence < 0.7;
-  return { queue: needsHuman ? "needs_human" : "auto", receipt_date: f.received_on, ack_due: federalDays(f.received_on, 5), human_within_1bd: f.human_classified_on ? f.human_classified_on <= addBusinessDays(f.received_on, 1, servicer) : null };
+/** 4.1 Intake Router contract: confidence < 0.6 (or kind "other") → `needs_human` queue with a 1-servicer-BD SLA. */
+export const INTAKE_NEEDS_HUMAN_BELOW = 0.6;
+/** AI triage (T13): confidence < 0.6 → needs_human with the ack timer running; a later human classification never moves the receipt date. */
+export function triageWithConfidence(f: { confidence: number; received_on: PlainDate; human_classified_on?: PlainDate | null; kind?: string }): { queue: "needs_human" | "auto"; receipt_date: PlainDate; ack_due: PlainDate; human_within_1bd: boolean | null; human_sla: PlainDate } {
+  const needsHuman = f.confidence < INTAKE_NEEDS_HUMAN_BELOW || f.kind === "other";
+  return { queue: needsHuman ? "needs_human" : "auto", receipt_date: f.received_on, ack_due: federalDays(f.received_on, 5), human_within_1bd: f.human_classified_on ? f.human_classified_on <= addBusinessDays(f.received_on, 1, servicer) : null, human_sla: addBusinessDays(f.received_on, 1, servicer) };
 }
 /** Mail-vendor manifest watch (T14): no manifest by 18:00 ET → alarm and the manual intake protocol (receipt dates from the physical stamp). */
 export function manifestWatch(f: { expected_by: string; received_at: string | null; now: string }): { alarm: boolean; protocol: "manual_intake" | "normal"; receipt_date_source: "physical_stamp" | "manifest" } {
@@ -70,6 +79,21 @@ export function boardOpenNoe(f: { type: AssertionType; transferor_received_on: P
   let n = 0; let x = f.boarded_on; while (x < d.response_due) { x = addBusinessDays(x, 1, federal); n++; }
   return { receipt_date: f.transferor_received_on, response_due: d.response_due, residual_federal_bd: n };
 }
+/**
+ * REGX_1024_35I_CREDIT_SUPPRESS_60 is satisfied by "expiry": the nightly sweep emits `credit_reporting.suppression.expired`
+ * for every §1024.35(i) row whose `ends_at` has passed (8.1 reads the table itself before each Metro 2 cycle).
+ */
+export function expireCreditSuppressions(events: Pick<EventStore, "append">, rows: readonly { loan_id: string; case_id: string; ends_at: PlainDate }[], today: PlainDate, actor: Actor = SYSTEM): { loan_id: string; case_id: string }[] {
+  const expired = rows.filter((r) => r.ends_at < today);
+  for (const r of expired) events.append({ type: "credit_reporting.suppression.expired", loanId: r.loan_id, actor, payload: { case_id: r.case_id, ends_at: r.ends_at, reason: "regx_1024_35_i" } });
+  return expired.map((r) => ({ loan_id: r.loan_id, case_id: r.case_id }));
+}
+/** CFPB_CONSUMER_FEEDBACK_60 (informational): the same sweep closes the 60-day consumer-feedback window after a portal response with `regulator.consumer_feedback.window_closed`. */
+export function closeConsumerFeedbackWindows(events: Pick<EventStore, "append">, responses: readonly { loan_id: string; case_id: string; responded_on: PlainDate }[], today: PlainDate, actor: Actor = SYSTEM): string[] {
+  const closed = responses.filter((r) => addDays(r.responded_on, 60) < today);
+  for (const r of closed) events.append({ type: "regulator.consumer_feedback.window_closed", loanId: r.loan_id, actor, payload: { case_id: r.case_id, portal: "cfpb", window_closed_on: addDays(r.responded_on, 60) } });
+  return closed.map((r) => r.case_id);
+}
 
 // ---------------------------------------------------------------- 4.2 RFI
 /** Call recordings (T5): within retention → provided within the 30-BD clock, as audio by secure message when consented, else mailed media/transcript. */
@@ -85,10 +109,10 @@ export function potentialSuccessorRfi(receivedOn: PlainDate): { notice: "NTC_REG
 export function duplicativeRfi(f: { prior_answered_on: PlainDate | null; prior_period: string | null; period: string; received_on: PlainDate }): "duplicative" | null {
   return f.prior_answered_on && f.prior_period === f.period && f.received_on <= addYears(f.prior_answered_on, 1) ? "duplicative" : null;
 }
-/** Untimely (T9): received more than one year after discharge/transfer → exception notice within 5 federal BD. */
-export function untimelyRfi(f: { discharge_or_transfer_on: PlainDate; received_on: PlainDate }): { exception: "untimely" | null; notice_due: PlainDate | null } {
+/** Untimely (T9): received more than one year after discharge/transfer → the (f)(2) exception notice within 5 federal BD of the determination (REGX_1024_36F2_RFI_EXCEPTION_NOTICE_5 anchors on the determination date; day 0 when determined at triage). */
+export function untimelyRfi(f: { discharge_or_transfer_on: PlainDate; received_on: PlainDate; determined_on?: PlainDate | null }): { exception: "untimely" | null; notice_due: PlainDate | null } {
   const u = f.received_on > addYears(f.discharge_or_transfer_on, 1);
-  return { exception: u ? "untimely" : null, notice_due: u ? federalDays(f.received_on, 5) : null };
+  return { exception: u ? "untimely" : null, notice_due: u ? federalDays(f.determined_on ?? f.received_on, 5) : null };
 }
 /** Custodian retrieval (T10): the (d)(2) extension is used when retrieval exceeds the standard clock; the response lands within 45 total federal BD; the extension notice cites the retrieval. */
 export function custodianExtension(receivedOn: PlainDate, retrievalBusinessDays: number): { extension_used: boolean; extension_notice_by: PlainDate; response_due: PlainDate; reason: string } {
@@ -108,6 +132,20 @@ export function privilegeRouting(itemText: string, receivedOn: PlainDate): { rou
 }
 
 // ---------------------------------------------------------------- 4.3 continuity of contact
+export interface ContactTeamBlock { readonly team_name: string; readonly named_human_first_name: string; readonly title: string; readonly direct_number: string; readonly hours: string; }
+/** T1: the 11.2 send command asserts an active assignment (REGX_1024_40A1_ASSIGN_BEFORE_EI_NOTICE); with none on the send date it auto-assigns the default team (mode `ai_first_named_human`) and the notice carries the team block. */
+export function eiNoticeAssignment(f: { episode: Episode | null; requested_on: PlainDate; due_unpaid: PlainDate; principal_residence: boolean; default_team: ContactTeamBlock }): { assignment_due_at: PlainDate | "not_required"; auto_assigned: boolean; episode: Episode; assigned_on: PlainDate; notice_block: ContactTeamBlock & { continuity_block_present: true } } {
+  const due = assignmentDue(f.due_unpaid, f.principal_residence);
+  const active = f.episode && f.episode.status === "assigned" ? f.episode : null;
+  const episode: Episode = active ?? { status: "assigned", consecutive_on_time: 0, mode: "ai_first_named_human", team: "default" };
+  return { assignment_due_at: due, auto_assigned: active === null, episode, assigned_on: f.requested_on, notice_block: { ...f.default_team, continuity_block_present: true } };
+}
+/** T7 (CA): a request for a foreclosure-prevention alternative on a §2924.15 loan (any channel, no magic words) → a *human* SPOC of record with a direct means of communication within 2 servicer BD (CA_CIV_2923_7_SPOC_ASSIGN_PROMPT); it persists per §2923.7(c) — after a denial until the appeal is decided. */
+export function caSpocRequest(f: { state: string; s2924_15: boolean; text: string; requested_on: PlainDate; lossmit: { current: boolean; determination: "pending" | "denied" | "approved" | null; appeal_pending: boolean } }): { spoc_required: boolean; assistance_requested: boolean; assign_by: PlainDate | null; assignment_mode: "human_team" | null; direct_means: string[]; notice: "NTC_CA_2923_7_SPOC" | null; persists: boolean } {
+  const asked = /\b(help|assist|option|modif|forbear|hardship|behind|afford|payments?|foreclos)/i.test(f.text);
+  const required = f.state === "CA" && f.s2924_15 && asked;
+  return { spoc_required: required, assistance_requested: asked, assign_by: required ? caSpocDue(f.requested_on) : null, assignment_mode: required ? "human_team" : null, direct_means: required ? ["direct_number", "direct_email"] : [], notice: required ? "NTC_CA_2923_7_SPOC" : null, persists: required && caSpocPersists(f.lossmit) };
+}
 /** T2: assignment by day 45 regardless of whether an EI notice is due; the EI send auto-assigns if earlier. */
 export function assignmentTrigger(dueUnpaid: PlainDate, principalResidence: boolean, eiNoticeOn: PlainDate | null): { assign_by: PlainDate | "not_required"; basis: "day_45" | "ei_notice" | "not_required" } {
   const d = assignmentDue(dueUnpaid, principalResidence);

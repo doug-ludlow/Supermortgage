@@ -32,7 +32,7 @@ test("11.1-T3/T4/T6/T7: rolling delinquency never breaches; one contact satisfie
   const hit = applyContact(fresh, D("2027-02-05"), "live", "ai_voice"); assert.equal(hit.length, 2); assert.equal(fresh[2]!.live, "open");
   assert.equal(sweep(fresh, D("2027-04-07")).length, 3);   // Mar 1 live leg (Apr 6) + Jan/Feb notice legs (Feb 15, Mar 18); Mar notice (Apr 15) still open
   const bk = openWindow(D("2027-01-01"), { principal_residence: true, bankruptcy: "active" }); assert.equal(bk.live, "exempt_bk");
-  assert.equal(openWindow(D("2027-01-01"), { principal_residence: false }).notice, "exempt_investment");
+  assert.equal(openWindow(D("2027-01-01"), { principal_residence: false }).notice, "not_applicable");   // non-principal residence: Reg X windows not_applicable (11.1-T22 / 11.2-T13)
   assert.deepEqual(cadence(10, { consent_voice: true }), { attempt: false, channel: null, reason: "grace/pre-day-17" });
   assert.equal(cadence(17, { consent_voice: true }).channel, "ai_voice"); assert.equal(cadence(17, { consent_voice: false }).reason, "TCPA_64_1200_A1_CELL_CONSENT_GATE");
   assert.equal(cadence(40, { consent_voice: true, suspended: "bankruptcy" }).attempt, false);
@@ -63,12 +63,12 @@ test("11.3-T1/T2/T3/T4/T9/T12: completeness, reason codes, promise-to-pay $4,165
   const partial = promiseToPay(cents("2000"), D("2026-12-28"), D("2026-12-11"), total); assert.equal(partial.covers, "partial"); assert.equal(partial.next_attempt_on, "2026-12-29");
   assert.equal(promiseToPay(cents("4165"), D("2027-01-15"), D("2026-12-11"), total).valid, false);
   assert.equal(promiseOutcome(cents("2000"), cents("4165")), "partial");
-  assert.equal(isStale(D("2026-12-11"), D("2027-01-10"), false), false); assert.equal(isStale(D("2026-12-11"), D("2027-01-11"), false), true);
+  assert.equal(isStale(D("2026-12-11"), D("2027-01-09"), false), false); assert.equal(isStale(D("2026-12-11"), D("2027-01-10"), false), true);   // SM_QRPC_STALE_30: achieved_at + 30 calendar days matures 2027-01-10 (11.3-T12)
   assert.deepEqual(thirdPartyAuthorization("oral_three_way", D("2026-12-11")), { scope: "discuss_only", expires_on: "2027-03-11" });
 });
 
 test("11.4-T1/T2/T3/T3a/T4: debt-collector determination, calendar-day validation notice, assumed receipt, itemization", () => {
-  assert.deepEqual(F.determineDebtCollector({ regx_days_delinquent_at_transfer: 61, bk_active: false, fc_active: false, accelerated: false }), { debt_collector: true, basis: "default_at_obtain" });
+  assert.deepEqual(F.determineDebtCollector({ regx_days_delinquent_at_transfer: 61, bk_active: false, fc_active: false, accelerated: false }), { debt_collector: true, basis: "default_at_obtain", threshold_days: 0 });
   assert.equal(F.determineDebtCollector({ regx_days_delinquent_at_transfer: 0, bk_active: false, fc_active: false, accelerated: false }).debt_collector, false);
   assert.equal(F.determineDebtCollector({ regx_days_delinquent_at_transfer: 1, bk_active: false, fc_active: false, accelerated: false, threshold_days: 30 }).debt_collector, false);
   assert.equal(F.validationNoticeDue(D("2026-09-30")), "2026-10-05");

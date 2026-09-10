@@ -7,7 +7,7 @@
  */
 import type { DomainEvent } from "./types.ts";
 
-export type Op = "=" | "!=" | ">" | ">=" | "<" | "<=" | "is null" | "is not null" | "in";
+export type Op = "=" | "!=" | ">" | ">=" | "<" | "<=" | "is null" | "is not null" | "in" | "truthy";
 export interface Condition { readonly field: string; readonly op: Op; readonly value?: string | readonly string[]; }
 export interface EventPattern { readonly type: string; readonly conditions: readonly Condition[]; readonly raw: string; }
 
@@ -67,9 +67,9 @@ function parseCondition(s: string): Condition | null {
     const op = (m[2] === "≠" ? "!=" : m[2]) as Op;
     return { field: m[1] as string, op, value: (m[3] as string).trim().replace(/^['"`]|['"`]$/g, "") };
   }
-  // A bare flag `{escrowed}` means `escrowed=true`.
+  // A bare `{escrowed}` or `{due_date}` means the field is present and not false.
   m = /^([a-zA-Z0-9_.]+)$/.exec(s);
-  if (m) return { field: m[1] as string, op: "=", value: "true" };
+  if (m) return { field: m[1] as string, op: "truthy" };
   return null;
 }
 
@@ -102,6 +102,7 @@ export function eventMatches(p: EventPattern, e: DomainEvent): boolean {
     switch (c.op) {
       case "is null": if (v != null) return false; break;
       case "is not null": if (v == null) return false; break;
+      case "truthy": if (v == null || v === false || v === "false") return false; break;
       case "in": if (!(c.value as readonly string[]).includes(String(v))) return false; break;
       case "=": if (String(v) !== c.value) return false; break;
       case "!=": if (String(v) === c.value) return false; break;

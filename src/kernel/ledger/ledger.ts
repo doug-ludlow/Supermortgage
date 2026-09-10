@@ -19,7 +19,7 @@ export const LOAN_ACCOUNTS = [
   "principal", "interest_due", "escrow", "suspense_unapplied", "late_charges", "nsf_fees", "other_fees",
   "deferred_principal", "forborne_principal", "corporate_advance", "escrow_advance",
 ] as const;
-export const CUSTODIAL_ACCOUNTS = ["clearing_cash", "custodial_pi_cash", "custodial_ti_cash", "custodial_ti_unapplied_cash"] as const;
+export const CUSTODIAL_ACCOUNTS = ["clearing_cash", "custodial_pi_cash", "custodial_ti_cash", "custodial_ti_unapplied_cash", "transfer_in_clearing"] as const;
 export const CORPORATE_ACCOUNTS = ["servicing_fee_income", "late_charge_income", "nsf_fee_income", "corporate_cash", "fnma_payable", "advance_receivable"] as const;
 
 export type LoanAccount = (typeof LOAN_ACCOUNTS)[number];

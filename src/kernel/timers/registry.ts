@@ -52,10 +52,8 @@ function normKind(kind: string): { kindNorm: TimerKind; kindQualifier?: string; 
 function parseSeverity(breach: string): Severity {
   const sev = /sev(?:erity)?\s*[-: ]?\s*([1-4])/i.exec(breach);
   const roles = new Set<string>();
-  for (const m of breach.matchAll(/`([a-z_\-]+)`/g)) {
-    const r = m[1]!;
-    if (/officer|agent|operator|counsel|analyst|human|owner|controller|compliance|manager|ops|treasury|qc|officer/.test(r)) roles.add(r);
-  }
+  // Backticked tokens without dots/braces are role or agent names (`officer`, `investor-reporting`, `fnma_portal_operator`).
+  for (const m of breach.matchAll(/`([a-z][a-z0-9_\-]*)`/g)) roles.add(m[1]!);
   return { level: sev ? (Number(sev[1]) as 1 | 2 | 3 | 4) : null, escalateTo: [...roles] };
 }
 
@@ -84,16 +82,36 @@ export function toTimerDef(raw: RawTimer): TimerDef {
   };
 }
 
+export type TimerOverride = Partial<Pick<TimerDef, "trigger" | "satisfied" | "anchor" | "offset" | "anchorField">>;
+
 export class TimerRegistry {
   private readonly byCode = new Map<string, TimerDef>();
   private readonly list: TimerDef[] = [];
   constructor(rows: readonly RawTimer[]) {
-    for (const r of rows) {
-      const def = toTimerDef(r);
-      // Cross-reference rows repeat a code owned elsewhere; keep the first (owning) definition.
-      if (!this.byCode.has(def.code)) this.byCode.set(def.code, def);
-      this.list.push(def);
+    for (const r of rows) this.list.push(toTimerDef(r));
+    // A code can appear in several process specs (cross-references). The owning
+    // definition is the one that is not marked "owned by"/"(x.y)" and has an
+    // executable offset; fall back to the first non-cross-reference, then the first row.
+    const groups = new Map<string, TimerDef[]>();
+    for (const d of this.list) { let g = groups.get(d.code); if (!g) { g = []; groups.set(d.code, g); } g.push(d); }
+    for (const [code, g] of groups) {
+      const owning = g.find((d) => !d.ownedBy && d.offsetParsed.kind !== "prose") ?? g.find((d) => !d.ownedBy) ?? g[0]!;
+      this.byCode.set(code, owning);
     }
+  }
+  /**
+   * Section code may tighten a registry row where the spec's prose carries a
+   * condition the column grammar cannot (e.g. "(escrowed loans)"), or where
+   * the anchor is a computed field. Overrides are explicit and reviewable.
+   */
+  override(code: string, o: TimerOverride): TimerDef {
+    const cur = this.byCode.get(code);
+    if (!cur) throw new RangeError(`no timer ${code}`);
+    const merged = toTimerDef({ ...cur, ...(o.trigger !== undefined ? { trigger: o.trigger } : {}), ...(o.satisfied !== undefined ? { satisfied: o.satisfied } : {}),
+      ...(o.anchor !== undefined ? { anchor: o.anchor } : {}), ...(o.offset !== undefined ? { offset: o.offset } : {}) });
+    const next: TimerDef = { ...merged, ...(o.anchorField !== undefined ? { anchorField: o.anchorField } : {}) };
+    this.byCode.set(code, next);
+    return next;
   }
   get(code: string): TimerDef | undefined { return this.byCode.get(code); }
   all(): readonly TimerDef[] { return this.list; }
@@ -105,12 +123,10 @@ export class TimerRegistry {
   }
 }
 
-let cached: TimerRegistry | undefined;
+let cachedRows: RawTimer[] | undefined;
+/** Load spec/registry/timers.json. Each call returns a fresh registry so per-section overrides never leak. */
 export function loadRegistry(path?: string): TimerRegistry {
-  if (cached && !path) return cached;
-  const file = path ?? fileURLToPath(new URL("../../../spec/registry/timers.json", import.meta.url));
-  const rows = JSON.parse(readFileSync(file, "utf8")) as RawTimer[];
-  const reg = new TimerRegistry(rows);
-  if (!path) cached = reg;
-  return reg;
+  if (path) return new TimerRegistry(JSON.parse(readFileSync(path, "utf8")) as RawTimer[]);
+  if (!cachedRows) cachedRows = JSON.parse(readFileSync(fileURLToPath(new URL("../../../spec/registry/timers.json", import.meta.url)), "utf8")) as RawTimer[];
+  return new TimerRegistry(cachedRows);
 }

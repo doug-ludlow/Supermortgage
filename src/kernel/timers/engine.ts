@@ -56,8 +56,10 @@ export interface AnchorResolver {
 /** Default anchor resolution: `payload[anchorField]` as an ISO date, else the event's own date. */
 export const defaultAnchorResolver: AnchorResolver = (def, event) => {
   const fromPayload = def.anchorField ? (event.payload as Record<string, unknown>)[def.anchorField] : undefined;
-  if (typeof fromPayload === "string" && /^\d{4}-\d{2}-\d{2}/.test(fromPayload)) return plainDate(fromPayload.slice(0, 10));
-  return plainDate(event.occurredAt.slice(0, 10));
+  if (typeof fromPayload === "string" && /^\d{4}-\d{2}-\d{2}$/.test(fromPayload)) return plainDate(fromPayload);
+  // Timestamps anchor on their Eastern-time civil date (Fannie Mae and Reg X cut-offs are ET / servicer-local).
+  if (typeof fromPayload === "string" && /^\d{4}-\d{2}-\d{2}T/.test(fromPayload)) return wallClock(Date.parse(fromPayload), "America/New_York").date;
+  return wallClock(Date.parse(event.occurredAt), "America/New_York").date;
 };
 
 export interface DueComputation { dueDate?: PlainDate; dueAt?: number; needsHuman?: string; }
@@ -149,7 +151,7 @@ export class TimerEngine {
 
   arm(def: TimerDef, trigger: DomainEvent, opts: { subjectOverride?: TimerInstance["subject"] } = {}): TimerInstance {
     const subject = opts.subjectOverride ?? (trigger.loanId ? { kind: "loan", id: trigger.loanId } : trigger.aggregate ?? { kind: "global", id: "*" });
-    const anchor = this.resolveAnchor(def, trigger) ?? plainDate(trigger.occurredAt.slice(0, 10));
+    const anchor = this.resolveAnchor(def, trigger) ?? wallClock(Date.parse(trigger.occurredAt), "America/New_York").date;
     const anchorMs = Date.parse(trigger.occurredAt);
     const due = computeDue(def.offsetParsed, anchor, anchorMs, this.cals);
     const inst: TimerInstance = {

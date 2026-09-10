@@ -120,6 +120,7 @@ export interface LoanCashState {
   fc_referred?: boolean;                        // 13.3 referral exists
   partial_payment_fc_risk?: boolean;            // jurisdiction_rules.partial_payment_fc_risk
   mbs_pool?: boolean;                           // 2.4 rule 5: MBS loans cannot reapply prepayments
+  note_frequency?: "monthly" | "biweekly";      // 2.5 rule 5: a true biweekly note accrues 14 days' interest per installment (F-1-09)
   late_charge_pct?: string;                     // "5" = 5% of basis
   late_charge_grace_days?: number;              // 15 → last timely day = due + 15
   late_charge_cap_cents?: Cents | null;

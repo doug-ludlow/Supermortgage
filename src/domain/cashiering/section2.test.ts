@@ -303,3 +303,11 @@ test("2.7-T10: NSF fee 2,500¢ where allowed with a $30 cap, capped by a lower c
   assert.equal(nsfFee(s, { allowed: true, cap_cents: null }, { our_error: true, returned_on: D("2027-02-03") }), null);
   assert.equal(nsfFee(L1({ overlays: [{ kind: "bankruptcy_active", from: D("2027-01-01") }] }), { allowed: true, cap_cents: null }, { our_error: false, returned_on: D("2027-02-03") }), null);
 });
+
+test("2.5 rule 5 / F-1-09 (AUDIT-REPORT item 5): a true biweekly note accrues 14 days' interest on the UPB as of the LPI date per installment; a monthly note keeps 30 days", () => {
+  const bi = L1({ escrowed: false, note_frequency: "biweekly" }); const expected = biweeklyInterest(bi.upb_cents, bi.note_rate_pct);
+  const plan = allocate(bi, { payment_id: "bw", amount_cents: 219_257n, received_on: D("2026-09-08"), credited_as_of: D("2026-09-08"), designation: "contractual" });
+  assert.ok(plan.installments.length >= 1); assert.equal(plan.installments[0]!.interest_cents, expected);
+  const mo = L1({ escrowed: false }); const monthly = allocate(mo, { payment_id: "mo", amount_cents: 219_257n, received_on: D("2026-09-08"), credited_as_of: D("2026-09-08"), designation: "contractual" });
+  assert.notEqual(monthly.installments[0]!.interest_cents, expected); assert.ok(monthly.installments[0]!.interest_cents > expected);
+});

@@ -30,8 +30,11 @@ export function waterfall(i: WaterfallInputs): WaterfallResult {
   let pi = piAt(gross, rate, term);
   if (Decimal.parse(mtmltv).cmp(Decimal.parse("50")) >= 0 && rate.cmp(mir) > 0) {
     while (pi > target && rate.sub(Decimal.parse("0.125")).cmp(mir) >= 0) { rate = rate.sub(Decimal.parse("0.125")); pi = piAt(gross, rate, term); trace.push(`step3 rate→${rate.toFixed(3)} pi=${pi}`); }
+    // F-1-27 step 3: a partial increment lands exactly on the MIR floor (never on the target).
+    if (pi > target && rate.cmp(mir) > 0) { rate = mir; pi = piAt(gross, rate, term); trace.push(`step3 partial→floor ${rate.toFixed(3)} pi=${pi}`); }
   } else trace.push("step3 skipped (mtmltv<50 or rate≤MIR)");
-  if (pi > target) { term = 480; pi = piAt(gross, rate, term); trace.push(`step4 term→480 pi=${pi}`); }
+  // F-1-27 step 4: extend one month at a time up to 480 from the effective date; stop at the first term where P&I ≤ target.
+  if (pi > target && term < 480) { while (pi > target && term < 480) { term += 1; pi = piAt(gross, rate, term); } trace.push(`step4 term→${term} pi=${pi}`); }
   let ib = gross, forborne = 0n; let caps: WaterfallResult["forbearance_caps"];
   if (pi > target && Decimal.parse(mtmltv).cmp(Decimal.parse("50")) > 0) {
     const a = gross - solveUpb(target, rate.toFixed(3), term); const b = gross - i.value_cents / 2n; const c = divRound(gross * 30n, 100n, "HALF_UP");

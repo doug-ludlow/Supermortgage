@@ -1,7 +1,8 @@
 /** §3.1–3.9 acceptance tests (Appendix E replay and the spec's annual example). */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { plainDate as D } from "../../kernel/calendar/date.ts";
+import { plainDate as D, addMonths } from "../../kernel/calendar/date.ts";
+import * as ESC from "./analysis.ts";
 import { cents } from "../../kernel/money/cents.ts";
 import { zonedEpochMs, toIso } from "../../kernel/calendar/zoned.ts";
 import { project, decide, newPayment, cushion, effectiveDate, anomalies, settlementDepositCeiling } from "./analysis.ts";
@@ -123,4 +124,26 @@ test("3.9: NY $6.22, CT floor 1.5% → $13.50 and $3.70 proration, MN $30, WI ba
   assert.equal(I.exemption({ state: "RI", origination_date: D("2020-01-01"), pmi_active: true }), "pmi_active"); assert.equal(I.exemption({ state: "VT", origination_date: D("2020-01-01"), escrow_imposed_for_default: true }), "escrow_imposed_for_default");
   assert.equal(I.maTaxShare(100_000n, { state: "MA", origination_date: D("2020-01-01"), tax_annual_cents: 300_000n, total_annual_cents: 420_000n }), 71_429n);
   assert.equal(I.needs1099Int(2_488n), true); assert.equal(I.needs1099Int(840n), false); assert.equal(I.accrue(-5_000n, "2", 20), 0n);
+});
+
+test("3.2 R1 line projection (AUDIT-REPORT item 4): known bill wins; prior year × CPI only for tax lines; insurance stays prior year; comparable for new construction; MI drops after termination; stale prior-year estimate → R10 anomaly; disbursement on the discount date when captured, else the penalty-avoidance date", () => {
+  const yearStart = D("2027-07-01");
+  const lines: ESC.EscrowLineInput[] = [
+    { line_type: "tax_county", frequency: "semiannual", estimate_basis: "prior_year_cpi", prior_year_annual_cents: 128_000n, prior_disbursed_on: [D("2026-11-10"), D("2027-04-10")] },
+    { line_type: "hazard", frequency: "annual", estimate_basis: "prior_year_cpi", prior_year_annual_cents: 90_000n, prior_disbursed_on: [D("2026-09-15")], prior_year_confirmed_on: D("2024-09-15") },
+    { line_type: "tax_school", frequency: "annual", estimate_basis: "known_bill", prior_year_annual_cents: 38_000n, prior_disbursed_on: [D("2026-10-01")], known_bills: [{ amount_cents: 40_000n, due_on: D("2027-10-01"), penalty_on: D("2027-10-31"), discount: { by: D("2027-09-30"), amount_cents: 800n }, available_on: D("2027-09-01") }] },
+    { line_type: "tax_city", frequency: "annual", estimate_basis: "comparable", prior_year_annual_cents: 0n, comparable_annual_cents: 52_000n, prior_disbursed_on: [] },
+    { line_type: "mi_borrower_paid", frequency: "monthly", estimate_basis: "contract", prior_year_annual_cents: 0n, contract_annual_cents: 96_000n, terminates_on: D("2027-10-01"), prior_disbursed_on: Array.from({ length: 12 }, (_, k) => addMonths(D("2026-07-01"), k)) },
+  ] as ESC.EscrowLineInput[];
+  const r = ESC.projectLines(lines, yearStart, { cpi_change_pct: "3.2" });
+  const basis = Object.fromEntries(r.bases.map((b) => [b.line_type, [b.basis_used, b.annual_cents]]));
+  assert.deepEqual(basis.tax_county, ["prior_year_cpi", 132_096n]);       // 1,280.00 × 1.032 = 1,320.96
+  assert.deepEqual(basis.hazard, ["prior_year", 90_000n]);                // insurers quote renewals: no CPI on insurance lines
+  assert.deepEqual(basis.tax_school, ["known_bill", 40_000n]); assert.deepEqual(basis.tax_city, ["comparable", 52_000n]); assert.deepEqual(basis.mi_borrower_paid, ["contract", 96_000n]);
+  assert.ok(r.anomalies.includes("hazard:estimate_basis_prior_year_gt_2y"));
+  const school = r.items.find((i) => i.line_type === "tax_school")!; assert.equal(school.disburse_on, "2027-09-30"); assert.equal(school.available_on, "2027-09-01");
+  const county = r.items.filter((i) => i.line_type === "tax_county"); assert.deepEqual(county.map((i) => i.disburse_on), ["2027-11-10", "2028-04-10"]); assert.equal(county[0]!.amount_cents + county[1]!.amount_cents, 132_096n);
+  const mi = r.items.filter((i) => i.line_type === "mi_borrower_paid"); assert.equal(mi.length, 3); assert.ok(mi.every((i) => i.disburse_on < "2027-10-01"));
+  assert.equal(ESC.lineDisbursementDates({ ...lines[2]!, known_bills: [{ amount_cents: 40_000n, due_on: D("2027-10-01"), penalty_on: D("2027-10-31") }] }, yearStart, {})[0]!.on, "2027-10-31");
+  const p = ESC.project(r.items, yearStart); assert.ok(p.base_payment_cents > 0n); assert.equal(p.annual_cents, r.items.reduce((s, i) => s + i.amount_cents, 0n));
 });

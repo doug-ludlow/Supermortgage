@@ -56,9 +56,16 @@ Ordered by consequence.
    figures (installment between calc date and good-through) are not implemented. (`src/domain/payoff/quote.ts`)
 4. **3.2 R1 line projection is not built.** The engine takes already-projected items; the prior-year × CPI
    estimate basis, comparable assessments for new construction and the R10 "estimate older than 2 years"
-   anomaly are absent. R2–R9 and the Appendix E replay match. (`src/domain/escrow/analysis.ts`)
+   anomaly are absent. R2–R9 and the Appendix E replay match. (`src/domain/escrow/analysis.ts`) — *Resolved:*
+   `projectLines` / `lineAnnualEstimate` / `lineDisbursementDates` implement R1 (known bill, prior year × CPI for
+   tax lines only, comparable assessment, contractual MI premium with the termination cut-off, multi-year cycles,
+   the 3.7 pay-date rule) and the R10 stale-estimate anomaly; test "3.2 R1 line projection" in `escrow.test.ts`.
 5. **2.1 DSI and biweekly interest.** All installment interest is 30/360 monthly; the spec's day-count
    method for `interest_method` = daily simple / biweekly is not implemented. (`src/domain/cashiering/allocation.ts`)
+   — *Resolved for the biweekly note:* `LoanCashState.note_frequency = "biweekly"` makes the allocator accrue 14 days'
+   interest per installment (2.5 rule 5, F-1-09) via `biweeklyInterest`; test "2.5 rule 5 / F-1-09" in
+   `section2.test.ts`. The spec names no daily-simple-interest method for §2.1 (the only mention is 12.8's
+   eligibility exclusion), so no DSI accrual is built.
 6. **Timers that cannot be satisfied** (row above): operational correctness, not arithmetic — a
    compliance dashboard would show hundreds of false breaches.
 7. **Ops console trusts `x-actor-id` / `x-actor-role` headers.** By design a placeholder for the 19.2

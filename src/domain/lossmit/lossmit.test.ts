@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { plainDate as D } from "../../kernel/calendar/date.ts";
-import { cents } from "../../kernel/money/cents.ts";
+import { cents, levelPayment, ratePercent } from "../../kernel/money/cents.ts";
 import * as AP from "./application.ts"; import * as EV from "./evaluation.ts"; import * as PL from "./plans.ts"; import * as DF from "./deferral.ts"; import * as FM from "./flexmod.ts"; import * as LQ from "./liquidation.ts";
 
 test("12.1-T1/T2/T3/T5/T6/T7: ack due (Labor Day, Thanksgiving), reasonable date caps and floor, 45-day test, duplicative", () => {
@@ -94,4 +94,19 @@ test("12.9-T2/T4/T5/T7/T8/T11: contribution $8,400, negotiation, listing rule, c
   assert.deepEqual([LQ.incentive(200), LQ.incentive(250), LQ.incentive(320)], [cents("2500"), cents("1500"), cents("750")]);
   assert.equal(LQ.leaseOption("12_month", true, true), false); assert.equal(LQ.leaseOption("3_month", true, true), true);
   assert.equal(LQ.netProceeds(cents("300000"), { commission: cents("18000"), prorations: 0n, transfer_taxes: 0n, title_settlement: 0n, seller_attorney: 0n, hoa_past_due: 0n, subordinate_liens: cents("6000"), relocation: 0n }).commission_ok, true);
+});
+
+test("12.8 F-1-27 step 3 partial increment lands on the MIR floor; step 4 extends one month at a time and stops at the first term meeting the target (AUDIT-REPORT item 2)", () => {
+  // Step 3: contract 6.700% ARM (not final), MIR 6.625% — a full 12.5 bp step would undershoot the floor, so the partial increment lands on 6.625% exactly.
+  const arm = FM.waterfall({ ib_upb_cents: cents("236765.47"), accrued_interest_cents: cents("10259.84"), escrow_advances_cents: cents("4200"), servicing_advances_cents: cents("180"), prior_nib_cents: 0n, value_cents: cents("290000"), contract_rate_pct: "6.700", is_arm_not_final: true, remaining_term_months: 309, pre_mod_pi_cents: cents("1580.17"), mir_pct: "6.625", delinquent_31_plus: true });
+  assert.equal(arm.rate_pct, "6.625"); assert.ok(arm.trace.some((t) => t.startsWith("step3 partial→floor 6.625")));
+  // Step 4: a small arrearage on a long remaining term — the target is reachable before 480 months, so the term stops at the first month that meets it.
+  const small = FM.waterfall({ ib_upb_cents: cents("200000"), accrued_interest_cents: cents("2166.67"), escrow_advances_cents: 0n, servicing_advances_cents: 0n, prior_nib_cents: 0n, value_cents: cents("290000"), contract_rate_pct: "6.500", is_arm_not_final: false, remaining_term_months: 300, pre_mod_pi_cents: cents("1580.17"), mir_pct: "6.625", delinquent_31_plus: true });
+  assert.ok(small.term_months > 300 && small.term_months < 480, `term ${small.term_months}`); assert.ok(small.pi_cents <= small.target_pi_cents); assert.equal(small.forborne_cents, 0n);
+  const piAt = (n: number) => levelPayment(small.gross_upb_cents, ratePercent("6.500"), n);
+  assert.ok(piAt(small.term_months - 1) > small.target_pi_cents, "the month before is still above target"); assert.ok(piAt(small.term_months) <= small.target_pi_cents);
+  assert.ok(small.trace.some((t) => t === `step4 term→${small.term_months} pi=${small.pi_cents}`));
+  // The worked example still exhausts the term at 480 and forbears $35,483.32.
+  const w = FM.waterfall({ ib_upb_cents: cents("236765.47"), accrued_interest_cents: cents("10259.84"), escrow_advances_cents: cents("4200"), servicing_advances_cents: cents("180"), prior_nib_cents: 0n, value_cents: cents("290000"), contract_rate_pct: "6.500", is_arm_not_final: false, remaining_term_months: 309, pre_mod_pi_cents: cents("1580.17"), mir_pct: "6.625", delinquent_31_plus: true });
+  assert.equal(w.term_months, 480); assert.equal(w.forborne_cents, cents("35483.32"));
 });

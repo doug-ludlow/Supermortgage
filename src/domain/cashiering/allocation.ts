@@ -5,6 +5,7 @@
  */
 import { type PlainDate } from "../../kernel/calendar/date.ts";
 import { monthlyInterest, ratePercent } from "../../kernel/money/cents.ts";
+import { biweeklyInterest } from "./biweekly.ts";
 import type { Cents } from "../../kernel/money/cents.ts";
 import { type LoanCashState, type Allocation, type AllocationOutcome, type Designation, type InstallmentProjection, type HoldType, instrumentProfile, BUCKET_ORDER, cashCfg } from "./types.ts";
 
@@ -104,7 +105,7 @@ export function allocate(state: LoanCashState, req: AllocationRequest): Allocati
   const open = next.installments.filter((i) => i.status === "due").sort((a, b) => (a.due_date < b.due_date ? -1 : 1));
 
   const applyInstallment = (inst: InstallmentProjection, escrowShort: Cents): void => {
-    const interest = monthlyInterest(next.upb_cents, rate);                 // 30 days' interest on UPB as of LPI (F-1-09)
+    const interest = state.note_frequency === "biweekly" ? biweeklyInterest(next.upb_cents, state.note_rate_pct) : monthlyInterest(next.upb_cents, rate);   // F-1-09: 30 days' (monthly note) or 14 days' (true biweekly note, 2.5 rule 5) interest on UPB as of LPI
     const principal = inst.pi_cents - interest;
     const escrow = inst.escrow_cents - escrowShort;
     const kind: InstallmentApplication["kind"] = inst.due_date > req.received_on ? "prepaid" : "contractual";

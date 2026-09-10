@@ -6,7 +6,7 @@
  * the new payment. All cents.
  */
 import type { Cents } from "../../kernel/money/cents.ts";
-import { divRound } from "../../kernel/money/decimal.ts";
+import { Decimal, divRound } from "../../kernel/money/decimal.ts";
 import { type PlainDate, addMonths, addDays, parts } from "../../kernel/calendar/date.ts";
 
 export interface ProjectedItem { readonly line_type: string; readonly amount_cents: Cents; readonly disburse_on: PlainDate; readonly cycle_years?: number; readonly available_on?: PlainDate; readonly penalty_on?: PlainDate; readonly terminates_on?: PlainDate | null; }
@@ -107,3 +107,73 @@ export function anomalies(oldPayment: Cents, newPay: Cents, d: Decision, flags: 
 }
 /** 3.1 rule 3 settlement deposit ceiling = required start + cushion. */
 export function settlementDepositCeiling(p: Projection): Cents { return p.target_at_start_cents; }
+
+// ---- R1 line projection (§1024.17(c)(7); 3.2 R1) -------------------------------------------------------------------
+export type EstimateBasis = "known_bill" | "prior_year" | "prior_year_cpi" | "comparable" | "quote" | "contract";
+export interface EscrowLineInput {
+  readonly line_type: string;
+  readonly frequency: "annual" | "semiannual" | "quarterly" | "monthly" | "triennial" | "biennial";
+  readonly estimate_basis: EstimateBasis;
+  /** Prior computation-year charge (used for prior_year / prior_year_cpi). */
+  readonly prior_year_annual_cents: Cents;
+  /** Date the prior-year estimate was last confirmed by a bill (R10: older than 2 years → anomaly). */
+  readonly prior_year_confirmed_on?: PlainDate | null;
+  /** Next-cycle bills the payee/vendor has issued (3.7 escrow_bills), if any. */
+  readonly known_bills?: readonly { amount_cents: Cents; due_on: PlainDate; penalty_on?: PlainDate | null; discount?: { by: PlainDate; amount_cents: Cents } | null; available_on?: PlainDate | null }[];
+  /** Comparable property's assessment for new construction (basis "comparable"). */
+  readonly comparable_annual_cents?: Cents | null;
+  /** Contractual premium for MI (basis "contract"). */
+  readonly contract_annual_cents?: Cents | null;
+  readonly cycle_years?: number;
+  readonly terminates_on?: PlainDate | null;
+  /** Prior-year disbursement anniversaries used when no bill is known (month/day of last year's payments). */
+  readonly prior_disbursed_on: readonly PlainDate[];
+}
+export interface LineProjectionOptions { readonly cpi_change_pct?: string; readonly cpi_line_types?: readonly string[]; readonly capture_discount?: boolean; readonly as_of?: PlainDate; }
+export const CPI_DEFAULT_LINE_TYPES = ["tax_county", "tax_city", "tax_school", "tax_special", "tax_supplemental", "tax_personal_property_mh"] as const;   // 3.2 decision 5: on for taxes, off for insurance
+const PERIODS: Record<EscrowLineInput["frequency"], number> = { annual: 1, semiannual: 2, quarterly: 4, monthly: 12, triennial: 1, biennial: 1 };
+
+/** Rule R1 amount: known bill → prior year (× CPI only where enabled for the line type) → comparable (new construction) → contract (MI); multi-year items carry the full-cycle premium. */
+export function lineAnnualEstimate(l: EscrowLineInput, o: LineProjectionOptions = {}): { annual_cents: Cents; basis_used: EstimateBasis; anomalies: string[] } {
+  const anomalies: string[] = [];
+  if (l.known_bills && l.known_bills.length) return { annual_cents: l.known_bills.reduce((s, b) => s + b.amount_cents, 0n), basis_used: "known_bill", anomalies };
+  if (l.estimate_basis === "contract" && l.contract_annual_cents !== undefined && l.contract_annual_cents !== null) return { annual_cents: l.contract_annual_cents, basis_used: "contract", anomalies };
+  if (l.estimate_basis === "comparable" && l.comparable_annual_cents !== undefined && l.comparable_annual_cents !== null) return { annual_cents: l.comparable_annual_cents, basis_used: "comparable", anomalies };
+  const cpiEnabled = (o.cpi_line_types ?? CPI_DEFAULT_LINE_TYPES).includes(l.line_type);
+  if (l.estimate_basis === "prior_year_cpi" && cpiEnabled && o.cpi_change_pct) {
+    const factor = Decimal.parse("100").add(Decimal.parse(o.cpi_change_pct));
+    return { annual_cents: divRound(l.prior_year_annual_cents * factor.unscaled, 100n * Decimal.ONE.unscaled, "HALF_UP"), basis_used: "prior_year_cpi", anomalies };
+  }
+  if (l.prior_year_confirmed_on && o.as_of && l.prior_year_confirmed_on < addMonths(o.as_of, -24)) anomalies.push("estimate_basis_prior_year_gt_2y");   // R10: prior-year basis older than 2 years
+  return { annual_cents: l.prior_year_annual_cents, basis_used: "prior_year", anomalies };
+}
+
+/** Rule R1 disbursement date: the 3.7 scheduled pay date — the discount deadline when captured, else the penalty-avoidance date, never before bill availability; estimates fall on the prior year's anniversaries in the projection year. */
+export function lineDisbursementDates(l: EscrowLineInput, yearStart: PlainDate, o: LineProjectionOptions = {}): { on: PlainDate; amount_cents: Cents; available_on?: PlainDate; penalty_on?: PlainDate }[] {
+  const yearEnd = addMonths(yearStart, 12);
+  if (l.known_bills && l.known_bills.length) {
+    return l.known_bills.map((b) => {
+      let on = b.penalty_on ?? b.due_on; if (o.capture_discount !== false && b.discount && b.discount.by < on) on = b.discount.by;
+      if (b.available_on && on < b.available_on) on = b.available_on;
+      return { on, amount_cents: b.amount_cents, ...(b.available_on ? { available_on: b.available_on } : {}), ...(b.penalty_on ? { penalty_on: b.penalty_on } : {}) };
+    });
+  }
+  const est = lineAnnualEstimate(l, o).annual_cents; const n = Math.max(1, PERIODS[l.frequency]); const per = divRound(est, BigInt(n), "HALF_UP");
+  const anniversaries = l.prior_disbursed_on.map((d) => { const p = parts(d); let x = addMonths(d, 12); while (x < yearStart) x = addMonths(x, 12); while (x >= yearEnd) x = addMonths(x, -12); void p; return x; }).sort();
+  const dates = anniversaries.length ? anniversaries : [yearStart];
+  return dates.slice(0, n).map((on, k) => ({ on, amount_cents: k === n - 1 ? est - per * BigInt(n - 1) : per }));
+}
+
+/** R1 end to end: escrow lines → the ProjectedItem list `project()` consumes, with the basis used and R10 anomalies per line. */
+export function projectLines(lines: readonly EscrowLineInput[], yearStart: PlainDate, o: LineProjectionOptions = {}): { items: ProjectedItem[]; bases: { line_type: string; basis_used: EstimateBasis; annual_cents: Cents }[]; anomalies: string[] } {
+  const items: ProjectedItem[] = []; const bases: { line_type: string; basis_used: EstimateBasis; annual_cents: Cents }[] = []; const anomalies: string[] = [];
+  for (const l of lines) {
+    const est = lineAnnualEstimate(l, { ...o, as_of: o.as_of ?? yearStart }); bases.push({ line_type: l.line_type, basis_used: est.basis_used, annual_cents: est.annual_cents }); anomalies.push(...est.anomalies.map((a) => `${l.line_type}:${a}`));
+    if (l.line_type === "mi_borrower_paid" && !l.terminates_on) anomalies.push(`${l.line_type}:pmi_without_termination`);
+    for (const d of lineDisbursementDates(l, yearStart, o)) {
+      if (l.terminates_on && d.on >= l.terminates_on) continue;   // MI: no installments after the §10 termination date
+      items.push({ line_type: l.line_type, amount_cents: d.amount_cents, disburse_on: d.on, ...(l.cycle_years && l.cycle_years > 1 ? { cycle_years: l.cycle_years } : {}), ...(d.available_on ? { available_on: d.available_on } : {}), ...(d.penalty_on ? { penalty_on: d.penalty_on } : {}), ...(l.terminates_on !== undefined ? { terminates_on: l.terminates_on ?? null } : {}) });
+    }
+  }
+  return { items, bases, anomalies };
+}

@@ -26,6 +26,7 @@ src/domain/               one directory per spec section/process
 src/infra/db/             Postgres repositories + loan-scoped unit of work over db/migrations
 src/infra/integrations/   outbox, adapter ports and fakes for every counterparty the spec names
 src/notices/              Notice Registry: catalog, template versions, content-rule checklists, channel decision, delivery service
+src/app/                  command bus, agent registry + kill switch, role gates, gate evaluators, escalations
   boarding/               §1.1 loan data intake & validation (HF/W gate, MIN, Reg X delinquency, opening ledger)
   cashiering/             §2.1 accept & post periodic payments (+ the §2.2 $50 rule)
 db/migrations/            Postgres schema (bigint cents; immutable event log, ledger, decisions)
@@ -42,6 +43,7 @@ npm test                  # node:test, all sections
 npm run typecheck
 npm run spec:lint         # how much of the timer registry is mechanically executable
 python3 tools/extract_notices.py   # regenerate spec/registry/notices.json (notice codes) from the spec
+python3 tools/extract_agents.py    # regenerate spec/registry/agents.json (agents, tools, guardrails) from the spec
 npm run test:db           # database-backed acceptance tests (needs Postgres; `npm test` skips them when none answers)
 DATABASE_URL=postgresql://sm:sm@localhost/supermortgage db/migrate.sh
 ```
@@ -56,6 +58,7 @@ DATABASE_URL=postgresql://sm:sm@localhost/supermortgage db/migrate.sh
 | Postgres schema | ✅ 23 migrations, 438 tables covering every section's "Data model" subsection; append-only/immutability triggers, restricted `restricted_fl` schema |
 | Integration framework | ✅ `src/infra/integrations`: idempotent outbox over `integration_messages` (dedupe by adapter+direction+key, backoff retry, dead-letter → `human_portal_tasks`), failure vocabulary (transient / unavailable-with-fallback / permanent rejection), BAI2 and Nacha codecs, and typed ports with behaviour-faithful fakes for fnma-lsdu (hard/soft/invalid/missing, head-of-line), fnma-servicing-events, SMDU, P360, CRS file builder, Connect, MERS, custodian, WORM e-vault, lockbox, custodial-bank, ODFI, print/mail, e-delivery, telephony, Metro 2, e-OSCAR, LPI tracking, flood, tax service, MI, PACER, DMDC, e-recording |
 | Notice Registry | ✅ `src/notices`: all 248 NTC_/INS_ codes the spec names (`spec/registry/notices.json` via `tools/extract_notices.py`) registered with class/channel policy; immutable effective-dated template versions with machine-checkable content, data and layout rules; publish gate (a failing block rule cannot be published); dependency-free renderer; channel decision per 7.4 (consent class, mail-only, bounce → same-day mail, split parties); `NoticeService` render → checklist → hold/send → proof of delivery with events; authored, rule-checked versions for the H-30 statements, MS-3(A) force-placed notice, MS-4(A) early-intervention notice, H-4(D)(3) ARM initial notice and the §1024.41(b)(2) acknowledgment |
+| Application layer | ✅ `src/app`: command bus every state change goes through (AI kill switch / AI-off routing, per-agent tool allowlists from `spec/registry/agents.json`, role gates, money-field protection, guardrails that refuse before anything runs, automatic `agent_decisions` rows with rule set / model / prompt / approver, `command.executed` / `command.refused` events); the 20 agents the spec defines with their processes, tools and escalation roles; 109 gate evaluators resolving every `evaluator:` ref the timer overrides name; escalations with role-checked completion |
 | Persistence layer | ✅ `src/infra/db`: `pg` client (bigint cents), repositories for `loan_events`, ledger sets/lines, `timers`, `agent_decisions`, loan fixtures; `PgUnitOfWork` hydrates a loan's history into the kernel stores, runs the synchronous domain command, and commits events + ledger + timers + decisions in one transaction. DB-backed acceptance tests (2.1-T1 end to end) via `npm run test:db` |
 | §1 Boarding & transfers in (1.1–1.7) | ✅ `src/domain/boarding`, `src/domain/transfers` |
 | §2 Cashiering (2.1–2.7) | ✅ `src/domain/cashiering` |

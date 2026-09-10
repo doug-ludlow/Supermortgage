@@ -1,0 +1,3419 @@
+{
+ "agents": [
+  {
+   "agent": "boarding",
+   "processes": [
+    "1.1"
+   ],
+   "tools": [
+    "readTape",
+    "mapField",
+    "runValidation",
+    "queryFnmaPosition",
+    "queryMers",
+    "proposeCorrection",
+    "applyCorrection",
+    "raiseException",
+    "boardLoan",
+    "sendTransferorQuery",
+    "writeDecision"
+   ],
+   "escalates_to": [
+    "fnma_portal_operator",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "agent": "transfer",
+   "processes": [
+    "1.2",
+    "1.3",
+    "1.5",
+    "17.1",
+    "17.2",
+    "17.3"
+   ],
+   "tools": [
+    "buildForm629",
+    "buildCustodianMatrix",
+    "validateLoanList",
+    "createPortalTask",
+    "parseConsentNotice",
+    "computeDeadlines",
+    "writeDecision",
+    "notifyPartner",
+    "planNoticeRun",
+    "renderNotice",
+    "runContentChecklist",
+    "validateAddress",
+    "releaseToVendor",
+    "ingestMailReturns",
+    "orderSkipTrace",
+    "planMersTransactions",
+    "validateMin",
+    "buildMersBatch",
+    "submitMersBatch",
+    "createPartnerTask",
+    "ingestMersAck",
+    "snapshotMins",
+    "reconcileMre",
+    "draftViolationResponse",
+    "buildTransferPlan",
+    "reconcileQxDownload",
+    "parseApprovalLetter",
+    "draftFnmaResponse",
+    "draftForm101Termination",
+    "verifyTransfereeBlock",
+    "planDeliverables",
+    "generateDeliverable",
+    "runOutboundDqGate",
+    "buildTrialBalance",
+    "buildImageIndex",
+    "sendDeliverable",
+    "ingestTransfereeAck",
+    "answerTransfereeRequest",
+    "notifyCounterparty",
+    "verifyMersSnapshot",
+    "verifyERegistry",
+    "buildDebrief"
+   ],
+   "escalates_to": [
+    "fnma_portal_operator",
+    "officer",
+    "signing_officer",
+    "attorney",
+    "human_agent"
+   ]
+  },
+  {
+   "agent": "security-records",
+   "processes": [
+    "1.4",
+    "19.1",
+    "19.2",
+    "19.3",
+    "19.4"
+   ],
+   "tools": [
+    "buildTrialBalance",
+    "sendToCustodian",
+    "ingestCustodianFeed",
+    "matchHoldings",
+    "openException",
+    "draftTransferorQuery",
+    "verifyERegistry",
+    "forecastRecertRisk",
+    "draftExtensionRequest",
+    "writeDecision",
+    "records.classify",
+    "records.compileServicingFile",
+    "siem.query",
+    "idp.disableIdentity",
+    "vault.rotateSecret",
+    "cloud.isolateHost",
+    "network.blockEgress",
+    "incident.setSeverity",
+    "incident.scope",
+    "notices.draft",
+    "portal_task.create",
+    "timers.read",
+    "controls.runTest",
+    "exceptions.propose",
+    "contracts.extractClauses",
+    "contracts.checklist",
+    "vendors.assess",
+    "vendors.setStatus",
+    "fnma_notices.recordSent",
+    "portfolio.count",
+    "ai_systems.upsert"
+   ],
+   "escalates_to": [
+    "attorney",
+    "officer",
+    "signing_officer",
+    "fnma_portal_operator",
+    "lossmit_reviewer"
+   ]
+  },
+  {
+   "agent": "custodial-recon",
+   "processes": [
+    "1.6",
+    "5.2",
+    "5.4",
+    "5.5",
+    "6.1",
+    "6.2",
+    "6.3",
+    "6.4",
+    "6.5",
+    "15.4"
+   ],
+   "tools": [
+    "loadTapeBalances",
+    "loadTrialBalance",
+    "loadBankFeed",
+    "queryFnmaPosition",
+    "matchWires",
+    "raiseVariance",
+    "classifyVariance",
+    "draftTransferorQuery",
+    "postOpeningEntries",
+    "writeDecision",
+    "buildCrsBatch",
+    "openPortalTask",
+    "pullDraftNotifications",
+    "matchBankDebits",
+    "explainVariance",
+    "postLedger",
+    "recordDecision",
+    "predictSdaEntry",
+    "parseRemittanceDetail",
+    "matchAdjustments",
+    "rollForwardReceivables",
+    "buildForm496Line12",
+    "parseGfeeBill",
+    "computeGfeeCheckFigures",
+    "reconcileRelief",
+    "fundDraft",
+    "matchDebit",
+    "depository.evaluate",
+    "fdic.lookup",
+    "ratings.read",
+    "custodial.plan_accounts",
+    "cbam.prepare_package",
+    "documents.write",
+    "escalation.create",
+    "timer.start/satisfy",
+    "email.send",
+    "ledger.post",
+    "escrow.read_balances",
+    "jurisdiction.read",
+    "bank.read_statement",
+    "ledger.read",
+    "ledger.post_reclass",
+    "fnma.read_cash_position",
+    "fnma.read_draft_notifications",
+    "crs.prepare_batch",
+    "form496.generate",
+    "timer.*",
+    "partner.notify",
+    "suspense.read/write",
+    "payments.history",
+    "borrowers.search",
+    "lockbox.image_ocr",
+    "ledger.apply_via_cashiering",
+    "nacha.originate_credit",
+    "check.issue",
+    "contact.request",
+    "unclaimed_property.compute",
+    "naupa.generate",
+    "recomputeAdvancePosition",
+    "setRecoveryExpectation",
+    "parseCashAdjustments",
+    "matchRecoveries",
+    "postRecoveryEntries",
+    "buildIrrPackage",
+    "agingReport"
+   ],
+   "escalates_to": [
+    "officer",
+    "fnma_portal_operator",
+    "human_agent",
+    "attorney"
+   ]
+  },
+  {
+   "agent": "lossmit-underwriter",
+   "processes": [
+    "1.7",
+    "11.5",
+    "12.1",
+    "12.2",
+    "12.3",
+    "12.4",
+    "12.5",
+    "12.6",
+    "12.8",
+    "12.9",
+    "17.4"
+   ],
+   "tools": [
+    "loadTransferorFile",
+    "runCarryoverChecks",
+    "computeDeemedDates",
+    "classifyCompleteness",
+    "requestFromTransferor",
+    "evaluateOptions",
+    "draftNotice",
+    "setForeclosureHold",
+    "honorTransferorOffer",
+    "writeDecision",
+    "lossmit.application.open/update",
+    "documents.classify_extract",
+    "requirements.compute",
+    "calendar.federal_bd",
+    "notice.render_send",
+    "contacts.log",
+    "timers.start",
+    "foreclosure_holds.set",
+    "fnma.status_code.report",
+    "sii.lookup",
+    "transfer.lossmit_file.get",
+    "lossmit.evaluation.*",
+    "hierarchy.walk",
+    "smdu.case.submit/poll",
+    "valuation.order",
+    "mi.decision.get",
+    "credit.report.pull",
+    "foreclosure_holds.set/release",
+    "attorney.instruct",
+    "timers.*",
+    "escalation.file",
+    "workout_plan.*",
+    "calendar.months",
+    "delinquency.project",
+    "fees.suppress",
+    "exception_request.prepare",
+    "contacts.*",
+    "ledger.arrears",
+    "calc.repayment_schedule",
+    "fees.suppress/waive",
+    "fnma.f116_package.prepare",
+    "deferral.screen",
+    "ledger.arrears_breakdown",
+    "escrow.analysis.run",
+    "smdu.case.submit",
+    "investor.report_contractual_payments",
+    "esign.send",
+    "erecording.submit",
+    "custodian.deliver",
+    "flexmod.waterfall",
+    "valuation.order/get",
+    "liquidation.case.*",
+    "ratio.compute",
+    "contribution.compute",
+    "title.order/get",
+    "inspection.order/get",
+    "offer.evaluate",
+    "closing.instructions.send",
+    "settlement.review",
+    "lien_release.request",
+    "mi.claim.prepare",
+    "reogram.watch",
+    "inventoryOpenCases",
+    "runHandoffChecks",
+    "exportDeadlineTable",
+    "completePreTransferAction",
+    "draftDetermination",
+    "lossmit_reviewer",
+    "packageCase",
+    "forwardPostTransfer"
+   ],
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "lossmit_reviewer",
+    "officer",
+    "signing_officer"
+   ]
+  },
+  {
+   "agent": "cashiering",
+   "processes": [
+    "2.1",
+    "2.2",
+    "2.3",
+    "2.4",
+    "2.5",
+    "2.6",
+    "2.7"
+   ],
+   "tools": [
+    "payments.read/write",
+    "ledger.post",
+    "loan_terms.get",
+    "cases.get_overlays",
+    "suspense.read",
+    "lockbox.image_ocr",
+    "borrower_comms.request_contact",
+    "notice.send",
+    "escalation.create",
+    "timer.*",
+    "suspense.read/write",
+    "payments.history",
+    "ledger.apply_via_cashiering",
+    "autodraft.read/write",
+    "consent.capture",
+    "account_validation.verify",
+    "nacha.build_entry",
+    "nacha.cancel_entry",
+    "contacts.log",
+    "fraud_monitor.score",
+    "payments.read",
+    "amortization.compute",
+    "nacha.parse_addenda",
+    "arrangements.read/write",
+    "trial_schedule.read",
+    "fees.suspend/waive",
+    "smdu.submit_trial_payment",
+    "fees.read",
+    "fees.assess",
+    "fees.waive",
+    "fees.reverse"
+   ],
+   "escalates_to": [
+    "attorney",
+    "human_agent",
+    "officer",
+    "signing_officer",
+    "fnma_portal_operator",
+    "lossmit_reviewer"
+   ]
+  },
+  {
+   "agent": "escrow",
+   "processes": [
+    "3.1",
+    "3.2",
+    "3.3",
+    "3.4",
+    "3.5",
+    "3.6",
+    "3.7",
+    "3.8",
+    "3.9"
+   ],
+   "tools": [
+    "readBoardingFile",
+    "runEscrowAnalysis",
+    "approveAnalysis",
+    "renderStatement",
+    "sendNotice",
+    "openCase",
+    "escalate",
+    "emitEscrowEvent",
+    "compareBillToPriorYear",
+    "lookupParcel",
+    "readPolicyDeclarations",
+    "validateChecklist",
+    "validateCushion",
+    "issueRefund",
+    "verifyAddress",
+    "reissueDisbursement",
+    "stopCheck",
+    "recordConsent",
+    "createRepaymentPlan",
+    "recordBorrowerElection",
+    "postEscrowLumpSum",
+    "scheduleDisbursement",
+    "releaseDisbursement",
+    "postAdvance",
+    "evaluateWaiver",
+    "approveWaiver",
+    "evaluateInterestEligibility",
+    "verifyRate",
+    "postInterestCredit",
+    "prorateInterest"
+   ],
+   "escalates_to": [
+    "human_agent",
+    "lossmit_reviewer",
+    "officer",
+    "attorney",
+    "fnma_portal_operator"
+   ]
+  },
+  {
+   "agent": "borrower-comms",
+   "processes": [
+    "4.1",
+    "4.3",
+    "4.5",
+    "7.4",
+    "11.3"
+   ],
+   "tools": [
+    "documents.search",
+    "contacts.list",
+    "jurisdiction_rules.get",
+    "timer.list",
+    "lossmit_facts.get",
+    "payments.history",
+    "lossmit.documents.list",
+    "lossmit.application.status",
+    "foreclosure.gates.get",
+    "callback.schedule",
+    "human.transfer",
+    "lossmit.intake.start",
+    "contact.log",
+    "identity.verify",
+    "disclosure.play",
+    "ledger.balances",
+    "qrpc.capture",
+    "promise.record",
+    "payment.schedule",
+    "lossmit.request.create",
+    "lossmit.streamlined.evaluate",
+    "authorization.record",
+    "preference.set",
+    "dispute.intake",
+    "decision.record"
+   ],
+   "escalates_to": [
+    "attorney",
+    "human_agent",
+    "officer",
+    "lossmit_reviewer"
+   ]
+  },
+  {
+   "agent": "case",
+   "processes": [
+    "4.2",
+    "4.4"
+   ],
+   "tools": [],
+   "escalates_to": [
+    "attorney",
+    "human_agent",
+    "officer",
+    "lossmit_reviewer",
+    "signing_officer"
+   ]
+  },
+  {
+   "agent": "investor-reporting",
+   "processes": [
+    "5.1",
+    "5.3",
+    "5.6",
+    "5.7"
+   ],
+   "tools": [
+    "projectEvent",
+    "validateLar80",
+    "validateSeJson",
+    "selectLiquidationCode",
+    "computeRemovalAmounts",
+    "buildCrsBatch",
+    "prepareReogramPackage",
+    "reconcileDra",
+    "draftCpmNotice",
+    "recordDecision",
+    "draftLetter",
+    "openPortalTask",
+    "buildDqSnapshot",
+    "deriveStatusCode",
+    "validateF121Layout",
+    "submitAmnFile",
+    "parseExceptionReport",
+    "submitDqEvent",
+    "checkConsistency"
+   ],
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "officer",
+    "human_agent"
+   ]
+  },
+  {
+   "agent": "disclosures",
+   "processes": [
+    "7.1",
+    "7.2",
+    "7.3",
+    "7.5"
+   ],
+   "tools": [
+    "computeArmAdjustment",
+    "verifyArmAdjustment"
+   ],
+   "escalates_to": [
+    "attorney",
+    "human_agent",
+    "officer",
+    "fnma_portal_operator"
+   ]
+  },
+  {
+   "agent": "payoff-release",
+   "processes": [
+    "7.6",
+    "16.1",
+    "16.2",
+    "16.3",
+    "16.4"
+   ],
+   "tools": [
+    "computePayoffQuote",
+    "assertAccuracyGate",
+    "renderStatement",
+    "mintVerificationToken",
+    "sendNotice",
+    "scheduleRecompute",
+    "openShortagePath",
+    "recordDecision",
+    "escalate",
+    "matchPayoffFunds",
+    "disposeVariance",
+    "postPayoff",
+    "computeFnmaPayoffShare",
+    "buildCrsBatch",
+    "projectRemovalPayoff",
+    "createHousekeepingTasks",
+    "selectReleaseInstrument",
+    "requestCustodyDocuments",
+    "draftReleaseInstrument",
+    "runReleaseChecklist",
+    "routeForExecution",
+    "scheduleNotarySession",
+    "submitRecording",
+    "handleRecorderReject",
+    "notifyBorrower",
+    "computePenaltyExposure",
+    "checkDeactivationEligibility",
+    "validateMinIntegrity"
+   ],
+   "escalates_to": [
+    "attorney",
+    "human_agent",
+    "officer",
+    "fnma_portal_operator",
+    "signing_officer"
+   ]
+  },
+  {
+   "agent": "credit-reporting",
+   "processes": [
+    "8.1",
+    "8.2",
+    "8.3"
+   ],
+   "tools": [
+    "eoscar.acdv.find/view/validate/submit",
+    "eoscar.aud.validate/submit",
+    "eoscar.notification.*",
+    "credit.suppression.create/release",
+    "bankruptcy.state.get",
+    "scra.case.get",
+    "disaster.case.get",
+    "borrowers.get",
+    "documents.search",
+    "eoscar.aud.submit",
+    "accuracy.control.run",
+    "escalation.file"
+   ],
+   "escalates_to": [
+    "human_agent",
+    "officer",
+    "attorney"
+   ]
+  },
+  {
+   "agent": "insurance-property",
+   "processes": [
+    "9.1",
+    "9.2",
+    "9.3",
+    "9.4",
+    "9.5",
+    "9.6",
+    "9.7",
+    "9.8",
+    "9.9"
+   ],
+   "tools": [
+    "recordDeficiency",
+    "requestEscrowLineUpdate",
+    "openCase",
+    "assessReasonableBasis",
+    "checkEscrowGuard",
+    "selectReminderVariant",
+    "quoteLpi",
+    "reviewLpiCoverage",
+    "quoteLpiRenewal",
+    "evaluateEvidence",
+    "computeOverlapRefund",
+    "requestLpiCancel",
+    "postRefund",
+    "payRefund",
+    "notifyBorrower",
+    "orderDetermination",
+    "evaluateStructures",
+    "computeFloodRequirement",
+    "evaluatePrivateFloodPolicy",
+    "openClaim",
+    "computeReleaseSchedule",
+    "requestEndorsement",
+    "depositInstrument",
+    "releaseFunds",
+    "orderRepairInspection",
+    "verifyRemoteInspection",
+    "prepareForm176",
+    "remitProceeds332",
+    "applyToUpb",
+    "openWorkoutEvaluation",
+    "escalate",
+    "computeInspectionSchedule",
+    "orderInspection",
+    "evaluateInspectionResult",
+    "updateOccupancy",
+    "notifyCarrierVacancy",
+    "submitPfpip",
+    "updatePfpip",
+    "reconcilePfpip",
+    "openPreservation",
+    "sendNotice",
+    "buildInitialScope",
+    "checkAllowables",
+    "orderWork",
+    "reviewCompletion",
+    "prepareBid",
+    "fileRegistration"
+   ],
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "officer",
+    "lossmit_reviewer",
+    "signing_officer"
+   ]
+  },
+  {
+   "agent": "pmi",
+   "processes": [
+    "10.1",
+    "10.2",
+    "10.3",
+    "10.4",
+    "10.5",
+    "10.6"
+   ],
+   "tools": [
+    "pmi.*",
+    "smdu.*",
+    "mi_insurer.cancel",
+    "notices.render/send",
+    "escrow.interim_analysis.request",
+    "ledger.post",
+    "investor_events.emit",
+    "case.*",
+    "contacts.log",
+    "documents.store",
+    "pmi.schedule.rebuild",
+    "pmi.terminate",
+    "notices.*",
+    "notices.compose/send",
+    "pmi.projection",
+    "consents.check",
+    "pmi.refund.estimate",
+    "disbursements.issue",
+    "custodial.match",
+    "mi_insurer.refund_status",
+    "pmi.evaluation.get",
+    "case.noe.open",
+    "smdu.valuation.appeal",
+    "documents.deliver"
+   ],
+   "escalates_to": [
+    "fnma_portal_operator",
+    "human_agent",
+    "officer",
+    "attorney"
+   ]
+  },
+  {
+   "agent": "default-collections",
+   "processes": [
+    "11.1",
+    "11.2",
+    "11.4"
+   ],
+   "tools": [
+    "windows.list",
+    "cycle.compute",
+    "bk.status",
+    "fdcpa.status",
+    "continuity.assignment.get",
+    "lossmit.options.list",
+    "notice.render",
+    "checklist.verify",
+    "print.request",
+    "edeliver.send",
+    "fnma.action.emit",
+    "decision.record",
+    "escalate"
+   ],
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "officer",
+    "lossmit_reviewer"
+   ]
+  },
+  {
+   "agent": "foreclosure-ops",
+   "processes": [
+    "13.1",
+    "13.2",
+    "13.3",
+    "13.4",
+    "13.5",
+    "13.6",
+    "13.7",
+    "13.8",
+    "13.9"
+   ],
+   "tools": [
+    "loan.get",
+    "delinquency.counters.get",
+    "lossmit.case.get",
+    "contacts.search",
+    "inspection.get",
+    "foreclosure.gates.evaluate",
+    "escalation.create",
+    "foreclosure.case.get",
+    "attorney.instruction.send",
+    "attorney.instruction.status",
+    "dra.snapshot.get",
+    "timer.create",
+    "notices.search",
+    "dmdc.verify",
+    "bk.scrub",
+    "title.status.get",
+    "custodian.request",
+    "mi.status.get",
+    "insurance.status.get",
+    "disaster.lookup",
+    "fc.timeframe.get",
+    "status.history.get",
+    "documents.bundle",
+    "fnma_connect.report.pull",
+    "firm.get",
+    "documents.extract",
+    "fee_schedule.get",
+    "invoice.review",
+    "dra.snapshot.import",
+    "attorney.message.send",
+    "litigation.classify",
+    "dmdc.batch.prepare",
+    "dmdc.results.import",
+    "scra.case.get/open/close"
+   ],
+   "escalates_to": [
+    "human_agent",
+    "officer",
+    "attorney",
+    "lossmit_reviewer",
+    "fnma_portal_operator",
+    "signing_officer"
+   ]
+  },
+  {
+   "agent": "bankruptcy-ops",
+   "processes": [
+    "14.1",
+    "14.2",
+    "14.3",
+    "14.4"
+   ],
+   "tools": [
+    "bk.case.read/write",
+    "pcl.search",
+    "ebn.inbox.read",
+    "bkvendor.*",
+    "docket.classify",
+    "ledger.snapshot",
+    "bk.claim.compute",
+    "bk.ledger.apply_trustee",
+    "bk.ledger.apply_postpetition",
+    "documents.render/search",
+    "timer.*",
+    "attorney.send_package/request",
+    "escalation.file",
+    "notice.send",
+    "smdu.package.prepare",
+    "p360.claim.prepare",
+    "fnma.form20.prepare",
+    "bk.change.detect",
+    "bk.notice.render",
+    "bk.fee_items.read/batch",
+    "bk.status_response.compute",
+    "timer.compute_frbp",
+    "documents.render",
+    "attorney.send_package",
+    "bk.statement_mode.set",
+    "bk.ledger_views.read",
+    "docket.read",
+    "requests.classify",
+    "bk.reporting_state.write",
+    "bk.case.read"
+   ],
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "lossmit_reviewer",
+    "officer",
+    "signing_officer",
+    "counsel"
+   ]
+  },
+  {
+   "agent": "claims-reo",
+   "processes": [
+    "15.1",
+    "15.2",
+    "15.3"
+   ],
+   "tools": [
+    "openReoCase",
+    "computeTpsSplit",
+    "buildReogramPackage",
+    "openPortalTask",
+    "parseP360Notification",
+    "scheduleHandoffTasks",
+    "requestInsuranceCancellation",
+    "buildCrsBatch",
+    "draftClosingStatement",
+    "draftEliminationTemplate",
+    "recordDecision",
+    "sweepClaimCandidates",
+    "validateLine",
+    "assembleClaim",
+    "buildBulkPackage",
+    "routeMiClaim",
+    "computeShadowClaim",
+    "assembleMiPackage",
+    "fileDirectClaim",
+    "trackDocRequests",
+    "reconcileEob",
+    "scoreCurtailmentRisk",
+    "draftAppeal",
+    "attributeShortfall"
+   ],
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "officer",
+    "human_agent"
+   ]
+  },
+  {
+   "agent": "qc-audit",
+   "processes": [
+    "18.1",
+    "18.2",
+    "18.3",
+    "18.4",
+    "18.5",
+    "18.6",
+    "18.7"
+   ],
+   "tools": [
+    "ledger.recompute",
+    "escrow.recompute_analysis",
+    "arm.second_engine",
+    "notice.checklist",
+    "timers.history",
+    "investor_events.replay"
+   ],
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "officer",
+    "human_agent"
+   ]
+  }
+ ],
+ "processes": [
+  {
+   "process": "1.1",
+   "agent": "boarding",
+   "agents_named": [
+    "boarding"
+   ],
+   "tools": [
+    "readTape",
+    "mapField",
+    "runValidation",
+    "queryFnmaPosition",
+    "queryMers",
+    "proposeCorrection",
+    "applyCorrection",
+    "raiseException",
+    "boardLoan",
+    "sendTransferorQuery",
+    "writeDecision"
+   ],
+   "guardrails": "money fields (UPB, escrow, suspense, advances, fees, P&I, rate) are never agent-corrected \u2014 only transferor-corrected or `officer`-waived; the agent may not board a loan with an open hard failure; every waiver needs a human. Escalations: `officer` for money-field waivers and for batches with > 2% hard-fail rate at T-7; `fnma_portal_operator` for the LSDU fallback; `human_agent` if a borrower calls about a loan still in `staged`. Disclosure/consent: consents on the tape are stored as `provenance='transferor', verified=false`; the AI voice channel may not be used for outbound calls on a loan unt",
+   "escalates_to": [
+    "fnma_portal_operator",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "1.2",
+   "agent": "transfer",
+   "agents_named": [
+    "transfer"
+   ],
+   "tools": [
+    "buildForm629",
+    "buildCustodianMatrix",
+    "validateLoanList",
+    "createPortalTask",
+    "parseConsentNotice",
+    "computeDeadlines",
+    "writeDecision",
+    "notifyPartner"
+   ],
+   "guardrails": "",
+   "escalates_to": [
+    "fnma_portal_operator",
+    "officer",
+    "signing_officer"
+   ]
+  },
+  {
+   "process": "1.3",
+   "agent": "transfer",
+   "agents_named": [
+    "transfer",
+    "cashiering",
+    "borrower-comms"
+   ],
+   "tools": [
+    "planNoticeRun",
+    "renderNotice",
+    "runContentChecklist",
+    "validateAddress",
+    "releaseToVendor",
+    "ingestMailReturns",
+    "orderSkipTrace",
+    "writeDecision"
+   ],
+   "guardrails": "",
+   "escalates_to": [
+    "attorney",
+    "human_agent",
+    "officer",
+    "signing_officer"
+   ]
+  },
+  {
+   "process": "1.4",
+   "agent": "security-records",
+   "agents_named": [
+    "security-records"
+   ],
+   "tools": [
+    "buildTrialBalance",
+    "sendToCustodian",
+    "ingestCustodianFeed",
+    "matchHoldings",
+    "openException",
+    "draftTransferorQuery",
+    "verifyERegistry",
+    "forecastRecertRisk",
+    "draftExtensionRequest",
+    "writeDecision"
+   ],
+   "guardrails": "",
+   "escalates_to": [
+    "attorney",
+    "officer",
+    "signing_officer"
+   ]
+  },
+  {
+   "process": "1.5",
+   "agent": "transfer",
+   "agents_named": [
+    "transfer"
+   ],
+   "tools": [
+    "planMersTransactions",
+    "validateMin",
+    "buildMersBatch",
+    "submitMersBatch",
+    "createPartnerTask",
+    "ingestMersAck",
+    "snapshotMins",
+    "reconcileMre",
+    "draftViolationResponse",
+    "writeDecision"
+   ],
+   "guardrails": "",
+   "escalates_to": [
+    "officer",
+    "signing_officer"
+   ]
+  },
+  {
+   "process": "1.6",
+   "agent": "custodial-recon",
+   "agents_named": [
+    "custodial-recon",
+    "escrow",
+    "investor-reporting"
+   ],
+   "tools": [
+    "loadTapeBalances",
+    "loadTrialBalance",
+    "loadBankFeed",
+    "queryFnmaPosition",
+    "matchWires",
+    "raiseVariance",
+    "classifyVariance",
+    "draftTransferorQuery",
+    "postOpeningEntries",
+    "writeDecision"
+   ],
+   "guardrails": "the agent may adjust a balance only with transferor evidence (corrected tape/trial balance) or bank evidence; absorbing or writing off any variance requires `officer` approval (threshold: any amount for borrower-affecting fields; \u2265 $25/loan or \u2265 $5,000/batch for portfolio-level); no borrower contact from 1.6 (escrow statements are Notice Registry outputs). Human path: ops-console reconciliation workbench with the same variance queue.",
+   "escalates_to": [
+    "officer"
+   ]
+  },
+  {
+   "process": "1.7",
+   "agent": "lossmit-underwriter",
+   "agents_named": [
+    "lossmit-underwriter",
+    "case",
+    "borrower-comms"
+   ],
+   "tools": [
+    "loadTransferorFile",
+    "runCarryoverChecks",
+    "computeDeemedDates",
+    "classifyCompleteness",
+    "requestFromTransferor",
+    "evaluateOptions",
+    "draftNotice",
+    "setForeclosureHold",
+    "honorTransferorOffer",
+    "writeDecision"
+   ],
+   "guardrails": "",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "lossmit_reviewer",
+    "officer"
+   ]
+  },
+  {
+   "process": "2.1",
+   "agent": "cashiering",
+   "agents_named": [
+    "cashiering"
+   ],
+   "tools": [
+    "payments.read/write",
+    "ledger.post",
+    "loan_terms.get",
+    "cases.get_overlays",
+    "suspense.read",
+    "lockbox.image_ocr",
+    "borrower_comms.request_contact",
+    "notice.send",
+    "escalation.create",
+    "timer.*"
+   ],
+   "guardrails": "the agent cannot change `received_on`; cannot allocate outside the instrument order; cannot apply first-lien funds to another lien; cannot post below 0.97 identification confidence without borrower confirmation; cannot refuse a conforming payment (1024.35(b)(1)); any allocation touching a loan with an open NoE requires the NoE case owner's rule check. Escalations: `human_agent` on borrower request (warm transfer, automation disclosed at the start of every call/chat); `officer` for suspected fraud/kiting patterns and for any manual ledger adjustment > $10,000; `attorney` never directly (foreclo",
+   "escalates_to": [
+    "attorney",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "2.2",
+   "agent": "cashiering",
+   "agents_named": [
+    "cashiering",
+    "foreclosure-ops"
+   ],
+   "tools": [
+    "suspense.read/write",
+    "payments.history",
+    "loan_terms.get",
+    "cases.get_overlays",
+    "lockbox.image_ocr",
+    "borrower_comms.request_contact",
+    "notice.send",
+    "ledger.apply_via_cashiering",
+    "timer.*",
+    "escalation.create"
+   ],
+   "guardrails": "cannot apply a partial to a single bucket (no \"interest only\" application) outside the $50 rule; cannot hold a full PITI payment; cannot return funds while a loss-mit case is active without the case owner; cannot bypass the accumulation rule (enforced in the ledger command); must send the hold notice within 1 BD of the hold. Escalations: `human_agent` on request; `officer` for returns > $10,000 to a non-borrower (6.5) and for any pattern flagged as check-kiting; foreclosure-state decisions go to the `foreclosure-ops` agent (not a human) unless counsel input is needed (`attorney` via 13.x). Hum",
+   "escalates_to": [
+    "attorney",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "2.3",
+   "agent": "cashiering",
+   "agents_named": [
+    "cashiering",
+    "borrower-comms"
+   ],
+   "tools": [
+    "autodraft.read/write",
+    "consent.capture",
+    "account_validation.verify",
+    "nacha.build_entry",
+    "nacha.cancel_entry",
+    "notice.send",
+    "contacts.log",
+    "fraud_monitor.score",
+    "escalation.create",
+    "timer.*"
+   ],
+   "guardrails": "cannot originate a debit without an `active` enrollment, a passed validation gate, and a satisfied 10-day-notice check; cannot reinitiate an unauthorized return; cannot exceed two NSF retries; cannot condition anything on enrollment; must disclose automation and offer a human at the start of every voice/chat enrollment; cannot read back full account numbers. Escalations: `human_agent` on request; `officer` for fraud findings \u2265 high, any debit transmitted after a timely revocation, and return-rate threshold breaches; `attorney` never (bankruptcy overlays come from 14.x case rules). Human path w",
+   "escalates_to": [
+    "attorney",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "2.4",
+   "agent": "cashiering",
+   "agents_named": [
+    "cashiering",
+    "investor-reporting"
+   ],
+   "tools": [
+    "payments.read",
+    "ledger.apply_via_cashiering",
+    "amortization.compute"
+   ],
+   "guardrails": "never curtail undesignated funds; never bypass the cure-first gate; never re-amortize on MBS loans without checking the Selling Guide/pool rules (**open question 2.4-Q2**); never treat a re-amortization as a modification. Human path when AI off: Posting Queue + Re-amortization Queue with the same validators.",
+   "escalates_to": [
+    "signing_officer"
+   ]
+  },
+  {
+   "process": "2.5",
+   "agent": "cashiering",
+   "agents_named": [
+    "cashiering",
+    "borrower-comms"
+   ],
+   "tools": [
+    "payments.read",
+    "nacha.parse_addenda",
+    "lockbox.image_ocr",
+    "arrangements.read/write",
+    "ledger.apply_via_cashiering",
+    "notice.send",
+    "borrower_comms.request_contact"
+   ],
+   "guardrails": "never refuse a conforming contractor payment; never treat an undesignated extra as principal; never market or recommend a contractor; always mention the free in-house option when discussing programs. Escalations: `human_agent` on request; `officer` for suspected contractor fraud (funds diverted, mismatched remittances). Human path when AI off: Posting Queue.",
+   "escalates_to": [
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "2.6",
+   "agent": "cashiering",
+   "agents_named": [
+    "cashiering",
+    "lossmit-underwriter",
+    "investor-reporting"
+   ],
+   "tools": [
+    "trial_schedule.read",
+    "suspense.read/write",
+    "ledger.apply_via_cashiering",
+    "fees.suspend/waive",
+    "smdu.submit_trial_payment"
+   ],
+   "guardrails": "cannot mark a trial month satisfied below the trial amount; cannot apply late charges from trial funds; cannot book the modification while residual/waiver gates are open; cannot return trial funds during an active trial. Escalations: `fnma_portal_operator` (SMDU UI when B2B unavailable), `human_agent` on request, `lossmit_reviewer` only via 12.8 (denials/failures are adverse determinations reviewed there). Human path when AI off: Trial Queue with the same gates.",
+   "escalates_to": [
+    "fnma_portal_operator",
+    "human_agent",
+    "lossmit_reviewer",
+    "officer"
+   ]
+  },
+  {
+   "process": "2.7",
+   "agent": "cashiering",
+   "agents_named": [
+    "cashiering"
+   ],
+   "tools": [
+    "fees.read",
+    "fees.assess",
+    "fees.waive",
+    "fees.reverse",
+    "cases.get_overlays",
+    "payments.history",
+    "notice.send",
+    "escalation.create"
+   ],
+   "guardrails": "cannot assess without the grace gate and posting-backlog gate; cannot exceed note/state caps; cannot assess twice; cannot collect from P&I/escrow; cannot waive beyond the courtesy limit without `officer`; cannot assess post-petition or during forbearance/SCRA. Escalations: `officer` (policy exceptions, systemic mis-assessment found by QC), `human_agent` (borrower request), `attorney` only through 13.x/14.x case owners (e.g., contested reinstatement figures). Human path when AI off: Fees Queue with identical gates; humans cannot override the legal gates either.",
+   "escalates_to": [
+    "attorney",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "3.1",
+   "agent": "escrow",
+   "agents_named": [
+    "escrow",
+    "qc-audit"
+   ],
+   "tools": [
+    "readBoardingFile",
+    "runEscrowAnalysis",
+    "approveAnalysis",
+    "renderStatement",
+    "sendNotice",
+    "openCase",
+    "escalate",
+    "emitEscrowEvent"
+   ],
+   "guardrails": "the agent cannot edit engine outputs; overrides only via `escrow_line` corrections with a documented source (bill, policy declarations). Escalations: none legally required; `human_agent` warm transfer on borrower request; `qc_finding` case to `qc-audit` when the originator failed (g)(1). Disclosure/consent: statements are not solicitations; no TCPA implication; e-delivery requires E-SIGN consent (7.4).",
+   "escalates_to": [
+    "human_agent"
+   ]
+  },
+  {
+   "process": "3.2",
+   "agent": "escrow",
+   "agents_named": [
+    "escrow",
+    "lossmit-underwriter",
+    "bankruptcy-ops"
+   ],
+   "tools": [
+    "compareBillToPriorYear",
+    "lookupParcel",
+    "readPolicyDeclarations"
+   ],
+   "guardrails": "the engine is deterministic TypeScript; the agent may not change base payment, cushion, or the Reg X option set; borrower elections must be evidenced (recorded call, e-signed form). Escalations: `human_agent` on request; `lossmit_reviewer` is *not* required for escrow math, but a workout analysis that changes the trial payment after the offer is routed to the `lossmit-underwriter` agent to re-issue the offer; `licensed_specialist` not applicable. Chapter 13 changes go to `bankruptcy-ops` for the 3002.1 filing (attorney signature where the district requires).",
+   "escalates_to": [
+    "human_agent",
+    "lossmit_reviewer"
+   ]
+  },
+  {
+   "process": "3.3",
+   "agent": "escrow",
+   "agents_named": [
+    "escrow",
+    "bankruptcy-ops",
+    "case"
+   ],
+   "tools": [
+    "renderStatement",
+    "validateChecklist",
+    "sendNotice"
+   ],
+   "guardrails": "",
+   "escalates_to": [
+    "human_agent"
+   ]
+  },
+  {
+   "process": "3.4",
+   "agent": "escrow",
+   "agents_named": [
+    "escrow"
+   ],
+   "tools": [
+    "validateCushion"
+   ],
+   "guardrails": "",
+   "escalates_to": []
+  },
+  {
+   "process": "3.5",
+   "agent": "escrow",
+   "agents_named": [
+    "escrow",
+    "payoff-release",
+    "case"
+   ],
+   "tools": [
+    "issueRefund",
+    "verifyAddress",
+    "reissueDisbursement",
+    "stopCheck",
+    "recordConsent",
+    "emitEscrowEvent",
+    "escalate"
+   ],
+   "guardrails": "refund amount is engine-computed; the agent cannot reduce it; payee must be a borrower/confirmed successor (no third-party payees without a `case` and human review); refunds > $25,000 or to a newly changed address require `officer` dual approval (policy control, not a legal touchpoint). `human_agent` on request.",
+   "escalates_to": [
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "3.6",
+   "agent": "escrow",
+   "agents_named": [
+    "escrow",
+    "borrower-comms",
+    "bankruptcy-ops"
+   ],
+   "tools": [
+    "createRepaymentPlan",
+    "recordBorrowerElection",
+    "postEscrowLumpSum"
+   ],
+   "guardrails": "no plan < 12 months for \u2265-one-month shortages; no deficiency plan < 2 installments; no interest; no fees; no lump-sum demand in statements; workout plans default to 60 months. Escalations: `human_agent` on request; disputes \u2192 4.1; Chapter 13 \u2192 `bankruptcy-ops`.",
+   "escalates_to": [
+    "human_agent"
+   ]
+  },
+  {
+   "process": "3.7",
+   "agent": "escrow",
+   "agents_named": [
+    "escrow",
+    "investor-reporting",
+    "custodial-recon"
+   ],
+   "tools": [
+    "scheduleDisbursement",
+    "releaseDisbursement",
+    "postAdvance"
+   ],
+   "guardrails": "payee remittance changes require validated evidence and (policy) `officer` dual approval when > $10,000 or a new payee; the agent may not skip a lien-protecting payment; penalties from agent-caused delay are flagged as `servicer_error`; LPI gate enforced by code. Escalations: `fnma_portal_operator` for attestation and CSV fallback; `officer` for attestation \"No\" with commentary (contractual representation); `human_agent` on request; `attorney` when an HOA lien litigation/Form 20 referral is needed (Section 13).",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "3.8",
+   "agent": "escrow",
+   "agents_named": [
+    "escrow",
+    "borrower-comms"
+   ],
+   "tools": [
+    "evaluateWaiver",
+    "approveWaiver"
+   ],
+   "guardrails": "rule outcomes are binding; the agent cannot approve when a gate fails; adverse decisions are not ECOA adverse actions (policy view \u2014 open question 3) but a written decision with reasons is always sent; Colorado AI Act: an escrow waiver denial is arguably a \"consequential decision\" in lending \u2014 provide the notice, explanation, and human-review path (`human_agent` review on request) \u2014 LL-2026-04 governance applies. Escalations: `human_agent` on request; `licensed_specialist` not required; counsel review when a state right conflicts with Fannie Mae denial tests (open question 1).",
+   "escalates_to": [
+    "human_agent"
+   ]
+  },
+  {
+   "process": "3.9",
+   "agent": "escrow",
+   "agents_named": [
+    "escrow",
+    "compliance-sentinel",
+    "security-records"
+   ],
+   "tools": [
+    "evaluateInterestEligibility",
+    "verifyRate",
+    "postInterestCredit",
+    "prorateInterest"
+   ],
+   "guardrails": "rates only from verified observations; the agent cannot lower a statutory minimum; policy rates (MA/VT/RI/UT) set by compliance with evidence; no fees. Escalations: none legally required; `officer` sign-off on the annual policy-rate memo (MA/VT/RI/UT election) as a governance control; `human_agent` on request.",
+   "escalates_to": [
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "4.1",
+   "agent": "borrower-comms",
+   "agents_named": [
+    "borrower-comms",
+    "case",
+    "compliance-sentinel"
+   ],
+   "tools": [
+    "documents.search",
+    "contacts.list",
+    "jurisdiction_rules.get",
+    "timer.list"
+   ],
+   "guardrails": "",
+   "escalates_to": [
+    "attorney",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "4.2",
+   "agent": "case",
+   "agents_named": [
+    "case",
+    "security-records",
+    "borrower-comms"
+   ],
+   "tools": [],
+   "guardrails": "cannot mark `not_available` without a search log covering the mandatory classes; cannot apply `irrelevant` to the borrower's own account records; cannot send an owner-identity answer that deviates from the versioned Fannie Mae block; must redact per (d)(3) before send (automated PII detector + rule table; a failed redaction check blocks the send).",
+   "escalates_to": [
+    "attorney",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "4.3",
+   "agent": "borrower-comms",
+   "agents_named": [
+    "borrower-comms"
+   ],
+   "tools": [
+    "lossmit_facts.get",
+    "payments.history",
+    "lossmit.documents.list",
+    "lossmit.application.status",
+    "timer.list",
+    "foreclosure.gates.get",
+    "callback.schedule",
+    "human.transfer",
+    "lossmit.intake.start",
+    "contact.log"
+   ],
+   "guardrails": "",
+   "escalates_to": [
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "4.4",
+   "agent": "case",
+   "agents_named": [
+    "case",
+    "borrower-comms"
+   ],
+   "tools": [],
+   "guardrails": "cannot demand documents outside the matrix row; cannot deny for \"no assumption\" or \"not on the note\"; cannot disclose account details to a potential successor before confirmation beyond \u00a71024.36(i); cannot treat a confirmed successor as an obligor; must expedite when a loss-mit application is pending (comment -5).",
+   "escalates_to": [
+    "attorney",
+    "human_agent",
+    "lossmit_reviewer",
+    "officer",
+    "signing_officer"
+   ]
+  },
+  {
+   "process": "4.5",
+   "agent": "borrower-comms",
+   "agents_named": [
+    "borrower-comms",
+    "case",
+    "compliance-sentinel",
+    "qc-audit"
+   ],
+   "tools": [],
+   "guardrails": "never dismiss a complaint for tone or repetition; never condition resolution on payment; never promise outcomes on loss mitigation; monetary authority limits (AI: \u2264 50,000\u00a2 per loan without approval; `officer` above); regulator responses always human-approved; discrimination/servicemember/AI-adverse-decision complaints always route to `officer` (and to 12.3 human review for Colorado AI Act appeals).",
+   "escalates_to": [
+    "attorney",
+    "human_agent",
+    "lossmit_reviewer",
+    "officer"
+   ]
+  },
+  {
+   "process": "5.1",
+   "agent": "investor-reporting",
+   "agents_named": [
+    "investor-reporting"
+   ],
+   "tools": [
+    "projectEvent",
+    "validateLar80",
+    "validateSeJson"
+   ],
+   "guardrails": "cannot alter ledger balances directly (must issue Section 2 correction commands that themselves post reversing entries); cannot mark an event `accepted` without a parsed Fannie Mae response; cannot submit a removal correction after BD2 17:00 ET; confidence < 0.8 on root cause \u2192 hold and escalate. Escalations: `fnma_portal_operator` for every UI-only submission (LSDU upload/single LAR, PPA, CSV upload, attestation) and for emails that change Fannie Mae records (PPA justifications, re-add requests, IRR letters) \u2014 the agent attaches the full package; `officer` when the BD2 close cannot be complet",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "officer"
+   ]
+  },
+  {
+   "process": "5.2",
+   "agent": "custodial-recon",
+   "agents_named": [
+    "custodial-recon",
+    "investor-reporting"
+   ],
+   "tools": [
+    "buildCrsBatch",
+    "openPortalTask",
+    "pullDraftNotifications",
+    "matchBankDebits",
+    "explainVariance",
+    "postLedger",
+    "recordDecision"
+   ],
+   "guardrails": "cannot move money between custodial and corporate accounts except through the `advance`/`fee_sweep` commands with dual-control thresholds (single transfer > $250,000 or daily > $1,000,000 requires `officer` approval \u2014 internal control, not Fannie Mae rule); cannot cancel a CRS request after 16:00 ET T\u22121; never uses escrow (T&I) funds for P&I drafts; variance > $500 per loan or > $5,000 per draft code with `unknown` classification \u2192 `officer`. Escalations: `fnma_portal_operator` for every CRS upload/instruction and for Connect pulls; `officer` for funding shortfalls the corporate facility canno",
+   "escalates_to": [
+    "fnma_portal_operator",
+    "officer"
+   ]
+  },
+  {
+   "process": "5.3",
+   "agent": "investor-reporting",
+   "agents_named": [
+    "investor-reporting",
+    "payoff-release",
+    "claims-reo",
+    "foreclosure-ops"
+   ],
+   "tools": [
+    "selectLiquidationCode",
+    "computeRemovalAmounts",
+    "projectEvent",
+    "buildCrsBatch",
+    "prepareReogramPackage",
+    "reconcileDra",
+    "draftCpmNotice",
+    "recordDecision"
+   ],
+   "guardrails": "never project AC 60 without cleared funds; never change a removal after BD2 17:00 ET; code-change requests to SF CPM and readd requests are drafted by the agent and sent by `fnma_portal_operator`/`officer`; confidence < 0.9 on 70 vs 71 vs 72 (e.g., unclear purchaser or insurance status) \u2192 hold and escalate to `claims-reo` human reviewer (`human_agent` role) before the deadline \u2212 4h. Escalations: `fnma_portal_operator` for REOgram/TPS/DRA/CRS UI steps; `attorney` when DRA data must be corrected by the firm; `officer` for post-close payoff errors (funding decision). Toggle-off path: deterministi",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "5.4",
+   "agent": "custodial-recon",
+   "agents_named": [
+    "custodial-recon",
+    "investor-reporting",
+    "default-collections"
+   ],
+   "tools": [
+    "predictSdaEntry",
+    "parseRemittanceDetail",
+    "matchAdjustments",
+    "rollForwardReceivables",
+    "buildForm496Line12",
+    "openPortalTask",
+    "recordDecision"
+   ],
+   "guardrails": "never fund an advance for a loan Fannie Mae has flagged Stop Advance; never release custodial P&I collected on an SDA loan before Fannie Mae's recovery draft settles; escalate to `officer` when unreimbursed advances exceed $25,000 per loan or 60 days after an exit. Escalations: `fnma_portal_operator` for report pulls and deselection entries; `officer` for reimbursement disputes (agent drafts the Investor Reporting Representative package). Toggle-off: same roll-forward computed; human approves matches.",
+   "escalates_to": [
+    "fnma_portal_operator",
+    "officer"
+   ]
+  },
+  {
+   "process": "5.5",
+   "agent": "custodial-recon",
+   "agents_named": [
+    "custodial-recon"
+   ],
+   "tools": [
+    "parseGfeeBill",
+    "computeGfeeCheckFigures",
+    "reconcileRelief",
+    "fundDraft",
+    "matchDebit",
+    "recordDecision"
+   ],
+   "guardrails": "never fund from T&I; escalate to `officer` if the bill total differs from the check-figure total by more than the greater of $500 or 0.5% (likely systemic PTR/UPB reporting error) or if a relief loan reappears on the bill without a contractual payment; `fnma_portal_operator` for Connect pulls. Toggle-off: human reviews the bill reconciliation in `ops-console` before the funding transfer.",
+   "escalates_to": [
+    "fnma_portal_operator",
+    "officer"
+   ]
+  },
+  {
+   "process": "5.6",
+   "agent": "investor-reporting",
+   "agents_named": [
+    "investor-reporting",
+    "qc-audit"
+   ],
+   "tools": [
+    "projectEvent",
+    "buildCrsBatch",
+    "draftLetter",
+    "openPortalTask",
+    "recordDecision"
+   ],
+   "guardrails": "the agent never commits the partner to a repurchase \u2014 every offer, acceptance, appeal and payment authorization is an `officer` escalation with the complete package (pricing worksheet, loan history, eligibility, alternative analysis); LAR 65/67 is projected only after the approval document is attached; no removal correction after BD2 17:00 ET. Toggle-off: same pricing engine; humans draft letters.",
+   "escalates_to": [
+    "officer"
+   ]
+  },
+  {
+   "process": "5.7",
+   "agent": "investor-reporting",
+   "agents_named": [
+    "investor-reporting",
+    "default-collections"
+   ],
+   "tools": [
+    "buildDqSnapshot",
+    "deriveStatusCode",
+    "validateF121Layout",
+    "submitAmnFile",
+    "parseExceptionReport",
+    "submitDqEvent",
+    "checkConsistency",
+    "recordDecision"
+   ],
+   "guardrails": "a code is never chosen without an evidence event id; AW once; no Level 1 code without an SMDU case id (except 27/29/32/44 with their own approvals); reason code changes require a new borrower statement; confidence < 0.85 \u2192 line flagged for `human_agent` review before BD2 (file still transmits on time with the best code and a correction follows by CD10 if the review changes it). Escalations: `fnma_portal_operator` for UI uploads/pulls; `officer` for a missed BD2 (compensatory-fee instance). Toggle-off: deterministic mapping runs; humans review flagged lines.",
+   "escalates_to": [
+    "fnma_portal_operator",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "6.1",
+   "agent": "custodial-recon",
+   "agents_named": [
+    "custodial-recon"
+   ],
+   "tools": [
+    "depository.evaluate",
+    "fdic.lookup",
+    "ratings.read",
+    "custodial.plan_accounts",
+    "cbam.prepare_package",
+    "documents.write",
+    "escalation.create",
+    "timer.start/satisfy",
+    "email.send"
+   ],
+   "guardrails": "it can never transmit an account number outside the allowlisted CBAM/depository/partner channels; it cannot mark a form `in_effect` without the executed document hash. Human path when AI is off: ops-console wizard produces the same package and the same gate checks run as command validators.",
+   "escalates_to": [
+    "fnma_portal_operator",
+    "officer"
+   ]
+  },
+  {
+   "process": "6.2",
+   "agent": "custodial-recon",
+   "agents_named": [
+    "custodial-recon"
+   ],
+   "tools": [
+    "ledger.post",
+    "escrow.read_balances",
+    "jurisdiction.read"
+   ],
+   "guardrails": "",
+   "escalates_to": [
+    "fnma_portal_operator",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "6.3",
+   "agent": "custodial-recon",
+   "agents_named": [
+    "custodial-recon",
+    "qc-audit"
+   ],
+   "tools": [
+    "bank.read_statement",
+    "ledger.read",
+    "ledger.post_reclass",
+    "fnma.read_cash_position",
+    "fnma.read_draft_notifications",
+    "crs.prepare_batch",
+    "form496.generate",
+    "documents.write",
+    "escalation.create",
+    "timer.*",
+    "partner.notify"
+   ],
+   "guardrails": "",
+   "escalates_to": [
+    "fnma_portal_operator",
+    "officer"
+   ]
+  },
+  {
+   "process": "6.4",
+   "agent": "custodial-recon",
+   "agents_named": [
+    "custodial-recon",
+    "qc-audit",
+    "insurance-property"
+   ],
+   "tools": [],
+   "guardrails": "",
+   "escalates_to": [
+    "fnma_portal_operator",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "6.5",
+   "agent": "custodial-recon",
+   "agents_named": [
+    "custodial-recon",
+    "borrower-comms"
+   ],
+   "tools": [
+    "suspense.read/write",
+    "payments.history",
+    "borrowers.search",
+    "lockbox.image_ocr",
+    "ledger.apply_via_cashiering",
+    "nacha.originate_credit",
+    "check.issue",
+    "contact.request",
+    "unclaimed_property.compute",
+    "naupa.generate",
+    "escalation.create",
+    "timer.*"
+   ],
+   "guardrails": "no application below 0.97 without borrower confirmation; no return of funds to a payer that is not the verified originator/remitter; no write-off above $5.00; any return > $10,000 to a non-borrower \u2192 `officer`; contact attempts respect `consents` (TCPA), quiet hours and AI disclosure (baseline \u00a78(6)); borrower request for a human \u2192 `human_agent` warm transfer. Escalations: `officer` (write-offs, escheat verification/filing, large non-borrower returns, aged > 90 days), `human_agent` (borrower request), `attorney` only via the bankruptcy/foreclosure case owner when a hold reason involves litigat",
+   "escalates_to": [
+    "attorney",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "7.1",
+   "agent": "disclosures",
+   "agents_named": [
+    "disclosures",
+    "borrower-comms",
+    "bankruptcy-ops",
+    "case"
+   ],
+   "tools": [],
+   "guardrails": "statements with any `block` rule failure cannot be sent; a cycle cannot be marked exempt without a linked evidence document (court order, written request image, charge-off approval); variant `bk_*` requires an open `bankruptcy` case with a PACER/vendor docket reference (14.1); the agent cannot suppress a statement for returned mail or FDCPA cease requests.",
+   "escalates_to": [
+    "attorney",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "7.2",
+   "agent": "disclosures",
+   "agents_named": [
+    "disclosures",
+    "borrower-comms",
+    "qc-audit"
+   ],
+   "tools": [
+    "computeArmAdjustment",
+    "verifyArmAdjustment"
+   ],
+   "guardrails": "the LLM never computes rates or payments; it handles exception triage (index missing, boarding data conflict, borrower dispute intake), drafts the internal correction memo for the IRR discussion (C-2.2-01) from engine output, and explains the notice to borrowers via `borrower-comms` using only recorded numbers. Any adjustment with `cap_test.applied \u2260 none`, a term change, or a discrepancy is sampled to `qc-audit`.",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "7.3",
+   "agent": "disclosures",
+   "agents_named": [
+    "disclosures"
+   ],
+   "tools": [],
+   "guardrails": "no send outside the window; no numbers from the LLM; the \"transferor sent it\" determination requires an attached document.",
+   "escalates_to": [
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "7.4",
+   "agent": "borrower-comms",
+   "agents_named": [
+    "borrower-comms",
+    "disclosures"
+   ],
+   "tools": [],
+   "guardrails": "an LLM cannot create an `active` consent; only the verification service can; the agent cannot mark a TCPA consent from a call transcript unless the recorded call contains the scripted consent language and the number was confirmed (stored as evidence with the recording id); revocations recognized from free text are applied immediately (over-recognition preferred).",
+   "escalates_to": [
+    "attorney",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "7.5",
+   "agent": "disclosures",
+   "agents_named": [
+    "disclosures",
+    "borrower-comms"
+   ],
+   "tools": [],
+   "guardrails": "the agent cannot alter notice text or the sharing grid (partner-controlled); a `privacy_policy.changed` event with `new_sharing=true` hard-blocks any data export tagged `marketing_share` until the gate clears; opt-out preferences (if ever enabled) are enforced in the data-export layer, not by prompt.",
+   "escalates_to": [
+    "attorney",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "7.6",
+   "agent": "payoff-release",
+   "agents_named": [
+    "payoff-release",
+    "disclosures",
+    "borrower-comms",
+    "bankruptcy-ops"
+   ],
+   "tools": [],
+   "guardrails": "figures come only from the 16.1 engine; wire instructions are static, vault-controlled and never edited by an agent; third-party delivery requires authorization evidence or a borrower-of-record copy; the LLM may classify requests and draft the authorization request, not the statement.",
+   "escalates_to": [
+    "attorney",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "8.1",
+   "agent": "credit-reporting",
+   "agents_named": [
+    "credit-reporting"
+   ],
+   "tools": [],
+   "guardrails": "the agent may not alter `payment_history_profile` history, `date_opened` or `date_of_first_delinquency` except through a `credit_reporting_corrections` row with evidence; may not send DA/DF (delete account), ECOA `Z`, or a full-file resubmission without `officer` approval; may not release a cycle whose anomaly score exceeds thresholds; may not furnish any record with an unresolved hard error; must apply 8.3 overlays before rendering; cannot bypass the FDCPA/NoE gates.",
+   "escalates_to": [
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "8.2",
+   "agent": "credit-reporting",
+   "agents_named": [
+    "credit-reporting"
+   ],
+   "tools": [
+    "eoscar.acdv.find/view/validate/submit",
+    "eoscar.aud.validate/submit",
+    "eoscar.notification.*"
+   ],
+   "guardrails": "never respond \"verified\" without evidence rows; never deem an ACDV frivolous; never let a due date lapse (a \"best-available\" modify/delete response with a follow-up correction is preferred to silence); never reinsert deleted data without certification; never contact the consumer's employer or third parties; never use the dispute to collect; disclose automation in any oral follow-up (baseline \u00a78 item 6).",
+   "escalates_to": [
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "8.3",
+   "agent": "credit-reporting",
+   "agents_named": [
+    "credit-reporting"
+   ],
+   "tools": [
+    "credit.suppression.create/release",
+    "bankruptcy.state.get",
+    "scra.case.get",
+    "disaster.case.get",
+    "borrowers.get",
+    "documents.search",
+    "eoscar.aud.submit",
+    "eoscar.notification.*",
+    "accuracy.control.run",
+    "escalation.file"
+   ],
+   "guardrails": "no suppression without a triggering event and evidence; `delete_account`/`delete_consumer` and identity-theft releases require `officer`; a Chapter 7 discharge zero-balance overlay requires the discharge order document; SCRA adverse changes during the gate require `officer`; the agent may not create \"courtesy\" suppressions on request (a borrower asking \"please don't report me\" is not a legal basis \u2014 accuracy governs; the request is logged and answered).",
+   "escalates_to": [
+    "attorney",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "9.1",
+   "agent": "insurance-property",
+   "agents_named": [
+    "insurance-property"
+   ],
+   "tools": [
+    "recordDeficiency",
+    "requestEscrowLineUpdate",
+    "openCase"
+   ],
+   "guardrails": "the agent cannot mark a policy `verified` without a confirmed evidence record; cannot waive a rating failure (only `officer` under documented mortgage-impairment cover); cannot ask an escrowed current borrower to pay a premium; all borrower calls disclose automation and offer a human. Escalations: `officer` (waivers; Fannie Mae documentation requests; E&O/electronic-file election), `human_agent` on request, `attorney` on title/named-insured disputes (trusts, divorces) beyond templated handling.",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "9.2",
+   "agent": "insurance-property",
+   "agents_named": [
+    "insurance-property",
+    "borrower-comms"
+   ],
+   "tools": [
+    "assessReasonableBasis",
+    "checkEscrowGuard"
+   ],
+   "guardrails": "",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "9.3",
+   "agent": "insurance-property",
+   "agents_named": [
+    "insurance-property"
+   ],
+   "tools": [
+    "selectReminderVariant",
+    "quoteLpi"
+   ],
+   "guardrails": "variant selection is deterministic from evidence records (the model cannot override); cost figure must trace to a quote/rate-table record; the checklist blocks rendering without the \"second and final notice\" sentence. Escalations: `human_agent` on request; `officer` if a quote is unavailable for > 2 business days (charge date slips).",
+   "escalates_to": [
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "9.4",
+   "agent": "insurance-property",
+   "agents_named": [
+    "insurance-property"
+   ],
+   "tools": [
+    "reviewLpiCoverage",
+    "quoteLpiRenewal"
+   ],
+   "guardrails": "one notice per year; no charge before the gate; gap charges only where the jurisdiction rule permits. Escalations: `attorney` for state-law prohibition questions; `human_agent` on request. AI-off: deterministic renewal job.",
+   "escalates_to": [
+    "attorney",
+    "human_agent"
+   ]
+  },
+  {
+   "process": "9.5",
+   "agent": "insurance-property",
+   "agents_named": [
+    "insurance-property"
+   ],
+   "tools": [
+    "evaluateEvidence",
+    "computeOverlapRefund",
+    "requestLpiCancel",
+    "postRefund",
+    "payRefund",
+    "notifyBorrower"
+   ],
+   "guardrails": "cannot reduce a refund below the calculator's figure; cannot wait for the carrier; cannot charge a cancellation fee. Escalations: `officer` at day 12 if unpaid (breach-risk report), `human_agent` on request. AI-off: the refund job runs on `insurance.evidence.confirmed`; staff evaluate evidence.",
+   "escalates_to": [
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "9.6",
+   "agent": "insurance-property",
+   "agents_named": [
+    "insurance-property"
+   ],
+   "tools": [
+    "orderDetermination",
+    "evaluateStructures",
+    "computeFloodRequirement",
+    "evaluatePrivateFloodPolicy"
+   ],
+   "guardrails": "no placement before t0 + 45; no reliance on FEMA NFHL alone; amount never exceeds the rule-2 minimum unless the borrower elects; termination/refund within 30 days regardless of carrier; automation disclosure and consent for any outreach call. Escalations: `officer` (Fannie Mae evidence requests; disputes over determinations \u2014 vendor guarantee claims), `human_agent` on request, `attorney` for borrower challenges to a determination (FEMA LOMA route explained to the borrower first).",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "9.7",
+   "agent": "insurance-property",
+   "agents_named": [
+    "insurance-property",
+    "borrower-comms",
+    "cashiering",
+    "investor-reporting"
+   ],
+   "tools": [
+    "openClaim",
+    "computeReleaseSchedule",
+    "requestEndorsement",
+    "depositInstrument",
+    "releaseFunds",
+    "orderRepairInspection",
+    "verifyRemoteInspection",
+    "prepareForm176",
+    "remitProceeds332",
+    "applyToUpb",
+    "openWorkoutEvaluation",
+    "escalate"
+   ],
+   "guardrails": "releases cannot exceed formula limits; no release without the required inspection; no third-party fee payment without a recorded Fannie Mae approval; no netting of servicer expenses; interest always paid; automation disclosure on calls; **legally required human touchpoints**: `signing_officer` endorses physical instruments under the LPOA; `fnma_portal_operator` sends Form 176/uploads; `attorney` for lien disputes, contractor litigation, bankruptcy (proceeds may be estate property \u2014 Section 14) and eminent-domain/condemnation; `human_agent` on request; `lossmit_reviewer` where the delinquent-tr",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "lossmit_reviewer",
+    "officer",
+    "signing_officer"
+   ]
+  },
+  {
+   "process": "9.8",
+   "agent": "insurance-property",
+   "agents_named": [
+    "insurance-property",
+    "default-collections"
+   ],
+   "tools": [
+    "computeInspectionSchedule",
+    "orderInspection",
+    "evaluateInspectionResult",
+    "updateOccupancy",
+    "notifyCarrierVacancy",
+    "submitPfpip",
+    "updatePfpip",
+    "reconcilePfpip",
+    "openPreservation",
+    "openClaim",
+    "sendNotice"
+   ],
+   "guardrails": "no interior inspection without confirmed vacancy and a permitted-entry jurisdiction rule; no order before day 90 except vacancy checks; curbside only with a recorded reason; the agent cannot mark occupancy `vacant` without a signed certification; inspectors never discuss the debt. Escalations: `fnma_portal_operator` (P360 UI submissions/reconciliation when no API), `attorney` (entry during bankruptcy, occupant disputes, Form 20 litigation), `human_agent` on request.",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent"
+   ]
+  },
+  {
+   "process": "9.9",
+   "agent": "insurance-property",
+   "agents_named": [
+    "insurance-property"
+   ],
+   "tools": [
+    "buildInitialScope",
+    "checkAllowables",
+    "orderWork",
+    "reviewCompletion",
+    "prepareBid",
+    "fileRegistration",
+    "notifyCarrierVacancy",
+    "openClaim"
+   ],
+   "guardrails": "no entry unless vacancy is confirmed (signed certification) and `entry_permitted` for the jurisdiction; no over-allowable work without a Fannie Mae approval record except Matrix-permitted BATF; no hazardous-material handling outside the allowable list; costs never charged to the borrower on PFPIP loans or where the contract/state law prohibits; neutral postings. **Human touchpoints**: `fnma_portal_operator` (HomeTracker bids, P360 updates), `attorney` (bankruptcy stay, occupant/tenant disputes, state entry restrictions, Form 20 litigation), `officer` (audit responses to Fannie Mae), `human_age",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "10.1",
+   "agent": "pmi",
+   "agents_named": [
+    "pmi",
+    "borrower-comms",
+    "boarding",
+    "security-records",
+    "qc-audit"
+   ],
+   "tools": [
+    "pmi.*",
+    "smdu.*",
+    "mi_insurer.cancel",
+    "notices.render/send",
+    "escrow.interim_analysis.request",
+    "ledger.post",
+    "investor_events.emit",
+    "case.*",
+    "contacts.log",
+    "documents.store"
+   ],
+   "guardrails": "the agent cannot alter `original_value`, payment-history counts or SMDU inputs without an evidence-backed `mi.data.corrected` event (which voids liability relief and starts `FNMA_SMDU_DATA_CORRECTION_30`); cannot charge any fee other than the tabulated valuation fee; cannot deny for reasons outside the rule set; must attach the valuation result to any denial; must add the AVM disclaimer; never solicits current-value cancellation. Escalations: missing original-value documents \u2192 `boarding`/`security-records` retrieval task; disputed original value or borrower-supplied appraisal outside SMDU \u2192 `o",
+   "escalates_to": [
+    "fnma_portal_operator",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "10.2",
+   "agent": "pmi",
+   "agents_named": [
+    "pmi"
+   ],
+   "tools": [
+    "pmi.schedule.rebuild",
+    "pmi.terminate",
+    "notices.*",
+    "escrow.interim_analysis.request",
+    "investor_events.emit",
+    "mi_insurer.cancel",
+    "ledger.post"
+   ],
+   "guardrails": "cannot delay a termination for value, seasoning or fee reasons (hard-coded reason whitelist: `NOT_CURRENT`, `MIDPOINT_ONLY_PROPERTY`, `ORIGINAL_VALUE_MISSING`, `POLICY_NOT_ACTIVE`); cannot edit schedule rows manually; must escalate schedule rebuild variances > $0.05 to `officer` with both schedules attached; `ORIGINAL_VALUE_MISSING` past 60 days \u2192 `officer` sev-2 with the loan's origination documents request. Human touchpoints: `fnma_portal_operator` for LAR 89 single-entry on reject; `officer` for corrections of prior erroneous non-termination (refund of premiums back to the true termination",
+   "escalates_to": [
+    "fnma_portal_operator",
+    "officer"
+   ]
+  },
+  {
+   "process": "10.3",
+   "agent": "pmi",
+   "agents_named": [
+    "pmi"
+   ],
+   "tools": [],
+   "guardrails": "",
+   "escalates_to": [
+    "officer"
+   ]
+  },
+  {
+   "process": "10.4",
+   "agent": "pmi",
+   "agents_named": [
+    "pmi",
+    "borrower-comms"
+   ],
+   "tools": [
+    "notices.compose/send",
+    "pmi.projection",
+    "consents.check",
+    "documents.store"
+   ],
+   "guardrails": "no template edits at run time; a failed checklist blocks release; any loan lacking a schedule version or original value gets the disclosure with dates replaced by \"contact us\" text plus an internal exception (never skipped). Escalations: returned mail without a forwarding address after two attempts \u2192 `human_agent` skip-trace review (Section 4); template legal changes \u2192 `officer` approval. AI-off: the scheduler still composes and sends using the last approved template.",
+   "escalates_to": [
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "10.5",
+   "agent": "pmi",
+   "agents_named": [
+    "pmi",
+    "escrow",
+    "security-records"
+   ],
+   "tools": [
+    "pmi.refund.estimate",
+    "ledger.post",
+    "disbursements.issue",
+    "custodial.match",
+    "mi_insurer.refund_status",
+    "escrow.interim_analysis.request",
+    "notices.*"
+   ],
+   "guardrails": "cannot credit a refund to escrow/principal/fees without a post-E borrower election document; cannot withhold a refund for delinquency; corporate advances above $5,000 need `officer` approval (package: computation, insurer correspondence, timer status); LPMI refunds never go to the borrower. Escalations: insurer refuses cancellation/refund \u2192 `officer` (master-policy dispute); refund payee is a deceased borrower/estate or a confirmed successor \u2192 `human_agent` review of payee instructions; suspected identity/account change fraud on the ACH account \u2192 `security-records`. AI-off: scheduled jobs comp",
+   "escalates_to": [
+    "attorney",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "10.6",
+   "agent": "pmi",
+   "agents_named": [
+    "pmi",
+    "qc-audit"
+   ],
+   "tools": [
+    "notices.*",
+    "pmi.evaluation.get",
+    "case.noe.open",
+    "smdu.valuation.appeal",
+    "documents.deliver"
+   ],
+   "guardrails": "the notice cannot issue without a linked `mi_evaluations` row; the due date is computed by the Timer Engine, not the agent; any change to numbers after composition forces re-composition; the agent cannot \"soften\" a denial into a partial grant. Escalations: human-review requests \u2192 `human_agent` (10 BD); systemic denial patterns (e.g., >5% of denials reversed in a month) \u2192 `officer` and `qc-audit`; suspected template defect \u2192 `officer`. Disclosures: AI disclosure on calls/chats; Colorado-style explanation and appeal path stated in the notice. AI-off path: denials compose from the same decision r",
+   "escalates_to": [
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "11.1",
+   "agent": "default-collections",
+   "agents_named": [
+    "default-collections",
+    "borrower-comms"
+   ],
+   "tools": [],
+   "guardrails": "no dial without every pre-dial check passing; no balance not read from the ledger; no option, deadline or foreclosure statement not present in `lossmit_facts`; no threat of action not actually intended/lawful (\u00a71006.18(c)); no negotiation of modification terms \u2014 only intake and referral (licensing rule); no more than one voicemail per number per 7 days (policy); terminate and mark `human_only` on borrower request. Escalations: `human_agent` (request/trigger), `licensed_specialist` (state-keyed), `officer` (timer breach), `attorney` (borrower represented by counsel in litigation), `fnma_portal_",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "11.2",
+   "agent": "default-collections",
+   "agents_named": [
+    "default-collections"
+   ],
+   "tools": [
+    "windows.list",
+    "cycle.compute",
+    "bk.status",
+    "fdcpa.status",
+    "continuity.assignment.get",
+    "lossmit.options.list",
+    "notice.render",
+    "checklist.verify",
+    "print.request",
+    "edeliver.send",
+    "fnma.action.emit",
+    "decision.record",
+    "escalate"
+   ],
+   "guardrails": "never send a payment request in bk/fdcpa variants (template-level, not prompt-level); never send a second bk notice in the same case; never send electronically without consent; never combine with a state pre-foreclosure notice unless the jurisdiction flag allows. Escalations: `officer` on any breach or vendor failure within 2 days of a deadline; `attorney` when a bankruptcy court order restricts communications (comment 39(c)-2) \u2014 the agent drafts an adapted notice for counsel review; `human_agent` none. Disclosure/consent: E-SIGN consent for electronic; \u00a71006.18(e) on DC-loan notices. AI-off p",
+   "escalates_to": [
+    "attorney",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "11.3",
+   "agent": "borrower-comms",
+   "agents_named": [
+    "borrower-comms"
+   ],
+   "tools": [
+    "identity.verify",
+    "disclosure.play",
+    "ledger.balances",
+    "payments.history",
+    "lossmit_facts.get",
+    "qrpc.capture",
+    "promise.record",
+    "payment.schedule",
+    "lossmit.request.create",
+    "lossmit.streamlined.evaluate",
+    "authorization.record",
+    "preference.set",
+    "dispute.intake",
+    "human.transfer",
+    "contact.log",
+    "decision.record"
+   ],
+   "guardrails": "no eligibility or approval statements; no threats (\u00a71006.18(c)); no discussion with unverified/unauthorized third parties; no financial-detail demands; no negotiation where licensed; the extractor must cite transcript evidence for every element (hallucinated elements fail validation and downgrade the call to `conversation_only`); QRPC is never marked from a voicemail, SMS-only exchange or chatbot session without a verified two-way dialog (SMS/chat QRPC allowed only with verified identity and all elements \u2014 policy default: allowed for chat/portal, not for SMS).",
+   "escalates_to": [
+    "human_agent",
+    "lossmit_reviewer"
+   ]
+  },
+  {
+   "process": "11.4",
+   "agent": "default-collections",
+   "agents_named": [
+    "default-collections",
+    "case",
+    "borrower-comms"
+   ],
+   "tools": [],
+   "guardrails": "the AI never states that a debt is \"not disputed,\" never threatens litigation/foreclosure timing not confirmed by 13.x, never contacts a represented consumer directly, never mentions the debt to an unverified party, never sends an email/SMS without the opt-out line, never adds a fee. Escalations: `officer` (determination overrides, timer breaches, cease-matrix ambiguities), `attorney` (litigation threats from the borrower, contested verification, court orders), `human_agent` (borrower request; disputes raised orally with distress), `lossmit_reviewer` (n/a), `fnma_portal_operator` (n/a). Human",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "lossmit_reviewer",
+    "officer"
+   ]
+  },
+  {
+   "process": "11.5",
+   "agent": "lossmit-underwriter",
+   "agents_named": [
+    "lossmit-underwriter",
+    "default-collections",
+    "borrower-comms"
+   ],
+   "tools": [],
+   "guardrails": "eligibility is computed by code, not by the model; the model may not alter inputs (every input has a document or ledger provenance); no adverse notice without `reviewer_id`; no terms quoted to the borrower before SMDU's decision; no credit pull without a recorded permissible purpose; no outbound solicitation below 30 days delinquent. Escalations: `lossmit_reviewer` (every ineligible/declined outcome; Colorado explanation), `fnma_portal_operator` (SMDU UI), `licensed_specialist` (presenting/negotiating modification terms in licensed states), `human_agent` (borrower request; bereavement conversa",
+   "escalates_to": [
+    "fnma_portal_operator",
+    "human_agent",
+    "lossmit_reviewer",
+    "officer"
+   ]
+  },
+  {
+   "process": "12.1",
+   "agent": "lossmit-underwriter",
+   "agents_named": [
+    "lossmit-underwriter",
+    "bankruptcy-ops"
+   ],
+   "tools": [
+    "lossmit.application.open/update",
+    "documents.classify_extract",
+    "requirements.compute",
+    "calendar.federal_bd",
+    "notice.render_send",
+    "contacts.log",
+    "timers.start",
+    "foreclosure_holds.set",
+    "fnma.status_code.report",
+    "sii.lookup",
+    "transfer.lossmit_file.get"
+   ],
+   "guardrails": "may not classify an RFA as \"not an application\" when confidence <0.80; may not mark an item `waived` without a catalog waiver rule; never asks for documents already in the file; never issues an ack after the clock without an `escalations` row; every borrower-facing sentence comes from the approved template (no free-text legal statements).",
+   "escalates_to": [
+    "fnma_portal_operator",
+    "human_agent",
+    "lossmit_reviewer",
+    "officer"
+   ]
+  },
+  {
+   "process": "12.2",
+   "agent": "lossmit-underwriter",
+   "agents_named": [
+    "lossmit-underwriter",
+    "qc-audit"
+   ],
+   "tools": [
+    "lossmit.evaluation.*",
+    "hierarchy.walk",
+    "smdu.case.submit/poll",
+    "valuation.order",
+    "mi.decision.get",
+    "credit.report.pull",
+    "notice.render_send",
+    "foreclosure_holds.set/release",
+    "attorney.instruct",
+    "timers.*",
+    "escalation.file"
+   ],
+   "guardrails": "eligibility outcomes must equal the rules engine/SMDU output (the model may not override a decision); reason codes only from the catalog; no denial notice without reviewer approval; no offer terms outside SMDU-returned or calculator-produced values; borrower-facing text only from templates; PII minimization in prompts; every SMDU submission carries the partner servicer number.",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "lossmit_reviewer",
+    "officer"
+   ]
+  },
+  {
+   "process": "12.3",
+   "agent": "lossmit-underwriter",
+   "agents_named": [
+    "lossmit-underwriter"
+   ],
+   "tools": [],
+   "guardrails": "the appeal agent cannot be the same run/prompt as the evaluator; cannot see or copy the original denial rationale; cannot issue a notice before the human decision; must treat any borrower statement of error as an NoE candidate.",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "lossmit_reviewer",
+    "officer"
+   ]
+  },
+  {
+   "process": "12.4",
+   "agent": "lossmit-underwriter",
+   "agents_named": [
+    "lossmit-underwriter",
+    "borrower-comms",
+    "default-collections"
+   ],
+   "tools": [
+    "workout_plan.*",
+    "calendar.months",
+    "delinquency.project",
+    "notice.render_send",
+    "fees.suppress",
+    "fnma.status_code.report",
+    "exception_request.prepare",
+    "contacts.*",
+    "timers.*"
+   ],
+   "guardrails": "cannot create a term breaching any gate; cannot suspend diligence unless the (c)(2)(iii) conditions are met; cannot terminate for a missed reduced payment without checking \"mitigating circumstances\" policy and logging; must schedule the \u221230-day outreach at term creation.",
+   "escalates_to": [
+    "fnma_portal_operator",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "12.5",
+   "agent": "lossmit-underwriter",
+   "agents_named": [
+    "lossmit-underwriter"
+   ],
+   "tools": [
+    "workout_plan.*",
+    "ledger.arrears",
+    "calc.repayment_schedule",
+    "fees.suppress/waive",
+    "notice.render_send",
+    "fnma.status_code.report",
+    "fnma.f116_package.prepare",
+    "timers.*"
+   ],
+   "guardrails": "calculator is deterministic; the agent cannot alter installment math; cannot set a term >12 without an approval id; cannot waive late charges outside the rule; must re-test the cap on every contractual change.",
+   "escalates_to": [
+    "fnma_portal_operator",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "12.6",
+   "agent": "lossmit-underwriter",
+   "agents_named": [
+    "lossmit-underwriter"
+   ],
+   "tools": [
+    "deferral.screen",
+    "ledger.arrears_breakdown",
+    "escrow.analysis.run",
+    "smdu.case.submit",
+    "investor.report_contractual_payments",
+    "notice.render_send",
+    "esign.send",
+    "erecording.submit",
+    "custodian.deliver",
+    "timers.*"
+   ],
+   "guardrails": "ineligibility determinations go to `lossmit_reviewer` before any notice (adverse determination); NIB math is code; cannot complete without the LAR/event ack and, where required, the contractual payment; cannot include late charges or escrow shortage in the NIB.",
+   "escalates_to": [
+    "fnma_portal_operator",
+    "human_agent",
+    "lossmit_reviewer",
+    "officer",
+    "signing_officer"
+   ]
+  },
+  {
+   "process": "12.7",
+   "agent": null,
+   "agents_named": [],
+   "tools": [
+    "disaster.registry.lookup",
+    "insurance.claim.get"
+   ],
+   "guardrails": "cannot assert a FEMA basis without a registry match; ineligibility \u2192 `lossmit_reviewer` before notice; the disaster foreclosure-approval package is prepared but sent only by the human role. AI-off path identical to 12.6.",
+   "escalates_to": [
+    "fnma_portal_operator",
+    "lossmit_reviewer",
+    "officer"
+   ]
+  },
+  {
+   "process": "12.8",
+   "agent": "lossmit-underwriter",
+   "agents_named": [
+    "lossmit-underwriter"
+   ],
+   "tools": [
+    "flexmod.waterfall",
+    "valuation.order/get"
+   ],
+   "guardrails": "the LLM never computes terms \u2014 it calls the waterfall; terms in notices must equal the waterfall/SMDU output; no TPP offer without a fresh valuation and escrow analysis; no permanent modification without the three binding conditions; no Form 3179 changes outside the template/riders; denials require `lossmit_reviewer`; solicitation blocked near a sale.",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "lossmit_reviewer",
+    "officer",
+    "signing_officer"
+   ]
+  },
+  {
+   "process": "12.9",
+   "agent": "lossmit-underwriter",
+   "agents_named": [
+    "lossmit-underwriter",
+    "claims-reo",
+    "qc-audit"
+   ],
+   "tools": [
+    "liquidation.case.*",
+    "ratio.compute",
+    "contribution.compute",
+    "valuation.order/get",
+    "title.order/get",
+    "inspection.order/get",
+    "smdu.case.submit/poll",
+    "offer.evaluate",
+    "notice.render_send",
+    "closing.instructions.send",
+    "settlement.review",
+    "erecording.submit",
+    "lien_release.request",
+    "mi.claim.prepare",
+    "reogram.watch",
+    "timers.*",
+    "attorney.instruct"
+   ],
+   "guardrails": "contribution and net-proceeds math is code; no approval outside SMDU's decision/Fannie Mae approval; no deed acceptance without title verification and inspection; no relocation payment when a contribution is required (absent Fannie Mae approval); denials via `lossmit_reviewer`; settlement-statement anomalies (related-party buyer, undisclosed payments) \u2192 `qc-audit`/`officer` fraud review before funding.",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "lossmit_reviewer",
+    "officer",
+    "signing_officer"
+   ]
+  },
+  {
+   "process": "13.1",
+   "agent": "foreclosure-ops",
+   "agents_named": [
+    "foreclosure-ops",
+    "compliance-sentinel"
+   ],
+   "tools": [
+    "loan.get",
+    "delinquency.counters.get",
+    "lossmit.case.get",
+    "contacts.search",
+    "inspection.get",
+    "foreclosure.gates.evaluate",
+    "escalation.create"
+   ],
+   "guardrails": "the agent cannot open a closed gate; it can only add evidence that changes an input; any conclusion that a property is *not* a principal residence with confidence < 0.9 is escalated to `human_agent` (servicing specialist) for verification before the non-principal-residence path is used. Escalations: `officer` for (f)(1)(ii)/(iii) exceptions (package: counsel memo, deed/transfer evidence or lienholder pleading, gate snapshot); `compliance-sentinel` on any refused command. Human path when AI is off: the same evaluator runs; a `human_agent` reviews occupancy exceptions from a queue.",
+   "escalates_to": [
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "13.2",
+   "agent": "foreclosure-ops",
+   "agents_named": [
+    "foreclosure-ops",
+    "borrower-comms"
+   ],
+   "tools": [
+    "lossmit.case.get",
+    "foreclosure.case.get",
+    "attorney.instruction.send",
+    "attorney.instruction.status",
+    "dra.snapshot.get",
+    "timer.create",
+    "escalation.create"
+   ],
+   "guardrails": "no `RESUME`/`CERTIFY_SALE` instruction may be sent while any hold is open; the agent cannot mark an application \"complete\" or \"rejected\" \u2014 only 12.x can. Escalations: `attorney` when the firm has not acknowledged in 1 BD or a court ruling is imminent; `lossmit_reviewer` when an exit depends on a denial (12.x owns the denial approval); `officer` for a request to proceed under a claimed exit not evidenced by 12.x events. Disclosure: any borrower conversation about foreclosure status through `borrower-comms` discloses automation and offers a human (baseline \u00a78.6). Human path: same holds; instruct",
+   "escalates_to": [
+    "attorney",
+    "human_agent",
+    "lossmit_reviewer",
+    "officer"
+   ]
+  },
+  {
+   "process": "13.3",
+   "agent": "foreclosure-ops",
+   "agents_named": [
+    "foreclosure-ops"
+   ],
+   "tools": [],
+   "guardrails": "money figures computed by deterministic code; the model never edits amounts; any bid below total indebtedness without an unexpired reserve price is refused; any deviation from the preferred method needs Form 20 (13.7) and `officer` approval. Escalations: `signing_officer` (assignments, substitutions of trustee, lost-note and other affidavits \u2014 package: instrument, evidence, notary/RON slot); `attorney` (all filings; deficiency and method questions; contested matters); `fnma_portal_operator` (reserve price/valuation portal fallback, REOgram, DRA view, HomeTracker); `officer` (foreclosing-party",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "officer",
+    "signing_officer"
+   ]
+  },
+  {
+   "process": "13.4",
+   "agent": "foreclosure-ops",
+   "agents_named": [
+    "foreclosure-ops"
+   ],
+   "tools": [
+    "lossmit.case.get",
+    "contacts.search",
+    "notices.search",
+    "inspection.get",
+    "dmdc.verify",
+    "bk.scrub",
+    "title.status.get",
+    "custodian.request",
+    "mi.status.get",
+    "insurance.status.get",
+    "disaster.lookup"
+   ],
+   "guardrails": "an item may be `pass` only with attached evidence; model-evaluated items with confidence < 0.85 route to `human_agent` verification; the agent never sends a disaster request recommending foreclosure where QRPC was never achieved unless the outreach log shows the D2-2-02 cadence was met (Fannie Mae will ask). Escalations: `human_agent` (occupancy/evidence ambiguity), `attorney` (title/standing questions, environmental litigation), `officer` (Fannie Mae denial of a disaster request that the partner wishes to contest; expedited path on a principal residence), `fnma_portal_operator` (DMDC batch, P",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "13.5",
+   "agent": "foreclosure-ops",
+   "agents_named": [
+    "foreclosure-ops"
+   ],
+   "tools": [
+    "fc.timeframe.get",
+    "status.history.get",
+    "dra.snapshot.get",
+    "attorney.instruction.send",
+    "documents.bundle",
+    "fnma_connect.report.pull"
+   ],
+   "guardrails": "exposure math is code; the model cannot add credits; rebuttals are `officer`-signed (Fannie Mae performance-management correspondence is an officer certification touchpoint). Escalations: `officer` (bill acceptance/rebuttal; allocation disputes), `attorney` (firm-caused delays, method deviations), `fnma_portal_operator` (DRA/Connect pulls where portal-only). AI-off path: dashboard + queue.",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "13.6",
+   "agent": "foreclosure-ops",
+   "agents_named": [
+    "foreclosure-ops",
+    "qc-audit"
+   ],
+   "tools": [
+    "firm.get",
+    "documents.extract",
+    "fee_schedule.get",
+    "invoice.review",
+    "dra.snapshot.import",
+    "attorney.message.send"
+   ],
+   "guardrails": "the model cannot approve an invoice line the rules reject; Form 200 certification is the partner `officer`'s (legally the servicer's certification to Fannie Mae); suspension/termination decisions are `officer` decisions with the AI package; litigation instructions are the `attorney`'s domain \u2014 the agent never instructs a firm on legal strategy beyond Guide-mandated instructions (hold/postpone/bid/certify). Escalations: `officer` (Form 200, suspensions, transfers, Fannie Mae escalations that assert the partner's position), `attorney` (contested matters, fee disputes over legal work), `fnma_port",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "13.7",
+   "agent": "foreclosure-ops",
+   "agents_named": [
+    "foreclosure-ops"
+   ],
+   "tools": [
+    "documents.extract",
+    "litigation.classify",
+    "foreclosure.case.get",
+    "attorney.message.send"
+   ],
+   "guardrails": "the agent never files pleadings or communicates positions to courts/opposing counsel; it never states Fannie Mae's position; environmental \"cleared\" requires human-reviewed evidence (`attorney` or licensed inspector report). Escalations: `fnma_portal_operator` (quatro filing), `attorney` (all substantive litigation; classification confirmation; pleading drafts), `officer` (partner) for positions, settlement authority, removal/appeal requests and any Fannie Mae direction requiring the servicer of record's acknowledgment; `human_agent` for borrower contact questions when a borrower is represente",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "13.8",
+   "agent": "foreclosure-ops",
+   "agents_named": [
+    "foreclosure-ops",
+    "borrower-comms"
+   ],
+   "tools": [
+    "dmdc.batch.prepare",
+    "dmdc.results.import",
+    "scra.case.get/open/close"
+   ],
+   "guardrails": "the agent cannot open a gate; only tail expiry, a court order obtained at Fannie Mae's direction, or an `attorney`-reviewed \u00a73918 agreement can; affidavits are executed only by a `signing_officer` after a records review the platform records (checklist: certificate ids, dates, party matching, no conflicting assertions); the agent never asks a servicemember to waive rights (D2-3.4-01). Escalations: `signing_officer` (affidavits \u2014 package: draft, certificates, party match evidence, notary slot), `attorney` (court stays, waiver review, violation remediation), `dmdc_operator`/`fnma_portal_operator`",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "officer",
+    "signing_officer"
+   ]
+  },
+  {
+   "process": "13.9",
+   "agent": "foreclosure-ops",
+   "agents_named": [
+    "foreclosure-ops",
+    "cashiering"
+   ],
+   "tools": [],
+   "guardrails": "no court-relief request is ever prepared (Fannie Mae prohibition); no denial without `attorney` review when service is asserted in writing; money math is code; the model never edits amounts. Escalations: `attorney` (disputed eligibility, waiver questions), `fnma_portal_operator` (MBS upload if portal-only), `human_agent` on request, `officer` (none required; informed of Fannie Mae funding shortfalls > $10k aggregate \u2014 policy). Disclosure: AI-drafted letters carry the servicer's name; calls disclose automation. AI-off path: SCRA queue in the ops console with the same calculators.",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "officer",
+    "signing_officer"
+   ]
+  },
+  {
+   "process": "14.1",
+   "agent": "bankruptcy-ops",
+   "agents_named": [
+    "bankruptcy-ops"
+   ],
+   "tools": [
+    "bk.case.read/write",
+    "pcl.search",
+    "ebn.inbox.read",
+    "bkvendor.*",
+    "docket.classify",
+    "ledger.snapshot",
+    "bk.claim.compute",
+    "bk.ledger.apply_trustee",
+    "bk.ledger.apply_postpetition",
+    "documents.render/search",
+    "timer.*",
+    "attorney.send_package/request",
+    "escalation.file",
+    "notice.send",
+    "smdu.package.prepare",
+    "p360.claim.prepare",
+    "fnma.form20.prepare"
+   ],
+   "guardrails": "no court paper leaves without `attorney` acceptance and, where the form carries a declaration, a `signing_officer` signature; the agent may not release a stay gate without a docket order or counsel's written confirmation; money figures come only from `bk.claim.compute`/ledger services with a reproducible computation log; docket classifications below confidence 0.90 are human-verified before they change state (dismissal/discharge/relief always human-verified by counsel or `human_agent` against the PDF); no outbound collection communication to a debtor while gates are on (template allowlist enfo",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "lossmit_reviewer",
+    "officer",
+    "signing_officer"
+   ]
+  },
+  {
+   "process": "14.2",
+   "agent": "bankruptcy-ops",
+   "agents_named": [
+    "bankruptcy-ops"
+   ],
+   "tools": [
+    "bk.change.detect",
+    "bk.notice.render",
+    "bk.fee_items.read/batch",
+    "bk.status_response.compute",
+    "timer.compute_frbp",
+    "documents.render",
+    "attorney.send_package",
+    "notice.send",
+    "escalation.file"
+   ],
+   "guardrails": "no notice is filed with figures that do not tie to the ledger/analysis (checklist `block`); the agent cannot waive a filing for a change it detected \u2014 only a scope-test failure with a decision record can skip it; a late filing is never back-dated; the (g) response cannot state \"current\" while any post-petition installment or noticed fee is unpaid; fee items that Fannie Mae reimbursed are not noticed for recovery without the 15.2 netting rule confirmed.",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "officer",
+    "signing_officer"
+   ]
+  },
+  {
+   "process": "14.3",
+   "agent": "bankruptcy-ops",
+   "agents_named": [
+    "bankruptcy-ops",
+    "disclosures",
+    "borrower-comms"
+   ],
+   "tools": [
+    "bk.statement_mode.set",
+    "bk.ledger_views.read",
+    "docket.read",
+    "requests.classify",
+    "escalation.file"
+   ],
+   "guardrails": "no exemption without a linked evidence document; no `standard` variant while any consumer is a debtor or discharged (unless reaffirmed and the rescission window lapsed); the LLM never alters figures; a cease request is never inferred from a phone call (writing required \u2014 a call is answered with instructions for a written request, and the agent may take the request through an authenticated portal message as \"in writing\"); statements are never suppressed for returned mail; no payment request in bankruptcy early-intervention notices (checklist `block`).",
+   "escalates_to": [
+    "attorney",
+    "counsel",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "14.4",
+   "agent": "bankruptcy-ops",
+   "agents_named": [
+    "bankruptcy-ops",
+    "credit-reporting"
+   ],
+   "tools": [
+    "bk.reporting_state.write",
+    "bk.case.read",
+    "escalation.file"
+   ],
+   "guardrails": "no state row without a verified case and evidence; non-filing obligors never receive a row; `debt_discharged=true` requires the discharge order document; reaffirmation is not `final` until the rescission window lapses; the agent cannot create suppressions directly (only 8.3 does, from the state row).",
+   "escalates_to": [
+    "attorney",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "15.1",
+   "agent": "claims-reo",
+   "agents_named": [
+    "claims-reo"
+   ],
+   "tools": [
+    "openReoCase",
+    "computeTpsSplit",
+    "buildReogramPackage",
+    "openPortalTask",
+    "parseP360Notification",
+    "scheduleHandoffTasks",
+    "requestInsuranceCancellation",
+    "buildCrsBatch",
+    "draftClosingStatement",
+    "draftEliminationTemplate",
+    "recordDecision"
+   ],
+   "guardrails": "never confirm a REOgram without the resale-restriction gate and MI data check; never remit more than `amount_due_fnma`; never order preservation after the sale for Fannie Mae-acquired property; confidence < 0.9 on purchaser type, bid amount or vesting date \u2192 hold and escalate before deadline \u2212 4 h. Escalations: `fnma_portal_operator` (P360/CRS/e-mail template steps); `attorney` (deed/title/rescission/eviction documents, PTFA); `officer` (compensatory-fee rebuttals, A1-3-02 make-whole responses). Toggle-off path: the package generator runs deterministically and a human reviews/approves each cas",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "officer"
+   ]
+  },
+  {
+   "process": "15.2",
+   "agent": "claims-reo",
+   "agents_named": [
+    "claims-reo"
+   ],
+   "tools": [
+    "sweepClaimCandidates",
+    "validateLine",
+    "assembleClaim",
+    "buildBulkPackage"
+   ],
+   "guardrails": "never submit a line without a paid invoice and allowable basis; never mark `non_recoverable` without a cited legal basis; never re-submit a claim that would push the age past `final_due_at`; never attach documents with NPI (automated redaction check must pass); denials > $5,000 per loan or systematic denial patterns \u2192 `officer` briefing. Escalations: `fnma_portal_operator` (bulk upload, PSA, IRT, CRS); `attorney` (fee disputes with firms, excess-fee approvals); `officer` (write-offs above threshold; A1-3-02 make-whole demands). Toggle-off: the validator runs; a human approves each claim in `op",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "officer"
+   ]
+  },
+  {
+   "process": "15.3",
+   "agent": "claims-reo",
+   "agents_named": [
+    "claims-reo",
+    "pmi",
+    "foreclosure-ops"
+   ],
+   "tools": [
+    "routeMiClaim",
+    "computeShadowClaim",
+    "assembleMiPackage",
+    "openPortalTask",
+    "fileDirectClaim",
+    "trackDocRequests",
+    "reconcileEob",
+    "scoreCurtailmentRisk",
+    "draftAppeal",
+    "attributeShortfall",
+    "recordDecision"
+   ],
+   "guardrails": "never let `micp_docs_due_at` pass without an `officer` alert at \u22123 BD; never upload origination-file documents unless requested; never concede a curtailment as servicer-caused without the timeline evidence review; appeals are drafted by the agent and approved by a `human_agent` reviewer when the amount > $10,000. Escalations: `fnma_portal_operator` (MICP/insurer portals); `officer` (advance-claim demands, make-whole, rescission); `attorney` (rescission disputes, conveyance defects). Toggle-off: shadow calc and package still generated; humans upload and reconcile.",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "15.4",
+   "agent": "custodial-recon",
+   "agents_named": [
+    "custodial-recon",
+    "investor-reporting",
+    "claims-reo"
+   ],
+   "tools": [
+    "recomputeAdvancePosition",
+    "setRecoveryExpectation",
+    "parseCashAdjustments",
+    "matchRecoveries",
+    "postRecoveryEntries",
+    "buildIrrPackage",
+    "agingReport",
+    "recordDecision"
+   ],
+   "guardrails": "never fund an advance on a Stop Advance loan (5.4); never book a recovery without a report-line reference; never write off without `officer` approval; never net Fannie Mae's SDA receivable against our advances; flag any S/S special servicing loan liquidated with a zero expectation (data error). Escalations: `fnma_portal_operator` (report pulls); `officer` (write-offs > $500/loan; disputes at 60 days; regular-servicing-option removal decisions with 5.6). Toggle-off: positions and expectations still computed; a human approves matches in `ops-console`.",
+   "escalates_to": [
+    "fnma_portal_operator",
+    "officer"
+   ]
+  },
+  {
+   "process": "16.1",
+   "agent": "payoff-release",
+   "agents_named": [
+    "payoff-release",
+    "borrower-comms",
+    "bankruptcy-ops",
+    "security-records"
+   ],
+   "tools": [
+    "computePayoffQuote",
+    "assertAccuracyGate",
+    "renderStatement",
+    "mintVerificationToken",
+    "sendNotice",
+    "scheduleRecompute",
+    "openShortagePath",
+    "recordDecision",
+    "escalate"
+   ],
+   "guardrails": "figures only from `payoff_quotes`; wire instructions only from the vault's active version; no statement to an unverified third party without a borrower-of-record copy (7.6); no oral figure before identity verification; the agent cannot waive fees > $100 without `officer` approval (2.7 waiver policy); every recompute \u0394 is explained in the updated statement.",
+   "escalates_to": [
+    "attorney",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "16.2",
+   "agent": "payoff-release",
+   "agents_named": [
+    "payoff-release",
+    "investor-reporting",
+    "security-records",
+    "borrower-comms"
+   ],
+   "tools": [
+    "matchPayoffFunds",
+    "disposeVariance",
+    "postPayoff",
+    "computeFnmaPayoffShare",
+    "buildCrsBatch",
+    "projectRemovalPayoff",
+    "createHousekeepingTasks"
+   ],
+   "guardrails": "no `removal.payoff` without `payoff.funds.cleared`; no demand for more than a reliance-protected figure; absorbed shortages > $500 need `officer` approval (package: quote, statement, funds evidence, state reliance rule, variance analysis); no reversal of a closed-period payoff; CRS amounts must equal `payoff_settlements` values; the LLM never computes money. Escalations: `fnma_portal_operator` (CRS upload; LSDU UI fallback), `officer` (post-close error funding; absorbed shortages > $500; wire recall response), `human_agent` on request, `security-records` on any wire recall/fraud signal, `attor",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "16.3",
+   "agent": "payoff-release",
+   "agents_named": [
+    "payoff-release"
+   ],
+   "tools": [
+    "selectReleaseInstrument",
+    "requestCustodyDocuments",
+    "draftReleaseInstrument",
+    "runReleaseChecklist",
+    "routeForExecution",
+    "scheduleNotarySession",
+    "submitRecording",
+    "handleRecorderReject",
+    "notifyBorrower",
+    "computePenaltyExposure",
+    "recordDecision"
+   ],
+   "guardrails": "no execution without a passed checklist and proof of payoff; the agent never signs; no borrower charge outside C-1.2-05; no release for a loan with `payoff_reversed` or open `fnma_liquidated_in_error` without `officer` approval; confidence < 0.9 on mortgagee-of-record \u2192 hold and `attorney`/title review before deadline \u2212 15 days. Escalations: `signing_officer` (execution \u2014 always), `attorney` (chain gaps, lost instruments, contested releases, post-recording reversal), `officer` (partner) for partner-executed documents and penalty write-offs, `human_agent` for borrower questions, no `fnma_portal",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "officer",
+    "signing_officer"
+   ]
+  },
+  {
+   "process": "16.4",
+   "agent": "payoff-release",
+   "agents_named": [
+    "payoff-release"
+   ],
+   "tools": [
+    "checkDeactivationEligibility",
+    "validateMinIntegrity"
+   ],
+   "guardrails": "never deactivate before recording evidence; never deactivate a MIN whose loan is not `paid_in_full`/charged-off; no reversal without a documented cause; the LLM only classifies rejects and drafts QA notes. Escalations: `officer` (partner) for reversals outside the window, violation notices and Annual Report sign-off; `fnma_portal_operator` only if an eNote status change requires a Fannie Mae UI; `attorney` if a deactivation must be undone after a contested payoff reversal. No borrower contact except the eNote paper-copy letter. AI-off path: ops-console MERS workbench producing the same batch f",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "officer"
+   ]
+  },
+  {
+   "process": "17.1",
+   "agent": "transfer",
+   "agents_named": [
+    "transfer"
+   ],
+   "tools": [
+    "buildTransferPlan",
+    "buildForm629",
+    "buildCustodianMatrix",
+    "validateLoanList",
+    "reconcileQxDownload",
+    "createPortalTask",
+    "parseApprovalLetter",
+    "computeDeadlines",
+    "draftFnmaResponse",
+    "draftForm101Termination",
+    "writeDecision",
+    "notifyPartner"
+   ],
+   "guardrails": "",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "officer"
+   ]
+  },
+  {
+   "process": "17.2",
+   "agent": "transfer",
+   "agents_named": [
+    "transfer",
+    "cashiering",
+    "escrow",
+    "borrower-comms"
+   ],
+   "tools": [
+    "planNoticeRun",
+    "renderNotice",
+    "runContentChecklist",
+    "validateAddress",
+    "verifyTransfereeBlock",
+    "releaseToVendor",
+    "ingestMailReturns",
+    "orderSkipTrace",
+    "writeDecision"
+   ],
+   "guardrails": "",
+   "escalates_to": [
+    "attorney",
+    "human_agent",
+    "officer",
+    "signing_officer"
+   ]
+  },
+  {
+   "process": "17.3",
+   "agent": "transfer",
+   "agents_named": [
+    "transfer",
+    "custodial-recon",
+    "investor-reporting",
+    "security-records",
+    "case",
+    "escrow"
+   ],
+   "tools": [
+    "planDeliverables",
+    "generateDeliverable",
+    "runOutboundDqGate",
+    "buildTrialBalance",
+    "buildImageIndex",
+    "sendDeliverable",
+    "ingestTransfereeAck",
+    "answerTransfereeRequest",
+    "notifyCounterparty",
+    "verifyMersSnapshot",
+    "verifyERegistry",
+    "buildDebrief",
+    "writeDecision"
+   ],
+   "guardrails": "the agent may not alter any balance to make a tie-out pass \u2014 differences are categorized (1.6 taxonomy) and resolved with evidence or escalated; attestation, final accounting and any write-off require Supermortgage `officer`; Fannie Mae adjustment requests and MERS/TOS submissions under the partner's credentials require the partner `officer`/`fnma_portal_operator`; `signing_officer` for any assignment, allonge or Form 2009 execution; `attorney` for litigation-file handoffs where counsel of record must substitute (17.4). No borrower contact from 17.3. Human path: ops-console transfer-out workbe",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "officer",
+    "signing_officer"
+   ]
+  },
+  {
+   "process": "17.4",
+   "agent": "lossmit-underwriter",
+   "agents_named": [
+    "lossmit-underwriter",
+    "foreclosure-ops",
+    "bankruptcy-ops",
+    "claims-reo",
+    "case",
+    "transfer"
+   ],
+   "tools": [
+    "inventoryOpenCases",
+    "runHandoffChecks",
+    "exportDeadlineTable",
+    "completePreTransferAction",
+    "draftDetermination",
+    "lossmit_reviewer",
+    "packageCase",
+    "forwardPostTransfer",
+    "writeDecision"
+   ],
+   "guardrails": "",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "lossmit_reviewer",
+    "officer"
+   ]
+  },
+  {
+   "process": "18.1",
+   "agent": "qc-audit",
+   "agents_named": [
+    "qc-audit",
+    "compliance-sentinel"
+   ],
+   "tools": [
+    "ledger.recompute",
+    "escrow.recompute_analysis",
+    "arm.second_engine",
+    "notice.checklist",
+    "timers.history",
+    "investor_events.replay"
+   ],
+   "guardrails": "",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "officer"
+   ]
+  },
+  {
+   "process": "18.2",
+   "agent": "qc-audit",
+   "agents_named": [
+    "qc-audit"
+   ],
+   "tools": [],
+   "guardrails": "the agent never characterizes legal compliance in a response without counsel review when a finding alleges a violation; no communication leaves without `officer` signature (baseline \u00a78 item 3 \u2014 \"MORA/exam responses\" are officer certifications); the partner's officer signs anything submitted under the partner's servicer number.",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "officer"
+   ]
+  },
+  {
+   "process": "18.3",
+   "agent": "qc-audit",
+   "agents_named": [
+    "qc-audit",
+    "investor-reporting"
+   ],
+   "tools": [],
+   "guardrails": "never alter delinquency history to match a scorecard; classification \"Fannie Mae error\" requires two independent evidence refs and `officer` sign-off before any inquiry is sent; confidentiality filter on report distribution lists.",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "officer"
+   ]
+  },
+  {
+   "process": "18.4",
+   "agent": "qc-audit",
+   "agents_named": [
+    "qc-audit",
+    "compliance-sentinel"
+   ],
+   "tools": [],
+   "guardrails": "the agent cannot certify or submit (baseline \u00a78 item 3 \u2014 Form 582 is an officer certification); any unresolved consistency check blocks `officer_review`; org-change classification with confidence < 0.9 \u2192 `officer` decides within the 5-BD window.",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "officer"
+   ]
+  },
+  {
+   "process": "18.5",
+   "agent": "qc-audit",
+   "agents_named": [
+    "qc-audit",
+    "security-records",
+    "borrower-comms"
+   ],
+   "tools": [],
+   "guardrails": "determinations, external reports and referrals are human acts (`officer:fraud_officer`, `officer`, `attorney`); the agent never contacts suspected perpetrators; protective actions are time-boxed (auto-expire in 30 days unless renewed by the officer) to avoid harming innocent borrowers; fairness monitoring of red-flag rates by protected class (18.1 fairness suite) because fraud flags can delay relief.",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "human_agent",
+    "officer"
+   ]
+  },
+  {
+   "process": "18.6",
+   "agent": "qc-audit",
+   "agents_named": [
+    "qc-audit"
+   ],
+   "tools": [],
+   "guardrails": "the agent never signs or asserts; management assertions and 1123 statements are officer acts (baseline \u00a78 item 3: \"Reg AB/USAP attestation\"); exception omissions are impossible by construction (every 18.1 finding tagged to a criterion appears in the exception list until dispositioned by the officer).",
+   "escalates_to": [
+    "attorney",
+    "officer"
+   ]
+  },
+  {
+   "process": "18.7",
+   "agent": "qc-audit",
+   "agents_named": [
+    "qc-audit",
+    "investor-reporting",
+    "custodial-recon"
+   ],
+   "tools": [],
+   "guardrails": "the agent never adjusts GL balances; every input is a hashed source document; classification of an asset as \"eligible security\" or \"unrestricted cash\" requires a source (custodial statement, facility agreement) or it is excluded; certifications are CEO/CFO acts (`officer`).",
+   "escalates_to": [
+    "fnma_portal_operator",
+    "officer"
+   ]
+  },
+  {
+   "process": "19.1",
+   "agent": "security-records",
+   "agents_named": [
+    "security-records",
+    "compliance-sentinel",
+    "case"
+   ],
+   "tools": [
+    "records.classify",
+    "records.compileServicingFile"
+   ],
+   "guardrails": "the agent can never delete; disposal executes only through the attested run; holds are never auto-released; any request scope > 500 loans or any request from a new requester identity requires `officer` confirmation before delivery; confidence < 0.85 on requester authority \u2192 escalate.",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "officer",
+    "signing_officer"
+   ]
+  },
+  {
+   "process": "19.2",
+   "agent": "security-records",
+   "agents_named": [
+    "security-records",
+    "compliance-sentinel"
+   ],
+   "tools": [
+    "siem.query",
+    "idp.disableIdentity",
+    "vault.rotateSecret",
+    "cloud.isolateHost",
+    "network.blockEgress",
+    "incident.setSeverity",
+    "incident.scope",
+    "notices.draft",
+    "portal_task.create",
+    "timers.read",
+    "controls.runTest",
+    "exceptions.propose"
+   ],
+   "guardrails": "containment tools have blast-radius limits (no more than N identities/hosts per action without CISO approval; never disable the `officer` break-glass accounts); notices go only to recipients in the verified registry; prompts to the model provider never include restricted FL data or full SSNs (tokenized); all agent tool calls are in the SIEM.",
+   "escalates_to": [
+    "attorney",
+    "officer"
+   ]
+  },
+  {
+   "process": "19.3",
+   "agent": "security-records",
+   "agents_named": [
+    "security-records",
+    "compliance-sentinel"
+   ],
+   "tools": [
+    "contracts.extractClauses",
+    "contracts.checklist",
+    "vendors.assess",
+    "vendors.setStatus",
+    "notices.draft",
+    "fnma_notices.recordSent",
+    "portfolio.count",
+    "ai_systems.upsert",
+    "timers.read",
+    "portal_task.create"
+   ],
+   "guardrails": "the agent cannot activate a Tier 1 vendor, send a Fannie Mae notice, or execute a cutover; it cannot mark a clause `present` without an evidence excerpt; threshold status changes are logged with the count basis.",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "officer"
+   ]
+  },
+  {
+   "process": "19.4",
+   "agent": "security-records",
+   "agents_named": [
+    "security-records",
+    "qc-audit",
+    "compliance-sentinel"
+   ],
+   "tools": [],
+   "guardrails": "decision-path agents have no read path to the restricted schema (grants + allowlists + CI + SIEM); monitoring outputs apply small-cell suppression; no agent may change a decision rule set in response to a finding \u2014 corrective actions are versioned `rule_sets` changes approved by the `officer`; queries producing row-level exports require a `records_requests` id.",
+   "escalates_to": [
+    "attorney",
+    "fnma_portal_operator",
+    "lossmit_reviewer",
+    "officer"
+   ]
+  }
+ ]
+}

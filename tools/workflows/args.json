@@ -1,0 +1,362 @@
+{
+ "process_build": {
+  "script": "tools/workflows/process-build.js",
+  "note": "launch one Workflow per 2 processes (the 4-CPU box caps each workflow at 2 concurrent agents); pass scratch = a writable scratch dir holding gaps.py, evref.ts and sec13_tests.py (copy them from tools/workflows)",
+  "processes": [
+   {
+    "id": "14.1",
+    "n": 14,
+    "k": 1,
+    "dir": "bankruptcy",
+    "mig": "0030",
+    "title": "bankruptcy monitoring and proof of claim",
+    "notes": ""
+   },
+   {
+    "id": "14.2",
+    "n": 14,
+    "k": 2,
+    "dir": "bankruptcy",
+    "mig": "0031",
+    "title": "Rule 3002.1 payment-change, fee and status notices",
+    "notes": ""
+   },
+   {
+    "id": "14.3",
+    "n": 14,
+    "k": 3,
+    "dir": "bankruptcy",
+    "mig": "0032",
+    "title": "periodic statements and early intervention in bankruptcy",
+    "notes": ""
+   },
+   {
+    "id": "14.4",
+    "n": 14,
+    "k": 4,
+    "dir": "bankruptcy",
+    "mig": "0033",
+    "title": "credit-reporting feed for bankruptcy phases",
+    "notes": ""
+   },
+   {
+    "id": "15.1",
+    "n": 15,
+    "k": 1,
+    "dir": "reo",
+    "mig": "0034",
+    "title": "REO conveyance, rescission and property disposition",
+    "notes": ""
+   },
+   {
+    "id": "15.2",
+    "n": 15,
+    "k": 2,
+    "dir": "reo",
+    "mig": "0035",
+    "title": "expense reimbursement claims (Property 360)",
+    "notes": ""
+   },
+   {
+    "id": "15.3",
+    "n": 15,
+    "k": 3,
+    "dir": "reo",
+    "mig": "0036",
+    "title": "MI claims",
+    "notes": ""
+   },
+   {
+    "id": "15.4",
+    "n": 15,
+    "k": 4,
+    "dir": "reo",
+    "mig": "0037",
+    "title": "servicer advances and recovery",
+    "notes": ""
+   },
+   {
+    "id": "16.1",
+    "n": 16,
+    "k": 1,
+    "dir": "payoff",
+    "mig": "0038",
+    "title": "payoff statements and quotes",
+    "notes": ""
+   },
+   {
+    "id": "16.2",
+    "n": 16,
+    "k": 2,
+    "dir": "payoff",
+    "mig": "0039",
+    "title": "payoff funds receipt and reconciliation",
+    "notes": ""
+   },
+   {
+    "id": "16.3",
+    "n": 16,
+    "k": 3,
+    "dir": "payoff",
+    "mig": "0040",
+    "title": "lien release, satisfaction and reconveyance",
+    "notes": ""
+   },
+   {
+    "id": "16.4",
+    "n": 16,
+    "k": 4,
+    "dir": "payoff",
+    "mig": "0041",
+    "title": "post-payoff escrow refund and document return",
+    "notes": ""
+   },
+   {
+    "id": "17.1",
+    "n": 17,
+    "k": 1,
+    "dir": "transfers",
+    "mig": "0042",
+    "title": "servicing transfer out: termination and notice",
+    "notes": ""
+   },
+   {
+    "id": "17.2",
+    "n": 17,
+    "k": 2,
+    "dir": "transfers",
+    "mig": "0043",
+    "title": "transfer-out data and document delivery",
+    "notes": ""
+   },
+   {
+    "id": "17.3",
+    "n": 17,
+    "k": 3,
+    "dir": "transfers",
+    "mig": "0044",
+    "title": "transfer-out cutover, custodial and in-flight items",
+    "notes": ""
+   },
+   {
+    "id": "17.4",
+    "n": 17,
+    "k": 4,
+    "dir": "transfers",
+    "mig": "0045",
+    "title": "post-transfer reconciliation and tail obligations",
+    "notes": ""
+   },
+   {
+    "id": "18.1",
+    "n": 18,
+    "k": 1,
+    "dir": "qc-audit",
+    "mig": "0046",
+    "title": "quality control program and re-derivation testing",
+    "notes": ""
+   },
+   {
+    "id": "18.2",
+    "n": 18,
+    "k": 2,
+    "dir": "qc-audit",
+    "mig": "0047",
+    "title": "Fannie Mae reviews and examinations (MORA, STAR)",
+    "notes": ""
+   },
+   {
+    "id": "18.3",
+    "n": 18,
+    "k": 3,
+    "dir": "qc-audit",
+    "mig": "0048",
+    "title": "regulatory examinations and subpoenas",
+    "notes": ""
+   },
+   {
+    "id": "18.4",
+    "n": 18,
+    "k": 4,
+    "dir": "qc-audit",
+    "mig": "0049",
+    "title": "internal audit and control evidence",
+    "notes": ""
+   },
+   {
+    "id": "18.5",
+    "n": 18,
+    "k": 5,
+    "dir": "qc-audit",
+    "mig": "0050",
+    "title": "mortgage fraud reporting",
+    "notes": ""
+   },
+   {
+    "id": "18.6",
+    "n": 18,
+    "k": 6,
+    "dir": "qc-audit",
+    "mig": "0051",
+    "title": "Reg AB / USAP attestation",
+    "notes": ""
+   },
+   {
+    "id": "18.7",
+    "n": 18,
+    "k": 7,
+    "dir": "qc-audit",
+    "mig": "0052",
+    "title": "net worth, liquidity and eligibility (Form 582)",
+    "notes": ""
+   },
+   {
+    "id": "19.1",
+    "n": 19,
+    "k": 1,
+    "dir": "data-security",
+    "mig": "0053",
+    "title": "records retention and disposal",
+    "notes": ""
+   },
+   {
+    "id": "19.2",
+    "n": 19,
+    "k": 2,
+    "dir": "data-security",
+    "mig": "0054",
+    "title": "information security, access control and incident response",
+    "notes": ""
+   },
+   {
+    "id": "19.3",
+    "n": 19,
+    "k": 3,
+    "dir": "data-security",
+    "mig": "0055",
+    "title": "vendor management and third-party oversight",
+    "notes": ""
+   },
+   {
+    "id": "19.4",
+    "n": 19,
+    "k": 4,
+    "dir": "data-security",
+    "mig": "0056",
+    "title": "fair lending and UDAAP monitoring",
+    "notes": ""
+   }
+  ]
+ },
+ "section_review": {
+  "script": "tools/workflows/section-review.js",
+  "note": "one Workflow per 2 sections",
+  "sections": [
+   {
+    "n": 1,
+    "pad": "01",
+    "dirs": [
+     "boarding",
+     "transfers"
+    ],
+    "title": "boarding and servicing transfer in"
+   },
+   {
+    "n": 2,
+    "pad": "02",
+    "dirs": [
+     "cashiering"
+    ],
+    "title": "payment processing and cashiering"
+   },
+   {
+    "n": 3,
+    "pad": "03",
+    "dirs": [
+     "escrow"
+    ],
+    "title": "escrow administration"
+   },
+   {
+    "n": 4,
+    "pad": "04",
+    "dirs": [
+     "servicing-requests"
+    ],
+    "title": "customer service and borrower communications"
+   },
+   {
+    "n": 5,
+    "pad": "05",
+    "dirs": [
+     "investor"
+    ],
+    "title": "investor reporting and remittance"
+   },
+   {
+    "n": 6,
+    "pad": "06",
+    "dirs": [
+     "custodial"
+    ],
+    "title": "custodial account management"
+   },
+   {
+    "n": 7,
+    "pad": "07",
+    "dirs": [
+     "notices"
+    ],
+    "title": "compliance notices and disclosures"
+   },
+   {
+    "n": 8,
+    "pad": "08",
+    "dirs": [
+     "credit-reporting"
+    ],
+    "title": "credit reporting"
+   },
+   {
+    "n": 9,
+    "pad": "09",
+    "dirs": [
+     "insurance"
+    ],
+    "title": "insurance and property protection"
+   },
+   {
+    "n": 10,
+    "pad": "10",
+    "dirs": [
+     "pmi"
+    ],
+    "title": "PMI administration"
+   },
+   {
+    "n": 11,
+    "pad": "11",
+    "dirs": [
+     "early-intervention"
+    ],
+    "title": "early intervention and collections"
+   },
+   {
+    "n": 12,
+    "pad": "12",
+    "dirs": [
+     "lossmit"
+    ],
+    "title": "loss mitigation"
+   },
+   {
+    "n": 13,
+    "pad": "13",
+    "dirs": [
+     "foreclosure"
+    ],
+    "title": "foreclosure"
+   }
+  ]
+ }
+}

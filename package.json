@@ -1,0 +1,18 @@
+{
+  "name": "supermortgage",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI-first Fannie Mae subservicing platform, built to spec/",
+  "type": "module",
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "test": "node --test --experimental-strip-types 'src/**/*.test.ts'",
+    "typecheck": "tsc --noEmit",
+    "spec:extract": "python3 tools/extract_spec.py",
+    "spec:lint": "node --experimental-strip-types tools/lint-registry.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "@types/node": "^22.10.0"
+  }
+}

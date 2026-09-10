@@ -1,33 +1,33 @@
 {
- "brief": "spec units built 2961/4597 (64.4%): tids 921/1253, tables 439/449, timers 910/1365, notices 92/248, tools 249/658, figures 350/624; processes at 100%: 46/114",
+ "brief": "spec units built 3026/4597 (65.8%): tids 928/1253, tables 440/449, timers 931/1365, notices 98/248, tools 262/658, figures 367/624; processes at 100%: 49/114",
  "totals": {
   "tids": {
    "spec": 1253,
-   "built": 921
+   "built": 928
   },
   "tables": {
    "spec": 449,
-   "built": 439
+   "built": 440
   },
   "timers": {
    "spec": 1365,
-   "built": 910
+   "built": 931
   },
   "notices": {
    "spec": 248,
-   "built": 92
+   "built": 98
   },
   "tools": {
    "spec": 658,
-   "built": 249
+   "built": 262
   },
   "figures": {
    "spec": 624,
-   "built": 350
+   "built": 367
   },
   "units": {
    "spec": 4597,
-   "built": 2961
+   "built": 3026
   }
  },
  "sections": {
@@ -75,9 +75,9 @@
   },
   "8": {
    "spec": 131,
-   "built": 70,
+   "built": 131,
    "processes": 3,
-   "done": 0
+   "done": 3
   },
   "9": {
    "spec": 286,
@@ -105,13 +105,13 @@
   },
   "13": {
    "spec": 353,
-   "built": 137,
+   "built": 139,
    "processes": 9,
    "done": 0
   },
   "14": {
    "spec": 224,
-   "built": 75,
+   "built": 77,
    "processes": 4,
    "done": 0
   },
@@ -192,7 +192,10 @@
   "7.3",
   "7.4",
   "7.5",
-  "7.6"
+  "7.6",
+  "8.1",
+  "8.2",
+  "8.3"
  ],
  "processes": [
   {
@@ -2086,13 +2089,9 @@
    "title": "Furnish tradeline (Metro 2)",
    "tids": {
     "spec": 19,
-    "built": 16,
-    "todo": 3,
-    "missing": [
-     12,
-     17,
-     18
-    ]
+    "built": 19,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 7,
@@ -2101,22 +2100,14 @@
    },
    "timers": {
     "spec": 11,
-    "built": 8,
+    "built": 11,
     "armable": 11,
-    "missing": [
-     "FCRA_1681S2A5_DOFD_90",
-     "FDCPA_1006_30A_PRE_FURNISH_GATE",
-     "SM_METRO2_TRANSMIT_HARD_CD10"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "NTC_FCRA_1681S2A1C_ADDRESS",
-     "NTC_FCRA_1681S2A7_B1",
-     "NTC_FCRA_1681S2A7_B2"
-    ]
+    "built": 3,
+    "missing": []
    },
    "tools": {
     "spec": 0,
@@ -2125,37 +2116,23 @@
    },
    "figures": {
     "spec": 9,
-    "built": 0,
-    "missing": [
-     "$1,847.15",
-     "$11,082.90",
-     "$14,757.30",
-     "$2,459.55",
-     "$292,743.16",
-     "$293,063.94",
-     "$3,674.40",
-     "$300,000.00",
-     "$612.40"
-    ]
+    "built": 9,
+    "missing": []
    },
    "units": {
     "spec": 49,
-    "built": 31
+    "built": 49
    },
-   "pct": 63.3
+   "pct": 100.0
   },
   {
    "process": "8.2",
    "title": "Dispute handling (e-OSCAR / ACDV)",
    "tids": {
     "spec": 14,
-    "built": 11,
-    "todo": 3,
-    "missing": [
-     10,
-     13,
-     14
-    ]
+    "built": 14,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 4,
@@ -2164,80 +2141,50 @@
    },
    "timers": {
     "spec": 10,
-    "built": 4,
+    "built": 10,
     "armable": 10,
-    "missing": [
-     "FCRA_1022_43E_DIRECT_RESULTS_EXT_45",
-     "FCRA_1681I_A1_CRA_OUTER_30_45",
-     "FCRA_1681S2A3_XB_FLAG_GATE",
-     "SM_ACDV_INTERNAL_TARGET_CD7",
-     "SM_ACDV_POLL_15M",
-     "SM_DISPUTE_REVIEW_SLA_BD1"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "NTC_FCRA_1022_43E_RESULTS",
-     "NTC_FCRA_1022_43F_FRIVOLOUS",
-     "NTC_FCRA_1022_43_ACK"
-    ]
+    "built": 3,
+    "missing": []
    },
    "tools": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "eoscar.acdv.find/view/validate/submit",
-     "eoscar.aud.validate/submit",
-     "eoscar.notification.*"
-    ]
+    "built": 3,
+    "missing": []
    },
    "figures": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "$2,459.55"
-    ]
+    "built": 1,
+    "missing": []
    },
    "units": {
     "spec": 35,
-    "built": 19
+    "built": 35
    },
-   "pct": 54.3
+   "pct": 100.0
   },
   {
    "process": "8.3",
    "title": "Suspend credit reporting",
    "tids": {
     "spec": 14,
-    "built": 13,
-    "todo": 1,
-    "missing": [
-     11
-    ]
+    "built": 14,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 4,
-    "built": 3,
-    "missing": [
-     "accuracy_program"
-    ]
+    "built": 4,
+    "missing": []
    },
    "timers": {
     "spec": 12,
-    "built": 4,
+    "built": 12,
     "armable": 12,
-    "missing": [
-     "BK_CII_APPLY_NEXT_CYCLE",
-     "FCRA_1681C2_IDTHEFT_BLOCK_GATE",
-     "FCRA_1681S2A3_XB_FLAG_GATE",
-     "FDCPA_1006_30A_PRE_FURNISH_GATE",
-     "RESPA_2605E3_QWR_SUPPRESS_60",
-     "SCRA_3919_NO_ADVERSE_GATE",
-     "SM_CR_DECEASED_ECOA_X_NEXT_CYCLE",
-     "SM_CR_SUPPRESSION_REVIEW_30"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -2246,38 +2193,19 @@
    },
    "tools": {
     "spec": 10,
-    "built": 0,
-    "missing": [
-     "credit.suppression.create/release",
-     "bankruptcy.state.get",
-     "scra.case.get",
-     "disaster.case.get",
-     "borrowers.get",
-     "documents.search",
-     "eoscar.aud.submit",
-     "eoscar.notification.*",
-     "accuracy.control.run",
-     "escalation.file"
-    ]
+    "built": 10,
+    "missing": []
    },
    "figures": {
     "spec": 7,
-    "built": 0,
-    "missing": [
-     "$1,800.91",
-     "$1,847.15",
-     "$2,413.31",
-     "$292,096.58",
-     "$4,919.10",
-     "$60.85",
-     "$612.40"
-    ]
+    "built": 7,
+    "missing": []
    },
    "units": {
     "spec": 47,
-    "built": 20
+    "built": 47
    },
-   "pct": 42.6
+   "pct": 100.0
   },
   {
    "process": "9.1",
@@ -4780,10 +4708,9 @@
    },
    "timers": {
     "spec": 14,
-    "built": 4,
+    "built": 5,
     "armable": 14,
     "missing": [
-     "SCRA_3919_NO_ADVERSE_GATE",
      "SCRA_3931G_DEFAULT_JUDGMENT_REOPEN_90",
      "SCRA_3953C_FC_PROTECTION_GATE",
      "SCRA_3953_TAIL_1Y",
@@ -4820,9 +4747,9 @@
    },
    "units": {
     "spec": 35,
-    "built": 10
+    "built": 11
    },
-   "pct": 28.6
+   "pct": 31.4
   },
   {
    "process": "13.9",
@@ -4847,14 +4774,13 @@
    },
    "timers": {
     "spec": 12,
-    "built": 4,
+    "built": 5,
     "armable": 12,
     "missing": [
      "FNMA_F119_ARM_TXN83",
      "FNMA_F119_MBS_UPLOAD_CD15",
      "FNMA_F119_MI_DISBURSEMENT_CHECK_M2",
      "FNMA_F119_SUBSIDY_ADJUST_12M",
-     "SCRA_3919_NO_ADVERSE_GATE",
      "SCRA_3937B1_NOTICE_WINDOW_180",
      "SCRA_3937_FEES_IN_CAP_GATE",
      "SM_SCRA_OVERPAYMENT_ELECTION_30"
@@ -4890,9 +4816,9 @@
    },
    "units": {
     "spec": 44,
-    "built": 19
+    "built": 20
    },
-   "pct": 43.2
+   "pct": 45.5
   },
   {
    "process": "14.1",
@@ -5188,15 +5114,13 @@
    },
    "timers": {
     "spec": 6,
-    "built": 0,
+    "built": 2,
     "armable": 6,
     "missing": [
-     "BK_CII_APPLY_NEXT_CYCLE",
      "SM_BK_CR_DISCHARGE_FINAL_RECORD",
      "SM_BK_CR_DISMISSAL_RELEASE_NEXT_CYCLE",
      "SM_BK_CR_REAFFIRM_HOLD",
-     "SM_BK_CR_STATE_SYNC_1BD",
-     "SM_CR_SUPPRESSION_REVIEW_30"
+     "SM_BK_CR_STATE_SYNC_1BD"
     ]
    },
    "notices": {
@@ -5220,9 +5144,9 @@
    },
    "units": {
     "spec": 18,
-    "built": 8
+    "built": 10
    },
-   "pct": 44.4
+   "pct": 55.6
   },
   {
    "process": "15.1",

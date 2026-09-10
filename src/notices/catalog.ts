@@ -14,6 +14,7 @@ import { SECTION_01_VERSIONS } from "./authored/section01.ts";
 import { SECTION_03_VERSIONS } from "./authored/section03.ts";
 import { SECTION_04_VERSIONS } from "./authored/section04.ts";
 import { SECTION_07_VERSIONS } from "./authored/section07.ts";
+import { SECTION_08_VERSIONS } from "./authored/section08.ts";
 
 interface CatalogEntry { readonly code: string; readonly owner_process: string; readonly mentions: readonly string[]; readonly context: string; }
 
@@ -230,4 +231,5 @@ export const AUTHORED_VERSIONS: readonly VersionInput[] = [
   ...SECTION_03_VERSIONS,
   ...SECTION_04_VERSIONS,
   ...SECTION_07_VERSIONS,
+  ...SECTION_08_VERSIONS,
 ];

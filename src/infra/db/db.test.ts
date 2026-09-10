@@ -36,13 +36,13 @@ async function fixture(db: Db): Promise<Fixture> {
   return new PgLoanRepository(db).createFixture({ fnmaLoanNumber: uniq(), servicerLoanNumber: `SM-${randomUUID()}`, instrumentDate: D("2021-07-15"), originalUpbCents: 26_000_000n, originalTermMonths: 360, firstPaymentDate: D("2021-09-01"), maturityDate: D("2051-08-01") });
 }
 
-test("migrations: every file under db/migrations is applied to the test database (443 tables)", { skip }, async () => {
+test("migrations: every file under db/migrations is applied to the test database (445 tables)", { skip }, async () => {
   execFileSync(fileURLToPath(new URL("../../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL);
   const [m] = await db.query<{ c: bigint }>(`SELECT count(*)::bigint AS c FROM schema_migrations`);
-  assert.equal(m!.c, 27n);
+  assert.equal(m!.c, 28n);
   const [t] = await db.query<{ c: bigint }>(`SELECT count(*)::bigint AS c FROM information_schema.tables WHERE table_schema IN ('public', 'restricted_fl') AND table_type = 'BASE TABLE'`);
-  assert.equal(t!.c, 443n);
+  assert.equal(t!.c, 445n);
 });
 
 test("loan_events is append-only: rows persist with database sequences and refuse UPDATE/DELETE", { skip }, async () => {

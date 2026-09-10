@@ -19,4 +19,20 @@ export function applyCreditReportingTimerOverrides(reg: TimerRegistry): void {
   o("SM_ACDV_INTERNAL_TARGET_CD7", { trigger: "`credit.dispute.acdv.received`", why: "§8.2 timer table: 'same' as FCRA_1681S2B_ACDV_RESPONSE_DUE → `credit.dispute.acdv.received`; internal target 7 calendar days." });
   o("FCRA_1681I_A1_CRA_OUTER_30_45", { trigger: "`credit.dispute.acdv.received`", anchorField: "cra_received_at", why: "§8.2 timer table: 'same' trigger; 30 calendar days (45 if consumer-supplied information) from `cra_received_at` (15 U.S.C. §1681i(a)(1))." });
   o("SM_ACDV_POLL_15M", { trigger: "`schedule.tick{cadence=every_15_minutes}`", why: "§8.2 timer table: schedule → e-OSCAR poll every 15 minutes." });
+  // ---- satisfaction events (spec "Satisfied by" prose → event patterns) ----
+  o("SM_METRO2_TRANSMIT_HARD_CD10", { satisfied: "`metro2.file.transmitted{all_bureaus=true}`", why: "§8.1 timer table: 'same' as the transmit target — files transmitted to all four bureaus." });
+  o("FCRA_1681S2A5_DOFD_90", { satisfied: "`credit.dofd.furnished{via∈{file, aud}}`", why: "§8.1 timer table: 'file/AUD carrying DOFD' (15 U.S.C. §1681s-2(a)(5))." });
+  o("FDCPA_1006_30A_PRE_FURNISH_GATE", { satisfied: "`fdcpa.furnishing_gate.opened`", why: "§8.1/8.3 timer tables: the gate opens on `contact.live` or a validation notice + 14 days with no undeliverability (8.3 rule 8)." });
+  o("SM_ACDV_INTERNAL_TARGET_CD7", { satisfied: "`credit.dispute.acdv.responded`", why: "§8.2 timer table: 'same' as FCRA_1681S2B_ACDV_RESPONSE_DUE — the ACDV response submitted." });
+  o("FCRA_1681I_A1_CRA_OUTER_30_45", { satisfied: "`credit.dispute.acdv.responded`", why: "§8.2 timer table: 'same' — the CRA's outer bound is met by the response (15 U.S.C. §1681i(a)(1))." });
+  o("FCRA_1022_43E_DIRECT_RESULTS_EXT_45", { satisfied: "`notice.sent{template=NTC_FCRA_1022_43E_RESULTS}`", why: "§8.2 timer table: 'same' as FCRA_1022_43E_DIRECT_RESULTS_30 — the results notice (12 CFR 1022.43(e))." });
+  o("FCRA_1681S2A3_XB_FLAG_GATE", { satisfied: "`credit.dispute.closed`", why: "§8.2/8.3 timer tables: XB holds 'until closed' — the dispute close transitions the CCC (rule 6)." });
+  o("SM_ACDV_POLL_15M", { satisfied: "`eoscar.poll.succeeded`", why: "§8.2 timer table: 'poll success'." });
+  o("SM_DISPUTE_REVIEW_SLA_BD1", { satisfied: "`credit.dispute.reviewed`", why: "§8.2 timer table: 'reviewer action'." });
+  o("RESPA_2605E3_QWR_SUPPRESS_60", { satisfied: "`credit.noe_bar.expired`", why: "§8.3 timer table: 'expiry' of the 60-day bar (12 U.S.C. §2605(e)(3); §1024.35(i)(1))." });
+  o("FCRA_1681C2_IDTHEFT_BLOCK_GATE", { satisfied: "`credit.identity_theft.released{by=officer}`", why: "§8.3 timer table: 'until officer release with evidence' (15 U.S.C. §1681c-2)." });
+  o("SCRA_3919_NO_ADVERSE_GATE", { satisfied: "`scra.relief.ended{plus_one_cycle=true}`", why: "§8.3 timer table: 'until relief/stay end + 1 cycle' (50 U.S.C. §3919)." });
+  o("BK_CII_APPLY_NEXT_CYCLE", { satisfied: "`metro2.snapshot.built{cii_applied=true}`", why: "§8.3 timer table: 'snapshot carries the phase's CII'." });
+  o("SM_CR_DECEASED_ECOA_X_NEXT_CYCLE", { satisfied: "`metro2.snapshot.built{ecoa_x_applied=true}`", why: "§8.3 timer table: 'snapshot carries ECOA X'." });
+  o("SM_CR_SUPPRESSION_REVIEW_30", { satisfied: "`credit.suppression.reviewed`", why: "§8.3 timer table: 'review recorded' (every 30 days while active)." });
 }

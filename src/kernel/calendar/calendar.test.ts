@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { plainDate as D, dayOfWeek, addDays, addMonths, daysBetween, toEpochDays, fromEpochDays, nthWeekday, lastWeekday } from "./date.ts";
 import { federalHolidays, isFederalHoliday } from "./holidays.ts";
-import { addBusinessDays, businessDaysBetween, federal, servicer, servicerCalendar, fannieEt, rollForward, nextBusinessDay } from "./business.ts";
+import { addBusinessDays, businessDaysBetween, federal, servicer, servicerCalendar, fannieEt, fannieEtObserved, rollForward, nextBusinessDay } from "./business.ts";
 import { zonedEpochMs, wallClock, toIso } from "./zoned.ts";
 
 test("date arithmetic is exact across leap years and month ends", () => {
@@ -36,6 +36,7 @@ test("business day conventions differ by calendar", () => {
   // Wed Nov 25, 2026 + 1 federal business day skips Thanksgiving → Fri Nov 27
   assert.equal(addBusinessDays(D("2026-11-25"), 1, federal), "2026-11-27");
   assert.equal(addBusinessDays(D("2026-11-25"), 1, fannieEt), "2026-11-27");
+  assert.equal(addBusinessDays(D("2026-11-25"), 1, fannieEtObserved), "2026-11-30"); // Fannie Mae-only closure Nov 27, 2026 (§5.3-T8)
   // A servicer that is open the Friday after Thanksgiving but closed on a company day
   const sm = servicerCalendar({ closures: [D("2026-11-27")] });
   assert.equal(addBusinessDays(D("2026-11-25"), 1, sm), "2026-11-30");

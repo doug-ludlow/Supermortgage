@@ -83,4 +83,74 @@ export function applyInvestorTimerOverrides(reg: TimerRegistry): void {
   o("FNMA_F121_DQ_FINAL_CD11", { trigger: "`period.month_end`", offset: "CD11 of the following month, 12:00 ET", why: "§5.7 timer table: CD11 12:00 ET final delinquency report (F-1-21)." });
   o("FNMA_D2401_DQ_MGMT_ACTION_GATE", { trigger: "`delinquency_reports.snapshot_built`", evaluator: "5.7.managementActionRecorded", why: "§5.7 timer table: snapshot → management action recorded for each delinquency (D2-4-01)." });
   o("SM_DQ_SMDU_DRA_CONSISTENCY_BD1", { trigger: "`period.month_end`", offset: "BD1 12:00 ET", why: "§5.7 timer table: BD1 12:00 ET SMDU/DRA consistency check." });
+  // ---- satisfaction events (spec "Satisfied by" prose → event patterns) ----
+  // 5.1
+  o("FNMA_A14201_COMPFEE_WATCH", { satisfied: "`report.produced{report=compfee_watch}`", why: "§5.1 timer table: informational monthly watch — the compensatory-fee instance count report (A1-4.2-01 ladder)." });
+  o("FNMA_IRM_BULK_CUTOFF_BD2_1500", { satisfied: "`investor_batches.bulk_channel.closed`", why: "§5.1 timer table: after the BD2 15:00 ET cutoff the adapter switches the bulk channel off (remaining items → `lsdu_single`)." });
+  o("FNMA_IRM_DEFERRAL_LAR_BEFORE_EOM_1BD", { satisfied: "`investor_events.accepted{event_type=payment.contractual, deferral_pending=true}`", why: "§5.1 timer table: 'contractual-payment LAR accepted' (IRM 4-01)." });
+  o("FNMA_IRM_NONREMOVAL_CORRECTION_BD1_2000", { satisfied: "`investor_events.resolved{status∈{superseded, accepted}}`", why: "§5.1 timer table: `superseded`/`accepted`." });
+  o("FNMA_IRM_REJECT_TRIAGE_4H", { satisfied: "`investor_event_exceptions.triaged`", why: "§5.1 timer table: 'triage decision recorded' (rule 9)." });
+  o("FNMA_IRM_REMOVAL_CORRECTION_BD2_1700", { satisfied: "`investor_events.resolved{status=superseded, family=removal}`", why: "§5.1/5.3/5.6/16.2 timer tables: the superseding removal event accepted (`superseded`)." });
+  o("FNMA_IRM_REMOVAL_NEXTBD_2000", { satisfied: "`investor_events.submitted{family=removal}`", why: "§5.1 timer table: `submitted`." });
+  o("FNMA_LL202605_ESCROW_ATTEST_BD2", { satisfied: "`human_portal_task.completed{task=escrow_attestation}`", why: "§5.1 timer table: `human_portal_task` completed with attestation evidence (LL-2026-05)." });
+  o("FNMA_LL202605_PERIOD_CLOSE_BD2_1700", { satisfied: "`period.closed`", why: "§5.1 timer table: 'period closed'." });
+  // 5.2
+  o("FNMA_CRS_INSTRUCTION_T1_2000", { satisfied: "`crs.instruction.confirmed`", why: "§5.2 timer table: 'CRS instruction confirmed'." });
+  o("FNMA_CRS_REQUEST_1600", { satisfied: "`crs_batches.upload_confirmed`", why: "§5.2 timer table: 'CRS upload confirmed' (operator screenshot)." });
+  o("FNMA_F120_AA_BD1_PRIOR_MONTH", { satisfied: "`remittances.instructed{remittance_type=aa}`", why: "§5.2 timer table: `instructed`." });
+  o("FNMA_F120_AA_DETAILED_48H", { satisfied: "`remittances.drafted{reporting=detailed}`", why: "§5.2 timer table: `drafted` observed." });
+  o("FNMA_F120_AA_MONTHLY_MIN", { satisfied: "`remittances.instructed{remittance_type=aa}`", why: "§5.2 timer table: `instructed`." });
+  o("FNMA_F120_AA_REMIT_2500_SAMEDAY", { satisfied: "`remittances.instructed{crs_code=001}`", why: "§5.2 timer table: `instructed` (CRS code 001 same day)." });
+  o("FNMA_F120_DRAFT_NOTICE_BD3", { satisfied: "`fnma.draft_notification.reconciled`", why: "§5.2 timer table: `draft_notifications` received & reconciled." });
+  o("FNMA_F120_MBSX_UNSCHED_BD4", { satisfied: "`remittances.funded{remittance_type=mbs_express}`", why: "§5.2 timer table: `funded`." });
+  o("FNMA_F120_PAYOFF_AA_IMMEDIATE", { satisfied: "`payoff.remittance.instructed`", why: "§5.2/16.2 timer tables: `instructed` / `payoff.remittance.instructed` (CRS 001)." });
+  o("FNMA_F120_RPM_DRAFT_DESIGNATED", { satisfied: "`remittances.funded{remittance_type=rpm}`", why: "§5.2 timer table: `funded`." });
+  o("FNMA_F120_SA_DRAFT_CD20", { satisfied: "`remittances.funded{remittance_type=sa}`", why: "§5.2 timer table: `funded`." });
+  o("FNMA_F120_SETTLEMENT_NEXT_REMIT_DATE", { satisfied: "`remittances.instructed{kind=settlement}`", why: "§5.2 timer table: 'instructed'." });
+  o("FNMA_F120_SHORTSALE_PROCEEDS_2BD", { satisfied: "`remittances.instructed{crs_code∈{357, 324}}`", why: "§5.2/5.3 timer tables: 'CRS 357/324 instructed'." });
+  o("FNMA_F120_SS_6TH_POOL_CD5", { satisfied: "`remittances.funded{remittance_type=ss, pool_draft_day=6}`", why: "§5.2 timer table: `funded`." });
+  o("FNMA_F120_TPS_PROCEEDS_NEXT_REMIT", { satisfied: "`remittances.instructed{crs_code∈{311, 351}}`", why: "§5.2 timer table: 'instructed' (CRS 311/351)." });
+  o("FNMA_IRM_SHORTAGE_IMMEDIATE", { satisfied: "`remittances.instructed{crs_code=001, reason=shortage}`", why: "§5.2 timer table: 'CRS remittance instructed' (rule 9)." });
+  o("FNMA_IRM_SURPLUS_RESOLVE_90", { satisfied: "`fnma.shortage_surplus.resolved{kind=surplus}`", why: "§5.2 timer table: 'surplus explained/reconciled'." });
+  o("FNMA_LL202605_AA_AUTODRAFT_2BD", { satisfied: "`remittances.funded{remittance_type=aa}`", why: "§5.2 timer table: `funded` (LL-2026-05 auto-draft)." });
+  o("FNMA_LL202605_PREDRAFT_REVIEW_1BD", { satisfied: "`fnma.draft_notification.reviewed`", why: "§5.2 timer table: 'reviewed/variance filed'." });
+  o("SM_CUSTODIAL_FUNDING_T1_1600", { satisfied: "`custodial.funding.verified{covered=true}`", why: "§5.2 timer table: 'custodial balance ≥ expected drafts' — the T−1 16:00 ET funding check records the verification (rule 7)." });
+  // 5.3
+  o("FNMA_E4101_REOGRAM_CONFIRM_1BD", { satisfied: "`reogram.confirmed`", why: "§5.3/12.9/13.3/15.1 timer tables: `human_portal_task` completed with the P360 confirmation → `reogram.confirmed`." });
+  o("FNMA_LL202605_FORECLOSURE_EVENT_NEXTBD", { satisfied: "`p360.liquidation_event.accepted`", why: "§5.3 timer table: 'P360 liquidation event accepted'." });
+  o("FNMA_P360_REOGRAM_EXCEPTION_3BD", { satisfied: "`reogram.exception.resolved`", why: "§5.3 timer table: 'exception resolved'." });
+  o("SM_DRA_RECONCILE_7CD", { satisfied: "`dra.reconciliation.recorded`", why: "§5.3 timer table: 'reconciliation run recorded' (rule 7, weekly)." });
+  o("SM_LIQ_CODE_CHANGE_CPM_2BD", { satisfied: "`cpm.notification.sent`", why: "§5.3 timer table: 'CPM notification sent (human)' — sent by `fnma_portal_operator`/`officer`." });
+  o("SM_PAYOFF_GOODFUNDS_GATE", { satisfied: "`payoff.funds.cleared`", why: "§5.3/16.2 timer tables: the gate holds 'until `payoff.funds.cleared`' — AC 60 is projected only from that event (rule 6)." });
+  // 5.4
+  o("FNMA_A1306_RECLASS_SELECTION_6M", { satisfied: "`fnma.purchase_advice.received{kind=reclass}`", why: "§5.4 timer table: 'reclass purchase advice received' (A1-3-06)." });
+  o("FNMA_F120_SDA_EXIT_RESUME_DRAFT", { satisfied: "`remittances.funded{remittance_type=ss, sda_resumed=true}`", why: "§5.4 timer table: 'scheduled P&I funded' at the next CD18 draft." });
+  o("FNMA_F120_SDA_FUNDING_HOLD", { satisfied: "`sda_status.exited`", why: "§5.4/15.4 timer tables: the hold blocks advance funding while `sda_status.active`; it lifts on exit (rule 5)." });
+  o("FNMA_F120_SDA_STATUS_RECONCILE_BD3", { satisfied: "`sda_status.reconciled`", why: "§5.4 timer table: 'every predicted/active loan reconciled to Fannie Mae's status'." });
+  o("FNMA_F125_RECLASS_DESELECT_CD15", { satisfied: "`reclass.deselection.decided`", why: "§5.4/5.7 timer tables: 'deselection decision recorded' (`human_portal_task` if deselecting)." });
+  o("FNMA_IRM_SDA_CONTRACTUAL_LAR_NEXTBD_2000", { satisfied: "`investor_events.accepted{event_type=payment.contractual, sda_active=true}`", why: "§5.4 timer table: 'contractual-payment event accepted with updated LPI'." });
+  o("SM_SDA_RECOVERY_MATCH_2_CYCLES", { satisfied: "`sda.adjustment.matched{kind∈{fnma_recovery, servicer_retention}}`", why: "§5.4 timer table: 'recovery adjustment matched (Fannie Mae recovery, then servicer retention)'." });
+  o("SM_SDA_REIMBURSEMENT_MATCH_2_CYCLES", { satisfied: "`advances.reimbursed_by_fnma{all_outstanding=true}`", why: "§5.4/15.4 timer tables: '`advances.status = reimbursed_by_fnma` for all outstanding'." });
+  // 5.5
+  o("FNMA_F120_GFEE_BILL_RETRIEVE_CD5", { satisfied: "`gfee.bill.parsed`", why: "§5.5 timer table: 'bill parsed into `draft_notifications`'." });
+  o("FNMA_F120_GFEE_RELIEF_RECONCILE_BILL", { satisfied: "`gfee_relief.reconciled`", why: "§5.5 timer table: 'every predicted/active relief loan reconciled to the bill'." });
+  o("FNMA_F120_GFEE_RESUME_ON_CURRENT", { satisfied: "`remittances.funded{kind=gfee}`", why: "§5.5 timer table: 'g-fee funded' at the next CD7." });
+  o("SM_GFEE_RECOVERY_MATCH_2_CYCLES", { satisfied: "`gfee.recovery.matched{kind∈{fnma_recovery, servicer_retention}}`", why: "§5.5 timer table: 'Fannie Mae recovery then servicer retention matched' (rule 4)." });
+  // 5.6
+  o("FNMA_A1302_APPEAL1_60", { satisfied: "`repurchase.appeal.decided{stage=1, outcome∈{filed, not_appealed}}`", why: "§5.6 timer table: 'appeal filed or decision not to appeal recorded' (A1-3-02)." });
+  o("FNMA_A1302_APPEAL2_15", { satisfied: "`repurchase.appeal.decided{stage=2, outcome∈{filed, waived}}`", why: "§5.6 timer table: 'second appeal filed / waived'." });
+  o("FNMA_A1302_DOCS_30", { satisfied: "`repurchase.documents.submitted`", why: "§5.6 timer table: 'documents submitted'." });
+  o("FNMA_A1302_IMPASSE_30", { satisfied: "`repurchase.stage.action_recorded`", why: "§5.6 timer table: 'next-stage action recorded' (30/30/15/15 ladder)." });
+  o("FNMA_A1302_REPURCHASE_PAY_60", { satisfied: "`remittances.funded{kind=repurchase}`", why: "§5.6 timer table: `funded`." });
+  o("FNMA_IRM_REPURCHASE_AC65_NEXTBD_2000", { satisfied: "`investor_events.submitted{action_code∈{65, 67}}`", why: "§5.6 timer table: 'LAR 65/67 submitted'." });
+  o("SM_REPURCHASE_OWNERSHIP_UPDATE_10BD", { satisfied: "`repurchase.ownership.updated`", why: "§5.6 timer table: 'MERS TOB/TOS + custodian release + loan `investor` field updated'." });
+  // 5.7
+  o("FNMA_F121_AW_ONE_MONTH", { satisfied: "`delinquency_reports.submitted{aw_repeated=false}`", why: "§5.7/11.3 timer tables: 'AW not repeated' in the next period's file (F-1-21)." });
+  o("FNMA_F121_DQ_CORRECT_CD10", { satisfied: "`delinquency_reports.corrections_accepted`", why: "§5.7 timer table: 'corrections transmitted and accepted'." });
+  o("FNMA_F121_DQ_EXCEPTIONS_BD4", { satisfied: "`delinquency_reports.exception_parsed`", why: "§5.7 timer table: 'exception report parsed'." });
+  o("FNMA_F121_DQ_FINAL_CD11", { satisfied: "`delinquency_reports.final_reconciled`", why: "§5.7 timer table: 'final report reconciled'." });
+  o("FNMA_F121_DQ_SNAPSHOT_EOM", { satisfied: "`delinquency_reports.snapshot_built`", why: "§5.7 timer table: 'snapshot built'." });
+  o("FNMA_LL202605_DQ_EVENT_NEXTBD_0300", { satisfied: "`delinquency_events.submitted`", why: "§5.7 timer table: 'event submitted' (LL-2026-05)." });
+  o("FNMA_LL202605_DQ_PMT_REMINDER_CD23", { satisfied: "`delinquency_events.accepted{servicer_action_type=payment_reminder_notice}`", why: "§5.7 timer table: 'Payment Reminder Notice event accepted'." });
+  o("SM_DQ_SMDU_DRA_CONSISTENCY_BD1", { satisfied: "`delinquency_reports.consistency_checked{errors=0}`", why: "§5.7 timer table: 'AMN codes consistent with SMDU (workouts) and DRA/P360 (sale/REO) statuses' (rule 7)." });
 }

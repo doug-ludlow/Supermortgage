@@ -1,33 +1,33 @@
 {
- "brief": "spec units built 2501/4597 (54.4%): tids 802/1253, tables 434/449, timers 789/1365, notices 29/248, tools 154/658, figures 293/624; processes at 100%: 23/114",
+ "brief": "spec units built 2793/4597 (60.8%): tids 868/1253, tables 439/449, timers 893/1365, notices 61/248, tools 212/658, figures 320/624; processes at 100%: 35/114",
  "totals": {
   "tids": {
    "spec": 1253,
-   "built": 802
+   "built": 868
   },
   "tables": {
    "spec": 449,
-   "built": 434
+   "built": 439
   },
   "timers": {
    "spec": 1365,
-   "built": 789
+   "built": 893
   },
   "notices": {
    "spec": 248,
-   "built": 29
+   "built": 61
   },
   "tools": {
    "spec": 658,
-   "built": 154
+   "built": 212
   },
   "figures": {
    "spec": 624,
-   "built": 293
+   "built": 320
   },
   "units": {
    "spec": 4597,
-   "built": 2501
+   "built": 2793
   }
  },
  "sections": {
@@ -51,15 +51,15 @@
   },
   "4": {
    "spec": 205,
-   "built": 91,
+   "built": 205,
    "processes": 5,
-   "done": 0
+   "done": 5
   },
   "5": {
    "spec": 293,
-   "built": 127,
+   "built": 293,
    "processes": 7,
-   "done": 0
+   "done": 7
   },
   "6": {
    "spec": 169,
@@ -75,7 +75,7 @@
   },
   "8": {
    "spec": 131,
-   "built": 68,
+   "built": 70,
    "processes": 3,
    "done": 0
   },
@@ -93,19 +93,19 @@
   },
   "11": {
    "spec": 252,
-   "built": 98,
+   "built": 99,
    "processes": 5,
    "done": 0
   },
   "12": {
    "spec": 425,
-   "built": 155,
+   "built": 156,
    "processes": 9,
    "done": 0
   },
   "13": {
    "spec": 353,
-   "built": 135,
+   "built": 137,
    "processes": 9,
    "done": 0
   },
@@ -117,13 +117,13 @@
   },
   "15": {
    "spec": 241,
-   "built": 84,
+   "built": 87,
    "processes": 4,
    "done": 0
   },
   "16": {
    "spec": 197,
-   "built": 78,
+   "built": 81,
    "processes": 4,
    "done": 0
   },
@@ -169,7 +169,19 @@
   "3.6",
   "3.7",
   "3.8",
-  "3.9"
+  "3.9",
+  "4.1",
+  "4.2",
+  "4.3",
+  "4.4",
+  "4.5",
+  "5.1",
+  "5.2",
+  "5.3",
+  "5.4",
+  "5.5",
+  "5.6",
+  "5.7"
  ],
  "processes": [
   {
@@ -1120,96 +1132,50 @@
    "title": "Notice of Error (NoE) resolution",
    "tids": {
     "spec": 16,
-    "built": 7,
+    "built": 16,
     "todo": 0,
-    "missing": [
-     5,
-     7,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15,
-     16
-    ]
+    "missing": []
    },
    "tables": {
     "spec": 9,
-    "built": 8,
-    "missing": [
-     "timer_definitions"
-    ]
+    "built": 9,
+    "missing": []
    },
    "timers": {
     "spec": 14,
-    "built": 11,
+    "built": 14,
     "armable": 14,
-    "missing": [
-     "REGX_1024_35E_FC_NOE_OPEN",
-     "REGX_1024_35F2_FC_GOODFAITH_RESPONSE",
-     "REGX_1024_35I_CREDIT_SUPPRESS_60"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 12,
-    "built": 0,
-    "missing": [
-     "NTC_REGX_35C_ADDRESS",
-     "NTC_REGX_35C_ADDRESS_CHANGE",
-     "NTC_REGX_35D_ACK",
-     "NTC_REGX_35E4_DOCS",
-     "NTC_REGX_35E4_WITHHELD",
-     "NTC_REGX_35E_ADDITIONAL_ERRORS",
-     "NTC_REGX_35E_CORRECTION",
-     "NTC_REGX_35E_EXTENSION",
-     "NTC_REGX_35E_NO_ERROR",
-     "NTC_REGX_35F1_EARLY_CORRECTION",
-     "NTC_REGX_35G2_EXCEPTION",
-     "NTC_REGX_38B5_PROCEDURES"
-    ]
+    "built": 12,
+    "missing": []
    },
    "tools": {
     "spec": 4,
-    "built": 0,
-    "missing": [
-     "documents.search",
-     "contacts.list",
-     "jurisdiction_rules.get",
-     "timer.list"
-    ]
+    "built": 4,
+    "missing": []
    },
    "figures": {
     "spec": 4,
-    "built": 1,
-    "missing": [
-     "$1,842.17",
-     "$2,454.57",
-     "$612.40"
-    ]
+    "built": 4,
+    "missing": []
    },
    "units": {
     "spec": 59,
-    "built": 27
+    "built": 59
    },
-   "pct": 45.8
+   "pct": 100.0
   },
   {
    "process": "4.2",
    "title": "Request for Information (RFI)",
    "tids": {
     "spec": 13,
-    "built": 6,
+    "built": 13,
     "todo": 0,
-    "missing": [
-     5,
-     7,
-     8,
-     9,
-     10,
-     11,
-     13
-    ]
+    "missing": []
    },
    "tables": {
     "spec": 3,
@@ -1218,28 +1184,14 @@
    },
    "timers": {
     "spec": 11,
-    "built": 7,
+    "built": 11,
     "armable": 11,
-    "missing": [
-     "NY_419_6_RFI_DOCS_15BD",
-     "NY_419_6_RFI_OWNER_10D",
-     "SM_RFI_INTERNAL_TARGET_7",
-     "SM_RFI_SII_DOCS_TARGET_5"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 8,
-    "built": 0,
-    "missing": [
-     "NTC_REGX_36A2_OWNER_IDENTITY",
-     "NTC_REGX_36C_ACK",
-     "NTC_REGX_36D_EXTENSION",
-     "NTC_REGX_36D_NOT_AVAILABLE",
-     "NTC_REGX_36D_RESPONSE",
-     "NTC_REGX_36E_EARLY",
-     "NTC_REGX_36F2_EXCEPTION",
-     "NTC_REGX_36I_SII_DOCS"
-    ]
+    "built": 8,
+    "missing": []
    },
    "tools": {
     "spec": 0,
@@ -1253,70 +1205,39 @@
    },
    "units": {
     "spec": 35,
-    "built": 16
+    "built": 35
    },
-   "pct": 45.7
+   "pct": 100.0
   },
   {
    "process": "4.3",
    "title": "Continuity of contact / assigned personnel",
    "tids": {
     "spec": 12,
-    "built": 5,
+    "built": 12,
     "todo": 0,
-    "missing": [
-     2,
-     4,
-     5,
-     8,
-     10,
-     11,
-     12
-    ]
+    "missing": []
    },
    "tables": {
     "spec": 6,
-    "built": 5,
-    "missing": [
-     "lossmit_facts"
-    ]
+    "built": 6,
+    "missing": []
    },
    "timers": {
     "spec": 10,
-    "built": 4,
+    "built": 10,
     "armable": 10,
-    "missing": [
-     "CA_CIV_2923_7_SPOC_UNTIL_EXHAUSTED_OR_CURRENT",
-     "FNMA_A4_2_1_04_CALL_METRICS_MONTHLY",
-     "FNMA_A4_2_1_04_CHAT_5MIN",
-     "FNMA_A4_2_1_04_EMAIL_48H",
-     "REGX_1024_40A2_AVAILABILITY_UNTIL_RELEASE",
-     "REGX_1024_40A3_LIVE_RESPONSE_1BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 3,
-    "built": 1,
-    "missing": [
-     "NTC_CA_2923_7_SPOC",
-     "NTC_REGX_40_CONTACT_ASSIGNED"
-    ]
+    "built": 3,
+    "missing": []
    },
    "tools": {
     "spec": 10,
-    "built": 0,
-    "missing": [
-     "lossmit_facts.get",
-     "payments.history",
-     "lossmit.documents.list",
-     "lossmit.application.status",
-     "timer.list",
-     "foreclosure.gates.get",
-     "callback.schedule",
-     "human.transfer",
-     "lossmit.intake.start",
-     "contact.log"
-    ]
+    "built": 10,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -1325,26 +1246,18 @@
    },
    "units": {
     "spec": 41,
-    "built": 15
+    "built": 41
    },
-   "pct": 36.6
+   "pct": 100.0
   },
   {
    "process": "4.4",
    "title": "Successor in interest",
    "tids": {
     "spec": 12,
-    "built": 5,
+    "built": 12,
     "todo": 0,
-    "missing": [
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "missing": []
    },
    "tables": {
     "spec": 6,
@@ -1353,25 +1266,14 @@
    },
    "timers": {
     "spec": 11,
-    "built": 8,
+    "built": 11,
     "armable": 11,
-    "missing": [
-     "FNMA_D1_4_1_02_FNMA_LEGAL_60",
-     "FNMA_D1_4_1_02_INTERESTED_PARTY_NOTIFY_10",
-     "REGX_1024_38B1VI_SII_FACILITATE_2"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 6,
-    "built": 0,
-    "missing": [
-     "NTC_FNMA_D1_4_1_02_ASSUMPTION_OFFER",
-     "NTC_REGX_32C_SII_ACK",
-     "NTC_REGX_38B1VI_SII_ADDL_DOCS",
-     "NTC_REGX_38B1VI_SII_CONFIRMED",
-     "NTC_REGX_38B1VI_SII_DOCS",
-     "NTC_REGX_38B1VI_SII_NOT_SUCCESSOR"
-    ]
+    "built": 6,
+    "missing": []
    },
    "tools": {
     "spec": 0,
@@ -1385,25 +1287,18 @@
    },
    "units": {
     "spec": 35,
-    "built": 19
+    "built": 35
    },
-   "pct": 54.3
+   "pct": 100.0
   },
   {
    "process": "4.5",
    "title": "Complaint handling / UDAAP",
    "tids": {
     "spec": 12,
-    "built": 6,
+    "built": 12,
     "todo": 0,
-    "missing": [
-     5,
-     7,
-     8,
-     9,
-     11,
-     12
-    ]
+    "missing": []
    },
    "tables": {
     "spec": 5,
@@ -1412,31 +1307,14 @@
    },
    "timers": {
     "spec": 12,
-    "built": 1,
+    "built": 12,
     "armable": 12,
-    "missing": [
-     "CFPB_CONSUMER_FEEDBACK_60",
-     "CFPB_PORTAL_FINAL_60",
-     "CFPB_PORTAL_RESPONSE_15",
-     "FNMA_A4_2_1_04_EMAIL_48H",
-     "FNMA_REFERRAL_RESPONSE_5BD",
-     "NY_419_6_COMPLAINT_ACK_5BD",
-     "NY_419_6_COMPLAINT_RESPONSE_30BD",
-     "SM_COMPLAINT_ACK_1BD",
-     "SM_POPULATION_REMEDIATION_60",
-     "SM_UDAAP_REVIEW_10BD",
-     "TX_50A6_CURE_60"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 4,
-    "built": 0,
-    "missing": [
-     "NTC_COMPLAINT_ACK",
-     "NTC_COMPLAINT_RESPONSE",
-     "NTC_REMEDIATION_REFUND",
-     "NTC_TX_50A6_CURE"
-    ]
+    "built": 4,
+    "missing": []
    },
    "tools": {
     "spec": 0,
@@ -1450,25 +1328,18 @@
    },
    "units": {
     "spec": 35,
-    "built": 14
+    "built": 35
    },
-   "pct": 40.0
+   "pct": 100.0
   },
   {
    "process": "5.1",
    "title": "Loan Activity Report (LAR) submission",
    "tids": {
     "spec": 12,
-    "built": 6,
+    "built": 12,
     "todo": 0,
-    "missing": [
-     4,
-     5,
-     6,
-     7,
-     11,
-     12
-    ]
+    "missing": []
    },
    "tables": {
     "spec": 7,
@@ -1477,19 +1348,9 @@
    },
    "timers": {
     "spec": 17,
-    "built": 8,
+    "built": 17,
     "armable": 17,
-    "missing": [
-     "FNMA_A14201_COMPFEE_WATCH",
-     "FNMA_IRM_BULK_CUTOFF_BD2_1500",
-     "FNMA_IRM_DEFERRAL_LAR_BEFORE_EOM_1BD",
-     "FNMA_IRM_NONREMOVAL_CORRECTION_BD1_2000",
-     "FNMA_IRM_REJECT_TRIAGE_4H",
-     "FNMA_IRM_REMOVAL_CORRECTION_BD2_1700",
-     "FNMA_IRM_REMOVAL_NEXTBD_2000",
-     "FNMA_LL202605_ESCROW_ATTEST_BD2",
-     "FNMA_LL202605_PERIOD_CLOSE_BD2_1700"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -1498,71 +1359,39 @@
    },
    "tools": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "projectEvent",
-     "validateLar80",
-     "validateSeJson"
-    ]
+    "built": 3,
+    "missing": []
    },
    "figures": {
     "spec": 8,
-    "built": 6,
-    "missing": [
-     "$1,580.17",
-     "$250,000.00"
-    ]
+    "built": 8,
+    "missing": []
    },
    "units": {
     "spec": 47,
-    "built": 27
+    "built": 47
    },
-   "pct": 57.4
+   "pct": 100.0
   },
   {
    "process": "5.2",
    "title": "Remittance of P&I",
    "tids": {
     "spec": 12,
-    "built": 11,
+    "built": 12,
     "todo": 0,
-    "missing": [
-     8
-    ]
+    "missing": []
    },
    "tables": {
     "spec": 7,
-    "built": 6,
-    "missing": [
-     "servicer_advance_receivable"
-    ]
+    "built": 7,
+    "missing": []
    },
    "timers": {
     "spec": 21,
-    "built": 1,
+    "built": 21,
     "armable": 21,
-    "missing": [
-     "FNMA_CRS_INSTRUCTION_T1_2000",
-     "FNMA_CRS_REQUEST_1600",
-     "FNMA_F120_AA_BD1_PRIOR_MONTH",
-     "FNMA_F120_AA_DETAILED_48H",
-     "FNMA_F120_AA_MONTHLY_MIN",
-     "FNMA_F120_AA_REMIT_2500_SAMEDAY",
-     "FNMA_F120_DRAFT_NOTICE_BD3",
-     "FNMA_F120_MBSX_UNSCHED_BD4",
-     "FNMA_F120_PAYOFF_AA_IMMEDIATE",
-     "FNMA_F120_RPM_DRAFT_DESIGNATED",
-     "FNMA_F120_SA_DRAFT_CD20",
-     "FNMA_F120_SETTLEMENT_NEXT_REMIT_DATE",
-     "FNMA_F120_SHORTSALE_PROCEEDS_2BD",
-     "FNMA_F120_SS_6TH_POOL_CD5",
-     "FNMA_F120_TPS_PROCEEDS_NEXT_REMIT",
-     "FNMA_IRM_SHORTAGE_IMMEDIATE",
-     "FNMA_IRM_SURPLUS_RESOLVE_90",
-     "FNMA_LL202605_AA_AUTODRAFT_2BD",
-     "FNMA_LL202605_PREDRAFT_REVIEW_1BD",
-     "SM_CUSTODIAL_FUNDING_T1_1600"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -1571,57 +1400,28 @@
    },
    "tools": {
     "spec": 7,
-    "built": 0,
-    "missing": [
-     "buildCrsBatch",
-     "openPortalTask",
-     "pullDraftNotifications",
-     "matchBankDebits",
-     "explainVariance",
-     "postLedger",
-     "recordDecision"
-    ]
+    "built": 7,
+    "missing": []
    },
    "figures": {
     "spec": 35,
-    "built": 22,
-    "missing": [
-     "$1,246.59",
-     "$1,247.73",
-     "$1,248.87",
-     "$1,580.17",
-     "$2,627.72",
-     "$227.23",
-     "$228.46",
-     "$229.70",
-     "$249,318.31",
-     "$249,546.77",
-     "$32.79",
-     "$400,000.00",
-     "$5,985.00"
-    ]
+    "built": 35,
+    "missing": []
    },
    "units": {
     "spec": 82,
-    "built": 40
+    "built": 82
    },
-   "pct": 48.8
+   "pct": 100.0
   },
   {
    "process": "5.3",
    "title": "Reporting liquidations (payoff/foreclosure/short sale)",
    "tids": {
     "spec": 10,
-    "built": 4,
+    "built": 10,
     "todo": 0,
-    "missing": [
-     2,
-     6,
-     7,
-     8,
-     9,
-     10
-    ]
+    "missing": []
    },
    "tables": {
     "spec": 2,
@@ -1630,18 +1430,9 @@
    },
    "timers": {
     "spec": 10,
-    "built": 2,
+    "built": 10,
     "armable": 10,
-    "missing": [
-     "FNMA_E4101_REOGRAM_CONFIRM_1BD",
-     "FNMA_F120_SHORTSALE_PROCEEDS_2BD",
-     "FNMA_IRM_REMOVAL_CORRECTION_BD2_1700",
-     "FNMA_LL202605_FORECLOSURE_EVENT_NEXTBD",
-     "FNMA_P360_REOGRAM_EXCEPTION_3BD",
-     "SM_DRA_RECONCILE_7CD",
-     "SM_LIQ_CODE_CHANGE_CPM_2BD",
-     "SM_PAYOFF_GOODFUNDS_GATE"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -1650,45 +1441,28 @@
    },
    "tools": {
     "spec": 8,
-    "built": 0,
-    "missing": [
-     "selectLiquidationCode",
-     "computeRemovalAmounts",
-     "projectEvent",
-     "buildCrsBatch",
-     "prepareReogramPackage",
-     "reconcileDra",
-     "draftCpmNotice",
-     "recordDecision"
-    ]
+    "built": 8,
+    "missing": []
    },
    "figures": {
     "spec": 5,
-    "built": 4,
-    "missing": [
-     "$210,000.00"
-    ]
+    "built": 5,
+    "missing": []
    },
    "units": {
     "spec": 35,
-    "built": 12
+    "built": 35
    },
-   "pct": 34.3
+   "pct": 100.0
   },
   {
    "process": "5.4",
    "title": "Stop Delinquency Advance handling",
    "tids": {
     "spec": 8,
-    "built": 3,
+    "built": 8,
     "todo": 0,
-    "missing": [
-     4,
-     5,
-     6,
-     7,
-     8
-    ]
+    "missing": []
    },
    "tables": {
     "spec": 3,
@@ -1697,18 +1471,9 @@
    },
    "timers": {
     "spec": 9,
-    "built": 1,
+    "built": 9,
     "armable": 9,
-    "missing": [
-     "FNMA_A1306_RECLASS_SELECTION_6M",
-     "FNMA_F120_SDA_EXIT_RESUME_DRAFT",
-     "FNMA_F120_SDA_FUNDING_HOLD",
-     "FNMA_F120_SDA_STATUS_RECONCILE_BD3",
-     "FNMA_F125_RECLASS_DESELECT_CD15",
-     "FNMA_IRM_SDA_CONTRACTUAL_LAR_NEXTBD_2000",
-     "SM_SDA_RECOVERY_MATCH_2_CYCLES",
-     "SM_SDA_REIMBURSEMENT_MATCH_2_CYCLES"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -1717,51 +1482,28 @@
    },
    "tools": {
     "spec": 7,
-    "built": 0,
-    "missing": [
-     "predictSdaEntry",
-     "parseRemittanceDetail",
-     "matchAdjustments",
-     "rollForwardReceivables",
-     "buildForm496Line12",
-     "openPortalTask",
-     "recordDecision"
-    ]
+    "built": 7,
+    "missing": []
    },
    "figures": {
     "spec": 15,
-    "built": 8,
-    "missing": [
-     "$1,476.38",
-     "$1,476.48",
-     "$1,580.17",
-     "$230.94",
-     "$248,857.67",
-     "$3,160.34",
-     "$51.90"
-    ]
+    "built": 15,
+    "missing": []
    },
    "units": {
     "spec": 42,
-    "built": 15
+    "built": 42
    },
-   "pct": 35.7
+   "pct": 100.0
   },
   {
    "process": "5.5",
    "title": "Guaranty fee relief",
    "tids": {
     "spec": 6,
-    "built": 0,
+    "built": 6,
     "todo": 0,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6
-    ]
+    "missing": []
    },
    "tables": {
     "spec": 4,
@@ -1770,14 +1512,9 @@
    },
    "timers": {
     "spec": 5,
-    "built": 1,
+    "built": 5,
     "armable": 5,
-    "missing": [
-     "FNMA_F120_GFEE_BILL_RETRIEVE_CD5",
-     "FNMA_F120_GFEE_RELIEF_RECONCILE_BILL",
-     "FNMA_F120_GFEE_RESUME_ON_CURRENT",
-     "SM_GFEE_RECOVERY_MATCH_2_CYCLES"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -1786,15 +1523,8 @@
    },
    "tools": {
     "spec": 6,
-    "built": 0,
-    "missing": [
-     "parseGfeeBill",
-     "computeGfeeCheckFigures",
-     "reconcileRelief",
-     "fundDraft",
-     "matchDebit",
-     "recordDecision"
-    ]
+    "built": 6,
+    "missing": []
    },
    "figures": {
     "spec": 6,
@@ -1803,22 +1533,18 @@
    },
    "units": {
     "spec": 27,
-    "built": 11
+    "built": 27
    },
-   "pct": 40.7
+   "pct": 100.0
   },
   {
    "process": "5.6",
    "title": "Repurchase reporting",
    "tids": {
     "spec": 7,
-    "built": 4,
+    "built": 7,
     "todo": 0,
-    "missing": [
-     4,
-     5,
-     7
-    ]
+    "missing": []
    },
    "tables": {
     "spec": 1,
@@ -1827,18 +1553,9 @@
    },
    "timers": {
     "spec": 9,
-    "built": 1,
+    "built": 9,
     "armable": 9,
-    "missing": [
-     "FNMA_A1302_APPEAL1_60",
-     "FNMA_A1302_APPEAL2_15",
-     "FNMA_A1302_DOCS_30",
-     "FNMA_A1302_IMPASSE_30",
-     "FNMA_A1302_REPURCHASE_PAY_60",
-     "FNMA_IRM_REMOVAL_CORRECTION_BD2_1700",
-     "FNMA_IRM_REPURCHASE_AC65_NEXTBD_2000",
-     "SM_REPURCHASE_OWNERSHIP_UPDATE_10BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -1847,63 +1564,39 @@
    },
    "tools": {
     "spec": 5,
-    "built": 0,
-    "missing": [
-     "projectEvent",
-     "buildCrsBatch",
-     "draftLetter",
-     "openPortalTask",
-     "recordDecision"
-    ]
+    "built": 5,
+    "missing": []
    },
    "figures": {
     "spec": 7,
-    "built": 6,
-    "missing": [
-     "$32.79"
-    ]
+    "built": 7,
+    "missing": []
    },
    "units": {
     "spec": 29,
-    "built": 12
+    "built": 29
    },
-   "pct": 41.4
+   "pct": 100.0
   },
   {
    "process": "5.7",
    "title": "Delinquent loan status reporting",
    "tids": {
     "spec": 8,
-    "built": 5,
+    "built": 8,
     "todo": 0,
-    "missing": [
-     5,
-     6,
-     8
-    ]
+    "missing": []
    },
    "tables": {
     "spec": 4,
-    "built": 3,
-    "missing": [
-     "dq_status_code_map"
-    ]
+    "built": 4,
+    "missing": []
    },
    "timers": {
     "spec": 11,
-    "built": 2,
+    "built": 11,
     "armable": 11,
-    "missing": [
-     "FNMA_F121_AW_ONE_MONTH",
-     "FNMA_F121_DQ_CORRECT_CD10",
-     "FNMA_F121_DQ_EXCEPTIONS_BD4",
-     "FNMA_F121_DQ_FINAL_CD11",
-     "FNMA_F121_DQ_SNAPSHOT_EOM",
-     "FNMA_F125_RECLASS_DESELECT_CD15",
-     "FNMA_LL202605_DQ_EVENT_NEXTBD_0300",
-     "FNMA_LL202605_DQ_PMT_REMINDER_CD23",
-     "SM_DQ_SMDU_DRA_CONSISTENCY_BD1"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -1912,17 +1605,8 @@
    },
    "tools": {
     "spec": 8,
-    "built": 0,
-    "missing": [
-     "buildDqSnapshot",
-     "deriveStatusCode",
-     "validateF121Layout",
-     "submitAmnFile",
-     "parseExceptionReport",
-     "submitDqEvent",
-     "checkConsistency",
-     "recordDecision"
-    ]
+    "built": 8,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -1931,9 +1615,9 @@
    },
    "units": {
     "spec": 31,
-    "built": 10
+    "built": 31
    },
-   "pct": 32.3
+   "pct": 100.0
   },
   {
    "process": "6.1",
@@ -1941,7 +1625,7 @@
    "tids": {
     "spec": 8,
     "built": 7,
-    "todo": 0,
+    "todo": 1,
     "missing": [
      7
     ]
@@ -1996,7 +1680,7 @@
    "tids": {
     "spec": 6,
     "built": 4,
-    "todo": 0,
+    "todo": 2,
     "missing": [
      4,
      6
@@ -2046,7 +1730,7 @@
    "tids": {
     "spec": 14,
     "built": 7,
-    "todo": 0,
+    "todo": 7,
     "missing": [
      3,
      5,
@@ -2117,7 +1801,7 @@
    "tids": {
     "spec": 8,
     "built": 6,
-    "todo": 0,
+    "todo": 2,
     "missing": [
      7,
      8
@@ -2164,7 +1848,7 @@
    "tids": {
     "spec": 10,
     "built": 4,
-    "todo": 0,
+    "todo": 6,
     "missing": [
      1,
      2,
@@ -2231,7 +1915,7 @@
    "tids": {
     "spec": 15,
     "built": 5,
-    "todo": 0,
+    "todo": 10,
     "missing": [
      4,
      5,
@@ -2308,7 +1992,7 @@
    "tids": {
     "spec": 14,
     "built": 7,
-    "todo": 0,
+    "todo": 7,
     "missing": [
      8,
      9,
@@ -2377,7 +2061,7 @@
    "tids": {
     "spec": 9,
     "built": 3,
-    "todo": 0,
+    "todo": 6,
     "missing": [
      3,
      4,
@@ -2430,7 +2114,7 @@
    "tids": {
     "spec": 11,
     "built": 8,
-    "todo": 0,
+    "todo": 3,
     "missing": [
      7,
      8,
@@ -2486,7 +2170,7 @@
    "tids": {
     "spec": 9,
     "built": 5,
-    "todo": 0,
+    "todo": 4,
     "missing": [
      6,
      7,
@@ -2538,7 +2222,7 @@
    "tids": {
     "spec": 11,
     "built": 6,
-    "todo": 0,
+    "todo": 5,
     "missing": [
      2,
      5,
@@ -2596,7 +2280,7 @@
    "tids": {
     "spec": 19,
     "built": 16,
-    "todo": 0,
+    "todo": 3,
     "missing": [
      12,
      17,
@@ -2610,12 +2294,11 @@
    },
    "timers": {
     "spec": 11,
-    "built": 7,
+    "built": 8,
     "armable": 11,
     "missing": [
      "FCRA_1681S2A5_DOFD_90",
      "FDCPA_1006_30A_PRE_FURNISH_GATE",
-     "REGX_1024_35I_CREDIT_SUPPRESS_60",
      "SM_METRO2_TRANSMIT_HARD_CD10"
     ]
    },
@@ -2650,9 +2333,9 @@
    },
    "units": {
     "spec": 49,
-    "built": 30
+    "built": 31
    },
-   "pct": 61.2
+   "pct": 63.3
   },
   {
    "process": "8.2",
@@ -2660,7 +2343,7 @@
    "tids": {
     "spec": 14,
     "built": 11,
-    "todo": 0,
+    "todo": 3,
     "missing": [
      10,
      13,
@@ -2722,7 +2405,7 @@
    "tids": {
     "spec": 14,
     "built": 13,
-    "todo": 0,
+    "todo": 1,
     "missing": [
      11
     ]
@@ -2736,14 +2419,13 @@
    },
    "timers": {
     "spec": 12,
-    "built": 3,
+    "built": 4,
     "armable": 12,
     "missing": [
      "BK_CII_APPLY_NEXT_CYCLE",
      "FCRA_1681C2_IDTHEFT_BLOCK_GATE",
      "FCRA_1681S2A3_XB_FLAG_GATE",
      "FDCPA_1006_30A_PRE_FURNISH_GATE",
-     "REGX_1024_35I_CREDIT_SUPPRESS_60",
      "RESPA_2605E3_QWR_SUPPRESS_60",
      "SCRA_3919_NO_ADVERSE_GATE",
      "SM_CR_DECEASED_ECOA_X_NEXT_CYCLE",
@@ -2786,9 +2468,9 @@
    },
    "units": {
     "spec": 47,
-    "built": 19
+    "built": 20
    },
-   "pct": 40.4
+   "pct": 42.6
   },
   {
    "process": "9.1",
@@ -2796,7 +2478,7 @@
    "tids": {
     "spec": 10,
     "built": 9,
-    "todo": 0,
+    "todo": 1,
     "missing": [
      10
     ]
@@ -2856,7 +2538,7 @@
    "tids": {
     "spec": 11,
     "built": 6,
-    "todo": 0,
+    "todo": 5,
     "missing": [
      5,
      6,
@@ -3021,7 +2703,7 @@
    "tids": {
     "spec": 7,
     "built": 6,
-    "todo": 0,
+    "todo": 1,
     "missing": [
      3
     ]
@@ -3087,7 +2769,7 @@
    "tids": {
     "spec": 9,
     "built": 6,
-    "todo": 0,
+    "todo": 3,
     "missing": [
      6,
      7,
@@ -3153,7 +2835,7 @@
    "tids": {
     "spec": 10,
     "built": 9,
-    "todo": 0,
+    "todo": 1,
     "missing": [
      10
     ]
@@ -3236,7 +2918,7 @@
    "tids": {
     "spec": 9,
     "built": 7,
-    "todo": 0,
+    "todo": 2,
     "missing": [
      3,
      5
@@ -3300,7 +2982,7 @@
    "tids": {
     "spec": 11,
     "built": 7,
-    "todo": 0,
+    "todo": 4,
     "missing": [
      7,
      9,
@@ -3367,7 +3049,7 @@
    "tids": {
     "spec": 12,
     "built": 9,
-    "todo": 0,
+    "todo": 3,
     "missing": [
      3,
      7,
@@ -3434,7 +3116,7 @@
    "tids": {
     "spec": 11,
     "built": 4,
-    "todo": 0,
+    "todo": 7,
     "missing": [
      1,
      2,
@@ -3502,7 +3184,7 @@
    "tids": {
     "spec": 7,
     "built": 6,
-    "todo": 0,
+    "todo": 1,
     "missing": [
      7
     ]
@@ -3547,7 +3229,7 @@
    "tids": {
     "spec": 9,
     "built": 2,
-    "todo": 0,
+    "todo": 7,
     "missing": [
      2,
      3,
@@ -3612,7 +3294,7 @@
    "tids": {
     "spec": 10,
     "built": 7,
-    "todo": 0,
+    "todo": 3,
     "missing": [
      4,
      9,
@@ -3677,7 +3359,7 @@
    "tids": {
     "spec": 10,
     "built": 8,
-    "todo": 0,
+    "todo": 2,
     "missing": [
      6,
      10
@@ -3735,7 +3417,7 @@
    "tids": {
     "spec": 24,
     "built": 6,
-    "todo": 0,
+    "todo": 18,
     "missing": [
      5,
      8,
@@ -3819,7 +3501,7 @@
    "tids": {
     "spec": 15,
     "built": 8,
-    "todo": 0,
+    "todo": 7,
     "missing": [
      9,
      10,
@@ -3893,7 +3575,7 @@
    "tids": {
     "spec": 14,
     "built": 6,
-    "todo": 0,
+    "todo": 8,
     "missing": [
      5,
      6,
@@ -3912,12 +3594,11 @@
    },
    "timers": {
     "spec": 11,
-    "built": 6,
+    "built": 7,
     "armable": 11,
     "missing": [
      "FNMA_D2204_BSP_AFTER_QRPC_3BD",
      "FNMA_D2210_INSPECTION_SUSPEND_30",
-     "FNMA_F121_AW_ONE_MONTH",
      "SM_QRPC_HUMAN_VERIFY_1BD",
      "SM_QRPC_STALE_30"
     ]
@@ -3962,9 +3643,9 @@
    },
    "units": {
     "spec": 48,
-    "built": 15
+    "built": 16
    },
-   "pct": 31.2
+   "pct": 33.3
   },
   {
    "process": "11.4",
@@ -3972,7 +3653,7 @@
    "tids": {
     "spec": 16,
     "built": 3,
-    "todo": 0,
+    "todo": 13,
     "missing": [
      4,
      5,
@@ -4043,7 +3724,7 @@
    "tids": {
     "spec": 14,
     "built": 6,
-    "todo": 0,
+    "todo": 8,
     "missing": [
      7,
      8,
@@ -4115,7 +3796,7 @@
    "tids": {
     "spec": 12,
     "built": 6,
-    "todo": 0,
+    "todo": 6,
     "missing": [
      4,
      8,
@@ -4194,7 +3875,7 @@
    "tids": {
     "spec": 13,
     "built": 5,
-    "todo": 0,
+    "todo": 8,
     "missing": [
      3,
      5,
@@ -4271,7 +3952,7 @@
    "tids": {
     "spec": 10,
     "built": 5,
-    "todo": 0,
+    "todo": 5,
     "missing": [
      2,
      3,
@@ -4329,7 +4010,7 @@
    "tids": {
     "spec": 10,
     "built": 4,
-    "todo": 0,
+    "todo": 6,
     "missing": [
      4,
      5,
@@ -4398,7 +4079,7 @@
    "tids": {
     "spec": 9,
     "built": 2,
-    "todo": 0,
+    "todo": 7,
     "missing": [
      2,
      3,
@@ -4477,7 +4158,7 @@
    "tids": {
     "spec": 10,
     "built": 4,
-    "todo": 0,
+    "todo": 6,
     "missing": [
      4,
      6,
@@ -4554,7 +4235,7 @@
    "tids": {
     "spec": 8,
     "built": 3,
-    "todo": 0,
+    "todo": 5,
     "missing": [
      1,
      3,
@@ -4614,7 +4295,7 @@
    "tids": {
     "spec": 12,
     "built": 5,
-    "todo": 0,
+    "todo": 7,
     "missing": [
      6,
      7,
@@ -4704,7 +4385,7 @@
    "tids": {
     "spec": 12,
     "built": 6,
-    "todo": 0,
+    "todo": 6,
     "missing": [
      1,
      3,
@@ -4723,7 +4404,7 @@
    },
    "timers": {
     "spec": 22,
-    "built": 9,
+    "built": 10,
     "armable": 22,
     "missing": [
      "CA_CIV_2924_11C_RESCIND_NOD",
@@ -4735,7 +4416,6 @@
      "FNMA_D23302_DIL_WEEKLY_UPDATE_7",
      "FNMA_E3401_SS_APPROVED_HOLD_60",
      "FNMA_E3401_SS_MARKETING_HOLD",
-     "FNMA_E4101_REOGRAM_CONFIRM_1BD",
      "FNMA_F114_SS_VALUATION_MAX_AGE_90",
      "FNMA_F202_LIQUIDATION_INCENTIVE_CLAIM",
      "REGX_1024_41G3_SS_LISTING_PERFORMANCE"
@@ -4785,9 +4465,9 @@
    },
    "units": {
     "spec": 64,
-    "built": 19
+    "built": 20
    },
-   "pct": 29.7
+   "pct": 31.2
   },
   {
    "process": "13.1",
@@ -4795,7 +4475,7 @@
    "tids": {
     "spec": 10,
     "built": 3,
-    "todo": 0,
+    "todo": 7,
     "missing": [
      4,
      5,
@@ -4808,10 +4488,8 @@
    },
    "tables": {
     "spec": 5,
-    "built": 4,
-    "missing": [
-     "timer_definitions"
-    ]
+    "built": 5,
+    "missing": []
    },
    "timers": {
     "spec": 7,
@@ -4848,9 +4526,9 @@
    },
    "units": {
     "spec": 29,
-    "built": 11
+    "built": 12
    },
-   "pct": 37.9
+   "pct": 41.4
   },
   {
    "process": "13.2",
@@ -4858,7 +4536,7 @@
    "tids": {
     "spec": 10,
     "built": 4,
-    "todo": 0,
+    "todo": 6,
     "missing": [
      2,
      4,
@@ -4922,7 +4600,7 @@
    "tids": {
     "spec": 12,
     "built": 3,
-    "todo": 0,
+    "todo": 9,
     "missing": [
      1,
      2,
@@ -4942,15 +4620,14 @@
    },
    "timers": {
     "spec": 23,
-    "built": 17,
+    "built": 18,
     "armable": 23,
     "missing": [
      "FNMA_E1202_REFER_NO_EARLIER_121",
      "FNMA_E3205_ADVANCE_REQUEST_10BD",
      "FNMA_E3205_BID_INSTRUCTIONS_5BD",
      "FNMA_E3206_OUTREACH_STOP_60_30",
-     "FNMA_E3502_TPS_DEPOSIT_REMIT_5BD",
-     "FNMA_E4101_REOGRAM_CONFIRM_1BD"
+     "FNMA_E3502_TPS_DEPOSIT_REMIT_5BD"
     ]
    },
    "notices": {
@@ -4997,9 +4674,9 @@
    },
    "units": {
     "spec": 68,
-    "built": 28
+    "built": 29
    },
-   "pct": 41.2
+   "pct": 42.6
   },
   {
    "process": "13.4",
@@ -5007,7 +4684,7 @@
    "tids": {
     "spec": 10,
     "built": 1,
-    "todo": 0,
+    "todo": 9,
     "missing": [
      2,
      3,
@@ -5076,7 +4753,7 @@
    "tids": {
     "spec": 9,
     "built": 3,
-    "todo": 0,
+    "todo": 6,
     "missing": [
      4,
      5,
@@ -5140,7 +4817,7 @@
    "tids": {
     "spec": 10,
     "built": 6,
-    "todo": 0,
+    "todo": 4,
     "missing": [
      5,
      7,
@@ -5213,7 +4890,7 @@
    "tids": {
     "spec": 10,
     "built": 5,
-    "todo": 0,
+    "todo": 5,
     "missing": [
      5,
      6,
@@ -5276,7 +4953,7 @@
    "tids": {
     "spec": 12,
     "built": 3,
-    "todo": 0,
+    "todo": 9,
     "missing": [
      1,
      3,
@@ -5346,7 +5023,7 @@
    "tids": {
     "spec": 11,
     "built": 5,
-    "todo": 0,
+    "todo": 6,
     "missing": [
      5,
      6,
@@ -5416,7 +5093,7 @@
    "tids": {
     "spec": 18,
     "built": 6,
-    "todo": 0,
+    "todo": 12,
     "missing": [
      1,
      2,
@@ -5533,7 +5210,7 @@
    "tids": {
     "spec": 14,
     "built": 8,
-    "todo": 0,
+    "todo": 6,
     "missing": [
      5,
      9,
@@ -5613,7 +5290,7 @@
    "tids": {
     "spec": 12,
     "built": 4,
-    "todo": 0,
+    "todo": 8,
     "missing": [
      3,
      5,
@@ -5692,7 +5369,7 @@
    "tids": {
     "spec": 8,
     "built": 7,
-    "todo": 0,
+    "todo": 1,
     "missing": [
      8
     ]
@@ -5746,7 +5423,7 @@
    "tids": {
     "spec": 12,
     "built": 11,
-    "todo": 0,
+    "todo": 1,
     "missing": [
      12
     ]
@@ -5758,13 +5435,12 @@
    },
    "timers": {
     "spec": 21,
-    "built": 5,
+    "built": 6,
     "armable": 21,
     "missing": [
      "FNMA_E3502_TPS_FAILED_DEPOSIT_5BD",
      "FNMA_E3502_TPS_INSURANCE_CANCEL_14",
      "FNMA_E3502_TPS_PROCEEDS_5BD",
-     "FNMA_E4101_REOGRAM_CONFIRM_1BD",
      "FNMA_E4102_ELIM_RESCISSION_REQUEST_5",
      "FNMA_E4102_REINTEGRATE_24H",
      "FNMA_E4102_TITLE_RESTORE_2",
@@ -5824,9 +5500,9 @@
    },
    "units": {
     "spec": 69,
-    "built": 26
+    "built": 27
    },
-   "pct": 37.7
+   "pct": 39.1
   },
   {
    "process": "15.2",
@@ -5834,7 +5510,7 @@
    "tids": {
     "spec": 13,
     "built": 12,
-    "todo": 0,
+    "todo": 1,
     "missing": [
      11
     ]
@@ -5919,7 +5595,7 @@
    "tids": {
     "spec": 12,
     "built": 10,
-    "todo": 0,
+    "todo": 2,
     "missing": [
      2,
      12
@@ -6012,7 +5688,7 @@
    "tids": {
     "spec": 11,
     "built": 8,
-    "todo": 0,
+    "todo": 3,
     "missing": [
      5,
      8,
@@ -6026,19 +5702,17 @@
    },
    "timers": {
     "spec": 11,
-    "built": 1,
+    "built": 3,
     "armable": 11,
     "missing": [
      "FNMA_A1306_RECLASS_REIMB_PA",
      "FNMA_E3501_MBS_REMOVAL_BEFORE_FCL",
-     "FNMA_F120_SDA_FUNDING_HOLD",
      "FNMA_IRM_PD_ADV_REIMB_4BD",
      "FNMA_IRM_SA_LIQ_INTEREST_REIMB",
      "FNMA_IRM_SA_MONTH4_NEG_INTEREST",
      "SM_DELADV_POSITION_DAILY",
      "SM_DELADV_UNRECOVERED_60",
-     "SM_PAYOFF_ADV_RECOVERY_SAME_DAY",
-     "SM_SDA_REIMBURSEMENT_MATCH_2_CYCLES"
+     "SM_PAYOFF_ADV_RECOVERY_SAME_DAY"
     ]
    },
    "notices": {
@@ -6074,9 +5748,9 @@
    },
    "units": {
     "spec": 42,
-    "built": 15
+    "built": 17
    },
-   "pct": 35.7
+   "pct": 40.5
   },
   {
    "process": "16.1",
@@ -6084,7 +5758,7 @@
    "tids": {
     "spec": 15,
     "built": 6,
-    "todo": 0,
+    "todo": 9,
     "missing": [
      5,
      8,
@@ -6171,7 +5845,7 @@
    "tids": {
     "spec": 12,
     "built": 8,
-    "todo": 0,
+    "todo": 4,
     "missing": [
      9,
      10,
@@ -6186,18 +5860,15 @@
    },
    "timers": {
     "spec": 20,
-    "built": 4,
+    "built": 7,
     "armable": 20,
     "missing": [
      "FNMA_F109_ADVANCE_REPAY_30",
-     "FNMA_F120_PAYOFF_AA_IMMEDIATE",
      "FNMA_F120_PAYOFF_SA_CD20",
      "FNMA_F120_PAYOFF_SS_CD18",
-     "FNMA_IRM_REMOVAL_CORRECTION_BD2_1700",
      "SM_OVERPAYMENT_REFUND_10BD",
      "SM_PAYOFF_AUTODRAFT_STOP_T0",
      "SM_PAYOFF_CREDIT_REPORT_NEXT_CYCLE",
-     "SM_PAYOFF_GOODFUNDS_GATE",
      "SM_PAYOFF_INSURANCE_INTEREST_REMOVE_5BD",
      "SM_PAYOFF_MI_NOTIFY_2BD",
      "SM_PAYOFF_PIF_LETTER_5BD",
@@ -6246,9 +5917,9 @@
    },
    "units": {
     "spec": 59,
-    "built": 20
+    "built": 23
    },
-   "pct": 33.9
+   "pct": 39.0
   },
   {
    "process": "16.3",
@@ -6256,7 +5927,7 @@
    "tids": {
     "spec": 12,
     "built": 6,
-    "todo": 0,
+    "todo": 6,
     "missing": [
      7,
      8,
@@ -6333,7 +6004,7 @@
    "tids": {
     "spec": 8,
     "built": 5,
-    "todo": 0,
+    "todo": 3,
     "missing": [
      4,
      7,
@@ -6386,7 +6057,7 @@
    "tids": {
     "spec": 8,
     "built": 5,
-    "todo": 0,
+    "todo": 3,
     "missing": [
      4,
      5,
@@ -6446,7 +6117,7 @@
    "tids": {
     "spec": 10,
     "built": 6,
-    "todo": 0,
+    "todo": 4,
     "missing": [
      3,
      6,
@@ -6509,7 +6180,7 @@
    "tids": {
     "spec": 14,
     "built": 2,
-    "todo": 0,
+    "todo": 12,
     "missing": [
      3,
      4,
@@ -6594,7 +6265,7 @@
    "tids": {
     "spec": 11,
     "built": 5,
-    "todo": 0,
+    "todo": 6,
     "missing": [
      4,
      5,
@@ -6666,7 +6337,7 @@
    "tids": {
     "spec": 12,
     "built": 11,
-    "todo": 0,
+    "todo": 1,
     "missing": [
      12
     ]
@@ -6722,7 +6393,7 @@
    "tids": {
     "spec": 9,
     "built": 6,
-    "todo": 0,
+    "todo": 3,
     "missing": [
      2,
      6,
@@ -6775,7 +6446,7 @@
    "tids": {
     "spec": 9,
     "built": 7,
-    "todo": 0,
+    "todo": 2,
     "missing": [
      3,
      9
@@ -6821,7 +6492,7 @@
    "tids": {
     "spec": 8,
     "built": 6,
-    "todo": 0,
+    "todo": 2,
     "missing": [
      6,
      8
@@ -6875,7 +6546,7 @@
    "tids": {
     "spec": 10,
     "built": 7,
-    "todo": 0,
+    "todo": 3,
     "missing": [
      6,
      7,
@@ -6928,7 +6599,7 @@
    "tids": {
     "spec": 7,
     "built": 4,
-    "todo": 0,
+    "todo": 3,
     "missing": [
      3,
      5,
@@ -6980,7 +6651,7 @@
    "tids": {
     "spec": 9,
     "built": 8,
-    "todo": 0,
+    "todo": 1,
     "missing": [
      7
     ]
@@ -7033,7 +6704,7 @@
    "tids": {
     "spec": 15,
     "built": 10,
-    "todo": 0,
+    "todo": 5,
     "missing": [
      5,
      9,
@@ -7100,7 +6771,7 @@
    "tids": {
     "spec": 17,
     "built": 15,
-    "todo": 0,
+    "todo": 2,
     "missing": [
      8,
      17
@@ -7184,7 +6855,7 @@
    "tids": {
     "spec": 14,
     "built": 9,
-    "todo": 0,
+    "todo": 5,
     "missing": [
      9,
      11,
@@ -7254,7 +6925,7 @@
    "tids": {
     "spec": 16,
     "built": 10,
-    "todo": 0,
+    "todo": 6,
     "missing": [
      3,
      4,

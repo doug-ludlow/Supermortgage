@@ -41,6 +41,21 @@ export const fannieEt: Calendar = {
   unit: "business_days_fannie_et", timeZone: "America/New_York",
   isBusinessDay: (d) => !isWeekend(d) && !isFederalHoliday(d),
 };
+/**
+ * Fannie Mae-only closures the spec cites (§5.1 "Holiday ambiguity": "Fannie Mae-only holidays (e.g., day
+ * after Thanksgiving) shift reporting deadlines but not necessarily Federal Reserve draft settlement —
+ * calendar table carries both flags"; §5.2 worked example 5 and §5.3-T8 name Nov 26–27, 2026). The list is
+ * per published year: the spec's §1.1-T7, §19.1-T6 and §19.3 examples count Fri Nov 27, 2026 as a Fannie
+ * business day on the reporting clocks, and §15.1-T2/§15.3 count Fri Nov 26, 2027 as one, so only the
+ * P360/REOgram confirmation clock (§5.3-T8) resolves against this observed calendar; every other
+ * `fannie_et` timer uses `fannieEt` above. Flagged in docs/audit as a spec inconsistency to settle at onboarding.
+ */
+export const FNMA_PUBLISHED_CLOSURES: readonly PlainDate[] = ["2026-11-27" as PlainDate];
+export function fannieMaeObservedCalendar(closures: readonly PlainDate[] = FNMA_PUBLISHED_CLOSURES): Calendar {
+  const closed = new Set(closures);
+  return { unit: "business_days_fannie_et", timeZone: "America/New_York", isBusinessDay: (d) => fannieEt.isBusinessDay(d) && !closed.has(d) };
+}
+export const fannieEtObserved: Calendar = fannieMaeObservedCalendar();
 
 export interface ServicerCalendarConfig {
   readonly timeZone?: string;

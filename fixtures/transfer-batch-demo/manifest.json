@@ -1,9 +1,9 @@
 {
   "batch": {
-    "batch_id": "B-DEMO-2026-10",
-    "transfer_date": "2026-10-01",
-    "respa_effective_date": "2026-10-01",
-    "sale_date": "2026-09-01",
+    "batch_id": "B-DEMO-2026-09",
+    "transfer_date": "2026-09-01",
+    "respa_effective_date": "2026-09-01",
+    "sale_date": "2026-08-01",
     "transferor_name": "Northline Mortgage Servicing LLC",
     "transferor_servicer_number": "123456789",
     "partner_servicer_number": "987654321",
@@ -12,38 +12,38 @@
     "d_code": "D-2026-0917-0042",
     "loan_count": 100,
     "seed": 20261001,
-    "upb_total": "3712930364",
+    "upb_total": "3722536261",
     "escrow_total": "17083861"
   },
   "generated_by": "tools/gen-transfer-batch.ts (deterministic; seed above)",
   "files": {
     "boarding_tape.final.csv": {
-      "sha256": "a25a397f0334ab8b5f3a95dfc9ef2e285efc908039ecc9cc4b5bc633a5fab59b",
+      "sha256": "717452b61d4d4d66527537ad481afaf46ba0608e846cabcf6ba4ad7d9a07221f",
       "row_count": 100,
       "bytes": 41580
     },
     "payment_history.csv": {
-      "sha256": "dc9b71f3b1be94d0d506319f332ec1d1dd080f2e2484764feeb3f45fa110c849",
+      "sha256": "6df7a6305120f5822e4e26989b2787808d29035fbbe5c7b5b58b49dbcff1aa21",
       "row_count": 2398,
       "bytes": 115241
     },
     "escrow_history.csv": {
-      "sha256": "648dc1419b452c05b219cc9e5ba5506662b2d5063ba95ad8cc2d2e7e61af0d59",
+      "sha256": "36fdfbbcc7525285df5404a83f3a661005f7051ea9f55efe2ece1f67b9be0e4f",
       "row_count": 189,
       "bytes": 7169
     },
     "escrow_analysis.csv": {
-      "sha256": "7df4e73ddb981ae252366630f8b01d5de9239fce07b2ce9a033a24044cbc7c02",
+      "sha256": "9b3f045f4286fed3983ba6f29c9c7ecaaf36bad621e14ecceca899b7c63fcbf4",
       "row_count": 85,
       "bytes": 2760
     },
     "lossmit_file.csv": {
-      "sha256": "d229fadd596526db19d1c028a7b4bad48ea63342c1569ea6cb3c8c19e348912a",
+      "sha256": "e3870efeebfc8a149c2440acef678f82df191c36e2eefc27a79a032f478a144e",
       "row_count": 3,
       "bytes": 161
     },
     "fc_bk_file.csv": {
-      "sha256": "a650cb722b27d39ecb71070775a026e35815dadb63d0d3ea6e5e7712b5c3d85e",
+      "sha256": "a6db90cb1ddfb0846123179257c5f61aac84d5aa467fdf1592e4e783b0bcfc32",
       "row_count": 4,
       "bytes": 256
     },
@@ -58,12 +58,12 @@
       "bytes": 35601
     },
     "trial_balance.csv": {
-      "sha256": "b3bec2c01b87439e5b1e4d6120f8457f20c9a4efee47f4312ba502ca69cf2546",
+      "sha256": "2cb0c061f716a430c5fd155a4d379da207c089b0cd261bdfbedd1b46765abbcc",
       "row_count": 100,
       "bytes": 3254
     },
     "fnma_position.csv": {
-      "sha256": "40346b112798c159777904be5b1d2a5441d98468408c32172850da729f626161",
+      "sha256": "a0f840bd6e69ad31f5a0bf8febdfe113682062b909fc54f614361dabb43fb53e",
       "row_count": 100,
       "bytes": 2997
     },

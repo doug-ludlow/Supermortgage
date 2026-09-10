@@ -3,6 +3,7 @@
  *   serve    HTTP API + ops console on $HOST:$PORT (the Cloud Run service)
  *   sweep    one pass over due timers and the outbox backlog, then exit (the Cloud Run job Cloud Scheduler runs every minute)
  *   migrate  apply db/migrations through db/migrate.sh, then exit (the Cloud Run job the deploy runs first)
+ *   seed-demo  board the built-in 100-loan demo transfer batch (fixtures/transfer-batch-demo), idempotent, then exit
  */
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -12,6 +13,9 @@ import { loadConfig } from "./config.ts";
 import { createLogger } from "./log.ts";
 import { Runtime } from "./app.ts";
 import { createApiServer, listen } from "./server.ts";
+import { boardTransferBatch } from "./transfers.ts";
+import { generateDemoBatch, DEMO_BATCH } from "../domain/boarding/demo-batch.ts";
+import { encodeTransferBatch } from "../domain/boarding/tape-codec.ts";
 
 const mode = process.argv[2] ?? "serve";
 const logger = createLogger(process.env["LOG_FORMAT"] === "text" ? "text" : "json");
@@ -38,7 +42,17 @@ if (mode === "sweep") {
   } catch (e) { logger.error("sweep failed", { error: e }); await db.end().catch(() => undefined); process.exit(1); }
 }
 
-if (mode !== "serve") { logger.error(`unknown mode ${mode}; use serve | sweep | migrate`); process.exit(2); }
+if (mode === "seed-demo") {
+  try {
+    const demo = generateDemoBatch();
+    const r = await boardTransferBatch(runtime, { ...DEMO_BATCH }, encodeTransferBatch(demo, demo.coborrowers), { kind: "system", id: "seed-demo" });
+    logger.info("seed-demo", { batch: r.batch_id, status: r.status, loans: r.loans, hard: r.hard, events: r.events, timers: r.timers, escalations: r.escalations });
+    await db.end();
+    process.exit(0);
+  } catch (e) { logger.error("seed-demo failed", { error: e }); await db.end().catch(() => undefined); process.exit(1); }
+}
+
+if (mode !== "serve") { logger.error(`unknown mode ${mode}; use serve | sweep | migrate | seed-demo`); process.exit(2); }
 if (!config.apiToken) logger.warn("API_TOKEN is empty: every route is open (ALLOW_INSECURE_NO_TOKEN=1)");
 const server = createApiServer({ runtime, apiToken: config.apiToken, logger });
 const port = await listen(server, config.port, config.host);

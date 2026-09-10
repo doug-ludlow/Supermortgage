@@ -9,6 +9,9 @@
  *   POST /v1/tools/{process}/{name}                 execute a global tool (no loan)
  *   GET  /v1/loans/{loanId}/events|timers|ledger    the loan's record
  *   POST /v1/sweep                                  the timer sweep, once
+ *   POST /v1/transfers/batches                      board a servicing-transfer batch  body: { actor, batch: {...}, files: { "boarding_tape.final.csv": "...", ... } }
+ *   POST /v1/transfers/batches/demo                 board the built-in 100-loan demo batch (fixtures/transfer-batch-demo)
+ *   GET  /v1/transfers/batches/{batchId}            a batch's boarding summary
  *   /, /index.html, /api/*                          the ops console (src/console) — its x-actor-id / x-actor-role headers name the human
  *
  * Every route but the two probes requires `Authorization: Bearer <API_TOKEN>` (or the cookie /login sets).
@@ -24,7 +27,11 @@ import type { Actor } from "../kernel/events/index.ts";
 import { createConsoleServer } from "../console/server.ts";
 import { PgConsoleStore } from "../console/pg-store.ts";
 import { Runtime, ToolNotFound } from "./app.ts";
+import { boardTransferBatch, type TransferBatchInput } from "./transfers.ts";
+import { generateDemoBatch, DEMO_BATCH } from "../domain/boarding/demo-batch.ts";
+import { encodeTransferBatch, type TransferBatchFiles } from "../domain/boarding/tape-codec.ts";
 import { isUuid } from "../infra/db/client.ts";
+import { plainDate } from "../kernel/calendar/date.ts";
 import type { Logger } from "./log.ts";
 
 export interface ServerOptions { readonly runtime: Runtime; readonly apiToken: string; readonly logger: Logger; readonly console?: boolean; }
@@ -33,7 +40,7 @@ const plain = (_k: string, v: unknown): unknown => (typeof v === "bigint" ? v.to
 export const toJson = (v: unknown): string => JSON.stringify(v, plain);
 const send = (res: ServerResponse, status: number, body: unknown): void => { res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }); res.end(toJson(body)); };
 
-const MAX_BODY = 4 * 1024 * 1024;
+const MAX_BODY = 64 * 1024 * 1024;   // a transfer batch of a few thousand loans is tens of MB of CSV
 async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = []; let size = 0;
   for await (const c of req) { size += (c as Buffer).length; if (size > MAX_BODY) throw new RangeError(`request body over ${MAX_BODY} bytes`); chunks.push(c as Buffer); }
@@ -56,6 +63,7 @@ function tokenOf(req: IncomingMessage): string {
   const m = /(?:^|;\s*)sm_token=([^;]+)/.exec(String(req.headers["cookie"] ?? ""));
   return m ? decodeURIComponent(m[1]!) : "";
 }
+const plainDateOf = (v: unknown) => plainDate(String(v));
 const same = (a: string, b: string): boolean => a.length === b.length && a.length > 0 && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 
 export function createApiServer(opts: ServerOptions): Server {
@@ -105,6 +113,33 @@ export function createApiServer(opts: ServerOptions): Server {
         if (m[2] === "events") done(200, { events: await runtime.uow.events.byLoan(loanId) });
         else if (m[2] === "timers") done(200, { timers: await runtime.uow.timers.open(loanId) });
         else done(200, { entry_sets: await runtime.uow.ledger.setsForLoan(loanId) });
+        return;
+      }
+      if (method === "POST" && path === "/v1/transfers/batches/demo") {
+        const b = await readJson(req);
+        const actor = b["actor"] ? actorOf(b["actor"]) : { kind: "system" as const, id: "demo-seed" };
+        const demo = generateDemoBatch();
+        const r = await boardTransferBatch(runtime, { ...DEMO_BATCH }, encodeTransferBatch(demo, demo.coborrowers), actor);
+        done(200, r, { batch: r.batch_id, status: r.status, boarded: r.loans.boarded }); return;
+      }
+      if (method === "POST" && path === "/v1/transfers/batches") {
+        const b = await readJson(req);
+        const actor = actorOf(b["actor"]);
+        const batch = b["batch"] as Record<string, unknown> | undefined; const files = b["files"] as Record<string, unknown> | undefined;
+        if (!batch || typeof batch !== "object") throw new RangeError("batch is required: { batch_id, transfer_date, transferor_name, transferor_servicer_number, partner_servicer_number, transferor_mers_org_id, partner_mers_org_id, ... }");
+        if (!files || typeof files !== "object" || typeof files["boarding_tape.final.csv"] !== "string") throw new RangeError("files must carry the tape CSV texts; boarding_tape.final.csv is required");
+        for (const k of ["batch_id", "transfer_date", "transferor_name", "transferor_servicer_number", "partner_servicer_number", "transferor_mers_org_id", "partner_mers_org_id"]) if (typeof batch[k] !== "string" || !batch[k]) throw new RangeError(`batch.${k} is required`);
+        const input: TransferBatchInput = { ...(batch as unknown as TransferBatchInput), transfer_date: plainDateOf(batch["transfer_date"]), ...(batch["respa_effective_date"] ? { respa_effective_date: plainDateOf(batch["respa_effective_date"]) } : {}), ...(batch["sale_date"] ? { sale_date: plainDateOf(batch["sale_date"]) } : {}) };
+        const empty = (): string => "";
+        const f: TransferBatchFiles = { "boarding_tape.final.csv": String(files["boarding_tape.final.csv"]), "payment_history.csv": String(files["payment_history.csv"] ?? empty()), "escrow_history.csv": String(files["escrow_history.csv"] ?? empty()), "escrow_analysis.csv": String(files["escrow_analysis.csv"] ?? empty()),
+          "lossmit_file.csv": String(files["lossmit_file.csv"] ?? empty()), "fc_bk_file.csv": String(files["fc_bk_file.csv"] ?? empty()), "consents_file.csv": String(files["consents_file.csv"] ?? empty()), "images_manifest.csv": String(files["images_manifest.csv"] ?? empty()), "trial_balance.csv": String(files["trial_balance.csv"] ?? empty()),
+          "fnma_position.csv": String(files["fnma_position.csv"] ?? empty()), "mers_lookup.csv": String(files["mers_lookup.csv"] ?? empty()), "fair_lending.csv": String(files["fair_lending.csv"] ?? empty()) };
+        const r = await boardTransferBatch(runtime, input, f, actor);
+        done(200, r, { batch: r.batch_id, status: r.status, boarded: r.loans.boarded }); return;
+      }
+      if (method === "GET" && (m = /^\/v1\/transfers\/batches\/([^/]+)$/.exec(path))) {
+        const rec = await runtime.entities.current("transfer_batches", decodeURIComponent(m[1]!));
+        if (!rec) done(404, { error: "no_such_batch" }); else done(200, rec.data);
         return;
       }
       if (method === "POST" && path === "/v1/sweep") { const report = await runtime.sweep(); done(200, report, { due: report.due, breaches: report.breaches.length }); return; }

@@ -1,6 +1,6 @@
 /**
  * A deterministic 100-loan servicing-transfer batch for demos and boarding
- * tests: what a transferor would deliver under 1.1 for an October 1, 2026
+ * tests: what a transferor would deliver under 1.1 for a September 1, 2026
  * transfer, with the portfolio shape of a real Fannie Mae book (vintages,
  * rates, ARMs, escrow, MI, delinquency, bankruptcy, foreclosure, loss
  * mitigation, SCRA, deferred balances, eNotes) and a designed set of data
@@ -25,10 +25,10 @@ import type { StagedLoan, FnmaPosition, MersRecord, Installment, HistoricalPayme
 import type { TransferBatchData, ImageRow, FairLendingRow } from "./tape-codec.ts";
 
 export const DEMO_BATCH = {
-  batch_id: "B-DEMO-2026-10",
-  transfer_date: D("2026-10-01"),
-  respa_effective_date: D("2026-10-01"),
-  sale_date: D("2026-09-01"),
+  batch_id: "B-DEMO-2026-09",
+  transfer_date: D("2026-09-01"),
+  respa_effective_date: D("2026-09-01"),
+  sale_date: D("2026-08-01"),
   transferor_name: "Northline Mortgage Servicing LLC",
   transferor_servicer_number: "123456789",
   partner_servicer_number: "987654321",
@@ -87,16 +87,19 @@ const MI_SEQS = new Set([4, 11, 17, 25, 29, 38, 54, 63]);
 const DELINQUENT_30 = new Set([20, 31, 44, 53, 62, 71, 79, 86, 90, 100]);
 const DELINQUENT_60 = new Set([22, 36, 64, 88, 93]);
 const DELINQUENT_90 = new Map<number, number>([[91, 5], [92, 4], [95, 3]]);   // months unpaid
-const BK = new Map<number, { chapter: string; case_number: string; filed_on: PlainDate }>([[88, { chapter: "13", case_number: "26-31882", filed_on: D("2026-04-14") }], [89, { chapter: "7", case_number: "26-40217", filed_on: D("2026-07-02") }]]);
-const FC = new Map<number, { referral_date: PlainDate; attorney: string }>([[91, { referral_date: D("2026-05-15"), attorney: "Hallmark & Reyes LLP" }], [92, { referral_date: D("2026-06-22"), attorney: "Carver Default Services" }]]);
-const LOSSMIT = new Map<number, { application_status: string; received_on: PlainDate | null }>([[42, { application_status: "incomplete", received_on: null }], [95, { application_status: "complete_under_review", received_on: D("2026-08-19") }], [96, { application_status: "trial_period_plan", received_on: D("2026-05-03") }]]);
+const BK = new Map<number, { chapter: string; case_number: string; filed_on: PlainDate }>([[88, { chapter: "13", case_number: "26-31882", filed_on: D("2026-03-14") }], [89, { chapter: "7", case_number: "26-40217", filed_on: D("2026-06-02") }]]);
+const FC = new Map<number, { referral_date: PlainDate; attorney: string }>([[91, { referral_date: D("2026-04-15"), attorney: "Hallmark & Reyes LLP" }], [92, { referral_date: D("2026-05-22"), attorney: "Carver Default Services" }]]);
+const LOSSMIT = new Map<number, { application_status: string; received_on: PlainDate | null }>([[42, { application_status: "incomplete", received_on: null }], [95, { application_status: "complete_under_review", received_on: D("2026-07-19") }], [96, { application_status: "trial_period_plan", received_on: D("2026-04-03") }]]);
 const NIB = new Map<number, { deferred: string; forborne: string }>([[40, { deferred: "18450.00", forborne: "0" }], [41, { deferred: "9120.55", forborne: "0" }], [43, { deferred: "0", forborne: "22300.00" }]]);
 const ENOTE = new Set([98, 99]);
 const UNREGISTERED_MIN = new Set([5, 6]);
 const NON_MERS = new Set([15]);
 const SII = new Map<number, boolean>([[45, false], [46, true], [47, true]]);   // present → complete?
 
-export function generateDemoBatch(seed: number = DEMO_BATCH.seed): DemoBatch {
+/** Identifier numbering, so several copies of the batch can coexist on one platform (HF-017): loan-number prefix, Fannie Mae number base, MIN sequence base. */
+export interface DemoNumbering { readonly prefix?: string; readonly fnma_base?: number; readonly min_sequence_base?: number; }
+
+export function generateDemoBatch(seed: number = DEMO_BATCH.seed, numbering: DemoNumbering = {}): DemoBatch {
   const rng = new Rng(seed);
   const T = DEMO_BATCH.transfer_date;
   const loans: StagedLoan[] = []; const fnma: FnmaPosition[] = []; const mers: MersRecord[] = []; const trialBalance: TransferBatchData["trialBalance"][number][] = [];
@@ -105,8 +108,8 @@ export function generateDemoBatch(seed: number = DEMO_BATCH.seed): DemoBatch {
   const flag = (m: Map<string, string[]>, n: string, code: string): void => { const a = m.get(n); if (a) a.push(code); else m.set(n, [code]); };
 
   for (let seq = 1; seq <= DEMO_BATCH.loan_count; seq++) {
-    const n = `TR-${String(seq).padStart(7, "0")}`;
-    const fnmaNo = String(4_100_000_000 + seq * 7);
+    const n = `${numbering.prefix ?? "TR"}-${String(seq).padStart(7, "0")}`;
+    const fnmaNo = String((numbering.fnma_base ?? 4_100_000_000) + seq * 7);
     // vintage and terms
     const origYear = [8, 57].includes(seq) ? 2024 : rng.int(2015, 2025); const origMonth = origYear === 2025 ? rng.int(1, 6) : rng.int(1, 12);
     const origination = D(`${origYear}-${String(origMonth).padStart(2, "0")}-${String(rng.int(2, 27)).padStart(2, "0")}`);
@@ -155,7 +158,7 @@ export function generateDemoBatch(seed: number = DEMO_BATCH.seed): DemoBatch {
     const [city, zip] = rng.pick(CITIES[state]!);
     const language = [12, 27, 68].includes(seq) ? null : rng.chance(0.06) ? "es" : "en";
     const noContact = seq === 3 || seq === 66;
-    const min = NON_MERS.has(seq) || UNREGISTERED_MIN.has(seq) ? null : makeMin(TRANSFEROR_ORG, String(seq));
+    const min = NON_MERS.has(seq) || UNREGISTERED_MIN.has(seq) ? null : makeMin(TRANSFEROR_ORG, String((numbering.min_sequence_base ?? 0) + seq));
     const badMin = seq === 13 && min ? min.slice(0, 17) + String((Number(min[17]) + 1) % 10) : null;
     const bk = BK.get(seq); const fc = FC.get(seq); const lm = LOSSMIT.get(seq); const nib = NIB.get(seq); const sii = SII.get(seq);
     const loan: StagedLoan = {
@@ -166,7 +169,7 @@ export function generateDemoBatch(seed: number = DEMO_BATCH.seed): DemoBatch {
       interest_method: rng.chance(0.9) ? "30_360" : "actual_365", amortization: isArm ? "arm" : "fixed",
       ...(isArm ? { arm: { index: "SOFR_30D_AVG", margin_bps: seq === 21 ? null : rng.pick([275, 300]), initial_cap_bps: rng.pick([200, 500]), periodic_cap_bps: 100, lifetime_cap_bps: 500, lookback_days: 45, next_change_date: D(`${rng.int(2027, 2029)}-${String(rng.int(1, 12)).padStart(2, "0")}-01`) } } : {}),
       escrowed, escrow_balance_cents: escrowBalance, escrow_lines: lines, escrow_sign_consistent: seq !== 58,
-      last_escrow_analysis_date: !escrowed ? null : [50, 51, 52].includes(seq) ? D("2025-06-01") : addDays(T, -rng.int(30, 330)),
+      last_escrow_analysis_date: !escrowed ? null : [50, 51, 52].includes(seq) ? addMonths(T, -15) : addDays(T, -rng.int(30, 330)),
       late_charge_pct: rng.pick(["4", "5", "5", "5"]), late_charge_grace_days: 15,
       deferred_principal_cents: nib ? cents(nib.deferred) : 0n, forborne_principal_cents: nib ? cents(nib.forborne) : 0n, nib_separated: true,
       bankruptcy: bk ? { active: true, ...bk } : { active: false },
@@ -177,7 +180,7 @@ export function generateDemoBatch(seed: number = DEMO_BATCH.seed): DemoBatch {
       property: { address_line1: `${rng.int(100, 9899)} ${rng.pick(STREETS)}`, city, state, postal_code: zip, occupancy: rng.chance(0.88) ? "owner_occupied" : rng.chance(0.5) ? "second_home" : "investment" },
       custody: ENOTE.has(seq) ? { enote_evault_ref: `EV-${String(seq).padStart(6, "0")}` } : { custodian: "Bank Custodian NA", certification_status: rng.chance(0.93) ? "certified" : "pending" },
       consents: { esign_evidence: !rng.chance(0.1), tcpa_voice_evidence: !rng.chance(0.15) },
-      tax_parcel_verified: seq !== 9, hazard_policy_expires: [18, 77].includes(seq) ? D("2026-10-15") : addDays(T, rng.int(45, 360)),
+      tax_parcel_verified: seq !== 9, hazard_policy_expires: [18, 77].includes(seq) ? addDays(T, 14) : addDays(T, rng.int(45, 360)),
       mi: MI_SEQS.has(seq) ? { flag: true, ...(seq === 25 ? {} : { certificate_number: `MI-${rng.int(100000, 999999)}` }) } : { flag: false },
       flood_determination_life_of_loan: seq !== 30,
       sii: sii === undefined ? { present: false, complete: true } : { present: true, complete: sii },

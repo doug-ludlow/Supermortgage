@@ -322,3 +322,91 @@ resource "google_cloud_run_v2_job" "sweep" {
     google_project_iam_member.runtime_roles,
   ]
 }
+
+# ---------------------------------------------------------------------------
+# Job: `seed-demo` — board the built-in 100-loan demo transfer batch (idempotent); run on demand
+# ---------------------------------------------------------------------------
+resource "google_cloud_run_v2_job" "seed_demo" {
+  name     = "supermortgage-seed-demo"
+  location = var.region
+
+  deletion_protection = false
+
+  template {
+    task_count = 1
+
+    template {
+      service_account = google_service_account.runtime.email
+      timeout         = "900s"
+      max_retries     = 0
+
+      containers {
+        image = var.image
+        args  = ["seed-demo"]
+
+        dynamic "env" {
+          for_each = local.common_env
+          content {
+            name  = env.key
+            value = env.value
+          }
+        }
+
+        env {
+          name = "DATABASE_URL"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.database_url.secret_id
+              version = "latest"
+            }
+          }
+        }
+
+        env {
+          name = "API_TOKEN"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.api_token.secret_id
+              version = "latest"
+            }
+          }
+        }
+
+        resources {
+          limits = {
+            cpu    = "1"
+            memory = "1Gi"
+          }
+        }
+
+        volume_mounts {
+          name       = local.cloudsql_volume
+          mount_path = local.cloudsql_mount
+        }
+      }
+
+      volumes {
+        name = local.cloudsql_volume
+        cloud_sql_instance {
+          instances = [google_sql_database_instance.main.connection_name]
+        }
+      }
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      template[0].template[0].containers[0].image,
+      client,
+      client_version,
+    ]
+  }
+
+  depends_on = [
+    google_secret_manager_secret_iam_member.runtime_database_url,
+    google_secret_manager_secret_iam_member.runtime_api_token,
+    google_secret_manager_secret_version.database_url,
+    google_secret_manager_secret_version.api_token,
+    google_project_iam_member.runtime_roles,
+  ]
+}

@@ -181,6 +181,23 @@ gcloud run jobs executions list --job supermortgage-sweep --region us-central1 -
 gcloud sql connect supermortgage-nonprod --user sm --database supermortgage --project supermortgage-nonprod
 ```
 
+## Loading the demo portfolio
+
+The console is empty until loans are boarded. The repo carries a 100-loan synthetic
+servicing-transfer batch (`fixtures/transfer-batch-demo/`, September 1, 2026 transfer date)
+that the runtime can board end to end through the 1.1 data-quality gate: 94 loans board,
+6 stop as exceptions with an escalation each, and every timer boarding arms is live for the
+sweep. Three ways to run it, all idempotent (a second run changes nothing):
+
+- Actions → deploy → Run workflow → tick **seed_demo**.
+- Cloud Shell: `gcloud run jobs execute supermortgage-seed-demo --region us-central1 --project supermortgage-nonprod --wait`
+- The API: `curl -X POST -H "Authorization: Bearer $TOKEN" https://demo.supermortgage.com/v1/transfers/batches/demo`
+
+Your own batch goes to `POST /v1/transfers/batches` with `{ actor, batch, files }`, where
+`files` carries the tape CSV texts in the layout documented in
+`fixtures/transfer-batch-demo/LAYOUT.md`; `GET /v1/transfers/batches/<batch_id>` returns the
+scorecard afterwards.
+
 ## 7. What is and is not real in nonprod
 
 - **`INTEGRATIONS=fake`.** Every vendor integration (lockbox/BAI2, e-OSCAR,

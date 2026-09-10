@@ -16,6 +16,11 @@ on:
         required: true
         default: nonprod
         type: string
+      seed_demo:
+        description: After deploying, board the 100-loan demo transfer batch (idempotent)
+        required: false
+        default: false
+        type: boolean
   push:
     branches:
       - main
@@ -219,6 +224,14 @@ jobs:
             --project "${{ vars.GCP_PROJECT_ID }}" \
             --quiet
 
+      - name: Point the seed-demo job at the new image
+        run: |
+          gcloud run jobs update supermortgage-seed-demo \
+            --image "${{ needs.build.outputs.image }}" \
+            --region "${{ vars.GCP_REGION }}" \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --quiet
+
       - name: Deploy the API service
         run: |
           gcloud run deploy supermortgage-api \
@@ -254,6 +267,14 @@ jobs:
             "https://${API_HOSTNAME}/healthz"
           echo
           echo "healthz OK via ${LB_IP}"
+
+      - name: Board the demo transfer batch (workflow_dispatch with seed_demo)
+        if: github.event.inputs.seed_demo == 'true'
+        run: |
+          gcloud run jobs execute supermortgage-seed-demo \
+            --region "${{ vars.GCP_REGION }}" \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --wait
 
       - name: Job summary (DNS records to enter at GoDaddy)
         env:

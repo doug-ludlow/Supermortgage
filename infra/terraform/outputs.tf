@@ -73,3 +73,8 @@ output "godaddy_dns_records" {
     }
   ]
 }
+
+output "seed_demo_job" {
+  description = "Cloud Run job that boards the 100-loan demo transfer batch (idempotent): gcloud run jobs execute supermortgage-seed-demo --region <region> --wait"
+  value       = google_cloud_run_v2_job.seed_demo.name
+}

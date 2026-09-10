@@ -60,7 +60,7 @@ test("the tape files round-trip: encode → CSV → decode reproduces every loan
 });
 
 test("through the 1.1 gate: exactly the designed hard failures, the designed warnings, and every other loan boards on the transfer date", () => {
-  const h = boardingHarness("2026-10-01T09:00:00.000Z", DEMO_BATCH.transfer_date);
+  const h = boardingHarness(`${DEMO_BATCH.transfer_date}T09:00:00.000Z`, DEMO_BATCH.transfer_date);
   const decoded = decodeTransferBatch(files);
   for (const p of decoded.fnma) h.ext.fnmaRows.set(p.fnma_loan_number, p);
   for (const t of decoded.trialBalance) h.ext.tb.set(t.transferor_loan_number, t.upb_cents);
@@ -94,7 +94,7 @@ test("through the 1.1 gate: exactly the designed hard failures, the designed war
   // boarding derives delinquency from the history, never from a tape code (1.1-T5 rule): the 30/60/90 loans carry their FDCPA flag
   const boarded = r.boarded.map((bl) => bl.staged.transferor_loan_number);
   const flagged = r.boarded.filter((bl) => (bl.regx_days_delinquent_at_boarding ?? 0) > 0);
-  assert.equal(flagged.length, boarded.filter((n) => byNumber.get(n)!.staged.next_due_date! < D("2026-10-01")).length);
+  assert.equal(flagged.length, boarded.filter((n) => byNumber.get(n)!.staged.next_due_date! < DEMO_BATCH.transfer_date).length);
   assert.ok(flagged.some((bl) => bl.fnma_delinquency_status_at_boarding && bl.fnma_delinquency_status_at_boarding !== "current"));
 });
 

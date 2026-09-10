@@ -20,6 +20,12 @@ import { SECTION_10_VERSIONS } from "./authored/section10.ts";
 import { SECTION_11_VERSIONS } from "./authored/section11.ts";
 import { SECTION_12_VERSIONS } from "./authored/section12.ts";
 import { SECTION_13_VERSIONS } from "./authored/section13.ts";
+import { SECTION_14_VERSIONS, SECTION_14_OVERRIDES } from "./authored/section14.ts";
+import { SECTION_15_VERSIONS, SECTION_15_OVERRIDES } from "./authored/section15.ts";
+import { SECTION_16_VERSIONS, SECTION_16_OVERRIDES } from "./authored/section16.ts";
+import { SECTION_17_VERSIONS, SECTION_17_OVERRIDES } from "./authored/section17.ts";
+import { SECTION_18_VERSIONS, SECTION_18_OVERRIDES } from "./authored/section18.ts";
+import { SECTION_19_VERSIONS, SECTION_19_OVERRIDES } from "./authored/section19.ts";
 
 interface CatalogEntry { readonly code: string; readonly owner_process: string; readonly mentions: readonly string[]; readonly context: string; }
 
@@ -56,6 +62,12 @@ function defaultsFor(code: string, owner: string): Pick<NoticeTemplate, "noticeC
 }
 
 const OVERRIDES: Record<string, Partial<NoticeTemplate>> = {
+  ...SECTION_14_OVERRIDES,
+  ...SECTION_15_OVERRIDES,
+  ...SECTION_16_OVERRIDES,
+  ...SECTION_17_OVERRIDES,
+  ...SECTION_18_OVERRIDES,
+  ...SECTION_19_OVERRIDES,
   NTC_REGZ_20D_ARM_INITIAL: { separateDocument: true, mayCombineWith: ["NTC_REGZ_41_STMT_STD", "NTC_REGZ_41_STMT_DELQ"], citation: "12 CFR 1026.20(d); H-4(D)(3)/(4)" },
   NTC_REGZ_20C_ARM_ADJ: { citation: "12 CFR 1026.20(c); H-4(D)(1)/(2)" },
   NTC_REGX_39B_EARLY_INTERVENTION: { mayCombineWith: ["NTC_FNMA_D2_2_05_BSP_FORM745"], citation: "12 CFR 1024.39(b); Appendix MS-4(A)" },
@@ -269,4 +281,10 @@ export const AUTHORED_VERSIONS: readonly VersionInput[] = [
   ...SECTION_11_VERSIONS,
   ...SECTION_12_VERSIONS,
   ...SECTION_13_VERSIONS,
+  ...SECTION_14_VERSIONS,
+  ...SECTION_15_VERSIONS,
+  ...SECTION_16_VERSIONS,
+  ...SECTION_17_VERSIONS,
+  ...SECTION_18_VERSIONS,
+  ...SECTION_19_VERSIONS,
 ];

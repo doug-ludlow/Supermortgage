@@ -8,24 +8,15 @@
  * assert them at the boundary; the timer engine records the ref on the
  * armed instance; tests prove every ref the overrides name is registered.
  */
-import { daysBetween, addDays, addYears, type PlainDate } from "../kernel/calendar/date.ts";
 
-export interface GateResult { readonly open: boolean; readonly reason?: string; }
-export type Facts = Record<string, unknown>;
-export type Evaluator = (f: Facts) => GateResult;
-
-const ok: GateResult = { open: true };
-const no = (reason: string): GateResult => ({ open: false, reason });
-const b = (f: Facts, k: string): boolean => f[k] === true;
-const n = (f: Facts, k: string): number => Number(f[k] ?? NaN);
-const c = (f: Facts, k: string): bigint => (typeof f[k] === "bigint" ? (f[k] as bigint) : BigInt(String(f[k] ?? "0")));
-const s = (f: Facts, k: string): string => String(f[k] ?? "");
-const arr = <T>(f: Facts, k: string): T[] => (Array.isArray(f[k]) ? (f[k] as T[]) : []);
-const every = (f: Facts, keys: readonly string[], what: string): GateResult => { const missing = keys.filter((k) => !b(f, k)); return missing.length ? no(`${what}: ${missing.join(", ")} not satisfied`) : ok; };
-const atMost = (v: number, max: number, what: string): GateResult => (v <= max ? ok : no(`${what}: ${v} > ${max}`));
-const atLeast = (v: number, min: number, what: string): GateResult => (v >= min ? ok : no(`${what}: ${v} < ${min}`));
-/** Trailing-window counter: timestamps (ISO) within `days` before `now`. */
-const within = (f: Facts, k: string, days: number, now: string): number => arr<string>(f, k).filter((t) => Date.parse(now) - Date.parse(t) < days * 86_400_000 && Date.parse(t) <= Date.parse(now)).length;
+import { ok, no, b, n, c, s, arr, every, atMost, atLeast, within, daysBetween, addDays, addYears, type PlainDate, type GateResult, type Facts, type Evaluator } from "./evaluator-kit.ts";
+export type { GateResult, Facts, Evaluator };
+import { SECTION_14_EVALUATORS } from "../domain/bankruptcy/evaluators.ts";
+import { SECTION_15_EVALUATORS } from "../domain/reo/evaluators.ts";
+import { SECTION_16_EVALUATORS } from "../domain/payoff/evaluators.ts";
+import { SECTION_17_EVALUATORS } from "../domain/transfers/evaluators.ts";
+import { SECTION_18_EVALUATORS } from "../domain/qc-audit/evaluators.ts";
+import { SECTION_19_EVALUATORS } from "../domain/data-security/evaluators.ts";
 
 export const EVALUATORS: Record<string, Evaluator> = {
   // ---- §1 transfers in
@@ -164,6 +155,8 @@ export const EVALUATORS: Record<string, Evaluator> = {
   "13.7.fannieMaePriorWrittenApproval": (f) => (s(f, "fnma_written_approval_document_id") ? ok : no("removal/appeal needs Fannie Mae prior written approval (E-1.3-01)")),
   "13.8.affidavitOnFreshCertificates": (f) => (n(f, "certificate_age_days") <= 30 && s(f, "executed_by_role") === "signing_officer" && b(f, "filed") ? ok : no("SCRA affidavit needs ≤30-day certificates, a signing_officer execution and filing")),
   // ---- §14–§19
+  "14.2.noB4MotionBeforeDueDate": (f) => (b(f, "b4_motion_docketed") ? no(`Rule 3002.1(b)(4) motion docketed ${s(f, "b4_motion_docketed_on")}: hold the payment at the old amount until the court's order`) : ok),
+  "14.4.reaffirmationFinal": (f) => { const filed = s(f, "reaffirmation_filed_on"), disc = s(f, "discharge_on"); if (!filed) return no("no reaffirmation filed"); const a = addDays(filed as PlainDate, 60), d = disc ? addDays(disc as PlainDate, 60) : a; const fin = a > d ? a : d; return s(f, "today") > fin && !b(f, "rescinded") ? ok : no(`reaffirmation not final until ${fin} (§524(c)(4): later of 60 days after filing or discharge)`); },
   "14.2.rule3002_1NoticesCeaseAfterRelief": (f) => (b(f, "relief_order_entered") && b(f, "rule_3002_1_notices_scheduled") ? no("Rule 3002.1 notices must cease after relief from stay") : ok),
   "15.2.refundCreditLinePresent": (f) => (b(f, "hazard_refund_expected") && !(b(f, "credit_line_present") || b(f, "refusal_comment_present")) ? no("final claim must credit the hazard refund or carry a refusal comment (E-4.4-02)") : ok),
   "15.3.premiumPaidThroughLiquidationMonth": (f) => (s(f, "premium_paid_through") >= s(f, "liquidation_month") ? ok : no("MI premium not paid through the liquidation month")),
@@ -180,6 +173,8 @@ export const EVALUATORS: Record<string, Evaluator> = {
   "19.3.evalSuitePassedAndInventoryUpdated": (f) => every(f, ["eval_suite_passed", "inventory_updated"], "AI system deploy gate"),
   "19.4.allFourBiasTestsPass": (f) => { const missing = ["disparate_treatment", "disparate_impact", "proxy", "outcome_parity"].filter((k) => !arr<string>(f, "passed_tests").includes(k)); return missing.length ? no(`bias tests not passed: ${missing.join(", ")}`) : ok; },
   "19.4.fairLendingRowPresent": (f) => (["validated", "not_obtained"].includes(s(f, "fl_row_status")) && (s(f, "fl_row_status") !== "not_obtained" || s(f, "not_obtained_evidence_id")) ? ok : no("FL row must be validated, or not_obtained with evidence, for note_date ≥ 2023-03-01")),
+  // ---- per-section maps (§14–§19 build their gates in src/domain/<section>/evaluators.ts)
+  ...SECTION_14_EVALUATORS, ...SECTION_15_EVALUATORS, ...SECTION_16_EVALUATORS, ...SECTION_17_EVALUATORS, ...SECTION_18_EVALUATORS, ...SECTION_19_EVALUATORS,
 };
 
 export class UnknownEvaluator extends Error { constructor(ref: string) { super(`no evaluator registered for ${ref}`); this.name = "UnknownEvaluator"; } }

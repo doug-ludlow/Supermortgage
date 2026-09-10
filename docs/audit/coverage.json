@@ -1,5 +1,5 @@
 {
- "brief": "spec units built 2490/4597 (54.2%): tids 802/1253, tables 434/449, timers 789/1365, notices 29/248, tools 154/658, figures 282/624; processes at 100%: 18/114",
+ "brief": "spec units built 2501/4597 (54.4%): tids 802/1253, tables 434/449, timers 789/1365, notices 29/248, tools 154/658, figures 293/624; processes at 100%: 23/114",
  "totals": {
   "tids": {
    "spec": 1253,
@@ -23,11 +23,11 @@
   },
   "figures": {
    "spec": 624,
-   "built": 282
+   "built": 293
   },
   "units": {
    "spec": 4597,
-   "built": 2490
+   "built": 2501
   }
  },
  "sections": {
@@ -45,9 +45,9 @@
   },
   "3": {
    "spec": 334,
-   "built": 323,
+   "built": 334,
    "processes": 9,
-   "done": 4
+   "done": 9
   },
   "4": {
    "spec": 205,
@@ -162,8 +162,13 @@
   "2.6",
   "2.7",
   "3.1",
+  "3.2",
+  "3.3",
   "3.4",
   "3.5",
+  "3.6",
+  "3.7",
+  "3.8",
   "3.9"
  ],
  "processes": [
@@ -814,20 +819,14 @@
    },
    "figures": {
     "spec": 34,
-    "built": 29,
-    "missing": [
-     "$1,250.00",
-     "$1,560.00",
-     "$360.00",
-     "$380.00",
-     "$570.00"
-    ]
+    "built": 34,
+    "missing": []
    },
    "units": {
     "spec": 65,
-    "built": 60
+    "built": 65
    },
-   "pct": 92.3
+   "pct": 100.0
   },
   {
    "process": "3.3",
@@ -861,18 +860,14 @@
    },
    "figures": {
     "spec": 15,
-    "built": 12,
-    "missing": [
-     "$1,560.00",
-     "$1,900.00",
-     "$360.00"
-    ]
+    "built": 15,
+    "missing": []
    },
    "units": {
     "spec": 45,
-    "built": 42
+    "built": 45
    },
-   "pct": 93.3
+   "pct": 100.0
   },
   {
    "process": "3.4",
@@ -988,16 +983,14 @@
    },
    "figures": {
     "spec": 16,
-    "built": 15,
-    "missing": [
-     "$2,400.00"
-    ]
+    "built": 16,
+    "missing": []
    },
    "units": {
     "spec": 37,
-    "built": 36
+    "built": 37
    },
-   "pct": 97.3
+   "pct": 100.0
   },
   {
    "process": "3.7",
@@ -1031,16 +1024,14 @@
    },
    "figures": {
     "spec": 7,
-    "built": 6,
-    "missing": [
-     "$15.20"
-    ]
+    "built": 7,
+    "missing": []
    },
    "units": {
     "spec": 46,
-    "built": 45
+    "built": 46
    },
-   "pct": 97.8
+   "pct": 100.0
   },
   {
    "process": "3.8",
@@ -1074,16 +1065,14 @@
    },
    "figures": {
     "spec": 3,
-    "built": 2,
-    "missing": [
-     "$240,000.00"
-    ]
+    "built": 3,
+    "missing": []
    },
    "units": {
     "spec": 32,
-    "built": 31
+    "built": 32
    },
-   "pct": 96.9
+   "pct": 100.0
   },
   {
    "process": "3.9",
@@ -1132,7 +1121,7 @@
    "tids": {
     "spec": 16,
     "built": 7,
-    "todo": 9,
+    "todo": 0,
     "missing": [
      5,
      7,
@@ -1211,7 +1200,7 @@
    "tids": {
     "spec": 13,
     "built": 6,
-    "todo": 7,
+    "todo": 0,
     "missing": [
      5,
      7,
@@ -1274,7 +1263,7 @@
    "tids": {
     "spec": 12,
     "built": 5,
-    "todo": 7,
+    "todo": 0,
     "missing": [
      2,
      4,
@@ -1346,7 +1335,7 @@
    "tids": {
     "spec": 12,
     "built": 5,
-    "todo": 7,
+    "todo": 0,
     "missing": [
      6,
      7,
@@ -1406,7 +1395,7 @@
    "tids": {
     "spec": 12,
     "built": 6,
-    "todo": 6,
+    "todo": 0,
     "missing": [
      5,
      7,
@@ -1471,7 +1460,7 @@
    "tids": {
     "spec": 12,
     "built": 6,
-    "todo": 6,
+    "todo": 0,
     "missing": [
      4,
      5,
@@ -1536,7 +1525,7 @@
    "tids": {
     "spec": 12,
     "built": 11,
-    "todo": 1,
+    "todo": 0,
     "missing": [
      8
     ]
@@ -1624,7 +1613,7 @@
    "tids": {
     "spec": 10,
     "built": 4,
-    "todo": 6,
+    "todo": 0,
     "missing": [
      2,
      6,
@@ -1692,7 +1681,7 @@
    "tids": {
     "spec": 8,
     "built": 3,
-    "todo": 5,
+    "todo": 0,
     "missing": [
      4,
      5,
@@ -1764,7 +1753,7 @@
    "tids": {
     "spec": 6,
     "built": 0,
-    "todo": 6,
+    "todo": 0,
     "missing": [
      1,
      2,
@@ -1824,7 +1813,7 @@
    "tids": {
     "spec": 7,
     "built": 4,
-    "todo": 3,
+    "todo": 0,
     "missing": [
      4,
      5,
@@ -1886,7 +1875,7 @@
    "tids": {
     "spec": 8,
     "built": 5,
-    "todo": 3,
+    "todo": 0,
     "missing": [
      5,
      6,
@@ -1952,7 +1941,7 @@
    "tids": {
     "spec": 8,
     "built": 7,
-    "todo": 1,
+    "todo": 0,
     "missing": [
      7
     ]
@@ -2007,7 +1996,7 @@
    "tids": {
     "spec": 6,
     "built": 4,
-    "todo": 2,
+    "todo": 0,
     "missing": [
      4,
      6
@@ -2057,7 +2046,7 @@
    "tids": {
     "spec": 14,
     "built": 7,
-    "todo": 7,
+    "todo": 0,
     "missing": [
      3,
      5,
@@ -2128,7 +2117,7 @@
    "tids": {
     "spec": 8,
     "built": 6,
-    "todo": 2,
+    "todo": 0,
     "missing": [
      7,
      8
@@ -2175,7 +2164,7 @@
    "tids": {
     "spec": 10,
     "built": 4,
-    "todo": 6,
+    "todo": 0,
     "missing": [
      1,
      2,
@@ -2242,7 +2231,7 @@
    "tids": {
     "spec": 15,
     "built": 5,
-    "todo": 10,
+    "todo": 0,
     "missing": [
      4,
      5,
@@ -2319,7 +2308,7 @@
    "tids": {
     "spec": 14,
     "built": 7,
-    "todo": 7,
+    "todo": 0,
     "missing": [
      8,
      9,
@@ -2388,7 +2377,7 @@
    "tids": {
     "spec": 9,
     "built": 3,
-    "todo": 6,
+    "todo": 0,
     "missing": [
      3,
      4,
@@ -2441,7 +2430,7 @@
    "tids": {
     "spec": 11,
     "built": 8,
-    "todo": 3,
+    "todo": 0,
     "missing": [
      7,
      8,
@@ -2497,7 +2486,7 @@
    "tids": {
     "spec": 9,
     "built": 5,
-    "todo": 4,
+    "todo": 0,
     "missing": [
      6,
      7,
@@ -2549,7 +2538,7 @@
    "tids": {
     "spec": 11,
     "built": 6,
-    "todo": 5,
+    "todo": 0,
     "missing": [
      2,
      5,
@@ -2607,7 +2596,7 @@
    "tids": {
     "spec": 19,
     "built": 16,
-    "todo": 3,
+    "todo": 0,
     "missing": [
      12,
      17,
@@ -2671,7 +2660,7 @@
    "tids": {
     "spec": 14,
     "built": 11,
-    "todo": 3,
+    "todo": 0,
     "missing": [
      10,
      13,
@@ -2733,7 +2722,7 @@
    "tids": {
     "spec": 14,
     "built": 13,
-    "todo": 1,
+    "todo": 0,
     "missing": [
      11
     ]
@@ -2807,7 +2796,7 @@
    "tids": {
     "spec": 10,
     "built": 9,
-    "todo": 1,
+    "todo": 0,
     "missing": [
      10
     ]
@@ -2867,7 +2856,7 @@
    "tids": {
     "spec": 11,
     "built": 6,
-    "todo": 5,
+    "todo": 0,
     "missing": [
      5,
      6,
@@ -3032,7 +3021,7 @@
    "tids": {
     "spec": 7,
     "built": 6,
-    "todo": 1,
+    "todo": 0,
     "missing": [
      3
     ]
@@ -3098,7 +3087,7 @@
    "tids": {
     "spec": 9,
     "built": 6,
-    "todo": 3,
+    "todo": 0,
     "missing": [
      6,
      7,
@@ -3164,7 +3153,7 @@
    "tids": {
     "spec": 10,
     "built": 9,
-    "todo": 1,
+    "todo": 0,
     "missing": [
      10
     ]
@@ -3247,7 +3236,7 @@
    "tids": {
     "spec": 9,
     "built": 7,
-    "todo": 2,
+    "todo": 0,
     "missing": [
      3,
      5
@@ -3311,7 +3300,7 @@
    "tids": {
     "spec": 11,
     "built": 7,
-    "todo": 4,
+    "todo": 0,
     "missing": [
      7,
      9,
@@ -3378,7 +3367,7 @@
    "tids": {
     "spec": 12,
     "built": 9,
-    "todo": 3,
+    "todo": 0,
     "missing": [
      3,
      7,
@@ -3445,7 +3434,7 @@
    "tids": {
     "spec": 11,
     "built": 4,
-    "todo": 7,
+    "todo": 0,
     "missing": [
      1,
      2,
@@ -3513,7 +3502,7 @@
    "tids": {
     "spec": 7,
     "built": 6,
-    "todo": 1,
+    "todo": 0,
     "missing": [
      7
     ]
@@ -3558,7 +3547,7 @@
    "tids": {
     "spec": 9,
     "built": 2,
-    "todo": 7,
+    "todo": 0,
     "missing": [
      2,
      3,
@@ -3623,7 +3612,7 @@
    "tids": {
     "spec": 10,
     "built": 7,
-    "todo": 3,
+    "todo": 0,
     "missing": [
      4,
      9,
@@ -3688,7 +3677,7 @@
    "tids": {
     "spec": 10,
     "built": 8,
-    "todo": 2,
+    "todo": 0,
     "missing": [
      6,
      10
@@ -3746,7 +3735,7 @@
    "tids": {
     "spec": 24,
     "built": 6,
-    "todo": 18,
+    "todo": 0,
     "missing": [
      5,
      8,
@@ -3830,7 +3819,7 @@
    "tids": {
     "spec": 15,
     "built": 8,
-    "todo": 7,
+    "todo": 0,
     "missing": [
      9,
      10,
@@ -3904,7 +3893,7 @@
    "tids": {
     "spec": 14,
     "built": 6,
-    "todo": 8,
+    "todo": 0,
     "missing": [
      5,
      6,
@@ -3983,7 +3972,7 @@
    "tids": {
     "spec": 16,
     "built": 3,
-    "todo": 13,
+    "todo": 0,
     "missing": [
      4,
      5,
@@ -4054,7 +4043,7 @@
    "tids": {
     "spec": 14,
     "built": 6,
-    "todo": 8,
+    "todo": 0,
     "missing": [
      7,
      8,
@@ -4126,7 +4115,7 @@
    "tids": {
     "spec": 12,
     "built": 6,
-    "todo": 6,
+    "todo": 0,
     "missing": [
      4,
      8,
@@ -4205,7 +4194,7 @@
    "tids": {
     "spec": 13,
     "built": 5,
-    "todo": 8,
+    "todo": 0,
     "missing": [
      3,
      5,
@@ -4282,7 +4271,7 @@
    "tids": {
     "spec": 10,
     "built": 5,
-    "todo": 5,
+    "todo": 0,
     "missing": [
      2,
      3,
@@ -4340,7 +4329,7 @@
    "tids": {
     "spec": 10,
     "built": 4,
-    "todo": 6,
+    "todo": 0,
     "missing": [
      4,
      5,
@@ -4409,7 +4398,7 @@
    "tids": {
     "spec": 9,
     "built": 2,
-    "todo": 7,
+    "todo": 0,
     "missing": [
      2,
      3,
@@ -4488,7 +4477,7 @@
    "tids": {
     "spec": 10,
     "built": 4,
-    "todo": 6,
+    "todo": 0,
     "missing": [
      4,
      6,
@@ -4565,7 +4554,7 @@
    "tids": {
     "spec": 8,
     "built": 3,
-    "todo": 5,
+    "todo": 0,
     "missing": [
      1,
      3,
@@ -4625,7 +4614,7 @@
    "tids": {
     "spec": 12,
     "built": 5,
-    "todo": 7,
+    "todo": 0,
     "missing": [
      6,
      7,
@@ -4715,7 +4704,7 @@
    "tids": {
     "spec": 12,
     "built": 6,
-    "todo": 6,
+    "todo": 0,
     "missing": [
      1,
      3,
@@ -4806,7 +4795,7 @@
    "tids": {
     "spec": 10,
     "built": 3,
-    "todo": 7,
+    "todo": 0,
     "missing": [
      4,
      5,
@@ -4869,7 +4858,7 @@
    "tids": {
     "spec": 10,
     "built": 4,
-    "todo": 6,
+    "todo": 0,
     "missing": [
      2,
      4,
@@ -4933,7 +4922,7 @@
    "tids": {
     "spec": 12,
     "built": 3,
-    "todo": 9,
+    "todo": 0,
     "missing": [
      1,
      2,
@@ -5018,7 +5007,7 @@
    "tids": {
     "spec": 10,
     "built": 1,
-    "todo": 9,
+    "todo": 0,
     "missing": [
      2,
      3,
@@ -5087,7 +5076,7 @@
    "tids": {
     "spec": 9,
     "built": 3,
-    "todo": 6,
+    "todo": 0,
     "missing": [
      4,
      5,
@@ -5151,7 +5140,7 @@
    "tids": {
     "spec": 10,
     "built": 6,
-    "todo": 4,
+    "todo": 0,
     "missing": [
      5,
      7,
@@ -5224,7 +5213,7 @@
    "tids": {
     "spec": 10,
     "built": 5,
-    "todo": 5,
+    "todo": 0,
     "missing": [
      5,
      6,
@@ -5287,7 +5276,7 @@
    "tids": {
     "spec": 12,
     "built": 3,
-    "todo": 9,
+    "todo": 0,
     "missing": [
      1,
      3,
@@ -5357,7 +5346,7 @@
    "tids": {
     "spec": 11,
     "built": 5,
-    "todo": 6,
+    "todo": 0,
     "missing": [
      5,
      6,
@@ -5427,7 +5416,7 @@
    "tids": {
     "spec": 18,
     "built": 6,
-    "todo": 12,
+    "todo": 0,
     "missing": [
      1,
      2,
@@ -5544,7 +5533,7 @@
    "tids": {
     "spec": 14,
     "built": 8,
-    "todo": 6,
+    "todo": 0,
     "missing": [
      5,
      9,
@@ -5624,7 +5613,7 @@
    "tids": {
     "spec": 12,
     "built": 4,
-    "todo": 8,
+    "todo": 0,
     "missing": [
      3,
      5,
@@ -5703,7 +5692,7 @@
    "tids": {
     "spec": 8,
     "built": 7,
-    "todo": 1,
+    "todo": 0,
     "missing": [
      8
     ]
@@ -5757,7 +5746,7 @@
    "tids": {
     "spec": 12,
     "built": 11,
-    "todo": 1,
+    "todo": 0,
     "missing": [
      12
     ]
@@ -5845,7 +5834,7 @@
    "tids": {
     "spec": 13,
     "built": 12,
-    "todo": 1,
+    "todo": 0,
     "missing": [
      11
     ]
@@ -5930,7 +5919,7 @@
    "tids": {
     "spec": 12,
     "built": 10,
-    "todo": 2,
+    "todo": 0,
     "missing": [
      2,
      12
@@ -6023,7 +6012,7 @@
    "tids": {
     "spec": 11,
     "built": 8,
-    "todo": 3,
+    "todo": 0,
     "missing": [
      5,
      8,
@@ -6095,7 +6084,7 @@
    "tids": {
     "spec": 15,
     "built": 6,
-    "todo": 9,
+    "todo": 0,
     "missing": [
      5,
      8,
@@ -6182,7 +6171,7 @@
    "tids": {
     "spec": 12,
     "built": 8,
-    "todo": 4,
+    "todo": 0,
     "missing": [
      9,
      10,
@@ -6267,7 +6256,7 @@
    "tids": {
     "spec": 12,
     "built": 6,
-    "todo": 6,
+    "todo": 0,
     "missing": [
      7,
      8,
@@ -6344,7 +6333,7 @@
    "tids": {
     "spec": 8,
     "built": 5,
-    "todo": 3,
+    "todo": 0,
     "missing": [
      4,
      7,
@@ -6397,7 +6386,7 @@
    "tids": {
     "spec": 8,
     "built": 5,
-    "todo": 3,
+    "todo": 0,
     "missing": [
      4,
      5,
@@ -6457,7 +6446,7 @@
    "tids": {
     "spec": 10,
     "built": 6,
-    "todo": 4,
+    "todo": 0,
     "missing": [
      3,
      6,
@@ -6520,7 +6509,7 @@
    "tids": {
     "spec": 14,
     "built": 2,
-    "todo": 12,
+    "todo": 0,
     "missing": [
      3,
      4,
@@ -6605,7 +6594,7 @@
    "tids": {
     "spec": 11,
     "built": 5,
-    "todo": 6,
+    "todo": 0,
     "missing": [
      4,
      5,
@@ -6677,7 +6666,7 @@
    "tids": {
     "spec": 12,
     "built": 11,
-    "todo": 1,
+    "todo": 0,
     "missing": [
      12
     ]
@@ -6733,7 +6722,7 @@
    "tids": {
     "spec": 9,
     "built": 6,
-    "todo": 3,
+    "todo": 0,
     "missing": [
      2,
      6,
@@ -6786,7 +6775,7 @@
    "tids": {
     "spec": 9,
     "built": 7,
-    "todo": 2,
+    "todo": 0,
     "missing": [
      3,
      9
@@ -6832,7 +6821,7 @@
    "tids": {
     "spec": 8,
     "built": 6,
-    "todo": 2,
+    "todo": 0,
     "missing": [
      6,
      8
@@ -6886,7 +6875,7 @@
    "tids": {
     "spec": 10,
     "built": 7,
-    "todo": 3,
+    "todo": 0,
     "missing": [
      6,
      7,
@@ -6939,7 +6928,7 @@
    "tids": {
     "spec": 7,
     "built": 4,
-    "todo": 3,
+    "todo": 0,
     "missing": [
      3,
      5,
@@ -6991,7 +6980,7 @@
    "tids": {
     "spec": 9,
     "built": 8,
-    "todo": 1,
+    "todo": 0,
     "missing": [
      7
     ]
@@ -7044,7 +7033,7 @@
    "tids": {
     "spec": 15,
     "built": 10,
-    "todo": 5,
+    "todo": 0,
     "missing": [
      5,
      9,
@@ -7111,7 +7100,7 @@
    "tids": {
     "spec": 17,
     "built": 15,
-    "todo": 2,
+    "todo": 0,
     "missing": [
      8,
      17
@@ -7195,7 +7184,7 @@
    "tids": {
     "spec": 14,
     "built": 9,
-    "todo": 5,
+    "todo": 0,
     "missing": [
      9,
      11,
@@ -7265,7 +7254,7 @@
    "tids": {
     "spec": 16,
     "built": 10,
-    "todo": 6,
+    "todo": 0,
     "missing": [
      3,
      4,

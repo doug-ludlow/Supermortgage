@@ -12,6 +12,7 @@ import { plainDate as D } from "../kernel/calendar/date.ts";
 import { publishCheck } from "./checklist.ts";
 import { SECTION_01_VERSIONS } from "./authored/section01.ts";
 import { SECTION_03_VERSIONS } from "./authored/section03.ts";
+import { SECTION_04_VERSIONS } from "./authored/section04.ts";
 
 interface CatalogEntry { readonly code: string; readonly owner_process: string; readonly mentions: readonly string[]; readonly context: string; }
 
@@ -221,4 +222,5 @@ export const AUTHORED_VERSIONS: readonly VersionInput[] = [
   V("NTC_REGX_41B2_ACK_INCOMPLETE", ACK_SOURCE, ACK_RULES, ACK_SAMPLE, "regx.lossmit.2013", "12.1 rule 5 worked example"),
   ...SECTION_01_VERSIONS,
   ...SECTION_03_VERSIONS,
+  ...SECTION_04_VERSIONS,
 ];

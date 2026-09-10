@@ -14,7 +14,7 @@ import { test } from "node:test";
 // 8.3-T8 — implemented in src/domain/credit-reporting/credit-reporting.test.ts
 // 8.3-T9 — implemented in src/domain/credit-reporting/credit-reporting.test.ts
 // 8.3-T10 — implemented in src/domain/credit-reporting/credit-reporting.test.ts
-test("8.3-T11", { todo: true });
+test("8.3-T11: (stale suppression) Given a bankruptcy dismissed 2027-10-02 with no monitor event, then the 30-day review on 2027-10-10 flags the docket mismatch and the agent applies CII L/Q with the dismissal order.", { todo: true });
 // 8.3-T12 — implemented in src/domain/credit-reporting/credit-reporting.test.ts
 // 8.3-T13 — implemented in src/domain/credit-reporting/credit-reporting.test.ts
 // 8.3-T14 — implemented in src/domain/credit-reporting/credit-reporting.test.ts

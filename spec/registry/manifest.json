@@ -1748,67 +1748,67 @@
   "tids": [
    {
     "n": 1,
-    "text": ""
+    "text": "(happy path) Given a written letter received 2026-09-04 asserting a misapplied 2026-03-01 payment, when classified, then a `noe` case with assertion `b2` exists, ack mailed \u22642026-09-14, response by 2026-10-20, ledger shows reversal + repost dated 2026-03-01, late charge 9,211\u00a2 reversed, suppression row through 2026-11-03."
    },
    {
     "n": 2,
-    "text": ""
+    "text": "(holiday boundary) Given receipt on 2026-11-06, then ack due 2026-11-16 (Veterans Day 11-11 excluded) and response due 2026-12-22; a servicer closure day (e.g., day after Thanksgiving) does not extend either date."
    },
    {
     "n": 3,
-    "text": ""
+    "text": "(payoff error) Given an assertion `b6`, then due 7 federal BD; extension command is rejected with `EXTENSION_NOT_PERMITTED`."
    },
    {
     "n": 4,
-    "text": ""
+    "text": "(foreclosure error, sale in 20 days) Given `b9` received 2026-09-04 with sale 2026-09-24, then due 2026-09-23; `foreclosure.sale.conduct` on 2026-09-24 is blocked while `REGX_1024_35E_FC_NOE_OPEN` is open; attorney escalation package generated; after response, the gate clears."
    },
    {
     "n": 5,
-    "text": ""
+    "text": "(\u22647 days before sale) Given `b10` received 3 days before sale, then a good-faith contact is logged before the sale and the (f)(2) path records `deadline_profile=fc_within_7_days_goodfaith`; no ack timer."
    },
    {
     "n": 6,
-    "text": ""
+    "text": "(extension) Given `std_30` and an extension notice sent on the due date, then due moves +15 federal BD; an extension attempted one day after the due date is rejected."
    },
    {
     "n": 7,
-    "text": ""
+    "text": "(overbroad with carve-out) Given a 40-page pleading-style letter containing one identifiable late-fee assertion, then the late fee is investigated and answered and the (g)(2) notice states the overbroad basis for the remainder, both within their clocks."
    },
    {
     "n": 8,
-    "text": ""
+    "text": "(duplicative) Given the same escrow-shortage assertion answered 60 days ago and no new material, then `exception_basis=duplicative` and the (g)(2) notice issues \u22645 federal BD; with a new bank statement showing an unposted payment, the case is investigated."
    },
    {
     "n": 9,
-    "text": ""
+    "text": "(untimely) Given a discharge date 14 months before receipt, then untimely notice issues; given 11 months, investigated."
    },
    {
     "n": 10,
-    "text": ""
+    "text": "(documents) Given a no-error response and a borrower's oral request for documents, then copies (snapshots) are mailed \u226415 federal BD; a privileged memo is withheld with the written withholding notice in the same window."
    },
    {
     "n": 11,
-    "text": ""
+    "text": "(early correction) Given a clear posting error fixed on day 2 with the correction letter mailed on day 3, then ack/response timers cancel with reason `early_correction`."
    },
    {
     "n": 12,
-    "text": ""
+    "text": "(NY override) Given a NY property and a `b9` assertion with a sale in 40 days, then due = 15 servicer BD, not 30; extension for a `std_30` NY case adds 7 BD."
    },
    {
     "n": 13,
-    "text": ""
+    "text": "(AI escalation) Given classifier confidence 0.4, then `needs_human` queue with the ack timer running; a human classification within 1 BD does not change the receipt date."
    },
    {
     "n": 14,
-    "text": ""
+    "text": "(mail vendor failure) Given no manifest by 18:00 ET, then an alarm fires and the manual intake protocol logs receipt dates from the physical stamp."
    },
    {
     "n": 15,
-    "text": ""
+    "text": "(fee prohibition) Given a borrower 2 months delinquent, then no fee or payment is requested in any NoE communication (template checklist assertion)."
    },
    {
     "n": 16,
-    "text": ""
+    "text": "(transfer-in open case) Given a boarding file with an NoE received by the transferor 20 federal BD earlier, then the case boards with the original receipt date and a 10-day residual clock."
    }
   ],
   "tables": [
@@ -1867,55 +1867,55 @@
   "tids": [
    {
     "n": 1,
-    "text": ""
+    "text": "Given a letter received 2026-09-04 asking for the owner, then `NTC_REGX_36A2_OWNER_IDENTITY` is sent by 2026-09-21 with the exact A4-1-03 block for the loan's ownership type and the \"as of\" sentence."
    },
    {
     "n": 2,
-    "text": ""
+    "text": "Given the same letter also asks for a payment history since 2019, then the history item is due 2026-10-20 and the extension command before that date moves it to 2026-11-10 with an extension notice stating reasons."
    },
    {
     "n": 3,
-    "text": ""
+    "text": "Given an extension attempted on an owner-identity item, then rejected `EXTENSION_NOT_PERMITTED`."
    },
    {
     "n": 4,
-    "text": ""
+    "text": "Given a request for \"all Fannie Mae guidelines you used,\" then `exception_irrelevant` for the guidelines and the borrower's own evaluation results are provided; (f)(2) notice within 5 federal BD."
    },
    {
     "n": 5,
-    "text": ""
+    "text": "Given a request for call recordings from 14 months ago within retention, then audio files are provided (secure message if consented, else mailed media/transcript per policy) within 30 days."
    },
    {
     "n": 6,
-    "text": ""
+    "text": "Given a confirmed successor requests the payment history, then the response omits the deceased borrower's SSN/contact/financial data but includes terms, status and history; redaction log present."
    },
    {
     "n": 7,
-    "text": ""
+    "text": "Given a potential successor's letter naming the deceased borrower, then `NTC_REGX_36I_SII_DOCS` is sent within 5 federal BD (policy) and no later than 30; an `sii` case opens (4.4); no account information is disclosed."
    },
    {
     "n": 8,
-    "text": ""
+    "text": "Given a request identical to one answered 3 months ago for the same period, then duplicative exception; for a new period, answered."
    },
    {
     "n": 9,
-    "text": ""
+    "text": "Given a discharge 13 months before receipt, then untimely notice within 5 federal BD."
    },
    {
     "n": 10,
-    "text": ""
+    "text": "Given the custodian copy request takes 12 BD, then the case uses the extension and responds within 45 total days; the extension notice cites the custodian retrieval."
    },
    {
     "n": 11,
-    "text": ""
+    "text": "(early response) Given a simple escrow-statement copy request answered on day 3, then the ack timer cancels with reason `early_response`."
    },
    {
     "n": 12,
-    "text": ""
+    "text": "(NY) Given a NY loan, then owner identity is due in 10 calendar days if earlier than the federal 10-BD date, and the response carries the 419.6 disclosure block."
    },
    {
     "n": 13,
-    "text": ""
+    "text": "(privilege) Given a request for \"your legal analysis of my foreclosure,\" then the item routes to `attorney` for a privilege determination and the withholding notice issues within the clock."
    }
   ],
   "tables": [
@@ -1956,51 +1956,51 @@
   "tids": [
    {
     "n": 1,
-    "text": ""
+    "text": "Given a principal-residence loan with payment due 2026-09-01 unpaid, when day 1 = 2026-09-02, then `assignment_due_at = 2026-10-16`; when the EI notice is requested on 2026-10-09 without an assignment, then the command auto-assigns and the notice shows the team block."
    },
    {
     "n": 2,
-    "text": ""
+    "text": "Given no EI notice by day 45 (e.g., \u00a71024.39 exemption), then assignment still occurs by 2026-10-16."
    },
    {
     "n": 3,
-    "text": ""
+    "text": "Given an investment property, then `not_required` and no timer breach."
    },
    {
     "n": 4,
-    "text": ""
+    "text": "Given a borrower calls the direct line after hours, then a callback request is created and a live contact by the assigned team occurs within 1 servicer BD."
    },
    {
     "n": 5,
-    "text": ""
+    "text": "Given a borrower says \"I want a person,\" then a warm transfer to `human_agent` occurs within the call, logged with `human_transfer_requested=true`."
    },
    {
     "n": 6,
-    "text": ""
+    "text": "Given a permanent modification effective 2027-03-01 and on-time payments on 2027-03-12 and 2027-04-10, then release on 2027-04-10; given the second payment is late (late charge posted), then no release and the counter resets."
    },
    {
     "n": 7,
-    "text": ""
+    "text": "(CA) Given a \u00a72924.15 loan and a chat message \"can I get help with my payments,\" then a human SPOC is assigned and a direct means of communication is sent within 2 servicer BD; the SPOC persists after the borrower is denied a modification until the appeal is decided."
    },
    {
     "n": 8,
-    "text": ""
+    "text": "(accuracy) Given a scripted call asking the five (b)(1) facts, then every statement matches `lossmit_facts` for the loan (evaluation harness, 100% agreement required for release)."
    },
    {
     "n": 9,
-    "text": ""
+    "text": "(bankruptcy) Given a Chapter 13 filing, then reassignment to the bankruptcy-specialist team without a new episode."
    },
    {
     "n": 10,
-    "text": ""
+    "text": "(metrics) Given a month of CDRs with ASA 75s, then the A4-2.1-04 report flags the miss and an `officer` remediation task opens."
    },
    {
     "n": 11,
-    "text": ""
+    "text": "(AI off) Given `continuity.ai_first=off` for state XX, then calls route to the human queue and the assignment record shows `human_team`."
    },
    {
     "n": 12,
-    "text": ""
+    "text": "(transfer-out) Given transfer-out on 2026-11-01, then the episode closes with `transfer_out` and the transfer file includes the assignment and open callbacks."
    }
   ],
   "tables": [
@@ -2049,51 +2049,51 @@
   "tids": [
    {
     "n": 1,
-    "text": ""
+    "text": "Given the 2026-10-01 call scenario, then docs letter by 2026-10-08, confirmation by 2026-11-03 after documents on 2026-10-20, and the acknowledgment notice in the same mailing."
    },
    {
     "n": 2,
-    "text": ""
+    "text": "Given a joint-tenancy survivor providing a death certificate and the recorded deed, then no probate documents are requested and confirmation issues."
    },
    {
     "n": 3,
-    "text": ""
+    "text": "Given a divorce decree and separation agreement awarding the home to the non-borrower spouse, then confirmation without requiring a deed (comment -3)."
    },
    {
     "n": 4,
-    "text": ""
+    "text": "Given documents that do not establish vesting (will, no letters, probate pending), then `additional_documents_required` with specific items within 5 federal BD, not a denial."
    },
    {
     "n": 5,
-    "text": ""
+    "text": "Given a buyer under an arm's-length sale claiming successor status, then `not_successor` with `officer` approval, the reason letter, and an NoE pathway statement; the D1-4.1-02 assumption path is offered separately if applicable."
    },
    {
     "n": 6,
-    "text": ""
+    "text": "Given confirmation and no returned acknowledgment, then periodic/escrow statements and EI notices to the successor are held while an RFI from the successor is answered on the 4.2 clock and a payoff request is answered within the Reg Z window (16.1)."
    },
    {
     "n": 7,
-    "text": ""
+    "text": "Given the acknowledgment is returned, then statements start on the next cycle and the escrow annual statement includes the successor as addressee."
    },
    {
     "n": 8,
-    "text": ""
+    "text": "Given a potential successor submits a loss-mit application, then all SII policy timers halve and `lossmit_reviewer` sees the pending-confirmation flag; upon confirmation the 12.1 application is treated as received on the confirmation date."
    },
    {
     "n": 9,
-    "text": ""
+    "text": "Given a confirmed successor requests the payment history, then the response omits the deceased borrower's SSN and contact data (4.2-T6 linkage)."
    },
    {
     "n": 10,
-    "text": ""
+    "text": "Given an assumption is executed, then the `signing_officer` signature record exists, interested parties are notified within 10 servicer BD, MI approval is on file where MI exists, and the loan-data change (if any) is reported per 5.x."
    },
    {
     "n": 11,
-    "text": ""
+    "text": "Given a state with a counsel-unreviewed matrix row, then the (i)(2) examples letter is used and the case is flagged `matrix_gap` for counsel."
    },
    {
     "n": 12,
-    "text": ""
+    "text": "(fraud) Given a quitclaim from a 90-year-old borrower to an unrelated party filed last week, then `officer`/`attorney` escalation and no confirmation."
    }
   ],
   "tables": [
@@ -2135,51 +2135,51 @@
   "tids": [
    {
     "n": 1,
-    "text": ""
+    "text": "Given a CFPB portal complaint received 2026-09-10, then the AI package is ready \u22645 days, `officer` approval recorded, and the portal response submitted by 2026-09-25; if \"in progress,\" a final response by 2026-11-09."
    },
    {
     "n": 2,
-    "text": ""
+    "text": "Given a phone call \"you people keep charging me late fees,\" then a complaint case opens, the AI checks the late-charge history live, reverses any unsupported charge within authority, and the \u00a71024.38(b)(5) script is read (transcript evidence); no NoE case opens for an oral complaint, but the written-procedure reminder is logged."
    },
    {
     "n": 3,
-    "text": ""
+    "text": "Given a written version of T2, then both a complaint and an NoE (b5) case exist with linked ids and the NoE clocks govern the written response."
    },
    {
     "n": 4,
-    "text": ""
+    "text": "(NY) Given a NY loan and an emailed complaint, then a written acknowledgment \u22645 BD with the DFS CAU disclosure and a response \u226430 BD (or \u226415 BD if foreclosure-related)."
    },
    {
     "n": 5,
-    "text": ""
+    "text": "(Texas) Given a \u00a750(a)(6) loan and a letter alleging a constitutional defect, then `attorney`/`officer` escalation, Form 20 package prepared, and the 60-day cure timer started on the notice date."
    },
    {
     "n": 6,
-    "text": ""
+    "text": "(population remediation) Given three complaints in a month about an undisclosed pay-by-phone fee, then the monitor opens a `udaap_review`, the lookback query identifies 1,240 loans, the remediation totals 1,860,000\u00a2, `officer` approves, refunds post with reversal entries, letters mail, and the partner is notified."
    },
    {
     "n": 7,
-    "text": ""
+    "text": "(AI complaint) Given a chat transcript where the borrower asked for a human twice without transfer, then `AI_HUMAN_REQUEST_UNMET` fires, the case is `critical`, and the governance owner is notified the same day."
    },
    {
     "n": 8,
-    "text": ""
+    "text": "(fair lending) Given a complaint alleging discrimination in a loss-mit denial, then `officer` review, 19.4 record, 12.3 appeal handling, no AI-only closure."
    },
    {
     "n": 9,
-    "text": ""
+    "text": "(wrong servicer) Given a state regulator complaint for a loan not on the platform, then a response within the state clock with no borrower data."
    },
    {
     "n": 10,
-    "text": ""
+    "text": "(email SLA) Given an inbound email complaint at 09:00 ET Monday, then a substantive reply by 09:00 ET Wednesday (48h)."
    },
    {
     "n": 11,
-    "text": ""
+    "text": "(analytics) Given the monthly refresh, then complaints per 1,000 loans by category and by `preferred_language` are produced and monitor breaches create `officer` tasks."
    },
    {
     "n": 12,
-    "text": ""
+    "text": "(monetary authority) Given an AI-proposed refund of 75,000\u00a2, then the correction is blocked pending `officer` approval and the borrower is told the review timeline."
    }
   ],
   "tables": [
@@ -3551,79 +3551,79 @@
   "tids": [
    {
     "n": 1,
-    "text": ""
+    "text": "(happy path) Given loan SM-1001 current on 2027-01-31, when the cycle builds, then the Base record shows status 11, Current Balance 000293063, PHP `0000000000000000000000BB`, K3 with MIN, and four files are transmitted by the 3rd servicer business day with hashes recorded."
    },
    {
     "n": 2,
-    "text": ""
+    "text": "(delinquency buckets) Given Feb-1 missed, then 02-28 \u2192 11 (27 days), 03-31 \u2192 71 with DOFD 02012027, 04-30 \u2192 78; Amount Past Due 000002459 / 000004919 / 000007378."
    },
    {
     "n": 3,
-    "text": ""
+    "text": "(forbearance freeze) Given forbearance effective 05-01, then 05-31\u202607-31 report 78 + CP with Amount Past Due frozen; with `policy.forbearance_status='contractual_aging'` the same months report 80/82/84."
    },
    {
     "n": 4,
-    "text": ""
+    "text": "(deferral cure) Given deferral completed 08-15 with $14,757.30 deferred, then 08-31 reports 11, Current Balance 000307500, K4 01/02012055/000014757, DOFD zero-filled, PHP `222210\u2026`."
    },
    {
     "n": 5,
-    "text": ""
+    "text": "(reinstatement) Given reinstatement on 08-10, then 08-31 reports 11, Current Balance 000292743, no K4."
    },
    {
     "n": 6,
-    "text": ""
+    "text": "(modification) Given a Flex Mod effective 2027-09-01 with capitalized arrears and $30,000 forborne principal, then status 11, CO, new Terms Duration, Current Balance incl. forborne, K4 01 balloon = 000030000, Date Opened unchanged, no new tradeline."
    },
    {
     "n": 7,
-    "text": ""
+    "text": "(short sale) Given a short sale closed with foreclosure previously referred, then 65 + AU, Payment Rating from the delinquency at closing, balances 0, Date Closed = closing date."
    },
    {
     "n": 8,
-    "text": ""
+    "text": "(foreclosure/DIL/payoff) Given sale completed \u2192 94 with Payment Rating; DIL \u2192 89; payoff \u2192 13 with Payment Rating 0; each reported once, then `final_reported`."
    },
    {
     "n": 9,
-    "text": ""
+    "text": "(validation blocks) Given a record with status 71 and blank DOFD, then it is excluded from the file, an exception is created, and next month's PHP shows `D` for that month if unresolved."
    },
    {
     "n": 10,
-    "text": ""
+    "text": "(anomaly hold) Given 3% of records improve status without payment/workout events, then the cycle is `held` and only `officer` can release it."
    },
    {
     "n": 11,
-    "text": ""
+    "text": "(transmission deadlines) Given `as_of_date` 2027-01-31 and a servicer holiday on Feb 2, then BD3 = 2027-02-04; the hard stop is 2027-02-10."
    },
    {
     "n": 12,
-    "text": ""
+    "text": "(ack/reject loop) Given Experian's Metric Report lists 12 rejected records for invalid MIN, then `metro2_ack_items` rows exist, the agent corrects the MIN from `loans`, resubmits/AUDs within 5 BD, and the items resolve."
    },
    {
     "n": 13,
-    "text": ""
+    "text": "(negative-information notice) Given a loan boarded without B-1 evidence that is furnished 71 on 2027-03-03, then a B-2 notice is mailed by 2027-04-02; given B-1 evidence on the hello notice, no B-2 is sent."
    },
    {
     "n": 14,
-    "text": ""
+    "text": "(DOFD never later) Given a correction attempting to move DOFD from 02012027 to 03012027 without evidence, then the command is rejected `DOFD_REAGE_BLOCKED`."
    },
    {
     "n": 15,
-    "text": ""
+    "text": "(boarding history) Given a transferor hand-off with PHP `000010000000000000000000` and DOFD blank, then the first cycle carries that PHP and DOFD blank; given no hand-off, PHP is `B` \u00d7 24."
    },
    {
     "n": 16,
-    "text": ""
+    "text": "(successor not furnished) Given a confirmed successor in interest who has not assumed, then no J1/J2 segment is generated for the successor."
    },
    {
     "n": 17,
-    "text": ""
+    "text": "(FDCPA gate) Given a loan boarded in default with no contact yet, then it is omitted from the cycle until a live contact or 14 days after a validation notice without undeliverability."
    },
    {
     "n": 18,
-    "text": ""
+    "text": "(four bureaus) Given any cycle, then exactly four files exist and Innovis is not skipped."
    },
    {
     "n": 19,
-    "text": ""
+    "text": "(rounding) Given Amount Past Due $4,919.10, then the field is 000004919 (truncation); switching `policy.metro2_rounding='round'` yields 000004919 for .10 and 000004920 for $4,919.55."
    }
   ],
   "tables": [
@@ -3663,59 +3663,59 @@
   "tids": [
    {
     "n": 1,
-    "text": ""
+    "text": "(ACDV happy path) Given an ACDV with Response Due Date 2027-10-01 received 2027-09-15, when investigated, then a response with the full field set is submitted by 2027-09-22, status reaches RESOLVED-RETURNEDTOAGENCY, and the case closes with XH scheduled for the next cycle."
    },
    {
     "n": 2,
-    "text": ""
+    "text": "(ACDV modify + fan-out) Given lockbox evidence of a misposted Feb-5 deposit, then response \"modify\" with corrected Feb/Mar statuses, AUDs to the other three bureaus within 2 BD, `credit_reporting_corrections` and `payment.reapplied` posted, late charge reversed."
    },
    {
     "n": 3,
-    "text": ""
+    "text": "(due-date breach prevention) Given no reviewer action by 90% of the Response Due Date, then the case auto-escalates to `officer` and, absent action by the due date, the agent submits a best-available response (never RESOLVED-NORESPONSEPROVIDED)."
    },
    {
     "n": 4,
-    "text": ""
+    "text": "(view-before-submit) Given an ACDV never viewed, then `submit` is refused by the adapter until `/view` has been called."
    },
    {
     "n": 5,
-    "text": ""
+    "text": "(direct dispute clocks) Given receipt 2027-09-03, then results are mailed by 2027-10-03; given supplementation on 2027-09-20, the due date moves to 2027-10-18; supplementation on 2027-10-05 opens a new case."
    },
    {
     "n": 6,
-    "text": ""
+    "text": "(frivolous notice) Given a repeat direct dispute with no new information determined frivolous on 2027-09-07 and approved by `human_agent`, then the (f) notice with reasons and the standardized information list is mailed by 2027-09-14; given the repeat includes a new bank statement, the case is investigated instead."
    },
    {
     "n": 7,
-    "text": ""
+    "text": "(XB flag) Given any open dispute, then the next Metro 2 file (or an AUD if >10 days away) carries XB on the consumer's segment; on close with correction, XR; on verified with stated disagreement, XC."
    },
    {
     "n": 8,
-    "text": ""
+    "text": "(unverifiable pre-boarding) Given a dispute about a 2026 late mark reported by the transferor and no hand-off evidence, then determination `unverifiable`, the item is deleted/modified, and the transferor is notified."
    },
    {
     "n": 9,
-    "text": ""
+    "text": "(identity theft) Given an ACDV with an identity-theft dispute code and a \u00a71681c-2 block notification, then furnishing for that consumer stops immediately, a `fraud` case opens, and `officer` approves any DF/ECOA Z."
    },
    {
     "n": 10,
-    "text": ""
+    "text": "(oral dispute) Given a borrower says on an AI voice call that \"my credit report shows me late in March and I wasn't,\" then a direct-dispute case opens, XB applies, and the results letter goes out within 30 days."
    },
    {
     "n": 11,
-    "text": ""
+    "text": "(API outage) Given e-OSCAR API 5xx for 4 hours with a response due tomorrow, then a `human_agent` task is created with the response payload for web-app entry."
    },
    {
     "n": 12,
-    "text": ""
+    "text": "(reviewer conditions) Given `verified_as_reported` at confidence 0.7, then the case waits for `human_agent` review with the evidence pack; given confidence 0.9 and no other condition, it submits without review."
    },
    {
     "n": 13,
-    "text": ""
+    "text": "(NoE linkage) Given a letter alleging a misapplied payment and a wrong credit report, then both an NoE case (4.1) and a direct dispute exist, the corrections are shared, and both letters meet their clocks."
    },
    {
     "n": 14,
-    "text": ""
+    "text": "(AUD is not in-cycle) Given an AUD sent on 2027-09-25, then the 2027-09-30 cycle still carries the corrected values (no reliance on the AUD alone)."
    }
   ],
   "tables": [
@@ -3755,59 +3755,59 @@
   "tids": [
    {
     "n": 1,
-    "text": ""
+    "text": "(NoE bar) Given the 4.1 NoE received 2026-09-04 disputing the March-2026 payment on an otherwise current loan, then the files transmitted 2026-10-05 and 2026-11-03 show status 11, XB, and PHP position for March 2026 = `D`; the file transmitted 2026-12-03 restores `1` with XH after a \"no error\" closure on 2026-10-20."
    },
    {
     "n": 2,
-    "text": ""
+    "text": "(bar at transmission time) Given a file built 2026-11-01 and transmitted 2026-11-04 (after expiry), then the projection is not applied."
    },
    {
     "n": 3,
-    "text": ""
+    "text": "(partial scope) Given an NoE disputing only the June installment on a loan also unpaid for July, then the June installment is treated as paid and July's delinquency is reported (status by July's days past due) with XB."
    },
    {
     "n": 4,
-    "text": ""
+    "text": "(Ch. 13 petition/confirmation/dismissal) Given the worked example, then Mar-31 = 71/CII D frozen; Jun-30 = 11/CII D with Amount Past Due 0; Jan-31-2028 = 80/CII L with DOFD 11012027; Feb-29-2028 = CII Q."
    },
    {
     "n": 5,
-    "text": ""
+    "text": "(Ch. 7 discharge) Given discharge 2027-09-20 without reaffirmation, then the Sep-30 record carries CII E, balances 0, Date Closed 09202027, and no record is furnished in October; given a reaffirmation agreement filed, CII R and normal reporting."
    },
    {
     "n": 6,
-    "text": ""
+    "text": "(SCRA) Given relief from 2027-05-01 and payments of $2,413.31 monthly, then status 11, Scheduled Payment 000002413, no AI code, no forgiven interest ($60.85 in May) in balances; given a missed reduced payment in July, the resulting 71 at Aug-31 is held for `officer` review (documented \"not solely by reason of the relief\") before furnishing."
    },
    {
     "n": 7,
-    "text": ""
+    "text": "(disaster) Given a FEMA declaration covering the property on 2027-08-20 and no forbearance, then the Aug-31 record carries AW; given a disaster forbearance from 2027-09-01, CP replaces AW."
    },
    {
     "n": 8,
-    "text": ""
+    "text": "(deceased) Given confirmed death of co-borrower B on 2027-04-12, then B's J1 segment carries ECOA X from the Apr-30 cycle and A's segment is unchanged; given the successor daughter confirmed under 4.4, no segment is created for her."
    },
    {
     "n": 9,
-    "text": ""
+    "text": "(identity theft) Given a Block notification on 2027-05-03 for borrower C, then C is omitted from the May cycle, an AUD removing C is sent by 2027-05-05, a `fraud` case opens, and resumption requires `officer` + BRR."
    },
    {
     "n": 10,
-    "text": ""
+    "text": "(FDCPA gate) Given boarding in default on 2027-02-10 and a validation notice mailed 2027-02-12 with no undeliverability by 2027-02-26, then the Feb-28 cycle includes the loan; given the notice returned undeliverable on 2027-02-20, the loan is omitted until live contact."
    },
    {
     "n": 11,
-    "text": ""
+    "text": "(stale suppression) Given a bankruptcy dismissed 2027-10-02 with no monitor event, then the 30-day review on 2027-10-10 flags the docket mismatch and the agent applies CII L/Q with the dismissal order."
    },
    {
     "n": 12,
-    "text": ""
+    "text": "(no courtesy suppression) Given a borrower asks the AI voice agent not to report a late payment, then no suppression is created, the request is logged, and the borrower is told about the direct-dispute process."
    },
    {
     "n": 13,
-    "text": ""
+    "text": "(sample verification) Given a cycle of 5,000 records, then \u2265250 are re-derived by `qc-audit`; a match rate of 99.2% escalates to `officer` with field-level variances."
    },
    {
     "n": 14,
-    "text": ""
+    "text": "(priority resolution) Given bankruptcy freeze + open dispute + SCRA on one consumer, then mechanism = freeze_status, codes = {CII D, XB}, and the decision record lists three reasons."
    }
   ],
   "tables": [
@@ -5478,51 +5478,51 @@
   "tids": [
    {
     "n": 1,
-    "text": ""
+    "text": "(happy path) Given a borrower's portal submission Thu 2026-09-10 with Form 710 and two paystubs, when classified, then `NTC_REGX_41B2_ACK_INCOMPLETE` (missing bank statements, co-borrower signature) is sent by 2026-09-17 with reasonable date 2026-10-15 and the basis recorded."
    },
    {
     "n": 2,
-    "text": ""
+    "text": "(holiday arithmetic) received Fri 2026-11-20 \u2192 ack due Mon 2026-11-30 (Thanksgiving excluded); timer due_at equals 2026-11-30 23:59 servicer-local."
    },
    {
     "n": 3,
-    "text": ""
+    "text": "(milestone cap and floor) (a) sale 2026-11-20, ack sent 2026-09-15 \u2192 reasonable date = min(2026-10-15, sale\u221238 = 2026-10-13) = **2026-10-13**; (b) same sale, ack sent 2026-10-08 \u2192 cap 2026-10-13 is earlier than the 7-day floor 2026-10-15 \u2192 the floor wins (comment 41(b)(2)(ii)-3; comment 41(k)(2)-1 logic) \u2192 **2026-10-15**, and `milestone_conflict=true` routes the file to `lossmit_reviewer` for expedited handling."
    },
    {
     "n": 4,
-    "text": ""
+    "text": "(facially complete) all listed items received 2026-10-01 \u2192 `facially_complete_at=2026-10-01`; verification finds a stale paystub \u2192 supplemental request 2026-10-02 with date \u22652026-10-09; `foreclosure_holds{kind=regx_f2_prefiling}` active throughout; borrower complies 2026-10-07 \u2192 `deemed_complete_date=2026-10-01`, `complete_at=2026-10-07`; (c)(3) notice by 2026-10-14."
    },
    {
     "n": 5,
-    "text": ""
+    "text": "(\u226445 days) sale 2026-10-20, received 2026-09-10 \u2192 (b)(2) not applicable; `NTC_FNMA_D2205_LATE_BRP_PLAN` within 5 servicer BD; expedited review queued."
    },
    {
     "n": 6,
-    "text": ""
+    "text": "(duplicative) prior complete application evaluated 2026-03-15, borrower delinquent continuously \u2192 new application 2026-09-10 flagged duplicative; `lossmit_reviewer` approves; Fannie Mae evaluation still performed; no (b)(2)/(c)(3) timers started; courtesy notice sent."
    },
    {
     "n": 7,
-    "text": ""
+    "text": "(current in between) same but loan brought current 2026-06-01 \u2192 full process."
    },
    {
     "n": 8,
-    "text": ""
+    "text": "(RFA only) call \"what programs do you have?\" with no financial info \u2192 `rfa_only`, no ack timer, CA SPOC assignment (4.3) and solicitation package sent; when the borrower later says \"my income dropped by half,\" application opens with that date."
    },
    {
     "n": 9,
-    "text": ""
+    "text": "(AI outage) document AI unavailable for 3 days \u2192 human checklist task completes the determination on day 4; ack on time; incident logged."
    },
    {
     "n": 10,
-    "text": ""
+    "text": "(CA per-document ack) each of three separate uploads on a CA loan receives an acknowledgment within 5 business days."
    },
    {
     "n": 11,
-    "text": ""
+    "text": "(NPRM flag) with `2024nprm`, an oral RFA received 40 days before a sale opens a review cycle and sets a `foreclosure_holds{kind=lm_review_cycle}` hold; with `2013`, it does not."
    },
    {
     "n": 12,
-    "text": ""
+    "text": "(breach) ack not produced by day 5 (simulated print failure) \u2192 escalation `officer` sev-1 created at 00:05 day 6, ack re-sent, NoE-risk flag set on the loan."
    }
   ],
   "tables": [
@@ -5582,55 +5582,55 @@
   "tids": [
    {
     "n": 1,
-    "text": ""
+    "text": "Given completion 2026-10-07 and no sale scheduled, when the evaluation runs, then all options have determinations, the notice is provided by 2026-11-06, `accept_by=provided_at+14`, and appeal rights appear for every denied modification option."
    },
    {
     "n": 2,
-    "text": ""
+    "text": "(7-day tier) sale 2027-01-15, complete 2026-11-01 (75 days before) \u2192 acceptance 7 days; no appeal rights statement (tier <90) but Fannie Mae D2-2-07 appeal availability check also negative."
    },
    {
     "n": 3,
-    "text": ""
+    "text": "(denial content) Flex Mod denied because \"loan has been modified three times previously\" \u2192 notice names Fannie Mae, quotes the criterion, states other criteria not evaluated; `lossmit_reviewer` approval recorded before mailing; mailing blocked without approval."
    },
    {
     "n": 4,
-    "text": ""
+    "text": "(ranking reason) Payment Deferral offered; Flex Mod not offered \"because Fannie Mae's hierarchy places the deferral first\" \u2192 allowed only because deferral outranks Flex Mod; the reverse ordering is rejected by the checklist."
    },
    {
     "n": 5,
-    "text": ""
+    "text": "(third-party delay) BPO outstanding at day 30 \u2192 delay notice plus all determinable results sent by day 30; on BPO receipt day 38, short-sale determination sent within 5 days; `foreclosure_holds{kind=lm_third_party_pending}` held throughout."
    },
    {
     "n": 6,
-    "text": ""
+    "text": "(current borrower, Fannie Mae declines) imminent-default case declined in SMDU \u2192 Form 182-based notice within 30 days; Reg B timer satisfied; counteroffer accepted \u2192 timers cancelled with reason."
    },
    {
     "n": 7,
-    "text": ""
+    "text": "(deemed rejection) no response by day 14+5 \u2192 `deemed_rejected`; hold released only if no other pending offer/appeal."
    },
    {
     "n": 8,
-    "text": ""
+    "text": "(appeal extends acceptance) appeal filed day 10 \u2192 original offer `accept_by` becomes appeal notice + 14."
    },
    {
     "n": 9,
-    "text": ""
+    "text": "(NY) NY loan, tier ge_90 \u2192 `accept_by=provided_at+30`; supervisory reviewer recorded for the denial."
    },
    {
     "n": 10,
-    "text": ""
+    "text": "(CA) denial \u2192 `CA_CIV_2923_6E_NOD_NOS_HOLD_31`; 13.x NOD command refused on day 20; appeal window 30 days shown in notice."
    },
    {
     "n": 11,
-    "text": ""
+    "text": "(SMDU outage) B2B down 6 hours at day 24 \u2192 portal task filed with package; decision recorded from the operator's SMDU result; notice on time."
    },
    {
     "n": 12,
-    "text": ""
+    "text": "(counsel) hold set on a loan with a pending summary-judgment motion \u2192 instruction sent within 1 BD and acknowledged; a sale conducted anyway is detected by the 13.x sale-event reconciliation and raises a sev-1 NoE-risk incident."
    },
    {
     "n": 13,
-    "text": ""
+    "text": "(streamlined offer with open incomplete application) day-90 Flex Mod solicitation issued while an incomplete application is open \u2192 letter includes incomplete-application disclosures; diligence follow-ups continue; no (c)(1) clock started by the solicitation."
    }
   ],
   "tables": [
@@ -5686,15 +5686,15 @@
   "tids": [
    {
     "n": 1,
-    "text": ""
+    "text": "Given a denial provided 2026-11-02 (tier ge_90) and an appeal received 2026-11-12, when processed, then a reviewer with no involvement is assigned by 2026-11-13, the decision notice is provided by 2026-12-12, and `accept_by = provided_at + 14`."
    },
    {
     "n": 2,
-    "text": ""
+    "text": "(independence) assignment of the original approving reviewer is refused with a logged reason; assignment of an uninvolved supervisor is accepted."
    },
    {
     "n": 3,
-    "text": ""
+    "text": "(late appeal) appeal received 2026-11-20 \u2192 ineligible notice; new pay stubs reviewed as new information; foreclosure holds released only after reviewer confirmation."
    },
    {
     "n": 4,
@@ -5702,27 +5702,27 @@
    },
    {
     "n": 5,
-    "text": ""
+    "text": "(TPP timing) appeal granted, notice sent 2026-12-16 \u2192 first trial payment due 2027-02-01; sent 2026-12-15 \u2192 2027-01-01."
    },
    {
     "n": 6,
-    "text": ""
+    "text": "(CA) appeal received on day 25 after the denial is timely (30-day window); NOD refused until 15 days after the appeal denial."
    },
    {
     "n": 7,
-    "text": ""
+    "text": "(NY postmark) denial postmarked 2026-11-03 though printed 2026-11-02 \u2192 NY window ends 2026-11-17."
    },
    {
     "n": 8,
-    "text": ""
+    "text": "(before first filing) loan 100 days delinquent, no filing, denial \u2192 appeal available even though a hypothetical sale date is unknown."
    },
    {
     "n": 9,
-    "text": ""
+    "text": "(transfer-in) appeal filed with transferor 2026-10-28, transfer date 2026-11-01 \u2192 decision due 2026-12-01 (later of 30 days from transfer/appeal)."
    },
    {
     "n": 10,
-    "text": ""
+    "text": "(breach) decision not provided by day 30 \u2192 `officer` sev-1, borrower notified of status, holds maintained."
    }
   ],
   "tables": [
@@ -5758,43 +5758,43 @@
   "tids": [
    {
     "n": 1,
-    "text": ""
+    "text": "Given QRPC on 2026-09-15 (temporary, unresolved hardship; 2 months delinquent), when a plan is offered, then term 1 = 2026-10-01..2026-12-31, Evaluation Notice within 5 days, status 09 reported at BD2 of November, late charges suppressed."
    },
    {
     "n": 2,
-    "text": ""
+    "text": "(3+3+3 caps) extensions to 2027-03-31 and 2027-06-30 succeed; a 3-month fourth extension is refused (14 months delinquent); a 1-month extension to 2027-07-31 succeeds; a 2-month request generates an exception package."
    },
    {
     "n": 3,
-    "text": ""
+    "text": "(short-term boundary) term 3 flagged `regx_short_term=false`; the engine requires a recorded basis (complete application / (c)(2)(ii) / servicer-initiated) before activation."
    },
    {
     "n": 4,
-    "text": ""
+    "text": "(pre-expiry) outreach begins by 2026-12-01 for a 2026-12-31 term end and continues at least every 3 days; QRPC on 2026-12-10 \u2192 hierarchy pre-screen executed the same day."
    },
    {
     "n": 5,
-    "text": ""
+    "text": "(no QRPC at expiry) deferral-eligible (4 months delinquent) \u2192 post-forbearance deferral solicitation by 2027-01-15; if deferral-ineligible \u2192 Flex Mod solicitation by 2027-01-15."
    },
    {
     "n": 6,
-    "text": ""
+    "text": "(disaster) FEMA IA area, current at disaster, 1 month delinquent \u2192 3-month plan without QRPC; QRPC attempts logged every \u22647 days."
    },
    {
     "n": 7,
-    "text": ""
+    "text": "(reduced payment miss) reduced payment not received by month-end \u2192 mitigating-circumstances check; termination notice; late charges from the default date only."
    },
    {
     "n": 8,
-    "text": ""
+    "text": "(MBS maturity) loan maturing 2027-02-01 \u2192 term capped at 2027-01-31."
    },
    {
     "n": 9,
-    "text": ""
+    "text": "(holds) 13.3 referral command refused while the plan is active; allowed 1 BD after `terminated{failed_terms}` (subject to 13.1)."
    },
    {
     "n": 10,
-    "text": ""
+    "text": "(Q1 2027 flag) with `smdu.plan_cases=on`, the plan creates an SMDU forbearance case and stops emitting code 09 in the legacy file."
    }
   ],
   "tables": [
@@ -5848,39 +5848,39 @@
   "tids": [
    {
     "n": 1,
-    "text": ""
+    "text": "Given PITI $2,100.00 and arrears $6,426.00, when terms are computed, then 6 months is rejected (151.0%) and 8 months accepted ($2,903.25; 138.25%); the schedule sums exactly to $6,426.00 with rounding in the last installment."
    },
    {
     "n": 2,
-    "text": ""
+    "text": "(BRP gate) loan 95 days delinquent \u2192 plan creation refused until the BRP is complete; 85 days + 6-month term \u2192 allowed on QRPC."
    },
    {
     "n": 3,
-    "text": ""
+    "text": "(>12 months) 14-month request \u2192 F-1-16 package generated; plan stays `extension_pending` until approval id recorded."
    },
    {
     "n": 4,
-    "text": ""
+    "text": "(late charges) charges during the plan are suppressed; at completion they are written off with reason; on failure in month 5, charges accrue from month 5 only."
    },
    {
     "n": 5,
-    "text": ""
+    "text": "(failure clock) payment missed at 2026-11-30 month-end, no QRPC, 4 months delinquent \u2192 deferral solicitation sent by 2026-12-15; if deferral-ineligible \u2192 Flex Mod solicitation by 2026-12-15."
    },
    {
     "n": 6,
-    "text": ""
+    "text": "(Reg X short-term) 3 months arrears over 6 months on an incomplete application \u2192 `regx_short_term=true`; terms notice within 5 federal BD; foreclosure hold active while performing."
    },
    {
     "n": 7,
-    "text": ""
+    "text": "(CA) late fee assessment refused from the evaluation start date, not only from plan start."
    },
    {
     "n": 8,
-    "text": ""
+    "text": "(reporting) status 12 with effective date reported at BD2; completion date reported in the completion month; $500 incentive claimed when the start delinquency was \u226560 days."
    },
    {
     "n": 9,
-    "text": ""
+    "text": "(recast) escrow analysis raises PITI to $2,250 in month 3 \u2192 total $3,053.25 = 135.7% (still under cap) \u2192 no recast; a rise to $2,050 P&I-only edge case handled by the cap re-test."
    }
   ],
   "tables": [
@@ -5927,43 +5927,43 @@
   "tids": [
    {
     "n": 1,
-    "text": ""
+    "text": "Given the 4-payment example, when accepted 2026-09-22, then NIB = $7,370.68, late charges $252.00 waived, new payment $2,131.17, SMDU entry by 2026-09-30, LAR/events by 2026-09-29, effective 2026-10-01, agreement sent by completion + 5 days, custodian by 2026-10-26."
    },
    {
     "n": 2,
-    "text": ""
+    "text": "(window) 1 month delinquent \u2192 ineligible (reason `INV_FNMA_D23204_DELQ_WINDOW`); 7 months \u2192 ineligible; 6 months \u2192 eligible with the contractual-payment gate."
    },
    {
     "n": 3,
-    "text": ""
+    "text": "(prior deferral) prior deferral effective 2025-11-01 \u2192 ineligible until 2026-11-01; prior *disaster* deferral 2025-11-01 \u2192 eligible."
    },
    {
     "n": 4,
-    "text": ""
+    "text": "(cap) cumulative 9 months deferred previously + 4 now = 13 \u2192 gate requires the contractual payment and the deferral is limited to 3 months (cap 12) with the 4th installment paid \u2014 engine offers the compliant structure or routes to Flex Mod (policy)."
    },
    {
     "n": 5,
-    "text": ""
+    "text": "(processing month) evaluation 2026-09-18 (after the 15th) \u2192 `processing_month=true`; entry deadline 2026-10-31; borrower not required to pay in October unless the 6-month/cap rule applies."
    },
    {
     "n": 6,
-    "text": ""
+    "text": "(solicitation clocks) forbearance expired 2026-12-31 without QRPC \u2192 solicitation by 2027-01-15; repayment failure at 2026-11-30 \u2192 solicitation by 2026-12-15."
    },
    {
     "n": 7,
-    "text": ""
+    "text": "(Reg X) deferral offered on a complete application \u2192 notice carries (c)(1) content and a 14-day window; deemed rejection after the grace releases holds."
    },
    {
     "n": 8,
-    "text": ""
+    "text": "(ledger) postings balance; IB UPB equals the scheduled balance; `deferred_principal` = $7,370.68; payoff statement shows the NIB line."
    },
    {
     "n": 9,
-    "text": ""
+    "text": "(SMDU outage) B2B failure on 2026-09-28 \u2192 portal task filed; operator completes 2026-09-29; case evidence attached."
    },
    {
     "n": 10,
-    "text": ""
+    "text": "(recording state) `deferral_recording=true` \u2192 recordable agreement executed by `signing_officer`, e-recorded, certified copy to custodian \u226425 days, original \u22645 BD after receipt."
    }
   ],
   "tables": [
@@ -6014,35 +6014,35 @@
   "tids": [
    {
     "n": 1,
-    "text": ""
+    "text": "Given a FEMA IA county, incident 2026-05-10, loan current at incident, disaster forbearance 2026-06-01..2026-11-30 without QRPC, when the plan expires, then the solicitation is sent by 2026-12-15 and, on acceptance 2026-12-20, the case is entered by 2026-12-31 (or processing month January under policy)."
    },
    {
     "n": 2,
-    "text": ""
+    "text": "(delinquency at disaster) 2 months delinquent at incident \u2192 prior-approval package; no offer until approval id recorded."
    },
    {
     "n": 3,
-    "text": ""
+    "text": "(12-month rule) 12 months delinquent at evaluation \u2192 contractual payment required before completion."
    },
    {
     "n": 4,
-    "text": ""
+    "text": "(caps) standard cumulative months unchanged after a 9-month disaster deferral; a standard deferral 8 months later is not blocked by the 12-month prior-deferral rule."
    },
    {
     "n": 5,
-    "text": ""
+    "text": "(same event) second disaster deferral request for the same `disaster_event_id` \u2192 refused; a new event \u2192 allowed."
    },
    {
     "n": 6,
-    "text": ""
+    "text": "(routing) ineligible (13 months delinquent) \u2192 Flex Mod disaster-criteria evaluation started within 5 BD."
    },
    {
     "n": 7,
-    "text": ""
+    "text": "(foreclosure gate) pre-referral review completed 2026-12-01 on a disaster loan \u2192 referral refused until Fannie Mae approval; submission by 2026-12-06."
    },
    {
     "n": 8,
-    "text": ""
+    "text": "(ledger) NIB $16,521.53 posted; IB UPB per schedule; late charges waived."
    }
   ],
   "tables": [],
@@ -6074,51 +6074,51 @@
   "tids": [
    {
     "n": 1,
-    "text": ""
+    "text": "(waterfall) Given the worked example, when the waterfall runs, then gross UPB $251,405.31, MTMLTV 86.69%, rate 6.500%, term 480, forbearance $35,483.32, IB UPB $215,921.99, P&I $1,264.13, reduction 20.0004%; step trace matches."
    },
    {
     "n": 2,
-    "text": ""
+    "text": "(cap c) value $200,000 \u2192 MTMLTV 125.70%; (a) $35,483.32, (b) $151,405.31, (c) $75,421.59 \u2192 forbearance (a) again; value $150,000 with a larger arrearage where (a) > (c) \u2192 forbearance = 30% cap and exhaustion-rule check applied."
    },
    {
     "n": 3,
-    "text": ""
+    "text": "(exhaustion/P&I rule) current borrower (imminent default), terms exhausted with new P&I = pre-mod P&I \u2192 ineligible (must be strictly less); 31+ days delinquent \u2192 eligible (\u2264)."
    },
    {
     "n": 4,
-    "text": ""
+    "text": "(trial timing) notice sent 2026-09-16 \u2192 first trial payment 2026-11-01; payment received 2026-11-30 = met; received 2026-12-01 = failed."
    },
    {
     "n": 5,
-    "text": ""
+    "text": "(four-month trial) current borrower \u2192 4 trial payments."
    },
    {
     "n": 6,
-    "text": ""
+    "text": "(solicitation window) day 90 on 2026-11-02 with no BRP \u2192 solicitation by 2026-11-17; a non-judicial sale scheduled 2026-11-25 \u2192 solicitation refused."
    },
    {
     "n": 7,
-    "text": ""
+    "text": "(MBS) MBS loan \u2192 servicer execution blocked until `smdu.case.reclassified`; effective date re-dated if needed."
    },
    {
     "n": 8,
-    "text": ""
+    "text": "(documents) Form 3179 sent 2026-12-01; borrower e-signs 2026-12-10; `signing_officer` executes 2026-12-28; recording required \u2192 certified copy of the executed agreement to the custodian by 2027-01-04 (25 days from 2026-12-10), e-recorded 2027-01-05, original to the custodian within 5 BD of receipt from the recorder; an unrecorded agreement instead goes as the fully executed original by 2027-01-04."
    },
    {
     "n": 9,
-    "text": ""
+    "text": "(conversion ledger) capitalization entries balance; late charges $505.68 waived; NIB $35,483.32 in `forborne_principal`; loan terms versioned effective 2027-01-01; delinquency reset; loan-data change acked."
    },
    {
     "n": 10,
-    "text": ""
+    "text": "(incentive) SMDU close by 2027-02-28 \u2192 $1,000 claimed; close on 2027-03-02 \u2192 no claim, sev-3 logged."
    },
    {
     "n": 11,
-    "text": ""
+    "text": "(three prior mods) denial with the specific Fannie Mae criterion; reviewer approval; appeal rights."
    },
    {
     "n": 12,
-    "text": ""
+    "text": "(MIR feed) MIR table lacks a rate for the evaluation date \u2192 waterfall refuses to run; `officer` alert."
    }
   ],
   "tables": [
@@ -6170,51 +6170,51 @@
   "tids": [
    {
     "n": 1,
-    "text": ""
+    "text": "Given a complete BRP and an initial offer received 2026-10-05 (loan 8 months delinquent), when processed, then the acknowledgment is sent by 2026-10-12 (5 BD), the valuation is ordered on eligibility, and the approval/counter/decline is sent by 2026-11-04 (30 days)."
    },
    {
     "n": 2,
-    "text": ""
+    "text": "(contribution) reserves $18,400, PITI $2,100 \u2192 request $8,400; negotiated $5,000 within policy; relocation not payable; Fannie Mae approval path when the borrower refuses."
    },
    {
     "n": 3,
-    "text": ""
+    "text": "(reserves >$50,000) case routed non-delegated with the assets field populated; no delegated approval issued."
    },
    {
     "n": 4,
-    "text": ""
+    "text": "(listing rule) MLS active 4 days \u2192 offer held; 5 days incl. weekend \u2192 review proceeds."
    },
    {
     "n": 5,
-    "text": ""
+    "text": "(closing clock) approval 2026-11-04 \u2192 close by 2027-01-03; funds 2027-01-10 without extension \u2192 approval expired, case re-evaluated."
    },
    {
     "n": 6,
-    "text": ""
+    "text": "(settlement review) CD shows a $2,000 payment to the borrower beyond the $7,500 incentive \u2192 funding blocked; fraud review."
    },
    {
     "n": 7,
-    "text": ""
+    "text": "(DIL window) acceptance 2026-10-15 \u2192 documents due 2026-12-14; weekly updates extend to 2027-01-13; inspection ordered \u22642026-12-14 when no interior BPO \u226490 days exists."
    },
    {
     "n": 8,
-    "text": ""
+    "text": "(deed timing) sale 2026-12-01; executed deed received 2026-11-05 (26 days before) \u2192 Fannie Mae prior approval required; received 2026-10-30 \u2192 allowed; recordation submitted within 5 BD; lien release within 30 BD after inspection confirms vacancy."
    },
    {
     "n": 9,
-    "text": ""
+    "text": "(lease option) borrower in active Chapter 13 \u2192 12-month lease refused; 3-month transition allowed (principal residence)."
    },
    {
     "n": 10,
-    "text": ""
+    "text": "(holds) during the listing period 13.x motion for judgment is refused (41(g)(3)-1); after approval, sale refused for 60 days; CA loan \u2192 NOD rescission task within 5 BD."
    },
    {
     "n": 11,
-    "text": ""
+    "text": "(incentive tiers) 200 days delinquent at closing \u2192 $2,500; 250 \u2192 $1,500; 320 \u2192 $750."
    },
    {
     "n": 12,
-    "text": ""
+    "text": "(Military Indulgence) DMDC-verified active duty with pre-service loan \u2192 indulgence case, 6% cap applied retroactively (13.9), late charges after call-up waived, status 32, quarterly contact timer."
    }
   ],
   "tables": [

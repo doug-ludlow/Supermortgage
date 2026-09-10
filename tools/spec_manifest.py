@@ -23,6 +23,9 @@ def tid_texts(pid, text):
         out.setdefault(int(m.group(1)), m.group(2).strip())
     for m in re.finditer(r'^\s*[-*]\s*' + re.escape(pid) + r'-T(\d+)[A-Za-z]?\s+(.*?)$', text, re.M):
         out.setdefault(int(m.group(1)), m.group(2).strip())
+    for m in re.finditer(r'^\s*[-*]\s*\*\*' + re.escape(pid) + r'-T(\d+)[A-Za-z]?\s*(\([^)]*\))?\s*[:.]?\*\*:?\s*(.*?)$', text, re.M):
+        label = (m.group(2) + ' ' if m.group(2) else '')
+        out.setdefault(int(m.group(1)), (label + m.group(3)).strip())
     for m in re.finditer(r'\b' + re.escape(pid) + r'-T(\d+)\b', text):
         out.setdefault(int(m.group(1)), '')
     return dict(sorted(out.items()))

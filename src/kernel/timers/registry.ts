@@ -29,6 +29,8 @@ export interface TimerDef extends RawTimer {
   readonly severity: Severity;
   /** Timer codes this row says it cross-references / is owned by (e.g. "(11.1)", "owned by 5.1"). */
   readonly ownedBy?: string;
+  /** Section override provenance (registry.override). */
+  readonly overrideWhy?: string;
 }
 
 const KIND_MAP: [RegExp, TimerKind][] = [
@@ -82,7 +84,12 @@ export function toTimerDef(raw: RawTimer): TimerDef {
   };
 }
 
-export type TimerOverride = Partial<Pick<TimerDef, "trigger" | "satisfied" | "anchor" | "offset" | "anchorField">>;
+export type TimerOverride = Partial<Pick<TimerDef, "trigger" | "satisfied" | "anchor" | "offset" | "anchorField">> & {
+  /** Name a domain evaluator for a condition-shaped gate/rule ("13.1.gate120"); sets the offset to `evaluator:<ref>`. */
+  readonly evaluator?: string;
+  /** Spec citation / prose the override encodes — kept on the def for the audit. */
+  readonly why?: string;
+};
 
 export class TimerRegistry {
   private readonly byCode = new Map<string, TimerDef>();
@@ -107,9 +114,10 @@ export class TimerRegistry {
   override(code: string, o: TimerOverride): TimerDef {
     const cur = this.byCode.get(code);
     if (!cur) throw new RangeError(`no timer ${code}`);
+    const offset = o.evaluator !== undefined ? `evaluator:${o.evaluator}` : o.offset;
     const merged = toTimerDef({ ...cur, ...(o.trigger !== undefined ? { trigger: o.trigger } : {}), ...(o.satisfied !== undefined ? { satisfied: o.satisfied } : {}),
-      ...(o.anchor !== undefined ? { anchor: o.anchor } : {}), ...(o.offset !== undefined ? { offset: o.offset } : {}) });
-    const next: TimerDef = { ...merged, ...(o.anchorField !== undefined ? { anchorField: o.anchorField } : {}) };
+      ...(o.anchor !== undefined ? { anchor: o.anchor } : {}), ...(offset !== undefined ? { offset } : {}) });
+    const next: TimerDef = { ...merged, ...(o.anchorField !== undefined ? { anchorField: o.anchorField } : {}), ...(o.why !== undefined ? { overrideWhy: o.why } : {}) };
     this.byCode.set(code, next);
     return next;
   }

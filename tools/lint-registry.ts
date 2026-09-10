@@ -4,9 +4,11 @@
  *   node --experimental-strip-types tools/lint-registry.ts [--verbose]
  */
 import { loadRegistry } from "../src/kernel/timers/registry.ts";
+import { applyAllTimerOverrides } from "../src/domain/timer-overrides.ts";
 
 const reg = loadRegistry();
 const rows = reg.all();
+const withOverrides = applyAllTimerOverrides(loadRegistry());
 const verbose = process.argv.includes("--verbose");
 const count = (f: (t: (typeof rows)[number]) => boolean) => rows.filter(f).length;
 
@@ -25,9 +27,18 @@ console.log(`severity parsed: ${count((t) => t.severity.level !== null)}/${rows.
 const executable = count((t) => t.offsetParsed.kind !== "prose" && t.triggerPattern !== null);
 console.log(`mechanically armable (offset + trigger parse): ${executable}/${rows.length} (${(100 * executable / rows.length).toFixed(1)}%)`);
 
+// After the section overrides (src/domain/*/timers.ts) every unique code must be armable with a dotted event trigger.
+const uniq = withOverrides.unique();
+const armable = uniq.filter((t) => t.offsetParsed.kind !== "prose" && t.triggerPattern !== null && t.triggerPattern.type.includes("."));
+const evaluators = uniq.filter((t) => t.offsetParsed.kind === "evaluator").length;
+const overridden = uniq.filter((t) => t.overrideWhy).length;
+console.log(`after section overrides: ${armable.length}/${uniq.length} unique codes armable (${overridden} overridden, ${evaluators} evaluator-backed)`);
+
 if (verbose) {
   console.log("\n--- prose offsets ---");
   for (const t of rows) if (t.offsetParsed.kind === "prose") console.log(`${t.code.padEnd(48)} ${t.process.padEnd(5)} ${t.offset}`);
   console.log("\n--- unparsed triggers ---");
   for (const t of rows) if (!t.triggerPattern) console.log(`${t.code.padEnd(48)} ${t.process.padEnd(5)} ${t.trigger}`);
+  console.log("\n--- still unarmable after overrides ---");
+  for (const t of uniq) if (!armable.includes(t)) console.log(`${t.code.padEnd(48)} ${t.process.padEnd(5)} offset=${t.offset} | trigger=${t.trigger}`);
 }

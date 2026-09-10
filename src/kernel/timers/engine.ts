@@ -13,8 +13,8 @@
 import { randomUUID } from "node:crypto";
 import type { DomainEvent, EventStore, Actor } from "../events/index.ts";
 import { eventMatches, SYSTEM } from "../events/index.ts";
-import { type PlainDate, addDays, addMonths, addYears, plainDate } from "../calendar/date.ts";
-import { addBusinessDays, rollForward, nextBusinessDay, type CalendarSet, defaultCalendars, type DayUnit } from "../calendar/business.ts";
+import { type PlainDate, addDays, addMonths, addYears, plainDate, parts, ymd, endOfMonth } from "../calendar/date.ts";
+import { addBusinessDays, rollForward, rollBack, nextBusinessDay, type CalendarSet, defaultCalendars, type DayUnit } from "../calendar/business.ts";
 import { zonedEpochMs, wallClock } from "../calendar/zoned.ts";
 import type { TimerDef, TimerRegistry } from "./registry.ts";
 import type { ParsedOffset } from "./offset.ts";
@@ -62,12 +62,13 @@ export const defaultAnchorResolver: AnchorResolver = (def, event) => {
   return wallClock(Date.parse(event.occurredAt), "America/New_York").date;
 };
 
-export interface DueComputation { dueDate?: PlainDate; dueAt?: number; needsHuman?: string; }
+export interface DueComputation { dueDate?: PlainDate; dueAt?: number; needsHuman?: string; opensDate?: PlainDate; evaluator?: string; }
 
+type StepLike = Extract<ParsedOffset, { kind: "step" }>;
 export function computeDue(offset: ParsedOffset, anchor: PlainDate, anchorMs: number, cals: CalendarSet = defaultCalendars): DueComputation {
   const endOfDay = (d: PlainDate, tz = "America/New_York") => zonedEpochMs(d, "23:59", tz);
   const atOrEod = (d: PlainDate, at?: { hhmm: string; timeZone: string }) =>
-    at && at.timeZone !== "servicer_local" ? zonedEpochMs(d, at.hhmm, at.timeZone) : endOfDay(d);
+    at && !at.timeZone.endsWith("_local") ? zonedEpochMs(d, at.hhmm, at.timeZone) : endOfDay(d);   // servicer_local / loan_local resolve per subject; end of day (ET) until then
   switch (offset.kind) {
     case "none": return {};
     case "same_day": return { dueDate: anchor, dueAt: endOfDay(anchor) };
@@ -94,6 +95,31 @@ export function computeDue(offset: ParsedOffset, anchor: PlainDate, anchorMs: nu
       return { dueDate: d, dueAt: atOrEod(d, offset.kind === "step" ? offset.at : undefined) };
     }
     case "until": return {};   // gate: armed with no due date, closes on its satisfying event
+    case "evaluator": return { evaluator: offset.ref };   // gate/rule asserted by domain code
+    case "window": {
+      const step = (n: number, unit: ParsedOffset & { kind: "step" } extends never ? never : StepLike["unit"]) => computeDue({ kind: "step", n, unit }, anchor, anchorMs, cals).dueDate!;
+      const opens = step(offset.open.n, offset.open.unit), closes = step(offset.close.n, offset.close.unit);
+      return { opensDate: opens, dueDate: closes, dueAt: endOfDay(closes) };
+    }
+    case "calendar_day": {
+      const a = parts(anchor);
+      let y = a.y, mo = a.m;
+      if (offset.month !== undefined) {
+        // next occurrence of month/day on or after the anchor, plus any explicit year offset
+        y = a.y + (offset.yearOffset ?? 0);
+        mo = offset.month;
+        const cand = ymd(y, mo, Math.min(offset.day, parts(endOfMonth(ymd(y, mo, 1))).d));
+        if (cand < anchor && !offset.yearOffset) y += 1;
+      } else {
+        const shifted = addMonths(ymd(a.y, a.m, 1), offset.monthOffset);
+        const sp = parts(shifted); y = sp.y; mo = sp.m;
+      }
+      const eom = endOfMonth(ymd(y, mo, 1));
+      let d = offset.day === -1 ? eom : ymd(y, mo, Math.min(offset.day, parts(eom).d));
+      if (offset.rollBackTo) d = rollBack(d, cals[offset.rollBackTo]);
+      if (offset.rollTo) d = rollForward(d, cals[offset.rollTo]);
+      return { dueDate: d, dueAt: atOrEod(d, offset.at) };
+    }
     case "prose": return { needsHuman: `offset is prose: ${offset.text}` };
   }
 }
@@ -159,7 +185,7 @@ export class TimerEngine {
       armedAt: trigger.occurredAt, armedByEventId: trigger.id, anchorDate: anchor,
       ...(due.dueAt !== undefined ? { dueAt: due.dueAt } : {}), ...(due.dueDate !== undefined ? { dueDate: due.dueDate } : {}),
       status: due.needsHuman ? "needs_human" : "armed",
-      ...(due.needsHuman ? { note: due.needsHuman } : {}),
+      ...(due.needsHuman ? { note: due.needsHuman } : due.evaluator ? { note: `evaluator:${due.evaluator}` } : due.opensDate ? { note: `window opens ${due.opensDate}` } : {}),
     };
     this.instances.push(inst);
     this.events.append({ type: "timer.armed", ...(inst.loanId ? { loanId: inst.loanId } : {}), actor: SYSTEM, causationId: trigger.id,

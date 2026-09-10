@@ -39,3 +39,13 @@ Open policy choices the engines default and the audit should confirm:
 - 15.2: uninsured REO final claim filed at sale + 60 as policy when disposition is unknown.
 - 18.5: fraud determination always requires the fraud officer regardless of agent confidence.
 - 19.2: state breach matrix seeded with NY and TX only; any other state refuses the clock and escalates to counsel.
+
+Timer overrides (`src/domain/*/timers.ts`, applied by `src/domain/timer-overrides.ts`) — defaults taken where the registry row is prose:
+
+- Event vocabulary introduced for prose triggers: `period.month_end` / `period.opened` / `period.closed` / `period.closing` (Fannie reporting period), `period.year_end`, `period.quarter_end`, `period.fiscal_year_end`, `schedule.tick{cadence=…}` for pure schedules, `claim.milestone.reached{kind=…}`, `bankruptcy.docket.event.received{kind=…}`, `contact.attempt.requested` / `communication.outbound.requested` for per-communication gates, `case_handoffs.inventoried{case_kind=…}`.
+- 109 condition-shaped gates/rules are `evaluator:<process>.<fn>` — no clock; the named domain function asserts them at the command boundary. The agent/command layer must wire each ref (task #13).
+- Computed anchors (`anchorField` with offset `0`) stand in for min()/tiered/state-matrix due dates: NOE foreclosure response (4.1), NY complaint tiers (4.5), repurchase stage deadlines and proceeds-by-type (5.6), state payoff-statement and lien-release deadlines (16.1/16.3), allowable foreclosure timeframes (13.3/13.5), vulnerability SLAs and vendor reassessment tiers (19.2/19.3), Reg AB PSA dates (18.6).
+- `FNMA_D23205_AGREEMENT_SEND_5` is an empty row in the registry; the override arms it on `payment_deferral.accepted{disaster=true}` +5 servicer BD per the code's own "5" (D2-3.2-05 gives no day count).
+- "2 draft cycles" (5.4/5.5/15.4) = the CDn draft of the month after next (preceding Fannie BD).
+- Rows with two legs ("engage +10 BD; complete +90", "5 BD / 1 BD during stress", "90 / 365 by identity kind") arm the primary leg; the second leg is named in `why` with the event variant that would arm it.
+- Fannie `BDn` offsets step n `business_days_fannie_et` from the anchor, so month-end-anchored rows land on BDn of the following month; mid-month anchors use an explicit period-end anchor field.

@@ -105,3 +105,47 @@ test("loan-scoped timers only satisfy on the same loan", () => {
   events.append({ type: "mers.registration.confirmed", loanId: "L1", actor: SYSTEM, payload: {} });
   assert.equal(mers[0]!.status, "satisfied");
 });
+
+test("offset grammar: calendar-day, window, fixed-date and evaluator shapes added for the section overrides", () => {
+  assert.deepEqual(parseOffset("CD18 (preceding fannie_et BD)"), { kind: "calendar_day", day: 18, monthOffset: 0, rollBackTo: "business_days_fannie_et", note: "preceding fannie_et BD" });
+  assert.deepEqual(parseOffset("18th of the following month (preceding fannie_et BD)"), { kind: "calendar_day", day: 18, monthOffset: 1, rollBackTo: "business_days_fannie_et", note: "preceding fannie_et BD" });
+  assert.equal((parseOffset("20th of the month after next (preceding fannie_et BD)") as { monthOffset?: number }).monthOffset, 2);
+  assert.deepEqual(parseOffset("by the 20th, 23:59 local"), { kind: "calendar_day", day: 20, monthOffset: 0, at: { hhmm: "23:59", timeZone: "servicer_local" } });
+  assert.deepEqual(parseOffset("last day of that month, 23:59 servicer-local"), { kind: "calendar_day", day: -1, monthOffset: 0, at: { hhmm: "23:59", timeZone: "servicer_local" } });
+  assert.deepEqual(parseOffset("first day of next month, 00:05 ET"), { kind: "calendar_day", day: 1, monthOffset: 1, at: { hhmm: "00:05", timeZone: "America/New_York" } });
+  assert.deepEqual(parseOffset("last business day of month, 16:00 ET (fannie_et)"), { kind: "calendar_day", day: -1, monthOffset: 0, at: { hhmm: "16:00", timeZone: "America/New_York" }, rollBackTo: "business_days_fannie_et", note: "fannie_et" });
+  assert.deepEqual(parseOffset("Jan 31 (rolled to the next federal business day)"), { kind: "calendar_day", day: 31, monthOffset: 0, month: 1, yearOffset: 0, rollTo: "business_days_federal", note: "rolled to the next federal business day" });
+  assert.deepEqual(parseOffset("Oct 15 following year"), { kind: "calendar_day", day: 15, monthOffset: 0, month: 10, yearOffset: 1 });
+  assert.deepEqual(parseOffset("between +30 and +35 calendar_days"), { kind: "window", open: { n: 30, unit: "calendar_days" }, close: { n: 35, unit: "calendar_days" } });
+  assert.deepEqual(parseOffset("window [−15, 0] calendar_days"), { kind: "window", open: { n: -15, unit: "calendar_days" }, close: { n: 0, unit: "calendar_days" } });
+  assert.deepEqual(parseOffset("opens −90 calendar_days, closes −10 calendar_days"), { kind: "window", open: { n: -90, unit: "calendar_days" }, close: { n: -10, unit: "calendar_days" } });
+  assert.deepEqual(parseOffset("evaluator:2.4.routeToPayoff"), { kind: "evaluator", ref: "2.4.routeToPayoff" });
+  assert.deepEqual(parseOffset("same day, 16:00 ET"), { kind: "step", n: 0, unit: "calendar_days", at: { hhmm: "16:00", timeZone: "America/New_York" } });
+  assert.deepEqual(parseOffset("0 (rolled to the next servicer business day)"), { kind: "step", n: 0, unit: "calendar_days", rollTo: "business_days_servicer", note: "rolled to the next servicer business day" });
+  assert.deepEqual(parseOffset("BD2 17:00 ET"), { kind: "step", n: 2, unit: "business_days_fannie_et", at: { hhmm: "17:00", timeZone: "America/New_York" } });
+  assert.deepEqual(parseOffset("+36 hours"), { kind: "step", n: 36, unit: "hours" });
+  assert.deepEqual((parseOffset("+44 calendar_days, 23:59 loan-local") as { at?: object }).at, { hhmm: "23:59", timeZone: "loan_local" });
+});
+
+test("computeDue: calendar-day and window offsets resolve against the anchor month and Fannie calendar", () => {
+  // Period opened Oct 1, 2026 → S/S draft CD18 = Sun Oct 18 → preceding Fannie BD = Fri Oct 16
+  assert.equal(computeDue(parseOffset("CD18 (preceding fannie_et BD)"), D("2026-10-01"), 0).dueDate, "2026-10-16");
+  // Two draft cycles after a Sept 3 acceptance: 18th of the month after next = Wed Nov 18, 2026
+  assert.equal(computeDue(parseOffset("18th of the month after next (preceding fannie_et BD)"), D("2026-09-03"), 0).dueDate, "2026-11-18");
+  // Month end Oct 31, 2026 → BD2 17:00 ET = Tue Nov 3, 2026
+  const bd2 = computeDue(parseOffset("BD2 17:00 ET"), D("2026-10-31"), 0);
+  assert.equal(bd2.dueDate, "2026-11-03");
+  assert.equal(toIso(bd2.dueAt!), "2026-11-03T22:00:00.000Z");
+  // Tax year closed Dec 31, 2026 → Jan 31, 2027 is a Sunday → rolled to Mon Feb 1, 2027 (federal)
+  assert.equal(computeDue(parseOffset("Jan 31 (rolled to the next federal business day)"), D("2026-12-31"), 0).dueDate, "2027-02-01");
+  // Electronic 1098 furnished Jan 20, 2027 → accessible through Oct 15 of the following year
+  assert.equal(computeDue(parseOffset("Oct 15 following year"), D("2027-01-20"), 0).dueDate, "2028-10-15");
+  // FPI reminder window from t0 = Aug 1: opens Aug 31, due Sep 5
+  const w = computeDue(parseOffset("between +30 and +35 calendar_days"), D("2026-08-01"), 0);
+  assert.equal(w.opensDate, "2026-08-31");
+  assert.equal(w.dueDate, "2026-09-05");
+  // Last day of the due month, e.g. a repayment-plan row due Feb 10, 2028 (leap year)
+  assert.equal(computeDue(parseOffset("last day of that month, 23:59 servicer-local"), D("2028-02-10"), 0).dueDate, "2028-02-29");
+  // Evaluator offsets carry no clock — the domain asserts them
+  assert.deepEqual(computeDue(parseOffset("evaluator:12.4.incrementMax3Months"), D("2026-10-01"), 0), { evaluator: "12.4.incrementMax3Months" });
+});

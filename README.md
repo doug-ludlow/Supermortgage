@@ -47,7 +47,7 @@ DATABASE_URL=postgresql://sm:sm@localhost/supermortgage db/migrate.sh
 |---|---|
 | Spec materialized in repo | ✅ all 114 processes + registries |
 | Kernel (money, calendars, events, FSM, ledger, timers) | ✅ tested |
-| Timer registry | ✅ 1,365 rows loaded; 741 armable purely from the registry, the rest armed by section code |
+| Timer registry | ✅ 1,365 rows loaded (1,206 unique codes); 774 armable purely from the registry, the other 616 via cited overrides in each section's `timers.ts` (`src/domain/timer-overrides.ts` applies all 19; 109 are evaluator-backed gates) — 1,206/1,206 armable |
 | Postgres schema | ✅ 22 migrations, 437 tables covering every section's "Data model" subsection; append-only/immutability triggers, restricted `restricted_fl` schema |
 | §1 Boarding & transfers in (1.1–1.7) | ✅ `src/domain/boarding`, `src/domain/transfers` |
 | §2 Cashiering (2.1–2.7) | ✅ `src/domain/cashiering` |

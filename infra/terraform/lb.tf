@@ -113,10 +113,9 @@ resource "google_compute_url_map" "https" {
   name            = "supermortgage-https"
   default_service = google_compute_backend_service.api.id
 
-  # api.* and console.* both route to the one service; the application
-  # distinguishes them by Host header.
+  # The API and console hostnames (one name, or two) route to the one service.
   host_rule {
-    hosts        = [var.api_hostname, var.console_hostname]
+    hosts        = local.hostnames
     path_matcher = "supermortgage"
   }
 
@@ -126,14 +125,21 @@ resource "google_compute_url_map" "https" {
   }
 }
 
-# Google-managed certificate for the two hostnames. The apex domain is NOT
+# Google-managed certificate for the hostnames. The apex domain is NOT
 # included: it keeps pointing wherever it does today, and adding it here
 # would block certificate issuance until the apex A record moved too.
+# The name carries a hash of the hostnames: a managed certificate's domains are
+# immutable, so a hostname change creates a new certificate (new name) before
+# the old one is detached.
+locals {
+  hostnames = distinct([var.api_hostname, var.console_hostname])
+}
+
 resource "google_compute_managed_ssl_certificate" "api" {
-  name = "supermortgage-cert"
+  name = "supermortgage-cert-${substr(md5(join(",", local.hostnames)), 0, 8)}"
 
   managed {
-    domains = [var.api_hostname, var.console_hostname]
+    domains = local.hostnames
   }
 
   # Managed certificates are immutable; rotating hostnames creates the new one

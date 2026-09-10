@@ -22,15 +22,15 @@ variable "domain" {
 }
 
 variable "api_hostname" {
-  description = "Hostname the API answers on behind the load balancer."
+  description = "Hostname the API answers on behind the load balancer. May equal console_hostname (one name for both)."
   type        = string
-  default     = "api.supermortgage.com"
+  default     = "demo.supermortgage.com"
 }
 
 variable "console_hostname" {
-  description = "Hostname the ops console answers on behind the load balancer (same backend as the API)."
+  description = "Hostname the ops console answers on behind the load balancer (same backend as the API). May equal api_hostname."
   type        = string
-  default     = "console.supermortgage.com"
+  default     = "demo.supermortgage.com"
 }
 
 variable "image" {

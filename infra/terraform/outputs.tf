@@ -58,25 +58,18 @@ output "sweep_job" {
 
 output "godaddy_dns_records" {
   description = <<-EOT
-    Enter these two A records in GoDaddy DNS for supermortgage.com (the value of
-    var.domain): My Products -> the domain -> DNS -> Add New Record. Only the api and
-    console hostnames move to Google Cloud; the apex (@) record and anything
-    else on the domain stay exactly where they are today. The managed
-    certificate provisions automatically once both names resolve to this IP
-    (allow up to 60 minutes).
+    Enter these A records in GoDaddy DNS for supermortgage.com (the value of
+    var.domain): My Products -> the domain -> DNS -> Add New Record. Only these
+    hostnames move to Google Cloud; the apex (@) record and anything else on the
+    domain stay exactly where they are today. The managed certificate provisions
+    automatically once every name resolves to this IP (allow up to 60 minutes).
   EOT
   value = [
-    {
+    for h in local.hostnames : {
       type  = "A"
-      name  = trimsuffix(var.api_hostname, ".${var.domain}")
+      name  = trimsuffix(h, ".${var.domain}")
       value = google_compute_global_address.lb.address
       ttl   = 600
-    },
-    {
-      type  = "A"
-      name  = trimsuffix(var.console_hostname, ".${var.domain}")
-      value = google_compute_global_address.lb.address
-      ttl   = 600
-    },
+    }
   ]
 }

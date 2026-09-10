@@ -1,3836 +1,7769 @@
 {
- "tids": [
-  {
-   "process": "1.1",
-   "spec": 10,
-   "implemented": 10,
-   "missing": []
-  },
-  {
-   "process": "1.2",
-   "spec": 7,
-   "implemented": 3,
-   "missing": [
-    4,
-    5,
-    6,
-    7
-   ]
-  },
-  {
-   "process": "1.3",
-   "spec": 10,
-   "implemented": 6,
-   "missing": [
-    4,
-    8,
-    9,
-    10
-   ]
-  },
-  {
-   "process": "1.4",
-   "spec": 9,
-   "implemented": 7,
-   "missing": [
-    6,
-    7
-   ]
-  },
-  {
-   "process": "1.5",
-   "spec": 8,
-   "implemented": 5,
-   "missing": [
-    2,
-    4,
-    8
-   ]
-  },
-  {
-   "process": "1.6",
-   "spec": 10,
-   "implemented": 7,
-   "missing": [
-    3,
-    4,
-    9
-   ]
-  },
-  {
-   "process": "1.7",
-   "spec": 10,
-   "implemented": 7,
-   "missing": [
-    7,
-    9,
-    10
-   ]
-  },
-  {
-   "process": "2.1",
-   "spec": 11,
-   "implemented": 8,
-   "missing": [
-    7,
-    10,
-    11
-   ]
-  },
-  {
-   "process": "2.2",
-   "spec": 11,
-   "implemented": 9,
-   "missing": [
-    10,
-    11
-   ]
-  },
-  {
-   "process": "2.3",
-   "spec": 11,
-   "implemented": 8,
-   "missing": [
-    9,
-    10,
-    11
-   ]
-  },
-  {
-   "process": "2.4",
-   "spec": 10,
-   "implemented": 8,
-   "missing": [
-    8,
-    9
-   ]
-  },
-  {
-   "process": "2.5",
-   "spec": 7,
-   "implemented": 5,
-   "missing": [
-    4,
-    7
-   ]
-  },
-  {
-   "process": "2.6",
-   "spec": 8,
-   "implemented": 5,
-   "missing": [
-    5,
-    6,
-    7
-   ]
-  },
-  {
-   "process": "2.7",
-   "spec": 13,
-   "implemented": 11,
-   "missing": [
-    9,
-    13
-   ]
-  },
-  {
-   "process": "3.1",
-   "spec": 9,
-   "implemented": 1,
-   "missing": [
-    1,
-    2,
-    4,
-    5,
-    6,
-    7,
-    8,
-    9
-   ]
-  },
-  {
-   "process": "3.2",
-   "spec": 17,
-   "implemented": 10,
-   "missing": [
-    11,
-    12,
-    13,
-    14,
-    15,
-    16,
-    17
-   ]
-  },
-  {
-   "process": "3.3",
-   "spec": 12,
-   "implemented": 0,
-   "missing": [
-    1,
-    2,
-    3,
-    4,
-    5,
-    6,
-    7,
-    8,
-    9,
-    10,
-    11,
-    12
-   ]
-  },
-  {
-   "process": "3.4",
-   "spec": 7,
-   "implemented": 1,
-   "missing": [
-    1,
-    2,
-    3,
-    4,
-    5,
-    7
-   ]
-  },
-  {
-   "process": "3.5",
-   "spec": 10,
-   "implemented": 0,
-   "missing": [
-    1,
-    2,
-    3,
-    4,
-    5,
-    6,
-    7,
-    8,
-    9,
-    10
-   ]
-  },
-  {
-   "process": "3.6",
-   "spec": 10,
-   "implemented": 0,
-   "missing": [
-    1,
-    2,
-    3,
-    4,
-    5,
-    6,
-    7,
-    8,
-    9,
-    10
-   ]
-  },
-  {
-   "process": "3.7",
-   "spec": 15,
-   "implemented": 1,
-   "missing": [
-    1,
-    2,
-    3,
-    4,
-    5,
-    6,
-    7,
-    8,
-    9,
-    11,
-    12,
-    13,
-    14,
-    15
-   ]
-  },
-  {
-   "process": "3.8",
-   "spec": 10,
-   "implemented": 0,
-   "missing": [
-    1,
-    2,
-    3,
-    4,
-    5,
-    6,
-    7,
-    8,
-    9,
-    10
-   ]
-  },
-  {
-   "process": "3.9",
-   "spec": 12,
-   "implemented": 0,
-   "missing": [
-    1,
-    2,
-    3,
-    4,
-    5,
-    6,
-    7,
-    8,
-    9,
-    10,
-    11,
-    12
-   ]
-  },
-  {
-   "process": "4.1",
-   "spec": 16,
-   "implemented": 7,
-   "missing": [
-    5,
-    7,
-    10,
-    11,
-    12,
-    13,
-    14,
-    15,
-    16
-   ]
-  },
-  {
-   "process": "4.2",
-   "spec": 13,
-   "implemented": 6,
-   "missing": [
-    5,
-    7,
-    8,
-    9,
-    10,
-    11,
-    13
-   ]
-  },
-  {
-   "process": "4.3",
-   "spec": 12,
-   "implemented": 5,
-   "missing": [
-    2,
-    4,
-    5,
-    8,
-    10,
-    11,
-    12
-   ]
-  },
-  {
-   "process": "4.4",
-   "spec": 12,
-   "implemented": 5,
-   "missing": [
-    6,
-    7,
-    8,
-    9,
-    10,
-    11,
-    12
-   ]
-  },
-  {
-   "process": "4.5",
-   "spec": 12,
-   "implemented": 6,
-   "missing": [
-    5,
-    7,
-    8,
-    9,
-    11,
-    12
-   ]
-  },
-  {
-   "process": "5.1",
-   "spec": 12,
-   "implemented": 6,
-   "missing": [
-    4,
-    5,
-    6,
-    7,
-    11,
-    12
-   ]
-  },
-  {
-   "process": "5.2",
-   "spec": 12,
-   "implemented": 11,
-   "missing": [
-    8
-   ]
-  },
-  {
-   "process": "5.3",
-   "spec": 10,
-   "implemented": 4,
-   "missing": [
-    2,
-    6,
-    7,
-    8,
-    9,
-    10
-   ]
-  },
-  {
-   "process": "5.4",
-   "spec": 8,
-   "implemented": 3,
-   "missing": [
-    4,
-    5,
-    6,
-    7,
-    8
-   ]
-  },
-  {
-   "process": "5.5",
-   "spec": 6,
-   "implemented": 0,
-   "missing": [
-    1,
-    2,
-    3,
-    4,
-    5,
-    6
-   ]
-  },
-  {
-   "process": "5.6",
-   "spec": 7,
-   "implemented": 4,
-   "missing": [
-    4,
-    5,
-    7
-   ]
-  },
-  {
-   "process": "5.7",
-   "spec": 8,
-   "implemented": 5,
-   "missing": [
-    5,
-    6,
-    8
-   ]
-  },
-  {
-   "process": "6.1",
-   "spec": 8,
-   "implemented": 7,
-   "missing": [
-    7
-   ]
-  },
-  {
-   "process": "6.2",
-   "spec": 6,
-   "implemented": 4,
-   "missing": [
-    4,
-    6
-   ]
-  },
-  {
-   "process": "6.3",
-   "spec": 14,
-   "implemented": 7,
-   "missing": [
-    3,
-    5,
-    10,
-    11,
-    12,
-    13,
-    14
-   ]
-  },
-  {
-   "process": "6.4",
-   "spec": 8,
-   "implemented": 6,
-   "missing": [
-    7,
-    8
-   ]
-  },
-  {
-   "process": "6.5",
-   "spec": 10,
-   "implemented": 4,
-   "missing": [
-    1,
-    2,
-    3,
-    6,
-    8,
-    9
-   ]
-  },
-  {
-   "process": "7.1",
-   "spec": 15,
-   "implemented": 5,
-   "missing": [
-    4,
-    5,
-    6,
-    7,
-    8,
-    11,
-    12,
-    13,
-    14,
-    15
-   ]
-  },
-  {
-   "process": "7.2",
-   "spec": 14,
-   "implemented": 7,
-   "missing": [
-    8,
-    9,
-    10,
-    11,
-    12,
-    13,
-    14
-   ]
-  },
-  {
-   "process": "7.3",
-   "spec": 9,
-   "implemented": 3,
-   "missing": [
-    3,
-    4,
-    5,
-    7,
-    8,
-    9
-   ]
-  },
-  {
-   "process": "7.4",
-   "spec": 11,
-   "implemented": 8,
-   "missing": [
-    7,
-    8,
-    11
-   ]
-  },
-  {
-   "process": "7.5",
-   "spec": 9,
-   "implemented": 5,
-   "missing": [
-    6,
-    7,
-    8,
-    9
-   ]
-  },
-  {
-   "process": "7.6",
-   "spec": 11,
-   "implemented": 6,
-   "missing": [
-    2,
-    5,
-    9,
-    10,
-    11
-   ]
-  },
-  {
-   "process": "8.1",
-   "spec": 19,
-   "implemented": 16,
-   "missing": [
-    12,
-    17,
-    18
-   ]
-  },
-  {
-   "process": "8.2",
-   "spec": 14,
-   "implemented": 11,
-   "missing": [
-    10,
-    13,
-    14
-   ]
-  },
-  {
-   "process": "8.3",
-   "spec": 14,
-   "implemented": 13,
-   "missing": [
-    11
-   ]
-  },
-  {
-   "process": "9.1",
-   "spec": 10,
-   "implemented": 9,
-   "missing": [
-    10
-   ]
-  },
-  {
-   "process": "9.2",
-   "spec": 11,
-   "implemented": 6,
-   "missing": [
-    5,
-    6,
-    7,
-    9,
-    10
-   ]
-  },
-  {
-   "process": "9.3",
-   "spec": 6,
-   "implemented": 6,
-   "missing": []
-  },
-  {
-   "process": "9.4",
-   "spec": 5,
-   "implemented": 5,
-   "missing": []
-  },
-  {
-   "process": "9.5",
-   "spec": 7,
-   "implemented": 6,
-   "missing": [
-    3
-   ]
-  },
-  {
-   "process": "9.6",
-   "spec": 9,
-   "implemented": 6,
-   "missing": [
-    6,
-    7,
-    8
-   ]
-  },
-  {
-   "process": "9.7",
-   "spec": 10,
-   "implemented": 9,
-   "missing": [
-    10
-   ]
-  },
-  {
-   "process": "9.8",
-   "spec": 9,
-   "implemented": 7,
-   "missing": [
-    3,
-    5
-   ]
-  },
-  {
-   "process": "9.9",
-   "spec": 11,
-   "implemented": 7,
-   "missing": [
-    7,
-    9,
-    10,
-    11
-   ]
-  },
-  {
-   "process": "10.1",
-   "spec": 12,
-   "implemented": 9,
-   "missing": [
-    3,
-    7,
-    8
-   ]
-  },
-  {
-   "process": "10.2",
-   "spec": 11,
-   "implemented": 4,
-   "missing": [
-    1,
-    2,
-    3,
-    6,
-    7,
-    8,
-    11
-   ]
-  },
-  {
-   "process": "10.3",
-   "spec": 7,
-   "implemented": 6,
-   "missing": [
-    7
-   ]
-  },
-  {
-   "process": "10.4",
-   "spec": 9,
-   "implemented": 2,
-   "missing": [
-    2,
-    3,
-    4,
-    5,
-    6,
-    7,
-    9
-   ]
-  },
-  {
-   "process": "10.5",
-   "spec": 10,
-   "implemented": 7,
-   "missing": [
-    4,
-    9,
-    10
-   ]
-  },
-  {
-   "process": "10.6",
-   "spec": 10,
-   "implemented": 8,
-   "missing": [
-    6,
-    10
-   ]
-  },
-  {
-   "process": "11.1",
-   "spec": 24,
-   "implemented": 6,
-   "missing": [
-    5,
-    8,
-    9,
-    10,
-    11,
-    12,
-    13,
-    14,
-    15,
-    16,
-    17,
-    18,
-    19,
-    20,
-    21,
-    22,
-    23,
-    24
-   ]
-  },
-  {
-   "process": "11.2",
-   "spec": 15,
-   "implemented": 8,
-   "missing": [
-    9,
-    10,
-    11,
-    12,
-    13,
-    14,
-    15
-   ]
-  },
-  {
-   "process": "11.3",
-   "spec": 14,
-   "implemented": 6,
-   "missing": [
-    5,
-    6,
-    7,
-    8,
-    10,
-    11,
-    13,
-    14
-   ]
-  },
-  {
-   "process": "11.4",
-   "spec": 16,
-   "implemented": 3,
-   "missing": [
-    4,
-    5,
-    6,
-    7,
-    8,
-    9,
-    10,
-    11,
-    12,
-    13,
-    14,
-    15,
-    16
-   ]
-  },
-  {
-   "process": "11.5",
-   "spec": 14,
-   "implemented": 6,
-   "missing": [
-    7,
-    8,
-    9,
-    10,
-    11,
-    12,
-    13,
-    14
-   ]
-  },
-  {
-   "process": "12.1",
-   "spec": 12,
-   "implemented": 6,
-   "missing": [
-    4,
-    8,
-    9,
-    10,
-    11,
-    12
-   ]
-  },
-  {
-   "process": "12.2",
-   "spec": 13,
-   "implemented": 5,
-   "missing": [
-    3,
-    5,
-    6,
-    8,
-    10,
-    11,
-    12,
-    13
-   ]
-  },
-  {
-   "process": "12.3",
-   "spec": 10,
-   "implemented": 5,
-   "missing": [
-    2,
-    3,
-    4,
-    8,
-    10
-   ]
-  },
-  {
-   "process": "12.4",
-   "spec": 10,
-   "implemented": 4,
-   "missing": [
-    4,
-    5,
-    6,
-    7,
-    9,
-    10
-   ]
-  },
-  {
-   "process": "12.5",
-   "spec": 9,
-   "implemented": 2,
-   "missing": [
-    2,
-    3,
-    4,
-    5,
-    7,
-    8,
-    9
-   ]
-  },
-  {
-   "process": "12.6",
-   "spec": 10,
-   "implemented": 4,
-   "missing": [
-    4,
-    6,
-    7,
-    8,
-    9,
-    10
-   ]
-  },
-  {
-   "process": "12.7",
-   "spec": 8,
-   "implemented": 3,
-   "missing": [
-    1,
-    3,
-    5,
-    6,
-    7
-   ]
-  },
-  {
-   "process": "12.8",
-   "spec": 12,
-   "implemented": 5,
-   "missing": [
-    6,
-    7,
-    8,
-    9,
-    10,
-    11,
-    12
-   ]
-  },
-  {
-   "process": "12.9",
-   "spec": 12,
-   "implemented": 6,
-   "missing": [
-    1,
-    3,
-    6,
-    9,
-    10,
-    12
-   ]
-  },
-  {
-   "process": "13.1",
-   "spec": 10,
-   "implemented": 3,
-   "missing": [
-    4,
-    5,
-    6,
-    7,
-    8,
-    9,
-    10
-   ]
-  },
-  {
-   "process": "13.2",
-   "spec": 10,
-   "implemented": 4,
-   "missing": [
-    2,
-    4,
-    6,
-    7,
-    9,
-    10
-   ]
-  },
-  {
-   "process": "13.3",
-   "spec": 12,
-   "implemented": 3,
-   "missing": [
-    1,
-    2,
-    3,
-    4,
-    8,
-    9,
-    10,
-    11,
-    12
-   ]
-  },
-  {
-   "process": "13.4",
-   "spec": 10,
-   "implemented": 1,
-   "missing": [
-    2,
-    3,
-    4,
-    5,
-    6,
-    7,
-    8,
-    9,
-    10
-   ]
-  },
-  {
-   "process": "13.5",
-   "spec": 9,
-   "implemented": 3,
-   "missing": [
-    4,
-    5,
-    6,
-    7,
-    8,
-    9
-   ]
-  },
-  {
-   "process": "13.6",
-   "spec": 10,
-   "implemented": 6,
-   "missing": [
-    5,
-    7,
-    8,
-    10
-   ]
-  },
-  {
-   "process": "13.7",
-   "spec": 10,
-   "implemented": 5,
-   "missing": [
-    5,
-    6,
-    7,
-    8,
-    9
-   ]
-  },
-  {
-   "process": "13.8",
-   "spec": 12,
-   "implemented": 3,
-   "missing": [
-    1,
-    3,
-    5,
-    6,
-    7,
-    8,
-    9,
-    10,
-    12
-   ]
-  },
-  {
-   "process": "13.9",
-   "spec": 11,
-   "implemented": 5,
-   "missing": [
-    5,
-    6,
-    7,
-    8,
-    9,
-    10
-   ]
-  },
-  {
-   "process": "14.1",
-   "spec": 18,
-   "implemented": 6,
-   "missing": [
-    1,
-    2,
-    5,
-    6,
-    10,
-    12,
-    13,
-    14,
-    15,
-    16,
-    17,
-    18
-   ]
-  },
-  {
-   "process": "14.2",
-   "spec": 14,
-   "implemented": 8,
-   "missing": [
-    5,
-    9,
-    10,
-    12,
-    13,
-    14
-   ]
-  },
-  {
-   "process": "14.3",
-   "spec": 12,
-   "implemented": 4,
-   "missing": [
-    3,
-    5,
-    6,
-    7,
-    9,
-    10,
-    11,
-    12
-   ]
-  },
-  {
-   "process": "14.4",
-   "spec": 8,
-   "implemented": 7,
-   "missing": [
-    8
-   ]
-  },
-  {
-   "process": "15.1",
-   "spec": 12,
-   "implemented": 11,
-   "missing": [
-    12
-   ]
-  },
-  {
-   "process": "15.2",
-   "spec": 13,
-   "implemented": 12,
-   "missing": [
-    11
-   ]
-  },
-  {
-   "process": "15.3",
-   "spec": 12,
-   "implemented": 10,
-   "missing": [
-    2,
-    12
-   ]
-  },
-  {
-   "process": "15.4",
-   "spec": 11,
-   "implemented": 8,
-   "missing": [
-    5,
-    8,
-    9
-   ]
-  },
-  {
-   "process": "16.1",
-   "spec": 15,
-   "implemented": 6,
-   "missing": [
-    5,
-    8,
-    9,
-    10,
-    11,
-    12,
-    13,
-    14,
-    15
-   ]
-  },
-  {
-   "process": "16.2",
-   "spec": 12,
-   "implemented": 8,
-   "missing": [
-    9,
-    10,
-    11,
-    12
-   ]
-  },
-  {
-   "process": "16.3",
-   "spec": 12,
-   "implemented": 6,
-   "missing": [
-    7,
-    8,
-    9,
-    10,
-    11,
-    12
-   ]
-  },
-  {
-   "process": "16.4",
-   "spec": 8,
-   "implemented": 5,
-   "missing": [
-    4,
-    7,
-    8
-   ]
-  },
-  {
-   "process": "17.1",
-   "spec": 8,
-   "implemented": 5,
-   "missing": [
-    4,
-    5,
-    8
-   ]
-  },
-  {
-   "process": "17.2",
-   "spec": 10,
-   "implemented": 6,
-   "missing": [
-    3,
-    6,
-    9,
-    10
-   ]
-  },
-  {
-   "process": "17.3",
-   "spec": 14,
-   "implemented": 2,
-   "missing": [
-    3,
-    4,
-    5,
-    6,
-    7,
-    8,
-    9,
-    10,
-    11,
-    12,
-    13,
-    14
-   ]
-  },
-  {
-   "process": "17.4",
-   "spec": 11,
-   "implemented": 5,
-   "missing": [
-    4,
-    5,
-    7,
-    8,
-    10,
-    11
-   ]
-  },
-  {
-   "process": "18.1",
-   "spec": 12,
-   "implemented": 11,
-   "missing": [
-    12
-   ]
-  },
-  {
-   "process": "18.2",
-   "spec": 9,
-   "implemented": 6,
-   "missing": [
-    2,
-    6,
-    8
-   ]
-  },
-  {
-   "process": "18.3",
-   "spec": 9,
-   "implemented": 7,
-   "missing": [
-    3,
-    9
-   ]
-  },
-  {
-   "process": "18.4",
-   "spec": 8,
-   "implemented": 6,
-   "missing": [
-    6,
-    8
-   ]
-  },
-  {
-   "process": "18.5",
-   "spec": 10,
-   "implemented": 7,
-   "missing": [
-    6,
-    7,
-    10
-   ]
-  },
-  {
-   "process": "18.6",
-   "spec": 7,
-   "implemented": 4,
-   "missing": [
-    3,
-    5,
-    6
-   ]
-  },
-  {
-   "process": "18.7",
-   "spec": 9,
-   "implemented": 8,
-   "missing": [
-    7
-   ]
-  },
-  {
-   "process": "19.1",
-   "spec": 15,
-   "implemented": 10,
-   "missing": [
-    5,
-    9,
-    12,
-    14,
-    15
-   ]
-  },
-  {
-   "process": "19.2",
-   "spec": 17,
-   "implemented": 15,
-   "missing": [
-    8,
-    17
-   ]
-  },
-  {
-   "process": "19.3",
-   "spec": 14,
-   "implemented": 9,
-   "missing": [
-    9,
-    11,
-    12,
-    13,
-    14
-   ]
-  },
-  {
-   "process": "19.4",
-   "spec": 16,
-   "implemented": 10,
-   "missing": [
-    3,
-    4,
-    5,
-    6,
-    14,
-    16
-   ]
+ "brief": "spec units built 2102/4598 (45.7%): tids 677/1253, tables 431/450, timers 720/1365, notices 6/248, tools 0/658, figures 268/624; processes at 100%: 0/114",
+ "totals": {
+  "tids": {
+   "spec": 1253,
+   "built": 677
+  },
+  "tables": {
+   "spec": 450,
+   "built": 431
+  },
+  "timers": {
+   "spec": 1365,
+   "built": 720
+  },
+  "notices": {
+   "spec": 248,
+   "built": 6
+  },
+  "tools": {
+   "spec": 658,
+   "built": 0
+  },
+  "figures": {
+   "spec": 624,
+   "built": 268
+  },
+  "units": {
+   "spec": 4598,
+   "built": 2102
   }
- ],
- "tables": [
-  {
-   "process": "1.1",
-   "spec": [
-    "boarding_exceptions",
-    "boarding_staging",
-    "boarding_tapes",
-    "boarding_validations",
-    "transfer_batch_loans",
-    "transfer_batches"
-   ],
-   "missing": []
-  },
-  {
-   "process": "1.2",
-   "spec": [
-    "escalations",
-    "transfer_batch_loan_list_versions",
-    "transfer_batches"
-   ],
-   "missing": []
-  },
-  {
-   "process": "1.3",
-   "spec": [
-    "misdirected_payments",
-    "notice_templates",
-    "notices",
-    "transfer_notice_runs"
-   ],
-   "missing": []
-  },
-  {
-   "process": "1.4",
-   "spec": [
-    "custody_exceptions",
-    "custody_recerts",
-    "custody_records",
-    "documents",
-    "enotes"
-   ],
-   "missing": []
-  },
-  {
-   "process": "1.5",
-   "spec": [
-    "mers_min_snapshots",
-    "mers_qa_findings",
-    "mers_transactions"
-   ],
-   "missing": []
-  },
-  {
-   "process": "1.6",
-   "spec": [
-    "escrow_analyses",
-    "ledger_accounts",
-    "recon_variances",
-    "reconciliations",
-    "transfer_funds_receipts"
-   ],
-   "missing": [
-    "ledger_accounts"
-   ]
-  },
-  {
-   "process": "1.7",
-   "spec": [
-    "lossmit_carryover_checks",
-    "lossmit_documents"
-   ],
-   "missing": []
-  },
-  {
-   "process": "2.1",
-   "spec": [
-    "payment_allocations",
-    "payments"
-   ],
-   "missing": []
-  },
-  {
-   "process": "2.2",
-   "spec": [
-    "partial_payment_evaluations"
-   ],
-   "missing": []
-  },
-  {
-   "process": "2.3",
-   "spec": [
-    "ach_entries",
-    "ach_files",
-    "ach_returns",
-    "autodraft_enrollments",
-    "autodraft_notices",
-    "consents",
-    "fraud_monitor_findings",
-    "tpsc_2y_post_revocation"
-   ],
-   "missing": [
-    "tpsc_2y_post_revocation"
-   ]
-  },
-  {
-   "process": "2.4",
-   "spec": [
-    "curtailment_reapplications",
-    "loan_terms",
-    "reamortizations"
-   ],
-   "missing": []
-  },
-  {
-   "process": "2.5",
-   "spec": [
-    "payments",
-    "third_party_payment_arrangements"
-   ],
-   "missing": []
-  },
-  {
-   "process": "2.6",
-   "spec": [
-    "fees",
-    "trial_funds_summary",
-    "trial_payment_schedules"
-   ],
-   "missing": []
-  },
-  {
-   "process": "2.7",
-   "spec": [
-    "fees"
-   ],
-   "missing": []
-  },
-  {
-   "process": "3.1",
-   "spec": [
-    "documents",
-    "escrow_accounts",
-    "escrow_analyses",
-    "escrow_statements"
-   ],
-   "missing": []
-  },
-  {
-   "process": "3.2",
-   "spec": [
-    "escrow_analyses",
-    "escrow_analysis_lines",
-    "escrow_bills",
-    "escrow_lines",
-    "loan_terms"
-   ],
-   "missing": []
-  },
-  {
-   "process": "3.3",
-   "spec": [
-    "escrow_statement_history_lines",
-    "escrow_statements",
-    "notices"
-   ],
-   "missing": []
-  },
-  {
-   "process": "3.4",
-   "spec": [],
-   "missing": []
-  },
-  {
-   "process": "3.5",
-   "spec": [
-    "disbursements"
-   ],
-   "missing": []
-  },
-  {
-   "process": "3.6",
-   "spec": [
-    "escrow_repayment_plans"
-   ],
-   "missing": []
-  },
-  {
-   "process": "3.7",
-   "spec": [
-    "disbursements",
-    "escrow_attestations",
-    "escrow_bills",
-    "investor_events",
-    "nonescrow_tax_checks",
-    "payees"
-   ],
-   "missing": [
-    "payees"
-   ]
-  },
-  {
-   "process": "3.8",
-   "spec": [
-    "escrow_waivers"
-   ],
-   "missing": []
-  },
-  {
-   "process": "3.9",
-   "spec": [
-    "escrow_interest_1099",
-    "escrow_interest_accruals",
-    "jurisdiction_rate_observations"
-   ],
-   "missing": []
-  },
-  {
-   "process": "4.1",
-   "spec": [
-    "case_assertions",
-    "case_relied_documents",
-    "cases",
-    "credit_reporting_suppressions",
-    "designated_addresses",
-    "document_copy_requests",
-    "inbound_communications",
-    "system_snapshots",
-    "timer_definitions"
-   ],
-   "missing": [
-    "timer_definitions"
-   ]
-  },
-  {
-   "process": "4.2",
-   "spec": [
-    "case_request_items",
-    "cases",
-    "records_inventory"
-   ],
-   "missing": []
-  },
-  {
-   "process": "4.3",
-   "spec": [
-    "callback_requests",
-    "contact_teams",
-    "contacts",
-    "continuity_episodes",
-    "lossmit_facts",
-    "personnel"
-   ],
-   "missing": [
-    "lossmit_facts"
-   ]
-  },
-  {
-   "process": "4.4",
-   "spec": [
-    "assumptions",
-    "parties",
-    "sii_acknowledgments",
-    "sii_cases",
-    "sii_document_matrix",
-    "sii_documents"
-   ],
-   "missing": []
-  },
-  {
-   "process": "4.5",
-   "spec": [
-    "cases",
-    "complaint_analytics",
-    "complaint_taxonomy",
-    "population_remediations",
-    "udaap_monitors"
-   ],
-   "missing": []
-  },
-  {
-   "process": "5.1",
-   "spec": [
-    "investor_event_exceptions",
-    "investor_event_types",
-    "investor_events",
-    "investor_loan_positions",
-    "investor_loan_sequences",
-    "investor_reporting_periods",
-    "investor_submissions"
-   ],
-   "missing": []
-  },
-  {
-   "process": "5.2",
-   "spec": [
-    "cash_positions",
-    "crs_batches",
-    "draft_notifications",
-    "remittance_calculations",
-    "remittances",
-    "servicer_advance_receivable",
-    "shortage_surplus"
-   ],
-   "missing": [
-    "servicer_advance_receivable"
-   ]
-  },
-  {
-   "process": "5.3",
-   "spec": [
-    "dra_milestones",
-    "liquidation_facts"
-   ],
-   "missing": []
-  },
-  {
-   "process": "5.4",
-   "spec": [
-    "advances",
-    "draft_adjustments",
-    "sda_status"
-   ],
-   "missing": []
-  },
-  {
-   "process": "5.5",
-   "spec": [
-    "advances",
-    "draft_notifications",
-    "gfee_calculations",
-    "gfee_relief_status"
-   ],
-   "missing": []
-  },
-  {
-   "process": "5.6",
-   "spec": [
-    "repurchases"
-   ],
-   "missing": []
-  },
-  {
-   "process": "5.7",
-   "spec": [
-    "delinquency_events",
-    "delinquency_report_lines",
-    "delinquency_reports",
-    "dq_status_code_map"
-   ],
-   "missing": [
-    "dq_status_code_map"
-   ]
-  },
-  {
-   "process": "6.1",
-   "spec": [
-    "custodial_accounts"
-   ],
-   "missing": []
-  },
-  {
-   "process": "6.2",
-   "spec": [],
-   "missing": []
-  },
-  {
-   "process": "6.3",
-   "spec": [
-    "reconciliations"
-   ],
-   "missing": []
-  },
-  {
-   "process": "6.4",
-   "spec": [],
-   "missing": []
-  },
-  {
-   "process": "6.5",
-   "spec": [
-    "suspense_actions",
-    "suspense_items"
-   ],
-   "missing": []
-  },
-  {
-   "process": "7.1",
-   "spec": [
-    "notice_batches",
-    "notice_checklist_results",
-    "notice_deliveries",
-    "notice_template_versions",
-    "notice_templates",
-    "notices",
-    "statement_cycles",
-    "statement_snapshots",
-    "tax_forms_1098"
-   ],
-   "missing": []
-  },
-  {
-   "process": "7.2",
-   "spec": [
-    "arm_adjustments",
-    "arm_corrections",
-    "arm_index_captures",
-    "arm_schedule",
-    "loan_terms"
-   ],
-   "missing": []
-  },
-  {
-   "process": "7.3",
-   "spec": [
-    "arm_initial_estimates",
-    "arm_schedule"
-   ],
-   "missing": []
-  },
-  {
-   "process": "7.4",
-   "spec": [
-    "consent_disclosure_versions",
-    "consents",
-    "delivery_addresses",
-    "edelivery_events"
-   ],
-   "missing": []
-  },
-  {
-   "process": "7.5",
-   "spec": [
-    "privacy_notice_deliveries",
-    "privacy_notice_programs"
-   ],
-   "missing": []
-  },
-  {
-   "process": "7.6",
-   "spec": [
-    "payoff_requests",
-    "payoff_statements"
-   ],
-   "missing": []
-  },
-  {
-   "process": "8.1",
-   "spec": [
-    "credit_reporting_corrections",
-    "furnisher_config",
-    "metro2_ack_items",
-    "metro2_cycles",
-    "metro2_files",
-    "metro2_overlay_decisions",
-    "metro2_snapshots"
-   ],
-   "missing": []
-  },
-  {
-   "process": "8.2",
-   "spec": [
-    "credit_dispute_events",
-    "credit_dispute_evidence",
-    "credit_disputes",
-    "eoscar_messages"
-   ],
-   "missing": []
-  },
-  {
-   "process": "8.3",
-   "spec": [
-    "accuracy_program",
-    "bankruptcy_reporting_state",
-    "credit_reporting_suppressions",
-    "metro2_overlay_decisions"
-   ],
-   "missing": [
-    "accuracy_program"
-   ]
-  },
-  {
-   "process": "9.1",
-   "spec": [
-    "insurance_deficiencies",
-    "insurance_evidence",
-    "insurance_policies",
-    "insurance_requirements",
-    "jurisdiction_rules"
-   ],
-   "missing": []
-  },
-  {
-   "process": "9.2",
-   "spec": [
-    "fpi_cases",
-    "jurisdiction_rules",
-    "lpi_charges",
-    "lpi_placements"
-   ],
-   "missing": []
-  },
-  {
-   "process": "9.3",
-   "spec": [
-    "notices"
-   ],
-   "missing": []
-  },
-  {
-   "process": "9.4",
-   "spec": [
-    "fpi_renewals"
-   ],
-   "missing": []
-  },
-  {
-   "process": "9.5",
-   "spec": [
-    "fpi_refunds"
-   ],
-   "missing": []
-  },
-  {
-   "process": "9.6",
-   "spec": [
-    "flood_determinations",
-    "flood_map_changes",
-    "fpi_cases",
-    "insurance_policies",
-    "jurisdiction_rules"
-   ],
-   "missing": []
-  },
-  {
-   "process": "9.7",
-   "spec": [
-    "claim_disbursements",
-    "claim_instruments",
-    "insurance_claims",
-    "repair_inspections"
-   ],
-   "missing": []
-  },
-  {
-   "process": "9.8",
-   "spec": [
-    "inspection_schedules",
-    "p360_pfpip_submissions",
-    "property_inspections"
-   ],
-   "missing": []
-  },
-  {
-   "process": "9.9",
-   "spec": [
-    "allowable_matrix",
-    "preservation_bids",
-    "preservation_cases",
-    "preservation_work_orders",
-    "property_registrations"
-   ],
-   "missing": []
-  },
-  {
-   "process": "10.1",
-   "spec": [
-    "mi_cases",
-    "mi_evaluations",
-    "mi_ltv_snapshots",
-    "mi_policies",
-    "mi_schedules",
-    "mi_valuations"
-   ],
-   "missing": []
-  },
-  {
-   "process": "10.2",
-   "spec": [
-    "mi_terminations"
-   ],
-   "missing": []
-  },
-  {
-   "process": "10.3",
-   "spec": [],
-   "missing": []
-  },
-  {
-   "process": "10.4",
-   "spec": [
-    "mi_disclosures"
-   ],
-   "missing": []
-  },
-  {
-   "process": "10.5",
-   "spec": [
-    "mi_refunds"
-   ],
-   "missing": []
-  },
-  {
-   "process": "10.6",
-   "spec": [
-    "mi_denials"
-   ],
-   "missing": []
-  },
-  {
-   "process": "11.1",
-   "spec": [
-    "consents",
-    "contact_attempt_plans",
-    "contact_preferences",
-    "contacts",
-    "frequency_counters",
-    "good_faith_effort_records",
-    "mode",
-    "phone_numbers",
-    "regx_ei_windows"
-   ],
-   "missing": [
-    "frequency_counters",
-    "mode"
-   ]
-  },
-  {
-   "process": "11.2",
-   "spec": [
-    "ei_notice_cycles",
-    "notices",
-    "regx_ei_windows",
-    "solicitation_packages"
-   ],
-   "missing": []
-  },
-  {
-   "process": "11.3",
-   "spec": [
-    "parties",
-    "promises",
-    "qrpc_records"
-   ],
-   "missing": []
-  },
-  {
-   "process": "11.4",
-   "spec": [
-    "contacts",
-    "fdcpa_disputes",
-    "fdcpa_status",
-    "validation_notices"
-   ],
-   "missing": []
-  },
-  {
-   "process": "11.5",
-   "spec": [
-    "credit_scores",
-    "imminent_default_evaluations"
-   ],
-   "missing": []
-  },
-  {
-   "process": "12.1",
-   "spec": [
-    "documents",
-    "foreclosure_holds",
-    "lossmit_applications",
-    "lossmit_contact_attempts",
-    "lossmit_notices",
-    "lossmit_requirement_catalog",
-    "lossmit_requirements"
-   ],
-   "missing": [
-    "lossmit_contact_attempts",
-    "lossmit_notices"
-   ]
-  },
-  {
-   "process": "12.2",
-   "spec": [
-    "foreclosure_holds",
-    "lossmit_evaluations",
-    "lossmit_offers",
-    "lossmit_option_determinations",
-    "smdu_cases"
-   ],
-   "missing": []
-  },
-  {
-   "process": "12.3",
-   "spec": [
-    "lossmit_appeals",
-    "lossmit_offers"
-   ],
-   "missing": []
-  },
-  {
-   "process": "12.4",
-   "spec": [
-    "fnma_exception_requests",
-    "workout_plan_schedule",
-    "workout_plan_terms",
-    "workout_plans"
-   ],
-   "missing": []
-  },
-  {
-   "process": "12.5",
-   "spec": [
-    "fees",
-    "workout_plan_schedule",
-    "workout_plans"
-   ],
-   "missing": []
-  },
-  {
-   "process": "12.6",
-   "spec": [
-    "loan_terms",
-    "payment_deferrals"
-   ],
-   "missing": []
-  },
-  {
-   "process": "12.7",
-   "spec": [],
-   "missing": []
-  },
-  {
-   "process": "12.8",
-   "spec": [
-    "loan_terms",
-    "modifications",
-    "trial_plans"
-   ],
-   "missing": []
-  },
-  {
-   "process": "12.9",
-   "spec": [
-    "dil_cases",
-    "foreclosure_holds",
-    "liquidation_cases",
-    "shortsale_closings",
-    "shortsale_offers"
-   ],
-   "missing": [
-    "dil_cases"
-   ]
-  },
-  {
-   "process": "13.1",
-   "spec": [
-    "foreclosure_gate_definitions",
-    "foreclosure_gate_evaluations",
-    "loans",
-    "rule_sets",
-    "timer_definitions"
-   ],
-   "missing": [
-    "timer_definitions"
-   ]
-  },
-  {
-   "process": "13.2",
-   "spec": [
-    "attorney_instructions",
-    "foreclosure_holds",
-    "lossmit_protection_snapshots",
-    "sale_events"
-   ],
-   "missing": []
-  },
-  {
-   "process": "13.3",
-   "spec": [
-    "assignments",
-    "attorney_referrals",
-    "bid_instructions",
-    "foreclosure_milestones",
-    "note_custody",
-    "sale_results"
-   ],
-   "missing": []
-  },
-  {
-   "process": "13.4",
-   "spec": [
-    "disaster_fc_approval_requests",
-    "prereferral_reviews"
-   ],
-   "missing": []
-  },
-  {
-   "process": "13.5",
-   "spec": [
-    "comp_fee_bills",
-    "comp_fee_delay_rules",
-    "fc_delay_credits",
-    "fc_timeframe_tracking"
-   ],
-   "missing": []
-  },
-  {
-   "process": "13.6",
-   "spec": [
-    "attorney_escalations",
-    "attorney_fee_schedules",
-    "attorney_firms",
-    "attorney_invoice_lines",
-    "attorney_invoices",
-    "attorney_matters",
-    "attorney_retentions",
-    "attorney_reviews",
-    "dra_events",
-    "dra_snapshots"
-   ],
-   "missing": []
-  },
-  {
-   "process": "13.7",
-   "spec": [
-    "environmental_hazards",
-    "form20_submissions",
-    "litigation_matters"
-   ],
-   "missing": []
-  },
-  {
-   "process": "13.8",
-   "spec": [
-    "scra_affidavits",
-    "scra_cases",
-    "scra_verifications"
-   ],
-   "missing": []
-  },
-  {
-   "process": "13.9",
-   "spec": [
-    "form_1022_submissions",
-    "loan_terms",
-    "scra_overpayment_elections",
-    "scra_rate_periods",
-    "scra_recalculations"
-   ],
-   "missing": []
-  },
-  {
-   "process": "14.1",
-   "spec": [
-    "bankruptcy_cases",
-    "bankruptcy_claims",
-    "bankruptcy_docket_events",
-    "bankruptcy_filings",
-    "bankruptcy_ledger_views",
-    "stay_gates"
-   ],
-   "missing": []
-  },
-  {
-   "process": "14.2",
-   "spec": [
-    "bk_payment_change_notices",
-    "bk_postpetition_fee_items",
-    "bk_status_responses"
-   ],
-   "missing": []
-  },
-  {
-   "process": "14.3",
-   "spec": [
-    "bk_early_intervention",
-    "bk_statement_status",
-    "communications_matrix"
-   ],
-   "missing": []
-  },
-  {
-   "process": "14.4",
-   "spec": [
-    "bankruptcy_reporting_state"
-   ],
-   "missing": []
-  },
-  {
-   "process": "15.1",
-   "spec": [
-    "elimination_rescission_requests",
-    "reo_cases",
-    "reo_handoff_tasks",
-    "reogram_confirmations",
-    "tps_cases"
-   ],
-   "missing": []
-  },
-  {
-   "process": "15.2",
-   "spec": [
-    "advance_recoveries",
-    "allowable_fee_schedules",
-    "claim_credits",
-    "expense_claim_lines",
-    "expense_claims",
-    "irt_inquiries"
-   ],
-   "missing": []
-  },
-  {
-   "process": "15.3",
-   "spec": [
-    "mi_claim_calculations",
-    "mi_claim_documents",
-    "mi_claim_events",
-    "mi_claims",
-    "mi_curtailment_risk",
-    "mi_master_policy_terms"
-   ],
-   "missing": [
-    "mi_claim_events"
-   ]
-  },
-  {
-   "process": "15.4",
-   "spec": [
-    "advance_recoveries",
-    "delinquency_advance_positions"
-   ],
-   "missing": []
-  },
-  {
-   "process": "16.1",
-   "spec": [
-    "payoff_quotes",
-    "payoff_requests",
-    "payoff_statements",
-    "payoff_wire_instructions"
-   ],
-   "missing": []
-  },
-  {
-   "process": "16.2",
-   "spec": [
-    "payoff_funds",
-    "payoff_housekeeping_tasks",
-    "payoff_settlements"
-   ],
-   "missing": []
-  },
-  {
-   "process": "16.3",
-   "spec": [
-    "custody_requests",
-    "lpoas",
-    "recording_submissions",
-    "release_tasks",
-    "signing_officers"
-   ],
-   "missing": []
-  },
-  {
-   "process": "16.4",
-   "spec": [
-    "mers_eregistry_transactions",
-    "mers_min_snapshots",
-    "mers_transactions"
-   ],
-   "missing": []
-  },
-  {
-   "process": "17.1",
-   "spec": [
-    "transfer_batch_loan_list_versions",
-    "transfer_batch_loans",
-    "transfer_batches"
-   ],
-   "missing": []
-  },
-  {
-   "process": "17.2",
-   "spec": [
-    "contact_scripts",
-    "loans",
-    "misdirected_payments",
-    "notice_templates",
-    "transfer_notice_runs"
-   ],
-   "missing": [
-    "contact_scripts"
-   ]
-  },
-  {
-   "process": "17.3",
-   "spec": [
-    "counterparty_notifications",
-    "ledger_accounts",
-    "loans",
-    "transfer_out_archives",
-    "transfer_out_attestations",
-    "transfer_out_deliverables",
-    "transferee_requests"
-   ],
-   "missing": [
-    "ledger_accounts"
-   ]
-  },
-  {
-   "process": "17.4",
-   "spec": [
-    "case_handoffs",
-    "cases",
-    "lossmit_handoff_checks",
-    "post_transfer_forwardings"
-   ],
-   "missing": []
-  },
-  {
-   "process": "18.1",
-   "spec": [
-    "qc_corrective_actions",
-    "qc_cycles",
-    "qc_findings",
-    "qc_plans",
-    "qc_reports",
-    "qc_rules",
-    "qc_samples",
-    "qc_tests"
-   ],
-   "missing": []
-  },
-  {
-   "process": "18.2",
-   "spec": [
-    "evidence_index",
-    "evidence_taxonomy",
-    "exam_findings",
-    "exam_productions",
-    "exam_requests",
-    "exams"
-   ],
-   "missing": []
-  },
-  {
-   "process": "18.3",
-   "spec": [
-    "loan_delinquency_months",
-    "star_metric_results",
-    "star_metrics_config",
-    "star_reconciliations",
-    "star_scorecards"
-   ],
-   "missing": []
-  },
-  {
-   "process": "18.4",
-   "spec": [
-    "fiscal_years",
-    "insurance_policies",
-    "org_registry",
-    "pending_actions",
-    "regulatory_filings",
-    "subservicing_arrangements",
-    "vendor_registry"
-   ],
-   "missing": []
-  },
-  {
-   "process": "18.5",
-   "spec": [
-    "cases",
-    "fraud_red_flags",
-    "fraud_reports",
-    "screening_results"
-   ],
-   "missing": []
-  },
-  {
-   "process": "18.6",
-   "spec": [
-    "attestation_packages",
-    "control_evidence",
-    "control_matrix",
-    "investor_programs"
-   ],
-   "missing": []
-  },
-  {
-   "process": "18.7",
-   "spec": [
-    "eligibility_config",
-    "eligibility_results",
-    "gl_snapshots",
-    "regulatory_filings",
-    "upb_positions"
-   ],
-   "missing": []
-  },
-  {
-   "process": "19.1",
-   "spec": [
-    "disposal_runs",
-    "legal_hold_objects",
-    "legal_holds",
-    "record_objects",
-    "record_types",
-    "records_requests",
-    "retention_classes",
-    "servicing_file_snapshots"
-   ],
-   "missing": []
-  },
-  {
-   "process": "19.2",
-   "spec": [
-    "access_reviews",
-    "assets",
-    "control_exceptions",
-    "control_test_results",
-    "control_tests",
-    "identities",
-    "incident_affected_persons",
-    "incident_notices",
-    "pen_tests",
-    "security_controls",
-    "security_incidents",
-    "security_logs_5y",
-    "vulnerabilities"
-   ],
-   "missing": [
-    "pen_tests",
-    "security_logs_5y"
-   ]
-  },
-  {
-   "process": "19.3",
-   "spec": [
-    "ai_systems",
-    "contract_clauses",
-    "contract_events",
-    "counterparty_contracts",
-    "data_access_authorizations",
-    "fnma_information_requests",
-    "fnma_notices",
-    "portfolio_threshold_snapshots",
-    "tech_provider_changes",
-    "vendor_assessments",
-    "vendor_incidents",
-    "vendors"
-   ],
-   "missing": []
-  },
-  {
-   "process": "19.4",
-   "spec": [
-    "ai_bias_tests",
-    "fair_servicing_metric_defs",
-    "fair_servicing_results",
-    "fair_servicing_reviews",
-    "fair_servicing_runs",
-    "impact_assessments"
-   ],
-   "missing": []
-  }
- ],
- "figures": [
-  {
-   "process": "1.1",
-   "figures": 6,
-   "reproduced": 4,
-   "reproduced_loose": 4,
-   "missing": [
-    "$311.10",
-    "$311.11"
-   ]
-  },
-  {
-   "process": "1.2",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "1.3",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "1.4",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "1.5",
-   "figures": 1,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": [
-    "$24.95"
-   ]
-  },
-  {
-   "process": "1.6",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "1.7",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "2.1",
-   "figures": 5,
-   "reproduced": 3,
-   "reproduced_loose": 3,
-   "missing": [
-    "$1,248.87",
-    "$104.07"
-   ]
-  },
-  {
-   "process": "2.2",
-   "figures": 4,
-   "reproduced": 4,
-   "reproduced_loose": 4,
-   "missing": []
-  },
-  {
-   "process": "2.3",
-   "figures": 1,
-   "reproduced": 1,
-   "reproduced_loose": 1,
-   "missing": []
-  },
-  {
-   "process": "2.4",
-   "figures": 6,
-   "reproduced": 5,
-   "reproduced_loose": 5,
-   "missing": [
-    "$1,271.62"
-   ]
-  },
-  {
-   "process": "2.5",
-   "figures": 1,
-   "reproduced": 1,
-   "reproduced_loose": 1,
-   "missing": []
-  },
-  {
-   "process": "2.6",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "2.7",
-   "figures": 1,
-   "reproduced": 1,
-   "reproduced_loose": 1,
-   "missing": []
-  },
-  {
-   "process": "3.1",
-   "figures": 2,
-   "reproduced": 2,
-   "reproduced_loose": 2,
-   "missing": []
-  },
-  {
-   "process": "3.2",
-   "figures": 34,
-   "reproduced": 29,
-   "reproduced_loose": 29,
-   "missing": [
-    "$1,250.00",
-    "$1,560.00",
-    "$360.00",
-    "$380.00",
-    "$570.00"
-   ]
-  },
-  {
-   "process": "3.3",
-   "figures": 15,
-   "reproduced": 12,
-   "reproduced_loose": 12,
-   "missing": [
-    "$1,560.00",
-    "$1,900.00",
-    "$360.00"
-   ]
-  },
-  {
-   "process": "3.4",
-   "figures": 8,
-   "reproduced": 6,
-   "reproduced_loose": 6,
-   "missing": [
-    "$1,800.00",
-    "$968.35"
-   ]
-  },
-  {
-   "process": "3.5",
-   "figures": 6,
-   "reproduced": 5,
-   "reproduced_loose": 5,
-   "missing": [
-    "$612.40"
-   ]
-  },
-  {
-   "process": "3.6",
-   "figures": 16,
-   "reproduced": 15,
-   "reproduced_loose": 16,
-   "missing": []
-  },
-  {
-   "process": "3.7",
-   "figures": 7,
-   "reproduced": 5,
-   "reproduced_loose": 5,
-   "missing": [
-    "$15.20",
-    "$810.00"
-   ]
-  },
-  {
-   "process": "3.8",
-   "figures": 3,
-   "reproduced": 0,
-   "reproduced_loose": 1,
-   "missing": [
-    "$1,206.68",
-    "$240,000.00"
-   ]
-  },
-  {
-   "process": "3.9",
-   "figures": 12,
-   "reproduced": 10,
-   "reproduced_loose": 10,
-   "missing": [
-    "$10.00",
-    "$2.55"
-   ]
-  },
-  {
-   "process": "4.1",
-   "figures": 4,
-   "reproduced": 1,
-   "reproduced_loose": 1,
-   "missing": [
-    "$1,842.17",
-    "$2,454.57",
-    "$612.40"
-   ]
-  },
-  {
-   "process": "4.2",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "4.3",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "4.4",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "4.5",
-   "figures": 2,
-   "reproduced": 2,
-   "reproduced_loose": 2,
-   "missing": []
-  },
-  {
-   "process": "5.1",
-   "figures": 8,
-   "reproduced": 6,
-   "reproduced_loose": 6,
-   "missing": [
-    "$1,580.17",
-    "$250,000.00"
-   ]
-  },
-  {
-   "process": "5.2",
-   "figures": 35,
-   "reproduced": 22,
-   "reproduced_loose": 22,
-   "missing": [
-    "$1,246.59",
-    "$1,247.73",
-    "$1,248.87",
-    "$1,580.17",
-    "$2,627.72",
-    "$227.23",
-    "$228.46",
-    "$229.70",
-    "$249,318.31",
-    "$249,546.77",
-    "$32.79",
-    "$400,000.00"
-   ]
-  },
-  {
-   "process": "5.3",
-   "figures": 5,
-   "reproduced": 4,
-   "reproduced_loose": 4,
-   "missing": [
-    "$210,000.00"
-   ]
-  },
-  {
-   "process": "5.4",
-   "figures": 15,
-   "reproduced": 8,
-   "reproduced_loose": 8,
-   "missing": [
-    "$1,476.38",
-    "$1,476.48",
-    "$1,580.17",
-    "$230.94",
-    "$248,857.67",
-    "$3,160.34",
-    "$51.90"
-   ]
-  },
-  {
-   "process": "5.5",
-   "figures": 6,
-   "reproduced": 6,
-   "reproduced_loose": 6,
-   "missing": []
-  },
-  {
-   "process": "5.6",
-   "figures": 7,
-   "reproduced": 6,
-   "reproduced_loose": 6,
-   "missing": [
-    "$32.79"
-   ]
-  },
-  {
-   "process": "5.7",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "6.1",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "6.2",
-   "figures": 4,
-   "reproduced": 4,
-   "reproduced_loose": 4,
-   "missing": []
-  },
-  {
-   "process": "6.3",
-   "figures": 14,
-   "reproduced": 10,
-   "reproduced_loose": 10,
-   "missing": [
-    "$1,000.00",
-    "$1,000.01",
-    "$25,000.00",
-    "$25.00"
-   ]
-  },
-  {
-   "process": "6.4",
-   "figures": 12,
-   "reproduced": 10,
-   "reproduced_loose": 10,
-   "missing": [
-    "$1,911,432.50",
-    "$121,500.00"
-   ]
-  },
-  {
-   "process": "6.5",
-   "figures": 2,
-   "reproduced": 1,
-   "reproduced_loose": 1,
-   "missing": [
-    "$1,500.00"
-   ]
-  },
-  {
-   "process": "7.1",
-   "figures": 11,
-   "reproduced": 1,
-   "reproduced_loose": 1,
-   "missing": [
-    "$1,446.79",
-    "$1,500.00",
-    "$2,334.29",
-    "$2,946.79",
-    "$233.42",
-    "$5,893.58",
-    "$6,010.29",
-    "$6,127.00",
-    "$612.50",
-    "$9,073.79"
-   ]
-  },
-  {
-   "process": "7.2",
-   "figures": 9,
-   "reproduced": 1,
-   "reproduced_loose": 2,
-   "missing": [
-    "$2,334.29",
-    "$2,802.64",
-    "$2,946.79",
-    "$3,088.94",
-    "$371,048.86",
-    "$400,000.00",
-    "$612.50"
-   ]
-  },
-  {
-   "process": "7.3",
-   "figures": 3,
-   "reproduced": 1,
-   "reproduced_loose": 1,
-   "missing": [
-    "$2,334.29",
-    "$371,048.86"
-   ]
-  },
-  {
-   "process": "7.4",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "7.5",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "7.6",
-   "figures": 7,
-   "reproduced": 4,
-   "reproduced_loose": 4,
-   "missing": [
-    "$1,830.00",
-    "$371,048.86",
-    "$371,602.55"
-   ]
-  },
-  {
-   "process": "8.1",
-   "figures": 9,
-   "reproduced": 0,
-   "reproduced_loose": 2,
-   "missing": [
-    "$11,082.90",
-    "$14,757.30",
-    "$2,459.55",
-    "$292,743.16",
-    "$293,063.94",
-    "$3,674.40",
-    "$300,000.00"
-   ]
-  },
-  {
-   "process": "8.2",
-   "figures": 1,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": [
-    "$2,459.55"
-   ]
-  },
-  {
-   "process": "8.3",
-   "figures": 7,
-   "reproduced": 0,
-   "reproduced_loose": 6,
-   "missing": [
-    "$292,096.58"
-   ]
-  },
-  {
-   "process": "9.1",
-   "figures": 1,
-   "reproduced": 0,
-   "reproduced_loose": 1,
-   "missing": []
-  },
-  {
-   "process": "9.2",
-   "figures": 3,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": [
-    "$2,190.00",
-    "$250,000.00",
-    "$250,000.01"
-   ]
-  },
-  {
-   "process": "9.3",
-   "figures": 1,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": [
-    "$2,190.00"
-   ]
-  },
-  {
-   "process": "9.4",
-   "figures": 1,
-   "reproduced": 0,
-   "reproduced_loose": 1,
-   "missing": []
-  },
-  {
-   "process": "9.5",
-   "figures": 9,
-   "reproduced": 2,
-   "reproduced_loose": 4,
-   "missing": [
-    "$1,700.00",
-    "$1,740.00",
-    "$2,190.00",
-    "$40.00",
-    "$450.00"
-   ]
-  },
-  {
-   "process": "9.6",
-   "figures": 2,
-   "reproduced": 1,
-   "reproduced_loose": 1,
-   "missing": [
-    "$1,150.00"
-   ]
-  },
-  {
-   "process": "9.7",
-   "figures": 8,
-   "reproduced": 0,
-   "reproduced_loose": 2,
-   "missing": [
-    "$1,000.00",
-    "$10,000.00",
-    "$15,000.00",
-    "$20,000.00",
-    "$240,000.00",
-    "$40,000.00"
-   ]
-  },
-  {
-   "process": "9.8",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "9.9",
-   "figures": 1,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": [
-    "$1,250.00"
-   ]
-  },
-  {
-   "process": "10.1",
-   "figures": 7,
-   "reproduced": 5,
-   "reproduced_loose": 7,
-   "missing": []
-  },
-  {
-   "process": "10.2",
-   "figures": 6,
-   "reproduced": 1,
-   "reproduced_loose": 1,
-   "missing": [
-    "$1,873.46",
-    "$2,157.60",
-    "$2,596.45",
-    "$312,000.00",
-    "$351,350.17"
-   ]
-  },
-  {
-   "process": "10.3",
-   "figures": 2,
-   "reproduced": 1,
-   "reproduced_loose": 1,
-   "missing": [
-    "$2,833.18"
-   ]
-  },
-  {
-   "process": "10.4",
-   "figures": 1,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": [
-    "$365,400.00"
-   ]
-  },
-  {
-   "process": "10.5",
-   "figures": 11,
-   "reproduced": 5,
-   "reproduced_loose": 6,
-   "missing": [
-    "$114.00",
-    "$2,701.86",
-    "$2,891.86",
-    "$868.27",
-    "$950.00"
-   ]
-  },
-  {
-   "process": "10.6",
-   "figures": 5,
-   "reproduced": 4,
-   "reproduced_loose": 5,
-   "missing": []
-  },
-  {
-   "process": "11.1",
-   "figures": 9,
-   "reproduced": 0,
-   "reproduced_loose": 2,
-   "missing": [
-    "$1,200.00",
-    "$1,650.00",
-    "$2,000.00",
-    "$2,400.00",
-    "$350.00",
-    "$4,000.00",
-    "$4,165.00"
-   ]
-  },
-  {
-   "process": "11.2",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "11.3",
-   "figures": 3,
-   "reproduced": 0,
-   "reproduced_loose": 1,
-   "missing": [
-    "$2,000.00",
-    "$4,165.00"
-   ]
-  },
-  {
-   "process": "11.4",
-   "figures": 5,
-   "reproduced": 5,
-   "reproduced_loose": 5,
-   "missing": []
-  },
-  {
-   "process": "11.5",
-   "figures": 8,
-   "reproduced": 1,
-   "reproduced_loose": 1,
-   "missing": [
-    "$1,650.00",
-    "$150.00",
-    "$2,412.50",
-    "$5,600.00",
-    "$6,031.25",
-    "$612.50",
-    "$8,400.00"
-   ]
-  },
-  {
-   "process": "12.1",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "12.2",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "12.3",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "12.4",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "12.5",
-   "figures": 13,
-   "reproduced": 2,
-   "reproduced_loose": 3,
-   "missing": [
-    "$1,580.17",
-    "$126.00",
-    "$2,100.00",
-    "$2,635.50",
-    "$2,903.25",
-    "$3,171.00",
-    "$535.50",
-    "$6,300.00",
-    "$6,426.00",
-    "$63.21"
-   ]
-  },
-  {
-   "process": "12.6",
-   "figures": 9,
-   "reproduced": 3,
-   "reproduced_loose": 4,
-   "missing": [
-    "$1,050.00",
-    "$1,580.17",
-    "$1,860.00",
-    "$252.00",
-    "$520.00"
-   ]
-  },
-  {
-   "process": "12.7",
-   "figures": 5,
-   "reproduced": 2,
-   "reproduced_loose": 2,
-   "missing": [
-    "$1,580.17",
-    "$14,221.53",
-    "$2,300.00"
-   ]
-  },
-  {
-   "process": "12.8",
-   "figures": 20,
-   "reproduced": 1,
-   "reproduced_loose": 3,
-   "missing": [
-    "$1,264.13",
-    "$1,282.48",
-    "$1,580.17",
-    "$1,815.13",
-    "$1,860.00",
-    "$10,259.84",
-    "$106,405.31",
-    "$215,921.99",
-    "$236,765.47",
-    "$251,405.31",
-    "$290,000.00",
-    "$35,483.32"
-   ]
-  },
-  {
-   "process": "12.9",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "13.1",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "13.2",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "13.3",
-   "figures": 16,
-   "reproduced": 2,
-   "reproduced_loose": 3,
-   "missing": [
-    "$1,420.11",
-    "$1,487.50",
-    "$1,975.00",
-    "$19,054.79",
-    "$2,150.00",
-    "$250,000.00",
-    "$270,000.00",
-    "$290,000.00",
-    "$3,105.40",
-    "$6,842.17",
-    "$60.00",
-    "$612.00"
-   ]
-  },
-  {
-   "process": "13.4",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "13.5",
-   "figures": 3,
-   "reproduced": 2,
-   "reproduced_loose": 2,
-   "missing": [
-    "$46.71"
-   ]
-  },
-  {
-   "process": "13.6",
-   "figures": 7,
-   "reproduced": 0,
-   "reproduced_loose": 1,
-   "missing": [
-    "$1,462.50",
-    "$1,912.50",
-    "$2,250.00",
-    "$22.00",
-    "$38.00",
-    "$450.00"
-   ]
-  },
-  {
-   "process": "13.7",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "13.8",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "13.9",
-   "figures": 13,
-   "reproduced": 5,
-   "reproduced_loose": 5,
-   "missing": [
-    "$1,463.03",
-    "$1,645.91",
-    "$1,767.83",
-    "$2,046.53",
-    "$213.43",
-    "$278.70",
-    "$292,606.60",
-    "$293,975.18"
-   ]
-  },
-  {
-   "process": "14.1",
-   "figures": 28,
-   "reproduced": 5,
-   "reproduced_loose": 7,
-   "missing": [
-    "$0.26",
-    "$1,120.00",
-    "$1,500.00",
-    "$1,774.81",
-    "$2,054.22",
-    "$2,340.00",
-    "$2,699.22",
-    "$2,700.00",
-    "$2,806.72",
-    "$20.00",
-    "$3,151.59",
-    "$3,920.00"
-   ]
-  },
-  {
-   "process": "14.2",
-   "figures": 12,
-   "reproduced": 2,
-   "reproduced_loose": 2,
-   "missing": [
-    "$1,290.00",
-    "$1,550.00",
-    "$2,054.22",
-    "$2,650.00",
-    "$2,699.22",
-    "$2,806.72",
-    "$288,625.18",
-    "$40.00",
-    "$645.00",
-    "$752.50"
-   ]
-  },
-  {
-   "process": "14.3",
-   "figures": 16,
-   "reproduced": 5,
-   "reproduced_loose": 5,
-   "missing": [
-    "$1,500.00",
-    "$1,685.59",
-    "$18,894.54",
-    "$19,305.38",
-    "$2,054.22",
-    "$2,699.22",
-    "$2,806.72",
-    "$22,004.60",
-    "$368.63",
-    "$410.84",
-    "$752.50"
-   ]
-  },
-  {
-   "process": "14.4",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "15.1",
-   "figures": 20,
-   "reproduced": 5,
-   "reproduced_loose": 6,
-   "missing": [
-    "$1,245.44",
-    "$1,369.94",
-    "$1,450.00",
-    "$11,219.94",
-    "$2,300.00",
-    "$249,088.61",
-    "$270,000.00",
-    "$270.00",
-    "$4,172.20",
-    "$4,820.00",
-    "$40.94",
-    "$445.00"
-   ]
-  },
-  {
-   "process": "15.2",
-   "figures": 22,
-   "reproduced": 3,
-   "reproduced_loose": 6,
-   "missing": [
-    "$1,369.94",
-    "$1,450.00",
-    "$100.00",
-    "$125.00",
-    "$160.00",
-    "$2,300.00",
-    "$215.00",
-    "$270.00",
-    "$350.00",
-    "$4,820.00",
-    "$445.00",
-    "$5.00"
-   ]
-  },
-  {
-   "process": "15.3",
-   "figures": 21,
-   "reproduced": 3,
-   "reproduced_loose": 5,
-   "missing": [
-    "$1,297.34",
-    "$1,369.94",
-    "$1,450.00",
-    "$14,270.74",
-    "$14,441.35",
-    "$170.61",
-    "$2,300.00",
-    "$2,865.00",
-    "$249,088.61",
-    "$270.00",
-    "$4,820.00",
-    "$42.65"
-   ]
-  },
-  {
-   "process": "15.4",
-   "figures": 10,
-   "reproduced": 4,
-   "reproduced_loose": 5,
-   "missing": [
-    "$1,245.44",
-    "$1,476.00",
-    "$1,476.10",
-    "$1,476.19",
-    "$249,088.61"
-   ]
-  },
-  {
-   "process": "16.1",
-   "figures": 21,
-   "reproduced": 4,
-   "reproduced_loose": 10,
-   "missing": [
-    "$1,643.38",
-    "$12,000.00",
-    "$180,000.00",
-    "$192,000.00",
-    "$192,468.49",
-    "$2,412.90",
-    "$221.10",
-    "$248,310.55",
-    "$34.00",
-    "$353.76",
-    "$840.17"
-   ]
-  },
-  {
-   "process": "16.2",
-   "figures": 14,
-   "reproduced": 5,
-   "reproduced_loose": 6,
-   "missing": [
-    "$1,039.06",
-    "$199,500.00",
-    "$2,412.90",
-    "$201,051.47",
-    "$491.92",
-    "$512.41",
-    "$6.83",
-    "$997.50"
-   ]
-  },
-  {
-   "process": "16.3",
-   "figures": 1,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": [
-    "$34.00"
-   ]
-  },
-  {
-   "process": "16.4",
-   "figures": 1,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": [
-    "$24.95"
-   ]
-  },
-  {
-   "process": "17.1",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "17.2",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "17.3",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "17.4",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "18.1",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "18.2",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "18.3",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "18.4",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "18.5",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "18.6",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "18.7",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "19.1",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "19.2",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "19.3",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  },
-  {
-   "process": "19.4",
-   "figures": 0,
-   "reproduced": 0,
-   "reproduced_loose": 0,
-   "missing": []
-  }
- ],
- "lint": "rows: 1365  unique codes: 1206\noffset parse: {\n  step: 828,\n  prose: 244,\n  same_day: 99,\n  none: 51,\n  recurring: 41,\n  until: 37,\n  calendar_day: 36,\n  next_business_day: 20,\n  window: 9\n}\nkind: {\n  deadline: 921,\n  not_before_gate: 232,\n  recurring: 125,\n  gate: 36,\n  informational: 19,\n  other: 13,\n  rule: 9,\n  validation: 7,\n  retention: 3\n}\ntrigger pattern parsed: 921/1365\nsatisfied pattern parsed: 757/1365\nanchor field resolved: 645/1365\nseverity parsed: 854/1365\nmechanically armable (offset + trigger parse): 774/1365 (56.7%)\nafter section overrides: 1206/1206 unique codes armable (619 overridden, 109 evaluator-backed)\n",
- "notices": {
-  "catalog": 248,
-  "authored": [
-   "NTC_REGZ_41_STMT_STD",
-   "NTC_REGZ_41_STMT_DELQ",
-   "INS_FPI_FIRST_MS3A",
-   "NTC_REGX_39B_EARLY_INTERVENTION",
-   "NTC_REGZ_20D_ARM_INITIAL",
-   "NTC_REGX_41B2_ACK_INCOMPLETE"
-  ]
  },
- "agents": {
-  "count": 20,
-  "tools": 544,
-  "commands_on_bus": [
-   "boarding.proposeWaiver",
-   "cashiering.postPayment",
-   "disclosures.sendNotice",
-   "lossmit.createForbearanceTerm",
-   "qc-audit.officerCertify"
-  ]
+ "sections": {
+  "1": {
+   "spec": 250,
+   "built": 137,
+   "processes": 7,
+   "done": 0
+  },
+  "2": {
+   "spec": 224,
+   "built": 125,
+   "processes": 7,
+   "done": 0
+  },
+  "3": {
+   "spec": 334,
+   "built": 160,
+   "processes": 9,
+   "done": 0
+  },
+  "4": {
+   "spec": 205,
+   "built": 91,
+   "processes": 5,
+   "done": 0
+  },
+  "5": {
+   "spec": 293,
+   "built": 126,
+   "processes": 7,
+   "done": 0
+  },
+  "6": {
+   "spec": 169,
+   "built": 99,
+   "processes": 5,
+   "done": 0
+  },
+  "7": {
+   "spec": 206,
+   "built": 108,
+   "processes": 6,
+   "done": 0
+  },
+  "8": {
+   "spec": 131,
+   "built": 68,
+   "processes": 3,
+   "done": 0
+  },
+  "9": {
+   "spec": 286,
+   "built": 125,
+   "processes": 9,
+   "done": 0
+  },
+  "10": {
+   "spec": 198,
+   "built": 103,
+   "processes": 6,
+   "done": 0
+  },
+  "11": {
+   "spec": 252,
+   "built": 98,
+   "processes": 5,
+   "done": 0
+  },
+  "12": {
+   "spec": 425,
+   "built": 154,
+   "processes": 9,
+   "done": 0
+  },
+  "13": {
+   "spec": 353,
+   "built": 131,
+   "processes": 9,
+   "done": 0
+  },
+  "14": {
+   "spec": 224,
+   "built": 75,
+   "processes": 4,
+   "done": 0
+  },
+  "15": {
+   "spec": 241,
+   "built": 84,
+   "processes": 4,
+   "done": 0
+  },
+  "16": {
+   "spec": 197,
+   "built": 77,
+   "processes": 4,
+   "done": 0
+  },
+  "17": {
+   "spec": 204,
+   "built": 96,
+   "processes": 4,
+   "done": 0
+  },
+  "18": {
+   "spec": 181,
+   "built": 116,
+   "processes": 7,
+   "done": 0
+  },
+  "19": {
+   "spec": 225,
+   "built": 129,
+   "processes": 4,
+   "done": 0
+  }
  },
- "adapters": {
-  "named": [
-   [
-    "print-mail",
-    29
-   ],
-   [
-    "fnma-lsdu",
-    20
-   ],
-   [
-    "fnma-servicing-events",
-    16
-   ],
-   [
-    "nacha",
-    16
-   ],
-   [
-    "fnma-smdu",
-    14
-   ],
-   [
-    "custodial-bank",
-    13
-   ],
-   [
-    "insurance-tracking/lpi",
-    12
-   ],
-   [
-    "e-delivery",
-    11
-   ],
-   [
-    "fnma-crs",
-    10
-   ],
-   [
-    "fnma-p360",
-    10
-   ],
-   [
-    "mers",
-    9
-   ],
-   [
-    "custodian",
-    9
-   ],
-   [
-    "telephony/voice",
-    9
-   ],
-   [
-    "lockbox",
-    9
-   ],
-   [
-    "fnma-connect",
-    8
-   ],
-   [
-    "mi/*",
-    7
-   ],
-   [
-    "erecording",
-    6
-   ],
-   [
-    "tax-service",
-    4
-   ],
-   [
-    "flood",
-    4
-   ],
-   [
-    "email-in",
-    4
-   ],
-   [
-    "fnma-auth",
-    4
-   ],
-   [
-    "pacer/bk-monitor",
-    4
-   ],
-   [
-    "dmdc",
-    4
-   ],
-   [
-    "index-feed",
-    3
-   ],
-   [
-    "metro2",
-    2
-   ]
-  ],
-  "ports": [
-   "LockboxPort",
-   "CustodialBankPort",
-   "NachaPort",
-   "Metro2Port",
-   "EoscarPort",
-   "CustodianPort",
-   "EvaultPort",
-   "PacerPort",
-   "DmdcPort",
-   "ErecordingPort",
-   "PrintMailPort",
-   "EdeliveryPort",
-   "TelephonyPort",
-   "LpiTrackingPort",
-   "FloodPort",
-   "TaxServicePort",
-   "MiPort",
-   "MersPort",
-   "FnmaLsduPort",
-   "FnmaServicingEventsPort",
-   "FnmaSmduPort",
-   "FnmaP360Port",
-   "FnmaConnectPort"
-  ]
- }
+ "done": [],
+ "processes": [
+  {
+   "process": "1.1",
+   "title": "Loan data intake & validation (note terms, remittance type A/A\u2013S/A\u2013S/S, escrow flags, MERS MIN)",
+   "tids": {
+    "spec": 10,
+    "built": 10,
+    "todo": 0,
+    "missing": []
+   },
+   "tables": {
+    "spec": 6,
+    "built": 6,
+    "missing": []
+   },
+   "timers": {
+    "spec": 8,
+    "built": 8,
+    "armable": 8,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 11,
+    "built": 0,
+    "missing": [
+     "readTape",
+     "mapField",
+     "runValidation",
+     "queryFnmaPosition",
+     "queryMers",
+     "proposeCorrection",
+     "applyCorrection",
+     "raiseException",
+     "boardLoan",
+     "sendTransferorQuery",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 6,
+    "built": 4,
+    "missing": [
+     "$311.10",
+     "$311.11"
+    ]
+   },
+   "units": {
+    "spec": 41,
+    "built": 28
+   },
+   "pct": 68.3
+  },
+  {
+   "process": "1.2",
+   "title": "Servicing transfer approval from Fannie Mae",
+   "tids": {
+    "spec": 7,
+    "built": 3,
+    "todo": 0,
+    "missing": [
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "tables": {
+    "spec": 3,
+    "built": 3,
+    "missing": []
+   },
+   "timers": {
+    "spec": 10,
+    "built": 10,
+    "armable": 10,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 8,
+    "built": 0,
+    "missing": [
+     "buildForm629",
+     "buildCustodianMatrix",
+     "validateLoanList",
+     "createPortalTask",
+     "parseConsentNotice",
+     "computeDeadlines",
+     "writeDecision",
+     "notifyPartner"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 28,
+    "built": 16
+   },
+   "pct": 57.1
+  },
+  {
+   "process": "1.3",
+   "title": "RESPA transfer notices (goodbye/hello)",
+   "tids": {
+    "spec": 10,
+    "built": 6,
+    "todo": 0,
+    "missing": [
+     4,
+     8,
+     9,
+     10
+    ]
+   },
+   "tables": {
+    "spec": 4,
+    "built": 4,
+    "missing": []
+   },
+   "timers": {
+    "spec": 8,
+    "built": 6,
+    "armable": 8,
+    "missing": [
+     "REGX_1024_33B3_EXCEPTION_30",
+     "REGX_1024_33C1_LATE_FEE_PROTECTION_60"
+    ]
+   },
+   "notices": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "NTC_REGX_1024_33B_COMBINED_MS2",
+     "NTC_REGX_1024_33B_GOODBYE_MS2",
+     "NTC_REGX_1024_33B_HELLO_MS2"
+    ]
+   },
+   "tools": {
+    "spec": 8,
+    "built": 0,
+    "missing": [
+     "planNoticeRun",
+     "renderNotice",
+     "runContentChecklist",
+     "validateAddress",
+     "releaseToVendor",
+     "ingestMailReturns",
+     "orderSkipTrace",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 33,
+    "built": 16
+   },
+   "pct": 48.5
+  },
+  {
+   "process": "1.4",
+   "title": "Document custody verification",
+   "tids": {
+    "spec": 9,
+    "built": 7,
+    "todo": 0,
+    "missing": [
+     6,
+     7
+    ]
+   },
+   "tables": {
+    "spec": 5,
+    "built": 5,
+    "missing": []
+   },
+   "timers": {
+    "spec": 14,
+    "built": 13,
+    "armable": 14,
+    "missing": [
+     "FNMA_DTJA_RECERT_ISALE_30"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 10,
+    "built": 0,
+    "missing": [
+     "buildTrialBalance",
+     "sendToCustodian",
+     "ingestCustodianFeed",
+     "matchHoldings",
+     "openException",
+     "draftTransferorQuery",
+     "verifyERegistry",
+     "forecastRecertRisk",
+     "draftExtensionRequest",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 38,
+    "built": 25
+   },
+   "pct": 65.8
+  },
+  {
+   "process": "1.5",
+   "title": "MERS transfer of servicing/beneficial rights",
+   "tids": {
+    "spec": 8,
+    "built": 5,
+    "todo": 0,
+    "missing": [
+     2,
+     4,
+     8
+    ]
+   },
+   "tables": {
+    "spec": 3,
+    "built": 3,
+    "missing": []
+   },
+   "timers": {
+    "spec": 10,
+    "built": 9,
+    "armable": 10,
+    "missing": [
+     "MERS_RULE7_LOCKOUT_WARNING_30"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 10,
+    "built": 0,
+    "missing": [
+     "planMersTransactions",
+     "validateMin",
+     "buildMersBatch",
+     "submitMersBatch",
+     "createPartnerTask",
+     "ingestMersAck",
+     "snapshotMins",
+     "reconcileMre",
+     "draftViolationResponse",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "$24.95"
+    ]
+   },
+   "units": {
+    "spec": 32,
+    "built": 17
+   },
+   "pct": 53.1
+  },
+  {
+   "process": "1.6",
+   "title": "Escrow/suspense/UPB reconciliation",
+   "tids": {
+    "spec": 10,
+    "built": 7,
+    "todo": 0,
+    "missing": [
+     3,
+     4,
+     9
+    ]
+   },
+   "tables": {
+    "spec": 5,
+    "built": 4,
+    "missing": [
+     "ledger_accounts"
+    ]
+   },
+   "timers": {
+    "spec": 11,
+    "built": 11,
+    "armable": 11,
+    "missing": []
+   },
+   "notices": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "NTC_REGX_1024_17G_INITIAL_ESCROW_STMT"
+    ]
+   },
+   "tools": {
+    "spec": 10,
+    "built": 0,
+    "missing": [
+     "loadTapeBalances",
+     "loadTrialBalance",
+     "loadBankFeed",
+     "queryFnmaPosition",
+     "matchWires",
+     "raiseVariance",
+     "classifyVariance",
+     "draftTransferorQuery",
+     "postOpeningEntries",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 37,
+    "built": 22
+   },
+   "pct": 59.5
+  },
+  {
+   "process": "1.7",
+   "title": "Loss-mit in-flight transfer handling",
+   "tids": {
+    "spec": 10,
+    "built": 7,
+    "todo": 0,
+    "missing": [
+     7,
+     9,
+     10
+    ]
+   },
+   "tables": {
+    "spec": 2,
+    "built": 2,
+    "missing": []
+   },
+   "timers": {
+    "spec": 13,
+    "built": 3,
+    "armable": 13,
+    "missing": [
+     "FNMA_LL_2026_01_FORBEARANCE_CUMULATIVE_12M",
+     "REGX_1024_41B2_ACK_5_DEEMED_T0",
+     "REGX_1024_41C1_EVAL_30_CARRYOVER",
+     "REGX_1024_41F1_120_DAY_GATE",
+     "REGX_1024_41H_APPEAL_WINDOW_14",
+     "REGX_1024_41K2_NO_FIRST_FILING_GATE",
+     "REGX_1024_41K2_TRANSFEREE_ACK_10",
+     "REGX_1024_41K3_COMPLETE_APP_EVAL_30",
+     "REGX_1024_41K4_APPEAL_DETERMINATION_30",
+     "REGX_1024_41K5_OFFER_ACCEPTANCE_BALANCE"
+    ]
+   },
+   "notices": {
+    "spec": 6,
+    "built": 1,
+    "missing": [
+     "NTC_REGX_41B2_ACK_COMPLETE",
+     "NTC_REGX_41C1_DENIAL",
+     "NTC_REGX_41C1_OFFER",
+     "NTC_REGX_41H4_APPEAL_DENIED",
+     "NTC_REGX_41H4_APPEAL_GRANTED"
+    ]
+   },
+   "tools": {
+    "spec": 10,
+    "built": 0,
+    "missing": [
+     "loadTransferorFile",
+     "runCarryoverChecks",
+     "computeDeemedDates",
+     "classifyCompleteness",
+     "requestFromTransferor",
+     "evaluateOptions",
+     "draftNotice",
+     "setForeclosureHold",
+     "honorTransferorOffer",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 41,
+    "built": 13
+   },
+   "pct": 31.7
+  },
+  {
+   "process": "2.1",
+   "title": "Accept & post periodic payment (P&I + escrow)",
+   "tids": {
+    "spec": 11,
+    "built": 8,
+    "todo": 0,
+    "missing": [
+     7,
+     10,
+     11
+    ]
+   },
+   "tables": {
+    "spec": 2,
+    "built": 2,
+    "missing": []
+   },
+   "timers": {
+    "spec": 9,
+    "built": 7,
+    "armable": 9,
+    "missing": [
+     "FNMA_LL202605_EVENT_NEXTBD_0300",
+     "REGZ_1026_36C1III_NONCONFORMING_5CD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 10,
+    "built": 0,
+    "missing": [
+     "payments.read/write",
+     "ledger.post",
+     "loan_terms.get",
+     "cases.get_overlays",
+     "suspense.read",
+     "lockbox.image_ocr",
+     "borrower_comms.request_contact",
+     "notice.send",
+     "escalation.create",
+     "timer.*"
+    ]
+   },
+   "figures": {
+    "spec": 5,
+    "built": 3,
+    "missing": [
+     "$1,248.87",
+     "$104.07"
+    ]
+   },
+   "units": {
+    "spec": 37,
+    "built": 20
+   },
+   "pct": 54.1
+  },
+  {
+   "process": "2.2",
+   "title": "Partial payment / suspense handling",
+   "tids": {
+    "spec": 11,
+    "built": 9,
+    "todo": 0,
+    "missing": [
+     10,
+     11
+    ]
+   },
+   "tables": {
+    "spec": 1,
+    "built": 1,
+    "missing": []
+   },
+   "timers": {
+    "spec": 6,
+    "built": 4,
+    "armable": 6,
+    "missing": [
+     "FNMA_C1102_50_RULE_COUNT_12M",
+     "SM_SUSPENSE_REEVAL_ON_TERMS_CHANGE_0"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 10,
+    "built": 0,
+    "missing": [
+     "suspense.read/write",
+     "payments.history",
+     "loan_terms.get",
+     "cases.get_overlays",
+     "lockbox.image_ocr",
+     "borrower_comms.request_contact",
+     "notice.send",
+     "ledger.apply_via_cashiering",
+     "timer.*",
+     "escalation.create"
+    ]
+   },
+   "figures": {
+    "spec": 4,
+    "built": 4,
+    "missing": []
+   },
+   "units": {
+    "spec": 32,
+    "built": 18
+   },
+   "pct": 56.2
+  },
+  {
+   "process": "2.3",
+   "title": "Automatic draft (ACH) setup",
+   "tids": {
+    "spec": 11,
+    "built": 8,
+    "todo": 0,
+    "missing": [
+     9,
+     10,
+     11
+    ]
+   },
+   "tables": {
+    "spec": 8,
+    "built": 7,
+    "missing": [
+     "tpsc_2y_post_revocation"
+    ]
+   },
+   "timers": {
+    "spec": 12,
+    "built": 6,
+    "armable": 12,
+    "missing": [
+     "NACHA_AUTH_RETENTION_2Y_POST_REVOCATION",
+     "NACHA_PRENOTE_WAIT_3BANKING_DAYS",
+     "NACHA_R11_CORRECTED_REINITIATION_60",
+     "NACHA_RETURN_RATE_MONTHLY_WATCH",
+     "REGE_1005_10C_STOP_PAYMENT_3BD_GATE",
+     "REGE_1005_10C_WRITTEN_CONFIRMATION_14"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 10,
+    "built": 0,
+    "missing": [
+     "autodraft.read/write",
+     "consent.capture",
+     "account_validation.verify",
+     "nacha.build_entry",
+     "nacha.cancel_entry",
+     "notice.send",
+     "contacts.log",
+     "fraud_monitor.score",
+     "escalation.create",
+     "timer.*"
+    ]
+   },
+   "figures": {
+    "spec": 1,
+    "built": 1,
+    "missing": []
+   },
+   "units": {
+    "spec": 42,
+    "built": 22
+   },
+   "pct": 52.4
+  },
+  {
+   "process": "2.4",
+   "title": "Additional principal / unscheduled payments",
+   "tids": {
+    "spec": 10,
+    "built": 8,
+    "todo": 0,
+    "missing": [
+     8,
+     9
+    ]
+   },
+   "tables": {
+    "spec": 3,
+    "built": 3,
+    "missing": []
+   },
+   "timers": {
+    "spec": 8,
+    "built": 6,
+    "armable": 8,
+    "missing": [
+     "FNMA_LL202605_EVENT_NEXTBD_0300",
+     "SM_REAMORT_FORM181_DELIVERY_10BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "payments.read",
+     "ledger.apply_via_cashiering",
+     "amortization.compute"
+    ]
+   },
+   "figures": {
+    "spec": 6,
+    "built": 5,
+    "missing": [
+     "$1,271.62"
+    ]
+   },
+   "units": {
+    "spec": 30,
+    "built": 22
+   },
+   "pct": 73.3
+  },
+  {
+   "process": "2.5",
+   "title": "Biweekly third-party payments",
+   "tids": {
+    "spec": 7,
+    "built": 5,
+    "todo": 0,
+    "missing": [
+     4,
+     7
+    ]
+   },
+   "tables": {
+    "spec": 2,
+    "built": 2,
+    "missing": []
+   },
+   "timers": {
+    "spec": 6,
+    "built": 3,
+    "armable": 6,
+    "missing": [
+     "SM_BIWEEKLY_HALF_STALE_45",
+     "SM_CONTRACTOR_DORMANT_60",
+     "SM_INHOUSE_SPLIT_APPLY_ON_DUE_DATE_0"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 7,
+    "built": 0,
+    "missing": [
+     "payments.read",
+     "nacha.parse_addenda",
+     "lockbox.image_ocr",
+     "arrangements.read/write",
+     "ledger.apply_via_cashiering",
+     "notice.send",
+     "borrower_comms.request_contact"
+    ]
+   },
+   "figures": {
+    "spec": 1,
+    "built": 1,
+    "missing": []
+   },
+   "units": {
+    "spec": 23,
+    "built": 11
+   },
+   "pct": 47.8
+  },
+  {
+   "process": "2.6",
+   "title": "Payment during modification pending (trial period)",
+   "tids": {
+    "spec": 8,
+    "built": 5,
+    "todo": 0,
+    "missing": [
+     5,
+     6,
+     7
+    ]
+   },
+   "tables": {
+    "spec": 3,
+    "built": 3,
+    "missing": []
+   },
+   "timers": {
+    "spec": 8,
+    "built": 4,
+    "armable": 8,
+    "missing": [
+     "FNMA_D23206_LC_WAIVE_ON_CONVERSION_0",
+     "FNMA_F122_TRIAL_PAYMENT_SMDU_REPORT_1BD",
+     "REGX_1024_41G_TRIAL_PERFORMING_FC_GATE",
+     "SM_TRIAL_FAILED_FUNDS_RESOLVE_30"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 5,
+    "built": 0,
+    "missing": [
+     "trial_schedule.read",
+     "suspense.read/write",
+     "ledger.apply_via_cashiering",
+     "fees.suspend/waive",
+     "smdu.submit_trial_payment"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 24,
+    "built": 12
+   },
+   "pct": 50.0
+  },
+  {
+   "process": "2.7",
+   "title": "Late charge assessment",
+   "tids": {
+    "spec": 13,
+    "built": 11,
+    "todo": 0,
+    "missing": [
+     9,
+     13
+    ]
+   },
+   "tables": {
+    "spec": 1,
+    "built": 1,
+    "missing": []
+   },
+   "timers": {
+    "spec": 13,
+    "built": 7,
+    "armable": 13,
+    "missing": [
+     "FNMA_A2304_LC_COLLECTED_REPORT_MONTHLY",
+     "FNMA_D2203_PAYMENT_REMINDER_CD20",
+     "FNMA_D23201_FORBEARANCE_NO_ACCRUAL_GATE",
+     "FNMA_D23206_LC_WAIVE_ON_CONVERSION_0",
+     "NOTE_6A_LATE_CHARGE_GRACE_GATE",
+     "REGX_1024_33C1_LATE_FEE_PROTECTION_60"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 8,
+    "built": 0,
+    "missing": [
+     "fees.read",
+     "fees.assess",
+     "fees.waive",
+     "fees.reverse",
+     "cases.get_overlays",
+     "payments.history",
+     "notice.send",
+     "escalation.create"
+    ]
+   },
+   "figures": {
+    "spec": 1,
+    "built": 1,
+    "missing": []
+   },
+   "units": {
+    "spec": 36,
+    "built": 20
+   },
+   "pct": 55.6
+  },
+  {
+   "process": "3.1",
+   "title": "Initial escrow account statement",
+   "tids": {
+    "spec": 9,
+    "built": 1,
+    "todo": 0,
+    "missing": [
+     1,
+     2,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9
+    ]
+   },
+   "tables": {
+    "spec": 4,
+    "built": 4,
+    "missing": []
+   },
+   "timers": {
+    "spec": 3,
+    "built": 3,
+    "armable": 3,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 8,
+    "built": 0,
+    "missing": [
+     "readBoardingFile",
+     "runEscrowAnalysis",
+     "approveAnalysis",
+     "renderStatement",
+     "sendNotice",
+     "openCase",
+     "escalate",
+     "emitEscrowEvent"
+    ]
+   },
+   "figures": {
+    "spec": 2,
+    "built": 2,
+    "missing": []
+   },
+   "units": {
+    "spec": 26,
+    "built": 10
+   },
+   "pct": 38.5
+  },
+  {
+   "process": "3.2",
+   "title": "Annual escrow analysis",
+   "tids": {
+    "spec": 17,
+    "built": 10,
+    "todo": 0,
+    "missing": [
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17
+    ]
+   },
+   "tables": {
+    "spec": 5,
+    "built": 5,
+    "missing": []
+   },
+   "timers": {
+    "spec": 6,
+    "built": 4,
+    "armable": 6,
+    "missing": [
+     "ESC_NEW_PAYMENT_NOTICE_MIN_30",
+     "REGX_1024_17F1_ADVANCE_DEFICIENCY_ANALYSIS_GATE"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "compareBillToPriorYear",
+     "lookupParcel",
+     "readPolicyDeclarations"
+    ]
+   },
+   "figures": {
+    "spec": 34,
+    "built": 29,
+    "missing": [
+     "$1,250.00",
+     "$1,560.00",
+     "$360.00",
+     "$380.00",
+     "$570.00"
+    ]
+   },
+   "units": {
+    "spec": 65,
+    "built": 48
+   },
+   "pct": 73.8
+  },
+  {
+   "process": "3.3",
+   "title": "Annual escrow account statement",
+   "tids": {
+    "spec": 12,
+    "built": 0,
+    "todo": 0,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 3,
+    "built": 3,
+    "missing": []
+   },
+   "timers": {
+    "spec": 7,
+    "built": 7,
+    "armable": 7,
+    "missing": []
+   },
+   "notices": {
+    "spec": 5,
+    "built": 0,
+    "missing": [
+     "NTC_REGX_1024_17F_SHORTAGE",
+     "NTC_REGX_1024_17I4_SHORT_YEAR_TRANSFEROR",
+     "NTC_REGX_1024_17I_ANNUAL_ESCROW_STMT",
+     "NTC_REGX_1024_17I_POST_EXEMPTION_HISTORY",
+     "NTC_SM_ESCROW_VOLUNTARY_LUMPSUM_INSERT"
+    ]
+   },
+   "tools": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "renderStatement",
+     "validateChecklist",
+     "sendNotice"
+    ]
+   },
+   "figures": {
+    "spec": 15,
+    "built": 12,
+    "missing": [
+     "$1,560.00",
+     "$1,900.00",
+     "$360.00"
+    ]
+   },
+   "units": {
+    "spec": 45,
+    "built": 22
+   },
+   "pct": 48.9
+  },
+  {
+   "process": "3.4",
+   "title": "Cushion enforcement",
+   "tids": {
+    "spec": 7,
+    "built": 1,
+    "todo": 0,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     7
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 3,
+    "built": 1,
+    "armable": 3,
+    "missing": [
+     "REGX_1024_17C5_CUSHION_CAP_GATE",
+     "REGX_1024_17C6_PREACCRUAL_GATE"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "validateCushion"
+    ]
+   },
+   "figures": {
+    "spec": 8,
+    "built": 6,
+    "missing": [
+     "$1,800.00",
+     "$968.35"
+    ]
+   },
+   "units": {
+    "spec": 19,
+    "built": 8
+   },
+   "pct": 42.1
+  },
+  {
+   "process": "3.5",
+   "title": "Surplus refund",
+   "tids": {
+    "spec": 10,
+    "built": 0,
+    "todo": 0,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10
+    ]
+   },
+   "tables": {
+    "spec": 1,
+    "built": 1,
+    "missing": []
+   },
+   "timers": {
+    "spec": 4,
+    "built": 3,
+    "armable": 4,
+    "missing": [
+     "ESC_REFUND_FINAL_DISBURSEMENT_HOLD_5BD"
+    ]
+   },
+   "notices": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "NTC_SM_ESCROW_SURPLUS_REFUND"
+    ]
+   },
+   "tools": {
+    "spec": 7,
+    "built": 0,
+    "missing": [
+     "issueRefund",
+     "verifyAddress",
+     "reissueDisbursement",
+     "stopCheck",
+     "recordConsent",
+     "emitEscrowEvent",
+     "escalate"
+    ]
+   },
+   "figures": {
+    "spec": 6,
+    "built": 5,
+    "missing": [
+     "$612.40"
+    ]
+   },
+   "units": {
+    "spec": 29,
+    "built": 9
+   },
+   "pct": 31.0
+  },
+  {
+   "process": "3.6",
+   "title": "Shortage repayment",
+   "tids": {
+    "spec": 10,
+    "built": 0,
+    "todo": 0,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10
+    ]
+   },
+   "tables": {
+    "spec": 1,
+    "built": 1,
+    "missing": []
+   },
+   "timers": {
+    "spec": 6,
+    "built": 5,
+    "armable": 6,
+    "missing": [
+     "REGX_1024_17F1_ADVANCE_DEFICIENCY_ANALYSIS_GATE"
+    ]
+   },
+   "notices": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "NTC_SM_ESCROW_ADVANCE"
+    ]
+   },
+   "tools": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "createRepaymentPlan",
+     "recordBorrowerElection",
+     "postEscrowLumpSum"
+    ]
+   },
+   "figures": {
+    "spec": 16,
+    "built": 15,
+    "missing": [
+     "$2,400.00"
+    ]
+   },
+   "units": {
+    "spec": 37,
+    "built": 21
+   },
+   "pct": 56.8
+  },
+  {
+   "process": "3.7",
+   "title": "Tax disbursement",
+   "tids": {
+    "spec": 15,
+    "built": 1,
+    "todo": 0,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     11,
+     12,
+     13,
+     14,
+     15
+    ]
+   },
+   "tables": {
+    "spec": 6,
+    "built": 5,
+    "missing": [
+     "payees"
+    ]
+   },
+   "timers": {
+    "spec": 12,
+    "built": 6,
+    "armable": 12,
+    "missing": [
+     "ESC_NONESCROW_TAX_DELINQ_FOLLOWUP_30",
+     "FNMA_B101_DISBURSE_BEFORE_PENALTY_0",
+     "FNMA_LL2026_05_ESCROW_EVENT_0300ET",
+     "FNMA_LL2026_05_ESCROW_PERIOD_CLOSE_BD2_1700ET",
+     "FNMA_LL2026_05_ESCROW_SETUP_CUTOVER",
+     "STATE_IL_765ILCS910_15_TAX_PAID_NOTICE_45BD"
+    ]
+   },
+   "notices": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "NTC_IL_765_910_15_TAX_PAID",
+     "NTC_SM_ESCROW_HAZARD_ADVANCE",
+     "NTC_SM_NONESCROW_TAX_DELINQUENCY"
+    ]
+   },
+   "tools": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "scheduleDisbursement",
+     "releaseDisbursement",
+     "postAdvance"
+    ]
+   },
+   "figures": {
+    "spec": 7,
+    "built": 5,
+    "missing": [
+     "$15.20",
+     "$810.00"
+    ]
+   },
+   "units": {
+    "spec": 46,
+    "built": 17
+   },
+   "pct": 37.0
+  },
+  {
+   "process": "3.8",
+   "title": "Escrow waiver administration",
+   "tids": {
+    "spec": 10,
+    "built": 0,
+    "todo": 0,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10
+    ]
+   },
+   "tables": {
+    "spec": 1,
+    "built": 1,
+    "missing": []
+   },
+   "timers": {
+    "spec": 12,
+    "built": 9,
+    "armable": 12,
+    "missing": [
+     "ESC_WAIVER_REFUND_30",
+     "REGZ_1026_35B3_HPML_ESCROW_5Y_GATE",
+     "STATE_MN_47_20_DISCONTINUE_NOTICE_60"
+    ]
+   },
+   "notices": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "NTC_MN_47_20_9_DISCONTINUE_RIGHT",
+     "NTC_REGX_1024_17I4_SHORT_YEAR_RESET",
+     "NTC_SM_ESCROW_WAIVER_DECISION",
+     "NTC_SM_ESCROW_WAIVER_REVOCATION"
+    ]
+   },
+   "tools": {
+    "spec": 2,
+    "built": 0,
+    "missing": [
+     "evaluateWaiver",
+     "approveWaiver"
+    ]
+   },
+   "figures": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "$1,206.68",
+     "$210.00",
+     "$240,000.00"
+    ]
+   },
+   "units": {
+    "spec": 32,
+    "built": 10
+   },
+   "pct": 31.2
+  },
+  {
+   "process": "3.9",
+   "title": "State interest-on-escrow",
+   "tids": {
+    "spec": 12,
+    "built": 0,
+    "todo": 0,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 3,
+    "built": 3,
+    "missing": []
+   },
+   "timers": {
+    "spec": 4,
+    "built": 2,
+    "armable": 4,
+    "missing": [
+     "IRS_1099INT_EFILE_0331",
+     "STATE_IOE_ACCRUAL_DAILY"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "evaluateInterestEligibility",
+     "verifyRate",
+     "postInterestCredit",
+     "prorateInterest"
+    ]
+   },
+   "figures": {
+    "spec": 12,
+    "built": 10,
+    "missing": [
+     "$10.00",
+     "$2.55"
+    ]
+   },
+   "units": {
+    "spec": 35,
+    "built": 15
+   },
+   "pct": 42.9
+  },
+  {
+   "process": "4.1",
+   "title": "Notice of Error (NoE) resolution",
+   "tids": {
+    "spec": 16,
+    "built": 7,
+    "todo": 0,
+    "missing": [
+     5,
+     7,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16
+    ]
+   },
+   "tables": {
+    "spec": 9,
+    "built": 8,
+    "missing": [
+     "timer_definitions"
+    ]
+   },
+   "timers": {
+    "spec": 14,
+    "built": 11,
+    "armable": 14,
+    "missing": [
+     "REGX_1024_35E_FC_NOE_OPEN",
+     "REGX_1024_35F2_FC_GOODFAITH_RESPONSE",
+     "REGX_1024_35I_CREDIT_SUPPRESS_60"
+    ]
+   },
+   "notices": {
+    "spec": 12,
+    "built": 0,
+    "missing": [
+     "NTC_REGX_35C_ADDRESS",
+     "NTC_REGX_35C_ADDRESS_CHANGE",
+     "NTC_REGX_35D_ACK",
+     "NTC_REGX_35E4_DOCS",
+     "NTC_REGX_35E4_WITHHELD",
+     "NTC_REGX_35E_ADDITIONAL_ERRORS",
+     "NTC_REGX_35E_CORRECTION",
+     "NTC_REGX_35E_EXTENSION",
+     "NTC_REGX_35E_NO_ERROR",
+     "NTC_REGX_35F1_EARLY_CORRECTION",
+     "NTC_REGX_35G2_EXCEPTION",
+     "NTC_REGX_38B5_PROCEDURES"
+    ]
+   },
+   "tools": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "documents.search",
+     "contacts.list",
+     "jurisdiction_rules.get",
+     "timer.list"
+    ]
+   },
+   "figures": {
+    "spec": 4,
+    "built": 1,
+    "missing": [
+     "$1,842.17",
+     "$2,454.57",
+     "$612.40"
+    ]
+   },
+   "units": {
+    "spec": 59,
+    "built": 27
+   },
+   "pct": 45.8
+  },
+  {
+   "process": "4.2",
+   "title": "Request for Information (RFI)",
+   "tids": {
+    "spec": 13,
+    "built": 6,
+    "todo": 0,
+    "missing": [
+     5,
+     7,
+     8,
+     9,
+     10,
+     11,
+     13
+    ]
+   },
+   "tables": {
+    "spec": 3,
+    "built": 3,
+    "missing": []
+   },
+   "timers": {
+    "spec": 11,
+    "built": 7,
+    "armable": 11,
+    "missing": [
+     "NY_419_6_RFI_DOCS_15BD",
+     "NY_419_6_RFI_OWNER_10D",
+     "SM_RFI_INTERNAL_TARGET_7",
+     "SM_RFI_SII_DOCS_TARGET_5"
+    ]
+   },
+   "notices": {
+    "spec": 8,
+    "built": 0,
+    "missing": [
+     "NTC_REGX_36A2_OWNER_IDENTITY",
+     "NTC_REGX_36C_ACK",
+     "NTC_REGX_36D_EXTENSION",
+     "NTC_REGX_36D_NOT_AVAILABLE",
+     "NTC_REGX_36D_RESPONSE",
+     "NTC_REGX_36E_EARLY",
+     "NTC_REGX_36F2_EXCEPTION",
+     "NTC_REGX_36I_SII_DOCS"
+    ]
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 35,
+    "built": 16
+   },
+   "pct": 45.7
+  },
+  {
+   "process": "4.3",
+   "title": "Continuity of contact / assigned personnel",
+   "tids": {
+    "spec": 12,
+    "built": 5,
+    "todo": 0,
+    "missing": [
+     2,
+     4,
+     5,
+     8,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 6,
+    "built": 5,
+    "missing": [
+     "lossmit_facts"
+    ]
+   },
+   "timers": {
+    "spec": 10,
+    "built": 4,
+    "armable": 10,
+    "missing": [
+     "CA_CIV_2923_7_SPOC_UNTIL_EXHAUSTED_OR_CURRENT",
+     "FNMA_A4_2_1_04_CALL_METRICS_MONTHLY",
+     "FNMA_A4_2_1_04_CHAT_5MIN",
+     "FNMA_A4_2_1_04_EMAIL_48H",
+     "REGX_1024_40A2_AVAILABILITY_UNTIL_RELEASE",
+     "REGX_1024_40A3_LIVE_RESPONSE_1BD"
+    ]
+   },
+   "notices": {
+    "spec": 3,
+    "built": 1,
+    "missing": [
+     "NTC_CA_2923_7_SPOC",
+     "NTC_REGX_40_CONTACT_ASSIGNED"
+    ]
+   },
+   "tools": {
+    "spec": 10,
+    "built": 0,
+    "missing": [
+     "lossmit_facts.get",
+     "payments.history",
+     "lossmit.documents.list",
+     "lossmit.application.status",
+     "timer.list",
+     "foreclosure.gates.get",
+     "callback.schedule",
+     "human.transfer",
+     "lossmit.intake.start",
+     "contact.log"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 41,
+    "built": 15
+   },
+   "pct": 36.6
+  },
+  {
+   "process": "4.4",
+   "title": "Successor in interest",
+   "tids": {
+    "spec": 12,
+    "built": 5,
+    "todo": 0,
+    "missing": [
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 6,
+    "built": 6,
+    "missing": []
+   },
+   "timers": {
+    "spec": 11,
+    "built": 8,
+    "armable": 11,
+    "missing": [
+     "FNMA_D1_4_1_02_FNMA_LEGAL_60",
+     "FNMA_D1_4_1_02_INTERESTED_PARTY_NOTIFY_10",
+     "REGX_1024_38B1VI_SII_FACILITATE_2"
+    ]
+   },
+   "notices": {
+    "spec": 6,
+    "built": 0,
+    "missing": [
+     "NTC_FNMA_D1_4_1_02_ASSUMPTION_OFFER",
+     "NTC_REGX_32C_SII_ACK",
+     "NTC_REGX_38B1VI_SII_ADDL_DOCS",
+     "NTC_REGX_38B1VI_SII_CONFIRMED",
+     "NTC_REGX_38B1VI_SII_DOCS",
+     "NTC_REGX_38B1VI_SII_NOT_SUCCESSOR"
+    ]
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 35,
+    "built": 19
+   },
+   "pct": 54.3
+  },
+  {
+   "process": "4.5",
+   "title": "Complaint handling / UDAAP",
+   "tids": {
+    "spec": 12,
+    "built": 6,
+    "todo": 0,
+    "missing": [
+     5,
+     7,
+     8,
+     9,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 5,
+    "built": 5,
+    "missing": []
+   },
+   "timers": {
+    "spec": 12,
+    "built": 1,
+    "armable": 12,
+    "missing": [
+     "CFPB_CONSUMER_FEEDBACK_60",
+     "CFPB_PORTAL_FINAL_60",
+     "CFPB_PORTAL_RESPONSE_15",
+     "FNMA_A4_2_1_04_EMAIL_48H",
+     "FNMA_REFERRAL_RESPONSE_5BD",
+     "NY_419_6_COMPLAINT_ACK_5BD",
+     "NY_419_6_COMPLAINT_RESPONSE_30BD",
+     "SM_COMPLAINT_ACK_1BD",
+     "SM_POPULATION_REMEDIATION_60",
+     "SM_UDAAP_REVIEW_10BD",
+     "TX_50A6_CURE_60"
+    ]
+   },
+   "notices": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "NTC_COMPLAINT_ACK",
+     "NTC_COMPLAINT_RESPONSE",
+     "NTC_REMEDIATION_REFUND",
+     "NTC_TX_50A6_CURE"
+    ]
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 2,
+    "built": 2,
+    "missing": []
+   },
+   "units": {
+    "spec": 35,
+    "built": 14
+   },
+   "pct": 40.0
+  },
+  {
+   "process": "5.1",
+   "title": "Loan Activity Report (LAR) submission",
+   "tids": {
+    "spec": 12,
+    "built": 6,
+    "todo": 0,
+    "missing": [
+     4,
+     5,
+     6,
+     7,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 7,
+    "built": 7,
+    "missing": []
+   },
+   "timers": {
+    "spec": 17,
+    "built": 7,
+    "armable": 17,
+    "missing": [
+     "FNMA_A14201_COMPFEE_WATCH",
+     "FNMA_IRM_BULK_CUTOFF_BD2_1500",
+     "FNMA_IRM_DEFERRAL_LAR_BEFORE_EOM_1BD",
+     "FNMA_IRM_NONREMOVAL_CORRECTION_BD1_2000",
+     "FNMA_IRM_REJECT_TRIAGE_4H",
+     "FNMA_IRM_REMOVAL_CORRECTION_BD2_1700",
+     "FNMA_IRM_REMOVAL_NEXTBD_2000",
+     "FNMA_LL202605_ESCROW_ATTEST_BD2",
+     "FNMA_LL202605_EVENT_NEXTBD_0300",
+     "FNMA_LL202605_PERIOD_CLOSE_BD2_1700"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "projectEvent",
+     "validateLar80",
+     "validateSeJson"
+    ]
+   },
+   "figures": {
+    "spec": 8,
+    "built": 6,
+    "missing": [
+     "$1,580.17",
+     "$250,000.00"
+    ]
+   },
+   "units": {
+    "spec": 47,
+    "built": 26
+   },
+   "pct": 55.3
+  },
+  {
+   "process": "5.2",
+   "title": "Remittance of P&I",
+   "tids": {
+    "spec": 12,
+    "built": 11,
+    "todo": 0,
+    "missing": [
+     8
+    ]
+   },
+   "tables": {
+    "spec": 7,
+    "built": 6,
+    "missing": [
+     "servicer_advance_receivable"
+    ]
+   },
+   "timers": {
+    "spec": 21,
+    "built": 1,
+    "armable": 21,
+    "missing": [
+     "FNMA_CRS_INSTRUCTION_T1_2000",
+     "FNMA_CRS_REQUEST_1600",
+     "FNMA_F120_AA_BD1_PRIOR_MONTH",
+     "FNMA_F120_AA_DETAILED_48H",
+     "FNMA_F120_AA_MONTHLY_MIN",
+     "FNMA_F120_AA_REMIT_2500_SAMEDAY",
+     "FNMA_F120_DRAFT_NOTICE_BD3",
+     "FNMA_F120_MBSX_UNSCHED_BD4",
+     "FNMA_F120_PAYOFF_AA_IMMEDIATE",
+     "FNMA_F120_RPM_DRAFT_DESIGNATED",
+     "FNMA_F120_SA_DRAFT_CD20",
+     "FNMA_F120_SETTLEMENT_NEXT_REMIT_DATE",
+     "FNMA_F120_SHORTSALE_PROCEEDS_2BD",
+     "FNMA_F120_SS_6TH_POOL_CD5",
+     "FNMA_F120_TPS_PROCEEDS_NEXT_REMIT",
+     "FNMA_IRM_SHORTAGE_IMMEDIATE",
+     "FNMA_IRM_SURPLUS_RESOLVE_90",
+     "FNMA_LL202605_AA_AUTODRAFT_2BD",
+     "FNMA_LL202605_PREDRAFT_REVIEW_1BD",
+     "SM_CUSTODIAL_FUNDING_T1_1600"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 7,
+    "built": 0,
+    "missing": [
+     "buildCrsBatch",
+     "openPortalTask",
+     "pullDraftNotifications",
+     "matchBankDebits",
+     "explainVariance",
+     "postLedger",
+     "recordDecision"
+    ]
+   },
+   "figures": {
+    "spec": 35,
+    "built": 22,
+    "missing": [
+     "$1,246.59",
+     "$1,247.73",
+     "$1,248.87",
+     "$1,580.17",
+     "$2,627.72",
+     "$227.23",
+     "$228.46",
+     "$229.70",
+     "$249,318.31",
+     "$249,546.77",
+     "$32.79",
+     "$400,000.00",
+     "$5,985.00"
+    ]
+   },
+   "units": {
+    "spec": 82,
+    "built": 40
+   },
+   "pct": 48.8
+  },
+  {
+   "process": "5.3",
+   "title": "Reporting liquidations (payoff/foreclosure/short sale)",
+   "tids": {
+    "spec": 10,
+    "built": 4,
+    "todo": 0,
+    "missing": [
+     2,
+     6,
+     7,
+     8,
+     9,
+     10
+    ]
+   },
+   "tables": {
+    "spec": 2,
+    "built": 2,
+    "missing": []
+   },
+   "timers": {
+    "spec": 10,
+    "built": 2,
+    "armable": 10,
+    "missing": [
+     "FNMA_E4101_REOGRAM_CONFIRM_1BD",
+     "FNMA_F120_SHORTSALE_PROCEEDS_2BD",
+     "FNMA_IRM_REMOVAL_CORRECTION_BD2_1700",
+     "FNMA_LL202605_FORECLOSURE_EVENT_NEXTBD",
+     "FNMA_P360_REOGRAM_EXCEPTION_3BD",
+     "SM_DRA_RECONCILE_7CD",
+     "SM_LIQ_CODE_CHANGE_CPM_2BD",
+     "SM_PAYOFF_GOODFUNDS_GATE"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 8,
+    "built": 0,
+    "missing": [
+     "selectLiquidationCode",
+     "computeRemovalAmounts",
+     "projectEvent",
+     "buildCrsBatch",
+     "prepareReogramPackage",
+     "reconcileDra",
+     "draftCpmNotice",
+     "recordDecision"
+    ]
+   },
+   "figures": {
+    "spec": 5,
+    "built": 4,
+    "missing": [
+     "$210,000.00"
+    ]
+   },
+   "units": {
+    "spec": 35,
+    "built": 12
+   },
+   "pct": 34.3
+  },
+  {
+   "process": "5.4",
+   "title": "Stop Delinquency Advance handling",
+   "tids": {
+    "spec": 8,
+    "built": 3,
+    "todo": 0,
+    "missing": [
+     4,
+     5,
+     6,
+     7,
+     8
+    ]
+   },
+   "tables": {
+    "spec": 3,
+    "built": 3,
+    "missing": []
+   },
+   "timers": {
+    "spec": 9,
+    "built": 1,
+    "armable": 9,
+    "missing": [
+     "FNMA_A1306_RECLASS_SELECTION_6M",
+     "FNMA_F120_SDA_EXIT_RESUME_DRAFT",
+     "FNMA_F120_SDA_FUNDING_HOLD",
+     "FNMA_F120_SDA_STATUS_RECONCILE_BD3",
+     "FNMA_F125_RECLASS_DESELECT_CD15",
+     "FNMA_IRM_SDA_CONTRACTUAL_LAR_NEXTBD_2000",
+     "SM_SDA_RECOVERY_MATCH_2_CYCLES",
+     "SM_SDA_REIMBURSEMENT_MATCH_2_CYCLES"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 7,
+    "built": 0,
+    "missing": [
+     "predictSdaEntry",
+     "parseRemittanceDetail",
+     "matchAdjustments",
+     "rollForwardReceivables",
+     "buildForm496Line12",
+     "openPortalTask",
+     "recordDecision"
+    ]
+   },
+   "figures": {
+    "spec": 15,
+    "built": 8,
+    "missing": [
+     "$1,476.38",
+     "$1,476.48",
+     "$1,580.17",
+     "$230.94",
+     "$248,857.67",
+     "$3,160.34",
+     "$51.90"
+    ]
+   },
+   "units": {
+    "spec": 42,
+    "built": 15
+   },
+   "pct": 35.7
+  },
+  {
+   "process": "5.5",
+   "title": "Guaranty fee relief",
+   "tids": {
+    "spec": 6,
+    "built": 0,
+    "todo": 0,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "tables": {
+    "spec": 4,
+    "built": 4,
+    "missing": []
+   },
+   "timers": {
+    "spec": 5,
+    "built": 1,
+    "armable": 5,
+    "missing": [
+     "FNMA_F120_GFEE_BILL_RETRIEVE_CD5",
+     "FNMA_F120_GFEE_RELIEF_RECONCILE_BILL",
+     "FNMA_F120_GFEE_RESUME_ON_CURRENT",
+     "SM_GFEE_RECOVERY_MATCH_2_CYCLES"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 6,
+    "built": 0,
+    "missing": [
+     "parseGfeeBill",
+     "computeGfeeCheckFigures",
+     "reconcileRelief",
+     "fundDraft",
+     "matchDebit",
+     "recordDecision"
+    ]
+   },
+   "figures": {
+    "spec": 6,
+    "built": 6,
+    "missing": []
+   },
+   "units": {
+    "spec": 27,
+    "built": 11
+   },
+   "pct": 40.7
+  },
+  {
+   "process": "5.6",
+   "title": "Repurchase reporting",
+   "tids": {
+    "spec": 7,
+    "built": 4,
+    "todo": 0,
+    "missing": [
+     4,
+     5,
+     7
+    ]
+   },
+   "tables": {
+    "spec": 1,
+    "built": 1,
+    "missing": []
+   },
+   "timers": {
+    "spec": 9,
+    "built": 1,
+    "armable": 9,
+    "missing": [
+     "FNMA_A1302_APPEAL1_60",
+     "FNMA_A1302_APPEAL2_15",
+     "FNMA_A1302_DOCS_30",
+     "FNMA_A1302_IMPASSE_30",
+     "FNMA_A1302_REPURCHASE_PAY_60",
+     "FNMA_IRM_REMOVAL_CORRECTION_BD2_1700",
+     "FNMA_IRM_REPURCHASE_AC65_NEXTBD_2000",
+     "SM_REPURCHASE_OWNERSHIP_UPDATE_10BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 5,
+    "built": 0,
+    "missing": [
+     "projectEvent",
+     "buildCrsBatch",
+     "draftLetter",
+     "openPortalTask",
+     "recordDecision"
+    ]
+   },
+   "figures": {
+    "spec": 7,
+    "built": 6,
+    "missing": [
+     "$32.79"
+    ]
+   },
+   "units": {
+    "spec": 29,
+    "built": 12
+   },
+   "pct": 41.4
+  },
+  {
+   "process": "5.7",
+   "title": "Delinquent loan status reporting",
+   "tids": {
+    "spec": 8,
+    "built": 5,
+    "todo": 0,
+    "missing": [
+     5,
+     6,
+     8
+    ]
+   },
+   "tables": {
+    "spec": 4,
+    "built": 3,
+    "missing": [
+     "dq_status_code_map"
+    ]
+   },
+   "timers": {
+    "spec": 11,
+    "built": 2,
+    "armable": 11,
+    "missing": [
+     "FNMA_F121_AW_ONE_MONTH",
+     "FNMA_F121_DQ_CORRECT_CD10",
+     "FNMA_F121_DQ_EXCEPTIONS_BD4",
+     "FNMA_F121_DQ_FINAL_CD11",
+     "FNMA_F121_DQ_SNAPSHOT_EOM",
+     "FNMA_F125_RECLASS_DESELECT_CD15",
+     "FNMA_LL202605_DQ_EVENT_NEXTBD_0300",
+     "FNMA_LL202605_DQ_PMT_REMINDER_CD23",
+     "SM_DQ_SMDU_DRA_CONSISTENCY_BD1"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 8,
+    "built": 0,
+    "missing": [
+     "buildDqSnapshot",
+     "deriveStatusCode",
+     "validateF121Layout",
+     "submitAmnFile",
+     "parseExceptionReport",
+     "submitDqEvent",
+     "checkConsistency",
+     "recordDecision"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 31,
+    "built": 10
+   },
+   "pct": 32.3
+  },
+  {
+   "process": "6.1",
+   "title": "Establish P&I custodial account (Form 1013)",
+   "tids": {
+    "spec": 8,
+    "built": 7,
+    "todo": 0,
+    "missing": [
+     7
+    ]
+   },
+   "tables": {
+    "spec": 1,
+    "built": 1,
+    "missing": []
+   },
+   "timers": {
+    "spec": 9,
+    "built": 8,
+    "armable": 9,
+    "missing": [
+     "FNMA_F103_FORM1013_IN_EFFECT_GATE"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 9,
+    "built": 0,
+    "missing": [
+     "depository.evaluate",
+     "fdic.lookup",
+     "ratings.read",
+     "custodial.plan_accounts",
+     "cbam.prepare_package",
+     "documents.write",
+     "escalation.create",
+     "timer.start/satisfy",
+     "email.send"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 27,
+    "built": 16
+   },
+   "pct": 59.3
+  },
+  {
+   "process": "6.2",
+   "title": "Establish T&I custodial account (Form 1014)",
+   "tids": {
+    "spec": 6,
+    "built": 4,
+    "todo": 0,
+    "missing": [
+     4,
+     6
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 5,
+    "built": 4,
+    "armable": 5,
+    "missing": [
+     "FNMA_F103_FORM1014_IN_EFFECT_GATE"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "ledger.post",
+     "escrow.read_balances",
+     "jurisdiction.read"
+    ]
+   },
+   "figures": {
+    "spec": 4,
+    "built": 4,
+    "missing": []
+   },
+   "units": {
+    "spec": 18,
+    "built": 12
+   },
+   "pct": 66.7
+  },
+  {
+   "process": "6.3",
+   "title": "Monthly P&I reconciliation (Form 496)",
+   "tids": {
+    "spec": 14,
+    "built": 7,
+    "todo": 0,
+    "missing": [
+     3,
+     5,
+     10,
+     11,
+     12,
+     13,
+     14
+    ]
+   },
+   "tables": {
+    "spec": 1,
+    "built": 1,
+    "missing": []
+   },
+   "timers": {
+    "spec": 15,
+    "built": 11,
+    "armable": 15,
+    "missing": [
+     "FNMA_F120_SA_FUNDS_AVAILABLE_20TH",
+     "SM_RECON_ITEM_AGE_30",
+     "SM_RECON_ITEM_AGE_60",
+     "SM_RECON_ITEM_AGE_90_FUND_OR_CLEAR"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 11,
+    "built": 0,
+    "missing": [
+     "bank.read_statement",
+     "ledger.read",
+     "ledger.post_reclass",
+     "fnma.read_cash_position",
+     "fnma.read_draft_notifications",
+     "crs.prepare_batch",
+     "form496.generate",
+     "documents.write",
+     "escalation.create",
+     "timer.*",
+     "partner.notify"
+    ]
+   },
+   "figures": {
+    "spec": 14,
+    "built": 10,
+    "missing": [
+     "$1,000.00",
+     "$1,000.01",
+     "$25,000.00",
+     "$25.00"
+    ]
+   },
+   "units": {
+    "spec": 55,
+    "built": 29
+   },
+   "pct": 52.7
+  },
+  {
+   "process": "6.4",
+   "title": "T&I custodial reconciliation (Form 496A)",
+   "tids": {
+    "spec": 8,
+    "built": 6,
+    "todo": 0,
+    "missing": [
+     7,
+     8
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 9,
+    "built": 9,
+    "armable": 9,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 12,
+    "built": 10,
+    "missing": [
+     "$1,911,432.50",
+     "$121,500.00"
+    ]
+   },
+   "units": {
+    "spec": 29,
+    "built": 25
+   },
+   "pct": 86.2
+  },
+  {
+   "process": "6.5",
+   "title": "Unidentified/unapplied funds management",
+   "tids": {
+    "spec": 10,
+    "built": 4,
+    "todo": 0,
+    "missing": [
+     1,
+     2,
+     3,
+     6,
+     8,
+     9
+    ]
+   },
+   "tables": {
+    "spec": 2,
+    "built": 2,
+    "missing": []
+   },
+   "timers": {
+    "spec": 14,
+    "built": 10,
+    "armable": 14,
+    "missing": [
+     "FNMA_C1102_50_RULE_COUNT_12M",
+     "SM_OVERPAYMENT_REFUND_10BD",
+     "SM_SUSPENSE_AGE_90_ESCALATE",
+     "SM_UNIDENTIFIED_RETURN_60"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 12,
+    "built": 0,
+    "missing": [
+     "suspense.read/write",
+     "payments.history",
+     "borrowers.search",
+     "lockbox.image_ocr",
+     "ledger.apply_via_cashiering",
+     "nacha.originate_credit",
+     "check.issue",
+     "contact.request",
+     "unclaimed_property.compute",
+     "naupa.generate",
+     "escalation.create",
+     "timer.*"
+    ]
+   },
+   "figures": {
+    "spec": 2,
+    "built": 1,
+    "missing": [
+     "$1,500.00"
+    ]
+   },
+   "units": {
+    "spec": 40,
+    "built": 17
+   },
+   "pct": 42.5
+  },
+  {
+   "process": "7.1",
+   "title": "Periodic statement",
+   "tids": {
+    "spec": 15,
+    "built": 5,
+    "todo": 0,
+    "missing": [
+     4,
+     5,
+     6,
+     7,
+     8,
+     11,
+     12,
+     13,
+     14,
+     15
+    ]
+   },
+   "tables": {
+    "spec": 9,
+    "built": 9,
+    "missing": []
+   },
+   "timers": {
+    "spec": 10,
+    "built": 7,
+    "armable": 10,
+    "missing": [
+     "IRS_1098_EFURNISH_ACCESS_1015",
+     "REGZ_1026_41E3IV_COUPON_DELQ_NOTICE",
+     "REGZ_1026_41E6_CHARGEOFF_NOTICE_30"
+    ]
+   },
+   "notices": {
+    "spec": 11,
+    "built": 2,
+    "missing": [
+     "NTC_FNMA_D2_2_03_PAYMENT_REMINDER",
+     "NTC_IRS_1098",
+     "NTC_IRS_1098_CORRECTED",
+     "NTC_REGZ_41E3IV_COUPON_DELQ_NOTICE",
+     "NTC_REGZ_41E6_CHARGEOFF_SUSPENSION",
+     "NTC_REGZ_41_STMT_AVAIL_EMAIL",
+     "NTC_REGZ_41_STMT_BK12_13",
+     "NTC_REGZ_41_STMT_BK7_11",
+     "NTC_REGZ_41_STMT_TPP"
+    ]
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 11,
+    "built": 1,
+    "missing": [
+     "$1,446.79",
+     "$1,500.00",
+     "$2,334.29",
+     "$2,946.79",
+     "$233.42",
+     "$5,893.58",
+     "$6,010.29",
+     "$6,127.00",
+     "$612.50",
+     "$9,073.79"
+    ]
+   },
+   "units": {
+    "spec": 56,
+    "built": 24
+   },
+   "pct": 42.9
+  },
+  {
+   "process": "7.2",
+   "title": "ARM interest rate adjustment notice",
+   "tids": {
+    "spec": 14,
+    "built": 7,
+    "todo": 0,
+    "missing": [
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14
+    ]
+   },
+   "tables": {
+    "spec": 5,
+    "built": 5,
+    "missing": []
+   },
+   "timers": {
+    "spec": 11,
+    "built": 10,
+    "armable": 11,
+    "missing": [
+     "REGZ_1026_20C_ADJ_NOTICE_NOT_BEFORE_120"
+    ]
+   },
+   "notices": {
+    "spec": 5,
+    "built": 0,
+    "missing": [
+     "NTC_ARM_INQUIRY_INTERIM_20",
+     "NTC_FNMA_C2_1_02_BUYDOWN_STEP_90",
+     "NTC_FNMA_C2_1_02_RATE_CHANGE",
+     "NTC_FNMA_C2_2_01_ARM_CORRECTION",
+     "NTC_REGZ_20C_ARM_ADJ"
+    ]
+   },
+   "tools": {
+    "spec": 2,
+    "built": 0,
+    "missing": [
+     "computeArmAdjustment",
+     "verifyArmAdjustment"
+    ]
+   },
+   "figures": {
+    "spec": 9,
+    "built": 1,
+    "missing": [
+     "$1.00",
+     "$2,334.29",
+     "$2,802.64",
+     "$2,946.79",
+     "$3,088.94",
+     "$371,048.86",
+     "$400,000.00",
+     "$612.50"
+    ]
+   },
+   "units": {
+    "spec": 46,
+    "built": 23
+   },
+   "pct": 50.0
+  },
+  {
+   "process": "7.3",
+   "title": "ARM initial adjustment notice",
+   "tids": {
+    "spec": 9,
+    "built": 3,
+    "todo": 0,
+    "missing": [
+     3,
+     4,
+     5,
+     7,
+     8,
+     9
+    ]
+   },
+   "tables": {
+    "spec": 2,
+    "built": 2,
+    "missing": []
+   },
+   "timers": {
+    "spec": 5,
+    "built": 4,
+    "armable": 5,
+    "missing": [
+     "REGZ_1026_20D_INITIAL_NOTICE_NOT_BEFORE_240"
+    ]
+   },
+   "notices": {
+    "spec": 1,
+    "built": 1,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 3,
+    "built": 1,
+    "missing": [
+     "$2,334.29",
+     "$371,048.86"
+    ]
+   },
+   "units": {
+    "spec": 20,
+    "built": 11
+   },
+   "pct": 55.0
+  },
+  {
+   "process": "7.4",
+   "title": "E-SIGN consent for e-delivery",
+   "tids": {
+    "spec": 11,
+    "built": 8,
+    "todo": 0,
+    "missing": [
+     7,
+     8,
+     11
+    ]
+   },
+   "tables": {
+    "spec": 4,
+    "built": 4,
+    "missing": []
+   },
+   "timers": {
+    "spec": 8,
+    "built": 7,
+    "armable": 8,
+    "missing": [
+     "SM_EMAIL_BOUNCE_SUSPECT_1BD"
+    ]
+   },
+   "notices": {
+    "spec": 8,
+    "built": 0,
+    "missing": [
+     "NTC_EDELIVERY_BOUNCE_PAPER_RESUME",
+     "NTC_ESIGN_7001C_DISCLOSURE",
+     "NTC_ESIGN_CONSENT_CONFIRMATION",
+     "NTC_ESIGN_HWSW_CHANGE_RECONSENT",
+     "NTC_ESIGN_VERIFICATION_EMAIL",
+     "NTC_ESIGN_WITHDRAWAL_CONFIRMATION",
+     "NTC_IRS_ESTATEMENT_CONSENT_DISCLOSURE",
+     "NTC_TCPA_CONSENT_CONFIRMATION"
+    ]
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 31,
+    "built": 19
+   },
+   "pct": 61.3
+  },
+  {
+   "process": "7.5",
+   "title": "GLBA privacy notice",
+   "tids": {
+    "spec": 9,
+    "built": 5,
+    "todo": 0,
+    "missing": [
+     6,
+     7,
+     8,
+     9
+    ]
+   },
+   "tables": {
+    "spec": 2,
+    "built": 2,
+    "missing": []
+   },
+   "timers": {
+    "spec": 6,
+    "built": 6,
+    "armable": 6,
+    "missing": []
+   },
+   "notices": {
+    "spec": 5,
+    "built": 0,
+    "missing": [
+     "NTC_REGP_1016_4_INITIAL",
+     "NTC_REGP_1016_5_ANNUAL",
+     "NTC_REGP_1016_8_REVISED",
+     "NTC_REGP_OPT_OUT_CONFIRMATION",
+     "NTC_STATE_CA_FIPA"
+    ]
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 22,
+    "built": 13
+   },
+   "pct": 59.1
+  },
+  {
+   "process": "7.6",
+   "title": "Payoff statement",
+   "tids": {
+    "spec": 11,
+    "built": 6,
+    "todo": 0,
+    "missing": [
+     2,
+     5,
+     9,
+     10,
+     11
+    ]
+   },
+   "tables": {
+    "spec": 2,
+    "built": 2,
+    "missing": []
+   },
+   "timers": {
+    "spec": 7,
+    "built": 6,
+    "armable": 7,
+    "missing": [
+     "SM_PAYOFF_DELAY_ACK_2BD"
+    ]
+   },
+   "notices": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "NTC_PAYOFF_AUTHORIZATION_REQUEST",
+     "NTC_PAYOFF_REQUEST_ACK_DELAY",
+     "NTC_PAYOFF_UPDATED_STMT",
+     "NTC_REGZ_36C3_PAYOFF_STMT"
+    ]
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 7,
+    "built": 4,
+    "missing": [
+     "$1,830.00",
+     "$371,048.86",
+     "$371,602.55"
+    ]
+   },
+   "units": {
+    "spec": 31,
+    "built": 18
+   },
+   "pct": 58.1
+  },
+  {
+   "process": "8.1",
+   "title": "Furnish tradeline (Metro 2)",
+   "tids": {
+    "spec": 19,
+    "built": 16,
+    "todo": 0,
+    "missing": [
+     12,
+     17,
+     18
+    ]
+   },
+   "tables": {
+    "spec": 7,
+    "built": 7,
+    "missing": []
+   },
+   "timers": {
+    "spec": 11,
+    "built": 7,
+    "armable": 11,
+    "missing": [
+     "FCRA_1681S2A5_DOFD_90",
+     "FDCPA_1006_30A_PRE_FURNISH_GATE",
+     "REGX_1024_35I_CREDIT_SUPPRESS_60",
+     "SM_METRO2_TRANSMIT_HARD_CD10"
+    ]
+   },
+   "notices": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "NTC_FCRA_1681S2A1C_ADDRESS",
+     "NTC_FCRA_1681S2A7_B1",
+     "NTC_FCRA_1681S2A7_B2"
+    ]
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 9,
+    "built": 0,
+    "missing": [
+     "$1,847.15",
+     "$11,082.90",
+     "$14,757.30",
+     "$2,459.55",
+     "$292,743.16",
+     "$293,063.94",
+     "$3,674.40",
+     "$300,000.00",
+     "$612.40"
+    ]
+   },
+   "units": {
+    "spec": 49,
+    "built": 30
+   },
+   "pct": 61.2
+  },
+  {
+   "process": "8.2",
+   "title": "Dispute handling (e-OSCAR / ACDV)",
+   "tids": {
+    "spec": 14,
+    "built": 11,
+    "todo": 0,
+    "missing": [
+     10,
+     13,
+     14
+    ]
+   },
+   "tables": {
+    "spec": 4,
+    "built": 4,
+    "missing": []
+   },
+   "timers": {
+    "spec": 10,
+    "built": 4,
+    "armable": 10,
+    "missing": [
+     "FCRA_1022_43E_DIRECT_RESULTS_EXT_45",
+     "FCRA_1681I_A1_CRA_OUTER_30_45",
+     "FCRA_1681S2A3_XB_FLAG_GATE",
+     "SM_ACDV_INTERNAL_TARGET_CD7",
+     "SM_ACDV_POLL_15M",
+     "SM_DISPUTE_REVIEW_SLA_BD1"
+    ]
+   },
+   "notices": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "NTC_FCRA_1022_43E_RESULTS",
+     "NTC_FCRA_1022_43F_FRIVOLOUS",
+     "NTC_FCRA_1022_43_ACK"
+    ]
+   },
+   "tools": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "eoscar.acdv.find/view/validate/submit",
+     "eoscar.aud.validate/submit",
+     "eoscar.notification.*"
+    ]
+   },
+   "figures": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "$2,459.55"
+    ]
+   },
+   "units": {
+    "spec": 35,
+    "built": 19
+   },
+   "pct": 54.3
+  },
+  {
+   "process": "8.3",
+   "title": "Suspend credit reporting",
+   "tids": {
+    "spec": 14,
+    "built": 13,
+    "todo": 0,
+    "missing": [
+     11
+    ]
+   },
+   "tables": {
+    "spec": 4,
+    "built": 3,
+    "missing": [
+     "accuracy_program"
+    ]
+   },
+   "timers": {
+    "spec": 12,
+    "built": 3,
+    "armable": 12,
+    "missing": [
+     "BK_CII_APPLY_NEXT_CYCLE",
+     "FCRA_1681C2_IDTHEFT_BLOCK_GATE",
+     "FCRA_1681S2A3_XB_FLAG_GATE",
+     "FDCPA_1006_30A_PRE_FURNISH_GATE",
+     "REGX_1024_35I_CREDIT_SUPPRESS_60",
+     "RESPA_2605E3_QWR_SUPPRESS_60",
+     "SCRA_3919_NO_ADVERSE_GATE",
+     "SM_CR_DECEASED_ECOA_X_NEXT_CYCLE",
+     "SM_CR_SUPPRESSION_REVIEW_30"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 10,
+    "built": 0,
+    "missing": [
+     "credit.suppression.create/release",
+     "bankruptcy.state.get",
+     "scra.case.get",
+     "disaster.case.get",
+     "borrowers.get",
+     "documents.search",
+     "eoscar.aud.submit",
+     "eoscar.notification.*",
+     "accuracy.control.run",
+     "escalation.file"
+    ]
+   },
+   "figures": {
+    "spec": 7,
+    "built": 0,
+    "missing": [
+     "$1,800.91",
+     "$1,847.15",
+     "$2,413.31",
+     "$292,096.58",
+     "$4,919.10",
+     "$60.85",
+     "$612.40"
+    ]
+   },
+   "units": {
+    "spec": 47,
+    "built": 19
+   },
+   "pct": 40.4
+  },
+  {
+   "process": "9.1",
+   "title": "Hazard insurance tracking",
+   "tids": {
+    "spec": 10,
+    "built": 9,
+    "todo": 0,
+    "missing": [
+     10
+    ]
+   },
+   "tables": {
+    "spec": 5,
+    "built": 5,
+    "missing": []
+   },
+   "timers": {
+    "spec": 9,
+    "built": 6,
+    "armable": 9,
+    "missing": [
+     "FNMA_B203_MASTER_POLICY_ANNUAL_VERIFY_365",
+     "FNMA_B301_FLOOD_EVIDENCE_TO_FNMA_10BD",
+     "INS_EXPIRATION_WATCH_60"
+    ]
+   },
+   "notices": {
+    "spec": 6,
+    "built": 0,
+    "missing": [
+     "INS_ANNUAL_REMINDER",
+     "INS_DEFICIENCY_NOTICE",
+     "INS_DEFICIENCY_NOTICE_BK",
+     "INS_EOI_REQUEST",
+     "INS_EXPIRATION_LAPSE_1",
+     "INS_EXPIRATION_WATCH_60"
+    ]
+   },
+   "tools": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "recordDeficiency",
+     "requestEscrowLineUpdate",
+     "openCase"
+    ]
+   },
+   "figures": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "$2,500.00"
+    ]
+   },
+   "units": {
+    "spec": 34,
+    "built": 20
+   },
+   "pct": 58.8
+  },
+  {
+   "process": "9.2",
+   "title": "Force-placed insurance \u2014 first notice",
+   "tids": {
+    "spec": 11,
+    "built": 6,
+    "todo": 0,
+    "missing": [
+     5,
+     6,
+     7,
+     9,
+     10
+    ]
+   },
+   "tables": {
+    "spec": 4,
+    "built": 4,
+    "missing": []
+   },
+   "timers": {
+    "spec": 8,
+    "built": 5,
+    "armable": 8,
+    "missing": [
+     "REGX_1024_37C1III_FPI_EVIDENCE_WINDOW_15",
+     "REGX_1024_37D5_NOTICE_PRODUCTION_5BD",
+     "REGX_1024_37D_FPI_REMINDER_BEFORE_CHARGE_15"
+    ]
+   },
+   "notices": {
+    "spec": 5,
+    "built": 1,
+    "missing": [
+     "INS_FPI_FIRST_NOTICE_SLA_3BD",
+     "INS_FPI_REMINDER_INSUFF_MS3C",
+     "INS_FPI_REMINDER_NOINFO_MS3B",
+     "INS_FPI_RENEWAL_MS3D"
+    ]
+   },
+   "tools": {
+    "spec": 2,
+    "built": 0,
+    "missing": [
+     "assessReasonableBasis",
+     "checkEscrowGuard"
+    ]
+   },
+   "figures": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "$2,190.00",
+     "$250,000.00",
+     "$250,000.01"
+    ]
+   },
+   "units": {
+    "spec": 33,
+    "built": 16
+   },
+   "pct": 48.5
+  },
+  {
+   "process": "9.3",
+   "title": "Force-placed \u2014 reminder notice",
+   "tids": {
+    "spec": 6,
+    "built": 6,
+    "todo": 0,
+    "missing": []
+   },
+   "tables": {
+    "spec": 1,
+    "built": 1,
+    "missing": []
+   },
+   "timers": {
+    "spec": 5,
+    "built": 2,
+    "armable": 5,
+    "missing": [
+     "REGX_1024_37C1III_FPI_EVIDENCE_WINDOW_15",
+     "REGX_1024_37D5_NOTICE_PRODUCTION_5BD",
+     "REGX_1024_37D_FPI_REMINDER_BEFORE_CHARGE_15"
+    ]
+   },
+   "notices": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "INS_FPI_REMINDER_TARGET_30_35"
+    ]
+   },
+   "tools": {
+    "spec": 2,
+    "built": 0,
+    "missing": [
+     "selectReminderVariant",
+     "quoteLpi"
+    ]
+   },
+   "figures": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "$2,190.00"
+    ]
+   },
+   "units": {
+    "spec": 16,
+    "built": 9
+   },
+   "pct": 56.2
+  },
+  {
+   "process": "9.4",
+   "title": "Force-placed renewal notice",
+   "tids": {
+    "spec": 5,
+    "built": 5,
+    "todo": 0,
+    "missing": []
+   },
+   "tables": {
+    "spec": 1,
+    "built": 1,
+    "missing": []
+   },
+   "timers": {
+    "spec": 4,
+    "built": 3,
+    "armable": 4,
+    "missing": [
+     "REGX_1024_37E_FPI_RENEWAL_NOTICE_45"
+    ]
+   },
+   "notices": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "INS_FPI_RENEWAL_COVERAGE_REVIEW_60"
+    ]
+   },
+   "tools": {
+    "spec": 2,
+    "built": 0,
+    "missing": [
+     "reviewLpiCoverage",
+     "quoteLpiRenewal"
+    ]
+   },
+   "figures": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "$2,250.00"
+    ]
+   },
+   "units": {
+    "spec": 14,
+    "built": 9
+   },
+   "pct": 64.3
+  },
+  {
+   "process": "9.5",
+   "title": "Force-placed cancellation/refund",
+   "tids": {
+    "spec": 7,
+    "built": 6,
+    "todo": 0,
+    "missing": [
+     3
+    ]
+   },
+   "tables": {
+    "spec": 1,
+    "built": 1,
+    "missing": []
+   },
+   "timers": {
+    "spec": 4,
+    "built": 1,
+    "armable": 4,
+    "missing": [
+     "FDPA_4012A_E3_FLOOD_LPI_TERMINATE_REFUND_30",
+     "INS_FPI_CARRIER_REFUND_RECON_45",
+     "INS_FPI_EVIDENCE_EVAL_2BD"
+    ]
+   },
+   "notices": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "INS_FPI_CANCEL_REFUND_CONFIRM",
+     "INS_FPI_CARRIER_REFUND_RECON_45",
+     "INS_FPI_EVIDENCE_EVAL_2BD"
+    ]
+   },
+   "tools": {
+    "spec": 6,
+    "built": 0,
+    "missing": [
+     "evaluateEvidence",
+     "computeOverlapRefund",
+     "requestLpiCancel",
+     "postRefund",
+     "payRefund",
+     "notifyBorrower"
+    ]
+   },
+   "figures": {
+    "spec": 9,
+    "built": 2,
+    "missing": [
+     "$1,700.00",
+     "$1,740.00",
+     "$150.00",
+     "$2,190.00",
+     "$40.00",
+     "$450.00",
+     "$600.00"
+    ]
+   },
+   "units": {
+    "spec": 30,
+    "built": 10
+   },
+   "pct": 33.3
+  },
+  {
+   "process": "9.6",
+   "title": "Flood insurance / mandatory purchase",
+   "tids": {
+    "spec": 9,
+    "built": 6,
+    "todo": 0,
+    "missing": [
+     6,
+     7,
+     8
+    ]
+   },
+   "tables": {
+    "spec": 5,
+    "built": 5,
+    "missing": []
+   },
+   "timers": {
+    "spec": 9,
+    "built": 3,
+    "armable": 9,
+    "missing": [
+     "FDPA_4012A_E3_FLOOD_LPI_TERMINATE_REFUND_30",
+     "FDPA_4012A_E_FLOOD_FPI_NOTICE_45",
+     "FLOOD_EVIDENCE_EVAL_2BD",
+     "FLOOD_LOL_HEARTBEAT_35",
+     "FNMA_B301_FLOOD_EVIDENCE_TO_FNMA_10BD",
+     "NFIP_44CFR6111_MAP_REVISION_1DAY_13M"
+    ]
+   },
+   "notices": {
+    "spec": 6,
+    "built": 0,
+    "missing": [
+     "INS_FLOOD_FPI_NOTICE_45",
+     "INS_FLOOD_FPI_PLACED_NOTICE",
+     "INS_FLOOD_MAP_CHANGE_NOTICE",
+     "INS_FLOOD_NOTICE_SLA_3BD",
+     "INS_FLOOD_REMOVED_NOTICE",
+     "INS_FLOOD_TERMINATION_REFUND_CONFIRM"
+    ]
+   },
+   "tools": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "orderDetermination",
+     "evaluateStructures",
+     "computeFloodRequirement",
+     "evaluatePrivateFloodPolicy"
+    ]
+   },
+   "figures": {
+    "spec": 2,
+    "built": 1,
+    "missing": [
+     "$1,150.00"
+    ]
+   },
+   "units": {
+    "spec": 35,
+    "built": 15
+   },
+   "pct": 42.9
+  },
+  {
+   "process": "9.7",
+   "title": "Loss draft / insurance claim handling",
+   "tids": {
+    "spec": 10,
+    "built": 9,
+    "todo": 0,
+    "missing": [
+     10
+    ]
+   },
+   "tables": {
+    "spec": 4,
+    "built": 4,
+    "missing": []
+   },
+   "timers": {
+    "spec": 11,
+    "built": 4,
+    "armable": 11,
+    "missing": [
+     "FNMA_B501_REMIT_PROCEEDS_REOGRAM_30",
+     "FNMA_B501_WIRE_POSTREOGRAM_PROCEEDS_10BD",
+     "FNMA_D1301_DISASTER_FC_APPROVAL_5",
+     "FNMA_F105_INSURED_LOSS_INSPECT_CLAIM_365",
+     "INS_CLAIM_INITIAL_RELEASE_5BD",
+     "INS_CLAIM_INSPECTION_ORDER_3BD",
+     "INS_CLAIM_STALE_90"
+    ]
+   },
+   "notices": {
+    "spec": 9,
+    "built": 0,
+    "missing": [
+     "INS_CLAIM_CONTENTS_RELEASE_2BD",
+     "INS_CLAIM_INITIAL_RELEASE_5BD",
+     "INS_CLAIM_INSPECTION_ORDER_3BD",
+     "INS_CLAIM_STALE_90",
+     "INS_LOSS_DRAFT_FINAL_LETTER",
+     "INS_LOSS_DRAFT_PACKAGE",
+     "INS_LOSS_DRAFT_RELEASE_LETTER",
+     "INS_LOSS_DRAFT_UPB_APPLICATION_NOTICE",
+     "INS_UNINSURED_LOSS_LETTER"
+    ]
+   },
+   "tools": {
+    "spec": 12,
+    "built": 0,
+    "missing": [
+     "openClaim",
+     "computeReleaseSchedule",
+     "requestEndorsement",
+     "depositInstrument",
+     "releaseFunds",
+     "orderRepairInspection",
+     "verifyRemoteInspection",
+     "prepareForm176",
+     "remitProceeds332",
+     "applyToUpb",
+     "openWorkoutEvaluation",
+     "escalate"
+    ]
+   },
+   "figures": {
+    "spec": 8,
+    "built": 0,
+    "missing": [
+     "$1,000.00",
+     "$10,000.00",
+     "$131.51",
+     "$15,000.00",
+     "$20,000.00",
+     "$240,000.00",
+     "$40,000.00",
+     "$60,000.00"
+    ]
+   },
+   "units": {
+    "spec": 54,
+    "built": 17
+   },
+   "pct": 31.5
+  },
+  {
+   "process": "9.8",
+   "title": "Property inspection (delinquent)",
+   "tids": {
+    "spec": 9,
+    "built": 7,
+    "todo": 0,
+    "missing": [
+     3,
+     5
+    ]
+   },
+   "tables": {
+    "spec": 3,
+    "built": 3,
+    "missing": []
+   },
+   "timers": {
+    "spec": 11,
+    "built": 4,
+    "armable": 11,
+    "missing": [
+     "FNMA_D2210_INSPECT_ORDER_DAY90",
+     "FNMA_D2210_INSPECT_RECUR_20_35",
+     "FNMA_D2210_VACANCY_INSPECT_ASAP_3BD",
+     "FNMA_D2210_VACANT_INTERIOR_MONTHLY_35",
+     "FNMA_F105_INSPECTION_CLAIM_60",
+     "FNMA_P360_PFPIP_STATUS_SYNC_2BD",
+     "FNMA_P360_PFPIP_SUBMIT_EXCEPTION_DAY45"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 11,
+    "built": 0,
+    "missing": [
+     "computeInspectionSchedule",
+     "orderInspection",
+     "evaluateInspectionResult",
+     "updateOccupancy",
+     "notifyCarrierVacancy",
+     "submitPfpip",
+     "updatePfpip",
+     "reconcilePfpip",
+     "openPreservation",
+     "openClaim",
+     "sendNotice"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 34,
+    "built": 14
+   },
+   "pct": 41.2
+  },
+  {
+   "process": "9.9",
+   "title": "Property preservation (vacant)",
+   "tids": {
+    "spec": 11,
+    "built": 7,
+    "todo": 0,
+    "missing": [
+     7,
+     9,
+     10,
+     11
+    ]
+   },
+   "tables": {
+    "spec": 5,
+    "built": 5,
+    "missing": []
+   },
+   "timers": {
+    "spec": 10,
+    "built": 3,
+    "armable": 10,
+    "missing": [
+     "FNMA_F105_PRESERVATION_CLAIM_60",
+     "FNMA_PPM_AUDIT_RESPONSE_7",
+     "FNMA_PPM_BID_RECONSIDER_7",
+     "FNMA_PPM_POST_NOTICE_SECURE_7",
+     "FNMA_PPM_ROOF_TARP_60",
+     "FNMA_PPM_WINDOW_DOOR_REPAIR_3",
+     "FNMA_PPM_YARD_REBID_15"
+    ]
+   },
+   "notices": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "INS_VACANCY_CARRIER_NOTIFY_5BD"
+    ]
+   },
+   "tools": {
+    "spec": 8,
+    "built": 0,
+    "missing": [
+     "buildInitialScope",
+     "checkAllowables",
+     "orderWork",
+     "reviewCompletion",
+     "prepareBid",
+     "fileRegistration",
+     "notifyCarrierVacancy",
+     "openClaim"
+    ]
+   },
+   "figures": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "$1,250.00"
+    ]
+   },
+   "units": {
+    "spec": 36,
+    "built": 15
+   },
+   "pct": 41.7
+  },
+  {
+   "process": "10.1",
+   "title": "Borrower-requested cancellation @80% LTV",
+   "tids": {
+    "spec": 12,
+    "built": 9,
+    "todo": 0,
+    "missing": [
+     3,
+     7,
+     8
+    ]
+   },
+   "tables": {
+    "spec": 6,
+    "built": 6,
+    "missing": []
+   },
+   "timers": {
+    "spec": 13,
+    "built": 10,
+    "armable": 13,
+    "missing": [
+     "FNMA_F102_VALUATION_FEE_GATE",
+     "MN_47_207_RESPONSE_30",
+     "SM_MI_INSURER_CANCEL_TARGET_2BD"
+    ]
+   },
+   "notices": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "NTC_HPA_4902A_ACK_EVIDENCE",
+     "NTC_HPA_4904A_CANCELLED",
+     "NTC_HPA_4904B_DENIAL"
+    ]
+   },
+   "tools": {
+    "spec": 10,
+    "built": 0,
+    "missing": [
+     "pmi.*",
+     "smdu.*",
+     "mi_insurer.cancel",
+     "notices.render/send",
+     "escrow.interim_analysis.request",
+     "ledger.post",
+     "investor_events.emit",
+     "case.*",
+     "contacts.log",
+     "documents.store"
+    ]
+   },
+   "figures": {
+    "spec": 7,
+    "built": 5,
+    "missing": [
+     "$2,401.86",
+     "$370,522.40"
+    ]
+   },
+   "units": {
+    "spec": 51,
+    "built": 30
+   },
+   "pct": 58.8
+  },
+  {
+   "process": "10.2",
+   "title": "Automatic termination @78% LTV",
+   "tids": {
+    "spec": 11,
+    "built": 4,
+    "todo": 0,
+    "missing": [
+     1,
+     2,
+     3,
+     6,
+     7,
+     8,
+     11
+    ]
+   },
+   "tables": {
+    "spec": 1,
+    "built": 1,
+    "missing": []
+   },
+   "timers": {
+    "spec": 12,
+    "built": 11,
+    "armable": 12,
+    "missing": [
+     "SM_MI_LAR89_INTERNAL_TARGET_NEXTBD_2000"
+    ]
+   },
+   "notices": {
+    "spec": 2,
+    "built": 0,
+    "missing": [
+     "NTC_HPA_4904B_AUTO_NOT_CURRENT",
+     "NTC_HPA_4905C2_LPMI_OPTIONS"
+    ]
+   },
+   "tools": {
+    "spec": 7,
+    "built": 0,
+    "missing": [
+     "pmi.schedule.rebuild",
+     "pmi.terminate",
+     "notices.*",
+     "escrow.interim_analysis.request",
+     "investor_events.emit",
+     "mi_insurer.cancel",
+     "ledger.post"
+    ]
+   },
+   "figures": {
+    "spec": 6,
+    "built": 1,
+    "missing": [
+     "$1,873.46",
+     "$2,157.60",
+     "$2,596.45",
+     "$312,000.00",
+     "$351,350.17"
+    ]
+   },
+   "units": {
+    "spec": 39,
+    "built": 17
+   },
+   "pct": 43.6
+  },
+  {
+   "process": "10.3",
+   "title": "Final termination @ midpoint",
+   "tids": {
+    "spec": 7,
+    "built": 6,
+    "todo": 0,
+    "missing": [
+     7
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 5,
+    "built": 5,
+    "armable": 5,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 2,
+    "built": 1,
+    "missing": [
+     "$2,833.18"
+    ]
+   },
+   "units": {
+    "spec": 14,
+    "built": 12
+   },
+   "pct": 85.7
+  },
+  {
+   "process": "10.4",
+   "title": "Annual PMI disclosure",
+   "tids": {
+    "spec": 9,
+    "built": 2,
+    "todo": 0,
+    "missing": [
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     9
+    ]
+   },
+   "tables": {
+    "spec": 1,
+    "built": 1,
+    "missing": []
+   },
+   "timers": {
+    "spec": 6,
+    "built": 4,
+    "armable": 6,
+    "missing": [
+     "CA_2954_6_NOTICE_WITH_STATEMENT",
+     "MN_47_207_ANNUAL_NOTICE_12M"
+    ]
+   },
+   "notices": {
+    "spec": 5,
+    "built": 0,
+    "missing": [
+     "NTC_FNMA_MI_ANNUAL_INFO",
+     "NTC_HPA_4903A3_ANNUAL",
+     "NTC_HPA_4903A3_ANNUAL_CA",
+     "NTC_HPA_4903A3_ANNUAL_MN",
+     "NTC_HPA_4903B_ANNUAL_LEGACY"
+    ]
+   },
+   "tools": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "notices.compose/send",
+     "pmi.projection",
+     "consents.check",
+     "documents.store"
+    ]
+   },
+   "figures": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "$365,400.00"
+    ]
+   },
+   "units": {
+    "spec": 26,
+    "built": 7
+   },
+   "pct": 26.9
+  },
+  {
+   "process": "10.5",
+   "title": "Unearned premium refund",
+   "tids": {
+    "spec": 10,
+    "built": 7,
+    "todo": 0,
+    "missing": [
+     4,
+     9,
+     10
+    ]
+   },
+   "tables": {
+    "spec": 1,
+    "built": 1,
+    "missing": []
+   },
+   "timers": {
+    "spec": 7,
+    "built": 5,
+    "armable": 7,
+    "missing": [
+     "LL_2026_05_ESCROW_EVENT_3AM",
+     "SM_MI_REFUND_VARIANCE_5BD"
+    ]
+   },
+   "notices": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "NTC_MI_REFUND_ADVICE"
+    ]
+   },
+   "tools": {
+    "spec": 7,
+    "built": 0,
+    "missing": [
+     "pmi.refund.estimate",
+     "ledger.post",
+     "disbursements.issue",
+     "custodial.match",
+     "mi_insurer.refund_status",
+     "escrow.interim_analysis.request",
+     "notices.*"
+    ]
+   },
+   "figures": {
+    "spec": 11,
+    "built": 5,
+    "missing": [
+     "$114.00",
+     "$2,701.86",
+     "$2,891.86",
+     "$76.00",
+     "$868.27",
+     "$950.00"
+    ]
+   },
+   "units": {
+    "spec": 37,
+    "built": 18
+   },
+   "pct": 48.6
+  },
+  {
+   "process": "10.6",
+   "title": "Denial notice",
+   "tids": {
+    "spec": 10,
+    "built": 8,
+    "todo": 0,
+    "missing": [
+     6,
+     10
+    ]
+   },
+   "tables": {
+    "spec": 1,
+    "built": 1,
+    "missing": []
+   },
+   "timers": {
+    "spec": 8,
+    "built": 6,
+    "armable": 8,
+    "missing": [
+     "MN_47_207_RESPONSE_30",
+     "SM_MI_DENIAL_SEND_5BD"
+    ]
+   },
+   "notices": {
+    "spec": 2,
+    "built": 0,
+    "missing": [
+     "NTC_MI_CASE_CLOSED",
+     "NTC_MI_INFO_REQUEST"
+    ]
+   },
+   "tools": {
+    "spec": 5,
+    "built": 0,
+    "missing": [
+     "notices.*",
+     "pmi.evaluation.get",
+     "case.noe.open",
+     "smdu.valuation.appeal",
+     "documents.deliver"
+    ]
+   },
+   "figures": {
+    "spec": 5,
+    "built": 4,
+    "missing": [
+     "$370,522.40"
+    ]
+   },
+   "units": {
+    "spec": 31,
+    "built": 19
+   },
+   "pct": 61.3
+  },
+  {
+   "process": "11.1",
+   "title": "Live contact",
+   "tids": {
+    "spec": 24,
+    "built": 6,
+    "todo": 0,
+    "missing": [
+     5,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18,
+     19,
+     20,
+     21,
+     22,
+     23,
+     24
+    ]
+   },
+   "tables": {
+    "spec": 9,
+    "built": 7,
+    "missing": [
+     "frequency_counters",
+     "mode"
+    ]
+   },
+   "timers": {
+    "spec": 17,
+    "built": 10,
+    "armable": 17,
+    "missing": [
+     "FNMA_D2202_CEASE_PRE_SALE_30NJ",
+     "FNMA_D2202_CONTINUE_AFTER_210",
+     "REGF_1006_14_POST_CONVERSATION_7",
+     "REGX_1024_39A_LIVE_CONTACT_36_WARN_28",
+     "REGX_1024_39A_RESUME_AFTER_BK_NEXT_DUE",
+     "SM_LIVE_CONTACT_HUMAN_FALLBACK_5CD",
+     "TCPA_64_1200_A10_REVOCATION_HONOR_10BD"
+    ]
+   },
+   "notices": {
+    "spec": 2,
+    "built": 0,
+    "missing": [
+     "NTC_SM_CALLBACK_CONFIRMATION",
+     "NTC_SM_CONTACT_REQUEST_LETTER"
+    ]
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 9,
+    "built": 0,
+    "missing": [
+     "$1,200.00",
+     "$1,650.00",
+     "$2,000.00",
+     "$2,400.00",
+     "$350.00",
+     "$4,000.00",
+     "$4,165.00",
+     "$400.00",
+     "$82.50"
+    ]
+   },
+   "units": {
+    "spec": 61,
+    "built": 23
+   },
+   "pct": 37.7
+  },
+  {
+   "process": "11.2",
+   "title": "Written early intervention notice",
+   "tids": {
+    "spec": 15,
+    "built": 8,
+    "todo": 0,
+    "missing": [
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15
+    ]
+   },
+   "tables": {
+    "spec": 4,
+    "built": 4,
+    "missing": []
+   },
+   "timers": {
+    "spec": 13,
+    "built": 9,
+    "armable": 13,
+    "missing": [
+     "FNMA_D2204_BSP_AFTER_QRPC_3BD",
+     "REGX_1024_39C2II_DISCHARGE_PAYMENT_REARM",
+     "REGX_1024_39C_ONCE_PER_CASE_GATE",
+     "REGX_1024_39C_RESUME_NEXT_DUE"
+    ]
+   },
+   "notices": {
+    "spec": 5,
+    "built": 0,
+    "missing": [
+     "NTC_FNMA_D2204_SOLICITATION_LETTER_745",
+     "NTC_FNMA_D2204_SOLICITATION_PACKAGE",
+     "NTC_REGX_39CD_EARLY_INTERVENTION_BK_FDCPA",
+     "NTC_REGX_39C_EARLY_INTERVENTION_BK",
+     "NTC_REGX_39D_EARLY_INTERVENTION_FDCPA"
+    ]
+   },
+   "tools": {
+    "spec": 13,
+    "built": 0,
+    "missing": [
+     "windows.list",
+     "cycle.compute",
+     "bk.status",
+     "fdcpa.status",
+     "continuity.assignment.get",
+     "lossmit.options.list",
+     "notice.render",
+     "checklist.verify",
+     "print.request",
+     "edeliver.send",
+     "fnma.action.emit",
+     "decision.record",
+     "escalate"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 50,
+    "built": 21
+   },
+   "pct": 42.0
+  },
+  {
+   "process": "11.3",
+   "title": "Quality Right Party Contact (QRPC)",
+   "tids": {
+    "spec": 14,
+    "built": 6,
+    "todo": 0,
+    "missing": [
+     5,
+     6,
+     7,
+     8,
+     10,
+     11,
+     13,
+     14
+    ]
+   },
+   "tables": {
+    "spec": 3,
+    "built": 3,
+    "missing": []
+   },
+   "timers": {
+    "spec": 11,
+    "built": 6,
+    "armable": 11,
+    "missing": [
+     "FNMA_D2204_BSP_AFTER_QRPC_3BD",
+     "FNMA_D2210_INSPECTION_SUSPEND_30",
+     "FNMA_F121_AW_ONE_MONTH",
+     "SM_QRPC_HUMAN_VERIFY_1BD",
+     "SM_QRPC_STALE_30"
+    ]
+   },
+   "notices": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "NTC_SM_QRPC_SUMMARY"
+    ]
+   },
+   "tools": {
+    "spec": 16,
+    "built": 0,
+    "missing": [
+     "identity.verify",
+     "disclosure.play",
+     "ledger.balances",
+     "payments.history",
+     "lossmit_facts.get",
+     "qrpc.capture",
+     "promise.record",
+     "payment.schedule",
+     "lossmit.request.create",
+     "lossmit.streamlined.evaluate",
+     "authorization.record",
+     "preference.set",
+     "dispute.intake",
+     "human.transfer",
+     "contact.log",
+     "decision.record"
+    ]
+   },
+   "figures": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "$2,000.00",
+     "$4,165.00",
+     "$82.50"
+    ]
+   },
+   "units": {
+    "spec": 48,
+    "built": 15
+   },
+   "pct": 31.2
+  },
+  {
+   "process": "11.4",
+   "title": "FDCPA compliance",
+   "tids": {
+    "spec": 16,
+    "built": 3,
+    "todo": 0,
+    "missing": [
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16
+    ]
+   },
+   "tables": {
+    "spec": 4,
+    "built": 4,
+    "missing": []
+   },
+   "timers": {
+    "spec": 20,
+    "built": 12,
+    "armable": 20,
+    "missing": [
+     "REGF_1006_100_RETENTION_3Y",
+     "REGF_1006_30A_FURNISH_GATE_14",
+     "REGF_1006_34_ASSUMED_RECEIPT_5D",
+     "REGF_1006_34_VALIDATION_PERIOD_30",
+     "REGF_1006_38_OC_REQUEST_GATE",
+     "REGF_1006_6B2_ATTORNEY_GATE",
+     "REGF_1006_6C_CEASE_GATE",
+     "SM_REGF_VERIFICATION_RESPONSE_30"
+    ]
+   },
+   "notices": {
+    "spec": 6,
+    "built": 0,
+    "missing": [
+     "NTC_REGF_1006_18E_DISCLOSURE",
+     "NTC_REGF_1006_34_VALIDATION_B1",
+     "NTC_REGF_1006_38_DUPLICATIVE",
+     "NTC_REGF_1006_38_ORIGINAL_CREDITOR",
+     "NTC_REGF_1006_38_VERIFICATION",
+     "NTC_REGF_1006_6C_CEASE_ACK"
+    ]
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 5,
+    "built": 5,
+    "missing": []
+   },
+   "units": {
+    "spec": 51,
+    "built": 24
+   },
+   "pct": 47.1
+  },
+  {
+   "process": "11.5",
+   "title": "Imminent default evaluation",
+   "tids": {
+    "spec": 14,
+    "built": 6,
+    "todo": 0,
+    "missing": [
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14
+    ]
+   },
+   "tables": {
+    "spec": 2,
+    "built": 2,
+    "missing": []
+   },
+   "timers": {
+    "spec": 15,
+    "built": 6,
+    "armable": 15,
+    "missing": [
+     "FNMA_D2101_FORM182_ADVERSE_30",
+     "FNMA_D2205_ACCEPT_14",
+     "FNMA_D2205_DECISION_5D_30D",
+     "FNMA_D2205_INCOME_DOC_90",
+     "FNMA_SMDU_PORTAL_TASK_1BD",
+     "REGB_1002_9_ADVERSE_ACTION_30",
+     "REGX_1024_41B2_LM_ACK_5",
+     "REGX_1024_41C1_EVALUATE_30",
+     "SM_ID_SMDU_SUBMIT_2BD"
+    ]
+   },
+   "notices": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "NTC_CO_AI_ACT_PRE_DECISION",
+     "NTC_FNMA_A42106_FORM182_ADVERSE_ACTION",
+     "NTC_SM_ID_ELIGIBILITY_RESULT"
+    ]
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 8,
+    "built": 1,
+    "missing": [
+     "$1,650.00",
+     "$150.00",
+     "$2,412.50",
+     "$5,600.00",
+     "$6,031.25",
+     "$612.50",
+     "$8,400.00"
+    ]
+   },
+   "units": {
+    "spec": 42,
+    "built": 15
+   },
+   "pct": 35.7
+  },
+  {
+   "process": "12.1",
+   "title": "Acknowledge loss-mit application",
+   "tids": {
+    "spec": 12,
+    "built": 6,
+    "todo": 0,
+    "missing": [
+     4,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 7,
+    "built": 5,
+    "missing": [
+     "lossmit_contact_attempts",
+     "lossmit_notices"
+    ]
+   },
+   "timers": {
+    "spec": 13,
+    "built": 7,
+    "armable": 13,
+    "missing": [
+     "FNMA_D2205_BRP_ACK_5BD",
+     "NY_419_7D_ACK_5BD",
+     "REGX_1024_41B1_DILIGENCE_FOLLOWUP_7",
+     "REGX_1024_41B2_LM_ACK_5",
+     "REGX_1024_41K2_TRANSFEREE_ACK_10",
+     "SM_LM_DOC_STALENESS_SWEEP"
+    ]
+   },
+   "notices": {
+    "spec": 9,
+    "built": 0,
+    "missing": [
+     "NTC_CA_2924_10_ACK",
+     "NTC_FNMA_D2204_SOLICITATION",
+     "NTC_FNMA_D2205_LATE_BRP_PLAN",
+     "NTC_REGX_41B2_INCOMPLETE_CLOSED",
+     "NTC_REGX_41B2_SUPPLEMENTAL_REQUEST",
+     "NTC_REGX_41C2III_SHORTTERM_TERMS",
+     "NTC_REGX_41C3_COMPLETE",
+     "NTC_REGX_41I_DUPLICATIVE",
+     "NTC_REGX_41_NPRM_RFA_RECEIVED"
+    ]
+   },
+   "tools": {
+    "spec": 11,
+    "built": 0,
+    "missing": [
+     "lossmit.application.open/update",
+     "documents.classify_extract",
+     "requirements.compute",
+     "calendar.federal_bd",
+     "notice.render_send",
+     "contacts.log",
+     "timers.start",
+     "foreclosure_holds.set",
+     "fnma.status_code.report",
+     "sii.lookup",
+     "transfer.lossmit_file.get"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 52,
+    "built": 18
+   },
+   "pct": 34.6
+  },
+  {
+   "process": "12.2",
+   "title": "Complete-application evaluation",
+   "tids": {
+    "spec": 13,
+    "built": 5,
+    "todo": 0,
+    "missing": [
+     3,
+     5,
+     6,
+     8,
+     10,
+     11,
+     12,
+     13
+    ]
+   },
+   "tables": {
+    "spec": 5,
+    "built": 5,
+    "missing": []
+   },
+   "timers": {
+    "spec": 17,
+    "built": 7,
+    "armable": 17,
+    "missing": [
+     "CA_CIV_2923_6E_NOD_NOS_HOLD_31",
+     "FNMA_D2205_EVAL_NOTICE_5_AFTER_DECISION",
+     "FNMA_E3401_POST_NOTICE_LEGAL_DELAY_14",
+     "NY_419_7G_ACCEPT_30",
+     "REGB_1002_9_ADVERSE_ACTION_30",
+     "REGX_1024_41C1_EVALUATE_NOTIFY_30",
+     "REGX_1024_41C4IIA2_SIGNIFICANT_PERIOD",
+     "REGX_1024_41C4_THIRD_PARTY_HEIGHTEN_30",
+     "REGX_1024_41E1_ACCEPT_7",
+     "REGX_1024_41E2II_TRIAL_OTHER_REQS_REASONABLE"
+    ]
+   },
+   "notices": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "NTC_FNMA_EVAL_NOTICE_STREAMLINED",
+     "NTC_REGB_1002_9_LM_ADVERSE_ACTION",
+     "NTC_REGX_41C4IIB_THIRD_PARTY_DELAY"
+    ]
+   },
+   "tools": {
+    "spec": 11,
+    "built": 0,
+    "missing": [
+     "lossmit.evaluation.*",
+     "hierarchy.walk",
+     "smdu.case.submit/poll",
+     "valuation.order",
+     "mi.decision.get",
+     "credit.report.pull",
+     "notice.render_send",
+     "foreclosure_holds.set/release",
+     "attorney.instruct",
+     "timers.*",
+     "escalation.file"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 49,
+    "built": 17
+   },
+   "pct": 34.7
+  },
+  {
+   "process": "12.3",
+   "title": "Appeal handling",
+   "tids": {
+    "spec": 10,
+    "built": 5,
+    "todo": 0,
+    "missing": [
+     2,
+     3,
+     4,
+     8,
+     10
+    ]
+   },
+   "tables": {
+    "spec": 2,
+    "built": 2,
+    "missing": []
+   },
+   "timers": {
+    "spec": 13,
+    "built": 6,
+    "armable": 13,
+    "missing": [
+     "CA_CIV_2923_6D_APPEAL_WINDOW_30",
+     "CA_CIV_2923_6E_POST_APPEAL_HOLD_15",
+     "FNMA_D2207_APPEAL_DECIDE_30",
+     "FNMA_D2207_TPP_FIRST_DUE_15TH_RULE",
+     "NY_419_7H_APPEAL_WINDOW_14_POSTMARK",
+     "REGX_1024_41E2III_ORIGINAL_OFFER_EXTENDED",
+     "REGX_1024_41H4_APPEAL_DECIDE_30"
+    ]
+   },
+   "notices": {
+    "spec": 2,
+    "built": 0,
+    "missing": [
+     "NTC_REGX_41H_APPEAL_ACK",
+     "NTC_REGX_41H_APPEAL_INELIGIBLE"
+    ]
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 27,
+    "built": 13
+   },
+   "pct": 48.1
+  },
+  {
+   "process": "12.4",
+   "title": "Forbearance plan",
+   "tids": {
+    "spec": 10,
+    "built": 4,
+    "todo": 0,
+    "missing": [
+     4,
+     5,
+     6,
+     7,
+     9,
+     10
+    ]
+   },
+   "tables": {
+    "spec": 4,
+    "built": 4,
+    "missing": []
+   },
+   "timers": {
+    "spec": 17,
+    "built": 12,
+    "armable": 17,
+    "missing": [
+     "FNMA_D23201_FORB_PREEXPIRY_CONTACT_30",
+     "FNMA_F121_STATUS_09_BD2",
+     "FNMA_LL202601_FORB_EXCEPTION_RESPONSE",
+     "REGX_1024_41B1_DILIGENCE_RESUME",
+     "REGX_1024_41C2III_PERFORMANCE_HOLD"
+    ]
+   },
+   "notices": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "NTC_FNMA_D23201_FORB_EXPIRY_OPTIONS",
+     "NTC_FNMA_D23201_FORB_EXTENSION",
+     "NTC_FNMA_D23201_FORB_PLAN",
+     "NTC_FNMA_D23201_FORB_TERMINATION"
+    ]
+   },
+   "tools": {
+    "spec": 9,
+    "built": 0,
+    "missing": [
+     "workout_plan.*",
+     "calendar.months",
+     "delinquency.project",
+     "notice.render_send",
+     "fees.suppress",
+     "fnma.status_code.report",
+     "exception_request.prepare",
+     "contacts.*",
+     "timers.*"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 44,
+    "built": 20
+   },
+   "pct": 45.5
+  },
+  {
+   "process": "12.5",
+   "title": "Repayment plan",
+   "tids": {
+    "spec": 9,
+    "built": 2,
+    "todo": 0,
+    "missing": [
+     2,
+     3,
+     4,
+     5,
+     7,
+     8,
+     9
+    ]
+   },
+   "tables": {
+    "spec": 3,
+    "built": 3,
+    "missing": []
+   },
+   "timers": {
+    "spec": 13,
+    "built": 9,
+    "armable": 13,
+    "missing": [
+     "FNMA_D23202_REPAY_PAYMENT_EOM",
+     "FNMA_F121_STATUS_12_BD2",
+     "FNMA_F202_REPAY_INCENTIVE_CLAIM",
+     "REGX_1024_41C2III_PERFORMANCE_HOLD"
+    ]
+   },
+   "notices": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "NTC_FNMA_D23202_REPAY_COMPLETED",
+     "NTC_FNMA_D23202_REPAY_FAILED",
+     "NTC_FNMA_D23202_REPAY_PLAN"
+    ]
+   },
+   "tools": {
+    "spec": 8,
+    "built": 0,
+    "missing": [
+     "workout_plan.*",
+     "ledger.arrears",
+     "calc.repayment_schedule",
+     "fees.suppress/waive",
+     "notice.render_send",
+     "fnma.status_code.report",
+     "fnma.f116_package.prepare",
+     "timers.*"
+    ]
+   },
+   "figures": {
+    "spec": 13,
+    "built": 2,
+    "missing": [
+     "$1,580.17",
+     "$126.00",
+     "$2,100.00",
+     "$2,635.50",
+     "$2,903.25",
+     "$3,171.00",
+     "$535.50",
+     "$6,300.00",
+     "$6,426.00",
+     "$63.00",
+     "$63.21"
+    ]
+   },
+   "units": {
+    "spec": 49,
+    "built": 16
+   },
+   "pct": 32.7
+  },
+  {
+   "process": "12.6",
+   "title": "Payment Deferral",
+   "tids": {
+    "spec": 10,
+    "built": 4,
+    "todo": 0,
+    "missing": [
+     4,
+     6,
+     7,
+     8,
+     9,
+     10
+    ]
+   },
+   "tables": {
+    "spec": 2,
+    "built": 2,
+    "missing": []
+   },
+   "timers": {
+    "spec": 15,
+    "built": 10,
+    "armable": 15,
+    "missing": [
+     "FNMA_D23204_PROCESSING_MONTH_ELECTION_15TH",
+     "FNMA_D23204_RECORDED_ORIGINAL_5BD",
+     "FNMA_F122_DEFERRAL_LAR_BEFORE_EOM_1BD",
+     "FNMA_F202_DEFERRAL_INCENTIVE_CLAIM",
+     "SM_DEFERRAL_SOLICIT_ACCEPT_WINDOW"
+    ]
+   },
+   "notices": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "NTC_FNMA_D23204_DEFERRAL_COMPLETED",
+     "NTC_FNMA_D23204_DEFERRAL_OFFER",
+     "NTC_FNMA_D23204_SOLICIT_POST_FORB",
+     "NTC_FNMA_D23204_SOLICIT_POST_REPAY"
+    ]
+   },
+   "tools": {
+    "spec": 10,
+    "built": 0,
+    "missing": [
+     "deferral.screen",
+     "ledger.arrears_breakdown",
+     "escrow.analysis.run",
+     "smdu.case.submit",
+     "investor.report_contractual_payments",
+     "notice.render_send",
+     "esign.send",
+     "erecording.submit",
+     "custodian.deliver",
+     "timers.*"
+    ]
+   },
+   "figures": {
+    "spec": 9,
+    "built": 3,
+    "missing": [
+     "$1,050.00",
+     "$1,580.17",
+     "$1,860.00",
+     "$252.00",
+     "$520.00",
+     "$63.00"
+    ]
+   },
+   "units": {
+    "spec": 50,
+    "built": 19
+   },
+   "pct": 38.0
+  },
+  {
+   "process": "12.7",
+   "title": "Disaster Payment Deferral",
+   "tids": {
+    "spec": 8,
+    "built": 3,
+    "todo": 0,
+    "missing": [
+     1,
+     3,
+     5,
+     6,
+     7
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 8,
+    "built": 7,
+    "armable": 8,
+    "missing": [
+     "FNMA_D1301_DISASTER_FLEX_ROUTE"
+    ]
+   },
+   "notices": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "NTC_FNMA_D23205_DISASTER_DEFERRAL_OFFER",
+     "NTC_FNMA_D23205_SOLICIT_POST_DISASTER_FORB",
+     "NTC_FNMA_D23205_SOLICIT_POST_REPAY"
+    ]
+   },
+   "tools": {
+    "spec": 2,
+    "built": 0,
+    "missing": [
+     "disaster.registry.lookup",
+     "insurance.claim.get"
+    ]
+   },
+   "figures": {
+    "spec": 5,
+    "built": 2,
+    "missing": [
+     "$1,580.17",
+     "$14,221.53",
+     "$2,300.00"
+    ]
+   },
+   "units": {
+    "spec": 26,
+    "built": 12
+   },
+   "pct": 46.2
+  },
+  {
+   "process": "12.8",
+   "title": "Fannie Mae Flex Modification",
+   "tids": {
+    "spec": 12,
+    "built": 5,
+    "todo": 0,
+    "missing": [
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 3,
+    "built": 3,
+    "missing": []
+   },
+   "timers": {
+    "spec": 22,
+    "built": 11,
+    "armable": 22,
+    "missing": [
+     "FNMA_D23102_MBS_RECLASS_BEFORE_EXECUTION",
+     "FNMA_D23206_FLEX_SOLICIT_STEP_60_75",
+     "FNMA_D23206_FORM3179_SERVICER_EXECUTE_BEFORE_EFFECTIVE",
+     "FNMA_D23206_NO_NEW_TRIAL_12M",
+     "FNMA_D23206_TPP_FIRST_DUE_15TH_RULE",
+     "FNMA_E3401_FC_SUSPEND_DURING_TRIAL",
+     "FNMA_F127_CAPITALIZATION_DATE",
+     "FNMA_F127_RECORDED_ORIGINAL_5BD",
+     "FNMA_F127_VALUATION_MAX_AGE_90",
+     "FNMA_IRM_MOD_LOAN_DATA_CHANGE",
+     "REGX_1024_41E2II_TRIAL_OTHER_REQS_REASONABLE"
+    ]
+   },
+   "notices": {
+    "spec": 5,
+    "built": 0,
+    "missing": [
+     "NTC_FNMA_D23206_MOD_COMPLETED",
+     "NTC_FNMA_D23206_SOLICIT_STREAMLINED",
+     "NTC_FNMA_D23206_TPP_FAILED",
+     "NTC_FNMA_D23206_TPP_OFFER",
+     "NTC_FNMA_D23206_TPP_REMINDER"
+    ]
+   },
+   "tools": {
+    "spec": 2,
+    "built": 0,
+    "missing": [
+     "flexmod.waterfall",
+     "valuation.order/get"
+    ]
+   },
+   "figures": {
+    "spec": 20,
+    "built": 1,
+    "missing": [
+     "$1,264.13",
+     "$1,282.48",
+     "$1,471.87",
+     "$1,580.17",
+     "$1,815.13",
+     "$1,860.00",
+     "$10,259.84",
+     "$106,405.31",
+     "$180.00",
+     "$215,921.99",
+     "$236,765.47",
+     "$251,405.31",
+     "$290,000.00",
+     "$35,483.32",
+     "$4,200.00",
+     "$505.68",
+     "$520.00",
+     "$63.21",
+     "$75,421.59"
+    ]
+   },
+   "units": {
+    "spec": 64,
+    "built": 20
+   },
+   "pct": 31.2
+  },
+  {
+   "process": "12.9",
+   "title": "Short sale / Mortgage Release (DIL)",
+   "tids": {
+    "spec": 12,
+    "built": 6,
+    "todo": 0,
+    "missing": [
+     1,
+     3,
+     6,
+     9,
+     10,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 5,
+    "built": 4,
+    "missing": [
+     "dil_cases"
+    ]
+   },
+   "timers": {
+    "spec": 22,
+    "built": 9,
+    "armable": 22,
+    "missing": [
+     "CA_CIV_2924_11C_RESCIND_NOD",
+     "FNMA_D23301_SS_DECISION_30",
+     "FNMA_D23301_SS_REVISED_OFFER_10BD",
+     "FNMA_D23302_DIL_DEED_BEFORE_SALE_30",
+     "FNMA_D23302_DIL_DOCS_60",
+     "FNMA_D23302_DIL_LIEN_RELEASE_30BD",
+     "FNMA_D23302_DIL_WEEKLY_UPDATE_7",
+     "FNMA_E3401_SS_APPROVED_HOLD_60",
+     "FNMA_E3401_SS_MARKETING_HOLD",
+     "FNMA_E4101_REOGRAM_CONFIRM_1BD",
+     "FNMA_F114_SS_VALUATION_MAX_AGE_90",
+     "FNMA_F202_LIQUIDATION_INCENTIVE_CLAIM",
+     "REGX_1024_41G3_SS_LISTING_PERFORMANCE"
+    ]
+   },
+   "notices": {
+    "spec": 8,
+    "built": 0,
+    "missing": [
+     "NTC_FNMA_D23301_SS_APPROVAL",
+     "NTC_FNMA_D23301_SS_COUNTER",
+     "NTC_FNMA_D23301_SS_DECLINE",
+     "NTC_FNMA_D23301_SS_ELIGIBILITY",
+     "NTC_FNMA_D23301_SS_OFFER_ACK",
+     "NTC_FNMA_D23302_DIL_ACCEPTED",
+     "NTC_FNMA_D23302_DIL_COMPLETED",
+     "NTC_FNMA_D23302_DIL_OFFER"
+    ]
+   },
+   "tools": {
+    "spec": 17,
+    "built": 0,
+    "missing": [
+     "liquidation.case.*",
+     "ratio.compute",
+     "contribution.compute",
+     "valuation.order/get",
+     "title.order/get",
+     "inspection.order/get",
+     "smdu.case.submit/poll",
+     "offer.evaluate",
+     "notice.render_send",
+     "closing.instructions.send",
+     "settlement.review",
+     "erecording.submit",
+     "lien_release.request",
+     "mi.claim.prepare",
+     "reogram.watch",
+     "timers.*",
+     "attorney.instruct"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 64,
+    "built": 19
+   },
+   "pct": 29.7
+  },
+  {
+   "process": "13.1",
+   "title": "120-day pre-foreclosure prohibition",
+   "tids": {
+    "spec": 10,
+    "built": 3,
+    "todo": 0,
+    "missing": [
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10
+    ]
+   },
+   "tables": {
+    "spec": 5,
+    "built": 4,
+    "missing": [
+     "timer_definitions"
+    ]
+   },
+   "timers": {
+    "spec": 7,
+    "built": 2,
+    "armable": 7,
+    "missing": [
+     "FNMA_D1301_DISASTER_FC_APPROVAL_GATE",
+     "REGX_1024_41F1_120_DAY_GATE",
+     "REGX_1024_41F2_PRE_FILING_APP_GATE",
+     "REGX_1024_41K2_NO_FIRST_FILING_GATE",
+     "SCRA_3953C_FC_PROTECTION_GATE"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 7,
+    "built": 0,
+    "missing": [
+     "loan.get",
+     "delinquency.counters.get",
+     "lossmit.case.get",
+     "contacts.search",
+     "inspection.get",
+     "foreclosure.gates.evaluate",
+     "escalation.create"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 29,
+    "built": 9
+   },
+   "pct": 31.0
+  },
+  {
+   "process": "13.2",
+   "title": "Dual-tracking restriction",
+   "tids": {
+    "spec": 10,
+    "built": 4,
+    "todo": 0,
+    "missing": [
+     2,
+     4,
+     6,
+     7,
+     9,
+     10
+    ]
+   },
+   "tables": {
+    "spec": 4,
+    "built": 4,
+    "missing": []
+   },
+   "timers": {
+    "spec": 13,
+    "built": 6,
+    "armable": 13,
+    "missing": [
+     "FNMA_E3401_EXPEDITED_REVIEW_CERT",
+     "FNMA_E3401_SHORTSALE_MARKETING_45",
+     "REGX_1024_41G_DUAL_TRACK_GATE",
+     "REGX_1024_41G_TRIAL_PERFORMING_FC_GATE",
+     "REGX_1024_41H_APPEAL_WINDOW_14",
+     "STATE_CA_2924_18_DUAL_TRACK_GATE",
+     "STATE_MN_582_043_DUAL_TRACK_GATE"
+    ]
+   },
+   "notices": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "NTC_FNMA_E3401_EXPEDITED_RESULT"
+    ]
+   },
+   "tools": {
+    "spec": 7,
+    "built": 0,
+    "missing": [
+     "lossmit.case.get",
+     "foreclosure.case.get",
+     "attorney.instruction.send",
+     "attorney.instruction.status",
+     "dra.snapshot.get",
+     "timer.create",
+     "escalation.create"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 35,
+    "built": 14
+   },
+   "pct": 40.0
+  },
+  {
+   "process": "13.3",
+   "title": "Foreclosure referral",
+   "tids": {
+    "spec": 12,
+    "built": 3,
+    "todo": 0,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 6,
+    "built": 6,
+    "missing": []
+   },
+   "timers": {
+    "spec": 23,
+    "built": 17,
+    "armable": 23,
+    "missing": [
+     "FNMA_E1202_REFER_NO_EARLIER_121",
+     "FNMA_E3205_ADVANCE_REQUEST_10BD",
+     "FNMA_E3205_BID_INSTRUCTIONS_5BD",
+     "FNMA_E3206_OUTREACH_STOP_60_30",
+     "FNMA_E3502_TPS_DEPOSIT_REMIT_5BD",
+     "FNMA_E4101_REOGRAM_CONFIRM_1BD"
+    ]
+   },
+   "notices": {
+    "spec": 11,
+    "built": 0,
+    "missing": [
+     "NTC_SM_FC_REFERRAL_ADVICE",
+     "NTC_SM_FC_REINSTATEMENT_QUOTE",
+     "NTC_STATE_PREFC_CA_2923_5_LETTER",
+     "NTC_STATE_PREFC_GA_162_2",
+     "NTC_STATE_PREFC_MA_35A",
+     "NTC_STATE_PREFC_MD_NOI",
+     "NTC_STATE_PREFC_NJ_NOI",
+     "NTC_STATE_PREFC_NV_107_5XX",
+     "NTC_STATE_PREFC_NY_1304",
+     "NTC_STATE_PREFC_TX_51002D",
+     "NTC_STATE_PREFC_WA_61_24_031_LETTER"
+    ]
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 16,
+    "built": 2,
+    "missing": [
+     "$1,420.11",
+     "$1,487.50",
+     "$1,975.00",
+     "$19,054.79",
+     "$2,150.00",
+     "$250,000.00",
+     "$270,000.00",
+     "$284.02",
+     "$290,000.00",
+     "$3,105.40",
+     "$6,842.17",
+     "$60.00",
+     "$612.00",
+     "$8,520.66"
+    ]
+   },
+   "units": {
+    "spec": 68,
+    "built": 28
+   },
+   "pct": 41.2
+  },
+  {
+   "process": "13.4",
+   "title": "Prereferral review",
+   "tids": {
+    "spec": 10,
+    "built": 1,
+    "todo": 0,
+    "missing": [
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10
+    ]
+   },
+   "tables": {
+    "spec": 2,
+    "built": 2,
+    "missing": []
+   },
+   "timers": {
+    "spec": 12,
+    "built": 7,
+    "armable": 12,
+    "missing": [
+     "FNMA_D1301_DISASTER_FC_APPROVAL_GATE",
+     "FNMA_E3204_NONPR_FIRST_PAYMENT_EOM",
+     "FNMA_E3204_NONPR_OFFER_14",
+     "SM_DISASTER_FC_RESPONSE_FOLLOWUP_10BD",
+     "SM_PREREFERRAL_RE_REVIEW_DAILY"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 11,
+    "built": 0,
+    "missing": [
+     "lossmit.case.get",
+     "contacts.search",
+     "notices.search",
+     "inspection.get",
+     "dmdc.verify",
+     "bk.scrub",
+     "title.status.get",
+     "custodian.request",
+     "mi.status.get",
+     "insurance.status.get",
+     "disaster.lookup"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 35,
+    "built": 10
+   },
+   "pct": 28.6
+  },
+  {
+   "process": "13.5",
+   "title": "Allowable timeframes / compensatory fees",
+   "tids": {
+    "spec": 9,
+    "built": 3,
+    "todo": 0,
+    "missing": [
+     4,
+     5,
+     6,
+     7,
+     8,
+     9
+    ]
+   },
+   "tables": {
+    "spec": 4,
+    "built": 4,
+    "missing": []
+   },
+   "timers": {
+    "spec": 7,
+    "built": 1,
+    "armable": 7,
+    "missing": [
+     "FNMA_A14202_RESCISSION_FEE_EXPOSURE",
+     "FNMA_E3215_TIMEFRAME_WARNING_70",
+     "FNMA_EXHIBIT_METHOD_DEVIATION_FORM20_GATE",
+     "FNMA_F121_STATUS_CODE_TIMELY_BD2",
+     "SM_COMP_FEE_BILL_REBUTTAL_30",
+     "SM_EXHIBIT_WATCH_MONTHLY"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 6,
+    "built": 0,
+    "missing": [
+     "fc.timeframe.get",
+     "status.history.get",
+     "dra.snapshot.get",
+     "attorney.instruction.send",
+     "documents.bundle",
+     "fnma_connect.report.pull"
+    ]
+   },
+   "figures": {
+    "spec": 3,
+    "built": 2,
+    "missing": [
+     "$46.71"
+    ]
+   },
+   "units": {
+    "spec": 29,
+    "built": 10
+   },
+   "pct": 34.5
+  },
+  {
+   "process": "13.6",
+   "title": "Default-related law-firm management",
+   "tids": {
+    "spec": 10,
+    "built": 6,
+    "todo": 0,
+    "missing": [
+     5,
+     7,
+     8,
+     10
+    ]
+   },
+   "tables": {
+    "spec": 10,
+    "built": 10,
+    "missing": []
+   },
+   "timers": {
+    "spec": 15,
+    "built": 4,
+    "armable": 15,
+    "missing": [
+     "FNMA_A4201_FORM200_RESPONSE_15BD",
+     "FNMA_A4201_RECORDS_7Y",
+     "FNMA_A4202_FIRM_ESCALATION_2BD",
+     "FNMA_A4204_SUSPENSION_NOTICE_5BD",
+     "FNMA_E1101_BULK_TRANSFER_NOTICE_5BD",
+     "FNMA_F105_EXPENSE_CLAIM_60",
+     "SM_DRA_EVENT_EXPECTED_2BD",
+     "SM_DRA_RECONCILE_DAILY",
+     "SM_FIRM_EO_EXPIRY_30",
+     "SM_INVOICE_PAY_30",
+     "SM_INVOICE_REVIEW_10BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 6,
+    "built": 0,
+    "missing": [
+     "firm.get",
+     "documents.extract",
+     "fee_schedule.get",
+     "invoice.review",
+     "dra.snapshot.import",
+     "attorney.message.send"
+    ]
+   },
+   "figures": {
+    "spec": 7,
+    "built": 0,
+    "missing": [
+     "$1,462.50",
+     "$1,912.50",
+     "$2,250.00",
+     "$22.00",
+     "$38.00",
+     "$412.75",
+     "$450.00"
+    ]
+   },
+   "units": {
+    "spec": 48,
+    "built": 20
+   },
+   "pct": 41.7
+  },
+  {
+   "process": "13.7",
+   "title": "Environmental hazard / non-routine litigation",
+   "tids": {
+    "spec": 10,
+    "built": 5,
+    "todo": 0,
+    "missing": [
+     5,
+     6,
+     7,
+     8,
+     9
+    ]
+   },
+   "tables": {
+    "spec": 3,
+    "built": 3,
+    "missing": []
+   },
+   "timers": {
+    "spec": 13,
+    "built": 3,
+    "armable": 13,
+    "missing": [
+     "FNMA_E1301_PLEADING_REVIEW_GATE",
+     "FNMA_E1301_WORKOUT_NOTIFY_COUNSEL_GATE",
+     "FNMA_E1302_FORM20_EXCEPTION_TRIGGER",
+     "FNMA_F108_ENV_LITIGATION_FORM20_0",
+     "FNMA_F108_ENV_NO_FORECLOSURE_GATE",
+     "FNMA_F108_LEAD_PAINT_NOTIFY_30",
+     "LITIGATION_HOLD",
+     "SM_ENV_SERVICING_REP_REPORT_2BD",
+     "SM_FORM20_RESPONSE_FOLLOWUP_10BD",
+     "SM_LITIGATION_STATUS_UPDATE_MONTHLY"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "documents.extract",
+     "litigation.classify",
+     "foreclosure.case.get",
+     "attorney.message.send"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 30,
+    "built": 11
+   },
+   "pct": 36.7
+  },
+  {
+   "process": "13.8",
+   "title": "SCRA foreclosure protection",
+   "tids": {
+    "spec": 12,
+    "built": 3,
+    "todo": 0,
+    "missing": [
+     1,
+     3,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 3,
+    "built": 3,
+    "missing": []
+   },
+   "timers": {
+    "spec": 14,
+    "built": 4,
+    "armable": 14,
+    "missing": [
+     "SCRA_3919_NO_ADVERSE_GATE",
+     "SCRA_3931G_DEFAULT_JUDGMENT_REOPEN_90",
+     "SCRA_3953C_FC_PROTECTION_GATE",
+     "SCRA_3953_TAIL_1Y",
+     "SM_DMDC_PERIODIC_ACTIVE_FC_90",
+     "SM_DMDC_VERIFY_DAY45",
+     "SM_DMDC_VERIFY_PRESALE_30",
+     "SM_DMDC_VERIFY_PRESALE_7",
+     "SM_DMDC_VERIFY_PRE_EVICTION_30",
+     "SM_DMDC_VERIFY_PRE_FIRST_NOTICE_30"
+    ]
+   },
+   "notices": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "NTC_FNMA_D23401_SCRA_RIGHTS",
+     "NTC_FNMA_D23401_SCRA_STATUS_CHECK_90",
+     "NTC_SCRA_3953_STAY_CONFIRMATION"
+    ]
+   },
+   "tools": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "dmdc.batch.prepare",
+     "dmdc.results.import",
+     "scra.case.get/open/close"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 35,
+    "built": 10
+   },
+   "pct": 28.6
+  },
+  {
+   "process": "13.9",
+   "title": "SCRA 6% interest cap",
+   "tids": {
+    "spec": 11,
+    "built": 5,
+    "todo": 0,
+    "missing": [
+     5,
+     6,
+     7,
+     8,
+     9,
+     10
+    ]
+   },
+   "tables": {
+    "spec": 5,
+    "built": 5,
+    "missing": []
+   },
+   "timers": {
+    "spec": 12,
+    "built": 4,
+    "armable": 12,
+    "missing": [
+     "FNMA_F119_ARM_TXN83",
+     "FNMA_F119_MBS_UPLOAD_CD15",
+     "FNMA_F119_MI_DISBURSEMENT_CHECK_M2",
+     "FNMA_F119_SUBSIDY_ADJUST_12M",
+     "SCRA_3919_NO_ADVERSE_GATE",
+     "SCRA_3937B1_NOTICE_WINDOW_180",
+     "SCRA_3937_FEES_IN_CAP_GATE",
+     "SM_SCRA_OVERPAYMENT_ELECTION_30"
+    ]
+   },
+   "notices": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "NTC_SCRA_3937_OVERPAYMENT_ELECTION",
+     "NTC_SCRA_3937_RATE_CONFIRMATION",
+     "NTC_SCRA_3937_RATE_END"
+    ]
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 13,
+    "built": 5,
+    "missing": [
+     "$1,463.03",
+     "$1,645.91",
+     "$1,767.83",
+     "$2,046.53",
+     "$213.43",
+     "$278.70",
+     "$292,606.60",
+     "$293,975.18"
+    ]
+   },
+   "units": {
+    "spec": 44,
+    "built": 19
+   },
+   "pct": 43.2
+  },
+  {
+   "process": "14.1",
+   "title": "Bankruptcy monitoring & Proof of Claim",
+   "tids": {
+    "spec": 18,
+    "built": 6,
+    "todo": 0,
+    "missing": [
+     1,
+     2,
+     5,
+     6,
+     10,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18
+    ]
+   },
+   "tables": {
+    "spec": 6,
+    "built": 6,
+    "missing": []
+   },
+   "timers": {
+    "spec": 35,
+    "built": 19,
+    "armable": 35,
+    "missing": [
+     "FNMA_E2_1_03_SUSPEND_COLLECTION_0",
+     "FNMA_E2_1_05_NOA_FILED_10BD",
+     "FNMA_E2_2_01_CH7_COMPLETION_2M2W",
+     "FNMA_E2_2_04_CH13_COMPLETION_5M2W",
+     "FNMA_E2_2_04_POSTCONF_COMPLETION_2M2W",
+     "FNMA_E2_3_06_POST_SALE_NOTIFY_2BD",
+     "FRBP_4001A3_ORDER_STAY_14",
+     "FRBP_4001D_AGREED_ORDER_OBJ_14",
+     "SM_BK_DOCKET_SYNC_1BD",
+     "SM_BK_ORPHAN_TRUSTEE_PAYMENT_2BD",
+     "USC_1301D_CODEBTOR_RELIEF_20",
+     "USC_362E1_MFR_PRELIM_30",
+     "USC_362E2_MFR_FINAL_60",
+     "USC_521A2_SOI_30",
+     "USC_521A2_SOI_PERFORM_30",
+     "USC_524C4_REAFFIRM_RESCISSION"
+    ]
+   },
+   "notices": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "NTC_BK_BREACH_INFORMATIONAL",
+     "NTC_BK_PAYMENT_INSTRUCTIONS",
+     "NTC_BK_STATUS_INFO"
+    ]
+   },
+   "tools": {
+    "spec": 17,
+    "built": 0,
+    "missing": [
+     "bk.case.read/write",
+     "pcl.search",
+     "ebn.inbox.read",
+     "bkvendor.*",
+     "docket.classify",
+     "ledger.snapshot",
+     "bk.claim.compute",
+     "bk.ledger.apply_trustee",
+     "bk.ledger.apply_postpetition",
+     "documents.render/search",
+     "timer.*",
+     "attorney.send_package/request",
+     "escalation.file",
+     "notice.send",
+     "smdu.package.prepare",
+     "p360.claim.prepare",
+     "fnma.form20.prepare"
+    ]
+   },
+   "figures": {
+    "spec": 28,
+    "built": 5,
+    "missing": [
+     "$0.26",
+     "$1,120.00",
+     "$1,500.00",
+     "$1,774.81",
+     "$102.71",
+     "$2,054.22",
+     "$2,340.00",
+     "$2,699.22",
+     "$2,700.00",
+     "$2,806.72",
+     "$20.00",
+     "$3,151.59",
+     "$3,920.00",
+     "$314,415.22",
+     "$325,000.00",
+     "$40.00",
+     "$400.00",
+     "$410.84",
+     "$450.84",
+     "$5,398.44",
+     "$645.00",
+     "$752.50",
+     "$8,496.29"
+    ]
+   },
+   "units": {
+    "spec": 107,
+    "built": 36
+   },
+   "pct": 33.6
+  },
+  {
+   "process": "14.2",
+   "title": "Payment change notices (Rule 3002.1)",
+   "tids": {
+    "spec": 14,
+    "built": 8,
+    "todo": 0,
+    "missing": [
+     5,
+     9,
+     10,
+     12,
+     13,
+     14
+    ]
+   },
+   "tables": {
+    "spec": 3,
+    "built": 3,
+    "missing": []
+   },
+   "timers": {
+    "spec": 14,
+    "built": 4,
+    "armable": 14,
+    "missing": [
+     "FRBP_3002_1B4_OBJECTION_WINDOW",
+     "FRBP_3002_1E_FEE_CHALLENGE_365",
+     "FRBP_3002_1F_STATUS_RESPONSE_28",
+     "FRBP_3002_1G3_FINAL_CURE_RESPONSE_28",
+     "FRBP_3002_1G4_DEBTOR_MOTION_WINDOW_45",
+     "FRBP_3002_1G4_MOTION_RESPONSE_28",
+     "SM_BK_3002_1C_BATCH_90",
+     "SM_BK_3002_1G1_TRUSTEE_NOTICE_WATCH_45",
+     "SM_BK_3002_1_TARGET_LEAD_35",
+     "SM_BK_PAYMENT_CHANGE_DETECT_1BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 9,
+    "built": 0,
+    "missing": [
+     "bk.change.detect",
+     "bk.notice.render",
+     "bk.fee_items.read/batch",
+     "bk.status_response.compute",
+     "timer.compute_frbp",
+     "documents.render",
+     "attorney.send_package",
+     "notice.send",
+     "escalation.file"
+    ]
+   },
+   "figures": {
+    "spec": 12,
+    "built": 2,
+    "missing": [
+     "$1,290.00",
+     "$1,550.00",
+     "$2,054.22",
+     "$2,650.00",
+     "$2,699.22",
+     "$2,806.72",
+     "$288,625.18",
+     "$40.00",
+     "$645.00",
+     "$752.50"
+    ]
+   },
+   "units": {
+    "spec": 52,
+    "built": 17
+   },
+   "pct": 32.7
+  },
+  {
+   "process": "14.3",
+   "title": "Periodic statement in bankruptcy",
+   "tids": {
+    "spec": 12,
+    "built": 4,
+    "todo": 0,
+    "missing": [
+     3,
+     5,
+     6,
+     7,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 3,
+    "built": 3,
+    "missing": []
+   },
+   "timers": {
+    "spec": 10,
+    "built": 2,
+    "armable": 10,
+    "missing": [
+     "REGX_1024_39B_BK_LATER_DELINQUENCY_45",
+     "REGX_1024_39C1_BK_WRITTEN_NOTICE_45",
+     "REGX_1024_39C2_DISCHARGE_WRITTEN_NOTICE",
+     "REGX_1024_39C2_RESUME_GATE",
+     "REGZ_1026_41E5II_RESUME_NEXT_CYCLE",
+     "REGZ_1026_41E5_CEASE_EFFECTIVE_0",
+     "SM_BK_COUNSEL_ROUTE_CONFIRM_5BD",
+     "SM_BK_STATEMENT_MODE_SYNC_1BD"
+    ]
+   },
+   "notices": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "NTC_REGX_39B_EARLY_INTERVENTION_BK"
+    ]
+   },
+   "tools": {
+    "spec": 5,
+    "built": 0,
+    "missing": [
+     "bk.statement_mode.set",
+     "bk.ledger_views.read",
+     "docket.read",
+     "requests.classify",
+     "escalation.file"
+    ]
+   },
+   "figures": {
+    "spec": 16,
+    "built": 5,
+    "missing": [
+     "$1,500.00",
+     "$1,685.59",
+     "$18,894.54",
+     "$19,305.38",
+     "$2,054.22",
+     "$2,699.22",
+     "$2,806.72",
+     "$22,004.60",
+     "$368.63",
+     "$410.84",
+     "$752.50"
+    ]
+   },
+   "units": {
+    "spec": 47,
+    "built": 14
+   },
+   "pct": 29.8
+  },
+  {
+   "process": "14.4",
+   "title": "Credit reporting suspension in BK",
+   "tids": {
+    "spec": 8,
+    "built": 7,
+    "todo": 0,
+    "missing": [
+     8
+    ]
+   },
+   "tables": {
+    "spec": 1,
+    "built": 1,
+    "missing": []
+   },
+   "timers": {
+    "spec": 6,
+    "built": 0,
+    "armable": 6,
+    "missing": [
+     "BK_CII_APPLY_NEXT_CYCLE",
+     "SM_BK_CR_DISCHARGE_FINAL_RECORD",
+     "SM_BK_CR_DISMISSAL_RELEASE_NEXT_CYCLE",
+     "SM_BK_CR_REAFFIRM_HOLD",
+     "SM_BK_CR_STATE_SYNC_1BD",
+     "SM_CR_SUPPRESSION_REVIEW_30"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "bk.reporting_state.write",
+     "bk.case.read",
+     "escalation.file"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 18,
+    "built": 8
+   },
+   "pct": 44.4
+  },
+  {
+   "process": "15.1",
+   "title": "REOgram / conveyance to Fannie Mae",
+   "tids": {
+    "spec": 12,
+    "built": 11,
+    "todo": 0,
+    "missing": [
+     12
+    ]
+   },
+   "tables": {
+    "spec": 5,
+    "built": 5,
+    "missing": []
+   },
+   "timers": {
+    "spec": 21,
+    "built": 5,
+    "armable": 21,
+    "missing": [
+     "FNMA_E3502_TPS_FAILED_DEPOSIT_5BD",
+     "FNMA_E3502_TPS_INSURANCE_CANCEL_14",
+     "FNMA_E3502_TPS_PROCEEDS_5BD",
+     "FNMA_E4101_REOGRAM_CONFIRM_1BD",
+     "FNMA_E4102_ELIM_RESCISSION_REQUEST_5",
+     "FNMA_E4102_REINTEGRATE_24H",
+     "FNMA_E4102_TITLE_RESTORE_2",
+     "FNMA_E4301_PRESERVATION_STOP",
+     "FNMA_E4304_EVICTION_DOCS_3BD",
+     "FNMA_E4401_RECOVERY_FIRM_INFO_3BD",
+     "FNMA_F108_TPS_CLOSING_STMT_SAME_DAY",
+     "FNMA_LL202605_LIQ_EVENT_NEXTBD",
+     "FNMA_P360_REOGRAM_EDIT_WINDOW_5BD",
+     "PTFA_TENANT_NOTICE_90",
+     "SM_REOGRAM_CASE_EXPECTED_1BD",
+     "SM_TPS_P360_DOCS_5BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 11,
+    "built": 0,
+    "missing": [
+     "openReoCase",
+     "computeTpsSplit",
+     "buildReogramPackage",
+     "openPortalTask",
+     "parseP360Notification",
+     "scheduleHandoffTasks",
+     "requestInsuranceCancellation",
+     "buildCrsBatch",
+     "draftClosingStatement",
+     "draftEliminationTemplate",
+     "recordDecision"
+    ]
+   },
+   "figures": {
+    "spec": 20,
+    "built": 5,
+    "missing": [
+     "$1,245.44",
+     "$1,369.94",
+     "$1,450.00",
+     "$11,219.94",
+     "$124.54",
+     "$2,300.00",
+     "$249,088.61",
+     "$270,000.00",
+     "$270.00",
+     "$4,172.20",
+     "$4,820.00",
+     "$40.94",
+     "$445.00",
+     "$565.00",
+     "$577.66"
+    ]
+   },
+   "units": {
+    "spec": 69,
+    "built": 26
+   },
+   "pct": 37.7
+  },
+  {
+   "process": "15.2",
+   "title": "Expense reimbursement submission",
+   "tids": {
+    "spec": 13,
+    "built": 12,
+    "todo": 0,
+    "missing": [
+     11
+    ]
+   },
+   "tables": {
+    "spec": 6,
+    "built": 6,
+    "missing": []
+   },
+   "timers": {
+    "spec": 18,
+    "built": 2,
+    "armable": 18,
+    "missing": [
+     "FNMA_E501_EXPENSE_FINAL_60",
+     "FNMA_F105_ESCROW_ADV_CUTOFF_14",
+     "FNMA_F105_INCENTIVE_REPAY_60",
+     "FNMA_F105_MI_REFUND_336_30",
+     "FNMA_F105_PD_EXPENSE_60",
+     "FNMA_F105_RECOVERABLE_REPAY_60",
+     "FNMA_F106_MI_EXPENSE_FINAL_30",
+     "FNMA_IRT_RESPONSE_7",
+     "FNMA_P360_PSA_RESPONSE_60",
+     "FNMA_PPM_AUDIT_RESPONSE_7",
+     "FNMA_PPM_BID_RECONSIDER_7",
+     "SM_EXPENSE_CLAIM_TARGET_20",
+     "SM_P360_ACH_MATCH_3BD",
+     "SM_P360_PROCESSING_30",
+     "SM_P360_PSA_INTERNAL_10",
+     "SM_P360_STATUS_POLL_7"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "sweepClaimCandidates",
+     "validateLine",
+     "assembleClaim",
+     "buildBulkPackage"
+    ]
+   },
+   "figures": {
+    "spec": 22,
+    "built": 3,
+    "missing": [
+     "$1,369.94",
+     "$1,450.00",
+     "$100.00",
+     "$124.54",
+     "$125.00",
+     "$160.00",
+     "$2,300.00",
+     "$215.00",
+     "$25.00",
+     "$270.00",
+     "$30.00",
+     "$350.00",
+     "$4,820.00",
+     "$445.00",
+     "$5.00",
+     "$50.00",
+     "$565.00",
+     "$60.00",
+     "$80.00"
+    ]
+   },
+   "units": {
+    "spec": 63,
+    "built": 23
+   },
+   "pct": 36.5
+  },
+  {
+   "process": "15.3",
+   "title": "MI claim filing",
+   "tids": {
+    "spec": 12,
+    "built": 10,
+    "todo": 0,
+    "missing": [
+     2,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 6,
+    "built": 5,
+    "missing": [
+     "mi_claim_events"
+    ]
+   },
+   "timers": {
+    "spec": 17,
+    "built": 2,
+    "armable": 17,
+    "missing": [
+     "FNMA_E4501_MICP_DATA_CORRECTION_1BD",
+     "FNMA_F106_MICP_DOCS_10BD",
+     "FNMA_F106_MI_DIRECT_FILE_30",
+     "FNMA_F106_MI_EXPENSE_FINAL_30",
+     "MI_MP_INTEREST_CAP_36M",
+     "MI_MP_LATE_DENY_120",
+     "MI_MP_NOD_25TH",
+     "MI_MP_SETTLEMENT_60",
+     "MI_MP_STATUS_MONTHLY_25TH",
+     "MI_MP_SUPPLEMENTAL_90",
+     "SM_MICP_DOCS_TARGET_15",
+     "SM_MICP_DOC_REQUEST_DUE",
+     "SM_MI_APPEAL_WINDOW",
+     "SM_MI_PROCEEDS_REMIT_2BD",
+     "SM_MI_SETTLEMENT_FOLLOWUP_7"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 11,
+    "built": 0,
+    "missing": [
+     "routeMiClaim",
+     "computeShadowClaim",
+     "assembleMiPackage",
+     "openPortalTask",
+     "fileDirectClaim",
+     "trackDocRequests",
+     "reconcileEob",
+     "scoreCurtailmentRisk",
+     "draftAppeal",
+     "attributeShortfall",
+     "recordDecision"
+    ]
+   },
+   "figures": {
+    "spec": 21,
+    "built": 3,
+    "missing": [
+     "$1,297.34",
+     "$1,369.94",
+     "$1,450.00",
+     "$14,270.74",
+     "$14,441.35",
+     "$170.61",
+     "$2,300.00",
+     "$2,720.51",
+     "$2,865.00",
+     "$249,088.61",
+     "$270.00",
+     "$30.00",
+     "$4,820.00",
+     "$42.65",
+     "$445.00",
+     "$565.00",
+     "$7,472.66",
+     "$790.55"
+    ]
+   },
+   "units": {
+    "spec": 67,
+    "built": 20
+   },
+   "pct": 29.9
+  },
+  {
+   "process": "15.4",
+   "title": "Delinquency advance reimbursement (Form 4828)",
+   "tids": {
+    "spec": 11,
+    "built": 8,
+    "todo": 0,
+    "missing": [
+     5,
+     8,
+     9
+    ]
+   },
+   "tables": {
+    "spec": 2,
+    "built": 2,
+    "missing": []
+   },
+   "timers": {
+    "spec": 11,
+    "built": 1,
+    "armable": 11,
+    "missing": [
+     "FNMA_A1306_RECLASS_REIMB_PA",
+     "FNMA_E3501_MBS_REMOVAL_BEFORE_FCL",
+     "FNMA_F120_SDA_FUNDING_HOLD",
+     "FNMA_IRM_PD_ADV_REIMB_4BD",
+     "FNMA_IRM_SA_LIQ_INTEREST_REIMB",
+     "FNMA_IRM_SA_MONTH4_NEG_INTEREST",
+     "SM_DELADV_POSITION_DAILY",
+     "SM_DELADV_UNRECOVERED_60",
+     "SM_PAYOFF_ADV_RECOVERY_SAME_DAY",
+     "SM_SDA_REIMBURSEMENT_MATCH_2_CYCLES"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 8,
+    "built": 0,
+    "missing": [
+     "recomputeAdvancePosition",
+     "setRecoveryExpectation",
+     "parseCashAdjustments",
+     "matchRecoveries",
+     "postRecoveryEntries",
+     "buildIrrPackage",
+     "agingReport",
+     "recordDecision"
+    ]
+   },
+   "figures": {
+    "spec": 10,
+    "built": 4,
+    "missing": [
+     "$0.05",
+     "$1,245.44",
+     "$1,476.00",
+     "$1,476.10",
+     "$1,476.19",
+     "$249,088.61"
+    ]
+   },
+   "units": {
+    "spec": 42,
+    "built": 15
+   },
+   "pct": 35.7
+  },
+  {
+   "process": "16.1",
+   "title": "Payoff statement",
+   "tids": {
+    "spec": 15,
+    "built": 6,
+    "todo": 0,
+    "missing": [
+     5,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15
+    ]
+   },
+   "tables": {
+    "spec": 4,
+    "built": 4,
+    "missing": []
+   },
+   "timers": {
+    "spec": 12,
+    "built": 7,
+    "armable": 12,
+    "missing": [
+     "FL_701_04_CORRECTED_ESTOPPEL_CUTOFF",
+     "FNMA_A42107_NIB_MATURITY_NOTICE_180_150",
+     "FNMA_A42107_NIB_MATURITY_NOTICE_75_60",
+     "SM_PAYOFF_PORTAL_QUOTE_60S",
+     "SM_PAYOFF_THIRD_PARTY_AUTH_1BD"
+    ]
+   },
+   "notices": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "NTC_FNMA_NIB_BALANCE_NOTICE"
+    ]
+   },
+   "tools": {
+    "spec": 9,
+    "built": 0,
+    "missing": [
+     "computePayoffQuote",
+     "assertAccuracyGate",
+     "renderStatement",
+     "mintVerificationToken",
+     "sendNotice",
+     "scheduleRecompute",
+     "openShortagePath",
+     "recordDecision",
+     "escalate"
+    ]
+   },
+   "figures": {
+    "spec": 21,
+    "built": 4,
+    "missing": [
+     "$0.01",
+     "$1,643.38",
+     "$12,000.00",
+     "$180,000.00",
+     "$192,000.00",
+     "$192,468.49",
+     "$2,412.90",
+     "$221.09",
+     "$221.10",
+     "$24.66",
+     "$248,310.55",
+     "$265.32",
+     "$34.00",
+     "$353.76",
+     "$468.49",
+     "$82.17",
+     "$840.17"
+    ]
+   },
+   "units": {
+    "spec": 62,
+    "built": 21
+   },
+   "pct": 33.9
+  },
+  {
+   "process": "16.2",
+   "title": "Remit payoff proceeds to Fannie Mae",
+   "tids": {
+    "spec": 12,
+    "built": 8,
+    "todo": 0,
+    "missing": [
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 3,
+    "built": 3,
+    "missing": []
+   },
+   "timers": {
+    "spec": 20,
+    "built": 4,
+    "armable": 20,
+    "missing": [
+     "FNMA_F109_ADVANCE_REPAY_30",
+     "FNMA_F120_PAYOFF_AA_IMMEDIATE",
+     "FNMA_F120_PAYOFF_SA_CD20",
+     "FNMA_F120_PAYOFF_SS_CD18",
+     "FNMA_IRM_REMOVAL_CORRECTION_BD2_1700",
+     "SM_OVERPAYMENT_REFUND_10BD",
+     "SM_PAYOFF_AUTODRAFT_STOP_T0",
+     "SM_PAYOFF_CREDIT_REPORT_NEXT_CYCLE",
+     "SM_PAYOFF_GOODFUNDS_GATE",
+     "SM_PAYOFF_INSURANCE_INTEREST_REMOVE_5BD",
+     "SM_PAYOFF_MI_NOTIFY_2BD",
+     "SM_PAYOFF_PIF_LETTER_5BD",
+     "SM_PAYOFF_SHORTAGE_CURE_5BD",
+     "SM_PAYOFF_SHORTAGE_DEMAND_1BD",
+     "SM_PAYOFF_SHORTAGE_UNCURED_30",
+     "SM_PAYOFF_TAX_AUTHORITY_NOTIFY_5BD"
+    ]
+   },
+   "notices": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "NTC_PAYOFF_OVERAGE_REFUND_ADVICE",
+     "NTC_PAYOFF_PAID_IN_FULL",
+     "NTC_PAYOFF_SHORTAGE_DEMAND"
+    ]
+   },
+   "tools": {
+    "spec": 7,
+    "built": 0,
+    "missing": [
+     "matchPayoffFunds",
+     "disposeVariance",
+     "postPayoff",
+     "computeFnmaPayoffShare",
+     "buildCrsBatch",
+     "projectRemovalPayoff",
+     "createHousekeepingTasks"
+    ]
+   },
+   "figures": {
+    "spec": 14,
+    "built": 5,
+    "missing": [
+     "$1,039.06",
+     "$199,500.00",
+     "$2,412.90",
+     "$201,051.47",
+     "$491.92",
+     "$498.75",
+     "$512.41",
+     "$6.83",
+     "$997.50"
+    ]
+   },
+   "units": {
+    "spec": 59,
+    "built": 20
+   },
+   "pct": 33.9
+  },
+  {
+   "process": "16.3",
+   "title": "Lien release / satisfaction recording",
+   "tids": {
+    "spec": 12,
+    "built": 6,
+    "todo": 0,
+    "missing": [
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 5,
+    "built": 5,
+    "missing": []
+   },
+   "timers": {
+    "spec": 18,
+    "built": 9,
+    "armable": 18,
+    "missing": [
+     "CA_CC2941_TRUSTEE_DELIVERY_30",
+     "CA_CC2941_TRUSTEE_RECORD_21",
+     "FNMA_A2104_SEND_FOR_EXECUTION_2BD",
+     "MD_RP_7106_RELEASE_DELIVERY_7",
+     "NJ_46_18_112_RIGHT_TO_DEMAND_NOTICE_10",
+     "NY_RPAPL1921_NOTE_RETURN_45",
+     "SM_BORROWER_RELEASE_NOTICE_5BD",
+     "SM_ERECORD_REJECT_FIX_2BD",
+     "SM_FNMA_EXECUTION_RETURN_15BD"
+    ]
+   },
+   "notices": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "NTC_ENOTE_PAPER_COPY",
+     "NTC_LIEN_RELEASE_RECORDED",
+     "NTC_NJ_CANCELLATION_RIGHT",
+     "NTC_NOTE_RETURNED"
+    ]
+   },
+   "tools": {
+    "spec": 11,
+    "built": 0,
+    "missing": [
+     "selectReleaseInstrument",
+     "requestCustodyDocuments",
+     "draftReleaseInstrument",
+     "runReleaseChecklist",
+     "routeForExecution",
+     "scheduleNotarySession",
+     "submitRecording",
+     "handleRecorderReject",
+     "notifyBorrower",
+     "computePenaltyExposure",
+     "recordDecision"
+    ]
+   },
+   "figures": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "$34.00"
+    ]
+   },
+   "units": {
+    "spec": 51,
+    "built": 20
+   },
+   "pct": 39.2
+  },
+  {
+   "process": "16.4",
+   "title": "MERS deactivation",
+   "tids": {
+    "spec": 8,
+    "built": 5,
+    "todo": 0,
+    "missing": [
+     4,
+     7,
+     8
+    ]
+   },
+   "tables": {
+    "spec": 3,
+    "built": 3,
+    "missing": []
+   },
+   "timers": {
+    "spec": 11,
+    "built": 8,
+    "armable": 11,
+    "missing": [
+     "MERS_RULE7_LOCKOUT_WARNING_30",
+     "SM_ENOTE_PAPER_COPY_10BD",
+     "SM_MERS_DEACTIVATE_TARGET_5BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 2,
+    "built": 0,
+    "missing": [
+     "checkDeactivationEligibility",
+     "validateMinIntegrity"
+    ]
+   },
+   "figures": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "$24.95"
+    ]
+   },
+   "units": {
+    "spec": 25,
+    "built": 16
+   },
+   "pct": 64.0
+  },
+  {
+   "process": "17.1",
+   "title": "Fannie Mae transfer approval",
+   "tids": {
+    "spec": 8,
+    "built": 5,
+    "todo": 0,
+    "missing": [
+     4,
+     5,
+     8
+    ]
+   },
+   "tables": {
+    "spec": 3,
+    "built": 3,
+    "missing": []
+   },
+   "timers": {
+    "spec": 19,
+    "built": 18,
+    "armable": 19,
+    "missing": [
+     "FNMA_A1_2_01_VOLUNTARY_TERMINATION_EFFECTIVE"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 12,
+    "built": 0,
+    "missing": [
+     "buildTransferPlan",
+     "buildForm629",
+     "buildCustodianMatrix",
+     "validateLoanList",
+     "reconcileQxDownload",
+     "createPortalTask",
+     "parseApprovalLetter",
+     "computeDeadlines",
+     "draftFnmaResponse",
+     "draftForm101Termination",
+     "writeDecision",
+     "notifyPartner"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 42,
+    "built": 26
+   },
+   "pct": 61.9
+  },
+  {
+   "process": "17.2",
+   "title": "RESPA goodbye notice",
+   "tids": {
+    "spec": 10,
+    "built": 6,
+    "todo": 0,
+    "missing": [
+     3,
+     6,
+     9,
+     10
+    ]
+   },
+   "tables": {
+    "spec": 5,
+    "built": 4,
+    "missing": [
+     "contact_scripts"
+    ]
+   },
+   "timers": {
+    "spec": 14,
+    "built": 11,
+    "armable": 14,
+    "missing": [
+     "REGX_1024_33B3_EXCEPTION_30",
+     "REGX_1024_33C1_LATE_FEE_PROTECTION_60",
+     "SM_XFER_OUT_BORROWER_ROUTING_90"
+    ]
+   },
+   "notices": {
+    "spec": 2,
+    "built": 0,
+    "missing": [
+     "NTC_REGX_1024_33B_CORRECTIVE",
+     "NTC_REGX_1024_33C_MISDIRECTED_PAYMENT_RETURN"
+    ]
+   },
+   "tools": {
+    "spec": 9,
+    "built": 0,
+    "missing": [
+     "planNoticeRun",
+     "renderNotice",
+     "runContentChecklist",
+     "validateAddress",
+     "verifyTransfereeBlock",
+     "releaseToVendor",
+     "ingestMailReturns",
+     "orderSkipTrace",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 40,
+    "built": 21
+   },
+   "pct": 52.5
+  },
+  {
+   "process": "17.3",
+   "title": "Data/document transfer",
+   "tids": {
+    "spec": 14,
+    "built": 2,
+    "todo": 0,
+    "missing": [
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14
+    ]
+   },
+   "tables": {
+    "spec": 7,
+    "built": 6,
+    "missing": [
+     "ledger_accounts"
+    ]
+   },
+   "timers": {
+    "spec": 41,
+    "built": 24,
+    "armable": 41,
+    "missing": [
+     "FNMA_LL202605_EVENT_NEXTBD_0300",
+     "REGX_1024_35G_NOE_TAIL_1Y",
+     "REGX_1024_38C1_RETENTION_1Y",
+     "SM_XFER_OUT_ARCHIVE_MANIFEST_10",
+     "SM_XFER_OUT_BK_TRUSTEE_NOTICE_T1",
+     "SM_XFER_OUT_COUNTERPARTIES_T1",
+     "SM_XFER_OUT_CREDIT_FINAL_CYCLE",
+     "SM_XFER_OUT_CUSTODIAL_ACCOUNT_CLOSE",
+     "SM_XFER_OUT_CUSTODIAL_CLOSE_60",
+     "SM_XFER_OUT_FORM2009_HANDOFF_T0",
+     "SM_XFER_OUT_INSURER_ENDORSEMENT_T1",
+     "SM_XFER_OUT_LAW_FIRM_NOTICE_T1",
+     "SM_XFER_OUT_MI_NOTICE_T1",
+     "SM_XFER_OUT_RECERT_EXCEPTION_RESPONSE_10",
+     "SM_XFER_OUT_SUPPORT_WINDOW_90",
+     "SM_XFER_OUT_TAXING_AUTHORITY_NOTICE_T1",
+     "SM_XFER_OUT_VENDOR_NOTICE_T1"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 13,
+    "built": 0,
+    "missing": [
+     "planDeliverables",
+     "generateDeliverable",
+     "runOutboundDqGate",
+     "buildTrialBalance",
+     "buildImageIndex",
+     "sendDeliverable",
+     "ingestTransfereeAck",
+     "answerTransfereeRequest",
+     "notifyCounterparty",
+     "verifyMersSnapshot",
+     "verifyERegistry",
+     "buildDebrief",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 75,
+    "built": 32
+   },
+   "pct": 42.7
+  },
+  {
+   "process": "17.4",
+   "title": "Loss-mit in-flight transfer",
+   "tids": {
+    "spec": 11,
+    "built": 5,
+    "todo": 0,
+    "missing": [
+     4,
+     5,
+     7,
+     8,
+     10,
+     11
+    ]
+   },
+   "tables": {
+    "spec": 4,
+    "built": 4,
+    "missing": []
+   },
+   "timers": {
+    "spec": 23,
+    "built": 8,
+    "armable": 23,
+    "missing": [
+     "FNMA_F1_27_TRIAL_PAYMENT_EOM",
+     "FNMA_LL_2026_01_FORBEARANCE_CUMULATIVE_12M",
+     "REGX_1024_41B2_ACK_5",
+     "REGX_1024_41G_DUAL_TRACK_GATE",
+     "REGX_1024_41H_APPEAL_DETERMINATION_30",
+     "REGX_1024_41K2_NO_FIRST_FILING_GATE",
+     "SM_BK_HANDOFF_T1",
+     "SM_CLAIM_HANDOFF_T1",
+     "SM_FC_SALE_WINDOW_HANDOFF",
+     "SM_FPI_CYCLE_HANDOFF_T1",
+     "SM_LOSSMIT_HANDOFF_FILE_14",
+     "SM_LOSSMIT_PRE_T_WORKDOWN_T1",
+     "SM_PAYOFF_REQUEST_OPEN_7BD",
+     "SM_SII_PENDING_HANDOFF_T1",
+     "SM_SMDU_CASE_HANDOFF_T0"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 9,
+    "built": 0,
+    "missing": [
+     "inventoryOpenCases",
+     "runHandoffChecks",
+     "exportDeadlineTable",
+     "completePreTransferAction",
+     "draftDetermination",
+     "lossmit_reviewer",
+     "packageCase",
+     "forwardPostTransfer",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 47,
+    "built": 17
+   },
+   "pct": 36.2
+  },
+  {
+   "process": "18.1",
+   "title": "Internal QC plan",
+   "tids": {
+    "spec": 12,
+    "built": 11,
+    "todo": 0,
+    "missing": [
+     12
+    ]
+   },
+   "tables": {
+    "spec": 8,
+    "built": 8,
+    "missing": []
+   },
+   "timers": {
+    "spec": 17,
+    "built": 12,
+    "armable": 17,
+    "missing": [
+     "CSBS_EXTERNAL_AUDIT_ANNUAL",
+     "FNMA_A4101_FNMA_QC_RESULTS_REQUEST_10BD",
+     "SM_QC_CAPA_EFFECTIVENESS_NEXT_CYCLE",
+     "SM_QC_CAPA_SEV1_10BD",
+     "SM_QC_CONSUMER_REMEDIATION_30"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 6,
+    "built": 0,
+    "missing": [
+     "ledger.recompute",
+     "escrow.recompute_analysis",
+     "arm.second_engine",
+     "notice.checklist",
+     "timers.history",
+     "investor_events.replay"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 43,
+    "built": 31
+   },
+   "pct": 72.1
+  },
+  {
+   "process": "18.2",
+   "title": "Fannie Mae MORA reviews",
+   "tids": {
+    "spec": 9,
+    "built": 6,
+    "todo": 0,
+    "missing": [
+     2,
+     6,
+     8
+    ]
+   },
+   "tables": {
+    "spec": 6,
+    "built": 6,
+    "missing": []
+   },
+   "timers": {
+    "spec": 9,
+    "built": 2,
+    "armable": 9,
+    "missing": [
+     "EXAM_REQUEST_DUE_AS_STATED",
+     "FNMA_A4101_FNMA_QC_RESULTS_REQUEST_10BD",
+     "FNMA_SCR_FINDING_RESPONSE_AS_STATED",
+     "SM_EXAM_LITIGATION_HOLD",
+     "SM_EXAM_PACKAGE_OFFICER_REVIEW_3BD",
+     "SM_EXAM_REMEDIATION_PLAN_15BD",
+     "SM_EXAM_SCOPE_5BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 24,
+    "built": 14
+   },
+   "pct": 58.3
+  },
+  {
+   "process": "18.3",
+   "title": "STAR performance measurement",
+   "tids": {
+    "spec": 9,
+    "built": 7,
+    "todo": 0,
+    "missing": [
+     3,
+     9
+    ]
+   },
+   "tables": {
+    "spec": 5,
+    "built": 5,
+    "missing": []
+   },
+   "timers": {
+    "spec": 5,
+    "built": 4,
+    "armable": 5,
+    "missing": [
+     "SM_STAR_PARTNER_REPORT_MONTHLY"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 19,
+    "built": 16
+   },
+   "pct": 84.2
+  },
+  {
+   "process": "18.4",
+   "title": "Form 582 Lender Record Information",
+   "tids": {
+    "spec": 8,
+    "built": 6,
+    "todo": 0,
+    "missing": [
+     6,
+     8
+    ]
+   },
+   "tables": {
+    "spec": 7,
+    "built": 7,
+    "missing": []
+   },
+   "timers": {
+    "spec": 13,
+    "built": 4,
+    "armable": 13,
+    "missing": [
+     "FNMA_A2101_TECH_PROVIDER_BREACH_5BD",
+     "FNMA_A2101_TECH_PROVIDER_CHANGE_180",
+     "FNMA_A3501_INSURANCE_EXPIRY_30",
+     "FNMA_A4102_ORG_CHANGE_5BD",
+     "FNMA_A4103_MAJOR_CHANGE_ADVANCE_60",
+     "FNMA_A4103_REGULATORY_ACTION_IMMEDIATE",
+     "FNMA_A42106_FORM183_ON_CHANGE",
+     "SM_FORM582_PARTNER_PACKAGE_FYE_60",
+     "SM_PARTNER_NOTIFY_SUB_EVENT_1BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 28,
+    "built": 17
+   },
+   "pct": 60.7
+  },
+  {
+   "process": "18.5",
+   "title": "Mortgage fraud reporting",
+   "tids": {
+    "spec": 10,
+    "built": 7,
+    "todo": 0,
+    "missing": [
+     6,
+     7,
+     10
+    ]
+   },
+   "tables": {
+    "spec": 4,
+    "built": 4,
+    "missing": []
+   },
+   "timers": {
+    "spec": 10,
+    "built": 3,
+    "armable": 10,
+    "missing": [
+     "FNMA_A3201_BREACH_SELF_REPORT_60",
+     "FNMA_A4222_LAWFIRM_FRAUD_2BD",
+     "FNMA_ISBR_CYBER_INCIDENT_36H",
+     "SM_FRAUD_CARRIER_NOTICE_IMMEDIATE",
+     "SM_FRAUD_LE_REFERRAL_DECISION_10BD",
+     "SM_FRAUD_PARTNER_NOTIFY_1BD",
+     "SM_FRAUD_TRIAGE_2BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 24,
+    "built": 14
+   },
+   "pct": 58.3
+  },
+  {
+   "process": "18.6",
+   "title": "Reg AB / USAP attestation",
+   "tids": {
+    "spec": 7,
+    "built": 4,
+    "todo": 0,
+    "missing": [
+     3,
+     5,
+     6
+    ]
+   },
+   "tables": {
+    "spec": 4,
+    "built": 4,
+    "missing": []
+   },
+   "timers": {
+    "spec": 7,
+    "built": 1,
+    "armable": 7,
+    "missing": [
+     "REGAB_1122_2VII_RECON_ITEMS_90",
+     "REGAB_1122_ASSESSMENT_PSA_DUE",
+     "REGAB_1123_STATEMENT_PSA_DUE",
+     "SM_ATTEST_EVIDENCE_COMPILE_FYE_15",
+     "SM_ATTEST_MANAGEMENT_ASSERTION_FYE_45",
+     "SM_MATERIAL_NONCOMPLIANCE_PARTNER_1BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 18,
+    "built": 9
+   },
+   "pct": 50.0
+  },
+  {
+   "process": "18.7",
+   "title": "Net-worth / liquidity eligibility",
+   "tids": {
+    "spec": 9,
+    "built": 8,
+    "todo": 0,
+    "missing": [
+     7
+    ]
+   },
+   "tables": {
+    "spec": 5,
+    "built": 5,
+    "missing": []
+   },
+   "timers": {
+    "spec": 11,
+    "built": 2,
+    "armable": 11,
+    "missing": [
+     "CSBS_PRUDENTIAL_APPLICABILITY_CHECK_Q",
+     "FNMA_A4101_LARGE_CAPLIQ_PLAN_90",
+     "FNMA_A4101_LARGE_MATERIAL_CHANGE_5BD",
+     "FNMA_A4102_FORM1002A_M_30",
+     "FNMA_A4102_FORM1002_Q_30",
+     "FNMA_A4102_FORM1002_YE_60",
+     "SM_ELIG_BREACH_NOTIFY_1BD",
+     "SM_ELIG_WARNING_REMEDIATION_30",
+     "SM_PARTNER_UPB_REPORT_MONTHLY_BD5"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 25,
+    "built": 15
+   },
+   "pct": 60.0
+  },
+  {
+   "process": "19.1",
+   "title": "Records retention",
+   "tids": {
+    "spec": 15,
+    "built": 10,
+    "todo": 0,
+    "missing": [
+     5,
+     9,
+     12,
+     14,
+     15
+    ]
+   },
+   "tables": {
+    "spec": 8,
+    "built": 8,
+    "missing": []
+   },
+   "timers": {
+    "spec": 19,
+    "built": 7,
+    "armable": 19,
+    "missing": [
+     "FNMA_A2_4_1_02_ACCOUNTING_REPORTS_18M",
+     "FNMA_A2_4_1_02_RETENTION_4Y_POST_LIQUIDATION",
+     "IRS_INFO_RETURN_RETENTION_4Y",
+     "NYDFS_500_6_AUDIT_TRAIL_5Y",
+     "NY_419_9_RETENTION_3Y_POST_FINAL_ENTRY",
+     "REGB_1002_12B_RETENTION_25M",
+     "REGF_1006_100A_RETENTION_3Y_POST_LAST_COLLECTION",
+     "REGF_1006_100B_CALL_RECORDING_3Y",
+     "REGX_1024_38C1_RETENTION_1Y_POST_DISCHARGE_OR_TRANSFER",
+     "REGZ_1026_25A_RETENTION_2Y",
+     "SM_REGULATOR_RECORDS_REQUEST",
+     "TCPA_CONSENT_EVIDENCE_4Y"
+    ]
+   },
+   "notices": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "NTC_DISPOSAL_CERTIFICATE",
+     "NTC_LEGAL_HOLD_INTERNAL",
+     "NTC_RECORDS_CERTIFICATION"
+    ]
+   },
+   "tools": {
+    "spec": 2,
+    "built": 0,
+    "missing": [
+     "records.classify",
+     "records.compileServicingFile"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 47,
+    "built": 25
+   },
+   "pct": 53.2
+  },
+  {
+   "process": "19.2",
+   "title": "GLBA safeguards",
+   "tids": {
+    "spec": 17,
+    "built": 15,
+    "todo": 0,
+    "missing": [
+     8,
+     17
+    ]
+   },
+   "tables": {
+    "spec": 13,
+    "built": 11,
+    "missing": [
+     "pen_tests",
+     "security_logs_5y"
+    ]
+   },
+   "timers": {
+    "spec": 33,
+    "built": 20,
+    "armable": 33,
+    "missing": [
+     "FNMA_FORM101_DATA_INCIDENT_NOTICE_36H",
+     "FNMA_SUPP_FIREWALL_RULE_REVIEW_90",
+     "FNMA_SUPP_LOST_MEDIA_NOTICE_36H",
+     "FNMA_SUPP_SEC_FILING_COPY_36H",
+     "FNMA_SUPP_TRAINING_365",
+     "FNMA_SUPP_WIRELESS_REVIEW_365",
+     "FNMA_TECHGUIDE_CREDENTIAL_RESET_90D",
+     "FNMA_TECHGUIDE_TLS_CIPHER_CUTOFF",
+     "NYDFS_500_12_MFA_COMPENSATING_REVIEW_365",
+     "NYDFS_500_17C_EXTORTION_EXPLANATION_30D",
+     "NYDFS_500_17C_EXTORTION_PAYMENT_NOTICE_24H",
+     "STATE_BREACH_CRA_NOTICE_NY_5000",
+     "STATE_BREACH_REGULATOR_NOTICE_NY"
+    ]
+   },
+   "notices": {
+    "spec": 9,
+    "built": 0,
+    "missing": [
+     "NTC_BREACH_CRA",
+     "NTC_FNMA_FORM101_INCIDENT",
+     "NTC_FNMA_INCIDENT_36H",
+     "NTC_FTC_314_4J",
+     "NTC_NYDFS_500_17A",
+     "NTC_NYDFS_500_17C_EXTORTION_24H",
+     "NTC_NYDFS_ANNUAL_CERT",
+     "NTC_PARTNER_INCIDENT_24H",
+     "NTC_SUPPLEMENT_ATTESTATION"
+    ]
+   },
+   "tools": {
+    "spec": 12,
+    "built": 0,
+    "missing": [
+     "siem.query",
+     "idp.disableIdentity",
+     "vault.rotateSecret",
+     "cloud.isolateHost",
+     "network.blockEgress",
+     "incident.setSeverity",
+     "incident.scope",
+     "notices.draft",
+     "portal_task.create",
+     "timers.read",
+     "controls.runTest",
+     "exceptions.propose"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 84,
+    "built": 46
+   },
+   "pct": 54.8
+  },
+  {
+   "process": "19.3",
+   "title": "Fannie Mae data/tech-provider requirements",
+   "tids": {
+    "spec": 14,
+    "built": 9,
+    "todo": 0,
+    "missing": [
+     9,
+     11,
+     12,
+     13,
+     14
+    ]
+   },
+   "tables": {
+    "spec": 12,
+    "built": 12,
+    "missing": []
+   },
+   "timers": {
+    "spec": 18,
+    "built": 12,
+    "armable": 18,
+    "missing": [
+     "FNMA_582_THIRD_PARTY_PACKAGE_30D",
+     "FNMA_LL2026_04_DISCLOSURE_PROMPT_5BD",
+     "FNMA_SUPP_PROGRAM_REQUEST_10BD",
+     "SM_CONTRACT_EXPIRY_WARNING_180",
+     "SM_PORTFOLIO_THRESHOLD_MONITOR_DAILY",
+     "SM_VENDOR_INCIDENT_NOTICE_SLA"
+    ]
+   },
+   "notices": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "NTC_FNMA_A2101_CONTRACT_COPIES_5BD",
+     "NTC_FNMA_A2101_CONTRACT_EVENT_5BD",
+     "NTC_FNMA_A2101_TECH_PROVIDER_CHANGE_180",
+     "NTC_FNMA_LL2026_04_DISCLOSURE"
+    ]
+   },
+   "tools": {
+    "spec": 10,
+    "built": 0,
+    "missing": [
+     "contracts.extractClauses",
+     "contracts.checklist",
+     "vendors.assess",
+     "vendors.setStatus",
+     "notices.draft",
+     "fnma_notices.recordSent",
+     "portfolio.count",
+     "ai_systems.upsert",
+     "timers.read",
+     "portal_task.create"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 58,
+    "built": 33
+   },
+   "pct": 56.9
+  },
+  {
+   "process": "19.4",
+   "title": "Fair lending data elements",
+   "tids": {
+    "spec": 16,
+    "built": 10,
+    "todo": 0,
+    "missing": [
+     3,
+     4,
+     5,
+     6,
+     14,
+     16
+    ]
+   },
+   "tables": {
+    "spec": 6,
+    "built": 6,
+    "missing": []
+   },
+   "timers": {
+    "spec": 14,
+    "built": 9,
+    "armable": 14,
+    "missing": [
+     "REGB_1002_12B_RETENTION_25M",
+     "SM_AI_BIAS_TEST_QUARTERLY_90",
+     "SM_FAIR_SERVICING_BOARD_REPORT_365",
+     "SM_FAIR_SERVICING_REGRESSION_QUARTERLY",
+     "SM_FL_DATA_QUALITY_MONTHLY"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 36,
+    "built": 25
+   },
+   "pct": 69.4
+  }
+ ]
 }

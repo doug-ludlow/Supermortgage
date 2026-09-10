@@ -1,0 +1,39 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"${CLAUDE_PROJECT_DIR:-.}\" && python3 tools/audit.py --hook SessionStart 2>/dev/null || true",
+            "timeout": 60,
+            "statusMessage": "Auditing the build against spec/"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"${CLAUDE_PROJECT_DIR:-.}\" && python3 tools/audit.py --hook UserPromptSubmit 2>/dev/null || true",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"${CLAUDE_PROJECT_DIR:-.}\" && python3 tools/audit.py --hook Stop 2>/dev/null || true",
+            "timeout": 60,
+            "statusMessage": "Auditing the build against spec/"
+          }
+        ]
+      }
+    ]
+  }
+}

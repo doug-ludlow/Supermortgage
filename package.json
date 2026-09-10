@@ -8,13 +8,18 @@
     "node": ">=22.18"
   },
   "scripts": {
-    "test": "node --test --experimental-strip-types 'src/**/*.test.ts'",
+    "test": "node --test --experimental-strip-types 'src/**/*.test.ts' && python3 tools/audit.py --check",
     "typecheck": "tsc --noEmit",
     "spec:extract": "python3 tools/extract_spec.py",
     "spec:lint": "node --experimental-strip-types tools/lint-registry.ts",
     "test:db": "REQUIRE_DB=1 node --test --experimental-strip-types 'src/infra/db/*.test.ts'",
     "console": "node --experimental-strip-types tools/console.ts",
-    "audit": "python3 tools/audit.py"
+    "audit": "python3 tools/spec_manifest.py && python3 tools/audit.py",
+    "test:unit": "node --test --experimental-strip-types 'src/**/*.test.ts'",
+    "audit:check": "python3 tools/audit.py --check",
+    "audit:baseline": "python3 tools/audit.py --baseline",
+    "spec:manifest": "python3 tools/spec_manifest.py",
+    "spec:scaffold": "python3 tools/scaffold_spec_tests.py"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

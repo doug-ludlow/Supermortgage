@@ -54,42 +54,42 @@ DATABASE_URL=postgresql://sm:sm@localhost/supermortgage db/migrate.sh
 
 ## Status
 
-| Area | State |
-|---|---|
-| Spec materialized in repo | ✅ all 114 processes + registries |
-| Kernel (money, calendars, events, FSM, ledger, timers) | ✅ tested |
-| Timer registry | ✅ 1,365 rows loaded (1,206 unique codes); 774 armable purely from the registry, the other 616 via cited overrides in each section's `timers.ts` (`src/domain/timer-overrides.ts` applies all 19; 109 are evaluator-backed gates) — 1,206/1,206 armable |
-| Postgres schema | ✅ 23 migrations, 438 tables covering every section's "Data model" subsection; append-only/immutability triggers, restricted `restricted_fl` schema |
-| Integration framework | ✅ `src/infra/integrations`: idempotent outbox over `integration_messages` (dedupe by adapter+direction+key, backoff retry, dead-letter → `human_portal_tasks`), failure vocabulary (transient / unavailable-with-fallback / permanent rejection), BAI2 and Nacha codecs, and typed ports with behaviour-faithful fakes for fnma-lsdu (hard/soft/invalid/missing, head-of-line), fnma-servicing-events, SMDU, P360, CRS file builder, Connect, MERS, custodian, WORM e-vault, lockbox, custodial-bank, ODFI, print/mail, e-delivery, telephony, Metro 2, e-OSCAR, LPI tracking, flood, tax service, MI, PACER, DMDC, e-recording |
-| Notice Registry | ✅ `src/notices`: all 248 NTC_/INS_ codes the spec names (`spec/registry/notices.json` via `tools/extract_notices.py`) registered with class/channel policy; immutable effective-dated template versions with machine-checkable content, data and layout rules; publish gate (a failing block rule cannot be published); dependency-free renderer; channel decision per 7.4 (consent class, mail-only, bounce → same-day mail, split parties); `NoticeService` render → checklist → hold/send → proof of delivery with events; authored, rule-checked versions for the H-30 statements, MS-3(A) force-placed notice, MS-4(A) early-intervention notice, H-4(D)(3) ARM initial notice and the §1024.41(b)(2) acknowledgment |
-| Application layer | ✅ `src/app`: command bus every state change goes through (AI kill switch / AI-off routing, per-agent tool allowlists from `spec/registry/agents.json`, role gates, money-field protection, guardrails that refuse before anything runs, automatic `agent_decisions` rows with rule set / model / prompt / approver, `command.executed` / `command.refused` events); the 20 agents the spec defines with their processes, tools and escalation roles; 109 gate evaluators resolving every `evaluator:` ref the timer overrides name; escalations with role-checked completion |
-| Ops console | ✅ `src/console`: the human path — role-scoped work queues (escalations, human portal tasks, held notices, dead letters, breached timers), loan record (events, ledger, timers, decisions, notices, open items), Compliance Sentinel dashboard, Agents & AI-path toggles; JSON API over a `ConsoleStore` with in-memory and Postgres implementations; read-only auditor/examiner roles; every request access-logged. `npm run console` (Postgres) or `npm run console -- --demo`; screenshots in `docs/console/` |
-| Persistence layer | ✅ `src/infra/db`: `pg` client (bigint cents), repositories for `loan_events`, ledger sets/lines, `timers`, `agent_decisions`, loan fixtures; `PgUnitOfWork` hydrates a loan's history into the kernel stores, runs the synchronous domain command, and commits events + ledger + timers + decisions in one transaction. DB-backed acceptance tests (2.1-T1 end to end) via `npm run test:db` |
-| §1 Boarding & transfers in (1.1–1.7) | ✅ `src/domain/boarding`, `src/domain/transfers` |
-| §2 Cashiering (2.1–2.7) | ✅ `src/domain/cashiering` |
-| §3 Escrow (3.1–3.9) | ✅ `src/domain/escrow` |
-| §4 Customer service & servicing requests (4.1–4.6) | ✅ `src/domain/servicing-requests` |
-| §5 Investor reporting & remittance (5.1–5.7) | ✅ `src/domain/investor` |
-| §6 Custodial accounts (6.1–6.5) | ✅ `src/domain/custodial` |
-| §7 Compliance notices (7.1–7.6) | ✅ `src/domain/notices` |
-| §8 Credit reporting (8.1–8.3) | ✅ `src/domain/credit-reporting` |
-| §9 Insurance & property (9.1–9.9) | ✅ `src/domain/insurance` |
-| §10 Private mortgage insurance (10.1–10.6) | ✅ `src/domain/pmi` |
-| §11 Early intervention (11.1–11.5) | ✅ `src/domain/early-intervention` |
-| §12 Loss mitigation (12.1–12.9) | ✅ `src/domain/lossmit` |
-| §13 Foreclosure (13.1–13.9) | ✅ `src/domain/foreclosure` |
-| §14 Bankruptcy (14.1–14.4) | ✅ `src/domain/bankruptcy` |
-| §15 REO, claims, advances (15.1–15.4) | ✅ `src/domain/reo` |
-| §16 Payoff & lien release (16.1–16.3) | ✅ `src/domain/payoff` |
-| §17 Transfers out (17.1–17.4) | ✅ `src/domain/transfers` |
-| §18 QC, audit, attestations (18.1–18.7) | ✅ `src/domain/qc-audit` |
-| §19 Records, security, vendors, fair lending (19.1–19.4) | ✅ `src/domain/data-security` |
-| Audit | ⏳ every section's tests reproduce the spec's worked examples; discrepancies found on the way are listed in [docs/AUDIT-NOTES.md](docs/AUDIT-NOTES.md) |
+These numbers come from `npm run audit` (`tools/audit.py`), which measures the tree against `spec/registry/manifest.json`, the spec in its own units. They are regenerated into [docs/audit/COVERAGE.md](docs/audit/COVERAGE.md) on every run and ratcheted by `npm test` against [docs/audit/baseline.json](docs/audit/baseline.json). The platform spine (kernel, timer engine, migrations, outbox and adapters, Notice Registry, command bus, ops console, persistence) exists and is tested; the table says how much of the spec's content sits on it.
 
-Each domain module is pure business logic (typed inputs → typed results) with
-a `*.test.ts` file whose test names carry the spec's T-numbers. Persistence
-beyond the baseline schema, adapters (e-OSCAR, P360, SMDU, lockbox, print) and
-the agent layer are the next build phases.
+| Unit of the spec | Built / spec |
+|---|---|
+| T-numbered acceptance tests (one verbatim `node:test` each) | 677/1253 |
+| Data-model tables created by a migration | 431/450 |
+| Timer codes the engine can arm and satisfy | 720/1365 |
+| Notice templates authored with content and layout rules | 6/248 |
+| Agent tools registered as commands on the bus | 0/658 |
+| Worked-example money figures reproduced by a test | 268/624 |
+| **All spec units** | **2102/4598** |
+| Processes at 100% of their units | 0/114 |
+
+| Section | Units built / spec | Processes at 100% |
+|---|---|---|
+| §1 | 137/250 | 0/7 |
+| §2 | 125/224 | 0/7 |
+| §3 | 160/334 | 0/9 |
+| §4 | 91/205 | 0/5 |
+| §5 | 126/293 | 0/7 |
+| §6 | 99/169 | 0/5 |
+| §7 | 108/206 | 0/6 |
+| §8 | 68/131 | 0/3 |
+| §9 | 125/286 | 0/9 |
+| §10 | 103/198 | 0/6 |
+| §11 | 98/252 | 0/5 |
+| §12 | 154/425 | 0/9 |
+| §13 | 131/353 | 0/9 |
+| §14 | 75/224 | 0/4 |
+| §15 | 84/241 | 0/4 |
+| §16 | 77/197 | 0/4 |
+| §17 | 96/204 | 0/4 |
+| §18 | 116/181 | 0/7 |
+| §19 | 129/225 | 0/4 |
+
+Each domain module is pure business logic (typed inputs → typed results). Its acceptance tests live in `src/domain/<section>/<n>-<m>.spec.test.ts`, one `node:test` per T-id named exactly as the spec; a `todo: true` line there is a T-id the spec names that nothing implements yet (`npm run spec:scaffold` creates missing files and never overwrites). The hands-on defect list is in [docs/audit/AUDIT-REPORT.md](docs/audit/AUDIT-REPORT.md).
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how a section is added and
 which conventions are non-negotiable.

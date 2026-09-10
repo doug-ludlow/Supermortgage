@@ -1,86 +1,150 @@
 #!/usr/bin/env python3
-"""Coverage audit of the build against spec/: T-numbered tests, data-model tables, worked-example figures,
-timers, notices, agents, adapters. Writes docs/audit/coverage.json and prints a summary."""
-import re, glob, json, os, collections, subprocess
-root = os.path.join(os.path.dirname(__file__), '..')
-os.makedirs(os.path.join(root, 'docs/audit'), exist_ok=True)
-procs = json.load(open(os.path.join(root, 'spec/registry/processes.json')))
+"""Coverage audit of the build against spec/, in the spec's own units, read from spec/registry/manifest.json
+(tools/spec_manifest.py). One row per process; a process is "done" only when every unit is built.
+
+  T-ids     acceptance tests: a T-id is implemented when a non-todo node:test names it ("2.1-T3: ...").
+  tables    Data-model tables that a migration creates.
+  timers    unique timer codes the engine can arm AND satisfy (tools/lint-registry.ts --json).
+  notices   NTC_/INS_ codes with an authored template version (src/notices/catalog.ts).
+  tools     agent tools registered as commands on the bus (src/app/catalog.ts, "<agent>.<tool>").
+  figures   worked-example money figures from "Business rules" that a test of the section reproduces.
+
+  python3 tools/audit.py              write docs/audit/coverage.json + COVERAGE.md, print the summary
+  python3 tools/audit.py --check      exit 1 if any total fell below docs/audit/baseline.json or a process
+                                      listed there as done is below 100%  (npm test runs this)
+  python3 tools/audit.py --baseline   rewrite baseline.json to the current totals (keeps its done list)
+  python3 tools/audit.py --brief      one line
+  python3 tools/audit.py --hook EVENT emit Claude Code hook JSON (SessionStart | UserPromptSubmit | Stop)
+"""
+import re, glob, json, os, sys, collections, subprocess
+root = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+AUDIT = os.path.join(root, 'docs/audit')
+os.makedirs(AUDIT, exist_ok=True)
+manifest = json.load(open(os.path.join(root, 'spec/registry/manifest.json')))
+UNITS = ('tids', 'tables', 'timers', 'notices', 'tools', 'figures')
 SECTION_DIR = {1: ['boarding', 'transfers'], 2: ['cashiering'], 3: ['escrow'], 4: ['servicing-requests'], 5: ['investor'], 6: ['custodial'], 7: ['notices'], 8: ['credit-reporting'],
                9: ['insurance'], 10: ['pmi'], 11: ['early-intervention'], 12: ['lossmit'], 13: ['foreclosure'], 14: ['bankruptcy'], 15: ['reo'], 16: ['payoff'], 17: ['transfers'], 18: ['qc-audit'], 19: ['data-security']}
-def spec_text(p):
-    return open(os.path.join(root, 'spec', p['path'])).read()
-tests_all = ''
-for f in glob.glob(os.path.join(root, 'src/**/*.test.ts'), recursive=True):
-    tests_all += open(f).read() + '\n'
-section_tests = {}
-for sec, dirs in SECTION_DIR.items():
-    t = ''
-    for d in dirs:
-        for f in glob.glob(os.path.join(root, f'src/domain/{d}/*.test.ts')): t += open(f).read() + '\n'
-    section_tests[sec] = t
-# ---- T-ids
+
+def read(p): return open(p, encoding='utf-8').read()
+def live_lines(text):
+    """Drop scaffold placeholders: a `todo: true` test or `test.todo(` names a T-id without implementing it."""
+    return '\n'.join(l for l in text.splitlines() if 'todo: true' not in l and 'test.todo(' not in l and 'it.todo(' not in l)
+test_files = sorted(glob.glob(os.path.join(root, 'src/**/*.test.ts'), recursive=True))
+tests_all = '\n'.join(read(f) for f in test_files)
+tests_live = live_lines(tests_all)
+section_tests = {sec: live_lines('\n'.join(read(f) for d in dirs for f in glob.glob(os.path.join(root, f'src/domain/{d}/*.test.ts')))) for sec, dirs in SECTION_DIR.items()}
+
 def tids_in(text):
     out = set()
     for m in re.finditer(r'\b(\d{1,2}\.\d{1,2})-T(\d+)((?:\s*/\s*T\d+)*)', text):
         out.add((m.group(1), int(m.group(2))))
         for x in re.findall(r'T(\d+)', m.group(3)): out.add((m.group(1), int(x)))
-    # ranges like 2.1-T1 … T6 or "T1–T6"
     for m in re.finditer(r'\b(\d{1,2}\.\d{1,2})-T(\d+)\s*(?:[–-]|\.\.|…)\s*T(\d+)', text):
         for i in range(int(m.group(2)), int(m.group(3)) + 1): out.add((m.group(1), i))
     return out
-spec_tids = collections.defaultdict(set); impl_tids = tids_in(tests_all)
-for p in procs:
-    for pid, n in tids_in(spec_text(p)):
-        if pid == p['id']: spec_tids[pid].add(n)
-tid_rows = []
-for p in procs:
-    s = spec_tids[p['id']]; i = {n for (pid, n) in impl_tids if pid == p['id']} & s
-    tid_rows.append({'process': p['id'], 'spec': len(s), 'implemented': len(i), 'missing': sorted(s - i)})
-# ---- tables
-created = set(re.findall(r'CREATE (?:TABLE|VIEW)\s+(?:IF NOT EXISTS\s+)?(?:restricted_fl\.)?(\w+)', '\n'.join(open(f).read() for f in glob.glob(os.path.join(root, 'db/migrations/*.sql')))))
-table_rows = []
-for p in procs:
-    t = spec_text(p)
-    m = re.search(r'#### Data model(.*?)(?=\n#### )', t, re.S)
-    names = set()
-    if m:
-        for n in re.findall(r'(?:^|\n)\s*[-*]\s*\*{0,2}`([a-z][a-z0-9_]{3,})`', m.group(1)):
-            if not n.endswith(('_id', '_at', '_on', '_cents', '_pct', '_date', '_flag')) and '.' not in n: names.add(n)
-        for n in re.findall(r'`([a-z][a-z0-9_]{3,})`\s*\((?:baseline|new|extended|append-only)', m.group(1)): names.add(n)
-    table_rows.append({'process': p['id'], 'spec': sorted(names), 'missing': sorted(n for n in names if n not in created and n + 's' not in created)})
-# ---- worked-example money figures
+impl_tids = tids_in(tests_live)
+todo_tids = tids_in(tests_all) - impl_tids
+created = set(re.findall(r'CREATE (?:TABLE|VIEW)\s+(?:IF NOT EXISTS\s+)?(?:restricted_fl\.)?(\w+)', '\n'.join(read(f) for f in glob.glob(os.path.join(root, 'db/migrations/*.sql')))))
+lint = json.loads(subprocess.run(['node', '--experimental-strip-types', 'tools/lint-registry.ts', '--json'], cwd=root, capture_output=True, text=True, check=True).stdout)
+timer_ok = {t['code'] for t in lint if t['armable'] and t['satisfiable']}
+timer_armable = {t['code'] for t in lint if t['armable']}
+authored = set(re.findall(r'V\("([A-Z0-9_]+)"', read(os.path.join(root, 'src/notices/catalog.ts'))))
+commands = set(re.findall(r'name: "([a-z\-]+\.[A-Za-z]+)"', read(os.path.join(root, 'src/app/catalog.ts'))))
 def cents(s): return int(round(float(s.replace('$', '').replace(',', '')) * 100))
-fig_rows = []
-for p in procs:
-    t = spec_text(p)
-    m = re.search(r'#### Business rules(.*?)(?=\n#### )', t, re.S)
-    body = m.group(1) if m else ''
-    figs = sorted({f for f in re.findall(r'\$[\d,]{1,12}\.\d{2}', body)})
-    sec = int(p['id'].split('.')[0]); tt = section_tests.get(sec, '')
-    flat = tt.replace('_', '')
-    strict = [f for f in figs if (f'{cents(f)}n' in flat or f in tt)]
-    loose = [f for f in figs if (f in strict or re.search(r'(?<![\d.])0*' + str(cents(f)) + r'(?![\d])', flat) or f.replace('$', '') in tt)]
-    fig_rows.append({'process': p['id'], 'figures': len(figs), 'reproduced': len(strict), 'reproduced_loose': len(loose), 'missing': [f for f in figs if f not in loose][:12]})
-# ---- timers / notices / agents / adapters
-lint = subprocess.run(['node', '--experimental-strip-types', 'tools/lint-registry.ts'], cwd=root, capture_output=True, text=True).stdout
-notices = json.load(open(os.path.join(root, 'spec/registry/notices.json')))
-authored = re.findall(r'V\("([A-Z0-9_]+)"', open(os.path.join(root, 'src/notices/catalog.ts')).read())
-agents = json.load(open(os.path.join(root, 'spec/registry/agents.json')))
-commands = re.findall(r'name: "([a-z\-]+\.[A-Za-z]+)"', open(os.path.join(root, 'src/app/catalog.ts')).read())
-adapter_names = collections.Counter(re.findall(r'`((?:fnma-[a-z0-9\-]+|mers|custodian|print-mail|e-delivery|e-oscar|lockbox|custodial-bank|nacha|tax-service|flood|insurance-tracking/lpi|mi/\*|pacer/bk-monitor|dmdc|erecording|telephony/voice|email-in|fnma-auth|index-feed|skip-trace|usps[a-z/ ]*|metro2|e-vault|evault))`', '\n'.join(spec_text(p) for p in procs)))
-ports = re.findall(r'export interface (\w+Port)\b', '\n'.join(open(f).read() for f in glob.glob(os.path.join(root, 'src/infra/integrations/*.ts'))))
-out = {'tids': tid_rows, 'tables': table_rows, 'figures': fig_rows, 'lint': lint, 'notices': {'catalog': len(notices), 'authored': authored}, 'agents': {'count': len(agents['agents']), 'tools': sum(len(a['tools']) for a in agents['agents']), 'commands_on_bus': commands}, 'adapters': {'named': adapter_names.most_common(), 'ports': ports}}
-json.dump(out, open(os.path.join(root, 'docs/audit/coverage.json'), 'w'), indent=1)
-ts = sum(r['spec'] for r in tid_rows); ti = sum(r['implemented'] for r in tid_rows)
-print(f"T-ids: {ti}/{ts} implemented ({100*ti/ts:.0f}%)")
-by = collections.defaultdict(lambda: [0, 0])
-for r in tid_rows: by[r['process'].split('.')[0]][0] += r['spec']; by[r['process'].split('.')[0]][1] += r['implemented']
-print('  by section: ' + '  '.join(f"§{k}:{v[1]}/{v[0]}" for k, v in sorted(by.items(), key=lambda x: int(x[0]))))
-tn = sum(len(r['spec']) for r in table_rows); tm = sum(len(r['missing']) for r in table_rows)
-print(f"tables named in Data model subsections: {tn}; not created: {tm}")
-fn = sum(r['figures'] for r in fig_rows); fr = sum(r['reproduced'] for r in fig_rows)
-fl = sum(r['reproduced_loose'] for r in fig_rows)
-print(f"worked-example money figures: {fr}/{fn} reproduced verbatim as cents/dollars ({100*fr/max(fn,1):.0f}%); {fl}/{fn} counting zero-padded or bare-digit matches ({100*fl/max(fn,1):.0f}%)")
-print(f"notices: {len(authored)}/{len(notices)} with an authored template version; agents {len(agents['agents'])}, spec tools {sum(len(a['tools']) for a in agents['agents'])}, commands on bus {len(commands)}")
-print(f"adapters named in spec: {len(adapter_names)}; ports built: {len(ports)}")
-print([l for l in lint.splitlines() if 'after section overrides' in l or 'satisfied pattern' in l or 'anchor field' in l])
+
+rows = []
+for p in manifest:
+    pid = p['process']; sec = int(pid.split('.')[0])
+    spec_t = {t['n'] for t in p['tids']}
+    impl_t = {n for (q, n) in impl_tids if q == pid} & spec_t
+    todo_t = {n for (q, n) in todo_tids if q == pid} & spec_t
+    tables_ok = [n for n in p['tables'] if n in created or n + 's' in created]
+    timers_ok = [c for c in p['timers'] if c in timer_ok]
+    notices_ok = [c for c in p['notices'] if c in authored]
+    tools_ok = [t for t in p['tools'] if f"{p['agent']}.{t}" in commands]
+    body = read(os.path.join(root, 'spec', p['path']))
+    m = re.search(r'#### Business rules(.*?)(?=\n#### )', body, re.S)
+    figs = sorted({f for f in re.findall(r'\$[\d,]{1,12}\.\d{2}', m.group(1) if m else '')})
+    tt = section_tests.get(sec, ''); flat = tt.replace('_', '')
+    figs_ok = [f for f in figs if (f'{cents(f)}n' in flat or f in tt)]
+    r = {'process': pid, 'title': p['title'],
+         'tids': {'spec': len(spec_t), 'built': len(impl_t), 'todo': len(todo_t), 'missing': sorted(spec_t - impl_t)},
+         'tables': {'spec': len(p['tables']), 'built': len(tables_ok), 'missing': [n for n in p['tables'] if n not in tables_ok]},
+         'timers': {'spec': len(p['timers']), 'built': len(timers_ok), 'armable': sum(1 for c in p['timers'] if c in timer_armable), 'missing': [c for c in p['timers'] if c not in timers_ok]},
+         'notices': {'spec': len(p['notices']), 'built': len(notices_ok), 'missing': [c for c in p['notices'] if c not in notices_ok]},
+         'tools': {'spec': len(p['tools']), 'built': len(tools_ok), 'missing': [t for t in p['tools'] if t not in tools_ok]},
+         'figures': {'spec': len(figs), 'built': len(figs_ok), 'missing': [f for f in figs if f not in figs_ok]}}
+    spec_n = sum(r[u]['spec'] for u in UNITS); built_n = sum(r[u]['built'] for u in UNITS)
+    r['units'] = {'spec': spec_n, 'built': built_n}
+    r['pct'] = round(100 * built_n / spec_n, 1) if spec_n else 100.0
+    rows.append(r)
+
+totals = {u: {'spec': sum(r[u]['spec'] for r in rows), 'built': sum(r[u]['built'] for r in rows)} for u in UNITS}
+totals['units'] = {'spec': sum(r['units']['spec'] for r in rows), 'built': sum(r['units']['built'] for r in rows)}
+pct = lambda t: round(100 * t['built'] / t['spec'], 1) if t['spec'] else 100.0
+frac = lambda t: f"{t['built']}/{t['spec']}"
+done = [r['process'] for r in rows if r['units']['built'] == r['units']['spec']]
+by_section = collections.OrderedDict()
+for r in rows:
+    s = by_section.setdefault(int(r['process'].split('.')[0]), {'spec': 0, 'built': 0, 'processes': 0, 'done': 0})
+    s['spec'] += r['units']['spec']; s['built'] += r['units']['built']; s['processes'] += 1; s['done'] += r['process'] in done
+brief = (f"spec units built {frac(totals['units'])} ({pct(totals['units'])}%): "
+         + ', '.join(f"{u} {frac(totals[u])}" for u in UNITS)
+         + f"; processes at 100%: {len(done)}/{len(rows)}")
+
+BASELINE = os.path.join(AUDIT, 'baseline.json')
+def check():
+    """Ratchet: no total may fall below the committed baseline; a process the baseline lists as done stays at 100%."""
+    if not os.path.exists(BASELINE): return ['no docs/audit/baseline.json (run: npm run audit:baseline)']
+    b = json.load(open(BASELINE)); errs = []
+    for u, v in b['totals'].items():
+        cur = totals.get(u, {}).get('built', 0)
+        if cur < v['built']: errs.append(f"{u} fell to {cur}/{totals[u]['spec']} (baseline {v['built']}/{v['spec']})")
+    for pid in b.get('done', []):
+        r = next((r for r in rows if r['process'] == pid), None)
+        if r is None: errs.append(f"process {pid} marked done is not in the manifest")
+        elif r['units']['built'] != r['units']['spec']:
+            errs.append(f"process {pid} is marked done but is at {frac(r['units'])} units: " + '; '.join(f"{u} {frac(r[u])}" for u in UNITS if r[u]['built'] != r[u]['spec']))
+    return errs
+
+args = sys.argv[1:]
+if '--baseline' in args:
+    prev = json.load(open(BASELINE)) if os.path.exists(BASELINE) else {}
+    json.dump({'totals': totals, 'done': sorted(set(prev.get('done', [])) | set(done), key=lambda s: [int(x) for x in s.split('.')])}, open(BASELINE, 'w'), indent=1)
+    print('baseline written: ' + brief); sys.exit(0)
+if '--check' in args:
+    errs = check()
+    if errs:
+        print('AUDIT RATCHET FAILED\n  ' + '\n  '.join(errs)); sys.exit(1)
+    print('audit ratchet ok: ' + brief); sys.exit(0)
+if '--hook' in args:
+    event = args[args.index('--hook') + 1] if args.index('--hook') + 1 < len(args) else 'SessionStart'
+    errs = check()
+    gaps = sorted(rows, key=lambda r: r['units']['spec'] - r['units']['built'], reverse=True)[:5]
+    msg = ('Spec audit (tools/audit.py, spec units from spec/registry/manifest.json): ' + brief + '. '
+           + ('Ratchet OK.' if not errs else 'RATCHET FAILED: ' + '; '.join(errs)) + ' '
+           + 'Largest gaps: ' + ', '.join(f"{r['process']} {frac(r['units'])}" for r in gaps) + '. '
+           + 'Report status only as these fractions; a process is done only at 100% of its units.')
+    if event == 'Stop':
+        out = {'systemMessage': msg}
+    else:
+        out = {'hookSpecificOutput': {'hookEventName': event, 'additionalContext': msg}}
+        if errs: out['systemMessage'] = 'Audit ratchet failing: ' + '; '.join(errs)
+    print(json.dumps(out)); sys.exit(0)
+if '--brief' in args:
+    print(brief); sys.exit(0)
+
+json.dump({'brief': brief, 'totals': totals, 'sections': {str(k): v for k, v in by_section.items()}, 'done': done, 'processes': rows}, open(os.path.join(AUDIT, 'coverage.json'), 'w'), indent=1)
+with open(os.path.join(AUDIT, 'COVERAGE.md'), 'w') as f:
+    f.write('# Spec coverage\n\nGenerated by `npm run audit` from `spec/registry/manifest.json`; do not edit. Each unit is one thing the spec names: a T-numbered test, a data-model table, a timer code (armable and satisfiable), a notice template, an agent tool on the command bus, or a worked-example figure.\n\n')
+    f.write(f'**{brief}**\n\n## Totals\n\n| Unit | Built / spec | % |\n|---|---|---|\n')
+    for u in UNITS: f.write(f"| {u} | {frac(totals[u])} | {pct(totals[u])} |\n")
+    f.write(f"| **all units** | **{frac(totals['units'])}** | **{pct(totals['units'])}** |\n\n## Sections\n\n| § | Units built / spec | % | Processes at 100% |\n|---|---|---|---|\n")
+    for k, s in by_section.items(): f.write(f"| {k} | {s['built']}/{s['spec']} | {round(100*s['built']/s['spec'],1) if s['spec'] else 100} | {s['done']}/{s['processes']} |\n")
+    f.write('\n## Processes\n\n| Process | T-ids | tables | timers | notices | tools | figures | units | % |\n|---|---|---|---|---|---|---|---|---|\n')
+    for r in rows: f.write(f"| {r['process']} | {frac(r['tids'])} | {frac(r['tables'])} | {frac(r['timers'])} | {frac(r['notices'])} | {frac(r['tools'])} | {frac(r['figures'])} | {frac(r['units'])} | {r['pct']} |\n")
+print(brief)
+print('  by section: ' + '  '.join(f"§{k}:{s['built']}/{s['spec']}" for k, s in by_section.items()))
+print(f"  T-ids scaffolded as todo (not counted): {sum(r['tids']['todo'] for r in rows)}; timers armable but not satisfiable: {sum(r['timers']['armable'] - r['timers']['built'] for r in rows)}")
+errs = check()
+print(('  ratchet: ' + '; '.join(errs)) if errs else '  ratchet ok')

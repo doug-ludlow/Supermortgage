@@ -31,10 +31,19 @@ export function parseEventPattern(raw: string): EventPattern | null {
 
 function splitTopLevel(s: string): string[] {
   const out: string[] = []; let depth = 0, cur = "";
-  for (const ch of s) {
+  const chars = [...s];
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i]!;
     if (ch === "(" || ch === "[" || ch === "{") depth++;
     if (ch === ")" || ch === "]" || ch === "}") depth--;
-    if (ch === "," && depth === 0) { out.push(cur); cur = ""; } else cur += ch;
+    if (ch === "," && depth === 0) {
+      // Inside a brace-less `field∈a,b` list, a comma followed by a bare value (no operator) continues the list.
+      const rest = chars.slice(i + 1).join("");
+      const nextPiece = rest.split(",")[0] ?? "";
+      const looksLikeCondition = /[=<>≠∈]|\bis\b|\bin\b|\bpresent\b|\bmissing\b/i.test(nextPiece);
+      if (/∈/.test(cur) && !looksLikeCondition) { cur += ch; continue; }
+      out.push(cur); cur = "";
+    } else cur += ch;
   }
   if (cur.trim()) out.push(cur);
   return out;
@@ -47,6 +56,12 @@ function parseCondition(s: string): Condition | null {
   if (m) return { field: m[1] as string, op: "is null" };
   m = /^([a-zA-Z0-9_.]+)\s*(?:∈|in)\s*[\{\[\(]([^\}\]\)]*)[\}\]\)]$/i.exec(s);
   if (m) return { field: m[1] as string, op: "in", value: (m[2] as string).split(/[,|]/).map((v) => v.trim()).filter(Boolean) };
+  m = /^([a-zA-Z0-9_.]+)\s*∈\s*(.+)$/.exec(s);
+  if (m) return { field: m[1] as string, op: "in", value: (m[2] as string).split(/[,|]/).map((v) => v.trim()).filter(Boolean) };
+  m = /^([a-zA-Z0-9_.]+)\s+present$/i.exec(s);
+  if (m) return { field: m[1] as string, op: "is not null" };
+  m = /^([a-zA-Z0-9_.]+)\s+(?:missing|absent)$/i.exec(s);
+  if (m) return { field: m[1] as string, op: "is null" };
   m = /^([a-zA-Z0-9_.]+)\s*(>=|<=|!=|≠|=|>|<)\s*(.+)$/.exec(s);
   if (m) {
     const op = (m[2] === "≠" ? "!=" : m[2]) as Op;

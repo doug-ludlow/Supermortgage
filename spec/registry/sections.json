@@ -1,0 +1,249 @@
+[
+  {
+    "n": 1,
+    "title": "Boarding / Servicing Transfer-In",
+    "path": "sections/01-boarding-servicing-transfer-in",
+    "processes": [
+      "1.1",
+      "1.2",
+      "1.3",
+      "1.4",
+      "1.5",
+      "1.6",
+      "1.7"
+    ]
+  },
+  {
+    "n": 2,
+    "title": "Payment Processing & Cashiering",
+    "path": "sections/02-payment-processing-cashiering",
+    "processes": [
+      "2.1",
+      "2.2",
+      "2.3",
+      "2.4",
+      "2.5",
+      "2.6",
+      "2.7"
+    ]
+  },
+  {
+    "n": 3,
+    "title": "Escrow Administration",
+    "path": "sections/03-escrow-administration",
+    "processes": [
+      "3.1",
+      "3.2",
+      "3.3",
+      "3.4",
+      "3.5",
+      "3.6",
+      "3.7",
+      "3.8",
+      "3.9"
+    ]
+  },
+  {
+    "n": 4,
+    "title": "Customer Service & Borrower Communications",
+    "path": "sections/04-customer-service-borrower-communications",
+    "processes": [
+      "4.1",
+      "4.2",
+      "4.3",
+      "4.4",
+      "4.5"
+    ]
+  },
+  {
+    "n": 5,
+    "title": "Investor Reporting & Remittance (Fannie Mae)",
+    "path": "sections/05-investor-reporting-remittance-fannie-mae",
+    "processes": [
+      "5.1",
+      "5.2",
+      "5.3",
+      "5.4",
+      "5.5",
+      "5.6",
+      "5.7"
+    ]
+  },
+  {
+    "n": 6,
+    "title": "Custodial Account Management",
+    "path": "sections/06-custodial-account-management",
+    "processes": [
+      "6.1",
+      "6.2",
+      "6.3",
+      "6.4",
+      "6.5"
+    ]
+  },
+  {
+    "n": 7,
+    "title": "Compliance Notices & Disclosures",
+    "path": "sections/07-compliance-notices-disclosures",
+    "processes": [
+      "7.1",
+      "7.2",
+      "7.3",
+      "7.4",
+      "7.5",
+      "7.6"
+    ]
+  },
+  {
+    "n": 8,
+    "title": "Credit Reporting",
+    "path": "sections/08-credit-reporting",
+    "processes": [
+      "8.1",
+      "8.2",
+      "8.3"
+    ]
+  },
+  {
+    "n": 9,
+    "title": "Insurance & Property Protection",
+    "path": "sections/09-insurance-property-protection",
+    "processes": [
+      "9.1",
+      "9.2",
+      "9.3",
+      "9.4",
+      "9.5",
+      "9.6",
+      "9.7",
+      "9.8",
+      "9.9"
+    ]
+  },
+  {
+    "n": 10,
+    "title": "PMI Administration",
+    "path": "sections/10-pmi-administration",
+    "processes": [
+      "10.1",
+      "10.2",
+      "10.3",
+      "10.4",
+      "10.5",
+      "10.6"
+    ]
+  },
+  {
+    "n": 11,
+    "title": "Early Intervention & Collections",
+    "path": "sections/11-early-intervention-collections",
+    "processes": [
+      "11.1",
+      "11.2",
+      "11.3",
+      "11.4",
+      "11.5"
+    ]
+  },
+  {
+    "n": 12,
+    "title": "Loss Mitigation",
+    "path": "sections/12-loss-mitigation",
+    "processes": [
+      "12.1",
+      "12.2",
+      "12.3",
+      "12.4",
+      "12.5",
+      "12.6",
+      "12.7",
+      "12.8",
+      "12.9"
+    ]
+  },
+  {
+    "n": 13,
+    "title": "Foreclosure",
+    "path": "sections/13-foreclosure",
+    "processes": [
+      "13.1",
+      "13.2",
+      "13.3",
+      "13.4",
+      "13.5",
+      "13.6",
+      "13.7",
+      "13.8",
+      "13.9"
+    ]
+  },
+  {
+    "n": 14,
+    "title": "Bankruptcy",
+    "path": "sections/14-bankruptcy",
+    "processes": [
+      "14.1",
+      "14.2",
+      "14.3",
+      "14.4"
+    ]
+  },
+  {
+    "n": 15,
+    "title": "REO / Claims / Expense Reimbursement",
+    "path": "sections/15-reo-claims-expense-reimbursement",
+    "processes": [
+      "15.1",
+      "15.2",
+      "15.3",
+      "15.4"
+    ]
+  },
+  {
+    "n": 16,
+    "title": "Payoff & Lien Release",
+    "path": "sections/16-payoff-lien-release",
+    "processes": [
+      "16.1",
+      "16.2",
+      "16.3",
+      "16.4"
+    ]
+  },
+  {
+    "n": 17,
+    "title": "Servicing Transfer-Out",
+    "path": "sections/17-servicing-transfer-out",
+    "processes": [
+      "17.1",
+      "17.2",
+      "17.3",
+      "17.4"
+    ]
+  },
+  {
+    "n": 18,
+    "title": "QC, Audit & Regulatory Reporting",
+    "path": "sections/18-qc-audit-regulatory-reporting",
+    "processes": [
+      "18.1",
+      "18.2",
+      "18.3",
+      "18.4",
+      "18.5",
+      "18.6",
+      "18.7"
+    ]
+  },
+  {
+    "n": 19,
+    "title": "Data, Security & Recordkeeping",
+    "path": "sections/19-data-security-recordkeeping",
+    "processes": [
+      "19.1",
+      "19.2",
+      "19.3",
+      "19.4"
+    ]
+  }
+]

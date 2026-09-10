@@ -94,6 +94,12 @@ the agent layer are the next build phases.
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how a section is added and
 which conventions are non-negotiable.
 
+## Audit
+
+`docs/audit/AUDIT-REPORT.md` is the end-of-build audit against the spec (coverage numbers from
+`npm run audit`, defects from a rule-by-rule reading of eight engines). Read it before trusting the
+status table above: the spine is faithful, the per-section depth is not complete.
+
 ## Ops console
 
 The console is the spec's "human path": when an agent's AI path is off (18.1 kill switch or an operator toggle) the same queues are worked by people with the same commands and rule codes. Roles come from `x-actor-id` / `x-actor-role` (set at the edge by the 19.2 identity provider; the UI's role picker in development). `auditor` and `examiner` are read-only and every request is written to `access_log`.

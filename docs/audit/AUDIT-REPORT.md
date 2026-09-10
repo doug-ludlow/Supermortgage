@@ -1,0 +1,83 @@
+# End-of-build audit against `spec/`
+
+Date: 2026-09-10. Scope: everything on `claude/mortgage-subservicer-builder-y9nr7e` through commit `0127fab`,
+measured against the 114-process spec. Two layers: a mechanical coverage audit (`tools/audit.py`,
+results in `coverage.json`) and a hands-on reading of spec rules against code for eight engines.
+
+## Verdict
+
+The platform spine is real and faithful: append-only events, a balanced bigint ledger, the four calendars,
+a registry-driven timer engine, migrations for the whole data model, an idempotent outbox, a rule-checked
+Notice Registry, a command bus with role gates and decision records, and an ops console. Where I compared
+spec arithmetic to code line by line, the engines mostly match, and the spec's own worked examples are
+reproduced in tests for the core money paths (2.1, 3.2, 5.2, 8.1, 10.2, 16.1).
+
+It is **not** a complete implementation of the packet, and earlier status lines overstated it. The build
+is broad and shallow: every section has a computational core, but roughly half of the acceptance tests,
+most notice templates, most agent tool surfaces, and the per-section persistence are not built, and one
+calendar defect affects Fannie Mae deadlines around Thanksgiving. Details follow.
+
+## 1. Coverage (mechanical)
+
+| Item | Spec | Built | Notes |
+|---|---|---|---|
+| T-numbered acceptance tests | 1,253 | 677 referenced by a test (54%) | Lower bound: tests bundle several T-ids per case ("3.2-T2..T5"), which also breaks the CLAUDE.md rule of one verbatim `node:test` per T. Six processes have no T-id test at all: 3.3, 3.5, 3.6, 3.8, 3.9, 5.5. Worst sections: §3 (13/102), §11 (29/83), §13 (33/94), §12 (40/96). |
+| Worked-example money figures | 624 | 268 verbatim (43%), 314 loosely (50%) | Figures in `$1,234.56` form in "Business rules" that appear as cents or dollars in the section's tests. Weakest: 7.1 (1/11), 11.5 (1/8), 13.6 (1/7), 12.8 (3/20), 10.2 (1/6), 14.2 (2/12). |
+| Data-model tables | 450 named | 431 created | Real gaps (not registry/enum false positives): `ledger_accounts`, `payees`, `lossmit_facts`, `servicer_advance_receivable` (account), `dq_status_code_map`, `accuracy_program`, `frequency_counters`, `lossmit_contact_attempts`, `lossmit_notices`, `dil_cases`, `mi_claim_events`, `contact_scripts`, `pen_tests`. Sampled `payments` (2.1) matches the spec field for field. |
+| Tables written or read by code | 450 | 22 | Domain code persists only the spine: `loan_events`, ledger sets/lines, `timers`, `agent_decisions`, notices (+versions, checklist, deliveries), `integration_messages`, `human_portal_tasks`, `escalations`, `access_log`, and the loan/party/property/custodial fixture. Every section table (payments, escrow analyses, MI schedules, cases, claims …) is schema-only. |
+| Timer rows armable | 1,206 unique | 1,206 | True. But **521 unique codes have no parseable `satisfied` pattern** (278 deadlines, 133 not-before gates, 47 recurring …): those deadlines will breach unconditionally and those gates never close mechanically. The overrides fixed offsets and triggers, not satisfaction. |
+| Notice templates | 248 codes | 6 with content and rules | The other 242 are registered shells (class, channel policy, citation) with no template body or checklist. |
+| Agents / tools | 20 agents, 544 tools | 20 agents, 5 commands on the bus | 109 gate evaluators exist but only 3 commands call them; the ~100 guardrail sentences in the spec are encoded only where those 5 commands touch them. |
+| Integration adapters | 25 named | 23 ports | Missing: `email-in`, `fnma-auth`, `index-feed`. LAR codec covers 96/97 only. |
+| Ops console workbenches | ~30 named ("Reconciliation Workbench", "Posting Queue", "MERS workbench", "Statement cycle run" …) | 0 | The console has the cross-cutting queues, loan record, dashboard and AI toggles; no section workbench runs a section command. |
+
+## 2. Correctness defects found by spec-versus-code reading
+
+Ordered by consequence.
+
+1. **Fannie Mae-only holidays are not modeled.** `fannieEt` is the federal calendar. Spec 5.2 rule 5: a
+   payment processed Wed 2026-11-25 reports Mon 2026-11-30 because Nov 26–27 are Fannie Mae holidays;
+   the kernel returns Fri 2026-11-27. Every `business_days_fannie_et` deadline near Thanksgiving is one day
+   early or late, and 5.1's "calendar table carries both flags" (`holiday_calendars`, transcribed each
+   December) is hard-coded instead. (`src/kernel/calendar/business.ts`)
+2. **12.8 Flex Modification waterfall.** Step 4 must extend the term one month at a time up to 480 and stop
+   when P&I ≤ target; the code jumps straight to 480, so a borrower whose target is met at, say, 400 months
+   gets a 480-month term. Step 3 never back-solves the partial increment that lands exactly on the MIR
+   floor. The worked example passes only because its target is not reachable before 480.
+   (`src/domain/lossmit/flexmod.ts`)
+3. **16.1 state deadline matrix is incomplete in code.** Only MA, FL and CA are implemented; NY 30 CD,
+   NC 10 CD, TX 7 BD and the CT rule the spec and the timer override cite are missing. Rule 7 alternative
+   figures (installment between calc date and good-through) are not implemented. (`src/domain/payoff/quote.ts`)
+4. **3.2 R1 line projection is not built.** The engine takes already-projected items; the prior-year × CPI
+   estimate basis, comparable assessments for new construction and the R10 "estimate older than 2 years"
+   anomaly are absent. R2–R9 and the Appendix E replay match. (`src/domain/escrow/analysis.ts`)
+5. **2.1 DSI and biweekly interest.** All installment interest is 30/360 monthly; the spec's day-count
+   method for `interest_method` = daily simple / biweekly is not implemented. (`src/domain/cashiering/allocation.ts`)
+6. **Timers that cannot be satisfied** (row above): operational correctness, not arithmetic — a
+   compliance dashboard would show hundreds of false breaches.
+7. **Ops console trusts `x-actor-id` / `x-actor-role` headers.** By design a placeholder for the 19.2
+   identity provider, but it must never be exposed without that edge. (`src/console/server.ts`)
+8. **Spec-internal inconsistencies** (18) where the engine chose one reading are listed in
+   `docs/AUDIT-NOTES.md`; each needs a counsel or product decision, not a code change.
+
+## 3. What matched on close reading
+
+- 3.2 escrow analysis R2–R9: base payment, trial balance, zeroing, cushion floor and 1/6 cap, surplus/shortage/deficiency, the (f) decision matrix and defaults, installment arithmetic, effective date; Appendix E replay and the $138.33 / $406.68 / $33.89 / $172.22 example.
+- 13.1 gates: day-121 rule (Jan 1 → May 2), unknown occupancy treated as principal residence, E-3.2-04 suspension ladder, inquiries and incomplete BRPs never postpone.
+- 2.1 allocation: overlay order, FIFO installments, 1999+/pre-1999 bucket order, interest on UPB as of LPI, late charges only after all installments, subordinate-lien instruction refused, worked example A to the cent.
+- 5.2 remittance: S/S scheduled roll ($1,476.00 / .10 / .19 / .29), S/A month-4 recovery, A/A servicing-fee split, payoff interest by type.
+- 10.2 automatic termination: month-preceding current test, cure → first of following month, 30/30/45-day and 2-BD finalization clocks, LAR 89 action date.
+- 16.1 accrual: full months + partial 365-day block, per diem, worked example A ($250,390.82).
+- 8.1 Metro 2: T1–T19 including the delinquency buckets, forbearance freeze, deferral K4 segment and rounding policy.
+- Persistence, outbox, notice checklist, command-bus gates and console actions behave as their tests state, including against Postgres.
+
+## 4. What "implement it all" would still take
+
+In priority order: (a) satisfaction patterns for the 521 timers (cited overrides, same method as the offsets);
+(b) the Fannie Mae holiday table and the two arithmetic fixes above; (c) one verbatim test per T-id, starting
+with the six untested processes and §3/§11/§12/§13; (d) per-section repositories so the 415 schema-only tables
+are written by the services; (e) template bodies and checklists for the 242 remaining notices; (f) the
+remaining ~540 agent tools as bus commands with the spec's guardrails, and the console workbenches over them;
+(g) the three missing adapters and the LAR 81/83/89 codecs.
+
+Reproduce the numbers with `npm run audit`.

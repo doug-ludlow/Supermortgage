@@ -59,6 +59,12 @@ test("probes answer without auth; everything else needs the bearer token", { ski
   const ready = await call("GET", "/readyz", undefined, null); assert.equal(ready.status, 200); assert.deepEqual(await ready.json(), { ok: true, database: "reachable" });
   assert.equal((await call("GET", "/v1/tools", undefined, null)).status, 401);
   assert.equal((await call("GET", "/v1/tools", undefined, "wrong")).status, 401);
+  // /login is reachable without the header: it is how a browser presents the token; a wrong token is refused, the right one sets the cookie
+  assert.equal((await fetch(`${base}/login?token=wrong`, { redirect: "manual" })).status, 401);
+  const login = await fetch(`${base}/login?token=${encodeURIComponent(TOKEN)}`, { redirect: "manual" });
+  assert.equal(login.status, 302); assert.match(login.headers.get("set-cookie") ?? "", /^sm_token=/);
+  const viaCookie = await fetch(`${base}/v1/tools`, { headers: { cookie: `sm_token=${encodeURIComponent(TOKEN)}` } });
+  assert.equal(viaCookie.status, 200);
   const tools = (await (await call("GET", "/v1/tools")).json()) as { tools: { process: string; name: string }[] };
   assert.ok(tools.tools.length > 600, `${tools.tools.length} tools on the bus`);
   assert.ok(tools.tools.some((t) => t.process === "1.1" && t.name === "mapField"));

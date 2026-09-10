@@ -75,13 +75,14 @@ export function createApiServer(opts: ServerOptions): Server {
     try {
       if (method === "GET" && path === "/healthz") { done(200, { ok: true }); return; }
       if (method === "GET" && path === "/readyz") { const ok = await runtime.ready(); done(ok ? 200 : 503, { ok, database: ok ? "reachable" : "unreachable" }); return; }
-      if (!authorized(req)) { done(401, { error: "unauthorized", hint: "Authorization: Bearer <API_TOKEN>" }); return; }
+      // /login is how a browser presents the token (it cannot send the header), so it runs before the token check
       if (method === "GET" && path === "/login") {
         const t = url.searchParams.get("token") ?? "";
-        if (!opts.apiToken || !same(t, opts.apiToken)) { done(401, { error: "unauthorized" }); return; }
+        if (!opts.apiToken || !same(t, opts.apiToken)) { done(401, { error: "unauthorized", hint: "GET /login?token=<API_TOKEN>: the token did not match" }); return; }
         res.writeHead(302, { location: "/", "set-cookie": `sm_token=${encodeURIComponent(t)}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=43200` }); res.end();
         logger.info("http", { method, path: "/login", status: 302, ms: Date.now() - started }); return;
       }
+      if (!authorized(req)) { done(401, { error: "unauthorized", hint: "Authorization: Bearer <API_TOKEN>" }); return; }
       if (method === "GET" && path === "/v1/tools") { done(200, { tools: runtime.listTools() }); return; }
       let m: RegExpExecArray | null;
       if (method === "POST" && (m = /^\/v1\/(?:loans\/([^/]+)\/)?tools\/([^/]+)\/([^/]+)$/.exec(path))) {

@@ -15,6 +15,7 @@ import { SECTION_03_VERSIONS } from "./authored/section03.ts";
 import { SECTION_04_VERSIONS } from "./authored/section04.ts";
 import { SECTION_07_VERSIONS } from "./authored/section07.ts";
 import { SECTION_08_VERSIONS } from "./authored/section08.ts";
+import { SECTION_09_VERSIONS } from "./authored/section09.ts";
 
 interface CatalogEntry { readonly code: string; readonly owner_process: string; readonly mentions: readonly string[]; readonly context: string; }
 
@@ -65,8 +66,10 @@ const OVERRIDES: Record<string, Partial<NoticeTemplate>> = {
   NTC_REGZ_41_STMT_TPP: { citation: "12 CFR 1026.41(d); comment 41(d)(1)-2" },
   NTC_REGZ_41_STMT_AVAIL_EMAIL: { channelPolicy: "electronic_ok_without_esign", citation: "comment 41(c)-3" },
   INS_FPI_FIRST_MS3A: { citation: "12 CFR 1024.37(c)(2); Appendix MS-3(A)", channelPolicy: "esign_or_mail" },
-  INS_FPI_REMINDER_NOINFO_MS3B: { citation: "12 CFR 1024.37(d)(2)(i); Appendix MS-3(B)" },
-  INS_FPI_REMINDER_INSUFF_MS3C: { citation: "12 CFR 1024.37(d)(2)(ii); Appendix MS-3(C)" },
+  INS_FLOOD_FPI_NOTICE_45: { separateDocument: true, mayCombineWith: ["INS_FPI_FIRST_MS3A"], citation: "42 U.S.C. 4012a(e)(1); RESPA §6(l)(4)" },
+  INS_FPI_REMINDER_NOINFO_MS3B: { channelPolicy: "mail_only", citation: "12 CFR 1024.37(d)(2)(i); Appendix MS-3(B)" },
+  INS_FPI_REMINDER_INSUFF_MS3C: { channelPolicy: "mail_only", citation: "12 CFR 1024.37(d)(2)(ii); Appendix MS-3(C)" },
+  INS_FPI_RENEWAL_MS3D: { citation: "12 CFR 1024.37(e)(2); Appendix MS-3(D)" },
   NTC_REGX_1024_33B_HELLO_MS2: { citation: "12 CFR 1024.33(b); Appendix MS-2", mayCombineWith: ["NTC_REGP_1016_4_INITIAL_PRIVACY", "NTC_REGX_1024_17G_INITIAL_ESCROW_STMT"] },
   NTC_SM_ESCROW_VOLUNTARY_LUMPSUM_INSERT: { separateDocument: true, mayCombineWith: ["NTC_REGX_1024_17I_ANNUAL_ESCROW_STMT"], citation: "CFPB escrow FAQ; 12 CFR 1024.17(f)(3)" },
   NTC_REGX_41B2_ACK_INCOMPLETE: { citation: "12 CFR 1024.41(b)(2)(i)(B)" },
@@ -232,4 +235,5 @@ export const AUTHORED_VERSIONS: readonly VersionInput[] = [
   ...SECTION_04_VERSIONS,
   ...SECTION_07_VERSIONS,
   ...SECTION_08_VERSIONS,
+  ...SECTION_09_VERSIONS,
 ];

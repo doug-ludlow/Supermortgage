@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 3026/4597 (65.8%): tids 928/1253, tables 440/449, timers 931/1365, notices 98/248, tools 262/658, figures 367/624; processes at 100%: 49/114",
+ "brief": "spec units built 3176/4584 (69.3%): tids 945/1253, tables 440/449, timers 973/1365, notices 116/235, tools 312/658, figures 390/624; processes at 100%: 58/114",
  "totals": {
   "tids": {
    "spec": 1253,
-   "built": 928
+   "built": 945
   },
   "tables": {
    "spec": 449,
@@ -11,23 +11,23 @@
   },
   "timers": {
    "spec": 1365,
-   "built": 931
+   "built": 973
   },
   "notices": {
-   "spec": 248,
-   "built": 98
+   "spec": 235,
+   "built": 116
   },
   "tools": {
    "spec": 658,
-   "built": 262
+   "built": 312
   },
   "figures": {
    "spec": 624,
-   "built": 367
+   "built": 390
   },
   "units": {
-   "spec": 4597,
-   "built": 3026
+   "spec": 4584,
+   "built": 3176
   }
  },
  "sections": {
@@ -80,10 +80,10 @@
    "done": 3
   },
   "9": {
-   "spec": 286,
-   "built": 125,
+   "spec": 273,
+   "built": 273,
    "processes": 9,
-   "done": 0
+   "done": 9
   },
   "10": {
    "spec": 198,
@@ -117,7 +117,7 @@
   },
   "15": {
    "spec": 241,
-   "built": 87,
+   "built": 89,
    "processes": 4,
    "done": 0
   },
@@ -195,7 +195,16 @@
   "7.6",
   "8.1",
   "8.2",
-  "8.3"
+  "8.3",
+  "9.1",
+  "9.2",
+  "9.3",
+  "9.4",
+  "9.5",
+  "9.6",
+  "9.7",
+  "9.8",
+  "9.9"
  ],
  "processes": [
   {
@@ -2212,11 +2221,9 @@
    "title": "Hazard insurance tracking",
    "tids": {
     "spec": 10,
-    "built": 9,
-    "todo": 1,
-    "missing": [
-     10
-    ]
+    "built": 10,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 5,
@@ -2225,62 +2232,39 @@
    },
    "timers": {
     "spec": 9,
-    "built": 6,
+    "built": 9,
     "armable": 9,
-    "missing": [
-     "FNMA_B203_MASTER_POLICY_ANNUAL_VERIFY_365",
-     "FNMA_B301_FLOOD_EVIDENCE_TO_FNMA_10BD",
-     "INS_EXPIRATION_WATCH_60"
-    ]
+    "missing": []
    },
    "notices": {
-    "spec": 6,
-    "built": 0,
-    "missing": [
-     "INS_ANNUAL_REMINDER",
-     "INS_DEFICIENCY_NOTICE",
-     "INS_DEFICIENCY_NOTICE_BK",
-     "INS_EOI_REQUEST",
-     "INS_EXPIRATION_LAPSE_1",
-     "INS_EXPIRATION_WATCH_60"
-    ]
+    "spec": 4,
+    "built": 4,
+    "missing": []
    },
    "tools": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "recordDeficiency",
-     "requestEscrowLineUpdate",
-     "openCase"
-    ]
+    "built": 3,
+    "missing": []
    },
    "figures": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "$2,500.00"
-    ]
+    "built": 1,
+    "missing": []
    },
    "units": {
-    "spec": 34,
-    "built": 20
+    "spec": 32,
+    "built": 32
    },
-   "pct": 58.8
+   "pct": 100.0
   },
   {
    "process": "9.2",
    "title": "Force-placed insurance \u2014 first notice",
    "tids": {
     "spec": 11,
-    "built": 6,
-    "todo": 5,
-    "missing": [
-     5,
-     6,
-     7,
-     9,
-     10
-    ]
+    "built": 11,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 4,
@@ -2289,46 +2273,30 @@
    },
    "timers": {
     "spec": 8,
-    "built": 5,
+    "built": 8,
     "armable": 8,
-    "missing": [
-     "REGX_1024_37C1III_FPI_EVIDENCE_WINDOW_15",
-     "REGX_1024_37D5_NOTICE_PRODUCTION_5BD",
-     "REGX_1024_37D_FPI_REMINDER_BEFORE_CHARGE_15"
-    ]
+    "missing": []
    },
    "notices": {
-    "spec": 5,
-    "built": 1,
-    "missing": [
-     "INS_FPI_FIRST_NOTICE_SLA_3BD",
-     "INS_FPI_REMINDER_INSUFF_MS3C",
-     "INS_FPI_REMINDER_NOINFO_MS3B",
-     "INS_FPI_RENEWAL_MS3D"
-    ]
+    "spec": 4,
+    "built": 4,
+    "missing": []
    },
    "tools": {
     "spec": 2,
-    "built": 0,
-    "missing": [
-     "assessReasonableBasis",
-     "checkEscrowGuard"
-    ]
+    "built": 2,
+    "missing": []
    },
    "figures": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "$2,190.00",
-     "$250,000.00",
-     "$250,000.01"
-    ]
+    "built": 3,
+    "missing": []
    },
    "units": {
-    "spec": 33,
-    "built": 16
+    "spec": 32,
+    "built": 32
    },
-   "pct": 48.5
+   "pct": 100.0
   },
   {
    "process": "9.3",
@@ -2346,41 +2314,30 @@
    },
    "timers": {
     "spec": 5,
-    "built": 2,
+    "built": 5,
     "armable": 5,
-    "missing": [
-     "REGX_1024_37C1III_FPI_EVIDENCE_WINDOW_15",
-     "REGX_1024_37D5_NOTICE_PRODUCTION_5BD",
-     "REGX_1024_37D_FPI_REMINDER_BEFORE_CHARGE_15"
-    ]
+    "missing": []
    },
    "notices": {
-    "spec": 1,
+    "spec": 0,
     "built": 0,
-    "missing": [
-     "INS_FPI_REMINDER_TARGET_30_35"
-    ]
+    "missing": []
    },
    "tools": {
     "spec": 2,
-    "built": 0,
-    "missing": [
-     "selectReminderVariant",
-     "quoteLpi"
-    ]
+    "built": 2,
+    "missing": []
    },
    "figures": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "$2,190.00"
-    ]
+    "built": 1,
+    "missing": []
    },
    "units": {
-    "spec": 16,
-    "built": 9
+    "spec": 15,
+    "built": 15
    },
-   "pct": 56.2
+   "pct": 100.0
   },
   {
    "process": "9.4",
@@ -2398,50 +2355,39 @@
    },
    "timers": {
     "spec": 4,
-    "built": 3,
+    "built": 4,
     "armable": 4,
-    "missing": [
-     "REGX_1024_37E_FPI_RENEWAL_NOTICE_45"
-    ]
+    "missing": []
    },
    "notices": {
-    "spec": 1,
+    "spec": 0,
     "built": 0,
-    "missing": [
-     "INS_FPI_RENEWAL_COVERAGE_REVIEW_60"
-    ]
+    "missing": []
    },
    "tools": {
     "spec": 2,
-    "built": 0,
-    "missing": [
-     "reviewLpiCoverage",
-     "quoteLpiRenewal"
-    ]
+    "built": 2,
+    "missing": []
    },
    "figures": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "$2,250.00"
-    ]
+    "built": 1,
+    "missing": []
    },
    "units": {
-    "spec": 14,
-    "built": 9
+    "spec": 13,
+    "built": 13
    },
-   "pct": 64.3
+   "pct": 100.0
   },
   {
    "process": "9.5",
    "title": "Force-placed cancellation/refund",
    "tids": {
     "spec": 7,
-    "built": 6,
-    "todo": 1,
-    "missing": [
-     3
-    ]
+    "built": 7,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 1,
@@ -2450,66 +2396,39 @@
    },
    "timers": {
     "spec": 4,
-    "built": 1,
+    "built": 4,
     "armable": 4,
-    "missing": [
-     "FDPA_4012A_E3_FLOOD_LPI_TERMINATE_REFUND_30",
-     "INS_FPI_CARRIER_REFUND_RECON_45",
-     "INS_FPI_EVIDENCE_EVAL_2BD"
-    ]
+    "missing": []
    },
    "notices": {
-    "spec": 3,
-    "built": 0,
-    "missing": [
-     "INS_FPI_CANCEL_REFUND_CONFIRM",
-     "INS_FPI_CARRIER_REFUND_RECON_45",
-     "INS_FPI_EVIDENCE_EVAL_2BD"
-    ]
+    "spec": 1,
+    "built": 1,
+    "missing": []
    },
    "tools": {
     "spec": 6,
-    "built": 0,
-    "missing": [
-     "evaluateEvidence",
-     "computeOverlapRefund",
-     "requestLpiCancel",
-     "postRefund",
-     "payRefund",
-     "notifyBorrower"
-    ]
+    "built": 6,
+    "missing": []
    },
    "figures": {
     "spec": 9,
-    "built": 2,
-    "missing": [
-     "$1,700.00",
-     "$1,740.00",
-     "$150.00",
-     "$2,190.00",
-     "$40.00",
-     "$450.00",
-     "$600.00"
-    ]
+    "built": 9,
+    "missing": []
    },
    "units": {
-    "spec": 30,
-    "built": 10
+    "spec": 28,
+    "built": 28
    },
-   "pct": 33.3
+   "pct": 100.0
   },
   {
    "process": "9.6",
    "title": "Flood insurance / mandatory purchase",
    "tids": {
     "spec": 9,
-    "built": 6,
-    "todo": 3,
-    "missing": [
-     6,
-     7,
-     8
-    ]
+    "built": 9,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 5,
@@ -2518,62 +2437,39 @@
    },
    "timers": {
     "spec": 9,
-    "built": 3,
+    "built": 9,
     "armable": 9,
-    "missing": [
-     "FDPA_4012A_E3_FLOOD_LPI_TERMINATE_REFUND_30",
-     "FDPA_4012A_E_FLOOD_FPI_NOTICE_45",
-     "FLOOD_EVIDENCE_EVAL_2BD",
-     "FLOOD_LOL_HEARTBEAT_35",
-     "FNMA_B301_FLOOD_EVIDENCE_TO_FNMA_10BD",
-     "NFIP_44CFR6111_MAP_REVISION_1DAY_13M"
-    ]
+    "missing": []
    },
    "notices": {
-    "spec": 6,
-    "built": 0,
-    "missing": [
-     "INS_FLOOD_FPI_NOTICE_45",
-     "INS_FLOOD_FPI_PLACED_NOTICE",
-     "INS_FLOOD_MAP_CHANGE_NOTICE",
-     "INS_FLOOD_NOTICE_SLA_3BD",
-     "INS_FLOOD_REMOVED_NOTICE",
-     "INS_FLOOD_TERMINATION_REFUND_CONFIRM"
-    ]
+    "spec": 5,
+    "built": 5,
+    "missing": []
    },
    "tools": {
     "spec": 4,
-    "built": 0,
-    "missing": [
-     "orderDetermination",
-     "evaluateStructures",
-     "computeFloodRequirement",
-     "evaluatePrivateFloodPolicy"
-    ]
+    "built": 4,
+    "missing": []
    },
    "figures": {
     "spec": 2,
-    "built": 1,
-    "missing": [
-     "$1,150.00"
-    ]
+    "built": 2,
+    "missing": []
    },
    "units": {
-    "spec": 35,
-    "built": 15
+    "spec": 34,
+    "built": 34
    },
-   "pct": 42.9
+   "pct": 100.0
   },
   {
    "process": "9.7",
    "title": "Loss draft / insurance claim handling",
    "tids": {
     "spec": 10,
-    "built": 9,
-    "todo": 1,
-    "missing": [
-     10
-    ]
+    "built": 10,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 4,
@@ -2582,82 +2478,39 @@
    },
    "timers": {
     "spec": 11,
-    "built": 4,
+    "built": 11,
     "armable": 11,
-    "missing": [
-     "FNMA_B501_REMIT_PROCEEDS_REOGRAM_30",
-     "FNMA_B501_WIRE_POSTREOGRAM_PROCEEDS_10BD",
-     "FNMA_D1301_DISASTER_FC_APPROVAL_5",
-     "FNMA_F105_INSURED_LOSS_INSPECT_CLAIM_365",
-     "INS_CLAIM_INITIAL_RELEASE_5BD",
-     "INS_CLAIM_INSPECTION_ORDER_3BD",
-     "INS_CLAIM_STALE_90"
-    ]
+    "missing": []
    },
    "notices": {
-    "spec": 9,
-    "built": 0,
-    "missing": [
-     "INS_CLAIM_CONTENTS_RELEASE_2BD",
-     "INS_CLAIM_INITIAL_RELEASE_5BD",
-     "INS_CLAIM_INSPECTION_ORDER_3BD",
-     "INS_CLAIM_STALE_90",
-     "INS_LOSS_DRAFT_FINAL_LETTER",
-     "INS_LOSS_DRAFT_PACKAGE",
-     "INS_LOSS_DRAFT_RELEASE_LETTER",
-     "INS_LOSS_DRAFT_UPB_APPLICATION_NOTICE",
-     "INS_UNINSURED_LOSS_LETTER"
-    ]
+    "spec": 5,
+    "built": 5,
+    "missing": []
    },
    "tools": {
     "spec": 12,
-    "built": 0,
-    "missing": [
-     "openClaim",
-     "computeReleaseSchedule",
-     "requestEndorsement",
-     "depositInstrument",
-     "releaseFunds",
-     "orderRepairInspection",
-     "verifyRemoteInspection",
-     "prepareForm176",
-     "remitProceeds332",
-     "applyToUpb",
-     "openWorkoutEvaluation",
-     "escalate"
-    ]
+    "built": 12,
+    "missing": []
    },
    "figures": {
     "spec": 8,
-    "built": 0,
-    "missing": [
-     "$1,000.00",
-     "$10,000.00",
-     "$131.51",
-     "$15,000.00",
-     "$20,000.00",
-     "$240,000.00",
-     "$40,000.00",
-     "$60,000.00"
-    ]
+    "built": 8,
+    "missing": []
    },
    "units": {
-    "spec": 54,
-    "built": 17
+    "spec": 50,
+    "built": 50
    },
-   "pct": 31.5
+   "pct": 100.0
   },
   {
    "process": "9.8",
    "title": "Property inspection (delinquent)",
    "tids": {
     "spec": 9,
-    "built": 7,
-    "todo": 2,
-    "missing": [
-     3,
-     5
-    ]
+    "built": 9,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 3,
@@ -2666,17 +2519,9 @@
    },
    "timers": {
     "spec": 11,
-    "built": 4,
+    "built": 11,
     "armable": 11,
-    "missing": [
-     "FNMA_D2210_INSPECT_ORDER_DAY90",
-     "FNMA_D2210_INSPECT_RECUR_20_35",
-     "FNMA_D2210_VACANCY_INSPECT_ASAP_3BD",
-     "FNMA_D2210_VACANT_INTERIOR_MONTHLY_35",
-     "FNMA_F105_INSPECTION_CLAIM_60",
-     "FNMA_P360_PFPIP_STATUS_SYNC_2BD",
-     "FNMA_P360_PFPIP_SUBMIT_EXCEPTION_DAY45"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -2685,20 +2530,8 @@
    },
    "tools": {
     "spec": 11,
-    "built": 0,
-    "missing": [
-     "computeInspectionSchedule",
-     "orderInspection",
-     "evaluateInspectionResult",
-     "updateOccupancy",
-     "notifyCarrierVacancy",
-     "submitPfpip",
-     "updatePfpip",
-     "reconcilePfpip",
-     "openPreservation",
-     "openClaim",
-     "sendNotice"
-    ]
+    "built": 11,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -2707,23 +2540,18 @@
    },
    "units": {
     "spec": 34,
-    "built": 14
+    "built": 34
    },
-   "pct": 41.2
+   "pct": 100.0
   },
   {
    "process": "9.9",
    "title": "Property preservation (vacant)",
    "tids": {
     "spec": 11,
-    "built": 7,
-    "todo": 4,
-    "missing": [
-     7,
-     9,
-     10,
-     11
-    ]
+    "built": 11,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 5,
@@ -2732,51 +2560,30 @@
    },
    "timers": {
     "spec": 10,
-    "built": 3,
+    "built": 10,
     "armable": 10,
-    "missing": [
-     "FNMA_F105_PRESERVATION_CLAIM_60",
-     "FNMA_PPM_AUDIT_RESPONSE_7",
-     "FNMA_PPM_BID_RECONSIDER_7",
-     "FNMA_PPM_POST_NOTICE_SECURE_7",
-     "FNMA_PPM_ROOF_TARP_60",
-     "FNMA_PPM_WINDOW_DOOR_REPAIR_3",
-     "FNMA_PPM_YARD_REBID_15"
-    ]
+    "missing": []
    },
    "notices": {
-    "spec": 1,
+    "spec": 0,
     "built": 0,
-    "missing": [
-     "INS_VACANCY_CARRIER_NOTIFY_5BD"
-    ]
+    "missing": []
    },
    "tools": {
     "spec": 8,
-    "built": 0,
-    "missing": [
-     "buildInitialScope",
-     "checkAllowables",
-     "orderWork",
-     "reviewCompletion",
-     "prepareBid",
-     "fileRegistration",
-     "notifyCarrierVacancy",
-     "openClaim"
-    ]
+    "built": 8,
+    "missing": []
    },
    "figures": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "$1,250.00"
-    ]
+    "built": 1,
+    "missing": []
    },
    "units": {
-    "spec": 36,
-    "built": 15
+    "spec": 35,
+    "built": 35
    },
-   "pct": 41.7
+   "pct": 100.0
   },
   {
    "process": "10.1",
@@ -5253,7 +5060,7 @@
    },
    "timers": {
     "spec": 18,
-    "built": 2,
+    "built": 4,
     "armable": 18,
     "missing": [
      "FNMA_E501_EXPENSE_FINAL_60",
@@ -5265,8 +5072,6 @@
      "FNMA_F106_MI_EXPENSE_FINAL_30",
      "FNMA_IRT_RESPONSE_7",
      "FNMA_P360_PSA_RESPONSE_60",
-     "FNMA_PPM_AUDIT_RESPONSE_7",
-     "FNMA_PPM_BID_RECONSIDER_7",
      "SM_EXPENSE_CLAIM_TARGET_20",
      "SM_P360_ACH_MATCH_3BD",
      "SM_P360_PROCESSING_30",
@@ -5316,9 +5121,9 @@
    },
    "units": {
     "spec": 63,
-    "built": 23
+    "built": 25
    },
-   "pct": 36.5
+   "pct": 39.7
   },
   {
    "process": "15.3",

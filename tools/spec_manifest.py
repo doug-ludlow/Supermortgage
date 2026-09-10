@@ -14,7 +14,12 @@ agent_by_proc = {p['process']: p['agent'] for p in agents['processes']}
 timers_by_proc = {}
 for t in timers: timers_by_proc.setdefault(t['process'], set()).add(t['code'])
 notices_by_proc = {}
-for n in notices: notices_by_proc.setdefault(n['owner_process'], []).append(n['code'])
+# A handful of `INS_*` registry rows in notices.json are timer codes (INS_EXPIRATION_WATCH_60, INS_CLAIM_STALE_90 ...);
+# they are counted once, as timers, never as notice templates.
+timer_codes = {t['code'] for t in timers}
+for n in notices:
+    if n['code'] in timer_codes: continue
+    notices_by_proc.setdefault(n['owner_process'], []).append(n['code'])
 
 def tid_texts(pid, text):
     """T-id → verbatim Given/When/Then text (table rows `| 2.1-T1 | … |` or bullets `- 2.1-T1 …`)."""

@@ -46,4 +46,40 @@ export function applyInsuranceTimerOverrides(reg: TimerRegistry): void {
   o("FNMA_PPM_YARD_REBID_15", { trigger: "`preservation.condition.discovered{item=grass_over_12in}`", why: "§9.9 timer table: grass > 12″ after initial service → bid within 15 calendar days (or BATF for 12–36″) (PPM)." });
   // ---- pseudo-trigger rows -----------------------------------------------------
   o("FNMA_F105_PRESERVATION_CLAIM_60", { trigger: "`claim.milestone.reached`", why: "§9.9 timer table: milestone → preservation expense claim within 60 calendar days (F-1-05)." });
+  // ---- satisfaction events (spec "Satisfied by" prose → event patterns) ----
+  o("FNMA_B203_MASTER_POLICY_ANNUAL_VERIFY_365", { satisfied: "`insurance.master_policy.verified`", why: "§9.1 timer table: 'same' — the next annual master-policy verification (B-2-03)." });
+  o("INS_EXPIRATION_WATCH_60", { satisfied: "`insurance.evidence.confirmed{kind=renewal}`", why: "§9.1 timer table: 'renewal evidence'." });
+  o("FNMA_B301_FLOOD_EVIDENCE_TO_FNMA_10BD", { satisfied: "`fnma.request.responded{kind=flood_evidence}`", why: "§9.1 timer table: 'response sent' (B-3-01)." });
+  o("REGX_1024_37D_FPI_REMINDER_BEFORE_CHARGE_15", { satisfied: "`fpi.charge_gate.opened`", why: "§9.2 timer table: 'gate opens' 15 days after the reminder (§1024.37(d)(1))." });
+  o("REGX_1024_37C1III_FPI_EVIDENCE_WINDOW_15", { satisfied: "`fpi.evidence_window.evaluated`", why: "§9.2 timer table: 'evidence evaluation recorded at window end' (§1024.37(c)(1)(iii))." });
+  o("REGX_1024_37D5_NOTICE_PRODUCTION_5BD", { satisfied: "`fpi.notice.mailed`", why: "§9.2 timer table: 'mailing' within 5 federal business days of production (comment 37(d)(5)-1)." });
+  o("REGX_1024_37E_FPI_RENEWAL_NOTICE_45", { satisfied: "`fpi.renewal_charge_gate.opened`", why: "§9.4 timer table: the 45-day renewal-notice period ends and the charge gate opens (§1024.37(e)(1)(iii))." });
+  o("INS_FPI_EVIDENCE_EVAL_2BD", { satisfied: "`insurance.evidence.evaluated{outcome∈{confirmed, rejected}}`", why: "§9.5 timer table: `insurance.evidence.confirmed/rejected`." });
+  o("FDPA_4012A_E3_FLOOD_LPI_TERMINATE_REFUND_30", { satisfied: "`fpi.lpi.cancelled_and_refunded{kind=flood}`", why: "§9.5/9.6 timer tables: 'cancellation + refund' within 30 days (42 U.S.C. §4012a(e)(3))." });
+  o("INS_FPI_CARRIER_REFUND_RECON_45", { satisfied: "`fpi.carrier_refund.reconciled`", why: "§9.5 timer table: '`refund_advice` reconciled'." });
+  o("FDPA_4012A_E_FLOOD_FPI_NOTICE_45", { satisfied: "`flood.fpi.gate.opened`", why: "§9.6 timer table: the 45-day notice period ends and placement is allowed (42 U.S.C. §4012a(e)(2))." });
+  o("FLOOD_LOL_HEARTBEAT_35", { satisfied: "`flood.lol.message.received`", why: "§9.6 timer table: 'any vendor message'." });
+  o("NFIP_44CFR6111_MAP_REVISION_1DAY_13M", { satisfied: "`flood.map_revision.window_closed`", why: "§9.6 timer table: the 13-month 1-day effective-date window after a map revision closes (44 CFR 61.11)." });
+  o("FLOOD_EVIDENCE_EVAL_2BD", { satisfied: "`insurance.evidence.evaluated{kind=flood, outcome∈{confirmed, rejected}}`", why: "§9.6 timer table: 'confirmed/rejected'." });
+  o("INS_CLAIM_INITIAL_RELEASE_5BD", { satisfied: "`claim.funds.released{kind=initial}`", why: "§9.7 timer table: 'initial release'." });
+  o("FNMA_B501_REMIT_PROCEEDS_REOGRAM_30", { satisfied: "`remittances.instructed{crs_code=332}`", why: "§9.7 timer table: 'code-332 remittance' (B-5-01)." });
+  o("FNMA_B501_WIRE_POSTREOGRAM_PROCEEDS_10BD", { satisfied: "`claim.proceeds.wired`", why: "§9.7 timer table: 'wire sent' (B-5-01)." });
+  o("INS_CLAIM_INSPECTION_ORDER_3BD", { satisfied: "`property.inspection.ordered{kind=repair}`", why: "§9.7 timer table: 'inspection ordered'." });
+  o("INS_CLAIM_STALE_90", { satisfied: "`claim.activity.recorded`", why: "§9.7 timer table: 'any activity'." });
+  o("FNMA_F105_INSURED_LOSS_INSPECT_CLAIM_365", { satisfied: "`expense_claim.filed{kind=inspection}`", why: "§9.7 timer table: '15.2 claim filed' (F-1-05)." });
+  o("FNMA_D1301_DISASTER_FC_APPROVAL_5", { satisfied: "`fnma.disaster_fc_approval.submitted`", why: "§9.7 timer table: 'Fannie Mae submission incl. claim date/status/disbursements' (D1-3-01)." });
+  o("FNMA_D2210_INSPECT_ORDER_DAY90", { satisfied: "`property.inspection.ordered`", why: "§9.8 timer table: 'order allowed' — the day-90 order (D2-2-10)." });
+  o("FNMA_D2210_INSPECT_RECUR_20_35", { satisfied: "`property.inspection.completed`", why: "§9.8 timer table: 'next completion' (20–35 days after the last)." });
+  o("FNMA_D2210_VACANT_INTERIOR_MONTHLY_35", { satisfied: "`property.inspection.completed{type=interior}`", why: "§9.8 timer table: 'interior inspection' (vacant, ≤ 35 days)." });
+  o("FNMA_D2210_VACANCY_INSPECT_ASAP_3BD", { satisfied: "`property.inspection.completed{purpose=vacancy_confirmation}`", why: "§9.8 timer table: 'vacancy-confirmation inspection completed'." });
+  o("FNMA_P360_PFPIP_SUBMIT_EXCEPTION_DAY45", { satisfied: "`pfpip.submitted`", why: "§9.8 timer table: 'submitted'." });
+  o("FNMA_P360_PFPIP_STATUS_SYNC_2BD", { satisfied: "`pfpip.record.updated`", why: "§9.8 timer table: 'program record updated'." });
+  o("FNMA_F105_INSPECTION_CLAIM_60", { satisfied: "`expense_claim.filed{kind=inspection}`", why: "§9.8 timer table: 'claim filed' (F-1-05)." });
+  o("FNMA_PPM_POST_NOTICE_SECURE_7", { satisfied: "`preservation.work.completed{kind=initial_services}`", why: "§9.9 timer table: 'initial completed' (PPM)." });
+  o("FNMA_PPM_WINDOW_DOOR_REPAIR_3", { satisfied: "`preservation.work.completed{item=unsecured_opening}`", why: "§9.9 timer table: 'repair/clear-board completed'." });
+  o("FNMA_PPM_BID_RECONSIDER_7", { satisfied: "`preservation.bid.reconsideration_submitted`", why: "§9.9 timer table: 'reconsideration submitted or accepted'." });
+  o("FNMA_PPM_AUDIT_RESPONSE_7", { satisfied: "`fnma.request.responded{kind=preservation_audit}`", why: "§9.9 timer table: 'documents provided'." });
+  o("FNMA_PPM_ROOF_TARP_60", { satisfied: "`preservation.work.completed{item=roof_repair}`", why: "§9.9 timer table: 'permanent repair completed/approved'." });
+  o("FNMA_PPM_YARD_REBID_15", { satisfied: "`preservation.bid.submitted{item=yard}`", why: "§9.9 timer table: 'bid submitted (or BATF filed for 12–36″)'." });
+  o("FNMA_F105_PRESERVATION_CLAIM_60", { satisfied: "`expense_claim.filed{kind=preservation}`", why: "§9.9 timer table: 'claim filed' (F-1-05)." });
 }

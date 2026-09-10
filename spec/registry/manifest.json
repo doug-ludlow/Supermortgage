@@ -3913,9 +3913,7 @@
    "INS_ANNUAL_REMINDER",
    "INS_DEFICIENCY_NOTICE",
    "INS_DEFICIENCY_NOTICE_BK",
-   "INS_EOI_REQUEST",
-   "INS_EXPIRATION_LAPSE_1",
-   "INS_EXPIRATION_WATCH_60"
+   "INS_EOI_REQUEST"
   ],
   "agent": "insurance-property",
   "tools": [
@@ -3992,7 +3990,6 @@
   ],
   "notices": [
    "INS_FPI_FIRST_MS3A",
-   "INS_FPI_FIRST_NOTICE_SLA_3BD",
    "INS_FPI_REMINDER_INSUFF_MS3C",
    "INS_FPI_REMINDER_NOINFO_MS3B",
    "INS_FPI_RENEWAL_MS3D"
@@ -4043,9 +4040,7 @@
    "REGX_1024_37D_FPI_REMINDER_BEFORE_CHARGE_15",
    "REGX_1024_37D_FPI_REMINDER_NOT_BEFORE_30"
   ],
-  "notices": [
-   "INS_FPI_REMINDER_TARGET_30_35"
-  ],
+  "notices": [],
   "agent": "insurance-property",
   "tools": [
    "selectReminderVariant",
@@ -4087,9 +4082,7 @@
    "REGX_1024_37E5_FPI_RENEWAL_NOTICE_ANNUAL",
    "REGX_1024_37E_FPI_RENEWAL_NOTICE_45"
   ],
-  "notices": [
-   "INS_FPI_RENEWAL_COVERAGE_REVIEW_60"
-  ],
+  "notices": [],
   "agent": "insurance-property",
   "tools": [
    "reviewLpiCoverage",
@@ -4140,9 +4133,7 @@
    "REGX_1024_37G_FPI_CANCEL_REFUND_15"
   ],
   "notices": [
-   "INS_FPI_CANCEL_REFUND_CONFIRM",
-   "INS_FPI_CARRIER_REFUND_RECON_45",
-   "INS_FPI_EVIDENCE_EVAL_2BD"
+   "INS_FPI_CANCEL_REFUND_CONFIRM"
   ],
   "agent": "insurance-property",
   "tools": [
@@ -4218,7 +4209,6 @@
    "INS_FLOOD_FPI_NOTICE_45",
    "INS_FLOOD_FPI_PLACED_NOTICE",
    "INS_FLOOD_MAP_CHANGE_NOTICE",
-   "INS_FLOOD_NOTICE_SLA_3BD",
    "INS_FLOOD_REMOVED_NOTICE",
    "INS_FLOOD_TERMINATION_REFUND_CONFIRM"
   ],
@@ -4296,10 +4286,6 @@
    "INS_CLAIM_STALE_90"
   ],
   "notices": [
-   "INS_CLAIM_CONTENTS_RELEASE_2BD",
-   "INS_CLAIM_INITIAL_RELEASE_5BD",
-   "INS_CLAIM_INSPECTION_ORDER_3BD",
-   "INS_CLAIM_STALE_90",
    "INS_LOSS_DRAFT_FINAL_LETTER",
    "INS_LOSS_DRAFT_PACKAGE",
    "INS_LOSS_DRAFT_RELEASE_LETTER",
@@ -4467,9 +4453,7 @@
    "FNMA_PPM_YARD_REBID_15",
    "INS_VACANCY_CARRIER_NOTIFY_5BD"
   ],
-  "notices": [
-   "INS_VACANCY_CARRIER_NOTIFY_5BD"
-  ],
+  "notices": [],
   "agent": "insurance-property",
   "tools": [
    "buildInitialScope",

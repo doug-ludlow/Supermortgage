@@ -1,5 +1,5 @@
 {
- "brief": "spec units built 5809/7446 (78.0%): tids 1515/1914, tables 556/717, timers 1616/1987, notices 279/306, tools 895/1311, figures 948/1211; processes at 100%: 130/165",
+ "brief": "spec units built 5846/7446 (78.5%): tids 1515/1914, tables 569/717, timers 1616/1987, notices 279/306, tools 919/1311, figures 948/1211; processes at 100%: 130/165",
  "totals": {
   "tids": {
    "spec": 1914,
@@ -7,7 +7,7 @@
   },
   "tables": {
    "spec": 717,
-   "built": 556
+   "built": 569
   },
   "timers": {
    "spec": 1987,
@@ -19,7 +19,7 @@
   },
   "tools": {
    "spec": 1311,
-   "built": 895
+   "built": 919
   },
   "figures": {
    "spec": 1211,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 7446,
-   "built": 5809
+   "built": 5846
   }
  },
  "sections": {
@@ -153,19 +153,19 @@
   },
   "21": {
    "spec": 282,
-   "built": 253,
+   "built": 269,
    "processes": 6,
    "done": 5
   },
   "22": {
    "spec": 368,
-   "built": 262,
+   "built": 281,
    "processes": 6,
    "done": 2
   },
   "23": {
    "spec": 219,
-   "built": 83,
+   "built": 84,
    "processes": 4,
    "done": 1
   },
@@ -195,7 +195,7 @@
   },
   "28": {
    "spec": 225,
-   "built": 5,
+   "built": 6,
    "processes": 4,
    "done": 0
   },
@@ -5568,13 +5568,8 @@
    },
    "tables": {
     "spec": 5,
-    "built": 1,
-    "missing": [
-     "adverse_actions",
-     "hmda_records",
-     "noias",
-     "withdrawals"
-    ]
+    "built": 5,
+    "missing": []
    },
    "timers": {
     "spec": 10,
@@ -5589,21 +5584,8 @@
    },
    "tools": {
     "spec": 12,
-    "built": 0,
-    "missing": [
-     "computeCompletion",
-     "trackDecisionClock",
-     "recommendDisposition",
-     "selectPrincipalReasons",
-     "assembleFcraBlock",
-     "assembleStateOverlays",
-     "openReviewerEscalation",
-     "renderNotice",
-     "deliverNotice",
-     "recordHmdaAction",
-     "cancelLock",
-     "writeDecision"
-    ]
+    "built": 12,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -5612,9 +5594,9 @@
    },
    "units": {
     "spec": 43,
-    "built": 14
+    "built": 30
    },
-   "pct": 32.6
+   "pct": 69.8
   },
   {
    "process": "22.1",
@@ -5752,15 +5734,8 @@
    },
    "tables": {
     "spec": 6,
-    "built": 0,
-    "missing": [
-     "asset_deposits",
-     "funds_to_close_worksheets",
-     "gift_records",
-     "ipc_items",
-     "reserve_calculations",
-     "verifications"
-    ]
+    "built": 6,
+    "missing": []
    },
    "timers": {
     "spec": 11,
@@ -5787,9 +5762,9 @@
    },
    "units": {
     "spec": 109,
-    "built": 102
+    "built": 108
    },
-   "pct": 93.6
+   "pct": 99.1
   },
   {
    "process": "22.5",
@@ -5835,21 +5810,8 @@
    },
    "tools": {
     "spec": 12,
-    "built": 0,
-    "missing": [
-     "buildLiabilitySet",
-     "matchTradelines",
-     "selectPaymentBasis",
-     "computeQualifyingPayment",
-     "computeDti",
-     "evaluateExclusion",
-     "planPayoff",
-     "evidencePayoff",
-     "checkDuCap",
-     "notifyTolerance",
-     "finalizeLiabilities",
-     "writeDecision"
-    ]
+    "built": 12,
+    "missing": []
    },
    "figures": {
     "spec": 17,
@@ -5870,9 +5832,9 @@
    },
    "units": {
     "spec": 54,
-    "built": 16
+    "built": 28
    },
-   "pct": 29.6
+   "pct": 51.9
   },
   {
    "process": "22.6",
@@ -5899,7 +5861,7 @@
    },
    "tables": {
     "spec": 9,
-    "built": 0,
+    "built": 1,
     "missing": [
      "fraud_investigations",
      "legal_presence_records",
@@ -5908,8 +5870,7 @@
      "party_screenings",
      "red_flag_events",
      "reo_discovery_checks",
-     "sar_candidates",
-     "verifications"
+     "sar_candidates"
     ]
    },
    "timers": {
@@ -5976,9 +5937,9 @@
    },
    "units": {
     "spec": 64,
-    "built": 4
+    "built": 5
    },
-   "pct": 6.2
+   "pct": 7.8
   },
   {
    "process": "23.1",
@@ -6192,11 +6153,10 @@
    },
    "tables": {
     "spec": 4,
-    "built": 0,
+    "built": 1,
     "missing": [
      "condition_clearances",
      "ctc_checklists",
-     "decisions",
      "rep_warrant_relief"
     ]
    },
@@ -6251,9 +6211,9 @@
    },
    "units": {
     "spec": 44,
-    "built": 4
+    "built": 5
    },
-   "pct": 9.1
+   "pct": 11.4
   },
   {
    "process": "23.4",
@@ -7893,13 +7853,12 @@
    },
    "tables": {
     "spec": 6,
-    "built": 0,
+    "built": 1,
     "missing": [
      "hmda_coverage_tests",
      "hmda_edit_verifications",
      "hmda_lar_files",
      "hmda_public_notices",
-     "hmda_records",
      "hmda_ulis"
     ]
    },
@@ -7949,9 +7908,9 @@
    },
    "units": {
     "spec": 39,
-    "built": 0
+    "built": 1
    },
-   "pct": 0.0
+   "pct": 2.6
   },
   {
    "process": "28.4",

@@ -535,7 +535,7 @@ The lines the borrower API and the shell author themselves (src/runtime/borrower
 - `person.human_agent` — PersonCard — "{{name}} is here and has your file. You can keep talking right here." — *SQ-30: after `human.transfer.completed`.*
 - `connect.failed.fallback` — line — "We couldn't connect just now. We'll take documents instead." — *32.1 §10: a vendor outage; no error code is shown (32.13-T12).*
 - `income.upload.fallback` — UploadCard — "Send your most recent pay stub and last year's W-2." — *SQ-03: the fallback when the payroll connection fails.*
-- `documents.upload.fallback` — UploadCard — "Send us the document instead" — why: "The connection didn't work, so a copy from you does the same job." — *T-X-12: a non-income connector fails.*
+- `documents.upload.fallback` — UploadCard — "Send us the document instead" — why: "The connection didn't work, so a copy from you does the same job." — *32.13-T12: a non-income connector fails.*
 
 ## Channel variants (rules)
 

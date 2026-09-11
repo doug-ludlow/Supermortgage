@@ -35,6 +35,7 @@ Stripe Identity, Plaid, Truv, IRS IVES, carrier connection, the RON platform, DU
 | 08c-servicing-hardship-delinquency.md | 32.10 | T-08c-01 … T-08c-11 | 32.10-T1 … 32.10-T11 |
 | 09-rate-watch-and-re-refinance.md | 32.11 | T-09-01 … T-09-10 | 32.11-T1 … 32.11-T10 |
 | 10-exits.md | 32.12 | T-10-01 … T-10-08 | 32.12-T1 … 32.12-T8 |
+| 15-entry-sign-up-and-sign-in.md | 32.14 | T-15-01 … T-15-20 | 32.14-T1 … 32.14-T20 |
 | 13-acceptance-tests.md, 12-message-copy-library.md (rules), 11-side-quests-catalogue.md | 32.13 | T-X-01 … T-X-16 | 32.13-T1 … 32.13-T16 |
 | 12-message-copy-library.md (the strings) | copy-library.md (referenced; not units) | — | — |
 
@@ -163,6 +164,7 @@ The reconciliation this import found (event spellings, consent kinds, the `esign
 | 32.11 | Rate-watch and the re-refinance loop | c |
 | 32.12 | Exits | c |
 | 32.13 | Cross-cutting: acceptance harness, copy library rules, side-quest catalogue | a |
+| 32.14 | Entry, sign-up and sign-in | c |
 
 ## Closing
 

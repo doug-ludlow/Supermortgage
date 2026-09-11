@@ -15327,5 +15327,104 @@
   "notices": [],
   "agent": "borrower-app",
   "tools": []
+ },
+ {
+  "process": "32.14",
+  "title": "Entry, sign-up and sign-in",
+  "path": "sections/32-borrower-experience/32-14-entry-sign-up-and-sign-in.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given a new browser with no cookies, when `/app` renders, then the first assistant content is `entry.disclosure.first`, a `leads` row exists at `L0_contact_unverified` with `party_id = null`, `lead.disclosure.delivered` and `consent.granted{kind=ai_disclosure_ack}` precede any other lead event, no `sessions` row exists, and the next step is the goal card with exactly `buy`, `lower_rate`, `cash_out`."
+   },
+   {
+    "n": 2,
+    "text": "Given the lead answers state `CO`, then `co_admt.preuse_notice.delivered` is logged before `lead.range.shown`; given `UT` or `CA`, then a second `lead.disclosure.delivered{state_variant}` is logged before the next chip."
+   },
+   {
+    "n": 3,
+    "text": "Given the lead answers state `NY`, then `licensing.gate.blocked{state=NY}` is logged, the lead is `closed_lost{reason=state_not_licensed}`, the reply is `lead.state_closed`, and no range and no identity ask are rendered."
+   },
+   {
+    "n": 4,
+    "text": "Given the active rate sheet, when the range renders, then `lead.range.shown` carries the sheet's `FRM30` low and high, the rendered text contains an APR beside each rate and the not-a-commitment footer, `regz_1026_24.apr_stated = true` in the checklist result, and no tier, LLPA or borrower-specific figure appears; given the checklist fails, then no range is shown and the identity ask still renders."
+   },
+   {
+    "n": 5,
+    "text": "Given the goal tiles, then each resolves to exactly one `transaction_type` (`purchase`, `limited_cash_out`, `cash_out`); Buy asks contract status; refi and cash-out ask occupancy with no default tapped."
+   },
+   {
+    "n": 6,
+    "text": "Given a lead at L0, when a client posts income, a name, an SSN, a demographic answer, marital status or citizenship as a lead fact, then `lead.answer` refuses with `L0_FACTS_ONLY` and nothing is written."
+   },
+   {
+    "n": 7,
+    "text": "Given a lead with goal `limited_cash_out`, occupancy `primary`, state `AZ`, when the visitor verifies an SMS code with the lead cookie, then `lead.linked{party_id}` and `lead.authenticated{level=L1}` are logged, an `applications` row exists with `channel=organic`, `transaction_type=limited_cash_out`, `occupancy=primary`, the property `tbd` with state `AZ`, the thread shows the session's disclosure line then `entry.resumed`, and no goal card is sent."
+   },
+   {
+    "n": 8,
+    "text": "Given `INTEGRATIONS=fake`, when the visitor completes Continue with Google, then `auth_challenges{kind=oidc}` is consumed once, `oidc_identities` holds `(issuer, sub)`, the session is L1 with `auth_method=oidc_google` and `last_l1_at = null`, `flows.sessionOpened` ran, and a subsequent `payment.makeOneTime` refuses with `FRESH_L1_REQUIRED`."
+   },
+   {
+    "n": 9,
+    "text": "Given a Google id token with `email_verified=false`, then the callback answers 401 `OIDC_EMAIL_UNVERIFIED`, no party, session or `oidc_identities` row is created."
+   },
+   {
+    "n": 10,
+    "text": "Given an existing borrower party whose contact e-mail equals the verified Google e-mail, when they sign in with Google, then the session's party is that party (no new party); given they later sign in with the same `sub` and a changed e-mail, then the same party is resolved by `sub`."
+   },
+   {
+    "n": 11,
+    "text": "Given a replayed or foreign `state`, or a `nonce` that does not match the challenge, then the callback answers 401 `OIDC_INVALID` and the challenge is not consumable again."
+   },
+   {
+    "n": 12,
+    "text": "Given a first successful session, then `auth.passkey.offer` renders once; given a registered passkey, when the visitor returns, then Use my passkey is offered first and a successful assertion lands in the thread with the Record open to `next`."
+   },
+   {
+    "n": 13,
+    "text": "Given L1 and consumer-entered name, address, DOB and SSN, when the borrower affirms the soft-pull consent, then `credit.authorization.captured{kind=soft_prequal}` and `credit.softpull.requested` are logged, `credit.softpull.received{tier}` follows from the FAKE bureau, `terms.presentation.requested` is logged, and under `assisted` no personal rate renders before `mlo.review.completed{approved}` (`NO_RATE_BEFORE_MLO_REVIEW` refuses `send_card{personal_terms}`); after approval `terms.presented` renders with the attribution and the 20.4 disclaimer."
+   },
+   {
+    "n": 14,
+    "text": "Given `terms_presented`, when the borrower taps Get my real numbers, then `application.received` is logged, `REGB_1002_9_DECISION_30` is armed, 32.3's E6 cards (`consent.esign.title`, `consent.tcpa.title`, `consent.credit.title{hard_pull}`) are sent, and `credit.authorize{hard_pull}` is still refused below L3 (32.3 T4 unchanged)."
+   },
+   {
+    "n": 15,
+    "text": "Given `terms_presented`, when the borrower taps Not yet, then nothing is ordered or pulled, `intent.deferred` is logged, the lead stays `terms_presented`, and `SM_LEAD_INACTIVITY_EXPIRY_90` remains the only clock."
+   },
+   {
+    "n": 16,
+    "text": "Given a deep-link token for a pending card, when opened without a session, then the sign-in chooser renders with the token retained; after the code, `ui_events{deep_link_opened}` is written and the card is pinned; given an expired token, then `deep_link.expired` renders with the sign-in offer; given another party's token, then `error.party_scope` and no target is revealed."
+   },
+   {
+    "n": 17,
+    "text": "Given a servicing-book borrower whose phone is on `application_borrowers.contact`, when they open Sign in and verify a code to that phone, then the session resolves to their existing party, the thread renders with the Record, and on-file numbers stay hidden until L2."
+   },
+   {
+    "n": 18,
+    "text": "Given the funnel read model, when queried for a date range, then counts per stage come from `loan_events`/lead events only (`lead.created`, `lead.disclosure.delivered`, `lead.goal.set`, `lead.range.shown`, `lead.authenticated`, `application.started`, `credit.softpull.received`, `terms.presented`, `application.received`, `application.trid_received`, `du.findings.received`, `intent.to_proceed.received`, `lock.executed`) and the response passes the serializer allow-list."
+   },
+   {
+    "n": 19,
+    "text": "Given a lead created 91 days ago that never authenticated, when the inactivity sweep runs, then the lead is `expired`, its `lead_tokens` row is purged, and no `parties`, `sessions`, `conversations` or `messages` row was ever created for it."
+   },
+   {
+    "n": 20,
+    "text": "Given an inbound SMS from an unknown number (phase 3), then the first outbound message is the disclosure, the goal prompt follows, the lead is keyed to the number, and identity is the code sent to that number."
+   }
+  ],
+  "tables": [
+   "lead_tokens",
+   "oidc_identities"
+  ],
+  "timers": [],
+  "notices": [],
+  "agent": "borrower-app",
+  "tools": [
+   "lead.answer",
+   "lead.requestRange",
+   "lead.proceed"
+  ]
  }
 ]

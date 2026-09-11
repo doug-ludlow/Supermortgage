@@ -4,3 +4,6 @@ coverage/
 *.log
 .env
 .DS_Store
+
+# Python bytecode from the spec tools
+__pycache__/

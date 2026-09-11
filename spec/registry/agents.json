@@ -1846,9 +1846,13 @@
    "agent": "borrower-app",
    "processes": [
     "32.13",
+    "32.14",
     "32.2"
    ],
    "tools": [
+    "lead.answer",
+    "lead.requestRange",
+    "lead.proceed",
     "lead.start",
     "lead.acknowledgeAiDisclosure",
     "party.authenticate",
@@ -6012,6 +6016,24 @@
     "mlo_of_record",
     "officer",
     "underwriting_reviewer"
+   ]
+  },
+  {
+   "process": "32.14",
+   "agent": "borrower-app",
+   "agents_named": [
+    "borrower-app",
+    "intake"
+   ],
+   "tools": [
+    "lead.answer",
+    "lead.requestRange",
+    "lead.proceed"
+   ],
+   "guardrails": "`L0_FACTS_ONLY` (no name, contact, income, SSN or prohibited inquiry on a lead without a party), `RANGE_IS_PUBLISHED` (the range is the sheet's low\u2013high; no tier, no LLPA, no borrower figure), `NO_RATE_BEFORE_MLO_REVIEW` (existing, on `send_card{personal_terms}`), `STATE_GATE_FIRST` (no range and no identity ask while `licensing.gate.blocked`), `CONSENT_VOICE_VOID` (existing). The agent proposes nothing and computes no regulatory date; every decision row names the lead id and the step (32.2's decision shape). Escalates to `human_agent` on \"human\" (existing 20.3 `transferToHuman`, SLA 10 s) and",
+   "escalates_to": [
+    "human_agent",
+    "mlo_of_record"
    ]
   },
   {

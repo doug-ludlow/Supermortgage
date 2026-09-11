@@ -49,15 +49,16 @@ VENDOR_FAKES = ('Stripe Identity, Plaid, Truv, IRS IVES, carrier connection, the
 UI_TABLES = ['conversations', 'messages', 'card_instances', 'card_instance_events', 'deep_links', 'ui_events', 'sessions']
 
 # ---------------------------------------------------------------- id and cross-reference rewriting
-TID_MAP = {'03': '32.3', '04': '32.4', '05': '32.5', '06': '32.6', '07': '32.7', '08a': '32.8', '08b': '32.9', '08c': '32.10', '09': '32.11', '10': '32.12', 'X': '32.13'}
+TID_MAP = {'03': '32.3', '04': '32.4', '05': '32.5', '06': '32.6', '07': '32.7', '08a': '32.8', '08b': '32.9', '08c': '32.10', '09': '32.11', '10': '32.12', 'X': '32.13', '15': '32.14'}
 FILE_MAP = {'00': 'README', '01': '32.1', '02': '32.2', '03': '32.3', '04': '32.4', '05': '32.5', '06': '32.6', '07': '32.7', '08a': '32.8', '08b': '32.9',
-            '08c': '32.10', '09': '32.11', '10': '32.12', '11': '32.13', '12': 'copy-library.md', '13': '32.13', '14': 'README'}
+            '08c': '32.10', '09': '32.11', '10': '32.12', '11': '32.13', '12': 'copy-library.md', '13': '32.13', '14': 'README', '15': '32.14'}
 BASENAMES = {'00-MASTER-INDEX': 'README', '01-foundations': '32.1', '02-data-contracts': '32.2', '03-entry-and-qualification': '32.3',
              '04-disclosures-intent-lock': '32.4', '05-verification-conditions-coborrowers': '32.5', '06-decision-property-title-insurance-mi': '32.6',
              '07-cd-closing-rescission-funding-boarding': '32.7', '08a-servicing-payments-statements-escrow': '32.8',
              '08b-servicing-insurance-pmi-arm-life-events-requests': '32.9', '08c-servicing-hardship-delinquency': '32.10',
              '09-rate-watch-and-re-refinance': '32.11', '10-exits': '32.12', '11-side-quests-catalogue': '32.13',
-             '12-message-copy-library': 'copy-library.md', '13-acceptance-tests': '32.13', '14-claude-code-build-plan': 'README'}
+             '12-message-copy-library': 'copy-library.md', '13-acceptance-tests': '32.13', '14-claude-code-build-plan': 'README',
+             '15-entry-sign-up-and-sign-in': '32.14'}
 
 def read(p): return open(p, encoding='utf-8').read()
 
@@ -96,11 +97,11 @@ def tx(text, pid=None):
     """Renumber and re-point: O-refs (O2.3 → 21.3), UX test ids (T-03-01 → 32.3-T1), UX file references (01 §3 → 32.1 §3),
     and un-backtick notice codes no earlier section owns."""
     text = renumber(text)
-    text = re.sub(r'\bT-(03|04|05|06|07|08a|08b|08c|09|10|X)-(\d{2})\b', lambda m: f'{TID_MAP[m.group(1)]}-T{int(m.group(2))}', text)
+    text = re.sub(r'\bT-(03|04|05|06|07|08a|08b|08c|09|10|X|15)-(\d{2})\b', lambda m: f'{TID_MAP[m.group(1)]}-T{int(m.group(2))}', text)
     text = re.sub(r'\b(' + '|'.join(sorted(BASENAMES, key=len, reverse=True)) + r')(\.md)?\b', lambda m: BASENAMES[m.group(1)], text)
-    text = re.sub(r'\b(00|0[1-9]|10|08a|08b|08c|11|12|13|14)( §)', lambda m: FILE_MAP[m.group(1)] + m.group(2), text)
-    text = re.sub(r'\((0[1-9]|10|08a|08b|08c|11|13)\)', lambda m: f'({FILE_MAP[m.group(1)]})', text)
-    text = re.sub(r'\b(0[1-9]|10|08a|08b|08c)\s+(?=32\.\d+-T\d)', '', text)
+    text = re.sub(r'(?<![\d.])\b(00|0[1-9]|10|08a|08b|08c|11|12|13|14|15)( §)', lambda m: FILE_MAP[m.group(1)] + m.group(2), text)
+    text = re.sub(r'\((0[1-9]|10|08a|08b|08c|11|13|15)\)', lambda m: f'({FILE_MAP[m.group(1)]})', text)
+    text = re.sub(r'\b(0[1-9]|10|08a|08b|08c|15)\s+(?=32\.\d+-T\d)', '', text)
     def notice(m):
         code = m.group(1)
         if code in OWNED: return m.group(0)
@@ -131,7 +132,7 @@ def as_h5(title, body):
     return f'##### {title}\n\n{demote(body).strip()}\n'
 
 TEST_TITLE = re.compile(r'^(\d+\.\s+)?(Acceptance tests.*|Tests|Cross-cutting tests)$')
-TEST_BULLET = re.compile(r'^- \*\*T-(03|04|05|06|07|08a|08b|08c|09|10|X)-(\d{2})((?:\s[^*]+?)?)\*\*\s*(?:—\s*)?(.*)$')
+TEST_BULLET = re.compile(r'^- \*\*T-(03|04|05|06|07|08a|08b|08c|09|10|X|15)-(\d{2})((?:\s[^*]+?)?)\*\*\s*(?:—\s*)?(.*)$')
 
 def parse_tests(body, pid):
     rows = []
@@ -260,6 +261,15 @@ META = {
              trigger='On every build stage (README §Closing); on every commit of the copy library',
              deadlines='none owned',
              discrepancies='none — the cross-cutting tests restate binding rules of 32.1 and 32.2.'),
+    14: dict(title='Entry, sign-up and sign-in', files=['15-entry-sign-up-and-sign-in.md'], agent='borrower-app',
+             owners='20.2 (advertising content checklist), 20.3 (lead intake, assurance levels, disclosure, soft-pull prequalification, terms review), 20.4 (rate sheet, quote, disclaimer), 21.1 (application intake), 22.6 (identity), 31.1 (state licensing gate), 32.1/32.2 (shell, commands, sessions), 32.3 (the five-minute qualification this process hands off to), 32.13 (cross-cutting rules)',
+             auto='c — the visitor answers by chip and card; the agent proposes nothing and computes no regulatory date; `mlo_of_record` reviews terms under `origination.ai_mlo_intake=assisted`',
+             trigger='On `GET /` of the borrower host (organic), a referral link, a deep link from a 20.2 touch, or Sign in; per lead before L1 and per party after',
+             deadlines='renders `SM_LEAD_INACTIVITY_EXPIRY_90`, `SM_MLO_PREAPP_TERMS_REVIEW_1BH`, `SM_QUOTE_VALIDITY_GATE`, `REGB_1002_9_DECISION_30` (owned by 20.3 / 21.x)',
+             discrepancies='(1) DELTA-11…16 (docs/ux/BACKEND-DELTAS.md) declare the L0 lead session (`lead_tokens`), Sign in with Google (`oidc_identities`, `sessions.auth_method = oidc_google`), the soft pull at L1 with consumer-entered identity, the deep-link and return pages, the partner from configuration and link-my-loan. (2) The console moves from `/` to `/ops` so the root of the host is the thread (§6.3). Nothing else is new: every state, command, event, timer and role is 20.2/20.3/20.4/21.1/22.6/31.1/32.x\'s.',
+             roles='`mlo_of_record`, `human_agent`',
+             overrides=[(re.compile(r'^0\. Ground truth'), 'rules'), (re.compile(r'^7\. Phases|^8\. Prompts|^10\. Definition of done'), 'audit'), (re.compile(r'^9\. Acceptance tests'), 'tests')],
+             retitle={'5. AI agent design': 'Owning agent, process tools and guardrails (the counted paragraph is under AI agent design below)'}),
 }
 
 # ---------------------------------------------------------------- generated blocks
@@ -315,7 +325,17 @@ def data_model_32_2(text):
             '- Baseline tables written, only ever through the owning process\'s command handler (the UI writes no domain row directly): `consents`, `intent_records`, '
             '`disclosures` (`receipt_evidence`), `credit_authorizations`, `condition_clearances`, `contacts`, `lead_interactions`, `applicant_demographics` (restricted; write-once).\n')
 
+def data_model_14(text):
+    """docs/ux/15 §6.1 verbatim: the two UI-owned tables this process adds (counted by spec_manifest.py) and the baseline tables it writes."""
+    m = re.search(r'^### 6\.1 Data model\n(.*?)(?=^### |^## |\Z)', text, re.S | re.M)
+    assert m, '15-entry-sign-up-and-sign-in.md: "### 6.1 Data model" block not found'
+    base = baseline_tables(text)
+    body = tx(m.group(1).strip(), '32.14')
+    return (body + '\n- Baseline, read-only projection sources this process renders (owned by the sections in the Blueprint row; no table is re-declared): '
+            + (', '.join(f'`{n}`' for n in base) if base else 'none named') + '.\n')
+
 def data_model_other(text, k):
+    if k == 14: return data_model_14(text)
     base = baseline_tables(text)
     ui = [n for n in UI_TABLES if f'`{n}`' in text]
     s = ('No UI-owned table is declared here (32.2 declares the seven UI-owned tables' + (f'; this process writes `{"`, `".join(ui)}` through the 32.2 command endpoints' if ui else '') + ').\n'
@@ -396,6 +416,17 @@ def agent_paragraph(k, meta):
                 'never an agent-side waiver — `officer` only; `applicant_demographics` is write-once from the borrower\'s own card and never read back; DU findings, '
                 'credit-report contents, fraud, QC and compliance internals are never serialized to the client (§6). Escalations: `human_agent` for `human.request`, '
                 '`mlo_of_record` for `lock.request` approval, `officer` for money-field waivers, `underwriting_reviewer` never from the client.')
+    if k == 14:
+        return ('`borrower-app` agent (tools: `lead.answer`, `lead.requestRange`, `lead.proceed`). End-to-end: the owning agent is 32.2\'s `borrower-app`, executing as the '
+                'thread-owning `intake` agent\'s card tools where a card is sent. `lead.answer` writes the S1 facts through 20.3 explainProgram{op=set_fact} and refuses any fact '
+                'outside 20.3 rule 6; `lead.requestRange` renders 20.3 generalRateRange through 20.2 runContentChecklist and refuses on a failing checklist and for a closed state; '
+                '`lead.proceed` runs 20.3 explainProgram{op=convert} to application.received and refuses before terms.presented under origination.ai_mlo_intake=assisted. It reuses '
+                'lead.start, lead.acknowledgeAiDisclosure, party.authenticate, credit.authorize, party.startIdentity, application.setGoal and party.updateContact of 32.2. '
+                'Decision record schema: {lead_id, step, command, party_id, gate, outcome, copy_key, rule_set_version, model_version, prompt_version, confidence, rationale}. '
+                'Guardrails: L0_FACTS_ONLY (no name, contact, income, SSN or prohibited inquiry on a lead without a party); RANGE_IS_PUBLISHED (the range is the sheet\'s low to high; '
+                'no tier, no LLPA, no borrower figure); NO_RATE_BEFORE_MLO_REVIEW (existing, on send_card{personal_terms}); STATE_GATE_FIRST (no range and no identity ask while '
+                'licensing.gate.blocked); CONSENT_VOICE_VOID (existing). The agent proposes nothing and computes no regulatory date; every decision row names the lead id and the step. '
+                'Escalations: `human_agent` on "human" (20.3 transferToHuman, SLA 10 s) and `mlo_of_record` for the terms review.')
     agent = meta['agent']
     phase = {'intake': 'the pre-funding thread', 'borrower-comms': 'the post-funding thread', 'borrower-app': 'the harness and the copy library'}[agent]
     return (f'`{agent}` agent owns {phase} for this process; it sends and resolves cards through the card-sending capabilities named in 32.1 (send_card, '
@@ -439,6 +470,8 @@ def build_process(k):
             if fname.startswith('02-') and t.startswith('4. Timers'):
                 slots['rules'].append(as_h5(tx(t, pid), tx(b, pid))); continue
             h = tx(t, pid)
+            for old_t, new_t in meta.get('retitle', {}).items():
+                if t.startswith(old_t): h = new_t
             if fname.startswith('11-'): h = f'Side-quest catalogue — {h}'
             if fname.startswith('13-'): h = f'Acceptance harness — {h}'
             slots[slot].append(as_h5(h, tx(b, pid)))
@@ -523,6 +556,7 @@ def build_readme():
            '| 08c-servicing-hardship-delinquency.md | 32.10 | T-08c-01 … T-08c-11 | 32.10-T1 … 32.10-T11 |',
            '| 09-rate-watch-and-re-refinance.md | 32.11 | T-09-01 … T-09-10 | 32.11-T1 … 32.11-T10 |',
            '| 10-exits.md | 32.12 | T-10-01 … T-10-08 | 32.12-T1 … 32.12-T8 |',
+           '| 15-entry-sign-up-and-sign-in.md | 32.14 | T-15-01 … T-15-20 | 32.14-T1 … 32.14-T20 |',
            '| 13-acceptance-tests.md, 12-message-copy-library.md (rules), 11-side-quests-catalogue.md | 32.13 | T-X-01 … T-X-16 | 32.13-T1 … 32.13-T16 |',
            '| 12-message-copy-library.md (the strings) | copy-library.md (referenced; not units) | — | — |', '',
            'The mapping rule: T-NN-kk → 32.k-Tkk with the leading zero dropped (T-03-01 = 32.3-T1, T-08c-11 = 32.10-T11, T-X-16 = 32.13-T16); the Given/When/Then text is the UX text verbatim apart from the renumbered cross-references.', '',

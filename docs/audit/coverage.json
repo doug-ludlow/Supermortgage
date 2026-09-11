@@ -1,12 +1,12 @@
 {
- "brief": "spec units built 7686/7686 (100.0%): tids 2057/2057, tables 724/724, timers 2029/2029, notices 306/306, tools 1359/1359, figures 1211/1211; processes at 100%: 178/178",
+ "brief": "spec units built 7686/7711 (99.7%): tids 2057/2077, tables 724/726, timers 2029/2029, notices 306/306, tools 1359/1362, figures 1211/1211; processes at 100%: 178/179",
  "totals": {
   "tids": {
-   "spec": 2057,
+   "spec": 2077,
    "built": 2057
   },
   "tables": {
-   "spec": 724,
+   "spec": 726,
    "built": 724
   },
   "timers": {
@@ -18,7 +18,7 @@
    "built": 306
   },
   "tools": {
-   "spec": 1359,
+   "spec": 1362,
    "built": 1359
   },
   "figures": {
@@ -26,7 +26,7 @@
    "built": 1211
   },
   "units": {
-   "spec": 7686,
+   "spec": 7711,
    "built": 7686
   }
  },
@@ -218,9 +218,9 @@
    "done": 3
   },
   "32": {
-   "spec": 240,
+   "spec": 265,
    "built": 240,
-   "processes": 13,
+   "processes": 14,
    "done": 13
   }
  },
@@ -7702,6 +7702,75 @@
     "built": 16
    },
    "pct": 100.0
+  },
+  {
+   "process": "32.14",
+   "title": "Entry, sign-up and sign-in",
+   "tids": {
+    "spec": 20,
+    "built": 0,
+    "todo": 20,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18,
+     19,
+     20
+    ]
+   },
+   "tables": {
+    "spec": 2,
+    "built": 0,
+    "missing": [
+     "lead_tokens",
+     "oidc_identities"
+    ]
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "lead.answer",
+     "lead.requestRange",
+     "lead.proceed"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 25,
+    "built": 0
+   },
+   "pct": 0.0
   }
  ]
 }

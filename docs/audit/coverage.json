@@ -1,5 +1,5 @@
 {
- "brief": "spec units built 6370/7446 (85.5%): tids 1654/1914, tables 606/717, timers 1740/1987, notices 288/306, tools 1058/1311, figures 1024/1211; processes at 100%: 143/165",
+ "brief": "spec units built 6401/7446 (86.0%): tids 1654/1914, tables 606/717, timers 1753/1987, notices 288/306, tools 1076/1311, figures 1024/1211; processes at 100%: 143/165",
  "totals": {
   "tids": {
    "spec": 1914,
@@ -11,7 +11,7 @@
   },
   "timers": {
    "spec": 1987,
-   "built": 1740
+   "built": 1753
   },
   "notices": {
    "spec": 306,
@@ -19,7 +19,7 @@
   },
   "tools": {
    "spec": 1311,
-   "built": 1058
+   "built": 1076
   },
   "figures": {
    "spec": 1211,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 7446,
-   "built": 6370
+   "built": 6401
   }
  },
  "sections": {
@@ -171,7 +171,7 @@
   },
   "24": {
    "spec": 314,
-   "built": 267,
+   "built": 285,
    "processes": 6,
    "done": 5
   },
@@ -201,7 +201,7 @@
   },
   "29": {
    "spec": 232,
-   "built": 10,
+   "built": 23,
    "processes": 4,
    "done": 0
   },
@@ -6252,27 +6252,8 @@
    },
    "tools": {
     "spec": 18,
-    "built": 0,
-    "missing": [
-     "computeLtvRounded",
-     "lookupCoverage",
-     "lookupMinCoverageLlpa",
-     "requestMiQuotes",
-     "compareMiPlans",
-     "recordPlanElection",
-     "submitMiOrder",
-     "parseCommitment",
-     "verifyCertificateMatchesTerms",
-     "buildInitialAmortizationSchedule",
-     "computeHpaDates",
-     "renderHpaDisclosure",
-     "renderLpmiDisclosure",
-     "requestActivation",
-     "remitPremium",
-     "evaluateGates",
-     "seedMiPolicy",
-     "writeDecision"
-    ]
+    "built": 18,
+    "missing": []
    },
    "figures": {
     "spec": 18,
@@ -6299,9 +6280,9 @@
    },
    "units": {
     "spec": 63,
-    "built": 16
+    "built": 34
    },
-   "pct": 25.4
+   "pct": 54.0
   },
   {
    "process": "25.1",
@@ -7494,21 +7475,9 @@
    },
    "timers": {
     "spec": 15,
-    "built": 4,
-    "armable": 7,
-    "missing": [
-     "FNMA_B2_1_5_02_LOAN_AGE_6M_PURCHASE_READY",
-     "FNMA_C2_1_1_03_DAILY_LIMIT_200M_GATE",
-     "FNMA_C2_1_1_03_MAND_COMMITMENT_EXPIRY",
-     "FNMA_C2_1_1_04_MAND_EXTENSION_CAP_30",
-     "FNMA_C2_1_2_02_BE_EXTENSION_CAP_30",
-     "FNMA_C2_1_2_03_DU_APPROVE_60_GATE",
-     "FNMA_C2_2_DELIVERY_COMMITMENT_EXPIRY",
-     "FNMA_PEWL_COMMIT_ACCEPT_60S",
-     "FNMA_PEWL_DPA_WINDOW_30",
-     "FNMA_PEWL_MAND_TOLERANCE_GATE",
-     "SM_PORTAL_OPERATOR_COMMITMENT_TASK_4H"
-    ]
+    "built": 15,
+    "armable": 15,
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -7559,9 +7528,9 @@
    },
    "units": {
     "spec": 61,
-    "built": 4
+    "built": 15
    },
-   "pct": 6.6
+   "pct": 24.6
   },
   {
    "process": "29.2",
@@ -7796,10 +7765,9 @@
    },
    "timers": {
     "spec": 23,
-    "built": 3,
-    "armable": 12,
+    "built": 5,
+    "armable": 14,
     "missing": [
-     "FNMA_B2_1_5_02_LOAN_AGE_6M_PURCHASE_READY",
      "FNMA_C1_2_02_CUSTODIAN_LOAN_NUMBER_REQUEST_3BD",
      "FNMA_C1_2_02_FNMA_LOAN_NUMBER_TO_CUSTODIAN_30",
      "FNMA_C1_2_02_PPA_LLPA_REPRICING_18M",
@@ -7811,7 +7779,6 @@
      "FNMA_C2_2_04_CERTIFICATION_EXPECTED_1BD",
      "FNMA_C2_2_04_PURCHASE_EXPECTED_1BD",
      "FNMA_C2_2_07_PAYEE_CODE_CHANGE_3BD",
-     "FNMA_C2_2_DELIVERY_COMMITMENT_EXPIRY",
      "FNMA_LD_UG_CUSTODIAN_0730_ET_EXPECTATION",
      "FNMA_LQC_DATA_VALIDATION_RESPONSE_30",
      "FNMA_PPA_PROCESSING_10BD",
@@ -7862,9 +7829,9 @@
    },
    "units": {
     "spec": 67,
-    "built": 4
+    "built": 6
    },
-   "pct": 6.0
+   "pct": 9.0
   },
   {
    "process": "30.1",

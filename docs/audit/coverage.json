@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 5318/7446 (71.4%): tids 1408/1914, tables 536/717, timers 1524/1987, notices 251/306, tools 810/1311, figures 789/1211; processes at 100%: 123/165",
+ "brief": "spec units built 5346/7446 (71.8%): tids 1420/1914, tables 536/717, timers 1532/1987, notices 251/306, tools 810/1311, figures 797/1211; processes at 100%: 124/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1408
+   "built": 1420
   },
   "tables": {
    "spec": 717,
@@ -11,7 +11,7 @@
   },
   "timers": {
    "spec": 1987,
-   "built": 1524
+   "built": 1532
   },
   "notices": {
    "spec": 306,
@@ -23,11 +23,11 @@
   },
   "figures": {
    "spec": 1211,
-   "built": 789
+   "built": 797
   },
   "units": {
    "spec": 7446,
-   "built": 5318
+   "built": 5346
   }
  },
  "sections": {
@@ -159,13 +159,13 @@
   },
   "22": {
    "spec": 368,
-   "built": 2,
+   "built": 9,
    "processes": 6,
    "done": 0
   },
   "23": {
    "spec": 219,
-   "built": 0,
+   "built": 1,
    "processes": 4,
    "done": 0
   },
@@ -177,9 +177,9 @@
   },
   "25": {
    "spec": 231,
-   "built": 172,
+   "built": 192,
    "processes": 4,
-   "done": 2
+   "done": 3
   },
   "26": {
    "spec": 247,
@@ -339,6 +339,7 @@
   "21.5",
   "25.1",
   "25.2",
+  "25.3",
   "26.1",
   "30.1",
   "30.4"
@@ -5733,15 +5734,11 @@
    },
    "timers": {
     "spec": 8,
-    "built": 2,
-    "armable": 5,
+    "built": 6,
+    "armable": 8,
     "missing": [
-     "FNMA_B1_1_03_CREDIT_DOCS_4M",
-     "FNMA_B1_1_03_TAX_YEAR_GATE",
-     "FNMA_B3_3_2_01_PAYSTUB_30D_GATE",
      "FNMA_B4_1_2_04_APPRAISAL_12M",
-     "REGB_1002_9_DECISION_30",
-     "SM_DOC_EXPIRY_WARN_14"
+     "REGB_1002_9_DECISION_30"
     ]
    },
    "notices": {
@@ -5785,9 +5782,9 @@
    },
    "units": {
     "spec": 45,
-    "built": 2
+    "built": 6
    },
-   "pct": 4.4
+   "pct": 13.3
   },
   {
    "process": "22.2",
@@ -5913,10 +5910,9 @@
    },
    "timers": {
     "spec": 9,
-    "built": 0,
-    "armable": 1,
+    "built": 1,
+    "armable": 2,
     "missing": [
-     "FNMA_B1_1_03_CREDIT_DOCS_4M",
      "FNMA_B3_2_02_DU_CLOSE_BY_GATE",
      "FNMA_B3_3_1_01_CONTINUANCE_3Y",
      "FNMA_B3_3_1_02_4506C_VALID_120",
@@ -5973,9 +5969,9 @@
    },
    "units": {
     "spec": 55,
-    "built": 0
+    "built": 1
    },
-   "pct": 0.0
+   "pct": 1.8
   },
   {
    "process": "22.4",
@@ -6013,10 +6009,9 @@
    },
    "timers": {
     "spec": 11,
-    "built": 0,
-    "armable": 1,
+    "built": 1,
+    "armable": 2,
     "missing": [
-     "FNMA_B1_1_03_CREDIT_DOCS_4M",
      "FNMA_B2_1_3_02_LCOR_CASHBACK_GATE",
      "FNMA_B3_2_02_DU_CLOSE_BY_GATE",
      "FNMA_B3_2_10_DU_FINAL_MATCH_GATE",
@@ -6128,9 +6123,9 @@
    },
    "units": {
     "spec": 109,
-    "built": 0
+    "built": 1
    },
-   "pct": 0.0
+   "pct": 0.9
   },
   {
    "process": "22.5",
@@ -6272,12 +6267,11 @@
    },
    "timers": {
     "spec": 15,
-    "built": 0,
-    "armable": 5,
+    "built": 1,
+    "armable": 6,
     "missing": [
      "BSA_1029_320_SAR_30",
      "FCRA_605A_H_ALERT_CONTACT_GATE",
-     "FNMA_B1_1_03_CREDIT_DOCS_4M",
      "FNMA_B2_1_3_01_NON_ARMS_LENGTH_GATE",
      "FNMA_B2_2_01_SSN_VALIDATION_GATE",
      "FNMA_B2_2_02_LEGAL_PRESENCE_GATE",
@@ -6338,9 +6332,9 @@
    },
    "units": {
     "spec": 64,
-    "built": 0
+    "built": 1
    },
-   "pct": 0.0
+   "pct": 1.6
   },
   {
    "process": "23.1",
@@ -6377,10 +6371,9 @@
    },
    "timers": {
     "spec": 8,
-    "built": 0,
-    "armable": 4,
+    "built": 1,
+    "armable": 5,
     "missing": [
-     "FNMA_B1_1_03_CREDIT_DOCS_4M",
      "FNMA_B3_2_01_DU_ARCHIVE_270",
      "FNMA_B3_2_01_DU_ARCHIVE_540",
      "FNMA_B3_2_02_DU_CLOSE_BY_GATE",
@@ -6434,9 +6427,9 @@
    },
    "units": {
     "spec": 50,
-    "built": 0
+    "built": 1
    },
-   "pct": 0.0
+   "pct": 2.0
   },
   {
    "process": "23.2",
@@ -7411,22 +7404,9 @@
    "title": "Right of rescission (refinances of principal dwellings): notice, period computation, waiver, confirmation of non-rescission, effect on funding, and rescission processing",
    "tids": {
     "spec": 12,
-    "built": 0,
-    "todo": 12,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 3,
@@ -7451,23 +7431,14 @@
    },
    "figures": {
     "spec": 14,
-    "built": 6,
-    "missing": [
-     "$2,099.45",
-     "$2,100.55",
-     "$2,800.00",
-     "$2,913.15",
-     "$4,100.00",
-     "$5,600.00",
-     "$544,000.00",
-     "$7,950.00"
-    ]
+    "built": 14,
+    "missing": []
    },
    "units": {
     "spec": 45,
-    "built": 25
+    "built": 45
    },
-   "pct": 55.6
+   "pct": 100.0
   },
   {
    "process": "25.4",

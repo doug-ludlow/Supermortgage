@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 6071/7446 (81.5%): tids 1567/1914, tables 589/717, timers 1673/1987, notices 283/306, tools 984/1311, figures 975/1211; processes at 100%: 136/165",
+ "brief": "spec units built 6135/7446 (82.4%): tids 1592/1914, tables 589/717, timers 1683/1987, notices 283/306, tools 1008/1311, figures 980/1211; processes at 100%: 138/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1567
+   "built": 1592
   },
   "tables": {
    "spec": 717,
@@ -11,7 +11,7 @@
   },
   "timers": {
    "spec": 1987,
-   "built": 1673
+   "built": 1683
   },
   "notices": {
    "spec": 306,
@@ -19,15 +19,15 @@
   },
   "tools": {
    "spec": 1311,
-   "built": 984
+   "built": 1008
   },
   "figures": {
    "spec": 1211,
-   "built": 975
+   "built": 980
   },
   "units": {
    "spec": 7446,
-   "built": 6071
+   "built": 6135
   }
  },
  "sections": {
@@ -159,21 +159,21 @@
   },
   "22": {
    "spec": 368,
-   "built": 353,
+   "built": 368,
    "processes": 6,
-   "done": 5
+   "done": 6
   },
   "23": {
    "spec": 219,
-   "built": 132,
+   "built": 144,
    "processes": 4,
    "done": 2
   },
   "24": {
    "spec": 314,
-   "built": 97,
+   "built": 134,
    "processes": 6,
-   "done": 1
+   "done": 2
   },
   "25": {
    "spec": 231,
@@ -344,9 +344,11 @@
   "22.3",
   "22.4",
   "22.5",
+  "22.6",
   "23.1",
   "23.4",
   "24.1",
+  "24.2",
   "25.1",
   "25.2",
   "25.3",
@@ -5800,23 +5802,9 @@
    "title": "Identity, fraud, OFAC/AML, Red Flags, occupancy/undisclosed-REO, and non-arm's-length screening",
    "tids": {
     "spec": 13,
-    "built": 0,
-    "todo": 13,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13
-    ]
+    "built": 13,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 9,
@@ -5841,17 +5829,14 @@
    },
    "figures": {
     "spec": 5,
-    "built": 3,
-    "missing": [
-     "$1,640.00",
-     "$2.25"
-    ]
+    "built": 5,
+    "missing": []
    },
    "units": {
     "spec": 64,
-    "built": 49
+    "built": 64
    },
-   "pct": 76.6
+   "pct": 100.0
   },
   {
    "process": "23.1",
@@ -5941,20 +5926,8 @@
    },
    "tools": {
     "spec": 11,
-    "built": 0,
-    "missing": [
-     "parseFindings",
-     "mapMessages",
-     "openCondition",
-     "openInvestigation",
-     "evaluateHomeReady",
-     "verifyEducationCertificate",
-     "computeRestructure",
-     "quote",
-     "proposeRestructure",
-     "writeDecision",
-     "openEscalation"
-    ]
+    "built": 11,
+    "missing": []
    },
    "figures": {
     "spec": 24,
@@ -5984,9 +5957,9 @@
    },
    "units": {
     "spec": 58,
-    "built": 9
+    "built": 20
    },
-   "pct": 15.5
+   "pct": 34.5
   },
   {
    "process": "23.3",
@@ -6021,11 +5994,10 @@
    },
    "timers": {
     "spec": 9,
-    "built": 3,
+    "built": 4,
     "armable": 7,
     "missing": [
      "FNMA_D1_2_01_PREFUNDING_PRIOR_TO_CLOSING_GATE",
-     "SM_UW_CONDITION_CLEAR_SLA_1BD",
      "SM_UW_CTC_GATE",
      "SM_UW_DECISION_VALIDITY",
      "SM_UW_PTD_CLEARED_GATE",
@@ -6069,9 +6041,9 @@
    },
    "units": {
     "spec": 44,
-    "built": 6
+    "built": 7
    },
-   "pct": 13.6
+   "pct": 15.9
   },
   {
    "process": "23.4",
@@ -6160,22 +6132,9 @@
    "title": "Appraisal receipt, UCDP/Collateral Underwriter review, reconsideration of value, appraisal quality/bias controls, Reg B delivery, and HPML appraisal rules",
    "tids": {
     "spec": 12,
-    "built": 0,
-    "todo": 12,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 3,
@@ -6205,9 +6164,9 @@
    },
    "units": {
     "spec": 51,
-    "built": 39
+    "built": 51
    },
-   "pct": 76.5
+   "pct": 100.0
   },
   {
    "process": "24.3",
@@ -6238,19 +6197,9 @@
    },
    "timers": {
     "spec": 11,
-    "built": 2,
-    "armable": 5,
-    "missing": [
-     "FNMA_B4_1_2_05_COMPLETION_BEFORE_DELIVERY_GATE",
-     "FNMA_B4_1_3_06_SAFETY_REPAIR_BEFORE_SALE_GATE",
-     "FNMA_B4_2_1_01_CPM_CERT_VALID_GATE",
-     "FNMA_B4_2_1_01_PROJECT_REVIEW_ESTABLISHED_1Y",
-     "FNMA_B4_2_1_01_PROJECT_REVIEW_NEW_180",
-     "FNMA_B4_2_1_03_INSPECTION_LOOKBACK_3Y",
-     "FNMA_B4_2_2_01_RESERVE_STUDY_AGE_3Y",
-     "SM_MH_LABEL_VERIFICATION_GATE",
-     "SM_PROJECT_DOCS_AGE_120"
-    ]
+    "built": 11,
+    "armable": 11,
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -6259,22 +6208,8 @@
    },
    "tools": {
     "spec": 13,
-    "built": 0,
-    "missing": [
-     "classifyProperty",
-     "runPropertyEligibility",
-     "routeCondition",
-     "planRepairs",
-     "computeHoldback",
-     "requestProjectDocs",
-     "extractProjectData",
-     "runProjectEligibility",
-     "prepareCpmSheet",
-     "recordCpmResult",
-     "verifyMh",
-     "writeDecision",
-     "fileEscalation"
-    ]
+    "built": 13,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -6283,9 +6218,9 @@
    },
    "units": {
     "spec": 40,
-    "built": 6
+    "built": 28
    },
-   "pct": 15.0
+   "pct": 70.0
   },
   {
    "process": "24.4",
@@ -6374,7 +6309,7 @@
    },
    "figures": {
     "spec": 13,
-    "built": 1,
+    "built": 2,
     "missing": [
      "$1,266.24",
      "$105.52",
@@ -6386,15 +6321,14 @@
      "$531,240.00",
      "$532,536.24",
      "$532,641.76",
-     "$560,000.00",
      "$565.32"
     ]
    },
    "units": {
     "spec": 67,
-    "built": 4
+    "built": 5
    },
-   "pct": 6.0
+   "pct": 7.5
   },
   {
    "process": "24.5",
@@ -6468,7 +6402,7 @@
    },
    "figures": {
     "spec": 11,
-    "built": 1,
+    "built": 2,
     "missing": [
      "$1,150.00",
      "$1,950.00",
@@ -6478,15 +6412,14 @@
      "$26,000.00",
      "$31,200.00",
      "$520,000.00",
-     "$560,000.00",
      "$95.83"
     ]
    },
    "units": {
     "spec": 52,
-    "built": 6
+    "built": 7
    },
-   "pct": 11.5
+   "pct": 13.5
   },
   {
    "process": "24.6",
@@ -6569,7 +6502,7 @@
    },
    "figures": {
     "spec": 18,
-    "built": 0,
+    "built": 1,
     "missing": [
      "$1,545.00",
      "$103.00",
@@ -6584,7 +6517,6 @@
      "$366,240.00",
      "$381.59",
      "$411,618.41",
-     "$412,000.00",
      "$418,592.00",
      "$457,800.00",
      "$460,000.00",
@@ -6593,9 +6525,9 @@
    },
    "units": {
     "spec": 63,
-    "built": 1
+    "built": 2
    },
-   "pct": 1.6
+   "pct": 3.2
   },
   {
    "process": "25.1",

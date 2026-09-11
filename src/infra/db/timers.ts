@@ -33,7 +33,7 @@ export class PgTimerRepository {
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
          ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, satisfied_at = EXCLUDED.satisfied_at, satisfied_by_event_id = EXCLUDED.satisfied_by_event_id,
            breached_at = EXCLUDED.breached_at, cancelled_reason = EXCLUDED.cancelled_reason, note = EXCLUDED.note`,
-        [i.id, i.code, i.subject.kind, i.subject.id, i.loanId ?? null, i.armedAt, i.armedByEventId, i.anchorDate, i.dueDate ?? null, i.dueAt !== undefined ? new Date(i.dueAt).toISOString() : null,
+        [i.id, i.code, i.subject.kind, i.subject.id, i.loanId || null, i.armedAt, i.armedByEventId, i.anchorDate, i.dueDate ?? null, i.dueAt !== undefined ? new Date(i.dueAt).toISOString() : null,
           i.status, i.satisfiedAt ?? null, i.satisfiedByEventId ?? null, i.breachedAt ?? null, i.cancelledReason ?? null, i.note ?? null, i.applicationId ?? null]);
     }
   }

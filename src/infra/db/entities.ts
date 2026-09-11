@@ -13,7 +13,9 @@
 import type { Queryable } from "./client.ts";
 import type { EntityRecord } from "../../app/tools.ts";
 
-type Row = { kind: string; id: string; version: number; loan_id: string | null; data: unknown; updated_at: Date | string; updated_by: string; };
+type Row = { kind: string; id: string; version: number; loan_id: string | null; application_id: string | null; data: unknown; updated_at: Date | string; updated_by: string; };
+/** What a command is about: a loan, an application (before funding), both (the 30.2 hand-off), or neither (global rows only). */
+export interface EntityScope { readonly loanId?: string; readonly applicationId?: string; }
 
 export function encodeEntityData(data: Record<string, unknown>): string {
   return JSON.stringify(data, (_k, v) => (typeof v === "bigint" ? { $bigint: v.toString() } : v));
@@ -40,11 +42,13 @@ export class PgEntityRepository {
   private readonly db: Queryable;
   constructor(db: Queryable) { this.db = db; }
 
-  /** Every version of the loan's rows and of the global rows, oldest first — what `EntityStore.seed` takes. An empty loanId loads only the global rows. */
-  async load(loanId: string): Promise<EntityRecord[]> {
-    const rows = loanId
-      ? await this.db.query<Row>(`SELECT * FROM entity_records WHERE loan_id = $1 OR loan_id IS NULL ORDER BY kind, id, version`, [loanId])
-      : await this.db.query<Row>(`SELECT * FROM entity_records WHERE loan_id IS NULL ORDER BY kind, id, version`);
+  /** Every version of the scope's rows and of the global rows, oldest first — what `EntityStore.seed` takes. An empty scope loads only the global rows. */
+  async load(scope: string | EntityScope): Promise<EntityRecord[]> {
+    const sc: EntityScope = typeof scope === "string" ? { loanId: scope } : scope;
+    const conds = ["loan_id IS NULL AND application_id IS NULL"]; const params: string[] = [];
+    if (sc.loanId) { params.push(sc.loanId); conds.push(`loan_id = $${params.length}`); }
+    if (sc.applicationId) { params.push(sc.applicationId); conds.push(`application_id = $${params.length}`); }
+    const rows = await this.db.query<Row>(`SELECT * FROM entity_records WHERE ${conds.map((c) => `(${c})`).join(" OR ")} ORDER BY kind, id, version`, params);
     return rows.map(toRecord);
   }
 
@@ -55,14 +59,17 @@ export class PgEntityRepository {
   }
 
   /**
-   * Append new versions. A record's loan is `data.loan_id` when the tool wrote one, else the command's
-   * loan; a command with no loan (loanId "") writes global rows.
+   * Append new versions. A record's loan is `data.loan_id` when the tool wrote one, else the command's loan; its
+   * application is `data.application_id` when written, else the command's application; a command with neither
+   * writes global rows.
    */
-  async save(records: readonly EntityRecord[], commandLoanId: string | null, q: Queryable = this.db): Promise<void> {
+  async save(records: readonly EntityRecord[], scope: string | null | EntityScope, q: Queryable = this.db): Promise<void> {
+    const sc: EntityScope = typeof scope === "string" ? { loanId: scope } : scope ?? {};
     for (const r of records) {
-      const loanId = typeof r.data["loan_id"] === "string" && r.data["loan_id"] ? (r.data["loan_id"] as string) : commandLoanId || null;
-      await q.query(`INSERT INTO entity_records (kind, id, version, loan_id, data, updated_at, updated_by) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)`,
-        [r.kind, r.id, r.version, loanId, encodeEntityData(r.data), r.updatedAt, r.updatedBy]);
+      const loanId = typeof r.data["loan_id"] === "string" && r.data["loan_id"] ? (r.data["loan_id"] as string) : sc.loanId || null;
+      const applicationId = typeof r.data["application_id"] === "string" && r.data["application_id"] ? (r.data["application_id"] as string) : sc.applicationId || null;
+      await q.query(`INSERT INTO entity_records (kind, id, version, loan_id, application_id, data, updated_at, updated_by) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)`,
+        [r.kind, r.id, r.version, loanId, applicationId, encodeEntityData(r.data), r.updatedAt, r.updatedBy]);
     }
   }
 }

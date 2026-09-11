@@ -9,6 +9,10 @@
  *   POST /v1/tools/{process}/{name}                 execute a global tool (no loan)
  *   GET  /v1/loans/{loanId}/events|timers|ledger    the loan's record
  *   POST /v1/sweep                                  the timer sweep, once
+ *   POST /v1/applications                           open an application  body: { actor, application: { partner_party_id, channel, transaction_type, occupancy, borrowers: [{ legal_name, … }], property?: {…}, prior_loan_id? } }
+ *   POST /v1/applications/{id}/tools/{process}/{name}   execute a tool for an application (before funding)   body as for loans
+ *   GET  /v1/applications/{id}                      the application's record: row, events, open timers, decisions
+ *   GET  /v1/applications                           the newest applications
  *   POST /v1/transfers/batches                      board a servicing-transfer batch  body: { actor, batch: {...}, files: { "boarding_tape.final.csv": "...", ... } }
  *   POST /v1/transfers/batches/demo                 board the built-in 100-loan demo batch (fixtures/transfer-batch-demo)
  *   GET  /v1/transfers/batches/{batchId}            a batch's boarding summary
@@ -26,6 +30,7 @@ import { RoleDenied } from "../app/roles.ts";
 import type { Actor } from "../kernel/events/index.ts";
 import { createConsoleServer } from "../console/server.ts";
 import { PgConsoleStore } from "../console/pg-store.ts";
+import type { ApplicationInput } from "../infra/db/applications.ts";
 import { Runtime, ToolNotFound } from "./app.ts";
 import { boardTransferBatch, type TransferBatchInput } from "./transfers.ts";
 import { generateDemoBatch, DEMO_BATCH } from "../domain/boarding/demo-batch.ts";
@@ -106,6 +111,41 @@ export function createApiServer(opts: ServerOptions): Server {
           ? { runId: run.runId, modelVersion: run.modelVersion, promptVersion: run.promptVersion, ...(typeof run.confidence === "number" ? { confidence: run.confidence } : {}) } : undefined;
         const r = await runtime.execute({ process, name, loanId, actor, input: loanId && input["loan_id"] === undefined ? { ...input, loan_id: loanId } : input, ...(runInfo ? { run: runInfo } : {}), ...(b["approvedBy"] ? { approvedBy: actorOf(b["approvedBy"]) } : {}) });
         done(200, r, { tool: `${process} ${name}`, loan_id: loanId || null, actor: `${actor.kind}:${actor.id}`, events: r.events.length }); return;
+      }
+      if (method === "POST" && (m = /^\/v1\/applications\/([^/]+)\/tools\/([^/]+)\/([^/]+)$/.exec(path))) {
+        const applicationId = decodeURIComponent(m[1]!);
+        if (!isUuid(applicationId)) throw new RangeError("applicationId must be the application's uuid (applications.id)");
+        const process = decodeURIComponent(m[2]!); const name = decodeURIComponent(m[3]!);
+        const b = await readJson(req);
+        const actor = actorOf(b["actor"]);
+        const input = (b["input"] ?? {}) as Record<string, unknown>;
+        if (!input || typeof input !== "object" || Array.isArray(input)) throw new RangeError("input must be a JSON object");
+        const app = await runtime.applications.get(applicationId);
+        if (!app) { done(404, { error: "no_such_application" }); return; }
+        const loanId = app.loan_id ?? "";
+        const run = b["run"] as { runId?: unknown; modelVersion?: unknown; promptVersion?: unknown; confidence?: unknown } | undefined;
+        const runInfo = run && typeof run.runId === "string" && typeof run.modelVersion === "string" && typeof run.promptVersion === "string"
+          ? { runId: run.runId, modelVersion: run.modelVersion, promptVersion: run.promptVersion, ...(typeof run.confidence === "number" ? { confidence: run.confidence } : {}) } : undefined;
+        const r = await runtime.execute({ process, name, loanId, applicationId, actor, input: { ...(loanId && input["loan_id"] === undefined ? { loan_id: loanId } : {}), ...(input["application_id"] === undefined ? { application_id: applicationId } : {}), ...input }, ...(runInfo ? { run: runInfo } : {}), ...(b["approvedBy"] ? { approvedBy: actorOf(b["approvedBy"]) } : {}) });
+        done(200, r, { tool: `${process} ${name}`, application_id: applicationId, loan_id: loanId || null, actor: `${actor.kind}:${actor.id}`, events: r.events.length }); return;
+      }
+      if (method === "POST" && path === "/v1/applications") {
+        const b = await readJson(req);
+        const actor = actorOf(b["actor"]);
+        const a = b["application"] as Record<string, unknown> | undefined;
+        if (!a || typeof a !== "object") throw new RangeError("application is required: { partner_party_id, channel, transaction_type, occupancy, borrowers: [{ legal_name }], property? }");
+        for (const k of ["partner_party_id", "channel", "transaction_type", "occupancy"]) if (typeof a[k] !== "string" || !a[k]) throw new RangeError(`application.${k} is required`);
+        if (!Array.isArray(a["borrowers"]) || !a["borrowers"].length) throw new RangeError("application.borrowers must list at least one borrower { legal_name }");
+        const r = await runtime.createApplication(a as unknown as ApplicationInput, actor);
+        done(200, r, { application_id: r.application.id, timers: r.timers.length }); return;
+      }
+      if (method === "GET" && path === "/v1/applications") { done(200, { applications: await runtime.applications.list() }); return; }
+      if (method === "GET" && (m = /^\/v1\/applications\/([^/]+)$/.exec(path))) {
+        const applicationId = decodeURIComponent(m[1]!);
+        if (!isUuid(applicationId)) throw new RangeError("applicationId must be the application's uuid (applications.id)");
+        const rec = await runtime.applicationRecord(applicationId);
+        if (!rec) done(404, { error: "no_such_application" }); else done(200, rec);
+        return;
       }
       if (method === "GET" && (m = /^\/v1\/loans\/([^/]+)\/(events|timers|ledger)$/.exec(path))) {
         const loanId = decodeURIComponent(m[1]!);

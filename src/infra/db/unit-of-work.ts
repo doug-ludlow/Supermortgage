@@ -19,8 +19,12 @@ import { PgLedgerRepository } from "./ledger.ts";
 import { PgTimerRepository } from "./timers.ts";
 import { PgDecisionRepository, type DecisionInput, type DecisionRecord } from "./decisions.ts";
 
+/** The scope of one command: a loan, an application (before funding), or both (30.2 creates the loan for the application). */
+export interface UowScope { readonly loanId?: string; readonly applicationId?: string; }
+
 export interface UowContext {
   readonly loanId: string;
+  readonly applicationId?: string;
   readonly events: MemoryEventStore;
   readonly ledger: MemoryLedger;
   readonly timers: TimerEngine;
@@ -40,6 +44,8 @@ export interface UowResult<T> {
 export interface UowOptions {
   readonly clock?: Clock;
   readonly timerOptions?: Omit<TimerEngineOptions, "calendars"> & { calendars?: TimerEngineOptions["calendars"] };
+  /** Writes that must precede the command's events in the same transaction (a new application row the events reference). */
+  readonly before?: (q: Queryable) => Promise<void>;
   /** Extra writes committed in the same transaction as the command's events, ledger sets, timers and decisions (the runtime's entity records and escalations). */
   readonly commit?: (q: Queryable) => Promise<void>;
 }
@@ -57,11 +63,22 @@ export class PgUnitOfWork {
     this.events = new PgEventRepository(db); this.ledger = new PgLedgerRepository(db); this.timers = new PgTimerRepository(db); this.decisions = new PgDecisionRepository(db);
   }
 
-  async run<T>(loanId: string, fn: (ctx: UowContext) => T | Promise<T>, opts: UowOptions = {}): Promise<UowResult<T>> {
+  async run<T>(scope: string | UowScope, fn: (ctx: UowContext) => T | Promise<T>, opts: UowOptions = {}): Promise<UowResult<T>> {
     const clock = opts.clock ?? systemClock;
-    // 1. hydrate
-    const [history, sets, openTimers] = await Promise.all([this.events.byLoan(loanId), this.ledger.setsForLoan(loanId), this.timers.open(loanId)]);
-    const events = new MemoryEventStore(clock);
+    const sc: UowScope = typeof scope === "string" ? { loanId: scope } : scope;
+    const loanId = sc.loanId ?? ""; const applicationId = sc.applicationId;
+    // 1. hydrate — a loan's record, an application's record, or both (deduplicated: the hand-off events carry both keys)
+    const [loanHistory, appHistory, sets, loanTimers, appTimers] = await Promise.all([
+      loanId ? this.events.byLoan(loanId) : Promise.resolve([] as DomainEvent[]),
+      applicationId ? this.events.byApplication(applicationId) : Promise.resolve([] as DomainEvent[]),
+      loanId ? this.ledger.setsForLoan(loanId) : Promise.resolve([] as EntrySet[]),
+      loanId ? this.timers.open(loanId) : Promise.resolve([] as TimerInstance[]),
+      applicationId ? this.timers.forApplication(applicationId) : Promise.resolve([] as TimerInstance[])]);
+    const seen = new Set<string>();
+    const history = [...loanHistory, ...appHistory].filter((e) => (seen.has(e.id) ? false : (seen.add(e.id), true))).sort((a, b) => a.sequence - b.sequence);
+    const tseen = new Set<string>();
+    const openTimers = [...loanTimers, ...appTimers].filter((t) => (t.status === "armed" || t.status === "breached") && (tseen.has(t.id) ? false : (tseen.add(t.id), true)));
+    const events = new MemoryEventStore(clock, { ...(loanId ? { loanId } : {}), ...(applicationId ? { applicationId } : {}) });
     events.seed(history);
     const ledger = new MemoryLedger();
     ledger.seed(sets);
@@ -73,13 +90,14 @@ export class PgUnitOfWork {
     const queued: DecisionInput[] = [];
 
     // 2. run the command
-    const result = await fn({ loanId, events, ledger, timers, clock, decide: (d) => { queued.push({ loanId, ...d }); } });
+    const result = await fn({ loanId, ...(applicationId ? { applicationId } : {}), events, ledger, timers, clock, decide: (d) => { queued.push({ ...(loanId ? { loanId } : {}), ...(applicationId ? { applicationId } : {}), ...d }); } });
 
     // 3. persist atomically
     const newEvents = events.since(priorSeq);
     const newSets = ledger.sets().filter((s) => !knownSets.has(s.id));
     const changedTimers = timers.all().filter((t) => priorTimerState.get(t.id) !== `${t.status}|${t.satisfiedAt ?? ""}|${t.breachedAt ?? ""}|${t.cancelledReason ?? ""}`);
     return this.db.tx(async (q) => {
+      if (opts.before) await opts.before(q);
       const persisted = await this.events.append(newEvents, q);
       for (const s of newSets) await this.ledger.post(s, q);
       await this.timers.save(changedTimers, q);

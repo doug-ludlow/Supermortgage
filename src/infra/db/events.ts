@@ -36,7 +36,7 @@ export class PgEventRepository {
       const rows = await q.query<EventRow>(
         `INSERT INTO loan_events (id, type, occurred_at, loan_id, application_id, aggregate_kind, aggregate_id, actor_kind, actor_id, actor_role, payload, causation_id, correlation_id)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13) RETURNING ${COLS}`,
-        [e.id, e.type, e.occurredAt, e.loanId ?? null, isUuid(e.applicationId) ? e.applicationId : null, e.aggregate?.kind ?? null, e.aggregate?.id ?? null, e.actor.kind, e.actor.id, e.actor.role ?? null,
+        [e.id, e.type, e.occurredAt, e.loanId || null, isUuid(e.applicationId) ? e.applicationId : null, e.aggregate?.kind ?? null, e.aggregate?.id ?? null, e.actor.kind, e.actor.id, e.actor.role ?? null,
           toJson(e.payload), isUuid(e.causationId) ? e.causationId : null, isUuid(e.correlationId) ? e.correlationId : null]);
       out.push(rowToEvent(rows[0]!));
     }

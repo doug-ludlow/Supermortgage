@@ -32,9 +32,12 @@ export class MemoryEventStore implements EventStore {
   private readonly subs: { pattern: EventPattern; fn: Subscriber }[] = [];
   private seq = 0;
   private readonly clock: Clock;
-  constructor(clock: Clock = systemClock) { this.clock = clock; }
+  /** Keys stamped on every appended event that does not carry them — the unit of work's scope (loan and/or application). */
+  private readonly defaults: { loanId?: string; applicationId?: string };
+  constructor(clock: Clock = systemClock, defaults: { loanId?: string; applicationId?: string } = {}) { this.clock = clock; this.defaults = defaults; }
 
   append<P extends Record<string, unknown>>(input: EventInput<P>): DomainEvent<P> {
+    const applicationId = input.applicationId ?? this.defaults.applicationId;
     const e: DomainEvent<P> = {
       id: randomUUID(),
       type: input.type,
@@ -43,7 +46,7 @@ export class MemoryEventStore implements EventStore {
       payload: (input.payload ?? {}) as P,
       sequence: ++this.seq,
       ...(input.loanId !== undefined ? { loanId: input.loanId } : {}),
-      ...(input.applicationId !== undefined ? { applicationId: input.applicationId } : {}),
+      ...(applicationId !== undefined ? { applicationId } : {}),
       ...(input.aggregate !== undefined ? { aggregate: input.aggregate } : {}),
       ...(input.causationId !== undefined ? { causationId: input.causationId } : {}),
       ...(input.correlationId !== undefined ? { correlationId: input.correlationId } : {}),
@@ -64,6 +67,7 @@ export class MemoryEventStore implements EventStore {
   since(sequence: number): readonly DomainEvent[] { return this.events.filter((e) => e.sequence > sequence); }
   lastSequence(): number { return this.seq; }
   byLoan(loanId: string): readonly DomainEvent[] { return this.events.filter((e) => e.loanId === loanId); }
+  byApplication(applicationId: string): readonly DomainEvent[] { return this.events.filter((e) => e.applicationId === applicationId); }
   ofType(type: string): readonly DomainEvent[] { return this.events.filter((e) => e.type === type); }
   all(): readonly DomainEvent[] { return this.events; }
   subscribe(pattern: string | EventPattern, fn: Subscriber): () => void {

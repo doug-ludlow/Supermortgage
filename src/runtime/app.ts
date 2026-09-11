@@ -18,9 +18,11 @@
  * wired yet: a tool that calls `service(rt, …)` answers 501 until its section's
  * service is given a persistence adapter.
  */
+import { randomUUID } from "node:crypto";
 import type { Db } from "../infra/db/client.ts";
 import { PgUnitOfWork, type UowResult } from "../infra/db/unit-of-work.ts";
-import { PgEntityRepository } from "../infra/db/entities.ts";
+import { PgEntityRepository, type EntityScope } from "../infra/db/entities.ts";
+import { PgApplicationRepository, type ApplicationInput, type ApplicationRecord } from "../infra/db/applications.ts";
 import { AgentRegistry } from "../app/agents.ts";
 import { CommandBus, type AgentRunInfo, type ExecuteResult } from "../app/commands.ts";
 import { EntityStore, type Ports, type ToolDef, type ToolInput, type ToolRuntime } from "../app/tools.ts";
@@ -50,7 +52,8 @@ export interface RuntimeDeps {
   readonly notices?: NoticeRegistry;
   readonly clock?: Clock;
 }
-export interface ExecuteRequest { readonly process: string; readonly name: string; readonly loanId: string; readonly actor: Actor; readonly input: ToolInput; readonly run?: AgentRunInfo; readonly approvedBy?: Actor; }
+/** A command is scoped to a loan (`loanId`), to an application before funding (`applicationId`), or to both during the 30.2 hand-off. */
+export interface ExecuteRequest { readonly process: string; readonly name: string; readonly loanId: string; readonly applicationId?: string; readonly actor: Actor; readonly input: ToolInput; readonly run?: AgentRunInfo; readonly approvedBy?: Actor; }
 export interface ExecuteResponse {
   readonly output: unknown;
   readonly decisionId?: string;
@@ -86,13 +89,14 @@ export class Runtime {
   readonly uow: PgUnitOfWork;
   readonly entities: PgEntityRepository;
   readonly escalationRepo: PgEscalationRepository;
+  readonly applications: PgApplicationRepository;
   private readonly bus: CommandBus;
   private readonly tools = new Map<string, ToolDef>();
 
   constructor(deps: RuntimeDeps) {
     this.db = deps.db; this.registry = deps.registry; this.agents = deps.agents ?? new AgentRegistry(); this.ports = deps.ports ?? fakePorts(); this.clock = deps.clock ?? systemClock;
     this.noticeRegistry = deps.notices ?? (() => { const r = buildRegistry(); publishAuthored(r); return r; })();
-    this.uow = new PgUnitOfWork(this.db, this.registry); this.entities = new PgEntityRepository(this.db); this.escalationRepo = new PgEscalationRepository(this.db);
+    this.uow = new PgUnitOfWork(this.db, this.registry); this.entities = new PgEntityRepository(this.db); this.escalationRepo = new PgEscalationRepository(this.db); this.applications = new PgApplicationRepository(this.db);
     this.bus = new CommandBus(this.agents);
     for (const t of ALL_TOOLS) { this.tools.set(toolKey(t.process, t.name), t); this.agents.registerTool(t.agent, t.name); }
   }
@@ -105,22 +109,45 @@ export class Runtime {
   async execute(req: ExecuteRequest): Promise<ExecuteResponse> {
     const def = this.tool(req.process, req.name);
     if (!def) throw new ToolNotFound(req.process, req.name);
+    const scope: EntityScope = { ...(req.loanId ? { loanId: req.loanId } : {}), ...(req.applicationId ? { applicationId: req.applicationId } : {}) };
     const store = new EntityStore();
-    store.seed(await this.entities.load(req.loanId));
+    store.seed(await this.entities.load(scope));
     const mark = store.versionCount();
     let escalations: EscalationService | undefined;
-    const r: UowResult<ExecuteResult<unknown>> = await this.uow.run(req.loanId, async (ctx) => {
+    const r: UowResult<ExecuteResult<unknown>> = await this.uow.run(scope, async (ctx) => {
       escalations = new EscalationService(ctx.events, ctx.clock);
       const notices = this.ports.printMail && this.ports.edelivery ? new NoticeService({ registry: this.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: this.ports.printMail, edelivery: this.ports.edelivery }) : undefined;
       const rt: ToolRuntime = { store, escalations, services: {}, ports: this.ports, ...(notices ? { notices } : {}) };
       const cmd = bindTools(rt, this.agents, [def]).get(toolKey(def.process, def.name))!;
       return this.bus.execute(cmd, req.actor, req.input, ctx, { ...(req.run ? { run: req.run } : {}), ...(req.approvedBy ? { approvedBy: req.approvedBy } : {}) });
     }, { clock: this.clock, commit: async (q) => {
-      await this.entities.save(store.versionsSince(mark), req.loanId || null, q);
+      await this.entities.save(store.versionsSince(mark), scope, q);
       for (const e of escalations?.list() ?? []) await this.escalationRepo.save(e, q);
     } });
     return { output: r.result.output, ...(r.result.decisionId ? { decisionId: r.result.decisionId } : {}), event: r.result.event, events: r.events, timers: r.timers,
       decisions: r.decisions.map((d) => ({ id: d.id })), escalations: (escalations?.list() ?? []).map((e) => ({ id: e.id, kind: e.kind, ownerRole: e.ownerRole })) };
+  }
+
+  /**
+   * Open an application (21.1's aggregate) — the origination side's first write. The row and its borrowers/property are
+   * inserted and `application.started` is appended keyed by the application id, in one transaction; every origination
+   * timer that triggers on `application.started` arms in the same pass.
+   */
+  async createApplication(input: ApplicationInput, actor: Actor): Promise<{ application: ApplicationRecord; event: DomainEvent; timers: readonly TimerInstance[] }> {
+    const id = input.id ?? randomUUID();
+    let app: ApplicationRecord | undefined;
+    const r = await this.uow.run({ applicationId: id }, (ctx) => ctx.events.append({ type: "application.started", applicationId: id, aggregate: { kind: "application", id }, actor,
+      payload: { application_id: id, channel: input.channel, transaction_type: input.transaction_type, occupancy: input.occupancy, partner_party_id: input.partner_party_id, prior_loan_id: input.prior_loan_id ?? null, borrowers: input.borrowers.length, intake_channel: input.intake_channel ?? null } }),
+      { clock: this.clock, before: async (q) => { app = await this.applications.create({ ...input, id }, q); } });
+    return { application: app!, event: r.result, timers: r.timers };
+  }
+
+  /** The application's record: the row, its events, open timers and decisions — and, once funded, the loan it became. */
+  async applicationRecord(id: string): Promise<{ application: ApplicationRecord; events: readonly DomainEvent[]; timers: readonly TimerInstance[]; decisions: readonly { id: string; action: string; agent: string }[] } | undefined> {
+    const application = await this.applications.get(id);
+    if (!application) return undefined;
+    const [events, timers, decisions] = await Promise.all([this.uow.events.byApplication(id), this.uow.timers.forApplication(id), this.uow.decisions.byApplication(id)]);
+    return { application, events, timers, decisions: decisions.map((d) => ({ id: d.id, action: d.action, agent: d.agent })) };
   }
 
   /** Breach every armed timer past due at `nowIso`; one escalation per breach to the registry's first escalation role. One transaction for the pass. */

@@ -16,7 +16,7 @@ import { SignIn } from "@/components/shell/SignIn";
 import { DeepLink, appRoute } from "@/components/shell/DeepLink";
 import { GoogleCallback } from "@/components/shell/GoogleCallback";
 import { ReturnRedirect } from "@/components/shell/ReturnRedirect";
-import { Header, FAKE_SERVICER_CONTACT } from "@/components/shell/Header";
+import { Header } from "@/components/shell/Header";
 import { AddMobilePrompt } from "@/components/shell/AddMobile";
 import { Thread } from "@/components/shell/Thread";
 import { PASSKEY_DEVICE_HINT, PENDING_DEEP_LINK, b64urlDecode, b64urlEncode } from "@/lib/auth/passkey";
@@ -340,13 +340,11 @@ describe("32.14 S3 — auth.add_mobile after Google, and the header", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(copy("auth.fresh_code"));
     expect(screen.getByRole("button", { name: copyOptions("auth.add_mobile")[1]! })).toBeEnabled();
   });
-  it("the header shows the partner's phone as a FAKE-marked tel link and Sign in when there is no session", async () => {
+  it("the header shows Sign in when there is no session, and no phone number (the FAKE placeholder number is gone)", async () => {
     const onSignIn = vi.fn();
     render(<Header fixturesMode={false} onSubjectChange={noop} onOpenRecord={noop} showSignIn onSignIn={onSignIn} />);
-    const phone = screen.getByTestId("partner-phone");
-    expect(phone).toHaveAttribute("href", `tel:${FAKE_SERVICER_CONTACT.phone_e164}`);
-    expect(phone).toHaveTextContent(FAKE_SERVICER_CONTACT.phone_display);
-    expect(within(phone).getByText("FAKE")).toHaveClass("sm-fake");
+    expect(screen.queryByTestId("partner-phone")).toBeNull();
+    expect(screen.getByTestId("header").textContent).not.toMatch(/555-0100|☎/);
     await user.click(screen.getByTestId("sign-in-button"));
     expect(onSignIn).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("fake-banner")).toHaveTextContent("FAKE dev mode");

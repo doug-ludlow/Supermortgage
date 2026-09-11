@@ -1,6 +1,6 @@
 /**
  * 32.14 Phase 1 e2e (DELTA-12, DELTA-14) over the fixtures build at 1280 and 390 px. The proxy is replaced by `page.route`
- * canned responses (no API): the header's Sign in → the chooser under auth.welcome_back with Talk to a person still visible;
+ * canned responses (no API): the header's Sign in → the chooser under auth.welcome_back with Talk to a person still visible (no phone number in the header);
  * a deep link without a session (T16) → the chooser with the token retained → the FAKE code → the card pinned on /app; the
  * Google FAKE path (FAKE identity form → start → the callback page posts with x-fake-oidc → the pending deep link resumes);
  * expired / unknown / another party's tokens; the vendor return; Use my passkey offered first on a device with the hint
@@ -82,12 +82,11 @@ async function axeClean(page: Page) {
 }
 
 test.describe("32.14 S6 — Sign in from the header", () => {
-  test("opens the chooser under auth.welcome_back in place of the thread; Talk to a person stays visible; the partner phone is FAKE-marked; axe", async ({ page }) => {
+  test("opens the chooser under auth.welcome_back in place of the thread; Talk to a person stays visible; no phone number in the header; axe", async ({ page }) => {
     await cannedApi(page, { signedIn: false });
     await page.goto("/app?fixture=refinance");
     await expect(page.getByTestId("shell")).toBeVisible();
-    await expect(page.getByTestId("partner-phone")).toContainText("(602) 555-0100");
-    await expect(page.getByTestId("partner-phone").locator(".sm-fake")).toHaveText("FAKE");
+    await expect(page.getByTestId("partner-phone")).toHaveCount(0);
     await page.getByTestId("sign-in-button").click();
     const signIn = page.locator("#otp");
     await expect(signIn).toBeVisible();

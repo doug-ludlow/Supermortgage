@@ -18,7 +18,6 @@ function FakeIdentityAsk() {
   return (
     <article className="sm-card" data-testid="fake-identity-ask" aria-labelledby="fake-identity-title" data-card-kind="ChoiceCard" data-status="pending">
       <div className="sm-card-kind">
-        <span>Your choice</span>
         <span className="sm-fake" data-testid="fake-identity-marker" title="FAKE: the sign-in chooser is a placeholder in this preview">
           FAKE sign-in placeholder
         </span>

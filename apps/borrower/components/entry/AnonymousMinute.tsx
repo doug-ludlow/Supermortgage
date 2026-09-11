@@ -148,6 +148,7 @@ function estimateFields(step: LeadStep, goal: LeadGoal | undefined): { path: str
 const ENTRY_CSS = `
 .sm-entry-headline { font-size: var(--sm-fs-28); font-weight: 700; letter-spacing: -0.01em; line-height: 1.2; margin: 12px 0 4px; max-width: 720px; }
 .sm-entry-quiet { display: block; max-width: 720px; margin: 0 0 12px; }
+.sm-entry-disclosure { margin: 8px 0 0; }
 [data-entry-step="goal"] .sm-options { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
 .sm-entry-fields { display: grid; gap: 10px; margin: 8px 0; }
 `;
@@ -311,6 +312,15 @@ function LeadLineView({ line, partner, state, timezone, testId }: { line: LeadLi
   const tokens: Tokens = { ...partnerTokens(partner), ...(code ? { state: stateName(code), state_code: code } : {}), ...(line.copy_tokens ?? {}) };
   const text = copy(variantKey ?? line.copy_key, tokens);
   const automated = line.copy_key === "entry.disclosure.first" || line.copy_key === "entry.disclosure.real_person";
+  // The automation disclosure is one quiet line above the first card — the sentence itself says who is talking, so no sender
+  // header, "automated" badge or timestamp around it (Utah's upfront disclosure and the CA/CO variants still render, still logged by the API).
+  if (automated) {
+    return (
+      <p id={`msg-${line.message_id}`} className="sm-source sm-entry-quiet sm-entry-disclosure" tabIndex={-1} data-sender={line.sender} data-testid={testId ?? "lead-line"} data-copy-key={variantKey ?? line.copy_key} data-state-variant={line.state_variant ?? (variantId ? STATE_OF_VARIANT[variantId] : undefined)} data-automated="true">
+        {text}
+      </p>
+    );
+  }
   return (
     <div id={`msg-${line.message_id}`} className={`sm-msg${line.sender === "notice" ? " sm-msg-notice" : ""}`} tabIndex={-1} data-sender={line.sender} data-testid={testId ?? "lead-line"} data-copy-key={variantKey ?? line.copy_key} data-state-variant={line.state_variant ?? (variantId ? STATE_OF_VARIANT[variantId] : undefined)}>
       <div className="sm-msg-meta">

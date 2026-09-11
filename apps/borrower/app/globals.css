@@ -934,18 +934,6 @@ a {
   height: 20px;
   flex: none;
 }
-.sm-header-phone {
-  color: var(--sm-text);
-  text-decoration: none;
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-  font-variant-numeric: tabular-nums;
-  min-height: 44px;
-}
-.sm-header-phone:hover {
-  text-decoration: underline;
-}
 .sm-offer-actions {
   display: flex;
   flex-wrap: wrap;

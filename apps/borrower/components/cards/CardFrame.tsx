@@ -5,7 +5,7 @@ import type { AnyCardInstance, CardKind } from "@/lib/types/cards";
 import { countdown, formatDate } from "@/lib/format";
 import { SHOW_FAKE_MARKERS } from "@/lib/env";
 
-/** Human-readable card kind label (01 §1.3 provenance for cards). */
+/** Human-readable card kind label (01 §1.3): the aria-live announcement and the title fallback — never printed as a kicker above the card. */
 const KIND_LABEL: Record<CardKind, string> = {
   StatusCard: "Status",
   ChoiceCard: "Your choice",
@@ -81,20 +81,21 @@ export function CardFrame({ card, timezone, title, receipt, announce, children, 
       tabIndex={-1}
       id={`card-${card.card_instance_id}`}
     >
-      <div className="sm-card-kind">
-        <span>{KIND_LABEL[card.kind]}</span>
-        {fakeVendor ? <FakeVendorMarker vendor={fakeVendor} /> : null}
-        {cd && cd.under72h ? (
-          <span className="sm-countdown" role="timer">
-            <time dateTime={card.expires_at}>{cd.text}</time>
-          </span>
-        ) : null}
-        {resolved && collapsible ? (
-          <button type="button" className="sm-btn sm-btn-quiet" style={{ marginLeft: "auto", minHeight: 32, padding: "2px 8px" }} onClick={() => setExpanded((e) => !e)} aria-expanded={expanded}>
-            {expanded ? "Hide" : "Show"}
-          </button>
-        ) : null}
-      </div>
+      {fakeVendor || (cd && cd.under72h) || (resolved && collapsible) ? (
+        <div className="sm-card-kind">
+          {fakeVendor ? <FakeVendorMarker vendor={fakeVendor} /> : null}
+          {cd && cd.under72h ? (
+            <span className="sm-countdown" role="timer">
+              <time dateTime={card.expires_at}>{cd.text}</time>
+            </span>
+          ) : null}
+          {resolved && collapsible ? (
+            <button type="button" className="sm-btn sm-btn-quiet" style={{ marginLeft: "auto", minHeight: 32, padding: "2px 8px" }} onClick={() => setExpanded((e) => !e)} aria-expanded={expanded}>
+              {expanded ? "Hide" : "Show"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       <h3 id={`card-${card.card_instance_id}-title`} className={collapsed ? "sm-visually-hidden" : undefined}>
         {title ?? KIND_LABEL[card.kind]}
       </h3>

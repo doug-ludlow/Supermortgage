@@ -59,19 +59,22 @@ async function toEstimate(stateLines: LeadLine[] = []) {
 }
 
 describe("32.14 S0 — arrive: the root renders the thread with no session (T-15-01, T-15-05)", () => {
-  it("posts lead.start on mount and renders the disclosure line FIRST with the automation marker, then the headline, the three goal tiles and the quiet time-budget line", async () => {
+  it("posts lead.start on mount and renders the disclosure FIRST as one quiet line (no sender header, badge or timestamp), then the headline, the three goal tiles and the quiet time-budget line", async () => {
     render(<AnonymousMinute />);
     const goal = await screen.findByTestId("entry-goal");
     expect(mocks().start).toHaveBeenCalledTimes(1);
     const log = screen.getByRole("log");
     expect(log).toHaveAttribute("data-step", "goal");
     expect(log).toHaveAttribute("data-lead-id", "lead-1");
-    // the first thing in the log is the disclosure, the library sentence with the partner's name, marked automated
+    // the first thing in the log is the disclosure, the library sentence with the partner's name, as a quiet line: the sentence alone
     const first = log.firstElementChild?.matches("style") ? log.children[1]! : log.firstElementChild!;
     expect(first).toHaveAttribute("data-testid", "lead-line");
     expect(first).toHaveAttribute("data-copy-key", "entry.disclosure.first");
-    expect(first).toHaveTextContent(copy("entry.disclosure.first", { "partner.legal_name": "Partner Bank" }));
-    expect(within(first as HTMLElement).getByTestId("automation-marker")).toHaveTextContent("automated");
+    expect(first).toHaveAttribute("data-automated", "true");
+    expect(first.textContent).toBe(copy("entry.disclosure.first", { "partner.legal_name": "Partner Bank" }));
+    expect(within(first as HTMLElement).queryByTestId("automation-marker")).toBeNull();
+    expect(within(first as HTMLElement).queryByTestId("provenance")).toBeNull();
+    expect(first.querySelector("time")).toBeNull();
     expect(first.compareDocumentPosition(goal) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // headline above the goal card, time budget under it — both library lines
     expect(screen.getByTestId("entry-headline")).toHaveTextContent(copy("entry.landing.headline"));

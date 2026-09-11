@@ -80,9 +80,6 @@ export function AddMobilePrompt({ onDone }: { onDone: () => void }) {
 
   return (
     <section className="sm-card sm-add-mobile" data-testid="add-mobile" aria-labelledby={`${id}-title`}>
-      <div className="sm-card-kind">
-        <span>Please confirm</span>
-      </div>
       <h3 id={`${id}-title`}>{copy("auth.add_mobile")}</h3>
       <p>{copyExtra("auth.add_mobile", "helper")}</p>
       {step.kind === "ask" ? (

@@ -107,11 +107,13 @@ test.describe("32.14 the anonymous minute", () => {
     expect(api.calls[0]).toMatchObject({ action: "start", channel: "web_chat" });
     const log = page.getByTestId("anonymous-minute");
     await expect(log).toHaveAttribute("data-step", "goal");
-    // the first line in the log is the disclosure, automated, with the partner's name; the goal card follows it
+    // the first line in the log is the disclosure with the partner's name, one quiet line (no sender, badge or time); the goal card follows it
     const first = log.locator("[data-testid=lead-line]").first();
     await expect(first).toHaveAttribute("data-copy-key", "entry.disclosure.first");
     await expect(first).toContainText("working for Partner Bank");
-    await expect(first.getByTestId("automation-marker")).toHaveText("automated");
+    await expect(first).toHaveAttribute("data-automated", "true");
+    await expect(first.getByTestId("automation-marker")).toHaveCount(0);
+    await expect(first.locator("time")).toHaveCount(0);
     const firstBox = (await first.boundingBox())!;
     const goalBox = (await page.getByTestId("entry-goal").boundingBox())!;
     expect(firstBox.y).toBeLessThan(goalBox.y);

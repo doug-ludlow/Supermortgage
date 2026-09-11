@@ -4,12 +4,11 @@
  * 32.14 S0 header (DELTA-14): the brand, the FAKE-mode banner, the loan switch, the partner's phone number and Sign in (S6 —
  * opens the sign-in screen under `auth.welcome_back`). The Record opener stays for the drawer breakpoint.
  *
- * FAKE: `FAKE_SERVICER_CONTACT` is the partner's number until the telephony vendor lands; it renders with the `.sm-fake` marker.
+ * No partner phone number in the header: the FAKE placeholder number was removed; a real one arrives with the telephony vendor.
  */
 import type { BorrowerMe } from "@/lib/types/record";
 import { SHOW_FAKE_MARKERS } from "@/lib/env";
 
-export const FAKE_SERVICER_CONTACT = { vendor: "FAKE", phone_e164: "+16025550100", phone_display: "(602) 555-0100" } as const;
 
 export type HeaderProps = {
   fixturesMode: boolean;
@@ -53,15 +52,6 @@ export function Header({ fixturesMode, me, subject, onSubjectChange, streamLabel
       ) : null}
       <span className="sm-header-spacer" />
       {streamLabel ? <span className="sm-source">{streamLabel}</span> : null}
-      <a className="sm-header-phone" href={`tel:${FAKE_SERVICER_CONTACT.phone_e164}`} data-testid="partner-phone">
-        <span aria-hidden="true">☎</span>
-        <span>{FAKE_SERVICER_CONTACT.phone_display}</span>
-        {SHOW_FAKE_MARKERS ? (
-          <span className="sm-fake" title="FAKE partner phone number until the telephony vendor lands">
-            FAKE
-          </span>
-        ) : null}
-      </a>
       {me ? (
         <span className="sm-source">
           {me.first_name} · {me.level}

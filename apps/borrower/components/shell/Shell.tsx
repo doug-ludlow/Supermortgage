@@ -311,7 +311,9 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
               cardErrors={cardErrors}
             />
           )}
-          <ActionBar disabled={showSignIn} onSend={(t) => void sendMessage(t)} onAttach={(f) => void attach(f)} onTalkToPerson={() => void talkToPerson()} />
+          {anonymous && !signInOpen ? null : (   // the anonymous minute has no session to send to or hand off from: no action bar until sign-in
+            <ActionBar disabled={showSignIn} onSend={(t) => void sendMessage(t)} onAttach={(f) => void attach(f)} onTalkToPerson={() => void talkToPerson()} />
+          )}
         </main>
         {anonymous ? null : (
         <Record record={record} link={link} open={recordOpen} onClose={() => setRecordOpen(false)}>

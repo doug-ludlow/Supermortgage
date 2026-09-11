@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 4819/7446 (64.7%): tids 1293/1914, tables 494/717, timers 1433/1987, notices 235/306, tools 695/1311, figures 669/1211; processes at 100%: 116/165",
+ "brief": "spec units built 4842/7446 (65.0%): tids 1306/1914, tables 494/717, timers 1435/1987, notices 235/306, tools 695/1311, figures 677/1211; processes at 100%: 116/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1293
+   "built": 1306
   },
   "tables": {
    "spec": 717,
@@ -11,7 +11,7 @@
   },
   "timers": {
    "spec": 1987,
-   "built": 1433
+   "built": 1435
   },
   "notices": {
    "spec": 306,
@@ -23,11 +23,11 @@
   },
   "figures": {
    "spec": 1211,
-   "built": 669
+   "built": 677
   },
   "units": {
    "spec": 7446,
-   "built": 4819
+   "built": 4842
   }
  },
  "sections": {
@@ -177,7 +177,7 @@
   },
   "25": {
    "spec": 231,
-   "built": 4,
+   "built": 5,
    "processes": 4,
    "done": 0
   },
@@ -207,7 +207,7 @@
   },
   "30": {
    "spec": 218,
-   "built": 193,
+   "built": 215,
    "processes": 4,
    "done": 2
   },
@@ -7917,7 +7917,7 @@
    },
    "timers": {
     "spec": 12,
-    "built": 4,
+    "built": 5,
     "armable": 12,
     "missing": [
      "CA_CIV_2954_IMPOUND_STMT_GATE",
@@ -7925,7 +7925,6 @@
      "REGZ_1026_39_OWNERSHIP_NOTICE_30",
      "SM_O64_CLOSING_PACKAGE_NOTICES_GATE",
      "SM_O64_FIRST_PAYMENT_LETTER_PREDUE_20",
-     "SM_O64_INITIAL_ESCROW_STMT_AT_SETTLEMENT",
      "SM_O64_POST_CLOSING_NOTICE_RUN_2BD",
      "UT_7_17_4_RESERVE_OPTIONS_NOTICE_GATE"
     ]
@@ -7981,9 +7980,9 @@
    },
    "units": {
     "spec": 62,
-    "built": 4
+    "built": 5
    },
-   "pct": 6.5
+   "pct": 8.1
   },
   {
    "process": "26.1",
@@ -9602,23 +9601,9 @@
    "title": "Escrow account establishment at origination: RESPA \u00a71024.17 aggregate analysis, initial deposit, initial escrow statement, CD escrow consistency, waivers, HPML escrow, same-servicer refinance escrow transfer",
    "tids": {
     "spec": 13,
-    "built": 0,
-    "todo": 13,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13
-    ]
+    "built": 13,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 4,
@@ -9627,12 +9612,11 @@
    },
    "timers": {
     "spec": 15,
-    "built": 12,
+    "built": 13,
     "armable": 14,
     "missing": [
      "REGZ_1026_35B1_HPML_ESCROW_GATE",
-     "REGZ_1026_35_HPML_ESCROW_5Y",
-     "SM_O64_INITIAL_ESCROW_STMT_AT_SETTLEMENT"
+     "REGZ_1026_35_HPML_ESCROW_5Y"
     ]
    },
    "notices": {
@@ -9647,23 +9631,14 @@
    },
    "figures": {
     "spec": 20,
-    "built": 12,
-    "missing": [
-     "$1,541.70",
-     "$1,610.40",
-     "$1,612.50",
-     "$2,010.40",
-     "$2,133.32",
-     "$452.10",
-     "$616.68",
-     "$8,250.00"
-    ]
+    "built": 20,
+    "missing": []
    },
    "units": {
     "spec": 55,
-    "built": 31
+    "built": 53
    },
-   "pct": 56.4
+   "pct": 96.4
   },
   {
    "process": "30.4",

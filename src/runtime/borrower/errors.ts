@@ -26,11 +26,15 @@ export const looksLikeGate = (code: string): boolean => GATE_SHAPED.test(code);
 export function toBorrowerError(e: unknown): BorrowerError {
   if (e instanceof BorrowerError) return e;
   if (e instanceof CommandRefused) return new BorrowerError(409, e.code, looksLikeGate(e.code) ? e.code : undefined, e.message);
+  // a section's own refusal (LockRefused, LeRefused, DecisionRefused, …): a typed code the owning handler named — the same {code, gate?, copy_key} answer
+  if (e instanceof Error && /Refused$/.test(e.name) && typeof (e as { code?: unknown }).code === "string") { const code = (e as unknown as { code: string }).code; return new BorrowerError(409, code, looksLikeGate(code) ? code : undefined, e.message); }
   if (e instanceof GateClosed) return new BorrowerError(409, "GATE_CLOSED", e.ref, e.message);
   if (e instanceof RoleDenied) return new BorrowerError(403, "ROLE_DENIED", undefined, e.message);
   if (e instanceof AiPathUnavailable) return new BorrowerError(503, "AI_OFF", undefined, e.message);
   if (e instanceof ToolNotFound) return new BorrowerError(404, "NOT_FOUND", undefined, e.message);
   if (e instanceof PortUnavailable) return new BorrowerError(501, "NOT_WIRED", undefined, e.message);
   if (e instanceof RangeError || e instanceof TypeError || e instanceof SyntaxError) return new BorrowerError(400, "BAD_REQUEST", undefined, e.message);
+  // a Postgres unique violation on the command's commit (a section whose row ids are a process-wide counter — 24.5's `ev-n`, 24.1's `sel-n`): the command wrote nothing; a typed 409, never a 500
+  if (e instanceof Error && (e as { code?: unknown }).code === "23505") return new BorrowerError(409, "DUPLICATE_RECORD", undefined, e.message);
   return new BorrowerError(500, "INTERNAL", undefined, e instanceof Error ? e.message : String(e));
 }

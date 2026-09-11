@@ -24,8 +24,8 @@
  * `service(rt, …)` for one of those answers 501 until its section's service is given a persistence adapter.
  */
 import { randomUUID } from "node:crypto";
-import type { Db } from "../infra/db/client.ts";
-import { PgUnitOfWork, type UowResult } from "../infra/db/unit-of-work.ts";
+import type { Db, Queryable } from "../infra/db/client.ts";
+import { PgUnitOfWork, type UowResult, type CommittedListener } from "../infra/db/unit-of-work.ts";
 import { PgEntityRepository, type EntityScope } from "../infra/db/entities.ts";
 import { PgApplicationRepository, type ApplicationInput, type ApplicationRecord } from "../infra/db/applications.ts";
 import { AgentRegistry } from "../app/agents.ts";
@@ -120,6 +120,8 @@ export class Runtime {
     return [...this.tools.values()].map((t) => ({ process: t.process, name: t.name, agent: t.agent, kind: t.kind, humanOnly: t.humanOnly === true }));
   }
   tool(process: string, name: string): ToolDef | undefined { return this.tools.get(toolKey(process, name)); }
+  /** Post-commit hook: every event a unit of work persisted (tools, createApplication, the origination bridges, the sweep) — the borrower SSE stream's feed. */
+  onCommitted(fn: CommittedListener): () => void { return this.uow.onCommitted(fn); }
 
   async execute(req: ExecuteRequest): Promise<ExecuteResponse> {
     const def = this.tool(req.process, req.name);
@@ -129,17 +131,21 @@ export class Runtime {
     store.seed(await this.entities.load(scope));
     const mark = store.versionCount();
     let escalations: EscalationService | undefined;
+    // writes a tool defers to the command's transaction (the borrower surface's UI-owned rows: card_instances, messages, deep_links — src/app/tools/section32-1.ts)
+    const deferred: ((q: Queryable) => Promise<void>)[] = [];
     const r: UowResult<ExecuteResult<unknown>> = await this.uow.run(scope, async (uow) => {
       // a loan-scoped command's events that name neither key are the loan's (the kernel store defaults the application key from the scope; the loan key is defaulted here)
       const ctx = uow.loanId ? { ...uow, events: withDefaultLoan(uow.events, uow.loanId) } : uow;
       escalations = new EscalationService(ctx.events, ctx.clock);
       const notices = this.ports.printMail && this.ports.edelivery ? new NoticeService({ registry: this.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: this.ports.printMail, edelivery: this.ports.edelivery }) : undefined;
-      const rt: ToolRuntime = { store, escalations, services: this.originationServices.forCommand(ctx, store, escalations), ports: this.ports, ...(notices ? { notices } : {}) };
+      // `agents` (the live registry, so a tool that delegates to another agent's tool keeps the allowlists and AI-off state), `db` (read-only lookups a borrower-surface tool needs) and `deferWrite` (a row committed with the command) ride on the services map
+      const rt: ToolRuntime = { store, escalations, services: { ...this.originationServices.forCommand(ctx, store, escalations), agents: this.agents, db: this.db, deferWrite: (fn: (q: Queryable) => Promise<void>) => { deferred.push(fn); } }, ports: this.ports, ...(notices ? { notices } : {}) };
       const cmd = bindTools(rt, this.agents, [def]).get(toolKey(def.process, def.name))!;
       return this.bus.execute(cmd, req.actor, req.input, ctx, { ...(req.run ? { run: req.run } : {}), ...(req.approvedBy ? { approvedBy: req.approvedBy } : {}) });
     }, { clock: this.clock, commit: async (q) => {
       await this.entities.save(store.versionsSince(mark), scope, q);
       for (const e of escalations?.list() ?? []) await this.escalationRepo.save(e, q);
+      for (const fn of deferred) await fn(q);
     } });
     return { output: r.result.output, ...(r.result.decisionId ? { decisionId: r.result.decisionId } : {}), event: r.result.event, events: r.events, timers: r.timers,
       decisions: r.decisions.map((d) => ({ id: d.id })), escalations: (escalations?.list() ?? []).map((e) => ({ id: e.id, kind: e.kind, ownerRole: e.ownerRole })) };
@@ -185,10 +191,11 @@ export class Runtime {
             payload: { timer_code: b.instance.code, timer_id: b.instance.id, due_at: b.instance.dueAt !== undefined ? new Date(b.instance.dueAt).toISOString() : null, breach: b.breachText } }, { kind: "system", id: "sweep" });
           breaches.push({ loan_id: b.instance.loanId ?? null, code: b.instance.code, severity: b.severity, escalate_to: [...b.escalateTo], timer_id: b.instance.id });
         }
-        await this.uow.events.append(events.since(0), q);
+        const persisted = await this.uow.events.append(events.since(0), q);
         await this.uow.timers.save(engine.all().filter((t) => t.status === "breached"), q);
         for (const e of escalations.list()) await this.escalationRepo.save(e, q);
-      });
+        return persisted;
+      }).then((persisted) => this.uow.notifyCommitted(persisted));
     }
     const outbox = await this.db.query<{ adapter: string; status: string; count: string }>(`SELECT adapter, status, count(*)::text AS count FROM integration_messages WHERE status IN ('queued', 'failed') GROUP BY adapter, status ORDER BY adapter, status`).catch(() => []);
     return { at: nowIso, due: due.length, breaches, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })) };

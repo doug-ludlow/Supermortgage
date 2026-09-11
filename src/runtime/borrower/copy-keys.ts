@@ -20,7 +20,48 @@ export const GATE_COPY_KEYS: Readonly<Record<string, string>> = {
   REGB_1002_9_COUNTEROFFER_90: "gate.counteroffer.window",
   REGX_1024_41E1_ACCEPT_14: "gate.lossmit.accept_window",
   FNMA_B4_1_3_12_ROV_CLOSING_GATE: "gate.rov.too_late",
+  REGZ_1026_23_RESCISSION_3SBD_GATE: "gate.rescission.window",
+  SM_UW_CTC_GATE: "gate.closing.not_clear_yet",
+  REGB_1002_9_DECISION_30: "gate.decision.pending",
+  FCRA_1681B_A3_SOFT_PULL_AUTHORIZATION: "gate.credit.authorize_first",
 };
+
+/** Command refusals the borrower surface itself names (32.2 §2 preconditions the owning handler does not check, 01 §3 card rules, 01 §5 identity). */
+export const COMMAND_COPY_KEYS: Readonly<Record<string, string>> = {
+  CARD_ALREADY_RESOLVED: "thread.card_already_resolved",        // receipt line: "Already done — nothing more needed."
+  CARD_NOT_PENDING: "thread.card_not_pending",
+  CARD_VOICE_CONSENT: "consent.esign.title",                   // 01 §3.5: "Saying yes in chat or on a call doesn't count — check the box and type your name."
+  CARD_EVIDENCE_KIND: "thread.card_needs_tap",                 // 32.1: a consent, signature or payment card is never resolved from evidence
+  CARD_NO_COMMAND: "thread.card_needs_tap",
+  CONSENT_VOICE_VOID: "consent.esign.title",
+  REG_E_ELEMENTS_NOT_SHOWN: "consent.autodraft.title",
+  LOCK_NOT_ACTIVE: "lock.expired",
+  MI_QUOTE_NOT_READY: "mi.compare.title",
+  VALUATION_NOT_ASSIGNED: "valuation.schedule",
+  APPRAISAL_NOT_ACCEPTED: "valuation.copy",
+  ESCROW_STATEMENT_NOT_SENT: "escrow.review_soon",
+  MI_POLICY_NOT_ACTIVE: "pmi.ending",
+  OFFER_NOT_OPEN: "offer.not_now",
+  NO_SERVICED_LOAN: "error.not_yours",
+  APPLICATION_TERMINAL: "decision.withdraw.confirm",
+  COUNTEROFFER_NOT_OPEN: "decision.counteroffer",
+  RESCISSION_NOT_RUNNING: "rescission.expired",
+  CASE_KIND: DEFAULT_COPY_KEY,
+  COMMAND_UNKNOWN: DEFAULT_COPY_KEY,
+  DUPLICATE_RECORD: DEFAULT_COPY_KEY,
+  SUBJECT_REQUIRED: "error.not_yours",
+  DEMOGRAPHICS_OWN_PARTY_ONLY: "demographics.title",
+  JOINT_INTENT_OWN_PARTY_ONLY: "consent.joint_intent.title",
+};
+
+/** Thread replies the API authors itself while the agent turn is not yet wired (01 §6.4, 01 §7.1, 13 T-X-05). */
+export const THREAD_COPY_KEYS = {
+  affirmativeNeedsCard: "thread.card_affirmative_deep_link",   // "Tap to confirm so it counts: {{deep_link}}" (01 §6.4)
+  humanRequested: "thread.human_requested",                     // "Bringing a person in now. They'll pick up right here."
+  placeholderIntake: "thread.assistant_placeholder.intake",     // "Got it — I'm looking at your file and will answer here."
+  placeholderServicing: "thread.assistant_placeholder.servicing",
+  voiceConsentLink: "consent.esign.title",                       // a spoken yes never resolves a ConsentCard; the link is sent instead (01 §3.5)
+} as const;
 
 /** API error code → copy key (auth, scoping, links, uploads). */
 export const ERROR_COPY_KEYS: Readonly<Record<string, string>> = {
@@ -49,5 +90,5 @@ export const ERROR_COPY_KEYS: Readonly<Record<string, string>> = {
 export function copyKeyFor(code: string, gate?: string): string {
   if (gate && GATE_COPY_KEYS[gate]) return GATE_COPY_KEYS[gate]!;
   if (GATE_COPY_KEYS[code]) return GATE_COPY_KEYS[code]!;
-  return ERROR_COPY_KEYS[code] ?? DEFAULT_COPY_KEY;
+  return ERROR_COPY_KEYS[code] ?? COMMAND_COPY_KEYS[code] ?? DEFAULT_COPY_KEY;
 }

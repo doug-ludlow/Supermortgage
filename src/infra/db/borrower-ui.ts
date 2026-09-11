@@ -6,7 +6,7 @@
  */
 import { randomBytes, randomUUID } from "node:crypto";
 import type { Queryable } from "./client.ts";
-import { toJson } from "./client.ts";
+import { isUuid, toJson } from "./client.ts";
 
 export type CardStatus = "pending" | "resolved" | "expired" | "superseded" | "cancelled";
 export type UiEventKind = "card_shown" | "card_resolved" | "document_opened" | "document_scrolled_to_end" | "consent_affirmed" | "connector_started" | "connector_completed" | "deep_link_opened" | "voice_started" | "human_requested";
@@ -16,9 +16,14 @@ export interface CardInstanceRow {
   readonly created_by: string; readonly copy_key: string; readonly props: Record<string, unknown>; readonly evidence: Record<string, unknown> | null; readonly command_ref: string | null; readonly expires_at: string | null; readonly created_at: string; readonly resolved_at: string | null;
 }
 export type DeepLinkTarget = { card_instance_id: string } | { document_id: string } | { route: string };
+export interface MessageRow {
+  readonly message_id: string; readonly conversation_id: string; readonly at: string; readonly sender: "borrower" | "agent" | "human" | "notice" | "system"; readonly sender_ref: string | null; readonly channel: "app" | "sms" | "email" | "voice" | "mail";
+  readonly body_text: string | null; readonly card_instance_id: string | null; readonly subject_application_id: string | null; readonly subject_loan_id: string | null; readonly external_ref: string | null; readonly voice_turn: boolean; readonly created_at: string;
+}
 export interface DeepLinkRow { readonly token: string; readonly party_id: string; readonly target: DeepLinkTarget; readonly expires_at: string; readonly single_use: boolean; readonly created_for_message_id: string | null; readonly created_at: string; readonly used_at: string | null; }
 
 export const DEEP_LINK_DAYS = 7;
+export const newDeepLinkToken = (): string => randomBytes(24).toString("base64url");
 export const addDaysIso = (iso: string, days: number): string => new Date(Date.parse(iso) + days * 86_400_000).toISOString();
 const CARD_COLS = "card_instance_id, conversation_id, party_id, subject_application_id, subject_loan_id, kind, status, created_by, copy_key, props, evidence, command_ref, expires_at, created_at, resolved_at";
 
@@ -39,15 +44,15 @@ export class PgBorrowerUiRepository {
     await q.query(`UPDATE card_instances SET retention_class = $2 WHERE conversation_id = $1`, [conversationId, retentionClass]);
   }
 
-  async appendMessage(i: { conversation_id: string; at: string; sender: "borrower" | "agent" | "human" | "notice" | "system"; sender_ref?: string | null; channel: "app" | "sms" | "email" | "voice" | "mail"; body_text?: string | null; card_instance_id?: string | null; subject_application_id?: string | null; subject_loan_id?: string | null; external_ref?: string | null; voice_turn?: boolean }, q: Queryable = this.db): Promise<string> {
-    const id = randomUUID();
+  async appendMessage(i: { message_id?: string; conversation_id: string; at: string; sender: "borrower" | "agent" | "human" | "notice" | "system"; sender_ref?: string | null; channel: "app" | "sms" | "email" | "voice" | "mail"; body_text?: string | null; card_instance_id?: string | null; subject_application_id?: string | null; subject_loan_id?: string | null; external_ref?: string | null; voice_turn?: boolean }, q: Queryable = this.db): Promise<string> {
+    const id = i.message_id ?? randomUUID();
     await q.query(`INSERT INTO messages (message_id, conversation_id, at, sender, sender_ref, channel, body_text, card_instance_id, subject_application_id, subject_loan_id, external_ref, voice_turn) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
       [id, i.conversation_id, i.at, i.sender, i.sender_ref ?? null, i.channel, i.body_text ?? null, i.card_instance_id ?? null, i.subject_application_id ?? null, i.subject_loan_id ?? null, i.external_ref ?? null, i.voice_turn ?? false]);
     return id;
   }
 
-  async createCard(i: { conversation_id: string; party_id: string; subject_application_id?: string | null; subject_loan_id?: string | null; kind: string; created_by: string; copy_key: string; props?: Record<string, unknown>; command_ref?: string | null; expires_at?: string | null; now: string }, q: Queryable = this.db): Promise<CardInstanceRow> {
-    const id = randomUUID();
+  async createCard(i: { card_instance_id?: string; conversation_id: string; party_id: string; subject_application_id?: string | null; subject_loan_id?: string | null; kind: string; created_by: string; copy_key: string; props?: Record<string, unknown>; command_ref?: string | null; expires_at?: string | null; now: string }, q: Queryable = this.db): Promise<CardInstanceRow> {
+    const id = i.card_instance_id ?? randomUUID();
     const rows = await q.query<CardInstanceRow & Record<string, unknown>>(
       `INSERT INTO card_instances (card_instance_id, conversation_id, party_id, subject_application_id, subject_loan_id, kind, created_by, copy_key, props, command_ref, expires_at, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12) RETURNING ${CARD_COLS}`,
       [id, i.conversation_id, i.party_id, i.subject_application_id ?? null, i.subject_loan_id ?? null, i.kind, i.created_by, i.copy_key, toJson(i.props ?? {}), i.command_ref ?? null, i.expires_at ?? null, i.now]);
@@ -56,6 +61,28 @@ export class PgBorrowerUiRepository {
   }
   async card(id: string, q: Queryable = this.db): Promise<CardInstanceRow | undefined> {
     const rows = await q.query<CardInstanceRow & Record<string, unknown>>(`SELECT ${CARD_COLS} FROM card_instances WHERE card_instance_id = $1`, [id]);
+    return rows[0];
+  }
+  /** The party's cards, newest first; `status` narrows (the pinned current ask is the newest pending one — 01 §1.3). */
+  async cardsOf(partyId: string, opts: { status?: CardStatus; subject?: { application_id?: string | null; loan_id?: string | null } } = {}, q: Queryable = this.db): Promise<CardInstanceRow[]> {
+    return q.query<CardInstanceRow & Record<string, unknown>>(
+      `SELECT ${CARD_COLS} FROM card_instances WHERE party_id = $1 AND ($2::text IS NULL OR status = $2)
+         AND ($3::uuid IS NULL OR subject_application_id = $3 OR subject_application_id IS NULL) AND ($4::uuid IS NULL OR subject_loan_id = $4 OR subject_loan_id IS NULL) ORDER BY created_at DESC, card_instance_id`,
+      [partyId, opts.status ?? null, opts.subject?.application_id ?? null, opts.subject?.loan_id ?? null]);
+  }
+  /** 02 §1.2 thread_messages: the conversation's messages after a cursor (message id or ISO instant), oldest first, paged. */
+  async messagesAfter(conversationId: string, after: string | null, limit = 200, q: Queryable = this.db): Promise<MessageRow[]> {
+    const rows = await q.query<MessageRow & Record<string, unknown>>(
+      `SELECT m.message_id, m.conversation_id, m.at, m.sender, m.sender_ref, m.channel, m.body_text, m.card_instance_id, m.subject_application_id, m.subject_loan_id, m.external_ref, m.voice_turn, m.created_at
+         FROM messages m WHERE m.conversation_id = $1
+          AND ($2::uuid IS NULL OR (m.at, m.message_id) > (SELECT x.at, x.message_id FROM messages x WHERE x.message_id = $2))
+          AND ($3::timestamptz IS NULL OR m.at > $3)
+         ORDER BY m.at, m.message_id LIMIT $4`,
+      [conversationId, after && isUuid(after) ? after : null, after && !isUuid(after) && !Number.isNaN(Date.parse(after)) ? after : null, limit]);
+    return rows;
+  }
+  async message(id: string, q: Queryable = this.db): Promise<MessageRow | undefined> {
+    const rows = await q.query<MessageRow & Record<string, unknown>>(`SELECT message_id, conversation_id, at, sender, sender_ref, channel, body_text, card_instance_id, subject_application_id, subject_loan_id, external_ref, voice_turn, created_at FROM messages WHERE message_id = $1`, [id]);
     return rows[0];
   }
   /** A status transition: the row moves and the transition appends (evidence persisted on resolve). */
@@ -67,8 +94,8 @@ export class PgBorrowerUiRepository {
   }
 
   /** 01 §6.5: a random token → target; expires in 7 days; never encodes loan data (the target is a row, not a payload). */
-  async createDeepLink(i: { party_id: string; target: DeepLinkTarget; now: string; created_for_message_id?: string | null; single_use?: boolean; expires_at?: string }, q: Queryable = this.db): Promise<DeepLinkRow> {
-    const token = randomBytes(24).toString("base64url");
+  async createDeepLink(i: { token?: string; party_id: string; target: DeepLinkTarget; now: string; created_for_message_id?: string | null; single_use?: boolean; expires_at?: string }, q: Queryable = this.db): Promise<DeepLinkRow> {
+    const token = i.token ?? newDeepLinkToken();
     const rows = await q.query<DeepLinkRow & Record<string, unknown>>(`INSERT INTO deep_links (token, party_id, target, expires_at, single_use, created_for_message_id, created_at) VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7) RETURNING token, party_id, target, expires_at, single_use, created_for_message_id, created_at, used_at`,
       [token, i.party_id, toJson(i.target), i.expires_at ?? addDaysIso(i.now, DEEP_LINK_DAYS), i.single_use ?? false, i.created_for_message_id ?? null, i.now]);
     return rows[0]!;

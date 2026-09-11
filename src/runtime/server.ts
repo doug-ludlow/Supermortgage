@@ -31,6 +31,13 @@
  *   POST /v1/borrower/documents                     multipart { file, application_id, document_class? } → 22.1 ingestDocument → { document_id, status, … }
  *   GET  /v1/borrower/documents/{id}                → { url, expires_at }: a signed 5-minute URL bound to the session (ui_events document_opened)
  *   GET  /v1/borrower/documents/{id}/content        the bytes behind that URL
+ *   GET  /v1/borrower/record?subject=…              → borrower_record (02 §1.1): status badge, next, needed_from_you[], numbers, dates[], documents[], people[], property, loan, offers[]
+ *   GET  /v1/borrower/thread?after=…                → thread_messages (02 §1.2), paged, with the pinned current ask
+ *   GET  /v1/borrower/history/{view}?subject=…      → payments | escrow | statements | cases | lossmit (02 §1.5) for a serviced loan
+ *   GET  /v1/borrower/stream                        → SSE {event_name, at, subject, payload_ref} (02 §3), fed from the runtime's post-commit hook; Last-Event-ID replays; heartbeat
+ *   POST /v1/borrower/messages                      { text, channel?, subject? } → borrower message + reply; an affirmative to a pending card gets its deep link and executes nothing (13 T-X-05)
+ *   POST /v1/borrower/cards/{id}/resolve            { option_id?, evidence?, args?, channel? } → evidence to card_instances + ui_events, then the card's 32.2 command on the bus; idempotent on card_instance_id
+ *   POST /v1/borrower/commands/{name}               { …args, subject? } → one of the 45 32.2 commands (src/app/tools/section32-2.ts) as the `borrower-app` agent
  *   Errors on these routes are `{ code, gate?, copy_key }` (02 §7); responses pass the allow-list serializer (src/runtime/borrower/serialize.ts).
  *
  * Every route but the two probes and the borrower API requires `Authorization: Bearer <API_TOKEN>` (or the cookie /login sets).
@@ -55,11 +62,13 @@ import { encodeTransferBatch, type TransferBatchFiles } from "../domain/boarding
 import { isUuid } from "../infra/db/client.ts";
 import { plainDate } from "../kernel/calendar/date.ts";
 import type { Logger } from "./log.ts";
-import { createBorrowerRouter, type BorrowerRouterOptions } from "./borrower/routes.ts";
+import { createBorrowerRouter, type BorrowerRouter, type BorrowerRouterOptions } from "./borrower/routes.ts";
 
 export interface ServerOptions { readonly runtime: Runtime; readonly apiToken: string; readonly logger: Logger; readonly console?: boolean;
   /** The borrower API's own dependencies (vendor fakes, rpId, environment); defaults to the FAKE vendors. */
-  readonly borrower?: Omit<BorrowerRouterOptions, "runtime" | "logger">; }
+  readonly borrower?: Omit<BorrowerRouterOptions, "runtime" | "logger">;
+  /** A borrower router built by the caller (tests that hold its stream hub); `borrower` is ignored when given. */
+  readonly borrowerRouter?: BorrowerRouter; }
 
 const plain = (_k: string, v: unknown): unknown => (typeof v === "bigint" ? v.toString() : v);
 export const toJson = (v: unknown): string => JSON.stringify(v, plain);
@@ -107,7 +116,7 @@ export function createApiServer(opts: ServerOptions): Server {
   const { runtime, logger } = opts;
   const consoleServer = opts.console === false ? null : createConsoleServer({ store: new PgConsoleStore(runtime.db, runtime.registry, runtime.agents), clock: runtime.clock });
   const authorized = (req: IncomingMessage): boolean => (opts.apiToken ? same(tokenOf(req), opts.apiToken) : true);
-  const borrower = createBorrowerRouter({ runtime, logger, ...(opts.borrower ?? {}) });
+  const borrower = opts.borrowerRouter ?? createBorrowerRouter({ runtime, logger, ...(opts.borrower ?? {}) });
 
   return createServer(async (req, res) => {
     const started = Date.now();

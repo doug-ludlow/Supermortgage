@@ -32,6 +32,10 @@ import { serialize, type ShapeName } from "./serialize.ts";
 import { b64url, sha256, verifyAssertion, verifyRegistration } from "./webauthn.ts";
 import { FakeStripeIdentity, type StripeIdentityPort } from "./vendors/fake-stripe-identity.ts";
 import { FakeBlobStore, type BlobStorePort } from "./vendors/fake-blob-store.ts";
+import { BorrowerRecordReader } from "./record.ts";
+import { BorrowerStreamHub } from "./stream.ts";
+import { BorrowerCommands } from "./commands.ts";
+import type { CardInstanceRow } from "../../infra/db/borrower-ui.ts";
 
 export interface BorrowerRouterOptions {
   readonly runtime: Runtime;
@@ -52,6 +56,9 @@ export interface BorrowerRouter {
   readonly ui: PgBorrowerUiRepository;
   readonly stripe: StripeIdentityPort;
   readonly blobs: BlobStorePort;
+  readonly hub: BorrowerStreamHub;
+  readonly commands: BorrowerCommands;
+  readonly reader: BorrowerRecordReader;
 }
 
 const MAX_BODY = 32 * 1024 * 1024;
@@ -107,6 +114,11 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
   const returnUrlBase = opts.returnUrlBase ?? process.env["BORROWER_APP_URL"] ?? "https://app.supermortgage.example";
   const auth = new BorrowerAuth(runtime.db);
   const ui = new PgBorrowerUiRepository(runtime.db);
+  const reader = new BorrowerRecordReader(runtime.db);
+  const hub = new BorrowerStreamHub(runtime.db);
+  const commands = new BorrowerCommands(runtime, ui);
+  // 02 §3: the stream is fed from the event store after each unit of work commits — the runtime's post-commit hook, in-process
+  runtime.onCommitted((events) => { hub.publish(events).catch((e) => logger.error("borrower.stream.publish", { error: e })); });
   const now = (): string => runtime.clock.now();
   const edelivery: EdeliveryPort | undefined = runtime.ports.edelivery;
   const deliveryIsFake = (): boolean => !edelivery || edelivery instanceof FakeEdelivery;
@@ -351,6 +363,67 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     res.end(blob.bytes);
   }
 
+  // ───────────────────────────── the read models (02 §1) · the stream (02 §3) · commands and cards (02 §2, §7)
+  const subjectParam = (ctx: BorrowerContext, url: URL) => { const s = url.searchParams.get("subject"); if (!s) return commands.subjectFor(ctx, null); if (!isUuid(s)) throw new RangeError("subject must be an application or loan uuid"); const found = ctx.subjects.find((x) => x.application_id === s || x.loan_id === s); if (!found) throw new BorrowerError(403, "PARTY_SCOPE", undefined, "the subject is not on this party's record"); return found; };
+  async function record(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+    const at = now(); const ctx = await auth.authenticate(req, at);
+    const subject = subjectParam(ctx, url);
+    const cards = await ui.cardsOf(ctx.party.id);
+    const r = await reader.record(ctx.party, subject, cards, at);
+    send(res, 200, "record", r);
+  }
+  async function thread(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+    const at = now(); const ctx = await auth.authenticate(req, at);
+    const after = url.searchParams.get("after"); const limit = Math.min(500, Math.max(1, Number(url.searchParams.get("limit") ?? 200) || 200));
+    const conv = await ui.conversationFor(ctx.party.id);
+    const rows = await ui.messagesAfter(conv.conversation_id, after, limit + 1);
+    const page = rows.slice(0, limit);
+    const cardIds = [...new Set(page.map((m) => m.card_instance_id).filter((x): x is string => !!x))];
+    const cards = new Map<string, CardInstanceRow>();
+    for (const id of cardIds) { const c = await ui.card(id); if (c) cards.set(id, c); }
+    const pinned = (await ui.cardsOf(ctx.party.id, { status: "pending" }))[0] ?? null;
+    send(res, 200, "thread", { conversation_id: conv.conversation_id, messages: reader.threadMessages(page, cards, ctx.party.legal_name.split(" ")[0] ?? ctx.party.legal_name), pinned_card: pinned ? { ...pinned, subject: { application_id: pinned.subject_application_id, loan_id: pinned.subject_loan_id } } : null, next_after: page.at(-1)?.message_id ?? after, has_more: rows.length > limit });
+  }
+  async function history(req: IncomingMessage, res: ServerResponse, url: URL, view: string): Promise<void> {
+    const at = now(); const ctx = await auth.authenticate(req, at);
+    if (!["payments", "escrow", "statements", "cases", "lossmit"].includes(view)) { send(res, 404, "error", new BorrowerError(404, "NOT_FOUND").body()); return; }
+    const s = url.searchParams.get("subject");
+    const subject = s ? subjectParam(ctx, url) : ctx.subjects.find((x) => x.loan_id) ?? commands.subjectFor(ctx, null);
+    if (!subject.loan_id) throw new BorrowerError(409, "NO_SERVICED_LOAN", undefined, "history views need a serviced loan");
+    send(res, 200, "history", { loan_id: subject.loan_id, view, rows: await reader.history(subject.loan_id, view as "payments") });
+  }
+  async function stream(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+    const at = now();
+    // EventSource cannot set headers: the session token may ride on ?token=; the same session policy applies (no loan data before L1)
+    const q = url.searchParams.get("token"); if (q && !req.headers["authorization"]) req.headers["authorization"] = `Bearer ${q}`;
+    const ctx = await auth.authenticate(req, at);
+    const h = req.headers["last-event-id"]; const raw = (Array.isArray(h) ? h[0] : h) ?? url.searchParams.get("last_event_id");
+    const lastEventId = raw !== null && raw !== undefined && /^\d+$/.test(String(raw)) ? Number(raw) : null;
+    hub.subscribe(ctx.party.id, res, lastEventId);
+    logger.info("borrower.stream.opened", { party_id: ctx.party.id, session_id: ctx.session.session_id, last_event_id: lastEventId, connections: hub.connections(ctx.party.id) });
+  }
+  async function message(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const at = now(); const ctx = await auth.authenticate(req, at);
+    const b = jsonOf(await readBody(req));
+    const r = await commands.borrowerMessage(ctx, b, at);
+    logger.info("borrower.message", { party_id: ctx.party.id, routed_to: r.routed_to, command_executed: r.command_executed, reply_copy_key: r.reply.copy_key, deep_link: !!r.reply.deep_link });
+    send(res, 200, "message_reply", { message: { ...r.message, subject: { application_id: r.message.subject_application_id, loan_id: r.message.subject_loan_id }, delivery: { sent: true, delivered: true, read: true } }, reply: { ...r.reply, subject: { application_id: r.reply.subject_application_id, loan_id: r.reply.subject_loan_id }, delivery: { sent: true, delivered: true, read: false }, sender_label: "Supermortgage" }, routed_to: r.routed_to, command_executed: r.command_executed, command: r.command });
+  }
+  async function resolveCard(req: IncomingMessage, res: ServerResponse, id: string): Promise<void> {
+    const at = now(); const ctx = await auth.authenticate(req, at);
+    const b = jsonOf(await readBody(req));
+    const r = await commands.resolveCard(ctx, id, b, at);
+    logger.info("borrower.card.resolved", { card_instance_id: id, kind: r.card.kind, command: r.command, idempotent: r.idempotent, events: r.events });
+    send(res, r.idempotent ? 200 : 201, "card_resolved", { card: { ...r.card, subject: { application_id: r.card.subject_application_id, loan_id: r.card.subject_loan_id } }, command: r.command, idempotent: r.idempotent, result: r.result, events: r.events });
+  }
+  async function command(req: IncomingMessage, res: ServerResponse, name: string): Promise<void> {
+    const at = now(); const ctx = await auth.authenticate(req, at);
+    const b = jsonOf(await readBody(req));
+    const r = await commands.runCommand(ctx, name, b, at);
+    logger.info("borrower.command", { command: name, party_id: ctx.party.id, subject: r.subject, events: r.events });
+    send(res, 200, "command_result", r);
+  }
+
   async function handle(req: IncomingMessage, res: ServerResponse, url: URL, method: string): Promise<boolean> {
     const path = url.pathname;
     if (!path.startsWith("/v1/borrower/") && path !== "/v1/webhooks/stripe") return false;
@@ -368,6 +441,13 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
       else if (method === "POST" && path === "/v1/borrower/documents") await uploadDocument(req, res);
       else if (method === "GET" && (m = /^\/v1\/borrower\/documents\/([^/]+)\/content$/.exec(path))) await documentContent(req, res, url, decodeURIComponent(m[1]!));
       else if (method === "GET" && (m = /^\/v1\/borrower\/documents\/([^/]+)$/.exec(path))) await documentLink(req, res, decodeURIComponent(m[1]!));
+      else if (method === "GET" && path === "/v1/borrower/record") await record(req, res, url);
+      else if (method === "GET" && path === "/v1/borrower/thread") await thread(req, res, url);
+      else if (method === "GET" && (m = /^\/v1\/borrower\/history\/([a-z]+)$/.exec(path))) await history(req, res, url, m[1]!);
+      else if (method === "GET" && path === "/v1/borrower/stream") { await stream(req, res, url); log(200, { stream: true }); return true; }
+      else if (method === "POST" && path === "/v1/borrower/messages") await message(req, res);
+      else if (method === "POST" && (m = /^\/v1\/borrower\/cards\/([^/]+)\/resolve$/.exec(path))) await resolveCard(req, res, decodeURIComponent(m[1]!));
+      else if (method === "POST" && (m = /^\/v1\/borrower\/commands\/([^/]+)$/.exec(path))) await command(req, res, decodeURIComponent(m[1]!));
       else { send(res, 404, "error", new BorrowerError(404, "NOT_FOUND").body()); log(404); return true; }
       log(res.statusCode);
     } catch (e) {
@@ -378,5 +458,5 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     }
     return true;
   }
-  return { handle, auth, ui, stripe, blobs };
+  return { handle, auth, ui, stripe, blobs, hub, commands, reader };
 }

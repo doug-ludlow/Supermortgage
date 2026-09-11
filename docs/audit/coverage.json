@@ -1,5 +1,5 @@
 {
- "brief": "spec units built 7495/7686 (97.5%): tids 1914/2057, tables 724/724, timers 2029/2029, notices 306/306, tools 1311/1359, figures 1211/1211; processes at 100%: 165/178",
+ "brief": "spec units built 7543/7686 (98.1%): tids 1914/2057, tables 724/724, timers 2029/2029, notices 306/306, tools 1359/1359, figures 1211/1211; processes at 100%: 167/178",
  "totals": {
   "tids": {
    "spec": 2057,
@@ -19,7 +19,7 @@
   },
   "tools": {
    "spec": 1359,
-   "built": 1311
+   "built": 1359
   },
   "figures": {
    "spec": 1211,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 7686,
-   "built": 7495
+   "built": 7543
   }
  },
  "sections": {
@@ -219,9 +219,9 @@
   },
   "32": {
    "spec": 240,
-   "built": 49,
+   "built": 97,
    "processes": 13,
-   "done": 0
+   "done": 2
   }
  },
  "done": [
@@ -389,7 +389,9 @@
   "30.4",
   "31.1",
   "31.2",
-  "31.3"
+  "31.3",
+  "32.1",
+  "32.2"
  ],
  "processes": [
   {
@@ -7184,12 +7186,8 @@
    },
    "tools": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "send_card",
-     "resolve_card_by_evidence",
-     "create_deep_link"
-    ]
+    "built": 3,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -7198,9 +7196,9 @@
    },
    "units": {
     "spec": 3,
-    "built": 0
+    "built": 3
    },
-   "pct": 0.0
+   "pct": 100.0
   },
   {
    "process": "32.2",
@@ -7229,54 +7227,8 @@
    },
    "tools": {
     "spec": 45,
-    "built": 0,
-    "missing": [
-     "lead.start",
-     "lead.acknowledgeAiDisclosure",
-     "party.authenticate",
-     "party.startIdentity",
-     "consent.capture",
-     "credit.authorize",
-     "application.confirmField",
-     "application.setGoal",
-     "application.answerDeclarations",
-     "application.answerDemographics",
-     "application.affirmJointIntent",
-     "application.inviteParty",
-     "verification.connect",
-     "document.upload",
-     "explanation.submit",
-     "disclosure.acknowledgeReceipt",
-     "intent.record",
-     "lock.request",
-     "lock.requestExtension",
-     "counteroffer.respond",
-     "application.withdraw",
-     "mi.selectPlan",
-     "valuation.scheduleAccess",
-     "rov.request",
-     "insurance.submitEvidence",
-     "closing.selectSlot",
-     "closing.captureEsignConsent",
-     "rescission.exercise",
-     "autodraft.enroll",
-     "autodraft.change",
-     "autodraft.pause",
-     "autodraft.revoke",
-     "payment.makeOneTime",
-     "payment.extraPrincipal",
-     "escrow.electShortage",
-     "escrow.requestWaiver",
-     "pmi.requestCancellation",
-     "case.open",
-     "lossmit.requestAssistance",
-     "lossmit.respondToOffer",
-     "lossmit.appeal",
-     "offer.respond",
-     "refi.request",
-     "human.request",
-     "party.updateContact"
-    ]
+    "built": 45,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -7285,9 +7237,9 @@
    },
    "units": {
     "spec": 94,
-    "built": 49
+    "built": 94
    },
-   "pct": 52.1
+   "pct": 100.0
   },
   {
    "process": "32.3",

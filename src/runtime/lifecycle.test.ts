@@ -19,6 +19,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { connect, reachable, type Db } from "../infra/db/client.ts";
+import { acquireJourneyLock, type TestLock } from "../infra/db/test-lock.ts";
 import { decodeEntityData } from "../infra/db/entities.ts";
 import { loadOverriddenRegistry } from "../domain/timer-overrides.ts";
 import { FixedClock, MemoryEventStore, type DomainEvent } from "../kernel/events/index.ts";
@@ -39,6 +40,7 @@ if (!up && process.env["REQUIRE_DB"]) throw new Error(`REQUIRE_DB set but ${DB_U
 const skip = up ? false : `no Postgres at ${DB_URL}`;
 const TOKEN = "t-" + randomUUID();
 
+let journeyLock: TestLock | undefined;
 let db: Db; let runtime: Runtime; let base = ""; let close: () => Promise<void> = async () => undefined;
 let partnerPartyId = "";
 const custodial = { clearing: "", pi: "", ti: "" };
@@ -61,6 +63,7 @@ const PAY_ID = () => `PAY-${loanId.slice(0, 8)}`; const QUOTE_ID = () => `pq-${l
 
 test.before(async () => {
   if (skip) return;
+  journeyLock = await acquireJourneyLock(DB_URL);   // serialize journey-driving files on the shared test database
   execFileSync(fileURLToPath(new URL("../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL);
   runtime = new Runtime({ db, registry: loadOverriddenRegistry(), clock });
@@ -80,7 +83,7 @@ test.before(async () => {
   const prior = await db.query<{ id: string }>(`INSERT INTO loans (fnma_loan_number, servicer_loan_number, partner_party_id, property_id, status, instrument_date, origination_date, original_upb_cents, original_term_months, first_payment_date, maturity_date, boarded_at) VALUES ($1, $2, $3, $4, 'active', '2024-09-18', '2024-09-18', 56500000, 360, '2024-11-01', '2054-10-01', '2025-01-15T00:00:00Z') RETURNING id`, [fnma, `PRIOR-${randomUUID().slice(0, 8)}`, partnerPartyId, prop[0]!.id]);
   priorLoanId = prior[0]!.id;
 });
-test.after(async () => { if (!skip) await close(); });
+test.after(async () => { if (!skip) { await close(); await journeyLock?.release(); } });
 
 async function call(method: string, path: string, body?: unknown): Promise<{ status: number; body: Record<string, unknown> }> {
   const r = await fetch(base + path, { method, headers: { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" }, ...(body !== undefined ? { body: JSON.stringify(body, (_k, v: unknown) => (typeof v === "bigint" ? v.toString() : v)) } : {}) });

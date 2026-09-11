@@ -51,9 +51,13 @@ export interface UowOptions {
   readonly commit?: (q: Queryable) => Promise<void>;
 }
 
+/** A post-commit listener: the events one unit of work persisted, with their database sequences (docs/ux/02 §3: the borrower SSE stream is fed here). */
+export type CommittedListener = (events: readonly DomainEvent[]) => void;
+
 export class PgUnitOfWork {
   private readonly db: Db;
   private readonly registry: TimerRegistry;
+  private readonly listeners = new Set<CommittedListener>();
   readonly events: PgEventRepository;
   readonly ledger: PgLedgerRepository;
   readonly timers: PgTimerRepository;
@@ -64,6 +68,11 @@ export class PgUnitOfWork {
     this.db = db; this.registry = registry;
     this.events = new PgEventRepository(db); this.ledger = new PgLedgerRepository(db); this.timers = new PgTimerRepository(db); this.decisions = new PgDecisionRepository(db); this.loans = new PgLoanRepository(db);
   }
+
+  /** Called after every commit with the persisted events (never inside the transaction; a listener that throws is logged by nobody — it must not). */
+  onCommitted(fn: CommittedListener): () => void { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; }
+  /** Publish events persisted outside `run` (the sweep's breach pass) to the same listeners. */
+  notifyCommitted(events: readonly DomainEvent[]): void { if (!events.length) return; for (const l of this.listeners) { try { l(events); } catch { /* a listener never fails the command */ } } }
 
   async run<T>(scope: string | UowScope, fn: (ctx: UowContext) => T | Promise<T>, opts: UowOptions = {}): Promise<UowResult<T>> {
     const clock = opts.clock ?? systemClock;
@@ -98,7 +107,7 @@ export class PgUnitOfWork {
     const newEvents = events.since(priorSeq);
     const newSets = ledger.sets().filter((s) => !knownSets.has(s.id));
     const changedTimers = timers.all().filter((t) => priorTimerState.get(t.id) !== `${t.status}|${t.satisfiedAt ?? ""}|${t.breachedAt ?? ""}|${t.cancelledReason ?? ""}`);
-    return this.db.tx(async (q) => {
+    const committed = await this.db.tx(async (q) => {
       if (opts.before) await opts.before(q);
       const persisted = await this.events.append(newEvents, q);
       await this.loans.projectStatus(persisted, q);   // `loan.paid_in_full` → loans.status = paid_off (16.2 rule 3); `payoff.reversed` → active
@@ -109,5 +118,7 @@ export class PgUnitOfWork {
       if (opts.commit) await opts.commit(q);
       return { result, events: persisted, entrySets: newSets, timers: changedTimers, decisions };
     });
+    this.notifyCommitted(committed.events);
+    return committed;
   }
 }

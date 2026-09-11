@@ -14,7 +14,12 @@ RUN npm ci --no-audit --no-fund && npm cache clean --force
 # ---- build -----------------------------------------------------------------
 FROM node:22-bookworm-slim AS build
 WORKDIR /src
-ENV NEXT_TELEMETRY_DISABLED=1 NODE_ENV=production
+# The environment the bundle is built for (deploy.yml passes its ENVIRONMENT, "nonprod" by default).
+# Inlined by Next as NEXT_PUBLIC_ENVIRONMENT: any value other than production turns on the FAKE
+# vendor paths (apps/borrower/lib/env.ts SHOW_FAKE_MARKERS), which are the only ones that work
+# against an API running INTEGRATIONS=fake. Empty (a plain docker build) means a production bundle.
+ARG NEXT_PUBLIC_ENVIRONMENT=""
+ENV NEXT_TELEMETRY_DISABLED=1 NODE_ENV=production NEXT_PUBLIC_ENVIRONMENT=$NEXT_PUBLIC_ENVIRONMENT
 COPY --from=deps /src/node_modules ./node_modules
 COPY apps/borrower/ ./
 # The copy library is generated from docs/ux/12; the generated module is committed, so the

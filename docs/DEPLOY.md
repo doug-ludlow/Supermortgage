@@ -14,7 +14,7 @@ What you end up with, in one Google Cloud project:
 | Secret Manager | `supermortgage-database-url`, `supermortgage-api-token` |
 | Artifact Registry `supermortgage` | container images built by GitHub Actions |
 | Global HTTPS load balancer + Cloud Armor | `demo.supermortgage.com` (API and console on one name), Google-managed certificate, rate limiting |
-| Cloud Run service `supermortgage-borrower` | the borrower app (`apps/borrower`, Next.js standalone from `Dockerfile.borrower`), served at `https://demo.supermortgage.com/app` by a `/app/*` URL-map rule to its own serverless NEG — infrastructure and the second build/deploy job are in `docs/ux/deploy-borrower.patch`, applied after review |
+| Cloud Run service `supermortgage-borrower` | the borrower app (`apps/borrower`, Next.js standalone from `Dockerfile.borrower`, built with `--build-arg NEXT_PUBLIC_ENVIRONMENT=<environment>` so a nonprod bundle shows the FAKE vendor paths the `INTEGRATIONS=fake` API expects — Google sign-in included), served at `https://demo.supermortgage.com/app` by a `/app/*` URL-map rule to its own serverless NEG — infrastructure and the second build/deploy job are in `docs/ux/deploy-borrower.patch`, applied after review |
 
 Everything is created by Terraform (`infra/terraform/`) from a GitHub Actions
 workflow (`.github/workflows/deploy.yml`). The only thing you run by hand is a
@@ -193,7 +193,7 @@ sweep. Three ways to run it, all idempotent (a second run changes nothing):
 - Actions → deploy → Run workflow → tick **seed_demo**.
 - Cloud Shell: `gcloud run jobs execute supermortgage-seed-demo --region us-central1 --project supermortgage-nonprod --wait`
 - The API: `curl -X POST -H "Authorization: Bearer $TOKEN" https://demo.supermortgage.com/v1/transfers/batches/demo`
-- The entry experience (32.14) needs open states, the partner's NMLSR ID and an active rate sheet, or every visitor at the root hits the state gate: the seed-demo job seeds them after the batch (FAKE rows, idempotent), and `curl -X POST -H "Authorization: Bearer $TOKEN" https://demo.supermortgage.com/v1/entry/seed-demo -d '{"states":["AZ","CA","CO","UT","TX","FL","WA","NV"]}'` re-seeds them on demand (src/runtime/entry-seed.ts). New York is left closed on purpose (the closed-state path).
+- The entry experience (32.14) needs open states, the partner's NMLSR ID (read from the seeded `partners/<id>` row unless `BORROWER_DEFAULT_PARTNER_NMLSR_ID` overrides it) and an active rate sheet, or every visitor at the root hits the state gate: the seed-demo job seeds them after the batch (FAKE rows, idempotent), and `curl -X POST -H "Authorization: Bearer $TOKEN" https://demo.supermortgage.com/v1/entry/seed-demo -d '{"states":["AZ","CA","CO","UT","TX","FL","WA","NV"]}'` re-seeds them on demand (src/runtime/entry-seed.ts). New York is left closed on purpose (the closed-state path).
 
 Your own batch goes to `POST /v1/transfers/batches` with `{ actor, batch, files }`, where
 `files` carries the tape CSV texts in the layout documented in

@@ -3,6 +3,6 @@
  * `<AnonymousMinute renderIdentity={…} />` in place of the Thread when `api.me()` answers 401 on the
  * root route and no `?d=` / `?card=` is present; S3's SignIn plugs into `renderIdentity`.
  */
-export { AnonymousMinute, productLabel, type AnonymousMinuteProps } from "./AnonymousMinute";
+export { AnonymousMinute, productLabel, splitFirstSentence, type AnonymousMinuteProps } from "./AnonymousMinute";
 export { parseMoneyToCents } from "./money";
 export { US_STATES, stateName } from "./states";

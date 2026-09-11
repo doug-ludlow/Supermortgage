@@ -107,6 +107,13 @@ export function createLeadRoutes(opts: LeadRoutesOptions): LeadRoutes {
     if (kept.length >= LEAD_START_PER_HOUR) throw new BorrowerError(429, "LEAD_THROTTLED", undefined, `${LEAD_START_PER_HOUR} lead starts per hour per IP`);
     kept.push(t); starts.set(key, kept);
   }
+  /** The partner's NMLSR ID for the §1026.24 footer: the configured one (DELTA-15) when set, else the global `partners/<id>` row 20.3 and the demo seed keep, else "" (20.2's checklist then refuses the range). */
+  async function nmlsrOf(partnerId: string): Promise<string> {
+    const configured = (opts.defaultPartnerNmlsrId ?? process.env["BORROWER_DEFAULT_PARTNER_NMLSR_ID"] ?? "").trim();
+    if (configured) return configured;
+    const row = partnerId ? await runtime.entities.current("partners", partnerId) : undefined;
+    return String(row?.data["nmlsr_id"] ?? "").trim();
+  }
   /** The partner the lead is opened for: the referral's partner party when it names one, else the configured Phase I partner (DELTA-15), else the newest servicer party. */
   async function partnerFor(referral: P): Promise<{ id: string; legal_name: string; nmlsr_id: string }> {
     const wanted = str(referral, "partner_party_id") || str(referral, "partner_id");
@@ -114,11 +121,11 @@ export function createLeadRoutes(opts: LeadRoutesOptions): LeadRoutes {
     for (const id of [wanted, configured]) {
       if (!isUuid(id)) continue;
       const row = (await runtime.db.query<{ id: string; legal_name: string }>(`SELECT id, legal_name FROM parties WHERE id = $1 AND party_type <> 'borrower'`, [id]))[0];
-      if (row) return { ...row, nmlsr_id: opts.defaultPartnerNmlsrId ?? process.env["BORROWER_DEFAULT_PARTNER_NMLSR_ID"] ?? "" };
+      if (row) return { ...row, nmlsr_id: await nmlsrOf(row.id) };
     }
     const row = (await runtime.db.query<{ id: string; legal_name: string }>(`SELECT id, legal_name FROM parties WHERE party_type = 'servicer' ORDER BY created_at DESC LIMIT 1`))[0];
     if (!row) throw new BorrowerError(503, "NOT_WIRED", undefined, "no partner: BORROWER_DEFAULT_PARTNER_ID is unset and no servicer party exists (32.14 DELTA-15)");
-    return { ...row, nmlsr_id: opts.defaultPartnerNmlsrId ?? process.env["BORROWER_DEFAULT_PARTNER_NMLSR_ID"] ?? "" };
+    return { ...row, nmlsr_id: await nmlsrOf(row.id) };
   }
   const leadOf = async (leadId: string): Promise<P | null> => { const r = await runtime.entities.current("leads", leadId); return r ? r.data : null; };
   /** The live lead behind the request's cookie: 404 LEAD_UNKNOWN when there is none or it is stale. */
@@ -149,7 +156,7 @@ export function createLeadRoutes(opts: LeadRoutesOptions): LeadRoutes {
   }
   const rangeOf = (events: readonly LeadEvent[]): P | null => { const e = events.filter((x) => x.type === "lead.range.shown").at(-1); return e ? rangeShape(e.payload) : null; };
   const rangeShape = (p: P): P => ({ low_pct: p["low_pct"] ?? null, high_pct: p["high_pct"] ?? null, apr_low_pct: p["apr_low_pct"] ?? null, apr_high_pct: p["apr_high_pct"] ?? null, product_code: p["product_code"] ?? null, rate_sheet_id: p["rate_sheet_id"] ?? null, text: p["text"] ?? null, checklist_run_id: p["checklist_run_id"] ?? null });
-  const partnerOfLead = async (lead: P): Promise<{ legal_name: string; nmlsr_id: string }> => ({ legal_name: String(lead["partner_name"] ?? ""), nmlsr_id: opts.defaultPartnerNmlsrId ?? process.env["BORROWER_DEFAULT_PARTNER_NMLSR_ID"] ?? "" });
+  const partnerOfLead = async (lead: P): Promise<{ legal_name: string; nmlsr_id: string }> => ({ legal_name: String(lead["partner_name"] ?? ""), nmlsr_id: await nmlsrOf(String(lead["partner_id"] ?? "")) });
   async function stateOf(leadId: string, lead: P): Promise<P> {
     const events = await leadEvents(leadId); const closed = closedOf(lead);
     return { lead_id: leadId, partner: await partnerOfLead(lead), lines: linesOf(events, { legal_name: String(lead["partner_name"] ?? "") }), step: closed ? null : nextStepOf(lead), closed, range: closed ? null : rangeOf(events) };

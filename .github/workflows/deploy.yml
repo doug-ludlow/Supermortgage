@@ -213,6 +213,7 @@ jobs:
         run: |
           docker build \
             -f Dockerfile.borrower \
+            --build-arg "NEXT_PUBLIC_ENVIRONMENT=${ENVIRONMENT}" \
             -t "${{ steps.tags.outputs.image }}" \
             -t "${{ steps.tags.outputs.branch_image }}" \
             .

@@ -210,7 +210,14 @@ export function createBorrowerChannels(deps: BorrowerChannelDeps): BorrowerChann
   const reloadLead = async (leadId: string): Promise<P> => (await runtime.entities.current("leads", leadId))?.data ?? {};
   const rangeShown = async (leadId: string): Promise<boolean> => (await runtime.db.query<{ n: string }>(`SELECT count(*)::text AS n FROM loan_events WHERE type = 'lead.range.shown' AND payload->>'lead_id' = $1`, [leadId]))[0]?.n !== "0";
   const interactionOf = (lead: P, channel: "sms" | "voice_inbound", sid: string | null): string | null => { const all = ((lead["interactions"] as P[] | undefined) ?? []); const own = sid ? all.find((i) => i["interaction_id"] === sid) : undefined; return String((own ?? all.filter((i) => i["channel"] === channel).at(-1))?.["interaction_id"] ?? "") || null; };
-  const partnerTokens = (lead: P): Record<string, string> => ({ "partner.legal_name": String(lead["partner_name"] ?? ""), "partner.nmlsr_id": "" });
+  /** The partner's NMLSR ID for the §1026.24 footer: configured (DELTA-15) when set, else the global `partners/<id>` row the demo seed and 20.3 keep, else "" (the 20.2 checklist then refuses the range). */
+  const nmlsrOf = async (lead: P): Promise<string> => {
+    const configured = (deps.defaultPartnerNmlsrId ?? process.env["BORROWER_DEFAULT_PARTNER_NMLSR_ID"] ?? "").trim();
+    if (configured) return configured;
+    const id = String(lead["partner_id"] ?? ""); const row = id ? await deps.runtime.entities.current("partners", id) : undefined;
+    return String(row?.data["nmlsr_id"] ?? "").trim();
+  };
+  const partnerTokens = (lead: P, nmlsr = ""): Record<string, string> => ({ "partner.legal_name": String(lead["partner_name"] ?? ""), "partner.nmlsr_id": nmlsr });
 
   // ---- one webhook turn: what goes out (texted through e-delivery; spoken on a call), what happened
   interface Turn { readonly channel: "sms" | "voice"; readonly number: string; readonly sid: string; readonly input: string | null; readonly at: string; }
@@ -367,10 +374,10 @@ export function createBorrowerChannels(deps: BorrowerChannelDeps): BorrowerChann
     if (step === "range") {
       if (onBus("32.14", "lead.requestRange")) {
         try {
-          // the partner's numeric NMLSR ID for the 1026.24 footer — from configuration, as the lead route names it (DELTA-15); without it the 20.2 checklist refuses the range
-          const nmlsr = (deps.defaultPartnerNmlsrId ?? process.env["BORROWER_DEFAULT_PARTNER_NMLSR_ID"] ?? "").trim();
+          // the partner's numeric NMLSR ID for the 1026.24 footer — from configuration or the partner row, as the lead route names it (DELTA-15); without it the 20.2 checklist refuses the range
+          const nmlsr = await nmlsrOf(data);
           const r = await exec("32.14", "lead.requestRange", BORROWER_APP, { lead_id, ...(interaction_id ? { interaction_id } : {}), ...(nmlsr ? { partner_nmlsr_id: nmlsr } : {}) }); out.record(r.events); const o = r.output as P; const range = o["range"] as P | null | undefined;
-          if (range && typeof range["text"] === "string") { await out.line("entry.range.card", range["text"]); await out.line("entry.range.promise", copyText("entry.range.promise")); await out.line("entry.range.disclaimer", copyText("entry.range.disclaimer", partnerTokens(data))); }
+          if (range && typeof range["text"] === "string") { await out.line("entry.range.card", range["text"]); await out.line("entry.range.promise", copyText("entry.range.promise")); await out.line("entry.range.disclaimer", copyText("entry.range.disclaimer", partnerTokens(data, nmlsr))); }
         } catch (e) { const be = toBorrowerError(e); logger.info("borrower.channels.range.refused", { lead_id, code: be.code, gate: be.gate ?? null }); if (be.code === "STATE_GATE_FIRST" || be.code === "LEAD_CLOSED") { out.refused = be.body(); await out.line(be.body().copy_key, copyText(be.body().copy_key, partnerTokens(data))); out.step = "closed"; return; } }
       } else logger.info("borrower.channels.range.unavailable", { lead_id });
       step = "identify";

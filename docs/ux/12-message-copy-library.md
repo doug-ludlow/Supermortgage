@@ -543,7 +543,7 @@ The lines the borrower API and the shell author themselves (src/runtime/borrower
 - `entry.landing.time_budget` — line — "About six minutes of your time. Then a real underwriting answer." — *S0: one quiet line under the goal card; never "your rate in four minutes".*
 - `entry.landing.getting_started` — status strip — "Getting started" — *S0 on mobile: the status strip before a subject exists; the Record pane is hidden.*
 - `entry.buy.contract_question` — ChoiceCard — "Do you have a signed purchase contract?" — options `Yes, I have a contract` · `Still looking` — *S1 after Buy a home; Still looking is 32.3 E3's preapproval path.*
-- `entry.occupancy.question` — ChoiceCard — "Will you live in the home?" — options `Primary home` · `Second home` · `Investment property` — *S1 after refinance or cash-out; primary is highlighted, never tapped for you.*
+- `entry.occupancy.question` — ChoiceCard — "Which best describes the home?" — helper: "The home you'd be refinancing." — options `Primary home` · `Second home` · `Investment property` — *S1 after refinance or cash-out (the visitor already owns the home, so never "will you live in it"); primary is highlighted, never tapped for you.*
 - `entry.state.question` — ChoiceCard — "Which state is the home in?" — helper: "We check that we can lend there before anything else." — *S1: runs 31.1 readiness and picks the disclosure variant.*
 - `entry.estimate.value` — field — "About what is your home worth?" — helper: "A rough number is fine." — *S1 refinance and cash-out; `value_estimate_cents`.*
 - `entry.estimate.balance` — field — "About how much do you owe on it?" — helper: "Your best guess from your last statement." — *S1: an own-stated existing-loan balance; never the loan amount sought.*

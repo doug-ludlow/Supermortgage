@@ -456,6 +456,12 @@ function EstimateStep({ entry, leadId, goal, timezone, busy, onAnswer }: { entry
   );
 }
 
+/** The first sentence and the rest: "…depending on credit and loan-to-value." | "This is not a commitment to lend; …" (a decimal such as 6.125% is not a sentence end). */
+export function splitFirstSentence(text: string): [string, string] {
+  const m = /^([\s\S]*?[.!?])\s+(?=[A-Z])([\s\S]*)$/.exec(text);
+  return m ? [m[1]!.trim(), m[2]!.trim()] : [text.trim(), ""];
+}
+
 /** S2: the published range as a StatusCard (never a personal figure), the disclaimer footer, the promise line. */
 function RangeView({ res, partner, timezone, created_at }: { res: LeadRangeResponse; partner?: LeadPartner; timezone: string; created_at: string }) {
   if (!res.range) {
@@ -473,12 +479,14 @@ function RangeView({ res, partner, timezone, created_at }: { res: LeadRangeRespo
     ...(partnerTokens(partner) as Record<string, string>),
   };
   const disclaimerKey = res.disclaimer_copy_key ?? "entry.range.disclaimer";
-  const disclaimer = copy(disclaimerKey, tokens);
   const serverText = r.text.trim();
-  // What 20.2's checklist checked is what is shown: the server's sentence verbatim; the library line (same tokens) only when none was sent.
-  const state_label = serverText || copy(cardKey, tokens);
-  // The not-a-commitment footer once: from the key unless the checked sentence already carries it.
-  const footerIncluded = serverText.includes(disclaimer);
+  // What 20.2's checklist checked is what is shown, every word of it: the rate sentence as the card's title, the rest
+  // (the not-a-commitment footer, the APR basis, the partner and its NMLSR ID) as the detail line under it;
+  // the library line (same tokens) only when no sentence was sent.
+  const [state_label, detail] = splitFirstSentence(serverText || copy(cardKey, tokens));
+  // The not-a-commitment footer once: a checked sentence always carries one (20.2's `not_a_commitment` gate), so the
+  // library footer is added only when the shown text has none — never a second copy, never an unbound token.
+  const footerIncluded = /not a commitment/i.test(serverText || state_label);
   const inst: CardInstance<"StatusCard"> = {
     card_instance_id: "lead-range",
     conversation_id: "lead",
@@ -489,7 +497,7 @@ function RangeView({ res, partner, timezone, created_at }: { res: LeadRangeRespo
     created_by: "agent:intake",
     copy_key: cardKey,
     created_at,
-    props: { state_label, copy_tokens: tokens, ...(footerIncluded ? {} : { detail_copy_key: disclaimerKey }) },
+    props: { state_label, ...(detail ? { detail } : {}), copy_tokens: tokens, ...(footerIncluded ? {} : { detail_copy_key: disclaimerKey }) },
   };
   const promise: LeadLine = { message_id: "range-promise", at: created_at, sender: "agent", copy_key: res.promise_copy_key ?? "entry.range.promise" };
   return (

@@ -7,7 +7,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { AnonymousMinute, parseMoneyToCents, productLabel, US_STATES } from "@/components/entry";
+import { AnonymousMinute, parseMoneyToCents, productLabel, splitFirstSentence, US_STATES } from "@/components/entry";
 import { ApiRequestError } from "@/lib/api/client";
 import { leadAnswer, leadRange, leadStart, referralFromSearch, type LeadAnswerResponse, type LeadLine, type LeadRangeResponse, type LeadStartResponse, type LeadStep } from "@/lib/api/lead";
 import { copy, copyOptions } from "@/lib/copy";
@@ -309,6 +309,31 @@ describe("32.14 S2 — the give-back: a published range, then the identity ask (
     expect(card.compareDocumentPosition(promise) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(promise.compareDocumentPosition(ask) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByRole("log")).toHaveAttribute("data-step", "identify");
+  });
+
+  it("the checked sentence as 20.3 renders it (the rate sentence, then the footer, the APR basis and the partner's NMLSR ID) shows once: the rates as the title, the rest as the detail line, no second footer and no unbound {{token}}", async () => {
+    // ops-20-3 rangeAdvertisement's phrasing — the footer wording differs from entry.range.disclaimer, so text matching would append a second one
+    const rendered = "Today's 30-year fixed rates for this program range from 6.125% (6.240% APR) to 6.875% (6.990% APR) depending on credit and loan-to-value. This is not a commitment to lend; rates change daily. APR is computed on a representative loan with no points; third-party costs are paid under the partner's program. Partner Bank, NMLSR ID 123456.";
+    expect(splitFirstSentence(rendered)).toEqual(["Today's 30-year fixed rates for this program range from 6.125% (6.240% APR) to 6.875% (6.990% APR) depending on credit and loan-to-value.", "This is not a commitment to lend; rates change daily. APR is computed on a representative loan with no points; third-party costs are paid under the partner's program. Partner Bank, NMLSR ID 123456."]);
+    expect(splitFirstSentence("One line, no period")).toEqual(["One line, no period", ""]);
+    const m = mocks();
+    // the demo's own shape before the fix: the partner row's NMLSR ID never reached the state, so the token was unbound
+    m.start.mockResolvedValueOnce({ ...startRes, partner: { legal_name: PARTNER.legal_name }, step: null });
+    m.range.mockResolvedValueOnce(rangeRes(rendered));
+    render(<AnonymousMinute />);
+    const card = await screen.findByTestId("range-card");
+    const article = card.querySelector("article")!;
+    expect(card.querySelector("h3")).toHaveTextContent("Today's 30-year fixed rates for this program range from 6.125% (6.240% APR) to 6.875% (6.990% APR) depending on credit and loan-to-value.");
+    expect(card.querySelector("h3")!.textContent).not.toMatch(/not a commitment/i);
+    const details = within(card).getAllByTestId("status-detail");
+    expect(details).toHaveLength(1);
+    expect(details[0]).toHaveTextContent("This is not a commitment to lend; rates change daily.");
+    expect(details[0]).toHaveTextContent("Partner Bank, NMLSR ID 123456.");
+    // every word the checklist checked is on the card, once: the title and the detail line together are the checked text
+    expect(`${card.querySelector("h3")!.textContent} ${details[0]!.textContent}`).toBe(rendered);
+    expect(article.textContent!.match(/not a commitment/gi)).toHaveLength(1);
+    expect(article.textContent).not.toContain("{{");
+    expect(article.textContent!.match(/NMLSR ID/g)).toHaveLength(1);
   });
 
   it("when the server's sentence lacks the footer, entry.range.disclaimer is appended from the library with the partner tokens; with no sentence at all the library line renders from the sheet's strings", async () => {

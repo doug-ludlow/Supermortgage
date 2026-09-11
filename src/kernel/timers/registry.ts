@@ -106,7 +106,10 @@ export class TimerRegistry {
       // redefine"): a code the servicing spec (sections 1–19) names is owned there; origination rows (20–31) that
       // restate it are references. Within a side the servicing spec's own convention applies (above).
       const servicing = g.filter((d) => Number(d.process.split(".")[0]) < 20);
-      const own = servicing.length ? servicing : g;
+      const side = servicing.length ? servicing : g;
+      // a row with no trigger and no offset is a bare reference ("| `CODE` | (26.4 owns) | — | — | — |"), never the definition
+      const defined = side.filter((d) => d.trigger.trim() !== "" && d.trigger.trim() !== "—");
+      const own = defined.length ? defined : side;
       const owning = own.find((d) => !d.ownedBy && d.offsetParsed.kind !== "prose") ?? own.find((d) => !d.ownedBy) ?? own[0]!;
       this.byCode.set(code, owning);
     }

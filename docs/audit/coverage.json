@@ -1,33 +1,33 @@
 {
- "brief": "spec units built 5346/7446 (71.8%): tids 1420/1914, tables 536/717, timers 1532/1987, notices 251/306, tools 810/1311, figures 797/1211; processes at 100%: 124/165",
+ "brief": "spec units built 5465/7446 (73.4%): tids 1446/1914, tables 544/717, timers 1557/1987, notices 258/306, tools 849/1311, figures 811/1211; processes at 100%: 125/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1420
+   "built": 1446
   },
   "tables": {
    "spec": 717,
-   "built": 536
+   "built": 544
   },
   "timers": {
    "spec": 1987,
-   "built": 1532
+   "built": 1557
   },
   "notices": {
    "spec": 306,
-   "built": 251
+   "built": 258
   },
   "tools": {
    "spec": 1311,
-   "built": 810
+   "built": 849
   },
   "figures": {
    "spec": 1211,
-   "built": 797
+   "built": 811
   },
   "units": {
    "spec": 7446,
-   "built": 5346
+   "built": 5465
   }
  },
  "sections": {
@@ -153,13 +153,13 @@
   },
   "21": {
    "spec": 282,
-   "built": 172,
+   "built": 189,
    "processes": 6,
    "done": 4
   },
   "22": {
    "spec": 368,
-   "built": 9,
+   "built": 71,
    "processes": 6,
    "done": 0
   },
@@ -171,15 +171,15 @@
   },
   "24": {
    "spec": 314,
-   "built": 11,
+   "built": 12,
    "processes": 6,
    "done": 0
   },
   "25": {
    "spec": 231,
-   "built": 192,
+   "built": 231,
    "processes": 4,
-   "done": 3
+   "done": 4
   },
   "26": {
    "spec": 247,
@@ -340,6 +340,7 @@
   "25.1",
   "25.2",
   "25.3",
+  "25.4",
   "26.1",
   "30.1",
   "30.4"
@@ -5449,27 +5450,9 @@
    },
    "timers": {
     "spec": 18,
-    "built": 1,
-    "armable": 8,
-    "missing": [
-     "AZ_ARS_6_946C_FEE_AGREEMENT_GATE",
-     "CA_21CCR_7114_FAIR_LENDING_NOTICE_AT_APPLICATION",
-     "CA_CIV_1632_5_TRANSLATED_LE_3BD",
-     "FCRA_609G_SCORE_NOTICE_1BD",
-     "FL_69B_124_013_ANTI_COERCION_AT_APPLICATION",
-     "MA_MGL_184_17B_ATTORNEY_STATEMENT_AT_APPLICATION",
-     "NJ_3_1_16_3_FEE_DISCLOSURE_GATE",
-     "NY_3NYCRR_38_3_PREAPP_DISCLOSURE_GATE",
-     "REGV_1022_74D_SCORE_NOTICE_CONSUMMATION_GATE",
-     "REGX_1024_15_AFBA_REFERRAL_GATE",
-     "REGX_1024_20_HCL_3BD",
-     "REGZ_1026_19B_ARM_DISCLOSURE_3BD",
-     "REGZ_1026_19B_ARM_DISCLOSURE_GATE",
-     "REGZ_1026_19G_TOOLKIT_3BD",
-     "REGZ_1026_35C5_HPML_APPRAISAL_NOTICE_3BD",
-     "SM_O23_PRIVACY_INITIAL_3BD",
-     "TX_7TAC_57_200_SML_NOTICE_AT_APPLICATION"
-    ]
+    "built": 18,
+    "armable": 18,
+    "missing": []
    },
    "notices": {
     "spec": 18,
@@ -5526,9 +5509,9 @@
    },
    "units": {
     "spec": 75,
-    "built": 7
+    "built": 24
    },
-   "pct": 9.3
+   "pct": 32.0
   },
   {
    "process": "21.4",
@@ -5705,32 +5688,14 @@
    "title": "Document intake, classification, extraction, integrity/freshness checks, and the borrower needs-list loop",
    "tids": {
     "spec": 12,
-    "built": 0,
-    "todo": 12,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 4,
-    "built": 0,
-    "missing": [
-     "document_classes",
-     "document_extractions",
-     "document_integrity_checks",
-     "document_requests"
-    ]
+    "built": 4,
+    "missing": []
    },
    "timers": {
     "spec": 8,
@@ -5743,48 +5708,24 @@
    },
    "notices": {
     "spec": 2,
-    "built": 0,
-    "missing": [
-     "NTC_SM_NEEDS_LIST",
-     "NTC_SM_NEEDS_LIST_REMINDER"
-    ]
+    "built": 2,
+    "missing": []
    },
    "tools": {
     "spec": 15,
-    "built": 0,
-    "missing": [
-     "ingestDocument",
-     "classifyDocument",
-     "extractFields",
-     "runIntegrityBattery",
-     "orderForensicScan",
-     "computeFreshness",
-     "matchToRequests",
-     "deriveNeedsList",
-     "renderNeedsListNotice",
-     "sendNotice",
-     "openRequest",
-     "waiveRequest",
-     "proposeConditionClear",
-     "writeDecision",
-     "escalate"
-    ]
+    "built": 15,
+    "missing": []
    },
    "figures": {
     "spec": 4,
-    "built": 0,
-    "missing": [
-     "$1,500.00",
-     "$1,631.25",
-     "$112,500.00",
-     "$6,250.00"
-    ]
+    "built": 4,
+    "missing": []
    },
    "units": {
     "spec": 45,
-    "built": 6
+    "built": 43
    },
-   "pct": 13.3
+   "pct": 95.6
   },
   {
    "process": "22.2",
@@ -5820,16 +5761,10 @@
    },
    "timers": {
     "spec": 7,
-    "built": 0,
-    "armable": 4,
+    "built": 6,
+    "armable": 7,
     "missing": [
-     "FNMA_B1_1_03_CREDIT_REPORT_EXPIRY_4M",
-     "REGB_1002_9_DECISION_30",
-     "SM_CREDIT_DISPUTE_RESOLUTION_5",
-     "SM_CREDIT_EXPIRY_WARN_21",
-     "SM_CREDIT_FREEZE_FOLLOWUP_2",
-     "SM_CREDIT_REFRESH_PRECLOSE_GATE",
-     "SM_UDM_MONITOR_ACTIVE"
+     "REGB_1002_9_DECISION_30"
     ]
    },
    "notices": {
@@ -5839,22 +5774,8 @@
    },
    "tools": {
     "spec": 13,
-    "built": 0,
-    "missing": [
-     "orderCreditReport",
-     "parseCreditReport",
-     "computeScores",
-     "detectFreezes",
-     "detectFraudAlerts",
-     "mapDuCreditMessages",
-     "openInquiryItems",
-     "triageUdmAlert",
-     "orderRefresh",
-     "scheduleRepull",
-     "emitScoreDisclosureData",
-     "writeDecision",
-     "escalate"
-    ]
+    "built": 13,
+    "missing": []
    },
    "figures": {
     "spec": 5,
@@ -5869,9 +5790,9 @@
    },
    "units": {
     "spec": 41,
-    "built": 0
+    "built": 19
    },
-   "pct": 0.0
+   "pct": 46.3
   },
   {
    "process": "22.3",
@@ -5939,7 +5860,7 @@
    },
    "figures": {
     "spec": 24,
-    "built": 0,
+    "built": 1,
     "missing": [
      "$1,000.00",
      "$1,200.00",
@@ -5956,7 +5877,6 @@
      "$32.50",
      "$350.00",
      "$5,633.33",
-     "$6,250.00",
      "$75,000.00",
      "$8,550.00",
      "$800.00",
@@ -5969,9 +5889,9 @@
    },
    "units": {
     "spec": 55,
-    "built": 1
+    "built": 2
    },
-   "pct": 1.8
+   "pct": 3.6
   },
   {
    "process": "22.4",
@@ -6053,9 +5973,8 @@
    },
    "figures": {
     "spec": 64,
-    "built": 0,
+    "built": 3,
     "missing": [
-     "$0.00",
      "$1,380.00",
      "$1,720.00",
      "$1,785.48",
@@ -6075,7 +5994,6 @@
      "$169.60",
      "$170.00",
      "$2,000.00",
-     "$2,500.00",
      "$2,532.00",
      "$2,856.82",
      "$250,000.00",
@@ -6100,7 +6018,6 @@
      "$5,000.00",
      "$5,600.00",
      "$5,769.60",
-     "$500.00",
      "$51,140.18",
      "$515.00",
      "$547,912.40",
@@ -6123,9 +6040,9 @@
    },
    "units": {
     "spec": 109,
-    "built": 1
+    "built": 4
    },
-   "pct": 0.9
+   "pct": 3.7
   },
   {
    "process": "22.5",
@@ -6160,8 +6077,8 @@
    },
    "timers": {
     "spec": 10,
-    "built": 0,
-    "armable": 1,
+    "built": 1,
+    "armable": 2,
     "missing": [
      "FNMA_B3_3_1_01_CONTINUANCE_3Y",
      "FNMA_B3_6_01_LIABILITY_RECALC_GATE",
@@ -6171,7 +6088,6 @@
      "FNMA_B3_6_05_LEGAL_DOC_GATE",
      "FNMA_B3_6_07_PAYOFF_FUNDS_GATE",
      "REGZ_1026_43_QM_DETERMINATION_GATE",
-     "SM_CREDIT_REFRESH_PRECLOSE_GATE",
      "SM_DU_RESUBMIT_SLA_1BD"
     ]
    },
@@ -6200,9 +6116,8 @@
    },
    "figures": {
     "spec": 17,
-    "built": 0,
+    "built": 1,
     "missing": [
-     "$0.00",
      "$1,180.00",
      "$14,400.00",
      "$2,057.06",
@@ -6223,9 +6138,9 @@
    },
    "units": {
     "spec": 54,
-    "built": 0
+    "built": 2
    },
-   "pct": 0.0
+   "pct": 3.7
   },
   {
    "process": "22.6",
@@ -6856,7 +6771,7 @@
    },
    "timers": {
     "spec": 13,
-    "built": 0,
+    "built": 1,
     "armable": 6,
     "missing": [
      "FNMA_B4_1_1_06_UCDP_SUCCESSFUL_GATE",
@@ -6864,7 +6779,6 @@
      "FNMA_B4_1_3_12_ROV_TURNTIME_5BD",
      "REGB_1002_14_APPRAISAL_COPY_3BD_GATE",
      "REGB_1002_14_APPRAISAL_COPY_PROMPT_7",
-     "REGB_1002_14_COPY_NOT_CONSUMMATED_30",
      "REGB_1002_14_WAIVER_3BD_GATE",
      "REGZ_1026_35C_HPML_APPRAISAL_COPY_3BD",
      "REGZ_1026_35C_HPML_COPY_NOT_CONSUMMATED_30",
@@ -6916,9 +6830,9 @@
    },
    "units": {
     "spec": 51,
-    "built": 0
+    "built": 1
    },
-   "pct": 0.0
+   "pct": 2.0
   },
   {
    "process": "24.3",
@@ -7445,34 +7359,14 @@
    "title": "Other closing-time and immediate post-closing consumer notices: initial escrow statement delivery, escrow elections and state escrow-waiver disclosures, the \u00a71026.39 notice of ownership transfer (Fannie Mae's practice), GLBA privacy gate, first-payment letter and autopay enrollment, HPA and flood cross-references, state post-closing notices, IRS Form 1098 seeding, and the closing-day notice run",
    "tids": {
     "spec": 14,
-    "built": 0,
-    "todo": 14,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14
-    ]
+    "built": 14,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 5,
-    "built": 1,
-    "missing": [
-     "closing_notice_runs",
-     "escrow_elections",
-     "ownership_transfer_notices",
-     "tax_reporting_seeds"
-    ]
+    "built": 5,
+    "missing": []
    },
    "timers": {
     "spec": 12,
@@ -7482,48 +7376,24 @@
    },
    "notices": {
     "spec": 5,
-    "built": 0,
-    "missing": [
-     "NTC_CA_CIV_2954_IMPOUND_STMT",
-     "NTC_REGZ_1026_39_OWNERSHIP_TRANSFER",
-     "NTC_SM_ESCROW_ELECTION",
-     "NTC_SM_FIRST_PAYMENT_LETTER",
-     "NTC_UT_7_17_4_RESERVE_OPTIONS"
-    ]
+    "built": 5,
+    "missing": []
    },
    "tools": {
     "spec": 11,
-    "built": 0,
-    "missing": [
-     "composeClosingPackage",
-     "evaluateEscrowWaiver",
-     "renderStateEscrowNotice",
-     "checkPrivacyNotice",
-     "runCdEscrowConsistency",
-     "deliverPackage",
-     "recordPackageEvidence",
-     "schedulePostClosingRun",
-     "evaluateOwnershipTransfer",
-     "renderOwnershipNotice",
-     "writeDecision"
-    ]
+    "built": 11,
+    "missing": []
    },
    "figures": {
     "spec": 15,
-    "built": 10,
-    "missing": [
-     "$1,050.00",
-     "$2,400.00",
-     "$3,927.62",
-     "$4,800.00",
-     "$71.95"
-    ]
+    "built": 15,
+    "missing": []
    },
    "units": {
     "spec": 62,
-    "built": 23
+    "built": 62
    },
-   "pct": 37.1
+   "pct": 100.0
   },
   {
    "process": "26.1",

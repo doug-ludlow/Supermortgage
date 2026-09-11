@@ -1,13 +1,13 @@
 {
- "brief": "spec units built 6401/7446 (86.0%): tids 1654/1914, tables 606/717, timers 1753/1987, notices 288/306, tools 1076/1311, figures 1024/1211; processes at 100%: 143/165",
+ "brief": "spec units built 6470/7446 (86.9%): tids 1666/1914, tables 613/717, timers 1753/1987, notices 288/306, tools 1109/1311, figures 1041/1211; processes at 100%: 144/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1654
+   "built": 1666
   },
   "tables": {
    "spec": 717,
-   "built": 606
+   "built": 613
   },
   "timers": {
    "spec": 1987,
@@ -19,15 +19,15 @@
   },
   "tools": {
    "spec": 1311,
-   "built": 1076
+   "built": 1109
   },
   "figures": {
    "spec": 1211,
-   "built": 1024
+   "built": 1041
   },
   "units": {
    "spec": 7446,
-   "built": 6401
+   "built": 6470
   }
  },
  "sections": {
@@ -171,9 +171,9 @@
   },
   "24": {
    "spec": 314,
-   "built": 285,
+   "built": 314,
    "processes": 6,
-   "done": 5
+   "done": 6
   },
   "25": {
    "spec": 231,
@@ -189,7 +189,7 @@
   },
   "27": {
    "spec": 197,
-   "built": 26,
+   "built": 51,
    "processes": 2,
    "done": 0
   },
@@ -201,7 +201,7 @@
   },
   "29": {
    "spec": 232,
-   "built": 23,
+   "built": 38,
    "processes": 4,
    "done": 0
   },
@@ -354,6 +354,7 @@
   "24.3",
   "24.4",
   "24.5",
+  "24.6",
   "25.1",
   "25.2",
   "25.3",
@@ -6217,22 +6218,9 @@
    "title": "Mortgage insurance ordering, coverage selection, MI types (BPMI/LPMI/single/split), delegated approval, certificate activation, and HPA/MI disclosures",
    "tids": {
     "spec": 12,
-    "built": 0,
-    "todo": 12,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 2,
@@ -6257,32 +6245,14 @@
    },
    "figures": {
     "spec": 18,
-    "built": 1,
-    "missing": [
-     "$1,545.00",
-     "$103.00",
-     "$130.47",
-     "$2,188.75",
-     "$2,570.34",
-     "$2,611.47",
-     "$27.47",
-     "$356,532.66",
-     "$357,084.00",
-     "$365,633.53",
-     "$366,240.00",
-     "$381.59",
-     "$411,618.41",
-     "$418,592.00",
-     "$457,800.00",
-     "$460,000.00",
-     "$6,592.00"
-    ]
+    "built": 18,
+    "missing": []
    },
    "units": {
     "spec": 63,
-    "built": 34
+    "built": 63
    },
-   "pct": 54.0
+   "pct": 100.0
   },
   {
    "process": "25.1",
@@ -6808,15 +6778,8 @@
    },
    "tables": {
     "spec": 6,
-    "built": 0,
-    "missing": [
-     "warehouse_borrowing_base_snapshots",
-     "warehouse_collateral_defects",
-     "warehouse_covenant_tests",
-     "warehouse_curtailments",
-     "warehouse_daily_reports",
-     "warehouse_interest_accruals"
-    ]
+    "built": 6,
+    "missing": []
    },
    "timers": {
     "spec": 22,
@@ -6831,28 +6794,8 @@
    },
    "tools": {
     "spec": 19,
-    "built": 0,
-    "missing": [
-     "evaluateEligibility",
-     "computeBorrowingBase",
-     "approveAdvance",
-     "prepareWire",
-     "funding_approver",
-     "issueBaileeLetter",
-     "trackCollateral",
-     "confirmTransferOfControl",
-     "accrueInterest",
-     "capitalizeInterest",
-     "assessFee",
-     "ageAdvances",
-     "issueCurtailment",
-     "recordDefect",
-     "demandRepurchase",
-     "issueKickout",
-     "testCovenants",
-     "renderDailyReport",
-     "writeDecision"
-    ]
+    "built": 19,
+    "missing": []
    },
    "figures": {
     "spec": 28,
@@ -6890,9 +6833,9 @@
    },
    "units": {
     "spec": 87,
-    "built": 22
+    "built": 47
    },
-   "pct": 25.3
+   "pct": 54.0
   },
   {
    "process": "27.2",
@@ -7486,23 +7429,8 @@
    },
    "tools": {
     "spec": 14,
-    "built": 0,
-    "missing": [
-     "priceForCommitment",
-     "commitBestEfforts",
-     "modifyCommitment",
-     "setClosedStatus",
-     "requestExtension",
-     "moveToFallout",
-     "preparePairOffPackage",
-     "prepareMandatoryPackage",
-     "captureMarketPrice",
-     "reconcileFeeDrafts",
-     "reconcilePewlStatus",
-     "computeNetPriceForecast",
-     "openEscalation",
-     "writeDecision"
-    ]
+    "built": 14,
+    "missing": []
    },
    "figures": {
     "spec": 16,
@@ -7528,9 +7456,9 @@
    },
    "units": {
     "spec": 61,
-    "built": 15
+    "built": 29
    },
-   "pct": 24.6
+   "pct": 47.5
   },
   {
    "process": "29.2",
@@ -7752,9 +7680,8 @@
    },
    "tables": {
     "spec": 8,
-    "built": 1,
+    "built": 2,
     "missing": [
-     "bailee_letters",
      "custodian_certifications",
      "deliveries",
      "delivery_operator_tasks",
@@ -7829,9 +7756,9 @@
    },
    "units": {
     "spec": 67,
-    "built": 6
+    "built": 7
    },
-   "pct": 9.0
+   "pct": 10.4
   },
   {
    "process": "30.1",

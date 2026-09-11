@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 6719/7446 (90.2%): tids 1734/1914, tables 625/717, timers 1790/1987, notices 289/306, tools 1155/1311, figures 1126/1211; processes at 100%: 150/165",
+ "brief": "spec units built 6779/7446 (91.0%): tids 1747/1914, tables 634/717, timers 1803/1987, notices 289/306, tools 1173/1311, figures 1133/1211; processes at 100%: 151/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1734
+   "built": 1747
   },
   "tables": {
    "spec": 717,
-   "built": 625
+   "built": 634
   },
   "timers": {
    "spec": 1987,
-   "built": 1790
+   "built": 1803
   },
   "notices": {
    "spec": 306,
@@ -19,15 +19,15 @@
   },
   "tools": {
    "spec": 1311,
-   "built": 1155
+   "built": 1173
   },
   "figures": {
    "spec": 1211,
-   "built": 1126
+   "built": 1133
   },
   "units": {
    "spec": 7446,
-   "built": 6719
+   "built": 6779
   }
  },
  "sections": {
@@ -201,9 +201,9 @@
   },
   "29": {
    "spec": 232,
-   "built": 115,
+   "built": 175,
    "processes": 4,
-   "done": 2
+   "done": 3
   },
   "30": {
    "spec": 218,
@@ -364,6 +364,7 @@
   "26.3",
   "27.1",
   "29.1",
+  "29.2",
   "29.3",
   "30.1",
   "30.2",
@@ -7254,57 +7255,20 @@
    "title": "Pipeline and interest-rate-risk management (fallout/pull-through, hedge for mandatory execution, mark-to-market, best-efforts operations)",
    "tids": {
     "spec": 13,
-    "built": 0,
-    "todo": 13,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13
-    ]
+    "built": 13,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 9,
-    "built": 0,
-    "missing": [
-     "fallout_events",
-     "hedge_policies",
-     "hedge_trades",
-     "margin_calls",
-     "mark_to_market_runs",
-     "pipeline_positions",
-     "pull_through_estimates",
-     "pull_through_models",
-     "rate_shock_reports"
-    ]
+    "built": 9,
+    "missing": []
    },
    "timers": {
     "spec": 12,
-    "built": 0,
-    "armable": 2,
-    "missing": [
-     "FINRA_4210_VARIATION_MARGIN_1BD",
-     "SIFMA_TBA_ROLL_GATE_3BD",
-     "SM_BE_FALLOUT_REVIEW_MONTHLY",
-     "SM_HEDGE_COVERAGE_BAND_GATE",
-     "SM_HEDGE_POLICY_REVIEW_1Y",
-     "SM_LIQUIDITY_STRESS_WEEKLY",
-     "SM_MTM_DAILY_1700ET",
-     "SM_PIPELINE_INTRADAY_MOVE_TRIGGER",
-     "SM_PIPELINE_POSITION_DAILY_0700ET",
-     "SM_PULL_THROUGH_MODEL_RECALIBRATION_90",
-     "SM_RATE_SHOCK_REPORT_DAILY",
-     "SM_UNCOMMITTED_POSITION_5BD"
-    ]
+    "built": 12,
+    "armable": 12,
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -7313,46 +7277,19 @@
    },
    "tools": {
     "spec": 18,
-    "built": 0,
-    "missing": [
-     "takePipelineSnapshot",
-     "estimatePullThrough",
-     "estimateDurationFactor",
-     "computeCoverage",
-     "recommendRebalance",
-     "prepareTradePackage",
-     "recordTradeConfirmation",
-     "scheduleRoll",
-     "requestMandatoryCommitment",
-     "runMarkToMarket",
-     "runRateShock",
-     "computeLiquidityNeed",
-     "recordMarginCall",
-     "analyzeFallout",
-     "recalibratePullThrough",
-     "publishPartnerReport",
-     "openEscalation",
-     "writeDecision"
-    ]
+    "built": 18,
+    "missing": []
    },
    "figures": {
     "spec": 8,
-    "built": 1,
-    "missing": [
-     "$2,240.00",
-     "$3,000.00",
-     "$4,000.00",
-     "$40,000.00",
-     "$497.74",
-     "$5,040.00",
-     "$7,280.00"
-    ]
+    "built": 8,
+    "missing": []
    },
    "units": {
     "spec": 60,
-    "built": 1
+    "built": 60
    },
-   "pct": 1.7
+   "pct": 100.0
   },
   {
    "process": "29.3",
@@ -7432,7 +7369,7 @@
    },
    "timers": {
     "spec": 23,
-    "built": 5,
+    "built": 6,
     "armable": 14,
     "missing": [
      "FNMA_C1_2_02_CUSTODIAN_LOAN_NUMBER_REQUEST_3BD",
@@ -7451,7 +7388,6 @@
      "FNMA_PPA_PROCESSING_10BD",
      "SM_LD_DATA_REVISION_RESPONSE_1BD",
      "SM_LD_PURCHASE_ERROR_RESUBMIT_1BD",
-     "SM_LOAN_DELIVERY_OPERATOR_SLA_1BD",
      "SM_WAREHOUSE_WIRE_APPROVAL_SLA_1BD"
     ]
    },
@@ -7495,9 +7431,9 @@
    },
    "units": {
     "spec": 67,
-    "built": 9
+    "built": 10
    },
-   "pct": 13.4
+   "pct": 14.9
   },
   {
    "process": "30.1",

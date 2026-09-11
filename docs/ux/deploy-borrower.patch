@@ -1,0 +1,426 @@
+diff -ruN a/.github/workflows/deploy.yml b/.github/workflows/deploy.yml
+--- a/.github/workflows/deploy.yml	2026-09-11 13:08:34.631209469 +0000
++++ b/.github/workflows/deploy.yml	2026-09-11 13:11:30.200047973 +0000
+@@ -5,7 +5,7 @@
+ # vars.GCP_WIF_PROVIDER, vars.GCP_DEPLOYER_SA, vars.TF_STATE_BUCKET).
+ # No GitHub secrets are needed: authentication is Workload Identity Federation.
+ #
+-# Order: preflight -> terraform -> build -> migrate -> deploy.
++# Order: preflight -> terraform -> build (api + borrower, in parallel) -> migrate -> deploy.
+ name: deploy
+ 
+ on:
+@@ -85,6 +85,7 @@
+       sql_connection_name: ${{ steps.out.outputs.sql_connection_name }}
+       api_hostname: ${{ steps.out.outputs.api_hostname }}
+       console_hostname: ${{ steps.out.outputs.console_hostname }}
++      borrower_url: ${{ steps.out.outputs.borrower_url }}
+       dns_records: ${{ steps.out.outputs.dns_records }}
+     steps:
+       - uses: actions/checkout@v4
+@@ -128,6 +129,7 @@
+             echo "sql_connection_name=$(terraform output -raw sql_connection_name)"
+             echo "api_hostname=$(terraform output -raw api_url | sed 's#^https://##')"
+             echo "console_hostname=$(terraform output -raw console_url | sed 's#^https://##')"
++            echo "borrower_url=$(terraform output -raw borrower_url)"
+             echo "dns_records=$(terraform output -json godaddy_dns_records | jq -c .)"
+           } >> "$GITHUB_OUTPUT"
+ 
+@@ -175,6 +177,51 @@
+           docker push "${{ steps.tags.outputs.image }}"
+           docker push "${{ steps.tags.outputs.branch_image }}"
+ 
++  build-borrower:
++    name: build borrower image
++    needs: terraform
++    runs-on: ubuntu-latest
++    outputs:
++      image: ${{ steps.tags.outputs.image }}
++    steps:
++      - uses: actions/checkout@v4
++
++      - name: Authenticate to Google Cloud (Workload Identity Federation)
++        uses: google-github-actions/auth@v2
++        with:
++          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
++          service_account: ${{ vars.GCP_DEPLOYER_SA }}
++
++      - uses: google-github-actions/setup-gcloud@v2
++
++      - name: Configure docker for Artifact Registry
++        run: gcloud auth configure-docker "${{ vars.GCP_REGION }}-docker.pkg.dev" --quiet
++
++      - name: Compute image tags
++        id: tags
++        env:
++          REPO: ${{ needs.terraform.outputs.artifact_repo }}
++        run: |
++          slug="$(echo "${GITHUB_REF_NAME}" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+//; s/-+$//' | cut -c1-63)"
++          {
++            echo "image=${REPO}/borrower:${GITHUB_SHA}"
++            echo "branch_image=${REPO}/borrower:${slug}"
++          } >> "$GITHUB_OUTPUT"
++
++      # apps/borrower: Next.js standalone build (Dockerfile.borrower at the repo root).
++      - name: docker build (borrower)
++        run: |
++          docker build \
++            -f Dockerfile.borrower \
++            -t "${{ steps.tags.outputs.image }}" \
++            -t "${{ steps.tags.outputs.branch_image }}" \
++            .
++
++      - name: docker push (borrower)
++        run: |
++          docker push "${{ steps.tags.outputs.image }}"
++          docker push "${{ steps.tags.outputs.branch_image }}"
++
+   migrate:
+     name: migrate database
+     needs: [terraform, build]
+@@ -205,7 +252,7 @@
+ 
+   deploy:
+     name: deploy
+-    needs: [terraform, build, migrate]
++    needs: [terraform, build, build-borrower, migrate]
+     runs-on: ubuntu-latest
+     steps:
+       - name: Authenticate to Google Cloud (Workload Identity Federation)
+@@ -240,6 +287,14 @@
+             --project "${{ vars.GCP_PROJECT_ID }}" \
+             --quiet
+ 
++      - name: Deploy the borrower app
++        run: |
++          gcloud run deploy supermortgage-borrower \
++            --image "${{ needs.build-borrower.outputs.image }}" \
++            --region "${{ vars.GCP_REGION }}" \
++            --project "${{ vars.GCP_PROJECT_ID }}" \
++            --quiet
++
+       - name: Service URL
+         run: |
+           url="$(gcloud run services describe supermortgage-api \
+@@ -268,6 +323,18 @@
+           echo
+           echo "healthz OK via ${LB_IP}"
+ 
++      - name: Smoke test /app (borrower) through the load balancer
++        continue-on-error: true
++        env:
++          API_HOSTNAME: ${{ needs.terraform.outputs.api_hostname }}
++          LB_IP: ${{ needs.terraform.outputs.lb_ip }}
++        run: |
++          curl --fail --silent --show-error --output /dev/null \
++            --retry 10 --retry-delay 15 --retry-all-errors \
++            --resolve "${API_HOSTNAME}:443:${LB_IP}" \
++            "https://${API_HOSTNAME}/app"
++          echo "borrower app OK via ${LB_IP}"
++
+       - name: Board the demo transfer batch (workflow_dispatch with seed_demo)
+         if: github.event.inputs.seed_demo == 'true'
+         run: |
+@@ -282,13 +349,16 @@
+           LB_IP: ${{ needs.terraform.outputs.lb_ip }}
+           API_HOSTNAME: ${{ needs.terraform.outputs.api_hostname }}
+           CONSOLE_HOSTNAME: ${{ needs.terraform.outputs.console_hostname }}
++          BORROWER_URL: ${{ needs.terraform.outputs.borrower_url }}
+           IMAGE: ${{ needs.build.outputs.image }}
++          BORROWER_IMAGE: ${{ needs.build-borrower.outputs.image }}
+           SQL: ${{ needs.terraform.outputs.sql_connection_name }}
+         run: |
+           {
+             echo "## Supermortgage deployed (${ENVIRONMENT})"
+             echo
+             echo "- Image: \`${IMAGE}\`"
++            echo "- Borrower image: \`${BORROWER_IMAGE}\`"
+             echo "- Cloud SQL: \`${SQL}\`"
+             echo "- Load balancer IP: \`${LB_IP}\`"
+             echo
+@@ -302,6 +372,7 @@
+             echo
+             echo "- https://${API_HOSTNAME}/healthz"
+             echo "- https://${CONSOLE_HOSTNAME}/"
++            echo "- ${BORROWER_URL} (borrower app)"
+             echo
+             echo "API token: \`gcloud secrets versions access latest --secret supermortgage-api-token --project ${{ vars.GCP_PROJECT_ID }}\`"
+           } >> "$GITHUB_STEP_SUMMARY"
+diff -ruN a/infra/terraform/iam.tf b/infra/terraform/iam.tf
+--- a/infra/terraform/iam.tf	2026-09-11 13:08:34.641451399 +0000
++++ b/infra/terraform/iam.tf	2026-09-11 13:11:30.199604842 +0000
+@@ -33,6 +33,33 @@
+   member    = "serviceAccount:${google_service_account.runtime.email}"
+ }
+ 
++# Identity the borrower app (apps/borrower, Dockerfile.borrower) runs as. It writes
++# logs and reads exactly one secret: the API token, which its server-side proxy holds
++# and never sends to the browser (the borrower routes themselves are session-authenticated).
++resource "google_service_account" "borrower" {
++  account_id   = "supermortgage-borrower"
++  display_name = "Supermortgage borrower app (Cloud Run service)"
++
++  depends_on = [google_project_service.apis]
++}
++
++resource "google_project_iam_member" "borrower_roles" {
++  for_each = toset([
++    "roles/logging.logWriter",
++    "roles/monitoring.metricWriter",
++  ])
++
++  project = var.project_id
++  role    = each.value
++  member  = "serviceAccount:${google_service_account.borrower.email}"
++}
++
++resource "google_secret_manager_secret_iam_member" "borrower_api_token" {
++  secret_id = google_secret_manager_secret.api_token.id
++  role      = "roles/secretmanager.secretAccessor"
++  member    = "serviceAccount:${google_service_account.borrower.email}"
++}
++
+ # Identity Cloud Scheduler uses to start the sweep job. It can invoke that
+ # one job and nothing else.
+ resource "google_service_account" "scheduler" {
+diff -ruN a/infra/terraform/lb.tf b/infra/terraform/lb.tf
+--- a/infra/terraform/lb.tf	2026-09-11 13:08:34.638152565 +0000
++++ b/infra/terraform/lb.tf	2026-09-11 13:11:30.199843735 +0000
+@@ -19,6 +19,17 @@
+   }
+ }
+ 
++# The borrower app (apps/borrower) — a second serverless NEG behind the same load balancer.
++resource "google_compute_region_network_endpoint_group" "borrower" {
++  name                  = "supermortgage-borrower-neg"
++  region                = var.region
++  network_endpoint_type = "SERVERLESS"
++
++  cloud_run {
++    service = google_cloud_run_v2_service.borrower.name
++  }
++}
++
+ # Cloud Armor: default allow, a per-IP rate limit, and Google's preconfigured
+ # SQLi/XSS signatures in preview (logged, not enforced) until the false-positive
+ # rate on real traffic is understood. Prod takes them out of preview.
+@@ -109,11 +120,28 @@
+   }
+ }
+ 
++resource "google_compute_backend_service" "borrower" {
++  name                  = "supermortgage-borrower-backend"
++  load_balancing_scheme = "EXTERNAL_MANAGED"
++  protocol              = "HTTPS"
++  security_policy       = google_compute_security_policy.armor.id
++
++  backend {
++    group = google_compute_region_network_endpoint_group.borrower.id
++  }
++
++  log_config {
++    enable      = true
++    sample_rate = 1.0
++  }
++}
++
+ resource "google_compute_url_map" "https" {
+   name            = "supermortgage-https"
+   default_service = google_compute_backend_service.api.id
+ 
+-  # The API and console hostnames (one name, or two) route to the one service.
++  # The API and console hostnames (one name, or two) route to the API service, except
++  # /app and /app/* which go to the borrower app (Next.js basePath "/app").
+   host_rule {
+     hosts        = local.hostnames
+     path_matcher = "supermortgage"
+@@ -122,6 +150,11 @@
+   path_matcher {
+     name            = "supermortgage"
+     default_service = google_compute_backend_service.api.id
++
++    path_rule {
++      paths   = ["/app", "/app/*"]
++      service = google_compute_backend_service.borrower.id
++    }
+   }
+ }
+ 
+diff -ruN a/infra/terraform/outputs.tf b/infra/terraform/outputs.tf
+--- a/infra/terraform/outputs.tf	2026-09-11 13:08:34.645213552 +0000
++++ b/infra/terraform/outputs.tf	2026-09-11 13:11:30.199911900 +0000
+@@ -13,6 +13,16 @@
+   value       = "https://${var.console_hostname}"
+ }
+ 
++output "borrower_url" {
++  description = "Public borrower app URL (Next.js basePath /app on the API/console hostname) once DNS and the certificate are in place."
++  value       = "https://${var.api_hostname}/app"
++}
++
++output "borrower_cloud_run_service_url" {
++  description = "The borrower service's run.app URL. Not reachable from the internet (ingress is load-balancer only)."
++  value       = google_cloud_run_v2_service.borrower.uri
++}
++
+ output "cloud_run_service_url" {
+   description = "The service's run.app URL. Not reachable from the internet (ingress is load-balancer only); shown for `gcloud` reference."
+   value       = google_cloud_run_v2_service.api.uri
+diff -ruN a/infra/terraform/run.tf b/infra/terraform/run.tf
+--- a/infra/terraform/run.tf	2026-09-11 13:08:34.634719100 +0000
++++ b/infra/terraform/run.tf	2026-09-11 13:11:30.199726953 +0000
+@@ -11,6 +11,13 @@
+     LOG_FORMAT   = "json"
+     ENVIRONMENT  = var.environment # optional in the runtime; labels log lines
+   }
++  # Borrower API settings (src/runtime/borrower/routes.ts): the borrower app is served
++  # at /app on the same hostname, so WebAuthn's relying party and allowed origin are that host.
++  borrower_api_env = {
++    BORROWER_RP_ID    = var.api_hostname
++    BORROWER_ORIGINS  = "https://${var.api_hostname}"
++    BORROWER_APP_URL  = "https://${var.api_hostname}/app"
++  }
+   cloudsql_volume = "cloudsql"
+   cloudsql_mount  = "/cloudsql"
+ }
+@@ -50,6 +57,14 @@
+         }
+       }
+ 
++      dynamic "env" {
++        for_each = local.borrower_api_env
++        content {
++          name  = env.key
++          value = env.value
++        }
++      }
++
+       env {
+         name = "DATABASE_URL"
+         value_source {
+@@ -410,3 +425,106 @@
+     google_project_iam_member.runtime_roles,
+   ]
+ }
++
++# ---------------------------------------------------------------------------
++# HTTP service: the borrower app (apps/borrower — Next.js standalone, basePath /app)
++# ---------------------------------------------------------------------------
++# Built from Dockerfile.borrower by the deploy workflow's `build-borrower` job. Served on the
++# same hostname as the API behind the load balancer; the URL map sends /app/* here. It talks
++# to the API over HTTPS through the load balancer (https://<api_hostname>) from a server-side
++# proxy route; the browser never holds an API or session bearer.
++resource "google_cloud_run_v2_service" "borrower" {
++  name     = "supermortgage-borrower"
++  location = var.region
++
++  ingress = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
++
++  deletion_protection = false
++
++  template {
++    service_account = google_service_account.borrower.email
++
++    scaling {
++      min_instance_count = var.borrower_min_instances
++      max_instance_count = var.borrower_max_instances
++    }
++
++    containers {
++      image = var.image # placeholder until the workflow deploys the borrower image
++
++      env {
++        name  = "API_BASE_URL"
++        value = "https://${var.api_hostname}"
++      }
++
++      env {
++        name  = "ENVIRONMENT"
++        value = var.environment
++      }
++
++      # The ops API token, for server-side calls only (never forwarded to the browser and never
++      # used on /v1/borrower/*, which is session-authenticated). Read from the same secret.
++      env {
++        name = "API_TOKEN"
++        value_source {
++          secret_key_ref {
++            secret  = google_secret_manager_secret.api_token.secret_id
++            version = "latest"
++          }
++        }
++      }
++
++      resources {
++        limits = {
++          cpu    = "1"
++          memory = "512Mi"
++        }
++        cpu_idle          = true
++        startup_cpu_boost = true
++      }
++
++      startup_probe {
++        http_get {
++          path = "/app"
++        }
++        initial_delay_seconds = 0
++        period_seconds        = 5
++        timeout_seconds       = 3
++        failure_threshold     = 12
++      }
++
++      liveness_probe {
++        http_get {
++          path = "/app"
++        }
++        period_seconds    = 30
++        timeout_seconds   = 3
++        failure_threshold = 3
++      }
++    }
++  }
++
++  lifecycle {
++    ignore_changes = [
++      template[0].containers[0].image,
++      client,
++      client_version,
++    ]
++  }
++
++  depends_on = [
++    google_secret_manager_secret_iam_member.borrower_api_token,
++    google_secret_manager_secret_version.api_token,
++    google_project_iam_member.borrower_roles,
++  ]
++}
++
++# Same reasoning as the API service: ingress is load-balancer only, so allUsers at the
++# Cloud Run layer just lets the serverless NEG forward traffic; the app is public by design.
++resource "google_cloud_run_v2_service_iam_member" "borrower_public_invoker" {
++  project  = google_cloud_run_v2_service.borrower.project
++  location = google_cloud_run_v2_service.borrower.location
++  name     = google_cloud_run_v2_service.borrower.name
++  role     = "roles/run.invoker"
++  member   = "allUsers"
++}
+diff -ruN a/infra/terraform/variables.tf b/infra/terraform/variables.tf
+--- a/infra/terraform/variables.tf	2026-09-11 13:08:34.648630468 +0000
++++ b/infra/terraform/variables.tf	2026-09-11 13:11:30.199448404 +0000
+@@ -69,3 +69,15 @@
+   default     = ""
+   sensitive   = true
+ }
++
++variable "borrower_min_instances" {
++  description = "Minimum Cloud Run instances for the borrower app (supermortgage-borrower)."
++  type        = number
++  default     = 1
++}
++
++variable "borrower_max_instances" {
++  description = "Maximum Cloud Run instances for the borrower app."
++  type        = number
++  default     = 10
++}

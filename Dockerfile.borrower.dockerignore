@@ -1,0 +1,11 @@
+# Build context for Dockerfile.borrower (BuildKit picks <Dockerfile>.dockerignore over .dockerignore).
+# Only apps/borrower's sources go in; the root package, docs, infra and every node_modules stay out.
+*
+!apps/borrower
+apps/borrower/node_modules
+apps/borrower/.next
+apps/borrower/test-results
+apps/borrower/playwright-report
+apps/borrower/tests
+apps/borrower/*.tsbuildinfo
+apps/borrower/.env*

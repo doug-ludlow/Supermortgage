@@ -1,0 +1,103 @@
+{
+  "name": "servicing",
+  "source": "docs/ux/08a-servicing-payments-statements-escrow.md §1 (the loan home) on the 13 §2 servicing fixture (payment due Sep 1, 2026; 15-day grace). FAKE: recorded, no live agent, FAKE vendors.",
+  "me": {
+    "party_id": "party-0002",
+    "first_name": "Luis",
+    "level": "L1",
+    "subjects": [{ "loan_id": "loan-0000731", "label": "Your loan · 2210 Rosewood Ct", "transaction_type": "purchase", "occupancy": "primary" }],
+    "partner": { "legal_name": "Saguaro Home Lending, LLC", "nmlsr_id": "1873421" }
+  },
+  "record": {
+    "timezone": "America/Phoenix",
+    "subject": { "loan_id": "loan-0000731", "label": "Your loan · 2210 Rosewood Ct", "transaction_type": "purchase", "occupancy": "primary" },
+    "header": { "address_line": "2210 Rosewood Ct, Chandler, AZ 85224", "purpose": "Your loan", "loan_label": "30-year fixed · 6.375%" },
+    "status": {
+      "badge": "Payment due",
+      "state_source": { "state": "installment 2026-09: late_charge_state = evaluating (inside grace)", "table": "installments / loans" },
+      "one_liner": "payment.due_soon",
+      "one_liner_tokens": { "money": "$3,182.34", "date": "Sep 1, 2026 — no late charge if received by Sep 16" }
+    },
+    "next": { "label": "Payment due · no late charge if received by", "due_at": "2026-09-16T23:59:59-07:00", "timer_code": "NOTE_6A_LATE_CHARGE_GRACE_GATE", "calendar_note": "calendar days" },
+    "needed_from_you": [
+      { "item_id": "need-pay", "kind": "confirmation", "label": "September payment", "due_at": "2026-09-16T23:59:59-07:00", "card_instance_id": "card-s-pay" }
+    ],
+    "numbers": {
+      "phase": "post_funding",
+      "upb_cents": "40612345",
+      "next_payment": { "due_on": "2026-09-01", "amount_cents": "318234", "pi_cents": "257034", "escrow_cents": "61200" },
+      "escrow_balance_cents": "284510",
+      "note_rate": "6.375",
+      "days_past_due": 0
+    },
+    "dates": [
+      { "timer_code": "NOTE_6A_LATE_CHARGE_GRACE_GATE", "label": "No late charge if received by", "due_at": "2026-09-16T23:59:59-07:00", "calendar": "calendar days", "message_id": "msg-s-due" },
+      { "timer_code": "REGX_1024_17C3_ANNUAL_ANALYSIS_LEAD_45", "label": "Escrow analysis", "due_at": "2026-11-16T09:00:00-07:00", "calendar": "calendar days", "message_id": "msg-s-escrow-review" },
+      { "timer_code": "HPA_4902B_AUTO_TERMINATE_0", "label": "PMI ends", "due_at": "2031-04-01T00:00:00-07:00", "calendar": "scheduled amortization date" }
+    ],
+    "documents": [
+      { "document_id": "doc-stmt-2026-08", "notice_code": "NTC_REGZ_41_STMT_STD", "title": "Your August statement", "kind": "statement", "status": "delivered", "delivered_at": "2026-08-17T06:05:00-07:00", "requires_ack": false, "channel": "email", "message_id": "msg-s-stmt" },
+      { "document_id": "doc-escrow-2025", "notice_code": "NTC_REGX_1024_17I_ANNUAL_ESCROW_STMT", "title": "Annual escrow statement", "kind": "notice", "status": "delivered", "delivered_at": "2025-12-12T06:00:00-07:00", "requires_ack": false, "channel": "email" },
+      { "document_id": "doc-1098-2025", "notice_code": "NTC_IRS_1098", "title": "Form 1098 for 2025", "kind": "year_end", "status": "mailed", "mailed_at": "2026-01-28T00:00:00-07:00", "requires_ack": false, "channel": "mail" }
+    ],
+    "people": [
+      { "party_id": "party-0002", "role": "borrower", "display_name": "Luis" },
+      { "party_id": "party-0003", "role": "co_borrower", "display_name": "Ana", "progress": { "consents_ok": true, "confirmations_ok": true, "signed": true } }
+    ],
+    "property": {
+      "address": "2210 Rosewood Ct, Chandler, AZ 85224",
+      "tbd": false,
+      "property_type": "Single-family",
+      "units": 1,
+      "occupancy": "primary",
+      "hazard": { "status": "verified", "label": "Insured · renews Mar 3, 2027" },
+      "flood": { "status": "not_in_sfha", "label": "Not in a flood hazard area" }
+    },
+    "loan": {
+      "autodraft": { "status": "active", "next_draft_on": "2026-09-15", "amount_cents": "318234", "account_last4": "4417" },
+      "escrow_lines": [
+        { "type": "County tax", "payee": "Maricopa County Treasurer", "next_disbursement_on": "2026-10-01", "annual_cents": "412800" },
+        { "type": "Homeowners insurance", "payee": "Desert Shield Insurance", "next_disbursement_on": "2027-02-20", "annual_cents": "196500" },
+        { "type": "Mortgage insurance", "payee": "Arch MI", "next_disbursement_on": "2026-10-01", "annual_cents": "125100" }
+      ],
+      "mi": { "status": "active", "projected_end_on": "2031-04-01", "cancellation_eligible_on": "2029-11-01" },
+      "year_end": { "form_1098_status": "Mailed Jan 28, 2026 (e-delivery needs a separate consent — offered in December)" },
+      "ratewatch": { "current_rate": "6.375", "best_available_rate": "6.250" }
+    },
+    "offers": []
+  },
+  "messages": [
+    { "message_id": "msg-s-disclosure", "conversation_id": "conv-0002", "at": "2026-08-17T06:05:00-07:00", "sender": "agent", "sender_label": "Supermortgage", "channel": "app", "body_text": "I'm Supermortgage's automated assistant, working for Saguaro Home Lending, LLC, your lender. You can reach a person at any time — just say human.", "subject": { "loan_id": "loan-0000731" }, "voice_turn": false, "delivery": { "sent": true, "delivered": true, "read": true }, "automation_marker": true },
+    { "message_id": "msg-s-stmt", "conversation_id": "conv-0002", "at": "2026-08-17T06:05:10-07:00", "sender": "agent", "sender_label": "Supermortgage", "channel": "app", "card_instance_id": "card-s-stmt", "subject": { "loan_id": "loan-0000731" }, "voice_turn": false, "delivery": { "sent": true, "delivered": true, "read": true } },
+    { "message_id": "msg-s-posted", "conversation_id": "conv-0002", "at": "2026-08-15T14:20:00-07:00", "sender": "agent", "sender_label": "Supermortgage", "channel": "app", "card_instance_id": "card-s-posted", "subject": { "loan_id": "loan-0000731" }, "voice_turn": false, "delivery": { "sent": true, "delivered": true, "read": true } },
+    { "message_id": "msg-s-escrow-paid", "conversation_id": "conv-0002", "at": "2026-08-20T10:02:00-07:00", "sender": "agent", "sender_label": "Supermortgage", "channel": "app", "card_instance_id": "card-s-escrow-paid", "subject": { "loan_id": "loan-0000731" }, "voice_turn": false, "delivery": { "sent": true, "delivered": true, "read": true } },
+    { "message_id": "msg-s-due", "conversation_id": "conv-0002", "at": "2026-08-27T09:00:00-07:00", "sender": "agent", "sender_label": "Supermortgage", "channel": "app", "body_text": "Payment of $3,182.34 due Sep 1, 2026. Autopay draws it on Sep 15 from ••••4417 — nothing to do unless you'd rather pay another way.", "subject": { "loan_id": "loan-0000731" }, "voice_turn": false, "delivery": { "sent": true, "delivered": true, "read": true } },
+    { "message_id": "msg-s-sms", "conversation_id": "conv-0002", "at": "2026-08-27T09:00:05-07:00", "sender": "agent", "sender_label": "Supermortgage", "channel": "sms", "body_text": "Payment of $3,182.34 due Sep 1, 2026. https://demo.supermortgage.com/app/d/FAKE-deeplink", "subject": { "loan_id": "loan-0000731" }, "voice_turn": false, "delivery": { "sent": true, "delivered": true, "read": false } },
+    { "message_id": "msg-s-ask", "conversation_id": "conv-0002", "at": "2026-09-10T18:41:00-07:00", "sender": "borrower", "sender_label": "You", "channel": "app", "body_text": "Can I pay this month early instead of waiting for autopay?", "subject": { "loan_id": "loan-0000731" }, "voice_turn": false, "delivery": { "sent": true, "delivered": true, "read": true } },
+    { "message_id": "msg-s-reply", "conversation_id": "conv-0002", "at": "2026-09-10T18:41:08-07:00", "sender": "agent", "sender_label": "Supermortgage", "channel": "app", "body_text": "Yes. Pay any day through Sep 16 and the Sep 15 autopay draft is skipped for this month. Here's the payment card.", "subject": { "loan_id": "loan-0000731" }, "voice_turn": false, "delivery": { "sent": true, "delivered": true, "read": true } },
+    { "message_id": "msg-s-pay", "conversation_id": "conv-0002", "at": "2026-09-10T18:41:10-07:00", "sender": "agent", "sender_label": "Supermortgage", "channel": "app", "card_instance_id": "card-s-pay", "subject": { "loan_id": "loan-0000731" }, "voice_turn": false, "delivery": { "sent": true, "delivered": true, "read": true } },
+    { "message_id": "msg-s-escrow-review", "conversation_id": "conv-0002", "at": "2026-09-11T06:00:00-07:00", "sender": "agent", "sender_label": "Supermortgage", "channel": "app", "card_instance_id": "card-s-escrow-review", "subject": { "loan_id": "loan-0000731" }, "voice_turn": false, "delivery": { "sent": true, "delivered": true, "read": false } }
+  ],
+  "cards": [
+    {
+      "card_instance_id": "card-s-posted", "conversation_id": "conv-0002", "party_id": "party-0002", "subject": { "loan_id": "loan-0000731" }, "kind": "StatusCard", "status": "resolved", "created_by": "agent:cashiering", "copy_key": "payment.posted", "created_at": "2026-08-15T14:20:00-07:00",
+      "props": { "state_label": "Payment of $3,182.34 posted Aug 15, 2026: $2,157.53 interest · $412.81 principal · $612.00 escrow." }
+    },
+    {
+      "card_instance_id": "card-s-stmt", "conversation_id": "conv-0002", "party_id": "party-0002", "subject": { "loan_id": "loan-0000731" }, "kind": "DocumentCard", "status": "resolved", "created_by": "agent:borrower-comms", "copy_key": "statement.available", "created_at": "2026-08-17T06:05:10-07:00",
+      "props": { "document_id": "doc-stmt-2026-08", "notice_code": "NTC_REGZ_41_STMT_STD", "title": "Your August statement", "why_you_see_this": "Your monthly statement — what was paid, what's due, and where it went.", "requires_ack": false, "esign_scope_required": "servicing_statements" }
+    },
+    {
+      "card_instance_id": "card-s-escrow-paid", "conversation_id": "conv-0002", "party_id": "party-0002", "subject": { "loan_id": "loan-0000731" }, "kind": "StatusCard", "status": "resolved", "created_by": "agent:escrow", "copy_key": "escrow.paid", "created_at": "2026-08-20T10:02:00-07:00",
+      "props": { "state_label": "We paid Desert Shield Insurance $1,965.00 for homeowners insurance." }
+    },
+    {
+      "card_instance_id": "card-s-pay", "conversation_id": "conv-0002", "party_id": "party-0002", "subject": { "loan_id": "loan-0000731" }, "kind": "PaymentCard", "status": "pending", "created_by": "agent:cashiering", "copy_key": "payment.due_soon", "created_at": "2026-09-10T18:41:10-07:00",
+      "props": { "mode": "one_time", "title": "September payment", "amount_default_cents": "318234", "amount_editable": true, "date_options": ["2026-09-11", "2026-09-12", "2026-09-13", "2026-09-14", "2026-09-15", "2026-09-16"], "accounts": [{ "id": "acct-1", "last4": "4417", "label": "Checking" }], "add_account": true }
+    },
+    {
+      "card_instance_id": "card-s-escrow-review", "conversation_id": "conv-0002", "party_id": "party-0002", "subject": { "loan_id": "loan-0000731" }, "kind": "StatusCard", "status": "resolved", "created_by": "agent:escrow", "copy_key": "escrow.review_soon", "created_at": "2026-09-11T06:00:00-07:00",
+      "props": { "state_label": "Your yearly escrow review starts Nov 16, 2026.", "next_event_label": "Escrow analysis", "next_event_at": "2026-11-16T09:00:00-07:00" }
+    }
+  ]
+}

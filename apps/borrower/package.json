@@ -1,0 +1,39 @@
+{
+  "name": "@supermortgage/borrower",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Supermortgage borrower-facing web app (docs/ux) — Next.js App Router, mounted at /app",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "postbuild": "node --experimental-strip-types scripts/stage-standalone.mts",
+    "start": "node .next/standalone/server.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "npm run typecheck && node --experimental-strip-types scripts/lint-money.mts",
+    "gen:copy": "node --experimental-strip-types scripts/gen-copy.mts",
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "vitest run",
+    "test:e2e": "PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers playwright test"
+  },
+  "dependencies": {
+    "next": "16.3.4",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.56.1",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "jsdom": "^26.1.0",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.4"
+  }
+}

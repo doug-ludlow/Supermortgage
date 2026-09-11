@@ -1,0 +1,170 @@
+{
+  "name": "refinance",
+  "source": "docs/ux/03-entry-and-qualification.md §2 R7–R11 on the 13 §2 refinance fixture (Phoenix, AZ; $560,000 limited cash-out; 30-year fixed 6.125%; application Oct 19–20, 2026). FAKE: recorded, no live agent, FAKE vendors.",
+  "me": {
+    "party_id": "party-0001",
+    "first_name": "Maya",
+    "level": "L3",
+    "subjects": [{ "application_id": "app-2026-000417", "label": "Refinance · 4120 E Cactus Wren Dr", "transaction_type": "limited_cash_out", "occupancy": "primary" }],
+    "partner": { "legal_name": "Saguaro Home Lending, LLC", "nmlsr_id": "1873421" }
+  },
+  "record": {
+    "timezone": "America/Phoenix",
+    "subject": { "application_id": "app-2026-000417", "label": "Refinance · 4120 E Cactus Wren Dr", "transaction_type": "limited_cash_out", "occupancy": "primary" },
+    "header": { "address_line": "4120 E Cactus Wren Dr, Phoenix, AZ 85028", "purpose": "Refinancing", "loan_label": "30-year fixed · limited cash-out" },
+    "status": {
+      "badge": "Rate floating",
+      "state_source": { "state": "intent_records.valid = true; locks: none", "table": "applications / intent_records / locks" },
+      "one_liner": "intent.received",
+      "one_liner_tokens": { "prior_servicer": "Mesa Verde Mortgage Servicing" }
+    },
+    "next": { "label": "Estimated costs on your LE are good through", "due_at": "2026-11-05T23:59:59-07:00", "timer_code": "REGZ_1026_37A13_COSTS_EXPIRE_10BD", "calendar_note": "business days" },
+    "needed_from_you": [
+      { "item_id": "need-lock", "kind": "confirmation", "label": "Lock your rate or keep floating", "card_instance_id": "card-r11-lock" },
+      { "item_id": "need-truv", "kind": "connector", "label": "Connect your payroll (Truv)", "due_at": "2026-10-30T17:00:00-07:00", "card_instance_id": "card-r3-truv" }
+    ],
+    "numbers": {
+      "phase": "pre_funding",
+      "note_rate": "6.125",
+      "apr": "6.201",
+      "pi_payment_cents": "340262",
+      "escrow_payment_cents": "61250",
+      "loan_amount_cents": "56000000",
+      "monthly_savings_cents": "37630",
+      "lock": { "status": "floating" },
+      "figures_source": "le_v1",
+      "footer": "Not a commitment to lend; rates change daily. Saguaro Home Lending, LLC, NMLSR ID 1873421."
+    },
+    "dates": [
+      { "timer_code": "REGZ_1026_37A13_COSTS_EXPIRE_10BD", "label": "Estimated costs on your LE are good through", "due_at": "2026-11-05T23:59:59-07:00", "calendar": "business days", "message_id": "msg-r9-le" },
+      { "timer_code": "REGB_1002_9_DECISION_30", "label": "Decision on your application by", "due_at": "2026-11-19T23:59:59-07:00", "calendar": "calendar days", "message_id": "msg-r7-received" },
+      { "timer_code": "SM_NEEDS_LIST_BORROWER_RESPONSE_5", "label": "Please send by", "due_at": "2026-10-30T17:00:00-07:00", "calendar": "business days", "message_id": "msg-r10-intent" }
+    ],
+    "documents": [
+      { "document_id": "doc-le-v1", "disclosure_id": "disc-le-1", "notice_code": "NTC_REGZ_1026_37_LE", "title": "Loan Estimate", "kind": "le", "status": "received", "delivered_at": "2026-10-22T09:12:00-07:00", "received_at": "2026-10-22T09:41:00-07:00", "requires_ack": true, "channel": "app", "message_id": "msg-r9-le" },
+      { "document_id": "doc-hcl", "notice_code": "NTC_REGX_1024_20_HCL", "title": "Housing counseling agencies near you", "kind": "companion", "status": "delivered", "delivered_at": "2026-10-22T09:12:00-07:00", "requires_ack": false, "channel": "app", "message_id": "msg-r9-hcl" },
+      { "document_id": "doc-appr-notice", "notice_code": "NTC_REGB_1002_14_APPRAISAL_NOTICE", "title": "Your right to a copy of the appraisal", "kind": "companion", "status": "delivered", "delivered_at": "2026-10-22T09:12:00-07:00", "requires_ack": false, "channel": "app" },
+      { "document_id": "doc-approval", "notice_code": "NTC_REGB_1002_9_APPROVAL", "title": "Approved with conditions", "kind": "notice", "status": "delivered", "delivered_at": "2026-10-21T14:02:00-07:00", "requires_ack": false, "channel": "app", "message_id": "msg-r8-approval" },
+      { "document_id": "doc-esign", "notice_code": "NTC_ESIGN_7001C_DISCLOSURE", "title": "E-delivery consent", "kind": "consent", "status": "received", "received_at": "2026-10-20T10:15:00-07:00", "requires_ack": false, "channel": "app" }
+    ],
+    "people": [
+      { "party_id": "party-0001", "role": "borrower", "display_name": "Maya", "progress": { "consents_ok": true, "confirmations_ok": true, "signed": false } },
+      { "party_id": "mlo-0042", "role": "mlo_of_record", "display_name": "Dana Whitfield", "nmlsr_id": "2210987" }
+    ],
+    "property": {
+      "address": "4120 E Cactus Wren Dr, Phoenix, AZ 85028",
+      "tbd": false,
+      "property_type": "Single-family",
+      "units": 1,
+      "occupancy": "primary",
+      "valuation": { "method": "value_acceptance", "status": "offer_recorded", "label": "No appraisal needed" },
+      "flood": { "status": "ordered", "label": "Flood determination ordered" },
+      "hazard": { "status": "requirement_computed", "label": "Insurance details needed next" }
+    }
+  },
+  "messages": [
+    { "message_id": "msg-e2-disclosure", "conversation_id": "conv-0001", "at": "2026-10-19T18:03:00-07:00", "sender": "agent", "sender_label": "Supermortgage", "channel": "app", "body_text": "I'm Supermortgage's automated assistant, working for Saguaro Home Lending, LLC, your lender. You can reach a person at any time — just say human.", "subject": { "application_id": "app-2026-000417" }, "voice_turn": false, "delivery": { "sent": true, "delivered": true, "read": true }, "automation_marker": true },
+    { "message_id": "msg-r7-value", "conversation_id": "conv-0001", "at": "2026-10-20T10:28:00-07:00", "sender": "agent", "sender_label": "Supermortgage", "channel": "app", "card_instance_id": "card-r7-value", "subject": { "application_id": "app-2026-000417" }, "voice_turn": false, "delivery": { "sent": true, "delivered": true, "read": true } },
+    { "message_id": "msg-r7-amount", "conversation_id": "conv-0001", "at": "2026-10-20T10:29:00-07:00", "sender": "agent", "sender_label": "Supermortgage", "channel": "app", "card_instance_id": "card-r7-amount", "subject": { "application_id": "app-2026-000417" }, "voice_turn": false, "delivery": { "sent": true, "delivered": true, "read": true } },
+    { "message_id": "msg-r7-product", "conversation_id": "conv-0001", "at": "2026-10-20T10:30:00-07:00", "sender": "agent", "sender_label": "Supermortgage", "channel": "app", "card_instance_id": "card-r7-product", "subject": { "application_id": "app-2026-000417" }, "voice_turn": false, "delivery": { "sent": true, "delivered": true, "read": true } },
+    { "message_id": "msg-r7-received", "conversation_id": "conv-0001", "at": "2026-10-20T10:31:10-07:00", "sender": "agent", "sender_label": "Supermortgage", "channel": "app", "card_instance_id": "card-r7-received", "subject": { "application_id": "app-2026-000417" }, "voice_turn": false, "delivery": { "sent": true, "delivered": true, "read": true } },
+    { "message_id": "msg-r8-du", "conversation_id": "conv-0001", "at": "2026-10-20T10:31:40-07:00", "sender": "agent", "sender_label": "Supermortgage", "channel": "app", "card_instance_id": "card-r8-du", "subject": { "application_id": "app-2026-000417" }, "voice_turn": false, "delivery": { "sent": true, "delivered": true, "read": true } },
+    { "message_id": "msg-r8-approval", "conversation_id": "conv-0001", "at": "2026-10-21T14:02:00-07:00", "sender": "notice", "sender_label": "Notice", "channel": "app", "card_instance_id": "card-r8-approval", "subject": { "application_id": "app-2026-000417" }, "voice_turn": false, "delivery": { "sent": true, "delivered": true, "read": true } },
+    { "message_id": "msg-r8-checklist", "conversation_id": "conv-0001", "at": "2026-10-21T14:02:30-07:00", "sender": "agent", "sender_label": "Supermortgage", "channel": "app", "card_instance_id": "card-r8-checklist", "subject": { "application_id": "app-2026-000417" }, "voice_turn": false, "delivery": { "sent": true, "delivered": true, "read": true } },
+    { "message_id": "msg-r9-pending", "conversation_id": "conv-0001", "at": "2026-10-21T14:05:00-07:00", "sender": "agent", "sender_label": "Supermortgage", "channel": "app", "card_instance_id": "card-r9-pending-mlo", "subject": { "application_id": "app-2026-000417" }, "voice_turn": false, "delivery": { "sent": true, "delivered": true, "read": true } },
+    { "message_id": "msg-r9-mlo", "conversation_id": "conv-0001", "at": "2026-10-21T14:05:20-07:00", "sender": "agent", "sender_label": "Supermortgage", "channel": "app", "card_instance_id": "card-r9-mlo", "subject": { "application_id": "app-2026-000417" }, "voice_turn": false, "delivery": { "sent": true, "delivered": true, "read": true } },
+    { "message_id": "msg-r9-le", "conversation_id": "conv-0001", "at": "2026-10-22T09:12:00-07:00", "sender": "agent", "sender_label": "Supermortgage", "channel": "app", "card_instance_id": "card-r9-le", "subject": { "application_id": "app-2026-000417" }, "voice_turn": false, "delivery": { "sent": true, "delivered": true, "read": true } },
+    { "message_id": "msg-r9-hcl", "conversation_id": "conv-0001", "at": "2026-10-22T09:12:05-07:00", "sender": "agent", "sender_label": "Supermortgage", "channel": "app", "card_instance_id": "card-r9-hcl", "subject": { "application_id": "app-2026-000417" }, "voice_turn": false, "delivery": { "sent": true, "delivered": true, "read": true } },
+    { "message_id": "msg-r10-q", "conversation_id": "conv-0001", "at": "2026-10-22T09:43:00-07:00", "sender": "borrower", "sender_label": "You", "channel": "app", "body_text": "What happens if I say proceed?", "subject": { "application_id": "app-2026-000417" }, "voice_turn": false, "delivery": { "sent": true, "delivered": true, "read": true } },
+    { "message_id": "msg-r10-a", "conversation_id": "conv-0001", "at": "2026-10-22T09:43:12-07:00", "sender": "agent", "sender_label": "Supermortgage", "channel": "app", "body_text": "Until you say proceed, we can't charge anything except the credit report, or require documents. Proceeding lets us order title and start verification.", "subject": { "application_id": "app-2026-000417" }, "voice_turn": false, "delivery": { "sent": true, "delivered": true, "read": true } },
+    { "message_id": "msg-r10-choice", "conversation_id": "conv-0001", "at": "2026-10-22T09:43:20-07:00", "sender": "agent", "sender_label": "Supermortgage", "channel": "app", "card_instance_id": "card-r10-intent", "subject": { "application_id": "app-2026-000417" }, "voice_turn": false, "delivery": { "sent": true, "delivered": true, "read": true } },
+    { "message_id": "msg-r10-intent", "conversation_id": "conv-0001", "at": "2026-10-23T08:15:00-07:00", "sender": "agent", "sender_label": "Supermortgage", "channel": "app", "card_instance_id": "card-r10-received", "subject": { "application_id": "app-2026-000417" }, "voice_turn": false, "delivery": { "sent": true, "delivered": true, "read": true } },
+    { "message_id": "msg-r3-truv", "conversation_id": "conv-0001", "at": "2026-10-23T08:15:30-07:00", "sender": "agent", "sender_label": "Supermortgage", "channel": "app", "card_instance_id": "card-r3-truv", "subject": { "application_id": "app-2026-000417" }, "voice_turn": false, "delivery": { "sent": true, "delivered": true, "read": true } },
+    { "message_id": "msg-r11-lock", "conversation_id": "conv-0001", "at": "2026-10-23T08:16:00-07:00", "sender": "agent", "sender_label": "Supermortgage", "channel": "app", "card_instance_id": "card-r11-lock", "subject": { "application_id": "app-2026-000417" }, "voice_turn": false, "delivery": { "sent": true, "delivered": true, "read": false } }
+  ],
+  "cards": [
+    {
+      "card_instance_id": "card-r7-value", "conversation_id": "conv-0001", "party_id": "party-0001", "subject": { "application_id": "app-2026-000417" }, "kind": "ConfirmCard", "status": "resolved", "created_by": "agent:intake", "copy_key": "value.confirm.title", "created_at": "2026-10-20T10:28:00-07:00", "resolved_at": "2026-10-20T10:28:40-07:00",
+      "props": { "title": "Our estimate of your home's value is $712,000.00. Use this, or enter your own?", "fields": [{ "path": "application_properties.estimated_value", "label": "Estimated value", "value": "$712,000.00", "source": "avm" }], "commits_to": "application_properties.estimated_value" },
+      "evidence": { "fields": [{ "path": "application_properties.estimated_value", "value_confirmed": "$712,000.00", "source": "avm", "confirmed_at": "2026-10-20T10:28:40-07:00" }], "edited": false }
+    },
+    {
+      "card_instance_id": "card-r7-amount", "conversation_id": "conv-0001", "party_id": "party-0001", "subject": { "application_id": "app-2026-000417" }, "kind": "ConfirmCard", "status": "resolved", "created_by": "agent:intake", "copy_key": "loan_amount.confirm.title", "created_at": "2026-10-20T10:29:00-07:00", "resolved_at": "2026-10-20T10:29:30-07:00",
+      "props": { "title": "Loan amount: $560,000.00 — enough to pay off your current loan with no closing costs to you.", "fields": [{ "path": "applications.loan_amount_sought", "label": "Loan amount", "value": "$560,000.00", "source": "credit_report" }, { "path": "application_liabilities.mortgage.balance", "label": "Current balance", "value": "$556,410.22", "source": "recorded_instrument" }], "commits_to": "applications.loan_amount_sought" },
+      "evidence": { "fields": [{ "path": "applications.loan_amount_sought", "value_confirmed": "$560,000.00", "source": "credit_report", "confirmed_at": "2026-10-20T10:29:30-07:00" }, { "path": "application_liabilities.mortgage.balance", "value_confirmed": "$556,410.22", "source": "recorded_instrument", "confirmed_at": "2026-10-20T10:29:30-07:00" }], "edited": false }
+    },
+    {
+      "card_instance_id": "card-r7-product", "conversation_id": "conv-0001", "party_id": "party-0001", "subject": { "application_id": "app-2026-000417" }, "kind": "ChoiceCard", "status": "resolved", "created_by": "agent:intake", "copy_key": "product.choice", "created_at": "2026-10-20T10:30:00-07:00", "resolved_at": "2026-10-20T10:31:00-07:00",
+      "props": { "title": "Loan type", "options": [{ "id": "fixed_30", "label": "30-year fixed", "is_primary": true }, { "id": "fixed_15", "label": "15-year fixed" }, { "id": "arm", "label": "Adjustable (ARM)", "sublabel": "adds the ARM program and CHARM disclosures" }], "command": "application.setGoal", "command_args_by_option": { "fixed_30": { "product": "fixed_30" }, "fixed_15": { "product": "fixed_15" }, "arm": { "product": "arm" } } },
+      "evidence": { "option_id": "fixed_30", "tapped_at": "2026-10-20T10:31:00-07:00" }
+    },
+    {
+      "card_instance_id": "card-r7-received", "conversation_id": "conv-0001", "party_id": "party-0001", "subject": { "application_id": "app-2026-000417" }, "kind": "StatusCard", "status": "resolved", "created_by": "system", "copy_key": "application.received", "created_at": "2026-10-20T10:31:10-07:00",
+      "props": { "state_label": "Application received Oct 20, 2026", "next_event_label": "Your Loan Estimate arrives by", "next_event_at": "2026-10-23T23:59:59-07:00" }
+    },
+    {
+      "card_instance_id": "card-r8-du", "conversation_id": "conv-0001", "party_id": "party-0001", "subject": { "application_id": "app-2026-000417" }, "kind": "StatusCard", "status": "resolved", "created_by": "agent:intake", "copy_key": "du.running", "created_at": "2026-10-20T10:31:40-07:00",
+      "props": { "state_label": "Checking your application with the automated underwriting system — usually a couple of minutes. Nothing needed from you." }
+    },
+    {
+      "card_instance_id": "card-r8-approval", "conversation_id": "conv-0001", "party_id": "party-0001", "subject": { "application_id": "app-2026-000417" }, "kind": "NoticeCard", "status": "resolved", "created_by": "agent:underwriter", "copy_key": "decision.conditional_approval", "created_at": "2026-10-21T14:02:00-07:00",
+      "props": { "notice_code": "NTC_REGB_1002_9_APPROVAL", "title": "Approved with conditions", "rendered_document_id": "doc-approval", "plain_language": "Your application is approved as long as the items listed in this notice are completed before closing. Two items need you; we're handling the rest.", "template_version": "REGB_1002_9_APPROVAL v3", "delivered_at": "2026-10-21T14:02:00-07:00", "channel": "app", "line": "Approved with conditions. 2 item(s) need you; we're handling 3." }
+    },
+    {
+      "card_instance_id": "card-r8-checklist", "conversation_id": "conv-0001", "party_id": "party-0001", "subject": { "application_id": "app-2026-000417" }, "kind": "ChecklistCard", "status": "pending", "created_by": "agent:underwriter", "copy_key": "needs.title", "created_at": "2026-10-21T14:02:30-07:00",
+      "props": { "title": "Needed from you", "items": [
+        { "condition_id": "cond-ins", "label": "Homeowners insurance evidence", "owner": "you", "status": "open", "action": { "kind": "upload", "card_kind": "UploadCard" } },
+        { "condition_id": "cond-payroll", "label": "Payroll connection (income and employment)", "owner": "you", "status": "waiting_borrower", "due_at": "2026-10-30T17:00:00-07:00", "action": { "kind": "connect", "card_kind": "ConnectCard", "card_instance_id": "card-r3-truv" } },
+        { "condition_id": "cond-title", "label": "Title commitment", "owner": "us", "status": "open" },
+        { "condition_id": "cond-payoff", "label": "Payoff statement from Mesa Verde Mortgage Servicing", "owner": "third_party", "status": "waiting_third_party" },
+        { "condition_id": "cond-val", "label": "Valuation (value acceptance)", "owner": "us", "status": "cleared" }
+      ] }
+    },
+    {
+      "card_instance_id": "card-r9-pending-mlo", "conversation_id": "conv-0001", "party_id": "party-0001", "subject": { "application_id": "app-2026-000417" }, "kind": "StatusCard", "status": "resolved", "created_by": "system", "copy_key": "terms.pending_mlo", "created_at": "2026-10-21T14:05:00-07:00",
+      "props": { "state_label": "Your terms and Loan Estimate are being reviewed by Dana Whitfield, NMLSR ID 2210987 — expected by Oct 22, 2026.", "next_event_label": "Expected by", "next_event_at": "2026-10-22T14:05:00-07:00" }
+    },
+    {
+      "card_instance_id": "card-r9-mlo", "conversation_id": "conv-0001", "party_id": "party-0001", "subject": { "application_id": "app-2026-000417" }, "kind": "PersonCard", "status": "resolved", "created_by": "system", "copy_key": "terms.pending_mlo", "created_at": "2026-10-21T14:05:20-07:00",
+      "props": { "role": "mlo_of_record", "name": "Dana Whitfield", "credentials": "NMLSR ID 2210987 · Saguaro Home Lending, LLC" }
+    },
+    {
+      "card_instance_id": "card-r9-le", "conversation_id": "conv-0001", "party_id": "party-0001", "subject": { "application_id": "app-2026-000417" }, "kind": "DocumentCard", "status": "resolved", "created_by": "agent:disclosure", "copy_key": "le.delivered", "created_at": "2026-10-22T09:12:00-07:00", "resolved_at": "2026-10-22T09:41:00-07:00",
+      "props": { "document_id": "doc-le-v1", "disclosure_id": "disc-le-1", "notice_code": "NTC_REGZ_1026_37_LE", "title": "Your Loan Estimate", "why_you_see_this": "This is the estimate of your loan terms and costs. Confirming receipt starts the timeline for your closing.", "requires_ack": true, "esign_scope_required": "origination_disclosures", "received_at": "2026-10-22T09:41:00-07:00" },
+      "evidence": { "receipt_evidence": "esign_confirmed", "received_at": "2026-10-22T09:41:00-07:00" }
+    },
+    {
+      "card_instance_id": "card-r9-hcl", "conversation_id": "conv-0001", "party_id": "party-0001", "subject": { "application_id": "app-2026-000417" }, "kind": "DocumentCard", "status": "resolved", "created_by": "agent:disclosure", "copy_key": "companion.hcl", "created_at": "2026-10-22T09:12:05-07:00",
+      "props": { "document_id": "doc-hcl", "notice_code": "NTC_REGX_1024_20_HCL", "title": "Housing counseling agencies near you", "why_you_see_this": "Federal rules require us to give you this list.", "requires_ack": false, "esign_scope_required": "origination_disclosures" }
+    },
+    {
+      "card_instance_id": "card-r10-intent", "conversation_id": "conv-0001", "party_id": "party-0001", "subject": { "application_id": "app-2026-000417" }, "kind": "ChoiceCard", "status": "resolved", "created_by": "agent:intake", "copy_key": "intent.title", "created_at": "2026-10-22T09:43:20-07:00", "resolved_at": "2026-10-23T08:14:50-07:00",
+      "props": { "title": "Want to move forward?", "helper": "Until you say proceed, we can't charge anything except the credit report, or require documents. Proceeding lets us order title and start verification.", "options": [{ "id": "proceed", "label": "Proceed", "is_primary": true }, { "id": "not_yet", "label": "Not yet" }], "command": "intent.record", "command_args_by_option": { "proceed": {}, "not_yet": { "defer": true } }, "disclosure_version_shown": "disc-le-1" },
+      "evidence": { "option_id": "proceed", "tapped_at": "2026-10-23T08:14:50-07:00", "disclosure_version_shown": "disc-le-1" }
+    },
+    {
+      "card_instance_id": "card-r10-received", "conversation_id": "conv-0001", "party_id": "party-0001", "subject": { "application_id": "app-2026-000417" }, "kind": "StatusCard", "status": "resolved", "created_by": "system", "copy_key": "intent.received", "created_at": "2026-10-23T08:15:00-07:00",
+      "props": { "state_label": "Thanks — we've ordered title and a flood determination and asked Mesa Verde Mortgage Servicing for your payoff figure.", "detail": "The automated underwriting system accepted your home's value — no appraisal, no fee." }
+    },
+    {
+      "card_instance_id": "card-r3-truv", "conversation_id": "conv-0001", "party_id": "party-0001", "subject": { "application_id": "app-2026-000417" }, "kind": "ConnectCard", "status": "pending", "created_by": "agent:verification", "copy_key": "income.connect.purpose", "created_at": "2026-10-23T08:15:30-07:00",
+      "props": { "vendor": "truv_income", "purpose_text": "Connect your payroll so we can verify income without paystubs.", "what_we_get": ["employer", "start date", "pay frequency", "base and variable pay", "year-to-date"], "fallback": { "label": "Type my income now; send paystubs later", "document_class": "paystub" }, "state": "not_started" }
+    },
+    {
+      "card_instance_id": "card-r11-lock", "conversation_id": "conv-0001", "party_id": "party-0001", "subject": { "application_id": "app-2026-000417" }, "kind": "ComparisonCard", "status": "pending", "created_by": "agent:intake", "copy_key": "lock.compare.title", "created_at": "2026-10-23T08:16:00-07:00", "expires_at": "2026-10-23T17:00:00-07:00",
+      "props": {
+        "title": "Lock your rate?",
+        "command": "lock.request",
+        "recommended_id": "lock_45",
+        "columns": [
+          { "id": "lock_30", "title": "30 days", "rows": [{ "label": "Rate", "value": "6.000%", "emphasis": true }, { "label": "APR", "value": "6.078%" }, { "label": "Principal & interest", "value": "$3,357.20/mo" }, { "label": "Points / credits", "value": "0.125 pts ($700.00)" }, { "label": "Expires", "value": "Nov 22, 2026" }] },
+          { "id": "lock_45", "title": "45 days", "rows": [{ "label": "Rate", "value": "6.125%", "emphasis": true }, { "label": "APR", "value": "6.201%" }, { "label": "Principal & interest", "value": "$3,402.62/mo" }, { "label": "Points / credits", "value": "none" }, { "label": "Expires", "value": "Dec 7, 2026" }], "footnote": "Covers your projected closing plus 7 days." },
+          { "id": "lock_60", "title": "60 days", "rows": [{ "label": "Rate", "value": "6.250%", "emphasis": true }, { "label": "APR", "value": "6.327%" }, { "label": "Principal & interest", "value": "$3,448.29/mo" }, { "label": "Points / credits", "value": "none" }, { "label": "Expires", "value": "Dec 22, 2026" }] }
+        ],
+        "command_args_by_option": { "lock_30": { "quote_id": "q-30", "period_days": 30 }, "lock_45": { "quote_id": "q-45", "period_days": 45 }, "lock_60": { "quote_id": "q-60", "period_days": 60 }, "float": { "float": true } },
+        "secondary_option": { "id": "float", "label": "Keep floating" },
+        "footnote": "Extensions cost 0.125% per 7 days; if a lock expires before closing, the rate is set again when you relock. Not a commitment to lend; rates change daily. Saguaro Home Lending, LLC, NMLSR ID 1873421."
+      }
+    }
+  ]
+}

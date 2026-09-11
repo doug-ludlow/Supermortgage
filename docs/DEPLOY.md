@@ -14,6 +14,7 @@ What you end up with, in one Google Cloud project:
 | Secret Manager | `supermortgage-database-url`, `supermortgage-api-token` |
 | Artifact Registry `supermortgage` | container images built by GitHub Actions |
 | Global HTTPS load balancer + Cloud Armor | `demo.supermortgage.com` (API and console on one name), Google-managed certificate, rate limiting |
+| Cloud Run service `supermortgage-borrower` | the borrower app (`apps/borrower`, Next.js standalone from `Dockerfile.borrower`), served at `https://demo.supermortgage.com/app` by a `/app/*` URL-map rule to its own serverless NEG — infrastructure and the second build/deploy job are in `docs/ux/deploy-borrower.patch`, applied after review |
 
 Everything is created by Terraform (`infra/terraform/`) from a GitHub Actions
 workflow (`.github/workflows/deploy.yml`). The only thing you run by hand is a

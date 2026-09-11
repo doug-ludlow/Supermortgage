@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 5846/7446 (78.5%): tids 1515/1914, tables 569/717, timers 1616/1987, notices 279/306, tools 919/1311, figures 948/1211; processes at 100%: 130/165",
+ "brief": "spec units built 5901/7446 (79.3%): tids 1540/1914, tables 580/717, timers 1624/1987, notices 279/306, tools 919/1311, figures 959/1211; processes at 100%: 132/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1515
+   "built": 1540
   },
   "tables": {
    "spec": 717,
-   "built": 569
+   "built": 580
   },
   "timers": {
    "spec": 1987,
-   "built": 1616
+   "built": 1624
   },
   "notices": {
    "spec": 306,
@@ -23,11 +23,11 @@
   },
   "figures": {
    "spec": 1211,
-   "built": 948
+   "built": 959
   },
   "units": {
    "spec": 7446,
-   "built": 5846
+   "built": 5901
   }
  },
  "sections": {
@@ -153,25 +153,25 @@
   },
   "21": {
    "spec": 282,
-   "built": 269,
+   "built": 282,
    "processes": 6,
-   "done": 5
+   "done": 6
   },
   "22": {
    "spec": 368,
-   "built": 281,
+   "built": 315,
    "processes": 6,
-   "done": 2
+   "done": 3
   },
   "23": {
    "spec": 219,
-   "built": 84,
+   "built": 86,
    "processes": 4,
    "done": 1
   },
   "24": {
    "spec": 314,
-   "built": 13,
+   "built": 19,
    "processes": 6,
    "done": 0
   },
@@ -338,8 +338,10 @@
   "21.3",
   "21.4",
   "21.5",
+  "21.6",
   "22.2",
   "22.3",
+  "22.5",
   "23.4",
   "25.1",
   "25.2",
@@ -5548,23 +5550,9 @@
    "title": "Application-status decisions: notice of incompleteness, withdrawal, counteroffer, denial/adverse action (ECOA + FCRA), and HMDA action-taken recording",
    "tids": {
     "spec": 13,
-    "built": 0,
-    "todo": 13,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13
-    ]
+    "built": 13,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 5,
@@ -5594,9 +5582,9 @@
    },
    "units": {
     "spec": 43,
-    "built": 30
+    "built": 43
    },
-   "pct": 69.8
+   "pct": 100.0
   },
   {
    "process": "22.1",
@@ -5771,31 +5759,14 @@
    "title": "Liabilities, debt-to-income, qualifying payment, and debts paid at closing",
    "tids": {
     "spec": 12,
-    "built": 0,
-    "todo": 12,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "debt_payoff_plans",
-     "dti_calculations",
-     "qualifying_payments"
-    ]
+    "built": 3,
+    "missing": []
    },
    "timers": {
     "spec": 10,
@@ -5815,26 +5786,14 @@
    },
    "figures": {
     "spec": 17,
-    "built": 6,
-    "missing": [
-     "$1,180.00",
-     "$2,057.06",
-     "$24,000.00",
-     "$3,402.61",
-     "$3,402.62",
-     "$3,402.63",
-     "$360,000.00",
-     "$4,560.00",
-     "$4,976.30",
-     "$615.00",
-     "$8,100.00"
-    ]
+    "built": 17,
+    "missing": []
    },
    "units": {
     "spec": 54,
-    "built": 28
+    "built": 54
    },
-   "pct": 51.9
+   "pct": 100.0
   },
   {
    "process": "22.6",
@@ -5861,17 +5820,8 @@
    },
    "tables": {
     "spec": 9,
-    "built": 1,
-    "missing": [
-     "fraud_investigations",
-     "legal_presence_records",
-     "non_arms_length_assessments",
-     "occupancy_assessments",
-     "party_screenings",
-     "red_flag_events",
-     "reo_discovery_checks",
-     "sar_candidates"
-    ]
+    "built": 9,
+    "missing": []
    },
    "timers": {
     "spec": 15,
@@ -5937,9 +5887,9 @@
    },
    "units": {
     "spec": 64,
-    "built": 5
+    "built": 13
    },
-   "pct": 7.8
+   "pct": 20.3
   },
   {
    "process": "23.1",
@@ -5976,11 +5926,9 @@
    },
    "timers": {
     "spec": 8,
-    "built": 3,
+    "built": 5,
     "armable": 6,
     "missing": [
-     "FNMA_B3_2_01_DU_ARCHIVE_270",
-     "FNMA_B3_2_01_DU_ARCHIVE_540",
      "FNMA_B3_2_10_DU_FINAL_MATCH_GATE",
      "FNMA_DU_IMPACT_MEMO_SUPPORT_120",
      "FNMA_DU_RETURN_FILE_16_17_RETIRE"
@@ -6026,9 +5974,9 @@
    },
    "units": {
     "spec": 50,
-    "built": 7
+    "built": 9
    },
-   "pct": 14.0
+   "pct": 18.0
   },
   {
    "process": "23.2",
@@ -6285,20 +6233,14 @@
    },
    "timers": {
     "spec": 13,
-    "built": 2,
+    "built": 8,
     "armable": 9,
     "missing": [
      "FNMA_B4_1_2_04_APPRAISAL_12M",
-     "FNMA_B4_1_2_04_APPRAISAL_UPDATE_4M",
-     "FNMA_B4_1_4_10_VALUE_ACCEPTANCE_OFFER_4M",
      "FNMA_B4_1_4_11_PDC_API_SUBMIT_GATE",
      "FNMA_UAD_3_6_REQUIRED_GATE",
-     "REGZ_1026_42G_MISCONDUCT_REFERRAL_30",
      "SM_AMC_REGISTRATION_GATE",
-     "SM_APPRAISER_LICENSE_GATE",
-     "SM_VALUATION_ASSIGN_SLA_2BD",
-     "SM_VALUATION_INSPECT_SLA_7CD",
-     "SM_VALUATION_ORDER_SLA_1BD"
+     "SM_APPRAISER_LICENSE_GATE"
     ]
    },
    "notices": {
@@ -6336,9 +6278,9 @@
    },
    "units": {
     "spec": 41,
-    "built": 2
+    "built": 8
    },
-   "pct": 4.9
+   "pct": 19.5
   },
   {
    "process": "24.2",

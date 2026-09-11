@@ -1,5 +1,5 @@
 {
- "brief": "spec units built 6558/7446 (88.1%): tids 1694/1914, tables 614/717, timers 1753/1987, notices 288/306, tools 1109/1311, figures 1100/1211; processes at 100%: 146/165",
+ "brief": "spec units built 6567/7446 (88.2%): tids 1694/1914, tables 614/717, timers 1762/1987, notices 288/306, tools 1109/1311, figures 1100/1211; processes at 100%: 146/165",
  "totals": {
   "tids": {
    "spec": 1914,
@@ -11,7 +11,7 @@
   },
   "timers": {
    "spec": 1987,
-   "built": 1753
+   "built": 1762
   },
   "notices": {
    "spec": 306,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 7446,
-   "built": 6558
+   "built": 6567
   }
  },
  "sections": {
@@ -201,7 +201,7 @@
   },
   "29": {
    "spec": 232,
-   "built": 72,
+   "built": 81,
    "processes": 4,
    "done": 1
   },
@@ -7512,19 +7512,9 @@
    },
    "timers": {
     "spec": 11,
-    "built": 2,
-    "armable": 4,
-    "missing": [
-     "FNMA_B4_1_4_10_VALUE_ACCEPTANCE_SFC_GATE",
-     "FNMA_C1_2_02_DU_FILE_EARLYCHECK_GATE",
-     "FNMA_C1_2_02_EARLYCHECK_CLEAN_GATE",
-     "FNMA_C1_2_02_SFC_COMPLETENESS_GATE",
-     "FNMA_LL_2026_06_SFC_067_CONSISTENCY_GATE",
-     "FNMA_ULDD_IDENTIFIER_CONSISTENCY_GATE",
-     "SM_O103_PACKAGE_FREEZE_GATE",
-     "SM_O103_PACKAGE_FREEZE_SLA_2BD",
-     "SM_O103_REBUILD_ON_CHANGE"
-    ]
+    "built": 11,
+    "armable": 11,
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -7560,9 +7550,9 @@
    },
    "units": {
     "spec": 44,
-    "built": 2
+    "built": 11
    },
-   "pct": 4.5
+   "pct": 25.0
   },
   {
    "process": "29.4",

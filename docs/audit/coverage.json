@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 7389/7446 (99.2%): tids 1900/1914, tables 708/717, timers 1974/1987, notices 306/306, tools 1291/1311, figures 1210/1211; processes at 100%: 163/165",
+ "brief": "spec units built 7446/7446 (100.0%): tids 1914/1914, tables 717/717, timers 1987/1987, notices 306/306, tools 1311/1311, figures 1211/1211; processes at 100%: 165/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1900
+   "built": 1914
   },
   "tables": {
    "spec": 717,
-   "built": 708
+   "built": 717
   },
   "timers": {
    "spec": 1987,
-   "built": 1974
+   "built": 1987
   },
   "notices": {
    "spec": 306,
@@ -19,15 +19,15 @@
   },
   "tools": {
    "spec": 1311,
-   "built": 1291
+   "built": 1311
   },
   "figures": {
    "spec": 1211,
-   "built": 1210
+   "built": 1211
   },
   "units": {
    "spec": 7446,
-   "built": 7389
+   "built": 7446
   }
  },
  "sections": {
@@ -195,9 +195,9 @@
   },
   "28": {
    "spec": 225,
-   "built": 169,
+   "built": 225,
    "processes": 4,
-   "done": 3
+   "done": 4
   },
   "29": {
    "spec": 232,
@@ -213,9 +213,9 @@
   },
   "31": {
    "spec": 140,
-   "built": 139,
+   "built": 140,
    "processes": 3,
-   "done": 2
+   "done": 3
   }
  },
  "done": [
@@ -372,6 +372,7 @@
   "28.1",
   "28.2",
   "28.3",
+  "28.4",
   "29.1",
   "29.2",
   "29.3",
@@ -381,7 +382,8 @@
   "30.3",
   "30.4",
   "31.1",
-  "31.2"
+  "31.2",
+  "31.3"
  ],
  "processes": [
   {
@@ -6662,58 +6664,20 @@
    "title": "Fraud, misrepresentation, AML/SAR, OFAC, and Fannie Mae fraud reporting",
    "tids": {
     "spec": 14,
-    "built": 0,
-    "todo": 14,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14
-    ]
+    "built": 14,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 9,
-    "built": 1,
-    "missing": [
-     "bsa_program",
-     "bsa_sar_5y",
-     "fnma_fraud_reports",
-     "identity_theft_requests",
-     "ofac_hits",
-     "ofac_reports",
-     "sar_decisions",
-     "sars"
-    ]
+    "built": 9,
+    "missing": []
    },
    "timers": {
     "spec": 21,
-    "built": 8,
-    "armable": 13,
-    "missing": [
-     "BSA_1029_210_INDEPENDENT_TEST",
-     "BSA_1029_210_PROGRAM_REVIEW_ANNUAL",
-     "BSA_1029_210_TRAINING_ANNUAL",
-     "BSA_1029_320_IMMEDIATE_LE_NOTICE",
-     "BSA_1029_320_SAR_CONTINUING_120",
-     "FCRA_609E_VICTIM_RECORDS_30",
-     "FCRA_681_ITPP_BOARD_REPORT_ANNUAL",
-     "OFAC_501_603_ANNUAL_BLOCKED_0930",
-     "OFAC_501_603_UNBLOCKING_REPORT_10BD",
-     "SM_BSA_OFFICER_SAR_DECISION_SLA_5",
-     "SM_FRAUD_TRIAGE_SLA_10",
-     "SM_OFAC_CLEAR_BEFORE_FUNDING_GATE",
-     "SM_OFAC_LIST_REFRESH_DAILY"
-    ]
+    "built": 21,
+    "armable": 21,
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -6722,42 +6686,19 @@
    },
    "tools": {
     "spec": 20,
-    "built": 0,
-    "missing": [
-     "aggregateSignals",
-     "openCase",
-     "applyHold",
-     "reexamineDocuments",
-     "orderIndependentVerification",
-     "screenParty",
-     "analyzeOfacMatch",
-     "interviewBorrower",
-     "buildTimeline",
-     "assessScheme",
-     "computeAmount",
-     "recommendTriage",
-     "draftSarPackage",
-     "draftNarrative",
-     "draftOfacReport",
-     "draftFnmaReport",
-     "draftVictimRecordsPackage",
-     "scheduleContinuingReview",
-     "openOfficerEscalation",
-     "writeDecision"
-    ]
+    "built": 20,
+    "missing": []
    },
    "figures": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "$41,250.00"
-    ]
+    "built": 1,
+    "missing": []
    },
    "units": {
     "spec": 65,
-    "built": 9
+    "built": 65
    },
-   "pct": 13.8
+   "pct": 100.0
   },
   {
    "process": "29.1",
@@ -7180,10 +7121,8 @@
    },
    "tables": {
     "spec": 21,
-    "built": 20,
-    "missing": [
-     "bsa_sar_5y"
-    ]
+    "built": 21,
+    "missing": []
    },
    "timers": {
     "spec": 19,
@@ -7208,9 +7147,9 @@
    },
    "units": {
     "spec": 55,
-    "built": 54
+    "built": 55
    },
-   "pct": 98.2
+   "pct": 100.0
   }
  ]
 }

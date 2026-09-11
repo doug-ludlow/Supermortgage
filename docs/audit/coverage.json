@@ -1,33 +1,33 @@
 {
- "brief": "spec units built 7215/7446 (96.9%): tids 1847/1914, tables 672/717, timers 1911/1987, notices 299/306, tools 1278/1311, figures 1208/1211; processes at 100%: 160/165",
+ "brief": "spec units built 7252/7446 (97.4%): tids 1861/1914, tables 677/717, timers 1921/1987, notices 302/306, tools 1282/1311, figures 1209/1211; processes at 100%: 160/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1847
+   "built": 1861
   },
   "tables": {
    "spec": 717,
-   "built": 672
+   "built": 677
   },
   "timers": {
    "spec": 1987,
-   "built": 1911
+   "built": 1921
   },
   "notices": {
    "spec": 306,
-   "built": 299
+   "built": 302
   },
   "tools": {
    "spec": 1311,
-   "built": 1278
+   "built": 1282
   },
   "figures": {
    "spec": 1211,
-   "built": 1208
+   "built": 1209
   },
   "units": {
    "spec": 7446,
-   "built": 7215
+   "built": 7252
   }
  },
  "sections": {
@@ -195,7 +195,7 @@
   },
   "28": {
    "spec": 225,
-   "built": 129,
+   "built": 166,
    "processes": 4,
    "done": 2
   },
@@ -6618,85 +6618,43 @@
    "title": "HMDA data capture, ULI generation, rate-spread and other derived fields, LAR editing, annual/quarterly submission, and public disclosure obligations",
    "tids": {
     "spec": 14,
-    "built": 0,
-    "todo": 14,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14
-    ]
+    "built": 14,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 6,
-    "built": 1,
-    "missing": [
-     "hmda_coverage_tests",
-     "hmda_edit_verifications",
-     "hmda_lar_files",
-     "hmda_public_notices",
-     "hmda_ulis"
-    ]
+    "built": 6,
+    "missing": []
    },
    "timers": {
     "spec": 11,
-    "built": 0,
-    "armable": 3,
+    "built": 10,
+    "armable": 11,
     "missing": [
-     "HMDA_1003_2G_COVERAGE_TEST_ANNUAL",
-     "HMDA_1003_4F_LAR_ENTRY_Q30",
-     "HMDA_1003_5B_DISCLOSURE_NOTICE_3BD",
-     "HMDA_1003_5C_MODIFIED_LAR_NOTICE_ANNUAL",
-     "HMDA_1003_5D_NOTICE_AVAILABILITY",
-     "HMDA_1003_5_ANNUAL_0301",
-     "HMDA_1003_5_LAR_RETENTION_3Y",
-     "HMDA_1003_5_QUARTERLY_60",
-     "SM_HMDA_LAR_COMPLETENESS_DAILY",
-     "SM_HMDA_OFFICER_SIGN_SLA_5BD",
-     "SM_HMDA_PRE_SUBMISSION_EDITS_0201"
+     "HMDA_1003_5_LAR_RETENTION_3Y"
     ]
    },
    "notices": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "NTC_HMDA_1003_5B_DISCLOSURE_STMT_NOTICE",
-     "NTC_HMDA_1003_5C_MODIFIED_LAR_NOTICE",
-     "NTC_HMDA_1003_5E_LOBBY_NOTICE"
-    ]
+    "built": 3,
+    "missing": []
    },
    "tools": {
     "spec": 4,
-    "built": 0,
-    "missing": [
-     "createRecord",
-     "assignUli",
-     "validateUliFfiec",
-     "geocode"
-    ]
+    "built": 4,
+    "missing": []
    },
    "figures": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "$1,245.00"
-    ]
+    "built": 1,
+    "missing": []
    },
    "units": {
     "spec": 39,
-    "built": 1
+    "built": 38
    },
-   "pct": 2.6
+   "pct": 97.4
   },
   {
    "process": "28.4",

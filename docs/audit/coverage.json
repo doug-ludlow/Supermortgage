@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 7112/7446 (95.5%): tids 1821/1914, tables 666/717, timers 1892/1987, notices 299/306, tools 1232/1311, figures 1202/1211; processes at 100%: 158/165",
+ "brief": "spec units built 7218/7446 (96.9%): tids 1834/1914, tables 677/717, timers 1923/1987, notices 299/306, tools 1278/1311, figures 1207/1211; processes at 100%: 159/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1821
+   "built": 1834
   },
   "tables": {
    "spec": 717,
-   "built": 666
+   "built": 677
   },
   "timers": {
    "spec": 1987,
-   "built": 1892
+   "built": 1923
   },
   "notices": {
    "spec": 306,
@@ -19,15 +19,15 @@
   },
   "tools": {
    "spec": 1311,
-   "built": 1232
+   "built": 1278
   },
   "figures": {
    "spec": 1211,
-   "built": 1202
+   "built": 1207
   },
   "units": {
    "spec": 7446,
-   "built": 7112
+   "built": 7218
   }
  },
  "sections": {
@@ -195,9 +195,9 @@
   },
   "28": {
    "spec": 225,
-   "built": 26,
+   "built": 130,
    "processes": 4,
-   "done": 0
+   "done": 1
   },
   "29": {
    "spec": 232,
@@ -213,7 +213,7 @@
   },
   "31": {
    "spec": 140,
-   "built": 5,
+   "built": 7,
    "processes": 3,
    "done": 0
   }
@@ -369,6 +369,7 @@
   "26.4",
   "27.1",
   "27.2",
+  "28.1",
   "29.1",
   "29.2",
   "29.3",
@@ -6534,32 +6535,14 @@
    "title": "Prefunding quality control program (selection, review scope, reverifications, defect handling before closing, reporting)",
    "tids": {
     "spec": 13,
-    "built": 0,
-    "todo": 13,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13
-    ]
+    "built": 13,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 6,
-    "built": 3,
-    "missing": [
-     "qc_reverifications",
-     "qc_reviews",
-     "qc_sample_plans"
-    ]
+    "built": 6,
+    "missing": []
    },
    "timers": {
     "spec": 9,
@@ -6574,46 +6557,19 @@
    },
    "tools": {
     "spec": 20,
-    "built": 0,
-    "missing": [
-     "buildPopulation",
-     "planSample",
-     "selectLoans",
-     "openReview",
-     "recomputeDuInputs",
-     "recomputeIncome",
-     "recomputeAssets",
-     "checkCollateral",
-     "checkMi",
-     "assessOccupancy",
-     "runComplianceSnapshot",
-     "orderReverification",
-     "draftFinding",
-     "routeToOfficer",
-     "releaseFindings",
-     "evaluateRebuttal",
-     "closeReview",
-     "computeMetrics",
-     "draftMonthlyReport",
-     "writeDecision"
-    ]
+    "built": 20,
+    "missing": []
    },
    "figures": {
     "spec": 5,
-    "built": 0,
-    "missing": [
-     "$14,850.00",
-     "$30,720.55",
-     "$4,212.80",
-     "$45,320.55",
-     "$61,940.11"
-    ]
+    "built": 5,
+    "missing": []
    },
    "units": {
     "spec": 53,
-    "built": 12
+    "built": 53
    },
-   "pct": 22.6
+   "pct": 100.0
   },
   {
    "process": "28.2",
@@ -6640,38 +6596,14 @@
    },
    "tables": {
     "spec": 4,
-    "built": 1,
-    "missing": [
-     "fnma_qc_cases",
-     "qc_self_reports",
-     "remedy_ledger"
-    ]
+    "built": 4,
+    "missing": []
    },
    "timers": {
     "spec": 24,
-    "built": 5,
-    "armable": 11,
-    "missing": [
-     "FNMA_A2_3_2_03_APPEAL2_15",
-     "FNMA_A2_3_2_03_FNMA_RESPONSE_60",
-     "FNMA_A2_3_2_03_IDR_15",
-     "FNMA_A2_3_2_03_IMPASSE_15",
-     "FNMA_A2_3_2_03_IMPASSE_RESOLVE_30",
-     "FNMA_A2_3_2_03_MGMT_ESCALATION_15",
-     "FNMA_A3_2_01_COMPLIANCE_SELF_REPORT_60",
-     "FNMA_D1_1_01_QC_SELF_REPORT_30",
-     "FNMA_D1_1_02_VENDOR_REVIEW_10PCT_MONTHLY",
-     "FNMA_D1_1_03_POST_CLOSING_REPORT_MONTHLY",
-     "FNMA_D1_1_03_TARGET_RATE_QUARTERLY",
-     "FNMA_D1_3_01_QC_ARREARS_NOTICE",
-     "FNMA_D1_3_01_QC_SELECT_MONTHLY",
-     "FNMA_D2_1_LQC_RESPONSE_30",
-     "FNMA_D2_1_NOPD_DOC_UPLOAD_30",
-     "FNMA_D2_1_RESOLUTION_REQUEST_60",
-     "SM_QC_EPD_MONITOR_MONTHLY",
-     "SM_QC_POST_CLOSING_REVIEW_SLA_45",
-     "SM_QC_REBUTTAL_WINDOW_10"
-    ]
+    "built": 24,
+    "armable": 24,
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -6680,35 +6612,8 @@
    },
    "tools": {
     "spec": 26,
-    "built": 0,
-    "missing": [
-     "buildCyclePopulation",
-     "drawRandomSample",
-     "selectDiscretionary",
-     "computeScope",
-     "orderReverification",
-     "reconcileLiabilities",
-     "assessOccupancy",
-     "assessCollateral",
-     "reviewClosingDocuments",
-     "matchDuFinalData",
-     "shadowReunderwrite",
-     "draftFinding",
-     "evaluateRebuttal",
-     "computeDefectRates",
-     "draftCycleReport",
-     "draftArrearsNotice",
-     "parseLqcNotification",
-     "buildLqcPackage",
-     "draftNopdResponse",
-     "draftSelfReport",
-     "draftAppeal",
-     "computeRepurchasePrice",
-     "trackRelief",
-     "openOperatorEscalation",
-     "openOfficerEscalation",
-     "writeDecision"
-    ]
+    "built": 26,
+    "missing": []
    },
    "figures": {
     "spec": 1,
@@ -6719,9 +6624,9 @@
    },
    "units": {
     "spec": 68,
-    "built": 6
+    "built": 54
    },
-   "pct": 8.8
+   "pct": 79.4
   },
   {
    "process": "28.3",
@@ -6749,31 +6654,15 @@
    },
    "tables": {
     "spec": 6,
-    "built": 1,
-    "missing": [
-     "hmda_coverage_tests",
-     "hmda_edit_verifications",
-     "hmda_lar_files",
-     "hmda_public_notices",
-     "hmda_ulis"
-    ]
+    "built": 6,
+    "missing": []
    },
    "timers": {
     "spec": 11,
-    "built": 0,
-    "armable": 3,
+    "built": 10,
+    "armable": 11,
     "missing": [
-     "HMDA_1003_2G_COVERAGE_TEST_ANNUAL",
-     "HMDA_1003_4F_LAR_ENTRY_Q30",
-     "HMDA_1003_5B_DISCLOSURE_NOTICE_3BD",
-     "HMDA_1003_5C_MODIFIED_LAR_NOTICE_ANNUAL",
-     "HMDA_1003_5D_NOTICE_AVAILABILITY",
-     "HMDA_1003_5_ANNUAL_0301",
-     "HMDA_1003_5_LAR_RETENTION_3Y",
-     "HMDA_1003_5_QUARTERLY_60",
-     "SM_HMDA_LAR_COMPLETENESS_DAILY",
-     "SM_HMDA_OFFICER_SIGN_SLA_5BD",
-     "SM_HMDA_PRE_SUBMISSION_EDITS_0201"
+     "HMDA_1003_5_LAR_RETENTION_3Y"
     ]
    },
    "notices": {
@@ -6804,9 +6693,9 @@
    },
    "units": {
     "spec": 39,
-    "built": 1
+    "built": 16
    },
-   "pct": 2.6
+   "pct": 41.0
   },
   {
    "process": "28.4",
@@ -7367,13 +7256,12 @@
    },
    "timers": {
     "spec": 19,
-    "built": 3,
-    "armable": 8,
+    "built": 5,
+    "armable": 19,
     "missing": [
      "CA_CPPA_7150_RISK_ASSESSMENT_20271231",
      "CA_CPPA_7157_ATTESTATION_20280401",
      "CA_CPPA_7200_ADMT_READINESS_20270101",
-     "CO_SB26_189_1702_DEVELOPER_DOCS_GATE",
      "CO_SB26_189_1702_MATERIAL_UPDATE_NOTICE",
      "SM_O122_AI_ASSESSMENT_ANNUAL_365",
      "SM_O122_COMPLAINT_FL_TRIAGE_5BD",
@@ -7383,7 +7271,6 @@
      "SM_O122_FAIR_LENDING_REVIEW_30D",
      "SM_O122_GOVERNANCE_PACK_QUARTERLY",
      "SM_O122_MODEL_CHANGE_NOTICE_TO_PARTNER_10BD",
-     "SM_O122_ORIGINATION_AI_DEPLOY_GATE",
      "SM_O122_PRICING_EXCEPTION_REVIEW_MONTHLY",
      "SM_O122_REASON_ACCURACY_SAMPLE_MONTHLY"
     ]
@@ -7411,9 +7298,9 @@
    },
    "units": {
     "spec": 42,
-    "built": 3
+    "built": 5
    },
-   "pct": 7.1
+   "pct": 11.9
   },
   {
    "process": "31.3",

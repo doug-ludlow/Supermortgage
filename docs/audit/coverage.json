@@ -1,33 +1,33 @@
 {
- "brief": "spec units built 6189/7446 (83.1%): tids 1616/1914, tables 595/717, timers 1683/1987, notices 283/306, tools 1008/1311, figures 1004/1211; processes at 100%: 140/165",
+ "brief": "spec units built 6370/7446 (85.5%): tids 1654/1914, tables 606/717, timers 1740/1987, notices 288/306, tools 1058/1311, figures 1024/1211; processes at 100%: 143/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1616
+   "built": 1654
   },
   "tables": {
    "spec": 717,
-   "built": 595
+   "built": 606
   },
   "timers": {
    "spec": 1987,
-   "built": 1683
+   "built": 1740
   },
   "notices": {
    "spec": 306,
-   "built": 283
+   "built": 288
   },
   "tools": {
    "spec": 1311,
-   "built": 1008
+   "built": 1058
   },
   "figures": {
    "spec": 1211,
-   "built": 1004
+   "built": 1024
   },
   "units": {
    "spec": 7446,
-   "built": 6189
+   "built": 6370
   }
  },
  "sections": {
@@ -165,15 +165,15 @@
   },
   "23": {
    "spec": 219,
-   "built": 186,
+   "built": 219,
    "processes": 4,
-   "done": 3
+   "done": 4
   },
   "24": {
    "spec": 314,
-   "built": 146,
+   "built": 267,
    "processes": 6,
-   "done": 3
+   "done": 5
   },
   "25": {
    "spec": 231,
@@ -183,25 +183,25 @@
   },
   "26": {
    "spec": 247,
-   "built": 88,
+   "built": 89,
    "processes": 4,
    "done": 1
   },
   "27": {
    "spec": 197,
-   "built": 4,
+   "built": 26,
    "processes": 2,
    "done": 0
   },
   "28": {
    "spec": 225,
-   "built": 13,
+   "built": 14,
    "processes": 4,
    "done": 0
   },
   "29": {
    "spec": 232,
-   "built": 7,
+   "built": 10,
    "processes": 4,
    "done": 0
   },
@@ -347,10 +347,13 @@
   "22.6",
   "23.1",
   "23.2",
+  "23.3",
   "23.4",
   "24.1",
   "24.2",
   "24.3",
+  "24.4",
+  "24.5",
   "25.1",
   "25.2",
   "25.3",
@@ -5927,68 +5930,30 @@
    "title": "The credit decision: comprehensive risk assessment, conditional approval, condition clearing (PTD/PTF), and final underwriting sign-off",
    "tids": {
     "spec": 12,
-    "built": 0,
-    "todo": 12,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 4,
-    "built": 1,
-    "missing": [
-     "condition_clearances",
-     "ctc_checklists",
-     "rep_warrant_relief"
-    ]
+    "built": 4,
+    "missing": []
    },
    "timers": {
     "spec": 9,
-    "built": 4,
-    "armable": 7,
-    "missing": [
-     "FNMA_D1_2_01_PREFUNDING_PRIOR_TO_CLOSING_GATE",
-     "SM_UW_CTC_GATE",
-     "SM_UW_DECISION_VALIDITY",
-     "SM_UW_PTD_CLEARED_GATE",
-     "SM_UW_PTF_CLEARED_GATE"
-    ]
+    "built": 9,
+    "armable": 9,
+    "missing": []
    },
    "notices": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "NTC_REGB_1002_9_APPROVAL"
-    ]
+    "built": 1,
+    "missing": []
    },
    "tools": {
     "spec": 12,
-    "built": 0,
-    "missing": [
-     "assessRisk",
-     "issueConditionalApproval",
-     "renderApprovalLetter",
-     "evaluateClearance",
-     "clearCondition",
-     "reopenCondition",
-     "runCtcChecklist",
-     "issueClearToClose",
-     "evaluateReliefLedger",
-     "prepareAdverseDecision",
-     "writeDecision",
-     "openEscalation"
-    ]
+    "built": 12,
+    "missing": []
    },
    "figures": {
     "spec": 6,
@@ -5997,9 +5962,9 @@
    },
    "units": {
     "spec": 44,
-    "built": 11
+    "built": 44
    },
-   "pct": 25.0
+   "pct": 100.0
   },
   {
    "process": "23.4",
@@ -6170,52 +6135,20 @@
    "title": "Title, vesting, settlement-agent vetting, existing-lien payoffs, subordinations, and curative",
    "tids": {
     "spec": 14,
-    "built": 0,
-    "todo": 14,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14
-    ]
+    "built": 14,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 5,
-    "built": 0,
-    "missing": [
-     "poa_reviews",
-     "settlement_agents",
-     "title_curative_items",
-     "trust_reviews",
-     "wire_verifications"
-    ]
+    "built": 5,
+    "missing": []
    },
    "timers": {
     "spec": 13,
-    "built": 3,
-    "armable": 5,
-    "missing": [
-     "FNMA_B2_1_2_04_RESUBORDINATION_GATE",
-     "FNMA_B7_2_01_TITLE_EVIDENCE_GATE",
-     "SM_CPL_BEFORE_FUNDING_GATE",
-     "SM_PAYOFF_DEMAND_FOLLOWUP_7BD",
-     "SM_PAYOFF_GOOD_THROUGH_GATE",
-     "SM_SETTLEMENT_AGENT_VETTING_GATE",
-     "SM_SUBORDINATION_REQUEST_3BD",
-     "SM_TITLE_COMMITMENT_DATEDOWN_GATE",
-     "SM_TRUST_POA_REVIEW_GATE",
-     "SM_WIRE_VERIFICATION_GATE"
-    ]
+    "built": 13,
+    "armable": 13,
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -6224,76 +6157,28 @@
    },
    "tools": {
     "spec": 22,
-    "built": 0,
-    "missing": [
-     "orderTitle",
-     "parseCommitment",
-     "classifyException",
-     "computeRequiredEndorsements",
-     "openCurative",
-     "requestUnderwriterDeletion",
-     "requestDateDown",
-     "vetSettlementAgent",
-     "lookupAltaRegistry",
-     "verifyWireInstructions",
-     "placeCallback",
-     "requestPayoff",
-     "parsePayoffStatement",
-     "computePayoffAtDate",
-     "decideEscrowTreatment",
-     "requestSubordination",
-     "checkSubordinateTerms",
-     "reviewTrust",
-     "reviewPOA",
-     "requestCPL",
-     "evaluateGates",
-     "writeDecision"
-    ]
+    "built": 22,
+    "missing": []
    },
    "figures": {
     "spec": 13,
-    "built": 2,
-    "missing": [
-     "$1,266.24",
-     "$105.52",
-     "$18,000.00",
-     "$2,347.18",
-     "$2,912.50",
-     "$30.00",
-     "$50,000.00",
-     "$531,240.00",
-     "$532,536.24",
-     "$532,641.76",
-     "$565.32"
-    ]
+    "built": 13,
+    "missing": []
    },
    "units": {
     "spec": 67,
-    "built": 5
+    "built": 67
    },
-   "pct": 7.5
+   "pct": 100.0
   },
   {
    "process": "24.5",
    "title": "Hazard, flood, and other property insurance (coverage, deductibles, carrier ratings, mortgagee clause, flood determination and notice, NFIP/private flood, condo master/HO-6, escrow implications)",
    "tids": {
     "spec": 12,
-    "built": 0,
-    "todo": 12,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 3,
@@ -6302,67 +6187,30 @@
    },
    "timers": {
     "spec": 9,
-    "built": 2,
-    "armable": 4,
-    "missing": [
-     "FDPA_4012A_LOL_ENROLLED_GATE",
-     "FDPA_4104A_FLOOD_NOTICE_GATE",
-     "FNMA_B7_3_02_HAZARD_EVIDENCE_GATE",
-     "FNMA_B7_3_03_PROJECT_INSURANCE_GATE",
-     "FNMA_B7_3_06_FLOOD_COVERAGE_GATE",
-     "SM_FLOOD_NOTICE_DELIVER_1BD",
-     "SM_INSURANCE_EVIDENCE_REQUEST_3BD"
-    ]
+    "built": 9,
+    "armable": 9,
+    "missing": []
    },
    "notices": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "NTC_FDPA_4104A_FLOOD_NOTICE"
-    ]
+    "built": 1,
+    "missing": []
    },
    "tools": {
     "spec": 16,
-    "built": 0,
-    "missing": [
-     "orderFloodDetermination",
-     "parseSFHDF",
-     "renderFloodNotice",
-     "deliverNotice",
-     "computeInsuranceRequirements",
-     "requestEvidence",
-     "extractEvidence",
-     "lookupCarrierRating",
-     "confirmWithCarrier",
-     "evaluateAdequacy",
-     "checkMortgageeClause",
-     "openDeficiency",
-     "computeFloodAmount",
-     "evaluateGates",
-     "seedEscrowLines",
-     "writeDecision"
-    ]
+    "built": 16,
+    "missing": []
    },
    "figures": {
     "spec": 11,
-    "built": 2,
-    "missing": [
-     "$1,150.00",
-     "$1,950.00",
-     "$10,400.00",
-     "$162.50",
-     "$250,000.00",
-     "$26,000.00",
-     "$31,200.00",
-     "$520,000.00",
-     "$95.83"
-    ]
+    "built": 11,
+    "missing": []
    },
    "units": {
     "spec": 52,
-    "built": 7
+    "built": 52
    },
-   "pct": 13.5
+   "pct": 100.0
   },
   {
    "process": "24.6",
@@ -6388,36 +6236,19 @@
    },
    "tables": {
     "spec": 2,
-    "built": 0,
-    "missing": [
-     "hpa_disclosures",
-     "mi_quotes"
-    ]
+    "built": 2,
+    "missing": []
    },
    "timers": {
     "spec": 10,
-    "built": 1,
-    "armable": 5,
-    "missing": [
-     "FNMA_B7_1_01_MI_ACTIVE_BEFORE_DELIVERY_GATE",
-     "FNMA_B7_1_01_MI_COMMITMENT_BEFORE_DOCS_GATE",
-     "HPA_4903_INITIAL_DISCLOSURE_GATE",
-     "HPA_4905C_LPMI_DISCLOSURE_GATE",
-     "SM_MI_ACTIVATE_1BD",
-     "SM_MI_COMMITMENT_EXPIRY_GATE",
-     "SM_MI_ORDER_2BD",
-     "SM_MI_QUOTE_1BD",
-     "SM_MI_UPFRONT_REMIT_10"
-    ]
+    "built": 10,
+    "armable": 10,
+    "missing": []
    },
    "notices": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "NTC_HPA_4903_INITIAL_ARM",
-     "NTC_HPA_4903_INITIAL_FIXED",
-     "NTC_HPA_4905_LPMI"
-    ]
+    "built": 3,
+    "missing": []
    },
    "tools": {
     "spec": 18,
@@ -6468,9 +6299,9 @@
    },
    "units": {
     "spec": 63,
-    "built": 2
+    "built": 16
    },
-   "pct": 3.2
+   "pct": 25.4
   },
   {
    "process": "25.1",
@@ -6923,7 +6754,7 @@
    },
    "timers": {
     "spec": 23,
-    "built": 2,
+    "built": 3,
     "armable": 16,
     "missing": [
      "MERS_PROC_NON_MOM_REGISTER_7",
@@ -6937,7 +6768,6 @@
      "SM_O74_LNA_DECISION_5BD",
      "SM_O74_MERS_SYSTEM_RECONCILE_MONTHLY",
      "SM_O74_MIN_REVERSAL_2BD",
-     "SM_O74_MI_CERT_ACTIVE_5BD",
      "SM_O74_NOTE_PICKUP_SCAN_1BD",
      "SM_O74_NOTE_TRANSIT_3BD",
      "SM_O74_RECORDED_SI_ERECORD_5BD",
@@ -6969,9 +6799,9 @@
    },
    "units": {
     "spec": 46,
-    "built": 4
+    "built": 5
    },
-   "pct": 8.7
+   "pct": 10.9
   },
   {
    "process": "27.1",
@@ -7009,32 +6839,9 @@
    },
    "timers": {
     "spec": 22,
-    "built": 0,
-    "armable": 10,
-    "missing": [
-     "SM_UW_CTC_GATE",
-     "SM_WH_ADVANCE_APPROVAL_2BH",
-     "SM_WH_ADVANCE_CUTOFF_GATE",
-     "SM_WH_AGING_45_CURTAIL",
-     "SM_WH_AGING_60_REPURCHASE",
-     "SM_WH_AGING_90_KICKOUT",
-     "SM_WH_BAILEE_LETTER_GATE",
-     "SM_WH_BORROWING_BASE_DAILY",
-     "SM_WH_COVENANT_ANNUAL_90",
-     "SM_WH_COVENANT_QUARTERLY_45",
-     "SM_WH_DAILY_ACCRUAL",
-     "SM_WH_DAILY_REPORT_0900ET",
-     "SM_WH_DEFECT_CURE_10BD",
-     "SM_WH_ENOTE_SECURED_PARTY_1BD",
-     "SM_WH_HAIRCUT_RESERVE_GATE",
-     "SM_WH_INTEREST_CAPITALIZE_MONTHLY",
-     "SM_WH_INTERIM_FUNDER_DESIGNATION_7",
-     "SM_WH_MARGIN_CALL_1BD",
-     "SM_WH_REPURCHASE_PAYMENT_5BD",
-     "SM_WH_UCC1_FILING_GATE",
-     "SM_WH_UCC_CONTINUATION_5Y",
-     "SM_WH_WET_NOTE_DELIVERY_5BD"
-    ]
+    "built": 22,
+    "armable": 22,
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -7102,9 +6909,9 @@
    },
    "units": {
     "spec": 87,
-    "built": 0
+    "built": 22
    },
-   "pct": 0.0
+   "pct": 25.3
   },
   {
    "process": "27.2",
@@ -7292,12 +7099,11 @@
    },
    "timers": {
     "spec": 9,
-    "built": 0,
-    "armable": 4,
+    "built": 1,
+    "armable": 5,
     "missing": [
      "FNMA_D1_1_01_QC_AUDIT_ANNUAL",
      "FNMA_D1_1_03_PREFUNDING_REPORT_30",
-     "FNMA_D1_2_01_PREFUNDING_PRIOR_TO_CLOSING_GATE",
      "SM_QC_OFFICER_FINDING_SLA_1BD",
      "SM_QC_PREFUNDING_REVIEW_SLA_2BD",
      "SM_QC_PREFUNDING_SELECTION_DAILY",
@@ -7350,9 +7156,9 @@
    },
    "units": {
     "spec": 53,
-    "built": 3
+    "built": 4
    },
-   "pct": 5.7
+   "pct": 7.5
   },
   {
    "process": "28.2",
@@ -7688,18 +7494,16 @@
    },
    "timers": {
     "spec": 15,
-    "built": 2,
+    "built": 4,
     "armable": 7,
     "missing": [
      "FNMA_B2_1_5_02_LOAN_AGE_6M_PURCHASE_READY",
      "FNMA_C2_1_1_03_DAILY_LIMIT_200M_GATE",
      "FNMA_C2_1_1_03_MAND_COMMITMENT_EXPIRY",
      "FNMA_C2_1_1_04_MAND_EXTENSION_CAP_30",
-     "FNMA_C2_1_2_02_BE_CLOSED_AUTOEXT_CAP_60",
      "FNMA_C2_1_2_02_BE_EXTENSION_CAP_30",
      "FNMA_C2_1_2_03_DU_APPROVE_60_GATE",
      "FNMA_C2_2_DELIVERY_COMMITMENT_EXPIRY",
-     "FNMA_PEWL_CLOSED_STATUS_1BD",
      "FNMA_PEWL_COMMIT_ACCEPT_60S",
      "FNMA_PEWL_DPA_WINDOW_30",
      "FNMA_PEWL_MAND_TOLERANCE_GATE",
@@ -7755,9 +7559,9 @@
    },
    "units": {
     "spec": 61,
-    "built": 2
+    "built": 4
    },
-   "pct": 3.3
+   "pct": 6.6
   },
   {
    "process": "29.2",
@@ -7979,7 +7783,7 @@
    },
    "tables": {
     "spec": 8,
-    "built": 0,
+    "built": 1,
     "missing": [
      "bailee_letters",
      "custodian_certifications",
@@ -7987,7 +7791,6 @@
      "delivery_operator_tasks",
      "post_purchase_adjustments",
      "purchase_advices",
-     "rep_warrant_relief",
      "wire_instructions"
     ]
    },
@@ -8059,9 +7862,9 @@
    },
    "units": {
     "spec": 67,
-    "built": 3
+    "built": 4
    },
-   "pct": 4.5
+   "pct": 6.0
   },
   {
    "process": "30.1",

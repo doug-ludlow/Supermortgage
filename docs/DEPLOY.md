@@ -198,6 +198,15 @@ Your own batch goes to `POST /v1/transfers/batches` with `{ actor, batch, files 
 `fixtures/transfer-batch-demo/LAYOUT.md`; `GET /v1/transfers/batches/<batch_id>` returns the
 scorecard afterwards.
 
+## Origination: applications over HTTP
+
+Origination runs on the same service. `POST /v1/applications` opens an application (the 21.1 aggregate: partner,
+channel, transaction type, occupancy, borrowers, subject property, the prior loan for a refinance) and returns the
+row with `application.started` and the origination timers it armed; `POST /v1/applications/{id}/tools/{process}/{name}`
+executes an agent tool in application scope (same body as the loan route); `GET /v1/applications/{id}` reads the
+record (row, events, open timers, decisions) and, once 30.2 has funded it, the `loan_id` it became. A loan created
+from an application answers on the loan routes like any transferred-in loan.
+
 ## 7. What is and is not real in nonprod
 
 - **`INTEGRATIONS=fake`.** Every vendor integration (lockbox/BAI2, e-OSCAR,

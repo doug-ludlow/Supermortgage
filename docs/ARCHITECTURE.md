@@ -83,3 +83,29 @@ Compliance Sentinel, AI-path toggles), (d) the end-of-build audit against
    "Business rules" is a test too.
 6. Note the open questions you resolved and the default you took in the
    commit message.
+
+## One product: origination and servicing
+
+Sections 20–31 (the Origination build specification, imported by `tools/import_origination.py`) and 1–19 are one
+platform with one id grammar, one registry, one audit and one kernel. The seam is a set of rules the build enforces:
+
+- **A name means one thing everywhere.** A table, event, timer code, notice code, agent or role the servicing spec
+  defines is reused by origination, never redefined. `python3 tools/spec_lint_names.py` (run by `npm test`) fails on
+  a timer code re-triggered by a different event in a later section, or an agent/role/calendar the kernel lacks;
+  `src/kernel/timers/registry.ts` lets the servicing side own a shared code and treats origination rows as references.
+  A rule that genuinely differs gets its own code, named as the variant (`LL_2026_05_ESCROW_SETUP_ORIG_PURCHASE_BD1`).
+- **One loan for life.** Before funding the aggregate is `applications` (0057). Events, timers, decisions, consents,
+  documents, escalations and entity rows carry `application_id`; the unit of work is scoped to a loan, an application
+  or both (`PgUnitOfWork.run({ loanId?, applicationId? })`). 30.2 creates the servicing `loans` row at funding with
+  `origination_application_id`, boards it through 1.1's pipeline with `boarding_staging.source = 'origination'`, and
+  from then on the same row is what §2–§19 service. Purchase (30.1) is an investor update, never a re-board;
+  `fnma_loan_number` is null until then. Payoff (§16) retires the row; a refinance (§20) opens a new application
+  with `prior_loan_id`.
+- **Two contexts, one engine.** Timers defined by sections 20–31 arm only on events that carry origination context
+  (`DomainEvent.applicationId`, an `application` aggregate, or `payload.application_id` / `source = 'origination'`);
+  a transferred-in loan never picks up an origination clock. The six day units — `calendar_days`,
+  `business_days_federal`, `business_days_servicer`, `business_days_fannie_et`, `business_days_creditor` (Reg Z
+  §1026.2(a)(6) general) and `business_days_regz_specific` (Reg Z specific; Saturdays count) — are the only calendars.
+- **One test proves it.** The lifecycle acceptance test runs one synthetic borrower from refinance trigger through
+  application, funding, boarding, first statement, payment, payoff and a new refinance, against Postgres.
+

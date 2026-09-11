@@ -292,8 +292,19 @@ async function standingConsent(deps: FlowDeps, partyId: string): Promise<{ id: s
   return (await deps.runtime.db.query<{ id: string; captured_at: string }>(`SELECT id, captured_at FROM consents WHERE party_id = $1 AND kind = 'blanket_verification_authorization' AND standing AND (status IS NULL OR status = 'active') ORDER BY captured_at DESC LIMIT 1`, [partyId]))[0];
 }
 const appCard = (c: CardSpec): CardSpec => ({ ...c, created_by: CREATED_BY_INTAKE });
+/** The application's own 20.3 lead — keyed by the application id (the intake journey), linked by `application_id`, the offer's own lead (`L-offer-<opportunity>` on the prior loan), or a party's. Never the first
+ *  `leads` row of the scoped store: the store also holds every global row, and a pre-application lead is global until it is linked (20.3), so "the first lead" is an unrelated consumer's whenever any exist. */
+function leadOf(ctx: AppCtx): string {
+  const own = ctx.store.get("leads", ctx.appId); if (own) return String(own.data["lead_id"] ?? ctx.appId);
+  const parties = new Set(ctx.parties.map((p) => p.party_id));
+  const mine = (d: P): boolean => d["application_id"] === ctx.appId || parties.has(String(d["party_id"]));
+  const linked = ctx.store.list("leads", mine)[0] ?? ctx.loanCtx.store.list("leads", mine)[0];
+  if (linked) return String(linked.data["lead_id"]);
+  const oppId = s(ctx.opp?.["opportunity_id"]); const offer = oppId ? ctx.loanCtx.store.get("leads", leadIdFor(oppId)) : undefined;
+  return offer ? String(offer.data["lead_id"]) : ctx.appId;
+}
 async function compressedCards(deps: FlowDeps, ctx: AppCtx): Promise<void> {
-  const subject: Subject = { application_id: ctx.appId }; const lead = ctx.store.list("leads").map((r) => String(r.data["lead_id"]))[0] ?? ctx.appId;
+  const subject: Subject = { application_id: ctx.appId }; const lead = leadOf(ctx);
   const row = universeOf(ctx.loanCtx); const candidate = (ctx.opp?.["candidate_terms"] as P | null) ?? {};
   const address = addressOf(ctx.property) ?? addressOf(ctx.loanCtx.property) ?? ""; const state = ctx.property?.state ?? ctx.loanCtx.property?.state ?? null;
   const value = s((row?.value_estimate as { value_cents?: unknown } | undefined)?.value_cents ?? candidate["value_cents"]) ?? ""; const amount = s(candidate["loan_amount_cents"]) ?? "";
@@ -347,7 +358,7 @@ async function refreshStandingIncome(deps: FlowDeps, ctx: AppCtx, party: AppPart
   const session = await STANDING_TRUV.createSession({ party_id: party.party_id, application_id: ctx.appId, application_borrower_id: party.application_borrower_id, borrower_id, card_instance_id: `standing:${standing.id}`, order_id: s(ordered["order_id"]) }, ctx.now);
   const report = STANDING_TRUV.complete(session.vendor_session_id, ctx.now);
   const received = await exec(deps, subject, "22.3", "orderVerificationReport", VERIFICATION, { op: "receive", borrower_id, kind: "income", supplier_code: "TRUV", report_reference_id: report.report_reference_id, vendor_data_as_of: report.vendor_data_as_of, report_document_id: report.report_document_id, authorization_consent_id: standing.id, ...(s(ordered["order_id"]) ? { verification_id: s(ordered["order_id"]) } : {}) });
-  const verificationId = s(received["verification_id"]) ?? report.report_reference_id; const lead = ctx.store.list("leads").map((r) => String(r.data["lead_id"]))[0] ?? ctx.appId;
+  const verificationId = s(received["verification_id"]) ?? report.report_reference_id; const lead = leadOf(ctx);
   await exec(deps, subject, "21.1", "confirmPrefill", INTAKE, { op: "offer", item: "income", value: (BigInt(report.monthly_base_cents) + BigInt(report.monthly_variable_cents)).toString() });
   await sendCard(deps, subject, party, appCard({ kind: "ConfirmCard", copy_key: "income.confirm.title", flow_key: `income.confirm:${verificationId}`, command_ref: "application.confirmField",
     props: { title: "", copy_tokens: { employer: report.employer }, helper_copy_key: "refi.income.fresh", standing_connection: true, standing_consent_id: standing.id, vendor_fake: "FAKE", fields: [{ path: "employer", label: "Employer", value: report.employer, source: "payroll_connection" }, { path: "position", label: "Position", value: report.position, source: "payroll_connection" }, { path: "start_date", label: "Start date", value: report.start_date, source: "payroll_connection" }, { path: "pay_frequency", label: "Pay frequency", value: report.pay_frequency, source: "payroll_connection" },

@@ -1,33 +1,33 @@
 {
- "brief": "spec units built 5251/7446 (70.5%): tids 1394/1914, tables 522/717, timers 1508/1987, notices 247/306, tools 803/1311, figures 777/1211; processes at 100%: 122/165",
+ "brief": "spec units built 5318/7446 (71.4%): tids 1408/1914, tables 536/717, timers 1524/1987, notices 251/306, tools 810/1311, figures 789/1211; processes at 100%: 123/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1394
+   "built": 1408
   },
   "tables": {
    "spec": 717,
-   "built": 522
+   "built": 536
   },
   "timers": {
    "spec": 1987,
-   "built": 1508
+   "built": 1524
   },
   "notices": {
    "spec": 306,
-   "built": 247
+   "built": 251
   },
   "tools": {
    "spec": 1311,
-   "built": 803
+   "built": 810
   },
   "figures": {
    "spec": 1211,
-   "built": 777
+   "built": 789
   },
   "units": {
    "spec": 7446,
-   "built": 5251
+   "built": 5318
   }
  },
  "sections": {
@@ -153,13 +153,13 @@
   },
   "21": {
    "spec": 282,
-   "built": 166,
+   "built": 172,
    "processes": 6,
    "done": 4
   },
   "22": {
    "spec": 368,
-   "built": 0,
+   "built": 2,
    "processes": 6,
    "done": 0
   },
@@ -177,13 +177,13 @@
   },
   "25": {
    "spec": 231,
-   "built": 114,
+   "built": 172,
    "processes": 4,
-   "done": 1
+   "done": 2
   },
   "26": {
    "spec": 247,
-   "built": 87,
+   "built": 88,
    "processes": 4,
    "done": 1
   },
@@ -338,6 +338,7 @@
   "21.4",
   "21.5",
   "25.1",
+  "25.2",
   "26.1",
   "30.1",
   "30.4"
@@ -5442,15 +5443,8 @@
    },
    "tables": {
     "spec": 6,
-    "built": 0,
-    "missing": [
-     "affiliate_relationships",
-     "arm_programs",
-     "counseling_lists",
-     "early_disclosure_packages",
-     "referrals",
-     "score_disclosures"
-    ]
+    "built": 6,
+    "missing": []
    },
    "timers": {
     "spec": 18,
@@ -5531,9 +5525,9 @@
    },
    "units": {
     "spec": 75,
-    "built": 1
+    "built": 7
    },
-   "pct": 1.3
+   "pct": 9.3
   },
   {
    "process": "21.4",
@@ -5739,7 +5733,7 @@
    },
    "timers": {
     "spec": 8,
-    "built": 0,
+    "built": 2,
     "armable": 5,
     "missing": [
      "FNMA_B1_1_03_CREDIT_DOCS_4M",
@@ -5747,9 +5741,7 @@
      "FNMA_B3_3_2_01_PAYSTUB_30D_GATE",
      "FNMA_B4_1_2_04_APPRAISAL_12M",
      "REGB_1002_9_DECISION_30",
-     "SM_DOC_EXPIRY_WARN_14",
-     "SM_NEEDS_LIST_BORROWER_RESPONSE_5",
-     "SM_NEEDS_LIST_REVIEW_1BD"
+     "SM_DOC_EXPIRY_WARN_14"
     ]
    },
    "notices": {
@@ -5793,9 +5785,9 @@
    },
    "units": {
     "spec": 45,
-    "built": 0
+    "built": 2
    },
-   "pct": 0.0
+   "pct": 4.4
   },
   {
    "process": "22.2",
@@ -7378,35 +7370,14 @@
    "title": "Closing Disclosure: preparation, delivery and receipt evidence, the three-business-day waiting period, redisclosure, post-consummation corrections, the seller's CD, and UCD generation/submission",
    "tids": {
     "spec": 14,
-    "built": 0,
-    "todo": 14,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14
-    ]
+    "built": 14,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 5,
-    "built": 0,
-    "missing": [
-     "cd_consistency_checks",
-     "cd_figure_sources",
-     "cd_receipts",
-     "cd_waivers",
-     "ucd_submissions"
-    ]
+    "built": 5,
+    "missing": []
    },
    "timers": {
     "spec": 10,
@@ -7416,11 +7387,8 @@
    },
    "notices": {
     "spec": 2,
-    "built": 0,
-    "missing": [
-     "NTC_REGZ_1026_38_CD_CORRECTED",
-     "NTC_REGZ_1026_38_SELLER_CD"
-    ]
+    "built": 2,
+    "missing": []
    },
    "tools": {
     "spec": 15,
@@ -7429,18 +7397,14 @@
    },
    "figures": {
     "spec": 4,
-    "built": 1,
-    "missing": [
-     "$12.00",
-     "$556,150.00",
-     "$668,793.20"
-    ]
+    "built": 4,
+    "missing": []
    },
    "units": {
     "spec": 50,
-    "built": 26
+    "built": 50
    },
-   "pct": 52.0
+   "pct": 100.0
   },
   {
    "process": "25.3",
@@ -7466,70 +7430,44 @@
    },
    "tables": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "rescission_exercises",
-     "rescission_periods",
-     "rescission_waivers"
-    ]
+    "built": 3,
+    "missing": []
    },
    "timers": {
     "spec": 7,
-    "built": 1,
+    "built": 7,
     "armable": 7,
-    "missing": [
-     "REGZ_1026_23D2_RESCISSION_REFUND_20",
-     "REGZ_1026_23_EXTENDED_RIGHT_3Y",
-     "REGZ_1026_23_RESCISSION_3SBD_GATE",
-     "SM_O63_MAILED_NOTICE_ALLOWANCE_2",
-     "SM_O63_NOTICE_AT_SIGNING_GATE",
-     "SM_O63_SATISFACTION_SWEEP"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 2,
-    "built": 0,
-    "missing": [
-     "NTC_REGZ_1026_23_H8",
-     "NTC_REGZ_1026_23_H9"
-    ]
+    "built": 2,
+    "missing": []
    },
    "tools": {
     "spec": 7,
-    "built": 0,
-    "missing": [
-     "determineRescindability",
-     "renderRescissionNotice",
-     "deliverRescissionNotice",
-     "computeRescissionPeriod",
-     "sweepInboundForRescission",
-     "classifyInboundDocument",
-     "writeDecision"
-    ]
+    "built": 7,
+    "missing": []
    },
    "figures": {
     "spec": 14,
-    "built": 2,
+    "built": 6,
     "missing": [
-     "$2,000.00",
      "$2,099.45",
      "$2,100.55",
      "$2,800.00",
      "$2,913.15",
-     "$3,850.00",
      "$4,100.00",
      "$5,600.00",
      "$544,000.00",
-     "$548,200.00",
-     "$556,150.00",
      "$7,950.00"
     ]
    },
    "units": {
     "spec": 45,
-    "built": 3
+    "built": 25
    },
-   "pct": 6.7
+   "pct": 55.6
   },
   {
    "process": "25.4",
@@ -7567,17 +7505,9 @@
    },
    "timers": {
     "spec": 12,
-    "built": 5,
+    "built": 12,
     "armable": 12,
-    "missing": [
-     "CA_CIV_2954_IMPOUND_STMT_GATE",
-     "GLBA_1016_4_INITIAL_PRIVACY_GATE",
-     "REGZ_1026_39_OWNERSHIP_NOTICE_30",
-     "SM_O64_CLOSING_PACKAGE_NOTICES_GATE",
-     "SM_O64_FIRST_PAYMENT_LETTER_PREDUE_20",
-     "SM_O64_POST_CLOSING_NOTICE_RUN_2BD",
-     "UT_7_17_4_RESERVE_OPTIONS_NOTICE_GATE"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 5,
@@ -7609,25 +7539,20 @@
    },
    "figures": {
     "spec": 15,
-    "built": 5,
+    "built": 10,
     "missing": [
      "$1,050.00",
-     "$1,875.00",
-     "$2,060.00",
      "$2,400.00",
      "$3,927.62",
      "$4,800.00",
-     "$525.00",
-     "$6,300.00",
-     "$71.95",
-     "$863.51"
+     "$71.95"
     ]
    },
    "units": {
     "spec": 62,
-    "built": 11
+    "built": 23
    },
-   "pct": 17.7
+   "pct": 37.1
   },
   {
    "process": "26.1",
@@ -7800,11 +7725,10 @@
    },
    "timers": {
     "spec": 14,
-    "built": 0,
+    "built": 1,
     "armable": 9,
     "missing": [
      "FNMA_B2_1_5_FIRST_PAYMENT_2M",
-     "REGZ_1026_23_RESCISSION_3SBD_GATE",
      "SM_O73_AGENT_RECEIPT_CONFIRM_2H",
      "SM_O73_CONDITIONS_EVAL_2BH",
      "SM_O73_DATE_RESYNC",
@@ -7876,9 +7800,9 @@
    },
    "units": {
     "spec": 77,
-    "built": 7
+    "built": 8
    },
-   "pct": 9.1
+   "pct": 10.4
   },
   {
    "process": "26.4",

@@ -1,33 +1,33 @@
 {
- "brief": "spec units built 5901/7446 (79.3%): tids 1540/1914, tables 580/717, timers 1624/1987, notices 279/306, tools 919/1311, figures 959/1211; processes at 100%: 132/165",
+ "brief": "spec units built 6065/7446 (81.5%): tids 1567/1914, tables 589/717, timers 1667/1987, notices 283/306, tools 984/1311, figures 975/1211; processes at 100%: 136/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1540
+   "built": 1567
   },
   "tables": {
    "spec": 717,
-   "built": 580
+   "built": 589
   },
   "timers": {
    "spec": 1987,
-   "built": 1624
+   "built": 1667
   },
   "notices": {
    "spec": 306,
-   "built": 279
+   "built": 283
   },
   "tools": {
    "spec": 1311,
-   "built": 919
+   "built": 984
   },
   "figures": {
    "spec": 1211,
-   "built": 959
+   "built": 975
   },
   "units": {
    "spec": 7446,
-   "built": 5901
+   "built": 6065
   }
  },
  "sections": {
@@ -159,21 +159,21 @@
   },
   "22": {
    "spec": 368,
-   "built": 315,
+   "built": 353,
    "processes": 6,
-   "done": 3
+   "done": 5
   },
   "23": {
    "spec": 219,
-   "built": 86,
+   "built": 128,
    "processes": 4,
-   "done": 1
+   "done": 2
   },
   "24": {
    "spec": 314,
-   "built": 19,
+   "built": 95,
    "processes": 6,
-   "done": 0
+   "done": 1
   },
   "25": {
    "spec": 231,
@@ -195,13 +195,13 @@
   },
   "28": {
    "spec": 225,
-   "built": 6,
+   "built": 13,
    "processes": 4,
    "done": 0
   },
   "29": {
    "spec": 232,
-   "built": 6,
+   "built": 7,
    "processes": 4,
    "done": 0
   },
@@ -339,10 +339,14 @@
   "21.4",
   "21.5",
   "21.6",
+  "22.1",
   "22.2",
   "22.3",
+  "22.4",
   "22.5",
+  "23.1",
   "23.4",
+  "24.1",
   "25.1",
   "25.2",
   "25.3",
@@ -5602,11 +5606,9 @@
    },
    "timers": {
     "spec": 8,
-    "built": 7,
+    "built": 8,
     "armable": 8,
-    "missing": [
-     "FNMA_B4_1_2_04_APPRAISAL_12M"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 2,
@@ -5625,9 +5627,9 @@
    },
    "units": {
     "spec": 45,
-    "built": 44
+    "built": 45
    },
-   "pct": 97.8
+   "pct": 100.0
   },
   {
    "process": "22.2",
@@ -5727,11 +5729,9 @@
    },
    "timers": {
     "spec": 11,
-    "built": 10,
+    "built": 11,
     "armable": 11,
-    "missing": [
-     "FNMA_B3_2_10_DU_FINAL_MATCH_GATE"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -5750,9 +5750,9 @@
    },
    "units": {
     "spec": 109,
-    "built": 108
+    "built": 109
    },
-   "pct": 99.1
+   "pct": 100.0
   },
   {
    "process": "22.5",
@@ -5825,24 +5825,9 @@
    },
    "timers": {
     "spec": 15,
-    "built": 1,
-    "armable": 6,
-    "missing": [
-     "BSA_1029_320_SAR_30",
-     "FCRA_605A_H_ALERT_CONTACT_GATE",
-     "FNMA_B2_1_3_01_NON_ARMS_LENGTH_GATE",
-     "FNMA_B2_2_01_SSN_VALIDATION_GATE",
-     "FNMA_B2_2_02_LEGAL_PRESENCE_GATE",
-     "OFAC_SDN_SCREEN_GATE",
-     "RED_FLAGS_681_RESPONSE_1BD",
-     "REGV_1022_82_ADDRESS_DISCREPANCY_GATE",
-     "SM_FRAUD_INVESTIGATION_10BD",
-     "SM_FRAUD_TOOL_CLEAR_GATE",
-     "SM_IDENTITY_IAL2_GATE",
-     "SM_IDENTITY_RETRY_2BD",
-     "SM_OCCUPANCY_REO_GATE",
-     "SM_SAR_PACKAGE_5BD"
-    ]
+    "built": 15,
+    "armable": 15,
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -5851,31 +5836,8 @@
    },
    "tools": {
     "spec": 22,
-    "built": 0,
-    "missing": [
-     "verifyIdentity",
-     "resolveSsn",
-     "orderCbsv",
-     "assessLegalPresence",
-     "screenParty",
-     "resolveOfacMatch",
-     "contactForFraudAlert",
-     "resolveAddressDiscrepancy",
-     "runFraudTool",
-     "scoreOccupancy",
-     "discoverReo",
-     "assessNonArmsLength",
-     "logRedFlag",
-     "openInvestigation",
-     "gatherEvidence",
-     "concludeInvestigation",
-     "prepareSarPackage",
-     "prepareSelfReportPackage",
-     "prepareOfacReport",
-     "placeHold",
-     "releaseHold",
-     "writeDecision"
-    ]
+    "built": 22,
+    "missing": []
    },
    "figures": {
     "spec": 5,
@@ -5887,52 +5849,29 @@
    },
    "units": {
     "spec": 64,
-    "built": 13
+    "built": 49
    },
-   "pct": 20.3
+   "pct": 76.6
   },
   {
    "process": "23.1",
    "title": "DU casefile creation, submission, resubmission tolerances, versioning, and casefile lifecycle",
    "tids": {
     "spec": 15,
-    "built": 0,
-    "todo": 15,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15
-    ]
+    "built": 15,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 2,
-    "built": 0,
-    "missing": [
-     "du_casefiles",
-     "du_resubmission_checks"
-    ]
+    "built": 2,
+    "missing": []
    },
    "timers": {
     "spec": 8,
-    "built": 5,
-    "armable": 6,
-    "missing": [
-     "FNMA_B3_2_10_DU_FINAL_MATCH_GATE",
-     "FNMA_DU_IMPACT_MEMO_SUPPORT_120",
-     "FNMA_DU_RETURN_FILE_16_17_RETIRE"
-    ]
+    "built": 8,
+    "armable": 8,
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -5941,42 +5880,19 @@
    },
    "tools": {
     "spec": 9,
-    "built": 0,
-    "missing": [
-     "buildDuRequest",
-     "associateCredit",
-     "submitCasefile",
-     "fetchFindings",
-     "evaluateResubmission",
-     "snapshotClosedLoan",
-     "assertFinalSubmissionMatches",
-     "writeDecision",
-     "openEscalation"
-    ]
+    "built": 9,
+    "missing": []
    },
    "figures": {
     "spec": 16,
-    "built": 4,
-    "missing": [
-     "$120.00",
-     "$3,402.61",
-     "$3,402.63",
-     "$3,448.02",
-     "$4,560.00",
-     "$450.00",
-     "$5,600.00",
-     "$537.37",
-     "$620.00",
-     "$7,100.00",
-     "$7,300.00",
-     "$8,000.00"
-    ]
+    "built": 16,
+    "missing": []
    },
    "units": {
     "spec": 50,
-    "built": 9
+    "built": 50
    },
-   "pct": 18.0
+   "pct": 100.0
   },
   {
    "process": "23.2",
@@ -6046,7 +5962,7 @@
    },
    "figures": {
     "spec": 24,
-    "built": 3,
+    "built": 4,
     "missing": [
      "$100,800.00",
      "$124,000.00",
@@ -6066,16 +5982,15 @@
      "$615.00",
      "$8,200.00",
      "$8,400.00",
-     "$800,000.00",
      "$98,400.00",
      "$99,200.00"
     ]
    },
    "units": {
     "spec": 58,
-    "built": 5
+    "built": 6
    },
-   "pct": 8.6
+   "pct": 10.3
   },
   {
    "process": "23.3",
@@ -6209,22 +6124,9 @@
    "title": "Valuation method selection and ordering (value acceptance, value acceptance + property data, hybrid, desktop, traditional), appraiser independence, and property data collection",
    "tids": {
     "spec": 12,
-    "built": 0,
-    "todo": 12,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 0,
@@ -6233,15 +6135,9 @@
    },
    "timers": {
     "spec": 13,
-    "built": 8,
-    "armable": 9,
-    "missing": [
-     "FNMA_B4_1_2_04_APPRAISAL_12M",
-     "FNMA_B4_1_4_11_PDC_API_SUBMIT_GATE",
-     "FNMA_UAD_3_6_REQUIRED_GATE",
-     "SM_AMC_REGISTRATION_GATE",
-     "SM_APPRAISER_LICENSE_GATE"
-    ]
+    "built": 13,
+    "armable": 13,
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -6250,37 +6146,19 @@
    },
    "tools": {
     "spec": 15,
-    "built": 0,
-    "missing": [
-     "readDuOffer",
-     "selectMethod",
-     "assertFeeGate",
-     "selectVendor",
-     "verifyAppraiserLicense",
-     "verifyAmcRegistration",
-     "benchmarkFee",
-     "placeOrder",
-     "scheduleInspection",
-     "trackOrder",
-     "submitPropertyData",
-     "orderAppraisalUpdate",
-     "logContact",
-     "writeDecision",
-     "fileEscalation"
-    ]
+    "built": 15,
+    "missing": []
    },
    "figures": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "$650.00"
-    ]
+    "built": 1,
+    "missing": []
    },
    "units": {
     "spec": 41,
-    "built": 8
+    "built": 41
    },
-   "pct": 19.5
+   "pct": 100.0
   },
   {
    "process": "24.2",
@@ -6306,65 +6184,24 @@
    },
    "tables": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "appraisals",
-     "ucdp_submissions",
-     "valuations"
-    ]
+    "built": 3,
+    "missing": []
    },
    "timers": {
     "spec": 13,
-    "built": 2,
-    "armable": 7,
-    "missing": [
-     "FNMA_B4_1_1_06_UCDP_SUCCESSFUL_GATE",
-     "FNMA_B4_1_3_12_ROV_CLOSING_GATE",
-     "FNMA_B4_1_3_12_ROV_TURNTIME_5BD",
-     "REGB_1002_14_APPRAISAL_COPY_3BD_GATE",
-     "REGB_1002_14_APPRAISAL_COPY_PROMPT_7",
-     "REGB_1002_14_WAIVER_3BD_GATE",
-     "REGZ_1026_35C_HPML_COPY_NOT_CONSUMMATED_30",
-     "SM_APPRAISAL_REVIEW_SLA_2BD",
-     "SM_CU_HIGH_RISK_REVIEW_1BD",
-     "SM_ROV_SCREEN_SLA_2BD",
-     "SM_UCDP_SUBMIT_SLA_1BD"
-    ]
+    "built": 13,
+    "armable": 13,
+    "missing": []
    },
    "notices": {
     "spec": 4,
-    "built": 0,
-    "missing": [
-     "NTC_FNMA_B4_1_3_12_ROV_DISCLOSURE",
-     "NTC_REGB_1002_14_COPY_NOT_CONSUMMATED",
-     "NTC_REGB_1002_14_VALUATION_COPY",
-     "NTC_REGZ_1026_35C_HPML_APPRAISAL_COPY"
-    ]
+    "built": 4,
+    "missing": []
    },
    "tools": {
     "spec": 19,
-    "built": 0,
-    "missing": [
-     "ingestReport",
-     "runUadCompliance",
-     "submitUcdp",
-     "pollFindings",
-     "applyReviewChecklist",
-     "scanLanguage",
-     "requestCorrection",
-     "prepareOverride",
-     "setValueUsed",
-     "buildCopyPackage",
-     "deliverNotice",
-     "recordWaiver",
-     "screenRov",
-     "prepareRovAnalysis",
-     "forwardRov",
-     "closeRov",
-     "runHpmlTests",
-     "writeDecision",
-     "fileEscalation"
-    ]
+    "built": 19,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -6373,9 +6210,9 @@
    },
    "units": {
     "spec": 51,
-    "built": 2
+    "built": 39
    },
-   "pct": 3.9
+   "pct": 76.5
   },
   {
    "process": "24.3",
@@ -6401,13 +6238,8 @@
    },
    "tables": {
     "spec": 4,
-    "built": 0,
-    "missing": [
-     "escrow_holdbacks",
-     "holdback_escrow",
-     "mh_verifications",
-     "property_eligibility_reviews"
-    ]
+    "built": 4,
+    "missing": []
    },
    "timers": {
     "spec": 11,
@@ -6458,9 +6290,9 @@
    },
    "units": {
     "spec": 40,
-    "built": 0
+    "built": 4
    },
-   "pct": 0.0
+   "pct": 10.0
   },
   {
    "process": "24.4",
@@ -6549,7 +6381,7 @@
    },
    "figures": {
     "spec": 13,
-    "built": 0,
+    "built": 1,
     "missing": [
      "$1,266.24",
      "$105.52",
@@ -6562,15 +6394,14 @@
      "$532,536.24",
      "$532,641.76",
      "$560,000.00",
-     "$565.32",
-     "$800,000.00"
+     "$565.32"
     ]
    },
    "units": {
     "spec": 67,
-    "built": 3
+    "built": 4
    },
-   "pct": 4.5
+   "pct": 6.0
   },
   {
    "process": "24.5",
@@ -6644,7 +6475,7 @@
    },
    "figures": {
     "spec": 11,
-    "built": 0,
+    "built": 1,
     "missing": [
      "$1,150.00",
      "$1,950.00",
@@ -6655,15 +6486,14 @@
      "$31,200.00",
      "$520,000.00",
      "$560,000.00",
-     "$800,000.00",
      "$95.83"
     ]
    },
    "units": {
     "spec": 52,
-    "built": 5
+    "built": 6
    },
-   "pct": 9.6
+   "pct": 11.5
   },
   {
    "process": "24.6",
@@ -7690,7 +7520,7 @@
    },
    "timers": {
     "spec": 24,
-    "built": 0,
+    "built": 1,
     "armable": 11,
     "missing": [
      "FNMA_A2_3_2_01_REMEDY_PAYMENT_60",
@@ -7703,7 +7533,6 @@
      "FNMA_A2_3_2_03_IMPASSE_RESOLVE_30",
      "FNMA_A2_3_2_03_MGMT_ESCALATION_15",
      "FNMA_A3_2_01_COMPLIANCE_SELF_REPORT_60",
-     "FNMA_A3_4_03_FRAUD_SELF_REPORT_30",
      "FNMA_D1_1_01_QC_SELF_REPORT_30",
      "FNMA_D1_1_02_VENDOR_REVIEW_10PCT_MONTHLY",
      "FNMA_D1_1_03_POST_CLOSING_REPORT_MONTHLY",
@@ -7765,9 +7594,9 @@
    },
    "units": {
     "spec": 68,
-    "built": 1
+    "built": 2
    },
-   "pct": 1.5
+   "pct": 2.9
   },
   {
    "process": "28.3",
@@ -7894,7 +7723,7 @@
    },
    "timers": {
     "spec": 21,
-    "built": 0,
+    "built": 6,
     "armable": 13,
     "missing": [
      "BSA_1029_210_INDEPENDENT_TEST",
@@ -7902,19 +7731,13 @@
      "BSA_1029_210_TRAINING_ANNUAL",
      "BSA_1029_320C_SAR_RETENTION_5Y",
      "BSA_1029_320_IMMEDIATE_LE_NOTICE",
-     "BSA_1029_320_SAR_30",
-     "BSA_1029_320_SAR_60_NO_SUBJECT",
      "BSA_1029_320_SAR_CONTINUING_120",
      "FCRA_609E_VICTIM_RECORDS_30",
      "FCRA_681_ITPP_BOARD_REPORT_ANNUAL",
-     "FNMA_A3_4_03_FRAUD_SELF_REPORT_30",
      "OFAC_501_601_RETENTION_10Y",
      "OFAC_501_603_ANNUAL_BLOCKED_0930",
-     "OFAC_501_603_BLOCKED_REPORT_10BD",
      "OFAC_501_603_UNBLOCKING_REPORT_10BD",
-     "OFAC_501_604_REJECTED_REPORT_10BD",
      "SM_BSA_OFFICER_SAR_DECISION_SLA_5",
-     "SM_FRAUD_PRODUCTION_HOLD",
      "SM_FRAUD_TRIAGE_SLA_10",
      "SM_OFAC_CLEAR_BEFORE_FUNDING_GATE",
      "SM_OFAC_LIST_REFRESH_DAILY"
@@ -7960,9 +7783,9 @@
    },
    "units": {
     "spec": 65,
-    "built": 1
+    "built": 7
    },
-   "pct": 1.5
+   "pct": 10.8
   },
   {
    "process": "29.1",
@@ -8210,10 +8033,9 @@
    },
    "timers": {
     "spec": 11,
-    "built": 1,
+    "built": 2,
     "armable": 4,
     "missing": [
-     "FNMA_B3_2_10_DU_FINAL_MATCH_GATE",
      "FNMA_B4_1_4_10_VALUE_ACCEPTANCE_SFC_GATE",
      "FNMA_C1_2_02_DU_FILE_EARLYCHECK_GATE",
      "FNMA_C1_2_02_EARLYCHECK_CLEAN_GATE",
@@ -8259,9 +8081,9 @@
    },
    "units": {
     "spec": 44,
-    "built": 1
+    "built": 2
    },
-   "pct": 2.3
+   "pct": 4.5
   },
   {
    "process": "29.4",

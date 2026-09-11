@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 5514/7446 (74.1%): tids 1458/1914, tables 552/717, timers 1570/1987, notices 258/306, tools 852/1311, figures 824/1211; processes at 100%: 125/165",
+ "brief": "spec units built 5585/7446 (75.0%): tids 1473/1914, tables 552/717, timers 1570/1987, notices 276/306, tools 868/1311, figures 846/1211; processes at 100%: 126/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1458
+   "built": 1473
   },
   "tables": {
    "spec": 717,
@@ -15,19 +15,19 @@
   },
   "notices": {
    "spec": 306,
-   "built": 258
+   "built": 276
   },
   "tools": {
    "spec": 1311,
-   "built": 852
+   "built": 868
   },
   "figures": {
    "spec": 1211,
-   "built": 824
+   "built": 846
   },
   "units": {
    "spec": 7446,
-   "built": 5514
+   "built": 5585
   }
  },
  "sections": {
@@ -153,15 +153,15 @@
   },
   "21": {
    "spec": 282,
-   "built": 189,
+   "built": 223,
    "processes": 6,
    "done": 4
   },
   "22": {
    "spec": 368,
-   "built": 117,
+   "built": 154,
    "processes": 6,
-   "done": 0
+   "done": 1
   },
   "23": {
    "spec": 219,
@@ -337,6 +337,7 @@
   "21.2",
   "21.4",
   "21.5",
+  "22.3",
   "25.1",
   "25.2",
   "25.3",
@@ -5456,49 +5457,13 @@
    },
    "notices": {
     "spec": 18,
-    "built": 0,
-    "missing": [
-     "NTC_AZ_ARS_6_946C_FEE_AGREEMENT",
-     "NTC_CA_21CCR_7114_FAIR_LENDING_NOTICE",
-     "NTC_CA_CIV_1632_5_TRANSLATED_LE",
-     "NTC_FCRA_609G_CREDIT_SCORE",
-     "NTC_FL_69B_124_013_ANTI_COERCION",
-     "NTC_MA_MGL_184_17B_ATTORNEY_STATEMENT",
-     "NTC_NJ_3_1_16_3_APPLICATION_DISCLOSURE",
-     "NTC_NY_3NYCRR_38_3_PREAPP_DISCLOSURE",
-     "NTC_REGB_1002_14_APPRAISAL_NOTICE",
-     "NTC_REGV_1022_74_RBP_EXCEPTION",
-     "NTC_REGX_1024_15_AFBA",
-     "NTC_REGX_1024_20_HCL",
-     "NTC_REGX_1024_33A_SDS",
-     "NTC_REGX_1024_6_TOOLKIT",
-     "NTC_REGZ_1026_19B_ARM_PROGRAM",
-     "NTC_REGZ_1026_19B_CHARM",
-     "NTC_TX_50A6_12DAY",
-     "NTC_TX_7TAC_57_200_SML_NOTICE"
-    ]
+    "built": 18,
+    "missing": []
    },
    "tools": {
     "spec": 16,
-    "built": 0,
-    "missing": [
-     "planCompanionPackage",
-     "evaluateExemptions",
-     "generateCounselingList",
-     "selectBookletEdition",
-     "renderScoreDisclosure",
-     "renderArmProgramDisclosure",
-     "evaluateAfBA",
-     "evaluateStateMatrix",
-     "renderNotice",
-     "assertConsent",
-     "deliver",
-     "recordReceipt",
-     "recordAcknowledgment",
-     "markSatisfiedByLE",
-     "setTimers",
-     "writeDecision"
-    ]
+    "built": 16,
+    "missing": []
    },
    "figures": {
     "spec": 1,
@@ -5509,9 +5474,9 @@
    },
    "units": {
     "spec": 75,
-    "built": 24
+    "built": 58
    },
-   "pct": 32.0
+   "pct": 77.3
   },
   {
    "process": "21.4",
@@ -5775,25 +5740,9 @@
    "title": "Income and employment verification (documentation standards, DU validation service, Income Calculator, IRS transcripts, self-employment, rental/other income, VVOE timing)",
    "tids": {
     "spec": 15,
-    "built": 0,
-    "todo": 15,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15
-    ]
+    "built": 15,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 4,
@@ -5818,32 +5767,14 @@
    },
    "figures": {
     "spec": 24,
-    "built": 7,
-    "missing": [
-     "$1,000.00",
-     "$1,650.00",
-     "$1,800.00",
-     "$10,800.00",
-     "$12,000.00",
-     "$2,000.00",
-     "$2,075.00",
-     "$2,400.00",
-     "$2,700.00",
-     "$32.50",
-     "$5,633.33",
-     "$75,000.00",
-     "$8,550.00",
-     "$9,000.00",
-     "$9,246.43",
-     "$921.43",
-     "$950.00"
-    ]
+    "built": 24,
+    "missing": []
    },
    "units": {
     "spec": 55,
-    "built": 23
+    "built": 55
    },
-   "pct": 41.8
+   "pct": 100.0
   },
   {
    "process": "22.4",
@@ -5924,7 +5855,7 @@
    },
    "figures": {
     "spec": 64,
-    "built": 4,
+    "built": 7,
     "missing": [
      "$1,380.00",
      "$1,720.00",
@@ -5944,7 +5875,6 @@
      "$160,000.00",
      "$169.60",
      "$170.00",
-     "$2,000.00",
      "$2,532.00",
      "$2,856.82",
      "$250,000.00",
@@ -5975,7 +5905,6 @@
      "$559,830.40",
      "$560,000.00",
      "$6,318.00",
-     "$6,500.00",
      "$6,752.00",
      "$7,500.00",
      "$8,000.00",
@@ -5983,16 +5912,15 @@
      "$8,640.00",
      "$8,712.00",
      "$834.52",
-     "$9,000.00",
      "$93.97",
      "$935.47"
     ]
    },
    "units": {
     "spec": 109,
-    "built": 6
+    "built": 9
    },
-   "pct": 5.5
+   "pct": 8.3
   },
   {
    "process": "22.5",
@@ -6065,13 +5993,11 @@
    },
    "figures": {
     "spec": 17,
-    "built": 1,
+    "built": 3,
     "missing": [
      "$1,180.00",
-     "$14,400.00",
      "$2,057.06",
      "$24,000.00",
-     "$3,000.00",
      "$3,402.61",
      "$3,402.62",
      "$3,402.63",
@@ -6087,9 +6013,9 @@
    },
    "units": {
     "spec": 54,
-    "built": 3
+    "built": 5
    },
-   "pct": 5.6
+   "pct": 9.3
   },
   {
    "process": "22.6",

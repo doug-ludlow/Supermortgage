@@ -1,5 +1,5 @@
 {
- "brief": "spec units built 7488/7686 (97.4%): tids 1914/2057, tables 717/724, timers 2029/2029, notices 306/306, tools 1311/1359, figures 1211/1211; processes at 100%: 165/178",
+ "brief": "spec units built 7495/7686 (97.5%): tids 1914/2057, tables 724/724, timers 2029/2029, notices 306/306, tools 1311/1359, figures 1211/1211; processes at 100%: 165/178",
  "totals": {
   "tids": {
    "spec": 2057,
@@ -7,7 +7,7 @@
   },
   "tables": {
    "spec": 724,
-   "built": 717
+   "built": 724
   },
   "timers": {
    "spec": 2029,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 7686,
-   "built": 7488
+   "built": 7495
   }
  },
  "sections": {
@@ -219,7 +219,7 @@
   },
   "32": {
    "spec": 240,
-   "built": 42,
+   "built": 49,
    "processes": 13,
    "done": 0
   }
@@ -7213,16 +7213,8 @@
    },
    "tables": {
     "spec": 7,
-    "built": 0,
-    "missing": [
-     "card_instance_events",
-     "card_instances",
-     "conversations",
-     "deep_links",
-     "messages",
-     "sessions",
-     "ui_events"
-    ]
+    "built": 7,
+    "missing": []
    },
    "timers": {
     "spec": 42,
@@ -7293,9 +7285,9 @@
    },
    "units": {
     "spec": 94,
-    "built": 42
+    "built": 49
    },
-   "pct": 44.7
+   "pct": 52.1
   },
   {
    "process": "32.3",

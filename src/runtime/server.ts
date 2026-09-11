@@ -20,7 +20,20 @@
  *   GET  /v1/transfers/batches/{batchId}            a batch's boarding summary
  *   /, /index.html, /api/*                          the ops console (src/console) — its x-actor-id / x-actor-role headers name the human
  *
- * Every route but the two probes requires `Authorization: Bearer <API_TOKEN>` (or the cookie /login sets).
+ *   Borrower API (docs/ux/02 §7; src/runtime/borrower/routes.ts) — authenticated by a borrower session token, never by API_TOKEN:
+ *   POST /v1/borrower/auth/otp                      { action: request, channel: sms|email, destination } → { challenge_id, delivery: FAKE|sms|email, expires_at }; { action: verify, challenge_id, code } → L1 session { token, … } (with a bearer: refreshes that session's fresh-L1)
+ *   POST /v1/borrower/auth/passkey                  WebAuthn { action: register_options | register | assert_options | assert, … } → options / registered credential / L1 session
+ *   POST /v1/borrower/auth/l2                       { ssn_last4, date_of_birth } matched against application_borrowers → level L2
+ *   POST /v1/borrower/identity/stripe/session       → ConnectCard + Stripe Identity session { vendor_session_id, client_secret, card_instance_id } (FakeStripeIdentity in nonprod)
+ *   POST /v1/webhooks/stripe                        the vendor's webhook (stripe-signature) → 22.6 verifyIdentity on the bus, application_borrowers.prefill source=stripe_identity, the party's sessions → L3
+ *   GET  /v1/borrower/me                            → { party, level, session, subjects[] }
+ *   GET  /v1/borrower/deeplink/{token}              → { target } after L1; 7-day expiry; the token never encodes loan data
+ *   POST /v1/borrower/documents                     multipart { file, application_id, document_class? } → 22.1 ingestDocument → { document_id, status, … }
+ *   GET  /v1/borrower/documents/{id}                → { url, expires_at }: a signed 5-minute URL bound to the session (ui_events document_opened)
+ *   GET  /v1/borrower/documents/{id}/content        the bytes behind that URL
+ *   Errors on these routes are `{ code, gate?, copy_key }` (02 §7); responses pass the allow-list serializer (src/runtime/borrower/serialize.ts).
+ *
+ * Every route but the two probes and the borrower API requires `Authorization: Bearer <API_TOKEN>` (or the cookie /login sets).
  * Refusals from the command bus answer 409 with the guardrail's code and citation; bad input 400; a
  * tool whose section service is not wired yet 501. Money in JSON is a decimal string of cents.
  */
@@ -42,8 +55,11 @@ import { encodeTransferBatch, type TransferBatchFiles } from "../domain/boarding
 import { isUuid } from "../infra/db/client.ts";
 import { plainDate } from "../kernel/calendar/date.ts";
 import type { Logger } from "./log.ts";
+import { createBorrowerRouter, type BorrowerRouterOptions } from "./borrower/routes.ts";
 
-export interface ServerOptions { readonly runtime: Runtime; readonly apiToken: string; readonly logger: Logger; readonly console?: boolean; }
+export interface ServerOptions { readonly runtime: Runtime; readonly apiToken: string; readonly logger: Logger; readonly console?: boolean;
+  /** The borrower API's own dependencies (vendor fakes, rpId, environment); defaults to the FAKE vendors. */
+  readonly borrower?: Omit<BorrowerRouterOptions, "runtime" | "logger">; }
 
 const plain = (_k: string, v: unknown): unknown => (typeof v === "bigint" ? v.toString() : v);
 export const toJson = (v: unknown): string => JSON.stringify(v, plain);
@@ -91,6 +107,7 @@ export function createApiServer(opts: ServerOptions): Server {
   const { runtime, logger } = opts;
   const consoleServer = opts.console === false ? null : createConsoleServer({ store: new PgConsoleStore(runtime.db, runtime.registry, runtime.agents), clock: runtime.clock });
   const authorized = (req: IncomingMessage): boolean => (opts.apiToken ? same(tokenOf(req), opts.apiToken) : true);
+  const borrower = createBorrowerRouter({ runtime, logger, ...(opts.borrower ?? {}) });
 
   return createServer(async (req, res) => {
     const started = Date.now();
@@ -111,6 +128,8 @@ export function createApiServer(opts: ServerOptions): Server {
         res.writeHead(302, { location: "/", "set-cookie": `sm_token=${encodeURIComponent(t)}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=43200` }); res.end();
         logger.info("http", { method, path: "/login", status: 302, ms: Date.now() - started }); return;
       }
+      // the borrower API authenticates its own sessions (and the vendor webhook its signature); the ops token is never accepted there
+      if (await borrower.handle(req, res, url, method)) return;
       if (!authorized(req)) { done(401, { error: "unauthorized", hint: "Authorization: Bearer <API_TOKEN>" }); return; }
       if (method === "GET" && path === "/v1/tools") { done(200, { tools: runtime.listTools() }); return; }
       let m: RegExpExecArray | null;

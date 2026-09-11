@@ -30,9 +30,10 @@ export class PgNoticeRepository {
         n.payloadHash, toJson(n.payload), n.channelDecision ? toJson(n.channelDecision) : null, n.status, n.heldReason ?? null, n.producedAt, n.sentAt ?? null, n.supersededBy ?? null]);
     await q.query(`INSERT INTO notice_checklist_results (notice_id, template_version, passed, results) VALUES ($1, $2, $3, $4::jsonb)`, [n.id, n.templateVersion, n.checklist.passed, toJson(n.checklist.results)]);
     for (const d of n.deliveries) {
-      await q.query(`INSERT INTO notice_deliveries (notice_id, attempt_no, channel, vendor, vendor_piece_id, submitted_at, mailed_at, email_status, returned_at, return_reason) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      // DELTA-08: an esign_portal delivery records the card that carried the document beside the rendered document (0111)
+      await q.query(`INSERT INTO notice_deliveries (notice_id, attempt_no, channel, vendor, vendor_piece_id, submitted_at, mailed_at, email_status, returned_at, return_reason, card_instance_id, rendered_document_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         ON CONFLICT (notice_id, attempt_no) DO UPDATE SET mailed_at = EXCLUDED.mailed_at, email_status = EXCLUDED.email_status, returned_at = EXCLUDED.returned_at, return_reason = EXCLUDED.return_reason`,
-        [n.id, d.attemptNo, d.channel, d.vendor, d.vendorPieceId, d.submittedAt, d.mailedAt ?? null, d.emailStatus ?? null, d.returnedAt ?? null, d.returnReason ?? null]);
+        [n.id, d.attemptNo, d.channel, d.vendor, d.vendorPieceId, d.submittedAt, d.mailedAt ?? null, d.emailStatus ?? null, d.returnedAt ?? null, d.returnReason ?? null, d.cardInstanceId ?? null, d.renderedDocumentId ?? null]);
     }
   }
   async statusOf(id: string): Promise<{ status: string; template_version: string; payload_hash: string } | undefined> {

@@ -181,3 +181,27 @@ test("NoticeService: render→checklist→send with proof of mailing, production
   svc.recordReturned(n.id, 3, "2026-10-28T00:00:00.000Z", "NIXIE");
   assert.equal(n.status, "returned"); assert.equal(events.ofType("notice.returned").length, 1);
 });
+
+test("channel esign_portal (DELTA-08): with an active E-SIGN consent for the class and a card instance for the party, the notice is card-delivered and the delivery evidence carries card_instance_id beside rendered_document_id; without a card the same consent e-mails; without consent it mails", async () => {
+  const reg = buildRegistry(); publishAuthored(reg);
+  const clock = new FixedClock("2026-10-17T05:00:00.000Z");
+  const events = new MemoryEventStore(clock);
+  const pm = new FakePrintMail(); const ed = new FakeEdelivery();
+  const svc = new NoticeService({ registry: reg, events, clock, printMail: pm, edelivery: ed });
+  const stmt = reg.template("NTC_REGZ_41_STMT_DELQ");
+  const A = { partyId: "A", name: "A", mailingAddress: "1 Test St", email: "a@x.com", consent: consent("A", ["periodic_statements"]) };
+  const B = { partyId: "B", name: "B", mailingAddress: "1 Test St", email: "b@x.com" };
+  const cards = { A: "11111111-1111-4111-8111-111111111111" };
+  assert.deepEqual(decideChannel(stmt, [A], { cardInstances: cards }).map((d) => [d.channel, d.cardInstanceId, d.satisfiesTimer]), [["esign_portal", cards.A, true]]);
+  assert.equal(decideChannel(stmt, [A]).map((d) => d.channel)[0], "email_link", "no card → the e-mail link as before");
+  assert.equal(decideChannel(stmt, [B], { cardInstances: { B: "x" } })[0]!.channel, "mail_first_class", "a card never bypasses the consent rule (7.4 rule 1)");
+  const v = reg.activeVersion("NTC_REGZ_41_STMT_DELQ", D("2026-10-17"))!;
+  const n = svc.render({ templateCode: "NTC_REGZ_41_STMT_DELQ", loanId: "L-1", recipients: [A, B], payload: v.samplePayload, asOf: D("2026-10-17"), renderedDocumentId: "22222222-2222-4222-8222-222222222222" });
+  await svc.send(n.id, { cardInstances: cards });
+  assert.deepEqual(n.deliveries.map((d) => [d.partyId, d.channel, d.vendor, d.cardInstanceId ?? null, d.renderedDocumentId ?? null, d.satisfiesTimer]),
+    [["A", "esign_portal", "borrower-app", cards.A, "22222222-2222-4222-8222-222222222222", false], ["B", "mail_first_class", "print-mail", null, "22222222-2222-4222-8222-222222222222", true]]);
+  const sent = events.ofType("notice.sent")[0]!.payload as { channels: { party_id: string; channel: string; card_instance_id?: string }[]; rendered_document_id: string };
+  assert.deepEqual(sent.channels.find((c) => c.party_id === "A"), { party_id: "A", channel: "esign_portal", satisfies_timer: false, card_instance_id: cards.A });
+  assert.equal(sent.rendered_document_id, "22222222-2222-4222-8222-222222222222");
+  assert.equal([...ed.messages.values()].find((m) => m.message.noticeId === n.id)?.message.channel, "portal", "the availability message goes through the e-delivery port");
+});

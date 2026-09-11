@@ -1,0 +1,382 @@
+/**
+ * The borrower API (docs/ux/02-data-contracts.md §7) — the first half: identity and the document seam.
+ *
+ *   POST /v1/borrower/auth/otp                    { action: "request", channel: sms|email, destination }  → { challenge_id, delivery, expires_at, fake_code? }
+ *                                                 { action: "verify", challenge_id, code }               → L1 session { token, session, party, level }; with a bearer: refreshes that session's fresh-L1 instead
+ *   POST /v1/borrower/auth/passkey                { action: "register_options" | "register" | "assert_options" | "assert", … }  (WebAuthn; server-side verifier in ./webauthn.ts)
+ *   POST /v1/borrower/auth/l2                     { ssn_last4, date_of_birth } matched against application_borrowers → L2
+ *   POST /v1/borrower/identity/stripe/session     { application_id? } → ConnectCard + vendor session (FakeStripeIdentity) → L3 on the webhook
+ *   POST /v1/webhooks/stripe                      vendor webhook (stripe-signature) → 22.6 verifyIdentity through the bus, prefill source=stripe_identity, sessions → L3
+ *   GET  /v1/borrower/me                          → { party, level, session, subjects[] }
+ *   GET  /v1/borrower/deeplink/{token}            → target after L1 (7-day expiry; the token never encodes loan data)
+ *   POST /v1/borrower/documents                   multipart (file, application_id, document_class?) → 22.1 ingestDocument → { document_id, status, … }
+ *   GET  /v1/borrower/documents/{id}              → signed short-lived URL bound to the session; ui_events document_opened
+ *   GET  /v1/borrower/documents/{id}/content      the bytes behind the signed URL (same session; exp + sig)
+ *
+ * Every response goes through ./serialize.ts (allow-listed shapes); every refusal is `{code, gate?, copy_key}` (./errors.ts).
+ * Borrower sessions are the only credential here — the API_TOKEN of the ops routes is never accepted on /v1/borrower/*.
+ */
+import { createHmac, randomBytes, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import type { Runtime } from "../app.ts";
+import type { Logger } from "../log.ts";
+import { PgBorrowerUiRepository } from "../../infra/db/borrower-ui.ts";
+import { normalizeDestination } from "../../infra/db/borrower-parties.ts";
+import { hashCode, type SessionRow } from "../../infra/db/borrower-sessions.ts";
+import { FakeEdelivery, type EdeliveryPort } from "../../infra/integrations/delivery.ts";
+import { DOCUMENT_CLASSES } from "../../domain/verification/ops-22-1.ts";
+import { isUuid, toJson } from "../../infra/db/client.ts";
+import { BorrowerAuth, OTP_MAX_ATTEMPTS, OTP_MINUTES, assertSubject, hasFreshL1, minutesAfter, type BorrowerContext } from "./auth.ts";
+import { BorrowerError, toBorrowerError } from "./errors.ts";
+import { serialize, type ShapeName } from "./serialize.ts";
+import { b64url, sha256, verifyAssertion, verifyRegistration } from "./webauthn.ts";
+import { FakeStripeIdentity, type StripeIdentityPort } from "./vendors/fake-stripe-identity.ts";
+import { FakeBlobStore, type BlobStorePort } from "./vendors/fake-blob-store.ts";
+
+export interface BorrowerRouterOptions {
+  readonly runtime: Runtime;
+  readonly logger: Logger;
+  /** `production` disables the FAKE code echo; anything else (nonprod, test) is a non-production environment. */
+  readonly environment?: string;
+  readonly rpId?: string;
+  readonly allowedOrigins?: readonly string[];
+  readonly stripe?: StripeIdentityPort;
+  readonly blobs?: BlobStorePort;
+  /** HMAC key for signed document URLs; random per process when unset (URLs then die with the process, which is fine for short-lived links). */
+  readonly urlSecret?: string;
+  readonly returnUrlBase?: string;
+}
+export interface BorrowerRouter {
+  handle(req: IncomingMessage, res: ServerResponse, url: URL, method: string): Promise<boolean>;
+  readonly auth: BorrowerAuth;
+  readonly ui: PgBorrowerUiRepository;
+  readonly stripe: StripeIdentityPort;
+  readonly blobs: BlobStorePort;
+}
+
+const MAX_BODY = 32 * 1024 * 1024;
+export const DOCUMENT_URL_MINUTES = 5;
+const SYSTEM_ACTOR = { kind: "system" as const, id: "borrower-api" };
+const WEBHOOK_ACTOR = { kind: "system" as const, id: "stripe-identity-webhook" };
+/** 02 §1.4: the document families a borrower may open (own-only families need the party's own application_borrowers row as subject). */
+const VISIBLE_FAMILIES: Readonly<Record<string, "own_only" | "shared">> = { identity: "own_only", income_employment: "own_only", assets: "own_only", letters: "own_only", insurance: "shared", hoa_project: "shared" };
+const RENDERED_KINDS = new Set(["notice", "disclosure", "rendered_notice", "rendered_disclosure"]);
+
+async function readBody(req: IncomingMessage): Promise<Buffer> {
+  const chunks: Buffer[] = []; let size = 0;
+  for await (const c of req) { size += (c as Buffer).length; if (size > MAX_BODY) throw new RangeError(`request body over ${MAX_BODY} bytes`); chunks.push(c as Buffer); }
+  return Buffer.concat(chunks);
+}
+const jsonOf = (b: Buffer): Record<string, unknown> => { if (!b.length) return {}; const v = JSON.parse(b.toString("utf8")) as unknown; if (!v || typeof v !== "object" || Array.isArray(v)) throw new RangeError("request body must be a JSON object"); return v as Record<string, unknown>; };
+const str = (b: Record<string, unknown>, k: string): string => (typeof b[k] === "string" ? (b[k] as string).trim() : "");
+const need = (b: Record<string, unknown>, ...keys: string[]): void => { for (const k of keys) if (!str(b, k)) throw new RangeError(`${k} is required`); };
+
+/** multipart/form-data → fields and one file (`file`), without a dependency. */
+export interface MultipartFile { readonly field: string; readonly filename: string | null; readonly mime_type: string; readonly bytes: Buffer; }
+export function parseMultipart(body: Buffer, contentType: string): { fields: Record<string, string>; files: MultipartFile[] } {
+  const m = /boundary="?([^";]+)"?/i.exec(contentType); if (!m) throw new RangeError("multipart/form-data needs a boundary");
+  const delim = Buffer.from(`--${m[1]!}`); const fields: Record<string, string> = {}; const files: MultipartFile[] = [];
+  let pos = body.indexOf(delim); if (pos < 0) throw new RangeError("multipart: boundary not found");
+  pos += delim.length;
+  for (;;) {
+    if (body.subarray(pos, pos + 2).toString() === "--") break;
+    if (body.subarray(pos, pos + 2).toString() === "\r\n") pos += 2;
+    const headEnd = body.indexOf("\r\n\r\n", pos); if (headEnd < 0) throw new RangeError("multipart: part without headers");
+    const headers = body.subarray(pos, headEnd).toString("utf8").split("\r\n");
+    const next = body.indexOf(delim, headEnd + 4); if (next < 0) throw new RangeError("multipart: unterminated part");
+    let content = body.subarray(headEnd + 4, next); if (content.subarray(-2).toString() === "\r\n") content = content.subarray(0, -2);
+    const disp = headers.find((h) => /^content-disposition:/i.test(h)) ?? "";
+    const name = /\bname="([^"]*)"/i.exec(disp)?.[1] ?? ""; const filename = /\bfilename="([^"]*)"/i.exec(disp)?.[1];
+    const ctype = (headers.find((h) => /^content-type:/i.test(h)) ?? "").replace(/^content-type:\s*/i, "").trim();
+    if (filename !== undefined) files.push({ field: name, filename: filename || null, mime_type: ctype || "application/octet-stream", bytes: Buffer.from(content) });
+    else fields[name] = content.toString("utf8");
+    pos = next + delim.length;
+  }
+  return { fields, files };
+}
+
+export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRouter {
+  const { runtime, logger } = opts;
+  const environment = opts.environment ?? process.env["ENVIRONMENT"] ?? "nonprod";
+  const nonProduction = environment !== "production" && environment !== "prod";
+  const rpId = opts.rpId ?? process.env["BORROWER_RP_ID"] ?? "localhost";
+  const allowedOrigins = opts.allowedOrigins ?? (process.env["BORROWER_ORIGINS"] ? process.env["BORROWER_ORIGINS"].split(",").map((s) => s.trim()) : []);
+  const stripe = opts.stripe ?? new FakeStripeIdentity((line) => logger.info("vendor", line));
+  const blobs = opts.blobs ?? new FakeBlobStore();
+  const urlSecret = opts.urlSecret ?? process.env["BORROWER_URL_SECRET"] ?? randomBytes(32).toString("hex");
+  const returnUrlBase = opts.returnUrlBase ?? process.env["BORROWER_APP_URL"] ?? "https://app.supermortgage.example";
+  const auth = new BorrowerAuth(runtime.db);
+  const ui = new PgBorrowerUiRepository(runtime.db);
+  const now = (): string => runtime.clock.now();
+  const edelivery: EdeliveryPort | undefined = runtime.ports.edelivery;
+  const deliveryIsFake = (): boolean => !edelivery || edelivery instanceof FakeEdelivery;
+
+  const send = (res: ServerResponse, status: number, shape: ShapeName, body: unknown): void => { res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }); res.end(toJson(serialize(shape, body))); };
+  const sessionBody = (r: { token: string; session: SessionRow; party: { id: string; party_type: string; legal_name: string } }) =>
+    ({ token: r.token, level: r.session.level, session: { ...r.session, fresh_l1: hasFreshL1(r.session, now()) }, party: { party_id: r.party.id, party_type: r.party.party_type, display_name: r.party.legal_name, first_name: r.party.legal_name.split(" ")[0] } });
+  const signUrl = (sessionId: string, documentId: string, exp: string): string => createHmac("sha256", urlSecret).update(`${sessionId}:${documentId}:${exp}`).digest("base64url");
+  const sameSig = (a: string, b: string): boolean => a.length === b.length && a.length > 0 && timingSafeEqual(Buffer.from(a), Buffer.from(b));
+
+  // ───────────────────────────── OTP (L1)
+  async function otp(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const b = jsonOf(await readBody(req)); const action = str(b, "action") || "request"; const at = now();
+    if (action === "request") {
+      const channel = str(b, "channel"); need(b, "destination");
+      if (channel !== "sms" && channel !== "email") throw new RangeError("channel must be sms or email");
+      const destination = normalizeDestination(channel, str(b, "destination"));
+      if (channel === "email" ? !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(destination) : !/^\+\d{10,15}$/.test(destination)) throw new RangeError(`destination is not a valid ${channel === "email" ? "e-mail address" : "phone number"}`);
+      const code = randomInt(0, 1_000_000).toString().padStart(6, "0");
+      const expiresAt = minutesAfter(at, OTP_MINUTES);
+      const challenge = await auth.sessions.createChallenge({ kind: "otp", channel, destination, code, expires_at: expiresAt, delivery: deliveryIsFake() ? "FAKE" : channel });
+      // the platform's e-delivery adapter carries the code (SMS or e-mail); with INTEGRATIONS=fake that adapter is the FakeEdelivery test double — marked FAKE in the response
+      let deliveryRef: string | null = null;
+      if (edelivery) { const r = await edelivery.send({ messageId: `otp:${challenge.challenge_id}`, noticeId: `otp:${challenge.challenge_id}`, channel: channel === "sms" ? "sms" : "email", to: destination, subject: "Your Supermortgage sign-in code", consentId: "policy:authentication_otp" }, at); deliveryRef = r.messageId; }
+      logger.info("borrower.otp.requested", { challenge_id: challenge.challenge_id, channel, delivery: challenge.delivery, delivery_ref: deliveryRef, vendor: deliveryIsFake() ? "FAKE" : "e-delivery" });
+      send(res, 200, "otp_request", { challenge_id: challenge.challenge_id, channel, delivery: challenge.delivery, expires_at: expiresAt, ...(deliveryIsFake() && nonProduction ? { fake_code: code } : {}) });
+      return;
+    }
+    if (action === "verify") {
+      need(b, "challenge_id", "code");
+      const ch = await auth.sessions.challenge(str(b, "challenge_id"));
+      if (!ch || ch.kind !== "otp" || ch.consumed_at) throw new BorrowerError(401, "OTP_INVALID");
+      if (Date.parse(ch.expires_at) <= Date.parse(at)) throw new BorrowerError(401, "OTP_EXPIRED");
+      const attempts = await auth.sessions.bumpAttempts(ch.challenge_id);
+      if (attempts > OTP_MAX_ATTEMPTS) throw new BorrowerError(429, "OTP_TOO_MANY_ATTEMPTS");
+      if (ch.code_hash !== hashCode(ch.challenge_id, str(b, "code"))) throw new BorrowerError(401, "OTP_INVALID");
+      await auth.sessions.consume(ch.challenge_id, at);
+      const channel = ch.channel!; const destination = ch.destination!;
+      // a live session presenting a fresh code: the fresh-L1 refresh (money movement); the same session continues
+      const bearer = String(req.headers["authorization"] ?? "");
+      if (bearer) {
+        const ctx = await auth.authenticate(req, at);
+        const resolved = await auth.parties.resolveOrCreateByDestination(channel, destination);
+        if (resolved.party.id !== ctx.party.id) throw new BorrowerError(403, "PARTY_SCOPE", undefined, "the code belongs to a different party");
+        await auth.sessions.recordL1(ctx.session.session_id, at);
+        send(res, 200, "session", sessionBody({ token: ctx.token, session: { ...ctx.session, last_l1_at: at }, party: ctx.party })); return;
+      }
+      const resolved = await auth.parties.resolveOrCreateByDestination(channel, destination);
+      await auth.sessions.setChallengeParty(ch.challenge_id, resolved.party.id);
+      const opened = await auth.openSession({ party_id: resolved.party.id, auth_method: channel === "sms" ? "otp_phone" : "otp_email", now: at, otp: true, ip: ipOf(req), user_agent: uaOf(req) });
+      await ui.conversationFor(resolved.party.id);
+      logger.info("borrower.session.opened", { session_id: opened.session.session_id, level: "L1", auth_method: opened.session.auth_method, party_created: resolved.created, linked_application_borrowers: resolved.linked_application_borrowers });
+      send(res, 200, "session", sessionBody({ token: opened.token, session: opened.session, party: opened.party })); return;
+    }
+    throw new RangeError("action must be request or verify");
+  }
+  const ipOf = (req: IncomingMessage): string | null => { const f = req.headers["x-forwarded-for"]; const s = Array.isArray(f) ? f[0] : f; return (s ? s.split(",")[0]!.trim() : req.socket?.remoteAddress) ?? null; };
+  const uaOf = (req: IncomingMessage): string | null => (typeof req.headers["user-agent"] === "string" ? (req.headers["user-agent"] as string).slice(0, 512) : null);
+
+  // ───────────────────────────── passkeys (WebAuthn)
+  async function passkey(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const b = jsonOf(await readBody(req)); const action = str(b, "action"); const at = now();
+    const challengeBytes = () => b64url.encode(randomBytes(32));
+    if (action === "register_options") {
+      const ctx = await auth.authenticate(req, at);
+      const challenge = challengeBytes(); const expiresAt = minutesAfter(at, OTP_MINUTES);
+      const ch = await auth.sessions.createChallenge({ kind: "passkey_registration", party_id: ctx.party.id, session_id: ctx.session.session_id, challenge, expires_at: expiresAt });
+      send(res, 200, "passkey_options", { challenge_id: ch.challenge_id, challenge, rp: { id: rpId, name: "Supermortgage" }, user: { id: b64url.encode(Buffer.from(ctx.party.id)), name: ctx.party.legal_name, display_name: ctx.party.legal_name }, pub_key_cred_params: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }], timeout_ms: OTP_MINUTES * 60_000, attestation: "none", expires_at: expiresAt }); return;
+    }
+    if (action === "register") {
+      const ctx = await auth.authenticate(req, at); need(b, "challenge_id");
+      const ch = await auth.sessions.challenge(str(b, "challenge_id"));
+      if (!ch || ch.kind !== "passkey_registration" || ch.consumed_at || ch.session_id !== ctx.session.session_id || Date.parse(ch.expires_at) <= Date.parse(at)) throw new BorrowerError(401, "PASSKEY_INVALID");
+      const credential = b["credential"] as { id: string; response: { clientDataJSON: string; attestationObject: string; transports?: string[] } } | undefined;
+      if (!credential || typeof credential !== "object" || typeof credential.id !== "string" || !credential.response) throw new RangeError("credential { id, response: { clientDataJSON, attestationObject } } is required");
+      let r; try { r = verifyRegistration({ rpId, allowedOrigins, expectedChallenge: ch.challenge!, credential }); } catch (e) { throw new BorrowerError(401, "PASSKEY_INVALID", undefined, (e as Error).message); }
+      await auth.sessions.consume(ch.challenge_id, at);
+      const row = await auth.sessions.addPasskey({ party_id: ctx.party.id, credential_id: r.credentialId, public_key_jwk: r.publicKey.jwk, algorithm: r.publicKey.algorithm, sign_count: BigInt(r.signCount), transports: r.transports, attestation_format: r.attestationFormat });
+      logger.info("borrower.passkey.registered", { passkey_id: row.passkey_id, party_id: ctx.party.id, attestation_format: r.attestationFormat, attestation_verified: r.attestationVerified });
+      send(res, 200, "passkey_registered", { passkey_id: row.passkey_id, credential_id: row.credential_id, algorithm: row.algorithm, attestation_verified: r.attestationVerified, created_at: row.created_at }); return;
+    }
+    if (action === "assert_options") {
+      const challenge = challengeBytes(); const expiresAt = minutesAfter(at, OTP_MINUTES);
+      const ch = await auth.sessions.createChallenge({ kind: "passkey_assertion", challenge, expires_at: expiresAt });
+      send(res, 200, "passkey_options", { challenge_id: ch.challenge_id, challenge, rp: { id: rpId, name: "Supermortgage" }, allow_credentials: [], timeout_ms: OTP_MINUTES * 60_000, expires_at: expiresAt }); return;
+    }
+    if (action === "assert") {
+      need(b, "challenge_id");
+      const ch = await auth.sessions.challenge(str(b, "challenge_id"));
+      if (!ch || ch.kind !== "passkey_assertion" || ch.consumed_at || Date.parse(ch.expires_at) <= Date.parse(at)) throw new BorrowerError(401, "PASSKEY_INVALID");
+      const credential = b["credential"] as { id: string; response: { clientDataJSON: string; authenticatorData: string; signature: string } } | undefined;
+      if (!credential || typeof credential !== "object" || typeof credential.id !== "string" || !credential.response) throw new RangeError("credential { id, response: { clientDataJSON, authenticatorData, signature } } is required");
+      const stored = await auth.sessions.passkeyByCredential(credential.id);
+      if (!stored) throw new BorrowerError(401, "PASSKEY_INVALID");
+      let r; try { r = verifyAssertion({ rpId, allowedOrigins, expectedChallenge: ch.challenge!, publicKeyJwk: stored.public_key_jwk, algorithm: stored.algorithm, storedSignCount: stored.sign_count, credential }); } catch (e) { throw new BorrowerError(401, "PASSKEY_INVALID", undefined, (e as Error).message); }
+      await auth.sessions.consume(ch.challenge_id, at);
+      await auth.sessions.passkeyUsed(stored.passkey_id, r.signCount, at);
+      // a passkey is an L1 sign-in without a code: last_l1_at stays empty until a code is verified (the fresh-L1 rule wants a code)
+      const opened = await auth.openSession({ party_id: stored.party_id, auth_method: "passkey", now: at, otp: false, passkey_id: stored.passkey_id, ip: ipOf(req), user_agent: uaOf(req) });
+      logger.info("borrower.session.opened", { session_id: opened.session.session_id, level: "L1", auth_method: "passkey", passkey_id: stored.passkey_id });
+      send(res, 200, "session", sessionBody({ token: opened.token, session: opened.session, party: opened.party })); return;
+    }
+    throw new RangeError("action must be register_options, register, assert_options or assert");
+  }
+
+  // ───────────────────────────── L2: SSN last 4 + DOB against application_borrowers
+  async function stepUpL2(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const at = now(); const ctx = await auth.authenticate(req, at);
+    const b = jsonOf(await readBody(req)); need(b, "ssn_last4", "date_of_birth");
+    const last4 = str(b, "ssn_last4"); const dob = str(b, "date_of_birth");
+    if (!/^\d{4}$/.test(last4) || !/^\d{4}-\d{2}-\d{2}$/.test(dob)) throw new RangeError("ssn_last4 is four digits; date_of_birth is YYYY-MM-DD");
+    const rows = await auth.parties.applicationBorrowersOf(ctx.party.id);
+    const matched = rows.some((r) => r.tin_last4 === last4 && r.date_of_birth === dob);
+    logger.info("borrower.l2.attempt", { session_id: ctx.session.session_id, matched });   // never the values
+    if (!matched) throw new BorrowerError(403, "L2_MATCH_FAILED");
+    await auth.sessions.raiseLevel(ctx.session.session_id, "L2");
+    send(res, 200, "level", { level: ctx.session.level === "L3" ? "L3" : "L2", session_id: ctx.session.session_id });
+  }
+
+  // ───────────────────────────── L3: Stripe Identity session + webhook → 22.6 verifyIdentity
+  async function identitySession(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const at = now(); const ctx = await auth.authenticate(req, at);
+    const b = jsonOf(await readBody(req));
+    const requested = str(b, "application_id");
+    const candidates = ctx.subjects.filter((s) => s.application_borrower_id && (!requested || s.application_id === requested));
+    if (requested && !candidates.length) assertSubject(ctx, { application_id: requested });
+    const subject = candidates[0];
+    if (!subject || !subject.application_id || !subject.application_borrower_id) throw new BorrowerError(409, "IDENTITY_NO_APPLICATION", undefined, "no application on which this party is a borrower");
+    const ab = (await auth.parties.applicationBorrowersOf(ctx.party.id)).find((r) => r.id === subject.application_borrower_id)!;
+    const conv = await ui.conversationFor(ctx.party.id);
+    const card = await ui.createCard({ conversation_id: conv.conversation_id, party_id: ctx.party.id, subject_application_id: subject.application_id, kind: "ConnectCard", created_by: "agent:verification", copy_key: "identity.stripe.purpose", props: { vendor: "stripe_identity", state: "in_progress" }, command_ref: "party.startIdentity", now: at });
+    const address = (await runtime.db.query<{ a: string | null }>(`SELECT concat_ws(', ', address_line1, city, state || ' ' || postal_code) AS a FROM application_properties WHERE application_id = $1 ORDER BY is_subject DESC, created_at LIMIT 1`, [subject.application_id]))[0]?.a ?? null;
+    const vs = await stripe.createSession({ party_id: ctx.party.id, application_id: subject.application_id, application_borrower_id: ab.id, legal_name: ab.legal_name, date_of_birth: ab.date_of_birth, address, return_url: `${returnUrlBase}/return/stripe_identity/${card.card_instance_id}` }, at);
+    await runtime.db.query(`UPDATE card_instances SET props = props || $2::jsonb WHERE card_instance_id = $1`, [card.card_instance_id, toJson({ vendor_session_id: vs.vendor_session_id, started_at: at })]);
+    await ui.logUiEvent({ party_id: ctx.party.id, session_id: ctx.session.session_id, conversation_id: conv.conversation_id, card_instance_id: card.card_instance_id, kind: "connector_started", at, ip: ctx.ip, user_agent: ctx.userAgent, payload: { vendor: "stripe_identity", vendor_session_id: vs.vendor_session_id } });
+    const fake = stripe instanceof FakeStripeIdentity;
+    logger.info("borrower.identity.session", { card_instance_id: card.card_instance_id, vendor_session_id: vs.vendor_session_id, vendor: fake ? "FAKE" : stripe.vendorName });
+    send(res, 200, "identity_session", { vendor: "stripe_identity", vendor_session_id: vs.vendor_session_id, client_secret: vs.client_secret, return_url: vs.return_url, card_instance_id: card.card_instance_id, application_id: subject.application_id, status: vs.status, ...(fake ? { delivery: "FAKE" } : {}) });
+  }
+  async function stripeWebhook(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const at = now(); const raw = (await readBody(req)).toString("utf8");
+    const sig = req.headers["stripe-signature"]; const parsed = await stripe.parseWebhook(raw, Array.isArray(sig) ? sig[0] : sig, at);
+    const cards = await runtime.db.query<{ card_instance_id: string; party_id: string; subject_application_id: string; props: Record<string, unknown>; status: string }>(`SELECT card_instance_id, party_id, subject_application_id, props, status FROM card_instances WHERE kind = 'ConnectCard' AND props->>'vendor_session_id' = $1`, [parsed.vendor_session_id]);
+    const card = cards[0];
+    if (!card) throw new BorrowerError(404, "IDENTITY_SESSION_UNKNOWN");
+    const fake = stripe instanceof FakeStripeIdentity;
+    if (parsed.outcome === "ignored") { send(res, 200, "identity_webhook", { received: true, vendor: fake ? "FAKE" : stripe.vendorName, vendor_session_id: parsed.vendor_session_id, outcome: "ignored" }); return; }
+    if (parsed.outcome !== "verified") {
+      await ui.transitionCard(card.card_instance_id, parsed.outcome === "canceled" ? "cancelled" : "pending", "system", at, { vendor: "stripe_identity", vendor_session_id: parsed.vendor_session_id, outcome: parsed.outcome === "canceled" ? "failed" : "in_progress", completed_at: at });
+      send(res, 200, "identity_webhook", { received: true, vendor: fake ? "FAKE" : stripe.vendorName, vendor_session_id: parsed.vendor_session_id, outcome: parsed.outcome }); return;
+    }
+    const result = await stripe.result(parsed.vendor_session_id);
+    if (!result) throw new BorrowerError(404, "IDENTITY_SESSION_UNKNOWN");
+    const applicationId = result.request.application_id; const abId = result.request.application_borrower_id;
+    const borrowerIds = await auth.parties.applicationBorrowerIds(applicationId);
+    // 22.6's own op through the bus: identity.verified{level, all_borrowers_verified} → SM_IDENTITY_IAL2_GATE satisfies when the last borrower verifies. Never a second identity path.
+    const r = await runtime.execute({ process: "22.6", name: "verifyIdentity", loanId: "", applicationId, actor: WEBHOOK_ACTOR,
+      input: { application_id: applicationId, borrower_id: abId, method: "remote_doc_biometric", result: result.session_result, borrower_ids: borrowerIds, at, consent_id: card.card_instance_id } });
+    const out = r.output as { outcome: string; level: string | null; all_borrowers_verified: boolean; gate: { open: boolean } };
+    // extracted name / DOB / address → application_borrowers.prefill as source=stripe_identity, confirmed_at null (pending the ConfirmCard)
+    const prefill = { legal_name: { value: result.extraction.legal_name, source: "stripe_identity", extracted_at: at, confirmed_at: null }, date_of_birth: { value: result.extraction.date_of_birth, source: "stripe_identity", extracted_at: at, confirmed_at: null }, address: { value: result.extraction.address, source: "stripe_identity", extracted_at: at, confirmed_at: null } } as const;
+    await auth.parties.writePrefill(abId, prefill);
+    let raised = 0;
+    if (out.outcome === "verified") raised = await auth.sessions.raisePartyLevel(card.party_id, "L3", at);
+    await ui.transitionCard(card.card_instance_id, out.outcome === "verified" ? "resolved" : "pending", "system", at, { vendor: "stripe_identity", vendor_session_id: parsed.vendor_session_id, started_at: card.props["started_at"] ?? null, completed_at: at, outcome: out.outcome === "verified" ? "connected" : "failed" });
+    await ui.logUiEvent({ party_id: card.party_id, card_instance_id: card.card_instance_id, kind: "connector_completed", at, payload: { vendor: "stripe_identity", vendor_session_id: parsed.vendor_session_id, outcome: out.outcome } });
+    logger.info("borrower.identity.webhook", { vendor: fake ? "FAKE" : stripe.vendorName, vendor_session_id: parsed.vendor_session_id, outcome: out.outcome, level: out.level, sessions_raised: raised, all_borrowers_verified: out.all_borrowers_verified, events: r.events.map((e) => e.type) });
+    send(res, 200, "identity_webhook", { received: true, vendor: fake ? "FAKE" : stripe.vendorName, vendor_session_id: parsed.vendor_session_id, outcome: out.outcome, level: out.outcome === "verified" ? "L3" : null, application_id: applicationId, prefilled: Object.keys(prefill), all_borrowers_verified: out.all_borrowers_verified, gate_open: out.gate.open });
+  }
+
+  // ───────────────────────────── me · deep links
+  async function me(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const at = now(); const ctx = await auth.authenticate(req, at);
+    send(res, 200, "me", { party: { party_id: ctx.party.id, party_type: ctx.party.party_type, display_name: ctx.party.legal_name, first_name: ctx.party.legal_name.split(" ")[0] }, level: ctx.session.level, session: { ...ctx.session, fresh_l1: hasFreshL1(ctx.session, at) }, subjects: ctx.subjects });
+  }
+  async function deepLink(req: IncomingMessage, res: ServerResponse, token: string): Promise<void> {
+    const at = now(); const ctx = await auth.authenticate(req, at);   // L1 first: no loan data before a session (01 §6.5)
+    const link = await ui.deepLink(token);
+    if (!link) throw new BorrowerError(404, "DEEP_LINK_UNKNOWN");
+    if (Date.parse(link.expires_at) <= Date.parse(at) || (link.single_use && link.used_at)) throw new BorrowerError(410, "DEEP_LINK_EXPIRED");
+    if (link.party_id !== ctx.party.id) throw new BorrowerError(403, "PARTY_SCOPE", undefined, "the link was sent to another party");
+    await ui.markDeepLinkUsed(token, at);
+    await ui.logUiEvent({ party_id: ctx.party.id, session_id: ctx.session.session_id, card_instance_id: "card_instance_id" in link.target ? link.target.card_instance_id : null, kind: "deep_link_opened", at, ip: ctx.ip, user_agent: ctx.userAgent, payload: { target: link.target } });
+    send(res, 200, "deep_link", { token, target: link.target, expires_at: link.expires_at });
+  }
+
+  // ───────────────────────────── documents: upload → 22.1; signed URL → bytes
+  async function uploadDocument(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const at = now(); const ctx = await auth.authenticate(req, at);
+    const ctype = String(req.headers["content-type"] ?? ""); const body = await readBody(req);
+    let fields: Record<string, string>; let file: MultipartFile | undefined;
+    if (/^multipart\/form-data/i.test(ctype)) { const p = parseMultipart(body, ctype); fields = p.fields; file = p.files.find((f) => f.field === "file") ?? p.files[0]; }
+    else { const j = jsonOf(body); fields = Object.fromEntries(Object.entries(j).filter(([, v]) => typeof v === "string") as [string, string][]); if (typeof j["content_base64"] === "string") file = { field: "file", filename: str(j, "filename") || null, mime_type: str(j, "mime_type") || "application/octet-stream", bytes: Buffer.from(j["content_base64"] as string, "base64") }; }
+    if (!file || !file.bytes.length) throw new RangeError("a file is required (multipart field `file`)");
+    const applicationId = fields["application_id"] ?? "";
+    if (!isUuid(applicationId)) throw new RangeError("application_id (uuid) is required");
+    const subject = assertSubject(ctx, { application_id: applicationId });
+    const declared = fields["document_class"] || null;
+    if (declared && !DOCUMENT_CLASSES.some((c) => c.code === declared)) throw new RangeError(`document_class ${declared} is not a 22.1 document class`);
+    const documentId = randomUUID(); const digest = sha256(file.bytes).toString("hex");
+    const storageUri = await blobs.put(documentId, { bytes: file.bytes, mime_type: file.mime_type, filename: file.filename, stored_at: at });
+    await runtime.db.query(`INSERT INTO documents (id, kind, sha256, byte_size, storage_uri, mime_type, received_from, application_id, doc_class, source_channel, sender_identity, received_at, subject_borrower_id, page_count, metadata) VALUES ($1, 'origination_document', $2, $3, $4, $5, $6, $7, $8, 'borrower_upload', $9::jsonb, $10, $11, 0, $12::jsonb)`,
+      [documentId, digest, file.bytes.length, storageUri, file.mime_type, ctx.party.id, applicationId, declared, toJson({ party_id: ctx.party.id, session_id: ctx.session.session_id, filename: file.filename }), at, subject.application_borrower_id, toJson({ filename: file.filename, blob_store: blobs.vendorName })]);
+    // 22.1's intake op through the bus: document.received (+ the needs-list review clock); a duplicate hash links, never re-processes
+    const r = await runtime.execute({ process: "22.1", name: "ingestDocument", loanId: "", applicationId, actor: SYSTEM_ACTOR,
+      input: { application_id: applicationId, document_id: documentId, source_channel: "borrower_upload", sha256: digest, page_count: 0, declared_class: declared, subject_borrower_id: subject.application_borrower_id, applicant_borrower_ids: await auth.parties.applicationBorrowerIds(applicationId), sender_identity: { party_id: ctx.party.id, session_id: ctx.session.session_id }, received_at: at } });
+    const out = r.output as Record<string, unknown>;
+    logger.info("borrower.document.uploaded", { document_id: documentId, application_id: applicationId, bytes: file.bytes.length, status: out["status"], blob_store: blobs.vendorName });
+    send(res, 201, "document_uploaded", { document_id: documentId, application_id: applicationId, status: out["status"], integrity_status: out["integrity_status"], quarantined: out["quarantined"], quarantine_reason: out["quarantine_reason"] ?? null, duplicate_of: out["duplicate_of"] ?? null, matched_request_ids: out["matched_request_ids"] ?? [], received_at: at, doc_class: declared, byte_size: file.bytes.length, sha256: digest });
+  }
+  interface DocRow { id: string; kind: string; doc_class: string | null; mime_type: string | null; application_id: string | null; loan_id: string | null; subject_borrower_id: string | null; metadata: Record<string, unknown>; }
+  async function visibleDocument(ctx: BorrowerContext, id: string): Promise<DocRow> {
+    if (!isUuid(id)) throw new RangeError("document id must be a uuid");
+    const rows = await runtime.db.query<DocRow & Record<string, unknown>>(`SELECT id, kind, doc_class, mime_type, application_id, loan_id, subject_borrower_id, metadata FROM documents WHERE id = $1`, [id]);
+    const d = rows[0];
+    if (!d) throw new BorrowerError(403, "PARTY_SCOPE");                          // never confirm existence outside the party's scope
+    const subject = assertSubject(ctx, { application_id: d.application_id, loan_id: d.loan_id });
+    if (RENDERED_KINDS.has(d.kind)) return d;
+    const family = DOCUMENT_CLASSES.find((c) => c.code === d.doc_class)?.family;
+    const rule = family ? VISIBLE_FAMILIES[family] : undefined;
+    if (!rule) throw new BorrowerError(403, "DOCUMENT_NOT_VISIBLE");
+    if (rule === "own_only" && d.subject_borrower_id !== subject.application_borrower_id) throw new BorrowerError(403, "DOCUMENT_NOT_VISIBLE");
+    return d;
+  }
+  async function documentLink(req: IncomingMessage, res: ServerResponse, id: string): Promise<void> {
+    const at = now(); const ctx = await auth.authenticate(req, at);
+    const d = await visibleDocument(ctx, id);
+    const exp = String(Date.parse(at) + DOCUMENT_URL_MINUTES * 60_000);
+    const url = `/v1/borrower/documents/${d.id}/content?exp=${exp}&sig=${signUrl(ctx.session.session_id, d.id, exp)}`;
+    await ui.logUiEvent({ party_id: ctx.party.id, session_id: ctx.session.session_id, kind: "document_opened", at, ip: ctx.ip, user_agent: ctx.userAgent, payload: { document_id: d.id, doc_class: d.doc_class, kind: d.kind } });
+    send(res, 200, "document_link", { document_id: d.id, title: (d.metadata["title"] as string | undefined) ?? (d.metadata["filename"] as string | undefined) ?? d.doc_class ?? d.kind, doc_class: d.doc_class, mime_type: d.mime_type, url, expires_at: new Date(Number(exp)).toISOString() });
+  }
+  async function documentContent(req: IncomingMessage, res: ServerResponse, url: URL, id: string): Promise<void> {
+    const at = now(); const ctx = await auth.authenticate(req, at);
+    const exp = url.searchParams.get("exp") ?? ""; const sig = url.searchParams.get("sig") ?? "";
+    if (!/^\d+$/.test(exp) || Number(exp) <= Date.parse(at)) throw new BorrowerError(410, "DEEP_LINK_EXPIRED");
+    if (!sameSig(sig, signUrl(ctx.session.session_id, id, exp))) throw new BorrowerError(403, "PARTY_SCOPE", undefined, "the signed URL is bound to another session");
+    const d = await visibleDocument(ctx, id);
+    const blob = await blobs.get(d.id);
+    if (!blob) throw new BorrowerError(404, "DOCUMENT_CONTENT_UNAVAILABLE");
+    res.writeHead(200, { "content-type": blob.mime_type, "content-length": blob.bytes.length, "cache-control": "no-store", "content-disposition": `inline${blob.filename ? `; filename="${blob.filename.replace(/"/g, "")}"` : ""}` });
+    res.end(blob.bytes);
+  }
+
+  async function handle(req: IncomingMessage, res: ServerResponse, url: URL, method: string): Promise<boolean> {
+    const path = url.pathname;
+    if (!path.startsWith("/v1/borrower/") && path !== "/v1/webhooks/stripe") return false;
+    const started = Date.now();
+    const log = (status: number, extra: Record<string, unknown> = {}): void => logger.info("http", { method, path, status, ms: Date.now() - started, surface: "borrower", ...extra });
+    try {
+      let m: RegExpExecArray | null;
+      if (method === "POST" && path === "/v1/borrower/auth/otp") await otp(req, res);
+      else if (method === "POST" && path === "/v1/borrower/auth/passkey") await passkey(req, res);
+      else if (method === "POST" && path === "/v1/borrower/auth/l2") await stepUpL2(req, res);
+      else if (method === "POST" && path === "/v1/borrower/identity/stripe/session") await identitySession(req, res);
+      else if (method === "POST" && path === "/v1/webhooks/stripe") await stripeWebhook(req, res);
+      else if (method === "GET" && path === "/v1/borrower/me") await me(req, res);
+      else if (method === "GET" && (m = /^\/v1\/borrower\/deeplink\/([^/]+)$/.exec(path))) await deepLink(req, res, decodeURIComponent(m[1]!));
+      else if (method === "POST" && path === "/v1/borrower/documents") await uploadDocument(req, res);
+      else if (method === "GET" && (m = /^\/v1\/borrower\/documents\/([^/]+)\/content$/.exec(path))) await documentContent(req, res, url, decodeURIComponent(m[1]!));
+      else if (method === "GET" && (m = /^\/v1\/borrower\/documents\/([^/]+)$/.exec(path))) await documentLink(req, res, decodeURIComponent(m[1]!));
+      else { send(res, 404, "error", new BorrowerError(404, "NOT_FOUND").body()); log(404); return true; }
+      log(res.statusCode);
+    } catch (e) {
+      const be = toBorrowerError(e);
+      if (be.status >= 500) logger.error("borrower.unhandled", { method, path, error: e });
+      send(res, be.status, "error", be.body());
+      log(be.status, { code: be.code, ...(be.gate ? { gate: be.gate } : {}), reason: be.message });
+    }
+    return true;
+  }
+  return { handle, auth, ui, stripe, blobs };
+}

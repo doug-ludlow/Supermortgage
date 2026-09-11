@@ -222,6 +222,39 @@ trigger on the existing loan through funding, boarding, purchase, payment, payof
 over HTTP. It is re-runnable against the same database: entity ids are platform-wide, so the fixture ids it writes in
 loan or application scope carry a per-run suffix.
 
+## Borrower API
+
+The borrower surface (`apps/borrower`, docs/ux) talks to the same service on `/v1/borrower/*` and `/v1/webhooks/*`
+(src/runtime/borrower/routes.ts; the route list is in the comment block at the top of src/runtime/server.ts). Those
+routes never accept `API_TOKEN`: a borrower authenticates with a one-time code or a passkey and carries a session token
+(`sessions`, migration 0111 — 30 minutes idle before funding, 7 days with a passkey in servicing; money movement needs a
+code verified within 10 minutes). Every response passes the allow-list serializer (src/runtime/borrower/serialize.ts)
+and every refusal is `{ code, gate?, copy_key }`.
+
+Environment: `ENVIRONMENT=production` turns off the FAKE code echo (below); `BORROWER_RP_ID` (WebAuthn relying-party id,
+default `localhost`) and `BORROWER_ORIGINS` (comma-separated allowed origins) must name the borrower app's host;
+`BORROWER_URL_SECRET` signs the short-lived document URLs (random per process when unset — set it when there is more
+than one instance); `BORROWER_APP_URL` is the base of the vendor return routes (`/return/{vendor}/{card_instance_id}`).
+
+**Every vendor behind the borrower API is a FAKE in nonprod.** Each one is a port with an in-memory test double that
+logs `vendor: "FAKE"`; the swap is one constructor argument on `createApiServer({ borrower: { … } })`:
+
+| What | FAKE today | Marker | Swap for |
+|---|---|---|---|
+| One-time codes (SMS / e-mail) | `FakeEdelivery` (src/infra/integrations/delivery.ts) — the platform's own e-delivery port carries the code; the response says `delivery: "FAKE"` and, outside production, echoes the code as `fake_code` | log `borrower.otp.requested … vendor: "FAKE"` | a real `EdeliveryPort` (Twilio / SES) wired through `Runtime.ports.edelivery` — the same swap the notices need |
+| Stripe Identity (L3) | `FakeStripeIdentity` (src/runtime/borrower/vendors/fake-stripe-identity.ts): sessions `vs_FAKE_…`, the webhook needs `stripe-signature: FAKE`, the "document" reads back the application's own name / DOB / address | log `stripe_identity … vendor: "FAKE"`; response `delivery: "FAKE"` | a `StripeIdentityPort` over VerificationSessions.create + `Stripe-Signature` HMAC verification with `STRIPE_WEBHOOK_SECRET` |
+| Passkey attestation | src/runtime/borrower/webauthn.ts verifies challenges, rpIdHash, flags, signCount and the ES256 / RS256 signature for real; the attestation *statement* is accepted unverified | `attestation_verified: "FAKE"` in the registration response | `@simplewebauthn/server` (`verifyRegistrationResponse` / `verifyAuthenticationResponse`) if attestation policy matters |
+| Document bytes | `FakeBlobStore` (src/runtime/borrower/vendors/fake-blob-store.ts): in memory, per instance; `documents.storage_uri = fake-blob://…` | `metadata.blob_store = "fake-blob"` | a `BlobStorePort` over Cloud Storage (CMEK bucket per environment; signed URLs minted by the service account) |
+
+What is real regardless of the fakes: the `sessions` / `auth_challenges` / `passkey_credentials` rows, party scoping
+(02 §6) through `application_borrowers.party_id` / `borrowers.party_id` / `loan_parties`, the 22.6 `verifyIdentity`
+command the webhook executes on the bus (`identity.verified` satisfies `SM_IDENTITY_IAL2_GATE`), the
+`application_borrowers.prefill` rows it writes as `source = stripe_identity` pending the borrower's confirmation, the
+22.1 `ingestDocument` command an upload executes, `ui_events`, and the `esign_portal` notice channel (DELTA-08:
+`notice_deliveries.card_instance_id` beside `rendered_document_id`).
+
+The proof is `node --test src/runtime/borrower/borrower.test.ts` against a migrated `supermortgage_test`.
+
 ## 7. What is and is not real in nonprod
 
 - **`INTEGRATIONS=fake`.** Every vendor integration (lockbox/BAI2, e-OSCAR,

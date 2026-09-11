@@ -29,6 +29,8 @@ export interface Notice {
   readonly applicationId?: string;
   readonly caseId?: string;
   readonly recipients: readonly Recipient[];
+  /** `documents.id` of the rendered PDF (notices.rendered_document_id) when the caller has stored it; carried onto every delivery as evidence. */
+  readonly renderedDocumentId?: string;
   readonly payload: Record<string, unknown>;
   readonly payloadHash: string;
   readonly rendered: Rendered;
@@ -41,7 +43,9 @@ export interface Notice {
   supersededBy?: string;
   readonly deliveries: Delivery[];
 }
-export interface Delivery { readonly attemptNo: number; readonly partyId: string; readonly channel: Channel; readonly vendor: string; readonly vendorPieceId: string; readonly submittedAt: string; mailedAt?: string; emailStatus?: "sent" | "delivered" | "bounced" | "complained"; returnedAt?: string; returnReason?: string; fallbackOf?: number; readonly satisfiesTimer: boolean; }
+export interface Delivery { readonly attemptNo: number; readonly partyId: string; readonly channel: Channel; readonly vendor: string; readonly vendorPieceId: string; readonly submittedAt: string; mailedAt?: string; emailStatus?: "sent" | "delivered" | "bounced" | "complained"; returnedAt?: string; returnReason?: string; fallbackOf?: number; readonly satisfiesTimer: boolean;
+  /** DELTA-08: for `esign_portal`, the card_instances row that carried the document — delivery evidence beside `renderedDocumentId`. */
+  readonly cardInstanceId?: string; readonly renderedDocumentId?: string; }
 
 export interface NoticeServiceDeps {
   readonly registry: NoticeRegistry;
@@ -67,7 +71,7 @@ export class NoticeService {
   template(code: string): NoticeTemplate { return this.deps.registry.template(code); }
 
   /** renderNotice + evaluateChecklist. A failing block rule holds the notice (it can never be sent); missing addresses hold too. */
-  render(input: { templateCode: string; loanId?: string; applicationId?: string; caseId?: string; recipients: readonly Recipient[]; payload: Record<string, unknown>; asOf: PlainDate }): Notice {
+  render(input: { templateCode: string; loanId?: string; applicationId?: string; caseId?: string; recipients: readonly Recipient[]; payload: Record<string, unknown>; asOf: PlainDate; renderedDocumentId?: string }): Notice {
     const t = this.deps.registry.template(input.templateCode);
     const v: TemplateVersion | undefined = this.deps.registry.activeVersion(t.code, input.asOf);
     if (!v) throw new RangeError(`no approved version of ${t.code} in effect on ${input.asOf}`);
@@ -75,7 +79,7 @@ export class NoticeService {
     const checklist = evaluateChecklist(v, input.payload, rendered);
     const now = this.deps.clock.now();
     const n: Notice = { id: randomUUID(), templateCode: t.code, templateVersion: v.version, recipients: input.recipients, payload: input.payload, payloadHash: rendered.payloadHash, rendered, checklist, producedAt: now, status: "rendered", deliveries: [],
-      ...(input.loanId ? { loanId: input.loanId } : {}), ...(input.applicationId ? { applicationId: input.applicationId } : {}), ...(input.caseId ? { caseId: input.caseId } : {}) };
+      ...(input.loanId ? { loanId: input.loanId } : {}), ...(input.applicationId ? { applicationId: input.applicationId } : {}), ...(input.caseId ? { caseId: input.caseId } : {}), ...(input.renderedDocumentId ? { renderedDocumentId: input.renderedDocumentId } : {}) };
     if (!checklist.passed) { n.status = "held"; n.heldReason = `checklist: ${checklist.blocking.map((r) => `${r.rule_id} (${r.citation})`).join(", ")}`; }
     else if (input.recipients.length === 0) { n.status = "held"; n.heldReason = "no recipients"; }
     this.notices.set(n.id, n);
@@ -101,7 +105,7 @@ export class NoticeService {
       else await this.electronic(n, r, d, now);
     }
     n.status = "sent"; n.sentAt = now;
-    this.emit("notice.sent", n, { channels: decisions.map((d) => ({ party_id: d.partyId, channel: d.channel, satisfies_timer: d.satisfiesTimer })), sent_at: now });
+    this.emit("notice.sent", n, { channels: decisions.map((d) => ({ party_id: d.partyId, channel: d.channel, satisfies_timer: d.satisfiesTimer, ...(d.cardInstanceId ? { card_instance_id: d.cardInstanceId } : {}) })), sent_at: now, ...(n.renderedDocumentId ? { rendered_document_id: n.renderedDocumentId } : {}) });
     return n;
   }
 
@@ -109,15 +113,17 @@ export class NoticeService {
     const t = this.template(n.templateCode);
     const attemptNo = n.deliveries.length + 1;
     const job = await this.deps.printMail.submit({ jobId: `${n.id}:${attemptNo}`, noticeId: n.id, template: n.templateCode, recipient: { name: r.name, address: r.mailingAddress ?? "" }, pages: Math.max(1, ...n.rendered.blocks.map((b) => b.page)), separateDocument: t.separateDocument }, now);
-    n.deliveries.push({ attemptNo, partyId: r.partyId, channel: d.channel, vendor: "print-mail", vendorPieceId: job.jobId, submittedAt: now, satisfiesTimer: d.satisfiesTimer, ...(fallbackOf !== undefined ? { fallbackOf } : {}) });
+    n.deliveries.push({ attemptNo, partyId: r.partyId, channel: d.channel, vendor: "print-mail", vendorPieceId: job.jobId, submittedAt: now, satisfiesTimer: d.satisfiesTimer, ...(fallbackOf !== undefined ? { fallbackOf } : {}), ...(n.renderedDocumentId ? { renderedDocumentId: n.renderedDocumentId } : {}) });
     // §1024.37(d)(5) / comment 37(d)(5)-1: a notice put into production must mail within 5 federal business days.
     const productionDate = now.slice(0, 10) as PlainDate;
     this.emit("notice.production", n, { attempt_no: attemptNo, production_at: now, mail_by: addBusinessDays(productionDate, 5, this.deps.federalCalendar ?? federal) });
   }
   private async electronic(n: Notice, r: Recipient, d: ChannelDecision, now: string): Promise<void> {
     const attemptNo = n.deliveries.length + 1;
-    const res = await this.deps.edelivery.send({ messageId: `${n.id}:${attemptNo}`, noticeId: n.id, channel: d.channel === "portal_post" ? "portal" : d.channel === "sms_link" ? "sms" : "email", to: r.email ?? "", subject: this.template(n.templateCode).name, consentId: d.consentId ?? "" }, now);
-    const delivery: Delivery = { attemptNo, partyId: r.partyId, channel: d.channel, vendor: "e-delivery", vendorPieceId: res.messageId, submittedAt: now, emailStatus: res.status === "bounced" ? "bounced" : "sent", satisfiesTimer: d.satisfiesTimer };
+    // esign_portal (DELTA-08): the card in the borrower thread is the delivery; the e-delivery port only posts the availability message, and the card id is the evidence
+    const res = await this.deps.edelivery.send({ messageId: `${n.id}:${attemptNo}`, noticeId: n.id, channel: d.channel === "portal_post" || d.channel === "esign_portal" ? "portal" : d.channel === "sms_link" ? "sms" : "email", to: r.email ?? "", subject: this.template(n.templateCode).name, consentId: d.consentId ?? "" }, now);
+    const delivery: Delivery = { attemptNo, partyId: r.partyId, channel: d.channel, vendor: d.channel === "esign_portal" ? "borrower-app" : "e-delivery", vendorPieceId: res.messageId, submittedAt: now, emailStatus: res.status === "bounced" ? "bounced" : "sent", satisfiesTimer: d.satisfiesTimer,
+      ...(d.cardInstanceId ? { cardInstanceId: d.cardInstanceId } : {}), ...(n.renderedDocumentId ? { renderedDocumentId: n.renderedDocumentId } : {}) };
     n.deliveries.push(delivery);
     if (res.status === "bounced") await this.bounce(n, r, delivery, now);
   }

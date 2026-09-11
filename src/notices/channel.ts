@@ -11,10 +11,13 @@
 import type { NoticeTemplate } from "./registry.ts";
 import type { Consent } from "../domain/notices/esign.ts";
 
-export type Channel = "mail_first_class" | "mail_certified" | "email_link" | "portal_post" | "sms_link";
+/** `esign_portal` (DELTA-08): the notice is delivered by a DocumentCard / NoticeCard in the borrower thread; the card instance is the delivery evidence beside the rendered document. */
+export type Channel = "mail_first_class" | "mail_certified" | "email_link" | "portal_post" | "sms_link" | "esign_portal";
 export interface Recipient { readonly partyId: string; readonly name: string; readonly mailingAddress: string | null; readonly email?: string; readonly consent?: Consent; readonly portalUser?: boolean; }
-export interface ChannelDecision { readonly partyId: string; readonly channel: Channel; readonly reason: string; readonly consentId?: string; readonly satisfiesTimer: boolean; readonly held?: string; }
-export interface ChannelContext { readonly stateMandatedMail?: boolean; readonly certified?: boolean; readonly preferPortal?: boolean; }
+export interface ChannelDecision { readonly partyId: string; readonly channel: Channel; readonly reason: string; readonly consentId?: string; readonly satisfiesTimer: boolean; readonly held?: string; readonly cardInstanceId?: string; }
+export interface ChannelContext { readonly stateMandatedMail?: boolean; readonly certified?: boolean; readonly preferPortal?: boolean;
+  /** DELTA-08: party id → the `card_instances` row that will carry the document; with an active E-SIGN consent for the class the channel is `esign_portal` and the card id is recorded as delivery evidence. */
+  readonly cardInstances?: Readonly<Record<string, string>>; }
 
 export function decideChannel(t: NoticeTemplate, recipients: readonly Recipient[], ctx: ChannelContext = {}): ChannelDecision[] {
   const mail: Channel = ctx.certified ? "mail_certified" : "mail_first_class";
@@ -30,6 +33,8 @@ export function decideChannel(t: NoticeTemplate, recipients: readonly Recipient[
     if (!c) return mailed("no E-SIGN consent (7.4 rule 1)");
     if (c.status !== "active") return mailed(`consent ${c.status} (7.4 rule ${c.status === "suspect" ? "8" : c.status === "reconsent_required" ? "6" : "7"})`);
     if (!c.classes.includes(t.noticeClass)) return mailed(`consent does not cover class ${t.noticeClass} (7.4 rule 1)`);
+    const card = ctx.cardInstances?.[r.partyId];
+    if (card) return { partyId: r.partyId, channel: "esign_portal", reason: `active E-SIGN consent for ${t.noticeClass}; card-delivered (DELTA-08)`, consentId: `${c.party_id}:${c.disclosure_version}`, satisfiesTimer: true, cardInstanceId: card };
     const channel: Channel = ctx.preferPortal && r.portalUser ? "portal_post" : "email_link";
     return { partyId: r.partyId, channel, reason: `active E-SIGN consent for ${t.noticeClass}`, consentId: `${c.party_id}:${c.disclosure_version}`, satisfiesTimer: true };
   });

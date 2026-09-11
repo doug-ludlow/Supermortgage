@@ -1,5 +1,5 @@
 {
- "brief": "spec units built 5465/7446 (73.4%): tids 1446/1914, tables 544/717, timers 1557/1987, notices 258/306, tools 849/1311, figures 811/1211; processes at 100%: 125/165",
+ "brief": "spec units built 5482/7446 (73.6%): tids 1446/1914, tables 548/717, timers 1570/1987, notices 258/306, tools 849/1311, figures 811/1211; processes at 100%: 125/165",
  "totals": {
   "tids": {
    "spec": 1914,
@@ -7,11 +7,11 @@
   },
   "tables": {
    "spec": 717,
-   "built": 544
+   "built": 548
   },
   "timers": {
    "spec": 1987,
-   "built": 1557
+   "built": 1570
   },
   "notices": {
    "spec": 306,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 7446,
-   "built": 5465
+   "built": 5482
   }
  },
  "sections": {
@@ -159,13 +159,13 @@
   },
   "22": {
    "spec": 368,
-   "built": 71,
+   "built": 85,
    "processes": 6,
    "done": 0
   },
   "23": {
    "spec": 219,
-   "built": 1,
+   "built": 4,
    "processes": 4,
    "done": 0
   },
@@ -5751,13 +5751,8 @@
    },
    "tables": {
     "spec": 4,
-    "built": 0,
-    "missing": [
-     "credit_alerts",
-     "credit_freeze_actions",
-     "credit_reports",
-     "inquiry_explanations"
-    ]
+    "built": 4,
+    "missing": []
    },
    "timers": {
     "spec": 7,
@@ -5790,9 +5785,9 @@
    },
    "units": {
     "spec": 41,
-    "built": 19
+    "built": 23
    },
-   "pct": 46.3
+   "pct": 56.1
   },
   {
    "process": "22.3",
@@ -5831,18 +5826,9 @@
    },
    "timers": {
     "spec": 9,
-    "built": 1,
-    "armable": 2,
-    "missing": [
-     "FNMA_B3_2_02_DU_CLOSE_BY_GATE",
-     "FNMA_B3_3_1_01_CONTINUANCE_3Y",
-     "FNMA_B3_3_1_02_4506C_VALID_120",
-     "FNMA_B3_3_1_04_SE_VERIFY_120",
-     "FNMA_B3_3_1_04_VVOE_10BD",
-     "FNMA_B3_3_1_04_VVOE_ALT_15BD",
-     "FNMA_B3_3_3_03_OFFER_START_WINDOW",
-     "SM_VVOE_SCHEDULE_2BD"
-    ]
+    "built": 9,
+    "armable": 9,
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -5889,9 +5875,9 @@
    },
    "units": {
     "spec": 55,
-    "built": 2
+    "built": 10
    },
-   "pct": 3.6
+   "pct": 18.2
   },
   {
    "process": "22.4",
@@ -5929,11 +5915,10 @@
    },
    "timers": {
     "spec": 11,
-    "built": 1,
-    "armable": 2,
+    "built": 2,
+    "armable": 3,
     "missing": [
      "FNMA_B2_1_3_02_LCOR_CASHBACK_GATE",
-     "FNMA_B3_2_02_DU_CLOSE_BY_GATE",
      "FNMA_B3_2_10_DU_FINAL_MATCH_GATE",
      "FNMA_B3_4_1_02_IPC_LIMIT_GATE",
      "FNMA_B3_4_2_02_LARGE_DEPOSIT_GATE",
@@ -6040,9 +6025,9 @@
    },
    "units": {
     "spec": 109,
-    "built": 4
+    "built": 5
    },
-   "pct": 3.7
+   "pct": 4.6
   },
   {
    "process": "22.5",
@@ -6077,10 +6062,9 @@
    },
    "timers": {
     "spec": 10,
-    "built": 1,
-    "armable": 2,
+    "built": 2,
+    "armable": 3,
     "missing": [
-     "FNMA_B3_3_1_01_CONTINUANCE_3Y",
      "FNMA_B3_6_01_LIABILITY_RECALC_GATE",
      "FNMA_B3_6_02_DU_DTI_50_GATE",
      "FNMA_B3_6_05_10MO_REMAINING_RULE",
@@ -6138,9 +6122,9 @@
    },
    "units": {
     "spec": 54,
-    "built": 2
+    "built": 3
    },
-   "pct": 3.7
+   "pct": 5.6
   },
   {
    "process": "22.6",
@@ -6286,12 +6270,11 @@
    },
    "timers": {
     "spec": 8,
-    "built": 1,
-    "armable": 5,
+    "built": 2,
+    "armable": 6,
     "missing": [
      "FNMA_B3_2_01_DU_ARCHIVE_270",
      "FNMA_B3_2_01_DU_ARCHIVE_540",
-     "FNMA_B3_2_02_DU_CLOSE_BY_GATE",
      "FNMA_B3_2_10_DU_FINAL_MATCH_GATE",
      "FNMA_DU_IMPACT_MEMO_SUPPORT_120",
      "FNMA_DU_RETURN_FILE_16_17_RETIRE",
@@ -6342,9 +6325,9 @@
    },
    "units": {
     "spec": 50,
-    "built": 1
+    "built": 2
    },
-   "pct": 2.0
+   "pct": 4.0
   },
   {
    "process": "23.2",
@@ -6382,11 +6365,10 @@
    },
    "timers": {
     "spec": 5,
-    "built": 0,
-    "armable": 2,
+    "built": 1,
+    "armable": 3,
     "missing": [
      "FNMA_B2_2_06_HOMEOWNERSHIP_ED_GATE",
-     "FNMA_B3_2_02_DU_CLOSE_BY_GATE",
      "FNMA_B5_6_01_COUNSELING_CREDIT_12M",
      "REGB_1002_9_DECISION_30",
      "SM_DU_CONDITIONS_SLA_4H"
@@ -6446,9 +6428,9 @@
    },
    "units": {
     "spec": 58,
-    "built": 0
+    "built": 1
    },
-   "pct": 0.0
+   "pct": 1.7
   },
   {
    "process": "23.3",
@@ -6484,10 +6466,9 @@
    },
    "timers": {
     "spec": 9,
-    "built": 0,
-    "armable": 6,
+    "built": 1,
+    "armable": 7,
     "missing": [
-     "FNMA_B3_2_02_DU_CLOSE_BY_GATE",
      "FNMA_D1_2_01_PREFUNDING_PRIOR_TO_CLOSING_GATE",
      "REGB_1002_9_DECISION_30",
      "SM_UW_CONDITIONAL_APPROVAL_SLA_1BD",
@@ -6537,9 +6518,9 @@
    },
    "units": {
     "spec": 44,
-    "built": 0
+    "built": 1
    },
-   "pct": 0.0
+   "pct": 2.3
   },
   {
    "process": "23.4",

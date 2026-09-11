@@ -1,24 +1,24 @@
 {
- "brief": "spec units built 7446/7446 (100.0%): tids 1914/1914, tables 717/717, timers 1987/1987, notices 306/306, tools 1311/1311, figures 1211/1211; processes at 100%: 165/165",
+ "brief": "spec units built 7488/7686 (97.4%): tids 1914/2057, tables 717/724, timers 2029/2029, notices 306/306, tools 1311/1359, figures 1211/1211; processes at 100%: 165/178",
  "totals": {
   "tids": {
-   "spec": 1914,
+   "spec": 2057,
    "built": 1914
   },
   "tables": {
-   "spec": 717,
+   "spec": 724,
    "built": 717
   },
   "timers": {
-   "spec": 1987,
-   "built": 1987
+   "spec": 2029,
+   "built": 2029
   },
   "notices": {
    "spec": 306,
    "built": 306
   },
   "tools": {
-   "spec": 1311,
+   "spec": 1359,
    "built": 1311
   },
   "figures": {
@@ -26,8 +26,8 @@
    "built": 1211
   },
   "units": {
-   "spec": 7446,
-   "built": 7446
+   "spec": 7686,
+   "built": 7488
   }
  },
  "sections": {
@@ -216,6 +216,12 @@
    "built": 140,
    "processes": 3,
    "done": 3
+  },
+  "32": {
+   "spec": 240,
+   "built": 42,
+   "processes": 13,
+   "done": 0
   }
  },
  "done": [
@@ -7150,6 +7156,751 @@
     "built": 55
    },
    "pct": 100.0
+  },
+  {
+   "process": "32.1",
+   "title": "Shell, theme, component library and Record pane",
+   "tids": {
+    "spec": 0,
+    "built": 0,
+    "todo": 0,
+    "missing": []
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "send_card",
+     "resolve_card_by_evidence",
+     "create_deep_link"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 3,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "32.2",
+   "title": "Data contracts: projections, commands, events, timers, notices, security, API",
+   "tids": {
+    "spec": 0,
+    "built": 0,
+    "todo": 0,
+    "missing": []
+   },
+   "tables": {
+    "spec": 7,
+    "built": 0,
+    "missing": [
+     "card_instance_events",
+     "card_instances",
+     "conversations",
+     "deep_links",
+     "messages",
+     "sessions",
+     "ui_events"
+    ]
+   },
+   "timers": {
+    "spec": 42,
+    "built": 42,
+    "armable": 42,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 45,
+    "built": 0,
+    "missing": [
+     "lead.start",
+     "lead.acknowledgeAiDisclosure",
+     "party.authenticate",
+     "party.startIdentity",
+     "consent.capture",
+     "credit.authorize",
+     "application.confirmField",
+     "application.setGoal",
+     "application.answerDeclarations",
+     "application.answerDemographics",
+     "application.affirmJointIntent",
+     "application.inviteParty",
+     "verification.connect",
+     "document.upload",
+     "explanation.submit",
+     "disclosure.acknowledgeReceipt",
+     "intent.record",
+     "lock.request",
+     "lock.requestExtension",
+     "counteroffer.respond",
+     "application.withdraw",
+     "mi.selectPlan",
+     "valuation.scheduleAccess",
+     "rov.request",
+     "insurance.submitEvidence",
+     "closing.selectSlot",
+     "closing.captureEsignConsent",
+     "rescission.exercise",
+     "autodraft.enroll",
+     "autodraft.change",
+     "autodraft.pause",
+     "autodraft.revoke",
+     "payment.makeOneTime",
+     "payment.extraPrincipal",
+     "escrow.electShortage",
+     "escrow.requestWaiver",
+     "pmi.requestCancellation",
+     "case.open",
+     "lossmit.requestAssistance",
+     "lossmit.respondToOffer",
+     "lossmit.appeal",
+     "offer.respond",
+     "refi.request",
+     "human.request",
+     "party.updateContact"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 94,
+    "built": 42
+   },
+   "pct": 44.7
+  },
+  {
+   "process": "32.3",
+   "title": "Entry and the five-minute qualification",
+   "tids": {
+    "spec": 30,
+    "built": 0,
+    "todo": 30,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18,
+     19,
+     20,
+     21,
+     22,
+     23,
+     24,
+     25,
+     26,
+     27,
+     28,
+     29,
+     30
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 30,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "32.4",
+   "title": "Disclosures, intent to proceed, lock, revised LEs",
+   "tids": {
+    "spec": 10,
+    "built": 0,
+    "todo": 10,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 10,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "32.5",
+   "title": "Verification, needs list, conditions, second borrower",
+   "tids": {
+    "spec": 11,
+    "built": 0,
+    "todo": 11,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 11,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "32.6",
+   "title": "Decision, property, title, insurance, MI, clear to close",
+   "tids": {
+    "spec": 12,
+    "built": 0,
+    "todo": 12,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 12,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "32.7",
+   "title": "CD, closing, rescission, funding, boarding",
+   "tids": {
+    "spec": 13,
+    "built": 0,
+    "todo": 13,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 13,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "32.8",
+   "title": "Servicing: loan home, payments, autopay, statements, escrow",
+   "tids": {
+    "spec": 11,
+    "built": 0,
+    "todo": 11,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 11,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "32.9",
+   "title": "Servicing: insurance, PMI, ARM, life events, requests",
+   "tids": {
+    "spec": 11,
+    "built": 0,
+    "todo": 11,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 11,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "32.10",
+   "title": "Servicing: hardship and delinquency",
+   "tids": {
+    "spec": 11,
+    "built": 0,
+    "todo": 11,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 11,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "32.11",
+   "title": "Rate-watch and the re-refinance loop",
+   "tids": {
+    "spec": 10,
+    "built": 0,
+    "todo": 10,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 10,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "32.12",
+   "title": "Exits",
+   "tids": {
+    "spec": 8,
+    "built": 0,
+    "todo": 8,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 8,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "32.13",
+   "title": "Cross-cutting: acceptance harness, copy library rules, side-quest catalogue",
+   "tids": {
+    "spec": 16,
+    "built": 0,
+    "todo": 16,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 16,
+    "built": 0
+   },
+   "pct": 0.0
   }
  ]
 }

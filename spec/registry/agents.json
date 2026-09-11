@@ -464,7 +464,12 @@
     "4.3",
     "4.5",
     "7.4",
-    "11.3"
+    "11.3",
+    "32.10",
+    "32.11",
+    "32.12",
+    "32.8",
+    "32.9"
    ],
    "tools": [
     "documents.search",
@@ -498,7 +503,9 @@
     "human_agent",
     "officer",
     "licensed_specialist",
-    "lossmit_reviewer"
+    "lossmit_reviewer",
+    "mlo_of_record",
+    "underwriting_reviewer"
    ]
   },
   {
@@ -1031,7 +1038,13 @@
     "20.1",
     "20.2",
     "20.3",
-    "21.1"
+    "21.1",
+    "32.1",
+    "32.3",
+    "32.4",
+    "32.5",
+    "32.6",
+    "32.7"
    ],
    "tools": [
     "loadUniverse",
@@ -1069,7 +1082,10 @@
     "renderForm1003",
     "requestESign",
     "openEscalation",
-    "logSafeActivity"
+    "logSafeActivity",
+    "send_card",
+    "resolve_card_by_evidence",
+    "create_deep_link"
    ],
    "escalates_to": [
     "human_agent",
@@ -1077,7 +1093,9 @@
     "officer",
     "qc_officer",
     "mlo_of_record",
-    "underwriting_reviewer"
+    "underwriting_reviewer",
+    "attorney",
+    "funding_approver"
    ]
   },
   {
@@ -1819,6 +1837,66 @@
     "counsel",
     "fnma_portal_operator",
     "licensed_specialist",
+    "mlo_of_record",
+    "officer",
+    "underwriting_reviewer"
+   ]
+  },
+  {
+   "agent": "borrower-app",
+   "processes": [
+    "32.13",
+    "32.2"
+   ],
+   "tools": [
+    "lead.start",
+    "lead.acknowledgeAiDisclosure",
+    "party.authenticate",
+    "party.startIdentity",
+    "consent.capture",
+    "credit.authorize",
+    "application.confirmField",
+    "application.setGoal",
+    "application.answerDeclarations",
+    "application.answerDemographics",
+    "application.affirmJointIntent",
+    "application.inviteParty",
+    "verification.connect",
+    "document.upload",
+    "explanation.submit",
+    "disclosure.acknowledgeReceipt",
+    "intent.record",
+    "lock.request",
+    "lock.requestExtension",
+    "counteroffer.respond",
+    "application.withdraw",
+    "mi.selectPlan",
+    "valuation.scheduleAccess",
+    "rov.request",
+    "insurance.submitEvidence",
+    "closing.selectSlot",
+    "closing.captureEsignConsent",
+    "rescission.exercise",
+    "autodraft.enroll",
+    "autodraft.change",
+    "autodraft.pause",
+    "autodraft.revoke",
+    "payment.makeOneTime",
+    "payment.extraPrincipal",
+    "escrow.electShortage",
+    "escrow.requestWaiver",
+    "pmi.requestCancellation",
+    "case.open",
+    "lossmit.requestAssistance",
+    "lossmit.respondToOffer",
+    "lossmit.appeal",
+    "offer.respond",
+    "refi.request",
+    "human.request",
+    "party.updateContact"
+   ],
+   "escalates_to": [
+    "human_agent",
     "mlo_of_record",
     "officer",
     "underwriting_reviewer"
@@ -5853,6 +5931,254 @@
     "fnma_portal_operator",
     "officer",
     "signing_officer"
+   ]
+  },
+  {
+   "process": "32.1",
+   "agent": "intake",
+   "agents_named": [
+    "intake",
+    "borrower-comms"
+   ],
+   "tools": [
+    "send_card",
+    "resolve_card_by_evidence",
+    "create_deep_link"
+   ],
+   "guardrails": "the automation disclosure precedes every exchange; no rate or payment is presented as personal before `mlo.review.completed{approved}`; no card is created for a party other than the one it is for; no consent, disclosure receipt, lock, intent, signature or authorization exists as chat text; no DU, credit-report, fraud, QC or compliance content is ever rendered. Escalations: `mlo_of_record` for terms and locks, `human_agent` on \"human\" or any distress keyword, `officer` for money-field waivers, `attorney` never from the shell.",
+   "escalates_to": [
+    "attorney",
+    "human_agent",
+    "mlo_of_record",
+    "officer"
+   ]
+  },
+  {
+   "process": "32.10",
+   "agent": "borrower-comms",
+   "agents_named": [
+    "borrower-comms"
+   ],
+   "tools": [],
+   "guardrails": "never a decline, \"you don't qualify\", \"guaranteed\" or an investor reference in copy (32.1 \u00a77.3); never a personal rate before `mlo.review.completed{approved}`; never a consent by voice or chat; never a money-field change without `officer` approval; never a date the Timer Engine did not compute. Escalations: `human_agent` on \"human\" or distress; the human roles the owning process names (`mlo_of_record`, `underwriting_reviewer`, `officer`) for their acts.",
+   "escalates_to": [
+    "human_agent",
+    "lossmit_reviewer",
+    "mlo_of_record",
+    "officer",
+    "underwriting_reviewer"
+   ]
+  },
+  {
+   "process": "32.11",
+   "agent": "borrower-comms",
+   "agents_named": [
+    "borrower-comms"
+   ],
+   "tools": [],
+   "guardrails": "never a decline, \"you don't qualify\", \"guaranteed\" or an investor reference in copy (32.1 \u00a77.3); never a personal rate before `mlo.review.completed{approved}`; never a consent by voice or chat; never a money-field change without `officer` approval; never a date the Timer Engine did not compute. Escalations: `human_agent` on \"human\" or distress; the human roles the owning process names (`mlo_of_record`, `underwriting_reviewer`, `officer`) for their acts.",
+   "escalates_to": [
+    "human_agent",
+    "mlo_of_record",
+    "officer",
+    "underwriting_reviewer"
+   ]
+  },
+  {
+   "process": "32.12",
+   "agent": "borrower-comms",
+   "agents_named": [
+    "borrower-comms"
+   ],
+   "tools": [],
+   "guardrails": "never a decline, \"you don't qualify\", \"guaranteed\" or an investor reference in copy (32.1 \u00a77.3); never a personal rate before `mlo.review.completed{approved}`; never a consent by voice or chat; never a money-field change without `officer` approval; never a date the Timer Engine did not compute. Escalations: `human_agent` on \"human\" or distress; the human roles the owning process names (`mlo_of_record`, `underwriting_reviewer`, `officer`) for their acts.",
+   "escalates_to": [
+    "human_agent",
+    "mlo_of_record",
+    "officer",
+    "underwriting_reviewer"
+   ]
+  },
+  {
+   "process": "32.13",
+   "agent": "borrower-app",
+   "agents_named": [
+    "borrower-app"
+   ],
+   "tools": [],
+   "guardrails": "never a decline, \"you don't qualify\", \"guaranteed\" or an investor reference in copy (32.1 \u00a77.3); never a personal rate before `mlo.review.completed{approved}`; never a consent by voice or chat; never a money-field change without `officer` approval; never a date the Timer Engine did not compute. Escalations: `human_agent` on \"human\" or distress; the human roles the owning process names (`mlo_of_record`, `underwriting_reviewer`, `officer`) for their acts.",
+   "escalates_to": [
+    "human_agent",
+    "mlo_of_record",
+    "officer",
+    "underwriting_reviewer"
+   ]
+  },
+  {
+   "process": "32.2",
+   "agent": "borrower-app",
+   "agents_named": [
+    "borrower-app"
+   ],
+   "tools": [
+    "lead.start",
+    "lead.acknowledgeAiDisclosure",
+    "party.authenticate",
+    "party.startIdentity",
+    "consent.capture",
+    "credit.authorize",
+    "application.confirmField",
+    "application.setGoal",
+    "application.answerDeclarations",
+    "application.answerDemographics",
+    "application.affirmJointIntent",
+    "application.inviteParty",
+    "verification.connect",
+    "document.upload",
+    "explanation.submit",
+    "disclosure.acknowledgeReceipt",
+    "intent.record",
+    "lock.request",
+    "lock.requestExtension",
+    "counteroffer.respond",
+    "application.withdraw",
+    "mi.selectPlan",
+    "valuation.scheduleAccess",
+    "rov.request",
+    "insurance.submitEvidence",
+    "closing.selectSlot",
+    "closing.captureEsignConsent",
+    "rescission.exercise",
+    "autodraft.enroll",
+    "autodraft.change",
+    "autodraft.pause",
+    "autodraft.revoke",
+    "payment.makeOneTime",
+    "payment.extraPrincipal",
+    "escrow.electShortage",
+    "escrow.requestWaiver",
+    "pmi.requestCancellation",
+    "case.open",
+    "lossmit.requestAssistance",
+    "lossmit.respondToOffer",
+    "lossmit.appeal",
+    "offer.respond",
+    "refi.request",
+    "human.request",
+    "party.updateContact"
+   ],
+   "guardrails": "no command bypasses its gate; money fields (`payment.makeOneTime`, `payment.extraPrincipal`, autodraft amounts, `escrow.electShortage`) require a fresh L1 code within 10 minutes and never an agent-side waiver \u2014 `officer` only; `applicant_demographics` is write-once from the borrower's own card and never read back; DU findings, credit-report contents, fraud, QC and compliance internals are never serialized to the client (\u00a76). Escalations: `human_agent` for `human.request`, `mlo_of_record` for `lock.request` approval, `officer` for money-field waivers, `underwriting_reviewer` never from the clie",
+   "escalates_to": [
+    "human_agent",
+    "mlo_of_record",
+    "officer",
+    "underwriting_reviewer"
+   ]
+  },
+  {
+   "process": "32.3",
+   "agent": "intake",
+   "agents_named": [
+    "intake"
+   ],
+   "tools": [],
+   "guardrails": "never a decline, \"you don't qualify\", \"guaranteed\" or an investor reference in copy (32.1 \u00a77.3); never a personal rate before `mlo.review.completed{approved}`; never a consent by voice or chat; never a money-field change without `officer` approval; never a date the Timer Engine did not compute. Escalations: `human_agent` on \"human\" or distress; the human roles the owning process names (`mlo_of_record`, `underwriting_reviewer`, `officer`) for their acts.",
+   "escalates_to": [
+    "human_agent",
+    "mlo_of_record",
+    "officer",
+    "underwriting_reviewer"
+   ]
+  },
+  {
+   "process": "32.4",
+   "agent": "intake",
+   "agents_named": [
+    "intake"
+   ],
+   "tools": [],
+   "guardrails": "never a decline, \"you don't qualify\", \"guaranteed\" or an investor reference in copy (32.1 \u00a77.3); never a personal rate before `mlo.review.completed{approved}`; never a consent by voice or chat; never a money-field change without `officer` approval; never a date the Timer Engine did not compute. Escalations: `human_agent` on \"human\" or distress; the human roles the owning process names (`mlo_of_record`, `underwriting_reviewer`, `officer`) for their acts.",
+   "escalates_to": [
+    "human_agent",
+    "mlo_of_record",
+    "officer",
+    "underwriting_reviewer"
+   ]
+  },
+  {
+   "process": "32.5",
+   "agent": "intake",
+   "agents_named": [
+    "intake"
+   ],
+   "tools": [],
+   "guardrails": "never a decline, \"you don't qualify\", \"guaranteed\" or an investor reference in copy (32.1 \u00a77.3); never a personal rate before `mlo.review.completed{approved}`; never a consent by voice or chat; never a money-field change without `officer` approval; never a date the Timer Engine did not compute. Escalations: `human_agent` on \"human\" or distress; the human roles the owning process names (`mlo_of_record`, `underwriting_reviewer`, `officer`) for their acts.",
+   "escalates_to": [
+    "human_agent",
+    "mlo_of_record",
+    "officer",
+    "underwriting_reviewer"
+   ]
+  },
+  {
+   "process": "32.6",
+   "agent": "intake",
+   "agents_named": [
+    "intake"
+   ],
+   "tools": [],
+   "guardrails": "never a decline, \"you don't qualify\", \"guaranteed\" or an investor reference in copy (32.1 \u00a77.3); never a personal rate before `mlo.review.completed{approved}`; never a consent by voice or chat; never a money-field change without `officer` approval; never a date the Timer Engine did not compute. Escalations: `human_agent` on \"human\" or distress; the human roles the owning process names (`mlo_of_record`, `underwriting_reviewer`, `officer`) for their acts.",
+   "escalates_to": [
+    "human_agent",
+    "mlo_of_record",
+    "officer",
+    "underwriting_reviewer"
+   ]
+  },
+  {
+   "process": "32.7",
+   "agent": "intake",
+   "agents_named": [
+    "intake"
+   ],
+   "tools": [],
+   "guardrails": "never a decline, \"you don't qualify\", \"guaranteed\" or an investor reference in copy (32.1 \u00a77.3); never a personal rate before `mlo.review.completed{approved}`; never a consent by voice or chat; never a money-field change without `officer` approval; never a date the Timer Engine did not compute. Escalations: `human_agent` on \"human\" or distress; the human roles the owning process names (`mlo_of_record`, `underwriting_reviewer`, `officer`) for their acts.",
+   "escalates_to": [
+    "funding_approver",
+    "human_agent",
+    "mlo_of_record",
+    "officer",
+    "underwriting_reviewer"
+   ]
+  },
+  {
+   "process": "32.8",
+   "agent": "borrower-comms",
+   "agents_named": [
+    "borrower-comms"
+   ],
+   "tools": [],
+   "guardrails": "never a decline, \"you don't qualify\", \"guaranteed\" or an investor reference in copy (32.1 \u00a77.3); never a personal rate before `mlo.review.completed{approved}`; never a consent by voice or chat; never a money-field change without `officer` approval; never a date the Timer Engine did not compute. Escalations: `human_agent` on \"human\" or distress; the human roles the owning process names (`mlo_of_record`, `underwriting_reviewer`, `officer`) for their acts.",
+   "escalates_to": [
+    "human_agent",
+    "mlo_of_record",
+    "officer",
+    "underwriting_reviewer"
+   ]
+  },
+  {
+   "process": "32.9",
+   "agent": "borrower-comms",
+   "agents_named": [
+    "borrower-comms"
+   ],
+   "tools": [],
+   "guardrails": "never a decline, \"you don't qualify\", \"guaranteed\" or an investor reference in copy (32.1 \u00a77.3); never a personal rate before `mlo.review.completed{approved}`; never a consent by voice or chat; never a money-field change without `officer` approval; never a date the Timer Engine did not compute. Escalations: `human_agent` on \"human\" or distress; the human roles the owning process names (`mlo_of_record`, `underwriting_reviewer`, `officer`) for their acts.",
+   "escalates_to": [
+    "human_agent",
+    "mlo_of_record",
+    "officer",
+    "underwriting_reviewer"
    ]
   }
  ]

@@ -4,7 +4,8 @@
   "owner_process": "1.3",
   "mentions": [
    "1.3",
-   "17.2"
+   "17.2",
+   "32.12"
   ],
   "context": "- `notice_templates` rows: `NTC_REGX_1024_33B_GOODBYE_MS2`, `NTC_REGX_1024_33B_HELLO_MS2`, `NTC_REGX_1024_33B_COMBINED_MS2` (citation \u00a71024.33(b)(4); Appendix MS-2), each with `required_content_checklist` = [(b)(4)(i)\u2026(vi), 60-day statement, transferor stop date, transferee start date and remittance address, both contacts, optional-insurance paragraph flag]."
  },
@@ -33,7 +34,8 @@
    "3.1",
    "3.8",
    "25.4",
-   "30.3"
+   "30.3",
+   "32.2"
   ],
   "context": "- Reconciliation reports (loan-level, wire, Fannie Mae position, final accounting) as `documents` with hashes; variance log; opening ledger entries; `escrow_analyses` seed; Escrow Setup investor events; initial escrow statement `NTC_REGX_1024_17G_INITIAL_ESCROW_STMT` (3.1) when required (mail or e-delivery only with Supermortgage-verified E-SIGN consent); first Form 496/496A including transferred "
  },
@@ -43,7 +45,8 @@
   "mentions": [
    "1.7",
    "11.5",
-   "12.1"
+   "12.1",
+   "32.10"
   ],
   "context": "- Notices: `NTC_REGX_41B2_ACK_INCOMPLETE`/`NTC_REGX_41B2_ACK_COMPLETE` (\u00a71024.41(b)(2)(i)(B); checklist: receipt statement, missing documents, reasonable date \u2265 7 days and generally 30 days, foreclosure-protection language), `NTC_REGX_41C1_OFFER`/`NTC_REGX_41C1_DENIAL` (\u00a71024.41(c)(1) determination pair, 12.2; options offered/denied, specific reasons for modification denials, appeal rights and 14-"
  },
@@ -52,7 +55,8 @@
   "owner_process": "1.7",
   "mentions": [
    "1.7",
-   "12.1"
+   "12.1",
+   "32.10"
   ],
   "context": "- Notices: `NTC_REGX_41B2_ACK_INCOMPLETE`/`NTC_REGX_41B2_ACK_COMPLETE` (\u00a71024.41(b)(2)(i)(B); checklist: receipt statement, missing documents, reasonable date \u2265 7 days and generally 30 days, foreclosure-protection language), `NTC_REGX_41C1_OFFER`/`NTC_REGX_41C1_DENIAL` (\u00a71024.41(c)(1) determination pair, 12.2; options offered/denied, specific reasons for modification denials, appeal rights and 14-"
  },
@@ -61,7 +65,8 @@
   "owner_process": "1.7",
   "mentions": [
    "1.7",
-   "12.2"
+   "12.2",
+   "32.10"
   ],
   "context": "- Notices: `NTC_REGX_41B2_ACK_INCOMPLETE`/`NTC_REGX_41B2_ACK_COMPLETE` (\u00a71024.41(b)(2)(i)(B); checklist: receipt statement, missing documents, reasonable date \u2265 7 days and generally 30 days, foreclosure-protection language), `NTC_REGX_41C1_OFFER`/`NTC_REGX_41C1_DENIAL` (\u00a71024.41(c)(1) determination pair, 12.2; options offered/denied, specific reasons for modification denials, appeal rights and 14-"
  },
@@ -88,7 +93,8 @@
   "owner_process": "1.7",
   "mentions": [
    "1.7",
-   "12.3"
+   "12.3",
+   "32.10"
   ],
   "context": "- Notices: `NTC_REGX_41B2_ACK_INCOMPLETE`/`NTC_REGX_41B2_ACK_COMPLETE` (\u00a71024.41(b)(2)(i)(B); checklist: receipt statement, missing documents, reasonable date \u2265 7 days and generally 30 days, foreclosure-protection language), `NTC_REGX_41C1_OFFER`/`NTC_REGX_41C1_DENIAL` (\u00a71024.41(c)(1) determination pair, 12.2; options offered/denied, specific reasons for modification denials, appeal rights and 14-"
  },
@@ -97,7 +103,9 @@
   "owner_process": "3.3",
   "mentions": [
    "3.3",
-   "3.6"
+   "3.6",
+   "32.13",
+   "32.8"
   ],
   "context": "| `REGX_1024_17F5_SHORTAGE_NOTICE_ANNUAL` | recurring | `escrow.account.established` / prior satisfaction | computation year start | 12 months | any `escrow.statement.sent` whose payload includes a shortage/deficiency explanation, or `NTC_REGX_1024_17F_SHORTAGE` sent | sev-2 |"
  },
@@ -107,7 +115,8 @@
   "mentions": [
    "3.3",
    "3.6",
-   "17.2"
+   "17.2",
+   "32.12"
   ],
   "context": "- Notice Registry templates: `NTC_REGX_1024_17I_ANNUAL_ESCROW_STMT`, `NTC_REGX_1024_17I4_SHORT_YEAR_TRANSFEROR` / `_PAYOFF` / `_RESET` (three registry rows, one per trigger; `_TRANSFEROR` is Section 17's row for the transfer-out short-year statement \u2014 same artifact, same code, do not duplicate it), `NTC_REGX_1024_17I_POST_EXEMPTION_HISTORY`, `NTC_SM_ESCROW_VOLUNTARY_LUMPSUM_INSERT` (separate inser"
  },
@@ -132,7 +141,8 @@
   "code": "NTC_SM_ESCROW_VOLUNTARY_LUMPSUM_INSERT",
   "owner_process": "3.3",
   "mentions": [
-   "3.3"
+   "3.3",
+   "32.8"
   ],
   "context": "- Notice Registry templates: `NTC_REGX_1024_17I_ANNUAL_ESCROW_STMT`, `NTC_REGX_1024_17I4_SHORT_YEAR_TRANSFEROR` / `_PAYOFF` / `_RESET` (three registry rows, one per trigger; `_TRANSFEROR` is Section 17's row for the transfer-out short-year statement \u2014 same artifact, same code, do not duplicate it), `NTC_REGX_1024_17I_POST_EXEMPTION_HISTORY`, `NTC_SM_ESCROW_VOLUNTARY_LUMPSUM_INSERT` (separate inser"
  },
@@ -140,7 +150,8 @@
   "code": "NTC_SM_ESCROW_SURPLUS_REFUND",
   "owner_process": "3.5",
   "mentions": [
-   "3.5"
+   "3.5",
+   "32.8"
   ],
   "context": "- **Print/mail** for check + `NTC_SM_ESCROW_SURPLUS_REFUND` insert."
  },
@@ -149,7 +160,8 @@
   "owner_process": "3.6",
   "mentions": [
    "3.6",
-   "3.7"
+   "3.7",
+   "32.8"
   ],
   "context": "- `escrow_repayment_plans`; `loan_terms` versions (payment and step-down); notices via 3.3 (`NTC_REGX_1024_17I_ANNUAL_ESCROW_STMT`, `NTC_REGX_1024_17I4_SHORT_YEAR_TRANSFEROR`/`_PAYOFF`/`_RESET`, `NTC_REGX_1024_17F_SHORTAGE`) and `NTC_SM_ESCROW_ADVANCE` (informational: \"we advanced $X for [item] on [date]; an analysis will follow\" \u2014 policy notice, no citation beyond (f)(1)(ii)); `loan_events`: `esc"
  },
@@ -157,7 +169,8 @@
   "code": "NTC_IL_765_910_15_TAX_PAID",
   "owner_process": "3.7",
   "mentions": [
-   "3.7"
+   "3.7",
+   "32.8"
   ],
   "context": "| `STATE_IL_765ILCS910_15_TAX_PAID_NOTICE_45BD` | deadline (jurisdiction IL) | `disbursement.confirmed` (tax, IL property) | paid date | 45 business_days_servicer | `NTC_IL_765_910_15_TAX_PAID` sent (or annual electronic access method enabled) | sev-3 |"
  },
@@ -165,7 +178,8 @@
   "code": "NTC_SM_ESCROW_HAZARD_ADVANCE",
   "owner_process": "3.7",
   "mentions": [
-   "3.7"
+   "3.7",
+   "32.8"
   ],
   "context": "- `disbursements`, `ledger_entries`, `investor_events` (escrow), `escrow_attestations`, `nonescrow_tax_checks`; notices: `NTC_IL_765_910_15_TAX_PAID` (765 ILCS 910/15: payment date, amount, property identification; mail/electronic; 45 business days), `NTC_SM_ESCROW_ADVANCE` (policy), `NTC_SM_NONESCROW_TAX_DELINQUENCY` (policy: informs borrower of delinquent taxes found; warns of advance/waiver rev"
  },
@@ -173,7 +187,8 @@
   "code": "NTC_SM_NONESCROW_TAX_DELINQUENCY",
   "owner_process": "3.7",
   "mentions": [
-   "3.7"
+   "3.7",
+   "32.8"
   ],
   "context": "- `disbursements`, `ledger_entries`, `investor_events` (escrow), `escrow_attestations`, `nonescrow_tax_checks`; notices: `NTC_IL_765_910_15_TAX_PAID` (765 ILCS 910/15: payment date, amount, property identification; mail/electronic; 45 business days), `NTC_SM_ESCROW_ADVANCE` (policy), `NTC_SM_NONESCROW_TAX_DELINQUENCY` (policy: informs borrower of delinquent taxes found; warns of advance/waiver rev"
  },
@@ -181,7 +196,8 @@
   "code": "NTC_MN_47_20_9_DISCONTINUE_RIGHT",
   "owner_process": "3.8",
   "mentions": [
-   "3.8"
+   "3.8",
+   "32.8"
   ],
   "context": "- Templates `NTC_SM_ESCROW_WAIVER_DECISION` (approve/deny with reasons), `NTC_SM_ESCROW_WAIVER_REVOCATION`, `NTC_MN_47_20_9_DISCONTINUE_RIGHT`; counsel review."
  },
@@ -189,7 +205,8 @@
   "code": "NTC_REGX_1024_17I4_SHORT_YEAR_RESET",
   "owner_process": "3.8",
   "mentions": [
-   "3.8"
+   "3.8",
+   "32.8"
   ],
   "context": "- Notices: `NTC_SM_ESCROW_WAIVER_DECISION` (approve/deny; reasons; re-request date; basis B-1-01/1026.35(b)/22.5), `NTC_SM_ESCROW_WAIVER_REVOCATION` (reason, new escrow payment, initial statement to follow), `NTC_MN_47_20_9_DISCONTINUE_RIGHT` (Minn. Stat. 47.20 subd. 9), `NTC_REGX_1024_17G_INITIAL_ESCROW_STMT` / `NTC_REGX_1024_17I4_SHORT_YEAR_RESET` (3.1/3.3 \u2014 the waiver-reset variant). Channel: E"
  },
@@ -197,7 +214,8 @@
   "code": "NTC_SM_ESCROW_WAIVER_DECISION",
   "owner_process": "3.8",
   "mentions": [
-   "3.8"
+   "3.8",
+   "32.8"
   ],
   "context": "- Templates `NTC_SM_ESCROW_WAIVER_DECISION` (approve/deny with reasons), `NTC_SM_ESCROW_WAIVER_REVOCATION`, `NTC_MN_47_20_9_DISCONTINUE_RIGHT`; counsel review."
  },
@@ -205,7 +223,8 @@
   "code": "NTC_SM_ESCROW_WAIVER_REVOCATION",
   "owner_process": "3.8",
   "mentions": [
-   "3.8"
+   "3.8",
+   "32.8"
   ],
   "context": "- Templates `NTC_SM_ESCROW_WAIVER_DECISION` (approve/deny with reasons), `NTC_SM_ESCROW_WAIVER_REVOCATION`, `NTC_MN_47_20_9_DISCONTINUE_RIGHT`; counsel review."
  },
@@ -213,7 +232,9 @@
   "code": "NTC_REGX_35C_ADDRESS",
   "owner_process": "4.1",
   "mentions": [
-   "4.1"
+   "4.1",
+   "32.2",
+   "32.9"
   ],
   "context": "- **Exclusive NoE/RFI address** (Supermortgage; 4\u20136 weeks): a dedicated P.O. Box (or vendor mail-scanning lockbox address) plus an exclusive online intake (secure message center + web form). Artifact: `designated_addresses` row; written designation notice (template `NTC_REGX_35C_ADDRESS`) delivered with the RESPA hello notice (1.3) or as a standalone mailing for boarded loans; website footer publi"
  },
@@ -229,7 +250,9 @@
   "code": "NTC_REGX_35D_ACK",
   "owner_process": "4.1",
   "mentions": [
-   "4.1"
+   "4.1",
+   "32.2",
+   "32.9"
   ],
   "context": "| `REGX_1024_35D_NOE_ACK_5` | deadline | `case.noe.opened` | receipt_date | 5 `business_days_federal` | `notice.sent` (template `NTC_REGX_35D_ACK`) or `case.noe.early_corrected` or `case.noe.exception_noticed` | escalate `officer` sev-2; auto-send ack anyway |"
  },
@@ -237,7 +260,8 @@
   "code": "NTC_REGX_35E4_DOCS",
   "owner_process": "4.1",
   "mentions": [
-   "4.1"
+   "4.1",
+   "32.9"
   ],
   "context": "| `REGX_1024_35E4_NOE_DOCS_15` | deadline | `case.noe.document_copies.requested` | request date | 15 `business_days_federal` | `notice.sent` (`NTC_REGX_35E4_DOCS` or `NTC_REGX_35E4_WITHHELD`) | escalate `officer` sev-2 |"
  },
@@ -253,7 +277,8 @@
   "code": "NTC_REGX_35E_ADDITIONAL_ERRORS",
   "owner_process": "4.1",
   "mentions": [
-   "4.1"
+   "4.1",
+   "32.9"
   ],
   "context": "Notices (all `notices` rows with template version, channel, evidence): `NTC_REGX_35C_ADDRESS` (exclusive address designation; \u00a71024.35(c); checklist: statement that the borrower *must* use the address, same address for RFIs, online channel, website mention) and `NTC_REGX_35C_ADDRESS_CHANGE` (mailed before the change); `NTC_REGX_35D_ACK` (acknowledgment; identifies the assertions as understood, the"
  },
@@ -261,7 +286,8 @@
   "code": "NTC_REGX_35E_CORRECTION",
   "owner_process": "4.1",
   "mentions": [
-   "4.1"
+   "4.1",
+   "32.9"
   ],
   "context": "Notices (all `notices` rows with template version, channel, evidence): `NTC_REGX_35C_ADDRESS` (exclusive address designation; \u00a71024.35(c); checklist: statement that the borrower *must* use the address, same address for RFIs, online channel, website mention) and `NTC_REGX_35C_ADDRESS_CHANGE` (mailed before the change); `NTC_REGX_35D_ACK` (acknowledgment; identifies the assertions as understood, the"
  },
@@ -269,7 +295,8 @@
   "code": "NTC_REGX_35E_EXTENSION",
   "owner_process": "4.1",
   "mentions": [
-   "4.1"
+   "4.1",
+   "32.9"
   ],
   "context": "| `REGX_1024_35E_NOE_EXT_NOTICE_BEFORE_30` | not_before_gate (inverse: must-act-before) | `case.noe.opened` (`std_30`) | receipt_date | 30 `business_days_federal` | `notice.sent` (`NTC_REGX_35E_EXTENSION`) | extension refused by command if past due |"
  },
@@ -277,7 +304,8 @@
   "code": "NTC_REGX_35E_NO_ERROR",
   "owner_process": "4.1",
   "mentions": [
-   "4.1"
+   "4.1",
+   "32.9"
   ],
   "context": "Notices (all `notices` rows with template version, channel, evidence): `NTC_REGX_35C_ADDRESS` (exclusive address designation; \u00a71024.35(c); checklist: statement that the borrower *must* use the address, same address for RFIs, online channel, website mention) and `NTC_REGX_35C_ADDRESS_CHANGE` (mailed before the change); `NTC_REGX_35D_ACK` (acknowledgment; identifies the assertions as understood, the"
  },
@@ -285,7 +313,8 @@
   "code": "NTC_REGX_35F1_EARLY_CORRECTION",
   "owner_process": "4.1",
   "mentions": [
-   "4.1"
+   "4.1",
+   "32.9"
   ],
   "context": "| `REGX_1024_35F1_NOE_EARLY_CORRECTION_5` | deadline (optional path) | `case.noe.early_correction.started` | receipt_date | 5 `business_days_federal` | `notice.sent` (`NTC_REGX_35F1_EARLY_CORRECTION`) | fall back to std path (ack + response timers remain live) |"
  },
@@ -293,7 +322,8 @@
   "code": "NTC_REGX_35G2_EXCEPTION",
   "owner_process": "4.1",
   "mentions": [
-   "4.1"
+   "4.1",
+   "32.9"
   ],
   "context": "| `REGX_1024_35G2_NOE_EXCEPTION_NOTICE_5` | deadline | `case.noe.exception_determined` | determination date | 5 `business_days_federal` | `notice.sent` (`NTC_REGX_35G2_EXCEPTION`) | escalate `officer` sev-2 |"
  },
@@ -301,7 +331,9 @@
   "code": "NTC_REGX_38B5_PROCEDURES",
   "owner_process": "4.1",
   "mentions": [
-   "4.1"
+   "4.1",
+   "32.2",
+   "32.9"
   ],
   "context": "Notices (all `notices` rows with template version, channel, evidence): `NTC_REGX_35C_ADDRESS` (exclusive address designation; \u00a71024.35(c); checklist: statement that the borrower *must* use the address, same address for RFIs, online channel, website mention) and `NTC_REGX_35C_ADDRESS_CHANGE` (mailed before the change); `NTC_REGX_35D_ACK` (acknowledgment; identifies the assertions as understood, the"
  },
@@ -309,7 +341,9 @@
   "code": "NTC_REGX_36A2_OWNER_IDENTITY",
   "owner_process": "4.2",
   "mentions": [
-   "4.2"
+   "4.2",
+   "32.2",
+   "32.9"
   ],
   "context": "Notices: `NTC_REGX_36C_ACK`; `NTC_REGX_36D_RESPONSE` (with attachments index), `NTC_REGX_36D_NOT_AVAILABLE` (basis text), `NTC_REGX_36D_EXTENSION`, `NTC_REGX_36E_EARLY`, `NTC_REGX_36F2_EXCEPTION` (basis per item; includes what *was* provided), `NTC_REGX_36A2_OWNER_IDENTITY` (Fannie Mae block per A4-1-03; NY variant adds 419.6 text), `NTC_REGX_36I_SII_DOCS` (document description; examples path; res"
  },
@@ -325,7 +359,8 @@
   "code": "NTC_REGX_36D_EXTENSION",
   "owner_process": "4.2",
   "mentions": [
-   "4.2"
+   "4.2",
+   "32.9"
   ],
   "context": "| `REGX_1024_36D_RFI_EXT_NOTICE_BEFORE_30` | must-act-before gate | `case.rfi.opened` (`std_30`) | receipt_date | 30 `business_days_federal` | `notice.sent` (`NTC_REGX_36D_EXTENSION`) | extension refused after due |"
  },
@@ -333,7 +368,8 @@
   "code": "NTC_REGX_36D_NOT_AVAILABLE",
   "owner_process": "4.2",
   "mentions": [
-   "4.2"
+   "4.2",
+   "32.9"
   ],
   "context": "Notices: `NTC_REGX_36C_ACK`; `NTC_REGX_36D_RESPONSE` (with attachments index), `NTC_REGX_36D_NOT_AVAILABLE` (basis text), `NTC_REGX_36D_EXTENSION`, `NTC_REGX_36E_EARLY`, `NTC_REGX_36F2_EXCEPTION` (basis per item; includes what *was* provided), `NTC_REGX_36A2_OWNER_IDENTITY` (Fannie Mae block per A4-1-03; NY variant adds 419.6 text), `NTC_REGX_36I_SII_DOCS` (document description; examples path; res"
  },
@@ -341,7 +377,8 @@
   "code": "NTC_REGX_36D_RESPONSE",
   "owner_process": "4.2",
   "mentions": [
-   "4.2"
+   "4.2",
+   "32.9"
   ],
   "context": "Notices: `NTC_REGX_36C_ACK`; `NTC_REGX_36D_RESPONSE` (with attachments index), `NTC_REGX_36D_NOT_AVAILABLE` (basis text), `NTC_REGX_36D_EXTENSION`, `NTC_REGX_36E_EARLY`, `NTC_REGX_36F2_EXCEPTION` (basis per item; includes what *was* provided), `NTC_REGX_36A2_OWNER_IDENTITY` (Fannie Mae block per A4-1-03; NY variant adds 419.6 text), `NTC_REGX_36I_SII_DOCS` (document description; examples path; res"
  },
@@ -357,7 +394,8 @@
   "code": "NTC_REGX_36F2_EXCEPTION",
   "owner_process": "4.2",
   "mentions": [
-   "4.2"
+   "4.2",
+   "32.9"
   ],
   "context": "| `REGX_1024_36F2_RFI_EXCEPTION_NOTICE_5` | deadline | `case.rfi.exception_determined` | determination date | 5 `business_days_federal` | `notice.sent` (`NTC_REGX_36F2_EXCEPTION`) | `officer` sev-2 |"
  },
@@ -365,7 +403,8 @@
   "code": "NTC_REGX_36I_SII_DOCS",
   "owner_process": "4.2",
   "mentions": [
-   "4.2"
+   "4.2",
+   "32.9"
   ],
   "context": "| `REGX_1024_36I_SII_RFI_RESPONSE_30` | deadline | `case.rfi.opened` with `is_potential_successor_request` | receipt_date (or supplement date per (i)(2)) | 30 `business_days_federal` (10 if the request also asks owner identity) | `notice.sent` (`NTC_REGX_36I_SII_DOCS`) | `officer` sev-1 |"
  },
@@ -373,7 +412,8 @@
   "code": "NTC_CA_2923_7_SPOC",
   "owner_process": "4.3",
   "mentions": [
-   "4.3"
+   "4.3",
+   "32.9"
   ],
   "context": "Notices: `NTC_REGX_39B_EARLY_INTERVENTION` (owned by 11.2) must include the assigned-contact block (required-content checklist item `continuity_block_present`); `NTC_REGX_40_CONTACT_ASSIGNED` (optional standalone letter/e-message when assignment happens before the EI notice or changes); `NTC_CA_2923_7_SPOC` (CA: name/team, direct means of communication, responsibilities). Records: `continuity_epis"
  },
@@ -382,7 +422,8 @@
   "owner_process": "4.3",
   "mentions": [
    "4.3",
-   "11.2"
+   "11.2",
+   "32.10"
   ],
   "context": "Notices: `NTC_REGX_39B_EARLY_INTERVENTION` (owned by 11.2) must include the assigned-contact block (required-content checklist item `continuity_block_present`); `NTC_REGX_40_CONTACT_ASSIGNED` (optional standalone letter/e-message when assignment happens before the EI notice or changes); `NTC_CA_2923_7_SPOC` (CA: name/team, direct means of communication, responsibilities). Records: `continuity_epis"
  },
@@ -390,7 +431,8 @@
   "code": "NTC_REGX_40_CONTACT_ASSIGNED",
   "owner_process": "4.3",
   "mentions": [
-   "4.3"
+   "4.3",
+   "32.10"
   ],
   "context": "Notices: `NTC_REGX_39B_EARLY_INTERVENTION` (owned by 11.2) must include the assigned-contact block (required-content checklist item `continuity_block_present`); `NTC_REGX_40_CONTACT_ASSIGNED` (optional standalone letter/e-message when assignment happens before the EI notice or changes); `NTC_CA_2923_7_SPOC` (CA: name/team, direct means of communication, responsibilities). Records: `continuity_epis"
  },
@@ -398,7 +440,10 @@
   "code": "NTC_FNMA_D1_4_1_02_ASSUMPTION_OFFER",
   "owner_process": "4.4",
   "mentions": [
-   "4.4"
+   "4.4",
+   "32.12",
+   "32.13",
+   "32.9"
   ],
   "context": "Notices: `NTC_REGX_38B1VI_SII_DOCS` (description of documents + how to submit an RFI under \u00a71024.36(i) + contact info; the (i)(2) variant with examples and questions), `NTC_REGX_38B1VI_SII_ADDL_DOCS` (what is still required and why), `NTC_REGX_38B1VI_SII_CONFIRMED` (confirmation; rights summary; assumption option; SPOC/continuity block if delinquent), `NTC_REGX_38B1VI_SII_NOT_SUCCESSOR` (reason; w"
  },
@@ -406,7 +451,9 @@
   "code": "NTC_REGX_32C_SII_ACK",
   "owner_process": "4.4",
   "mentions": [
-   "4.4"
+   "4.4",
+   "32.12",
+   "32.9"
   ],
   "context": "| `REGX_1024_32C_SII_ACK_NOTICE_SAME_DAY` | deadline (policy) | `case.sii.confirmed` (non-obligor successor) | determination date | 0 (same mailing as confirmation) | `notice.sent` (`NTC_REGX_32C_SII_ACK`) | `officer` sev-3 |"
  },
@@ -414,7 +461,8 @@
   "code": "NTC_REGX_38B1VI_SII_ADDL_DOCS",
   "owner_process": "4.4",
   "mentions": [
-   "4.4"
+   "4.4",
+   "32.9"
   ],
   "context": "| `REGX_1024_38B1VI_SII_ADDL_DOCS_5` | deadline (policy) | `case.sii.documents.received` (insufficient) | receipt date | 5 `business_days_federal` | `notice.sent` (`NTC_REGX_38B1VI_SII_ADDL_DOCS`) specifying what more is required | `officer` sev-2 |"
  },
@@ -422,7 +470,8 @@
   "code": "NTC_REGX_38B1VI_SII_CONFIRMED",
   "owner_process": "4.4",
   "mentions": [
-   "4.4"
+   "4.4",
+   "32.9"
   ],
   "context": "Notices: `NTC_REGX_38B1VI_SII_DOCS` (description of documents + how to submit an RFI under \u00a71024.36(i) + contact info; the (i)(2) variant with examples and questions), `NTC_REGX_38B1VI_SII_ADDL_DOCS` (what is still required and why), `NTC_REGX_38B1VI_SII_CONFIRMED` (confirmation; rights summary; assumption option; SPOC/continuity block if delinquent), `NTC_REGX_38B1VI_SII_NOT_SUCCESSOR` (reason; w"
  },
@@ -430,7 +479,8 @@
   "code": "NTC_REGX_38B1VI_SII_DOCS",
   "owner_process": "4.4",
   "mentions": [
-   "4.4"
+   "4.4",
+   "32.9"
   ],
   "context": "| `REGX_1024_38B1VI_SII_DOCS_DESC_5` | deadline (policy for \"promptly \u2026 provide a description\") | `case.sii.potential_successor.identified` | identification date | 5 `business_days_federal` (2 if `lossmit_pending`) | `notice.sent` (`NTC_REGX_38B1VI_SII_DOCS`) | `officer` sev-2 |"
  },
@@ -438,7 +488,8 @@
   "code": "NTC_REGX_38B1VI_SII_NOT_SUCCESSOR",
   "owner_process": "4.4",
   "mentions": [
-   "4.4"
+   "4.4",
+   "32.9"
   ],
   "context": "Notices: `NTC_REGX_38B1VI_SII_DOCS` (description of documents + how to submit an RFI under \u00a71024.36(i) + contact info; the (i)(2) variant with examples and questions), `NTC_REGX_38B1VI_SII_ADDL_DOCS` (what is still required and why), `NTC_REGX_38B1VI_SII_CONFIRMED` (confirmation; rights summary; assumption option; SPOC/continuity block if delinquent), `NTC_REGX_38B1VI_SII_NOT_SUCCESSOR` (reason; w"
  },
@@ -454,7 +505,8 @@
   "code": "NTC_COMPLAINT_RESPONSE",
   "owner_process": "4.5",
   "mentions": [
-   "4.5"
+   "4.5",
+   "32.9"
   ],
   "context": "Notices/templates: `NTC_COMPLAINT_ACK` (written complaints; NY variant with 419.6 disclosures), `NTC_COMPLAINT_RESPONSE` (with the \u00a71024.38(b)(5) procedures paragraph and the exclusive address), `NTC_REMEDIATION_REFUND`, regulator response package templates (CFPB, state), `NTC_TX_50A6_CURE` (with attorney review), oral-complaint script (`SCRIPT_38B5_ORAL_COMPLAINT`). Records: the complaint log (`v"
  },
@@ -479,7 +531,9 @@
   "owner_process": "7.1",
   "mentions": [
    "7.1",
-   "11.1"
+   "11.1",
+   "32.10",
+   "32.8"
   ],
   "context": "- **Notice Registry v1** (Supermortgage; 6\u20138 weeks): template versions `NTC_REGZ_41_STMT_STD`, `_DELQ`, `_TPP`, `_BK7_11`, `_BK12_13`, `NTC_REGZ_41E6_CHARGEOFF_SUSPENSION`, `NTC_FNMA_D2_2_03_PAYMENT_REMINDER`, `NTC_IRS_1098`, `NTC_REGZ_41_STMT_AVAIL_EMAIL`; counsel approval of each version (H-30(A)/(B)/(E)/(F) basis); plain-language QA passed."
  },
@@ -488,7 +542,9 @@
   "owner_process": "7.1",
   "mentions": [
    "7.1",
-   "25.4"
+   "25.4",
+   "32.12",
+   "32.8"
   ],
   "context": "- **Notice Registry v1** (Supermortgage; 6\u20138 weeks): template versions `NTC_REGZ_41_STMT_STD`, `_DELQ`, `_TPP`, `_BK7_11`, `_BK12_13`, `NTC_REGZ_41E6_CHARGEOFF_SUSPENSION`, `NTC_FNMA_D2_2_03_PAYMENT_REMINDER`, `NTC_IRS_1098`, `NTC_REGZ_41_STMT_AVAIL_EMAIL`; counsel approval of each version (H-30(A)/(B)/(E)/(F) basis); plain-language QA passed."
  },
@@ -496,7 +552,8 @@
   "code": "NTC_IRS_1098_CORRECTED",
   "owner_process": "7.1",
   "mentions": [
-   "7.1"
+   "7.1",
+   "32.8"
   ],
   "context": "- Notices: `NTC_REGZ_41_STMT_STD` (H-30(A) basis; rules D1\u2013D7), `NTC_REGZ_41_STMT_DELQ` (H-30(B); + D8 seven items), `NTC_REGZ_41_STMT_TPP` (D1/D2 dual amounts), `NTC_REGZ_41_STMT_BK7_11` (H-30(E)), `NTC_REGZ_41_STMT_BK12_13` (H-30(F)), `NTC_REGZ_41E3IV_COUPON_DELQ_NOTICE`, `NTC_REGZ_41E6_CHARGEOFF_SUSPENSION` ((e)(6) seven items, exact title), `NTC_FNMA_D2_2_03_PAYMENT_REMINDER` (five D2-2-03 ite"
  },
@@ -504,7 +561,8 @@
   "code": "NTC_REGZ_41E3IV_COUPON_DELQ_NOTICE",
   "owner_process": "7.1",
   "mentions": [
-   "7.1"
+   "7.1",
+   "32.8"
   ],
   "context": "| `REGZ_1026_41E3IV_COUPON_DELQ_NOTICE` | deadline (feature `statements.coupon_books`, default off) | `delinquency.crossed_45` | statement_due_by of that cycle | +4 calendar_days | `NTC_REGZ_41E3IV_COUPON_DELQ_NOTICE` sent | sev-2 |"
  },
@@ -520,7 +578,8 @@
   "code": "NTC_REGZ_41_STMT_AVAIL_EMAIL",
   "owner_process": "7.1",
   "mentions": [
-   "7.1"
+   "7.1",
+   "32.8"
   ],
   "context": "- **Notice Registry v1** (Supermortgage; 6\u20138 weeks): template versions `NTC_REGZ_41_STMT_STD`, `_DELQ`, `_TPP`, `_BK7_11`, `_BK12_13`, `NTC_REGZ_41E6_CHARGEOFF_SUSPENSION`, `NTC_FNMA_D2_2_03_PAYMENT_REMINDER`, `NTC_IRS_1098`, `NTC_REGZ_41_STMT_AVAIL_EMAIL`; counsel approval of each version (H-30(A)/(B)/(E)/(F) basis); plain-language QA passed."
  },
@@ -538,7 +597,8 @@
   "owner_process": "7.1",
   "mentions": [
    "7.1",
-   "14.3"
+   "14.3",
+   "32.10"
   ],
   "context": "- Notices: `NTC_REGZ_41_STMT_STD` (H-30(A) basis; rules D1\u2013D7), `NTC_REGZ_41_STMT_DELQ` (H-30(B); + D8 seven items), `NTC_REGZ_41_STMT_TPP` (D1/D2 dual amounts), `NTC_REGZ_41_STMT_BK7_11` (H-30(E)), `NTC_REGZ_41_STMT_BK12_13` (H-30(F)), `NTC_REGZ_41E3IV_COUPON_DELQ_NOTICE`, `NTC_REGZ_41E6_CHARGEOFF_SUSPENSION` ((e)(6) seven items, exact title), `NTC_FNMA_D2_2_03_PAYMENT_REMINDER` (five D2-2-03 ite"
  },
@@ -546,7 +606,8 @@
   "code": "NTC_REGZ_41_STMT_DELQ",
   "owner_process": "7.1",
   "mentions": [
-   "7.1"
+   "7.1",
+   "32.10"
   ],
   "context": "- Notices: `NTC_REGZ_41_STMT_STD` (H-30(A) basis; rules D1\u2013D7), `NTC_REGZ_41_STMT_DELQ` (H-30(B); + D8 seven items), `NTC_REGZ_41_STMT_TPP` (D1/D2 dual amounts), `NTC_REGZ_41_STMT_BK7_11` (H-30(E)), `NTC_REGZ_41_STMT_BK12_13` (H-30(F)), `NTC_REGZ_41E3IV_COUPON_DELQ_NOTICE`, `NTC_REGZ_41E6_CHARGEOFF_SUSPENSION` ((e)(6) seven items, exact title), `NTC_FNMA_D2_2_03_PAYMENT_REMINDER` (five D2-2-03 ite"
  },
@@ -556,7 +617,9 @@
   "mentions": [
    "7.1",
    "25.4",
-   "30.2"
+   "30.2",
+   "32.7",
+   "32.8"
   ],
   "context": "- **Notice Registry v1** (Supermortgage; 6\u20138 weeks): template versions `NTC_REGZ_41_STMT_STD`, `_DELQ`, `_TPP`, `_BK7_11`, `_BK12_13`, `NTC_REGZ_41E6_CHARGEOFF_SUSPENSION`, `NTC_FNMA_D2_2_03_PAYMENT_REMINDER`, `NTC_IRS_1098`, `NTC_REGZ_41_STMT_AVAIL_EMAIL`; counsel approval of each version (H-30(A)/(B)/(E)/(F) basis); plain-language QA passed."
  },
@@ -564,7 +627,8 @@
   "code": "NTC_REGZ_41_STMT_TPP",
   "owner_process": "7.1",
   "mentions": [
-   "7.1"
+   "7.1",
+   "32.10"
   ],
   "context": "- Notices: `NTC_REGZ_41_STMT_STD` (H-30(A) basis; rules D1\u2013D7), `NTC_REGZ_41_STMT_DELQ` (H-30(B); + D8 seven items), `NTC_REGZ_41_STMT_TPP` (D1/D2 dual amounts), `NTC_REGZ_41_STMT_BK7_11` (H-30(E)), `NTC_REGZ_41_STMT_BK12_13` (H-30(F)), `NTC_REGZ_41E3IV_COUPON_DELQ_NOTICE`, `NTC_REGZ_41E6_CHARGEOFF_SUSPENSION` ((e)(6) seven items, exact title), `NTC_FNMA_D2_2_03_PAYMENT_REMINDER` (five D2-2-03 ite"
  },
@@ -572,7 +636,8 @@
   "code": "NTC_ARM_INQUIRY_INTERIM_20",
   "owner_process": "7.2",
   "mentions": [
-   "7.2"
+   "7.2",
+   "32.9"
   ],
   "context": "- Notice Registry templates `NTC_REGZ_20C_ARM_ADJ` (H-4(D)(2) basis), `NTC_FNMA_C2_1_02_RATE_CHANGE`, `NTC_FNMA_C2_1_02_BUYDOWN_STEP_90`, `NTC_FNMA_C2_2_01_ARM_CORRECTION`, `NTC_ARM_INQUIRY_INTERIM_20` \u2014 counsel approved."
  },
@@ -580,7 +645,8 @@
   "code": "NTC_FNMA_C2_1_02_BUYDOWN_STEP_90",
   "owner_process": "7.2",
   "mentions": [
-   "7.2"
+   "7.2",
+   "32.9"
   ],
   "context": "- Notice Registry templates `NTC_REGZ_20C_ARM_ADJ` (H-4(D)(2) basis), `NTC_FNMA_C2_1_02_RATE_CHANGE`, `NTC_FNMA_C2_1_02_BUYDOWN_STEP_90`, `NTC_FNMA_C2_2_01_ARM_CORRECTION`, `NTC_ARM_INQUIRY_INTERIM_20` \u2014 counsel approved."
  },
@@ -588,7 +654,8 @@
   "code": "NTC_FNMA_C2_1_02_RATE_CHANGE",
   "owner_process": "7.2",
   "mentions": [
-   "7.2"
+   "7.2",
+   "32.9"
   ],
   "context": "- Notice Registry templates `NTC_REGZ_20C_ARM_ADJ` (H-4(D)(2) basis), `NTC_FNMA_C2_1_02_RATE_CHANGE`, `NTC_FNMA_C2_1_02_BUYDOWN_STEP_90`, `NTC_FNMA_C2_2_01_ARM_CORRECTION`, `NTC_ARM_INQUIRY_INTERIM_20` \u2014 counsel approved."
  },
@@ -596,7 +663,8 @@
   "code": "NTC_FNMA_C2_2_01_ARM_CORRECTION",
   "owner_process": "7.2",
   "mentions": [
-   "7.2"
+   "7.2",
+   "32.9"
   ],
   "context": "- Notice Registry templates `NTC_REGZ_20C_ARM_ADJ` (H-4(D)(2) basis), `NTC_FNMA_C2_1_02_RATE_CHANGE`, `NTC_FNMA_C2_1_02_BUYDOWN_STEP_90`, `NTC_FNMA_C2_2_01_ARM_CORRECTION`, `NTC_ARM_INQUIRY_INTERIM_20` \u2014 counsel approved."
  },
@@ -604,7 +672,8 @@
   "code": "NTC_REGZ_20C_ARM_ADJ",
   "owner_process": "7.2",
   "mentions": [
-   "7.2"
+   "7.2",
+   "32.9"
   ],
   "context": "- Notice Registry templates `NTC_REGZ_20C_ARM_ADJ` (H-4(D)(2) basis), `NTC_FNMA_C2_1_02_RATE_CHANGE`, `NTC_FNMA_C2_1_02_BUYDOWN_STEP_90`, `NTC_FNMA_C2_2_01_ARM_CORRECTION`, `NTC_ARM_INQUIRY_INTERIM_20` \u2014 counsel approved."
  },
@@ -612,7 +681,8 @@
   "code": "NTC_REGZ_20D_ARM_INITIAL",
   "owner_process": "7.3",
   "mentions": [
-   "7.3"
+   "7.3",
+   "32.9"
   ],
   "context": "- Template `NTC_REGZ_20D_ARM_INITIAL` (H-4(D)(4) basis; estimate and actual variants; counsel approved) \u2014 Notice Registry."
  },
@@ -620,7 +690,8 @@
   "code": "NTC_EDELIVERY_BOUNCE_PAPER_RESUME",
   "owner_process": "7.4",
   "mentions": [
-   "7.4"
+   "7.4",
+   "32.2"
   ],
   "context": "- Notices: `NTC_ESIGN_7001C_DISCLOSURE` (pre-consent statement; checklist = the seven (c)(1)(B)/(C) items), `NTC_ESIGN_CONSENT_CONFIRMATION` (electronic, with a paper copy on request), `NTC_ESIGN_VERIFICATION_EMAIL` (link + token PDF), `NTC_ESIGN_HWSW_CHANGE_RECONSENT` ((c)(1)(D) statement: revised requirements; right to withdraw without fee), `NTC_ESIGN_WITHDRAWAL_CONFIRMATION` (mail), `NTC_EDELI"
  },
@@ -629,7 +700,8 @@
   "owner_process": "7.4",
   "mentions": [
    "7.4",
-   "30.2"
+   "30.2",
+   "32.2"
   ],
   "context": "- Counsel-approved **E-SIGN disclosure** (`NTC_ESIGN_7001C_DISCLOSURE` v1: paper option, withdrawal procedure and consequences (none/no fee), scope = listed categories, update-contact procedure, paper-copy procedure and fee (none), hardware/software requirements) and the separate **IRS e-statement consent** text; Reg P electronic-delivery language."
  },
@@ -637,7 +709,8 @@
   "code": "NTC_ESIGN_CONSENT_CONFIRMATION",
   "owner_process": "7.4",
   "mentions": [
-   "7.4"
+   "7.4",
+   "32.2"
   ],
   "context": "- Notices: `NTC_ESIGN_7001C_DISCLOSURE` (pre-consent statement; checklist = the seven (c)(1)(B)/(C) items), `NTC_ESIGN_CONSENT_CONFIRMATION` (electronic, with a paper copy on request), `NTC_ESIGN_VERIFICATION_EMAIL` (link + token PDF), `NTC_ESIGN_HWSW_CHANGE_RECONSENT` ((c)(1)(D) statement: revised requirements; right to withdraw without fee), `NTC_ESIGN_WITHDRAWAL_CONFIRMATION` (mail), `NTC_EDELI"
  },
@@ -653,7 +726,9 @@
   "code": "NTC_ESIGN_VERIFICATION_EMAIL",
   "owner_process": "7.4",
   "mentions": [
-   "7.4"
+   "7.4",
+   "32.2",
+   "32.3"
   ],
   "context": "- Notices: `NTC_ESIGN_7001C_DISCLOSURE` (pre-consent statement; checklist = the seven (c)(1)(B)/(C) items), `NTC_ESIGN_CONSENT_CONFIRMATION` (electronic, with a paper copy on request), `NTC_ESIGN_VERIFICATION_EMAIL` (link + token PDF), `NTC_ESIGN_HWSW_CHANGE_RECONSENT` ((c)(1)(D) statement: revised requirements; right to withdraw without fee), `NTC_ESIGN_WITHDRAWAL_CONFIRMATION` (mail), `NTC_EDELI"
  },
@@ -661,7 +736,9 @@
   "code": "NTC_ESIGN_WITHDRAWAL_CONFIRMATION",
   "owner_process": "7.4",
   "mentions": [
-   "7.4"
+   "7.4",
+   "32.13",
+   "32.2"
   ],
   "context": "7. **Withdrawal:** accepted via portal, written request, email, or a call (voice withdrawal is fine \u2014 it is the *consent* that cannot be oral); applied within 1 business day; confirmation sent (`NTC_ESIGN_WITHDRAWAL_CONFIRMATION`) by mail; all classes revert to mail unless the borrower withdraws only some classes."
  },
@@ -669,7 +746,9 @@
   "code": "NTC_IRS_ESTATEMENT_CONSENT_DISCLOSURE",
   "owner_process": "7.4",
   "mentions": [
-   "7.4"
+   "7.4",
+   "32.2",
+   "32.8"
   ],
   "context": "- Notices: `NTC_ESIGN_7001C_DISCLOSURE` (pre-consent statement; checklist = the seven (c)(1)(B)/(C) items), `NTC_ESIGN_CONSENT_CONFIRMATION` (electronic, with a paper copy on request), `NTC_ESIGN_VERIFICATION_EMAIL` (link + token PDF), `NTC_ESIGN_HWSW_CHANGE_RECONSENT` ((c)(1)(D) statement: revised requirements; right to withdraw without fee), `NTC_ESIGN_WITHDRAWAL_CONFIRMATION` (mail), `NTC_EDELI"
  },
@@ -677,7 +756,10 @@
   "code": "NTC_TCPA_CONSENT_CONFIRMATION",
   "owner_process": "7.4",
   "mentions": [
-   "7.4"
+   "7.4",
+   "32.1",
+   "32.2",
+   "32.3"
   ],
   "context": "- Notices: `NTC_ESIGN_7001C_DISCLOSURE` (pre-consent statement; checklist = the seven (c)(1)(B)/(C) items), `NTC_ESIGN_CONSENT_CONFIRMATION` (electronic, with a paper copy on request), `NTC_ESIGN_VERIFICATION_EMAIL` (link + token PDF), `NTC_ESIGN_HWSW_CHANGE_RECONSENT` ((c)(1)(D) statement: revised requirements; right to withdraw without fee), `NTC_ESIGN_WITHDRAWAL_CONFIRMATION` (mail), `NTC_EDELI"
  },
@@ -693,7 +775,8 @@
   "code": "NTC_REGP_1016_5_ANNUAL",
   "owner_process": "7.5",
   "mentions": [
-   "7.5"
+   "7.5",
+   "32.8"
   ],
   "context": "- Notice Registry templates `NTC_REGP_1016_4_INITIAL`, `NTC_REGP_1016_5_ANNUAL`, `NTC_REGP_1016_8_REVISED`, `NTC_STATE_CA_FIPA` (dormant), `NTC_REGP_OPT_OUT_CONFIRMATION` (dormant)."
  },
@@ -725,7 +808,9 @@
   "code": "NTC_PAYOFF_AUTHORIZATION_REQUEST",
   "owner_process": "7.6",
   "mentions": [
-   "7.6"
+   "7.6",
+   "32.12",
+   "32.9"
   ],
   "context": "- Notices: `NTC_REGZ_36C3_PAYOFF_STMT` (checklist items in rule 4; state variants `_CA_2943`, `_FL_701_04`), `NTC_PAYOFF_REQUEST_ACK_DELAY` (reason, expected date), `NTC_PAYOFF_UPDATED_STMT`, `NTC_PAYOFF_AUTHORIZATION_REQUEST`. Channel per rule 7."
  },
@@ -733,7 +818,10 @@
   "code": "NTC_PAYOFF_REQUEST_ACK_DELAY",
   "owner_process": "7.6",
   "mentions": [
-   "7.6"
+   "7.6",
+   "32.10",
+   "32.2",
+   "32.9"
   ],
   "context": "- Notice Registry templates `NTC_REGZ_36C3_PAYOFF_STMT` (+ CA and FL variants), `NTC_PAYOFF_REQUEST_ACK_DELAY` (reasonable-time path), `NTC_PAYOFF_UPDATED_STMT`; counsel approved."
  },
@@ -742,7 +830,10 @@
   "owner_process": "7.6",
   "mentions": [
    "7.6",
-   "16.1"
+   "16.1",
+   "32.12",
+   "32.2",
+   "32.9"
   ],
   "context": "- Notice Registry templates `NTC_REGZ_36C3_PAYOFF_STMT` (+ CA and FL variants), `NTC_PAYOFF_REQUEST_ACK_DELAY` (reasonable-time path), `NTC_PAYOFF_UPDATED_STMT`; counsel approved."
  },
@@ -751,7 +842,10 @@
   "owner_process": "7.6",
   "mentions": [
    "7.6",
-   "16.1"
+   "16.1",
+   "32.12",
+   "32.2",
+   "32.9"
   ],
   "context": "- Notice Registry templates `NTC_REGZ_36C3_PAYOFF_STMT` (+ CA and FL variants), `NTC_PAYOFF_REQUEST_ACK_DELAY` (reasonable-time path), `NTC_PAYOFF_UPDATED_STMT`; counsel approved."
  },
@@ -759,7 +853,8 @@
   "code": "NTC_FCRA_1681S2A1C_ADDRESS",
   "owner_process": "8.1",
   "mentions": [
-   "8.1"
+   "8.1",
+   "32.9"
   ],
   "context": "- **Notices:** `NTC_FCRA_1681S2A7_B1` (pre-furnishing negative-information notice \u2014 Appendix B Model B-1 text verbatim, placed on the hello notice 1.3 and first periodic statement 7.1; checklist: exact model text, clear and conspicuous, per account); `NTC_FCRA_1681S2A7_B2` (post-furnishing, Model B-2 text; mailed \u226430 days after the first furnishing of negative information when no B-1 evidence exis"
  },
@@ -786,7 +881,8 @@
   "code": "NTC_FCRA_1022_43E_RESULTS",
   "owner_process": "8.2",
   "mentions": [
-   "8.2"
+   "8.2",
+   "32.9"
   ],
   "context": "| `FCRA_1022_43E_DIRECT_RESULTS_30` | deadline | `credit.dispute.direct.received` | `received_at` date | 30 `calendar_days` | `notice.sent` (`NTC_FCRA_1022_43E_RESULTS`) | escalate `officer` sev-1 |"
  },
@@ -802,7 +898,8 @@
   "code": "NTC_FCRA_1022_43_ACK",
   "owner_process": "8.2",
   "mentions": [
-   "8.2"
+   "8.2",
+   "32.9"
   ],
   "context": "- **Notices:** `NTC_FCRA_1022_43E_RESULTS` (direct-dispute results; checklist: each item, determination, reasons, corrections + effective cycle, CRA dispute rights, address); `NTC_FCRA_1022_43F_FRIVOLOUS` (reasons + standardized list of information required; sent by mail unless the consumer authorized another means); `NTC_FCRA_1022_43_ACK` (optional acknowledgment \u2014 policy, not required); `NTC_FCR"
  },
@@ -810,7 +907,8 @@
   "code": "INS_ANNUAL_REMINDER",
   "owner_process": "9.1",
   "mentions": [
-   "9.1"
+   "9.1",
+   "32.9"
   ],
   "context": "- Notice Registry templates `INS_DEFICIENCY_NOTICE`, `INS_ANNUAL_REMINDER`, `INS_EOI_REQUEST` reviewed by counsel (plain-language status) \u2014 Supermortgage."
  },
@@ -868,7 +966,8 @@
   "code": "INS_FPI_FIRST_NOTICE_SLA_3BD",
   "owner_process": "9.2",
   "mentions": [
-   "9.2"
+   "9.2",
+   "32.9"
   ],
   "context": "| Timers | `FNMA_B601_LPI_AFTER_ATTEMPTS`, `INS_FPI_FIRST_NOTICE_SLA_3BD`, `REGX_1024_17K5_LPI_PURCHASE_GATE`, `REGX_1024_37C1III_FPI_EVIDENCE_WINDOW_15`, `REGX_1024_37C_FPI_FIRST_NOTICE_45`, `REGX_1024_37D5_NOTICE_PRODUCTION_5BD`, `REGX_1024_37D_FPI_REMINDER_BEFORE_CHARGE_15`, `REGX_1024_37D_FPI_REMINDER_NOT_BEFORE_30` |"
  },
@@ -886,7 +985,8 @@
   "owner_process": "9.2",
   "mentions": [
    "9.2",
-   "9.3"
+   "9.3",
+   "32.9"
   ],
   "context": "- Notice Registry templates `INS_FPI_FIRST_MS3A`, `INS_FPI_REMINDER_NOINFO_MS3B`, `INS_FPI_REMINDER_INSUFF_MS3C`, `INS_FPI_RENEWAL_MS3D` built from the Appendix MS-3 model forms with machine-checked bold/placeholder rules; counsel sign-off \u2014 Supermortgage."
  },
@@ -919,7 +1019,8 @@
   "code": "INS_FPI_CANCEL_REFUND_CONFIRM",
   "owner_process": "9.5",
   "mentions": [
-   "9.5"
+   "9.5",
+   "32.9"
   ],
   "context": "- Notice `INS_FPI_CANCEL_REFUND_CONFIRM` (policy; plain-language: LPI cancelled effective date, overlap period, amount removed, amount refunded and how, remaining balance if any, contact) \u2014 e-delivery permitted with consent, else mail."
  },
@@ -951,7 +1052,8 @@
   "code": "INS_FLOOD_FPI_PLACED_NOTICE",
   "owner_process": "9.6",
   "mentions": [
-   "9.6"
+   "9.6",
+   "32.9"
   ],
   "context": "- Notice Registry templates `INS_FLOOD_FPI_NOTICE_45`, `INS_FLOOD_MAP_CHANGE_NOTICE`, `INS_FLOOD_REMOVED_NOTICE`, `INS_FLOOD_FPI_PLACED_NOTICE` with counsel review \u2014 Supermortgage."
  },
@@ -959,7 +1061,8 @@
   "code": "INS_FLOOD_MAP_CHANGE_NOTICE",
   "owner_process": "9.6",
   "mentions": [
-   "9.6"
+   "9.6",
+   "32.9"
   ],
   "context": "- Notice Registry templates `INS_FLOOD_FPI_NOTICE_45`, `INS_FLOOD_MAP_CHANGE_NOTICE`, `INS_FLOOD_REMOVED_NOTICE`, `INS_FLOOD_FPI_PLACED_NOTICE` with counsel review \u2014 Supermortgage."
  },
@@ -975,7 +1078,8 @@
   "code": "INS_FLOOD_REMOVED_NOTICE",
   "owner_process": "9.6",
   "mentions": [
-   "9.6"
+   "9.6",
+   "32.9"
   ],
   "context": "- Notice Registry templates `INS_FLOOD_FPI_NOTICE_45`, `INS_FLOOD_MAP_CHANGE_NOTICE`, `INS_FLOOD_REMOVED_NOTICE`, `INS_FLOOD_FPI_PLACED_NOTICE` with counsel review \u2014 Supermortgage."
  },
@@ -1047,7 +1151,8 @@
   "code": "INS_LOSS_DRAFT_UPB_APPLICATION_NOTICE",
   "owner_process": "9.7",
   "mentions": [
-   "9.7"
+   "9.7",
+   "32.9"
   ],
   "context": "- Notices (policy; e-delivery with consent, else mail): `INS_LOSS_DRAFT_PACKAGE` (claim requirements, endorsement instructions, disbursement schedule for the track, inspection expectations, interest, contact), `INS_LOSS_DRAFT_RELEASE_LETTER` (each release: amount, basis, remaining balance), `INS_LOSS_DRAFT_FINAL_LETTER` (completion, interest paid, surplus handling), `INS_LOSS_DRAFT_UPB_APPLICATION"
  },
@@ -1081,7 +1186,8 @@
   "mentions": [
    "10.1",
    "10.2",
-   "10.3"
+   "10.3",
+   "32.9"
   ],
   "context": "- **Notice templates approved** (`NTC_HPA_4902A_ACK_EVIDENCE`, `NTC_HPA_4904A_CANCELLED`, `NTC_HPA_4904B_DENIAL`; MN/CA variants) with plain-language review and the AVM disclaimer text."
  },
@@ -1090,7 +1196,8 @@
   "owner_process": "10.1",
   "mentions": [
    "10.1",
-   "10.6"
+   "10.6",
+   "32.9"
   ],
   "context": "- **Notice templates approved** (`NTC_HPA_4902A_ACK_EVIDENCE`, `NTC_HPA_4904A_CANCELLED`, `NTC_HPA_4904B_DENIAL`; MN/CA variants) with plain-language review and the AVM disclaimer text."
  },
@@ -1100,7 +1207,8 @@
   "mentions": [
    "10.2",
    "10.3",
-   "10.6"
+   "10.6",
+   "32.9"
   ],
   "context": "- Insurer cancellation channels, LAR 89 submission path, escrow interim-analysis capability (Section 3.2), refund rails (10.5), notice templates `NTC_HPA_4904A_CANCELLED`, `NTC_HPA_4904B_AUTO_NOT_CURRENT`, `NTC_HPA_4905C2_LPMI_OPTIONS`."
  },
@@ -1109,7 +1217,8 @@
   "owner_process": "10.2",
   "mentions": [
    "10.2",
-   "24.6"
+   "24.6",
+   "32.9"
   ],
   "context": "- Insurer cancellation channels, LAR 89 submission path, escrow interim-analysis capability (Section 3.2), refund rails (10.5), notice templates `NTC_HPA_4904A_CANCELLED`, `NTC_HPA_4904B_AUTO_NOT_CURRENT`, `NTC_HPA_4905C2_LPMI_OPTIONS`."
  },
@@ -1117,7 +1226,8 @@
   "code": "NTC_FNMA_MI_ANNUAL_INFO",
   "owner_process": "10.4",
   "mentions": [
-   "10.4"
+   "10.4",
+   "32.9"
   ],
   "context": "Jurisdiction overrides: MN font/text; CA font/text and per-statement cadence; loans outside HPA scope (2\u20134 units, second homes, investment): the HPA timer is not instantiated, but a policy disclosure (`NTC_FNMA_MI_ANNUAL_INFO`, same content framed as Fannie Mae's program) is sent on the same cadence \u2014 open question 10.4-Q2 (default: send)."
  },
@@ -1125,7 +1235,8 @@
   "code": "NTC_HPA_4903A3_ANNUAL",
   "owner_process": "10.4",
   "mentions": [
-   "10.4"
+   "10.4",
+   "32.9"
   ],
   "context": "- Notice templates `NTC_HPA_4903A3_ANNUAL` (post-1999 BPMI), `NTC_HPA_4903B_ANNUAL_LEGACY` (pre-July 29, 1999), MN and CA variants with font/size rules enforced in the template CSS and validated by the required-content checklist; plain-language review by compliance; partner sign-off on the servicer contact block (partner name where required by state law, Supermortgage's toll-free number and addres"
  },
@@ -1157,7 +1268,8 @@
   "code": "NTC_MI_REFUND_ADVICE",
   "owner_process": "10.5",
   "mentions": [
-   "10.5"
+   "10.5",
+   "32.9"
   ],
   "context": "- Refund rails to the borrower: ACH credit (Nacha PPD/CCD credit to the borrower's verified account on file; Section 2) and check via `print-mail`; refund letter template `NTC_MI_REFUND_ADVICE`."
  },
@@ -1165,7 +1277,8 @@
   "code": "NTC_MI_CASE_CLOSED",
   "owner_process": "10.6",
   "mentions": [
-   "10.6"
+   "10.6",
+   "32.9"
   ],
   "context": "- `mi.evaluation.completed` with `result='ineligible'` (10.1 paths) \u2192 denial notice; `mi.auto.deferred_not_current` (10.2/10.3) \u2192 not-current notice; `mi.case.expired` (fee not received within 60 days; valuation expired without decision) \u2192 closing letter (`NTC_MI_CASE_CLOSED`, policy); MN \"request additional information\" branch \u2192 `NTC_MI_INFO_REQUEST` (policy/MN) within 30 days of receipt."
  },
@@ -1173,7 +1286,8 @@
   "code": "NTC_MI_INFO_REQUEST",
   "owner_process": "10.6",
   "mentions": [
-   "10.6"
+   "10.6",
+   "32.9"
   ],
   "context": "- `mi.evaluation.completed` with `result='ineligible'` (10.1 paths) \u2192 denial notice; `mi.auto.deferred_not_current` (10.2/10.3) \u2192 not-current notice; `mi.case.expired` (fee not received within 60 days; valuation expired without decision) \u2192 closing letter (`NTC_MI_CASE_CLOSED`, policy); MN \"request additional information\" branch \u2192 `NTC_MI_INFO_REQUEST` (policy/MN) within 30 days of receipt."
  },
@@ -1181,7 +1295,8 @@
   "code": "NTC_SM_CALLBACK_CONFIRMATION",
   "owner_process": "11.1",
   "mentions": [
-   "11.1"
+   "11.1",
+   "32.10"
   ],
   "context": "- Notices: `NTC_SM_CONTACT_REQUEST_LETTER` (plain-language \"please contact us,\" counts toward good-faith efforts; contains the assigned-contact block (4.3), the exclusive NoE/RFI address (4.1), HUD counseling line; FDCPA variant adds \u00a71006.18(e) disclosure); `NTC_SM_CALLBACK_CONFIRMATION` (SMS/email after a conversation summarizing the promise/next steps \u2014 only on consented channels)."
  },
@@ -1197,7 +1312,8 @@
   "code": "NTC_FNMA_D2204_SOLICITATION_LETTER_745",
   "owner_process": "11.2",
   "mentions": [
-   "11.2"
+   "11.2",
+   "32.10"
   ],
   "context": "- Notice Registry templates approved by counsel and the partner: `NTC_REGX_39B_EARLY_INTERVENTION` (standard; MS-4(A)\u2013(C) wording), `NTC_REGX_39D_EARLY_INTERVENTION_FDCPA` (MS-4(D) + (A)\u2013(C), no payment request, \u00a71006.18(e) disclosure), `NTC_REGX_39C_EARLY_INTERVENTION_BK` (no payment request; bankruptcy disclaimer \"informational, not an attempt to collect from you personally\"), `NTC_REGX_39CD_EAR"
  },
@@ -1205,7 +1321,8 @@
   "code": "NTC_FNMA_D2204_SOLICITATION_PACKAGE",
   "owner_process": "11.2",
   "mentions": [
-   "11.2"
+   "11.2",
+   "32.10"
   ],
   "context": "- Notice Registry templates approved by counsel and the partner: `NTC_REGX_39B_EARLY_INTERVENTION` (standard; MS-4(A)\u2013(C) wording), `NTC_REGX_39D_EARLY_INTERVENTION_FDCPA` (MS-4(D) + (A)\u2013(C), no payment request, \u00a71006.18(e) disclosure), `NTC_REGX_39C_EARLY_INTERVENTION_BK` (no payment request; bankruptcy disclaimer \"informational, not an attempt to collect from you personally\"), `NTC_REGX_39CD_EAR"
  },
@@ -1237,7 +1354,8 @@
   "code": "NTC_SM_QRPC_SUMMARY",
   "owner_process": "11.3",
   "mentions": [
-   "11.3"
+   "11.3",
+   "32.10"
   ],
   "context": "- Notices: `NTC_SM_QRPC_SUMMARY` (post-call confirmation on a consented channel: what was discussed, next steps, promise details, how to apply \u2014 never a demand in bk/fdcpa-cease contexts); `FRM_SM_THIRD_PARTY_AUTH`."
  },
@@ -1253,7 +1371,8 @@
   "code": "NTC_REGF_1006_34_VALIDATION_B1",
   "owner_process": "11.4",
   "mentions": [
-   "11.4"
+   "11.4",
+   "32.10"
   ],
   "context": "- Notice Registry: `NTC_REGF_1006_34_VALIDATION_B1` (Model Form B-1 with mortgage periodic-statement substitute; English + Spanish), `NTC_REGF_1006_18E_DISCLOSURE` fragment injected into every DC-loan template (letters, emails, SMS, statements, EI notices, BSP), `NTC_REGF_1006_38_VERIFICATION` (dispute response: note copy, payment history, itemization), `NTC_REGF_1006_38_ORIGINAL_CREDITOR`, `NTC_R"
  },
@@ -1285,7 +1404,10 @@
   "code": "NTC_REGF_1006_6C_CEASE_ACK",
   "owner_process": "11.4",
   "mentions": [
-   "11.4"
+   "11.4",
+   "32.10",
+   "32.13",
+   "32.9"
   ],
   "context": "- Notice Registry: `NTC_REGF_1006_34_VALIDATION_B1` (Model Form B-1 with mortgage periodic-statement substitute; English + Spanish), `NTC_REGF_1006_18E_DISCLOSURE` fragment injected into every DC-loan template (letters, emails, SMS, statements, EI notices, BSP), `NTC_REGF_1006_38_VERIFICATION` (dispute response: note copy, payment history, itemization), `NTC_REGF_1006_38_ORIGINAL_CREDITOR`, `NTC_R"
  },
@@ -1293,7 +1415,8 @@
   "code": "NTC_CO_AI_ACT_PRE_DECISION",
   "owner_process": "11.5",
   "mentions": [
-   "11.5"
+   "11.5",
+   "32.10"
   ],
   "context": "- **Notice Registry**: `NTC_FNMA_A42106_FORM182_ADVERSE_ACTION` (Form 182 + Reg B/FCRA elements), `NTC_SM_ID_ELIGIBILITY_RESULT` (informational), 12.x Evaluation Notice templates; Colorado pre-decision notice (`NTC_CO_AI_ACT_PRE_DECISION`)."
  },
@@ -1309,7 +1432,8 @@
   "code": "NTC_SM_ID_ELIGIBILITY_RESULT",
   "owner_process": "11.5",
   "mentions": [
-   "11.5"
+   "11.5",
+   "32.10"
   ],
   "context": "- **Notice Registry**: `NTC_FNMA_A42106_FORM182_ADVERSE_ACTION` (Form 182 + Reg B/FCRA elements), `NTC_SM_ID_ELIGIBILITY_RESULT` (informational), 12.x Evaluation Notice templates; Colorado pre-decision notice (`NTC_CO_AI_ACT_PRE_DECISION`)."
  },
@@ -1317,7 +1441,8 @@
   "code": "NTC_CA_2924_10_ACK",
   "owner_process": "12.1",
   "mentions": [
-   "12.1"
+   "12.1",
+   "32.10"
   ],
   "context": "- `NTC_FNMA_D2204_SOLICITATION` (Form 745 + Form 710 + 4506-C), `NTC_FNMA_D2205_LATE_BRP_PLAN`, `NTC_REGX_41I_DUPLICATIVE`, `NTC_CA_2924_10_ACK`."
  },
@@ -1333,7 +1458,8 @@
   "code": "NTC_FNMA_D2205_LATE_BRP_PLAN",
   "owner_process": "12.1",
   "mentions": [
-   "12.1"
+   "12.1",
+   "32.10"
   ],
   "context": "3. **45-day test.** If a foreclosure sale is scheduled and `received_date > sale_date \u2212 45 days`, (b)(2) does not apply; the D2-2-05 \"explanation of plan\" acknowledgment (`NTC_FNMA_D2205_LATE_BRP_PLAN`) is still sent within 5 servicer business days, and 12.2's expedited review applies."
  },
@@ -1341,7 +1467,8 @@
   "code": "NTC_REGX_41B2_INCOMPLETE_CLOSED",
   "owner_process": "12.1",
   "mentions": [
-   "12.1"
+   "12.1",
+   "32.10"
   ],
   "context": "- `incomplete` \u2192 `facially_complete` (all listed items received) \u2192 `complete` (verified; `complete_at` set) | `incomplete` again (new request; reasonable opportunity; deemed date preserved) ; `incomplete` \u2192 `expired` (reasonable date passed without progress \u2192 (c)(2)(ii) discretionary evaluation path in 12.2, or closure with `NTC_REGX_41B2_INCOMPLETE_CLOSED`)."
  },
@@ -1349,7 +1476,8 @@
   "code": "NTC_REGX_41B2_SUPPLEMENTAL_REQUEST",
   "owner_process": "12.1",
   "mentions": [
-   "12.1"
+   "12.1",
+   "32.10"
   ],
   "context": "7. **Facially complete.** When the last item listed in the (b)(2) notice arrives, set `facially_complete_at`; run verification within 2 business days; if anything further is needed, send `NTC_REGX_41B2_SUPPLEMENTAL_REQUEST` with a new date (\u22657 days; milestones apply) and keep `foreclosure_holds` active; if nothing further, `complete_at = facially_complete_at`."
  },
@@ -1358,7 +1486,8 @@
   "owner_process": "12.1",
   "mentions": [
    "12.1",
-   "12.4"
+   "12.4",
+   "32.10"
   ],
   "context": "- **Notice templates (Supermortgage; partner legal sign-off):** `NTC_REGX_41B2_ACK_COMPLETE`, `NTC_REGX_41B2_ACK_INCOMPLETE` (with Incomplete Information Notice content) \u2014 **canonical codes for the \u00a71024.41(b)(2)(i)(B) loss-mitigation acknowledgment, and the only ones. 1.7's 10-business-day transferee-acknowledgment timer `REGX_1024_41K2_TRANSFEREE_ACK_10` is satisfied by these notices**: a transf"
  },
@@ -1366,7 +1495,8 @@
   "code": "NTC_REGX_41C3_COMPLETE",
   "owner_process": "12.1",
   "mentions": [
-   "12.1"
+   "12.1",
+   "32.10"
   ],
   "context": "- **Notice templates (Supermortgage; partner legal sign-off):** `NTC_REGX_41B2_ACK_COMPLETE`, `NTC_REGX_41B2_ACK_INCOMPLETE` (with Incomplete Information Notice content) \u2014 **canonical codes for the \u00a71024.41(b)(2)(i)(B) loss-mitigation acknowledgment, and the only ones. 1.7's 10-business-day transferee-acknowledgment timer `REGX_1024_41K2_TRANSFEREE_ACK_10` is satisfied by these notices**: a transf"
  },
@@ -1375,7 +1505,8 @@
   "owner_process": "12.1",
   "mentions": [
    "12.1",
-   "12.2"
+   "12.2",
+   "32.10"
   ],
   "context": "8. **Duplicative test (\u00a71024.41(i)).** `duplicative` only if a prior application by the same borrower on this loan reached `complete` and was fully processed by *Supermortgage* (not a transferor) and `regx_days_delinquent` never reset to zero since; otherwise full process. Even when duplicative, evaluate under \u00a71024.38(b)(2)(v)/Fannie Mae and send a courtesy notice (`NTC_REGX_41I_DUPLICATIVE`) sta"
  },
@@ -1383,7 +1514,8 @@
   "code": "NTC_REGX_41_NPRM_RFA_RECEIVED",
   "owner_process": "12.1",
   "mentions": [
-   "12.1"
+   "12.1",
+   "32.10"
   ],
   "context": "10. **NPRM strategy (flag).** Under `regx.lossmit.2024nprm`, `lossmit.assistance.requested` alone opens `review_cycle_open`, sets `foreclosure_holds{kind=lm_review_cycle}` when received >37 days before a sale, and the acknowledgment becomes `NTC_REGX_41_NPRM_RFA_RECEIVED` (what was received, what will happen, how to reach the SPOC, translations/taglines). The completeness engine keeps running for "
  },
@@ -1391,7 +1523,8 @@
   "code": "NTC_FNMA_EVAL_NOTICE_STREAMLINED",
   "owner_process": "12.2",
   "mentions": [
-   "12.2"
+   "12.2",
+   "32.10"
   ],
   "context": "- `NTC_REGX_41C4IIB_THIRD_PARTY_DELAY`, `NTC_FNMA_EVAL_NOTICE_STREAMLINED` (offers not based on a BRP), `NTC_REGX_41I_DUPLICATIVE` (12.1)."
  },
@@ -1399,7 +1532,8 @@
   "code": "NTC_REGB_1002_9_LM_ADVERSE_ACTION",
   "owner_process": "12.2",
   "mentions": [
-   "12.2"
+   "12.2",
+   "32.10"
   ],
   "context": "- **Notice templates:** `NTC_REGX_41C1_OFFER`, `NTC_REGX_41C1_DENIAL`, `NTC_REGX_41C4IIB_THIRD_PARTY_DELAY`, `NTC_FNMA_EVAL_*` variants, `NTC_REGB_1002_9_LM_ADVERSE_ACTION` (Form 182 content), CA/NY addenda."
  },
@@ -1407,7 +1541,8 @@
   "code": "NTC_REGX_41C4IIB_THIRD_PARTY_DELAY",
   "owner_process": "12.2",
   "mentions": [
-   "12.2"
+   "12.2",
+   "32.10"
   ],
   "context": "- **Notice templates:** `NTC_REGX_41C1_OFFER`, `NTC_REGX_41C1_DENIAL`, `NTC_REGX_41C4IIB_THIRD_PARTY_DELAY`, `NTC_FNMA_EVAL_*` variants, `NTC_REGB_1002_9_LM_ADVERSE_ACTION` (Form 182 content), CA/NY addenda."
  },
@@ -1415,7 +1550,8 @@
   "code": "NTC_REGX_41H_APPEAL_ACK",
   "owner_process": "12.3",
   "mentions": [
-   "12.3"
+   "12.3",
+   "32.10"
   ],
   "context": "- **Templates:** `NTC_REGX_41H4_APPEAL_GRANTED`, `NTC_REGX_41H4_APPEAL_DENIED`, `NTC_REGX_41H_APPEAL_ACK` (policy), `NTC_REGX_41H_APPEAL_INELIGIBLE` (late/non-modification), CA/NY addenda."
  },
@@ -1423,7 +1559,8 @@
   "code": "NTC_REGX_41H_APPEAL_INELIGIBLE",
   "owner_process": "12.3",
   "mentions": [
-   "12.3"
+   "12.3",
+   "32.10"
   ],
   "context": "- **Templates:** `NTC_REGX_41H4_APPEAL_GRANTED`, `NTC_REGX_41H4_APPEAL_DENIED`, `NTC_REGX_41H_APPEAL_ACK` (policy), `NTC_REGX_41H_APPEAL_INELIGIBLE` (late/non-modification), CA/NY addenda."
  },
@@ -1431,7 +1568,8 @@
   "code": "NTC_FNMA_D23201_FORB_EXPIRY_OPTIONS",
   "owner_process": "12.4",
   "mentions": [
-   "12.4"
+   "12.4",
+   "32.10"
   ],
   "context": "- **Templates:** `NTC_FNMA_D23201_FORB_PLAN` (Evaluation Notice with plan terms; doubles as `NTC_REGX_41C2III_SHORTTERM_TERMS` when offered on an incomplete application), `NTC_FNMA_D23201_FORB_EXTENSION`, `NTC_FNMA_D23201_FORB_EXPIRY_OPTIONS`, `NTC_FNMA_D23201_FORB_TERMINATION`."
  },
@@ -1439,7 +1577,8 @@
   "code": "NTC_FNMA_D23201_FORB_EXTENSION",
   "owner_process": "12.4",
   "mentions": [
-   "12.4"
+   "12.4",
+   "32.10"
   ],
   "context": "- **Templates:** `NTC_FNMA_D23201_FORB_PLAN` (Evaluation Notice with plan terms; doubles as `NTC_REGX_41C2III_SHORTTERM_TERMS` when offered on an incomplete application), `NTC_FNMA_D23201_FORB_EXTENSION`, `NTC_FNMA_D23201_FORB_EXPIRY_OPTIONS`, `NTC_FNMA_D23201_FORB_TERMINATION`."
  },
@@ -1447,7 +1586,8 @@
   "code": "NTC_FNMA_D23201_FORB_PLAN",
   "owner_process": "12.4",
   "mentions": [
-   "12.4"
+   "12.4",
+   "32.10"
   ],
   "context": "- **Templates:** `NTC_FNMA_D23201_FORB_PLAN` (Evaluation Notice with plan terms; doubles as `NTC_REGX_41C2III_SHORTTERM_TERMS` when offered on an incomplete application), `NTC_FNMA_D23201_FORB_EXTENSION`, `NTC_FNMA_D23201_FORB_EXPIRY_OPTIONS`, `NTC_FNMA_D23201_FORB_TERMINATION`."
  },
@@ -1455,7 +1595,8 @@
   "code": "NTC_FNMA_D23201_FORB_TERMINATION",
   "owner_process": "12.4",
   "mentions": [
-   "12.4"
+   "12.4",
+   "32.10"
   ],
   "context": "- **Templates:** `NTC_FNMA_D23201_FORB_PLAN` (Evaluation Notice with plan terms; doubles as `NTC_REGX_41C2III_SHORTTERM_TERMS` when offered on an incomplete application), `NTC_FNMA_D23201_FORB_EXTENSION`, `NTC_FNMA_D23201_FORB_EXPIRY_OPTIONS`, `NTC_FNMA_D23201_FORB_TERMINATION`."
  },
@@ -1479,7 +1620,8 @@
   "code": "NTC_FNMA_D23202_REPAY_PLAN",
   "owner_process": "12.5",
   "mentions": [
-   "12.5"
+   "12.5",
+   "32.10"
   ],
   "context": "- **Templates:** `NTC_FNMA_D23202_REPAY_PLAN` (Evaluation Notice + agreement text per F-1-16; dual-cited \u00a71024.41(c)(2)(iii) when on an incomplete application), `NTC_FNMA_D23202_REPAY_COMPLETED`, `NTC_FNMA_D23202_REPAY_FAILED`."
  },
@@ -1487,7 +1629,8 @@
   "code": "NTC_FNMA_D23204_DEFERRAL_COMPLETED",
   "owner_process": "12.6",
   "mentions": [
-   "12.6"
+   "12.6",
+   "32.10"
   ],
   "context": "- **Templates:** `NTC_FNMA_D23204_DEFERRAL_OFFER` (Evaluation Notice variant), `NTC_FNMA_D23204_SOLICIT_POST_FORB`, `NTC_FNMA_D23204_SOLICIT_POST_REPAY`, `DOC_FNMA_PAYMENT_DEFERRAL_AGREEMENT` (Fannie Mae model content; e-sign enabled), `NTC_FNMA_D23204_DEFERRAL_COMPLETED`."
  },
@@ -1495,7 +1638,9 @@
   "code": "NTC_FNMA_D23204_DEFERRAL_OFFER",
   "owner_process": "12.6",
   "mentions": [
-   "12.6"
+   "12.6",
+   "32.10",
+   "32.2"
   ],
   "context": "- **Templates:** `NTC_FNMA_D23204_DEFERRAL_OFFER` (Evaluation Notice variant), `NTC_FNMA_D23204_SOLICIT_POST_FORB`, `NTC_FNMA_D23204_SOLICIT_POST_REPAY`, `DOC_FNMA_PAYMENT_DEFERRAL_AGREEMENT` (Fannie Mae model content; e-sign enabled), `NTC_FNMA_D23204_DEFERRAL_COMPLETED`."
  },
@@ -1503,7 +1648,8 @@
   "code": "NTC_FNMA_D23204_SOLICIT_POST_FORB",
   "owner_process": "12.6",
   "mentions": [
-   "12.6"
+   "12.6",
+   "32.10"
   ],
   "context": "- **Templates:** `NTC_FNMA_D23204_DEFERRAL_OFFER` (Evaluation Notice variant), `NTC_FNMA_D23204_SOLICIT_POST_FORB`, `NTC_FNMA_D23204_SOLICIT_POST_REPAY`, `DOC_FNMA_PAYMENT_DEFERRAL_AGREEMENT` (Fannie Mae model content; e-sign enabled), `NTC_FNMA_D23204_DEFERRAL_COMPLETED`."
  },
@@ -1511,7 +1657,8 @@
   "code": "NTC_FNMA_D23204_SOLICIT_POST_REPAY",
   "owner_process": "12.6",
   "mentions": [
-   "12.6"
+   "12.6",
+   "32.10"
   ],
   "context": "- **Templates:** `NTC_FNMA_D23204_DEFERRAL_OFFER` (Evaluation Notice variant), `NTC_FNMA_D23204_SOLICIT_POST_FORB`, `NTC_FNMA_D23204_SOLICIT_POST_REPAY`, `DOC_FNMA_PAYMENT_DEFERRAL_AGREEMENT` (Fannie Mae model content; e-sign enabled), `NTC_FNMA_D23204_DEFERRAL_COMPLETED`."
  },
@@ -1519,7 +1666,8 @@
   "code": "NTC_FNMA_D23205_DISASTER_DEFERRAL_OFFER",
   "owner_process": "12.7",
   "mentions": [
-   "12.7"
+   "12.7",
+   "32.10"
   ],
   "context": "- Templates: `NTC_FNMA_D23205_DISASTER_DEFERRAL_OFFER`, `NTC_FNMA_D23205_SOLICIT_POST_DISASTER_FORB`, `NTC_FNMA_D23205_SOLICIT_POST_REPAY`, agreement variant."
  },
@@ -1527,7 +1675,8 @@
   "code": "NTC_FNMA_D23205_SOLICIT_POST_DISASTER_FORB",
   "owner_process": "12.7",
   "mentions": [
-   "12.7"
+   "12.7",
+   "32.10"
   ],
   "context": "- Templates: `NTC_FNMA_D23205_DISASTER_DEFERRAL_OFFER`, `NTC_FNMA_D23205_SOLICIT_POST_DISASTER_FORB`, `NTC_FNMA_D23205_SOLICIT_POST_REPAY`, agreement variant."
  },
@@ -1535,7 +1684,8 @@
   "code": "NTC_FNMA_D23205_SOLICIT_POST_REPAY",
   "owner_process": "12.7",
   "mentions": [
-   "12.7"
+   "12.7",
+   "32.10"
   ],
   "context": "- Templates: `NTC_FNMA_D23205_DISASTER_DEFERRAL_OFFER`, `NTC_FNMA_D23205_SOLICIT_POST_DISASTER_FORB`, `NTC_FNMA_D23205_SOLICIT_POST_REPAY`, agreement variant."
  },
@@ -1551,7 +1701,8 @@
   "code": "NTC_FNMA_D23206_SOLICIT_STREAMLINED",
   "owner_process": "12.8",
   "mentions": [
-   "12.8"
+   "12.8",
+   "32.10"
   ],
   "context": "- `NTC_FNMA_D23206_SOLICIT_STREAMLINED` (cover letter + \"TPP Solicitation Offer \u2014 Not Based on an Evaluation of a BRP\"): same terms; incomplete-application disclosures where an application is open."
  },
@@ -1655,7 +1806,9 @@
   "code": "NTC_SM_FC_REFERRAL_ADVICE",
   "owner_process": "13.3",
   "mentions": [
-   "13.3"
+   "13.3",
+   "32.10",
+   "32.13"
   ],
   "context": "- Notices (Notice Registry; all mail-only unless the statute permits otherwise; E-SIGN consent never substitutes for statutory certified mail): `NTC_STATE_PREFC_NY_1304` (RPAPL \u00a71304 content checklist: header text, days/amount in default, 90-day statement, \u22655 counseling agencies for the county, AG HOPP hotline, occupancy statement, 14-pt, separate envelope, language version), `NTC_STATE_PREFC_NJ_N"
  },
@@ -1663,7 +1816,8 @@
   "code": "NTC_SM_FC_REINSTATEMENT_QUOTE",
   "owner_process": "13.3",
   "mentions": [
-   "13.3"
+   "13.3",
+   "32.10"
   ],
   "context": "- Notices (Notice Registry; all mail-only unless the statute permits otherwise; E-SIGN consent never substitutes for statutory certified mail): `NTC_STATE_PREFC_NY_1304` (RPAPL \u00a71304 content checklist: header text, days/amount in default, 90-day statement, \u22655 counseling agencies for the county, AG HOPP hotline, occupancy statement, 14-pt, separate envelope, language version), `NTC_STATE_PREFC_NJ_N"
  },
@@ -1671,7 +1825,8 @@
   "code": "NTC_STATE_PREFC_CA_2923_5_LETTER",
   "owner_process": "13.3",
   "mentions": [
-   "13.3"
+   "13.3",
+   "32.10"
   ],
   "context": "- Notices (Notice Registry; all mail-only unless the statute permits otherwise; E-SIGN consent never substitutes for statutory certified mail): `NTC_STATE_PREFC_NY_1304` (RPAPL \u00a71304 content checklist: header text, days/amount in default, 90-day statement, \u22655 counseling agencies for the county, AG HOPP hotline, occupancy statement, 14-pt, separate envelope, language version), `NTC_STATE_PREFC_NJ_N"
  },
@@ -1679,7 +1834,8 @@
   "code": "NTC_STATE_PREFC_GA_162_2",
   "owner_process": "13.3",
   "mentions": [
-   "13.3"
+   "13.3",
+   "32.10"
   ],
   "context": "- Notices (Notice Registry; all mail-only unless the statute permits otherwise; E-SIGN consent never substitutes for statutory certified mail): `NTC_STATE_PREFC_NY_1304` (RPAPL \u00a71304 content checklist: header text, days/amount in default, 90-day statement, \u22655 counseling agencies for the county, AG HOPP hotline, occupancy statement, 14-pt, separate envelope, language version), `NTC_STATE_PREFC_NJ_N"
  },
@@ -1687,7 +1843,8 @@
   "code": "NTC_STATE_PREFC_MA_35A",
   "owner_process": "13.3",
   "mentions": [
-   "13.3"
+   "13.3",
+   "32.10"
   ],
   "context": "- Notices (Notice Registry; all mail-only unless the statute permits otherwise; E-SIGN consent never substitutes for statutory certified mail): `NTC_STATE_PREFC_NY_1304` (RPAPL \u00a71304 content checklist: header text, days/amount in default, 90-day statement, \u22655 counseling agencies for the county, AG HOPP hotline, occupancy statement, 14-pt, separate envelope, language version), `NTC_STATE_PREFC_NJ_N"
  },
@@ -1695,7 +1852,8 @@
   "code": "NTC_STATE_PREFC_MD_NOI",
   "owner_process": "13.3",
   "mentions": [
-   "13.3"
+   "13.3",
+   "32.10"
   ],
   "context": "- Notices (Notice Registry; all mail-only unless the statute permits otherwise; E-SIGN consent never substitutes for statutory certified mail): `NTC_STATE_PREFC_NY_1304` (RPAPL \u00a71304 content checklist: header text, days/amount in default, 90-day statement, \u22655 counseling agencies for the county, AG HOPP hotline, occupancy statement, 14-pt, separate envelope, language version), `NTC_STATE_PREFC_NJ_N"
  },
@@ -1703,7 +1861,8 @@
   "code": "NTC_STATE_PREFC_NJ_NOI",
   "owner_process": "13.3",
   "mentions": [
-   "13.3"
+   "13.3",
+   "32.10"
   ],
   "context": "- Notices (Notice Registry; all mail-only unless the statute permits otherwise; E-SIGN consent never substitutes for statutory certified mail): `NTC_STATE_PREFC_NY_1304` (RPAPL \u00a71304 content checklist: header text, days/amount in default, 90-day statement, \u22655 counseling agencies for the county, AG HOPP hotline, occupancy statement, 14-pt, separate envelope, language version), `NTC_STATE_PREFC_NJ_N"
  },
@@ -1711,7 +1870,8 @@
   "code": "NTC_STATE_PREFC_NV_107_5XX",
   "owner_process": "13.3",
   "mentions": [
-   "13.3"
+   "13.3",
+   "32.10"
   ],
   "context": "- Notices (Notice Registry; all mail-only unless the statute permits otherwise; E-SIGN consent never substitutes for statutory certified mail): `NTC_STATE_PREFC_NY_1304` (RPAPL \u00a71304 content checklist: header text, days/amount in default, 90-day statement, \u22655 counseling agencies for the county, AG HOPP hotline, occupancy statement, 14-pt, separate envelope, language version), `NTC_STATE_PREFC_NJ_N"
  },
@@ -1719,7 +1879,8 @@
   "code": "NTC_STATE_PREFC_NY_1304",
   "owner_process": "13.3",
   "mentions": [
-   "13.3"
+   "13.3",
+   "32.10"
   ],
   "context": "- Notices (Notice Registry; all mail-only unless the statute permits otherwise; E-SIGN consent never substitutes for statutory certified mail): `NTC_STATE_PREFC_NY_1304` (RPAPL \u00a71304 content checklist: header text, days/amount in default, 90-day statement, \u22655 counseling agencies for the county, AG HOPP hotline, occupancy statement, 14-pt, separate envelope, language version), `NTC_STATE_PREFC_NJ_N"
  },
@@ -1727,7 +1888,8 @@
   "code": "NTC_STATE_PREFC_TX_51002D",
   "owner_process": "13.3",
   "mentions": [
-   "13.3"
+   "13.3",
+   "32.10"
   ],
   "context": "- Notices (Notice Registry; all mail-only unless the statute permits otherwise; E-SIGN consent never substitutes for statutory certified mail): `NTC_STATE_PREFC_NY_1304` (RPAPL \u00a71304 content checklist: header text, days/amount in default, 90-day statement, \u22655 counseling agencies for the county, AG HOPP hotline, occupancy statement, 14-pt, separate envelope, language version), `NTC_STATE_PREFC_NJ_N"
  },
@@ -1735,7 +1897,8 @@
   "code": "NTC_STATE_PREFC_WA_61_24_031_LETTER",
   "owner_process": "13.3",
   "mentions": [
-   "13.3"
+   "13.3",
+   "32.10"
   ],
   "context": "- Notices (Notice Registry; all mail-only unless the statute permits otherwise; E-SIGN consent never substitutes for statutory certified mail): `NTC_STATE_PREFC_NY_1304` (RPAPL \u00a71304 content checklist: header text, days/amount in default, 90-day statement, \u22655 counseling agencies for the county, AG HOPP hotline, occupancy statement, 14-pt, separate envelope, language version), `NTC_STATE_PREFC_NJ_N"
  },
@@ -1743,7 +1906,9 @@
   "code": "NTC_FNMA_D23401_SCRA_RIGHTS",
   "owner_process": "13.8",
   "mentions": [
-   "13.8"
+   "13.8",
+   "32.10",
+   "32.13"
   ],
   "context": "- Notices: `NTC_FNMA_D23401_SCRA_RIGHTS` (policy; plain-language SCRA rights, Form 180 enclosure, contact channels; mail or e-delivery with consent), `NTC_SCRA_3953_STAY_CONFIRMATION` (confirms the stay, its expected end, and the 12-month tail; mail), `NTC_FNMA_D23401_SCRA_STATUS_CHECK_90` (quarterly letter/call script)."
  },
@@ -1759,7 +1924,8 @@
   "code": "NTC_SCRA_3953_STAY_CONFIRMATION",
   "owner_process": "13.8",
   "mentions": [
-   "13.8"
+   "13.8",
+   "32.10"
   ],
   "context": "- Notices: `NTC_FNMA_D23401_SCRA_RIGHTS` (policy; plain-language SCRA rights, Form 180 enclosure, contact channels; mail or e-delivery with consent), `NTC_SCRA_3953_STAY_CONFIRMATION` (confirms the stay, its expected end, and the 12-month tail; mail), `NTC_FNMA_D23401_SCRA_STATUS_CHECK_90` (quarterly letter/call script)."
  },
@@ -1775,7 +1941,9 @@
   "code": "NTC_SCRA_3937_RATE_CONFIRMATION",
   "owner_process": "13.9",
   "mentions": [
-   "13.9"
+   "13.9",
+   "32.10",
+   "32.13"
   ],
   "context": "- Notice templates approved: `NTC_SCRA_3937_RATE_CONFIRMATION` (D2-3.4-01 content), `NTC_SCRA_3937_RATE_END`, `NTC_SCRA_3937_OVERPAYMENT_ELECTION`."
  },
@@ -1791,7 +1959,8 @@
   "code": "NTC_BK_BREACH_INFORMATIONAL",
   "owner_process": "14.1",
   "mentions": [
-   "14.1"
+   "14.1",
+   "32.10"
   ],
   "context": "- **Informational notices** (mail-only unless counsel consents to e-mail; counsel-addressed where represented): `NTC_BK_PAYMENT_INSTRUCTIONS` (post-petition payment address/amount; \"informational \u2014 not an attempt to collect\"), `NTC_BK_STATUS_INFO` (responses to inbound questions), `NTC_BK_BREACH_INFORMATIONAL` (post-discharge breach letter variant for 13.x)."
  },
@@ -1799,7 +1968,8 @@
   "code": "NTC_BK_PAYMENT_INSTRUCTIONS",
   "owner_process": "14.1",
   "mentions": [
-   "14.1"
+   "14.1",
+   "32.10"
   ],
   "context": "- **Notice Registry**: court-form templates (`CRT_B410`, `CRT_B410A`, `CRT_B410S1`, `CRT_B410S2`, `CRT_B410C13_M1R`, `CRT_B410C13_NR`, `CRT_B410C13_M2R`, `CRT_MFR_DECL`, `CRT_NOA`, `CRT_OBJ_CONFIRMATION`, `CRT_REAFFIRM_2400A`), versioned to the Official Form revision (410A 12/23; 410S-1 12/25; 410S-2 12/16; 410C13-* 12/25), each with a required-content checklist and Rule 9037 redaction check; info"
  },
@@ -1807,7 +1977,8 @@
   "code": "NTC_BK_STATUS_INFO",
   "owner_process": "14.1",
   "mentions": [
-   "14.1"
+   "14.1",
+   "32.10"
   ],
   "context": "- **Notice Registry**: court-form templates (`CRT_B410`, `CRT_B410A`, `CRT_B410S1`, `CRT_B410S2`, `CRT_B410C13_M1R`, `CRT_B410C13_NR`, `CRT_B410C13_M2R`, `CRT_MFR_DECL`, `CRT_NOA`, `CRT_OBJ_CONFIRMATION`, `CRT_REAFFIRM_2400A`), versioned to the Official Form revision (410A 12/23; 410S-1 12/25; 410S-2 12/16; 410C13-* 12/25), each with a required-content checklist and Rule 9037 redaction check; info"
  },
@@ -1839,7 +2010,8 @@
   "code": "NTC_PAYOFF_PAID_IN_FULL",
   "owner_process": "16.2",
   "mentions": [
-   "16.2"
+   "16.2",
+   "32.11"
   ],
   "context": "| `SM_PAYOFF_PIF_LETTER_5BD` | deadline (policy) | `loan.paid_in_full` | payoff date | +5 BD | `NTC_PAYOFF_PAID_IN_FULL` sent | sev-4 |"
  },
@@ -1847,7 +2019,8 @@
   "code": "NTC_PAYOFF_SHORTAGE_DEMAND",
   "owner_process": "16.2",
   "mentions": [
-   "16.2"
+   "16.2",
+   "32.12"
   ],
   "context": "| `SM_PAYOFF_SHORTAGE_DEMAND_1BD` | deadline (policy) | `payoff.funds.short` | receipt | +1 BD | `NTC_PAYOFF_SHORTAGE_DEMAND` sent | sev-3 |"
  },
@@ -1856,7 +2029,8 @@
   "owner_process": "16.3",
   "mentions": [
    "16.3",
-   "16.4"
+   "16.4",
+   "32.12"
   ],
   "context": "- Notices: `NTC_LIEN_RELEASE_RECORDED` (policy; FL \u00a7701.04(2) mandatory) \u2014 recorded instrument copy, recording reference, statement that the lien is released, MERS deactivation note, tax/insurance reminders; `NTC_NJ_CANCELLATION_RIGHT` (N.J.S.A. 46:18-11.2 nonbank notice; content: right to demand cancellation, fee \u2264 $25, how to demand); `NTC_ENOTE_PAPER_COPY` (F-1-09 letter with the \"Copy\"/\"Paid-I"
  },
@@ -1864,7 +2038,9 @@
   "code": "NTC_LIEN_RELEASE_RECORDED",
   "owner_process": "16.3",
   "mentions": [
-   "16.3"
+   "16.3",
+   "32.11",
+   "32.12"
   ],
   "context": "| `SM_BORROWER_RELEASE_NOTICE_5BD` | deadline (policy; FL \u00a7701.04(2) requires sending the recorded release) | `lien_release.recorded` | recorded_at | +5 BD | `NTC_LIEN_RELEASE_RECORDED` sent with the recorded image | sev-3 (sev-1 in FL) |"
  },
@@ -1872,7 +2048,8 @@
   "code": "NTC_NJ_CANCELLATION_RIGHT",
   "owner_process": "16.3",
   "mentions": [
-   "16.3"
+   "16.3",
+   "32.12"
   ],
   "context": "| `NJ_46_18_112_RIGHT_TO_DEMAND_NOTICE_10` | deadline (NJ, nonbank) | `loan.paid_in_full{NJ}` | payoff date | +10 `calendar_days` | `NTC_NJ_CANCELLATION_RIGHT` sent (or cancellation already submitted) | sev-2 |"
  },
@@ -1880,7 +2057,8 @@
   "code": "NTC_NOTE_RETURNED",
   "owner_process": "16.3",
   "mentions": [
-   "16.3"
+   "16.3",
+   "32.12"
   ],
   "context": "- Notices: `NTC_LIEN_RELEASE_RECORDED` (policy; FL \u00a7701.04(2) mandatory) \u2014 recorded instrument copy, recording reference, statement that the lien is released, MERS deactivation note, tax/insurance reminders; `NTC_NJ_CANCELLATION_RIGHT` (N.J.S.A. 46:18-11.2 nonbank notice; content: right to demand cancellation, fee \u2264 $25, how to demand); `NTC_ENOTE_PAPER_COPY` (F-1-09 letter with the \"Copy\"/\"Paid-I"
  },
@@ -1888,7 +2066,8 @@
   "code": "NTC_REGX_1024_33B_CORRECTIVE",
   "owner_process": "17.2",
   "mentions": [
-   "17.2"
+   "17.2",
+   "32.12"
   ],
   "context": "- `notice_templates`: `NTC_REGX_1024_33B_GOODBYE_MS2`, `NTC_REGX_1024_33B_COMBINED_MS2` (1.3, now issued by Supermortgage as transferor), `NTC_REGX_1024_33B_CORRECTIVE` (cancellation/date change), `NTC_REGX_1024_17I4_SHORT_YEAR_TRANSFEROR` (\u00a71024.17(i)(4)(ii); checklist = \u00a71024.17(i)(1) annual-statement items + transfer date + transferee escrow contact), `NTC_REGX_1024_33C_MISDIRECTED_PAYMENT_RETU"
  },
@@ -1896,7 +2075,8 @@
   "code": "NTC_REGX_1024_33C_MISDIRECTED_PAYMENT_RETURN",
   "owner_process": "17.2",
   "mentions": [
-   "17.2"
+   "17.2",
+   "32.12"
   ],
   "context": "- `notice_templates`: `NTC_REGX_1024_33B_GOODBYE_MS2`, `NTC_REGX_1024_33B_COMBINED_MS2` (1.3, now issued by Supermortgage as transferor), `NTC_REGX_1024_33B_CORRECTIVE` (cancellation/date change), `NTC_REGX_1024_17I4_SHORT_YEAR_TRANSFEROR` (\u00a71024.17(i)(4)(ii); checklist = \u00a71024.17(i)(1) annual-statement items + transfer date + transferee escrow contact), `NTC_REGX_1024_33C_MISDIRECTED_PAYMENT_RETU"
  },
@@ -2039,7 +2219,10 @@
    "20.3",
    "21.3",
    "25.4",
-   "31.3"
+   "31.3",
+   "32.2",
+   "32.3",
+   "32.4"
   ],
   "context": "- Partner privacy notice (`NTC_GLBA_1016_4_PRIVACY_INITIAL`, 21.3; servicing 7.x annual notice) reviewed by counsel to confirm it describes service-provider sharing (\u00a71016.13) and does **not** promise \"we do not market to you\" (Owner: partner; SM drafts)."
  },
@@ -2063,7 +2246,8 @@
   "code": "NTC_REGZ_1026_24_REFI_OFFER",
   "owner_process": "20.2",
   "mentions": [
-   "20.2"
+   "20.2",
+   "32.2"
   ],
   "context": "1. **Channel eligibility matrix (per touch).** Email: allowed unless `email_optout`/`all_marketing`; must carry ad identification, opt-out link, partner postal address, `NTC_REGZ_1026_24_REFI_OFFER` content when rate/payment terms appear. Portal card: allowed for enrolled borrowers (no CAN-SPAM; \u00a71026.24 applies). Mail: allowed unless `mail_optout`; state disclosures per property state. SMS: PEWC "
  },
@@ -2094,7 +2278,10 @@
    "20.3",
    "21.3",
    "21.6",
-   "31.2"
+   "31.2",
+   "32.2",
+   "32.4",
+   "32.6"
   ],
   "context": "**Colorado SB 26-189 (signed act, leg.colorado.gov/bill_files/116489, fetched 2026-09-10).** C.R.S. 6-1-1701 definitions: \"covered ADMT\" = \"automated decision-making technology that is used to materially influence a consequential decision\"; consequential decision = a decision \"made about a consumer that relates to the provision of or a consumer's access to, eligibility for, selection for, or compe"
  },
@@ -2120,7 +2307,8 @@
    "24.4",
    "26.1",
    "26.2",
-   "30.2"
+   "30.2",
+   "32.2"
   ],
   "context": "- Counsel-approved texts: `NTC_SM_AI_INTERACTION_DISCLOSURE` (voice/chat/web variants; UT/CA/CO overlays), `NTC_SM_ESIGN_CONSENT` (21.1's template extended with the \"origination disclosures\" category), TCPA consent language (20.2), credit-authorization language (soft and hard), prequalification-letter template with \"not a commitment, not a preapproval\" language (Owner: both)."
  },
@@ -2144,7 +2332,9 @@
   "code": "NTC_FNMA_1103_SCIF",
   "owner_process": "21.1",
   "mentions": [
-   "21.1"
+   "21.1",
+   "32.2",
+   "32.3"
   ],
   "context": "Notices owned here (Notice Registry): `NTC_FNMA_1103_SCIF` (English + five translations; channels e-delivery/print), `NTC_SM_ESIGN_CONSENT` (owned here; 20.3 captures the same consent artifact at lead stage and 21.1 re-presents it for the application document class; 30.2 relies on its servicing categories). Referenced, not owned: `NTC_SM_AI_INTERACTION_DISCLOSURE` (20.3 owns the state-parameterize"
  },
@@ -2170,7 +2360,9 @@
   "owner_process": "21.2",
   "mentions": [
    "21.2",
-   "21.4"
+   "21.4",
+   "32.1",
+   "32.2"
   ],
   "context": "Notices owned here: `NTC_REGZ_1026_37_LE` (form H-24; e-delivery/print), `NTC_REGZ_1026_19E1VI_PROVIDER_LIST` (written list of providers; delivered with the LE), Referenced, not owned: the \u00a71026.19(e)(2)(ii) statement on any consumer-specific written estimate issued before the LE (by 20.4/21.1/21.2) is 20.4's `NTC_REGZ_1026_19E2II_QUOTE_DISCLAIMER` under 20.4's `REGZ_1026_19E2II_QUOTE_DISCLAIMER_G"
  },
@@ -2203,7 +2395,10 @@
   "owner_process": "21.3",
   "mentions": [
    "21.3",
-   "22.2"
+   "22.2",
+   "32.2",
+   "32.3",
+   "32.4"
   ],
   "context": "Notices owned here (Notice Registry codes; channel rule per baseline \u00a76): `NTC_REGX_1024_20_HCL` (generated list + accompanying language; e-delivery/print) \u00b7 `NTC_REGX_1024_6_TOOLKIT` (Your Home Loan Toolkit, August 2026 edition, EN/ES; the code keeps the seeded \u00a71024.6 citation, the executing rule is \u00a71026.19(g)) \u00b7 `NTC_REGX_1024_15_AFBA` (Appendix D format; separate piece of paper/separate docum"
  },
@@ -2244,7 +2439,10 @@
   "owner_process": "21.3",
   "mentions": [
    "21.3",
-   "24.1"
+   "24.1",
+   "32.2",
+   "32.3",
+   "32.4"
   ],
   "context": "Notices owned here (Notice Registry codes; channel rule per baseline \u00a76): `NTC_REGX_1024_20_HCL` (generated list + accompanying language; e-delivery/print) \u00b7 `NTC_REGX_1024_6_TOOLKIT` (Your Home Loan Toolkit, August 2026 edition, EN/ES; the code keeps the seeded \u00a71024.6 citation, the executing rule is \u00a71026.19(g)) \u00b7 `NTC_REGX_1024_15_AFBA` (Appendix D format; separate piece of paper/separate docum"
  },
@@ -2253,7 +2451,10 @@
   "owner_process": "21.3",
   "mentions": [
    "21.3",
-   "22.2"
+   "22.2",
+   "32.2",
+   "32.3",
+   "32.4"
   ],
   "context": "Notices owned here (Notice Registry codes; channel rule per baseline \u00a76): `NTC_REGX_1024_20_HCL` (generated list + accompanying language; e-delivery/print) \u00b7 `NTC_REGX_1024_6_TOOLKIT` (Your Home Loan Toolkit, August 2026 edition, EN/ES; the code keeps the seeded \u00a71024.6 citation, the executing rule is \u00a71026.19(g)) \u00b7 `NTC_REGX_1024_15_AFBA` (Appendix D format; separate piece of paper/separate docum"
  },
@@ -2261,7 +2462,10 @@
   "code": "NTC_REGX_1024_15_AFBA",
   "owner_process": "21.3",
   "mentions": [
-   "21.3"
+   "21.3",
+   "32.2",
+   "32.3",
+   "32.4"
   ],
   "context": "Notices owned here (Notice Registry codes; channel rule per baseline \u00a76): `NTC_REGX_1024_20_HCL` (generated list + accompanying language; e-delivery/print) \u00b7 `NTC_REGX_1024_6_TOOLKIT` (Your Home Loan Toolkit, August 2026 edition, EN/ES; the code keeps the seeded \u00a71024.6 citation, the executing rule is \u00a71026.19(g)) \u00b7 `NTC_REGX_1024_15_AFBA` (Appendix D format; separate piece of paper/separate docum"
  },
@@ -2269,7 +2473,10 @@
   "code": "NTC_REGX_1024_20_HCL",
   "owner_process": "21.3",
   "mentions": [
-   "21.3"
+   "21.3",
+   "32.2",
+   "32.3",
+   "32.4"
   ],
   "context": "Notices owned here (Notice Registry codes; channel rule per baseline \u00a76): `NTC_REGX_1024_20_HCL` (generated list + accompanying language; e-delivery/print) \u00b7 `NTC_REGX_1024_6_TOOLKIT` (Your Home Loan Toolkit, August 2026 edition, EN/ES; the code keeps the seeded \u00a71024.6 citation, the executing rule is \u00a71026.19(g)) \u00b7 `NTC_REGX_1024_15_AFBA` (Appendix D format; separate piece of paper/separate docum"
  },
@@ -2285,7 +2492,10 @@
   "code": "NTC_REGX_1024_6_TOOLKIT",
   "owner_process": "21.3",
   "mentions": [
-   "21.3"
+   "21.3",
+   "32.2",
+   "32.3",
+   "32.4"
   ],
   "context": "Notices owned here (Notice Registry codes; channel rule per baseline \u00a76): `NTC_REGX_1024_20_HCL` (generated list + accompanying language; e-delivery/print) \u00b7 `NTC_REGX_1024_6_TOOLKIT` (Your Home Loan Toolkit, August 2026 edition, EN/ES; the code keeps the seeded \u00a71024.6 citation, the executing rule is \u00a71026.19(g)) \u00b7 `NTC_REGX_1024_15_AFBA` (Appendix D format; separate piece of paper/separate docum"
  },
@@ -2293,7 +2503,10 @@
   "code": "NTC_REGZ_1026_19B_ARM_PROGRAM",
   "owner_process": "21.3",
   "mentions": [
-   "21.3"
+   "21.3",
+   "32.2",
+   "32.3",
+   "32.4"
   ],
   "context": "Notices owned here (Notice Registry codes; channel rule per baseline \u00a76): `NTC_REGX_1024_20_HCL` (generated list + accompanying language; e-delivery/print) \u00b7 `NTC_REGX_1024_6_TOOLKIT` (Your Home Loan Toolkit, August 2026 edition, EN/ES; the code keeps the seeded \u00a71024.6 citation, the executing rule is \u00a71026.19(g)) \u00b7 `NTC_REGX_1024_15_AFBA` (Appendix D format; separate piece of paper/separate docum"
  },
@@ -2301,7 +2514,10 @@
   "code": "NTC_REGZ_1026_19B_CHARM",
   "owner_process": "21.3",
   "mentions": [
-   "21.3"
+   "21.3",
+   "32.2",
+   "32.3",
+   "32.4"
   ],
   "context": "Notices owned here (Notice Registry codes; channel rule per baseline \u00a76): `NTC_REGX_1024_20_HCL` (generated list + accompanying language; e-delivery/print) \u00b7 `NTC_REGX_1024_6_TOOLKIT` (Your Home Loan Toolkit, August 2026 edition, EN/ES; the code keeps the seeded \u00a71024.6 citation, the executing rule is \u00a71026.19(g)) \u00b7 `NTC_REGX_1024_15_AFBA` (Appendix D format; separate piece of paper/separate docum"
  },
@@ -2310,7 +2526,10 @@
   "owner_process": "21.3",
   "mentions": [
    "21.3",
-   "26.1"
+   "26.1",
+   "32.13",
+   "32.2",
+   "32.4"
   ],
   "context": "Colorado (SB 26-189 point-of-interaction notice), California CPPA ADMT pre-use notice, Utah and Texas AI-disclosure duties are 20.3/21.1 (`NTC_SM_AI_INTERACTION_DISCLOSURE`, `NTC_CO_SB26_189_ADMT_NOTICE`) and are not repeated here. TX 50(a)(6) 12-day notice is 26.1's `NTC_TX_50A6_12DAY` (delivered at application when the transaction is a 50(a)(6) \u2014 26.1 sets the timer; 21.3's package carries it)."
  },
@@ -2354,7 +2573,9 @@
    "21.6",
    "23.2",
    "23.3",
-   "31.2"
+   "31.2",
+   "32.2",
+   "32.3"
   ],
   "context": "| Data/artifacts | `decisions`; `adverse_actions` (principal reasons with sources; FCRA block per applicant); notices C-1/C-4/C-6 equivalents (`NTC_REGB_1002_9_ADVERSE_ACTION`, `NTC_REGB_1002_9_COUNTEROFFER`, `NTC_REGB_1002_9_NOIA`); Colorado ADMT notice/explanation (`NTC_CO_SB26_189_ADMT_NOTICE`); `underwriting_reviewer` approval; `hmda_records.action_taken`/`action_taken_date`/denial reasons |"
  },
@@ -2364,7 +2585,9 @@
   "mentions": [
    "21.6",
    "23.2",
-   "23.3"
+   "23.3",
+   "32.2",
+   "32.3"
   ],
   "context": "| Data/artifacts | `decisions`; `adverse_actions` (principal reasons with sources; FCRA block per applicant); notices C-1/C-4/C-6 equivalents (`NTC_REGB_1002_9_ADVERSE_ACTION`, `NTC_REGB_1002_9_COUNTEROFFER`, `NTC_REGB_1002_9_NOIA`); Colorado ADMT notice/explanation (`NTC_CO_SB26_189_ADMT_NOTICE`); `underwriting_reviewer` approval; `hmda_records.action_taken`/`action_taken_date`/denial reasons |"
  },
@@ -2373,7 +2596,10 @@
   "owner_process": "21.6",
   "mentions": [
    "21.6",
-   "22.1"
+   "22.1",
+   "32.2",
+   "32.3",
+   "32.4"
   ],
   "context": "| Data/artifacts | `decisions`; `adverse_actions` (principal reasons with sources; FCRA block per applicant); notices C-1/C-4/C-6 equivalents (`NTC_REGB_1002_9_ADVERSE_ACTION`, `NTC_REGB_1002_9_COUNTEROFFER`, `NTC_REGB_1002_9_NOIA`); Colorado ADMT notice/explanation (`NTC_CO_SB26_189_ADMT_NOTICE`); `underwriting_reviewer` approval; `hmda_records.action_taken`/`action_taken_date`/denial reasons |"
  },
@@ -2385,7 +2611,10 @@
    "22.2",
    "22.3",
    "22.4",
-   "22.6"
+   "22.6",
+   "32.1",
+   "32.2",
+   "32.5"
   ],
   "context": "Baseline tables written: `conditions` (status \u2192 `cleared` when a request is satisfied and the owning process accepts it), `notices` (`NTC_SM_NEEDS_LIST`, `NTC_SM_NEEDS_LIST_REMINDER`), `timers`, `agent_runs`, `agent_decisions`, `escalations`, `loan_events`."
  },
@@ -2393,7 +2622,11 @@
   "code": "NTC_SM_NEEDS_LIST_REMINDER",
   "owner_process": "22.1",
   "mentions": [
-   "22.1"
+   "22.1",
+   "32.1",
+   "32.2",
+   "32.4",
+   "32.5"
   ],
   "context": "Baseline tables written: `conditions` (status \u2192 `cleared` when a request is satisfied and the owning process accepts it), `notices` (`NTC_SM_NEEDS_LIST`, `NTC_SM_NEEDS_LIST_REMINDER`), `timers`, `agent_runs`, `agent_decisions`, `escalations`, `loan_events`."
  },
@@ -2401,7 +2634,9 @@
   "code": "NTC_REGB_1002_9_APPROVAL",
   "owner_process": "23.3",
   "mentions": [
-   "23.3"
+   "23.3",
+   "32.2",
+   "32.6"
   ],
   "context": "| Data/artifacts | `decisions` (conditional approval / approval / counteroffer / denial), conditional-approval letter (`NTC_REGB_1002_9_APPROVAL`), `condition_clearances`, `ctc_checklists`, AI decision record (inputs, DU findings, evidence, rule-set versions), rep-and-warrant relief ledger (`rep_warrant_relief`), prefunding-QC hooks |"
  },
@@ -2442,7 +2677,9 @@
   "owner_process": "24.5",
   "mentions": [
    "24.5",
-   "25.4"
+   "25.4",
+   "32.2",
+   "32.6"
   ],
   "context": "| Systems | Flood vendor (life-of-loan; `flood` adapter), insurance-tracking vendor shared with 9.x (`insurance-tracking` adapter), e-delivery/print for the notice, `title-closing` agent, Notice Registry (`NTC_FDPA_4104A_FLOOD_NOTICE`), Timer Engine |"
  },
@@ -2451,7 +2688,8 @@
   "owner_process": "24.6",
   "mentions": [
    "24.6",
-   "25.4"
+   "25.4",
+   "32.2"
   ],
   "context": "| Systems | MI company APIs (MGIC, Enact, Radian, Essent, Arch, NMI; MISMO MI Rate Quote standard; order/activation vendor-specific \u2014 00b-orig N9), DU MI messages (23.1), LE/CD engine (21.2/25.2), Notice Registry (`NTC_HPA_4903_INITIAL_FIXED`, `NTC_HPA_4903_INITIAL_ARM`, `NTC_HPA_4905_LPMI`), `title-closing` agent |"
  },
@@ -2460,7 +2698,9 @@
   "owner_process": "24.6",
   "mentions": [
    "24.6",
-   "25.4"
+   "25.4",
+   "32.2",
+   "32.6"
   ],
   "context": "| Systems | MI company APIs (MGIC, Enact, Radian, Essent, Arch, NMI; MISMO MI Rate Quote standard; order/activation vendor-specific \u2014 00b-orig N9), DU MI messages (23.1), LE/CD engine (21.2/25.2), Notice Registry (`NTC_HPA_4903_INITIAL_FIXED`, `NTC_HPA_4903_INITIAL_ARM`, `NTC_HPA_4905_LPMI`), `title-closing` agent |"
  },
@@ -2469,7 +2709,9 @@
   "owner_process": "24.6",
   "mentions": [
    "24.6",
-   "25.4"
+   "25.4",
+   "32.2",
+   "32.6"
   ],
   "context": "| Systems | MI company APIs (MGIC, Enact, Radian, Essent, Arch, NMI; MISMO MI Rate Quote standard; order/activation vendor-specific \u2014 00b-orig N9), DU MI messages (23.1), LE/CD engine (21.2/25.2), Notice Registry (`NTC_HPA_4903_INITIAL_FIXED`, `NTC_HPA_4903_INITIAL_ARM`, `NTC_HPA_4905_LPMI`), `title-closing` agent |"
  },
@@ -2479,7 +2721,8 @@
   "mentions": [
    "25.1",
    "25.2",
-   "25.4"
+   "25.4",
+   "32.2"
   ],
   "context": "- `apr_calculations` row per checkpoint with the full Appendix J trace (retention `regz_cd_5y`); the APR, finance charge, amount financed, total of payments and TIP feed `NTC_REGZ_1026_38_CD` (25.2) and the material disclosures list (25.3)."
  },
@@ -2487,7 +2730,8 @@
   "code": "NTC_REGZ_1026_38_CD_CORRECTED",
   "owner_process": "25.2",
   "mentions": [
-   "25.2"
+   "25.2",
+   "32.2"
   ],
   "context": "| Data/artifacts | `disclosures{kind \u2208 cd, corrected_cd, seller_cd}` versions with receipt evidence per consumer; `cd_receipts`; `cd_figure_sources`; `cd_consistency_checks`; `ucd_submissions`; `NTC_REGZ_1026_38_CD`, `NTC_REGZ_1026_38_CD_CORRECTED`, `NTC_REGZ_1026_38_SELLER_CD` |"
  },
@@ -2504,7 +2748,8 @@
   "owner_process": "25.3",
   "mentions": [
    "25.3",
-   "26.1"
+   "26.1",
+   "32.2"
   ],
   "context": "| Data/artifacts | `rescission_periods`, `rescission_exercises`, `disclosures{kind=rescission_h8 \\| rescission_h9}`, `fundings.rescission_expires_at`, `NTC_REGZ_1026_23_H8`, `NTC_REGZ_1026_23_H9`, gate `REGZ_1026_23_RESCISSION_3SBD_GATE`, monitor `REGZ_1026_23_EXTENDED_RIGHT_3Y` |"
  },
@@ -2512,7 +2757,8 @@
   "code": "NTC_REGZ_1026_23_H9",
   "owner_process": "25.3",
   "mentions": [
-   "25.3"
+   "25.3",
+   "32.2"
   ],
   "context": "| Data/artifacts | `rescission_periods`, `rescission_exercises`, `disclosures{kind=rescission_h8 \\| rescission_h9}`, `fundings.rescission_expires_at`, `NTC_REGZ_1026_23_H8`, `NTC_REGZ_1026_23_H9`, gate `REGZ_1026_23_RESCISSION_3SBD_GATE`, monitor `REGZ_1026_23_EXTENDED_RIGHT_3Y` |"
  },
@@ -2520,7 +2766,8 @@
   "code": "NTC_CA_CIV_2954_IMPOUND_STMT",
   "owner_process": "25.4",
   "mentions": [
-   "25.4"
+   "25.4",
+   "32.7"
   ],
   "context": "| Data/artifacts | `closing_notice_runs`, `escrow_elections`, `ownership_transfer_notices`, `tax_reporting_seeds`; `disclosures{kind \u2208 initial_escrow_stmt, privacy, escrow_election, state:<code>}`; `NTC_REGZ_1026_39_OWNERSHIP_TRANSFER`, `NTC_SM_ESCROW_ELECTION`, `NTC_UT_7_17_4_RESERVE_OPTIONS`, `NTC_CA_CIV_2954_IMPOUND_STMT`; referenced: `NTC_REGX_1024_17G_INITIAL_ESCROW_STMT` (servicing 3.1), `NT"
  },
@@ -2529,7 +2776,9 @@
   "owner_process": "25.4",
   "mentions": [
    "25.4",
-   "30.4"
+   "30.4",
+   "32.2",
+   "32.7"
   ],
   "context": "| Data/artifacts | `closing_notice_runs`, `escrow_elections`, `ownership_transfer_notices`, `tax_reporting_seeds`; `disclosures{kind \u2208 initial_escrow_stmt, privacy, escrow_election, state:<code>}`; `NTC_REGZ_1026_39_OWNERSHIP_TRANSFER`, `NTC_SM_ESCROW_ELECTION`, `NTC_UT_7_17_4_RESERVE_OPTIONS`, `NTC_CA_CIV_2954_IMPOUND_STMT`; referenced: `NTC_REGX_1024_17G_INITIAL_ESCROW_STMT` (servicing 3.1), `NT"
  },
@@ -2537,7 +2786,8 @@
   "code": "NTC_SM_ESCROW_ELECTION",
   "owner_process": "25.4",
   "mentions": [
-   "25.4"
+   "25.4",
+   "32.7"
   ],
   "context": "| Data/artifacts | `closing_notice_runs`, `escrow_elections`, `ownership_transfer_notices`, `tax_reporting_seeds`; `disclosures{kind \u2208 initial_escrow_stmt, privacy, escrow_election, state:<code>}`; `NTC_REGZ_1026_39_OWNERSHIP_TRANSFER`, `NTC_SM_ESCROW_ELECTION`, `NTC_UT_7_17_4_RESERVE_OPTIONS`, `NTC_CA_CIV_2954_IMPOUND_STMT`; referenced: `NTC_REGX_1024_17G_INITIAL_ESCROW_STMT` (servicing 3.1), `NT"
  },
@@ -2548,7 +2798,9 @@
    "25.4",
    "26.3",
    "30.2",
-   "30.4"
+   "30.4",
+   "32.2",
+   "32.7"
   ],
   "context": "| Data/artifacts | `closing_notice_runs`, `escrow_elections`, `ownership_transfer_notices`, `tax_reporting_seeds`; `disclosures{kind \u2208 initial_escrow_stmt, privacy, escrow_election, state:<code>}`; `NTC_REGZ_1026_39_OWNERSHIP_TRANSFER`, `NTC_SM_ESCROW_ELECTION`, `NTC_UT_7_17_4_RESERVE_OPTIONS`, `NTC_CA_CIV_2954_IMPOUND_STMT`; referenced: `NTC_REGX_1024_17G_INITIAL_ESCROW_STMT` (servicing 3.1), `NT"
  },
@@ -2556,7 +2808,8 @@
   "code": "NTC_UT_7_17_4_RESERVE_OPTIONS",
   "owner_process": "25.4",
   "mentions": [
-   "25.4"
+   "25.4",
+   "32.7"
   ],
   "context": "| Data/artifacts | `closing_notice_runs`, `escrow_elections`, `ownership_transfer_notices`, `tax_reporting_seeds`; `disclosures{kind \u2208 initial_escrow_stmt, privacy, escrow_election, state:<code>}`; `NTC_REGZ_1026_39_OWNERSHIP_TRANSFER`, `NTC_SM_ESCROW_ELECTION`, `NTC_UT_7_17_4_RESERVE_OPTIONS`, `NTC_CA_CIV_2954_IMPOUND_STMT`; referenced: `NTC_REGX_1024_17G_INITIAL_ESCROW_STMT` (servicing 3.1), `NT"
  },
@@ -2573,7 +2826,9 @@
   "code": "NTC_TX_50A6_ITEMIZATION",
   "owner_process": "26.1",
   "mentions": [
-   "26.1"
+   "26.1",
+   "32.2",
+   "32.7"
   ],
   "context": "Baseline tables written: `documents` (every rendered artifact), `notices` (`NTC_TX_50A6_12DAY`, `NTC_TX_50A6_ITEMIZATION`, `NTC_TX_50F2_REFI_NOTICE`, `NTC_SM_CLOSING_INSTRUCTIONS`), `timers`, `agent_decisions`, `escalations`, `conditions{source=closing}`, `closings` (set `document_set_id`), `mers_transactions` (MIN reserved / Pre-Closing Registration if elected \u2014 26.4 owns registration). Events em"
  },

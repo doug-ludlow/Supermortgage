@@ -16,7 +16,8 @@ coverage = json.load(open(os.path.join(root, 'docs/audit/coverage.json')))
 cov = {r['process']: r for r in coverage['processes']}
 SECTION_DIR = {1: 'boarding', 2: 'cashiering', 3: 'escrow', 4: 'servicing-requests', 5: 'investor', 6: 'custodial', 7: 'notices', 8: 'credit-reporting', 9: 'insurance', 10: 'pmi',
                11: 'early-intervention', 12: 'lossmit', 13: 'foreclosure', 14: 'bankruptcy', 15: 'reo', 16: 'payoff', 17: 'transfers', 18: 'qc-audit', 19: 'data-security',
-               20: 'leads-pricing', 21: 'application', 22: 'verification', 23: 'underwriting', 24: 'property', 25: 'compliance-disclosures', 26: 'closing', 27: 'warehouse', 28: 'qc-hmda', 29: 'secondary', 30: 'orig-boarding', 31: 'governance'}
+               20: 'leads-pricing', 21: 'application', 22: 'verification', 23: 'underwriting', 24: 'property', 25: 'compliance-disclosures', 26: 'closing', 27: 'warehouse', 28: 'qc-hmda', 29: 'secondary', 30: 'orig-boarding', 31: 'governance',
+               32: 'borrower'}  # section 32 (borrower experience): API-level node:test plus Playwright driven from node:test
 dry = '--dry-run' in sys.argv
 
 def tids_in(text):
@@ -45,12 +46,12 @@ for p in manifest:
     if sec == 1 and pid != '1.1': d = 'transfers'  # 1.2–1.7 (transfer-in) live with 17.x in src/domain/transfers
     path = os.path.join(root, 'src/domain', d, pid.replace('.', '-') + '.spec.test.ts')
     if os.path.exists(path): continue
-    missing = set(cov[pid]['tids']['missing'])
+    missing = set(cov[pid]['tids']['missing']) if pid in cov else {t['n'] for t in p['tids']}  # not audited yet → every T-id is todo
     lines = [f'// {pid} {p["title"]}', f'// spec/{p["path"]}', '// One node:test per T-id, named exactly as the spec. `todo: true` = not implemented yet (tools/audit.py does not',
              '// count it). Implement by replacing the todo line with a real test; never edit the name.', 'import { test } from "node:test";', '']
     for t in p['tids']:
         n = t['n']; name = f'{pid}-T{n}' + (f': {t["text"]}' if t['text'] else '')
-        if n in missing: lines.append(f'test({json.dumps(name)}, {{ todo: true }});')
+        if n in missing: lines.append(f'test({json.dumps(name, ensure_ascii=False)}, {{ todo: true }});')  # literal characters, never \uXXXX: the audit compares titles verbatim
         else: lines.append(f'// {pid}-T{n} — implemented in {covered_in(pid, n)}')
     lines.append('')
     print(('would write ' if dry else 'wrote ') + os.path.relpath(path, root) + f'  ({len(missing)} todo, {len(p["tids"]) - len(missing)} indexed)')

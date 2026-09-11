@@ -14500,5 +14500,832 @@
    "records.classify",
    "records.anchor"
   ]
+ },
+ {
+  "process": "32.1",
+  "title": "Shell, theme, component library and Record pane",
+  "path": "sections/32-borrower-experience/32-1-shell-theme-component-library-and-record-pane.md",
+  "tids": [],
+  "tables": [],
+  "timers": [],
+  "notices": [],
+  "agent": "intake",
+  "tools": [
+   "send_card",
+   "resolve_card_by_evidence",
+   "create_deep_link"
+  ]
+ },
+ {
+  "process": "32.2",
+  "title": "Data contracts: projections, commands, events, timers, notices, security, API",
+  "path": "sections/32-borrower-experience/32-2-data-contracts-projections-commands-events-timers-notices-se.md",
+  "tids": [],
+  "tables": [
+   "card_instance_events",
+   "card_instances",
+   "conversations",
+   "deep_links",
+   "messages",
+   "sessions",
+   "ui_events"
+  ],
+  "timers": [
+   "FDPA_4104A_FLOOD_NOTICE_GATE",
+   "FNMA_B1_1_03_CREDIT_DOCS_4M",
+   "FNMA_B2_1_5_FIRST_PAYMENT_2M",
+   "FNMA_B4_1_3_12_ROV_TURNTIME_5BD",
+   "HPA_4902B_AUTO_TERMINATE_0",
+   "REGB_1002_14_APPRAISAL_COPY_3BD_GATE",
+   "REGB_1002_14_APPRAISAL_COPY_PROMPT_7",
+   "REGB_1002_9C2_NOIA_RESPONSE",
+   "REGB_1002_9_COUNTEROFFER_90",
+   "REGB_1002_9_DECISION_30",
+   "REGB_1002_9_NOIA",
+   "REGX_1024_17C3_ANNUAL_ANALYSIS_LEAD_45",
+   "REGX_1024_17G_INITIAL_STMT_45",
+   "REGX_1024_17I_ANNUAL_STMT_30",
+   "REGX_1024_34B_PAYOFF_ESCROW_REFUND_20BD",
+   "REGX_1024_41E1_ACCEPT_14",
+   "REGZ_1026_19E1_LE_3BD",
+   "REGZ_1026_19E3IVD_LOCK_REVISED_LE_3BD",
+   "REGZ_1026_19F1III_CD_MAILBOX_3SBD",
+   "REGZ_1026_19F1_CD_3SBD_GATE",
+   "REGZ_1026_23_RESCISSION_3SBD_GATE",
+   "REGZ_1026_36C3_PAYOFF_STMT_7BD",
+   "REGZ_1026_37A13_COSTS_EXPIRE_10BD",
+   "REGZ_1026_39_OWNERSHIP_NOTICE_30",
+   "SM_CREDIT_EXPIRY_WARN_21",
+   "SM_DEFERRAL_SOLICIT_ACCEPT_WINDOW",
+   "SM_DOC_EXPIRY_WARN_14",
+   "SM_FLOOD_NOTICE_DELIVER_1BD",
+   "SM_LEAD_INACTIVITY_EXPIRY_90",
+   "SM_LOCK_EXPIRY_DEADLINE",
+   "SM_LOCK_EXPIRY_WARN_7",
+   "SM_LOCK_MLO_APPROVAL_SLA_30MIN",
+   "SM_MLO_PREAPP_TERMS_REVIEW_1BH",
+   "SM_NEEDS_LIST_BORROWER_RESPONSE_5",
+   "SM_O21_MLO_REVIEW_SLA_1BD",
+   "SM_O62_CD_TARGET_4SBD",
+   "SM_O64_FIRST_PAYMENT_LETTER_5BD",
+   "SM_O64_FIRST_PAYMENT_LETTER_PREDUE_20",
+   "SM_O73_POST_RESCISSION_FUNDING_1BD",
+   "SM_ORIG_FIRST_STATEMENT_LEAD_15",
+   "SM_REFI_OPPORTUNITY_EXPIRY_30",
+   "SM_UW_DECISION_VALIDITY"
+  ],
+  "notices": [],
+  "agent": "borrower-app",
+  "tools": [
+   "lead.start",
+   "lead.acknowledgeAiDisclosure",
+   "party.authenticate",
+   "party.startIdentity",
+   "consent.capture",
+   "credit.authorize",
+   "application.confirmField",
+   "application.setGoal",
+   "application.answerDeclarations",
+   "application.answerDemographics",
+   "application.affirmJointIntent",
+   "application.inviteParty",
+   "verification.connect",
+   "document.upload",
+   "explanation.submit",
+   "disclosure.acknowledgeReceipt",
+   "intent.record",
+   "lock.request",
+   "lock.requestExtension",
+   "counteroffer.respond",
+   "application.withdraw",
+   "mi.selectPlan",
+   "valuation.scheduleAccess",
+   "rov.request",
+   "insurance.submitEvidence",
+   "closing.selectSlot",
+   "closing.captureEsignConsent",
+   "rescission.exercise",
+   "autodraft.enroll",
+   "autodraft.change",
+   "autodraft.pause",
+   "autodraft.revoke",
+   "payment.makeOneTime",
+   "payment.extraPrincipal",
+   "escrow.electShortage",
+   "escrow.requestWaiver",
+   "pmi.requestCancellation",
+   "case.open",
+   "lossmit.requestAssistance",
+   "lossmit.respondToOffer",
+   "lossmit.appeal",
+   "offer.respond",
+   "refi.request",
+   "human.request",
+   "party.updateContact"
+  ]
+ },
+ {
+  "process": "32.3",
+  "title": "Entry and the five-minute qualification",
+  "path": "sections/32-borrower-experience/32-3-entry-and-the-five-minute-qualification.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given a new web session, when the first assistant message renders, then it contains the automation disclosure and `lead.disclosure.delivered` is logged before any other assistant content; same for voice (spoken) and SMS (first outbound)."
+   },
+   {
+    "n": 2,
+    "text": "Given the borrower types \"are you a real person?\", then the reply is the 20.3 T11 script and a second `lead.disclosure.delivered` row exists."
+   },
+   {
+    "n": 3,
+    "text": "Given `sessions.level = L1`, when the client requests `borrower_record` for an application with personal terms, then `numbers` is omitted and cards requiring L2+ are not created."
+   },
+   {
+    "n": 4,
+    "text": "Given L1 only, when `credit.authorize{hard_pull}` is called, then the API returns `{gate: SM_IDENTITY_IAL2_GATE}` and no `credit_authorizations` row is written."
+   },
+   {
+    "n": 5,
+    "text": "Given Stripe extracted \"Jane Q. Public, 1990-04-01, 14 Elm St\", when the borrower taps Edit on the address and confirms \"22 Elm St\", then `application_borrowers.current_address = \"22 Elm St\"` with `source = borrower`, and name/DOB carry `source = stripe_identity`, all with `confirmed_at`."
+   },
+   {
+    "n": 6,
+    "text": "Given an in-app voice call, when the borrower says \"yes, e-delivery is fine\", then no `consents{kind=esign}` row becomes `active`; the assistant sends the E-SIGN invitation link (20.3 T8)."
+   },
+   {
+    "n": 7,
+    "text": "Given `consents{esign}` is `consented_pending_verification` when the LE is approved, then `disclosure.le.mailed` fires, the Record shows *Mailed*, and no `DocumentCard` for the LE is created until `active` and a re-delivery is made."
+   },
+   {
+    "n": 8,
+    "text": "Given the borrower confirms the property address, then `trid_items.property_address.present = true` and `application.trid_received` has not fired."
+   },
+   {
+    "n": 9,
+    "text": "Given two borrowers with different score models, then the UI shows the neutral re-run message and no scores; DU association is refused until re-ordered (23.1 T11)."
+   },
+   {
+    "n": 10,
+    "text": "Given `credit.report.received` at 09:00 Tuesday, then `NTC_FCRA_609G_CREDIT_SCORE` is delivered by end of Wednesday (`FCRA_609G_SCORE_NOTICE_1BD`)."
+   },
+   {
+    "n": 11,
+    "text": "Given Truv returns $8,200 monthly base, when the borrower confirms, then `application_income` has `amount_cents = 820000, source = payroll_connection, confirmed_at set` and `trid_items.income.present = true`; given the borrower instead types $8,000, then `source = borrower`."
+   },
+   {
+    "n": 12,
+    "text": "Given a DU validation report with `close_by_date`, then the date exists in `verifications` and nowhere in any client payload."
+   },
+   {
+    "n": 13,
+    "text": "Given the Profile card, when the borrower taps Confirm without choosing citizenship, then the card refuses and the field is not written."
+   },
+   {
+    "n": 14,
+    "text": "Given \"None of these apply\", then thirteen `declarations` values are `false` and `evidence.list_version_hash` is set."
+   },
+   {
+    "n": 15,
+    "text": "Given `applications.status = started` is not yet reached, when a client posts `application.answerDemographics`, then the API refuses (20.3 T12)."
+   },
+   {
+    "n": 16,
+    "text": "Given the borrower selects \"I do not wish to provide\" for ethnicity, then `applicant_demographics.ethnicity = declined` and `collection_method = internet`."
+   },
+   {
+    "n": 17,
+    "text": "Given income confirmed at 10:02, SSN authorization at 10:03, address at 10:04, value at 10:05 and loan amount at 10:06 (ET), then `trid_application_date = 10:06` and `REGZ_1026_19E1_LE_3BD.due_at` is end of the third creditor business day after."
+   },
+   {
+    "n": 18,
+    "text": "Given the AVM card is shown and the borrower edits to $600,000, then `property_value_estimate.present = true` with `source = borrower`; given no action, then `present = false`."
+   },
+   {
+    "n": 19,
+    "text": "Given any `du.findings.received`, then no field of the findings appears in `/v1/borrower/*` responses (contract test on serializers)."
+   },
+   {
+    "n": 20,
+    "text": "Given findings at 14:00, then a `ChecklistCard` with materialized conditions exists by 18:00 the same creditor business day (`SM_DU_CONDITIONS_SLA_4H`)."
+   },
+   {
+    "n": 21,
+    "text": "Given `origination.ai_mlo_intake = assisted` and `terms.presentation.requested` at 08:50, then no personal rate renders before `mlo.review.completed{approved}`; the `StatusCard` shows `due_at = 09:50` (20.3 T7)."
+   },
+   {
+    "n": 22,
+    "text": "Given active E-SIGN scoped to `origination_disclosures`, when the LE is approved, then the `DocumentCard` renders and `disclosure.le.delivered{channel=esign_portal}` is logged; **Confirm receipt** writes `received_at` and `receipt_evidence = esign_confirmed`."
+   },
+   {
+    "n": 23,
+    "text": "Given the borrower taps Proceed before the LE's effective receipt date, then `intent_records.valid = false`, the fee gate stays closed, and the assistant explains the order."
+   },
+   {
+    "n": 24,
+    "text": "Given no valid intent, then no lock `ComparisonCard` is created; `lock.request` returns the gate error."
+   },
+   {
+    "n": 25,
+    "text": "Given `lock.executed` on Monday, then a revised LE `DocumentCard` exists by Thursday (`REGZ_1026_19E3IVD_LOCK_REVISED_LE_3BD`) and Numbers show `le_v2`."
+   },
+   {
+    "n": 26,
+    "text": "Given a preapproval request with `property = TBD`, then `application.received` fires, `application.trid_received` does not, and `REGB_1002_9_DECISION_30` runs."
+   },
+   {
+    "n": 27,
+    "text": "Given a preapproval letter is issued, then it names `partner.legal_name`, `mlo.name`/NMLSR ID, `valid_until`, the general conditions, and contains no occurrence of \"guarantee\"."
+   },
+   {
+    "n": 28,
+    "text": "Given a preapproved borrower sends a listing at a different price, then the payment estimate uses the approved quote id; if `SM_QUOTE_VALIDITY_GATE` is closed, the new rate renders only after `mlo.review.completed{approved}` (`assisted`)."
+   },
+   {
+    "n": 29,
+    "text": "Given a contract is uploaded, then extracted fields are written with `source = document_extraction` and `confirmed_at null` until Confirm; `application.trid_received` fires only after the address confirmation."
+   },
+   {
+    "n": 30,
+    "text": "Given SMS reply \"yes that's my income\" to a pending income `ConfirmCard`, then the card stays pending and the assistant replies with the deep link (32.1 \u00a76.4)."
+   }
+  ],
+  "tables": [],
+  "timers": [],
+  "notices": [],
+  "agent": "intake",
+  "tools": []
+ },
+ {
+  "process": "32.4",
+  "title": "Disclosures, intent to proceed, lock, revised LEs",
+  "path": "sections/32-borrower-experience/32-4-disclosures-intent-to-proceed-lock-revised-les.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given `consents{esign}` inactive at LE approval, then `disclosure.le.mailed` and the Documents row reads *Mailed {{date}}*; given consent becomes active later, then a re-delivered electronic copy appears as a new row, and the original mailing evidence remains."
+   },
+   {
+    "n": 2,
+    "text": "Given an e-mailed LE with no confirmation, then `deemed_received` is set on the third specific business day and the Record shows *(deemed)*."
+   },
+   {
+    "n": 3,
+    "text": "Given a companion `hcl` planned with `hud_snapshot_at` 31 days old, then the card is not created until a fresh snapshot exists (21.3 gate)."
+   },
+   {
+    "n": 4,
+    "text": "Given an ARM selected in R7, then `NTC_REGZ_1026_19B_ARM_PROGRAM` and `NTC_REGZ_1026_19B_CHARM` cards exist before the LE receipt card is shown."
+   },
+   {
+    "n": 5,
+    "text": "Given a spoken \"proceed\" on an in-app call after LE receipt, then the pending intent `ChoiceCard` resolves with evidence `{channel=voice, transcript_ref}` and `intent_records.valid=true`."
+   },
+   {
+    "n": 6,
+    "text": "Given a lock executed Tue Oct 27, 2026 for 45 days, then Numbers show expiry Fri Dec 11, 2026; `SM_LOCK_EXPIRY_WARN_7` styles the Dates row caution on Fri Dec 4."
+   },
+   {
+    "n": 7,
+    "text": "Given a lock expired, then no closing slot `ScheduleCard` can be created until a relock (`SM_O71_DOC_GEN_GATE`), and the Thread explains why."
+   },
+   {
+    "n": 8,
+    "text": "Given `changed_circumstances.evaluated_valid{kind=new_info}` 2 specific business days before consummation, then no revised LE issues; the change is `reflected_on_cd` and the Thread message uses `revised_le.on_cd_instead`."
+   },
+   {
+    "n": 9,
+    "text": "Given `le_v2` differs from `le_v1` in the appraisal fee, then the What-changed block lists exactly that row with both amounts and the kind label."
+   },
+   {
+    "n": 10,
+    "text": "Given `tolerance_tests.refund_required` after consummation, then a `NoticeCard` and a ledger refund appear within 60 days and the borrower took no action."
+   }
+  ],
+  "tables": [],
+  "timers": [],
+  "notices": [],
+  "agent": "intake",
+  "tools": []
+ },
+ {
+  "process": "32.5",
+  "title": "Verification, needs list, conditions, second borrower",
+  "path": "sections/32-borrower-experience/32-5-verification-needs-list-conditions-second-borrower.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given a DU verification message opens a `conditions` row, then within `SM_DU_CONDITIONS_SLA_4H` it appears in Needed-from-you with owner *you* and a verb-first label."
+   },
+   {
+    "n": 2,
+    "text": "Given an `UploadCard{paystub}` receives a W-2, then the item stays `waiting_borrower` and the card shows the mismatch copy with the detected class."
+   },
+   {
+    "n": 3,
+    "text": "Given a paystub dated 40 days before the application date, then the freshness copy renders the 30-day rule and the request stays open."
+   },
+   {
+    "n": 4,
+    "text": "Given the closing date moves from Nov 6 to Dec 15, 2026 and an asset statement would exceed 4 months at the new note date, then `SM_DOC_EXPIRY_WARN_14` shows in Dates and a re-request is created on expiry with the reason text."
+   },
+   {
+    "n": 5,
+    "text": "Given the pre-closing credit refresh finds a new tradeline, then a `ConfirmCard` renders naming creditor and open date and nothing about the decision; a yes adds `application_liabilities` and triggers DU resubmission per 23.1 tolerances."
+   },
+   {
+    "n": 6,
+    "text": "Given a large deposit of $9,000 against $8,200 monthly qualifying income, then an `ExplanationCard` is created for that deposit only."
+   },
+   {
+    "n": 7,
+    "text": "Given a co-borrower invite, then a `credit.authorize` for the invitee is refused until `joint_intent` is affirmed by that invitee (`SM_O21_JOINT_INTENT_GATE`)."
+   },
+   {
+    "n": 8,
+    "text": "Given a non-borrowing spouse party, then no `ProfileCard`, `DemographicsCard`, income or liability card is ever created for that party."
+   },
+   {
+    "n": 9,
+    "text": "Given borrower A has active E-SIGN and borrower B does not, then the LE is electronic to A (`DocumentCard`) and mailed to B; the Record shows both statuses; the LE timer is satisfied by the mailing to B."
+   },
+   {
+    "n": 10,
+    "text": "Given a human agent is engaged, when the agent attempts to resolve a `ConsentCard` on the borrower's behalf, then the API refuses (`party_id` mismatch)."
+   },
+   {
+    "n": 11,
+    "text": "Given zero `owner=you` items, then the Record shows the nothing-needed state and the status strip count is 0."
+   }
+  ],
+  "tables": [],
+  "timers": [],
+  "notices": [],
+  "agent": "intake",
+  "tools": []
+ },
+ {
+  "process": "32.6",
+  "title": "Decision, property, title, insurance, MI, clear to close",
+  "path": "sections/32-borrower-experience/32-6-decision-property-title-insurance-mi-clear-to-close.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given `decision.issued{conditional_approval}`, then `NTC_REGB_1002_9_APPROVAL` renders, Dates shows `valid_until`, and Needed-from-you equals the `waiting_borrower` conditions."
+   },
+   {
+    "n": 2,
+    "text": "Given a lender-initiated loan-amount reduction, then a counteroffer notice and `ComparisonCard` exist, `REGB_1002_9_COUNTEROFFER_90` appears in Dates, and no adverse-action notice exists while the window is open."
+   },
+   {
+    "n": 3,
+    "text": "Given `decision.issued{denial}`, then the payload contains the specific reasons from the template and no DU recommendation string; the Record is read-only."
+   },
+   {
+    "n": 4,
+    "text": "Given value acceptance offered at the final DU submission, then Property shows \"No appraisal needed\" and no `ScheduleCard{appraisal_access}` exists."
+   },
+   {
+    "n": 5,
+    "text": "Given an appraisal accepted Wed Nov 4, 2026 with consummation Fri Nov 6, then the copy `DocumentCard` was delivered \u2265 3 business days earlier or a `copy_waived` record \u2265 3 BD before consummation exists; otherwise `consummate` is refused."
+   },
+   {
+    "n": 6,
+    "text": "Given a purchase appraisal below price, then the `ChoiceCard` offers renegotiate / cash / cancel and a chosen \"cash\" writes the new down payment as `source=borrower` and triggers DU resubmission."
+   },
+   {
+    "n": 7,
+    "text": "Given `project_reviews.status = pending_docs`, then SQ-08 cards exist and the item is owner *you* only for documents the HOA sends to the borrower; otherwise owner *third party*."
+   },
+   {
+    "n": 8,
+    "text": "Given a hazard policy with a 7% deductible, then `deficient` renders a deficiency card naming the deductible only."
+   },
+   {
+    "n": 9,
+    "text": "Given `in_sfha = true`, then `NTC_FDPA_4104A_FLOOD_NOTICE` is delivered with `requires_ack` \u2265 10 days before the scheduled closing, and no closing slot renders before `flood.notice.delivered`."
+   },
+   {
+    "n": 10,
+    "text": "Given LTV 92%, then the MI `ComparisonCard` shows four plans with cancellation rules; `mi.selectPlan{lpmi}` produces a revised LE with a higher rate and no MI line."
+   },
+   {
+    "n": 11,
+    "text": "Given `ctc_checklists.passed = true`, then the badge is \"Clear to close\" and the closing `ScheduleCard` waits for `earliest_consummation_date`."
+   },
+   {
+    "n": 12,
+    "text": "Given `SM_QC_PREFUNDING_HOLD`, then the Thread copy is `ctc.final_review` and contains no \"QC\"."
+   }
+  ],
+  "tables": [],
+  "timers": [],
+  "notices": [],
+  "agent": "intake",
+  "tools": []
+ },
+ {
+  "process": "32.7",
+  "title": "CD, closing, rescission, funding, boarding",
+  "path": "sections/32-borrower-experience/32-7-cd-closing-rescission-funding-boarding.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given the CD e-mailed Mon Nov 2, 2026 without confirmation, then `deemed received` is Thu Nov 5 (specific business days) and `earliest_consummation_date` is Mon Nov 9; given confirmation Mon Nov 2, then `earliest_consummation_date` is Fri Nov 6 (25.2 fixture)."
+   },
+   {
+    "n": 2,
+    "text": "Given an APR increase beyond tolerance after CD delivery, then a superseding CD card renders with `cd.redisclosed_restart` and Dates recompute."
+   },
+   {
+    "n": 3,
+    "text": "Given a co-borrower without active E-SIGN, then their CD is mailed and the `earliest_consummation_date` uses the later of the two receipt dates."
+   },
+   {
+    "n": 4,
+    "text": "Given `SM_O72_RON_STATE_AUTH_GATE` closed for the property state, then the `ScheduleCard` offers `ipen|hybrid|wet` and never `ron`."
+   },
+   {
+    "n": 5,
+    "text": "Given the borrower declines electronic records, then `closing_type = wet`, no eNote is built, and the Thread confirms the paper path."
+   },
+   {
+    "n": 6,
+    "text": "Given `signed` on a primary-residence refinance by a different creditor, then the H-8 card renders with `requires_ack`, Dates shows midnight of the third specific business day, and `disburse` is refused before `expires_at` (`REGZ_1026_23_RESCISSION_3SBD_GATE`)."
+   },
+   {
+    "n": 7,
+    "text": "Given a purchase, then no rescission card or cancel window renders (`not_applicable`)."
+   },
+   {
+    "n": 8,
+    "text": "Given the borrower opens \"How to cancel\" and confirms, then `rescinded \u2192 unwinding`, `REGZ_1026_23D2_RESCISSION_REFUND_20` is created, and the Record is read-only with badge \"Cancelled\"."
+   },
+   {
+    "n": 9,
+    "text": "Given `fundings.status = held{reason=insurance_effective_date}`, then the borrower sees a single ask for the corrected effective date and no wire-status detail."
+   },
+   {
+    "n": 10,
+    "text": "Given `loan.funded` on Thu Nov 12, 2026 for a refinance, then the funded message names the prior servicer, the 20-day refund clock, and a first payment date \u2264 Jan 12, 2027 (`FNMA_B2_1_5_FIRST_PAYMENT_2M`)."
+   },
+   {
+    "n": 11,
+    "text": "Given `loan.boarded`, then `NTC_SM_FIRST_PAYMENT_LETTER` is sent within 5 servicer business days and the Record shows the servicing layout; the autopay `ConsentCard` includes every 2.x rule-1 element and the optional statement."
+   },
+   {
+    "n": 12,
+    "text": "Given E6 consent scoped only `origination_disclosures`, then the first statement is paper and a servicing-scope `ConsentCard` is offered."
+   },
+   {
+    "n": 13,
+    "text": "Given `loan.purchased`, then the `HandoffCard{fannie_mae_letter}` exists and, on the borrower's upload of the letter, `ownership_transfer_notices.evidenced` is set."
+   }
+  ],
+  "tables": [],
+  "timers": [],
+  "notices": [],
+  "agent": "intake",
+  "tools": []
+ },
+ {
+  "process": "32.8",
+  "title": "Servicing: loan home, payments, autopay, statements, escrow",
+  "path": "sections/32-borrower-experience/32-8-servicing-loan-home-payments-autopay-statements-escrow.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given due Oct 1 with 15-day grace, then the badge is \"Payment due\" Oct 1\u201315 with the grace end shown, \"Past due\" from Oct 16 with the assessed late charge, and \"Current\" on posting."
+   },
+   {
+    "n": 2,
+    "text": "Given a `PaymentCard` submitted without a fresh L1 code in the last 10 minutes, then the API refuses and the card requests the code."
+   },
+   {
+    "n": 3,
+    "text": "Given a payment of $1,000 against a $2,400 installment, then the Thread shows *held*, the remaining $1,400 and the 30-day rule; `suspense_items.open` exists; a request for refund resolves to `refunded`."
+   },
+   {
+    "n": 4,
+    "text": "Given `ach.return.received{R01}`, then `AUTODRAFT-RETURN-v1` renders, one retry is scheduled in 3\u20135 banking days, and a second R01 moves the enrollment to `suspended_returns` with a re-activation `ChoiceCard`."
+   },
+   {
+    "n": 5,
+    "text": "Given an autopay `ConsentCard`, then it contains every 2.x rule-1 element and the optional statement; `authorized` is never set from voice."
+   },
+   {
+    "n": 6,
+    "text": "Given an escrow analysis raising the payment on Jan 1, then `AUTODRAFT-AMOUNT-CHANGE-v1` is sent \u2265 10 days before the Jan draft unless the escrow statement stated the exact amount and date."
+   },
+   {
+    "n": 7,
+    "text": "Given a hard bounce on the statement availability e-mail, then a paper statement is mailed the same day, consent is `suspect`, and a re-verification card appears."
+   },
+   {
+    "n": 8,
+    "text": "Given a shortage of $600, then the `ChoiceCard` shows +$50/month or $600 now; choosing spread creates a 12-installment plan and no lump-sum insert is rendered afterwards."
+   },
+   {
+    "n": 9,
+    "text": "Given a surplus of $75 on a current loan, then a refund is scheduled and `NTC_SM_ESCROW_SURPLUS_REFUND` renders; given $40, then `credited_to_payments`."
+   },
+   {
+    "n": 10,
+    "text": "Given an HPML loan consummated Nov 6, 2026, then `escrow.requestWaiver` before Nov 6, 2031 is refused with the escrow-period copy (23.4-T5)."
+   },
+   {
+    "n": 11,
+    "text": "Given no `irs_estatement` consent, then the 1098 shows *Mailed* and the December `ConsentCard` was offered."
+   }
+  ],
+  "tables": [],
+  "timers": [],
+  "notices": [],
+  "agent": "borrower-comms",
+  "tools": []
+ },
+ {
+  "process": "32.9",
+  "title": "Servicing: insurance, PMI, ARM, life events, requests",
+  "path": "sections/32-borrower-experience/32-9-servicing-insurance-pmi-arm-life-events-requests.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given a policy `cancelled` on Mar 1, then the \u00a71024.37(c) first notice renders no later than 3 federal BD (`INS_FPI_FIRST_NOTICE_SLA_3BD`), the reminder \u2265 30 days later, and no charge before max(t0+45, t1+15)."
+   },
+   {
+    "n": 2,
+    "text": "Given evidence of continuous coverage uploaded on day 50 after placement, then the LPI is cancelled and the refund posted within 15 days with `INS_FPI_CANCEL_REFUND_CONFIRM`."
+   },
+   {
+    "n": 3,
+    "text": "Given a flood map change into an SFHA, then `INS_FLOOD_MAP_CHANGE_NOTICE` renders with the coverage rule and a 45-day placement date in Dates."
+   },
+   {
+    "n": 4,
+    "text": "Given `pmi.requestCancellation` on a loan at 79% LTV by amortization with a clean 12-month history, then the case reaches `cancellation_issued` without a valuation and `NTC_HPA_4904A_CANCELLED` renders."
+   },
+   {
+    "n": 5,
+    "text": "Given a value check is needed, then the fee `ChoiceCard` appears, `awaiting_fee` expires at 60 days, and withdrawal before an order refunds the fee."
+   },
+   {
+    "n": 6,
+    "text": "Given an ARM with the first change on Jul 1, 2028, then `NTC_REGZ_20D_ARM_INITIAL` is sent between Nov 3 and Dec 3, 2027 and Numbers show the estimated payment."
+   },
+   {
+    "n": 7,
+    "text": "Given a message \"my mother passed away, I'm her son\", then a 4.4 case opens, the sender becomes `potential_successor`, the documents card renders from the matrix, and no collection language appears in any message to them."
+   },
+   {
+    "n": 8,
+    "text": "Given a typed message \"you charged me a late fee I don't owe\", then a `noe` case opens, `NTC_REGX_35D_ACK` is sent within 5 federal BD, credit-reporting suppression is set for 60 days, and the Thread shows the response date."
+   },
+   {
+    "n": 9,
+    "text": "Given a spoken payoff request, then the quote is given live, no 7-BD clock starts, and the one-tap conversion starts it."
+   },
+   {
+    "n": 10,
+    "text": "Given a typed payoff request Fri Nov 6, 2026, then `NTC_REGZ_36C3_PAYOFF_STMT` is sent by Tue Nov 17 (servicer business days; Veterans Day closed) with wire instructions carrying the positive-confirmation text."
+   },
+   {
+    "n": 11,
+    "text": "Given a message that is both a complaint and an assertion of error, then both cases exist and the complaint cannot close before the NoE responds."
+   }
+  ],
+  "tables": [],
+  "timers": [],
+  "notices": [],
+  "agent": "borrower-comms",
+  "tools": []
+ },
+ {
+  "process": "32.10",
+  "title": "Servicing: hardship and delinquency",
+  "path": "sections/32-borrower-experience/32-10-servicing-hardship-and-delinquency.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given a payment due Sep 1, 2026 unpaid, then live-contact attempts are logged by Oct 7 (day 36) using only channels with consent, the EI notice and continuity assignment exist by Oct 16 (day 45), and the `PersonCard` shows a reachable direct number (4.3 T1)."
+   },
+   {
+    "n": 2,
+    "text": "Given the borrower types \"I lost my job and can't pay next month\" while current, then a QRPC record and an 11.5 imminent-default evaluation exist, and a `lossmit_applications` row is `received` (evaluative information present) with the 5-day ack."
+   },
+   {
+    "n": 3,
+    "text": "Given an incomplete application, then `NTC_REGX_41B2_ACK_INCOMPLETE` lists the missing items and the reasonable date, and the same items appear in Needed-from-you."
+   },
+   {
+    "n": 4,
+    "text": "Given a complete application received 40 days before a scheduled sale, then the Thread shows the protection sentence and `REGX_1024_41G_DUAL_TRACK_GATE` blocks the sale internally."
+   },
+   {
+    "n": 5,
+    "text": "Given an offer notice on Nov 2, then Dates shows the 14-day acceptance deadline; silence \u2192 `deemed_rejected` on Nov 17 with the copy that said so on Nov 2."
+   },
+   {
+    "n": 6,
+    "text": "Given a Flex Mod TPP offer, then the first trial payment received by its due date moves the case to `tpp_active` without any other tap, and the `PaymentCard` default equals the trial amount."
+   },
+   {
+    "n": 7,
+    "text": "Given a forbearance plan, then the Loan section shows the paused period; a request beyond 12 cumulative months is refused with the LL-2026-01 copy; expiry renders the exit `ComparisonCard`."
+   },
+   {
+    "n": 8,
+    "text": "Given a denial, then `NTC_REGX_41C1_DENIAL` renders with specific reasons and the appeal link; an appeal on day 15 \u2192 `NTC_REGX_41H_APPEAL_INELIGIBLE`."
+   },
+   {
+    "n": 9,
+    "text": "Given a bankruptcy notice, then the badge changes, outbound collection stops, the statement variant switches, and `NTC_BK_PAYMENT_INSTRUCTIONS` renders without collection language."
+   },
+   {
+    "n": 10,
+    "text": "Given day 121 with no pending application and all state notices sent, then `NTC_SM_FC_REFERRAL_ADVICE` renders with the help-still-available paragraph and the reinstatement `ChoiceCard`."
+   },
+   {
+    "n": 11,
+    "text": "Given a `cease_communication` request on an FDCPA-covered loan, then outbound collection messages stop within the 11.4 window and the Thread confirms with `NTC_REGF_1006_6C_CEASE_ACK`; inbound remains open."
+   }
+  ],
+  "tables": [],
+  "timers": [],
+  "notices": [],
+  "agent": "borrower-comms",
+  "tools": []
+ },
+ {
+  "process": "32.11",
+  "title": "Rate-watch and the re-refinance loop",
+  "path": "sections/32-borrower-experience/32-11-rate-watch-and-the-re-refinance-loop.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given `loan.purchased` on Nov 19, 2026, then no `OfferCard` exists before Mar 19, 2027 regardless of rates (`FNMA_C1_1_01_PREMIUM_RECAPTURE_120`); a borrower-initiated `refi.request` in that window produces `offer_ready` with the recapture acknowledgment internal only."
+   },
+   {
+    "n": 2,
+    "text": "Given `offer_ready` and no marketing consent, then delivery is e-mail + in-app only; no `tcpa_voice` call or SMS is attempted; a human click-to-dial is permitted under the EBR (20.2 worked example 1)."
+   },
+   {
+    "n": 3,
+    "text": "Given the `OfferCard`, then it contains every field in \u00a72 and no \"guarantee\"; the MLO attribution is present; the expiry equals `SM_REFI_OPPORTUNITY_EXPIRY_30.due_at`."
+   },
+   {
+    "n": 4,
+    "text": "Given **Not now**, then `refi.opportunity.declined` and no proactive offer for 90 days; a typed \"can I refinance?\" on day 10 still yields `offer_ready`."
+   },
+   {
+    "n": 5,
+    "text": "Given **Never**, then `consents{purpose=marketing}` is revoked, servicing informational consent remains, and the Rate-watch block stays passive."
+   },
+   {
+    "n": 6,
+    "text": "Given **Yes**, then the compressed application asks income (fresh statement), hard-pull authorization, declarations and demographics again, and does not re-ask address (ConfirmCard from `servicing_record`) or identity documents; `application.trid_received` fires on the sixth confirmation."
+   },
+   {
+    "n": 7,
+    "text": "Given the same-servicer funding, then the old loan reaches `paid_in_full` without a third-party wire, the escrow balance is `credited_to_new_loan`, and the Thread message says so; `REGX_1024_34B_PAYOFF_ESCROW_REFUND_20BD` is satisfied by the credit."
+   },
+   {
+    "n": 8,
+    "text": "Given the partner was the original creditor and the new loan is rate/term, then the rescission state is whatever 25.3 computes and the UI renders no cancel window when `not_applicable`."
+   },
+   {
+    "n": 9,
+    "text": "Given a standing connection consent revoked from the Loan section, then the next conversion creates `ConnectCard{truv_income}` again."
+   },
+   {
+    "n": 10,
+    "text": "Given any Rate-watch copy, then it contains no reference to the investor and no future-terms promise (string tests on the copy library)."
+   }
+  ],
+  "tables": [],
+  "timers": [],
+  "notices": [],
+  "agent": "borrower-comms",
+  "tools": []
+ },
+ {
+  "process": "32.12",
+  "title": "Exits",
+  "path": "sections/32-borrower-experience/32-12-exits.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given a typed payoff request, then `NTC_REGZ_36C3_PAYOFF_STMT` renders within 7 servicer business days with the components, good-through date and the positive-confirmation text; a rate change before funds \u2192 `NTC_PAYOFF_UPDATED_STMT`."
+   },
+   {
+    "n": 2,
+    "text": "Given funds $300 short of the good-through figure, then `NTC_PAYOFF_SHORTAGE_DEMAND` renders; cured \u2192 `paid_in_full`; uncured at day 30 \u2192 funds applied per the note and the loan stays open with a `StatusCard` explaining."
+   },
+   {
+    "n": 3,
+    "text": "Given `paid_in_full` on Mar 3, then the escrow refund is scheduled by Mar 23 (`REGX_1024_34B_PAYOFF_ESCROW_REFUND_20BD`), autopay is `terminated`, and rate-watch is `void`."
+   },
+   {
+    "n": 4,
+    "text": "Given a California trustee-path release, then the `NTC_LIEN_RELEASE_RECORDED` copy explains the reconveyance path and Dates shows the state deadline."
+   },
+   {
+    "n": 5,
+    "text": "Given a goodbye notice mailed Sep 16 for an Oct 1 transfer, then `REGX_1024_33B3_COMBINED_15` is satisfied, the badge and Dates update, and autopay shows its end date (1.3 T1)."
+   },
+   {
+    "n": 6,
+    "text": "Given a payment received by Supermortgage on Oct 14 after an Oct 1 transfer, then the Thread states the payment is forwarded and protected; on day 61+ the protection text is absent."
+   },
+   {
+    "n": 7,
+    "text": "Given a confirmed successor who declined borrower notices, then no statements are sent to them, but an RFI they submit is acknowledged and answered on the 4.2 clocks."
+   },
+   {
+    "n": 8,
+    "text": "Given `closed`, then the Record is read-only, documents remain downloadable, and a new typed question still creates a case."
+   }
+  ],
+  "tables": [],
+  "timers": [],
+  "notices": [],
+  "agent": "borrower-comms",
+  "tools": []
+ },
+ {
+  "process": "32.13",
+  "title": "Cross-cutting: acceptance harness, copy library rules, side-quest catalogue",
+  "path": "sections/32-borrower-experience/32-13-cross-cutting-acceptance-harness-copy-library-rules-side-que.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Disclosure first \u2014 Given any new session on app, voice or SMS, then `lead.disclosure.delivered` precedes any other assistant content (32.3-T1 generalized to servicing sessions: `consent.ai_disclosure.acknowledged` per session)."
+   },
+   {
+    "n": 2,
+    "text": "No invented dates \u2014 Given any Dates row rendered, then its `timer_code` is in the 32.2 \u00a74 allow-list and `due_at` equals `timers.due_at`."
+   },
+   {
+    "n": 3,
+    "text": "Serializer allow-list \u2014 Given every `/v1/borrower/*` response schema, then no field name from `du_findings_interpretations`, `risk_assessment`, `credit_reports.*` (except score-notice fields), `compliance_test_runs`, `qc_*`, `fraud_*`, `applicant_demographics` appears."
+   },
+   {
+    "n": 4,
+    "text": "Consent precedes e-delivery \u2014 Given any `DocumentCard` with `disclosure_id`, then a `consents{kind=esign, status=active}` row scoped to the disclosure class exists for that party at `delivered_at`."
+   },
+   {
+    "n": 5,
+    "text": "Cards commit, chat doesn't \u2014 Given a borrower message whose text matches a pending card's affirmative (e.g., \"yes proceed\", \"lock it\", \"I agree\"), then no command executes and the reply contains the deep link."
+   },
+   {
+    "n": 6,
+    "text": "Party scoping \u2014 Given a co-borrower session, then the Record shows the other party's first name and `progress` booleans only; `applicant_demographics`, income and liabilities of the other party never appear."
+   },
+   {
+    "n": 7,
+    "text": "Voice never consents \u2014 Given any `ConsentCard`, when a voice session affirms, then the card stays `pending` and the invitation link is sent."
+   },
+   {
+    "n": 8,
+    "text": "Talk to a person \u2014 Given any screen, then a control emitting `human.request` is visible without scrolling; after `human.transfer.completed`, a `PersonCard{human_agent}` exists."
+   },
+   {
+    "n": 9,
+    "text": "Money and rates \u2014 Given any rendered amount, then it is produced from cents via `Intl.NumberFormat` and any rate from a decimal string; no float arithmetic in the client."
+   },
+   {
+    "n": 10,
+    "text": "Mobile parity \u2014 Given every card kind at 390 px, then it is operable and the status strip shows badge, next event and the needed-from-you count."
+   },
+   {
+    "n": 11,
+    "text": "Deep links \u2014 Given an SMS deep link opened without a session, then L1 is required before any loan data renders; the token resolves to the card and expires at 7 days."
+   },
+   {
+    "n": 12,
+    "text": "Degraded vendor \u2014 Given Truv returns an error, then the `ConnectCard` shows `failed` with the upload fallback and no error code is shown to the borrower."
+   },
+   {
+    "n": 13,
+    "text": "Reading level \u2014 Given every string in 12 outside notice templates, then its Flesch-Kincaid grade \u2264 8."
+   },
+   {
+    "n": 14,
+    "text": "Forbidden words \u2014 Given every string in 12, then none of the forbidden words appears outside its allowed keys."
+   },
+   {
+    "n": 15,
+    "text": "Nothing-needed \u2014 Given zero `owner=you` items, then the nothing-needed state renders and no reminder is sent."
+   },
+   {
+    "n": 16,
+    "text": "Read-only after terminal \u2014 Given `denied | withdrawn | closed_incomplete | rescinded | paid_in_full \u2192 closed | transferred_out`, then no command except `case.open`, `human.request`, document download and contact update succeeds."
+   }
+  ],
+  "tables": [],
+  "timers": [],
+  "notices": [],
+  "agent": "borrower-app",
+  "tools": []
  }
 ]

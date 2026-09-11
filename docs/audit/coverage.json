@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 7334/7446 (98.5%): tids 1887/1914, tables 690/717, timers 1952/1987, notices 306/306, tools 1289/1311, figures 1210/1211; processes at 100%: 162/165",
+ "brief": "spec units built 7389/7446 (99.2%): tids 1900/1914, tables 708/717, timers 1974/1987, notices 306/306, tools 1291/1311, figures 1210/1211; processes at 100%: 163/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1887
+   "built": 1900
   },
   "tables": {
    "spec": 717,
-   "built": 690
+   "built": 708
   },
   "timers": {
    "spec": 1987,
-   "built": 1952
+   "built": 1974
   },
   "notices": {
    "spec": 306,
@@ -19,7 +19,7 @@
   },
   "tools": {
    "spec": 1311,
-   "built": 1289
+   "built": 1291
   },
   "figures": {
    "spec": 1211,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 7446,
-   "built": 7334
+   "built": 7389
   }
  },
  "sections": {
@@ -195,9 +195,9 @@
   },
   "28": {
    "spec": 225,
-   "built": 166,
+   "built": 169,
    "processes": 4,
-   "done": 2
+   "done": 3
   },
   "29": {
    "spec": 232,
@@ -213,7 +213,7 @@
   },
   "31": {
    "spec": 140,
-   "built": 87,
+   "built": 139,
    "processes": 3,
    "done": 2
   }
@@ -371,6 +371,7 @@
   "27.2",
   "28.1",
   "28.2",
+  "28.3",
   "29.1",
   "29.2",
   "29.3",
@@ -6631,11 +6632,9 @@
    },
    "timers": {
     "spec": 11,
-    "built": 10,
+    "built": 11,
     "armable": 11,
-    "missing": [
-     "HMDA_1003_5_LAR_RETENTION_3Y"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 3,
@@ -6654,9 +6653,9 @@
    },
    "units": {
     "spec": 39,
-    "built": 38
+    "built": 39
    },
-   "pct": 97.4
+   "pct": 100.0
   },
   {
    "process": "28.4",
@@ -6698,18 +6697,16 @@
    },
    "timers": {
     "spec": 21,
-    "built": 6,
+    "built": 8,
     "armable": 13,
     "missing": [
      "BSA_1029_210_INDEPENDENT_TEST",
      "BSA_1029_210_PROGRAM_REVIEW_ANNUAL",
      "BSA_1029_210_TRAINING_ANNUAL",
-     "BSA_1029_320C_SAR_RETENTION_5Y",
      "BSA_1029_320_IMMEDIATE_LE_NOTICE",
      "BSA_1029_320_SAR_CONTINUING_120",
      "FCRA_609E_VICTIM_RECORDS_30",
      "FCRA_681_ITPP_BOARD_REPORT_ANNUAL",
-     "OFAC_501_601_RETENTION_10Y",
      "OFAC_501_603_ANNUAL_BLOCKED_0930",
      "OFAC_501_603_UNBLOCKING_REPORT_10BD",
      "SM_BSA_OFFICER_SAR_DECISION_SLA_5",
@@ -6758,9 +6755,9 @@
    },
    "units": {
     "spec": 65,
-    "built": 7
+    "built": 9
    },
-   "pct": 10.8
+   "pct": 13.8
   },
   {
    "process": "29.1",
@@ -7177,74 +7174,22 @@
    "title": "Records, retention, privacy, data ownership, and security for origination",
    "tids": {
     "spec": 13,
-    "built": 0,
-    "todo": 13,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13
-    ]
+    "built": 13,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 21,
-    "built": 2,
+    "built": 20,
     "missing": [
-     "bsa_sar_5y",
-     "esign_consent_life",
-     "fdpa_life_of_loan",
-     "fnma_enote_signing_life_plus_7y",
-     "fnma_loan_file_life_plus_4y",
-     "hmda_3y",
-     "ofac_10y",
-     "orig_unfunded_policy_25m",
-     "pii_access_log",
-     "regb_25m",
-     "regb_prescreen_25m",
-     "regb_selftest_25m",
-     "regz_atr_3y",
-     "regz_cd_5y",
-     "regz_general_2y",
-     "regz_le_3y",
-     "regz_locomp_3y",
-     "respa_afba_5y",
-     "respa_s8_5y"
+     "bsa_sar_5y"
     ]
    },
    "timers": {
     "spec": 19,
-    "built": 0,
-    "armable": 12,
-    "missing": [
-     "BSA_1029_320C_SAR_RETENTION_5Y",
-     "ESIGN_7001_CONSENT_EVIDENCE_LIFE",
-     "FNMA_B8_8_02_ENOTE_SIGNING_RECORDS_LIFE_PLUS_7Y",
-     "GLBA_1016_13_SERVICE_PROVIDER_CONTRACT_GATE",
-     "HMDA_1003_5_LAR_RETENTION_3Y",
-     "OFAC_501_601_RETENTION_10Y",
-     "REGB_1002_12B_APPLICATION_RETENTION_25M",
-     "REGZ_1026_25C1II_CD_RETENTION_5Y",
-     "REGZ_1026_25C1I_LE_RETENTION_3Y",
-     "REGZ_1026_25C2_LOCOMP_RETENTION_3Y",
-     "REGZ_1026_25C3_ATR_RETENTION_3Y",
-     "RESPA_1024_14H_S8_RETENTION_5Y",
-     "RESPA_1024_15D_AFBA_RETENTION_5Y",
-     "SM_O123_FANNIE_DATA_USE_SCAN_WEEKLY",
-     "SM_O123_LEGAL_HOLD_ON_TRIGGER_1H",
-     "SM_O123_PII_ACCESS_ANOMALY_1H",
-     "SM_O123_PII_ACCESS_REVIEW_90",
-     "SM_O123_UNFUNDED_FILE_PURGE_SWEEP_MONTHLY",
-     "SM_O123_VENDOR_FLOWDOWN_GATE"
-    ]
+    "built": 19,
+    "armable": 19,
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -7253,11 +7198,8 @@
    },
    "tools": {
     "spec": 2,
-    "built": 0,
-    "missing": [
-     "records.classify",
-     "records.anchor"
-    ]
+    "built": 2,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -7266,9 +7208,9 @@
    },
    "units": {
     "spec": 55,
-    "built": 2
+    "built": 54
    },
-   "pct": 3.6
+   "pct": 98.2
   }
  ]
 }

@@ -1,25 +1,25 @@
 {
- "brief": "spec units built 7295/7446 (98.0%): tids 1874/1914, tables 684/717, timers 1936/1987, notices 304/306, tools 1287/1311, figures 1210/1211; processes at 100%: 161/165",
+ "brief": "spec units built 7334/7446 (98.5%): tids 1887/1914, tables 690/717, timers 1952/1987, notices 306/306, tools 1289/1311, figures 1210/1211; processes at 100%: 162/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1874
+   "built": 1887
   },
   "tables": {
    "spec": 717,
-   "built": 684
+   "built": 690
   },
   "timers": {
    "spec": 1987,
-   "built": 1936
+   "built": 1952
   },
   "notices": {
    "spec": 306,
-   "built": 304
+   "built": 306
   },
   "tools": {
    "spec": 1311,
-   "built": 1287
+   "built": 1289
   },
   "figures": {
    "spec": 1211,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 7446,
-   "built": 7295
+   "built": 7334
   }
  },
  "sections": {
@@ -213,9 +213,9 @@
   },
   "31": {
    "spec": 140,
-   "built": 48,
+   "built": 87,
    "processes": 3,
-   "done": 1
+   "done": 2
   }
  },
  "done": [
@@ -379,7 +379,8 @@
   "30.2",
   "30.3",
   "30.4",
-  "31.1"
+  "31.1",
+  "31.2"
  ],
  "processes": [
   {
@@ -7135,74 +7136,30 @@
    "title": "AI governance, model risk, and fair-lending controls for AI underwriting, pricing, and adverse action",
    "tids": {
     "spec": 13,
-    "built": 0,
-    "todo": 13,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13
-    ]
+    "built": 13,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 6,
-    "built": 0,
-    "missing": [
-     "ai_eval_runs",
-     "consumer_ai_rights_requests",
-     "fair_lending_findings",
-     "fair_lending_reviews",
-     "fair_lending_runs",
-     "lda_searches"
-    ]
+    "built": 6,
+    "missing": []
    },
    "timers": {
     "spec": 19,
-    "built": 3,
-    "armable": 8,
-    "missing": [
-     "CA_CPPA_7150_RISK_ASSESSMENT_20271231",
-     "CA_CPPA_7157_ATTESTATION_20280401",
-     "CA_CPPA_7200_ADMT_READINESS_20270101",
-     "CO_SB26_189_1702_DEVELOPER_DOCS_GATE",
-     "CO_SB26_189_1702_MATERIAL_UPDATE_NOTICE",
-     "SM_O122_AI_ASSESSMENT_ANNUAL_365",
-     "SM_O122_COMPLAINT_FL_TRIAGE_5BD",
-     "SM_O122_DRIFT_ALERT_REVIEW_2BD",
-     "SM_O122_FAIR_LENDING_MONITOR_MONTHLY",
-     "SM_O122_FAIR_LENDING_REGRESSION_QUARTERLY",
-     "SM_O122_FAIR_LENDING_REVIEW_30D",
-     "SM_O122_GOVERNANCE_PACK_QUARTERLY",
-     "SM_O122_MODEL_CHANGE_NOTICE_TO_PARTNER_10BD",
-     "SM_O122_ORIGINATION_AI_DEPLOY_GATE",
-     "SM_O122_PRICING_EXCEPTION_REVIEW_MONTHLY",
-     "SM_O122_REASON_ACCURACY_SAMPLE_MONTHLY"
-    ]
+    "built": 19,
+    "armable": 19,
+    "missing": []
    },
    "notices": {
     "spec": 2,
-    "built": 0,
-    "missing": [
-     "NTC_CA_CPPA_7220_ADMT_PRE_USE",
-     "NTC_SM_AI_DECISION_EXPLANATION"
-    ]
+    "built": 2,
+    "missing": []
    },
    "tools": {
     "spec": 2,
-    "built": 0,
-    "missing": [
-     "inventory.upsert",
-     "assess.draft"
-    ]
+    "built": 2,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -7211,9 +7168,9 @@
    },
    "units": {
     "spec": 42,
-    "built": 3
+    "built": 42
    },
-   "pct": 7.1
+   "pct": 100.0
   },
   {
    "process": "31.3",

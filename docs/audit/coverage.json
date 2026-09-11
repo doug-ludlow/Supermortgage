@@ -1,13 +1,13 @@
 {
- "brief": "spec units built 4949/7446 (66.5%): tids 1330/1914, tables 498/717, timers 1475/1987, notices 239/306, tools 716/1311, figures 691/1211; processes at 100%: 118/165",
+ "brief": "spec units built 5042/7446 (67.7%): tids 1344/1914, tables 509/717, timers 1475/1987, notices 243/306, tools 747/1311, figures 724/1211; processes at 100%: 119/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1330
+   "built": 1344
   },
   "tables": {
    "spec": 717,
-   "built": 498
+   "built": 509
   },
   "timers": {
    "spec": 1987,
@@ -15,19 +15,19 @@
   },
   "notices": {
    "spec": 306,
-   "built": 239
+   "built": 243
   },
   "tools": {
    "spec": 1311,
-   "built": 716
+   "built": 747
   },
   "figures": {
    "spec": 1211,
-   "built": 691
+   "built": 724
   },
   "units": {
    "spec": 7446,
-   "built": 4949
+   "built": 5042
   }
  },
  "sections": {
@@ -153,7 +153,7 @@
   },
   "21": {
    "spec": 282,
-   "built": 93,
+   "built": 115,
    "processes": 6,
    "done": 2
   },
@@ -177,9 +177,9 @@
   },
   "25": {
    "spec": 231,
-   "built": 18,
+   "built": 89,
    "processes": 4,
-   "done": 0
+   "done": 1
   },
   "26": {
    "spec": 247,
@@ -335,6 +335,7 @@
   "19.4",
   "21.1",
   "21.2",
+  "25.1",
   "30.1",
   "30.4"
  ],
@@ -5613,12 +5614,8 @@
    },
    "tables": {
     "spec": 5,
-    "built": 2,
-    "missing": [
-     "changed_circumstances",
-     "fee_gate_checks",
-     "intent_records"
-    ]
+    "built": 5,
+    "missing": []
    },
    "timers": {
     "spec": 7,
@@ -5628,34 +5625,13 @@
    },
    "notices": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "NTC_NY_3NYCRR_38_6_LOCK_EXPIRY_NOTICE",
-     "NTC_REGZ_1026_37_LE_REVISED",
-     "NTC_SM_RATE_LOCK_CONFIRMATION"
-    ]
+    "built": 3,
+    "missing": []
    },
    "tools": {
     "spec": 16,
-    "built": 0,
-    "missing": [
-     "getQuote",
-     "checkFeeGate",
-     "recordIntent",
-     "requestLock",
-     "openMloEscalation",
-     "executeLock",
-     "renderLockConfirmation",
-     "requestCommitment",
-     "recordChangedCircumstance",
-     "quoteExtension",
-     "extendLock",
-     "relock",
-     "applyFloatDown",
-     "expireLock",
-     "sendNotice",
-     "writeDecision"
-    ]
+    "built": 16,
+    "missing": []
    },
    "figures": {
     "spec": 4,
@@ -5667,9 +5643,9 @@
    },
    "units": {
     "spec": 47,
-    "built": 11
+    "built": 33
    },
-   "pct": 23.4
+   "pct": 70.2
   },
   {
    "process": "21.5",
@@ -7474,38 +7450,14 @@
    "title": "Compliance testing engine (APR/finance charge, TRID tolerances, QM/ATR, HPML, HOEPA, state high-cost, fee reasonableness, RESPA \u00a78, LO compensation and steering, licensing/NMLSR, E-SIGN, fair-lending pricing exceptions, TCPA) and the compliance gates",
    "tids": {
     "spec": 14,
-    "built": 0,
-    "todo": 14,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14
-    ]
+    "built": 14,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 8,
-    "built": 0,
-    "missing": [
-     "compliance_test_definitions",
-     "compliance_test_runs",
-     "compliance_tests",
-     "compliance_waivers",
-     "fee_benchmarks",
-     "finance_charge_classifications",
-     "license_checks",
-     "pricing_exception_reviews"
-    ]
+    "built": 8,
+    "missing": []
    },
    "timers": {
     "spec": 11,
@@ -7515,68 +7467,24 @@
    },
    "notices": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "NTC_REGZ_1026_38_CD"
-    ]
+    "built": 1,
+    "missing": []
    },
    "tools": {
     "spec": 15,
-    "built": 0,
-    "missing": [
-     "computeApr",
-     "classifyFinanceCharges",
-     "runToleranceTest",
-     "determineQm",
-     "determineHpml",
-     "determineHoepa",
-     "evaluateStateHighCost",
-     "checkLicenses",
-     "checkEsignConsent",
-     "checkTcpaConsent",
-     "reviewPricingException",
-     "checkRespa8",
-     "assertGateOpen",
-     "openEscalation",
-     "writeDecision"
-    ]
+    "built": 15,
+    "missing": []
    },
    "figures": {
     "spec": 25,
-    "built": 0,
-    "missing": [
-     "$1,224,943.20",
-     "$1,712.60",
-     "$1,785.43",
-     "$1,785.48",
-     "$1,950.00",
-     "$2,064.52",
-     "$24.95",
-     "$3,312.61",
-     "$3,402.61",
-     "$3,402.62",
-     "$3,849.95",
-     "$4,200.00",
-     "$5.57",
-     "$552,022.88",
-     "$556,150.05",
-     "$560,000.00",
-     "$60.00",
-     "$640,516.72",
-     "$668,793.15",
-     "$668,853.15",
-     "$7,977.12",
-     "$84.00",
-     "$9.00",
-     "$90.13",
-     "$93.97"
-    ]
+    "built": 25,
+    "missing": []
    },
    "units": {
     "spec": 74,
-    "built": 11
+    "built": 74
    },
-   "pct": 14.9
+   "pct": 100.0
   },
   {
    "process": "25.2",
@@ -7660,19 +7568,18 @@
    },
    "figures": {
     "spec": 4,
-    "built": 0,
+    "built": 1,
     "missing": [
      "$12.00",
-     "$3,402.62",
      "$556,150.00",
      "$668,793.20"
     ]
    },
    "units": {
     "spec": 50,
-    "built": 1
+    "built": 2
    },
-   "pct": 2.0
+   "pct": 4.0
   },
   {
    "process": "25.3",
@@ -7742,7 +7649,7 @@
    },
    "figures": {
     "spec": 14,
-    "built": 0,
+    "built": 2,
     "missing": [
      "$2,000.00",
      "$2,099.45",
@@ -7755,16 +7662,14 @@
      "$544,000.00",
      "$548,200.00",
      "$556,150.00",
-     "$560,000.00",
-     "$7,950.00",
-     "$93.97"
+     "$7,950.00"
     ]
    },
    "units": {
     "spec": 45,
-    "built": 0
+    "built": 2
    },
-   "pct": 0.0
+   "pct": 4.4
   },
   {
    "process": "25.4",
@@ -7844,30 +7749,25 @@
    },
    "figures": {
     "spec": 15,
-    "built": 0,
+    "built": 5,
     "missing": [
      "$1,050.00",
-     "$1,500.00",
-     "$1,785.48",
      "$1,875.00",
      "$2,060.00",
      "$2,400.00",
-     "$3,402.62",
      "$3,927.62",
      "$4,800.00",
      "$525.00",
-     "$560,000.00",
      "$6,300.00",
      "$71.95",
-     "$863.51",
-     "$93.97"
+     "$863.51"
     ]
    },
    "units": {
     "spec": 62,
-    "built": 6
+    "built": 11
    },
-   "pct": 9.7
+   "pct": 17.7
   },
   {
    "process": "26.1",

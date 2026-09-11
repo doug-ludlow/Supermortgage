@@ -1,33 +1,33 @@
 {
- "brief": "spec units built 7252/7446 (97.4%): tids 1861/1914, tables 677/717, timers 1921/1987, notices 302/306, tools 1282/1311, figures 1209/1211; processes at 100%: 160/165",
+ "brief": "spec units built 7295/7446 (98.0%): tids 1874/1914, tables 684/717, timers 1936/1987, notices 304/306, tools 1287/1311, figures 1210/1211; processes at 100%: 161/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1861
+   "built": 1874
   },
   "tables": {
    "spec": 717,
-   "built": 677
+   "built": 684
   },
   "timers": {
    "spec": 1987,
-   "built": 1921
+   "built": 1936
   },
   "notices": {
    "spec": 306,
-   "built": 302
+   "built": 304
   },
   "tools": {
    "spec": 1311,
-   "built": 1282
+   "built": 1287
   },
   "figures": {
    "spec": 1211,
-   "built": 1209
+   "built": 1210
   },
   "units": {
    "spec": 7446,
-   "built": 7252
+   "built": 7295
   }
  },
  "sections": {
@@ -213,9 +213,9 @@
   },
   "31": {
    "spec": 140,
-   "built": 5,
+   "built": 48,
    "processes": 3,
-   "done": 0
+   "done": 1
   }
  },
  "done": [
@@ -378,7 +378,8 @@
   "30.1",
   "30.2",
   "30.3",
-  "30.4"
+  "30.4",
+  "31.1"
  ],
  "processes": [
   {
@@ -7093,90 +7094,41 @@
    "title": "Licensing, approvals, and the partner boundary",
    "tids": {
     "spec": 13,
-    "built": 0,
-    "todo": 13,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13
-    ]
+    "built": 13,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 7,
-    "built": 0,
-    "missing": [
-     "ai_intake_legal_positions",
-     "eligibility_inputs_origination",
-     "fnma_approvals",
-     "license_requirements",
-     "licenses",
-     "mlo_roster",
-     "tpo_program_reviews"
-    ]
+    "built": 7,
+    "missing": []
    },
    "timers": {
     "spec": 15,
-    "built": 0,
-    "armable": 3,
-    "missing": [
-     "FNMA_A2_1_01_EMORTGAGE_APPROVAL_GATE",
-     "FNMA_A3_3_01_TPO_ANNUAL_FINANCIAL_REVIEW_365",
-     "FNMA_A3_3_01_TPO_LICENSE_REVERIFY_365",
-     "FNMA_A3_3_01_TPO_QUARTERLY_PERFORMANCE_90",
-     "FNMA_A4_1_01_ANNUAL_ORIGINATION_1B_0131",
-     "FNMA_A4_1_01_ORIG_LIQUIDITY_INPUTS_QBD5",
-     "FNMA_TSP_PRODUCTION_CERT_GATE",
-     "NMLS_REINSTATEMENT_0101_0228",
-     "NMLS_RENEWAL_1101_1231",
-     "SAFE_1008_107_MLO_CE_8H_1231",
-     "SM_LICENSE_EXPIRY_WARN_90",
-     "SM_LICENSE_STATE_GATE",
-     "SM_O121_AI_POSITION_REVIEW_365",
-     "SM_O121_MATRIX_REVERIFY_365",
-     "SM_O121_NMLS_SYNC_DAILY"
-    ]
+    "built": 15,
+    "armable": 15,
+    "missing": []
    },
    "notices": {
     "spec": 2,
-    "built": 0,
-    "missing": [
-     "NTC_INTERNAL_LICENSE_EXPIRY_WARN",
-     "NTC_INTERNAL_STATE_GATE_BLOCKED"
-    ]
+    "built": 2,
+    "missing": []
    },
    "tools": {
     "spec": 5,
-    "built": 0,
-    "missing": [
-     "nmls.sync",
-     "licenses.upsert",
-     "matrix.propose",
-     "license_requirements",
-     "verified"
-    ]
+    "built": 5,
+    "missing": []
    },
    "figures": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "$1,450,000.00"
-    ]
+    "built": 1,
+    "missing": []
    },
    "units": {
     "spec": 43,
-    "built": 0
+    "built": 43
    },
-   "pct": 0.0
+   "pct": 100.0
   },
   {
    "process": "31.2",

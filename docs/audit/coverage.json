@@ -1,13 +1,13 @@
 {
- "brief": "spec units built 6171/7446 (82.9%): tids 1604/1914, tables 589/717, timers 1683/1987, notices 283/306, tools 1008/1311, figures 1004/1211; processes at 100%: 138/165",
+ "brief": "spec units built 6189/7446 (83.1%): tids 1616/1914, tables 595/717, timers 1683/1987, notices 283/306, tools 1008/1311, figures 1004/1211; processes at 100%: 140/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1604
+   "built": 1616
   },
   "tables": {
    "spec": 717,
-   "built": 589
+   "built": 595
   },
   "timers": {
    "spec": 1987,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 7446,
-   "built": 6171
+   "built": 6189
   }
  },
  "sections": {
@@ -165,15 +165,15 @@
   },
   "23": {
    "spec": 219,
-   "built": 180,
+   "built": 186,
    "processes": 4,
-   "done": 2
+   "done": 3
   },
   "24": {
    "spec": 314,
-   "built": 134,
+   "built": 146,
    "processes": 6,
-   "done": 2
+   "done": 3
   },
   "25": {
    "spec": 231,
@@ -346,9 +346,11 @@
   "22.5",
   "22.6",
   "23.1",
+  "23.2",
   "23.4",
   "24.1",
   "24.2",
+  "24.3",
   "25.1",
   "25.2",
   "25.3",
@@ -5890,15 +5892,8 @@
    },
    "tables": {
     "spec": 6,
-    "built": 0,
-    "missing": [
-     "conditions",
-     "du_findings_interpretations",
-     "du_message_rules",
-     "homeownership_education_records",
-     "homeready_evaluations",
-     "restructure_proposals"
-    ]
+    "built": 6,
+    "missing": []
    },
    "timers": {
     "spec": 5,
@@ -5923,9 +5918,9 @@
    },
    "units": {
     "spec": 58,
-    "built": 52
+    "built": 58
    },
-   "pct": 89.7
+   "pct": 100.0
   },
   {
    "process": "23.3",
@@ -6134,22 +6129,9 @@
    "title": "Property and project eligibility (property types, condo/PUD project review incl. CPM and deferred-maintenance rules, manufactured housing, ADUs, condition ratings, escrow holdbacks, new construction, zoning/environmental)",
    "tids": {
     "spec": 12,
-    "built": 0,
-    "todo": 12,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 4,
@@ -6179,9 +6161,9 @@
    },
    "units": {
     "spec": 40,
-    "built": 28
+    "built": 40
    },
-   "pct": 70.0
+   "pct": 100.0
   },
   {
    "process": "24.4",

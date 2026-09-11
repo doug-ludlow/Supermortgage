@@ -1,13 +1,13 @@
 {
- "brief": "spec units built 5482/7446 (73.6%): tids 1446/1914, tables 548/717, timers 1570/1987, notices 258/306, tools 849/1311, figures 811/1211; processes at 100%: 125/165",
+ "brief": "spec units built 5514/7446 (74.1%): tids 1458/1914, tables 552/717, timers 1570/1987, notices 258/306, tools 852/1311, figures 824/1211; processes at 100%: 125/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1446
+   "built": 1458
   },
   "tables": {
    "spec": 717,
-   "built": 548
+   "built": 552
   },
   "timers": {
    "spec": 1987,
@@ -19,15 +19,15 @@
   },
   "tools": {
    "spec": 1311,
-   "built": 849
+   "built": 852
   },
   "figures": {
    "spec": 1211,
-   "built": 811
+   "built": 824
   },
   "units": {
    "spec": 7446,
-   "built": 5482
+   "built": 5514
   }
  },
  "sections": {
@@ -159,7 +159,7 @@
   },
   "22": {
    "spec": 368,
-   "built": 85,
+   "built": 117,
    "processes": 6,
    "done": 0
   },
@@ -5732,22 +5732,9 @@
    "title": "Credit report ordering, credit-score model and merge rules, analysis, freezes/disputes, inquiries, and pre-closing refresh (undisclosed-debt monitoring)",
    "tids": {
     "spec": 12,
-    "built": 0,
-    "todo": 12,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 4,
@@ -5774,20 +5761,14 @@
    },
    "figures": {
     "spec": 5,
-    "built": 0,
-    "missing": [
-     "$13,500.00",
-     "$150.00",
-     "$2,150.00",
-     "$3,200.00",
-     "$612.40"
-    ]
+    "built": 5,
+    "missing": []
    },
    "units": {
     "spec": 41,
-    "built": 23
+    "built": 40
    },
-   "pct": 56.1
+   "pct": 97.6
   },
   {
    "process": "22.3",
@@ -5816,13 +5797,8 @@
    },
    "tables": {
     "spec": 4,
-    "built": 0,
-    "missing": [
-     "business_verifications",
-     "employment_verifications",
-     "income_calculations",
-     "tax_transcript_requests"
-    ]
+    "built": 4,
+    "missing": []
    },
    "timers": {
     "spec": 9,
@@ -5837,47 +5813,37 @@
    },
    "tools": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "buildDocumentationMatrix",
-     "orderVerificationReport",
-     "submitIncomeCalculator"
-    ]
+    "built": 3,
+    "missing": []
    },
    "figures": {
     "spec": 24,
-    "built": 1,
+    "built": 7,
     "missing": [
      "$1,000.00",
-     "$1,200.00",
      "$1,650.00",
      "$1,800.00",
      "$10,800.00",
      "$12,000.00",
-     "$150.00",
      "$2,000.00",
      "$2,075.00",
-     "$2,150.00",
      "$2,400.00",
      "$2,700.00",
      "$32.50",
-     "$350.00",
      "$5,633.33",
      "$75,000.00",
      "$8,550.00",
-     "$800.00",
      "$9,000.00",
      "$9,246.43",
-     "$900.00",
      "$921.43",
      "$950.00"
     ]
    },
    "units": {
     "spec": 55,
-    "built": 10
+    "built": 23
    },
-   "pct": 18.2
+   "pct": 41.8
   },
   {
    "process": "22.4",
@@ -5958,7 +5924,7 @@
    },
    "figures": {
     "spec": 64,
-    "built": 3,
+    "built": 4,
     "missing": [
      "$1,380.00",
      "$1,720.00",
@@ -6000,7 +5966,6 @@
      "$455,268.00",
      "$457,800.00",
      "$460,000.00",
-     "$5,000.00",
      "$5,600.00",
      "$5,769.60",
      "$51,140.18",
@@ -6025,9 +5990,9 @@
    },
    "units": {
     "spec": 109,
-    "built": 5
+    "built": 6
    },
-   "pct": 4.6
+   "pct": 5.5
   },
   {
    "process": "22.5",
@@ -6220,20 +6185,19 @@
    },
    "figures": {
     "spec": 5,
-    "built": 0,
+    "built": 1,
     "missing": [
      "$1,640.00",
      "$2.25",
      "$30,000.00",
-     "$457,800.00",
-     "$5,000.00"
+     "$457,800.00"
     ]
    },
    "units": {
     "spec": 64,
-    "built": 1
+    "built": 2
    },
-   "pct": 1.6
+   "pct": 3.1
   },
   {
    "process": "23.1",

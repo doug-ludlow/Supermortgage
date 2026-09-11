@@ -98,6 +98,7 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
     } catch (e) {
       if (e instanceof ApiRequestError && e.status === 401) {
         // no session (or it expired and the proxy dropped the cookie): the anonymous minute at the root (no subject, no deep link, no pinned card), else the sign-in screen — never the auth.sign_in notice
+        streamRef.current?.close(); streamRef.current = null; setStream("closed");   // no session: nothing to stream (the label would read "reconnecting…" forever)
         if (!initialSubject && !initialCard && !window.location.search.includes("d=")) { setAnonymous(true); setLoadError(undefined); return; }
         setNeedsSignIn(true);
         setLoadError(undefined);

@@ -15,6 +15,8 @@ export const COPY = {
   "entry.disclosure.first": { key: "entry.disclosure.first", kind: "system message", text: "I'm Supermortgage's automated assistant, working for {{partner.legal_name}}, your lender. You can reach a person at any time — just say *human*.", notes: "first message of every session, every channel; voice reads it aloud.", extras: [], section: "Entry and identity" },
   "entry.disclosure.real_person": { key: "entry.disclosure.real_person", kind: "reply", text: "No — I'm {{partner.legal_name}}'s automated assistant. I can bring a person in right now if you'd like.", notes: "O1.3 T11.", extras: [], section: "Entry and identity" },
   "entry.disclosure.co_admt": { key: "entry.disclosure.co_admt", kind: "line", text: "Colorado notice: an automated system helps evaluate your application. You have the right to an explanation, to correct information, and to a human review of a decision.", notes: "before any pricing output; from Dec 1, 2026.", extras: [], section: "Entry and identity" },
+  "entry.disclosure.ut_high_risk_upfront": { key: "entry.disclosure.ut_high_risk_upfront", kind: "line", text: "Utah notice: you are talking with an automated system, not a person. Say *human* at any time to reach one.", notes: "32.14 S1 (ii): the Utah up-front line, re-delivered on a state change (20.3 rule 1 overlay `ut_high_risk_upfront`).", extras: [], section: "Entry and identity" },
+  "entry.disclosure.ca_admt_preuse": { key: "entry.disclosure.ca_admt_preuse", kind: "line", text: "California notice: automated technology may help decide about your loan. You can ask how it works, ask for a person, or opt out where the law allows.", notes: "32.14 S1 (ii): the California pre-use line, re-delivered on a state change (20.3 rule 1 overlay `ca_admt_preuse`).", extras: [], section: "Entry and identity" },
   "entry.goal.question": { key: "entry.goal.question", kind: "ChoiceCard title", text: "What are we doing today?", extras: [], options: ["Buy a home", "Lower my rate or payment", "Take cash out"], section: "Entry and identity" },
   "entry.goal.contract": { key: "entry.goal.contract", kind: "ChoiceCard", text: "Do you have a signed purchase contract?", extras: [], options: ["Yes, I have a contract", "Still looking"], section: "Entry and identity" },
   "entry.occupancy": { key: "entry.occupancy", kind: "ChoiceCard", text: "Will this be your primary home?", extras: [], options: ["Primary home", "Second home", "Investment property"], section: "Entry and identity" },
@@ -549,4 +551,4 @@ export const COPY = {
 } as const satisfies Record<string, CopyEntry>;
 
 export type CopyKey = keyof typeof COPY;
-export const COPY_KEY_COUNT = 534;
+export const COPY_KEY_COUNT = 536;

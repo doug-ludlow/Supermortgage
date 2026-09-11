@@ -24,7 +24,9 @@ const goalStep: LeadStep = { id: "goal", kind: "ChoiceCard", copy_key: "entry.go
 const contractStep: LeadStep = { id: "contract", kind: "ChoiceCard", copy_key: "entry.buy.contract_question", options: [{ id: "signed" }, { id: "looking" }] };
 const occupancyStep: LeadStep = { id: "occupancy", kind: "ChoiceCard", copy_key: "entry.occupancy.question", options: [{ id: "primary" }, { id: "second_home" }, { id: "investment" }] };
 const stateStep: LeadStep = { id: "state", kind: "ChoiceCard", copy_key: "entry.state.question" };
-const estimateStep: LeadStep = { id: "estimate", kind: "ConfirmCard", copy_key: "entry.estimate.value" };
+// the wire shape (lead-routes.ts): the estimate step names its fields as objects and no copy_key of its own
+const estimateStep: LeadStep = { id: "estimate", kind: "ConfirmCard", copy_key: "", fields: [{ id: "value_estimate_cents", copy_key: "entry.estimate.value", kind: "money" }, { id: "stated_existing_balance_cents", copy_key: "entry.estimate.balance", kind: "money" }] };
+const purchaseEstimateStep: LeadStep = { id: "estimate", kind: "ConfirmCard", copy_key: "", fields: [{ id: "price_range_cents", copy_key: "entry.estimate.price_range", kind: "money" }, { id: "down_payment_cents", copy_key: "entry.estimate.down_payment", kind: "money" }] };
 const identify: LeadStep = { id: "identify", kind: "ChoiceCard", copy_key: "auth.choose_method" };
 const startRes: LeadStartResponse = { lead_id: "lead-1", partner: PARTNER, lines: [disclosure], step: goalStep };
 const answer = (step: LeadStep | null, lines: LeadLine[] = [], extra: Partial<LeadAnswerResponse> = {}): LeadAnswerResponse => ({ lead_id: "lead-1", lines, step, ...extra });
@@ -131,7 +133,8 @@ describe("32.14 S1 — the chips (T-15-05)", () => {
 
   it("the state is a select of the 50 states + DC that needs an explicit Continue; the answer is the USPS code and the response lines render before the next chip (UT/CA variant, CO notice — T-15-02)", async () => {
     const m = mocks();
-    const variant: LeadLine = { message_id: "m-2", at: "2026-10-19T14:01:00.000Z", sender: "agent", automation_marker: true, copy_key: "entry.disclosure.first", state_variant: "UT" };
+    // the API re-delivers the disclosure with the 20.3 variant in copy_tokens (no bare state code)
+    const variant: LeadLine = { message_id: "m-2", at: "2026-10-19T14:01:00.000Z", sender: "agent", automation_marker: true, copy_key: "entry.disclosure.first", copy_tokens: { state_variant: "ut_high_risk_upfront", reason: "channel_change" } };
     const coNotice: LeadLine = { message_id: "m-3", at: "2026-10-19T14:01:01.000Z", sender: "agent", copy_key: "entry.disclosure.co_admt" };
     m.answer.mockResolvedValueOnce(answer(occupancyStep)).mockResolvedValueOnce(answer(stateStep)).mockResolvedValueOnce(answer(estimateStep, [variant, coNotice]));
     render(<AnonymousMinute />);
@@ -150,8 +153,10 @@ describe("32.14 S1 — the chips (T-15-05)", () => {
     expect(m.answer).toHaveBeenLastCalledWith("state", "UT");
     const estimate = await screen.findByTestId("lead-estimate-value_estimate_cents");
     const lines = screen.getAllByTestId("lead-line");
-    expect(lines.map((l) => l.getAttribute("data-copy-key"))).toEqual(["entry.disclosure.first", "entry.disclosure.first", "entry.disclosure.co_admt"]);
+    // the re-delivered line is Utah's own line, never the base sentence twice
+    expect(lines.map((l) => l.getAttribute("data-copy-key"))).toEqual(["entry.disclosure.first", "entry.disclosure.ut_high_risk_upfront", "entry.disclosure.co_admt"]);
     expect(lines[1]).toHaveAttribute("data-state-variant", "UT");
+    expect(lines[1]).toHaveTextContent(copy("entry.disclosure.ut_high_risk_upfront"));
     expect(lines[2]).toHaveTextContent(copy("entry.disclosure.co_admt"));
     expect(lines[2]!.compareDocumentPosition(estimate) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getAllByTestId("card-receipt").at(-1)).toHaveTextContent("Utah");
@@ -189,6 +194,25 @@ describe("32.14 S1 — the chips (T-15-05)", () => {
 });
 
 describe("32.14 S1 — the estimate: money fields produce cents strings, no float arithmetic (T-X-09)", () => {
+  it("a purchase (Buy a home → Still looking) asks price range and down payment — the API's field list, never the refinance pair (the live defect: the wire sends field objects)", async () => {
+    const m = mocks();
+    m.answer.mockResolvedValueOnce(answer(contractStep)).mockResolvedValueOnce(answer(stateStep)).mockResolvedValueOnce(answer(purchaseEstimateStep)).mockResolvedValueOnce(answer(null));
+    m.range.mockResolvedValue(rangeRes(checkedSentence));
+    render(<AnonymousMinute />);
+    await user.click(await screen.findByRole("button", { name: "Buy a home" }));
+    await user.click(await screen.findByRole("button", { name: /Still looking/ }));
+    await user.selectOptions(await screen.findByTestId("entry-state-select"), "AZ");
+    await user.click(screen.getByTestId("entry-state-continue"));
+    const price = await screen.findByTestId("lead-estimate-price_range_cents");
+    expect(screen.getByTestId("lead-estimate-down_payment_cents")).toBeInTheDocument();
+    expect(screen.queryByTestId("lead-estimate-value_estimate_cents")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("lead-estimate-stated_existing_balance_cents")).not.toBeInTheDocument();
+    await user.type(price, "$450,000");
+    await user.type(screen.getByTestId("lead-estimate-down_payment_cents"), "90,000");
+    await user.click(screen.getByTestId("entry-estimate-continue"));
+    expect(m.answer).toHaveBeenLastCalledWith("estimate", { price_range_cents: "45000000", down_payment_cents: "9000000" });
+  });
+
   it("parseMoneyToCents is integer-only and exact beyond float precision", () => {
     expect(parseMoneyToCents("$300,000")).toBe("30000000");
     expect(parseMoneyToCents("300000")).toBe("30000000");
@@ -233,7 +257,7 @@ describe("32.14 S1 — the estimate: money fields produce cents strings, no floa
 
   it("purchase asks price range and down payment and posts price_range_cents / down_payment_cents", async () => {
     const m = mocks();
-    m.answer.mockResolvedValueOnce(answer(contractStep)).mockResolvedValueOnce(answer(stateStep)).mockResolvedValueOnce(answer(estimateStep));
+    m.answer.mockResolvedValueOnce(answer(contractStep)).mockResolvedValueOnce(answer(stateStep)).mockResolvedValueOnce(answer(purchaseEstimateStep));   // the API names the purchase fields
     render(<AnonymousMinute />);
     await user.click(await screen.findByRole("button", { name: "Buy a home" }));
     await user.click(await screen.findByRole("button", { name: "Still looking" }));

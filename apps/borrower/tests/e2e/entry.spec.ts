@@ -26,14 +26,16 @@ const STEPS = {
   contract: { id: "contract", kind: "ChoiceCard", copy_key: "entry.buy.contract_question", options: [{ id: "signed" }, { id: "looking" }] },
   occupancy: { id: "occupancy", kind: "ChoiceCard", copy_key: "entry.occupancy.question", options: [{ id: "primary" }, { id: "second_home" }, { id: "investment" }] },
   state: { id: "state", kind: "ChoiceCard", copy_key: "entry.state.question" },
-  estimate: { id: "estimate", kind: "ConfirmCard", copy_key: "entry.estimate.value" },
+  // the wire shape: field objects, no copy_key on the step
+  estimate: { id: "estimate", kind: "ConfirmCard", fields: [{ id: "value_estimate_cents", copy_key: "entry.estimate.value", kind: "money" }, { id: "stated_existing_balance_cents", copy_key: "entry.estimate.balance", kind: "money" }] },
+  purchaseEstimate: { id: "estimate", kind: "ConfirmCard", fields: [{ id: "price_range_cents", copy_key: "entry.estimate.price_range", kind: "money" }, { id: "down_payment_cents", copy_key: "entry.estimate.down_payment", kind: "money" }] },
   identify: { id: "identify", kind: "ChoiceCard", copy_key: "auth.choose_method" },
 };
 
 /** FAKE lead API: one lead per page, the fixed step order, the state gate as the spec orders it (S1 (i)–(iii)). */
 function fakeLeadApi(scenario: Scenario) {
   const calls: Record<string, unknown>[] = [];
-  let n = 10;
+  let n = 10; let goal = "lower_rate";
   const handler = async (route: Route) => {
     const body = route.request().postDataJSON() as Record<string, unknown>;
     calls.push(body);
@@ -45,14 +47,14 @@ function fakeLeadApi(scenario: Scenario) {
       case "answer": {
         const step = body.step as string;
         const value = body.value as string | Record<string, string>;
-        if (step === "goal") return json({ lead_id: "lead-e2e", lines: [], step: value === "buy" ? STEPS.contract : STEPS.occupancy });
+        if (step === "goal") { goal = String(value); return json({ lead_id: "lead-e2e", lines: [], step: value === "buy" ? STEPS.contract : STEPS.occupancy }); }
         if (step === "contract" || step === "occupancy") return json({ lead_id: "lead-e2e", lines: [], step: STEPS.state });
         if (step === "state") {
           if (scenario === "closed" || value === "NY") return json({ lead_id: "lead-e2e", lines: [], step: null, closed: { reason: "state_not_licensed", copy_key: "lead.state_closed" } });
           const lines: unknown[] = [];
-          if (value === "UT" || value === "CA") lines.push(line((n += 1), "entry.disclosure.first", { automation_marker: true, state_variant: value }));
+          if (value === "UT" || value === "CA") lines.push(line((n += 1), "entry.disclosure.first", { automation_marker: true, copy_tokens: { state_variant: value === "UT" ? "ut_high_risk_upfront" : "ca_admt_preuse", reason: "channel_change" } }));
           if (value === "CO") lines.push(line((n += 1), "entry.disclosure.co_admt"));
-          return json({ lead_id: "lead-e2e", lines, step: STEPS.estimate });
+          return json({ lead_id: "lead-e2e", lines, step: goal === "buy" ? STEPS.purchaseEstimate : STEPS.estimate });
         }
         if (step === "estimate") {
           const v = value as Record<string, string>;
@@ -223,4 +225,24 @@ test("the root with no session is the anonymous minute; the header's Sign in ope
   await expect(page.getByTestId("record")).toHaveCount(0);
   await page.getByTestId("sign-in-button").click();
   await expect(page.getByTestId("sign-in-title")).toHaveText(copy("auth.welcome_back"));
+});
+
+// The live defect: Buy a home must ask price range and down payment (the API's field objects), never the refinance pair; the California re-log is California's line.
+test("Buy a home → Still looking → California: the California line is re-delivered once, then price range and down payment, then the range", async ({ page }) => {
+  const api = await open(page, "refinance");
+  await page.getByRole("button", { name: "Buy a home" }).click();
+  await page.getByRole("button", { name: /Still looking/ }).click();
+  await page.getByTestId("entry-state-select").selectOption("CA");
+  await page.getByTestId("entry-state-continue").click();
+  await expect(page.getByTestId("lead-estimate-price_range_cents")).toBeVisible();
+  await expect(page.getByTestId("lead-estimate-value_estimate_cents")).toHaveCount(0);
+  const lines = page.locator("[data-testid=lead-line]");
+  await expect(lines.nth(1)).toHaveAttribute("data-copy-key", "entry.disclosure.ca_admt_preuse");
+  await expect(lines.nth(1)).toContainText("California notice");
+  await page.getByTestId("lead-estimate-price_range_cents").fill("$450,000");
+  await page.getByTestId("lead-estimate-down_payment_cents").fill("90,000");
+  await page.getByTestId("entry-estimate-continue").click();
+  await expect(page.getByTestId("range-card")).toBeVisible();
+  const estimate = api.calls.find((c) => c["step"] === "estimate") as { value: Record<string, string> } | undefined;
+  expect(estimate?.value).toEqual({ price_range_cents: "45000000", down_payment_cents: "9000000" });
 });

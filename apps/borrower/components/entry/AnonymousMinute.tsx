@@ -39,7 +39,7 @@ import {
   type LeadStep,
   type LeadStepId,
 } from "@/lib/api/lead";
-import { copy, copyExtra, copyOptions, type Tokens } from "@/lib/copy";
+import { isCopyKey, copy, copyExtra, copyOptions, type Tokens } from "@/lib/copy";
 import { formatDate, formatMoney, formatRate } from "@/lib/format";
 import { ChoiceCard } from "@/components/cards/ChoiceCard";
 import { StatusCard } from "@/components/cards/StatusCard";
@@ -124,8 +124,16 @@ function choiceInstance(e: StepEntry, leadId: string): CardInstance<"ChoiceCard"
 }
 
 /** The estimate's two fields: purchase (price range · down payment) or refinance/cash-out (value · balance). */
+const ESTIMATE_COPY: Readonly<Record<string, string>> = { price_range_cents: "entry.estimate.price_range", down_payment_cents: "entry.estimate.down_payment", value_estimate_cents: "entry.estimate.value", stated_existing_balance_cents: "entry.estimate.balance" };
+/** The wire's field ids (objects `{id, copy_key}` as the API sends them, or bare strings). */
+function fieldIds(step: LeadStep): { id: string; copy_key?: string }[] {
+  return (step.fields ?? []).map((f) => (typeof f === "string" ? { id: f } : { id: String(f.id ?? f.path ?? ""), ...(f.copy_key ? { copy_key: f.copy_key } : {}) })).filter((f) => f.id in ESTIMATE_COPY);
+}
 function estimateFields(step: LeadStep, goal: LeadGoal | undefined): { path: string; copy_key: string }[] {
-  const purchase = step.fields?.includes("price_range_cents") || step.transaction_intent === "purchase" || step.goal === "buy" || (!step.fields && !step.transaction_intent && !step.goal && goal === "buy");
+  const wire = fieldIds(step);
+  // the API's own field list wins (it is the lead's transaction type); the goal tile is the fallback for a step that names none
+  if (wire.length) return wire.map((f) => ({ path: f.id, copy_key: f.copy_key ?? ESTIMATE_COPY[f.id]! }));
+  const purchase = step.transaction_intent === "purchase" || step.goal === "buy" || (!step.transaction_intent && !step.goal && goal === "buy");
   return purchase
     ? [
         { path: "price_range_cents", copy_key: "entry.estimate.price_range" },
@@ -292,13 +300,19 @@ export function AnonymousMinute({ renderIdentity }: AnonymousMinuteProps) {
 
 // ---------------------------------------------------------------------------
 
+const VARIANT_OF_STATE: Readonly<Record<string, string>> = { UT: "ut_high_risk_upfront", CA: "ca_admt_preuse", CO: "co_sb26_189_preuse" };
+const STATE_OF_VARIANT: Readonly<Record<string, string>> = { ut_high_risk_upfront: "UT", ca_admt_preuse: "CA", co_sb26_189_preuse: "CO" };
 function LeadLineView({ line, partner, state, timezone, testId }: { line: LeadLine; partner?: LeadPartner; /** the state the visitor chose — the `{{state}}` fallback for `lead.state_closed` when the line carries no variant or tokens */ state?: string; timezone: string; testId?: string }) {
-  const code = line.state_variant ?? state;
+  // S1 (ii): the disclosure re-delivered for UT/CA renders that state's own line (`entry.disclosure.<variant>`), never the base sentence twice;
+  // the API names the 20.3 variant in `copy_tokens.state_variant` (e.g. ca_admt_preuse); a bare state code on the line is tolerated
+  const variantId = line.copy_tokens?.["state_variant"] ?? (line.state_variant ? VARIANT_OF_STATE[line.state_variant] : undefined);
+  const variantKey = line.copy_key === "entry.disclosure.first" && variantId && isCopyKey(`entry.disclosure.${variantId}`) ? `entry.disclosure.${variantId}` : null;
+  const code = line.state_variant ?? (variantId ? STATE_OF_VARIANT[variantId] : undefined) ?? state;
   const tokens: Tokens = { ...partnerTokens(partner), ...(code ? { state: stateName(code), state_code: code } : {}), ...(line.copy_tokens ?? {}) };
-  const text = copy(line.copy_key, tokens);
+  const text = copy(variantKey ?? line.copy_key, tokens);
   const automated = line.copy_key === "entry.disclosure.first" || line.copy_key === "entry.disclosure.real_person";
   return (
-    <div id={`msg-${line.message_id}`} className={`sm-msg${line.sender === "notice" ? " sm-msg-notice" : ""}`} tabIndex={-1} data-sender={line.sender} data-testid={testId ?? "lead-line"} data-copy-key={line.copy_key} data-state-variant={line.state_variant ?? undefined}>
+    <div id={`msg-${line.message_id}`} className={`sm-msg${line.sender === "notice" ? " sm-msg-notice" : ""}`} tabIndex={-1} data-sender={line.sender} data-testid={testId ?? "lead-line"} data-copy-key={variantKey ?? line.copy_key} data-state-variant={line.state_variant ?? (variantId ? STATE_OF_VARIANT[variantId] : undefined)}>
       <div className="sm-msg-meta">
         <span data-testid="provenance">{line.sender === "notice" ? "Notice" : (line.sender_label ?? "Supermortgage")}</span>
         {line.automation_marker ? (
@@ -309,7 +323,7 @@ function LeadLineView({ line, partner, state, timezone, testId }: { line: LeadLi
         <time dateTime={line.at}>{formatDate(line.at, timezone, "time")}</time>
       </div>
       <div className="sm-msg-body">
-        <span data-copy-key={line.copy_key} data-automated={automated ? "true" : undefined}>
+        <span data-copy-key={variantKey ?? line.copy_key} data-automated={automated ? "true" : undefined}>
           {text}
         </span>
       </div>

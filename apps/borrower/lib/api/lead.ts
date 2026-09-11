@@ -37,14 +37,17 @@ export type LeadLine = {
 };
 
 export type LeadStepOption = { id: string; copy_key?: string };
+export type LeadStepField = { id?: string; path?: string; copy_key?: string; kind?: string };
 
 export type LeadStep = {
   id: LeadStepId;
   kind: "ChoiceCard" | "ConfirmCard" | "StatusCard";
   copy_key: string;
   options?: LeadStepOption[];
-  /** The estimate step may name its own shape on a reload (purchase vs refinance fields). */
-  fields?: string[];
+  /** The estimate step names its fields as the API sends them: `{id, copy_key, kind}` objects (a bare id string is tolerated). Purchase → price_range_cents + down_payment_cents; refinance / cash-out → value_estimate_cents + stated_existing_balance_cents. */
+  fields?: (string | LeadStepField)[];
+  /** A cash-out estimate carries the program cap as a plain limit (never a decline). */
+  limit?: { max_ltv_pct?: string } | null;
   transaction_intent?: "purchase" | "limited_cash_out" | "cash_out" | null;
   goal?: LeadGoal | null;
 };

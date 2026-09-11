@@ -11,6 +11,8 @@ Format: `key` — **card/message** — text — *notes*.
 - `entry.disclosure.first` — system message — "I'm Supermortgage's automated assistant, working for {{partner.legal_name}}, your lender. You can reach a person at any time — just say *human*." — *first message of every session, every channel; voice reads it aloud.*
 - `entry.disclosure.real_person` — reply — "No — I'm {{partner.legal_name}}'s automated assistant. I can bring a person in right now if you'd like." — *20.3 T11.*
 - `entry.disclosure.co_admt` — line — "Colorado notice: an automated system helps evaluate your application. You have the right to an explanation, to correct information, and to a human review of a decision." — *before any pricing output; from Dec 1, 2026.*
+- `entry.disclosure.ut_high_risk_upfront` — line — "Utah notice: you are talking with an automated system, not a person. Say *human* at any time to reach one." — *32.14 S1 (ii): the Utah up-front line, re-delivered on a state change (20.3 rule 1 overlay `ut_high_risk_upfront`).*
+- `entry.disclosure.ca_admt_preuse` — line — "California notice: automated technology may help decide about your loan. You can ask how it works, ask for a person, or opt out where the law allows." — *32.14 S1 (ii): the California pre-use line, re-delivered on a state change (20.3 rule 1 overlay `ca_admt_preuse`).*
 - `entry.goal.question` — ChoiceCard title — "What are we doing today?" — options `Buy a home` · `Lower my rate or payment` · `Take cash out`.
 - `entry.goal.contract` — ChoiceCard — "Do you have a signed purchase contract?" — options `Yes, I have a contract` · `Still looking`.
 - `entry.occupancy` — ChoiceCard — "Will this be your primary home?" — options `Primary home` · `Second home` · `Investment property`.

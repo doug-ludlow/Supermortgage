@@ -105,6 +105,58 @@ import { EVALUATORS_13_6 } from "../domain/foreclosure/evaluators-13-6.ts";
 import { EVALUATORS_13_7 } from "../domain/foreclosure/evaluators-13-7.ts";
 import { EVALUATORS_13_8 } from "../domain/foreclosure/evaluators-13-8.ts";
 import { EVALUATORS_13_9 } from "../domain/foreclosure/evaluators-13-9.ts";
+// ---- §20–§31 process-owned files (scaffolded by tools/workflows/wire_orig.py)
+import { EVALUATORS_20_1 } from "../domain/leads-pricing/evaluators-20-1.ts";
+import { EVALUATORS_20_2 } from "../domain/leads-pricing/evaluators-20-2.ts";
+import { EVALUATORS_20_3 } from "../domain/leads-pricing/evaluators-20-3.ts";
+import { EVALUATORS_20_4 } from "../domain/leads-pricing/evaluators-20-4.ts";
+import { EVALUATORS_21_1 } from "../domain/application/evaluators-21-1.ts";
+import { EVALUATORS_21_2 } from "../domain/application/evaluators-21-2.ts";
+import { EVALUATORS_21_3 } from "../domain/application/evaluators-21-3.ts";
+import { EVALUATORS_21_4 } from "../domain/application/evaluators-21-4.ts";
+import { EVALUATORS_21_5 } from "../domain/application/evaluators-21-5.ts";
+import { EVALUATORS_21_6 } from "../domain/application/evaluators-21-6.ts";
+import { EVALUATORS_22_1 } from "../domain/verification/evaluators-22-1.ts";
+import { EVALUATORS_22_2 } from "../domain/verification/evaluators-22-2.ts";
+import { EVALUATORS_22_3 } from "../domain/verification/evaluators-22-3.ts";
+import { EVALUATORS_22_4 } from "../domain/verification/evaluators-22-4.ts";
+import { EVALUATORS_22_5 } from "../domain/verification/evaluators-22-5.ts";
+import { EVALUATORS_22_6 } from "../domain/verification/evaluators-22-6.ts";
+import { EVALUATORS_23_1 } from "../domain/underwriting/evaluators-23-1.ts";
+import { EVALUATORS_23_2 } from "../domain/underwriting/evaluators-23-2.ts";
+import { EVALUATORS_23_3 } from "../domain/underwriting/evaluators-23-3.ts";
+import { EVALUATORS_23_4 } from "../domain/underwriting/evaluators-23-4.ts";
+import { EVALUATORS_24_1 } from "../domain/property/evaluators-24-1.ts";
+import { EVALUATORS_24_2 } from "../domain/property/evaluators-24-2.ts";
+import { EVALUATORS_24_3 } from "../domain/property/evaluators-24-3.ts";
+import { EVALUATORS_24_4 } from "../domain/property/evaluators-24-4.ts";
+import { EVALUATORS_24_5 } from "../domain/property/evaluators-24-5.ts";
+import { EVALUATORS_24_6 } from "../domain/property/evaluators-24-6.ts";
+import { EVALUATORS_25_1 } from "../domain/compliance-disclosures/evaluators-25-1.ts";
+import { EVALUATORS_25_2 } from "../domain/compliance-disclosures/evaluators-25-2.ts";
+import { EVALUATORS_25_3 } from "../domain/compliance-disclosures/evaluators-25-3.ts";
+import { EVALUATORS_25_4 } from "../domain/compliance-disclosures/evaluators-25-4.ts";
+import { EVALUATORS_26_1 } from "../domain/closing/evaluators-26-1.ts";
+import { EVALUATORS_26_2 } from "../domain/closing/evaluators-26-2.ts";
+import { EVALUATORS_26_3 } from "../domain/closing/evaluators-26-3.ts";
+import { EVALUATORS_26_4 } from "../domain/closing/evaluators-26-4.ts";
+import { EVALUATORS_27_1 } from "../domain/warehouse/evaluators-27-1.ts";
+import { EVALUATORS_27_2 } from "../domain/warehouse/evaluators-27-2.ts";
+import { EVALUATORS_28_1 } from "../domain/qc-hmda/evaluators-28-1.ts";
+import { EVALUATORS_28_2 } from "../domain/qc-hmda/evaluators-28-2.ts";
+import { EVALUATORS_28_3 } from "../domain/qc-hmda/evaluators-28-3.ts";
+import { EVALUATORS_28_4 } from "../domain/qc-hmda/evaluators-28-4.ts";
+import { EVALUATORS_29_1 } from "../domain/secondary/evaluators-29-1.ts";
+import { EVALUATORS_29_2 } from "../domain/secondary/evaluators-29-2.ts";
+import { EVALUATORS_29_3 } from "../domain/secondary/evaluators-29-3.ts";
+import { EVALUATORS_29_4 } from "../domain/secondary/evaluators-29-4.ts";
+import { EVALUATORS_30_1 } from "../domain/orig-boarding/evaluators-30-1.ts";
+import { EVALUATORS_30_2 } from "../domain/orig-boarding/evaluators-30-2.ts";
+import { EVALUATORS_30_3 } from "../domain/orig-boarding/evaluators-30-3.ts";
+import { EVALUATORS_30_4 } from "../domain/orig-boarding/evaluators-30-4.ts";
+import { EVALUATORS_31_1 } from "../domain/governance/evaluators-31-1.ts";
+import { EVALUATORS_31_2 } from "../domain/governance/evaluators-31-2.ts";
+import { EVALUATORS_31_3 } from "../domain/governance/evaluators-31-3.ts";
 
 export const EVALUATORS: Record<string, Evaluator> = {
   // ---- §1 transfers in
@@ -257,6 +309,7 @@ export const EVALUATORS: Record<string, Evaluator> = {
   ...SECTION_14_EVALUATORS, ...SECTION_15_EVALUATORS, ...SECTION_16_EVALUATORS, ...SECTION_17_EVALUATORS, ...SECTION_18_EVALUATORS, ...SECTION_19_EVALUATORS,
   // ---- §1–§13 process-owned maps (spread last: a key here supersedes the inline definition above)
   ...EVALUATORS_1_1, ...EVALUATORS_1_2, ...EVALUATORS_1_3, ...EVALUATORS_1_4, ...EVALUATORS_1_5, ...EVALUATORS_1_6, ...EVALUATORS_1_7, ...EVALUATORS_2_1, ...EVALUATORS_2_2, ...EVALUATORS_2_3, ...EVALUATORS_2_4, ...EVALUATORS_2_5, ...EVALUATORS_2_6, ...EVALUATORS_2_7, ...EVALUATORS_3_1, ...EVALUATORS_3_2, ...EVALUATORS_3_3, ...EVALUATORS_3_4, ...EVALUATORS_3_5, ...EVALUATORS_3_6, ...EVALUATORS_3_7, ...EVALUATORS_3_8, ...EVALUATORS_3_9, ...EVALUATORS_4_1, ...EVALUATORS_4_2, ...EVALUATORS_4_3, ...EVALUATORS_4_4, ...EVALUATORS_4_5, ...EVALUATORS_5_1, ...EVALUATORS_5_2, ...EVALUATORS_5_3, ...EVALUATORS_5_4, ...EVALUATORS_5_5, ...EVALUATORS_5_6, ...EVALUATORS_5_7, ...EVALUATORS_6_1, ...EVALUATORS_6_2, ...EVALUATORS_6_3, ...EVALUATORS_6_4, ...EVALUATORS_6_5, ...EVALUATORS_7_1, ...EVALUATORS_7_2, ...EVALUATORS_7_3, ...EVALUATORS_7_4, ...EVALUATORS_7_5, ...EVALUATORS_7_6, ...EVALUATORS_8_1, ...EVALUATORS_8_2, ...EVALUATORS_8_3, ...EVALUATORS_9_1, ...EVALUATORS_9_2, ...EVALUATORS_9_3, ...EVALUATORS_9_4, ...EVALUATORS_9_5, ...EVALUATORS_9_6, ...EVALUATORS_9_7, ...EVALUATORS_9_8, ...EVALUATORS_9_9, ...EVALUATORS_10_1, ...EVALUATORS_10_2, ...EVALUATORS_10_3, ...EVALUATORS_10_4, ...EVALUATORS_10_5, ...EVALUATORS_10_6, ...EVALUATORS_11_1, ...EVALUATORS_11_2, ...EVALUATORS_11_3, ...EVALUATORS_11_4, ...EVALUATORS_11_5, ...EVALUATORS_12_1, ...EVALUATORS_12_2, ...EVALUATORS_12_3, ...EVALUATORS_12_4, ...EVALUATORS_12_5, ...EVALUATORS_12_6, ...EVALUATORS_12_7, ...EVALUATORS_12_8, ...EVALUATORS_12_9, ...EVALUATORS_13_1, ...EVALUATORS_13_2, ...EVALUATORS_13_3, ...EVALUATORS_13_4, ...EVALUATORS_13_5, ...EVALUATORS_13_6, ...EVALUATORS_13_7, ...EVALUATORS_13_8, ...EVALUATORS_13_9,
+  ...EVALUATORS_20_1, ...EVALUATORS_20_2, ...EVALUATORS_20_3, ...EVALUATORS_20_4, ...EVALUATORS_21_1, ...EVALUATORS_21_2, ...EVALUATORS_21_3, ...EVALUATORS_21_4, ...EVALUATORS_21_5, ...EVALUATORS_21_6, ...EVALUATORS_22_1, ...EVALUATORS_22_2, ...EVALUATORS_22_3, ...EVALUATORS_22_4, ...EVALUATORS_22_5, ...EVALUATORS_22_6, ...EVALUATORS_23_1, ...EVALUATORS_23_2, ...EVALUATORS_23_3, ...EVALUATORS_23_4, ...EVALUATORS_24_1, ...EVALUATORS_24_2, ...EVALUATORS_24_3, ...EVALUATORS_24_4, ...EVALUATORS_24_5, ...EVALUATORS_24_6, ...EVALUATORS_25_1, ...EVALUATORS_25_2, ...EVALUATORS_25_3, ...EVALUATORS_25_4, ...EVALUATORS_26_1, ...EVALUATORS_26_2, ...EVALUATORS_26_3, ...EVALUATORS_26_4, ...EVALUATORS_27_1, ...EVALUATORS_27_2, ...EVALUATORS_28_1, ...EVALUATORS_28_2, ...EVALUATORS_28_3, ...EVALUATORS_28_4, ...EVALUATORS_29_1, ...EVALUATORS_29_2, ...EVALUATORS_29_3, ...EVALUATORS_29_4, ...EVALUATORS_30_1, ...EVALUATORS_30_2, ...EVALUATORS_30_3, ...EVALUATORS_30_4, ...EVALUATORS_31_1, ...EVALUATORS_31_2, ...EVALUATORS_31_3,
 };
 
 export class UnknownEvaluator extends Error { constructor(ref: string) { super(`no evaluator registered for ${ref}`); this.name = "UnknownEvaluator"; } }

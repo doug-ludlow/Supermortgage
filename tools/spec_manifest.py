@@ -35,9 +35,24 @@ def tid_texts(pid, text):
         out.setdefault(int(m.group(1)), '')
     return dict(sorted(out.items()))
 
-def tables(text):
+COLUMN_SUFFIXES = ('_id', '_at', '_on', '_cents', '_pct', '_date', '_flag', '_until', '_bps', '_code')
+def tables(text, markdown_first=False):
     m = re.search(r'#### Data model(.*?)(?=\n#### )', text, re.S)
     names = set()
+    if m and markdown_first:
+        # sections 20+ (spec/TEMPLATE-process.md): a table is a backticked name at the start of a bullet or paragraph,
+        # or one followed by "(new…)/(baseline…)/(extended…)/(shared with…)", never a column, ledger account, enum, flag or class
+        body = m.group(1)
+        for n in re.findall(r'(?:^|\n)\s*(?:[-*]\s*)?\*{0,2}`([a-z][a-z0-9_]{3,})`\*{0,2}\s*(?:\(|—|:|,| \(|$)', body):
+            names.add(n)
+        for n, tail in re.findall(r'`([a-z][a-z0-9_]{3,})`\s*\(((?:baseline|new|extended|append-only|shared with)[^)]*)\)', body):
+            if re.search(r'column|account|enum|flag|class|event|value', tail): continue
+            names.add(n)
+        for n in list(names):
+            ctx = re.search(r'`' + re.escape(n) + r'`\s*\(([^)]*)\)', body)
+            if n.endswith(COLUMN_SUFFIXES) or '.' in n or (ctx and re.search(r'column|account|enum|flag|class|event|value|codes', ctx.group(1))) or re.search(r'`' + re.escape(n) + r'`\s*[∈=]', body):
+                names.discard(n)
+        return sorted(names)
     if m:
         for n in re.findall(r'(?:^|\n)\s*[-*]\s*\*{0,2}`([a-z][a-z0-9_]{3,})`', m.group(1)):
             if not n.endswith(('_id', '_at', '_on', '_cents', '_pct', '_date', '_flag')) and '.' not in n: names.add(n)
@@ -54,7 +69,7 @@ for p in procs:
     tids = tid_texts(p['id'], text)
     manifest.append({'process': p['id'], 'title': p['title'], 'path': p['path'],
                      'tids': [{'n': n, 'text': t} for n, t in tids.items()],
-                     'tables': tables(text), 'timers': sorted(timers_by_proc.get(p['id'], [])),
+                     'tables': tables(text, int(p['id'].split('.')[0]) >= 20), 'timers': sorted(timers_by_proc.get(p['id'], [])),
                      'notices': sorted(notices_by_proc.get(p['id'], [])),
                      'agent': agent_by_proc.get(p['id']), 'tools': tools_by_proc.get(p['id'], [])})
 json.dump(manifest, open(os.path.join(root, 'spec/registry/manifest.json'), 'w'), indent=1)

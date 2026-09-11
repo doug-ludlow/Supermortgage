@@ -114,6 +114,58 @@ import { VERSIONS_13_6, OVERRIDES_13_6 } from "./authored/section13-6.ts";
 import { VERSIONS_13_7, OVERRIDES_13_7 } from "./authored/section13-7.ts";
 import { VERSIONS_13_8, OVERRIDES_13_8 } from "./authored/section13-8.ts";
 import { VERSIONS_13_9, OVERRIDES_13_9 } from "./authored/section13-9.ts";
+// ---- §20–§31 process-owned files (scaffolded by tools/workflows/wire_orig.py)
+import { VERSIONS_20_1, OVERRIDES_20_1 } from "./authored/section20-1.ts";
+import { VERSIONS_20_2, OVERRIDES_20_2 } from "./authored/section20-2.ts";
+import { VERSIONS_20_3, OVERRIDES_20_3 } from "./authored/section20-3.ts";
+import { VERSIONS_20_4, OVERRIDES_20_4 } from "./authored/section20-4.ts";
+import { VERSIONS_21_1, OVERRIDES_21_1 } from "./authored/section21-1.ts";
+import { VERSIONS_21_2, OVERRIDES_21_2 } from "./authored/section21-2.ts";
+import { VERSIONS_21_3, OVERRIDES_21_3 } from "./authored/section21-3.ts";
+import { VERSIONS_21_4, OVERRIDES_21_4 } from "./authored/section21-4.ts";
+import { VERSIONS_21_5, OVERRIDES_21_5 } from "./authored/section21-5.ts";
+import { VERSIONS_21_6, OVERRIDES_21_6 } from "./authored/section21-6.ts";
+import { VERSIONS_22_1, OVERRIDES_22_1 } from "./authored/section22-1.ts";
+import { VERSIONS_22_2, OVERRIDES_22_2 } from "./authored/section22-2.ts";
+import { VERSIONS_22_3, OVERRIDES_22_3 } from "./authored/section22-3.ts";
+import { VERSIONS_22_4, OVERRIDES_22_4 } from "./authored/section22-4.ts";
+import { VERSIONS_22_5, OVERRIDES_22_5 } from "./authored/section22-5.ts";
+import { VERSIONS_22_6, OVERRIDES_22_6 } from "./authored/section22-6.ts";
+import { VERSIONS_23_1, OVERRIDES_23_1 } from "./authored/section23-1.ts";
+import { VERSIONS_23_2, OVERRIDES_23_2 } from "./authored/section23-2.ts";
+import { VERSIONS_23_3, OVERRIDES_23_3 } from "./authored/section23-3.ts";
+import { VERSIONS_23_4, OVERRIDES_23_4 } from "./authored/section23-4.ts";
+import { VERSIONS_24_1, OVERRIDES_24_1 } from "./authored/section24-1.ts";
+import { VERSIONS_24_2, OVERRIDES_24_2 } from "./authored/section24-2.ts";
+import { VERSIONS_24_3, OVERRIDES_24_3 } from "./authored/section24-3.ts";
+import { VERSIONS_24_4, OVERRIDES_24_4 } from "./authored/section24-4.ts";
+import { VERSIONS_24_5, OVERRIDES_24_5 } from "./authored/section24-5.ts";
+import { VERSIONS_24_6, OVERRIDES_24_6 } from "./authored/section24-6.ts";
+import { VERSIONS_25_1, OVERRIDES_25_1 } from "./authored/section25-1.ts";
+import { VERSIONS_25_2, OVERRIDES_25_2 } from "./authored/section25-2.ts";
+import { VERSIONS_25_3, OVERRIDES_25_3 } from "./authored/section25-3.ts";
+import { VERSIONS_25_4, OVERRIDES_25_4 } from "./authored/section25-4.ts";
+import { VERSIONS_26_1, OVERRIDES_26_1 } from "./authored/section26-1.ts";
+import { VERSIONS_26_2, OVERRIDES_26_2 } from "./authored/section26-2.ts";
+import { VERSIONS_26_3, OVERRIDES_26_3 } from "./authored/section26-3.ts";
+import { VERSIONS_26_4, OVERRIDES_26_4 } from "./authored/section26-4.ts";
+import { VERSIONS_27_1, OVERRIDES_27_1 } from "./authored/section27-1.ts";
+import { VERSIONS_27_2, OVERRIDES_27_2 } from "./authored/section27-2.ts";
+import { VERSIONS_28_1, OVERRIDES_28_1 } from "./authored/section28-1.ts";
+import { VERSIONS_28_2, OVERRIDES_28_2 } from "./authored/section28-2.ts";
+import { VERSIONS_28_3, OVERRIDES_28_3 } from "./authored/section28-3.ts";
+import { VERSIONS_28_4, OVERRIDES_28_4 } from "./authored/section28-4.ts";
+import { VERSIONS_29_1, OVERRIDES_29_1 } from "./authored/section29-1.ts";
+import { VERSIONS_29_2, OVERRIDES_29_2 } from "./authored/section29-2.ts";
+import { VERSIONS_29_3, OVERRIDES_29_3 } from "./authored/section29-3.ts";
+import { VERSIONS_29_4, OVERRIDES_29_4 } from "./authored/section29-4.ts";
+import { VERSIONS_30_1, OVERRIDES_30_1 } from "./authored/section30-1.ts";
+import { VERSIONS_30_2, OVERRIDES_30_2 } from "./authored/section30-2.ts";
+import { VERSIONS_30_3, OVERRIDES_30_3 } from "./authored/section30-3.ts";
+import { VERSIONS_30_4, OVERRIDES_30_4 } from "./authored/section30-4.ts";
+import { VERSIONS_31_1, OVERRIDES_31_1 } from "./authored/section31-1.ts";
+import { VERSIONS_31_2, OVERRIDES_31_2 } from "./authored/section31-2.ts";
+import { VERSIONS_31_3, OVERRIDES_31_3 } from "./authored/section31-3.ts";
 
 interface CatalogEntry { readonly code: string; readonly owner_process: string; readonly mentions: readonly string[]; readonly context: string; }
 
@@ -157,6 +209,7 @@ const OVERRIDES: Record<string, Partial<NoticeTemplate>> = {
   ...SECTION_18_OVERRIDES,
   ...SECTION_19_OVERRIDES,
   ...OVERRIDES_1_1, ...OVERRIDES_1_2, ...OVERRIDES_1_3, ...OVERRIDES_1_4, ...OVERRIDES_1_5, ...OVERRIDES_1_6, ...OVERRIDES_1_7, ...OVERRIDES_2_1, ...OVERRIDES_2_2, ...OVERRIDES_2_3, ...OVERRIDES_2_4, ...OVERRIDES_2_5, ...OVERRIDES_2_6, ...OVERRIDES_2_7, ...OVERRIDES_3_1, ...OVERRIDES_3_2, ...OVERRIDES_3_3, ...OVERRIDES_3_4, ...OVERRIDES_3_5, ...OVERRIDES_3_6, ...OVERRIDES_3_7, ...OVERRIDES_3_8, ...OVERRIDES_3_9, ...OVERRIDES_4_1, ...OVERRIDES_4_2, ...OVERRIDES_4_3, ...OVERRIDES_4_4, ...OVERRIDES_4_5, ...OVERRIDES_5_1, ...OVERRIDES_5_2, ...OVERRIDES_5_3, ...OVERRIDES_5_4, ...OVERRIDES_5_5, ...OVERRIDES_5_6, ...OVERRIDES_5_7, ...OVERRIDES_6_1, ...OVERRIDES_6_2, ...OVERRIDES_6_3, ...OVERRIDES_6_4, ...OVERRIDES_6_5, ...OVERRIDES_7_1, ...OVERRIDES_7_2, ...OVERRIDES_7_3, ...OVERRIDES_7_4, ...OVERRIDES_7_5, ...OVERRIDES_7_6, ...OVERRIDES_8_1, ...OVERRIDES_8_2, ...OVERRIDES_8_3, ...OVERRIDES_9_1, ...OVERRIDES_9_2, ...OVERRIDES_9_3, ...OVERRIDES_9_4, ...OVERRIDES_9_5, ...OVERRIDES_9_6, ...OVERRIDES_9_7, ...OVERRIDES_9_8, ...OVERRIDES_9_9, ...OVERRIDES_10_1, ...OVERRIDES_10_2, ...OVERRIDES_10_3, ...OVERRIDES_10_4, ...OVERRIDES_10_5, ...OVERRIDES_10_6, ...OVERRIDES_11_1, ...OVERRIDES_11_2, ...OVERRIDES_11_3, ...OVERRIDES_11_4, ...OVERRIDES_11_5, ...OVERRIDES_12_1, ...OVERRIDES_12_2, ...OVERRIDES_12_3, ...OVERRIDES_12_4, ...OVERRIDES_12_5, ...OVERRIDES_12_6, ...OVERRIDES_12_7, ...OVERRIDES_12_8, ...OVERRIDES_12_9, ...OVERRIDES_13_1, ...OVERRIDES_13_2, ...OVERRIDES_13_3, ...OVERRIDES_13_4, ...OVERRIDES_13_5, ...OVERRIDES_13_6, ...OVERRIDES_13_7, ...OVERRIDES_13_8, ...OVERRIDES_13_9,
+  ...OVERRIDES_20_1, ...OVERRIDES_20_2, ...OVERRIDES_20_3, ...OVERRIDES_20_4, ...OVERRIDES_21_1, ...OVERRIDES_21_2, ...OVERRIDES_21_3, ...OVERRIDES_21_4, ...OVERRIDES_21_5, ...OVERRIDES_21_6, ...OVERRIDES_22_1, ...OVERRIDES_22_2, ...OVERRIDES_22_3, ...OVERRIDES_22_4, ...OVERRIDES_22_5, ...OVERRIDES_22_6, ...OVERRIDES_23_1, ...OVERRIDES_23_2, ...OVERRIDES_23_3, ...OVERRIDES_23_4, ...OVERRIDES_24_1, ...OVERRIDES_24_2, ...OVERRIDES_24_3, ...OVERRIDES_24_4, ...OVERRIDES_24_5, ...OVERRIDES_24_6, ...OVERRIDES_25_1, ...OVERRIDES_25_2, ...OVERRIDES_25_3, ...OVERRIDES_25_4, ...OVERRIDES_26_1, ...OVERRIDES_26_2, ...OVERRIDES_26_3, ...OVERRIDES_26_4, ...OVERRIDES_27_1, ...OVERRIDES_27_2, ...OVERRIDES_28_1, ...OVERRIDES_28_2, ...OVERRIDES_28_3, ...OVERRIDES_28_4, ...OVERRIDES_29_1, ...OVERRIDES_29_2, ...OVERRIDES_29_3, ...OVERRIDES_29_4, ...OVERRIDES_30_1, ...OVERRIDES_30_2, ...OVERRIDES_30_3, ...OVERRIDES_30_4, ...OVERRIDES_31_1, ...OVERRIDES_31_2, ...OVERRIDES_31_3,
   NTC_REGZ_20D_ARM_INITIAL: { separateDocument: true, mayCombineWith: ["NTC_REGZ_41_STMT_STD", "NTC_REGZ_41_STMT_DELQ"], citation: "12 CFR 1026.20(d); H-4(D)(3)/(4)" },
   NTC_REGZ_20C_ARM_ADJ: { citation: "12 CFR 1026.20(c); H-4(D)(1)/(2)" },
   NTC_REGX_39B_EARLY_INTERVENTION: { mayCombineWith: ["NTC_FNMA_D2_2_05_BSP_FORM745"], citation: "12 CFR 1024.39(b); Appendix MS-4(A)" },
@@ -377,4 +430,5 @@ export const AUTHORED_VERSIONS: readonly VersionInput[] = [
   ...SECTION_18_VERSIONS,
   ...SECTION_19_VERSIONS,
   ...VERSIONS_1_1, ...VERSIONS_1_2, ...VERSIONS_1_3, ...VERSIONS_1_4, ...VERSIONS_1_5, ...VERSIONS_1_6, ...VERSIONS_1_7, ...VERSIONS_2_1, ...VERSIONS_2_2, ...VERSIONS_2_3, ...VERSIONS_2_4, ...VERSIONS_2_5, ...VERSIONS_2_6, ...VERSIONS_2_7, ...VERSIONS_3_1, ...VERSIONS_3_2, ...VERSIONS_3_3, ...VERSIONS_3_4, ...VERSIONS_3_5, ...VERSIONS_3_6, ...VERSIONS_3_7, ...VERSIONS_3_8, ...VERSIONS_3_9, ...VERSIONS_4_1, ...VERSIONS_4_2, ...VERSIONS_4_3, ...VERSIONS_4_4, ...VERSIONS_4_5, ...VERSIONS_5_1, ...VERSIONS_5_2, ...VERSIONS_5_3, ...VERSIONS_5_4, ...VERSIONS_5_5, ...VERSIONS_5_6, ...VERSIONS_5_7, ...VERSIONS_6_1, ...VERSIONS_6_2, ...VERSIONS_6_3, ...VERSIONS_6_4, ...VERSIONS_6_5, ...VERSIONS_7_1, ...VERSIONS_7_2, ...VERSIONS_7_3, ...VERSIONS_7_4, ...VERSIONS_7_5, ...VERSIONS_7_6, ...VERSIONS_8_1, ...VERSIONS_8_2, ...VERSIONS_8_3, ...VERSIONS_9_1, ...VERSIONS_9_2, ...VERSIONS_9_3, ...VERSIONS_9_4, ...VERSIONS_9_5, ...VERSIONS_9_6, ...VERSIONS_9_7, ...VERSIONS_9_8, ...VERSIONS_9_9, ...VERSIONS_10_1, ...VERSIONS_10_2, ...VERSIONS_10_3, ...VERSIONS_10_4, ...VERSIONS_10_5, ...VERSIONS_10_6, ...VERSIONS_11_1, ...VERSIONS_11_2, ...VERSIONS_11_3, ...VERSIONS_11_4, ...VERSIONS_11_5, ...VERSIONS_12_1, ...VERSIONS_12_2, ...VERSIONS_12_3, ...VERSIONS_12_4, ...VERSIONS_12_5, ...VERSIONS_12_6, ...VERSIONS_12_7, ...VERSIONS_12_8, ...VERSIONS_12_9, ...VERSIONS_13_1, ...VERSIONS_13_2, ...VERSIONS_13_3, ...VERSIONS_13_4, ...VERSIONS_13_5, ...VERSIONS_13_6, ...VERSIONS_13_7, ...VERSIONS_13_8, ...VERSIONS_13_9,
+  ...VERSIONS_20_1, ...VERSIONS_20_2, ...VERSIONS_20_3, ...VERSIONS_20_4, ...VERSIONS_21_1, ...VERSIONS_21_2, ...VERSIONS_21_3, ...VERSIONS_21_4, ...VERSIONS_21_5, ...VERSIONS_21_6, ...VERSIONS_22_1, ...VERSIONS_22_2, ...VERSIONS_22_3, ...VERSIONS_22_4, ...VERSIONS_22_5, ...VERSIONS_22_6, ...VERSIONS_23_1, ...VERSIONS_23_2, ...VERSIONS_23_3, ...VERSIONS_23_4, ...VERSIONS_24_1, ...VERSIONS_24_2, ...VERSIONS_24_3, ...VERSIONS_24_4, ...VERSIONS_24_5, ...VERSIONS_24_6, ...VERSIONS_25_1, ...VERSIONS_25_2, ...VERSIONS_25_3, ...VERSIONS_25_4, ...VERSIONS_26_1, ...VERSIONS_26_2, ...VERSIONS_26_3, ...VERSIONS_26_4, ...VERSIONS_27_1, ...VERSIONS_27_2, ...VERSIONS_28_1, ...VERSIONS_28_2, ...VERSIONS_28_3, ...VERSIONS_28_4, ...VERSIONS_29_1, ...VERSIONS_29_2, ...VERSIONS_29_3, ...VERSIONS_29_4, ...VERSIONS_30_1, ...VERSIONS_30_2, ...VERSIONS_30_3, ...VERSIONS_30_4, ...VERSIONS_31_1, ...VERSIONS_31_2, ...VERSIONS_31_3,
 ];

@@ -1,0 +1,8 @@
+/**
+ * §29.1 process-owned tools — bus tools for 29.1 defined with `defineTools("29.1", <agent>, defs)` from
+ * ../tools.ts. Every tool string must be one spec/registry/agents.json names for 29.1; src/app/tools.test.ts refuses
+ * the rest. Spread by ./index.ts.
+ */
+import type { ToolDef } from "../tools.ts";
+
+export const TOOLS_29_1: readonly ToolDef[] = [];

@@ -1,13 +1,13 @@
 {
- "brief": "spec units built 4627/7463 (62.0%): tids 1253/1914, tables 470/734, timers 1387/1987, notices 235/306, tools 658/1311, figures 624/1211; processes at 100%: 114/165",
+ "brief": "spec units built 4641/7446 (62.3%): tids 1253/1914, tables 484/717, timers 1387/1987, notices 235/306, tools 658/1311, figures 624/1211; processes at 100%: 114/165",
  "totals": {
   "tids": {
    "spec": 1914,
    "built": 1253
   },
   "tables": {
-   "spec": 734,
-   "built": 470
+   "spec": 717,
+   "built": 484
   },
   "timers": {
    "spec": 1987,
@@ -26,8 +26,8 @@
    "built": 624
   },
   "units": {
-   "spec": 7463,
-   "built": 4627
+   "spec": 7446,
+   "built": 4641
   }
  },
  "sections": {
@@ -146,74 +146,74 @@
    "done": 4
   },
   "20": {
-   "spec": 196,
-   "built": 5,
+   "spec": 190,
+   "built": 3,
    "processes": 4,
    "done": 0
   },
   "21": {
-   "spec": 283,
-   "built": 2,
+   "spec": 282,
+   "built": 6,
    "processes": 6,
    "done": 0
   },
   "22": {
-   "spec": 373,
-   "built": 3,
+   "spec": 368,
+   "built": 0,
    "processes": 6,
    "done": 0
   },
   "23": {
-   "spec": 212,
+   "spec": 219,
    "built": 0,
    "processes": 4,
    "done": 0
   },
   "24": {
-   "spec": 321,
-   "built": 6,
+   "spec": 314,
+   "built": 9,
    "processes": 6,
    "done": 0
   },
   "25": {
-   "spec": 232,
+   "spec": 231,
    "built": 1,
    "processes": 4,
    "done": 0
   },
   "26": {
-   "spec": 250,
-   "built": 0,
+   "spec": 247,
+   "built": 3,
    "processes": 4,
    "done": 0
   },
   "27": {
-   "spec": 201,
+   "spec": 197,
    "built": 0,
    "processes": 2,
    "done": 0
   },
   "28": {
-   "spec": 224,
-   "built": 4,
+   "spec": 225,
+   "built": 5,
    "processes": 4,
    "done": 0
   },
   "29": {
-   "spec": 231,
+   "spec": 232,
    "built": 0,
    "processes": 4,
    "done": 0
   },
   "30": {
-   "spec": 216,
-   "built": 21,
+   "spec": 218,
+   "built": 28,
    "processes": 4,
    "done": 0
   },
   "31": {
-   "spec": 141,
-   "built": 2,
+   "spec": 140,
+   "built": 3,
    "processes": 3,
    "done": 0
   }
@@ -5136,8 +5136,8 @@
     ]
    },
    "tables": {
-    "spec": 8,
-    "built": 3,
+    "spec": 7,
+    "built": 2,
     "missing": [
      "dnc_scrubs",
      "marketing_campaigns",
@@ -5198,10 +5198,10 @@
     ]
    },
    "units": {
-    "spec": 46,
-    "built": 3
+    "spec": 45,
+    "built": 2
    },
-   "pct": 6.5
+   "pct": 4.4
   },
   {
    "process": "20.3",
@@ -5226,14 +5226,13 @@
     ]
    },
    "tables": {
-    "spec": 7,
-    "built": 2,
+    "spec": 5,
+    "built": 1,
     "missing": [
      "credit_authorizations",
      "lead_interactions",
      "leads",
-     "prequalifications",
-     "verifications"
+     "prequalifications"
     ]
    },
    "timers": {
@@ -5286,10 +5285,10 @@
     ]
    },
    "units": {
-    "spec": 43,
-    "built": 2
+    "spec": 41,
+    "built": 1
    },
-   "pct": 4.7
+   "pct": 2.4
   },
   {
    "process": "20.4",
@@ -5314,14 +5313,11 @@
     ]
    },
    "tables": {
-    "spec": 6,
+    "spec": 3,
     "built": 0,
     "missing": [
      "fee_schedules",
-     "llpa_tables",
      "pricing_exceptions",
-     "pricing_quotes",
-     "rate_sheets",
      "sm_cost_schedules"
     ]
    },
@@ -5383,7 +5379,7 @@
     ]
    },
    "units": {
-    "spec": 50,
+    "spec": 47,
     "built": 0
    },
    "pct": 0.0
@@ -5411,8 +5407,8 @@
     ]
    },
    "tables": {
-    "spec": 1,
-    "built": 1,
+    "spec": 2,
+    "built": 2,
     "missing": []
    },
    "timers": {
@@ -5465,10 +5461,10 @@
     ]
    },
    "units": {
-    "spec": 37,
-    "built": 1
+    "spec": 38,
+    "built": 2
    },
-   "pct": 2.7
+   "pct": 5.3
   },
   {
    "process": "21.2",
@@ -5493,9 +5489,12 @@
     ]
    },
    "tables": {
-    "spec": 0,
-    "built": 0,
-    "missing": []
+    "spec": 3,
+    "built": 1,
+    "missing": [
+     "disclosures",
+     "fee_items"
+    ]
    },
    "timers": {
     "spec": 5,
@@ -5544,10 +5543,10 @@
     ]
    },
    "units": {
-    "spec": 33,
-    "built": 0
+    "spec": 36,
+    "built": 1
    },
-   "pct": 0.0
+   "pct": 2.8
   },
   {
    "process": "21.3",
@@ -5576,13 +5575,12 @@
     ]
    },
    "tables": {
-    "spec": 7,
+    "spec": 6,
     "built": 0,
     "missing": [
      "affiliate_relationships",
      "arm_programs",
      "counseling_lists",
-     "disclosures",
      "early_disclosure_packages",
      "referrals",
      "score_disclosures"
@@ -5667,7 +5665,7 @@
     ]
    },
    "units": {
-    "spec": 76,
+    "spec": 75,
     "built": 0
    },
    "pct": 0.0
@@ -5695,13 +5693,12 @@
     ]
    },
    "tables": {
-    "spec": 4,
-    "built": 0,
+    "spec": 5,
+    "built": 2,
     "missing": [
      "changed_circumstances",
      "fee_gate_checks",
-     "intent_records",
-     "locks"
+     "intent_records"
     ]
    },
    "timers": {
@@ -5760,10 +5757,10 @@
     ]
    },
    "units": {
-    "spec": 46,
-    "built": 0
+    "spec": 47,
+    "built": 2
    },
-   "pct": 0.0
+   "pct": 4.3
   },
   {
    "process": "21.5",
@@ -5788,14 +5785,10 @@
     ]
    },
    "tables": {
-    "spec": 7,
+    "spec": 3,
     "built": 0,
     "missing": [
-     "changed_circumstances",
      "disclosures",
-     "discovered_at",
-     "fee_items",
-     "revised_le_due_at",
      "tolerance_cures",
      "tolerance_tests"
     ]
@@ -5853,7 +5846,7 @@
     ]
    },
    "units": {
-    "spec": 47,
+    "spec": 43,
     "built": 0
    },
    "pct": 0.0
@@ -5882,13 +5875,12 @@
     ]
    },
    "tables": {
-    "spec": 6,
+    "spec": 5,
     "built": 1,
     "missing": [
      "adverse_actions",
      "hmda_records",
      "noias",
-     "notice_id",
      "withdrawals"
     ]
    },
@@ -5942,7 +5934,7 @@
     "missing": []
    },
    "units": {
-    "spec": 44,
+    "spec": 43,
     "built": 1
    },
    "pct": 2.3
@@ -6152,15 +6144,13 @@
     ]
    },
    "tables": {
-    "spec": 7,
-    "built": 1,
+    "spec": 4,
+    "built": 0,
     "missing": [
      "business_verifications",
      "employment_verifications",
      "income_calculations",
-     "irs_ives_2y",
-     "tax_transcript_requests",
-     "verifications"
+     "tax_transcript_requests"
     ]
    },
    "timers": {
@@ -6224,10 +6214,10 @@
     ]
    },
    "units": {
-    "spec": 58,
-    "built": 1
+    "spec": 55,
+    "built": 0
    },
-   "pct": 1.7
+   "pct": 0.0
   },
   {
    "process": "22.4",
@@ -6252,8 +6242,8 @@
     ]
    },
    "tables": {
-    "spec": 7,
-    "built": 1,
+    "spec": 6,
+    "built": 0,
     "missing": [
      "asset_deposits",
      "funds_to_close_worksheets",
@@ -6379,10 +6369,10 @@
     ]
    },
    "units": {
-    "spec": 110,
-    "built": 1
+    "spec": 109,
+    "built": 0
    },
-   "pct": 0.9
+   "pct": 0.0
   },
   {
    "process": "22.5",
@@ -6407,8 +6397,8 @@
     ]
    },
    "tables": {
-    "spec": 4,
-    "built": 1,
+    "spec": 3,
+    "built": 0,
     "missing": [
      "debt_payoff_plans",
      "dti_calculations",
@@ -6479,10 +6469,10 @@
     ]
    },
    "units": {
-    "spec": 55,
-    "built": 1
+    "spec": 54,
+    "built": 0
    },
-   "pct": 1.8
+   "pct": 0.0
   },
   {
    "process": "22.6",
@@ -6620,9 +6610,10 @@
     ]
    },
    "tables": {
-    "spec": 1,
+    "spec": 2,
     "built": 0,
     "missing": [
+     "du_casefiles",
      "du_resubmission_checks"
     ]
    },
@@ -6684,7 +6675,7 @@
     ]
    },
    "units": {
-    "spec": 49,
+    "spec": 50,
     "built": 0
    },
    "pct": 0.0
@@ -6712,9 +6703,10 @@
     ]
    },
    "tables": {
-    "spec": 5,
+    "spec": 6,
     "built": 0,
     "missing": [
+     "conditions",
      "du_findings_interpretations",
      "du_message_rules",
      "homeownership_education_records",
@@ -6787,7 +6779,7 @@
     ]
    },
    "units": {
-    "spec": 57,
+    "spec": 58,
     "built": 0
    },
    "pct": 0.0
@@ -6815,11 +6807,13 @@
     ]
    },
    "tables": {
-    "spec": 2,
+    "spec": 4,
     "built": 0,
     "missing": [
      "condition_clearances",
-     "ctc_checklists"
+     "ctc_checklists",
+     "decisions",
+     "rep_warrant_relief"
     ]
    },
    "timers": {
@@ -6876,7 +6870,7 @@
     ]
    },
    "units": {
-    "spec": 42,
+    "spec": 44,
     "built": 0
    },
    "pct": 0.0
@@ -6906,10 +6900,13 @@
     ]
    },
    "tables": {
-    "spec": 1,
+    "spec": 4,
     "built": 0,
     "missing": [
-     "apor_tables"
+     "apor_tables",
+     "high_cost_determinations",
+     "hpml_determinations",
+     "qm_determinations"
     ]
    },
    "timers": {
@@ -6986,7 +6983,7 @@
     ]
    },
    "units": {
-    "spec": 64,
+    "spec": 67,
     "built": 0
    },
    "pct": 0.0
@@ -7014,12 +7011,9 @@
     ]
    },
    "tables": {
-    "spec": 2,
+    "spec": 0,
     "built": 0,
-    "missing": [
-     "property_data_collections",
-     "valuation_orders"
-    ]
+    "missing": []
    },
    "timers": {
     "spec": 13,
@@ -7074,10 +7068,10 @@
     ]
    },
    "units": {
-    "spec": 43,
+    "spec": 41,
     "built": 1
    },
-   "pct": 2.3
+   "pct": 2.4
   },
   {
    "process": "24.2",
@@ -7102,11 +7096,10 @@
     ]
    },
    "tables": {
-    "spec": 4,
+    "spec": 3,
     "built": 0,
     "missing": [
      "appraisals",
-     "rov_requests",
      "ucdp_submissions",
      "valuations"
     ]
@@ -7172,7 +7165,7 @@
     "missing": []
    },
    "units": {
-    "spec": 52,
+    "spec": 51,
     "built": 0
    },
    "pct": 0.0
@@ -7200,13 +7193,12 @@
     ]
    },
    "tables": {
-    "spec": 5,
+    "spec": 4,
     "built": 0,
     "missing": [
      "escrow_holdbacks",
      "holdback_escrow",
      "mh_verifications",
-     "project_reviews",
      "property_eligibility_reviews"
     ]
    },
@@ -7258,7 +7250,7 @@
     "missing": []
    },
    "units": {
-    "spec": 41,
+    "spec": 40,
     "built": 0
    },
    "pct": 0.0
@@ -7288,15 +7280,12 @@
     ]
    },
    "tables": {
-    "spec": 8,
+    "spec": 5,
     "built": 0,
     "missing": [
-     "payoff_demands",
      "poa_reviews",
      "settlement_agents",
-     "subordinations",
      "title_curative_items",
-     "title_orders",
      "trust_reviews",
      "wire_verifications"
     ]
@@ -7372,10 +7361,10 @@
     ]
    },
    "units": {
-    "spec": 70,
+    "spec": 67,
     "built": 2
    },
-   "pct": 2.9
+   "pct": 3.0
   },
   {
    "process": "24.5",
@@ -7400,11 +7389,9 @@
     ]
    },
    "tables": {
-    "spec": 1,
-    "built": 0,
-    "missing": [
-     "notice_delivered_at"
-    ]
+    "spec": 3,
+    "built": 3,
+    "missing": []
    },
    "timers": {
     "spec": 9,
@@ -7467,10 +7454,10 @@
     ]
    },
    "units": {
-    "spec": 50,
-    "built": 2
+    "spec": 52,
+    "built": 5
    },
-   "pct": 4.0
+   "pct": 9.6
   },
   {
    "process": "24.6",
@@ -7495,12 +7482,10 @@
     ]
    },
    "tables": {
-    "spec": 4,
+    "spec": 2,
     "built": 0,
     "missing": [
-     "activated_at",
      "hpa_disclosures",
-     "mi_certificates",
      "mi_quotes"
     ]
    },
@@ -7578,10 +7563,10 @@
     ]
    },
    "units": {
-    "spec": 65,
+    "spec": 63,
     "built": 1
    },
-   "pct": 1.5
+   "pct": 1.6
   },
   {
    "process": "25.1",
@@ -7608,10 +7593,9 @@
     ]
    },
    "tables": {
-    "spec": 9,
+    "spec": 8,
     "built": 0,
     "missing": [
-     "apr_calculations",
      "compliance_test_definitions",
      "compliance_test_runs",
      "compliance_tests",
@@ -7700,7 +7684,7 @@
     ]
    },
    "units": {
-    "spec": 75,
+    "spec": 74,
     "built": 0
    },
    "pct": 0.0
@@ -8027,14 +8011,13 @@
     ]
    },
    "tables": {
-    "spec": 9,
+    "spec": 8,
     "built": 0,
     "missing": [
      "buydown_agreements",
      "cema_packages",
      "closing_data_snapshots",
      "closing_document_sets",
-     "closing_documents",
      "closing_instructions",
      "document_qc_checks",
      "document_templates",
@@ -8118,7 +8101,7 @@
     ]
    },
    "units": {
-    "spec": 74,
+    "spec": 73,
     "built": 0
    },
    "pct": 0.0
@@ -8148,13 +8131,10 @@
     ]
    },
    "tables": {
-    "spec": 4,
-    "built": 0,
+    "spec": 3,
+    "built": 2,
     "missing": [
-     "closings",
-     "eclosing_eligibility",
-     "recordings",
-     "signing_sessions"
+     "eclosing_eligibility"
     ]
    },
    "timers": {
@@ -8216,10 +8196,10 @@
     "missing": []
    },
    "units": {
-    "spec": 52,
-    "built": 0
+    "spec": 51,
+    "built": 2
    },
-   "pct": 0.0
+   "pct": 3.9
   },
   {
    "process": "26.3",
@@ -8246,14 +8226,13 @@
     ]
    },
    "tables": {
-    "spec": 5,
+    "spec": 4,
     "built": 0,
     "missing": [
      "funding_conditions",
      "funding_unwinds",
      "funding_wires",
-     "funding_worksheets",
-     "fundings"
+     "funding_worksheets"
     ]
    },
    "timers": {
@@ -8340,7 +8319,7 @@
     ]
    },
    "units": {
-    "spec": 78,
+    "spec": 77,
     "built": 0
    },
    "pct": 0.0
@@ -8370,15 +8349,14 @@
    },
    "tables": {
     "spec": 7,
-    "built": 0,
+    "built": 1,
     "missing": [
      "final_policy_reviews",
      "lost_note_affidavits",
      "mers_registrations",
      "note_custody_shipments",
      "note_endorsements",
-     "recorded_instrument_reviews",
-     "trailing_documents"
+     "recorded_instrument_reviews"
     ]
    },
    "timers": {
@@ -8433,9 +8411,9 @@
    },
    "units": {
     "spec": 46,
-    "built": 0
+    "built": 1
    },
-   "pct": 0.0
+   "pct": 2.2
   },
   {
    "process": "27.1",
@@ -8460,17 +8438,14 @@
     ]
    },
    "tables": {
-    "spec": 9,
+    "spec": 6,
     "built": 0,
     "missing": [
-     "bailee_letters",
-     "warehouse_advances",
      "warehouse_borrowing_base_snapshots",
      "warehouse_collateral_defects",
      "warehouse_covenant_tests",
      "warehouse_curtailments",
      "warehouse_daily_reports",
-     "warehouse_facilities",
      "warehouse_interest_accruals"
     ]
    },
@@ -8568,7 +8543,7 @@
     ]
    },
    "units": {
-    "spec": 90,
+    "spec": 87,
     "built": 0
    },
    "pct": 0.0
@@ -8596,7 +8571,7 @@
     ]
    },
    "tables": {
-    "spec": 10,
+    "spec": 9,
     "built": 0,
     "missing": [
      "gain_on_sale_computations",
@@ -8606,7 +8581,6 @@
      "ppa_requests",
      "proceeds_matches",
      "proceeds_receipts",
-     "purchase_advices",
      "rate_passthrough_reconciliations",
      "settlement_waterfalls"
     ]
@@ -8725,7 +8699,7 @@
     ]
    },
    "units": {
-    "spec": 111,
+    "spec": 110,
     "built": 0
    },
    "pct": 0.0
@@ -8754,11 +8728,11 @@
     ]
    },
    "tables": {
-    "spec": 5,
-    "built": 2,
+    "spec": 6,
+    "built": 3,
     "missing": [
-     "fnma_qc_3y",
      "qc_reverifications",
+     "qc_reviews",
      "qc_sample_plans"
     ]
    },
@@ -8821,10 +8795,10 @@
     ]
    },
    "units": {
-    "spec": 52,
-    "built": 2
+    "spec": 53,
+    "built": 3
    },
-   "pct": 3.8
+   "pct": 5.7
   },
   {
    "process": "28.2",
@@ -8850,12 +8824,11 @@
     ]
    },
    "tables": {
-    "spec": 5,
+    "spec": 4,
     "built": 1,
     "missing": [
      "fnma_qc_cases",
      "qc_self_reports",
-     "relief_report_id",
      "remedy_ledger"
     ]
    },
@@ -8935,10 +8908,10 @@
     ]
    },
    "units": {
-    "spec": 69,
+    "spec": 68,
     "built": 1
    },
-   "pct": 1.4
+   "pct": 1.5
   },
   {
    "process": "28.3",
@@ -8965,13 +8938,14 @@
     ]
    },
    "tables": {
-    "spec": 5,
+    "spec": 6,
     "built": 0,
     "missing": [
      "hmda_coverage_tests",
      "hmda_edit_verifications",
      "hmda_lar_files",
      "hmda_public_notices",
+     "hmda_records",
      "hmda_ulis"
     ]
    },
@@ -9020,7 +8994,7 @@
     ]
    },
    "units": {
-    "spec": 38,
+    "spec": 39,
     "built": 0
    },
    "pct": 0.0
@@ -9162,13 +9136,9 @@
     ]
    },
    "tables": {
-    "spec": 3,
+    "spec": 0,
     "built": 0,
-    "missing": [
-     "amount_cents",
-     "commitments",
-     "expires_on"
-    ]
+    "missing": []
    },
    "timers": {
     "spec": 15,
@@ -9240,7 +9210,7 @@
     ]
    },
    "units": {
-    "spec": 64,
+    "spec": 61,
     "built": 0
    },
    "pct": 0.0
@@ -9269,12 +9239,11 @@
     ]
    },
    "tables": {
-    "spec": 10,
+    "spec": 9,
     "built": 0,
     "missing": [
      "fallout_events",
      "hedge_policies",
-     "hedge_positions",
      "hedge_trades",
      "margin_calls",
      "mark_to_market_runs",
@@ -9347,7 +9316,7 @@
     ]
    },
    "units": {
-    "spec": 61,
+    "spec": 60,
     "built": 0
    },
    "pct": 0.0
@@ -9375,9 +9344,10 @@
     ]
    },
    "tables": {
-    "spec": 5,
+    "spec": 6,
     "built": 0,
     "missing": [
+     "deliveries",
      "delivery_edits",
      "delivery_packages",
      "earlycheck_runs",
@@ -9436,7 +9406,7 @@
     ]
    },
    "units": {
-    "spec": 43,
+    "spec": 44,
     "built": 0
    },
    "pct": 0.0
@@ -9466,12 +9436,16 @@
     ]
    },
    "tables": {
-    "spec": 4,
+    "spec": 8,
     "built": 0,
     "missing": [
+     "bailee_letters",
      "custodian_certifications",
+     "deliveries",
      "delivery_operator_tasks",
      "post_purchase_adjustments",
+     "purchase_advices",
+     "rep_warrant_relief",
      "wire_instructions"
     ]
    },
@@ -9545,7 +9519,7 @@
     ]
    },
    "units": {
-    "spec": 63,
+    "spec": 67,
     "built": 0
    },
    "pct": 0.0
@@ -9574,13 +9548,10 @@
    },
    "tables": {
     "spec": 7,
-    "built": 2,
+    "built": 5,
     "missing": [
      "custodial_transfers",
-     "fnma_establishment_checks",
-     "master_servicer_org_id",
-     "post_purchase_verified_at",
-     "secured_party_org_id"
+     "fnma_establishment_checks"
     ]
    },
    "timers": {
@@ -9640,9 +9611,9 @@
    },
    "units": {
     "spec": 51,
-    "built": 3
+    "built": 6
    },
-   "pct": 5.9
+   "pct": 11.8
   },
   {
    "process": "30.2",
@@ -9670,10 +9641,9 @@
    },
    "tables": {
     "spec": 7,
-    "built": 5,
+    "built": 6,
     "missing": [
-     "loan_documents_index",
-     "origination_funding_clearing"
+     "loan_documents_index"
     ]
    },
    "timers": {
@@ -9736,9 +9706,9 @@
    },
    "units": {
     "spec": 59,
-    "built": 9
+    "built": 10
    },
-   "pct": 15.3
+   "pct": 16.9
   },
   {
    "process": "30.3",
@@ -9764,11 +9734,10 @@
     ]
    },
    "tables": {
-    "spec": 2,
-    "built": 0,
+    "spec": 4,
+    "built": 3,
     "missing": [
-     "escrow_credit_transfers",
-     "hpml_escrow_min_cancel_date"
+     "escrow_credit_transfers"
     ]
    },
    "timers": {
@@ -9828,10 +9797,10 @@
     ]
    },
    "units": {
-    "spec": 53,
-    "built": 6
+    "spec": 55,
+    "built": 9
    },
-   "pct": 11.3
+   "pct": 16.4
   },
   {
    "process": "30.4",
@@ -10043,11 +10012,10 @@
     ]
    },
    "tables": {
-    "spec": 8,
-    "built": 1,
+    "spec": 6,
+    "built": 0,
     "missing": [
      "ai_eval_runs",
-     "ai_impact_assessments",
      "consumer_ai_rights_requests",
      "fair_lending_findings",
      "fair_lending_reviews",
@@ -10102,10 +10070,10 @@
     "missing": []
    },
    "units": {
-    "spec": 44,
-    "built": 2
+    "spec": 42,
+    "built": 1
    },
-   "pct": 4.5
+   "pct": 2.4
   },
   {
    "process": "31.3",
@@ -10131,8 +10099,8 @@
     ]
    },
    "tables": {
-    "spec": 20,
-    "built": 0,
+    "spec": 21,
+    "built": 2,
     "missing": [
      "bsa_sar_5y",
      "esign_consent_life",
@@ -10152,8 +10120,7 @@
      "regz_le_3y",
      "regz_locomp_3y",
      "respa_afba_5y",
-     "respa_s8_5y",
-     "vendor_flowdown_requirements"
+     "respa_s8_5y"
     ]
    },
    "timers": {
@@ -10201,10 +10168,10 @@
     "missing": []
    },
    "units": {
-    "spec": 54,
-    "built": 0
+    "spec": 55,
+    "built": 2
    },
-   "pct": 0.0
+   "pct": 3.6
   }
  ]
 }

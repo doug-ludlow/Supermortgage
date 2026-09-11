@@ -9594,7 +9594,6 @@
    }
   ],
   "tables": [
-   "consents",
    "contacts",
    "dnc_scrubs",
    "marketing_campaigns",
@@ -9692,12 +9691,10 @@
   ],
   "tables": [
    "applications",
-   "consents",
    "credit_authorizations",
    "lead_interactions",
    "leads",
-   "prequalifications",
-   "verifications"
+   "prequalifications"
   ],
   "timers": [
    "CO_SB26_189_1704_PREUSE_NOTICE_GATE",
@@ -9784,10 +9781,7 @@
   ],
   "tables": [
    "fee_schedules",
-   "llpa_tables",
    "pricing_exceptions",
-   "pricing_quotes",
-   "rate_sheets",
    "sm_cost_schedules"
   ],
   "timers": [
@@ -9875,6 +9869,7 @@
    }
   ],
   "tables": [
+   "application_borrowers",
    "applications"
   ],
   "timers": [
@@ -9961,7 +9956,11 @@
     "text": "Given the purchase fixture with closing Wed Nov 18, 2026, when the LE is delivered Thu Oct 22, then `earliest_consummation_date` = Fri Oct 30 (Fri 23, Sat 24, Mon 26, Tue 27, Wed 28, Thu 29, Fri 30) and the Nov 18 closing passes the gate; an LE first delivered Tue Nov 10 would set the earliest date to Thu Nov 19 (Wed Nov 11 excluded) and block the Nov 18 closing."
    }
   ],
-  "tables": [],
+  "tables": [
+   "applications",
+   "disclosures",
+   "fee_items"
+  ],
   "timers": [
    "REGZ_1026_19E1III_LE_7SBD_GATE",
    "REGZ_1026_19E1IV_LE_MAILBOX_3SBD",
@@ -10058,7 +10057,6 @@
    "affiliate_relationships",
    "arm_programs",
    "counseling_lists",
-   "disclosures",
    "early_disclosure_packages",
    "referrals",
    "score_disclosures"
@@ -10179,9 +10177,10 @@
   ],
   "tables": [
    "changed_circumstances",
+   "escalations",
    "fee_gate_checks",
    "intent_records",
-   "locks"
+   "notices"
   ],
   "timers": [
    "FNMA_C2_1_2_03_KEY_DATA_CHANGE_1BD",
@@ -10272,11 +10271,7 @@
    }
   ],
   "tables": [
-   "changed_circumstances",
    "disclosures",
-   "discovered_at",
-   "fee_items",
-   "revised_le_due_at",
    "tolerance_cures",
    "tolerance_tests"
   ],
@@ -10367,7 +10362,6 @@
    "applications",
    "hmda_records",
    "noias",
-   "notice_id",
    "withdrawals"
   ],
   "timers": [
@@ -10650,13 +10644,10 @@
    }
   ],
   "tables": [
-   "application_income",
    "business_verifications",
    "employment_verifications",
    "income_calculations",
-   "irs_ives_2y",
-   "tax_transcript_requests",
-   "verifications"
+   "tax_transcript_requests"
   ],
   "timers": [
    "FNMA_B1_1_03_CREDIT_DOCS_4M",
@@ -10732,7 +10723,6 @@
    }
   ],
   "tables": [
-   "application_assets",
    "asset_deposits",
    "funds_to_close_worksheets",
    "gift_records",
@@ -10829,7 +10819,6 @@
    }
   ],
   "tables": [
-   "application_liabilities",
    "debt_payoff_plans",
    "dti_calculations",
    "qualifying_payments"
@@ -11043,6 +11032,7 @@
    }
   ],
   "tables": [
+   "du_casefiles",
    "du_resubmission_checks"
   ],
   "timers": [
@@ -11124,6 +11114,7 @@
    }
   ],
   "tables": [
+   "conditions",
    "du_findings_interpretations",
    "du_message_rules",
    "homeownership_education_records",
@@ -11209,7 +11200,9 @@
   ],
   "tables": [
    "condition_clearances",
-   "ctc_checklists"
+   "ctc_checklists",
+   "decisions",
+   "rep_warrant_relief"
   ],
   "timers": [
    "FNMA_B3_2_02_DU_CLOSE_BY_GATE",
@@ -11304,7 +11297,10 @@
    }
   ],
   "tables": [
-   "apor_tables"
+   "apor_tables",
+   "high_cost_determinations",
+   "hpml_determinations",
+   "qm_determinations"
   ],
   "timers": [
    "FFIEC_APOR_TABLE_REFRESH_WEEKLY",
@@ -11386,10 +11382,7 @@
     "text": "Given a report transferred from another lender dated Sept 20, 2026 with an AIR attestation, then the platform accepts it into 24.2 review, marks `transferred_from_lender`, and requires a UCDP resubmission under the partner."
    }
   ],
-  "tables": [
-   "property_data_collections",
-   "valuation_orders"
-  ],
+  "tables": [],
   "timers": [
    "FNMA_B4_1_2_04_APPRAISAL_12M",
    "FNMA_B4_1_2_04_APPRAISAL_UPDATE_4M",
@@ -11481,7 +11474,6 @@
   ],
   "tables": [
    "appraisals",
-   "rov_requests",
    "ucdp_submissions",
    "valuations"
   ],
@@ -11587,7 +11579,6 @@
    "escrow_holdbacks",
    "holdback_escrow",
    "mh_verifications",
-   "project_reviews",
    "property_eligibility_reviews"
   ],
   "timers": [
@@ -11684,12 +11675,9 @@
    }
   ],
   "tables": [
-   "payoff_demands",
    "poa_reviews",
    "settlement_agents",
-   "subordinations",
    "title_curative_items",
-   "title_orders",
    "trust_reviews",
    "wire_verifications"
   ],
@@ -11790,7 +11778,9 @@
    }
   ],
   "tables": [
-   "notice_delivered_at"
+   "flood_determinations",
+   "insurance_policies",
+   "insurance_requirements"
   ],
   "timers": [
    "FDPA_4012A_LOL_ENROLLED_GATE",
@@ -11881,9 +11871,7 @@
    }
   ],
   "tables": [
-   "activated_at",
    "hpa_disclosures",
-   "mi_certificates",
    "mi_quotes"
   ],
   "timers": [
@@ -11988,7 +11976,6 @@
    }
   ],
   "tables": [
-   "apr_calculations",
    "compliance_test_definitions",
    "compliance_test_runs",
    "compliance_tests",
@@ -12392,7 +12379,6 @@
    "cema_packages",
    "closing_data_snapshots",
    "closing_document_sets",
-   "closing_documents",
    "closing_instructions",
    "document_qc_checks",
    "document_templates",
@@ -12502,10 +12488,9 @@
    }
   ],
   "tables": [
-   "closings",
+   "custody_records",
    "eclosing_eligibility",
-   "recordings",
-   "signing_sessions"
+   "mers_transactions"
   ],
   "timers": [
    "MERS_PROC_ENOTE_REGISTER_1BD",
@@ -12615,8 +12600,7 @@
    "funding_conditions",
    "funding_unwinds",
    "funding_wires",
-   "funding_worksheets",
-   "fundings"
+   "funding_worksheets"
   ],
   "timers": [
    "FNMA_B2_1_5_FIRST_PAYMENT_2M",
@@ -12713,13 +12697,13 @@
    }
   ],
   "tables": [
+   "custody_records",
    "final_policy_reviews",
    "lost_note_affidavits",
    "mers_registrations",
    "note_custody_shipments",
    "note_endorsements",
-   "recorded_instrument_reviews",
-   "trailing_documents"
+   "recorded_instrument_reviews"
   ],
   "timers": [
    "MERS_PROC_MOM_REGISTER_7",
@@ -12808,14 +12792,11 @@
    }
   ],
   "tables": [
-   "bailee_letters",
-   "warehouse_advances",
    "warehouse_borrowing_base_snapshots",
    "warehouse_collateral_defects",
    "warehouse_covenant_tests",
    "warehouse_curtailments",
    "warehouse_daily_reports",
-   "warehouse_facilities",
    "warehouse_interest_accruals"
   ],
   "timers": [
@@ -12928,7 +12909,6 @@
    "ppa_requests",
    "proceeds_matches",
    "proceeds_receipts",
-   "purchase_advices",
    "rate_passthrough_reconciliations",
    "settlement_waterfalls"
   ],
@@ -13030,10 +13010,11 @@
    }
   ],
   "tables": [
-   "fnma_qc_3y",
+   "applications",
    "qc_findings",
    "qc_reports",
    "qc_reverifications",
+   "qc_reviews",
    "qc_sample_plans"
   ],
   "timers": [
@@ -13134,7 +13115,6 @@
    "fnma_qc_cases",
    "qc_cycles",
    "qc_self_reports",
-   "relief_report_id",
    "remedy_ledger"
   ],
   "timers": [
@@ -13261,6 +13241,7 @@
    "hmda_edit_verifications",
    "hmda_lar_files",
    "hmda_public_notices",
+   "hmda_records",
    "hmda_ulis"
   ],
   "timers": [
@@ -13480,11 +13461,7 @@
     "text": "Given a VantageScore 4.0 tri-merge (771) instead of Classic FICO on the refinance fixture, then `llpa_forecast_pct = 0.250`, `net_price_forecast = 101.125`, `proceeds_forecast_cents = 56,630,000`, and SFC 067 is staged for 29.3."
    }
   ],
-  "tables": [
-   "amount_cents",
-   "commitments",
-   "expires_on"
-  ],
+  "tables": [],
   "timers": [
    "FNMA_B2_1_5_02_LOAN_AGE_6M_PURCHASE_READY",
    "FNMA_C2_1_1_03_DAILY_LIMIT_200M_GATE",
@@ -13582,7 +13559,6 @@
   "tables": [
    "fallout_events",
    "hedge_policies",
-   "hedge_positions",
    "hedge_trades",
    "margin_calls",
    "mark_to_market_runs",
@@ -13683,6 +13659,7 @@
    }
   ],
   "tables": [
+   "deliveries",
    "delivery_edits",
    "delivery_packages",
    "earlycheck_runs",
@@ -13782,9 +13759,13 @@
    }
   ],
   "tables": [
+   "bailee_letters",
    "custodian_certifications",
+   "deliveries",
    "delivery_operator_tasks",
    "post_purchase_adjustments",
+   "purchase_advices",
+   "rep_warrant_relief",
    "wire_instructions"
   ],
   "timers": [
@@ -13889,12 +13870,12 @@
   ],
   "tables": [
    "custodial_transfers",
+   "custody_records",
+   "enotes",
    "fnma_establishment_checks",
-   "loan_terms",
-   "loans",
-   "master_servicer_org_id",
-   "post_purchase_verified_at",
-   "secured_party_org_id"
+   "investor_events",
+   "investor_loan_positions",
+   "loan_terms"
   ],
   "timers": [
    "FNMA_C2_2_05_PPA_REQUEST_30",
@@ -13989,12 +13970,12 @@
    }
   ],
   "tables": [
+   "boarding_validations",
    "documents",
    "loan_borrowers",
    "loan_documents_index",
    "loan_terms",
    "loans",
-   "origination_funding_clearing",
    "properties"
   ],
   "timers": [
@@ -14087,8 +14068,10 @@
    }
   ],
   "tables": [
+   "consents",
+   "escrow_bills",
    "escrow_credit_transfers",
-   "hpml_escrow_min_cancel_date"
+   "escrow_waivers"
   ],
   "timers": [
    "FNMA_B101_MI_MONTHLY_ESCROW_GATE",
@@ -14371,9 +14354,7 @@
    }
   ],
   "tables": [
-   "agent_decisions",
    "ai_eval_runs",
-   "ai_impact_assessments",
    "consumer_ai_rights_requests",
    "fair_lending_findings",
    "fair_lending_reviews",
@@ -14479,6 +14460,7 @@
    "ofac_10y",
    "orig_unfunded_policy_25m",
    "pii_access_log",
+   "record_objects",
    "regb_25m",
    "regb_prescreen_25m",
    "regb_selftest_25m",
@@ -14489,7 +14471,7 @@
    "regz_locomp_3y",
    "respa_afba_5y",
    "respa_s8_5y",
-   "vendor_flowdown_requirements"
+   "retention_classes"
   ],
   "timers": [
    "BSA_1029_320C_SAR_RETENTION_5Y",

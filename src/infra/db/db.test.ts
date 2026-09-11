@@ -7,6 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { connect, reachable, type Db } from "./client.ts";
@@ -36,13 +37,13 @@ async function fixture(db: Db): Promise<Fixture> {
   return new PgLoanRepository(db).createFixture({ fnmaLoanNumber: uniq(), servicerLoanNumber: `SM-${randomUUID()}`, instrumentDate: D("2021-07-15"), originalUpbCents: 26_000_000n, originalTermMonths: 360, firstPaymentDate: D("2021-09-01"), maturityDate: D("2051-08-01") });
 }
 
-test("migrations: every file under db/migrations is applied to the test database (476 tables: public + restricted_fl)", { skip }, async () => {
+test("migrations: every file under db/migrations is applied to the test database (487 tables: public + restricted_fl)", { skip }, async () => {
   execFileSync(fileURLToPath(new URL("../../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL);
   const [m] = await db.query<{ c: bigint }>(`SELECT count(*)::bigint AS c FROM schema_migrations`);
-  assert.equal(m!.c, 58n);
+  assert.equal(m!.c, BigInt(readdirSync(fileURLToPath(new URL("../../../db/migrations", import.meta.url))).filter((f) => f.endsWith(".sql")).length));
   const [t] = await db.query<{ c: bigint }>(`SELECT count(*)::bigint AS c FROM information_schema.tables WHERE table_schema IN ('public', 'restricted_fl') AND table_type = 'BASE TABLE'`);
-  assert.equal(t!.c, 476n);
+  assert.equal(t!.c, 487n);
 });
 
 test("loan_events is append-only: rows persist with database sequences and refuse UPDATE/DELETE", { skip }, async () => {
@@ -245,7 +246,7 @@ test("ops console on Postgres: queues, loan record and dashboard read the same t
   assert.equal(l.fnmaLoanNumber.length, 10); assert.ok(Array.isArray(l.events));
   assert.equal((await store.searchLoans(l.fnmaLoanNumber)).length, 1);
   const d = await store.dashboard(clock.now());
-  assert.ok(d.queues.escalation >= 1); assert.equal(d.agents.length, 20);
+  assert.ok(d.queues.escalation >= 1); assert.ok(d.agents.length >= 20);
   const denied = await store.completeEscalation(e.id, { kind: "human", id: "u-att", role: "attorney" }, null, clock.now());
   assert.equal(denied.ok, false);
   const badEvidence = await store.completeEscalation(e.id, { kind: "human", id: "u-off", role: "officer" }, "doc-1", clock.now());

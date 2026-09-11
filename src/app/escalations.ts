@@ -9,7 +9,8 @@ import type { Actor, EventStore } from "../kernel/events/index.ts";
 import type { Queryable } from "../infra/db/client.ts";
 import { toJson } from "../infra/db/client.ts";
 
-export type EscalationKind = "human_portal_task" | "officer" | "attorney" | "signing_officer" | "lossmit_reviewer" | "fraud_officer" | "human_agent" | "sev1" | "sev2" | "sev3" | "sev4";
+export type EscalationKind = "human_portal_task" | "officer" | "attorney" | "signing_officer" | "lossmit_reviewer" | "fraud_officer" | "human_agent" | "sev1" | "sev2" | "sev3" | "sev4"
+  | "mlo_of_record" | "underwriting_reviewer" | "notary" | "settlement_agent" | "closing_attorney" | "appraiser" | "property_data_collector" | "funding_approver" | "bsa_officer" | "qc_officer" | "licensed_specialist";
 export interface Escalation {
   readonly id: string; readonly kind: EscalationKind; readonly ownerRole: string; readonly loanId?: string; readonly caseId?: string; readonly batchId?: string; readonly severity?: string;
   readonly openedAt: string; readonly openedBy: string; readonly payload: Record<string, unknown>; readonly slaTimerId?: string;
@@ -17,7 +18,8 @@ export interface Escalation {
 }
 export interface EscalationInput { readonly kind: EscalationKind; readonly ownerRole?: string; readonly loanId?: string; readonly caseId?: string; readonly batchId?: string; readonly severity?: string; readonly payload?: Record<string, unknown>; readonly slaTimerId?: string; }
 
-const DEFAULT_ROLE: Record<EscalationKind, string> = { human_portal_task: "fnma_portal_operator", officer: "officer", attorney: "attorney", signing_officer: "signing_officer", lossmit_reviewer: "lossmit_reviewer", fraud_officer: "fraud_officer", human_agent: "human_agent", sev1: "officer", sev2: "officer", sev3: "ops_analyst", sev4: "ops_analyst" };
+const DEFAULT_ROLE: Record<EscalationKind, string> = { human_portal_task: "fnma_portal_operator", officer: "officer", attorney: "attorney", signing_officer: "signing_officer", lossmit_reviewer: "lossmit_reviewer", fraud_officer: "fraud_officer", human_agent: "human_agent", sev1: "officer", sev2: "officer", sev3: "ops_analyst", sev4: "ops_analyst",
+  mlo_of_record: "mlo_of_record", underwriting_reviewer: "underwriting_reviewer", notary: "notary", settlement_agent: "settlement_agent", closing_attorney: "closing_attorney", appraiser: "appraiser", property_data_collector: "property_data_collector", funding_approver: "funding_approver", bsa_officer: "bsa_officer", qc_officer: "qc_officer", licensed_specialist: "licensed_specialist" };
 
 export class EscalationService {
   private readonly events: EventStore;

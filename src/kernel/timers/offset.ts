@@ -84,6 +84,9 @@ const UNIT_ALIASES: Record<string, OffsetUnit> = {
   bd: "business_days_servicer", bds: "business_days_servicer", business_days: "business_days_servicer",
   business_days_fannie_et: "business_days_fannie_et", fannie_et: "business_days_fannie_et", "fannie_et bd": "business_days_fannie_et",
   "banking days": "business_days_federal", "banking day": "business_days_federal", cd: "calendar_days",
+  business_days_creditor: "business_days_creditor", creditor: "business_days_creditor", "creditor business days": "business_days_creditor", "creditor business day": "business_days_creditor",
+  business_days_regz_specific: "business_days_regz_specific", regz_specific: "business_days_regz_specific", sbd: "business_days_regz_specific", sbds: "business_days_regz_specific",
+  "specific business days": "business_days_regz_specific", "specific business day": "business_days_regz_specific",
   calendar_year: "years", calendar_years: "years", "calendar year": "years", "calendar years": "years",
   hours: "hours", hour: "hours", h: "hours", hrs: "hours",
   minutes: "minutes", minute: "minutes", min: "minutes",
@@ -114,10 +117,10 @@ function parseTime(s: string): { hhmm: string; timeZone: string } | undefined {
 
 /** "rolled to the next servicer/federal/fannie business day" → the calendar to roll forward on. */
 function rollFrom(s: string): DayUnit | undefined {
-  const roll = /roll(?:ed)?\s+(?:forward\s+)?to\s+(?:the\s+)?next\s+(servicer|federal|fannie)/i.exec(s);
+  const roll = /roll(?:ed)?\s+(?:forward\s+)?to\s+(?:the\s+)?next\s+(servicer|federal|fannie|creditor|regz[_ ]specific)/i.exec(s);
   if (!roll) return undefined;
   const k = roll[1]!.toLowerCase();
-  return k === "servicer" ? "business_days_servicer" : k === "federal" ? "business_days_federal" : "business_days_fannie_et";
+  return k === "servicer" ? "business_days_servicer" : k === "federal" ? "business_days_federal" : k === "creditor" ? "business_days_creditor" : k.startsWith("regz") ? "business_days_regz_specific" : "business_days_fannie_et";
 }
 
 function unitOf(s: string): OffsetUnit | undefined {

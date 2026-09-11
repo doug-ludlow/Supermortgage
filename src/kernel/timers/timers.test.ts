@@ -1,4 +1,6 @@
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { parseOffset } from "./offset.ts";
 import { loadRegistry } from "./registry.ts";
@@ -25,9 +27,10 @@ test("offset grammar covers the registry's real shapes", () => {
   assert.equal(parseOffset("+72 hours").kind, "step");
 });
 
-test("registry loads all 1,365 rows with parsed structure", () => {
+test("registry loads every registry row with parsed structure", () => {
   const reg = loadRegistry();
-  assert.equal(reg.all().length, 1365);
+  const rows = JSON.parse(readFileSync(fileURLToPath(new URL("../../../spec/registry/timers.json", import.meta.url)), "utf8")) as unknown[];
+  assert.equal(reg.all().length, rows.length); assert.ok(rows.length >= 1365);
   const t = reg.get("SM_BOARD_PRELIM_TAPE_14")!;
   assert.equal(t.process, "1.1");
   assert.equal(t.kindNorm, "deadline");

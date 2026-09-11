@@ -5,8 +5,10 @@ names listed there, the guardrails sentence and the escalation roles. Agents are
 {agent, processes[], tools[], escalates_to[]}."""
 import re, glob, json, os, collections
 root = os.path.join(os.path.dirname(__file__), '..')
-KNOWN = {"boarding","transfer","custodial-recon","escrow","lossmit-underwriter","investor-reporting","security-records","compliance-sentinel","cashiering","case","borrower-comms","disclosures","credit-reporting","insurance-property","pmi","default-collections","foreclosure-ops","bankruptcy-ops","claims-reo","payoff-release","qc-audit"}
-ROLES = {"officer","attorney","signing_officer","fnma_portal_operator","human_agent","lossmit_reviewer","fraud_officer","ciso","compliance","counsel"}
+KNOWN = {"boarding","transfer","custodial-recon","escrow","lossmit-underwriter","investor-reporting","security-records","compliance-sentinel","cashiering","case","borrower-comms","disclosures","credit-reporting","insurance-property","pmi","default-collections","foreclosure-ops","bankruptcy-ops","claims-reo","payoff-release","qc-audit",
+         "intake","pricing","disclosure","verification","fraud-risk","underwriter","valuation","title-closing","compliance-tester","funder","warehouse","post-closing","secondary","hmda"}
+ROLES = {"officer","attorney","signing_officer","fnma_portal_operator","human_agent","lossmit_reviewer","fraud_officer","ciso","compliance","counsel",
+         "mlo_of_record","underwriting_reviewer","notary","settlement_agent","closing_attorney","appraiser","property_data_collector","funding_approver","bsa_officer","qc_officer","licensed_specialist"}
 per_process = []
 agents = collections.OrderedDict()
 for f in sorted(glob.glob(os.path.join(root, 'spec/sections/*/*.md'))):

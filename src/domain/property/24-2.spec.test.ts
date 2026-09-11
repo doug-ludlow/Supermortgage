@@ -1,0 +1,18 @@
+// 24.2 Appraisal receipt, UCDP/Collateral Underwriter review, reconsideration of value, appraisal quality/bias controls, Reg B delivery, and HPML appraisal rules
+// spec/sections/24-property-valuation-eligibility-title-hazard-flood-insurance/24-2-appraisal-receipt-ucdp-collateral-underwriter-review-reconsi.md
+// One node:test per T-id, named exactly as the spec. `todo: true` = not implemented yet (tools/audit.py does not
+// count it). Implement by replacing the todo line with a real test; never edit the name.
+import { test } from "node:test";
+
+test("24.2-T1: Given v1 received Thu Oct 15, 2026 14:20 and UCDP Successful both GSEs 15:07 with CU 1.9, when review completes Fri Oct 16 10:30, then `completion_at = 2026-10-16`, `rw_relief_property_value = true`, and the copy package is due by Fri Oct 23 and by Tue Nov 3 (`copy_required_by = Oct 23`).", { todo: true });
+test("24.2-T2: Given consummation Fri Nov 6, 2026 and the latest version copy e-delivered Tue Nov 3 at 17:59 MST, then `REGB_1002_14_APPRAISAL_COPY_3BD_GATE` is open; delivered Wed Nov 4 08:00 \u2192 gate closed and the proposed earliest consummation is Mon Nov 9.", { todo: true });
+test("24.2-T3: Given a borrower waiver statement recorded Wed Nov 4 for a Nov 6 consummation, then `REGB_1002_14_WAIVER_3BD_GATE` rejects it; recorded Tue Nov 3 \u2192 accepted, and copies must still be delivered at or before consummation.", { todo: true });
+test("24.2-T4: Given an ROV received Tue Oct 20 with three sourced comparables, then screening completes by Thu Oct 22, the SME escalation is created, and after forwarding on Oct 21 the appraiser response is due Wed Oct 28.", { todo: true });
+test("24.2-T5: Given a second borrower ROV on the same appraisal, or an ROV submitted after `closing.consummated`, then the request is rejected with the stated reason and no appraiser contact occurs.", { todo: true });
+test("24.2-T6: Given a report narrative containing \"undesirable neighborhood\" without factual support, then `bias_scan_result.severity = high`, `correction_requested` is issued using the template, and a fair-lending record is written; the value is not used until the corrected version is accepted.", { todo: true });
+test("24.2-T7: Given a non-QM HPML purchase with seller acquisition Aug 1, 2026 at $340,000 and a contract Oct 15, 2026 at $412,000, then the flip test yields days = 75, pct = 21.18%, a second appraisal by a different appraiser is required, only one appraisal fee may be borrower-paid, and both copies are due by Fri Nov 13 for a Nov 18 consummation.", { todo: true });
+test("24.2-T8: Given a General QM classification, then `hpml_appraisal_rules_apply = false` and only the Reg B timers exist.", { todo: true });
+test("24.2-T9: Given UCDP \"Not Successful\" with a manually overridable stop, then a `fnma_portal_operator` escalation with reason code and justification is created and delivery remains blocked by `FNMA_B4_1_1_06_UCDP_SUCCESSFUL_GATE` until Successful.", { todo: true });
+test("24.2-T10: Given denial issued Fri Oct 30, 2026 with an undelivered AVM report developed Oct 12, then `REGB_1002_14_COPY_NOT_CONSUMMATED_30` is due Sun Nov 29 and the package includes the AVM report.", { todo: true });
+test("24.2-T11: Given a revised report (v2) received Mon Oct 26 after v1 was delivered Oct 16, then v2 is resubmitted to UCDP under the same Doc File ID, delivered to the applicants, and `is_final_version` moves to v2.", { todo: true });
+test("24.2-T12: Given CU score 4.3 with an Overvaluation flag, then `SM_CU_HIGH_RISK_REVIEW_1BD` is opened, the enhanced review record includes a comparable re-analysis, and `rw_relief_property_value = false`.", { todo: true });

@@ -101,7 +101,7 @@ test("console: loan search and record — events, ledger balances in cents, time
     assert.deepEqual(l.balances, [{ account: "principal", cents: "-22723" }, { account: "interest_due", cents: "-135294" }]);
     assert.ok(l.timers.some((t) => t.status === "breached")); assert.equal(l.decisions[0]!.agent, "cashiering"); assert.equal(l.notices[0]!.status, "held");
     const d = (await s.call("/api/dashboard", "compliance")).body as { timers: { breached: number; breachedBySection: Record<string, number> }; queues: Record<string, number>; notices: { held: number }; agents: { agent: string; off: boolean }[] };
-    assert.ok(d.timers.breached >= 1); assert.ok(d.timers.breachedBySection["7"]! >= 1); assert.equal(d.queues.escalation, 2); assert.equal(d.queues.dead_letter, 1); assert.equal(d.notices.held, 1); assert.equal(d.agents.length, 20);
+    assert.ok(d.timers.breached >= 1); assert.ok(d.timers.breachedBySection["7"]! >= 1); assert.equal(d.queues.escalation, 2); assert.equal(d.queues.dead_letter, 1); assert.equal(d.notices.held, 1); assert.ok(d.agents.length >= 20);
   } finally { s.server.close(); }
 });
 

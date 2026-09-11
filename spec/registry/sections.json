@@ -245,5 +245,140 @@
       "19.3",
       "19.4"
     ]
+  },
+  {
+    "n": 20,
+    "title": "Refinance triggers, solicitation, lead intake, and pricing",
+    "path": "sections/20-refinance-triggers-solicitation-lead-intake-and-pricing",
+    "processes": [
+      "20.1",
+      "20.2",
+      "20.3",
+      "20.4"
+    ]
+  },
+  {
+    "n": 21,
+    "title": "Application (URLA), initial disclosures, intent to proceed, rate lock, and application-status decisions",
+    "path": "sections/21-application-urla-initial-disclosures-intent-to-proceed-rate",
+    "processes": [
+      "21.1",
+      "21.2",
+      "21.3",
+      "21.4",
+      "21.5",
+      "21.6"
+    ]
+  },
+  {
+    "n": 22,
+    "title": "Documents, credit, income, assets, liabilities, identity and fraud (the verification engine)",
+    "path": "sections/22-documents-credit-income-assets-liabilities-identity-and-frau",
+    "processes": [
+      "22.1",
+      "22.2",
+      "22.3",
+      "22.4",
+      "22.5",
+      "22.6"
+    ]
+  },
+  {
+    "n": 23,
+    "title": "Desktop Underwriter and the credit decision",
+    "path": "sections/23-desktop-underwriter-and-the-credit-decision",
+    "processes": [
+      "23.1",
+      "23.2",
+      "23.3",
+      "23.4"
+    ]
+  },
+  {
+    "n": 24,
+    "title": "Property: valuation, eligibility, title, hazard/flood insurance, and mortgage insurance",
+    "path": "sections/24-property-valuation-eligibility-title-hazard-flood-insurance",
+    "processes": [
+      "24.1",
+      "24.2",
+      "24.3",
+      "24.4",
+      "24.5",
+      "24.6"
+    ]
+  },
+  {
+    "n": 25,
+    "title": "Compliance testing, the Closing Disclosure, rescission, and closing-time disclosures",
+    "path": "sections/25-compliance-testing-the-closing-disclosure-rescission-and-clo",
+    "processes": [
+      "25.1",
+      "25.2",
+      "25.3",
+      "25.4"
+    ]
+  },
+  {
+    "n": 26,
+    "title": "Closing execution: documents, eClosing/RON, funding, and post-closing collateral",
+    "path": "sections/26-closing-execution-documents-eclosing-ron-funding-and-post-cl",
+    "processes": [
+      "26.1",
+      "26.2",
+      "26.3",
+      "26.4"
+    ]
+  },
+  {
+    "n": 27,
+    "title": "Warehouse funding and settlement economics (Supermortgage as warehouse provider)",
+    "path": "sections/27-warehouse-funding-and-settlement-economics-supermortgage-as",
+    "processes": [
+      "27.1",
+      "27.2"
+    ]
+  },
+  {
+    "n": 28,
+    "title": "Quality control, HMDA, and fraud/AML reporting",
+    "path": "sections/28-quality-control-hmda-and-fraud-aml-reporting",
+    "processes": [
+      "28.1",
+      "28.2",
+      "28.3",
+      "28.4"
+    ]
+  },
+  {
+    "n": 29,
+    "title": "Secondary marketing and delivery to Fannie Mae (whole loan, servicing retained)",
+    "path": "sections/29-secondary-marketing-and-delivery-to-fannie-mae-whole-loan-se",
+    "processes": [
+      "29.1",
+      "29.2",
+      "29.3",
+      "29.4"
+    ]
+  },
+  {
+    "n": 30,
+    "title": "Post-purchase servicing setup and boarding to the subservicer",
+    "path": "sections/30-post-purchase-servicing-setup-and-boarding-to-the-subservice",
+    "processes": [
+      "30.1",
+      "30.2",
+      "30.3",
+      "30.4"
+    ]
+  },
+  {
+    "n": 31,
+    "title": "Cross-cutting: licensing and approvals, AI governance and fair lending, records/privacy/security",
+    "path": "sections/31-cross-cutting-licensing-and-approvals-ai-governance-and-fair",
+    "processes": [
+      "31.1",
+      "31.2",
+      "31.3"
+    ]
   }
 ]

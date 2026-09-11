@@ -45,9 +45,10 @@ function cashiering(ctx: UowContext) {
   return { svc, payment };
 }
 
-test("agent registry: 20 agents from the spec, every process has an owner, allowlists carry the spec's tools plus registered commands", () => {
+test("agent registry: every agent from the spec, every process has an owner, allowlists carry the spec's tools plus registered commands", () => {
   const agents = new AgentRegistry();
-  assert.equal(agents.agents().length, 20);
+  const specAgents = (JSON.parse(readFileSync(new URL("../../spec/registry/agents.json", import.meta.url), "utf8")) as { agents: unknown[] }).agents.length;
+  assert.equal(agents.agents().length, specAgents); assert.ok(specAgents >= 20);
   const processes = JSON.parse(readFileSync(new URL("../../spec/registry/processes.json", import.meta.url), "utf8")) as { id: string }[];
   const orphan = processes.map((p) => p.id).filter((id) => !agents.ownerOf(id));
   assert.deepEqual(orphan, []);

@@ -43,6 +43,7 @@ export class MemoryEventStore implements EventStore {
       payload: (input.payload ?? {}) as P,
       sequence: ++this.seq,
       ...(input.loanId !== undefined ? { loanId: input.loanId } : {}),
+      ...(input.applicationId !== undefined ? { applicationId: input.applicationId } : {}),
       ...(input.aggregate !== undefined ? { aggregate: input.aggregate } : {}),
       ...(input.causationId !== undefined ? { causationId: input.causationId } : {}),
       ...(input.correlationId !== undefined ? { correlationId: input.correlationId } : {}),

@@ -102,7 +102,12 @@ export class TimerRegistry {
     const groups = new Map<string, TimerDef[]>();
     for (const d of this.list) { let g = groups.get(d.code); if (!g) { g = []; groups.set(d.code, g); } g.push(d); }
     for (const [code, g] of groups) {
-      const owning = g.find((d) => !d.ownedBy && d.offsetParsed.kind !== "prose") ?? g.find((d) => !d.ownedBy) ?? g[0]!;
+      // One code, one definition across origination and servicing (addendum §4: "reuse the servicing code — never
+      // redefine"): a code the servicing spec (sections 1–19) names is owned there; origination rows (20–31) that
+      // restate it are references. Within a side the servicing spec's own convention applies (above).
+      const servicing = g.filter((d) => Number(d.process.split(".")[0]) < 20);
+      const own = servicing.length ? servicing : g;
+      const owning = own.find((d) => !d.ownedBy && d.offsetParsed.kind !== "prose") ?? own.find((d) => !d.ownedBy) ?? own[0]!;
       this.byCode.set(code, owning);
     }
   }

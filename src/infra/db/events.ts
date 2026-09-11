@@ -7,17 +7,18 @@ import type { DomainEvent, ActorKind } from "../../kernel/events/index.ts";
 import { type Queryable, toJson, isUuid } from "./client.ts";
 
 interface EventRow extends Record<string, unknown> {
-  id: string; sequence: bigint; type: string; occurred_at: string; loan_id: string | null; aggregate_kind: string | null; aggregate_id: string | null;
+  id: string; sequence: bigint; type: string; occurred_at: string; loan_id: string | null; application_id: string | null; aggregate_kind: string | null; aggregate_id: string | null;
   actor_kind: ActorKind; actor_id: string; actor_role: string | null; payload: Record<string, unknown>; causation_id: string | null; correlation_id: string | null;
 }
 
-const COLS = "id, sequence, type, occurred_at, loan_id, aggregate_kind, aggregate_id, actor_kind, actor_id, actor_role, payload, causation_id, correlation_id";
+const COLS = "id, sequence, type, occurred_at, loan_id, application_id, aggregate_kind, aggregate_id, actor_kind, actor_id, actor_role, payload, causation_id, correlation_id";
 
 export function rowToEvent(r: EventRow): DomainEvent {
   return {
     id: r.id, sequence: Number(r.sequence), type: r.type, occurredAt: r.occurred_at, payload: r.payload,
     actor: { kind: r.actor_kind, id: r.actor_id, ...(r.actor_role ? { role: r.actor_role } : {}) },
     ...(r.loan_id ? { loanId: r.loan_id } : {}),
+    ...(r.application_id ? { applicationId: r.application_id } : {}),
     ...(r.aggregate_kind && r.aggregate_id ? { aggregate: { kind: r.aggregate_kind, id: r.aggregate_id } } : {}),
     ...(r.causation_id ? { causationId: r.causation_id } : {}),
     ...(r.correlation_id ? { correlationId: r.correlation_id } : {}),
@@ -33,13 +34,16 @@ export class PgEventRepository {
     const out: DomainEvent[] = [];
     for (const e of events) {
       const rows = await q.query<EventRow>(
-        `INSERT INTO loan_events (id, type, occurred_at, loan_id, aggregate_kind, aggregate_id, actor_kind, actor_id, actor_role, payload, causation_id, correlation_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12) RETURNING ${COLS}`,
-        [e.id, e.type, e.occurredAt, e.loanId ?? null, e.aggregate?.kind ?? null, e.aggregate?.id ?? null, e.actor.kind, e.actor.id, e.actor.role ?? null,
+        `INSERT INTO loan_events (id, type, occurred_at, loan_id, application_id, aggregate_kind, aggregate_id, actor_kind, actor_id, actor_role, payload, causation_id, correlation_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13) RETURNING ${COLS}`,
+        [e.id, e.type, e.occurredAt, e.loanId ?? null, isUuid(e.applicationId) ? e.applicationId : null, e.aggregate?.kind ?? null, e.aggregate?.id ?? null, e.actor.kind, e.actor.id, e.actor.role ?? null,
           toJson(e.payload), isUuid(e.causationId) ? e.causationId : null, isUuid(e.correlationId) ? e.correlationId : null]);
       out.push(rowToEvent(rows[0]!));
     }
     return out;
+  }
+  async byApplication(applicationId: string): Promise<DomainEvent[]> {
+    return (await this.db.query<EventRow>(`SELECT ${COLS} FROM loan_events WHERE application_id = $1 ORDER BY sequence`, [applicationId])).map(rowToEvent);
   }
   async byLoan(loanId: string): Promise<DomainEvent[]> {
     return (await this.db.query<EventRow>(`SELECT ${COLS} FROM loan_events WHERE loan_id = $1 ORDER BY sequence`, [loanId])).map(rowToEvent);

@@ -28,7 +28,8 @@ os.makedirs(AUDIT, exist_ok=True)
 manifest = json.load(open(os.path.join(root, 'spec/registry/manifest.json')))
 UNITS = ('tids', 'tables', 'timers', 'notices', 'tools', 'figures')
 SECTION_DIR = {1: ['boarding', 'transfers'], 2: ['cashiering'], 3: ['escrow'], 4: ['servicing-requests'], 5: ['investor'], 6: ['custodial'], 7: ['notices'], 8: ['credit-reporting'],
-               9: ['insurance'], 10: ['pmi'], 11: ['early-intervention'], 12: ['lossmit'], 13: ['foreclosure'], 14: ['bankruptcy'], 15: ['reo'], 16: ['payoff'], 17: ['transfers'], 18: ['qc-audit'], 19: ['data-security']}
+               9: ['insurance'], 10: ['pmi'], 11: ['early-intervention'], 12: ['lossmit'], 13: ['foreclosure'], 14: ['bankruptcy'], 15: ['reo'], 16: ['payoff'], 17: ['transfers'], 18: ['qc-audit'], 19: ['data-security'],
+               20: ['leads-pricing'], 21: ['application'], 22: ['verification'], 23: ['underwriting'], 24: ['property'], 25: ['compliance-disclosures'], 26: ['closing'], 27: ['warehouse'], 28: ['qc-hmda'], 29: ['secondary'], 30: ['orig-boarding'], 31: ['governance']}
 
 def read(p): return open(p, encoding='utf-8').read()
 def live_lines(text):

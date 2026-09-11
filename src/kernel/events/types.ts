@@ -19,6 +19,8 @@ export interface DomainEvent<P = Record<string, unknown>> {
   readonly type: EventType;
   readonly occurredAt: string;              // ISO instant
   readonly loanId?: string;
+  /** Origination key: set on every event before funding (30.2 sets both while the loan row is created). */
+  readonly applicationId?: string;
   readonly aggregate?: { readonly kind: string; readonly id: string }; // batch, case, payment...
   readonly actor: Actor;
   readonly payload: P;
@@ -30,6 +32,7 @@ export interface DomainEvent<P = Record<string, unknown>> {
 export interface EventInput<P = Record<string, unknown>> {
   readonly type: EventType;
   readonly loanId?: string;
+  readonly applicationId?: string;
   readonly aggregate?: { readonly kind: string; readonly id: string };
   readonly actor: Actor;
   readonly payload?: P;

@@ -1,33 +1,33 @@
 {
- "brief": "spec units built 4583/4583 (100.0%): tids 1253/1253, tables 448/448, timers 1365/1365, notices 235/235, tools 658/658, figures 624/624; processes at 100%: 114/114",
+ "brief": "spec units built 4627/7463 (62.0%): tids 1253/1914, tables 470/734, timers 1387/1987, notices 235/306, tools 658/1311, figures 624/1211; processes at 100%: 114/165",
  "totals": {
   "tids": {
-   "spec": 1253,
+   "spec": 1914,
    "built": 1253
   },
   "tables": {
-   "spec": 448,
-   "built": 448
+   "spec": 734,
+   "built": 470
   },
   "timers": {
-   "spec": 1365,
-   "built": 1365
+   "spec": 1987,
+   "built": 1387
   },
   "notices": {
-   "spec": 235,
+   "spec": 306,
    "built": 235
   },
   "tools": {
-   "spec": 658,
+   "spec": 1311,
    "built": 658
   },
   "figures": {
-   "spec": 624,
+   "spec": 1211,
    "built": 624
   },
   "units": {
-   "spec": 4583,
-   "built": 4583
+   "spec": 7463,
+   "built": 4627
   }
  },
  "sections": {
@@ -144,6 +144,78 @@
    "built": 225,
    "processes": 4,
    "done": 4
+  },
+  "20": {
+   "spec": 196,
+   "built": 5,
+   "processes": 4,
+   "done": 0
+  },
+  "21": {
+   "spec": 283,
+   "built": 2,
+   "processes": 6,
+   "done": 0
+  },
+  "22": {
+   "spec": 373,
+   "built": 3,
+   "processes": 6,
+   "done": 0
+  },
+  "23": {
+   "spec": 212,
+   "built": 0,
+   "processes": 4,
+   "done": 0
+  },
+  "24": {
+   "spec": 321,
+   "built": 6,
+   "processes": 6,
+   "done": 0
+  },
+  "25": {
+   "spec": 232,
+   "built": 1,
+   "processes": 4,
+   "done": 0
+  },
+  "26": {
+   "spec": 250,
+   "built": 0,
+   "processes": 4,
+   "done": 0
+  },
+  "27": {
+   "spec": 201,
+   "built": 0,
+   "processes": 2,
+   "done": 0
+  },
+  "28": {
+   "spec": 224,
+   "built": 4,
+   "processes": 4,
+   "done": 0
+  },
+  "29": {
+   "spec": 231,
+   "built": 0,
+   "processes": 4,
+   "done": 0
+  },
+  "30": {
+   "spec": 216,
+   "built": 21,
+   "processes": 4,
+   "done": 0
+  },
+  "31": {
+   "spec": 141,
+   "built": 2,
+   "processes": 3,
+   "done": 0
   }
  },
  "done": [
@@ -4936,6 +5008,5203 @@
     "built": 36
    },
    "pct": 100.0
+  },
+  {
+   "process": "20.1",
+   "title": "Portfolio rate monitoring and refinance-opportunity detection on the subserviced book (self-improving-mortgage trigger)",
+   "tids": {
+    "spec": 11,
+    "built": 0,
+    "todo": 11,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11
+    ]
+   },
+   "tables": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "partner_programs",
+     "refi_opportunities",
+     "refi_trigger_runs"
+    ]
+   },
+   "timers": {
+    "spec": 9,
+    "built": 0,
+    "armable": 6,
+    "missing": [
+     "FNMA_B2_1_3_03_CASHOUT_NOTE_SEASONING_12M",
+     "FNMA_B2_1_3_03_TITLE_SEASONING_6M",
+     "FNMA_C1_1_01_PREMIUM_RECAPTURE_120",
+     "MA_183_28C_BORROWER_INTEREST_60M",
+     "SM_REFI_OFFER_FREQUENCY_CAP",
+     "SM_REFI_OFFER_SLA_2BD",
+     "SM_REFI_OPPORTUNITY_EXPIRY_30",
+     "SM_REFI_RESOLICIT_COOLDOWN_90",
+     "SM_REFI_TRIGGER_DAILY"
+    ]
+   },
+   "notices": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "NTC_GLBA_1016_4_PRIVACY_INITIAL"
+    ]
+   },
+   "tools": {
+    "spec": 10,
+    "built": 0,
+    "missing": [
+     "loadUniverse",
+     "buildCandidate",
+     "priceCandidate",
+     "computeBenefit",
+     "checkStateRule",
+     "checkGates",
+     "assertGateOpen",
+     "writeDecision",
+     "emitOfferReady",
+     "writeFairLendingExtract"
+    ]
+   },
+   "figures": {
+    "spec": 23,
+    "built": 0,
+    "missing": [
+     "$1,785.43",
+     "$106.08",
+     "$22,436.54",
+     "$24,292.78",
+     "$269.99",
+     "$3,402.62",
+     "$3,485.00",
+     "$3,488.97",
+     "$3,758.96",
+     "$3,941.28",
+     "$356.34",
+     "$44,960.95",
+     "$495,596.33",
+     "$503,092.35",
+     "$553,106.41",
+     "$554,273.29",
+     "$612,293.92",
+     "$664,943.20",
+     "$7,496.02",
+     "$700.00",
+     "$709,904.15",
+     "$93.97",
+     "$97,610.23"
+    ]
+   },
+   "units": {
+    "spec": 57,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "20.2",
+   "title": "Solicitation, marketing, and consent compliance for outbound refinance offers and organic acquisition",
+   "tids": {
+    "spec": 12,
+    "built": 0,
+    "todo": 12,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 8,
+    "built": 3,
+    "missing": [
+     "dnc_scrubs",
+     "marketing_campaigns",
+     "marketing_creatives",
+     "marketing_suppressions",
+     "marketing_touches"
+    ]
+   },
+   "timers": {
+    "spec": 13,
+    "built": 0,
+    "armable": 5,
+    "missing": [
+     "CANSPAM_7704_A4_OPTOUT_10BD",
+     "FCRA_615D_PRESCREEN_NOTICE_GATE",
+     "REGN_1014_5_RECORDS_24M",
+     "SM_CAMPAIGN_CREATIVE_APPROVAL_GATE",
+     "TCPA_64_1200_A2_PEWC_GATE",
+     "TCPA_64_1200_A3_LANDLINE_PEWC_GATE",
+     "TCPA_64_1200_C1_QUIET_HOURS_GATE",
+     "TCPA_64_1200_C2_DNC_SCRUB_31",
+     "TCPA_64_1200_C2_NATIONAL_DNC_GATE",
+     "TCPA_64_1200_D3_DNC_REQUEST_10BD",
+     "TCPA_64_1200_D_COMPANY_DNC_5Y",
+     "TCPA_64_1200_F5_EBR_INQUIRY_3M",
+     "TCPA_64_1200_F5_EBR_TRANSACTION_18M"
+    ]
+   },
+   "notices": {
+    "spec": 5,
+    "built": 0,
+    "missing": [
+     "NTC_CANSPAM_7704_FOOTER",
+     "NTC_FCRA_615D_PRESCREEN_OPTOUT",
+     "NTC_REGZ_1026_24_REFI_OFFER",
+     "NTC_SM_AI_INTERACTION_DISCLOSURE",
+     "NTC_TCPA_64_1200_B_AI_VOICE_IDENT"
+    ]
+   },
+   "tools": {
+    "spec": 7,
+    "built": 0,
+    "missing": [
+     "planChannels",
+     "checkGates",
+     "assertGateOpen",
+     "renderCreative",
+     "runContentChecklist",
+     "scheduleTouch",
+     "placeCall"
+    ]
+   },
+   "figures": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "$3,402.62"
+    ]
+   },
+   "units": {
+    "spec": 46,
+    "built": 3
+   },
+   "pct": 6.5
+  },
+  {
+   "process": "20.3",
+   "title": "Lead intake, identity, E-SIGN/TCPA consents, and the pre-qualification interview (pre-application boundary)",
+   "tids": {
+    "spec": 12,
+    "built": 0,
+    "todo": 12,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 7,
+    "built": 2,
+    "missing": [
+     "credit_authorizations",
+     "lead_interactions",
+     "leads",
+     "prequalifications",
+     "verifications"
+    ]
+   },
+   "timers": {
+    "spec": 10,
+    "built": 0,
+    "armable": 3,
+    "missing": [
+     "CO_SB26_189_1704_PREUSE_NOTICE_GATE",
+     "FCRA_1681B_A3_SOFT_PULL_PURPOSE_GATE",
+     "REGB_1002_2F_NO_PREQUAL_DECLINE_GATE",
+     "REGB_1002_9_DECISION_30",
+     "REGZ_1026_19E1_LE_3BD",
+     "SM_AI_INTERACTION_DISCLOSURE_GATE",
+     "SM_ESIGN_BEFORE_LE_GATE",
+     "SM_LEAD_AUTH_BEFORE_DISCLOSURE_GATE",
+     "SM_LEAD_INACTIVITY_EXPIRY_90",
+     "SM_MLO_PREAPP_TERMS_REVIEW_1BH"
+    ]
+   },
+   "notices": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "NTC_CO_SB26_189_ADMT_NOTICE",
+     "NTC_REGZ_1026_19E2II_QUOTE_DISCLAIMER",
+     "NTC_SM_ESIGN_CONSENT",
+     "NTC_SM_PREQUAL_LETTER"
+    ]
+   },
+   "tools": {
+    "spec": 7,
+    "built": 0,
+    "missing": [
+     "deliverDisclosure",
+     "authenticate",
+     "captureConsent",
+     "orderSoftPull",
+     "explainProgram",
+     "getBenefit",
+     "requestQuote"
+    ]
+   },
+   "figures": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "$3,402.62",
+     "$3,488.97",
+     "$3,758.96"
+    ]
+   },
+   "units": {
+    "spec": 43,
+    "built": 2
+   },
+   "pct": 4.7
+  },
+  {
+   "process": "20.4",
+   "title": "Rate quote and pricing engine (base pricing, LLPAs, servicing value, cost pass-through, fee schedule)",
+   "tids": {
+    "spec": 12,
+    "built": 0,
+    "todo": 12,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 6,
+    "built": 0,
+    "missing": [
+     "fee_schedules",
+     "llpa_tables",
+     "pricing_exceptions",
+     "pricing_quotes",
+     "rate_sheets",
+     "sm_cost_schedules"
+    ]
+   },
+   "timers": {
+    "spec": 9,
+    "built": 0,
+    "armable": 3,
+    "missing": [
+     "FNMA_PEWL_QUOTE_ID_WINDOW",
+     "REGZ_1026_19E2II_QUOTE_DISCLAIMER_GATE",
+     "REGZ_1026_19E3IVD_LOCK_REVISED_LE_3BD",
+     "SM_FEE_SCHEDULE_REFRESH_30",
+     "SM_LLPA_TABLE_VERSION_GATE",
+     "SM_MLO_PREAPP_TERMS_REVIEW_1BH",
+     "SM_PRICING_EXCEPTION_APPROVAL_1BD",
+     "SM_QUOTE_VALIDITY_GATE",
+     "SM_RATE_SHEET_PUBLISH_DAILY"
+    ]
+   },
+   "notices": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "NTC_SM_RATE_QUOTE"
+    ]
+   },
+   "tools": {
+    "spec": 12,
+    "built": 0,
+    "missing": [
+     "fetchPeWlPrices",
+     "publishRateSheet",
+     "loadLlpaTable",
+     "computeLlpa",
+     "solvePassThrough",
+     "computePayment",
+     "estimateApr",
+     "buildFeeItems",
+     "renderQuote",
+     "explainQuote",
+     "requestException",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 10,
+    "built": 0,
+    "missing": [
+     "$1,785.43",
+     "$101.88",
+     "$199.13",
+     "$2,570.34",
+     "$2,672.22",
+     "$3,402.62",
+     "$3,485.00",
+     "$555.00",
+     "$700.00",
+     "$93.97"
+    ]
+   },
+   "units": {
+    "spec": 50,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "21.1",
+   "title": "Conversational URLA/1003 intake, application data capture, and the MLO-of-record touchpoint",
+   "tids": {
+    "spec": 12,
+    "built": 0,
+    "todo": 12,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 1,
+    "built": 1,
+    "missing": []
+   },
+   "timers": {
+    "spec": 6,
+    "built": 0,
+    "armable": 2,
+    "missing": [
+     "SAFE_1008_103_MLO_OF_RECORD_GATE",
+     "SM_O21_DEMOGRAPHICS_ASKED_GATE",
+     "SM_O21_INTAKE_ABANDON_30",
+     "SM_O21_JOINT_INTENT_GATE",
+     "SM_O21_MLO_REVIEW_SLA_1BD",
+     "SM_O21_SCIF_PRESENT_GATE"
+    ]
+   },
+   "notices": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "NTC_FNMA_1103_SCIF"
+    ]
+   },
+   "tools": {
+    "spec": 15,
+    "built": 0,
+    "missing": [
+     "startInterview",
+     "discloseAI",
+     "captureField",
+     "confirmPrefill",
+     "validateULAD",
+     "detectSixItems",
+     "askDemographics",
+     "presentSCIF",
+     "affirmJointIntent",
+     "assignMLO",
+     "renderForm1003",
+     "requestESign",
+     "openEscalation",
+     "logSafeActivity",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 2,
+    "built": 0,
+    "missing": [
+     "$3,402.62",
+     "$3,402.63"
+    ]
+   },
+   "units": {
+    "spec": 37,
+    "built": 1
+   },
+   "pct": 2.7
+  },
+  {
+   "process": "21.2",
+   "title": "TRID application receipt, application date, and the Loan Estimate",
+   "tids": {
+    "spec": 12,
+    "built": 0,
+    "todo": 12,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 5,
+    "built": 0,
+    "armable": 4,
+    "missing": [
+     "REGZ_1026_19E1III_LE_7SBD_GATE",
+     "REGZ_1026_19E1IV_LE_MAILBOX_3SBD",
+     "REGZ_1026_19E1_LE_3BD",
+     "REGZ_1026_37A13_COSTS_EXPIRE_10BD",
+     "SM_O22_MLO_LE_REVIEW_SLA_1BD"
+    ]
+   },
+   "notices": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "NTC_REGZ_1026_19E1VI_PROVIDER_LIST",
+     "NTC_REGZ_1026_19E2II_PRELE_ESTIMATE",
+     "NTC_REGZ_1026_37_LE"
+    ]
+   },
+   "tools": {
+    "spec": 6,
+    "built": 0,
+    "missing": [
+     "assembleFees",
+     "getPricingScenario",
+     "deriveTolerance",
+     "computeAPR",
+     "renderH24",
+     "buildProviderList"
+    ]
+   },
+   "figures": {
+    "spec": 7,
+    "built": 0,
+    "missing": [
+     "$1,785.43",
+     "$206,774.20",
+     "$3,402.62",
+     "$3,505.43",
+     "$38,097.13",
+     "$521,902.87",
+     "$93.97"
+    ]
+   },
+   "units": {
+    "spec": 33,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "21.3",
+   "title": "Companion early disclosures: homeownership counseling list, Your Home Loan Toolkit, AfBA, Reg B appraisal notice, FCRA/Reg V credit-score notices, ARM program disclosure and CHARM booklet, GLBA initial privacy notice, the retired RESPA Servicing Disclosure Statement, and state early disclosures",
+   "tids": {
+    "spec": 16,
+    "built": 0,
+    "todo": 16,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16
+    ]
+   },
+   "tables": {
+    "spec": 7,
+    "built": 0,
+    "missing": [
+     "affiliate_relationships",
+     "arm_programs",
+     "counseling_lists",
+     "disclosures",
+     "early_disclosure_packages",
+     "referrals",
+     "score_disclosures"
+    ]
+   },
+   "timers": {
+    "spec": 18,
+    "built": 0,
+    "armable": 8,
+    "missing": [
+     "AZ_ARS_6_946C_FEE_AGREEMENT_GATE",
+     "CA_21CCR_7114_FAIR_LENDING_NOTICE_AT_APPLICATION",
+     "CA_CIV_1632_5_TRANSLATED_LE_3BD",
+     "FCRA_609G_SCORE_NOTICE_1BD",
+     "FL_69B_124_013_ANTI_COERCION_AT_APPLICATION",
+     "MA_MGL_184_17B_ATTORNEY_STATEMENT_AT_APPLICATION",
+     "NJ_3_1_16_3_FEE_DISCLOSURE_GATE",
+     "NY_3NYCRR_38_3_PREAPP_DISCLOSURE_GATE",
+     "REGB_1002_14_APPRAISAL_NOTICE_3BD",
+     "REGV_1022_74D_SCORE_NOTICE_CONSUMMATION_GATE",
+     "REGX_1024_15_AFBA_REFERRAL_GATE",
+     "REGX_1024_20_HCL_3BD",
+     "REGZ_1026_19B_ARM_DISCLOSURE_3BD",
+     "REGZ_1026_19B_ARM_DISCLOSURE_GATE",
+     "REGZ_1026_19G_TOOLKIT_3BD",
+     "REGZ_1026_35C5_HPML_APPRAISAL_NOTICE_3BD",
+     "SM_O23_PRIVACY_INITIAL_3BD",
+     "TX_7TAC_57_200_SML_NOTICE_AT_APPLICATION"
+    ]
+   },
+   "notices": {
+    "spec": 18,
+    "built": 0,
+    "missing": [
+     "NTC_AZ_ARS_6_946C_FEE_AGREEMENT",
+     "NTC_CA_21CCR_7114_FAIR_LENDING_NOTICE",
+     "NTC_CA_CIV_1632_5_TRANSLATED_LE",
+     "NTC_FCRA_609G_CREDIT_SCORE",
+     "NTC_FL_69B_124_013_ANTI_COERCION",
+     "NTC_MA_MGL_184_17B_ATTORNEY_STATEMENT",
+     "NTC_NJ_3_1_16_3_APPLICATION_DISCLOSURE",
+     "NTC_NY_3NYCRR_38_3_PREAPP_DISCLOSURE",
+     "NTC_REGB_1002_14_APPRAISAL_NOTICE",
+     "NTC_REGV_1022_74_RBP_EXCEPTION",
+     "NTC_REGX_1024_15_AFBA",
+     "NTC_REGX_1024_20_HCL",
+     "NTC_REGX_1024_33A_SDS",
+     "NTC_REGX_1024_6_TOOLKIT",
+     "NTC_REGZ_1026_19B_ARM_PROGRAM",
+     "NTC_REGZ_1026_19B_CHARM",
+     "NTC_TX_50A6_12DAY",
+     "NTC_TX_7TAC_57_200_SML_NOTICE"
+    ]
+   },
+   "tools": {
+    "spec": 16,
+    "built": 0,
+    "missing": [
+     "planCompanionPackage",
+     "evaluateExemptions",
+     "generateCounselingList",
+     "selectBookletEdition",
+     "renderScoreDisclosure",
+     "renderArmProgramDisclosure",
+     "evaluateAfBA",
+     "evaluateStateMatrix",
+     "renderNotice",
+     "assertConsent",
+     "deliver",
+     "recordReceipt",
+     "recordAcknowledgment",
+     "markSatisfiedByLE",
+     "setTimers",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "$59.15"
+    ]
+   },
+   "units": {
+    "spec": 76,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "21.4",
+   "title": "Intent to proceed, fee collection, and rate lock (lock confirmation, revised LE on lock, extensions, relocks, float-down, lock-to-commitment linkage)",
+   "tids": {
+    "spec": 12,
+    "built": 0,
+    "todo": 12,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "changed_circumstances",
+     "fee_gate_checks",
+     "intent_records",
+     "locks"
+    ]
+   },
+   "timers": {
+    "spec": 7,
+    "built": 0,
+    "armable": 5,
+    "missing": [
+     "FNMA_C2_1_2_03_KEY_DATA_CHANGE_1BD",
+     "NY_3NYCRR_38_6B4_LOCK_EXPIRY_NOTICE_12_20BD",
+     "REGZ_1026_19E2_INTENT_FEE_GATE",
+     "REGZ_1026_19E3IVD_LOCK_REVISED_LE_3BD",
+     "SM_LOCK_EXPIRY_DEADLINE",
+     "SM_LOCK_EXPIRY_WARN_7",
+     "SM_LOCK_MLO_APPROVAL_SLA_30MIN"
+    ]
+   },
+   "notices": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "NTC_NY_3NYCRR_38_6_LOCK_EXPIRY_NOTICE",
+     "NTC_REGZ_1026_37_LE_REVISED",
+     "NTC_SM_RATE_LOCK_CONFIRMATION"
+    ]
+   },
+   "tools": {
+    "spec": 16,
+    "built": 0,
+    "missing": [
+     "getQuote",
+     "checkFeeGate",
+     "recordIntent",
+     "requestLock",
+     "openMloEscalation",
+     "executeLock",
+     "renderLockConfirmation",
+     "requestCommitment",
+     "recordChangedCircumstance",
+     "quoteExtension",
+     "extendLock",
+     "relock",
+     "applyFloatDown",
+     "expireLock",
+     "sendNotice",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "$3,402.62",
+     "$650.00",
+     "$68.50",
+     "$700.00"
+    ]
+   },
+   "units": {
+    "spec": 46,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "21.5",
+   "title": "Changed circumstances, revised Loan Estimates, and tolerance management (good-faith baseline, 4-business-day rule, resets, cure)",
+   "tids": {
+    "spec": 12,
+    "built": 0,
+    "todo": 12,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 7,
+    "built": 0,
+    "missing": [
+     "changed_circumstances",
+     "disclosures",
+     "discovered_at",
+     "fee_items",
+     "revised_le_due_at",
+     "tolerance_cures",
+     "tolerance_tests"
+    ]
+   },
+   "timers": {
+    "spec": 5,
+    "built": 0,
+    "armable": 4,
+    "missing": [
+     "REGZ_1026_19E4_REVISED_LE_3BD",
+     "REGZ_1026_19E4_REVISED_LE_4SBD_GATE",
+     "REGZ_1026_19F2V_TOLERANCE_REFUND_60",
+     "REGZ_1026_37A13_COSTS_EXPIRE_10BD",
+     "SM_TOLERANCE_CURE_REVIEW_SLA_1BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 12,
+    "built": 0,
+    "missing": [
+     "classifyFeeChange",
+     "evaluateChangedCircumstance",
+     "resetBaseline",
+     "computeRevisedLEDueDate",
+     "checkFourDayRule",
+     "renderRevisedLE",
+     "deliverDisclosure",
+     "reflectOnCD",
+     "runToleranceTest",
+     "applyCure",
+     "issueRefund",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 11,
+    "built": 0,
+    "missing": [
+     "$1,691.46",
+     "$1,785.43",
+     "$186.50",
+     "$2,051.50",
+     "$2,145.00",
+     "$2,442.00",
+     "$200.00",
+     "$222.00",
+     "$3,493.76",
+     "$93.50",
+     "$93.97"
+    ]
+   },
+   "units": {
+    "spec": 47,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "21.6",
+   "title": "Application-status decisions: notice of incompleteness, withdrawal, counteroffer, denial/adverse action (ECOA + FCRA), and HMDA action-taken recording",
+   "tids": {
+    "spec": 13,
+    "built": 0,
+    "todo": 13,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13
+    ]
+   },
+   "tables": {
+    "spec": 6,
+    "built": 1,
+    "missing": [
+     "adverse_actions",
+     "hmda_records",
+     "noias",
+     "notice_id",
+     "withdrawals"
+    ]
+   },
+   "timers": {
+    "spec": 10,
+    "built": 0,
+    "armable": 6,
+    "missing": [
+     "CO_SB26_189_1703_RECORDS_3Y",
+     "CO_SB26_189_1704_ADVERSE_EXPLANATION_30",
+     "CO_SB26_189_1704_PREUSE_NOTICE_GATE",
+     "CO_SB26_189_1705_HUMAN_REVIEW_30",
+     "REGB_1002_9C2_NOIA_RESPONSE",
+     "REGB_1002_9_COUNTEROFFER_90",
+     "REGB_1002_9_DECISION_30",
+     "REGB_1002_9_NOIA",
+     "SM_ADVERSE_NOTICE_5BD",
+     "SM_UNDERWRITING_REVIEWER_SLA_2BD"
+    ]
+   },
+   "notices": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "NTC_REGB_1002_9_ADVERSE_ACTION",
+     "NTC_REGB_1002_9_COUNTEROFFER",
+     "NTC_REGB_1002_9_NOIA"
+    ]
+   },
+   "tools": {
+    "spec": 12,
+    "built": 0,
+    "missing": [
+     "computeCompletion",
+     "trackDecisionClock",
+     "recommendDisposition",
+     "selectPrincipalReasons",
+     "assembleFcraBlock",
+     "assembleStateOverlays",
+     "openReviewerEscalation",
+     "renderNotice",
+     "deliverNotice",
+     "recordHmdaAction",
+     "cancelLock",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 44,
+    "built": 1
+   },
+   "pct": 2.3
+  },
+  {
+   "process": "22.1",
+   "title": "Document intake, classification, extraction, integrity/freshness checks, and the borrower needs-list loop",
+   "tids": {
+    "spec": 12,
+    "built": 0,
+    "todo": 12,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "document_classes",
+     "document_extractions",
+     "document_integrity_checks",
+     "document_requests"
+    ]
+   },
+   "timers": {
+    "spec": 8,
+    "built": 0,
+    "armable": 4,
+    "missing": [
+     "FNMA_B1_1_03_CREDIT_DOCS_4M",
+     "FNMA_B1_1_03_TAX_YEAR_GATE",
+     "FNMA_B3_3_2_01_PAYSTUB_30D_GATE",
+     "FNMA_B4_1_2_04_APPRAISAL_12M",
+     "REGB_1002_9_DECISION_30",
+     "SM_DOC_EXPIRY_WARN_14",
+     "SM_NEEDS_LIST_BORROWER_RESPONSE_5",
+     "SM_NEEDS_LIST_REVIEW_1BD"
+    ]
+   },
+   "notices": {
+    "spec": 2,
+    "built": 0,
+    "missing": [
+     "NTC_SM_NEEDS_LIST",
+     "NTC_SM_NEEDS_LIST_REMINDER"
+    ]
+   },
+   "tools": {
+    "spec": 15,
+    "built": 0,
+    "missing": [
+     "ingestDocument",
+     "classifyDocument",
+     "extractFields",
+     "runIntegrityBattery",
+     "orderForensicScan",
+     "computeFreshness",
+     "matchToRequests",
+     "deriveNeedsList",
+     "renderNeedsListNotice",
+     "sendNotice",
+     "openRequest",
+     "waiveRequest",
+     "proposeConditionClear",
+     "writeDecision",
+     "escalate"
+    ]
+   },
+   "figures": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "$1,500.00",
+     "$1,631.25",
+     "$112,500.00",
+     "$6,250.00"
+    ]
+   },
+   "units": {
+    "spec": 45,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "22.2",
+   "title": "Credit report ordering, credit-score model and merge rules, analysis, freezes/disputes, inquiries, and pre-closing refresh (undisclosed-debt monitoring)",
+   "tids": {
+    "spec": 12,
+    "built": 0,
+    "todo": 12,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "credit_alerts",
+     "credit_freeze_actions",
+     "credit_reports",
+     "inquiry_explanations"
+    ]
+   },
+   "timers": {
+    "spec": 7,
+    "built": 0,
+    "armable": 4,
+    "missing": [
+     "FNMA_B1_1_03_CREDIT_REPORT_EXPIRY_4M",
+     "REGB_1002_9_DECISION_30",
+     "SM_CREDIT_DISPUTE_RESOLUTION_5",
+     "SM_CREDIT_EXPIRY_WARN_21",
+     "SM_CREDIT_FREEZE_FOLLOWUP_2",
+     "SM_CREDIT_REFRESH_PRECLOSE_GATE",
+     "SM_UDM_MONITOR_ACTIVE"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 13,
+    "built": 0,
+    "missing": [
+     "orderCreditReport",
+     "parseCreditReport",
+     "computeScores",
+     "detectFreezes",
+     "detectFraudAlerts",
+     "mapDuCreditMessages",
+     "openInquiryItems",
+     "triageUdmAlert",
+     "orderRefresh",
+     "scheduleRepull",
+     "emitScoreDisclosureData",
+     "writeDecision",
+     "escalate"
+    ]
+   },
+   "figures": {
+    "spec": 5,
+    "built": 0,
+    "missing": [
+     "$13,500.00",
+     "$150.00",
+     "$2,150.00",
+     "$3,200.00",
+     "$612.40"
+    ]
+   },
+   "units": {
+    "spec": 41,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "22.3",
+   "title": "Income and employment verification (documentation standards, DU validation service, Income Calculator, IRS transcripts, self-employment, rental/other income, VVOE timing)",
+   "tids": {
+    "spec": 15,
+    "built": 0,
+    "todo": 15,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15
+    ]
+   },
+   "tables": {
+    "spec": 7,
+    "built": 1,
+    "missing": [
+     "business_verifications",
+     "employment_verifications",
+     "income_calculations",
+     "irs_ives_2y",
+     "tax_transcript_requests",
+     "verifications"
+    ]
+   },
+   "timers": {
+    "spec": 9,
+    "built": 0,
+    "armable": 1,
+    "missing": [
+     "FNMA_B1_1_03_CREDIT_DOCS_4M",
+     "FNMA_B3_2_02_DU_CLOSE_BY_GATE",
+     "FNMA_B3_3_1_01_CONTINUANCE_3Y",
+     "FNMA_B3_3_1_02_4506C_VALID_120",
+     "FNMA_B3_3_1_04_SE_VERIFY_120",
+     "FNMA_B3_3_1_04_VVOE_10BD",
+     "FNMA_B3_3_1_04_VVOE_ALT_15BD",
+     "FNMA_B3_3_3_03_OFFER_START_WINDOW",
+     "SM_VVOE_SCHEDULE_2BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "buildDocumentationMatrix",
+     "orderVerificationReport",
+     "submitIncomeCalculator"
+    ]
+   },
+   "figures": {
+    "spec": 24,
+    "built": 0,
+    "missing": [
+     "$1,000.00",
+     "$1,200.00",
+     "$1,650.00",
+     "$1,800.00",
+     "$10,800.00",
+     "$12,000.00",
+     "$150.00",
+     "$2,000.00",
+     "$2,075.00",
+     "$2,150.00",
+     "$2,400.00",
+     "$2,700.00",
+     "$32.50",
+     "$350.00",
+     "$5,633.33",
+     "$6,250.00",
+     "$75,000.00",
+     "$8,550.00",
+     "$800.00",
+     "$9,000.00",
+     "$9,246.43",
+     "$900.00",
+     "$921.43",
+     "$950.00"
+    ]
+   },
+   "units": {
+    "spec": 58,
+    "built": 1
+   },
+   "pct": 1.7
+  },
+  {
+   "process": "22.4",
+   "title": "Asset, reserve, and cash-to-close verification (VOA, large deposits, gifts, EMD, IPCs, reserves, subordinate financing)",
+   "tids": {
+    "spec": 12,
+    "built": 0,
+    "todo": 12,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 7,
+    "built": 1,
+    "missing": [
+     "asset_deposits",
+     "funds_to_close_worksheets",
+     "gift_records",
+     "ipc_items",
+     "reserve_calculations",
+     "verifications"
+    ]
+   },
+   "timers": {
+    "spec": 11,
+    "built": 0,
+    "armable": 0,
+    "missing": [
+     "FNMA_B1_1_03_CREDIT_DOCS_4M",
+     "FNMA_B2_1_3_02_LCOR_CASHBACK_GATE",
+     "FNMA_B3_2_02_DU_CLOSE_BY_GATE",
+     "FNMA_B3_2_10_DU_FINAL_MATCH_GATE",
+     "FNMA_B3_4_1_02_IPC_LIMIT_GATE",
+     "FNMA_B3_4_2_02_LARGE_DEPOSIT_GATE",
+     "FNMA_B3_4_3_04_GIFT_TRANSFER_GATE",
+     "FNMA_B3_4_3_10_SALE_PROCEEDS_GATE",
+     "FNMA_B3_4_4_02_ASSET_STMT_45D_GATE",
+     "SM_CASH_TO_CLOSE_RECONCILED_GATE",
+     "SM_RESERVES_VERIFIED_GATE"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 16,
+    "built": 0,
+    "missing": [
+     "declareAssets",
+     "orderAssetReport",
+     "parseStatement",
+     "evaluateDeposits",
+     "requestSource",
+     "verifyGift",
+     "checkDonorInterestedParty",
+     "recordIpc",
+     "testIpcLimits",
+     "computeReserves",
+     "buildFundsToCloseWorksheet",
+     "reconcileToCd",
+     "testLcorCashBack",
+     "proposeCure",
+     "finalizeAssets",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 64,
+    "built": 0,
+    "missing": [
+     "$0.00",
+     "$1,380.00",
+     "$1,720.00",
+     "$1,785.48",
+     "$1,856.82",
+     "$1,960.00",
+     "$1,978.00",
+     "$10,000.00",
+     "$120.00",
+     "$13,640.00",
+     "$13,658.04",
+     "$13,734.00",
+     "$14,580.00",
+     "$14,900.00",
+     "$16,200.00",
+     "$16,341.96",
+     "$160,000.00",
+     "$169.60",
+     "$170.00",
+     "$2,000.00",
+     "$2,500.00",
+     "$2,532.00",
+     "$2,856.82",
+     "$250,000.00",
+     "$26,240.18",
+     "$27,468.00",
+     "$3,401.59",
+     "$3,750.00",
+     "$30,000.00",
+     "$31,240.18",
+     "$38,000.00",
+     "$4,100.00",
+     "$41,140.18",
+     "$410,000.00",
+     "$412,000.00",
+     "$42,140.18",
+     "$43,997.00",
+     "$45,143.18",
+     "$45,800.00",
+     "$455,268.00",
+     "$457,800.00",
+     "$460,000.00",
+     "$5,000.00",
+     "$5,600.00",
+     "$5,769.60",
+     "$500.00",
+     "$51,140.18",
+     "$515.00",
+     "$547,912.40",
+     "$559,830.00",
+     "$559,830.40",
+     "$560,000.00",
+     "$6,318.00",
+     "$6,500.00",
+     "$6,752.00",
+     "$7,500.00",
+     "$8,000.00",
+     "$8,200.00",
+     "$8,640.00",
+     "$8,712.00",
+     "$834.52",
+     "$9,000.00",
+     "$93.97",
+     "$935.47"
+    ]
+   },
+   "units": {
+    "spec": 110,
+    "built": 1
+   },
+   "pct": 0.9
+  },
+  {
+   "process": "22.5",
+   "title": "Liabilities, debt-to-income, qualifying payment, and debts paid at closing",
+   "tids": {
+    "spec": 12,
+    "built": 0,
+    "todo": 12,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 4,
+    "built": 1,
+    "missing": [
+     "debt_payoff_plans",
+     "dti_calculations",
+     "qualifying_payments"
+    ]
+   },
+   "timers": {
+    "spec": 10,
+    "built": 0,
+    "armable": 1,
+    "missing": [
+     "FNMA_B3_3_1_01_CONTINUANCE_3Y",
+     "FNMA_B3_6_01_LIABILITY_RECALC_GATE",
+     "FNMA_B3_6_02_DU_DTI_50_GATE",
+     "FNMA_B3_6_05_10MO_REMAINING_RULE",
+     "FNMA_B3_6_05_IRS_AGREEMENT_GATE",
+     "FNMA_B3_6_05_LEGAL_DOC_GATE",
+     "FNMA_B3_6_07_PAYOFF_FUNDS_GATE",
+     "REGZ_1026_43_QM_DETERMINATION_GATE",
+     "SM_CREDIT_REFRESH_PRECLOSE_GATE",
+     "SM_DU_RESUBMIT_SLA_1BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 12,
+    "built": 0,
+    "missing": [
+     "buildLiabilitySet",
+     "matchTradelines",
+     "selectPaymentBasis",
+     "computeQualifyingPayment",
+     "computeDti",
+     "evaluateExclusion",
+     "planPayoff",
+     "evidencePayoff",
+     "checkDuCap",
+     "notifyTolerance",
+     "finalizeLiabilities",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 17,
+    "built": 0,
+    "missing": [
+     "$0.00",
+     "$1,180.00",
+     "$14,400.00",
+     "$2,057.06",
+     "$24,000.00",
+     "$3,000.00",
+     "$3,402.61",
+     "$3,402.62",
+     "$3,402.63",
+     "$360,000.00",
+     "$4,560.00",
+     "$4,976.30",
+     "$412,000.00",
+     "$457,800.00",
+     "$560,000.00",
+     "$615.00",
+     "$8,100.00"
+    ]
+   },
+   "units": {
+    "spec": 55,
+    "built": 1
+   },
+   "pct": 1.8
+  },
+  {
+   "process": "22.6",
+   "title": "Identity, fraud, OFAC/AML, Red Flags, occupancy/undisclosed-REO, and non-arm's-length screening",
+   "tids": {
+    "spec": 13,
+    "built": 0,
+    "todo": 13,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13
+    ]
+   },
+   "tables": {
+    "spec": 9,
+    "built": 0,
+    "missing": [
+     "fraud_investigations",
+     "legal_presence_records",
+     "non_arms_length_assessments",
+     "occupancy_assessments",
+     "party_screenings",
+     "red_flag_events",
+     "reo_discovery_checks",
+     "sar_candidates",
+     "verifications"
+    ]
+   },
+   "timers": {
+    "spec": 15,
+    "built": 0,
+    "armable": 5,
+    "missing": [
+     "BSA_1029_320_SAR_30",
+     "FCRA_605A_H_ALERT_CONTACT_GATE",
+     "FNMA_B1_1_03_CREDIT_DOCS_4M",
+     "FNMA_B2_1_3_01_NON_ARMS_LENGTH_GATE",
+     "FNMA_B2_2_01_SSN_VALIDATION_GATE",
+     "FNMA_B2_2_02_LEGAL_PRESENCE_GATE",
+     "OFAC_SDN_SCREEN_GATE",
+     "RED_FLAGS_681_RESPONSE_1BD",
+     "REGV_1022_82_ADDRESS_DISCREPANCY_GATE",
+     "SM_FRAUD_INVESTIGATION_10BD",
+     "SM_FRAUD_TOOL_CLEAR_GATE",
+     "SM_IDENTITY_IAL2_GATE",
+     "SM_IDENTITY_RETRY_2BD",
+     "SM_OCCUPANCY_REO_GATE",
+     "SM_SAR_PACKAGE_5BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 22,
+    "built": 0,
+    "missing": [
+     "verifyIdentity",
+     "resolveSsn",
+     "orderCbsv",
+     "assessLegalPresence",
+     "screenParty",
+     "resolveOfacMatch",
+     "contactForFraudAlert",
+     "resolveAddressDiscrepancy",
+     "runFraudTool",
+     "scoreOccupancy",
+     "discoverReo",
+     "assessNonArmsLength",
+     "logRedFlag",
+     "openInvestigation",
+     "gatherEvidence",
+     "concludeInvestigation",
+     "prepareSarPackage",
+     "prepareSelfReportPackage",
+     "prepareOfacReport",
+     "placeHold",
+     "releaseHold",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 5,
+    "built": 0,
+    "missing": [
+     "$1,640.00",
+     "$2.25",
+     "$30,000.00",
+     "$457,800.00",
+     "$5,000.00"
+    ]
+   },
+   "units": {
+    "spec": 64,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "23.1",
+   "title": "DU casefile creation, submission, resubmission tolerances, versioning, and casefile lifecycle",
+   "tids": {
+    "spec": 15,
+    "built": 0,
+    "todo": 15,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15
+    ]
+   },
+   "tables": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "du_resubmission_checks"
+    ]
+   },
+   "timers": {
+    "spec": 8,
+    "built": 0,
+    "armable": 3,
+    "missing": [
+     "FNMA_B1_1_03_CREDIT_DOCS_4M",
+     "FNMA_B3_2_01_DU_ARCHIVE_270",
+     "FNMA_B3_2_01_DU_ARCHIVE_540",
+     "FNMA_B3_2_02_DU_CLOSE_BY_GATE",
+     "FNMA_B3_2_10_DU_FINAL_MATCH_GATE",
+     "FNMA_DU_IMPACT_MEMO_SUPPORT_120",
+     "FNMA_DU_RETURN_FILE_16_17_RETIRE",
+     "SM_DU_RESUBMIT_SLA_1BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 9,
+    "built": 0,
+    "missing": [
+     "buildDuRequest",
+     "associateCredit",
+     "submitCasefile",
+     "fetchFindings",
+     "evaluateResubmission",
+     "snapshotClosedLoan",
+     "assertFinalSubmissionMatches",
+     "writeDecision",
+     "openEscalation"
+    ]
+   },
+   "figures": {
+    "spec": 16,
+    "built": 0,
+    "missing": [
+     "$12,000.00",
+     "$120.00",
+     "$3,402.61",
+     "$3,402.62",
+     "$3,402.63",
+     "$3,448.02",
+     "$300.00",
+     "$4,560.00",
+     "$450.00",
+     "$5,600.00",
+     "$500.00",
+     "$537.37",
+     "$620.00",
+     "$7,100.00",
+     "$7,300.00",
+     "$8,000.00"
+    ]
+   },
+   "units": {
+    "spec": 49,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "23.2",
+   "title": "DU findings interpretation, recommendation policy, and conditions generation (incl. HomeReady/AMI, homebuyer education, value acceptance offers, MI messages, red flags)",
+   "tids": {
+    "spec": 12,
+    "built": 0,
+    "todo": 12,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 5,
+    "built": 0,
+    "missing": [
+     "du_findings_interpretations",
+     "du_message_rules",
+     "homeownership_education_records",
+     "homeready_evaluations",
+     "restructure_proposals"
+    ]
+   },
+   "timers": {
+    "spec": 5,
+    "built": 0,
+    "armable": 2,
+    "missing": [
+     "FNMA_B2_2_06_HOMEOWNERSHIP_ED_GATE",
+     "FNMA_B3_2_02_DU_CLOSE_BY_GATE",
+     "FNMA_B5_6_01_COUNSELING_CREDIT_12M",
+     "REGB_1002_9_DECISION_30",
+     "SM_DU_CONDITIONS_SLA_4H"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 11,
+    "built": 0,
+    "missing": [
+     "parseFindings",
+     "mapMessages",
+     "openCondition",
+     "openInvestigation",
+     "evaluateHomeReady",
+     "verifyEducationCertificate",
+     "computeRestructure",
+     "quote",
+     "proposeRestructure",
+     "writeDecision",
+     "openEscalation"
+    ]
+   },
+   "figures": {
+    "spec": 24,
+    "built": 0,
+    "missing": [
+     "$100,800.00",
+     "$124,000.00",
+     "$126.67",
+     "$137.33",
+     "$2,245.93",
+     "$2,370.71",
+     "$2,570.34",
+     "$3,270.93",
+     "$3,522.38",
+     "$3,732.67",
+     "$360,000.00",
+     "$380,000.00",
+     "$410.00",
+     "$412,000.00",
+     "$458,000.00",
+     "$520.00",
+     "$615.00",
+     "$7,000.00",
+     "$8,200.00",
+     "$8,400.00",
+     "$800,000.00",
+     "$95.00",
+     "$98,400.00",
+     "$99,200.00"
+    ]
+   },
+   "units": {
+    "spec": 57,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "23.3",
+   "title": "The credit decision: comprehensive risk assessment, conditional approval, condition clearing (PTD/PTF), and final underwriting sign-off",
+   "tids": {
+    "spec": 12,
+    "built": 0,
+    "todo": 12,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 2,
+    "built": 0,
+    "missing": [
+     "condition_clearances",
+     "ctc_checklists"
+    ]
+   },
+   "timers": {
+    "spec": 9,
+    "built": 0,
+    "armable": 6,
+    "missing": [
+     "FNMA_B3_2_02_DU_CLOSE_BY_GATE",
+     "FNMA_D1_2_01_PREFUNDING_PRIOR_TO_CLOSING_GATE",
+     "REGB_1002_9_DECISION_30",
+     "SM_UW_CONDITIONAL_APPROVAL_SLA_1BD",
+     "SM_UW_CONDITION_CLEAR_SLA_1BD",
+     "SM_UW_CTC_GATE",
+     "SM_UW_DECISION_VALIDITY",
+     "SM_UW_PTD_CLEARED_GATE",
+     "SM_UW_PTF_CLEARED_GATE"
+    ]
+   },
+   "notices": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "NTC_REGB_1002_9_APPROVAL"
+    ]
+   },
+   "tools": {
+    "spec": 12,
+    "built": 0,
+    "missing": [
+     "assessRisk",
+     "issueConditionalApproval",
+     "renderApprovalLetter",
+     "evaluateClearance",
+     "clearCondition",
+     "reopenCondition",
+     "runCtcChecklist",
+     "issueClearToClose",
+     "evaluateReliefLedger",
+     "prepareAdverseDecision",
+     "writeDecision",
+     "openEscalation"
+    ]
+   },
+   "figures": {
+    "spec": 6,
+    "built": 0,
+    "missing": [
+     "$2,245.93",
+     "$360,000.00",
+     "$410.00",
+     "$520.00",
+     "$7,000.00",
+     "$95.00"
+    ]
+   },
+   "units": {
+    "spec": 42,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "23.4",
+   "title": "ATR/QM, HPML, HOEPA, and state high-cost determinations",
+   "tids": {
+    "spec": 14,
+    "built": 0,
+    "todo": 14,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14
+    ]
+   },
+   "tables": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "apor_tables"
+    ]
+   },
+   "timers": {
+    "spec": 8,
+    "built": 0,
+    "armable": 1,
+    "missing": [
+     "FFIEC_APOR_TABLE_REFRESH_WEEKLY",
+     "REGZ_1026_32_HOEPA_GATE",
+     "REGZ_1026_35B1_HPML_ESCROW_GATE",
+     "REGZ_1026_35C_HPML_APPRAISAL_COPY_3BD",
+     "REGZ_1026_35_HPML_ESCROW_5Y",
+     "REGZ_1026_43_E3III_PF_CURE_210",
+     "REGZ_1026_43_QM_DETERMINATION_GATE",
+     "STATE_HIGH_COST_GATE"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 11,
+    "built": 0,
+    "missing": [
+     "getApor",
+     "computeTotalLoanAmount",
+     "classifyFeeItems",
+     "evaluateBonaFideDiscount",
+     "runQmTests",
+     "runHpmlTests",
+     "runHoepaTests",
+     "runStateHighCostTests",
+     "assembleAtrEvidence",
+     "writeDecision",
+     "openEscalation"
+    ]
+   },
+   "figures": {
+    "spec": 30,
+    "built": 0,
+    "missing": [
+     "$1,295.00",
+     "$1,785.43",
+     "$1,800.00",
+     "$1,995.00",
+     "$10,200.00",
+     "$12,128.24",
+     "$12,360.00",
+     "$15,300.00",
+     "$15,640.00",
+     "$15,980.00",
+     "$16,686.58",
+     "$17,000.00",
+     "$2,060.00",
+     "$2,995.00",
+     "$20,213.73",
+     "$27,810.98",
+     "$3,010.00",
+     "$3,780.43",
+     "$3,851.76",
+     "$404,274.53",
+     "$440.00",
+     "$556,219.52",
+     "$556,219.57",
+     "$6,180.00",
+     "$7,725.47",
+     "$75.00",
+     "$9,800.00",
+     "$93.97",
+     "$935.47",
+     "$95.00"
+    ]
+   },
+   "units": {
+    "spec": 64,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "24.1",
+   "title": "Valuation method selection and ordering (value acceptance, value acceptance + property data, hybrid, desktop, traditional), appraiser independence, and property data collection",
+   "tids": {
+    "spec": 12,
+    "built": 0,
+    "todo": 12,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 2,
+    "built": 0,
+    "missing": [
+     "property_data_collections",
+     "valuation_orders"
+    ]
+   },
+   "timers": {
+    "spec": 13,
+    "built": 1,
+    "armable": 8,
+    "missing": [
+     "FNMA_B4_1_2_04_APPRAISAL_12M",
+     "FNMA_B4_1_2_04_APPRAISAL_UPDATE_4M",
+     "FNMA_B4_1_4_10_VALUE_ACCEPTANCE_OFFER_4M",
+     "FNMA_B4_1_4_11_PDC_API_SUBMIT_GATE",
+     "FNMA_UAD_3_6_REQUIRED_GATE",
+     "REGZ_1026_19E2_INTENT_FEE_GATE",
+     "REGZ_1026_42G_MISCONDUCT_REFERRAL_30",
+     "SM_AMC_REGISTRATION_GATE",
+     "SM_APPRAISER_LICENSE_GATE",
+     "SM_VALUATION_ASSIGN_SLA_2BD",
+     "SM_VALUATION_INSPECT_SLA_7CD",
+     "SM_VALUATION_ORDER_SLA_1BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 15,
+    "built": 0,
+    "missing": [
+     "readDuOffer",
+     "selectMethod",
+     "assertFeeGate",
+     "selectVendor",
+     "verifyAppraiserLicense",
+     "verifyAmcRegistration",
+     "benchmarkFee",
+     "placeOrder",
+     "scheduleInspection",
+     "trackOrder",
+     "submitPropertyData",
+     "orderAppraisalUpdate",
+     "logContact",
+     "writeDecision",
+     "fileEscalation"
+    ]
+   },
+   "figures": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "$650.00"
+    ]
+   },
+   "units": {
+    "spec": 43,
+    "built": 1
+   },
+   "pct": 2.3
+  },
+  {
+   "process": "24.2",
+   "title": "Appraisal receipt, UCDP/Collateral Underwriter review, reconsideration of value, appraisal quality/bias controls, Reg B delivery, and HPML appraisal rules",
+   "tids": {
+    "spec": 12,
+    "built": 0,
+    "todo": 12,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "appraisals",
+     "rov_requests",
+     "ucdp_submissions",
+     "valuations"
+    ]
+   },
+   "timers": {
+    "spec": 13,
+    "built": 0,
+    "armable": 6,
+    "missing": [
+     "FNMA_B4_1_1_06_UCDP_SUCCESSFUL_GATE",
+     "FNMA_B4_1_3_12_ROV_CLOSING_GATE",
+     "FNMA_B4_1_3_12_ROV_TURNTIME_5BD",
+     "REGB_1002_14_APPRAISAL_COPY_3BD_GATE",
+     "REGB_1002_14_APPRAISAL_COPY_PROMPT_7",
+     "REGB_1002_14_COPY_NOT_CONSUMMATED_30",
+     "REGB_1002_14_WAIVER_3BD_GATE",
+     "REGZ_1026_35C_HPML_APPRAISAL_COPY_3BD",
+     "REGZ_1026_35C_HPML_COPY_NOT_CONSUMMATED_30",
+     "SM_APPRAISAL_REVIEW_SLA_2BD",
+     "SM_CU_HIGH_RISK_REVIEW_1BD",
+     "SM_ROV_SCREEN_SLA_2BD",
+     "SM_UCDP_SUBMIT_SLA_1BD"
+    ]
+   },
+   "notices": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "NTC_FNMA_B4_1_3_12_ROV_DISCLOSURE",
+     "NTC_REGB_1002_14_COPY_NOT_CONSUMMATED",
+     "NTC_REGB_1002_14_VALUATION_COPY",
+     "NTC_REGZ_1026_35C_HPML_APPRAISAL_COPY"
+    ]
+   },
+   "tools": {
+    "spec": 19,
+    "built": 0,
+    "missing": [
+     "ingestReport",
+     "runUadCompliance",
+     "submitUcdp",
+     "pollFindings",
+     "applyReviewChecklist",
+     "scanLanguage",
+     "requestCorrection",
+     "prepareOverride",
+     "setValueUsed",
+     "buildCopyPackage",
+     "deliverNotice",
+     "recordWaiver",
+     "screenRov",
+     "prepareRovAnalysis",
+     "forwardRov",
+     "closeRov",
+     "runHpmlTests",
+     "writeDecision",
+     "fileEscalation"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 52,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "24.3",
+   "title": "Property and project eligibility (property types, condo/PUD project review incl. CPM and deferred-maintenance rules, manufactured housing, ADUs, condition ratings, escrow holdbacks, new construction, zoning/environmental)",
+   "tids": {
+    "spec": 12,
+    "built": 0,
+    "todo": 12,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 5,
+    "built": 0,
+    "missing": [
+     "escrow_holdbacks",
+     "holdback_escrow",
+     "mh_verifications",
+     "project_reviews",
+     "property_eligibility_reviews"
+    ]
+   },
+   "timers": {
+    "spec": 11,
+    "built": 0,
+    "armable": 5,
+    "missing": [
+     "FNMA_B4_1_2_05_COMPLETION_BEFORE_DELIVERY_GATE",
+     "FNMA_B4_1_2_05_HOLDBACK_COMPLETION_180",
+     "FNMA_B4_1_3_06_SAFETY_REPAIR_BEFORE_SALE_GATE",
+     "FNMA_B4_2_1_01_CPM_CERT_VALID_GATE",
+     "FNMA_B4_2_1_01_PROJECT_REVIEW_ESTABLISHED_1Y",
+     "FNMA_B4_2_1_01_PROJECT_REVIEW_NEW_180",
+     "FNMA_B4_2_1_03_INSPECTION_LOOKBACK_3Y",
+     "FNMA_B4_2_2_01_RESERVE_STUDY_AGE_3Y",
+     "SM_HOLDBACK_FINAL_DRAW_5BD",
+     "SM_MH_LABEL_VERIFICATION_GATE",
+     "SM_PROJECT_DOCS_AGE_120"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 13,
+    "built": 0,
+    "missing": [
+     "classifyProperty",
+     "runPropertyEligibility",
+     "routeCondition",
+     "planRepairs",
+     "computeHoldback",
+     "requestProjectDocs",
+     "extractProjectData",
+     "runProjectEligibility",
+     "prepareCpmSheet",
+     "recordCpmResult",
+     "verifyMh",
+     "writeDecision",
+     "fileEscalation"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 41,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "24.4",
+   "title": "Title, vesting, settlement-agent vetting, existing-lien payoffs, subordinations, and curative",
+   "tids": {
+    "spec": 14,
+    "built": 0,
+    "todo": 14,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14
+    ]
+   },
+   "tables": {
+    "spec": 8,
+    "built": 0,
+    "missing": [
+     "payoff_demands",
+     "poa_reviews",
+     "settlement_agents",
+     "subordinations",
+     "title_curative_items",
+     "title_orders",
+     "trust_reviews",
+     "wire_verifications"
+    ]
+   },
+   "timers": {
+    "spec": 13,
+    "built": 2,
+    "armable": 5,
+    "missing": [
+     "FNMA_B2_1_2_04_RESUBORDINATION_GATE",
+     "FNMA_B7_2_01_TITLE_EVIDENCE_GATE",
+     "SM_CPL_BEFORE_FUNDING_GATE",
+     "SM_PAYOFF_DEMAND_FOLLOWUP_7BD",
+     "SM_PAYOFF_GOOD_THROUGH_GATE",
+     "SM_SETTLEMENT_AGENT_VETTING_GATE",
+     "SM_SUBORDINATION_REQUEST_3BD",
+     "SM_TITLE_COMMITMENT_DATEDOWN_GATE",
+     "SM_TITLE_ORDER_2BD",
+     "SM_TRUST_POA_REVIEW_GATE",
+     "SM_WIRE_VERIFICATION_GATE"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 22,
+    "built": 0,
+    "missing": [
+     "orderTitle",
+     "parseCommitment",
+     "classifyException",
+     "computeRequiredEndorsements",
+     "openCurative",
+     "requestUnderwriterDeletion",
+     "requestDateDown",
+     "vetSettlementAgent",
+     "lookupAltaRegistry",
+     "verifyWireInstructions",
+     "placeCallback",
+     "requestPayoff",
+     "parsePayoffStatement",
+     "computePayoffAtDate",
+     "decideEscrowTreatment",
+     "requestSubordination",
+     "checkSubordinateTerms",
+     "reviewTrust",
+     "reviewPOA",
+     "requestCPL",
+     "evaluateGates",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 13,
+    "built": 0,
+    "missing": [
+     "$1,266.24",
+     "$105.52",
+     "$18,000.00",
+     "$2,347.18",
+     "$2,912.50",
+     "$30.00",
+     "$50,000.00",
+     "$531,240.00",
+     "$532,536.24",
+     "$532,641.76",
+     "$560,000.00",
+     "$565.32",
+     "$800,000.00"
+    ]
+   },
+   "units": {
+    "spec": 70,
+    "built": 2
+   },
+   "pct": 2.9
+  },
+  {
+   "process": "24.5",
+   "title": "Hazard, flood, and other property insurance (coverage, deductibles, carrier ratings, mortgagee clause, flood determination and notice, NFIP/private flood, condo master/HO-6, escrow implications)",
+   "tids": {
+    "spec": 12,
+    "built": 0,
+    "todo": 12,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "notice_delivered_at"
+    ]
+   },
+   "timers": {
+    "spec": 9,
+    "built": 2,
+    "armable": 4,
+    "missing": [
+     "FDPA_4012A_LOL_ENROLLED_GATE",
+     "FDPA_4104A_FLOOD_NOTICE_GATE",
+     "FNMA_B7_3_02_HAZARD_EVIDENCE_GATE",
+     "FNMA_B7_3_03_PROJECT_INSURANCE_GATE",
+     "FNMA_B7_3_06_FLOOD_COVERAGE_GATE",
+     "SM_FLOOD_NOTICE_DELIVER_1BD",
+     "SM_INSURANCE_EVIDENCE_REQUEST_3BD"
+    ]
+   },
+   "notices": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "NTC_FDPA_4104A_FLOOD_NOTICE"
+    ]
+   },
+   "tools": {
+    "spec": 16,
+    "built": 0,
+    "missing": [
+     "orderFloodDetermination",
+     "parseSFHDF",
+     "renderFloodNotice",
+     "deliverNotice",
+     "computeInsuranceRequirements",
+     "requestEvidence",
+     "extractEvidence",
+     "lookupCarrierRating",
+     "confirmWithCarrier",
+     "evaluateAdequacy",
+     "checkMortgageeClause",
+     "openDeficiency",
+     "computeFloodAmount",
+     "evaluateGates",
+     "seedEscrowLines",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 11,
+    "built": 0,
+    "missing": [
+     "$1,150.00",
+     "$1,950.00",
+     "$10,400.00",
+     "$162.50",
+     "$250,000.00",
+     "$26,000.00",
+     "$31,200.00",
+     "$520,000.00",
+     "$560,000.00",
+     "$800,000.00",
+     "$95.83"
+    ]
+   },
+   "units": {
+    "spec": 50,
+    "built": 2
+   },
+   "pct": 4.0
+  },
+  {
+   "process": "24.6",
+   "title": "Mortgage insurance ordering, coverage selection, MI types (BPMI/LPMI/single/split), delegated approval, certificate activation, and HPA/MI disclosures",
+   "tids": {
+    "spec": 12,
+    "built": 0,
+    "todo": 12,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "activated_at",
+     "hpa_disclosures",
+     "mi_certificates",
+     "mi_quotes"
+    ]
+   },
+   "timers": {
+    "spec": 10,
+    "built": 1,
+    "armable": 5,
+    "missing": [
+     "FNMA_B7_1_01_MI_ACTIVE_BEFORE_DELIVERY_GATE",
+     "FNMA_B7_1_01_MI_COMMITMENT_BEFORE_DOCS_GATE",
+     "HPA_4903_INITIAL_DISCLOSURE_GATE",
+     "HPA_4905C_LPMI_DISCLOSURE_GATE",
+     "SM_MI_ACTIVATE_1BD",
+     "SM_MI_COMMITMENT_EXPIRY_GATE",
+     "SM_MI_ORDER_2BD",
+     "SM_MI_QUOTE_1BD",
+     "SM_MI_UPFRONT_REMIT_10"
+    ]
+   },
+   "notices": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "NTC_HPA_4903_INITIAL_ARM",
+     "NTC_HPA_4903_INITIAL_FIXED",
+     "NTC_HPA_4905_LPMI"
+    ]
+   },
+   "tools": {
+    "spec": 18,
+    "built": 0,
+    "missing": [
+     "computeLtvRounded",
+     "lookupCoverage",
+     "lookupMinCoverageLlpa",
+     "requestMiQuotes",
+     "compareMiPlans",
+     "recordPlanElection",
+     "submitMiOrder",
+     "parseCommitment",
+     "verifyCertificateMatchesTerms",
+     "buildInitialAmortizationSchedule",
+     "computeHpaDates",
+     "renderHpaDisclosure",
+     "renderLpmiDisclosure",
+     "requestActivation",
+     "remitPremium",
+     "evaluateGates",
+     "seedMiPolicy",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 18,
+    "built": 0,
+    "missing": [
+     "$1,545.00",
+     "$103.00",
+     "$130.47",
+     "$2,188.75",
+     "$2,570.34",
+     "$2,611.47",
+     "$27.47",
+     "$356,532.66",
+     "$357,084.00",
+     "$365,633.53",
+     "$366,240.00",
+     "$381.59",
+     "$411,618.41",
+     "$412,000.00",
+     "$418,592.00",
+     "$457,800.00",
+     "$460,000.00",
+     "$6,592.00"
+    ]
+   },
+   "units": {
+    "spec": 65,
+    "built": 1
+   },
+   "pct": 1.5
+  },
+  {
+   "process": "25.1",
+   "title": "Compliance testing engine (APR/finance charge, TRID tolerances, QM/ATR, HPML, HOEPA, state high-cost, fee reasonableness, RESPA \u00a78, LO compensation and steering, licensing/NMLSR, E-SIGN, fair-lending pricing exceptions, TCPA) and the compliance gates",
+   "tids": {
+    "spec": 14,
+    "built": 0,
+    "todo": 14,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14
+    ]
+   },
+   "tables": {
+    "spec": 9,
+    "built": 0,
+    "missing": [
+     "apr_calculations",
+     "compliance_test_definitions",
+     "compliance_test_runs",
+     "compliance_tests",
+     "compliance_waivers",
+     "fee_benchmarks",
+     "finance_charge_classifications",
+     "license_checks",
+     "pricing_exception_reviews"
+    ]
+   },
+   "timers": {
+    "spec": 11,
+    "built": 0,
+    "armable": 7,
+    "missing": [
+     "REGZ_1026_19E1_LE_3BD",
+     "SM_O61_APOR_REFRESH_7",
+     "SM_O61_BLOCKING_FAILURE_REVIEW_1BD",
+     "SM_O61_COMPLIANCE_PASS_CD_GATE",
+     "SM_O61_COMPLIANCE_PASS_CONSUMMATE_GATE",
+     "SM_O61_COMPLIANCE_PASS_DELIVERY_GATE",
+     "SM_O61_COMPLIANCE_PASS_DISBURSE_GATE",
+     "SM_O61_COMPLIANCE_PASS_LE_GATE",
+     "SM_O61_COMPLIANCE_PASS_LOCK_GATE",
+     "SM_O61_LICENSE_CHECK_REFRESH_30",
+     "SM_O61_RULESET_ANNUAL_0101"
+    ]
+   },
+   "notices": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "NTC_REGZ_1026_38_CD"
+    ]
+   },
+   "tools": {
+    "spec": 15,
+    "built": 0,
+    "missing": [
+     "computeApr",
+     "classifyFinanceCharges",
+     "runToleranceTest",
+     "determineQm",
+     "determineHpml",
+     "determineHoepa",
+     "evaluateStateHighCost",
+     "checkLicenses",
+     "checkEsignConsent",
+     "checkTcpaConsent",
+     "reviewPricingException",
+     "checkRespa8",
+     "assertGateOpen",
+     "openEscalation",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 25,
+    "built": 0,
+    "missing": [
+     "$1,224,943.20",
+     "$1,712.60",
+     "$1,785.43",
+     "$1,785.48",
+     "$1,950.00",
+     "$2,064.52",
+     "$24.95",
+     "$3,312.61",
+     "$3,402.61",
+     "$3,402.62",
+     "$3,849.95",
+     "$4,200.00",
+     "$5.57",
+     "$552,022.88",
+     "$556,150.05",
+     "$560,000.00",
+     "$60.00",
+     "$640,516.72",
+     "$668,793.15",
+     "$668,853.15",
+     "$7,977.12",
+     "$84.00",
+     "$9.00",
+     "$90.13",
+     "$93.97"
+    ]
+   },
+   "units": {
+    "spec": 75,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "25.2",
+   "title": "Closing Disclosure: preparation, delivery and receipt evidence, the three-business-day waiting period, redisclosure, post-consummation corrections, the seller's CD, and UCD generation/submission",
+   "tids": {
+    "spec": 14,
+    "built": 0,
+    "todo": 14,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14
+    ]
+   },
+   "tables": {
+    "spec": 5,
+    "built": 0,
+    "missing": [
+     "cd_consistency_checks",
+     "cd_figure_sources",
+     "cd_receipts",
+     "cd_waivers",
+     "ucd_submissions"
+    ]
+   },
+   "timers": {
+    "spec": 10,
+    "built": 0,
+    "armable": 7,
+    "missing": [
+     "FNMA_UCD_ACCEPTED_GATE",
+     "REGZ_1026_19F1III_CD_MAILBOX_3SBD",
+     "REGZ_1026_19F1_CD_3SBD_GATE",
+     "REGZ_1026_19F2V_TOLERANCE_REFUND_60",
+     "REGZ_1026_19F2_CLERICAL_CD_60",
+     "REGZ_1026_19F2_CORRECTED_CD_30",
+     "REGZ_1026_19F4_SELLER_CD_GATE",
+     "SM_O62_CD_TARGET_4SBD",
+     "SM_O62_SETTLEMENT_FIGURES_5SBD",
+     "SM_O62_UCD_RESUBMIT_ON_CORRECTION"
+    ]
+   },
+   "notices": {
+    "spec": 2,
+    "built": 0,
+    "missing": [
+     "NTC_REGZ_1026_38_CD_CORRECTED",
+     "NTC_REGZ_1026_38_SELLER_CD"
+    ]
+   },
+   "tools": {
+    "spec": 15,
+    "built": 0,
+    "missing": [
+     "assembleCdFigures",
+     "reconcileFigureSources",
+     "renderCd",
+     "deliverDisclosure",
+     "recordReceipt",
+     "computeEarliestConsummation",
+     "evaluateRedisclosure",
+     "runToleranceTest",
+     "assertGateOpen",
+     "runCdConsistencyChecks",
+     "generateUcd",
+     "submitUcd",
+     "scheduleCorrectedCd",
+     "openEscalation",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "$12.00",
+     "$3,402.62",
+     "$556,150.00",
+     "$668,793.20"
+    ]
+   },
+   "units": {
+    "spec": 50,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "25.3",
+   "title": "Right of rescission (refinances of principal dwellings): notice, period computation, waiver, confirmation of non-rescission, effect on funding, and rescission processing",
+   "tids": {
+    "spec": 12,
+    "built": 0,
+    "todo": 12,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "rescission_exercises",
+     "rescission_periods",
+     "rescission_waivers"
+    ]
+   },
+   "timers": {
+    "spec": 7,
+    "built": 0,
+    "armable": 7,
+    "missing": [
+     "REGZ_1026_19F1_CD_3SBD_GATE",
+     "REGZ_1026_23D2_RESCISSION_REFUND_20",
+     "REGZ_1026_23_EXTENDED_RIGHT_3Y",
+     "REGZ_1026_23_RESCISSION_3SBD_GATE",
+     "SM_O63_MAILED_NOTICE_ALLOWANCE_2",
+     "SM_O63_NOTICE_AT_SIGNING_GATE",
+     "SM_O63_SATISFACTION_SWEEP"
+    ]
+   },
+   "notices": {
+    "spec": 2,
+    "built": 0,
+    "missing": [
+     "NTC_REGZ_1026_23_H8",
+     "NTC_REGZ_1026_23_H9"
+    ]
+   },
+   "tools": {
+    "spec": 7,
+    "built": 0,
+    "missing": [
+     "determineRescindability",
+     "renderRescissionNotice",
+     "deliverRescissionNotice",
+     "computeRescissionPeriod",
+     "sweepInboundForRescission",
+     "classifyInboundDocument",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 14,
+    "built": 0,
+    "missing": [
+     "$2,000.00",
+     "$2,099.45",
+     "$2,100.55",
+     "$2,800.00",
+     "$2,913.15",
+     "$3,850.00",
+     "$4,100.00",
+     "$5,600.00",
+     "$544,000.00",
+     "$548,200.00",
+     "$556,150.00",
+     "$560,000.00",
+     "$7,950.00",
+     "$93.97"
+    ]
+   },
+   "units": {
+    "spec": 45,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "25.4",
+   "title": "Other closing-time and immediate post-closing consumer notices: initial escrow statement delivery, escrow elections and state escrow-waiver disclosures, the \u00a71026.39 notice of ownership transfer (Fannie Mae's practice), GLBA privacy gate, first-payment letter and autopay enrollment, HPA and flood cross-references, state post-closing notices, IRS Form 1098 seeding, and the closing-day notice run",
+   "tids": {
+    "spec": 14,
+    "built": 0,
+    "todo": 14,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14
+    ]
+   },
+   "tables": {
+    "spec": 5,
+    "built": 0,
+    "missing": [
+     "closing_notice_runs",
+     "disclosures",
+     "escrow_elections",
+     "ownership_transfer_notices",
+     "tax_reporting_seeds"
+    ]
+   },
+   "timers": {
+    "spec": 12,
+    "built": 1,
+    "armable": 12,
+    "missing": [
+     "CA_CIV_2954_IMPOUND_STMT_GATE",
+     "GLBA_1016_4_INITIAL_PRIVACY_GATE",
+     "REGZ_1026_39_OWNERSHIP_NOTICE_30",
+     "SM_O64_1098_SEEDS_AT_BOARDING_GATE",
+     "SM_O64_CLOSING_PACKAGE_NOTICES_GATE",
+     "SM_O64_FIRST_PAYMENT_LETTER_5BD",
+     "SM_O64_FIRST_PAYMENT_LETTER_PREDUE_20",
+     "SM_O64_FNMA_1026_39_EVIDENCE_45",
+     "SM_O64_INITIAL_ESCROW_STMT_AT_SETTLEMENT",
+     "SM_O64_POST_CLOSING_NOTICE_RUN_2BD",
+     "UT_7_17_4_RESERVE_OPTIONS_NOTICE_GATE"
+    ]
+   },
+   "notices": {
+    "spec": 5,
+    "built": 0,
+    "missing": [
+     "NTC_CA_CIV_2954_IMPOUND_STMT",
+     "NTC_REGZ_1026_39_OWNERSHIP_TRANSFER",
+     "NTC_SM_ESCROW_ELECTION",
+     "NTC_SM_FIRST_PAYMENT_LETTER",
+     "NTC_UT_7_17_4_RESERVE_OPTIONS"
+    ]
+   },
+   "tools": {
+    "spec": 11,
+    "built": 0,
+    "missing": [
+     "composeClosingPackage",
+     "evaluateEscrowWaiver",
+     "renderStateEscrowNotice",
+     "checkPrivacyNotice",
+     "runCdEscrowConsistency",
+     "deliverPackage",
+     "recordPackageEvidence",
+     "schedulePostClosingRun",
+     "evaluateOwnershipTransfer",
+     "renderOwnershipNotice",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 15,
+    "built": 0,
+    "missing": [
+     "$1,050.00",
+     "$1,500.00",
+     "$1,785.48",
+     "$1,875.00",
+     "$2,060.00",
+     "$2,400.00",
+     "$3,402.62",
+     "$3,927.62",
+     "$4,800.00",
+     "$525.00",
+     "$560,000.00",
+     "$6,300.00",
+     "$71.95",
+     "$863.51",
+     "$93.97"
+    ]
+   },
+   "units": {
+    "spec": 62,
+    "built": 1
+   },
+   "pct": 1.6
+  },
+  {
+   "process": "26.1",
+   "title": "Closing document generation and closing instructions (uniform instruments, riders, eNote form, MERS MOM language, state variants incl. Texas 50(a)(6) and NY CEMA, buydown agreements, POA/trust documents, final 1003, document QC)",
+   "tids": {
+    "spec": 14,
+    "built": 0,
+    "todo": 14,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14
+    ]
+   },
+   "tables": {
+    "spec": 9,
+    "built": 0,
+    "missing": [
+     "buydown_agreements",
+     "cema_packages",
+     "closing_data_snapshots",
+     "closing_document_sets",
+     "closing_documents",
+     "closing_instructions",
+     "document_qc_checks",
+     "document_templates",
+     "tx_home_equity_reviews"
+    ]
+   },
+   "timers": {
+    "spec": 13,
+    "built": 0,
+    "armable": 7,
+    "missing": [
+     "REGZ_1026_19F1_CD_3SBD_GATE",
+     "SM_O71_DOCS_TO_AGENT_1BD",
+     "SM_O71_DOC_GEN_GATE",
+     "SM_O71_DOC_QC_PASS_GATE",
+     "SM_O71_INSTRUCTIONS_ACK_GATE",
+     "SM_O71_TEMPLATE_VERSION_GATE",
+     "TX_50A6_12DAY_CLOSING_GATE",
+     "TX_50A6_ITEMIZATION_1BD_GATE",
+     "TX_50A6_ONE_YEAR_GATE",
+     "TX_50A6_RESCISSION_3D_GATE",
+     "TX_50F2_12DAY_CLOSING_GATE",
+     "TX_50F2_NOTICE_3BD",
+     "TX_50F2_ONE_YEAR_GATE"
+    ]
+   },
+   "notices": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "NTC_SM_CLOSING_INSTRUCTIONS",
+     "NTC_TX_50A6_ITEMIZATION",
+     "NTC_TX_50F2_REFI_NOTICE"
+    ]
+   },
+   "tools": {
+    "spec": 17,
+    "built": 0,
+    "missing": [
+     "evaluateDocGenGates",
+     "takeClosingSnapshot",
+     "selectDocumentSet",
+     "computeNoteTerms",
+     "generateMIN",
+     "renderDocument",
+     "buildSmartDocENote",
+     "runDocumentQc",
+     "runTxHomeEquityReview",
+     "buildCemaPackage",
+     "draftBuydownAgreement",
+     "draftClosingInstructions",
+     "releaseToPlatform",
+     "releaseToSettlementAgent",
+     "requestAcknowledgment",
+     "scheduleRedraw",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 18,
+    "built": 0,
+    "missing": [
+     "$1,550.00",
+     "$1.00",
+     "$13,733.33",
+     "$170.13",
+     "$2,087.54",
+     "$2,339.29",
+     "$2,604.12",
+     "$2,858.33",
+     "$264.83",
+     "$3,177.96",
+     "$3,402.62",
+     "$516.58",
+     "$544.29",
+     "$560,000.00",
+     "$6,198.96",
+     "$6,450.00",
+     "$8,000.00",
+     "$9,376.92"
+    ]
+   },
+   "units": {
+    "spec": 74,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "26.2",
+   "title": "eClosing execution (RON, IPEN, hybrid, wet), eNote signing, eVault custody, MERS eRegistry registration, eRecording, and paper-note handling",
+   "tids": {
+    "spec": 14,
+    "built": 0,
+    "todo": 14,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14
+    ]
+   },
+   "tables": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "closings",
+     "eclosing_eligibility",
+     "recordings",
+     "signing_sessions"
+    ]
+   },
+   "timers": {
+    "spec": 14,
+    "built": 0,
+    "armable": 7,
+    "missing": [
+     "MERS_PROC_ENOTE_REGISTER_1BD",
+     "MERS_PROC_MOM_REGISTER_7",
+     "SM_O72_AGENT_ECLOSING_ELIGIBLE_GATE",
+     "SM_O72_AUDIT_TRAIL_BEFORE_FUNDING_GATE",
+     "SM_O72_ENOTE_LOCATION_GATE",
+     "SM_O72_ENOTE_SAME_DAY_REGISTER",
+     "SM_O72_ERECORD_SUBMIT_1BD",
+     "SM_O72_ESIGN_CONSENT_CLOSING_GATE",
+     "SM_O72_PAPER_FALLBACK_5BD",
+     "SM_O72_PAPER_NOTE_HANDOFF_1BD",
+     "SM_O72_POST_SIGNING_REVIEW_4H",
+     "SM_O72_RECORDING_REJECT_CURE_2BD",
+     "SM_O72_RON_STATE_AUTH_GATE",
+     "SM_O72_SECURED_PARTY_BEFORE_ADVANCE_GATE"
+    ]
+   },
+   "notices": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "NTC_SM_CLOSING_APPOINTMENT"
+    ]
+   },
+   "tools": {
+    "spec": 19,
+    "built": 0,
+    "missing": [
+     "runPreSessionChecks",
+     "decideClosingType",
+     "verifyEsignConsent",
+     "checkRonEligibility",
+     "assignNotary",
+     "openSigningSession",
+     "monitorSession",
+     "validateAuthoritativeCopy",
+     "registerENote",
+     "setSecuredParty",
+     "reverseRegistration",
+     "ingestAuditTrail",
+     "reviewExecution",
+     "submitERecording",
+     "handleRecordingReject",
+     "dispatchPaperRecording",
+     "trackPaperNote",
+     "seedCustodyRecord",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 52,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "26.3",
+   "title": "Funding authorization and disbursement (funding conditions, wet vs dry states, rescission expiry, wire controls, per-diem interest and interest credits, table-funding analysis, unwind)",
+   "tids": {
+    "spec": 14,
+    "built": 0,
+    "todo": 14,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14
+    ]
+   },
+   "tables": {
+    "spec": 5,
+    "built": 0,
+    "missing": [
+     "funding_conditions",
+     "funding_unwinds",
+     "funding_wires",
+     "funding_worksheets",
+     "fundings"
+    ]
+   },
+   "timers": {
+    "spec": 14,
+    "built": 0,
+    "armable": 9,
+    "missing": [
+     "FNMA_B2_1_5_FIRST_PAYMENT_2M",
+     "REGZ_1026_23_RESCISSION_3SBD_GATE",
+     "SM_O73_AGENT_RECEIPT_CONFIRM_2H",
+     "SM_O73_CONDITIONS_EVAL_2BH",
+     "SM_O73_DATE_RESYNC",
+     "SM_O73_DISBURSEMENT_CONFIRM_1BD",
+     "SM_O73_DUAL_CONTROL_RELEASE_1H",
+     "SM_O73_FUNDS_RETURN_2BD",
+     "SM_O73_POST_RESCISSION_FUNDING_1BD",
+     "SM_O73_UNWIND_STEPS_5BD",
+     "SM_O73_WET_FUNDS_AT_TABLE_GATE",
+     "SM_O73_WIRE_ACCEPT_30M",
+     "SM_O73_WIRE_CUTOFF_1300ET",
+     "VA_55_1_902_REFI_DISBURSE_1BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 15,
+    "built": 0,
+    "missing": [
+     "evaluateFundingConditions",
+     "computeDates",
+     "computePerDiem",
+     "decideInterestMode",
+     "buildFundingWorksheet",
+     "reconcileToSettlementStatement",
+     "scoreBecIndicators",
+     "prepareWire",
+     "runFourEyesChecks",
+     "requestWarehouseAdvance",
+     "notifySettlementAgent",
+     "confirmDisbursement",
+     "postLedger",
+     "openUnwind",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 30,
+    "built": 0,
+    "missing": [
+     "$0.00",
+     "$1,240.00",
+     "$1,597.49",
+     "$1,665.00",
+     "$1,785.43",
+     "$1,785.48",
+     "$1.00",
+     "$187.94",
+     "$2,725.13",
+     "$2,858.33",
+     "$2,913.07",
+     "$2,913.15",
+     "$3,402.62",
+     "$34,300.00",
+     "$403,760.00",
+     "$409,824.52",
+     "$412,000.00",
+     "$538,214.60",
+     "$544.29",
+     "$548,800.00",
+     "$557,249.57",
+     "$559,222.94",
+     "$560,000.00",
+     "$700.00",
+     "$71.96",
+     "$8,449.57",
+     "$863.51",
+     "$863.52",
+     "$93.97",
+     "$935.48"
+    ]
+   },
+   "units": {
+    "spec": 78,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "26.4",
+   "title": "Post-closing document collection, collateral perfection, and trailing documents (endorsements/allonges, assignments for non-MERS, MERS MOM registration and interim-funder designation, recorded security instrument, final title policy, note custody and shipping to warehouse/document custodian)",
+   "tids": {
+    "spec": 13,
+    "built": 0,
+    "todo": 13,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13
+    ]
+   },
+   "tables": {
+    "spec": 7,
+    "built": 0,
+    "missing": [
+     "final_policy_reviews",
+     "lost_note_affidavits",
+     "mers_registrations",
+     "note_custody_shipments",
+     "note_endorsements",
+     "recorded_instrument_reviews",
+     "trailing_documents"
+    ]
+   },
+   "timers": {
+    "spec": 23,
+    "built": 0,
+    "armable": 15,
+    "missing": [
+     "MERS_PROC_MOM_REGISTER_7",
+     "MERS_PROC_NON_MOM_REGISTER_7",
+     "SM_O72_PAPER_NOTE_HANDOFF_1BD",
+     "SM_O74_CUSTODIAN_EXCEPTION_CURE_5BD",
+     "SM_O74_ENDORSEMENT_BEFORE_SHIP_GATE",
+     "SM_O74_EVAULT_EREGISTRY_RECONCILE_MONTHLY",
+     "SM_O74_FINAL_POLICY_REVIEW_2BD",
+     "SM_O74_FINAL_TITLE_POLICY_60",
+     "SM_O74_INTERIM_FUNDER_1BD",
+     "SM_O74_LNA_DECISION_5BD",
+     "SM_O74_MERS_SYSTEM_RECONCILE_MONTHLY",
+     "SM_O74_MIN_REVERSAL_2BD",
+     "SM_O74_MI_CERT_ACTIVE_5BD",
+     "SM_O74_MOM_REGISTER_TARGET_1BD",
+     "SM_O74_NOTE_PICKUP_SCAN_1BD",
+     "SM_O74_NOTE_TRANSIT_3BD",
+     "SM_O74_RECORDED_SI_ERECORD_5BD",
+     "SM_O74_RECORDED_SI_PAPER_90",
+     "SM_O74_RECORDED_SI_REVIEW_2BD",
+     "SM_O74_RERECORD_CURE_10BD",
+     "SM_O74_TRAILING_DOC_ESCALATE_120",
+     "SM_O74_TRAILING_DOC_FOLLOWUP_30",
+     "SM_O74_TRUST_RECEIPT_1BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 2,
+    "built": 0,
+    "missing": [
+     "computeMersAnchor",
+     "registerMin"
+    ]
+   },
+   "figures": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "$560,000.00"
+    ]
+   },
+   "units": {
+    "spec": 46,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "27.1",
+   "title": "Warehouse facility mechanics: advance requests, wet/dry funding limits, collateral control (bailee letters, interim funder, UCC), aging and curtailments, interest/fees, kick-outs and repurchases, borrowing-base and covenant monitoring",
+   "tids": {
+    "spec": 12,
+    "built": 0,
+    "todo": 12,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 9,
+    "built": 0,
+    "missing": [
+     "bailee_letters",
+     "warehouse_advances",
+     "warehouse_borrowing_base_snapshots",
+     "warehouse_collateral_defects",
+     "warehouse_covenant_tests",
+     "warehouse_curtailments",
+     "warehouse_daily_reports",
+     "warehouse_facilities",
+     "warehouse_interest_accruals"
+    ]
+   },
+   "timers": {
+    "spec": 22,
+    "built": 0,
+    "armable": 10,
+    "missing": [
+     "SM_UW_CTC_GATE",
+     "SM_WH_ADVANCE_APPROVAL_2BH",
+     "SM_WH_ADVANCE_CUTOFF_GATE",
+     "SM_WH_AGING_45_CURTAIL",
+     "SM_WH_AGING_60_REPURCHASE",
+     "SM_WH_AGING_90_KICKOUT",
+     "SM_WH_BAILEE_LETTER_GATE",
+     "SM_WH_BORROWING_BASE_DAILY",
+     "SM_WH_COVENANT_ANNUAL_90",
+     "SM_WH_COVENANT_QUARTERLY_45",
+     "SM_WH_DAILY_ACCRUAL",
+     "SM_WH_DAILY_REPORT_0900ET",
+     "SM_WH_DEFECT_CURE_10BD",
+     "SM_WH_ENOTE_SECURED_PARTY_1BD",
+     "SM_WH_HAIRCUT_RESERVE_GATE",
+     "SM_WH_INTEREST_CAPITALIZE_MONTHLY",
+     "SM_WH_INTERIM_FUNDER_DESIGNATION_7",
+     "SM_WH_MARGIN_CALL_1BD",
+     "SM_WH_REPURCHASE_PAYMENT_5BD",
+     "SM_WH_UCC1_FILING_GATE",
+     "SM_WH_UCC_CONTINUATION_5Y",
+     "SM_WH_WET_NOTE_DELIVERY_5BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 19,
+    "built": 0,
+    "missing": [
+     "evaluateEligibility",
+     "computeBorrowingBase",
+     "approveAdvance",
+     "prepareWire",
+     "funding_approver",
+     "issueBaileeLetter",
+     "trackCollateral",
+     "confirmTransferOfControl",
+     "accrueInterest",
+     "capitalizeInterest",
+     "assessFee",
+     "ageAdvances",
+     "issueCurtailment",
+     "recordDefect",
+     "demandRepurchase",
+     "issueKickout",
+     "testCovenants",
+     "renderDailyReport",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 28,
+    "built": 0,
+    "missing": [
+     "$1,067.72",
+     "$1,402.18",
+     "$1,665.00",
+     "$1,785.43",
+     "$1,969.58",
+     "$103.66",
+     "$103.67",
+     "$25.00",
+     "$4,768.46",
+     "$403,760.00",
+     "$404,852.72",
+     "$493,920.00",
+     "$499,514.71",
+     "$5,569.71",
+     "$500,115.64",
+     "$54,880.00",
+     "$548,800.00",
+     "$549,550.64",
+     "$557,249.57",
+     "$560,000.00",
+     "$700.00",
+     "$725.62",
+     "$725.64",
+     "$76.26",
+     "$76.27",
+     "$8,449.57",
+     "$801.25",
+     "$93.97"
+    ]
+   },
+   "units": {
+    "spec": 90,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "27.2",
+   "title": "Purchase-proceeds settlement, warehouse payoff, gain-on-sale computation and the borrower rate pass-through (Grander economics), MSR accounting hand-off to the partner",
+   "tids": {
+    "spec": 12,
+    "built": 0,
+    "todo": 12,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 10,
+    "built": 0,
+    "missing": [
+     "gain_on_sale_computations",
+     "gl_export_batches",
+     "msr_handoffs",
+     "platform_fee_accruals",
+     "ppa_requests",
+     "proceeds_matches",
+     "proceeds_receipts",
+     "purchase_advices",
+     "rate_passthrough_reconciliations",
+     "settlement_waterfalls"
+    ]
+   },
+   "timers": {
+    "spec": 15,
+    "built": 0,
+    "armable": 9,
+    "missing": [
+     "FNMA_C1_1_01_PREMIUM_RECAPTURE_120",
+     "FNMA_C1_2_02_PPA_LLPA_REPRICING_18M",
+     "FNMA_C2_2_05_PPA_REQUEST_30",
+     "FNMA_C2_2_DELIVERY_LPI_45",
+     "SM_GL_EXPORT_DAILY",
+     "SM_GOS_POST_1BD",
+     "SM_MSR_HANDOFF_1BD",
+     "SM_PLATFORM_FEE_ACCRUAL_MONTHLY",
+     "SM_WH_BAILEE_RELEASE_SAME_DAY",
+     "SM_WH_INTERIM_FUNDER_RELEASE_2BD",
+     "SM_WH_PARTNER_RESIDUAL_1BD",
+     "SM_WH_PAYOFF_POST_SAME_DAY",
+     "SM_WH_PROCEEDS_EXPECTED_1BD",
+     "SM_WH_PROCEEDS_MATCH_SAME_DAY",
+     "SM_WH_SHORTFALL_DRAFT_2BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 17,
+    "built": 0,
+    "missing": [
+     "pollPurchaseAdvices",
+     "ingestReceipts",
+     "forecastProceeds",
+     "matchProceeds",
+     "explainVariance",
+     "postWaterfall",
+     "releaseCollateral",
+     "schedulePartnerResidual",
+     "funding_approver",
+     "computeGainOnSale",
+     "reconcilePassthrough",
+     "issueMsrHandoff",
+     "accruePlatformFee",
+     "exportGl",
+     "preparePpa",
+     "fnma_portal_operator",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 57,
+    "built": 0,
+    "missing": [
+     "$1,067.72",
+     "$1,081.64",
+     "$1,096.67",
+     "$1,400.00",
+     "$1,665.00",
+     "$1,785.43",
+     "$1.00",
+     "$10,052.69",
+     "$100.00",
+     "$11,200.00",
+     "$15.00",
+     "$2,774.00",
+     "$2,815.00",
+     "$23.33",
+     "$25.00",
+     "$3,402.62",
+     "$3,485.00",
+     "$3,515.00",
+     "$3,605.00",
+     "$4,120.00",
+     "$4,200.00",
+     "$4,900.00",
+     "$403,760.00",
+     "$404,852.72",
+     "$416,120.00",
+     "$416,190.10",
+     "$515.00",
+     "$542,103.33",
+     "$548,800.00",
+     "$549,550.64",
+     "$554,400.00",
+     "$559,455.71",
+     "$560,000.00",
+     "$563,103.33",
+     "$564,900.00",
+     "$565,203.33",
+     "$565,903.33",
+     "$565,918.36",
+     "$567,700.00",
+     "$58.28",
+     "$58.33",
+     "$61.88",
+     "$688.76",
+     "$69.14",
+     "$7,000.00",
+     "$7,700.00",
+     "$7,732.38",
+     "$70.10",
+     "$700.00",
+     "$71.96",
+     "$725.64",
+     "$750.64",
+     "$8,449.57",
+     "$831.00",
+     "$9,352.69",
+     "$93.97",
+     "$935.48"
+    ]
+   },
+   "units": {
+    "spec": 111,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "28.1",
+   "title": "Prefunding quality control program (selection, review scope, reverifications, defect handling before closing, reporting)",
+   "tids": {
+    "spec": 13,
+    "built": 0,
+    "todo": 13,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13
+    ]
+   },
+   "tables": {
+    "spec": 5,
+    "built": 2,
+    "missing": [
+     "fnma_qc_3y",
+     "qc_reverifications",
+     "qc_sample_plans"
+    ]
+   },
+   "timers": {
+    "spec": 9,
+    "built": 0,
+    "armable": 4,
+    "missing": [
+     "FNMA_D1_1_01_QC_AUDIT_ANNUAL",
+     "FNMA_D1_1_03_PREFUNDING_REPORT_30",
+     "FNMA_D1_2_01_PREFUNDING_PRIOR_TO_CLOSING_GATE",
+     "SM_QC_OFFICER_FINDING_SLA_1BD",
+     "SM_QC_PREFUNDING_REVIEW_SLA_2BD",
+     "SM_QC_PREFUNDING_SELECTION_DAILY",
+     "SM_QC_REBUTTAL_WINDOW_1BD",
+     "SM_QC_REPORT_SIGNOFF_SLA_3BD",
+     "SM_QC_REVERIFICATION_RESPONSE_3BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 20,
+    "built": 0,
+    "missing": [
+     "buildPopulation",
+     "planSample",
+     "selectLoans",
+     "openReview",
+     "recomputeDuInputs",
+     "recomputeIncome",
+     "recomputeAssets",
+     "checkCollateral",
+     "checkMi",
+     "assessOccupancy",
+     "runComplianceSnapshot",
+     "orderReverification",
+     "draftFinding",
+     "routeToOfficer",
+     "releaseFindings",
+     "evaluateRebuttal",
+     "closeReview",
+     "computeMetrics",
+     "draftMonthlyReport",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 5,
+    "built": 0,
+    "missing": [
+     "$14,850.00",
+     "$30,720.55",
+     "$4,212.80",
+     "$45,320.55",
+     "$61,940.11"
+    ]
+   },
+   "units": {
+    "spec": 52,
+    "built": 2
+   },
+   "pct": 3.8
+  },
+  {
+   "process": "28.2",
+   "title": "Post-closing QC program, Fannie Mae QC reviews (Loan Quality Connect), self-reporting, defect rates, and remedies/appeals",
+   "tids": {
+    "spec": 13,
+    "built": 0,
+    "todo": 13,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13
+    ]
+   },
+   "tables": {
+    "spec": 5,
+    "built": 1,
+    "missing": [
+     "fnma_qc_cases",
+     "qc_self_reports",
+     "relief_report_id",
+     "remedy_ledger"
+    ]
+   },
+   "timers": {
+    "spec": 24,
+    "built": 0,
+    "armable": 10,
+    "missing": [
+     "FNMA_A2_3_2_01_REMEDY_PAYMENT_60",
+     "FNMA_A2_3_2_02_RELIEF_36_PAYMENTS",
+     "FNMA_A2_3_2_03_APPEAL1_60",
+     "FNMA_A2_3_2_03_APPEAL2_15",
+     "FNMA_A2_3_2_03_FNMA_RESPONSE_60",
+     "FNMA_A2_3_2_03_IDR_15",
+     "FNMA_A2_3_2_03_IMPASSE_15",
+     "FNMA_A2_3_2_03_IMPASSE_RESOLVE_30",
+     "FNMA_A2_3_2_03_MGMT_ESCALATION_15",
+     "FNMA_A3_2_01_COMPLIANCE_SELF_REPORT_60",
+     "FNMA_A3_4_03_FRAUD_SELF_REPORT_30",
+     "FNMA_D1_1_01_QC_SELF_REPORT_30",
+     "FNMA_D1_1_02_VENDOR_REVIEW_10PCT_MONTHLY",
+     "FNMA_D1_1_03_POST_CLOSING_REPORT_MONTHLY",
+     "FNMA_D1_1_03_TARGET_RATE_QUARTERLY",
+     "FNMA_D1_3_01_QC_ARREARS_NOTICE",
+     "FNMA_D1_3_01_QC_SELECT_MONTHLY",
+     "FNMA_D1_3_QC_CYCLE_90",
+     "FNMA_D2_1_LQC_RESPONSE_30",
+     "FNMA_D2_1_NOPD_DOC_UPLOAD_30",
+     "FNMA_D2_1_RESOLUTION_REQUEST_60",
+     "SM_QC_EPD_MONITOR_MONTHLY",
+     "SM_QC_POST_CLOSING_REVIEW_SLA_45",
+     "SM_QC_REBUTTAL_WINDOW_10"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 26,
+    "built": 0,
+    "missing": [
+     "buildCyclePopulation",
+     "drawRandomSample",
+     "selectDiscretionary",
+     "computeScope",
+     "orderReverification",
+     "reconcileLiabilities",
+     "assessOccupancy",
+     "assessCollateral",
+     "reviewClosingDocuments",
+     "matchDuFinalData",
+     "shadowReunderwrite",
+     "draftFinding",
+     "evaluateRebuttal",
+     "computeDefectRates",
+     "draftCycleReport",
+     "draftArrearsNotice",
+     "parseLqcNotification",
+     "buildLqcPackage",
+     "draftNopdResponse",
+     "draftSelfReport",
+     "draftAppeal",
+     "computeRepurchasePrice",
+     "trackRelief",
+     "openOperatorEscalation",
+     "openOfficerEscalation",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "$556,143.55"
+    ]
+   },
+   "units": {
+    "spec": 69,
+    "built": 1
+   },
+   "pct": 1.4
+  },
+  {
+   "process": "28.3",
+   "title": "HMDA data capture, ULI generation, rate-spread and other derived fields, LAR editing, annual/quarterly submission, and public disclosure obligations",
+   "tids": {
+    "spec": 14,
+    "built": 0,
+    "todo": 14,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14
+    ]
+   },
+   "tables": {
+    "spec": 5,
+    "built": 0,
+    "missing": [
+     "hmda_coverage_tests",
+     "hmda_edit_verifications",
+     "hmda_lar_files",
+     "hmda_public_notices",
+     "hmda_ulis"
+    ]
+   },
+   "timers": {
+    "spec": 11,
+    "built": 0,
+    "armable": 3,
+    "missing": [
+     "HMDA_1003_2G_COVERAGE_TEST_ANNUAL",
+     "HMDA_1003_4F_LAR_ENTRY_Q30",
+     "HMDA_1003_5B_DISCLOSURE_NOTICE_3BD",
+     "HMDA_1003_5C_MODIFIED_LAR_NOTICE_ANNUAL",
+     "HMDA_1003_5D_NOTICE_AVAILABILITY",
+     "HMDA_1003_5_ANNUAL_0301",
+     "HMDA_1003_5_LAR_RETENTION_3Y",
+     "HMDA_1003_5_QUARTERLY_60",
+     "SM_HMDA_LAR_COMPLETENESS_DAILY",
+     "SM_HMDA_OFFICER_SIGN_SLA_5BD",
+     "SM_HMDA_PRE_SUBMISSION_EDITS_0201"
+    ]
+   },
+   "notices": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "NTC_HMDA_1003_5B_DISCLOSURE_STMT_NOTICE",
+     "NTC_HMDA_1003_5C_MODIFIED_LAR_NOTICE",
+     "NTC_HMDA_1003_5E_LOBBY_NOTICE"
+    ]
+   },
+   "tools": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "createRecord",
+     "assignUli",
+     "validateUliFfiec",
+     "geocode"
+    ]
+   },
+   "figures": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "$1,245.00"
+    ]
+   },
+   "units": {
+    "spec": 38,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "28.4",
+   "title": "Fraud, misrepresentation, AML/SAR, OFAC, and Fannie Mae fraud reporting",
+   "tids": {
+    "spec": 14,
+    "built": 0,
+    "todo": 14,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14
+    ]
+   },
+   "tables": {
+    "spec": 9,
+    "built": 1,
+    "missing": [
+     "bsa_program",
+     "bsa_sar_5y",
+     "fnma_fraud_reports",
+     "identity_theft_requests",
+     "ofac_hits",
+     "ofac_reports",
+     "sar_decisions",
+     "sars"
+    ]
+   },
+   "timers": {
+    "spec": 21,
+    "built": 0,
+    "armable": 12,
+    "missing": [
+     "BSA_1029_210_INDEPENDENT_TEST",
+     "BSA_1029_210_PROGRAM_REVIEW_ANNUAL",
+     "BSA_1029_210_TRAINING_ANNUAL",
+     "BSA_1029_320C_SAR_RETENTION_5Y",
+     "BSA_1029_320_IMMEDIATE_LE_NOTICE",
+     "BSA_1029_320_SAR_30",
+     "BSA_1029_320_SAR_60_NO_SUBJECT",
+     "BSA_1029_320_SAR_CONTINUING_120",
+     "FCRA_609E_VICTIM_RECORDS_30",
+     "FCRA_681_ITPP_BOARD_REPORT_ANNUAL",
+     "FNMA_A3_4_03_FRAUD_SELF_REPORT_30",
+     "OFAC_501_601_RETENTION_10Y",
+     "OFAC_501_603_ANNUAL_BLOCKED_0930",
+     "OFAC_501_603_BLOCKED_REPORT_10BD",
+     "OFAC_501_603_UNBLOCKING_REPORT_10BD",
+     "OFAC_501_604_REJECTED_REPORT_10BD",
+     "SM_BSA_OFFICER_SAR_DECISION_SLA_5",
+     "SM_FRAUD_PRODUCTION_HOLD",
+     "SM_FRAUD_TRIAGE_SLA_10",
+     "SM_OFAC_CLEAR_BEFORE_FUNDING_GATE",
+     "SM_OFAC_LIST_REFRESH_DAILY"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 20,
+    "built": 0,
+    "missing": [
+     "aggregateSignals",
+     "openCase",
+     "applyHold",
+     "reexamineDocuments",
+     "orderIndependentVerification",
+     "screenParty",
+     "analyzeOfacMatch",
+     "interviewBorrower",
+     "buildTimeline",
+     "assessScheme",
+     "computeAmount",
+     "recommendTriage",
+     "draftSarPackage",
+     "draftNarrative",
+     "draftOfacReport",
+     "draftFnmaReport",
+     "draftVictimRecordsPackage",
+     "scheduleContinuingReview",
+     "openOfficerEscalation",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "$41,250.00"
+    ]
+   },
+   "units": {
+    "spec": 65,
+    "built": 1
+   },
+   "pct": 1.5
+  },
+  {
+   "process": "29.1",
+   "title": "Committing and pricing execution (best efforts and mandatory PE\u2013Whole Loan commitments, commitment terms, LLPAs, servicing fee and buy-up/buy-down, pair-off/extension, over/under delivery tolerance)",
+   "tids": {
+    "spec": 16,
+    "built": 0,
+    "todo": 16,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16
+    ]
+   },
+   "tables": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "amount_cents",
+     "commitments",
+     "expires_on"
+    ]
+   },
+   "timers": {
+    "spec": 15,
+    "built": 0,
+    "armable": 6,
+    "missing": [
+     "FNMA_B2_1_5_02_LOAN_AGE_6M_PURCHASE_READY",
+     "FNMA_C2_1_1_03_DAILY_LIMIT_200M_GATE",
+     "FNMA_C2_1_1_03_MAND_COMMITMENT_EXPIRY",
+     "FNMA_C2_1_1_04_MAND_EXTENSION_CAP_30",
+     "FNMA_C2_1_2_02_BE_CLOSED_AUTOEXT_CAP_60",
+     "FNMA_C2_1_2_02_BE_COMMITMENT_EXPIRY",
+     "FNMA_C2_1_2_02_BE_EXTENSION_CAP_30",
+     "FNMA_C2_1_2_03_DU_APPROVE_60_GATE",
+     "FNMA_C2_1_2_03_KEY_DATA_CHANGE_1BD",
+     "FNMA_C2_2_DELIVERY_COMMITMENT_EXPIRY",
+     "FNMA_PEWL_CLOSED_STATUS_1BD",
+     "FNMA_PEWL_COMMIT_ACCEPT_60S",
+     "FNMA_PEWL_DPA_WINDOW_30",
+     "FNMA_PEWL_MAND_TOLERANCE_GATE",
+     "SM_PORTAL_OPERATOR_COMMITMENT_TASK_4H"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 14,
+    "built": 0,
+    "missing": [
+     "priceForCommitment",
+     "commitBestEfforts",
+     "modifyCommitment",
+     "setClosedStatus",
+     "requestExtension",
+     "moveToFallout",
+     "preparePairOffPackage",
+     "prepareMandatoryPackage",
+     "captureMarketPrice",
+     "reconcileFeeDrafts",
+     "reconcilePewlStatus",
+     "computeNetPriceForecast",
+     "openEscalation",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 16,
+    "built": 0,
+    "missing": [
+     "$0.00",
+     "$0.56",
+     "$1,375.00",
+     "$1.00",
+     "$116.67",
+     "$2,800.00",
+     "$4,200.00",
+     "$413,083.12",
+     "$413,083.13",
+     "$415,605.00",
+     "$5,483.33",
+     "$567,000.00",
+     "$625.00",
+     "$7,700.00",
+     "$700.00",
+     "$91.38"
+    ]
+   },
+   "units": {
+    "spec": 64,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "29.2",
+   "title": "Pipeline and interest-rate-risk management (fallout/pull-through, hedge for mandatory execution, mark-to-market, best-efforts operations)",
+   "tids": {
+    "spec": 13,
+    "built": 0,
+    "todo": 13,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13
+    ]
+   },
+   "tables": {
+    "spec": 10,
+    "built": 0,
+    "missing": [
+     "fallout_events",
+     "hedge_policies",
+     "hedge_positions",
+     "hedge_trades",
+     "margin_calls",
+     "mark_to_market_runs",
+     "pipeline_positions",
+     "pull_through_estimates",
+     "pull_through_models",
+     "rate_shock_reports"
+    ]
+   },
+   "timers": {
+    "spec": 12,
+    "built": 0,
+    "armable": 2,
+    "missing": [
+     "FINRA_4210_VARIATION_MARGIN_1BD",
+     "SIFMA_TBA_ROLL_GATE_3BD",
+     "SM_BE_FALLOUT_REVIEW_MONTHLY",
+     "SM_HEDGE_COVERAGE_BAND_GATE",
+     "SM_HEDGE_POLICY_REVIEW_1Y",
+     "SM_LIQUIDITY_STRESS_WEEKLY",
+     "SM_MTM_DAILY_1700ET",
+     "SM_PIPELINE_INTRADAY_MOVE_TRIGGER",
+     "SM_PIPELINE_POSITION_DAILY_0700ET",
+     "SM_PULL_THROUGH_MODEL_RECALIBRATION_90",
+     "SM_RATE_SHOCK_REPORT_DAILY",
+     "SM_UNCOMMITTED_POSITION_5BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 18,
+    "built": 0,
+    "missing": [
+     "takePipelineSnapshot",
+     "estimatePullThrough",
+     "estimateDurationFactor",
+     "computeCoverage",
+     "recommendRebalance",
+     "prepareTradePackage",
+     "recordTradeConfirmation",
+     "scheduleRoll",
+     "requestMandatoryCommitment",
+     "runMarkToMarket",
+     "runRateShock",
+     "computeLiquidityNeed",
+     "recordMarginCall",
+     "analyzeFallout",
+     "recalibratePullThrough",
+     "publishPartnerReport",
+     "openEscalation",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 8,
+    "built": 0,
+    "missing": [
+     "$2,240.00",
+     "$3,000.00",
+     "$4,000.00",
+     "$40,000.00",
+     "$497.74",
+     "$5,040.00",
+     "$625.00",
+     "$7,280.00"
+    ]
+   },
+   "units": {
+    "spec": 61,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "29.3",
+   "title": "Delivery data preparation and pre-delivery validation (ULDD, Special Feature Codes, UCD/UCDP/DU identifiers, MI data, EarlyCheck)",
+   "tids": {
+    "spec": 12,
+    "built": 0,
+    "todo": 12,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 5,
+    "built": 0,
+    "missing": [
+     "delivery_edits",
+     "delivery_packages",
+     "earlycheck_runs",
+     "sfc_assignments",
+     "uldd_data_points"
+    ]
+   },
+   "timers": {
+    "spec": 11,
+    "built": 0,
+    "armable": 3,
+    "missing": [
+     "FNMA_B3_2_10_DU_FINAL_MATCH_GATE",
+     "FNMA_B4_1_4_10_VALUE_ACCEPTANCE_SFC_GATE",
+     "FNMA_C1_2_02_DU_FILE_EARLYCHECK_GATE",
+     "FNMA_C1_2_02_EARLYCHECK_CLEAN_GATE",
+     "FNMA_C1_2_02_SFC_COMPLETENESS_GATE",
+     "FNMA_LL_2026_06_SFC_067_CONSISTENCY_GATE",
+     "FNMA_ULDD_IDENTIFIER_CONSISTENCY_GATE",
+     "SM_O103_PACKAGE_FREEZE_GATE",
+     "SM_O103_PACKAGE_FREEZE_SLA_2BD",
+     "SM_O103_REBUILD_ON_CHANGE",
+     "SM_O103_ULDD_BUILD_SLA_1BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 12,
+    "built": 0,
+    "missing": [
+     "collectPrerequisites",
+     "assembleUlddDataPoints",
+     "evaluateConditionality",
+     "assignSfcs",
+     "reconcileIdentifiers",
+     "buildUlddXml",
+     "validateSchema",
+     "runEarlyCheck",
+     "mapEditToOwner",
+     "applyDerivedFix",
+     "freezePackage",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "$3,120.00",
+     "$3,402.62",
+     "$457,777.78"
+    ]
+   },
+   "units": {
+    "spec": 43,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "29.4",
+   "title": "Loan Delivery submission, custodian certification, purchase, purchase advice reconciliation, and post-delivery corrections/remedies",
+   "tids": {
+    "spec": 14,
+    "built": 0,
+    "todo": 14,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14
+    ]
+   },
+   "tables": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "custodian_certifications",
+     "delivery_operator_tasks",
+     "post_purchase_adjustments",
+     "wire_instructions"
+    ]
+   },
+   "timers": {
+    "spec": 23,
+    "built": 0,
+    "armable": 11,
+    "missing": [
+     "FNMA_B2_1_5_02_LOAN_AGE_6M_PURCHASE_READY",
+     "FNMA_B2_1_5_02_SEASONED_1Y_FLAG",
+     "FNMA_C1_2_02_CUSTODIAN_LOAN_NUMBER_REQUEST_3BD",
+     "FNMA_C1_2_02_FNMA_LOAN_NUMBER_TO_CUSTODIAN_30",
+     "FNMA_C1_2_02_PPA_LLPA_REPRICING_18M",
+     "FNMA_C1_2_04_ENOTE_TRANSFER_SAME_DAY_GATE",
+     "FNMA_C2_2_01_CUSTODIAN_RECEIPT_BEFORE_EXPIRY",
+     "FNMA_C2_2_02_SHIP_SAME_DAY_AS_SUBMIT",
+     "FNMA_C2_2_03_SECURITY_BREACH_CONFIRM_24H",
+     "FNMA_C2_2_03_WAREHOUSE_RELEASE_BY_ACQUISITION_GATE",
+     "FNMA_C2_2_04_CERTIFICATION_EXPECTED_1BD",
+     "FNMA_C2_2_04_PURCHASE_EXPECTED_1BD",
+     "FNMA_C2_2_05_PPA_REQUEST_30",
+     "FNMA_C2_2_07_PAYEE_CODE_CHANGE_3BD",
+     "FNMA_C2_2_DELIVERY_COMMITMENT_EXPIRY",
+     "FNMA_C2_2_DELIVERY_LPI_45",
+     "FNMA_LD_UG_CUSTODIAN_0730_ET_EXPECTATION",
+     "FNMA_LQC_DATA_VALIDATION_RESPONSE_30",
+     "FNMA_PPA_PROCESSING_10BD",
+     "SM_LD_DATA_REVISION_RESPONSE_1BD",
+     "SM_LD_PURCHASE_ERROR_RESUBMIT_1BD",
+     "SM_LOAN_DELIVERY_OPERATOR_SLA_1BD",
+     "SM_WAREHOUSE_WIRE_APPROVAL_SLA_1BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 16,
+    "built": 0,
+    "missing": [
+     "openOperatorTask",
+     "renderInstructionSheet",
+     "parseOperatorEvidence",
+     "observeStatus",
+     "scheduleShipment",
+     "trackShipment",
+     "prepareCustodianPackage",
+     "requestEnoteTransfer",
+     "approveWarehouseWire",
+     "computeExpectedDates",
+     "ingestPurchaseAdvice",
+     "reconcileProceeds",
+     "evaluateRelief",
+     "preparePpa",
+     "prepareRemedyPackage",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 6,
+    "built": 0,
+    "missing": [
+     "$1,081.64",
+     "$1,096.67",
+     "$103.66",
+     "$548,800.00",
+     "$564,503.33",
+     "$566,300.00"
+    ]
+   },
+   "units": {
+    "spec": 63,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "30.1",
+   "title": "Fannie Mae post-purchase servicing setup (servicer number, Fannie Mae loan number, remittance type, first reporting cycle, initial custodial deposits, servicer loan number, MERS/eRegistry post-purchase state, custodian record, Escrow Setup event)",
+   "tids": {
+    "spec": 12,
+    "built": 0,
+    "todo": 12,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 7,
+    "built": 2,
+    "missing": [
+     "custodial_transfers",
+     "fnma_establishment_checks",
+     "master_servicer_org_id",
+     "post_purchase_verified_at",
+     "secured_party_org_id"
+    ]
+   },
+   "timers": {
+    "spec": 14,
+    "built": 1,
+    "armable": 13,
+    "missing": [
+     "FNMA_C2_2_05_PPA_REQUEST_30",
+     "FNMA_F1_03_PI_DEPOSIT_PROCEEDS_1BD",
+     "FNMA_F1_03_TI_DEPOSIT_PROCEEDS_1BD",
+     "FNMA_TT96_FIRST_LAR_ACQ_MONTH_BD2",
+     "LL_2026_05_ESCROW_SETUP_ORIG_PURCHASE_BD1",
+     "SM_CUSTODY_RECORD_FINALIZE_1BD",
+     "SM_ENOTE_POST_PURCHASE_VERIFY_1BD",
+     "SM_FIRST_LAR_TARGET_NEXTBD_2000",
+     "SM_FNMA_ESTABLISHMENT_VERIFY_1BD",
+     "SM_FNMA_LOAN_NUMBER_RECORD_T0",
+     "SM_INVESTOR_SETUP_COMPLETE_5BD",
+     "SM_MERS_INVESTOR_FNMA_VERIFY_10BD",
+     "SM_WH_INTERIM_FUNDER_RELEASE_2BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 9,
+    "built": 0,
+    "missing": [
+     "matchPurchaseAdvice",
+     "checkFnmaEstablishment",
+     "seedInvestorPosition",
+     "projectEvent",
+     "submitBatch",
+     "pollFeedback",
+     "createCorrection",
+     "openPortalTask",
+     "recordDecision"
+    ]
+   },
+   "figures": {
+    "spec": 9,
+    "built": 0,
+    "missing": [
+     "$0.05",
+     "$1,081.64",
+     "$1,096.67",
+     "$2,062.50",
+     "$2,741.67",
+     "$3,285.96",
+     "$544.29",
+     "$559,455.71",
+     "$560,000.00"
+    ]
+   },
+   "units": {
+    "spec": 51,
+    "built": 3
+   },
+   "pct": 5.9
+  },
+  {
+   "process": "30.2",
+   "title": "New-origination boarding onto the Supermortgage servicing platform at funding (origination-to-servicing data mapping, DQ gate, opening ledger, documents, consents, timers seeded, welcome/first-payment communications, no-transfer-notice design)",
+   "tids": {
+    "spec": 14,
+    "built": 0,
+    "todo": 14,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14
+    ]
+   },
+   "tables": {
+    "spec": 7,
+    "built": 5,
+    "missing": [
+     "loan_documents_index",
+     "origination_funding_clearing"
+    ]
+   },
+   "timers": {
+    "spec": 11,
+    "built": 4,
+    "armable": 9,
+    "missing": [
+     "FNMA_B2_1_5_FIRST_PAYMENT_2M",
+     "LL_2026_05_ESCROW_SETUP_ORIG_PURCHASE_BD1",
+     "MERS_PROC_MOM_REGISTER_7",
+     "SM_O64_FIRST_PAYMENT_LETTER_5BD",
+     "SM_ORIG_ACTIVE_BEFORE_FIRST_DUE_GATE",
+     "SM_ORIG_BOARD_T1BD",
+     "SM_ORIG_WARNING_CLEAR_10BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 13,
+    "built": 0,
+    "missing": [
+     "snapshotOrigination",
+     "mapField",
+     "runValidation",
+     "proposeCorrection",
+     "routeToOwner",
+     "allocateServicingLoanNumber",
+     "boardLoan",
+     "postOpeningEntries",
+     "indexDocuments",
+     "boardConsents",
+     "seedTimers",
+     "sendNotice",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 14,
+    "built": 0,
+    "missing": [
+     "$0.01",
+     "$1,785.43",
+     "$1,785.48",
+     "$130.47",
+     "$170.13",
+     "$2,570.34",
+     "$2,858.33",
+     "$3,402.62",
+     "$4,090.12",
+     "$412,000.00",
+     "$544.29",
+     "$559,455.71",
+     "$687.50",
+     "$93.97"
+    ]
+   },
+   "units": {
+    "spec": 59,
+    "built": 9
+   },
+   "pct": 15.3
+  },
+  {
+   "process": "30.3",
+   "title": "Escrow account establishment at origination: RESPA \u00a71024.17 aggregate analysis, initial deposit, initial escrow statement, CD escrow consistency, waivers, HPML escrow, same-servicer refinance escrow transfer",
+   "tids": {
+    "spec": 13,
+    "built": 0,
+    "todo": 13,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13
+    ]
+   },
+   "tables": {
+    "spec": 2,
+    "built": 0,
+    "missing": [
+     "escrow_credit_transfers",
+     "hpml_escrow_min_cancel_date"
+    ]
+   },
+   "timers": {
+    "spec": 15,
+    "built": 6,
+    "armable": 11,
+    "missing": [
+     "FNMA_B2_1_5_04_REFI_TAX_FINANCING_GATE",
+     "LL_2026_05_ESCROW_SETUP_ORIG_PURCHASE_BD1",
+     "REGX_1024_17C2_INITIAL_ANALYSIS_GATE",
+     "REGX_1024_34B_SAME_SERVICER_CREDIT_AGREEMENT_GATE",
+     "REGZ_1026_35B1_HPML_ESCROW_GATE",
+     "REGZ_1026_35_HPML_ESCROW_5Y",
+     "REGZ_1026_38L7_CD_ESCROW_CONSISTENCY_GATE",
+     "SM_ESCROW_REFRESH_AT_FUNDING_T0",
+     "SM_O64_INITIAL_ESCROW_STMT_AT_SETTLEMENT"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "buildEscrowLines",
+     "lookupParcel",
+     "readPolicyDeclarations"
+    ]
+   },
+   "figures": {
+    "spec": 20,
+    "built": 0,
+    "missing": [
+     "$0.00",
+     "$1,375.00",
+     "$1,541.70",
+     "$1,610.40",
+     "$1,612.50",
+     "$1,850.00",
+     "$130.47",
+     "$154.17",
+     "$2,010.40",
+     "$2,062.50",
+     "$2,133.32",
+     "$3,402.62",
+     "$4,090.12",
+     "$400.00",
+     "$452.10",
+     "$533.33",
+     "$6,400.00",
+     "$616.68",
+     "$687.50",
+     "$8,250.00"
+    ]
+   },
+   "units": {
+    "spec": 53,
+    "built": 6
+   },
+   "pct": 11.3
+  },
+  {
+   "process": "30.4",
+   "title": "First-90-days servicing hand-off: ownership notice, first statement, first credit and investor cycles, vendor activations, EPD monitoring, servicing file, origination record retention and timer seeding",
+   "tids": {
+    "spec": 14,
+    "built": 0,
+    "todo": 14,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14
+    ]
+   },
+   "tables": {
+    "spec": 6,
+    "built": 0,
+    "missing": [
+     "epd_flags",
+     "handoff_items",
+     "retention_schedule",
+     "servicing_file_compilations",
+     "servicing_handoffs",
+     "vendor_activations"
+    ]
+   },
+   "timers": {
+    "spec": 11,
+    "built": 3,
+    "armable": 8,
+    "missing": [
+     "REGX_1024_38C2_SERVICING_FILE_5",
+     "SM_CS_BOARDED_ORIG_REPORT_DAILY",
+     "SM_FIRST_STATEMENT_RECONCILE_1BD",
+     "SM_FLOOD_LOL_SERVICING_LINK_2BD",
+     "SM_ORIG_EPD_WATCH_P6_60",
+     "SM_ORIG_HANDOFF_CLOSE_90",
+     "SM_ORIG_RETENTION_CLASSIFY_GATE",
+     "SM_TAX_SERVICE_ACTIVATE_2BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 12,
+    "built": 0,
+    "missing": [
+     "openHandoff",
+     "verifyTimerSeeding",
+     "repairTimer",
+     "requestVendorActivation",
+     "confirmVendorActivation",
+     "reconcileFirstStatement",
+     "evaluateEpd",
+     "compileServicingFile",
+     "classifyRetention",
+     "explainFnmaLetter",
+     "closeHandoff",
+     "requestOfficerOverride"
+    ]
+   },
+   "figures": {
+    "spec": 10,
+    "built": 0,
+    "missing": [
+     "$0.01",
+     "$1,785.43",
+     "$1,850.00",
+     "$170.13",
+     "$2,062.50",
+     "$3,200.00",
+     "$3,402.62",
+     "$4,090.12",
+     "$687.50",
+     "$93.97"
+    ]
+   },
+   "units": {
+    "spec": 53,
+    "built": 3
+   },
+   "pct": 5.7
+  },
+  {
+   "process": "31.1",
+   "title": "Licensing, approvals, and the partner boundary",
+   "tids": {
+    "spec": 13,
+    "built": 0,
+    "todo": 13,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13
+    ]
+   },
+   "tables": {
+    "spec": 7,
+    "built": 0,
+    "missing": [
+     "ai_intake_legal_positions",
+     "eligibility_inputs_origination",
+     "fnma_approvals",
+     "license_requirements",
+     "licenses",
+     "mlo_roster",
+     "tpo_program_reviews"
+    ]
+   },
+   "timers": {
+    "spec": 15,
+    "built": 0,
+    "armable": 3,
+    "missing": [
+     "FNMA_A2_1_01_EMORTGAGE_APPROVAL_GATE",
+     "FNMA_A3_3_01_TPO_ANNUAL_FINANCIAL_REVIEW_365",
+     "FNMA_A3_3_01_TPO_LICENSE_REVERIFY_365",
+     "FNMA_A3_3_01_TPO_QUARTERLY_PERFORMANCE_90",
+     "FNMA_A4_1_01_ANNUAL_ORIGINATION_1B_0131",
+     "FNMA_A4_1_01_ORIG_LIQUIDITY_INPUTS_QBD5",
+     "FNMA_TSP_PRODUCTION_CERT_GATE",
+     "NMLS_REINSTATEMENT_0101_0228",
+     "NMLS_RENEWAL_1101_1231",
+     "SAFE_1008_107_MLO_CE_8H_1231",
+     "SM_LICENSE_EXPIRY_WARN_90",
+     "SM_LICENSE_STATE_GATE",
+     "SM_O121_AI_POSITION_REVIEW_365",
+     "SM_O121_MATRIX_REVERIFY_365",
+     "SM_O121_NMLS_SYNC_DAILY"
+    ]
+   },
+   "notices": {
+    "spec": 2,
+    "built": 0,
+    "missing": [
+     "NTC_INTERNAL_LICENSE_EXPIRY_WARN",
+     "NTC_INTERNAL_STATE_GATE_BLOCKED"
+    ]
+   },
+   "tools": {
+    "spec": 5,
+    "built": 0,
+    "missing": [
+     "nmls.sync",
+     "licenses.upsert",
+     "matrix.propose",
+     "license_requirements",
+     "verified"
+    ]
+   },
+   "figures": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "$1,450,000.00"
+    ]
+   },
+   "units": {
+    "spec": 43,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "31.2",
+   "title": "AI governance, model risk, and fair-lending controls for AI underwriting, pricing, and adverse action",
+   "tids": {
+    "spec": 13,
+    "built": 0,
+    "todo": 13,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13
+    ]
+   },
+   "tables": {
+    "spec": 8,
+    "built": 1,
+    "missing": [
+     "ai_eval_runs",
+     "ai_impact_assessments",
+     "consumer_ai_rights_requests",
+     "fair_lending_findings",
+     "fair_lending_reviews",
+     "fair_lending_runs",
+     "lda_searches"
+    ]
+   },
+   "timers": {
+    "spec": 19,
+    "built": 1,
+    "armable": 7,
+    "missing": [
+     "CA_CPPA_7150_RISK_ASSESSMENT_20271231",
+     "CA_CPPA_7157_ATTESTATION_20280401",
+     "CA_CPPA_7200_ADMT_READINESS_20270101",
+     "CO_SB26_189_1702_DEVELOPER_DOCS_GATE",
+     "CO_SB26_189_1702_MATERIAL_UPDATE_NOTICE",
+     "CO_SB26_189_1703_RECORDS_3Y",
+     "CO_SB26_189_1704_ADVERSE_EXPLANATION_30",
+     "SM_O122_AI_ASSESSMENT_ANNUAL_365",
+     "SM_O122_COMPLAINT_FL_TRIAGE_5BD",
+     "SM_O122_DRIFT_ALERT_REVIEW_2BD",
+     "SM_O122_FAIR_LENDING_MONITOR_MONTHLY",
+     "SM_O122_FAIR_LENDING_REGRESSION_QUARTERLY",
+     "SM_O122_FAIR_LENDING_REVIEW_30D",
+     "SM_O122_GOVERNANCE_PACK_QUARTERLY",
+     "SM_O122_MODEL_CHANGE_NOTICE_TO_PARTNER_10BD",
+     "SM_O122_ORIGINATION_AI_DEPLOY_GATE",
+     "SM_O122_PRICING_EXCEPTION_REVIEW_MONTHLY",
+     "SM_O122_REASON_ACCURACY_SAMPLE_MONTHLY"
+    ]
+   },
+   "notices": {
+    "spec": 2,
+    "built": 0,
+    "missing": [
+     "NTC_CA_CPPA_7220_ADMT_PRE_USE",
+     "NTC_SM_AI_DECISION_EXPLANATION"
+    ]
+   },
+   "tools": {
+    "spec": 2,
+    "built": 0,
+    "missing": [
+     "inventory.upsert",
+     "assess.draft"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 44,
+    "built": 2
+   },
+   "pct": 4.5
+  },
+  {
+   "process": "31.3",
+   "title": "Records, retention, privacy, data ownership, and security for origination",
+   "tids": {
+    "spec": 13,
+    "built": 0,
+    "todo": 13,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13
+    ]
+   },
+   "tables": {
+    "spec": 20,
+    "built": 0,
+    "missing": [
+     "bsa_sar_5y",
+     "esign_consent_life",
+     "fdpa_life_of_loan",
+     "fnma_enote_signing_life_plus_7y",
+     "fnma_loan_file_life_plus_4y",
+     "hmda_3y",
+     "ofac_10y",
+     "orig_unfunded_policy_25m",
+     "pii_access_log",
+     "regb_25m",
+     "regb_prescreen_25m",
+     "regb_selftest_25m",
+     "regz_atr_3y",
+     "regz_cd_5y",
+     "regz_general_2y",
+     "regz_le_3y",
+     "regz_locomp_3y",
+     "respa_afba_5y",
+     "respa_s8_5y",
+     "vendor_flowdown_requirements"
+    ]
+   },
+   "timers": {
+    "spec": 19,
+    "built": 0,
+    "armable": 12,
+    "missing": [
+     "BSA_1029_320C_SAR_RETENTION_5Y",
+     "ESIGN_7001_CONSENT_EVIDENCE_LIFE",
+     "FNMA_B8_8_02_ENOTE_SIGNING_RECORDS_LIFE_PLUS_7Y",
+     "GLBA_1016_13_SERVICE_PROVIDER_CONTRACT_GATE",
+     "HMDA_1003_5_LAR_RETENTION_3Y",
+     "OFAC_501_601_RETENTION_10Y",
+     "REGB_1002_12B_APPLICATION_RETENTION_25M",
+     "REGZ_1026_25C1II_CD_RETENTION_5Y",
+     "REGZ_1026_25C1I_LE_RETENTION_3Y",
+     "REGZ_1026_25C2_LOCOMP_RETENTION_3Y",
+     "REGZ_1026_25C3_ATR_RETENTION_3Y",
+     "RESPA_1024_14H_S8_RETENTION_5Y",
+     "RESPA_1024_15D_AFBA_RETENTION_5Y",
+     "SM_O123_FANNIE_DATA_USE_SCAN_WEEKLY",
+     "SM_O123_LEGAL_HOLD_ON_TRIGGER_1H",
+     "SM_O123_PII_ACCESS_ANOMALY_1H",
+     "SM_O123_PII_ACCESS_REVIEW_90",
+     "SM_O123_UNFUNDED_FILE_PURGE_SWEEP_MONTHLY",
+     "SM_O123_VENDOR_FLOWDOWN_GATE"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 2,
+    "built": 0,
+    "missing": [
+     "records.classify",
+     "records.anchor"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 54,
+    "built": 0
+   },
+   "pct": 0.0
   }
  ]
 }

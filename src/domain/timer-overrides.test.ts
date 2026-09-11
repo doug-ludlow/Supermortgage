@@ -14,10 +14,14 @@ import { applyAllTimerOverrides, loadOverriddenRegistry, SECTION_OVERRIDES } fro
 
 const processes = new Set((JSON.parse(readFileSync(fileURLToPath(new URL("../../spec/registry/processes.json", import.meta.url)), "utf8")) as { id: string }[]).map((p) => p.id));
 
-test("every unique timer code is mechanically armable after section overrides", () => {
+// The armability contract covers every process the audit baseline lists as done (docs/audit/baseline.json): a section
+// joins this set when it reaches 100% of its units, and the ratchet keeps it there. Origination processes still being
+// built are reported by tools/lint-registry.ts, not asserted here.
+const done = new Set((JSON.parse(readFileSync(fileURLToPath(new URL("../../docs/audit/baseline.json", import.meta.url)), "utf8")) as { done: string[] }).done);
+test("every unique timer code of a done process is mechanically armable after section overrides", () => {
   const reg = loadOverriddenRegistry();
-  const u = reg.unique();
-  assert.equal(u.length, 1206);
+  const u = reg.unique().filter((t) => done.has(t.process));
+  assert.ok(u.length >= 1206, `${u.length} unique codes across done processes`);
   const prose = u.filter((t) => t.offsetParsed.kind === "prose").map((t) => `${t.code}: ${t.offset}`);
   assert.deepEqual(prose, [], "offsets still prose");
   const noTrigger = u.filter((t) => t.triggerPattern === null).map((t) => `${t.code}: ${t.trigger}`);

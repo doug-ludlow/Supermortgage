@@ -10,6 +10,16 @@
  *                              substantially all of its business functions"
  *  - `business_days_fannie_et` Fannie Mae business days, America/New_York
  *
+ * The origination baseline addendum (spec/origination/01-architecture-baseline-addendum.md §4) adds two
+ * Reg Z definitions that are likewise not interchangeable with the four above:
+ *
+ *  - `business_days_creditor`      Reg Z §1026.2(a)(6) first sentence: a day on which the creditor's offices are
+ *                                  open to the public for carrying on substantially all of its business functions
+ *                                  (decision: Mon–Fri excluding federal holidays plus any published closures)
+ *  - `business_days_regz_specific` Reg Z §1026.2(a)(6) second sentence: all calendar days except Sundays and the
+ *                                  federal legal public holidays — the LE 7-day, CD 3-day, revised-LE 4-day and
+ *                                  rescission clocks ("SBD" in timer codes)
+ *
  * Each is a `Calendar`. The servicer calendar is configurable (extra closure
  * days, and whether Saturday counts) because §1024.31 is about *this*
  * servicer's actual hours, not the federal list.
@@ -17,8 +27,8 @@
 import { type PlainDate, addDays, isWeekend, dayOfWeek } from "./date.ts";
 import { isFederalHoliday } from "./holidays.ts";
 
-export type DayUnit = "calendar_days" | "business_days_federal" | "business_days_servicer" | "business_days_fannie_et";
-export const DAY_UNITS: readonly DayUnit[] = ["calendar_days", "business_days_federal", "business_days_servicer", "business_days_fannie_et"];
+export type DayUnit = "calendar_days" | "business_days_federal" | "business_days_servicer" | "business_days_fannie_et" | "business_days_creditor" | "business_days_regz_specific";
+export const DAY_UNITS: readonly DayUnit[] = ["calendar_days", "business_days_federal", "business_days_servicer", "business_days_fannie_et", "business_days_creditor", "business_days_regz_specific"];
 
 export interface Calendar {
   readonly unit: DayUnit;
@@ -86,11 +96,35 @@ export function servicerCalendar(cfg: ServicerCalendarConfig = {}): Calendar {
 /** Default servicer calendar: Monday–Friday, closed on federal holidays. */
 export const servicer: Calendar = servicerCalendar();
 
+export interface CreditorCalendarConfig {
+  readonly timeZone?: string;
+  /** Published closures of the partner/SM origination office beyond weekends + federal holidays. */
+  readonly closures?: readonly PlainDate[];
+}
+/** Reg Z §1026.2(a)(6) general definition — the creditor's own office days (addendum §4 decision: Mon–Fri, federal holidays and published closures off). */
+export function creditorCalendar(cfg: CreditorCalendarConfig = {}): Calendar {
+  const closures = new Set(cfg.closures ?? []);
+  return {
+    unit: "business_days_creditor",
+    timeZone: cfg.timeZone ?? "America/New_York",
+    isBusinessDay: (d) => !isWeekend(d) && !isFederalHoliday(d) && !closures.has(d),
+  };
+}
+export const creditor: Calendar = creditorCalendar();
+
+/** Reg Z §1026.2(a)(6) specific definition: every day except Sundays and the legal public holidays in 5 U.S.C. 6103(a). Saturdays count. */
+export const regzSpecific: Calendar = {
+  unit: "business_days_regz_specific", timeZone: "America/New_York",
+  isBusinessDay: (d) => dayOfWeek(d) !== 0 && !isFederalHoliday(d),
+};
+
 export interface CalendarSet {
   readonly calendar_days: Calendar;
   readonly business_days_federal: Calendar;
   readonly business_days_servicer: Calendar;
   readonly business_days_fannie_et: Calendar;
+  readonly business_days_creditor: Calendar;
+  readonly business_days_regz_specific: Calendar;
 }
 
 export const defaultCalendars: CalendarSet = {
@@ -98,6 +132,8 @@ export const defaultCalendars: CalendarSet = {
   business_days_federal: federal,
   business_days_servicer: servicer,
   business_days_fannie_et: fannieEt,
+  business_days_creditor: creditor,
+  business_days_regz_specific: regzSpecific,
 };
 
 /**

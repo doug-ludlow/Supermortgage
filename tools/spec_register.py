@@ -19,6 +19,7 @@ root = os.path.join(os.path.dirname(__file__), '..')
 spec = os.path.join(root, 'spec')
 if '--root' in args: spec = args[args.index('--root') + 1]
 dry = '--dry-run' in args
+MARKDOWN_FIRST_FROM = 20  # sections written in markdown (the origination series and later); 1–19 came from the HTML export
 reg = os.path.join(spec, 'registry')
 
 def load(name, default):
@@ -45,7 +46,7 @@ def timer_rows(text):
     out = []
     for line in block.splitlines():
         if not line.startswith('|') or line.startswith('|---') or 'Timer code' in line: continue
-        cells = [c.strip() for c in line.strip().strip('|').split('|')]
+        cells = [c.strip().replace('\\|', '|') for c in re.split(r'(?<!\\)\|', line.strip().strip('|'))]
         if len(cells) < 7: continue
         code = re.search(r'`([A-Z][A-Z0-9_]+)`', cells[0])
         if not code: continue
@@ -68,8 +69,26 @@ for sec_dir in sorted(glob.glob(os.path.join(spec, 'sections', '[0-9][0-9]-*')))
         if not fm: continue
         pid = f'{fm.group(1)}.{fm.group(2)}'
         ids.append(pid)
-        if pid in known_processes: continue
         text = open(f).read()
+        if pid in known_processes:
+            if n < MARKDOWN_FIRST_FROM: continue
+            # markdown-first process already registered: its timer rows are re-derived from the file (rows it no longer
+            # names are dropped, renamed codes are picked up); the process record itself is refreshed in place.
+            text_nocomment = re.sub(r'<!--.*?-->', '', text, flags=re.S)
+            rows = timer_rows(text_nocomment)
+            before = {(t['process'], t['code']) for t in timers if t['process'] == pid}
+            now = {(pid, r['code']) for r in rows}
+            if before != now:
+                timers[:] = [t for t in timers if t['process'] != pid]
+                known_timers.difference_update(before)
+                for r in rows:
+                    if (pid, r['code']) in known_timers: continue
+                    timers.append({'code': r['code'], 'section': n, 'process': pid, **{k: r[k] for k in ('kind', 'trigger', 'anchor', 'offset', 'satisfied', 'breach')}})
+                    known_timers.add((pid, r['code']))
+                added['timers'].append(f'{pid}: resynced {len(before)}→{len(now)} rows')
+                for rec in processes:
+                    if rec['id'] == pid: rec['timers'] = sorted({r['code'] for r in rows}); rec['words'] = len(text_nocomment.split())
+            continue
         text_nocomment = re.sub(r'<!--.*?-->', '', text, flags=re.S)
         h1 = re.search(r'^#\s+' + re.escape(pid) + r'\s+[—-]\s+(.+?)\s*$', text_nocomment, re.M)
         if not h1: print(f'skip {f}: no "# {pid} — Title" heading'); continue
@@ -101,7 +120,7 @@ for sec_dir in sorted(glob.glob(os.path.join(spec, 'sections', '[0-9][0-9]-*')))
 def pkey(pid): return tuple(int(x) for x in pid.split('.'))
 processes.sort(key=lambda p: pkey(p['id']))
 sections.sort(key=lambda s: s['n'])
-timers.sort(key=lambda t: (pkey(t['process']), t['code']))
+timers.sort(key=lambda t: pkey(t['process']))  # stable: rows keep their spec-table order within a process (the engine arms in registry order)
 summary = f"sections +{len(added['sections'])} {added['sections']}; processes +{len(added['processes'])} {added['processes']}; timers +{len(added['timers'])}"
 if dry or not any(added.values()):
     print(('dry run: ' if dry else 'nothing to add: ') + summary); sys.exit(0)

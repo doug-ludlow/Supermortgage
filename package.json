@@ -11,7 +11,7 @@
     "start": "node --experimental-strip-types src/runtime/main.ts serve",
     "sweep": "node --experimental-strip-types src/runtime/main.ts sweep",
     "migrate": "node --experimental-strip-types src/runtime/main.ts migrate",
-    "test": "node --test --experimental-strip-types 'src/**/*.test.ts' && python3 tools/audit.py --check",
+    "test": "node --test --experimental-strip-types 'src/**/*.test.ts' && python3 tools/audit.py --check && python3 tools/spec_lint_names.py",
     "typecheck": "tsc --noEmit",
     "spec:extract": "python3 tools/extract_spec.py",
     "spec:lint": "node --experimental-strip-types tools/lint-registry.ts",
@@ -23,7 +23,9 @@
     "audit:baseline": "python3 tools/audit.py --baseline",
     "spec:register": "python3 tools/spec_register.py",
     "spec:manifest": "python3 tools/spec_manifest.py",
-    "spec:scaffold": "python3 tools/scaffold_spec_tests.py"
+    "spec:scaffold": "python3 tools/scaffold_spec_tests.py",
+    "spec:lint:names": "python3 tools/spec_lint_names.py --verbose",
+    "spec:import:origination": "python3 tools/import_origination.py"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

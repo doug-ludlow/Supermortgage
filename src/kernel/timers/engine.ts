@@ -22,6 +22,7 @@ import type { ParsedOffset } from "./offset.ts";
 export type TimerStatus = "armed" | "satisfied" | "breached" | "satisfied_late" | "cancelled" | "needs_human";
 
 export interface TimerInstance {
+  readonly applicationId?: string;
   readonly id: string;
   readonly code: string;
   readonly subject: { readonly kind: string; readonly id: string };
@@ -167,7 +168,7 @@ export class TimerEngine {
       inst.satisfiedAt = e.occurredAt;
       inst.satisfiedByEventId = e.id;
       inst.status = inst.status === "breached" ? "satisfied_late" : "satisfied";
-      this.events.append({ type: "timer.satisfied", ...(inst.loanId ? { loanId: inst.loanId } : {}), actor: SYSTEM, causationId: e.id,
+      this.events.append({ type: "timer.satisfied", ...(inst.loanId ? { loanId: inst.loanId } : {}), ...(inst.applicationId ? { applicationId: inst.applicationId } : {}), actor: SYSTEM, causationId: e.id,
         payload: { code: inst.code, timer_id: inst.id, late: inst.status === "satisfied_late" } });
       if (def.kindNorm === "recurring") this.arm(def, e, { subjectOverride: inst.subject });
     }
@@ -175,24 +176,25 @@ export class TimerEngine {
     for (const def of this.registry.triggeredBy(e.type)) {
       if (this.processFilter && !this.processFilter.has(def.process)) continue;
       if (!def.triggerPattern || !eventMatches(def.triggerPattern, e)) continue;
+      if (isOriginationDef(def) && !isOriginationContext(e)) continue;
       this.arm(def, e);
     }
   }
 
   arm(def: TimerDef, trigger: DomainEvent, opts: { subjectOverride?: TimerInstance["subject"] } = {}): TimerInstance {
-    const subject = opts.subjectOverride ?? (trigger.loanId ? { kind: "loan", id: trigger.loanId } : trigger.aggregate ?? { kind: "global", id: "*" });
+    const subject = opts.subjectOverride ?? (trigger.loanId ? { kind: "loan", id: trigger.loanId } : trigger.applicationId ? { kind: "application", id: trigger.applicationId } : trigger.aggregate ?? { kind: "global", id: "*" });
     const anchor = this.resolveAnchor(def, trigger) ?? wallClock(Date.parse(trigger.occurredAt), "America/New_York").date;
     const anchorMs = Date.parse(trigger.occurredAt);
     const due = computeDue(def.offsetParsed, anchor, anchorMs, this.cals);
     const inst: TimerInstance = {
-      id: randomUUID(), code: def.code, subject, ...(trigger.loanId ? { loanId: trigger.loanId } : {}),
+      id: randomUUID(), code: def.code, subject, ...(trigger.loanId ? { loanId: trigger.loanId } : {}), ...(trigger.applicationId ? { applicationId: trigger.applicationId } : {}),
       armedAt: trigger.occurredAt, armedByEventId: trigger.id, anchorDate: anchor,
       ...(due.dueAt !== undefined ? { dueAt: due.dueAt } : {}), ...(due.dueDate !== undefined ? { dueDate: due.dueDate } : {}),
       status: due.needsHuman ? "needs_human" : "armed",
       ...(due.needsHuman ? { note: due.needsHuman } : due.evaluator ? { note: `evaluator:${due.evaluator}` } : due.opensDate ? { note: `window opens ${due.opensDate}` } : {}),
     };
     this.instances.push(inst);
-    this.events.append({ type: "timer.armed", ...(inst.loanId ? { loanId: inst.loanId } : {}), actor: SYSTEM, causationId: trigger.id,
+    this.events.append({ type: "timer.armed", ...(inst.loanId ? { loanId: inst.loanId } : {}), ...(inst.applicationId ? { applicationId: inst.applicationId } : {}), actor: SYSTEM, causationId: trigger.id,
       payload: { code: def.code, timer_id: inst.id, due_date: inst.dueDate ?? null, due_at: inst.dueAt !== undefined ? new Date(inst.dueAt).toISOString() : null, status: inst.status } });
     return inst;
   }
@@ -208,7 +210,7 @@ export class TimerEngine {
       inst.breachedAt = nowIso;
       const b: Breach = { instance: inst, def, severity: def.severity.level, escalateTo: def.severity.escalateTo, breachText: def.breach };
       out.push(b);
-      this.events.append({ type: "timer.breached", ...(inst.loanId ? { loanId: inst.loanId } : {}), actor: SYSTEM,
+      this.events.append({ type: "timer.breached", ...(inst.loanId ? { loanId: inst.loanId } : {}), ...(inst.applicationId ? { applicationId: inst.applicationId } : {}), actor: SYSTEM,
         payload: { code: inst.code, timer_id: inst.id, severity: b.severity, escalate_to: [...b.escalateTo], breach: def.breach } });
     }
     return out;
@@ -222,8 +224,19 @@ export class TimerEngine {
   }
 }
 
+/** Sections 20–31 (origination) define timers that share servicing event names (`loan.boarded`, `loan.paid_in_full`, …):
+ *  they arm only for an event that carries origination context — an application id, or a payload that names one — so a
+ *  transferred-in loan on the servicing side never picks up an origination clock (one product, two contexts). */
+export function isOriginationDef(def: { readonly process: string }): boolean { return Number(def.process.split(".")[0]) >= 20; }
+export function isOriginationContext(e: DomainEvent): boolean {
+  if (e.applicationId) return true;
+  if (e.aggregate?.kind === "application") return true;
+  const p = e.payload as Record<string, unknown>;
+  return typeof p.application_id === "string" || p.source === "origination" || p.origination === true;
+}
 function sameSubject(inst: TimerInstance, e: DomainEvent): boolean {
   if (inst.subject.kind === "loan") return e.loanId === inst.subject.id;
+  if (inst.subject.kind === "application") return e.applicationId === inst.subject.id || (e.payload as Record<string, unknown>).application_id === inst.subject.id;
   if (inst.subject.kind === "global") return true;
   return e.aggregate?.kind === inst.subject.kind && e.aggregate.id === inst.subject.id;
 }

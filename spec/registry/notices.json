@@ -31,7 +31,9 @@
   "mentions": [
    "1.6",
    "3.1",
-   "3.8"
+   "3.8",
+   "25.4",
+   "30.3"
   ],
   "context": "- Reconciliation reports (loan-level, wire, Fannie Mae position, final accounting) as `documents` with hashes; variance log; opening ledger entries; `escrow_analyses` seed; Escrow Setup investor events; initial escrow statement `NTC_REGX_1024_17G_INITIAL_ESCROW_STMT` (3.1) when required (mail or e-delivery only with Supermortgage-verified E-SIGN consent); first Form 496/496A including transferred "
  },
@@ -485,7 +487,8 @@
   "code": "NTC_IRS_1098",
   "owner_process": "7.1",
   "mentions": [
-   "7.1"
+   "7.1",
+   "25.4"
   ],
   "context": "- **Notice Registry v1** (Supermortgage; 6\u20138 weeks): template versions `NTC_REGZ_41_STMT_STD`, `_DELQ`, `_TPP`, `_BK7_11`, `_BK12_13`, `NTC_REGZ_41E6_CHARGEOFF_SUSPENSION`, `NTC_FNMA_D2_2_03_PAYMENT_REMINDER`, `NTC_IRS_1098`, `NTC_REGZ_41_STMT_AVAIL_EMAIL`; counsel approval of each version (H-30(A)/(B)/(E)/(F) basis); plain-language QA passed."
  },
@@ -551,7 +554,9 @@
   "code": "NTC_REGZ_41_STMT_STD",
   "owner_process": "7.1",
   "mentions": [
-   "7.1"
+   "7.1",
+   "25.4",
+   "30.2"
   ],
   "context": "- **Notice Registry v1** (Supermortgage; 6\u20138 weeks): template versions `NTC_REGZ_41_STMT_STD`, `_DELQ`, `_TPP`, `_BK7_11`, `_BK12_13`, `NTC_REGZ_41E6_CHARGEOFF_SUSPENSION`, `NTC_FNMA_D2_2_03_PAYMENT_REMINDER`, `NTC_IRS_1098`, `NTC_REGZ_41_STMT_AVAIL_EMAIL`; counsel approval of each version (H-30(A)/(B)/(E)/(F) basis); plain-language QA passed."
  },
@@ -623,7 +628,8 @@
   "code": "NTC_ESIGN_7001C_DISCLOSURE",
   "owner_process": "7.4",
   "mentions": [
-   "7.4"
+   "7.4",
+   "30.2"
   ],
   "context": "- Counsel-approved **E-SIGN disclosure** (`NTC_ESIGN_7001C_DISCLOSURE` v1: paper option, withdrawal procedure and consequences (none/no fee), scope = listed categories, update-contact procedure, paper-copy procedure and fee (none), hardware/software requirements) and the separate **IRS e-statement consent** text; Reg P electronic-delivery language."
  },
@@ -761,7 +767,9 @@
   "code": "NTC_FCRA_1681S2A7_B1",
   "owner_process": "8.1",
   "mentions": [
-   "8.1"
+   "8.1",
+   "30.2",
+   "30.4"
   ],
   "context": "| `FCRA_1681S2A7_NEG_INFO_NOTICE_30` | deadline | first `metro2.file.transmitted` containing negative information for a loan/consumer with no B-1 notice on file | transmitted_at | 30 `calendar_days` | `notice.sent` (`NTC_FCRA_1681S2A7_B2`) or pre-existing `NTC_FCRA_1681S2A7_B1` evidence | escalate `officer` sev-1 |"
  },
@@ -834,7 +842,8 @@
   "code": "INS_EXPIRATION_LAPSE_1",
   "owner_process": "9.1",
   "mentions": [
-   "9.1"
+   "9.1",
+   "30.4"
   ],
   "context": "| Timers | `FNMA_B201_ANNUAL_INSURANCE_REMINDER_365`, `FNMA_B202_INSUFFICIENCY_NOTICE_5BD`, `FNMA_B202_POLICY_ANNUAL_VERIFY_365`, `FNMA_B203_MASTER_POLICY_ANNUAL_VERIFY_365`, `FNMA_B301_FLOOD_EVIDENCE_TO_FNMA_10BD`, `FNMA_B601_LPI_DOC_REQUEST_30`, `INS_EXPIRATION_LAPSE_1`, `INS_EXPIRATION_WATCH_60`, `REGX_1024_17K5_LPI_PURCHASE_GATE` |"
  },
@@ -842,7 +851,8 @@
   "code": "INS_EXPIRATION_WATCH_60",
   "owner_process": "9.1",
   "mentions": [
-   "9.1"
+   "9.1",
+   "30.4"
   ],
   "context": "| Timers | `FNMA_B201_ANNUAL_INSURANCE_REMINDER_365`, `FNMA_B202_INSUFFICIENCY_NOTICE_5BD`, `FNMA_B202_POLICY_ANNUAL_VERIFY_365`, `FNMA_B203_MASTER_POLICY_ANNUAL_VERIFY_365`, `FNMA_B301_FLOOD_EVIDENCE_TO_FNMA_10BD`, `FNMA_B601_LPI_DOC_REQUEST_30`, `INS_EXPIRATION_LAPSE_1`, `INS_EXPIRATION_WATCH_60`, `REGX_1024_17K5_LPI_PURCHASE_GATE` |"
  },
@@ -1098,7 +1108,8 @@
   "code": "NTC_HPA_4905C2_LPMI_OPTIONS",
   "owner_process": "10.2",
   "mentions": [
-   "10.2"
+   "10.2",
+   "24.6"
   ],
   "context": "- Insurer cancellation channels, LAR 89 submission path, escrow interim-analysis capability (Section 3.2), refund rails (10.5), notice templates `NTC_HPA_4904A_CANCELLED`, `NTC_HPA_4904B_AUTO_NOT_CURRENT`, `NTC_HPA_4905C2_LPMI_OPTIONS`."
  },
@@ -1893,7 +1904,8 @@
   "code": "NTC_DISPOSAL_CERTIFICATE",
   "owner_process": "19.1",
   "mentions": [
-   "19.1"
+   "19.1",
+   "31.3"
   ],
   "context": "- `servicing_file_snapshots` bundles (PDF + JSON + CSV, hashed); production manifests; certification of records (`NTC_RECORDS_CERTIFICATION` \u2014 plain business-records certification signed by a `signing_officer`; not a Notice Registry borrower notice but versioned in the same template store); internal `NTC_LEGAL_HOLD_INTERNAL` (hold notice to custodians of paper records/vendors); `NTC_DISPOSAL_CERTI"
  },
@@ -1933,7 +1945,8 @@
   "code": "NTC_FNMA_INCIDENT_36H",
   "owner_process": "19.2",
   "mentions": [
-   "19.2"
+   "19.2",
+   "31.3"
   ],
   "context": "- **Fannie Mae**: incident email (SMTP via the corporate mail system; template `NTC_FNMA_INCIDENT_36H`; officer-sent; read receipt/acknowledgement stored) \u2014 not an API; Form 101 notice by email to Technology_Registration and the partner; post-incident attestation letters. Access suspension by Fannie Mae \u2192 integration outage playbook (queue outbox; human portal fallback per Section 5)."
  },
@@ -2013,8 +2026,628 @@
   "code": "NTC_FNMA_LL2026_04_DISCLOSURE",
   "owner_process": "19.3",
   "mentions": [
-   "19.3"
+   "19.3",
+   "31.2"
   ],
   "context": "- Notices/documents: `NTC_FNMA_A2101_TECH_PROVIDER_CHANGE_180` (content: provider from/to, critical functions, planned date, continuity of original provider, offer of transition plan), `NTC_FNMA_A2101_CONTRACT_EVENT_5BD`, `NTC_FNMA_A2101_CONTRACT_COPIES_5BD` (cover + copy), `DOC_TRANSITION_PLAN` (steps, timeline, data/document export, custodial handover, MERS, credentials, borrower communications,"
+ },
+ {
+  "code": "NTC_GLBA_1016_4_PRIVACY_INITIAL",
+  "owner_process": "20.1",
+  "mentions": [
+   "20.1",
+   "20.3",
+   "21.3",
+   "25.4",
+   "31.3"
+  ],
+  "context": "- Partner privacy notice (`NTC_GLBA_1016_4_PRIVACY_INITIAL`, 21.3; servicing 7.x annual notice) reviewed by counsel to confirm it describes service-provider sharing (\u00a71016.13) and does **not** promise \"we do not market to you\" (Owner: partner; SM drafts)."
+ },
+ {
+  "code": "NTC_CANSPAM_7704_FOOTER",
+  "owner_process": "20.2",
+  "mentions": [
+   "20.2"
+  ],
+  "context": "- Notice/creative templates (Notice Registry): `NTC_REGZ_1026_24_REFI_OFFER` (email/mail/portal; required-content checklist = rule 4), `NTC_TCPA_64_1200_B_AI_VOICE_IDENT` (voice opening: identity, callback number, opt-out instruction), `NTC_CANSPAM_7704_FOOTER` (ad identification, opt-out, postal address), `NTC_FCRA_615D_PRESCREEN_OPTOUT` (short + long notices; only if prescreen enabled), `consent"
+ },
+ {
+  "code": "NTC_FCRA_615D_PRESCREEN_OPTOUT",
+  "owner_process": "20.2",
+  "mentions": [
+   "20.2"
+  ],
+  "context": "- Notice/creative templates (Notice Registry): `NTC_REGZ_1026_24_REFI_OFFER` (email/mail/portal; required-content checklist = rule 4), `NTC_TCPA_64_1200_B_AI_VOICE_IDENT` (voice opening: identity, callback number, opt-out instruction), `NTC_CANSPAM_7704_FOOTER` (ad identification, opt-out, postal address), `NTC_FCRA_615D_PRESCREEN_OPTOUT` (short + long notices; only if prescreen enabled), `consent"
+ },
+ {
+  "code": "NTC_REGZ_1026_24_REFI_OFFER",
+  "owner_process": "20.2",
+  "mentions": [
+   "20.2"
+  ],
+  "context": "1. **Channel eligibility matrix (per touch).** Email: allowed unless `email_optout`/`all_marketing`; must carry ad identification, opt-out link, partner postal address, `NTC_REGZ_1026_24_REFI_OFFER` content when rate/payment terms appear. Portal card: allowed for enrolled borrowers (no CAN-SPAM; \u00a71026.24 applies). Mail: allowed unless `mail_optout`; state disclosures per property state. SMS: PEWC "
+ },
+ {
+  "code": "NTC_SM_AI_INTERACTION_DISCLOSURE",
+  "owner_process": "20.2",
+  "mentions": [
+   "20.2",
+   "20.3",
+   "21.1",
+   "21.3",
+   "31.2"
+  ],
+  "context": "`intake` agent (campaign/touch orchestration) with `borrower-comms` (voice/SMS/chat execution). Tools: `planChannels`, `checkGates` (every gate above via `assertGateOpen`), `renderCreative` (approved templates only; variable schema enforced), `runContentChecklist`, `scheduleTouch`, `placeCall`/`sendSms`/`sendEmail`/`queueMail`, `recordResponse`, `recordSuppression`, `writeDecision`. Behavior: for "
+ },
+ {
+  "code": "NTC_TCPA_64_1200_B_AI_VOICE_IDENT",
+  "owner_process": "20.2",
+  "mentions": [
+   "20.2"
+  ],
+  "context": "- Notice/creative templates (Notice Registry): `NTC_REGZ_1026_24_REFI_OFFER` (email/mail/portal; required-content checklist = rule 4), `NTC_TCPA_64_1200_B_AI_VOICE_IDENT` (voice opening: identity, callback number, opt-out instruction), `NTC_CANSPAM_7704_FOOTER` (ad identification, opt-out, postal address), `NTC_FCRA_615D_PRESCREEN_OPTOUT` (short + long notices; only if prescreen enabled), `consent"
+ },
+ {
+  "code": "NTC_CO_SB26_189_ADMT_NOTICE",
+  "owner_process": "20.3",
+  "mentions": [
+   "20.3",
+   "21.3",
+   "21.6",
+   "31.2"
+  ],
+  "context": "**Colorado SB 26-189 (signed act, leg.colorado.gov/bill_files/116489, fetched 2026-09-10).** C.R.S. 6-1-1701 definitions: \"covered ADMT\" = \"automated decision-making technology that is used to materially influence a consequential decision\"; consequential decision = a decision \"made about a consumer that relates to the provision of or a consumer's access to, eligibility for, selection for, or compe"
+ },
+ {
+  "code": "NTC_REGZ_1026_19E2II_QUOTE_DISCLAIMER",
+  "owner_process": "20.3",
+  "mentions": [
+   "20.3",
+   "20.4",
+   "21.2",
+   "21.4"
+  ],
+  "context": "- Notices: `NTC_SM_AI_INTERACTION_DISCLOSURE` (owned here; voice/chat/web variants; state overlays), `NTC_SM_PREQUAL_LETTER` (owned here; e-delivery only with an active `esign` consent covering `origination_disclosures`, else mail/portal download at the consumer's request \u2014 a prequal letter is not a required disclosure, so it may be emailed as a PDF on the consumer's request without E-SIGN choreog"
+ },
+ {
+  "code": "NTC_SM_ESIGN_CONSENT",
+  "owner_process": "20.3",
+  "mentions": [
+   "20.3",
+   "21.1",
+   "21.4",
+   "22.1",
+   "24.4",
+   "26.1",
+   "26.2",
+   "30.2"
+  ],
+  "context": "- Counsel-approved texts: `NTC_SM_AI_INTERACTION_DISCLOSURE` (voice/chat/web variants; UT/CA/CO overlays), `NTC_SM_ESIGN_CONSENT` (21.1's template extended with the \"origination disclosures\" category), TCPA consent language (20.2), credit-authorization language (soft and hard), prequalification-letter template with \"not a commitment, not a preapproval\" language (Owner: both)."
+ },
+ {
+  "code": "NTC_SM_PREQUAL_LETTER",
+  "owner_process": "20.3",
+  "mentions": [
+   "20.3"
+  ],
+  "context": "**Worked example 2 \u2014 purchase lead without a property (Columbus, OH).** Thu Oct 15, 2026 11:05 ET an organic visitor asks \"how much house can I afford?\" \u2192 `lead.created{organic}`; disclosure; L1 OTP; soft-pull authorization; the consumer volunteers income (this is a purchase prequal \u2014 income stated, but no property address \u2192 only five items possible); `prequalifications{basis=soft_pull, outcome=le"
+ },
+ {
+  "code": "NTC_SM_RATE_QUOTE",
+  "owner_process": "20.4",
+  "mentions": [
+   "20.4"
+  ],
+  "context": "| Data/artifacts | `rate_sheets`, `llpa_tables`, `pricing_quotes`, `fee_schedules`, `sm_cost_schedules`, `pricing_exceptions`, the written quote (`NTC_SM_RATE_QUOTE`) with the \u00a71026.19(e)(2)(ii) disclaimer, fee items handed to 21.2 |"
+ },
+ {
+  "code": "NTC_FNMA_1103_SCIF",
+  "owner_process": "21.1",
+  "mentions": [
+   "21.1"
+  ],
+  "context": "Notices owned here (Notice Registry): `NTC_FNMA_1103_SCIF` (English + five translations; channels e-delivery/print), `NTC_SM_ESIGN_CONSENT` (owned here; 20.3 captures the same consent artifact at lead stage and 21.1 re-presents it for the application document class; 30.2 relies on its servicing categories). Referenced, not owned: `NTC_SM_AI_INTERACTION_DISCLOSURE` (20.3 owns the state-parameterize"
+ },
+ {
+  "code": "NTC_REGZ_1026_19E1VI_PROVIDER_LIST",
+  "owner_process": "21.2",
+  "mentions": [
+   "21.2",
+   "21.5"
+  ],
+  "context": "Notices owned here: `NTC_REGZ_1026_37_LE` (form H-24; e-delivery/print), `NTC_REGZ_1026_19E1VI_PROVIDER_LIST` (written list of providers; delivered with the LE), Referenced, not owned: the \u00a71026.19(e)(2)(ii) statement on any consumer-specific written estimate issued before the LE (by 20.4/21.1/21.2) is 20.4's `NTC_REGZ_1026_19E2II_QUOTE_DISCLAIMER` under 20.4's `REGZ_1026_19E2II_QUOTE_DISCLAIMER_G"
+ },
+ {
+  "code": "NTC_REGZ_1026_19E2II_PRELE_ESTIMATE",
+  "owner_process": "21.2",
+  "mentions": [
+   "21.2"
+  ],
+  "context": "Notices owned here: `NTC_REGZ_1026_37_LE` (form H-24; e-delivery/print), `NTC_REGZ_1026_19E1VI_PROVIDER_LIST` (written list of providers; delivered with the LE), Referenced, not owned: the \u00a71026.19(e)(2)(ii) statement on any consumer-specific written estimate issued before the LE (by 20.4/21.1/21.2) is 20.4's `NTC_REGZ_1026_19E2II_QUOTE_DISCLAIMER` under 20.4's `REGZ_1026_19E2II_QUOTE_DISCLAIMER_G"
+ },
+ {
+  "code": "NTC_REGZ_1026_37_LE",
+  "owner_process": "21.2",
+  "mentions": [
+   "21.2",
+   "21.4"
+  ],
+  "context": "Notices owned here: `NTC_REGZ_1026_37_LE` (form H-24; e-delivery/print), `NTC_REGZ_1026_19E1VI_PROVIDER_LIST` (written list of providers; delivered with the LE), Referenced, not owned: the \u00a71026.19(e)(2)(ii) statement on any consumer-specific written estimate issued before the LE (by 20.4/21.1/21.2) is 20.4's `NTC_REGZ_1026_19E2II_QUOTE_DISCLAIMER` under 20.4's `REGZ_1026_19E2II_QUOTE_DISCLAIMER_G"
+ },
+ {
+  "code": "NTC_AZ_ARS_6_946C_FEE_AGREEMENT",
+  "owner_process": "21.3",
+  "mentions": [
+   "21.3"
+  ],
+  "context": "Notices owned here (Notice Registry codes; channel rule per baseline \u00a76): `NTC_REGX_1024_20_HCL` (generated list + accompanying language; e-delivery/print) \u00b7 `NTC_REGX_1024_6_TOOLKIT` (Your Home Loan Toolkit, August 2026 edition, EN/ES; the code keeps the seeded \u00a71024.6 citation, the executing rule is \u00a71026.19(g)) \u00b7 `NTC_REGX_1024_15_AFBA` (Appendix D format; separate piece of paper/separate docum"
+ },
+ {
+  "code": "NTC_CA_21CCR_7114_FAIR_LENDING_NOTICE",
+  "owner_process": "21.3",
+  "mentions": [
+   "21.3"
+  ],
+  "context": "Notices owned here (Notice Registry codes; channel rule per baseline \u00a76): `NTC_REGX_1024_20_HCL` (generated list + accompanying language; e-delivery/print) \u00b7 `NTC_REGX_1024_6_TOOLKIT` (Your Home Loan Toolkit, August 2026 edition, EN/ES; the code keeps the seeded \u00a71024.6 citation, the executing rule is \u00a71026.19(g)) \u00b7 `NTC_REGX_1024_15_AFBA` (Appendix D format; separate piece of paper/separate docum"
+ },
+ {
+  "code": "NTC_CA_CIV_1632_5_TRANSLATED_LE",
+  "owner_process": "21.3",
+  "mentions": [
+   "21.3"
+  ],
+  "context": "Notices owned here (Notice Registry codes; channel rule per baseline \u00a76): `NTC_REGX_1024_20_HCL` (generated list + accompanying language; e-delivery/print) \u00b7 `NTC_REGX_1024_6_TOOLKIT` (Your Home Loan Toolkit, August 2026 edition, EN/ES; the code keeps the seeded \u00a71024.6 citation, the executing rule is \u00a71026.19(g)) \u00b7 `NTC_REGX_1024_15_AFBA` (Appendix D format; separate piece of paper/separate docum"
+ },
+ {
+  "code": "NTC_FCRA_609G_CREDIT_SCORE",
+  "owner_process": "21.3",
+  "mentions": [
+   "21.3",
+   "22.2"
+  ],
+  "context": "Notices owned here (Notice Registry codes; channel rule per baseline \u00a76): `NTC_REGX_1024_20_HCL` (generated list + accompanying language; e-delivery/print) \u00b7 `NTC_REGX_1024_6_TOOLKIT` (Your Home Loan Toolkit, August 2026 edition, EN/ES; the code keeps the seeded \u00a71024.6 citation, the executing rule is \u00a71026.19(g)) \u00b7 `NTC_REGX_1024_15_AFBA` (Appendix D format; separate piece of paper/separate docum"
+ },
+ {
+  "code": "NTC_FL_69B_124_013_ANTI_COERCION",
+  "owner_process": "21.3",
+  "mentions": [
+   "21.3"
+  ],
+  "context": "Notices owned here (Notice Registry codes; channel rule per baseline \u00a76): `NTC_REGX_1024_20_HCL` (generated list + accompanying language; e-delivery/print) \u00b7 `NTC_REGX_1024_6_TOOLKIT` (Your Home Loan Toolkit, August 2026 edition, EN/ES; the code keeps the seeded \u00a71024.6 citation, the executing rule is \u00a71026.19(g)) \u00b7 `NTC_REGX_1024_15_AFBA` (Appendix D format; separate piece of paper/separate docum"
+ },
+ {
+  "code": "NTC_MA_MGL_184_17B_ATTORNEY_STATEMENT",
+  "owner_process": "21.3",
+  "mentions": [
+   "21.3"
+  ],
+  "context": "Notices owned here (Notice Registry codes; channel rule per baseline \u00a76): `NTC_REGX_1024_20_HCL` (generated list + accompanying language; e-delivery/print) \u00b7 `NTC_REGX_1024_6_TOOLKIT` (Your Home Loan Toolkit, August 2026 edition, EN/ES; the code keeps the seeded \u00a71024.6 citation, the executing rule is \u00a71026.19(g)) \u00b7 `NTC_REGX_1024_15_AFBA` (Appendix D format; separate piece of paper/separate docum"
+ },
+ {
+  "code": "NTC_NJ_3_1_16_3_APPLICATION_DISCLOSURE",
+  "owner_process": "21.3",
+  "mentions": [
+   "21.3"
+  ],
+  "context": "Notices owned here (Notice Registry codes; channel rule per baseline \u00a76): `NTC_REGX_1024_20_HCL` (generated list + accompanying language; e-delivery/print) \u00b7 `NTC_REGX_1024_6_TOOLKIT` (Your Home Loan Toolkit, August 2026 edition, EN/ES; the code keeps the seeded \u00a71024.6 citation, the executing rule is \u00a71026.19(g)) \u00b7 `NTC_REGX_1024_15_AFBA` (Appendix D format; separate piece of paper/separate docum"
+ },
+ {
+  "code": "NTC_NY_3NYCRR_38_3_PREAPP_DISCLOSURE",
+  "owner_process": "21.3",
+  "mentions": [
+   "21.3"
+  ],
+  "context": "Notices owned here (Notice Registry codes; channel rule per baseline \u00a76): `NTC_REGX_1024_20_HCL` (generated list + accompanying language; e-delivery/print) \u00b7 `NTC_REGX_1024_6_TOOLKIT` (Your Home Loan Toolkit, August 2026 edition, EN/ES; the code keeps the seeded \u00a71024.6 citation, the executing rule is \u00a71026.19(g)) \u00b7 `NTC_REGX_1024_15_AFBA` (Appendix D format; separate piece of paper/separate docum"
+ },
+ {
+  "code": "NTC_REGB_1002_14_APPRAISAL_NOTICE",
+  "owner_process": "21.3",
+  "mentions": [
+   "21.3",
+   "24.1"
+  ],
+  "context": "Notices owned here (Notice Registry codes; channel rule per baseline \u00a76): `NTC_REGX_1024_20_HCL` (generated list + accompanying language; e-delivery/print) \u00b7 `NTC_REGX_1024_6_TOOLKIT` (Your Home Loan Toolkit, August 2026 edition, EN/ES; the code keeps the seeded \u00a71024.6 citation, the executing rule is \u00a71026.19(g)) \u00b7 `NTC_REGX_1024_15_AFBA` (Appendix D format; separate piece of paper/separate docum"
+ },
+ {
+  "code": "NTC_REGV_1022_74_RBP_EXCEPTION",
+  "owner_process": "21.3",
+  "mentions": [
+   "21.3",
+   "22.2"
+  ],
+  "context": "Notices owned here (Notice Registry codes; channel rule per baseline \u00a76): `NTC_REGX_1024_20_HCL` (generated list + accompanying language; e-delivery/print) \u00b7 `NTC_REGX_1024_6_TOOLKIT` (Your Home Loan Toolkit, August 2026 edition, EN/ES; the code keeps the seeded \u00a71024.6 citation, the executing rule is \u00a71026.19(g)) \u00b7 `NTC_REGX_1024_15_AFBA` (Appendix D format; separate piece of paper/separate docum"
+ },
+ {
+  "code": "NTC_REGX_1024_15_AFBA",
+  "owner_process": "21.3",
+  "mentions": [
+   "21.3"
+  ],
+  "context": "Notices owned here (Notice Registry codes; channel rule per baseline \u00a76): `NTC_REGX_1024_20_HCL` (generated list + accompanying language; e-delivery/print) \u00b7 `NTC_REGX_1024_6_TOOLKIT` (Your Home Loan Toolkit, August 2026 edition, EN/ES; the code keeps the seeded \u00a71024.6 citation, the executing rule is \u00a71026.19(g)) \u00b7 `NTC_REGX_1024_15_AFBA` (Appendix D format; separate piece of paper/separate docum"
+ },
+ {
+  "code": "NTC_REGX_1024_20_HCL",
+  "owner_process": "21.3",
+  "mentions": [
+   "21.3"
+  ],
+  "context": "Notices owned here (Notice Registry codes; channel rule per baseline \u00a76): `NTC_REGX_1024_20_HCL` (generated list + accompanying language; e-delivery/print) \u00b7 `NTC_REGX_1024_6_TOOLKIT` (Your Home Loan Toolkit, August 2026 edition, EN/ES; the code keeps the seeded \u00a71024.6 citation, the executing rule is \u00a71026.19(g)) \u00b7 `NTC_REGX_1024_15_AFBA` (Appendix D format; separate piece of paper/separate docum"
+ },
+ {
+  "code": "NTC_REGX_1024_33A_SDS",
+  "owner_process": "21.3",
+  "mentions": [
+   "21.3"
+  ],
+  "context": "**RESPA Servicing Disclosure Statement \u2014 \u00a71024.33(a) (eCFR 9/08/2026 via 00a-fed \u00a76.2) \u2014 VERIFIED (surprise).** \"Within three days (excluding legal public holidays, Saturdays, and Sundays) after a person applies for a reverse mortgage transaction, the lender, mortgage broker who anticipates using table funding, or dealer in a first-lien dealer loan shall provide to the person a servicing disclosur"
+ },
+ {
+  "code": "NTC_REGX_1024_6_TOOLKIT",
+  "owner_process": "21.3",
+  "mentions": [
+   "21.3"
+  ],
+  "context": "Notices owned here (Notice Registry codes; channel rule per baseline \u00a76): `NTC_REGX_1024_20_HCL` (generated list + accompanying language; e-delivery/print) \u00b7 `NTC_REGX_1024_6_TOOLKIT` (Your Home Loan Toolkit, August 2026 edition, EN/ES; the code keeps the seeded \u00a71024.6 citation, the executing rule is \u00a71026.19(g)) \u00b7 `NTC_REGX_1024_15_AFBA` (Appendix D format; separate piece of paper/separate docum"
+ },
+ {
+  "code": "NTC_REGZ_1026_19B_ARM_PROGRAM",
+  "owner_process": "21.3",
+  "mentions": [
+   "21.3"
+  ],
+  "context": "Notices owned here (Notice Registry codes; channel rule per baseline \u00a76): `NTC_REGX_1024_20_HCL` (generated list + accompanying language; e-delivery/print) \u00b7 `NTC_REGX_1024_6_TOOLKIT` (Your Home Loan Toolkit, August 2026 edition, EN/ES; the code keeps the seeded \u00a71024.6 citation, the executing rule is \u00a71026.19(g)) \u00b7 `NTC_REGX_1024_15_AFBA` (Appendix D format; separate piece of paper/separate docum"
+ },
+ {
+  "code": "NTC_REGZ_1026_19B_CHARM",
+  "owner_process": "21.3",
+  "mentions": [
+   "21.3"
+  ],
+  "context": "Notices owned here (Notice Registry codes; channel rule per baseline \u00a76): `NTC_REGX_1024_20_HCL` (generated list + accompanying language; e-delivery/print) \u00b7 `NTC_REGX_1024_6_TOOLKIT` (Your Home Loan Toolkit, August 2026 edition, EN/ES; the code keeps the seeded \u00a71024.6 citation, the executing rule is \u00a71026.19(g)) \u00b7 `NTC_REGX_1024_15_AFBA` (Appendix D format; separate piece of paper/separate docum"
+ },
+ {
+  "code": "NTC_TX_50A6_12DAY",
+  "owner_process": "21.3",
+  "mentions": [
+   "21.3",
+   "26.1"
+  ],
+  "context": "Colorado (SB 26-189 point-of-interaction notice), California CPPA ADMT pre-use notice, Utah and Texas AI-disclosure duties are 20.3/21.1 (`NTC_SM_AI_INTERACTION_DISCLOSURE`, `NTC_CO_SB26_189_ADMT_NOTICE`) and are not repeated here. TX 50(a)(6) 12-day notice is 26.1's `NTC_TX_50A6_12DAY` (delivered at application when the transaction is a 50(a)(6) \u2014 26.1 sets the timer; 21.3's package carries it)."
+ },
+ {
+  "code": "NTC_TX_7TAC_57_200_SML_NOTICE",
+  "owner_process": "21.3",
+  "mentions": [
+   "21.3"
+  ],
+  "context": "Notices owned here (Notice Registry codes; channel rule per baseline \u00a76): `NTC_REGX_1024_20_HCL` (generated list + accompanying language; e-delivery/print) \u00b7 `NTC_REGX_1024_6_TOOLKIT` (Your Home Loan Toolkit, August 2026 edition, EN/ES; the code keeps the seeded \u00a71024.6 citation, the executing rule is \u00a71026.19(g)) \u00b7 `NTC_REGX_1024_15_AFBA` (Appendix D format; separate piece of paper/separate docum"
+ },
+ {
+  "code": "NTC_NY_3NYCRR_38_6_LOCK_EXPIRY_NOTICE",
+  "owner_process": "21.4",
+  "mentions": [
+   "21.4"
+  ],
+  "context": "- SM: Notice Registry templates `NTC_SM_RATE_LOCK_CONFIRMATION` and `NTC_NY_3NYCRR_38_6_LOCK_EXPIRY_NOTICE` approved by partner compliance; E-SIGN consent scope `disclosures.origination` covers lock confirmations (21.1 `NTC_SM_ESIGN_CONSENT`)."
+ },
+ {
+  "code": "NTC_REGZ_1026_37_LE_REVISED",
+  "owner_process": "21.4",
+  "mentions": [
+   "21.4",
+   "21.5"
+  ],
+  "context": "`notices`: `NTC_SM_RATE_LOCK_CONFIRMATION` (new, owned here; the \"lock agreement\": borrower names, property, product, note rate, points/credits in dollars, lock period, expiration date and time with time zone, extension/relock/float-down terms, fee refund rules, conditions, partner as lender, MLO name and NMLSR ID; NY variant adds \u00a738.6 content and signature blocks for applicant and lender; NJ var"
+ },
+ {
+  "code": "NTC_SM_RATE_LOCK_CONFIRMATION",
+  "owner_process": "21.4",
+  "mentions": [
+   "21.4"
+  ],
+  "context": "- SM: Notice Registry templates `NTC_SM_RATE_LOCK_CONFIRMATION` and `NTC_NY_3NYCRR_38_6_LOCK_EXPIRY_NOTICE` approved by partner compliance; E-SIGN consent scope `disclosures.origination` covers lock confirmations (21.1 `NTC_SM_ESIGN_CONSENT`)."
+ },
+ {
+  "code": "NTC_REGB_1002_9_ADVERSE_ACTION",
+  "owner_process": "21.6",
+  "mentions": [
+   "21.6",
+   "23.2",
+   "23.3",
+   "31.2"
+  ],
+  "context": "| Data/artifacts | `decisions`; `adverse_actions` (principal reasons with sources; FCRA block per applicant); notices C-1/C-4/C-6 equivalents (`NTC_REGB_1002_9_ADVERSE_ACTION`, `NTC_REGB_1002_9_COUNTEROFFER`, `NTC_REGB_1002_9_NOIA`); Colorado ADMT notice/explanation (`NTC_CO_SB26_189_ADMT_NOTICE`); `underwriting_reviewer` approval; `hmda_records.action_taken`/`action_taken_date`/denial reasons |"
+ },
+ {
+  "code": "NTC_REGB_1002_9_COUNTEROFFER",
+  "owner_process": "21.6",
+  "mentions": [
+   "21.6",
+   "23.2",
+   "23.3"
+  ],
+  "context": "| Data/artifacts | `decisions`; `adverse_actions` (principal reasons with sources; FCRA block per applicant); notices C-1/C-4/C-6 equivalents (`NTC_REGB_1002_9_ADVERSE_ACTION`, `NTC_REGB_1002_9_COUNTEROFFER`, `NTC_REGB_1002_9_NOIA`); Colorado ADMT notice/explanation (`NTC_CO_SB26_189_ADMT_NOTICE`); `underwriting_reviewer` approval; `hmda_records.action_taken`/`action_taken_date`/denial reasons |"
+ },
+ {
+  "code": "NTC_REGB_1002_9_NOIA",
+  "owner_process": "21.6",
+  "mentions": [
+   "21.6",
+   "22.1"
+  ],
+  "context": "| Data/artifacts | `decisions`; `adverse_actions` (principal reasons with sources; FCRA block per applicant); notices C-1/C-4/C-6 equivalents (`NTC_REGB_1002_9_ADVERSE_ACTION`, `NTC_REGB_1002_9_COUNTEROFFER`, `NTC_REGB_1002_9_NOIA`); Colorado ADMT notice/explanation (`NTC_CO_SB26_189_ADMT_NOTICE`); `underwriting_reviewer` approval; `hmda_records.action_taken`/`action_taken_date`/denial reasons |"
+ },
+ {
+  "code": "NTC_SM_NEEDS_LIST",
+  "owner_process": "22.1",
+  "mentions": [
+   "22.1",
+   "22.2",
+   "22.3",
+   "22.4",
+   "22.6"
+  ],
+  "context": "Baseline tables written: `conditions` (status \u2192 `cleared` when a request is satisfied and the owning process accepts it), `notices` (`NTC_SM_NEEDS_LIST`, `NTC_SM_NEEDS_LIST_REMINDER`), `timers`, `agent_runs`, `agent_decisions`, `escalations`, `loan_events`."
+ },
+ {
+  "code": "NTC_SM_NEEDS_LIST_REMINDER",
+  "owner_process": "22.1",
+  "mentions": [
+   "22.1"
+  ],
+  "context": "Baseline tables written: `conditions` (status \u2192 `cleared` when a request is satisfied and the owning process accepts it), `notices` (`NTC_SM_NEEDS_LIST`, `NTC_SM_NEEDS_LIST_REMINDER`), `timers`, `agent_runs`, `agent_decisions`, `escalations`, `loan_events`."
+ },
+ {
+  "code": "NTC_REGB_1002_9_APPROVAL",
+  "owner_process": "23.3",
+  "mentions": [
+   "23.3"
+  ],
+  "context": "| Data/artifacts | `decisions` (conditional approval / approval / counteroffer / denial), conditional-approval letter (`NTC_REGB_1002_9_APPROVAL`), `condition_clearances`, `ctc_checklists`, AI decision record (inputs, DU findings, evidence, rule-set versions), rep-and-warrant relief ledger (`rep_warrant_relief`), prefunding-QC hooks |"
+ },
+ {
+  "code": "NTC_FNMA_B4_1_3_12_ROV_DISCLOSURE",
+  "owner_process": "24.2",
+  "mentions": [
+   "24.2"
+  ],
+  "context": "`consents` row kind `regb_1002_14_timing_waiver` {`statement_channel` \u2208 {oral_recorded, written, electronic}, `obtained_at`, `consummation_at_when_obtained`}. `disclosures.kind` additions: `valuation_copy`, `rov_disclosure`, `hpml_appraisal_copy`. Notice codes (owned here): `NTC_REGB_1002_14_VALUATION_COPY` (cover letter + copies of every `valuations` row not yet delivered; creditor = partner), `N"
+ },
+ {
+  "code": "NTC_REGB_1002_14_COPY_NOT_CONSUMMATED",
+  "owner_process": "24.2",
+  "mentions": [
+   "24.2"
+  ],
+  "context": "`consents` row kind `regb_1002_14_timing_waiver` {`statement_channel` \u2208 {oral_recorded, written, electronic}, `obtained_at`, `consummation_at_when_obtained`}. `disclosures.kind` additions: `valuation_copy`, `rov_disclosure`, `hpml_appraisal_copy`. Notice codes (owned here): `NTC_REGB_1002_14_VALUATION_COPY` (cover letter + copies of every `valuations` row not yet delivered; creditor = partner), `N"
+ },
+ {
+  "code": "NTC_REGB_1002_14_VALUATION_COPY",
+  "owner_process": "24.2",
+  "mentions": [
+   "24.2"
+  ],
+  "context": "`consents` row kind `regb_1002_14_timing_waiver` {`statement_channel` \u2208 {oral_recorded, written, electronic}, `obtained_at`, `consummation_at_when_obtained`}. `disclosures.kind` additions: `valuation_copy`, `rov_disclosure`, `hpml_appraisal_copy`. Notice codes (owned here): `NTC_REGB_1002_14_VALUATION_COPY` (cover letter + copies of every `valuations` row not yet delivered; creditor = partner), `N"
+ },
+ {
+  "code": "NTC_REGZ_1026_35C_HPML_APPRAISAL_COPY",
+  "owner_process": "24.2",
+  "mentions": [
+   "24.2"
+  ],
+  "context": "`consents` row kind `regb_1002_14_timing_waiver` {`statement_channel` \u2208 {oral_recorded, written, electronic}, `obtained_at`, `consummation_at_when_obtained`}. `disclosures.kind` additions: `valuation_copy`, `rov_disclosure`, `hpml_appraisal_copy`. Notice codes (owned here): `NTC_REGB_1002_14_VALUATION_COPY` (cover letter + copies of every `valuations` row not yet delivered; creditor = partner), `N"
+ },
+ {
+  "code": "NTC_FDPA_4104A_FLOOD_NOTICE",
+  "owner_process": "24.5",
+  "mentions": [
+   "24.5",
+   "25.4"
+  ],
+  "context": "| Systems | Flood vendor (life-of-loan; `flood` adapter), insurance-tracking vendor shared with 9.x (`insurance-tracking` adapter), e-delivery/print for the notice, `title-closing` agent, Notice Registry (`NTC_FDPA_4104A_FLOOD_NOTICE`), Timer Engine |"
+ },
+ {
+  "code": "NTC_HPA_4903_INITIAL_ARM",
+  "owner_process": "24.6",
+  "mentions": [
+   "24.6",
+   "25.4"
+  ],
+  "context": "| Systems | MI company APIs (MGIC, Enact, Radian, Essent, Arch, NMI; MISMO MI Rate Quote standard; order/activation vendor-specific \u2014 00b-orig N9), DU MI messages (23.1), LE/CD engine (21.2/25.2), Notice Registry (`NTC_HPA_4903_INITIAL_FIXED`, `NTC_HPA_4903_INITIAL_ARM`, `NTC_HPA_4905_LPMI`), `title-closing` agent |"
+ },
+ {
+  "code": "NTC_HPA_4903_INITIAL_FIXED",
+  "owner_process": "24.6",
+  "mentions": [
+   "24.6",
+   "25.4"
+  ],
+  "context": "| Systems | MI company APIs (MGIC, Enact, Radian, Essent, Arch, NMI; MISMO MI Rate Quote standard; order/activation vendor-specific \u2014 00b-orig N9), DU MI messages (23.1), LE/CD engine (21.2/25.2), Notice Registry (`NTC_HPA_4903_INITIAL_FIXED`, `NTC_HPA_4903_INITIAL_ARM`, `NTC_HPA_4905_LPMI`), `title-closing` agent |"
+ },
+ {
+  "code": "NTC_HPA_4905_LPMI",
+  "owner_process": "24.6",
+  "mentions": [
+   "24.6",
+   "25.4"
+  ],
+  "context": "| Systems | MI company APIs (MGIC, Enact, Radian, Essent, Arch, NMI; MISMO MI Rate Quote standard; order/activation vendor-specific \u2014 00b-orig N9), DU MI messages (23.1), LE/CD engine (21.2/25.2), Notice Registry (`NTC_HPA_4903_INITIAL_FIXED`, `NTC_HPA_4903_INITIAL_ARM`, `NTC_HPA_4905_LPMI`), `title-closing` agent |"
+ },
+ {
+  "code": "NTC_REGZ_1026_38_CD",
+  "owner_process": "25.1",
+  "mentions": [
+   "25.1",
+   "25.2",
+   "25.4"
+  ],
+  "context": "- `apr_calculations` row per checkpoint with the full Appendix J trace (retention `regz_cd_5y`); the APR, finance charge, amount financed, total of payments and TIP feed `NTC_REGZ_1026_38_CD` (25.2) and the material disclosures list (25.3)."
+ },
+ {
+  "code": "NTC_REGZ_1026_38_CD_CORRECTED",
+  "owner_process": "25.2",
+  "mentions": [
+   "25.2"
+  ],
+  "context": "| Data/artifacts | `disclosures{kind \u2208 cd, corrected_cd, seller_cd}` versions with receipt evidence per consumer; `cd_receipts`; `cd_figure_sources`; `cd_consistency_checks`; `ucd_submissions`; `NTC_REGZ_1026_38_CD`, `NTC_REGZ_1026_38_CD_CORRECTED`, `NTC_REGZ_1026_38_SELLER_CD` |"
+ },
+ {
+  "code": "NTC_REGZ_1026_38_SELLER_CD",
+  "owner_process": "25.2",
+  "mentions": [
+   "25.2"
+  ],
+  "context": "| Data/artifacts | `disclosures{kind \u2208 cd, corrected_cd, seller_cd}` versions with receipt evidence per consumer; `cd_receipts`; `cd_figure_sources`; `cd_consistency_checks`; `ucd_submissions`; `NTC_REGZ_1026_38_CD`, `NTC_REGZ_1026_38_CD_CORRECTED`, `NTC_REGZ_1026_38_SELLER_CD` |"
+ },
+ {
+  "code": "NTC_REGZ_1026_23_H8",
+  "owner_process": "25.3",
+  "mentions": [
+   "25.3",
+   "26.1"
+  ],
+  "context": "| Data/artifacts | `rescission_periods`, `rescission_exercises`, `disclosures{kind=rescission_h8 \\| rescission_h9}`, `fundings.rescission_expires_at`, `NTC_REGZ_1026_23_H8`, `NTC_REGZ_1026_23_H9`, gate `REGZ_1026_23_RESCISSION_3SBD_GATE`, monitor `REGZ_1026_23_EXTENDED_RIGHT_3Y` |"
+ },
+ {
+  "code": "NTC_REGZ_1026_23_H9",
+  "owner_process": "25.3",
+  "mentions": [
+   "25.3"
+  ],
+  "context": "| Data/artifacts | `rescission_periods`, `rescission_exercises`, `disclosures{kind=rescission_h8 \\| rescission_h9}`, `fundings.rescission_expires_at`, `NTC_REGZ_1026_23_H8`, `NTC_REGZ_1026_23_H9`, gate `REGZ_1026_23_RESCISSION_3SBD_GATE`, monitor `REGZ_1026_23_EXTENDED_RIGHT_3Y` |"
+ },
+ {
+  "code": "NTC_CA_CIV_2954_IMPOUND_STMT",
+  "owner_process": "25.4",
+  "mentions": [
+   "25.4"
+  ],
+  "context": "| Data/artifacts | `closing_notice_runs`, `escrow_elections`, `ownership_transfer_notices`, `tax_reporting_seeds`; `disclosures{kind \u2208 initial_escrow_stmt, privacy, escrow_election, state:<code>}`; `NTC_REGZ_1026_39_OWNERSHIP_TRANSFER`, `NTC_SM_ESCROW_ELECTION`, `NTC_UT_7_17_4_RESERVE_OPTIONS`, `NTC_CA_CIV_2954_IMPOUND_STMT`; referenced: `NTC_REGX_1024_17G_INITIAL_ESCROW_STMT` (servicing 3.1), `NT"
+ },
+ {
+  "code": "NTC_REGZ_1026_39_OWNERSHIP_TRANSFER",
+  "owner_process": "25.4",
+  "mentions": [
+   "25.4",
+   "30.4"
+  ],
+  "context": "| Data/artifacts | `closing_notice_runs`, `escrow_elections`, `ownership_transfer_notices`, `tax_reporting_seeds`; `disclosures{kind \u2208 initial_escrow_stmt, privacy, escrow_election, state:<code>}`; `NTC_REGZ_1026_39_OWNERSHIP_TRANSFER`, `NTC_SM_ESCROW_ELECTION`, `NTC_UT_7_17_4_RESERVE_OPTIONS`, `NTC_CA_CIV_2954_IMPOUND_STMT`; referenced: `NTC_REGX_1024_17G_INITIAL_ESCROW_STMT` (servicing 3.1), `NT"
+ },
+ {
+  "code": "NTC_SM_ESCROW_ELECTION",
+  "owner_process": "25.4",
+  "mentions": [
+   "25.4"
+  ],
+  "context": "| Data/artifacts | `closing_notice_runs`, `escrow_elections`, `ownership_transfer_notices`, `tax_reporting_seeds`; `disclosures{kind \u2208 initial_escrow_stmt, privacy, escrow_election, state:<code>}`; `NTC_REGZ_1026_39_OWNERSHIP_TRANSFER`, `NTC_SM_ESCROW_ELECTION`, `NTC_UT_7_17_4_RESERVE_OPTIONS`, `NTC_CA_CIV_2954_IMPOUND_STMT`; referenced: `NTC_REGX_1024_17G_INITIAL_ESCROW_STMT` (servicing 3.1), `NT"
+ },
+ {
+  "code": "NTC_SM_FIRST_PAYMENT_LETTER",
+  "owner_process": "25.4",
+  "mentions": [
+   "25.4",
+   "26.3",
+   "30.2",
+   "30.4"
+  ],
+  "context": "| Data/artifacts | `closing_notice_runs`, `escrow_elections`, `ownership_transfer_notices`, `tax_reporting_seeds`; `disclosures{kind \u2208 initial_escrow_stmt, privacy, escrow_election, state:<code>}`; `NTC_REGZ_1026_39_OWNERSHIP_TRANSFER`, `NTC_SM_ESCROW_ELECTION`, `NTC_UT_7_17_4_RESERVE_OPTIONS`, `NTC_CA_CIV_2954_IMPOUND_STMT`; referenced: `NTC_REGX_1024_17G_INITIAL_ESCROW_STMT` (servicing 3.1), `NT"
+ },
+ {
+  "code": "NTC_UT_7_17_4_RESERVE_OPTIONS",
+  "owner_process": "25.4",
+  "mentions": [
+   "25.4"
+  ],
+  "context": "| Data/artifacts | `closing_notice_runs`, `escrow_elections`, `ownership_transfer_notices`, `tax_reporting_seeds`; `disclosures{kind \u2208 initial_escrow_stmt, privacy, escrow_election, state:<code>}`; `NTC_REGZ_1026_39_OWNERSHIP_TRANSFER`, `NTC_SM_ESCROW_ELECTION`, `NTC_UT_7_17_4_RESERVE_OPTIONS`, `NTC_CA_CIV_2954_IMPOUND_STMT`; referenced: `NTC_REGX_1024_17G_INITIAL_ESCROW_STMT` (servicing 3.1), `NT"
+ },
+ {
+  "code": "NTC_SM_CLOSING_INSTRUCTIONS",
+  "owner_process": "26.1",
+  "mentions": [
+   "26.1",
+   "26.3"
+  ],
+  "context": "Baseline tables written: `documents` (every rendered artifact), `notices` (`NTC_TX_50A6_12DAY`, `NTC_TX_50A6_ITEMIZATION`, `NTC_TX_50F2_REFI_NOTICE`, `NTC_SM_CLOSING_INSTRUCTIONS`), `timers`, `agent_decisions`, `escalations`, `conditions{source=closing}`, `closings` (set `document_set_id`), `mers_transactions` (MIN reserved / Pre-Closing Registration if elected \u2014 26.4 owns registration). Events em"
+ },
+ {
+  "code": "NTC_TX_50A6_ITEMIZATION",
+  "owner_process": "26.1",
+  "mentions": [
+   "26.1"
+  ],
+  "context": "Baseline tables written: `documents` (every rendered artifact), `notices` (`NTC_TX_50A6_12DAY`, `NTC_TX_50A6_ITEMIZATION`, `NTC_TX_50F2_REFI_NOTICE`, `NTC_SM_CLOSING_INSTRUCTIONS`), `timers`, `agent_decisions`, `escalations`, `conditions{source=closing}`, `closings` (set `document_set_id`), `mers_transactions` (MIN reserved / Pre-Closing Registration if elected \u2014 26.4 owns registration). Events em"
+ },
+ {
+  "code": "NTC_TX_50F2_REFI_NOTICE",
+  "owner_process": "26.1",
+  "mentions": [
+   "26.1"
+  ],
+  "context": "Baseline tables written: `documents` (every rendered artifact), `notices` (`NTC_TX_50A6_12DAY`, `NTC_TX_50A6_ITEMIZATION`, `NTC_TX_50F2_REFI_NOTICE`, `NTC_SM_CLOSING_INSTRUCTIONS`), `timers`, `agent_decisions`, `escalations`, `conditions{source=closing}`, `closings` (set `document_set_id`), `mers_transactions` (MIN reserved / Pre-Closing Registration if elected \u2014 26.4 owns registration). Events em"
+ },
+ {
+  "code": "NTC_SM_CLOSING_APPOINTMENT",
+  "owner_process": "26.2",
+  "mentions": [
+   "26.2",
+   "26.4"
+  ],
+  "context": "- Notices: `NTC_SM_CLOSING_APPOINTMENT` (new; borrower closing-day instructions: platform link, ID requirements, KBA expectations, paper option, who attends, TX office address) \u2014 e-delivery under consent or paper."
+ },
+ {
+  "code": "NTC_HMDA_1003_5B_DISCLOSURE_STMT_NOTICE",
+  "owner_process": "28.3",
+  "mentions": [
+   "28.3"
+  ],
+  "context": "- Notices: none to borrowers; public notices (b)(2), (c)(1), (e) are partner-office artifacts produced from Notice Registry templates `NTC_HMDA_1003_5B_DISCLOSURE_STMT_NOTICE`, `NTC_HMDA_1003_5C_MODIFIED_LAR_NOTICE`, `NTC_HMDA_1003_5E_LOBBY_NOTICE` (defined here; text follows \u00a71003.5's \"may be obtained on the Bureau's Web site at www.consumerfinance.gov/hmda\")."
+ },
+ {
+  "code": "NTC_HMDA_1003_5C_MODIFIED_LAR_NOTICE",
+  "owner_process": "28.3",
+  "mentions": [
+   "28.3"
+  ],
+  "context": "- Notices: none to borrowers; public notices (b)(2), (c)(1), (e) are partner-office artifacts produced from Notice Registry templates `NTC_HMDA_1003_5B_DISCLOSURE_STMT_NOTICE`, `NTC_HMDA_1003_5C_MODIFIED_LAR_NOTICE`, `NTC_HMDA_1003_5E_LOBBY_NOTICE` (defined here; text follows \u00a71003.5's \"may be obtained on the Bureau's Web site at www.consumerfinance.gov/hmda\")."
+ },
+ {
+  "code": "NTC_HMDA_1003_5E_LOBBY_NOTICE",
+  "owner_process": "28.3",
+  "mentions": [
+   "28.3"
+  ],
+  "context": "- Notices: none to borrowers; public notices (b)(2), (c)(1), (e) are partner-office artifacts produced from Notice Registry templates `NTC_HMDA_1003_5B_DISCLOSURE_STMT_NOTICE`, `NTC_HMDA_1003_5C_MODIFIED_LAR_NOTICE`, `NTC_HMDA_1003_5E_LOBBY_NOTICE` (defined here; text follows \u00a71003.5's \"may be obtained on the Bureau's Web site at www.consumerfinance.gov/hmda\")."
+ },
+ {
+  "code": "NTC_INTERNAL_LICENSE_EXPIRY_WARN",
+  "owner_process": "31.1",
+  "mentions": [
+   "31.1"
+  ],
+  "context": "- Notices: none to borrowers. Internal: `NTC_INTERNAL_LICENSE_EXPIRY_WARN`, `NTC_INTERNAL_STATE_GATE_BLOCKED`."
+ },
+ {
+  "code": "NTC_INTERNAL_STATE_GATE_BLOCKED",
+  "owner_process": "31.1",
+  "mentions": [
+   "31.1"
+  ],
+  "context": "- Notices: none to borrowers. Internal: `NTC_INTERNAL_LICENSE_EXPIRY_WARN`, `NTC_INTERNAL_STATE_GATE_BLOCKED`."
+ },
+ {
+  "code": "NTC_CA_CPPA_7220_ADMT_PRE_USE",
+  "owner_process": "31.2",
+  "mentions": [
+   "31.2"
+  ],
+  "context": "- Consumer artifacts owned elsewhere and parameterized here: `NTC_CO_SB26_189_ADMT_NOTICE{pre_use, adverse_outcome_explanation}` (21.6), `NTC_SM_AI_INTERACTION_DISCLOSURE` (20.3; UT/CA/CO overlays), `NTC_REGB_1002_9_ADVERSE_ACTION` reason text (21.6). New (owned here): `NTC_CA_CPPA_7220_ADMT_PRE_USE` (California pre-use notice variant; delivered with the 21.3 companion notices for California appli"
+ },
+ {
+  "code": "NTC_SM_AI_DECISION_EXPLANATION",
+  "owner_process": "31.2",
+  "mentions": [
+   "31.2"
+  ],
+  "context": "- Consumer artifacts owned elsewhere and parameterized here: `NTC_CO_SB26_189_ADMT_NOTICE{pre_use, adverse_outcome_explanation}` (21.6), `NTC_SM_AI_INTERACTION_DISCLOSURE` (20.3; UT/CA/CO overlays), `NTC_REGB_1002_9_ADVERSE_ACTION` reason text (21.6). New (owned here): `NTC_CA_CPPA_7220_ADMT_PRE_USE` (California pre-use notice variant; delivered with the 21.3 companion notices for California appli"
  }
 ]

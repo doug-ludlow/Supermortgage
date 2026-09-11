@@ -15,7 +15,8 @@ manifest = json.load(open(os.path.join(root, 'spec/registry/manifest.json')))
 coverage = json.load(open(os.path.join(root, 'docs/audit/coverage.json')))
 cov = {r['process']: r for r in coverage['processes']}
 SECTION_DIR = {1: 'boarding', 2: 'cashiering', 3: 'escrow', 4: 'servicing-requests', 5: 'investor', 6: 'custodial', 7: 'notices', 8: 'credit-reporting', 9: 'insurance', 10: 'pmi',
-               11: 'early-intervention', 12: 'lossmit', 13: 'foreclosure', 14: 'bankruptcy', 15: 'reo', 16: 'payoff', 17: 'transfers', 18: 'qc-audit', 19: 'data-security'}
+               11: 'early-intervention', 12: 'lossmit', 13: 'foreclosure', 14: 'bankruptcy', 15: 'reo', 16: 'payoff', 17: 'transfers', 18: 'qc-audit', 19: 'data-security',
+               20: 'leads-pricing', 21: 'application', 22: 'verification', 23: 'underwriting', 24: 'property', 25: 'compliance-disclosures', 26: 'closing', 27: 'warehouse', 28: 'qc-hmda', 29: 'secondary', 30: 'orig-boarding', 31: 'governance'}
 dry = '--dry-run' in sys.argv
 
 def tids_in(text):

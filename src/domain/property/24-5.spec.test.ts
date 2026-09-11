@@ -1,0 +1,18 @@
+// 24.5 Hazard, flood, and other property insurance (coverage, deductibles, carrier ratings, mortgagee clause, flood determination and notice, NFIP/private flood, condo master/HO-6, escrow implications)
+// spec/sections/24-property-valuation-eligibility-title-hazard-flood-insurance/24-5-hazard-flood-and-other-property-insurance-coverage-deductibl.md
+// One node:test per T-id, named exactly as the spec. `todo: true` = not implemented yet (tools/audit.py does not
+// count it). Implement by replacing the todo line with a real test; never edit the name.
+import { test } from "node:test";
+
+test("24.5-T1: Given the refinance fixture with dwelling coverage $520,000 on a replacement-cost basis (roof ACV), Special form, AM Best A carrier, deductible $5,000, wind deductible 2%, when evaluated, then `verified` with `hazard_deductible_max_cents=2600000` and all tests PASS.", { todo: true });
+test("24.5-T2: Given the same policy with a named-storm deductible of 6% ($31,200), when evaluated, then `deductible_excess` deficiency; given exactly 5% ($26,000), then PASS.", { todo: true });
+test("24.5-T3: Given a policy written on an actual-cash-value basis for the dwelling, when evaluated, then `acv_dwelling` deficiency (roof ACV alone would pass).", { todo: true });
+test("24.5-T4: Given a Zone AE determination received Tue Oct 6, 2026 and the notice e-signed Wed Oct 7, when consummation is Fri Nov 6, then `FDPA_4104A_FLOOD_NOTICE_GATE` passes (30 days); given the notice first delivered Mon Nov 2, then the gate fails and `consummate` is refused unless the short-period path (reason + acknowledgment) is recorded.", { todo: true });
+test("24.5-T5: Given Zone AE, RCV $520,000, UPB $560,000, when the requirement is computed, then `flood_required_amount_cents=25000000` and `flood_deductible_max_cents=1000000`; an NFIP policy of $250,000 with a $5,000 deductible applied and paid Nov 5 passes; a $200,000 policy fails (`flood_insufficient`).", { todo: true });
+test("24.5-T6: Given a 40-unit RCBAP with RCV $12,000,000 and coverage $9,600,000 and a unit with UPB $412,000, when evaluated, then the building passes (80% rule) and the unit requires a $10,000 supplemental policy (`flood_insufficient` until provided).", { todo: true });
+test("24.5-T7: Given a condo master policy with a $60,000 per-unit deductible on an application dated Oct 19, 2026, when evaluated, then FAIL (cap $50,000); given $25,000 and an HO-6 of $40,000 with a $2,500 deductible, then PASS.", { todo: true });
+test("24.5-T8: Given a mortgagee clause naming \"MERS as nominee for [Partner]\", when checked, then `mortgagee_clause` deficiency; given \"[Partner], its successors and/or assigns, c/o Supermortgage, P.O. Box \u2026\", then PASS (with or without \"as their interests may appear\").", { todo: true });
+test("24.5-T9: Given a Zone X determination with no residential structure in an SFHA, when finalized, then `not_required`, `sfc_180=true`, no notice, and 29.3 receives SFC 180.", { todo: true });
+test("24.5-T10: Given a non-participating community, when the determination is received, then `ineligible` and the loan is stopped with a collateral-based reason.", { todo: true });
+test("24.5-T11: Given the partner flagged `regulated_lending_institution=false` and an escrow-waived non-HPML loan in an SFHA, when escrow lines are seeded, then the flood line is `waivable=true`; given the flag true, then `waivable=false` (12 CFR 22.5).", { todo: true });
+test("24.5-T12: Given a carrier rated only by Demotech at \"A\" and unrated elsewhere, when evaluated, then the rating test PASSES (one agency suffices); given Demotech \"S\" with no other rating, then `rating_fail` unless FAIR plan/mortgage-impairment relief applies.", { todo: true });

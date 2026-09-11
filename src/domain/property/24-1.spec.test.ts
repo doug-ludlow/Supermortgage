@@ -1,0 +1,18 @@
+// 24.1 Valuation method selection and ordering (value acceptance, value acceptance + property data, hybrid, desktop, traditional), appraiser independence, and property data collection
+// spec/sections/24-property-valuation-eligibility-title-hazard-flood-insurance/24-1-valuation-method-selection-and-ordering-value-acceptance-val.md
+// One node:test per T-id, named exactly as the spec. `todo: true` = not implemented yet (tools/audit.py does not
+// count it). Implement by replacing the todo line with a real test; never edit the name.
+import { test } from "node:test";
+
+test("24.1-T1: Given ITP received Tue Oct 6, 2026 08:40 MST and `fee_paid_by = borrower`, when the agent attempts `placeOrder` at 08:30 MST, then the command is refused with `REGZ_1026_19E2_INTENT_FEE_GATE` closed; at 08:41 it succeeds.", { todo: true });
+test("24.1-T2: Given the refinance fixture with `offer_type = none`, when R1 runs, then `method = traditional`, `form_code = urar_uad36`, `desktop` is excluded with reason \"refinance\", and a decision record with the exclusion list is written.", { todo: true });
+test("24.1-T3: Given order Tue Oct 6, assignment Wed Oct 7, inspection Sat Oct 10 and report Thu Oct 15, 2026, then `SM_VALUATION_ORDER_SLA_1BD`, `_ASSIGN_SLA_2BD`, `_INSPECT_SLA_7CD` and `_REPORT_SLA_10CD` are all satisfied and `age_4m_update_after = 2027-02-10`, `age_12m_expires_on = 2027-10-10`.", { todo: true });
+test("24.1-T4: Given effective date Oct 10, 2026 and a note date of Feb 16, 2027, when `consummate` is asserted, then `FNMA_B4_1_2_04_APPRAISAL_UPDATE_4M` blocks until an update dated between Oct 16, 2026 and Feb 16, 2027 with \"not declined\" is received; a \"declined\" update forces `method_pending`.", { todo: true });
+test("24.1-T5: Given the purchase fixture with `value_acceptance_pd` offered Oct 19, 2026 and PDC accepted Oct 26, when the note date is Nov 18, 2026, then both `FNMA_B4_1_4_10_VALUE_ACCEPTANCE_OFFER_4M` (expiry Feb 19, 2027) and `FNMA_B4_1_4_11_PDC_API_SUBMIT_GATE` are satisfied and delivery data carries SFC 774 and the Property Data ID.", { todo: true });
+test("24.1-T6: Given a PDC with `safety_issue_flag = true` (collector reports active roof leak), then VA+PD is blocked, `converted_to_hybrid` is recorded, the PDC is attached to the hybrid engagement, and the lender representation rule is cited in the decision.", { todo: true });
+test("24.1-T7: Given an outbound order payload containing `estimated_value` or `loan_amount`, then schema validation rejects the payload before transmission and an `air.guardrail.blocked` audit row is written.", { todo: true });
+test("24.1-T8: Given an AMC quote whose appraiser share is 45,000 cents against a benchmark p25 of 52,500 with no (f)(2) adjustment reason, then `benchmarkFee` fails and the order is held for vendor re-quote.", { todo: true });
+test("24.1-T9: Given an appraiser whose AZ license expires Oct 8, 2026 and an assignment attempt on Oct 9, then `SM_APPRAISER_LICENSE_GATE` blocks and the order is reassigned.", { todo: true });
+test("24.1-T10: Given an order placed Oct 20, 2026 whose first UCDP submission will occur Nov 3, 2026, when the vendor delivers a UAD 2.6 file, then receipt is rejected with reference FNM0391 and a re-engagement is issued.", { todo: true });
+test("24.1-T11: Given a DU resubmission that loses the VA offer on Nov 6, 2026 for the purchase fixture, then `valuation.offer.lost` fires, R1 selects `hybrid`, and the order is placed the same business day.", { todo: true });
+test("24.1-T12: Given a report transferred from another lender dated Sept 20, 2026 with an AIR attestation, then the platform accepts it into 24.2 review, marks `transferred_from_lender`, and requires a UCDP resubmission under the partner.", { todo: true });

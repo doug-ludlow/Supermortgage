@@ -7,7 +7,9 @@
  */
 import type { Actor } from "../kernel/events/index.ts";
 
-export const HUMAN_ROLES = ["officer", "attorney", "signing_officer", "fnma_portal_operator", "human_agent", "lossmit_reviewer", "fraud_officer", "ciso", "compliance", "counsel", "ops_analyst"] as const;
+export const HUMAN_ROLES = ["officer", "attorney", "signing_officer", "fnma_portal_operator", "human_agent", "lossmit_reviewer", "fraud_officer", "ciso", "compliance", "counsel", "ops_analyst",
+  // origination touchpoints (spec/origination/01-architecture-baseline-addendum.md §8): the person the law or policy names
+  "mlo_of_record", "underwriting_reviewer", "notary", "settlement_agent", "closing_attorney", "appraiser", "property_data_collector", "funding_approver", "bsa_officer", "qc_officer", "licensed_specialist"] as const;
 export type HumanRole = (typeof HUMAN_ROLES)[number];
 
 export class RoleDenied extends Error {

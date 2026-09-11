@@ -1,33 +1,33 @@
 {
- "brief": "spec units built 5071/7446 (68.1%): tids 1356/1914, tables 509/717, timers 1489/1987, notices 244/306, tools 747/1311, figures 726/1211; processes at 100%: 120/165",
+ "brief": "spec units built 5189/7446 (69.7%): tids 1380/1914, tables 522/717, timers 1501/1987, notices 247/306, tools 788/1311, figures 751/1211; processes at 100%: 121/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1356
+   "built": 1380
   },
   "tables": {
    "spec": 717,
-   "built": 509
+   "built": 522
   },
   "timers": {
    "spec": 1987,
-   "built": 1489
+   "built": 1501
   },
   "notices": {
    "spec": 306,
-   "built": 244
+   "built": 247
   },
   "tools": {
    "spec": 1311,
-   "built": 747
+   "built": 788
   },
   "figures": {
    "spec": 1211,
-   "built": 726
+   "built": 751
   },
   "units": {
    "spec": 7446,
-   "built": 5071
+   "built": 5189
   }
  },
  "sections": {
@@ -147,15 +147,15 @@
   },
   "20": {
    "spec": 190,
-   "built": 13,
+   "built": 57,
    "processes": 4,
    "done": 0
   },
   "21": {
    "spec": 282,
-   "built": 130,
+   "built": 166,
    "processes": 6,
-   "done": 3
+   "done": 4
   },
   "22": {
    "spec": 368,
@@ -177,13 +177,13 @@
   },
   "25": {
    "spec": 231,
-   "built": 90,
+   "built": 92,
    "processes": 4,
    "done": 1
   },
   "26": {
    "spec": 247,
-   "built": 11,
+   "built": 47,
    "processes": 4,
    "done": 0
   },
@@ -336,6 +336,7 @@
   "21.1",
   "21.2",
   "21.4",
+  "21.5",
   "25.1",
   "30.1",
   "30.4"
@@ -5086,15 +5087,12 @@
    },
    "figures": {
     "spec": 23,
-    "built": 0,
+    "built": 5,
     "missing": [
-     "$1,785.43",
      "$106.08",
      "$22,436.54",
      "$24,292.78",
      "$269.99",
-     "$3,402.62",
-     "$3,485.00",
      "$3,488.97",
      "$3,758.96",
      "$3,941.28",
@@ -5107,17 +5105,15 @@
      "$612,293.92",
      "$664,943.20",
      "$7,496.02",
-     "$700.00",
      "$709,904.15",
-     "$93.97",
      "$97,610.23"
     ]
    },
    "units": {
     "spec": 57,
-    "built": 0
+    "built": 5
    },
-   "pct": 0.0
+   "pct": 8.8
   },
   {
    "process": "20.2",
@@ -5198,16 +5194,14 @@
    },
    "figures": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "$3,402.62"
-    ]
+    "built": 1,
+    "missing": []
    },
    "units": {
     "spec": 45,
-    "built": 2
+    "built": 3
    },
-   "pct": 4.4
+   "pct": 6.7
   },
   {
    "process": "20.3",
@@ -5282,49 +5276,31 @@
    },
    "figures": {
     "spec": 3,
-    "built": 0,
+    "built": 1,
     "missing": [
-     "$3,402.62",
      "$3,488.97",
      "$3,758.96"
     ]
    },
    "units": {
     "spec": 41,
-    "built": 2
+    "built": 3
    },
-   "pct": 4.9
+   "pct": 7.3
   },
   {
    "process": "20.4",
    "title": "Rate quote and pricing engine (base pricing, LLPAs, servicing value, cost pass-through, fee schedule)",
    "tids": {
     "spec": 12,
-    "built": 0,
-    "todo": 12,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "fee_schedules",
-     "pricing_exceptions",
-     "sm_cost_schedules"
-    ]
+    "built": 3,
+    "missing": []
    },
    "timers": {
     "spec": 9,
@@ -5341,43 +5317,19 @@
    },
    "tools": {
     "spec": 12,
-    "built": 0,
-    "missing": [
-     "fetchPeWlPrices",
-     "publishRateSheet",
-     "loadLlpaTable",
-     "computeLlpa",
-     "solvePassThrough",
-     "computePayment",
-     "estimateApr",
-     "buildFeeItems",
-     "renderQuote",
-     "explainQuote",
-     "requestException",
-     "writeDecision"
-    ]
+    "built": 12,
+    "missing": []
    },
    "figures": {
     "spec": 10,
-    "built": 0,
-    "missing": [
-     "$1,785.43",
-     "$101.88",
-     "$199.13",
-     "$2,570.34",
-     "$2,672.22",
-     "$3,402.62",
-     "$3,485.00",
-     "$555.00",
-     "$700.00",
-     "$93.97"
-    ]
+    "built": 10,
+    "missing": []
    },
    "units": {
     "spec": 47,
-    "built": 9
+    "built": 46
    },
-   "pct": 19.1
+   "pct": 97.9
   },
   {
    "process": "21.1",
@@ -5628,39 +5580,20 @@
    "title": "Changed circumstances, revised Loan Estimates, and tolerance management (good-faith baseline, 4-business-day rule, resets, cure)",
    "tids": {
     "spec": 12,
-    "built": 0,
-    "todo": 12,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 3,
-    "built": 1,
-    "missing": [
-     "tolerance_cures",
-     "tolerance_tests"
-    ]
+    "built": 3,
+    "missing": []
    },
    "timers": {
     "spec": 5,
-    "built": 3,
-    "armable": 4,
-    "missing": [
-     "REGZ_1026_19E4_REVISED_LE_4SBD_GATE",
-     "SM_TOLERANCE_CURE_REVIEW_SLA_1BD"
-    ]
+    "built": 5,
+    "armable": 5,
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -5669,41 +5602,19 @@
    },
    "tools": {
     "spec": 12,
-    "built": 0,
-    "missing": [
-     "classifyFeeChange",
-     "evaluateChangedCircumstance",
-     "resetBaseline",
-     "computeRevisedLEDueDate",
-     "checkFourDayRule",
-     "renderRevisedLE",
-     "deliverDisclosure",
-     "reflectOnCD",
-     "runToleranceTest",
-     "applyCure",
-     "issueRefund",
-     "writeDecision"
-    ]
+    "built": 12,
+    "missing": []
    },
    "figures": {
     "spec": 11,
-    "built": 3,
-    "missing": [
-     "$1,691.46",
-     "$186.50",
-     "$2,051.50",
-     "$2,145.00",
-     "$2,442.00",
-     "$222.00",
-     "$3,493.76",
-     "$93.50"
-    ]
+    "built": 11,
+    "missing": []
    },
    "units": {
     "spec": 43,
-    "built": 7
+    "built": 43
    },
-   "pct": 16.3
+   "pct": 100.0
   },
   {
    "process": "21.6",
@@ -7498,12 +7409,11 @@
    },
    "timers": {
     "spec": 10,
-    "built": 2,
+    "built": 3,
     "armable": 7,
     "missing": [
      "FNMA_UCD_ACCEPTED_GATE",
      "REGZ_1026_19F1III_CD_MAILBOX_3SBD",
-     "REGZ_1026_19F1_CD_3SBD_GATE",
      "REGZ_1026_19F2_CLERICAL_CD_60",
      "REGZ_1026_19F2_CORRECTED_CD_30",
      "REGZ_1026_19F4_SELLER_CD_GATE",
@@ -7551,9 +7461,9 @@
    },
    "units": {
     "spec": 50,
-    "built": 3
+    "built": 4
    },
-   "pct": 6.0
+   "pct": 8.0
   },
   {
    "process": "25.3",
@@ -7588,10 +7498,9 @@
    },
    "timers": {
     "spec": 7,
-    "built": 0,
+    "built": 1,
     "armable": 7,
     "missing": [
-     "REGZ_1026_19F1_CD_3SBD_GATE",
      "REGZ_1026_23D2_RESCISSION_REFUND_20",
      "REGZ_1026_23_EXTENDED_RIGHT_3Y",
      "REGZ_1026_23_RESCISSION_3SBD_GATE",
@@ -7641,9 +7550,9 @@
    },
    "units": {
     "spec": 45,
-    "built": 2
+    "built": 3
    },
-   "pct": 4.4
+   "pct": 6.7
   },
   {
    "process": "25.4",
@@ -7769,64 +7678,24 @@
    },
    "tables": {
     "spec": 8,
-    "built": 0,
-    "missing": [
-     "buydown_agreements",
-     "cema_packages",
-     "closing_data_snapshots",
-     "closing_document_sets",
-     "closing_instructions",
-     "document_qc_checks",
-     "document_templates",
-     "tx_home_equity_reviews"
-    ]
+    "built": 8,
+    "missing": []
    },
    "timers": {
     "spec": 13,
-    "built": 5,
-    "armable": 7,
-    "missing": [
-     "REGZ_1026_19F1_CD_3SBD_GATE",
-     "SM_O71_DOC_QC_PASS_GATE",
-     "SM_O71_INSTRUCTIONS_ACK_GATE",
-     "SM_O71_TEMPLATE_VERSION_GATE",
-     "TX_50A6_12DAY_CLOSING_GATE",
-     "TX_50A6_ONE_YEAR_GATE",
-     "TX_50F2_12DAY_CLOSING_GATE",
-     "TX_50F2_ONE_YEAR_GATE"
-    ]
+    "built": 13,
+    "armable": 13,
+    "missing": []
    },
    "notices": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "NTC_SM_CLOSING_INSTRUCTIONS",
-     "NTC_TX_50A6_ITEMIZATION",
-     "NTC_TX_50F2_REFI_NOTICE"
-    ]
+    "built": 3,
+    "missing": []
    },
    "tools": {
     "spec": 17,
-    "built": 0,
-    "missing": [
-     "evaluateDocGenGates",
-     "takeClosingSnapshot",
-     "selectDocumentSet",
-     "computeNoteTerms",
-     "generateMIN",
-     "renderDocument",
-     "buildSmartDocENote",
-     "runDocumentQc",
-     "runTxHomeEquityReview",
-     "buildCemaPackage",
-     "draftBuydownAgreement",
-     "draftClosingInstructions",
-     "releaseToPlatform",
-     "releaseToSettlementAgent",
-     "requestAcknowledgment",
-     "scheduleRedraw",
-     "writeDecision"
-    ]
+    "built": 17,
+    "missing": []
    },
    "figures": {
     "spec": 18,
@@ -7854,9 +7723,9 @@
    },
    "units": {
     "spec": 73,
-    "built": 5
+    "built": 41
    },
-   "pct": 6.8
+   "pct": 56.2
   },
   {
    "process": "26.2",

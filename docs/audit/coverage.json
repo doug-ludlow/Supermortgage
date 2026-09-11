@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 5042/7446 (67.7%): tids 1344/1914, tables 509/717, timers 1475/1987, notices 243/306, tools 747/1311, figures 724/1211; processes at 100%: 119/165",
+ "brief": "spec units built 5069/7446 (68.1%): tids 1356/1914, tables 509/717, timers 1487/1987, notices 244/306, tools 747/1311, figures 726/1211; processes at 100%: 120/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1344
+   "built": 1356
   },
   "tables": {
    "spec": 717,
@@ -11,11 +11,11 @@
   },
   "timers": {
    "spec": 1987,
-   "built": 1475
+   "built": 1487
   },
   "notices": {
    "spec": 306,
-   "built": 243
+   "built": 244
   },
   "tools": {
    "spec": 1311,
@@ -23,11 +23,11 @@
   },
   "figures": {
    "spec": 1211,
-   "built": 724
+   "built": 726
   },
   "units": {
    "spec": 7446,
-   "built": 5042
+   "built": 5069
   }
  },
  "sections": {
@@ -147,15 +147,15 @@
   },
   "20": {
    "spec": 190,
-   "built": 5,
+   "built": 13,
    "processes": 4,
    "done": 0
   },
   "21": {
    "spec": 282,
-   "built": 115,
+   "built": 129,
    "processes": 6,
-   "done": 2
+   "done": 3
   },
   "22": {
    "spec": 368,
@@ -183,7 +183,7 @@
   },
   "26": {
    "spec": 247,
-   "built": 6,
+   "built": 11,
    "processes": 4,
    "done": 0
   },
@@ -335,6 +335,7 @@
   "19.4",
   "21.1",
   "21.2",
+  "21.4",
   "25.1",
   "30.1",
   "30.4"
@@ -5327,25 +5328,16 @@
    },
    "timers": {
     "spec": 9,
-    "built": 1,
-    "armable": 3,
+    "built": 8,
+    "armable": 8,
     "missing": [
-     "FNMA_PEWL_QUOTE_ID_WINDOW",
-     "REGZ_1026_19E2II_QUOTE_DISCLAIMER_GATE",
-     "SM_FEE_SCHEDULE_REFRESH_30",
-     "SM_LLPA_TABLE_VERSION_GATE",
-     "SM_MLO_PREAPP_TERMS_REVIEW_1BH",
-     "SM_PRICING_EXCEPTION_APPROVAL_1BD",
-     "SM_QUOTE_VALIDITY_GATE",
-     "SM_RATE_SHEET_PUBLISH_DAILY"
+     "SM_MLO_PREAPP_TERMS_REVIEW_1BH"
     ]
    },
    "notices": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "NTC_SM_RATE_QUOTE"
-    ]
+    "built": 1,
+    "missing": []
    },
    "tools": {
     "spec": 12,
@@ -5383,9 +5375,9 @@
    },
    "units": {
     "spec": 47,
-    "built": 1
+    "built": 9
    },
-   "pct": 2.1
+   "pct": 19.1
   },
   {
    "process": "21.1",
@@ -5595,22 +5587,9 @@
    "title": "Intent to proceed, fee collection, and rate lock (lock confirmation, revised LE on lock, extensions, relocks, float-down, lock-to-commitment linkage)",
    "tids": {
     "spec": 12,
-    "built": 0,
-    "todo": 12,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 5,
@@ -5635,17 +5614,14 @@
    },
    "figures": {
     "spec": 4,
-    "built": 2,
-    "missing": [
-     "$68.50",
-     "$700.00"
-    ]
+    "built": 4,
+    "missing": []
    },
    "units": {
     "spec": 47,
-    "built": 33
+    "built": 47
    },
-   "pct": 70.2
+   "pct": 100.0
   },
   {
    "process": "21.5",
@@ -7809,21 +7785,16 @@
    },
    "timers": {
     "spec": 13,
-    "built": 0,
+    "built": 5,
     "armable": 7,
     "missing": [
      "REGZ_1026_19F1_CD_3SBD_GATE",
-     "SM_O71_DOCS_TO_AGENT_1BD",
-     "SM_O71_DOC_GEN_GATE",
      "SM_O71_DOC_QC_PASS_GATE",
      "SM_O71_INSTRUCTIONS_ACK_GATE",
      "SM_O71_TEMPLATE_VERSION_GATE",
      "TX_50A6_12DAY_CLOSING_GATE",
-     "TX_50A6_ITEMIZATION_1BD_GATE",
      "TX_50A6_ONE_YEAR_GATE",
-     "TX_50A6_RESCISSION_3D_GATE",
      "TX_50F2_12DAY_CLOSING_GATE",
-     "TX_50F2_NOTICE_3BD",
      "TX_50F2_ONE_YEAR_GATE"
     ]
    },
@@ -7885,9 +7856,9 @@
    },
    "units": {
     "spec": 73,
-    "built": 0
+    "built": 5
    },
-   "pct": 0.0
+   "pct": 6.8
   },
   {
    "process": "26.2",

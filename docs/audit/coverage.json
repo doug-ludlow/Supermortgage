@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 6779/7446 (91.0%): tids 1747/1914, tables 634/717, timers 1803/1987, notices 289/306, tools 1173/1311, figures 1133/1211; processes at 100%: 151/165",
+ "brief": "spec units built 6950/7446 (93.3%): tids 1773/1914, tables 648/717, timers 1850/1987, notices 289/306, tools 1208/1311, figures 1182/1211; processes at 100%: 152/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1747
+   "built": 1773
   },
   "tables": {
    "spec": 717,
-   "built": 634
+   "built": 648
   },
   "timers": {
    "spec": 1987,
-   "built": 1803
+   "built": 1850
   },
   "notices": {
    "spec": 306,
@@ -19,15 +19,15 @@
   },
   "tools": {
    "spec": 1311,
-   "built": 1173
+   "built": 1208
   },
   "figures": {
    "spec": 1211,
-   "built": 1133
+   "built": 1182
   },
   "units": {
    "spec": 7446,
-   "built": 6779
+   "built": 6950
   }
  },
  "sections": {
@@ -183,27 +183,27 @@
   },
   "26": {
    "spec": 247,
-   "built": 207,
+   "built": 228,
    "processes": 4,
    "done": 3
   },
   "27": {
    "spec": 197,
-   "built": 104,
+   "built": 196,
    "processes": 2,
    "done": 1
   },
   "28": {
    "spec": 225,
-   "built": 14,
+   "built": 15,
    "processes": 4,
    "done": 0
   },
   "29": {
    "spec": 232,
-   "built": 175,
+   "built": 232,
    "processes": 4,
-   "done": 3
+   "done": 4
   },
   "30": {
    "spec": 218,
@@ -366,6 +366,7 @@
   "29.1",
   "29.2",
   "29.3",
+  "29.4",
   "30.1",
   "30.2",
   "30.3",
@@ -6585,29 +6586,9 @@
    },
    "timers": {
     "spec": 23,
-    "built": 4,
-    "armable": 16,
-    "missing": [
-     "MERS_PROC_NON_MOM_REGISTER_7",
-     "SM_O74_CUSTODIAN_EXCEPTION_CURE_5BD",
-     "SM_O74_ENDORSEMENT_BEFORE_SHIP_GATE",
-     "SM_O74_EVAULT_EREGISTRY_RECONCILE_MONTHLY",
-     "SM_O74_FINAL_POLICY_REVIEW_2BD",
-     "SM_O74_FINAL_TITLE_POLICY_60",
-     "SM_O74_INTERIM_FUNDER_1BD",
-     "SM_O74_LNA_DECISION_5BD",
-     "SM_O74_MERS_SYSTEM_RECONCILE_MONTHLY",
-     "SM_O74_MIN_REVERSAL_2BD",
-     "SM_O74_NOTE_PICKUP_SCAN_1BD",
-     "SM_O74_NOTE_TRANSIT_3BD",
-     "SM_O74_RECORDED_SI_ERECORD_5BD",
-     "SM_O74_RECORDED_SI_PAPER_90",
-     "SM_O74_RECORDED_SI_REVIEW_2BD",
-     "SM_O74_RERECORD_CURE_10BD",
-     "SM_O74_TRAILING_DOC_ESCALATE_120",
-     "SM_O74_TRAILING_DOC_FOLLOWUP_30",
-     "SM_O74_TRUST_RECEIPT_1BD"
-    ]
+    "built": 23,
+    "armable": 23,
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -6616,11 +6597,8 @@
    },
    "tools": {
     "spec": 2,
-    "built": 0,
-    "missing": [
-     "computeMersAnchor",
-     "registerMin"
-    ]
+    "built": 2,
+    "missing": []
    },
    "figures": {
     "spec": 1,
@@ -6629,9 +6607,9 @@
    },
    "units": {
     "spec": 46,
-    "built": 6
+    "built": 27
    },
-   "pct": 13.0
+   "pct": 58.7
   },
   {
    "process": "27.1",
@@ -6679,54 +6657,21 @@
    "title": "Purchase-proceeds settlement, warehouse payoff, gain-on-sale computation and the borrower rate pass-through (Grander economics), MSR accounting hand-off to the partner",
    "tids": {
     "spec": 12,
-    "built": 0,
-    "todo": 12,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 9,
-    "built": 0,
-    "missing": [
-     "gain_on_sale_computations",
-     "gl_export_batches",
-     "msr_handoffs",
-     "platform_fee_accruals",
-     "ppa_requests",
-     "proceeds_matches",
-     "proceeds_receipts",
-     "rate_passthrough_reconciliations",
-     "settlement_waterfalls"
-    ]
+    "built": 9,
+    "missing": []
    },
    "timers": {
     "spec": 15,
-    "built": 4,
-    "armable": 10,
+    "built": 14,
+    "armable": 15,
     "missing": [
-     "FNMA_C1_1_01_PREMIUM_RECAPTURE_120",
-     "FNMA_C1_2_02_PPA_LLPA_REPRICING_18M",
-     "SM_GL_EXPORT_DAILY",
-     "SM_GOS_POST_1BD",
-     "SM_MSR_HANDOFF_1BD",
-     "SM_PLATFORM_FEE_ACCRUAL_MONTHLY",
-     "SM_WH_BAILEE_RELEASE_SAME_DAY",
-     "SM_WH_PARTNER_RESIDUAL_1BD",
-     "SM_WH_PROCEEDS_EXPECTED_1BD",
-     "SM_WH_PROCEEDS_MATCH_SAME_DAY",
-     "SM_WH_SHORTFALL_DRAFT_2BD"
+     "FNMA_C1_1_01_PREMIUM_RECAPTURE_120"
     ]
    },
    "notices": {
@@ -6736,82 +6681,19 @@
    },
    "tools": {
     "spec": 17,
-    "built": 0,
-    "missing": [
-     "pollPurchaseAdvices",
-     "ingestReceipts",
-     "forecastProceeds",
-     "matchProceeds",
-     "explainVariance",
-     "postWaterfall",
-     "releaseCollateral",
-     "schedulePartnerResidual",
-     "funding_approver",
-     "computeGainOnSale",
-     "reconcilePassthrough",
-     "issueMsrHandoff",
-     "accruePlatformFee",
-     "exportGl",
-     "preparePpa",
-     "fnma_portal_operator",
-     "writeDecision"
-    ]
+    "built": 17,
+    "missing": []
    },
    "figures": {
     "spec": 57,
-    "built": 13,
-    "missing": [
-     "$1,081.64",
-     "$1,096.67",
-     "$1,400.00",
-     "$1.00",
-     "$10,052.69",
-     "$100.00",
-     "$11,200.00",
-     "$15.00",
-     "$2,774.00",
-     "$2,815.00",
-     "$23.33",
-     "$3,402.62",
-     "$3,485.00",
-     "$3,515.00",
-     "$3,605.00",
-     "$4,120.00",
-     "$4,200.00",
-     "$4,900.00",
-     "$416,120.00",
-     "$416,190.10",
-     "$515.00",
-     "$542,103.33",
-     "$554,400.00",
-     "$559,455.71",
-     "$563,103.33",
-     "$564,900.00",
-     "$565,203.33",
-     "$565,903.33",
-     "$565,918.36",
-     "$567,700.00",
-     "$58.28",
-     "$58.33",
-     "$61.88",
-     "$688.76",
-     "$69.14",
-     "$7,000.00",
-     "$7,700.00",
-     "$7,732.38",
-     "$70.10",
-     "$71.96",
-     "$750.64",
-     "$831.00",
-     "$9,352.69",
-     "$935.48"
-    ]
+    "built": 57,
+    "missing": []
    },
    "units": {
     "spec": 110,
-    "built": 17
+    "built": 109
    },
-   "pct": 15.5
+   "pct": 99.1
   },
   {
    "process": "28.1",
@@ -6942,11 +6824,10 @@
    },
    "timers": {
     "spec": 24,
-    "built": 1,
+    "built": 2,
     "armable": 11,
     "missing": [
      "FNMA_A2_3_2_01_REMEDY_PAYMENT_60",
-     "FNMA_A2_3_2_02_RELIEF_36_PAYMENTS",
      "FNMA_A2_3_2_03_APPEAL1_60",
      "FNMA_A2_3_2_03_APPEAL2_15",
      "FNMA_A2_3_2_03_FNMA_RESPONSE_60",
@@ -7016,9 +6897,9 @@
    },
    "units": {
     "spec": 68,
-    "built": 2
+    "built": 3
    },
-   "pct": 2.9
+   "pct": 4.4
   },
   {
    "process": "28.3",
@@ -7337,59 +7218,20 @@
    "title": "Loan Delivery submission, custodian certification, purchase, purchase advice reconciliation, and post-delivery corrections/remedies",
    "tids": {
     "spec": 14,
-    "built": 0,
-    "todo": 14,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14
-    ]
+    "built": 14,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 8,
-    "built": 3,
-    "missing": [
-     "custodian_certifications",
-     "delivery_operator_tasks",
-     "post_purchase_adjustments",
-     "purchase_advices",
-     "wire_instructions"
-    ]
+    "built": 8,
+    "missing": []
    },
    "timers": {
     "spec": 23,
-    "built": 6,
-    "armable": 14,
-    "missing": [
-     "FNMA_C1_2_02_CUSTODIAN_LOAN_NUMBER_REQUEST_3BD",
-     "FNMA_C1_2_02_FNMA_LOAN_NUMBER_TO_CUSTODIAN_30",
-     "FNMA_C1_2_02_PPA_LLPA_REPRICING_18M",
-     "FNMA_C1_2_04_ENOTE_TRANSFER_SAME_DAY_GATE",
-     "FNMA_C2_2_01_CUSTODIAN_RECEIPT_BEFORE_EXPIRY",
-     "FNMA_C2_2_02_SHIP_SAME_DAY_AS_SUBMIT",
-     "FNMA_C2_2_03_SECURITY_BREACH_CONFIRM_24H",
-     "FNMA_C2_2_03_WAREHOUSE_RELEASE_BY_ACQUISITION_GATE",
-     "FNMA_C2_2_04_CERTIFICATION_EXPECTED_1BD",
-     "FNMA_C2_2_04_PURCHASE_EXPECTED_1BD",
-     "FNMA_C2_2_07_PAYEE_CODE_CHANGE_3BD",
-     "FNMA_LD_UG_CUSTODIAN_0730_ET_EXPECTATION",
-     "FNMA_LQC_DATA_VALIDATION_RESPONSE_30",
-     "FNMA_PPA_PROCESSING_10BD",
-     "SM_LD_DATA_REVISION_RESPONSE_1BD",
-     "SM_LD_PURCHASE_ERROR_RESUBMIT_1BD",
-     "SM_WAREHOUSE_WIRE_APPROVAL_SLA_1BD"
-    ]
+    "built": 23,
+    "armable": 23,
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -7398,42 +7240,19 @@
    },
    "tools": {
     "spec": 16,
-    "built": 0,
-    "missing": [
-     "openOperatorTask",
-     "renderInstructionSheet",
-     "parseOperatorEvidence",
-     "observeStatus",
-     "scheduleShipment",
-     "trackShipment",
-     "prepareCustodianPackage",
-     "requestEnoteTransfer",
-     "approveWarehouseWire",
-     "computeExpectedDates",
-     "ingestPurchaseAdvice",
-     "reconcileProceeds",
-     "evaluateRelief",
-     "preparePpa",
-     "prepareRemedyPackage",
-     "writeDecision"
-    ]
+    "built": 16,
+    "missing": []
    },
    "figures": {
     "spec": 6,
-    "built": 1,
-    "missing": [
-     "$1,081.64",
-     "$1,096.67",
-     "$103.66",
-     "$548,800.00",
-     "$564,503.33"
-    ]
+    "built": 6,
+    "missing": []
    },
    "units": {
     "spec": 67,
-    "built": 10
+    "built": 67
    },
-   "pct": 14.9
+   "pct": 100.0
   },
   {
    "process": "30.1",

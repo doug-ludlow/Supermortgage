@@ -1,33 +1,33 @@
 {
- "brief": "spec units built 6567/7446 (88.2%): tids 1694/1914, tables 614/717, timers 1762/1987, notices 288/306, tools 1109/1311, figures 1100/1211; processes at 100%: 146/165",
+ "brief": "spec units built 6708/7446 (90.1%): tids 1706/1914, tables 634/717, timers 1803/1987, notices 289/306, tools 1173/1311, figures 1103/1211; processes at 100%: 148/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1694
+   "built": 1706
   },
   "tables": {
    "spec": 717,
-   "built": 614
+   "built": 634
   },
   "timers": {
    "spec": 1987,
-   "built": 1762
+   "built": 1803
   },
   "notices": {
    "spec": 306,
-   "built": 288
+   "built": 289
   },
   "tools": {
    "spec": 1311,
-   "built": 1109
+   "built": 1173
   },
   "figures": {
    "spec": 1211,
-   "built": 1100
+   "built": 1103
   },
   "units": {
    "spec": 7446,
-   "built": 6567
+   "built": 6708
   }
  },
  "sections": {
@@ -183,7 +183,7 @@
   },
   "26": {
    "spec": 247,
-   "built": 90,
+   "built": 156,
    "processes": 4,
    "done": 1
   },
@@ -201,15 +201,15 @@
   },
   "29": {
    "spec": 232,
-   "built": 81,
+   "built": 155,
    "processes": 4,
-   "done": 1
+   "done": 2
   },
   "30": {
    "spec": 218,
-   "built": 217,
+   "built": 218,
    "processes": 4,
-   "done": 3
+   "done": 4
   },
   "31": {
    "spec": 140,
@@ -362,7 +362,9 @@
   "26.1",
   "27.1",
   "29.1",
+  "29.3",
   "30.1",
+  "30.2",
   "30.3",
   "30.4"
  ],
@@ -6492,55 +6494,19 @@
    },
    "timers": {
     "spec": 14,
-    "built": 1,
-    "armable": 8,
-    "missing": [
-     "MERS_PROC_ENOTE_REGISTER_1BD",
-     "SM_O72_AGENT_ECLOSING_ELIGIBLE_GATE",
-     "SM_O72_AUDIT_TRAIL_BEFORE_FUNDING_GATE",
-     "SM_O72_ENOTE_LOCATION_GATE",
-     "SM_O72_ENOTE_SAME_DAY_REGISTER",
-     "SM_O72_ERECORD_SUBMIT_1BD",
-     "SM_O72_ESIGN_CONSENT_CLOSING_GATE",
-     "SM_O72_PAPER_FALLBACK_5BD",
-     "SM_O72_PAPER_NOTE_HANDOFF_1BD",
-     "SM_O72_POST_SIGNING_REVIEW_4H",
-     "SM_O72_RECORDING_REJECT_CURE_2BD",
-     "SM_O72_RON_STATE_AUTH_GATE",
-     "SM_O72_SECURED_PARTY_BEFORE_ADVANCE_GATE"
-    ]
+    "built": 14,
+    "armable": 14,
+    "missing": []
    },
    "notices": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "NTC_SM_CLOSING_APPOINTMENT"
-    ]
+    "built": 1,
+    "missing": []
    },
    "tools": {
     "spec": 19,
-    "built": 0,
-    "missing": [
-     "runPreSessionChecks",
-     "decideClosingType",
-     "verifyEsignConsent",
-     "checkRonEligibility",
-     "assignNotary",
-     "openSigningSession",
-     "monitorSession",
-     "validateAuthoritativeCopy",
-     "registerENote",
-     "setSecuredParty",
-     "reverseRegistration",
-     "ingestAuditTrail",
-     "reviewExecution",
-     "submitERecording",
-     "handleRecordingReject",
-     "dispatchPaperRecording",
-     "trackPaperNote",
-     "seedCustodyRecord",
-     "writeDecision"
-    ]
+    "built": 19,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -6549,9 +6515,9 @@
    },
    "units": {
     "spec": 51,
-    "built": 4
+    "built": 37
    },
-   "pct": 7.8
+   "pct": 72.5
   },
   {
    "process": "26.3",
@@ -6579,33 +6545,14 @@
    },
    "tables": {
     "spec": 4,
-    "built": 0,
-    "missing": [
-     "funding_conditions",
-     "funding_unwinds",
-     "funding_wires",
-     "funding_worksheets"
-    ]
+    "built": 4,
+    "missing": []
    },
    "timers": {
     "spec": 14,
-    "built": 1,
-    "armable": 9,
-    "missing": [
-     "FNMA_B2_1_5_FIRST_PAYMENT_2M",
-     "SM_O73_AGENT_RECEIPT_CONFIRM_2H",
-     "SM_O73_CONDITIONS_EVAL_2BH",
-     "SM_O73_DATE_RESYNC",
-     "SM_O73_DISBURSEMENT_CONFIRM_1BD",
-     "SM_O73_DUAL_CONTROL_RELEASE_1H",
-     "SM_O73_FUNDS_RETURN_2BD",
-     "SM_O73_POST_RESCISSION_FUNDING_1BD",
-     "SM_O73_UNWIND_STEPS_5BD",
-     "SM_O73_WET_FUNDS_AT_TABLE_GATE",
-     "SM_O73_WIRE_ACCEPT_30M",
-     "SM_O73_WIRE_CUTOFF_1300ET",
-     "VA_55_1_902_REFI_DISBURSE_1BD"
-    ]
+    "built": 14,
+    "armable": 14,
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -6614,24 +6561,8 @@
    },
    "tools": {
     "spec": 15,
-    "built": 0,
-    "missing": [
-     "evaluateFundingConditions",
-     "computeDates",
-     "computePerDiem",
-     "decideInterestMode",
-     "buildFundingWorksheet",
-     "reconcileToSettlementStatement",
-     "scoreBecIndicators",
-     "prepareWire",
-     "runFourEyesChecks",
-     "requestWarehouseAdvance",
-     "notifySettlementAgent",
-     "confirmDisbursement",
-     "postLedger",
-     "openUnwind",
-     "writeDecision"
-    ]
+    "built": 15,
+    "missing": []
    },
    "figures": {
     "spec": 30,
@@ -6664,9 +6595,9 @@
    },
    "units": {
     "spec": 77,
-    "built": 8
+    "built": 40
    },
-   "pct": 10.4
+   "pct": 51.9
   },
   {
    "process": "26.4",
@@ -6705,11 +6636,10 @@
    },
    "timers": {
     "spec": 23,
-    "built": 3,
+    "built": 4,
     "armable": 16,
     "missing": [
      "MERS_PROC_NON_MOM_REGISTER_7",
-     "SM_O72_PAPER_NOTE_HANDOFF_1BD",
      "SM_O74_CUSTODIAN_EXCEPTION_CURE_5BD",
      "SM_O74_ENDORSEMENT_BEFORE_SHIP_GATE",
      "SM_O74_EVAULT_EREGISTRY_RECONCILE_MONTHLY",
@@ -6750,9 +6680,9 @@
    },
    "units": {
     "spec": 46,
-    "built": 5
+    "built": 6
    },
-   "pct": 10.9
+   "pct": 13.0
   },
   {
    "process": "27.1",
@@ -7396,37 +7326,14 @@
    },
    "tables": {
     "spec": 9,
-    "built": 0,
-    "missing": [
-     "fallout_events",
-     "hedge_policies",
-     "hedge_trades",
-     "margin_calls",
-     "mark_to_market_runs",
-     "pipeline_positions",
-     "pull_through_estimates",
-     "pull_through_models",
-     "rate_shock_reports"
-    ]
+    "built": 9,
+    "missing": []
    },
    "timers": {
     "spec": 12,
-    "built": 0,
-    "armable": 2,
-    "missing": [
-     "FINRA_4210_VARIATION_MARGIN_1BD",
-     "SIFMA_TBA_ROLL_GATE_3BD",
-     "SM_BE_FALLOUT_REVIEW_MONTHLY",
-     "SM_HEDGE_COVERAGE_BAND_GATE",
-     "SM_HEDGE_POLICY_REVIEW_1Y",
-     "SM_LIQUIDITY_STRESS_WEEKLY",
-     "SM_MTM_DAILY_1700ET",
-     "SM_PIPELINE_INTRADAY_MOVE_TRIGGER",
-     "SM_PIPELINE_POSITION_DAILY_0700ET",
-     "SM_PULL_THROUGH_MODEL_RECALIBRATION_90",
-     "SM_RATE_SHOCK_REPORT_DAILY",
-     "SM_UNCOMMITTED_POSITION_5BD"
-    ]
+    "built": 12,
+    "armable": 12,
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -7435,27 +7342,8 @@
    },
    "tools": {
     "spec": 18,
-    "built": 0,
-    "missing": [
-     "takePipelineSnapshot",
-     "estimatePullThrough",
-     "estimateDurationFactor",
-     "computeCoverage",
-     "recommendRebalance",
-     "prepareTradePackage",
-     "recordTradeConfirmation",
-     "scheduleRoll",
-     "requestMandatoryCommitment",
-     "runMarkToMarket",
-     "runRateShock",
-     "computeLiquidityNeed",
-     "recordMarginCall",
-     "analyzeFallout",
-     "recalibratePullThrough",
-     "publishPartnerReport",
-     "openEscalation",
-     "writeDecision"
-    ]
+    "built": 18,
+    "missing": []
    },
    "figures": {
     "spec": 8,
@@ -7472,43 +7360,23 @@
    },
    "units": {
     "spec": 60,
-    "built": 1
+    "built": 40
    },
-   "pct": 1.7
+   "pct": 66.7
   },
   {
    "process": "29.3",
    "title": "Delivery data preparation and pre-delivery validation (ULDD, Special Feature Codes, UCD/UCDP/DU identifiers, MI data, EarlyCheck)",
    "tids": {
     "spec": 12,
-    "built": 0,
-    "todo": 12,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 6,
-    "built": 0,
-    "missing": [
-     "deliveries",
-     "delivery_edits",
-     "delivery_packages",
-     "earlycheck_runs",
-     "sfc_assignments",
-     "uldd_data_points"
-    ]
+    "built": 6,
+    "missing": []
    },
    "timers": {
     "spec": 11,
@@ -7523,36 +7391,19 @@
    },
    "tools": {
     "spec": 12,
-    "built": 0,
-    "missing": [
-     "collectPrerequisites",
-     "assembleUlddDataPoints",
-     "evaluateConditionality",
-     "assignSfcs",
-     "reconcileIdentifiers",
-     "buildUlddXml",
-     "validateSchema",
-     "runEarlyCheck",
-     "mapEditToOwner",
-     "applyDerivedFix",
-     "freezePackage",
-     "writeDecision"
-    ]
+    "built": 12,
+    "missing": []
    },
    "figures": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "$3,120.00",
-     "$3,402.62",
-     "$457,777.78"
-    ]
+    "built": 3,
+    "missing": []
    },
    "units": {
     "spec": 44,
-    "built": 11
+    "built": 44
    },
-   "pct": 25.0
+   "pct": 100.0
   },
   {
    "process": "29.4",
@@ -7580,10 +7431,9 @@
    },
    "tables": {
     "spec": 8,
-    "built": 2,
+    "built": 3,
     "missing": [
      "custodian_certifications",
-     "deliveries",
      "delivery_operator_tasks",
      "post_purchase_adjustments",
      "purchase_advices",
@@ -7592,7 +7442,7 @@
    },
    "timers": {
     "spec": 23,
-    "built": 5,
+    "built": 6,
     "armable": 14,
     "missing": [
      "FNMA_C1_2_02_CUSTODIAN_LOAN_NUMBER_REQUEST_3BD",
@@ -7611,7 +7461,6 @@
      "FNMA_PPA_PROCESSING_10BD",
      "SM_LD_DATA_REVISION_RESPONSE_1BD",
      "SM_LD_PURCHASE_ERROR_RESUBMIT_1BD",
-     "SM_LOAN_DELIVERY_OPERATOR_SLA_1BD",
      "SM_WAREHOUSE_WIRE_APPROVAL_SLA_1BD"
     ]
    },
@@ -7655,9 +7504,9 @@
    },
    "units": {
     "spec": 67,
-    "built": 8
+    "built": 10
    },
-   "pct": 11.9
+   "pct": 14.9
   },
   {
    "process": "30.1",
@@ -7716,11 +7565,9 @@
    },
    "timers": {
     "spec": 11,
-    "built": 10,
-    "armable": 10,
-    "missing": [
-     "FNMA_B2_1_5_FIRST_PAYMENT_2M"
-    ]
+    "built": 11,
+    "armable": 11,
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -7739,9 +7586,9 @@
    },
    "units": {
     "spec": 59,
-    "built": 58
+    "built": 59
    },
-   "pct": 98.3
+   "pct": 100.0
   },
   {
    "process": "30.3",

@@ -69,3 +69,15 @@ variable "api_token" {
   default     = ""
   sensitive   = true
 }
+
+variable "borrower_min_instances" {
+  description = "Minimum Cloud Run instances for the borrower app (supermortgage-borrower)."
+  type        = number
+  default     = 1
+}
+
+variable "borrower_max_instances" {
+  description = "Maximum Cloud Run instances for the borrower app."
+  type        = number
+  default     = 10
+}

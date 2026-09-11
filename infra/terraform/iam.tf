@@ -33,6 +33,33 @@ resource "google_secret_manager_secret_iam_member" "runtime_api_token" {
   member    = "serviceAccount:${google_service_account.runtime.email}"
 }
 
+# Identity the borrower app (apps/borrower, Dockerfile.borrower) runs as. It writes
+# logs and reads exactly one secret: the API token, which its server-side proxy holds
+# and never sends to the browser (the borrower routes themselves are session-authenticated).
+resource "google_service_account" "borrower" {
+  account_id   = "supermortgage-borrower"
+  display_name = "Supermortgage borrower app (Cloud Run service)"
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_project_iam_member" "borrower_roles" {
+  for_each = toset([
+    "roles/logging.logWriter",
+    "roles/monitoring.metricWriter",
+  ])
+
+  project = var.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.borrower.email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "borrower_api_token" {
+  secret_id = google_secret_manager_secret.api_token.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.borrower.email}"
+}
+
 # Identity Cloud Scheduler uses to start the sweep job. It can invoke that
 # one job and nothing else.
 resource "google_service_account" "scheduler" {

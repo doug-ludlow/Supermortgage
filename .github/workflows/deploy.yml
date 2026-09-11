@@ -5,7 +5,7 @@
 # vars.GCP_WIF_PROVIDER, vars.GCP_DEPLOYER_SA, vars.TF_STATE_BUCKET).
 # No GitHub secrets are needed: authentication is Workload Identity Federation.
 #
-# Order: preflight -> terraform -> build -> migrate -> deploy.
+# Order: preflight -> terraform -> build (api + borrower, in parallel) -> migrate -> deploy.
 name: deploy
 
 on:
@@ -85,6 +85,7 @@ jobs:
       sql_connection_name: ${{ steps.out.outputs.sql_connection_name }}
       api_hostname: ${{ steps.out.outputs.api_hostname }}
       console_hostname: ${{ steps.out.outputs.console_hostname }}
+      borrower_url: ${{ steps.out.outputs.borrower_url }}
       dns_records: ${{ steps.out.outputs.dns_records }}
     steps:
       - uses: actions/checkout@v4
@@ -128,6 +129,7 @@ jobs:
             echo "sql_connection_name=$(terraform output -raw sql_connection_name)"
             echo "api_hostname=$(terraform output -raw api_url | sed 's#^https://##')"
             echo "console_hostname=$(terraform output -raw console_url | sed 's#^https://##')"
+            echo "borrower_url=$(terraform output -raw borrower_url)"
             echo "dns_records=$(terraform output -json godaddy_dns_records | jq -c .)"
           } >> "$GITHUB_OUTPUT"
 
@@ -175,6 +177,51 @@ jobs:
           docker push "${{ steps.tags.outputs.image }}"
           docker push "${{ steps.tags.outputs.branch_image }}"
 
+  build-borrower:
+    name: build borrower image
+    needs: terraform
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.tags.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure docker for Artifact Registry
+        run: gcloud auth configure-docker "${{ vars.GCP_REGION }}-docker.pkg.dev" --quiet
+
+      - name: Compute image tags
+        id: tags
+        env:
+          REPO: ${{ needs.terraform.outputs.artifact_repo }}
+        run: |
+          slug="$(echo "${GITHUB_REF_NAME}" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+//; s/-+$//' | cut -c1-63)"
+          {
+            echo "image=${REPO}/borrower:${GITHUB_SHA}"
+            echo "branch_image=${REPO}/borrower:${slug}"
+          } >> "$GITHUB_OUTPUT"
+
+      # apps/borrower: Next.js standalone build (Dockerfile.borrower at the repo root).
+      - name: docker build (borrower)
+        run: |
+          docker build \
+            -f Dockerfile.borrower \
+            -t "${{ steps.tags.outputs.image }}" \
+            -t "${{ steps.tags.outputs.branch_image }}" \
+            .
+
+      - name: docker push (borrower)
+        run: |
+          docker push "${{ steps.tags.outputs.image }}"
+          docker push "${{ steps.tags.outputs.branch_image }}"
+
   migrate:
     name: migrate database
     needs: [terraform, build]
@@ -205,7 +252,7 @@ jobs:
 
   deploy:
     name: deploy
-    needs: [terraform, build, migrate]
+    needs: [terraform, build, build-borrower, migrate]
     runs-on: ubuntu-latest
     steps:
       - name: Authenticate to Google Cloud (Workload Identity Federation)
@@ -240,6 +287,14 @@ jobs:
             --project "${{ vars.GCP_PROJECT_ID }}" \
             --quiet
 
+      - name: Deploy the borrower app
+        run: |
+          gcloud run deploy supermortgage-borrower \
+            --image "${{ needs.build-borrower.outputs.image }}" \
+            --region "${{ vars.GCP_REGION }}" \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --quiet
+
       - name: Service URL
         run: |
           url="$(gcloud run services describe supermortgage-api \
@@ -268,6 +323,18 @@ jobs:
           echo
           echo "healthz OK via ${LB_IP}"
 
+      - name: Smoke test /app (borrower) through the load balancer
+        continue-on-error: true
+        env:
+          API_HOSTNAME: ${{ needs.terraform.outputs.api_hostname }}
+          LB_IP: ${{ needs.terraform.outputs.lb_ip }}
+        run: |
+          curl --fail --silent --show-error --output /dev/null \
+            --retry 10 --retry-delay 15 --retry-all-errors \
+            --resolve "${API_HOSTNAME}:443:${LB_IP}" \
+            "https://${API_HOSTNAME}/app"
+          echo "borrower app OK via ${LB_IP}"
+
       - name: Board the demo transfer batch (workflow_dispatch with seed_demo)
         if: github.event.inputs.seed_demo == 'true'
         run: |
@@ -282,13 +349,16 @@ jobs:
           LB_IP: ${{ needs.terraform.outputs.lb_ip }}
           API_HOSTNAME: ${{ needs.terraform.outputs.api_hostname }}
           CONSOLE_HOSTNAME: ${{ needs.terraform.outputs.console_hostname }}
+          BORROWER_URL: ${{ needs.terraform.outputs.borrower_url }}
           IMAGE: ${{ needs.build.outputs.image }}
+          BORROWER_IMAGE: ${{ needs.build-borrower.outputs.image }}
           SQL: ${{ needs.terraform.outputs.sql_connection_name }}
         run: |
           {
             echo "## Supermortgage deployed (${ENVIRONMENT})"
             echo
             echo "- Image: \`${IMAGE}\`"
+            echo "- Borrower image: \`${BORROWER_IMAGE}\`"
             echo "- Cloud SQL: \`${SQL}\`"
             echo "- Load balancer IP: \`${LB_IP}\`"
             echo
@@ -302,6 +372,7 @@ jobs:
             echo
             echo "- https://${API_HOSTNAME}/healthz"
             echo "- https://${CONSOLE_HOSTNAME}/"
+            echo "- ${BORROWER_URL} (borrower app)"
             echo
             echo "API token: \`gcloud secrets versions access latest --secret supermortgage-api-token --project ${{ vars.GCP_PROJECT_ID }}\`"
           } >> "$GITHUB_STEP_SUMMARY"

@@ -19,6 +19,17 @@ resource "google_compute_region_network_endpoint_group" "api" {
   }
 }
 
+# The borrower app (apps/borrower) — a second serverless NEG behind the same load balancer.
+resource "google_compute_region_network_endpoint_group" "borrower" {
+  name                  = "supermortgage-borrower-neg"
+  region                = var.region
+  network_endpoint_type = "SERVERLESS"
+
+  cloud_run {
+    service = google_cloud_run_v2_service.borrower.name
+  }
+}
+
 # Cloud Armor: default allow, a per-IP rate limit, and Google's preconfigured
 # SQLi/XSS signatures in preview (logged, not enforced) until the false-positive
 # rate on real traffic is understood. Prod takes them out of preview.
@@ -109,11 +120,28 @@ resource "google_compute_backend_service" "api" {
   }
 }
 
+resource "google_compute_backend_service" "borrower" {
+  name                  = "supermortgage-borrower-backend"
+  load_balancing_scheme = "EXTERNAL_MANAGED"
+  protocol              = "HTTPS"
+  security_policy       = google_compute_security_policy.armor.id
+
+  backend {
+    group = google_compute_region_network_endpoint_group.borrower.id
+  }
+
+  log_config {
+    enable      = true
+    sample_rate = 1.0
+  }
+}
+
 resource "google_compute_url_map" "https" {
   name            = "supermortgage-https"
   default_service = google_compute_backend_service.api.id
 
-  # The API and console hostnames (one name, or two) route to the one service.
+  # The API and console hostnames (one name, or two) route to the API service, except
+  # /app and /app/* which go to the borrower app (Next.js basePath "/app").
   host_rule {
     hosts        = local.hostnames
     path_matcher = "supermortgage"
@@ -122,6 +150,11 @@ resource "google_compute_url_map" "https" {
   path_matcher {
     name            = "supermortgage"
     default_service = google_compute_backend_service.api.id
+
+    path_rule {
+      paths   = ["/app", "/app/*"]
+      service = google_compute_backend_service.borrower.id
+    }
   }
 }
 

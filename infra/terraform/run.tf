@@ -11,6 +11,13 @@ locals {
     LOG_FORMAT   = "json"
     ENVIRONMENT  = var.environment # optional in the runtime; labels log lines
   }
+  # Borrower API settings (src/runtime/borrower/routes.ts): the borrower app is served
+  # at /app on the same hostname, so WebAuthn's relying party and allowed origin are that host.
+  borrower_api_env = {
+    BORROWER_RP_ID   = var.api_hostname
+    BORROWER_ORIGINS = "https://${var.api_hostname}"
+    BORROWER_APP_URL = "https://${var.api_hostname}/app"
+  }
   cloudsql_volume = "cloudsql"
   cloudsql_mount  = "/cloudsql"
 }
@@ -44,6 +51,14 @@ resource "google_cloud_run_v2_service" "api" {
 
       dynamic "env" {
         for_each = local.common_env
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+
+      dynamic "env" {
+        for_each = local.borrower_api_env
         content {
           name  = env.key
           value = env.value
@@ -409,4 +424,107 @@ resource "google_cloud_run_v2_job" "seed_demo" {
     google_secret_manager_secret_version.api_token,
     google_project_iam_member.runtime_roles,
   ]
+}
+
+# ---------------------------------------------------------------------------
+# HTTP service: the borrower app (apps/borrower — Next.js standalone, basePath /app)
+# ---------------------------------------------------------------------------
+# Built from Dockerfile.borrower by the deploy workflow's `build-borrower` job. Served on the
+# same hostname as the API behind the load balancer; the URL map sends /app/* here. It talks
+# to the API over HTTPS through the load balancer (https://<api_hostname>) from a server-side
+# proxy route; the browser never holds an API or session bearer.
+resource "google_cloud_run_v2_service" "borrower" {
+  name     = "supermortgage-borrower"
+  location = var.region
+
+  ingress = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+
+  deletion_protection = false
+
+  template {
+    service_account = google_service_account.borrower.email
+
+    scaling {
+      min_instance_count = var.borrower_min_instances
+      max_instance_count = var.borrower_max_instances
+    }
+
+    containers {
+      image = var.image # placeholder until the workflow deploys the borrower image
+
+      env {
+        name  = "API_BASE_URL"
+        value = "https://${var.api_hostname}"
+      }
+
+      env {
+        name  = "ENVIRONMENT"
+        value = var.environment
+      }
+
+      # The ops API token, for server-side calls only (never forwarded to the browser and never
+      # used on /v1/borrower/*, which is session-authenticated). Read from the same secret.
+      env {
+        name = "API_TOKEN"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.api_token.secret_id
+            version = "latest"
+          }
+        }
+      }
+
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = "512Mi"
+        }
+        cpu_idle          = true
+        startup_cpu_boost = true
+      }
+
+      startup_probe {
+        tcp_socket {
+          port = 8080
+        }
+        initial_delay_seconds = 0
+        period_seconds        = 5
+        timeout_seconds       = 3
+        failure_threshold     = 12
+      }
+
+      liveness_probe {
+        tcp_socket {
+          port = 8080
+        }
+        period_seconds    = 30
+        timeout_seconds   = 3
+        failure_threshold = 3
+      }
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      template[0].containers[0].image,
+      client,
+      client_version,
+    ]
+  }
+
+  depends_on = [
+    google_secret_manager_secret_iam_member.borrower_api_token,
+    google_secret_manager_secret_version.api_token,
+    google_project_iam_member.borrower_roles,
+  ]
+}
+
+# Same reasoning as the API service: ingress is load-balancer only, so allUsers at the
+# Cloud Run layer just lets the serverless NEG forward traffic; the app is public by design.
+resource "google_cloud_run_v2_service_iam_member" "borrower_public_invoker" {
+  project  = google_cloud_run_v2_service.borrower.project
+  location = google_cloud_run_v2_service.borrower.location
+  name     = google_cloud_run_v2_service.borrower.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
 }

@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 7218/7446 (96.9%): tids 1834/1914, tables 677/717, timers 1923/1987, notices 299/306, tools 1278/1311, figures 1207/1211; processes at 100%: 159/165",
+ "brief": "spec units built 7215/7446 (96.9%): tids 1847/1914, tables 672/717, timers 1911/1987, notices 299/306, tools 1278/1311, figures 1208/1211; processes at 100%: 160/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1834
+   "built": 1847
   },
   "tables": {
    "spec": 717,
-   "built": 677
+   "built": 672
   },
   "timers": {
    "spec": 1987,
-   "built": 1923
+   "built": 1911
   },
   "notices": {
    "spec": 306,
@@ -23,11 +23,11 @@
   },
   "figures": {
    "spec": 1211,
-   "built": 1207
+   "built": 1208
   },
   "units": {
    "spec": 7446,
-   "built": 7218
+   "built": 7215
   }
  },
  "sections": {
@@ -195,9 +195,9 @@
   },
   "28": {
    "spec": 225,
-   "built": 130,
+   "built": 129,
    "processes": 4,
-   "done": 1
+   "done": 2
   },
   "29": {
    "spec": 232,
@@ -213,7 +213,7 @@
   },
   "31": {
    "spec": 140,
-   "built": 7,
+   "built": 5,
    "processes": 3,
    "done": 0
   }
@@ -370,6 +370,7 @@
   "27.1",
   "27.2",
   "28.1",
+  "28.2",
   "29.1",
   "29.2",
   "29.3",
@@ -6576,23 +6577,9 @@
    "title": "Post-closing QC program, Fannie Mae QC reviews (Loan Quality Connect), self-reporting, defect rates, and remedies/appeals",
    "tids": {
     "spec": 13,
-    "built": 0,
-    "todo": 13,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13
-    ]
+    "built": 13,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 4,
@@ -6617,16 +6604,14 @@
    },
    "figures": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "$556,143.55"
-    ]
+    "built": 1,
+    "missing": []
    },
    "units": {
     "spec": 68,
-    "built": 54
+    "built": 68
    },
-   "pct": 79.4
+   "pct": 100.0
   },
   {
    "process": "28.3",
@@ -6654,15 +6639,31 @@
    },
    "tables": {
     "spec": 6,
-    "built": 6,
-    "missing": []
+    "built": 1,
+    "missing": [
+     "hmda_coverage_tests",
+     "hmda_edit_verifications",
+     "hmda_lar_files",
+     "hmda_public_notices",
+     "hmda_ulis"
+    ]
    },
    "timers": {
     "spec": 11,
-    "built": 10,
-    "armable": 11,
+    "built": 0,
+    "armable": 3,
     "missing": [
-     "HMDA_1003_5_LAR_RETENTION_3Y"
+     "HMDA_1003_2G_COVERAGE_TEST_ANNUAL",
+     "HMDA_1003_4F_LAR_ENTRY_Q30",
+     "HMDA_1003_5B_DISCLOSURE_NOTICE_3BD",
+     "HMDA_1003_5C_MODIFIED_LAR_NOTICE_ANNUAL",
+     "HMDA_1003_5D_NOTICE_AVAILABILITY",
+     "HMDA_1003_5_ANNUAL_0301",
+     "HMDA_1003_5_LAR_RETENTION_3Y",
+     "HMDA_1003_5_QUARTERLY_60",
+     "SM_HMDA_LAR_COMPLETENESS_DAILY",
+     "SM_HMDA_OFFICER_SIGN_SLA_5BD",
+     "SM_HMDA_PRE_SUBMISSION_EDITS_0201"
     ]
    },
    "notices": {
@@ -6693,9 +6694,9 @@
    },
    "units": {
     "spec": 39,
-    "built": 16
+    "built": 1
    },
-   "pct": 41.0
+   "pct": 2.6
   },
   {
    "process": "28.4",
@@ -7256,12 +7257,13 @@
    },
    "timers": {
     "spec": 19,
-    "built": 5,
-    "armable": 19,
+    "built": 3,
+    "armable": 8,
     "missing": [
      "CA_CPPA_7150_RISK_ASSESSMENT_20271231",
      "CA_CPPA_7157_ATTESTATION_20280401",
      "CA_CPPA_7200_ADMT_READINESS_20270101",
+     "CO_SB26_189_1702_DEVELOPER_DOCS_GATE",
      "CO_SB26_189_1702_MATERIAL_UPDATE_NOTICE",
      "SM_O122_AI_ASSESSMENT_ANNUAL_365",
      "SM_O122_COMPLAINT_FL_TRIAGE_5BD",
@@ -7271,6 +7273,7 @@
      "SM_O122_FAIR_LENDING_REVIEW_30D",
      "SM_O122_GOVERNANCE_PACK_QUARTERLY",
      "SM_O122_MODEL_CHANGE_NOTICE_TO_PARTNER_10BD",
+     "SM_O122_ORIGINATION_AI_DEPLOY_GATE",
      "SM_O122_PRICING_EXCEPTION_REVIEW_MONTHLY",
      "SM_O122_REASON_ACCURACY_SAMPLE_MONTHLY"
     ]
@@ -7298,9 +7301,9 @@
    },
    "units": {
     "spec": 42,
-    "built": 5
+    "built": 3
    },
-   "pct": 11.9
+   "pct": 7.1
   },
   {
    "process": "31.3",

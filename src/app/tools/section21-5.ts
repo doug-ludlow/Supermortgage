@@ -1,8 +1,105 @@
 /**
- * §21.5 process-owned tools — bus tools for 21.5 defined with `defineTools("21.5", <agent>, defs)` from
- * ../tools.ts. Every tool string must be one spec/registry/agents.json names for 21.5; src/app/tools.test.ts refuses
- * the rest. Spread by ./index.ts.
+ * §21.5 process-owned tools — bus tools for 21.5 defined with `defineTools("21.5", "disclosure", defs)` from
+ * ../tools.ts. Every tool string is one spec/registry/agents.json names for 21.5; src/app/tools.test.ts refuses the
+ * rest. Spread by ./index.ts. The handlers are thin: the rules live in src/domain/application/ops-21-5.ts; the
+ * per-application register (`fee_items` baselines, `changed_circumstances`, revised `disclosures`, `tolerance_tests`,
+ * `tolerance_cures` — migration 0067) is the `tolerance` service the runtime wires (`ToleranceService`); the pure
+ * calculators (`classifyFeeChange`, `computeRevisedLEDueDate`, `checkFourDayRule`, `runToleranceTest` over supplied
+ * baseline items) also run without it, which is how 25.1/25.2/28.x call the engine.
+ *
+ * Guardrails encode the AI-design sentences (never alone): never reset a baseline without a `changed_circumstances`
+ * row that has `valid=true`, evidence and a basis; never classify the creditor's or SM's own estimation error, a
+ * vendor's general price increase, or a fee the agent forgot to disclose as a changed circumstance; never reduce lender
+ * credits; never issue a revised LE on or after the CD date; never reset a bucket baseline when the increase is at or
+ * below 10 %; never mark a decrease as requiring a revised LE for good faith; never choose the refund route when the
+ * excess is known before consummation (cure at closing is mandatory); never let a cure be funded by the borrower in
+ * any form; the partner `officer` releases refunds.
  */
-import type { ToolDef } from "../tools.ts";
+import { defineTools, compute, decision, never, needsRole, cents, str, flag, service, type ToolDef, type ToolInput, type ToolRuntime } from "../tools.ts";
+import type { CommandContext } from "../commands.ts";
+import { plainDate as D, type PlainDate } from "../../kernel/calendar/date.ts";
+import { PHOENIX_CREDITOR, type CreditorCalendarSpec, type DeliveryChannel, type EsignConsent, type FeeItemInput, type LeRenderInput } from "../../domain/application/ops-21-2.ts";
+import {
+  ToleranceService, classifyFeeChange, evaluateChangedCircumstance, revisedLeDueAt, fourDayRule, toleranceTest, NOT_A_CHANGED_CIRCUMSTANCE, BASES, STAGES, tenPercentLimitCents, resetThresholdCents, latestRevisedLeReceipt, refundDueOn,
+  type BaselineItem, type RevisedAmount, type ActualItem, type Basis, type Stage, type FundedBy, type PaidBy,
+} from "../../domain/application/ops-21-5.ts";
 
-export const TOOLS_21_5: readonly ToolDef[] = [];
+const need = (i: ToolInput, ...keys: string[]): void => { for (const k of keys) if (i[k] === undefined || i[k] === null || i[k] === "") throw new RangeError(`${k} is required`); };
+const appOf = (i: ToolInput, ctx: CommandContext): string => { const id = str(i, "application_id") || ctx.applicationId || ""; if (!id) throw new RangeError("application_id is required"); return id; };
+const at = (i: ToolInput, k: string, ctx: CommandContext): string => (typeof i[k] === "string" && i[k] ? String(i[k]) : ctx.now);
+const optDate = (i: ToolInput, k: string): PlainDate | null => (i[k] === undefined || i[k] === null || i[k] === "" ? null : D(str(i, k)));
+const calendarOf = (i: ToolInput): CreditorCalendarSpec => (i.calendar as CreditorCalendarSpec | undefined) ?? PHOENIX_CREDITOR;
+const bigint = (v: unknown, what: string): bigint => { if (typeof v === "bigint") return v; if (typeof v === "number" && Number.isInteger(v)) return BigInt(v); if (typeof v === "string" && /^-?\d+$/.test(v)) return BigInt(v); throw new RangeError(`${what} must be integer cents`); };
+const feeItem = (r: Record<string, unknown>): FeeItemInput => ({ ...(r as unknown as FeeItemInput), amount_cents: bigint(r.amount_cents, `${String(r.fee_code)} amount_cents`) });
+const revisedOf = (i: ToolInput, key = "revised"): RevisedAmount[] => { need(i, key); const rows = i[key]; if (!Array.isArray(rows)) throw new RangeError(`${key} must be an array of {fee_code, amount_cents, item?}`); return rows.map((r: Record<string, unknown>) => ({ fee_code: String(r.fee_code ?? ""), amount_cents: bigint(r.amount_cents, `${String(r.fee_code)} amount_cents`), ...(r.item ? { item: feeItem(r.item as Record<string, unknown>) } : {}) })); };
+const actualsOf = (i: ToolInput): ActualItem[] => { need(i, "actuals"); const rows = i.actuals; if (!Array.isArray(rows)) throw new RangeError("actuals must be an array of {fee_code, amount_cents, item?}"); return rows.map((r: Record<string, unknown>): ActualItem => ({ fee_code: String(r.fee_code ?? ""), amount_cents: bigint(r.amount_cents, `${String(r.fee_code)} amount_cents`), ...(r.item ? { item: feeItem(r.item as Record<string, unknown>) } : {}), ...(typeof r.paid_by === "string" ? { paid_by: r.paid_by as PaidBy } : {}) })); };
+const baselineOf = (i: ToolInput, rt: ToolRuntime, app: string): readonly BaselineItem[] => {
+  const svc = rt.services.tolerance as ToleranceService | undefined;
+  if (svc && svc.baseline(app).length) return svc.baseline(app);
+  const rows = i.baseline_items; if (!Array.isArray(rows) || !rows.length) throw new RangeError(`no fee baseline for ${app}: pass baseline_items (fee_items rows) or wire the tolerance service after fee.baseline.set`);
+  return rows.map((r: Record<string, unknown>) => ({ ...(r as unknown as BaselineItem), baseline_amount_cents: bigint(r.baseline_amount_cents, `${String(r.fee_code)} baseline_amount_cents`), current_amount_cents: bigint(r.current_amount_cents ?? r.baseline_amount_cents, `${String(r.fee_code)} current_amount_cents`), paid_by: (r.paid_by as BaselineItem["paid_by"] | undefined) ?? "borrower", history: Array.isArray(r.history) ? (r.history as BaselineItem["history"]) : [] }));
+};
+const svcOf = (rt: ToolRuntime): ToleranceService => service<ToleranceService>(rt, "tolerance");
+const basisOf = (i: ToolInput): Basis => { need(i, "basis"); const b = str(i, "basis") as Basis; if (!BASES.includes(b)) throw new RangeError(`basis ${JSON.stringify(b)} is not one of ${BASES.join("/")}`); return b; };
+const narrativeLooksInvalid = (i: ToolInput): boolean => typeof i.narrative === "string" && NOT_A_CHANGED_CIRCUMSTANCE.test(i.narrative);
+
+export const TOOLS_21_5: readonly ToolDef[] = defineTools("21.5", "disclosure", [
+  // step (1)–(2): update the current amount with source and time; is this an increase in a class that matters?
+  { name: "classifyFeeChange", kind: "act", handler: compute((i) => { need(i, "item"); const item = feeItem(i.item as Record<string, unknown>); const revised = i.revised_item ? feeItem(i.revised_item as Record<string, unknown>) : bigint(i.revised_amount_cents, "revised_amount_cents"); return classifyFeeChange(item, revised); }),
+    guardrails: [never("NO_GOOD_FAITH_REVISION_ON_DECREASE", "21.5 guardrails: never mark a decrease as requiring a revised LE for good faith (§1026.19(e)(3)(i); rule 8)", (i) => flag(i, "require_revised_le_for_good_faith") && i.item !== undefined && i.revised_amount_cents !== undefined && bigint(i.revised_amount_cents, "revised_amount_cents") <= bigint((i.item as Record<string, unknown>).amount_cents, "amount_cents"), "a decrease never requires a revised LE for good-faith purposes; the CD shows the lower actual")] },
+  // step (3)–(4): basis + narrative + evidence → validity; bucket threshold test (rule 5)
+  { name: "evaluateChangedCircumstance", kind: "act", handler: compute((i, ctx, rt) => { const app = appOf(i, ctx); const basis = basisOf(i); need(i, "narrative", "information_received_at"); const evidence = Array.isArray(i.evidence_document_ids) ? (i.evidence_document_ids as string[]) : [];
+      const input = { basis, narrative: str(i, "narrative"), evidence_document_ids: evidence, information_received_at: str(i, "information_received_at"), revised: basis === "E" ? [] : revisedOf(i), transaction_specific: typeof i.transaction_specific === "boolean" ? i.transaction_specific : null };
+      const svc = rt.services.tolerance as ToleranceService | undefined;
+      if (svc && flag(i, "record")) { const r = svc.recordChangedCircumstance({ application_id: app, ...input, source_event_id: (i.source_event_id as string | undefined) ?? null, recorded_by: `${ctx.actor.kind}:${ctx.actor.id}`, ...(i.consummation_on !== undefined ? { consummation_on: optDate(i, "consummation_on") } : {}) }); return { cc: r.cc, evaluation: r.evaluation, event: r.event.type }; }
+      return { evaluation: evaluateChangedCircumstance(baselineOf(i, rt, app), input), due: revisedLeDueAt(input.information_received_at, calendarOf(i)) }; }),
+    guardrails: [never("NOT_A_CHANGED_CIRCUMSTANCE", "12 CFR 1026.19(e)(3)(iv)(A); 21.5 guardrails: never classify the creditor's or SM's own estimation error, a vendor's general price increase, or a fee the agent forgot to disclose as a changed circumstance", (i) => flag(i, "declare_valid") && (narrativeLooksInvalid(i) || i.transaction_specific === false), "the cause is not information specific to the consumer or transaction — record it as evaluated_invalid; the increase becomes a cure candidate")] },
+  // rule 6: the reset (only from a valid row with evidence and a basis; bucket only above 10 %)
+  { name: "resetBaseline", kind: "write", handler: compute((i, ctx, rt) => { need(i, "cc_id"); const r = svcOf(rt).resetBaseline(str(i, "cc_id"), at(i, "at", ctx)); return { reset: r.reset, event: r.event?.type ?? null }; }),
+    guardrails: [never("NO_RESET_WITHOUT_VALID_CC", "21.5 guardrails: never reset a baseline without a `changed_circumstances` row that has `valid=true`, evidence and a basis", (i) => i.valid === false || flag(i, "force") || (i.evidence_document_ids !== undefined && Array.isArray(i.evidence_document_ids) && i.evidence_document_ids.length === 0) || (i.basis !== undefined && !BASES.includes(i.basis as Basis)), "a baseline resets only from a valid changed circumstance with evidence and a basis (§1026.19(e)(3)(iv))"),
+      never("BUCKET_THRESHOLD_NOT_EXCEEDED", "12 CFR 1026.19(e)(3)(iv)(A) 'increase by more than 10 percent'; 21.5 guardrails", (i) => flag(i, "bucket") && i.increase_cents !== undefined && i.bucket_baseline_cents !== undefined && bigint(i.increase_cents, "increase_cents") <= resetThresholdCents(bigint(i.bucket_baseline_cents, "bucket_baseline_cents")), "never reset a ten-percent baseline when the aggregate increase is at or below 10 %")] },
+  // rule 7: +3 creditor business days, end of day, creditor zone
+  { name: "computeRevisedLEDueDate", kind: "act", handler: compute((i) => { need(i, "information_received_at"); const d = revisedLeDueAt(str(i, "information_received_at"), calendarOf(i)); return { ...d, basis_note: str(i, "basis") === "D" ? "basis (D) runs on 21.4's REGZ_1026_19E3IVD_LOCK_REVISED_LE_3BD" : "REGZ_1026_19E4_REVISED_LE_3BD" }; }) },
+  // §1026.19(e)(4)(ii): the receipt limit and the CD bar
+  { name: "checkFourDayRule", kind: "act", handler: compute((i, ctx, rt) => { need(i, "today"); const svc = rt.services.tolerance as ToleranceService | undefined; const app = str(i, "application_id") || ctx.applicationId || "";
+      const check = svc && app ? svc.checkFourDayRule(app, { today: D(str(i, "today")), channel: (i.channel as DeliveryChannel | undefined) ?? null, issue_on: optDate(i, "issue_on"), receipt_evidence_on: optDate(i, "receipt_evidence_on"), ...(i.consummation_on !== undefined ? { consummation_on: optDate(i, "consummation_on") } : {}) })
+        : fourDayRule({ consummation_on: optDate(i, "consummation_on"), cd_delivered_on: optDate(i, "cd_delivered_on"), today: D(str(i, "today")), channel: (i.channel as DeliveryChannel | undefined) ?? null, issue_on: optDate(i, "issue_on"), receipt_evidence_on: optDate(i, "receipt_evidence_on") });
+      return { ...check, latest_receipt_for: i.consummation_on ? latestRevisedLeReceipt(D(str(i, "consummation_on"))) : check.latest_receipt }; }) },
+  // step (6a): LE v(n+1) with the 21.2 fee model, calculations and H-24 data; never on/after the CD date; never a lower lender credit
+  { name: "renderRevisedLE", kind: "act", handler: compute((i, ctx, rt) => { const app = appOf(i, ctx); need(i, "disclosure_id", "as_of", "loan_cents", "term_months", "transaction_type", "product", "property_address", "estimated_value_cents", "pricing", "fees", "creditor", "loan_officer");
+      const ccIds = Array.isArray(i.cc_ids) ? (i.cc_ids as string[]) : []; if (!ccIds.length) throw new RangeError("cc_ids (revision_reason_cc_ids) is required");
+      const fees = (i.fees as Record<string, unknown>[]).map(feeItem); const p = i.pricing as Record<string, unknown>;
+      const input: LeRenderInput & { cc_ids: readonly string[]; costs_expire_at?: string | null } = { application_id: app, disclosure_id: str(i, "disclosure_id"), as_of: D(str(i, "as_of")), loan_cents: bigint(i.loan_cents, "loan_cents"), term_months: Number(i.term_months), transaction_type: str(i, "transaction_type") as LeRenderInput["transaction_type"], product: str(i, "product"),
+        pricing: { quote_id: String(p.quote_id ?? ""), rate_pct: String(p.rate_pct ?? ""), price: String(p.price ?? "100.000"), points_cents: bigint(p.points_cents ?? 0n, "points_cents"), lender_credit_cents: bigint(p.lender_credit_cents ?? 0n, "lender_credit_cents"), locked: p.locked === true, lock_expires_at: (p.lock_expires_at as string | undefined) ?? null, lock_time_zone: (p.lock_time_zone as string | undefined) ?? null },
+        fees, applicants: (i.applicants as string[] | undefined) ?? [], property_address: str(i, "property_address"), estimated_value_cents: bigint(i.estimated_value_cents, "estimated_value_cents"), creditor: i.creditor as LeRenderInput["creditor"], loan_officer: i.loan_officer as LeRenderInput["loan_officer"], cc_ids: ccIds, ...(i.mi_monthly_cents !== undefined ? { mi_monthly_cents: bigint(i.mi_monthly_cents, "mi_monthly_cents") } : {}), costs_expire_at: (i.costs_expire_at as string | undefined) ?? null };
+      const row = svcOf(rt).renderRevisedLE(input); return { disclosure_id: row.disclosure_id, le_version: row.le_version, data_hash: row.data_hash, notice_code: row.notice_code, what_changed: row.what_changed, totals: row.totals, apr: row.apr.apr_disclosed, h24: row.h24 }; }),
+    guardrails: [never("NO_REVISED_LE_AFTER_CD", "12 CFR 1026.19(e)(4)(ii); 21.5 guardrails: never issue a revised LE on or after the CD date", (i) => typeof i.cd_delivered_on === "string" && typeof i.as_of === "string" && String(i.as_of) >= String(i.cd_delivered_on), "the CD has been provided — the revised estimate rides on the CD or a corrected CD (reflectOnCD → 25.2)"),
+      never("NO_LENDER_CREDIT_REDUCTION", "comment 19(e)(3)(i)-5 (CFPB TRID FAQ); 21.5 guardrails: never reduce lender credits", (i) => i.lender_credit_baseline_cents !== undefined && i.lender_credits_cents !== undefined && bigint(i.lender_credits_cents, "lender_credits_cents") > bigint(i.lender_credit_baseline_cents, "lender_credit_baseline_cents"), "lender credits are zero-tolerance in the downward direction"),
+      never("NO_ABSOLUTE_FEE_PROMISE", "21.5 borrower-facing guardrail: the AI never tells the borrower a fee 'cannot change' or 'will not increase' beyond what the class allows", (i) => typeof i.change_summary === "string" && /cannot change|will not (increase|change)|can'?t change|never (increase|change)/i.test(i.change_summary), "the plain-language change summary may not promise more than the tolerance class allows")] },
+  // step (6a) delivery: channel guards, the four-day/CD check on the delivery facts, receipt evidence
+  { name: "deliverDisclosure", kind: "write", handler: compute((i, ctx, rt) => { need(i, "disclosure_id", "channel"); const row = svcOf(rt).deliverRevisedLE(str(i, "disclosure_id"), { channel: str(i, "channel") as DeliveryChannel, at: at(i, "at", ctx), consent: (i.consent as EsignConsent | undefined) ?? null, mailing_proof_id: (i.mailing_proof_id as string | undefined) ?? null, receipt_evidence_at: (i.receipt_evidence_at as string | undefined) ?? null });
+      return { disclosure_id: row.disclosure_id, le_version: row.le_version, status: row.status, issued_on: row.issued_on, deemed_receipt_date: row.deemed_receipt_date, effective_receipt_date: row.effective_receipt_date, latest_receipt_on: row.latest_receipt_on, late: row.late }; }),
+    guardrails: [never("NO_REVISED_LE_AFTER_CD", "12 CFR 1026.19(e)(4)(ii); 21.5 guardrails: never issue a revised LE on or after the CD date", (i) => typeof i.cd_delivered_on === "string" && typeof i.at === "string" && String(i.at).slice(0, 10) >= String(i.cd_delivered_on), "the CD has been provided — reflect the estimate on the CD (25.2)")] },
+  // step (6b): the 25.2 hand-off when a revised LE is barred
+  { name: "reflectOnCD", kind: "write", handler: compute((i, ctx, rt) => { need(i, "cc_id"); const r = svcOf(rt).reflectOnCD(str(i, "cc_id"), at(i, "at", ctx)); return { cc_id: r.cc.cc_id, reflected_on: r.cc.reflected_on, event: r.event.type, to_process: "25.2" }; }) },
+  // step (7): the test at every stage (25.1 calls it at cd_initial / cd_corrected / pre_funding; this process at le_revision / post_consummation; 28.x at qc)
+  { name: "runToleranceTest", kind: "act", handler: compute((i, ctx, rt) => { const app = appOf(i, ctx); need(i, "stage", "comparison_disclosure_id"); const stage = str(i, "stage") as Stage; if (!STAGES.includes(stage)) throw new RangeError(`stage ${stage} is not one of ${STAGES.join("/")}`);
+      const actuals = actualsOf(i); const credit = bigint(i.lender_credit_actual_cents ?? 0n, "lender_credit_actual_cents"); const run_at = at(i, "run_at", ctx);
+      const svc = rt.services.tolerance as ToleranceService | undefined;
+      if (svc && svc.baseline(app).length) { const r = svc.runToleranceTest({ application_id: app, stage, run_at, comparison_disclosure_id: str(i, "comparison_disclosure_id"), actuals, lender_credit_actual_cents: credit }); return { test: r.test, event: r.event.type }; }
+      const items = baselineOf(i, rt, app);
+      return { test: toleranceTest(items, { application_id: app, stage, run_at, comparison_disclosure_id: str(i, "comparison_disclosure_id"), actuals, lender_credit_actual_cents: credit, ...(i.lender_credit_baseline_cents !== undefined ? { lender_credit_baseline_cents: bigint(i.lender_credit_baseline_cents, "lender_credit_baseline_cents") } : {}) }), limit_cents: tenPercentLimitCents(items.filter((f) => f.tolerance_class === "ten_percent").reduce((a, f) => a + f.baseline_amount_cents, 0n)) }; }) },
+  // rule 9 at the CD: the lender credit; never funded by the borrower
+  { name: "applyCure", kind: "write", moneyFields: ["amount_cents"], handler: compute((i, ctx, rt) => { need(i, "test_id", "cd_disclosure_id"); const r = svcOf(rt).applyCure(str(i, "test_id"), { funded_by: (str(i, "funded_by") || "sm") as FundedBy, cd_disclosure_id: str(i, "cd_disclosure_id"), at: at(i, "at", ctx) }); return { cure_id: r.cure.cure_id, amount_cents: r.cure.amount_cents, method: r.cure.method, cd_statement: r.cure.cd_statement, ledger_set_id: r.cure.ledger_entry_id }; }),
+    guardrails: [never("NO_BORROWER_FUNDED_CURE", "21.5 guardrails: never let a cure be funded by the borrower in any form (e.g., by raising another fee)", (i) => str(i, "funded_by") === "borrower" || flag(i, "offset_by_fee_increase") || cents(i.borrower_charge_cents) > 0n, "a cure is funded by SM or the partner per the term sheet, never by the borrower"),
+      never("CURE_AT_CLOSING_MANDATORY", "21.5 guardrails: never choose the refund route when the excess is known before consummation", (i) => str(i, "method") === "refund_post_consummation" && !flag(i, "consummated"), "an excess known before consummation is cured on the CD at closing")] },
+  // rule 9 after consummation: refund within 60 days (officer releases), corrected CD requested from 25.2
+  { name: "issueRefund", kind: "write", moneyFields: ["amount_cents"], humanRoles: ["officer", "ops_analyst", "mlo_of_record"], handler: compute((i, ctx, rt) => { need(i, "test_id", "instrument", "sent_at"); const instrument = str(i, "instrument"); if (instrument !== "ach" && instrument !== "check") throw new RangeError("instrument is ach or check");
+      const released = ctx.actor.kind === "human" && ctx.actor.role === "officer" ? { kind: "human" as const, id: ctx.actor.id, role: "officer" } : (i.released_by as { kind: "human"; id: string; role: string } | undefined);
+      if (!released) throw new RangeError("released_by (the partner officer) is required — the agent prepares the refund; the officer releases it");
+      const r = svcOf(rt).issueRefund(str(i, "test_id"), { instrument, sent_at: str(i, "sent_at"), funded_by: (str(i, "funded_by") || "sm") as FundedBy, released_by: released }); return { cure_id: r.cure.cure_id, amount_cents: r.cure.amount_cents, due_on: r.due_on, sent_on: r.cure.refund_sent_on, ledger_set_id: r.cure.ledger_entry_id, corrected_cd_requested: true }; }),
+    guardrails: [needsRole("REFUND_RELEASE", "21.5 escalations: partner `officer` (refund release)", (i) => flag(i, "release"), ["officer"], "a post-consummation refund is released by the partner officer"),
+      never("CURE_AT_CLOSING_MANDATORY", "21.5 guardrails: never choose the refund route when the excess is known before consummation", (i) => i.consummated === false, "an excess known before consummation is cured on the CD at closing, never refunded later"),
+      never("REFUND_DUE_DATE", "12 CFR 1026.19(f)(2)(v): refund no later than 60 days after consummation", (i) => typeof i.consummation_on === "string" && typeof i.sent_at === "string" && flag(i, "assert_timely") && String(i.sent_at).slice(0, 10) > refundDueOn(D(str(i, "consummation_on"))), "the refund would leave after the 60th day — send it now and self-identify the breach (28.2)")] },
+  { name: "writeDecision", kind: "write", handler: decision() },
+]);

@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 5189/7446 (69.7%): tids 1380/1914, tables 522/717, timers 1501/1987, notices 247/306, tools 788/1311, figures 751/1211; processes at 100%: 121/165",
+ "brief": "spec units built 5236/7446 (70.3%): tids 1394/1914, tables 522/717, timers 1508/1987, notices 247/306, tools 788/1311, figures 777/1211; processes at 100%: 122/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1380
+   "built": 1394
   },
   "tables": {
    "spec": 717,
@@ -11,7 +11,7 @@
   },
   "timers": {
    "spec": 1987,
-   "built": 1501
+   "built": 1508
   },
   "notices": {
    "spec": 306,
@@ -23,11 +23,11 @@
   },
   "figures": {
    "spec": 1211,
-   "built": 751
+   "built": 777
   },
   "units": {
    "spec": 7446,
-   "built": 5189
+   "built": 5236
   }
  },
  "sections": {
@@ -177,15 +177,15 @@
   },
   "25": {
    "spec": 231,
-   "built": 92,
+   "built": 99,
    "processes": 4,
    "done": 1
   },
   "26": {
    "spec": 247,
-   "built": 47,
+   "built": 87,
    "processes": 4,
-   "done": 0
+   "done": 1
   },
   "27": {
    "spec": 197,
@@ -338,6 +338,7 @@
   "21.4",
   "21.5",
   "25.1",
+  "26.1",
   "30.1",
   "30.4"
  ],
@@ -7409,17 +7410,9 @@
    },
    "timers": {
     "spec": 10,
-    "built": 3,
-    "armable": 7,
-    "missing": [
-     "FNMA_UCD_ACCEPTED_GATE",
-     "REGZ_1026_19F1III_CD_MAILBOX_3SBD",
-     "REGZ_1026_19F2_CLERICAL_CD_60",
-     "REGZ_1026_19F2_CORRECTED_CD_30",
-     "REGZ_1026_19F4_SELLER_CD_GATE",
-     "SM_O62_SETTLEMENT_FIGURES_5SBD",
-     "SM_O62_UCD_RESUBMIT_ON_CORRECTION"
-    ]
+    "built": 10,
+    "armable": 10,
+    "missing": []
    },
    "notices": {
     "spec": 2,
@@ -7461,9 +7454,9 @@
    },
    "units": {
     "spec": 50,
-    "built": 4
+    "built": 11
    },
-   "pct": 8.0
+   "pct": 22.0
   },
   {
    "process": "25.3",
@@ -7657,24 +7650,9 @@
    "title": "Closing document generation and closing instructions (uniform instruments, riders, eNote form, MERS MOM language, state variants incl. Texas 50(a)(6) and NY CEMA, buydown agreements, POA/trust documents, final 1003, document QC)",
    "tids": {
     "spec": 14,
-    "built": 0,
-    "todo": 14,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14
-    ]
+    "built": 14,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 8,
@@ -7699,33 +7677,14 @@
    },
    "figures": {
     "spec": 18,
-    "built": 0,
-    "missing": [
-     "$1,550.00",
-     "$1.00",
-     "$13,733.33",
-     "$170.13",
-     "$2,087.54",
-     "$2,339.29",
-     "$2,604.12",
-     "$2,858.33",
-     "$264.83",
-     "$3,177.96",
-     "$3,402.62",
-     "$516.58",
-     "$544.29",
-     "$560,000.00",
-     "$6,198.96",
-     "$6,450.00",
-     "$8,000.00",
-     "$9,376.92"
-    ]
+    "built": 18,
+    "missing": []
    },
    "units": {
     "spec": 73,
-    "built": 41
+    "built": 73
    },
-   "pct": 56.2
+   "pct": 100.0
   },
   {
    "process": "26.2",
@@ -7904,31 +7863,24 @@
    },
    "figures": {
     "spec": 30,
-    "built": 0,
+    "built": 7,
     "missing": [
-     "$0.00",
      "$1,240.00",
      "$1,597.49",
      "$1,665.00",
      "$1,785.43",
      "$1,785.48",
-     "$1.00",
      "$187.94",
      "$2,725.13",
-     "$2,858.33",
      "$2,913.07",
      "$2,913.15",
-     "$3,402.62",
      "$34,300.00",
      "$403,760.00",
      "$409,824.52",
-     "$412,000.00",
      "$538,214.60",
-     "$544.29",
      "$548,800.00",
      "$557,249.57",
      "$559,222.94",
-     "$560,000.00",
      "$700.00",
      "$71.96",
      "$8,449.57",
@@ -7940,9 +7892,9 @@
    },
    "units": {
     "spec": 77,
-    "built": 0
+    "built": 7
    },
-   "pct": 0.0
+   "pct": 9.1
   },
   {
    "process": "26.4",
@@ -8022,16 +7974,14 @@
    },
    "figures": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "$560,000.00"
-    ]
+    "built": 1,
+    "missing": []
    },
    "units": {
     "spec": 46,
-    "built": 3
+    "built": 4
    },
-   "pct": 6.5
+   "pct": 8.7
   },
   {
    "process": "27.1",

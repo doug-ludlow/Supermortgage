@@ -270,7 +270,10 @@ export interface LeRow {
   provider_list: readonly ProviderListService[]; refusals: { at: string; channel: DeliveryChannel; reason: string }[];
   breach: { code: string; at: string; severity: 1; escalated_to: readonly string[]; incident_id: string } | null;
   readonly h24: Record<string, unknown>;
+  /** 7.4 rule 4 / 32.5 §7: one delivery per consumer when the consumers' E-SIGN states differ (`deliverPerBorrower`); absent for a single-channel issuance. */
+  deliveries?: readonly PerBorrowerDelivery[];
 }
+export interface PerBorrowerDelivery { readonly borrower_id: string; readonly channel: DeliveryChannel; readonly at: string; readonly esign_consent_id: string | null; readonly mailing_proof_id: string | null; }
 export interface EsignConsent { readonly id: string; readonly scope: readonly string[]; readonly granted_at: string; readonly revoked_at?: string | null; }
 /** §1026.37(o)(3)(iii): the E-SIGN consent must be scoped to disclosures, granted before delivery and unrevoked. */
 export function consentValidFor(c: EsignConsent | null | undefined, deliveredAtIso: string): { ok: boolean; reason?: string } {
@@ -327,7 +330,10 @@ export class LoanEstimateService {
       delivery_channel: null, delivered_at: null, mailed_at: null, issued_on: null, esign_consent_id: null, mailing_proof_id: null, deemed_receipt_date: null, received_at: null, receipt_evidence: null, effective_receipt_date: null,
       earliest_consummation_date: null, gate_opened_at: null, waiver_consent_id: null, closing_costs_expire_at: null, closing_costs_expire_display: null, provider_list, refusals: existing?.refusals ?? [], breach: existing?.breach ?? this.breaches.get(i.application_id) ?? null, h24 };
     this.rows.set(i.disclosure_id, row);
-    this.append("disclosure.le.rendered", i.application_id, { disclosure_id: i.disclosure_id, le_version: 1, data_hash: hash, template_version: H24_TEMPLATE_VERSION, pricing_scenario_id: i.pricing.quote_id, apr: apr.apr_disclosed, tip_pct: calcs.tip_pct });
+    // the figure snapshot the borrower surface diffs between versions (32.4 "What changed": computed from two snapshots, never free text)
+    this.append("disclosure.le.rendered", i.application_id, { disclosure_id: i.disclosure_id, le_version: 1, data_hash: hash, template_version: H24_TEMPLATE_VERSION, pricing_scenario_id: i.pricing.quote_id, apr: apr.apr_disclosed, tip_pct: calcs.tip_pct,
+      rate_pct: i.pricing.rate_pct, pi_cents: calcs.pi_cents.toString(), loan_cents: i.loan_cents.toString(), points_cents: i.pricing.points_cents.toString(), lender_credits_cents: totals.lender_credits_cents.toString(), total_closing_costs_cents: totals.total_closing_costs_cents.toString(),
+      fees: classed.map((f) => ({ fee_code: f.fee_code, description: f.description, le_section: f.le_section, amount_cents: f.amount_cents.toString() })) });
     return row;
   }
   /** Stage `le_terms` escalation to the MLO of record; the SLA clock is +1 creditor BD capped at `le_due_at` − 2h (SM_O22_MLO_LE_REVIEW_SLA_1BD). */
@@ -373,6 +379,46 @@ export class LoanEstimateService {
     if (r.provider_list.length) this.append("provider_list.delivered", r.application_id, { disclosure_id: disclosureId, services: r.provider_list.map((s) => s.service), delivered_with_le: true }, AGENT, at);
     this.setFeeBaseline(disclosureId, at);
     if (isInPerson(d.channel)) { r.received_at = at; r.receipt_evidence = "in_person"; r.effective_receipt_date = issued_on; r.status = "received"; this.append("disclosure.le.received", r.application_id, { disclosure_id: disclosureId, evidence: "in_person", received_on: issued_on, effective_receipt_date: issued_on }, AGENT, at); }
+    return r;
+  }
+  /**
+   * 7.4 rule 4 (E-SIGN is per party) / 32.5 §7: the initial LE issued to EVERY consumer, each on the channel their own E-SIGN state
+   * allows — electronic (esign_portal/email) to a party with a valid consent, print/mail (with the vendor's proof) to the rest. The
+   * spec's channel events carry `borrower_id`; ONE `disclosure.le.issued` completes the issuance (it satisfies REGZ_1026_19E1_LE_3BD),
+   * governed by the mailed delivery whenever any consumer is mailed (the mailbox presumption and the 7-SBD gate derive from the
+   * mailing date; the mailing to the non-consenting party is what completes the timer). Same guards as `deliver` (docs/ux/BACKEND-DELTAS.md).
+   */
+  deliverPerBorrower(disclosureId: string, d: { deliveries: readonly { borrower_id: string; channel: DeliveryChannel; consent?: EsignConsent | null; mailing_proof_id?: string | null }[]; at?: string; ai_intake_mode?: "assisted" | "supervised_present" | "autonomous" }): LeRow {
+    const r = this.get(disclosureId); const at = d.at ?? this.clock.now();
+    if (!Array.isArray(d.deliveries) || !d.deliveries.length) throw new RangeError("deliveries[] (one per consumer) is required");
+    if (r.issued_on) throw new LeRefused("ALREADY_ISSUED", `LE ${disclosureId} was already issued on ${r.issued_on}`);
+    const ids = new Set<string>();
+    for (const x of d.deliveries) { nonEmpty(x.borrower_id, "borrower_id"); if (ids.has(x.borrower_id)) throw new RangeError(`borrower ${x.borrower_id} listed twice`); ids.add(x.borrower_id); if (!DELIVERY_CHANNELS.includes(x.channel)) throw new RangeError(`channel ${x.channel} is not one of ${DELIVERY_CHANNELS.join("/")}`); if (isInPerson(x.channel)) throw new RangeError("per-consumer issuance covers remote channels; an in-person delivery uses deliver()"); }
+    const refuse = (code: string, channel: DeliveryChannel, reason: string): never => { r.refusals.push({ at, channel, reason }); this.append("disclosure.le.delivery.refused", r.application_id, { disclosure_id: disclosureId, channel, code, reason }, AGENT, at); throw new LeRefused(code, reason); };
+    if ((d.ai_intake_mode ?? "assisted") === "assisted" && (r.mlo_approved_hash === null || r.mlo_approved_hash !== r.data_hash)) refuse("MLO_APPROVAL_REQUIRED", d.deliveries[0]!.channel, r.mlo_approved_hash === null ? "no MLO-of-record approval exists for this LE's data hash (assisted mode)" : `the MLO approved hash ${r.mlo_approved_hash.slice(0, 8)} but the pricing scenario changed to ${r.data_hash.slice(0, 8)}; a new approval is required before release`);
+    for (const x of d.deliveries) {
+      if (isElectronic(x.channel)) { const c = consentValidFor(x.consent, at); if (!c.ok) refuse("NO_ESIGN_CONSENT", x.channel, `borrower ${x.borrower_id}: ${c.reason} — deliver by print the same day; the mailbox rule applies`); }
+      if (x.channel === "mail" && !x.mailing_proof_id) refuse("NO_MAILING_PROOF", x.channel, `borrower ${x.borrower_id}: a mailed LE needs the print vendor's mailing-date evidence`);
+    }
+    const issued_on = civilDate(at, this.calendar.time_zone);
+    const mailed = d.deliveries.filter((x) => x.channel === "mail");
+    const governing: DeliveryChannel = mailed.length ? "mail" : d.deliveries[0]!.channel;   // the least favourable receipt presumption governs the one LE
+    const receipt = receiptDetermination({ channel: governing, issued_on, evidence_at: null, time_zone: this.calendar.time_zone });
+    const exp = closingCostsExpireAt(issued_on, this.calendar);
+    const electronic = d.deliveries.find((x) => isElectronic(x.channel));
+    r.delivery_channel = governing; r.issued_on = issued_on; r.esign_consent_id = electronic?.consent?.id ?? null; r.mailing_proof_id = mailed[0]?.mailing_proof_id ?? null;
+    r.deemed_receipt_date = receipt.deemed_receipt_date; r.earliest_consummation_date = earliestConsummationDate(issued_on); r.closing_costs_expire_at = exp.expires_at; r.closing_costs_expire_display = exp.display;
+    r.deliveries = d.deliveries.map((x) => ({ borrower_id: x.borrower_id, channel: x.channel, at, esign_consent_id: isElectronic(x.channel) ? (x.consent?.id ?? null) : null, mailing_proof_id: x.channel === "mail" ? (x.mailing_proof_id ?? null) : null }));
+    for (const x of r.deliveries) {
+      if (x.channel === "mail") { r.mailed_at = at; this.append("disclosure.le.mailed", r.application_id, { disclosure_id: disclosureId, le_version: 1, borrower_id: x.borrower_id, mailed_at: at, mailing_proof_id: x.mailing_proof_id, issued_on, per_borrower: true }, AGENT, at); }
+      else { r.delivered_at = at; this.append("disclosure.le.delivered", r.application_id, { disclosure_id: disclosureId, le_version: 1, borrower_id: x.borrower_id, channel: x.channel, delivered_at: at, esign_consent_id: x.esign_consent_id, issued_on, per_borrower: true }, AGENT, at); }
+    }
+    r.status = mailed.length ? "mailed" : "delivered";
+    const completing = mailed.at(-1) ?? d.deliveries.at(-1)!;
+    this.append("disclosure.le.issued", r.application_id, { disclosure_id: disclosureId, le_version: 1, channel: governing, in_person: false, issued_on, deemed_receipt_date: receipt.deemed_receipt_date, earliest_consummation_date: r.earliest_consummation_date, closing_costs_expire_at: exp.expires_at,
+      per_borrower: r.deliveries.map((x) => ({ borrower_id: x.borrower_id, channel: x.channel })), completed_by_borrower_id: completing.borrower_id, completed_by_channel: completing.channel }, AGENT, at);
+    if (r.provider_list.length) this.append("provider_list.delivered", r.application_id, { disclosure_id: disclosureId, services: r.provider_list.map((s) => s.service), delivered_with_le: true }, AGENT, at);
+    this.setFeeBaseline(disclosureId, at);
     return r;
   }
   /** `fee.baseline.set`: the LE fixes the good-faith baseline for every fee (§1026.19(e)(3)); 21.5 tests against these classes. */

@@ -32,6 +32,8 @@ import { commandInputFor } from "../../app/tools/section32-1.ts";
 import { assertSubject, hasFreshL1, requireFreshL1, type BorrowerContext } from "./auth.ts";
 import { BorrowerError } from "./errors.ts";
 import { THREAD_COPY_KEYS } from "./copy-keys.ts";
+import type { BorrowerFlows } from "./flows/index.ts";
+import { SUBJECT_FREE_COMMANDS, TERMINAL_ALLOWED_COMMANDS, terminalStateOf } from "./flows/13-cross-cutting.ts";
 
 export const BORROWER_APP_ACTOR: Actor = { kind: "agent", id: "borrower-app" };
 export const COMMAND_NAMES: ReadonlySet<string> = new Set(TOOLS_32_2.map((t) => t.name));
@@ -56,9 +58,22 @@ export function affirmativeFor(text: string, cards: readonly CardInstanceRow[]):
 
 export interface CommandOutcome { readonly command: string; readonly subject: { application_id: string | null; loan_id: string | null }; readonly result: unknown; readonly events: string[]; readonly decision_id: string | null }
 
+/**
+ * A commit that lost the entity store's optimistic version to a flow reaction on the same subject: the 32.x flows react to the party's
+ * previous commit in the background (32.5 runs 21.1 `captureField` as `intake` after `application.party.invited`, …) and write the intake
+ * record's next version while the borrower's next command has already hydrated its store one version behind — Postgres 23505 on
+ * entity_records_pkey (0115: (kind, id, version, scope_key)). The unit of work rolled back, so nothing of the command was written.
+ */
+const isEntityVersionRace = (e: unknown): boolean => e instanceof Error && (e as { code?: unknown }).code === "23505" && /entity_records_pkey/.test(String((e as { constraint?: unknown }).constraint ?? "") + e.message);
+
 export class BorrowerCommands {
   private readonly runtime: Runtime; private readonly db: Db; private readonly ui: PgBorrowerUiRepository;
-  constructor(runtime: Runtime, ui: PgBorrowerUiRepository) { this.runtime = runtime; this.db = runtime.db; this.ui = ui; }
+  /** The 32.x flows (src/runtime/borrower/flows): a message a flow answers itself (32.3 T2 "are you a real person?", P9 listings) comes before the generic reply. */
+  flows: BorrowerFlows | undefined;
+  constructor(runtime: Runtime, ui: PgBorrowerUiRepository, flows?: BorrowerFlows) { this.runtime = runtime; this.db = runtime.db; this.ui = ui; this.flows = flows; }
+
+  /** Every queued flow reaction has run (read-your-writes across the seam: a command sees the cards, rows and entity versions the flows wrote for the party's previous commit). */
+  private async settled(): Promise<void> { if (this.flows) await this.flows.settle(); }
 
   /** The subject a command runs on: the body's / card's subject when given (scoped), else the party's first subject. */
   subjectFor(ctx: BorrowerContext, wanted: { application_id?: string | null; loan_id?: string | null } | null): Subject {
@@ -71,7 +86,10 @@ export class BorrowerCommands {
   private async enrich(ctx: BorrowerContext, name: string, subject: Subject, args: Record<string, unknown>, now: string): Promise<Record<string, unknown>> {
     const input: Record<string, unknown> = { ...args, party_id: ctx.party.id, assurance_level: ctx.session.level, fresh_l1: hasFreshL1(ctx.session, now), ...(subject.application_id ? { application_id: subject.application_id } : {}), ...(subject.loan_id ? { loan_id: subject.loan_id } : {}) };
     if (FRESH_L1_COMMANDS.has(name)) requireFreshL1(ctx.session, now);
-    const need = LEVEL_REQUIRED[name]?.(args); if (need && RANK[ctx.session.level] < RANK[need]) throw new BorrowerError(403, "LEVEL_REQUIRED", undefined, `${need} required; session is ${ctx.session.level}`);
+    // 32.5 §7 / 21.1 rule 4: a co-borrower's credit is never ordered before their own joint-intent affirmation — the fact comes from 21.1's record (SM_O21_JOINT_INTENT_GATE armed by `application.borrower.added{joint_intent_required}`), stated before the level check so the invitee sees the gate rather than a step-up
+    if (name === "credit.authorize" && subject.application_id) { const ji = await this.jointIntentFacts(subject); input["joint_intent_required"] = ji.required; input["joint_intent_affirmed"] = ji.affirmed; if (ji.required && !ji.affirmed) throw new BorrowerError(409, "SM_O21_JOINT_INTENT_GATE", "SM_O21_JOINT_INTENT_GATE", `borrower ${ji.borrower_id ?? "?"} has not affirmed joint intent (21.1 rule 4)`); }
+    // 01 §5 / 32.3 T4: a hard pull needs L3 — the refusal names the identity gate (SM_IDENTITY_IAL2_GATE) so the client renders "verify your ID first"
+    const need = LEVEL_REQUIRED[name]?.(args); if (need && RANK[ctx.session.level] < RANK[need]) throw new BorrowerError(403, "LEVEL_REQUIRED", need === "L3" ? "SM_IDENTITY_IAL2_GATE" : undefined, `${need} required; session is ${ctx.session.level}`);
     if (subject.application_borrower_id) {
       // the party's OWN borrower as the interview knows it (never the client's claim): the default subject of a borrower-scoped command, and the fact the own-party guardrails compare against
       const own = await this.intakeBorrowerId(subject); input["own_borrower_id"] = own;
@@ -98,14 +116,41 @@ export class BorrowerCommands {
     return subject.application_borrower_id;
   }
 
+  /** 32.5 §7: the 21.1 joint-intent facts for the party's own borrower — required only while 21.1's gate is armed on the application (a co-borrower added after the interview), affirmed once that borrower's `application.joint_intent.affirmed` landed on the intake record. */
+  private async jointIntentFacts(subject: Subject): Promise<{ required: boolean; affirmed: boolean; borrower_id: string | null }> {
+    if (!subject.application_id) return { required: false, affirmed: true, borrower_id: null };
+    const armed = await this.db.query<{ n: string }>(`SELECT count(*)::text AS n FROM timers WHERE application_id = $1 AND code = 'SM_O21_JOINT_INTENT_GATE' AND status IN ('armed', 'breached')`, [subject.application_id]);
+    const own = await this.intakeBorrowerId(subject);
+    if (Number(armed[0]?.n ?? 0) === 0 || !own) return { required: false, affirmed: true, borrower_id: own };
+    const intake = (await this.db.query<{ data: unknown }>(`SELECT data FROM entity_current WHERE kind = 'applications' AND id = $1`, [subject.application_id]))[0];
+    const b = intake ? ((decodeEntityData(intake.data)["borrowers"] as { id: string; credit_requested?: boolean; joint_intent_affirmed_at?: string | null }[] | undefined) ?? []).find((x) => x.id === own) : undefined;
+    if (!b || b.credit_requested === false) return { required: false, affirmed: true, borrower_id: own };
+    return { required: true, affirmed: !!b.joint_intent_affirmed_at, borrower_id: own };
+  }
+
   /** A direct command (02 §7 POST /v1/borrower/commands/{name}). */
   async runCommand(ctx: BorrowerContext, name: string, body: Record<string, unknown>, now: string, cardInstanceId: string | null = null): Promise<CommandOutcome> {
     if (!COMMAND_NAMES.has(name)) throw new BorrowerError(404, "COMMAND_UNKNOWN", undefined, `${name} is not a 32.2 command`);
     const wanted = (body["subject"] as { application_id?: string | null; loan_id?: string | null } | undefined) ?? { application_id: typeof body["application_id"] === "string" ? body["application_id"] : null, loan_id: typeof body["loan_id"] === "string" ? body["loan_id"] : null };
+    // 20.3 T12 / 32.3 T15: the demographic request exists only on an application — a lead-stage party (no application subject) is refused before anything runs
+    if (name === "application.answerDemographics" && !ctx.subjects.some((s) => s.application_id)) throw new BorrowerError(409, "NO_DEMOGRAPHIC_AT_LEAD", undefined, "demographic information is requested only at application (21.1), never at the lead stage");
     const subject = this.subjectFor(ctx, wanted);
+    // the flows' reactions to the party's previous commit finish before this command reads its facts and hydrates its entity store (a direct command settles
+    // here; a card resolve settled before its transaction — the reactions need their own connections)
+    if (cardInstanceId === null) await this.settled();
+    // 32.13 T-X-16: a terminal subject (denied | withdrawn | closed_incomplete | rescinded | paid_in_full | transferred_out) is read-only — only case.open, human.request and party.updateContact run (document download is a GET)
+    if (!TERMINAL_ALLOWED_COMMANDS.has(name) && !SUBJECT_FREE_COMMANDS.has(name)) { const terminal = await terminalStateOf(this.db, subject); if (terminal) throw new BorrowerError(409, "SUBJECT_TERMINAL", undefined, `the subject is ${terminal}: the Record is read-only (32.13 T-X-16)`); }
     const { subject: _s, ...args } = body;
     const input = await this.enrich(ctx, name, subject, { ...args, ...(cardInstanceId ? { card_instance_id: cardInstanceId } : {}) }, now);
-    const r = await this.runtime.execute({ process: "32.2", name, loanId: subject.loan_id ?? "", ...(subject.application_id ? { applicationId: subject.application_id } : {}), actor: BORROWER_APP_ACTOR, input, run: { runId: `session:${ctx.session.session_id}`, modelVersion: "borrower-app api (deterministic)", promptVersion: "32.2" } });
+    const req = { process: "32.2", name, loanId: subject.loan_id ?? "", ...(subject.application_id ? { applicationId: subject.application_id } : {}), actor: BORROWER_APP_ACTOR, input, run: { runId: `session:${ctx.session.session_id}`, modelVersion: "borrower-app api (deterministic)", promptVersion: "32.2" } };
+    let r;
+    try { r = await this.runtime.execute(req); }
+    catch (e) {
+      if (!isEntityVersionRace(e)) throw e;
+      // a reaction landed between the hydrate and the commit: nothing was written — once the reactions settle, the command runs again on the current versions
+      await this.settled();
+      r = await this.runtime.execute(req);
+    }
     return { command: name, subject: { application_id: subject.application_id, loan_id: subject.loan_id }, result: r.output, events: r.events.map((e) => e.type), decision_id: r.decisionId ?? null };
   }
 
@@ -122,6 +167,8 @@ export class BorrowerCommands {
     const subject = this.subjectFor(ctx, { application_id: first.subject_application_id, loan_id: first.subject_loan_id });
     const optionId = typeof body["option_id"] === "string" ? (body["option_id"] as string) : null;
     const evidence = { ...((body["evidence"] as Record<string, unknown> | undefined) ?? {}), option_id: optionId, channel, tapped_at: now, session_id: ctx.session.session_id, ip: ctx.ip, user_agent: ctx.userAgent, disclosure_version_shown: (first.props["disclosure_version_id"] as string | null) ?? ((body["evidence"] as Record<string, unknown> | undefined)?.["disclosure_version_shown"] as string | null) ?? null };
+    // the flows' reactions to the party's previous commit finish before the card's command hydrates its store (outside the transaction: the reactions need their own connections)
+    await this.settled();
     // the card's own lock: a second tap waits here and then answers the stored outcome (idempotency key = card_instance_id)
     return this.db.tx(async (q) => {
       await q.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [cardId]);
@@ -129,12 +176,17 @@ export class BorrowerCommands {
       if (card.status === "resolved") return { card, command: card.command_ref, idempotent: true, result: (card.evidence as Record<string, unknown> | null)?.["command_output"] ?? null, events: [] };
       if (card.status !== "pending") throw new BorrowerError(409, "CARD_NOT_PENDING", undefined, `the card is ${card.status}`);
       let result: unknown = null; let events: string[] = [];
-      if (card.command_ref) {
+      // an option the card lists under `no_command_options` (Keep floating, Not yet, Wait) records the choice and issues no command (32.4 §3–4)
+      const noCommand = optionId !== null && Array.isArray(card.props["no_command_options"]) && (card.props["no_command_options"] as unknown[]).includes(optionId);
+      // 32.3: what the card's evidence contributes to the command (the API settles it, never the client): the confirmed fields with the source the platform holds (or `borrower` where edited),
+      // the profile answers, the demographic answers (never persisted on the card), the declarations list hash; a required field without an answer refuses before anything runs (T13)
+      const card32 = cardArgs(card, evidence, optionId);
+      if (card.command_ref && !noCommand) {
         const args = commandInputFor(card, { option_id: optionId, args: (body["args"] as Record<string, unknown> | undefined) ?? {} }, { application_id: subject.application_id, loan_id: subject.loan_id });
-        const out = await this.runCommand(ctx, card.command_ref, { ...args, evidence, channel, subject: { application_id: subject.application_id, loan_id: subject.loan_id } }, now, cardId);
+        const out = await this.runCommand(ctx, card.command_ref, { ...args, ...card32.args, evidence: card32.stored, channel, subject: { application_id: subject.application_id, loan_id: subject.loan_id } }, now, cardId);
         result = out.result; events = out.events;
       }
-      const stored = { ...evidence, command_ref: card.command_ref, command_output: summarize(result) };
+      const stored = { ...card32.stored, command_ref: card.command_ref, command_output: summarize(result) };
       const resolved = await this.ui.transitionCard(cardId, "resolved", `borrower:${ctx.party.id}`, now, stored, q);
       await this.ui.logUiEvent({ party_id: ctx.party.id, session_id: ctx.session.session_id, conversation_id: card.conversation_id, card_instance_id: cardId, kind: card.kind === "ConsentCard" ? "consent_affirmed" : "card_resolved", at: now, ip: ctx.ip, user_agent: ctx.userAgent, disclosure_version_id: isUuid(evidence.disclosure_version_shown) ? evidence.disclosure_version_shown : null, payload: { option_id: optionId, channel, command_ref: card.command_ref, ...(card.kind === "DemographicsCard" ? {} : { evidence_keys: Object.keys(evidence) }) } }, q);
       await this.ui.appendMessage({ conversation_id: card.conversation_id, at: now, sender: "system", sender_ref: "borrower-api", channel: channel === "voice" || channel === "sms" || channel === "email" ? channel : "app", body_text: `{{copy:receipt.${card.copy_key}}}`, card_instance_id: cardId, subject_application_id: card.subject_application_id, subject_loan_id: card.subject_loan_id }, q);   // the collapsed receipt line (01 §1.3, 02 §1.3)
@@ -165,6 +217,11 @@ export class BorrowerCommands {
       const r = await reply(card.kind === "ConsentCard" && channel === "voice" ? THREAD_COPY_KEYS.voiceConsentLink : THREAD_COPY_KEYS.affirmativeNeedsCard, { card_instance_id: card.card_instance_id, deep_link: { token: link.token, path: `/d/${link.token}`, expires_at: link.expires_at }, body: `{{copy:${THREAD_COPY_KEYS.affirmativeNeedsCard}}} /d/${link.token}` });
       return { message, reply: r, routed_to, command_executed: false, command: null };
     }
+    // a flow that answers this message itself (32.3 T2 "are you a real person?" → 20.3's script with the disclosure re-logged; P9 listings) — before the human path, which "real person" would otherwise match
+    if (this.flows) {
+      const fr = await this.flows.message({ party_id: ctx.party.id, session_id: ctx.session.session_id, conversation_id: conv.conversation_id, message_id: messageId, text, channel, subject: subject ? { application_id: subject.application_id, loan_id: subject.loan_id } : null, claimed_subject: wanted, at: now });
+      if (fr) return { message, reply: await reply(fr.copy_key, { card_instance_id: fr.card_instance_id ?? null, ...(fr.body_text ? { body: fr.body_text } : {}) }), routed_to, command_executed: !!fr.command, command: fr.command ?? null };
+    }
     // "human" at any time (01 §1.1, §7.1): the human.request command
     if (/\b(human|real person|a person|talk to (a|someone)|representative|agent)\b/i.test(text) && subject) {
       const out = await this.runCommand(ctx, "human.request", { reason: "borrower_request", channel, utterance: text, subject: { application_id: subject.application_id, loan_id: subject.loan_id } }, now);
@@ -175,3 +232,34 @@ export class BorrowerCommands {
 }
 
 const summarize = (v: unknown): unknown => JSON.parse(toJson(v ?? null));
+
+/** 32.3: the card's evidence → the command's input and the evidence the card keeps (01 §3.3 ConfirmCard, §3.18 ProfileCard, §3.19 DemographicsCard, R5 declarations). */
+export function cardArgs(card: CardInstanceRow, evidence: Record<string, unknown>, optionId: string | null): { args: Record<string, unknown>; stored: Record<string, unknown> } {
+  const props = card.props; const args: Record<string, unknown> = {}; let stored: Record<string, unknown> = { ...evidence };
+  const required = Array.isArray(props["required_paths"]) ? (props["required_paths"] as string[]) : [];
+  const evFields = Array.isArray(evidence["fields"]) ? (evidence["fields"] as Record<string, unknown>[]) : [];
+  const valueOf = (f: Record<string, unknown>): string => { const v = f["value_confirmed"] ?? f["value"]; return v === undefined || v === null ? "" : String(v); };
+  if (required.length && (card.kind === "ConfirmCard" || card.kind === "ProfileCard")) {
+    const missing = required.filter((p) => !evFields.some((f) => f["path"] === p && valueOf(f).trim() !== ""));
+    if (missing.length) throw new BorrowerError(409, "CARD_FIELD_REQUIRED", undefined, `${missing.join(", ")} need an answer — nothing is written without the tap (01 §3.18)`);
+  }
+  if (card.kind === "ConfirmCard" && evFields.length) {
+    const shown = Array.isArray(props["fields"]) ? (props["fields"] as { path?: unknown; value?: unknown; source?: unknown }[]) : [];
+    args["fields"] = evFields.map((f) => { const path = String(f["path"] ?? ""); const orig = shown.find((x) => x["path"] === path); const value = valueOf(f); const edited = !orig || String(orig["value"] ?? "") !== value; return { path, value, source: edited ? "borrower" : String(orig?.["source"] ?? f["source"] ?? "borrower"), edited }; });
+    const masked = Array.isArray(props["masked_paths"]) ? (props["masked_paths"] as string[]) : [];
+    if (masked.length) stored = { ...stored, fields: evFields.map((f) => (masked.includes(String(f["path"])) ? { ...f, value_confirmed: `••••${valueOf(f).replace(/\D/g, "").slice(-4)}`, value: undefined, masked: true } : f)) };   // the SSN is stored once by the owning handler, never echoed (01 §5)
+  }
+  if (card.kind === "ProfileCard" && evFields.length) args["fields"] = evFields.map((f) => ({ path: String(f["path"] ?? ""), value: valueOf(f), source: "borrower" }));
+  // 32.10 T6 (01 §3.12): a PaymentCard's evidence IS the payment — the amount, date and account the borrower confirmed go to `payment.makeOneTime` as its input (the card's `command_args` carry the designation)
+  if (card.kind === "PaymentCard") { for (const k of ["amount_cents", "date", "account_id", "include_late_charge"]) if (evidence[k] !== undefined && args[k] === undefined) args[k] = evidence[k]; if (evidence["new_account"] && typeof evidence["new_account"] === "object") args["account"] = evidence["new_account"]; }
+  if (card.kind === "DemographicsCard") {
+    const answers = (evidence["answers"] as { ethnicity?: unknown; race?: unknown; sex?: unknown } | undefined) ?? {};
+    const decline = (v: unknown): boolean => v === "do_not_wish" || v === "declined" || (Array.isArray(v) && (v as unknown[]).some((x) => x === "do_not_wish" || x === "declined"));
+    const keep = (v: unknown): string[] | null => (Array.isArray(v) ? (v as unknown[]).map(String).filter((x) => x !== "do_not_wish" && x !== "declined") : []);
+    const declined_ethnicity = decline(answers.ethnicity) || (Array.isArray(answers.ethnicity) && !(answers.ethnicity as unknown[]).length); const declined_race = decline(answers.race) || (Array.isArray(answers.race) && !(answers.race as unknown[]).length); const declined_sex = decline(answers.sex) || !answers.sex;
+    Object.assign(args, { ethnicity: declined_ethnicity ? null : keep(answers.ethnicity), race: declined_race ? null : keep(answers.race), sex: declined_sex ? null : String(answers.sex), declined_ethnicity, declined_race, declined_sex, collection_method: String(evidence["collection_method"] ?? props["collection_method"] ?? "internet") });
+    const { answers: _a, ...rest } = stored; stored = rest;   // the answers are written once by 21.1 and never kept on the card (01 §3.19)
+  }
+  if (typeof props["list_version_hash"] === "string") stored = { ...stored, list_version: props["list_version"] ?? null, list_version_hash: props["list_version_hash"], ...(optionId ? { option_id: optionId } : {}) };
+  return { args, stored };
+}

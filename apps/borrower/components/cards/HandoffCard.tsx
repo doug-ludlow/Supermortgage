@@ -4,6 +4,7 @@ import { CardFrame, nowIso } from "./CardFrame";
 import type { CardComponentProps } from "./types";
 import type { HandoffDestination } from "@/lib/types/cards";
 import { SHOW_FAKE_MARKERS } from "@/lib/env";
+import { handoffLine } from "@/components/flows/7-closing";
 
 const DEST_LABEL: Record<HandoffDestination, string> = {
   ron_platform: "Online notary session",
@@ -12,6 +13,7 @@ const DEST_LABEL: Record<HandoffDestination, string> = {
   notary_wet: "In-person notary",
   prior_servicer: "Your previous servicer",
   fannie_mae_letter: "A letter in the mail",
+  hoa_management: "Your HOA management company",
 };
 
 /**
@@ -32,8 +34,20 @@ export function HandoffCard({ card, timezone, onResolve, onLaunchVendor, busy }:
 
   return (
     <CardFrame card={card} timezone={timezone} title={p.title ?? DEST_LABEL[p.destination]} collapsible={isVendor} receipt={`${DEST_LABEL[p.destination]} — started`} fakeVendor={fake}>
-      <p className="sm-primary-text">{p.what_to_expect}</p>
-      <p>When it's done, you'll see: {p.return_state}</p>
+      <p className="sm-primary-text">{handoffLine(p.what_to_expect, p.what_to_expect_copy_key, p.copy_tokens)}</p>
+      {p.explainer_headline || p.explainer_points?.length ? (
+        <div className="sm-card-block" data-testid="handoff-explainer">
+          {p.explainer_headline ? <p className="sm-primary-text">{p.explainer_headline}</p> : null}
+          {p.explainer_points?.length ? (
+            <ul>
+              {p.explainer_points.map((x, i) => (
+                <li key={i}>{x}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+      <p>When it's done, you'll see: {handoffLine(p.return_state, p.return_state_copy_key, p.copy_tokens)}</p>
       {pending && isVendor ? (
         <div className="sm-card-actions">
           {p.launch_url ? (

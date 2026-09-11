@@ -236,9 +236,10 @@ export function captureSixItem(events: EventStore, app: IntakeApplication, c: Ca
   return { app: trid.app, event, trid };
 }
 /** Refinance-trigger prefill (20.1): a suggestion, not a submission — `submitted_at` stays null until the borrower confirms it. */
-export function offerPrefill(app: IntakeApplication, item: SixItemKey, value: string | Cents): IntakeApplication {
+export function offerPrefill(app: IntakeApplication, item: SixItemKey, value: string | Cents, o: { readonly on_file_value_hash?: string | null } = {}): IntakeApplication {
   if (!SIX_ITEMS.includes(item)) throw new RangeError(`item ${String(item)} is not one of ${SIX_ITEMS.join("/")}`);
-  const { hash } = itemValue(item, value);
+  // 32.11 §3 (a serviced borrower's compressed application): an item already on the prior application's file is offered by that file's own value hash — the value is neither re-typed nor re-stated in clear (the SSN); the borrower still confirms it item by item (rule 1)
+  const { hash } = o.on_file_value_hash ? { hash: nonEmpty(o.on_file_value_hash, "on_file_value_hash") } : itemValue(item, value);
   if (item === "property_address" && typeof value === "string") { const m = /\b([A-Z]{2})\b\s*\d{5}(?:-\d{4})?\s*$/.exec(value); app = { ...app, property_address: value, property_state: m?.[1] ?? app.property_state }; }
   return withItem(app, item, { submitted_at: null, source: "prefill_unconfirmed", value_hash: hash }, null);
 }

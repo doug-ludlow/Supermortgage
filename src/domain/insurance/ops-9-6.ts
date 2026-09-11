@@ -231,6 +231,28 @@ export async function sendFloodNotice45(d: FloodDeps, i: FloodNoticeInput): Prom
   if (!mailed && electronic && n.sentAt) return { notice: n, sent: appendNoticeSent(d, loanId, { notice_id: n.id, mailed_on: etDate(n.sentAt), mailed_at: n.sentAt, proof_of_mailing_id: null, channel: electronic.channel }), awaiting_proof_of_mailing: false };
   return { notice: n, sent: null, awaiting_proof_of_mailing: mailed };
 }
+export const FLOOD_MAP_CHANGE_NOTICE = "INS_FLOOD_MAP_CHANGE_NOTICE" as const;
+export interface MapChangeNoticeInput { readonly loan_id: string; readonly certificate_id?: string | null; readonly recipients: readonly Recipient[]; readonly payload: Record<string, unknown>; readonly as_of: PlainDate; readonly channel_context?: ChannelContext; }
+/**
+ * Rule 7 / 9.6 outputs: `INS_FLOOD_MAP_CHANGE_NOTICE` ("remapped into an SFHA — coverage is now required", policy; may
+ * accompany the 45-day notice when coverage is absent) rendered and sent through the Notice Registry, then
+ * `flood.map_change.notified` on the loan (the 9.6 event list: `flood.map_change.received/notified/closed`) — the map
+ * change row moves `open → borrower_notified`. 32.9 backend delta: the borrower's NoticeCard hangs on this event.
+ */
+export async function sendMapChangeNotice(d: FloodDeps, i: MapChangeNoticeInput): Promise<{ notice: Notice; event: DomainEvent }> {
+  const svc = d.notices; if (!svc) throw new RangeError("NoticeService is not wired: the map-change notice is produced by the Notice Registry only (9.6 rule 4)");
+  const loanId = nonEmpty(i.loan_id, "loan_id"); if (!i.recipients.length) throw new RangeError("recipients is required");
+  const received = byLoan(d, loanId, "flood.map_change.received").filter((e) => !i.certificate_id || payload<{ certificate_id?: unknown }>(e).certificate_id === i.certificate_id).at(-1);
+  if (!received) throw new RangeError(`no flood.map_change.received on loan ${loanId}${i.certificate_id ? ` for certificate ${i.certificate_id}` : ""} — the notice follows the vendor's map-change message`);
+  const mc = payload<{ certificate_id?: string; direction?: string; effective_date?: string; new_zone?: string; map_panel?: string | null; fnma_deadline?: string | null }>(received);
+  const coverage_required = mc.direction === "into_sfha";
+  const n = svc.render({ templateCode: FLOOD_MAP_CHANGE_NOTICE, loanId, recipients: i.recipients, payload: { coverage_required, map_effective: mc.effective_date, flood_zone: mc.new_zone, map_panel: mc.map_panel ?? "", ...i.payload }, asOf: i.as_of });
+  if (n.status === "held") throw new RangeError(`${FLOOD_MAP_CHANGE_NOTICE} for ${loanId} is held: ${n.heldReason ?? "checklist"}`);
+  await svc.send(n.id, i.channel_context ?? {});
+  const notice45 = floodNoticeOnFile(d, loanId);
+  const event = d.events.append({ type: "flood.map_change.notified", loanId, actor: actorOf(d), aggregate: { kind: "notice", id: n.id }, payload: { template: FLOOD_MAP_CHANGE_NOTICE, notice_id: n.id, certificate_id: mc.certificate_id ?? null, direction: mc.direction ?? null, effective_date: mc.effective_date ?? null, new_zone: mc.new_zone ?? null, coverage_required, required_cents: i.payload.required_amount_cents ?? null, fnma_deadline: mc.fnma_deadline ?? null, notified_on: i.as_of, notice_45_id: notice45?.notice_id ?? null, borrower_deadline: notice45 ? floodNoticeClocks(notice45.mailed_on, null).borrower_deadline : null, status: "borrower_notified" } });
+  return { notice: n, event };
+}
 export interface FloodNoticeMailedInput { readonly loan_id: string; readonly notice_id: string; readonly mailed_at: string; readonly proof_of_mailing_id: string; readonly attempt_no?: number; readonly template?: string; }
 /** Print-mail manifest ingestion for the flood notice: records the proof of mailing on the registry (`notice.mailed`) and appends `flood.fpi.notice.sent` anchored on the mailed date (42 U.S.C. §4012a(e)(1)–(2): 45 days "after notification"). */
 export function recordFloodNoticeMailed(d: FloodDeps, i: FloodNoticeMailedInput): FloodNoticeSentRecord {

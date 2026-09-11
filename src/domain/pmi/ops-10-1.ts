@@ -238,6 +238,59 @@ export function feeIsTabulated(fee: Cents, kind: string | null): boolean {
   return Object.values(VALUATION_FEES_CENTS).includes(fee);
 }
 
+// ---- withdrawal and fee-wait expiry (10.1 state machine `awaiting_fee → withdrawn | expired`; 32.9 backend delta) ------------
+
+const OPEN_MI_CASE = (d: Record<string, unknown>, loanId: string): boolean => d.loan_id === loanId && !["closed", "withdrawn", "expired"].includes(String(d.status));
+/** Events of this case's cycle: everything on the loan since the case's own `mi.cancel.requested`. */
+function caseCycleEvents(events: EventStore, loanId: string, caseId: string): readonly DomainEvent[] {
+  const all = events.byLoan(loanId);
+  const open = all.findIndex((e) => e.type === "mi.cancel.requested" && (e.payload as { case_id?: unknown }).case_id === caseId);
+  return open < 0 ? [] : all.slice(open);
+}
+export interface WithdrawResult { readonly case_id: string; readonly status: "withdrawn"; readonly withdrawn_on: PlainDate; readonly fee_paid_cents: Cents; readonly fee_refund_cents: Cents; readonly valuation_ordered: boolean; readonly event: DomainEvent; readonly refund_event: DomainEvent | null; }
+/**
+ * The borrower withdraws the open `pmi_cancel` case (10.1 state machine: any non-terminal state → `withdrawn`). The
+ * valuation fee the borrower posted is refunded in full when no valuation order was placed (F-1-02: the tabulated fee
+ * pays for the valuation; nothing was ordered, so nothing was earned — 32.9 §2 "refund if no order placed on
+ * withdrawal"); once the order is placed the fee is earned and no refund is due. `mi.cancel.withdrawn` (and the
+ * `mi.valuation_fee.refunded` leg) are the loan events the refund and the borrower's receipt hang on.
+ */
+export function withdrawCancellationRequest(f: { loan_id: string; case_id: string | null; withdrawn_on: PlainDate; requester_party_id?: string | null; card_instance_id?: string | null }, deps: OpsDeps): WithdrawResult {
+  if (!f.loan_id) throw new RangeError("loan_id is required");
+  const row = f.case_id ? deps.store.get("mi_cases", f.case_id) : deps.store.list("mi_cases", (d) => OPEN_MI_CASE(d, f.loan_id))[0];
+  if (!row) throw new RangeError(`no open pmi_cancel case on loan ${f.loan_id}`);
+  if (["closed", "withdrawn", "expired"].includes(String(row.data.status))) throw new RangeError(`case ${String(row.data.case_id)} is ${String(row.data.status)} — nothing to withdraw`);
+  const caseId = String(row.data.case_id);
+  const cycle = caseCycleEvents(deps.events, f.loan_id, caseId);
+  const ordered = cycle.some((e) => e.type === "mi.valuation.ordered");
+  const fee = cycle.filter((e) => e.type === "mi.evidence.received" && (e.payload as { kind?: unknown }).kind === "fee").reduce((sum, e) => sum + BigInt(String((e.payload as { amount_cents?: unknown }).amount_cents ?? 0)), 0n) as Cents;
+  const refund = (ordered ? 0n : fee) as Cents;
+  deps.store.put("mi_cases", caseId, { status: "withdrawn", withdrawn_on: f.withdrawn_on, withdrawn_by_party_id: f.requester_party_id ?? null, fee_refund_cents: refund, valuation_ordered_before_withdrawal: ordered }, deps.actor, deps.now);
+  deps.store.put("cases", caseId, { status: "withdrawn", closed_at: deps.now }, deps.actor, deps.now);
+  const event = deps.events.append({ type: "mi.cancel.withdrawn", loanId: f.loan_id, aggregate: { kind: "case", id: caseId }, actor: deps.actor, payload: { case_id: caseId, withdrawn_on: f.withdrawn_on, requester_party_id: f.requester_party_id ?? null, card_instance_id: f.card_instance_id ?? null, fee_paid_cents: fee, fee_refund_cents: refund, valuation_ordered: ordered, refund_basis: ordered ? "valuation ordered — the tabulated fee is earned (F-1-02)" : "no valuation order placed — the fee is refunded in full (10.1 awaiting_fee → withdrawn)" } });
+  const refund_event = refund > 0n ? deps.events.append({ type: "mi.valuation_fee.refunded", loanId: f.loan_id, aggregate: { kind: "case", id: caseId }, actor: deps.actor, payload: { case_id: caseId, refund_cents: refund, refunded_on: f.withdrawn_on, rail: "original_payment_method", reason: "request withdrawn before a valuation order (F-1-02)" } }) : null;
+  return { case_id: caseId, status: "withdrawn", withdrawn_on: f.withdrawn_on, fee_paid_cents: fee, fee_refund_cents: refund, valuation_ordered: ordered, event, refund_event };
+}
+export interface FeeWaitExpiryResult { readonly case_id: string; readonly status: "expired"; readonly expired_on: PlainDate; readonly closing_letter: "NTC_MI_CASE_CLOSED"; readonly event: DomainEvent; }
+/**
+ * SM_MI_FEE_WAIT_60 breach ("case → `expired`; closing letter"): the open case that was waiting for the borrower's
+ * valuation fee closes as `expired` — only from `value_check_needed` / `awaiting_fee`, only when no fee arrived in the
+ * cycle (a posted fee satisfied the clock). `mi.case.expired` is the loan event the closing letter and the borrower's
+ * receipt hang on; a later request opens a new case.
+ */
+export function expireFeeWait(f: { loan_id: string; case_id?: string | null; expired_on: PlainDate; timer_id?: string | null }, deps: OpsDeps): FeeWaitExpiryResult | null {
+  if (!f.loan_id) throw new RangeError("loan_id is required");
+  const row = f.case_id ? deps.store.get("mi_cases", f.case_id) : deps.store.list("mi_cases", (d) => OPEN_MI_CASE(d, f.loan_id))[0];
+  if (!row) return null;
+  const caseId = String(row.data.case_id);
+  if (!["value_check_needed", "awaiting_fee"].includes(String(row.data.status))) return null;
+  if (caseCycleEvents(deps.events, f.loan_id, caseId).some((e) => e.type === "mi.evidence.received" && (e.payload as { kind?: unknown }).kind === "fee")) return null;
+  deps.store.put("mi_cases", caseId, { status: "expired", expired_on: f.expired_on, expiry_timer: "SM_MI_FEE_WAIT_60" }, deps.actor, deps.now);
+  deps.store.put("cases", caseId, { status: "expired", closed_at: deps.now }, deps.actor, deps.now);
+  const event = deps.events.append({ type: "mi.case.expired", loanId: f.loan_id, aggregate: { kind: "case", id: caseId }, actor: deps.actor, payload: { case_id: caseId, expired_on: f.expired_on, timer: "SM_MI_FEE_WAIT_60", timer_id: f.timer_id ?? null, reason: "no valuation fee within 60 days of the value-check notice", closing_letter: "NTC_MI_CASE_CLOSED" } });
+  return { case_id: caseId, status: "expired", expired_on: f.expired_on, closing_letter: "NTC_MI_CASE_CLOSED", event };
+}
+
 // ---- SMDU evaluation with the outage fallback --------------------------------------
 
 export interface SmduEvaluateInput {

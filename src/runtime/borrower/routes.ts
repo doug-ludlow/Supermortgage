@@ -26,15 +26,19 @@ import { hashCode, type SessionRow } from "../../infra/db/borrower-sessions.ts";
 import { FakeEdelivery, type EdeliveryPort } from "../../infra/integrations/delivery.ts";
 import { DOCUMENT_CLASSES } from "../../domain/verification/ops-22-1.ts";
 import { isUuid, toJson } from "../../infra/db/client.ts";
+import { decodeEntityData } from "../../infra/db/entities.ts";
 import { BorrowerAuth, OTP_MAX_ATTEMPTS, OTP_MINUTES, assertSubject, hasFreshL1, minutesAfter, type BorrowerContext } from "./auth.ts";
 import { BorrowerError, toBorrowerError } from "./errors.ts";
 import { serialize, type ShapeName } from "./serialize.ts";
 import { b64url, sha256, verifyAssertion, verifyRegistration } from "./webauthn.ts";
 import { FakeStripeIdentity, type StripeIdentityPort } from "./vendors/fake-stripe-identity.ts";
 import { FakeBlobStore, type BlobStorePort } from "./vendors/fake-blob-store.ts";
+import { FakeTruv, type IncomeConnectPort } from "./vendors/fake-truv.ts";
 import { BorrowerRecordReader } from "./record.ts";
 import { BorrowerStreamHub } from "./stream.ts";
 import { BorrowerCommands } from "./commands.ts";
+import { BorrowerFlows } from "./flows/index.ts";
+import { connectorFailed } from "./flows/13-cross-cutting.ts";
 import type { CardInstanceRow } from "../../infra/db/borrower-ui.ts";
 
 export interface BorrowerRouterOptions {
@@ -46,6 +50,8 @@ export interface BorrowerRouterOptions {
   readonly allowedOrigins?: readonly string[];
   readonly stripe?: StripeIdentityPort;
   readonly blobs?: BlobStorePort;
+  /** 32.3 R3: the payroll connector (FakeTruv unless a real adapter is wired). */
+  readonly truv?: IncomeConnectPort;
   /** HMAC key for signed document URLs; random per process when unset (URLs then die with the process, which is fine for short-lived links). */
   readonly urlSecret?: string;
   readonly returnUrlBase?: string;
@@ -56,9 +62,12 @@ export interface BorrowerRouter {
   readonly ui: PgBorrowerUiRepository;
   readonly stripe: StripeIdentityPort;
   readonly blobs: BlobStorePort;
+  readonly truv: IncomeConnectPort;
   readonly hub: BorrowerStreamHub;
   readonly commands: BorrowerCommands;
   readonly reader: BorrowerRecordReader;
+  /** The 32.x flows (src/runtime/borrower/flows): event → card, plus the scheduled `tick`. */
+  readonly flows?: BorrowerFlows;
 }
 
 const MAX_BODY = 32 * 1024 * 1024;
@@ -119,6 +128,11 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
   const commands = new BorrowerCommands(runtime, ui);
   // 02 §3: the stream is fed from the event store after each unit of work commits — the runtime's post-commit hook, in-process
   runtime.onCommitted((events) => { hub.publish(events).catch((e) => logger.error("borrower.stream.publish", { error: e })); });
+  // the 32.x flows react to the same post-commit feed: the owning processes' events become the cards the borrower sees (src/runtime/borrower/flows)
+  const flows = new BorrowerFlows({ runtime, ui, logger, blobs }); flows.start();
+  commands.flows = flows;   // 32.3: a message a flow answers itself (T2, P9) comes before the generic reply
+  const truv = opts.truv ?? new FakeTruv((line) => logger.info("vendor", line));
+  const VERIFICATION_ACTOR = { kind: "agent" as const, id: "verification" };
   const now = (): string => runtime.clock.now();
   const edelivery: EdeliveryPort | undefined = runtime.ports.edelivery;
   const deliveryIsFake = (): boolean => !edelivery || edelivery instanceof FakeEdelivery;
@@ -170,6 +184,8 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
       await auth.sessions.setChallengeParty(ch.challenge_id, resolved.party.id);
       const opened = await auth.openSession({ party_id: resolved.party.id, auth_method: channel === "sms" ? "otp_phone" : "otp_email", now: at, otp: true, ip: ipOf(req), user_agent: uaOf(req) });
       await ui.conversationFor(resolved.party.id);
+      // 32.3 E1/E2: the session hook runs before the response — the automation disclosure is the first assistant content on the channel the code came through (an SMS code = the SMS thread)
+      await flows.sessionOpened({ party_id: resolved.party.id, session_id: opened.session.session_id, channel: channel === "sms" ? "sms" : "app", auth_method: opened.session.auth_method, at });
       logger.info("borrower.session.opened", { session_id: opened.session.session_id, level: "L1", auth_method: opened.session.auth_method, party_created: resolved.created, linked_application_borrowers: resolved.linked_application_borrowers });
       send(res, 200, "session", sessionBody({ token: opened.token, session: opened.session, party: opened.party })); return;
     }
@@ -218,6 +234,7 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
       await auth.sessions.passkeyUsed(stored.passkey_id, r.signCount, at);
       // a passkey is an L1 sign-in without a code: last_l1_at stays empty until a code is verified (the fresh-L1 rule wants a code)
       const opened = await auth.openSession({ party_id: stored.party_id, auth_method: "passkey", now: at, otp: false, passkey_id: stored.passkey_id, ip: ipOf(req), user_agent: uaOf(req) });
+      await flows.sessionOpened({ party_id: stored.party_id, session_id: opened.session.session_id, channel: "app", auth_method: "passkey", at });
       logger.info("borrower.session.opened", { session_id: opened.session.session_id, level: "L1", auth_method: "passkey", passkey_id: stored.passkey_id });
       send(res, 200, "session", sessionBody({ token: opened.token, session: opened.session, party: opened.party })); return;
     }
@@ -274,13 +291,14 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     if (!result) throw new BorrowerError(404, "IDENTITY_SESSION_UNKNOWN");
     const applicationId = result.request.application_id; const abId = result.request.application_borrower_id;
     const borrowerIds = await auth.parties.applicationBorrowerIds(applicationId);
+    // extracted name / DOB / address → application_borrowers.prefill as source=stripe_identity, confirmed_at null (pending the ConfirmCard)
+    const prefill = { legal_name: { value: result.extraction.legal_name, source: "stripe_identity", extracted_at: at, confirmed_at: null }, date_of_birth: { value: result.extraction.date_of_birth, source: "stripe_identity", extracted_at: at, confirmed_at: null }, address: { value: result.extraction.address, source: "stripe_identity", extracted_at: at, confirmed_at: null } } as const;
+    await auth.parties.writePrefill(abId, prefill);
+    // (written before 22.6's op commits: 32.3 R1's identity ConfirmCard reads the prefill when it reacts to identity.verified)
     // 22.6's own op through the bus: identity.verified{level, all_borrowers_verified} → SM_IDENTITY_IAL2_GATE satisfies when the last borrower verifies. Never a second identity path.
     const r = await runtime.execute({ process: "22.6", name: "verifyIdentity", loanId: "", applicationId, actor: WEBHOOK_ACTOR,
       input: { application_id: applicationId, borrower_id: abId, method: "remote_doc_biometric", result: result.session_result, borrower_ids: borrowerIds, at, consent_id: card.card_instance_id } });
     const out = r.output as { outcome: string; level: string | null; all_borrowers_verified: boolean; gate: { open: boolean } };
-    // extracted name / DOB / address → application_borrowers.prefill as source=stripe_identity, confirmed_at null (pending the ConfirmCard)
-    const prefill = { legal_name: { value: result.extraction.legal_name, source: "stripe_identity", extracted_at: at, confirmed_at: null }, date_of_birth: { value: result.extraction.date_of_birth, source: "stripe_identity", extracted_at: at, confirmed_at: null }, address: { value: result.extraction.address, source: "stripe_identity", extracted_at: at, confirmed_at: null } } as const;
-    await auth.parties.writePrefill(abId, prefill);
     let raised = 0;
     if (out.outcome === "verified") raised = await auth.sessions.raisePartyLevel(card.party_id, "L3", at);
     await ui.transitionCard(card.card_instance_id, out.outcome === "verified" ? "resolved" : "pending", "system", at, { vendor: "stripe_identity", vendor_session_id: parsed.vendor_session_id, started_at: card.props["started_at"] ?? null, completed_at: at, outcome: out.outcome === "verified" ? "connected" : "failed" });
@@ -292,7 +310,15 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
   // ───────────────────────────── me · deep links
   async function me(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const at = now(); const ctx = await auth.authenticate(req, at);
-    send(res, 200, "me", { party: { party_id: ctx.party.id, party_type: ctx.party.party_type, display_name: ctx.party.legal_name, first_name: ctx.party.legal_name.split(" ")[0] }, level: ctx.session.level, session: { ...ctx.session, fresh_l1: hasFreshL1(ctx.session, at) }, subjects: ctx.subjects });
+    send(res, 200, "me", { party: { party_id: ctx.party.id, party_type: ctx.party.party_type, display_name: ctx.party.legal_name, first_name: ctx.party.legal_name.split(" ")[0] }, level: ctx.session.level, session: { ...ctx.session, fresh_l1: hasFreshL1(ctx.session, at) }, subjects: ctx.subjects, partner: await partnerFor(ctx) });
+  }
+  /** 32.13: the partner behind the party's first subject (the shell's automation marker and `{{partner.legal_name}}` in the disclosure line) — the application's intake record names the NMLSR id. */
+  async function partnerFor(ctx: BorrowerContext): Promise<{ legal_name: string; nmlsr_id: string }> {
+    const app = ctx.subjects.find((x) => x.application_id)?.application_id ?? null; const loan = ctx.subjects.find((x) => x.loan_id)?.loan_id ?? null;
+    const row = app ? (await runtime.db.query<{ legal_name: string; data: unknown }>(`SELECT p.legal_name, (SELECT data FROM entity_current e WHERE e.kind = 'applications' AND e.id = a.id::text) AS data FROM applications a JOIN parties p ON p.id = a.partner_party_id WHERE a.id = $1`, [app]))[0]
+      : loan ? (await runtime.db.query<{ legal_name: string; data: unknown }>(`SELECT p.legal_name, NULL AS data FROM loans l JOIN parties p ON p.id = l.partner_party_id WHERE l.id = $1`, [loan]))[0] : undefined;
+    const nested = row?.data ? decodeEntityData(row.data) : null;
+    return { legal_name: (nested?.["partner_name"] as string | undefined) ?? row?.legal_name ?? "Supermortgage", nmlsr_id: (nested?.["partner_nmlsr_id"] as string | undefined) ?? "" };
   }
   async function deepLink(req: IncomingMessage, res: ServerResponse, token: string): Promise<void> {
     const at = now(); const ctx = await auth.authenticate(req, at);   // L1 first: no loan data before a session (01 §6.5)
@@ -370,7 +396,63 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     const subject = subjectParam(ctx, url);
     const cards = await ui.cardsOf(ctx.party.id);
     const r = await reader.record(ctx.party, subject, cards, at);
+    // 01 §5 / 32.3 T3: personal terms (a quote, an LE, a lock) render from L2 — an L1 session's origination record omits `numbers`
+    if (ctx.session.level === "L1" && !subject.loan_id) { const { numbers: _numbers, ...rest } = r; send(res, 200, "record", rest); return; }
     send(res, 200, "record", r);
+  }
+  // ───────────────────────────── 32.3: the in-app voice session (E1) and the FAKE payroll connector (R3)
+  async function voiceSession(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const at = now(); const ctx = await auth.authenticate(req, at);
+    const b = jsonOf(await readBody(req)); const requested = str(b, "application_id"); if (requested) assertSubject(ctx, { application_id: requested });
+    const conv = await ui.conversationFor(ctx.party.id);
+    await ui.logUiEvent({ party_id: ctx.party.id, session_id: ctx.session.session_id, conversation_id: conv.conversation_id, kind: "voice_started", at, ip: ctx.ip, user_agent: ctx.userAgent, payload: { vendor: "FAKE", telephony: "in_app" } });
+    // the spoken disclosure first (E2: "voice reads it aloud"), then the lead's interaction on the voice channel
+    await flows.sessionOpened({ party_id: ctx.party.id, session_id: ctx.session.session_id, channel: "voice", auth_method: ctx.session.auth_method, at });
+    const first = (await ui.messagesAfter(conv.conversation_id, null, 500)).filter((m) => m.channel === "voice" && m.sender === "agent").at(-1) ?? null;
+    logger.info("borrower.voice.session", { party_id: ctx.party.id, session_id: ctx.session.session_id, vendor: "FAKE" });
+    send(res, 200, "voice_session", { session_id: ctx.session.session_id, channel: "voice", vendor: "FAKE", started_at: at, first_message: first ? reader.threadMessages([first], new Map(), ctx.party.legal_name.split(" ")[0] ?? ctx.party.legal_name)[0] : null });
+  }
+  async function connectSession(req: IncomingMessage, res: ServerResponse, vendor: string): Promise<void> {
+    const at = now(); const ctx = await auth.authenticate(req, at);
+    if (vendor !== "truv_income") throw new BorrowerError(404, "NOT_FOUND", undefined, `${vendor} is not a connector this API opens`);
+    const b = jsonOf(await readBody(req)); need(b, "card_instance_id"); const cardId = str(b, "card_instance_id");
+    if (!isUuid(cardId)) throw new BorrowerError(403, "PARTY_SCOPE", undefined, "card id must be a uuid");
+    const card = await ui.card(cardId);
+    if (!card || card.party_id !== ctx.party.id) throw new BorrowerError(403, "PARTY_SCOPE", undefined, "the card is not this party's");
+    if (card.kind !== "ConnectCard" || card.props["vendor"] !== "truv_income") throw new BorrowerError(409, "CARD_NOT_PENDING", undefined, "not a payroll ConnectCard");
+    const subject = assertSubject(ctx, { application_id: card.subject_application_id });
+    const orderId = ((card.evidence?.["command_output"] as Record<string, unknown> | undefined)?.["order_id"] as string | undefined) ?? null;
+    if (!orderId) throw new BorrowerError(409, "CONNECT_NOT_STARTED", undefined, "resolve the ConnectCard first (verification.connect orders the report — 22.3)");
+    const borrowerId = orderId.split(":")[1] ?? subject.application_borrower_id ?? "";
+    const vs = await truv.createSession({ party_id: ctx.party.id, application_id: subject.application_id!, application_borrower_id: subject.application_borrower_id ?? "", borrower_id: borrowerId, card_instance_id: cardId, order_id: orderId }, at);
+    await runtime.db.query(`UPDATE card_instances SET props = props || $2::jsonb WHERE card_instance_id = $1`, [cardId, toJson({ vendor_session_id: vs.vendor_session_id, started_at: at, state: "in_progress" })]);
+    await ui.logUiEvent({ party_id: ctx.party.id, session_id: ctx.session.session_id, conversation_id: card.conversation_id, card_instance_id: cardId, kind: "connector_started", at, ip: ctx.ip, user_agent: ctx.userAgent, payload: { vendor: "truv_income", vendor_session_id: vs.vendor_session_id } });
+    const fake = truv instanceof FakeTruv;
+    logger.info("borrower.connect.session", { card_instance_id: cardId, vendor_session_id: vs.vendor_session_id, vendor: fake ? "FAKE" : truv.vendorName });
+    send(res, 200, "connect_session", { vendor: "truv_income", vendor_session_id: vs.vendor_session_id, link_token: vs.link_token, card_instance_id: cardId, application_id: subject.application_id, status: vs.status, ...(fake ? { delivery: "FAKE" } : {}) });
+  }
+  async function truvWebhook(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const at = now(); const raw = (await readBody(req)).toString("utf8");
+    const sig = req.headers["x-truv-signature"]; const parsed = await truv.parseWebhook(raw, Array.isArray(sig) ? sig[0] : sig, at);
+    const card = (await runtime.db.query<{ card_instance_id: string; party_id: string; subject_application_id: string; props: Record<string, unknown>; evidence: Record<string, unknown> | null }>(`SELECT card_instance_id, party_id, subject_application_id, props, evidence FROM card_instances WHERE kind = 'ConnectCard' AND props->>'vendor_session_id' = $1`, [parsed.vendor_session_id]))[0];
+    if (!card) throw new BorrowerError(404, "NOT_FOUND", undefined, "no ConnectCard for this vendor session");
+    const fake = truv instanceof FakeTruv;
+    if (parsed.outcome !== "report_ready" || !parsed.report) {
+      if (parsed.outcome === "failed") await runtime.db.query(`UPDATE card_instances SET props = props || $2::jsonb WHERE card_instance_id = $1`, [card.card_instance_id, toJson({ state: "failed", completed_at: at })]);
+      // 32.13 T-X-12: the failure the borrower never decodes — evidence without a code, the fallback line, an UploadCard for the same purpose
+      if (parsed.outcome === "failed") await connectorFailed({ runtime, ui }, card, at, { name: "truv_income", fake, vendor_session_id: parsed.vendor_session_id });
+      send(res, 200, "connect_webhook", { received: true, vendor: fake ? "FAKE" : truv.vendorName, vendor_session_id: parsed.vendor_session_id, outcome: parsed.outcome, application_id: card.subject_application_id, events: [] }); return;
+    }
+    const result = await truv.result(parsed.vendor_session_id); const request = result?.request; const report = parsed.report;
+    const orderId = request?.order_id ?? ((card.evidence?.["command_output"] as Record<string, unknown> | undefined)?.["order_id"] as string | undefined) ?? null;
+    // 22.3's own op through the bus: verification.received{kind=income} on the order the ConnectCard placed — the verifications row keeps the vendor's references; the figures stay on the card for the ConfirmCard (R3)
+    const r = await runtime.execute({ process: "22.3", name: "orderVerificationReport", loanId: "", applicationId: card.subject_application_id, actor: VERIFICATION_ACTOR,
+      input: { application_id: card.subject_application_id, op: "receive", borrower_id: request?.borrower_id ?? orderId?.split(":")[1] ?? "", kind: "income", supplier_code: "TRUV", report_reference_id: report.report_reference_id, vendor_data_as_of: report.vendor_data_as_of, report_document_id: report.report_document_id, authorization_consent_id: card.card_instance_id, ...(orderId ? { verification_id: orderId } : {}) } });
+    const out = r.output as { verification_id: string };
+    await runtime.db.query(`UPDATE card_instances SET evidence = coalesce(evidence, '{}'::jsonb) || $2::jsonb, props = props || $3::jsonb WHERE card_instance_id = $1`, [card.card_instance_id, toJson({ vendor: "truv_income", vendor_fake: "FAKE", vendor_session_id: parsed.vendor_session_id, completed_at: at, outcome: "connected", report, report_reference_id: report.report_reference_id, verification_id: out.verification_id }), toJson({ state: "connected", report_reference_id: report.report_reference_id, completed_at: at })]);
+    await ui.logUiEvent({ party_id: card.party_id, card_instance_id: card.card_instance_id, kind: "connector_completed", at, payload: { vendor: "truv_income", vendor_session_id: parsed.vendor_session_id, outcome: "connected" } });
+    logger.info("borrower.connect.webhook", { vendor: fake ? "FAKE" : truv.vendorName, vendor_session_id: parsed.vendor_session_id, verification_id: out.verification_id, events: r.events.map((e) => e.type) });
+    send(res, 200, "connect_webhook", { received: true, vendor: fake ? "FAKE" : truv.vendorName, vendor_session_id: parsed.vendor_session_id, outcome: "connected", application_id: card.subject_application_id, verification_id: out.verification_id, report_reference_id: report.report_reference_id, events: r.events.map((e) => e.type) });
   }
   async function thread(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
     const at = now(); const ctx = await auth.authenticate(req, at);
@@ -426,7 +508,7 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
 
   async function handle(req: IncomingMessage, res: ServerResponse, url: URL, method: string): Promise<boolean> {
     const path = url.pathname;
-    if (!path.startsWith("/v1/borrower/") && path !== "/v1/webhooks/stripe") return false;
+    if (!path.startsWith("/v1/borrower/") && path !== "/v1/webhooks/stripe" && path !== "/v1/webhooks/truv") return false;
     const started = Date.now();
     const log = (status: number, extra: Record<string, unknown> = {}): void => logger.info("http", { method, path, status, ms: Date.now() - started, surface: "borrower", ...extra });
     try {
@@ -436,6 +518,9 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
       else if (method === "POST" && path === "/v1/borrower/auth/l2") await stepUpL2(req, res);
       else if (method === "POST" && path === "/v1/borrower/identity/stripe/session") await identitySession(req, res);
       else if (method === "POST" && path === "/v1/webhooks/stripe") await stripeWebhook(req, res);
+      else if (method === "POST" && path === "/v1/webhooks/truv") await truvWebhook(req, res);
+      else if (method === "POST" && path === "/v1/borrower/voice/session") await voiceSession(req, res);
+      else if (method === "POST" && (m = /^\/v1\/borrower\/connect\/([a-z_]+)\/session$/.exec(path))) await connectSession(req, res, m[1]!);
       else if (method === "GET" && path === "/v1/borrower/me") await me(req, res);
       else if (method === "GET" && (m = /^\/v1\/borrower\/deeplink\/([^/]+)$/.exec(path))) await deepLink(req, res, decodeURIComponent(m[1]!));
       else if (method === "POST" && path === "/v1/borrower/documents") await uploadDocument(req, res);
@@ -458,5 +543,5 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     }
     return true;
   }
-  return { handle, auth, ui, stripe, blobs, hub, commands, reader };
+  return { handle, auth, ui, stripe, blobs, truv, hub, commands, reader, flows };
 }

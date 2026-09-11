@@ -7,8 +7,15 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { BorrowerRecord, RecordDocument, RecordPerson, StatusBadge } from "@/lib/types/record";
-import { copy } from "@/lib/copy";
+import { copy, copyOrUndefined } from "@/lib/copy";
+import { ExitBanner, autopayExitLine } from "@/components/flows/12-exits";
+import { PartyDeliveries, WhatWeAreDoing } from "@/components/flows/5-verification";
+import { propertyStateLabel } from "@/components/flows/6-decision-property";
+import { ArmEstimateRows } from "@/components/flows/9-servicing-requests";
+import { form1098Label } from "@/components/flows/8-servicing-payments";
 import { formatDate, formatMoney, formatRate, mask4, plural, withinDays } from "@/lib/format";
+import { hardshipRows } from "@/components/flows/10-hardship";
+import { rateWatchDetailRows } from "@/components/flows/11-rate-watch";
 
 export type RecordLink = (target: { message_id?: string; card_instance_id?: string; document_id?: string }) => void;
 
@@ -42,8 +49,8 @@ function Value({ value, className }: { value: string; className?: string }) {
 
 export function badgeTone(badge: StatusBadge): "positive" | "caution" | "info" | "neutral" {
   if (["Funded", "Your loan", "Current", "Rate locked", "Clear to close", "Preapproved", "Prequalified", "Paid off"].includes(badge)) return "positive";
-  if (["Past due", "Behind", "What's missing", "Cancel window", "Payment due", "Counteroffer"].includes(badge)) return "caution";
-  if (["Closed", "Withdrawn", "Decision letter sent"].includes(badge)) return "neutral";
+  if (["Past due", "Behind", "What's missing", "Cancel window", "Payment due", "Counteroffer", "Bankruptcy — protections in effect"].includes(badge)) return "caution";
+  if (["Closed", "Withdrawn", "Decision letter sent", "Transferred out", "Cancelled"].includes(badge)) return "neutral";   // 32.12: read-only after cutover
   return "info";
 }
 
@@ -57,6 +64,9 @@ const BADGE_ICON: Partial<Record<StatusBadge, string>> = {
   "Clear to close": "✓",
   "Cancel window": "⏱",
   "Paid off": "✓",
+  "Paying off": "◔",
+  "Servicing moving": "→",
+  "Transferred out": "→",
 };
 
 export function StatusBadgeView({ badge, oneLiner }: { badge: StatusBadge; oneLiner?: string }) {
@@ -88,6 +98,7 @@ export function StatusSection({ r, link }: { r: BorrowerRecord; link: RecordLink
   return (
     <Section id="status" title="Status">
       <StatusBadgeView badge={r.status.badge} />
+      <ExitBanner r={r} />
       <p style={{ margin: "6px 0 0" }}>
         <Value value={line} />
         {count > 0 ? (
@@ -137,7 +148,7 @@ export function NeededSection({ r, link }: { r: BorrowerRecord; link: RecordLink
           {items.map((i) => (
             <li key={i.item_id}>
               <button type="button" className="sm-linkbtn" onClick={() => link({ card_instance_id: i.card_instance_id })}>
-                {i.label}
+                {copyOrUndefined(i.label_copy_key, i.copy_tokens) ?? i.label}
               </button>
               {i.due_at ? (
                 <time dateTime={i.due_at} className={`sm-muted${withinDays(i.due_at, 3) ? " sm-caution-text" : ""}`}>
@@ -148,6 +159,7 @@ export function NeededSection({ r, link }: { r: BorrowerRecord; link: RecordLink
           ))}
         </ul>
       )}
+      <WhatWeAreDoing items={r.what_we_are_doing ?? []} />
     </Section>
   );
 }
@@ -190,6 +202,7 @@ export function NumbersSection({ r }: { r: BorrowerRecord }) {
               <dd className="sm-caution-text">{n.days_past_due}</dd>
             </>
           ) : null}
+          {n.arm_estimate ? <ArmEstimateRows estimate={n.arm_estimate} /> : null}
         </dl>
       </Section>
     );
@@ -294,13 +307,13 @@ export function DatesSection({ r, link }: { r: BorrowerRecord; link: RecordLink 
     <Section id="dates" title="Dates">
       <ul className="sm-list">
         {r.dates.map((d) => (
-          <li key={d.timer_code} data-timer-code={d.timer_code}>
+          <li key={d.timer_code} data-timer-code={d.timer_code} data-tone={d.tone}>
             <span>
               {d.label}
               <span className="sm-source"> · {d.calendar}</span>
             </span>
             <button type="button" className="sm-linkbtn" onClick={() => link({ message_id: d.message_id })} disabled={!d.message_id}>
-              <time dateTime={d.due_at} className={`sm-num${withinDays(d.due_at, 3) ? " sm-caution-text" : ""}`}>
+              <time dateTime={d.due_at} className={`sm-num${withinDays(d.due_at, 3) || d.tone === "caution" ? " sm-caution-text" : ""}`}>
                 <Value value={formatDate(d.due_at, r.timezone)} />
               </time>
             </button>
@@ -317,7 +330,8 @@ function docStatus(d: RecordDocument, tz: string): string {
     case "received":
       return `Received ${d.received_at ? formatDate(d.received_at, tz) : ""}`.trim();
     case "deemed_received":
-      return `Counts as received ${d.received_at ? formatDate(d.received_at, tz) : ""}`.trim();
+      // 32.4 §1: the mailbox rule — "Received (deemed) {{date}}" (`le.deemed`), the date 21.2 computed
+      return copy("le.deemed", { date: d.received_on ? formatDate(`${d.received_on}T12:00:00Z`, "UTC") : d.received_at ? formatDate(d.received_at, tz) : "" }).trim();
     case "mailed":
       return `Mailed ${d.mailed_at ? formatDate(d.mailed_at, tz) : ""}`.trim();
     case "delivered":
@@ -346,6 +360,7 @@ export function DocumentsSection({ r, link }: { r: BorrowerRecord; link: RecordL
             <span className="sm-muted">
               <Value value={docStatus(d, r.timezone)} />
             </span>
+            {d.deliveries?.length ? <PartyDeliveries deliveries={d.deliveries} timezone={r.timezone} /> : null}
           </li>
         ))}
       </ul>
@@ -369,6 +384,7 @@ function personLine(p: RecordPerson): string {
 const ROLE_LABEL: Record<RecordPerson["role"], string> = {
   borrower: "Borrower",
   co_borrower: "Co-borrower",
+  non_borrowing_spouse: "Non-borrowing spouse",
   mlo_of_record: "Loan officer",
   human_agent: "Your contact",
   notary: "Notary",
@@ -404,10 +420,10 @@ export function PropertySection({ r }: { r: BorrowerRecord }) {
   const rows: [string, string][] = [];
   if (p.property_type) rows.push(["Type", `${p.property_type}${p.units ? ` · ${p.units} unit${p.units === 1 ? "" : "s"}` : ""}`]);
   if (p.occupancy) rows.push(["Occupancy", p.occupancy === "primary" ? "Primary home" : p.occupancy === "second_home" ? "Second home" : "Investment"]);
-  if (p.valuation) rows.push(["Valuation", p.valuation.label ?? p.valuation.status]);
-  if (p.flood) rows.push(["Flood zone", p.flood.label ?? p.flood.status]);
-  if (p.hazard) rows.push(["Insurance", p.hazard.label ?? p.hazard.status]);
-  if (p.project_review) rows.push(["Project review", p.project_review.label ?? p.project_review.status]);
+  if (p.valuation) rows.push(["Valuation", p.valuation.label ?? propertyStateLabel("valuation", p.valuation.status)]);
+  if (p.flood) rows.push(["Flood zone", p.flood.label ?? propertyStateLabel("flood", p.flood.status)]);
+  if (p.hazard) rows.push(["Insurance", p.hazard.label ?? propertyStateLabel("hazard", p.hazard.status)]);
+  if (p.project_review) rows.push(["Project review", p.project_review.label ?? propertyStateLabel("project_review", p.project_review.status)]);
   if (p.hoa_dues_cents) rows.push(["HOA", `${formatMoney(p.hoa_dues_cents)}/mo`]);
   if (rows.length === 0) return null;
   return (
@@ -432,21 +448,21 @@ export function LoanSection({ r }: { r: BorrowerRecord }) {
   if (!l) return null;
   const rows: [string, string][] = [];
   if (l.autodraft) {
-    rows.push([
-      "Autopay",
-      l.autodraft.status === "active" && l.autodraft.amount_cents && l.autodraft.next_draft_on
-        ? copy("autopay.next", { money: formatMoney(l.autodraft.amount_cents), date: formatDate(`${l.autodraft.next_draft_on}T12:00:00Z`, "UTC"), last4: l.autodraft.account_last4 ?? "" })
-        : l.autodraft.status,
-    ]);
+    // 32.12: an enrollment ending with a transfer out shows its end date; a terminated one (payoff / transfer) says so — the stored dates, never computed here
+    const next = l.autodraft.status === "active" && l.autodraft.amount_cents && l.autodraft.next_draft_on ? copy("autopay.next", { money: formatMoney(l.autodraft.amount_cents), date: formatDate(`${l.autodraft.next_draft_on}T12:00:00Z`, "UTC"), last4: l.autodraft.account_last4 ?? "" }) : null;
+    const exit = autopayExitLine(l.autodraft);
+    rows.push(["Autopay", exit ? [next, exit].filter(Boolean).join(" ") : (next ?? l.autodraft.status)]);
   }
   for (const line of l.escrow_lines ?? []) {
     rows.push([`Escrow · ${line.type}`, `${line.payee} · ${formatMoney(line.annual_cents)}/yr${line.next_disbursement_on ? ` · next ${formatDate(`${line.next_disbursement_on}T12:00:00Z`, "UTC")}` : ""}`]);
   }
   if (l.mi) rows.push(["Mortgage insurance", `${l.mi.status}${l.mi.projected_end_on ? ` · ends ${formatDate(`${l.mi.projected_end_on}T12:00:00Z`, "UTC")}` : ""}`]);
   if (l.arm) rows.push(["Rate change", `${formatDate(`${l.arm.next_change_on}T12:00:00Z`, "UTC")} · ${l.arm.notice_status}`]);
-  if (l.year_end) rows.push(["Form 1098", l.year_end.form_1098_status]);
+  if (l.year_end) rows.push(["Form 1098", form1098Label(l.year_end, r.timezone)]);   // 32.8 §5: *Mailed {{date}}* without `irs_estatement` consent
   if (l.continuity_team) rows.push(["Your team", `${l.continuity_team.name} · ${l.continuity_team.direct_number}`]);
   if (l.ratewatch) rows.push(["Rate-watch", copy("ratewatch.block", { rate: [formatRate(l.ratewatch.current_rate), formatRate(l.ratewatch.best_available_rate)] })]);
+  for (const row of rateWatchDetailRows(l)) rows.push(row);   // 32.11: what "worth it" means, the block's state, the standing connections (components/flows/11-rate-watch)
+  for (const row of hardshipRows(l.hardship)) rows.push(row);   // 32.10: trial payment / paused period / cease (components/flows/10-hardship)
   if (rows.length === 0) return null;
   return (
     <Section id="loan" title="Loan">

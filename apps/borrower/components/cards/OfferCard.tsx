@@ -5,6 +5,7 @@ import type { CardComponentProps } from "./types";
 import type { OfferCardEvidence, OfferDecision } from "@/lib/types/cards";
 import { copy, copyOptions } from "@/lib/copy";
 import { formatDate, formatMoney, formatRate } from "@/lib/format";
+import { offerLines } from "@/components/flows/11-rate-watch";
 
 /** 01 §3.15 — the refinance offer; O1.2 creative structure; Yes / Not now / Never. */
 export function OfferCard({ card, timezone, onResolve, busy, error }: CardComponentProps<"OfferCard">) {
@@ -49,6 +50,12 @@ export function OfferCard({ card, timezone, onResolve, busy, error }: CardCompon
           <time dateTime={p.expires_at}>{formatDate(p.expires_at, timezone)}</time>
         </dd>
       </dl>
+      {/* 32.11 §2: the LE-style payment statement and the cost line, from the library */}
+      {offerLines(p).map((line, i) => (
+        <p key={i} data-testid="offer-line">
+          {line}
+        </p>
+      ))}
       {pending ? (
         <div className="sm-options" role="group" aria-label="Your answer">
           {options.map((o) => (

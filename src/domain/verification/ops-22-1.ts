@@ -66,7 +66,7 @@ export const DOCUMENT_CLASSES: readonly DocumentClass[] = [
   ...cls("valuation", "b4_1_2_04_appraisal", false, ["appraisal_report", "form_1004d_update", "desktop_appraisal", "pdc_report"]),
   ...cls("title", "none", false, ["title_commitment", "title_policy"]),
   ...cls("closing", "none", false, ["closing_disclosure", "note", "security_instrument"]),
-  ...cls("other", "none", false, ["unclassified"]),
+  ...cls("other", "none", false, ["unclassified", "fnma_loan_purchase_letter"]),   // the borrower's forwarded Fannie Mae loan purchase letter (30.4 HO-009 / 25.4 §1026.39 evidence; 32.7 T13)
 ];
 const BY_CODE = new Map(DOCUMENT_CLASSES.map((c) => [c.code, c]));
 export function documentClass(code: string): DocumentClass {

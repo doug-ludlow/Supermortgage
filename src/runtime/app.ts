@@ -33,8 +33,10 @@ import { CommandBus, type AgentRunInfo, type ExecuteResult } from "../app/comman
 import { EntityStore, type Ports, type ToolDef, type ToolInput, type ToolRuntime } from "../app/tools.ts";
 import { ALL_TOOLS, bindTools, toolKey } from "../app/tools/index.ts";
 import { EscalationService, PgEscalationRepository } from "../app/escalations.ts";
-import { NoticeService } from "../notices/service.ts";
+import { NoticeService, type Notice } from "../notices/service.ts";
 import { buildRegistry, publishAuthored } from "../notices/catalog.ts";
+import { publishSection02 } from "../notices/authored/section02.ts";
+import { registerPreapprovalLetter } from "../notices/authored/section20-3.ts";
 import type { NoticeRegistry } from "../notices/registry.ts";
 import type { TimerRegistry } from "../kernel/timers/registry.ts";
 import { TimerEngine, type TimerInstance } from "../kernel/timers/engine.ts";
@@ -106,10 +108,12 @@ export class Runtime {
   readonly originationServices: OriginationServiceSet;
   private readonly bus: CommandBus;
   private readonly tools = new Map<string, ToolDef>();
+  /** 32.12 backend delta: the Notice Registry's rendered notices for the life of the runtime (NoticeServiceDeps.notices) — a notice rendered by one command is readable by the next (17.2 runContentChecklist, the borrower flows' plain-language block). In-memory beside the `notices` table; the event log stays the record. */
+  readonly noticeMemory = new Map<string, Notice>();
 
   constructor(deps: RuntimeDeps) {
     this.db = deps.db; this.registry = deps.registry; this.agents = deps.agents ?? new AgentRegistry(); this.ports = deps.ports ?? fakePorts(); this.clock = deps.clock ?? systemClock;
-    this.noticeRegistry = deps.notices ?? (() => { const r = buildRegistry(); publishAuthored(r); return r; })();
+    this.noticeRegistry = deps.notices ?? (() => { const r = buildRegistry(); publishAuthored(r); publishSection02(r); registerPreapprovalLetter(r); return r; })();   // 32.8: 2.x's own authored pieces (AUTODRAFT-*, LC-*, SUSP-*) beside the catalog   // DELTA-01: the preapproval letter beside the catalog
     this.uow = new PgUnitOfWork(this.db, this.registry); this.entities = new PgEntityRepository(this.db); this.escalationRepo = new PgEscalationRepository(this.db); this.applications = new PgApplicationRepository(this.db);
     this.bus = new CommandBus(this.agents);
     this.originationServices = originationServices(this.clock);
@@ -126,18 +130,29 @@ export class Runtime {
   async execute(req: ExecuteRequest): Promise<ExecuteResponse> {
     const def = this.tool(req.process, req.name);
     if (!def) throw new ToolNotFound(req.process, req.name);
+    return this.executeDef(def, req);
+  }
+  /**
+   * Execute a command that is not one of the registry's tool strings — the section case commands the spec's Agents
+   * paragraphs describe but do not list as tools (src/app/tools/section04.ts SECTION_04_CASE_COMMANDS: `case.noe.open`,
+   * `sii.open`, `complaint.open`, …) — on the same bus, in the same unit of work, with the same allowlists, guardrails,
+   * decision record and commit (32.9 backend delta: the borrower flows open the 4.x cases the Intake Router classifies).
+   */
+  async executeDef(def: ToolDef, req: Omit<ExecuteRequest, "process" | "name">): Promise<ExecuteResponse> {
     const scope: EntityScope = { ...(req.loanId ? { loanId: req.loanId } : {}), ...(req.applicationId ? { applicationId: req.applicationId } : {}) };
     const store = new EntityStore();
     store.seed(await this.entities.load(scope));
     const mark = store.versionCount();
     let escalations: EscalationService | undefined;
+    // the scope's open escalations an earlier command persisted, so this one can complete them (21.6's reviewer decides the escalation `recommendDisposition` opened — 32.6 backend delta)
+    const openEscalations = await this.escalationRepo.openFor(scope);
     // writes a tool defers to the command's transaction (the borrower surface's UI-owned rows: card_instances, messages, deep_links — src/app/tools/section32-1.ts)
     const deferred: ((q: Queryable) => Promise<void>)[] = [];
     const r: UowResult<ExecuteResult<unknown>> = await this.uow.run(scope, async (uow) => {
       // a loan-scoped command's events that name neither key are the loan's (the kernel store defaults the application key from the scope; the loan key is defaulted here)
       const ctx = uow.loanId ? { ...uow, events: withDefaultLoan(uow.events, uow.loanId) } : uow;
-      escalations = new EscalationService(ctx.events, ctx.clock);
-      const notices = this.ports.printMail && this.ports.edelivery ? new NoticeService({ registry: this.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: this.ports.printMail, edelivery: this.ports.edelivery }) : undefined;
+      escalations = new EscalationService(ctx.events, ctx.clock); escalations.seed(openEscalations);
+      const notices = this.ports.printMail && this.ports.edelivery ? new NoticeService({ registry: this.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: this.ports.printMail, edelivery: this.ports.edelivery, notices: this.noticeMemory }) : undefined;
       // `agents` (the live registry, so a tool that delegates to another agent's tool keeps the allowlists and AI-off state), `db` (read-only lookups a borrower-surface tool needs) and `deferWrite` (a row committed with the command) ride on the services map
       const rt: ToolRuntime = { store, escalations, services: { ...this.originationServices.forCommand(ctx, store, escalations), agents: this.agents, db: this.db, deferWrite: (fn: (q: Queryable) => Promise<void>) => { deferred.push(fn); } }, ports: this.ports, ...(notices ? { notices } : {}) };
       const cmd = bindTools(rt, this.agents, [def]).get(toolKey(def.process, def.name))!;

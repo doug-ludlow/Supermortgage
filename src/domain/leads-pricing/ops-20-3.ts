@@ -93,7 +93,11 @@ export interface CreditAuthorization { readonly authorization_id: string; readon
 export interface SoftPullReport { readonly report_id: string; readonly authorization_id: string; readonly received_at: string; readonly representative_score: number | null; readonly score_model: "classic_fico" | "vantagescore_4"; readonly frozen: boolean; readonly fraud_alert: boolean; readonly tier: string | null; }
 export type PrequalBasis = "consumer_stated_only" | "soft_pull";
 export type PrequalOutcome = "information_provided" | "letter_issued" | "converted_to_application" | "abandoned";
-export interface Prequalification { readonly prequal_id: string; readonly lead_id: string; readonly requested_at: string; readonly basis: PrequalBasis; readonly soft_pull_report_id: string | null; readonly estimated_representative_score: number | null; readonly score_source: string | null; readonly stated_income_cents: Cents | null; readonly stated_assets_cents: Cents | null; readonly value_estimate_cents: Cents | null; readonly loan_amount_range_cents: readonly [Cents, Cents] | null; readonly ltv_estimate: string | null; readonly program_fit: Record<string, unknown>; readonly quote_id: string | null; readonly outcome: PrequalOutcome | null; readonly letter_document_id: string | null; readonly retention_class: "regb_25m" | "sm_lead_36m"; readonly regb_decline_risk_flag: boolean; }
+/** DELTA-01: `prequalifications.kind` — the soft-pull prequalification (rule 4) or the Reg C §1003.2(b)(2) preapproval program (adopted; README §7). */
+export type PrequalKind = "prequalification" | "preapproval";
+export interface Prequalification { readonly prequal_id: string; readonly lead_id: string; readonly requested_at: string; readonly basis: PrequalBasis; readonly soft_pull_report_id: string | null; readonly estimated_representative_score: number | null; readonly score_source: string | null; readonly stated_income_cents: Cents | null; readonly stated_assets_cents: Cents | null; readonly value_estimate_cents: Cents | null; readonly loan_amount_range_cents: readonly [Cents, Cents] | null; readonly ltv_estimate: string | null; readonly program_fit: Record<string, unknown>; readonly quote_id: string | null; readonly outcome: PrequalOutcome | null; readonly letter_document_id: string | null; readonly retention_class: "regb_25m" | "sm_lead_36m"; readonly regb_decline_risk_flag: boolean;
+  /** DELTA-01 (migration 0113): the preapproval program's columns — absent (or `prequalification`) on a rule-4 prequalification. */
+  readonly kind?: PrequalKind; readonly du_casefile_id?: string | null; readonly approved_amount_cents?: Cents | null; readonly valid_until?: PlainDate | null; }
 export interface ClassifierResult { readonly at: string; readonly interaction_id: string; readonly blocked: boolean; readonly matches: readonly string[]; readonly delivered: boolean; }
 export interface Lead {
   readonly lead_id: string; readonly partner_id: string; readonly partner_name: string; readonly channel: LeadChannel; readonly source_touch_id: string | null; readonly opportunity_id: string | null;
@@ -197,6 +201,17 @@ export function transferToHuman(events: EventStore, escalations: EscalationServi
   const escalation = escalations.open({ kind: role === "mlo_of_record" ? "mlo_of_record" : "human_agent", ownerRole: role, ...(lead.application_id ? { applicationId: lead.application_id } : {}), payload: { lead_id: lead.lead_id, interaction_id: r.interaction_id, reason: r.reason ?? "consumer_request", sla_seconds: HUMAN_TRANSFER_SLA_SECONDS, safe_act: r.terms_to_be_discussed ? "terms are discussed by the mlo_of_record" : null } }, INTAKE_AGENT);
   const next = touched(withInteraction(lead, r.interaction_id, { human_transfer_requested_at: at }), at);
   return { lead: next, escalation, sla_seconds: HUMAN_TRANSFER_SLA_SECONDS, event: emit(events, next, "human.transfer.requested", { interaction_id: r.interaction_id, escalation_id: escalation.id, owner_role: role, sla_seconds: HUMAN_TRANSFER_SLA_SECONDS, reason: r.reason ?? "consumer_request" }, at) };
+}
+/**
+ * 32.13 T-X-08 / SQ-30 (docs/ux/BACKEND-DELTAS.md §6): the person joins the interaction — `human.transfer.completed{interaction_id,
+ * escalation_id, human_agent_id, human_agent_name, joined_at}`; the interaction records the agent and is no longer AI-led. Only after
+ * `transferToHuman` on that interaction; the escalation is completed by the caller (the agent's own role closes it).
+ */
+export function completeHumanTransfer(events: EventStore, lead: Lead, r: { interaction_id: string; at: string; human_agent_id: string; human_agent_name?: string | null; escalation_id?: string | null }): { lead: Lead; event: DomainEvent } {
+  const at = isoInstant(r.at, "at"); const i = interactionOf(lead, r.interaction_id);
+  if (!i.human_transfer_requested_at) throw new RangeError(`no human transfer was requested on interaction ${r.interaction_id} (transfer_to_human first)`);
+  const next = touched(withInteraction(lead, r.interaction_id, { human_agent_id: nonEmpty(r.human_agent_id, "human_agent_id"), ai: false }), at);
+  return { lead: next, event: emit(events, next, "human.transfer.completed", { interaction_id: r.interaction_id, escalation_id: r.escalation_id ?? null, human_agent_id: r.human_agent_id, human_agent_name: r.human_agent_name ?? null, requested_at: i.human_transfer_requested_at, joined_at: at }, at) };
 }
 
 // ============================================================ Colorado pre-use notice (21.6's gate; 20.3 asserts it at the first interaction)
@@ -342,13 +357,13 @@ export function generalRateRange(sheet: { readonly prices: readonly { readonly n
   const low_pct = rates[0]!, high_pct = rates[rates.length - 1]!;
   return { low_pct, high_pct, text: `Today's 30-year fixed rates for this program range from ${low_pct}% to ${high_pct}% depending on credit and loan-to-value.` };
 }
-export interface PrequalInput { readonly prequal_id: string; readonly at: string; readonly stated_income_cents?: Cents | null; readonly stated_assets_cents?: Cents | null; readonly value_estimate_cents?: Cents | null; readonly loan_amount_range_cents?: readonly [Cents, Cents] | null; readonly program_fit?: Record<string, unknown>; }
+export interface PrequalInput { readonly prequal_id: string; readonly at: string; readonly stated_income_cents?: Cents | null; readonly stated_assets_cents?: Cents | null; readonly value_estimate_cents?: Cents | null; readonly loan_amount_range_cents?: readonly [Cents, Cents] | null; readonly program_fit?: Record<string, unknown>; /** DELTA-01: a preapproval request (P1) is a Reg B application; the row is `kind=preapproval` from the start */ readonly kind?: PrequalKind; }
 /** `prequalifications{basis}` — soft_pull when a report is on the lead, else consumer_stated_only; income here is the purchase-prequal volunteer (rule 5), never the six-item income. */
 export function requestPrequalification(events: EventStore, lead: Lead, p: PrequalInput): { lead: Lead; prequal: Prequalification; event: DomainEvent } {
   const at = isoInstant(p.at, "at"); const r = lead.soft_pull_report;
   const value = p.value_estimate_cents ?? null; const range = p.loan_amount_range_cents ?? null;
   const ltv = value && range ? ((Number(range[1]) / Number(value)) * 100).toFixed(2) : null;
-  const prequal: Prequalification = { prequal_id: nonEmpty(p.prequal_id, "prequal_id"), lead_id: lead.lead_id, requested_at: at, basis: r ? "soft_pull" : "consumer_stated_only", soft_pull_report_id: r?.report_id ?? null, estimated_representative_score: r?.representative_score ?? null, score_source: r ? "soft_pull" : null, stated_income_cents: p.stated_income_cents ?? null, stated_assets_cents: p.stated_assets_cents ?? null, value_estimate_cents: value, loan_amount_range_cents: range, ltv_estimate: ltv, program_fit: p.program_fit ?? {}, quote_id: null, outcome: null, letter_document_id: null, retention_class: "sm_lead_36m", regb_decline_risk_flag: false };
+  const prequal: Prequalification = { prequal_id: nonEmpty(p.prequal_id, "prequal_id"), lead_id: lead.lead_id, requested_at: at, basis: r ? "soft_pull" : "consumer_stated_only", soft_pull_report_id: r?.report_id ?? null, estimated_representative_score: r?.representative_score ?? null, score_source: r ? "soft_pull" : null, stated_income_cents: p.stated_income_cents ?? null, stated_assets_cents: p.stated_assets_cents ?? null, value_estimate_cents: value, loan_amount_range_cents: range, ltv_estimate: ltv, program_fit: p.program_fit ?? {}, quote_id: null, outcome: null, letter_document_id: null, retention_class: p.kind === "preapproval" ? "regb_25m" : "sm_lead_36m", regb_decline_risk_flag: false, kind: p.kind ?? "prequalification", du_casefile_id: null, approved_amount_cents: null, valid_until: null };
   const next = touched({ ...lead, prequal_id: prequal.prequal_id, prequalifications: [...lead.prequalifications, prequal], status: "prequal_requested" }, at);
   return { lead: next, prequal, event: emit(events, next, "prequal.requested", { prequal_id: prequal.prequal_id, basis: prequal.basis, soft_pull_report_id: prequal.soft_pull_report_id }, at) };
 }
@@ -366,6 +381,36 @@ export function issuePrequalLetter(events: EventStore, lead: Lead, l: { at: stri
   if (lead.trid_application_at) throw new RangeError("a lead with the six items is an application — 21.1/21.2 govern; no prequal letter after application.trid_received");
   const next = touched({ ...withPrequal(lead, { outcome: "letter_issued", letter_document_id: nonEmpty(l.letter_document_id, "letter_document_id") }), status: "prequalified" }, at);
   return { lead: next, prequal: currentPrequal(next), template: PREQUAL_LETTER_TEMPLATE, is_preapproval: false, hmda_record_created: false, event: emit(events, next, "prequal.letter.issued", { prequal_id: p.prequal_id, basis: p.basis, letter_document_id: l.letter_document_id, notice_id: l.notice_id ?? null, template: PREQUAL_LETTER_TEMPLATE, is_preapproval: false, hmda_record: false, hmda_preapproval_program: false, retention_class: p.retention_class }, at) };
+}
+// ============================================================ DELTA-01: the Reg C preapproval program (README §7 adopted; 32.3 P8; 28.3 `preapproval: 1`)
+export const PREAPPROVAL_LETTER_TEMPLATE = "NTC_SM_PREAPPROVAL_LETTER";
+export interface PreapprovalLetterInput { readonly at: string; readonly du_casefile_id: string; readonly approved_amount_cents: Cents; readonly valid_until: PlainDate; readonly letter_document_id: string; readonly application_id?: string | null; readonly quote_id?: string | null; readonly decision_id?: string | null; readonly product?: string | null; readonly prequal_id?: string | null; readonly notice_id?: string | null; }
+/**
+ * The written commitment after comprehensive analysis (DU on a property to be determined, 23.1 TBD casefile; the conditional approval of 23.3):
+ * `prequalifications{kind=preapproval, du_casefile_id, approved_amount_cents, valid_until}` on the lead and `preapproval.letter.issued` on the
+ * application (a HMDA preapproval record follows — 28.3). Never after `application.trid_received`: an address makes the request a TRID
+ * application and 21.2's Loan Estimate governs; never without the Reg B application (`application.received`) the request is.
+ */
+export function issuePreapprovalLetter(events: EventStore, lead0: Lead, l: PreapprovalLetterInput): { lead: Lead; prequal: Prequalification; template: string; is_preapproval: true; hmda_preapproval_program: true; event: DomainEvent } {
+  const at = isoInstant(l.at, "at"); nonEmpty(l.du_casefile_id, "du_casefile_id"); nonEmpty(l.letter_document_id, "letter_document_id"); nonEmpty(l.valid_until, "valid_until");
+  if (l.approved_amount_cents <= 0n) throw new RangeError("approved_amount_cents must be positive");
+  if (lead0.trid_application_at) throw new RangeError("a lead with the six items is a TRID application — 21.2's Loan Estimate governs; no preapproval letter after application.trid_received");
+  const lead: Lead = { ...lead0, application_id: lead0.application_id ?? l.application_id ?? null, regb_application_at: lead0.regb_application_at ?? at };
+  if (!lead.application_id) throw new RangeError("a preapproval request is a Reg B application — the lead names no application_id");
+  const prequalId = l.prequal_id ?? lead.prequal_id ?? `PA-${lead.lead_id.slice(0, 8)}`;
+  const existing = lead.prequalifications.find((p) => p.prequal_id === prequalId);
+  const r = lead.soft_pull_report;
+  const base: Prequalification = existing ?? { prequal_id: prequalId, lead_id: lead.lead_id, requested_at: at, basis: r ? "soft_pull" : "consumer_stated_only", soft_pull_report_id: r?.report_id ?? null, estimated_representative_score: r?.representative_score ?? null, score_source: r ? "soft_pull" : null, stated_income_cents: null, stated_assets_cents: null, value_estimate_cents: null, loan_amount_range_cents: null, ltv_estimate: null, program_fit: {}, quote_id: null, outcome: null, letter_document_id: null, retention_class: "regb_25m", regb_decline_risk_flag: false };
+  const prequal: Prequalification = { ...base, kind: "preapproval", du_casefile_id: l.du_casefile_id, approved_amount_cents: l.approved_amount_cents, valid_until: l.valid_until, quote_id: l.quote_id ?? base.quote_id, outcome: "letter_issued", letter_document_id: l.letter_document_id, retention_class: "regb_25m" };
+  const next = touched({ ...lead, prequal_id: prequalId, prequalifications: existing ? lead.prequalifications.map((p) => (p.prequal_id === prequalId ? prequal : p)) : [...lead.prequalifications, prequal] }, at);
+  const event = emit(events, next, "preapproval.letter.issued", { application_id: next.application_id, prequal_id: prequalId, kind: "preapproval", du_casefile_id: l.du_casefile_id, approved_amount_cents: String(l.approved_amount_cents), valid_until: l.valid_until, letter_document_id: l.letter_document_id, quote_id: prequal.quote_id, decision_id: l.decision_id ?? null, product: l.product ?? "30-year fixed", notice_id: l.notice_id ?? null, template: PREAPPROVAL_LETTER_TEMPLATE, is_preapproval: true, is_commitment: true, hmda_preapproval_program: true, retention_class: "regb_25m" }, at);
+  return { lead: next, prequal, template: PREAPPROVAL_LETTER_TEMPLATE, is_preapproval: true, hmda_preapproval_program: true, event };
+}
+/** The NTC_SM_PREAPPROVAL_LETTER payload: the partner as lender, the MLO of record with NMLSR ID, the approved amount and product, validity, the general conditions — never a promise (no "guarantee"). */
+export function preapprovalLetterPayload(lead: Lead, p: Prequalification, i: { prepared_on: PlainDate; consumer_name: string; partner_nmlsr_id: string; product?: string | null; general_conditions?: readonly string[] }): Record<string, unknown> {
+  const general_conditions = i.general_conditions ?? ["the property you choose must appraise for at least the purchase price and meet the program's eligibility requirements", "no material change in your income, assets, credit or debts before closing", "a signed purchase contract and the documentation the lender regularly obtains", "program eligibility and pricing on the day your rate is locked"];
+  return { prepared_on: i.prepared_on, consumer_name: i.consumer_name, partner_name: lead.partner_name, partner_nmlsr_id: i.partner_nmlsr_id, mlo_name: lead.mlo_name ?? "[MLO of record]", mlo_nmlsr_id: lead.mlo_nmlsr_id ?? "[NMLSR ID]", prequal_id: p.prequal_id, approved_amount_cents: p.approved_amount_cents ?? 0n, product: i.product ?? "30-year fixed", valid_until: p.valid_until, du_casefile_id: p.du_casefile_id ?? null,
+    is_preapproval: true, is_commitment: true, hmda_preapproval_program: true, general_conditions, condition_count: general_conditions.length };
 }
 /** The NTC_SM_PREQUAL_LETTER payload (placeholders for the partner/MLO identities the roster supplies). */
 export function prequalLetterPayload(lead: Lead, p: Prequalification, i: { prepared_on: PlainDate; consumer_name: string; partner_nmlsr_id: string; general_conditions?: readonly string[] }): Record<string, unknown> {

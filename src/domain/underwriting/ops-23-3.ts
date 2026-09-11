@@ -252,6 +252,18 @@ export function reopenCondition(events: EventStore, cond: Condition, i: { reason
   const condition: Condition = { ...cond, status: "reopened", cleared_at: null, cleared_by: null };
   return { condition, event: emit(events, cond.application_id, "condition.reopened", { condition_id: cond.condition_id, template_code: cond.template_code, stage: cond.stage, reason: i.reason, reopened_by: `${actor.kind}:${actor.id}`, prior_status: cond.status }, i.at, actor) };
 }
+/**
+ * Condition lifecycle (spec 23.3 "Condition lifecycle"): `open` → `waiting_borrower` (needs-list item sent) or `waiting_third_party` (vendor
+ * order). The step the borrower surface (32.5 §1) renders — only `waiting_borrower` items are the borrower's; `open` and
+ * `waiting_third_party` items sit under "What we're doing" with the owner label. Emits `condition.waiting{status, on}` (docs/ux/BACKEND-DELTAS.md).
+ */
+export function markConditionWaiting(events: EventStore, cond: Condition, i: { on: "borrower" | "third_party"; reason: string; at: string }, actor: Actor = AGENT): { condition: Condition; event: DomainEvent } {
+  nonEmpty(i.reason, "reason"); need(i.on === "borrower" || i.on === "third_party", `on must be borrower or third_party, not ${String(i.on)}`);
+  need(cond.status === "open" || cond.status === "reopened" || cond.status === "waiting_borrower" || cond.status === "waiting_third_party", `${cond.condition_id} is ${cond.status}, not open`);
+  const status: Condition["status"] = i.on === "borrower" ? "waiting_borrower" : "waiting_third_party";
+  const condition: Condition = { ...cond, status };
+  return { condition, event: emit(events, cond.application_id, "condition.waiting", { condition_id: cond.condition_id, template_code: cond.template_code, stage: cond.stage, source: cond.source, status, on: i.on, reason: i.reason, prior_status: cond.status, borrower_id: cond.borrower_id, marked_by: `${actor.kind}:${actor.id}` }, i.at, actor) };
+}
 const ELIGIBILITY_CATEGORIES: readonly Condition["category"][] = ["program", "compliance", "project", "property"];
 /** Waivers: only `underwriting_reviewer`; never a DU verification message (A2-2-04 requires resolution) or a Fannie Mae eligibility item; only SM-added conditions, with a recorded reason. */
 export function waiveCondition(events: EventStore, cond: Condition, i: { reason: string; at: string }, actor: Actor): { condition: Condition; event: DomainEvent } {

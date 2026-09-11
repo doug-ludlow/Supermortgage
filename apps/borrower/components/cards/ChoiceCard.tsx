@@ -3,12 +3,13 @@
 import { CardFrame, nowIso } from "./CardFrame";
 import type { CardComponentProps } from "./types";
 import type { ChoiceCardEvidence } from "@/lib/types/cards";
-import { copy } from "@/lib/copy";
+import { copy, copyExtra } from "@/lib/copy";
 
 /** 01 §3.2 — 2–4 mutually exclusive options; resolves on tap; never captures a consent. */
 export function ChoiceCard({ card, timezone, onResolve, busy, error }: CardComponentProps<"ChoiceCard">) {
-  const { options, title, helper, disclosure_version_shown } = card.props;
-  const heading = title ?? copy(card.copy_key);
+  const { options, title, helper, disclosure_version_shown, copy_tokens } = card.props;
+  const heading = title || copy(card.copy_key, copy_tokens);   // 32.8: the library's sentence with the server's tokens when the card names only the key (`payment.refund.choice` {{money}})
+  const helperText = helper || copyExtra(card.copy_key, "helper", copy_tokens);
   const chosen = (card.evidence as ChoiceCardEvidence | undefined)?.option_id;
   const chosenLabel = options.find((o) => o.id === chosen)?.label;
   const pending = card.status === "pending";
@@ -23,7 +24,7 @@ export function ChoiceCard({ card, timezone, onResolve, busy, error }: CardCompo
 
   return (
     <CardFrame card={card} timezone={timezone} title={heading} receipt={chosenLabel ? `${heading} — ${chosenLabel}` : undefined} announce={chosenLabel ? `You chose ${chosenLabel}` : undefined}>
-      {helper ? <p>{helper}</p> : null}
+      {helperText ? <p>{helperText}</p> : null}
       <div className="sm-options" role="group" aria-label={heading}>
         {options.slice(0, 4).map((o) => (
           <button key={o.id} type="button" className={`sm-btn sm-option${o.id === primaryId ? " sm-btn-primary" : ""}`} onClick={() => pick(o.id)} disabled={!pending || busy} aria-pressed={chosen === o.id}>

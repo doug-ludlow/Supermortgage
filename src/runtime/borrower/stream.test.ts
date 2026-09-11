@@ -103,7 +103,7 @@ test("a tool executed on the bus reaches the party's open stream after the unit 
   // a borrower command through the API is a unit of work like any other: its events reach the stream too (a card sent by the intake agent → `card.sent`)
   const card = await runtime.execute({ process: "32.1", name: "send_card", loanId: "", applicationId: appA, actor: { kind: "agent", id: "intake" }, input: { party_id: (await db.query<{ party_id: string }>(`SELECT party_id FROM application_borrowers WHERE application_id = $1`, [appA]))[0]!.party_id, subject: { application_id: appA }, kind: "StatusCard", copy_key: "application.received" } });
   const cf = await s.next((x) => x.event === "card.sent"); assert.equal((cf.data!["subject"] as { application_id: string }).application_id, appA); assert.ok(card.output);
-  s.close(); await wait(50);
+  s.close(); for (let i = 0; i < 200 && hub.connections() > 0; i++) await wait(10);   // the server sees the close on its own tick — a bounded wait, never a fixed sleep (flaked under load)
   assert.equal(hub.connections(), 0, "a closed connection leaves the subscriber list");
 });
 

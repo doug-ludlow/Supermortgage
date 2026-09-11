@@ -4,6 +4,7 @@ import { useId, useState } from "react";
 import { CardFrame, nowIso, textHash } from "./CardFrame";
 import type { CardComponentProps } from "./types";
 import type { ExplanationCardEvidence } from "@/lib/types/cards";
+import { copy } from "@/lib/copy";
 
 /** 01 §3.10 — letter of explanation with typed-name attestation; rendered by the API as a signed document. */
 export function ExplanationCard({ card, timezone, onResolve, busy, error }: CardComponentProps<"ExplanationCard">) {
@@ -13,6 +14,9 @@ export function ExplanationCard({ card, timezone, onResolve, busy, error }: Card
   const [name, setName] = useState("");
   const pending = card.status === "pending";
   const ready = text.trim().length >= p.min_length && name.trim().length >= 2;
+  // 32.5 §3: the subject names the fact, the prompt asks one question — both from the copy library when the card carries keys
+  const subject = p.subject || (p.subject_copy_key ? copy(p.subject_copy_key, p.copy_tokens) : copy(card.copy_key, p.copy_tokens));
+  const prompt = p.prompt || (p.prompt_copy_key ? copy(p.prompt_copy_key, p.copy_tokens) : "");
 
   const submit = () => {
     const evidence: ExplanationCardEvidence = { text_hash: textHash(text.trim()), attestation: name.trim(), attested_at: nowIso() };
@@ -20,8 +24,8 @@ export function ExplanationCard({ card, timezone, onResolve, busy, error }: Card
   };
 
   return (
-    <CardFrame card={card} timezone={timezone} title={p.subject} receipt={`${p.subject} — explanation sent`}>
-      <p className="sm-primary-text">{p.prompt}</p>
+    <CardFrame card={card} timezone={timezone} title={subject} receipt={`${subject} — explanation sent`}>
+      <p className="sm-primary-text">{prompt}</p>
       {pending ? (
         <>
           <label className="sm-label" htmlFor={`${id}-text`}>

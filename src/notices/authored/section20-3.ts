@@ -19,6 +19,8 @@
  * Every consumer-facing text names the partner; SM appears as "operating for [Partner]". Placeholder identities only.
  */
 import type { ContentRule, NoticeTemplate, VersionInput } from "../registry.ts";
+import type { NoticeRegistry } from "../registry.ts";
+import { publishCheck } from "../checklist.ts";
 import { V } from "./section01.ts";
 
 const R = (rule_id: string, citation: string, kind: ContentRule["kind"], selector: string, message: string, extra: Partial<ContentRule> = {}): ContentRule => ({ rule_id, citation, kind, selector, severity: "block", message, ...extra });
@@ -119,6 +121,40 @@ export const CO_ADMT_RULES: ContentRule[] = [
 /** Worked example 4: the Denver voice session of Tue Jan 5, 2027 — the pre-use line before any eligibility or pricing output. */
 export const CO_ADMT_SAMPLE = { variant: "pre_use", is_pre_use: true, is_adverse_explanation: false, partner_name: "Partner Bank", public_notice_url: "https://example.test/partner/admt-notice", information_request_procedure: "asking this assistant, using your portal, or writing to [Partner address]", retention_class: "co_admt_3y", decided_on: null,
   decision_description: null, admt_role_description: null, admt_name: null, admt_version: null, admt_developer: null, data_categories: [], human_review_instructions: null, correction_instructions: null, days_since_decision: null };
+
+// ------------------------------------------------------------------ NTC_SM_PREAPPROVAL_LETTER (DELTA-01: the Reg C §1003.2(b)(2) preapproval program adopted; 32.3 P8 / T27; MAP §1014.3(q)/(r))
+export const PREAPPROVAL_LETTER_TEMPLATE_CODE = "NTC_SM_PREAPPROVAL_LETTER";
+export const PREAPPROVAL_LETTER_SOURCE = `{{#block "heading" page=1 y=0.05 pt=14 bold}}PREAPPROVAL LETTER{{/block}}
+{{#block "intro" page=1 y=0.1 pt=11}}Prepared {{date prepared_on}} for {{consumer_name}} by {{partner_name}} (NMLSR ID {{partner_nmlsr_id}}), your lender, with Supermortgage operating for {{partner_name}}. Reference {{prequal_id}}.{{/block}}
+{{#block "commitment" page=1 y=0.18 pt=12 bold}}Based on your verified income, assets and credit, run through the automated underwriting system used for the loan itself (casefile {{du_casefile_id}}), {{partner_name}} has preapproved you for a {{product}} loan of up to {{money approved_amount_cents}}.{{/block}}
+{{#block "validity" page=1 y=0.3 pt=11}}This preapproval is valid through {{date valid_until}}. It is a written commitment under the lender's preapproval program, subject to the conditions below; it is not a rate lock, and your rate and payment are set when you lock.{{/block}}
+{{#block "conditions" page=1 y=0.4 pt=11}}The commitment is subject to the following general conditions: {{#each general_conditions}}{{this}}; {{/each}}and the lender's regular closing requirements.{{/block}}
+{{#block "originator" page=1 y=0.6 pt=11}}Questions about loan terms are answered by {{mlo_name}}, NMLSR ID {{mlo_nmlsr_id}}, on behalf of {{partner_name}}. Rates, payments and program terms change until your rate is locked.{{/block}}
+{{#block "body" page=1 y=0.75 pt=11}}You may share this letter with a seller or real estate agent. The loan closes only once the conditions above are met and the property is accepted; the letter promises nothing beyond what is stated here.{{/block}}`;
+export const PREAPPROVAL_LETTER_RULES: ContentRule[] = [
+  R("preapproval-commitment", "12 CFR 1003.2(b)(2): a written commitment after a comprehensive analysis of creditworthiness", "presence", "has preapproved you for a .+ loan of up to \\$[0-9,]+", "the written commitment with the approved amount"),
+  R("preapproval-commitment-prominent", "12 CFR 1014.3(q)/(r): the commitment stated plainly and prominently", "layout", "commitment", "the commitment is on page 1 in bold at ≥ 12 pt", { layout: { page: 1, bold: true, minPt: 12 } }),
+  R("partner-named", "20.3 capacity; 32.3 T27: names partner.legal_name", "presence", "by .+ \\(NMLSR ID .+\\), your lender", "the partner named as the lender"),
+  R("mlo-attribution", "12 CFR 1026.36(g); 32.3 T27: mlo.name and NMLSR ID", "presence", "answered by .+, NMLSR ID [^,]+, on behalf of .+", "the MLO of record with NMLSR ID on behalf of the partner"),
+  R("validity", "23.3 SM_UW_DECISION_VALIDITY; 32.3 T27: valid_until", "presence", "valid through [A-Z][a-z]+ [0-9]{1,2}, [0-9]{4}", "the validity date"),
+  R("general-conditions", "32.3 P8: property must appraise and be eligible; no material change", "presence", "subject to the following general conditions: .+; .+;", "the general conditions"),
+  R("general-conditions-data", "32.3 P8", "data_equality", "general_conditions", "at least two general conditions", { predicate: { ">=": [{ var: "condition_count" }, 2] } }),
+  R("preapproval-program-data", "12 CFR 1003.2(b)(2); DELTA-01", "data_equality", "is_preapproval", "a Reg C preapproval program letter (HMDA preapproval record)", { predicate: { and: [{ "==": [{ var: "is_preapproval" }, true] }, { "==": [{ var: "is_commitment" }, true] }, { "==": [{ var: "hmda_preapproval_program" }, true] }] } }),
+  R("approved-amount-positive", "20.3 data model: approved_amount_cents", "data_range", "approved_amount_cents", "the approved amount is positive", { range: { min: 1 } }),
+  R("no-guarantee", "12 CFR 1014.3(q); 32.1 §7.3; 32.3 T27: never \"guarantee\"", "absence", "(guarantee|guaranteed|guarantees|approval is certain|you are approved for any home)", "no promise language — a preapproval is a conditioned commitment, never a promise"),
+  R("not-a-rate-lock", "12 CFR 1026.19(e)(2)(ii); 20.4", "presence", "it is not a rate lock", "the letter is not a rate lock"),
+  R("no-fee-demand", "12 CFR 1026.19(e)(2)(i)(A)", "absence", "(pay now|payment due today|charge your card)", "no fee demand before the LE"),
+];
+export const PREAPPROVAL_LETTER_SAMPLE = { prepared_on: "2026-11-03", consumer_name: "[Consumer name]", partner_name: "Partner Bank", partner_nmlsr_id: "000000", mlo_name: "[MLO of record]", mlo_nmlsr_id: "123456", prequal_id: "PA-2026-11-03-001", du_casefile_id: "TBD-1234", product: "30-year fixed", approved_amount_cents: 40_000_000n, valid_until: "2027-02-01",
+  is_preapproval: true, is_commitment: true, hmda_preapproval_program: true, condition_count: 4,
+  general_conditions: ["the property you choose must appraise for at least the purchase price and meet the program's eligibility requirements", "no material change in your income, assets, credit or debts before closing", "a signed purchase contract and the documentation the lender regularly obtains", "program eligibility and pricing on the day your rate is locked"] };
+export const PREAPPROVAL_LETTER_VERSION: VersionInput = V(PREAPPROVAL_LETTER_TEMPLATE_CODE, PREAPPROVAL_LETTER_SOURCE, PREAPPROVAL_LETTER_RULES, PREAPPROVAL_LETTER_SAMPLE, "sm.lead_intake.2026.v1", "DELTA-01 (README §7 preapproval program adopted); 32.3 P8 / T27; 12 CFR 1003.2(b)(2); 12 CFR 1014.3(q)/(r)");
+export const PREAPPROVAL_LETTER_TEMPLATE_DEF: NoticeTemplate = { code: PREAPPROVAL_LETTER_TEMPLATE_CODE, name: "sm preapproval letter", ownerSection: "20.3", mentions: ["20.3", "32.3", "23.1", "28.3"], channelPolicy: "electronic_ok_without_esign", noticeClass: "origination_disclosures", separateDocument: true, mayCombineWith: ["NTC_SM_RATE_QUOTE", "NTC_REGZ_1026_19E2II_QUOTE_DISCLAIMER"], retention: "regb_25m", piiLevel: "medium", citation: "DELTA-01: 12 CFR 1003.2(b)(2) preapproval program (a written commitment after comprehensive analysis — HMDA preapproval record, 28.3); 12 CFR 1014.3(q)/(r); 20.3 rule 4 stays the prequalification letter; retention regb_25m (an application)" };
+/** DELTA-01: the preapproval letter template is not in the spec's notice catalog (20.3 open question 2 chose prequalification letters only); the runtime registers, drafts and approves it beside the catalog (src/runtime/app.ts). */
+export function registerPreapprovalLetter(reg: NoticeRegistry, approvedBy = "counsel", approvedAt = "2026-09-01T00:00:00.000Z"): void {
+  if (reg.has(PREAPPROVAL_LETTER_TEMPLATE_CODE)) return;
+  reg.register(PREAPPROVAL_LETTER_TEMPLATE_DEF); reg.draft(PREAPPROVAL_LETTER_VERSION); reg.publish(PREAPPROVAL_LETTER_TEMPLATE_CODE, PREAPPROVAL_LETTER_VERSION.version, approvedBy, approvedAt, publishCheck);
+}
 
 export const VERSIONS_20_3: VersionInput[] = [
   V("NTC_SM_ESIGN_CONSENT", ESIGN_CONSENT_SOURCE, ESIGN_CONSENT_RULES, ESIGN_CONSENT_SAMPLE, "sm.lead_intake.2026.v1", "15 U.S.C. 7001(c)(1)(A)–(D), (c)(6); 7.4 rule 2 demonstration test; 20.3 rule 8 (origination disclosures + servicing communications categories)"),

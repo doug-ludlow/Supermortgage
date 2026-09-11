@@ -17,8 +17,10 @@ Format: `key` — **card/message** — text — *notes*.
 - `entry.identify.why` — helper — "Your code keeps this conversation yours. We'll never text you marketing without asking first."
 - `identity.stripe.purpose` — ConnectCard — "Verify your identity with a photo of your ID and a selfie. Takes about a minute." — what_we_get: "your name, date of birth and the address on your ID".
 - `identity.confirm.title` — ConfirmCard — "Here's what your ID says. Right?"
-- `identity.ssn.why` — ConfirmCard — "We need your Social Security number to pull your credit report. It's checked with the Social Security Administration and never shown again here."
+- `identity.ssn.why` — ConfirmCard — "We need your Social Security number to pull your credit report. We check it with the Social Security Administration. It's never shown again here."
 - `identity.fallback` — StatusCard — "We'll take a closer look at your ID — nothing for you to do."
+- `identity.ssn.title` — ConfirmCard — "Your Social Security number" — helper: "We need it to pull your credit report. It's checked with the Social Security Administration and never shown again here." — *32.3 E5: the one typed field; masked; stored once.*
+- `entry.voice.started` — line — "You're on a call with Supermortgage's automated assistant. Anything you agree to here still needs a tap on a card we'll send you." — *32.3 E1 voice; consents never by voice.*
 
 ## Consents
 
@@ -31,17 +33,18 @@ Format: `key` — **card/message** — text — *notes*.
 - `consent.credit.title` — ConsentCard — "Pull my credit report" — body from `credit_authorizations` template — helper: "This is a full credit check for your application."
 - `consent.joint_intent.title` — ConsentCard — "Do you intend to apply for this loan jointly with {{other_first_name}}?"
 - `consent.autodraft.title` — ConsentCard — "Set up autopay" — helper: "Optional — never a condition of your loan." — body: all 2.x rule-1 elements from the template.
-- `consent.standing.title` — ConsentCard — "Keep my payroll and bank connections active so a future refinance takes minutes." — helper: "We only use them when you say yes to an offer. Turn off any time."
+- `consent.standing.title` — ConsentCard — "Keep my payroll and bank connections on. That way a future refinance takes minutes." — helper: "We only use them when you say yes to an offer. Turn off any time."
+- `consent.esign.verify_hint` — helper — "Enter the six-character code from the PDF attached to our e-mail." — *32.3 E6: 7.4's demonstration test (FAKE mailer in every build stage).*
 
 ## Refinance and purchase intake
 
 - `refi.home.confirm` — ConfirmCard — "Your home — right?" — fields: address · type · "your primary home".
 - `refi.current_loan.confirm` — ConfirmCard — "Your current loan, from your credit report and county records. Correct?"
 - `credit.liabilities.confirm` — ConfirmCard — "Your debts, from your credit report. Anything missing?"
-- `credit.liabilities.student_zero` — helper — "For a student loan showing $0, the program counts 1% of the balance unless you have a statement showing your plan payment."
-- `income.connect.purpose` — ConnectCard — "Connect your payroll so we can verify income without paystubs." — what_we_get: "employer, start date, pay frequency, base and variable pay, year-to-date" — fallback: "type your monthly income now; we'll ask for paystubs later".
+- `credit.liabilities.student_zero` — helper — "For a student loan showing $0, the program counts 1% of the balance. A statement showing your plan payment changes that."
+- `income.connect.purpose` — ConnectCard — "Connect your payroll so we can check your income without paystubs." — what_we_get: "employer, start date, pay frequency, base and variable pay, year-to-date" — fallback: "type your monthly income now; we'll ask for paystubs later".
 - `income.confirm.title` — ConfirmCard — "Your income from {{employer}}. This becomes the income you're stating on your application."
-- `income.other.question` — field — "Any other income you want considered? (Social Security, pension, child support, rental)" — default `None`.
+- `income.other.question` — field — "Any other income you want us to count? (Social Security, pension, child support, rental)" — default `None`.
 - `profile.title` — ProfileCard — "A few things only you can tell us."
 - `declarations.title` — ChoiceCard — "Does any of this apply to you?" — options `None of these apply to me` · `Something here applies`.
 - `demographics.title` — DemographicsCard — the prescribed statement (App. B instruction 2) — options include `I do not wish to provide`.
@@ -49,7 +52,7 @@ Format: `key` — **card/message** — text — *notes*.
 - `loan_amount.confirm.title` — ConfirmCard — "Loan amount: {{money}} — enough to pay off your current loan with no closing costs to you."
 - `product.choice` — ChoiceCard — "Loan type" — options `30-year fixed` · `15-year fixed` · `Adjustable (ARM)`.
 - `application.received` — StatusCard — "Application received {{date}}. Your Loan Estimate arrives by {{due}}."
-- `du.running` — StatusCard — "Checking your application with the automated underwriting system — usually a couple of minutes. Nothing needed from you."
+- `du.running` — StatusCard — "We're running your application through underwriting. It often takes a few minutes. Nothing needed from you."
 - `du.leave_ok` — StatusCard — "This is taking a bit longer. You'll get a message when it's done — no need to wait here."
 - `terms.pending_mlo` — StatusCard — "Your terms and Loan Estimate are being reviewed by {{mlo.name}}, NMLSR ID {{mlo.nmlsr_id}} — expected by {{due}}."
 - `decision.conditional_approval` — StatusCard — "Approved with conditions. {{count_you}} item(s) need you; we're handling {{count_us}}."
@@ -61,11 +64,18 @@ Format: `key` — **card/message** — text — *notes*.
 - `contract.confirm` — ConfirmCard — "From your contract. Correct?"
 - `insurance.select.choice` — ChoiceCard — "Homeowners insurance" — options `I have a quote or policy` · `Help me get quotes`.
 - `insurance.requirement` — StatusCard — "Any policy works if it: covers replacement cost; has a deductible no more than 5% of coverage; is from a carrier rated AM Best B or better (or equivalent); names the mortgagee as: {{mortgagee_clause}}; and starts on or before {{disbursement_date}}."
+- `refi.value.confirm` — ConfirmCard — "Our estimate of your home's value. Right?" — helper: "Tap Confirm to use it, or Edit to enter your own number." — *32.3 R7: an AVM counts only when accepted (21.2 rule 2).*
+- `refi.loan_amount.confirm` — ConfirmCard — "Your new loan amount. It's your current balance plus the payoff interest we estimate." — *32.3 R7: accepting counts as the loan amount sought.*
+- `refi.product.choice` — ChoiceCard — "Which loan?" — options `30-year fixed` · `15-year fixed` · `Adjustable (ARM)`.
+- `credit.rerun.neutral` — StatusCard — "We're re-running your credit report so every borrower is scored the same way. Nothing needed from you." — *32.3 T9 / 23.1 T11: never a score in the thread.*
+- `preapproval.where` — ConfirmCard — "Where are you buying, and how much?" — fields: state · price range · down payment · first-time buyer.
+- `preapproval.target` — ConfirmCard — "Your target price, down payment and loan amount." — helper: "30-year fixed unless you tell us otherwise."
+- `contract.seller_relationship` — ChoiceCard — "Do you have a relationship with the seller?" — options `No relationship` · `Yes, I know the seller`. — *URLA Section 5 addendum at contract (32.3 C1).*
 
 ## Disclosures, intent, lock
 
 - `le.delivered` — DocumentCard — "Your Loan Estimate" — why: "This is the estimate of your loan terms and costs. Confirming receipt starts the timeline for your closing."
-- `le.mailed` — StatusCard — "Mailed today to {{mailing_address}}. Want future documents electronically? Finish the e-delivery step."
+- `le.mailed` — StatusCard — "Mailed today to {{mailing_address}}. Want future documents online? Finish the e-delivery step."
 - `le.costs_expire` — Dates label — "Estimated costs good through {{date}}".
 - `le.what_changed` — block title — "What changed since your last estimate".
 - `companion.hcl` — DocumentCard — "Housing counseling agencies near you" — why: "Federal rules require us to give you this list."
@@ -74,7 +84,7 @@ Format: `key` — **card/message** — text — *notes*.
 - `companion.score_notice` — DocumentCard — "Your credit score disclosure".
 - `companion.arm` — DocumentCard — "How your adjustable rate works".
 - `companion.privacy` — DocumentCard — "Privacy notice".
-- `intent.title` — ChoiceCard — "Want to move forward?" — helper: "Until you say proceed, we can't charge anything except the credit report, or require documents. Proceeding lets us order title and start verification." — options `Proceed` · `Not yet`.
+- `intent.title` — ChoiceCard — "Want to move forward?" — helper: "Until you say proceed, we can't charge you anything but the credit report. We also can't require documents. Proceeding lets us order title and start checking your file." — options `Proceed` · `Not yet`.
 - `intent.too_early` — reply — "You'll be able to proceed once your Loan Estimate is in your hands — it's on its way."
 - `intent.received` — StatusCard — "Thanks — we've ordered title and a flood determination and asked {{prior_servicer}} for your payoff figure."
 - `lock.compare.title` — ComparisonCard — "Lock your rate?" — footnote: "Extensions cost {{cost_rule}}; if a lock expires before closing, the rate is set again when you relock."
@@ -83,6 +93,35 @@ Format: `key` — **card/message** — text — *notes*.
 - `lock.expiry_warn` — StatusCard — "Your lock expires {{date}}. If closing is later, we can extend — {{cost}} for {{days}} days."
 - `lock.expired` — StatusCard — "Your lock expired {{date}}. Your loan can still close; the rate is set again when you relock."
 - `revised_le.on_cd_instead` — StatusCard — "This change will show on your Closing Disclosure instead of a new Loan Estimate."
+- `le.preparing` — StatusCard — "Preparing your Loan Estimate." — *32.4 §1: the `assembling`/`rendered` states; Next shows `REGZ_1026_19E1_LE_3BD.due_at`.*
+- `le.package` — Thread group header — "Your Loan Estimate and {{count}} related document(s)." — *32.4 §2: companions render as a single grouped message with the LE, each its own card.*
+- `le.electronic_copy` — DocumentCard — "Your Loan Estimate (electronic copy)" — why: "We mailed this on {{date}}. Now that e-delivery is on, here is the same document; confirming receipt here counts too."
+- `le.deemed` — Documents label — "Received (deemed) {{date}}" — *32.4 §1: the mailbox rule, three specific business days after mailing/e-mailing without confirmation.*
+- `companion.afba` — DocumentCard — "Affiliated business arrangement" — why: "We referred you to a company related to your lender. This explains the relationship; using them is your choice." — *ack by signature.*
+- `companion.state` — DocumentCard — "A notice required in {{state}}" — why: "Your state requires this early disclosure."
+- `companion.co_admt` — DocumentCard — "Colorado notice about automated decisions" — why: "Colorado requires this before any pricing is shown to you."
+- `companion.tx_12day` — DocumentCard — "Texas home-equity 12-day notice" — why: "Texas requires this notice; your closing can't happen before day 12." — *ack required.*
+- `lock.compare.float` — option — "Keep floating" — helper: "Floating means your rate isn't set yet and moves with the market until you lock. You'll need to lock before we can prepare closing documents."
+- `lock.required_before_closing` — StatusCard — "You'll need to lock before we can prepare closing documents." — *32.4 §4.1: `SM_O71_DOC_GEN_GATE` needs an active lock through the closing date.*
+- `lock.expiry_warn.no_closing` — StatusCard — "Your lock expires {{date}}. No closing is scheduled yet — if closing lands after that date, we can extend; the cost is in your lock agreement."
+- `lock.extend.choice` — ChoiceCard — "Extend your lock?" — options `Extend {{days}} days ({{cost}})` · `Wait`.
+- `lock.relock.title` — ComparisonCard — "Relock your rate?" — footnote: "A relock is priced at today's rate or your original one, whichever is higher. That doesn't apply if the delay was ours."
+- `revised_le.delivered` — DocumentCard — "Your updated Loan Estimate" — why: "Compare it with your last estimate — what changed is listed below. Confirming receipt keeps your closing timeline moving."
+- `revised_le.row.rate` — What-changed row — "Interest rate".
+- `revised_le.row.points` — What-changed row — "Points".
+- `revised_le.row.payment` — What-changed row — "Monthly principal & interest".
+- `revised_le.row.cash_to_close` — What-changed row — "Cash to close".
+- `revised_le.kind.extraordinary_event` — What-changed label — "An unexpected event outside anyone's control".
+- `revised_le.kind.inaccurate_info` — What-changed label — "Information we relied on turned out to be wrong".
+- `revised_le.kind.new_info` — What-changed label — "New information about you or your loan".
+- `revised_le.kind.eligibility_change` — What-changed label — "A change in what you qualify for".
+- `revised_le.kind.borrower_request` — What-changed label — "Because you asked us to make a change".
+- `revised_le.kind.rate_lock` — What-changed label — "Your rate lock".
+- `revised_le.kind.le_expired` — What-changed label — "Your earlier estimate expired before you told us to proceed".
+- `revised_le.kind.construction_delay` — What-changed label — "A construction delay".
+- `tolerance.refund.notice` — NoticeCard — "A refund is on its way" — line: "A fee came in above what your Loan Estimate allowed, so we're refunding {{money}} — sent {{date}}. Nothing for you to do." — *32.4 §5: `refund_required` after consummation; `REGZ_1026_19F2V_TOLERANCE_REFUND_60`.*
+- `terms.presented` — StatusCard — "Your terms, reviewed by {{mlo.name}}, NMLSR ID {{mlo.nmlsr_id}}: {{rate}}. Your Loan Estimate follows." — *32.3 R9: only after `mlo.review.completed{approved}`; the rate is 20.4's quote.*
+- `preapproval.listing_pending` — StatusCard — "Pricing has moved since your preapproval. {{address}}: a loan officer is reviewing today's numbers before we show a new rate — usually within the hour." — *32.3 P9 / T28: SM_QUOTE_VALIDITY_GATE closed → MLO review first (assisted).*
 
 ## Verification and conditions
 
@@ -97,6 +136,27 @@ Format: `key` — **card/message** — text — *notes*.
 - `new_debt.confirm` — ConfirmCard — "We see a new account with {{creditor}} opened {{date}}. Is this yours?"
 - `coborrower.invite` — InviteCard — "Add {{first_name}} as a co-borrower. They'll get their own link and answer their own questions."
 - `coborrower.waiting` — People — "{{first_name}} — invited, waiting".
+- `upload.title` — UploadCard — "Upload your {{document}}" — *32.5 §1: the verb-first Needed-from-you line; `{{document}}` is the owning process's document class in words, never a computed date.*
+- `upload.rerequest.closing_moved` — UploadCard — "Closing moved to {{date}}, so we need a {{document}} from the last {{n}} days." — *32.5 §2.3: the replacement request 22.1's freshness sweep opens at expiry (`SM_DOC_EXPIRY_WARN_14`, `FNMA_B1_1_03_CREDIT_DOCS_4M`); the date is the owning process's scheduled note date.*
+- `explain.title` — ExplanationCard — "Explain the {{subject}}" — *32.5 §3: one card per item; the prompt names the fact and asks one question.*
+- `explain.deposit.subject` — ExplanationCard subject — "{{money}} deposit on {{date}}" — *32.5 §3/§4: a deposit above 50% of monthly qualifying income (22.4).*
+- `explain.inquiry.subject` — ExplanationCard subject — "{{creditor}} inquiry from {{date}}" — *32.5 §3: an inquiry within 90 days (22.2).*
+- `needs.doing.title` — Record — "What we're doing" — *32.5 §1: `open` and `waiting_third_party` items with their owner label.*
+- `needs.owner.you` — owner label — "you" — *32.5 §1.*
+- `needs.owner.us` — owner label — "us" — *32.5 §1.*
+- `needs.owner.title_company` — owner label — "the title company" — *32.5 §1.*
+- `needs.owner.appraiser` — owner label — "the appraiser" — *32.5 §1.*
+- `needs.owner.prior_servicer` — owner label — "your current servicer" — *32.5 §1.*
+- `new_debt.source` — ConfirmCard helper — "Source: the credit refresh we run before closing." — *32.5 §2.4: names creditor, open date and source — never a word about the decision.*
+- `new_debt.rechecking` — StatusCard — "Added. We're re-checking your application with the updated debt — we'll tell you if anything changes." — *32.5 §2.4: after a yes the liability is added and DU is resubmitted per 23.1's tolerances.*
+- `human.agent.intro` — PersonCard — "A person has your file and will pick up right here — with everything you've told us so far." — *32.5 §8: `human.transfer.requested` → warm transfer with the full context; cards stay the only way to commit.*
+- `human.agent.pending` — PersonCard name — "Your Supermortgage contact" — *32.5 §8: shown until the human's own turn carries their name.*
+- `needs.item.received` — receipt — "Got it — received and under review." — *32.5 §2.2: the one-line confirmation when a document matches its request; the item is `satisfied_pending_review` until 23.3 clears it.*
+- `coborrower.joint_intent.first` — StatusCard — "First, one question only you can answer — then your own income, debts and profile." — *32.5 §7: joint intent is captured before any credit is ordered for the invitee (`SM_O21_JOINT_INTENT_GATE`).*
+- `coborrower.deep_link` — message — "You've been added to this application. Sign in with a code and we'll pick up right here: {{deep_link}}" — *32.5 §7: the invitee's own conversation and deep link.*
+- `conditions.checklist` — ChecklistCard — "What's still needed to close" — helper: "Items marked *you* are yours; the rest are ours or a third party's." — *32.3 R8: materialized within SM_DU_CONDITIONS_SLA_4H; never DU text.*
+- `thread.card_field_required` — reply — "Pick an answer for each item so it counts — nothing is submitted without your tap." — *32.3 T13.*
+- `gate.demographics.application_first` — refusal — "Those questions come once your application is started." — *20.3 T12 / 32.3 T15.*
 
 ## Decision, property, insurance, MI
 
@@ -104,20 +164,53 @@ Format: `key` — **card/message** — text — *notes*.
 - `decision.denial.next` — line — "You can request a copy of the appraisal (if one was done) and reach a person any time."
 - `decision.noia` — StatusCard — "We need the items in this notice by {{date}} to keep your application open."
 - `decision.withdraw.confirm` — ChoiceCard — "This ends your application. Your documents stay available to you." — options `Yes, withdraw` · `Keep going`.
-- `valuation.value_acceptance` — StatusCard — "The automated underwriting system accepted your home's value — no appraisal, no fee."
+- `valuation.value_acceptance` — StatusCard — "The underwriting system took your home's value as is. No appraisal, no fee."
 - `valuation.schedule` — ScheduleCard — "Pick a time for the appraiser to visit (about an hour)."
 - `valuation.copy` — DocumentCard — "Your appraisal" — footer link: "Ask for a value review".
-- `valuation.low.choice` — ChoiceCard — "The appraised value is {{money}}, below {{price|requested}}. Options:" — options per 32.6 §2.
+- `valuation.low.choice` — ChoiceCard — "The appraised value is {{money}}, below {{price|requested}}. Options:" — options `Renegotiate the price` · `Bring the difference in cash` · `Cancel under my contingency` — *32.6 §2: purchase levers; refinance: lower loan amount, add MI, stop.*
 - `title.vesting.confirm` — ConfirmCard — "Title will be held by {{names}} as {{vesting}}. Right?"
 - `insurance.deficient` — NoticeCard line — "One thing to fix: {{element}} — {{fix}}."
 - `flood.notice` — DocumentCard — "Flood insurance is required for this property" — why: "The property is in a special flood hazard area."
 - `mi.compare.title` — ComparisonCard — "Mortgage insurance options".
-- `ctc.reached` — StatusCard — "Everything is verified. Next: your Closing Disclosure, then a signing appointment."
+- `ctc.reached` — StatusCard — "Everything checks out. Next: your Closing Disclosure, then a signing time."
 - `ctc.final_review` — StatusCard — "A final review is in progress — nothing needed from you."
+- `decision.approval.notice` — NoticeCard — "Your approval letter" — line: "Approved with conditions — good through {{valid_until}}. The letter lists what's still needed." — *32.6 §1.1: NTC_REGB_1002_9_APPROVAL rendered by 23.3; the conditions are the letter's borrower-facing list.*
+- `decision.counteroffer.notice` — NoticeCard — "Our counteroffer" — line: "We can't offer the terms you asked for, but here's what we can offer. The notice explains why." — *32.6 §1.2: NTC_REGB_1002_9_COUNTEROFFER; never "you were declined" while the offer is open.*
+- `decision.counteroffer.compare` — ComparisonCard — "What you asked for vs. what we can offer" — *32.6 §1.2: loan amount, rate, monthly principal & interest, loan-to-value; the offered column is recommended.*
+- `decision.denial.notice` — NoticeCard — "Your decision letter" — line: "The letter lists the specific reasons. Your documents stay available to you here." — *32.6 §1.3: NTC_REGB_1002_9_ADVERSE_ACTION; the Record goes read-only.*
+- `decision.noia.notice` — NoticeCard — "What we still need" — line: "The notice lists the items and the date we need them by." — *32.6 §1.4: NTC_REGB_1002_9_NOIA.*
+- `valuation.handoff.appraiser` — HandoffCard — "The appraiser is coordinating the visit" — what_to_expect: "On a purchase the appraiser arranges access with the listing side. Nothing needed from you." — *32.6 §2.*
+- `valuation.copy.mailed` — StatusCard — "Your appraisal copy was mailed {{date}}." — *32.6 §2: a mailed copy shows Mailed and no receipt action.*
+- `hoa.docs.upload` — UploadCard — "Send your association's {{document}}" — why: "Your HOA sends this to owners; we need it for the project review." — *SQ-08, owner you.*
+- `hoa.docs.handoff` — HandoffCard — "We're asking {{hoa_contact}} for the {{document}}" — what_to_expect: "The management company sends it straight to us. Nothing needed from you." — *SQ-08, owner third party.*
+- `insurance.deficient.element.deductible` — token — "the deductible" — *32.6 §5: the failing element named on `insurance.deficient`.*
+- `insurance.deficient.fix.deductible` — token — "a deductible no more than 5% of the coverage amount"
+- `insurance.deficient.element.coverage_form` — token — "the coverage form"
+- `insurance.deficient.fix.coverage_form` — token — "coverage on a replacement-cost basis for the required perils"
+- `insurance.deficient.element.carrier_rating` — token — "the carrier's rating"
+- `insurance.deficient.fix.carrier_rating` — token — "a carrier rated AM Best B or better (or the Demotech, S&P or Kroll equivalent)"
+- `insurance.deficient.element.mortgagee_clause` — token — "the mortgagee clause"
+- `insurance.deficient.fix.mortgagee_clause` — token — "the mortgagee clause exactly as it must read: {{partner.legal_name}}, its successors and/or assigns, c/o Supermortgage"
+- `insurance.deficient.element.effective_date` — token — "the effective date"
+- `insurance.deficient.fix.effective_date` — token — "a policy in force on or before your disbursement date, with the first year's premium paid"
+- `insurance.deficient.element.flood_coverage` — token — "the flood coverage"
+- `insurance.deficient.fix.flood_coverage` — token — "flood coverage for the lesser of the loan amount, the NFIP maximum or the replacement cost, applied for and paid at or before closing"
+- `insurance.deficient.element.coverage` — token — "the coverage"
+- `insurance.deficient.fix.coverage` — token — "coverage that meets the four requirements on the insurance card"
+- `insurance.upload.policy` — UploadCard — "Send the corrected declarations page" — why: "Once your carrier fixes it, send the new page and we'll check it again." — *32.6 §5: the item stays in Needed-from-you.*
+- `mi.plan.bpmi_monthly` — column — "Borrower-paid monthly"
+- `mi.plan.single` — column — "Single premium"
+- `mi.plan.split` — column — "Split premium"
+- `mi.plan.lpmi` — column — "Lender-paid (higher rate)"
+- `mi.cancel.bpmi_monthly` — row — "You can ask to cancel at 80% of the original value; it ends automatically at 78%." — *HPA §4902(a)/(b), one line.*
+- `mi.cancel.single` — row — "Paid once up front, no monthly line; a refund follows the insurer's plan if the loan pays off early."
+- `mi.cancel.split` — row — "Part up front, part monthly; the monthly part ends the same way as monthly MI."
+- `mi.cancel.lpmi` — row — "No separate MI line; the higher rate stays for the life of the loan and can't be cancelled." — *HPA §4905(c).*
+- `closing.schedule.waiting` — StatusCard — "Closing times open once your Closing Disclosure sets the earliest closing date." — *32.6 §7 / 32.7 §2.*
 
 ## Closing, rescission, funding, boarding
 
-- `cd.delivered` — DocumentCard — "Your Closing Disclosure" — why: "Confirming receipt starts the three-business-day wait before you can sign (Sundays and federal holidays don't count)."
+- `cd.delivered` — DocumentCard — "Your Closing Disclosure" — why: "Confirming receipt starts the 3-business-day wait before you can sign. Sundays and federal holidays don't count."
 - `cd.mailbox` — StatusCard — "Mailed {{date}}; it counts as received on {{date}} unless you confirm sooner."
 - `cd.redisclosed_restart` — StatusCard — "This change restarts the three-day wait. Earliest closing is now {{date}}."
 - `cd.wire_warning` — line — "Never send closing funds from instructions received by e-mail. Confirm by phone with your settlement agent first."
@@ -135,6 +228,66 @@ Format: `key` — **card/message** — text — *notes*.
 - `funded.no_skip` — line — "Interest from {{disbursement}} to {{month_end}} was collected at closing — no payment is skipped."
 - `boarding.welcome` — StatusCard — "Welcome. You pay Supermortgage, servicing on behalf of {{partner.legal_name}}. Set up autopay and e-statements below."
 - `boarding.fannie_letter` — HandoffCard — "Within about a month you'll get a letter from Fannie Mae saying it owns your loan. Nothing changes — you still pay Supermortgage."
+- `cd.preparing` — StatusCard — "Preparing your Closing Disclosure." — *32.7 §1: `drafting`/`gated`; Next shows `SM_O62_CD_TARGET_4SBD.due_at`.*
+- `cd.what_changed` — block title — "What changed since your Loan Estimate" — *32.7 §1: the LE→CD row diff from the two figure snapshots; tolerance cures shown as lender credits.*
+- `cd.row.apr` — What-changed row — "APR" — *32.7 §1.*
+- `cd.row.lender_credit` — What-changed row — "Lender credits" — *32.7 §1.*
+- `cd.row.payoff` — What-changed row — "Payoff of your current loan" — *32.7 §1: refinance.*
+- `cd.row.escrow` — What-changed row — "Monthly escrow" — *32.7 §1: refinance.*
+- `cd.row.tolerance_cure` — What-changed row — "Lender credit for a fee above your estimate" — *32.7 §1: a 21.5 cure rendered as a lender credit.*
+- `cd.corrected` — DocumentCard — "Your updated Closing Disclosure" — why: "Compare it with the earlier version — what changed is listed below. Confirming receipt keeps your closing on track." — *32.7 §1 `superseded`; `cd.redisclosed_restart` follows when the three-day wait restarts (T2).*
+- `cd.corrected.post` — DocumentCard — "A corrected Closing Disclosure" — why: "We corrected a figure after closing. Nothing to do — this is for your records." — *32.7 §1: `corrected_post_consummation`, requires_ack=false.*
+- `closing.schedule.type.ron` — line — "Online notary session (video)." — *32.7 §2: the closing type in one line.*
+- `closing.schedule.type.ipen` — line — "In person with the settlement agent. You sign on a screen." — *32.7 §2.*
+- `closing.schedule.type.hybrid` — line — "In person. You sign a paper note; the rest is on a screen." — *32.7 §2.*
+- `closing.schedule.type.wet` — line — "On paper with the settlement agent." — *32.7 §2.*
+- `closing.schedule.fallback` — line — "If the video session can't happen, you can sign on paper with the settlement agent." — *32.7 §2.*
+- `closing.electronic_or_paper` — ChoiceCard — "How would you like to sign?" — helper: "You can always sign on paper. Choosing paper means no electronic note." — options `Sign electronically` · `Sign on paper` — *32.7 §2: A2-4.1-03; the slot you pick with that type commits the choice (T5).*
+- `closing.confirmed` — StatusCard — "Your signing is set for {{date}}." — *32.7 §2: `closing.scheduled`.*
+- `closing.paper_path` — StatusCard — "You'll sign on paper with the settlement agent on {{date}}. No electronic documents or electronic note — your loan is otherwise unchanged." — *32.7 §2 / T5: `closing_type = wet`.*
+- `closing.person.notary` — PersonCard — "Your notary" — *32.7 §2.*
+- `closing.person.settlement_agent` — PersonCard — "Your settlement agent" — *32.7 §2.*
+- `closing.presign.what_to_expect` — line — "Identity is proved inside the session (a photo ID and a few questions). About 15–20 minutes. Have your ID, a quiet room and a device with a camera. Everyone who signs joins." — *32.7 §2: the RON HandoffCard.*
+- `closing.presign.return` — line — "your signed documents and, for a refinance, your cancel window" — *32.7 §2.*
+- `closing.wet.handoff` — HandoffCard — "Your settlement agent will meet you to sign on paper." — *32.7 §2: the paper path.*
+- `closing.wet.what_to_expect` — line — "Bring your ID. The settlement agent walks you through each document; a notary witnesses the signatures." — *32.7 §2.*
+- `closing.all_set` — StatusCard — "All set for {{time}} — join from this link." — *32.7 §3: `pre_session_checks_passed` (T−1).*
+- `closing.package_items` — StatusCard — "At signing you'll see these documents:" — *32.7 §3: the day before; the list is 25.4's package, one StatusCard.*
+- `closing.package.cd_final` — list item — "your final Closing Disclosure" — *32.7 §3.*
+- `closing.package.rescission_notice` — list item — "your notice of the right to cancel (two copies)" — *32.7 §3: refinance.*
+- `closing.package.hpa` — list item — "your mortgage insurance disclosure" — *32.7 §3: with MI.*
+- `closing.package.escrow_statement` — list item — "your initial escrow account statement" — *32.7 §3.*
+- `closing.package.privacy` — list item — "the privacy notice" — *32.7 §3.*
+- `closing.package.state_notices` — list item — "any notice your state requires" — *32.7 §3.*
+- `closing.package.first_payment_letter` — list item — "your first-payment details — payee: Supermortgage, servicing on behalf of {{partner.legal_name}}" — *32.7 §3.*
+- `closing.in_session` — StatusCard — "Your signing session is in progress." — *32.7 §3: the live status line.*
+- `rescission.notice` — DocumentCard — "Your right to cancel" — why: "You have three business days to cancel this refinance (Sundays and federal holidays don't count). Two copies are yours to keep." — *32.7 §4 / T6: H-8/H-9 with requires_ack; `rescission.how` is a quiet link, never a primary button.*
+- `rescission.how.opened` — reply — "Here's how cancelling works — it's your choice, and nothing happens until you confirm." — *32.7 §4 / T8: the ChoiceCard `rescission.confirm` follows.*
+- `rescission.cancelled` — StatusCard — "Your loan is cancelled. Anything you paid is returned within 20 days (by {{date}}). Your documents stay here." — *32.7 §4 / T8: `rescinded → unwinding`; the Record is read-only with badge Cancelled.*
+- `funding.held` — StatusCard — "A final check is in progress." — *32.7 §5 / T9: `held{reason}`; never a wire, bank or fraud detail.*
+- `funding.held.insurance_effective_date` — UploadCard — "Your insurance needs a new effective date" — why: "Your policy must be in force on the day your loan funds. Send the updated declarations page showing the new effective date." — *32.7 §5 / T9: the single borrower ask on a hold.*
+- `funding.held.resigned_document` — UploadCard — "One page needs to be signed again" — why: "A signature was missed or altered. Sign the page again and send it back." — *32.7 §5.*
+- `first_payment.letter` — NoticeCard — "Your first payment" — line: "Your first payment of {{money}} is due {{date}}. Pay Supermortgage, servicing on behalf of {{partner.legal_name}}." — *32.7 §6 item 1: `NTC_SM_FIRST_PAYMENT_LETTER`; the letter's text is the Notice Registry's (T11).*
+- `first_payment.payee` — line — "Supermortgage, servicing on behalf of {{partner.legal_name}}" — *32.7 §6.*
+- `consent.autodraft.optional` — statement — "Autopay is optional. It is never a condition of your loan, and you can turn it off at any time." — *32.7 §6 item 2: Reg E §1005.10(e)(1) (T11).*
+- `consent.autodraft.element.borrower` — element — "Borrower" — *2.3 rule 1.*
+- `consent.autodraft.element.loan` — element — "Loan (last four)" — *2.3 rule 1.*
+- `consent.autodraft.element.account` — element — "Account to be debited (routing, account, type)" — *2.3 rule 1.*
+- `consent.autodraft.element.amount` — element — "Amount" — *2.3 rule 1: fixed or the contractual payment.*
+- `consent.autodraft.element.amount.variable` — element — "If your payment changes, the debit changes with it — we'll tell you at least 10 days before a changed debit." — *2.3 rule 1 / Reg E §1005.10(d).*
+- `consent.autodraft.element.timing` — element — "When (monthly, on the day you choose, 1st–16th)" — *2.3 rule 1.*
+- `consent.autodraft.element.first_debit` — element — "First debit" — *2.3 rule 1.*
+- `consent.autodraft.element.company` — element — "Company name on your bank statement" — *2.3 rule 1: SUPERMORTGAGE.*
+- `consent.autodraft.element.revoke` — element — "To stop: revoke here or by phone. A revocation received 3 or more business days before a scheduled debit stops that debit." — *2.3 rule 1 / Reg E §1005.10(c).*
+- `consent.autodraft.element.date` — element — "Date of authorization" — *2.3 rule 1.*
+- `consent.autodraft.element.esign` — element — "You'll get a copy of this authorization online. It arrives within one business day." — *2.3 rule 1: `SM_AUTODRAFT_COPY_DELIVERY_1BD`.*
+- `consent.esign.servicing` — ConsentCard — "Get your statements and notices electronically" — footer: "Saying yes in chat or on a call doesn't count — check the box and type your name." — *32.7 §6 item 3 / T12: re-offered when E6 covered origination only; statements are paper until active.*
+- `statement.paper_until_esign` — StatusCard — "Your statements come by mail until e-delivery is set up." — *32.7 §6 item 3 / T12.*
+- `escrow.initial_statement` — DocumentCard — "Your initial escrow statement" — why: "How your escrow payment was set: the monthly amount, the first year's disbursements and the cushion." — *32.7 §6 item 4.*
+- `boarding.fannie_letter.what_to_expect` — line — "The letter says Fannie Mae now owns your loan. It's a legal notice, not a bill. Your terms don't change, and Fannie Mae is not your servicer." — *32.7 §6 item 6: 30.4's explainer.*
+- `boarding.fannie_letter.return` — line — "nothing — keep paying Supermortgage as before" — *32.7 §6 item 6.*
+- `boarding.fannie_letter.upload` — UploadCard — "Got the Fannie Mae letter? Send us a copy." — why: "Optional. It confirms the letter reached you. Nothing else changes." — *32.7 §6 item 6 / T13: `ownership_transfer_notices.evidenced` from the upload.*
+- `boarding.fannie_letter.received` — StatusCard — "Thanks — we've noted Fannie Mae's letter. Keep paying Supermortgage as before." — *32.7 §6 / T13.*
 
 ## Servicing
 
@@ -151,20 +304,113 @@ Format: `key` — **card/message** — text — *notes*.
 - `escrow.shortage.choice` — ChoiceCard — "Your escrow is short {{money}}." — options `Spread over 12 months (+{{money}}/mo)` · `Pay {{money}} now`.
 - `escrow.surplus` — StatusCard — "Escrow surplus of {{money}} — refund on its way."
 - `insurance.renewal` — StatusCard — "Your homeowners policy renews {{date}}. If it renews automatically, nothing to do; if you switch carriers, send the new policy."
-- `pmi.ending` — StatusCard — "Your mortgage insurance ends {{date}} — we'll remove it automatically."
+- `pmi.ending` — StatusCard — "Your mortgage insurance ends {{date}}. We'll remove it for you."
 - `pmi.cancel.choice` — ChoiceCard — "Ask to cancel PMI now?"
 - `arm.change` — NoticeCard line — "Your rate changes {{date}}. Estimated new payment {{money}}."
 - `hardship.open` — StatusCard — "If something's changed, tell me — there are options."
 - `hardship.qrpc_summary` — ConfirmCard — "Here's what I understood: {{summary}}. Correct?"
-- `hardship.protection` — line — "Because your complete application arrived more than 37 days before the sale date, the sale can't proceed while we review it."
+- `hardship.protection` — line — "Your complete application arrived more than 37 days before the sale date. So the sale can't go ahead while we review it."
 - `hardship.offer.deadline` — line — "Please respond by {{date}}. If we don't hear from you, the offer is treated as declined."
 - `hardship.tpp` — Loan — "Trial payment {{n}} of 3 — {{money}} due {{date}}."
 - `hardship.forb` — Loan — "Payments paused through {{date}}."
 - `team.assigned` — PersonCard — "Your team: {{team}}. Reach them directly at {{number}}."
+- `hardship.heard` — reply — "I'm sorry to hear that — thank you for telling me. Nothing changes today. I've opened a request for help so we can look at your options together; please check what I understood below."
+- `hardship.id_eval.started` — StatusCard — "We've started an early-help review. Finishing it needs a few details from you — the items are listed under Needed from you."
+- `hardship.id_eval.eligible` — StatusCard — "Early help is available: your situation meets the investor's imminent-default criteria. The next step comes as a card."
+- `hardship.id_eval.review` — StatusCard — "A person is reviewing your early-help request. You'll hear back here."
+- `hardship.application.received` — StatusCard — "Your request for help is in. We'll confirm what's needed within 5 business days."
+- `hardship.application.complete` — StatusCard — "Your application is complete — we're reviewing it now."
+- `hardship.notice.ei` — NoticeCard — "Your payment due {{date}} hasn't arrived — here are your options and your team." — line: "Nothing here is a demand. It explains the help available and how to reach the people assigned to you."
+- `hardship.notice.contact_assigned` — NoticeCard — "Your assigned team." — line: "One team, one direct number, for as long as you need help."
+- `hardship.solicitation.notice` — NoticeCard — "Your mortgage assistance package." — line: "The forms are enclosed, but you don't have to fill them in to be heard — start below and we'll use what you already told us."
+- `hardship.solicitation.start` — ChoiceCard — "Start a request for help?" — options `Start` · `Not now`
+- `hardship.ack.incomplete` — NoticeCard — "We received your application — a few items are missing." — line: "Send these by {{date}}: {{items}}."
+- `hardship.needs.item` — UploadCard — "{{item}}" — why: "Needed to finish your application." — fallback: "Mail or drop off a paper copy if you can't upload."
+- `hardship.ack.complete` — NoticeCard — "Your application is complete." — line: "A decision follows within 30 days of {{date}}."
+- `hardship.offer.notice` — NoticeCard — "You have an offer." — line: "The terms and your response deadline are on the card below."
+- `hardship.offer.compare` — ComparisonCard — "Your offer" — footnote: "Please respond by {{date}}. If we don't hear from you, the offer is treated as declined."
+- `hardship.offer.credit` — line — "Credit reporting: {{effect}}."
+- `hardship.offer.deemed_rejected` — StatusCard — "We didn't hear from you by {{date}}, so the offer is treated as declined — as the offer said. If you'd still like help, tell me and we'll look again."
+- `hardship.tpp.notice` — NoticeCard — "Your trial period plan." — line: "Make the first trial payment of {{money}} by {{date}} and the plan is accepted — no other step needed."
+- `hardship.tpp.pay` — PaymentCard — "Trial payment {{n}} of {{count}}"
+- `hardship.tpp.active` — StatusCard — "Trial period plan active. Payment {{n}} of {{count}} received — {{remaining}} to go."
+- `hardship.denial.notice` — NoticeCard — "About your application." — line: "We couldn't offer {{option}}: {{reasons}}. You can appeal by {{date}} — tap Appeal below."
+- `hardship.appeal.choice` — ChoiceCard — "Appeal this decision?" — options `Appeal` · `Not now` — helper: "Tell us what we should look at again. Appeals are decided by someone who wasn't part of the first review."
+- `hardship.appeal.late` — StatusCard — "Your appeal arrived after the {{days}}-day window closed on {{date}}. A written explanation follows."
+- `hardship.appeal.ineligible` — NoticeCard — "About your appeal." — line: "Your appeal couldn't be reviewed because it arrived after the window closed. Help is still available — ask any time."
+- `hardship.forb.notice` — NoticeCard — "Your forbearance plan." — line: "Payments are paused through {{date}}. Interest still adds up; we'll go over what comes next before the plan ends."
+- `hardship.forb.active` — StatusCard — "Payments paused through {{date}}. No late charges while the plan runs."
+- `hardship.forb.limit` — reply — "Forbearance can't go past 12 months in total, and each extension is at most 3 months (Lender Letter LL-2026-01). Yours is at the limit, so let's look at what comes next: reinstatement, a repayment plan, a payment deferral or a Flex Modification."
+- `hardship.forb.extension` — ChoiceCard — "Extend your forbearance by {{n}} months?" — options `Extend` · `Not now`
+- `hardship.forb.expiry.notice` — NoticeCard — "Your forbearance ends soon." — line: "Let's pick what happens after {{date}}. The options are below."
+- `hardship.forb.exit` — ComparisonCard — "Your forbearance ends {{date}} — what's next?" — options `Reinstate` · `Repayment plan` · `Payment deferral` · `Flex Modification` · `Payoff`
+- `hardship.bk.protections` — StatusCard — "Bankruptcy protections are in effect. We've stopped collection calls and letters. Anything we send is just to keep you informed."
+- `hardship.bk.notice` — NoticeCard — "For your information." — line: "This is for your information only. It is not an attempt to collect from you personally."
+- `hardship.bk.statements` — StatusCard — "Your statements now use the bankruptcy form."
+- `hardship.fc.advice` — NoticeCard — "Your loan has been referred for foreclosure." — line: "Help is still available: you can apply for mortgage assistance at any time — a complete application received at least 37 days before a sale date stops the sale while we review it — or ask how much it takes to bring the loan current. Your team is here."
+- `hardship.fc.reinstate` — ChoiceCard — "How much to bring the loan current?" — options `Send me the figure` · `Not now`
+- `hardship.cease.ack` — NoticeCard — "We'll stop contacting you." — line: "We received your request. We won't reach out to collect; legally required notices continue, and you can contact us here any time."
+- `hardship.cease.confirmed` — StatusCard — "Understood — no more collection calls, texts or e-mails from us. You can still message us here whenever you like."
+- `hardship.qrpc.confirm` — ConfirmCard — "Here's what I understood — correct anything that's off."
+- `hardship.plan.on_hold_fees` — line — "Late charges are on hold while you're on the plan."
 - `case.ack` — line — "Logged as a formal request. You'll have an acknowledgment by {{date}} and an answer by {{date}}."
 - `case.written_procedure` — line — "If you'd like a formal written answer, I've logged this as a request — here's how that works."
 - `payoff.quote_live` — reply — "Today's payoff is about {{money}}. Want a written statement? It arrives within 7 business days."
 - `successor.intro` — message — "I'm sorry for your loss. I can explain what's needed to confirm you as the person responsible for the home, without any pressure about payments."
+- `insurance.fpi.first_notice` — NoticeCard — "Your homeowners insurance {{status}} on {{date}}. Send proof of coverage by {{deadline}}, or we'll buy a policy for the home and charge you for it." — line: "A policy we buy may cost more and cover less than one you choose. The letter has the details."
+- `insurance.fpi.upload` — UploadCard — "Your homeowners insurance" — why: "Proof of coverage closes the insurance notice and stops any charge." — fallback: "Your insurance agent can send it for you."
+- `insurance.fpi.reminder` — NoticeCard — "Reminder: we still haven't received proof of homeowners insurance since {{from}}. Send it by {{deadline}}." — line: "After {{deadline}} we'll place a policy and charge for it back to {{from}}."
+- `insurance.fpi.placed` — NoticeCard — "We placed insurance on the home from {{date}}: {{money}}." — line: "Send your own policy any time — we'll cancel ours and refund any overlap."
+- `insurance.fpi.refund_confirm` — StatusCard — "We cancelled the placed insurance and refunded {{money}} — your own policy covers the home." — line: "The refund posts to your escrow account; the letter shows the dates."
+- `flood.map_change` — NoticeCard — "The flood map changed on {{date}}: your home is now in zone {{zone}}, and flood insurance of {{money}} is required. Send proof of coverage by {{deadline}}." — line: "If nothing arrives by {{deadline}}, we'll place flood coverage and charge for it."
+- `pmi.cancel.intro` — reply — "You can ask to cancel PMI once your balance is at or below 80% of the home's original value and your payments are current. Want me to send the request?"
+- `pmi.request.received` — StatusCard — "Your PMI cancellation request is in. You'll have an answer by {{date}}."
+- `pmi.fee.choice` — ChoiceCard — "To finish the review we need a current value for the home. The valuation fee is {{money}} — refunded if you withdraw before the valuation is ordered." — options `Pay the {{money}} valuation fee` · `Not now`
+- `pmi.fee.received` — StatusCard — "Valuation fee of {{money}} received. The valuation is next."
+- `pmi.withdraw.choice` — ChoiceCard — "Withdraw your PMI cancellation request?" — options `Yes, withdraw` · `Keep going` — helper: "If you paid the valuation fee and no valuation was ordered, it comes back to you."
+- `pmi.withdrawn` — StatusCard — "Your PMI cancellation request is withdrawn. The {{money}} valuation fee is on its way back to you."
+- `pmi.withdrawn.no_refund` — StatusCard — "Your PMI cancellation request is withdrawn. Nothing is owed."
+- `pmi.expired` — StatusCard — "Your PMI cancellation request closed because the valuation fee wasn't paid within 60 days. Ask again any time."
+- `pmi.cancelled` — NoticeCard — "Your mortgage insurance is cancelled as of {{date}}." — line: "Your payment drops from the next statement; the letter has the details."
+- `pmi.cancelled.status` — StatusCard — "PMI removed as of {{date}}."
+- `successor.documents` — NoticeCard — "What we need to confirm you as successor." — line: "Send: {{documents}}. There's no rush from our side, and nothing here asks you to pay anything."
+- `successor.upload` — UploadCard — "{{document}}" — why: "Needed to confirm you as successor in interest." — fallback: "Mail or drop off a copy if you can't upload."
+- `case.noe.opened` — StatusCard — "Your notice of error is logged. Acknowledgment by {{date}}, answer by {{date}}."
+- `case.noe.ack` — NoticeCard — "We received your notice of error on {{received}}." — line: "You'll have our answer by {{date}}. We won't report the disputed payment to the credit bureaus before {{until}}."
+- `case.complaint.ack` — NoticeCard — "We received your complaint." — line: "We'll respond by {{date}}."
+- `case.complaint.with_noe` — line — "I've logged your complaint. Since you say a payment was misapplied, I also logged a formal notice of error. You'll get an acknowledgment within 5 business days and an answer within 30."
+- `payoff.quote_spoken` — reply — "Here's today's payoff figure. Want a written statement? It arrives within 7 business days — the card below sends it."
+- `payoff.written.choice` — ChoiceCard — "Send a written payoff statement?" — options `Yes, send it` · `Not now`
+- `payoff.requested` — StatusCard — "Your written payoff statement is on its way — you'll have it within 7 business days."
+- `payoff.statement` — NoticeCard — "Your payoff statement: {{money}}, good through {{date}}." — line: "We will never change wire instructions by e-mail — call us to confirm before sending funds."
+- `account.current` — badge one-liner — "Next payment {{money}} due {{date}}." — *32.8 §2: Current, autopay off.*
+- `account.current_autopay` — badge one-liner — "Next payment {{money}} due {{date}} · autopay on {{date}}." — *32.8 §2: Current, autopay on (2.3 `next_draft_on`).*
+- `account.payment_due` — badge one-liner — "Due {{date}} — no late charge if received by {{grace_end}}." — *32.8 §2: the grace end is 2.7's (`NOTE_6A_LATE_CHARGE_GRACE_GATE`), never computed here.*
+- `account.past_due` — badge one-liner — "Past due. Late charge {{money}} applied {{date}}." — *32.8 §2: `late_charge_state = assessed` (2.7).*
+- `payment.due` — PaymentCard — "Your payment of {{money}} is due {{date}}." — helper: "Pick a date up to the grace end and the account to pay from." — *32.8 §3.1: amount = installment (2.1); date options = today through the engine's grace end.*
+- `payment.another_way` — PaymentCard — "Pay {{money}} for {{date}} another way." — helper: "Choose a different account, or add one." — *32.8 §3.4: after a returned draft.*
+- `payment.received` — StatusCard — "Received {{money}} on {{date}} — posting now." — *32.8 §3.1: `payment.received` (2.1).*
+- `payment.refund.choice` — ChoiceCard — "Want the held {{money}} back?" — options `Return my {{money}}` · `Keep holding it` — *32.8 §3.3: `suspense_items.open → refunded` (2.2).*
+- `payment.refund.offered` — reply — "I can send that back to you — confirm on the card below." — *32.8 §3.3.*
+- `payment.refunded` — StatusCard — "We returned {{money}} to you on {{date}}." — *32.8 §3.3: `suspense.item.closed{refunded}` (2.2).*
+- `payment.card_offered` — reply — "Here's your payment card — pick the date and the account." — *32.8 §3.1.*
+- `payment.returned.final` — NoticeCard line — "Your bank returned the {{date}} payment again. Autopay is paused until you choose an account below." — *32.8 §3.4: 2.x rule 7 second return → `suspended_returns`.*
+- `autopay.active` — StatusCard — "Autopay is on: {{money}} on {{date}} from ••••{{last4}}. A copy of your authorization is on its way." — *32.8 §4: `AUTODRAFT-CONFIRM-v1` within 1 business day (`SM_AUTODRAFT_COPY_DELIVERY_1BD`).*
+- `autopay.confirm` — NoticeCard line — "Your autopay authorization — keep this copy." — *32.8 §4: `AUTODRAFT-CONFIRM-v1`.*
+- `autopay.suspended.choice` — ChoiceCard — "Autopay is paused after two returned payments. Use the same account again, or pay another way?" — options `Use account ••••{{last4}} again` · `Pay another way` — *32.8 §4: `suspended_returns` re-activation (2.3).*
+- `escrow.statement` — NoticeCard — "Your escrow statement: {{money}} a month from {{date}}." — line: "The statement shows how the new amount was set and any surplus or shortage." — *32.8 §6.2: `NTC_REGX_1024_17I_ANNUAL_ESCROW_STMT` / `NTC_REGX_1024_17F_SHORTAGE`.*
+- `escrow.surplus_credit` — StatusCard — "Escrow surplus of {{money}} — credited to your payments ({{monthly}} a month)." — *32.8 §6.2: under $50 → `credited_to_payments` (3.5).*
+- `escrow.surplus_retained` — StatusCard — "Escrow surplus of {{money}} stays in your escrow account because the loan isn't current." — *32.8 §6.2: `retained` (3.5).*
+- `escrow.surplus.notice` — NoticeCard — "Your escrow surplus refund of {{money}}." — line: "The refund goes out within 30 days of the statement." — *32.8 §6.2: `NTC_SM_ESCROW_SURPLUS_REFUND`.*
+- `escrow.plan.created` — StatusCard — "Shortage spread over {{n}} months: +{{money}} a month from {{date}}." — *32.8 §6.2: `escrow_shortage_plans.active` (3.6).*
+- `escrow.waiver.choice` — ChoiceCard — "Ask to close your escrow account?" — options `Ask to close my escrow account` · `Keep escrow` — helper: "Flood and mortgage-insurance lines can't be waived; a higher-priced loan keeps escrow for at least five years." — *32.8 §6.3: `escrow.requestWaiver`.*
+- `escrow.waiver.offered` — reply — "You can ask to close your escrow account — the card below sends the request and explains the rules." — *32.8 §6.3.*
+- `escrow.waiver.hpml_period` — gate — "Your loan keeps its escrow account until {{date}} — a higher-priced loan keeps escrow for at least five years. Ask again after that date." — *32.8 §6.3: `REGZ_1026_35B1_HPML_ESCROW_GATE` (23.4-T5).*
+- `escrow.waiver.denied` — StatusCard — "Your escrow account stays open for now. You can ask again from {{date}}." — *32.8 §6.3: `NTC_SM_ESCROW_WAIVER_DECISION`.*
+- `statement.mailed` — StatusCard — "Your {{month}} statement was mailed {{date}}." — *32.8 §5: paper cycles and `fallback_mailed` (7.1).*
+- `consent.esign.reverify` — ConsentCard — "Turn e-delivery back on" — helper: "An e-mail to you bounced, so your documents go by mail until you verify your e-mail again. Check the box and type your name, then open the link we send." — *32.8 §5 / 7.4 rule 8: consent `suspect` → mail until re-verified.*
+- `consent.irs_estatement.title` — ConsentCard — "Get your {{year}} Form 1098 electronically" — helper: "Optional. Without it, your 1098 arrives by mail by January 31." — body: the `NTC_IRS_ESTATEMENT_CONSENT_DISCLOSURE` statement — *32.8 §5: `consents{kind=irs_estatement}`, offered in December.*
+- `year_end.1098` — NoticeCard — "Your {{year}} Form 1098 is ready." — line: "It shows the mortgage interest you paid in {{year}}." — *32.8 §5: `NTC_IRS_1098` by January 31 (7.4).*
 
 ## Rate-watch and re-refinance
 
@@ -174,6 +420,34 @@ Format: `key` — **card/message** — text — *notes*.
 - `offer.not_now` — reply — "We'll stay quiet about offers for 90 days. Ask any time."
 - `offer.never` — reply — "Proactive offers are off. You can still ask about refinancing whenever you like; loan messages continue."
 - `refi.same_servicer.funded` — StatusCard — "Done. Your new rate {{rate}} is live. Your old loan is paid off; your escrow balance moved over; your new payment is {{money}} starting {{date}}."
+- `ratewatch.passive` — Loan — "Nothing to do right now. We'll tell you when a change is worth it." — *32.11 §1: the block is passive until an opportunity exists; suppressed opportunities are invisible.*
+- `ratewatch.offer_open` — Loan — "An offer is waiting for you in the thread." — *32.11 §2: a pending OfferCard.*
+- `ratewatch.in_progress` — Loan — "Refinance in progress — your new application is in the thread." — *32.11 §3: the second subject beside "Your loan".*
+- `refi.in_progress` — Record subject label — "Refinance in progress" — *32.11 §3.*
+- `refi.request.received` — reply — "Let me check what a refinance would look like for you today. If it's worth doing, the offer shows up right here." — *32.11 §1: the answer to a typed "can I refinance?"; never a rate before the MLO review.*
+- `refi.name.confirm` — ConfirmCard — "Still you? Your name from your loan record." — *32.11 §3: name on file (source prior_application).*
+- `refi.ssn.confirm` — ConfirmCard — "Your Social Security number on file ends in {{last4}}. Still right?" — helper: "We keep it from your earlier application; it's never shown in full here." — *32.11 §3: identity is on file; nothing is re-typed.*
+- `refi.profile.confirm` — ConfirmCard — "A few things from your earlier application. Still true?" — *32.11 §3: citizenship, marital status, dependents, military service (source prior_application).*
+- `refi.income.fresh` — helper — "Income is stated fresh for every application — this comes from your payroll connection today, not from your earlier file." — *32.11 §3 / 21.2 rule 2.*
+- `consent.esign.extend` — ConsentCard — "Get your refinance documents online, too" — body: "Your e-delivery choice for loan messages now covers the disclosures and notices for this refinance. Check the box and type your name." — *32.11 §3: the scope statement (7.4 class rule).*
+- `consent.standing.manage` — ChoiceCard — "Your payroll and bank connections stay on until you turn them off." — helper: "We only use them when you say yes to an offer. You can turn them off here any time." — options `Keep them on` · `Turn them off` — *32.11 §5 (DELTA-05): revocable from the Loan section.*
+- `consent.standing.off` — receipt — "Standing connections are off. For a future refinance we'll ask you to connect again." — *32.11 §5.*
+- `refi.escrow.moved` — message — "Your escrow balance moves to the new loan — no refund to wait for." — *32.11 §4: 30.3 same-servicer netting (§1024.34(b)(2)).*
+- `refi.same_servicer.autopay` — line — "Autopay: {{autopay}}." — *32.11 §6; the token is one of `refi.autopay.carried_over` · `refi.autopay.reauthorize` · `refi.autopay.none`.*
+- `refi.autopay.carried_over` — token — "carried over"
+- `refi.autopay.reauthorize` — token — "please re-authorize it for your new loan"
+- `refi.autopay.none` — token — "not set up"
+- `offer.rates_line` — OfferCard line — "Your current rate {{rate}} → offered rate {{rate}} ({{rate}} APR)" — *32.11 §2; the three rates in order: current, offered, APR — all from `refi_opportunities` / `pricing_quotes`.*
+- `offer.payment_line` — OfferCard line — "{{n}} monthly principal-and-interest payments of {{money}}; payments do not include taxes and insurance, so your actual payment will be higher" — *32.11 §2: the LE-style statement 20.2 uses.*
+- `offer.savings_line` — OfferCard line — "Saves about {{money}} a month"
+- `offer.no_cost_line` — OfferCard line — "No lender fees and no third-party closing costs charged to you — Supermortgage pays them and they're reflected in the rate" — *32.11 §2: `costs_to_borrower_cents = 0` program default.*
+- `offer.costs_line` — OfferCard line — "Costs charged to you: {{money}}" — *32.11 §2: only if a program ever charges.*
+- `offer.not_a_commitment` — OfferCard line — "This is not a commitment to lend; rates change daily."
+- `offer.lender_line` — OfferCard line — "{{name}}, NMLSR ID {{id}}, is your lender; Supermortgage services your loan for {{name}}." — *32.11 §2; `partner.legal_name`, `partner.nmlsr_id`.*
+- `offer.mlo_attribution` — OfferCard line — "Terms reviewed by {{name}}, NMLSR ID {{id}}." — *32.11 §2 / §7: personalized terms always name the MLO of record (`mlo.review.completed{approved}`).*
+- `offer.good_through` — OfferCard line — "Offer good through {{date}}" — *32.11 §2: `SM_REFI_OPPORTUNITY_EXPIRY_30.due_at`, rendered, never computed.*
+- `ratewatch.standing.on` — Loan — "Your payroll and bank connections stay on — turn them off any time from the card in your thread." — *32.11 §5 (DELTA-05): the Loan section row; the manage card is the act.*
+- `ratewatch.standing.off` — Loan — "Payroll and bank connections are off. For a future refinance we'll ask you to connect again." — *32.11 §5.*
 
 ## Exits
 
@@ -181,6 +455,87 @@ Format: `key` — **card/message** — text — *notes*.
 - `payoff.paid_in_full` — StatusCard — "Paid in full. Your escrow refund of {{money}} is on its way by {{date}}; the lien release records within {{n}} days."
 - `transfer.goodbye` — StatusCard — "Your loan's servicing moves to {{new_servicer}} on {{date}}. Your terms don't change. Payments to us through {{date}}; after that, to them — anything sent to us in the following 60 days is forwarded and counts as on time."
 - `closed` — StatusCard — "Your loan is closed. Your documents stay here."
+- `payoff.statement.components` — StatusCard — "What's in your payoff figure: principal {{principal}} · interest through {{good_through}} {{interest}} · escrow balance {{escrow}} refunded separately · fees and charges {{fees}} · {{per_diem}} more for each day after {{good_through}} · total {{total}}, good through {{good_through}}." — *32.12 §1.1: the components the NoticeCard shows, from 16.1's `payoff_quotes` figures — never a client-side sum.*
+- `payoff.wire_confirm` — line — "Call the number on your statement to confirm the wire instructions before sending; we never change wire instructions by e-mail." — *32.12 §1.1: the positive-confirmation rule beside the wire instructions.*
+- `payoff.statement.updated` — NoticeCard — "Your payoff figure changed." — line: "{{reason}}. The new total is {{money}}, good through {{date}}; this replaces the earlier statement, which we keep on file." — *32.12 §1.1: `NTC_PAYOFF_UPDATED_STMT` after a rate change or a ledger event before funds.*
+- `payoff.shortage` — NoticeCard — "The payoff came in {{money}} short." — line: "{{reason}}. Send the difference by {{date}} the way your statement describes; until then the funds wait unapplied." — *32.12 §1.2 `applied_short`: the difference, the reason, how to send it.*
+- `payoff.shortage.day20` — StatusCard — "Still {{money}} short. If it isn't here by {{date}}, we apply the funds to your loan under your note and the loan stays open." — *32.12 §1.2: the day-20 line.*
+- `payoff.shortage.applied_per_note` — StatusCard — "The payoff funds were applied to your loan under your note on {{date}}. Your loan stays open; {{money}} is still due." — *32.12 §1.2 `uncured_30d`.*
+- `payoff.shortage.cured` — StatusCard — "Thanks — the {{money}} difference arrived {{received}}. Your loan is paid in full as of {{date}}."
+- `payoff.escrow_refund` — StatusCard — "Your escrow balance of {{money}} is being refunded — check mailed / deposited by {{date}}." — *32.12 §1.2: the date is `REGX_1024_34B_PAYOFF_ESCROW_REFUND_20BD.due_at`; a same-servicer refinance credits it instead (32.11).*
+- `payoff.escrow_refund.sent` — StatusCard — "Your escrow refund of {{money}} was sent {{date}}."
+- `payoff.autopay_terminated` — StatusCard — "Autopay has ended — nothing more will be drafted from ••••{{last4}}."
+- `payoff.ratewatch_ended` — StatusCard — "Rate-watch has ended for this loan."
+- `payoff.lien_release.opened` — StatusCard — "We're preparing the release of the lien on your home. It records by {{date}}." — *32.12 §1.2: the date is `STATE_LIEN_RELEASE_DEADLINE.due_at`.*
+- `payoff.lien_release.delivered` — StatusCard — "The release papers went to the trustee on {{date}}; the trustee records the reconveyance."
+- `payoff.lien_release` — NoticeCard — "The lien release is recorded." — line: "Recorded {{date}}, reference {{reference}}. {{path}}" — *32.12 §1.2: `NTC_LIEN_RELEASE_RECORDED` with the recording reference; `path` is `payoff.lien_release.trustee` (CA / WA / CO) or `payoff.lien_release.direct`.*
+- `payoff.lien_release.trustee` — line — "A trustee handles the release in your state: we sent the paid note, the deed of trust and a request for reconveyance to the trustee, who recorded the reconveyance. The recorded copy is enclosed." — *32.12 §1.2: the trustee / public-trustee path (CA / WA / CO) explained in the notice.*
+- `payoff.lien_release.direct` — line — "Your home is free of this mortgage's lien; the recorded copy is enclosed." — *32.12 §1.2: the direct-recording path.*
+- `payoff.shortage.reason.per_diem` — token — "Interest kept accruing after the good-through date on your statement"
+- `payoff.shortage.reason.amount` — token — "The amount sent was less than the payoff total on your statement"
+- `closed.question_logged` — reply — "Your loan is closed, but we're still here. I've logged your question as a request; a person will answer it right here." — *32.12 §1.2 / T8: the Thread stays open for questions.*
+- `transfer.notice` — NoticeCard — "Your loan's servicing moves to {{new_servicer}} on {{date}}." — line: "Your terms don't change. Pay us through {{through}}; from {{date}} pay {{new_servicer}} at {{address}} · {{tollfree}}. Anything sent to us in the 60 days after {{date}} is forwarded and counts as on time." — *32.12 §2: the goodbye / combined MS-2.*
+- `transfer.moving` — StatusCard — "Your loan's servicing moves to {{new_servicer}} on {{date}}. Your terms don't change. Pay us through {{through}}; after that, pay them — anything sent to us in the 60 days after {{date}} is forwarded and counts as on time." — *32.12 §2: the Record one-liner under the "Servicing moving" badge.*
+- `transfer.after` — StatusCard — "Your loan's servicing moved to {{new_servicer}} on {{date}}. Anything sent to us through {{through}} is forwarded and counts as on time — but please send your payments to them." — *32.12 §2: days 1–60 after the transfer.*
+- `transfer.after_window` — StatusCard — "Your loan's servicing moved to {{new_servicer}} on {{date}}. Please send your payments to them." — *32.12 §2: from day 61 the protection line is gone.*
+- `transfer.autopay_ends` — StatusCard — "Autopay with us ends after the {{date}} draft. Set up autopay with {{new_servicer}} after {{transfer_date}}." — *32.12 §2: the last debit is no later than the last pre-cutover due date.*
+- `transfer.payment_forwarded` — StatusCard — "We received your {{money}} payment on {{date}} after servicing moved and forwarded it to {{new_servicer}}. You're protected: it counts as on time. Please update your payments to {{new_servicer}}." — *32.12 §2 / T6: inside `REGX_1024_33C1_LATE_FEE_PROTECTION_60`.*
+- `transfer.payment_forwarded.after_window` — StatusCard — "We received your {{money}} payment on {{date}} after servicing moved and forwarded it to {{new_servicer}}. Please send your payments to {{new_servicer}} directly." — *32.12 §2 / T6: day 61 and later — no protection line.*
+- `successor.notices_declined` — StatusCard — "You've chosen not to receive this loan's regular notices and statements. Anything you ask us yourself, we answer to you." — *32.12 §3: the `NTC_REGX_32C_SII_ACK` choice is respected.*
+- `successor.rfi_answered` — NoticeCard — "Your answer is ready." — line: "The response to your request of {{date}} is enclosed." — *32.12 §3 / T7: `NTC_REGX_36D_RESPONSE` to the successor's own request.*
+- `case.ack.notice` — NoticeCard — "We've received your request." — line: "Your request of {{date}} is logged; the answer comes by {{due}}." — *32.12 §3 / T7: `NTC_REGX_36C_ACK` on the 4.2 clock.*
+- `autopay.ends` — Loan — "Autopay with us ends after {{date}}." — *32.12 §2: the last pre-cutover draft 17.2 stored (`transfer_notice_runs.ach_cancel_by`).*
+- `autopay.terminated` — Loan — "Autopay ended {{date}}." — *32.12 §1.2 / §2: `autodraft.enrollment.terminated`.*
+- `exit.documents_stay` — Record — "Your documents stay here, and you can still ask us anything below." — *32.12 §1.2 / §2: the read-only banner.*
+
+## Seam, gates and errors (32.13)
+
+The lines the borrower API and the shell author themselves (src/runtime/borrower/copy-keys.ts): a refusal renders its `copy_key`, never the handler's reason; the thread's own lines while the agent turn is not yet wired; the cross-cutting cards of 32.13. Grade 8, no forbidden words.
+
+- `thread.assistant_placeholder.intake` — reply — "Got it. I'm looking at your file now and will answer here."
+- `thread.assistant_placeholder.servicing` — reply — "Got it. I'm checking your loan now and will answer here."
+- `thread.card_affirmative_deep_link` — reply — "Tap to confirm so it counts: {{deep_link}}" — *32.1 §6.4: a typed or spoken yes never resolves a card; the deep link is the answer (32.13-T5).*
+- `thread.human_requested` — line — "Bringing a person in now. They'll pick up right here." — *on `human.transfer.requested`.*
+- `thread.card_already_resolved` — receipt — "Already done — nothing more needed."
+- `thread.card_not_pending` — line — "That step is closed. If something changed, tell me and we'll open it again."
+- `thread.card_needs_tap` — line — "This one needs your tap on the card so it counts."
+- `gate.identity.verify_first` — refusal — "Verify your ID first — it takes about a minute." — *`SM_IDENTITY_IAL2_GATE`.*
+- `gate.intent.before_fees` — refusal — "Tell us you'd like to proceed before we charge anything." — *`REGZ_1026_19E2_INTENT_FEE_GATE`.*
+- `gate.joint_intent.each_borrower` — refusal — "Each borrower confirms they're applying together first." — *`SM_O21_JOINT_INTENT_GATE`.*
+- `gate.quote.expired` — refusal — "That quote has expired. Here are today's numbers." — *`SM_QUOTE_VALIDITY_GATE`.*
+- `gate.lock.compliance_pending` — refusal — "We're finishing a check before your rate can lock." — *`SM_O61_COMPLIANCE_PASS_LOCK_GATE`.*
+- `gate.credit.authorize_first` — refusal — "Authorize the credit check first. It's one tap on the card."
+- `gate.closing.ron_unavailable` — refusal — "Online signing isn't offered in your state. We'll set up a signing in person."
+- `gate.closing.esign_consent` — refusal — "Agree to sign electronically first. That's the card above."
+- `gate.esign.consent_first` — refusal — "Turn on e-delivery first. Until then, we mail your documents."
+- `gate.counteroffer.window` — refusal — "That offer isn't open right now."
+- `gate.lossmit.accept_window` — refusal — "That offer isn't open right now. A person can go over your options."
+- `gate.rov.too_late` — refusal — "A value review isn't possible after closing."
+- `gate.rescission.window` — refusal — "The cancel window isn't open."
+- `gate.closing.not_clear_yet` — refusal — "Your file isn't clear to close yet. We'll let you know when it is."
+- `gate.decision.pending` — refusal — "Your decision is still in review."
+- `auth.sign_in` — refusal — "Sign in with a code to continue."
+- `auth.session_expired` — refusal — "You were signed out after a while away. Sign in again."
+- `auth.step_up` — refusal — "One more check before we show that."
+- `auth.fresh_code` — refusal — "For payments we ask for a fresh code. We just sent one."
+- `auth.code_wrong` — refusal — "That code didn't match. Try again."
+- `auth.code_expired` — refusal — "That code expired. We can send a new one."
+- `auth.code_locked` — refusal — "Too many tries. Ask for a new code."
+- `auth.passkey_failed` — refusal — "That passkey didn't work. Use a code instead."
+- `auth.identity_match_failed` — refusal — "Those details didn't match what we have. Try again or talk to a person."
+- `error.not_yours` — refusal — "That isn't on your account."
+- `deeplink.expired` — refusal — "That link has expired. Sign in and we'll take you there."
+- `deeplink.unknown` — refusal — "That link doesn't work. Sign in and we'll find your place."
+- `documents.not_available` — refusal — "That document isn't available here."
+- `identity.no_application` — refusal — "Start your application first, then verify your ID."
+- `identity.session_unknown` — refusal — "We couldn't find that ID check. Start it again from the card."
+- `error.generic` — refusal — "Something didn't go through. Nothing was changed — try again."
+- `error.human_takes_over` — line — "A person is taking over from here. Your cards and record stay as they are."
+- `error.read_only` — refusal — "This file is closed, so that can't change. Your documents stay here, and you can still ask a question or reach a person." — *32.13-T16: after a terminal state only `case.open`, `human.request`, document download and a contact update go through.*
+- `person.human_agent` — PersonCard — "{{name}} is here and has your file. You can keep talking right here." — *SQ-30: after `human.transfer.completed`.*
+- `connect.failed.fallback` — line — "We couldn't connect just now. We'll take documents instead." — *32.1 §10: a vendor outage; no error code is shown (32.13-T12).*
+- `income.upload.fallback` — UploadCard — "Send your most recent pay stub and last year's W-2." — *SQ-03: the fallback when the payroll connection fails.*
+- `documents.upload.fallback` — UploadCard — "Send us the document instead" — why: "The connection didn't work, so a copy from you does the same job." — *T-X-12: a non-income connector fails.*
 
 ## Channel variants (rules)
 

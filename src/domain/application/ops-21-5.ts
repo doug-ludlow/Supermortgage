@@ -461,7 +461,10 @@ export class ToleranceService {
       delivery_channel: null, delivered_at: null, mailed_at: null, issued_on: null, esign_consent_id: null, mailing_proof_id: null, deemed_receipt_date: null, received_at: null, receipt_evidence: null, effective_receipt_date: null, latest_receipt_on: null, earliest_consummation_date: null, gate_opened_at: null, late: false };
     s.revised.set(i.disclosure_id, row); s.le_version = le_version;
     for (const cc of ccs) { cc.revised_le_disclosure_id = i.disclosure_id; if (cc.status === "evaluated_valid") cc.status = "revised_le_scheduled"; }
-    this.append("disclosure.le.rendered", i.application_id, { disclosure_id: i.disclosure_id, le_version, basis: "revised", data_hash: hash, template_version: H24_TEMPLATE_VERSION, cc_ids: i.cc_ids, apr: apr.apr_disclosed, tip_pct: calcs.tip_pct, pi_cents: S(calcs.pi_cents) });
+    // the figure snapshot the borrower surface diffs against the prior version (32.4 "What changed": computed from two snapshots, never free text)
+    this.append("disclosure.le.rendered", i.application_id, { disclosure_id: i.disclosure_id, le_version, basis: "revised", data_hash: hash, template_version: H24_TEMPLATE_VERSION, cc_ids: i.cc_ids, apr: apr.apr_disclosed, tip_pct: calcs.tip_pct, pi_cents: S(calcs.pi_cents),
+      rate_pct: i.pricing.rate_pct, loan_cents: S(i.loan_cents), points_cents: S(i.pricing.points_cents), lender_credits_cents: S(totals.lender_credits_cents), total_closing_costs_cents: S(totals.total_closing_costs_cents), reason: row.reason, reasons: row.reasons,
+      fees: classed.map((f) => ({ fee_code: f.fee_code, description: f.description, le_section: f.le_section, amount_cents: S(f.amount_cents), baseline_amount_cents: S(f.baseline_amount_cents) })) });
     // current estimates follow the rendered figures (step 1: fee_items.current_amount_cents with source and time)
     for (const f of classed) { const b = s.items.find((x) => x.fee_code === f.fee_code); if (b && b.current_amount_cents !== f.amount_cents) { b.history.push({ at: this.clock.now(), from_cents: b.current_amount_cents, to_cents: f.amount_cents, cause: `LE v${le_version} render`, cc_id: null, actor: "agent:disclosure" }); b.current_amount_cents = f.amount_cents; } }
     return row;

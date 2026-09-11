@@ -15,7 +15,7 @@ export function UploadCard({ card, timezone, onResolve, onUpload, busy, error }:
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | undefined>();
   const pending = card.status === "pending";
-  const heading = p.title ?? copy(card.copy_key);
+  const heading = p.title || copy(card.copy_key, p.copy_tokens);
 
   const onFile = async (file: File) => {
     setFileName(file.name);
@@ -38,6 +38,16 @@ export function UploadCard({ card, timezone, onResolve, onUpload, busy, error }:
       {p.mismatch ? (
         <p className="sm-error" role="alert">
           {copy("upload.mismatch", { detected: p.mismatch.detected, expected: p.mismatch.expected })}
+        </p>
+      ) : null}
+      {p.stale ? (
+        <p className="sm-error" role="alert" data-testid="upload-stale">
+          {copy("upload.stale", { date: p.stale.date, n: String(p.stale.n) })}
+        </p>
+      ) : null}
+      {p.reason_copy_key ? (
+        <p className="sm-primary-text" data-testid="upload-reason">
+          {copy(p.reason_copy_key, p.copy_tokens)}
         </p>
       ) : null}
       <p>

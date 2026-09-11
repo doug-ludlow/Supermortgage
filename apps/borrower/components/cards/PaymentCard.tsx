@@ -5,6 +5,7 @@ import { CardFrame, nowIso } from "./CardFrame";
 import type { CardComponentProps } from "./types";
 import type { PaymentCardEvidence } from "@/lib/types/cards";
 import { formatDate, formatMoney, mask4, sumCents, toCents } from "@/lib/format";
+import { paymentTitle } from "@/components/flows/8-servicing-payments";
 
 /**
  * 01 §3.12 — one-time payment, extra principal, or autopay change. Never shows a full
@@ -24,7 +25,7 @@ export function PaymentCard({ card, timezone, onResolve, busy, error }: CardComp
   const parsed = parseDollarsToCents(amountText);
   const late = p.include_late_charge_option?.late_charge_cents;
   const total = parsed !== null ? (includeLate && late ? sumCents(parsed, late) : parsed) : null;
-  const title = p.title ?? (p.mode === "extra_principal" ? "Extra principal" : p.mode === "autopay_change" ? "Change autopay" : "Make a payment");
+  const title = paymentTitle(card.copy_key, p);   // 32.8 §3.1: `payment.due` / `payment.another_way` with the server's tokens; the mode's default otherwise
   const ready = pending && total !== null && total > 0n && (p.mode === "extra_principal" || date) && (account !== "new" || (routing.length === 9 && acct.length >= 4));
 
   const submit = () => {

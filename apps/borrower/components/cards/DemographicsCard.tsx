@@ -83,12 +83,12 @@ export function DemographicsCard({ card, timezone, onResolve, busy, error }: Car
           {p.statement_text}
         </p>
       </div>
-      {group("Ethnicity", p.ethnicity, eth, setEth)}
-      {group("Race", p.race, race, setRace)}
+      {group("Ethnicity", p.ethnicity_options ?? p.ethnicity ?? [], eth, setEth)}
+      {group("Race", p.race_options ?? p.race ?? [], race, setRace)}
       <fieldset className="sm-fieldset">
         <legend>Sex</legend>
         <div className="sm-radios">
-          {[...p.sex, { id: DECLINE_ID, label: "I do not wish to provide" }].map((o) => (
+          {[...(p.sex_options ?? p.sex ?? []), { id: DECLINE_ID, label: "I do not wish to provide" }].map((o) => (
             <label key={o.id}>
               <input type="radio" name={`${id}-sex`} value={o.id} checked={sex === o.id} onChange={() => setSex(o.id)} disabled={!pending} />
               {o.label}

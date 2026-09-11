@@ -13,6 +13,7 @@
  */
 import type { AnyCardInstance, ResolveRequest, ResolveResponse, Uuid } from "@/lib/types/cards";
 import type { ApiError, BorrowerMe, BorrowerRecord, ThreadMessage } from "@/lib/types/record";
+import { subjectId, toMe, toRecord, toThread } from "./adapt";   // 32.13: wire shapes (serialize.ts) → the shell's types
 
 export const BASE_PATH = "/app";
 
@@ -53,10 +54,10 @@ async function request<T>(method: "GET" | "POST", path: string, body?: unknown, 
 
 /** 02 §7 routes, one function each. Paths are relative to /v1/borrower. */
 export const api = {
-  me: () => request<BorrowerMe>("GET", "/v1/borrower/me"),
-  record: (subject: string) => request<BorrowerRecord>("GET", `/v1/borrower/record?subject=${encodeURIComponent(subject)}`),
-  thread: (after?: string) => request<{ messages: ThreadMessage[]; cards: AnyCardInstance[]; next_after?: string }>("GET", `/v1/borrower/thread${after ? `?after=${encodeURIComponent(after)}` : ""}`),
-  sendMessage: (body_text: string, subject?: { application_id?: Uuid; loan_id?: Uuid }) => request<{ message: ThreadMessage }>("POST", "/v1/borrower/messages", { body_text, subject }),
+  me: async () => toMe(await request<Record<string, unknown>>("GET", "/v1/borrower/me")),
+  record: async (subject: string): Promise<BorrowerRecord> => toRecord(await request<Record<string, unknown>>("GET", `/v1/borrower/record?subject=${encodeURIComponent(subjectId(subject))}`)),
+  thread: async (after?: string): Promise<{ messages: ThreadMessage[]; cards: AnyCardInstance[]; next_after?: string }> => toThread(await request<Record<string, unknown>>("GET", `/v1/borrower/thread?limit=500${after ? `&after=${encodeURIComponent(after)}` : ""}`)),
+  sendMessage: (body_text: string, subject?: { application_id?: Uuid; loan_id?: Uuid }) => request<{ message: ThreadMessage }>("POST", "/v1/borrower/messages", { text: body_text, ...(subject && (subject.application_id || subject.loan_id) ? { subject: { application_id: subject.application_id ?? null, loan_id: subject.loan_id ?? null } } : {}) }),
   /** Card resolution → mapped command (02 §2); idempotency = card_instance_id. */
   resolveCard: (card_instance_id: Uuid, body: ResolveRequest) =>
     request<ResolveResponse>("POST", `/v1/borrower/cards/${encodeURIComponent(card_instance_id)}/resolve`, body, { headers: { "idempotency-key": card_instance_id } }),

@@ -41,12 +41,15 @@
  *   Errors on these routes are `{ code, gate?, copy_key }` (02 §7); responses pass the allow-list serializer (src/runtime/borrower/serialize.ts).
  *
  * Every route but the two probes and the borrower API requires `Authorization: Bearer <API_TOKEN>` (or the cookie /login sets).
- * Refusals from the command bus answer 409 with the guardrail's code and citation; bad input 400; a
- * tool whose section service is not wired yet 501. Money in JSON is a decimal string of cents.
+ * Refusals from the command bus answer 409 with the guardrail's code and citation — so do a section's own typed refusals
+ * (32.1's CardRefused, 25.3/26.3's RescissionRefused: `{ error: refused, code, reason }`); bad input 400; a tool whose
+ * section service is not wired yet 501. Money in JSON is a decimal string of cents.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
 import { CommandRefused, AiPathUnavailable } from "../app/commands.ts";
+import { CardRefused } from "../app/tools/section32-1.ts";
+import { RescissionRefused } from "../domain/compliance-disclosures/ops-25-3.ts";
 import { PortUnavailable } from "../app/tools.ts";
 import { RoleDenied } from "../app/roles.ts";
 import type { Actor } from "../kernel/events/index.ts";
@@ -207,6 +210,7 @@ export function createApiServer(opts: ServerOptions): Server {
         const b = await readJson(req);
         const actor = actorOf(b["actor"]);
         if (!b["render"] || typeof b["render"] !== "object" || !b["mlo"] || typeof b["mlo"] !== "object" || !b["delivery"] || typeof b["delivery"] !== "object") throw new RangeError("render, mlo { review_id, nmlsr_id } and delivery { channel } are required");
+        // 32.5 T9: `delivery.deliveries[]` (one per consumer) rides through as-is — the bridge chooses LoanEstimateService.deliverPerBorrower; `delivery.channel` stays required as the governing channel
         const render = reviveCents(b["render"]) as Record<string, unknown>;
         const input: LoanEstimateDeliveryInput = { render: { ...render, as_of: plainDateOf(render["as_of"]), fees: ((render["fees"] as Record<string, unknown>[] | undefined) ?? []).map((f) => ({ ...f, estimated_at: plainDateOf(f["estimated_at"]) })) } as unknown as LoanEstimateDeliveryInput["render"], mlo: b["mlo"] as LoanEstimateDeliveryInput["mlo"], delivery: b["delivery"] as LoanEstimateDeliveryInput["delivery"] };
         const r = await deliverLoanEstimate(runtime, applicationId, input, actor);
@@ -255,11 +259,14 @@ export function createApiServer(opts: ServerOptions): Server {
         if (!rec) done(404, { error: "no_such_batch" }); else done(200, rec.data);
         return;
       }
-      if (method === "POST" && path === "/v1/sweep") { const report = await runtime.sweep(); done(200, report, { due: report.due, breaches: report.breaches.length }); return; }
+      if (method === "POST" && path === "/v1/sweep") { if (borrower.flows) await borrower.flows.tick(runtime.clock.now()); const report = await runtime.sweep(); done(200, report, { due: report.due, breaches: report.breaches.length }); return; }
       if (consoleServer && (path === "/" || path === "/index.html" || path.startsWith("/api/"))) { consoleServer.emit("request", req, res); return; }
       done(404, { error: "not found" });
     } catch (e) {
       if (e instanceof CommandRefused) { done(409, { error: "refused", command: e.command, code: e.code, citation: e.citation, reason: e.message }, { refused: e.code }); return; }
+      // a section's own typed refusal thrown by its tool (not a bus guardrail): the same 409 shape, its code and reason kept (32.5 T10, 32.7 T6)
+      if (e instanceof CardRefused) { done(409, { error: "refused", code: e.code, reason: e.message }, { refused: e.code }); return; }
+      if (e instanceof RescissionRefused) { done(409, { error: "refused", code: e.code, citation: e.citation, reason: e.message }, { refused: e.code }); return; }
       if (e instanceof BoardingRefused) { done(409, { error: "refused", command: "applications.fund", code: e.code, citation: "30.2 rule 2 / OB-018: boarding is refused until the source record is corrected", reason: e.message, application_id: e.applicationId, validations: e.validations }, { refused: e.code }); return; }
       if (e instanceof ApplicationNotFound) { done(404, { error: "no_such_application", reason: e.message }); return; }
       if (e instanceof RoleDenied) { done(403, { error: "role_denied", reason: e.message }); return; }

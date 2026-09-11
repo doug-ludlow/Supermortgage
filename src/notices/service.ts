@@ -54,6 +54,8 @@ export interface NoticeServiceDeps {
   readonly printMail: PrintMailPort;
   readonly edelivery: EdeliveryPort;
   readonly federalCalendar?: Calendar;
+  /** 32.12 backend delta: a shared map so notices rendered in one unit of work are readable in the next (17.2's content checklist over a notice rendered by an earlier command; the borrower flows' NoticeCard plain-language block). Default: private to the instance. */
+  readonly notices?: Map<string, Notice>;
 }
 
 export class NoticeHeld extends Error {
@@ -63,8 +65,8 @@ export class NoticeHeld extends Error {
 
 export class NoticeService {
   private readonly deps: NoticeServiceDeps;
-  private readonly notices = new Map<string, Notice>();
-  constructor(deps: NoticeServiceDeps) { this.deps = deps; }
+  private readonly notices: Map<string, Notice>;
+  constructor(deps: NoticeServiceDeps) { this.deps = deps; this.notices = deps.notices ?? new Map<string, Notice>(); }
 
   get(id: string): Notice { const n = this.notices.get(id); if (!n) throw new RangeError(`no notice ${id}`); return n; }
   all(): readonly Notice[] { return [...this.notices.values()]; }

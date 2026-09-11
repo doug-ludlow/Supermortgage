@@ -266,7 +266,7 @@ import { DeliveryBuildService, FakeEarlyCheck } from "../domain/secondary/ops-29
 import { CommitmentService, FakePewl, FakeSalesDesk } from "../domain/secondary/ops-29-1.ts";
 import { ToleranceService } from "../domain/application/ops-21-5.ts";
 import { CompanionDisclosureService } from "../domain/application/ops-21-3.ts";
-import { LoanEstimateService, type LeRenderInput, type EsignConsent, type DeliveryChannel } from "../domain/application/ops-21-2.ts";
+import { LoanEstimateService, AGENT as LE_AGENT, PHOENIX_CREDITOR, civilDate, type LeRenderInput, type EsignConsent, type DeliveryChannel } from "../domain/application/ops-21-2.ts";
 import { FixturePricing, type PricingPort, type RateSheet as LockRateSheet } from "../domain/application/ops-21-4.ts";
 import type { RateSheet as PricedRateSheet } from "../domain/leads-pricing/ops-20-4.ts";
 import { FakeDuPort } from "../domain/underwriting/ops-23-1.ts";
@@ -390,7 +390,10 @@ export function originationServices(clock: Clock): OriginationServiceSet {
 export interface LoanEstimateDeliveryInput {
   readonly render: LeRenderInput;
   readonly mlo: { readonly review_id: string; readonly nmlsr_id: string };
-  readonly delivery: { readonly channel: DeliveryChannel; readonly at?: string; readonly consent?: EsignConsent | null; readonly receipt?: { readonly kind: "authenticated_view" | "acknowledgement" | "esignature"; readonly at: string; readonly borrower_id: string } | null };
+  /** `mailing_proof_id`: the print vendor's mailing-date evidence a `channel: "mail"` delivery needs (21.2 rule: a mailed LE is never issued without it). */
+  readonly delivery: { readonly channel: DeliveryChannel; readonly at?: string; readonly consent?: EsignConsent | null; readonly mailing_proof_id?: string | null; readonly receipt?: { readonly kind: "authenticated_view" | "acknowledgement" | "esignature"; readonly at: string; readonly borrower_id: string } | null;
+    /** 7.4 rule 4 / 32.5 §7 (T9): one delivery per consumer when their E-SIGN states differ — `LoanEstimateService.deliverPerBorrower`; `channel` then only names the governing (mailed) channel. */
+    readonly deliveries?: readonly { readonly borrower_id: string; readonly channel: DeliveryChannel; readonly consent?: EsignConsent | null; readonly mailing_proof_id?: string | null }[] };
 }
 /**
  * Renders, MLO-approves, delivers and records receipt of the initial LE through 21.2's own LoanEstimateService in ONE
@@ -405,6 +408,8 @@ export async function deliverLoanEstimate(rt: Runtime, applicationId: string, in
   let escalations: EscalationService | undefined; let out!: Awaited<ReturnType<typeof deliverLoanEstimate>>;
   const r = await rt.uow.run({ applicationId }, async (ctx) => {
     escalations = new EscalationService(ctx.events, ctx.clock);
+    // the runtime-wide section services (21.3 companions, 21.5 tolerance, 25.2) observe this unit of work like any command's: `fee.baseline.set` and the `disclosure.le.*` events reach them
+    rt.originationServices.forCommand(ctx, store, escalations);
     const trid = ctx.events.ofType("application.trid_received").filter((e) => e.applicationId === applicationId).at(-1);
     if (!trid) throw new RangeError("no application.trid_received on the application's log (21.1's six items first)");
     const svc = new LoanEstimateService({ events: ctx.events, clock: ctx.clock, escalations });
@@ -413,13 +418,67 @@ export async function deliverLoanEstimate(rt: Runtime, applicationId: string, in
     svc.openMloReview(row.disclosure_id);
     svc.mloDecision(row.disclosure_id, { review_id: input.mlo.review_id, decision: "approved", data_hash: row.data_hash, nmlsr_id: input.mlo.nmlsr_id });
     const at = input.delivery.at ?? ctx.clock.now();
-    svc.deliver(row.disclosure_id, { channel: input.delivery.channel, at, consent: input.delivery.consent ?? null });
+    if (input.delivery.deliveries?.length) svc.deliverPerBorrower(row.disclosure_id, { deliveries: input.delivery.deliveries, at });
+    else svc.deliver(row.disclosure_id, { channel: input.delivery.channel, at, consent: input.delivery.consent ?? null, mailing_proof_id: input.delivery.mailing_proof_id ?? null });
     const rec = input.delivery.receipt; const final = rec ? svc.recordReceipt(row.disclosure_id, rec) : svc.get(row.disclosure_id);
-    store.put("disclosures", row.disclosure_id, { application_id: applicationId, kind: "le", le_version: 1, status: final.status, data_hash: row.data_hash, issued_on: final.issued_on, effective_receipt_date: final.effective_receipt_date, delivery_channel: final.delivery_channel }, actor, ctx.clock.now());
+    store.put("disclosures", row.disclosure_id, { application_id: applicationId, kind: "le", le_version: 1, status: final.status, data_hash: row.data_hash, issued_on: final.issued_on, effective_receipt_date: final.effective_receipt_date, delivery_channel: final.delivery_channel, ...(final.deliveries ? { deliveries: final.deliveries } : {}) }, actor, ctx.clock.now());
     out = { disclosure_id: row.disclosure_id, data_hash: row.data_hash, status: final.status, issued_on: final.issued_on, effective_receipt_date: final.effective_receipt_date, le_due_on: a.le_due_on, events: 0 };
     return out;
   }, { clock: rt.clock, commit: async (q) => { await rt.entities.save(store.versionsSince(mark), { applicationId }, q); for (const e of escalations?.list() ?? []) await rt.escalationRepo.save(e, q); } });
   return { ...out, events: r.events.length };
+}
+
+// ───────────────────────────── the daily sweeps 21.2 and 21.4 describe (no scheduler ran them until the borrower surface needed their outcomes) ─────────────────────────────
+export interface OriginationSweepReport { readonly at: string; readonly deemed: string[]; readonly warned: string[]; readonly expired: string[] }
+const PRICING_AGENT: Actor = { kind: "agent", id: "pricing" };
+/**
+ * 21.2's mailbox presumption sweep (`LoanEstimateService.deemReceived`: "once the third specific business day has passed with no
+ * evidence, the LE is deemed received") and 21.4's expiry playbook (`SM_LOCK_EXPIRY_WARN_7` → `expireLock{op: warn}` on the warning
+ * day; `SM_LOCK_EXPIRY_DEADLINE` → `expireLock{op: expire}` at the expiration instant), run once per pass over every application.
+ * Nothing here computes a date: the deemed date is the one 21.2 wrote on `disclosure.le.issued`, the warning/expiry days are the
+ * Timer Engine's own `due_date`/`due_at`. Called by the borrower flows' tick (src/runtime/borrower/flows) and by POST /v1/sweep.
+ */
+export async function originationDailySweep(rt: Runtime, nowIso: string = rt.clock.now()): Promise<OriginationSweepReport> {
+  const report: OriginationSweepReport = { at: nowIso, deemed: [], warned: [], expired: [] };
+  const today = civilDate(nowIso, PHOENIX_CREDITOR.time_zone);
+  const issued = await rt.db.query<{ application_id: string; payload: Record<string, unknown> }>(
+    `SELECT e.application_id, e.payload FROM loan_events e WHERE e.type = 'disclosure.le.issued' AND e.application_id IS NOT NULL AND coalesce(e.payload->>'in_person', 'false') = 'false'
+       AND NOT EXISTS (SELECT 1 FROM loan_events r WHERE r.type = 'disclosure.le.received' AND r.application_id = e.application_id AND r.payload->>'disclosure_id' = e.payload->>'disclosure_id') ORDER BY e.sequence`);
+  for (const row of issued) {
+    const disclosureId = String(row.payload["disclosure_id"] ?? ""); const deemedOn = String(row.payload["deemed_receipt_date"] ?? "");
+    if (!disclosureId || !deemedOn || today < deemedOn) continue;
+    const applicationId = row.application_id;
+    const store = new EntityStore(); store.seed(await rt.entities.load({ applicationId })); const mark = store.versionCount();
+    let escalations: EscalationService | undefined;
+    await rt.uow.run({ applicationId }, async (ctx) => {
+      escalations = new EscalationService(ctx.events, ctx.clock); rt.originationServices.forCommand(ctx, store, escalations);
+      // exactly the two events `LoanEstimateService.deemReceived` appends (ops-21-2.ts): the effective receipt date is the row's own deemed date
+      ctx.events.append({ type: "disclosure.le.deemed_received", applicationId, aggregate: { kind: "disclosure", id: disclosureId }, actor: LE_AGENT, payload: { application_id: applicationId, disclosure_id: disclosureId, deemed_receipt_date: deemedOn, effective_receipt_date: deemedOn } });
+      ctx.events.append({ type: "disclosure.le.received", applicationId, aggregate: { kind: "disclosure", id: disclosureId }, actor: LE_AGENT, payload: { application_id: applicationId, disclosure_id: disclosureId, evidence: "mailbox_rule", received_on: null, effective_receipt_date: deemedOn } });
+      const cur = store.get("disclosures", disclosureId);
+      if (cur) store.put("disclosures", disclosureId, { ...cur.data, status: "deemed_received", effective_receipt_date: deemedOn, receipt_evidence: "mailbox_rule" }, LE_AGENT, ctx.clock.now());
+    }, { clock: rt.clock, commit: async (q) => { await rt.entities.save(store.versionsSince(mark), { applicationId }, q); for (const e of escalations?.list() ?? []) await rt.escalationRepo.save(e, q); } });
+    report.deemed.push(disclosureId);
+  }
+  // 21.4: the warning day (the engine's due_date) and the expiration instant (the engine's due_at) — the playbook runs through 21.4's own tool.
+  // Only while the application is still the subject: once 30.2 has linked its loan (applications.loan_id) the lock was consummated (`closing.consummated`
+  // satisfied SM_LOCK_EXPIRY_DEADLINE) and a warning day has nothing to warn — and 21.4's events name the application alone, which after boarding would
+  // break the id grammar (docs/ARCHITECTURE.md "One product": keyed by the loan after the hand-off; lifecycle.test g).
+  const due = await rt.db.query<{ id: string; code: string; application_id: string; due_at: string | null; due_date: string | null }>(
+    `SELECT t.id, t.code, t.application_id, t.due_at, t.due_date::text AS due_date FROM timers t JOIN applications a ON a.id = t.application_id
+       WHERE t.status = 'armed' AND a.loan_id IS NULL AND ((t.code = 'SM_LOCK_EXPIRY_WARN_7' AND t.due_date <= $2::date) OR (t.code = 'SM_LOCK_EXPIRY_DEADLINE' AND t.due_at <= $1)) ORDER BY t.due_at`, [nowIso, today]);
+  for (const t of due) {
+    const store = new EntityStore(); store.seed(await rt.entities.load({ applicationId: t.application_id }));
+    const live = store.list("locks", (d) => d.application_id === t.application_id && (d.status === "executed" || d.status === "confirmed")).map((r) => r.data).sort((a, b) => Number(b.version ?? 0) - Number(a.version ?? 0))[0];
+    if (!live) continue;
+    const closing = store.list("closings", (d) => typeof d.scheduled_at === "string").map((r) => r.data).at(-1);
+    const closing_scheduled_on = closing?.scheduled_at ? civilDate(String(closing.scheduled_at), PHOENIX_CREDITOR.time_zone) : null;
+    try {
+      if (t.code === "SM_LOCK_EXPIRY_WARN_7") { await rt.execute({ process: "21.4", name: "expireLock", loanId: "", applicationId: t.application_id, actor: PRICING_AGENT, input: { application_id: t.application_id, lock_id: String(live.lock_id), op: "warn", at: nowIso, closing_scheduled_on } }); report.warned.push(String(live.lock_id)); }
+      else { await rt.execute({ process: "21.4", name: "expireLock", loanId: "", applicationId: t.application_id, actor: PRICING_AGENT, input: { application_id: t.application_id, lock_id: String(live.lock_id), op: "expire", at: nowIso } }); report.expired.push(String(live.lock_id)); }
+    } catch (e) { if (!/NOT_EXPIRED|LOCK_STATE/.test(String((e as Error).message))) throw e; }
+  }
+  return report;
 }
 
 // ───────────────────────────── the funded payload and the closing facts from the application's own record ─────────────────────────────

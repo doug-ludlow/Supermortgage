@@ -32,6 +32,7 @@ import { plainDate as D, type PlainDate } from "../../kernel/calendar/date.ts";
 import type { EscalationKind } from "../escalations.ts";
 import type { TransferType } from "../../domain/transfers/batch.ts";
 import { transferDateGate } from "../../domain/transfers/batch.ts";
+import { respaEffectiveDate } from "../../domain/transfers/respa.ts";
 import type { LoanListVersion } from "../../domain/transfers/inbound.ts";
 import { transferPlan, approvePlan, form629Package, custodianMatrixSelection, validateLoanList, submitLoanListVersion, reconcileQxDownload, attestationGate, qxDifferenceResolution, attestLoanList, parseApprovalLetter, applyFnmaOutcome, computeDeadlines, fnmaResponseDraft, sendFnmaCorrespondence, form101TerminationDraft, submitForm101Termination, partnerAccessRevocation, partnerNotification, decisionRecord, proposeBatch, transitionTransferOut, recordNotice, counselReviewAllowed, fnmaProcessingConfirmation, quickExchangeCadenceOut, goodbyeRunForBatch, payoffAfterAttestation, form629PortalTaskOpened, form582TerminationReflected, type Form582FilingRecord, type TerminationBasis, type Form629Row, type TransferOutBatch, type TransferOutStatus, type TransitionEvidence, type FnmaInstruction, type NoticeKind, type OutEvent, type QxStatus } from "../../domain/transfers/ops-17-1.ts";
 
@@ -103,7 +104,11 @@ export const TOOLS_17_1: readonly ToolDef[] = defineTools("17.1", AGENT, [
           const goodbye = to === "notice_window" || to === "cutover" ? goodbyeRunStatus(rt, b) : null;
           const pb = partnerBatches(rt, b);
           const t = transitionTransferOut(b, to, { ...evidenceOf(i, ctx), ...(attested ? { attested_version: attested } : {}), ...(goodbye ? { goodbye_run_status: goodbye } : {}), ...(pb ? { partner_batches: pb } : {}) }, today(i, ctx));
-          saveBatch(rt, t.batch, ctx); emitAll(ctx, b.batch_id, t.events);
+          // 32.12 backend delta (additive): the approval carries the 1.3 / 17.2 notice facts the registry's goodbye and combined clocks key on — `notice_mode` (separate | combined) and `respa_effective_date` (= transfer_date unless the first installment due to the transferee differs; respa.ts respaEffectiveDate) — so REGX_1024_33B3_GOODBYE_15 / COMBINED_15 arm on `transfer.batch.approved{direction=out, notice_mode}` with their anchor
+          const noticeMode = str(i, "notice_mode") === "combined" ? "combined" : "separate";
+          const respaEffective = optDate(i, "respa_effective_date") ?? respaEffectiveDate(b.transfer_date, i.installments_due_on_1st !== false);
+          const withNotice = t.events.map((e) => (e.type === "transfer.batch.approved" ? { ...e, payload: { notice_mode: noticeMode, respa_effective_date: respaEffective, ...e.payload } } : e));
+          saveBatch(rt, { ...t.batch, ...(to === "approved" ? { notice_mode: noticeMode, respa_effective_date: respaEffective } : {}) } as TransferOutBatch, ctx); emitAll(ctx, b.batch_id, withNotice);
           return { batch: t.batch, events: t.events.map((e) => e.type) };
         }
         case "respa_exclusion": {   // rule 17.1: `master_change_sub_retained` with payee/address/account/amount unchanged → no goodbye run; the `officer` sign-off records the exclusion (T5)

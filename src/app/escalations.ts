@@ -35,6 +35,12 @@ export class EscalationService {
   }
   /** Every escalation opened through this service (open and completed), oldest first. */
   list(): readonly Escalation[] { return this.opened; }
+  /**
+   * The scope's still-open escalations an earlier command persisted (`PgEscalationRepository.openFor`), so a later command can
+   * complete one — 21.6's `openReviewerEscalation{op: decide}` closes the `underwriting_reviewer` escalation `recommendDisposition`
+   * opened in its own unit of work (32.6 backend delta). Seeded rows are not re-created: `save` upserts them by id.
+   */
+  seed(rows: readonly Escalation[]): void { for (const e of rows) if (!this.opened.some((x) => x.id === e.id)) this.opened.push(e); }
   complete(id: string, by: Actor, evidenceDocumentId?: string): Escalation {
     const e = this.opened.find((x) => x.id === id); if (!e) throw new RangeError(`no escalation ${id}`);
     if (by.kind !== "human" || by.role !== e.ownerRole) throw new RangeError(`escalation ${id} is completed by role ${e.ownerRole}, not ${by.kind}:${by.id}${by.role ? ` (${by.role})` : ""}`);
@@ -52,6 +58,15 @@ export class PgEscalationRepository {
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14)
       ON CONFLICT (id) DO UPDATE SET completed_at = EXCLUDED.completed_at, completed_evidence_document_id = EXCLUDED.completed_evidence_document_id`,
       [e.id, e.kind, e.loanId || null, e.caseId ?? null, e.batchId ?? null, e.severity ?? null, e.ownerRole, e.slaTimerId ?? null, e.openedAt, e.openedBy, e.completedAt ?? null, e.evidenceDocumentId ?? null, toJson(e.payload), e.applicationId ?? null]);
+  }
+  /** The open escalations of one application or loan, as `Escalation` rows a command's service can be seeded with (`EscalationService.seed`). */
+  async openFor(scope: { applicationId?: string; loanId?: string }, q: Queryable = this.db): Promise<Escalation[]> {
+    if (!scope.applicationId && !scope.loanId) return [];
+    const rows = await q.query<{ id: string; kind: EscalationKind; loan_id: string | null; application_id: string | null; case_id: string | null; batch_id: string | null; severity: string | null; owner_role: string | null; sla_timer_id: string | null; opened_at: string; opened_by: string; payload: Record<string, unknown> | null }>(
+      `SELECT id, kind, loan_id, application_id, case_id, batch_id, severity, owner_role, sla_timer_id, opened_at, opened_by, payload FROM escalations WHERE completed_at IS NULL AND (($1::uuid IS NOT NULL AND application_id = $1) OR ($2::uuid IS NOT NULL AND loan_id = $2)) ORDER BY opened_at, id`,
+      [scope.applicationId ?? null, scope.loanId ?? null]);
+    return rows.map((r) => ({ id: r.id, kind: r.kind, ownerRole: r.owner_role ?? DEFAULT_ROLE[r.kind], openedAt: typeof r.opened_at === "string" ? r.opened_at : new Date(r.opened_at).toISOString(), openedBy: r.opened_by, payload: r.payload ?? {}, status: "open" as const,
+      ...(r.loan_id ? { loanId: r.loan_id } : {}), ...(r.application_id ? { applicationId: r.application_id } : {}), ...(r.case_id ? { caseId: r.case_id } : {}), ...(r.batch_id ? { batchId: r.batch_id } : {}), ...(r.severity ? { severity: r.severity } : {}), ...(r.sla_timer_id ? { slaTimerId: r.sla_timer_id } : {}) }));
   }
   async open(ownerRole?: string): Promise<{ id: string; kind: string; owner_role: string; loan_id: string | null; opened_at: string }[]> {
     return ownerRole ? this.db.query(`SELECT id, kind, owner_role, loan_id, opened_at FROM escalations WHERE owner_role = $1 AND completed_at IS NULL ORDER BY opened_at`, [ownerRole])

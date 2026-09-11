@@ -7,6 +7,7 @@ import type { ScheduleCardEvidence, SchedulePurpose } from "@/lib/types/cards";
 import { copy } from "@/lib/copy";
 import { formatDate } from "@/lib/format";
 import { SHOW_FAKE_MARKERS } from "@/lib/env";
+import { ClosingTypeOptions, defaultClosingType, slotsForType } from "@/components/flows/7-closing";
 
 const PURPOSE_LABEL: Record<SchedulePurpose, string> = {
   appraisal_access: "Appraiser visit",
@@ -22,7 +23,15 @@ export function ScheduleCard({ card, timezone, onResolve, busy, error }: CardCom
   const pending = card.status === "pending";
   const chosen = (card.evidence as ScheduleCardEvidence | undefined)?.slot_id ?? slot;
   const chosenSlot = p.slots.find((s) => s.id === chosen);
-  const heading = p.title ?? copy(card.copy_key);
+  const heading = p.title ?? copy(card.copy_key, p.copy_tokens);
+  // 32.7 §2: the closing types 26.2 allows; the slot list narrows to the chosen one (the booked slot's type is the election)
+  const [closingType, setClosingType] = useState<string | undefined>(() => defaultClosingType(p.closing_type_options, p.default_closing_type));
+  const activeType = chosenSlot?.closing_type ?? closingType;
+  const slots = slotsForType(p.slots, activeType);
+  const pickType = (id: string) => {
+    setClosingType(id);
+    if (slot && !p.slots.some((s) => s.id === slot && (!s.closing_type || s.closing_type === id))) setSlot(undefined);
+  };
   // FAKE: RON platform / AMC slot providers are test doubles outside production.
   const fakeVendor = SHOW_FAKE_MARKERS && p.purpose === "ron_session" ? "RON platform" : SHOW_FAKE_MARKERS && p.purpose !== "callback" ? "AMC scheduling" : undefined;
 
@@ -36,11 +45,12 @@ export function ScheduleCard({ card, timezone, onResolve, busy, error }: CardCom
     <CardFrame card={card} timezone={timezone} title={heading} receipt={chosenSlot ? `${PURPOSE_LABEL[p.purpose]} — ${formatDate(chosenSlot.starts_at, timezone, "datetime")}` : undefined} fakeVendor={fakeVendor}>
       {p.helper ? <p>{p.helper}</p> : null}
       {p.constraints_text ? <p>{p.constraints_text}</p> : null}
+      {p.closing_type_options?.length ? <ClosingTypeOptions options={p.closing_type_options} value={activeType} onChange={pickType} name={`closing-type-${card.card_instance_id}`} disabled={!pending} fallbackCopyKey={p.fallback_copy_key} /> : null}
       <fieldset className="sm-fieldset">
         <legend>{PURPOSE_LABEL[p.purpose]} — pick a time</legend>
         <div className="sm-radios">
-          {p.slots.map((s) => (
-            <label key={s.id}>
+          {slots.map((s) => (
+            <label key={s.id} data-closing-type={s.closing_type}>
               <input type="radio" name={`slot-${card.card_instance_id}`} value={s.id} checked={chosen === s.id} onChange={() => setSlot(s.id)} disabled={!pending} />
               <time dateTime={s.starts_at}>{s.label ?? `${formatDate(s.starts_at, timezone, "datetime")} – ${formatDate(s.ends_at, timezone, "time")}`}</time>
             </label>

@@ -61,8 +61,10 @@ async function signIn(email: string): Promise<{ token: string; party_id: string 
   assert.equal(ver.status, 200, JSON.stringify(ver.body));
   return { token: ver.body["token"] as string, party_id: (ver.body["party"] as { party_id: string }).party_id };
 }
-// the journey moves the clock by weeks between reads and sessions idle out after 30 minutes (01 §5): every read signs in afresh
-const tok = async (email: string): Promise<string> => (await signIn(email)).token;
+// the journey moves the clock by weeks between reads and sessions idle out after 30 minutes (01 §5): every read signs in afresh — and steps up to L2 (SSN last four + DOB) where the party has
+// an application_borrowers row, because the Record for an application and its personal terms (numbers) render from L2 (01 §5; 32.3 T3: an L1 session's record omits `numbers`)
+const L2_FACTS: Record<string, { ssn_last4: string; date_of_birth: string }> = { [EMAIL_A]: { ssn_last4: "6789", date_of_birth: "1985-06-15" }, [EMAIL_B]: { ssn_last4: "4321", date_of_birth: "1986-02-20" } };
+const tok = async (email: string): Promise<string> => { const token = (await signIn(email)).token; const facts = L2_FACTS[email]; if (facts) await api("POST", "/v1/borrower/auth/l2", facts, token); return token; };
 const record = async (email: string, subject?: string): Promise<Record<string, unknown>> => { const r = await api("GET", `/v1/borrower/record${subject ? `?subject=${subject}` : ""}`, undefined, await tok(email)); assert.equal(r.status, 200, JSON.stringify(r.body).slice(0, 600)); return r.body; };
 const walk = (v: unknown, into: Set<string>): void => { if (Array.isArray(v)) v.forEach((x) => walk(x, into)); else if (v && typeof v === "object") for (const [k, x] of Object.entries(v as Record<string, unknown>)) { into.add(k); walk(x, into); } };
 
@@ -136,7 +138,10 @@ test("needed_from_you (02 §1.3): the DU conditions the borrower owns, pending c
   assert.equal(needed2.find((n) => n.card_instance_id === consent.card_instance_id)?.kind, "consent");
   assert.equal(needed2.find((n) => n.card_instance_id === confirm.card_instance_id)?.kind, "confirmation");
   assert.equal(needed2.find((n) => n.card_instance_id === connect.card_instance_id)?.kind, "connector");
-  assert.equal(needed2[0]!.card_instance_id, consent.card_instance_id, "the item with the earliest due_at (the expiring consent) comes first");
+  // ordered by due_at then created_at: 32.5 dates a condition item by 22.1's request (`document_requests.due_at`, +5 calendar days), so those precede the consent expiring Oct 20; nothing after the consent is due before it
+  const due2 = needed2.map((n) => n.due_at ?? "9999"); assert.deepEqual(due2, [...due2].sort(), "ordered by due_at, undated last");
+  const consentIx = needed2.findIndex((n) => n.card_instance_id === consent.card_instance_id); assert.ok(consentIx >= 0, "the expiring consent is listed");
+  assert.ok(needed2.slice(consentIx + 1).every((n) => (n.due_at ?? "9999") >= "2026-10-20T00:00:00.000Z"), "the item with the earliest due_at comes first: nothing after the expiring consent is due before it");
   assert.ok(!needed2.some((n) => n.kind === "acknowledgment" && n.card_instance_id === null && !/ack:/.test(String(n.card_instance_id))) || true);
   // the ConnectCard connects → it leaves the list; the ConfirmCard resolves → it leaves the list (a receipt line in the thread)
   await ui.transitionCard(connect.card_instance_id, "resolved", "system", now, { outcome: "connected" });

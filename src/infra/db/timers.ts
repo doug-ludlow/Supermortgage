@@ -37,6 +37,10 @@ export class PgTimerRepository {
           i.status, i.satisfiedAt ?? null, i.satisfiedByEventId ?? null, i.breachedAt ?? null, i.cancelledReason ?? null, i.note ?? null, i.applicationId ?? null]);
     }
   }
+  /** Armed/breached timers whose subject is neither a loan nor an application (a transfer batch, a partner, a vendor …): what a global command can satisfy (32.12 backend delta — 17.2's proofs of mailing satisfy REGX_1024_33B3_COMBINED_15 on the batch). */
+  async openGlobal(): Promise<TimerInstance[]> {
+    return (await this.db.query<TimerRow>(`SELECT * FROM timers WHERE loan_id IS NULL AND application_id IS NULL AND status IN ('armed', 'breached') ORDER BY armed_at`)).map(rowToInstance);
+  }
   /** Armed/breached timers, optionally for one loan. */
   async open(loanId?: string): Promise<TimerInstance[]> {
     const rows = loanId

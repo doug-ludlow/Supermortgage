@@ -40,6 +40,8 @@ function rowToRecord(r: Row): DecisionRecord {
   };
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export class PgDecisionRepository {
   private readonly db: Queryable;
   constructor(db: Queryable) { this.db = db; }
@@ -48,7 +50,8 @@ export class PgDecisionRepository {
     const rows = await q.query<Row>(
       `INSERT INTO agent_decisions (id, agent, loan_id, subject_kind, subject_id, rule_code, action, evidence_document_ids, confidence, rule_set_version, model_version, prompt_version, rationale, approved_by, approved_role, event_id, application_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::uuid[], $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING *`,
-      [id, d.agent, d.loanId || null, d.subject?.kind ?? null, d.subject?.id ?? null, d.ruleCode ?? null, d.action, [...(d.evidenceDocumentIds ?? [])], d.confidence ?? null, d.ruleSetVersion,
+      // `evidence_document_ids` is uuid[]: a decision that cites process-owned record ids as its evidence (13.1's `foreclosure_gate_evaluations` rows, `fge-…`) keeps them in its rationale, never in the uuid column (32.10 backend delta)
+      [id, d.agent, d.loanId || null, d.subject?.kind ?? null, d.subject?.id ?? null, d.ruleCode ?? null, d.action, [...(d.evidenceDocumentIds ?? [])].filter((x) => UUID_RE.test(String(x))), d.confidence ?? null, d.ruleSetVersion,
         d.modelVersion ?? null, d.promptVersion ?? null, d.rationale, d.approvedBy ?? null, d.approvedRole ?? null, d.eventId ?? null, d.applicationId ?? null]);
     return rowToRecord(rows[0]!);
   }

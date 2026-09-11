@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 7543/7686 (98.1%): tids 1914/2057, tables 724/724, timers 2029/2029, notices 306/306, tools 1359/1359, figures 1211/1211; processes at 100%: 167/178",
+ "brief": "spec units built 7686/7686 (100.0%): tids 2057/2057, tables 724/724, timers 2029/2029, notices 306/306, tools 1359/1359, figures 1211/1211; processes at 100%: 178/178",
  "totals": {
   "tids": {
    "spec": 2057,
-   "built": 1914
+   "built": 2057
   },
   "tables": {
    "spec": 724,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 7686,
-   "built": 7543
+   "built": 7686
   }
  },
  "sections": {
@@ -219,9 +219,9 @@
   },
   "32": {
    "spec": 240,
-   "built": 97,
+   "built": 240,
    "processes": 13,
-   "done": 2
+   "done": 13
   }
  },
  "done": [
@@ -391,7 +391,18 @@
   "31.2",
   "31.3",
   "32.1",
-  "32.2"
+  "32.2",
+  "32.3",
+  "32.4",
+  "32.5",
+  "32.6",
+  "32.7",
+  "32.8",
+  "32.9",
+  "32.10",
+  "32.11",
+  "32.12",
+  "32.13"
  ],
  "processes": [
   {
@@ -7246,40 +7257,9 @@
    "title": "Entry and the five-minute qualification",
    "tids": {
     "spec": 30,
-    "built": 0,
-    "todo": 30,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15,
-     16,
-     17,
-     18,
-     19,
-     20,
-     21,
-     22,
-     23,
-     24,
-     25,
-     26,
-     27,
-     28,
-     29,
-     30
-    ]
+    "built": 30,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 0,
@@ -7309,29 +7289,18 @@
    },
    "units": {
     "spec": 30,
-    "built": 0
+    "built": 30
    },
-   "pct": 0.0
+   "pct": 100.0
   },
   {
    "process": "32.4",
    "title": "Disclosures, intent to proceed, lock, revised LEs",
    "tids": {
     "spec": 10,
-    "built": 0,
-    "todo": 10,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10
-    ]
+    "built": 10,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 0,
@@ -7361,30 +7330,18 @@
    },
    "units": {
     "spec": 10,
-    "built": 0
+    "built": 10
    },
-   "pct": 0.0
+   "pct": 100.0
   },
   {
    "process": "32.5",
    "title": "Verification, needs list, conditions, second borrower",
    "tids": {
     "spec": 11,
-    "built": 0,
-    "todo": 11,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11
-    ]
+    "built": 11,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 0,
@@ -7414,31 +7371,18 @@
    },
    "units": {
     "spec": 11,
-    "built": 0
+    "built": 11
    },
-   "pct": 0.0
+   "pct": 100.0
   },
   {
    "process": "32.6",
    "title": "Decision, property, title, insurance, MI, clear to close",
    "tids": {
     "spec": 12,
-    "built": 0,
-    "todo": 12,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 0,
@@ -7468,32 +7412,18 @@
    },
    "units": {
     "spec": 12,
-    "built": 0
+    "built": 12
    },
-   "pct": 0.0
+   "pct": 100.0
   },
   {
    "process": "32.7",
    "title": "CD, closing, rescission, funding, boarding",
    "tids": {
     "spec": 13,
-    "built": 0,
-    "todo": 13,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13
-    ]
+    "built": 13,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 0,
@@ -7523,30 +7453,18 @@
    },
    "units": {
     "spec": 13,
-    "built": 0
+    "built": 13
    },
-   "pct": 0.0
+   "pct": 100.0
   },
   {
    "process": "32.8",
    "title": "Servicing: loan home, payments, autopay, statements, escrow",
    "tids": {
     "spec": 11,
-    "built": 0,
-    "todo": 11,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11
-    ]
+    "built": 11,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 0,
@@ -7576,30 +7494,18 @@
    },
    "units": {
     "spec": 11,
-    "built": 0
+    "built": 11
    },
-   "pct": 0.0
+   "pct": 100.0
   },
   {
    "process": "32.9",
    "title": "Servicing: insurance, PMI, ARM, life events, requests",
    "tids": {
     "spec": 11,
-    "built": 0,
-    "todo": 11,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11
-    ]
+    "built": 11,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 0,
@@ -7629,30 +7535,18 @@
    },
    "units": {
     "spec": 11,
-    "built": 0
+    "built": 11
    },
-   "pct": 0.0
+   "pct": 100.0
   },
   {
    "process": "32.10",
    "title": "Servicing: hardship and delinquency",
    "tids": {
     "spec": 11,
-    "built": 0,
-    "todo": 11,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11
-    ]
+    "built": 11,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 0,
@@ -7682,29 +7576,18 @@
    },
    "units": {
     "spec": 11,
-    "built": 0
+    "built": 11
    },
-   "pct": 0.0
+   "pct": 100.0
   },
   {
    "process": "32.11",
    "title": "Rate-watch and the re-refinance loop",
    "tids": {
     "spec": 10,
-    "built": 0,
-    "todo": 10,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10
-    ]
+    "built": 10,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 0,
@@ -7734,27 +7617,18 @@
    },
    "units": {
     "spec": 10,
-    "built": 0
+    "built": 10
    },
-   "pct": 0.0
+   "pct": 100.0
   },
   {
    "process": "32.12",
    "title": "Exits",
    "tids": {
     "spec": 8,
-    "built": 0,
-    "todo": 8,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8
-    ]
+    "built": 8,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 0,
@@ -7784,35 +7658,18 @@
    },
    "units": {
     "spec": 8,
-    "built": 0
+    "built": 8
    },
-   "pct": 0.0
+   "pct": 100.0
   },
   {
    "process": "32.13",
    "title": "Cross-cutting: acceptance harness, copy library rules, side-quest catalogue",
    "tids": {
     "spec": 16,
-    "built": 0,
-    "todo": 16,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15,
-     16
-    ]
+    "built": 16,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 0,
@@ -7842,9 +7699,9 @@
    },
    "units": {
     "spec": 16,
-    "built": 0
+    "built": 16
    },
-   "pct": 0.0
+   "pct": 100.0
   }
  ]
 }

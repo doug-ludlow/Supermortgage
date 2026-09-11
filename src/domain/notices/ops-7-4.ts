@@ -254,3 +254,18 @@ export function voiceEnrollment(deps: Deps, f: Parameters<typeof voiceEnrollment
   const invited = deps.events.append({ type: "consent.esign.invited", loanId: f.loan_id, actor, causationId: ack.id, payload: { party_id: f.party_id, email: r.invitation.email, sms: r.invitation.sms, link: r.invitation.link, esign_consent_created: false, refusal: r.refusal } });
   return { ...r, events: [ack, invited] };
 }
+
+// ============================================================ rule 8: a hard bounce on an electronic delivery (32.8-T7)
+export interface BounceSuspectInput { readonly loan_id: string; readonly party_id: string; readonly consent_id: string | null; readonly notice_id: string; readonly template: string; readonly bounced_at: string; readonly fallback_mailed_at: string | null; }
+/**
+ * Rule 8: "hard bounce → same-day mail of the affected notice; the consent owner marks the consent suspect" — NoticeService
+ * mails the fallback and flips the recipient's in-memory consent; this records the owner's state transition on the log
+ * (`consent.esign.suspect{party_id, reason=hard_bounce}` — the fact the re-verification invitation follows) so the consents
+ * row and every later channel decision read the suspect status, never a memory.
+ */
+export function recordBounceSuspect(deps: Deps, f: BounceSuspectInput): { status: "suspect"; reinvite: "NTC_ESIGN_VERIFICATION_EMAIL"; event: DomainEvent } {
+  need(f.party_id.length > 0 && f.loan_id.length > 0 && f.notice_id.length > 0, "recordBounceSuspect: loan_id, party_id and notice_id are required");
+  need(isIso(f.bounced_at), "recordBounceSuspect: bounced_at must be an ISO instant");
+  const event = deps.events.append({ type: "consent.esign.suspect", loanId: f.loan_id, actor: actorOf(deps), payload: { party_id: f.party_id, consent_id: f.consent_id, reason: "hard_bounce", notice_id: f.notice_id, template: f.template, bounced_at: f.bounced_at, fallback_mailed_at: f.fallback_mailed_at, mail_until_reverified: true, reinvite: "NTC_ESIGN_VERIFICATION_EMAIL" } });
+  return { status: "suspect", reinvite: "NTC_ESIGN_VERIFICATION_EMAIL", event };
+}

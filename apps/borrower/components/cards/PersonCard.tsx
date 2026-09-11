@@ -3,6 +3,7 @@
 import { CardFrame } from "./CardFrame";
 import type { CardComponentProps } from "./types";
 import type { PersonRole } from "@/lib/types/cards";
+import { copy } from "@/lib/copy";
 
 const ROLE_LABEL: Record<PersonRole, string> = {
   mlo_of_record: "Your loan officer",
@@ -16,20 +17,22 @@ const ROLE_LABEL: Record<PersonRole, string> = {
 /** 01 §3.17 — introduce a human the borrower will deal with. */
 export function PersonCard({ card, timezone }: CardComponentProps<"PersonCard">) {
   const p = card.props;
-  const initials = p.name
+  const name = p.name || (p.name_copy_key ? copy(p.name_copy_key) : "");
+  const intro = p.intro || (p.intro_copy_key ? copy(p.intro_copy_key, { name }) : undefined);
+  const initials = name
     .split(/\s+/)
     .map((s) => s[0] ?? "")
     .join("")
     .slice(0, 2)
     .toUpperCase();
   return (
-    <CardFrame card={card} timezone={timezone} title={`${ROLE_LABEL[p.role]}: ${p.name}`} collapsible={false}>
+    <CardFrame card={card} timezone={timezone} title={`${ROLE_LABEL[p.role]}: ${name}`} collapsible={false}>
       <div className="sm-person">
         <span className="sm-avatar" aria-hidden="true">
           {initials}
         </span>
         <div>
-          <div className="sm-primary-text">{p.name}</div>
+          <div className="sm-primary-text">{name}</div>
           {p.credentials ? <div className="sm-source">{p.credentials}</div> : null}
           {p.reach ? (
             <div>
@@ -38,7 +41,7 @@ export function PersonCard({ card, timezone }: CardComponentProps<"PersonCard">)
           ) : null}
         </div>
       </div>
-      {p.intro ? <p>{p.intro}</p> : null}
+      {intro ? <p>{intro}</p> : null}
     </CardFrame>
   );
 }

@@ -16,12 +16,16 @@ const SOURCE_LABEL: Record<ConfirmSource, string> = {
   recorded_instrument: "from county records",
   prior_application: "from your earlier application",
   servicing_record: "from your loan record",
+  document_extraction: "from your contract",
+  borrower: "you told us",
 };
 
 /** 01 §3.3 — present a fact the platform already holds and take explicit confirmation (O2.1 rule 1). */
 export function ConfirmCard({ card, timezone, onResolve, busy, error }: CardComponentProps<"ConfirmCard">) {
   const { fields, title, commits_to } = card.props;
-  const heading = title ?? copy(card.copy_key);
+  const heading = title || copy(card.copy_key, card.props.copy_tokens);
+  const helper = card.props.helper_copy_key ? copy(card.props.helper_copy_key, card.props.copy_tokens) : undefined;
+  const options = card.props.options;
   const [editing, setEditing] = useState(false);
   const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(fields.map((f) => [f.path, f.value])));
   const pending = card.status === "pending";
@@ -37,6 +41,11 @@ export function ConfirmCard({ card, timezone, onResolve, busy, error }: CardComp
 
   return (
     <CardFrame card={card} timezone={timezone} title={heading} receipt={`${heading} — confirmed`} announce={pending ? undefined : "Confirmed"}>
+      {helper ? (
+        <p className="sm-source" data-testid="confirm-helper">
+          {helper}
+        </p>
+      ) : null}
       <dl className="sm-fields" data-commits-to={commits_to}>
         {fields.map((f) => (
           <div key={f.path}>
@@ -53,7 +62,15 @@ export function ConfirmCard({ card, timezone, onResolve, busy, error }: CardComp
           </div>
         ))}
       </dl>
-      {pending ? (
+      {pending && options?.length ? (
+        <div className="sm-card-actions">
+          {options.map((o) => (
+            <button key={o.id} type="button" className={`sm-btn${o.is_primary ? " sm-btn-primary" : ""}`} onClick={() => void onResolve({ option_id: o.id, evidence: { fields: fields.map((f) => ({ path: f.path, value_confirmed: values[f.path] ?? f.value, source: f.source, confirmed_at: nowIso() })), edited: false } })} disabled={busy}>
+              {o.label}
+            </button>
+          ))}
+        </div>
+      ) : pending ? (
         <div className="sm-card-actions">
           <button type="button" className="sm-btn sm-btn-primary" onClick={confirm} disabled={busy}>
             Confirm

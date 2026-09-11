@@ -46,6 +46,16 @@ const renderInput = (i: ToolInput, ctx: CommandContext, rt: ToolRuntime): CdRend
 const NO_TYPED_FIGURE = never("FIGURE_NEEDS_VERSIONED_SOURCE", "25.2 guardrails: never edit a figure without a versioned source", (i) => i.figure_override !== undefined || i.typed_figures !== undefined || i.manual_amount_cents !== undefined, "every CD figure comes from a `cd_figure_sources` version (settlement agent, creditor, MI, flood, payoff, escrow) — record and reconcile the source, never type the amount");
 const NO_CD_FEE = never("NO_FEE_FOR_CD", "§1026.19(f)(5); 25.2-T14", (i) => Array.isArray(i.fees) && (i.fees as { description?: string; fee_code?: string }[]).some((f) => PROHIBITED_CD_FEE.test(String(f.description ?? "")) || PROHIBITED_CD_FEE.test(String(f.fee_code ?? "").replace(/_/g, " "))), "no fee may be imposed by a creditor or servicer for the preparation or delivery of the Closing Disclosure");
 
+/**
+ * 02 §1.1 `disclosures{cd}` figure snapshot (32.7 §1): the figures 25.2 rendered, kept on the disclosures row as decimal strings so the borrower
+ * record can diff LE→CD and show the first payment without re-rendering — a projection of the render input, never a recomputation.
+ */
+const cdFigureSnapshot = (i: CdRenderInput): Record<string, unknown> => {
+  const S = (v: unknown): string | null => (v === undefined || v === null ? null : String(v)); const x = i as unknown as Record<string, unknown>;
+  return { rate_pct: S(i.loan.rate_pct), apr_pct: S(i.apr.apr_pct), pi_cents: S(i.loan.pi_cents), loan_amount_cents: S(i.loan.loan_amount_cents), cash_to_close_cents: S(x["cash_to_close_cents"]), lender_credits_cents: S(x["lender_credits_cents"]), payoffs_and_payments_cents: S(x["payoffs_and_payments_cents"]),
+    monthly_escrow_cents: S((i.escrow as unknown as Record<string, unknown> | undefined)?.["monthly_escrow_cents"]), initial_escrow_payment_cents: S((i.escrow as unknown as Record<string, unknown> | undefined)?.["initial_escrow_payment_cents"]), fees: i.fees.map((f) => ({ fee_code: f.fee_code, description: f.description, amount_cents: S(f.amount_cents), section: f.section ?? null })) };
+};
+
 export const TOOLS_25_2: readonly ToolDef[] = defineTools("25.2", "disclosure", [
   { name: "assembleCdFigures", kind: "act", handler: compute((i, ctx, rt) => {
       const application_id = appOf(i, ctx); const svc = svcOf(ctx, rt);
@@ -71,7 +81,7 @@ export const TOOLS_25_2: readonly ToolDef[] = defineTools("25.2", "disclosure", 
       if (i.op === "validate") return renderCd(input);
       const required = Array.isArray(i.required_consumer_ids) ? (i.required_consumer_ids as string[]) : []; if (!required.length) throw new RangeError("25.2 tool needs required_consumer_ids[] (every borrower; every rescinding consumer on a refinance)");
       const row = svc.prepare({ ...input, required_consumer_ids: required, supersedes: (i.supersedes as string | undefined) ?? null, ...(typeof i.pdf_document_id === "string" ? { pdf_document_id: i.pdf_document_id } : {}) });
-      rt.store.put("disclosures", row.disclosure_id, { application_id: row.application_id, kind: row.kind, cd_version: row.cd_version, cd_reason: row.cd_reason, status: row.status, figures_hash: row.figures_hash, figure_source_version: row.figure_source_version, apr_calculation_id: row.apr_calculation_id, template_version: row.render.template_version, retention_class: row.retention_class, new_waiting_period: row.new_waiting_period }, ctx.actor, ctx.now);
+      rt.store.put("disclosures", row.disclosure_id, { application_id: row.application_id, kind: row.kind, cd_version: row.cd_version, cd_reason: row.cd_reason, status: row.status, figures_hash: row.figures_hash, figure_source_version: row.figure_source_version, apr_calculation_id: row.apr_calculation_id, template_version: row.render.template_version, retention_class: row.retention_class, new_waiting_period: row.new_waiting_period, figures: cdFigureSnapshot(input) }, ctx.actor, ctx.now);
       return { disclosure_id: row.disclosure_id, cd_version: row.cd_version, status: row.status, figures_hash: row.figures_hash, checklist: row.render.checklist, notice_code: row.render.notice_code, le_gate_asserted_on: row.le_gate_asserted_on }; }),
     guardrails: [NO_CD_FEE, NO_TYPED_FIGURE] },
   { name: "deliverDisclosure", kind: "act", handler: compute((i, ctx, rt) => {
@@ -162,8 +172,9 @@ export const TOOLS_25_2: readonly ToolDef[] = defineTools("25.2", "disclosure", 
       need(i, "disclosure_id", "cd_reason", "input", "gate", "deliveries");
       const input = renderInput({ ...(i.input as ToolInput), application_id, disclosure_id: str(i, "disclosure_id"), cd_version: 0 }, ctx, rt);
       const { application_id: _a, disclosure_id: _d, cd_version: _v, cd_reason: _r, ...rest } = input;
-      const r = svc.scheduleCorrectedCd(application_id, { disclosure_id: str(i, "disclosure_id"), cd_reason: str(i, "cd_reason") as Exclude<CdReason, "initial">, input: rest, evaluation: (i.evaluation as never) ?? null, gate: i.gate as { run_id: string; apr_verdict: "pass" | "fail" }, deliveries: (i.deliveries as never[]).map((d: { at?: string }) => ({ ...d, at: d.at ?? ctx.now })) as never });
-      rt.store.put("disclosures", r.row.disclosure_id, { application_id, kind: r.row.kind, cd_version: r.row.cd_version, cd_reason: r.row.cd_reason, status: r.row.status, figures_hash: r.row.figures_hash, new_waiting_period: r.row.new_waiting_period, redisclosure_triggers: r.row.redisclosure_triggers }, ctx.actor, ctx.now);
+      const prev = svc.current(application_id);
+      const r = svc.scheduleCorrectedCd(application_id, { disclosure_id: str(i, "disclosure_id"), cd_reason: str(i, "cd_reason") as Exclude<CdReason, "initial">, input: rest, evaluation: (i.evaluation as never) ?? null, gate: i.gate as { run_id: string; apr_verdict: "pass" | "fail" }, deliveries: (i.deliveries as never[]).map((d: { at?: string }) => ({ ...d, at: d.at ?? ctx.now })) as never, ...(Array.isArray(i.cc_ids) ? { cc_ids: (i.cc_ids as unknown[]).map(String) } : {}) });
+      rt.store.put("disclosures", r.row.disclosure_id, { application_id, kind: r.row.kind, cd_version: r.row.cd_version, cd_reason: r.row.cd_reason, status: r.row.status, figures_hash: r.row.figures_hash, new_waiting_period: r.row.new_waiting_period, redisclosure_triggers: r.row.redisclosure_triggers, supersedes: prev?.disclosure_id ?? null, figures: cdFigureSnapshot(input) }, ctx.actor, ctx.now);
       return { disclosure_id: r.row.disclosure_id, cd_version: r.row.cd_version, cd_reason: r.row.cd_reason, status: r.row.status, corrected_event_id: r.corrected_event.id, tolerance_test_invoked: r.tolerance_test_invoked, notice_code: "NTC_REGZ_1026_38_CD_CORRECTED" }; }),
     guardrails: [never("NO_WAIT_WITH_APR_FAIL", "25.2 guardrails: never issue a \"no-wait\" corrected CD when 25.1's APR verdict is fail (§1026.19(f)(2)(ii)(A))", (i) => i.cd_reason === "pre_consummation_no_wait" && (((i.gate as { apr_verdict?: string } | undefined)?.apr_verdict === "fail") || ((i.evaluation as { new_wait?: boolean } | undefined)?.new_wait === true)), "an inaccurate APR, a product change or an added prepayment penalty requires cd_reason = pre_consummation_new_wait and a new three-business-day waiting period"), NO_CD_FEE, NO_TYPED_FIGURE] },
   { name: "openEscalation", kind: "act", handler: escalate("settlement_agent"), humanRoles: ["officer", "settlement_agent", "fnma_portal_operator", "mlo_of_record", "human_agent", "ops_analyst"] },

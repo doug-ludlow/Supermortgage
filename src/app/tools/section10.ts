@@ -32,7 +32,7 @@ import { pmiTerminateOps_10_2, reviewHooks_10_2, investorEmitOps_10_2, scheduleR
 import { escrowEventOp_10_5 } from "./section10-5.ts";
 import { pmiTerminateOps_10_3 } from "./section10-3.ts";
 import { disclosureComposeSendOps_10_4 } from "./section10-4.ts";
-import { validateCancelRequest, openCancellationRequest, confirmWrittenRequest, advanceCase, cancelBasisOnRecord, smduEvaluate, feeIsTabulated } from "../../domain/pmi/ops-10-1.ts";
+import { validateCancelRequest, openCancellationRequest, confirmWrittenRequest, advanceCase, cancelBasisOnRecord, smduEvaluate, feeIsTabulated, withdrawCancellationRequest, expireFeeWait } from "../../domain/pmi/ops-10-1.ts";
 
 const need = (i: ToolInput, ...keys: string[]): void => { for (const k of keys) if (i[k] === undefined || i[k] === null || i[k] === "") throw new RangeError(`${k} is required`); };
 const date = (i: ToolInput, k: string): PlainDate => { need(i, k); return D(str(i, k)); };
@@ -148,6 +148,8 @@ const p101 = defineTools("10.1", A, [
           ctx.events.append({ type: "mi.evaluation.completed", loanId, actor: ctx.actor, payload: { evaluation_id: id, result: d.result, reasons: d.reasons, ltv_bps: d.ltv_bps, threshold_bps: d.threshold_bps, effective_on: d.effective_on, decision_due: d.decision_due, evaluated_at: req.decision_on, determined_at: req.decision_on, liability_relief: row.liability_relief, servicer_overridden: ov.length > 0, overrides: ov } });
           if (d.result === "eligible" || d.result === "ineligible") ctx.events.append({ type: "mi.case.decided", loanId, actor: ctx.actor, payload: { evaluation_id: id, decision: d.result, decided_on: req.decision_on, reasons: d.reasons } });
           if (d.result === "value_check_needed") ctx.events.append({ type: "mi.value_check_needed", loanId, actor: ctx.actor, payload: { evaluation_id: id, reasons: d.reasons, options: valueCheck(req.avm_cents, req.original_value_cents, req.property_class === "2_4u_principal" ? 2 : 1) } });
+          // 10.1 state machine: the open `pmi_cancel` case follows the decision (`value_check_needed → awaiting_fee` while the tabulated fee is awaited; `eligible` / `ineligible`); the grant and the denial move it further (cancel / 10.6)
+          if (loanId) advanceCase(rt.store, loanId, { status: d.result === "value_check_needed" ? "awaiting_fee" : d.result === "eligible" ? "eligible" : d.result === "ineligible" ? "ineligible" : "evaluating", evaluation_id: id, ...(d.result === "value_check_needed" ? { value_check_reasons: d.reasons } : {}) }, ctx.actor, ctx.now);
           return { evaluation_id: id, ...d };
         }
         case "value_check": { need(i, "original_value_cents"); return valueCheck(optCents(i.avm_cents), cents(i.original_value_cents), num(i, "units") || 1); }
@@ -172,6 +174,12 @@ const p101 = defineTools("10.1", A, [
           const refund = rt.store.put("mi_refunds", `refund-${loanId}-${effective}`, { loan_id: loanId, effective_date: effective, status: "estimated", leg: "insurer_unearned", evaluation_id: basis.evaluation_id }, ctx.actor, ctx.now);
           return { ...actions, refund_id: refund.id, evaluation_id: basis.evaluation_id, cancel_basis: basis.kind };
         }
+        // 32.9 §2 / 10.1 state machine: the borrower withdraws the open request (the valuation fee is refunded when no order was placed) — `mi.cancel.withdrawn`
+        case "withdraw": { need(i, "loan_id"); const r = withdrawCancellationRequest({ loan_id: str(i, "loan_id"), case_id: (i.case_id as string | undefined) ?? null, withdrawn_on: optDate(i, "withdrawn_on") ?? D(ctx.now.slice(0, 10)), requester_party_id: (i.requester_party_id as string | undefined) ?? null, card_instance_id: (i.card_instance_id as string | undefined) ?? null }, { events: ctx.events, store: rt.store, actor: ctx.actor, now: ctx.now });
+          return { case_id: r.case_id, status: r.status, withdrawn_on: r.withdrawn_on, fee_paid_cents: r.fee_paid_cents, fee_refund_cents: r.fee_refund_cents, valuation_ordered: r.valuation_ordered, refund_event: r.refund_event?.type ?? null }; }
+        // SM_MI_FEE_WAIT_60 breach: "case → `expired`; closing letter" — `mi.case.expired` on the case that was awaiting the fee
+        case "fee_wait_expired": { need(i, "loan_id"); const r = expireFeeWait({ loan_id: str(i, "loan_id"), case_id: (i.case_id as string | undefined) ?? null, expired_on: optDate(i, "expired_on") ?? D(ctx.now.slice(0, 10)), timer_id: (i.timer_id as string | undefined) ?? null }, { events: ctx.events, store: rt.store, actor: ctx.actor, now: ctx.now });
+          return r ? { case_id: r.case_id, status: r.status, expired_on: r.expired_on, closing_letter: r.closing_letter } : { case_id: null, status: "no_open_fee_wait", expired_on: null, closing_letter: null }; }
         case "ny_gate": {
           // 10.2 NY overlay (N.Y. Ins. Law §6503(d); 10.2-Q2): at ≤ 75% of the original appraised value the borrower stops paying; the servicer carries the premium until 10.1 terminates.
           need(i, "loan_id", "upb_cents", "original_appraised_value_cents"); const loanId = str(i, "loan_id"); const snapshotOn = str(i, "snapshot_date") || ctx.now.slice(0, 10);
@@ -185,7 +193,7 @@ const p101 = defineTools("10.1", A, [
           }
           return { ...r, next: "10.1 evaluation → pmi.* cancel (terminates; the gate resolves on `mi.coverage.ended`)" };
         }
-        default: throw new RangeError(`pmi op ${String(i.op)} is not one of list/get/request/written_confirmation/evaluate/value_check/set_original_value/cancel/ny_gate`);
+        default: throw new RangeError(`pmi op ${String(i.op)} is not one of list/get/request/written_confirmation/evaluate/value_check/set_original_value/cancel/withdraw/fee_wait_expired/ny_gate`);
       } }),
     guardrails: [never("ORIGINAL_VALUE_NEEDS_EVIDENCE", "10.1 guardrail: cannot alter `original_value` without an evidence-backed `mi.data.corrected` event", (i) => i.op === "set_original_value" && !setOriginalValueAllowed((i.evidence_document_id as string | undefined) ?? null), "attach the evidence document"),
       never("HISTORY_NEEDS_EVIDENCE", "10.1 guardrail: payment-history counts and SMDU inputs change only with an evidence-backed `mi.data.corrected` event", (i) => overrides(i).length > 0 && !i.evidence_document_id, "overrides need evidence and void liability relief"),
@@ -198,7 +206,7 @@ const p101 = defineTools("10.1", A, [
       switch (i.op) {
         // 10.1 integrations: SMDU 5xx/timeouts → retry with backoff for 4 hours, then `human_portal_task` at case day 15+ with the prepared data set; the HPA clock never moves (10.1-T8).
         case "evaluate": { need(i, "fnma_loan_number"); return smduEvaluate({ loan_id: (i.loan_id as string | undefined) ?? ctx.loanId ?? "", fnma_loan_number: str(i, "fnma_loan_number"), request_type: (str(i, "request_type") || "original_value") as "original_value" | "current_value" | "current_value_improvements", data_set: rec(i.data_set), overrides: overrides(i), received_on: optDate(i, "received_on"), case_id: (i.case_id as string | undefined) ?? null }, { smdu: port(rt, "smdu"), events: ctx.events, store: rt.store, escalations: rt.escalations, actor: ctx.actor, now: ctx.now }); }
-        case "valuation.order": { need(i, "loan_id", "kind"); ctx.events.append({ type: "mi.valuation.ordered", loanId: str(i, "loan_id"), actor: ctx.actor, payload: { kind: str(i, "kind"), fee_cents: cents(i.fee_cents), ordered_on: ctx.now.slice(0, 10) } }); return { ordered: true, kind: str(i, "kind"), turnaround_days: 14, ordered_on: ctx.now.slice(0, 10) }; }
+        case "valuation.order": { need(i, "loan_id", "kind"); ctx.events.append({ type: "mi.valuation.ordered", loanId: str(i, "loan_id"), actor: ctx.actor, payload: { kind: str(i, "kind"), fee_cents: cents(i.fee_cents), ordered_on: ctx.now.slice(0, 10) } }); advanceCase(rt.store, str(i, "loan_id"), { status: "valuation_ordered", valuation_kind: str(i, "kind"), valuation_ordered_on: ctx.now.slice(0, 10) }, ctx.actor, ctx.now); return { ordered: true, kind: str(i, "kind"), turnaround_days: 14, ordered_on: ctx.now.slice(0, 10) }; }
         case "valuation.delivered": { need(i, "loan_id"); const on = date(i, "delivered_on"); const w = valuationDenialWindows(on);   // appeal 60 days (FNMA_SMDU_VALUATION_APPEAL_60), validity 120 (FNMA_SMDU_VALUATION_VALID_120)
           const ev = ctx.events.append({ type: "mi.valuation.delivered", loanId: str(i, "loan_id"), actor: ctx.actor, payload: { delivered_at: on, kind: str(i, "kind") || "bpo_int_ext", value_cents: optCents(i.value_cents), valid_until: w.valid_until, appeal_by: w.appeal_by, request_received_on: str(i, "received_on") || null } });
           if (flag(i, "borrower_paid")) reanchorDecisionClock(ctx, str(i, "loan_id"), ev, on);   // a borrower-paid valuation is evidence (4904(b)(2)(ii)); the servicer's own AVM never re-anchors (10.6 R1)

@@ -20,7 +20,8 @@
  * id that no officer recorded is refused (ARCHITECTURE: "Money fields are never agent-corrected; waivers need an
  * `officer`").
  */
-import { defineTools, read, escalate, timerOps, compute, guard, never, str, num, flag, data, cents, type ToolDef, type ToolInput, type ToolRuntime } from "../tools.ts";
+import { defineTools, read, escalate, timerOps, compute, guard, never, str, num, flag, data, cents, PortUnavailable, type ToolDef, type ToolInput, type ToolRuntime } from "../tools.ts";
+import type { Recipient } from "../../notices/channel.ts";
 import type { CommandContext, Guardrail } from "../commands.ts";
 import { evaluateGate } from "../evaluators.ts";
 import { hasRole } from "../roles.ts";
@@ -505,6 +506,9 @@ const siiCommands: ToolDef[] = defineTools("4.4", "case", [
       const caseId = str(i, "case_id"); const on = D(str(i, "identified_on") || ctx.now.slice(0, 10)); const pending = flag(i, "lossmit_pending") || siiLossmitPending(ctx, caseId);
       rt.store.put("sii_cases", caseId, { potential_successor_party_id: str(i, "party_id") || null, identified_on: on, lossmit_pending: pending, status: "identifying_successor" }, ctx.actor, ctx.now);
       if (str(i, "party_id")) rt.store.put("parties", str(i, "party_id"), { role: "potential_successor", case_id: caseId }, ctx.actor, ctx.now);
+      // 02 §6 / 32.9 §4.2: the reporter is a `potential_successor` on the loan — the scoping row the borrower surface reads (correspondence only, no subject) — committed with the command when the runtime lends its transaction
+      const defer = rt.services["deferWrite"] as ((fn: (q: { query(sql: string, params?: unknown[]): Promise<unknown> }) => Promise<void>) => void) | undefined; const partyId = str(i, "party_id"); const loanId = ctx.loanId; const startedOn = on;
+      if (defer && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(partyId) && loanId) defer(async (q) => { await q.query(`INSERT INTO loan_parties (loan_id, party_id, role, started_at) VALUES ($1, $2, 'potential_successor', $3) ON CONFLICT DO NOTHING`, [loanId, partyId, startedOn]); });
       const due = siiPolicyDue(on, pending);
       caseEvent(ctx, "case.sii.potential_successor.identified", caseId, { party_id: str(i, "party_id") || null, identified_on: on, lossmit_pending: pending, docs_description_due: due.docs_description_due });
       return { docs_description_due: due.docs_description_due, lossmit_pending: pending };
@@ -541,7 +545,10 @@ const siiCommands: ToolDef[] = defineTools("4.4", "case", [
       const caseId = str(i, "case_id"), det = str(i, "determination"); const pending = siiLossmitPending(ctx, caseId);
       rt.store.put("sii_cases", caseId, { determination: det, determined_at: ctx.now, reason: str(i, "reason") || null, officer_approval_id: str(i, "officer_approval_id") || null, status: det }, ctx.actor, ctx.now);
       caseEvent(ctx, "case.sii.determined", caseId, { determination: det, reason: str(i, "reason") || null, officer_approval_id: str(i, "officer_approval_id") || null });
-      if (det === "confirmed") { rt.store.put("parties", str(i, "party_id") || `${caseId}:successor`, { role: "confirmed_successor", obligor: false, case_id: caseId }, ctx.actor, ctx.now); caseEvent(ctx, "case.sii.confirmed", caseId, { non_obligor: true, party_id: str(i, "party_id") || null, confirmed_on: today(ctx), lossmit_pending: pending, lossmit_application_received_on: pending ? today(ctx) : null }); }
+      if (det === "confirmed") { rt.store.put("parties", str(i, "party_id") || `${caseId}:successor`, { role: "confirmed_successor", obligor: false, case_id: caseId }, ctx.actor, ctx.now); caseEvent(ctx, "case.sii.confirmed", caseId, { non_obligor: true, party_id: str(i, "party_id") || null, confirmed_on: today(ctx), lossmit_pending: pending, lossmit_application_received_on: pending ? today(ctx) : null });
+        // 32.12 backend delta (additive): a confirmed successor who is a platform party (uuid) becomes a `loan_parties{role=confirmed_successor}` row committed with the determination — the scoped role the borrower surface reads (02 §6; borrower-parties.ts SCOPED_LOAN_PARTY_ROLES), so the successor's own sign-in sees the loan
+        const partyId = str(i, "party_id"); const deferWrite = rt.services["deferWrite"] as ((fn: (q: { query(sql: string, params?: unknown[]): Promise<unknown> }) => Promise<void>) => void) | undefined;
+        if (deferWrite && ctx.loanId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(partyId)) { const loanId = ctx.loanId; const at = ctx.now.slice(0, 10); deferWrite(async (q) => { await q.query(`INSERT INTO loan_parties (loan_id, party_id, role, started_at) SELECT $1, $2, 'confirmed_successor', $3::date WHERE NOT EXISTS (SELECT 1 FROM loan_parties WHERE loan_id = $1 AND party_id = $2 AND role = 'confirmed_successor' AND ended_at IS NULL)`, [loanId, partyId, at]); }); } }
       return { determination: det, notice: det === "confirmed" ? "NTC_REGX_38B1VI_SII_CONFIRMED" : det === "not_successor" ? "NTC_REGX_38B1VI_SII_NOT_SUCCESSOR" : "NTC_REGX_38B1VI_SII_ADDL_DOCS", obligor: false, ...(det === "confirmed" && pending ? { lossmit_application_received_on: today(ctx) } : {}) };
     }),
     guardrails: [never("DENY_FOR_NO_ASSUMPTION", "4.4 guardrails: cannot deny for \"no assumption\" or \"not on the note\" (§1024.31: ownership interest, not liability, defines a successor)", (i) => str(i, "determination") === "not_successor" && /no assumption|not on the note|not an obligor|did not assume/i.test(str(i, "reason")), "a successor need not be on the note or assume the loan"),
@@ -659,7 +666,29 @@ const complaintCommands: ToolDef[] = defineTools("4.5", "case", [
     guardrails: [COMPLAINT_EXISTS, guard("FORM_20_REQUIRED", "4.5 human touchpoints: Form 20 escalation logged before the cure", (i, ctx) => (caseEvents(ctx, "complaint.tx_50a6_defect.alleged", str(i, "case_id")).length ? undefined : `no §50(a)(6) allegation / Form 20 escalation on record for case ${str(i, "case_id")}`)), never("CURE_REQUIRED", "§50(a)(6)(Q)(x): the cure taken is stated", (i) => !str(i, "cure"), "state the cure")] },
 ]);
 
-export const SECTION_04_CASE_COMMANDS: readonly ToolDef[] = [...approvalCommands, ...noeCommands, ...rfiCommands, ...continuityCommands, ...CONTINUITY_COMMANDS_4_3, ...siiCommands, ...complaintCommands];
+// ---------------------------------------------------------------- the 4.x notices through the Notice Registry (32.9 backend delta)
+/** The 4.x-owned templates (src/notices/authored/section04.ts) the `case` agent renders and sends: acknowledgments, responses, the successor document description, complaint letters. */
+export const CASE_NOTICE_TEMPLATES = /^NTC_(REGX_35[CDEFG]|REGX_36[ACDEFI]|REGX_38B|REGX_32C|REGX_40|CA_2923_7|COMPLAINT|REMEDIATION|TX_50A6|FNMA_D1_4_1_02)/;
+const noticeCommands: ToolDef[] = defineTools("4.1", "case", [
+  // The acknowledgment / response / document-description letters the 4.1, 4.2, 4.4 and 4.5 clocks wait on (`notice.sent{template}`): rendered and sent
+  // through the Notice Registry (checklist, channel decision, delivery evidence) for a case the record holds — never free text, never a figure.
+  { name: "case.notice.send", kind: "act", handler: compute(async (i, ctx, rt) => {
+      const template = str(i, "template"); const caseId = str(i, "case_id"); const recipients = (Array.isArray(i.recipients) ? i.recipients : []) as Recipient[];
+      const svc = rt.notices; if (!svc) throw new PortUnavailable("notices");
+      if (!recipients.length) throw new RangeError("recipients are required (the party the case is for)");
+      const payload = (i.payload && typeof i.payload === "object" && !Array.isArray(i.payload) ? (i.payload as Record<string, unknown>) : {});
+      const n = svc.render({ templateCode: template, loanId: ctx.loanId, caseId, recipients, payload, asOf: today(ctx) });
+      if (n.status === "held") throw new RangeError(`${template} for case ${caseId} is held: ${n.heldReason ?? "checklist"}`);
+      const sent = await svc.send(n.id, (i.channel_context as Parameters<typeof svc.send>[1] | undefined) ?? {});
+      caseEvent(ctx, "case.notice.sent", caseId, { template, notice_id: n.id, template_version: n.templateVersion, sent_on: today(ctx), channels: (sent.channelDecision ?? []).map((d) => ({ party_id: d.partyId, channel: d.channel })) });
+      return { case_id: caseId, template, notice_id: n.id, template_version: n.templateVersion, status: sent.status, sent_at: sent.sentAt ?? ctx.now, channels: (sent.channelDecision ?? []).map((d) => ({ party_id: d.partyId, channel: d.channel, satisfies_timer: d.satisfiesTimer })) };
+    }),
+    decision: (i, out) => ({ action: "case.notice.send", subject: { kind: "case", id: str(i, "case_id") }, rationale: `${str(i, "template")} rendered through the Notice Registry for case ${str(i, "case_id")} (notice ${String((out as { notice_id?: unknown })?.notice_id ?? "?")})` }),
+    guardrails: [never("CASE_NOTICE_TEMPLATE", "4.x outputs: the case agent sends only the section's own templates (acknowledgments, responses, SII document descriptions, complaint letters)", (i) => !CASE_NOTICE_TEMPLATES.test(str(i, "template")), "template must be a 4.1/4.2/4.4/4.5 Notice Registry template"),
+      guard("CASE_NOT_FOUND", "4.x state machine: a letter attaches to a case the record holds", (i, ctx) => (caseKnown(ctx, str(i, "case_id")) ? undefined : `no case ${str(i, "case_id") || "(missing case_id)"} on the loan`))] },
+]);
+
+export const SECTION_04_CASE_COMMANDS: readonly ToolDef[] = [...approvalCommands, ...noeCommands, ...rfiCommands, ...continuityCommands, ...CONTINUITY_COMMANDS_4_3, ...siiCommands, ...complaintCommands, ...noticeCommands];
 /** Helper for §13 (and tests): the sale/judgment command's guardrail list — the FC gate first, then the process's own. */
 export const withFcNoeGate = (guardrails: readonly Guardrail<ToolInput>[] = []): Guardrail<ToolInput>[] => [FC_NOE_OPEN_GATE, ...guardrails];
 /** 4.4 worked timeline / 4.4-T6: the successor's payoff request is answered within the Reg Z §1026.36(c)(3) window — 7 business days (Reg Z §1026.2(a)(6): days the servicer is open), never held for the acknowledgment. */

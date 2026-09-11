@@ -4,7 +4,8 @@ import { useId, useState } from "react";
 import { CardFrame, nowIso, textHash } from "./CardFrame";
 import type { CardComponentProps } from "./types";
 import type { ConsentCardEvidence } from "@/lib/types/cards";
-import { copy } from "@/lib/copy";
+import { copy, copyExtra } from "@/lib/copy";
+import { ConsentElements } from "@/components/flows/7-closing";
 
 /**
  * 01 §3.5 — capture a legally sufficient consent. `checkbox_with_text` + typed name for
@@ -18,7 +19,11 @@ export function ConsentCard({ card, timezone, onResolve, busy, error }: CardComp
   const [checked, setChecked] = useState(false);
   const [name, setName] = useState("");
   const pending = card.status === "pending";
-  const heading = p.title || copy(card.copy_key);
+  const heading = p.title || copy(card.copy_key, p.copy_tokens);   // 32.5 §7: `consent.joint_intent.title` names the other borrower ({{other_first_name}})
+  // 32.7 §6: the library's body/helper/footer when the server left them empty and named only the key (the autodraft authorization, the servicing E-SIGN offer)
+  const bodyText = p.body_text || copyExtra(card.copy_key, "body", p.copy_tokens) || "";
+  const helperText = p.helper_text || copyExtra(card.copy_key, "helper", p.copy_tokens);
+  const footerText = p.footer_text || copyExtra(card.copy_key, "footer", p.copy_tokens);
   const singleTap = p.affirmation_method === "single_tap";
   const ready = singleTap || (checked && (!p.requires_typed_name || name.trim().length >= 2));
 
@@ -27,7 +32,7 @@ export function ConsentCard({ card, timezone, onResolve, busy, error }: CardComp
       consent_kind: p.consent_kind,
       disclosure_version_id: p.disclosure_version_id,
       method: p.affirmation_method,
-      text_hash: textHash(p.body_text),
+      text_hash: textHash(bodyText),
       affirmed_at: nowIso(),
       party_id: card.party_id,
       user_agent: typeof navigator !== "undefined" ? navigator.userAgent : undefined,
@@ -45,11 +50,12 @@ export function ConsentCard({ card, timezone, onResolve, busy, error }: CardComp
 
   return (
     <CardFrame card={card} timezone={timezone} title={heading} receipt={`${heading} — ${p.verification_state === "pending_verification" ? "pending verification — check your email" : "affirmed"}`} announce={stateLine}>
-      {p.helper_text ? <p>{p.helper_text}</p> : null}
+      {helperText ? <p>{helperText}</p> : null}
+      {p.elements?.length || p.optional_statement_copy_key ? <ConsentElements elements={p.elements ?? []} optionalStatementCopyKey={p.optional_statement_copy_key} /> : null}
       <div className="sm-card-block" data-testid="consent-body">
         {p.phone_number ? <p className="sm-primary-text sm-num">{p.phone_number}</p> : null}
         <p className="sm-primary-text" style={{ whiteSpace: "pre-wrap" }}>
-          {p.body_text}
+          {bodyText}
         </p>
       </div>
       {stateLine ? <p className="sm-primary-text">{stateLine}</p> : null}
@@ -78,7 +84,7 @@ export function ConsentCard({ card, timezone, onResolve, busy, error }: CardComp
           </div>
         </>
       ) : null}
-      {p.footer_text ? <p className="sm-card-footer">{p.footer_text}</p> : null}
+      {footerText ? <p className="sm-card-footer">{footerText}</p> : null}
       {error ? <p className="sm-error" role="alert">{error}</p> : null}
     </CardFrame>
   );

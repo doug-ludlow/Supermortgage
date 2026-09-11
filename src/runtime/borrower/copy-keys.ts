@@ -24,6 +24,7 @@ export const GATE_COPY_KEYS: Readonly<Record<string, string>> = {
   SM_UW_CTC_GATE: "gate.closing.not_clear_yet",
   REGB_1002_9_DECISION_30: "gate.decision.pending",
   FCRA_1681B_A3_SOFT_PULL_AUTHORIZATION: "gate.credit.authorize_first",
+  REGZ_1026_35B1_HPML_ESCROW_GATE: "escrow.waiver.hpml_period",           // 32.8 §6.3 / 23.4-T5: "Your loan keeps its escrow account until {{date}}."
 };
 
 /** Command refusals the borrower surface itself names (32.2 §2 preconditions the owning handler does not check, 01 §3 card rules, 01 §5 identity). */
@@ -51,7 +52,11 @@ export const COMMAND_COPY_KEYS: Readonly<Record<string, string>> = {
   DUPLICATE_RECORD: DEFAULT_COPY_KEY,
   SUBJECT_REQUIRED: "error.not_yours",
   DEMOGRAPHICS_OWN_PARTY_ONLY: "demographics.title",
+  CARD_FIELD_REQUIRED: "thread.card_field_required",          // 32.3 T13: a required tap missing — the card refuses, nothing is written
+  NO_DEMOGRAPHIC_AT_LEAD: "gate.demographics.application_first",   // 20.3 T12 / 32.3 T15
+  SCORE_MODEL_MIXED: "credit.rerun.neutral",                    // 23.1 T11 / 32.3 T9: the neutral re-run line, never a score
   JOINT_INTENT_OWN_PARTY_ONLY: "consent.joint_intent.title",
+  SUBJECT_TERMINAL: "error.read_only",                          // 32.13 T-X-16: "This file is closed, so that can't change…"
 };
 
 /** Thread replies the API authors itself while the agent turn is not yet wired (01 §6.4, 01 §7.1, 13 T-X-05). */

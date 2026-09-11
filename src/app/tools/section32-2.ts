@@ -27,6 +27,7 @@ import { CommandBus, type CommandContext } from "../commands.ts";
 import { AgentRegistry, loadAgentsFile } from "../agents.ts";
 import type { Queryable } from "../../infra/db/client.ts";
 import { isUuid, toJson } from "../../infra/db/client.ts";
+import { plainDate as D, addYears } from "../../kernel/calendar/date.ts";
 
 export const BORROWER_APP = "borrower-app";
 export const PROCESS = "32.2";
@@ -97,6 +98,109 @@ const SIX_ITEMS = new Set(["name", "income", "ssn", "property_address", "propert
 const CASE_KINDS = new Set(["rfi", "noe", "complaint", "payoff_request", "address_change", "general_inquiry"]);
 const ok = (name: string, extra: Record<string, unknown>): Record<string, unknown> => ({ command: name, outcome: "accepted", ...(DIRECT_TO_OPS[name] ? { direct_to_ops: DIRECT_TO_OPS[name] } : {}), ...extra });
 
+// ---------------------------------------------------------------- 32.3: the multi-field ConfirmCard / ProfileCard resolves (E5, R1, R3, R4, R7, P1, P8, C1) and the E-SIGN demonstration test
+/** 7.4's demonstration test, FAKE: the code printed in the verification e-mail's PDF is derived from the consent id (a real mailer holds it out of band). */
+export const esignVerificationToken = (consentId: string): string => sha(`esign-verify:${consentId}`).slice(0, 6).toUpperCase();
+/** 32.13 / BACKEND-DELTAS §3: the 0009 `consents.scope` vocabulary (disclosures, notices, esign_signatures, enote, the servicing classes) → 20.3's E-SIGN class names. */
+export const esignClassesOf = (scopes: readonly string[]): string[] => [...new Set(scopes.map((s) => (s === "disclosures" || s === "notices" || s === "origination_disclosures" ? "origination_disclosures" : s === "esign_signatures" || s === "enote" || s === "origination_esign_signatures" ? "origination_esign_signatures" : "servicing_communications")))];
+interface ConfirmedField { readonly path: string; readonly value: string; readonly source: string }
+/** The card's confirmed fields as the API hands them over (`fields[]`: value + the source the API settled — `borrower` where the value was edited). */
+const fieldsOf = (i: ToolInput): ConfirmedField[] => list(i, "fields").map((f) => { const o = (f && typeof f === "object" ? f : {}) as Record<string, unknown>; const v = o["value"] !== undefined && o["value"] !== null ? o["value"] : o["value_confirmed"]; return { path: String(o["path"] ?? ""), value: v === undefined || v === null ? "" : String(v), source: String(o["source"] ?? "borrower") }; }).filter((f) => f.path);
+/** 21.1's six items ↔ 20.3's `trid_items` keys (the lead's evidence of the TRID anchor — 20.3 T5, 32.3 T8/T18). */
+const TRID_ITEM_OF: Readonly<Record<string, string>> = { name: "name", legal_name: "name", income: "income", ssn: "ssn_for_credit", property_address: "property_address", property_value_estimate: "value_estimate", loan_amount_sought: "loan_amount_sought" };
+async function recordLeadTridItem(rt: ToolRuntime, ctx: CommandContext, i: ToolInput, item: string, source: string, value: string): Promise<unknown> {
+  const lead_id = str(i, "lead_id"); const trid = TRID_ITEM_OF[item]; if (!lead_id || !trid || !rt.store.get("leads", lead_id)) return null;
+  // an accepted prefill is `on_file_confirmed`; a typed value is `consumer_stated`; income is always the consumer's own statement for the new transaction (20.3 rule 5); the SSN itself never travels
+  const tridSource = item === "income" || source === "borrower" ? "consumer_stated" : "on_file_confirmed";
+  return delegate(rt, ctx, "20.3", "explainProgram", { op: "record_trid_item", lead_id, item: trid, source: tridSource, value: item === "ssn" ? "ssn:provided" : value });
+}
+/** A six-item write: a typed/edited value is `borrower_stated` (captureField); an accepted prefill is `borrower_confirmed_prefill` (confirmPrefill) — 21.1 rule 1 / 21.2 rule 2. */
+const captureSix = (rt: ToolRuntime, ctx: CommandContext, application_id: string, item: string, value: string, source: string, borrower_id: string | undefined): Promise<Record<string, unknown>> =>
+  (source === "borrower" ? delegate(rt, ctx, "21.1", "captureField", { application_id, field: item, value, ...(borrower_id ? { borrower_id } : {}) }) : delegate(rt, ctx, "21.1", "confirmPrefill", { application_id, item, value, ...(borrower_id ? { borrower_id } : {}), confirmed: true })) as Promise<Record<string, unknown>>;
+async function confirmFields(i: ToolInput, ctx: CommandContext, rt: ToolRuntime, application_id: string, path: string): Promise<Record<string, unknown>> {
+  const fields = fieldsOf(i); const abId = isUuid(str(i, "application_borrower_id")) ? str(i, "application_borrower_id") : ""; const borrower_id = str(i, "borrower_id") || undefined; const now = ctx.now;
+  const get = (p: string): ConfirmedField | undefined => fields.find((f) => f.path === p && f.value !== "");
+  const need_ = (p: string): ConfirmedField => { const f = get(p); if (!f) throw new RangeError(`${p} is required`); return f; };
+  const results: Record<string, unknown> = {}; let trid: Record<string, unknown> | null = null;
+  // application_borrowers.prefill[item] = {value, source, confirmed_at}: the confirmed fact beside its provenance (01 §3.3; T5)
+  const prefill = (item: string, f: ConfirmedField): void => { if (abId) defer(rt, async (q) => { await q.query(`UPDATE application_borrowers SET prefill = jsonb_set(prefill, ARRAY[$2], coalesce(prefill->$2, '{}'::jsonb) || $3::jsonb) WHERE id = $1`, [abId, item, toJson({ value: f.value, source: f.source, confirmed_at: now })]); }); };
+  const plain = (field: string, value: string): Promise<unknown> => delegate(rt, ctx, "21.1", "captureField", { application_id, field, value, ...(borrower_id ? { borrower_id } : {}) });
+  switch (path) {
+    case "identity": {   // E5: name → the six-item `name`; DOB and current address are plain fields (each with its source and confirmed_at)
+      const name = get("legal_name"); const dob = get("date_of_birth"); const addr = get("current_address");
+      if (name) { trid = await captureSix(rt, ctx, application_id, "name", name.value, name.source, borrower_id); prefill("legal_name", name); await recordLeadTridItem(rt, ctx, i, "name", name.source, name.value); if (abId) defer(rt, async (q) => { await q.query(`UPDATE application_borrowers SET legal_name = $2 WHERE id = $1`, [abId, name.value]); }); }
+      if (dob) { await plain("date_of_birth", dob.value); prefill("date_of_birth", dob); if (abId && /^\d{4}-\d{2}-\d{2}$/.test(dob.value)) defer(rt, async (q) => { await q.query(`UPDATE application_borrowers SET date_of_birth = $2::date WHERE id = $1`, [abId, dob.value]); }); }
+      if (addr) { await plain("current_address", addr.value); prefill("current_address", addr); }
+      break;
+    }
+    case "ssn": {   // E5: the one typed field — stored once (last four beside the encrypted TIN's slot), never echoed, never in prefill
+      const f = need_("ssn"); const digits = f.value.replace(/\D/g, ""); if (digits.length !== 9) throw new RangeError("ssn must be nine digits");
+      trid = await captureSix(rt, ctx, application_id, "ssn", f.value, "borrower", borrower_id); await recordLeadTridItem(rt, ctx, i, "ssn", "borrower", "ssn:provided");
+      if (abId) defer(rt, async (q) => { await q.query(`UPDATE application_borrowers SET tin_last4 = $2 WHERE id = $1`, [abId, digits.slice(-4)]); });
+      results["ssn"] = "stored"; break;
+    }
+    case "property_address": {   // R1: the address counts as the six-item property address when confirmed (20.3 T5 / 32.3 T8); type, units and occupancy are plain fields
+      const f = need_("property_address"); trid = await captureSix(rt, ctx, application_id, "property_address", f.value, f.source, borrower_id); await recordLeadTridItem(rt, ctx, i, "property_address", f.source, f.value);
+      for (const k of ["property_type", "units", "occupancy"]) { const x = get(k); if (x) await plain(k, x.value); }
+      break;
+    }
+    case "income": {   // R3: Confirm = the borrower's stated income for this transaction (21.2 rule 2); the row keeps the source and the confirmation time (T11)
+      const base = need_("monthly_base_cents"); const amount = cents(base.value); if (amount < 0n) throw new RangeError("monthly_base_cents must be non-negative");
+      const source = base.source === "borrower" ? "borrower" : "payroll_connection";
+      trid = await captureSix(rt, ctx, application_id, "income", amount.toString(), source === "borrower" ? "borrower" : "payroll_connection", borrower_id); await recordLeadTridItem(rt, ctx, i, "income", source, amount.toString());
+      const employer = { name: get("employer")?.value ?? null, position: get("position")?.value ?? null, start_date: get("start_date")?.value ?? null, pay_frequency: get("pay_frequency")?.value ?? null, source: get("employer")?.source ?? source };
+      const calculation = { source, confirmed_at: now, verification_id: str(i, "verification_id") || null, report_reference_id: str(i, "report_reference_id") || null, card_instance_id: cardId(i), variable_monthly_cents: cents(get("monthly_variable_cents")?.value ?? "0").toString(), other_income: get("other_income")?.value ?? "none", vendor: source === "payroll_connection" ? "FAKE:truv_income" : null };
+      if (abId) defer(rt, async (q) => { await q.query(`INSERT INTO application_income (application_id, application_borrower_id, source_kind, employer, monthly_amount_cents, qualifying, calculation) VALUES ($1, $2, 'base', $3::jsonb, $4, true, $5::jsonb)`, [application_id, abId, toJson(employer), amount.toString(), toJson(calculation)]); });
+      results["amount_cents"] = amount.toString(); results["source"] = source; break;
+    }
+    case "profile": {   // R4: four required taps and the Form 1103 language preference — each a ULAD-validated field on the borrower (T13: nothing without the tap)
+      need_("citizenship_status"); need_("marital_status"); need_("dependents"); need_("military_service");
+      for (const k of ["citizenship_status", "marital_status", "language_preference", "dependents", "military_service", "dependents_ages"]) { const x = get(k); if (x) await plain(k, k === "language_preference" && x.value === "" ? "not_answered" : x.value); }
+      if (abId) { const c = get("citizenship_status")!.value; const m = get("marital_status")!.value; const l = get("language_preference")?.value ?? "not_answered"; defer(rt, async (q) => { await q.query(`UPDATE application_borrowers SET citizenship_status = $2, marital_status = $3, language_preference = $4 WHERE id = $1`, [abId, c, m, l]); }); }
+      break;
+    }
+    case "ssn_on_file": {   // 32.11 §3: a returning borrower's SSN is on file (captured once at the prior origination, 01 §5) — confirming the offered prefill counts as the six-item `ssn`; nothing is re-typed and nothing travels
+      need_("ssn_on_file"); trid = await delegate(rt, ctx, "21.1", "confirmPrefill", { application_id, item: "ssn", ...(borrower_id ? { borrower_id } : {}), confirmed: true }) as Record<string, unknown>; await recordLeadTridItem(rt, ctx, i, "ssn", "prior_application", "ssn:on_file");
+      results["ssn"] = "on_file"; break;
+    }
+    case "property_value_estimate": case "loan_amount_sought": {   // R7: an accepted AVM / payoff-based amount counts at the tap; an edit is the borrower's own number (T18)
+      const f = need_(path); const amount = cents(f.value).toString(); trid = await captureSix(rt, ctx, application_id, path, amount, f.source, borrower_id); await recordLeadTridItem(rt, ctx, i, path, f.source, amount); results["source"] = f.source; break;
+    }
+    case "purchase_contract": {   // C1/C2: the extracted fields count only on Confirm; the address completes the six items (T29); the purchase_contracts row is written here
+      const addr = get("property_address"); const price = get("purchase_price_cents"); if (!addr && !price) throw new RangeError("property_address or purchase_price_cents is required");
+      if (price) { const v = cents(price.value).toString(); await captureSix(rt, ctx, application_id, "property_value_estimate", v, price.source, borrower_id); await recordLeadTridItem(rt, ctx, i, "property_value_estimate", price.source, v); }
+      if (addr) { trid = await captureSix(rt, ctx, application_id, "property_address", addr.value, addr.source, borrower_id); await recordLeadTridItem(rt, ctx, i, "property_address", addr.source, addr.value); }
+      const document_id = str(i, "document_id"); const confirmed = Object.fromEntries(fields.map((f) => [f.path, { value: f.value, source: f.source, confirmed_at: now }]));
+      rt.store.put("purchase_contracts", document_id || `${application_id}:contract`, { application_id, document_id: document_id || null, fields: confirmed, confirmed_at: now, card_instance_id: cardId(i) }, ctx.actor, ctx.now);
+      const dateOr = (k: string): string | null => { const v = get(k)?.value ?? ""; return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null; };
+      if (price) defer(rt, async (q) => { await q.query(`INSERT INTO purchase_contracts (application_id, document_id, sales_price_cents, seller_concessions_cents, contract_date, closing_date) VALUES ($1, $2, $3, $4, $5::date, $6::date)`, [application_id, isUuid(document_id) ? document_id : null, cents(price.value).toString(), cents(get("seller_concessions_cents")?.value ?? "0").toString(), dateOr("contract_date"), dateOr("closing_date")]); });
+      ctx.events.append({ type: "purchase_contract.confirmed", applicationId: application_id, actor: ctx.actor, payload: { application_id, document_id: document_id || null, fields: Object.keys(confirmed), card_instance_id: cardId(i) } });
+      break;
+    }
+    case "preapproval.where": {   // P1: the state (SM_LICENSE_STATE_GATE), the price range and down payment → 20.3's prequalification request (kind preapproval — DELTA-01)
+      const state = need_("state"); const lo = cents(need_("price_min_cents").value); const hi = cents(need_("price_max_cents").value); const down = cents(need_("down_payment_cents").value);
+      await plain("property_state", state.value); const range = [lo > down ? lo - down : 0n, hi > down ? hi - down : 0n];
+      if (str(i, "lead_id") && rt.store.get("leads", str(i, "lead_id"))) results["prequal"] = await delegate(rt, ctx, "20.3", "explainProgram", { op: "request_prequal", lead_id: str(i, "lead_id"), prequal_id: str(i, "prequal_id") || `PQ-${application_id.slice(0, 8)}`, kind: "preapproval", value_estimate_cents: hi.toString(), loan_amount_range_cents: [range[0]!.toString(), range[1]!.toString()], first_time_buyer: get("first_time_buyer")?.value === "yes" });
+      results["state"] = state.value; break;
+    }
+    case "preapproval.target": {   // P8: target price, down payment and the loan amount (typed) — the value and amount items for the TBD casefile
+      const price = cents(need_("target_price_cents").value).toString(); const loan = cents(need_("loan_amount_sought").value).toString();
+      await captureSix(rt, ctx, application_id, "property_value_estimate", price, "borrower", borrower_id); await recordLeadTridItem(rt, ctx, i, "property_value_estimate", "borrower", price);
+      trid = await captureSix(rt, ctx, application_id, "loan_amount_sought", loan, "borrower", borrower_id); await recordLeadTridItem(rt, ctx, i, "loan_amount_sought", "borrower", loan);
+      const product = get("product_code"); if (product) await plain("product_code", product.value); const down = get("down_payment_cents"); if (down) await plain("down_payment_cents", cents(down.value).toString());
+      break;
+    }
+    case "liabilities": case "current_loan": {   // R1/R2: the confirmed liabilities (source credit_report) as the borrower's own statement beside 22.5's rows
+      const id = `${application_id}:${borrower_id ?? abId ?? "all"}:${path}`;
+      rt.store.put("application_liabilities", id, { application_id, borrower_id: borrower_id ?? abId ?? null, kind: path, report_id: str(i, "report_id") || null, fields: fields.map((f) => ({ ...f, confirmed_at: now })), confirmed_at: now, card_instance_id: cardId(i) }, ctx.actor, ctx.now);
+      ctx.events.append({ type: "application.liabilities.confirmed", applicationId: application_id, actor: ctx.actor, payload: { application_id, borrower_id: borrower_id ?? null, kind: path, count: fields.length, card_instance_id: cardId(i) } });
+      break;
+    }
+    default: for (const f of fields) await plain(f.path, f.value);
+  }
+  return ok("application.confirmField", { application_id, path, fields: fields.map((f) => ({ path: f.path, source: f.source })), confirmed_at: now, six_items_complete: trid?.["six_items_complete"] ?? null, trid_emitted: trid?.["trid_emitted"] ?? false, ...results });
+}
+
 type Def = Omit<ToolDef, "process" | "agent">;
 const cmd = (name: string, kind: ToolDef["kind"], handler: (i: ToolInput, ctx: CommandContext, rt: ToolRuntime) => unknown | Promise<unknown>, extra: Partial<Def> = {}): Def =>
   ({ name, kind, handler: compute(handler), decision: decisionFor(name), ...extra });
@@ -115,6 +219,8 @@ export const TOOLS_32_2: readonly ToolDef[] = defineTools(PROCESS, BORROWER_APP,
   cmd("lead.acknowledgeAiDisclosure", "act", async (i, ctx, rt) => {
     need(i, "lead_id", "interaction_id");
     const r = await delegate(rt, ctx, "20.3", "deliverDisclosure", { lead_id: str(i, "lead_id"), interaction_id: str(i, "interaction_id"), notice_id: str(i, "notice_id") || null, ...(str(i, "disclosure_version_id") ? { version: str(i, "disclosure_version_id") } : {}) }) as Record<string, unknown>;
+    // 7.4 rule 13 / 32.13 T-X-01: the acknowledgment is per session, on every channel, origination and servicing alike — the 20.3 delivery is the disclosure; this is the party's session acknowledging it (no tap: logged on the render)
+    ctx.events.append({ type: "consent.ai_disclosure.acknowledged", ...(appOf(i, ctx) ? { applicationId: appOf(i, ctx) } : {}), ...(loanOf(i, ctx) ? { loanId: loanOf(i, ctx) } : {}), actor: ctx.actor, payload: { lead_id: str(i, "lead_id"), interaction_id: str(i, "interaction_id"), party_id: str(i, "party_id") || null, consent_id: r["consent_id"] ?? null, version: r["version"] ?? null, session_id: str(i, "session_id") || null, channel: str(i, "channel") || null, acknowledged_at: ctx.now } });
     return ok("lead.acknowledgeAiDisclosure", { lead_id: str(i, "lead_id"), consent_id: r["consent_id"], version: r["version"], text: r["text"] });
   }),
   // party.authenticate → 20.3 authenticate{method}: `lead.authenticated{level}` (the session itself is the API's — 01 §5)
@@ -132,25 +238,45 @@ export const TOOLS_32_2: readonly ToolDef[] = defineTools(PROCESS, BORROWER_APP,
   }, { guardrails: [never("LEVEL_REQUIRED", "01 §5: identity proofing starts from an L1 session", (i) => !levelAtLeast(i, "L1"), "an L1 session is required")] }),
   // consent.capture → 20.3 captureConsent (a lead) or 2.3 consent.capture (a loan); the consents row is written with the command (7.4: consent is per party)
   cmd("consent.capture", "write", async (i, ctx, rt) => {
+    if (flag(i, "withdraw")) {   // 32.11 §5 (DELTA-05) / 7.4: the borrower withdraws a consent from the Loan section (a ChoiceCard tap) — the rows keep their history; `consent.<kind>.withdrawn` (02 §1.3); rows of other kinds and purposes stay
+      need(i, "kind", "party_id"); const kind = str(i, "kind"); const platformKind = kind === "autodraft_authorization" ? "autopay" : kind; const party_id = str(i, "party_id"); const now = ctx.now; const purpose = str(i, "purpose") || null; const only = str(i, "consent_id") || null;
+      defer(rt, async (q) => { await q.query(`UPDATE consents SET status = 'withdrawn', revoked_at = $3, withdrawal_channel = 'portal', withdrawal_reason = $4 WHERE party_id = $1 AND kind = $2::consent_kind AND ($5::text IS NULL OR purpose = $5) AND ($6::text IS NULL OR id::text = $6) AND (status IS NULL OR status NOT IN ('withdrawn', 'revoked'))`, [party_id, platformKind, now, str(i, "reason") || "borrower_withdrew", purpose, only]); });
+      ctx.events.append({ type: `consent.${kind}.withdrawn`, ...(loanOf(i, ctx) ? { loanId: loanOf(i, ctx) } : {}), ...(appOf(i, ctx) ? { applicationId: appOf(i, ctx) } : {}), actor: ctx.actor, payload: { kind: platformKind, ux_kind: kind, party_id, purpose, consent_id: only, withdrawn_at: now, channel: "portal", reason: str(i, "reason") || "borrower_withdrew", card_instance_id: cardId(i) } });
+      return ok("consent.capture", { consent_id: only, kind: platformKind, status: "withdrawn", party_id, withdrawn_at: now });
+    }
+    if (str(i, "op") === "verify") {   // 32.3 E6 / 7.4 rule 2: the demonstration test — the e-mailed link + PDF code; only now does the esign row become `active` (never a spoken or typed yes)
+      need(i, "consent_id", "token", "party_id"); const consent_id = str(i, "consent_id"); const party_id = str(i, "party_id"); const now = ctx.now;
+      if (str(i, "token").trim().toUpperCase() !== esignVerificationToken(consent_id)) throw new RangeError("the verification code did not match the one in the attached PDF (FAKE mailer)");
+      const scope = list(i, "scope").length ? list(i, "scope").map(String) : ["disclosures", "notices"]; const application_id = appOf(i, ctx) || null;
+      defer(rt, async (q) => { await q.query(`UPDATE consents SET status = 'active', verified = true WHERE id = $1 AND kind = 'esign' AND party_id = $2`, [consent_id, party_id]); });
+      const sub = application_id ? { applicationId: application_id } : {};
+      ctx.events.append({ type: "consent.esign.verified", ...sub, actor: ctx.actor, payload: { consent_id, party_id, verified_at: now, method: "email_link_pdf_token", vendor: "FAKE", card_instance_id: cardId(i) } });
+      ctx.events.append({ type: "consent.esign.active", ...sub, actor: ctx.actor, payload: { consent_id, party_id, scope, activated_at: now } });
+      ctx.events.append({ type: "consent.granted", ...sub, actor: ctx.actor, payload: { consent_id, kind: "esign", ux_kind: "esign", party_id, scope, status: "active", method: "checkbox_with_text", covers_origination_disclosures: scope.includes("disclosures"), verified_at: now } });
+      return ok("consent.capture", { consent_id, kind: "esign", status: "active", verified: true, party_id, scope });
+    }
     need(i, "kind", "party_id", "method"); const kind = str(i, "kind"); const scope = list(i, "scope").map(String); const consent_id = str(i, "consent_id") || randomUUID();
     const platformKind = kind === "autodraft_authorization" ? "autopay" : kind;
     const status = kind === "esign" ? "pending_verification" : "active";   // 7.4's consents.status vocabulary: the E-SIGN demonstration test runs out of band before `active`
     let delegated: Record<string, unknown> | null = null;
     if (str(i, "lead_id") && ["esign", "tcpa_voice", "tcpa_sms", "credit_authorization"].includes(kind)) {
-      delegated = await delegate(rt, ctx, "20.3", "captureConsent", kind === "esign" ? { lead_id: str(i, "lead_id"), kind, consent_id, party_id: str(i, "party_id"), scopes: scope.length ? scope : ["disclosures", "notices"], disclosure_version: str(i, "disclosure_version_id"), captured_via: str(i, "channel") === "voice" ? "voice" : "portal", clicked_at: ctx.now, ip: str(i, "ip") || null, user_agent: str(i, "user_agent") || null }
+      delegated = await delegate(rt, ctx, "20.3", "captureConsent", kind === "esign" ? { lead_id: str(i, "lead_id"), kind, consent_id, party_id: str(i, "party_id"), scopes: esignClassesOf(scope.length ? scope : ["disclosures", "notices"]), disclosure_version: str(i, "disclosure_version_id"), captured_via: str(i, "channel") === "voice" ? "voice" : "portal", clicked_at: ctx.now, ip: str(i, "ip") || null, user_agent: str(i, "user_agent") || null }
         : kind === "credit_authorization" ? { lead_id: str(i, "lead_id"), kind, authorization_id: consent_id, authorization_kind: str(i, "authorization_kind") || "soft_prequal", party_id: str(i, "party_id"), text_version: str(i, "text_hash") || str(i, "disclosure_version_id"), channel: "web_chat", end_user: "partner", evidence: { ip: str(i, "ip") || null, user_agent: str(i, "user_agent") || null, card_instance_id: cardId(i) } }
         : { lead_id: str(i, "lead_id"), kind, consent_id, party_id: str(i, "party_id"), number: str(i, "phone_number") }) as Record<string, unknown>;
     } else if (loanOf(i, ctx)) {
       delegated = await delegate(rt, ctx, "2.3", "consent.capture", { id: consent_id, loan_id: loanOf(i, ctx), data: { consent_id, loan_id: loanOf(i, ctx), party_id: str(i, "party_id"), kind: platformKind, scope, status, method: str(i, "method"), channel: "portal", disclosure_version_id: str(i, "disclosure_version_id") || null, text_hash: str(i, "text_hash") || null, purpose: str(i, "purpose") || "informational", captured_at: ctx.now } }) as Record<string, unknown>;
     }
-    ctx.events.append({ type: `consent.granted`, ...(appOf(i, ctx) ? { applicationId: appOf(i, ctx) } : {}), actor: ctx.actor, payload: { consent_id, kind: platformKind, ux_kind: kind, party_id: str(i, "party_id"), scope, status, method: str(i, "method"), disclosure_version_id: str(i, "disclosure_version_id") || null, card_instance_id: cardId(i), standing: flag(i, "standing") } });
+    ctx.events.append({ type: `consent.granted`, ...(appOf(i, ctx) ? { applicationId: appOf(i, ctx) } : {}), ...(loanOf(i, ctx) ? { loanId: loanOf(i, ctx) } : {}), actor: ctx.actor, payload: { consent_id, kind: platformKind, ux_kind: kind, party_id: str(i, "party_id"), scope, status, method: str(i, "method"), disclosure_version_id: str(i, "disclosure_version_id") || null, card_instance_id: cardId(i), standing: flag(i, "standing") } });   // 32.11 §5: a consent captured on a serviced loan carries the loan subject too (the standing authorization's card)
     if (kind === "esign") ctx.events.append({ type: "consent.esign.pending", ...(appOf(i, ctx) ? { applicationId: appOf(i, ctx) } : {}), actor: ctx.actor, payload: { consent_id, party_id: str(i, "party_id"), scope, verification_email: "NTC_ESIGN_VERIFICATION_EMAIL" } });
     const application_id = appOf(i, ctx) || null; const loan_id = loanOf(i, ctx) || null; const party_id = str(i, "party_id"); const lead_id = str(i, "lead_id") || null;
     // consents.disclosure_version_id is a uuid (the consent_disclosure_versions row); a card's version label that is not one lands in hw_sw_version (7.4's statement version) beside the text hash
     const versionId = str(i, "disclosure_version_id"); const versionUuid = isUuid(versionId) ? versionId : null; const versionLabel = versionUuid ? null : versionId || null;
-    defer(rt, async (q) => { await q.query(`INSERT INTO consents (id, kind, granted, provenance, verified, captured_at, scope, status, disclosure_version_id, hw_sw_version, captured_via, application_id, loan_id, lead_id, party_id, purpose, disclosure_text_hash, standing, loan_ids)
+    defer(rt, async (q) => {
+      // 32.13: 20.3 keeps the lead in the entity store; the 0112 `consents.lead_id` reference holds only when the lead has a `leads` row (the preapproval-letter path writes one) — the lead id stays on the event and in 20.3's record either way
+      const leadRow = lead_id ? await q.query<{ lead_id: string }>(`SELECT lead_id FROM leads WHERE lead_id::text = $1`, [lead_id]) : []; const leadFk = leadRow.length ? lead_id : null;
+      await q.query(`INSERT INTO consents (id, kind, granted, provenance, verified, captured_at, scope, status, disclosure_version_id, hw_sw_version, captured_via, application_id, loan_id, lead_id, party_id, purpose, disclosure_text_hash, standing, loan_ids)
       VALUES ($1, $2::consent_kind, true, 'portal', $3, $4, $5::text[], $6, $7, $8, 'portal', $9, $10, $11, $12, $13, $14, $15, $16::uuid[])`,
-      [consent_id, platformKind, kind !== "esign", ctx.now, scope, status, versionUuid, versionLabel, application_id, loan_id, lead_id, party_id, str(i, "purpose") || "informational", str(i, "text_hash") || null, flag(i, "standing"), loan_id ? [loan_id] : []]); });
+      [consent_id, platformKind, kind !== "esign", ctx.now, scope, status, versionUuid, versionLabel, application_id, loan_id, leadFk, party_id, str(i, "purpose") || "informational", str(i, "text_hash") || null, flag(i, "standing"), loan_id ? [loan_id] : []]); });
     return ok("consent.capture", { consent_id, kind: platformKind, status, scope, party_id, verification_email: kind === "esign" ? "NTC_ESIGN_VERIFICATION_EMAIL" : null, delegated: delegated ? Object.fromEntries(Object.entries(delegated).filter(([k]) => ["consent_id", "status", "scope", "authorization_id", "permissible_purpose"].includes(k))) : null });
   }, { guardrails: [NOT_VOICE("a consent"),
     never("AFFIRMATION_METHOD", "01 §3.5: esign / credit_authorization / autodraft_authorization need checkbox_with_text + typed name; ai_disclosure_ack a single tap", (i) => ["esign", "credit_authorization", "autodraft_authorization", "tcpa_voice", "tcpa_sms"].includes(str(i, "kind")) && str(i, "method") !== "" && str(i, "method") !== "checkbox_with_text", "this consent kind is affirmed by checkbox_with_text and a typed name")] }),
@@ -162,10 +288,38 @@ export const TOOLS_32_2: readonly ToolDef[] = defineTools(PROCESS, BORROWER_APP,
     const pulled = kind === "soft_pull" && i.order_pull !== false ? await delegate(rt, ctx, "20.3", "orderSoftPull", { lead_id: str(i, "lead_id"), requested_by: "consumer" }) as Record<string, unknown> : null;
     return ok("credit.authorize", { kind, authorization_id, permissible_purpose: r["permissible_purpose"], soft_pull_requested: !!pulled });
   }, { guardrails: [never("LEVEL_REQUIRED", "02 §2 credit.authorize: L2 (soft) / L3 (hard)", (i) => str(i, "kind") === "hard_pull" ? !levelAtLeast(i, "L3") : !levelAtLeast(i, "L2"), "a soft pull needs an L2 session and a hard pull an L3 session"),
-    never("CREDIT_AUTHORIZATION_KIND", "02 §2: kind ∈ {soft_pull, hard_pull}", (i) => str(i, "kind") !== "" && !["soft_pull", "hard_pull"].includes(str(i, "kind")), "kind must be soft_pull or hard_pull")] }),
+    never("CREDIT_AUTHORIZATION_KIND", "02 §2: kind ∈ {soft_pull, hard_pull}", (i) => str(i, "kind") !== "" && !["soft_pull", "hard_pull"].includes(str(i, "kind")), "kind must be soft_pull or hard_pull"),
+    never("SM_O21_JOINT_INTENT_GATE", "21.1 rule 4 / §1002.7(d)(1) — 32.5 §7: joint intent is affirmed by each borrower before their credit is ordered (the API states `joint_intent_required` / `joint_intent_affirmed` from 21.1's own record)", (i) => i.joint_intent_required === true && i.joint_intent_affirmed !== true, "this borrower has not affirmed joint intent — the ConsentCard{joint_intent} comes first")] }),
   // application.confirmField → 21.1 confirmPrefill (a six-item prefill) / captureField (any other path): the O2.1 rule-1 event
   cmd("application.confirmField", "write", async (i, ctx, rt) => {
     const application_id = needApp(i, ctx); need(i, "path"); const path = str(i, "path"); const item = path.replace(/^application\./, "");
+    // 32.5 §2.4 — the pre-closing credit refresh's ConfirmCard: `credit.alert.<alert_id>` is 22.2's own triage, never an intake field. Yes → `verified_new_debt`
+    // (the liability row, 22.5's DTI recalculation, 23.1's B3-2-10 tolerance test → `du.resubmission.required|waived`); no → 22.2's explained/dispute path (SQ-14/15).
+    if (item.startsWith("credit.alert.")) {
+      const alert_id = item.slice("credit.alert.".length); const v = obj(i, "value");
+      const yes = v["is_mine"] === true || v["is_mine"] === "yes" || str(i, "option_id") === "yes";
+      const alert = rt.store.get("credit_alerts", alert_id)?.data as Record<string, unknown> | undefined; if (!alert) throw new RangeError(`no credit_alerts row ${alert_id}`);
+      const payload = (alert["payload"] as Record<string, unknown> | undefined) ?? {}; const creditor = String(v["creditor_name"] ?? payload["creditor_name"] ?? "the creditor");
+      if (!yes) {
+        const t = await delegate(rt, ctx, "22.2", "triageUdmAlert", { application_id, alert_id, status: "explained", rationale: `the borrower does not recognize the ${creditor} account (ConfirmCard ${cardId(i) ?? "-"}) — 22.2 dispute path (SQ-15)`, explanation: String(v["explanation"] ?? "not mine") }) as Record<string, unknown>;
+        return ok("application.confirmField", { application_id, path, alert_id, is_mine: false, confirmed_at: ctx.now, triage: (t["alert"] as Record<string, unknown> | undefined)?.["status"] ?? "explained", next: "22.2 dispute/fraud path (SQ-14/15)" });
+      }
+      // the figures the tolerance test measures against are DU's own last submission (never re-typed): qualifying income and total obligations from the ULAD snapshot
+      const subs = rt.store.list("du_submissions", (d) => d.application_id === application_id).map((x) => x.data as Record<string, unknown>).sort((a, b) => Number(a["submission_number"] ?? 0) - Number(b["submission_number"] ?? 0));
+      const baseline = subs.at(-1); if (!baseline) throw new RangeError("no DU submission to measure the new debt against (23.1)");
+      const snap = (baseline["snapshot"] as Record<string, unknown>) ?? {}; const income = cents(snap["qualifying_income_cents"] ?? 0); const obligations = cents(snap["total_obligations_cents"] ?? 0);
+      const monthly = cents(v["monthly_payment_cents"] ?? payload["monthly_payment_cents"] ?? 0); if (monthly <= 0n) throw new RangeError("monthly_payment_cents is required to add the debt");
+      const t = await delegate(rt, ctx, "22.2", "triageUdmAlert", { application_id, alert_id, status: "verified_new_debt", rationale: `the borrower confirmed the ${creditor} account through the ConfirmCard ${cardId(i) ?? "-"}`, explanation: String(v["explanation"] ?? `${creditor} account confirmed by the borrower`), evidence_document_id: cardId(i), creditor_name: creditor, liability_kind: String(v["liability_kind"] ?? payload["liability_kind"] ?? "installment"), monthly_payment_cents: monthly, balance_cents: cents(v["balance_cents"] ?? payload["balance_cents"] ?? 0), qualifying_income_cents: income, obligations_cents: obligations }) as Record<string, unknown>;
+      const impact = t["impact"] as Record<string, unknown> | null;
+      let resubmission: Record<string, unknown> | null = null;
+      if (impact) {
+        const candidate = { ...snap, total_obligations_cents: (obligations + monthly).toString() };
+        const r23 = await delegate(rt, ctx, "23.1", "evaluateResubmission", { application_id, casefile_id: baseline["casefile_id"], baseline, candidate, trigger_event: "credit.undisclosed_debt.found", credit_report_updated: true }) as Record<string, unknown>;
+        resubmission = { result: r23["result"], rule_codes: r23["rule_codes"], reason: r23["reason"], event: r23["event"] };
+      }
+      return ok("application.confirmField", { application_id, path, alert_id, is_mine: true, confirmed_at: ctx.now, liability: impact ? (impact["liability"] as Record<string, unknown>)["liability_id"] : null, dti_after_tenths: impact?.["new_dti_tenths"] ?? null, tolerance: impact?.["tolerance"] ?? null, resubmission });
+    }
+    if (list(i, "fields").length) return confirmFields(i, ctx, rt, application_id, item);   // 32.3: a multi-field card resolve (the API settles each field's source)
     const r = SIX_ITEMS.has(item)
       ? await delegate(rt, ctx, "21.1", "confirmPrefill", { application_id, item, ...(i.value !== undefined ? { value: i.value } : {}), borrower_id: str(i, "borrower_id") || undefined, confirmed: true }) as Record<string, unknown>
       : await delegate(rt, ctx, "21.1", "captureField", { application_id, field: item, value: i.value, borrower_id: str(i, "borrower_id") || undefined }) as Record<string, unknown>;
@@ -200,7 +354,8 @@ export const TOOLS_32_2: readonly ToolDef[] = defineTools(PROCESS, BORROWER_APP,
     const declined = flag(i, "declined");
     await delegate(rt, ctx, "21.1", "askDemographics", { application_id, borrower_id: str(i, "borrower_id"), collection_method: str(i, "collection_method") || "internet", ethnicity: declined ? null : (i.ethnicity ?? null), race: declined ? null : (i.race ?? null), sex: declined ? null : (i.sex ?? null), declined_ethnicity: declined || flag(i, "declined_ethnicity"), declined_race: declined || flag(i, "declined_race"), declined_sex: declined || flag(i, "declined_sex") });
     return ok("application.answerDemographics", { application_id, borrower_id: str(i, "borrower_id"), collection_method: str(i, "collection_method") || "internet", answered_at: ctx.now });   // never the values (01 §3.19)
-  }, { guardrails: [never("DEMOGRAPHICS_OWN_PARTY_ONLY", "02 §2 / 01 §3.19: own party only — never inferred, never answered for another borrower", (i) => str(i, "own_borrower_id") !== "" && str(i, "own_borrower_id") !== str(i, "borrower_id"), "a party answers the demographic questions only for themself"),
+  }, { guardrails: [guard("NO_DEMOGRAPHIC_AT_LEAD", "20.3 rule 6 / T12; 32.3 T15: the §1002.13 request exists only once the application is started (21.1)", (_i, ctx) => (hasEvent(ctx, /^application\.(started|received|trid_received)$/) ? undefined : "the demographic questions are asked at application, never at the lead stage")),
+    never("DEMOGRAPHICS_OWN_PARTY_ONLY", "02 §2 / 01 §3.19: own party only — never inferred, never answered for another borrower", (i) => str(i, "own_borrower_id") !== "" && str(i, "own_borrower_id") !== str(i, "borrower_id"), "a party answers the demographic questions only for themself"),
     never("DEMOGRAPHICS_NOT_IN_PERSON", "DELTA-09 / 21.1 rule 3: `video` is not in person; the card's collection_method is internet or telephone", (i) => str(i, "collection_method") !== "" && !["internet", "telephone"].includes(str(i, "collection_method")), "collection_method must be internet or telephone from the card")] }),
   // application.affirmJointIntent → 21.1 affirmJointIntent{method=card_affirmation, evidence_id=card_instance_id}; before that party's credit order (SM_O21_JOINT_INTENT_GATE)
   cmd("application.affirmJointIntent", "write", async (i, ctx, rt) => {
@@ -211,10 +366,10 @@ export const TOOLS_32_2: readonly ToolDef[] = defineTools(PROCESS, BORROWER_APP,
     never("SM_O21_JOINT_INTENT_GATE", "21.1 rule 4 / §1002.7(d): joint intent is affirmed by each borrower before their credit is ordered", (i) => flag(i, "credit_already_ordered"), "credit was already ordered for this borrower — intent must precede the order")] }),
   // application.inviteParty → the party + its conversation (DIRECT_TO_OPS): `application.party.invited`; the inviter never answers for the invitee
   cmd("application.inviteParty", "write", (i, ctx, rt) => {
-    const application_id = needApp(i, ctx); need(i, "role"); const contact = obj(i, "contact"); const role = str(i, "role");
+    const application_id = needApp(i, ctx); const contact = obj(i, "contact"); const role = str(i, "role") || str(i, "party_role"); if (!role) throw new RangeError("role is required");   // the InviteCard's evidence names `party_role` (01 §3.13)
     if (!["co_borrower", "non_borrowing_spouse", "poa", "authorized_third_party"].includes(role)) throw new RangeError("role must be co_borrower, non_borrowing_spouse, poa or authorized_third_party");
     if (!contact["email"] && !contact["phone"]) throw new RangeError("contact.email or contact.phone is required");
-    const legal_name = str(i, "legal_name") || String(contact["name"] ?? "") || "Invited party"; const ab_id = randomUUID(); const party_id = randomUUID(); const now = ctx.now;
+    const legal_name = str(i, "legal_name") || String(contact["name"] ?? "") || [contact["first_name"], contact["last_name"]].filter((x) => typeof x === "string" && x).join(" ") || "Invited party"; const ab_id = randomUUID(); const party_id = randomUUID(); const now = ctx.now;
     defer(rt, async (q) => {
       await q.query(`INSERT INTO parties (id, party_type, legal_name, contact) VALUES ($1, 'borrower', $2, $3::jsonb)`, [party_id, legal_name, toJson(contact)]);
       if (role === "co_borrower" || role === "non_borrowing_spouse") await q.query(`INSERT INTO application_borrowers (id, application_id, borrower_role, legal_name, contact, party_id, created_at) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)`, [ab_id, application_id, role, legal_name, toJson(contact), party_id, now]);
@@ -238,7 +393,8 @@ export const TOOLS_32_2: readonly ToolDef[] = defineTools(PROCESS, BORROWER_APP,
   // document.upload → 22.1 ingestDocument{source_channel=borrower_upload}: `document.received` → `document.classified`
   cmd("document.upload", "write", async (i, ctx, rt) => {
     const application_id = needApp(i, ctx); need(i, "document_id", "sha256");
-    const r = await delegate(rt, ctx, "22.1", "ingestDocument", { application_id, document_id: str(i, "document_id"), source_channel: "borrower_upload", sha256: str(i, "sha256"), page_count: Number(i.page_count ?? 0), declared_class: str(i, "document_class") || null, subject_borrower_id: str(i, "borrower_id") || null, ...(list(i, "applicant_borrower_ids").length ? { applicant_borrower_ids: i.applicant_borrower_ids } : {}), sender_identity: { party_id: str(i, "party_id") || null, card_instance_id: cardId(i) }, received_at: ctx.now }) as Record<string, unknown>;
+    // 32.5 §2.2: an UploadCard names the 22.1 request it answers (`request_id`) — `document.received{request_id}` satisfies SM_NEEDS_LIST_BORROWER_RESPONSE_5
+    const r = await delegate(rt, ctx, "22.1", "ingestDocument", { application_id, document_id: str(i, "document_id"), source_channel: "borrower_upload", sha256: str(i, "sha256"), page_count: Number(i.page_count ?? 0), declared_class: str(i, "document_class") || null, subject_borrower_id: str(i, "borrower_id") || null, ...(str(i, "request_id") ? { request_id: str(i, "request_id") } : {}), ...(list(i, "applicant_borrower_ids").length ? { applicant_borrower_ids: i.applicant_borrower_ids } : {}), sender_identity: { party_id: str(i, "party_id") || null, card_instance_id: cardId(i) }, received_at: ctx.now }) as Record<string, unknown>;
     return ok("document.upload", { application_id, document_id: str(i, "document_id"), status: r["status"], quarantined: r["quarantined"] ?? false, matched_request_ids: r["matched_request_ids"] ?? [] });
   }),
   // explanation.submit → the signed letter document (explanation_letter / inquiry_explanation) + 22.1 ingestDocument
@@ -261,9 +417,13 @@ export const TOOLS_32_2: readonly ToolDef[] = defineTools(PROCESS, BORROWER_APP,
       const r = await delegate(rt, ctx, "25.2", "recordReceipt", { application_id, disclosure_id, consumer_id: str(i, "consumer_id"), evidence: "esign_confirmed", at: ctx.now, evidence_document_id: cardId(i) || str(i, "evidence_document_id") || `card-${randomUUID()}` }) as Record<string, unknown>;
       return ok("disclosure.acknowledgeReceipt", { application_id, disclosure_id, kind, receipt: r["receipt"] ?? r, received_at: ctx.now });
     }
+    if (kind === "flood_notice") {   // 32.6 §5: the flood notice's acknowledgment is 24.5's own act (`flood.notice.acknowledged`), never a disclosure row
+      const r = await delegate(rt, ctx, "24.5", "deliverNotice", { application_id, op: "acknowledge", acknowledged_at: ctx.now, method: str(i, "method") || "esign", before_signing: true, ...(str(i, "short_period_reason") ? { short_period_reason: str(i, "short_period_reason") } : {}) }) as Record<string, unknown>;
+      return ok("disclosure.acknowledgeReceipt", { application_id, disclosure_id, kind, received_at: ctx.now, effective_receipt_date: r["effective_receipt_date"] ?? null, acknowledged_at: r["acknowledged_at"] ?? ctx.now });
+    }
     const received_on = ctx.now.slice(0, 10);
-    ctx.events.append({ type: `disclosure.${kind}.received`, applicationId: application_id, aggregate: { kind: "disclosure", id: disclosure_id }, actor: ctx.actor, payload: { application_id, disclosure_id, borrower_id: str(i, "consumer_id"), evidence: "esign_confirmed", receipt_evidence: "esign_confirmed", evidence_kind: "portal_acknowledgement", received_on, effective_receipt_date: received_on, card_instance_id: cardId(i) } });
-    if (row) rt.store.put("disclosures", disclosure_id, { ...row, status: "received", effective_receipt_date: (row["effective_receipt_date"] as string | undefined) ?? received_on, receipt_evidence: "esign_confirmed" }, ctx.actor, ctx.now);
+    ctx.events.append({ type: `disclosure.${kind}.received`, applicationId: application_id, aggregate: { kind: "disclosure", id: disclosure_id }, actor: ctx.actor, payload: { application_id, disclosure_id, borrower_id: str(i, "consumer_id"), evidence: "esign_confirmed", receipt_evidence: "esign_confirmed", evidence_kind: "portal_acknowledgement", received_on, received_at: ctx.now, effective_receipt_date: received_on, card_instance_id: cardId(i) } });
+    if (row) rt.store.put("disclosures", disclosure_id, { ...row, status: "received", effective_receipt_date: (row["effective_receipt_date"] as string | undefined) ?? received_on, receipt_evidence: "esign_confirmed", received_at: ctx.now }, ctx.actor, ctx.now);
     return ok("disclosure.acknowledgeReceipt", { application_id, disclosure_id, kind, received_at: ctx.now, effective_receipt_date: received_on });
   }, { guardrails: [never("ESIGN_7001C_CONSENT_GATE", "01 §3.6 / 02 §2: receipt through the card only under consents{kind=esign, status=active} for the class", (i) => i.esign_consent_active !== undefined && i.esign_consent_active !== true, "no active E-SIGN consent for this document class — the document is mailed instead")] }),
   // intent.record → 21.4 recordIntent{channel=app_button}: `intent.to_proceed.received`; opens REGZ_1026_19E2_INTENT_FEE_GATE
@@ -277,7 +437,7 @@ export const TOOLS_32_2: readonly ToolDef[] = defineTools(PROCESS, BORROWER_APP,
     const application_id = needApp(i, ctx); need(i, "quote_id", "property_state", "le_loan_amount_cents");
     const r = await delegate(rt, ctx, "21.4", "requestLock", { application_id, quote_id: str(i, "quote_id"), borrower_statement: str(i, "borrower_statement") || "Please lock my rate", property_state: str(i, "property_state"), le_loan_amount_cents: cents(i.le_loan_amount_cents), requested_at: ctx.now, ...(i.period_days !== undefined ? { lock_period_days: Number(i.period_days) } : {}), float_down_elected: flag(i, "float_down_elected"), ...(str(i, "time_zone") ? { time_zone: str(i, "time_zone") } : {}) }) as Record<string, unknown>;
     return ok("lock.request", { application_id, lock_id: r["lock_id"], status: r["status"], quote_id: str(i, "quote_id"), period_days: i.period_days ?? null, float_down_elected: flag(i, "float_down_elected") });
-  }),
+  }, { guardrails: [guard("REGZ_1026_19E2_INTENT_FEE_GATE", "21.4 rule 1 / 32.3 R11 (T24): a lock follows the LE receipt and a valid intent to proceed — never before", (_i, ctx) => (hasEvent(ctx, "intent.to_proceed.received", (p) => p["valid"] !== false) ? undefined : "no valid intent to proceed on file — the Proceed step comes after the Loan Estimate is received"))] }),
   // lock.requestExtension → 21.4 extendLock{delay_attribution=borrower}: `lock.extended`; locks.status executed|confirmed
   cmd("lock.requestExtension", "write", async (i, ctx, rt) => {
     const application_id = needApp(i, ctx); need(i, "lock_id", "new_closing_on");
@@ -323,6 +483,14 @@ export const TOOLS_32_2: readonly ToolDef[] = defineTools(PROCESS, BORROWER_APP,
     guard("APPRAISAL_NOT_ACCEPTED", "02 §2 rov.request: appraisals.review_status = accepted", (i) => (i.review_status !== undefined && String(i.review_status) !== "accepted" ? `the appraisal review is ${String(i.review_status)}, not accepted` : undefined))] }),
   // insurance.submitEvidence → 24.5 extractEvidence{kind=hoi_declaration}: `insurance.evidence.received`
   cmd("insurance.submitEvidence", "write", async (i, ctx, rt) => {
+    // 32.9 §1 (servicing, 9.5): evidence of the borrower's own coverage on a serviced loan with an FPI case — `insurance.evidence.received{fpi_active}` on the loan (the anchor of
+    // REGX_1024_37G_FPI_CANCEL_REFUND_15) and 9.5's evaluation; the origination path (24.5) below stays for an application's hazard requirement
+    if (loanOf(i, ctx) && (flag(i, "servicing") || str(i, "fpi_case_id"))) {
+      const loan_id = loanOf(i, ctx); need(i, "document_id"); const kind = str(i, "kind") === "flood" ? "flood" : "hazard"; const evidence_id = str(i, "evidence_id") || `ev-${loan_id.slice(0, 8)}-${randomUUID().slice(0, 8)}`; const received_on = ctx.now.slice(0, 10);
+      ctx.events.append({ type: "insurance.evidence.received", loanId: loan_id, actor: ctx.actor, payload: { evidence_id, kind, fpi_active: true, channel: "portal", receipt: received_on, received_at: received_on, document_id: str(i, "document_id"), fpi_case_id: str(i, "fpi_case_id") || null, coverage_effective: str(i, "coverage_effective") || null, coverage_expiration: str(i, "coverage_expiration") || null, policy_number: str(i, "policy_number") || null, carrier: str(i, "carrier") || null, party_id: str(i, "party_id") || null, card_instance_id: cardId(i) } });
+      const r = await delegate(rt, ctx, "9.5", "evaluateEvidence", { loan_id, evidence_id, kind, continuous_coverage_shown: i.continuous_coverage_shown === undefined ? true : flag(i, "continuous_coverage_shown"), written: true }) as Record<string, unknown>;
+      return ok("insurance.submitEvidence", { loan_id, document_id: str(i, "document_id"), evidence_id, kind, received_on, outcome: r["outcome"], reason: r["reason"] ?? null, servicing: true });
+    }
     const application_id = needApp(i, ctx); need(i, "document_id");
     const r = await delegate(rt, ctx, "24.5", "extractEvidence", { application_id, kind: str(i, "kind") || "hoi_declaration", document_id: str(i, "document_id"), received_at: ctx.now, fields: obj(i, "fields"), confidence: obj(i, "confidence"), source: str(i, "carrier_connection_id") ? "carrier_connect_FAKE" : "borrower_upload" }) as Record<string, unknown>;
     return ok("insurance.submitEvidence", { application_id, document_id: str(i, "document_id"), evidence_id: r["evidence_id"], status: r["status"], confirmation_required: r["confirmation_required"] ?? false });
@@ -331,7 +499,7 @@ export const TOOLS_32_2: readonly ToolDef[] = defineTools(PROCESS, BORROWER_APP,
   cmd("closing.selectSlot", "act", async (i, ctx, rt) => {
     const application_id = needApp(i, ctx); need(i, "slot", "state", "settlement_agent_party_id", "transaction_type");
     const closing_id = str(i, "closing_id") || `CLS-${application_id.slice(0, 8)}`;
-    const r = await delegate(rt, ctx, "26.2", "runPreSessionChecks", { application_id, op: "schedule", closing_id, scheduled_at: str(i, "slot"), time_zone: str(i, "time_zone") || "America/New_York", state: str(i, "state"), county_fips: str(i, "county_fips") || null, transaction_type: str(i, "transaction_type"), dry_state: flag(i, "dry_state"), settlement_agent_party_id: str(i, "settlement_agent_party_id"), notary_party_id: str(i, "notary_party_id") || null, ron_provider_party_id: str(i, "ron_provider_party_id") || null, eligibility: list(i, "eligibility"), signers: list(i, "signers"), closing_type_preference: str(i, "closing_type_preference") || null }) as Record<string, unknown>;
+    const r = await delegate(rt, ctx, "26.2", "runPreSessionChecks", { application_id, op: "schedule", closing_id, scheduled_at: str(i, "slot"), time_zone: str(i, "time_zone") || "America/New_York", state: str(i, "state"), county_fips: str(i, "county_fips") || null, transaction_type: str(i, "transaction_type"), dry_state: flag(i, "dry_state"), settlement_agent_party_id: str(i, "settlement_agent_party_id"), notary_party_id: str(i, "notary_party_id") || null, ron_provider_party_id: str(i, "ron_provider_party_id") || null, eligibility: list(i, "eligibility"), signers: list(i, "signers"), closing_type_preference: str(i, "closing_type_preference") || null, borrower_election: str(i, "closing_type_preference") || null }) as Record<string, unknown>;   // 26.2's decision input names the election `borrower_election` (A2-4.1-03: wet when the borrower says paper)
     return ok("closing.selectSlot", { application_id, closing_id, scheduled_at: str(i, "slot"), closing_type: r["closing_type"], note_form: r["note_form"], scheduled_note_date: r["scheduled_note_date"] });
   }, { guardrails: [guard("SM_UW_CTC_GATE", "02 §2 closing.selectSlot: decision sub-status clear_to_close", (_i, ctx) => (hasEvent(ctx, "clear_to_close.issued") ? undefined : "the file is not clear to close yet"))] }),
   // closing.captureEsignConsent → 26.2 verifyEsignConsent (SM_O72_ESIGN_CONSENT_CLOSING_GATE): signing_sessions.consent_captured; never by voice
@@ -354,10 +522,10 @@ export const TOOLS_32_2: readonly ToolDef[] = defineTools(PROCESS, BORROWER_APP,
     const loan_id = needLoan(i, ctx); const id = str(i, "enrollment_id") || (verb === "enroll" ? `AD-${loan_id.slice(0, 8)}-${randomUUID().slice(0, 8)}` : ""); if (!id) throw new RangeError("enrollment_id is required");
     const account = obj(i, "account");
     const status = verb === "enroll" || verb === "change" ? "requested" : verb === "pause" ? "paused" : "revoked";
-    const data: Record<string, unknown> = { enrollment_id: id, loan_id, status, ...(verb === "enroll" || verb === "change" ? { amount_rule: str(i, "amount_rule") || "contractual", draft_day: Number(i.draft_day ?? 1), include_fees: flag(i, "include_fees"), account_last4: String(account["last4"] ?? account["account_last4"] ?? "").slice(-4) || null, account_type: (account["type"] as string | undefined) ?? null, channel: "portal", automation_disclosed: true, human_offered: true, elements_displayed: true, ...(i.extra_principal_cents !== undefined ? { extra_principal_cents: cents(i.extra_principal_cents) } : {}), ...(i.fixed_amount_cents !== undefined ? { fixed_amount_cents: cents(i.fixed_amount_cents) } : {}) } : {}), ...(verb === "revoke" ? { revoked_at: ctx.now, revocation_source: "portal" } : {}), ...(verb === "pause" ? { paused_at: ctx.now } : {}), card_instance_id: cardId(i), version_at: ctx.now };
+    const data: Record<string, unknown> = { enrollment_id: id, loan_id, status, party_id: str(i, "party_id") || null, ...(verb === "enroll" || verb === "change" ? { amount_rule: str(i, "amount_rule") || "contractual", draft_day: Number(i.draft_day ?? 1), include_fees: flag(i, "include_fees"), account_last4: String(account["last4"] ?? account["account_last4"] ?? "").slice(-4) || null, account_type: (account["type"] as string | undefined) ?? null, routing: String(account["routing"] ?? "").replace(/\D/g, "") || null, channel: "portal", automation_disclosed: true, human_offered: true, elements_displayed: true, ...(i.extra_principal_cents !== undefined ? { extra_principal_cents: cents(i.extra_principal_cents) } : {}), ...(i.fixed_amount_cents !== undefined ? { fixed_amount_cents: cents(i.fixed_amount_cents) } : {}) } : {}), ...(verb === "revoke" ? { revoked_at: ctx.now, revocation_source: "portal" } : {}), ...(verb === "pause" ? { paused_at: ctx.now } : {}), card_instance_id: cardId(i), version_at: ctx.now };
     if (verb === "enroll" || verb === "change") { const d = Number(data["draft_day"]); if (!(d >= 1 && d <= 16)) throw new RangeError("draft_day must be 1–16"); }
     await delegate(rt, ctx, "2.3", "autodraft.read/write", { op: "write", id, loan_id, data });
-    ctx.events.append({ type: verb === "revoke" ? "autodraft.enrollment.revoked" : verb === "pause" ? "autodraft.enrollment.paused" : "autodraft.enrollment.requested", loanId: loan_id, aggregate: { kind: "autodraft_enrollment", id }, actor: ctx.actor, payload: { enrollment_id: id, loan_id, verb, status, draft_day: data["draft_day"] ?? null, amount_rule: data["amount_rule"] ?? null, include_fees: data["include_fees"] ?? null, card_instance_id: cardId(i), copy_due: "SM_AUTODRAFT_COPY_DELIVERY_1BD" } });
+    ctx.events.append({ type: verb === "revoke" ? "autodraft.enrollment.revoked" : verb === "pause" ? "autodraft.enrollment.paused" : "autodraft.enrollment.requested", loanId: loan_id, aggregate: { kind: "autodraft_enrollment", id }, actor: ctx.actor, payload: { enrollment_id: id, loan_id, verb, status, party_id: str(i, "party_id") || null, draft_day: data["draft_day"] ?? null, amount_rule: data["amount_rule"] ?? null, include_fees: data["include_fees"] ?? null, card_instance_id: cardId(i), copy_due: "SM_AUTODRAFT_COPY_DELIVERY_1BD" } });
     return ok(`autodraft.${verb}`, { loan_id, enrollment_id: id, status, next: verb === "enroll" || verb === "change" ? "authorized → validating → active" : null });
   }, { guardrails: [FRESH_L1, never("REG_E_ELEMENTS_NOT_SHOWN", "2.x rule 1 / 01 §3.5: every Nacha / Reg E element is displayed before the authorization", (i) => (verb === "enroll" || verb === "change") && i.elements_displayed !== undefined && i.elements_displayed !== true, "the Reg E / Nacha authorization elements were not displayed")], moneyFields: ["fixed_amount_cents", "extra_principal_cents"] })),
   // payment.makeOneTime → 2.1 payments.read/write{write, channel=portal}: `payment.receive{channel=portal}` → received → identified → posted; fresh L1
@@ -379,21 +547,38 @@ export const TOOLS_32_2: readonly ToolDef[] = defineTools(PROCESS, BORROWER_APP,
   // escrow.electShortage → 3.6 recordBorrowerElection{spread_12 | lump_sum}: plan active / paid_lump; analysis statement_sent
   cmd("escrow.electShortage", "write", async (i, ctx, rt) => {
     const loan_id = needLoan(i, ctx); need(i, "option"); const option = str(i, "option"); if (!["spread_12", "lump_sum"].includes(option)) throw new RangeError("option must be spread_12 or lump_sum");
-    const r = await delegate(rt, ctx, "3.6", "recordBorrowerElection", { loan_id, election: { election_id: str(i, "election_id") || `EL-${loan_id.slice(0, 8)}-${randomUUID().slice(0, 8)}`, kind: option === "lump_sum" ? "lump_sum" : "spread", months: option === "spread_12" ? 12 : null, evidence_document_id: cardId(i) || str(i, "evidence_document_id") || `card-${randomUUID()}`, analysis_id: str(i, "analysis_id") || undefined, recorded_on: ctx.now.slice(0, 10) } }) as Record<string, unknown>;
-    return ok("escrow.electShortage", { loan_id, option, election_id: r["election_id"], kind: r["kind"], months: r["months"] ?? null });
+    // the 3.6 tool reads the election from `data` (the generic write shape) — the resolved card is its evidence (3.6 rule 3)
+    const election = { election_id: str(i, "election_id") || `EL-${loan_id.slice(0, 8)}-${randomUUID().slice(0, 8)}`, kind: option === "lump_sum" ? "lump_sum" : "spread", months: option === "spread_12" ? 12 : null, evidence_document_id: cardId(i) || str(i, "evidence_document_id") || `card-${randomUUID()}`, ...(str(i, "analysis_id") ? { analysis_id: str(i, "analysis_id") } : {}), recorded_on: ctx.now.slice(0, 10) };
+    const r = await delegate(rt, ctx, "3.6", "recordBorrowerElection", { loan_id, data: election }) as Record<string, unknown>;
+    // 32.8 §6.2: "→ escrow.electShortage → plan active or paid_lump" — the spread election creates the 3.6 plan (12 installments from the approved analysis; `escrow.repayment_plan.created` + `loan_terms.versioned`); a lump-sum election is recorded and `paid_lump` follows the receipt (3.6 postEscrowLumpSum)
+    const plan = option === "spread_12" ? await delegate(rt, ctx, "3.6", "createRepaymentPlan", { loan_id, kind: "shortage", ...(str(i, "analysis_id") ? { analysis_id: str(i, "analysis_id") } : {}), ...(str(i, "start") ? { start: str(i, "start") } : {}) }) as Record<string, unknown> : null;
+    return ok("escrow.electShortage", { loan_id, option, election_id: r["election_id"], kind: r["kind"], months: r["months"] ?? null, plan_id: plan?.["id"] ?? null, plan_status: plan?.["status"] ?? null, plan_months: plan?.["months"] ?? null, installment_cents: plan?.["installment_cents"] ?? null, lump_sum_insert: option === "spread_12" ? "not_rendered" : "NTC_SM_ESCROW_VOLUNTARY_LUMPSUM_INSERT" });
   }, { guardrails: [FRESH_L1, guard("ESCROW_STATEMENT_NOT_SENT", "02 §2 escrow.electShortage: analysis statement_sent", (i, ctx) => (i.analysis_status !== undefined ? (["statement_sent", "effective"].includes(String(i.analysis_status)) ? undefined : `the analysis is ${String(i.analysis_status)}, not statement_sent`) : hasEvent(ctx, /^escrow\.(analysis\.(completed|approved)|statement\.(sent|rendered))$/) ? undefined : "no escrow analysis statement has been sent"))] }),
   // escrow.requestWaiver → 3.8 evaluateWaiver (eligibility): escrowed → evaluating
   cmd("escrow.requestWaiver", "act", async (i, ctx, rt) => {
     const loan_id = needLoan(i, ctx);
     ctx.events.append({ type: "escrow.waiver.requested", loanId: loan_id, actor: ctx.actor, payload: { loan_id, requested_at: ctx.now, channel: "portal", card_instance_id: cardId(i) } });
     const request = obj(i, "request"); if (!Object.keys(request).length) return ok("escrow.requestWaiver", { loan_id, status: "evaluating", evaluated: false, next: "3.8 evaluateWaiver with the loan's facts" });
-    const r = await delegate(rt, ctx, "3.8", "evaluateWaiver", { loan_id, request: { requested_on: ctx.now.slice(0, 10), ...request } }) as Record<string, unknown>;
+    // the card's request arrives as JSON: the 3.8 WaiverRequest's cents are bigint
+    const money = (k: string) => (request[k] !== undefined && request[k] !== null ? { [k]: cents(request[k]) } : {});
+    const r = await delegate(rt, ctx, "3.8", "evaluateWaiver", { loan_id, request: { requested_on: ctx.now.slice(0, 10), ...request, ...money("upb_cents"), ...money("original_appraised_value_cents"), ...money("original_property_value_cents") } }) as Record<string, unknown>;
     return ok("escrow.requestWaiver", { loan_id, status: "evaluating", evaluated: true, decision: r });
-  }),
+  }, { guardrails: [guard("REGZ_1026_35B1_HPML_ESCROW_GATE", "32.8 §6.3 / 23.4-T5 / §1026.35(b)(3): an HPML loan stays escrowed five years from consummation — a cancellation request before `consummation_date + 5y` is refused with the escrow-period copy (the 3.8 engine's HPML_LT_5Y)", (i, ctx) => {
+    const request = obj(i, "request"); const all = ctx.events.all();
+    const determined = all.filter((e) => e.type === "compliance.hpml.determined").at(-1)?.payload as Record<string, unknown> | undefined; const consummated = all.filter((e) => e.type === "closing.consummated").at(-1)?.payload as Record<string, unknown> | undefined; const boarded = all.filter((e) => e.type === "loan.boarded").at(-1)?.payload as Record<string, unknown> | undefined;
+    const hpml = request["hpml"] === true || i.hpml === true || determined?.["is_hpml"] === true || consummated?.["is_hpml"] === true;
+    const consummation = String(request["consummation_date"] ?? i.consummation_date ?? consummated?.["consummation_on"] ?? boarded?.["consummation_date"] ?? "");
+    if (!hpml || !/^\d{4}-\d{2}-\d{2}$/.test(consummation)) return undefined;
+    const floor = addYears(D(consummation), 5); const today = ctx.now.slice(0, 10);
+    return today < floor ? `higher-priced mortgage loan: the escrow account may not be cancelled before ${floor} (five years from consummation ${consummation}; §1026.35(b)(3), 23.4 hpml_escrow_min_cancel_date)` : undefined; })] }),
   // pmi.requestCancellation → 10.1 pmi.*{request}: `mi.cancel.requested` + the pmi_cancel case; mi_policies active
   cmd("pmi.requestCancellation", "act", async (i, ctx, rt) => {
     const loan_id = needLoan(i, ctx);
-    const r = await delegate(rt, ctx, "10.1", "pmi.*", { op: "request", loan_id, channel: "portal", requested_at: ctx.now, request: { loan_id, channel: "portal", written: true, received_on: ctx.now.slice(0, 10), card_instance_id: cardId(i), ...obj(i, "request") }, ...Object.fromEntries(Object.entries(i).filter(([k]) => !["op", "loan_id", "request", "card_instance_id", "party_id", "fresh_l1"].includes(k))) }) as Record<string, unknown>;
+    // 32.9 §2: the borrower withdraws the open request (a ChoiceCard tap) — 10.1 pmi.*{withdraw}: the valuation fee is refunded when no order was placed
+    if (flag(i, "withdraw")) { const w = await delegate(rt, ctx, "10.1", "pmi.*", { op: "withdraw", loan_id, case_id: str(i, "case_id") || null, requester_party_id: str(i, "party_id") || null, card_instance_id: cardId(i) }) as Record<string, unknown>; return ok("pmi.requestCancellation", { loan_id, case_id: w["case_id"] ?? null, status: w["status"] ?? "withdrawn", withdrawn: true, fee_refund_cents: w["fee_refund_cents"] ?? null, valuation_ordered: w["valuation_ordered"] ?? null }); }
+    // 10.1's request channel vocabulary (written/verbal/portal/sii): the app is `portal`, a spoken turn `verbal`; the API-added facts (channel, evidence, subject, assurance level) never reach the owning tool's input
+    const requestChannel = str(i, "channel") === "voice" ? "verbal" : "portal";
+    const r = await delegate(rt, ctx, "10.1", "pmi.*", { op: "request", loan_id, requester_party_id: str(i, "party_id") || null, requested_at: ctx.now, request: { loan_id, channel: requestChannel, written: requestChannel !== "verbal", received_on: ctx.now.slice(0, 10), card_instance_id: cardId(i), ...obj(i, "request") }, ...Object.fromEntries(Object.entries(i).filter(([k]) => !["op", "loan_id", "request", "card_instance_id", "party_id", "fresh_l1", "channel", "evidence", "subject", "assurance_level", "application_id"].includes(k))), channel: requestChannel }) as Record<string, unknown>;
     return ok("pmi.requestCancellation", { loan_id, case_id: r["case_id"] ?? null, status: r["status"] ?? "received" });
   }, { guardrails: [guard("MI_POLICY_NOT_ACTIVE", "02 §2 pmi.requestCancellation: mi_policies active", (i, _c) => (i.policy_status !== undefined && String(i.policy_status) !== "active" ? `the MI policy is ${String(i.policy_status)}, not active` : undefined))] }),
   // case.open → `communication.inbound.received{channel=app, written=true}` → 10.1 case.*{write}: the Intake Router's case row
@@ -407,8 +592,10 @@ export const TOOLS_32_2: readonly ToolDef[] = defineTools(PROCESS, BORROWER_APP,
   }),
   // lossmit.requestAssistance → 12.1 lossmit.application.open/update: `lossmit.rfa.received` (hardship text only) / `lossmit.application.received`
   cmd("lossmit.requestAssistance", "write", async (i, ctx, rt) => {
-    const loan_id = needLoan(i, ctx); const hasEvaluative = i.income !== undefined || i.expenses !== undefined || list(i, "documents").length > 0;
-    const r = await delegate(rt, ctx, "12.1", "lossmit.application.open/update", { loan_id, utterance: str(i, "hardship_text") || "I need help with my mortgage payment", has_evaluative_info: hasEvaluative, confidence: 1, receipt_channel: "portal", received_on: ctx.now.slice(0, 10), state: str(i, "state") || "", submitted_by_party_id: str(i, "party_id") || null, ...(hasEvaluative ? { income: i.income ?? null, expenses: i.expenses ?? null } : {}), card_instance_id: cardId(i) }) as Record<string, unknown>;
+    const loan_id = needLoan(i, ctx); const hasEvaluative = i.income !== undefined || i.expenses !== undefined || list(i, "documents").length > 0 || !!str(i, "hardship_reason") || !!str(i, "qrpc_id");   // 32.10: a stated hardship reason / QRPC id is evaluative information (12.1 `classify`)
+    // 32.10 (additive): `op`/`id`/`status` pass through so a ConfirmCard correction updates the same application; `changes` carries the hardship facts the 12.1 handler spreads onto the row.
+    const changes32_10 = { ...((i.changes as Record<string, unknown> | undefined) ?? {}), ...(str(i, "hardship_reason") ? { hardship_reason: str(i, "hardship_reason") } : {}), ...(str(i, "qrpc_id") ? { qrpc_id: str(i, "qrpc_id") } : {}), ...(str(i, "hardship_nature") ? { hardship_nature: str(i, "hardship_nature") } : {}), ...(str(i, "hardship_text") ? { hardship_text: str(i, "hardship_text") } : {}) };
+    const r = await delegate(rt, ctx, "12.1", "lossmit.application.open/update", { loan_id, utterance: str(i, "hardship_text") || "I need help with my mortgage payment", has_evaluative_info: hasEvaluative, confidence: 1, receipt_channel: "portal", received_on: ctx.now.slice(0, 10), state: str(i, "state") || "", submitted_by_party_id: str(i, "party_id") || null, ...(hasEvaluative ? { income: i.income ?? null, expenses: i.expenses ?? null } : {}), ...(str(i, "op") ? { op: str(i, "op") } : {}), ...(str(i, "id") ? { id: str(i, "id") } : {}), ...(str(i, "status") ? { status: str(i, "status") } : {}), ...(Object.keys(changes32_10).length ? { changes: changes32_10 } : {}), card_instance_id: cardId(i) }) as Record<string, unknown>;
     return ok("lossmit.requestAssistance", { loan_id, kind: hasEvaluative ? "application" : "rfa", application_id: (r as { application_id?: unknown })["application_id"] ?? (r as { id?: unknown })["id"] ?? null, status: (r as { status?: unknown })["status"] ?? null });
   }),
   // lossmit.respondToOffer → 12.2 lossmit.evaluation.*{offer_response}: `lossmit.offer.response.received`; REGX_1024_41E1_ACCEPT_14 running
@@ -439,7 +626,8 @@ export const TOOLS_32_2: readonly ToolDef[] = defineTools(PROCESS, BORROWER_APP,
     const r = await delegate(rt, ctx, "20.1", "emitOfferReady", { op: "declined", opportunity_id, loan_id, reason: decision === "never" ? "never_proactive_offers" : "not_now" }) as Record<string, unknown>;
     if (decision === "never") {
       const party_id = str(i, "party_id") || null; const now = ctx.now;
-      if (party_id) defer(rt, async (q) => { await q.query(`UPDATE consents SET status = 'revoked', revoked_at = $2, withdrawal_channel = 'portal', withdrawal_reason = 'never_proactive_offers' WHERE party_id = $1 AND purpose = 'marketing' AND (status IS NULL OR status <> 'revoked')`, [party_id, now]); });
+      // 7.4's consents.status vocabulary (0076 check): a revocation is `withdrawn` with `revoked_at` and the reason — the event keeps the spec's word (`consent.marketing.revoked`)
+      if (party_id) defer(rt, async (q) => { await q.query(`UPDATE consents SET status = 'withdrawn', revoked_at = $2, withdrawal_channel = 'portal', withdrawal_reason = 'never_proactive_offers' WHERE party_id = $1 AND purpose = 'marketing' AND (status IS NULL OR status NOT IN ('withdrawn', 'revoked'))`, [party_id, now]); });
       ctx.events.append({ type: "consent.marketing.revoked", loanId: loan_id, actor: ctx.actor, payload: { loan_id, party_id, opportunity_id, reason: "never_proactive_offers", borrower_initiated_path_open: true, card_instance_id: cardId(i) } });
     }
     return ok("offer.respond", { loan_id, opportunity_id, decision, status: r["status"], cooldown_until: r["cooldown_until"] ?? null, marketing_consent_revoked: decision === "never" });

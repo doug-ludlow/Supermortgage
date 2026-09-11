@@ -51,7 +51,9 @@ export const TOOLS_32_1: readonly ToolDef[] = defineTools("32.1", "intake", [
       need(i, "party_id", "kind", "copy_key"); const kind = str(i, "kind"); if (!CARD_KIND_SET.has(kind)) throw new RangeError(`kind ${kind} is not a 01 §3 card kind`);
       const party_id = str(i, "party_id"); if (!isUuid(party_id)) throw new RangeError("party_id must be the party's uuid");
       const subject = obj(i, "subject"); const application_id = (subject["application_id"] as string | undefined) ?? (str(i, "application_id") || ctx.applicationId || null); const loan_id = (subject["loan_id"] as string | undefined) ?? (str(i, "loan_id") || ctx.loanId || null);
-      const card_instance_id = str(i, "card_instance_id") || randomUUID(); const message_id = randomUUID(); const now = ctx.now;
+      const card_instance_id = str(i, "card_instance_id") || randomUUID(); const message_id = randomUUID();
+      // `at` (optional, additive — 32.5): a flow dates the card to the fact it answers (the reacted event's instant) when that precedes the clock's reading; never later than now
+      const now = str(i, "at") && !Number.isNaN(Date.parse(str(i, "at"))) && str(i, "at") < ctx.now ? str(i, "at") : ctx.now;
       const created_by = str(i, "created_by") || (ctx.actor.kind === "agent" ? `agent:${ctx.actor.id}` : ctx.actor.kind === "human" ? `human:${ctx.actor.role ?? "human_agent"}` : "system");
       const props = obj(i, "props"); const command_ref = str(i, "command_ref") || null; const copy_key = str(i, "copy_key"); const expires_at = str(i, "expires_at") || null; const body_text = str(i, "body_text") || null;
       defer(rt, async (q) => {

@@ -38,7 +38,9 @@ import { wallClock } from "../../kernel/calendar/zoned.ts";
 import { formatCents } from "../../kernel/money/cents.ts";
 import { noticeCycle, nextNoticeDue, variantFor, liveSatisfiedEvent, type Cycle } from "../../domain/early-intervention/windows.ts";
 import { qrpcCompleteness, extractHardship, cessationOnQrpc, thirdPartyAuthorization, reasonCode, promiseToPay, type Conversation, type CommitmentKind } from "../../domain/early-intervention/qrpc.ts";
-import { eiRenderGate, eiChannel, dcLoanEiNotice, dcEmailCheck, validateExtraction, licensedNegotiationGate, thirdPartyCall, delinquencySnapshot, stateOverlay, type LedgerFacts } from "../../domain/early-intervention/ops.ts";
+import { eiRenderGate, eiChannel, dcLoanEiNotice, dcEmailCheck, validateExtraction, licensedNegotiationGate, thirdPartyCall, delinquencySnapshot, stateOverlay, writtenCease, oralCease, type LedgerFacts } from "../../domain/early-intervention/ops.ts";
+import { fdcpaStatusAtBoarding, type FdcpaStatus } from "../../domain/early-intervention/fdcpa.ts";
+import { evaluate as evaluateImminentDefault, evaluationEvents as imminentDefaultEvents, type Evaluation as ImminentDefaultEvaluation } from "../../domain/early-intervention/imminent-default.ts";
 import { ALL_CHECKS_PASS, FNMA_CADENCE_TIMERS, type PreDialChecks } from "../../domain/early-intervention/plan.ts";
 import { cancelEarlyInterventionTimers } from "../../domain/early-intervention/timers.ts";
 import { attemptRequestedForTool, liveContactOf } from "../../domain/early-intervention/ops-11-1.ts";
@@ -269,7 +271,7 @@ const p113 = defineTools("11.3", "borrower-comms", [
   { name: "payment.schedule", kind: "act", moneyFields: ["amount_cents"], handler: compute((i, ctx) => { need(i, "loan_id", "amount_cents", "debit_on", "reg_e_authorization_id"); return ctx.events.append({ type: "payment.ach.scheduled", loanId: str(i, "loan_id"), actor: ctx.actor, payload: { amount_cents: cents(i.amount_cents), debit_on: str(i, "debit_on"), authorization_id: str(i, "reg_e_authorization_id") } }); }),
     guardrails: [never("REG_E_AUTHORIZATION", "11.3 rule 3: in-call ACH needs a Reg E authorization", (i) => !i.reg_e_authorization_id, "record the Reg E authorization first"),
       never("NO_PAY_TO_PAY_FEE", "11.4 guardrail: never adds a fee — no convenience/pay-to-pay fees; only fees expressly authorized by the agreement or permitted by law (Reg F §1006.22; 11.4 rule 10)", (i) => cents(i.convenience_fee_cents) > 0n || (cents(i.fee_cents) > 0n && !flag(i, "fdcpa_authorized")), "no fee may be added to an in-call payment")] },
-  { name: "lossmit.request.create", kind: "write", handler: write("cases", "lossmit.assistance.requested"),
+  { name: "lossmit.request.create", kind: "write", handler: compute((i, ctx, rt) => requestWithImminentDefault_11_5(i, ctx, rt)),   // + `imminent_default{…}`: the 11.5 evaluation on the bus (32.10 DELTA)
     guardrails: [never("CREDIT_PULL_PERMISSIBLE_PURPOSE", "11.5 guardrail: no credit pull without a recorded permissible purpose (FCRA)", (i) => flag(i, "credit_pull") && !str(i, "permissible_purpose"), "record the FCRA permissible purpose (account review) before any pull"),
       never("NO_TERMS_BEFORE_SMDU", "11.5 guardrail: no terms quoted to the borrower before SMDU's decision", (i) => flag(i, "terms_quoted") && !str(i, "smdu_decision_id"), "eligibility is computed by code and terms come from SMDU's decision"),
       never("NO_SOLICITATION_LT30", "11.5 guardrail: no outbound solicitation below 30 days delinquent (D2-1-01)", (i) => str(i, "source") === "outbound_solicitation" && num(i, "regx_days_delinquent") < 30 && !flag(i, "borrower_requested"), "the evaluation is borrower-initiated below 30 days delinquent")] },
@@ -280,7 +282,7 @@ const p113 = defineTools("11.3", "borrower-comms", [
       const conv = str(i, "kind") === "oral_three_way" ? thirdPartyConversation(ctx, { loan_id: str(i, "loan_id") || ctx.loanId, contact_id: str(i, "contact_id") || null, party_role: "trusted_advisor", claimed_relation: str(i, "party") || null, authorization: { id: rec.id, scope: a.scope, expires_on: a.expires_on }, in_call_consent_recorded: true, on: date(i, "on") }) : null;
       return { ...rec.data, id: rec.id, conversation: conv ? { gate: conv.gate, open: conv.open, party_role: "trusted_advisor", in_call_consent_recorded: conv.in_call_consent_recorded, disclose_account_details: conv.disclose_account_details, may_complete_qrpc: conv.qrpc_recorded_allowed, outcome: conv.outcome } : null }; }),
     guardrails: [never("ORAL_NEEDS_VERIFIED_BORROWER", "11.3 rule 4: an oral three-way authorization requires the verified borrower on the call", (i) => str(i, "kind") === "oral_three_way" && !flag(i, "borrower_verified"), "verify the borrower first")] },
-  { name: "preference.set", kind: "write", handler: compute((i, ctx, rt) => { need(i, "party_id"); const loanId = (i.loan_id as string | undefined) ?? ctx.loanId;
+  { name: "preference.set", kind: "write", handler: compute(async (i, ctx, rt) => { need(i, "party_id"); const loanId = (i.loan_id as string | undefined) ?? ctx.loanId;
       const revoke = Array.isArray(i.revoke_channels) ? (i.revoke_channels as string[]) : [];
       const humanOnly = flag(i, "human_only") || flag(i, "borrower_requested_human");
       const rec = rt.store.put("contact_preferences", str(i, "id") || `pref-${str(i, "party_id")}`, { party_id: str(i, "party_id"), ...(i.preferred_channel !== undefined ? { preferred_channel: i.preferred_channel } : {}), ...(i.preferred_windows !== undefined ? { preferred_windows: i.preferred_windows } : {}), ...(i.language !== undefined ? { language: i.language } : {}), human_only: humanOnly, do_not_call_reason: str(i, "do_not_call_reason") || (revoke.length ? "borrower revocation" : null), set_by: str(i, "set_by") || (ctx.actor.kind === "agent" ? "agent" : "borrower"), set_at: ctx.now }, ctx.actor, ctx.now);
@@ -291,7 +293,9 @@ const p113 = defineTools("11.3", "borrower-comms", [
         ctx.events.append({ type: "consent.revocation.honored", loanId, actor: ctx.actor, payload: { party_id: str(i, "party_id"), channels: revoke, honored_at: ctx.now, latency_ms: 0, timer: "TCPA_64_1200_A10_REVOCATION_HONOR_10BD" } });
       }
       if (flag(i, "borrower_requested_human")) ctx.events.append({ type: "contact.human_only.marked", loanId, actor: ctx.actor, payload: { party_id: str(i, "party_id"), terminated_ai_session: true } });
-      return { ...rec.data, revoked_channels: revoke }; }),
+      // 11.4 rules 6/8 (32.10 DELTA): "STOP/cease honored" — a written cease (§1006.6(c)) or an oral "stop calling" recorded here, from the borrower's own words, on the loan's fdcpa_status
+      const cease = str(i, "cease") === "written" || str(i, "cease") === "oral" ? await ceaseCommunication_11_4(i, ctx, rt, loanId, str(i, "cease") as "written" | "oral") : null;
+      return { ...rec.data, revoked_channels: revoke, ...(cease ? { cease } : {}) }; }),
     guardrails: [never("HUMAN_ONLY_ON_REQUEST", "11.1 guardrail: terminate and mark human_only on borrower request", (i) => flag(i, "borrower_requested_human") && i.human_only === false, "a borrower's request for a person always sets human_only")] },
   { name: "dispute.intake", kind: "write", handler: compute((i, ctx, rt) => { need(i, "loan_id", "received_on"); const loanId = str(i, "loan_id"); const rec = rt.store.put("cases", str(i, "id") || `noe-${loanId}-${str(i, "received_on")}`, { loan_id: loanId, case_type: "noe", received_on: str(i, "received_on"), source: "qrpc_dispute", status: "open", written: flag(i, "written") }, ctx.actor, ctx.now); ctx.events.append({ type: "case.noe.opened", loanId, actor: ctx.actor, payload: { case_id: rec.id } });
       // 11.4 rule 5: on a DC loan a written dispute inside the validation period is also a Reg F dispute — collection ceases until verification (recorded in `fdcpa_disputes`; contact.log refuses outbound collection calls while it is open).
@@ -341,3 +345,70 @@ const p113 = defineTools("11.3", "borrower-comms", [
 ]);
 
 export const SECTION_11_TOOLS: readonly ToolDef[] = [...p112, ...p113];
+
+// ---------------------------------------------------------------- 32.10 backend deltas on the 11.x bus (docs/ux/BACKEND-DELTAS.md)
+/**
+ * 11.5 on the bus: `lossmit.request.create{imminent_default: {…facts}}` runs the imminent-default evaluation the process
+ * owns (imminent-default.ts `evaluate` + `evaluationEvents`) beside the assistance request. Without a complete BRP the
+ * evaluation stays `evaluating` (the gates arm on `imminent_default.evaluating`; D2-1-01 makes the BRP an eligibility
+ * test, so the determination waits for the complete package) unless `await_brp: false`; the record lands on
+ * `imminent_default_evaluations`. Facts only — the rules engine decides (11.5 guardrails).
+ */
+function requestWithImminentDefault_11_5(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): unknown {
+  const r = write("cases", "lossmit.assistance.requested")(i, ctx, rt) as Record<string, unknown>;
+  const f = i.imminent_default && typeof i.imminent_default === "object" && !Array.isArray(i.imminent_default) ? (i.imminent_default as Record<string, unknown>) : null;
+  if (!f) return r;
+  const loanId = (i.loan_id as string | undefined) ?? ctx.loanId; if (!loanId) throw new RangeError("loan_id is required for an imminent-default evaluation");
+  const evaluationDate = typeof f.evaluation_date === "string" ? D(f.evaluation_date) : D(ctx.now.slice(0, 10));
+  const credit = f.credit && typeof f.credit === "object" && !Array.isArray(f.credit) ? (f.credit as Record<string, unknown>) : null;
+  const e: ImminentDefaultEvaluation = { evaluation_date: evaluationDate, regx_days_delinquent: Number(f.regx_days_delinquent ?? 0), principal_residence: f.principal_residence !== false, brp_complete: f.brp_complete === true, oldest_doc_date: typeof f.oldest_doc_date === "string" ? D(f.oldest_doc_date) : evaluationDate, cash_reserves_cents: cents(f.cash_reserves_cents), hardship_type: typeof f.hardship_type === "string" ? f.hardship_type : null, hardship_documented: f.hardship_documented === true,
+    ...(typeof f.pcs_distance_miles === "number" ? { pcs_distance_miles: f.pcs_distance_miles } : {}), ...(typeof f.was_principal_residence === "boolean" ? { was_principal_residence: f.was_principal_residence } : {}),
+    credit: credit ? { scores: Array.isArray(credit.scores) ? (credit.scores as number[]) : [], fico_date: D(String(credit.fico_date ?? evaluationDate)), delinquencies_30_in_6m: Number(credit.delinquencies_30_in_6m ?? 0), pitia_cents: cents(credit.pitia_cents), gross_income_cents: cents(credit.gross_income_cents) } : null };
+  const result = evaluateImminentDefault(e);
+  const all = imminentDefaultEvents(e, result, { loan_id: loanId, ...(str(i, "state") ? { state: str(i, "state") } : {}), ai_influenced: i.ai_influenced !== false, brp_complete_on: typeof f.brp_complete_on === "string" ? D(f.brp_complete_on) : null });
+  const awaitBrp = !e.brp_complete && f.await_brp !== false && result.outcome !== "rerouted_delinquent";
+  const emitted = awaitBrp ? all.slice(0, 1) : all;
+  for (const ev of emitted) ctx.events.append({ type: ev.type, loanId, actor: ctx.actor, payload: ev.payload });
+  const status = awaitBrp ? "awaiting_brp" : result.outcome;
+  const rec = rt.store.put("imminent_default_evaluations", str(i, "evaluation_id") || `ide-${loanId}-${evaluationDate}`, { loan_id: loanId, case_id: ((r.id as string | undefined) ?? str(i, "id")) || null, evaluation_date: evaluationDate, status, outcome: awaitBrp ? null : result.outcome, path: "path" in result ? result.path : null, failed: "failed" in result ? result.failed : [], regx_days_delinquent: e.regx_days_delinquent, hardship_type: e.hardship_type, brp_complete: e.brp_complete, source: "lossmit.request.create" }, ctx.actor, ctx.now);
+  return { ...r, imminent_default: { evaluation_id: rec.id, status, outcome: awaitBrp ? null : result.outcome, path: "path" in result ? result.path : null, failed: "failed" in result ? result.failed : [], events: emitted.map((x) => x.type) } };
+}
+/**
+ * 11.4 rules 6/8 on the bus: the borrower's written cease (§1006.6(c) — `fdcpa.cease.received{written=true}`, the
+ * permanent REGF_1006_6C_CEASE_GATE, the D2-2-02 cadence suspended, the acknowledgment rendered and sent once through
+ * the Notice Registry when recipients are supplied) or an oral "stop calling" (the TCPA channels stopped at commit).
+ * The loan's `fdcpa_status` is the record: created from the boarding facts on first use (11.4-T1), then mutated here.
+ */
+async function ceaseCommunication_11_4(i: ToolInput, ctx: CommandContext, rt: ToolRuntime, loanId: string | undefined, scope: "written" | "oral"): Promise<Record<string, unknown>> {
+  if (!loanId) throw new RangeError("loan_id is required for a cease request");
+  const today = D(ctx.now.slice(0, 10));
+  const stored = rt.store.get("fdcpa_status", loanId)?.data as unknown as (FdcpaStatus & Record<string, unknown>) | undefined;
+  const days = num(i, "regx_days_delinquent_at_boarding") || 0;
+  const status: FdcpaStatus = stored && Array.isArray(stored.disputes) ? { ...stored, disputes: [...stored.disputes], history: [...(stored.history ?? [])] }
+    : fdcpaStatusAtBoarding(loanId, typeof i.determined_on === "string" ? D(i.determined_on) : today, { regx_days_delinquent_at_transfer: days, bk_active: flag(i, "bk_active"), fc_active: flag(i, "fc_active"), accelerated: false, ...(days > 0 || flag(i, "unpaid_installment_at_boarding") ? { unpaid_installment_at_transfer: true } : {}), ...(flag(i, "originated_by_partner") ? { originated_by_partner: true } : {}) }).status;
+  const dc = status.debt_collector; const bk = flag(i, "bk_active");
+  const ackBefore = rt.store.list("fdcpa_cease_acks", (d) => d.loan_id === loanId).length > 0;
+  const common = { party_id: str(i, "party_id"), channel: str(i, "channel") || "app", document_id: str(i, "document_id") || null, message_id: str(i, "message_id") || null };
+  let out: Record<string, unknown>;
+  if (scope === "written") {
+    const r = writtenCease({ received_on: today, ack_sent_before: ackBefore, fdcpa: status, bk_active: bk, debt_collector: dc });
+    for (const e of r.fdcpa_events) ctx.events.append({ type: e.type, loanId, actor: ctx.actor, payload: { ...e.payload, ...common } });
+    for (const e of r.plan_events) ctx.events.append({ type: e.type, loanId, actor: ctx.actor, payload: { ...e.payload, loan_id: loanId } });
+    // the D2-2-02 cadence ends with the suspended plan (11.4-T7) — the same cancellation the QRPC cessation uses
+    cancelEarlyInterventionTimers(ctx.timers, loanId, FNMA_CADENCE_TIMERS, "contact.plan.suspended{cease_request}", ctx.actor);
+    out = { scope: "written_full", received_on: today, plan: r.plan, ei_variant: r.ei_variant, gate: r.gate, outbound_collection_call: r.outbound_collection_call, borrower_initiated_lossmit_call: r.borrower_initiated_lossmit_call, send_ack: r.send_ack, ack_template: r.ack_template, debt_collector: dc };
+  } else {
+    const consented = Array.isArray(i.consented_channels) ? (i.consented_channels as ("voice" | "sms" | "email")[]) : undefined;
+    const r = oralCease({ at_ms: Date.parse(ctx.now), ...(consented ? { consented_channels: consented } : {}), fdcpa: status, bk_active: bk, debt_collector: dc, received_on: today });
+    for (const e of r.fdcpa_events) ctx.events.append({ type: e.type, loanId, actor: ctx.actor, payload: { ...e.payload, ...common } });
+    ctx.events.append({ type: "consent.revoked", loanId, actor: ctx.actor, payload: { party_id: str(i, "party_id"), channels: r.stopped, method: "oral", receipt: ctx.now, cease_scope: r.cease_scope } });
+    out = { scope: r.cease_scope, received_on: today, stopped: r.stopped, mail_continues: r.mail_continues, ei_variant: r.ei_variant, debt_collector: dc };
+  }
+  rt.store.put("fdcpa_status", loanId, { ...(status as unknown as Record<string, unknown>) }, ctx.actor, ctx.now);
+  if (scope === "written" && !ackBefore && Array.isArray(i.recipients) && (i.recipients as unknown[]).length) {
+    const n = (await noticeOps("render_send")({ ...i, template_code: "NTC_REGF_1006_6C_CEASE_ACK", payload: { ...((i.payload as Record<string, unknown> | undefined) ?? {}), cease_received_on: today, notice_date: today, initial: false }, notice_id: undefined }, ctx, rt)) as { id: string; status: string };
+    rt.store.put("fdcpa_cease_acks", `ack-${loanId}-${today}`, { loan_id: loanId, notice_id: n.id, status: n.status, sent_on: today }, ctx.actor, ctx.now);
+    out.ack = { notice_id: n.id, status: n.status, template: "NTC_REGF_1006_6C_CEASE_ACK" };
+  }
+  return out;
+}

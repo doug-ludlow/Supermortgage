@@ -28,7 +28,7 @@
 import { type PlainDate, addDays, plainDate } from "../../kernel/calendar/date.ts";
 import { wallClock } from "../../kernel/calendar/zoned.ts";
 import { SYSTEM, type EventStore, type DomainEvent, type Actor } from "../../kernel/events/index.ts";
-import { selectChannel, quietHoursCheck, regfDialCheck, postConversationGate, preSaleStop, stateOverlay, smsRevocation, type CallAttempt } from "./ops.ts";
+import { selectChannel, quietHoursCheck, regfDialCheck, postConversationGate, preSaleStop, stateOverlay, smsRevocation, counterRun, delinquencyMilestone, type CallAttempt, type CounterRunOptions } from "./ops.ts";
 import { dialRequest, type ContactPlan, type PlanAttempt, type PreDialChecks } from "./plan.ts";
 import { resumeAfterBankruptcy } from "./windows.ts";
 
@@ -289,4 +289,35 @@ export function attachBankruptcyResumeHooks_11_1(deps: { events: EventStore; act
     catch (err) { deps.events.append({ type: "regx.ei_windows.resume_after_bk.rejected", ...(e.loanId ? { loanId: e.loanId } : {}), actor, occurredAt: e.occurredAt, causationId: e.id, payload: { source_event_id: e.id, reason: err instanceof Error ? err.message : String(err) } }); return; }
     resumeWindowsAfterBankruptcy(deps.events, actor, rec, { causationId: e.id, occurredAt: e.occurredAt });
   });
+}
+
+// ---------------------------------------------------------------- the daily counter job (11.1 inputs; 32.10 §1 "Day (from due date)")
+/**
+ * The 00:05 counter job over one loan's unpaid installments (11.1-T1: window(D) opens on D+1 with the loan-local
+ * deadlines; the milestone `loan.delinquency.day_reached{day}` fires once per milestone day). Pure: the caller (the
+ * hosted runtime's daily sweep, src/runtime/delinquency.ts) supplies what the log already holds — the due dates whose
+ * windows are open (`windows_opened`) and the days a milestone was already recorded (`milestones_reached`) — and
+ * appends the returned events under the loan. `unpaid_due_dates` are the `loan_installments` rows still `due`.
+ */
+export interface CounterJobInput {
+  readonly loan_id: string; readonly today: PlainDate; readonly unpaid_due_dates: readonly PlainDate[]; readonly windows_opened: readonly PlainDate[]; readonly milestones_reached: readonly PlainDate[];
+  readonly principal_residence?: boolean; readonly qrpc_established?: boolean; readonly resolved?: boolean; readonly ai_voice_counts?: boolean;
+  readonly bankruptcy?: CounterRunOptions["bankruptcy"]; readonly bk_case_id?: string | null; readonly petition_date?: PlainDate | null; readonly fdcpa_cease?: boolean;
+}
+export interface CounterJobResult { readonly earliest_unpaid_due: PlainDate | null; readonly regx_days_delinquent: number; readonly windows_opened: PlainDate[]; readonly milestone: number | null; readonly events: { type: string; payload: Record<string, unknown> }[] }
+export function delinquencyCounterJob(i: CounterJobInput): CounterJobResult {
+  const unpaid = [...new Set(i.unpaid_due_dates)].filter((d) => d < i.today).sort();
+  const earliest = unpaid[0] ?? null;
+  const opened: PlainDate[] = []; const events: { type: string; payload: Record<string, unknown> }[] = [];
+  const already = new Set(i.windows_opened);
+  for (const due of unpaid) {
+    if (already.has(due)) continue;
+    const r = counterRun(due, i.today, { principal_residence: i.principal_residence !== false, first_delinquency: due === earliest, ...(i.ai_voice_counts !== undefined ? { ai_voice_counts: i.ai_voice_counts } : {}), ...(i.bankruptcy ? { bankruptcy: i.bankruptcy, bk_case_id: i.bk_case_id ?? null, petition_date: i.petition_date ?? null } : {}), ...(i.fdcpa_cease !== undefined ? { fdcpa_cease: i.fdcpa_cease } : {}) });
+    for (const e of r.events) events.push({ type: e.type, payload: { ...e.payload, loan_id: i.loan_id } });
+    opened.push(due);
+  }
+  const m = delinquencyMilestone({ today: i.today, earliest_unpaid_due: earliest, qrpc_established: i.qrpc_established === true, resolved: i.resolved === true, principal_residence: i.principal_residence !== false });
+  const milestoneToday = m.milestone !== null && !i.milestones_reached.includes(i.today);
+  if (milestoneToday) for (const e of m.events) events.push({ type: e.type, payload: { ...e.payload, loan_id: i.loan_id } });
+  return { earliest_unpaid_due: earliest, regx_days_delinquent: m.regx_days_delinquent, windows_opened: opened, milestone: milestoneToday ? m.milestone : null, events };
 }

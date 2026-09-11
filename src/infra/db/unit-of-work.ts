@@ -83,7 +83,8 @@ export class PgUnitOfWork {
       loanId ? this.events.byLoan(loanId) : Promise.resolve([] as DomainEvent[]),
       applicationId ? this.events.byApplication(applicationId) : Promise.resolve([] as DomainEvent[]),
       loanId ? this.ledger.setsForLoan(loanId) : Promise.resolve([] as EntrySet[]),
-      loanId ? this.timers.open(loanId) : Promise.resolve([] as TimerInstance[]),
+      // a global command (no loan, no application) hydrates the timers armed on global subjects — a transfer batch's clocks are satisfied by the batch-level events 17.x tools emit (32.12 backend delta; additive)
+      loanId ? this.timers.open(loanId) : applicationId ? Promise.resolve([] as TimerInstance[]) : this.timers.openGlobal(),
       applicationId ? this.timers.forApplication(applicationId) : Promise.resolve([] as TimerInstance[])]);
     const seen = new Set<string>();
     const history = [...loanHistory, ...appHistory].filter((e) => (seen.has(e.id) ? false : (seen.add(e.id), true))).sort((a, b) => a.sequence - b.sequence);

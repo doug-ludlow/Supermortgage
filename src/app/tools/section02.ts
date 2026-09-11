@@ -13,7 +13,9 @@ import { reamortize } from "../../domain/cashiering/curtailment.ts";
 import { graceEndFor, receivedTowardBasis, basisCents, type WaiverReason } from "../../domain/cashiering/latecharges.ts";
 import { LateChargeOps } from "../../domain/cashiering/ops-2-7.ts";
 import { CashieringOps } from "../../domain/cashiering/ops.ts";
-import { withStatementSummary } from "./section2-2.ts";
+import { withStatementSummary, withRefund } from "./section2-2.ts";
+import { postReceivedPayment } from "./section2-1.ts";
+import { withAutodraftLifecycle } from "./section2-3.ts";
 import { levelPayment, ratePercent } from "../../kernel/money/cents.ts";
 import { plainDate as D } from "../../kernel/calendar/date.ts";
 import { BUCKET_ORDER, instrumentProfile, type InstrumentProfile, type LoanCashState } from "../../domain/cashiering/types.ts";
@@ -52,7 +54,8 @@ const lockboxImageOcr = compute(async (i, ctx, rt) => {
 const requestContact = { name: "borrower_comms.request_contact", kind: "act" as const, handler: escalate("human_agent"),
   guardrails: [never("AUTOMATION_DISCLOSED", "2.1 escalations: automation is disclosed at the start of every call/chat", (i) => i.automation_disclosed === false, "automation must be disclosed before the contact")],
   decision: (i: ToolInput) => ({ action: "borrower_comms.request_contact", rationale: str(i, "reason") || "borrower asked for a human (warm transfer)" }) };
-const noticeSend = { name: "notice.send", kind: "act" as const, handler: noticeOps("send") };
+/** 2.x names no render tool: `notice.send{notice_id}` sends a rendered notice; `notice.send{template_code, recipients, payload}` renders and sends through the registry in one command (32.8 delta). */
+const noticeSend = { name: "notice.send", kind: "act" as const, handler: compute((i, ctx, rt) => (str(i, "notice_id") ? noticeOps("send") : noticeOps("render_send"))(i, ctx, rt)) };
 const escalationCreate = { name: "escalation.create", kind: "act" as const, handler: escalate("officer") };
 const timers = { name: "timer.*", kind: "act" as const, handler: timerOps() };
 const overlays = { name: "cases.get_overlays", kind: "read" as const, handler: read("case_overlays") };
@@ -66,6 +69,7 @@ const loanTerms = { name: "loan_terms.get", kind: "read" as const, handler: read
 const paymentsReadWrite = (() => {
   const rw = readWrite("payments", "payment.written");
   return (i: ToolInput, ctx: CommandContext, rt: ToolRuntime): unknown => {
+    if (i.op === "post") return postReceivedPayment(i, ctx, rt);   // the 2.1 posting run (allocation engine + 2.2 partial rules; section2-1.ts, 32.8 delta)
     if (i.op !== "write" || typeof i.id !== "string") return rw(i, ctx, rt);
     const existing = rt.store.get("payments", i.id)?.data;
     const attempted = (i.changes as Record<string, unknown> | undefined)?.received_on ?? data(i).received_on;
@@ -106,7 +110,7 @@ const applyViaCashiering = (extra: ReturnType<typeof never>[] = []): Omit<ToolDe
   guardrails: [never("ACCUMULATION_RULE", "2.2 guardrails: cannot bypass the accumulation rule (enforced in the ledger command)", (i) => flag(i, "accumulation_rule_bypassed"), "the accumulation rule is enforced in the ledger command"), ...extra] });
 
 const p22: ToolDef[] = defineTools("2.2", "cashiering", [
-  withStatementSummary(suspenseRw("2.2")),                                  // + op=statement_summary: the 7.1 (d)(3)/(d)(5) read model (section2-2.ts)
+  withRefund(withStatementSummary(suspenseRw("2.2"))),                      // + op=statement_summary: the 7.1 (d)(3)/(d)(5) read model; + op=refund: a held partial returned to the borrower (section2-2.ts)
   { name: "payments.history", kind: "read", handler: history("payments") },
   loanTerms, overlays,
   { name: "lockbox.image_ocr", kind: "read", handler: lockboxImageOcr },
@@ -116,7 +120,8 @@ const p22: ToolDef[] = defineTools("2.2", "cashiering", [
 ]);
 
 const p23: ToolDef[] = defineTools("2.3", "cashiering", [
-  { name: "autodraft.read/write", kind: "write", handler: readWrite("autodraft_enrollments", "autodraft.written"), guardrails: [never("NO_CONDITIONING", "2.3 guardrails: cannot condition anything on enrollment", (i) => i.op === "write" && data(i).conditioned_benefit !== undefined, "no benefit or term may be conditioned on autodraft enrollment")] },
+  { name: "autodraft.read/write", kind: "write", handler: withAutodraftLifecycle(readWrite("autodraft_enrollments", "autodraft.written")), guardrails: [never("NO_CONDITIONING", "2.3 guardrails: cannot condition anything on enrollment", (i) => i.op === "write" && data(i).conditioned_benefit !== undefined, "no benefit or term may be conditioned on autodraft enrollment"),
+      never("CONSENT_VOICE_VOID", "2.3 rule 1 / 01 §3.5 / 15 U.S.C. 7001(c)(6): `authorized` is never set from a voice channel — the ConsentCard link is sent instead", (i) => i.op === "authorize" && str(i, "channel") === "voice", "an autodraft authorization cannot be captured by voice")] },
   { name: "consent.capture", kind: "write", handler: write("consents", "consent.captured"),
     guardrails: [never("DISCLOSE_AND_OFFER_HUMAN", "2.3 guardrails: must disclose automation and offer a human at the start of every voice/chat enrollment", (i) => ["voice", "chat"].includes(String(data(i).channel)) && (data(i).automation_disclosed !== true || data(i).human_offered !== true), "voice/chat enrollment without automation disclosure and a human offer"),
       never("NO_ACCOUNT_READBACK", "2.3 guardrails: cannot read back full account numbers", (i) => data(i).account_number_read_back === true, "full account numbers are never read back")] },
@@ -209,7 +214,7 @@ const lcFacts = (i: ToolInput): Record<string, unknown> => {
   }
   return f;
 };
-const gateOn = (ref: string, code: string, citation: string) => guard(code, citation, (i) => { const r = evaluateGate(ref, lcFacts(i)); return r.open ? undefined : `${r.reason ?? "gate closed"} (${ref}; pass facts.${ref === "2.1.noPostingBacklog" ? "items_received_or_identified_on_or_before_gate_date" : ref === "2.7.graceGateOpen" ? "run_on/grace_end_on" : ref === "2.7.onlyOnePerInstallment" ? "late_charges_for_installment_not_reversed" : "…"} or the loan state)`; });
+const gateOn = (ref: string, code: string, citation: string) => guard(code, citation, (i) => { if (i.op === "daily_run" && ref !== "2.1.noPostingBacklog") return undefined; const r = evaluateGate(ref, lcFacts(i)); return r.open ? undefined : `${r.reason ?? "gate closed"} (${ref}; pass facts.${ref === "2.1.noPostingBacklog" ? "items_received_or_identified_on_or_before_gate_date" : ref === "2.7.graceGateOpen" ? "run_on/grace_end_on" : ref === "2.7.onlyOnePerInstallment" ? "late_charges_for_installment_not_reversed" : "…"} or the loan state)`; });
 const withOps = (ctx: CommandContext) => new CashieringOps({ events: ctx.events, clock: { now: () => ctx.now }, actor: ctx.actor });
 const withLcOps = (ctx: CommandContext) => new LateChargeOps({ events: ctx.events, clock: { now: () => ctx.now }, actor: ctx.actor });
 const feeRecord = (f: Record<string, unknown>): Record<string, unknown> => Object.fromEntries(Object.entries(f).map(([k, v]) => [k, typeof v === "bigint" ? v.toString() : v]));
@@ -221,6 +226,13 @@ const p27: ToolDef[] = defineTools("2.7", "cashiering", [
     handler: compute((i, ctx, rt) => {
       if (!i.state) return write("fees", "fee.assessed")(i, ctx, rt);
       const state = i.state as LoanCashState;
+      // op=daily_run (2.7 "inputs and triggers" / 32.8 delta): the 00:30 run over every installment — `installment.due_date_reached{grace_end_on}` for the ones due today
+      // (arms NOTE_6A_LATE_CHARGE_GRACE_GATE) and the engine's decision for the ones whose grace end was yesterday (the once-only, credited-funds and overlay rules run inside assessLateCharge).
+      if (i.op === "daily_run") {
+        const r = withLcOps(ctx).dailyRun(state, D(str(i, "run_on") || ctx.now.slice(0, 10)), { unposted_receipts_on_or_before_grace: Number(i.unposted_receipts_on_or_before_grace ?? 0) });
+        for (const d of r.decisions) if (d.outcome === "assessed" || d.outcome === "accrued_suspended") rt.store.put("fees", d.fee.id, feeRecord({ ...d.fee, loan_id: state.loan_id }), ctx.actor, ctx.now);
+        return { due_reached: r.due_reached, decisions: r.decisions.map((d) => ({ outcome: d.outcome, grace_end_on: d.grace_end_on, ...(d.outcome === "assessed" || d.outcome === "accrued_suspended" ? { fee: feeRecord({ ...d.fee }) } : {}), ...(d.outcome === "not_assessed" ? { reason: d.reason } : {}) })) };
+      }
       // Rule 1: the credited-funds test is the engine's (receivedTowardBasis from the installment's status/credited_as_of) unless the caller carries the credited figure.
       const r = withLcOps(ctx).assess({ state, installment_due_date: D(str(i, "installment_due_date")), ...(i.received_toward_basis_cents !== undefined && i.received_toward_basis_cents !== null ? { received_toward_basis_cents: cents(i.received_toward_basis_cents) } : {}), run_on: D(str(i, "run_on") || ctx.now.slice(0, 10)), unposted_receipts_on_or_before_grace: Number(i.unposted_receipts_on_or_before_grace ?? 0) });
       if (r.outcome === "assessed" || r.outcome === "accrued_suspended") rt.store.put("fees", r.fee.id, feeRecord({ ...r.fee, loan_id: state.loan_id }), ctx.actor, ctx.now);

@@ -3,7 +3,8 @@
 import { CardFrame, nowIso } from "./CardFrame";
 import type { CardComponentProps } from "./types";
 import type { ChoiceCardEvidence } from "@/lib/types/cards";
-import { copy } from "@/lib/copy";
+import { copy, copyExtra } from "@/lib/copy";
+import { columnTitle, rowValue } from "@/components/flows/6-decision-property";
 
 /**
  * 01 §3.7 — multi-option numeric choice as columns; values arrive pre-formatted from the
@@ -12,9 +13,10 @@ import { copy } from "@/lib/copy";
 export function ComparisonCard({ card, timezone, onResolve, busy, error, stub, onOpen }: CardComponentProps<"ComparisonCard"> & { stub?: boolean }) {
   const p = card.props;
   const heading = p.title ?? copy(card.copy_key);
+  const footnote = p.footnote || copyExtra(card.copy_key, "footnote", p.copy_tokens);   // 32.10: the offer's deadline line from the library when the server named only the key
   const pending = card.status === "pending";
   const chosen = (card.evidence as ChoiceCardEvidence | undefined)?.option_id;
-  const chosenTitle = p.columns.find((c) => c.id === chosen)?.title ?? (p.secondary_option && chosen === p.secondary_option.id ? p.secondary_option.label : undefined);
+  const chosenCol = p.columns.find((c) => c.id === chosen); const chosenTitle = chosenCol ? columnTitle(chosenCol) : (p.secondary_option && chosen === p.secondary_option.id ? p.secondary_option.label : undefined);
 
   const pick = (option_id: string) => {
     const evidence: ChoiceCardEvidence = { option_id, tapped_at: nowIso() };
@@ -39,7 +41,7 @@ export function ComparisonCard({ card, timezone, onResolve, busy, error, stub, o
           return (
             <div key={c.id} className="sm-column" data-recommended={recommended}>
               <h4>
-                {c.title}
+                {columnTitle(c)}
                 {recommended ? <span className="sm-positive-text"> · recommended</span> : null}
               </h4>
               <dl>
@@ -47,7 +49,7 @@ export function ComparisonCard({ card, timezone, onResolve, busy, error, stub, o
                   <div key={r.label}>
                     <dt>{r.label}</dt>
                     <dd data-emphasis={r.emphasis ? "true" : undefined} className="sm-num">
-                      {r.value}
+                      {rowValue(r)}
                     </dd>
                   </div>
                 ))}
@@ -55,7 +57,7 @@ export function ComparisonCard({ card, timezone, onResolve, busy, error, stub, o
               {c.footnote ? <p className="sm-source">{c.footnote}</p> : null}
               {pending ? (
                 <button type="button" className={`sm-btn${recommended || (!p.recommended_id && c === p.columns[0]) ? " sm-btn-primary" : ""}`} style={{ width: "100%", marginTop: 8 }} onClick={() => pick(c.id)} disabled={busy} aria-pressed={chosen === c.id}>
-                  Choose {c.title}
+                  Choose {columnTitle(c)}
                 </button>
               ) : null}
             </div>
@@ -69,7 +71,7 @@ export function ComparisonCard({ card, timezone, onResolve, busy, error, stub, o
           </button>
         </div>
       ) : null}
-      {p.footnote ? <p className="sm-card-footer">{p.footnote}</p> : null}
+      {footnote ? <p className="sm-card-footer">{footnote}</p> : null}
       {error ? <p className="sm-error" role="alert">{error}</p> : null}
     </CardFrame>
   );

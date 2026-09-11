@@ -75,9 +75,9 @@ export class PgBorrowerUiRepository {
     const rows = await q.query<MessageRow & Record<string, unknown>>(
       `SELECT m.message_id, m.conversation_id, m.at, m.sender, m.sender_ref, m.channel, m.body_text, m.card_instance_id, m.subject_application_id, m.subject_loan_id, m.external_ref, m.voice_turn, m.created_at
          FROM messages m WHERE m.conversation_id = $1
-          AND ($2::uuid IS NULL OR (m.at, m.message_id) > (SELECT x.at, x.message_id FROM messages x WHERE x.message_id = $2))
+          AND ($2::uuid IS NULL OR (m.at, m.created_at, m.message_id) > (SELECT x.at, x.created_at, x.message_id FROM messages x WHERE x.message_id = $2))
           AND ($3::timestamptz IS NULL OR m.at > $3)
-         ORDER BY m.at, m.message_id LIMIT $4`,
+         ORDER BY m.at, m.created_at, m.message_id LIMIT $4`,
       [conversationId, after && isUuid(after) ? after : null, after && !isUuid(after) && !Number.isNaN(Date.parse(after)) ? after : null, limit]);
     return rows;
   }
@@ -86,6 +86,12 @@ export class PgBorrowerUiRepository {
     return rows[0];
   }
   /** A status transition: the row moves and the transition appends (evidence persisted on resolve). */
+  /** Merge props into a card in place (32.7 §2: the closing ScheduleCard one flow created gains the closing-type decision another flow owns — one card per party, never two asks). The status and its events are untouched. */
+  async mergeCardProps(id: string, props: Record<string, unknown>, q: Queryable = this.db): Promise<CardInstanceRow> {
+    const rows = await q.query<CardInstanceRow & Record<string, unknown>>(`UPDATE card_instances SET props = props || $2::jsonb WHERE card_instance_id = $1 RETURNING ${CARD_COLS}`, [id, toJson(props)]);
+    if (!rows[0]) throw new RangeError(`no card ${id}`);
+    return rows[0];
+  }
   async transitionCard(id: string, to: CardStatus, actor: string, at: string, evidence: Record<string, unknown> | null = null, q: Queryable = this.db): Promise<CardInstanceRow> {
     const before = await this.card(id, q); if (!before) throw new RangeError(`no card ${id}`);
     const rows = await q.query<CardInstanceRow & Record<string, unknown>>(`UPDATE card_instances SET status = $2, evidence = COALESCE($3::jsonb, evidence), resolved_at = CASE WHEN $2 = 'resolved' THEN $4 ELSE resolved_at END WHERE card_instance_id = $1 RETURNING ${CARD_COLS}`, [id, to, evidence ? toJson(evidence) : null, at]);

@@ -11,6 +11,8 @@ export type CardComponentProps<K extends CardKind> = {
   onLaunchVendor?: (vendor: string, card_instance_id: string) => Promise<{ vendor_session_id: string }>;
   /** Attach/upload hook (UploadCard). */
   onUpload?: (file: File, document_class: string) => Promise<{ document_id: string }>;
+  /** Post a borrower message from a card's quiet link (32.7 §4: "How to cancel" opens the rescission ChoiceCard through the thread, never a primary button). */
+  onMessage?: (text: string) => Promise<void> | void;
   busy?: boolean;
   error?: string;
 };

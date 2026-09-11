@@ -52,10 +52,11 @@ export type StatementType = "initial" | "annual" | "short_year_transfer" | "shor
  * landed on/before the timer's due date. `shortage_explained` marks the payload that satisfies REGX_1024_17F5_SHORTAGE_NOTICE_ANNUAL:
  * a statement whose item (vi) explains a shortage/deficiency, or the (f)(5) notice `NTC_REGX_1024_17F_SHORTAGE` sent in its place.
  */
-export function recordStatementSent(events: EventStore, f: { loan_id: string; template: string; statement_type: StatementType; sent_on: PlainDate; due_on: PlainDate; actor: Actor; shortage_explained?: boolean; history_to?: PlainDate | null }): { event_type: "escrow.statement.sent"; satisfied_on_time: boolean; shortage_explained: boolean } {
+export function recordStatementSent(events: EventStore, f: { loan_id: string; template: string; statement_type: StatementType; sent_on: PlainDate; due_on: PlainDate; actor: Actor; shortage_explained?: boolean; history_to?: PlainDate | null; stated_payment?: { amount_cents: Cents; effective_on: PlainDate } | null }): { event_type: "escrow.statement.sent"; satisfied_on_time: boolean; shortage_explained: boolean } {
   const shortageExplained = f.shortage_explained === true || f.template === "NTC_REGX_1024_17F_SHORTAGE";
   // `history_to` (the statement's period end) is what the next (i)(2) post-exemption history continues from (3.3 rule 6; ops-3-3.ts historyStartFromLog).
-  events.append({ type: "escrow.statement.sent", loanId: f.loan_id, actor: f.actor, payload: { template: f.template, statement_type: f.statement_type, disposition: "sent", sent_on: f.sent_on, due_on: f.due_on, shortage_explained: shortageExplained, ...(f.history_to ? { history_to: f.history_to } : {}) } });
+  // `stated_payment` (32.8 / 2.3 rule 5): the exact new payment and effective date the statement states — the fact 2.3's variable-amount check reads when the escrow statement already served as the Reg E §1005.10(d)(1) notice.
+  events.append({ type: "escrow.statement.sent", loanId: f.loan_id, actor: f.actor, payload: { template: f.template, statement_type: f.statement_type, disposition: "sent", sent_on: f.sent_on, due_on: f.due_on, shortage_explained: shortageExplained, ...(f.history_to ? { history_to: f.history_to } : {}), ...(f.stated_payment ? { stated_payment_cents: f.stated_payment.amount_cents.toString(), stated_payment_effective_on: f.stated_payment.effective_on } : {}) } });
   return { event_type: "escrow.statement.sent", satisfied_on_time: f.sent_on <= f.due_on, shortage_explained: shortageExplained };
 }
 /** 3.1 rule 6 / 7.4: electronic only with an unrevoked E-SIGN consent covering the class as of the send date. */

@@ -12,20 +12,25 @@ const PARTY: Shape = { party_id: true, party_type: true, display_name: true, fir
 const SESSION: Shape = { session_id: true, level: true, auth_method: true, expires_at: true, last_l1_at: true, fresh_l1: true, created_at: true };
 const SUBJECT: Shape = { application_id: true, loan_id: true, role: true, stage: true, label: true };
 const CARD: Shape = { card_instance_id: true, conversation_id: true, party_id: true, subject: { application_id: true, loan_id: true }, kind: true, status: true, created_by: true, copy_key: true, props: "opaque", evidence: "opaque", command_ref: true, expires_at: true, created_at: true, resolved_at: true };
-const MESSAGE: Shape = { message_id: true, conversation_id: true, at: true, sender: true, sender_label: true, channel: true, body_text: true, card_instance_id: true, subject: { application_id: true, loan_id: true }, voice_turn: true, delivery: { sent: true, delivered: true, read: true }, card: CARD, deep_link: { token: true, path: true, expires_at: true }, copy_key: true };
+const MESSAGE: Shape = { message_id: true, conversation_id: true, at: true, sender: true, sender_label: true, channel: true, body_text: true, card_instance_id: true, subject: { application_id: true, loan_id: true }, voice_turn: true, delivery: { sent: true, delivered: true, read: true }, card: CARD, deep_link: { token: true, path: true, expires_at: true }, copy_key: true, automation_marker: true };
 const NUMBERS: Shape = { note_rate: true, apr: true, pi_payment_cents: true, escrow_payment_cents: true, loan_amount_cents: true, cash_to_close_cents: true, monthly_savings_cents: true, lock: { status: true, expires_at: true, expires_on: true, period_days: true }, figures_source: true,
-  upb_cents: true, next_payment: { due_on: true, amount_cents: true, pi_cents: true, escrow_cents: true }, escrow_balance_cents: true, days_past_due: true, paid_off: { payoff_date: true, escrow_refund_pending_cents: true } };
+  upb_cents: true, next_payment: { due_on: true, amount_cents: true, pi_cents: true, escrow_cents: true }, escrow_balance_cents: true, days_past_due: true, paid_off: { payoff_date: true, escrow_refund_pending_cents: true },
+  // 32.9 §3 / 7.3: the engine's ARM estimate once the initial notice is sent
+  arm_estimate: { basis: true, change_on: true, first_new_payment_due: true, estimated_rate: true, estimated_pi_cents: true, notice_id: true, sent_on: true } };
 const RECORD: Shape = {
   subject: { application_id: true, loan_id: true, label: true, transaction_type: true, occupancy: true, stage: true },
-  status: { badge: true, state_source: true, one_liner: true },
+  status: { badge: true, state_source: true, one_liner: true, one_liner_tokens: "opaque" },
+  read_only: true,
   next: { label: true, due_at: true, timer_code: true, calendar_note: true },
-  needed_from_you: [{ item_id: true, kind: true, label: true, due_at: true, card_instance_id: true, created_at: true, source: true }],
+  needed_from_you: [{ item_id: true, kind: true, label: true, due_at: true, card_instance_id: true, created_at: true, source: true, owner: true, label_copy_key: true, copy_tokens: "opaque" }],
+  what_we_are_doing: [{ item_id: true, kind: true, label: true, owner: true, owner_copy_key: true, status: true, source: true, created_at: true }],
+  needed_summary: { count: true, nothing_needed: true, copy_key: true },
   numbers: NUMBERS,
-  dates: [{ timer_code: true, label: true, due_at: true, calendar: true, status: true }],
-  documents: [{ document_id: true, disclosure_id: true, notice_code: true, title: true, kind: true, status: true, delivered_at: true, received_at: true, mailed_at: true, requires_ack: true, channel: true, template_version: true }],
-  people: [{ party_id: true, role: true, display_name: true, progress: { consents_ok: true, confirmations_ok: true, signed: true }, nmlsr_id: true, direct_number: true, commission_state: true, is_you: true }],
-  property: { address: true, tbd: true, property_type: true, units: true, occupancy: true, county: true, valuation: { method: true, status: true, appointment_at: true, value_used_cents: true }, flood: { status: true }, hazard: { status: true }, project_review: { status: true }, hoa_dues_cents: true },
-  loan: { autodraft: { status: true, next_draft_on: true, amount_cents: true, account_last4: true, draft_day: true, amount_rule: true }, escrow_lines: [{ type: true, payee: true, next_disbursement_on: true, annual_cents: true }], mi: { status: true, projected_end_on: true, cancellation_eligible_on: true, midpoint_on: true }, arm: { next_change_on: true, notice_status: true }, year_end: { form_1098_status: true }, continuity_team: "opaque", servicer_loan_number_last4: true, first_payment_date: true, maturity_date: true, escrowed: true, remaining_term_months: true },
+  dates: [{ timer_code: true, label: true, due_at: true, calendar: true, status: true, tone: true }],
+  documents: [{ document_id: true, notice_id: true, disclosure_id: true, notice_code: true, title: true, kind: true, status: true, delivered_at: true, received_at: true, received_on: true, mailed_at: true, requires_ack: true, channel: true, template_version: true, le_version: true, copy_of_disclosure_id: true, card_instance_id: true, deliveries: [{ borrower_id: true, display_name: true, channel: true, status: true, at: true }] }],
+  people: [{ party_id: true, role: true, display_name: true, progress: { consents_ok: true, confirmations_ok: true, signed: true }, nmlsr_id: true, direct_number: true, commission_state: true, is_you: true, waiting: true }],
+  property: { address: true, tbd: true, property_type: true, units: true, occupancy: true, county: true, valuation: { method: true, status: true, appointment_at: true, value_used_cents: true, label: true }, flood: { status: true, label: true }, hazard: { status: true, label: true }, project_review: { status: true, label: true }, hoa_dues_cents: true },
+  loan: { autodraft: { status: true, next_draft_on: true, amount_cents: true, account_last4: true, draft_day: true, amount_rule: true, ends_on: true, terminated_on: true, termination_reason: true }, ratewatch_status: true, escrow_lines: [{ type: true, payee: true, next_disbursement_on: true, annual_cents: true }], mi: { status: true, projected_end_on: true, cancellation_eligible_on: true, midpoint_on: true }, arm: { next_change_on: true, notice_status: true }, year_end: { form_1098_status: true, tax_year: true, furnished_on: true, channel: true }, continuity_team: "opaque", hardship: "opaque", servicer_loan_number_last4: true, first_payment_date: true, maturity_date: true, escrowed: true, remaining_term_months: true, ratewatch: { current_rate: true, best_available_rate: true, rate_sheet_id: true, state: true, worth_it_copy_key: true, state_copy_key: true, offer_card_instance_id: true, application_id: true }, standing_connections: { status: true, consent_id: true, captured_at: true, withdrawn_at: true, manage_card_instance_id: true, vendors: true } },
   offers: [{ refi_opportunity_id: true, status: true, offered_at: true, expires_at: true, terms: { current_rate: true, offered_rate: true, apr: true, new_pi_payment_cents: true, monthly_savings_cents: true, costs_to_borrower_cents: true } }],
   as_of: true,
 };
@@ -35,7 +40,7 @@ const HISTORY_ROW: Shape = { kind: true, id: true, payment_id: true, status: tru
   case_id: true, opened_at: true, closed_at: true, receipt_date: true, is_qwr: true, determination: true, response_type: true, due: [{ timer_code: true, due_date: true, status: true }],
   application_id: true, received_date: true, protection_tier: true, facially_complete_at: true, complete_at: true, reasonable_date: true, ack_sent_on: true, evaluation_id: true, started_at: true, due_at: true, decided_at: true, provided_at: true, option: true, accept_by: true, responded_on: true, plan_type: true, start_date: true, current_term_end: true, installment_cents: true, term_months: true, appeal_window_ends: true, decision: true };
 export const SHAPES = {
-  me: { party: PARTY, level: true, session: SESSION, subjects: [SUBJECT] } satisfies Shape,
+  me: { party: PARTY, level: true, session: SESSION, subjects: [SUBJECT], partner: { legal_name: true, nmlsr_id: true } } satisfies Shape,   // 32.13: the partner the shell names in the automation marker and the disclosure line
   session: { token: true, session: SESSION, party: PARTY, level: true } satisfies Shape,
   otp_request: { challenge_id: true, channel: true, delivery: true, expires_at: true, fake_code: true } satisfies Shape,
   passkey_options: { challenge_id: true, challenge: true, rp: { id: true, name: true }, user: { id: true, name: true, display_name: true }, pub_key_cred_params: [{ type: true, alg: true }], allow_credentials: [{ type: true, id: true, transports: true }], timeout_ms: true, attestation: true, expires_at: true } satisfies Shape,
@@ -53,6 +58,10 @@ export const SHAPES = {
   card_resolved: { card: CARD, command: true, idempotent: true, result: "opaque", events: true } satisfies Shape,
   command_result: { command: true, subject: { application_id: true, loan_id: true }, result: "opaque", events: true, decision_id: true } satisfies Shape,
   error: { code: true, gate: true, copy_key: true } satisfies Shape,
+  // 32.3: the in-app voice session (E1 "a call to the published number"; the disclosure is spoken first) and the FAKE payroll connector (R3)
+  voice_session: { session_id: true, channel: true, vendor: true, started_at: true, first_message: MESSAGE } satisfies Shape,
+  connect_session: { vendor: true, vendor_session_id: true, link_token: true, card_instance_id: true, application_id: true, status: true, delivery: true } satisfies Shape,
+  connect_webhook: { received: true, vendor: true, vendor_session_id: true, outcome: true, application_id: true, verification_id: true, report_reference_id: true, events: true } satisfies Shape,
 } as const;
 export type ShapeName = keyof typeof SHAPES;
 
@@ -62,6 +71,8 @@ export const FORBIDDEN_FIELDS: readonly string[] = [
   "risk_assessment", "risk_score", "du_findings", "findings", "interpretation", "recommendation_code", "credit_score", "scores", "tradelines", "inquiries", "public_records", "report_xml", "report_json", "raw_report",
   "fraud_score", "fraud_flags", "fraud_hold", "fraud_hold_record", "red_flags", "sar_candidate", "qc_hold", "qc_finding", "qc_defect", "compliance_result", "test_results", "verdict",
   "tin_encrypted", "tin", "ssn", "date_of_birth_full", "account_number", "routing_number", "token_hash", "code_hash",
+  // 32.3 T12 / T19: DU findings and validation-report internals never reach a client payload
+  "close_by_date", "validation_results", "value_acceptance_offer", "mi_requirement", "risk_factors", "findings_hash", "du_release", "du_release_applied", "policy_outcome", "policy_generation", "decline_candidate", "dti_du", "ltv_du", "reserves_required_cents", "request_hash",
 ];
 
 export function fieldsOf(shape: Shape, into = new Set<string>()): Set<string> {
@@ -69,11 +80,14 @@ export function fieldsOf(shape: Shape, into = new Set<string>()): Set<string> {
   return into;
 }
 const FORBIDDEN = new Set(FORBIDDEN_FIELDS);
+/** 32.13 / 01 §3.19: a DemographicsCard's prompt lists (`ethnicity`, `race`, `sex` as `[{id, label}]` options) are the questions, not an applicant's answers — they travel as `<key>_options`; the answer-shaped keys never do. */
+const DEMOGRAPHIC_PROMPTS = new Set(["ethnicity", "race", "sex"]);
+const isOptionList = (x: unknown): boolean => Array.isArray(x) && x.length > 0 && x.every((o) => !!o && typeof o === "object" && typeof (o as Record<string, unknown>)["id"] === "string" && typeof (o as Record<string, unknown>)["label"] === "string");
 /** A UI-owned free-form value: copied with bigints as strings and every forbidden key dropped at any depth (the allow-list's guarantee holds inside opaque values too). */
 export function opaque(v: unknown): unknown {
   if (typeof v === "bigint") return v.toString();
   if (Array.isArray(v)) return v.map(opaque);
-  if (v && typeof v === "object") { const out: Record<string, unknown> = {}; for (const [k, x] of Object.entries(v as Record<string, unknown>)) if (!FORBIDDEN.has(k)) out[k] = opaque(x); return out; }
+  if (v && typeof v === "object") { const out: Record<string, unknown> = {}; for (const [k, x] of Object.entries(v as Record<string, unknown>)) { if (!FORBIDDEN.has(k)) out[k] = opaque(x); else if (DEMOGRAPHIC_PROMPTS.has(k) && isOptionList(x)) out[`${k}_options`] = opaque(x); } return out; }
   return v === undefined ? null : v;
 }
 export const ALL_ALLOWED_FIELDS: ReadonlySet<string> = (() => { const s = new Set<string>(); for (const sh of Object.values(SHAPES)) fieldsOf(sh, s); return s; })();

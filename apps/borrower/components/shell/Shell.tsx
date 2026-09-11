@@ -223,7 +223,7 @@ export function Shell({ fixturesMode, fixtureName, initialSubject }: ShellProps)
     setScrollTo(target.card_instance_id ?? target.message_id);
   }, []);
 
-  const cardProps = useMemo(() => ({ onOpen: link, onLaunchVendor: launchVendor, onUpload: upload }), [link, launchVendor, upload]);
+  const cardProps = useMemo(() => ({ onOpen: link, onLaunchVendor: launchVendor, onUpload: upload, onMessage: sendMessage }), [link, launchVendor, upload, sendMessage]);
 
   const comparisonInRecord = useMemo(() => (wide ? Object.values(cards).filter((c) => c.kind === "ComparisonCard" && c.status === "pending") : []), [cards, wide]);
 

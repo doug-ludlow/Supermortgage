@@ -7,6 +7,9 @@ import { Card } from "@/components/cards";
 import type { CardComponentProps } from "@/components/cards/types";
 import { civilDate, dayDividerLabel, formatDate } from "@/lib/format";
 import { copy } from "@/lib/copy";
+import { DisclosurePackage, packageMembers } from "@/components/flows/4-disclosures/DisclosurePackage";
+import { MessageBody } from "@/components/flows/3-entry";
+import { CardBoundary } from "@/components/flows/13-cross-cutting/CardBoundary";   // 32.13: one failing card never blanks the thread
 
 export type ThreadProps = {
   messages: ThreadMessage[];
@@ -54,6 +57,8 @@ export function Thread({ messages, cards, timezone, partnerLegalName, showSubjec
   }, [messages.length]);
 
   const sorted = useMemo(() => [...messages].sort((a, b) => (a.at < b.at ? -1 : 1)), [messages]);
+  // 32.4 §2: the LE and its companions are one grouped message — the package renders at its first card; the members render inside it
+  const packages = useMemo(() => packageMembers(sorted, cards), [sorted, cards]);
 
   return (
     <>
@@ -80,6 +85,8 @@ export function Thread({ messages, cards, timezone, partnerLegalName, showSubjec
           const prev = sorted[i - 1];
           const newDay = !prev || civilDate(prev.at, timezone) !== civilDate(m.at, timezone);
           const card = m.card_instance_id ? cards[m.card_instance_id] : undefined;
+          const pkg = packages.get(m.message_id);
+          if (pkg?.role === "member") return null;
           // 01 §1.3 grouping: consecutive system messages within 60 s share one timestamp; cards never group.
           const grouped = !card && !!prev && !prev.card_instance_id && prev.sender === m.sender && m.sender !== "borrower" && new Date(m.at).getTime() - new Date(prev.at).getTime() < 60_000 && !newDay;
           return (
@@ -104,8 +111,10 @@ export function Thread({ messages, cards, timezone, partnerLegalName, showSubjec
                     <time dateTime={m.at}>{formatDate(m.at, timezone, "time")}</time>
                   </div>
                 ) : null}
-                {m.body_text ? <div className="sm-msg-body">{m.body_text}</div> : null}
-                {card ? <Card card={card} timezone={timezone} {...cardProps} onResolve={(req) => resolve(card, req)} busy={busyCardId === card.card_instance_id} error={cardErrors[card.card_instance_id]} comparisonStub={wide} /> : null}
+                {m.body_text ? <div className="sm-msg-body"><MessageBody text={m.body_text} partnerLegalName={partnerLegalName} /></div> : null}
+                {pkg?.role === "head" ? (
+                  <DisclosurePackage packageId={pkg.package_id} cards={pkg.cards} timezone={timezone} render={(c) => <CardBoundary card={c}><Card card={c} timezone={timezone} {...cardProps} onResolve={(req) => resolve(c, req)} busy={busyCardId === c.card_instance_id} error={cardErrors[c.card_instance_id]} comparisonStub={wide} /></CardBoundary>} />
+                ) : card ? <CardBoundary card={card}><Card card={card} timezone={timezone} {...cardProps} onResolve={(req) => resolve(card, req)} busy={busyCardId === card.card_instance_id} error={cardErrors[card.card_instance_id]} comparisonStub={wide} /></CardBoundary> : null}
               </div>
             </Fragment>
           );

@@ -20,7 +20,7 @@ import { plainDate as D, type PlainDate } from "../../kernel/calendar/date.ts";
 import type { Actor } from "../../kernel/events/index.ts";
 import type { DecisionFile } from "../../domain/application/ops-21-6.ts";
 import type { Condition, Investigation23, RestructureProposal } from "../../domain/underwriting/ops-23-2.ts";
-import { assessRisk, validUntil, conditionalApprovalGuard, issueConditionalApproval, approvalLetterPayload, evaluateClearance, clearCondition, waiveCondition, reopenCondition, ptdStatus, recordPtdCleared, ptfStatus, recordPtfCleared, runCtcChecklist, issueClearToClose, ctcGate, ptdClearedGate, reopenDecision, supersedeDecision, validityExpired,
+import { assessRisk, validUntil, conditionalApprovalGuard, issueConditionalApproval, approvalLetterPayload, evaluateClearance, clearCondition, waiveCondition, reopenCondition, markConditionWaiting, ptdStatus, recordPtdCleared, ptfStatus, recordPtfCleared, runCtcChecklist, issueClearToClose, ctcGate, ptdClearedGate, reopenDecision, supersedeDecision, validityExpired,
   prepareAdverseDecision, reviewAdverseDecision, handOffToRegB, counterofferExpiry, expireCounterofferProposal, evaluateReliefLedger, recordReliefLedger, loseEmploymentRelief, openPaymentHistoryRelief, decisionRecord23_3, prefundingReviewStatus, assertNoDemographics,
   type RiskInput, type RiskAssessment, type CreditDecision, type EvidenceDoc, type ClearanceEvaluation, type QcHold, type CtcFacts, type CtcChecklist, type PrefundingReviewStatus, type ReopenCause, type AdverseDecisionRecord, type AdverseReason, type ReliefFacts, type ReliefEntry, type PtfRequirement, type ReviewerAction, type LetterInput } from "../../domain/underwriting/ops-23-3.ts";
 
@@ -105,6 +105,8 @@ export const TOOLS_23_3: readonly ToolDef[] = defineTools("23.3", "underwriter",
     needsRole("WAIVER_NEEDS_UNDERWRITING_REVIEWER", "23.3 automation class (b): condition waivers require `underwriting_reviewer`", (i) => i.op === "waive", ["underwriting_reviewer"], "a waiver is the reviewer's own act with a recorded reason"),
     never("QC_OFFICER_CANNOT_CLEAR", "23.3 rule 3: `qc_officer` never clears production conditions (independence)", (i) => i.op !== "waive" && i.as_role === "qc_officer", "QC may reopen, never clear")] },
   { name: "reopenCondition", kind: "act", handler: compute((i, ctx, rt) => {
+    // op=waiting: the lifecycle step `open` → `waiting_borrower` (needs-list item sent) | `waiting_third_party` (vendor order) — spec "Condition lifecycle"; 32.5 §1 renders it (docs/ux/BACKEND-DELTAS.md)
+    if (i.op === "waiting") { const cond = conditionOf(i, rt); need(i, "on"); const r = markConditionWaiting(ctx.events, cond, { on: str(i, "on") as "borrower" | "third_party", reason: str(i, "reason") || (str(i, "on") === "borrower" ? "needs-list item sent to the borrower" : "vendor order placed"), at: str(i, "at") || ctx.now }, ctx.actor); saveConditions(rt, ctx, [r.condition]); return { condition: r.condition, event: r.event.type }; }
     const cond = conditionOf(i, rt); need(i, "reason");
     const r = reopenCondition(ctx.events, cond, { reason: str(i, "reason"), at: ctx.now }, ctx.actor);
     saveConditions(rt, ctx, [r.condition]); return { condition: r.condition, event: r.event.type };

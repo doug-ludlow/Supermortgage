@@ -18,6 +18,7 @@ import { makeMin } from "../../../domain/boarding/min.ts";
 import { newDecisionFile } from "../../../domain/application/ops-21-6.ts";
 import { REFI_OFFER_SAMPLE } from "../../../notices/authored/section20-2.ts";
 import type { Runtime } from "../../app.ts";
+import { loanCashState } from "../../servicing.ts";
 
 type Actor = { kind: "agent" | "human" | "system"; id: string; role?: string };
 export const INTAKE: Actor = { kind: "agent", id: "intake" }; const PRICING: Actor = { kind: "agent", id: "pricing" }; const DISCLOSURE: Actor = { kind: "agent", id: "disclosure" }; const VERIFICATION: Actor = { kind: "agent", id: "verification" }; const UNDERWRITER: Actor = { kind: "agent", id: "underwriter" }; const VALUATION: Actor = { kind: "agent", id: "valuation" }; const CLOSER: Actor = { kind: "agent", id: "title-closing" }; const FUNDER: Actor = { kind: "agent", id: "funder" }; const FRAUD_RISK: Actor = { kind: "agent", id: "fraud-risk" }; const COMPLIANCE: Actor = { kind: "agent", id: "compliance-tester" }; const FUNDING: Actor = { kind: "agent", id: "funding" }; export const CASHIERING: Actor = { kind: "agent", id: "cashiering" }; const PAYOFF: Actor = { kind: "agent", id: "payoff-release" };
@@ -34,6 +35,9 @@ export class Journey {
   readonly leadId = randomUUID(); readonly R = this.leadId.slice(0, 8);
   priorLoanId = ""; appId = ""; loanId = ""; opportunityId = ""; touchId = ""; quoteId = ""; lockId = ""; commitmentId = ""; leDataHash = ""; creditReportId = ""; casefileId = ""; valuationOrderId = ""; cdDisclosureId = ""; closingSetId = ""; noteDataHash = ""; abIds: string[] = [];
   readonly custodial = { clearing: "", pi: "", ti: "" };
+  /** 32.11 T8: the rescission facts 26.3 funds under when 25.3 computed `not_applicable` (same-creditor rate/term, §1026.23(f)(2)); null keeps the fixture's expired_not_rescinded. */
+  rescissionOverride: Record<string, unknown> | null = null;
+  private fundingFacts(as_of: string) { const f = this.FUNDING_FACTS(as_of); return this.rescissionOverride ? { ...f, rescission: { ...f.rescission, ...this.rescissionOverride, now: as_of } } : f; }
   readonly PARTNER_ID = "partner-1"; readonly PROGRAM_ID = `prog-refi-${this.R}`; readonly CAMPAIGN = `camp-refi-${this.R}`; readonly CREATIVE = `cr-email-${this.R}`; readonly SCRUB_ID = `scrub-${this.R}`; readonly QUOTE = `Q-A-${this.R}`; readonly FUNDING_ID = `F-${this.R}`; readonly CLOSING_ID = `CLS-${this.R}`; readonly SESSION_ID = `SES-${this.R}`; readonly CONSENT_ID = `CONS-${this.R}`; readonly decisionId = `D-REFI-CA-${this.R}`;
   readonly MIN = makeMin("1000123", String(1_000_000_000 + Number(BigInt("0x" + this.leadId.replace(/-/g, "").slice(8, 16)) % 8_999_999_999n)));
   constructor(o: JourneyOptions) { this.o = o; }
@@ -190,13 +194,17 @@ export class Journey {
     clock.set(MST("2026-10-05", "10:41")); const sixth = await this.tool(scope, "21.1", "captureField", { field: "loan_amount_sought", value: "56000000" });
     assert.equal(sixth.output["trid_emitted"], true);
   }
-  /** a6 (first half): the Oct 5 sheet, 20.4's quote, the credit-report fee, 21.2's H-24 and the LE delivered and e-signed Oct 5. */
-  async quoteAndLe(): Promise<void> {
+  /** a6 (first half, before the LE): the Oct 5 sheet, 20.4's quote, the credit-report fee and 21.2's H-24 — a caller that delivers the LE its own way (32.13: by the parties' consents, `deliverLeByConsent`) stops here. */
+  async quoteOnly(): Promise<void> {
     const scope = { app: this.appId }; const clock = this.clock; const R = this.R;
     clock.set(EDT("2026-10-05", "06:35")); await this.tool({}, "20.4", "publishRateSheet", { rate_sheet_id: "rs-2026-10-05", partner_id: this.PARTNER_ID, source: "pe_whole_loan_api", published_at: EDT("2026-10-05", "06:35"), expires_at: EDT("2026-10-05", "17:00"), prices: this.PRICES }, PRICING);
     clock.set(MST("2026-10-05", "10:45")); await this.tool(scope, "20.4", "solvePassThrough", { inputs: this.QUOTE_INPUTS, quote_id: this.QUOTE, purpose: "lead_quote", partner_id: this.PARTNER_ID, lead_id: this.leadId }, PRICING);
     clock.set(MST("2026-10-05", "10:50")); await this.tool(scope, "21.4", "checkFeeGate", { command: "order_credit_report", fee_kind: "credit_report", amount_cents: "7500", vendor_invoice_cents: "6850", op: "impose", fee_item_id: `fee-credit-report-${R}`, method: "card_token", checked_at: MST("2026-10-05", "10:50") }, PRICING);
     clock.set(MST("2026-10-05", "16:10")); const h24 = await this.tool(scope, "21.2", "renderH24", this.LE_RENDER(), DISCLOSURE); this.leDataHash = h24.output["data_hash"] as string;
+  }
+  /** a6 (first half): the Oct 5 sheet, 20.4's quote, the credit-report fee, 21.2's H-24 and the LE delivered and e-signed Oct 5. */
+  async quoteAndLe(): Promise<void> {
+    await this.quoteOnly(); const R = this.R;
     const le = await this.call("POST", `/v1/applications/${this.appId}/disclosures/le`, { actor: MLO, render: this.LE_RENDER(), mlo: { review_id: `MR-LE-${R}`, nmlsr_id: "987654" }, delivery: { channel: "esign_portal", at: MST("2026-10-05", "16:10"), consent: this.ESIGN_CONSENT, receipt: { kind: "esignature", at: MST("2026-10-05", "17:42"), borrower_id: "B1" } } });
     assert.equal(le.status, 200, JSON.stringify(le.body)); assert.equal(le.body["status"], "received");
   }
@@ -225,6 +233,34 @@ export class Journey {
     const lock = await this.tool(scope, "21.4", "executeLock", { lock_id: this.lockId, executed_at: MST("2026-10-07", "10:19") }, PRICING);
     assert.equal(lock.output["status"], "executed"); assert.equal(lock.output["expires_on"], "2026-11-23");
     const c = await this.tool(scope, "21.4", "requestCommitment", { lock_id: this.lockId, at: MST("2026-10-07", "10:20") }, PRICING); this.commitmentId = c.output["commitment_id"] as string;
+  }
+  /** 32.3 R2: identity, screening and the tri-merge credit order for both borrowers (Oct 5, 10:52 MST) — the first half of `verifyDecideAndClear`, alone. */
+  async orderCredit(at: string = MST("2026-10-05", "10:52")): Promise<string> {
+    const scope = { app: this.appId }; const clock = this.clock;
+    clock.set(MST("2026-10-05", "11:00"));
+    await this.tool(scope, "22.6", "verifyIdentity", { borrower_id: "B1", borrower_ids: ["B1", "B2"], scheduled_note_date: "2026-11-06" }, FRAUD_RISK);
+    await this.tool(scope, "22.6", "verifyIdentity", { borrower_id: "B2", borrower_ids: ["B1", "B2"], scheduled_note_date: "2026-11-06" }, FRAUD_RISK);
+    for (const [party, name] of [["B1", "Alex Borrower"], ["B2", "Blake Borrower"]] as const) await this.tool(scope, "22.6", "screenParty", { party_id: party, party_role: "borrower", name, lists: this.SDN_LISTS }, FRAUD_RISK);
+    clock.set(at);
+    const order = await this.tool(scope, "22.2", "orderCreditReport", { borrower_ids: ["B1", "B2"], permissible_purpose: "credit_transaction_604a3A", certification_ref: "CERT-PARTNER-1681E-2026", borrower_authorization_ref: "AUTH-BLANKET-2026-10-05", subscriber_code: "SUB-PARTNER-0417", joint_intent_facts: this.JOINT_INTENT, at }, VERIFICATION);
+    this.creditReportId = order.output["report_id"] as string;
+    await this.tool(scope, "22.2", "parseCreditReport", { report_id: this.creditReportId }, VERIFICATION);
+    return this.creditReportId;
+  }
+  /** 32.3 R8 / T20: 23.1's casefile → credit association → DU request → submission → findings at `findings_at`, interpreted by 23.2 at `interpreted_at` (SM_DU_CONDITIONS_SLA_4H). */
+  async duSubmitAndInterpret(times: { findings_at: string; interpreted_at: string }): Promise<{ submission_id: string; interpretation_id: string | null; request_hash: string }> {
+    const scope = { app: this.appId }; const clock = this.clock;
+    clock.set(times.findings_at);
+    const cf0 = createCasefile(new MemoryEventStore(clock), { application_id: this.appId, seller_number: "123456789", system_id_ref: "SYS-PARTNER-01", tsp_product_ref: "SM-TSP", score_model: "classic_fico", created_at: clock.now() }).casefile; this.casefileId = cf0.casefile_id;
+    const report = await this.entity("credit_reports", this.creditReportId);
+    await this.tool(scope, "23.1", "associateCredit", { casefile: cf0, reports: [report], borrowers: this.BORROWER_IDENTITIES, app_score_model: "classic_fico" }, UNDERWRITER);
+    const built = await this.tool(scope, "23.1", "buildDuRequest", { casefile_id: this.casefileId, submission_type: "credit_and_underwriting", reason: "initial", snapshot: this.ULAD() }, UNDERWRITER);
+    await this.tool(scope, "23.1", "submitCasefile", { casefile_id: this.casefileId, request: built.output["request"], projected_note_date: "2026-11-06", scif_facts: { borrowers: this.BORROWER_IDENTITIES.map((b) => ({ id: b.borrower_id, scif_presented_at: MST("2026-10-05", "10:20") })) } }, UNDERWRITER);
+    const findings = await this.tool(scope, "23.1", "fetchFindings", { casefile_id: this.casefileId, submission_number: 1 }, UNDERWRITER);
+    const submission = findings.output["submission"] as Record<string, unknown>;
+    clock.set(times.interpreted_at);
+    const interp = await this.tool(scope, "23.2", "parseFindings", { op: "interpret", submission_id: submission["submission_id"], submission_number: 1, recommendation: "approve_eligible", messages: this.DU_MESSAGES, validation_results: [], value_acceptance_offer: { offered: true, property_value_cents: "80000000" }, mi_requirement: { required: false, coverage_pct: null }, du_release: "2026-09-25", policy_generation: "2026_09_26", request_hash: built.output["request_hash"], findings_received_at: times.findings_at, facts: this.DU_FACTS }, UNDERWRITER);
+    return { submission_id: String(submission["submission_id"]), interpretation_id: ((interp.output["interpretation"] as { interpretation_id?: string } | undefined)?.interpretation_id) ?? null, request_hash: String(built.output["request_hash"]) };
   }
   /** a7–a9: verifications, valuation, DU, the conditional approval (Oct 7), clear to close (Oct 29). */
   async verifyDecideAndClear(): Promise<void> {
@@ -273,8 +309,9 @@ export class Journey {
     const sch = await this.tool({ app: this.appId }, "26.2", "runPreSessionChecks", { op: "schedule", closing_id: this.CLOSING_ID, application_id: this.appId, scheduled_at: MST("2026-11-06", "14:00"), time_zone: "America/Phoenix", state: "AZ", county_fips: "04013", transaction_type: "limited_cash_out", dry_state: true, settlement_agent_party_id: this.AGENT_PARTY, notary_party_id: this.NOTARY.party_id, ron_provider_party_id: "P-RON-1", eligibility: this.ELIGIBILITY, signers: this.SIGNERS }, CLOSER);
     assert.equal(sch.output["closing_type"], "ron");
   }
-  /** a10: 25.2's CD v1 rendered Mon Nov 2, e-delivered to both borrowers with e-sign receipts → earliest consummation Nov 5. */
-  async closingDisclosure(opts: { receipts?: boolean } = {}): Promise<string> {
+  /** a10: 25.2's CD v1 rendered Mon Nov 2, e-delivered to both borrowers with e-sign receipts → earliest consummation Nov 5.
+   *  `deliveries: false` (32.7) stops after `renderCd` so the caller delivers per consumer itself (channel, receipts, the mailbox rule). */
+  async closingDisclosure(opts: { receipts?: boolean; deliveries?: boolean } = {}): Promise<string> {
     const scope = { app: this.appId }; const clock = this.clock; const R = this.R;
     clock.set(MST("2026-11-02", "10:00"));
     await this.tool(scope, "25.2", "assembleCdFigures", { op: "record_source", source_id: `SRC-SA-${R}`, party: "settlement_agent", payload: { fees: [{ fee_code: "title_lender_policy", amount_cents: "120000" }, { fee_code: "settlement_fee", amount_cents: "60000" }, { fee_code: "recording", amount_cents: "3000" }] }, payload_document_id: "DOC-SA-FEES" }, DISCLOSURE);
@@ -288,6 +325,7 @@ export class Journey {
       fees: this.CD_FEES, escrow: { established: true, monthly_escrow_cents: "68750", initial_escrow_payment_cents: "206250", escrowed_costs_year1_cents: "825000", non_escrowed_costs_year1_cents: "0" },
       parties: { borrowers: ["Alex Borrower", "Blake Borrower"], creditor_name: "Partner Bank, N.A.", creditor_nmlsr_id: "123456", mlo_name: "Jordan Rivera", mlo_nmlsr_id: "987654", settlement_agent_name: "Desert Title Agency LLC", settlement_agent_license_id: "AZ-TA-4471" },
       dates: { date_issued: "2026-11-02", closing_date: "2026-11-06", disbursement_date: "2026-11-12" }, property_address: "100 N Central Ave, Phoenix AZ 85004", cash_to_close_cents: "552943", lender_credits_cents: "70000", payoffs_and_payments_cents: "54820000", rescindable: true }, DISCLOSURE);
+    if (opts.deliveries === false) return this.cdDisclosureId;
     clock.set(MST("2026-11-02", "09:14"));
     for (const consumer of ["B1", "B2"]) {
       await this.tool(scope, "25.2", "deliverDisclosure", { disclosure_id: this.cdDisclosureId, consumer_id: consumer, channel: "esign_portal", at: MST("2026-11-02", "09:14"), esign_consent_id: `ESIGN-${consumer}`, ...(consumer === "B1" ? { gate_run: { run_id: "RUN-CD-1", open: true, apr_verdict: "pass", blocked_channels: [] } } : {}) }, DISCLOSURE);
@@ -297,16 +335,16 @@ export class Journey {
     return this.cdDisclosureId;
   }
   /** a11–a12: the closing documents rendered and released, the RON session, the eNote signed 14:26 MST Nov 6 = consummation, sealed and registered. */
-  async closeAndSign(): Promise<void> {
-    const scope = { app: this.appId }; const clock = this.clock; const R = this.R;
+  async closeAndSign(opts: { snapshot?: Record<string, unknown> } = {}): Promise<void> {
+    const scope = { app: this.appId }; const clock = this.clock; const R = this.R; const snapshot = { ...this.CLOSING_SNAPSHOT(), ...(opts.snapshot ?? {}) };
     clock.set(MST("2026-11-04", "10:00"));
     const terms = await this.tool(scope, "26.1", "computeNoteTerms", { principal_cents: "56000000", note_rate_pct: "6.125", term_months: 360, scheduled_disbursement_date: "2026-11-12", state: "AZ" }, CLOSER);
     const g = await this.tool(scope, "26.1", "evaluateDocGenGates", { gate: this.DOCGEN_GATE }, CLOSER); this.closingSetId = g.output["set_id"] as string;
-    await this.tool(scope, "26.1", "takeClosingSnapshot", { set_id: this.closingSetId, snapshot: this.CLOSING_SNAPSHOT(), gate: this.DOCGEN_GATE }, CLOSER);
+    await this.tool(scope, "26.1", "takeClosingSnapshot", { set_id: this.closingSetId, snapshot, gate: this.DOCGEN_GATE }, CLOSER);
     const rendered = await this.tool(scope, "26.1", "renderDocument", { set_id: this.closingSetId }, CLOSER);
     const docs = rendered.output["documents"] as { document_id: string; kind: string; data_hash: string }[]; this.noteDataHash = docs.find((d) => d.kind === "enote")!.data_hash; assert.equal(this.noteDataHash, terms.output["data_hash"]);
     const smart = await this.tool(scope, "26.1", "buildSmartDocENote", { set_id: this.closingSetId }, CLOSER);
-    await this.tool(scope, "26.1", "runDocumentQc", { set_id: this.closingSetId, upstream: { enote: smart.output, cd: { loan_amount_cents: "56000000", note_rate_pct: "6.125", pi_cents: "340262", org_nmlsr_id: "123456", mlo_nmlsr_id: "987654", first_payment_date: "2027-01-01" }, du: { loan_amount_cents: "56000000", note_rate_pct: "6.125", term_months: 360 }, lock: { note_rate_pct: "6.125" }, title: { vesting_text: this.CLOSING_SNAPSHOT().vesting_text, legal_description: this.CLOSING_SNAPSHOT().legal_description }, urla_1003: { org_nmlsr_id: "123456", mlo_nmlsr_id: "987654", loan_amount_cents: "56000000", note_rate_pct: "6.125", term_months: 360 }, note_date: "2026-11-06" } }, CLOSER);
+    await this.tool(scope, "26.1", "runDocumentQc", { set_id: this.closingSetId, upstream: { enote: smart.output, cd: { loan_amount_cents: "56000000", note_rate_pct: "6.125", pi_cents: "340262", org_nmlsr_id: "123456", mlo_nmlsr_id: "987654", first_payment_date: "2027-01-01" }, du: { loan_amount_cents: "56000000", note_rate_pct: "6.125", term_months: 360 }, lock: { note_rate_pct: "6.125" }, title: { vesting_text: snapshot.vesting_text, legal_description: snapshot.legal_description }, urla_1003: { org_nmlsr_id: "123456", mlo_nmlsr_id: "987654", loan_amount_cents: "56000000", note_rate_pct: "6.125", term_months: 360 }, note_date: "2026-11-06" } }, CLOSER);
     clock.set(MST("2026-11-05", "09:00"));
     await this.tool(scope, "26.1", "releaseToSettlementAgent", { set_id: this.closingSetId, released_to_party_id: this.AGENT_PARTY, facts: { qc_pass_gate_open: true, template_version_gate_open: true } }, CLOSER);
     clock.set(MST("2026-11-05", "15:00"));
@@ -332,16 +370,27 @@ export class Journey {
     clock.set(MST("2026-11-06", "14:43")); const v = await this.tool(scope, "26.2", "validateAuthoritativeCopy", { closing_id: this.CLOSING_ID, authoritative_copy: copy }, CLOSER); assert.equal(v.output["gate_open"], true, String(v.output["reason"]));
     clock.set(MST("2026-11-06", "14:44")); const reg = await this.tool(scope, "26.2", "registerENote", { closing_id: this.CLOSING_ID }, CLOSER); assert.equal(reg.output["accepted"], true);
   }
-  /** a13: 26.3 funds Thu Nov 12 → `loan.funded`. */
-  async fund(): Promise<void> {
-    const scope = { app: this.appId }; const clock = this.clock; const R = this.R; const F = this.FUNDING_ID;
+  /** a13: 26.3 funds Thu Nov 12 → `loan.funded` (openFunding on Wed Nov 11, then disburse on Thu Nov 12). */
+  async fund(): Promise<void> { await this.openFunding(); await this.disburse(); }
+  /** a13 (first half): Wed Nov 11 — 26.3's funding calendar opened (`funding.requested`), the worksheet built and reconciled to the settlement statement. */
+  async openFunding(): Promise<void> {
+    const scope = { app: this.appId }; const clock = this.clock; const F = this.FUNDING_ID;
     clock.set(EST("2026-11-11", "11:00"));
     await this.tool(scope, "26.3", "computeDates", { op: "open", funding_id: F, state: "AZ", transaction_type: "limited_cash_out", time_zone: "America/Phoenix", consummation_at: MST("2026-11-06", "14:26"), review_completed_on: "2026-11-09", partner_id: this.PARTNER_ID, partner_loan_number: "PL-1001", gross_loan_cents: "56000000", note_rate_pct: "6.125", note_first_payment_date: "2027-01-01" }, FUNDER);
     await this.tool(scope, "26.3", "buildFundingWorksheet", { funding_id: F, version: 1, cd_version: 1, gross_loan_cents: "56000000", prepaid_interest_cents: "178543", escrow_deposit_cents: "166500", lender_credits_cents: "70000" }, FUNDER);
     await this.tool(scope, "26.3", "reconcileToSettlementStatement", { funding_id: F, worksheet_id: `${F}:ws:1`, agent_requested_net_cents: "55724957" }, FUNDER);
-    clock.set(EST("2026-11-12", "08:05")); const conditions = await this.tool(scope, "26.3", "evaluateFundingConditions", { funding_id: F, facts: this.FUNDING_FACTS(EST("2026-11-12", "08:05")) }, FUNDER); assert.equal(conditions.output["passed"], true, JSON.stringify(conditions.output["blocking_codes"]));
-    clock.set(EST("2026-11-12", "08:12")); await this.tool(scope, "26.3", "requestWarehouseAdvance", { funding_id: F, conditions: conditions.output, rescission: this.FUNDING_FACTS(EST("2026-11-12", "08:12")).rescission, fraud_hold: { fraud_hold: false }, ptf: { ptf_cleared: true }, cash_to_close: { worksheet: { reconciled_to_cd: true, sufficient: true } }, gifts: [] }, FUNDER);
+  }
+  /** a13 (second half): Thu Nov 12 — funding conditions, the warehouse advance, the wire, the agent's receipt and 26.3's `confirmDisbursement` → `loan.funded`. */
+  async disburse(): Promise<void> {
+    const scope = { app: this.appId }; const clock = this.clock; const R = this.R; const F = this.FUNDING_ID;
+    clock.set(EST("2026-11-12", "08:05")); const conditions = await this.tool(scope, "26.3", "evaluateFundingConditions", { funding_id: F, facts: this.fundingFacts(EST("2026-11-12", "08:05")) }, FUNDER); assert.equal(conditions.output["passed"], true, JSON.stringify(conditions.output["blocking_codes"]));
+    clock.set(EST("2026-11-12", "08:12")); await this.tool(scope, "26.3", "requestWarehouseAdvance", { funding_id: F, conditions: conditions.output, rescission: this.fundingFacts(EST("2026-11-12", "08:12")).rescission, fraud_hold: { fraud_hold: false }, ptf: { ptf_cleared: true }, cash_to_close: { worksheet: { reconciled_to_cd: true, sufficient: true } }, gifts: [] }, FUNDER);
     await this.tool(scope, "26.3", "requestWarehouseAdvance", { funding_id: F, op: "advance_approved", advance_id: `ADV-${R}` }, FUNDER);
+    await this.disburseFromAdvance();
+  }
+  /** a13 (after the advance is approved): the wire prepared, released and accepted, the agent's receipt, 26.3's `confirmDisbursement` → `loan.funded` (32.7-T10 resumes here after T9's hold). */
+  async disburseFromAdvance(): Promise<void> {
+    const scope = { app: this.appId }; const clock = this.clock; const R = this.R; const F = this.FUNDING_ID;
     clock.set(EST("2026-11-12", "08:20")); const wireId = `W-${R}`;
     await this.tool(scope, "26.3", "prepareWire", { funding_id: F, wire_id: wireId, record: this.VERIFIED_WIRE, instructions_hash: this.VERIFIED_WIRE.instructions_hash, instructions_source: "verified_record", value_date: "2026-11-12", prepared_at: EST("2026-11-12", "08:20"), run_id: "run-funder-1", editors: ["u-analyst"], borrower_last_name: "Borrower", property_short: "100 N Central Ave, Phoenix AZ", funding_account_ref_hash: "sha256:funding", closing_documents: [] }, FUNDER);
     clock.set(EST("2026-11-12", "09:40")); await this.tool(scope, "26.3", "prepareWire", { funding_id: F, op: "release", wire_id: wireId, bank_ref: "BK-1", released_at: EST("2026-11-12", "09:40") }, APPROVER);
@@ -352,11 +401,46 @@ export class Journey {
     assert.ok(funded.events.some((e) => e.type === "loan.funded"));
   }
   /** b: POST /v1/applications/{id}/fund boards ONE servicing loan from the record (30.2). */
-  async board(): Promise<string> {
+  async board(snapshotOverrides: Record<string, unknown> = {}): Promise<string> {
     this.clock.set("2026-11-12T18:40:00.000Z");
-    const r = await this.call("POST", `/v1/applications/${this.appId}/fund`, { actor: FUNDING, snapshot: { final_cd: { document_id: this.cdDisclosureId, pi_cents: "340262", monthly_escrow_cents: "68750", initial_escrow_deposit_cents: "206250", prepaid_interest_cents: "178543", prepaid_interest_days: 19, compliance_tests_passed: true } } });
+    // `snapshotOverrides` (32.8-T10): whole top-level snapshot fields replaced as 30.2's correction rule allows — e.g. `hpml: true` with the escrow analysis's `hpml_escrow_min_cancel_date` (23.4 / 30.3)
+    const r = await this.call("POST", `/v1/applications/${this.appId}/fund`, { actor: FUNDING, snapshot: { final_cd: { document_id: this.cdDisclosureId, pi_cents: "340262", monthly_escrow_cents: "68750", initial_escrow_deposit_cents: "206250", prepaid_interest_cents: "178543", prepaid_interest_days: 19, compliance_tests_passed: true }, ...snapshotOverrides } });
     assert.equal(r.status, 200, JSON.stringify(r.body).slice(0, 2000));
     this.loanId = r.body["loan_id"] as string; return this.loanId;
+  }
+  /** b (30.4): the servicing hand-off opened on the boarded loan through 30.4's own tool (HO items from `boarded_at`; 32.7-T13 evidences HO-009 from the borrower's upload). Runs after board(). */
+  async openServicingHandoff(): Promise<void> {
+    this.clock.set("2026-11-12T18:45:00.000Z");
+    await this.tool({ loan: this.loanId }, "30.4", "openHandoff", { loan_id: this.loanId, application_id: this.appId, boarded_at: "2026-11-12T18:40:00.000Z", first_payment_date: "2027-01-01", mi_certificates_present: false, escrowed: true }, { kind: "agent", id: "boarding" });
+  }
+  /** b2: delivery and purchase on the same loan id (29.4 / 30.1, Nov 13–20, lifecycle.test.ts b2): the delivery registered with SM's warehouse wire instruction, the frozen package, the eNote eDelivered and transferred, the operator's evidence, the eVault's auto-certification, the Purchase Advice → `loan.purchased{purchase_date=2026-11-19}` keyed by BOTH ids; 30.1's `loan.investor_updated`. Runs after board(). */
+  async deliverAndPurchase(): Promise<void> {
+    const scope = { app: this.appId }; const clock = this.clock; const R = this.R; const loanId = this.loanId; assert.ok(loanId, "board() first");
+    const SECONDARY: Actor = { kind: "agent", id: "secondary" }; const INVESTOR: Actor = { kind: "agent", id: "investor-reporting" }; const OPERATOR: Actor = { kind: "human", id: "u-op-seller", role: "fnma_portal_operator" };
+    const WIRE_INSTRUCTION = { wire_instruction_id: `wire-sm-${R}`, partner_id: this.PARTNER_ID, payee_code: "SMWH1", receiver_type: "warehouse_lender", warehouse_lender_org_id: "1000123", letter_type: "bailee", bailee_letter_name: "SUPERMORTGAGE WAREHOUSE LENDING, LLC", status: "active", form_482_document_id: "doc-482-1", form_482_signed_by: "officer", approved_by_warehouse_at: "2026-09-15T15:00:00.000Z", approved_by_operator_id: "u-op-warehouse" };
+    const EVIDENCE = ["import_result_screenshot", "edit_history_csv", "loan_record_print", "wire_details_screenshot"].map((kind, k) => ({ kind, document_id: `doc-ev-${k + 1}` }));
+    const FNMA_NO = String(4_000_000_000 + Number(BigInt("0x" + loanId.replace(/-/g, "").slice(0, 8)) % 999_999_999n)).padStart(10, "0");
+    const dlv = `dlv-${loanId.slice(0, 8)}`;
+    const servicingLoanNumber = (await this.o.db.query<{ n: string }>(`SELECT servicer_loan_number AS n FROM loans WHERE id = $1`, [loanId]))[0]!.n;
+    clock.set(MST("2026-11-13", "10:05"));
+    await this.tool(scope, "29.4", "openOperatorTask", { op: "register", delivery_id: dlv, loan_id: loanId, application_id: this.appId, partner_id: this.PARTNER_ID, seller_loan_number: servicingLoanNumber, commitment_id_fnma: "C-2026-0001", commitment_expires_on: "2026-12-07", note_form: "enote", enote_indicator: true, min: this.MIN, upb_cents: "56000000", note_rate: "6.125", pass_through_rate: "5.875", servicing_fee_rate: "0.250", commitment_price: "101.125000", remittance_type: "actual_actual", disbursement_date: "2026-11-12", first_payment_date: "2027-01-01", wire_instruction_id: `wire-sm-${R}`, payee_code: "SMWH1", commitment_closed: true, wire: WIRE_INSTRUCTION }, SECONDARY);
+    await this.tool(scope, "29.4", "openOperatorTask", { op: "frozen", delivery_id: dlv, package_id: `pkg-refi-${R}`, sha256: "a".repeat(64), file_name: `pkg-refi-${R}.xml`, frozen_at: MST("2026-11-13", "10:05") }, SECONDARY);
+    clock.set(MST("2026-11-13", "10:06"));
+    const task = await this.tool(scope, "29.4", "openOperatorTask", { delivery_id: dlv, at: MST("2026-11-13", "10:06"), gate_facts: { qm_type: "general_safe_harbor", apr_test_pass: true, pf_pass: true, product_tests_pass: true, consider_verify_complete: true, consider_verify_missing: [], stage: "consummation", computed_from_final_cd: true, is_hoepa: false, state_tests: [] } }, SECONDARY);
+    clock.set(EST("2026-11-16", "11:02")); await this.tool(scope, "29.4", "requestEnoteTransfer", { op: "edeliver", delivery_id: dlv, at: EST("2026-11-16", "11:02") }, SECONDARY);
+    clock.set(EST("2026-11-16", "11:05")); await this.tool(scope, "29.4", "requestEnoteTransfer", { op: "transfer", delivery_id: dlv, effective_date: "2026-11-16", at: EST("2026-11-16", "11:05"), delegatee_on_file: true }, SECONDARY);
+    clock.set(EST("2026-11-16", "13:31"));
+    await this.tool(scope, "29.4", "parseOperatorEvidence", { task_id: task.output["task_id"], operator_id: OPERATOR.id, evidence: EVIDENCE, hash_confirmed: true, edits: [], captured_state: { fnma_loan_number: FNMA_NO, submitted_at: EST("2026-11-16", "13:31"), commitment_number: "C-2026-0001", file_sha256: "a".repeat(64), loan_delivery_status: "Purchase Requested", certification_status: "Awaiting Certification" }, at: EST("2026-11-16", "13:31") }, OPERATOR);
+    await this.tool(scope, "29.4", "prepareCustodianPackage", { delivery_id: dlv }, SECONDARY);
+    clock.set(EST("2026-11-16", "18:30"));
+    await this.tool(scope, "29.4", "trackShipment", { op: "certified", delivery_id: dlv, certified_at: EST("2026-11-16", "18:30"), certification_kind: "auto_certified_enote", notice_document_id: "doc-autocert-1", at: EST("2026-11-16", "18:30") }, SECONDARY);
+    clock.set(EST("2026-11-20", "06:00"));
+    const advice = { purchase_advice_id: `pa-${R}`, fnma_loan_number: FNMA_NO, advice_date: "2026-11-19", purchase_date: "2026-11-19", commitment_id_fnma: "C-2026-0001", payee_code: "SMWH1", remittance_type: "actual_actual", pass_through_rate: "5.875", servicing_fee_rate: "0.250", price: "101.125000", upb_cents: "56000000", principal_proceeds_cents: "56630000", interest_adjustment_cents: "-109667", llpa_total_cents: "70000", llpa_lines: [{ code: "LCOR_762_70", pct: "0.125", cents: "70000" }], fees: [], net_proceeds_cents: "56450333", wire_reference: "FEDW-20261119-001", source: "api", raw_payload_document_id: "doc-pa-json-1", received_at: EST("2026-11-20", "06:00") };
+    const purchased = await this.tool(scope, "29.4", "ingestPurchaseAdvice", { delivery_id: dlv, advice, at: EST("2026-11-20", "06:00") }, SECONDARY);
+    assert.ok(purchased.events.some((e) => e.type === "loan.purchased"), JSON.stringify(purchased.events.map((e) => e.type)));
+    clock.set(EST("2026-11-19", "10:30"));
+    await this.tool(scope, "30.1", "matchPurchaseAdvice", { loan: { loan_id: loanId, application_id: this.appId, servicing_loan_number: servicingLoanNumber, original_upb_cents: "56000000", first_payment_date: "2027-01-01", note_rate_pct: "6.125", commitment_remittance_type: "AA", escrowed: true, note_form: "enote", mers_registered: true, min: this.MIN },
+      advice: { advice_id: `PA-${R}`, fnma_loan_number: FNMA_NO, fnma_servicer_number: "123456789", lender_loan_number: servicingLoanNumber, advice_date: "2026-11-19", purchase_date: "2026-11-19", remittance_type: "AA", pass_through_rate: "5.875000", note_rate_pct: "6.125", servicing_fee_bps: 25, interest_adjustment_cents: "-109667", net_proceeds_cents: "56590333" } }, INVESTOR);
   }
   /** d: the Jan 1, 2027 installment ($4,090.12) received Wed Dec 30 posts through the 2.1 bus (principal after: $559,455.71). */
   async firstPayment(): Promise<void> {
@@ -368,6 +452,22 @@ export class Journey {
     await post(`receipt ${PAY_ID}`, [{ account: cust(this.custodial.clearing, "clearing_cash"), amountCents: 409_012n, ruleRef: "2.1:r8:receipt" }, { account: loanAcct("suspense_unapplied"), amountCents: -409_012n, ruleRef: "2.1:r8:receipt" }]);
     await post(`allocation ${PAY_ID}`, [{ account: loanAcct("suspense_unapplied"), amountCents: 409_012n, ruleRef: "2.1:r8:allocation" }, { account: loanAcct("interest_due"), amountCents: -285_833n, ruleRef: "2.1:r8:allocation:interest" }, { account: loanAcct("principal"), amountCents: -54_429n, ruleRef: "2.1:r8:allocation:principal" }, { account: loanAcct("escrow"), amountCents: -68_750n, ruleRef: "2.1:r8:allocation:escrow" }]);
     await post(`cash split ${PAY_ID}`, [{ account: cust(this.custodial.pi, "custodial_pi_cash"), amountCents: 285_833n + 54_429n, ruleRef: "2.1:r8:cash_split:pi" }, { account: cust(this.custodial.ti, "custodial_ti_cash"), amountCents: 68_750n, ruleRef: "2.1:r8:cash_split:escrow" }, { account: cust(this.custodial.clearing, "clearing_cash"), amountCents: -409_012n, ruleRef: "2.1:r8:cash_split" }]);
+  }
+  /**
+   * 32.8: one installment received on `receivedOn` (lockbox, the full P&I + escrow the loan's terms state for `dueDate`) written through 2.1
+   * `payments.read/write{write}` and posted through `payments.read/write{op=post}` — the allocation engine's plan and the rule-8 entry sets
+   * (src/runtime/servicing.ts loanCashState is the state the engine reads; the journey states no figure of its own).
+   */
+  async postInstallment(dueDate: string, receivedOn: string, opts: { amount_cents?: bigint; channel?: string } = {}): Promise<{ payment_id: string; outcome: string; installments: string[] }> {
+    const { runtime } = this.o; const loanId = this.loanId; this.clock.set(`${receivedOn}T17:00:00.000Z`);
+    const facts = await loanCashState(runtime, loanId, receivedOn as never);
+    const inst = facts.state.installments.find((x) => x.due_date === dueDate); if (!inst) throw new Error(`no installment ${dueDate} on ${loanId}`);
+    const amount = opts.amount_cents ?? inst.pi_cents + inst.escrow_cents; const payment_id = `PAY-${loanId.slice(0, 8)}-${dueDate}`;
+    await runtime.execute({ process: "2.1", name: "payments.read/write", loanId, actor: CASHIERING, input: { op: "write", id: payment_id, loan_id: loanId, data: { payment_id, loan_id: loanId, amount_cents: amount, received_on: receivedOn, credited_as_of: receivedOn, channel: opts.channel ?? "lockbox", designation: "contractual", status: "received", identification_confidence: 0.99, conforming: true } } });
+    if (!facts.custodial) throw new Error("no custodial accounts for the loan's partner (seedBook first)");
+    const posted = await runtime.execute({ process: "2.1", name: "payments.read/write", loanId, actor: CASHIERING, input: { op: "post", id: payment_id, loan_id: loanId, state: facts.state, custodial: facts.custodial } });
+    const o = posted.output as { outcome: string; installments: string[] };
+    return { payment_id, outcome: o.outcome, installments: o.installments };
   }
   /** e: the 16.1 quote (Jan 20, 2027), the wire on Jan 29 and 16.2's postPayoff → `loan.paid_in_full`. */
   async payoff(): Promise<void> {
@@ -383,5 +483,30 @@ export class Journey {
     const escrowBalance = -BigInt((await db.query<{ s: string }>(`SELECT coalesce(sum(amount_cents), 0)::text AS s FROM ledger_lines WHERE scope = 'loan' AND loan_id = $1 AND account = 'escrow'`, [loanId]))[0]!.s);
     const posted = await runtime.execute({ process: "16.2", name: "postPayoff", loanId, actor: PAYOFF, input: { loan_id: loanId, funds_id: m.funds_id, amount_cents: q.total_cents, payoff_date: "2027-01-29", remittance_type: "AA", escrowed: true, buckets: { accrued_interest: q.interest_cents, principal: 55_945_571n, escrow_balance: escrowBalance }, custodial_pi_id: this.custodial.pi, custodial_ti_id: this.custodial.ti, custodial_clearing_id: this.custodial.clearing } });
     assert.ok(posted.events.some((e) => e.type === "loan.paid_in_full"));
+  }
+  /** 32.11: 21.1's MLO of record on the application from a one-entry roster (the LE/CD fixtures' Jordan Rivera, NMLSR ID 987654, licensed AZ) — `application.mlo_of_record.assigned`. */
+  async assignMlo(): Promise<void> {
+    await this.tool({ app: this.appId }, "21.1", "assignMLO", { roster: [{ mlo_id: "mlo-rivera", name: "Jordan Rivera", nmlsr_id: "987654", licensed_states: ["AZ"], nmls_status: "active", open_queue: 0 }] });
+  }
+  /**
+   * 32.10: the party adopts the servicing book's prior loan as a serviced borrower (borrowers.party_id → loan_borrowers →
+   * "Your loan ····last4"): loan_terms v1 (the $565,000 / 7.000% / 360 fixture; escrowed $687.50) and one `loan_installments`
+   * row per unpaid month from `first_unpaid_due` (status `due`) — the counter job (11.1 `delinquencyCounterJob`, run by the
+   * 32.10 flow's tick through src/runtime/delinquency.ts) reads them. Flags for the 11.4 / 13.1 paths ride on the loans row.
+   */
+  async adoptPriorLoan(partyId: string, o: { first_unpaid_due?: string; unpaid_months?: number; fdcpa_debt_collector?: boolean; regx_days_delinquent_at_boarding?: number; legal_name?: string; tin_last4?: string } = {}): Promise<string> {
+    const db = this.o.db; const loanId = this.priorLoanId; assert.ok(loanId, "seedBook() first");
+    const b = await db.query<{ id: string }>(`INSERT INTO borrowers (legal_name, tin_last4, party_id) VALUES ($1, $2, $3) RETURNING id`, [o.legal_name ?? "Alex Borrower", o.tin_last4 ?? "6789", partyId]);
+    await db.query(`INSERT INTO loan_borrowers (loan_id, borrower_id, role, is_primary) VALUES ($1, $2, 'borrower', true)`, [loanId, b[0]!.id]);
+    await db.query(`INSERT INTO loan_terms (loan_id, effective_from, source, amortization, note_rate_bps, pi_cents, escrow_payment_cents, escrowed, remittance_type, maturity_date, remaining_term_months) VALUES ($1, '2024-11-01', 'boarding', 'fixed', 7000, 375875, 68750, true, 'A/A', '2054-10-01', 360)`, [loanId]);
+    await db.query(`UPDATE loans SET principal_residence = true, fdcpa_debt_collector_flag = $2, regx_days_delinquent_at_boarding = $3, default_status_at_boarding = $4 WHERE id = $1`, [loanId, o.fdcpa_debt_collector === true, o.regx_days_delinquent_at_boarding ?? 0, (o.regx_days_delinquent_at_boarding ?? 0) > 0]);
+    if (o.first_unpaid_due) {
+      const first = new Date(`${o.first_unpaid_due}T12:00:00Z`);
+      for (let k = 0; k < (o.unpaid_months ?? 1); k += 1) {
+        const d = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + k, first.getUTCDate())).toISOString().slice(0, 10);
+        await db.query(`INSERT INTO loan_installments (loan_id, due_date, pi_cents, interest_cents, principal_cents, escrow_cents, status) VALUES ($1, $2::date, 375875, 329583, 46292, 68750, 'due') ON CONFLICT (loan_id, due_date) DO NOTHING`, [loanId, d]);
+      }
+    }
+    return loanId;
   }
 }

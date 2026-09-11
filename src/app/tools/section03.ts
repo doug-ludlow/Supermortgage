@@ -74,14 +74,17 @@ const escrowEvent = { name: "emitEscrowEvent", kind: "act" as const, handler: co
 }), guardrails: [never("ESCROW_EVENT_SHAPE", "3.7 rule 11: every escrow event carries the signed amount, balance after and sequence", (i) => { const p = (i.payload as Record<string, unknown> | undefined) ?? {}; return p.amount_cents === undefined || p.balance_cents === undefined || p.sequence === undefined; }, "escrow events need amount_cents, balance_cents and sequence")] };
 const escalateTool = { name: "escalate", kind: "act" as const, handler: escalate("human_agent") };
 const sendNotice = { name: "sendNotice", kind: "act" as const, handler: compute(async (i, ctx, rt) => {
-  const n = (await noticeOps("send")(i, ctx, rt)) as Notice;
+  // `sendNotice{notice_id}` sends a statement `renderStatement` rendered in this command; `sendNotice{template_code, recipients, payload}` renders and sends in one command (the registry's notices live in the unit of work — 32.8 delta)
+  const n = (await (str(i, "notice_id") ? noticeOps("send") : noticeOps("render_send"))(i, ctx, rt)) as Notice;
   const statementType = STATEMENT_TEMPLATES[n.templateCode];
   if (statementType && n.status === "sent") {
     const sentOn = D((n.sentAt ?? ctx.now).slice(0, 10));
     // (f)(5): the statement's item (vi) explains a shortage/deficiency (rendered from the decision — ops.decisionText), or the (f)(5) notice itself is sent.
     const shortageExplained = flag(i, "shortage_explained") || n.templateCode === "NTC_REGX_1024_17F_SHORTAGE" || /has a (shortage|deficiency) of/i.test(String(n.payload.decision_text ?? ""));
     const periodEnd = [n.payload.period_end, n.payload.year_end].find((v) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) as string | undefined;   // the statement's period end (3.3 rule 6: the next post-exemption history starts after it)
-    recordStatementSent(ctx.events, { loan_id: n.loanId ?? ctx.loanId, template: n.templateCode, statement_type: statementType, sent_on: sentOn, due_on: i.due_on ? D(str(i, "due_on")) : sentOn, actor: ctx.actor, shortage_explained: shortageExplained, history_to: periodEnd ? D(periodEnd) : null });
+    const statedAmount = n.payload.new_payment_cents; const statedOn = n.payload.new_payment_effective_on;   // the statement's item (i) figure and its effective date, when the template states them (2.3 rule 5 / 32.8-T6)
+    recordStatementSent(ctx.events, { loan_id: n.loanId ?? ctx.loanId, template: n.templateCode, statement_type: statementType, sent_on: sentOn, due_on: i.due_on ? D(str(i, "due_on")) : sentOn, actor: ctx.actor, shortage_explained: shortageExplained, history_to: periodEnd ? D(periodEnd) : null,
+      stated_payment: (typeof statedAmount === "bigint" || (typeof statedAmount === "string" && /^\d+$/.test(statedAmount))) && typeof statedOn === "string" && /^\d{4}-\d{2}-\d{2}$/.test(statedOn) ? { amount_cents: cents(statedAmount), effective_on: D(statedOn) } : null });
   }
   return n;
 }) };

@@ -102,6 +102,13 @@ export type StatusCardProps = {
   next_event_label?: string;
   next_event_at?: Timestamptz; // from timers.due_at, allow-listed codes only
   detail?: string;
+  /** Tokens for `copy(card.copy_key, …)` when `state_label` is empty — the server names the key, the library holds the sentence. */
+  copy_tokens?: Record<string, string | string[]>;   // 32.8: a token used twice in the sentence ({{money}} … {{money}}) is an array consumed in order
+  /** 32.7: a detail line named by copy key (`funded.no_skip`), or a list of them (`closing.package_items` → `closing.package.*`), rendered with `copy_tokens`. */
+  detail_copy_key?: string;
+  detail_copy_keys?: string[];
+  /** 32.11 §6: a token given as a copy KEY (`autopay` → `refi.autopay.carried_over`), resolved through the library — never a sentence in props. */
+  copy_token_keys?: Record<string, string>;
 };
 
 /** 3.2 ChoiceCard — 2–4 mutually exclusive options; never captures a consent. */
@@ -113,6 +120,9 @@ export type ChoiceCardProps = {
   command: string;
   command_args_by_option: Record<string, Record<string, unknown>>;
   disclosure_version_shown?: string;
+  /** Options that record the choice and issue no command (Not yet · Wait · Keep floating). */
+  no_command_options?: string[];
+  copy_tokens?: Record<string, string | string[]>;   // 32.8: a token used twice in the sentence ({{money}} … {{money}}) is an array consumed in order
 };
 export type ChoiceCardEvidence = { option_id: string; tapped_at: Timestamptz; disclosure_version_shown?: string };
 
@@ -126,12 +136,20 @@ export type ConfirmSource =
   | "avm"
   | "recorded_instrument"
   | "prior_application"
-  | "servicing_record";
-export type ConfirmField = { path: string; label: string; value: string; source: ConfirmSource };
+  | "servicing_record"
+  /** 32.3 C1: a field the FAKE contract extractor read — counts only on Confirm (T29) */
+  | "document_extraction"
+  /** 32.3: a value the borrower typed or edited (source=borrower — 21.1 rule 1) */
+  | "borrower";
+export type ConfirmField = { path: string; label: string; value: string; source: ConfirmSource; /** 32.3 T29: null until the borrower confirms */ confirmed_at?: string | null };
 export type ConfirmCardProps = {
   title?: string;
   fields: ConfirmField[];
   commits_to: string; // e.g. application_income, application_properties.estimated_value
+  /** 32.5 §2.4: the title's tokens (`new_debt.confirm` {{creditor}} {{date}}), a helper line from the copy library, yes/no options that map to the command's args. */
+  copy_tokens?: Record<string, string>;
+  helper_copy_key?: string;
+  options?: { id: string; label: string; is_primary?: boolean }[];
 };
 export type ConfirmCardEvidence = {
   fields: { path: string; value_confirmed: string; source: ConfirmSource; confirmed_at: Timestamptz }[];
@@ -183,7 +201,16 @@ export type ConsentCardProps = {
   requires_typed_name: boolean;
   /** esign only: consented_pending_verification until consent.esign.verified */
   verification_state?: "none" | "pending_verification" | "active";
+  /** 32.5 §7: the title's tokens (`consent.joint_intent.title` {{other_first_name}}). */
+  copy_tokens?: Record<string, string>;
+  /** 32.7 §6: the autodraft authorization's 2.3 elements, each labelled by copy key, shown before the affirmation (T11). */
+  elements?: ConsentElement[];
+  /** 32.7 §6: the "autopay is optional" statement (Reg E §1005.10(e)(1)) as a copy key. */
+  optional_statement_copy_key?: string;
+  optional?: boolean;
 };
+/** 32.7 §6: one displayed element of a consent (2.3 rule: borrower, loan, account, amount, timing, first debit, company, revoke, date, e-sign). */
+export type ConsentElement = { id: string; label_key: string; value: string; input?: string; options?: string[]; draft_day_options?: number[] };
 export type ConsentCardEvidence = {
   consent_kind: ConsentKind;
   disclosure_version_id: string;
@@ -197,6 +224,11 @@ export type ConsentCardEvidence = {
 };
 
 /** 3.6 DocumentCard */
+/** 32.4 §5: one row of the What-changed block — the diff of two LE figure snapshots computed by the API, never free text. */
+export type WhatChangedRow = { key: string; label_key?: string; label?: string; from: string | null; to: string | null; unit: "cents" | "rate" };
+export type WhatChanged = { since_version: number; kind: string | null; kind_copy_key: string | null; cc_ids?: string[]; rows: WhatChangedRow[]; /** 32.7 §1: the block's title as a copy key (`cd.what_changed` for the LE→CD diff); `le.what_changed` when absent */ title_key?: string };
+/** 32.7 §4: the H-8/H-9 card's quiet "How to cancel" link — a borrower message, never a primary button (T8). */
+export type HowToCancelLink = { copy_key: string; message_text: string; quiet?: boolean };
 export type DocumentCardProps = {
   document_id: Uuid;
   disclosure_id?: Uuid;
@@ -206,12 +238,29 @@ export type DocumentCardProps = {
   requires_ack: boolean;
   esign_scope_required: string;
   received_at?: Timestamptz;
+  /** 32.4: the LE version this card carries; cards sharing a `package_id` render as one grouped message (LE + companions). */
+  le_version?: number;
+  package_id?: string;
+  companion_kind?: string;
+  channel?: string;
+  mailed_at?: Timestamptz;
+  /** 32.4-T1: an electronic copy of a mailed disclosure delivered once e-delivery was on. */
+  electronic_copy?: boolean;
+  copy_of_disclosure_id?: Uuid;
+  /** 32.4 §5: present on a revised LE (v ≥ 2). */
+  what_changed?: WhatChanged;
+  copy_tokens?: Record<string, string>;
+  /** 32.7 §4: the rescission notice's quiet link (T8). */
+  how_to_cancel?: HowToCancelLink;
+  /** 32.7 §1: the wire-fraud warning beside the CD, as a copy key. */
+  wire_warning_copy_key?: string;
 };
 export type DocumentCardEvidence = { receipt_evidence: "esign_confirmed"; received_at: Timestamptz };
 
 /** 3.7 ComparisonCard */
-export type ComparisonRow = { label: string; value: string; emphasis?: boolean };
-export type ComparisonColumn = { id: string; title: string; rows: ComparisonRow[]; footnote?: string };
+/** 32.6 §6: `value_key` / `title_key` name copy-library entries (an MI plan's title, its HPA cancellation line) when the literal is empty. */
+export type ComparisonRow = { label: string; value: string; emphasis?: boolean; value_key?: string };
+export type ComparisonColumn = { id: string; title: string; rows: ComparisonRow[]; footnote?: string; title_key?: string };
 export type ComparisonCardProps = {
   title?: string;
   columns: ComparisonColumn[];
@@ -221,6 +270,10 @@ export type ComparisonCardProps = {
   footnote?: string;
   /** e.g. "Keep floating" — an option that is not a column */
   secondary_option?: ChoiceOption;
+  /** Options that record the choice and issue no command (Keep floating). */
+  no_command_options?: string[];
+  /** 32.10: tokens for the copy library's title/footnote when the server named only the key (the offer's `hardship.offer.compare` deadline). */
+  copy_tokens?: Record<string, string>;
 };
 
 /** 3.8 ChecklistCard */
@@ -252,22 +305,38 @@ export type UploadCardProps = {
   freshness_hint?: string;
   title?: string;
   mismatch?: { detected: string; expected: string };
+  /** 32.5 §2.2–2.3: the freshness verdict (`upload.stale` {{date}} {{n}}), a re-request reason (`upload.rerequest.closing_moved`), the title's `{{document}}` token, and the ids the request links. */
+  stale?: { date: string; n: number };
+  reason_copy_key?: string;
+  copy_tokens?: Record<string, string>;
+  label_copy_key?: string;
+  request_id?: string;
+  condition_id?: string | null;
 };
 export type UploadCardEvidence = { document_class: string; file_name: string; uploaded_at: Timestamptz };
 
 /** 3.10 ExplanationCard */
-export type ExplanationCardProps = { subject: string; prompt: string; min_length: number };
+export type ExplanationCardProps = { subject: string; prompt: string; min_length: number; /** 32.5 §3: subject and prompt from the copy library (`explain.deposit.subject` / `explain.deposit`) with their tokens */ subject_copy_key?: string; prompt_copy_key?: string; copy_tokens?: Record<string, string> };
 export type ExplanationCardEvidence = { text_hash: string; attestation: string; attested_at: Timestamptz };
 
 /** 3.11 ScheduleCard */
 export type SchedulePurpose = "appraisal_access" | "pdc_access" | "ron_session" | "callback";
-export type ScheduleSlot = { id: string; starts_at: Timestamptz; ends_at: Timestamptz; label?: string };
+export type ScheduleSlot = { id: string; starts_at: Timestamptz; ends_at: Timestamptz; label?: string; /** 32.7 §2: the closing type this slot books (ron · ipen · hybrid · wet) */ closing_type?: string };
+/** 32.7 §2: one closing type 26.2's `decideClosingType` allows, labelled by copy key (`closing.schedule.type.ron` …). */
+export type ClosingTypeOption = { id: string; copy_key: string; is_default?: boolean };
 export type ScheduleCardProps = {
   purpose: SchedulePurpose;
   slots: ScheduleSlot[];
   constraints_text?: string;
   title?: string;
   helper?: string;
+  /** 32.7 §2: the closing types offered (RON only when 26.2 says eligible); the slot list filters to the chosen type. */
+  closing_type_options?: ClosingTypeOption[];
+  default_closing_type?: string;
+  ron_eligible?: boolean;
+  /** 32.7 §2: the "you can always sign on paper" line as a copy key. */
+  fallback_copy_key?: string;
+  copy_tokens?: Record<string, string>;
 };
 export type ScheduleCardEvidence = { slot_id: string; chosen_at: Timestamptz };
 
@@ -284,6 +353,11 @@ export type PaymentCardProps = {
   include_late_charge_option?: { late_charge_cents: Cents };
   effect_line?: string; // extra principal: "brings your balance to {{money}}"
   title?: string;
+  /** 32.8 §3.1: tokens for the copy-library title (`payment.due` {{money}} {{date}}) when `title` is empty. */
+  copy_tokens?: Record<string, string>;
+  /** 32.8 §3.1: the installment and 2.7's grace end the date options run through (never computed here). */
+  installment_due_date?: string;
+  grace_end_on?: string | null;
 };
 export type PaymentCardEvidence = {
   amount_cents: Cents;
@@ -309,13 +383,22 @@ export type HandoffDestination =
   | "appraiser"
   | "notary_wet"
   | "prior_servicer"
-  | "fannie_mae_letter";
+  | "fannie_mae_letter"
+  | "hoa_management"; // SQ-08 (32.6 §3): the HOA management company sends the project documents
 export type HandoffCardProps = {
   destination: HandoffDestination;
   what_to_expect: string;
   return_state: string;
   title?: string;
   launch_url?: string;
+  /** 32.7: the two lines as copy keys when the literals are empty (`closing.presign.what_to_expect`, `boarding.fannie_letter.return`). */
+  what_to_expect_copy_key?: string;
+  return_state_copy_key?: string;
+  /** 32.7 §6 item 6: 30.4's explainer for the Fannie Mae letter — its headline and points are the owning process's own plain-language block. */
+  explainer_headline?: string;
+  explainer_points?: string[];
+  closing_type?: string;
+  copy_tokens?: Record<string, string>;
 };
 
 /** 3.15 OfferCard (servicing → origination) */
@@ -333,6 +416,11 @@ export type OfferCardProps = {
   expires_at: Timestamptz; // SM_REFI_OPPORTUNITY_EXPIRY_30
   not_a_commitment_text: string;
   rates_change_daily_text: string;
+  /** 32.11 §2: the payment statement's term, the lender's NMLSR ID, the path the offer came by, the timer the expiry copies */
+  term_months?: number;
+  lender_nmlsr_id?: string;
+  path?: "proactive" | "borrower_request";
+  expiry_timer_code?: string;
 };
 export type OfferDecision = "yes" | "not_now" | "never";
 export type OfferCardEvidence = { decision: OfferDecision; decided_at: Timestamptz };
@@ -348,6 +436,11 @@ export type NoticeCardProps = {
   channel?: "app" | "mail" | "email";
   mailed_at?: Timestamptz;
   line?: string; // 12: "NoticeCard line" copy
+  /** Tokens for the copy-library line/title when the props leave them empty. */
+  copy_tokens?: Record<string, string | string[]>;   // 32.8: a token used twice in the sentence ({{money}} … {{money}}) is an array consumed in order
+  /** 32.6 §5: tokens given as copy KEYS (the failing insurance element, its fix) — resolved through the library, never a sentence in props. */
+  copy_token_keys?: Record<string, string>;
+  amount_cents?: Cents;
 };
 
 /** 3.17 PersonCard */
@@ -364,6 +457,9 @@ export type PersonCardProps = {
   credentials?: string; // NMLSR ID; commission state
   reach?: string; // direct number (4.3 team)
   intro?: string;
+  /** 32.5 §8: until the human's own turn carries their name, the name and intro come from the copy library. */
+  name_copy_key?: string;
+  intro_copy_key?: string;
 };
 
 /** 3.18 ProfileCard */
@@ -387,6 +483,10 @@ export type DemographicsCardProps = {
   ethnicity: DemographicOption[];
   race: DemographicOption[];
   sex: DemographicOption[];
+  /** 32.13 / T-X-03: on the wire the serializer carries the prompt lists as `<key>_options` (the answer-shaped names never leave the API); the component reads these first. */
+  ethnicity_options?: DemographicOption[];
+  race_options?: DemographicOption[];
+  sex_options?: DemographicOption[];
   /** applications.status >= started (O1.3 T12) */
   available: boolean;
 };

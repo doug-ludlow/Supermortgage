@@ -19,9 +19,10 @@ import { evaluateGate } from "../evaluators.ts";
 import { plainDate as D, type PlainDate } from "../../kernel/calendar/date.ts";
 import type { Actor } from "../../kernel/events/types.ts";
 import { contentCheck, REQUIRED_CONTENT } from "../../domain/transfers/respa.ts";
-import { noticeRecipients, type NoticeParty, type NoticeRunStatus } from "../../domain/transfers/inbound.ts";
+import { noticeRecipients, noticeRunMailed, planNoticeRun as planRun, type NoticeParty, type NoticeRunStatus } from "../../domain/transfers/inbound.ts";
+import { respaEffectiveDate } from "../../domain/transfers/respa.ts";
 import type { TransferType } from "../../domain/transfers/batch.ts";
-import { planGoodbyeRun, verifyTransfereeBlock, releaseTransferOutRun, contentPresentFromPayload, ingestMailReturns, skipTraceOrder, relyOnExceptionB3ii, TRANSFER_OUT_TEMPLATES, type TransfereeBlock } from "../../domain/transfers/ops-17-2.ts";
+import { planGoodbyeRun, verifyTransfereeBlock, releaseTransferOutRun, contentPresentFromPayload, ingestMailReturns, skipTraceOrder, relyOnExceptionB3ii, goodbyeTiming, TRANSFER_OUT_TEMPLATES, type TransfereeBlock } from "../../domain/transfers/ops-17-2.ts";
 
 const need = (i: ToolInput, ...keys: string[]): void => { for (const k of keys) if (i[k] === undefined || i[k] === null || i[k] === "") throw new RangeError(`${k} is required`); };
 const date = (i: ToolInput, k: string): PlainDate => { need(i, k); return D(str(i, k)); };
@@ -137,6 +138,28 @@ export const TOOLS_17_2: readonly ToolDef[] = defineTools("17.2", AGENT, [
       return out; }),
     guardrails: [needsRole("RELEASE_NEEDS_OFFICER", "17.2 state machine: release requires (d) officer (Supermortgage) authorization — no partner signature, the partner is copied", (i) => !str(i, "officer_approval_decision_id"), ["officer"], "release without the officer's approval decision on file (writeDecision by the officer naming the run)")] },
   { name: "ingestMailReturns", kind: "act", handler: compute((i, ctx, rt) => {
+      // 32.12 backend delta (additive): `op=proofs` — the print vendor's proofs of mailing for a goodbye / combined / corrective run (1.3 outputs `notices.proof_of_mailing_document_id`): one `notice.mailed` per loan and, once every loan on the run has a proof, the run-level `notice.mailed{template, every_loan=true}` on the batch that satisfies REGX_1024_33B3_GOODBYE_15 / COMBINED_15 (inbound.ts noticeRunMailed, the same path 1.3 uses). The run is the stored `transfer_notice_runs` row when planNoticeRun recorded one, else planned here from the batch facts; the timing facts the borrower record renders (transferor stop, transferee start, window end, ACH cancel-by — ops-17-2 goodbyeTiming) are stored on the row.
+      if (str(i, "op") === "proofs") {
+        need(i, "batch_id", "proofs");
+        const batchId = str(i, "batch_id"); const kind = (str(i, "kind") || "goodbye") as "goodbye" | "hello" | "combined" | "corrective"; const runId = str(i, "run_id") || `run-${batchId}-${kind}`;
+        const stored = rt.store.get("transfer_notice_runs", runId)?.data ?? null;
+        const transferDate = optDate(i, "transfer_date") ?? (stored?.transfer_date ? D(String(stored.transfer_date)) : null);
+        const eff = optDate(i, "respa_effective_date") ?? (stored?.respa_effective_date ? D(String(stored.respa_effective_date)) : null) ?? (transferDate ? respaEffectiveDate(transferDate, i.installments_due_on_1st !== false) : null);
+        if (!eff) throw new RangeError("respa_effective_date (or transfer_date) is required to plan the run the proofs belong to");
+        const storedLoans = Array.isArray(stored?.loan_ids) ? (stored!.loan_ids as unknown[]).map(String) : [];
+        const loanIds = storedLoans.length ? storedLoans : (Array.isArray(i.loan_ids) ? (i.loan_ids as unknown[]).map(String) : []);
+        if (!loanIds.length) throw new RangeError("the run has no loans: name loan_ids (17.1's frozen list) or plan the run first");
+        const run = planRun({ batch_id: batchId, respa_effective_date: eff, loan_ids: loanIds }, kind, runId);
+        const priorProofs = (stored?.mailed_proofs as Record<string, { mailed_on: string; proof_of_mailing_id: string }> | undefined) ?? {};
+        for (const [loanId, m] of Object.entries(priorProofs)) run.mailed.set(loanId, { mailed_on: D(m.mailed_on), proof_of_mailing_id: m.proof_of_mailing_id });
+        if (Object.keys(priorProofs).length === loanIds.length && loanIds.length > 0) run.status = "mailed";
+        const proofs = (i.proofs as { loan_id: string; proof_of_mailing_id: string; mailed_on: string }[]).map((p) => ({ loan_id: String(p.loan_id), proof_of_mailing_id: String(p.proof_of_mailing_id), mailed_on: D(String(p.mailed_on)) }));
+        const r = noticeRunMailed(ctx.events, run, proofs, ctx.actor);
+        const timing = transferDate ? goodbyeTiming(transferDate, i.installments_due_on_1st !== false) : null;
+        const mailedProofs = Object.fromEntries([...run.mailed.entries()].map(([l, m]) => [l, { mailed_on: m.mailed_on, proof_of_mailing_id: m.proof_of_mailing_id }]));
+        rt.store.put("transfer_notice_runs", runId, { ...(stored ?? { id: runId, batch_id: batchId, kind, template: run.template, due: run.due_at, due_at: run.due_at, loan_ids: loanIds, loan_count: loanIds.length, respa_effective_date: eff }), mailed_proofs: mailedProofs, mailed_count: r.mailed_count, status: r.every_loan ? "complete" : "released_to_vendor", ...(r.every_loan ? { mailed_on: proofs.map((p) => p.mailed_on).sort().at(-1) ?? null } : {}), ...(transferDate ? { transfer_date: transferDate } : {}), ...(timing ? { transferor_stops: timing.transferor_stops, transferee_starts: timing.transferee_starts, window_end: timing.window_end, ach_cancel_by: timing.ach_cancel_by, short_year_due: timing.short_year_due } : {}) }, ctx.actor, ctx.now);
+        return { run_id: runId, batch_id: batchId, kind, template: run.template, due_at: run.due_at, mailed_count: r.mailed_count, every_loan: r.every_loan, run_event_id: r.run_event?.id ?? null, ...(timing ? { timing } : {}) };
+      }
       need(i, "returns");
       const on = optDate(i, "returned_on") ?? D(ctx.now.slice(0, 10));
       const rows = ingestMailReturns((i.returns as { notice_id: string; loan_id: string; template: string; proof_of_mailing_id: string }[] | undefined) ?? [], on);

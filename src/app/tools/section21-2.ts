@@ -2,7 +2,61 @@
  * §21.2 process-owned tools — bus tools for 21.2 defined with `defineTools("21.2", <agent>, defs)` from
  * ../tools.ts. Every tool string must be one spec/registry/agents.json names for 21.2; src/app/tools.test.ts refuses
  * the rest. Spread by ./index.ts.
+ *
+ * The `disclosure` agent's LE tools: `assembleFees` (every fee with a source reference; stale estimates refused —
+ * rule 5), `getPricingScenario` (20.4's `pricing_quotes`, idempotent by quote_id), `deriveTolerance` (rule 4 classes
+ * and the ten-percent aggregate), `computeAPR` (Appendix J exact, TIP, In 5 Years), `renderH24` (form H-24 data and
+ * rendering with the content checklist) and `buildProviderList` (§1026.19(e)(1)(vi)(C)). The paragraph's remaining
+ * verbs — openEscalation(mlo_of_record, le_terms), assertConsent, deliver, recordReceipt, setTimers, writeDecision —
+ * are `LoanEstimateService` methods (src/domain/application/ops-21-2.ts) the console and the agent runtime call; they
+ * are not separate bus tools because agents.json names only the six above for 21.2.
+ *
+ * Guardrails encode the spec's sentences: never impose or collect any fee (only 21.4 may, after receipt and intent);
+ * never condition the LE on verification documents (§1026.19(e)(2)(iii)); never disclose an estimate older than the
+ * freshness rule; never alter the servicing statement from `service`; never issue an LE without the MLO's NMLSR ID;
+ * never release an LE whose data hash was not approved by the MLO of record in `assisted` mode; never deliver
+ * electronically without a prior valid consent.
  */
-import type { ToolDef } from "../tools.ts";
+import { defineTools, compute, never, str, num, flag, type ToolDef, type ToolInput } from "../tools.ts";
+import { plainDate as D, type PlainDate } from "../../kernel/calendar/date.ts";
+import { assembleFees, deriveToleranceClass, tenPercentAggregate, sectionTotals, computeApr, loanEstimateCalcs, netPrepaidFinanceCharge, buildProviderList, h24Payload, dataHash, consentValidFor, FEE_TABLE_MAX_AGE_DAYS, type FeeItemInput, type FeeItem, type PricingScenario, type Provider, type LeRenderInput, type EsignConsent } from "../../domain/application/ops-21-2.ts";
+import { render } from "../../notices/render.ts";
+import { LE_H24_SOURCE } from "../../notices/authored/section21-2.ts";
 
-export const TOOLS_21_2: readonly ToolDef[] = [];
+const need = (i: ToolInput, ...keys: string[]): void => { for (const k of keys) if (i[k] === undefined || i[k] === null || i[k] === "") throw new RangeError(`${k} is required`); };
+const bigint = (v: unknown, what: string): bigint => { if (typeof v === "bigint") return v; if (typeof v === "number" && Number.isInteger(v)) return BigInt(v); if (typeof v === "string" && /^-?\d+$/.test(v)) return BigInt(v); throw new RangeError(`${what} must be integer cents`); };
+const feeItems = (i: ToolInput, key = "fees"): FeeItemInput[] => { need(i, key); const rows = i[key]; if (!Array.isArray(rows)) throw new RangeError(`${key} must be an array of fee items`); return rows.map((r: Record<string, unknown>) => ({ ...(r as unknown as FeeItemInput), amount_cents: bigint(r.amount_cents, `${String(r.fee_code)} amount_cents`) })); };
+const pricing = (i: ToolInput): PricingScenario => { const p = i.pricing as Record<string, unknown> | undefined; if (!p) throw new RangeError("pricing is required"); return { quote_id: String(p.quote_id ?? ""), rate_pct: String(p.rate_pct ?? ""), price: String(p.price ?? "100.000"), points_cents: bigint(p.points_cents ?? 0n, "points_cents"), lender_credit_cents: bigint(p.lender_credit_cents ?? 0n, "lender_credit_cents"), locked: p.locked === true, lock_expires_at: (p.lock_expires_at as string | undefined) ?? null, lock_time_zone: (p.lock_time_zone as string | undefined) ?? null }; };
+
+export const TOOLS_21_2: readonly ToolDef[] = defineTools("21.2", "disclosure", [
+  { name: "assembleFees", kind: "act", handler: compute((i) => { need(i, "as_of"); const items = assembleFees(feeItems(i), D(str(i, "as_of")), i.max_age_days !== undefined ? num(i, "max_age_days") : FEE_TABLE_MAX_AGE_DAYS); return { items, totals: sectionTotals(items), net_prepaid_finance_charge_cents: netPrepaidFinanceCharge(items) }; }),
+    guardrails: [never("NO_FEE_IMPOSED", "21.2 guardrails: never impose or collect any fee (only 21.4 may, after receipt and intent; §1026.19(e)(2)(i)(A))", (i) => flag(i, "impose") || flag(i, "collect") || flag(i, "charge_card"), "the disclosure agent assembles estimates only; fees are imposed by 21.4 after receipt and intent"),
+      never("NO_VERIFICATION_CONDITION", "12 CFR 1026.19(e)(2)(iii); 21.2 guardrails: never condition the LE on verification documents", (i) => flag(i, "require_verification_documents"), "the LE may not be conditioned on verifying documents")] },
+  { name: "getPricingScenario", kind: "read", handler: compute((i, _c, rt) => { need(i, "quote_id"); const q = rt.store.get("pricing_quotes", str(i, "quote_id")); if (!q) throw new RangeError(`no pricing scenario ${str(i, "quote_id")} (20.4 pricing_quotes)`); return { quote_id: str(i, "quote_id"), ...q.data, data_hash: dataHash(q.data) }; }) },
+  { name: "deriveTolerance", kind: "act", handler: compute((i) => { const items: (FeeItemInput & { tolerance_class: ReturnType<typeof deriveToleranceClass> })[] = feeItems(i).map((f) => ({ ...f, tolerance_class: deriveToleranceClass(f) })); return { items: items.map((f) => ({ fee_code: f.fee_code, le_section: f.le_section, tolerance_class: f.tolerance_class, baseline_amount_cents: f.amount_cents })), ten_percent_baseline_cents: tenPercentAggregate(items), lender_credit_baseline_cents: sectionTotals(items).lender_credits_cents }; }) },
+  { name: "computeAPR", kind: "act", handler: compute((i) => { need(i, "loan_cents", "rate_pct", "term_months"); const loan = bigint(i.loan_cents, "loan_cents"); const term = num(i, "term_months"); const fees = Array.isArray(i.fees) ? feeItems(i) : [];
+      const pfc = i.prepaid_finance_charge_cents !== undefined ? bigint(i.prepaid_finance_charge_cents, "prepaid_finance_charge_cents") : netPrepaidFinanceCharge(fees);
+      const apr = computeApr({ loan_cents: loan, rate_pct: str(i, "rate_pct"), term_months: term, prepaid_finance_charge_cents: pfc, ...(i.odd_days !== undefined ? { odd_days: num(i, "odd_days") } : {}), ...(i.mi_monthly_cents !== undefined ? { mi_monthly_cents: bigint(i.mi_monthly_cents, "mi_monthly_cents") } : {}) });
+      const calcs = loanEstimateCalcs({ loan_cents: loan, rate_pct: str(i, "rate_pct"), term_months: term, loan_costs_cents: fees.length ? sectionTotals(fees).loan_costs_cents : bigint(i.loan_costs_cents ?? 0n, "loan_costs_cents"), ...(i.mi_monthly_cents !== undefined ? { mi_monthly_cents: bigint(i.mi_monthly_cents, "mi_monthly_cents") } : {}) });
+      return { apr, calcs }; }) },
+  { name: "renderH24", kind: "act", handler: compute((i) => { need(i, "application_id", "disclosure_id", "as_of", "loan_cents", "term_months", "transaction_type", "product", "property_address", "estimated_value_cents");
+      const fees = assembleFees(feeItems(i), D(str(i, "as_of"))); const classed: FeeItem[] = fees.map((f) => ({ ...f, tolerance_class: deriveToleranceClass(f), baseline_amount_cents: f.amount_cents, baseline_disclosure_id: str(i, "disclosure_id") }));
+      const p = pricing(i); const loan = bigint(i.loan_cents, "loan_cents"); const term = num(i, "term_months"); const totals = sectionTotals(fees);
+      const mi = i.mi_monthly_cents !== undefined ? { mi_monthly_cents: bigint(i.mi_monthly_cents, "mi_monthly_cents") } : {};
+      const calcs = loanEstimateCalcs({ loan_cents: loan, rate_pct: p.rate_pct, term_months: term, loan_costs_cents: totals.loan_costs_cents, ...mi });
+      const apr = computeApr({ loan_cents: loan, rate_pct: p.rate_pct, term_months: term, prepaid_finance_charge_cents: netPrepaidFinanceCharge(fees), ...mi });
+      const lo = i.loan_officer as { name: string; nmlsr_id: string } | undefined; const cr = (i.creditor as LeRenderInput["creditor"] | undefined) ?? { name: str(i, "lender_name"), nmlsr_id: str(i, "lender_nmlsr_id"), email: str(i, "lender_email"), phone: str(i, "lender_phone") };
+      if (!lo?.nmlsr_id) throw new RangeError("loan_officer.nmlsr_id is required (§1026.36(g))"); if (!cr.nmlsr_id) throw new RangeError("creditor.nmlsr_id is required (§1026.37(k)(1))");
+      const base = h24Payload({ application_id: str(i, "application_id"), disclosure_id: str(i, "disclosure_id"), as_of: D(str(i, "as_of")) as PlainDate, loan_cents: loan, term_months: term, transaction_type: str(i, "transaction_type") as LeRenderInput["transaction_type"], product: str(i, "product"), pricing: p, fees: classed, applicants: (i.applicants as string[] | undefined) ?? [], property_address: str(i, "property_address"), estimated_value_cents: bigint(i.estimated_value_cents, "estimated_value_cents"), creditor: cr, loan_officer: lo, totals, calcs, apr, rendered_on: D(str(i, "as_of")), ...mi });
+      const payload = { ...base, loan_id: str(i, "application_id"), costs_expire_display: (i.costs_expire_display as string | undefined) ?? "", intent_received_in_period: flag(i, "intent_received_in_period"), lender_credits_abs_cents: -totals.lender_credits_cents, sum_abc_cents: totals.A + totals.B + totals.C, d_plus_i_cents: totals.loan_costs_cents + totals.other_costs_cents, cash_to_close_cents: bigint(i.cash_to_close_cents ?? totals.total_closing_costs_cents, "cash_to_close_cents"),
+        prepayment_penalty: false, balloon_payment: false, escrow_monthly_cents: bigint(i.escrow_monthly_cents ?? 0n, "escrow_monthly_cents"), taxes_insurance_monthly_cents: bigint(i.escrow_monthly_cents ?? 0n, "escrow_monthly_cents"), escrowed: i.escrowed !== false, total_monthly_payment_cents: calcs.pi_cents + (mi.mi_monthly_cents ?? 0n) + bigint(i.escrow_monthly_cents ?? 0n, "escrow_monthly_cents"),
+        closing_costs_financed_cents: 0n, down_payment_cents: 0n, deposit_cents: 0n, funds_for_borrower_cents: 0n, seller_credits_cents: 0n, adjustments_cents: 0n };
+      const rendered = render(LE_H24_SOURCE, payload); return { payload, data_hash: dataHash({ loan, term, pricing: p, fees: classed.map((f) => [f.fee_code, f.amount_cents]), calcs, apr: apr.apr_disclosed, loan_officer: lo }), text: rendered.text, blocks: rendered.blocks.map((b) => b.id), template_version: "H-24 2017" }; }),
+    guardrails: [never("SERVICING_INTENT", "21.2 guardrails: never alter the servicing statement from `service` (§1026.37(m)(6))", (i) => i.servicing_intent !== undefined && i.servicing_intent !== "service", "the servicing statement is always `service` (partner services; SM subservices from day one)"),
+      never("NO_MLO_NMLSR_ID", "21.2 guardrails: never issue an LE without the MLO's NMLSR ID (§1026.36(g); SAFE_1008_103_MLO_OF_RECORD_GATE)", (i) => i.loan_officer !== undefined && !(i.loan_officer as { nmlsr_id?: string }).nmlsr_id, "no MLO of record NMLSR ID"),
+      never("NO_VERIFICATION_CONDITION", "12 CFR 1026.19(e)(2)(iii); 21.2 guardrails: never condition the LE on verification documents", (i) => flag(i, "require_verification_documents"), "the LE may not be conditioned on verifying documents"),
+      never("UNAPPROVED_HASH_RELEASE", "21.2 guardrails: never release an LE whose data hash was not approved by the MLO of record in `assisted` mode", (i) => flag(i, "release") && (i.ai_intake_mode ?? "assisted") === "assisted" && (!i.approved_data_hash || i.approved_data_hash !== i.data_hash), "release requires an MLO approval for this exact data hash"),
+      never("NO_ESIGN_CONSENT", "21.2 guardrails: never deliver electronically without a prior valid consent (§1026.37(o)(3)(iii); 15 U.S.C. 7001(c))", (i) => flag(i, "release") && (i.channel === "esign_portal" || i.channel === "email") && !consentValidFor((i.consent as EsignConsent | undefined) ?? null, str(i, "as_of") ? `${str(i, "as_of")}T23:59:59.000Z` : new Date().toISOString()).ok, "electronic delivery needs an unrevoked E-SIGN consent scoped to disclosures obtained before delivery")] },
+  { name: "buildProviderList", kind: "act", handler: compute((i) => { const providers = (i.providers as Record<string, readonly Provider[]> | undefined) ?? {}; const services = buildProviderList(feeItems(i), Object.fromEntries(Object.entries(providers).map(([k, v]) => [k, v.map((p) => ({ ...p, estimated_fee_cents: bigint(p.estimated_fee_cents, `${p.name} estimated_fee_cents`) }))])));
+      return { services, min_providers_per_service: services.length ? Math.min(...services.map((s) => s.providers.length)) : 0, affiliates: services.flatMap((s) => s.providers.filter((p) => p.affiliate).map((p) => p.name)), delivered_with_le: true }; }) },
+]);

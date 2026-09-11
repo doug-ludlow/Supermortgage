@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 4905/7446 (65.9%): tids 1318/1914, tables 498/717, timers 1453/1987, notices 239/306, tools 716/1311, figures 681/1211; processes at 100%: 117/165",
+ "brief": "spec units built 4949/7446 (66.5%): tids 1330/1914, tables 498/717, timers 1475/1987, notices 239/306, tools 716/1311, figures 691/1211; processes at 100%: 118/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1318
+   "built": 1330
   },
   "tables": {
    "spec": 717,
@@ -11,7 +11,7 @@
   },
   "timers": {
    "spec": 1987,
-   "built": 1453
+   "built": 1475
   },
   "notices": {
    "spec": 306,
@@ -23,11 +23,11 @@
   },
   "figures": {
    "spec": 1211,
-   "built": 681
+   "built": 691
   },
   "units": {
    "spec": 7446,
-   "built": 4905
+   "built": 4949
   }
  },
  "sections": {
@@ -147,15 +147,15 @@
   },
   "20": {
    "spec": 190,
-   "built": 4,
+   "built": 5,
    "processes": 4,
    "done": 0
   },
   "21": {
    "spec": 282,
-   "built": 64,
+   "built": 93,
    "processes": 6,
-   "done": 1
+   "done": 2
   },
   "22": {
    "spec": 368,
@@ -177,7 +177,7 @@
   },
   "25": {
    "spec": 231,
-   "built": 7,
+   "built": 18,
    "processes": 4,
    "done": 0
   },
@@ -201,7 +201,7 @@
   },
   "29": {
    "spec": 232,
-   "built": 3,
+   "built": 6,
    "processes": 4,
    "done": 0
   },
@@ -334,6 +334,7 @@
   "19.3",
   "19.4",
   "21.1",
+  "21.2",
   "30.1",
   "30.4"
  ],
@@ -5325,12 +5326,11 @@
    },
    "timers": {
     "spec": 9,
-    "built": 0,
+    "built": 1,
     "armable": 3,
     "missing": [
      "FNMA_PEWL_QUOTE_ID_WINDOW",
      "REGZ_1026_19E2II_QUOTE_DISCLAIMER_GATE",
-     "REGZ_1026_19E3IVD_LOCK_REVISED_LE_3BD",
      "SM_FEE_SCHEDULE_REFRESH_30",
      "SM_LLPA_TABLE_VERSION_GATE",
      "SM_MLO_PREAPP_TERMS_REVIEW_1BH",
@@ -5382,9 +5382,9 @@
    },
    "units": {
     "spec": 47,
-    "built": 0
+    "built": 1
    },
-   "pct": 0.0
+   "pct": 2.1
   },
   {
    "process": "21.1",
@@ -5432,22 +5432,9 @@
    "title": "TRID application receipt, application date, and the Loan Estimate",
    "tids": {
     "spec": 12,
-    "built": 0,
-    "todo": 12,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 3,
@@ -5472,21 +5459,14 @@
    },
    "figures": {
     "spec": 7,
-    "built": 1,
-    "missing": [
-     "$1,785.43",
-     "$206,774.20",
-     "$3,505.43",
-     "$38,097.13",
-     "$521,902.87",
-     "$93.97"
-    ]
+    "built": 7,
+    "missing": []
    },
    "units": {
     "spec": 36,
-    "built": 18
+    "built": 36
    },
-   "pct": 50.0
+   "pct": 100.0
   },
   {
    "process": "21.3",
@@ -5642,16 +5622,9 @@
    },
    "timers": {
     "spec": 7,
-    "built": 1,
-    "armable": 5,
-    "missing": [
-     "FNMA_C2_1_2_03_KEY_DATA_CHANGE_1BD",
-     "NY_3NYCRR_38_6B4_LOCK_EXPIRY_NOTICE_12_20BD",
-     "REGZ_1026_19E3IVD_LOCK_REVISED_LE_3BD",
-     "SM_LOCK_EXPIRY_DEADLINE",
-     "SM_LOCK_EXPIRY_WARN_7",
-     "SM_LOCK_MLO_APPROVAL_SLA_30MIN"
-    ]
+    "built": 7,
+    "armable": 7,
+    "missing": []
    },
    "notices": {
     "spec": 3,
@@ -5686,18 +5659,17 @@
    },
    "figures": {
     "spec": 4,
-    "built": 1,
+    "built": 2,
     "missing": [
-     "$650.00",
      "$68.50",
      "$700.00"
     ]
    },
    "units": {
     "spec": 47,
-    "built": 4
+    "built": 11
    },
-   "pct": 8.5
+   "pct": 23.4
   },
   {
    "process": "21.5",
@@ -5731,10 +5703,9 @@
    },
    "timers": {
     "spec": 5,
-    "built": 1,
+    "built": 2,
     "armable": 4,
     "missing": [
-     "REGZ_1026_19E4_REVISED_LE_3BD",
      "REGZ_1026_19E4_REVISED_LE_4SBD_GATE",
      "REGZ_1026_19F2V_TOLERANCE_REFUND_60",
      "SM_TOLERANCE_CURE_REVIEW_SLA_1BD"
@@ -5765,26 +5736,23 @@
    },
    "figures": {
     "spec": 11,
-    "built": 0,
+    "built": 3,
     "missing": [
      "$1,691.46",
-     "$1,785.43",
      "$186.50",
      "$2,051.50",
      "$2,145.00",
      "$2,442.00",
-     "$200.00",
      "$222.00",
      "$3,493.76",
-     "$93.50",
-     "$93.97"
+     "$93.50"
     ]
    },
    "units": {
     "spec": 43,
-    "built": 2
+    "built": 6
    },
-   "pct": 4.7
+   "pct": 14.0
   },
   {
    "process": "21.6",
@@ -7541,20 +7509,9 @@
    },
    "timers": {
     "spec": 11,
-    "built": 1,
-    "armable": 7,
-    "missing": [
-     "SM_O61_APOR_REFRESH_7",
-     "SM_O61_BLOCKING_FAILURE_REVIEW_1BD",
-     "SM_O61_COMPLIANCE_PASS_CD_GATE",
-     "SM_O61_COMPLIANCE_PASS_CONSUMMATE_GATE",
-     "SM_O61_COMPLIANCE_PASS_DELIVERY_GATE",
-     "SM_O61_COMPLIANCE_PASS_DISBURSE_GATE",
-     "SM_O61_COMPLIANCE_PASS_LE_GATE",
-     "SM_O61_COMPLIANCE_PASS_LOCK_GATE",
-     "SM_O61_LICENSE_CHECK_REFRESH_30",
-     "SM_O61_RULESET_ANNUAL_0101"
-    ]
+    "built": 11,
+    "armable": 11,
+    "missing": []
    },
    "notices": {
     "spec": 1,
@@ -7617,9 +7574,9 @@
    },
    "units": {
     "spec": 74,
-    "built": 1
+    "built": 11
    },
-   "pct": 1.4
+   "pct": 14.9
   },
   {
    "process": "25.2",
@@ -7658,7 +7615,7 @@
    },
    "timers": {
     "spec": 10,
-    "built": 0,
+    "built": 1,
     "armable": 7,
     "missing": [
      "FNMA_UCD_ACCEPTED_GATE",
@@ -7668,7 +7625,6 @@
      "REGZ_1026_19F2_CLERICAL_CD_60",
      "REGZ_1026_19F2_CORRECTED_CD_30",
      "REGZ_1026_19F4_SELLER_CD_GATE",
-     "SM_O62_CD_TARGET_4SBD",
      "SM_O62_SETTLEMENT_FIGURES_5SBD",
      "SM_O62_UCD_RESUBMIT_ON_CORRECTION"
     ]
@@ -7714,9 +7670,9 @@
    },
    "units": {
     "spec": 50,
-    "built": 0
+    "built": 1
    },
-   "pct": 0.0
+   "pct": 2.0
   },
   {
    "process": "25.3",
@@ -9062,18 +9018,16 @@
    },
    "timers": {
     "spec": 15,
-    "built": 0,
-    "armable": 6,
+    "built": 2,
+    "armable": 7,
     "missing": [
      "FNMA_B2_1_5_02_LOAN_AGE_6M_PURCHASE_READY",
      "FNMA_C2_1_1_03_DAILY_LIMIT_200M_GATE",
      "FNMA_C2_1_1_03_MAND_COMMITMENT_EXPIRY",
      "FNMA_C2_1_1_04_MAND_EXTENSION_CAP_30",
      "FNMA_C2_1_2_02_BE_CLOSED_AUTOEXT_CAP_60",
-     "FNMA_C2_1_2_02_BE_COMMITMENT_EXPIRY",
      "FNMA_C2_1_2_02_BE_EXTENSION_CAP_30",
      "FNMA_C2_1_2_03_DU_APPROVE_60_GATE",
-     "FNMA_C2_1_2_03_KEY_DATA_CHANGE_1BD",
      "FNMA_C2_2_DELIVERY_COMMITMENT_EXPIRY",
      "FNMA_PEWL_CLOSED_STATUS_1BD",
      "FNMA_PEWL_COMMIT_ACCEPT_60S",
@@ -9131,9 +9085,9 @@
    },
    "units": {
     "spec": 61,
-    "built": 0
+    "built": 2
    },
-   "pct": 0.0
+   "pct": 3.3
   },
   {
    "process": "29.2",
@@ -9277,7 +9231,7 @@
    },
    "timers": {
     "spec": 11,
-    "built": 0,
+    "built": 1,
     "armable": 4,
     "missing": [
      "FNMA_B3_2_10_DU_FINAL_MATCH_GATE",
@@ -9289,8 +9243,7 @@
      "FNMA_ULDD_IDENTIFIER_CONSISTENCY_GATE",
      "SM_O103_PACKAGE_FREEZE_GATE",
      "SM_O103_PACKAGE_FREEZE_SLA_2BD",
-     "SM_O103_REBUILD_ON_CHANGE",
-     "SM_O103_ULDD_BUILD_SLA_1BD"
+     "SM_O103_REBUILD_ON_CHANGE"
     ]
    },
    "notices": {
@@ -9327,9 +9280,9 @@
    },
    "units": {
     "spec": 44,
-    "built": 0
+    "built": 1
    },
-   "pct": 0.0
+   "pct": 2.3
   },
   {
    "process": "29.4",

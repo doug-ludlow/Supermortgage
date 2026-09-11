@@ -1,5 +1,5 @@
 {
- "brief": "spec units built 6065/7446 (81.5%): tids 1567/1914, tables 589/717, timers 1667/1987, notices 283/306, tools 984/1311, figures 975/1211; processes at 100%: 136/165",
+ "brief": "spec units built 6071/7446 (81.5%): tids 1567/1914, tables 589/717, timers 1673/1987, notices 283/306, tools 984/1311, figures 975/1211; processes at 100%: 136/165",
  "totals": {
   "tids": {
    "spec": 1914,
@@ -11,7 +11,7 @@
   },
   "timers": {
    "spec": 1987,
-   "built": 1667
+   "built": 1673
   },
   "notices": {
    "spec": 306,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 7446,
-   "built": 6065
+   "built": 6071
   }
  },
  "sections": {
@@ -165,13 +165,13 @@
   },
   "23": {
    "spec": 219,
-   "built": 128,
+   "built": 132,
    "processes": 4,
    "done": 2
   },
   "24": {
    "spec": 314,
-   "built": 95,
+   "built": 97,
    "processes": 6,
    "done": 1
   },
@@ -5930,13 +5930,9 @@
    },
    "timers": {
     "spec": 5,
-    "built": 2,
-    "armable": 3,
-    "missing": [
-     "FNMA_B2_2_06_HOMEOWNERSHIP_ED_GATE",
-     "FNMA_B5_6_01_COUNSELING_CREDIT_12M",
-     "SM_DU_CONDITIONS_SLA_4H"
-    ]
+    "built": 5,
+    "armable": 5,
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -5988,9 +5984,9 @@
    },
    "units": {
     "spec": 58,
-    "built": 6
+    "built": 9
    },
-   "pct": 10.3
+   "pct": 15.5
   },
   {
    "process": "23.3",
@@ -6025,11 +6021,10 @@
    },
    "timers": {
     "spec": 9,
-    "built": 2,
+    "built": 3,
     "armable": 7,
     "missing": [
      "FNMA_D1_2_01_PREFUNDING_PRIOR_TO_CLOSING_GATE",
-     "SM_UW_CONDITIONAL_APPROVAL_SLA_1BD",
      "SM_UW_CONDITION_CLEAR_SLA_1BD",
      "SM_UW_CTC_GATE",
      "SM_UW_DECISION_VALIDITY",
@@ -6074,9 +6069,9 @@
    },
    "units": {
     "spec": 44,
-    "built": 5
+    "built": 6
    },
-   "pct": 11.4
+   "pct": 13.6
   },
   {
    "process": "23.4",
@@ -6243,18 +6238,16 @@
    },
    "timers": {
     "spec": 11,
-    "built": 0,
+    "built": 2,
     "armable": 5,
     "missing": [
      "FNMA_B4_1_2_05_COMPLETION_BEFORE_DELIVERY_GATE",
-     "FNMA_B4_1_2_05_HOLDBACK_COMPLETION_180",
      "FNMA_B4_1_3_06_SAFETY_REPAIR_BEFORE_SALE_GATE",
      "FNMA_B4_2_1_01_CPM_CERT_VALID_GATE",
      "FNMA_B4_2_1_01_PROJECT_REVIEW_ESTABLISHED_1Y",
      "FNMA_B4_2_1_01_PROJECT_REVIEW_NEW_180",
      "FNMA_B4_2_1_03_INSPECTION_LOOKBACK_3Y",
      "FNMA_B4_2_2_01_RESERVE_STUDY_AGE_3Y",
-     "SM_HOLDBACK_FINAL_DRAW_5BD",
      "SM_MH_LABEL_VERIFICATION_GATE",
      "SM_PROJECT_DOCS_AGE_120"
     ]
@@ -6290,9 +6283,9 @@
    },
    "units": {
     "spec": 40,
-    "built": 4
+    "built": 6
    },
-   "pct": 10.0
+   "pct": 15.0
   },
   {
    "process": "24.4",

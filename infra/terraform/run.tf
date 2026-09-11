@@ -493,10 +493,6 @@ resource "google_cloud_run_v2_service" "borrower" {
         failure_threshold     = 12
       }
 
-      liveness_probe {
-        tcp_socket {
-          port = 8080
-        }
         period_seconds    = 30
         timeout_seconds   = 3
         failure_threshold = 3

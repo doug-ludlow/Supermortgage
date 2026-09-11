@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 6135/7446 (82.4%): tids 1592/1914, tables 589/717, timers 1683/1987, notices 283/306, tools 1008/1311, figures 980/1211; processes at 100%: 138/165",
+ "brief": "spec units built 6171/7446 (82.9%): tids 1604/1914, tables 589/717, timers 1683/1987, notices 283/306, tools 1008/1311, figures 1004/1211; processes at 100%: 138/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1592
+   "built": 1604
   },
   "tables": {
    "spec": 717,
@@ -23,11 +23,11 @@
   },
   "figures": {
    "spec": 1211,
-   "built": 980
+   "built": 1004
   },
   "units": {
    "spec": 7446,
-   "built": 6135
+   "built": 6171
   }
  },
  "sections": {
@@ -165,7 +165,7 @@
   },
   "23": {
    "spec": 219,
-   "built": 144,
+   "built": 180,
    "processes": 4,
    "done": 2
   },
@@ -5884,22 +5884,9 @@
    "title": "DU findings interpretation, recommendation policy, and conditions generation (incl. HomeReady/AMI, homebuyer education, value acceptance offers, MI messages, red flags)",
    "tids": {
     "spec": 12,
-    "built": 0,
-    "todo": 12,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 6,
@@ -5931,35 +5918,14 @@
    },
    "figures": {
     "spec": 24,
-    "built": 4,
-    "missing": [
-     "$100,800.00",
-     "$124,000.00",
-     "$126.67",
-     "$137.33",
-     "$2,245.93",
-     "$2,370.71",
-     "$2,570.34",
-     "$3,270.93",
-     "$3,522.38",
-     "$3,732.67",
-     "$360,000.00",
-     "$380,000.00",
-     "$410.00",
-     "$458,000.00",
-     "$520.00",
-     "$615.00",
-     "$8,200.00",
-     "$8,400.00",
-     "$98,400.00",
-     "$99,200.00"
-    ]
+    "built": 24,
+    "missing": []
    },
    "units": {
     "spec": 58,
-    "built": 20
+    "built": 52
    },
-   "pct": 34.5
+   "pct": 89.7
   },
   {
    "process": "23.3",
@@ -6031,19 +5997,14 @@
    },
    "figures": {
     "spec": 6,
-    "built": 2,
-    "missing": [
-     "$2,245.93",
-     "$360,000.00",
-     "$410.00",
-     "$520.00"
-    ]
+    "built": 6,
+    "missing": []
    },
    "units": {
     "spec": 44,
-    "built": 7
+    "built": 11
    },
-   "pct": 15.9
+   "pct": 25.0
   },
   {
    "process": "23.4",

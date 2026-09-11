@@ -1,33 +1,33 @@
 {
- "brief": "spec units built 6950/7446 (93.3%): tids 1773/1914, tables 648/717, timers 1850/1987, notices 289/306, tools 1208/1311, figures 1182/1211; processes at 100%: 152/165",
+ "brief": "spec units built 7089/7446 (95.2%): tids 1809/1914, tables 666/717, timers 1881/1987, notices 299/306, tools 1232/1311, figures 1202/1211; processes at 100%: 157/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1773
+   "built": 1809
   },
   "tables": {
    "spec": 717,
-   "built": 648
+   "built": 666
   },
   "timers": {
    "spec": 1987,
-   "built": 1850
+   "built": 1881
   },
   "notices": {
    "spec": 306,
-   "built": 289
+   "built": 299
   },
   "tools": {
    "spec": 1311,
-   "built": 1208
+   "built": 1232
   },
   "figures": {
    "spec": 1211,
-   "built": 1182
+   "built": 1202
   },
   "units": {
    "spec": 7446,
-   "built": 6950
+   "built": 7089
   }
  },
  "sections": {
@@ -147,9 +147,9 @@
   },
   "20": {
    "spec": 190,
-   "built": 59,
+   "built": 178,
    "processes": 4,
-   "done": 0
+   "done": 3
   },
   "21": {
    "spec": 282,
@@ -183,15 +183,15 @@
   },
   "26": {
    "spec": 247,
-   "built": 228,
+   "built": 247,
    "processes": 4,
-   "done": 3
+   "done": 4
   },
   "27": {
    "spec": 197,
-   "built": 196,
+   "built": 197,
    "processes": 2,
-   "done": 1
+   "done": 2
   },
   "28": {
    "spec": 225,
@@ -333,6 +333,9 @@
   "19.2",
   "19.3",
   "19.4",
+  "20.1",
+  "20.3",
+  "20.4",
   "21.1",
   "21.2",
   "21.3",
@@ -362,7 +365,9 @@
   "26.1",
   "26.2",
   "26.3",
+  "26.4",
   "27.1",
+  "27.2",
   "29.1",
   "29.2",
   "29.3",
@@ -5052,99 +5057,41 @@
    "title": "Portfolio rate monitoring and refinance-opportunity detection on the subserviced book (self-improving-mortgage trigger)",
    "tids": {
     "spec": 11,
-    "built": 0,
-    "todo": 11,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11
-    ]
+    "built": 11,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "partner_programs",
-     "refi_opportunities",
-     "refi_trigger_runs"
-    ]
+    "built": 3,
+    "missing": []
    },
    "timers": {
     "spec": 9,
-    "built": 0,
-    "armable": 6,
-    "missing": [
-     "FNMA_B2_1_3_03_CASHOUT_NOTE_SEASONING_12M",
-     "FNMA_B2_1_3_03_TITLE_SEASONING_6M",
-     "FNMA_C1_1_01_PREMIUM_RECAPTURE_120",
-     "MA_183_28C_BORROWER_INTEREST_60M",
-     "SM_REFI_OFFER_FREQUENCY_CAP",
-     "SM_REFI_OFFER_SLA_2BD",
-     "SM_REFI_OPPORTUNITY_EXPIRY_30",
-     "SM_REFI_RESOLICIT_COOLDOWN_90",
-     "SM_REFI_TRIGGER_DAILY"
-    ]
+    "built": 9,
+    "armable": 9,
+    "missing": []
    },
    "notices": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "NTC_GLBA_1016_4_PRIVACY_INITIAL"
-    ]
+    "built": 1,
+    "missing": []
    },
    "tools": {
     "spec": 10,
-    "built": 0,
-    "missing": [
-     "loadUniverse",
-     "buildCandidate",
-     "priceCandidate",
-     "computeBenefit",
-     "checkStateRule",
-     "checkGates",
-     "assertGateOpen",
-     "writeDecision",
-     "emitOfferReady",
-     "writeFairLendingExtract"
-    ]
+    "built": 10,
+    "missing": []
    },
    "figures": {
     "spec": 23,
-    "built": 5,
-    "missing": [
-     "$106.08",
-     "$22,436.54",
-     "$24,292.78",
-     "$269.99",
-     "$3,488.97",
-     "$3,758.96",
-     "$3,941.28",
-     "$356.34",
-     "$44,960.95",
-     "$495,596.33",
-     "$503,092.35",
-     "$553,106.41",
-     "$554,273.29",
-     "$612,293.92",
-     "$664,943.20",
-     "$7,496.02",
-     "$709,904.15",
-     "$97,610.23"
-    ]
+    "built": 23,
+    "missing": []
    },
    "units": {
     "spec": 57,
-    "built": 5
+    "built": 57
    },
-   "pct": 8.8
+   "pct": 100.0
   },
   {
    "process": "20.2",
@@ -5170,58 +5117,24 @@
    },
    "tables": {
     "spec": 7,
-    "built": 2,
-    "missing": [
-     "dnc_scrubs",
-     "marketing_campaigns",
-     "marketing_creatives",
-     "marketing_suppressions",
-     "marketing_touches"
-    ]
+    "built": 7,
+    "missing": []
    },
    "timers": {
     "spec": 13,
-    "built": 0,
-    "armable": 5,
-    "missing": [
-     "CANSPAM_7704_A4_OPTOUT_10BD",
-     "FCRA_615D_PRESCREEN_NOTICE_GATE",
-     "REGN_1014_5_RECORDS_24M",
-     "SM_CAMPAIGN_CREATIVE_APPROVAL_GATE",
-     "TCPA_64_1200_A2_PEWC_GATE",
-     "TCPA_64_1200_A3_LANDLINE_PEWC_GATE",
-     "TCPA_64_1200_C1_QUIET_HOURS_GATE",
-     "TCPA_64_1200_C2_DNC_SCRUB_31",
-     "TCPA_64_1200_C2_NATIONAL_DNC_GATE",
-     "TCPA_64_1200_D3_DNC_REQUEST_10BD",
-     "TCPA_64_1200_D_COMPANY_DNC_5Y",
-     "TCPA_64_1200_F5_EBR_INQUIRY_3M",
-     "TCPA_64_1200_F5_EBR_TRANSACTION_18M"
-    ]
+    "built": 13,
+    "armable": 13,
+    "missing": []
    },
    "notices": {
     "spec": 5,
-    "built": 0,
-    "missing": [
-     "NTC_CANSPAM_7704_FOOTER",
-     "NTC_FCRA_615D_PRESCREEN_OPTOUT",
-     "NTC_REGZ_1026_24_REFI_OFFER",
-     "NTC_SM_AI_INTERACTION_DISCLOSURE",
-     "NTC_TCPA_64_1200_B_AI_VOICE_IDENT"
-    ]
+    "built": 5,
+    "missing": []
    },
    "tools": {
     "spec": 7,
-    "built": 0,
-    "missing": [
-     "planChannels",
-     "checkGates",
-     "assertGateOpen",
-     "renderCreative",
-     "runContentChecklist",
-     "scheduleTouch",
-     "placeCall"
-    ]
+    "built": 7,
+    "missing": []
    },
    "figures": {
     "spec": 1,
@@ -5230,92 +5143,50 @@
    },
    "units": {
     "spec": 45,
-    "built": 3
+    "built": 33
    },
-   "pct": 6.7
+   "pct": 73.3
   },
   {
    "process": "20.3",
    "title": "Lead intake, identity, E-SIGN/TCPA consents, and the pre-qualification interview (pre-application boundary)",
    "tids": {
     "spec": 12,
-    "built": 0,
-    "todo": 12,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 5,
-    "built": 1,
-    "missing": [
-     "credit_authorizations",
-     "lead_interactions",
-     "leads",
-     "prequalifications"
-    ]
+    "built": 5,
+    "missing": []
    },
    "timers": {
     "spec": 10,
-    "built": 3,
-    "armable": 4,
-    "missing": [
-     "FCRA_1681B_A3_SOFT_PULL_PURPOSE_GATE",
-     "REGB_1002_2F_NO_PREQUAL_DECLINE_GATE",
-     "SM_AI_INTERACTION_DISCLOSURE_GATE",
-     "SM_ESIGN_BEFORE_LE_GATE",
-     "SM_LEAD_AUTH_BEFORE_DISCLOSURE_GATE",
-     "SM_LEAD_INACTIVITY_EXPIRY_90",
-     "SM_MLO_PREAPP_TERMS_REVIEW_1BH"
-    ]
+    "built": 10,
+    "armable": 10,
+    "missing": []
    },
    "notices": {
     "spec": 4,
-    "built": 0,
-    "missing": [
-     "NTC_CO_SB26_189_ADMT_NOTICE",
-     "NTC_REGZ_1026_19E2II_QUOTE_DISCLAIMER",
-     "NTC_SM_ESIGN_CONSENT",
-     "NTC_SM_PREQUAL_LETTER"
-    ]
+    "built": 4,
+    "missing": []
    },
    "tools": {
     "spec": 7,
-    "built": 0,
-    "missing": [
-     "deliverDisclosure",
-     "authenticate",
-     "captureConsent",
-     "orderSoftPull",
-     "explainProgram",
-     "getBenefit",
-     "requestQuote"
-    ]
+    "built": 7,
+    "missing": []
    },
    "figures": {
     "spec": 3,
-    "built": 1,
-    "missing": [
-     "$3,488.97",
-     "$3,758.96"
-    ]
+    "built": 3,
+    "missing": []
    },
    "units": {
     "spec": 41,
-    "built": 5
+    "built": 41
    },
-   "pct": 12.2
+   "pct": 100.0
   },
   {
    "process": "20.4",
@@ -5333,11 +5204,9 @@
    },
    "timers": {
     "spec": 9,
-    "built": 8,
-    "armable": 8,
-    "missing": [
-     "SM_MLO_PREAPP_TERMS_REVIEW_1BH"
-    ]
+    "built": 9,
+    "armable": 9,
+    "missing": []
    },
    "notices": {
     "spec": 1,
@@ -5356,9 +5225,9 @@
    },
    "units": {
     "spec": 47,
-    "built": 46
+    "built": 47
    },
-   "pct": 97.9
+   "pct": 100.0
   },
   {
    "process": "21.1",
@@ -6554,35 +6423,14 @@
    "title": "Post-closing document collection, collateral perfection, and trailing documents (endorsements/allonges, assignments for non-MERS, MERS MOM registration and interim-funder designation, recorded security instrument, final title policy, note custody and shipping to warehouse/document custodian)",
    "tids": {
     "spec": 13,
-    "built": 0,
-    "todo": 13,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13
-    ]
+    "built": 13,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 7,
-    "built": 1,
-    "missing": [
-     "final_policy_reviews",
-     "lost_note_affidavits",
-     "mers_registrations",
-     "note_custody_shipments",
-     "note_endorsements",
-     "recorded_instrument_reviews"
-    ]
+    "built": 7,
+    "missing": []
    },
    "timers": {
     "spec": 23,
@@ -6607,9 +6455,9 @@
    },
    "units": {
     "spec": 46,
-    "built": 27
+    "built": 46
    },
-   "pct": 58.7
+   "pct": 100.0
   },
   {
    "process": "27.1",
@@ -6668,11 +6516,9 @@
    },
    "timers": {
     "spec": 15,
-    "built": 14,
+    "built": 15,
     "armable": 15,
-    "missing": [
-     "FNMA_C1_1_01_PREMIUM_RECAPTURE_120"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -6691,9 +6537,9 @@
    },
    "units": {
     "spec": 110,
-    "built": 109
+    "built": 110
    },
-   "pct": 99.1
+   "pct": 100.0
   },
   {
    "process": "28.1",

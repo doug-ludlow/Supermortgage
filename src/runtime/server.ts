@@ -11,6 +11,7 @@
  *   POST /v1/sweep                                  the timer sweep, once
  *   POST /v1/applications                           open an application  body: { actor, application: { partner_party_id, channel, transaction_type, occupancy, borrowers: [{ legal_name, … }], property?: {…}, prior_loan_id? } }
  *   POST /v1/applications/{id}/tools/{process}/{name}   execute a tool for an application (before funding)   body as for loans
+ *   POST /v1/applications/{id}/fund                 fund the application (30.2 hand-off → the servicing loan)  body: { actor, funded?: {...loan.funded overrides}, snapshot?: {...OriginationSnapshot overrides} }; 404 unknown application, 409 when boarding refuses
  *   GET  /v1/applications/{id}                      the application's record: row, events, open timers, decisions
  *   GET  /v1/applications                           the newest applications
  *   POST /v1/transfers/batches                      board a servicing-transfer batch  body: { actor, batch: {...}, files: { "boarding_tape.final.csv": "...", ... } }
@@ -33,6 +34,8 @@ import { PgConsoleStore } from "../console/pg-store.ts";
 import type { ApplicationInput } from "../infra/db/applications.ts";
 import { Runtime, ToolNotFound } from "./app.ts";
 import { boardTransferBatch, type TransferBatchInput } from "./transfers.ts";
+import { fundApplication, demoSnapshot, demoFunded, ApplicationNotFound, BoardingRefused, type DemoOverrides } from "./origination.ts";
+import type { LoanFundedPayload } from "../domain/orig-boarding/ops-30-2.ts";
 import { generateDemoBatch, DEMO_BATCH } from "../domain/boarding/demo-batch.ts";
 import { encodeTransferBatch, type TransferBatchFiles } from "../domain/boarding/tape-codec.ts";
 import { isUuid } from "../infra/db/client.ts";
@@ -69,6 +72,12 @@ function tokenOf(req: IncomingMessage): string {
   return m ? decodeURIComponent(m[1]!) : "";
 }
 const plainDateOf = (v: unknown) => plainDate(String(v));
+/** JSON carries money as decimal strings of cents: every `*_cents` field in a snapshot/funded override becomes a bigint, dates stay PlainDate strings. */
+function reviveCents(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(reviveCents);
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, k.endsWith("_cents") && (typeof x === "string" || typeof x === "number") && x !== "" ? BigInt(x) : reviveCents(x)]));
+  return v;
+}
 const same = (a: string, b: string): boolean => a.length === b.length && a.length > 0 && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 
 export function createApiServer(opts: ServerOptions): Server {
@@ -139,6 +148,20 @@ export function createApiServer(opts: ServerOptions): Server {
         const r = await runtime.createApplication(a as unknown as ApplicationInput, actor);
         done(200, r, { application_id: r.application.id, timers: r.timers.length }); return;
       }
+      if (method === "POST" && (m = /^\/v1\/applications\/([^/]+)\/fund$/.exec(path))) {
+        const applicationId = decodeURIComponent(m[1]!);
+        if (!isUuid(applicationId)) throw new RangeError("applicationId must be the application's uuid (applications.id)");
+        const b = await readJson(req);
+        const actor = actorOf(b["actor"]);
+        const app = await runtime.applications.get(applicationId);
+        if (!app) { done(404, { error: "no_such_application" }); return; }
+        const snapshotOverrides = (b["snapshot"] && typeof b["snapshot"] === "object" ? reviveCents(b["snapshot"]) : {}) as DemoOverrides;
+        const fundedOverrides = (b["funded"] && typeof b["funded"] === "object" ? reviveCents(b["funded"]) : {}) as Partial<LoanFundedPayload>;
+        const snapshot = demoSnapshot(app, snapshotOverrides);
+        const funded = demoFunded(applicationId, { ...fundedOverrides, ...(fundedOverrides.funding_date ? { funding_date: plainDateOf(fundedOverrides.funding_date) } : {}), ...(fundedOverrides.disbursement_date ? { disbursement_date: plainDateOf(fundedOverrides.disbursement_date) } : {}) });
+        const r = await fundApplication(runtime, applicationId, snapshot, funded, actor);
+        done(200, r, { application_id: applicationId, loan_id: r.loan_id, status: r.status, duplicate: r.duplicate, events: r.events }); return;
+      }
       if (method === "GET" && path === "/v1/applications") { done(200, { applications: await runtime.applications.list() }); return; }
       if (method === "GET" && (m = /^\/v1\/applications\/([^/]+)$/.exec(path))) {
         const applicationId = decodeURIComponent(m[1]!);
@@ -187,6 +210,8 @@ export function createApiServer(opts: ServerOptions): Server {
       done(404, { error: "not found" });
     } catch (e) {
       if (e instanceof CommandRefused) { done(409, { error: "refused", command: e.command, code: e.code, citation: e.citation, reason: e.message }, { refused: e.code }); return; }
+      if (e instanceof BoardingRefused) { done(409, { error: "refused", command: "applications.fund", code: e.code, citation: "30.2 rule 2 / OB-018: boarding is refused until the source record is corrected", reason: e.message, application_id: e.applicationId, validations: e.validations }, { refused: e.code }); return; }
+      if (e instanceof ApplicationNotFound) { done(404, { error: "no_such_application", reason: e.message }); return; }
       if (e instanceof RoleDenied) { done(403, { error: "role_denied", reason: e.message }); return; }
       if (e instanceof AiPathUnavailable) { done(503, { error: "ai_path_unavailable", reason: e.message }); return; }
       if (e instanceof ToolNotFound) { done(404, { error: "no_such_tool", reason: e.message }); return; }

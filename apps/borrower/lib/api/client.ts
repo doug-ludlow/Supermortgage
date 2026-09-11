@@ -7,7 +7,7 @@
  * the browser never holds a bearer token of any kind (ops API_TOKEN or session).
  *
  * Routes that exist on the API seam today (src/runtime/server.ts): auth/otp, auth/passkey,
- * auth/l2, identity/stripe/session, me, deeplink/{token}, documents. The rest of 02 §7
+ * auth/oidc (32.14 DELTA-12), auth/l2, identity/stripe/session, me, deeplink/{token}, documents. The rest of 02 §7
  * (record, thread, stream, messages, cards/{id}/resolve, commands, connect, voice) is typed
  * here and answers 404 until the projection/command endpoints land.
  */
@@ -32,12 +32,13 @@ export class ApiRequestError extends Error {
 }
 
 async function request<T>(method: "GET" | "POST", path: string, body?: unknown, init: RequestInit = {}): Promise<T> {
+  const { headers: extraHeaders, ...rest } = init; // merged below — never let a caller's headers replace accept/content-type
   const res = await fetch(`${apiBase()}${path}`, {
     method,
     credentials: "include",
-    headers: { accept: "application/json", ...(body !== undefined ? { "content-type": "application/json" } : {}), ...(init.headers ?? {}) },
+    headers: { accept: "application/json", ...(body !== undefined ? { "content-type": "application/json" } : {}), ...((extraHeaders as Record<string, string> | undefined) ?? {}) },
     body: body !== undefined ? JSON.stringify(body) : undefined,
-    ...init,
+    ...rest,
   });
   if (!res.ok) {
     let err: ApiError = { code: `http_${res.status}`, copy_key: "error.generic" };
@@ -76,6 +77,16 @@ export const api = {
   authOtpRequest: (channel: "sms" | "email", destination: string) => request<{ challenge_id: string; delivery: "FAKE" | "sms" | "email"; expires_at: string; fake_code?: string }>("POST", "/v1/borrower/auth/otp", { action: "request", channel, destination }),
   authOtpVerify: (challenge_id: string, code: string) => request<{ level: "L1" | "L2" | "L3"; session: "cookie"; expires_at?: string }>("POST", "/v1/borrower/auth/otp", { action: "verify", challenge_id, code }),
   authPasskey: (body: { action: "register_options" | "register" | "assert_options" | "assert"; [k: string]: unknown }) => request<Record<string, unknown>>("POST", "/v1/borrower/auth/passkey", body),
+  /**
+   * 32.14 §3 (DELTA-12) Sign in with Google: Authorization Code + PKCE is held server side — the app only navigates to
+   * `authorization_url` and posts Google's `code`/`state` back; the proxy sets the session cookie on the same session body as
+   * OTP verify. `fake` is the FAKE identity hint FakeGoogleOidc honours under INTEGRATIONS=fake (refused elsewhere).
+   */
+  authOidcStart: (provider: "google", redirect_uri: string, fake?: { email: string; email_verified?: boolean; name?: string; sub?: string }) =>
+    request<{ authorization_url: string; state: string; expires_at: string }>("POST", "/v1/borrower/auth/oidc", { action: "start", provider, redirect_uri, ...(fake ? { fake } : {}) }),
+  /** Errors: `{code: OIDC_EMAIL_UNVERIFIED | OIDC_INVALID, copy_key}` → the app renders `auth.google.failed`. `fake` sends `x-fake-oidc: FAKE` (the callback page in FAKE/dev mode). */
+  authOidcCallback: (provider: "google", code: string, state: string, opts: { fake?: boolean } = {}) =>
+    request<{ level: "L1" | "L2" | "L3"; session: "cookie"; expires_at?: string }>("POST", "/v1/borrower/auth/oidc", { action: "callback", provider, code, state }, opts.fake ? { headers: { "x-fake-oidc": "FAKE" } } : {}),
   authL2: (ssn_last4: string, date_of_birth: string) => request<{ level: "L2" }>("POST", "/v1/borrower/auth/l2", { ssn_last4, date_of_birth }),
   identitySession: () => request<{ client_secret: string; vendor_session_id: string; card_instance_id: string }>("POST", "/v1/borrower/identity/stripe/session"),
   connectSession: (vendor: string, card_instance_id: Uuid) => request<{ link_token: string; vendor_session_id: string }>("POST", `/v1/borrower/connect/${encodeURIComponent(vendor)}/session`, { card_instance_id }),

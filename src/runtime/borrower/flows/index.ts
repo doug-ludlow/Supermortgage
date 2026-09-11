@@ -28,10 +28,13 @@ import { FLOW_10_HARDSHIP } from "./10-hardship.ts";
 import { FLOW_11_RATE_WATCH } from "./11-rate-watch.ts";
 import { FLOW_12_EXITS } from "./12-exits.ts";
 import { FLOW_13_CROSS_CUTTING } from "./13-cross-cutting.ts";
+import { FLOW_14_ENTRY_SIGN_IN } from "./14-entry-sign-in.ts";
+import { FLOW_14_ENTRY_LEAD } from "./14-entry-lead.ts";
+import { FLOW_14_PREQUAL } from "./14-prequal.ts";
 
-export interface FlowDeps { readonly runtime: Runtime; readonly ui: PgBorrowerUiRepository; readonly logger?: Logger | undefined; /** the uploaded bytes (32.3 C1: the FAKE contract extraction reads them) */ readonly blobs?: BlobStorePort | undefined }
+export interface FlowDeps { readonly runtime: Runtime; readonly ui: PgBorrowerUiRepository; readonly logger?: Logger | undefined; /** the uploaded bytes (32.3 C1: the FAKE contract extraction reads them) */ readonly blobs?: BlobStorePort | undefined; /** 32.14 DELTA-15: the Phase I partner party id from configuration (`BORROWER_DEFAULT_PARTNER_ID`); unset → the newest servicer party */ readonly defaultPartnerId?: string | undefined }
 /** A borrower session opened on a channel (32.3 E1–E2: the automation disclosure is the first assistant content of every session, every channel). */
-export interface SessionOpened { readonly party_id: string; readonly session_id: string; readonly channel: "app" | "sms" | "voice"; readonly auth_method: string; readonly at: string }
+export interface SessionOpened { readonly party_id: string; readonly session_id: string; readonly channel: "app" | "sms" | "voice"; readonly auth_method: string; readonly at: string; /** 32.14 DELTA-11: the lead the `sm_borrower_lead` cookie named at verify, linked to the party before the hook ran (`lead.linked{party_id}`); the 32.14 flow creates the application from it */ readonly lead_id?: string | null }
 /** A borrower message a flow may answer before the generic placeholder (32.3 T2 "are you a real person?", P9 "send me the listing"). */
 export interface InboundMessage { readonly party_id: string; readonly session_id: string; readonly conversation_id: string; readonly message_id: string; readonly text: string; readonly channel: "app" | "sms" | "email" | "voice"; readonly subject: { application_id: string | null; loan_id: string | null } | null; /** the subject the borrower named in the request body, even when it is not one of the party's own (32.9 P4: a potential successor names the loan) */ readonly claimed_subject?: { application_id?: string | null; loan_id?: string | null } | null; readonly at: string }
 export interface FlowReply { readonly copy_key: string; readonly body_text?: string; readonly command?: string | null; readonly card_instance_id?: string | null }
@@ -51,7 +54,9 @@ export interface BorrowerFlow {
 }
 
 /** Every registered flow — sibling processes append theirs (additive). */
-export const FLOWS: BorrowerFlow[] = [FLOW_3_ENTRY, FLOW_4_DISCLOSURES, FLOW_6_DECISION_PROPERTY, FLOW_5_VERIFICATION, FLOW_7_CLOSING, FLOW_8_SERVICING, FLOW_9_SERVICING_REQUESTS, FLOW_10_HARDSHIP, FLOW_11_RATE_WATCH, FLOW_12_EXITS, FLOW_13_CROSS_CUTTING];
+// 32.14's lead flow sits right after 3-entry: the session hook order is the spec's S3 (i) → (ii) — 3-entry's disclosure line and the lead's `party.authenticate` first, then the application from the lead and the `entry.resumed` receipt (T7: "the session's disclosure line then entry.resumed")
+// 32.14's S4 flow (DELTA-13) follows the lead flow: its identity ask opens once 3-entry's session hook and the application from the lead have run, and its reactions to the 20.3 soft-pull / review events run after 3-entry's R9 cards for the same commit
+export const FLOWS: BorrowerFlow[] = [FLOW_3_ENTRY, FLOW_14_ENTRY_LEAD, FLOW_14_PREQUAL, FLOW_4_DISCLOSURES, FLOW_6_DECISION_PROPERTY, FLOW_5_VERIFICATION, FLOW_7_CLOSING, FLOW_8_SERVICING, FLOW_9_SERVICING_REQUESTS, FLOW_10_HARDSHIP, FLOW_11_RATE_WATCH, FLOW_12_EXITS, FLOW_13_CROSS_CUTTING, FLOW_14_ENTRY_SIGN_IN];
 
 export class BorrowerFlows {
   private readonly deps: FlowDeps;

@@ -286,6 +286,8 @@ export type MessageSender = "borrower" | "agent" | "human" | "notice" | "system"
 export type MessageChannel = "app" | "sms" | "email" | "voice" | "mail";
 
 export type ThreadMessage = {
+  /** 32.14: tokens for the line's `{{copy:key}}` sentence (`entry.resumed` → `{{answers}}`); absent on most lines. */
+  copy_tokens?: Record<string, string>;
   message_id: Uuid;
   conversation_id: Uuid;
   at: Timestamptz;
@@ -305,6 +307,8 @@ export type BorrowerMe = {
   party_id: Uuid;
   first_name: string;
   level: "L1" | "L2" | "L3";
+  /** 32.14 §3: how the session was opened (`otp_phone` · `otp_email` · `passkey` · `oidc_google`); a Google session gets the `auth.add_mobile` prompt. */
+  auth_method?: string;
   subjects: RecordSubject[];
   partner: { legal_name: string; nmlsr_id: string };
 };

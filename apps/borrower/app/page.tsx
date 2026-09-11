@@ -8,5 +8,6 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const sp = await searchParams;
   const fixture = typeof sp.fixture === "string" ? sp.fixture : undefined;
   const subject = typeof sp.subject === "string" ? sp.subject : undefined;
-  return <Shell fixturesMode={FIXTURES_MODE} fixtureName={fixture} initialSubject={subject} />;
+  const card = typeof sp.card === "string" ? sp.card : undefined; // 32.14 S5: a deep link or a vendor return lands with the card pinned
+  return <Shell fixturesMode={FIXTURES_MODE} fixtureName={fixture} initialSubject={subject} initialCard={card} />;
 }

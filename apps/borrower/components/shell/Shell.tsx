@@ -12,15 +12,25 @@ import { api, ApiRequestError } from "@/lib/api/client";
 import { openStream, type StreamStatus } from "@/lib/api/sse";
 import { loadFixture } from "@/lib/fixtures";
 import { copy } from "@/lib/copy";
-import { SHOW_FAKE_MARKERS } from "@/lib/env";
 import { Thread } from "./Thread";
 import { ActionBar } from "./ActionBar";
 import { StatusStrip } from "./StatusStrip";
+import { Header } from "./Header";
+import { AnonymousMinute } from "@/components/entry";
+import { SignIn } from "./SignIn";   // 32.14 S6 (DELTA-14): the sign-in screen — Shell decides, SignIn renders
+import { AddMobilePrompt, isAddMobileDone } from "./AddMobile";
+import { passkeyRegister, rememberPasskeyOnDevice } from "@/lib/auth/passkey";
 import { Record } from "@/components/record/Record";
 import { Card } from "@/components/cards";
 import { nowIso } from "@/components/cards/CardFrame";
 
-export type ShellProps = { fixturesMode: boolean; fixtureName?: string; initialSubject?: string };
+export type ShellProps = {
+  fixturesMode: boolean;
+  fixtureName?: string;
+  initialSubject?: string;
+  /** 32.14 S5: `?card=` — that card is pinned and scrolled into view (a deep link or a vendor return lands here). */
+  initialCard?: string;
+};
 
 function useMedia(query: string): boolean {
   const [m, setM] = useState(false);
@@ -44,7 +54,7 @@ function stampAfter(messages: ThreadMessage[]): string {
   return new Date(t).toISOString();
 }
 
-export function Shell({ fixturesMode, fixtureName, initialSubject }: ShellProps) {
+export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }: ShellProps) {
   const [me, setMe] = useState<BorrowerMe | undefined>();
   const [record, setRecord] = useState<BorrowerRecord | undefined>();
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
@@ -56,6 +66,13 @@ export function Shell({ fixturesMode, fixtureName, initialSubject }: ShellProps)
   const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
   const [loadError, setLoadError] = useState<string | undefined>();
   const [stream, setStream] = useState<StreamStatus>("closed");
+  // 32.14 S6 (DELTA-14): a 401 from me, or the header's Sign in, renders the sign-in screen in place of the thread
+  const [needsSignIn, setNeedsSignIn] = useState(false);
+  // 32.14 S0–S2 (DELTA-11): no session at the root, no deep link and no pinned card → the anonymous minute (the lead, not a sign-in ask)
+  const [anonymous, setAnonymous] = useState(false);
+  const [signInOpen, setSignInOpen] = useState(false);
+  const [addMobileDone, setAddMobileDone] = useState(true);
+  useEffect(() => setAddMobileDone(isAddMobileDone()), []); // after hydration: the dismissal lives in this browser only
   const wide = useMedia("(min-width: 1024px)");
   const streamRef = useRef<ReturnType<typeof openStream> | null>(null);
 
@@ -67,6 +84,7 @@ export function Shell({ fixturesMode, fixtureName, initialSubject }: ShellProps)
     try {
       const m = await api.me();
       setMe(m);
+      setNeedsSignIn(false);
       const subj = subject ?? (m.subjects[0]?.loan_id ? `loan:${m.subjects[0].loan_id}` : m.subjects[0]?.application_id ? `application:${m.subjects[0].application_id}` : undefined);
       if (subj) {
         setSubject(subj);
@@ -76,18 +94,28 @@ export function Shell({ fixturesMode, fixtureName, initialSubject }: ShellProps)
       setMessages(t.messages);
       setCards(Object.fromEntries(t.cards.map((c) => [c.card_instance_id, c])));
       setLoadError(undefined);
+      if (initialCard) setScrollTo(initialCard);
     } catch (e) {
+      if (e instanceof ApiRequestError && e.status === 401) {
+        // no session (or it expired and the proxy dropped the cookie): the anonymous minute at the root (no subject, no deep link, no pinned card), else the sign-in screen — never the auth.sign_in notice
+        if (!initialSubject && !initialCard && !window.location.search.includes("d=")) { setAnonymous(true); setLoadError(undefined); return; }
+        setNeedsSignIn(true);
+        setLoadError(undefined);
+        return;
+      }
       setLoadError(e instanceof ApiRequestError ? copy(e.body.copy_key) : "We can't reach your loan right now. Nothing is lost — try again in a moment.");
     }
-  }, [subject]);
+  }, [subject, initialCard, initialSubject]);
 
   useEffect(() => {
-    if (fixturesMode) {
+    // `?fixture=api` in a fixtures build takes the live path (the e2e drives the root of the host with routed API answers)
+    if (fixturesMode && fixtureName !== "api") {
       const f = loadFixture(fixtureName);
       setMe(f.me);
       setRecord(f.record);
       setMessages(f.messages);
       setCards(Object.fromEntries(f.cards.map((c) => [c.card_instance_id, c])));
+      if (initialCard) setScrollTo(initialCard);
       return;
     }
     void loadFromApi();
@@ -214,6 +242,15 @@ export function Shell({ fixturesMode, fixtureName, initialSubject }: ShellProps)
     [fixturesMode],
   );
 
+  const addPasskey = useCallback(async () => {
+    // 32.14 S3: the API's auth.passkey.offer line → register_options → this device's authenticator → register; the device then offers Use my passkey first
+    if (fixturesMode) {
+      rememberPasskeyOnDevice(); // FAKE fixtures mode: no API — only the device hint
+      return;
+    }
+    await passkeyRegister();
+  }, [fixturesMode]);
+
   const link = useCallback((target: { message_id?: string; card_instance_id?: string; document_id?: string }) => {
     if (target.document_id && !target.card_instance_id && !target.message_id) {
       window.location.assign(`/app/doc/${encodeURIComponent(target.document_id)}`);
@@ -228,64 +265,60 @@ export function Shell({ fixturesMode, fixtureName, initialSubject }: ShellProps)
   const comparisonInRecord = useMemo(() => (wide ? Object.values(cards).filter((c) => c.kind === "ComparisonCard" && c.status === "pending") : []), [cards, wide]);
 
   const subjects = me?.subjects ?? [];
+  const showSignIn = needsSignIn || signInOpen;
 
   return (
     <div className="sm-shell" data-testid="shell" data-fixtures={fixturesMode ? "1" : undefined}>
-      <header className="sm-header">
-        <span className="sm-brand">Supermortgage</span>
-        {SHOW_FAKE_MARKERS ? (
-          <span className="sm-fake-banner" data-testid="fake-banner" title="Fixtures/dev mode: recorded data, FAKE vendors and agents">
-            FAKE {fixturesMode ? "fixtures" : "dev"} mode
-          </span>
-        ) : null}
-        {subjects.length > 1 ? (
-          <label className="sm-visually-hidden" htmlFor="subject-switch">
-            Which loan
-          </label>
-        ) : null}
-        {subjects.length > 1 ? (
-          <select id="subject-switch" className="sm-select" style={{ width: "auto", minHeight: 36 }} value={subject ?? ""} onChange={(e) => setSubject(e.target.value)}>
-            {subjects.map((s) => {
-              const v = s.loan_id ? `loan:${s.loan_id}` : `application:${s.application_id}`;
-              return (
-                <option key={v} value={v}>
-                  {s.label}
-                </option>
-              );
-            })}
-          </select>
-        ) : null}
-        <span className="sm-header-spacer" />
-        {!fixturesMode && stream !== "open" && stream !== "closed" ? <span className="sm-source">{stream === "reconnecting" ? "reconnecting…" : "connecting…"}</span> : null}
-        {me ? <span className="sm-source">{me.first_name} · {me.level}</span> : null}
-        <button type="button" className="sm-btn sm-drawer-btn" onClick={() => setRecordOpen(true)} aria-haspopup="dialog">
-          Your record
-        </button>
-      </header>
+      <Header
+        fixturesMode={fixturesMode}
+        me={me}
+        subject={subject}
+        onSubjectChange={setSubject}
+        streamLabel={!fixturesMode && stream !== "open" && stream !== "closed" ? (stream === "reconnecting" ? "reconnecting…" : "connecting…") : undefined}
+        onOpenRecord={() => setRecordOpen(true)}
+        showSignIn={!me || fixturesMode}
+        onSignIn={() => setSignInOpen(true)}
+      />
       <StatusStrip record={record} onOpen={() => setRecordOpen(true)} />
       <div className="sm-body">
         <main className="sm-thread" aria-label="Conversation">
-          <Thread
-            notice={loadError}
-            messages={messages}
-            cards={cards}
-            timezone={timezone}
-            partnerLegalName={partner}
-            showSubjectLabels={subjects.length > 1}
-            wide={wide}
-            scrollTo={scrollTo}
-            cardProps={cardProps}
-            resolve={resolveCard}
-            busyCardId={busyCardId}
-            cardErrors={cardErrors}
-          />
-          <ActionBar onSend={(t) => void sendMessage(t)} onAttach={(f) => void attach(f)} onTalkToPerson={() => void talkToPerson()} />
+          {anonymous && !signInOpen ? (
+            <AnonymousMinute renderIdentity={() => <SignIn variant="choose_method" onSession={() => window.location.reload()} />} />
+          ) : showSignIn ? (
+            <>
+              <div className="sm-thread-top" />
+              <div className="sm-thread-scroll">
+                <SignIn variant="welcome_back" onSession={() => window.location.reload()} onCancel={signInOpen && !needsSignIn ? () => setSignInOpen(false) : undefined} />
+              </div>
+            </>
+          ) : (
+            <Thread
+              notice={loadError}
+              banner={me?.auth_method === "oidc_google" && !addMobileDone ? <AddMobilePrompt onDone={() => setAddMobileDone(true)} /> : null}
+              pinnedId={initialCard}
+              onAddPasskey={addPasskey}
+              messages={messages}
+              cards={cards}
+              timezone={timezone}
+              partnerLegalName={partner}
+              showSubjectLabels={subjects.length > 1}
+              wide={wide}
+              scrollTo={scrollTo}
+              cardProps={cardProps}
+              resolve={resolveCard}
+              busyCardId={busyCardId}
+              cardErrors={cardErrors}
+            />
+          )}
+          <ActionBar disabled={showSignIn} onSend={(t) => void sendMessage(t)} onAttach={(f) => void attach(f)} onTalkToPerson={() => void talkToPerson()} />
         </main>
+        {anonymous ? null : (
         <Record record={record} link={link} open={recordOpen} onClose={() => setRecordOpen(false)}>
           {comparisonInRecord.map((c) => (
             <Card key={c.card_instance_id} card={c} timezone={timezone} {...cardProps} onResolve={(req) => resolveCard(c, req)} busy={busyCardId === c.card_instance_id} error={cardErrors[c.card_instance_id]} />
           ))}
         </Record>
+        )}
       </div>
     </div>
   );

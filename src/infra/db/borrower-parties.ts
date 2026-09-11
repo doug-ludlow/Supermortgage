@@ -42,8 +42,9 @@ export class PgBorrowerPartyRepository {
 
   /**
    * The party a one-time code destination belongs to: a party whose contact lists it, else an application borrower whose
-   * contact lists it (linked to a new borrower party on the spot), else a new borrower party carrying only the destination.
-   * A borrower never authenticates as someone else: the destination is what the code went to.
+   * contact lists it (an already-linked row → its party, so a servicing-book borrower's phone on file lands on the party their
+   * e-mail created — 32.14 T17; an unlinked row → a new borrower party linked on the spot), else a new borrower party carrying
+   * only the destination. A borrower never authenticates as someone else: the destination is what the code went to.
    */
   async resolveOrCreateByDestination(channel: "sms" | "email", destination: string, q: Queryable = this.db): Promise<{ party: PartyRow; created: boolean; linked_application_borrowers: number }> {
     const dest = normalizeDestination(channel, destination);
@@ -51,6 +52,10 @@ export class PgBorrowerPartyRepository {
     const parties = await q.query<PartyRow & Record<string, unknown>>(`SELECT id, party_type, legal_name, contact, created_at FROM parties WHERE party_type = 'borrower' ORDER BY created_at`);
     const found = parties.find((p) => emailOrPhone(p.contact)[key].includes(dest));
     if (found) return { party: found, created: false, linked_application_borrowers: await this.linkUnlinkedBorrowers(found.id, channel, dest, q) };
+    // an application borrower already linked to a party whose contact carries the destination (the phone on file beside the e-mail that signed in first) → that party
+    const linked = await q.query<{ party_id: string; contact: Record<string, unknown> }>(`SELECT ab.party_id, ab.contact FROM application_borrowers ab JOIN parties p ON p.id = ab.party_id WHERE ab.party_id IS NOT NULL AND p.party_type = 'borrower' ORDER BY ab.created_at`);
+    const owner = linked.find((b) => emailOrPhone(b.contact)[key].includes(dest));
+    if (owner) { const party = parties.find((p) => p.id === owner.party_id) ?? (await this.get(owner.party_id, q)); if (party) return { party, created: false, linked_application_borrowers: await this.linkUnlinkedBorrowers(party.id, channel, dest, q) }; }
     // an application borrower the intake interview (21.1) created with this contact → their own party
     const abs = await q.query<{ id: string; legal_name: string; contact: Record<string, unknown> }>(`SELECT id, legal_name, contact FROM application_borrowers WHERE party_id IS NULL ORDER BY created_at`);
     const ab = abs.find((b) => emailOrPhone(b.contact)[key].includes(dest));
@@ -67,6 +72,40 @@ export class PgBorrowerPartyRepository {
     let n = 0;
     for (const b of abs) if (emailOrPhone(b.contact)[key].includes(dest)) { await q.query(`UPDATE application_borrowers SET party_id = $2 WHERE id = $1 AND party_id IS NULL`, [b.id, partyId]); n++; }
     return n;
+  }
+  /**
+   * Where a destination is on file: a party (its contact, or an application borrower linked to it), an application borrower no
+   * party has claimed yet (someone else's record until they sign in), or nowhere. Never creates anything.
+   */
+  async destinationOnFile(channel: "sms" | "email", destination: string, q: Queryable = this.db): Promise<{ party: PartyRow } | { unlinked_application_borrower_id: string } | null> {
+    const dest = normalizeDestination(channel, destination);
+    const key = channel === "email" ? "emails" : "phones";
+    const parties = await q.query<PartyRow & Record<string, unknown>>(`SELECT id, party_type, legal_name, contact, created_at FROM parties WHERE party_type = 'borrower' ORDER BY created_at`);
+    const found = parties.find((p) => emailOrPhone(p.contact)[key].includes(dest));
+    if (found) return { party: found };
+    const abs = await q.query<{ id: string; party_id: string | null; contact: Record<string, unknown> }>(`SELECT id, party_id, contact FROM application_borrowers ORDER BY created_at`);
+    const ab = abs.find((b) => emailOrPhone(b.contact)[key].includes(dest));
+    if (!ab) return null;
+    if (ab.party_id) { const party = parties.find((p) => p.id === ab.party_id) ?? (await this.get(ab.party_id, q)); if (party) return { party }; }
+    return { unlinked_application_borrower_id: ab.id };
+  }
+  /**
+   * 32.14 S3 "Mobile after Google": a destination a live session's own code just proved possession of becomes the party's contact
+   * (`phone` / `email`, or the `phones` / `emails` list when one is already there — the same effect as party.updateContact) and
+   * claims any unlinked application borrower carrying it. Idempotent.
+   */
+  async attachDestination(partyId: string, channel: "sms" | "email", destination: string, q: Queryable = this.db): Promise<{ contact: Record<string, unknown>; added: boolean; linked_application_borrowers: number }> {
+    const dest = normalizeDestination(channel, destination);
+    const party = await this.get(partyId, q); if (!party) throw new RangeError(`party ${partyId} not found`);
+    const on = emailOrPhone(party.contact)[channel === "email" ? "emails" : "phones"];
+    let contact = party.contact; let added = false;
+    if (!on.includes(dest)) {
+      const single = channel === "email" ? "email" : "phone"; const list = channel === "email" ? "emails" : "phones";
+      const existing = Array.isArray(contact[list]) ? (contact[list] as unknown[]).filter((x): x is string => typeof x === "string") : [];
+      contact = typeof contact[single] === "string" && contact[single] ? { ...contact, [list]: [...new Set([...existing, dest])] } : { ...contact, [single]: dest };
+      await q.query(`UPDATE parties SET contact = $2::jsonb WHERE id = $1`, [partyId, toJson(contact)]); added = true;
+    }
+    return { contact, added, linked_application_borrowers: await this.linkUnlinkedBorrowers(partyId, channel, dest, q) };
   }
   /** Explicit link (an InviteCard, a test fixture): the application borrower row is this party's. */
   async linkApplicationBorrower(applicationBorrowerId: string, partyId: string, q: Queryable = this.db): Promise<void> {

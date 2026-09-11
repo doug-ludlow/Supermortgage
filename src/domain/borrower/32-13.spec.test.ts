@@ -488,10 +488,11 @@ test("32.13-T6: Party scoping — Given a co-borrower session, then the Record s
 
 test("32.13-T3: Serializer allow-list — Given every `/v1/borrower/*` response schema, then no field name from `du_findings_interpretations`, `risk_assessment`, `credit_reports.*` (except score-notice fields), `compliance_test_runs`, `qc_*`, `fraud_*`, `applicant_demographics` appears.", { skip }, async () => {
   // every response the router sends names a shape, and every shape is an allow-list (nothing opaque but the card props/evidence and command results)
-  const routes = readFileSync(`${ROOT}src/runtime/borrower/routes.ts`, "utf8");
+  // every module of the borrower API that sends a response (routes.ts and, since 32.14 DELTA-11, lead-routes.ts — POST /v1/borrower/lead); `funnel` is the console's /api/funnel shape (32.14 T18), serialized through the same allow-list
+  const routes = readdirSync(`${ROOT}src/runtime/borrower`).filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts")).map((f) => readFileSync(`${ROOT}src/runtime/borrower/${f}`, "utf8")).filter((src) => /\bsend\(res, /.test(src)).join("\n");
   const sent = [...new Set([...routes.matchAll(/send\(res, [^,]+, "([a-z_]+)"/g)].map((m) => m[1]!))];
   assert.ok(sent.length >= 15, `the route set (${sent.length} shapes)`); for (const s of sent) assert.ok(s in SHAPES, `route response "${s}" is a serializer shape`);
-  for (const name of Object.keys(SHAPES)) assert.ok(sent.includes(name) || ["session", "level"].includes(name) || /^(voice|connect|identity|passkey|document|deep|otp|history|stream|error)/.test(name), `shape ${name} is sent by a route`);
+  for (const name of Object.keys(SHAPES)) assert.ok(sent.includes(name) || ["session", "level", "funnel"].includes(name) || /^(voice|connect|identity|passkey|document|deep|otp|history|stream|error)/.test(name), `shape ${name} is sent by a route`);
   for (const f of FORBIDDEN_FIELDS) assert.ok(!ALL_ALLOWED_FIELDS.has(f), `${f} is never an allowed field`);
   // the restricted tables' own column names (beyond the generic ones ordinary tables share) never appear in any shape — the schema grep over the current route set
   const RESTRICTED = `table_name IN ('du_findings_interpretations', 'risk_assessment', 'credit_reports', 'compliance_test_runs', 'applicant_demographics') OR table_name LIKE 'qc_%' OR table_name LIKE 'fraud_%' OR table_name LIKE 'credit_report_%'`;

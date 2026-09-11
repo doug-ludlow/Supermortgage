@@ -41,7 +41,7 @@ const s = (v: unknown): string => (typeof v === "string" ? v : "");
 /** The commands that run on a read-only Record (13 T-X-16): a question, a person, a contact change. Document download is a GET. */
 export const TERMINAL_ALLOWED_COMMANDS: ReadonlySet<string> = new Set(["case.open", "human.request", "party.updateContact"]);
 /** Commands that act on no subject (a new lead, the session's own disclosure and authentication, identity proofing): never judged by a subject's terminal state. */
-export const SUBJECT_FREE_COMMANDS: ReadonlySet<string> = new Set(["lead.start", "lead.acknowledgeAiDisclosure", "party.authenticate", "party.startIdentity"]);
+export const SUBJECT_FREE_COMMANDS: ReadonlySet<string> = new Set(["lead.start", "lead.acknowledgeAiDisclosure", "party.authenticate", "party.startIdentity", "lead.answer", "lead.requestRange", "lead.proceed", "party.linkLoan"]);   // 32.14 DELTA-11: the anonymous minute's tools act on the lead, never on a subject; DELTA-16: link-my-loan runs before the party has a subject
 export type TerminalState = "denied" | "withdrawn" | "closed_incomplete" | "rescinded" | "paid_in_full" | "transferred_out";
 
 /**

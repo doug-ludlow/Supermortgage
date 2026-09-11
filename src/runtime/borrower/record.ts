@@ -505,7 +505,7 @@ export class BorrowerRecordReader {
     return rows.map((m) => {
       const card = m.card_instance_id ? cards.get(m.card_instance_id) : undefined;
       const sender_label = m.sender === "agent" ? "Supermortgage" : m.sender === "notice" ? "Notice" : m.sender === "borrower" ? partyFirstName : m.sender === "human" ? humanLabel(m.sender_ref) : "Supermortgage";
-      return { message_id: m.message_id, conversation_id: m.conversation_id, at: m.at, sender: m.sender, sender_label, channel: m.channel, body_text: m.body_text, card_instance_id: m.card_instance_id, subject: { application_id: m.subject_application_id, loan_id: m.subject_loan_id }, voice_turn: m.voice_turn, delivery: { sent: true, delivered: true, read: m.sender === "borrower" },
+      return { message_id: m.message_id, conversation_id: m.conversation_id, at: m.at, sender: m.sender, sender_label, channel: m.channel, body_text: m.body_text, card_instance_id: m.card_instance_id, subject: { application_id: m.subject_application_id, loan_id: m.subject_loan_id }, voice_turn: m.voice_turn, delivery: { sent: true, delivered: true, read: m.sender === "borrower" }, copy_tokens: m.copy_tokens ?? null,
         ...(m.body_text === "{{copy:entry.disclosure.first}}" || m.body_text === "{{copy:entry.disclosure.real_person}}" ? { automation_marker: true } : {}),
         card: card ? { card_instance_id: card.card_instance_id, kind: card.kind, status: card.status, copy_key: card.copy_key, command_ref: card.command_ref, props: card.props, expires_at: card.expires_at, created_by: card.created_by, resolved_at: card.resolved_at } : null };
     });

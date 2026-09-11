@@ -19,6 +19,8 @@ export type DeepLinkTarget = { card_instance_id: string } | { document_id: strin
 export interface MessageRow {
   readonly message_id: string; readonly conversation_id: string; readonly at: string; readonly sender: "borrower" | "agent" | "human" | "notice" | "system"; readonly sender_ref: string | null; readonly channel: "app" | "sms" | "email" | "voice" | "mail";
   readonly body_text: string | null; readonly card_instance_id: string | null; readonly subject_application_id: string | null; readonly subject_loan_id: string | null; readonly external_ref: string | null; readonly voice_turn: boolean; readonly created_at: string;
+  /** 32.14 DELTA-11: the tokens a `{{copy:key}}` line renders with (the way cards carry theirs) — `entry.resumed`'s `answers`; null on every other line. */
+  readonly copy_tokens: Record<string, unknown> | null;
 }
 export interface DeepLinkRow { readonly token: string; readonly party_id: string; readonly target: DeepLinkTarget; readonly expires_at: string; readonly single_use: boolean; readonly created_for_message_id: string | null; readonly created_at: string; readonly used_at: string | null; }
 
@@ -42,12 +44,14 @@ export class PgBorrowerUiRepository {
   async setRetentionClass(conversationId: string, retentionClass: "sm_lead_36m" | "fnma_loan_file_life_plus_4y", q: Queryable = this.db): Promise<void> {
     await q.query(`UPDATE conversations SET retention_class = $2 WHERE conversation_id = $1`, [conversationId, retentionClass]);
     await q.query(`UPDATE card_instances SET retention_class = $2 WHERE conversation_id = $1`, [conversationId, retentionClass]);
+    // 32.14 §6.1 (DELTA-12): the party's OpenID Connect identities are promoted with the conversation's class
+    await q.query(`UPDATE oidc_identities SET retention_class = $2 WHERE party_id = (SELECT party_id FROM conversations WHERE conversation_id = $1)`, [conversationId, retentionClass]);
   }
 
-  async appendMessage(i: { message_id?: string; conversation_id: string; at: string; sender: "borrower" | "agent" | "human" | "notice" | "system"; sender_ref?: string | null; channel: "app" | "sms" | "email" | "voice" | "mail"; body_text?: string | null; card_instance_id?: string | null; subject_application_id?: string | null; subject_loan_id?: string | null; external_ref?: string | null; voice_turn?: boolean }, q: Queryable = this.db): Promise<string> {
+  async appendMessage(i: { message_id?: string; conversation_id: string; at: string; sender: "borrower" | "agent" | "human" | "notice" | "system"; sender_ref?: string | null; channel: "app" | "sms" | "email" | "voice" | "mail"; body_text?: string | null; card_instance_id?: string | null; subject_application_id?: string | null; subject_loan_id?: string | null; external_ref?: string | null; voice_turn?: boolean; copy_tokens?: Record<string, unknown> | null }, q: Queryable = this.db): Promise<string> {
     const id = i.message_id ?? randomUUID();
-    await q.query(`INSERT INTO messages (message_id, conversation_id, at, sender, sender_ref, channel, body_text, card_instance_id, subject_application_id, subject_loan_id, external_ref, voice_turn) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-      [id, i.conversation_id, i.at, i.sender, i.sender_ref ?? null, i.channel, i.body_text ?? null, i.card_instance_id ?? null, i.subject_application_id ?? null, i.subject_loan_id ?? null, i.external_ref ?? null, i.voice_turn ?? false]);
+    await q.query(`INSERT INTO messages (message_id, conversation_id, at, sender, sender_ref, channel, body_text, card_instance_id, subject_application_id, subject_loan_id, external_ref, voice_turn, copy_tokens) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)`,
+      [id, i.conversation_id, i.at, i.sender, i.sender_ref ?? null, i.channel, i.body_text ?? null, i.card_instance_id ?? null, i.subject_application_id ?? null, i.subject_loan_id ?? null, i.external_ref ?? null, i.voice_turn ?? false, i.copy_tokens ? toJson(i.copy_tokens) : null]);
     return id;
   }
 
@@ -73,7 +77,7 @@ export class PgBorrowerUiRepository {
   /** 02 §1.2 thread_messages: the conversation's messages after a cursor (message id or ISO instant), oldest first, paged. */
   async messagesAfter(conversationId: string, after: string | null, limit = 200, q: Queryable = this.db): Promise<MessageRow[]> {
     const rows = await q.query<MessageRow & Record<string, unknown>>(
-      `SELECT m.message_id, m.conversation_id, m.at, m.sender, m.sender_ref, m.channel, m.body_text, m.card_instance_id, m.subject_application_id, m.subject_loan_id, m.external_ref, m.voice_turn, m.created_at
+      `SELECT m.message_id, m.conversation_id, m.at, m.sender, m.sender_ref, m.channel, m.body_text, m.card_instance_id, m.subject_application_id, m.subject_loan_id, m.external_ref, m.voice_turn, m.created_at, m.copy_tokens
          FROM messages m WHERE m.conversation_id = $1
           AND ($2::uuid IS NULL OR (m.at, m.created_at, m.message_id) > (SELECT x.at, x.created_at, x.message_id FROM messages x WHERE x.message_id = $2))
           AND ($3::timestamptz IS NULL OR m.at > $3)
@@ -82,7 +86,7 @@ export class PgBorrowerUiRepository {
     return rows;
   }
   async message(id: string, q: Queryable = this.db): Promise<MessageRow | undefined> {
-    const rows = await q.query<MessageRow & Record<string, unknown>>(`SELECT message_id, conversation_id, at, sender, sender_ref, channel, body_text, card_instance_id, subject_application_id, subject_loan_id, external_ref, voice_turn, created_at FROM messages WHERE message_id = $1`, [id]);
+    const rows = await q.query<MessageRow & Record<string, unknown>>(`SELECT message_id, conversation_id, at, sender, sender_ref, channel, body_text, card_instance_id, subject_application_id, subject_loan_id, external_ref, voice_turn, created_at, copy_tokens FROM messages WHERE message_id = $1`, [id]);
     return rows[0];
   }
   /** A status transition: the row moves and the transition appends (evidence persisted on resolve). */

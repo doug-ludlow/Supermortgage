@@ -202,8 +202,42 @@ async function confirmFields(i: ToolInput, ctx: CommandContext, rt: ToolRuntime,
 }
 
 type Def = Omit<ToolDef, "process" | "agent">;
+/** DELTA-16: link-my-loan refused — one code for any mismatch, never which field (32.14 §2 S6). */
+export class LinkLoanRefused extends RangeError { readonly code = "LINK_LOAN_MISMATCH"; constructor() { super("LINK_LOAN_MISMATCH: the facts did not match a loan on file"); this.name = "LinkLoanRefused"; } }
+/** The tool strings spec/registry/agents.json names for a process (tools/extract_agents.py reads the spec's agent-design paragraphs; src/app/tools.test.ts refuses anything else on the bus). */
+export const specToolNames = (process: string): ReadonlySet<string> => { agentsFile ??= loadAgentsFile(); return new Set(agentsFile.processes.find((p) => p.process === process)?.tools ?? []); };
 const cmd = (name: string, kind: ToolDef["kind"], handler: (i: ToolInput, ctx: CommandContext, rt: ToolRuntime) => unknown | Promise<unknown>, extra: Partial<Def> = {}): Def =>
   ({ name, kind, handler: compute(handler), decision: decisionFor(name), ...extra });
+
+/**
+ * 32.14 DELTA-16 (docs/ux/15 §2 S6, §6): `party.linkLoan{loan_last4 | property_zip, ssn_last4, date_of_birth}` — a servicing-book
+ * borrower whose contact is not on file (a Google e-mail that created a new party) links their loan by facts only they would know:
+ * an exact match of every fact given against the book's own rows (borrowers ↔ loan_borrowers ↔ loans ↔ properties) sets
+ * `borrowers.party_id` on the matched rows and raises the party's live sessions to L2 (the same on-file facts /auth/l2 matches —
+ * 01 §5); any mismatch refuses `LINK_LOAN_MISMATCH` without saying which field (nothing is written). A borrower already linked to
+ * another party never re-links. Event `party.loan.linked{party_id, borrower_id, loan_id, matched_by, level}` on the loan.
+ *
+ * Defined beside 32.2's helpers; registered by section32-14.ts as a 32.14 tool (32.2's table keeps its 45) — and only once
+ * spec/registry/agents.json names `party.linkLoan` for 32.14 (src/app/tools.test.ts refuses an unlisted tool; tools/extract_agents.py
+ * reads the spec's agent-design paragraphs). Until then the API answers COMMAND_UNKNOWN and this definition waits here, exported.
+ */
+export const LINK_LOAN_DEF: Def = cmd("party.linkLoan", "write", async (i, ctx, rt) => {
+  const party_id = str(i, "party_id"); if (!party_id) throw new RangeError("party_id is required (the API states it from the session)");
+  const last4 = str(i, "ssn_last4"); const dob = str(i, "date_of_birth"); const loanLast4 = str(i, "loan_last4"); const zip = str(i, "property_zip").slice(0, 5);
+  if (!/^\d{4}$/.test(last4) || !/^\d{4}-\d{2}-\d{2}$/.test(dob) || (!/^\d{4}$/.test(loanLast4) && !/^\d{5}$/.test(zip))) throw new RangeError("loan_last4 (4 digits) or property_zip (5 digits), ssn_last4 (4 digits) and date_of_birth (YYYY-MM-DD) are required");
+  const rows = await dbOf(rt).query<{ borrower_id: string; loan_id: string; party_id: string | null }>(
+    `SELECT b.id AS borrower_id, l.id AS loan_id, b.party_id FROM borrowers b JOIN loan_borrowers lb ON lb.borrower_id = b.id JOIN loans l ON l.id = lb.loan_id JOIN properties p ON p.id = l.property_id
+       WHERE b.tin_last4 = $1 AND b.date_of_birth = $2::date AND (($3 <> '' AND right(l.servicer_loan_number, 4) = $3) OR ($4 <> '' AND left(p.postal_code, 5) = $4))`, [last4, dob, loanLast4, zip]);
+  const mine = rows.filter((r) => r.party_id === null || r.party_id === party_id);
+  if (!mine.length) throw new LinkLoanRefused();   // never which field (the API logs the attempt, never the values)
+  const now = ctx.now; const matched_by = loanLast4 ? "loan_last4" : "property_zip";
+  defer(rt, async (q) => {
+    for (const r of mine) await q.query(`UPDATE borrowers SET party_id = $2 WHERE id = $1 AND party_id IS NULL`, [r.borrower_id, party_id]);
+    await q.query(`UPDATE sessions SET level = 'L2' WHERE party_id = $1 AND revoked_at IS NULL AND expires_at > $2 AND level = 'L1'`, [party_id, now]);   // the session rises to L2
+  });
+  for (const r of mine) ctx.events.append({ type: "party.loan.linked", loanId: r.loan_id, actor: ctx.actor, payload: { party_id, borrower_id: r.borrower_id, loan_id: r.loan_id, matched_by, level: "L2", card_instance_id: cardId(i) } });
+  return ok("party.linkLoan", { party_id, loans: [...new Set(mine.map((r) => r.loan_id))], matched_by, level: "L2" });
+}, { guardrails: [never("LEVEL_REQUIRED", "01 §5: linking a loan starts from an L1 session", (i) => !levelAtLeast(i, "L1"), "an L1 session is required")] });
 
 // ---------------------------------------------------------------- the 45 commands (02 §2 order)
 export const TOOLS_32_2: readonly ToolDef[] = defineTools(PROCESS, BORROWER_APP, [
@@ -211,7 +245,7 @@ export const TOOLS_32_2: readonly ToolDef[] = defineTools(PROCESS, BORROWER_APP,
   cmd("lead.start", "act", async (i, ctx, rt) => {
     need(i, "partner_id", "partner_name");
     const lead_id = str(i, "lead_id") || randomUUID(); const interaction_id = str(i, "interaction_id") || randomUUID();
-    const created = await delegate(rt, ctx, "20.3", "deliverDisclosure", { op: "create", lead_id, partner_id: str(i, "partner_id"), partner_name: str(i, "partner_name"), channel: str(i, "lead_channel") || "organic", consumer_state: str(i, "consumer_state") || null, property_state: str(i, "property_state") || str(i, "consumer_state") || null, transaction_intent: str(i, "transaction_intent") || "undecided", party_id: str(i, "party_id") || null, source_touch_id: str(i, "utm_touch_id") || null, opportunity_id: str(i, "opportunity_id") || null, time_zone: str(i, "time_zone") || "America/New_York", utm: obj(i, "utm") }) as Record<string, unknown>;
+    const created = await delegate(rt, ctx, "20.3", "deliverDisclosure", { op: "create", lead_id, partner_id: str(i, "partner_id"), partner_name: str(i, "partner_name"), channel: str(i, "lead_channel") || "organic", consumer_state: str(i, "consumer_state") || null, property_state: str(i, "property_state") || str(i, "consumer_state") || null, transaction_intent: str(i, "transaction_intent") || "undecided", party_id: str(i, "party_id") || null, prospect: Object.keys(obj(i, "prospect")).length ? obj(i, "prospect") : null, source_touch_id: str(i, "utm_touch_id") || null, opportunity_id: str(i, "opportunity_id") || null, time_zone: str(i, "time_zone") || "America/New_York", utm: obj(i, "utm") }) as Record<string, unknown>;
     const started = await delegate(rt, ctx, "20.3", "deliverDisclosure", { op: "start", lead_id, interaction_id, channel: str(i, "channel") || "web_chat", ai: true }) as Record<string, unknown>;
     return ok("lead.start", { lead_id, interaction_id, status: created["status"], disclosure_required: started["disclosure_required"], co_preuse_notice: started["co_preuse_notice"] ?? null });
   }),
@@ -280,14 +314,15 @@ export const TOOLS_32_2: readonly ToolDef[] = defineTools(PROCESS, BORROWER_APP,
     return ok("consent.capture", { consent_id, kind: platformKind, status, scope, party_id, verification_email: kind === "esign" ? "NTC_ESIGN_VERIFICATION_EMAIL" : null, delegated: delegated ? Object.fromEntries(Object.entries(delegated).filter(([k]) => ["consent_id", "status", "scope", "authorization_id", "permissible_purpose"].includes(k))) : null });
   }, { guardrails: [NOT_VOICE("a consent"),
     never("AFFIRMATION_METHOD", "01 §3.5: esign / credit_authorization / autodraft_authorization need checkbox_with_text + typed name; ai_disclosure_ack a single tap", (i) => ["esign", "credit_authorization", "autodraft_authorization", "tcpa_voice", "tcpa_sms"].includes(str(i, "kind")) && str(i, "method") !== "" && str(i, "method") !== "checkbox_with_text", "this consent kind is affirmed by checkbox_with_text and a typed name")] }),
-  // credit.authorize → 20.3 captureConsent{credit_authorization}: `credit.authorization.captured{kind}`; L2 for a soft pull, L3 for a hard pull
+  // credit.authorize → 20.3 captureConsent{credit_authorization}: `credit.authorization.captured{kind}`; L2 for a soft pull, L3 for a hard pull —
+  // 32.14 DELTA-13 / 20.3 rule 2: a soft pull at L1 when the API states `consumer_entered_identity: true` (the consumer's own entry or confirmation of name, address, DOB and SSN on the application_borrowers row; never the client's claim)
   cmd("credit.authorize", "act", async (i, ctx, rt) => {
-    need(i, "kind", "lead_id", "text_hash"); const kind = str(i, "kind"); const authorization_id = str(i, "authorization_id") || randomUUID();
-    const r = await delegate(rt, ctx, "20.3", "captureConsent", { lead_id: str(i, "lead_id"), kind: "credit_authorization", authorization_id, authorization_kind: kind === "hard_pull" ? "hard_application" : "soft_prequal", party_id: str(i, "party_id") || null, text_version: str(i, "text_hash"), channel: "web_chat", end_user: "partner", evidence: { signature: str(i, "signature") || null, card_instance_id: cardId(i), ip: str(i, "ip") || null } }) as Record<string, unknown>;
-    ctx.events.append({ type: "credit.authorization.captured", actor: ctx.actor, payload: { kind, authorization_id, lead_id: str(i, "lead_id"), party_id: str(i, "party_id") || null, text_hash: str(i, "text_hash"), card_instance_id: cardId(i) } });
+    need(i, "kind", "lead_id", "text_hash"); const kind = str(i, "kind"); const authorization_id = str(i, "authorization_id") || randomUUID(); const entered = i.consumer_entered_identity === true;
+    const r = await delegate(rt, ctx, "20.3", "captureConsent", { lead_id: str(i, "lead_id"), kind: "credit_authorization", authorization_id, authorization_kind: kind === "hard_pull" ? "hard_application" : "soft_prequal", party_id: str(i, "party_id") || null, text_version: str(i, "text_hash"), channel: "web_chat", end_user: "partner", ...(entered ? { consumer_entered_identity: true } : {}), evidence: { signature: str(i, "signature") || null, card_instance_id: cardId(i), ip: str(i, "ip") || null, ...(entered ? { consumer_entered_identity: true } : {}) } }) as Record<string, unknown>;
+    ctx.events.append({ type: "credit.authorization.captured", actor: ctx.actor, payload: { kind, authorization_id, lead_id: str(i, "lead_id"), party_id: str(i, "party_id") || null, text_hash: str(i, "text_hash"), card_instance_id: cardId(i), consumer_entered_identity: entered, assurance_level: str(i, "assurance_level") || null } });
     const pulled = kind === "soft_pull" && i.order_pull !== false ? await delegate(rt, ctx, "20.3", "orderSoftPull", { lead_id: str(i, "lead_id"), requested_by: "consumer" }) as Record<string, unknown> : null;
-    return ok("credit.authorize", { kind, authorization_id, permissible_purpose: r["permissible_purpose"], soft_pull_requested: !!pulled });
-  }, { guardrails: [never("LEVEL_REQUIRED", "02 §2 credit.authorize: L2 (soft) / L3 (hard)", (i) => str(i, "kind") === "hard_pull" ? !levelAtLeast(i, "L3") : !levelAtLeast(i, "L2"), "a soft pull needs an L2 session and a hard pull an L3 session"),
+    return ok("credit.authorize", { kind, authorization_id, permissible_purpose: r["permissible_purpose"], soft_pull_requested: !!pulled, consumer_entered_identity: entered });
+  }, { guardrails: [never("LEVEL_REQUIRED", "02 §2 credit.authorize: L2 (soft) / L3 (hard); 32.14 DELTA-13 / 20.3 rule 2: L1 for a soft pull with the consumer's own entry of name, address, DOB and SSN (`consumer_entered_identity`, stated by the API)", (i) => str(i, "kind") === "hard_pull" ? !levelAtLeast(i, "L3") : !(levelAtLeast(i, "L2") || (i.consumer_entered_identity === true && levelAtLeast(i, "L1"))), "a soft pull needs an L2 session (or L1 with the consumer's own identity entry) and a hard pull an L3 session"),
     never("CREDIT_AUTHORIZATION_KIND", "02 §2: kind ∈ {soft_pull, hard_pull}", (i) => str(i, "kind") !== "" && !["soft_pull", "hard_pull"].includes(str(i, "kind")), "kind must be soft_pull or hard_pull"),
     never("SM_O21_JOINT_INTENT_GATE", "21.1 rule 4 / §1002.7(d)(1) — 32.5 §7: joint intent is affirmed by each borrower before their credit is ordered (the API states `joint_intent_required` / `joint_intent_affirmed` from 21.1's own record)", (i) => i.joint_intent_required === true && i.joint_intent_affirmed !== true, "this borrower has not affirmed joint intent — the ConsentCard{joint_intent} comes first")] }),
   // application.confirmField → 21.1 confirmPrefill (a six-item prefill) / captureField (any other path): the O2.1 rule-1 event

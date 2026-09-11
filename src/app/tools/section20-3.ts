@@ -15,8 +15,13 @@
  * pull without authorization; no decline language; no particular terms before MLO review; no demographic/marital/
  * childbearing questions; no document requests before the LE; no promises; truthful "are you human?"; the review is the
  * `mlo_of_record`'s act; a spoken E-SIGN "yes" is void.
+ *
+ * DELTA-11 / DELTA-13 (32.14, the anonymous minute): explainProgram gains `set_fact` (one rule-6 fact → `lead.goal.set` /
+ * `lead.state.set` / `lead.estimate.set`; anything else L0_FACTS_ONLY), `next_step`, `link_party` (`lead.linked{party_id}`),
+ * `show_range` (rule 7's published range as an advertisement through 20.2's checklist → `lead.range.shown`, or
+ * `{range: null, refused: RANGE_CONTENT_CHECK}`), `defer_intent` (`intent.deferred`) and `close` (`lead.closed{reason}`).
  */
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { defineTools, compute, never, needsRole, str, flag, type ToolDef, type ToolInput, type ToolRuntime } from "../tools.ts";
 import type { CommandContext } from "../commands.ts";
 import { completeHumanTransfer } from "../../domain/leads-pricing/ops-20-3.ts";   // 32.13 T-X-08 delta: `human.transfer.completed`
@@ -25,7 +30,8 @@ import type { PricingQuote, MloReview } from "../../domain/leads-pricing/ops-20-
 import { activeSheetAt, type RateSheet } from "../../domain/leads-pricing/ops-20-4.ts";
 import { type Lead, type LeadChannel, type InteractionChannel, type AuthMethod, type TridItemKey, type TridSource, type BenefitInput, IntakeRefused, createLead, startInteraction, deliverDisclosure, answerQuestion, answerAreYouHuman, transferToHuman, coPreuseNoticeRequired, deliverCoPreuseNotice, authenticate, requestOnFileData,
   informationalTcpaConsent, captureEsignConsent, completeEsignDemonstration, esignBeforeLeGate, esignGateFacts, leChannelFor, captureCreditAuthorization, orderSoftPull, receiveSoftPull, explainProgram, generalRateRange, screenUtterance, communicateDecline, requestDemographics, preApplicationCheck,
-  requestPrequalification, provideInformation, issuePrequalLetter, prequalLetterPayload, issuePreapprovalLetter, preapprovalLetterPayload, PREAPPROVAL_LETTER_TEMPLATE, type PrequalKind, recordTridItem, convertToApplication, requestDecision, expireLead, getBenefit, assignMlo, requestTermsReview, completeMloReview, presentTerms, leadDecisionRecord, PREQUAL_LETTER_TEMPLATE, civilDate } from "../../domain/leads-pricing/ops-20-3.ts";
+  requestPrequalification, provideInformation, issuePrequalLetter, prequalLetterPayload, issuePreapprovalLetter, preapprovalLetterPayload, PREAPPROVAL_LETTER_TEMPLATE, type PrequalKind, recordTridItem, convertToApplication, requestDecision, expireLead, getBenefit, assignMlo, requestTermsReview, completeMloReview, presentTerms, leadDecisionRecord, PREQUAL_LETTER_TEMPLATE, civilDate,
+  setFact, linkParty, showRange, deferIntent, closeLead, rangeAdvertisement, nextEntryStep, entryFacts, assertL0Fact, l0ProhibitedKeys, transactionTypeOf, GOAL_TRANSACTION_TYPES, PROGRAM_MAX_LTV_PCT, type EntryFact, type EntryTransactionType, type ContractStatus, type EntryOccupancy } from "../../domain/leads-pricing/ops-20-3.ts";
 
 /** Missing-input guard: a tool executed without its subject refuses with a RangeError (never a TypeError). */
 const need = (i: ToolInput, ...keys: string[]): void => { const gaps = keys.filter((k) => i[k] === undefined || i[k] === null || i[k] === ""); if (gaps.length) throw new RangeError(`20.3 tool needs ${gaps.join(", ")}`); };
@@ -36,6 +42,20 @@ const saveLead = (rt: ToolRuntime, ctx: CommandContext, lead: Lead): Lead => rt.
 const loadQuote = (i: ToolInput, rt: ToolRuntime): PricingQuote => { need(i, "quote_id"); const q = (i.quote as PricingQuote | undefined) ?? (rt.store.get("pricing_quotes", str(i, "quote_id"))?.data as unknown as PricingQuote | undefined); if (!q) throw new RangeError(`no pricing quote ${str(i, "quote_id")} (20.4 priceQuote first)`); return q; };
 const summary = (lead: Lead): Record<string, unknown> => ({ lead_id: lead.lead_id, status: lead.status, assurance_level: lead.assurance_level, application_id: lead.application_id, trid_application_at: lead.trid_application_at, expires_on: lead.expires_on });
 const textOf = (i: ToolInput): string => [str(i, "text"), str(i, "draft"), str(i, "question")].join(" ");
+/** DELTA-11: the `set_fact` input `{fact: {kind, …}}` (or `{step, value}`) → one typed rule-6 fact; cents arrive as decimal strings; the tile ids (buy / lower_rate / cash_out) map onto transaction types. */
+const entryFactIn = (i: ToolInput): EntryFact => {
+  const f = (i.fact && typeof i.fact === "object" && !Array.isArray(i.fact) ? i.fact : {}) as Record<string, unknown>;
+  const value = (i.value && typeof i.value === "object" && !Array.isArray(i.value) ? i.value : {}) as Record<string, unknown>;
+  const kind = assertL0Fact(String(f["kind"] ?? i.step ?? "")); const s = (k: string): string => String(f[k] ?? value[k] ?? (typeof i.value === "string" ? i.value : "")).trim();
+  const c = (k: string): string | null => { const v = f[k] ?? value[k]; return v === undefined || v === null || v === "" ? null : String(cents(v)); };
+  switch (kind) {
+    case "goal": { const g = s("transaction_intent") || s("goal") || s("transaction_type"); return { kind, transaction_intent: ((GOAL_TRANSACTION_TYPES as Record<string, EntryTransactionType>)[g] ?? g) as EntryTransactionType }; }
+    case "contract": return { kind, contract_status: s("contract_status") as ContractStatus };
+    case "occupancy": return { kind, occupancy: s("occupancy") as EntryOccupancy };
+    case "state": return { kind, consumer_state: s("consumer_state") || s("state") };
+    case "estimate": return { kind, value_estimate_cents: c("value_estimate_cents"), stated_existing_balance_cents: c("stated_existing_balance_cents"), price_range_cents: c("price_range_cents"), down_payment_cents: c("down_payment_cents") };
+  }
+};
 
 export const TOOLS_20_3: readonly ToolDef[] = defineTools("20.3", "intake", [
   // Rule 1 / T1, T9, T11, rule 12: the first-contact disclosure (state variant), the Colorado pre-use line, the truthful "are you human?" answer and the warm transfer.
@@ -89,6 +109,26 @@ export const TOOLS_20_3: readonly ToolDef[] = defineTools("20.3", "intake", [
       if (op === "general_rates") { const sheet = (i.sheet as RateSheet | undefined) ?? activeSheetAt(rt.store.list("rate_sheets").map((r) => r.data as unknown as RateSheet), when); if (!sheet) throw new RangeError("no rate sheet in force (20.4 publishRateSheet) — general information only, no figures"); return generalRateRange(sheet, str(i, "product_code") || "FRM30"); }
       if (op === "demographics") { const lead = loadLead(i, rt); return requestDemographics(lead); }
       const lead = loadLead(i, rt);
+      // DELTA-11 (32.14 S1): one rule-6 fact per call → `lead.goal.set` / `lead.state.set` / `lead.estimate.set`; anything else L0_FACTS_ONLY (guardrail + domain), nothing written
+      if (op === "set_fact") { const r = setFact(ctx.events, lead, entryFactIn(i), when); saveLead(rt, ctx, r.lead); const tt = transactionTypeOf(r.lead);
+        return { ...summary(r.lead), step: r.step, next_step: r.next_step, facts: entryFacts(r.lead), ...(r.step === "estimate" && tt ? { max_ltv_pct: PROGRAM_MAX_LTV_PCT[tt] } : {}), event_id: r.event.id }; }
+      if (op === "next_step") return { ...summary(lead), next_step: nextEntryStep(lead), facts: entryFacts(lead) };
+      // DELTA-11 (32.14 S3): the L1 link at verify — `lead.linked{party_id}`; the lead is linked, never copied
+      if (op === "link_party") { need(i, "party_id"); const r = linkParty(ctx.events, lead, { party_id: str(i, "party_id"), at: when, method: str(i, "method") || null, session_id: str(i, "session_id") || null }); saveLead(rt, ctx, r.lead); return { ...summary(r.lead), party_id: r.lead.party_id, event_id: r.event.id }; }
+      // DELTA-11 (32.14 S2): rule 7's published range as an advertisement (APR beside each rate, the not-a-commitment footer) through 20.2's checklist → `lead.range.shown`, or `{range: null, refused: RANGE_CONTENT_CHECK}`
+      if (op === "show_range") { const sheet = (i.sheet as RateSheet | undefined) ?? activeSheetAt(rt.store.list("rate_sheets").map((r) => r.data as unknown as RateSheet), when); if (!sheet) throw new RangeError("no rate sheet in force (20.4 publishRateSheet) — general information only, no figures");
+        const partner_nmlsr_id = str(i, "partner_nmlsr_id") || String(rt.store.get("partners", lead.partner_id)?.data["nmlsr_id"] ?? "");
+        const ad = rangeAdvertisement(sheet, { product_code: str(i, "product_code") || "FRM30", partner_name: lead.partner_name, partner_nmlsr_id, at: when, time_zone: lead.time_zone, ...(i.representative_loan_cents !== undefined && i.representative_loan_cents !== null ? { representative_loan_cents: cents(i.representative_loan_cents) } : {}) });
+        const checklist_run_id = str(i, "checklist_run_id") || randomUUID();
+        rt.store.put("content_checklist_runs", checklist_run_id, { checklist_run_id, lead_id: lead.lead_id, rate_sheet_id: sheet.rate_sheet_id, product_code: ad.product_code, channel: "portal", campaign_kind: "general_advertising", text: ad.text, checklist: ad.checklist, failures: [...ad.failures], passes: ad.passes, apr_source: ad.apr_source, representative_loan_cents: String(ad.representative_loan_cents), at: when }, ctx.actor, ctx.now);
+        const range = { product_code: ad.product_code, product_label: ad.product_label, low_pct: ad.low_pct, high_pct: ad.high_pct, apr_low_pct: ad.apr_low_pct, apr_high_pct: ad.apr_high_pct, apr_source: ad.apr_source, rate_sheet_id: sheet.rate_sheet_id, text: ad.text, checklist_run_id, personal_terms: false as const };
+        if (!ad.passes) return { ...summary(lead), range: null, refused: "RANGE_CONTENT_CHECK", failures: [...ad.failures], checklist_run_id, checklist: ad.checklist, event_id: null };
+        const r = showRange(ctx.events, lead, { at: when, product_code: range.product_code, rate_sheet_id: range.rate_sheet_id, low_pct: range.low_pct, high_pct: range.high_pct, apr_low_pct: range.apr_low_pct, apr_high_pct: range.apr_high_pct, apr_source: range.apr_source, checklist_run_id }); saveLead(rt, ctx, r.lead);
+        return { ...summary(r.lead), range, refused: null, failures: [], checklist_run_id, checklist: ad.checklist, event_id: r.event.id }; }
+      // DELTA-13 (32.14 S4): "Not yet" — `intent.deferred`; nothing ordered, pulled or converted
+      if (op === "defer_intent") { const r = deferIntent(ctx.events, lead, { at: when, reason: str(i, "reason") || null }); saveLead(rt, ctx, r.lead); return { ...summary(r.lead), deferred: true, ordered: false, pulled: false, document: null, event_id: r.event.id }; }
+      // 31.1 closed a state on the lead (32.14 S1 (i)) or the consumer walked away: `lead.closed{reason}` → closed_lost
+      if (op === "close") { need(i, "reason"); const r = closeLead(ctx.events, lead, { at: when, reason: str(i, "reason") }); saveLead(rt, ctx, r.lead); return { ...summary(r.lead), closed_reason: r.lead.closed_reason, event_id: r.event.id }; }
       if (op === "screen") { need(i, "interaction_id", "draft"); const pre = preApplicationCheck(str(i, "draft")); if (!pre.allowed) throw new IntakeRefused(pre.findings[0]!.code.toUpperCase(), `${pre.findings[0]!.citation}: "${pre.findings[0]!.excerpt}" is never asked before application`);
         const r = screenUtterance(ctx.events, lead, { interaction_id: str(i, "interaction_id"), draft: str(i, "draft"), at: when, ...(i.value_cents !== undefined ? { value_cents: cents(i.value_cents) } : {}), ...(i.max_ltv_pct !== undefined ? { max_ltv_pct: Number(i.max_ltv_pct) } : {}) }); saveLead(rt, ctx, r.lead); return { ...summary(r.lead), blocked: r.blocked, matches: r.matches, delivered_text: r.delivered_text, regb_decline_risk_flag: false }; }
       if (op === "communicate_decline") return communicateDecline(ctx.events, lead, { at: when, ...(str(i, "interaction_id") ? { interaction_id: str(i, "interaction_id") } : {}) });
@@ -119,8 +159,9 @@ export const TOOLS_20_3: readonly ToolDef[] = defineTools("20.3", "intake", [
         const r = op === "convert" ? convertToApplication(ctx.events, lead, c) : requestDecision(ctx.events, lead, c); saveLead(rt, ctx, r.lead); return { ...summary(r.lead), application_id: r.application.id, application_date: r.application_date, trid_application_date: r.trid_application_date, le_due_on: r.le_due_on, decision_due_on: r.decision_due_on, next: "21.1 (1003 interview, demographic request) / 21.2 (LE) / 21.6 (decision)" }; }
       if (op === "expire") { need(i, "on"); const r = expireLead(ctx.events, lead, { on: D(str(i, "on")) }); saveLead(rt, ctx, r.lead); return { ...summary(r.lead), purged: r.purged, retained: r.retained }; }
       if (op === "decision_record") { need(i, "interaction_id"); return leadDecisionRecord(lead, str(i, "interaction_id"), str(i, "rationale") || "intake decision record"); }
-      throw new RangeError(`explainProgram op ${op} is not one of criteria/general_rates/screen/communicate_decline/demographics/request_prequal/provide_information/issue_letter/issue_preapproval_letter/record_trid_item/convert/request_decision/expire/decision_record`); }),
-    guardrails: [never("REGB_1002_2F_NO_PREQUAL_DECLINE_GATE", "12 CFR 1002.2(f) comment 2(f)-3; 20.3 rule 3: the agent may never say the consumer does not qualify, would be denied or cannot get the loan — communicateDecline exists only to fail loudly and route to conversion", (i) => str(i, "op") === "communicate_decline" && flag(i, "force"), "a decline is 21.6's adverse action after application.received — never an intake utterance"),
+      throw new RangeError(`explainProgram op ${op} is not one of criteria/general_rates/screen/communicate_decline/demographics/set_fact/next_step/link_party/show_range/defer_intent/close/request_prequal/provide_information/issue_letter/issue_preapproval_letter/record_trid_item/convert/request_decision/expire/decision_record`); }),
+    guardrails: [never("L0_FACTS_ONLY", "20.3 rule 6 / 32.14 guardrails: no name, contact, income, SSN or prohibited inquiry on a lead without a party", (i) => str(i, "op") === "set_fact" && l0ProhibitedKeys(i).length > 0, "only goal, contract status, occupancy, state and the consumer's own estimates are lead facts before a session — nothing was written"),
+      never("REGB_1002_2F_NO_PREQUAL_DECLINE_GATE", "12 CFR 1002.2(f) comment 2(f)-3; 20.3 rule 3: the agent may never say the consumer does not qualify, would be denied or cannot get the loan — communicateDecline exists only to fail loudly and route to conversion", (i) => str(i, "op") === "communicate_decline" && flag(i, "force"), "a decline is 21.6's adverse action after application.received — never an intake utterance"),
       never("NO_DEMOGRAPHIC_AT_LEAD", "12 CFR 1002.5(b), 1002.13; HMDA App. B; 20.3 rule 6: demographic information is requested only at application (21.1)", (i) => str(i, "op") === "demographics" || /\b(race|ethnicity|national origin|religion|gender)\b/i.test(textOf(i)), "the §1002.13 request exists only in 21.1 — unavailable at lead stage"),
       never("NO_MARITAL_CHILDBEARING_INQUIRY", "12 CFR 1002.5(d)(1)–(3); 20.3 rule 6", (i) => /\b(divorc|widow|pregnan|plan(?:ning)? (?:to have|on) (?:children|kids)|alimony|child support|separate maintenance)/i.test(textOf(i)), "marital status beyond married/unmarried/separated, childbearing and alimony/child-support questions are never asked pre-application"),
       never("NO_DOCUMENTS_BEFORE_LE", "12 CFR 1026.19(e)(2)(iii); 20.3 rule 6", (i) => /\b(upload|send|provide|attach)\b.*\b(pay ?stubs?|w-?2s?|tax returns?|bank statements?)\b/i.test(textOf(i)), "no document requests before the Loan Estimate"),

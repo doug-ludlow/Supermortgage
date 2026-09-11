@@ -4,8 +4,8 @@ import type { Db } from "../infra/db/client.ts";
 import { toJson, isUuid } from "../infra/db/client.ts";
 import type { TimerRegistry } from "../kernel/timers/index.ts";
 import type { AgentRegistry } from "../app/agents.ts";
-import type { ConsoleStore, QueueItem, LoanSummary, LoanDetail, Dashboard, AccessEntry } from "./store.ts";
-import { queueKindsFor } from "./store.ts";
+import type { ConsoleStore, QueueItem, LoanSummary, LoanDetail, Dashboard, AccessEntry, Funnel } from "./store.ts";
+import { queueKindsFor, FUNNEL_STAGES, funnelRows } from "./store.ts";
 
 type Row = Record<string, unknown>;
 const s = (v: unknown): string => (v === null || v === undefined ? "" : String(v));
@@ -110,5 +110,10 @@ export class PgConsoleStore implements ConsoleStore {
   }
   async logAccess(e: AccessEntry): Promise<void> {
     await this.db.query(`INSERT INTO access_log (table_name, actor_kind, actor_id, purpose) VALUES ('ops_console', $1, $2, $3)`, [e.actor.kind, e.actor.id, `${e.method} ${e.path}${e.purpose ? ` — ${e.purpose}` : ""}`]);
+  }
+  /** 32.14 T18: the funnel — one count per stage from `loan_events` alone (no lead row, no UI table), events that occurred in [from, to). */
+  async funnel(range: { from: string; to: string }): Promise<Funnel> {
+    const rows = await this.db.query<Row>(`SELECT type, count(*)::text AS n FROM loan_events WHERE type = ANY($1::text[]) AND occurred_at >= $2::timestamptz AND occurred_at < $3::timestamptz GROUP BY type`, [[...FUNNEL_STAGES], range.from, range.to]);
+    return { from: range.from, to: range.to, stages: funnelRows(new Map(rows.map((r) => [s(r["type"]), Number(r["n"])]))) };
   }
 }

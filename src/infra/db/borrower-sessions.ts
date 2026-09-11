@@ -10,14 +10,17 @@ import type { Queryable } from "./client.ts";
 import { toJson } from "./client.ts";
 
 export type SessionLevel = "L1" | "L2" | "L3";
-export type AuthMethod = "otp_phone" | "otp_email" | "passkey";
+/** 32.14 §3: `oidc_google` (DELTA-12) is an L1 session opened without a code — `last_l1_at` stays null, the fresh-L1 rule is unchanged. */
+export type AuthMethod = "otp_phone" | "otp_email" | "passkey" | "oidc_google";
 export interface SessionRow {
   readonly session_id: string; readonly party_id: string; readonly level: SessionLevel; readonly auth_method: AuthMethod; readonly created_at: string; readonly last_seen_at: string;
   readonly last_l1_at: string | null; readonly expires_at: string; readonly revoked_at: string | null; readonly passkey_id: string | null; readonly ip: string | null; readonly user_agent: string | null;
 }
 export interface ChallengeRow {
-  readonly challenge_id: string; readonly kind: "otp" | "passkey_registration" | "passkey_assertion"; readonly party_id: string | null; readonly session_id: string | null; readonly channel: "sms" | "email" | null;
+  readonly challenge_id: string; readonly kind: "otp" | "passkey_registration" | "passkey_assertion" | "oidc"; readonly party_id: string | null; readonly session_id: string | null; readonly channel: "sms" | "email" | null;
   readonly destination: string | null; readonly code_hash: string | null; readonly challenge: string | null; readonly delivery: string | null; readonly delivery_ref: string | null; readonly attempts: number; readonly created_at: string; readonly expires_at: string; readonly consumed_at: string | null;
+  /** 32.14 DELTA-12 (kind = oidc): the identity provider, the id-token nonce and sha256 of the PKCE verifier; `challenge` carries the OAuth `state`, `destination` the redirect URI. */
+  readonly provider: string | null; readonly nonce: string | null; readonly code_verifier_hash: string | null;
 }
 export interface PasskeyRow {
   readonly passkey_id: string; readonly party_id: string; readonly credential_id: string; readonly public_key_jwk: Record<string, unknown>; readonly algorithm: number; readonly sign_count: bigint; readonly transports: readonly string[];
@@ -31,7 +34,7 @@ export const hashToken = (token: string): string => sha256hex(token);
 export const hashCode = (challengeId: string, code: string): string => sha256hex(`${challengeId}:${code}`);
 
 const SESSION_COLS = "session_id, party_id, level, auth_method, created_at, last_seen_at, last_l1_at, expires_at, revoked_at, passkey_id, ip, user_agent";
-const CHALLENGE_COLS = "challenge_id, kind, party_id, session_id, channel, destination, code_hash, challenge, delivery, delivery_ref, attempts, created_at, expires_at, consumed_at";
+const CHALLENGE_COLS = "challenge_id, kind, party_id, session_id, channel, destination, code_hash, challenge, delivery, delivery_ref, attempts, created_at, expires_at, consumed_at, provider, nonce, code_verifier_hash";
 const PASSKEY_COLS = "passkey_id, party_id, credential_id, public_key_jwk, algorithm, sign_count, transports, attestation_format, created_at, last_used_at, revoked_at";
 
 export class PgBorrowerSessionRepository {
@@ -77,16 +80,21 @@ export class PgBorrowerSessionRepository {
   }
 
   // ───────────────────────────── challenges
-  async createChallenge(i: { kind: ChallengeRow["kind"]; party_id?: string | null; session_id?: string | null; channel?: "sms" | "email" | null; destination?: string | null; code?: string | null; challenge?: string | null; delivery?: string | null; delivery_ref?: string | null; expires_at: string }, q: Queryable = this.db): Promise<ChallengeRow> {
-    const id = randomUUID();
+  async createChallenge(i: { challenge_id?: string; kind: ChallengeRow["kind"]; party_id?: string | null; session_id?: string | null; channel?: "sms" | "email" | null; destination?: string | null; code?: string | null; challenge?: string | null; delivery?: string | null; delivery_ref?: string | null; expires_at: string; provider?: string | null; nonce?: string | null; code_verifier_hash?: string | null }, q: Queryable = this.db): Promise<ChallengeRow> {
+    const id = i.challenge_id ?? randomUUID();
     const rows = await q.query<ChallengeRow & Record<string, unknown>>(
-      `INSERT INTO auth_challenges (challenge_id, kind, party_id, session_id, channel, destination, code_hash, challenge, delivery, delivery_ref, expires_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING ${CHALLENGE_COLS}`,
-      [id, i.kind, i.party_id ?? null, i.session_id ?? null, i.channel ?? null, i.destination ?? null, i.code ? hashCode(id, i.code) : null, i.challenge ?? null, i.delivery ?? null, i.delivery_ref ?? null, i.expires_at]);
+      `INSERT INTO auth_challenges (challenge_id, kind, party_id, session_id, channel, destination, code_hash, challenge, delivery, delivery_ref, expires_at, provider, nonce, code_verifier_hash)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING ${CHALLENGE_COLS}`,
+      [id, i.kind, i.party_id ?? null, i.session_id ?? null, i.channel ?? null, i.destination ?? null, i.code ? hashCode(id, i.code) : null, i.challenge ?? null, i.delivery ?? null, i.delivery_ref ?? null, i.expires_at, i.provider ?? null, i.nonce ?? null, i.code_verifier_hash ?? null]);
     return rows[0]!;
   }
   async challenge(id: string, q: Queryable = this.db): Promise<ChallengeRow | undefined> {
     const rows = await q.query<ChallengeRow & Record<string, unknown>>(`SELECT ${CHALLENGE_COLS} FROM auth_challenges WHERE challenge_id = $1`, [id]);
+    return rows[0];
+  }
+  /** 32.14 DELTA-12: the oidc challenge an OAuth `state` names (the provider's callback carries the state, never the challenge id). */
+  async oidcChallengeByState(provider: string, state: string, q: Queryable = this.db): Promise<ChallengeRow | undefined> {
+    const rows = await q.query<ChallengeRow & Record<string, unknown>>(`SELECT ${CHALLENGE_COLS} FROM auth_challenges WHERE kind = 'oidc' AND provider = $1 AND challenge = $2 ORDER BY created_at DESC LIMIT 1`, [provider, state]);
     return rows[0];
   }
   async bumpAttempts(id: string, q: Queryable = this.db): Promise<number> {

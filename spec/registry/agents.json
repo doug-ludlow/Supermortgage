@@ -1853,6 +1853,7 @@
     "lead.answer",
     "lead.requestRange",
     "lead.proceed",
+    "party.linkLoan",
     "lead.start",
     "lead.acknowledgeAiDisclosure",
     "party.authenticate",
@@ -6028,7 +6029,8 @@
    "tools": [
     "lead.answer",
     "lead.requestRange",
-    "lead.proceed"
+    "lead.proceed",
+    "party.linkLoan"
    ],
    "guardrails": "`L0_FACTS_ONLY` (no name, contact, income, SSN or prohibited inquiry on a lead without a party), `RANGE_IS_PUBLISHED` (the range is the sheet's low\u2013high; no tier, no LLPA, no borrower figure), `NO_RATE_BEFORE_MLO_REVIEW` (existing, on `send_card{personal_terms}`), `STATE_GATE_FIRST` (no range and no identity ask while `licensing.gate.blocked`), `CONSENT_VOICE_VOID` (existing). The agent proposes nothing and computes no regulatory date; every decision row names the lead id and the step (32.2's decision shape). Escalates to `human_agent` on \"human\" (existing 20.3 `transferToHuman`, SLA 10 s) and",
    "escalates_to": [

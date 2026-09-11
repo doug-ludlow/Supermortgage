@@ -46,3 +46,64 @@ resource "google_secret_manager_secret_version" "api_token" {
   secret      = google_secret_manager_secret.api_token.id
   secret_data = local.api_token
 }
+
+# 32.14 DELTA-12 — Sign in with Google. The OAuth client (docs/DEPLOY.md "Sign in
+# with Google") is created by hand in the Google Cloud console; its id and secret
+# are set by hand as new versions of these two secrets. Terraform writes a
+# placeholder first version so the Cloud Run revision can start before the client
+# exists (a secret without any version fails the revision); the runtime treats the
+# placeholder as "not configured" and keeps the FAKE provider.
+resource "google_secret_manager_secret" "google_oauth_client_id" {
+  secret_id = "supermortgage-google-oauth-client-id"
+
+  replication {
+    auto {}
+  }
+
+  labels = local.labels
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_secret_manager_secret_version" "google_oauth_client_id" {
+  secret      = google_secret_manager_secret.google_oauth_client_id.id
+  secret_data = "unset"
+
+  lifecycle {
+    ignore_changes = [secret_data]
+  }
+}
+
+resource "google_secret_manager_secret" "google_oauth_client_secret" {
+  secret_id = "supermortgage-google-oauth-client-secret"
+
+  replication {
+    auto {}
+  }
+
+  labels = local.labels
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_secret_manager_secret_version" "google_oauth_client_secret" {
+  secret      = google_secret_manager_secret.google_oauth_client_secret.id
+  secret_data = "unset"
+
+  lifecycle {
+    ignore_changes = [secret_data]
+  }
+}
+
+# Per-secret access for the API runtime only (the borrower app never sees the client secret).
+resource "google_secret_manager_secret_iam_member" "runtime_google_oauth_client_id" {
+  secret_id = google_secret_manager_secret.google_oauth_client_id.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.runtime.email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "runtime_google_oauth_client_secret" {
+  secret_id = google_secret_manager_secret.google_oauth_client_secret.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.runtime.email}"
+}

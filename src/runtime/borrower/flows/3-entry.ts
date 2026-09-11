@@ -33,11 +33,12 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Actor, DomainEvent } from "../../../kernel/events/index.ts";
 import { EntityStore } from "../../../app/tools.ts";
-import { quoteValidAt } from "../../../domain/leads-pricing/ops-20-4.ts";
+import { quoteValidAt, DISCLAIMER_TEMPLATE, DISCLAIMER_STATEMENT } from "../../../domain/leads-pricing/ops-20-4.ts";
 import { esignVerificationToken } from "../../../app/tools/section32-2.ts";
 import { deliverLoanEstimate, type LoanEstimateDeliveryInput } from "../../origination.ts";
 import type { Runtime } from "../../app.ts";
 import { timerLabel } from "../record.ts";
+import { leadCarriesGoal } from "./14-entry-lead.ts";
 import type { BorrowerFlow, FlowDeps, FlowReply, InboundMessage, SessionOpened } from "./index.ts";
 
 export const FLOW_ID = "32.3";
@@ -142,9 +143,19 @@ async function say(deps: FlowDeps, ctx: Ctx, party: Party, copy_key: string, ext
 }
 const exec = (deps: FlowDeps, appId: string | null, process: string, name: string, actor: Actor, input: P) => deps.runtime.execute({ process, name, loanId: "", ...(appId ? { applicationId: appId } : {}), actor, input, run: { ...RUN } });
 const prefillOf = (party: Party, key: string): { value: string; source: string } | null => { const p = party.prefill?.[key] as { value?: unknown; source?: unknown } | undefined; return p && p.value !== undefined && p.value !== null ? { value: String(p.value), source: typeof p.source === "string" ? p.source : "borrower" } : null; };
-const partnerOf = async (deps: FlowDeps): Promise<{ id: string; legal_name: string }> => (await deps.runtime.db.query<{ id: string; legal_name: string }>(`SELECT id, legal_name FROM parties WHERE party_type = 'servicer' ORDER BY created_at DESC LIMIT 1`))[0] ?? { id: "partner-FAKE", legal_name: "Partner Bank" };
+/** 32.14 DELTA-15: the Phase I partner from configuration (`BORROWER_DEFAULT_PARTNER_ID` → a parties row); only when it is unset, the newest servicer party. Never an invented partner: null when neither exists (the lead is not started). */
+export const partnerOf = async (deps: FlowDeps): Promise<{ id: string; legal_name: string } | null> => {
+  const configured = deps.defaultPartnerId?.trim();
+  if (configured) {
+    const row = (await deps.runtime.db.query<{ id: string; legal_name: string }>(`SELECT id, legal_name FROM parties WHERE id::text = $1`, [configured]))[0];
+    if (!row) deps.logger?.error("borrower.flow.32-3.partner.unknown", { default_partner_id: configured });
+    return row ?? null;
+  }
+  return (await deps.runtime.db.query<{ id: string; legal_name: string }>(`SELECT id, legal_name FROM parties WHERE party_type = 'servicer' ORDER BY created_at DESC LIMIT 1`))[0] ?? null;
+};
 const CHANNEL_20_3: Record<string, string> = { app: "web_chat", sms: "sms", voice: "voice_inbound" };
-const AUTH_20_3: Record<string, string> = { otp_phone: "otp_phone", otp_email: "otp_email", passkey: "passkey" };
+/** The session's auth method as 20.3's `authenticate{method}` (32.2 `party.authenticate` maps the platform's names); `oidc_google` (32.14 DELTA-12) is L1 like a code. */
+const AUTH_20_3: Record<string, string> = { otp_phone: "otp_phone", otp_email: "otp_email", passkey: "passkey", oidc_google: "oidc_google" };
 const cents = (v: unknown): string | null => (v === undefined || v === null || v === "" ? null : typeof v === "bigint" ? v.toString() : String(v));
 
 // ---------------------------------------------------------------- E1/E2/E4: the session hook (every channel; the disclosure first)
@@ -162,13 +173,16 @@ async function sessionOpened(deps: FlowDeps, s: SessionOpened): Promise<void> {
   const interaction_id = randomUUID(); const channel = CHANNEL_20_3[s.channel] ?? "web_chat";
   if (app?.channel === "refi_trigger" && !existing) return;   // 20.1/20.2's lead: 20.3 delivered the disclosure on its own interaction (the journey); this session's line is the spoken/typed repeat only
   try {
-    if (!existing) await exec(deps, appId, "32.2", "lead.start", BORROWER_APP, { partner_id: partner.id, partner_name: partner.legal_name, party_id: s.party_id, lead_id, interaction_id, channel, lead_channel: app?.channel === "refi_trigger" ? "organic" : (app?.channel ?? "organic"), consumer_state: app?.consumer_state ?? null, time_zone: "America/New_York", session_id: s.session_id });
+    if (!existing && !partner) throw new Error("no partner: BORROWER_DEFAULT_PARTNER_ID is unset and no servicer party exists (32.14 DELTA-15)");
+    if (!existing) await exec(deps, appId, "32.2", "lead.start", BORROWER_APP, { partner_id: partner!.id, partner_name: partner!.legal_name, party_id: s.party_id, lead_id, interaction_id, channel, lead_channel: app?.channel === "refi_trigger" ? "organic" : (app?.channel ?? "organic"), consumer_state: app?.consumer_state ?? null, time_zone: "America/New_York", session_id: s.session_id });
     else await exec(deps, appId, "20.3", "deliverDisclosure", INTAKE, { op: "start", lead_id, interaction_id, channel, ai: true });
     // E2: `lead.disclosure.delivered` + `consent.ai_disclosure.acknowledged` — logged on the render, no tap
     await exec(deps, appId, "32.2", "lead.acknowledgeAiDisclosure", BORROWER_APP, { lead_id, interaction_id, notice_id: `n-disc-${interaction_id.slice(0, 8)}`, party_id: s.party_id });
     // E4: `lead.authenticated{level=L1}` — the session itself is the API's (01 §5)
     await exec(deps, appId, "32.2", "party.authenticate", BORROWER_APP, { lead_id, method: AUTH_20_3[s.auth_method] ?? "otp_email", session_id: s.session_id, party_id: s.party_id });
   } catch (e) { deps.logger?.error("borrower.flow.32-3.session", { party_id: s.party_id, error: e instanceof Error ? e.message : String(e) }); }
+  // 32.14 DELTA-11: a session opened on a lead cookie whose lead already carries a goal gets `entry.resumed` from flows/14-entry-lead.ts instead of the goal card
+  if (s.lead_id && (await leadCarriesGoal(deps, s.lead_id))) return;
   // E3: the goal ChoiceCard for an application the lead opened itself (a refi-trigger lead arrives with its goal — 20.1/20.3 convert)
   if (appId && app && app.channel !== "refi_trigger") {
     const ctx = await context(deps, appId);
@@ -362,7 +376,8 @@ async function presentTerms(deps: FlowDeps, ctx: Ctx, e: DomainEvent): Promise<v
 async function termsPresentedCards(deps: FlowDeps, ctx: Ctx, e: DomainEvent): Promise<void> {
   const p = pl(e); const quoteId = String(p["quote_id"]); const q = ctx.store.get("pricing_quotes", quoteId)?.data as P | undefined;
   const rate = q ? `${String(q["note_rate_pct"] ?? q["note_rate"] ?? "")}%` : "";
-  await sendToAll(deps, ctx, StatusCard("terms.presented", `terms.presented:${quoteId}`, { quote_id: quoteId, note_rate_pct: q?.["note_rate_pct"] ?? null, pi_cents: cents(q?.["pi_cents"]), copy_tokens: { "mlo.name": String(p["mlo_name"] ?? ""), "mlo.nmlsr_id": String(p["nmlsr_id"] ?? ""), rate } }, true));
+  // 32.14 DELTA-13: the card carries the review it rests on, the attribution ("reviewed by {{mlo.name}}, NMLSR ID {{mlo.nmlsr_id}}") and 20.4's written-quote disclaimer block (REGZ_1026_19E2II_QUOTE_DISCLAIMER_GATE's statement) — the borrower reads a reviewed estimate, never a commitment
+  await sendToAll(deps, ctx, StatusCard("terms.presented", `terms.presented:${quoteId}`, { quote_id: quoteId, note_rate_pct: q?.["note_rate_pct"] ?? null, pi_cents: cents(q?.["pi_cents"]), mlo_review_id: p["mlo_review_id"] ?? null, mlo_review_approved: true, attribution: String(p["attribution"] ?? ""), disclaimer: { template: String(p["disclaimer_template"] ?? DISCLAIMER_TEMPLATE), statement: DISCLAIMER_STATEMENT }, copy_tokens: { "mlo.name": String(p["mlo_name"] ?? ""), "mlo.nmlsr_id": String(p["nmlsr_id"] ?? ""), rate } }, true));
   // P9: a listing that waited for this review now gets its estimate on the reviewed quote
   const pending = await deps.runtime.db.query<{ card_instance_id: string; party_id: string; props: P }>(`SELECT card_instance_id, party_id, props FROM card_instances WHERE subject_application_id = $1 AND props->>'flow_key' LIKE 'listing.pending:%' AND props->>'quote_id' = $2`, [ctx.appId, quoteId]);
   for (const row of pending) { const party = ctx.parties.find((x) => x.party_id === row.party_id); if (party && q) await listingEstimateCard(deps, ctx, party, String(row.props["listing_address"] ?? ""), String(row.props["listing_price_cents"] ?? ""), q); }

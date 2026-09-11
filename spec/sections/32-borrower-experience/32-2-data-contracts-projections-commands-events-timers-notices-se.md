@@ -186,7 +186,7 @@ Every row above is a bare reference (empty trigger, anchor, offset and satisfied
 
 Jurisdiction overrides: none — `jurisdiction_rules` drives copy only (Business rules §8).
 
-Names the UX uses as timers that are not registry codes (backend delta; listed without backticks so nothing registers them): SM_QC_PREFUNDING_HOLD (32.6), FNMA_NIB_BALANCE_NOTICE (32.12), NO_RATE_BEFORE_MLO_REVIEW (32.14), BORROWER_DEFAULT_PARTNER_ID (32.14), SUBJECT_FREE_COMMANDS (32.14), FAKE_SERVICER_CONTACT (32.14), RANGE_CONTENT_CHECK (32.14), LEVEL_REQUIRED (32.14), OIDC_EMAIL_UNVERIFIED (32.14), AUTH_ROUTES (32.14), BORROWER_ORIGINS (32.14), L0_FACTS_ONLY (32.14), RANGE_IS_PUBLISHED (32.14), STATE_GATE_FIRST (32.14), CONSENT_VOICE_VOID (32.14), AUTH_20_3 (32.14), COPY_KEY_COUNT (32.14), FRESH_L1_REQUIRED (32.14), OIDC_INVALID (32.14).
+Names the UX uses as timers that are not registry codes (backend delta; listed without backticks so nothing registers them): SM_QC_PREFUNDING_HOLD (32.6), FNMA_NIB_BALANCE_NOTICE (32.12), OIDC_EMAIL_UNVERIFIED (32.13), OIDC_INVALID (32.13), NO_RATE_BEFORE_MLO_REVIEW (32.14), BORROWER_DEFAULT_PARTNER_ID (32.14), SUBJECT_FREE_COMMANDS (32.14), FAKE_SERVICER_CONTACT (32.14), RANGE_CONTENT_CHECK (32.14), LEVEL_REQUIRED (32.14), AUTH_ROUTES (32.14), BORROWER_ORIGINS (32.14), L0_FACTS_ONLY (32.14), RANGE_IS_PUBLISHED (32.14), STATE_GATE_FIRST (32.14), CONSENT_VOICE_VOID (32.14), AUTH_20_3 (32.14), COPY_KEY_COUNT (32.14), FRESH_L1_REQUIRED (32.14).
 
 Notice codes the UX renders that no earlier section names (not in spec/registry/notices.json; listed without backticks so 32.x never becomes an owner):
 

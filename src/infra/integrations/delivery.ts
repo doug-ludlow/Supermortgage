@@ -97,3 +97,49 @@ export class FakeTelephony implements TelephonyPort {
     return { reassigned: d !== undefined && d > consentDate, checkedAt: new Date().toISOString() };
   }
 }
+
+// ───────────────────────────── 32.14 §4: the telephony vendor's INBOUND webhooks (SMS and voice entry on the same 20.3 lead)
+/** An inbound text the vendor posts to POST /v1/webhooks/sms (raw strings — the channel layer normalizes the numbers). */
+export interface InboundSms { readonly from: string; readonly to: string; readonly text: string; readonly message_sid: string; }
+/** An inbound call leg the vendor posts to POST /v1/webhooks/voice: the first post carries no input; later posts carry keypad digits or a speech result. */
+export interface InboundVoice { readonly from: string; readonly to: string; readonly call_sid: string; readonly digits: string | null; readonly speech: string | null; }
+/** The inbound side of the telephony/SMS vendor: parse and authenticate its webhook posts (the outbound text goes through `EdeliveryPort` on channel `sms`). */
+export interface TelephonyWebhookPort {
+  readonly vendorName: string;
+  parseSms(rawBody: string, signatureHeader: string | undefined): InboundSms;
+  parseVoice(rawBody: string, signatureHeader: string | undefined): InboundVoice;
+}
+/**
+ * FAKE: the vendor signature header `x-fake-telephony` must equal "FAKE" (a real adapter verifies the vendor's HMAC —
+ * Twilio's X-Twilio-Signature over the URL + form body); the body is JSON in either the vendor's PascalCase form
+ * (From/To/Body/MessageSid, CallSid/Digits/SpeechResult) or snake_case. Every parsed post is logged with `vendor: "FAKE"`.
+ */
+export class FakeTelephonyWebhooks implements TelephonyWebhookPort {
+  readonly vendorName = "FAKE" as const;
+  readonly marker = "FAKE" as const;
+  readonly log: { vendor: "FAKE"; kind: "sms" | "voice"; from: string; sid: string }[] = [];
+  private body(rawBody: string, signatureHeader: string | undefined): Record<string, unknown> {
+    if (signatureHeader !== "FAKE") throw new RangeError("x-fake-telephony header must be FAKE for the fake adapter");
+    const v = rawBody ? (JSON.parse(rawBody) as unknown) : {};
+    if (!v || typeof v !== "object" || Array.isArray(v)) throw new RangeError("the telephony webhook body must be a JSON object");
+    return v as Record<string, unknown>;
+  }
+  private pick(b: Record<string, unknown>, ...keys: string[]): string { for (const k of keys) { const v = b[k]; if (typeof v === "string" && v.trim()) return v.trim(); if (typeof v === "number") return String(v); } return ""; }
+  parseSms(rawBody: string, signatureHeader: string | undefined): InboundSms {
+    const b = this.body(rawBody, signatureHeader);
+    const from = this.pick(b, "from", "From"); const to = this.pick(b, "to", "To"); const text = this.pick(b, "text", "body", "Body");
+    if (!from) throw new RangeError("from (the sender's number) is required");
+    const message_sid = this.pick(b, "message_sid", "MessageSid", "sid") || `SM_FAKE_${Date.now().toString(36)}_${Math.floor(Math.random() * 1e6).toString(36)}`;
+    this.log.push({ vendor: "FAKE", kind: "sms", from, sid: message_sid });
+    return { from, to, text, message_sid };
+  }
+  parseVoice(rawBody: string, signatureHeader: string | undefined): InboundVoice {
+    const b = this.body(rawBody, signatureHeader);
+    const from = this.pick(b, "from", "From", "caller", "Caller"); const to = this.pick(b, "to", "To", "called", "Called");
+    if (!from) throw new RangeError("from (the caller's number) is required");
+    const call_sid = this.pick(b, "call_sid", "CallSid") || `CA_FAKE_${Date.now().toString(36)}_${Math.floor(Math.random() * 1e6).toString(36)}`;
+    const digits = this.pick(b, "digits", "Digits") || null; const speech = this.pick(b, "speech", "SpeechResult", "speech_result") || null;
+    this.log.push({ vendor: "FAKE", kind: "voice", from, sid: call_sid });
+    return { from, to, call_sid, digits, speech };
+  }
+}

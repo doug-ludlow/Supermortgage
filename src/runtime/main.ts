@@ -16,6 +16,7 @@ import { createApiServer, listen } from "./server.ts";
 import { boardTransferBatch } from "./transfers.ts";
 import { generateDemoBatch, DEMO_BATCH } from "../domain/boarding/demo-batch.ts";
 import { encodeTransferBatch } from "../domain/boarding/tape-codec.ts";
+import { seedEntryDemo } from "./entry-seed.ts";
 
 const mode = process.argv[2] ?? "serve";
 const logger = createLogger(process.env["LOG_FORMAT"] === "text" ? "text" : "json");
@@ -47,6 +48,9 @@ if (mode === "seed-demo") {
     const demo = generateDemoBatch();
     const r = await boardTransferBatch(runtime, { ...DEMO_BATCH }, encodeTransferBatch(demo, demo.coborrowers), { kind: "system", id: "seed-demo" });
     logger.info("seed-demo", { batch: r.batch_id, status: r.status, loans: r.loans, hard: r.hard, events: r.events, timers: r.timers, escalations: r.escalations });
+    // 32.14: the entry experience needs open states, the partner's NMLSR ID and an active rate sheet (FAKE, idempotent — src/runtime/entry-seed.ts)
+    const entry = await seedEntryDemo(runtime, {});
+    logger.info("seed-demo entry", { partner_id: entry.partner_id, states: entry.states, written: entry.written.length, rate_sheet_id: entry.rate_sheet_id, rate_sheet_published: entry.rate_sheet_published });
     await db.end();
     process.exit(0);
   } catch (e) { logger.error("seed-demo failed", { error: e }); await db.end().catch(() => undefined); process.exit(1); }
@@ -54,9 +58,10 @@ if (mode === "seed-demo") {
 
 if (mode !== "serve") { logger.error(`unknown mode ${mode}; use serve | sweep | migrate | seed-demo`); process.exit(2); }
 if (!config.apiToken) logger.warn("API_TOKEN is empty: every route is open (ALLOW_INSECURE_NO_TOKEN=1)");
-const server = createApiServer({ runtime, apiToken: config.apiToken, logger });
+// 32.14: the Phase I partner from configuration (DELTA-15); Sign in with Google is the FAKE provider under INTEGRATIONS=fake (DELTA-12 — the real adapter is wired with the client secret when another INTEGRATIONS value exists)
+const server = createApiServer({ runtime, apiToken: config.apiToken, logger, borrower: { environment: config.environment, defaultPartnerId: config.borrowerDefaultPartnerId } });
 const port = await listen(server, config.port, config.host);
-logger.info("serving", { host: config.host, port, environment: config.environment, integrations: config.integrations, tools: runtime.listTools().length, node: process.version });
+logger.info("serving", { host: config.host, port, environment: config.environment, integrations: config.integrations, tools: runtime.listTools().length, node: process.version, default_partner_id: config.borrowerDefaultPartnerId || null, google_oauth: config.googleOauth.clientId ? "configured" : "FAKE" });
 const shutdown = (signal: string): void => {
   logger.info("shutting down", { signal });
   server.close(() => { db.end().finally(() => process.exit(0)); });

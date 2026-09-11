@@ -17,6 +17,10 @@ locals {
     BORROWER_RP_ID   = var.api_hostname
     BORROWER_ORIGINS = "https://${var.api_hostname}"
     BORROWER_APP_URL = "https://${var.api_hostname}/app"
+    # 32.14 DELTA-15: the Phase I partner party (empty → the newest servicer party)
+    BORROWER_DEFAULT_PARTNER_ID = var.borrower_default_partner_id
+    # 32.14 DELTA-12: the OAuth redirect Google sends the code back to (the app's callback page, an allowed origin)
+    GOOGLE_OAUTH_REDIRECT = "https://${var.api_hostname}/app/auth/google/callback"
   }
   cloudsql_volume = "cloudsql"
   cloudsql_mount  = "/cloudsql"
@@ -85,6 +89,29 @@ resource "google_cloud_run_v2_service" "api" {
         }
       }
 
+      # 32.14 DELTA-12: Sign in with Google — values set by hand in Secret Manager
+      # (docs/DEPLOY.md "Sign in with Google"); the placeholder version reads as
+      # unset and the FAKE provider stays in place.
+      env {
+        name = "GOOGLE_OAUTH_CLIENT_ID"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.google_oauth_client_id.secret_id
+            version = "latest"
+          }
+        }
+      }
+
+      env {
+        name = "GOOGLE_OAUTH_CLIENT_SECRET"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.google_oauth_client_secret.secret_id
+            version = "latest"
+          }
+        }
+      }
+
       resources {
         limits = {
           cpu    = "1"
@@ -139,12 +166,16 @@ resource "google_cloud_run_v2_service" "api" {
     ]
   }
 
-  # The revision only becomes ready once the SA can read both secrets.
+  # The revision only becomes ready once the SA can read every secret it mounts.
   depends_on = [
     google_secret_manager_secret_iam_member.runtime_database_url,
     google_secret_manager_secret_iam_member.runtime_api_token,
+    google_secret_manager_secret_iam_member.runtime_google_oauth_client_id,
+    google_secret_manager_secret_iam_member.runtime_google_oauth_client_secret,
     google_secret_manager_secret_version.database_url,
     google_secret_manager_secret_version.api_token,
+    google_secret_manager_secret_version.google_oauth_client_id,
+    google_secret_manager_secret_version.google_oauth_client_secret,
     google_project_iam_member.runtime_roles,
   ]
 }

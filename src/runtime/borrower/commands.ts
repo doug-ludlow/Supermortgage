@@ -28,6 +28,7 @@ import { PgBorrowerUiRepository, type CardInstanceRow, type MessageRow } from ".
 import type { Subject } from "../../infra/db/borrower-parties.ts";
 import { decodeEntityData } from "../../infra/db/entities.ts";
 import { TOOLS_32_2 } from "../../app/tools/section32-2.ts";
+import { TOOLS_32_14 } from "../../app/tools/section32-14.ts";
 import { commandInputFor } from "../../app/tools/section32-1.ts";
 import { assertSubject, hasFreshL1, requireFreshL1, type BorrowerContext } from "./auth.ts";
 import { BorrowerError } from "./errors.ts";
@@ -36,10 +37,15 @@ import type { BorrowerFlows } from "./flows/index.ts";
 import { SUBJECT_FREE_COMMANDS, TERMINAL_ALLOWED_COMMANDS, terminalStateOf } from "./flows/13-cross-cutting.ts";
 
 export const BORROWER_APP_ACTOR: Actor = { kind: "agent", id: "borrower-app" };
+/** The commands a card or a direct endpoint may name: 32.2's 45 and 32.14's three (`lead.answer`, `lead.requestRange`, `lead.proceed` — the S4 proceed card's command; the L0 routes call the bus directly) — each executed as its own process's tool. */
+const PROCESS_OF: ReadonlyMap<string, string> = new Map([...TOOLS_32_2.map((t) => [t.name, "32.2"] as const), ...TOOLS_32_14.map((t) => [t.name, "32.14"] as const)]);
+/** 32.2's own command surface — the 45 of 02 §2 (commands.test.ts); the 32.14 names a card or endpoint may also issue are `PROCESS_OF`'s. */
 export const COMMAND_NAMES: ReadonlySet<string> = new Set(TOOLS_32_2.map((t) => t.name));
+export const CARD_COMMAND_NAMES: ReadonlySet<string> = new Set(PROCESS_OF.keys());
 /** 32.2 guardrails: the money-field commands — a fresh L1 code first, never an agent-side waiver. */
 export const FRESH_L1_COMMANDS: ReadonlySet<string> = new Set(["payment.makeOneTime", "payment.extraPrincipal", "autodraft.enroll", "autodraft.change", "autodraft.pause", "autodraft.revoke", "escrow.electShortage", "party.updateContact"]);
-const LEVEL_REQUIRED: Readonly<Record<string, (args: Record<string, unknown>) => "L1" | "L2" | "L3">> = { "credit.authorize": (a) => (a["kind"] === "hard_pull" ? "L3" : "L2"), "party.startIdentity": () => "L1" };
+/** 01 §5 / 02 §2: the level a command needs. 32.14 DELTA-13 / 20.3 rule 2: a soft pull is L1 when the consumer entered (or confirmed) name, address, DOB and SSN themselves — a fact the API states from the application_borrowers row (`consumerEnteredIdentity`), never the client's claim; L2 otherwise; a hard pull stays L3 (32.3 T4). */
+const LEVEL_REQUIRED: Readonly<Record<string, (args: Record<string, unknown>) => "L1" | "L2" | "L3">> = { "credit.authorize": (a) => (a["kind"] === "hard_pull" ? "L3" : a["consumer_entered_identity"] === true ? "L1" : "L2"), "party.startIdentity": () => "L1" };
 const RANK = { L1: 1, L2: 2, L3: 3 } as const;
 /** 01 §6.4 / T-X-05: a borrower message that answers a pending card. Card props may carry their own `affirmatives`. */
 export const DEFAULT_AFFIRMATIVES = ["yes proceed", "proceed", "lock it", "lock", "i agree", "agree", "agreed", "confirm", "confirmed", "accept", "accepted", "yes", "yep", "yeah", "ok", "okay", "sounds good", "go ahead", "do it", "let's do it", "sign me up", "approve", "i consent", "consent", "sure"];
@@ -56,6 +62,8 @@ export function affirmativeFor(text: string, cards: readonly CardInstanceRow[]):
   return undefined;
 }
 
+/** The subject of a subject-free command for a party that has none yet (32.14 DELTA-16 party.linkLoan): the command runs in global scope; nothing is scoped to it. */
+const NO_SUBJECT: Subject = { application_id: null, loan_id: null, role: "party", stage: "origination", label: "", application_borrower_id: null };
 export interface CommandOutcome { readonly command: string; readonly subject: { application_id: string | null; loan_id: string | null }; readonly result: unknown; readonly events: string[]; readonly decision_id: string | null }
 
 /**
@@ -88,8 +96,11 @@ export class BorrowerCommands {
     if (FRESH_L1_COMMANDS.has(name)) requireFreshL1(ctx.session, now);
     // 32.5 §7 / 21.1 rule 4: a co-borrower's credit is never ordered before their own joint-intent affirmation — the fact comes from 21.1's record (SM_O21_JOINT_INTENT_GATE armed by `application.borrower.added{joint_intent_required}`), stated before the level check so the invitee sees the gate rather than a step-up
     if (name === "credit.authorize" && subject.application_id) { const ji = await this.jointIntentFacts(subject); input["joint_intent_required"] = ji.required; input["joint_intent_affirmed"] = ji.affirmed; if (ji.required && !ji.affirmed) throw new BorrowerError(409, "SM_O21_JOINT_INTENT_GATE", "SM_O21_JOINT_INTENT_GATE", `borrower ${ji.borrower_id ?? "?"} has not affirmed joint intent (21.1 rule 4)`); }
+    // 32.14 DELTA-13 / 20.3 rule 2: whether the consumer entered or confirmed their own identity (the API's fact from the row the identity and SSN cards wrote — the client's `consumer_entered_identity` is overwritten, never trusted)
+    const facts: Record<string, unknown> = { ...args };
+    if (name === "credit.authorize" && args["kind"] !== "hard_pull") { const entered = await this.consumerEnteredIdentity(subject); facts["consumer_entered_identity"] = entered; input["consumer_entered_identity"] = entered; }
     // 01 §5 / 32.3 T4: a hard pull needs L3 — the refusal names the identity gate (SM_IDENTITY_IAL2_GATE) so the client renders "verify your ID first"
-    const need = LEVEL_REQUIRED[name]?.(args); if (need && RANK[ctx.session.level] < RANK[need]) throw new BorrowerError(403, "LEVEL_REQUIRED", need === "L3" ? "SM_IDENTITY_IAL2_GATE" : undefined, `${need} required; session is ${ctx.session.level}`);
+    const need = LEVEL_REQUIRED[name]?.(facts); if (need && RANK[ctx.session.level] < RANK[need]) throw new BorrowerError(403, "LEVEL_REQUIRED", need === "L3" ? "SM_IDENTITY_IAL2_GATE" : undefined, `${need} required; session is ${ctx.session.level}`);
     if (subject.application_borrower_id) {
       // the party's OWN borrower as the interview knows it (never the client's claim): the default subject of a borrower-scoped command, and the fact the own-party guardrails compare against
       const own = await this.intakeBorrowerId(subject); input["own_borrower_id"] = own;
@@ -105,6 +116,18 @@ export class BorrowerCommands {
     }
     if (name === "human.request" && !input["channel"]) input["channel"] = "app";
     return input;
+  }
+  /**
+   * 20.3 rule 2 (32.14 S4): the consumer's own entry or confirmation of name, address, DOB and SSN on their application_borrowers row — the
+   * identity ConfirmCard wrote `prefill.legal_name / date_of_birth / current_address{confirmed_at}` (typed, or the vendor's extraction confirmed
+   * item by item) and the SSN card stored the last four (01 §5). Nothing else counts: a servicing-file prefill nobody confirmed is not an entry.
+   */
+  private async consumerEnteredIdentity(subject: Subject): Promise<boolean> {
+    if (!subject.application_borrower_id) return false;
+    const row = (await this.db.query<{ prefill: Record<string, { confirmed_at?: unknown } | undefined> | null; tin_last4: string | null }>(`SELECT prefill, tin_last4 FROM application_borrowers WHERE id = $1`, [subject.application_borrower_id]))[0];
+    if (!row || !row.tin_last4) return false;
+    const confirmed = (k: string): boolean => typeof row.prefill?.[k]?.confirmed_at === "string";
+    return confirmed("legal_name") && confirmed("date_of_birth") && (confirmed("current_address") || confirmed("address"));
   }
   /** The party's borrower id as the 21.1 interview knows it (the intake application's own borrower ids, e.g. "B1"), else the application_borrowers row id. */
   private async intakeBorrowerId(subject: Subject): Promise<string | null> {
@@ -130,11 +153,12 @@ export class BorrowerCommands {
 
   /** A direct command (02 §7 POST /v1/borrower/commands/{name}). */
   async runCommand(ctx: BorrowerContext, name: string, body: Record<string, unknown>, now: string, cardInstanceId: string | null = null): Promise<CommandOutcome> {
-    if (!COMMAND_NAMES.has(name)) throw new BorrowerError(404, "COMMAND_UNKNOWN", undefined, `${name} is not a 32.2 command`);
+    if (!CARD_COMMAND_NAMES.has(name)) throw new BorrowerError(404, "COMMAND_UNKNOWN", undefined, `${name} is not a 32.2 or 32.14 command`);
     const wanted = (body["subject"] as { application_id?: string | null; loan_id?: string | null } | undefined) ?? { application_id: typeof body["application_id"] === "string" ? body["application_id"] : null, loan_id: typeof body["loan_id"] === "string" ? body["loan_id"] : null };
     // 20.3 T12 / 32.3 T15: the demographic request exists only on an application — a lead-stage party (no application subject) is refused before anything runs
     if (name === "application.answerDemographics" && !ctx.subjects.some((s) => s.application_id)) throw new BorrowerError(409, "NO_DEMOGRAPHIC_AT_LEAD", undefined, "demographic information is requested only at application (21.1), never at the lead stage");
-    const subject = this.subjectFor(ctx, wanted);
+    // 32.14 DELTA-16 / SUBJECT_FREE_COMMANDS: a signed-in party with no application or loan yet (a Google e-mail not on file) runs a subject-free command — party.linkLoan — on no subject; every other command needs one
+    const subject = SUBJECT_FREE_COMMANDS.has(name) && !ctx.subjects.length && !wanted.application_id && !wanted.loan_id ? NO_SUBJECT : this.subjectFor(ctx, wanted);
     // the flows' reactions to the party's previous commit finish before this command reads its facts and hydrates its entity store (a direct command settles
     // here; a card resolve settled before its transaction — the reactions need their own connections)
     if (cardInstanceId === null) await this.settled();
@@ -142,7 +166,8 @@ export class BorrowerCommands {
     if (!TERMINAL_ALLOWED_COMMANDS.has(name) && !SUBJECT_FREE_COMMANDS.has(name)) { const terminal = await terminalStateOf(this.db, subject); if (terminal) throw new BorrowerError(409, "SUBJECT_TERMINAL", undefined, `the subject is ${terminal}: the Record is read-only (32.13 T-X-16)`); }
     const { subject: _s, ...args } = body;
     const input = await this.enrich(ctx, name, subject, { ...args, ...(cardInstanceId ? { card_instance_id: cardInstanceId } : {}) }, now);
-    const req = { process: "32.2", name, loanId: subject.loan_id ?? "", ...(subject.application_id ? { applicationId: subject.application_id } : {}), actor: BORROWER_APP_ACTOR, input, run: { runId: `session:${ctx.session.session_id}`, modelVersion: "borrower-app api (deterministic)", promptVersion: "32.2" } };
+    const process = PROCESS_OF.get(name) ?? "32.2";
+    const req = { process, name, loanId: subject.loan_id ?? "", ...(subject.application_id ? { applicationId: subject.application_id } : {}), actor: BORROWER_APP_ACTOR, input, run: { runId: `session:${ctx.session.session_id}`, modelVersion: "borrower-app api (deterministic)", promptVersion: process } };
     let r;
     try { r = await this.runtime.execute(req); }
     catch (e) {

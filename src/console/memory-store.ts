@@ -7,8 +7,8 @@ import type { AgentRegistry } from "../app/agents.ts";
 import type { MemoryPortalTasks, MemoryOutbox } from "../infra/integrations/outbox.ts";
 import type { NoticeService } from "../notices/service.ts";
 import type { DecisionInput } from "../infra/db/decisions.ts";
-import type { ConsoleStore, QueueItem, LoanSummary, LoanDetail, Dashboard, AccessEntry } from "./store.ts";
-import { queueKindsFor } from "./store.ts";
+import type { ConsoleStore, QueueItem, LoanSummary, LoanDetail, Dashboard, AccessEntry, Funnel } from "./store.ts";
+import { queueKindsFor, FUNNEL_STAGES, funnelRows } from "./store.ts";
 
 export interface MemoryConsoleDeps {
   readonly events: EventStore;
@@ -98,4 +98,10 @@ export class MemoryConsoleStore implements ConsoleStore {
     return { ok: true };
   }
   async logAccess(e: AccessEntry): Promise<void> { this.accessLog.push(e); }
+  /** 32.14 T18: the funnel over the in-memory event store — the same stages, the same [from, to) window. */
+  async funnel(range: { from: string; to: string }): Promise<Funnel> {
+    const from = Date.parse(range.from), to = Date.parse(range.to); const counts = new Map<string, number>();
+    for (const e of this.d.events.all()) { const t = Date.parse(e.occurredAt); if (FUNNEL_STAGES.includes(e.type) && t >= from && t < to) counts.set(e.type, (counts.get(e.type) ?? 0) + 1); }
+    return { from: range.from, to: range.to, stages: funnelRows(counts) };
+  }
 }

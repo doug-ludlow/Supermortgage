@@ -11,3 +11,4 @@ export * from "./delivery.ts";
 export * from "./credit.ts";
 export * from "./property.ts";
 export * from "./legal.ts";
+export * from "./oidc.ts";

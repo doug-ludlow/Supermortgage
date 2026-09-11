@@ -335,6 +335,23 @@ jobs:
             "https://${API_HOSTNAME}/app"
           echo "borrower app OK via ${LB_IP}"
 
+      - name: Smoke test / (302 to /app) and /ops (console) through the load balancer
+        continue-on-error: true
+        env:
+          API_HOSTNAME: ${{ needs.terraform.outputs.api_hostname }}
+          LB_IP: ${{ needs.terraform.outputs.lb_ip }}
+        run: |
+          code="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --retry 10 --retry-delay 15 --retry-all-errors \
+            --resolve "${API_HOSTNAME}:443:${LB_IP}" \
+            "https://${API_HOSTNAME}/")"
+          test "${code}" = "302" || { echo "expected 302 from /, got ${code}"; exit 1; }
+          code="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --resolve "${API_HOSTNAME}:443:${LB_IP}" \
+            "https://${API_HOSTNAME}/ops")"
+          test "${code}" = "401" || { echo "expected 401 from /ops without a token, got ${code}"; exit 1; }
+          echo "/ redirects to /app; /ops answers via ${LB_IP}"
+
       - name: Board the demo transfer batch (workflow_dispatch with seed_demo)
         if: github.event.inputs.seed_demo == 'true'
         run: |

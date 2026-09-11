@@ -32,9 +32,14 @@
  *   lead.trid_item.recorded{item, source, present, complete}
  *   lead.qualified{application_id, assurance_level, consents, channel, trid_items}   [the hand-off; satisfies SM_LEAD_INACTIVITY_EXPIRY_90]
  *   lead.expired{purged, retained, closed_reason} · lead.closed{reason} · human.transfer.requested{interaction_id, sla_seconds}
+ *   DELTA-11 (32.14, the anonymous minute on the L0 lead — docs/ux/15 §2 S1–S3, §6):
+ *   lead.goal.set{transaction_intent, contract_status, occupancy, step}   [the goal tile; re-emitted with the addition by the contract / occupancy chip]
+ *   lead.state.set{consumer_state, property_state, state_variant} · lead.estimate.set{value_estimate_cents, stated_existing_balance_cents | price_range_cents, down_payment_cents, max_ltv_pct}
+ *   lead.range.shown{low_pct, high_pct, apr_low_pct, apr_high_pct, product_code, rate_sheet_id, checklist_run_id, personal_terms=false}
+ *   lead.linked{party_id} (the L1 link at verify) · intent.deferred{lead_id, status} (DELTA-13: "Not yet" — nothing ordered, pulled or converted)
  */
 import { createHash } from "node:crypto";
-import { type PlainDate, addDays, plainDate } from "../../kernel/calendar/date.ts";
+import { type PlainDate, addDays, addMonths, startOfMonth, plainDate } from "../../kernel/calendar/date.ts";
 import { addBusinessDays, servicer } from "../../kernel/calendar/business.ts";
 import { wallClock, zonedEpochMs, toIso } from "../../kernel/calendar/zoned.ts";
 import { type Cents, levelPayment, ratePercent } from "../../kernel/money/cents.ts";
@@ -44,6 +49,9 @@ import { newConsent, verify, channelFor, type Consent } from "../notices/esign.t
 import { INTAKE_AGENT, AI_DISCLOSURE_TEMPLATE, ESIGN_CONSENT_TEMPLATE, newIntakeApplication, receiveApplication, captureSixItem, offerPrefill, confirmPrefill, leDueDate, localIso, type IntakeApplication, type SixItemKey } from "../application/ops-21-1.ts";
 import { recordPreuseNoticeDelivered, decisionClock, CO_SB26_189_EFFECTIVE_FROM, coPreuseNoticeGate } from "../application/ops-21-6.ts";
 import { requestTermsReview as requestQuoteTermsReview, presentQuote, DISCLAIMER_TEMPLATE, type PricingQuote, type MloReview } from "./ops-20-4.ts";
+import { runContentChecklist, checklistFailures, type Checklists } from "./ops-20-2.ts";
+import { computeApr } from "../compliance-disclosures/ops-25-1.ts";
+import { prepaidInterest } from "../orig-boarding/ops-30-2.ts";
 
 export { INTAKE_AGENT };
 export const RULE_SET_VERSION_20_3 = "sm.lead_intake.2026.v1";
@@ -73,7 +81,8 @@ export const AI_DISCLOSURE_STATE_VARIANTS: Readonly<Record<string, string>> = { 
 
 // ============================================================ types
 export type LeadChannel = "refi_trigger" | "organic" | "referral";
-export type TransactionIntent = "refinance" | "purchase" | "undecided";
+/** `refinance`/`undecided` are 20.1/20.2's coarse intents; the three 32.14 goal tiles write the 21.1 `transaction_type` itself (DELTA-11). */
+export type TransactionIntent = "refinance" | "purchase" | "limited_cash_out" | "cash_out" | "undecided";
 export type LeadStatus = "new" | "disclosed" | "authenticated" | "exploring" | "prequal_requested" | "prequalified" | "terms_review" | "terms_presented" | "applying" | "converted" | "expired" | "closed_lost";
 export const ASSURANCE_LEVELS = ["L0_contact_unverified", "L1_channel_otp", "L2_account_authenticated", "L3_document_biometric", "L4_ssa_cbsv"] as const;
 export type AssuranceLevel = (typeof ASSURANCE_LEVELS)[number];
@@ -111,6 +120,8 @@ export interface Lead {
   readonly mlo_of_record_id: string | null; readonly mlo_name: string | null; readonly mlo_nmlsr_id: string | null; readonly mlo_time_zone: string;
   readonly trid_items: Readonly<Record<TridItemKey, TridItem>>; readonly application_id: string | null; readonly regb_application_at: string | null; readonly trid_application_at: string | null;
   readonly last_activity_at: string; readonly expires_on: PlainDate; readonly closed_reason: string | null; readonly interactions: readonly LeadInteraction[]; readonly classifier_log: readonly ClassifierResult[];
+  /** DELTA-11 (32.14 S1): the anonymous minute's rule-6 facts — nullable; cents ride the wire as decimal strings and are coerced on read (an older stored lead lacks the keys). */
+  readonly occupancy: EntryOccupancy | null; readonly contract_status: ContractStatus | null; readonly value_estimate_cents: Cents | null; readonly stated_existing_balance_cents: Cents | null; readonly price_range_cents: Cents | null; readonly down_payment_cents: Cents | null;
 }
 /** A rule the intake agent refuses on — the gate code is the timer/guardrail code the spec names. */
 export class IntakeRefused extends RangeError { readonly code: string; constructor(code: string, message: string) { super(`${code}: ${message}`); this.name = "IntakeRefused"; this.code = code; } }
@@ -143,7 +154,8 @@ export function createLead(events: EventStore, i: NewLeadInput): { lead: Lead; e
     status: "new", assurance_level: "L0_contact_unverified", first_interaction_at: null, ai_disclosure_notice_id: null, ai_disclosure_version: null, co_admt_preuse_notice_id: null, co_admt_preuse_delivered_at: null,
     esign_consent_id: null, tcpa_consent_ids: [], consents: [], credit_authorization_id: null, credit_authorizations: [], soft_pull_report: null, soft_pull_purged: null, prequal_id: null, prequalifications: [], quote_ids: [],
     mlo_of_record_id: null, mlo_name: null, mlo_nmlsr_id: null, mlo_time_zone: i.mlo_time_zone ?? tz, trid_items: { name: EMPTY_TRID, income: EMPTY_TRID, ssn_for_credit: EMPTY_TRID, property_address: EMPTY_TRID, value_estimate: EMPTY_TRID, loan_amount_sought: EMPTY_TRID },
-    application_id: null, regb_application_at: null, trid_application_at: null, last_activity_at: at, expires_on: leadExpiresOn(on), closed_reason: null, interactions: [], classifier_log: [] };
+    application_id: null, regb_application_at: null, trid_application_at: null, last_activity_at: at, expires_on: leadExpiresOn(on), closed_reason: null, interactions: [], classifier_log: [],
+    occupancy: null, contract_status: null, value_estimate_cents: null, stated_existing_balance_cents: null, price_range_cents: null, down_payment_cents: null };
   return { lead, event: emit(events, lead, "lead.created", { channel: lead.channel, loan_id: lead.loan_id, opportunity_id: lead.opportunity_id, party_id: lead.party_id, source_touch_id: lead.source_touch_id, consumer_state: lead.consumer_state, property_state: lead.property_state, transaction_intent: lead.transaction_intent, last_activity_at: at, last_activity_on: on, expires_on: lead.expires_on, timer: "SM_LEAD_INACTIVITY_EXPIRY_90" }, at) };
 }
 /** Rule 10: a phone number given in the inquiry is prior express consent for informational calls/texts about that inquiry (marketing PEWC only through 20.2). */
@@ -224,10 +236,15 @@ export function coPreuseNoticeRequired(lead: Pick<Lead, "consumer_state" | "prop
 }
 export const coPreuseFacts = (lead: Lead, on: PlainDate): Record<string, unknown> => ({ consumer_state: lead.consumer_state, property_state: lead.property_state, interaction_on: on, preuse_notice_delivered: lead.co_admt_preuse_notice_id !== null });
 /** 6-1-1704: the point-of-interaction line + public notice URL before any ADMT-influenced eligibility/pricing output — 21.6's `co_admt.preuse_notice.delivered` on the lead's id (the application id it becomes). */
+/** 21.6 keys the pre-use event on the application; a lead that has no application yet records it on its own aggregate (the hosted store keys `loan_events.application_id` to `applications`), the payload still naming the id the lead becomes (32.14 DELTA-11: the Colorado line at the state chip, T2). */
+function leadKeyed(events: EventStore, lead: Lead): EventStore {
+  if (lead.application_id) return events;
+  return new Proxy(events, { get: (target, prop, receiver) => (prop === "append" ? (input: Parameters<EventStore["append"]>[0]) => { const { applicationId: _application, ...rest } = input; return target.append({ ...rest, aggregate: { kind: "lead", id: lead.lead_id } }); } : Reflect.get(target, prop, receiver)) });
+}
 export function deliverCoPreuseNotice(events: EventStore, lead: Lead, d: { at: string; notice_id: string; public_notice_url: string }): { lead: Lead; text: string; gate_required: boolean; event: DomainEvent } {
   const at = isoInstant(d.at, "at"); const on = civilDate(at, lead.time_zone); const req = coPreuseNoticeRequired(lead, on);
   if (!req.deliver) throw new RangeError("the Colorado pre-use notice is delivered only where consumer_state=CO or property_state=CO");
-  const event = recordPreuseNoticeDelivered(events, { application_id: lead.application_id ?? lead.lead_id, notice_id: nonEmpty(d.notice_id, "notice_id"), delivered_at: at, state: "CO", public_notice_url: nonEmpty(d.public_notice_url, "public_notice_url") }, INTAKE_AGENT);
+  const event = recordPreuseNoticeDelivered(leadKeyed(events, lead), { application_id: lead.application_id ?? lead.lead_id, notice_id: nonEmpty(d.notice_id, "notice_id"), delivered_at: at, state: "CO", public_notice_url: nonEmpty(d.public_notice_url, "public_notice_url") }, INTAKE_AGENT);
   const next = touched({ ...lead, co_admt_preuse_notice_id: d.notice_id, co_admt_preuse_delivered_at: at }, at);
   return { lead: next, text: coPreuseLine(lead.partner_name, d.public_notice_url), gate_required: req.gate_required, event };
 }
@@ -238,7 +255,8 @@ export function assertPricingOutputAllowed(lead: Lead, at: string): void {
 }
 
 // ============================================================ rule 2: identity levels and the on-file-data gate
-export type AuthMethod = "otp_email" | "otp_sms" | "portal_login" | "auth_script_4x";
+/** 32.14 §3 (DELTA-12): `oidc_google` — a verified Google identity — is L1 like a code (no on-file data before L2). */
+export type AuthMethod = "otp_email" | "otp_sms" | "portal_login" | "auth_script_4x" | "oidc_google";
 export const authLevelFor = (method: AuthMethod): AssuranceLevel => (method === "portal_login" || method === "auth_script_4x" ? "L2_account_authenticated" : "L1_channel_otp");
 /** L1: OTP to the entered email/phone (prospects); L2: portal login or the 4.x authentication script (existing borrowers). */
 export function authenticate(events: EventStore, lead: Lead, a: { method: AuthMethod; at: string; evidence?: Record<string, unknown> }): { lead: Lead; level: AssuranceLevel; event: DomainEvent } {
@@ -597,6 +615,166 @@ export function expireLead(events: EventStore, lead: Lead, e: { on: PlainDate })
 export function closeLead(events: EventStore, lead: Lead, c: { at: string; reason: string }): { lead: Lead; event: DomainEvent } {
   const at = isoInstant(c.at, "at"); const next: Lead = { ...lead, status: "closed_lost", closed_reason: nonEmpty(c.reason, "reason") };
   return { lead: next, event: emit(events, next, "lead.closed", { reason: c.reason }, at) };
+}
+
+// ============================================================ DELTA-11 (32.14): the anonymous minute on the L0 lead — rule-6 facts, the party link, the published range, the deferred intent
+/** 32.14 §1.3 / 20.3 rule 6: the only chips a lead without a party answers — goal, contract status (Buy), occupancy (refi / cash-out), state, one estimate pair. Fixed order (S1). */
+export const ENTRY_STEPS = ["goal", "contract", "occupancy", "state", "estimate"] as const;
+export type EntryStep = (typeof ENTRY_STEPS)[number];
+export type EntryTransactionType = "purchase" | "limited_cash_out" | "cash_out";
+export type EntryOccupancy = "primary" | "second_home" | "investment";
+export type ContractStatus = "signed" | "looking";
+export const ENTRY_TRANSACTION_TYPES: readonly EntryTransactionType[] = ["purchase", "limited_cash_out", "cash_out"];
+export const ENTRY_OCCUPANCIES: readonly EntryOccupancy[] = ["primary", "second_home", "investment"];
+/** 32.14 §1.6: the three goal tiles map one-to-one onto 21.1's `transaction_type` ("Get preapproved" is Buy → Still looking). */
+export const GOAL_TRANSACTION_TYPES: Readonly<Record<"buy" | "lower_rate" | "cash_out", EntryTransactionType>> = { buy: "purchase", lower_rate: "limited_cash_out", cash_out: "cash_out" };
+/** Never on a lead without a party (rule 6; 20.3 T12; 32.14 T6): name, contact, SSN, income, demographics, marital status, citizenship, documents, military service, DOB, address, assets, the loan amount sought. */
+export const L0_PROHIBITED_FACTS: readonly string[] = ["name", "legal_name", "first_name", "last_name", "email", "e_mail", "phone", "mobile", "contact", "ssn", "tin", "itin", "income", "employment", "employer", "assets", "demographics", "demographic", "race", "ethnicity", "sex", "gender", "religion", "national_origin", "marital_status", "married", "divorced", "widowed", "alimony", "child_support", "citizenship", "immigration_status", "documents", "document", "paystub", "w2", "tax_return", "bank_statement", "military", "military_service", "veteran", "dob", "date_of_birth", "address", "current_address", "loan_amount", "loan_amount_sought", "children", "pregnancy"];
+export const isL0PermittedFact = (kind: string): kind is EntryStep => (ENTRY_STEPS as readonly string[]).includes(kind);
+/** The rule-6 guard: a permitted kind returns; anything else is `L0_FACTS_ONLY` (the tool maps it to the 409 the API answers) and nothing is written. */
+export function assertL0Fact(kind: string): EntryStep {
+  if (isL0PermittedFact(kind)) return kind;
+  throw new IntakeRefused("L0_FACTS_ONLY", `"${kind || "(none)"}" is never a lead fact before a session (20.3 rule 6; 32.14 §1.3): only ${ENTRY_STEPS.join("/")} may be written on a lead without a party — nothing was written`);
+}
+const normFact = (s: string): string => s.trim().toLowerCase().replace(/[\s-]+/g, "_");
+/** The prohibited-fact names an input carries — its `step` / `kind` / `fact.kind` outside the permitted set, or a prohibited key inside `fact` / `value` — the L0_FACTS_ONLY guardrail's predicate (an empty input carries none). */
+export function l0ProhibitedKeys(input: Record<string, unknown>): string[] {
+  const found = new Set<string>();
+  const fact = (input["fact"] && typeof input["fact"] === "object" && !Array.isArray(input["fact"]) ? input["fact"] : {}) as Record<string, unknown>;
+  const value = (input["value"] && typeof input["value"] === "object" && !Array.isArray(input["value"]) ? input["value"] : {}) as Record<string, unknown>;
+  for (const k of [input["step"], input["kind"], fact["kind"]]) if (typeof k === "string" && k !== "" && !isL0PermittedFact(normFact(k))) found.add(normFact(k));
+  for (const k of [...Object.keys(fact), ...Object.keys(value)]) if (L0_PROHIBITED_FACTS.includes(normFact(k))) found.add(normFact(k));
+  return [...found];
+}
+export type EntryFact =
+  | { readonly kind: "goal"; readonly transaction_intent: EntryTransactionType }
+  | { readonly kind: "contract"; readonly contract_status: ContractStatus }
+  | { readonly kind: "occupancy"; readonly occupancy: EntryOccupancy }
+  | { readonly kind: "state"; readonly consumer_state: string }
+  | { readonly kind: "estimate"; readonly value_estimate_cents?: Cents | string | null; readonly stated_existing_balance_cents?: Cents | string | null; readonly price_range_cents?: Cents | string | null; readonly down_payment_cents?: Cents | string | null };
+/** The 21.1 `transaction_type` the goal tile wrote; null while the lead is `undecided` / a 20.1 `refinance` intent (the goal card is still due). */
+export const transactionTypeOf = (lead: Pick<Lead, "transaction_intent">): EntryTransactionType | null => ((ENTRY_TRANSACTION_TYPES as readonly string[]).includes(lead.transaction_intent) ? (lead.transaction_intent as EntryTransactionType) : null);
+const nullableCents = (v: unknown): Cents | null => (v === undefined || v === null || v === "" ? null : cents(v as string | Cents | number));
+const centsOrNull = (v: Cents | null | undefined): string | null => (v === undefined || v === null ? null : String(v));
+/** The fixed S1 order: goal → (purchase: contract · refi / cash-out: occupancy) → state → one estimate pair; null once every chip is answered (the range and the identity ask follow). */
+export function nextEntryStep(lead: Lead): EntryStep | null {
+  const tt = transactionTypeOf(lead); if (!tt) return "goal";
+  if (tt === "purchase" && !lead.contract_status) return "contract";
+  if (tt !== "purchase" && !lead.occupancy) return "occupancy";
+  if (!lead.consumer_state) return "state";
+  if ((tt === "purchase" ? nullableCents(lead.price_range_cents) : nullableCents(lead.value_estimate_cents)) === null) return "estimate";
+  return null;
+}
+/** The lead's rule-6 facts as the wire carries them (cents as decimal strings; never a name, a contact or a figure that is not the consumer's own estimate). */
+export function entryFacts(lead: Lead): { transaction_type: EntryTransactionType | null; contract_status: ContractStatus | null; occupancy: EntryOccupancy | null; consumer_state: string | null; value_estimate_cents: string | null; stated_existing_balance_cents: string | null; price_range_cents: string | null; down_payment_cents: string | null; next_step: EntryStep | null } {
+  return { transaction_type: transactionTypeOf(lead), contract_status: lead.contract_status ?? null, occupancy: lead.occupancy ?? null, consumer_state: lead.consumer_state, value_estimate_cents: centsOrNull(nullableCents(lead.value_estimate_cents)), stated_existing_balance_cents: centsOrNull(nullableCents(lead.stated_existing_balance_cents)), price_range_cents: centsOrNull(nullableCents(lead.price_range_cents)), down_payment_cents: centsOrNull(nullableCents(lead.down_payment_cents)), next_step: nextEntryStep(lead) };
+}
+const leadIsClosed = (lead: Lead): void => { if (lead.status === "expired" || lead.status === "closed_lost") throw new IntakeRefused("LEAD_CLOSED", `lead ${lead.lead_id} is ${lead.status}${lead.closed_reason ? ` (${lead.closed_reason})` : ""}; nothing further is written on it`); };
+/**
+ * DELTA-11: one rule-6 fact → one event on the lead. `lead.goal.set{transaction_intent, contract_status, occupancy, step}` is written by
+ * the goal tile and re-emitted, carrying the addition, by the contract chip (Buy) or the occupancy chip (refi / cash-out) — 32.14 S1
+ * says "Buy adds contract_status; refi/cash-out adds occupancy" and names no separate event, so occupancy is folded into goal.set (a
+ * funnel counts distinct lead ids per stage, never events). A goal change clears its refinements and estimates. `lead.state.set
+ * {consumer_state, property_state}` (the chip asks where the home is; the disclosure variant and 31.1 readiness read it).
+ * `lead.estimate.set` carries the pair the goal implies — value + own-stated existing balance (never the loan-amount item) or price
+ * range + down payment; cash-out shows `PROGRAM_MAX_LTV_PCT.cash_out` as a plain limit. Anything outside the permitted set is
+ * `L0_FACTS_ONLY` and nothing is written; no fact before the disclosure (rule 1); none on a closed, expired or converted lead.
+ */
+export function setFact(events: EventStore, lead: Lead, fact: EntryFact, at: string): { lead: Lead; step: EntryStep; next_step: EntryStep | null; event: DomainEvent } {
+  const when = isoInstant(at, "at"); const kind = assertL0Fact(String((fact as { kind?: unknown }).kind ?? ""));
+  leadIsClosed(lead); if (lead.status === "converted") throw new IntakeRefused("LEAD_CLOSED", `lead ${lead.lead_id} is converted to application ${lead.application_id}; its facts are 21.1's now`);
+  const last = lead.interactions.at(-1); if (last && last.ai && !last.disclosure_delivered_at) throw new IntakeRefused("SM_AI_INTERACTION_DISCLOSURE_GATE", "no lead fact before NTC_SM_AI_INTERACTION_DISCLOSURE is delivered and logged (rule 1; 32.14 T1)");
+  const tt = transactionTypeOf(lead); let next: Lead; let type: string; let payload: Record<string, unknown>;
+  switch (kind) {
+    case "goal": { const f = fact as Extract<EntryFact, { kind: "goal" }>; if (!(ENTRY_TRANSACTION_TYPES as readonly string[]).includes(f.transaction_intent)) throw new RangeError(`transaction_intent ${JSON.stringify(f.transaction_intent)} is not one of ${ENTRY_TRANSACTION_TYPES.join("/")} (buy / lower_rate / cash_out)`);
+      next = { ...lead, transaction_intent: f.transaction_intent, contract_status: null, occupancy: null, value_estimate_cents: null, stated_existing_balance_cents: null, price_range_cents: null, down_payment_cents: null };
+      type = "lead.goal.set"; payload = { transaction_intent: f.transaction_intent, transaction_type: f.transaction_intent, contract_status: null, occupancy: null, step: "goal" }; break; }
+    case "contract": { const f = fact as Extract<EntryFact, { kind: "contract" }>; if (tt !== "purchase") throw new RangeError("contract_status is a purchase lead's fact (Buy → signed | looking); answer the goal first");
+      if (f.contract_status !== "signed" && f.contract_status !== "looking") throw new RangeError(`contract_status ${JSON.stringify(f.contract_status)} is not signed | looking`);
+      next = { ...lead, contract_status: f.contract_status }; type = "lead.goal.set"; payload = { transaction_intent: lead.transaction_intent, transaction_type: tt, contract_status: f.contract_status, occupancy: lead.occupancy ?? null, step: "contract" }; break; }
+    case "occupancy": { const f = fact as Extract<EntryFact, { kind: "occupancy" }>; if (!tt) throw new RangeError("occupancy follows the goal (refi / cash-out → primary | second_home | investment); answer the goal first");
+      if (!(ENTRY_OCCUPANCIES as readonly string[]).includes(f.occupancy)) throw new RangeError(`occupancy ${JSON.stringify(f.occupancy)} is not one of ${ENTRY_OCCUPANCIES.join("/")}`);
+      next = { ...lead, occupancy: f.occupancy }; type = "lead.goal.set"; payload = { transaction_intent: lead.transaction_intent, transaction_type: tt, contract_status: lead.contract_status ?? null, occupancy: f.occupancy, step: "occupancy" }; break; }
+    case "state": { const f = fact as Extract<EntryFact, { kind: "state" }>; const st = String(f.consumer_state ?? "").trim().toUpperCase(); if (!/^[A-Z]{2}$/.test(st)) throw new RangeError(`consumer_state ${JSON.stringify(f.consumer_state)} is not a two-letter USPS state code`);
+      next = { ...lead, consumer_state: st, property_state: st }; type = "lead.state.set"; payload = { consumer_state: st, property_state: st, state_variant: AI_DISCLOSURE_STATE_VARIANTS[st] ?? null }; break; }
+    case "estimate": { const f = fact as Extract<EntryFact, { kind: "estimate" }>; if (!tt) throw new RangeError("the estimate pair follows the goal; answer the goal first");
+      const value = nullableCents(f.value_estimate_cents), balance = nullableCents(f.stated_existing_balance_cents), price = nullableCents(f.price_range_cents), down = nullableCents(f.down_payment_cents);
+      if (tt === "purchase") { if (price === null || down === null) throw new RangeError("a purchase estimate is {price_range_cents, down_payment_cents}"); if (price <= 0n || down < 0n || down > price) throw new RangeError("price_range_cents must be positive and down_payment_cents between 0 and the price");
+        next = { ...lead, price_range_cents: price, down_payment_cents: down, value_estimate_cents: null, stated_existing_balance_cents: null }; }
+      else { if (value === null || balance === null) throw new RangeError("a refinance / cash-out estimate is {value_estimate_cents, stated_existing_balance_cents}"); if (value <= 0n || balance < 0n) throw new RangeError("value_estimate_cents must be positive and stated_existing_balance_cents non-negative");
+        next = { ...lead, value_estimate_cents: value, stated_existing_balance_cents: balance, price_range_cents: null, down_payment_cents: null }; }
+      type = "lead.estimate.set"; payload = { transaction_type: tt, value_estimate_cents: centsOrNull(next.value_estimate_cents), stated_existing_balance_cents: centsOrNull(next.stated_existing_balance_cents), price_range_cents: centsOrNull(next.price_range_cents), down_payment_cents: centsOrNull(next.down_payment_cents), max_ltv_pct: PROGRAM_MAX_LTV_PCT[tt], counted_as_trid_item: false, source: "consumer_stated" }; break; }
+  }
+  next = touched(next, when);
+  return { lead: next, step: kind, next_step: nextEntryStep(next), event: emit(events, next, type, payload, when) };
+}
+/** DELTA-11: the L1 link at verify — `lead.linked{party_id}`; the lead is linked, never copied (32.14 §4). A lead already linked to another party is never re-pointed. */
+export function linkParty(events: EventStore, lead: Lead, l: { party_id: string; at: string; method?: string | null; session_id?: string | null }): { lead: Lead; event: DomainEvent } {
+  const at = isoInstant(l.at, "at"); const party_id = nonEmpty(l.party_id, "party_id"); leadIsClosed(lead);
+  if (lead.party_id && lead.party_id !== party_id) throw new RangeError(`lead ${lead.lead_id} is linked to party ${lead.party_id}, not ${party_id}`);
+  const next = touched({ ...lead, party_id }, at);
+  return { lead: next, event: emit(events, next, "lead.linked", { party_id, method: l.method ?? null, session_id: l.session_id ?? null, already_linked: lead.party_id === party_id }, at) };
+}
+/** DELTA-13: "Not yet" — `intent.deferred{lead_id, status}`: nothing is ordered, pulled or converted; the lead keeps its status (SM_QUOTE_VALIDITY_GATE governs a re-quote; SM_LEAD_INACTIVITY_EXPIRY_90 is the only clock). */
+export function deferIntent(events: EventStore, lead: Lead, d: { at: string; reason?: string | null }): { lead: Lead; event: DomainEvent } {
+  const at = isoInstant(d.at, "at"); leadIsClosed(lead);
+  if (lead.status === "converted") throw new RangeError(`lead ${lead.lead_id} is converted to application ${lead.application_id}; intent is 21.4's (intent.record)`);
+  const next = touched(lead, at);
+  return { lead: next, event: emit(events, next, "intent.deferred", { status: next.status, reason: d.reason ?? "not_yet", quote_id: next.quote_ids.at(-1) ?? null, ordered: false, pulled: false, document: null, clocks: ["SM_LEAD_INACTIVITY_EXPIRY_90"] }, at) };
+}
+
+// ---- the published range as an advertisement (32.14 S2; 20.3 rule 7; 20.2 rule 4 / §1026.24)
+/** The representative loan the APR beside each published rate is computed on when the sheet's price rows carry no APR (a no-point loan; third-party costs are paid under the partner's program, so prepaid interest is the only prepaid charge). */
+export const RANGE_REPRESENTATIVE_LOAN_CENTS: Cents = 30_000_000n;
+/** The representative schedule for a disbursement: the odd days to month-end are prepaid interest (30.2's `interest_paid_through_date`), the amortizing term starts the day after it (Appendix J (b)(3)(i): the date the finance charge begins to be earned on the schedule) and the first payment falls one regular period later. */
+export const representativeSchedule = (disbursement: PlainDate): { term_start_date: PlainDate; first_payment_date: PlainDate } => { const term_start_date = startOfMonth(addMonths(disbursement, 1)); return { term_start_date, first_payment_date: addMonths(term_start_date, 1) }; };
+/** 20.4's own APR (25.1 Appendix J through computeApr, as computePayment does) on the representative loan: note rate, term, disbursement today, the odd-days interest as the only prepaid finance charge, no points. */
+export function representativeApr(note_rate_pct: string, term_months: number, disbursement: PlainDate, loan_cents: Cents = RANGE_REPRESENTATIVE_LOAN_CENTS): string {
+  const prepaid = prepaidInterest(loan_cents, note_rate_pct, disbursement); const s = representativeSchedule(disbursement);
+  return computeApr({ loan_amount_cents: loan_cents, note_rate_pct, term_months, term_start_date: s.term_start_date, first_payment_date: s.first_payment_date, prepaid_finance_charges_cents: 0n, prepaid_interest_cents: prepaid.prepaid_interest_cents }).apr_disclosed_str;
+}
+export interface RangeSheetPriceLike { readonly note_rate?: string; readonly note_rate_pct?: string; readonly product_code?: string; readonly term_months?: number; readonly amortization?: string; readonly apr_pct?: string | null; }
+export interface RangeAdvertisementInput { readonly product_code?: string; readonly partner_name: string; readonly partner_nmlsr_id?: string | null; readonly at: string; readonly time_zone?: string; readonly representative_loan_cents?: Cents; }
+export interface RangeAdvertisement {
+  readonly product_code: string; readonly product_label: string; readonly amortization: "fixed" | "arm"; readonly term_months: number;
+  readonly low_pct: string; readonly high_pct: string; readonly apr_low_pct: string; readonly apr_high_pct: string; readonly apr_source: "sheet" | "computed_representative_loan"; readonly representative_loan_cents: Cents;
+  readonly text: string; readonly sheet_rates_pct: readonly string[]; readonly checklist: Checklists; readonly failures: readonly string[]; readonly passes: boolean; readonly personal_terms: false;
+}
+const productLabel = (term_months: number, amortization: "fixed" | "arm"): string => `${Math.round(term_months / 12)}-year ${amortization === "fixed" ? "fixed" : "adjustable-rate"}`;
+/**
+ * 32.14 S2 / 20.3 rule 7 (RANGE_IS_PUBLISHED): the sheet's low–high for the product — never an LLPA-adjusted figure, a tier or a borrower
+ * figure — written as an advertisement: the APR beside each rate (the sheet row's `apr_pct` when the rows carry one, else 20.4's APR on the
+ * representative loan, and the footer says so), "not a commitment to lend; rates change daily", the partner's name and NMLSR ID, then
+ * 20.2 `runContentChecklist` like any creative (`regz_1026_24.apr_stated`, (d)(2) — "30-year" is a triggering term — `not_a_commitment`,
+ * the NMLS ID, no investor reference). `passes=false` refuses the card (RANGE_CONTENT_CHECK); a missing NMLSR ID is the ordinary failure.
+ */
+export function rangeAdvertisement(sheet: { readonly prices: readonly RangeSheetPriceLike[] }, i: RangeAdvertisementInput): RangeAdvertisement {
+  const product_code = i.product_code || "FRM30"; const at = isoInstant(i.at, "at"); const on = civilDate(at, i.time_zone ?? "America/New_York");
+  const pct = (p: RangeSheetPriceLike): string => p.note_rate_pct ?? (p.note_rate !== undefined ? (Math.round(Number(p.note_rate) * 100_000) / 1000).toFixed(3) : "");
+  const rows = sheet.prices.filter((p) => !p.product_code || p.product_code === product_code).map((row) => ({ pct: pct(row), row })).filter((r) => r.pct !== "").sort((a, b) => Number(a.pct) - Number(b.pct));
+  if (!rows.length) throw new RangeError(`no ${product_code} prices on the sheet`);
+  const low = rows[0]!, high = rows[rows.length - 1]!;
+  const term_months = low.row.term_months ?? (product_code === "FRM15" ? 180 : 360); const amortization: "fixed" | "arm" = (low.row.amortization ?? "fixed") === "fixed" ? "fixed" : "arm";
+  const loan = i.representative_loan_cents ?? RANGE_REPRESENTATIVE_LOAN_CENTS;
+  const apr_source: RangeAdvertisement["apr_source"] = low.row.apr_pct && high.row.apr_pct ? "sheet" : "computed_representative_loan";
+  const aprOf = (r: { pct: string; row: RangeSheetPriceLike }): string => (apr_source === "sheet" ? String(r.row.apr_pct) : representativeApr(r.pct, term_months, on, loan));
+  const apr_low_pct = aprOf(low), apr_high_pct = aprOf(high); const product_label = productLabel(term_months, amortization);
+  const nmlsr = (i.partner_nmlsr_id ?? "").trim();
+  const text = `Today's ${product_label} rates for this program range from ${low.pct}% (${apr_low_pct}% APR) to ${high.pct}% (${apr_high_pct}% APR) depending on credit and loan-to-value. This is not a commitment to lend; rates change daily. ${apr_source === "sheet" ? "APR as published on the rate sheet in force." : "APR is computed on a representative loan with no points; third-party costs are paid under the partner's program."} ${i.partner_name}${nmlsr ? `, NMLSR ID ${nmlsr}` : ""}.`;
+  const sheet_rates_pct = rows.map((r) => r.pct);
+  const checklist = runContentChecklist({ text, channel: "portal", campaign_kind: "general_advertising", amortization, sheet_rates_pct, sheet_validity_stated: true });
+  const failures = checklistFailures(checklist);
+  return { product_code, product_label, amortization, term_months, low_pct: low.pct, high_pct: high.pct, apr_low_pct, apr_high_pct, apr_source, representative_loan_cents: loan, text, sheet_rates_pct, checklist, failures, passes: failures.length === 0, personal_terms: false };
+}
+export interface RangeShownInput { readonly at: string; readonly product_code: string; readonly rate_sheet_id: string; readonly low_pct: string; readonly high_pct: string; readonly apr_low_pct: string; readonly apr_high_pct: string; readonly apr_source: string; readonly checklist_run_id: string; }
+/** DELTA-11: `lead.range.shown{…, checklist_run_id}` — logged as it happens (a bounced visitor leaves a record); refused on a lead a closed state ended (STATE_GATE_FIRST) and, for Colorado on/after 2027-01-01, before the pre-use notice (21.6's gate). */
+export function showRange(events: EventStore, lead: Lead, r: RangeShownInput): { lead: Lead; event: DomainEvent } {
+  const at = isoInstant(r.at, "at");
+  if (lead.status === "closed_lost" && lead.closed_reason === "state_not_licensed") throw new IntakeRefused("STATE_GATE_FIRST", `${lead.consumer_state ?? "the state"} readiness is closed: no range and no identity ask (31.1 SM_LICENSE_STATE_GATE)`);
+  leadIsClosed(lead); nonEmpty(r.checklist_run_id, "checklist_run_id"); nonEmpty(r.rate_sheet_id, "rate_sheet_id");
+  assertPricingOutputAllowed(lead, at);
+  const next = touched(lead, at);
+  return { lead: next, event: emit(events, next, "lead.range.shown", { low_pct: r.low_pct, high_pct: r.high_pct, apr_low_pct: r.apr_low_pct, apr_high_pct: r.apr_high_pct, product_code: r.product_code, rate_sheet_id: r.rate_sheet_id, checklist_run_id: r.checklist_run_id, apr_source: r.apr_source, personal_terms: false, tier: null, llpa_applied: false }, at) };
 }
 
 // ============================================================ getBenefit (20.1 payload for L2 borrowers) and the decision record

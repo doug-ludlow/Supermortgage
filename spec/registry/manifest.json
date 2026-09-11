@@ -15424,7 +15424,8 @@
   "tools": [
    "lead.answer",
    "lead.requestRange",
-   "lead.proceed"
+   "lead.proceed",
+   "party.linkLoan"
   ]
  }
 ]

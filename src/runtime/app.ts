@@ -50,6 +50,7 @@ import { FakeFnmaLsdu, FakeFnmaServicingEvents, FakeFnmaSmdu, FakeFnmaP360, Fake
 import { FakePacer, FakeDmdc, FakeErecording } from "../infra/integrations/legal.ts";
 import { FakeMers } from "../infra/integrations/mers.ts";
 import { FakeLpiTracking, FakeFlood, FakeTaxService, FakeMi } from "../infra/integrations/property.ts";
+import { FakeGoogleOidc } from "../infra/integrations/oidc.ts";
 import { originationServices, type OriginationServiceSet } from "./origination.ts";
 
 export interface RuntimeDeps {
@@ -84,7 +85,7 @@ export function fakePorts(): Ports {
   const lsdu = new FakeFnmaLsdu();
   return { lockbox: new FakeLockbox(), custodialBank: new FakeCustodialBank(), nacha: new FakeOdfi(), metro2: new FakeMetro2(), eoscar: new FakeEoscar(), custodian: new FakeCustodian(), evault: new FakeEvault(),
     printMail: new FakePrintMail(), edelivery: new FakeEdelivery(), telephony: new FakeTelephony(), lsdu, servicingEvents: new FakeFnmaServicingEvents(), smdu: new FakeFnmaSmdu(), p360: new FakeFnmaP360(),
-    connect: new FakeFnmaConnect(), pacer: new FakePacer(), dmdc: new FakeDmdc(), erecording: new FakeErecording(), mers: new FakeMers(), lpi: new FakeLpiTracking(), flood: new FakeFlood(), taxService: new FakeTaxService(), mi: new FakeMi() };
+    connect: new FakeFnmaConnect(), pacer: new FakePacer(), dmdc: new FakeDmdc(), erecording: new FakeErecording(), mers: new FakeMers(), lpi: new FakeLpiTracking(), flood: new FakeFlood(), taxService: new FakeTaxService(), mi: new FakeMi(), oidc: new FakeGoogleOidc() };
 }
 
 /** The unit of work's store with the scope's loan stamped on every appended event that carries neither a loan nor an application key. */

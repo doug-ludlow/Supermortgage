@@ -7,6 +7,9 @@
  *   POST /v1/borrower/auth/l2                     { ssn_last4, date_of_birth } matched against application_borrowers → L2
  *   POST /v1/borrower/identity/stripe/session     { application_id? } → ConnectCard + vendor session (FakeStripeIdentity) → L3 on the webhook
  *   POST /v1/webhooks/stripe                      vendor webhook (stripe-signature) → 22.6 verifyIdentity through the bus, prefill source=stripe_identity, sessions → L3
+ *   POST /v1/webhooks/sms                         telephony webhook (x-fake-telephony: FAKE) { from, to, text, message_sid } → 32.14 §4: an unknown number starts a 20.3 lead keyed to it
+ *                                                 (lead.start{channel: sms}; the disclosure is the first outbound text), replies are the S1 chips (lead.answer), the identity code goes to that number (./channels.ts)
+ *   POST /v1/webhooks/voice                       telephony webhook { from, to, call_sid, digits?, speech? } → lead.start{channel: voice_inbound}; the spoken disclosure first; the code is texted to the caller; consents never by voice
  *   GET  /v1/borrower/me                          → { party, level, session, subjects[] }
  *   GET  /v1/borrower/deeplink/{token}            → target after L1 (7-day expiry; the token never encodes loan data)
  *   POST /v1/borrower/documents                   multipart (file, application_id, document_class?) → 22.1 ingestDocument → { document_id, status, … }
@@ -23,7 +26,9 @@ import type { Logger } from "../log.ts";
 import { PgBorrowerUiRepository } from "../../infra/db/borrower-ui.ts";
 import { normalizeDestination } from "../../infra/db/borrower-parties.ts";
 import { hashCode, type SessionRow } from "../../infra/db/borrower-sessions.ts";
-import { FakeEdelivery, type EdeliveryPort } from "../../infra/integrations/delivery.ts";
+import { FakeEdelivery, type EdeliveryPort, type TelephonyWebhookPort } from "../../infra/integrations/delivery.ts";
+import { FakeGoogleOidc, type OidcPort } from "../../infra/integrations/oidc.ts";
+import { PgBorrowerOidcRepository } from "../../infra/db/borrower-oidc.ts";
 import { DOCUMENT_CLASSES } from "../../domain/verification/ops-22-1.ts";
 import { isUuid, toJson } from "../../infra/db/client.ts";
 import { decodeEntityData } from "../../infra/db/entities.ts";
@@ -37,7 +42,10 @@ import { FakeTruv, type IncomeConnectPort } from "./vendors/fake-truv.ts";
 import { BorrowerRecordReader } from "./record.ts";
 import { BorrowerStreamHub } from "./stream.ts";
 import { BorrowerCommands } from "./commands.ts";
+import { BorrowerOidc } from "./oidc.ts";
+import { createBorrowerChannels, type BorrowerChannels } from "./channels.ts";
 import { BorrowerFlows } from "./flows/index.ts";
+import { createLeadRoutes } from "./lead-routes.ts";
 import { connectorFailed } from "./flows/13-cross-cutting.ts";
 import type { CardInstanceRow } from "../../infra/db/borrower-ui.ts";
 
@@ -55,6 +63,12 @@ export interface BorrowerRouterOptions {
   /** HMAC key for signed document URLs; random per process when unset (URLs then die with the process, which is fine for short-lived links). */
   readonly urlSecret?: string;
   readonly returnUrlBase?: string;
+  /** 32.14 DELTA-12: Sign in with Google — the runtime's `oidc` port (FakeGoogleOidc under INTEGRATIONS=fake) unless a caller wires one. */
+  readonly oidc?: OidcPort;
+  /** 32.14 DELTA-15: the Phase I partner party id (`BORROWER_DEFAULT_PARTNER_ID`) the organic entry names when no application names one. */
+  readonly defaultPartnerId?: string;
+  /** 32.14 §4: the telephony vendor's inbound webhook adapter for /v1/webhooks/sms and /v1/webhooks/voice (FakeTelephonyWebhooks unless a real one is wired). */
+  readonly telephonyWebhooks?: TelephonyWebhookPort;
 }
 export interface BorrowerRouter {
   handle(req: IncomingMessage, res: ServerResponse, url: URL, method: string): Promise<boolean>;
@@ -68,6 +82,10 @@ export interface BorrowerRouter {
   readonly reader: BorrowerRecordReader;
   /** The 32.x flows (src/runtime/borrower/flows): event → card, plus the scheduled `tick`. */
   readonly flows?: BorrowerFlows;
+  /** 32.14 DELTA-12: the OpenID Connect provider behind /auth/oidc (FAKE unless a real adapter is wired). */
+  readonly oidc: OidcPort;
+  /** 32.14 §4: SMS and voice entry on the same lead (src/runtime/borrower/channels.ts) — the two telephony webhooks and the number → lead key. */
+  readonly channels: BorrowerChannels;
 }
 
 const MAX_BODY = 32 * 1024 * 1024;
@@ -129,13 +147,21 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
   // 02 §3: the stream is fed from the event store after each unit of work commits — the runtime's post-commit hook, in-process
   runtime.onCommitted((events) => { hub.publish(events).catch((e) => logger.error("borrower.stream.publish", { error: e })); });
   // the 32.x flows react to the same post-commit feed: the owning processes' events become the cards the borrower sees (src/runtime/borrower/flows)
-  const flows = new BorrowerFlows({ runtime, ui, logger, blobs }); flows.start();
+  const defaultPartnerId = (opts.defaultPartnerId ?? process.env["BORROWER_DEFAULT_PARTNER_ID"] ?? "").trim() || undefined;   // 32.14 DELTA-15
+  const flows = new BorrowerFlows({ runtime, ui, logger, blobs, defaultPartnerId }); flows.start();
+  // 32.14 DELTA-11: the anonymous minute (POST /v1/borrower/lead, no session) and the lead→party link at verify (src/runtime/borrower/lead-routes.ts)
+  const leads = createLeadRoutes({ runtime, logger, flows, defaultPartnerId });
+  // 32.14 DELTA-12: Sign in with Google — the runtime's oidc port (the FAKE provider under INTEGRATIONS=fake); the PKCE verifier is derived from the router's secret
+  const oidcPort: OidcPort = opts.oidc ?? runtime.ports.oidc ?? new FakeGoogleOidc((line) => logger.info("vendor", { line }));
+  const oidcAuth = new BorrowerOidc({ auth, ui, port: oidcPort, urlSecret, allowedOrigins, rpId, logger, identities: new PgBorrowerOidcRepository(runtime.db) });
   commands.flows = flows;   // 32.3: a message a flow answers itself (T2, P9) comes before the generic reply
   const truv = opts.truv ?? new FakeTruv((line) => logger.info("vendor", line));
   const VERIFICATION_ACTOR = { kind: "agent" as const, id: "verification" };
   const now = (): string => runtime.clock.now();
   const edelivery: EdeliveryPort | undefined = runtime.ports.edelivery;
   const deliveryIsFake = (): boolean => !edelivery || edelivery instanceof FakeEdelivery;
+  // 32.14 §4: SMS and voice entry on the same lead — the telephony vendor's inbound webhooks (./channels.ts; the FAKE adapter unless a real one is wired)
+  const channels = createBorrowerChannels({ runtime, logger, auth, ui, flows, commands, telephony: opts.telephonyWebhooks, nonProduction, defaultPartnerId });
 
   const send = (res: ServerResponse, status: number, shape: ShapeName, body: unknown): void => { res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }); res.end(toJson(serialize(shape, body))); };
   const sessionBody = (r: { token: string; session: SessionRow; party: { id: string; party_type: string; legal_name: string } }) =>
@@ -175,17 +201,24 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
       const bearer = String(req.headers["authorization"] ?? "");
       if (bearer) {
         const ctx = await auth.authenticate(req, at);
-        const resolved = await auth.parties.resolveOrCreateByDestination(channel, destination);
-        if (resolved.party.id !== ctx.party.id) throw new BorrowerError(403, "PARTY_SCOPE", undefined, "the code belongs to a different party");
+        // 32.14 S3 "Mobile after Google": a destination on file for no one becomes THIS party's contact (the verified code is the proof — the same effect as party.updateContact, which is fresh-L1-gated and so could never run first);
+        // on file for another party, or for an applicant who has not signed in yet, it is refused; on file for this party it is the fresh-L1 refresh as before
+        const onFile = await auth.parties.destinationOnFile(channel, destination);
+        if (onFile && "party" in onFile && onFile.party.id !== ctx.party.id) throw new BorrowerError(403, "PARTY_SCOPE", undefined, "the code belongs to a different party");
+        if (onFile && "unlinked_application_borrower_id" in onFile) throw new BorrowerError(403, "PARTY_SCOPE", undefined, "the destination is on file for an applicant who has not signed in");
+        const attached = await auth.parties.attachDestination(ctx.party.id, channel, destination);
         await auth.sessions.recordL1(ctx.session.session_id, at);
+        logger.info("borrower.otp.refreshed", { session_id: ctx.session.session_id, channel, contact_added: attached.added, linked_application_borrowers: attached.linked_application_borrowers });
         send(res, 200, "session", sessionBody({ token: ctx.token, session: { ...ctx.session, last_l1_at: at }, party: ctx.party })); return;
       }
       const resolved = await auth.parties.resolveOrCreateByDestination(channel, destination);
       await auth.sessions.setChallengeParty(ch.challenge_id, resolved.party.id);
       const opened = await auth.openSession({ party_id: resolved.party.id, auth_method: channel === "sms" ? "otp_phone" : "otp_email", now: at, otp: true, ip: ipOf(req), user_agent: uaOf(req) });
       await ui.conversationFor(resolved.party.id);
+      // 32.14 DELTA-11: the lead behind the `sm_borrower_lead` cookie (header x-borrower-lead) is linked to the party before the hook runs (`lead.linked{party_id}`)
+      const lead_id = await leads.linkAtVerify(req, resolved.party.id, at);
       // 32.3 E1/E2: the session hook runs before the response — the automation disclosure is the first assistant content on the channel the code came through (an SMS code = the SMS thread)
-      await flows.sessionOpened({ party_id: resolved.party.id, session_id: opened.session.session_id, channel: channel === "sms" ? "sms" : "app", auth_method: opened.session.auth_method, at });
+      await flows.sessionOpened({ party_id: resolved.party.id, session_id: opened.session.session_id, channel: channel === "sms" ? "sms" : "app", auth_method: opened.session.auth_method, at, lead_id });
       logger.info("borrower.session.opened", { session_id: opened.session.session_id, level: "L1", auth_method: opened.session.auth_method, party_created: resolved.created, linked_application_borrowers: resolved.linked_application_borrowers });
       send(res, 200, "session", sessionBody({ token: opened.token, session: opened.session, party: opened.party })); return;
     }
@@ -234,11 +267,32 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
       await auth.sessions.passkeyUsed(stored.passkey_id, r.signCount, at);
       // a passkey is an L1 sign-in without a code: last_l1_at stays empty until a code is verified (the fresh-L1 rule wants a code)
       const opened = await auth.openSession({ party_id: stored.party_id, auth_method: "passkey", now: at, otp: false, passkey_id: stored.passkey_id, ip: ipOf(req), user_agent: uaOf(req) });
-      await flows.sessionOpened({ party_id: stored.party_id, session_id: opened.session.session_id, channel: "app", auth_method: "passkey", at });
+      const lead_id = await leads.linkAtVerify(req, stored.party_id, at);   // 32.14 DELTA-11: the lead cookie's lead is this party's now
+      await flows.sessionOpened({ party_id: stored.party_id, session_id: opened.session.session_id, channel: "app", auth_method: "passkey", at, lead_id });
       logger.info("borrower.session.opened", { session_id: opened.session.session_id, level: "L1", auth_method: "passkey", passkey_id: stored.passkey_id });
       send(res, 200, "session", sessionBody({ token: opened.token, session: opened.session, party: opened.party })); return;
     }
     throw new RangeError("action must be register_options, register, assert_options or assert");
+  }
+
+  // ───────────────────────────── Sign in with Google (32.14 §3, DELTA-12): Authorization Code + PKCE on the server, the same session body as a code
+  async function oidc(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const b = jsonOf(await readBody(req)); const action = str(b, "action"); const at = now();
+    if (action === "start") {
+      const r = await oidcAuth.start(b, at);
+      send(res, 200, "oidc_start", { authorization_url: r.authorization_url, state: r.state, expires_at: r.expires_at, ...(r.delivery ? { delivery: r.delivery } : {}) }); return;
+    }
+    if (action === "callback") {
+      const marker = req.headers["x-fake-oidc"]; const fakeMarker = Array.isArray(marker) ? marker[0] : marker;
+      const opened = await oidcAuth.callback(b, { at, ip: ipOf(req), user_agent: uaOf(req), fake_marker: fakeMarker });
+      await ui.conversationFor(opened.party.id);
+      // 32.3 E1/E2 as for a code: the session hook runs before the response — the disclosure is the first assistant content; a passkey-less L1 session (no last_l1_at)
+      const lead_id = await leads.linkAtVerify(req, opened.party.id, at);   // 32.14 DELTA-11: the lead cookie's lead is this party's now (as at OTP verify and passkey assert)
+      await flows.sessionOpened({ party_id: opened.party.id, session_id: opened.session.session_id, channel: "app", auth_method: opened.session.auth_method, at, lead_id });
+      logger.info("borrower.session.opened", { session_id: opened.session.session_id, level: "L1", auth_method: opened.session.auth_method, provider: oidcPort.provider, vendor: oidcPort.vendorName, party_created: opened.party_created, identity_created: opened.identity_created, resolved_by: opened.resolved_by, challenge_id: opened.challenge_id });
+      send(res, 200, "session", sessionBody({ token: opened.token, session: opened.session, party: opened.party })); return;
+    }
+    throw new RangeError("action must be start or callback");
   }
 
   // ───────────────────────────── L2: SSN last 4 + DOB against application_borrowers
@@ -318,7 +372,9 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     const row = app ? (await runtime.db.query<{ legal_name: string; data: unknown }>(`SELECT p.legal_name, (SELECT data FROM entity_current e WHERE e.kind = 'applications' AND e.id = a.id::text) AS data FROM applications a JOIN parties p ON p.id = a.partner_party_id WHERE a.id = $1`, [app]))[0]
       : loan ? (await runtime.db.query<{ legal_name: string; data: unknown }>(`SELECT p.legal_name, NULL AS data FROM loans l JOIN parties p ON p.id = l.partner_party_id WHERE l.id = $1`, [loan]))[0] : undefined;
     const nested = row?.data ? decodeEntityData(row.data) : null;
-    return { legal_name: (nested?.["partner_name"] as string | undefined) ?? row?.legal_name ?? "Supermortgage", nmlsr_id: (nested?.["partner_nmlsr_id"] as string | undefined) ?? "" };
+    // 32.14 DELTA-15: a party with no subject yet (a fresh sign-in) is the configured Phase I partner's
+    const configured = !row && defaultPartnerId ? (await runtime.db.query<{ legal_name: string }>(`SELECT legal_name FROM parties WHERE id::text = $1`, [defaultPartnerId]))[0] : undefined;
+    return { legal_name: (nested?.["partner_name"] as string | undefined) ?? row?.legal_name ?? configured?.legal_name ?? "Supermortgage", nmlsr_id: (nested?.["partner_nmlsr_id"] as string | undefined) ?? "" };
   }
   async function deepLink(req: IncomingMessage, res: ServerResponse, token: string): Promise<void> {
     const at = now(); const ctx = await auth.authenticate(req, at);   // L1 first: no loan data before a session (01 §6.5)
@@ -508,17 +564,21 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
 
   async function handle(req: IncomingMessage, res: ServerResponse, url: URL, method: string): Promise<boolean> {
     const path = url.pathname;
-    if (!path.startsWith("/v1/borrower/") && path !== "/v1/webhooks/stripe" && path !== "/v1/webhooks/truv") return false;
+    if (!path.startsWith("/v1/borrower/") && path !== "/v1/webhooks/stripe" && path !== "/v1/webhooks/truv" && path !== "/v1/webhooks/sms" && path !== "/v1/webhooks/voice") return false;
     const started = Date.now();
     const log = (status: number, extra: Record<string, unknown> = {}): void => logger.info("http", { method, path, status, ms: Date.now() - started, surface: "borrower", ...extra });
     try {
       let m: RegExpExecArray | null;
+      if (path === "/v1/borrower/lead" && method === "POST") { await leads.handle(req, res, url); return true; }   // 32.14 DELTA-11: no session — the anonymous minute (lead-routes.ts logs its own line)
       if (method === "POST" && path === "/v1/borrower/auth/otp") await otp(req, res);
       else if (method === "POST" && path === "/v1/borrower/auth/passkey") await passkey(req, res);
+      else if (method === "POST" && path === "/v1/borrower/auth/oidc") await oidc(req, res);
       else if (method === "POST" && path === "/v1/borrower/auth/l2") await stepUpL2(req, res);
       else if (method === "POST" && path === "/v1/borrower/identity/stripe/session") await identitySession(req, res);
       else if (method === "POST" && path === "/v1/webhooks/stripe") await stripeWebhook(req, res);
       else if (method === "POST" && path === "/v1/webhooks/truv") await truvWebhook(req, res);
+      else if (method === "POST" && path === "/v1/webhooks/sms") send(res, 200, "sms_webhook", await channels.sms(req));
+      else if (method === "POST" && path === "/v1/webhooks/voice") send(res, 200, "voice_webhook", await channels.voice(req));
       else if (method === "POST" && path === "/v1/borrower/voice/session") await voiceSession(req, res);
       else if (method === "POST" && (m = /^\/v1\/borrower\/connect\/([a-z_]+)\/session$/.exec(path))) await connectSession(req, res, m[1]!);
       else if (method === "GET" && path === "/v1/borrower/me") await me(req, res);
@@ -543,5 +603,5 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     }
     return true;
   }
-  return { handle, auth, ui, stripe, blobs, truv, hub, commands, reader, flows };
+  return { handle, auth, ui, stripe, blobs, truv, hub, commands, reader, flows, oidc: oidcPort, channels };
 }

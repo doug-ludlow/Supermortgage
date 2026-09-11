@@ -59,7 +59,7 @@ The same tree runs as a service: `src/runtime/main.ts` is the container entrypoi
 ```sh
 export DATABASE_URL=postgresql://sm:sm@localhost/supermortgage API_TOKEN=dev-token
 npm run migrate           # db/migrate.sh through the entrypoint (what the Cloud Run `migrate` job runs)
-npm start                 # HTTP API + ops console on $PORT (default 8080): GET /healthz, /readyz, /v1/tools, POST /v1/loans/{uuid}/tools/{process}/{name}
+npm start                 # HTTP API + ops console (page at /ops, JSON at /api/*) on $PORT (default 8080): GET /healthz, /readyz, /v1/tools, POST /v1/loans/{uuid}/tools/{process}/{name}
 npm run sweep             # one pass over due timers and the outbox backlog, then exit (Cloud Scheduler runs this every minute)
 ```
 

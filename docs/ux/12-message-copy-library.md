@@ -535,6 +535,47 @@ The lines the borrower API and the shell author themselves (src/runtime/borrower
 - `income.upload.fallback` — UploadCard — "Send your most recent pay stub and last year's W-2." — *SQ-03: the fallback when the payroll connection fails.*
 - `documents.upload.fallback` — UploadCard — "Send us the document instead" — why: "The connection didn't work, so a copy from you does the same job." — *T-X-12: a non-income connector fails.*
 
+## Entry, sign-up and sign-in (32.14)
+
+- `entry.landing.headline` — headline — "Let's find your best mortgage." — *S0: the root of the borrower host is the thread; the line above the first assistant message.*
+- `entry.landing.time_budget` — line — "About six minutes of your time. Then a real underwriting answer." — *S0: one quiet line under the goal card; never "your rate in four minutes".*
+- `entry.landing.getting_started` — status strip — "Getting started" — *S0 on mobile: the status strip before a subject exists; the Record pane is hidden.*
+- `entry.buy.contract_question` — ChoiceCard — "Do you have a signed purchase contract?" — options `Yes, I have a contract` · `Still looking` — *S1 after Buy a home; Still looking is 32.3 E3's preapproval path.*
+- `entry.occupancy.question` — ChoiceCard — "Will you live in the home?" — options `Primary home` · `Second home` · `Investment property` — *S1 after refinance or cash-out; primary is highlighted, never tapped for you.*
+- `entry.state.question` — ChoiceCard — "Which state is the home in?" — helper: "We check that we can lend there before anything else." — *S1: runs 31.1 readiness and picks the disclosure variant.*
+- `entry.estimate.value` — field — "About what is your home worth?" — helper: "A rough number is fine." — *S1 refinance and cash-out; `value_estimate_cents`.*
+- `entry.estimate.balance` — field — "About how much do you owe on it?" — helper: "Your best guess from your last statement." — *S1: an own-stated existing-loan balance; never the loan amount sought.*
+- `entry.estimate.price_range` — field — "About what price are you looking at?" — helper: "A range is fine." — *S1 purchase; `price_range_cents`.*
+- `entry.estimate.down_payment` — field — "About how much will you put down?" — *S1 purchase; `down_payment_cents`.*
+- `entry.range.card` — StatusCard — "Today's published rates for a {{product}}: {{rate_low}} ({{apr_low}} APR) to {{rate_high}} ({{apr_high}} APR)." — *S2: the active sheet's low and high for the product with the APR beside each rate; never a tier, LLPA or borrower figure.*
+- `entry.range.promise` — line — "Your real number takes a soft credit check that doesn't affect your score and a few minutes of your time. A licensed loan officer confirms it — usually within the hour. Underwriting answers in about six minutes." — *S2: the promise, before the identity ask.*
+- `entry.range.disclaimer` — footer — "Not a commitment to lend. Rates change daily. {{partner.legal_name}}, NMLSR ID {{partner.nmlsr_id}}." — *S2: the 1026.24 footer beside the range; `not_a_commitment=true` in the 20.2 checklist.*
+- `entry.resumed` — receipt — "You told me: {{answers}}." — *S3: the one line that replaces the goal card when the lead carries a goal, e.g. "refinance · primary home · Arizona".*
+- `entry.proceed.question` — ChoiceCard — "Ready for your real numbers?" — helper: "This starts your application. Nothing is ordered until you say yes on the cards that follow." — options `Get my real numbers` · `Not yet` — *S4: Proceed → `application.received`; Not yet → `intent.deferred`.*
+- `entry.proceed.not_yet` — line — "No problem. Your numbers stay here, and nothing is ordered or pulled until you say so." — *S4: the lead stays at `terms_presented`.*
+- `lead.state_closed` — line — "We can't lend in {{state}} right now, so we'll stop here. Thanks for stopping by." — *S1: 31.1 readiness closed; no range, no identity ask; the lead is `closed_lost`.*
+- `auth.choose_method` — ChoiceCard — "Where should I send your numbers?" — options `Text me a code` · `E-mail me a code` · `Continue with Google` · `Use my passkey` — *S3: the identity ask; Use my passkey is listed first on a device with a registered passkey.*
+- `auth.welcome_back` — ChoiceCard — "Welcome back. How would you like to sign in?" — options `Text me a code` · `E-mail me a code` · `Continue with Google` · `Use my passkey` — *S6: the same screen from the header's Sign in and on any 401.*
+- `auth.sms.field` — field — "Your mobile number" — helper: "We'll text you a six-digit code." — *S3: `POST /v1/borrower/auth/otp {channel: sms}`.*
+- `auth.email.field` — field — "Your e-mail address" — helper: "We'll e-mail you a six-digit code." — *S3: `{channel: email}`.*
+- `auth.google.button` — button — "Continue with Google" — *S3: Google's standard button, no custom styling (DELTA-12); in FAKE mode a small FAKE identity form stands in for Google.*
+- `auth.google.failed` — refusal — "Google sign-in didn't go through. Use a code instead." — *`OIDC_EMAIL_UNVERIFIED` and `OIDC_INVALID`; the reason is never shown.*
+- `auth.code.enter` — field — "Enter the six-digit code we sent to {{destination}}." — options `Continue` · `Send a new code` — *S3: one field; the FAKE code is shown beside it outside production.*
+- `auth.code.resent` — receipt — "We sent a new code to {{destination}}." — *S3.*
+- `auth.add_mobile` — ConfirmCard — "Add a mobile number? We'll text you a link when something needs you." — helper: "Optional. It doesn't hold anything up." — options `Text me a code` · `Not now` — *S3 after Google: `party.updateContact`, then a code to the number; never blocks the flow.*
+- `auth.passkey.offer` — line — "Next time, skip the code: add a passkey and sign in with one tap on this device." — options `Add a passkey` · `Not now` — *S3: once, after the first session; skippable; no card.*
+- `auth.identity.how` — ChoiceCard — "For the soft credit check, how do you want to give us your details?" — options `Scan my ID (30 seconds)` · `Type it in` — *S4: Scan → 32.3 E5 unchanged (L3); Type → the same ConfirmCard with `source=borrower`; the session stays L1.*
+- `auth.link_loan` — ConfirmCard — "Already have a loan with us? Link it with a few facts only you would know." — fields: last 4 of your loan number or the property ZIP · last 4 of your SSN · date of birth — *DELTA-16, phase 3: `party.linkLoan`; a mismatch never says which field.*
+- `consent.credit.soft.title` — ConsentCard — "Check my credit with a soft pull" — helper: "A soft pull doesn't affect your score. A full credit check happens only if you apply." — *S4: `credit.authorize{kind: soft_pull, consumer_entered_identity: true}` at L1 (DELTA-13).*
+- `consent.credit.soft.body` — ConsentCard body — "I authorize {{partner.legal_name}} to obtain my credit report to prequalify me. This is a soft inquiry and does not affect my credit score. A full credit check happens only if I choose to apply." — footer: "Type your name to authorize." — *S4: `requires_typed_name: true`.*
+- `credit.freeze.lift` — StatusCard — "Your credit file is frozen, so the bureau couldn't share it. Lift the freeze with the bureau, then tap Try again. Nothing else changes." — *S4: a freeze is not a decline; no adverse inference.*
+- `deep_link.unknown` — refusal — "That link doesn't work. Sign in and we'll find your place." — options `Sign in` — *S5: `GET /v1/borrower/deeplink/{token}` answers 404.*
+- `deep_link.expired` — refusal — "That link has expired. Sign in and we'll take you there." — options `Sign in` — *S5: 410.*
+- `entry.step.continue` — button — "Continue" — *S1: the one submit for the state select and the two estimate fields (chips resolve on tap; a select or typed field needs an explicit submit for keyboard users, WCAG 3.2.2).*
+- `entry.voice.code_texted` — spoken line — "I've texted a six-digit code to this number. Enter it on your keypad to continue." — *32.14 §4 voice entry: consents are never taken by voice; the identity code goes to the calling number.*
+- `entry.sms.options_hint` — line — "Reply with a number." — *32.14 §4 SMS entry: the options of a ChoiceCard are spelled "1) … 2) … 3) …" from the copy line's options.*
+- `entry.estimate.cash_out_limit` — line — "For cash-out, the loan can be up to {{max_ltv_pct}}% of your home's value." — *S1: under the estimate fields for a cash-out goal; the 80% LTV cap shown as a plain limit, never a decline (`PROGRAM_MAX_LTV_PCT.cash_out`).*
+
 ## Channel variants (rules)
 - **SMS**: first sentence + deep link; never a number the borrower hasn't seen in-app first (no rates, balances or payoff figures by SMS); STOP footer on the first message of a thread.
 - **E-mail**: full text; subject = the card title; marketing e-mails carry the CAN-SPAM footer and the `partner` postal address.

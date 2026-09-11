@@ -27,6 +27,7 @@ export function toMe(api: Json): BorrowerMe {
     party_id: str(party.party_id),
     first_name: str(party.first_name) || str(party.display_name).split(" ")[0] || "",
     level: (str(api.level) as BorrowerMe["level"]) || "L1",
+    ...(str(obj(api.session).auth_method) ? { auth_method: str(obj(api.session).auth_method) } : {}), // 32.14 §3
     subjects,
     partner: { legal_name: str(partner.legal_name) || "Supermortgage", nmlsr_id: str(partner.nmlsr_id) },
   };
@@ -139,6 +140,7 @@ export function toThread(api: Json): { messages: ThreadMessage[]; cards: AnyCard
       sender_label: str(m.sender_label) || "Supermortgage",
       channel: (str(m.channel) as ThreadMessage["channel"]) || "app",
       ...(str(m.body_text) ? { body_text: str(m.body_text) } : {}),
+      ...(m.copy_tokens && typeof m.copy_tokens === "object" ? { copy_tokens: Object.fromEntries(Object.entries(obj(m.copy_tokens)).filter(([, v]) => typeof v === "string") as [string, string][]) } : {}),
       ...(str(m.card_instance_id) ? { card_instance_id: str(m.card_instance_id) } : {}),
       subject: { ...(str(subject.application_id) ? { application_id: str(subject.application_id) } : {}), ...(str(subject.loan_id) ? { loan_id: str(subject.loan_id) } : {}), ...(str(subject.label) ? { label: str(subject.label) } : {}) },
       voice_turn: m.voice_turn === true,

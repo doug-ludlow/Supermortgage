@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef } from "react";
+import { Fragment, useEffect, useMemo, useRef, type ReactNode } from "react";
 import type { AnyCardInstance, ResolveRequest } from "@/lib/types/cards";
 import type { ThreadMessage } from "@/lib/types/record";
 import { Card } from "@/components/cards";
@@ -8,7 +8,8 @@ import type { CardComponentProps } from "@/components/cards/types";
 import { civilDate, dayDividerLabel, formatDate } from "@/lib/format";
 import { copy } from "@/lib/copy";
 import { DisclosurePackage, packageMembers } from "@/components/flows/4-disclosures/DisclosurePackage";
-import { MessageBody } from "@/components/flows/3-entry";
+import { MessageBody, renderMessageBody } from "@/components/flows/3-entry";
+import { PasskeyOffer } from "./PasskeyOffer";   // 32.14 S3: the inline action on the API's auth.passkey.offer line
 import { CardBoundary } from "@/components/flows/13-cross-cutting/CardBoundary";   // 32.13: one failing card never blanks the thread
 
 export type ThreadProps = {
@@ -25,6 +26,12 @@ export type ThreadProps = {
   cardErrors: Record<string, string>;
   /** A load/connection problem, shown above the pinned ask (never as a card). */
   notice?: string;
+  /** 32.14 S5: `?card=` on /app — that card is the pinned ask while pending and is scrolled into view (a deep link or a vendor return lands here). */
+  pinnedId?: string;
+  /** 32.14 S3: a non-blocking prompt above the scrollback (the `auth.add_mobile` ConfirmCard after Google). */
+  banner?: ReactNode;
+  /** 32.14 S3: registers a device passkey from the `{{copy:auth.passkey.offer}}` line. */
+  onAddPasskey?: () => Promise<void>;
 };
 
 /** The pinned current ask: most recent unresolved card (01 §1.3). */
@@ -39,9 +46,18 @@ function cardTitle(c: AnyCardInstance): string {
   return (p.title as string) || (p.state_label as string) || (p.purpose_text as string) || (p.subject as string) || copy(c.copy_key);
 }
 
-export function Thread({ messages, cards, timezone, partnerLegalName, showSubjectLabels, wide, scrollTo, cardProps, resolve, busyCardId, cardErrors, notice }: ThreadProps) {
+export function Thread({ messages, cards, timezone, partnerLegalName, showSubjectLabels, wide, scrollTo, cardProps, resolve, busyCardId, cardErrors, notice, pinnedId, banner, onAddPasskey }: ThreadProps) {
   const scroller = useRef<HTMLDivElement>(null);
-  const pinned = useMemo(() => pinnedCard(cards), [cards]);
+  const pinned = useMemo(() => {
+    const named = pinnedId ? cards[pinnedId] : undefined;
+    return named && named.status === "pending" ? named : pinnedCard(cards);
+  }, [cards, pinnedId]);
+
+  useEffect(() => {
+    // keep the newest message in view as the thread grows (declared first: a scroll target set on the same render wins below)
+    const s = scroller.current;
+    if (s) s.scrollTop = s.scrollHeight;
+  }, [messages.length]);
 
   useEffect(() => {
     if (!scrollTo) return;
@@ -49,12 +65,6 @@ export function Thread({ messages, cards, timezone, partnerLegalName, showSubjec
     el?.scrollIntoView({ block: "center", behavior: "smooth" });
     (el as HTMLElement | null)?.focus?.();
   }, [scrollTo]);
-
-  useEffect(() => {
-    // keep the newest message in view as the thread grows
-    const s = scroller.current;
-    if (s) s.scrollTop = s.scrollHeight;
-  }, [messages.length]);
 
   const sorted = useMemo(() => [...messages].sort((a, b) => (a.at < b.at ? -1 : 1)), [messages]);
   // 32.4 §2: the LE and its companions are one grouped message — the package renders at its first card; the members render inside it
@@ -68,7 +78,8 @@ export function Thread({ messages, cards, timezone, partnerLegalName, showSubjec
             {notice}
           </p>
         ) : null}
-        <div className="sm-pinned" data-testid="pinned-ask" hidden={!pinned}>
+        {banner}
+        <div className="sm-pinned" data-testid="pinned-ask" hidden={!pinned} data-pinned-card={pinned?.card_instance_id}>
         {pinned ? (
           <>
             <strong>Waiting on you:</strong>
@@ -111,7 +122,8 @@ export function Thread({ messages, cards, timezone, partnerLegalName, showSubjec
                     <time dateTime={m.at}>{formatDate(m.at, timezone, "time")}</time>
                   </div>
                 ) : null}
-                {m.body_text ? <div className="sm-msg-body"><MessageBody text={m.body_text} partnerLegalName={partnerLegalName} /></div> : null}
+                {m.body_text ? <div className="sm-msg-body"><MessageBody text={m.body_text} partnerLegalName={partnerLegalName} tokens={m.copy_tokens} /></div> : null}
+                {m.body_text && onAddPasskey && renderMessageBody(m.body_text).copy_key === "auth.passkey.offer" ? <PasskeyOffer onAdd={onAddPasskey} /> : null}
                 {pkg?.role === "head" ? (
                   <DisclosurePackage packageId={pkg.package_id} cards={pkg.cards} timezone={timezone} render={(c) => <CardBoundary card={c}><Card card={c} timezone={timezone} {...cardProps} onResolve={(req) => resolve(c, req)} busy={busyCardId === c.card_instance_id} error={cardErrors[c.card_instance_id]} comparisonStub={wide} /></CardBoundary>} />
                 ) : card ? <CardBoundary card={card}><Card card={card} timezone={timezone} {...cardProps} onResolve={(req) => resolve(card, req)} busy={busyCardId === card.card_instance_id} error={cardErrors[card.card_instance_id]} comparisonStub={wide} /></CardBoundary> : null}

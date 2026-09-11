@@ -308,7 +308,7 @@ test("20.3-T9: Given `consumer_state=CO` on 2027-01-05, when the session starts,
   lead = deliverDisclosure(h.events, lead, { interaction_id: "v-1", at: ET("2027-01-05", "10:00", "-05:00") }).lead;
   const co = deliverCoPreuseNotice(h.events, lead, { at: ET("2027-01-05", "10:00", "-05:00"), notice_id: "n-co-1", public_notice_url: "https://example.test/partner/admt-notice" }); lead = co.lead;
   assert.equal(co.text, "Partner Bank uses automated decision-making technology in decisions about your loan; here's how to get more information: https://example.test/partner/admt-notice"); assert.equal(co.gate_required, true);
-  assert.equal(co.event.type, "co_admt.preuse_notice.delivered"); assert.equal(co.event.payload.variant, "pre_use"); assert.equal(co.event.payload.state, "CO"); assert.equal(co.event.applicationId, "lead-co-0105");
+  assert.equal(co.event.type, "co_admt.preuse_notice.delivered"); assert.equal(co.event.payload.variant, "pre_use"); assert.equal(co.event.payload.state, "CO"); assert.equal(co.event.applicationId, undefined); assert.equal(co.event.aggregate?.id, "lead-co-0105");   // a lead with no application yet records the line on its own aggregate, like every other lead event (loan_events.application_id references applications; 32.14 DELTA-11)
   assert.equal(evaluateGate("21.6.coPreuseNoticeGate", coPreuseFacts(lead, D("2027-01-05"))).open, true); assertPricingOutputAllowed(lead, ET("2027-01-05", "10:01", "-05:00"));
   assert.ok(ofType(h.events, "co_admt.preuse_notice.delivered")[0]!.sequence < h.events.all().length + 1);
   assert.equal(ofType(h.events, "terms.presented").length + ofType(h.events, "quote.presented").length, 0, "no pricing output preceded the line");

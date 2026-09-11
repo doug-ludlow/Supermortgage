@@ -57,6 +57,15 @@ export const COMMAND_COPY_KEYS: Readonly<Record<string, string>> = {
   SCORE_MODEL_MIXED: "credit.rerun.neutral",                    // 23.1 T11 / 32.3 T9: the neutral re-run line, never a score
   JOINT_INTENT_OWN_PARTY_ONLY: "consent.joint_intent.title",
   SUBJECT_TERMINAL: "error.read_only",                          // 32.13 T-X-16: "This file is closed, so that can't change…"
+  // 32.14 DELTA-11: the anonymous minute's refusals (POST /v1/borrower/lead) — the guardrails of 32.14 §5 as the API answers them
+  L0_FACTS_ONLY: DEFAULT_COPY_KEY,                              // a fact outside 20.3 rule 6 on a lead without a party — nothing is written
+  STATE_GATE_FIRST: "entry.state.question",                     // no range and no identity ask before the state is known (31.1 readiness first)
+  STEP_ORDER: DEFAULT_COPY_KEY,                                 // the chips are answered in their fixed order
+  LEAD_CLOSED: "lead.state_closed",                             // a closed state ended the lead: no range, no identity ask
+  LEAD_UNKNOWN: DEFAULT_COPY_KEY,                               // a stale lead cookie: the app starts over
+  LEAD_THROTTLED: DEFAULT_COPY_KEY,                             // LEAD_START_PER_HOUR per IP
+  RANGE_CONTENT_CHECK: "auth.choose_method",                    // the 20.2 checklist failed: no number, the identity ask still renders
+  LINK_LOAN_MISMATCH: "auth.link_loan",                         // DELTA-16: refused without saying which field
 };
 
 /** Thread replies the API authors itself while the agent turn is not yet wired (01 §6.4, 01 §7.1, 13 T-X-05). */
@@ -78,6 +87,10 @@ export const ERROR_COPY_KEYS: Readonly<Record<string, string>> = {
   OTP_EXPIRED: "auth.code_expired",                  // "That code expired. We can send a new one."
   OTP_TOO_MANY_ATTEMPTS: "auth.code_locked",
   PASSKEY_INVALID: "auth.passkey_failed",
+  OIDC_INVALID: "auth.google.failed",
+  TERMS_NOT_PRESENTED: "terms.pending_mlo",   // 32.14 S4: lead.proceed before terms.presented — the review is still pending                // 32.14 §3 (DELTA-12): a replayed/foreign state, a nonce mismatch, an unverifiable id token — the reason is never shown
+  OIDC_EMAIL_UNVERIFIED: "auth.google.failed",       // the provider did not verify the e-mail: no party is ever linked by an unverified e-mail
+  OIDC_FAKE_MARKER_REQUIRED: "auth.google.failed",   // FAKE provider only: the callback lacked the x-fake-oidc marker
   L2_MATCH_FAILED: "auth.identity_match_failed",     // "Those details didn't match what we have. Try again or talk to a person."
   PARTY_SCOPE: "error.not_yours",                    // "That isn't on your account."
   DEEP_LINK_EXPIRED: "deeplink.expired",             // "That link has expired. Sign in and we'll take you there."

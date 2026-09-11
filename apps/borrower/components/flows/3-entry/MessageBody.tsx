@@ -17,8 +17,9 @@ export function renderMessageBody(text: string, tokens: Record<string, string> =
   return { text: tail ? `${body} ${tail}` : body, copy_key: key, automated: key === "entry.disclosure.first" || key === "entry.disclosure.real_person" };
 }
 
-export function MessageBody({ text, partnerLegalName }: { text: string; partnerLegalName: string }) {
-  const r = renderMessageBody(text, { "partner.legal_name": partnerLegalName });
+/** `tokens`: the message's own `copy_tokens` (32.14: `entry.resumed` carries `{{answers}}`), beside the partner name every line may use. */
+export function MessageBody({ text, partnerLegalName, tokens }: { text: string; partnerLegalName: string; tokens?: Record<string, string> }) {
+  const r = renderMessageBody(text, { "partner.legal_name": partnerLegalName, ...(tokens ?? {}) });
   return (
     <span data-copy-key={r.copy_key ?? undefined} data-automated={r.automated ? "true" : undefined}>
       {r.text}

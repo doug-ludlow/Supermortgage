@@ -26,6 +26,13 @@ export interface Dashboard {
   readonly agents: readonly { agent: string; off: boolean; why?: string | undefined; tier: string; decisionsLast7d: number }[];
 }
 export interface AccessEntry { readonly at: string; readonly actor: Actor; readonly method: string; readonly path: string; readonly purpose?: string; }
+/** 32.14 §1.9 / T18: the funnel read model — counts per stage from `loan_events` / lead events only, in funnel order (`GET /api/funnel?from=&to=`). */
+export const FUNNEL_STAGES: readonly string[] = ["lead.created", "lead.disclosure.delivered", "lead.goal.set", "lead.range.shown", "lead.authenticated", "application.started", "credit.softpull.received", "terms.presented", "application.received", "application.trid_received", "du.findings.received", "intent.to_proceed.received", "lock.executed"];
+export interface FunnelStage { readonly stage: string; readonly event_type: string; readonly count: number; }
+export interface Funnel { readonly from: string; readonly to: string; readonly stages: readonly FunnelStage[]; }
+/** A stage id from its event type (`lead.created` → `lead_created`); the rows keep both. */
+export const funnelStageId = (eventType: string): string => eventType.replace(/\./g, "_");
+export const funnelRows = (counts: ReadonlyMap<string, number>): FunnelStage[] => FUNNEL_STAGES.map((t) => ({ stage: funnelStageId(t), event_type: t, count: counts.get(t) ?? 0 }));
 
 export interface ConsoleStore {
   queue(opts: { role?: string; kind?: QueueItem["kind"]; loanId?: string; now: string }): Promise<QueueItem[]>;
@@ -38,6 +45,8 @@ export interface ConsoleStore {
   requeueDeadLetter(id: string, actor: Actor, now: string): Promise<{ ok: true } | { ok: false; reason: string }>;
   setAiOff(agent: string, why: string | null, actor: Actor, now: string): Promise<{ ok: true } | { ok: false; reason: string }>;
   logAccess(e: AccessEntry): Promise<void>;
+  /** 32.14 T18: counts per funnel stage for events that occurred in [from, to). */
+  funnel(range: { from: string; to: string }): Promise<Funnel>;
 }
 
 export const READ_ONLY_ROLES = new Set(["auditor", "examiner"]);

@@ -34,7 +34,8 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
   return createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? "/", "http://console");
-      if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end(ui); return; }
+      // "/" standalone (npm run console); "/ops" behind the API (32.14 §6.3)
+      if (req.method === "GET" && ["/", "/index.html", "/ops", "/ops/", "/ops/index.html"].includes(url.pathname)) { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end(ui); return; }
       if (url.pathname === "/api/roles") { json(res, 200, { roles: CONSOLE_ROLES, readOnly: [...READ_ONLY_ROLES] }); return; }
       const actor = actorOf(req);
       if (!actor) { json(res, 401, { error: "x-actor-id and a valid x-actor-role are required" }); return; }
@@ -46,6 +47,8 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
         if (url.pathname === "/api/loans") { json(res, 200, await store.searchLoans(url.searchParams.get("q") ?? "", Number(url.searchParams.get("limit") ?? 20))); return; }
         const m = /^\/api\/loans\/([^/]+)$/.exec(url.pathname);
         if (m) { const l = await store.loan(decodeURIComponent(m[1]!), now); if (!l) json(res, 404, { error: "no such loan" }); else json(res, 200, l); return; }
+        // 32.14 T18: the entry funnel — counts per stage from loan_events/lead events only (src/console/pg-store.ts funnel)
+        if (url.pathname === "/api/funnel") { json(res, 200, await store.funnel({ from: url.searchParams.get("from") ?? new Date(Date.parse(now) - 30 * 86_400_000).toISOString(), to: url.searchParams.get("to") ?? now })); return; }
         if (url.pathname === "/api/dashboard") { json(res, 200, await store.dashboard(now)); return; }
         json(res, 404, { error: "not found" }); return;
       }

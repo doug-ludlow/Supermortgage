@@ -17,6 +17,7 @@
  *   GET  /v1/applications                           the newest applications
  *   POST /v1/transfers/batches                      board a servicing-transfer batch  body: { actor, batch: {...}, files: { "boarding_tape.final.csv": "...", ... } }
  *   POST /v1/transfers/batches/demo                 board the built-in 100-loan demo batch (fixtures/transfer-batch-demo)
+ *   POST /v1/entry/seed-demo                        32.14 demo seed (FAKE): readiness rows for the demo states, partner NMLSR ID, an active rate sheet (idempotent)
  *   GET  /v1/transfers/batches/{batchId}            a batch's boarding summary
  *   /, /index.html, /api/*                          the ops console (src/console) — its x-actor-id / x-actor-role headers name the human
  *
@@ -66,6 +67,7 @@ import { isUuid } from "../infra/db/client.ts";
 import { plainDate } from "../kernel/calendar/date.ts";
 import type { Logger } from "./log.ts";
 import { createBorrowerRouter, type BorrowerRouter, type BorrowerRouterOptions } from "./borrower/routes.ts";
+import { seedEntryDemo } from "./entry-seed.ts";
 
 export interface ServerOptions { readonly runtime: Runtime; readonly apiToken: string; readonly logger: Logger; readonly console?: boolean;
   /** The borrower API's own dependencies (vendor fakes, rpId, environment); defaults to the FAKE vendors. */
@@ -137,7 +139,7 @@ export function createApiServer(opts: ServerOptions): Server {
       if (method === "GET" && path === "/login") {
         const t = url.searchParams.get("token") ?? "";
         if (!opts.apiToken || !same(t, opts.apiToken)) { done(401, { error: "unauthorized", hint: "GET /login?token=<API_TOKEN>: the token did not match" }); return; }
-        res.writeHead(302, { location: "/", "set-cookie": `sm_token=${encodeURIComponent(t)}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=43200` }); res.end();
+        res.writeHead(302, { location: "/ops", "set-cookie": `sm_token=${encodeURIComponent(t)}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=43200` }); res.end();
         logger.info("http", { method, path: "/login", status: 302, ms: Date.now() - started }); return;
       }
       // the borrower API authenticates its own sessions (and the vendor webhook its signature); the ops token is never accepted there
@@ -232,6 +234,12 @@ export function createApiServer(opts: ServerOptions): Server {
         else done(200, { entry_sets: await runtime.uow.ledger.setsForLoan(loanId) });
         return;
       }
+      // 32.14 demo seed (FAKE, idempotent): readiness rows for the demo states, the partner's NMLSR ID, an active rate sheet — src/runtime/entry-seed.ts
+      if (method === "POST" && path === "/v1/entry/seed-demo") {
+        const b = await readJson(req);
+        const r = await seedEntryDemo(runtime, { ...(Array.isArray(b["states"]) ? { states: (b["states"] as unknown[]).map(String) } : {}), ...(typeof b["partner_id"] === "string" ? { partner_id: b["partner_id"] as string } : {}), ...(typeof b["nmlsr_id"] === "string" ? { nmlsr_id: b["nmlsr_id"] as string } : {}) });
+        done(200, r, { partner: r.partner_id, written: r.written.length, rate_sheet: r.rate_sheet_id }); return;
+      }
       if (method === "POST" && path === "/v1/transfers/batches/demo") {
         const b = await readJson(req);
         const actor = b["actor"] ? actorOf(b["actor"]) : { kind: "system" as const, id: "demo-seed" };
@@ -260,7 +268,8 @@ export function createApiServer(opts: ServerOptions): Server {
         return;
       }
       if (method === "POST" && path === "/v1/sweep") { if (borrower.flows) await borrower.flows.tick(runtime.clock.now()); const report = await runtime.sweep(); done(200, report, { due: report.due, breaches: report.breaches.length }); return; }
-      if (consoleServer && (path === "/" || path === "/index.html" || path.startsWith("/api/"))) { consoleServer.emit("request", req, res); return; }
+      // 32.14 §6.3: the root of the host is the borrower thread (the load balancer sends / to /app); the ops console page lives at /ops and its JSON API stays at /api/*
+      if (consoleServer && (path === "/ops" || path === "/ops/" || path === "/ops/index.html" || path.startsWith("/api/"))) { consoleServer.emit("request", req, res); return; }
       done(404, { error: "not found" });
     } catch (e) {
       if (e instanceof CommandRefused) { done(409, { error: "refused", command: e.command, code: e.code, citation: e.citation, reason: e.message }, { refused: e.code }); return; }

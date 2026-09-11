@@ -12,7 +12,7 @@ const PARTY: Shape = { party_id: true, party_type: true, display_name: true, fir
 const SESSION: Shape = { session_id: true, level: true, auth_method: true, expires_at: true, last_l1_at: true, fresh_l1: true, created_at: true };
 const SUBJECT: Shape = { application_id: true, loan_id: true, role: true, stage: true, label: true };
 const CARD: Shape = { card_instance_id: true, conversation_id: true, party_id: true, subject: { application_id: true, loan_id: true }, kind: true, status: true, created_by: true, copy_key: true, props: "opaque", evidence: "opaque", command_ref: true, expires_at: true, created_at: true, resolved_at: true };
-const MESSAGE: Shape = { message_id: true, conversation_id: true, at: true, sender: true, sender_label: true, channel: true, body_text: true, card_instance_id: true, subject: { application_id: true, loan_id: true }, voice_turn: true, delivery: { sent: true, delivered: true, read: true }, card: CARD, deep_link: { token: true, path: true, expires_at: true }, copy_key: true, automation_marker: true };
+const MESSAGE: Shape = { message_id: true, conversation_id: true, at: true, sender: true, sender_label: true, channel: true, body_text: true, card_instance_id: true, subject: { application_id: true, loan_id: true }, voice_turn: true, delivery: { sent: true, delivered: true, read: true }, card: CARD, deep_link: { token: true, path: true, expires_at: true }, copy_key: true, automation_marker: true, copy_tokens: "opaque" };   // 32.14 DELTA-11: a line's copy tokens (entry.resumed's answers), the way cards carry theirs
 const NUMBERS: Shape = { note_rate: true, apr: true, pi_payment_cents: true, escrow_payment_cents: true, loan_amount_cents: true, cash_to_close_cents: true, monthly_savings_cents: true, lock: { status: true, expires_at: true, expires_on: true, period_days: true }, figures_source: true,
   upb_cents: true, next_payment: { due_on: true, amount_cents: true, pi_cents: true, escrow_cents: true }, escrow_balance_cents: true, days_past_due: true, paid_off: { payoff_date: true, escrow_refund_pending_cents: true },
   // 32.9 §3 / 7.3: the engine's ARM estimate once the initial notice is sent
@@ -39,10 +39,22 @@ const HISTORY_ROW: Shape = { kind: true, id: true, payment_id: true, status: tru
   cycle_id: true, cycle_due_date: true, statement_due_by: true, variant: true, generated_at: true, document_id: true, delivered_at: true,
   case_id: true, opened_at: true, closed_at: true, receipt_date: true, is_qwr: true, determination: true, response_type: true, due: [{ timer_code: true, due_date: true, status: true }],
   application_id: true, received_date: true, protection_tier: true, facially_complete_at: true, complete_at: true, reasonable_date: true, ack_sent_on: true, evaluation_id: true, started_at: true, due_at: true, decided_at: true, provided_at: true, option: true, accept_by: true, responded_on: true, plan_type: true, start_date: true, current_term_end: true, installment_cents: true, term_months: true, appeal_window_ends: true, decision: true };
+// 32.14 DELTA-11: the anonymous minute (POST /v1/borrower/lead) — a line is a copy reference with the tokens it needs (never loan data), a step is the next chip, the range is 20.3 rule 7's published low–high
+const LEAD_LINE: Shape = { message_id: true, at: true, sender: true, automation_marker: true, copy_key: true, copy_tokens: "opaque", event_type: true, text: true, state_variant: true, reason: true, state: true, personal_terms: true };
+const LEAD_STEP: Shape = { id: true, kind: true, copy_key: true, options: [{ id: true, transaction_type: true }], preselected: true, fields: [{ id: true, copy_key: true, kind: true }], limit: { max_ltv_pct: true } };   // the estimate step names no copy_key of its own (its fields do — one accessible name each); cash-out carries the 80% cap as a plain limit
+const LEAD_RANGE: Shape = { low_pct: true, high_pct: true, apr_low_pct: true, apr_high_pct: true, product_code: true, product_label: true, rate_sheet_id: true, text: true, checklist_run_id: true, apr_basis: true };
+const LEAD_CLOSED: Shape = { reason: true, copy_key: true, gate: true, state: true };
 export const SHAPES = {
   me: { party: PARTY, level: true, session: SESSION, subjects: [SUBJECT], partner: { legal_name: true, nmlsr_id: true } } satisfies Shape,   // 32.13: the partner the shell names in the automation marker and the disclosure line
+  lead_state: { lead_token: true, lead_id: true, partner: { legal_name: true, nmlsr_id: true }, lines: [LEAD_LINE], step: LEAD_STEP, closed: LEAD_CLOSED, range: LEAD_RANGE } satisfies Shape,   // `lead_token` leaves the API once (start) and the proxy turns it into the cookie; it is never echoed on state/answer/range
+  lead_answer: { lead_id: true, lines: [LEAD_LINE], step: LEAD_STEP, closed: LEAD_CLOSED } satisfies Shape,
+  lead_range: { lead_id: true, range: LEAD_RANGE, card: { kind: true, copy_key: true, personal_terms: true, copy_tokens: "opaque" }, promise_copy_key: true, disclaimer_copy_key: true, next: LEAD_STEP, refused: true } satisfies Shape,
+  // 32.14 T18: the funnel read model (counts per stage from loan_events only)
+  funnel: { from: true, to: true, stages: [{ stage: true, event_type: true, count: true }] } satisfies Shape,
   session: { token: true, session: SESSION, party: PARTY, level: true } satisfies Shape,
   otp_request: { challenge_id: true, channel: true, delivery: true, expires_at: true, fake_code: true } satisfies Shape,
+  // 32.14 §3 (DELTA-12): Sign in with Google — the provider's authorization URL and the state the callback must echo; never the nonce, the code verifier, a token or a client secret
+  oidc_start: { authorization_url: true, state: true, expires_at: true, delivery: true } satisfies Shape,
   passkey_options: { challenge_id: true, challenge: true, rp: { id: true, name: true }, user: { id: true, name: true, display_name: true }, pub_key_cred_params: [{ type: true, alg: true }], allow_credentials: [{ type: true, id: true, transports: true }], timeout_ms: true, attestation: true, expires_at: true } satisfies Shape,
   passkey_registered: { passkey_id: true, credential_id: true, algorithm: true, attestation_verified: true, created_at: true } satisfies Shape,
   level: { level: true, session_id: true } satisfies Shape,
@@ -62,6 +74,9 @@ export const SHAPES = {
   voice_session: { session_id: true, channel: true, vendor: true, started_at: true, first_message: MESSAGE } satisfies Shape,
   connect_session: { vendor: true, vendor_session_id: true, link_token: true, card_instance_id: true, application_id: true, status: true, delivery: true } satisfies Shape,
   connect_webhook: { received: true, vendor: true, vendor_session_id: true, outcome: true, application_id: true, verification_id: true, report_reference_id: true, events: true } satisfies Shape,
+  // 32.14 §4: the telephony vendor's inbound webhooks (SMS and voice entry on the same lead) — what went out to the number (copy keys and rendered lines), never a session token, never the number itself
+  sms_webhook: { received: true, vendor: true, channel: true, lead_id: true, step: true, outbound: [{ copy_key: true, text: true, message_id: true }], events: true, session_opened: true, level: true, fake_code: true, refused: { code: true, gate: true, copy_key: true } } satisfies Shape,
+  voice_webhook: { received: true, vendor: true, channel: true, call_id: true, lead_id: true, step: true, say: [{ copy_key: true, text: true }], texted: [{ copy_key: true, text: true, message_id: true }], events: true, session_opened: true, level: true, fake_code: true, refused: { code: true, gate: true, copy_key: true } } satisfies Shape,
 } as const;
 export type ShapeName = keyof typeof SHAPES;
 
@@ -71,6 +86,8 @@ export const FORBIDDEN_FIELDS: readonly string[] = [
   "risk_assessment", "risk_score", "du_findings", "findings", "interpretation", "recommendation_code", "credit_score", "scores", "tradelines", "inquiries", "public_records", "report_xml", "report_json", "raw_report",
   "fraud_score", "fraud_flags", "fraud_hold", "fraud_hold_record", "red_flags", "sar_candidate", "qc_hold", "qc_finding", "qc_defect", "compliance_result", "test_results", "verdict",
   "tin_encrypted", "tin", "ssn", "date_of_birth_full", "account_number", "routing_number", "token_hash", "code_hash",
+  // 32.14 DELTA-12: an id token and a PKCE verifier (or its hash) never leave the API (the OAuth client secret is never on any response object; `client_secret` stays a Stripe Identity session's ephemeral field)
+  "id_token", "code_verifier", "code_verifier_hash",
   // 32.3 T12 / T19: DU findings and validation-report internals never reach a client payload
   "close_by_date", "validation_results", "value_acceptance_offer", "mi_requirement", "risk_factors", "findings_hash", "du_release", "du_release_applied", "policy_outcome", "policy_generation", "decline_candidate", "dti_du", "ltv_du", "reserves_required_cents", "request_hash",
 ];

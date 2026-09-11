@@ -417,11 +417,12 @@ def agent_paragraph(k, meta):
                 'credit-report contents, fraud, QC and compliance internals are never serialized to the client (§6). Escalations: `human_agent` for `human.request`, '
                 '`mlo_of_record` for `lock.request` approval, `officer` for money-field waivers, `underwriting_reviewer` never from the client.')
     if k == 14:
-        return ('`borrower-app` agent (tools: `lead.answer`, `lead.requestRange`, `lead.proceed`). End-to-end: the owning agent is 32.2\'s `borrower-app`, executing as the '
+        return ('`borrower-app` agent (tools: `lead.answer`, `lead.requestRange`, `lead.proceed`, `party.linkLoan`). End-to-end: the owning agent is 32.2\'s `borrower-app`, executing as the '
                 'thread-owning `intake` agent\'s card tools where a card is sent. `lead.answer` writes the S1 facts through 20.3 explainProgram{op=set_fact} and refuses any fact '
                 'outside 20.3 rule 6; `lead.requestRange` renders 20.3 generalRateRange through 20.2 runContentChecklist and refuses on a failing checklist and for a closed state; '
                 '`lead.proceed` runs 20.3 explainProgram{op=convert} to application.received and refuses before terms.presented under origination.ai_mlo_intake=assisted. It reuses '
-                'lead.start, lead.acknowledgeAiDisclosure, party.authenticate, credit.authorize, party.startIdentity, application.setGoal and party.updateContact of 32.2. '
+                'lead.start, lead.acknowledgeAiDisclosure, party.authenticate, credit.authorize, party.startIdentity, application.setGoal and party.updateContact of 32.2; `party.linkLoan` (DELTA-16) '
+                'links a signed-in party to a serviced loan by loan_last4 or property_zip + ssn_last4 + date_of_birth, raises the session to L2 on an exact match and refuses any mismatch without naming the field. '
                 'Decision record schema: {lead_id, step, command, party_id, gate, outcome, copy_key, rule_set_version, model_version, prompt_version, confidence, rationale}. '
                 'Guardrails: L0_FACTS_ONLY (no name, contact, income, SSN or prohibited inquiry on a lead without a party); RANGE_IS_PUBLISHED (the range is the sheet\'s low to high; '
                 'no tier, no LLPA, no borrower figure); NO_RATE_BEFORE_MLO_REVIEW (existing, on send_card{personal_terms}); STATE_GATE_FIRST (no range and no identity ask while '

@@ -141,7 +141,7 @@ resource "google_compute_url_map" "https" {
   default_service = google_compute_backend_service.api.id
 
   # The API and console hostnames (one name, or two) route to the API service, except
-  # /app and /app/* which go to the borrower app (Next.js basePath "/app").
+  # / (302 → /app) and /app, /app/* which go to the borrower app (Next.js basePath "/app").
   host_rule {
     hosts        = local.hostnames
     path_matcher = "supermortgage"
@@ -150,6 +150,18 @@ resource "google_compute_url_map" "https" {
   path_matcher {
     name            = "supermortgage"
     default_service = google_compute_backend_service.api.id
+
+    # 32.14 §6.3: the root of the host is the borrower thread. "/" answers 302 → /app; the
+    # ops console page is at /ops on the API service; everything else stays on the API.
+    path_rule {
+      paths = ["/"]
+      url_redirect {
+        path_redirect          = "/app"
+        redirect_response_code = "FOUND"
+        strip_query            = false
+        https_redirect         = true
+      }
+    }
 
     path_rule {
       paths   = ["/app", "/app/*"]

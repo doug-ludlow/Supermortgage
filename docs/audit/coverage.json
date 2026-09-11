@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 4641/7446 (62.3%): tids 1253/1914, tables 484/717, timers 1387/1987, notices 235/306, tools 658/1311, figures 624/1211; processes at 100%: 114/165",
+ "brief": "spec units built 4819/7446 (64.7%): tids 1293/1914, tables 494/717, timers 1433/1987, notices 235/306, tools 695/1311, figures 669/1211; processes at 100%: 116/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1253
+   "built": 1293
   },
   "tables": {
    "spec": 717,
-   "built": 484
+   "built": 494
   },
   "timers": {
    "spec": 1987,
-   "built": 1387
+   "built": 1433
   },
   "notices": {
    "spec": 306,
@@ -19,15 +19,15 @@
   },
   "tools": {
    "spec": 1311,
-   "built": 658
+   "built": 695
   },
   "figures": {
    "spec": 1211,
-   "built": 624
+   "built": 669
   },
   "units": {
    "spec": 7446,
-   "built": 4641
+   "built": 4819
   }
  },
  "sections": {
@@ -177,19 +177,19 @@
   },
   "25": {
    "spec": 231,
-   "built": 1,
+   "built": 4,
    "processes": 4,
    "done": 0
   },
   "26": {
    "spec": 247,
-   "built": 3,
+   "built": 6,
    "processes": 4,
    "done": 0
   },
   "27": {
    "spec": 197,
-   "built": 0,
+   "built": 4,
    "processes": 2,
    "done": 0
   },
@@ -201,15 +201,15 @@
   },
   "29": {
    "spec": 232,
-   "built": 0,
+   "built": 3,
    "processes": 4,
    "done": 0
   },
   "30": {
    "spec": 218,
-   "built": 28,
+   "built": 193,
    "processes": 4,
-   "done": 0
+   "done": 2
   },
   "31": {
    "spec": 140,
@@ -332,7 +332,9 @@
   "19.1",
   "19.2",
   "19.3",
-  "19.4"
+  "19.4",
+  "30.1",
+  "30.4"
  ],
  "processes": [
   {
@@ -5974,7 +5976,7 @@
    "timers": {
     "spec": 8,
     "built": 0,
-    "armable": 4,
+    "armable": 5,
     "missing": [
      "FNMA_B1_1_03_CREDIT_DOCS_4M",
      "FNMA_B1_1_03_TAX_YEAR_GATE",
@@ -6256,7 +6258,7 @@
    "timers": {
     "spec": 11,
     "built": 0,
-    "armable": 0,
+    "armable": 1,
     "missing": [
      "FNMA_B1_1_03_CREDIT_DOCS_4M",
      "FNMA_B2_1_3_02_LCOR_CASHBACK_GATE",
@@ -6620,7 +6622,7 @@
    "timers": {
     "spec": 8,
     "built": 0,
-    "armable": 3,
+    "armable": 4,
     "missing": [
      "FNMA_B1_1_03_CREDIT_DOCS_4M",
      "FNMA_B3_2_01_DU_ARCHIVE_270",
@@ -7018,7 +7020,7 @@
    "timers": {
     "spec": 13,
     "built": 1,
-    "armable": 8,
+    "armable": 9,
     "missing": [
      "FNMA_B4_1_2_04_APPRAISAL_12M",
      "FNMA_B4_1_2_04_APPRAISAL_UPDATE_4M",
@@ -7915,17 +7917,14 @@
    },
    "timers": {
     "spec": 12,
-    "built": 1,
+    "built": 4,
     "armable": 12,
     "missing": [
      "CA_CIV_2954_IMPOUND_STMT_GATE",
      "GLBA_1016_4_INITIAL_PRIVACY_GATE",
      "REGZ_1026_39_OWNERSHIP_NOTICE_30",
-     "SM_O64_1098_SEEDS_AT_BOARDING_GATE",
      "SM_O64_CLOSING_PACKAGE_NOTICES_GATE",
-     "SM_O64_FIRST_PAYMENT_LETTER_5BD",
      "SM_O64_FIRST_PAYMENT_LETTER_PREDUE_20",
-     "SM_O64_FNMA_1026_39_EVIDENCE_45",
      "SM_O64_INITIAL_ESCROW_STMT_AT_SETTLEMENT",
      "SM_O64_POST_CLOSING_NOTICE_RUN_2BD",
      "UT_7_17_4_RESERVE_OPTIONS_NOTICE_GATE"
@@ -7982,9 +7981,9 @@
    },
    "units": {
     "spec": 62,
-    "built": 1
+    "built": 4
    },
-   "pct": 1.6
+   "pct": 6.5
   },
   {
    "process": "26.1",
@@ -8139,11 +8138,10 @@
    },
    "timers": {
     "spec": 14,
-    "built": 0,
-    "armable": 7,
+    "built": 1,
+    "armable": 8,
     "missing": [
      "MERS_PROC_ENOTE_REGISTER_1BD",
-     "MERS_PROC_MOM_REGISTER_7",
      "SM_O72_AGENT_ECLOSING_ELIGIBLE_GATE",
      "SM_O72_AUDIT_TRAIL_BEFORE_FUNDING_GATE",
      "SM_O72_ENOTE_LOCATION_GATE",
@@ -8197,9 +8195,9 @@
    },
    "units": {
     "spec": 51,
-    "built": 2
+    "built": 3
    },
-   "pct": 3.9
+   "pct": 5.9
   },
   {
    "process": "26.3",
@@ -8361,10 +8359,9 @@
    },
    "timers": {
     "spec": 23,
-    "built": 0,
-    "armable": 15,
+    "built": 2,
+    "armable": 16,
     "missing": [
-     "MERS_PROC_MOM_REGISTER_7",
      "MERS_PROC_NON_MOM_REGISTER_7",
      "SM_O72_PAPER_NOTE_HANDOFF_1BD",
      "SM_O74_CUSTODIAN_EXCEPTION_CURE_5BD",
@@ -8377,7 +8374,6 @@
      "SM_O74_MERS_SYSTEM_RECONCILE_MONTHLY",
      "SM_O74_MIN_REVERSAL_2BD",
      "SM_O74_MI_CERT_ACTIVE_5BD",
-     "SM_O74_MOM_REGISTER_TARGET_1BD",
      "SM_O74_NOTE_PICKUP_SCAN_1BD",
      "SM_O74_NOTE_TRANSIT_3BD",
      "SM_O74_RECORDED_SI_ERECORD_5BD",
@@ -8411,9 +8407,9 @@
    },
    "units": {
     "spec": 46,
-    "built": 1
+    "built": 3
    },
-   "pct": 2.2
+   "pct": 6.5
   },
   {
    "process": "27.1",
@@ -8587,21 +8583,17 @@
    },
    "timers": {
     "spec": 15,
-    "built": 0,
-    "armable": 9,
+    "built": 4,
+    "armable": 10,
     "missing": [
      "FNMA_C1_1_01_PREMIUM_RECAPTURE_120",
      "FNMA_C1_2_02_PPA_LLPA_REPRICING_18M",
-     "FNMA_C2_2_05_PPA_REQUEST_30",
-     "FNMA_C2_2_DELIVERY_LPI_45",
      "SM_GL_EXPORT_DAILY",
      "SM_GOS_POST_1BD",
      "SM_MSR_HANDOFF_1BD",
      "SM_PLATFORM_FEE_ACCRUAL_MONTHLY",
      "SM_WH_BAILEE_RELEASE_SAME_DAY",
-     "SM_WH_INTERIM_FUNDER_RELEASE_2BD",
      "SM_WH_PARTNER_RESIDUAL_1BD",
-     "SM_WH_PAYOFF_POST_SAME_DAY",
      "SM_WH_PROCEEDS_EXPECTED_1BD",
      "SM_WH_PROCEEDS_MATCH_SAME_DAY",
      "SM_WH_SHORTFALL_DRAFT_2BD"
@@ -8700,9 +8692,9 @@
    },
    "units": {
     "spec": 110,
-    "built": 0
+    "built": 4
    },
-   "pct": 0.0
+   "pct": 3.6
   },
   {
    "process": "28.1",
@@ -8835,7 +8827,7 @@
    "timers": {
     "spec": 24,
     "built": 0,
-    "armable": 10,
+    "armable": 11,
     "missing": [
      "FNMA_A2_3_2_01_REMEDY_PAYMENT_60",
      "FNMA_A2_3_2_02_RELIEF_36_PAYMENTS",
@@ -9040,7 +9032,7 @@
    "timers": {
     "spec": 21,
     "built": 0,
-    "armable": 12,
+    "armable": 13,
     "missing": [
      "BSA_1029_210_INDEPENDENT_TEST",
      "BSA_1029_210_PROGRAM_REVIEW_ANNUAL",
@@ -9358,7 +9350,7 @@
    "timers": {
     "spec": 11,
     "built": 0,
-    "armable": 3,
+    "armable": 4,
     "missing": [
      "FNMA_B3_2_10_DU_FINAL_MATCH_GATE",
      "FNMA_B4_1_4_10_VALUE_ACCEPTANCE_SFC_GATE",
@@ -9451,11 +9443,10 @@
    },
    "timers": {
     "spec": 23,
-    "built": 0,
-    "armable": 11,
+    "built": 3,
+    "armable": 12,
     "missing": [
      "FNMA_B2_1_5_02_LOAN_AGE_6M_PURCHASE_READY",
-     "FNMA_B2_1_5_02_SEASONED_1Y_FLAG",
      "FNMA_C1_2_02_CUSTODIAN_LOAN_NUMBER_REQUEST_3BD",
      "FNMA_C1_2_02_FNMA_LOAN_NUMBER_TO_CUSTODIAN_30",
      "FNMA_C1_2_02_PPA_LLPA_REPRICING_18M",
@@ -9466,10 +9457,8 @@
      "FNMA_C2_2_03_WAREHOUSE_RELEASE_BY_ACQUISITION_GATE",
      "FNMA_C2_2_04_CERTIFICATION_EXPECTED_1BD",
      "FNMA_C2_2_04_PURCHASE_EXPECTED_1BD",
-     "FNMA_C2_2_05_PPA_REQUEST_30",
      "FNMA_C2_2_07_PAYEE_CODE_CHANGE_3BD",
      "FNMA_C2_2_DELIVERY_COMMITMENT_EXPIRY",
-     "FNMA_C2_2_DELIVERY_LPI_45",
      "FNMA_LD_UG_CUSTODIAN_0730_ET_EXPECTATION",
      "FNMA_LQC_DATA_VALIDATION_RESPONSE_30",
      "FNMA_PPA_PROCESSING_10BD",
@@ -9520,59 +9509,29 @@
    },
    "units": {
     "spec": 67,
-    "built": 0
+    "built": 3
    },
-   "pct": 0.0
+   "pct": 4.5
   },
   {
    "process": "30.1",
    "title": "Fannie Mae post-purchase servicing setup (servicer number, Fannie Mae loan number, remittance type, first reporting cycle, initial custodial deposits, servicer loan number, MERS/eRegistry post-purchase state, custodian record, Escrow Setup event)",
    "tids": {
     "spec": 12,
-    "built": 0,
-    "todo": 12,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 7,
-    "built": 5,
-    "missing": [
-     "custodial_transfers",
-     "fnma_establishment_checks"
-    ]
+    "built": 7,
+    "missing": []
    },
    "timers": {
     "spec": 14,
-    "built": 1,
-    "armable": 13,
-    "missing": [
-     "FNMA_C2_2_05_PPA_REQUEST_30",
-     "FNMA_F1_03_PI_DEPOSIT_PROCEEDS_1BD",
-     "FNMA_F1_03_TI_DEPOSIT_PROCEEDS_1BD",
-     "FNMA_TT96_FIRST_LAR_ACQ_MONTH_BD2",
-     "LL_2026_05_ESCROW_SETUP_ORIG_PURCHASE_BD1",
-     "SM_CUSTODY_RECORD_FINALIZE_1BD",
-     "SM_ENOTE_POST_PURCHASE_VERIFY_1BD",
-     "SM_FIRST_LAR_TARGET_NEXTBD_2000",
-     "SM_FNMA_ESTABLISHMENT_VERIFY_1BD",
-     "SM_FNMA_LOAN_NUMBER_RECORD_T0",
-     "SM_INVESTOR_SETUP_COMPLETE_5BD",
-     "SM_MERS_INVESTOR_FNMA_VERIFY_10BD",
-     "SM_WH_INTERIM_FUNDER_RELEASE_2BD"
-    ]
+    "built": 14,
+    "armable": 14,
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -9581,83 +9540,40 @@
    },
    "tools": {
     "spec": 9,
-    "built": 0,
-    "missing": [
-     "matchPurchaseAdvice",
-     "checkFnmaEstablishment",
-     "seedInvestorPosition",
-     "projectEvent",
-     "submitBatch",
-     "pollFeedback",
-     "createCorrection",
-     "openPortalTask",
-     "recordDecision"
-    ]
+    "built": 9,
+    "missing": []
    },
    "figures": {
     "spec": 9,
-    "built": 0,
-    "missing": [
-     "$0.05",
-     "$1,081.64",
-     "$1,096.67",
-     "$2,062.50",
-     "$2,741.67",
-     "$3,285.96",
-     "$544.29",
-     "$559,455.71",
-     "$560,000.00"
-    ]
+    "built": 9,
+    "missing": []
    },
    "units": {
     "spec": 51,
-    "built": 6
+    "built": 51
    },
-   "pct": 11.8
+   "pct": 100.0
   },
   {
    "process": "30.2",
    "title": "New-origination boarding onto the Supermortgage servicing platform at funding (origination-to-servicing data mapping, DQ gate, opening ledger, documents, consents, timers seeded, welcome/first-payment communications, no-transfer-notice design)",
    "tids": {
     "spec": 14,
-    "built": 0,
-    "todo": 14,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14
-    ]
+    "built": 14,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 7,
-    "built": 6,
-    "missing": [
-     "loan_documents_index"
-    ]
+    "built": 7,
+    "missing": []
    },
    "timers": {
     "spec": 11,
-    "built": 4,
-    "armable": 9,
+    "built": 10,
+    "armable": 10,
     "missing": [
-     "FNMA_B2_1_5_FIRST_PAYMENT_2M",
-     "LL_2026_05_ESCROW_SETUP_ORIG_PURCHASE_BD1",
-     "MERS_PROC_MOM_REGISTER_7",
-     "SM_O64_FIRST_PAYMENT_LETTER_5BD",
-     "SM_ORIG_ACTIVE_BEFORE_FIRST_DUE_GATE",
-     "SM_ORIG_BOARD_T1BD",
-     "SM_ORIG_WARNING_CLEAR_10BD"
+     "FNMA_B2_1_5_FIRST_PAYMENT_2M"
     ]
    },
    "notices": {
@@ -9667,48 +9583,19 @@
    },
    "tools": {
     "spec": 13,
-    "built": 0,
-    "missing": [
-     "snapshotOrigination",
-     "mapField",
-     "runValidation",
-     "proposeCorrection",
-     "routeToOwner",
-     "allocateServicingLoanNumber",
-     "boardLoan",
-     "postOpeningEntries",
-     "indexDocuments",
-     "boardConsents",
-     "seedTimers",
-     "sendNotice",
-     "writeDecision"
-    ]
+    "built": 13,
+    "missing": []
    },
    "figures": {
     "spec": 14,
-    "built": 0,
-    "missing": [
-     "$0.01",
-     "$1,785.43",
-     "$1,785.48",
-     "$130.47",
-     "$170.13",
-     "$2,570.34",
-     "$2,858.33",
-     "$3,402.62",
-     "$4,090.12",
-     "$412,000.00",
-     "$544.29",
-     "$559,455.71",
-     "$687.50",
-     "$93.97"
-    ]
+    "built": 14,
+    "missing": []
    },
    "units": {
     "spec": 59,
-    "built": 10
+    "built": 58
    },
-   "pct": 16.9
+   "pct": 98.3
   },
   {
    "process": "30.3",
@@ -9735,24 +9622,16 @@
    },
    "tables": {
     "spec": 4,
-    "built": 3,
-    "missing": [
-     "escrow_credit_transfers"
-    ]
+    "built": 4,
+    "missing": []
    },
    "timers": {
     "spec": 15,
-    "built": 6,
-    "armable": 11,
+    "built": 12,
+    "armable": 14,
     "missing": [
-     "FNMA_B2_1_5_04_REFI_TAX_FINANCING_GATE",
-     "LL_2026_05_ESCROW_SETUP_ORIG_PURCHASE_BD1",
-     "REGX_1024_17C2_INITIAL_ANALYSIS_GATE",
-     "REGX_1024_34B_SAME_SERVICER_CREDIT_AGREEMENT_GATE",
      "REGZ_1026_35B1_HPML_ESCROW_GATE",
      "REGZ_1026_35_HPML_ESCROW_5Y",
-     "REGZ_1026_38L7_CD_ESCROW_CONSISTENCY_GATE",
-     "SM_ESCROW_REFRESH_AT_FUNDING_T0",
      "SM_O64_INITIAL_ESCROW_STMT_AT_SETTLEMENT"
     ]
    },
@@ -9763,95 +9642,48 @@
    },
    "tools": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "buildEscrowLines",
-     "lookupParcel",
-     "readPolicyDeclarations"
-    ]
+    "built": 3,
+    "missing": []
    },
    "figures": {
     "spec": 20,
-    "built": 0,
+    "built": 12,
     "missing": [
-     "$0.00",
-     "$1,375.00",
      "$1,541.70",
      "$1,610.40",
      "$1,612.50",
-     "$1,850.00",
-     "$130.47",
-     "$154.17",
      "$2,010.40",
-     "$2,062.50",
      "$2,133.32",
-     "$3,402.62",
-     "$4,090.12",
-     "$400.00",
      "$452.10",
-     "$533.33",
-     "$6,400.00",
      "$616.68",
-     "$687.50",
      "$8,250.00"
     ]
    },
    "units": {
     "spec": 55,
-    "built": 9
+    "built": 31
    },
-   "pct": 16.4
+   "pct": 56.4
   },
   {
    "process": "30.4",
    "title": "First-90-days servicing hand-off: ownership notice, first statement, first credit and investor cycles, vendor activations, EPD monitoring, servicing file, origination record retention and timer seeding",
    "tids": {
     "spec": 14,
-    "built": 0,
-    "todo": 14,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14
-    ]
+    "built": 14,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 6,
-    "built": 0,
-    "missing": [
-     "epd_flags",
-     "handoff_items",
-     "retention_schedule",
-     "servicing_file_compilations",
-     "servicing_handoffs",
-     "vendor_activations"
-    ]
+    "built": 6,
+    "missing": []
    },
    "timers": {
     "spec": 11,
-    "built": 3,
-    "armable": 8,
-    "missing": [
-     "REGX_1024_38C2_SERVICING_FILE_5",
-     "SM_CS_BOARDED_ORIG_REPORT_DAILY",
-     "SM_FIRST_STATEMENT_RECONCILE_1BD",
-     "SM_FLOOD_LOL_SERVICING_LINK_2BD",
-     "SM_ORIG_EPD_WATCH_P6_60",
-     "SM_ORIG_HANDOFF_CLOSE_90",
-     "SM_ORIG_RETENTION_CLASSIFY_GATE",
-     "SM_TAX_SERVICE_ACTIVATE_2BD"
-    ]
+    "built": 11,
+    "armable": 11,
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -9860,43 +9692,19 @@
    },
    "tools": {
     "spec": 12,
-    "built": 0,
-    "missing": [
-     "openHandoff",
-     "verifyTimerSeeding",
-     "repairTimer",
-     "requestVendorActivation",
-     "confirmVendorActivation",
-     "reconcileFirstStatement",
-     "evaluateEpd",
-     "compileServicingFile",
-     "classifyRetention",
-     "explainFnmaLetter",
-     "closeHandoff",
-     "requestOfficerOverride"
-    ]
+    "built": 12,
+    "missing": []
    },
    "figures": {
     "spec": 10,
-    "built": 0,
-    "missing": [
-     "$0.01",
-     "$1,785.43",
-     "$1,850.00",
-     "$170.13",
-     "$2,062.50",
-     "$3,200.00",
-     "$3,402.62",
-     "$4,090.12",
-     "$687.50",
-     "$93.97"
-    ]
+    "built": 10,
+    "missing": []
    },
    "units": {
     "spec": 53,
-    "built": 3
+    "built": 53
    },
-   "pct": 5.7
+   "pct": 100.0
   },
   {
    "process": "31.1",

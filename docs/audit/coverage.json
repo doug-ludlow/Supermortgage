@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 7089/7446 (95.2%): tids 1809/1914, tables 666/717, timers 1881/1987, notices 299/306, tools 1232/1311, figures 1202/1211; processes at 100%: 157/165",
+ "brief": "spec units built 7101/7446 (95.4%): tids 1821/1914, tables 666/717, timers 1881/1987, notices 299/306, tools 1232/1311, figures 1202/1211; processes at 100%: 158/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1809
+   "built": 1821
   },
   "tables": {
    "spec": 717,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 7446,
-   "built": 7089
+   "built": 7101
   }
  },
  "sections": {
@@ -147,9 +147,9 @@
   },
   "20": {
    "spec": 190,
-   "built": 178,
+   "built": 190,
    "processes": 4,
-   "done": 3
+   "done": 4
   },
   "21": {
    "spec": 282,
@@ -334,6 +334,7 @@
   "19.3",
   "19.4",
   "20.1",
+  "20.2",
   "20.3",
   "20.4",
   "21.1",
@@ -5098,22 +5099,9 @@
    "title": "Solicitation, marketing, and consent compliance for outbound refinance offers and organic acquisition",
    "tids": {
     "spec": 12,
-    "built": 0,
-    "todo": 12,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 7,
@@ -5143,9 +5131,9 @@
    },
    "units": {
     "spec": 45,
-    "built": 33
+    "built": 45
    },
-   "pct": 73.3
+   "pct": 100.0
   },
   {
    "process": "20.3",

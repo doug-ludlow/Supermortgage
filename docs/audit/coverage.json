@@ -1,33 +1,33 @@
 {
- "brief": "spec units built 4842/7446 (65.0%): tids 1306/1914, tables 494/717, timers 1435/1987, notices 235/306, tools 695/1311, figures 677/1211; processes at 100%: 116/165",
+ "brief": "spec units built 4905/7446 (65.9%): tids 1318/1914, tables 498/717, timers 1453/1987, notices 239/306, tools 716/1311, figures 681/1211; processes at 100%: 117/165",
  "totals": {
   "tids": {
    "spec": 1914,
-   "built": 1306
+   "built": 1318
   },
   "tables": {
    "spec": 717,
-   "built": 494
+   "built": 498
   },
   "timers": {
    "spec": 1987,
-   "built": 1435
+   "built": 1453
   },
   "notices": {
    "spec": 306,
-   "built": 235
+   "built": 239
   },
   "tools": {
    "spec": 1311,
-   "built": 695
+   "built": 716
   },
   "figures": {
    "spec": 1211,
-   "built": 677
+   "built": 681
   },
   "units": {
    "spec": 7446,
-   "built": 4842
+   "built": 4905
   }
  },
  "sections": {
@@ -147,15 +147,15 @@
   },
   "20": {
    "spec": 190,
-   "built": 3,
+   "built": 4,
    "processes": 4,
    "done": 0
   },
   "21": {
    "spec": 282,
-   "built": 6,
+   "built": 64,
    "processes": 6,
-   "done": 0
+   "done": 1
   },
   "22": {
    "spec": 368,
@@ -171,13 +171,13 @@
   },
   "24": {
    "spec": 314,
-   "built": 9,
+   "built": 11,
    "processes": 6,
    "done": 0
   },
   "25": {
    "spec": 231,
-   "built": 5,
+   "built": 7,
    "processes": 4,
    "done": 0
   },
@@ -333,6 +333,7 @@
   "19.2",
   "19.3",
   "19.4",
+  "21.1",
   "30.1",
   "30.4"
  ],
@@ -5239,14 +5240,13 @@
    },
    "timers": {
     "spec": 10,
-    "built": 0,
+    "built": 1,
     "armable": 3,
     "missing": [
      "CO_SB26_189_1704_PREUSE_NOTICE_GATE",
      "FCRA_1681B_A3_SOFT_PULL_PURPOSE_GATE",
      "REGB_1002_2F_NO_PREQUAL_DECLINE_GATE",
      "REGB_1002_9_DECISION_30",
-     "REGZ_1026_19E1_LE_3BD",
      "SM_AI_INTERACTION_DISCLOSURE_GATE",
      "SM_ESIGN_BEFORE_LE_GATE",
      "SM_LEAD_AUTH_BEFORE_DISCLOSURE_GATE",
@@ -5288,9 +5288,9 @@
    },
    "units": {
     "spec": 41,
-    "built": 1
+    "built": 2
    },
-   "pct": 2.4
+   "pct": 4.9
   },
   {
    "process": "20.4",
@@ -5391,22 +5391,9 @@
    "title": "Conversational URLA/1003 intake, application data capture, and the MLO-of-record touchpoint",
    "tids": {
     "spec": 12,
-    "built": 0,
-    "todo": 12,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 2,
@@ -5415,58 +5402,30 @@
    },
    "timers": {
     "spec": 6,
-    "built": 0,
-    "armable": 2,
-    "missing": [
-     "SAFE_1008_103_MLO_OF_RECORD_GATE",
-     "SM_O21_DEMOGRAPHICS_ASKED_GATE",
-     "SM_O21_INTAKE_ABANDON_30",
-     "SM_O21_JOINT_INTENT_GATE",
-     "SM_O21_MLO_REVIEW_SLA_1BD",
-     "SM_O21_SCIF_PRESENT_GATE"
-    ]
+    "built": 6,
+    "armable": 6,
+    "missing": []
    },
    "notices": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "NTC_FNMA_1103_SCIF"
-    ]
+    "built": 1,
+    "missing": []
    },
    "tools": {
     "spec": 15,
-    "built": 0,
-    "missing": [
-     "startInterview",
-     "discloseAI",
-     "captureField",
-     "confirmPrefill",
-     "validateULAD",
-     "detectSixItems",
-     "askDemographics",
-     "presentSCIF",
-     "affirmJointIntent",
-     "assignMLO",
-     "renderForm1003",
-     "requestESign",
-     "openEscalation",
-     "logSafeActivity",
-     "writeDecision"
-    ]
+    "built": 15,
+    "missing": []
    },
    "figures": {
     "spec": 2,
-    "built": 0,
-    "missing": [
-     "$3,402.62",
-     "$3,402.63"
-    ]
+    "built": 2,
+    "missing": []
    },
    "units": {
     "spec": 38,
-    "built": 2
+    "built": 38
    },
-   "pct": 5.3
+   "pct": 100.0
   },
   {
    "process": "21.2",
@@ -5492,52 +5451,31 @@
    },
    "tables": {
     "spec": 3,
-    "built": 1,
-    "missing": [
-     "disclosures",
-     "fee_items"
-    ]
+    "built": 3,
+    "missing": []
    },
    "timers": {
     "spec": 5,
-    "built": 0,
-    "armable": 4,
-    "missing": [
-     "REGZ_1026_19E1III_LE_7SBD_GATE",
-     "REGZ_1026_19E1IV_LE_MAILBOX_3SBD",
-     "REGZ_1026_19E1_LE_3BD",
-     "REGZ_1026_37A13_COSTS_EXPIRE_10BD",
-     "SM_O22_MLO_LE_REVIEW_SLA_1BD"
-    ]
+    "built": 5,
+    "armable": 5,
+    "missing": []
    },
    "notices": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "NTC_REGZ_1026_19E1VI_PROVIDER_LIST",
-     "NTC_REGZ_1026_19E2II_PRELE_ESTIMATE",
-     "NTC_REGZ_1026_37_LE"
-    ]
+    "built": 3,
+    "missing": []
    },
    "tools": {
     "spec": 6,
-    "built": 0,
-    "missing": [
-     "assembleFees",
-     "getPricingScenario",
-     "deriveTolerance",
-     "computeAPR",
-     "renderH24",
-     "buildProviderList"
-    ]
+    "built": 6,
+    "missing": []
    },
    "figures": {
     "spec": 7,
-    "built": 0,
+    "built": 1,
     "missing": [
      "$1,785.43",
      "$206,774.20",
-     "$3,402.62",
      "$3,505.43",
      "$38,097.13",
      "$521,902.87",
@@ -5546,9 +5484,9 @@
    },
    "units": {
     "spec": 36,
-    "built": 1
+    "built": 18
    },
-   "pct": 2.8
+   "pct": 50.0
   },
   {
    "process": "21.3",
@@ -5590,7 +5528,7 @@
    },
    "timers": {
     "spec": 18,
-    "built": 0,
+    "built": 1,
     "armable": 8,
     "missing": [
      "AZ_ARS_6_946C_FEE_AGREEMENT_GATE",
@@ -5601,7 +5539,6 @@
      "MA_MGL_184_17B_ATTORNEY_STATEMENT_AT_APPLICATION",
      "NJ_3_1_16_3_FEE_DISCLOSURE_GATE",
      "NY_3NYCRR_38_3_PREAPP_DISCLOSURE_GATE",
-     "REGB_1002_14_APPRAISAL_NOTICE_3BD",
      "REGV_1022_74D_SCORE_NOTICE_CONSUMMATION_GATE",
      "REGX_1024_15_AFBA_REFERRAL_GATE",
      "REGX_1024_20_HCL_3BD",
@@ -5668,9 +5605,9 @@
    },
    "units": {
     "spec": 75,
-    "built": 0
+    "built": 1
    },
-   "pct": 0.0
+   "pct": 1.3
   },
   {
    "process": "21.4",
@@ -5705,12 +5642,11 @@
    },
    "timers": {
     "spec": 7,
-    "built": 0,
+    "built": 1,
     "armable": 5,
     "missing": [
      "FNMA_C2_1_2_03_KEY_DATA_CHANGE_1BD",
      "NY_3NYCRR_38_6B4_LOCK_EXPIRY_NOTICE_12_20BD",
-     "REGZ_1026_19E2_INTENT_FEE_GATE",
      "REGZ_1026_19E3IVD_LOCK_REVISED_LE_3BD",
      "SM_LOCK_EXPIRY_DEADLINE",
      "SM_LOCK_EXPIRY_WARN_7",
@@ -5750,9 +5686,8 @@
    },
    "figures": {
     "spec": 4,
-    "built": 0,
+    "built": 1,
     "missing": [
-     "$3,402.62",
      "$650.00",
      "$68.50",
      "$700.00"
@@ -5760,9 +5695,9 @@
    },
    "units": {
     "spec": 47,
-    "built": 2
+    "built": 4
    },
-   "pct": 4.3
+   "pct": 8.5
   },
   {
    "process": "21.5",
@@ -5788,22 +5723,20 @@
    },
    "tables": {
     "spec": 3,
-    "built": 0,
+    "built": 1,
     "missing": [
-     "disclosures",
      "tolerance_cures",
      "tolerance_tests"
     ]
    },
    "timers": {
     "spec": 5,
-    "built": 0,
+    "built": 1,
     "armable": 4,
     "missing": [
      "REGZ_1026_19E4_REVISED_LE_3BD",
      "REGZ_1026_19E4_REVISED_LE_4SBD_GATE",
      "REGZ_1026_19F2V_TOLERANCE_REFUND_60",
-     "REGZ_1026_37A13_COSTS_EXPIRE_10BD",
      "SM_TOLERANCE_CURE_REVIEW_SLA_1BD"
     ]
    },
@@ -5849,9 +5782,9 @@
    },
    "units": {
     "spec": 43,
-    "built": 0
+    "built": 2
    },
-   "pct": 0.0
+   "pct": 4.7
   },
   {
    "process": "21.6",
@@ -7019,7 +6952,7 @@
    },
    "timers": {
     "spec": 13,
-    "built": 1,
+    "built": 2,
     "armable": 9,
     "missing": [
      "FNMA_B4_1_2_04_APPRAISAL_12M",
@@ -7027,7 +6960,6 @@
      "FNMA_B4_1_4_10_VALUE_ACCEPTANCE_OFFER_4M",
      "FNMA_B4_1_4_11_PDC_API_SUBMIT_GATE",
      "FNMA_UAD_3_6_REQUIRED_GATE",
-     "REGZ_1026_19E2_INTENT_FEE_GATE",
      "REGZ_1026_42G_MISCONDUCT_REFERRAL_30",
      "SM_AMC_REGISTRATION_GATE",
      "SM_APPRAISER_LICENSE_GATE",
@@ -7071,9 +7003,9 @@
    },
    "units": {
     "spec": 41,
-    "built": 1
+    "built": 2
    },
-   "pct": 2.4
+   "pct": 4.9
   },
   {
    "process": "24.2",
@@ -7294,7 +7226,7 @@
    },
    "timers": {
     "spec": 13,
-    "built": 2,
+    "built": 3,
     "armable": 5,
     "missing": [
      "FNMA_B2_1_2_04_RESUBORDINATION_GATE",
@@ -7305,7 +7237,6 @@
      "SM_SETTLEMENT_AGENT_VETTING_GATE",
      "SM_SUBORDINATION_REQUEST_3BD",
      "SM_TITLE_COMMITMENT_DATEDOWN_GATE",
-     "SM_TITLE_ORDER_2BD",
      "SM_TRUST_POA_REVIEW_GATE",
      "SM_WIRE_VERIFICATION_GATE"
     ]
@@ -7364,9 +7295,9 @@
    },
    "units": {
     "spec": 67,
-    "built": 2
+    "built": 3
    },
-   "pct": 3.0
+   "pct": 4.5
   },
   {
    "process": "24.5",
@@ -7610,10 +7541,9 @@
    },
    "timers": {
     "spec": 11,
-    "built": 0,
+    "built": 1,
     "armable": 7,
     "missing": [
-     "REGZ_1026_19E1_LE_3BD",
      "SM_O61_APOR_REFRESH_7",
      "SM_O61_BLOCKING_FAILURE_REVIEW_1BD",
      "SM_O61_COMPLIANCE_PASS_CD_GATE",
@@ -7687,9 +7617,9 @@
    },
    "units": {
     "spec": 74,
-    "built": 0
+    "built": 1
    },
-   "pct": 0.0
+   "pct": 1.4
   },
   {
    "process": "25.2",
@@ -7906,10 +7836,9 @@
    },
    "tables": {
     "spec": 5,
-    "built": 0,
+    "built": 1,
     "missing": [
      "closing_notice_runs",
-     "disclosures",
      "escrow_elections",
      "ownership_transfer_notices",
      "tax_reporting_seeds"
@@ -7980,9 +7909,9 @@
    },
    "units": {
     "spec": 62,
-    "built": 5
+    "built": 6
    },
-   "pct": 8.1
+   "pct": 9.7
   },
   {
    "process": "26.1",

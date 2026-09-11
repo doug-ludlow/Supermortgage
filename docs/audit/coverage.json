@@ -1,5 +1,5 @@
 {
- "brief": "spec units built 5236/7446 (70.3%): tids 1394/1914, tables 522/717, timers 1508/1987, notices 247/306, tools 788/1311, figures 777/1211; processes at 100%: 122/165",
+ "brief": "spec units built 5251/7446 (70.5%): tids 1394/1914, tables 522/717, timers 1508/1987, notices 247/306, tools 803/1311, figures 777/1211; processes at 100%: 122/165",
  "totals": {
   "tids": {
    "spec": 1914,
@@ -19,7 +19,7 @@
   },
   "tools": {
    "spec": 1311,
-   "built": 788
+   "built": 803
   },
   "figures": {
    "spec": 1211,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 7446,
-   "built": 5236
+   "built": 5251
   }
  },
  "sections": {
@@ -177,7 +177,7 @@
   },
   "25": {
    "spec": 231,
-   "built": 99,
+   "built": 114,
    "processes": 4,
    "done": 1
   },
@@ -7424,24 +7424,8 @@
    },
    "tools": {
     "spec": 15,
-    "built": 0,
-    "missing": [
-     "assembleCdFigures",
-     "reconcileFigureSources",
-     "renderCd",
-     "deliverDisclosure",
-     "recordReceipt",
-     "computeEarliestConsummation",
-     "evaluateRedisclosure",
-     "runToleranceTest",
-     "assertGateOpen",
-     "runCdConsistencyChecks",
-     "generateUcd",
-     "submitUcd",
-     "scheduleCorrectedCd",
-     "openEscalation",
-     "writeDecision"
-    ]
+    "built": 15,
+    "missing": []
    },
    "figures": {
     "spec": 4,
@@ -7454,9 +7438,9 @@
    },
    "units": {
     "spec": 50,
-    "built": 11
+    "built": 26
    },
-   "pct": 22.0
+   "pct": 52.0
   },
   {
    "process": "25.3",

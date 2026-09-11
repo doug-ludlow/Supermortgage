@@ -1,5 +1,5 @@
 {
- "brief": "spec units built 5069/7446 (68.1%): tids 1356/1914, tables 509/717, timers 1487/1987, notices 244/306, tools 747/1311, figures 726/1211; processes at 100%: 120/165",
+ "brief": "spec units built 5071/7446 (68.1%): tids 1356/1914, tables 509/717, timers 1489/1987, notices 244/306, tools 747/1311, figures 726/1211; processes at 100%: 120/165",
  "totals": {
   "tids": {
    "spec": 1914,
@@ -11,7 +11,7 @@
   },
   "timers": {
    "spec": 1987,
-   "built": 1487
+   "built": 1489
   },
   "notices": {
    "spec": 306,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 7446,
-   "built": 5069
+   "built": 5071
   }
  },
  "sections": {
@@ -153,7 +153,7 @@
   },
   "21": {
    "spec": 282,
-   "built": 129,
+   "built": 130,
    "processes": 6,
    "done": 3
   },
@@ -177,7 +177,7 @@
   },
   "25": {
    "spec": 231,
-   "built": 89,
+   "built": 90,
    "processes": 4,
    "done": 1
   },
@@ -5655,11 +5655,10 @@
    },
    "timers": {
     "spec": 5,
-    "built": 2,
+    "built": 3,
     "armable": 4,
     "missing": [
      "REGZ_1026_19E4_REVISED_LE_4SBD_GATE",
-     "REGZ_1026_19F2V_TOLERANCE_REFUND_60",
      "SM_TOLERANCE_CURE_REVIEW_SLA_1BD"
     ]
    },
@@ -5702,9 +5701,9 @@
    },
    "units": {
     "spec": 43,
-    "built": 6
+    "built": 7
    },
-   "pct": 14.0
+   "pct": 16.3
   },
   {
    "process": "21.6",
@@ -7499,13 +7498,12 @@
    },
    "timers": {
     "spec": 10,
-    "built": 1,
+    "built": 2,
     "armable": 7,
     "missing": [
      "FNMA_UCD_ACCEPTED_GATE",
      "REGZ_1026_19F1III_CD_MAILBOX_3SBD",
      "REGZ_1026_19F1_CD_3SBD_GATE",
-     "REGZ_1026_19F2V_TOLERANCE_REFUND_60",
      "REGZ_1026_19F2_CLERICAL_CD_60",
      "REGZ_1026_19F2_CORRECTED_CD_30",
      "REGZ_1026_19F4_SELLER_CD_GATE",
@@ -7553,9 +7551,9 @@
    },
    "units": {
     "spec": 50,
-    "built": 2
+    "built": 3
    },
-   "pct": 4.0
+   "pct": 6.0
   },
   {
    "process": "25.3",

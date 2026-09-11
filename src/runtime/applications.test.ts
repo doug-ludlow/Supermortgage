@@ -98,3 +98,18 @@ test("a tool executes in application scope: the command, its events and its deci
   const rec = await call("GET", `/v1/applications/${appId}`);
   assert.ok((rec.body["decisions"] as { action: string }[]).some((d) => d.action === "application.intake.reviewed"), JSON.stringify(rec.body["decisions"]));
 });
+
+test("the LE bridge (POST /v1/applications/{id}/disclosures/le) is the MLO of record's act over an application with its six items: an agent actor is refused (400), an unknown application is 404, an application without `application.trid_received` is refused (400) — and nothing is written", { skip }, async () => {
+  const opened = await call("POST", "/v1/applications", { actor: ACTOR, application: { partner_party_id: partnerPartyId, channel: "organic", transaction_type: "limited_cash_out", occupancy: "primary", borrowers: [{ legal_name: "Dana Fixture" }] } });
+  const appId = (opened.body["application"] as { id: string }).id;
+  const render = { application_id: appId, disclosure_id: `LE-${appId.slice(0, 8)}`, as_of: "2026-10-05", loan_cents: "56000000", term_months: 360, transaction_type: "limited_cash_out", product: "Fixed Rate", pricing: { quote_id: "Q-1", rate_pct: "6.125", price: "100.000", points_cents: "0", lender_credit_cents: "0", locked: false }, fees: [], applicants: ["Dana Fixture"], property_address: "1 Palm Ln, Phoenix AZ 85001", estimated_value_cents: "80000000", creditor: { name: "Partner Bank, N.A.", nmlsr_id: "123456", email: "loans@partnerbank.example", phone: "(800) 555-0155" }, loan_officer: { name: "Jordan Rivera", nmlsr_id: "987654" } };
+  const body = { render, mlo: { review_id: "MR-1", nmlsr_id: "987654" }, delivery: { channel: "esign_portal", consent: { id: "CNS-1", scope: ["disclosures"], granted_at: "2026-10-05T17:20:00.000Z" } } };
+  const agent = await call("POST", `/v1/applications/${appId}/disclosures/le`, { actor: ACTOR, ...body });
+  assert.equal(agent.status, 400); assert.match(String(agent.body["reason"]), /mlo_of_record/);
+  const mlo = { kind: "human", id: "u-mlo", role: "mlo_of_record" };
+  assert.equal((await call("POST", `/v1/applications/${randomUUID()}/disclosures/le`, { actor: mlo, ...body })).status, 404);
+  const early = await call("POST", `/v1/applications/${appId}/disclosures/le`, { actor: mlo, ...body });
+  assert.equal(early.status, 400); assert.match(String(early.body["reason"]), /trid_received/);
+  const events = await db.query<{ type: string }>(`SELECT type FROM loan_events WHERE application_id = $1`, [appId]);
+  assert.ok(events.every((e) => !e.type.startsWith("disclosure.")), "nothing was delivered");
+});

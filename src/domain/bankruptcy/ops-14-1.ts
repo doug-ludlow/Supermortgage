@@ -584,7 +584,7 @@ export function arrearageCureOrder(claim: { installments: readonly { due: PlainD
   for (let k = out.length - 1; k >= 0 && net > 0n; k--) { const c = out[k]!; const t = net < c.cents ? net : c.cents; out[k] = { ...c, cents: c.cents - t }; net -= t; }
   return out.filter((c) => c.cents > 0n);
 }
-const BK_ACCOUNT = (loanId: string, account: "bk_prepetition_arrearage" | "bk_postpetition_suspense" | "bk_trustee_clearing" | "bk_unsecured_cramdown"): AccountRef => ({ scope: "loan", loanId, account: account as LoanAccount });   // §14.1 data model: bk_* loan sub-accounts (baseline §5 extension)
+const BK_ACCOUNT = (loanId: string, account: "bk_prepetition_arrearage" | "bk_postpetition_suspense" | "bk_trustee_clearing" | "bk_unsecured_cramdown"): AccountRef => ({ scope: "loan", loanId, account });   // §14.1 data model: bk_* loan sub-accounts (baseline §5 extension)
 const takeInOrder = (components: readonly Cents[], paidBefore: Cents, take: Cents): Cents[] => { const out: Cents[] = []; let skip = paidBefore, pool = take; for (const c of components) { const avail = c > skip ? c - skip : 0n; skip = skip > c ? skip - c : 0n; const t = pool < avail ? pool : avail; out.push(t); pool -= t; } return out; };
 /**
  * Rule 6(a) / E-2.2-04: the voucher posts to `bk_trustee_clearing` and is split per its designation — conduit post-petition

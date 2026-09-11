@@ -16,7 +16,7 @@
  * Shared-code notes: 19.1's `regBRetentionGate`, `fnmaRetentionGate`, `tcpaConsentGate`, `jurisdictionYears` and
  * `productionDue` are reused unchanged; 19.2's `triageIncident` / `scopeIncident` / `nydfsClocks` drive every incident
  * clock (31.3 adds only the origination scoping and the holds). 30.2's RETENTION_BY_KIND spells the LO-comp class
- * `regz_loc_comp_3y` (0061 CHECK) where the spec and this registry say `regz_locomp_3y` — reported, not redefined.
+ * `regz_loc_comp_3y` (0061 CHECK) where the spec and this registry say `regz_locomp_3y` — re-spelled by 0110 and 30.4's RETENTION_BY_KIND.
  */
 import { createHash } from "node:crypto";
 import { type PlainDate, addDays, addMonths, dayOfWeek, parts, plainDate } from "../../kernel/calendar/date.ts";

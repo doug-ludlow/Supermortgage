@@ -14,9 +14,14 @@
  *     report the integration outbox backlog. Cloud Scheduler runs it every
  *     minute as the `sweep` job; the API also exposes it on POST /v1/sweep.
  *
- * Section domain services (BoardingService, CashieringService, …) are not
- * wired yet: a tool that calls `service(rt, …)` answers 501 until its section's
- * service is given a persistence adapter.
+ * Origination services (sections 20–31): `originationServices` (src/runtime/origination.ts) constructs ONE instance of
+ * every stateful section service (25.2's ClosingDisclosureService, 29.1's CommitmentService, 29.3/29.4's delivery
+ * services, 21.5's ToleranceService, 21.3's companion service) over forwarding stores that land in the executing
+ * command's unit of work, plus the vendor fakes the ops files export (credit reseller, DU, identity/OFAC/fraud, AMC,
+ * UCDP, EarlyCheck, PE–WL, warehouse bank, eRegistry, RON, title) and a 21.4 pricing port over 20.4's published sheets —
+ * the same `services` keys the section tool files look up, so the HTTP path and the unit harnesses behave identically.
+ * Servicing-side section services (BoardingService, CashieringService, …) are not wired yet: a tool that calls
+ * `service(rt, …)` for one of those answers 501 until its section's service is given a persistence adapter.
  */
 import { randomUUID } from "node:crypto";
 import type { Db } from "../infra/db/client.ts";
@@ -43,6 +48,7 @@ import { FakeFnmaLsdu, FakeFnmaServicingEvents, FakeFnmaSmdu, FakeFnmaP360, Fake
 import { FakePacer, FakeDmdc, FakeErecording } from "../infra/integrations/legal.ts";
 import { FakeMers } from "../infra/integrations/mers.ts";
 import { FakeLpiTracking, FakeFlood, FakeTaxService, FakeMi } from "../infra/integrations/property.ts";
+import { originationServices, type OriginationServiceSet } from "./origination.ts";
 
 export interface RuntimeDeps {
   readonly db: Db;
@@ -79,6 +85,12 @@ export function fakePorts(): Ports {
     connect: new FakeFnmaConnect(), pacer: new FakePacer(), dmdc: new FakeDmdc(), erecording: new FakeErecording(), mers: new FakeMers(), lpi: new FakeLpiTracking(), flood: new FakeFlood(), taxService: new FakeTaxService(), mi: new FakeMi() };
 }
 
+/** The unit of work's store with the scope's loan stamped on every appended event that carries neither a loan nor an application key. */
+function withDefaultLoan(inner: MemoryEventStore, loanId: string): MemoryEventStore {
+  const append: MemoryEventStore["append"] = (input) => inner.append(input.loanId === undefined && input.applicationId === undefined ? { ...input, loanId } : input);
+  return new Proxy(inner, { get: (target, prop, receiver) => (prop === "append" ? append : Reflect.get(target, prop, receiver)) });
+}
+
 export class Runtime {
   readonly db: Db;
   readonly registry: TimerRegistry;
@@ -90,6 +102,8 @@ export class Runtime {
   readonly entities: PgEntityRepository;
   readonly escalationRepo: PgEscalationRepository;
   readonly applications: PgApplicationRepository;
+  /** The origination section services and vendor ports, one set for the life of the runtime (see origination.ts). */
+  readonly originationServices: OriginationServiceSet;
   private readonly bus: CommandBus;
   private readonly tools = new Map<string, ToolDef>();
 
@@ -98,6 +112,7 @@ export class Runtime {
     this.noticeRegistry = deps.notices ?? (() => { const r = buildRegistry(); publishAuthored(r); return r; })();
     this.uow = new PgUnitOfWork(this.db, this.registry); this.entities = new PgEntityRepository(this.db); this.escalationRepo = new PgEscalationRepository(this.db); this.applications = new PgApplicationRepository(this.db);
     this.bus = new CommandBus(this.agents);
+    this.originationServices = originationServices(this.clock);
     for (const t of ALL_TOOLS) { this.tools.set(toolKey(t.process, t.name), t); this.agents.registerTool(t.agent, t.name); }
   }
 
@@ -114,10 +129,12 @@ export class Runtime {
     store.seed(await this.entities.load(scope));
     const mark = store.versionCount();
     let escalations: EscalationService | undefined;
-    const r: UowResult<ExecuteResult<unknown>> = await this.uow.run(scope, async (ctx) => {
+    const r: UowResult<ExecuteResult<unknown>> = await this.uow.run(scope, async (uow) => {
+      // a loan-scoped command's events that name neither key are the loan's (the kernel store defaults the application key from the scope; the loan key is defaulted here)
+      const ctx = uow.loanId ? { ...uow, events: withDefaultLoan(uow.events, uow.loanId) } : uow;
       escalations = new EscalationService(ctx.events, ctx.clock);
       const notices = this.ports.printMail && this.ports.edelivery ? new NoticeService({ registry: this.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: this.ports.printMail, edelivery: this.ports.edelivery }) : undefined;
-      const rt: ToolRuntime = { store, escalations, services: {}, ports: this.ports, ...(notices ? { notices } : {}) };
+      const rt: ToolRuntime = { store, escalations, services: this.originationServices.forCommand(ctx, store, escalations), ports: this.ports, ...(notices ? { notices } : {}) };
       const cmd = bindTools(rt, this.agents, [def]).get(toolKey(def.process, def.name))!;
       return this.bus.execute(cmd, req.actor, req.input, ctx, { ...(req.run ? { run: req.run } : {}), ...(req.approvedBy ? { approvedBy: req.approvedBy } : {}) });
     }, { clock: this.clock, commit: async (q) => {

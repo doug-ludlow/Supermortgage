@@ -71,7 +71,7 @@ const gateFacts = (code: DocumentGateCode, i: ToolInput, ctx: CommandContext, rt
   }
 };
 const GATE_CODES: readonly DocumentGateCode[] = ["FNMA_B1_1_03_CREDIT_DOCS_4M", "FNMA_B3_3_2_01_PAYSTUB_30D_GATE", "FNMA_B1_1_03_TAX_YEAR_GATE"];
-const THIRD_PARTY_COSTS = { scope: "corporate" as const, account: "third_party_costs" as CorporateAccount };
+const THIRD_PARTY_COSTS = { scope: "corporate" as const, account: "third_party_costs" as const };
 const CORPORATE_CASH = { scope: "corporate" as const, account: "corporate_cash" as CorporateAccount };
 const ALTERING_OPS = ["alter", "enhance", "redact", "edit", "rewrite"];
 /** ops-22-1 gate refusals (DocumentGateClosed) surface as CommandRefused with the gate code and citation. */

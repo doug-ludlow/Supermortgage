@@ -323,9 +323,9 @@ export function consentScopeAtBoarding(c: OrigConsent, versions: OriginationSnap
 
 // ───────────────────────────── opening ledger (rule 3) ─────────────────────────────
 export interface OpeningFigures { readonly principal_cents: Cents; readonly escrow_deposit_cents: Cents; readonly prepaid_interest_cents: Cents; readonly buydown_funds_cents?: Cents; readonly holdback_escrow_cents?: Cents; }
-export const origFundingClearing = (loanId: string): AccountRef => ({ scope: "custodial", custodialAccountId: `orig-funding-clearing:${loanId}`, account: "origination_funding_clearing" as CustodialAccount });   // new clearing account per loan, cleared by 27.1
-export const prepurchaseTiCash = (custodialAccountId: string): AccountRef => ({ scope: "custodial", custodialAccountId, account: "custodial_ti_prepurchase_cash" as CustodialAccount });
-const loanAcct = (loanId: string, account: "principal" | "escrow" | "prepaid_interest" | "buydown_funds" | "holdback_escrow"): AccountRef => ({ scope: "loan", loanId, account: account as LoanAccount });   // prepaid_interest / buydown_funds / holdback_escrow: baseline §5 loan sub-accounts named by 30.2
+export const origFundingClearing = (loanId: string): AccountRef => ({ scope: "custodial", custodialAccountId: `orig-funding-clearing:${loanId}`, account: "origination_funding_clearing" });   // new clearing account per loan, cleared by 27.1
+export const prepurchaseTiCash = (custodialAccountId: string): AccountRef => ({ scope: "custodial", custodialAccountId, account: "custodial_ti_prepurchase_cash" });
+const loanAcct = (loanId: string, account: "principal" | "escrow" | "prepaid_interest" | "buydown_funds" | "holdback_escrow"): AccountRef => ({ scope: "loan", loanId, account });   // prepaid_interest / buydown_funds / holdback_escrow: baseline §5 loan sub-accounts named by 30.2
 /** Balanced entry set: (a) Dr principal / Cr origination_funding_clearing; (b) Dr custodial_ti_prepurchase_cash / Cr escrow; (c) Dr clearing / Cr prepaid_interest; (d)(e) buydown / holdback; Σ = 0. */
 export function openingLedgerLines(loanId: string, prepurchaseTiAccountId: string, f: OpeningFigures): LineInput[] {
   if (f.principal_cents <= 0n) throw new RangeError("principal must be the original loan amount (> 0)");
@@ -403,6 +403,16 @@ export interface FirstPaymentLetterPayload {
   readonly late_charge_pct: string; readonly late_charge_grace_days: number; readonly escrow_summary: string; readonly initial_escrow_statement_pointer: string;
   readonly not_a_transfer_notice: boolean; readonly b1_text: string | null; readonly esign_invitation: boolean; readonly privacy_reference: string; readonly hud_cfpb_block: string; readonly acp_or_successor_handling: string | null;
   readonly account_last4: string;
+  // 25.4's authored NTC_SM_FIRST_PAYMENT_LETTER checklist (src/notices/authored/section25-4.ts) tests these on the payload;
+  // `letterPayload` always fills them (optional only so a rule-10-only payload still types — the registry holds a letter without them):
+  /** rule 9(c): every borrower's legal name on the letter. */
+  readonly borrower_names?: readonly string[];
+  /** rule 9(d) / 25.4 worked example 3: P&I + escrow + MI — equal to `total_cents` by construction. */
+  readonly breakdown_sum_cents?: Cents; readonly has_mi?: boolean;
+  /** rule 9(e) / 25.4-Q4: the payee exactly as the note/CD name it — "Supermortgage, as servicer for [Partner]" — with the contact hours. */
+  readonly payee_line?: string; readonly contact_hours?: string;
+  /** 12 CFR 1005.10(b), (e)(1): autopay is offered, never pre-checked or required. */
+  readonly autopay_prechecked?: false; readonly autopay_required?: false;
 }
 export interface LetterCheck { readonly rule_id: string; readonly citation: string; readonly passed: boolean; readonly message: string; }
 /** Rule 10 content checklist (a)–(m); every item blocks release. */
@@ -481,7 +491,7 @@ export interface OrigBoardingDeps {
   /** Pre-purchase T&I custodial account (30.1 prerequisite) that holds the closing escrow deposit. */
   readonly prepurchaseTiAccountId: string;
   readonly servicerTz?: string; readonly loanIdFor?: (applicationId: string) => string;
-  readonly letterContext?: Partial<Pick<FirstPaymentLetterPayload, "servicer_name" | "remittance_address" | "portal_url" | "ach_enrollment" | "servicer_phone" | "automation_disclosure" | "hud_cfpb_block" | "privacy_reference">>;
+  readonly letterContext?: Partial<Pick<FirstPaymentLetterPayload, "servicer_name" | "remittance_address" | "portal_url" | "ach_enrollment" | "servicer_phone" | "automation_disclosure" | "hud_cfpb_block" | "privacy_reference" | "contact_hours">>;
 }
 export interface BoardFundedResult { readonly status: OrigBoardingStatus; readonly loan_id: string; readonly application_id: string; readonly servicing_loan_number: string; readonly validations: readonly OrigValidation[]; readonly ledger_set: EntrySet | null; readonly timers: readonly TimerInstance[]; readonly seed_plan: readonly SeedPlanRow[]; readonly letters: readonly LetterRecord[]; readonly consents: readonly ConsentScopeDecision[]; readonly documents_index: readonly LoanDocumentIndexRow[]; readonly duplicate: boolean; readonly refusal: string | null; }
 
@@ -650,8 +660,10 @@ export class OriginationBoardingService {
     const invitation = !!c && c.invitation_required;   // declining every electronic delivery (no consent row) is not a defect: no invitation
     const p = r.mapped.properties; const lc = this.d.letterContext ?? {};
     const ti = r.mapped.loan_terms;
-    return { servicer_name: lc.servicer_name ?? "Supermortgage", partner_name: r.snapshot.partner_name, servicing_loan_number: r.servicing_loan_number, property_address: `${p.address_line1}, ${p.city}, ${p.state} ${p.postal_code}`, first_payment_date: r.mapped.loans.first_payment_date,
-      pi_cents: ti.pi_cents, escrow_cents: ti.escrow_payment_cents, mi_cents: ti.mi_premium_cents, total_cents: ti.pi_cents + ti.escrow_payment_cents + ti.mi_premium_cents,
+    const servicer_name = lc.servicer_name ?? "Supermortgage"; const total = ti.pi_cents + ti.escrow_payment_cents + ti.mi_premium_cents;
+    return { servicer_name, partner_name: r.snapshot.partner_name, servicing_loan_number: r.servicing_loan_number, property_address: `${p.address_line1}, ${p.city}, ${p.state} ${p.postal_code}`, borrower_names: r.mapped.borrowers.map((x) => x.legal_name), first_payment_date: r.mapped.loans.first_payment_date,
+      pi_cents: ti.pi_cents, escrow_cents: ti.escrow_payment_cents, mi_cents: ti.mi_premium_cents, has_mi: ti.mi_premium_cents > 0n, total_cents: total, breakdown_sum_cents: total,
+      payee_line: `${servicer_name}, as servicer for ${r.snapshot.partner_name}`, contact_hours: lc.contact_hours ?? "Mon–Fri 8am–8pm ET", autopay_prechecked: false, autopay_required: false,
       remittance_address: lc.remittance_address ?? "PO Box 7, Testville TX 75001", portal_url: lc.portal_url ?? "portal.supermortgage.example", ach_enrollment: lc.ach_enrollment ?? "enroll in automatic payments (ACH) in the portal", servicer_phone: lc.servicer_phone ?? "(800) 555-0100", automation_disclosure: lc.automation_disclosure ?? "Our phone and chat assistant is automated; you can ask for a person at any time.",
       late_charge_pct: ti.late_charge_pct, late_charge_grace_days: ti.late_charge_grace_days, escrow_summary: r.snapshot.escrow_analysis ? `your escrow account starts with ${formatCents(r.snapshot.final_cd.initial_escrow_deposit_cents, { symbol: true, grouping: true })} and collects ${formatCents(ti.escrow_payment_cents, { symbol: true, grouping: true })} monthly.` : "your loan has no escrow account.", initial_escrow_statement_pointer: r.snapshot.escrow_analysis ? "See the initial escrow account statement delivered at settlement." : "",
       not_a_transfer_notice: true, b1_text: MODEL_B1, esign_invitation: invitation, privacy_reference: lc.privacy_reference ?? `${r.snapshot.partner_name}'s privacy notice was delivered with your application; it continues to apply.`, hud_cfpb_block: lc.hud_cfpb_block ?? "Housing counseling: (800) 569-4287 (HUD) / consumerfinance.gov/find-a-housing-counselor.", acp_or_successor_handling: b.acp_enrolled ? "Address Confidentiality Program: correspondence goes to your designated substitute address." : null, account_last4: r.servicing_loan_number.slice(-4) };
@@ -672,7 +684,10 @@ export class OriginationBoardingService {
         const n = registry.render({ templateCode: FIRST_PAYMENT_LETTER, loanId: r.loan_id, recipients: [rec], payload: { ...p, b1_text: p.b1_text ?? "" }, asOf: f.sent_on });
         rendered = n.rendered.text ?? rendered; notice_id = n.id; viaRegistry = true;
       }
-      const checklist = firstPaymentLetterChecklist(p, rendered);
+      const own = firstPaymentLetterChecklist(p, rendered);
+      // 25.4's checklist (the registry's `held` notice) blocks release the same way rule 10's does: a held letter is recorded, never sent — and never thrown out of the funding hand-off.
+      const registryHeld = viaRegistry && registry!.get(notice_id).status === "held" ? registry!.get(notice_id).checklist.blocking.map((x) => ({ rule_id: x.rule_id, citation: x.citation, passed: false, message: x.message })) : [];
+      const checklist = registryHeld.length ? { passed: false, results: [...own.results, ...registryHeld], blocking: [...own.blocking, ...registryHeld] } : own;
       const carries = [...(p.b1_text === MODEL_B1 ? [B1_TEMPLATE] : []), ...(p.esign_invitation ? [ESIGN_INVITATION] : [])];
       const c = r.consents.find((x) => x.party_id === b.party_id && x.kind === "esign");
       const channel: LetterRecord["channel"] = c && c.scope_servicing.includes("general_correspondence") ? "mail_and_portal" : "mail_first_class";

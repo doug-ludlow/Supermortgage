@@ -365,9 +365,9 @@ export type CapturePurpose = "commitment" | "pair_off_quote" | "extension_quote"
 export interface PewlPriceCapture { readonly capture_id: string; readonly commitment_id: string | null; readonly purpose: CapturePurpose; readonly price: string; readonly ptr: string; readonly captured_at: string; readonly source: "api" | "ui" | "browse_export"; readonly quote_id_fnma: string | null; readonly quote_expires_at: string | null; readonly close_of_business: boolean; readonly raw: Record<string, unknown>; }
 
 // ---- ledger accounts (new, defined here; the kernel's list predates origination — cast like 21.4's origination_fees_receivable)
-export const COMMITTING_FEE_EXPENSE: AccountRef = { scope: "corporate", account: "committing_fee_expense" as CorporateAccount };
-export const COMMITTING_FEE_PARTNER_DRAFT: AccountRef = { scope: "corporate", account: "committing_fee_partner_draft" as CorporateAccount };
-export const PARTNER_REIMBURSABLE_FROM_SM: AccountRef = { scope: "corporate", account: "partner_reimbursable_from_sm" as CorporateAccount };
+export const COMMITTING_FEE_EXPENSE: AccountRef = { scope: "corporate", account: "committing_fee_expense" };
+export const COMMITTING_FEE_PARTNER_DRAFT: AccountRef = { scope: "corporate", account: "committing_fee_partner_draft" };
+export const PARTNER_REIMBURSABLE_FROM_SM: AccountRef = { scope: "corporate", account: "partner_reimbursable_from_sm" };
 export const COMMITTING_CASH_BACK_RECEIVABLE: AccountRef = { scope: "corporate", account: "committing_cash_back_receivable" as CorporateAccount };
 
 // ============================================================ Ports (PE–Whole Loan API for best efforts; UI/Sales Desk are operator tasks)

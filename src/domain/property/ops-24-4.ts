@@ -26,7 +26,7 @@
  *   title.curative.opened{kind, owner, blocks_consummation} / title.curative.cleared{resolution}
  *   title.order.status_changed{status}                                                  [status ∈ {cleared, dated_down} satisfies FNMA_B7_2_01_TITLE_EVIDENCE_GATE]
  *   title.datedown.received{effective_date, in_window}                                  [satisfies SM_TITLE_COMMITMENT_DATEDOWN_GATE]
- *   title.aol.approved / title.aol.refused{reason}
+ *   title.aol.evaluated{sfc_155} · title.aol.approved / title.aol.refused{reason}
  *   settlement_agent.vetted{vetting_status, vetting_expires_on} / settlement_agent.rejected{reasons}   [satisfies SM_SETTLEMENT_AGENT_VETTING_GATE]
  *   wire.instructions.verified{match_result, callback_number_source} / wire.instructions.change_detected{hours_to_funding, blocked}
  *                                                                                       [satisfy / re-arm SM_WIRE_VERIFICATION_GATE]
@@ -542,6 +542,10 @@ export function recordOrderStatus(events: EventStore, c: EventCtx, i: { order_id
 export function recordDatedownReceived(events: EventStore, c: EventCtx, i: { order_id: string; effective_date: PlainDate; consummation_on: PlainDate | null; received_at: string }): { event: DomainEvent; gate: ReturnType<typeof commitmentDatedownGate> } {
   const gate = commitmentDatedownGate({ commitment_effective_date: i.effective_date, consummation_on: i.consummation_on });
   return { event: appEvent(events, c, "title.datedown.received", { order_id: i.order_id, effective_date: i.effective_date, consummation_on: i.consummation_on, in_window: gate.open, received_at: i.received_at }), gate };
+}
+/** Every AOL evaluation on the bus: `title.aol.evaluated{sfc_155}` is the SFC-155 source 29.3 harvests (its owner map keys this event), whether or not an order is named. */
+export function recordAolEvaluated(events: EventStore, c: EventCtx, r: ReturnType<typeof evaluateAolPath>, order_id: string | null = null): DomainEvent {
+  return appEvent(events, c, "title.aol.evaluated", { order_id, allowed: r.allowed, sfc_155: r.sfc_155, reason: r.reason, missing_elements: [...r.missing_elements], required_instead: [...r.required_instead] });
 }
 export function recordAolDecision(events: EventStore, c: EventCtx, r: ReturnType<typeof evaluateAolPath>, o: { order_id: string; approved_by?: string | null }): DomainEvent {
   return r.allowed ? appEvent(events, c, "title.aol.approved", { order_id: o.order_id, sfc_155: true, approved_by: o.approved_by ?? null }) : appEvent(events, c, "title.aol.refused", { order_id: o.order_id, reason: r.reason, missing_elements: [...r.missing_elements], required_instead: [...r.required_instead] });

@@ -256,8 +256,8 @@ export function toleranceTest(items: readonly BaselineItem[], i: ToleranceTestIn
 export const cureStatement = (cents: Cents): string => `Includes ${formatCents(cents)} credit for increase in closing costs above legal limit`;
 
 // ============================================================ ledger (baseline §5 accounts added here)
-export const TOLERANCE_CURE_EXPENSE: AccountRef = { scope: "corporate", account: "tolerance_cure_expense" as CorporateAccount };
-export const BORROWER_REFUNDS_PAYABLE: AccountRef = { scope: "corporate", account: "borrower_refunds_payable" as CorporateAccount };
+export const TOLERANCE_CURE_EXPENSE: AccountRef = { scope: "corporate", account: "tolerance_cure_expense" };
+export const BORROWER_REFUNDS_PAYABLE: AccountRef = { scope: "corporate", account: "borrower_refunds_payable" };
 export const CORPORATE_CASH: AccountRef = { scope: "corporate", account: "corporate_cash" };
 export type FundedBy = "sm" | "partner";
 export interface ToleranceCureRow { readonly cure_id: string; readonly application_id: string; readonly test_id: string; readonly amount_cents: Cents; readonly method: "lender_credit_at_closing" | "refund_post_consummation"; readonly funded_by: FundedBy; readonly posted_at: string; cd_disclosure_id: string | null; refund_instrument: "ach" | "check" | null; refund_sent_at: string | null; refund_sent_on: PlainDate | null; readonly refund_due_on: PlainDate | null; readonly ledger_entry_id: string; refund_ledger_entry_id: string | null; corrected_cd_delivered_at: string | null; readonly cd_statement: string; }

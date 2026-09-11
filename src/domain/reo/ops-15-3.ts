@@ -261,7 +261,7 @@ export function benefitReceipt(i: BenefitReceiptInput): BenefitReceipt {
       { account: { scope: "custodial", custodialAccountId: i.custodial_account_id ?? "custodial-clearing", account: "clearing_cash" }, amountCents: i.amount_cents, ruleRef: MI_BENEFIT_REMIT_RULE, memo: "Dr custodial/clearing — MI benefit wire" },
       // the custodial liability the 5.2 CRS draft flow debits (db/migrations/0024_ledger_accounts.sql: custodial `fnma_remittance_payable`) — the kernel's
       // CustodialAccount union predates the 0024 account rows, so the account name is asserted against the migration's row, not the union
-      { account: { scope: "custodial", custodialAccountId: i.custodial_account_id ?? "custodial-clearing", account: "fnma_remittance_payable" as CustodialAccount }, amountCents: -i.amount_cents, ruleRef: MI_BENEFIT_REMIT_RULE, memo: "Cr fnma_remittance_payable — full benefit, never netted against advances" },
+      { account: { scope: "custodial", custodialAccountId: i.custodial_account_id ?? "custodial-clearing", account: "fnma_remittance_payable" }, amountCents: -i.amount_cents, ruleRef: MI_BENEFIT_REMIT_RULE, memo: "Cr fnma_remittance_payable — full benefit, never netted against advances" },
     ] };
   return { payee: "servicer", custodial_entry: true, next_status: "remit_pending", remit_by: remitBy, timer: "SM_MI_PROCEEDS_REMIT_2BD",
     remittance: { kind: "special", crs_code: "316", crs_code_verified: false, payee: "Fannie Mae", amount_cents: i.amount_cents }, ledger, netting_allowed: false,

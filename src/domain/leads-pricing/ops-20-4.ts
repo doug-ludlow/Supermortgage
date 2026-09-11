@@ -19,7 +19,7 @@
  *   llpa_table.loaded{matrix_version, grids, status, verified_by} · llpa_table.verified{matrix_version, verified_by} · llpa_table.activated{matrix_version}
  *   fee_schedule.refreshed{fee_schedule_id, jurisdiction, refreshed_at, refreshed_on, version}   [arms + satisfies SM_FEE_SCHEDULE_REFRESH_30]
  *   quote.created{quote_id, purpose, quoted_at, quoted_on, valid_until, expected_purchase_ready_date, rate_sheet_id, llpa_table_id, note_rate}   [arms SM_QUOTE_VALIDITY_GATE, SM_LLPA_TABLE_VERSION_GATE]
- *   quote.presented{quote_id, mlo_review_id} · quote.expired{quote_id, valid_until} · quote.superseded{quote_id, superseded_by, reason} · quote.locked{quote_id, lock_id}
+ *   quote.presented{quote_id, mlo_review_id} · quote.expired{quote_id, valid_until} · quote.superseded{quote_id, superseded_by, reason} · quote.locked{quote_id, lock_id, sfcs}
  *   terms.presentation.requested{quote_id, requested_at, mlo_of_record_id}   [20.3's SM_MLO_PREAPP_TERMS_REVIEW_1BH trigger — the personalized quote asks for the MLO review]
  *   quote.render.requested{quote_id, template} · quote.rendered{quote_id, notice_id, disclaimer_verified=true} · quote.render.blocked{quote_id, reasons}   [REGZ_1026_19E2II_QUOTE_DISCLAIMER_GATE]
  *   pricing.exception.requested{exception_id, quote_id, kind, amount_bps, requested_at, requested_on, due_on}   [arms SM_PRICING_EXCEPTION_APPROVAL_1BD]
@@ -642,7 +642,7 @@ export function supersedeQuote(events: EventStore, q: PricingQuote, by: string, 
 /** 21.4's `lock.executed` on the quote: `presented → locked`; the price is frozen (rule 6). */
 export function markQuoteLocked(events: EventStore, q: PricingQuote, lock: { lock_id: string; executed_at: string }, actor: Actor = PRICING_AGENT): { quote: PricingQuote; event: DomainEvent } {
   const w = lockWindowCheck(q, lock.executed_at); if (!w.allowed) throw new QuoteRefused(w.reason!, `lock ${lock.lock_id} at ${lock.executed_at} is outside the quote window (valid until ${q.valid_until})`);
-  return { quote: { ...q, status: "locked" }, event: events.append({ type: "quote.locked", actor, occurredAt: lock.executed_at, ...(q.application_id ? { applicationId: q.application_id } : {}), aggregate: { kind: "pricing_quote", id: q.quote_id }, payload: { quote_id: q.quote_id, lock_id: lock.lock_id, note_rate: q.note_rate, base_price: q.base_price, origination: true } }) };
+  return { quote: { ...q, status: "locked" }, event: events.append({ type: "quote.locked", actor, occurredAt: lock.executed_at, ...(q.application_id ? { applicationId: q.application_id } : {}), aggregate: { kind: "pricing_quote", id: q.quote_id }, payload: { quote_id: q.quote_id, lock_id: lock.lock_id, note_rate: q.note_rate, base_price: q.base_price, sfcs: [...q.sfcs], origination: true } }) };   // `sfcs`: 29.3 harvests the quote's SFCs (007/067/808/900/235/874/884) from quote.locked
 }
 /**
  * T5: a lock request after `valid_until` is refused (`quote_expired`) and the borrower is re-quoted from the sheet

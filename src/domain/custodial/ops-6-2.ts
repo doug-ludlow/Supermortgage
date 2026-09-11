@@ -137,7 +137,7 @@ export interface PendingDeposit extends LedgerItem { readonly deposit_id: string
 
 const cashRef = (accountKind: TiAccountKind, id: string): AccountRef => ({ scope: "custodial", custodialAccountId: id, account: accountKind === "ti_unapplied" ? "custodial_ti_unapplied_cash" : "custodial_ti_cash" });
 /** The 6.2 data-model control account `interest_pending` (sub-ledger of `custodial_ti_cash:<id>`; composition line 6 "I"). */
-export const interestPendingRef = (custodialAccountId: string): AccountRef => ({ scope: "custodial", custodialAccountId, account: "interest_pending" as CustodialAccount });
+export const interestPendingRef = (custodialAccountId: string): AccountRef => ({ scope: "custodial", custodialAccountId, account: "interest_pending" });
 
 /**
  * One T&I statement line. Interest family → `custodial.interest.credited` (the 30-day clock runs from the credit

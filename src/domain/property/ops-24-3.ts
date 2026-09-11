@@ -270,7 +270,7 @@ export function establishHoldback(events: EventStore, i: { application_id: strin
   return { holdback, event };
 }
 /** 30.2's loan sub-account (baseline §5) — the same AccountRef openingLedgerLines uses. */
-export const holdbackEscrowAccount = (loanId: string): AccountRef => ({ scope: "loan", loanId, account: "holdback_escrow" as LoanAccount });
+export const holdbackEscrowAccount = (loanId: string): AccountRef => ({ scope: "loan", loanId, account: "holdback_escrow" });
 /** Funding (26.3): Dr custodial_ti_prepurchase_cash / Cr holdback_escrow — mirrors 30.2:opening:holdback_cash / holdback_escrow. */
 export function holdbackFundingLines(loanId: string, prepurchaseTiAccountId: string, escrowCents: Cents): LineInput[] {
   if (escrowCents <= 0n) throw new RangeError("holdback escrow must be > 0");

@@ -37,6 +37,20 @@ export class PgLoanRepository {
     return rows[0];
   }
 
+  /**
+   * `loans.status` projection from the event spine (the row is a read model of `loan_events`; nothing else flips it).
+   * 16.2 rule 3 / 16.1: `loan.paid_in_full` retires the row (`paid_off`); 16.2 rule 6: a `payoff.reversed` inside the
+   * finality window reopens it (`active`) — after BD2 17:00 ET the reversal is refused upstream (NO_REVERSAL_AFTER_CLOSE),
+   * so a closed-period payoff never reactivates. Runs inside the command's transaction (PgUnitOfWork).
+   */
+  async projectStatus(events: readonly { readonly type: string; readonly loanId?: string }[], q: Queryable = this.db): Promise<void> {
+    for (const e of events) {
+      if (!e.loanId) continue;
+      if (e.type === "loan.paid_in_full") await q.query(`UPDATE loans SET status = 'paid_off' WHERE id = $1 AND status IN ('staged', 'active')`, [e.loanId]);
+      else if (e.type === "payoff.reversed") await q.query(`UPDATE loans SET status = 'active' WHERE id = $1 AND status = 'paid_off'`, [e.loanId]);
+    }
+  }
+
   async createFixture(f: FixtureInput, q: Queryable = this.db): Promise<Fixture> {
     const partner = await q.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name) VALUES ('servicer', $1) RETURNING id`, [f.partnerName ?? "Test Partner Servicing LLC"]);
     const partnerPartyId = partner[0]!.id;

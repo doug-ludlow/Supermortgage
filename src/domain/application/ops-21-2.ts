@@ -32,6 +32,7 @@ import { isFederalHoliday } from "../../kernel/calendar/holidays.ts";
 import { wallClock, zonedEpochMs, toIso } from "../../kernel/calendar/zoned.ts";
 import { Decimal, divRound, levelPayment, monthlyInterest, ratePercent, centsToDecimal, formatCents, type Cents } from "../../kernel/money/index.ts";
 import type { Actor, DomainEvent, EventStore, Clock } from "../../kernel/events/index.ts";
+import { solveAppendixJ } from "../compliance-disclosures/ops-25-1.ts";
 
 export const AGENT: Actor = { kind: "agent", id: "disclosure" };
 const nonEmpty = (v: unknown, what: string): string => { if (typeof v !== "string" || !v.trim()) throw new RangeError(`${what} is required`); return v; };
@@ -205,12 +206,12 @@ export function loanEstimateCalcs(i: LeCalcInput): LeCalcs {
 // ---- Appendix J actuarial APR
 export interface AprInput { readonly loan_cents: Cents; readonly rate_pct: string; readonly term_months: number; readonly prepaid_finance_charge_cents: Cents; /** odd days before the first full unit period (Appendix J (b)(3)); the LE assumes 0. */ readonly odd_days?: number; readonly unit_period_days?: number; readonly mi_monthly_cents?: Cents; }
 export interface AprCalculation { readonly method: "appendix_j_exact"; readonly amount_financed_cents: Cents; readonly finance_charge_cents: Cents; readonly payment_cents: Cents; readonly term_months: number; readonly odd_days: number; readonly odd_fraction: string; readonly monthly_rate: string; readonly apr_pct: string; readonly apr_disclosed: string; readonly inputs: Record<string, string | number>; }
-function presentValue(i: Decimal, f: Decimal, payment: Decimal, n: number): Decimal {
-  const v = Decimal.ONE.div(Decimal.ONE.add(i)); let term = Decimal.ONE, sum = Decimal.ZERO;
-  for (let k = 0; k < n; k++) { term = term.mul(v); sum = sum.add(term); }
-  return payment.mul(sum).div(Decimal.ONE.add(f.mul(i)));
-}
-/** Appendix J (b)(8): solve A = Σ P / ((1 + f·i)(1 + i)^k), k = 1..n, for the unit-period rate i by bisection at full decimal precision; APR = 12 i, displayed to three decimals. */
+/**
+ * Appendix J (b)(8): solve A = Σ P / ((1 + f·i)(1 + i)^k), k = 1..n, for the unit-period rate i; APR = 12 i, displayed to three
+ * decimals. The solver is 25.1's `solveAppendixJ` (one Appendix J engine on the platform — the LE is the level-payment case
+ * with one full unit period before the first payment and f = odd_days / unit_period_days); 25.1's checkpoint `computeApr`
+ * adds the dated first-period count, payment streams and the §1026.17(c)(4) disregard on the same solver.
+ */
 export function computeApr(a: AprInput): AprCalculation {
   if (a.term_months <= 0) throw new RangeError("term_months must be positive");
   if (a.prepaid_finance_charge_cents < 0n) throw new RangeError("prepaid finance charges cannot be negative");
@@ -219,9 +220,7 @@ export function computeApr(a: AprInput): AprCalculation {
   const f = Decimal.ratio(BigInt(odd), BigInt(unit));
   const amount_financed_cents = a.loan_cents - a.prepaid_finance_charge_cents;
   const A = centsToDecimal(amount_financed_cents), P = centsToDecimal(pi);
-  let lo = Decimal.ZERO, hi = Decimal.parse("0.1");
-  for (let n = 0; n < 72; n++) { const mid = lo.add(hi).div(Decimal.fromInt(2)); if (presentValue(mid, f, P, a.term_months).cmp(A) > 0) lo = mid; else hi = mid; }
-  const i = lo.add(hi).div(Decimal.fromInt(2));
+  const { i } = solveAppendixJ(A, Array.from({ length: a.term_months }, () => P), 1, f);
   const apr = i.mul(Decimal.fromInt(1200));
   return { method: "appendix_j_exact", amount_financed_cents, finance_charge_cents: pi * BigInt(a.term_months) + a.prepaid_finance_charge_cents - a.loan_cents, payment_cents: pi, term_months: a.term_months, odd_days: odd, odd_fraction: f.toFixed(10), monthly_rate: i.toFixed(12), apr_pct: apr.toFixed(6), apr_disclosed: apr.toFixed(3),
     inputs: { loan_cents: a.loan_cents.toString(), rate_pct: a.rate_pct, term_months: a.term_months, prepaid_finance_charge_cents: a.prepaid_finance_charge_cents.toString(), odd_days: odd, unit_period_days: unit } };

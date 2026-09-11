@@ -267,7 +267,7 @@ export function recordReconciliation(events: EventStore, application_id: string,
 }
 
 // ============================================================ rule 5: ledger postings (balanced sets linked to `loan.funded`)
-const corp = (account: string): AccountRef => ({ scope: "corporate", account: account as CorporateAccount });   // baseline §5 SM accounts named by 26.3/27.1
+const corp = (account: CorporateAccount): AccountRef => ({ scope: "corporate", account });   // baseline §5 SM accounts named by 26.3/27.1
 export const WAREHOUSE_ADVANCE_RECEIVABLE = "warehouse_advance_receivable", PARTNER_HAIRCUT_RESERVE = "partner_haircut_reserve", SM_FUNDING_CASH = "sm_funding_cash";
 export interface FundingLedgerInput { readonly gross_loan_cents: Cents; readonly net_wire_cents: Cents; readonly advance_rate_bps?: number; readonly loan_ref: string; }
 export interface FundingSplit { readonly advance_cents: Cents; readonly partner_contribution_cents: Cents; readonly haircut_reserve_cents: Cents; readonly wire_cents: Cents; }

@@ -207,6 +207,21 @@ executes an agent tool in application scope (same body as the loan route); `GET 
 record (row, events, open timers, decisions) and, once 30.2 has funded it, the `loan_id` it became. A loan created
 from an application answers on the loan routes like any transferred-in loan.
 
+The origination tools run against the runtime's own service set (see ARCHITECTURE.md, "One product"): one instance
+per process of the stateful section services (CD, commitment, delivery, tolerance, companion disclosures) and the
+vendor fakes (`INTEGRATIONS=fake` — credit reseller, DU, identity / OFAC / fraud, AMC, UCDP, title, eRegistry, RON,
+EarlyCheck, PE–WL, warehouse). Two runtime routes bridge what the tool surface does not carry yet:
+`POST /v1/applications/{id}/disclosures/le` (the initial LE rendered, MLO-approved, delivered and received through
+21.2's service; the actor must be the `mlo_of_record`) and `POST /v1/applications/{id}/fund`, which reads 26.3's
+`loan.funded`, 26.1's note hash, 26.2's consummation and MIN from the application's record before falling back to the
+demo fixture for what the record does not state. Money in every tool `input` is a decimal string of cents.
+
+The end-to-end proof is `node --test src/runtime/lifecycle.test.ts` against a migrated `supermortgage_test` database
+(`DATABASE_URL=postgresql://sm:sm@localhost/supermortgage_test db/migrate.sh`): one borrower from the refinance
+trigger on the existing loan through funding, boarding, purchase, payment, payoff and the next refinance, every step
+over HTTP. It is re-runnable against the same database: entity ids are platform-wide, so the fixture ids it writes in
+loan or application scope carry a per-run suffix.
+
 ## 7. What is and is not real in nonprod
 
 - **`INTEGRATIONS=fake`.** Every vendor integration (lockbox/BAI2, e-OSCAR,

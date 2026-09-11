@@ -14,7 +14,7 @@
  *   lock.approved{lock_id, quote_id, mlo_nmlsr_id} · lock.rejected{lock_id, reason∈{quote_expired, mlo_returned}}   [satisfy the SLA]
  *   lock.executed{lock_id, lineage_id, version, note_rate, price, points_cents, lender_credit_cents, lock_period_days, expires_at, expires_on,
  *                 rate_set_date, quote_id_fnma, property_state, ny_expiry_notice_required}      [arms the 3BD revised-LE clock, the expiry clocks, the NY window]
- *   changed_circumstance.recorded{cc_id, kind∈{rate_lock, borrower_request}, basis, discovered_at, revised_le_due_at, reflected_on, lock_id}   [21.5 consumes]
+ *   changed_circumstance.recorded{cc_id, kind∈{rate_lock, borrower_request}, basis, valid, discovered_at, information_received_at/on, revised_le_due_at, reflected_on, lock_id}   [21.5 consumes]
  *   lock.extended{lock_id, extension_id, days, fee_cents, payer, consumer_charge_cents, new_expires_on, new_expires_at, expires_on}
  *   lock.relocked{lock_id, supersedes_lock_id, version, note_rate, price, expires_on, expires_at, rate_set_date}   [29.1 key-data change]
  *   lock.float_down.applied{lock_id, supersedes_lock_id, version, note_rate, float_down_fee_cents, expires_on}
@@ -161,8 +161,8 @@ export function checkFeeGate(events: EventStore, f: FeeGateFacts, actor: Actor =
   return { check, event, open: r.result === "open" || r.result === "exempt_credit_report" };
 }
 /** Ledger account the 21.2 note names for imposed origination fees (the kernel's account list predates origination; cast like 30.2's prepaid_interest). */
-export const ORIGINATION_FEES_RECEIVABLE: AccountRef = { scope: "corporate", account: "origination_fees_receivable" as CorporateAccount };
-export const ORIGINATION_VENDOR_PAYABLE: AccountRef = { scope: "corporate", account: "origination_vendor_payable" as CorporateAccount };
+export const ORIGINATION_FEES_RECEIVABLE: AccountRef = { scope: "corporate", account: "origination_fees_receivable" };
+export const ORIGINATION_VENDOR_PAYABLE: AccountRef = { scope: "corporate", account: "origination_vendor_payable" };
 /** A fee is imposed (card/ACH authorized or a payment method captured) only on an open or exempt check; posts to `origination_fees_receivable`. */
 export function imposeFee(events: EventStore, ledger: Ledger, i: { check: FeeGateCheck; fee_item_id: string; method: string; at: string; description?: string }, actor: Actor = PRICING_AGENT): { event: DomainEvent; ledger_set: EntrySet; amount_cents: Cents } {
   if (i.check.result !== "open" && i.check.result !== "exempt_credit_report") throw new LockRefused(i.check.result.toUpperCase(), "12 CFR 1026.19(e)(2)(i)(A)", `fee ${i.fee_item_id} cannot be imposed: ${i.check.result}`);
@@ -354,7 +354,8 @@ export interface ExecuteResult { readonly lock: Lock; readonly event: DomainEven
 const ccFor = (events: EventStore, lock: Lock, kind: CcKind, source: DomainEvent, at: string, assessment: RevisedLeAssessment, narrative: string, amount: Cents, actor: Actor): { cc: ChangedCircumstance; event: DomainEvent } => {
   const cc: ChangedCircumstance = { cc_id: randomUUID(), application_id: lock.application_id, kind, basis: kind === "rate_lock" ? "D" : "C", discovered_at: at, information_received_at: at, source_event_id: source.id, lock_id: lock.lock_id, narrative,
     revised_le_due_at: assessment.due_at, revised_le_due_on: assessment.due_on, reflected_on: assessment.reflected_on, revised_le_disclosure_id: null, valid: true, affected_amount_cents: amount, recorded_by: lock.recorded_by };
-  const event = emit(events, lock.application_id, "changed_circumstance.recorded", { cc_id: cc.cc_id, kind, basis: cc.basis, discovered_at: at, revised_le_due_at: cc.revised_le_due_at, revised_le_due_on: cc.revised_le_due_on, reflected_on: cc.reflected_on, lock_id: lock.lock_id, source_event_id: source.id, affected_amount_cents: String(amount), narrative }, at, actor);
+  // `valid=true` + `information_received_on` are what 21.5's REGZ_1026_19E4_REVISED_LE_3BD (basis C) arms on; basis D rows arm 21.4's own REGZ_1026_19E3IVD row.
+  const event = emit(events, lock.application_id, "changed_circumstance.recorded", { cc_id: cc.cc_id, kind, basis: cc.basis, valid: cc.valid, discovered_at: at, information_received_at: cc.information_received_at, information_received_on: civilDate(cc.information_received_at), revised_le_due_at: cc.revised_le_due_at, revised_le_due_on: cc.revised_le_due_on, reflected_on: cc.reflected_on, lock_id: lock.lock_id, source_event_id: source.id, affected_amount_cents: String(amount), narrative }, at, actor);
   return { cc, event };
 };
 /**

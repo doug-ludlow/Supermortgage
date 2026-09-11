@@ -47,7 +47,7 @@ export interface StatementCycleDeps {
   readonly features?: { readonly coupon_books?: boolean };
 }
 export interface StatementCycleRow { readonly cycle_due_date: PlainDate; readonly courtesy_period_end: PlainDate; readonly statement_due_by: PlainDate; readonly vendor_file_by: PlainDate; readonly snapshot_at: string; readonly status: "scheduled"; readonly event_id: string; }
-interface Pending { readonly loanId: string; readonly cycle_due_date: PlainDate; readonly statement_date: PlainDate; readonly template: StatementTemplate; readonly variant: StatementVariant; readonly reminder_panel: boolean; readonly single_statement_exemption_used: boolean; }
+interface Pending { readonly loanId: string; readonly cycle: number; readonly cycle_due_date: PlainDate; readonly statement_date: PlainDate; readonly template: StatementTemplate; readonly variant: StatementVariant; readonly reminder_panel: boolean; readonly single_statement_exemption_used: boolean; }
 
 export class StatementCycleService {
   private readonly d: StatementCycleDeps;
@@ -57,6 +57,11 @@ export class StatementCycleService {
     return this.d.events.append({ type, loanId, actor: DISCLOSURES_AGENT, payload, ...(causationId ? { causationId } : {}) });
   }
   private of(noticeId: string): Pending { const p = this.pending.get(noticeId); if (!p) throw new RangeError(`no statement rendered as notice ${noticeId} (render first)`); return p; }
+  /** Ordinal of the statement cycle on this loan: the caller's `cycle` (30.2 opens cycle 1 at boarding), else one past the statements already sent on the loan — `statement.sent{cycle=1}` is what 30.4's SM_FIRST_STATEMENT_RECONCILE_1BD triggers on. */
+  private cycleOf(loanId: string, explicit: number | undefined): number {
+    if (explicit !== undefined) { if (!Number.isInteger(explicit) || explicit < 1) throw new RangeError("cycle must be a positive integer"); return explicit; }
+    return this.d.events.byLoan(loanId).filter((e) => e.type === "statement.sent").length + 1;
+  }
 
   // ---------------------------------------------------------------- cycle: opened → rendered/held → sent | exempt
   /** Rule 1: the scheduler opens the next cycle the day after the previous cycle's courtesy period ends; the row carries `courtesy_period_end` (the anchor of both cycle timers), `statement_due_by` (+4, no business-day roll) and the vendor file date. */
@@ -69,10 +74,10 @@ export class StatementCycleService {
     return { ...row, event_id: e.id };
   }
   /** Render + checklist (guardrail: any `block` failure holds the statement; it cannot be sent and an ops alert fires within 5 minutes — T11). `statement.rendered` closes SM_STATEMENT_GENERATE_T1. */
-  renderStatement(loanId: string, f: { cycle_due_date: PlainDate; statement_date: PlainDate; template: StatementTemplate; variant: StatementVariant; payload: Record<string, unknown>; recipients: readonly Recipient[]; reminder_panel: boolean; single_statement_exemption_used?: boolean }): { notice: Notice; status: "rendered" | "held"; held_reason: string | null; ops_alert_by: string | null } {
+  renderStatement(loanId: string, f: { cycle_due_date: PlainDate; statement_date: PlainDate; template: StatementTemplate; variant: StatementVariant; payload: Record<string, unknown>; recipients: readonly Recipient[]; reminder_panel: boolean; single_statement_exemption_used?: boolean; cycle?: number }): { notice: Notice; status: "rendered" | "held"; held_reason: string | null; ops_alert_by: string | null } {
     if (!STATEMENT_TEMPLATES.includes(f.template)) throw new RangeError(`${f.template} is not a periodic-statement template (${STATEMENT_TEMPLATES.join(", ")})`);
     const n = this.d.notices.render({ templateCode: f.template, loanId, recipients: f.recipients, payload: f.payload, asOf: f.statement_date });
-    const base = { cycle_due_date: f.cycle_due_date, statement_date: f.statement_date, template: f.template, variant: f.variant, notice_id: n.id, reminder_panel: f.reminder_panel };
+    const base = { cycle: this.cycleOf(loanId, f.cycle), cycle_due_date: f.cycle_due_date, statement_date: f.statement_date, template: f.template, variant: f.variant, notice_id: n.id, reminder_panel: f.reminder_panel };
     this.pending.set(n.id, { loanId, ...base, single_statement_exemption_used: f.single_statement_exemption_used ?? false });
     if (n.status === "held") {
       const alertBy = new Date(Date.parse(n.producedAt) + OPS_ALERT_MINUTES * 60_000).toISOString();
@@ -102,7 +107,8 @@ export class StatementCycleService {
   }
   private statementSent(p: Pending, n: Notice, via: { mailed_at: string | null; channel: "mail" | "electronic"; proof_of_mailing_id: string | null }): DomainEvent {
     this.pending.delete(n.id);
-    const sent = this.append("statement.sent", p.loanId, { cycle_due_date: p.cycle_due_date, statement_date: p.statement_date, variant: p.variant, template: p.template, notice_id: n.id, reminder_panel: p.reminder_panel, single_statement_exemption_used: p.single_statement_exemption_used, mailed_at: via.mailed_at, channel: via.channel, proof_of_mailing_id: via.proof_of_mailing_id });
+    // `cycle` (ordinal; 30.4's SM_FIRST_STATEMENT_RECONCILE_1BD triggers on cycle=1) and `sent_at` (its anchor: the manifest's mailing instant, else the e-delivery send).
+    const sent = this.append("statement.sent", p.loanId, { cycle: p.cycle, cycle_due_date: p.cycle_due_date, statement_date: p.statement_date, variant: p.variant, template: p.template, notice_id: n.id, reminder_panel: p.reminder_panel, single_statement_exemption_used: p.single_statement_exemption_used, sent_at: via.mailed_at ?? n.sentAt ?? this.d.clock.now(), mailed_at: via.mailed_at, channel: via.channel, proof_of_mailing_id: via.proof_of_mailing_id });
     // REGZ_1026_41B_STATEMENT_PROMPT_4 closes on one resolution event for both "sent" and "exempt" (timers-7-1.ts).
     this.append("statement.cycle.closed", p.loanId, { cycle_due_date: p.cycle_due_date, outcome: "sent", notice_id: n.id, statement_date: p.statement_date, mailed_at: via.mailed_at }, sent.id);
     // D2-2-03 (rule 10): a statement carrying the reminder panel is the payment reminder; "dated ≤ 20th" is `on_time`.

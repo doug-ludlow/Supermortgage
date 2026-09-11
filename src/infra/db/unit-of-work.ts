@@ -18,6 +18,7 @@ import { PgEventRepository } from "./events.ts";
 import { PgLedgerRepository } from "./ledger.ts";
 import { PgTimerRepository } from "./timers.ts";
 import { PgDecisionRepository, type DecisionInput, type DecisionRecord } from "./decisions.ts";
+import { PgLoanRepository } from "./loans.ts";
 
 /** The scope of one command: a loan, an application (before funding), or both (30.2 creates the loan for the application). */
 export interface UowScope { readonly loanId?: string; readonly applicationId?: string; }
@@ -57,10 +58,11 @@ export class PgUnitOfWork {
   readonly ledger: PgLedgerRepository;
   readonly timers: PgTimerRepository;
   readonly decisions: PgDecisionRepository;
+  readonly loans: PgLoanRepository;
 
   constructor(db: Db, registry: TimerRegistry) {
     this.db = db; this.registry = registry;
-    this.events = new PgEventRepository(db); this.ledger = new PgLedgerRepository(db); this.timers = new PgTimerRepository(db); this.decisions = new PgDecisionRepository(db);
+    this.events = new PgEventRepository(db); this.ledger = new PgLedgerRepository(db); this.timers = new PgTimerRepository(db); this.decisions = new PgDecisionRepository(db); this.loans = new PgLoanRepository(db);
   }
 
   async run<T>(scope: string | UowScope, fn: (ctx: UowContext) => T | Promise<T>, opts: UowOptions = {}): Promise<UowResult<T>> {
@@ -99,6 +101,7 @@ export class PgUnitOfWork {
     return this.db.tx(async (q) => {
       if (opts.before) await opts.before(q);
       const persisted = await this.events.append(newEvents, q);
+      await this.loans.projectStatus(persisted, q);   // `loan.paid_in_full` → loans.status = paid_off (16.2 rule 3); `payoff.reversed` → active
       for (const s of newSets) await this.ledger.post(s, q);
       await this.timers.save(changedTimers, q);
       const decisions: DecisionRecord[] = [];

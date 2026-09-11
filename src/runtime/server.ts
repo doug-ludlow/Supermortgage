@@ -11,7 +11,8 @@
  *   POST /v1/sweep                                  the timer sweep, once
  *   POST /v1/applications                           open an application  body: { actor, application: { partner_party_id, channel, transaction_type, occupancy, borrowers: [{ legal_name, … }], property?: {…}, prior_loan_id? } }
  *   POST /v1/applications/{id}/tools/{process}/{name}   execute a tool for an application (before funding)   body as for loans
- *   POST /v1/applications/{id}/fund                 fund the application (30.2 hand-off → the servicing loan)  body: { actor, funded?: {...loan.funded overrides}, snapshot?: {...OriginationSnapshot overrides} }; 404 unknown application, 409 when boarding refuses
+ *   POST /v1/applications/{id}/disclosures/le       render, MLO-approve, deliver and record receipt of the initial LE (21.2's LoanEstimateService; the MLO of record is the actor)  body: { actor, render: {...LeRenderInput}, mlo: { review_id, nmlsr_id }, delivery: { channel, at?, consent?, receipt? } }
+ *   POST /v1/applications/{id}/fund                 fund the application (30.2 hand-off → the servicing loan)  body: { actor, funded?: {...loan.funded overrides}, snapshot?: {...OriginationSnapshot overrides} }; the funded payload defaults to 26.3's `loan.funded` on the application's log, the snapshot to the record's closing facts + the demo fixture; 404 unknown application, 409 when boarding refuses
  *   GET  /v1/applications/{id}                      the application's record: row, events, open timers, decisions
  *   GET  /v1/applications                           the newest applications
  *   POST /v1/transfers/batches                      board a servicing-transfer batch  body: { actor, batch: {...}, files: { "boarding_tape.final.csv": "...", ... } }
@@ -34,7 +35,7 @@ import { PgConsoleStore } from "../console/pg-store.ts";
 import type { ApplicationInput } from "../infra/db/applications.ts";
 import { Runtime, ToolNotFound } from "./app.ts";
 import { boardTransferBatch, type TransferBatchInput } from "./transfers.ts";
-import { fundApplication, demoSnapshot, demoFunded, ApplicationNotFound, BoardingRefused, type DemoOverrides } from "./origination.ts";
+import { fundApplication, demoSnapshot, demoFunded, fundedFromLog, snapshotOverridesFromRecord, deliverLoanEstimate, ApplicationNotFound, BoardingRefused, type DemoOverrides, type LoanEstimateDeliveryInput } from "./origination.ts";
 import type { LoanFundedPayload } from "../domain/orig-boarding/ops-30-2.ts";
 import { generateDemoBatch, DEMO_BATCH } from "../domain/boarding/demo-batch.ts";
 import { encodeTransferBatch, type TransferBatchFiles } from "../domain/boarding/tape-codec.ts";
@@ -78,6 +79,12 @@ function reviveCents(v: unknown): unknown {
   if (v && typeof v === "object") return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, k.endsWith("_cents") && (typeof x === "string" || typeof x === "number") && x !== "" ? BigInt(x) : reviveCents(x)]));
   return v;
 }
+/** A tool's `input` from JSON: an object, with every `*_cents` field (at any depth) revived to the bigint the tools compute with — the wire convention is a decimal string of cents. */
+function toolInput(v: unknown): Record<string, unknown> {
+  if (!v) return {};
+  if (typeof v !== "object" || Array.isArray(v)) throw new RangeError("input must be a JSON object");
+  return reviveCents(v) as Record<string, unknown>;
+}
 const same = (a: string, b: string): boolean => a.length === b.length && a.length > 0 && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 
 export function createApiServer(opts: ServerOptions): Server {
@@ -113,8 +120,7 @@ export function createApiServer(opts: ServerOptions): Server {
         const process = decodeURIComponent(m[2]!); const name = decodeURIComponent(m[3]!);
         const b = await readJson(req);
         const actor = actorOf(b["actor"]);
-        const input = (b["input"] ?? {}) as Record<string, unknown>;
-        if (!input || typeof input !== "object" || Array.isArray(input)) throw new RangeError("input must be a JSON object");
+        const input = toolInput(b["input"]);
         const run = b["run"] as { runId?: unknown; modelVersion?: unknown; promptVersion?: unknown; confidence?: unknown } | undefined;
         const runInfo = run && typeof run.runId === "string" && typeof run.modelVersion === "string" && typeof run.promptVersion === "string"
           ? { runId: run.runId, modelVersion: run.modelVersion, promptVersion: run.promptVersion, ...(typeof run.confidence === "number" ? { confidence: run.confidence } : {}) } : undefined;
@@ -127,8 +133,7 @@ export function createApiServer(opts: ServerOptions): Server {
         const process = decodeURIComponent(m[2]!); const name = decodeURIComponent(m[3]!);
         const b = await readJson(req);
         const actor = actorOf(b["actor"]);
-        const input = (b["input"] ?? {}) as Record<string, unknown>;
-        if (!input || typeof input !== "object" || Array.isArray(input)) throw new RangeError("input must be a JSON object");
+        const input = toolInput(b["input"]);
         const app = await runtime.applications.get(applicationId);
         if (!app) { done(404, { error: "no_such_application" }); return; }
         const loanId = app.loan_id ?? "";
@@ -157,10 +162,27 @@ export function createApiServer(opts: ServerOptions): Server {
         if (!app) { done(404, { error: "no_such_application" }); return; }
         const snapshotOverrides = (b["snapshot"] && typeof b["snapshot"] === "object" ? reviveCents(b["snapshot"]) : {}) as DemoOverrides;
         const fundedOverrides = (b["funded"] && typeof b["funded"] === "object" ? reviveCents(b["funded"]) : {}) as Partial<LoanFundedPayload>;
-        const snapshot = demoSnapshot(app, snapshotOverrides);
-        const funded = demoFunded(applicationId, { ...fundedOverrides, ...(fundedOverrides.funding_date ? { funding_date: plainDateOf(fundedOverrides.funding_date) } : {}), ...(fundedOverrides.disbursement_date ? { disbursement_date: plainDateOf(fundedOverrides.disbursement_date) } : {}) });
+        // the record first: the closing facts 26.1/26.2 wrote and 26.3's loan.funded; the body's overrides win; the demo fixture fills what the record does not carry
+        const recorded = await snapshotOverridesFromRecord(runtime, applicationId);
+        const base = demoSnapshot(app);
+        const merged: Record<string, unknown> = { ...recorded, ...snapshotOverrides };
+        for (const k of ["note", "closing"] as const) { const r = recorded[k] as Record<string, unknown> | undefined; const o = snapshotOverrides[k] as Record<string, unknown> | undefined; if (r || o) merged[k] = { ...(base[k] as Record<string, unknown>), ...(r ?? {}), ...(o ?? {}) }; }
+        const snapshot = demoSnapshot(app, merged as DemoOverrides);
+        const logged = Object.keys(fundedOverrides).length ? null : await fundedFromLog(runtime, applicationId);
+        const funded = logged ?? demoFunded(applicationId, { ...fundedOverrides, ...(fundedOverrides.funding_date ? { funding_date: plainDateOf(fundedOverrides.funding_date) } : {}), ...(fundedOverrides.disbursement_date ? { disbursement_date: plainDateOf(fundedOverrides.disbursement_date) } : {}) });
         const r = await fundApplication(runtime, applicationId, snapshot, funded, actor);
         done(200, r, { application_id: applicationId, loan_id: r.loan_id, status: r.status, duplicate: r.duplicate, events: r.events }); return;
+      }
+      if (method === "POST" && (m = /^\/v1\/applications\/([^/]+)\/disclosures\/le$/.exec(path))) {
+        const applicationId = decodeURIComponent(m[1]!);
+        if (!isUuid(applicationId)) throw new RangeError("applicationId must be the application's uuid (applications.id)");
+        const b = await readJson(req);
+        const actor = actorOf(b["actor"]);
+        if (!b["render"] || typeof b["render"] !== "object" || !b["mlo"] || typeof b["mlo"] !== "object" || !b["delivery"] || typeof b["delivery"] !== "object") throw new RangeError("render, mlo { review_id, nmlsr_id } and delivery { channel } are required");
+        const render = reviveCents(b["render"]) as Record<string, unknown>;
+        const input: LoanEstimateDeliveryInput = { render: { ...render, as_of: plainDateOf(render["as_of"]), fees: ((render["fees"] as Record<string, unknown>[] | undefined) ?? []).map((f) => ({ ...f, estimated_at: plainDateOf(f["estimated_at"]) })) } as unknown as LoanEstimateDeliveryInput["render"], mlo: b["mlo"] as LoanEstimateDeliveryInput["mlo"], delivery: b["delivery"] as LoanEstimateDeliveryInput["delivery"] };
+        const r = await deliverLoanEstimate(runtime, applicationId, input, actor);
+        done(200, r, { application_id: applicationId, disclosure_id: r.disclosure_id, status: r.status, events: r.events }); return;
       }
       if (method === "GET" && path === "/v1/applications") { done(200, { applications: await runtime.applications.list() }); return; }
       if (method === "GET" && (m = /^\/v1\/applications\/([^/]+)$/.exec(path))) {

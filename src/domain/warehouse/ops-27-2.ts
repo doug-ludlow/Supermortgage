@@ -492,9 +492,10 @@ export function buildGlBatches(sets: readonly EntrySet[], periodDate: PlainDate,
 }
 
 // ============================================================ ledger sets (SM books; partner mirror)
+// 27.2 keeps per-loan settlement sub-ledgers under the corporate account names (proceeds, receivables, the partner GL mirror) — the loan-scope union is the servicing chart, so the cast stays here.
 const loanAcct = (loanId: string, account: string): AccountRef => ({ scope: "loan", loanId, account: account as LoanAccount });
-const corpAcct = (account: string): AccountRef => ({ scope: "corporate", account: account as CorporateAccount });
-const custodialAcct = (custodialAccountId: string, account: string): AccountRef => ({ scope: "custodial", custodialAccountId, account: account as CustodialAccount });
+const corpAcct = (account: CorporateAccount): AccountRef => ({ scope: "corporate", account });
+const custodialAcct = (custodialAccountId: string, account: CustodialAccount): AccountRef => ({ scope: "custodial", custodialAccountId, account });
 const line = (account: AccountRef, amountCents: Cents, ruleRef: string, memo?: string): LineInput => ({ account, amountCents, ruleRef, ...(memo ? { memo } : {}) });
 /** Drop zero lines; a set with fewer than two lines is not postable (the caller skips it). */
 export const compact = (s: EntrySetInput): EntrySetInput | null => { const lines = s.lines.filter((l) => l.amountCents !== 0n); return lines.length >= 2 ? { ...s, lines } : null; };

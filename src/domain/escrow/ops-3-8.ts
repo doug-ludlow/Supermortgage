@@ -34,8 +34,12 @@ export type WaiverOrigin = "origination" | "borrower_request" | "state_right" | 
 const ORIGINS: ReadonlySet<string> = new Set<WaiverOrigin>(["origination", "borrower_request", "state_right", "transfer_in"]);
 const isDate = (s: unknown): s is PlainDate => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
 const need = (cond: boolean, what: string): void => { if (!cond) throw new RangeError(what); };
-const loanEvents = (events: EventStore, loanId: string, type: string): readonly DomainEvent[] => events.byLoan(loanId).filter((e) => e.type === type);
-const forWaiver = (events: EventStore, loanId: string, type: string, waiverId: string): DomainEvent | undefined => loanEvents(events, loanId, type).filter((e) => e.payload.waiver_id === waiverId).at(-1);
+/** The keys a waiver fact is appended under: the loan, or (before funding, 30.3) the application — both at the hand-off. */
+export interface WaiverKeys { readonly loan_id: string | null; readonly application_id?: string | null; }
+const keysOf = (k: WaiverKeys): { loanId?: string; applicationId?: string } => ({ ...(k.loan_id ? { loanId: k.loan_id } : {}), ...(k.application_id ? { applicationId: k.application_id } : {}) });
+const needKey = (k: WaiverKeys): void => need(!!k.loan_id || !!k.application_id, "loan_id (or, before funding, application_id) is required");
+const loanEvents = (events: EventStore, k: WaiverKeys, type: string): readonly DomainEvent[] => (k.loan_id ? events.byLoan(k.loan_id) : events.all().filter((e) => e.applicationId === k.application_id)).filter((e) => e.type === type);
+const forWaiver = (events: EventStore, k: WaiverKeys, type: string, waiverId: string): DomainEvent | undefined => loanEvents(events, k, type).filter((e) => e.payload.waiver_id === waiverId).at(-1);
 
 /** The request record the rule engine needs (3.8 operational prerequisites); a caller-supplied verdict is never part of it. */
 function validateRequest(r: WaiverRequest): void {
@@ -52,15 +56,15 @@ function validateRequest(r: WaiverRequest): void {
  * per waiver id: a second intake for an open case returns the existing fact (`already_open`). The agent must not solicit —
  * the origin is the borrower's or the state right's, never the servicer's.
  */
-export function recordWaiverRequest(events: EventStore, i: { readonly loan_id: string; readonly waiver_id: string; readonly request: WaiverRequest; readonly origin?: WaiverOrigin }, actor: Actor): { event: DomainEvent; already_open: boolean; decision_due_on: PlainDate; timer: typeof WAIVER_SLA_TIMER } {
-  need(!!i.loan_id && !!i.waiver_id, "loan_id and waiver_id are required");
+export function recordWaiverRequest(events: EventStore, i: WaiverKeys & { readonly waiver_id: string; readonly request: WaiverRequest; readonly origin?: WaiverOrigin }, actor: Actor): { event: DomainEvent; already_open: boolean; decision_due_on: PlainDate; timer: typeof WAIVER_SLA_TIMER } {
+  needKey(i); need(!!i.waiver_id, "waiver_id is required");
   validateRequest(i.request);
   const origin = i.origin ?? (i.request.state_right_met === true ? "state_right" : "borrower_request");
   need(ORIGINS.has(origin), `origin ${String(origin)} is not an escrow_waivers.origin`);
   const dueOn = addBusinessDays(i.request.requested_on, WAIVER_SLA_BUSINESS_DAYS, servicer);
-  const existing = forWaiver(events, i.loan_id, "escrow.waiver.requested", i.waiver_id);
+  const existing = forWaiver(events, i, "escrow.waiver.requested", i.waiver_id);
   if (existing) return { event: existing, already_open: true, decision_due_on: String(existing.payload.decision_due_on) as PlainDate, timer: WAIVER_SLA_TIMER };
-  const event = events.append({ type: "escrow.waiver.requested", loanId: i.loan_id, actor, payload: {
+  const event = events.append({ type: "escrow.waiver.requested", ...keysOf(i), actor, payload: { ...(i.application_id ? { application_id: i.application_id } : {}),
     waiver_id: i.waiver_id, case_type: "escrow_waiver", origin, requested_on: i.request.requested_on, state: i.request.state ?? null, hpml: i.request.hpml,
     upb_cents: String(i.request.upb_cents), decision_due_on: dueOn, sla_timer: WAIVER_SLA_TIMER } });
   return { event, already_open: false, decision_due_on: dueOn, timer: WAIVER_SLA_TIMER };
@@ -71,13 +75,13 @@ export function recordWaiverRequest(events: EventStore, i: { readonly loan_id: s
  * (REGZ_1026_35B3_HPML_ESCROW_5Y_GATE / _LTV_GATE), `flood_escrow_mandatory` + `flood_line` (FLOOD_12CFR22_5_ESCROW_GATE)
  * and `borrower_paid_mi_monthly` (FNMA_B101_MI_MONTHLY_ESCROW_GATE). `waived_line_types` is what the request asks to waive.
  */
-export function recordWaiverEvaluation(events: EventStore, i: { readonly loan_id: string; readonly waiver_id: string | null; readonly request: WaiverRequest; readonly waived_line_types: readonly string[]; readonly evaluated_on: PlainDate }, actor: Actor): { event: DomainEvent; decision: WaiverDecision } {
-  need(!!i.loan_id, "loan_id is required");
+export function recordWaiverEvaluation(events: EventStore, i: WaiverKeys & { readonly waiver_id: string | null; readonly request: WaiverRequest; readonly waived_line_types: readonly string[]; readonly evaluated_on: PlainDate }, actor: Actor): { event: DomainEvent; decision: WaiverDecision } {
+  needKey(i);
   need(isDate(i.evaluated_on), "evaluated_on must be an ISO date");
   validateRequest(i.request);
   const decision = evaluateWaiver(i.request, i.evaluated_on);
   const lines = [...i.waived_line_types];
-  const event = events.append({ type: "escrow.waiver.evaluating", loanId: i.loan_id, actor, payload: {
+  const event = events.append({ type: "escrow.waiver.evaluating", ...keysOf(i), actor, payload: { ...(i.application_id ? { application_id: i.application_id } : {}),
     waiver_id: i.waiver_id, evaluated_on: i.evaluated_on, requested_on: i.request.requested_on, waived_line_types: lines,
     hpml_flag: i.request.hpml, consummation_date: i.request.consummation_date ?? null, flood_escrow_mandatory: i.request.flood_escrow_mandatory, flood_line: lines.includes("flood"),
     borrower_paid_mi_monthly: i.request.monthly_mi_line, mi_line: lines.includes("mi"), state: i.request.state ?? null, state_right_met: i.request.state_right_met === true,
@@ -90,13 +94,13 @@ export function recordWaiverEvaluation(events: EventStore, i: { readonly loan_id
  * failed reasons, the earliest re-request date (null when a reason is permanent) and the B-1-01 / §1026.35(b) / 22.5 basis
  * retained. Once per waiver id; an approval is approveWaiver's fact, never this one's.
  */
-export function recordWaiverDenial(events: EventStore, i: { readonly loan_id: string; readonly waiver_id: string; readonly decision: WaiverDecision; readonly decided_on: PlainDate }, actor: Actor): { event: DomainEvent; already_decided: boolean } {
-  need(!!i.loan_id && !!i.waiver_id, "loan_id and waiver_id are required");
+export function recordWaiverDenial(events: EventStore, i: WaiverKeys & { readonly waiver_id: string; readonly decision: WaiverDecision; readonly decided_on: PlainDate }, actor: Actor): { event: DomainEvent; already_decided: boolean } {
+  needKey(i); need(!!i.waiver_id, "waiver_id is required");
   need(i.decision.decision === "denied", `recordWaiverDenial records the engine's denial; this decision is ${i.decision.decision}`);
   need(isDate(i.decided_on), "decided_on must be an ISO date");
-  const existing = forWaiver(events, i.loan_id, "escrow.waiver.decided", i.waiver_id);
+  const existing = forWaiver(events, i, "escrow.waiver.decided", i.waiver_id);
   if (existing) return { event: existing, already_decided: true };
-  const event = events.append({ type: "escrow.waiver.decided", loanId: i.loan_id, actor, payload: {
+  const event = events.append({ type: "escrow.waiver.decided", ...keysOf(i), actor, payload: { ...(i.application_id ? { application_id: i.application_id } : {}),
     waiver_id: i.waiver_id, decision: "denied", decided_on: i.decided_on, reasons: i.decision.reasons, re_request_on: i.decision.re_request_on, permanent: i.decision.re_request_on === null,
     effective_on: null, lines_kept: i.decision.lines_kept, state_right_applied: false, basis: "B-1-01; 12 CFR 1026.35(b)(3); 12 CFR 22.5", notice: "NTC_SM_ESCROW_WAIVER_DECISION" } });
   return { event, already_decided: false };
@@ -128,7 +132,7 @@ export interface TrialGateResult { readonly proceed: boolean; readonly waived: b
 export function trialOfferEscrowGate(events: EventStore, i: TrialGateInput, actor: Actor): TrialGateResult {
   need(!!i.loan_id && !!i.offer_id, "loan_id and offer_id are required");
   need(typeof i.current_on_ti === "boolean", "current_on_ti must state whether the borrower is current on all taxes, insurance and related items");
-  const prepared = loanEvents(events, i.loan_id, "lossmit.trial_plan.offer_prepared").filter((e) => e.payload.offer_id === i.offer_id).at(-1);
+  const prepared = loanEvents(events, { loan_id: i.loan_id }, "lossmit.trial_plan.offer_prepared").filter((e) => e.payload.offer_id === i.offer_id).at(-1);
   need(prepared !== undefined, `no prepared trial plan offer ${i.offer_id} on ${i.loan_id}: ingest the §12 hand-off first (ops-3-2 ingestTrialPlanOfferPrepared)`);
   const waived = i.waived ?? isWaived(events, i.loan_id);
   const exception = waived && i.program === FLEX_MOD && i.current_on_ti;
@@ -158,7 +162,7 @@ export function minnesotaAnniversaryJob(events: EventStore, i: { readonly loan_i
   need(isDate(i.mortgage_date) && isDate(i.today), "mortgage_date and today must be ISO dates");
   const r = minnesotaDiscontinue({ mortgage_date: i.mortgage_date, today: i.today, written_election: false, late_over_30_in_12m: 0, fnma_80_test_passed: true });
   if (i.state !== "MN" || i.today < r.anniversary) return { due: false, anniversary: r.anniversary, notice_due_on: r.notice_due_on, event: null, already_recorded: false };
-  const existing = loanEvents(events, i.loan_id, "loan.anniversary").find((e) => String(e.payload.years) === "5" && e.payload.of === "mortgage_date");
+  const existing = loanEvents(events, { loan_id: i.loan_id }, "loan.anniversary").find((e) => String(e.payload.years) === "5" && e.payload.of === "mortgage_date");
   if (existing) return { due: true, anniversary: r.anniversary, notice_due_on: r.notice_due_on, event: existing, already_recorded: true };
   const event = events.append({ type: "loan.anniversary", loanId: i.loan_id, actor, payload: { years: 5, n: 5, of: "mortgage_date", mortgage_date: i.mortgage_date, anniversary: r.anniversary, state: "MN", observed_on: i.today, notice_due_on: r.notice_due_on, template: MN_DISCONTINUE_NOTICE, timer: MN_DISCONTINUE_TIMER } });
   return { due: true, anniversary: r.anniversary, notice_due_on: r.notice_due_on, event, already_recorded: false };

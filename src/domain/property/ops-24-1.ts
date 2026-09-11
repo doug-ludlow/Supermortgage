@@ -486,9 +486,9 @@ export function completeInspection(events: EventStore, order: ValuationOrder, co
   return { order: { ...order, status: "inspected", inspection_completed_at: completedAt }, event };
 }
 
-export const THIRD_PARTY_COSTS: AccountRef = { scope: "corporate", account: "third_party_costs" as CorporateAccount };
-export const ACCOUNTS_PAYABLE_VENDOR: AccountRef = { scope: "corporate", account: "accounts_payable_vendor" as CorporateAccount };
-export const ORIGINATION_FEES_RECEIVABLE: AccountRef = { scope: "corporate", account: "origination_fees_receivable" as CorporateAccount };
+export const THIRD_PARTY_COSTS: AccountRef = { scope: "corporate", account: "third_party_costs" };
+export const ACCOUNTS_PAYABLE_VENDOR: AccountRef = { scope: "corporate", account: "accounts_payable_vendor" };
+export const ORIGINATION_FEES_RECEIVABLE: AccountRef = { scope: "corporate", account: "origination_fees_receivable" };
 export interface ReportDelivery { readonly report_document_id: string; readonly uad_version: UadVersion; readonly effective_date: PlainDate; readonly received_at: string; readonly assignment_type?: AssignmentType; readonly declined?: boolean; readonly lender_client_name?: string | null; readonly partner_name?: string | null; readonly fee_invoice_cents?: Cents | null; readonly delivered_by?: "vendor" | "borrower" | "seller" | "agent" | "other_lender"; }
 export interface ReceiptResult { readonly accepted: boolean; readonly order: ValuationOrder; readonly event: DomainEvent; readonly reference: string | null; readonly reengagement: DomainEvent | null; readonly ledger_set: EntrySet | null; readonly dates: AppraisalAgeDates | null; }
 /**

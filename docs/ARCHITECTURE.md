@@ -106,6 +106,35 @@ platform with one id grammar, one registry, one audit and one kernel. The seam i
   a transferred-in loan never picks up an origination clock. The six day units — `calendar_days`,
   `business_days_federal`, `business_days_servicer`, `business_days_fannie_et`, `business_days_creditor` (Reg Z
   §1026.2(a)(6) general) and `business_days_regz_specific` (Reg Z specific; Saturdays count) — are the only calendars.
-- **One test proves it.** The lifecycle acceptance test runs one synthetic borrower from refinance trigger through
-  application, funding, boarding, first statement, payment, payoff and a new refinance, against Postgres.
+- **One runtime, one service set.** The hosted `Runtime` (src/runtime/app.ts) executes every tool through the same
+  command bus the unit harnesses use, and constructs the same `services` the section tool files look up
+  (`originationServices` in src/runtime/origination.ts): ONE instance per runtime of each stateful section service —
+  25.2's `cd-25-2`, 29.1's `secondary` (which is also 21.4's CommitmentPort), 29.3's `delivery-29-3`, 29.4's
+  `delivery-29-4`, 21.5's `tolerance`, 21.3's `companion` — over forwarding stores whose `append` / `now` / `open` /
+  `post` land in the unit of work of the command that is executing (so a CD prepared by one HTTP call is the CD the
+  next call delivers), plus the vendor fakes the ops files export (`credit_bureau`, `fnma-du`, `identity_vendor`,
+  `cbsv`, `ofac_screener`, `fraud_tool`, `mers`, `amc`, `propertyData`, `ucdp`, `title`, `wire_verification`,
+  `alta_registry`, `state_doi`, `26.2.eregistry`, `26.2.ron`, `earlycheck`, `pewl`, `warehouse`, `fnma_loan_lookup`)
+  and 21.4's `pricing` port built over 20.4's published `rate_sheets` (global entity rows). A tool's JSON `input` has
+  every `*_cents` field revived to bigint on the way in (the wire form is a decimal string of cents). A loan-scoped
+  command's events that name neither key are stamped with the scope's loan by the runtime (the kernel store defaults
+  only the application key from the scope).
+- **Two runtime bridges, reported as gaps.** `POST /v1/applications/{id}/disclosures/le` renders, MLO-approves,
+  delivers and records receipt of the initial LE through 21.2's `LoanEstimateService` in one application-scoped
+  transaction, because 21.2's tool surface (assembleFees / renderH24 / …) has no delivery or receipt tool while 21.4's
+  `requestLock` and 24.1's fee gate read `disclosure.le.received`. `POST /v1/applications/{id}/fund` takes 26.3's
+  `loan.funded` from the application's log as 30.2's funded payload (no fallback event is appended), the note-terms
+  hash from 26.1's rendered eNote, the consummation date from 26.2's `closing.consummated` and the MIN from 26.2's
+  `enote.registered`; only what the record does not carry yet (the CD figures, the escrow analysis, consents, the
+  document index) comes from the demo fixture or the caller's `snapshot` overrides.
+- **One test proves it.** The lifecycle acceptance test (src/runtime/lifecycle.test.ts) runs one synthetic borrower
+  over HTTP from the refinance trigger on the existing loan (20.1 → 20.2 → 20.3 on the servicing book) through the
+  application that points back at it (21.1 with `prior_loan_id`), quote / LE / intent / lock / commitment
+  (20.4, 21.2, 21.4, 29.1), verifications / credit / identity (22.x), DU and the decision (23.1 → 23.3), valuation
+  (24.1), scheduling and the CD (26.2, 25.2), documents (26.1), consummation and the eNote (26.2), funding (26.3 →
+  `loan.funded`), the 30.2 hand-off into ONE `loans` row, delivery and purchase (29.4, 30.1), the first statement lead,
+  a 2.1 payment, a 16.1/16.2 payoff (`loans.status = paid_off`) and a new refinance application — and audits the id
+  grammar over the whole log: keyed by the application alone before 30.2 stages the loan, by both ids through the
+  hand-off, by the loan after, with the prior loan's record never naming the application except for the one
+  `refi.opportunity.converted` event that links them.
 

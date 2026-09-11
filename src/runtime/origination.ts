@@ -244,3 +244,211 @@ export function demoFunded(applicationId: string, overrides: Partial<LoanFundedP
   return { application_id: applicationId, ...DEMO_FUNDED, ...overrides, ...(overrides.application_id ? { application_id: overrides.application_id } : {}) };
 }
 
+
+// ───────────────────────────── the origination services the hosted runtime constructs ─────────────────────────────
+//
+// The section tool files (src/app/tools/section2x-y.ts) read their domain services from `ToolRuntime.services` and, when a
+// service is absent, build one over the unit of work's event store (`svcOf(rt, ctx)`), keyed by the ToolRuntime object. The
+// hosted Runtime builds a fresh ToolRuntime per command, so a service built that way is gone by the next HTTP call — a CD
+// prepared by one call would be "no CD" to the next. The runtime therefore constructs ONE instance of each stateful service
+// per Runtime, over forwarding stores: every `events.append` / `clock.now` / `escalations.open` / `ledger.post` the service
+// makes lands in the unit of work of the command that is executing, so persistence and keying are exactly what a tool
+// gets. The vendor ports (credit reseller, DU, identity, OFAC, AMC, UCDP, EarlyCheck, PE–WL, warehouse bank, eRegistry,
+// RON, title) are the in-memory fakes the ops files export (INTEGRATIONS=fake) — the same set the unit harnesses wire, so
+// the HTTP path and the unit path behave identically.
+import type { EventStore, DomainEvent as KernelEvent, EventInput, EventPattern, Subscriber, Clock } from "../kernel/events/index.ts";
+import type { PlainDate } from "../kernel/calendar/date.ts";
+import type { EscalationInput, Escalation } from "../app/escalations.ts";
+import { type EntityStore as EntityStoreType } from "../app/tools.ts";
+import { ClosingDisclosureService } from "../domain/compliance-disclosures/ops-25-2.ts";
+import { DeliveryService } from "../domain/secondary/ops-29-4.ts";
+import { DeliveryBuildService, FakeEarlyCheck } from "../domain/secondary/ops-29-3.ts";
+import { CommitmentService, FakePewl, FakeSalesDesk } from "../domain/secondary/ops-29-1.ts";
+import { ToleranceService } from "../domain/application/ops-21-5.ts";
+import { CompanionDisclosureService } from "../domain/application/ops-21-3.ts";
+import { LoanEstimateService, type LeRenderInput, type EsignConsent, type DeliveryChannel } from "../domain/application/ops-21-2.ts";
+import { FixturePricing, type PricingPort, type RateSheet as LockRateSheet } from "../domain/application/ops-21-4.ts";
+import type { RateSheet as PricedRateSheet } from "../domain/leads-pricing/ops-20-4.ts";
+import { FakeDuPort } from "../domain/underwriting/ops-23-1.ts";
+import type { CreditBureauPort, CreditOrder, CreditReportResponse, BorrowerCredit } from "../domain/verification/ops-22-2.ts";
+import { FakeCbsv, FakeOfacScreener, FakeFraudTool, FakeMers as FakeMersSearch, identityPass, type IdentityVendorPort, type IdentityMethod, type IdentitySessionResult } from "../domain/verification/ops-22-6.ts";
+import { FakeAmc, FakePropertyDataApi } from "../domain/property/ops-24-1.ts";
+import { FakeUcdp } from "../domain/property/ops-24-2.ts";
+import { FakeTitleVendor, FakeWireVerification, FakeAltaRegistry, FakeStateDoi } from "../domain/property/ops-24-4.ts";
+import { FakeERegistry26, FakeRonPlatform, type ERegistryPort26, type ERegistryAck } from "../domain/closing/ops-26-2.ts";
+import { FakeWarehouseBank, FakeWarehouseCustodian, FakeERegistry } from "../domain/warehouse/ops-27-1.ts";
+import type { LoanLookupPort } from "../domain/leads-pricing/ops-20-1.ts";
+
+/** An EventStore that delegates to the unit of work currently executing — the stateful services hold this one for life. */
+class ForwardingEventStore implements EventStore {
+  private active: EventStore | null = null;
+  /** Subscriptions the services registered (21.5 subscribes to `*` at construction) — re-attached to every unit of work that becomes current. */
+  private readonly subs: { pattern: string | EventPattern; fn: Subscriber }[] = [];
+  set current(store: EventStore | null) { this.active = store; if (store) for (const s of this.subs) store.subscribe(s.pattern, s.fn); }
+  get current(): EventStore | null { return this.active; }
+  private req(): EventStore { if (!this.active) throw new Error("no unit of work is executing (origination service used outside a command)"); return this.active; }
+  append<P extends Record<string, unknown>>(input: EventInput<P>): KernelEvent<P> { return this.req().append(input); }
+  byLoan(loanId: string): readonly KernelEvent[] { return this.active?.byLoan(loanId) ?? []; }
+  ofType(type: string): readonly KernelEvent[] { return this.active?.ofType(type) ?? []; }
+  all(): readonly KernelEvent[] { return this.active?.all() ?? []; }
+  subscribe(pattern: string | EventPattern, fn: Subscriber): () => void { const s = { pattern, fn }; this.subs.push(s); this.active?.subscribe(pattern, fn); return () => { const k = this.subs.indexOf(s); if (k >= 0) this.subs.splice(k, 1); }; }
+}
+class ForwardingClock implements Clock { current: Clock; constructor(fallback: Clock) { this.current = fallback; } now(): string { return this.current.now(); } }
+class ForwardingLedger implements Ledger {
+  current: Ledger | null = null;
+  private req(): Ledger { if (!this.current) throw new Error("no unit of work is executing"); return this.current; }
+  post(input: EntrySetInput, postedAt?: string): EntrySet { return this.req().post(input, postedAt); }
+  reverse(setId: string, effectiveDate: PlainDate, reason: string, postedAt?: string): EntrySet { return this.req().reverse(setId, effectiveDate, reason, postedAt); }
+  balance(a: AccountRef, asOf?: PlainDate): Cents { return this.req().balance(a, asOf); }
+  sets(): readonly EntrySet[] { return this.req().sets(); }
+  linesFor(a: AccountRef): readonly Line[] { return this.req().linesFor(a); }
+}
+/** The escalation opener the services hold: opens on the executing command's EscalationService (persisted with that command). */
+class ForwardingEscalations {
+  current: EscalationService | null = null;
+  open(input: EscalationInput, by: Actor): Escalation { if (!this.current) throw new Error("no unit of work is executing"); return this.current.open(input, by); }
+  get opened(): readonly Escalation[] { return this.current?.opened ?? []; }
+  list(): readonly Escalation[] { return this.current?.list() ?? []; }
+}
+
+/** 22.2's reseller port for INTEGRATIONS=fake: the refinance fixture's tri-merge (A 742/751/760, B 698/712/705, Classic FICO), any borrower order answered. */
+export class FixtureCreditBureau implements CreditBureauPort {
+  readonly orders: CreditOrder[] = [];
+  private readonly clock: Clock;
+  constructor(clock: Clock) { this.clock = clock; }
+  async order(o: CreditOrder): Promise<CreditReportResponse> {
+    this.orders.push(o);
+    const now = this.clock.now();
+    const sc = (score: number) => ({ score, model_version: o.score_model === "vantagescore_4" ? "VantageScore 4.0" : "Classic FICO", key_factors: ["Proportion of balances to credit limits is too high", "Too many inquiries last 12 months"] });
+    const borrowers: BorrowerCredit[] = o.borrower_ids.map((borrower_id, k) => ({ borrower_id, scores: k === 0 ? { efx: sc(742), exp: sc(751), tu: sc(760) } : { efx: sc(698), exp: sc(712), tu: sc(705) }, returned: [...o.repositories], frozen: [] }));
+    return { credit_reference_number: `CRN-${o.order_type}-${o.attempt}-${now.slice(0, 10)}`, du_credit_provider_code: "DUP-0417", reseller: "Xactus360", report_date: D(now.slice(0, 10)), received_at: now, borrowers, trended_data: true, cra: { name: "Xactus360 (reseller for Equifax, Experian, TransUnion)", address: "PO Box 1000, Broomall PA 19008", phone: "800-555-0100" }, fee_cents: 3_500n };
+  }
+}
+/** 22.6's identity vendor for INTEGRATIONS=fake: every session passes (document + liveness + face match). */
+export class PassingIdentityVendor implements IdentityVendorPort {
+  readonly sessions: { borrower_id: string; method: IdentityMethod }[] = [];
+  async verify(req: { borrower_id: string; method: IdentityMethod }): Promise<IdentitySessionResult> { this.sessions.push(req); return identityPass(`S-${req.borrower_id}-${this.sessions.length}`); }
+}
+
+/** The MERS eRegistry fake with platform-unique transaction ids: 26.2 keys its `mers_transactions` rows by the acknowledgement's `txn_id`, and the fake numbers them per instance (`EREG-1`, …) — a fresh runtime over the same database would collide. */
+class UniqueERegistry26 implements ERegistryPort26 {
+  private readonly inner = new FakeERegistry26();
+  private readonly prefix = `EREG-${randomUUID().slice(0, 8)}`;
+  private key(a: ERegistryAck): ERegistryAck { return { ...a, txn_id: `${this.prefix}-${a.txn_id}` }; }
+  async register(...args: Parameters<ERegistryPort26["register"]>): Promise<ERegistryAck> { return this.key(await this.inner.register(...args)); }
+  async changeDataSecuredParty(...args: Parameters<ERegistryPort26["changeDataSecuredParty"]>): Promise<ERegistryAck> { return this.key(await this.inner.changeDataSecuredParty(...args)); }
+  async reverseRegistration(...args: Parameters<ERegistryPort26["reverseRegistration"]>): Promise<ERegistryAck> { return this.key(await this.inner.reverseRegistration(...args)); }
+  inquiry(...args: Parameters<ERegistryPort26["inquiry"]>): ReturnType<ERegistryPort26["inquiry"]> { return this.inner.inquiry(...args); }
+}
+
+/** 21.4's PricingPort over 20.4's published rate sheets in the entity store (global rows): the sheet in force at `at` stamps the quote with the active LLPA matrix version. */
+export function pricingFromStore(store: EntityStoreType): PricingPort | null {
+  const sheets = store.list("rate_sheets").map((r) => r.data as unknown as PricedRateSheet).filter((s) => typeof s.published_at === "string").sort((a, b) => Date.parse(a.published_at) - Date.parse(b.published_at));
+  if (!sheets.length) return null;
+  const llpa = store.list("llpa_tables").map((r) => r.data).find((d) => d.status === "active");
+  const version = typeof llpa?.matrix_version === "string" ? llpa.matrix_version : "09.09.2026";
+  const mapped: LockRateSheet[] = sheets.map((s, k) => ({ rate_sheet_id: s.rate_sheet_id, effective_at: s.published_at, superseded_at: sheets[k + 1]?.published_at ?? null, llpa_version: version }));
+  return new FixturePricing(mapped);
+}
+
+export interface OriginationServiceSet {
+  /** The `services` map for one command: the runtime-wide instances plus the per-command adapters (pricing over this command's store). */
+  forCommand(ctx: { events: EventStore; clock: Clock; ledger: Ledger }, store: EntityStoreType, escalations: EscalationService): Record<string, unknown>;
+  readonly events: ForwardingEventStore; readonly clock: ForwardingClock;
+}
+/** One set per Runtime: the same keys the section tool files look up (`services.<key>`). */
+export function originationServices(clock: Clock): OriginationServiceSet {
+  const events = new ForwardingEventStore(); const fclock = new ForwardingClock(clock); const ledger = new ForwardingLedger(); const esc = new ForwardingEscalations();
+  const escAsService = esc as unknown as EscalationService;   // the services call only `open` (and read `opened`/`list`)
+  const warehouse = { bank: new FakeWarehouseBank(), registry: new FakeERegistry(), custodian: new FakeWarehouseCustodian() };
+  const fixed: Record<string, unknown> = {
+    // stateful section services, forwarding into the executing unit of work
+    "cd-25-2": new ClosingDisclosureService({ events, clock: fclock, escalations: esc }),
+    "delivery-29-4": new DeliveryService({ events, clock: fclock, escalations: escAsService, registry: warehouse.registry }),
+    "delivery-29-3": new DeliveryBuildService({ events, clock: fclock, escalations: escAsService, earlycheck: new FakeEarlyCheck() }),
+    secondary: new CommitmentService({ events, clock: fclock, ledger, escalations: escAsService, pewl: new FakePewl({ price: "100.875" }), salesDesk: new FakeSalesDesk() }),
+    tolerance: new ToleranceService({ events, clock: fclock, ledger, escalations: esc }),
+    companion: new CompanionDisclosureService({ events, clock: fclock, escalations: esc }),
+    // vendor ports (INTEGRATIONS=fake)
+    credit_bureau: new FixtureCreditBureau(fclock), "fnma-du": new FakeDuPort(fclock),
+    identity_vendor: new PassingIdentityVendor(), cbsv: new FakeCbsv(), ofac_screener: new FakeOfacScreener(), fraud_tool: new FakeFraudTool(), mers: new FakeMersSearch(),
+    amc: new FakeAmc(), propertyData: new FakePropertyDataApi(), ucdp: new FakeUcdp(), title: new FakeTitleVendor(), wire_verification: new FakeWireVerification(), alta_registry: new FakeAltaRegistry(), state_doi: new FakeStateDoi(),
+    "26.2.eregistry": new UniqueERegistry26(), "26.2.ron": new FakeRonPlatform(), earlycheck: new FakeEarlyCheck(), pewl: new FakePewl({ price: "100.875" }), warehouse,
+    fnma_loan_lookup: { lookup: (_loanId: string) => ({ owned: false, checked_at: fclock.now() }) } satisfies LoanLookupPort,
+  };
+  return {
+    events, clock: fclock,
+    forCommand(ctx, store, escalations) {
+      events.current = ctx.events; fclock.current = ctx.clock; ledger.current = ctx.ledger; esc.current = escalations;
+      const pricing = pricingFromStore(store);
+      return { ...fixed, ...(pricing ? { pricing } : {}) };
+    },
+  };
+}
+
+// ───────────────────────────── 21.2's LE delivery (the runtime's own command until 21.2 puts deliver/recordReceipt on the bus) ─────────────────────────────
+export interface LoanEstimateDeliveryInput {
+  readonly render: LeRenderInput;
+  readonly mlo: { readonly review_id: string; readonly nmlsr_id: string };
+  readonly delivery: { readonly channel: DeliveryChannel; readonly at?: string; readonly consent?: EsignConsent | null; readonly receipt?: { readonly kind: "authenticated_view" | "acknowledgement" | "esignature"; readonly at: string; readonly borrower_id: string } | null };
+}
+/**
+ * Renders, MLO-approves, delivers and records receipt of the initial LE through 21.2's own LoanEstimateService in ONE
+ * application-scoped transaction. 21.2's tool surface (assembleFees / renderH24 / …) has no delivery or receipt tool, yet
+ * 21.4's requestLock and 24.1's fee gate read `disclosure.le.received`; this is the runtime's bridge over that gap.
+ */
+export async function deliverLoanEstimate(rt: Runtime, applicationId: string, input: LoanEstimateDeliveryInput, actor: Actor): Promise<{ disclosure_id: string; data_hash: string; status: string; issued_on: string | null; effective_receipt_date: string | null; le_due_on: string; events: number }> {
+  const app = await rt.applications.get(applicationId);
+  if (!app) throw new ApplicationNotFound(applicationId);
+  if (actor.kind !== "human" || actor.role !== "mlo_of_record") throw new RangeError("the LE's MLO review is the mlo_of_record's act: actor must be { kind: human, role: mlo_of_record }");
+  const store = new EntityStore(); store.seed(await rt.entities.load({ applicationId })); const mark = store.versionCount();
+  let escalations: EscalationService | undefined; let out!: Awaited<ReturnType<typeof deliverLoanEstimate>>;
+  const r = await rt.uow.run({ applicationId }, async (ctx) => {
+    escalations = new EscalationService(ctx.events, ctx.clock);
+    const trid = ctx.events.ofType("application.trid_received").filter((e) => e.applicationId === applicationId).at(-1);
+    if (!trid) throw new RangeError("no application.trid_received on the application's log (21.1's six items first)");
+    const svc = new LoanEstimateService({ events: ctx.events, clock: ctx.clock, escalations });
+    const a = svc.onTridReceived(applicationId, String(trid.payload["trid_received_at"] ?? trid.occurredAt));
+    const row = svc.render({ ...input.render, application_id: applicationId });
+    svc.openMloReview(row.disclosure_id);
+    svc.mloDecision(row.disclosure_id, { review_id: input.mlo.review_id, decision: "approved", data_hash: row.data_hash, nmlsr_id: input.mlo.nmlsr_id });
+    const at = input.delivery.at ?? ctx.clock.now();
+    svc.deliver(row.disclosure_id, { channel: input.delivery.channel, at, consent: input.delivery.consent ?? null });
+    const rec = input.delivery.receipt; const final = rec ? svc.recordReceipt(row.disclosure_id, rec) : svc.get(row.disclosure_id);
+    store.put("disclosures", row.disclosure_id, { application_id: applicationId, kind: "le", le_version: 1, status: final.status, data_hash: row.data_hash, issued_on: final.issued_on, effective_receipt_date: final.effective_receipt_date, delivery_channel: final.delivery_channel }, actor, ctx.clock.now());
+    out = { disclosure_id: row.disclosure_id, data_hash: row.data_hash, status: final.status, issued_on: final.issued_on, effective_receipt_date: final.effective_receipt_date, le_due_on: a.le_due_on, events: 0 };
+    return out;
+  }, { clock: rt.clock, commit: async (q) => { await rt.entities.save(store.versionsSince(mark), { applicationId }, q); for (const e of escalations?.list() ?? []) await rt.escalationRepo.save(e, q); } });
+  return { ...out, events: r.events.length };
+}
+
+// ───────────────────────────── the funded payload and the closing facts from the application's own record ─────────────────────────────
+/** 26.3's `loan.funded` on the application's log (confirmDisbursement), as 30.2's LoanFundedPayload — null when 26.3 has not run. */
+export async function fundedFromLog(rt: Runtime, applicationId: string): Promise<LoanFundedPayload | null> {
+  const e = (await rt.uow.events.byApplication(applicationId)).filter((x) => x.type === "loan.funded").at(-1);
+  if (!e) return null;
+  const p = e.payload as Record<string, unknown>;
+  const c = (k: string): Cents => BigInt(String(p[k] ?? "0"));
+  return { application_id: applicationId, funded_at: String(p["funded_at"] ?? e.occurredAt), funding_date: D(String(p["funding_date"])), disbursement_date: D(String(p["disbursement_date"])), wire_id: (p["wire_id"] as string | null | undefined) ?? null, funded_amount_cents: c("funded_amount_cents"), per_diem_cents: c("per_diem_cents"), prepaid_interest_cents: c("prepaid_interest_cents"), interest_credit: p["interest_credit"] === true, rescission_expires_at: (p["rescission_expires_at"] as string | null | undefined) ?? null, event_id: e.id };
+}
+/**
+ * The snapshot fields the application's own record already states: the consummation date and rescission expiry from 26.2's
+ * `closing.consummated` / 26.3's funding calendar, the signed note's data hash from 26.1's rendered eNote (`closing_documents`),
+ * the MIN from 26.2's registration. What the record does not carry yet is filled from the demo fixture (see demoSnapshot).
+ */
+export async function snapshotOverridesFromRecord(rt: Runtime, applicationId: string): Promise<DemoOverrides> {
+  const events = await rt.uow.events.byApplication(applicationId);
+  const out: Record<string, unknown> = {};
+  const consummated = events.filter((e) => e.type === "closing.consummated").at(-1);
+  const funded = events.filter((e) => e.type === "loan.funded").at(-1);
+  const enote = (await rt.entities.load({ applicationId })).filter((r) => r.kind === "closing_documents" && (r.data["kind"] === "enote" || r.data["kind"] === "note") && r.data["application_id"] === applicationId).at(-1);
+  const registered = events.filter((e) => e.type === "enote.registered").at(-1);
+  if (consummated || enote) {
+    const note_terms_hash = typeof enote?.data["data_hash"] === "string" ? (enote.data["data_hash"] as string) : undefined;
+    out["closing"] = { ...(consummated ? { consummation_date: D(String((consummated.payload as Record<string, unknown>)["consummation_on"])) } : {}), ...(note_terms_hash ? { note_terms_hash } : {}) };
+    if (note_terms_hash) out["note"] = { data_hash: note_terms_hash, ...(consummated ? { note_date: D(String((consummated.payload as Record<string, unknown>)["note_date"])) } : {}) };
+  }
+  if (funded) out["rescission_expires_at"] = ((funded.payload as Record<string, unknown>)["rescission_expires_at"] as string | null | undefined) ?? null;
+  if (registered) out["min"] = { value: String((registered.payload as Record<string, unknown>)["min"] ?? ""), registration: "active" };
+  return out as DemoOverrides;
+}

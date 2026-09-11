@@ -18,9 +18,39 @@ export type AccountScope = "loan" | "custodial" | "corporate";
 export const LOAN_ACCOUNTS = [
   "principal", "interest_due", "escrow", "suspense_unapplied", "late_charges", "nsf_fees", "other_fees",
   "deferred_principal", "forborne_principal", "corporate_advance", "escrow_advance",
+  // §14.1 data model: bk_* loan sub-accounts (baseline §5 extension)
+  "bk_prepetition_arrearage", "bk_postpetition_suspense", "bk_postpetition_fees_memo", "bk_unsecured_cramdown", "bk_trustee_clearing",
+  // §16.2/16.3: the recording-fee liability collected from the payoff funds
+  "recording_fee_payable",
+  // origination (30.2 opening set / 24.3 completion holdback / 26.x buydown funds)
+  "prepaid_interest", "buydown_funds", "holdback_escrow",
+  // §27.1 warehouse: the per-loan advance receivable (sub-ledgered by component) and the partner's mirror
+  "warehouse_advance_receivable.principal", "warehouse_advance_receivable.capitalized_interest", "warehouse_advance_receivable.fees", "warehouse_interest_receivable", "warehouse_fees_receivable", "partner_funding_contribution", "warehouse_payable",
 ] as const;
-export const CUSTODIAL_ACCOUNTS = ["clearing_cash", "custodial_pi_cash", "custodial_ti_cash", "custodial_ti_unapplied_cash", "transfer_in_clearing"] as const;
-export const CORPORATE_ACCOUNTS = ["servicing_fee_income", "late_charge_income", "nsf_fee_income", "corporate_cash", "fnma_payable", "advance_receivable"] as const;
+export const CUSTODIAL_ACCOUNTS = [
+  "clearing_cash", "custodial_pi_cash", "custodial_ti_cash", "custodial_ti_unapplied_cash", "transfer_in_clearing",
+  // §6.2 interest pending / §15.3 remittance payable
+  "interest_pending", "fnma_remittance_payable",
+  // §30.2 per-loan funding clearing and the pre-purchase T&I account (30.1 prerequisite)
+  "origination_funding_clearing", "custodial_ti_prepurchase_cash",
+  // §27.1/27.2 warehouse funding, collection and haircut-reserve bank accounts
+  "sm_funding_cash", "sm_collection_cash", "partner_haircut_reserve",
+] as const;
+export const CORPORATE_ACCOUNTS = [
+  "servicing_fee_income", "late_charge_income", "nsf_fee_income", "corporate_cash", "fnma_payable", "advance_receivable",
+  // §6.2 custodial reconciliation
+  "corporate_bank_fee_recovery", "corporate_interest_income", "corporate_expense_escrow_interest", "interest_due_corporate",
+  // §16.3 lien release
+  "release_penalty_expense", "release_recording_expense",
+  // origination vendor costs and fee receivables (21.4 / 22.1 / 24.1); tolerance cures and refunds (21.5); committing fees (29.1)
+  "third_party_costs", "accounts_payable_vendor", "origination_fees_receivable", "origination_vendor_payable", "tolerance_cure_expense", "borrower_refunds_payable",
+  "committing_fee_expense", "committing_fee_partner_draft", "partner_reimbursable_from_sm",
+  // §26.3/27.1 warehouse (SM side) and §27.2 settlement / partner GL mirror
+  "warehouse_advance_receivable", "warehouse_interest_receivable", "warehouse_fees_receivable", "warehouse_interest_income", "warehouse_fees", "warehouse_loss_reserve", "warehouse_interest_expense",
+  "sm_funding_cash", "partner_haircut_reserve", "warehouse_payable", "partner_funding_contribution",
+  "purchase_proceeds_receivable", "purchase_proceeds_suspense", "sm_cost_recovery_receivable", "sm_cost_recovery_income", "sm_program_margin", "partner_settlement_payable", "partner_shortfall_receivable",
+  "platform_fee_receivable", "platform_fee_income", "gain_on_sale", "loans_held_for_sale", "cost_recovery_expense", "partner_residual_receivable", "premium_recapture_payable", "borrower_rate_passthrough", "premium_recapture_contingency",
+] as const;
 
 export type LoanAccount = (typeof LOAN_ACCOUNTS)[number];
 export type CustodialAccount = (typeof CUSTODIAL_ACCOUNTS)[number];

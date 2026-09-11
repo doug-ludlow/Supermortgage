@@ -232,6 +232,7 @@ export function clearCondition(events: EventStore, cond: Condition, ev: Clearanc
   need(ev.condition_id === cond.condition_id, "evaluation belongs to another condition");
   need(LIVE_STATUSES.includes(cond.status), `${cond.condition_id} is ${cond.status}`);
   const by = clearedByKind(actor);
+  if (actor.id === "qc-audit") throw new DecisionRefused("QC_AUDIT_AGENT_CANNOT_CLEAR", "23.3 rule 3 / 28.1 independence (D1-2-01): the `qc-audit` agent never clears production conditions — it samples, finds and reopens", `${actor.kind}:${actor.id} may reopen, not clear`);
   if (by === "qc_officer") throw new DecisionRefused("QC_OFFICER_CANNOT_CLEAR", "23.3 rule 3: `qc_officer` never clears production conditions (independence, D1-2-01) but can reopen", `${actor.id} may reopen, not clear`);
   if (by === "funding_approver" && !(cond.stage === "ptf" && cond.category === "funding")) throw new DecisionRefused("FUNDING_APPROVER_FUNDING_ITEMS_ONLY", "23.3 rule 3: `funding_approver` clears only funding-stage items (26.3)", `${cond.condition_id} is ${cond.stage}/${cond.category}`);
   if (ev.outcome === "insufficient") throw new DecisionRefused("CLEAR_WITHOUT_EVIDENCE_AT_DU_LEVEL", "23.3 guardrails: never clear a DU verification condition without evidence meeting DU's documentation level (B3-2-04)", ev.reasons.join(", "));

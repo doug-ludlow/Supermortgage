@@ -495,7 +495,7 @@ export function compileHandoffServicingFile(events: EventStore, s: HandoffState 
 }
 
 // ============================================================ rule 11 — origination record retention
-export type RetentionClass = "regz_le_3y" | "regz_cd_5y" | "regz_atr_3y" | "regz_loc_comp_3y" | "regz_general_2y" | "regb_25m" | "hmda_3y" | "respa_afba_5y" | "respa_s8_5y" | "fdpa_life_of_loan" | "fnma_loan_file_life_plus_4y" | "respa_servicing_1y_post" | "bsa_sar_5y" | "ofac_10y" | "esign_consent_life" | "fnma_accounting_report_18m" | `ron_recording_state_${number}y`;
+export type RetentionClass = "regz_le_3y" | "regz_cd_5y" | "regz_atr_3y" | "regz_locomp_3y" | "regz_general_2y" | "regb_25m" | "hmda_3y" | "respa_afba_5y" | "respa_s8_5y" | "fdpa_life_of_loan" | "fnma_loan_file_life_plus_4y" | "respa_servicing_1y_post" | "bsa_sar_5y" | "ofac_10y" | "esign_consent_life" | "fnma_accounting_report_18m" | `ron_recording_state_${number}y`;
 export type RetentionAnchorEvent = "consummation" | "action_taken_notice" | "hmda_submission" | "afba_execution" | "sar_filing" | "liquidation" | "servicing_transfer" | "discharge" | "compensation_payment" | "ofac_screening" | "ron_session" | "report_filing";
 export interface RetentionAnchors { readonly consummation: PlainDate; readonly action_taken_notice?: PlainDate | null; readonly hmda_submission?: PlainDate | null; readonly afba_execution?: PlainDate | null; readonly sar_filing?: PlainDate | null; readonly compensation_payment?: PlainDate | null; readonly ofac_screening?: PlainDate | null; readonly ron_session?: PlainDate | null; readonly ron_state_years?: number | null; readonly liquidation?: PlainDate | null; readonly servicing_transfer?: PlainDate | null; readonly claim_proceeds?: PlainDate | null; }
 export interface RetentionRow { readonly document_id: string; readonly kind: string; readonly retention_class: RetentionClass | null; readonly anchor_event: RetentionAnchorEvent | null; readonly anchor_date: PlainDate | null; readonly class_until: PlainDate | null; readonly retention_until: PlainDate | null; readonly governing_class: RetentionClass | null; readonly legal_hold: boolean; readonly jurisdiction_extension_days: number; readonly computed_at: string; readonly rule_version: string; readonly unclassified_reason: string | null; }
@@ -507,7 +507,7 @@ const KIND_RULES: readonly { match: RegExp; rule: (x: RetentionAnchors) => Class
   { match: /^(le|loan_estimate|1026_19e_evidence|le_evidence)$/, rule: () => ({ cls: "regz_le_3y", anchor: "consummation", until: yrs(3) }) },
   { match: /^(cd|closing_disclosure)$/, rule: () => ({ cls: "regz_cd_5y", anchor: "consummation", until: yrs(5) }) },
   { match: /^(atr|atr_worksheet|qm_worksheet|du_findings|income_evidence|asset_evidence)$/, rule: () => ({ cls: "regz_atr_3y", anchor: "consummation", until: yrs(3) }) },
-  { match: /^(lo_comp|originator_compensation)$/, rule: () => ({ cls: "regz_loc_comp_3y", anchor: "compensation_payment", until: yrs(3) }) },
+  { match: /^(lo_comp|originator_compensation)$/, rule: () => ({ cls: "regz_locomp_3y", anchor: "compensation_payment", until: yrs(3) }) },
   { match: /^(regb_|adverse_action|action_taken|reg_b_)/, rule: () => ({ cls: "regb_25m", anchor: "action_taken_notice", until: (a) => addMonths(a, 25) }) },
   { match: /^(hmda|lar_entry)$/, rule: () => ({ cls: "hmda_3y", anchor: "hmda_submission", until: yrs(3) }) },
   { match: /^(afba|affiliated_business)$/, rule: () => ({ cls: "respa_afba_5y", anchor: "afba_execution", until: yrs(5) }) },

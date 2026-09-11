@@ -417,9 +417,9 @@ export function wireValueDate(approvedAtIso: string): { value_date: PlainDate; s
 }
 
 // ============================================================ ledger sets (SM books + the 30.2 clearing seam)
-const loanAcct = (loanId: string, account: string): AccountRef => ({ scope: "loan", loanId, account: account as LoanAccount });
-const corpAcct = (account: string): AccountRef => ({ scope: "corporate", account: account as CorporateAccount });
-const custodialAcct = (custodialAccountId: string, account: string): AccountRef => ({ scope: "custodial", custodialAccountId, account: account as CustodialAccount });
+const loanAcct = (loanId: string, account: LoanAccount): AccountRef => ({ scope: "loan", loanId, account });
+const corpAcct = (account: CorporateAccount): AccountRef => ({ scope: "corporate", account });
+const custodialAcct = (custodialAccountId: string, account: CustodialAccount): AccountRef => ({ scope: "custodial", custodialAccountId, account });
 export const WH_ACCOUNTS = { advance_principal: "warehouse_advance_receivable.principal", advance_capitalized: "warehouse_advance_receivable.capitalized_interest", advance_fees: "warehouse_advance_receivable.fees", interest_receivable: "warehouse_interest_receivable", fees_receivable: "warehouse_fees_receivable", interest_income: "warehouse_interest_income", fees: "warehouse_fees", funding_cash: "sm_funding_cash", collection_cash: "sm_collection_cash", haircut_reserve: "partner_haircut_reserve", loss_reserve: "warehouse_loss_reserve", partner_payable: "warehouse_payable", partner_interest_expense: "warehouse_interest_expense", partner_contribution: "partner_funding_contribution" } as const;
 export const sumLines = (lines: readonly LineInput[]): Cents => lines.reduce((t, l) => t + l.amountCents, 0n);
 /**

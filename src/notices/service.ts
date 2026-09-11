@@ -25,6 +25,8 @@ export interface Notice {
   readonly templateCode: string;
   readonly templateVersion: string;
   readonly loanId?: string;
+  /** Origination key: a notice rendered before funding is keyed by the application (its events must satisfy application-subject timers). */
+  readonly applicationId?: string;
   readonly caseId?: string;
   readonly recipients: readonly Recipient[];
   readonly payload: Record<string, unknown>;
@@ -65,7 +67,7 @@ export class NoticeService {
   template(code: string): NoticeTemplate { return this.deps.registry.template(code); }
 
   /** renderNotice + evaluateChecklist. A failing block rule holds the notice (it can never be sent); missing addresses hold too. */
-  render(input: { templateCode: string; loanId?: string; caseId?: string; recipients: readonly Recipient[]; payload: Record<string, unknown>; asOf: PlainDate }): Notice {
+  render(input: { templateCode: string; loanId?: string; applicationId?: string; caseId?: string; recipients: readonly Recipient[]; payload: Record<string, unknown>; asOf: PlainDate }): Notice {
     const t = this.deps.registry.template(input.templateCode);
     const v: TemplateVersion | undefined = this.deps.registry.activeVersion(t.code, input.asOf);
     if (!v) throw new RangeError(`no approved version of ${t.code} in effect on ${input.asOf}`);
@@ -73,7 +75,7 @@ export class NoticeService {
     const checklist = evaluateChecklist(v, input.payload, rendered);
     const now = this.deps.clock.now();
     const n: Notice = { id: randomUUID(), templateCode: t.code, templateVersion: v.version, recipients: input.recipients, payload: input.payload, payloadHash: rendered.payloadHash, rendered, checklist, producedAt: now, status: "rendered", deliveries: [],
-      ...(input.loanId ? { loanId: input.loanId } : {}), ...(input.caseId ? { caseId: input.caseId } : {}) };
+      ...(input.loanId ? { loanId: input.loanId } : {}), ...(input.applicationId ? { applicationId: input.applicationId } : {}), ...(input.caseId ? { caseId: input.caseId } : {}) };
     if (!checklist.passed) { n.status = "held"; n.heldReason = `checklist: ${checklist.blocking.map((r) => `${r.rule_id} (${r.citation})`).join(", ")}`; }
     else if (input.recipients.length === 0) { n.status = "held"; n.heldReason = "no recipients"; }
     this.notices.set(n.id, n);
@@ -147,6 +149,6 @@ export class NoticeService {
   }
 
   private emit(type: string, n: Notice, payload: Record<string, unknown>): void {
-    this.deps.events.append({ type, ...(n.loanId ? { loanId: n.loanId } : {}), aggregate: { kind: "notice", id: n.id }, actor: DISCLOSURES_AGENT, payload: { notice_id: n.id, template: n.templateCode, ...payload } });
+    this.deps.events.append({ type, ...(n.loanId ? { loanId: n.loanId } : {}), ...(n.applicationId ? { applicationId: n.applicationId } : {}), aggregate: { kind: "notice", id: n.id }, actor: DISCLOSURES_AGENT, payload: { notice_id: n.id, template: n.templateCode, ...(n.applicationId ? { application_id: n.applicationId } : {}), ...payload } });
   }
 }

@@ -174,6 +174,38 @@ export function countFirstPeriod(term_start_date: PlainDate, first_payment_date:
   return { full_unit_periods_first: full, odd_days, first_period_days, first_period_longer_by_days: first_period_days - regular_period_days };
 }
 
+/** The Appendix J solver's precision (`regz.apr.appendix_j` rule set: |Δ| < 10⁻¹², ≤ 200 iterations). */
+export interface AppendixJSolverOptions { readonly bisection_tolerance: string; readonly max_iterations: number; }
+/** The open-ended (currently in force) `regz.apr.appendix_j` version — for a caller with no as-of date (21.2's LE has none). */
+export const APPENDIX_J_OPEN_ENDED = "9999-12-31" as PlainDate;
+export function appendixJSolverOptions(asOf: PlainDate = APPENDIX_J_OPEN_ENDED): AppendixJSolverOptions {
+  const rs = ruleSet<{ bisection_tolerance: string; max_iterations: number }>("regz.apr.appendix_j", asOf);
+  return { bisection_tolerance: rs.content.bisection_tolerance, max_iterations: rs.content.max_iterations };
+}
+/**
+ * THE Appendix J (b)(8) actuarial solver — the one function both APR engines call (21.2's LE `computeApr` and this
+ * process's checkpoint `computeApr`; the maintainer reconciliation of the two engines the origination build recorded).
+ * Solves A = Σ_k P_k / ((1 + f·i)(1 + i)^(t_k)), t_k = full_unit_periods_first + k − 1, for the unit-period rate i by
+ * bisection on [0, 0.1] to the rule set's tolerance. Returns i and the iteration count; the callers format and round.
+ */
+export function solveAppendixJ(amount_financed: Decimal, payments: readonly Decimal[], full_unit_periods_first: number, odd_fraction: Decimal, opts: AppendixJSolverOptions = appendixJSolverOptions()): { i: Decimal; iterations: number } {
+  const pv = (i: Decimal): Decimal => {
+    const v = ONE.div(ONE.add(i));
+    let fac = v.pow(full_unit_periods_first);   // discount to the first payment
+    const oddFactor = ONE.div(ONE.add(odd_fraction.mul(i)));
+    let sum = ZERO;
+    for (const p of payments) { sum = sum.add(p.mul(fac)); fac = fac.mul(v); }
+    return sum.mul(oddFactor);
+  };
+  const eps = Decimal.parse(opts.bisection_tolerance);
+  let lo = ZERO, hi = Decimal.parse("0.1"), iterations = 0;
+  while (iterations < opts.max_iterations && hi.sub(lo).cmp(eps) > 0) {
+    const mid = lo.add(hi).div(Decimal.fromInt(2));
+    if (pv(mid).cmp(amount_financed) > 0) lo = mid; else hi = mid;
+    iterations++;
+  }
+  return { i: lo.add(hi).div(Decimal.fromInt(2)), iterations };
+}
 /**
  * The APR by the actuarial method: solve Σ_k P_k / ((1 + f·i)(1 + i)^(t_k)) = A for the monthly rate i by bisection
  * (|Δ| < 10⁻¹², ≤ 200 iterations); APR = 12·i to six decimals, disclosed rounded half-up to three. Under
@@ -196,22 +228,7 @@ export function computeApr(input: AprInput): AprCalculation {
   const f = method === "appendix_j_exact" ? Decimal.ratio(BigInt(count.odd_days), 30n) : ZERO;
   const A = centsToDecimal(input.loan_amount_cents - input.prepaid_finance_charges_cents);
   const P = stream.map((x) => centsToDecimal(x));
-  const pv = (i: Decimal): Decimal => {
-    const v = ONE.div(ONE.add(i));
-    let fac = v.pow(count.full_unit_periods_first);   // discount to the first payment
-    const oddFactor = ONE.div(ONE.add(f.mul(i)));
-    let sum = ZERO;
-    for (const p of P) { sum = sum.add(p.mul(fac)); fac = fac.mul(v); }
-    return sum.mul(oddFactor);
-  };
-  const eps = Decimal.parse(rs.content.bisection_tolerance);
-  let lo = ZERO, hi = Decimal.parse("0.1"), iterations = 0;
-  while (iterations < rs.content.max_iterations && hi.sub(lo).cmp(eps) > 0) {
-    const mid = lo.add(hi).div(Decimal.fromInt(2));
-    if (pv(mid).cmp(A) > 0) lo = mid; else hi = mid;
-    iterations++;
-  }
-  const i = lo.add(hi).div(Decimal.fromInt(2));
+  const { i, iterations } = solveAppendixJ(A, P, count.full_unit_periods_first, f, { bisection_tolerance: rs.content.bisection_tolerance, max_iterations: rs.content.max_iterations });
   const aprExact = i.mul(Decimal.fromInt(12)).mul(HUNDRED);
   const apr_str = roundHalfUp(aprExact, 6), apr_disclosed_str = roundHalfUp(aprExact, 3);
   const total_of_payments_cents = sumCents(stream), pi_total = sumCents(piStream);
@@ -384,7 +401,15 @@ export function excludableDiscountPoints(rule: PfCountingRule, inp: Pick<PointsA
   if (und.cmp(apor.add(Decimal.fromInt(2))) <= 0) return 1;
   return 0;
 }
-/** Points and fees both without and with Supermortgage's flat fee ("compute points and fees both ways and block on the inclusive figure"). */
+/**
+ * Points and fees both without and with Supermortgage's flat fee ("compute points and fees both ways and block on the inclusive figure").
+ * Maintainer note (build-notes defect "pf cap rounds HALF_UP where rule says floor"): the 25.1 spec text states the cap only as
+ * "3 percent of the total loan amount" (§43) with no rounding direction, so `qmPointsAndFeesCap` keeps the platform's
+ * round-half-up-to-the-cent convention (docs/ARCHITECTURE.md rule 1); a floor is adopted only when 23.4's determination text says so.
+ * Likewise "classifyFinanceCharges ignores creditor-retained (c)(7) items": the spec's classification table (§140–147) withdraws a
+ * (c)(7) exclusion only for an unreasonable amount (FEE_REASONABLENESS) and flips only `conditional_a2` on creditor retention;
+ * creditor/affiliate receipt of a (c)(7) fee is counted in points and fees here (§1026.32(b)(1)(iii)), not re-classified.
+ */
 export function pointsAndFees(inp: PointsAndFeesInput, rule: PfCountingRule = "federal_1026_32"): PointsAndFees {
   const byId = new Map(inp.classifications.map((r) => [r.fee_item_id, r] as const));
   const maxPts = excludableDiscountPoints(rule, inp);
@@ -423,7 +448,12 @@ export function totalLoanAmount(amount_financed_cents: Cents, financed_pf_items_
 
 // ============================================================ QM / HPML / HOEPA (23.4's determinations re-executed with checkpoint figures)
 export interface AporTable { readonly table_date: PlainDate; readonly term_years: number; readonly product: "fixed" | "adjustable"; readonly apor_pct: string; }
-/** The APOR as of the rate-set date: the table for the week containing `rate_set_date` (table_date ≤ rate_set_date < table_date + 7). */
+/**
+ * The APOR as of the rate-set date: the table for the week containing `rate_set_date` (table_date ≤ rate_set_date < table_date + 7).
+ * Maintainer note (build-notes defect "aporAsOf only within the rate-set week"): this is the spec's rule — "FFIEC APOR tables …
+ * parsed by term and rate-set week" (§164) and "Missing APOR for the rate-set week (FFIEC late): tests `error` → gates block;
+ * `officer` may not waive; wait for the table" (§189) — so an older table is never carried forward (T-test: the Sep 28 table does not cover Oct 7).
+ */
 export function aporAsOf(tables: readonly AporTable[], rate_set_date: PlainDate, term_years = 30, product: "fixed" | "adjustable" = "fixed"): AporTable | null {
   return tables.find((t) => t.term_years === term_years && t.product === product && t.table_date <= rate_set_date && rate_set_date < addDays(t.table_date, 7)) ?? null;
 }

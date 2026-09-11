@@ -34,7 +34,10 @@ export function beginAnalysisComputation(events: EventStore, i: ComputingInput):
 }
 
 export interface CushionCheck {
-  readonly loan_id: string;
+  /** The serviced loan; null/empty before funding, when `application_id` keys the check (30.3's initial escrow analysis). */
+  readonly loan_id: string | null;
+  /** Origination key (pre-funding, 30.3): the events carry `applicationId` so the application-subject timers arm; both keys may be set at the hand-off. */
+  readonly application_id?: string | null;
   /** The analysis the check belongs to; null for the boarding validator's stand-alone check (ESC_INHERITED_CUSHION_CHECK_10BD). */
   readonly analysis_id: string | null;
   readonly source: "engine" | "boarding_validator";
@@ -58,19 +61,20 @@ export function cushionCheckReasons(c: Pick<CushionCheck, "cap_check_passed" | "
 
 /** The cushion module's result as loan_events: `escrow.cushion.validated` (always — it carries the check fields) and `escrow.cushion.cap_failed` with the reason when a check fails. */
 export function recordCushionCheck(events: EventStore, c: CushionCheck): CushionCheckRecord {
-  if (!c.loan_id) throw new RangeError("loan_id is required to record a cushion check");
+  if (!c.loan_id && !c.application_id) throw new RangeError("loan_id (or, before funding, application_id) is required to record a cushion check");
   if (c.cushion_cents < 0n || c.cushion_cap_cents < 0n) throw new RangeError("cushion figures cannot be negative");
   const reasons = cushionCheckReasons(c);
+  const keys = { ...(c.loan_id ? { loanId: c.loan_id } : {}), ...(c.application_id ? { applicationId: c.application_id } : {}) };
   const fields = { analysis_id: c.analysis_id, source: c.source, cushion_months: c.cushion_months, cushion_cents: String(c.cushion_cents), cushion_cap_source: c.cushion_cap_source, cushion_cap_cents: String(c.cushion_cap_cents),
-    lowest_target_cents: c.lowest_target_cents === null ? null : String(c.lowest_target_cents), cap_check_passed: c.cap_check_passed, preaccrual_check_passed: c.preaccrual_check_passed };
-  const validated = events.append({ type: ESCROW_CUSHION_VALIDATED, loanId: c.loan_id, actor: c.actor, payload: fields });
-  const capFailed = reasons.length ? events.append({ type: ESCROW_CUSHION_CAP_FAILED, loanId: c.loan_id, actor: c.actor, causationId: validated.id, payload: { ...fields, reason: reasons.join("+"), reasons } }) : null;
+    lowest_target_cents: c.lowest_target_cents === null ? null : String(c.lowest_target_cents), cap_check_passed: c.cap_check_passed, preaccrual_check_passed: c.preaccrual_check_passed, ...(c.application_id ? { application_id: c.application_id } : {}) };
+  const validated = events.append({ type: ESCROW_CUSHION_VALIDATED, ...keys, actor: c.actor, payload: fields });
+  const capFailed = reasons.length ? events.append({ type: ESCROW_CUSHION_CAP_FAILED, ...keys, actor: c.actor, causationId: validated.id, payload: { ...fields, reason: reasons.join("+"), reasons } }) : null;
   return { reasons, validated, cap_failed: capFailed, passed: reasons.length === 0 };
 }
 
 /** The projection's cushion fields as a check record input (rule 3: the aggregate low point is the min target after Step 3). */
-export function checkFromProjection(p: Projection, f: { loan_id: string; analysis_id: string | null; source: CushionCheck["source"]; cushion_months: number; actor: Actor }): CushionCheck {
+export function checkFromProjection(p: Projection, f: { loan_id: string | null; application_id?: string | null; analysis_id: string | null; source: CushionCheck["source"]; cushion_months: number; actor: Actor }): CushionCheck {
   const lowest = p.targets.length ? p.targets.reduce((a, b) => (b < a ? b : a)) : null;
-  return { loan_id: f.loan_id, analysis_id: f.analysis_id, source: f.source, cushion_months: f.cushion_months, cushion_cents: p.cushion_cents, cushion_cap_source: p.cushion_source, cushion_cap_cents: p.cap_cents,
+  return { loan_id: f.loan_id, ...(f.application_id ? { application_id: f.application_id } : {}), analysis_id: f.analysis_id, source: f.source, cushion_months: f.cushion_months, cushion_cents: p.cushion_cents, cushion_cap_source: p.cushion_source, cushion_cap_cents: p.cap_cents,
     lowest_target_cents: lowest, cap_check_passed: p.cap_ok, preaccrual_check_passed: p.preaccrual_ok, actor: f.actor };
 }

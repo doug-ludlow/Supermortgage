@@ -1,5 +1,5 @@
 {
- "brief": "spec units built 7101/7446 (95.4%): tids 1821/1914, tables 666/717, timers 1881/1987, notices 299/306, tools 1232/1311, figures 1202/1211; processes at 100%: 158/165",
+ "brief": "spec units built 7112/7446 (95.5%): tids 1821/1914, tables 666/717, timers 1892/1987, notices 299/306, tools 1232/1311, figures 1202/1211; processes at 100%: 158/165",
  "totals": {
   "tids": {
    "spec": 1914,
@@ -11,7 +11,7 @@
   },
   "timers": {
    "spec": 1987,
-   "built": 1881
+   "built": 1892
   },
   "notices": {
    "spec": 306,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 7446,
-   "built": 7101
+   "built": 7112
   }
  },
  "sections": {
@@ -195,7 +195,7 @@
   },
   "28": {
    "spec": 225,
-   "built": 15,
+   "built": 26,
    "processes": 4,
    "done": 0
   },
@@ -6563,18 +6563,9 @@
    },
    "timers": {
     "spec": 9,
-    "built": 1,
-    "armable": 5,
-    "missing": [
-     "FNMA_D1_1_01_QC_AUDIT_ANNUAL",
-     "FNMA_D1_1_03_PREFUNDING_REPORT_30",
-     "SM_QC_OFFICER_FINDING_SLA_1BD",
-     "SM_QC_PREFUNDING_REVIEW_SLA_2BD",
-     "SM_QC_PREFUNDING_SELECTION_DAILY",
-     "SM_QC_REBUTTAL_WINDOW_1BD",
-     "SM_QC_REPORT_SIGNOFF_SLA_3BD",
-     "SM_QC_REVERIFICATION_RESPONSE_3BD"
-    ]
+    "built": 9,
+    "armable": 9,
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -6620,9 +6611,9 @@
    },
    "units": {
     "spec": 53,
-    "built": 4
+    "built": 12
    },
-   "pct": 7.5
+   "pct": 22.6
   },
   {
    "process": "28.2",
@@ -6658,11 +6649,9 @@
    },
    "timers": {
     "spec": 24,
-    "built": 2,
+    "built": 5,
     "armable": 11,
     "missing": [
-     "FNMA_A2_3_2_01_REMEDY_PAYMENT_60",
-     "FNMA_A2_3_2_03_APPEAL1_60",
      "FNMA_A2_3_2_03_APPEAL2_15",
      "FNMA_A2_3_2_03_FNMA_RESPONSE_60",
      "FNMA_A2_3_2_03_IDR_15",
@@ -6676,7 +6665,6 @@
      "FNMA_D1_1_03_TARGET_RATE_QUARTERLY",
      "FNMA_D1_3_01_QC_ARREARS_NOTICE",
      "FNMA_D1_3_01_QC_SELECT_MONTHLY",
-     "FNMA_D1_3_QC_CYCLE_90",
      "FNMA_D2_1_LQC_RESPONSE_30",
      "FNMA_D2_1_NOPD_DOC_UPLOAD_30",
      "FNMA_D2_1_RESOLUTION_REQUEST_60",
@@ -6731,9 +6719,9 @@
    },
    "units": {
     "spec": 68,
-    "built": 3
+    "built": 6
    },
-   "pct": 4.4
+   "pct": 8.8
   },
   {
    "process": "28.3",

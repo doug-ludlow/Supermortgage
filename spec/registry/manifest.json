@@ -15459,7 +15459,7 @@
    },
    {
     "n": 7,
-    "text": "Given a turn that references `consent.esign.title`, then the rendered text equals the template exactly."
+    "text": "Given a turn in which the model shows rates, then the reply carries a rates element (`messages.copy_tokens.element = \"rates\"` with the 20.3 range: product, low and high rates each with its APR, the lender and its NMLSR ID) and the model's own sentence restates none of its figures; given a turn whose reply is a copy-library template verbatim, then the guard rejects it and the regenerated reply is the model's own words."
    },
    {
     "n": 8,

@@ -27,7 +27,7 @@
  *                                                     in global scope is presented here by lead id. `terms.presented` → 3-entry's `terms.presented`
  *                                                     StatusCard (personal_terms, mlo_review_approved, the attribution, 20.4's disclaimer block; L2+ —
  *                                                     NO_RATE_BEFORE_MLO_REVIEW refuses any earlier personal card)
- *   terms.presented                                    ChoiceCard `entry.proceed.question`: Get my real numbers → 32.14 lead.proceed (20.3 convert →
+ *   terms.presented                                    ChoiceCard `entry.proceed.question`: Show me my rate → 32.14 lead.proceed (20.3 convert →
  *                                                     `application.received`, REGB_1002_9_DECISION_30, 32.3's E6 cards incl. the L3 hard-pull card) ·
  *                                                     Not yet → lead.proceed{not_yet} → `intent.deferred` (nothing ordered, pulled or converted)
  *   intent.deferred                                    the `entry.proceed.not_yet` line; the lead stays `terms_presented` (SM_QUOTE_VALIDITY_GATE governs a
@@ -229,8 +229,8 @@ async function presentByLead(deps: FlowDeps, ctx: Ctx, e: DomainEvent): Promise<
 // ---------------------------------------------------------------- S4 step 6: proceed (→ 32.3) or not yet
 async function proceedCard(deps: FlowDeps, ctx: Ctx, party: Party, quoteId: string): Promise<void> {
   await sendCard(deps, ctx, party, { kind: "ChoiceCard", copy_key: "entry.proceed.question", flow_key: `prequal.proceed:${ctx.leadId}:${quoteId}`, command_ref: "lead.proceed",
-    props: { title: "", quote_id: quoteId, options: [{ id: "proceed", label: "Get my real numbers", is_primary: true }, { id: "not_yet", label: "Not yet" }], command: "lead.proceed", command_args: { lead_id: ctx.leadId, quote_id: quoteId, borrower_name: party.legal_name, occupancy: ctx.app.occupancy },
-      command_args_by_option: { proceed: { choice: "proceed" }, not_yet: { choice: "not_yet" } }, affirmatives: ["get my real numbers", "my real numbers", "not yet"] } });
+    props: { title: "", quote_id: quoteId, options: [{ id: "proceed", label: "Show me my rate", is_primary: true }, { id: "not_yet", label: "Not yet" }], command: "lead.proceed", command_args: { lead_id: ctx.leadId, quote_id: quoteId, borrower_name: party.legal_name, occupancy: ctx.app.occupancy },
+      command_args_by_option: { proceed: { choice: "proceed" }, not_yet: { choice: "not_yet" } }, affirmatives: ["show me my rate", "my rate", "not yet"] } });
 }
 
 // ---------------------------------------------------------------- the reactions

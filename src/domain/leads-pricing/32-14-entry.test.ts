@@ -280,7 +280,7 @@ test("lead.requestRange (32.14 T4): lead.range.shown carries the sheet's FRM30 l
   assert.throws(() => stepCard("state", h.lead(buy)) && USPS_STATES.includes("XX") ? null : (() => { throw new RangeError("XX"); })(), RangeError);
 });
 
-test("lead.proceed (32.14 T14/T15, DELTA-13): Not yet → intent.deferred and the lead keeps its status; Get my real numbers before terms.presented under assisted → TERMS_NOT_PRESENTED; at terms_presented → 20.3 convert → application.received on the lead's id (REGB_1002_9_DECISION_30 arms) and the lead is converted; link_party → lead.linked", async () => {
+test("lead.proceed (32.14 T14/T15, DELTA-13): Not yet → intent.deferred and the lead keeps its status; Show me my rate before terms.presented under assisted → TERMS_NOT_PRESENTED; at terms_presented → 20.3 convert → application.received on the lead's id (REGB_1002_9_DECISION_30 arms) and the lead is converted; link_party → lead.linked", async () => {
   const h = harness(); const lead_id = await organicLead(h); await refiChips(h, lead_id, "AZ");
   const d = await h.run("32.14", "lead.proceed", { lead_id, choice: "not_yet" });
   assert.equal(d["deferred"], true); assert.deepEqual([d["ordered"], d["pulled"], d["document"]], [false, false, null]); assert.equal(d["copy_key"], "entry.proceed.not_yet");

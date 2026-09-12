@@ -23,8 +23,8 @@ test.describe("talk", () => {
       const lines: Record<string, unknown>[] = [];
       if (!transcript.length) { lines.push(disclosure, { role: "agent", text: "Hi. What would you like to do: buy a home, lower your rate or payment, or take cash out?", at }); }
       else if (/lower/i.test(text)) { lines.push({ role: "you", text, at }, { role: "agent", text: "Got it. Is this your primary home, a second home, or an investment property?", at }); }
-      else if (/450/.test(text)) { lines.push({ role: "you", text, at }, { role: "notice", text: RANGE, copy_key: "entry.range.card", at }, { role: "agent", text: "Those are today's rates above. Where should I send your real number?", at }); }
-      else if (/go ahead/i.test(text)) { lines.push({ role: "you", text, at }, { role: "notice", text: "Create your account to get your real number. Your answers come with you.", copy_key: "account.from_talk", at }, { role: "agent", text: "Your real number takes a soft credit check that doesn't affect your score, and it starts with an account.", at }); }
+      else if (/450/.test(text)) { lines.push({ role: "you", text, at }, { role: "notice", text: RANGE, copy_key: "entry.range.card", at }, { role: "agent", text: "Those are today's rates above. Want to see the rate you'd actually get?", at }); }
+      else if (/go ahead/i.test(text)) { lines.push({ role: "you", text, at }, { role: "notice", text: "To see the rate you'd actually get, create your account. Your answers come with you.", copy_key: "account.from_talk", at }, { role: "agent", text: "Seeing the rate you'd actually get takes a soft credit check that doesn't affect your score, and it starts with an account.", at }); }
       else lines.push({ role: "you", text, at }, { role: "agent", text: "Okay.", at });
       transcript = [...transcript, ...lines];
       return json(route, 200, { lead_id: "lead-1", agent: "claude", model: "claude-opus-5", transcript, lines, step: "goal", session_opened: false, level: null });

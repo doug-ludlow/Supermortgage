@@ -727,7 +727,7 @@ test("32.14-T13: Given L1 and consumer-entered name, address, DOB and SSN, when 
   const rec2 = await record(x.token, x.appId); assert.equal((rec2["numbers"] as Json)["figures_source"], "quote", "the Record's Numbers block from the quote");
   const proceed = await pendingCard(x.appId, x.partyId, "entry.proceed.question"); assert.equal(proceed.command_ref, "lead.proceed"); assert.deepEqual((proceed.props["options"] as { id: string }[]).map((o) => o.id), ["proceed", "not_yet"]);
 });
-test("32.14-T14: Given `terms_presented`, when the borrower taps Get my real numbers, then `application.received` is logged, `REGB_1002_9_DECISION_30` is armed, 32.3's E6 cards (`consent.esign.title`, `consent.tcpa.title`, `consent.credit.title{hard_pull}`) are sent, and `credit.authorize{hard_pull}` is still refused below L3 (32.3 T4 unchanged).", { skip }, async () => {
+test("32.14-T14: Given `terms_presented`, when the borrower taps Show me my rate, then `application.received` is logged, `REGB_1002_9_DECISION_30` is armed, 32.3's E6 cards (`consent.esign.title`, `consent.tcpa.title`, `consent.credit.title{hard_pull}`) are sent, and `credit.authorize{hard_pull}` is still refused below L3 (32.3 T4 unchanged).", { skip }, async () => {
   // the REAL organic path, end to end: the anonymous minute on the lead (S0–S2), the code with the lead cookie (S3), the application from the lead, S4, then Proceed
   await seedS4(); clock.set(EDT("2026-10-21", "11:00"));
   const l = await refiLead("AZ"); const shown = await range(l.token); assert.equal(shown.status, 200, JSON.stringify(shown.body)); assert.ok(shown.body["range"], "the published range before any identity");
@@ -751,7 +751,7 @@ test("32.14-T14: Given `terms_presented`, when the borrower taps Get my real num
   assert.equal((await entity("leads", x.appId))!["status"], "terms_presented"); clock.set(EDT("2026-10-21", "11:30"));
   assert.equal((await appEvents(x.appId, "application.received")).length, 0, "no Reg B request before Proceed");
   const proceed = await pendingCard(x.appId, x.partyId, "entry.proceed.question");
-  // Get my real numbers → 32.14 lead.proceed → 20.3 explainProgram{convert} → application.received (Reg B)
+  // Show me my rate → 32.14 lead.proceed → 20.3 explainProgram{convert} → application.received (Reg B)
   const r = await resolve(x.token, proceed.card_instance_id, { option_id: "proceed", evidence: { option_id: "proceed", tapped_at: clock.now() } }); assert.equal(r.status, 201, JSON.stringify(r.body));
   assert.equal(r.body["command"], "lead.proceed"); assert.ok((r.body["events"] as string[]).includes("application.received"), JSON.stringify(r.body["events"])); assert.equal((r.body["result"] as Json)["choice"], "proceed");
   const received = await appEvents(x.appId, "application.received"); assert.ok(received.length >= 1); assert.equal(received[0]!.payload["transaction_type"], "limited_cash_out"); assert.equal(received[0]!.payload["occupancy"], "primary");

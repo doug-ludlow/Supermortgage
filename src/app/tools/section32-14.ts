@@ -17,7 +17,7 @@
  *                      `lead.range.shown{…, checklist_run_id}` on the lead. A failing checklist answers `{range: null, refused:
  *                      RANGE_CONTENT_CHECK}` and the identity ask (`auth.choose_method`) still follows. STATE_GATE_FIRST before
  *                      the state is known and while 31.1 readiness is closed.
- *   lead.proceed       "Get my real numbers" → 20.3 `explainProgram{op=convert}` → `application.received` (Reg B; 32.3's E6 cards
+ *   lead.proceed       "Show me my rate" → 20.3 `explainProgram{op=convert}` → `application.received` (Reg B; 32.3's E6 cards
  *                      fire on it unchanged); refused TERMS_NOT_PRESENTED before `terms.presented` under
  *                      origination.ai_mlo_intake=assisted. "Not yet" → `intent.deferred{lead_id}` (nothing ordered, pulled or
  *                      converted; SM_LEAD_INACTIVITY_EXPIRY_90 remains the only clock).

@@ -15387,7 +15387,7 @@
    },
    {
     "n": 14,
-    "text": "Given `terms_presented`, when the borrower taps Get my real numbers, then `application.received` is logged, `REGB_1002_9_DECISION_30` is armed, 32.3's E6 cards (`consent.esign.title`, `consent.tcpa.title`, `consent.credit.title{hard_pull}`) are sent, and `credit.authorize{hard_pull}` is still refused below L3 (32.3 T4 unchanged)."
+    "text": "Given `terms_presented`, when the borrower taps Show me my rate, then `application.received` is logged, `REGB_1002_9_DECISION_30` is armed, 32.3's E6 cards (`consent.esign.title`, `consent.tcpa.title`, `consent.credit.title{hard_pull}`) are sent, and `credit.authorize{hard_pull}` is still refused below L3 (32.3 T4 unchanged)."
    },
    {
     "n": 15,

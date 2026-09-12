@@ -171,6 +171,20 @@ test("talk: the guard — a figure before the range and a forbidden word never r
   assert.equal((await entity("talk_transcripts", String(start.body["lead_id"])))?.["human_requested"], true);
 });
 
+test("talk: a lead that already carries answers (the chip flow on the same cookie) is read back as entry.resumed before the model picks up mid-way", { skip }, async () => {
+  // the chip flow: start a lead and answer the goal through POST /v1/borrower/lead — the same lead the talk route will find on the cookie
+  const started = await post("/v1/borrower/lead", { action: "start", channel: "web_chat" }); assert.equal(started.status, 200, JSON.stringify(started.body));
+  const token = started.body["lead_token"] as string; const withLead = { [LEAD_HEADER]: token };
+  const answered = await post("/v1/borrower/lead", { action: "answer", step: "goal", value: "lower_rate" }, withLead); assert.equal(answered.status, 200, JSON.stringify(answered.body));
+  const r = await post(TALK_PATH, {}, withLead);
+  assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body["lead_id"], started.body["lead_id"], "the same lead");
+  const t = transcript(r.body);
+  assert.equal(t[0]!["copy_key"], "entry.disclosure.first");
+  assert.equal(t[1]!["copy_key"], "entry.resumed", JSON.stringify(t)); assert.equal(t[1]!["role"], "notice"); assert.match(String(t[1]!["text"]), /lower my rate/);
+  assert.equal(t[2]!["role"], "agent");
+  assert.equal(r.body["step"], "occupancy", "the next unanswered step");
+});
+
 test("talk: without ANTHROPIC_API_KEY the route answers 503 TALK_NOT_CONFIGURED and nothing else changes", { skip }, async () => {
   const saved = process.env["ANTHROPIC_API_KEY"]; delete process.env["ANTHROPIC_API_KEY"];
   try {

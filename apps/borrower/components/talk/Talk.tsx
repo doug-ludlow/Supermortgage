@@ -52,7 +52,10 @@ export function Talk() {
     setBusy(true); setError(null);
     if (msg) { setTurns((cur) => [...cur, { role: "you", text: msg, at: new Date().toISOString() }]); setText(""); }
     try { apply(await talk(msg || undefined)); }
-    catch (e) { setError(e instanceof ApiRequestError && e.status === 503 ? "The conversational entry is not configured on this server yet." : copy("error.generic")); }
+    catch (e) {
+      const code = e instanceof ApiRequestError ? e.body.code : "";
+      setError(code === "TALK_NOT_CONFIGURED" ? "The conversational entry is not configured on this server yet." : code === "NOT_WIRED" ? "No partner is configured on this server yet." : copy("error.generic"));
+    }
     finally { setBusy(false); inputRef.current?.focus(); }
   }, [apply, busy, text]);
 

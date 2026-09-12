@@ -2,7 +2,6 @@
 .github
 .claude
 node_modules
-docs
 infra
 tools
 spec/sections
@@ -11,3 +10,5 @@ spec/*.md
 **/*.md
 .dockerignore
 Dockerfile
+# the copy library src/runtime/borrower/channels.ts renders SMS, voice and talk lines from (docs/ux/12) — the one .md the image needs
+!docs/ux/12-message-copy-library.md

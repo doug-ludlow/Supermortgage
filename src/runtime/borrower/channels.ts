@@ -92,10 +92,12 @@ const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const COPY_FILES = ["docs/ux/12-message-copy-library.md", "spec/sections/32-borrower-experience/copy-library.md"];
 interface CopyLine { readonly text: string; readonly options: readonly string[]; }
 let copyCache: Map<string, CopyLine> | null = null;
+/** The copy library file the API renders from, or null when none is on disk (every `{{copy:key}}` then leaves as the token — the Docker image must carry docs/ux/12). */
+export const copyLibraryFile = (): string | null => COPY_FILES.map((f) => `${ROOT}${f}`).find((f) => existsSync(f)) ?? null;
 function copyLibrary(): Map<string, CopyLine> {
   if (copyCache) return copyCache;
   const map = new Map<string, CopyLine>();
-  const file = COPY_FILES.map((f) => `${ROOT}${f}`).find((f) => existsSync(f));
+  const file = copyLibraryFile();
   if (file) for (const line of readFileSync(file, "utf8").split("\n")) {
     const m = /^- `([a-z0-9_.]+)` — [^—"]*? — "((?:[^"\\]|\\.)*)"(.*)$/.exec(line); if (!m || map.has(m[1]!)) continue;
     const opts = /options ((?:`[^`]+`\s*(?:·\s*)?)+)/.exec(m[3]!); const options = opts ? [...opts[1]!.matchAll(/`([^`]+)`/g)].map((x) => x[1]!) : [];

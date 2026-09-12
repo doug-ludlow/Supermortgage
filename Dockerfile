@@ -17,6 +17,8 @@ COPY tsconfig.json ./
 COPY spec/registry ./spec/registry
 COPY db ./db
 COPY src ./src
+# the copy library the API renders SMS, voice and talk lines from (src/runtime/borrower/channels.ts COPY_FILES)
+COPY docs/ux/12-message-copy-library.md ./docs/ux/12-message-copy-library.md
 RUN chmod +x db/migrate.sh && chown -R node:node /app
 
 USER node

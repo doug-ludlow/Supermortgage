@@ -17,6 +17,7 @@ import { boardTransferBatch } from "./transfers.ts";
 import { generateDemoBatch, DEMO_BATCH } from "../domain/boarding/demo-batch.ts";
 import { encodeTransferBatch } from "../domain/boarding/tape-codec.ts";
 import { seedEntryDemo } from "./entry-seed.ts";
+import { copyLibraryFile } from "./borrower/channels.ts";
 
 const mode = process.argv[2] ?? "serve";
 const logger = createLogger(process.env["LOG_FORMAT"] === "text" ? "text" : "json");
@@ -60,8 +61,9 @@ if (mode !== "serve") { logger.error(`unknown mode ${mode}; use serve | sweep | 
 if (!config.apiToken) logger.warn("API_TOKEN is empty: every route is open (ALLOW_INSECURE_NO_TOKEN=1)");
 // 32.14: the Phase I partner from configuration (DELTA-15); Sign in with Google is the FAKE provider under INTEGRATIONS=fake (DELTA-12 — the real adapter is wired with the client secret when another INTEGRATIONS value exists)
 const server = createApiServer({ runtime, apiToken: config.apiToken, logger, borrower: { environment: config.environment, defaultPartnerId: config.borrowerDefaultPartnerId, talk: { apiKey: config.talk.apiKey, model: config.talk.model, effort: config.talk.effort } } });
+const copyFile = copyLibraryFile(); if (!copyFile) logger.error("copy library missing: docs/ux/12-message-copy-library.md is not in the image — SMS, voice and talk lines render as {{copy:key}} tokens");
 const port = await listen(server, config.port, config.host);
-logger.info("serving", { host: config.host, port, environment: config.environment, integrations: config.integrations, tools: runtime.listTools().length, node: process.version, default_partner_id: config.borrowerDefaultPartnerId || null, google_oauth: config.googleOauth.clientId ? "configured" : "FAKE", talk: config.talk.apiKey ? `claude:${config.talk.model}` : "not configured" });
+logger.info("serving", { host: config.host, port, copy_library: copyFile, environment: config.environment, integrations: config.integrations, tools: runtime.listTools().length, node: process.version, default_partner_id: config.borrowerDefaultPartnerId || null, google_oauth: config.googleOauth.clientId ? "configured" : "FAKE", talk: config.talk.apiKey ? `claude:${config.talk.model}` : "not configured" });
 const shutdown = (signal: string): void => {
   logger.info("shutting down", { signal });
   server.close(() => { db.end().finally(() => process.exit(0)); });

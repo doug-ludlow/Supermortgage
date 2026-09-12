@@ -359,7 +359,12 @@ export function createTalkRoutes(deps: TalkDeps): TalkRoutes {
       if (String(req.headers["authorization"] ?? "")) { try { ctx = await auth.authenticate(req, at); } catch { ctx = null; } }
       const { lead_id, lead_token, started: fresh } = await leadFor(req, at);
       const t = await loadTranscript(lead_id); const before = t.turns.length;
-      if (fresh || !t.turns.length) { const lead0 = (await leadOf(lead_id)) ?? {}; t.turns.push({ role: "notice", text: copyText("entry.disclosure.first", partnerTokens(lead0)), copy_key: "entry.disclosure.first", at }); }
+      if (fresh || !t.turns.length) {
+        const lead0 = (await leadOf(lead_id)) ?? {};
+        t.turns.push({ role: "notice", text: copyText("entry.disclosure.first", partnerTokens(lead0)), copy_key: "entry.disclosure.first", at });
+        // a lead that already carries answers (the chip flow, an earlier visit on this cookie) is read back before the model picks up mid-way: `entry.resumed`, the same receipt sign-in uses
+        const answers = answersOf(lead0); if (!fresh && answers) t.turns.push({ role: "notice", text: copyText("entry.resumed", { answers }), copy_key: "entry.resumed", at });
+      }
       if (text) t.turns.push({ role: "you", text, at });
       const lead = (await leadOf(lead_id)) ?? {};
       const situation = await situationOf(lead_id, lead, t, ctx);

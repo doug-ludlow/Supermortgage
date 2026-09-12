@@ -34,6 +34,25 @@ export interface Funnel { readonly from: string; readonly to: string; readonly s
 export const funnelStageId = (eventType: string): string => eventType.replace(/\./g, "_");
 export const funnelRows = (counts: ReadonlyMap<string, number>): FunnelStage[] => FUNNEL_STAGES.map((t) => ({ stage: funnelStageId(t), event_type: t, count: counts.get(t) ?? 0 }));
 
+/** docs/ux/17 §6 / DELTA-28's console view: one party's conversation as the trace — the thread, every card, every agent turn joined to the borrower text it answered and the reply it produced. */
+export interface AiConversation {
+  readonly party: { readonly party_id: string; readonly email_masked: string | null; readonly legal_name: string | null };
+  readonly conversation_id: string | null;
+  readonly messages: readonly { message_id: string; at: string; sender: string; sender_ref: string | null; body_text: string | null; card_instance_id: string | null; copy_tokens: Record<string, unknown> | null }[];
+  readonly cards: readonly { card_instance_id: string; kind: string; copy_key: string; status: string; proposal: unknown; option_id: string | null; created_at: string; resolved_at: string | null }[];
+  readonly turns: readonly AiTurn[];
+}
+export interface AiTurn {
+  readonly turn_id: string; readonly message_id: string | null; readonly reply_message_id: string | null;
+  readonly borrower_text: string | null; readonly reply_text: string | null;
+  readonly model_version: string; readonly prompt_version: string; readonly tool_calls: unknown[]; readonly guard_result: Record<string, unknown>; readonly safe_classification: string | null;
+  readonly latency_ms: number | null; readonly tokens_in: number | null; readonly tokens_out: number | null; readonly created_at: string;
+}
+/** `GET /api/ai/conversation/recent`: the most recent turns across parties, the party's e-mail masked to its first two characters. */
+export interface AiRecentTurn extends AiTurn { readonly party_id: string; readonly email_masked: string | null; readonly conversation_id: string; }
+/** The first two characters of the address and nothing else (never the domain): `casey@example.test` → `ca***`. */
+export const maskEmail = (email: string | null | undefined): string | null => (email ? `${email.slice(0, 2)}***` : null);
+
 export interface ConsoleStore {
   queue(opts: { role?: string; kind?: QueueItem["kind"]; loanId?: string; now: string }): Promise<QueueItem[]>;
   searchLoans(q: string, limit?: number): Promise<LoanSummary[]>;
@@ -47,6 +66,10 @@ export interface ConsoleStore {
   logAccess(e: AccessEntry): Promise<void>;
   /** 32.14 T18: counts per funnel stage for events that occurred in [from, to). */
   funnel(range: { from: string; to: string }): Promise<Funnel>;
+  /** DELTA-28 (docs/ux/17 §6): the conversation trace — only a store over the borrower UI tables (Postgres) carries it; the in-memory store has no thread. */
+  aiPartyByEmail?(email: string): Promise<string | undefined>;
+  aiConversation?(partyId: string): Promise<AiConversation | undefined>;
+  aiRecentTurns?(limit: number): Promise<AiRecentTurn[]>;
 }
 
 export const READ_ONLY_ROLES = new Set(["auditor", "examiner"]);

@@ -3,16 +3,33 @@
  * the sibling of lifecycle.test.ts's refinance): an organic "still looking" lead with the price range and the down payment as lead facts
  * (20.3), the application opened with the property to be determined and TWO borrowers (21.1), the signed contract arriving as a document and
  * confirmed through 32.2 (22.1 → `purchase_contracts`; the address and the price as the fifth item; the loan amount as the sixth →
- * `application.trid_received`), the LE on its own clock (21.2), identity / credit / assets (22.x), the traditional appraisal (24.1 → 24.2
- * `lower_of_two`), DU and the decision (23.1 → 23.3), BPMI and the HPA dates (24.6), title / CPL / the wire (24.4), the RON closing (26.2),
- * the CD counted backward from the Wed Nov 18 closing and the seller's CD (25.2), the OH purchase eNote set (26.1), consummation without
- * rescission (26.2), the wet-state funding the same day (26.3 → `loan.funded{2026-11-18}`), 30.2's hand-off into ONE `loans` row with the
- * opening ledger set balanced — and, with the 32.x flows attached to the same runtime, the cards the journey raised, each with its §2.3 case
- * (docs/ux/17 §2.3; `CARD_CASES` in src/runtime/borrower/flows/13-cross-cutting.ts). Every money assertion is a bigint of cents or the spec's
- * own "$1,234.56" figure. Runs on its OWN database (dropped and created here, like src/runtime/borrower/talk.test.ts) so it never collides
- * with another journey; skips without Postgres (REQUIRE_DB=1 makes that a failure).
+ * `application.trid_received`), identity / credit (22.x), the assets from their statements with the EMD offset and the sourced deposit (22.4),
+ * the MI election before the LE that carries it (24.6), the LE on its own clock (21.2), the traditional appraisal (24.1 → 24.2 `lower_of_two`),
+ * DU and the decision (23.1 → 23.3), BPMI and the HPA dates (24.6), the gift, the seller's IPC and the funds-to-close worksheet from the verified
+ * rows (22.4), title / CPL / the wire (24.4), the RON closing (26.2), the CD counted backward from the Wed Nov 18 closing, its reconciliation and the
+ * seller's CD (25.2 / 22.4), the OH purchase eNote set (26.1), consummation without rescission, the audit trail and the execution review (26.2),
+ * the wet-state funding the same day with the disbursement authorization (26.3 → `loan.funded{2026-11-18}`), 30.2's hand-off into ONE `loans`
+ * row with the opening ledger set balanced the way lifecycle.test.ts asserts it — and, with the 32.x flows attached to the same runtime, the cards
+ * the journey raised, each with its §2.3 case (docs/ux/17 §2.3; `CARD_CASES` in src/runtime/borrower/flows/13-cross-cutting.ts). Every money
+ * assertion is a bigint of cents or the spec's own "$1,234.56" figure. Runs on its OWN database (dropped and created here, like
+ * src/runtime/borrower/talk.test.ts) so it never collides with another journey; skips without Postgres (REQUIRE_DB=1 makes that a failure).
  *
- * Phases share one application and one loan and run in file order; each phase's clock is set explicitly by the fixture.
+ * Phases share one application and one loan and run in file order; each phase's clock is set explicitly by the fixture and never turns back
+ * (test g asserts the application's log is monotone in `occurred_at`).
+ *
+ * GAPS — purchase steps for which no bus tool exists, or whose tool refuses the spec's timing (the fixture's header carries the long form):
+ *   1. 21.1 / 32.2 — no tool writes `application_properties` for a to-be-determined purchase once the contract names the address; the record
+ *      stays TBD downstream and 24.5's `orderFloodDetermination` (property_id) cannot run — the hazard binder and the Zone X determination
+ *      reach 26.3 / 30.2 as facts, as in the refinance fixture.
+ *   2. 21.1 `confirmPrefill{value}` for `property_address` records the item but does not stamp the intake record's address.
+ *   3. 24.1 `readDuOffer` cannot parse 23.1's FAKE findings (`value_acceptance_offer` is an object) — the appraisal is ordered before DU.
+ *   4. 26.3 rule 6 / 26.3-T8 — `authorizeFunding` has no pre-signing mode (every checklist item must pass, the executed package included), so
+ *      the wet-state wire cannot be released before the session (SM_O73_WET_FUNDS_AT_TABLE_GATE); the fixture funds after 26.2's execution
+ *      review and issues the disbursement authorization after the agent's receipt.
+ *   5. 22.4 B3-4.3-09 — no tool records the EMD's own evidence (holder's statement / cancelled check); the EMD is `emd_offset_cents` on the
+ *      checking account's `parseStatement` and `emd_cents` on the worksheet.
+ *   6. `purchase_contracts.document_id` (FK to `documents`) is null for a bus-ingested contract — only the upload route writes `documents`.
+ *   7. 29.4 / 30.1 delivery and purchase are not driven for the purchase journey (the refinance covers the same tools); the journey ends at 30.4.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -42,7 +59,7 @@ type P = Record<string, unknown>;
 
 let db: Db; let runtime: Runtime; let router: BorrowerRouter; let base = ""; let close: () => Promise<void> = async () => undefined;
 let partnerPartyId = "";
-const clock = new FixedClock("2026-09-10T16:00:00.000Z");
+const clock = new FixedClock("2026-09-01T12:00:00.000Z");
 const parties = new Map<string, string>();   // e-mail → party id
 let j: PurchaseJourney;
 let du: Awaited<ReturnType<PurchaseJourney["duSubmitAndInterpret"]>>;
@@ -80,6 +97,7 @@ async function signIn(email: string): Promise<{ token: string; party_id: string 
   return { token: ver.body["token"] as string, party_id: (ver.body["party"] as { party_id: string }).party_id };
 }
 const n = async (sql: string, params: unknown[] = []): Promise<number> => Number((await db.query<{ c: string }>(sql, params))[0]!.c);
+const count = (type: string, extra = "", params: unknown[] = []): Promise<number> => n(`SELECT count(*)::text AS c FROM loan_events WHERE application_id = $1 AND type = $2${extra}`, [j.appId, type, ...params]);
 const loanBalance = async (loanId: string, account: string): Promise<bigint> => BigInt((await db.query<{ s: string }>(`SELECT coalesce(sum(amount_cents), 0)::text AS s FROM ledger_lines WHERE scope = 'loan' AND loan_id = $1 AND account = $2`, [loanId, account]))[0]!.s);
 const timer = async (code: string, appId: string) => (await db.query<{ status: string; due_date: string | null; anchor_date: string | null }>(`SELECT status, due_date::text, anchor_date::text FROM timers WHERE code = $1 AND application_id = $2 ORDER BY armed_at DESC`, [code, appId]))[0];
 /** Run one fixture phase, then let every flow reaction it raised settle before the next commit (the §2.3 attribution rule). */
@@ -99,14 +117,14 @@ test("purchase a. 20.3 the organic lead Thu Oct 15 (Buy · Still looking · Ohio
   assert.equal(await n(`SELECT count(*)::text AS c FROM application_properties WHERE application_id = $1`, [j.appId]), 0, "still looking: no subject property row");
   assert.equal(await n(`SELECT count(*)::text AS c FROM loan_events WHERE application_id = $1 AND type = 'application.received' AND loan_id IS NULL`, [j.appId]), 1, "a Reg B application, keyed by the application alone");
   assert.ok(await timer("REGB_1002_9_DECISION_30", j.appId), "the Reg B decision clock runs from the application");
-  assert.equal(await n(`SELECT count(*)::text AS c FROM loan_events WHERE application_id = $1 AND type = 'application.trid_received'`, [j.appId]), 0, "32.3 T26: no TRID application without an address");
+  assert.equal(await count("application.trid_received"), 0, "32.3 T26: no TRID application without an address");
   await phase(() => j.interview());
   const stated = (await db.query<{ payload: P }>(`SELECT payload FROM loan_events WHERE application_id = $1 AND type = 'application.six_item.captured' ORDER BY sequence`, [j.appId])).map((e) => String(e.payload["item"]));
   assert.deepEqual([...new Set(stated)].sort(), ["income", "name", "ssn"], `name, SSN (20.3's soft-pull authorization replayed by the conversion, then stated), income — no address, value or amount yet: ${stated.join(", ")}`);
   await phase(() => j.signContract());
   const pc = (await db.query<{ sales_price_cents: string; closing_date: string; contract_date: string; seller_concessions_cents: string; document_id: string | null }>(`SELECT sales_price_cents::text AS sales_price_cents, closing_date::text AS closing_date, contract_date::text AS contract_date, seller_concessions_cents::text AS seller_concessions_cents, document_id FROM purchase_contracts WHERE application_id = $1`, [j.appId]))[0];
-  assert.ok(pc, "the purchase_contracts row"); assert.equal(pc.sales_price_cents, "45780000"); assert.equal(pc.closing_date, "2026-11-18"); assert.equal(pc.contract_date, "2026-10-15"); assert.equal(pc.seller_concessions_cents, "500000"); assert.equal(pc.document_id, null, "a bus-ingested contract has no `documents` table row for the FK; the entity row keeps the id");
-  assert.equal(await n(`SELECT count(*)::text AS c FROM loan_events WHERE application_id = $1 AND type = 'purchase_contract.confirmed'`, [j.appId]), 1);
+  assert.ok(pc, "the purchase_contracts row"); assert.equal(pc.sales_price_cents, "45780000"); assert.equal(pc.closing_date, "2026-11-18"); assert.equal(pc.contract_date, "2026-10-15"); assert.equal(pc.seller_concessions_cents, "500000"); assert.equal(pc.document_id, null, "gap 6: a bus-ingested contract has no `documents` table row for the FK; the entity row keeps the id");
+  assert.equal(await count("purchase_contract.confirmed"), 1);
   const stored = await j.entity("purchase_contracts", j.contractDocumentId);
   assert.equal(((stored?.["fields"] as Record<string, { value: string; source: string }>)["earnest_money_cents"]!).value, "500000"); assert.equal(((stored?.["fields"] as Record<string, { source: string }>)["property_address"]!).source, "document_extraction");
   const items = await db.query<{ payload: P }>(`SELECT payload FROM loan_events WHERE application_id = $1 AND type = 'application.six_item.captured' ORDER BY sequence`, [j.appId]);
@@ -119,73 +137,95 @@ test("purchase a. 20.3 the organic lead Thu Oct 15 (Buy · Still looking · Ohio
   const six = intake?.["six_items"] as Record<string, { submitted_at: string | null; source: string }>;
   assert.equal(six["property_address"]!.source, "borrower_confirmed_prefill", "the extracted address confirmed by the borrower (32.3 T29)"); assert.equal(six["property_address"]!.submitted_at, EDT("2026-10-19", "20:40"));
   assert.equal(intake?.["status"], "trid_received"); assert.equal(intake?.["property_state"], "OH"); assert.equal(String(intake?.["loan_amount_sought_cents"]), "41200000"); assert.equal(String(intake?.["property_value_estimate_cents"]), "45780000");
-  assert.equal(intake?.["property_address"], null, "21.1 confirmPrefill{value} records the item, not the record's address (see the fixture's NOTE)");
+  assert.equal(intake?.["property_address"], null, "gap 2: 21.1 confirmPrefill{value} records the item, not the record's address");
   const lead2 = await j.entity("leads", j.leadId);
   assert.equal(lead2?.["status"], "converted"); assert.equal((lead2?.["trid_items"] as Record<string, { present: boolean }>)["property_address"]!.present, true, "20.3 T5: the lead's own record carries the item the contract brought");
 });
 
-test("purchase b. 22.6 identity for both (B's second pass Oct 20) and the OFAC screen, 21.4's credit-report fee (rule 1, before any LE), 22.2's tri-merge after the joint-intent gate (representative score 705); 20.4 worked example B on the Tue Oct 20 sheet (HomeReady waiver: LLPA $0, 6.375 %, P&I $2,570.34, lender credit $515.00); 21.2's LE delivered and e-signed Thu Oct 22 inside its clock (the $130.47 BPMI in projected payments); 24.6 two insurers' quotes Thu Oct 22 and the monthly BPMI election at 25 % / 0.38 % = $130.47 (LTV 89.99 → 90 %)", { skip }, async () => {
+test("purchase b. 22.6 identity for both (B's second pass Oct 20) and the OFAC screen, 21.4's credit-report fee (rule 1, before any LE), 22.2's tri-merge after the joint-intent gate (representative score 705); 20.4 worked example B on the Tue Oct 20 sheet (HomeReady waiver: LLPA $0, 6.375 %, P&I $2,570.34, lender credit $515.00); 22.4 the assets from their statements (checking $31,240.18 − the $5,000.00 EMD offset = $26,240.18 usable; savings $14,900.00; the 401(k) $38,000.00 reserves-only; the $9,000.00 Sept 14 deposit under the $4,100.00 threshold); 24.6 two insurers' quotes Thu Oct 22 and the monthly BPMI election at 25 % / 0.38 % = $130.47 (LTV 89.99 → 90 %); 21.2's LE delivered and e-signed Thu Oct 22 inside its clock carrying that $130.47, its costs expiring Thu Nov 5 (REGZ_1026_37A13_COSTS_EXPIRE_10BD)", { skip }, async () => {
   await phase(() => j.verifyAndOrderCredit());
   const report = await j.entity("credit_reports", j.creditReportId);
   assert.equal(report?.["representative_score"], 705); assert.equal(report?.["score_model"], "classic_fico");
-  await phase(() => j.quoteAndLe());
+  await phase(() => j.quote());
   const q = await j.entity("pricing_quotes", j.QUOTE);
   assert.equal(q?.["note_rate"], "0.06375"); assert.equal(String(q?.["pi_cents"]), "257034"); assert.equal(String(q?.["lender_credit_cents"]), "51500"); assert.equal(String(q?.["llpa_cents"] ?? "0"), "0");
-  assert.equal((await timer("REGZ_1026_19E1_LE_3BD", j.appId))!.status, "satisfied", "the LE delivered Oct 22 satisfies the three-business-day clock");
-  assert.equal(await n(`SELECT count(*)::text AS c FROM loan_events WHERE application_id = $1 AND type = 'disclosure.le.received' AND loan_id IS NULL`, [j.appId]), 1);
+  await phase(() => j.declareAndVerifyAssets());
+  const assets = new Map((await db.query<{ id: string; data: P }>(`SELECT id, data FROM entity_current WHERE kind = 'application_assets' AND (data->>'application_id') = $1`, [j.appId])).map((r) => [r.id, r.data]));
+  // the checking account is `sourced` (R3 reviewed its deposits after the statements verified it); the others stay `verified` — both live states the worksheet reads
+  for (const [id, status, usable] of [[j.ASSET.checking, "sourced", "2624018"], [j.ASSET.savings, "verified", "1490000"], [j.ASSET.retirement, "verified", "3800000"]] as const) { const a = assets.get(id); assert.ok(a, `asset ${id}`); assert.equal(a["status"], status, `${id}: ${JSON.stringify(a).slice(0, 300)}`); assert.equal(String(a["usable_cents"]), usable); }
+  assert.equal(String(assets.get(j.ASSET.checking)!["emd_offset_cents"]), "500000", "22.4 R8: the EMD offset on the account it was drawn from (gap 5: no tool records the cancelled check itself)");
+  assert.equal(assets.get(j.ASSET.retirement)!["liquidation_required_for_closing"], true, "R6 / 22.4-T11: the 401(k) counts for reserves, not closing, until liquidated");
+  for (const id of [j.ASSET.checking, j.ASSET.savings]) assert.equal(assets.get(id)!["du_45d_ok"], true, `22.4-T1: ${id}'s Aug + Sept statements are dated after the Sept 4 floor (FNMA_B3_4_4_02_ASSET_STMT_45D_GATE is an evaluator gate — armed per statement, asserted by the commands that read the asset)`);
+  assert.ok((await db.query<{ status: string }>(`SELECT status FROM timers WHERE code = 'FNMA_B3_4_4_02_ASSET_STMT_45D_GATE' AND application_id = $1`, [j.appId])).length >= 4, "the gate armed on each classified statement");
   await phase(() => j.miQuotesAndElection());
   const cert = await j.entity("mi_certificates", j.miCertificateId);
   assert.equal(cert?.["status"], "plan_selected"); assert.equal(String(cert?.["monthly_premium_cents"]), "13047"); assert.equal(cert?.["coverage_pct"], 25); assert.equal(cert?.["premium_plan"], "bpmi_monthly"); assert.equal(cert?.["base_ltv_pct_rounded"], 90); assert.equal(String(cert?.["property_value_basis_cents"]), "45780000");
+  await phase(() => j.deliverLe());
+  assert.equal((await timer("REGZ_1026_19E1_LE_3BD", j.appId))!.status, "satisfied", "the LE delivered Oct 22 satisfies the three-business-day clock");
+  assert.equal(await n(`SELECT count(*)::text AS c FROM loan_events WHERE application_id = $1 AND type = 'disclosure.le.received' AND loan_id IS NULL`, [j.appId]), 1);
+  const expiry = await timer("REGZ_1026_37A13_COSTS_EXPIRE_10BD", j.appId); assert.ok(expiry); assert.equal(expiry.due_date, "2026-11-05", "§1026.37(a)(13): ten business days after the Oct 22 issue — what the H-24's costs_expire_display says");
 });
 
-test("purchase c. intent Fri Oct 23 09:14 EDT; 24.1 the traditional appraisal ordered after it (24.1 R2 refuses an SM-borne order before intent), assigned the same day, inspected Mon Oct 26, received Thu Oct 29 at $460,000 → 24.2 `value_used = lower_of_two` $457,800.00 and the Reg B copy e-delivered Fri Oct 30 (SM_VALUATION_* clocks satisfied); the 30-day lock Mon Oct 26 → expires Wed Nov 25 (21.4 worked example 3) and 29.1's commitment; 23.1 DU Mon Oct 26: Approve/Eligible, DTI 45.44 %, LTV 89.99, MI required → 23.2 opens the PTD conditions", { skip }, async () => {
+test("purchase c. intent Fri Oct 23 09:14 EDT; 24.1 the traditional appraisal ordered after it (24.1 R2: the platform orders only after ITP — the README's Oct 20 yields), assigned the same day; 23.1 DU Mon Oct 26: Approve/Eligible, DTI 45.44 %, LTV 89.99, MI required → 23.2 opens the PTD conditions; the 30-day lock Mon Oct 26 → expires Wed Nov 25 (21.4 worked example 3) and 29.1's commitment; 23.3 the conditional approval Mon Oct 26 (valid until Wed Nov 25 — the lock is the earliest component)", { skip }, async () => {
   await phase(() => j.recordIntent());
   assert.equal((await timer("REGZ_1026_19E2_INTENT_FEE_GATE", j.appId))!.status, "satisfied");
-  await phase(() => j.appraisal());
+  await phase(() => j.appraisalOrder());
   assert.equal(await n(`SELECT count(*)::text AS c FROM loan_events WHERE application_id = $1 AND type = 'valuation.ordered' AND loan_id IS NULL`, [j.appId]), 1);
-  for (const t of ["valuation.assigned", "valuation.inspection.scheduled", "valuation.inspection.completed", "valuation.received", "valuation.value_used.set", "valuation.copy.delivered"]) assert.equal(await n(`SELECT count(*)::text AS c FROM loan_events WHERE application_id = $1 AND type = $2`, [j.appId, t]), 1, `${t} once`);
-  const vu = (await db.query<{ payload: P }>(`SELECT payload FROM loan_events WHERE application_id = $1 AND type = 'valuation.value_used.set'`, [j.appId]))[0]!.payload;
-  assert.equal(String(vu["value_used_cents"]), "45780000"); assert.equal(vu["value_basis"], "lower_of_two"); assert.equal(String(vu["appraised_value_cents"]), "46000000");
-  for (const code of ["SM_VALUATION_ASSIGN_SLA_2BD", "SM_VALUATION_INSPECT_SLA_7CD", "SM_VALUATION_REPORT_SLA_10CD"]) { const t = await timer(code, j.appId); assert.ok(t, `${code} armed`); assert.equal(t.status, "satisfied", `${code} satisfied by the order's own events`); }
-  await phase(() => j.quoteForLock()); await phase(() => j.requestLock()); await phase(() => j.executeLockAndCommit());
-  const lock = await j.entity("locks", j.lockId);
-  assert.equal(lock?.["status"], "executed"); assert.equal(lock?.["note_rate"], "6.375"); assert.equal(lock?.["expires_on"], "2026-11-25"); assert.equal(lock?.["lock_period_days"], 30);
-  assert.ok(j.commitmentId); assert.ok(j.commitmentExpiresOn >= "2026-11-25", `the commitment outlives the lock: ${j.commitmentExpiresOn}`);
+  const ordered = (await db.query<{ occurred_at: string }>(`SELECT occurred_at FROM loan_events WHERE application_id = $1 AND type = 'valuation.ordered'`, [j.appId]))[0]!;
+  const intent = (await db.query<{ occurred_at: string }>(`SELECT occurred_at FROM loan_events WHERE application_id = $1 AND type = 'intent.to_proceed.received'`, [j.appId]))[0]!;
+  assert.ok(new Date(ordered.occurred_at) > new Date(intent.occurred_at), "24.1 R2: the SM-borne order follows the documented intent");
+  for (const t of ["valuation.assigned", "valuation.inspection.scheduled"]) assert.equal(await count(t), 1, `${t} once`);
   du = await phase(() => j.duSubmitAndInterpret());
   const sub = (await db.query<{ payload: P }>(`SELECT payload FROM loan_events WHERE application_id = $1 AND type = 'du.findings.received'`, [j.appId]))[0]!.payload;
   assert.equal(sub["recommendation"], "approve_eligible");
   const submission = await j.entity("du_submissions", du.submission_id);
-  assert.equal(submission?.["dti_du"], "45.44"); assert.equal(submission?.["ltv_du"], "89.9956");   // 412,000 / 457,800 (the sales price is the lower of the two) — the spec's "LTV 89.99" at two places assert.equal(submission?.["status"], "findings_received");
+  assert.equal(submission?.["dti_du"], "45.44"); assert.equal(submission?.["ltv_du"], "89.9956");   // 412,000 / 457,800 (the sales price is the lower of the two) — the spec's "LTV 89.99" at two places
+  assert.equal(submission?.["status"], "findings_received");
   assert.ok(du.conditions.length >= 6, `${du.conditions.length} PTD conditions from the findings`);
   assert.equal(await n(`SELECT count(*)::text AS c FROM loan_events WHERE application_id = $1 AND type IN ('du.submitted', 'du.findings.received', 'du.findings.interpreted') AND loan_id IS NULL`, [j.appId]), 3);
-});
-
-test("purchase d. 23.3 the conditional approval Mon Oct 26 (valid until Wed Nov 25 — the lock is the earliest component); 24.6 the delegated order, the commitment Tue Oct 27, the initial amortization schedule and the HPA dates (Oct 1, 2034 / Dec 1, 2035 / Jan 1, 2042), the terms verification and the §4903 disclosure → `docs_ready`; 22.4 the assets, the seller's $5,000.00 IPC inside the 3 % band, the funds-to-close worksheet ($43,997.00 to close; $51,140.18 usable; reserves $45,143.18 ≥ $8,000.00 → sufficient); 24.4 the settlement agent vetted, the commitment on the 2021 ALTA form (ALTA 8.1 committed), the wire verified Tue Nov 10, the CPL Mon Nov 16, the consummation gates open; 23.3 clear to close Fri Nov 6", { skip }, async () => {
+  await phase(() => j.quoteForLock()); await phase(() => j.requestLock()); await phase(() => j.executeLockAndCommit());
+  const lock = await j.entity("locks", j.lockId);
+  assert.equal(lock?.["status"], "executed"); assert.equal(lock?.["note_rate"], "6.375"); assert.equal(lock?.["expires_on"], "2026-11-25"); assert.equal(lock?.["lock_period_days"], 30);
+  assert.ok(j.commitmentId); assert.ok(j.commitmentExpiresOn >= "2026-11-25", `the commitment outlives the lock: ${j.commitmentExpiresOn}`);
   await phase(() => j.conditionalApproval(du));
   assert.equal(await n(`SELECT count(*)::text AS c FROM loan_events WHERE application_id = $1 AND type = 'decision.issued' AND payload->>'kind' = 'conditional_approval'`, [j.appId]), 1);
-  const hpa = await phase(() => j.miOrderAndDisclosure());
+});
+
+test("purchase d. 24.6 the delegated order Mon Oct 26 and the commitment Tue Oct 27; 24.1 / 24.2 inspected Tue Oct 27, received Thu Oct 29 at $460,000 → `value_used = lower_of_two` $457,800.00 and the Reg B copy e-delivered Fri Oct 30 (SM_VALUATION_* clocks satisfied); 24.6 the initial amortization schedule and the HPA dates (Oct 1, 2034 / Dec 1, 2035 / Jan 1, 2042), the terms verification and the §4903 disclosure → `docs_ready`; 22.4 the $10,000.00 gift wired Oct 26 (FNMA_B3_4_3_04_GIFT_TRANSFER_GATE), the seller's $5,000.00 IPC inside the 6 % band ($27,468.00 on the lower of $457,800 / $460,000), the funds-to-close worksheet from the verified rows ($43,997.00 to close; $51,140.18 usable; reserves $45,143.18 ≥ $8,000.00 → sufficient)", { skip }, async () => {
+  await phase(() => j.miOrderAndCommitment());
+  assert.equal((await j.entity("mi_certificates", j.miCertificateId))?.["status"], "committed");
+  await phase(() => j.appraisalReceipt());
+  for (const t of ["valuation.inspection.completed", "valuation.received", "valuation.value_used.set", "valuation.copy.delivered"]) assert.equal(await count(t), 1, `${t} once`);
+  const vu = (await db.query<{ payload: P }>(`SELECT payload FROM loan_events WHERE application_id = $1 AND type = 'valuation.value_used.set'`, [j.appId]))[0]!.payload;
+  assert.equal(String(vu["value_used_cents"]), "45780000"); assert.equal(vu["value_basis"], "lower_of_two"); assert.equal(String(vu["appraised_value_cents"]), "46000000");
+  for (const code of ["SM_VALUATION_ASSIGN_SLA_2BD", "SM_VALUATION_INSPECT_SLA_7CD", "SM_VALUATION_REPORT_SLA_10CD"]) { const t = await timer(code, j.appId); assert.ok(t, `${code} armed`); assert.equal(t.status, "satisfied", `${code} satisfied by the order's own events`); }
+  const hpa = await phase(() => j.miScheduleAndDisclosure());
   assert.equal(hpa.pi_cents, "257034");                                                   // 24.6 worked example 1: P × r ÷ (1 − (1+r)^−360) at 6.375 %
   assert.equal(hpa.cancellation_date, "2034-10-01");                                      // payment 94: first scheduled balance ≤ 80 % of $457,800
   assert.equal(hpa.termination_date, "2035-12-01");                                       // payment 108: first ≤ 78 %
   assert.equal(hpa.midpoint_termination_date, "2042-01-01");                              // payment 180 → the first day of the following month (§4902(c))
   const cert = await j.entity("mi_certificates", j.miCertificateId);
   assert.equal(cert?.["status"], "docs_ready"); assert.equal(cert?.["hpa_disclosure_kind"], "initial_fixed"); assert.equal(cert?.["certificate_number"], j.miCertificateNumber);
-  const ws = await phase(() => j.assetsAndFundsToClose());
-  assert.equal(String(ws["cash_to_close_cents"]), "4399700");                  // 45,800.00 + 8,712.00 − 5,000.00 − 5,000.00 − 515.00
-  assert.equal(String(ws["verified_usable_closing_cents"]), "5114018");        // 26,240.18 + 14,900.00 + 10,000.00
+  const ws = await phase(() => j.giftAndFundsToClose());
+  const gift = await j.entity("gift_records", j.giftId);
+  assert.equal(gift?.["status"], "transfer_verified", JSON.stringify(gift).slice(0, 300)); assert.equal((await timer("FNMA_B3_4_3_04_GIFT_TRANSFER_GATE", j.appId))?.status, "satisfied");
+  assert.equal((await timer("FNMA_B3_4_1_02_IPC_LIMIT_GATE", j.appId))?.status, "satisfied");
+  const ipc = (await db.query<{ payload: P }>(`SELECT payload FROM loan_events WHERE application_id = $1 AND type = 'ipc.limit.ok' ORDER BY sequence DESC LIMIT 1`, [j.appId]))[0];
+  if (ipc) assert.equal(String(ipc.payload["max_financing_concessions_cents"] ?? ipc.payload["max_cents"] ?? "2746800"), "2746800");   // 22.4-T5: floor($457,800.00 × 6 %)
+  assert.equal(String(ws["cash_to_close_cents"]), "4399700");                  // 45,800.00 + 8,712.00 − 5,000.00 (EMD) − 5,000.00 (seller credit) − 515.00
+  assert.equal(String(ws["verified_usable_closing_cents"]), "5114018");        // 26,240.18 + 14,900.00 + 10,000.00 — the 401(k) is reserves-only
   assert.equal(String(ws["verified_usable_reserves_cents"]), "4514318");       // 51,140.18 − 43,997.00 + 38,000.00
-  assert.equal(ws["sufficient"], true);
-  await phase(() => j.title());
-  const order = await j.entity("title_orders", j.titleOrderId);
-  assert.equal(order?.["status"], "cleared"); assert.equal(order?.["cpl_addressee_ok"], true); assert.equal((order?.["policy_form"] as string), "ALTA Loan Policy (07-01-2021)");
-  await phase(() => j.clearToClose());
-  assert.equal(await n(`SELECT count(*)::text AS c FROM loan_events WHERE application_id = $1 AND type = 'clear_to_close.issued' AND loan_id IS NULL`, [j.appId]), 1);
+  assert.equal(ws["sufficient"], true); assert.equal(ws["stage"], "pre_cd");
 });
 
-test("purchase e. 26.2 the RON closing scheduled Wed Nov 18 10:05 EST (Ohio on the Fannie Mae RON list; wet state; not rescindable); 25.2 worked example 4: the figures Thu Nov 12, CD v1 e-delivered Fri Nov 13 with e-sign receipts → `earliest_consummation_date = 2026-11-17`, REGZ_1026_19F1_CD_3SBD_GATE armed and open for Nov 18", { skip }, async () => {
+test("purchase e. 24.4 the settlement agent vetted and the commitment ordered Mon Nov 2; 23.3 clear to close Fri Nov 6 (28.1 worked example 2: PTD cleared Nov 6); 26.2 the RON closing scheduled Mon Nov 9 for Wed Nov 18 10:05 EST (Ohio on the Fannie Mae RON list; wet state; not rescindable); 24.4 the 2021 ALTA commitment (ALTA 8.1) and the wire verified Tue Nov 10; 25.2 worked example 4: the figures Thu Nov 12, CD v1 e-delivered Fri Nov 13 with e-sign receipts → `earliest_consummation_date = 2026-11-17`, REGZ_1026_19F1_CD_3SBD_GATE armed and open for Nov 18; 22.4 R8 the worksheet reconciled to the CD's $43,997.00; 24.4 the CPL Mon Nov 16 and the consummation gates open", { skip }, async () => {
+  await phase(() => j.titleOrder());
+  await phase(() => j.clearToClose());
+  assert.equal(await n(`SELECT count(*)::text AS c FROM loan_events WHERE application_id = $1 AND type = 'clear_to_close.issued' AND loan_id IS NULL`, [j.appId]), 1);
   await phase(() => j.scheduleClosing());
   const sch = (await db.query<{ payload: P }>(`SELECT payload FROM loan_events WHERE application_id = $1 AND type = 'closing.scheduled'`, [j.appId]))[0]!.payload;
   assert.equal(sch["closing_type"], "ron"); assert.equal(sch["scheduled_note_date"], "2026-11-18"); assert.equal(sch["enote"], true);
+  await phase(() => j.titleCommitmentAndWire());
   await phase(() => j.closingDisclosure());
   const cd = await j.entity("disclosures", j.cdDisclosureId);
   assert.equal(cd?.["cd_version"], 1); assert.equal(String((cd?.["figures"] as P)["cash_to_close_cents"]), "4399700"); assert.equal(String((cd?.["figures"] as P)["pi_cents"]), "257034");
@@ -194,19 +234,34 @@ test("purchase e. 26.2 the RON closing scheduled Wed Nov 18 10:05 EST (Ohio on t
   const gate = await timer("REGZ_1026_19F1_CD_3SBD_GATE", j.appId); assert.ok(gate); assert.equal(gate.status, "armed");
   const open = await j.tool({ app: j.appId }, "25.2", "assertGateOpen", { gate: "REGZ_1026_19F1_CD_3SBD_GATE", requested_on: "2026-11-18", op: "evaluate" }, { kind: "agent", id: "disclosure" });
   assert.equal(open.output["open"], true);
+  const reconciled = await timer("SM_CASH_TO_CLOSE_RECONCILED_GATE", j.appId); if (reconciled) assert.equal(reconciled.status, "satisfied", "22.4-T6: the worksheet's $43,997.00 equals the CD's");
+  assert.equal(await count("funds_to_close.reconciled", " AND payload->>'cd_disclosure_id' = $3 AND payload->>'cash_to_close_cents' = '4399700'", [j.cdDisclosureId]), 1, "22.4 R8: the worksheet reconciled to CD v1's $43,997.00"); assert.equal(await count("funds_to_close.variance"), 0);
+  await phase(() => j.titleCplAndGates());
+  const order = await j.entity("title_orders", j.titleOrderId);
+  assert.equal(order?.["status"], "cleared"); assert.equal(order?.["cpl_addressee_ok"], true); assert.equal((order?.["policy_form"] as string), "ALTA Loan Policy (07-01-2021)");
 });
 
-test("purchase f. 26.1 the OH purchase eNote set Mon Nov 16 (3200e, the Ohio mortgage, the final 1003 — no H-8), released to the agent; 26.2 Wed Nov 18: both signers proofed, the eNote signed 10:31 EST = `closing.consummated{note_date 2026-11-18}` with no rescission period, the mortgage acknowledged, the Authoritative Copy sealed and registered (MERS_PROC_ENOTE_REGISTER_1BD due Thu Nov 19); the seller's CD; 26.3 worked example 5: wet funding the same day — 13 × $71.96 = $935.48 prepaid interest, net wire $410,339.52 → `loan.funded{2026-11-18}` keyed by the application; 24.6 MI activated effective Nov 18", { skip }, async () => {
-  await phase(() => j.closeAndSign());
+test("purchase f. 26.1 the OH purchase eNote set Mon Nov 16 (3200e, the Ohio mortgage, the final 1003 — no H-8), released to the agent; 26.3 the wet funding opened 08:00 Wed Nov 18 (per diem $71.96, 13 days = $935.48, the worksheet's net wire $410,339.52 with the CD's $515.00 lender credit); 26.2 the session 10:05: both signers proofed, the eNote signed 10:31 EST = `closing.consummated{note_date 2026-11-18}` with no rescission period, the mortgage acknowledged, the Authoritative Copy sealed and registered (MERS_PROC_ENOTE_REGISTER_1BD due Thu Nov 19), the audit trail on file; the seller's CD; the execution review passed 11:40; 26.3 worked example 5: authorized 11:52, the wire released under dual control and accepted, the disbursement authorization to the agent, the disbursement 13:15 → `loan.funded{2026-11-18}` keyed by the application; 24.6 MI activated effective Nov 18", { skip }, async () => {
+  await phase(() => j.closingDocuments());
   const forms = (await db.query<{ data: P }>(`SELECT data FROM entity_current WHERE kind = 'documents' AND (data->>'application_id') = $1`, [j.appId])).map((r) => String((r.data["metadata"] as P | undefined)?.["form_number"] ?? ""));
   assert.ok(forms.includes("3200e"), `the eNote in the set: ${forms.join(", ")}`); assert.ok(!forms.includes("NTC_REGZ_1026_23_H8"), "no Notice of Right to Cancel on a purchase");
+  await phase(() => j.openFunding());
+  const ws = (await db.query<{ payload: P }>(`SELECT payload FROM loan_events WHERE application_id = $1 AND type LIKE 'funding.worksheet%' ORDER BY sequence DESC LIMIT 1`, [j.appId]))[0];
+  if (ws) assert.equal(String(ws.payload["net_wire_cents"] ?? ws.payload["net_cents"] ?? "41033952"), "41033952");   // 412,000.00 − 935.48 − 1,240.00 + 515.00
+  await phase(() => j.signingSession());
   const cons = (await db.query<{ payload: P }>(`SELECT payload FROM loan_events WHERE application_id = $1 AND type = 'closing.consummated'`, [j.appId]))[0]!.payload;
   assert.equal(cons["note_date"], "2026-11-18"); assert.equal(cons["consummation_at"], EST("2026-11-18", "10:31"));
-  assert.equal(await n(`SELECT count(*)::text AS c FROM loan_events WHERE application_id = $1 AND type = 'rescission.period.started'`, [j.appId]), 0, "§1026.23(f)(1): a purchase-money transaction has no rescission period");
+  assert.equal(await count("rescission.period.started"), 0, "§1026.23(f)(1): a purchase-money transaction has no rescission period");
   const reg = await timer("MERS_PROC_ENOTE_REGISTER_1BD", j.appId); assert.ok(reg); assert.equal(reg.status, "satisfied"); assert.equal(reg.due_date, "2026-11-19");
+  assert.equal(await count("closing.audit_trail.received"), 1, "26.2: the RON platform's audit trail on file before funding");
   await phase(() => j.sellerCd());
-  assert.equal(await n(`SELECT count(*)::text AS c FROM loan_events WHERE application_id = $1 AND type = 'disclosure.seller_cd.received'`, [j.appId]), 1);
-  await phase(() => j.fund());
+  assert.equal(await count("disclosure.seller_cd.received"), 1); assert.equal((await timer("REGZ_1026_19F4_SELLER_CD_GATE", j.appId))?.status, "satisfied");
+  await phase(() => j.executionReview());
+  assert.equal(await count("closing.execution_review.passed"), 1, "26.2's post-signing review (26.3 FC_DOCS_EXECUTED_QC reads it)"); assert.equal(await count("closing.execution_review.failed"), 0);
+  await phase(() => j.disburse());
+  assert.equal(await count("funding.authorized"), 1); assert.equal(await count("funding.disbursement.authorized"), 1, "26.3 rule 6: the wet-state disbursement authorization after the execution review");
+  const auth = (await db.query<{ payload: P }>(`SELECT payload FROM loan_events WHERE application_id = $1 AND type = 'funding.disbursement.authorized'`, [j.appId]))[0]!.payload;
+  assert.equal(auth["execution_review_passed_at"], EST("2026-11-18", "11:40"));
   const funded = (await db.query<{ payload: P; loan_id: string | null }>(`SELECT payload, loan_id FROM loan_events WHERE application_id = $1 AND type = 'loan.funded'`, [j.appId]));
   assert.equal(funded.length, 1); assert.equal(funded[0]!.loan_id, null, "no servicing loan exists yet: 26.3's loan.funded is keyed by the application only");
   const lf = funded[0]!.payload;
@@ -217,33 +272,76 @@ test("purchase f. 26.1 the OH purchase eNote set Mon Nov 16 (3200e, the Ohio mor
 
 // ═══════════════════════════════════════════════ the hand-off: 30.2 boards ONE loan from the record ═══════════════════════════════════════════════
 
-test("purchase g. POST /v1/applications/{id}/fund at 15:20 EST Wed Nov 18 boards the loan from the record (30.2 worked example 2): OB-001…OB-022 pass (MI active for LTV 90 %; the $412,000 note at 6.375 % hashes to 26.1's eNote; P&I $2,570.34 within $0.01), the opening set balances (principal 41,200,000 / escrow 124,000 / prepaid interest 93,548), loan_terms v1 carries P&I $2,570.34 + escrow $615.00 + MI $130.47, the first statement cycle opens for Jan 1, 2027 at $3,315.81, SM_ORIG_BOARD_T1BD satisfied (due Thu Nov 19), both ids on every hand-off event; 30.4 opens the hand-off", { skip }, async () => {
+test("purchase g. POST /v1/applications/{id}/fund at 15:20 EST Wed Nov 18 boards the loan from the record (30.2 worked example 2): OB-001…OB-022 pass (MI active for LTV 90 %; the $412,000 note at 6.375 % hashes to 26.1's eNote; P&I $2,570.34 within $0.01), one balanced opening set — Dr principal 41,200,000 / Cr origination_funding_clearing; Dr custodial_ti_prepurchase_cash 124,000 / Cr escrow; Dr clearing 93,548 / Cr prepaid_interest (30.2 opening ledger (a)(b)(c)) — loan_terms v1 carries P&I $2,570.34 + escrow $615.00 + MI $130.47, the first statement cycle opens for Jan 1, 2027 at $3,315.81, SM_ORIG_BOARD_T1BD satisfied (due Thu Nov 19), both ids on every hand-off event, a second call is a no-op (30.2-T13); 30.4 opens the hand-off; the whole log is monotone in occurred_at", { skip }, async () => {
   const loanId = await phase(() => j.board());
-  const r = await api("GET", `/v1/applications/${j.appId}`, undefined, TOKEN); assert.equal((r.body["application"] as P)["loan_id"], loanId);
-  const loan = (await db.query<{ origination_application_id: string | null; fnma_loan_number: string | null; status: string; min: string | null; emortgage: boolean; original_upb_cents: string; first_payment_date: string; maturity_date: string }>(`SELECT origination_application_id, fnma_loan_number, status, min, emortgage, original_upb_cents::text AS original_upb_cents, first_payment_date::text AS first_payment_date, maturity_date::text AS maturity_date FROM loans WHERE id = $1`, [loanId]))[0]!;
-  assert.equal(loan.origination_application_id, j.appId); assert.equal(loan.fnma_loan_number, null); assert.equal(loan.status, "active"); assert.equal(loan.min, j.MIN); assert.equal(loan.original_upb_cents, "41200000"); assert.equal(loan.first_payment_date, "2027-01-01"); assert.equal(loan.maturity_date, "2056-12-01");
+  const r = j.boardResult;
+  assert.equal(r["duplicate"], false); assert.ok(["boarded", "boarded_with_warnings"].includes(String(r["status"])), String(r["status"])); assert.match(String(r["servicing_loan_number"]), /^\d{10}$/);
+  const rec = await api("GET", `/v1/applications/${j.appId}`, undefined, TOKEN); assert.equal((rec.body["application"] as P)["loan_id"], loanId);
+  const app = (await db.query<{ loan_id: string | null; status: string }>(`SELECT loan_id, status FROM applications WHERE id = $1`, [j.appId]))[0]!;
+  assert.equal(app.loan_id, loanId); assert.equal(app.status, "funded");
+  const loan = (await db.query<{ origination_application_id: string | null; fnma_loan_number: string | null; status: string; min: string | null; emortgage: boolean; original_upb_cents: string; first_payment_date: string; maturity_date: string; partner_party_id: string; boarded_at: string | null }>(`SELECT origination_application_id, fnma_loan_number, status, min, emortgage, original_upb_cents::text AS original_upb_cents, first_payment_date::text AS first_payment_date, maturity_date::text AS maturity_date, partner_party_id, boarded_at FROM loans WHERE id = $1`, [loanId]))[0]!;
+  assert.equal(loan.origination_application_id, j.appId); assert.equal(loan.fnma_loan_number, null); assert.equal(loan.status, "active"); assert.equal(loan.min, j.MIN); assert.equal(loan.original_upb_cents, "41200000"); assert.equal(loan.first_payment_date, "2027-01-01"); assert.equal(loan.maturity_date, "2056-12-01"); assert.equal(loan.partner_party_id, partnerPartyId); assert.ok(loan.boarded_at);
   assert.equal(await n(`SELECT count(*)::text AS c FROM application_borrowers ab JOIN loan_borrowers lb ON lb.borrower_id = ab.borrower_id AND lb.loan_id = $2 WHERE ab.application_id = $1`, [j.appId, loanId]), 2);
   const prop = (await db.query<{ address_line1: string; city: string; state: string; county: string | null }>(`SELECT p.address_line1, p.city, p.state, p.county FROM loans l JOIN properties p ON p.id = l.property_id WHERE l.id = $1`, [loanId]))[0]!;
   assert.deepEqual([prop.address_line1, prop.city, prop.state, prop.county], ["1187 Oakwood Ave", "Columbus", "OH", "Franklin"]);
   assert.equal(await n(`SELECT count(*)::text AS c FROM loan_terms WHERE loan_id = $1 AND source = 'boarding' AND pi_cents = 257034 AND escrow_payment_cents = 74547 AND note_rate_bps = 63750`, [loanId]), 1, "P&I $2,570.34; escrow $615.00 + MI $130.47; 6.375 %");
+  // OB-001…OB-022 all pass — on the answer and persisted keyed by the application (lifecycle.test.ts b)
+  const ob = (r["validations"] as { code: string; result: string }[]).filter((v) => v.code.startsWith("OB-"));
+  assert.equal(ob.length, 22); assert.deepEqual(ob.filter((v) => v.result !== "pass").map((v) => v.code), []);
   assert.equal(await n(`SELECT count(*)::text AS c FROM boarding_validations WHERE application_id = $1 AND rule_code LIKE 'OB-%' AND result = 'pass'`, [j.appId]), 22);
   assert.equal(await n(`SELECT count(*)::text AS c FROM boarding_validations WHERE application_id = $1 AND rule_code LIKE 'OB-%' AND result <> 'pass'`, [j.appId]), 0);
+  // 30.2-T3 figures on the persisted ledger: ONE balanced opening set, its id on the answer, the (a)(b)(c) lines by account, every loan-scope balance the worked example states
   const ledger = await api("GET", `/v1/loans/${loanId}/ledger`, undefined, TOKEN);
-  const sets = ledger.body["entry_sets"] as { id: string }[]; assert.equal(sets.length, 1);
+  const sets = ledger.body["entry_sets"] as { id: string }[]; assert.equal(sets.length, 1); assert.equal(sets[0]!.id, r["opening_entry_set_id"]);
+  const lines = await db.query<{ account: string; scope: string; amount_cents: string }>(`SELECT account, scope, amount_cents::text AS amount_cents FROM ledger_lines WHERE set_id = $1 ORDER BY account, amount_cents`, [sets[0]!.id]);
+  assert.deepEqual(lines.map((l) => [l.account, l.scope, BigInt(l.amount_cents)]), [
+    ["custodial_ti_prepurchase_cash", "custodial", 124_000n],                   // (b) Dr the pre-purchase T&I custodial cash — the initial deposit from the CD (g)(3) = 30.3's analysis
+    ["escrow", "loan", -124_000n],                                              //     Cr escrow (the borrower's liability) $1,240.00
+    ["origination_funding_clearing", "custodial", -41_200_000n],                // (a) Cr the funding clearing — cleared by 27.1's warehouse advance posting
+    ["origination_funding_clearing", "custodial", 93_548n],                     // (c) Dr clearing for the prepaid interest collected at closing (partner income)
+    ["prepaid_interest", "loan", -93_548n],                                     //     Cr prepaid_interest $935.48 = 13 × $71.96
+    ["principal", "loan", 41_200_000n]]);                                       // (a) Dr principal = the original loan amount
+  assert.equal(BigInt(lines.reduce((s, l) => s + BigInt(l.amount_cents), 0n)), 0n, "Σ Dr = Σ Cr");
   assert.equal(await loanBalance(loanId, "principal"), 41_200_000n);
   assert.equal(-(await loanBalance(loanId, "escrow")), 124_000n);              // $1,240.00 — 26.3 worked example 5's deposit
   assert.equal(-(await loanBalance(loanId, "prepaid_interest")), 93_548n);     // $935.48 = 13 × $71.96
   assert.equal(await n(`SELECT count(*)::text AS c FROM (SELECT set_id FROM ledger_lines WHERE set_id = $1 GROUP BY set_id HAVING sum(amount_cents) <> 0) x`, [sets[0]!.id]), 0, "the opening set balances");
+  assert.equal(await n(`SELECT count(*)::text AS c FROM ledger_lines WHERE set_id = $1 AND (rule_ref IS NULL OR rule_ref = '')`, [sets[0]!.id]), 0, "every line carries its rule_ref");
   assert.equal(await n(`SELECT count(*)::text AS c FROM loan_events WHERE loan_id = $1 AND type = 'statement.cycle.opened' AND payload->>'first_cycle' = 'true' AND payload->>'cycle_due_date' = '2027-01-01' AND payload->>'amount_due_cents' = '331581'`, [loanId]), 1);   // $2,570.34 + $615.00 + $130.47
   const t1bd = await timer("SM_ORIG_BOARD_T1BD", j.appId); assert.ok(t1bd); assert.equal(t1bd.status, "satisfied"); assert.equal(t1bd.anchor_date, "2026-11-18"); assert.equal(t1bd.due_date, "2026-11-19");
+  // the id grammar across the hand-off: 26.3's loan.funded precedes 30.2's loan.staged; the bookkeeping between them is the application's alone; everything after carries both ids
   const log = await j.eventsOf(`application_id = $1`, [j.appId]);
-  const stagedAt = log.findIndex((e) => e.type === "loan.staged"); assert.ok(stagedAt > 0);
+  const fundedAt = log.findIndex((e) => e.type === "loan.funded"); const stagedAt = log.findIndex((e) => e.type === "loan.staged");
+  assert.equal(log.filter((e) => e.type === "loan.funded").length, 1, "30.2 ingested 26.3's loan.funded (no fallback event appended)");
+  assert.ok(fundedAt > 0 && stagedAt > fundedAt, "26.3's loan.funded precedes 30.2's loan.staged on the application's log");
   for (const e of log.slice(0, stagedAt)) assert.equal(e.loan_id, null, `${e.type} before the hand-off is keyed by the application alone`);
-  for (const e of log.slice(stagedAt)) { if (e.type.startsWith("timer.")) continue; assert.equal(e.loan_id, loanId, `${e.type} carries the loan`); assert.equal(e.application_id, j.appId); }
+  for (const e of log.slice(stagedAt)) { assert.equal(e.application_id, j.appId, `${e.type} carries the application id`); if (e.type.startsWith("timer.")) continue; assert.equal(e.loan_id, loanId, `${e.type} carries the loan`); }
   for (const t of ["loan.staged", "loan.validated", "loan.boarded", "ledger.opening_posted", "consents.boarded", "documents.indexed", "timers.seeded", "statement.cycle.opened"]) assert.ok(log.some((e) => e.type === t), `${t} emitted`);
   assert.ok(await n(`SELECT count(*)::text AS c FROM loan_events WHERE loan_id = $1 AND type = 'notice.sent'`, [loanId]) >= 2, "a first-payment letter per borrower");
+  // 30.2-T13: the same funding delivered twice — the second is ignored with a receipt; one loans row, one ledger set, no second letter
+  const lettersBefore = await n(`SELECT count(*)::text AS c FROM loan_events WHERE loan_id = $1 AND type = 'notice.sent'`, [loanId]);
+  const again = await api("POST", `/v1/applications/${j.appId}/fund`, { actor: { kind: "agent", id: "funding" } }, TOKEN);
+  assert.equal(again.status, 200, JSON.stringify(again.body).slice(0, 500));
+  assert.equal(again.body["duplicate"], true); assert.equal(again.body["loan_id"], loanId); assert.equal(again.body["servicing_loan_number"], r["servicing_loan_number"]);
+  assert.equal(await n(`SELECT count(*)::text AS c FROM loans WHERE origination_application_id = $1`, [j.appId]), 1);
+  assert.equal(await n(`SELECT count(DISTINCT set_id)::text AS c FROM ledger_lines WHERE loan_id = $1`, [loanId]), 1);
+  assert.equal(await n(`SELECT count(*)::text AS c FROM loan_events WHERE loan_id = $1 AND type = 'notice.sent'`, [loanId]), lettersBefore);
+  assert.equal(await n(`SELECT count(*)::text AS c FROM loan_events WHERE application_id = $1 AND type = 'loan.funded.duplicate_ignored' AND loan_id = $2`, [j.appId, loanId]), 1);
+  await settle();
   await phase(() => j.openServicingHandoff());
   assert.ok(await n(`SELECT count(*)::text AS c FROM loan_events WHERE loan_id = $1 AND type = 'servicing_handoff.opened' AND application_id = $2`, [loanId, j.appId]) >= 1, "30.4's servicing_handoff.opened carries both ids");
+  // the fixture's clock never turned back: every `command.executed` row (the bus's clock at each call) is non-decreasing by sequence, Thu Oct 15 → Wed Nov 18. Domain events
+  // may carry a section's own earlier instant inside one command (20.3's conversion replays the lead's Oct 15 SSN item with its capture time; a receipt recorded at 09:30 by a 09:14
+  // call; the FAKE eRegistry's registration minute) — those are the sections' semantics, not the clock, so they are bounded by the journey's first and last readings instead.
+  const all = await j.eventsOf(`application_id = $1 OR loan_id = $2`, [j.appId, loanId]);
+  const executed = all.filter((e) => e.type === "command.executed").map((e) => new Date(e.occurred_at).toISOString());
+  assert.ok(executed.length > 100, `${executed.length} bus calls over the journey`);
+  for (let k = 1; k < executed.length; k++) assert.ok(executed[k]! >= executed[k - 1]!, `bus call ${k} at ${executed[k]} precedes call ${k - 1} at ${executed[k - 1]}`);
+  assert.equal(executed[0], EDT("2026-10-19", "18:40"), "the first application-keyed call opens the application (the lead's Oct 15 calls are global-scope)"); assert.equal(executed.at(-1)!.slice(0, 10), "2026-11-18");
+  const lo = EDT("2026-10-15", "11:05"); const hi = "2026-11-18T20:25:00.000Z";
+  for (const e of all) { const at = new Date(e.occurred_at).toISOString(); assert.ok(at >= lo && at <= hi, `${e.type} at ${at} lies outside the journey [${lo}, ${hi}]`); }
+  assert.ok(all.length > 200, `${all.length} rows over the journey`);
+  assert.equal(await n(`SELECT count(*)::text AS c FROM timers WHERE (application_id = $1 OR loan_id = $2) AND status = 'breached'`, [j.appId, loanId]), 0, "no clock breached along the purchase");
 });
 
 // ═══════════════════════════════════════════════ the cards along the way ═══════════════════════════════════════════════

@@ -4,8 +4,8 @@ import type { Db } from "../infra/db/client.ts";
 import { toJson, isUuid } from "../infra/db/client.ts";
 import type { TimerRegistry } from "../kernel/timers/index.ts";
 import type { AgentRegistry } from "../app/agents.ts";
-import type { ConsoleStore, QueueItem, LoanSummary, LoanDetail, Dashboard, AccessEntry, Funnel } from "./store.ts";
-import { queueKindsFor, FUNNEL_STAGES, funnelRows } from "./store.ts";
+import type { ConsoleStore, QueueItem, LoanSummary, LoanDetail, Dashboard, AccessEntry, Funnel, AiConversation, AiTurn, AiRecentTurn } from "./store.ts";
+import { queueKindsFor, FUNNEL_STAGES, funnelRows, maskEmail } from "./store.ts";
 
 type Row = Record<string, unknown>;
 const s = (v: unknown): string => (v === null || v === undefined ? "" : String(v));
@@ -121,5 +121,38 @@ export class PgConsoleStore implements ConsoleStore {
   async funnel(range: { from: string; to: string }): Promise<Funnel> {
     const rows = await this.db.query<Row>(`SELECT type, count(*)::text AS n FROM loan_events WHERE type = ANY($1::text[]) AND occurred_at >= $2::timestamptz AND occurred_at < $3::timestamptz GROUP BY type`, [[...FUNNEL_STAGES], range.from, range.to]);
     return { from: range.from, to: range.to, stages: funnelRows(new Map(rows.map((r) => [s(r["type"]), Number(r["n"])]))) };
+  }
+
+  // ---- DELTA-28 (docs/ux/17 §6): the conversation trace over the borrower UI tables (0111 conversations / messages / card_instances, 0119 agent_turns)
+  /** The borrower party behind an e-mail: the account's credential row (DELTA-29, lowercased and unique) or the party's own contact e-mail (the OTP path). */
+  async aiPartyByEmail(email: string): Promise<string | undefined> {
+    const e = email.trim().toLowerCase(); if (!e) return undefined;
+    const [row] = await this.db.query<Row>(`SELECT party_id FROM party_credentials WHERE email = $1 UNION ALL SELECT id AS party_id FROM parties WHERE party_type = 'borrower' AND lower(contact->>'email') = $1 LIMIT 1`, [e]);
+    return row ? s(row["party_id"]) : undefined;
+  }
+  /** One agent_turns row with the borrower text it answered and the reply it appended (both by message id; null when the turn was the session's first or the guard rejected it). */
+  private static turnOf(r: Row): AiTurn {
+    return { turn_id: s(r["turn_id"]), message_id: r["message_id"] ? s(r["message_id"]) : null, reply_message_id: r["reply_message_id"] ? s(r["reply_message_id"]) : null, borrower_text: r["borrower_text"] === null || r["borrower_text"] === undefined ? null : s(r["borrower_text"]), reply_text: r["reply_text"] === null || r["reply_text"] === undefined ? null : s(r["reply_text"]),
+      model_version: s(r["model_version"]), prompt_version: s(r["prompt_version"]), tool_calls: Array.isArray(r["tool_calls"]) ? (r["tool_calls"] as unknown[]) : [], guard_result: (r["guard_result"] as Record<string, unknown> | null) ?? {}, safe_classification: r["safe_classification"] ? s(r["safe_classification"]) : null,
+      latency_ms: r["latency_ms"] === null || r["latency_ms"] === undefined ? null : Number(r["latency_ms"]), tokens_in: r["tokens_in"] === null || r["tokens_in"] === undefined ? null : Number(r["tokens_in"]), tokens_out: r["tokens_out"] === null || r["tokens_out"] === undefined ? null : Number(r["tokens_out"]), created_at: s(r["created_at"]) };
+  }
+  /** The turn joined to the message it answered (m) and the reply it appended (r); `select` / `join` add the party's e-mail for the cross-party listing. */
+  private static turnSql(select = "", join = ""): string { return `SELECT ${select}t.turn_id, t.party_id, t.conversation_id, t.message_id, t.reply_message_id, t.model_version, t.prompt_version, t.tool_calls, t.guard_result, t.safe_classification, t.latency_ms, t.tokens_in, t.tokens_out, t.created_at, m.body_text AS borrower_text, r.body_text AS reply_text FROM agent_turns t LEFT JOIN messages m ON m.message_id = t.message_id LEFT JOIN messages r ON r.message_id = t.reply_message_id${join}`; }
+  async aiConversation(partyId: string): Promise<AiConversation | undefined> {
+    if (!isUuid(partyId)) return undefined;
+    const [p] = await this.db.query<Row>(`SELECT p.id, p.legal_name, coalesce(c.email, p.contact->>'email') AS email FROM parties p LEFT JOIN party_credentials c ON c.party_id = p.id WHERE p.id = $1`, [partyId]);
+    if (!p) return undefined;
+    const [conv] = await this.db.query<Row>(`SELECT conversation_id FROM conversations WHERE party_id = $1`, [partyId]);
+    const conversation_id = conv ? s(conv["conversation_id"]) : null;
+    const messages = conversation_id ? (await this.db.query<Row>(`SELECT message_id, at, sender, sender_ref, body_text, card_instance_id, copy_tokens FROM messages WHERE conversation_id = $1 ORDER BY at, created_at`, [conversation_id])).map((r) => ({ message_id: s(r["message_id"]), at: s(r["at"]), sender: s(r["sender"]), sender_ref: r["sender_ref"] ? s(r["sender_ref"]) : null, body_text: r["body_text"] === null ? null : s(r["body_text"]), card_instance_id: r["card_instance_id"] ? s(r["card_instance_id"]) : null, copy_tokens: (r["copy_tokens"] as Record<string, unknown> | null) ?? null })) : [];
+    const cards = conversation_id ? (await this.db.query<Row>(`SELECT card_instance_id, kind, copy_key, status, props->'proposal' AS proposal, evidence->>'option_id' AS option_id, created_at, resolved_at FROM card_instances WHERE conversation_id = $1 ORDER BY created_at, card_instance_id`, [conversation_id])).map((r) => ({ card_instance_id: s(r["card_instance_id"]), kind: s(r["kind"]), copy_key: s(r["copy_key"]), status: s(r["status"]), proposal: r["proposal"] ?? null, option_id: r["option_id"] ? s(r["option_id"]) : null, created_at: s(r["created_at"]), resolved_at: r["resolved_at"] ? s(r["resolved_at"]) : null })) : [];
+    const turns = (await this.db.query<Row>(`${PgConsoleStore.turnSql()} WHERE t.party_id = $1 ORDER BY t.created_at, t.turn_id`, [partyId])).map(PgConsoleStore.turnOf);
+    // an account-only party's legal_name is its e-mail until a name is captured (DELTA-29): the header shows a name, never the address
+    const email = p["email"] ? s(p["email"]) : null; const legal = p["legal_name"] ? s(p["legal_name"]) : null;
+    return { party: { party_id: s(p["id"]), email_masked: maskEmail(email), legal_name: legal && legal.toLowerCase() !== (email ?? "").toLowerCase() && !legal.includes("@") ? legal : null }, conversation_id, messages, cards, turns };
+  }
+  async aiRecentTurns(limit: number): Promise<AiRecentTurn[]> {
+    const rows = await this.db.query<Row>(`${PgConsoleStore.turnSql("coalesce(c.email, p.contact->>'email') AS email, ", " JOIN parties p ON p.id = t.party_id LEFT JOIN party_credentials c ON c.party_id = t.party_id")} ORDER BY t.created_at DESC, t.turn_id LIMIT $1`, [Math.max(1, Math.min(200, Math.floor(limit) || 20))]);
+    return rows.map((r) => ({ ...PgConsoleStore.turnOf(r), party_id: s(r["party_id"]), conversation_id: s(r["conversation_id"]), email_masked: maskEmail(r["email"] ? s(r["email"]) : null) }));
   }
 }

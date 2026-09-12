@@ -10,7 +10,7 @@ import { createServer, type IncomingMessage, type ServerResponse, type Server } 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Actor } from "../kernel/events/index.ts";
-import { type ConsoleStore, READ_ONLY_ROLES, CONSOLE_ROLES } from "./store.ts";
+import { type ConsoleStore, READ_ONLY_ROLES, CONSOLE_ROLES, maskEmail } from "./store.ts";
 
 export interface ConsoleServerOptions { readonly store: ConsoleStore; readonly clock?: { now(): string }; readonly uiHtml?: string; }
 
@@ -40,9 +40,24 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
       const actor = actorOf(req);
       if (!actor) { json(res, 401, { error: "x-actor-id and a valid x-actor-role are required" }); return; }
       const now = clock.now();
-      await store.logAccess({ at: now, actor, method: req.method ?? "GET", path: url.pathname + url.search });
+      // the access log names who looked at whom, never the address itself: `?email=` is masked the way the trace masks it (19.2 / DELTA-28)
+      const logged = new URL(url.toString()); if (logged.searchParams.has("email")) logged.searchParams.set("email", maskEmail(logged.searchParams.get("email")) ?? "");
+      await store.logAccess({ at: now, actor, method: req.method ?? "GET", path: logged.pathname + logged.search });
       if (req.method === "GET") {
         if (url.pathname === "/api/me") { json(res, 200, { actor, readOnly: READ_ONLY_ROLES.has(actor.role!) }); return; }
+        // DELTA-28 (docs/ux/17 §6): the conversation trace — the most recent turns across parties, and one party's thread / cards / turns by party_id or e-mail
+        if (url.pathname === "/api/ai/conversation/recent") {
+          if (!store.aiRecentTurns) { json(res, 501, { error: "the conversation trace needs the Postgres console store" }); return; }
+          json(res, 200, { as_of: now, turns: await store.aiRecentTurns(Number(url.searchParams.get("limit") ?? 20) || 20) }); return;
+        }
+        if (url.pathname === "/api/ai/conversation") {
+          if (!store.aiConversation || !store.aiPartyByEmail) { json(res, 501, { error: "the conversation trace needs the Postgres console store" }); return; }
+          const email = url.searchParams.get("email"); let partyId = url.searchParams.get("party_id");
+          if (!partyId && !email) { json(res, 400, { error: "party_id=<uuid> or email=<address> is required" }); return; }
+          if (!partyId && email) partyId = (await store.aiPartyByEmail(email)) ?? null;
+          const c = partyId ? await store.aiConversation(partyId) : undefined;
+          if (!c) json(res, 404, { error: "no such party" }); else json(res, 200, c); return;
+        }
         if (url.pathname === "/api/queue") { const kind = url.searchParams.get("kind"); const loanId = url.searchParams.get("loanId"); json(res, 200, await store.queue({ role: url.searchParams.get("role") ?? actor.role!, now, ...(kind ? { kind: kind as never } : {}), ...(loanId ? { loanId } : {}) })); return; }
         if (url.pathname === "/api/loans") { json(res, 200, await store.searchLoans(url.searchParams.get("q") ?? "", Number(url.searchParams.get("limit") ?? 20))); return; }
         const m = /^\/api\/loans\/([^/]+)$/.exec(url.pathname);

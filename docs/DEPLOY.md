@@ -550,3 +550,18 @@ variable `PARTNER_NMLSR_ID`, "123456" — the demo partner — when unset) becau
 them from; once signed in the footer takes both from `/v1/borrower/me`'s `partner`, as the thread does. Codes are delivered by the e-delivery adapter (the FAKE echoes the code on
 nonprod, as the OTP route does). A password session opens without a fresh code, so a money command still
 asks for one (`FRESH_L1_COMMANDS`).
+
+## The conversation trace (docs/ux/17 §6, DELTA-28's console view)
+
+Two read-only routes on the ops console API (src/console/server.ts, behind `API_TOKEN` and the console's
+`x-actor-id` / `x-actor-role` headers like every other `/api/*` call; every read is access-logged with the
+address masked): `GET /api/ai/conversation?party_id=<uuid>` or `?email=<address>` returns, for one borrower, in
+order, the thread (`messages`: message_id, at, sender, sender_ref, body_text, card_instance_id, copy_tokens),
+every card (`cards`: card_instance_id, kind, copy_key, status, `props.proposal`, `evidence.option_id`,
+created_at, resolved_at) and every `agent_turns` row (`turns`: turn_id, message_id, reply_message_id,
+model_version, prompt_version, tool_calls, guard_result, safe_classification, latency_ms, tokens_in/out,
+created_at) joined so each turn shows the borrower text it answered (`borrower_text`) and the reply it produced
+(`reply_text`); `GET /api/ai/conversation/recent?limit=20` lists the most recent turns across parties with the
+party's e-mail masked to its first two characters (`ca***`). The console page at `/ops` renders the listing
+under Oversight → AI conversations, each row linking to the per-party trace. The proof is
+`node --test src/console/ai-conversation.test.ts` (its own database, the scripted model).

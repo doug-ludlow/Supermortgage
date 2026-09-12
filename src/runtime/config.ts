@@ -16,6 +16,8 @@ export interface RuntimeConfig {
   readonly borrowerDefaultPartnerId: string;
   /** 32.14 DELTA-12: the Google OAuth client for Sign in with Google (Secret Manager `supermortgage-google-oauth-client-id` / `-secret`); empty under INTEGRATIONS=fake, where FakeGoogleOidc is the only provider. A placeholder version reads as unset. */
   readonly googleOauth: { readonly clientId: string; readonly clientSecret: string; readonly redirectUri: string };
+  /** Talk (src/runtime/borrower/talk.ts): the conversational entry's model. `apiKey` from Secret Manager `supermortgage-anthropic-api-key` (empty → 503 TALK_NOT_CONFIGURED on that route only); `model` defaults to claude-opus-5. */
+  readonly talk: { readonly apiKey: string; readonly model: string; readonly effort: "low" | "medium" | "high" };
 }
 
 /** Secret Manager needs a first version before Cloud Run can start the service; Terraform writes this placeholder and a human replaces it. */
@@ -34,5 +36,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RuntimeConfig 
   const borrowerDefaultPartnerId = (env["BORROWER_DEFAULT_PARTNER_ID"] ?? "").trim();
   if (borrowerDefaultPartnerId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(borrowerDefaultPartnerId)) throw new Error("BORROWER_DEFAULT_PARTNER_ID must be a parties row id (uuid) or empty");
   const googleOauth = { clientId: secret(env["GOOGLE_OAUTH_CLIENT_ID"]), clientSecret: secret(env["GOOGLE_OAUTH_CLIENT_SECRET"]), redirectUri: (env["GOOGLE_OAUTH_REDIRECT"] ?? "").trim() };
-  return { databaseUrl, apiToken, host: env["HOST"] ?? "0.0.0.0", port, integrations, logFormat: env["LOG_FORMAT"] === "text" ? "text" : "json", environment: env["ENVIRONMENT"] ?? "nonprod", borrowerDefaultPartnerId, googleOauth };
+  const effortIn = (env["TALK_EFFORT"] ?? "low").trim();
+  if (!["low", "medium", "high"].includes(effortIn)) throw new Error("TALK_EFFORT must be low, medium or high");
+  const talk = { apiKey: secret(env["ANTHROPIC_API_KEY"]), model: (env["TALK_MODEL"] ?? "").trim() || "claude-opus-5", effort: effortIn as "low" | "medium" | "high" };
+  return { databaseUrl, apiToken, host: env["HOST"] ?? "0.0.0.0", port, integrations, logFormat: env["LOG_FORMAT"] === "text" ? "text" : "json", environment: env["ENVIRONMENT"] ?? "nonprod", borrowerDefaultPartnerId, googleOauth, talk };
 }

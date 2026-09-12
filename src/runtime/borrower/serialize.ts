@@ -76,6 +76,7 @@ export const SHAPES = {
   connect_webhook: { received: true, vendor: true, vendor_session_id: true, outcome: true, application_id: true, verification_id: true, report_reference_id: true, events: true } satisfies Shape,
   // 32.14 §4: the telephony vendor's inbound webhooks (SMS and voice entry on the same lead) — what went out to the number (copy keys and rendered lines), never a session token, never the number itself
   sms_webhook: { received: true, vendor: true, channel: true, lead_id: true, step: true, outbound: [{ copy_key: true, text: true, message_id: true }], events: true, session_opened: true, level: true, fake_code: true, refused: { code: true, gate: true, copy_key: true } } satisfies Shape,
+  talk_turn: { lead_id: true, agent: true, model: true, transcript: [{ role: true, text: true, copy_key: true, at: true }], lines: [{ role: true, text: true, copy_key: true, at: true }], step: true, session_opened: true, level: true, token: true, lead_token: true, fake_code: true } satisfies Shape,   // talk.ts: `token` and `lead_token` leave once and the proxy turns them into cookies
   voice_webhook: { received: true, vendor: true, channel: true, call_id: true, lead_id: true, step: true, say: [{ copy_key: true, text: true }], texted: [{ copy_key: true, text: true, message_id: true }], events: true, session_opened: true, level: true, fake_code: true, refused: { code: true, gate: true, copy_key: true } } satisfies Shape,
 } as const;
 export type ShapeName = keyof typeof SHAPES;

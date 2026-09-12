@@ -107,3 +107,33 @@ resource "google_secret_manager_secret_iam_member" "runtime_google_oauth_client_
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.runtime.email}"
 }
+
+# Talk (src/runtime/borrower/talk.ts): the conversational entry's model key. Set by hand in
+# Secret Manager (docs/DEPLOY.md "Talk"); the placeholder version reads as unset and the
+# route answers 503 TALK_NOT_CONFIGURED until a real version exists.
+resource "google_secret_manager_secret" "anthropic_api_key" {
+  secret_id = "supermortgage-anthropic-api-key"
+
+  replication {
+    auto {}
+  }
+
+  labels = local.labels
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_secret_manager_secret_version" "anthropic_api_key" {
+  secret      = google_secret_manager_secret.anthropic_api_key.id
+  secret_data = "unset"
+
+  lifecycle {
+    ignore_changes = [secret_data]
+  }
+}
+
+resource "google_secret_manager_secret_iam_member" "runtime_anthropic_api_key" {
+  secret_id = google_secret_manager_secret.anthropic_api_key.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.runtime.email}"
+}

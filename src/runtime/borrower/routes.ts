@@ -43,6 +43,7 @@ import { BorrowerRecordReader } from "./record.ts";
 import { BorrowerStreamHub } from "./stream.ts";
 import { BorrowerCommands } from "./commands.ts";
 import { BorrowerOidc } from "./oidc.ts";
+import { createTalkRoutes, TALK_PATH, type TalkOptions, type TalkRoutes } from "./talk.ts";
 import { createBorrowerChannels, type BorrowerChannels } from "./channels.ts";
 import { BorrowerFlows } from "./flows/index.ts";
 import { createLeadRoutes } from "./lead-routes.ts";
@@ -60,6 +61,8 @@ export interface BorrowerRouterOptions {
   readonly blobs?: BlobStorePort;
   /** 32.3 R3: the payroll connector (FakeTruv unless a real adapter is wired). */
   readonly truv?: IncomeConnectPort;
+  /** Talk (talk.ts): the conversational entry's model — ANTHROPIC_API_KEY / TALK_MODEL from the environment when unset. */
+  readonly talk?: TalkOptions | undefined;
   /** HMAC key for signed document URLs; random per process when unset (URLs then die with the process, which is fine for short-lived links). */
   readonly urlSecret?: string;
   readonly returnUrlBase?: string;
@@ -85,6 +88,7 @@ export interface BorrowerRouter {
   /** 32.14 DELTA-12: the OpenID Connect provider behind /auth/oidc (FAKE unless a real adapter is wired). */
   readonly oidc: OidcPort;
   /** 32.14 §4: SMS and voice entry on the same lead (src/runtime/borrower/channels.ts) — the two telephony webhooks and the number → lead key. */
+  readonly talk: TalkRoutes;
   readonly channels: BorrowerChannels;
 }
 
@@ -162,6 +166,8 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
   const deliveryIsFake = (): boolean => !edelivery || edelivery instanceof FakeEdelivery;
   // 32.14 §4: SMS and voice entry on the same lead — the telephony vendor's inbound webhooks (./channels.ts; the FAKE adapter unless a real one is wired)
   const channels = createBorrowerChannels({ runtime, logger, auth, ui, flows, commands, telephony: opts.telephonyWebhooks, nonProduction, defaultPartnerId });
+  // Talk: the anonymous minute and sign-in as one conversation with Claude on the same tools (./talk.ts); 503 TALK_NOT_CONFIGURED without the key
+  const talk = createTalkRoutes({ runtime, logger, auth, ui, flows, commands, leads, nonProduction, defaultPartnerId, talk: opts.talk });
 
   const send = (res: ServerResponse, status: number, shape: ShapeName, body: unknown): void => { res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }); res.end(toJson(serialize(shape, body))); };
   const sessionBody = (r: { token: string; session: SessionRow; party: { id: string; party_type: string; legal_name: string } }) =>
@@ -570,6 +576,7 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     try {
       let m: RegExpExecArray | null;
       if (path === "/v1/borrower/lead" && method === "POST") { await leads.handle(req, res, url); return true; }   // 32.14 DELTA-11: no session — the anonymous minute (lead-routes.ts logs its own line)
+      if (path === TALK_PATH && method === "POST") { await talk.handle(req, res); return true; }   // Talk: no session needed; the lead cookie and, after sign-in, the bearer (talk.ts logs its own line)
       if (method === "POST" && path === "/v1/borrower/auth/otp") await otp(req, res);
       else if (method === "POST" && path === "/v1/borrower/auth/passkey") await passkey(req, res);
       else if (method === "POST" && path === "/v1/borrower/auth/oidc") await oidc(req, res);
@@ -603,5 +610,5 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     }
     return true;
   }
-  return { handle, auth, ui, stripe, blobs, truv, hub, commands, reader, flows, oidc: oidcPort, channels };
+  return { handle, auth, ui, stripe, blobs, truv, hub, commands, reader, flows, oidc: oidcPort, channels, talk };
 }

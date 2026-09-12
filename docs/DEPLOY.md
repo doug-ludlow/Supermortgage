@@ -408,3 +408,28 @@ still asks for one. Also on the API service: `BORROWER_DEFAULT_PARTNER_ID`
 (Terraform variable `borrower_default_partner_id`, DELTA-15) — the Phase I
 partner's `parties` row id the organic entry names; leave it empty to use the
 newest servicer party (the seeded demo partner).
+
+## Talk: the entry as one conversation
+
+`POST /v1/borrower/talk` (`src/runtime/borrower/talk.ts`) and the page at
+`https://demo.supermortgage.com/app/talk` run the anonymous minute and sign-in as
+a conversation with Claude. The model only talks and calls tools; every fact goes
+through the same 32.14 tools the chips use (`lead.answer`, `lead.requestRange`,
+the OTP rows, the session hook), every line a regulation wants verbatim is
+rendered by the API from the copy library, and the model's own sentence passes a
+guard (no figure it did not get from a tool, none of the forbidden words).
+
+It needs one secret: an Anthropic API key, as a new version of the secret
+Terraform created with a placeholder first version:
+
+```sh
+printf '%s' '<api key>' | gcloud secrets versions add supermortgage-anthropic-api-key --data-file=- --project supermortgage-nonprod
+```
+
+The API service reads it as `ANTHROPIC_API_KEY` (`latest`); the placeholder
+`unset` reads as "not configured" and the talk route answers `503
+TALK_NOT_CONFIGURED` while everything else keeps working. Redeploy (or restart
+the revision) after adding the version. Optional: `TALK_MODEL` (default
+`claude-opus-5`) and `TALK_EFFORT` (`low`, the default, `medium` or `high`) on
+the API service. Each turn is one or a few Messages API calls; the system prompt
+is cached across turns.

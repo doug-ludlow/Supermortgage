@@ -59,9 +59,9 @@ if (mode === "seed-demo") {
 if (mode !== "serve") { logger.error(`unknown mode ${mode}; use serve | sweep | migrate | seed-demo`); process.exit(2); }
 if (!config.apiToken) logger.warn("API_TOKEN is empty: every route is open (ALLOW_INSECURE_NO_TOKEN=1)");
 // 32.14: the Phase I partner from configuration (DELTA-15); Sign in with Google is the FAKE provider under INTEGRATIONS=fake (DELTA-12 — the real adapter is wired with the client secret when another INTEGRATIONS value exists)
-const server = createApiServer({ runtime, apiToken: config.apiToken, logger, borrower: { environment: config.environment, defaultPartnerId: config.borrowerDefaultPartnerId } });
+const server = createApiServer({ runtime, apiToken: config.apiToken, logger, borrower: { environment: config.environment, defaultPartnerId: config.borrowerDefaultPartnerId, talk: { apiKey: config.talk.apiKey, model: config.talk.model, effort: config.talk.effort } } });
 const port = await listen(server, config.port, config.host);
-logger.info("serving", { host: config.host, port, environment: config.environment, integrations: config.integrations, tools: runtime.listTools().length, node: process.version, default_partner_id: config.borrowerDefaultPartnerId || null, google_oauth: config.googleOauth.clientId ? "configured" : "FAKE" });
+logger.info("serving", { host: config.host, port, environment: config.environment, integrations: config.integrations, tools: runtime.listTools().length, node: process.version, default_partner_id: config.borrowerDefaultPartnerId || null, google_oauth: config.googleOauth.clientId ? "configured" : "FAKE", talk: config.talk.apiKey ? `claude:${config.talk.model}` : "not configured" });
 const shutdown = (signal: string): void => {
   logger.info("shutting down", { signal });
   server.close(() => { db.end().finally(() => process.exit(0)); });

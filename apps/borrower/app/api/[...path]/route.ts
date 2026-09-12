@@ -22,12 +22,12 @@ const SESSION_MAX_AGE_S = 7 * 24 * 3600; // 7 days with a passkey (01 §5); the 
 const HOP_BY_HOP = new Set(["connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade", "proxy-authorization", "proxy-authenticate", "host", "content-length"]);
 // 32.14 DELTA-12: auth/oidc's callback answers the same session body as OTP verify, so the cookie is set here too; the
 // `x-fake-oidc: FAKE` header the callback page sends in FAKE/dev mode is forwarded like any other non-hop-by-hop header.
-const AUTH_ROUTES = new Set(["v1/borrower/auth/otp", "v1/borrower/auth/passkey", "v1/borrower/auth/l2", "v1/borrower/auth/oidc"]);
+const AUTH_ROUTES = new Set(["v1/borrower/auth/otp", "v1/borrower/auth/passkey", "v1/borrower/auth/l2", "v1/borrower/auth/oidc", "v1/borrower/talk"]);   // talk: verify_code answers the same `token` once
 // 32.14 DELTA-11: the anonymous minute's lead token lives in its own HttpOnly cookie (30 days) and rides to the API as
 // `x-borrower-lead` on every proxied request — the OTP/passkey/OIDC verify routes link the lead to the party from it.
 const LEAD_COOKIE = "sm_borrower_lead";
 const LEAD_HEADER = "x-borrower-lead";
-const LEAD_ROUTE = "v1/borrower/lead";
+const LEAD_ROUTES = new Set(["v1/borrower/lead", "v1/borrower/talk"]);   // both start a lead and answer `lead_token` once
 const LEAD_MAX_AGE_S = 30 * 24 * 3600;
 
 function upstreamBase(): string | null {
@@ -89,26 +89,21 @@ async function forward(req: NextRequest, ctx: { params: Promise<{ path: string[]
 
   // A successful auth step returns `{ token, … }`: keep the token server-side in the cookie
   // and hand the browser the rest (level, party, expiry) — never the token itself.
-  if (AUTH_ROUTES.has(joined) && res.ok && (res.headers.get("content-type") ?? "").includes("application/json")) {
-    const body = (await res.json()) as Record<string, unknown>;
-    if (typeof body.token === "string" && body.token) {
-      out.set("set-cookie", sessionCookie(body.token, req));
-      const { token: _token, ...rest } = body;
-      return Response.json({ ...rest, session: "cookie" }, { status: res.status, headers: out });
-    }
-    return Response.json(body, { status: res.status, headers: out });
-  }
-
-  // 32.14 DELTA-11: a lead start returns `{ lead_token, … }` once — kept server-side in its own cookie, stripped from the body.
-  if (joined === LEAD_ROUTE && (res.headers.get("content-type") ?? "").includes("application/json")) {
-    const body = (await res.json()) as Record<string, unknown>;
-    if (res.ok && typeof body.lead_token === "string" && body.lead_token) {
+  if ((AUTH_ROUTES.has(joined) || LEAD_ROUTES.has(joined)) && (res.headers.get("content-type") ?? "").includes("application/json")) {
+    let body = (await res.json()) as Record<string, unknown>;
+    const cookies: string[] = [];
+    // 32.14 DELTA-11: a lead start returns `{ lead_token, … }` once — kept server-side in its own cookie, stripped from the body.
+    if (LEAD_ROUTES.has(joined) && res.ok && typeof body.lead_token === "string" && body.lead_token) {
       const secure = req.nextUrl.protocol === "https:" || process.env.NODE_ENV === "production";
-      out.set("set-cookie", `${LEAD_COOKIE}=${encodeURIComponent(body.lead_token)}; HttpOnly; ${secure ? "Secure; " : ""}SameSite=Strict; Path=/app; Max-Age=${LEAD_MAX_AGE_S}`);
-      const { lead_token: _leadToken, ...rest } = body;
-      return Response.json(rest, { status: res.status, headers: out });
+      cookies.push(`${LEAD_COOKIE}=${encodeURIComponent(body.lead_token)}; HttpOnly; ${secure ? "Secure; " : ""}SameSite=Strict; Path=/app; Max-Age=${LEAD_MAX_AGE_S}`);
+      const { lead_token: _leadToken, ...rest } = body; body = rest;
     }
-    if (res.status === 404 && lead) out.set("set-cookie", `${LEAD_COOKIE}=; HttpOnly; SameSite=Strict; Path=/app; Max-Age=0`);   // a stale lead cookie (LEAD_UNKNOWN): the app starts over
+    if (LEAD_ROUTES.has(joined) && res.status === 404 && lead) cookies.push(`${LEAD_COOKIE}=; HttpOnly; SameSite=Strict; Path=/app; Max-Age=0`);   // a stale lead cookie (LEAD_UNKNOWN): the app starts over
+    if (AUTH_ROUTES.has(joined) && res.ok && typeof body.token === "string" && body.token) {
+      cookies.push(sessionCookie(body.token, req));
+      const { token: _token, ...rest } = body; body = { ...rest, session: "cookie" };
+    }
+    for (const c of cookies) out.append("set-cookie", c);
     return Response.json(body, { status: res.status, headers: out });
   }
 

@@ -80,18 +80,21 @@ async function axeClean(page: Page) {
 }
 
 test.describe("32.16 §2.0 — create an account", () => {
-  test("the disclosure line first, then e-mail + password + Google and nothing else; create → /app with the thread at once, no code; axe", async ({ page }) => {
+  test("the disclosure footer outside the form (32.16 §1 principle 8), then e-mail + password + Google and nothing else; create → /app with the thread at once, no code; axe", async ({ page }) => {
     const calls = await cannedApi(page, { signedIn: false });
     await page.goto("/app/sign-up");
     const form = page.locator("#otp");
     await expect(form).toBeVisible();
     await expect(form.getByTestId("account-title")).toHaveText(copy("account.create.title"));
-    const disclosure = form.getByTestId("account-disclosure");
-    await expect(disclosure).toHaveAttribute("data-copy-key", "entry.disclosure.first");
-    await expect(disclosure).not.toContainText("{{");
-    const box = (await disclosure.boundingBox())!;
-    const titleBox = (await form.getByTestId("account-title").boundingBox())!;
-    expect(box.y).toBeLessThan(titleBox.y); // the disclosure is the first line on the account screen
+    await expect(form.getByTestId("account-disclosure")).toHaveCount(0); // no disclosure sentence above the form
+    const footer = page.getByTestId("footer-disclosure");
+    await expect(footer).toHaveAttribute("data-copy-key", "footer.disclosure");
+    await expect(footer).toContainText("This chat is AI-powered. Chats are recorded for quality.");
+    await expect(footer).not.toContainText("{{");
+    await expect(footer.getByRole("link", { name: "Disclosures and licenses" })).toHaveAttribute("href", "/app/disclosures");
+    const box = (await footer.boundingBox())!;
+    const formBox = (await form.boundingBox())!;
+    expect(box.y).toBeGreaterThan(formBox.y + formBox.height - 1); // the footer sits outside the main content, below the form
     await expect(form.getByRole("button", { name: googleLabel })).toBeVisible();
     for (const gone of copyOptions("auth.choose_method").filter((o) => o !== googleLabel)) await expect(form.getByRole("button", { name: gone })).toHaveCount(0);
     await expect(form.getByRole("link", { name: copy("account.have_account") })).toHaveAttribute("href", "/app/sign-in");

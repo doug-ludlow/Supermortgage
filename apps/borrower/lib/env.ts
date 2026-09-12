@@ -26,3 +26,9 @@ export const THEME_DEFAULT: "dark" | "light" = "dark";
  * session to read it from (`me.partner.legal_name` takes over once signed in). Set `NEXT_PUBLIC_PARTNER_LEGAL_NAME` at build.
  */
 export const PARTNER_LEGAL_NAME = process.env.NEXT_PUBLIC_PARTNER_LEGAL_NAME ?? "your lender";
+/**
+ * 32.16 §1 principle 8: the partner's NMLS ID beside its name in the disclosure footer before a session exists
+ * (`me.partner.nmlsr_id` takes over once signed in). Set `NEXT_PUBLIC_PARTNER_NMLSR_ID` at build; the default is the
+ * demo partner's (the journey fixture's `partner_nmlsr_id`), never a real lender's.
+ */
+export const PARTNER_NMLSR_ID = process.env.NEXT_PUBLIC_PARTNER_NMLSR_ID ?? "123456";

@@ -14,6 +14,7 @@ import { api } from "@/lib/api/client";
 import { copy, copyOptions } from "@/lib/copy";
 import { SHOW_FAKE_MARKERS } from "@/lib/env";
 import { takePendingDeepLink } from "@/lib/auth/passkey";
+import { FooterDisclosure } from "./FooterDisclosure";
 
 export function GoogleCallback({ navigate }: { navigate?: (url: string) => void }) {
   const [failed, setFailed] = useState(false);
@@ -69,6 +70,7 @@ export function GoogleCallback({ navigate }: { navigate?: (url: string) => void 
           </p>
         )}
       </main>
+      <FooterDisclosure />
     </div>
   );
 }

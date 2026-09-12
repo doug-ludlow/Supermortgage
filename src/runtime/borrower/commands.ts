@@ -12,8 +12,9 @@
  *   borrowerMessage  POST /v1/borrower/messages — the borrower's text lands in `messages`; a text matching a pending
  *                    card's affirmative ("yes proceed", "lock it", "I agree") executes NO command and is answered with the
  *                    card's deep link (T-X-05; 01 §6.4 "tap to confirm so it counts"); "human" routes to human.request;
- *                    anything else gets the assistant's placeholder reply from the copy library (the agent turn is later),
- *                    routed to `intake` before funding and `borrower-comms` after.
+ *                    anything else is the agent turn (32.16 DELTA-23, src/runtime/borrower/agent/turn.ts — Claude on the bus's
+ *                    tools, routed to `intake` before funding and `borrower-comms` after); the copy library's placeholder reply
+ *                    stands only when no model is configured or the 18.1 kill switch bypasses the turn.
  *
  * Facts only the API knows ride into the command input: `party_id`, `fresh_l1` (01 §5: money movement needs a code within
  * 10 minutes — checked here first, never client-asserted), `assurance_level`, the party's own application_borrower row,
@@ -35,6 +36,7 @@ import { BorrowerError } from "./errors.ts";
 import { THREAD_COPY_KEYS } from "./copy-keys.ts";
 import type { BorrowerFlows } from "./flows/index.ts";
 import { SUBJECT_FREE_COMMANDS, TERMINAL_ALLOWED_COMMANDS, terminalStateOf } from "./flows/13-cross-cutting.ts";
+import type { AgentTurnRequest, AgentTurnReply } from "./agent/turn.ts";
 
 export const BORROWER_APP_ACTOR: Actor = { kind: "agent", id: "borrower-app" };
 /** The commands a card or a direct endpoint may name: 32.2's 45 and 32.14's three (`lead.answer`, `lead.requestRange`, `lead.proceed` — the S4 proceed card's command; the L0 routes call the bus directly) — each executed as its own process's tool. */
@@ -78,6 +80,8 @@ export class BorrowerCommands {
   private readonly runtime: Runtime; private readonly db: Db; private readonly ui: PgBorrowerUiRepository;
   /** The 32.x flows (src/runtime/borrower/flows): a message a flow answers itself (32.3 T2 "are you a real person?", P9 listings) comes before the generic reply. */
   flows: BorrowerFlows | undefined;
+  /** 32.16 DELTA-23: the agent turn (routes.ts wires it when a model is configured); null from it = bypassed (the placeholder answers). */
+  agentTurn: ((req: AgentTurnRequest) => Promise<AgentTurnReply | null>) | undefined;
   constructor(runtime: Runtime, ui: PgBorrowerUiRepository, flows?: BorrowerFlows) { this.runtime = runtime; this.db = runtime.db; this.ui = ui; this.flows = flows; }
 
   /** Every queued flow reaction has run (read-your-writes across the seam: a command sees the cards, rows and entity versions the flows wrote for the party's previous commit). */
@@ -252,6 +256,11 @@ export class BorrowerCommands {
       const out = await this.runCommand(ctx, "human.request", { reason: "borrower_request", channel, utterance: text, subject: { application_id: subject.application_id, loan_id: subject.loan_id } }, now);
       return { message, reply: await reply(THREAD_COPY_KEYS.humanRequested, {}), routed_to, command_executed: true, command: out.command };
     }
+    // 32.16 §3.1: the agent turn replaces the placeholder — the same order in front of it; the placeholder stands only without a model or under the kill switch
+    if (this.agentTurn) {
+      const t = await this.agentTurn({ ctx, conversation_id: conv.conversation_id, message_id: messageId, text, channel, subject, routed_to, now });
+      if (t) return { message, reply: { ...t.reply, copy_key: t.copy_key, deep_link: null }, routed_to, command_executed: t.command_executed, command: t.command };
+    }
     return { message, reply: await reply(routed_to === "intake" ? THREAD_COPY_KEYS.placeholderIntake : THREAD_COPY_KEYS.placeholderServicing, {}), routed_to, command_executed: false, command: null };
   }
 }
@@ -261,6 +270,8 @@ const summarize = (v: unknown): unknown => JSON.parse(toJson(v ?? null));
 /** 32.3: the card's evidence → the command's input and the evidence the card keeps (01 §3.3 ConfirmCard, §3.18 ProfileCard, §3.19 DemographicsCard, R5 declarations). */
 export function cardArgs(card: CardInstanceRow, evidence: Record<string, unknown>, optionId: string | null): { args: Record<string, unknown>; stored: Record<string, unknown> } {
   const props = card.props; const args: Record<string, unknown> = {}; let stored: Record<string, unknown> = { ...evidence };
+  // 32.16 §3.4: a Confirm on a proposal the assistant read back carries `evidence.source = borrower_stated` (the six items count when stated — 21.2); it stays on the card's evidence and names the fields' source
+  const evidenceSource = typeof evidence["source"] === "string" ? (evidence["source"] as string) : null;
   const required = Array.isArray(props["required_paths"]) ? (props["required_paths"] as string[]) : [];
   const evFields = Array.isArray(evidence["fields"]) ? (evidence["fields"] as Record<string, unknown>[]) : [];
   const valueOf = (f: Record<string, unknown>): string => { const v = f["value_confirmed"] ?? f["value"]; return v === undefined || v === null ? "" : String(v); };
@@ -270,7 +281,7 @@ export function cardArgs(card: CardInstanceRow, evidence: Record<string, unknown
   }
   if (card.kind === "ConfirmCard" && evFields.length) {
     const shown = Array.isArray(props["fields"]) ? (props["fields"] as { path?: unknown; value?: unknown; source?: unknown }[]) : [];
-    args["fields"] = evFields.map((f) => { const path = String(f["path"] ?? ""); const orig = shown.find((x) => x["path"] === path); const value = valueOf(f); const edited = !orig || String(orig["value"] ?? "") !== value; return { path, value, source: edited ? "borrower" : String(orig?.["source"] ?? f["source"] ?? "borrower"), edited }; });
+    args["fields"] = evFields.map((f) => { const path = String(f["path"] ?? ""); const orig = shown.find((x) => x["path"] === path); const value = valueOf(f); const edited = !orig || String(orig["value"] ?? "") !== value; return { path, value, source: evidenceSource === "borrower_stated" || edited ? "borrower" : String(orig?.["source"] ?? f["source"] ?? "borrower"), edited }; });
     const masked = Array.isArray(props["masked_paths"]) ? (props["masked_paths"] as string[]) : [];
     if (masked.length) stored = { ...stored, fields: evFields.map((f) => (masked.includes(String(f["path"])) ? { ...f, value_confirmed: `••••${valueOf(f).replace(/\D/g, "").slice(-4)}`, value: undefined, masked: true } : f)) };   // the SSN is stored once by the owning handler, never echoed (01 §5)
   }

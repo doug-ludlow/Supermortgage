@@ -27,7 +27,7 @@ import { FLOW_9_SERVICING_REQUESTS } from "./9-servicing-requests.ts";
 import { FLOW_10_HARDSHIP } from "./10-hardship.ts";
 import { FLOW_11_RATE_WATCH } from "./11-rate-watch.ts";
 import { FLOW_12_EXITS } from "./12-exits.ts";
-import { FLOW_13_CROSS_CUTTING, SESSION_TRIGGER, MESSAGE_TRIGGER, TICK_TRIGGER } from "./13-cross-cutting.ts";
+import { FLOW_13_CROSS_CUTTING, SESSION_TRIGGER, MESSAGE_TRIGGER, TICK_TRIGGER, COMMAND_TRIGGERS } from "./13-cross-cutting.ts";
 import { FLOW_14_ENTRY_SIGN_IN } from "./14-entry-sign-in.ts";
 import { FLOW_14_ENTRY_LEAD } from "./14-entry-lead.ts";
 import { FLOW_14_PREQUAL } from "./14-prequal.ts";
@@ -109,8 +109,9 @@ export class BorrowerFlows {
     for (const e of events) {
       if (e.type !== "card.sent") continue;
       const id = (e.payload as { card_instance_id?: unknown }).card_instance_id; if (typeof id !== "string") continue;
-      // no flow context: the owning events committed with the card (never the bus's own `command.*` receipt or the thread's `card.*`)
-      const ctx: readonly CardTrigger[] = this.active.length ? [...this.active] : [{ source: "command", flow: null, triggers: [...new Set(events.filter((x) => !BUS_OR_THREAD_EVENT.test(x.type)).map((x) => x.type))] }];
+      // no flow context: the owning events committed with the card (never the bus's own `command.*` receipt or the thread's `card.*`) — or the 32.16 tool command the card.sent names (`card.request`, COMMAND_TRIGGERS)
+      const declared = (e.payload as { trigger?: unknown }).trigger;
+      const ctx: readonly CardTrigger[] = this.active.length ? [...this.active] : typeof declared === "string" && COMMAND_TRIGGERS.includes(declared) ? [{ source: "command", flow: null, triggers: [declared] }] : [{ source: "command", flow: null, triggers: [...new Set(events.filter((x) => !BUS_OR_THREAD_EVENT.test(x.type)).map((x) => x.type))] }];
       if (this.cardTriggers.size >= CARD_TRIGGER_CAP) { const oldest = this.cardTriggers.keys().next().value; if (oldest !== undefined) this.cardTriggers.delete(oldest); }
       this.cardTriggers.set(id, ctx);
     }

@@ -162,11 +162,21 @@ function lockColumns(quotes: readonly Quote[]): { columns: P[]; recommended_id: 
   const shortest = quotes.map((q) => ({ id: q.quote_id, days: q.lock_period_days ?? q.inputs?.lock_period_days ?? Number.MAX_SAFE_INTEGER })).sort((a, b) => a.days - b.days)[0];
   return { columns, recommended_id: shortest?.id ?? null, by_option };
 }
+/** The property's state for 21.4 `requestLock{property_state}`: the subject application_properties row, else 21.1's intake record (its `property_state`, or the state inside the confirmed six-item address — an organic application opened at the account door has no properties row until the home is confirmed, 32.16 §2.0). */
+async function propertyStateOf(deps: FlowDeps, ctx: Ctx): Promise<string | null> {
+  const row = (await deps.runtime.db.query<{ state: string | null }>(`SELECT state FROM application_properties WHERE application_id = $1 ORDER BY is_subject DESC, created_at LIMIT 1`, [ctx.appId]))[0];
+  if (row?.state) return row.state;
+  const intake = ctx.store.get("applications", ctx.appId)?.data as P | undefined;
+  if (typeof intake?.["property_state"] === "string" && intake["property_state"]) return String(intake["property_state"]);
+  const item = (intake?.["six_items"] as Record<string, P> | undefined)?.["property_address"]; const address = String(item?.["value"] ?? intake?.["property_address"] ?? "");
+  const m = /\b([A-Z]{2})\s+\d{5}(?:-\d{4})?\b/.exec(address); return m ? m[1]! : null;
+}
 async function lockCompareCard(deps: FlowDeps, ctx: Ctx, flowKey: string, copy_key: "lock.compare.title" | "lock.relock.title"): Promise<boolean> {
   const quotes = validQuotes(ctx); if (!quotes.length) return false;   // 32.4 §4.4: never a rate that is not a pricing_quotes row within SM_QUOTE_VALIDITY_GATE
   const { columns, recommended_id, by_option } = lockColumns(quotes);
+  const property_state = await propertyStateOf(deps, ctx);   // what `lock.request` needs beside the quote (commands.ts fills it from application_properties when the row exists)
   await sendToAll(deps, ctx, { kind: "ComparisonCard", copy_key, flow_key: flowKey, command_ref: "lock.request", personal_terms: true,
-    props: { title: "", columns, recommended_id, command: "lock.request", command_args_by_option: by_option, secondary_option: { id: "float", label: "Keep floating" }, no_command_options: ["float"], footnote: "", affirmatives: ["lock it", "lock", "lock my rate"] } });
+    props: { title: "", columns, recommended_id, command: "lock.request", ...(property_state ? { command_args: { property_state } } : {}), command_args_by_option: by_option, secondary_option: { id: "float", label: "Keep floating" }, no_command_options: ["float"], footnote: "", affirmatives: ["lock it", "lock", "lock my rate"] } });
   return true;
 }
 const lockOf = (ctx: Ctx, lockId: unknown): P | undefined => (typeof lockId === "string" ? (ctx.store.get("locks", lockId)?.data as P | undefined) : undefined);

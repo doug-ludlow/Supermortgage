@@ -31,6 +31,13 @@ export interface TimerDef extends RawTimer {
   readonly ownedBy?: string;
   /** Section override provenance (registry.override). */
   readonly overrideWhy?: string;
+  /**
+   * `subject: "global"` (registry.override): the clock belongs to the platform day, not to the aggregate of the event that
+   * armed it — a recurring daily row whose trigger is a per-day aggregate (`rate_sheet.published{rate_sheet_id}`) would
+   * otherwise re-arm on the first day's sheet and never be satisfied by the next day's run. Armed on `{global, *}`; a
+   * recurring row already armed there is not armed twice.
+   */
+  readonly subjectOverride?: "global";
 }
 
 const KIND_MAP: [RegExp, TimerKind][] = [
@@ -87,6 +94,8 @@ export function toTimerDef(raw: RawTimer): TimerDef {
 export type TimerOverride = Partial<Pick<TimerDef, "trigger" | "satisfied" | "anchor" | "offset" | "anchorField">> & {
   /** Name a domain evaluator for a condition-shaped gate/rule ("13.1.gate120"); sets the offset to `evaluator:<ref>`. */
   readonly evaluator?: string;
+  /** Arm on the global subject regardless of the trigger's aggregate (see TimerDef.subjectOverride). */
+  readonly subject?: "global";
   /** Spec citation / prose the override encodes — kept on the def for the audit. */
   readonly why?: string;
 };
@@ -128,7 +137,7 @@ export class TimerRegistry {
     // A later override that touches neither `anchor` nor `anchorField` keeps the anchor field an
     // earlier override set (toTimerDef would otherwise re-parse it from the raw anchor text).
     const anchorField = o.anchorField !== undefined ? o.anchorField : o.anchor === undefined ? cur.anchorField : merged.anchorField;
-    const next: TimerDef = { ...merged, anchorField, ...(o.why !== undefined ? { overrideWhy: o.why } : {}) };
+    const next: TimerDef = { ...merged, anchorField, ...(o.why !== undefined ? { overrideWhy: o.why } : {}), ...(o.subject !== undefined ? { subjectOverride: o.subject } : cur.subjectOverride !== undefined ? { subjectOverride: cur.subjectOverride } : {}) };
     this.byCode.set(code, next);
     return next;
   }

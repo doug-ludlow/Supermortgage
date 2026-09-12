@@ -10,6 +10,8 @@ import { describe, expect, it } from "vitest";
 import { Card } from "@/components/cards";
 import { DatesSection, DocumentsSection } from "@/components/record/sections";
 import { Thread } from "@/components/shell/Thread";
+import { Rail } from "@/components/record/Rail";
+import { fireEvent } from "@testing-library/react";
 import { packageMembers } from "@/components/flows/4-disclosures";
 import { copy } from "@/lib/copy";
 import type { AnyCardInstance } from "@/lib/types/cards";
@@ -54,16 +56,22 @@ describe("32.4 grouped LE package (T3, T4)", () => {
     expect(roles.get("m-charm")?.role).toBe("member");
     expect(roles.get("m-le")?.role).toBe("member");
   });
-  it("the Thread renders a single grouped message: 'Your Loan Estimate and 2 related document(s).' with each document its own card", () => {
+  it("the Thread renders a single grouped message: 'Your Loan Estimate and 2 related document(s).' as one reference with a chip per document; on the rail each document is its own card (32.16 §2.1: no card in the thread)", () => {
     const { onResolve } = resolver();
-    render(<Thread messages={messages} cards={cards} timezone={TZ} partnerLegalName="Partner Bank" showSubjectLabels={false} wide={false} cardProps={{}} resolve={async (c, req) => onResolve(req)} cardErrors={{}} />);
+    const thread = render(<Thread messages={messages} cards={cards} timezone={TZ} partnerLegalName="Partner Bank" showSubjectLabels={false} resolve={async (c, req) => onResolve(req)} cardErrors={{}} />);
     const pkg = screen.getAllByTestId("disclosure-package");
     expect(pkg).toHaveLength(1);
     expect(screen.getByTestId("disclosure-package-header")).toHaveTextContent("Your Loan Estimate and 2 related document(s).");
-    expect(within(pkg[0]!).getAllByRole("article")).toHaveLength(3);
-    // the ARM program disclosure and CHARM booklet cards exist; the LE card (requires_ack) carries the receipt action
-    expect(within(pkg[0]!).getByRole("button", { name: "Confirm receipt" })).toBeInTheDocument();
-    expect(screen.getAllByText("How your adjustable rate works")).toHaveLength(2);
+    expect(within(pkg[0]!).getAllByTestId(/^(reference-chip|chip-receipt)$/)).toHaveLength(3);
+    expect(within(pkg[0]!).queryAllByRole("article")).toHaveLength(0);
+    thread.unmount();
+    // the rail's Documents section: each document its own card, expanded in place; the LE card (requires_ack) carries the receipt action
+    render(<Rail record={{ ...base, timezone: TZ, documents: [] }} cards={cards} timezone={TZ} cardProps={{}} resolve={async (c, req) => onResolve(req)} cardErrors={{}} link={noop} />);
+    const docs = document.querySelector('[data-record-section="documents"]')!;
+    for (const id of ["c-le", "c-arm", "c-charm"]) fireEvent.click(docs.querySelector(`[data-rail-card="${id}"] > button`)!);
+    expect(within(docs as HTMLElement).getAllByRole("article")).toHaveLength(3);
+    expect(within(docs as HTMLElement).getByRole("button", { name: "Confirm receipt" })).toBeInTheDocument();
+    expect(within(docs as HTMLElement).getAllByRole("heading", { name: "How your adjustable rate works" })).toHaveLength(2);
   });
 });
 

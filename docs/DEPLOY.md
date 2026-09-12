@@ -9,7 +9,7 @@ What you end up with, in one Google Cloud project:
 |---|---|
 | Cloud Run service `supermortgage-api` | the HTTP server (`serve` mode), 1..10 instances |
 | Cloud Run job `supermortgage-migrate` | applies `db/migrations/*.sql`; run before every deploy |
-| Cloud Run job `supermortgage-sweep` | one pass over due timers and the outbox; Cloud Scheduler runs it every minute |
+| Cloud Run job `supermortgage-sweep` | one pass every minute (Cloud Scheduler): the borrower flows' scheduled tick, the daily refinance check (06:30 ET), the FAKE reviewers, due timers and the outbox |
 | Cloud SQL (PostgreSQL 16) `supermortgage-nonprod` | the database, encrypted with a customer-managed key, daily backups + point-in-time recovery |
 | Secret Manager | `supermortgage-database-url`, `supermortgage-api-token` |
 | Artifact Registry `supermortgage` | container images built by GitHub Actions |
@@ -199,6 +199,100 @@ Your own batch goes to `POST /v1/transfers/batches` with `{ actor, batch, files 
 `files` carries the tape CSV texts in the layout documented in
 `fixtures/transfer-batch-demo/LAYOUT.md`; `GET /v1/transfers/batches/<batch_id>` returns the
 scorecard afterwards.
+
+## The demo clock
+
+Outside production the runtime's clock is the system clock plus a persisted offset (`src/runtime/demo-clock.ts`,
+table `demo_clock`, migration 0120 — append-only, the latest row is the current offset), so the demo can be walked
+through days and months in minutes and the timers, statements, late charges, the daily refinance run and the borrower
+flows fire as they would. The once-a-minute `sweep` job and `seed-demo` read the offset at start; every `serve`
+instance reads it at start and then **follows** the table — one indexed `LIMIT 1` read a second — because the service
+runs 1..10 instances and only the one that took the POST steps the clock, so the API, the console, the sweeps and the
+flows on every instance agree on the instant within a second. Both routes take the ops bearer token and answer **403
+in production** (`ENVIRONMENT=production` runs on the system clock, full stop).
+
+- `GET /v1/demo/clock` → `{ now, real_now, offset_ms, offset_days, date, zone, rows, latest, following, max_advance_days, default_budget_ms }`.
+- `POST /v1/demo/advance` with `{ "days": 45 }` or `{ "to": "2026-10-25T16:00:00Z" }` (exactly one; `actor` and
+  `budget_ms` optional). For every America/New_York calendar day crossed the clock steps to that day (noon ET) and
+  runs the sweep minute in the order the wall clock runs it (the `sweep` job, `POST /v1/sweep`): the borrower flows'
+  `tick` — every flow's scheduled pass: `originationDailySweep`, `servicingDailySweep` (2.1 posting, the 2.7
+  late-charge runs, the 2.3 amount check) and the December `irs_estatement` ask, `delinquencyDailySweep` (the 11.x
+  counter), the card expiries — then `Runtime.sweep()`, which runs the refinance daily run
+  (`src/runtime/refi-daily.ts`, when a rate feed is wired) and the FAKE reviewers before its breach pass, then the
+  flows settle the reactions the breaches queued — and last steps to the target and runs it once more. Each step is
+  one `demo_clock` row written before its passes, so a crash leaves the clock on the last swept day. A single advance
+  covers at most 400 days; a target at or before now is a no-op (`advanced: false`, nothing written), so re-posting
+  the same target changes nothing; the clock never moves backwards. The answer lists every step with what it ran.
+- **Long advances.** The whole advance runs inside the one request. Forty-five steps take about five seconds on the
+  demo book without the rate feed; with the refinance run and the reviewers a 400-day advance can outlive Cloud Run's
+  request timeout (the deploy sets none, so the default 300 s applies). So an advance spends at most `budget_ms`
+  stepping (default 240 s; the body may lower it) and then stops *between* steps, answering `complete: false`,
+  `steps_remaining` and the clock standing on the last swept day; re-POST the same `to` (or `GET /v1/demo/clock`
+  first, then `to`) and it carries on from there. The same recovery holds if a request is cut off outright: the
+  per-step row means nothing is lost but the answer, and the next POST resumes from the last row.
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" https://demo.supermortgage.com/v1/demo/clock
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "content-type: application/json" \
+  https://demo.supermortgage.com/v1/demo/advance -d '{"days": 45}'
+# a year, in request-sized pieces: repeat until the answer says "complete": true
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "content-type: application/json" \
+  https://demo.supermortgage.com/v1/demo/advance -d '{"to": "2027-09-10T16:00:00Z"}'
+```
+
+The proof is `node --test src/runtime/demo-clock.test.ts` on its own database (`supermortgage_demo_clock_test`, created
+and migrated by the test): the demo batch boards, 45 days advance, every boarding-armed clock that fell due breached on
+its own day, a second advance to the same instant is a no-op, a new Runtime reads the persisted offset and a following
+clock adopts another instance's advance unasked, and a spent budget stops between steps and resumes on the next POST.
+
+## The daily refinance check (20.1 `SM_REFI_TRIGGER_DAILY`)
+
+Every sweep (the `supermortgage-sweep` job each minute, and `POST /v1/sweep`) runs
+`src/runtime/refi-daily.ts` before its breach pass. Once per calendar day, at or after
+06:30 America/New_York, it:
+
+1. publishes the day's rate sheet through `20.4 publishRateSheet` (`rs-<date>-<vendor>`,
+   once per day) from the rate feed — the FAKE feed (`src/infra/integrations/rates.ts`,
+   the 20.1 worked-example grid, the same every day) unless `RATE_FEED=fred`, which reads
+   Freddie Mac's weekly 30-year average from FRED's `MORTGAGE30US` series over https
+   (`FRED_API_KEY` optional: with a key the JSON API, without it the public CSV) and
+   builds the sheet's grid around it; `RATE_FEED_FAKE_SHIFT_BPS=-25` moves the FAKE grid;
+2. builds the universe from the investor-blind view `v_refi_universe` — every active loan
+   on the book, joined at run time to the ledger balance, unpaid installments, the boarding
+   flags, the escrow lines and the origination record, with the vendor facts (AVM value,
+   score on file) from the loan's `refi_universe` row or a FAKE fallback (indexed
+   origination value at `confidence=low`); rows that changed go through
+   `20.1 loadUniverse{op=load_row}`; the pass refuses if the view exposes an investor column;
+3. runs `20.1 emitOfferReady{op=run, trigger_kind=scheduled}` per partner program and writes
+   the `20.1 writeDecision` row per opportunity; `refi.trigger.run_completed` satisfies
+   `SM_REFI_TRIGGER_DAILY` (the day's clock, re-armed for tomorrow 06:30). A run that cannot
+   start (no matrix, no sheet, feed down with no sheet in force) is logged and the clock
+   breaches at 06:30 the next day — sev 3 to compliance-sentinel, the spec's breach action;
+4. logs one line: `refi daily <date>: sheet=… programs=… universe=N evaluated=M offers=K suppressed={…}`
+   (`gcloud logging read 'jsonPayload.message="refi daily run"'`).
+
+What it needs on the book: a `partner_programs` row, 20.4's LLPA matrix and a cost schedule —
+`seed-demo` / `POST /v1/entry/seed-demo` writes all three (FAKE, idempotent) beside the demo
+sheet. The 32.11 flow reacts to `refi.opportunity.offer_ready` in the same process (the job
+starts the borrower flows for its pass): the MLO of record's review is requested, and once
+20.2 has sent the offer and the review is approved, the borrower's OfferCard appears.
+
+## FAKE reviewers (DELTA-30)
+
+Under `INTEGRATIONS=fake` every human role a borrower journey waits on is filled by a FAKE
+that approves after `FAKE_REVIEWER_DELAY_S` seconds (default 20), on every sweep, through the
+same bus tools a person uses, as `human:FAKE:<role>` — the MLO of record's terms review
+(`20.3 requestQuote{op=review}`; the 21.1 stage package `21.1 openEscalation{op=decide}`),
+the underwriting reviewer (`21.6 openReviewerEscalation{op=decide}` / `23.3 openEscalation{op=complete}`),
+QC's prefunding hold (`28.1 openReview` + `closeReview{no_defect}`), the funding approver's
+wire release (`26.3 prepareWire{op=release}`), and the person a transfer reaches
+(`20.3 deliverDisclosure{op=human_joined}` on a lead, `4.3 human.transfer{op=complete}` on a loan
+or application); any other escalation a FAKE role owns is completed the way the console's
+queue completes it. Queues, roles, guardrails and decision rows are unchanged — the review id
+is `FAKE-MR-…`, the person's name "FAKE reviewer (Supermortgage)", the notes say "FAKE reviewer",
+and the console's queue row of a pending item a FAKE will fill reads "— FAKE reviewer".
+`FAKE_REVIEWERS=off` leaves every queue to a person. Timer breaches (`sev1`–`sev4`
+escalations) are never auto-closed. Source: `src/infra/integrations/reviewers.ts`.
 
 ## Origination: applications over HTTP
 
@@ -448,9 +542,11 @@ is cached across turns.
 someone's record), `/app/reset` resets a password.
 Continue with Google is on both screens (the FAKE provider under `INTEGRATIONS=fake`; the real one once the
 OAuth client exists, "Sign in with Google" above). The anonymous minute of 32.14 is no longer rendered
-(docs/ux/17 §0.4); its API routes remain. The automation disclosure on the account screen names the partner
-from the build argument `NEXT_PUBLIC_PARTNER_LEGAL_NAME` (repository variable `PARTNER_LEGAL_NAME`,
-"Partner Bank" when unset) because no session exists yet to read it from; inside the thread the partner
-comes from the API as before. Codes are delivered by the e-delivery adapter (the FAKE echoes the code on
+(docs/ux/17 §0.4); its API routes remain. The disclosure footer on every screen (docs/ux/17 §1 principle 8:
+`footer.disclosure` — the AI notice, the partner's name and NMLS ID, the NMLS consumer access link and
+`/app/disclosures`) names the partner from the build arguments `NEXT_PUBLIC_PARTNER_LEGAL_NAME` (repository
+variable `PARTNER_LEGAL_NAME`, "Partner Bank" when unset) and `NEXT_PUBLIC_PARTNER_NMLSR_ID` (repository
+variable `PARTNER_NMLSR_ID`, "123456" — the demo partner — when unset) because no session exists yet to read
+them from; once signed in the footer takes both from `/v1/borrower/me`'s `partner`, as the thread does. Codes are delivered by the e-delivery adapter (the FAKE echoes the code on
 nonprod, as the OTP route does). A password session opens without a fresh code, so a money command still
 asks for one (`FRESH_L1_COMMANDS`).

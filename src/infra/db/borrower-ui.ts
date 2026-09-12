@@ -14,6 +14,8 @@ export interface ConversationRow { readonly conversation_id: string; readonly pa
 export interface CardInstanceRow {
   readonly card_instance_id: string; readonly conversation_id: string; readonly party_id: string; readonly subject_application_id: string | null; readonly subject_loan_id: string | null; readonly kind: string; readonly status: CardStatus;
   readonly created_by: string; readonly copy_key: string; readonly props: Record<string, unknown>; readonly evidence: Record<string, unknown> | null; readonly command_ref: string | null; readonly expires_at: string | null; readonly created_at: string; readonly resolved_at: string | null;
+  /** 32.16 §3.7 (0119): proposals rejected or edited on this card; the third transfers to a human. Absent on a row read through a select that predates the column. */
+  readonly misses?: number;
 }
 export type DeepLinkTarget = { card_instance_id: string } | { document_id: string } | { route: string };
 export interface MessageRow {
@@ -27,7 +29,7 @@ export interface DeepLinkRow { readonly token: string; readonly party_id: string
 export const DEEP_LINK_DAYS = 7;
 export const newDeepLinkToken = (): string => randomBytes(24).toString("base64url");
 export const addDaysIso = (iso: string, days: number): string => new Date(Date.parse(iso) + days * 86_400_000).toISOString();
-const CARD_COLS = "card_instance_id, conversation_id, party_id, subject_application_id, subject_loan_id, kind, status, created_by, copy_key, props, evidence, command_ref, expires_at, created_at, resolved_at";
+const CARD_COLS = "card_instance_id, conversation_id, party_id, subject_application_id, subject_loan_id, kind, status, created_by, copy_key, props, evidence, command_ref, expires_at, created_at, resolved_at, misses";
 
 export class PgBorrowerUiRepository {
   private readonly db: Queryable;

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { FooterDisclosure } from "@/components/shell/FooterDisclosure";
 
 /**
  * 01 §1.5 document viewer: /doc/{document_id} (authenticated). Documents are served
@@ -18,6 +19,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
         The document viewer opens here with a text layer. (Document {id})
       </div>
       <p className="sm-source">Template version and delivery evidence appear in the footer of every notice.</p>
+      <FooterDisclosure />
     </main>
   );
 }

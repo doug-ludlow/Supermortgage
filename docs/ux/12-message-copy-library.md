@@ -6,7 +6,7 @@ Format: `key` — **card/message** — text — *notes*.
 
 ## Entry and identity
 
-- `entry.disclosure.first` — system message — "I'm Supermortgage's automated assistant, working for {{partner.legal_name}}, your lender. You can reach a person at any time — just say *human*." — *first message of every session, every channel; voice reads it aloud.*
+- `entry.disclosure.first` — system message — "This is an automated assistant for {{partner.legal_name}}. You can ask for a callback or a written reply at any time." — *the session's first record on every channel (32.3 E2); on the app it is never shown as a bubble — the footer (`footer.disclosure`) is the disclosure; SMS sends it and voice reads it aloud.*
 - `entry.disclosure.real_person` — reply — "No — I'm {{partner.legal_name}}'s automated assistant. I can bring a person in right now if you'd like." — *O1.3 T11.*
 - `entry.disclosure.co_admt` — line — "Colorado notice: an automated system helps evaluate your application. You have the right to an explanation, to correct information, and to a human review of a decision." — *before any pricing output; from Dec 1, 2026.*
 - `entry.disclosure.ut_high_risk_upfront` — line — "Utah notice: you are talking with an automated system, not a person. Say *human* at any time to reach one." — *32.14 S1 (ii): the Utah up-front line, re-delivered on a state change (20.3 rule 1 overlay `ut_high_risk_upfront`).*
@@ -398,6 +398,13 @@ Format: `key` — **card/message** — text — *notes*.
 - `autopay.active` — StatusCard — "Autopay is on: {{money}} on {{date}} from ••••{{last4}}. A copy of your authorization is on its way." — *32.8 §4: `AUTODRAFT-CONFIRM-v1` within 1 business day (`SM_AUTODRAFT_COPY_DELIVERY_1BD`).*
 - `autopay.confirm` — NoticeCard line — "Your autopay authorization — keep this copy." — *32.8 §4: `AUTODRAFT-CONFIRM-v1`.*
 - `autopay.suspended.choice` — ChoiceCard — "Autopay is paused after two returned payments. Use the same account again, or pay another way?" — options `Use account ••••{{last4}} again` · `Pay another way` — *32.8 §4: `suspended_returns` re-activation (2.3).*
+- `payment.extra_principal` — PaymentCard — "Pay extra toward your principal." — helper: "Amount only. On a current loan it goes to principal the day we receive it; if a payment is past due it goes to that first." — *32.8 §3.2 / 32.16 §4: raised by `card.request{extra_principal}` when the borrower asks in words; `payment.extraPrincipal` on the tap with a fresh code.*
+- `autopay.enroll` — ConsentCard — "Set up autopay" — helper: "Every element of the authorization is below. Add the account, check the box and type your name; a copy follows." — *32.8 §4 / 32.16 §4: `card.request{autopay_enroll}`; `autodraft.enroll` on the tap (fresh code), then `consent.autodraft.title` follows.*
+- `autopay.change.choice` — ChoiceCard — "Move your autopay draft day?" — options `Draft on the {{n}} from now on` · `Keep it as it is` — *32.8 §4 / 32.16 §4: `card.request{autopay_change}`; `autodraft.change` on the tap (fresh code).*
+- `autopay.pause.choice` — ChoiceCard — "Pause autopay?" — options `Pause autopay` · `Keep it as it is` — helper: "Paused means nothing is drafted until you turn it back on; payments are still due." — *32.8 §4 / 32.16 §4: `card.request{autopay_pause}`; `autodraft.pause` on the tap (fresh code).*
+- `autopay.revoke.choice` — ChoiceCard — "Turn autopay off?" — options `Turn autopay off` · `Keep it as it is` — helper: "Off means we stop drafting from ••••{{last4}}; you pay another way each month." — *32.8 §4 / 32.16 §4: `card.request{autopay_revoke}`; `autodraft.revoke` on the tap (fresh code); never argued against.*
+- `callback.request` — ConfirmCard — "Request a callback" — helper: "Confirm the number and the best time. No one is staffed live right now; the request is logged and answered as soon as a person is available." — *32.16 §1 principle 8 / 4.3: `card.request{callback}`; the tap logs the written request (`case.open{general_inquiry}`).*
+- `case.noe.confirm` — ChoiceCard — "Log this as a formal notice of error?" — options `Log it as a notice of error` · `Not now` — helper: "You'll get an acknowledgment within five business days and an answer within thirty. There is never a fee." — *32.9 §5.2 / 32.16 §4: `card.request{dispute}`; `case.open{noe}` on the tap.*
 - `escrow.statement` — NoticeCard — "Your escrow statement: {{money}} a month from {{date}}." — line: "The statement shows how the new amount was set and any surplus or shortage." — *32.8 §6.2: `NTC_REGX_1024_17I_ANNUAL_ESCROW_STMT` / `NTC_REGX_1024_17F_SHORTAGE`.*
 - `escrow.surplus_credit` — StatusCard — "Escrow surplus of {{money}} — credited to your payments ({{monthly}} a month)." — *32.8 §6.2: under $50 → `credited_to_payments` (3.5).*
 - `escrow.surplus_retained` — StatusCard — "Escrow surplus of {{money}} stays in your escrow account because the loan isn't current." — *32.8 §6.2: `retained` (3.5).*
@@ -602,6 +609,58 @@ The lines the borrower API and the shell author themselves (src/runtime/borrower
 - `auth.password_wrong` — refusal — "That e-mail and password didn't match." — *401 `PASSWORD_WRONG`; never says which.*
 - `auth.account_locked` — refusal — "Too many tries. Wait fifteen minutes, or reset your password." — *423 `ACCOUNT_LOCKED`: ten failures lock for fifteen minutes (`locked_until`).*
 - `auth.email_unverified` — refusal — "Enter the code we just e-mailed you to finish setting up." — *403 `EMAIL_UNVERIFIED` on sign-in: a fresh code was sent; the app shows the code step.*
+
+The rail and the thread (32.16 §2.1–2.2, DELTA-26). The rail's section names, the Progress count, the reference and confirm chips, the rates element and the journey's step labels — every visible string of the conversation shell. The assistant's own lines are the model's words; nothing here is spoken in the stream.
+
+- `rail.progress.title` — heading — "Progress" — *32.16 §2.2: the journey's steps, done / current / upcoming, from `journey_progress`.*
+- `rail.progress.count` — line — "{{done}} of {{total}}" — *32.16 §2.2: beside the Progress heading; `journey_progress.done` and `.total`, never counted by the rail.*
+- `rail.connections.title` — heading — "Connections" — *32.16 §2.2: each vendor connection and its state; expands to the `ConnectCard` or its receipt.*
+- `rail.waiting_on_you` — line — "Waiting on you: {{label}} →" — *32.16 §2.1: the slim line under the header, shown only while the borrower has scrolled away from the current ask; tapping it focuses the card on the rail.*
+- `chip.reference` — chip — "{{label}} →" — *32.16 §2.1: the one-line reference the assistant attaches when it puts a card on the rail; tapping it focuses and expands that card. A resolved card's chip shows its receipt line instead.*
+- `chip.confirm` — button — "Confirm" — *32.16 §2.1 / §3.4: the confirm chip's tap — resolves the card through `resolveCard` with `evidence.source = borrower_stated`.*
+- `chip.edit` — button — "Edit" — *32.16 §2.1: expands the proposed card on the rail so the borrower can change a value.*
+- `connection.not_connected` — state — "not connected" — *32.16 §2.2 Connections row.*
+- `connection.in_progress` — state — "in progress" — *32.16 §2.2 Connections row.*
+- `connection.connected` — state — "connected" — *32.16 §2.2 Connections row.*
+- `connection.failed` — state — "couldn't connect" — *32.16 §2.2 Connections row; the card offers the documents path.*
+- `connection.fallback` — state — "documents instead" — *32.16 §2.2 Connections row after the borrower chose the upload path.*
+- `rates.element.low` — line — "Low {{rate}} · {{apr}} APR" — *32.16 §1 principle 8 / T7: the rates element the app draws from `messages.copy_tokens{element: rates}`; the APR beside each rate with equal prominence (Reg Z §1026.24).*
+- `rates.element.high` — line — "High {{rate}} · {{apr}} APR" — *32.16 §1 principle 8: the high end of the 20.3 checked range.*
+- `rates.element.as_of` — line — "as of {{date}}" — *32.16 §1 principle 8: the rate sheet's own date from the tokens.*
+- `rates.element.footer` — footer — "{{lender}}, NMLSR ID {{nmlsr_id}}. Not a commitment to lend; rates change daily." — *32.16 §1 principle 8: the lender's name and NMLSR ID as the rates element's footer — data from the 20.3 tool, drawn by the app, never text the model speaks.*
+- `journey.refi.home` — step — "Your home and current loan" — *docs/ux/03 R1.*
+- `journey.refi.credit` — step — "Credit" — *docs/ux/03 R2.*
+- `journey.refi.income` — step — "Income" — *docs/ux/03 R3.*
+- `journey.refi.about_you` — step — "About you" — *docs/ux/03 R4.*
+- `journey.refi.declarations` — step — "Declarations" — *docs/ux/03 R5.*
+- `journey.refi.demographics` — step — "Demographic information" — *docs/ux/03 R6.*
+- `journey.refi.application` — step — "Value, amount and product" — *docs/ux/03 R7: the six-item moment.*
+- `journey.refi.underwriting` — step — "Underwriting" — *docs/ux/03 R8: from `du.submitted` to the decision.*
+- `journey.refi.terms` — step — "Terms and Loan Estimate" — *docs/ux/03 R9.*
+- `journey.refi.proceed` — step — "Proceed" — *docs/ux/03 R10.*
+- `journey.refi.lock` — step — "Lock" — *docs/ux/03 R11.*
+- `journey.refi.handoff` — step — "Closing" — *docs/ux/03 R12: the hand-off into 04–07.*
+- `journey.purchase.where` — step — "Where and how much" — *docs/ux/03 P1.*
+- `journey.purchase.identity` — step — "Identity" — *docs/ux/03 P2.*
+- `journey.purchase.consents` — step — "Consents" — *docs/ux/03 P2–P6.*
+- `journey.purchase.credit` — step — "Credit" — *docs/ux/03 P2–P6.*
+- `journey.purchase.income` — step — "Income" — *docs/ux/03 P2–P6.*
+- `journey.purchase.about_you` — step — "About you" — *docs/ux/03 P2–P6: profile, declarations, demographics.*
+- `journey.purchase.assets` — step — "Assets" — *docs/ux/03 P7.*
+- `journey.purchase.target` — step — "Target price and loan amount" — *docs/ux/03 P8.*
+- `journey.purchase.house_hunting` — step — "House hunting" — *docs/ux/03 P9.*
+- `journey.purchase.contract` — step — "Your contract" — *docs/ux/03 C1.*
+- `journey.purchase.address` — step — "Your new address" — *docs/ux/03 C2.*
+- `journey.purchase.terms` — step — "Terms and Loan Estimate" — *docs/ux/03 C3.*
+- `journey.purchase.proceed` — step — "Proceed" — *docs/ux/03 C4.*
+- `journey.purchase.lock` — step — "Lock" — *docs/ux/03 C5.*
+- `journey.purchase.insurance` — step — "Insurance" — *docs/ux/03 C6.*
+- `journey.purchase.handoff` — step — "Closing" — *docs/ux/03 C7.*
+- `disclosures.title` — heading — "Disclosures and licenses" — *32.16 §1 principle 8: /app/disclosures, the footer's second link.*
+- `disclosures.lender` — line — "{{partner.legal_name}}, NMLS #{{partner.nmlsr_id}}" — *32.16 §1 principle 8: the lender the footer names, with its NMLS ID.*
+- `disclosures.nmls` — link — "NMLS consumer access" — *32.16 §1 principle 8: → nmlsconsumeraccess.org.*
+- `disclosures.licenses` — heading — "State licenses" — *32.16 §1 principle 8: the lender's licenses by state.*
+- `disclosures.licenses.pending` — line — "License details appear here as they are added." — *32.16 §1 principle 8: the placeholder until the partner's licenses are configured.*
 
 ## Channel variants (rules)
 - **SMS**: first sentence + deep link; never a number the borrower hasn't seen in-app first (no rates, balances or payoff figures by SMS); STOP footer on the first message of a thread.

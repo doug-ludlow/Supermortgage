@@ -309,3 +309,36 @@ test("PACER / DMDC / e-recording (14.1, 13.8, 16.3): SSN-only queries rejected a
   const rec = await er.submit(p2.packageId, "2026-09-05T15:00:00.000Z");
   assert.equal(rec.status, "recorded"); assert.ok(rec.instrumentNumber); assert.equal(rec.feeCents, 3_400n);
 });
+
+test("rate feed (20.4 daily sheet, 20.1 SM_REFI_TRIGGER_DAILY): the FAKE is the worked-example grid every day; RATE_FEED=fred selects FRED's MORTGAGE30US over a stubbed fetch (CSV without a key, JSON with one) and snaps the week's average to the 0.125 % grid; outages are transient, nonsense is rejected", async () => {
+  const { FakeRateFeed, FredRateFeed, rateFeedFromEnv, gridAround, toGrid, fakeDemoPrices } = await import("./rates.ts");
+  const fake = new FakeRateFeed();
+  const day1 = await fake.fetchPrices("2026-10-01T10:30:00.000Z"); const day2 = await fake.fetchPrices("2026-10-02T10:30:00.000Z");
+  assert.deepEqual(day1, day2); assert.equal(fake.vendorName, "FAKE"); assert.equal(fake.calls.length, 2);
+  assert.deepEqual(day1.filter((p) => p.product_code === "FRM30").map((p) => [p.note_rate_pct, p.price]), [["6.375", "101.875"], ["6.250", "101.375"], ["6.125", "100.875"], ["6.000", "100.375"], ["5.875", "99.750"]]);
+  assert.equal(day1.length, 9); assert.ok(day1.every((p) => p.lock_period_days === 45));
+  assert.deepEqual(fakeDemoPrices(-25).filter((p) => p.product_code === "FRM30").map((p) => p.note_rate_pct), ["6.125", "6.000", "5.875", "5.750", "5.625"], "RATE_FEED_FAKE_SHIFT_BPS moves the grid in 12.5-bps steps");
+  assert.equal(rateFeedFromEnv({}).vendorName, "FAKE"); assert.equal(rateFeedFromEnv({ INTEGRATIONS: "fake", RATE_FEED: "fred" }).vendorName, "FRED:MORTGAGE30US");
+  assert.equal(toGrid(6.27), "6.250"); assert.equal(toGrid(6.32), "6.375");
+  // the real adapter behind the port: the public CSV (no key) — the latest observation on or before the day; "." weeks skipped
+  const csv = "observation_date,MORTGAGE30US\n2026-09-17,6.35\n2026-09-24,.\n2026-10-01,6.27\n2026-10-08,6.10\n";
+  const calls: string[] = [];
+  const stub = (body: string, ok = true, status = 200) => (async (url: string | URL | Request) => { calls.push(String(url)); return new Response(body, { status, statusText: ok ? "OK" : "Server Error" }); }) as unknown as typeof fetch;
+  const fred = new FredRateFeed({ fetchImpl: stub(csv) });
+  assert.deepEqual(await fred.latest("2026-10-02T10:30:00.000Z"), { date: "2026-10-01", value: 6.27 });
+  assert.match(calls[0]!, /^https:\/\/fred\.stlouisfed\.org\/graph\/fredgraph\.csv\?id=MORTGAGE30US$/);
+  const prices = await fred.fetchPrices("2026-10-02T10:30:00.000Z");
+  assert.deepEqual(prices.filter((p) => p.product_code === "FRM30").map((p) => [p.note_rate_pct, p.price, p.pe_wl_quote_id]), [["6.500", "101.875", "MORTGAGE30US:2026-10-01"], ["6.375", "101.375", "MORTGAGE30US:2026-10-01"], ["6.250", "100.875", "MORTGAGE30US:2026-10-01"], ["6.125", "100.375", "MORTGAGE30US:2026-10-01"], ["6.000", "99.875", "MORTGAGE30US:2026-10-01"]]);
+  assert.deepEqual(gridAround(6.27, null).filter((p) => p.product_code === "FRM15").map((p) => p.note_rate_pct), ["5.875", "5.750", "5.625", "5.500"]);
+  assert.equal(fred.source, "partner_rate_sheet", "20.4's source vocabulary: a published external sheet, never a manual UI read");
+  // with a key: the JSON observations API, newest first
+  const json = JSON.stringify({ observations: [{ date: "2026-10-08", value: "6.10" }, { date: "2026-10-01", value: "6.27" }, { date: "2026-09-24", value: "." }] });
+  const keyed = new FredRateFeed({ apiKey: "k", fetchImpl: stub(json) });
+  assert.deepEqual(await keyed.latest("2026-10-03T00:00:00.000Z"), { date: "2026-10-01", value: 6.27 });
+  assert.match(calls.at(-1)!, /^https:\/\/api\.stlouisfed\.org\/fred\/series\/observations\?series_id=MORTGAGE30US&api_key=k&file_type=json/);
+  // failure modes: a 5xx or a network error is transient (the daily pass keeps the sheet in force and reports it); an empty or absurd series is rejected for good
+  await assert.rejects(new FredRateFeed({ fetchImpl: stub("", false, 503) }).latest("2026-10-02T00:00:00.000Z"), (e: unknown) => e instanceof TransientFailure);
+  await assert.rejects(new FredRateFeed({ fetchImpl: (async () => { throw new Error("ECONNRESET"); }) as unknown as typeof fetch }).latest("2026-10-02T00:00:00.000Z"), (e: unknown) => e instanceof TransientFailure);
+  await assert.rejects(new FredRateFeed({ fetchImpl: stub("observation_date,MORTGAGE30US\n2026-10-01,.\n") }).latest("2026-10-02T00:00:00.000Z"), (e: unknown) => e instanceof PermanentRejection && e.code === "FRED_NO_OBSERVATION");
+  await assert.rejects(new FredRateFeed({ fetchImpl: stub("observation_date,MORTGAGE30US\n2026-10-01,62.7\n") }).latest("2026-10-02T00:00:00.000Z"), (e: unknown) => e instanceof PermanentRejection && e.code === "FRED_VALUE_OUT_OF_RANGE");
+});

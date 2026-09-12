@@ -174,6 +174,8 @@ export type RecordDocument = {
   received_on?: string;
   le_version?: number;
   copy_of_disclosure_id?: Uuid;
+  /** 32.16 §2.2: the DocumentCard / NoticeCard this row expands to on the rail (the API names it beside the document). */
+  card_instance_id?: Uuid;
   /** 32.5 §7 / 7.4 rule 4: one LE issued per consumer on their own channel — each consumer's status beside the one document. */
   deliveries?: { borrower_id: string; display_name: string; channel: string; status: "delivered" | "mailed" | "received"; at: Timestamptz }[];
 };
@@ -259,6 +261,10 @@ export type RecordOffer = {
   terms?: { offered_rate: Rate; monthly_savings_cents: Cents };
 };
 
+/** 32.16 §2.2 (DELTA-26): the journey's steps — done / current / upcoming — derived by the API from the event spine and `card_instances`, never stored; the rail renders "{{done}} of {{total}}" from the counts it carries. */
+export type JourneyStep = { id: string; label_copy_key: string; state: "done" | "current" | "upcoming"; at: Timestamptz | null };
+export type JourneyProgress = { steps: JourneyStep[]; done: number; total: number };
+
 export type BorrowerRecord = {
   subject: RecordSubject;
   status: RecordStatus;
@@ -274,6 +280,8 @@ export type BorrowerRecord = {
   property?: RecordProperty;
   loan?: RecordLoan;
   offers?: RecordOffer[];
+  /** 32.16 §2.2: the Progress section; absent for a serviced loan. */
+  journey_progress?: JourneyProgress | null;
   /** Header helpers (01 §4 row 1) */
   header: { address_line: string; purpose: "Buying" | "Refinancing" | "Your loan"; loan_label: string };
   timezone: string; // borrower time zone, e.g. America/Phoenix
@@ -286,7 +294,11 @@ export type MessageSender = "borrower" | "agent" | "human" | "notice" | "system"
 export type MessageChannel = "app" | "sms" | "email" | "voice" | "mail";
 
 export type ThreadMessage = {
-  /** 32.14: tokens for the line's `{{copy:key}}` sentence (`entry.resumed` → `{{answers}}`); absent on most lines. */
+  /**
+   * 32.14: tokens for the line's `{{copy:key}}` sentence (`entry.resumed` → `{{answers}}`); absent on most lines.
+   * 32.16 §1 principle 8 / T7: `element: "rates"` names a rates element the app draws from the 20.3 range in the same
+   * tokens (`product`, `low_rate`, `low_apr`, `high_rate`, `high_apr`, `lender`, `nmlsr_id`, `as_of`) — never text.
+   */
   copy_tokens?: Record<string, string>;
   message_id: Uuid;
   conversation_id: Uuid;

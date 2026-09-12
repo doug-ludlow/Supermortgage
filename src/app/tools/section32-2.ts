@@ -145,7 +145,8 @@ async function confirmFields(i: ToolInput, ctx: CommandContext, rt: ToolRuntime,
       break;
     }
     case "income": {   // R3: Confirm = the borrower's stated income for this transaction (21.2 rule 2); the row keeps the source and the confirmation time (T11)
-      const base = need_("monthly_base_cents"); const amount = cents(base.value); if (amount < 0n) throw new RangeError("monthly_base_cents must be non-negative");
+      // 32.16 §3.4 / R3 "type it in": a borrower-typed `monthly_income` (the ConnectCard's fallback, a proposal the assistant read back) is the stated monthly base when no payroll figure was confirmed
+      const base = get("monthly_base_cents") ?? get("monthly_income") ?? need_("monthly_base_cents"); const amount = cents(base.value); if (amount < 0n) throw new RangeError("monthly_base_cents must be non-negative");
       const source = base.source === "borrower" ? "borrower" : "payroll_connection";
       trid = await captureSix(rt, ctx, application_id, "income", amount.toString(), source === "borrower" ? "borrower" : "payroll_connection", borrower_id); await recordLeadTridItem(rt, ctx, i, "income", source, amount.toString());
       const employer = { name: get("employer")?.value ?? null, position: get("position")?.value ?? null, start_date: get("start_date")?.value ?? null, pay_frequency: get("pay_frequency")?.value ?? null, source: get("employer")?.source ?? source };
@@ -678,8 +679,9 @@ export const TOOLS_32_2: readonly ToolDef[] = defineTools(PROCESS, BORROWER_APP,
     const reason = str(i, "reason") || "borrower_request"; let escalation: unknown = null;
     if (loanOf(i, ctx) && !appOf(i, ctx)) escalation = await delegate(rt, ctx, "4.3", "human.transfer", { loan_id: loanOf(i, ctx), reason, utterance: str(i, "utterance") || "human", payload: { reason, party_id: str(i, "party_id") || null, card_instance_id: cardId(i) } });
     else if (str(i, "lead_id") && str(i, "interaction_id")) escalation = await delegate(rt, ctx, "20.3", "deliverDisclosure", { op: "transfer_to_human", lead_id: str(i, "lead_id"), interaction_id: str(i, "interaction_id"), reason });
-    else escalation = rt.escalations.open({ kind: "human_agent", ...(loanOf(i, ctx) ? { loanId: loanOf(i, ctx) } : {}), ...(appOf(i, ctx) ? { applicationId: appOf(i, ctx) } : {}), payload: { reason, party_id: str(i, "party_id") || null, card_instance_id: cardId(i), source: "borrower_app" } }, ctx.actor);
-    ctx.events.append({ type: "human.transfer.requested", ...(loanOf(i, ctx) ? { loanId: loanOf(i, ctx) } : {}), ...(appOf(i, ctx) ? { applicationId: appOf(i, ctx) } : {}), actor: ctx.actor, payload: { reason, party_id: str(i, "party_id") || null, channel: str(i, "channel") || "app", card_instance_id: cardId(i), requested_at: ctx.now } });
+    else escalation = rt.escalations.open({ kind: "human_agent", ...(loanOf(i, ctx) ? { loanId: loanOf(i, ctx) } : {}), ...(appOf(i, ctx) ? { applicationId: appOf(i, ctx) } : {}), payload: { reason, party_id: str(i, "party_id") || null, card_instance_id: cardId(i), source: "borrower_app", transcript_ref: str(i, "transcript_ref") || null } }, ctx.actor);
+    // 32.16 §3.7: a turn's transfer (the third miss on a card) names the transcript it came from
+    ctx.events.append({ type: "human.transfer.requested", ...(loanOf(i, ctx) ? { loanId: loanOf(i, ctx) } : {}), ...(appOf(i, ctx) ? { applicationId: appOf(i, ctx) } : {}), actor: ctx.actor, payload: { reason, party_id: str(i, "party_id") || null, channel: str(i, "channel") || "app", card_instance_id: cardId(i), requested_at: ctx.now, transcript_ref: str(i, "transcript_ref") || null } });
     const e = escalation as { id?: unknown; escalation_id?: unknown } | null;
     return ok("human.request", { reason, escalation_id: e?.id ?? e?.escalation_id ?? null, requested_at: ctx.now });
   }, { guardrails: [never("HUMAN_PATH_ALWAYS_OPEN", "20.3 rule 12 / 01 §1.1: a request for a person is never refused", (i) => flag(i, "deny_transfer"), "a request for a person is never refused")] }),

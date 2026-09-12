@@ -50,6 +50,9 @@ import { BorrowerStreamHub } from "./stream.ts";
 import { BorrowerCommands } from "./commands.ts";
 import { BorrowerOidc } from "./oidc.ts";
 import { createTalkRoutes, TALK_PATH, type TalkOptions, type TalkRoutes } from "./talk.ts";
+import { AnthropicLlm, type LlmEffort } from "./agent/llm.ts";
+import { AgentTurnRunner } from "./agent/turn.ts";
+import type Anthropic from "@anthropic-ai/sdk";
 import { createBorrowerChannels, type BorrowerChannels } from "./channels.ts";
 import { BorrowerFlows } from "./flows/index.ts";
 import { entryPartner, isSupermortgage } from "./partner.ts";
@@ -71,6 +74,8 @@ export interface BorrowerRouterOptions {
   readonly truv?: IncomeConnectPort;
   /** Talk (talk.ts): the conversational entry's model — ANTHROPIC_API_KEY / TALK_MODEL from the environment when unset. */
   readonly talk?: TalkOptions | undefined;
+  /** 32.16 DELTA-23: the agent turn's model (agent/turn.ts) — ANTHROPIC_API_KEY / LLM_MODEL (fallback TALK_MODEL) / LLM_EFFORT / LLM_PROMPT_VERSION from the environment when unset; `client` is a scripted Messages API client (tests). Without a key or a client the placeholder reply stands. */
+  readonly llm?: LlmOptions | undefined;
   /** HMAC key for signed document URLs; random per process when unset (URLs then die with the process, which is fine for short-lived links). */
   readonly urlSecret?: string;
   readonly returnUrlBase?: string;
@@ -98,7 +103,10 @@ export interface BorrowerRouter {
   /** 32.14 §4: SMS and voice entry on the same lead (src/runtime/borrower/channels.ts) — the two telephony webhooks and the number → lead key. */
   readonly talk: TalkRoutes;
   readonly channels: BorrowerChannels;
+  /** 32.16 DELTA-23: the agent turn runner, or null when no model is configured (the placeholder reply stands). */
+  readonly agent: AgentTurnRunner | null;
 }
+export interface LlmOptions { readonly apiKey?: string | undefined; readonly model?: string | undefined; readonly effort?: LlmEffort | undefined; readonly promptVersion?: string | undefined; readonly client?: Anthropic | undefined }
 
 const MAX_BODY = 32 * 1024 * 1024;
 export const DOCUMENT_URL_MINUTES = 5;
@@ -181,6 +189,14 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
   const channels = createBorrowerChannels({ runtime, logger, auth, ui, flows, commands, telephony: opts.telephonyWebhooks, nonProduction, defaultPartnerId });
   // Talk: the anonymous minute and sign-in as one conversation with Claude on the same tools (./talk.ts); 503 TALK_NOT_CONFIGURED without the key
   const talk = createTalkRoutes({ runtime, logger, auth, ui, flows, commands, leads, nonProduction, defaultPartnerId, talk: opts.talk });
+  // 32.16 DELTA-23: the agent turn — Claude on the 32.16 bus tools in the placeholder's slot (agent/turn.ts); without a key (or a scripted client) the placeholder stands and the server says so
+  const llmKey = (opts.llm?.apiKey ?? process.env["ANTHROPIC_API_KEY"] ?? "").trim();
+  const agent: AgentTurnRunner | null = llmKey || opts.llm?.client
+    ? new AgentTurnRunner({ runtime, ui, reader, flows, logger, hub, promptVersion: opts.llm?.promptVersion ?? process.env["LLM_PROMPT_VERSION"], partner: (ctx) => partnerFor(ctx),
+        llm: new AnthropicLlm({ apiKey: llmKey, model: opts.llm?.model ?? process.env["LLM_MODEL"] ?? process.env["TALK_MODEL"], effort: opts.llm?.effort ?? (process.env["LLM_EFFORT"] as LlmEffort | undefined), client: opts.llm?.client, logger }) })
+    : null;
+  if (agent) commands.agentTurn = (req) => agent.run(req.ctx.party.id, req);
+  else logger.warn("borrower.agent.not_configured", { reason: "ANTHROPIC_API_KEY is unset: the thread answers the copy library's placeholder reply (32.16 DELTA-23)" });
 
   const send = (res: ServerResponse, status: number, shape: ShapeName, body: unknown): void => { res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }); res.end(toJson(serialize(shape, body))); };
   const sessionBody = (r: { token: string; session: SessionRow; party: { id: string; party_type: string; legal_name: string } }) =>
@@ -215,7 +231,7 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
    * `ensureOrganicApplication`, so 3-entry's E3 asks the goal), then `flows.sessionOpened` (32.3 E1/E2: the disclosure is the first assistant content).
    * A one-time code is not an account door: a code sign-in on a fresh e-mail stays a lead-stage party (32.3 T15, 32.14 DELTA-16 — unchanged).
    */
-  async function landSession(req: IncomingMessage, opened: { session: SessionRow; party: { id: string } }, at: string, channel: "app" | "sms", door: "account" | "code"): Promise<void> {
+  async function landSession(req: IncomingMessage, opened: { session: SessionRow; party: { id: string }; token?: string }, at: string, channel: "app" | "sms", door: "account" | "code"): Promise<void> {
     await ui.conversationFor(opened.party.id);
     const lead_id = await leads.linkAtVerify(req, opened.party.id, at);
     if (door === "account") {
@@ -223,6 +239,18 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
       if (organic.created) logger.info("borrower.session.organic_application", { session_id: opened.session.session_id, party_id: opened.party.id, application_id: organic.application_id, lead_id: organic.lead_id });
     }
     await flows.sessionOpened({ party_id: opened.party.id, session_id: opened.session.session_id, channel, auth_method: opened.session.auth_method, at, lead_id });
+    // 32.16 §2.0 "the first turn": through the account door the agent turn runs with no borrower text — the model greets and asks the goal in its own words (a lead's facts are in its context; no entry.resumed is posted by the turn). Queued per party behind the flows' session hooks; never blocks the account response.
+    if (door === "account" && agent && channel === "app") firstTurn(req, opened, at).catch((e) => logger.error("borrower.agent.first_turn.failed", { party_id: opened.party.id, error: e instanceof Error ? e.message : String(e) }));
+  }
+  async function firstTurn(req: IncomingMessage, opened: { session: SessionRow; party: { id: string }; token?: string }, at: string): Promise<void> {
+    const ip = ipOf(req); const userAgent = uaOf(req);
+    await agent!.run(opened.party.id, async () => {
+      await flows.settle();   // the session hooks (the disclosure row, the goal card) land first
+      const [party, subjects] = await Promise.all([auth.parties.get(opened.party.id), auth.parties.subjectsOf(opened.party.id)]); if (!party) return null;
+      const ctx: BorrowerContext = { session: opened.session, party, subjects, token: opened.token ?? "", ip, userAgent };
+      const conv = await ui.conversationFor(party.id); const subject = subjects[0] ?? null;
+      return { ctx, conversation_id: conv.conversation_id, message_id: null, text: "", channel: "app", subject, routed_to: subject?.stage === "servicing" ? "borrower-comms" : "intake", now: at };
+    });
   }
   /**
    * 32.16 §2.0 / 01 §5: a money command refused for want of a fresh code sends one — to the mobile when one is on file (verified by a code when it was
@@ -775,5 +803,5 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     }
     return true;
   }
-  return { handle, auth, ui, stripe, blobs, truv, hub, commands, reader, flows, oidc: oidcPort, channels, talk };
+  return { handle, auth, ui, stripe, blobs, truv, hub, commands, reader, flows, oidc: oidcPort, channels, talk, agent };
 }

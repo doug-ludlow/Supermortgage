@@ -14,6 +14,7 @@ import { api, ApiRequestError } from "@/lib/api/client";
 import { copy, copyOptions } from "@/lib/copy";
 import { SHOW_FAKE_MARKERS } from "@/lib/env";
 import { SignIn } from "./SignIn";
+import { FooterDisclosure } from "./FooterDisclosure";
 
 type State = { kind: "loading" } | { kind: "sign_in" } | { kind: "refused"; copyKey: string; offerSignIn: boolean } | { kind: "resolved" };
 
@@ -87,6 +88,7 @@ export function DeepLink({ token, navigate }: { token: string; navigate?: (url: 
           </section>
         ) : null}
       </main>
+      <FooterDisclosure />
     </div>
   );
 }

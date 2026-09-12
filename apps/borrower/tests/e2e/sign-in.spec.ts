@@ -91,6 +91,7 @@ test.describe("32.16 §2.0 — Sign in from the header (32.14 S6)", () => {
     await expect(page.getByTestId("thread")).toHaveCount(0);
     await expect(page.getByTestId("action-bar")).toHaveCount(0);
     await expect(page.getByTestId("talk-to-person")).toHaveCount(0);
+    await expect(page.getByTestId("footer-disclosure")).toContainText("This chat is AI-powered.");   // 32.16 §1 principle 8: the footer is the disclosure on the sign-in screen too
     await axeClean(page);
     await signInWithPassword(form, "nope");
     await expect(form.getByRole("alert")).toHaveText(copy("auth.password_wrong"));
@@ -129,7 +130,7 @@ test.describe("32.14 S5 — deep links and the return page", () => {
     await axeClean(page);
     await signInWithPassword(form);
     await page.waitForURL(/\/app\?card=card-r3-truv$/);
-    await expect(page.getByTestId("pinned-ask")).toHaveAttribute("data-pinned-card", "card-r3-truv");
+    await expect(page.locator('[data-rail-card="card-r3-truv"]')).toHaveAttribute("data-expanded", "true");   // 32.16 §2.2: focused and expanded on the rail (the sheet, on a phone)
     await expect(page.locator('article[data-card-id="card-r3-truv"]')).toBeInViewport();
     expect(calls.filter((c) => c.path === "v1/borrower/deeplink/tok-card")).toHaveLength(2);
     const signIn = calls.find((c) => c.path === "v1/borrower/auth/account")!;
@@ -146,7 +147,7 @@ test.describe("32.14 S5 — deep links and the return page", () => {
     await fake.getByLabel(copy("auth.email.field")).fill("maya@example.com");
     await fake.getByRole("button", { name: googleLabel }).click();
     await page.waitForURL(/\/app\?card=card-r3-truv$/);
-    await expect(page.getByTestId("pinned-ask")).toHaveAttribute("data-pinned-card", "card-r3-truv");
+    await expect(page.locator('[data-rail-card="card-r3-truv"]')).toHaveAttribute("data-expanded", "true");
     const start = calls.find((c) => c.path === "v1/borrower/auth/oidc" && c.body.action === "start")!;
     expect(start.body).toMatchObject({ provider: "google", fake: { email: "maya@example.com", email_verified: true } });
     expect(String(start.body.redirect_uri)).toMatch(/\/app\/auth\/google\/callback$/);
@@ -175,7 +176,7 @@ test.describe("32.14 S5 — deep links and the return page", () => {
   test("/return/{vendor}/{card} lands on /app with the card pinned; the ConnectCard's state is the API's, not the return's", async ({ page }) => {
     await page.goto("/app/return/truv/card-r3-truv");
     await page.waitForURL(/\/app\?card=card-r3-truv$/);
-    await expect(page.getByTestId("pinned-ask")).toHaveAttribute("data-pinned-card", "card-r3-truv");
+    await expect(page.locator('[data-rail-card="card-r3-truv"]')).toHaveAttribute("data-expanded", "true");
     const truv = page.locator('article[data-card-id="card-r3-truv"]');
     await expect(truv).toBeInViewport();
     await expect(truv.getByTestId("connect-state")).toContainText("Not started");

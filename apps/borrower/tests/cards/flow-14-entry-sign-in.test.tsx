@@ -18,7 +18,7 @@ import { GoogleCallback } from "@/components/shell/GoogleCallback";
 import { ReturnRedirect } from "@/components/shell/ReturnRedirect";
 import { Header } from "@/components/shell/Header";
 import { AddMobilePrompt } from "@/components/shell/AddMobile";
-import { Thread } from "@/components/shell/Thread";
+import { Thread, currentAsk } from "@/components/shell/Thread";
 import { accountSignIn } from "@/lib/api/account";
 import { PENDING_DEEP_LINK } from "@/lib/auth/passkey";
 import type { AnyCardInstance } from "@/lib/types/cards";
@@ -189,7 +189,7 @@ describe("32.14 S5 — deep links (T16) and the vendor return", () => {
     vi.mocked(api.deeplink).mockRejectedValueOnce(apiError(403, "PARTY_SCOPE", "error.not_yours"));
     render(<DeepLink token="theirs" navigate={navigate} />);
     expect(await screen.findByRole("alert")).toHaveTextContent(copy("error.not_yours"));
-    expect(screen.queryByRole("link")).toBeNull();
+    expect(within(screen.getByTestId("deep-link-refused")).queryByRole("link")).toBeNull();   // the footer's links (32.16 §1 principle 8) are outside the refusal
     expect(navigate).not.toHaveBeenCalled();
     expect(document.body.textContent).not.toContain("PARTY_SCOPE");
   });
@@ -207,16 +207,18 @@ const msg = (over: Partial<ThreadMessage>): ThreadMessage => ({ message_id: "m-1
 const threadProps = (messages: ThreadMessage[], cards: Record<string, AnyCardInstance> = {}) => ({ messages, cards, timezone: TZ, partnerLegalName: "Partner Bank", showSubjectLabels: false, wide: false, cardProps: { onOpen: noop, onLaunchVendor: async () => ({ vendor_session_id: "vs-FAKE" }), onUpload: async () => ({ document_id: "doc-FAKE" }) }, resolve: async () => {}, cardErrors: {} });
 
 describe("32.14 — the thread: ?card= pins, the passkey offer line", () => {
-  it("pinnedId makes that card the pinned ask over the newest pending one; a resolved card falls back", () => {
+  it("?card= makes that card the current ask (focused on the rail) over the newest pending one; a resolved card falls back — and the thread shows each card as a reference chip, never a card (32.16 §2.1)", () => {
     const older = makeCard("ChoiceCard", { title: "Older ask", options: [{ id: "a", label: "A" }], command: "x", command_args_by_option: {} }, { card_instance_id: "card-old", created_at: "2026-10-19T10:00:00Z" });
     const newer = makeCard("ChoiceCard", { title: "Newer ask", options: [{ id: "a", label: "A" }], command: "x", command_args_by_option: {} }, { card_instance_id: "card-new", created_at: "2026-10-19T12:00:00Z" });
     const cards = { "card-old": older, "card-new": newer } as Record<string, AnyCardInstance>;
     const messages = [msg({ message_id: "m-old", card_instance_id: "card-old" }), msg({ message_id: "m-new", at: "2026-10-19T12:00:00Z", card_instance_id: "card-new" })];
-    const { rerender } = render(<Thread {...threadProps(messages, cards)} pinnedId="card-old" />);
-    expect(screen.getByTestId("pinned-ask")).toHaveAttribute("data-pinned-card", "card-old");
-    expect(screen.getByTestId("pinned-ask")).toHaveTextContent("Older ask");
-    rerender(<Thread {...threadProps(messages, { ...cards, "card-old": { ...older, status: "resolved" } as AnyCardInstance })} pinnedId="card-old" />);
-    expect(screen.getByTestId("pinned-ask")).toHaveAttribute("data-pinned-card", "card-new");
+    expect(currentAsk(cards, undefined, "card-old")?.card_instance_id).toBe("card-old");
+    expect(currentAsk({ ...cards, "card-old": { ...older, status: "resolved" } as AnyCardInstance }, undefined, "card-old")?.card_instance_id).toBe("card-new");
+    render(<Thread {...threadProps(messages, cards)} currentAskId="card-old" />);
+    expect(screen.queryAllByRole("article")).toHaveLength(0);
+    const chips = screen.getAllByTestId("reference-chip");
+    expect(chips.map((c) => c.getAttribute("data-card-id")).sort()).toEqual(["card-new", "card-old"]);
+    expect(chips.find((c) => c.getAttribute("data-card-id") === "card-old")).toHaveTextContent("Older ask →");
   });
   it("T12 (docs/ux/17 §0.4): a {{copy:auth.passkey.offer}} line, should one ever arrive, renders as plain text with no action", () => {
     render(<Thread {...threadProps([msg({ body_text: "{{copy:auth.passkey.offer}}" })])} />);

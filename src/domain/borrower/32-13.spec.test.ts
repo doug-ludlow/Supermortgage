@@ -164,7 +164,7 @@ export function fleschKincaid(text: string): { grade: number; words: number; sen
 }
 
 // ---------------------------------------------------------------- the shell: the built Next.js app on this test's API, driven with Playwright
-interface Locator { getByTestId(id: string): Locator; allInnerTexts(): Promise<string[]>; evaluateAll<T>(fn: (els: unknown[]) => T): Promise<T>; count(): Promise<number>; first(): Locator; nth(i: number): Locator; click(o?: object): Promise<void>; boundingBox(): Promise<{ x: number; y: number; width: number; height: number } | null>; textContent(): Promise<string | null>; isVisible(): Promise<boolean>; waitFor(o?: { state?: string; timeout?: number }): Promise<void>; getAttribute(n: string): Promise<string | null>; locator(sel: string, o?: { hasText?: string | RegExp }): Locator; all(): Promise<Locator[]>; innerText(): Promise<string> }
+interface Locator { getByTestId(id: string): Locator; fill(value: string): Promise<void>; allInnerTexts(): Promise<string[]>; evaluateAll<T>(fn: (els: unknown[]) => T): Promise<T>; count(): Promise<number>; first(): Locator; nth(i: number): Locator; click(o?: object): Promise<void>; boundingBox(): Promise<{ x: number; y: number; width: number; height: number } | null>; textContent(): Promise<string | null>; isVisible(): Promise<boolean>; waitFor(o?: { state?: string; timeout?: number }): Promise<void>; getAttribute(n: string): Promise<string | null>; locator(sel: string, o?: { hasText?: string | RegExp }): Locator; all(): Promise<Locator[]>; innerText(): Promise<string> }
 interface Page { on(event: string, fn: (x: { text(): string; message?: string }) => void): void; goto(url: string, o?: { waitUntil?: string; timeout?: number }): Promise<unknown>; reload(o?: { waitUntil?: string }): Promise<unknown>; locator(sel: string, o?: { hasText?: string | RegExp }): Locator; getByTestId(id: string): Locator; evaluate<T>(fn: string): Promise<T>; viewportSize(): { width: number; height: number } | null; waitForTimeout(ms: number): Promise<void>; content(): Promise<string>; close(): Promise<void>; waitForSelector(sel: string, o?: { timeout?: number; state?: string }): Promise<unknown> }
 interface Context { addCookies(c: object[]): Promise<void>; newPage(): Promise<Page>; close(): Promise<void> }
 interface Browser { newContext(o: object): Promise<Context>; close(): Promise<void> }
@@ -206,6 +206,11 @@ async function pageFor(token: string | null, width: number, path = "/app"): Prom
   (page as Page & { logs: string[] }).logs = logs;
   await page.goto(`${appBase}${path}`, { waitUntil: "load", timeout: 60_000 });   // never networkidle: the SSE stream stays open
   return { page, ctx };
+}
+/** 32.16 §2.2: a card's home is its rail row; expanding it (client state) renders the existing component. The current ask is open by default. */
+async function expandRail(page: Page, cardId: string): Promise<void> {
+  const row = page.locator(`[data-rail-card="${cardId}"]`).first(); await row.waitFor({ timeout: 30_000 });
+  if ((await row.getAttribute("data-expanded")) !== "true") await row.locator("> button").click();
 }
 async function inViewport(page: Page, testId: string): Promise<boolean> {
   const box = await page.getByTestId(testId).boundingBox(); const vp = page.viewportSize()!;
@@ -463,6 +468,7 @@ test("32.13-T12: Degraded vendor — Given Truv returns an error, then the `Conn
   assert.ok(upload, "an UploadCard is the fallback"); assert.equal(upload.copy_key, "income.upload.fallback"); assert.equal(upload.command_ref, "document.upload");
   // in the shell: the ConnectCard reads failed with the documents path, the code nowhere on the page
   const { page, ctx } = await openShell(tok, 1280);
+  await expandRail(page, cardId); await expandRail(page, upload.card_instance_id);
   const article = page.locator(`article[data-card-id="${cardId}"]`).first(); await article.waitFor({ timeout: 30_000 });
   const text = await article.innerText(); assert.match(text, /Couldn't connect|documents instead/i); assert.ok(!/TRUV_ERR|ITEM_LOGIN_REQUIRED|provider outage/.test(await page.content()), "no vendor code on the page");
   assert.ok((await page.locator(`article[data-card-id="${upload.card_instance_id}"]`).count()) >= 1, "the UploadCard renders");
@@ -618,12 +624,14 @@ test("32.13-T8: Talk to a person — Given any screen, then a control emitting `
   const s = await signIn(J.A);
   const requested = async () => Number((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM loan_events WHERE type = 'human.transfer.requested' AND (application_id = $1 OR loan_id = $2)`, [J.j.appId, J.j.loanId]))[0]!.n);
   const requestedBefore = await requested();
-  // 1280: the control is in the viewport on the thread, on the record-open state, and after the thread grows
+  // 32.16 §1 principle 8 (docs/ux/17, amended): there is NO "Talk to a person" control while no person exists — the borrower asks in words and
+  // the same `human.request` command runs from the input bar (commands.ts: "human" → human.request → human.transfer.requested)
   const { page, ctx } = await openShell(s.token, 1280);
-  assert.ok(await inViewport(page, "talk-to-person"), "Talk to a person is visible without scrolling at 1280");
-  await page.getByTestId("talk-to-person").click(); await page.waitForTimeout(1500); await settle();
-  assert.equal(await requested(), requestedBefore + 1, "the control emits human.request → human.transfer.requested");
-  assert.ok(await inViewport(page, "talk-to-person"), "still visible after the thread grew");
+  assert.equal(await page.getByTestId("talk-to-person").count(), 0, "no Talk to a person control (32.16 §1 principle 8)");
+  assert.ok(await inViewport(page, "action-bar"), "the input bar is in the viewport at 1280");
+  await page.getByTestId("action-bar").locator("input[type=text], input:not([type])").first().fill("human"); await page.getByTestId("send").click(); await page.waitForTimeout(1500); await settle();
+  assert.equal(await requested(), requestedBefore + 1, "the word emits human.request → human.transfer.requested");
+  assert.ok(await inViewport(page, "action-bar"), "still in the viewport after the thread grew");
   // the person joins: 20.3's warm transfer on the session's interaction, then the delta op `human_joined` → human.transfer.completed
   const lead = await entity("leads", J.j.appId); const interactions = (lead?.["interactions"] as { interaction_id: string }[] | undefined) ?? [];
   leadInteraction = interactions.at(-1)!.interaction_id; assert.ok(leadInteraction, "the session opened a 20.3 interaction");
@@ -636,13 +644,16 @@ test("32.13-T8: Talk to a person — Given any screen, then a control emitting `
   assert.equal(person.length, 1, "PersonCard{human_agent} for the person who joined"); assert.equal(person[0]!.copy_key, "person.human_agent"); assert.equal(person[0]!.status, "resolved", "no action: filed as read");
   assert.equal((await cardsOf(J.partyB, `AND kind = 'PersonCard'`)).filter((c) => c.props["role"] === "human_agent" && c.props["name"] === "Sam").length, 1, "the co-borrower sees the same person");
   await page.reload({ waitUntil: "load" }); await page.waitForSelector('[data-testid="thread"] .sm-msg', { timeout: 30_000 });
+  // 32.16 §2.2: the person's card lives under People on the rail (expanded on click); the thread carries its reference
+  await expandRail(page, person[0]!.card_instance_id);
   const card = page.locator('article[data-card-kind="PersonCard"]', { hasText: "Sam" }); assert.ok((await card.count()) >= 1, "the PersonCard for the person who joined renders in the shell (beside 32.5's pending-name card)");
   assert.match(await card.first().innerText(), /A person on your loan/);
-  assert.ok(await inViewport(page, "talk-to-person"));
+  assert.equal(await page.getByTestId("talk-to-person").count(), 0);
   await ctx.close();
-  // 390: the same control, in the viewport, with the status strip
+  // 390: no control either; the input bar in the viewport, with the status strip
   const m = await openShell(s.token, 390);
-  assert.ok(await inViewport(m.page, "talk-to-person"), "Talk to a person is visible without scrolling at 390");
+  assert.equal(await m.page.getByTestId("talk-to-person").count(), 0, "no Talk to a person control at 390");
+  assert.ok(await inViewport(m.page, "action-bar"), "the input bar is in the viewport at 390");
   assert.ok(await m.page.getByTestId("status-strip").isVisible());
   await m.ctx.close();
   // the serviced loan: 11.3's contact log records the transfer to a person (the platform's `human_transferred`) — the same PersonCard on the loan
@@ -689,6 +700,9 @@ test("32.13-T10: Mobile parity — Given every card kind at 390 px, then it is o
   assert.deepEqual(await page.locator('[data-testid="card-error"]').evaluateAll((els: unknown[]) => (els as { getAttribute(n: string): string | null }[]).map((e) => `${e.getAttribute("data-card-kind")}: ${e.getAttribute("data-error")}`)), [], "every card renders");
   assert.ok(await page.evaluate<boolean>("document.documentElement.scrollWidth <= 390 && document.body.scrollWidth <= 390"), "the page never scrolls sideways");
   const INFORMATIONAL = new Set(["StatusCard", "NoticeCard", "PersonCard", "HandoffCard", "ChecklistCard"]);
+  // 32.16 §2.2: on a phone the bottom sheet is the rail — every card kind has a row there; expanding it renders the component
+  await strip.click(); await page.waitForSelector('[data-testid="record"][data-open="true"]', { timeout: 15_000 });
+  for (const [kind] of KINDS) await expandRail(page, ids.get(kind)!);
   for (const [kind] of KINDS) {
     const article = page.locator(`article[data-card-id="${ids.get(kind)!}"]`).first();
     assert.ok((await page.locator(`article[data-card-id="${ids.get(kind)!}"]`).count()) >= 1, `${kind} renders`); await article.waitFor({ timeout: 15_000 });
@@ -698,8 +712,7 @@ test("32.13-T10: Mobile parity — Given every card kind at 390 px, then it is o
     else assert.ok(await article.isVisible(), `${kind} is visible`);
     if (!INFORMATIONAL.has(kind)) { const ctl = article.locator("button:not([disabled]), a[href], input:not([disabled]):not([type=file]), select:not([disabled]), textarea:not([disabled])").first(); const cb = await ctl.boundingBox(); assert.ok(cb && cb.x >= 0 && cb.x + cb.width <= 390 + 1 && cb.height >= 16, `${kind}'s control is reachable (${JSON.stringify(cb)})`); }
   }
-  // the strip opens the Record as a bottom sheet with its sections
-  await strip.click(); await page.waitForSelector('[data-testid="record"][data-open="true"]', { timeout: 15_000 });
+  // the sheet (opened above by the strip) carries the rail's sections
   assert.ok(await page.locator('[data-testid="record"] [data-record-section="status"]').isVisible());
   await ctx.close();
 });
@@ -784,7 +797,7 @@ test("32.13-T15: Nothing-needed — Given zero `owner=you` items, then the nothi
   const { page, ctx } = await openShell(s.token, 1280);
   const none = page.getByTestId("needs-none"); await none.waitFor({ timeout: 30_000 });
   assert.equal((await none.innerText()).trim(), needsNone.text.trim());
-  assert.equal(await page.locator('[data-testid="pinned-ask"]:not([hidden])').count(), 0, "no pinned ask");
+  assert.equal(await page.locator('[data-testid="waiting-on-you"]').count(), 0, "no waiting-on-you line (32.16 §2.1)"); assert.equal(await page.locator('[data-testid="record"] [data-record-section="needed"] [data-rail-card]').count(), 0, "no row under Needed from you");
   await ctx.close();
   const m = await openShell(s.token, 390); assert.match((await m.page.getByTestId("strip-count").innerText()).trim(), /^0 /); await m.ctx.close();
 });

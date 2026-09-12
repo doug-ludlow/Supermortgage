@@ -119,6 +119,14 @@ platform with one id grammar, one registry, one audit and one kernel. The seam i
   every `*_cents` field revived to bigint on the way in (the wire form is a decimal string of cents). A loan-scoped
   command's events that name neither key are stamped with the scope's loan by the runtime (the kernel store defaults
   only the application key from the scope).
+- **One sweep, every minute.** `Runtime.sweep` (src/runtime/app.ts) is the scheduled pass both the Cloud Run job and
+  `POST /v1/sweep` take: the borrower flows' `tick` (2.x / 11.x daily sweeps, src/runtime/servicing.ts and delinquency.ts),
+  the daily refinance check (src/runtime/refi-daily.ts — once a day at/after 06:30 ET: the day's sheet through 20.4 from
+  the rate feed port of src/infra/integrations/rates.ts, the universe from `v_refi_universe`, `20.1 emitOfferReady{op=run}`
+  per partner program, whose `refi.trigger.run_completed` satisfies `SM_REFI_TRIGGER_DAILY` — the day's clock, armed on
+  the global subject by a `subject: "global"` override), the FAKE reviewers (src/infra/integrations/reviewers.ts, DELTA-30:
+  every pending human item older than the delay approved through its owning tool as `human:FAKE:<role>`), then the breach
+  pass. Both daily passes commit through the command bus, so what they satisfy is never breached by the pass that follows.
 - **Two runtime bridges, reported as gaps.** `POST /v1/applications/{id}/disclosures/le` renders, MLO-approves,
   delivers and records receipt of the initial LE through 21.2's `LoanEstimateService` in one application-scoped
   transaction, because 21.2's tool surface (assembleFees / renderH24 / …) has no delivery or receipt tool while 21.4's
@@ -137,4 +145,13 @@ platform with one id grammar, one registry, one audit and one kernel. The seam i
   grammar over the whole log: keyed by the application alone before 30.2 stages the loan, by both ids through the
   hand-off, by the loan after, with the prior loan's record never naming the application except for the one
   `refi.opportunity.converted` event that links them.
+- **A second journey, the purchase.** src/runtime/purchase-lifecycle.test.ts drives the fixture
+  src/runtime/borrower/fixtures/journey-purchase.ts (same shape as journey.ts: `PARTNER_ID`, `tool()`, `phases()`) on its
+  own database (`PURCHASE_TEST_DATABASE_URL`, dropped and created per run): an organic "still looking" lead (20.3) → the
+  application with the property to be determined → the signed contract through 22.1 and 32.2's `application.confirmField`
+  (`purchase_contracts`) → the six items and the Reg Z clock → LE / intent / lock (21.2, 21.4, 29.1) → the traditional
+  appraisal and the Reg B copy (24.1, 24.2) → DU and the decision (23.x) → MI (24.6) → title (24.4) → the RON closing and
+  the CD (26.2, 25.2) → the eNote (26.1, 26.2) → wet funding (26.3) → `POST /v1/applications/{id}/fund` (30.2) → 30.4 —
+  and lists every card the 32.x flows raised with its docs/ux/17 §2.3 case. Steps the tool surface does not carry yet are
+  listed as gaps in that file's header, never faked.
 

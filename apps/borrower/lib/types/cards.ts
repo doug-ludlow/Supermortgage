@@ -78,6 +78,19 @@ export type CardCreatedBy =
   | `human:${string}`
   | "system";
 
+/**
+ * 32.16 §3.4 (DELTA-25): values the model proposed into a pending card (`card.propose`) — strings in cents or enum ids,
+ * `source: borrower_stated_unconfirmed` until the borrower taps Confirm on the thread's chip (which resolves the card
+ * through `resolveCard` with `evidence.source = borrower_stated`). Stored in `card_instances.props.proposal`; resolves nothing.
+ */
+export type CardProposal = {
+  fields?: { path: string; value: string; source: "borrower_stated_unconfirmed" }[];
+  option_id?: string;
+  utterance_message_id?: Uuid;
+  utterance_id?: string;
+  proposed_at?: Timestamptz;
+};
+
 /** 01 §3 `CardBase`, verbatim field set. */
 export type CardBase = {
   card_instance_id: Uuid;
@@ -123,6 +136,8 @@ export type ChoiceCardProps = {
   /** Options that record the choice and issue no command (Not yet · Wait · Keep floating). */
   no_command_options?: string[];
   copy_tokens?: Record<string, string | string[]>;   // 32.8: a token used twice in the sentence ({{money}} … {{money}}) is an array consumed in order
+  /** 32.16 §3.4: the model's proposed option, read back as a confirm chip in the thread. */
+  proposal?: CardProposal;
 };
 export type ChoiceCardEvidence = { option_id: string; tapped_at: Timestamptz; disclosure_version_shown?: string };
 
@@ -150,6 +165,8 @@ export type ConfirmCardProps = {
   copy_tokens?: Record<string, string>;
   helper_copy_key?: string;
   options?: { id: string; label: string; is_primary?: boolean }[];
+  /** 32.16 §3.4: the model's proposed values (cents or enum ids), read back as a confirm chip in the thread. */
+  proposal?: CardProposal;
 };
 export type ConfirmCardEvidence = {
   fields: { path: string; value_confirmed: string; source: ConfirmSource; confirmed_at: Timestamptz }[];
@@ -471,7 +488,7 @@ export type ProfileField = {
   input?: "text" | "number";
   statement?: string; // Form 1103 SCIF statement for language preference
 };
-export type ProfileCardProps = { title: string; fields: ProfileField[] };
+export type ProfileCardProps = { title: string; fields: ProfileField[]; /** 32.16 §3.4: the model's proposed answers, read back as a confirm chip. */ proposal?: CardProposal };
 export type ProfileCardEvidence = { fields: { path: string; value: string; answered_at: Timestamptz }[] };
 
 /** 3.19 DemographicsCard */

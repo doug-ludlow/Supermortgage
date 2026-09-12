@@ -22,18 +22,20 @@ const msg = (over: Partial<ThreadMessage>): ThreadMessage => ({ message_id: "m-1
 const threadProps = (messages: ThreadMessage[], cards: Record<string, AnyCardInstance> = {}) => ({ messages, cards, timezone: TZ, partnerLegalName: "Partner Bank", showSubjectLabels: false, wide: false, cardProps: { onOpen: noop, onLaunchVendor: async () => ({ vendor_session_id: "vs-FAKE" }), onUpload: async () => ({ document_id: "doc-FAKE" }) }, resolve: async () => {}, cardErrors: {} });
 
 describe("32.3 E2 — the automation disclosure (T1, T2)", () => {
-  it("renders the library sentence for {{copy:entry.disclosure.first}} with the partner's legal name and the automation marker, first in the thread", () => {
+  it("the {{copy:entry.disclosure.first}} row is the session's first row on the API and is NOT a line in the log (32.16 §2.0: the footer is the disclosure); the next line renders plainly, no sender label, no badge", () => {
     render(<Thread {...threadProps([msg({ message_id: "m-2", at: "2026-10-19T14:00:05.000Z", body_text: "{{copy:thread.assistant_placeholder.intake}}" }), msg({ body_text: "{{copy:entry.disclosure.first}}", automation_marker: true })])} />);
     const log = screen.getByRole("log"); const lines = within(log).getAllByText((_, el) => el?.className === "sm-msg-body");
-    expect(lines[0]).toHaveTextContent(copy("entry.disclosure.first", { "partner.legal_name": "Partner Bank" }));
-    expect(lines[0]).toHaveTextContent("working for Partner Bank");
-    expect(within(log).getByText("automated")).toBeInTheDocument();
+    expect(lines).toHaveLength(1);
+    expect(log.textContent).not.toContain(copy("entry.disclosure.first", { "partner.legal_name": "Partner Bank" }));
+    expect(log.textContent).not.toContain("working for Partner Bank");
+    expect(within(log).queryByText("automated")).toBeNull();
+    expect(lines[0]).toHaveTextContent(copy("thread.assistant_placeholder.intake"));
     expect(lines[0]!.textContent).not.toContain("{{copy:");
   });
   it("the 20.3 T11 reply line reads as the script, spoken lines carry the voice tag, and an unknown key stays visible", () => {
     render(<Thread {...threadProps([msg({ body_text: "{{copy:entry.disclosure.real_person}}", channel: "voice", voice_turn: true })])} />);
     expect(screen.getByText(/automated assistant\. I can bring a person in right now/)).toBeInTheDocument();
-    expect(screen.getAllByText("voice").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByTestId("provenance").some((p) => /voice/.test(p.textContent ?? ""))).toBe(true);   // provenance is an aria detail, not a visible row (32.16 §2.1)
     expect(renderMessageBody("{{copy:not.a.real.key}}").text).toBe("not.a.real.key");
     expect(renderMessageBody("{{copy:thread.card_affirmative_deep_link}} /d/abc").text).toMatch(/\/d\/abc$/);
     expect(renderMessageBody("plain words").copy_key).toBeNull();

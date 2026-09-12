@@ -14,14 +14,20 @@ export class PgConsoleStore implements ConsoleStore {
   private readonly db: Db;
   private readonly registry: TimerRegistry;
   private readonly agents: AgentRegistry;
-  constructor(db: Db, registry: TimerRegistry, agents: AgentRegistry) { this.db = db; this.registry = registry; this.agents = agents; }
+  /** DELTA-30: the FAKE reviewers the runtime runs (roles they fill, the delay) — a pending queue row one of them will fill says so; null when they are off. */
+  private readonly fakeReviewers: { readonly roles: readonly string[]; readonly delaySeconds: number } | null;
+  constructor(db: Db, registry: TimerRegistry, agents: AgentRegistry, opts: { fakeReviewers?: { readonly roles: readonly string[]; readonly delaySeconds: number } | null } = {}) { this.db = db; this.registry = registry; this.agents = agents; this.fakeReviewers = opts.fakeReviewers ?? null; }
 
   private async items(now: string, loanId?: string): Promise<QueueItem[]> {
     const lf = loanId ? " AND loan_id = $1" : "";
     const p = loanId ? [loanId] : [];
     const out: QueueItem[] = [];
-    for (const r of await this.db.query<Row>(`SELECT id, kind, owner_role, loan_id, severity, opened_at, payload FROM escalations WHERE completed_at IS NULL${lf} ORDER BY opened_at`, p))
-      out.push({ id: s(r["id"]), kind: "escalation", title: `${s(r["kind"])} escalation${(r["payload"] as Row)["command"] ? ` — ${s((r["payload"] as Row)["command"])}` : ""}`, ownerRole: s(r["owner_role"]), openedAt: s(r["opened_at"]), detail: r["payload"] as Row, ...(r["loan_id"] ? { loanId: s(r["loan_id"]) } : {}), ...(r["severity"] ? { severity: s(r["severity"]) } : {}) });
+    // DELTA-30: a pending item whose owner role a FAKE reviewer fills says so on the queue row (the FAKE approves it after the delay; FAKE_REVIEWERS=off leaves it to a person)
+    const fakeRoles = this.fakeReviewers?.roles ?? []; const fakeDelay = this.fakeReviewers?.delaySeconds ?? 0;
+    for (const r of await this.db.query<Row>(`SELECT id, kind, owner_role, loan_id, severity, opened_at, payload FROM escalations WHERE completed_at IS NULL${lf} ORDER BY opened_at`, p)) {
+      const fake = fakeRoles.includes(s(r["owner_role"])) && !/^sev[1-4]$/.test(s(r["kind"]));
+      out.push({ id: s(r["id"]), kind: "escalation", title: `${s(r["kind"])} escalation${(r["payload"] as Row)["command"] ? ` — ${s((r["payload"] as Row)["command"])}` : ""}${fake ? " — FAKE reviewer" : ""}`, ownerRole: s(r["owner_role"]), openedAt: s(r["opened_at"]), detail: fake ? { ...(r["payload"] as Row), fake_reviewer: { role: s(r["owner_role"]), approves_after_s: fakeDelay, marker: "FAKE" } } : (r["payload"] as Row), ...(r["loan_id"] ? { loanId: s(r["loan_id"]) } : {}), ...(r["severity"] ? { severity: s(r["severity"]) } : {}) });
+    }
     for (const r of await this.db.query<Row>(`SELECT id, kind, adapter, owner_role, loan_id, package, due_at, opened_at FROM human_portal_tasks WHERE status IN ('open','in_progress')${lf} ORDER BY due_at NULLS LAST, opened_at`, p))
       out.push({ id: s(r["id"]), kind: "portal_task", title: `${s(r["kind"])} (${s(r["adapter"])})`, ownerRole: s(r["owner_role"]), openedAt: s(r["opened_at"]), detail: r["package"] as Row, ...(r["loan_id"] ? { loanId: s(r["loan_id"]) } : {}), ...(r["due_at"] ? { dueAt: s(r["due_at"]) } : {}) });
     for (const r of await this.db.query<Row>(`SELECT n.id, n.template_code, n.loan_id, n.held_reason, n.produced_at FROM notices n WHERE n.status = 'held'${lf.replace("loan_id", "n.loan_id")} ORDER BY n.produced_at`, p))

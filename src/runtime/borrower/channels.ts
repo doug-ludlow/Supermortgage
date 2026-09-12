@@ -111,6 +111,8 @@ export function copyText(key: string, tokens: Readonly<Record<string, string>> =
   return line.text.replace(/\{\{([a-z0-9_.]+)\}\}/g, (all, k: string) => tokens[k] ?? all).replace(/\*([^*]+)\*/g, "$1");
 }
 export const copyOptions = (key: string): readonly string[] => copyLibrary().get(key)?.options ?? [];
+/** Every copy-library line as {key, text} — the utterance guard refuses a reply that is one of them verbatim (32.16 §3.5 check 2). */
+export const copyTemplates = (): readonly { key: string; text: string }[] => [...copyLibrary()].map(([key, l]) => ({ key, text: l.text }));
 
 // ---------------------------------------------------------------- the S1 steps as SMS/voice prompts and reply mappers (the app's chips, spelled out)
 interface Option { readonly id: string; readonly match: RegExp; }

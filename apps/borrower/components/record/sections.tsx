@@ -33,11 +33,24 @@ export function useHighlight(value: unknown): boolean {
   return on;
 }
 
-function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
+/**
+ * One rail section (32.16 §2.2): a heading that collapses and expands its body (client state; open by default), with an
+ * optional count or aside beside the title. Sections with nothing to show are not rendered by their callers (01 §1.4).
+ */
+export function Section({ id, title, aside, defaultOpen = true, children }: { id: string; title: string; aside?: ReactNode; defaultOpen?: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
-    <section className="sm-record-section" aria-labelledby={`rec-${id}`} data-record-section={id}>
-      <h2 id={`rec-${id}`}>{title}</h2>
-      {children}
+    <section className="sm-record-section" aria-labelledby={`rec-${id}`} data-record-section={id} data-open={open ? "true" : "false"}>
+      <h2 id={`rec-${id}`} className="sm-rail-h">
+        <button type="button" className="sm-rail-h-btn" aria-expanded={open} aria-controls={`rec-${id}-body`} onClick={() => setOpen((o) => !o)}>
+          <span className="sm-rail-caret" aria-hidden="true">{open ? "▾" : "▸"}</span>
+          <span>{title}</span>
+        </button>
+        {aside ? <span className="sm-rail-aside">{aside}</span> : null}
+      </h2>
+      <div id={`rec-${id}-body`} className="sm-rail-body" hidden={!open}>
+        {children}
+      </div>
     </section>
   );
 }
@@ -325,7 +338,7 @@ export function DatesSection({ r, link }: { r: BorrowerRecord; link: RecordLink 
 }
 
 // 7 Documents
-function docStatus(d: RecordDocument, tz: string): string {
+export function docStatus(d: RecordDocument, tz: string): string {
   switch (d.status) {
     case "received":
       return `Received ${d.received_at ? formatDate(d.received_at, tz) : ""}`.trim();
@@ -369,7 +382,7 @@ export function DocumentsSection({ r, link }: { r: BorrowerRecord; link: RecordL
 }
 
 // 8 People
-function personLine(p: RecordPerson): string {
+export function personLine(p: RecordPerson): string {
   const bits: string[] = [];
   if (p.nmlsr_id) bits.push(`NMLSR ID ${p.nmlsr_id}`);
   if (p.commission_state) bits.push(`Commissioned in ${p.commission_state}`);
@@ -381,7 +394,7 @@ function personLine(p: RecordPerson): string {
   }
   return bits.join(" · ");
 }
-const ROLE_LABEL: Record<RecordPerson["role"], string> = {
+export const ROLE_LABEL: Record<RecordPerson["role"], string> = {
   borrower: "Borrower",
   co_borrower: "Co-borrower",
   non_borrowing_spouse: "Non-borrowing spouse",

@@ -2,12 +2,13 @@
 
 /**
  * 32.16 §2.0 — the standalone account routes (/app/sign-up, /app/sign-in, /app/reset): the header chrome the deep-link and
- * Google callback pages use, and the one `Account` form. A session lands on /app (the thread, which opens with the disclosure
+ * Google callback pages use, the one `Account` form, and the disclosure footer (§1 principle 8). A session lands on /app (the thread, which opens with the disclosure
  * line and asks the goal).
  */
 import Link from "next/link";
 import { SHOW_FAKE_MARKERS } from "@/lib/env";
 import { Account, type AccountMode } from "./Account";
+import { FooterDisclosure } from "@/components/shell/FooterDisclosure";
 
 const ARIA: Record<AccountMode, string> = { sign_up: "Create your account", sign_in: "Sign in", reset: "Reset your password" };
 
@@ -27,6 +28,7 @@ export function AccountPage({ mode }: { mode: AccountMode }) {
       <main className="sm-page" aria-label={ARIA[mode]}>
         <Account mode={mode} />
       </main>
+      <FooterDisclosure />
     </div>
   );
 }

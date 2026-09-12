@@ -1,14 +1,13 @@
 "use client";
 
 /**
- * 32.14 S0 header (DELTA-14): the brand, the FAKE-mode banner, the loan switch, the partner's phone number and Sign in (S6 —
- * opens the sign-in screen under `auth.welcome_back`). The Record opener stays for the drawer breakpoint.
- *
- * No partner phone number in the header: the FAKE placeholder number was removed; a real one arrives with the telephony vendor.
+ * 32.16 §1 principle 8 — the header is the brand and Sign in, nothing else (the way Rocket's is): the brand, the FAKE-mode
+ * banner when the build shows FAKE markers, the loan switch for a party with more than one subject, the signed-in party's
+ * first name, and Sign in when there is no session. No e-mail, no assurance level, no sentence: the AI disclosure is the
+ * footer (`FooterDisclosure`). The rail opener stays for the drawer breakpoint (768–1023).
  */
 import type { BorrowerMe } from "@/lib/types/record";
 import { SHOW_FAKE_MARKERS } from "@/lib/env";
-
 
 export type HeaderProps = {
   fixturesMode: boolean;
@@ -52,9 +51,9 @@ export function Header({ fixturesMode, me, subject, onSubjectChange, streamLabel
       ) : null}
       <span className="sm-header-spacer" />
       {streamLabel ? <span className="sm-source">{streamLabel}</span> : null}
-      {me ? (
-        <span className="sm-source">
-          {me.first_name} · {me.level}
+      {me?.first_name ? (
+        <span className="sm-source" data-testid="header-name">
+          {me.first_name}
         </span>
       ) : null}
       {showSignIn ? (

@@ -178,3 +178,34 @@ test("satisfying a recurring timer re-arms it once for the next cycle (no re-arm
   const after = engine.byCode(def.code);
   assert.deepEqual(after.map((i) => i.status).sort(), ["armed", "satisfied"], `${def.code}: one satisfied instance and exactly one re-armed instance`);
 });
+
+test("a recurring row overridden with subject: \"global\" is the day's clock, not the trigger aggregate's: armed once by the first publish, left alone by a second, satisfied by any run's receipt, re-armed for the next day (20.1 SM_REFI_TRIGGER_DAILY)", () => {
+  const reg = loadRegistry();
+  reg.override("SM_REFI_TRIGGER_DAILY", { anchorField: "published_on", offset: "+1 calendar_days, 06:30 ET", subject: "global", why: "test: the 20.1 override (src/domain/leads-pricing/timers-20-1.ts)" });
+  assert.equal(reg.get("SM_REFI_TRIGGER_DAILY")!.subjectOverride, "global");
+  const clock = new FixedClock("2026-10-01T10:35:00.000Z"); const events = new MemoryEventStore(clock);
+  const engine = new TimerEngine(reg, events, { processes: ["20.1"] });
+  const publish = (id: string, at: string) => events.append({ type: "rate_sheet.published", actor: SYSTEM, occurredAt: at, aggregate: { kind: "rate_sheet", id }, payload: { rate_sheet_id: id, published_on: at.slice(0, 10), origination: true } });
+  const ran = (sheet: string, at: string) => events.append({ type: "refi.trigger.run_completed", actor: SYSTEM, occurredAt: at, aggregate: { kind: "rate_sheet", id: sheet }, payload: { run_id: `run-${at.slice(0, 10)}`, rate_sheet_id: sheet, origination: true } });
+  publish("rs-2026-10-01", "2026-10-01T10:35:00.000Z");
+  let all = engine.byCode("SM_REFI_TRIGGER_DAILY");
+  assert.equal(all.length, 1); assert.deepEqual(all[0]!.subject, { kind: "global", id: "*" }); assert.equal(all[0]!.loanId, undefined); assert.equal(all[0]!.dueAt, zonedEpochMs(D("2026-10-02"), "06:30", "America/New_York"));
+  publish("rs-2026-10-01-intraday", "2026-10-01T15:00:00.000Z");               // a ≥ 12.5 bps republish the same day: the day's clock is one instance
+  assert.equal(engine.byCode("SM_REFI_TRIGGER_DAILY").length, 1);
+  ran("rs-2026-10-01-intraday", "2026-10-01T15:10:00.000Z");                   // whichever sheet the run priced with satisfies the day's clock; recurring → re-armed for tomorrow 06:30
+  all = engine.byCode("SM_REFI_TRIGGER_DAILY");
+  assert.deepEqual(all.map((i) => i.status), ["satisfied", "armed"]); assert.equal(all[1]!.dueAt, zonedEpochMs(D("2026-10-02"), "06:30", "America/New_York")); assert.deepEqual(all[1]!.subject, { kind: "global", id: "*" });
+  publish("rs-2026-10-02", "2026-10-02T10:30:00.000Z");                        // tomorrow's first publish finds the re-armed clock and leaves it
+  assert.equal(engine.byCode("SM_REFI_TRIGGER_DAILY").length, 2);
+  ran("rs-2026-10-02", "2026-10-02T10:31:00.000Z");                            // and tomorrow's run satisfies it — nothing to breach at 06:30
+  all = engine.byCode("SM_REFI_TRIGGER_DAILY");
+  assert.deepEqual(all.map((i) => i.status), ["satisfied", "satisfied", "armed"]);
+  assert.equal(engine.evaluate("2026-10-02T10:31:00.000Z").filter((b) => b.instance.code === "SM_REFI_TRIGGER_DAILY").length, 0);
+  // without the override the same events leave the first sheet's re-armed clock unsatisfiable (the row 20.1 cites; the reason for the knob)
+  const plain = loadRegistry(); plain.override("SM_REFI_TRIGGER_DAILY", { anchorField: "published_on", offset: "+1 calendar_days, 06:30 ET" });
+  const e2 = new MemoryEventStore(clock); const eng2 = new TimerEngine(plain, e2, { processes: ["20.1"] });
+  e2.append({ type: "rate_sheet.published", actor: SYSTEM, occurredAt: "2026-10-01T10:35:00.000Z", aggregate: { kind: "rate_sheet", id: "rs-a" }, payload: { rate_sheet_id: "rs-a", published_on: "2026-10-01", origination: true } });
+  e2.append({ type: "refi.trigger.run_completed", actor: SYSTEM, occurredAt: "2026-10-01T10:41:00.000Z", aggregate: { kind: "rate_sheet", id: "rs-a" }, payload: { origination: true } });
+  e2.append({ type: "refi.trigger.run_completed", actor: SYSTEM, occurredAt: "2026-10-02T10:41:00.000Z", aggregate: { kind: "rate_sheet", id: "rs-b" }, payload: { origination: true } });
+  assert.deepEqual(eng2.byCode("SM_REFI_TRIGGER_DAILY").map((i) => [i.subject.id, i.status]), [["rs-a", "satisfied"], ["rs-a", "armed"]], "the per-sheet subject: yesterday's re-armed clock never meets today's run");
+});

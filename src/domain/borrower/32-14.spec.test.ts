@@ -392,7 +392,7 @@ test("32.14-T7: Given a lead with goal `limited_cash_out`, occupancy `primary`, 
   assert.ok(!(await db.query<{ type: string }>(`SELECT type FROM loan_events WHERE application_id = $1 AND type = 'application.field.captured' AND payload->>'field' = 'property_value_estimate'`, [app.id])).length, "the value estimate is not captured");
   // the thread: the session's disclosure line, then entry.resumed — and no goal card
   const thread = await api("GET", "/v1/borrower/thread?limit=500", undefined, { authorization: `Bearer ${token}` }); assert.equal(thread.status, 200, JSON.stringify(thread.body).slice(0, 300));
-  const agentMessages = (thread.body["messages"] as Json[]).filter((m) => m["sender"] === "agent"); const agentLines = agentMessages.map((m) => String(m["body_text"] ?? ""));
+  const agentMessages = (thread.body["messages"] as Json[]).filter((m) => m["sender"] === "agent" || m["sender"] === "system"); const agentLines = agentMessages.map((m) => String(m["body_text"] ?? ""));   // 32.16 §2.0: the app's disclosure row is the session's `sender: system` record (the header), then the assistant's lines
   assert.equal(agentLines[0], "{{copy:entry.disclosure.first}}"); assert.equal(agentLines[1], "{{copy:entry.resumed}}");
   assert.equal(agentLines.filter((x) => x === "{{copy:entry.resumed}}").length, 1, "one receipt line");
   // the receipt's answers ride as the line's copy tokens (composed from the lead's facts), never as a sentence in body_text
@@ -488,7 +488,7 @@ test("32.14-T8: Given `INTEGRATIONS=fake`, when the visitor completes Continue w
   assert.equal(ab.party_id, alex.partyId); assert.equal(ab.legal_name, "Alex Borrower");
   assert.deepEqual(ab.prefill["legal_name"], { value: "Alex G. Borrower", source: "oidc_google", extracted_at: clock.now(), confirmed_at: null });
   // flows.sessionOpened ran: the disclosure is the first assistant content (32.3 E2) and 20.3 logged lead.authenticated{level=L1, method=oidc_google} on the application's lead
-  const lines = await messagesOf(alex.partyId); assert.ok(lines.length >= 1); assert.equal(lines[0]!.body_text, "{{copy:entry.disclosure.first}}"); assert.equal(lines[0]!.sender, "agent"); assert.equal(lines[0]!.channel, "app");
+  const lines = await messagesOf(alex.partyId); assert.ok(lines.length >= 1); assert.equal(lines[0]!.body_text, "{{copy:entry.disclosure.first}}"); assert.equal(lines[0]!.sender, "system"); assert.equal(lines[0]!.channel, "app");   // 32.16 §2.0: on the app the disclosure row is the session's `sender: system` record (rendered as the header)
   const authed = (await appEvents(journey.appId, "lead.authenticated")).filter((e) => e.payload["method"] === "oidc_google"); assert.equal(authed.length, 1, "lead.authenticated{method=oidc_google}");
   assert.ok(["L1", "L2"].includes(String(authed[0]!.payload["level"])), "the lead's level is 20.3's (the journey's lead was portal-authenticated before; a Google sign-in never lowers it) — the SESSION is L1, asserted on its row above");
   assert.equal(((authed[0]!.payload["evidence"] as Json)["session_id"]), alex.sessionId);
@@ -739,7 +739,7 @@ test("32.14-T14: Given `terms_presented`, when the borrower taps Show me my rate
   assert.equal((await db.query<{ channel: string }>(`SELECT channel::text AS channel FROM applications WHERE id = $1`, [l.id]))[0]?.channel, "organic", "the application is the lead's id");
   assert.ok(await entity("applications", x.appId), "21.1's interview is open on it"); assert.equal((await entity("applications", x.appId))!["transaction_type"], "limited_cash_out");
   assert.equal((await appEvents(x.appId, "application.received")).length, 0, "no Reg B request at sign-in");
-  const agentLines = (await thread(x.token)).messages.filter((m) => m["sender"] === "agent").map((m) => String(m["body_text"] ?? "")); assert.equal(agentLines[0], "{{copy:entry.disclosure.first}}"); assert.equal(agentLines[1], "{{copy:entry.resumed}}");
+  const agentLines = (await thread(x.token)).messages.filter((m) => m["sender"] === "agent" || m["sender"] === "system").map((m) => String(m["body_text"] ?? "")); assert.equal(agentLines[0], "{{copy:entry.disclosure.first}}"); assert.equal(agentLines[1], "{{copy:entry.resumed}}");   // 32.16 §2.0: the disclosure row is `sender: system` on the app
   assert.equal((await cardsOf(x.appId, x.partyId)).filter((c) => c.copy_key === "entry.goal.question" || c.copy_key === "consent.credit.title").length, 0, "no goal card, no hard-pull card: S4 opens instead");
   // S4 on the real lead: the identity typed at L1, the soft pull at L1, the FAKE bureau's tier, the review, the terms
   clock.set(EDT("2026-10-21", "11:02")); await typeIdentity(QUINN, x);

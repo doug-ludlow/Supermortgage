@@ -177,17 +177,19 @@ export class TimerEngine {
       if (this.processFilter && !this.processFilter.has(def.process)) continue;
       if (!def.triggerPattern || !eventMatches(def.triggerPattern, e)) continue;
       if (isOriginationDef(def) && !isOriginationContext(e)) continue;
+      // a global recurring clock (def.subjectOverride) is one instance: a second trigger while it is armed leaves it (the day's clock, not the sheet's)
+      if (def.subjectOverride === "global" && def.kindNorm === "recurring" && this.instances.some((i) => i.code === def.code && i.status === "armed" && i.subject.kind === "global")) continue;
       this.arm(def, e);
     }
   }
 
   arm(def: TimerDef, trigger: DomainEvent, opts: { subjectOverride?: TimerInstance["subject"] } = {}): TimerInstance {
-    const subject = opts.subjectOverride ?? (trigger.loanId ? { kind: "loan", id: trigger.loanId } : trigger.applicationId ? { kind: "application", id: trigger.applicationId } : trigger.aggregate ?? { kind: "global", id: "*" });
+    const subject = opts.subjectOverride ?? (def.subjectOverride === "global" ? { kind: "global", id: "*" } : trigger.loanId ? { kind: "loan", id: trigger.loanId } : trigger.applicationId ? { kind: "application", id: trigger.applicationId } : trigger.aggregate ?? { kind: "global", id: "*" });
     const anchor = this.resolveAnchor(def, trigger) ?? wallClock(Date.parse(trigger.occurredAt), "America/New_York").date;
     const anchorMs = Date.parse(trigger.occurredAt);
     const due = computeDue(def.offsetParsed, anchor, anchorMs, this.cals);
     const inst: TimerInstance = {
-      id: randomUUID(), code: def.code, subject, ...(trigger.loanId ? { loanId: trigger.loanId } : {}), ...(trigger.applicationId ? { applicationId: trigger.applicationId } : {}),
+      id: randomUUID(), code: def.code, subject, ...(trigger.loanId && subject.kind !== "global" ? { loanId: trigger.loanId } : {}), ...(trigger.applicationId && subject.kind !== "global" ? { applicationId: trigger.applicationId } : {}),
       armedAt: trigger.occurredAt, armedByEventId: trigger.id, anchorDate: anchor,
       ...(due.dueAt !== undefined ? { dueAt: due.dueAt } : {}), ...(due.dueDate !== undefined ? { dueDate: due.dueDate } : {}),
       status: due.needsHuman ? "needs_human" : "armed",

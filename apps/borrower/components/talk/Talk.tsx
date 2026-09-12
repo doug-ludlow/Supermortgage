@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { talk, type TalkLine, type TalkTurn } from "@/lib/api/talk";
 import { ApiRequestError } from "@/lib/api/client";
 import { copy, copyOptions } from "@/lib/copy";
+import { FooterDisclosure } from "@/components/shell/FooterDisclosure";
 
 type Recognition = { start(): void; stop(): void; lang: string; interimResults: boolean; onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null; onend: (() => void) | null; onerror: (() => void) | null };
 type RecognitionCtor = new () => Recognition;
@@ -110,12 +111,15 @@ export function Talk() {
         </button>
         <button type="submit" className="sm-btn sm-btn-primary" disabled={busy || !text.trim()} data-testid="talk-send">Send</button>
       </form>
-      <p className="sm-source sm-talk-foot">
-        {agent ? `Automated assistant (${agent.name}${agent.model ? ` · ${agent.model}` : ""}). ` : ""}Say "person" to reach a person at any time.
-      </p>
+      {agent ? (
+        <p className="sm-source sm-talk-foot">
+          {`${agent.name}${agent.model ? ` · ${agent.model}` : ""}`}
+        </p>
+      ) : null}
+      <FooterDisclosure />
       <style>{`
-        .sm-talk { max-width: 720px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; min-height: 100dvh; box-sizing: border-box; }
-        .sm-talk > [role="log"] { flex: 1; }
+        .sm-talk { max-width: 720px; margin: 0 auto; padding: 16px 16px 0; display: flex; flex-direction: column; height: 100dvh; box-sizing: border-box; }
+        .sm-talk > [role="log"] { flex: 1; min-height: 0; overflow-y: auto; }
         .sm-talk-log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
         .sm-talk-line { line-height: 1.5; max-width: 60ch; }
         .sm-talk-you { display: block; }
@@ -123,11 +127,12 @@ export function Talk() {
         .sm-talk-line.sm-talk-you { align-self: flex-end; text-align: right; }
         .sm-talk-notice { opacity: 0.8; font-size: 0.95em; }
         .sm-talk-thinking { opacity: 0.5; }
-        .sm-talk-bar { display: flex; gap: 8px; padding-top: 12px; position: sticky; bottom: 0; background: var(--sm-bg, transparent); }
+        .sm-talk-bar { display: flex; gap: 8px; padding-top: 12px; background: var(--sm-bg, transparent); }
+        .sm-talk .sm-footer { margin: 8px -16px 0; }
         .sm-talk-bar .sm-input { flex: 1; min-width: 0; }
         .sm-talk-error { color: var(--sm-danger, #e5484d); }
         .sm-talk-foot { margin: 8px 0 0; }
-        .sm-talk-file a { font-weight: 600; }
+        .sm-talk-file a { font-weight: 700; } /* 19px bold: large text for the AA contrast bar on the accent */
       `}</style>
     </main>
   );

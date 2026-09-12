@@ -52,9 +52,9 @@ Jurisdiction overrides: none owned; state copy variants come from `jurisdiction_
 ###### 1.1 Regions
 The shell has two regions and one persistent bar.
 
-- **Thread** (left) — the conversation. Messages from the `intake` agent (pre-funding) or `borrower-comms` agent (post-funding) and from the borrower; typed **cards** (§3) rendered as message blocks. The thread is the navigation: the borrower never opens a menu to do something; the platform puts the card in front of them or they ask.
-- **Record** (right) — a live projection of `borrower_record` (32.2 §1): status, next event, needed-from-you, numbers, dates, documents, people, property, loan. Never hand-authored per screen; sections show or hide by state (§4).
-- **Action bar** (bottom of Thread) — text input, microphone (in-app voice, §6.3), attach (document upload → 22.1 intake), and **Talk to a person** (always visible; emits `human.transfer.requested`).
+- **Thread** (left) — the conversation. Messages from the `intake` agent (pre-funding) or `borrower-comms` agent (post-funding) and from the borrower. *Amended by docs/ux/32.16 §2.1 (DELTA-26):* no card renders in the thread — a card's one home is the rail (right), and the thread carries a one-line **reference chip** that focuses and expands it there, plus the **confirm chip** of a proposed value (32.16 §3.4); no sender label, badge or timestamp row on every line (provenance is an aria/hover detail); the automation disclosure is the footer of every screen (32.16 §1 principle 8), never a line in the log. The thread is still the navigation: the borrower never opens a menu to do something; the platform puts the card on the rail and references it, or they ask.
+- **Record** (right) — *amended by docs/ux/32.16 §2.2 (DELTA-26): the rail* — where the cards live: Progress (`journey_progress`), Needed from you (every pending card, current ask first, expanding in place to its component and resolving there), Connections, Documents (with the viewer and Confirm receipt), What we're doing, People, then Numbers · Dates · Property · Loan read-only from `borrower_record` (32.2 §1). Each section collapsible; never hand-authored per screen; sections show or hide by state (§4).
+- **Action bar** (bottom of Thread) — text input, Send, and attach (document upload → 22.1 intake). *Amended by docs/ux/32.16 §1 principle 8 and §2.4:* no **Talk to a person** control while no person exists (a borrower who asks is answered in words; `human.request` stays reachable by the word), and the microphone arrives with voice (17 Phase 3).
 
 ###### 1.2 Breakpoints
 | Width | Thread | Record |
@@ -65,7 +65,7 @@ The shell has two regions and one persistent bar.
 | < 768 (mobile) | 100% | **Status strip** pinned under the header (status badge · next event · "N needed from you") → tap opens the Record as a bottom sheet |
 
 ###### 1.3 Thread behavior
-- **Pinned current ask.** The most recent unresolved card (`card_instances.status = pending`) is pinned above the scrollback with a "jump to it" affordance. Over a 45-day purchase file the thread is long; the borrower must never scroll to find what is waiting on them.
+- **Current ask.** *Amended by docs/ux/32.16 §2.1–2.2:* the current ask is the first row of the rail's Needed from you, expanded by default; a slim "Waiting on you: {{label}} →" line appears under the header only while the borrower has scrolled away from its reference in the thread. Over a 45-day purchase file the thread is long; the borrower must never scroll to find what is waiting on them.
 - **Cards are stateful.** A card renders from `card_instances` (32.2 §1.6) and updates in place when its state changes (e.g., `ConnectCard` → `connected`; `DocumentCard` → `received`). Resolved cards collapse to a one-line receipt ("Loan Estimate received Oct 22, 2026 9:41 AM").
 - **Grouping.** Consecutive system messages within 60 seconds group under one timestamp. Cards never group.
 - **Day dividers** in the borrower's time zone.

@@ -40,13 +40,11 @@ async function fillCredentials(email = EMAIL, password = "correct horse") {
 }
 
 describe("32.16 §2.0 — create an account", () => {
-  it("the disclosure line heads the form (partner token filled); e-mail, password with its helper, Create account, Google, the sign-in link; no passkey, no code chooser", () => {
+  it("no disclosure sentence above the form (32.16 §1 principle 8: the footer of the page is the disclosure); e-mail, password with its helper, Create account, Google, the sign-in link; no passkey, no code chooser", () => {
     render(<Account mode="sign_up" partnerLegalName="Saguaro Home Lending, LLC" />);
     expect(screen.getByRole("heading", { name: copy("account.create.title") })).toBeInTheDocument();
-    const disclosure = screen.getByTestId("account-disclosure");
-    expect(disclosure).toHaveTextContent(copy("entry.disclosure.first", { "partner.legal_name": "Saguaro Home Lending, LLC" }));
-    expect(disclosure).not.toHaveTextContent("{{");
-    expect(disclosure).toHaveAttribute("data-copy-key", "entry.disclosure.first");
+    expect(screen.queryByTestId("account-disclosure")).toBeNull();
+    expect(document.body.textContent).not.toContain("automated assistant");
     expect(screen.getByLabelText(copy("account.email.field"))).toHaveAttribute("type", "email");
     expect(screen.getByLabelText(copy("account.password.field"))).toHaveAttribute("type", "password");
     expect(screen.getByText(copyExtra("account.password.field", "helper")!)).toBeInTheDocument();

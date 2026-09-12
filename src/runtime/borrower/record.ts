@@ -22,6 +22,7 @@ import type { Queryable } from "../../infra/db/client.ts";
 import { decodeEntityData } from "../../infra/db/entities.ts";
 import { DOCUMENT_CLASSES } from "../../domain/verification/ops-22-1.ts";
 import type { Subject } from "../../infra/db/borrower-parties.ts";
+import { journeyProgress, type JourneyProgress } from "./journey-progress.ts";   // 32.16 §2.2 / DELTA-26: the Progress rail section, derived, never stored
 import type { CardInstanceRow, MessageRow } from "../../infra/db/borrower-ui.ts";
 import { rateWatchSection } from "./flows/11-rate-watch.ts";
 import { hardshipSection } from "./flows/10-hardship-record.ts";
@@ -96,6 +97,8 @@ export interface BorrowerRecord {
   property: Record<string, unknown> | null;
   loan: Record<string, unknown> | null;
   offers: Record<string, unknown>[];
+  /** 32.16 §2.2 (DELTA-26): the journey's steps — done / current / upcoming — from the event spine and card_instances (src/runtime/borrower/journey-progress.ts); null for a serviced loan. */
+  journey_progress: JourneyProgress | null;
   as_of: string;
 }
 interface Ev { sequence: string; type: string; occurred_at: string; loan_id: string | null; application_id: string | null; payload: Record<string, unknown> }
@@ -214,7 +217,10 @@ export class BorrowerRecordReader {
     const offers = byKind("refi_opportunities").filter((o) => ["offer_ready", "offered", "engaged"].includes(String(o.data["status"]))).map((o) => ({ refi_opportunity_id: o.id, status: o.data["status"], offered_at: o.data["offered_at"] ?? o.data["created_at"] ?? null, expires_at: o.data["expires_at"] ?? o.data["offer_expires_at"] ?? null,
       terms: { current_rate: rate((o.data["current_terms"] as Record<string, unknown> | undefined)?.["note_rate"] ?? loan?.["note_rate_bps"] !== undefined ? bpsToPct(loan?.["note_rate_bps"]) : null), offered_rate: rate((o.data["candidate_terms"] as Record<string, unknown> | undefined)?.["note_rate"]), new_pi_payment_cents: cents((o.data["candidate_terms"] as Record<string, unknown> | undefined)?.["pi_cents"]), monthly_savings_cents: cents((o.data["benefit"] as Record<string, unknown> | undefined)?.["pi_delta_cents"] ?? o.data["pi_delta_cents"]), costs_to_borrower_cents: "0" } }));
 
-    return { subject: subjectOut, status, read_only: READ_ONLY_BADGES.has(status.badge), next, needed_from_you: neededOut, what_we_are_doing, needed_summary, numbers, dates, documents, people, property, loan: loanSection, offers: exits && (exits.paidInFull || exits.transfer) ? [] : offers, as_of: asOf };   // 32.12: rate-watch ends with the loan
+    // ---- journey progress (32.16 §2.2): the subject's own cards and the event spine, never stored
+    const journey_progress = journeyProgress({ stage, transaction_type, events, cards: cards.filter((c) => (!c.subject_application_id || c.subject_application_id === appId) && (!c.subject_loan_id || c.subject_loan_id === loanId)) });
+
+    return { subject: subjectOut, status, read_only: READ_ONLY_BADGES.has(status.badge), next, needed_from_you: neededOut, what_we_are_doing, needed_summary, numbers, dates, documents, people, property, loan: loanSection, offers: exits && (exits.paidInFull || exits.transfer) ? [] : offers, journey_progress, as_of: asOf };   // 32.12: rate-watch ends with the loan
   }
 
   private badge(app: Record<string, unknown> | null, loan: Record<string, unknown> | null, events: Ev[], _entities: Entity[], byKind: (k: string) => Entity[], ev: (t: string, w?: (p: Record<string, unknown>) => boolean) => Ev | undefined, has: (t: string | RegExp, w?: (p: Record<string, unknown>) => boolean) => boolean): BorrowerRecord["status"] {

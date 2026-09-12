@@ -957,3 +957,251 @@ a {
 .sm-signin > p {
   margin: 10px 0 0;
 }
+
+/* ---------- 32.16 the conversation shell: the footer, the thread's chips and rates element, the rail ---------- */
+.sm-shell {
+  grid-template-rows: auto auto minmax(0, 1fr) auto; /* header · status strip (mobile only) · body · disclosure footer */
+}
+.sm-strip-slot {
+  grid-row: 2;
+}
+.sm-footer {
+  grid-row: 4;
+  text-align: center;
+  color: var(--sm-text-3);
+  font-size: var(--sm-fs-13);
+  padding: 8px 16px calc(8px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--sm-border);
+  background: var(--sm-surface);
+}
+.sm-footer p {
+  margin: 0;
+}
+.sm-footer a {
+  color: var(--sm-text-2);
+  text-decoration: underline;
+}
+.sm-page-shell {
+  grid-template-rows: auto minmax(0, 1fr) auto; /* header · page · disclosure footer */
+}
+.sm-waiting {
+  border-bottom: 1px solid var(--sm-border);
+  background: var(--sm-surface-2);
+  padding: 6px 16px;
+  font-size: var(--sm-fs-15);
+}
+.sm-msg-human .sm-msg-body {
+  border-left: 3px solid var(--sm-positive);
+}
+.sm-chip {
+  font: inherit;
+  font-size: var(--sm-fs-15);
+  margin-top: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  background: var(--sm-surface-3);
+  color: var(--sm-text);
+  border: 1px solid var(--sm-border-strong);
+  border-radius: 999px;
+  padding: 6px 14px;
+  min-height: 36px;
+  cursor: pointer;
+  text-align: left;
+}
+.sm-chip:hover {
+  border-color: var(--sm-accent);
+}
+.sm-chip-receipt {
+  color: var(--sm-text-2);
+  border-style: dashed;
+}
+.sm-chip-receipt::before {
+  content: "✓";
+  color: var(--sm-positive);
+}
+.sm-thread-chips {
+  margin: 12px 0 0;
+}
+.sm-confirm-chip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  max-width: 720px;
+  background: var(--sm-surface-2);
+  border: 1px solid var(--sm-accent);
+  border-radius: var(--sm-radius);
+  padding: 10px 14px;
+  margin: 8px 0;
+}
+.sm-confirm-chip-text {
+  flex: 1 1 200px;
+  min-width: 0;
+  font-weight: 600;
+}
+.sm-confirm-chip-actions {
+  display: inline-flex;
+  gap: 8px;
+}
+.sm-rates {
+  max-width: 720px;
+  margin: 8px 0;
+  background: var(--sm-surface-2);
+  border: 1px solid var(--sm-border);
+  border-radius: var(--sm-radius);
+  padding: 10px 14px;
+}
+.sm-rates-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.sm-rates-product {
+  font-weight: 700;
+}
+.sm-rates-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: var(--sm-fs-17);
+}
+.sm-rates-footer {
+  margin: 8px 0 0;
+}
+/* the rail */
+.sm-rail-status {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: -8px 0 12px;
+}
+.sm-rail-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.sm-rail-h-btn {
+  font: inherit;
+  font-weight: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  min-height: 32px;
+}
+.sm-rail-caret {
+  color: var(--sm-text-3);
+  width: 1em;
+  display: inline-block;
+}
+.sm-rail-aside {
+  color: var(--sm-text-2);
+  font-size: var(--sm-fs-15);
+  font-weight: 500;
+  text-transform: none; /* "7 of 12" as the copy library spells it, whatever the heading's case */
+  letter-spacing: normal;
+}
+.sm-rail-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.sm-rail-row {
+  border-top: 1px solid var(--sm-border);
+}
+.sm-rail-row:first-child {
+  border-top: 0;
+}
+.sm-rail-row[data-tone="caution"] > .sm-rail-toggle {
+  border-left: 3px solid var(--sm-caution);
+  padding-left: 8px;
+}
+.sm-rail-row[data-tone="caution"] .sm-rail-label::before {
+  content: "! ";
+  color: var(--sm-caution);
+  font-weight: 700;
+}
+.sm-rail-row[data-current-ask="true"] > .sm-rail-toggle .sm-rail-label {
+  font-weight: 600;
+}
+.sm-rail-toggle {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  width: 100%;
+  text-align: left;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 8px 0;
+  min-height: 40px;
+  cursor: pointer;
+}
+.sm-rail-static {
+  cursor: default;
+}
+.sm-rail-label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.sm-rail-toggle time,
+.sm-rail-toggle .sm-muted {
+  font-size: var(--sm-fs-15);
+  color: var(--sm-text-2);
+}
+.sm-rail-card {
+  padding: 0 0 10px;
+}
+.sm-rail-card .sm-card {
+  margin: 0;
+}
+.sm-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.sm-step summary {
+  cursor: pointer;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  min-height: 32px;
+  padding: 2px 0;
+}
+.sm-step[data-state="done"] .sm-step-mark {
+  color: var(--sm-positive);
+}
+.sm-step[data-state="current"] .sm-step-mark {
+  color: var(--sm-accent);
+}
+.sm-step[data-state="current"] summary {
+  font-weight: 600;
+}
+.sm-step[data-state="upcoming"] {
+  color: var(--sm-text-2);
+}
+.sm-step-at {
+  margin: 0 0 6px 1.5em;
+  font-size: var(--sm-fs-15);
+}
+@media (max-width: 767px) {
+  .sm-record[data-open="true"] {
+    bottom: 0;
+  }
+}

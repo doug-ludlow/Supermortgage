@@ -119,6 +119,8 @@ export function toRecord(api: Json): BorrowerRecord {
         }
       : {}),
     offers: (Array.isArray(api.offers) ? api.offers : []) as BorrowerRecord["offers"],
+    // 32.16 §2.2: the journey's steps and counts as the API derived them — the rail never counts them itself
+    ...(api.journey_progress && typeof api.journey_progress === "object" && Array.isArray(obj(api.journey_progress).steps) ? { journey_progress: { steps: (obj(api.journey_progress).steps as unknown[]).map((st) => ({ id: str(obj(st).id), label_copy_key: str(obj(st).label_copy_key), state: (["done", "current", "upcoming"].includes(str(obj(st).state)) ? str(obj(st).state) : "upcoming") as "done", at: str(obj(st).at) || null })), done: typeof obj(api.journey_progress).done === "number" ? (obj(api.journey_progress).done as number) : 0, total: typeof obj(api.journey_progress).total === "number" ? (obj(api.journey_progress).total as number) : 0 } } : {}),
     header: { address_line: address, purpose, loan_label: subject.label },
     timezone: str(api.time_zone) || "America/Phoenix",
     ...(api.read_only === true ? { read_only: true } : {}),

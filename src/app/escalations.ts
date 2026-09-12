@@ -41,11 +41,12 @@ export class EscalationService {
    * opened in its own unit of work (32.6 backend delta). Seeded rows are not re-created: `save` upserts them by id.
    */
   seed(rows: readonly Escalation[]): void { for (const e of rows) if (!this.opened.some((x) => x.id === e.id)) this.opened.push(e); }
-  complete(id: string, by: Actor, evidenceDocumentId?: string): Escalation {
+  /** The owner role's own act. The receipt names who completed it (`completed_by`, the role) — 32.13's PersonCard reads it — plus any `extra` the closing tool passes (a person's display name). */
+  complete(id: string, by: Actor, evidenceDocumentId?: string, extra: Record<string, unknown> = {}): Escalation {
     const e = this.opened.find((x) => x.id === id); if (!e) throw new RangeError(`no escalation ${id}`);
     if (by.kind !== "human" || by.role !== e.ownerRole) throw new RangeError(`escalation ${id} is completed by role ${e.ownerRole}, not ${by.kind}:${by.id}${by.role ? ` (${by.role})` : ""}`);
     e.status = "completed"; e.completedAt = this.clock.now(); e.completedBy = by.id; if (evidenceDocumentId) e.evidenceDocumentId = evidenceDocumentId;
-    this.events.append({ type: "escalation.completed", ...(e.loanId ? { loanId: e.loanId } : {}), ...(e.applicationId ? { applicationId: e.applicationId } : {}), aggregate: { kind: "escalation", id: e.id }, actor: by, payload: { escalation_id: e.id, kind: e.kind, evidence_document_id: evidenceDocumentId ?? null } });
+    this.events.append({ type: "escalation.completed", ...(e.loanId ? { loanId: e.loanId } : {}), ...(e.applicationId ? { applicationId: e.applicationId } : {}), aggregate: { kind: "escalation", id: e.id }, actor: by, payload: { ...extra, escalation_id: e.id, kind: e.kind, evidence_document_id: evidenceDocumentId ?? null, completed_by: by.id, completed_by_role: by.role ?? null, completed_at: e.completedAt } });
     return e;
   }
 }

@@ -39,6 +39,7 @@ import { partnerOf } from "./flows/3-entry.ts";
 import type { BorrowerFlows } from "./flows/index.ts";
 import { leadTokenOf, type LeadRoutes } from "./lead-routes.ts";
 import { serialize, type ShapeName } from "./serialize.ts";
+import { AnthropicLlm, DEFAULT_LLM_MODEL } from "./agent/llm.ts";
 
 type P = Record<string, unknown>;
 const BORROWER_APP: Actor = { kind: "agent", id: "borrower-app" };
@@ -47,7 +48,7 @@ const RUN = { runId: "talk:borrower-api", modelVersion: "borrower-app talk (dete
 const MAX_BODY = 16 * 1024;
 const MAX_TURNS_KEPT = 200;
 export const TALK_PATH = "/v1/borrower/talk";
-export const DEFAULT_TALK_MODEL = "claude-opus-5";
+export const DEFAULT_TALK_MODEL = DEFAULT_LLM_MODEL;
 /** The hand-off line after the range (docs/ux/12 `account.from_talk`): the app renders the Create account link beside it. */
 export const ACCOUNT_HANDOFF_KEY = "account.from_talk";
 
@@ -127,44 +128,23 @@ const situationText = (s: Situation): string => [
   s.closed ? "The lead is closed (a state we cannot lend in): no rates, no sign-in; be kind and brief." : "",
 ].filter(Boolean).join("\n");
 
-/** The Claude agent: a manual tool loop on the Messages API (no beta dependency); the client is injectable for tests. */
+/** The Claude agent: the shared Messages API loop of agent/llm.ts (AnthropicLlm) over the talk tools; the client is injectable for tests. */
 export class ClaudeTalkAgent implements TalkAgent {
   readonly name = "claude";
   readonly model: string;
-  private readonly client: Anthropic;
-  private readonly effort: "low" | "medium" | "high";
-  private readonly logger: Logger | undefined;
+  private readonly llm: AnthropicLlm;
   constructor(opts: { apiKey?: string | undefined; model?: string | undefined; effort?: "low" | "medium" | "high" | undefined; client?: Anthropic | undefined; logger?: Logger | undefined }) {
-    this.client = opts.client ?? new Anthropic(opts.apiKey ? { apiKey: opts.apiKey } : {});
-    this.model = opts.model || DEFAULT_TALK_MODEL; this.effort = opts.effort ?? "low"; this.logger = opts.logger;
+    this.llm = new AnthropicLlm({ apiKey: opts.apiKey, model: opts.model || DEFAULT_TALK_MODEL, effort: opts.effort ?? "low", client: opts.client, logger: opts.logger });
+    this.model = this.llm.model;
   }
   async turn(input: AgentTurnInput): Promise<AgentTurnOutput> {
     const messages: Anthropic.MessageParam[] = [...input.history, { role: "user", content: `[situation]\n${situationText(input.situation)}\n\n[visitor]\n${input.text || "(the visitor just arrived and has not said anything yet — greet them and ask the first question)"}` }];
-    const calls: { name: string; input: P }[] = []; const texts: string[] = [];
-    for (let i = 0; i < 6; i++) {
-      const response = await this.client.messages.create({
-        model: this.model, max_tokens: 1024,
-        output_config: { effort: this.effort },
-        system: [{ type: "text", text: input.system, cache_control: { type: "ephemeral" } }],
-        tools: input.tools, messages,
-      });
-      if (response.stop_reason === "refusal") { this.logger?.warn("talk.refusal", { category: response.stop_details?.category ?? null }); return { text: "", calls, refused: true }; }
-      for (const b of response.content) if (b.type === "text" && b.text.trim()) texts.push(b.text.trim());
-      const uses = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
-      if (response.stop_reason !== "tool_use" || !uses.length) break;
-      messages.push({ role: "assistant", content: response.content });
-      const results: Anthropic.ToolResultBlockParam[] = [];
-      for (const u of uses) {
-        const args = (u.input && typeof u.input === "object" ? (u.input as P) : {});
-        calls.push({ name: u.name, input: args });
-        let outcome: ToolOutcome;
-        try { outcome = await input.execute(u.name, args); }
-        catch (e) { const be = toBorrowerError(e); outcome = { result: { error: be.code, message: be.message }, lines: [] }; }
-        results.push({ type: "tool_result", tool_use_id: u.id, content: JSON.stringify(outcome.result), ...(outcome.result["error"] ? { is_error: true } : {}) });
-      }
-      messages.push({ role: "user", content: results });
-    }
-    return { text: texts.join(" "), calls };
+    const r = await this.llm.turn({ system: input.system, messages, tools: input.tools, maxTokens: 1024, execute: async (name, args) => {
+      try { const outcome = await input.execute(name, args); return { result: outcome.result, is_error: !!outcome.result["error"] }; }
+      catch (e) { const be = toBorrowerError(e); return { result: { error: be.code, message: be.message }, is_error: true }; }
+    } });
+    const calls = r.calls.map((c) => ({ name: c.name, input: c.input }));
+    return r.refused ? { text: "", calls, refused: true } : { text: r.text, calls };
   }
 }
 

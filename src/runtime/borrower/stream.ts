@@ -64,6 +64,13 @@ export class BorrowerStreamHub {
     }
     return pushed;
   }
+  /** 32.16 DELTA-23: a row the API appended outside a unit of work (an agent reply, a rates element) — the party's open streams learn to re-fetch the thread. */
+  notify(partyId: string, e: { event_name: string; at: string; subject: { application_id: string | null; loan_id: string | null }; ref: string }): number {
+    const se: StreamEvent = { id: ++this.seq, event_name: e.event_name, at: e.at, subject: e.subject, payload_ref: { event_id: e.ref, sequence: 0, record: `/v1/borrower/record?subject=${encodeURIComponent(e.subject.application_id ?? e.subject.loan_id ?? "")}`, thread: `/v1/borrower/thread` } };
+    let ring = this.rings.get(partyId); if (!ring) { ring = []; this.rings.set(partyId, ring); } ring.push(se); if (ring.length > RING_SIZE) ring.splice(0, ring.length - RING_SIZE);
+    let pushed = 0; for (const c of this.conns.get(partyId) ?? []) { this.write(c, se); pushed++; }
+    return pushed;
+  }
   /** Every party that may read the subject (02 §6): the application's borrowers, the loan's borrowers, the scoped loan parties, the origination application's borrowers. */
   private async partiesFor(appId: string | null, loanId: string | null): Promise<string[]> {
     const key = `${appId ?? ""}|${loanId ?? ""}`; const cached = this.partyCache.get(key); const now = Date.now();

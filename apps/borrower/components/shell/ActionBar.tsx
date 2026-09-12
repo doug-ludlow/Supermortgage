@@ -3,11 +3,11 @@
 import { useId, useRef, useState } from "react";
 
 /**
- * 01 §1.1 Action bar — text input, microphone (in-app voice, §6.3 — placeholder until
- * the telephony adapter lands), attach (document upload → O3.1 intake), and
- * **Talk to a person** (always visible; emits human.transfer.requested via human.request).
+ * 32.16 §1 principle 8 / §2.2 — the input bar: one text input, Send, and attach as an icon (document upload → O3.1
+ * intake). No microphone yet (voice is Phase 3, docs/ux/17 §2.4) and no "Talk to a person" control while no person exists —
+ * a borrower who wants one types it and the assistant answers in words; the `human.request` path stays in lib/api.
  */
-export function ActionBar({ onSend, onAttach, onTalkToPerson, onVoice, disabled }: { onSend: (text: string) => void; onAttach: (file: File) => void; onTalkToPerson: () => void; onVoice?: () => void; disabled?: boolean }) {
+export function ActionBar({ onSend, onAttach, disabled }: { onSend: (text: string) => void; onAttach: (file: File) => void; disabled?: boolean }) {
   const id = useId();
   const [text, setText] = useState("");
   const file = useRef<HTMLInputElement>(null);
@@ -28,7 +28,7 @@ export function ActionBar({ onSend, onAttach, onTalkToPerson, onVoice, disabled 
         send();
       }}
     >
-      <button type="button" className="sm-btn sm-iconbtn" aria-label="Attach a document" onClick={() => file.current?.click()} disabled={disabled}>
+      <button type="button" className="sm-btn sm-iconbtn" aria-label="Attach a document" data-testid="attach" onClick={() => file.current?.click()} disabled={disabled}>
         <span aria-hidden="true">📎</span>
       </button>
       <input
@@ -62,14 +62,8 @@ export function ActionBar({ onSend, onAttach, onTalkToPerson, onVoice, disabled 
         disabled={disabled}
         autoComplete="off"
       />
-      <button type="button" className="sm-btn sm-iconbtn" aria-label="Talk by voice (coming soon)" onClick={onVoice} disabled={!onVoice || disabled} title="In-app voice — placeholder until the telephony adapter lands">
-        <span aria-hidden="true">🎤</span>
-      </button>
-      <button type="submit" className="sm-btn" disabled={disabled || !text.trim()}>
+      <button type="submit" className="sm-btn sm-btn-primary" data-testid="send" disabled={disabled || !text.trim()}>
         Send
-      </button>
-      <button type="button" className="sm-btn sm-btn-primary sm-talk" data-testid="talk-to-person" onClick={onTalkToPerson}>
-        Talk to a person
       </button>
     </form>
   );

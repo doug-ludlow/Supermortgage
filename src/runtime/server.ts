@@ -9,6 +9,8 @@
  *   POST /v1/tools/{process}/{name}                 execute a global tool (no loan)
  *   GET  /v1/loans/{loanId}/events|timers|ledger    the loan's record
  *   POST /v1/sweep                                  the timer sweep, once
+ *   GET  /v1/demo/clock                             the demo clock (src/runtime/demo-clock.ts): what the runtime's clock reads, the offset, the latest step — 403 in production
+ *   POST /v1/demo/advance                           { to?: ISO instant | days?: number, budget_ms?: number } advance the demo clock, running the sweep minute for every calendar day crossed (≤ 400 days; stops between steps once budget_ms is spent, `complete: false` — re-POST to carry on) — 403 in production
  *   POST /v1/applications                           open an application  body: { actor, application: { partner_party_id, channel, transaction_type, occupancy, borrowers: [{ legal_name, … }], property?: {…}, prior_loan_id? } }
  *   POST /v1/applications/{id}/tools/{process}/{name}   execute a tool for an application (before funding)   body as for loans
  *   POST /v1/applications/{id}/disclosures/le       render, MLO-approve, deliver and record receipt of the initial LE (21.2's LoanEstimateService; the MLO of record is the actor)  body: { actor, render: {...LeRenderInput}, mlo: { review_id, nmlsr_id }, delivery: { channel, at?, consent?, receipt? } }
@@ -68,6 +70,7 @@ import { plainDate } from "../kernel/calendar/date.ts";
 import type { Logger } from "./log.ts";
 import { createBorrowerRouter, type BorrowerRouter, type BorrowerRouterOptions } from "./borrower/routes.ts";
 import { seedEntryDemo } from "./entry-seed.ts";
+import { OffsetClock, advanceDemoClock, demoClockStatus } from "./demo-clock.ts";
 
 export interface ServerOptions { readonly runtime: Runtime; readonly apiToken: string; readonly logger: Logger; readonly console?: boolean;
   /** The borrower API's own dependencies (vendor fakes, rpId, environment); defaults to the FAKE vendors. */
@@ -119,9 +122,12 @@ const same = (a: string, b: string): boolean => a.length === b.length && a.lengt
 
 export function createApiServer(opts: ServerOptions): Server {
   const { runtime, logger } = opts;
-  const consoleServer = opts.console === false ? null : createConsoleServer({ store: new PgConsoleStore(runtime.db, runtime.registry, runtime.agents), clock: runtime.clock });
+  // DELTA-30: the console's queue rows name the FAKE reviewer that will fill them (src/infra/integrations/reviewers.ts) when the runtime runs one
+  const consoleServer = opts.console === false ? null : createConsoleServer({ store: new PgConsoleStore(runtime.db, runtime.registry, runtime.agents, { fakeReviewers: runtime.reviewers ? { roles: runtime.reviewers.roles, delaySeconds: runtime.reviewers.delaySeconds } : null }), clock: runtime.clock });
   const authorized = (req: IncomingMessage): boolean => (opts.apiToken ? same(tokenOf(req), opts.apiToken) : true);
   const borrower = opts.borrowerRouter ?? createBorrowerRouter({ runtime, logger, ...(opts.borrower ?? {}) });
+  // the demo clock routes refuse in production (docs/DEPLOY.md "The demo clock"); the borrower options carry the environment main.ts read from ENVIRONMENT
+  const environment = opts.borrower?.environment ?? process.env["ENVIRONMENT"] ?? "nonprod";
 
   return createServer(async (req, res) => {
     const started = Date.now();
@@ -266,6 +272,20 @@ export function createApiServer(opts: ServerOptions): Server {
         const rec = await runtime.entities.current("transfer_batches", decodeURIComponent(m[1]!));
         if (!rec) done(404, { error: "no_such_batch" }); else done(200, rec.data);
         return;
+      }
+      // the demo clock (src/runtime/demo-clock.ts): advance the hosted demo through days in minutes, running the sweep minute for every calendar day crossed; ops token; never in production
+      if (path === "/v1/demo/clock" || path === "/v1/demo/advance") {
+        if (environment === "production") { done(403, { error: "forbidden", reason: "the demo clock does not exist in production (ENVIRONMENT=production)" }); return; }
+        const clock = runtime.clock;
+        if (!(clock instanceof OffsetClock)) { done(501, { error: "not_wired", reason: "the runtime's clock is not the demo OffsetClock (src/runtime/main.ts constructs it outside production)" }); return; }
+        if (method === "GET" && path === "/v1/demo/clock") { done(200, await demoClockStatus(runtime.db, clock)); return; }
+        if (method === "POST" && path === "/v1/demo/advance") {
+          const b = await readJson(req);
+          const actor = b["actor"] ? actorOf(b["actor"]) : { kind: "human" as const, id: "ops" };
+          const r = await advanceDemoClock({ runtime, clock, flows: borrower.flows, logger, actor: `${actor.kind}:${actor.id}` }, { to: b["to"], days: b["days"], budget_ms: b["budget_ms"] });
+          done(200, r, { advanced: r.advanced, complete: r.complete, from: r.from, to: r.to, days_crossed: r.days_crossed, steps: r.steps.length, steps_remaining: r.steps_remaining, due: r.due, breaches: r.breaches }); return;
+        }
+        done(404, { error: "not found" }); return;
       }
       if (method === "POST" && path === "/v1/sweep") { if (borrower.flows) await borrower.flows.tick(runtime.clock.now()); const report = await runtime.sweep(); done(200, report, { due: report.due, breaches: report.breaches.length }); return; }
       // 32.14 §6.3: the root of the host is the borrower thread (the load balancer sends / to /app); the ops console page lives at /ops and its JSON API stays at /api/*

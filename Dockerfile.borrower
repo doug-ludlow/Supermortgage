@@ -19,10 +19,13 @@ WORKDIR /src
 # vendor paths (apps/borrower/lib/env.ts SHOW_FAKE_MARKERS), which are the only ones that work
 # against an API running INTEGRATIONS=fake. Empty (a plain docker build) means a production bundle.
 ARG NEXT_PUBLIC_ENVIRONMENT=""
-# The partner named in the automation disclosure on the account screen (before any session exists to read it
+# The partner named in the disclosure footer on every screen (before any session exists to read it
 # from). deploy.yml passes the repository variable PARTNER_LEGAL_NAME, "Partner Bank" when unset.
 ARG NEXT_PUBLIC_PARTNER_LEGAL_NAME="Partner Bank"
-ENV NEXT_TELEMETRY_DISABLED=1 NODE_ENV=production NEXT_PUBLIC_ENVIRONMENT=$NEXT_PUBLIC_ENVIRONMENT NEXT_PUBLIC_PARTNER_LEGAL_NAME=$NEXT_PUBLIC_PARTNER_LEGAL_NAME
+# The partner's NMLS ID beside its name in the disclosure footer on every screen (docs/ux/17 §1 principle 8) before a
+# session exists to read it from. deploy.yml passes the repository variable PARTNER_NMLSR_ID, "123456" (the demo partner) when unset.
+ARG NEXT_PUBLIC_PARTNER_NMLSR_ID="123456"
+ENV NEXT_TELEMETRY_DISABLED=1 NODE_ENV=production NEXT_PUBLIC_ENVIRONMENT=$NEXT_PUBLIC_ENVIRONMENT NEXT_PUBLIC_PARTNER_LEGAL_NAME=$NEXT_PUBLIC_PARTNER_LEGAL_NAME NEXT_PUBLIC_PARTNER_NMLSR_ID=$NEXT_PUBLIC_PARTNER_NMLSR_ID
 COPY --from=deps /src/node_modules ./node_modules
 COPY apps/borrower/ ./
 # The copy library is generated from docs/ux/12; the generated module is committed, so the

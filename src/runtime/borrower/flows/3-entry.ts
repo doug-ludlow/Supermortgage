@@ -163,8 +163,9 @@ async function sessionOpened(deps: FlowDeps, s: SessionOpened): Promise<void> {
   const appId = subjects[0]?.application_id ?? null;
   const app = appId ? (await deps.runtime.db.query<{ partner_party_id: string; partner_name: string; channel: string; consumer_state: string | null }>(`SELECT a.partner_party_id, p.legal_name AS partner_name, a.channel::text AS channel, (SELECT state FROM application_properties ap WHERE ap.application_id = a.id ORDER BY is_subject DESC, created_at LIMIT 1) AS consumer_state FROM applications a JOIN parties p ON p.id = a.partner_party_id WHERE a.id = $1`, [appId]))[0] ?? null : null;
   const partner = app ? { id: app.partner_party_id, legal_name: app.partner_name } : await partnerOf(deps);
-  // E2: the automation disclosure is the first assistant content of the session — before any card, any line, any answer (T1)
-  await deps.ui.appendMessage({ conversation_id: conv.conversation_id, at: s.at, sender: "agent", sender_ref: "agent:intake", channel: s.channel, body_text: "{{copy:entry.disclosure.first}}", subject_application_id: appId, voice_turn: s.channel === "voice" });
+  // E2: the automation disclosure is the first assistant content of the session — before any card, any line, any answer (T1).
+  // 32.16 §2.0 (docs/ux/17 principle 8): on the app the row is the session's disclosure record with `sender: system` — the shell renders it as the header's AI tag, never a bubble; SMS sends it and voice reads it, so those channels keep the assistant line
+  await deps.ui.appendMessage({ conversation_id: conv.conversation_id, at: s.at, sender: s.channel === "app" ? "system" : "agent", sender_ref: "agent:intake", channel: s.channel, body_text: "{{copy:entry.disclosure.first}}", subject_application_id: appId, voice_turn: s.channel === "voice" });
   const store = new EntityStore(); store.seed(await deps.runtime.entities.load(appId ? { applicationId: appId } : {}));
   const existing = (appId ? store.get("leads", appId)?.data : undefined) ?? store.list("leads", (d) => d.party_id === s.party_id).map((r) => r.data)[0];
   const lead_id = existing ? String(existing["lead_id"]) : (appId ?? randomUUID());

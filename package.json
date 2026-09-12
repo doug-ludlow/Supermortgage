@@ -26,7 +26,8 @@
     "spec:scaffold": "python3 tools/scaffold_spec_tests.py",
     "spec:lint:names": "python3 tools/spec_lint_names.py --verbose",
     "spec:import:origination": "python3 tools/import_origination.py",
-    "spec:import:ux": "python3 tools/import_ux.py"
+    "spec:import:ux": "python3 tools/import_ux.py",
+    "eval:fake": "INTEGRATIONS=fake node --experimental-strip-types src/domain/borrower/eval/cli.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

@@ -8,6 +8,7 @@
 import Link from "next/link";
 import { useEffect } from "react";
 import { SHOW_FAKE_MARKERS } from "@/lib/env";
+import { FooterDisclosure } from "./FooterDisclosure";
 
 export function ReturnRedirect({ vendor, card, navigate }: { vendor: string; card: string; navigate?: (url: string) => void }) {
   const target = `/app?card=${encodeURIComponent(card)}`; // the canonical form: Next redirects /app/ to /app
@@ -15,6 +16,7 @@ export function ReturnRedirect({ vendor, card, navigate }: { vendor: string; car
     (navigate ?? ((url: string) => window.location.replace(url)))(target);
   }, [navigate, target]);
   return (
+    <div className="sm-page-shell">
     <main className="sm-page" data-testid="vendor-return" data-vendor={vendor} data-card={card}>
       {SHOW_FAKE_MARKERS ? (
         <p>
@@ -25,5 +27,7 @@ export function ReturnRedirect({ vendor, card, navigate }: { vendor: string; car
         <Link href={`/?card=${encodeURIComponent(card)}`}>Back to your conversation</Link>
       </p>
     </main>
+    <FooterDisclosure />
+    </div>
   );
 }

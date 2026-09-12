@@ -496,7 +496,15 @@
     "authorization.record",
     "preference.set",
     "dispute.intake",
-    "decision.record"
+    "decision.record",
+    "session.next",
+    "record.get",
+    "explain",
+    "timer.due",
+    "document.describe",
+    "card.propose",
+    "card.request",
+    "command.run"
    ],
    "escalates_to": [
     "attorney",

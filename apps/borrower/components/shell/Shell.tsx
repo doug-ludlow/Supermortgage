@@ -1,9 +1,10 @@
 "use client";
 
 /**
- * The one shell (01 §1): Thread (left) · Record (right) · Action bar. Breakpoints per
- * 01 §1.2. Data comes from the 02 §7 API through lib/api, or — with NEXT_PUBLIC_FIXTURES=1 —
- * from apps/borrower/fixtures/*.json (FAKE: recorded, no agent, no vendors).
+ * The one shell (32.16 §2.1–2.2): the thread (left) is the conversation; the rail (right) is where the cards live; the input
+ * bar under the thread; the disclosure footer under everything (§1 principle 8). Breakpoints per 01 §1.2 — at 768–1023 the
+ * rail is a drawer, below 768 the status strip opens it as the bottom sheet. Data comes from the 02 §7 API through lib/api,
+ * or — with NEXT_PUBLIC_FIXTURES=1 — from apps/borrower/fixtures/*.json (FAKE: recorded, no agent, no vendors).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AnyCardInstance, ResolveRequest } from "@/lib/types/cards";
@@ -12,22 +13,22 @@ import { api, ApiRequestError } from "@/lib/api/client";
 import { openStream, type StreamStatus } from "@/lib/api/sse";
 import { loadFixture } from "@/lib/fixtures";
 import { copy } from "@/lib/copy";
-import { Thread } from "./Thread";
+import { Thread, currentAsk } from "./Thread";
 import { ActionBar } from "./ActionBar";
 import { StatusStrip } from "./StatusStrip";
 import { Header } from "./Header";
+import { FooterDisclosure } from "./FooterDisclosure";
 import { Account } from "@/components/account/Account";   // 32.16 §2.0 (DELTA-29): the account form on any 401 — Shell decides, Account renders
 import { AddMobilePrompt, isAddMobileDone } from "./AddMobile";
 import { PARTNER_LEGAL_NAME } from "@/lib/env";
 import { Record } from "@/components/record/Record";
-import { Card } from "@/components/cards";
 import { nowIso } from "@/components/cards/CardFrame";
 
 export type ShellProps = {
   fixturesMode: boolean;
   fixtureName?: string;
   initialSubject?: string;
-  /** 32.14 S5: `?card=` — that card is pinned and scrolled into view (a deep link or a vendor return lands here). */
+  /** 32.14 S5: `?card=` — that card is focused and expanded on the rail (a deep link or a vendor return lands here). */
   initialCard?: string;
 };
 
@@ -61,6 +62,7 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
   const [subject, setSubject] = useState<string | undefined>(initialSubject);
   const [recordOpen, setRecordOpen] = useState(false);
   const [scrollTo, setScrollTo] = useState<string | undefined>();
+  const [focus, setFocus] = useState<{ card_instance_id: string; seq: number } | undefined>();
   const [busyCardId, setBusyCardId] = useState<string | undefined>();
   const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
   const [loadError, setLoadError] = useState<string | undefined>();
@@ -70,11 +72,20 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
   const [signInOpen, setSignInOpen] = useState(false);
   const [addMobileDone, setAddMobileDone] = useState(true);
   useEffect(() => setAddMobileDone(isAddMobileDone()), []); // after hydration: the dismissal lives in this browser only
-  const wide = useMedia("(min-width: 1024px)");
+  const beside = useMedia("(min-width: 1024px)");   // the rail sits beside the thread; below that it is the drawer / bottom sheet
   const streamRef = useRef<ReturnType<typeof openStream> | null>(null);
 
   const timezone = record?.timezone ?? "America/Phoenix";
   const partner = me?.partner.legal_name || PARTNER_LEGAL_NAME;   // the API names the record's partner; "" (none on file yet) → the build's configured partner, never Supermortgage
+
+  /** Focus a card on the rail: expanded, scrolled into view; below 1024 the rail opens as the drawer / sheet (32.16 §2.1: the chip opens it). */
+  const focusCard = useCallback(
+    (card_instance_id: string) => {
+      setFocus({ card_instance_id, seq: (seq += 1) });
+      if (!beside) setRecordOpen(true);
+    },
+    [beside],
+  );
 
   // ---- load ---------------------------------------------------------------
   const loadFromApi = useCallback(async () => {
@@ -91,7 +102,6 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
       setMessages(t.messages);
       setCards(Object.fromEntries(t.cards.map((c) => [c.card_instance_id, c])));
       setLoadError(undefined);
-      if (initialCard) setScrollTo(initialCard);
     } catch (e) {
       if (e instanceof ApiRequestError && e.status === 401) {
         // no session (or it expired and the proxy dropped the cookie): the sign-in form — never the auth.sign_in notice
@@ -102,7 +112,7 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
       }
       setLoadError(e instanceof ApiRequestError ? copy(e.body.copy_key) : "We can't reach your loan right now. Nothing is lost — try again in a moment.");
     }
-  }, [subject, initialCard]);
+  }, [subject]);
 
   useEffect(() => {
     // `?fixture=api` in a fixtures build takes the live path (the e2e drives the root of the host with routed API answers)
@@ -112,7 +122,6 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
       setRecord(f.record);
       setMessages(f.messages);
       setCards(Object.fromEntries(f.cards.map((c) => [c.card_instance_id, c])));
-      if (initialCard) setScrollTo(initialCard);
       return;
     }
     void loadFromApi();
@@ -120,6 +129,14 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
     return () => streamRef.current?.close();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fixturesMode, fixtureName]);
+
+  // `?card=` (a deep link, a vendor return): focus that card once the thread has it
+  const initialFocused = useRef(false);
+  useEffect(() => {
+    if (!initialCard || initialFocused.current || !cards[initialCard]) return;
+    initialFocused.current = true;
+    focusCard(initialCard);
+  }, [initialCard, cards, focusCard]);
 
   // ---- actions ------------------------------------------------------------
   const resolveCard = useCallback(
@@ -132,6 +149,10 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
           const resolved: AnyCardInstance = { ...card, status: card.kind === "ConnectCard" && req.option_id === "connect" ? "pending" : "resolved", resolved_at: nowIso(), evidence: req.evidence } as AnyCardInstance;
           if (card.kind === "ConnectCard" && req.option_id === "connect") {
             (resolved as AnyCardInstance & { props: { state: string } }).props = { ...card.props, state: "in_progress" } as never;
+          }
+          if (resolved.status === "resolved" && "proposal" in resolved.props) {
+            const { proposal: _proposal, ...rest } = resolved.props as Record<string, unknown>;   // the confirm chip is the pending card; resolved, its read-back is the receipt
+            (resolved as { props: unknown }).props = rest;
           }
           setCards((c) => ({ ...c, [card.card_instance_id]: resolved }));
           setRecord((r) => (r ? { ...r, needed_from_you: r.needed_from_you.filter((n) => n.card_instance_id !== card.card_instance_id) } : r));
@@ -170,42 +191,6 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
     [appendLocal, fixturesMode, record?.subject],
   );
 
-  const talkToPerson = useCallback(async () => {
-    // 01 §1.1: emits human.transfer.requested (command human.request), one action away on every screen.
-    if (fixturesMode) {
-      const id = localId("card");
-      const personCard: AnyCardInstance = {
-        card_instance_id: id,
-        conversation_id: messages[0]?.conversation_id ?? "local",
-        party_id: me?.party_id ?? "local",
-        subject: record?.subject ?? {},
-        kind: "PersonCard",
-        status: "resolved",
-        created_by: "system",
-        copy_key: "team.assigned",
-        created_at: nowIso(),
-        props: { role: "human_agent", name: "Sam Ortega", credentials: "FAKE human agent (fixtures mode)", intro: "Hi — I'm here. What can I help with?" },
-      };
-      setCards((c) => ({ ...c, [id]: personCard }));
-      setMessages((ms) => {
-        const at = stampAfter(ms);
-        const at2 = new Date(new Date(at).getTime() + 1000).toISOString();
-        return [
-          ...ms,
-          { message_id: localId("m"), conversation_id: ms[0]?.conversation_id ?? "local", at, sender: "system", sender_label: "Supermortgage", channel: "app", body_text: "Bringing a person in now. (FAKE fixtures mode: human.transfer.requested → human.transfer.completed is simulated.)", subject: {}, voice_turn: false, delivery: { sent: true, delivered: true, read: false } },
-          { message_id: localId("m"), conversation_id: ms[0]?.conversation_id ?? "local", at: at2, sender: "human", sender_label: "Sam · Loan specialist", channel: "app", card_instance_id: id, subject: {}, voice_turn: false, delivery: { sent: true, delivered: true, read: false } },
-        ];
-      });
-      return;
-    }
-    try {
-      await api.requestHuman();
-      appendLocal({ sender: "system", sender_label: "Supermortgage", channel: "app", body_text: "Bringing a person in now." });
-    } catch {
-      appendLocal({ sender: "system", sender_label: "Supermortgage", channel: "app", body_text: "We couldn't reach a person just now — call the number on your statement, or try again." });
-    }
-  }, [appendLocal, fixturesMode, me?.party_id, messages, record?.subject]);
-
   const attach = useCallback(
     async (file: File) => {
       if (fixturesMode) {
@@ -239,18 +224,27 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
     [fixturesMode],
   );
 
-  const link = useCallback((target: { message_id?: string; card_instance_id?: string; document_id?: string }) => {
-    if (target.document_id && !target.card_instance_id && !target.message_id) {
-      window.location.assign(`/app/doc/${encodeURIComponent(target.document_id)}`);
-      return;
-    }
-    setRecordOpen(false);
-    setScrollTo(target.card_instance_id ?? target.message_id);
-  }, []);
+  /** A rail or card link: a card → focus it on the rail; a document → the viewer; a message → scroll the thread to it. */
+  const link = useCallback(
+    (target: { message_id?: string; card_instance_id?: string; document_id?: string }) => {
+      if (target.card_instance_id) {
+        focusCard(target.card_instance_id);
+        return;
+      }
+      if (target.document_id) {
+        window.location.assign(`/app/doc/${encodeURIComponent(target.document_id)}`);
+        return;
+      }
+      if (target.message_id) {
+        setRecordOpen(false);
+        setScrollTo(target.message_id);
+      }
+    },
+    [focusCard],
+  );
 
   const cardProps = useMemo(() => ({ onOpen: link, onLaunchVendor: launchVendor, onUpload: upload, onMessage: sendMessage }), [link, launchVendor, upload, sendMessage]);
-
-  const comparisonInRecord = useMemo(() => (wide ? Object.values(cards).filter((c) => c.kind === "ComparisonCard" && c.status === "pending") : []), [cards, wide]);
+  const ask = useMemo(() => currentAsk(cards, record?.needed_from_you[0]?.card_instance_id, initialCard), [cards, record?.needed_from_you, initialCard]);
 
   const subjects = me?.subjects ?? [];
   const showSignIn = needsSignIn || signInOpen;
@@ -267,7 +261,7 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
         showSignIn={!me || fixturesMode}
         onSignIn={() => setSignInOpen(true)}
       />
-      <StatusStrip record={record} onOpen={() => setRecordOpen(true)} />
+      {showSignIn ? <div className="sm-strip-slot" /> : <StatusStrip record={record} onOpen={() => setRecordOpen(true)} />}
       <div className="sm-body">
         <main className="sm-thread" aria-label="Conversation">
           {showSignIn ? (
@@ -281,30 +275,28 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
             <Thread
               notice={loadError}
               banner={me?.auth_method === "oidc_google" && !addMobileDone ? <AddMobilePrompt onDone={() => setAddMobileDone(true)} /> : null}
-              pinnedId={initialCard}
               messages={messages}
               cards={cards}
               timezone={timezone}
               partnerLegalName={partner}
               showSubjectLabels={subjects.length > 1}
-              wide={wide}
               scrollTo={scrollTo}
-              cardProps={cardProps}
+              currentAskId={ask?.card_instance_id}
+              onOpenCard={focusCard}
               resolve={resolveCard}
               busyCardId={busyCardId}
               cardErrors={cardErrors}
             />
           )}
-          {showSignIn ? null : (   // signed out there is no session to send to or hand off from: no action bar until sign-in
-            <ActionBar onSend={(t) => void sendMessage(t)} onAttach={(f) => void attach(f)} onTalkToPerson={() => void talkToPerson()} />
+          {showSignIn ? null : (   // signed out there is no session to send to: no input bar until sign-in
+            <ActionBar onSend={(t) => void sendMessage(t)} onAttach={(f) => void attach(f)} />
           )}
         </main>
-        <Record record={record} link={link} open={recordOpen} onClose={() => setRecordOpen(false)}>
-          {comparisonInRecord.map((c) => (
-            <Card key={c.card_instance_id} card={c} timezone={timezone} {...cardProps} onResolve={(req) => resolveCard(c, req)} busy={busyCardId === c.card_instance_id} error={cardErrors[c.card_instance_id]} />
-          ))}
-        </Record>
+        {showSignIn ? null : (
+          <Record record={record} cards={cards} timezone={timezone} cardProps={cardProps} resolve={resolveCard} busyCardId={busyCardId} cardErrors={cardErrors} currentAskId={ask?.card_instance_id} focus={focus} link={link} open={recordOpen} onClose={() => setRecordOpen(false)} />
+        )}
       </div>
+      <FooterDisclosure partner={me?.partner} />
     </div>
   );
 }

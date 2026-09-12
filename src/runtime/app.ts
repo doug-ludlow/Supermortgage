@@ -9,6 +9,11 @@
  *     decisions, entity versions and escalations — or nothing.
  *
  *   sweep(now)
+ *     the daily refinance check when a rate feed is wired (src/runtime/refi-daily.ts: once per calendar day at/after
+ *     06:30 ET — the day's rate sheet through 20.4, the universe from `v_refi_universe`, `20.1 emitOfferReady{op=run}`
+ *     per partner program, whose `refi.trigger.run_completed` satisfies SM_REFI_TRIGGER_DAILY before the breach pass
+ *     below could breach it), the FAKE reviewers when they are on (src/infra/integrations/reviewers.ts, DELTA-30: every
+ *     pending human item older than the delay approved through its owning tool), then
  *     breach every armed timer whose due instant has passed (timer.breached
  *     events, an escalation per breach to the registry's escalation role) and
  *     report the integration outbox backlog. Cloud Scheduler runs it every
@@ -51,7 +56,11 @@ import { FakePacer, FakeDmdc, FakeErecording } from "../infra/integrations/legal
 import { FakeMers } from "../infra/integrations/mers.ts";
 import { FakeLpiTracking, FakeFlood, FakeTaxService, FakeMi } from "../infra/integrations/property.ts";
 import { FakeGoogleOidc } from "../infra/integrations/oidc.ts";
+import type { RateFeedPort } from "../infra/integrations/rates.ts";
+import type { FakeReviewers, FakeReviewerReport } from "../infra/integrations/reviewers.ts";
 import { originationServices, type OriginationServiceSet } from "./origination.ts";
+import { refiDailyRun, type RefiDailyReport } from "./refi-daily.ts";
+import type { Logger } from "./log.ts";
 
 export interface RuntimeDeps {
   readonly db: Db;
@@ -60,6 +69,11 @@ export interface RuntimeDeps {
   readonly ports?: Partial<Ports>;
   readonly notices?: NoticeRegistry;
   readonly clock?: Clock;
+  /** The daily rate source the sweep publishes through 20.4 and runs 20.1 against (src/infra/integrations/rates.ts); absent → the sweep runs no daily refinance check. */
+  readonly rateFeed?: RateFeedPort | null;
+  /** DELTA-30: the FAKE reviewers the sweep runs every pass (null / absent → off; `fakeReviewersFromEnv`). */
+  readonly reviewers?: FakeReviewers | null;
+  readonly logger?: Logger;
 }
 /** A command is scoped to a loan (`loanId`), to an application before funding (`applicationId`), or to both during the 30.2 hand-off. */
 export interface ExecuteRequest { readonly process: string; readonly name: string; readonly loanId: string; readonly applicationId?: string; readonly actor: Actor; readonly input: ToolInput; readonly run?: AgentRunInfo; readonly approvedBy?: Actor; }
@@ -77,6 +91,10 @@ export interface SweepReport {
   readonly due: number;
   readonly breaches: readonly { loan_id: string | null; code: string; severity: number | null; escalate_to: readonly string[]; timer_id: string }[];
   readonly outbox: readonly { adapter: string; status: string; count: number }[];
+  /** The daily refinance check's report (null when no rate feed is wired). */
+  readonly refi: RefiDailyReport | null;
+  /** The FAKE reviewers' pass (null when they are off). */
+  readonly reviewers: FakeReviewerReport | null;
 }
 export class ToolNotFound extends Error { constructor(process: string, name: string) { super(`no tool ${name} in process ${process}`); this.name = "ToolNotFound"; } }
 
@@ -101,6 +119,9 @@ export class Runtime {
   readonly ports: Partial<Ports>;
   readonly noticeRegistry: NoticeRegistry;
   readonly clock: Clock;
+  readonly rateFeed: RateFeedPort | null;
+  readonly reviewers: FakeReviewers | null;
+  readonly logger: Logger | undefined;
   readonly uow: PgUnitOfWork;
   readonly entities: PgEntityRepository;
   readonly escalationRepo: PgEscalationRepository;
@@ -114,6 +135,7 @@ export class Runtime {
 
   constructor(deps: RuntimeDeps) {
     this.db = deps.db; this.registry = deps.registry; this.agents = deps.agents ?? new AgentRegistry(); this.ports = deps.ports ?? fakePorts(); this.clock = deps.clock ?? systemClock;
+    this.rateFeed = deps.rateFeed ?? null; this.reviewers = deps.reviewers ?? null; this.logger = deps.logger;
     this.noticeRegistry = deps.notices ?? (() => { const r = buildRegistry(); publishAuthored(r); publishSection02(r); registerPreapprovalLetter(r); return r; })();   // 32.8: 2.x's own authored pieces (AUTODRAFT-*, LC-*, SUSP-*) beside the catalog   // DELTA-01: the preapproval letter beside the catalog
     this.uow = new PgUnitOfWork(this.db, this.registry); this.entities = new PgEntityRepository(this.db); this.escalationRepo = new PgEscalationRepository(this.db); this.applications = new PgApplicationRepository(this.db);
     this.bus = new CommandBus(this.agents);
@@ -189,8 +211,20 @@ export class Runtime {
     return { application, events, timers, decisions: decisions.map((d) => ({ id: d.id, action: d.action, agent: d.agent })) };
   }
 
-  /** Breach every armed timer past due at `nowIso`; one escalation per breach to the registry's first escalation role. One transaction for the pass. */
+  /**
+   * The scheduled pass: the daily refinance check (when a rate feed is wired) and the FAKE reviewers (when on) first — both
+   * commit through the command bus, so what they satisfy is never breached below — then breach every armed timer past due
+   * at `nowIso`; one escalation per breach to the registry's first escalation role. One transaction for the breach pass.
+   * Neither daily pass can fail the sweep: a failure is logged and reported, the breach pass still runs.
+   */
   async sweep(nowIso: string = this.clock.now()): Promise<SweepReport> {
+    let refi: RefiDailyReport | null = null;
+    if (this.rateFeed) {
+      try { refi = await refiDailyRun(this, nowIso, { feed: this.rateFeed, logger: this.logger }); }
+      catch (e) { const msg = e instanceof Error ? e.message : String(e); this.logger?.error("refi daily run failed", { at: nowIso, error: e }); refi = { at: nowIso, as_of_date: nowIso.slice(0, 10) as RefiDailyReport["as_of_date"], ran: false, reason: `failed: ${msg}`, rate_sheet: null, universe: { view_rows: 0, loaded: 0, unchanged: 0, skipped: [] }, programs: [], line: `refi daily: failed (${msg})` }; }
+    }
+    let reviewers: FakeReviewerReport | null = null;
+    if (this.reviewers) { try { reviewers = await this.reviewers.tick(this, nowIso); } catch (e) { this.logger?.error("fake reviewers failed", { at: nowIso, error: e }); } }
     const due = await this.uow.timers.due(nowIso);
     const breaches: SweepReport["breaches"][number][] = [];
     if (due.length) {
@@ -214,7 +248,7 @@ export class Runtime {
       }).then((persisted) => this.uow.notifyCommitted(persisted));
     }
     const outbox = await this.db.query<{ adapter: string; status: string; count: string }>(`SELECT adapter, status, count(*)::text AS count FROM integration_messages WHERE status IN ('queued', 'failed') GROUP BY adapter, status ORDER BY adapter, status`).catch(() => []);
-    return { at: nowIso, due: due.length, breaches, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })) };
+    return { at: nowIso, due: due.length, breaches, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })), refi, reviewers };
   }
 
   async ready(): Promise<boolean> { try { await this.db.query("SELECT 1"); return true; } catch { return false; } }

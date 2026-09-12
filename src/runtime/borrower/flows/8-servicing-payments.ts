@@ -26,10 +26,17 @@
  *   consent.esign.suspect                            ConsentCard `consent.esign.reverify` (7.4 rule 8) — T7
  *   tax_form.1098.furnished{channel}                 NoticeCard `year_end.1098` (paper → Mailed) — T11
  *   tick                                             src/runtime/servicing.ts servicingDailySweep; the December `irs_estatement` ConsentCard — T11
- *   onMessage                                        "make a payment" → PaymentCard; "refund" → ChoiceCard; "waive my escrow" → ChoiceCard `escrow.waiver.choice` (T10)
+ *   onMessage                                        "make a payment" → PaymentCard; "refund" → ChoiceCard; "waive my escrow" → ChoiceCard `escrow.waiver.choice` (T10);
+ *                                                    an extra-principal ask ("pay 500 extra toward principal") is left to the agent turn (32.16 `card.request{extra_principal}`)
+ *
+ * 32.16 Stage 4 (docs/ux/17 §4 "card.request for payments and changes"): the card builders are exported — `paymentFacts` loads the same
+ * loan facts `context()` reads, and `paymentCard` / `extraPrincipalCard` / `autopayEnrollCard` / `autopayChoiceCard` / `escrowShortageCard`
+ * are the specs this flow sends — so the 32.16 `card.request` catalogue (src/app/tools/section32-16.ts) raises the same card the flow
+ * raises, from inside the turn's unit of work. Nothing the flow commits changes.
  */
 import { randomUUID } from "node:crypto";
 import type { Actor, DomainEvent } from "../../../kernel/events/index.ts";
+import type { Queryable } from "../../../infra/db/client.ts";
 import { plainDate as D, addDays, addMonths, type PlainDate } from "../../../kernel/calendar/date.ts";
 import { EntityStore } from "../../../app/tools.ts";
 import { servicingDailySweep, servicingParties, recipientsOf, loanCashState, type ServicingParty } from "../../servicing.ts";
@@ -53,23 +60,36 @@ const monthOf = (d: string): string => MONTH.format(new Date(`${d.slice(0, 10)}T
 
 // ---------------------------------------------------------------- the loan context one batch works on
 type P = Record<string, unknown>;
-interface Ctx { readonly loanId: string; readonly appId: string | null; readonly parties: readonly ServicingParty[]; readonly events: readonly DomainEvent[]; readonly store: EntityStore; readonly now: string; readonly terms: { pi_cents: bigint; escrow_cents: bigint; grace_days: number; loan_last4: string; first_payment_date: string; note_rate_pct: string }; }
+/** The loan's own terms the payment cards state (the latest `loan_terms` version beside the `loans` row): never a figure the flow computed. */
+export interface PaymentTerms { readonly pi_cents: bigint; readonly escrow_cents: bigint; readonly grace_days: number; readonly late_charge_pct_bps: number | null; readonly loan_last4: string; readonly first_payment_date: string; readonly note_rate_pct: string }
+/** What the card builders read: the loan's committed log, its entity rows, the clock and its terms — the flow's `context()` and the 32.16 turn's unit of work both supply one. */
+export interface PaymentFacts { readonly loanId: string; readonly events: readonly DomainEvent[]; readonly store: EntityStore; readonly now: string; readonly terms: PaymentTerms }
+interface Ctx extends PaymentFacts { readonly appId: string | null; readonly parties: readonly ServicingParty[] }
 const pl = (e: DomainEvent): P => e.payload as P;
-const has = (ctx: Ctx, type: string, where: (p: P) => boolean = () => true): boolean => ctx.events.some((e) => e.type === type && where(pl(e)));
-const last = (ctx: Ctx, type: string, where: (p: P) => boolean = () => true): DomainEvent | undefined => ctx.events.filter((e) => e.type === type && where(pl(e))).at(-1);
+const has = (ctx: PaymentFacts, type: string, where: (p: P) => boolean = () => true): boolean => ctx.events.some((e) => e.type === type && where(pl(e)));
+const last = (ctx: PaymentFacts, type: string, where: (p: P) => boolean = () => true): DomainEvent | undefined => ctx.events.filter((e) => e.type === type && where(pl(e))).at(-1);
 const str = (v: unknown): string => (typeof v === "string" ? v : v === undefined || v === null ? "" : String(v));
 
+/** The `loans` + latest `loan_terms` row the cards state their figures from (the same query for the flow and for 32.16 `card.request`). */
+export async function loadPaymentTerms(db: Queryable, loanId: string): Promise<{ terms: PaymentTerms; appId: string | null }> {
+  const row = (await db.query<P>(`SELECT l.origination_application_id, l.servicer_loan_number, l.first_payment_date::text AS first_payment_date, lt.pi_cents::text AS pi_cents, lt.escrow_payment_cents::text AS escrow_payment_cents, lt.late_charge_grace_days, lt.late_charge_pct_bps, lt.note_rate_bps FROM loans l LEFT JOIN LATERAL (SELECT * FROM loan_terms t WHERE t.loan_id = l.id ORDER BY t.effective_from DESC, t.created_at DESC LIMIT 1) lt ON true WHERE l.id = $1`, [loanId]))[0] ?? null;
+  const terms: PaymentTerms = { pi_cents: BigInt(String(row?.["pi_cents"] ?? "0")), escrow_cents: BigInt(String(row?.["escrow_payment_cents"] ?? "0")), grace_days: Number(row?.["late_charge_grace_days"] ?? 15), late_charge_pct_bps: row?.["late_charge_pct_bps"] === null || row?.["late_charge_pct_bps"] === undefined ? null : Number(row["late_charge_pct_bps"]), loan_last4: str(row?.["servicer_loan_number"]).slice(-4), first_payment_date: str(row?.["first_payment_date"]), note_rate_pct: (Number(row?.["note_rate_bps"] ?? 0) / 10_000).toFixed(3) };
+  return { terms, appId: (row?.["origination_application_id"] as string | null) ?? null };
+}
+/** The facts from an already-open unit of work (32.16 `card.request`: the turn's seeded event store and entity store, the command's clock). */
+export async function paymentFacts(db: Queryable, loanId: string, o: { events: readonly DomainEvent[]; store: EntityStore; now: string }): Promise<PaymentFacts> {
+  const { terms } = await loadPaymentTerms(db, loanId);
+  return { loanId, events: o.events, store: o.store, now: o.now, terms };
+}
 async function context(deps: FlowDeps, loanId: string): Promise<Ctx> {
-  const [events, records, parties, row] = await Promise.all([deps.runtime.uow.events.byLoan(loanId), deps.runtime.entities.load({ loanId }), servicingParties(deps.runtime, loanId),
-    deps.runtime.db.query<P>(`SELECT l.origination_application_id, l.servicer_loan_number, l.first_payment_date::text AS first_payment_date, lt.pi_cents::text AS pi_cents, lt.escrow_payment_cents::text AS escrow_payment_cents, lt.late_charge_grace_days, lt.note_rate_bps FROM loans l LEFT JOIN LATERAL (SELECT * FROM loan_terms t WHERE t.loan_id = l.id ORDER BY t.effective_from DESC, t.created_at DESC LIMIT 1) lt ON true WHERE l.id = $1`, [loanId]).then((r) => r[0] ?? null)]);
+  const [events, records, parties, loaded] = await Promise.all([deps.runtime.uow.events.byLoan(loanId), deps.runtime.entities.load({ loanId }), servicingParties(deps.runtime, loanId), loadPaymentTerms(deps.runtime.db, loanId)]);
   const store = new EntityStore(); store.seed(records);
-  const terms = { pi_cents: BigInt(String(row?.["pi_cents"] ?? "0")), escrow_cents: BigInt(String(row?.["escrow_payment_cents"] ?? "0")), grace_days: Number(row?.["late_charge_grace_days"] ?? 15), loan_last4: str(row?.["servicer_loan_number"]).slice(-4), first_payment_date: str(row?.["first_payment_date"]), note_rate_pct: (Number(row?.["note_rate_bps"] ?? 0) / 10_000).toFixed(3) };
-  return { loanId, appId: (row?.["origination_application_id"] as string | null) ?? null, parties, events, store, now: deps.runtime.clock.now(), terms };
+  return { loanId, appId: loaded.appId, parties, events, store, now: deps.runtime.clock.now(), terms: loaded.terms };
 }
 const partyOf = (ctx: Ctx, partyId: unknown): readonly ServicingParty[] => { const p = ctx.parties.find((x) => x.party_id === partyId); return p ? [p] : ctx.parties; };
 
 // ---------------------------------------------------------------- card primitives (32.1's tools; idempotent on `flow_key`)
-interface CardSpec { readonly kind: string; readonly copy_key: string; readonly props: P; readonly command_ref?: string; readonly body_text?: string; readonly expires_at?: string; readonly flow_key: string; readonly informational?: boolean }
+export interface CardSpec { readonly kind: string; readonly copy_key: string; readonly props: P; readonly command_ref?: string; readonly body_text?: string; readonly expires_at?: string; readonly flow_key: string; readonly informational?: boolean }
 async function existingCard(deps: FlowDeps, partyId: string, flowKey: string): Promise<{ card_instance_id: string; status: string } | undefined> {
   return (await deps.runtime.db.query<{ card_instance_id: string; status: string }>(`SELECT card_instance_id, status FROM card_instances WHERE party_id = $1 AND props->>'flow_key' = $2 ORDER BY created_at DESC LIMIT 1`, [partyId, flowKey]))[0];
 }
@@ -101,23 +121,55 @@ const dateRange = (from: PlainDate, to: PlainDate): string[] => { const out: str
 
 // ---------------------------------------------------------------- payments (2.1 / 2.2 / 2.7)
 /** The next installment the loan's rows say is due: the engine's own `installment.due_date_reached` when inside its grace, else the schedule's next date (a calendar restatement of the note). */
-function nextInstallment(ctx: Ctx): { due: PlainDate; grace_end: PlainDate | null; reached: boolean } {
+export function nextInstallment(ctx: PaymentFacts): { due: PlainDate; grace_end: PlainDate | null; reached: boolean } {
   const reversed = new Set(ctx.events.filter((e) => e.type === "payment.reversed").map((e) => str(pl(e)["payment_id"])));   // 2.3 rule 7: a returned debit no longer covers its installment
   const reached = last(ctx, "installment.due_date_reached"); const posted = ctx.events.filter((e) => e.type === "payment.posted" && !reversed.has(str(pl(e)["payment_id"])) && Array.isArray(pl(e)["installments"])).flatMap((e) => pl(e)["installments"] as string[]);
   if (reached && !posted.includes(str(pl(reached)["installment_due_date"]))) return { due: D(str(pl(reached)["installment_due_date"])), grace_end: str(pl(reached)["grace_end_on"]) ? D(str(pl(reached)["grace_end_on"])) : null, reached: true };
   const lastPosted = posted.slice().sort().at(-1);
   return { due: lastPosted ? addMonths(D(lastPosted), 1) : D(ctx.terms.first_payment_date || ctx.now.slice(0, 10)), grace_end: null, reached: false };
 }
-function savedAccounts(ctx: Ctx): P[] {
+export function savedAccounts(ctx: PaymentFacts): P[] {
   return ctx.store.list("autodraft_enrollments", (d) => d.loan_id === ctx.loanId && typeof d.account_last4 === "string" && d.account_last4 !== "").map((r) => ({ id: r.id, last4: String(r.data.account_last4), label: `${String(r.data.account_type ?? "checking")} (autopay)` }));
 }
-function paymentCard(ctx: Ctx, flowKey: string, opts: { late_charge_cents?: bigint; add_account?: boolean; title_key?: string } = {}): CardSpec {
+export function paymentCard(ctx: PaymentFacts, flowKey: string, opts: { late_charge_cents?: bigint; add_account?: boolean; title_key?: string } = {}): CardSpec {
   const n = nextInstallment(ctx); const today = D(ctx.now.slice(0, 10)); const amount = ctx.terms.pi_cents + ctx.terms.escrow_cents;
   // 32.8 §3.1: date options = today through the engine's grace end (never a date the engine did not state); before the due date is reached, through the due date
   const through = n.grace_end && n.grace_end >= today ? n.grace_end : n.due >= today ? n.due : today;
   const lc = opts.late_charge_cents ?? 0n;
   return { kind: "PaymentCard", copy_key: opts.title_key ?? "payment.due", flow_key: flowKey, command_ref: "payment.makeOneTime",
     props: { mode: "one_time", amount_default_cents: amount.toString(), amount_editable: true, date_options: dateRange(today, through), accounts: savedAccounts(ctx), add_account: opts.add_account ?? true, ...(lc > 0n ? { include_late_charge_option: { late_charge_cents: lc.toString() } } : {}), title: "", installment_due_date: n.due, grace_end_on: n.grace_end, copy_tokens: { money: money(amount), date: n.due }, fresh_l1_required: true, command_args: { date: today, amount_cents: amount.toString(), designation: "contractual" } } };
+}
+/**
+ * 32.8 §3.2 / 32.16 §4: the extra-principal PaymentCard a borrower asks for in words — amount only (`payment.extraPrincipal`, a curtailment
+ * 2.4 applies the same day on a current loan and redirects to the cure when an installment is past due: the card says which before the tap).
+ * `amount_cents` is the figure the borrower named (the model transcribed it into the ask); it is the editable default, never the commit —
+ * the tap's evidence carries the amount, with a fresh code (32.1 §5).
+ */
+export function extraPrincipalCard(ctx: PaymentFacts, flowKey: string, opts: { amount_cents?: string | null } = {}): CardSpec {
+  const n = nextInstallment(ctx); const today = D(ctx.now.slice(0, 10));
+  const pastDue = n.reached && (n.grace_end ? n.grace_end < today : n.due < today);
+  const amount = opts.amount_cents && /^\d+$/.test(opts.amount_cents) && BigInt(opts.amount_cents) > 0n ? opts.amount_cents : null;
+  return { kind: "PaymentCard", copy_key: "payment.extra_principal", flow_key: flowKey, command_ref: "payment.extraPrincipal",
+    props: { mode: "extra_principal", amount_default_cents: amount, amount_source: amount ? "borrower_stated_unconfirmed" : null, amount_editable: true, date_options: [today], accounts: savedAccounts(ctx), add_account: true, title: "", installment_due_date: n.due, applies: pastDue ? "redirected_to_cure" : "same_day_principal", fresh_l1_required: true, copy_tokens: { ...(amount ? { money: money(amount) } : {}), date: n.due }, command_args: { date: today, designation: "curtailment" } } };
+}
+/** The Reg E / Nacha elements shown before an enrollment (2.x rule 1), for the enrollment ConsentCard a borrower asks for in words (32.16 `card.request{autopay_enroll}`): `autodraft.enroll` runs on the tap (fresh code; the tap's args carry the account), then this flow's authorization ConsentCard follows `autodraft.enrollment.requested`. */
+export function autopayEnrollCard(ctx: PaymentFacts, party: Pick<ServicingParty, "party_id" | "legal_name">, flowKey: string, o: { draft_day: number }): CardSpec {
+  const draftDay = Math.min(Math.max(Math.trunc(o.draft_day || 1), 1), 16);
+  const a = autodraftAuthorization(ctx, party, { draft_day: draftDay, amount_rule: "contractual" });
+  return { kind: "ConsentCard", copy_key: "autopay.enroll", flow_key: flowKey, command_ref: "autodraft.enroll",
+    props: { consent_kind: "autodraft", disclosure_version_id: AUTODRAFT_DISCLOSURE_VERSION, scope: ["autopay"], affirmation_method: "checkbox_with_text", title: "", body_text: a.body_text, helper_text: "", footer_text: "", requires_typed_name: true, verification_state: "none", optional_statement_copy_key: "consent.autodraft.optional", optional: true, prechecked: false, elements: a.elements, draft_day: draftDay, amount_rule: "contractual", amount_cents: (ctx.terms.pi_cents + ctx.terms.escrow_cents).toString(), first_debit_on: a.authorization["first_debit_on"] ?? null, add_account: true, accounts: savedAccounts(ctx), fresh_l1_required: true, copy_tokens: { money: money(ctx.terms.pi_cents + ctx.terms.escrow_cents), n: String(draftDay) },
+      command_args: { amount_rule: "contractual", draft_day: draftDay, include_fees: false, elements_displayed: true } } };
+}
+/** An autopay change / pause / revocation a borrower asks for in words: the ChoiceCard whose tap runs the 32.2 command on the enrollment row (fresh code); the assistant never argues against a revocation (32.8 §4). */
+export function autopayChoiceCard(verb: "change" | "pause" | "revoke", rec: { id: string; data: P }, flowKey: string, o: { draft_day?: number | null } = {}): CardSpec {
+  const a = (rec.data["authorization"] as P | undefined) ?? {}; const last4 = str(a["account_last4"] ?? rec.data["account_last4"]);
+  const account = { last4, type: str(a["account_type"] ?? rec.data["account_type"]) || "checking", routing: str(a["routing"] ?? rec.data["routing"]) };
+  const day = verb === "change" ? Math.min(Math.max(Math.trunc(o.draft_day ?? Number(rec.data["draft_day"] ?? 1)), 1), 16) : Number(rec.data["draft_day"] ?? 1);
+  const ordinal = (n: number): string => `${n}${n === 1 ? "st" : n === 2 ? "nd" : n === 3 ? "rd" : "th"}`;
+  const primary = verb === "change" ? { id: "change", label: `Draft on the ${ordinal(day)} from now on`, is_primary: true } : verb === "pause" ? { id: "pause", label: "Pause autopay", is_primary: true } : { id: "revoke", label: "Turn autopay off", is_primary: true };
+  const args = verb === "change" ? { enrollment_id: rec.id, amount_rule: str(rec.data["amount_rule"]) || "contractual", draft_day: day, include_fees: rec.data["include_fees"] === true, account, elements_displayed: true } : { enrollment_id: rec.id };
+  return { kind: "ChoiceCard", copy_key: `autopay.${verb}.choice`, flow_key: flowKey, command_ref: `autodraft.${verb}`,
+    props: { title: "", options: [primary, { id: "keep", label: "Keep it as it is" }], command: `autodraft.${verb}`, command_args_by_option: { [primary.id]: args, keep: {} }, no_command_options: ["keep"], enrollment_id: rec.id, draft_day: day, copy_tokens: { last4, n: String(day) }, fresh_l1_required: true, affirmatives: verb === "change" ? ["change it", "move it"] : verb === "pause" ? ["pause it", "pause autopay"] : ["turn it off", "cancel autopay", "stop autopay"] } };
 }
 async function onInstallmentDue(deps: FlowDeps, ctx: Ctx, e: DomainEvent): Promise<void> {
   const p = pl(e); const due = str(p["installment_due_date"] ?? p["due_date"]);
@@ -164,7 +216,7 @@ async function onLateCharge(deps: FlowDeps, ctx: Ctx, e: DomainEvent): Promise<v
 
 // ---------------------------------------------------------------- autopay (2.3)
 /** 2.x rule 1: every Nacha / Reg E element the ConsentCard must show (32.7's element copy keys), and the Authorization record 2.3's checklist verifies. */
-export function autodraftAuthorization(ctx: Ctx, party: ServicingParty, e: P): { authorization: P; elements: P[]; body_text: string } {
+export function autodraftAuthorization(ctx: PaymentFacts, party: Pick<ServicingParty, "party_id" | "legal_name">, e: P): { authorization: P; elements: P[]; body_text: string } {
   const amount = ctx.terms.pi_cents + ctx.terms.escrow_cents + BigInt(str(e["extra_principal_cents"]) || "0");
   const draftDay = Number(e["draft_day"] ?? 1); const n = nextInstallment(ctx); const today = ctx.now.slice(0, 10);
   const firstMonth = `${n.due.slice(0, 8)}${String(Math.min(draftDay, 28)).padStart(2, "0")}`; const firstDebit = firstMonth > today ? firstMonth : `${addMonths(n.due, 1).slice(0, 8)}${String(Math.min(draftDay, 28)).padStart(2, "0")}`;
@@ -254,9 +306,21 @@ async function onEscrowStatementSent(deps: FlowDeps, ctx: Ctx, e: DomainEvent): 
   const a = approvedAnalysis(ctx); const d = (a?.data["decision"] as P | undefined);
   if (!a || !d || d["kind"] !== "shortage" || bi(d["shortage_cents"]) <= 0n) return;
   if (has(ctx, "escrow.repayment_plan.created", (x) => x["analysis_id"] === a.id) || has(ctx, "escrow.election.recorded", (x) => x["analysis_id"] === a.id)) return;
+  await sendToAll(deps, ctx, escrowShortageCard(a, d));
+}
+/** 32.8 §6.2: the shortage ChoiceCard (spread over the plan's months | pay now) with 3.2's own figures — sent on the statement, and re-offered when the borrower asks for it in words (32.16 `card.request{escrow_shortage}`) while no plan or election exists. */
+export function escrowShortageCard(a: { id: string; data: P }, d: P): CardSpec {
   const shortage = bi(d["shortage_cents"]); const installment = bi(d["installment_cents"]); const months = Number(d["months"] ?? 12); const start = str(a.data["year_start"]);
-  await sendToAll(deps, ctx, { kind: "ChoiceCard", copy_key: "escrow.shortage.choice", flow_key: `escrow.shortage:${a.id}`, command_ref: "escrow.electShortage",
-    props: { title: "", options: [{ id: "spread_12", label: `Spread over ${months} months (+${money(installment)}/mo)`, is_primary: true }, { id: "lump_sum", label: `Pay ${money(shortage)} now` }], command: "escrow.electShortage", command_args_by_option: { spread_12: { option: "spread_12", analysis_id: a.id, start }, lump_sum: { option: "lump_sum", analysis_id: a.id } }, copy_tokens: { money: [money(shortage), money(installment), money(shortage)] }, analysis_id: a.id, shortage_cents: shortage.toString(), installment_cents: installment.toString(), months, start_due_date: start, lump_sum_insert: "NTC_SM_ESCROW_VOLUNTARY_LUMPSUM_INSERT", lump_sum_option_offered: d["lump_sum_option_offered"] === true, fresh_l1_required: true, affirmatives: ["spread it", "spread over 12 months", "pay it now"] } });
+  return { kind: "ChoiceCard", copy_key: "escrow.shortage.choice", flow_key: `escrow.shortage:${a.id}`, command_ref: "escrow.electShortage",
+    props: { title: "", options: [{ id: "spread_12", label: `Spread over ${months} months (+${money(installment)}/mo)`, is_primary: true }, { id: "lump_sum", label: `Pay ${money(shortage)} now` }], command: "escrow.electShortage", command_args_by_option: { spread_12: { option: "spread_12", analysis_id: a.id, start }, lump_sum: { option: "lump_sum", analysis_id: a.id } }, copy_tokens: { money: [money(shortage), money(installment), money(shortage)] }, analysis_id: a.id, shortage_cents: shortage.toString(), installment_cents: installment.toString(), months, start_due_date: start, lump_sum_insert: "NTC_SM_ESCROW_VOLUNTARY_LUMPSUM_INSERT", lump_sum_option_offered: d["lump_sum_option_offered"] === true, fresh_l1_required: true, affirmatives: ["spread it", "spread over 12 months", "pay it now"] } };
+}
+/** The approved analysis whose shortage still awaits the borrower's election (no 3.6 plan, no election recorded), or null — the same test `onEscrowStatementSent` applies. */
+export function openShortage(ctx: PaymentFacts): { analysis: { id: string; data: P }; decision: P } | null {
+  const id = str(last(ctx, "escrow.analysis.approved")?.payload["analysis_id"]); const rec = id ? ctx.store.get("escrow_analyses", id) : undefined; if (!rec) return null;
+  const d = rec.data["decision"] as P | undefined; if (!d || d["kind"] !== "shortage" || bi(d["shortage_cents"]) <= 0n) return null;
+  if (!has(ctx, "escrow.statement.sent", (x) => ["annual", "shortage_notice", "short_year_reset"].includes(str(x["statement_type"])))) return null;
+  if (has(ctx, "escrow.repayment_plan.created", (x) => x["analysis_id"] === id) || has(ctx, "escrow.election.recorded", (x) => x["analysis_id"] === id)) return null;
+  return { analysis: { id, data: rec.data }, decision: d };
 }
 async function onAnalysisApproved(deps: FlowDeps, ctx: Ctx, e: DomainEvent): Promise<void> {
   const p = pl(e); const id = str(p["analysis_id"]);
@@ -348,6 +412,8 @@ async function react(deps: FlowDeps, ctx: Ctx, e: DomainEvent): Promise<void> {
 }
 
 const PAY = /\b(make|schedule|send|submit)\b.*\bpayment\b|\bpay (my|the|this) (mortgage|loan|payment|bill)\b|^pay\b|\bpayment card\b/i;
+/** An extra-principal ask (32.8 §3.2) is not the contractual PaymentCard's: it is left to the agent turn (32.16 `card.request{extra_principal}`), which raises `extraPrincipalCard`. */
+export const EXTRA_PRINCIPAL = /\b(extra|additional|more)\b.*\b(principal|toward|towards)\b|\bprincipal\b.*\b(extra|additional|curtail\w*|prepay\w*|pay down)\b|\bcurtail\w*\b|\bpay (down|off) (some|part|extra)\b/i;
 const REFUND = /\b(refund|send (it |the money |the funds )?back|return (my|the) (money|funds|partial|payment)|money back)\b/i;
 const WAIVER = /\b(waive|cancel|remove|drop|close|stop)\b.*\bescrow\b|\bescrow\b.*\b(waiver|waive|cancel|remove|drop)\b/i;
 async function onMessage(deps: FlowDeps, m: InboundMessage): Promise<FlowReply | null> {
@@ -364,7 +430,7 @@ async function onMessage(deps: FlowDeps, m: InboundMessage): Promise<FlowReply |
       props: { title: "", options: [{ id: "request", label: "Ask to close my escrow account", is_primary: true }, { id: "keep", label: "Keep escrow" }], command: "escrow.requestWaiver", command_args_by_option: { request: { request }, keep: {} }, no_command_options: ["keep"], gate: "REGZ_1026_35B1_HPML_ESCROW_GATE", hpml: request["hpml"] === true, consummation_date: request["consummation_date"] ?? null, affirmatives: ["close my escrow", "waive escrow"] } });
     return { copy_key: "escrow.waiver.offered", card_instance_id: id };
   }
-  if (PAY.test(m.text)) {
+  if (PAY.test(m.text) && !EXTRA_PRINCIPAL.test(m.text)) {
     const id = await sendCard(deps, ctx, party, paymentCard(ctx, `pay:manual:${m.at.slice(0, 10)}`));
     return { copy_key: "payment.card_offered", card_instance_id: id };
   }

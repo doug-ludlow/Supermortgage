@@ -209,12 +209,7 @@ export function Account({ mode, titleKey, onSession, onCancel, navigate, redirec
 
   return (
     <section className="sm-signin" id="otp" data-testid="account" data-mode={mode} data-step={step.kind} aria-labelledby={`${id}-title`}>
-      {mode === "sign_up" && step.kind === "form" ? (
-        // 32.16 §2.0: the automation disclosure is the first assistant line on the account screen (and again as the first message of every session)
-        <p className="sm-source" data-testid="account-disclosure" data-copy-key="entry.disclosure.first" data-automated="true">
-          {copy("entry.disclosure.first", { "partner.legal_name": partner })}
-        </p>
-      ) : null}
+      {/* 32.16 §2.0 / §1 principle 8: no disclosure sentence above the form — the footer of every screen is the disclosure */}
       <h2 id={`${id}-title`} data-testid="account-title">
         {heading}
       </h2>

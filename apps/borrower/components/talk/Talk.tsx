@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { talk, type TalkLine, type TalkTurn } from "@/lib/api/talk";
 import { ApiRequestError } from "@/lib/api/client";
-import { copy } from "@/lib/copy";
+import { copy, copyOptions } from "@/lib/copy";
 
 type Recognition = { start(): void; stop(): void; lang: string; interimResults: boolean; onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null; onend: (() => void) | null; onerror: (() => void) | null };
 type RecognitionCtor = new () => Recognition;
@@ -27,6 +27,7 @@ export function Talk() {
   const [error, setError] = useState<string | null>(null);
   const [agent, setAgent] = useState<{ name: string; model: string | null } | null>(null);
   const [signedIn, setSignedIn] = useState(false);
+  const [handoff, setHandoff] = useState(false);   // account.from_talk arrived: the Create account link (docs/ux/17 §2.0 — the account is the door)
   const [speak, setSpeak] = useState(false);
   const [listening, setListening] = useState(false);
   const recRef = useRef<Recognition | null>(null);
@@ -43,6 +44,7 @@ export function Talk() {
     setTurns(r.transcript);
     setAgent({ name: r.agent, model: r.model });
     if (r.session_opened || r.step === "signed_in") setSignedIn(true);
+    if (r.transcript.some((l) => l.copy_key === "account.from_talk")) setHandoff(true);
     say(r.lines);
   }, [say]);
 
@@ -74,7 +76,7 @@ export function Talk() {
 
   return (
     <main className="sm-talk" aria-label="Conversation" data-testid="talk">
-      <div role="log" aria-live="polite" data-step={signedIn ? "signed_in" : undefined}>
+      <div role="log" aria-live="polite" data-step={signedIn ? "signed_in" : handoff ? "sign_up" : undefined}>
         <ol className="sm-talk-log">
           {turns.map((l, i) => (
             <li key={i} className={`sm-talk-line sm-talk-${l.role}`} data-role={l.role} data-copy-key={l.copy_key}>
@@ -90,6 +92,10 @@ export function Talk() {
       {signedIn ? (
         <p className="sm-talk-file">
           <a href="/app">Open your file</a>
+        </p>
+      ) : handoff ? (
+        <p className="sm-talk-file">
+          <a href="/app/sign-up" className="sm-btn sm-btn-primary" data-testid="talk-sign-up">{copyOptions("account.from_talk")[0] ?? "Create your account"}</a>
         </p>
       ) : null}
       <form className="sm-talk-bar" onSubmit={(e) => { e.preventDefault(); void send(); }}>

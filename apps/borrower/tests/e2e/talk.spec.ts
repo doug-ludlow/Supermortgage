@@ -1,8 +1,8 @@
 /**
  * /app/talk — the entry as one conversation. The proxy is replaced by `page.route` canned responses (no API): the first turn
  * shows the disclosure notice then the agent's question; a typed answer is posted as `{text}` and the transcript re-renders;
- * the range sentence arrives as a notice; the sign-in turn shows the "Open your file" link; a 503 says the route is not
- * configured; axe AA.
+ * the range sentence arrives as a notice; the hand-off line shows the Create account link (no code by text or e-mail —
+ * docs/ux/17 §2.0); a 503 says the route is not configured; axe AA.
  */
 import { expect, test, type Route } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
@@ -13,7 +13,7 @@ const disclosure = { role: "notice", text: "I'm Supermortgage's automated assist
 const RANGE = "Today's 30-year fixed rates for this program range from 6.125% (6.240% APR) to 6.875% (6.990% APR) depending on credit and loan-to-value. This is not a commitment to lend; rates change daily. Partner Bank, NMLSR ID 123456.";
 
 test.describe("talk", () => {
-  test("the conversation: disclosure first, the agent asks, a typed answer posts {text}, the range arrives as a notice, sign-in shows the file link; axe", async ({ page }) => {
+  test("the conversation: disclosure first, the agent asks, a typed answer posts {text}, the range arrives as a notice, the hand-off shows the Create account link; axe", async ({ page }) => {
     const posts: Record<string, unknown>[] = [];
     let transcript: Record<string, unknown>[] = [];
     await page.route("**/app/api/v1/borrower/talk", async (route) => {
@@ -24,11 +24,10 @@ test.describe("talk", () => {
       if (!transcript.length) { lines.push(disclosure, { role: "agent", text: "Hi. What would you like to do: buy a home, lower your rate or payment, or take cash out?", at }); }
       else if (/lower/i.test(text)) { lines.push({ role: "you", text, at }, { role: "agent", text: "Got it. Is this your primary home, a second home, or an investment property?", at }); }
       else if (/450/.test(text)) { lines.push({ role: "you", text, at }, { role: "notice", text: RANGE, copy_key: "entry.range.card", at }, { role: "agent", text: "Those are today's rates above. Where should I send your real number?", at }); }
-      else if (/^\d{6}$/.test(text)) { lines.push({ role: "you", text, at }, { role: "notice", text: "You told me: lower my rate · primary home · AZ.", copy_key: "entry.resumed", at }, { role: "agent", text: "You're in. Your numbers continue in your file.", at }); }
+      else if (/go ahead/i.test(text)) { lines.push({ role: "you", text, at }, { role: "notice", text: "Create your account to get your real number. Your answers come with you.", copy_key: "account.from_talk", at }, { role: "agent", text: "Your real number takes a soft credit check that doesn't affect your score, and it starts with an account.", at }); }
       else lines.push({ role: "you", text, at }, { role: "agent", text: "Okay.", at });
       transcript = [...transcript, ...lines];
-      const signedIn = /^\d{6}$/.test(text);
-      return json(route, 200, { lead_id: "lead-1", agent: "claude", model: "claude-opus-5", transcript, lines, step: signedIn ? "signed_in" : "goal", session_opened: signedIn, level: signedIn ? "L1" : null, ...(signedIn ? { session: "cookie" } : {}) });
+      return json(route, 200, { lead_id: "lead-1", agent: "claude", model: "claude-opus-5", transcript, lines, step: "goal", session_opened: false, level: null });
     });
     await page.goto("/app/talk");
     const log = page.getByRole("log");
@@ -45,10 +44,12 @@ test.describe("talk", () => {
     await expect(range).toHaveAttribute("data-role", "notice");
     await expect(range).toContainText("6.125% (6.240% APR)");
     await expect(range).toContainText("NMLSR ID 123456");
-    await page.getByTestId("talk-input").fill("246810");
+    await page.getByTestId("talk-input").fill("ok go ahead");
     await page.getByTestId("talk-send").click();
-    await expect(log).toHaveAttribute("data-step", "signed_in");
-    await expect(page.getByRole("link", { name: "Open your file" })).toHaveAttribute("href", "/app");
+    await expect(log).toHaveAttribute("data-step", "sign_up");
+    await expect(log.locator('li[data-copy-key="account.from_talk"]')).toHaveAttribute("data-role", "notice");
+    await expect(page.getByTestId("talk-sign-up")).toHaveAttribute("href", "/app/sign-up");
+    await expect(page.getByRole("link", { name: "Open your file" })).toHaveCount(0);
     await expect(page.locator(".sm-talk-foot")).toContainText("claude-opus-5");
     // @axe-core/playwright bundles a newer playwright-core; the Page API used here is the same.
     const axe = await new AxeBuilder({ page: page as never }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();

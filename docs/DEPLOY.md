@@ -419,8 +419,10 @@ job creates "Partner Bank (FAKE demo)" when no other servicer party exists.
 `POST /v1/borrower/talk` (`src/runtime/borrower/talk.ts`) and the page at
 `https://demo.supermortgage.com/app/talk` run the anonymous minute and sign-in as
 a conversation with Claude. The model only talks and calls tools; every fact goes
-through the same 32.14 tools the chips use (`lead.answer`, `lead.requestRange`,
-the OTP rows, the session hook), every line a regulation wants verbatim is
+through the same 32.14 tools the chips use (`lead.answer`, `lead.requestRange`),
+after the range the visitor is handed to Create account (no code by text or e-mail —
+docs/ux/17 §2.0; the lead cookie rides to /app/sign-up and the session resumes
+from its answers), every line a regulation wants verbatim is
 rendered by the API from the copy library, and the model's own sentence passes a
 guard (no figure it did not get from a tool, none of the forbidden words).
 

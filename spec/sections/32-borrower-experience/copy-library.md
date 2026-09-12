@@ -596,6 +596,7 @@ The lines the borrower API and the shell author themselves (src/runtime/borrower
 - `account.have_account` — link — "Already have an account? Sign in" — *32.16 §2.0: under the create form → /app/sign-in.*
 - `account.new` — link — "New here? Create an account" — *32.16 §2.0: under the sign-in form → /app/sign-up.*
 - `account.verify.title` — heading — "Check your e-mail" — *32.16 §2.0: the code step after Create account; the field is `auth.code.enter` with the e-mail as the destination; the FAKE code is shown outside production.*
+- `account.from_talk` — line — "Create your account to get your real number. Your answers come with you." — options `Create your account` — *the talk entry after the range (docs/ux/32.16 §2.0: the account is the door; no code by text or e-mail): the app renders the Create account link beside the line; the lead cookie rides to /app/sign-up and the session resumes from the lead.*
 - `account.on_file` — line — "That e-mail is already on file with us. Enter the code we sent to it to show it's yours." — *sign-up when the e-mail is on file for a borrower party or an application borrower: the code step; an e-mail on file for no one opens the session at once.*
 - `account.exists` — refusal — "There's already an account for that e-mail. Sign in instead." — *409 `ACCOUNT_EXISTS`.*
 - `account.password_weak` — refusal — "Use at least 8 characters." — *400 `PASSWORD_WEAK`.*

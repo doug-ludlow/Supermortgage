@@ -2,12 +2,15 @@
  * Talk — the anonymous minute and sign-in as one conversation (an experiment on top of 32.14).
  *
  *   POST /v1/borrower/talk   { text?: string }   with the `sm_borrower_lead` cookie (x-borrower-lead) and, after sign-in, the session bearer
- *                            → { lead_id, agent, model, transcript: [{role, text, copy_key?, at}], lines: [the new ones], step, session_opened, level, token?, fake_code? }
+ *                            → { lead_id, agent, model, transcript: [{role, text, copy_key?, at}], lines: [the new ones], step, session_opened, level }
+ *   An empty text on an existing transcript returns it without a model turn (a reload never re-greets). After the range the
+ *   visitor is handed to Create account (docs/ux/17 §2.0 — the account is the door; no code by text or e-mail here): the lead
+ *   cookie rides to /app/sign-up, where the session links the lead and the thread resumes from its answers (`entry.resumed`).
  *
  * The visitor types (or speaks, in the app) and a language-model agent answers — but the agent never holds a fact, a rate or
  * a decision. Everything that matters is a tool call into the same deterministic machinery the chips and the SMS channel
- * use (32.14 `lead.answer`, `lead.requestRange`, the OTP rows, `flows.sessionOpened`), and everything a regulation wants said
- * verbatim (the automation disclosure, the §1026.24 range sentence, the code prompt) is a `notice` line the endpoint renders
+ * use (32.14 `lead.answer`, `lead.requestRange`), and everything a regulation wants said verbatim (the automation disclosure,
+ * the §1026.24 range sentence, the account hand-off) is a `notice` line the endpoint renders
  * from the copy library or the tool's own output — never the model's paraphrase. Guardrails on the model's text: no figure it
  * did not get from a tool, none of the forbidden words (32.13 T14), nothing when the model refuses.
  *
@@ -20,18 +23,15 @@
  * figure or a rate; dollars the model reports become bigint cents in code.
  */
 import Anthropic from "@anthropic-ai/sdk";
-import { randomInt, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Actor } from "../../kernel/events/index.ts";
 import type { Runtime } from "../app.ts";
 import type { Logger } from "../log.ts";
 import { EntityStore } from "../../app/tools.ts";
 import { isUuid, toJson } from "../../infra/db/client.ts";
-import { normalizeDestination } from "../../infra/db/borrower-parties.ts";
-import { hashCode } from "../../infra/db/borrower-sessions.ts";
 import type { PgBorrowerUiRepository } from "../../infra/db/borrower-ui.ts";
-import { FakeEdelivery, type EdeliveryPort } from "../../infra/integrations/delivery.ts";
-import { BorrowerAuth, OTP_MAX_ATTEMPTS, OTP_MINUTES, ipOf, minutesAfter, userAgentOf, type BorrowerContext } from "./auth.ts";
+import { BorrowerAuth, ipOf, userAgentOf, type BorrowerContext } from "./auth.ts";
 import { copyOptions, copyText, stepOf, type Step } from "./channels.ts";
 import type { BorrowerCommands } from "./commands.ts";
 import { BorrowerError, toBorrowerError } from "./errors.ts";
@@ -48,15 +48,17 @@ const MAX_BODY = 16 * 1024;
 const MAX_TURNS_KEPT = 200;
 export const TALK_PATH = "/v1/borrower/talk";
 export const DEFAULT_TALK_MODEL = "claude-opus-5";
+/** The hand-off line after the range (docs/ux/12 `account.from_talk`): the app renders the Create account link beside it. */
+export const ACCOUNT_HANDOFF_KEY = "account.from_talk";
 
 // ---------------------------------------------------------------- the transcript
 export type TalkRole = "you" | "agent" | "notice";
 export interface TalkLine { readonly role: TalkRole; readonly text: string; readonly copy_key?: string; readonly at: string }
-interface Transcript { lead_id: string; agent: string; turns: TalkLine[]; challenge: { challenge_id: string; channel: "sms" | "email"; destination: string } | null; human_requested: boolean }
+interface Transcript { lead_id: string; agent: string; turns: TalkLine[]; human_requested: boolean }
 
 // ---------------------------------------------------------------- the tools the agent may call
 /** What a tool hands back: a result the model reads, and the lines the visitor sees verbatim (never through the model). */
-export interface ToolOutcome { readonly result: P; readonly lines: readonly TalkLine[]; readonly session?: { token: string; level: string } }
+export interface ToolOutcome { readonly result: P; readonly lines: readonly TalkLine[] }
 export type ToolExecutor = (name: string, input: P) => Promise<ToolOutcome>;
 
 /** The situation the agent reasons from each turn — measured from the lead, never remembered by the model. */
@@ -66,7 +68,6 @@ export interface Situation {
   readonly facts: P;
   readonly next_question: string | null;
   readonly options: readonly { id: string; label: string }[];
-  readonly code_pending: { channel: string; destination: string } | null;
   readonly partner: string;
   readonly closed: boolean;
 }
@@ -92,12 +93,11 @@ const TOOLS: Anthropic.Tool[] = [
     },
   },
   { name: "show_rates", description: "Show today's published rate range for the visitor's product once every fact is in (the system shows the checked sentence to the visitor verbatim; you never state a rate yourself). Returns whether it was shown.", input_schema: { type: "object", properties: {}, additionalProperties: false }, strict: true },
-  { name: "send_code", description: "Send a six-digit sign-in code to the mobile number or e-mail address the visitor gave, so their real number can be sent there.", input_schema: { type: "object", properties: { channel: { type: "string", enum: ["sms", "email"] }, destination: { type: "string" } }, required: ["channel", "destination"], additionalProperties: false }, strict: true },
-  { name: "verify_code", description: "Check the six-digit code the visitor typed. On success their file opens and the conversation continues there.", input_schema: { type: "object", properties: { code: { type: "string" } }, required: ["code"], additionalProperties: false }, strict: true },
+  { name: "create_account", description: "After the rates are shown: the visitor's real number needs an account. Call this once; the system shows the Create account step and their answers carry over. Never ask for a phone number, an e-mail address or a code yourself.", input_schema: { type: "object", properties: {}, additionalProperties: false }, strict: true },
   { name: "talk_to_person", description: "The visitor asked for a human. Hand off; the system tells them what happens next.", input_schema: { type: "object", properties: {}, additionalProperties: false }, strict: true },
   { name: "send_message", description: "After sign-in only: pass the visitor's message to their file's conversation and return the reply.", input_schema: { type: "object", properties: { text: { type: "string" } }, required: ["text"], additionalProperties: false }, strict: true },
 ];
-const L0_TOOLS = new Set(["set_fact", "show_rates", "send_code", "verify_code", "talk_to_person"]);
+const L0_TOOLS = new Set(["set_fact", "show_rates", "create_account", "talk_to_person"]);
 const L1_TOOLS = new Set(["send_message", "talk_to_person"]);
 
 // ---------------------------------------------------------------- the system prompt (stable: cached as a prefix)
@@ -105,7 +105,7 @@ export const TALK_SYSTEM = `You are Supermortgage's automated assistant, talking
 
 How to talk: plain words a 13-year-old reads easily, one or two short sentences, one question at a time, no bullet points, no headings, no emoji. Be warm and quick. Never restate the automation disclosure (the system already showed it). Do not narrate your tools.
 
-What you do: the visitor's goal (buy a home, lower the rate or payment, take cash out), then one follow-up (a signed contract or still looking for a purchase; primary, second home or investment for a refinance), then the state the home is in, then two rough amounts (home value and balance owed, or price and down payment). Ask the step named in the situation block in your own words; when the visitor gives a fact, call set_fact at once — several facts in one message mean several calls in order. Never invent a fact; if it is unclear, ask. When every fact is in, call show_rates. After the rates are shown, say in one sentence that their real number takes a soft credit check that does not affect their score, and ask for a mobile number or e-mail to send it to; call send_code with what they give; ask for the six digits; call verify_code. After sign-in, use send_message for what they say and tell them their numbers continue in their file.
+What you do: the visitor's goal (buy a home, lower the rate or payment, take cash out), then one follow-up (a signed contract or still looking for a purchase; primary, second home or investment for a refinance), then the state the home is in, then two rough amounts (home value and balance owed, or price and down payment). Ask the step named in the situation block in your own words; when the visitor gives a fact, call set_fact at once — several facts in one message mean several calls in order. Never invent a fact; if it is unclear, ask. When every fact is in, call show_rates. After the rates are shown, call create_account and say in one sentence that their real number takes a soft credit check that does not affect their score and starts with an account; the system shows the Create account step. Never ask for a phone number, an e-mail address or a code. After sign-in, use send_message for what they say and tell them their numbers continue in their file.
 
 Hard rules. Never say a rate, an APR, a payment or a dollar figure yourself; the system shows the checked rate sentence to the visitor when show_rates succeeds, and you may only refer to "the rates above". Never use the words guarantee, guaranteed, pre-approved, preapproved, approved, denied or lowest. Before sign-in never ask for or accept income, a Social Security number, date of birth, employer, full name, race, sex, ethnicity, marital status, citizenship, military service, documents or a loan amount; if offered, say you do not need it yet and move on. If the visitor asks for a person, call talk_to_person. If they ask whether you are a person, say you are automated and they can reach a person at any time. If a tool refuses, tell the visitor simply what happened and do not retry the same call.`;
 
@@ -124,7 +124,6 @@ const situationText = (s: Situation): string => [
   Object.keys(s.facts).length ? `Facts so far: ${Object.entries(s.facts).map(([k, v]) => `${k}=${String(v)}`).join(", ")}.` : "Facts so far: none.",
   s.next_question ? `Question to ask now (in your own words): "${s.next_question}"` : "",
   s.options.length ? `Options for this step: ${s.options.map((o) => `${o.id} ("${o.label}")`).join(", ")}.` : "",
-  s.code_pending ? `A sign-in code is already waiting at ${s.code_pending.destination} (${s.code_pending.channel}).` : "",
   s.closed ? "The lead is closed (a state we cannot lend in): no rates, no sign-in; be kind and brief." : "",
 ].filter(Boolean).join("\n");
 
@@ -199,8 +198,6 @@ const cents = (dollars: unknown): string | null => { const n = Number(dollars); 
 export function createTalkRoutes(deps: TalkDeps): TalkRoutes {
   const { runtime, logger, auth, ui, flows, commands, leads } = deps;
   const agent = chooseAgent(deps.talk, logger);
-  const edelivery: EdeliveryPort | undefined = runtime.ports.edelivery;
-  const deliveryIsFake = (): boolean => !edelivery || edelivery instanceof FakeEdelivery;
   const now = (): string => runtime.clock.now();
   const exec = (process: string, name: string, input: P, actor: Actor = BORROWER_APP) => runtime.execute({ process, name, loanId: "", actor, input, run: { ...RUN } });
   const send = (res: ServerResponse, status: number, shape: ShapeName, body: unknown): void => { res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }); res.end(toJson(serialize(shape, body))); };
@@ -220,7 +217,7 @@ export function createTalkRoutes(deps: TalkDeps): TalkRoutes {
   // ---- the transcript in the entity store (the lead's own record; append-only versions)
   async function loadTranscript(leadId: string): Promise<Transcript> {
     const cur = await runtime.entities.current("talk_transcripts", leadId);
-    return cur ? (cur.data as unknown as Transcript) : { lead_id: leadId, agent: agent?.name ?? "", turns: [], challenge: null, human_requested: false };
+    return cur ? (cur.data as unknown as Transcript) : { lead_id: leadId, agent: agent?.name ?? "", turns: [], human_requested: false };
   }
   async function saveTranscript(t: Transcript, at: string): Promise<void> {
     const store = new EntityStore(); store.seed(await runtime.entities.load({})); const mark = store.versionCount();
@@ -256,7 +253,7 @@ export function createTalkRoutes(deps: TalkDeps): TalkRoutes {
     const q = ctx || step === "range" || step === "identify" || step === "closed" ? { question: null, options: [] } : questionFor(step as Step, lead);
     const facts: P = {};
     for (const k of ["transaction_intent", "contract_status", "occupancy", "consumer_state", "value_estimate_cents", "stated_existing_balance_cents", "price_range_cents", "down_payment_cents"]) if (lead[k] !== undefined && lead[k] !== null && lead[k] !== "") facts[k] = lead[k];
-    return { step, goal: (lead["transaction_intent"] as string | undefined) ?? null, facts, next_question: q.question, options: q.options, code_pending: t.challenge ? { channel: t.challenge.channel, destination: t.challenge.destination } : null, partner: String(lead["partner_name"] ?? ""), closed: step === "closed" };
+    return { step, goal: (lead["transaction_intent"] as string | undefined) ?? null, facts, next_question: q.question, options: q.options, partner: String(lead["partner_name"] ?? ""), closed: step === "closed" };
   }
 
   // ---- the tools
@@ -291,39 +288,9 @@ export function createTalkRoutes(deps: TalkDeps): TalkRoutes {
         if (!range || typeof range["text"] !== "string") return { result: { shown: false, refused: out["refused"] ?? "RANGE_CONTENT_CHECK", message: "the published range could not be shown; go on to the sign-in ask without a number" }, lines: [] };
         return { result: { shown: true, note: "the checked rate sentence was shown to the visitor; refer to it as the rates above" }, lines: [line("notice", String(range["text"]), "entry.range.card"), line("notice", copyText("entry.range.promise"), "entry.range.promise")] };
       }
-      if (name === "send_code") {
-        const channel = input["channel"] === "email" ? "email" : "sms"; const destination = normalizeDestination(channel, String(input["destination"] ?? ""));
-        if (channel === "email" ? !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(destination) : !/^\+\d{10,15}$/.test(destination)) return { result: { error: "DESTINATION_INVALID", message: `not a valid ${channel === "email" ? "e-mail address" : "mobile number"}` }, lines: [] };
-        const code = randomInt(0, 1_000_000).toString().padStart(6, "0"); const expiresAt = minutesAfter(at, OTP_MINUTES);
-        const ch = await auth.sessions.createChallenge({ kind: "otp", channel, destination, code, expires_at: expiresAt, delivery: deliveryIsFake() ? "FAKE" : channel });
-        if (edelivery) await edelivery.send({ messageId: `otp:${ch.challenge_id}`, noticeId: `otp:${ch.challenge_id}`, channel: channel === "sms" ? "sms" : "email", to: destination, subject: "Your Supermortgage sign-in code", consentId: "policy:authentication_otp" }, at);
-        t.challenge = { challenge_id: ch.challenge_id, channel, destination };
-        logger.info("borrower.otp.requested", { challenge_id: ch.challenge_id, channel, delivery: ch.delivery, vendor: deliveryIsFake() ? "FAKE" : "e-delivery", via: "talk" });
-        const lines = [line("notice", copyText("auth.code.enter", { destination }), "auth.code.enter")];
-        const fake = deliveryIsFake() && deps.nonProduction ? code : undefined;
-        if (fake) lines.push(line("notice", `FAKE delivery: your code is ${fake}`, "fake.code"));
-        return { result: { sent: true, channel, destination, ...(fake ? { fake_code_shown_to_visitor: true } : {}) }, lines };
-      }
-      if (name === "verify_code") {
-        const code = String(input["code"] ?? "").replace(/\D/g, "");
-        if (!t.challenge) return { result: { error: "NO_CODE_PENDING", message: "no code was sent yet; ask where to send one" }, lines: [] };
-        const ch = await auth.sessions.challenge(t.challenge.challenge_id);
-        if (!ch || ch.kind !== "otp" || ch.consumed_at) { t.challenge = null; return { result: { error: "OTP_INVALID", message: "that code is no longer valid; offer to send a new one" }, lines: [] }; }
-        if (Date.parse(ch.expires_at) <= Date.parse(at)) { t.challenge = null; return { result: { error: "OTP_EXPIRED", message: "the code expired; offer to send a new one" }, lines: [line("notice", copyText("auth.code_expired"), "auth.code_expired")] }; }
-        const attempts = await auth.sessions.bumpAttempts(ch.challenge_id);
-        if (attempts > OTP_MAX_ATTEMPTS) { t.challenge = null; return { result: { error: "OTP_TOO_MANY_ATTEMPTS", message: "too many tries; a new code is needed" }, lines: [line("notice", copyText("auth.code_locked"), "auth.code_locked")] }; }
-        if (ch.code_hash !== hashCode(ch.challenge_id, code)) return { result: { error: "OTP_INVALID", message: "wrong code; ask them to check it and try again" }, lines: [line("notice", copyText("auth.code_wrong"), "auth.code_wrong")] };
-        await auth.sessions.consume(ch.challenge_id, at);
-        const channel = ch.channel === "email" ? "email" : "sms"; const destination = ch.destination ?? t.challenge.destination;
-        const resolved = await auth.parties.resolveOrCreateByDestination(channel, destination);
-        await auth.sessions.setChallengeParty(ch.challenge_id, resolved.party.id);
-        const opened = await auth.openSession({ party_id: resolved.party.id, auth_method: channel === "sms" ? "otp_phone" : "otp_email", now: at, otp: true, ip: ipOf(req), user_agent: userAgentOf(req) });
-        await ui.conversationFor(resolved.party.id);
-        const lead_id = await leads.linkAtVerify(req, resolved.party.id, at);   // the lead cookie rode on this request: `lead.linked{party_id}` before the hook
-        await flows.sessionOpened({ party_id: resolved.party.id, session_id: opened.session.session_id, channel: "app", auth_method: opened.session.auth_method, at, lead_id });
-        t.challenge = null;
-        logger.info("borrower.session.opened", { session_id: opened.session.session_id, level: opened.session.level, auth_method: opened.session.auth_method, party_created: resolved.created, lead_id, via: "talk" });
-        return { result: { signed_in: true, level: opened.session.level, note: "their file is open now; tell them their numbers continue there" }, lines: [line("notice", copyText("entry.resumed", { answers: answersOf(lead) }), "entry.resumed")], session: { token: opened.token, level: opened.session.level } };
+      if (name === "create_account") {
+        // docs/ux/17 §2.0: the account is the door — no code by text or e-mail here; the lead cookie rides to /app/sign-up and the session resumes from the lead
+        return { result: { shown: true, note: "the Create account step is shown; tell them in one sentence and stop asking questions" }, lines: [line("notice", copyText(ACCOUNT_HANDOFF_KEY), ACCOUNT_HANDOFF_KEY)] };
       }
       if (name === "talk_to_person") {
         if (ctx) { await commands.runCommand(ctx, "human.request", { reason: "talk" }, at); }
@@ -359,6 +326,11 @@ export function createTalkRoutes(deps: TalkDeps): TalkRoutes {
       if (String(req.headers["authorization"] ?? "")) { try { ctx = await auth.authenticate(req, at); } catch { ctx = null; } }
       const { lead_id, lead_token, started: fresh } = await leadFor(req, at);
       const t = await loadTranscript(lead_id); const before = t.turns.length;
+      // a reload (no text) on a transcript that already has the agent's opening never re-greets: the transcript comes back as it is
+      if (!text && !fresh && t.turns.some((l) => l.role === "agent")) {
+        const step0 = ctx ? "signed_in" : stepOf((await leadOf(lead_id)) ?? {}, await rangeShown(lead_id));
+        send(res, 200, "talk_turn", { lead_id, agent: agent.name, model: agent.model, transcript: t.turns, lines: [], step: step0, session_opened: false, level: ctx?.session.level ?? null }); return;
+      }
       if (fresh || !t.turns.length) {
         const lead0 = (await leadOf(lead_id)) ?? {};
         t.turns.push({ role: "notice", text: copyText("entry.disclosure.first", partnerTokens(lead0)), copy_key: "entry.disclosure.first", at });
@@ -368,9 +340,9 @@ export function createTalkRoutes(deps: TalkDeps): TalkRoutes {
       if (text) t.turns.push({ role: "you", text, at });
       const lead = (await leadOf(lead_id)) ?? {};
       const situation = await situationOf(lead_id, lead, t, ctx);
-      const pending: TalkLine[] = []; let session: { token: string; level: string } | undefined; let fakeCode: string | undefined;
+      const pending: TalkLine[] = [];
       const execute = executor(req, lead_id, t, ctx, at);
-      const traced: ToolExecutor = async (name, input) => { const o = await execute(name, input); pending.push(...o.lines); if (o.session) session = o.session; const fc = o.lines.find((l) => l.copy_key === "fake.code"); if (fc) fakeCode = fc.text.replace(/\D/g, ""); logger.info("borrower.talk.tool", { lead_id, tool: name, ok: !o.result["error"], error: o.result["error"] ?? null }); return o; };
+      const traced: ToolExecutor = async (name, input) => { const o = await execute(name, input); pending.push(...o.lines); logger.info("borrower.talk.tool", { lead_id, tool: name, ok: !o.result["error"], error: o.result["error"] ?? null }); return o; };
       const prior = text ? t.turns.slice(0, -1) : t.turns;   // the history is everything before this message; the message itself rides in the situation turn
       const out = await agent.turn({ system: TALK_SYSTEM, history: history({ ...t, turns: prior }), situation, text, tools: TOOLS, execute: traced });
       const g = guard(out.text, pending.some((l) => l.copy_key === "entry.range.card") || (await rangeShown(lead_id)));
@@ -380,9 +352,9 @@ export function createTalkRoutes(deps: TalkDeps): TalkRoutes {
       if (agentText) t.turns.push({ role: "agent", text: agentText, at });
       t.agent = agent.name;
       await saveTranscript(t, at);
-      const after = (await leadOf(lead_id)) ?? lead; const step = session ? "signed_in" : ctx ? "signed_in" : stepOf(after, await rangeShown(lead_id));
+      const after = (await leadOf(lead_id)) ?? lead; const step = ctx ? "signed_in" : stepOf(after, await rangeShown(lead_id));
       logger.info("borrower.talk.turn", { lead_id, agent: agent.name, model: agent.model, step, calls: out.calls.map((c) => c.name), guarded: g.guarded, ms: Date.now() - started });
-      send(res, 200, "talk_turn", { lead_id, agent: agent.name, model: agent.model, transcript: t.turns, lines: t.turns.slice(before), step, session_opened: !!session, level: session?.level ?? ctx?.session.level ?? null, ...(session ? { token: session.token } : {}), ...(lead_token ? { lead_token } : {}), ...(fakeCode ? { fake_code: fakeCode } : {}) });
+      send(res, 200, "talk_turn", { lead_id, agent: agent.name, model: agent.model, transcript: t.turns, lines: t.turns.slice(before), step, session_opened: false, level: ctx?.session.level ?? null, ...(lead_token ? { lead_token } : {}) });
     } catch (e) {
       const be = toBorrowerError(e);
       if (be.status >= 500) logger.error("borrower.talk.unhandled", { error: e });

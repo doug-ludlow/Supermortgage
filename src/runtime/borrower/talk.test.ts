@@ -18,7 +18,7 @@ import { createLogger } from "../log.ts";
 import { createBorrowerRouter, type BorrowerRouter } from "./routes.ts";
 import { LEAD_HEADER } from "./lead-routes.ts";
 import { seedEntryDemo } from "../entry-seed.ts";
-import { ClaudeTalkAgent, TALK_PATH, TALK_SYSTEM } from "./talk.ts";
+import { ACCOUNT_HANDOFF_KEY, ClaudeTalkAgent, TALK_PATH, TALK_SYSTEM } from "./talk.ts";
 
 const DB_URL = process.env["TALK_TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_talk_test";
 const up = await reachable(DB_URL);
@@ -57,8 +57,7 @@ const SCENES: Scene[] = [
   { when: /^primary$/i, calls: [{ name: "set_fact", input: { step: "occupancy", value: "primary" } }], text: "Which state is the home in?" },
   { when: /arizona/i, calls: [{ name: "set_fact", input: { step: "state", value: "AZ" } }], text: "About what is it worth, and about how much do you owe on it?" },
   { when: /worth about 450k/i, calls: [{ name: "set_fact", input: { step: "estimate", value: "", amounts_dollars: { home_value: 450000, balance_owed: 300000 } } }, { name: "show_rates", input: {} }], text: "Those are today's published rates above. Your real number takes a soft credit check that doesn't affect your score. Where should I send it: a mobile number or an e-mail?" },
-  { when: /602/, calls: [{ name: "send_code", input: { channel: "sms", destination: "602-555-0147" } }], text: "I've sent a six-digit code to your phone. Type it here when it arrives." },
-  { when: /^\d{6}$/, calls: [{ name: "verify_code", input: { code: "__CODE__" } }], text: "You're in. Your numbers continue in your file." },
+  { when: /go ahead/i, calls: [{ name: "create_account", input: {} }], text: "Your real number takes a soft credit check that doesn't affect your score, and it starts with an account." },
   { when: /pay ahead/i, calls: [{ name: "send_message", input: { text: "can I pay ahead?" } }], text: "I've passed that to your file." },
   { when: /a person/i, calls: [{ name: "talk_to_person", input: {} }], text: "Of course. Someone will pick this up from here." },
   { when: /guess my rate/i, text: "You'd probably land around 6.1% and save $412 a month." },
@@ -106,16 +105,18 @@ test("talk: arrive → the disclosure first (verbatim, from the library), the ag
   // the system prompt is the stable, cached prefix; the tools ride on every request
   const req = scripted.requests.at(-1)!;
   assert.deepEqual(req.system, [{ type: "text", text: TALK_SYSTEM, cache_control: { type: "ephemeral" } }]);
-  assert.deepEqual((req.tools ?? []).map((x) => (x as { name: string }).name), ["set_fact", "show_rates", "send_code", "verify_code", "talk_to_person", "send_message"]);
+  assert.deepEqual((req.tools ?? []).map((x) => (x as { name: string }).name), ["set_fact", "show_rates", "create_account", "talk_to_person", "send_message"]);
   assert.equal(req.model, "scripted");
-  // a reload with the cookie continues the same lead and the same transcript
+  // a reload with the cookie continues the same lead and the same transcript — and never re-greets: no model call, no second opening line
+  const requestsBefore = scripted.requests.length;
   const again = await post(TALK_PATH, {}, { [LEAD_HEADER]: token });
   assert.equal(again.body["lead_id"], r.body["lead_id"]); assert.equal(again.body["lead_token"], undefined, "no second lead, no second token");
   assert.equal(transcript(again.body)[0]!["copy_key"], "entry.disclosure.first");
+  assert.equal(transcript(again.body).length, t.length, "the transcript as it was"); assert.deepEqual(lines(again.body), [], "no new lines"); assert.equal(scripted.requests.length, requestsBefore, "the model was not called");
   assert.equal((await entity("talk_transcripts", String(r.body["lead_id"])))?.["lead_id"], r.body["lead_id"], "the transcript is the lead's own entity row");
 });
 
-test("talk: the facts through set_fact (dollars → bigint cents in code), the range shown verbatim with APR and the NMLSR ID, the code, the session — one conversation, the same rows the chips write", { skip }, async () => {
+test("talk: the facts through set_fact (dollars → bigint cents in code), the range shown verbatim with APR and the NMLSR ID, then Create account with the lead carried over — one conversation, the same rows the chips write", { skip }, async () => {
   const start = await post(TALK_PATH, {}); const token = start.body["lead_token"] as string; const leadId = String(start.body["lead_id"]); const withLead = { [LEAD_HEADER]: token };
   let r = await post(TALK_PATH, { text: "I want to lower my payment" }, withLead);
   assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body["step"], "occupancy");
@@ -135,22 +136,22 @@ test("talk: the facts through set_fact (dollars → bigint cents in code), the r
   assert.equal((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM loan_events WHERE type = 'lead.range.shown' AND payload->>'lead_id' = $1`, [leadId]))[0]!.n, "1");
   // the agent's sentence after the range may mention "the rates above" but carries no figure of its own
   const agentLine = String(lines(r.body).find((l) => l["role"] === "agent")?.["text"]); assert.doesNotMatch(agentLine, /\d%|\$\d/);
-  // the code to the number: the same auth_challenges row as POST /auth/otp; the FAKE delivery echoes the code to the visitor outside production
-  r = await post(TALK_PATH, { text: "602-555-0147" }, withLead);
+  // after the range: no code by text or e-mail (docs/ux/17 §2.0) — create_account shows the hand-off line and the app's Create account link
+  r = await post(TALK_PATH, { text: "ok go ahead" }, withLead);
   assert.equal(r.status, 200, JSON.stringify(r.body));
-  assert.equal(lines(r.body).find((l) => l["copy_key"] === "auth.code.enter")?.["role"], "notice");
-  const code = r.body["fake_code"] as string; assert.match(code, /^\d{6}$/);
-  assert.equal((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM auth_challenges WHERE kind = 'otp' AND channel = 'sms' AND destination = '+16025550147'`))[0]!.n, "1");
-  // the six digits: verify → party → lead linked → L1 session → the session hook; the token leaves once for the proxy's session cookie
-  SCENES.find((s) => s.calls?.[0]?.name === "verify_code")!.calls![0]!.input = { code };
-  r = await post(TALK_PATH, { text: code }, withLead);
-  assert.equal(r.status, 200, JSON.stringify(r.body));
-  assert.equal(r.body["session_opened"], true); assert.equal(r.body["level"], "L1"); assert.equal(r.body["step"], "signed_in");
-  const bearer = r.body["token"] as string; assert.ok(bearer, "the session token for the cookie");
-  assert.equal(lines(r.body).find((l) => l["copy_key"] === "entry.resumed")?.["role"], "notice");
+  assert.equal(lines(r.body).find((l) => l["copy_key"] === ACCOUNT_HANDOFF_KEY)?.["role"], "notice", JSON.stringify(lines(r.body)));
+  assert.equal(r.body["session_opened"], false); assert.equal(r.body["token"], undefined, "no session from the talk route");
+  assert.equal((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM auth_challenges WHERE kind = 'otp'`))[0]!.n, "0", "no code was sent");
+  // Create account with the lead cookie: the session links the lead, the organic application is built from its answers, and the thread resumes with entry.resumed
+  const signUp = await post("/v1/borrower/auth/account", { action: "create", email: `talk-${randomUUID().slice(0, 8)}@example.com`, password: "correct horse battery" }, { ...withLead, "x-forwarded-for": "10.0.0.9" });
+  assert.equal(signUp.status, 200, JSON.stringify(signUp.body));
+  const bearer = signUp.body["token"] as string; assert.ok(bearer, "the session token for the cookie");
   await router.flows!.settle();
-  const linked = (await entity("leads", leadId))!; assert.ok(linked["party_id"], "lead.linked{party_id}");
-  assert.equal((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM sessions WHERE party_id = $1 AND auth_method = 'otp_phone'`, [linked["party_id"]]))[0]!.n, "1");
+  const linked = (await entity("leads", leadId))!; assert.equal(linked["party_id"], (signUp.body["party"] as Json)["party_id"], "lead.linked{party_id} at the account door");
+  const thread = await (await fetch(`${base}/v1/borrower/thread?limit=200`, { headers: { authorization: `Bearer ${bearer}` } })).json() as Json;
+  const bodies = ((thread["messages"] as Json[]) ?? []).map((m) => String(m["body_text"] ?? ""));
+  assert.equal(bodies[0], "{{copy:entry.disclosure.first}}"); assert.ok(bodies.some((b) => b.startsWith("{{copy:entry.resumed}}")), `entry.resumed in the thread: ${JSON.stringify(bodies)}`);
+  assert.equal((await db.query<{ t: string }>(`SELECT a.transaction_type::text AS t FROM applications a JOIN application_borrowers ab ON ab.application_id = a.id WHERE ab.party_id = $1`, [(signUp.body["party"] as Json)["party_id"]]))[0]?.t, "limited_cash_out", "the application carries the lead's goal");
   // after sign-in the L0 tools are gone and the visitor's words go to their file's conversation
   r = await post(TALK_PATH, { text: "can I pay ahead?" }, { ...withLead, authorization: `Bearer ${bearer}` });
   assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body["step"], "signed_in");

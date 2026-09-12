@@ -15,6 +15,7 @@
 import { plainDate as D } from "../kernel/calendar/date.ts";
 import type { Actor } from "../kernel/events/types.ts";
 import { EntityStore } from "../app/tools.ts";
+import { entryPartner } from "./borrower/partner.ts";
 import { newLicense, type LicenseRequirement, type MloRosterMember } from "../domain/governance/ops-31-1.ts";
 import { activeSheetAt, type RateSheet } from "../domain/leads-pricing/ops-20-4.ts";
 import type { Runtime } from "./app.ts";
@@ -42,10 +43,9 @@ const requirement = (st: string, applies_to: "partner" | "sm", activity: License
 
 /** The demo partner: the configured default, else the newest servicer party, else a FAKE one is created. */
 async function resolvePartner(runtime: Runtime, partnerId: string | null | undefined): Promise<{ id: string; legal_name: string }> {
-  const byId = partnerId ? await runtime.db.query<{ id: string; legal_name: string }>(`SELECT id, legal_name FROM parties WHERE id::text = $1`, [partnerId]) : [];
-  if (byId[0]) return byId[0];
-  const newest = await runtime.db.query<{ id: string; legal_name: string }>(`SELECT id, legal_name FROM parties WHERE party_type = 'servicer' ORDER BY created_at DESC LIMIT 1`);
-  if (newest[0]) return newest[0];
+  // partner.ts: the configured partner, else the newest servicer party that is not Supermortgage itself (the batch's own party is the subservicer, never the lender)
+  const found = await entryPartner(runtime.db, partnerId ?? undefined);
+  if (found) return found;
   const made = await runtime.db.query<{ id: string; legal_name: string }>(`INSERT INTO parties (party_type, legal_name, servicer_number, mers_org_id) VALUES ('servicer', $1, '123456789', '1000123') RETURNING id, legal_name`, ["Partner Bank (FAKE demo)"]);
   return made[0]!;
 }

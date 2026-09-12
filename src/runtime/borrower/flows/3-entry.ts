@@ -39,6 +39,7 @@ import { deliverLoanEstimate, type LoanEstimateDeliveryInput } from "../../origi
 import type { Runtime } from "../../app.ts";
 import { timerLabel } from "../record.ts";
 import { leadCarriesGoal } from "./14-entry-lead.ts";
+import { entryPartner } from "../partner.ts";
 import type { BorrowerFlow, FlowDeps, FlowReply, InboundMessage, SessionOpened } from "./index.ts";
 
 export const FLOW_ID = "32.3";
@@ -145,13 +146,10 @@ const exec = (deps: FlowDeps, appId: string | null, process: string, name: strin
 const prefillOf = (party: Party, key: string): { value: string; source: string } | null => { const p = party.prefill?.[key] as { value?: unknown; source?: unknown } | undefined; return p && p.value !== undefined && p.value !== null ? { value: String(p.value), source: typeof p.source === "string" ? p.source : "borrower" } : null; };
 /** 32.14 DELTA-15: the Phase I partner from configuration (`BORROWER_DEFAULT_PARTNER_ID` → a parties row); only when it is unset, the newest servicer party. Never an invented partner: null when neither exists (the lead is not started). */
 export const partnerOf = async (deps: FlowDeps): Promise<{ id: string; legal_name: string } | null> => {
-  const configured = deps.defaultPartnerId?.trim();
-  if (configured) {
-    const row = (await deps.runtime.db.query<{ id: string; legal_name: string }>(`SELECT id, legal_name FROM parties WHERE id::text = $1`, [configured]))[0];
-    if (!row) deps.logger?.error("borrower.flow.32-3.partner.unknown", { default_partner_id: configured });
-    return row ?? null;
-  }
-  return (await deps.runtime.db.query<{ id: string; legal_name: string }>(`SELECT id, legal_name FROM parties WHERE party_type = 'servicer' ORDER BY created_at DESC LIMIT 1`))[0] ?? null;
+  // 32.14 DELTA-15 / docs/ux/17 §2.0: the configured partner, else the newest servicer party that is not Supermortgage itself (partner.ts) — never Supermortgage as the lender
+  const partner = await entryPartner(deps.runtime.db, deps.defaultPartnerId);
+  if (!partner) deps.logger?.error("borrower.flow.32-3.partner.unknown", { default_partner_id: deps.defaultPartnerId?.trim() ?? null });
+  return partner;
 };
 const CHANNEL_20_3: Record<string, string> = { app: "web_chat", sms: "sms", voice: "voice_inbound" };
 /** The session's auth method as 20.3's `authenticate{method}` (32.2 `party.authenticate` maps the platform's names); `oidc_google` (32.14 DELTA-12) is L1 like a code; `password` (32.16 DELTA-29) is L1 on the e-mail a code verified at account creation. */

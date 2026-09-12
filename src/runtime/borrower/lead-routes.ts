@@ -27,6 +27,7 @@ import type { Logger } from "../log.ts";
 import type { Actor } from "../../kernel/events/index.ts";
 import { EntityStore } from "../../app/tools.ts";
 import { isUuid, toJson } from "../../infra/db/client.ts";
+import { entryPartner, partnerById } from "./partner.ts";
 import { PgLeadTokenRepository, type LeadTokenRow } from "../../infra/db/lead-tokens.ts";
 import { linkParty, PROGRAM_MAX_LTV_PCT, type Lead } from "../../domain/leads-pricing/ops-20-3.ts";
 import { BorrowerError, toBorrowerError } from "./errors.ts";
@@ -118,13 +119,9 @@ export function createLeadRoutes(opts: LeadRoutesOptions): LeadRoutes {
   async function partnerFor(referral: P): Promise<{ id: string; legal_name: string; nmlsr_id: string }> {
     const wanted = str(referral, "partner_party_id") || str(referral, "partner_id");
     const configured = opts.defaultPartnerId ?? process.env["BORROWER_DEFAULT_PARTNER_ID"] ?? "";
-    for (const id of [wanted, configured]) {
-      if (!isUuid(id)) continue;
-      const row = (await runtime.db.query<{ id: string; legal_name: string }>(`SELECT id, legal_name FROM parties WHERE id = $1 AND party_type <> 'borrower'`, [id]))[0];
-      if (row) return { ...row, nmlsr_id: await nmlsrOf(row.id) };
-    }
-    const row = (await runtime.db.query<{ id: string; legal_name: string }>(`SELECT id, legal_name FROM parties WHERE party_type = 'servicer' ORDER BY created_at DESC LIMIT 1`))[0];
-    if (!row) throw new BorrowerError(503, "NOT_WIRED", undefined, "no partner: BORROWER_DEFAULT_PARTNER_ID is unset and no servicer party exists (32.14 DELTA-15)");
+    // partner.ts: the referral's party, else the configured partner, else the newest servicer party that is not Supermortgage — never Supermortgage as the lender
+    const row = (await partnerById(runtime.db, wanted)) ?? (await entryPartner(runtime.db, configured));
+    if (!row) throw new BorrowerError(503, "NOT_WIRED", undefined, "no partner: BORROWER_DEFAULT_PARTNER_ID is unset and no partner party exists (32.14 DELTA-15)");
     return { ...row, nmlsr_id: await nmlsrOf(row.id) };
   }
   const leadOf = async (leadId: string): Promise<P | null> => { const r = await runtime.entities.current("leads", leadId); return r ? r.data : null; };

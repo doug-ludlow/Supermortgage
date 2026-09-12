@@ -18,7 +18,7 @@ import { StatusStrip } from "./StatusStrip";
 import { Header } from "./Header";
 import { Account } from "@/components/account/Account";   // 32.16 §2.0 (DELTA-29): the account form on any 401 — Shell decides, Account renders
 import { AddMobilePrompt, isAddMobileDone } from "./AddMobile";
-import { passkeyRegister, rememberPasskeyOnDevice } from "@/lib/auth/passkey";
+import { PARTNER_LEGAL_NAME } from "@/lib/env";
 import { Record } from "@/components/record/Record";
 import { Card } from "@/components/cards";
 import { nowIso } from "@/components/cards/CardFrame";
@@ -74,7 +74,7 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
   const streamRef = useRef<ReturnType<typeof openStream> | null>(null);
 
   const timezone = record?.timezone ?? "America/Phoenix";
-  const partner = me?.partner.legal_name ?? "your lender";
+  const partner = me?.partner.legal_name || PARTNER_LEGAL_NAME;   // the API names the record's partner; "" (none on file yet) → the build's configured partner, never Supermortgage
 
   // ---- load ---------------------------------------------------------------
   const loadFromApi = useCallback(async () => {
@@ -239,15 +239,6 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
     [fixturesMode],
   );
 
-  const addPasskey = useCallback(async () => {
-    // 32.14 S3: the API's auth.passkey.offer line → register_options → this device's authenticator → register; the device then offers Use my passkey first
-    if (fixturesMode) {
-      rememberPasskeyOnDevice(); // FAKE fixtures mode: no API — only the device hint
-      return;
-    }
-    await passkeyRegister();
-  }, [fixturesMode]);
-
   const link = useCallback((target: { message_id?: string; card_instance_id?: string; document_id?: string }) => {
     if (target.document_id && !target.card_instance_id && !target.message_id) {
       window.location.assign(`/app/doc/${encodeURIComponent(target.document_id)}`);
@@ -291,7 +282,6 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
               notice={loadError}
               banner={me?.auth_method === "oidc_google" && !addMobileDone ? <AddMobilePrompt onDone={() => setAddMobileDone(true)} /> : null}
               pinnedId={initialCard}
-              onAddPasskey={addPasskey}
               messages={messages}
               cards={cards}
               timezone={timezone}

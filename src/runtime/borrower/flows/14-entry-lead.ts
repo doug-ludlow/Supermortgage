@@ -25,6 +25,7 @@
 import type { Actor, DomainEvent } from "../../../kernel/events/index.ts";
 import { randomUUID } from "node:crypto";
 import { isUuid, toJson } from "../../../infra/db/client.ts";
+import { entryPartner, partnerById } from "../partner.ts";
 import { PgBorrowerPartyRepository } from "../../../infra/db/borrower-parties.ts";
 import { PgLeadTokenRepository } from "../../../infra/db/lead-tokens.ts";
 import { civilDate } from "../../../domain/leads-pricing/ops-20-3.ts";
@@ -79,8 +80,7 @@ async function resumeFromLead(deps: FlowDeps, s: SessionOpened): Promise<void> {
   if ((await db.query<{ message_id: string }>(`SELECT message_id FROM messages WHERE conversation_id = $1 AND body_text = $2 LIMIT 1`, [conv.conversation_id, RESUMED_LINE])).length) return;   // resumed once
   const party = (await db.query<{ legal_name: string; contact: P }>(`SELECT legal_name, contact FROM parties WHERE id = $1`, [s.party_id]))[0]; if (!party) return;
   // the partner the lead was opened for (DELTA-15: the referral's or the configured default), else the configured default itself, else the newest servicer party — never an invented one
-  const partnerRow = async (id: string | undefined): Promise<{ id: string; legal_name: string } | undefined> => (isUuid(id ?? "") ? (await db.query<{ id: string; legal_name: string }>(`SELECT id, legal_name FROM parties WHERE id = $1 AND party_type <> 'borrower'`, [id]))[0] : undefined);
-  const partner = (await partnerRow(String(lead["partner_id"] ?? ""))) ?? (await partnerRow(deps.defaultPartnerId)) ?? (deps.defaultPartnerId ? undefined : (await db.query<{ id: string; legal_name: string }>(`SELECT id, legal_name FROM parties WHERE party_type = 'servicer' ORDER BY created_at DESC LIMIT 1`))[0]);
+  const partner = (await partnerById(db, String(lead["partner_id"] ?? ""))) ?? (await entryPartner(db, deps.defaultPartnerId)) ?? undefined;   // partner.ts: never Supermortgage itself
   if (!partner) { deps.logger?.error("borrower.flow.32-14.partner.unknown", { lead_id: s.lead_id }); return; }
   const state = typeof lead["consumer_state"] === "string" && lead["consumer_state"] ? String(lead["consumer_state"]) : typeof lead["property_state"] === "string" && lead["property_state"] ? String(lead["property_state"]) : null;
   const occupancy = OCCUPANCIES.has(String(lead["occupancy"] ?? "")) ? (String(lead["occupancy"]) as "primary" | "second_home" | "investment") : "primary";

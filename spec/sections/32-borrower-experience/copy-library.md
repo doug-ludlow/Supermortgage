@@ -567,7 +567,7 @@ The lines the borrower API and the shell author themselves (src/runtime/borrower
 - `auth.code.enter` — field — "Enter the six-digit code we sent to {{destination}}." — options `Continue` · `Send a new code` — *S3: one field; the FAKE code is shown beside it outside production.*
 - `auth.code.resent` — receipt — "We sent a new code to {{destination}}." — *S3.*
 - `auth.add_mobile` — ConfirmCard — "Add a mobile number? We'll text you a link when something needs you." — helper: "Optional. It doesn't hold anything up." — options `Text me a code` · `Not now` — *S3 after Google: `party.updateContact`, then a code to the number; never blocks the flow.*
-- `auth.passkey.offer` — line — "Next time, skip the code: add a passkey and sign in with one tap on this device." — options `Add a passkey` · `Not now` — *S3: once, after the first session; skippable; no card.*
+- `auth.passkey.offer` — line — "Next time, skip the code: add a passkey and sign in with one tap on this device." — options `Add a passkey` · `Not now` — *S3, retired by 32.16 §0.4: no session posts it; the key stays for the fixtures.*
 - `auth.identity.how` — ChoiceCard — "For the soft credit check, how do you want to give us your details?" — options `Scan my ID (30 seconds)` · `Type it in` — *S4: Scan → 32.3 E5 unchanged (L3); Type → the same ConfirmCard with `source=borrower`; the session stays L1.*
 - `auth.link_loan` — ConfirmCard — "Already have a loan with us? Link it with a few facts only you would know." — fields: last 4 of your loan number or the property ZIP · last 4 of your SSN · date of birth — *DELTA-16, phase 3: `party.linkLoan`; a mismatch never says which field.*
 - `consent.credit.soft.title` — ConsentCard — "Check my credit with a soft pull" — helper: "A soft pull doesn't affect your score. A full credit check happens only if you apply." — *S4: `credit.authorize{kind: soft_pull, consumer_entered_identity: true}` at L1 (DELTA-13).*
@@ -596,6 +596,7 @@ The lines the borrower API and the shell author themselves (src/runtime/borrower
 - `account.have_account` — link — "Already have an account? Sign in" — *32.16 §2.0: under the create form → /app/sign-in.*
 - `account.new` — link — "New here? Create an account" — *32.16 §2.0: under the sign-in form → /app/sign-up.*
 - `account.verify.title` — heading — "Check your e-mail" — *32.16 §2.0: the code step after Create account; the field is `auth.code.enter` with the e-mail as the destination; the FAKE code is shown outside production.*
+- `account.on_file` — line — "That e-mail is already on file with us. Enter the code we sent to it to show it's yours." — *sign-up when the e-mail is on file for a borrower party or an application borrower: the code step; an e-mail on file for no one opens the session at once.*
 - `account.exists` — refusal — "There's already an account for that e-mail. Sign in instead." — *409 `ACCOUNT_EXISTS`.*
 - `account.password_weak` — refusal — "Use at least 8 characters." — *400 `PASSWORD_WEAK`.*
 - `auth.password_wrong` — refusal — "That e-mail and password didn't match." — *401 `PASSWORD_WRONG`; never says which.*

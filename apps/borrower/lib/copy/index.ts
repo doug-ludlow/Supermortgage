@@ -19,6 +19,9 @@ export function copyEntry(key: string): CopyEntry | undefined {
   return isCopyKey(key) ? COPY[key] : undefined;
 }
 
+/** The library's markdown emphasis (`*human*`) is a writing convention, not screen text: shown plain, as the API's `copyText` and the SMS/voice renderers do. */
+export const stripEmphasis = (text: string): string => text.replace(/\*([^*\n]+)\*/g, "$1");
+
 /**
  * Replace `{{token}}` / `{{token(x)}}` placeholders. A token that appears more than
  * once in the text (`{{money}} … {{money}}`) consumes an array value in order.
@@ -26,7 +29,7 @@ export function copyEntry(key: string): CopyEntry | undefined {
  */
 export function renderTemplate(text: string, tokens: Tokens = {}): string {
   const counters = new Map<string, number>();
-  return text.replace(/\{\{([a-zA-Z0-9_.|]+)(?:\([^)]*\))?\}\}/g, (whole, rawName: string) => {
+  return stripEmphasis(text).replace(/\{\{([a-zA-Z0-9_.|]+)(?:\([^)]*\))?\}\}/g, (whole, rawName: string) => {
     // "{{price|requested}}" → first bound alternative
     const names = rawName.split("|");
     for (const name of names) {

@@ -407,7 +407,12 @@ JWKS); `email_verified` must be true or the sign-in is refused
 still asks for one. Also on the API service: `BORROWER_DEFAULT_PARTNER_ID`
 (Terraform variable `borrower_default_partner_id`, DELTA-15) — the Phase I
 partner's `parties` row id the organic entry names; leave it empty to use the
-newest servicer party (the seeded demo partner).
+newest servicer party that is not Supermortgage itself (the seeded demo partner;
+`src/runtime/borrower/partner.ts`). Supermortgage is the subservicer and is never
+named as the lender: the servicing batch's own "Supermortgage" servicer party is
+skipped by the fallback, `/v1/borrower/me` reads a record that names it as
+unnamed (the app then shows `NEXT_PUBLIC_PARTNER_LEGAL_NAME`), and the seed-demo
+job creates "Partner Bank (FAKE demo)" when no other servicer party exists.
 
 ## Talk: the entry as one conversation
 

@@ -15379,7 +15379,7 @@
    },
    {
     "n": 12,
-    "text": "Given a first successful session, then `auth.passkey.offer` renders once; given a registered passkey, when the visitor returns, then Use my passkey is offered first and a successful assertion lands in the thread with the Record open to `next`."
+    "text": "Given a first successful session, then no `auth.passkey.offer` line renders in any session (retired by 32.16 \u00a70.4); given a registered passkey, when the visitor returns, then a successful assertion lands in the thread with the Record open to `next`."
    },
    {
     "n": 13,

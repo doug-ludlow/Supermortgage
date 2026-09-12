@@ -218,24 +218,10 @@ describe("32.14 — the thread: ?card= pins, the passkey offer line", () => {
     rerender(<Thread {...threadProps(messages, { ...cards, "card-old": { ...older, status: "resolved" } as AnyCardInstance })} pinnedId="card-old" />);
     expect(screen.getByTestId("pinned-ask")).toHaveAttribute("data-pinned-card", "card-new");
   });
-  it("T12: the API's {{copy:auth.passkey.offer}} line renders the library sentence and an inline Add a passkey action that runs the registration; Not now dismisses it", async () => {
-    const onAddPasskey = vi.fn().mockResolvedValue(undefined);
-    const [addLabel = "", notNowLabel = ""] = copyOptions("auth.passkey.offer");
-    render(<Thread {...threadProps([msg({ body_text: "{{copy:auth.passkey.offer}}" })])} onAddPasskey={onAddPasskey} />);
-    expect(screen.getByText(copy("auth.passkey.offer"))).toBeInTheDocument();
-    expect(screen.queryByRole("article")).toBeNull(); // no card
-    await user.click(screen.getByRole("button", { name: addLabel }));
-    expect(onAddPasskey).toHaveBeenCalledTimes(1);
-    expect(await screen.findByTestId("passkey-added")).toHaveTextContent(addLabel);
-    window.sessionStorage.clear();
-    render(<Thread {...threadProps([msg({ message_id: "m-2", body_text: "{{copy:auth.passkey.offer}}" })])} onAddPasskey={onAddPasskey} />);
-    await user.click(screen.getByRole("button", { name: notNowLabel }));
-    expect(screen.queryByRole("button", { name: addLabel })).toBeNull();
-    expect(window.sessionStorage.getItem("sm_passkey_offer_done")).toBe("1");
-  });
-  it("a plain line shows no passkey action", () => {
-    render(<Thread {...threadProps([msg({ body_text: "{{copy:entry.disclosure.first}}" })])} onAddPasskey={vi.fn()} />);
+  it("T12 (docs/ux/17 §0.4): a {{copy:auth.passkey.offer}} line, should one ever arrive, renders as plain text with no action", () => {
+    render(<Thread {...threadProps([msg({ body_text: "{{copy:auth.passkey.offer}}" })])} />);
     expect(screen.queryByTestId("passkey-offer")).toBeNull();
+    expect(screen.queryByRole("button", { name: copyOptions("auth.passkey.offer")[0]! })).toBeNull();
   });
 });
 

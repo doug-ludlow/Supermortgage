@@ -556,16 +556,16 @@ test("32.14-T11: Given a replayed or foreign `state`, or a `nonce` that does not
   // a start refuses a redirect outside the allowed origins (the FAKE identity hint itself is accepted here only because the provider is FAKE)
   const bad = await sapi("POST", "/v1/borrower/auth/oidc", { action: "start", provider: "google", redirect_uri: "https://evil.example/callback", fake: who }); assert.equal(bad.status, 400); assert.equal(bad.body["code"], "BAD_REQUEST");
 });
-test("32.14-T12: Given a first successful session, then `auth.passkey.offer` renders once; given a registered passkey, when the visitor returns, then Use my passkey is offered first and a successful assertion lands in the thread with the Record open to `next`.", { skip }, async () => {
+test("32.14-T12: Given a first successful session, then no `auth.passkey.offer` line renders in any session (retired by 32.16 §0.4); given a registered passkey, when the visitor returns, then a successful assertion lands in the thread with the Record open to `next`.", { skip }, async () => {
   await journeyReady();
   const offer = `{{copy:${PASSKEY_OFFER_COPY_KEY}}}`;
-  // Alex's first session was T8's Google sign-in: the offer rendered once, after the session's disclosure line; a second sign-in adds no second offer
+  // Alex's first session was T8's Google sign-in: docs/ux/17 §0.4 retires the offer line — no session posts it, first or second
   const after1 = await messagesOf(alex.partyId);
-  assert.equal(after1.filter((m) => m.body_text === offer).length, 1, "the offer renders once"); assert.ok(after1.findIndex((m) => m.body_text === offer) > 0, "after the disclosure line"); assert.equal(after1.find((m) => m.body_text === offer)!.card_instance_id, null, "no card");
+  assert.equal(after1.filter((m) => m.body_text === offer).length, 0, "no passkey offer after the first session"); assert.equal(after1[0]?.body_text, "{{copy:entry.disclosure.first}}", "the disclosure line is first");
   const again = await google({ email: EMAIL_A, email_verified: true, name: "Alex G. Borrower" }); assert.equal(again.status, 200, JSON.stringify(again.body)); assert.equal((again.body["party"] as Json)["party_id"], alex.partyId);
-  assert.equal((await messagesOf(alex.partyId)).filter((m) => m.body_text === offer).length, 1, "still once after the second session");
-  assert.ok((await thread(again.body["token"] as string)).messages.some((m) => m["body_text"] === offer), "the line is in the thread the shell renders");
-  // the offer taken: the existing passkey registration path on the session (a P-256 credential; attestation `none`)
+  assert.equal((await messagesOf(alex.partyId)).filter((m) => m.body_text === offer).length, 0, "none after the second session either");
+  assert.ok(!(await thread(again.body["token"] as string)).messages.some((m) => m["body_text"] === offer), "not in the thread the shell renders");
+  // passkeys stay in the code: the registration path on the session (a P-256 credential; attestation `none`)
   const token = again.body["token"] as string;
   const opts = await sapi("POST", "/v1/borrower/auth/passkey", { action: "register_options" }, token); assert.equal(opts.status, 200, JSON.stringify(opts.body));
   const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
@@ -593,7 +593,7 @@ test("32.14-T12: Given a first successful session, then `auth.passkey.offer` ren
   const landed = await sapi("POST", "/v1/borrower/auth/passkey", { action: "assert", challenge_id: ao.body["challenge_id"], credential: { id: b64url.encode(credId), response: { clientDataJSON: cdj, authenticatorData: b64url.encode(authData2), signature } } }); await settle();
   assert.equal(landed.status, 200, JSON.stringify(landed.body)); assert.equal((landed.body["party"] as Json)["party_id"], alex.partyId); assert.equal((landed.body["session"] as Json)["auth_method"], "passkey"); assert.equal((landed.body["session"] as Json)["fresh_l1"], false);
   // lands in the thread with the Record open to `next`
-  const t = await thread(landed.body["token"] as string); assert.equal(t.messages[0]!["body_text"], "{{copy:entry.disclosure.first}}"); assert.equal(t.messages.filter((m) => m["body_text"] === offer).length, 1, "no offer for a passkey session");
+  const t = await thread(landed.body["token"] as string); assert.equal(t.messages[0]!["body_text"], "{{copy:entry.disclosure.first}}"); assert.equal(t.messages.filter((m) => m["body_text"] === offer).length, 0, "no offer for a passkey session either");
   const rec = await record(landed.body["token"] as string, journey.appId);
   const next = rec["next"] as Json | null; assert.ok(next, "the Record's next"); assert.equal(typeof next!["due_at"], "string"); assert.equal(typeof next!["timer_code"], "string"); assert.equal(typeof next!["label"], "string");
   assert.equal((rec["subject"] as Json)["application_id"], journey.appId);

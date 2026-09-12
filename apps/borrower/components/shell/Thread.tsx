@@ -9,7 +9,6 @@ import { civilDate, dayDividerLabel, formatDate } from "@/lib/format";
 import { copy } from "@/lib/copy";
 import { DisclosurePackage, packageMembers } from "@/components/flows/4-disclosures/DisclosurePackage";
 import { MessageBody, renderMessageBody } from "@/components/flows/3-entry";
-import { PasskeyOffer } from "./PasskeyOffer";   // 32.14 S3: the inline action on the API's auth.passkey.offer line
 import { CardBoundary } from "@/components/flows/13-cross-cutting/CardBoundary";   // 32.13: one failing card never blanks the thread
 
 export type ThreadProps = {
@@ -30,8 +29,6 @@ export type ThreadProps = {
   pinnedId?: string;
   /** 32.14 S3: a non-blocking prompt above the scrollback (the `auth.add_mobile` ConfirmCard after Google). */
   banner?: ReactNode;
-  /** 32.14 S3: registers a device passkey from the `{{copy:auth.passkey.offer}}` line. */
-  onAddPasskey?: () => Promise<void>;
 };
 
 /** The pinned current ask: most recent unresolved card (01 §1.3). */
@@ -46,7 +43,7 @@ function cardTitle(c: AnyCardInstance): string {
   return (p.title as string) || (p.state_label as string) || (p.purpose_text as string) || (p.subject as string) || copy(c.copy_key);
 }
 
-export function Thread({ messages, cards, timezone, partnerLegalName, showSubjectLabels, wide, scrollTo, cardProps, resolve, busyCardId, cardErrors, notice, pinnedId, banner, onAddPasskey }: ThreadProps) {
+export function Thread({ messages, cards, timezone, partnerLegalName, showSubjectLabels, wide, scrollTo, cardProps, resolve, busyCardId, cardErrors, notice, pinnedId, banner }: ThreadProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useMemo(() => {
     const named = pinnedId ? cards[pinnedId] : undefined;
@@ -123,7 +120,6 @@ export function Thread({ messages, cards, timezone, partnerLegalName, showSubjec
                   </div>
                 ) : null}
                 {m.body_text ? <div className="sm-msg-body"><MessageBody text={m.body_text} partnerLegalName={partnerLegalName} tokens={m.copy_tokens} /></div> : null}
-                {m.body_text && onAddPasskey && renderMessageBody(m.body_text).copy_key === "auth.passkey.offer" ? <PasskeyOffer onAdd={onAddPasskey} /> : null}
                 {pkg?.role === "head" ? (
                   <DisclosurePackage packageId={pkg.package_id} cards={pkg.cards} timezone={timezone} render={(c) => <CardBoundary card={c}><Card card={c} timezone={timezone} {...cardProps} onResolve={(req) => resolve(c, req)} busy={busyCardId === c.card_instance_id} error={cardErrors[c.card_instance_id]} comparisonStub={wide} /></CardBoundary>} />
                 ) : card ? <CardBoundary card={card}><Card card={card} timezone={timezone} {...cardProps} onResolve={(req) => resolve(card, req)} busy={busyCardId === card.card_instance_id} error={cardErrors[card.card_instance_id]} comparisonStub={wide} /></CardBoundary> : null}

@@ -52,6 +52,7 @@ import { BorrowerOidc } from "./oidc.ts";
 import { createTalkRoutes, TALK_PATH, type TalkOptions, type TalkRoutes } from "./talk.ts";
 import { createBorrowerChannels, type BorrowerChannels } from "./channels.ts";
 import { BorrowerFlows } from "./flows/index.ts";
+import { entryPartner, isSupermortgage } from "./partner.ts";
 import { createLeadRoutes } from "./lead-routes.ts";
 import { ensureOrganicApplication } from "./flows/14-entry-lead.ts";
 import { connectorFailed } from "./flows/13-cross-cutting.ts";
@@ -538,8 +539,10 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
       : loan ? (await runtime.db.query<{ legal_name: string; data: unknown }>(`SELECT p.legal_name, NULL AS data FROM loans l JOIN parties p ON p.id = l.partner_party_id WHERE l.id = $1`, [loan]))[0] : undefined;
     const nested = row?.data ? decodeEntityData(row.data) : null;
     // 32.14 DELTA-15: a party with no subject yet (a fresh sign-in) is the configured Phase I partner's
-    const configured = !row && defaultPartnerId ? (await runtime.db.query<{ legal_name: string }>(`SELECT legal_name FROM parties WHERE id::text = $1`, [defaultPartnerId]))[0] : undefined;
-    return { legal_name: (nested?.["partner_name"] as string | undefined) ?? row?.legal_name ?? configured?.legal_name ?? "Supermortgage", nmlsr_id: (nested?.["partner_nmlsr_id"] as string | undefined) ?? "" };
+    // never Supermortgage as the lender (partner.ts): a record that names Supermortgage (the first build's fallback) reads as unnamed and the entry partner stands in; nothing → "" and the app shows its configured partner name
+    const named = [nested?.["partner_name"] as string | undefined, row?.legal_name].find((n) => n && !isSupermortgage(n));
+    const fallback = named ? undefined : await entryPartner(runtime.db, defaultPartnerId);
+    return { legal_name: named ?? fallback?.legal_name ?? "", nmlsr_id: (nested?.["partner_nmlsr_id"] as string | undefined) ?? "" };
   }
   async function deepLink(req: IncomingMessage, res: ServerResponse, token: string): Promise<void> {
     const at = now(); const ctx = await auth.authenticate(req, at);   // L1 first: no loan data before a session (01 §6.5)

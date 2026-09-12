@@ -53,6 +53,9 @@ export const SHAPES = {
   funnel: { from: true, to: true, stages: [{ stage: true, event_type: true, count: true }] } satisfies Shape,
   session: { token: true, session: SESSION, party: PARTY, level: true } satisfies Shape,
   otp_request: { challenge_id: true, channel: true, delivery: true, expires_at: true, fake_code: true } satisfies Shape,
+  // 32.16 DELTA-29: POST /v1/borrower/auth/account — `create` answers the e-mail challenge (the code only as the FAKE echo outside production); `verify_email` / `sign_in` answer the session shape; `request_reset` / `reset` answer `account_ok` (a reset challenge id and the FAKE echo when the e-mail exists — never whether it does); an unverified sign-in's 403 carries the fresh challenge on the error shape
+  account_create: { challenge_id: true, delivery: true, expires_at: true, fake_code: true } satisfies Shape,
+  account_ok: { ok: true, challenge_id: true, fake_code: true } satisfies Shape,
   // 32.14 §3 (DELTA-12): Sign in with Google — the provider's authorization URL and the state the callback must echo; never the nonce, the code verifier, a token or a client secret
   oidc_start: { authorization_url: true, state: true, expires_at: true, delivery: true } satisfies Shape,
   passkey_options: { challenge_id: true, challenge: true, rp: { id: true, name: true }, user: { id: true, name: true, display_name: true }, pub_key_cred_params: [{ type: true, alg: true }], allow_credentials: [{ type: true, id: true, transports: true }], timeout_ms: true, attestation: true, expires_at: true } satisfies Shape,
@@ -69,7 +72,7 @@ export const SHAPES = {
   message_reply: { message: MESSAGE, reply: MESSAGE, routed_to: true, command_executed: true, command: true } satisfies Shape,
   card_resolved: { card: CARD, command: true, idempotent: true, result: "opaque", events: true } satisfies Shape,
   command_result: { command: true, subject: { application_id: true, loan_id: true }, result: "opaque", events: true, decision_id: true } satisfies Shape,
-  error: { code: true, gate: true, copy_key: true } satisfies Shape,
+  error: { code: true, gate: true, copy_key: true, challenge_id: true, fake_code: true } satisfies Shape,   // challenge_id / fake_code: EMAIL_UNVERIFIED only (32.16 DELTA-29) — every other refusal carries {code, gate?, copy_key} and nothing else
   // 32.3: the in-app voice session (E1 "a call to the published number"; the disclosure is spoken first) and the FAKE payroll connector (R3)
   voice_session: { session_id: true, channel: true, vendor: true, started_at: true, first_message: MESSAGE } satisfies Shape,
   connect_session: { vendor: true, vendor_session_id: true, link_token: true, card_instance_id: true, application_id: true, status: true, delivery: true } satisfies Shape,

@@ -16,8 +16,7 @@ import { Thread } from "./Thread";
 import { ActionBar } from "./ActionBar";
 import { StatusStrip } from "./StatusStrip";
 import { Header } from "./Header";
-import { AnonymousMinute } from "@/components/entry";
-import { SignIn } from "./SignIn";   // 32.14 S6 (DELTA-14): the sign-in screen — Shell decides, SignIn renders
+import { Account } from "@/components/account/Account";   // 32.16 §2.0 (DELTA-29): the account form on any 401 — Shell decides, Account renders
 import { AddMobilePrompt, isAddMobileDone } from "./AddMobile";
 import { passkeyRegister, rememberPasskeyOnDevice } from "@/lib/auth/passkey";
 import { Record } from "@/components/record/Record";
@@ -66,10 +65,8 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
   const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
   const [loadError, setLoadError] = useState<string | undefined>();
   const [stream, setStream] = useState<StreamStatus>("closed");
-  // 32.14 S6 (DELTA-14): a 401 from me, or the header's Sign in, renders the sign-in screen in place of the thread
+  // 32.16 §2.0 (DELTA-29): a 401 from me, or the header's Sign in, renders the sign-in form under auth.welcome_back in place of the thread (the anonymous minute of docs/ux/15 is not built — docs/ux/17 §0.4)
   const [needsSignIn, setNeedsSignIn] = useState(false);
-  // 32.14 S0–S2 (DELTA-11): no session at the root, no deep link and no pinned card → the anonymous minute (the lead, not a sign-in ask)
-  const [anonymous, setAnonymous] = useState(false);
   const [signInOpen, setSignInOpen] = useState(false);
   const [addMobileDone, setAddMobileDone] = useState(true);
   useEffect(() => setAddMobileDone(isAddMobileDone()), []); // after hydration: the dismissal lives in this browser only
@@ -97,16 +94,15 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
       if (initialCard) setScrollTo(initialCard);
     } catch (e) {
       if (e instanceof ApiRequestError && e.status === 401) {
-        // no session (or it expired and the proxy dropped the cookie): the anonymous minute at the root (no subject, no deep link, no pinned card), else the sign-in screen — never the auth.sign_in notice
+        // no session (or it expired and the proxy dropped the cookie): the sign-in form — never the auth.sign_in notice
         streamRef.current?.close(); streamRef.current = null; setStream("closed");   // no session: nothing to stream (the label would read "reconnecting…" forever)
-        if (!initialSubject && !initialCard && !window.location.search.includes("d=")) { setAnonymous(true); setLoadError(undefined); return; }
         setNeedsSignIn(true);
         setLoadError(undefined);
         return;
       }
       setLoadError(e instanceof ApiRequestError ? copy(e.body.copy_key) : "We can't reach your loan right now. Nothing is lost — try again in a moment.");
     }
-  }, [subject, initialCard, initialSubject]);
+  }, [subject, initialCard]);
 
   useEffect(() => {
     // `?fixture=api` in a fixtures build takes the live path (the e2e drives the root of the host with routed API answers)
@@ -283,13 +279,11 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
       <StatusStrip record={record} onOpen={() => setRecordOpen(true)} />
       <div className="sm-body">
         <main className="sm-thread" aria-label="Conversation">
-          {anonymous && !signInOpen ? (
-            <AnonymousMinute renderIdentity={() => <SignIn variant="choose_method" onSession={() => window.location.reload()} />} />
-          ) : showSignIn ? (
+          {showSignIn ? (
             <>
               <div className="sm-thread-top" />
               <div className="sm-thread-scroll">
-                <SignIn variant="welcome_back" onSession={() => window.location.reload()} onCancel={signInOpen && !needsSignIn ? () => setSignInOpen(false) : undefined} />
+                <Account mode="sign_in" titleKey="auth.welcome_back" partnerLegalName={me?.partner.legal_name} onSession={() => window.location.reload()} onCancel={signInOpen && !needsSignIn ? () => setSignInOpen(false) : undefined} />
               </div>
             </>
           ) : (
@@ -311,17 +305,15 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
               cardErrors={cardErrors}
             />
           )}
-          {anonymous && !signInOpen ? null : (   // the anonymous minute has no session to send to or hand off from: no action bar until sign-in
-            <ActionBar disabled={showSignIn} onSend={(t) => void sendMessage(t)} onAttach={(f) => void attach(f)} onTalkToPerson={() => void talkToPerson()} />
+          {showSignIn ? null : (   // signed out there is no session to send to or hand off from: no action bar until sign-in
+            <ActionBar onSend={(t) => void sendMessage(t)} onAttach={(f) => void attach(f)} onTalkToPerson={() => void talkToPerson()} />
           )}
         </main>
-        {anonymous ? null : (
         <Record record={record} link={link} open={recordOpen} onClose={() => setRecordOpen(false)}>
           {comparisonInRecord.map((c) => (
             <Card key={c.card_instance_id} card={c} timezone={timezone} {...cardProps} onResolve={(req) => resolveCard(c, req)} busy={busyCardId === c.card_instance_id} error={cardErrors[c.card_instance_id]} />
           ))}
         </Record>
-        )}
       </div>
     </div>
   );

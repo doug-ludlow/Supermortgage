@@ -49,16 +49,16 @@ VENDOR_FAKES = ('Stripe Identity, Plaid, Truv, IRS IVES, carrier connection, the
 UI_TABLES = ['conversations', 'messages', 'card_instances', 'card_instance_events', 'deep_links', 'ui_events', 'sessions']
 
 # ---------------------------------------------------------------- id and cross-reference rewriting
-TID_MAP = {'03': '32.3', '04': '32.4', '05': '32.5', '06': '32.6', '07': '32.7', '08a': '32.8', '08b': '32.9', '08c': '32.10', '09': '32.11', '10': '32.12', 'X': '32.13', '15': '32.14'}
+TID_MAP = {'03': '32.3', '04': '32.4', '05': '32.5', '06': '32.6', '07': '32.7', '08a': '32.8', '08b': '32.9', '08c': '32.10', '09': '32.11', '10': '32.12', 'X': '32.13', '15': '32.14', '17': '32.16'}
 FILE_MAP = {'00': 'README', '01': '32.1', '02': '32.2', '03': '32.3', '04': '32.4', '05': '32.5', '06': '32.6', '07': '32.7', '08a': '32.8', '08b': '32.9',
-            '08c': '32.10', '09': '32.11', '10': '32.12', '11': '32.13', '12': 'copy-library.md', '13': '32.13', '14': 'README', '15': '32.14'}
+            '08c': '32.10', '09': '32.11', '10': '32.12', '11': '32.13', '12': 'copy-library.md', '13': '32.13', '14': 'README', '15': '32.14', '17': '32.16'}
 BASENAMES = {'00-MASTER-INDEX': 'README', '01-foundations': '32.1', '02-data-contracts': '32.2', '03-entry-and-qualification': '32.3',
              '04-disclosures-intent-lock': '32.4', '05-verification-conditions-coborrowers': '32.5', '06-decision-property-title-insurance-mi': '32.6',
              '07-cd-closing-rescission-funding-boarding': '32.7', '08a-servicing-payments-statements-escrow': '32.8',
              '08b-servicing-insurance-pmi-arm-life-events-requests': '32.9', '08c-servicing-hardship-delinquency': '32.10',
              '09-rate-watch-and-re-refinance': '32.11', '10-exits': '32.12', '11-side-quests-catalogue': '32.13',
              '12-message-copy-library': 'copy-library.md', '13-acceptance-tests': '32.13', '14-claude-code-build-plan': 'README',
-             '15-entry-sign-up-and-sign-in': '32.14'}
+             '15-entry-sign-up-and-sign-in': '32.14', '17-the-conversational-product': '32.16'}
 
 def read(p): return open(p, encoding='utf-8').read()
 
@@ -97,11 +97,11 @@ def tx(text, pid=None):
     """Renumber and re-point: O-refs (O2.3 → 21.3), UX test ids (T-03-01 → 32.3-T1), UX file references (01 §3 → 32.1 §3),
     and un-backtick notice codes no earlier section owns."""
     text = renumber(text)
-    text = re.sub(r'\bT-(03|04|05|06|07|08a|08b|08c|09|10|X|15)-(\d{2})\b', lambda m: f'{TID_MAP[m.group(1)]}-T{int(m.group(2))}', text)
+    text = re.sub(r'\bT-(03|04|05|06|07|08a|08b|08c|09|10|X|15|17)-(\d{2})\b', lambda m: f'{TID_MAP[m.group(1)]}-T{int(m.group(2))}', text)
     text = re.sub(r'\b(' + '|'.join(sorted(BASENAMES, key=len, reverse=True)) + r')(\.md)?\b', lambda m: BASENAMES[m.group(1)], text)
-    text = re.sub(r'(?<![\d.])\b(00|0[1-9]|10|08a|08b|08c|11|12|13|14|15)( §)', lambda m: FILE_MAP[m.group(1)] + m.group(2), text)
-    text = re.sub(r'\((0[1-9]|10|08a|08b|08c|11|13|15)\)', lambda m: f'({FILE_MAP[m.group(1)]})', text)
-    text = re.sub(r'\b(0[1-9]|10|08a|08b|08c|15)\s+(?=32\.\d+-T\d)', '', text)
+    text = re.sub(r'(?<![\d.])\b(00|0[1-9]|10|08a|08b|08c|11|12|13|14|15|17)( §)', lambda m: FILE_MAP[m.group(1)] + m.group(2), text)
+    text = re.sub(r'\((0[1-9]|10|08a|08b|08c|11|13|15|17)\)', lambda m: f'({FILE_MAP[m.group(1)]})', text)
+    text = re.sub(r'\b(0[1-9]|10|08a|08b|08c|15|17)\s+(?=32\.\d+-T\d)', '', text)
     def notice(m):
         code = m.group(1)
         if code in OWNED: return m.group(0)
@@ -132,7 +132,7 @@ def as_h5(title, body):
     return f'##### {title}\n\n{demote(body).strip()}\n'
 
 TEST_TITLE = re.compile(r'^(\d+\.\s+)?(Acceptance tests.*|Tests|Cross-cutting tests)$')
-TEST_BULLET = re.compile(r'^- \*\*T-(03|04|05|06|07|08a|08b|08c|09|10|X|15)-(\d{2})((?:\s[^*]+?)?)\*\*\s*(?:—\s*)?(.*)$')
+TEST_BULLET = re.compile(r'^- \*\*T-(03|04|05|06|07|08a|08b|08c|09|10|X|15|17)-(\d{2})((?:\s[^*]+?)?)\*\*\s*(?:—\s*)?(.*)$')
 
 def parse_tests(body, pid):
     rows = []
@@ -270,6 +270,14 @@ META = {
              roles='`mlo_of_record`, `human_agent`',
              overrides=[(re.compile(r'^0\. Ground truth'), 'rules'), (re.compile(r'^7\. Phases|^8\. Prompts|^10\. Definition of done'), 'audit'), (re.compile(r'^9\. Acceptance tests'), 'tests')],
              retitle={'5. AI agent design': 'Owning agent, process tools and guardrails (the counted paragraph is under AI agent design below)'}),
+    16: dict(title='The conversational product: an account, then a conversation, with cards only when the rules need one', files=['17-the-conversational-product.md'], agent='intake',
+             owners='20.3 (lead intake, disclosure, transfer to a human), 21.1 (SAFE classification, prohibited inquiries, ULAD validation), 18.1 (AI governance: systems, versions, evaluations, kill switch), 32.1/32.2 (cards, commands, sessions, read models), 32.3 (the qualification the conversation drives), 32.14 (Google sign-in, deep links, the partner from configuration, link my loan), 32.13 (cross-cutting rules)',
+             auto='b — the model narrates the head of an agenda the flows own; every fact is a card the borrower resolves; every tool call is a bus command; the utterance guard runs before every reply; `mlo_of_record` reviews terms under `origination.ai_mlo_intake=assisted`',
+             trigger='On account creation or sign-in (e-mail + password, or Google); then on every borrower message or utterance on any channel; per party for the life of the relationship',
+             deadlines='renders the 42 allow-listed timer codes through `timer.due` (owned by the sections that arm them); `SM_MLO_PREAPP_TERMS_REVIEW_1BH`, `REGB_1002_9_DECISION_30` (20.3 / 21.x)',
+             discrepancies='(1) DELTA-23…29 (docs/ux/BACKEND-DELTAS.md) declare the agent turn, the tool contract, the utterance guard and turn log, the rail, voice attestation, the evaluation harness and e-mail + password accounts (`party_credentials`). (2) docs/ux/15 §0.4 is superseded in part: the anonymous minute (S0–S2, DELTA-11) is not the front door; the account is. Nothing else is new: every gate, timer, notice, command, table and role is 1–31 and 32.x\'s.',
+             roles='`mlo_of_record`, `human_agent`',
+             overrides=[(re.compile(r'^0\. Ground truth'), 'rules'), (re.compile(r'^5\. Data model'), 'data'), (re.compile(r'^8\. Phases|^10\. Definition of done'), 'audit'), (re.compile(r'^9\. Acceptance tests'), 'tests'), (re.compile(r'^3\. The agent turn'), 'rules'), (re.compile(r'^6\. The evaluation harness'), 'audit'), (re.compile(r'^7\. Backend deltas'), 'integrations')]),
 }
 
 # ---------------------------------------------------------------- generated blocks
@@ -334,8 +342,18 @@ def data_model_14(text):
     return (body + '\n- Baseline, read-only projection sources this process renders (owned by the sections in the Blueprint row; no table is re-declared): '
             + (', '.join(f'`{n}`' for n in base) if base else 'none named') + '.\n')
 
+def data_model_16(text):
+    """docs/ux/17 §5 verbatim: the UI-owned tables this process adds (`party_credentials`, `agent_turns`; counted by spec_manifest.py) and what it changes."""
+    m = re.search(r'^## 5\. Data model[^\n]*\n(.*?)(?=^## |\Z)', text, re.S | re.M)
+    assert m, '17-the-conversational-product.md: "## 5. Data model" block not found'
+    base = baseline_tables(text)
+    body = tx(m.group(1).strip(), '32.16')
+    return (body + '\n- Baseline, read-only projection sources this process renders (owned by the sections in the Blueprint row; no table is re-declared): '
+            + (', '.join(f'`{n}`' for n in base) if base else 'none named') + '.\n')
+
 def data_model_other(text, k):
     if k == 14: return data_model_14(text)
+    if k == 16: return data_model_16(text)
     base = baseline_tables(text)
     ui = [n for n in UI_TABLES if f'`{n}`' in text]
     s = ('No UI-owned table is declared here (32.2 declares the seven UI-owned tables' + (f'; this process writes `{"`, `".join(ui)}` through the 32.2 command endpoints' if ui else '') + ').\n'
@@ -395,6 +413,15 @@ def commands_32_2():
     return tools
 
 def agent_paragraph(k, meta):
+    if k == 16:
+        return ('`intake` and `borrower-comms` agents (tools: `session.next`, `record.get`, `explain`, `timer.due`, `document.describe`, `card.propose`, `card.request`, `command.run`, `human.transfer`) — the '
+                'tool contract of §3.3 (DELTA-24): every tool is a 32.16 bus command delegating to an existing tool through `commandInputFor` / `delegate()`; the model-facing schema is generated from '
+                '`TOOLS_32_16` at boot. End-to-end: the turn rebuilds its context from `borrower_record`, `session.next`, the last few messages and the copy library (nothing carried between turns), '
+                'calls the model with the contract, executes each tool call on the bus (an `agent_decisions` row each), runs the utterance guard (provenance, verbatim, SAFE, prohibited inquiries, '
+                'scope, disclosure) and appends the reply. Decision record schema: {turn_id, conversation_id, party_id, session_id, ai_system_version_id, model_version, prompt_version, tier, '
+                'context_hash, tool_calls[], safe_classification, guard_result}. Guardrails: the model resolves no card, runs no money or consent command, writes no digit outside a token, never '
+                'sees DU, credit, fraud, QC or compliance internals; a card exists only for a §2.3 case; three misses on a card transfer to a human; the 18.1 kill switch restores the placeholder '
+                'reply. Escalations: `human_agent` on the word, on distress or the third miss; `mlo_of_record` for particular terms; `officer` never from a turn.')
     if k == 1:
         return ('`intake` and `borrower-comms` agents (tools: `send_card`, `resolve_card_by_evidence`, `create_deep_link`) — DELTA-07 adds the three card tools to both '
                 'thread-owning agents (the `intake` agent owns the thread before funding, `borrower-comms` after). End-to-end: the agent sends a typed card whenever the '

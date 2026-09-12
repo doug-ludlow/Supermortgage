@@ -580,6 +580,28 @@ The lines the borrower API and the shell author themselves (src/runtime/borrower
 - `entry.sms.options_hint` — line — "Reply with a number." — *32.14 §4 SMS entry: the options of a ChoiceCard are spelled "1) … 2) … 3) …" from the copy line's options.*
 - `entry.estimate.cash_out_limit` — line — "For cash-out, the loan can be up to {{max_ltv_pct}}% of your home's value." — *S1: under the estimate fields for a cash-out goal; the 80% LTV cap shown as a plain limit, never a decline (`PROGRAM_MAX_LTV_PCT.cash_out`).*
 
+## The conversational product (32.16)
+
+- `account.create.title` — heading — "Create your account" — *32.16 §2.0: /app/sign-up; e-mail, password or Google, nothing else. The disclosure line (`entry.disclosure.first`) sits above the form.*
+- `account.signin.title` — heading — "Sign in" — *32.16 §2.0: /app/sign-in. Over a live shell (the header's Sign in, any 401) the same form is headed by `auth.welcome_back`.*
+- `account.email.field` — field — "Your e-mail address" — *32.16 §2.0: stored lowercased and unique (DELTA-29).*
+- `account.password.field` — field — "Password" — helper: "At least 8 characters." — *32.16 §2.0: hashed with Argon2id; never echoed.*
+- `account.create.button` — button — "Create account" — *32.16 §2.0: `POST /v1/borrower/auth/account {action: create}` → a six-digit code to the e-mail.*
+- `account.signin.button` — button — "Sign in" — *32.16 §2.0: `{action: sign_in}`.*
+- `account.forgot` — link — "Forgot your password?" — *32.16 §2.0: → /app/reset.*
+- `account.reset.title` — heading — "Reset your password" — *32.16 §2.0: the e-mail step; `{action: request_reset}` always answers ok.*
+- `account.reset.code` — heading — "Enter your code and a new password." — *32.16 §2.0: the code step of the reset; the field is `auth.code.enter` with the e-mail as the destination.*
+- `account.reset.button` — button — "Set new password" — *32.16 §2.0: `{action: reset}`.*
+- `account.reset.done` — line — "Your password is set. Sign in to continue." — *32.16 §2.0: with a link to /app/sign-in; no session is opened by a reset.*
+- `account.have_account` — link — "Already have an account? Sign in" — *32.16 §2.0: under the create form → /app/sign-in.*
+- `account.new` — link — "New here? Create an account" — *32.16 §2.0: under the sign-in form → /app/sign-up.*
+- `account.verify.title` — heading — "Check your e-mail" — *32.16 §2.0: the code step after Create account; the field is `auth.code.enter` with the e-mail as the destination; the FAKE code is shown outside production.*
+- `account.exists` — refusal — "There's already an account for that e-mail. Sign in instead." — *409 `ACCOUNT_EXISTS`.*
+- `account.password_weak` — refusal — "Use at least 8 characters." — *400 `PASSWORD_WEAK`.*
+- `auth.password_wrong` — refusal — "That e-mail and password didn't match." — *401 `PASSWORD_WRONG`; never says which.*
+- `auth.account_locked` — refusal — "Too many tries. Wait fifteen minutes, or reset your password." — *423 `ACCOUNT_LOCKED`: ten failures lock for fifteen minutes (`locked_until`).*
+- `auth.email_unverified` — refusal — "Enter the code we just e-mailed you to finish setting up." — *403 `EMAIL_UNVERIFIED` on sign-in: a fresh code was sent; the app shows the code step.*
+
 ## Channel variants (rules)
 
 - **SMS**: first sentence + deep link; never a number the borrower hasn't seen in-app first (no rates, balances or payoff figures by SMS); STOP footer on the first message of a thread.

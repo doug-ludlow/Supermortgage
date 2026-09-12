@@ -944,3 +944,16 @@ a {
 .sm-add-mobile {
   margin: 8px 16px;
 }
+
+/* ---------- 32.16 the account (sign-up / sign-in / reset) ---------- */
+.sm-signin .sm-options {
+  margin-top: 12px;
+}
+.sm-account-link {
+  color: var(--sm-info);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.sm-signin > p {
+  margin: 10px 0 0;
+}

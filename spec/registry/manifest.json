@@ -15427,5 +15427,143 @@
    "lead.proceed",
    "party.linkLoan"
   ]
+ },
+ {
+  "process": "32.16",
+  "title": "The conversational product: an account, then a conversation, with cards only when the rules need one",
+  "path": "sections/32-borrower-experience/32-16-the-conversational-product-an-account-then-a-conversation-wi.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given a borrower message that is not an affirmative, not a flow reply and not \"human\", then the reply is produced by the agent turn (an `agent_turns` row exists with `model_version`, `prompt_version`, `context_hash`) and no placeholder copy key is used."
+   },
+   {
+    "n": 2,
+    "text": "Given any turn, then its context contains no DU message, credit report field, findings text, fraud/QC entity or vendor payload (contract test over `context.ts`)."
+   },
+   {
+    "n": 3,
+    "text": "Given the model's tool calls in a turn, then each is a 32.16 bus tool with an `agent_decisions` row, and a call outside the contract (e.g. `payment.makeOneTime`) is refused by the bus with `command.refused` and never executed."
+   },
+   {
+    "n": 4,
+    "text": "Given \"eight thousand two hundred a month\" with the R3 income card pending, then `card_instances.props.proposal.fields[0] = {path: \"monthly_income\", value: \"820000\", source: \"borrower_stated_unconfirmed\"}`, the thread shows the confirm chip, `application_income` is unchanged, and Confirm resolves the card with `evidence.source = borrower_stated`."
+   },
+   {
+    "n": 5,
+    "text": "Given a model turn containing \"your rate is 6.125%\", then the guard rejects it, the regenerated turn uses `{{numbers.rate}}`, and the rendered message shows the projection's rate."
+   },
+   {
+    "n": 6,
+    "text": "Given `ai_intake_mode = assisted` and no `mlo.review.completed`, when the turn is classified `particular_terms_presented`, then it is refused, `logSafeActivity` records it, and the reply is the step's default copy."
+   },
+   {
+    "n": 7,
+    "text": "Given a turn that references `consent.esign.title`, then the rendered text equals the template exactly."
+   },
+   {
+    "n": 8,
+    "text": "Given \"what's escrow?\" mid-R3, then the reply carries `explain.escrow` and restates the R3 ask; `session.next` before and after the turn is the same card."
+   },
+   {
+    "n": 9,
+    "text": "Given three consecutive rejected or edited proposals on one card, then `human.request` runs with the transcript reference and `PersonCard{human_agent}` follows `human.transfer.completed`."
+   },
+   {
+    "n": 10,
+    "text": "Given the 18.1 kill switch tripped for `intake`, then the turn is bypassed and the placeholder copy returns for every party until reset."
+   },
+   {
+    "n": 11,
+    "text": "Given the shell at \u2265 1024 px, then no card component renders inside the thread; every pending card renders under Needed from you, current ask first, and expanding one shows its component."
+   },
+   {
+    "n": 12,
+    "text": "Given a reference chip, when clicked, then the rail focuses and expands that `card_instance_id`; resolving it there updates the chip to its receipt."
+   },
+   {
+    "n": 13,
+    "text": "Given the refinance fixture at R8, then `journey_progress` shows E1\u2013R7 `done`, R8 `current`, and Progress renders \"7 of 12\"."
+   },
+   {
+    "n": 14,
+    "text": "Given `credit_reports.frozen_repositories` non-empty, then the rail shows a caution row with the lift-instructions card, and no toast or modal exists in the DOM."
+   },
+   {
+    "n": 15,
+    "text": "Given a `DocumentCard{LE}` under Documents, when expanded, then the viewer and \"Confirm receipt\" render and confirming writes `receipt_evidence = esign_confirmed` (32.3 32.3-T22 unchanged)."
+   },
+   {
+    "n": 16,
+    "text": "Given a phone width, then the status strip shows the badge, next event and needed count, and the sheet shows the same rail sections."
+   },
+   {
+    "n": 17,
+    "text": "Given an in-app voice turn proposing the home-confirm values, when the borrower says \"yes\", then the card resolves through `resolve_card_by_evidence` with `card_instance_events{kind: voice_attestation, utterance_id, transcript_ref}` and `messages.voice_turn = true`."
+   },
+   {
+    "n": 18,
+    "text": "Given a pending `ConsentCard` on a voice turn, when the borrower says \"I agree\", then nothing resolves and the reply is `voiceConsentLink` with the deep link."
+   },
+   {
+    "n": 19,
+    "text": "Given a phone-line session, then the first spoken content is `entry.disclosure.first` and `lead.disclosure.delivered` precedes any other assistant utterance."
+   },
+   {
+    "n": 20,
+    "text": "Given STT returns low confidence three times on the SSN step, then the reply is the deep link and no proposal is written."
+   },
+   {
+    "n": 21,
+    "text": "Given the cooperative refinance persona under `INTEGRATIONS=fake`, starting from account creation, then the run reaches `du.findings.received` with one typed field, all five checks pass, and an `ai_evaluations{pass: true}` row is written."
+   },
+   {
+    "n": 22,
+    "text": "Given the hostile persona, then no gated SAFE class is sent, `human.request` runs within one turn of a distress classification, and the evidence check passes."
+   },
+   {
+    "n": 23,
+    "text": "Given an `ai_system_versions` row without a passing `eval_run_id`, then selecting it for `borrower-conversation` is refused."
+   },
+   {
+    "n": 24,
+    "text": "Given two days of `ai_monitoring_metrics` with transfers per session outside the 18.1 band, then the kill switch trips and 32.16-T10's behaviour follows."
+   },
+   {
+    "n": 25,
+    "text": "Given e-mail + password on the account screen, then a six-digit code goes to the e-mail, entering it writes `party_credentials.email_verified_at` and opens `sessions{level: L1, auth_method: password}`, and the first assistant message of the session is `entry.disclosure.first`; a wrong code three times leaves no session."
+   },
+   {
+    "n": 26,
+    "text": "Given Continue with Google with `email_verified = true`, then a session opens with `auth_method: oidc_google` keyed on `sub`; with `email_verified = false` the sign-in is refused (`OIDC_EMAIL_UNVERIFIED`); a Google e-mail already on file lands in that party's thread."
+   },
+   {
+    "n": 27,
+    "text": "Given ten failed password attempts, then the account is locked for fifteen minutes (`locked_until`) and a correct password inside the window is refused; given a reset code, then a new password signs in; given `payment.makeOneTime` after a password sign-in with no code in the last ten minutes, then the command is refused with the fresh-L1 gate and a code is sent."
+   },
+   {
+    "n": 28,
+    "text": "Given every `card.sent` event in the refinance, purchase and servicing fixtures, then each card's kind and trigger match a \u00a72.3 case (`CARD_CASES`), and an injected `send_card{kind: StatusCard, trigger: \"chat\"}` fails the contract test."
+   }
+  ],
+  "tables": [
+   "agent_turns",
+   "journey_progress",
+   "party_credentials"
+  ],
+  "timers": [],
+  "notices": [],
+  "agent": "intake",
+  "tools": [
+   "session.next",
+   "record.get",
+   "explain",
+   "timer.due",
+   "document.describe",
+   "card.propose",
+   "card.request",
+   "command.run",
+   "human.transfer"
+  ]
  }
 ]

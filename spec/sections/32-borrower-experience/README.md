@@ -165,6 +165,7 @@ The reconciliation this import found (event spellings, consent kinds, the `esign
 | 32.12 | Exits | c |
 | 32.13 | Cross-cutting: acceptance harness, copy library rules, side-quest catalogue | a |
 | 32.14 | Entry, sign-up and sign-in | c |
+| 32.16 | The conversational product: an account, then a conversation, with cards only when the rules need one | b |
 
 ## Closing
 

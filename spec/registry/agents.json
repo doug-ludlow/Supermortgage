@@ -1040,6 +1040,7 @@
     "20.3",
     "21.1",
     "32.1",
+    "32.16",
     "32.3",
     "32.4",
     "32.5",
@@ -1085,7 +1086,16 @@
     "logSafeActivity",
     "send_card",
     "resolve_card_by_evidence",
-    "create_deep_link"
+    "create_deep_link",
+    "session.next",
+    "record.get",
+    "explain",
+    "timer.due",
+    "document.describe",
+    "card.propose",
+    "card.request",
+    "command.run",
+    "human.transfer"
    ],
    "escalates_to": [
     "human_agent",
@@ -6036,6 +6046,31 @@
    "escalates_to": [
     "human_agent",
     "mlo_of_record"
+   ]
+  },
+  {
+   "process": "32.16",
+   "agent": "intake",
+   "agents_named": [
+    "intake",
+    "borrower-comms"
+   ],
+   "tools": [
+    "session.next",
+    "record.get",
+    "explain",
+    "timer.due",
+    "document.describe",
+    "card.propose",
+    "card.request",
+    "command.run",
+    "human.transfer"
+   ],
+   "guardrails": "the model resolves no card, runs no money or consent command, writes no digit outside a token, never sees DU, credit, fraud, QC or compliance internals; a card exists only for a \u00a72.3 case; three misses on a card transfer to a human; the 18.1 kill switch restores the placeholder reply. Escalations: `human_agent` on the word, on distress or the third miss; `mlo_of_record` for particular terms; `officer` never from a turn.",
+   "escalates_to": [
+    "human_agent",
+    "mlo_of_record",
+    "officer"
    ]
   },
   {

@@ -22,12 +22,14 @@ const SESSION_MAX_AGE_S = 7 * 24 * 3600; // 7 days with a passkey (01 §5); the 
 const HOP_BY_HOP = new Set(["connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade", "proxy-authorization", "proxy-authenticate", "host", "content-length"]);
 // 32.14 DELTA-12: auth/oidc's callback answers the same session body as OTP verify, so the cookie is set here too; the
 // `x-fake-oidc: FAKE` header the callback page sends in FAKE/dev mode is forwarded like any other non-hop-by-hop header.
-const AUTH_ROUTES = new Set(["v1/borrower/auth/otp", "v1/borrower/auth/passkey", "v1/borrower/auth/l2", "v1/borrower/auth/oidc", "v1/borrower/talk"]);   // talk: verify_code answers the same `token` once
-// 32.14 DELTA-11: the anonymous minute's lead token lives in its own HttpOnly cookie (30 days) and rides to the API as
-// `x-borrower-lead` on every proxied request — the OTP/passkey/OIDC verify routes link the lead to the party from it.
+// 32.16 DELTA-29: auth/account (create → verify_email, sign_in) answers the same session body — the cookie is set here too.
+const AUTH_ROUTES = new Set(["v1/borrower/auth/otp", "v1/borrower/auth/passkey", "v1/borrower/auth/l2", "v1/borrower/auth/oidc", "v1/borrower/auth/account", "v1/borrower/talk"]);   // talk: verify_code answers the same `token` once
+// The /app/talk lead token lives in its own HttpOnly cookie (30 days) and rides to the API as `x-borrower-lead` on every
+// proxied request — the auth verify routes link the lead to the party from it. (docs/ux/15 DELTA-11, the anonymous minute
+// on /v1/borrower/lead, is superseded by docs/ux/17 §0.4 and not built: only talk starts a lead here.)
 const LEAD_COOKIE = "sm_borrower_lead";
 const LEAD_HEADER = "x-borrower-lead";
-const LEAD_ROUTES = new Set(["v1/borrower/lead", "v1/borrower/talk"]);   // both start a lead and answer `lead_token` once
+const LEAD_ROUTES = new Set(["v1/borrower/talk"]);   // starts a lead and answers `lead_token` once
 const LEAD_MAX_AGE_S = 30 * 24 * 3600;
 
 function upstreamBase(): string | null {
@@ -92,7 +94,7 @@ async function forward(req: NextRequest, ctx: { params: Promise<{ path: string[]
   if ((AUTH_ROUTES.has(joined) || LEAD_ROUTES.has(joined)) && (res.headers.get("content-type") ?? "").includes("application/json")) {
     let body = (await res.json()) as Record<string, unknown>;
     const cookies: string[] = [];
-    // 32.14 DELTA-11: a lead start returns `{ lead_token, … }` once — kept server-side in its own cookie, stripped from the body.
+    // a lead start returns `{ lead_token, … }` once — kept server-side in its own cookie, stripped from the body.
     if (LEAD_ROUTES.has(joined) && res.ok && typeof body.lead_token === "string" && body.lead_token) {
       const secure = req.nextUrl.protocol === "https:" || process.env.NODE_ENV === "production";
       cookies.push(`${LEAD_COOKIE}=${encodeURIComponent(body.lead_token)}; HttpOnly; ${secure ? "Secure; " : ""}SameSite=Strict; Path=/app; Max-Age=${LEAD_MAX_AGE_S}`);

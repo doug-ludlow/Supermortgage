@@ -1,11 +1,11 @@
 /**
- * 32.14 — what the borrower SEES at the doors (Phase 1: DELTA-12, DELTA-14). The API facts are asserted in
- * src/domain/borrower/32-14.spec.test.ts; here: the sign-in screen (S3/S6 — the chooser under `auth.choose_method` and
- * `auth.welcome_back`, code entry with the FAKE code marked, resend, the error keys, Use my passkey first on a device that
- * registered one, the Google FAKE identity form → `authOidcStart` → the redirect, T12), the Google callback page, the deep-link
- * page (S5/T16: no session → the chooser with the token retained; 404/410 → `deep_link.*` with the sign-in offer; another
- * party's token → the API's refusal and no target), the return page, the `?card=` pin, the `auth.passkey.offer` inline
- * action, the `auth.add_mobile` prompt and the header's partner phone + Sign in.
+ * 32.14 — what the borrower SEES at the doors (DELTA-12, DELTA-14; the account form itself is 32.16 §2.0 — tests/cards/account.test.tsx).
+ * The API facts are asserted in src/domain/borrower/32-14.spec.test.ts; here: the sign-in screen the shell and the deep-link
+ * page render on a 401 (`SignIn` = the account form in its sign-in mode under `auth.welcome_back`: e-mail + password, the
+ * Google FAKE identity form → `authOidcStart` → the redirect; no code chooser, no passkey — docs/ux/17 §0.4), the Google
+ * callback page, the deep-link page (S5/T16: no session → the sign-in form with the token retained; 404/410 → `deep_link.*`
+ * with the sign-in offer; another party's token → the API's refusal and no target), the return page, the `?card=` pin, the
+ * `auth.passkey.offer` inline action, the `auth.add_mobile` prompt (codes stay for the mobile) and the header's Sign in.
  */
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -19,7 +19,8 @@ import { ReturnRedirect } from "@/components/shell/ReturnRedirect";
 import { Header } from "@/components/shell/Header";
 import { AddMobilePrompt } from "@/components/shell/AddMobile";
 import { Thread } from "@/components/shell/Thread";
-import { PASSKEY_DEVICE_HINT, PENDING_DEEP_LINK, b64urlDecode, b64urlEncode } from "@/lib/auth/passkey";
+import { accountSignIn } from "@/lib/api/account";
+import { PENDING_DEEP_LINK } from "@/lib/auth/passkey";
 import type { AnyCardInstance } from "@/lib/types/cards";
 import type { ThreadMessage } from "@/lib/types/record";
 import { makeCard, TZ } from "./helpers";
@@ -31,12 +32,17 @@ vi.mock("@/lib/api/client", async (importOriginal) => {
     api: { ...mod.api, authOtpRequest: vi.fn(), authOtpVerify: vi.fn(), authOidcStart: vi.fn(), authOidcCallback: vi.fn(), authPasskey: vi.fn(), deeplink: vi.fn(), command: vi.fn() },
   };
 });
+vi.mock("@/lib/api/account", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("@/lib/api/account")>();
+  return { ...mod, accountSignIn: vi.fn(), accountCreate: vi.fn(), accountVerifyEmail: vi.fn() };
+});
 
 const user = userEvent.setup();
 const apiError = (status: number, code: string, copy_key: string) => new ApiRequestError(status, { code, copy_key });
 const REDIRECT = "https://demo.supermortgage.com/app/auth/google/callback";
-const [smsLabel = "", emailLabel = "", googleLabel = "", passkeyLabel = ""] = copyOptions("auth.choose_method");
-const [continueLabel = "", resendLabel = ""] = copyOptions("auth.code.enter");
+const googleLabel = copy("auth.google.button");
+const [continueLabel = ""] = copyOptions("auth.code.enter");
+const SESSION = { level: "L1" as const, session: "cookie" as const };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -45,116 +51,45 @@ beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
 });
 
-/** Walk the SMS code path on a rendered SignIn: request → the FAKE code → verify. */
-async function signInWithCode(destination = "(602) 555-0100", code = "246810") {
-  await user.click(screen.getByRole("button", { name: smsLabel }));
-  await user.type(screen.getByLabelText(copy("auth.sms.field")), destination);
-  await user.click(screen.getByRole("button", { name: smsLabel }));
-  const field = await screen.findByLabelText(copy("auth.code.enter", { destination }));
-  await user.type(field, code);
-  await user.click(screen.getByRole("button", { name: continueLabel }));
+/** Sign in with e-mail + password on a rendered SignIn (32.16 §2.0). */
+async function signInWithPassword(email = "maya@example.com", password = "correct horse") {
+  await user.type(screen.getByLabelText(copy("account.email.field")), email);
+  await user.type(screen.getByLabelText(copy("account.password.field")), password);
+  await user.click(screen.getByRole("button", { name: copy("account.signin.button") }));
 }
 
-describe("32.14 S3/S6 — the sign-in screen", () => {
-  it("renders the chooser under auth.welcome_back: text, e-mail, Google; no passkey without the device hint; the helper line; #otp on the root", () => {
-    render(<SignIn variant="welcome_back" onSession={vi.fn()} />);
+describe("32.16 §2.0 — the sign-in screen on a 401 (SignIn = the account form under auth.welcome_back)", () => {
+  it("renders e-mail, password, Sign in and Google under auth.welcome_back; no code chooser, no passkey; #otp on the root; no card", () => {
+    render(<SignIn onSession={vi.fn()} />);
     expect(screen.getByRole("heading", { name: copy("auth.welcome_back") })).toBeInTheDocument();
-    const group = screen.getByRole("group", { name: copy("auth.welcome_back") });
-    expect(within(group).getByRole("button", { name: smsLabel })).toHaveClass("sm-btn-primary");
-    expect(within(group).getByRole("button", { name: emailLabel })).toBeInTheDocument();
-    expect(within(group).getByRole("button", { name: googleLabel })).toHaveClass("sm-google-btn");
-    expect(within(group).queryByRole("button", { name: passkeyLabel })).toBeNull();
-    expect(screen.getByText(copy("entry.identify.why"))).toBeInTheDocument();
-    expect(document.getElementById("otp")).toBe(screen.getByTestId("sign-in"));
+    expect(screen.getByLabelText(copy("account.email.field"))).toBeInTheDocument();
+    expect(screen.getByLabelText(copy("account.password.field"))).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: copy("account.signin.button") })).toHaveClass("sm-btn-primary");
+    expect(screen.getByRole("button", { name: googleLabel })).toHaveClass("sm-google-btn");
+    for (const gone of copyOptions("auth.welcome_back").filter((o) => o !== googleLabel)) expect(screen.queryByRole("button", { name: gone })).toBeNull(); // Text me a code · E-mail me a code · Use my passkey
+    expect(screen.getByRole("link", { name: copy("account.new") })).toHaveAttribute("href", "/sign-up");
+    expect(document.getElementById("otp")).toBe(screen.getByTestId("account"));
+    expect(screen.getByTestId("account")).toHaveAttribute("data-mode", "sign_in");
     expect(screen.queryByRole("article")).toBeNull();
   });
 
-  it("the S3 variant is the same screen under auth.choose_method", () => {
-    render(<SignIn variant="choose_method" onSession={vi.fn()} />);
-    expect(screen.getByRole("heading", { name: copy("auth.choose_method") })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: smsLabel })).toBeInTheDocument();
-  });
-
-  it("Text me a code: the mobile field (auth.sms.field) → authOtpRequest(sms) → code entry with the FAKE code marked → authOtpVerify → onSession", async () => {
-    vi.mocked(api.authOtpRequest).mockResolvedValue({ challenge_id: "ch-1", delivery: "FAKE", expires_at: "2026-10-20T10:10:00Z", fake_code: "246810" });
-    vi.mocked(api.authOtpVerify).mockResolvedValue({ level: "L1", session: "cookie" });
+  it("e-mail + password → accountSignIn → onSession; a wrong password renders auth.password_wrong, never the code", async () => {
+    vi.mocked(accountSignIn).mockRejectedValueOnce(apiError(401, "PASSWORD_WRONG", "auth.password_wrong")).mockResolvedValueOnce(SESSION);
     const onSession = vi.fn();
-    render(<SignIn variant="choose_method" onSession={onSession} />);
-    await user.click(screen.getByRole("button", { name: smsLabel }));
-    expect(screen.getByText(copyExtra("auth.sms.field", "helper")!)).toBeInTheDocument();
-    await user.type(screen.getByLabelText(copy("auth.sms.field")), "(602) 555-0100");
-    await user.click(screen.getByRole("button", { name: smsLabel }));
-    expect(api.authOtpRequest).toHaveBeenCalledWith("sms", "(602) 555-0100");
-    const code = await screen.findByLabelText(copy("auth.code.enter", { destination: "(602) 555-0100" }));
-    expect(code).toHaveAttribute("autocomplete", "one-time-code");
-    const fake = screen.getByTestId("fake-code");
-    expect(fake).toHaveClass("sm-fake");
-    expect(fake).toHaveTextContent("FAKE code · 246810");
-    expect(screen.getByRole("button", { name: continueLabel })).toBeDisabled();
-    await user.type(code, "246810");
-    await user.click(screen.getByRole("button", { name: continueLabel }));
-    expect(api.authOtpVerify).toHaveBeenCalledWith("ch-1", "246810");
-    await waitFor(() => expect(onSession).toHaveBeenCalledWith({ level: "L1", session: "cookie" }));
-  });
-
-  it("E-mail me a code uses auth.email.field and channel email; Send a new code re-requests and shows auth.code.resent", async () => {
-    vi.mocked(api.authOtpRequest).mockResolvedValueOnce({ challenge_id: "ch-1", delivery: "FAKE", expires_at: "x" }).mockResolvedValueOnce({ challenge_id: "ch-2", delivery: "FAKE", expires_at: "x" });
-    render(<SignIn variant="choose_method" onSession={vi.fn()} />);
-    await user.click(screen.getByRole("button", { name: emailLabel }));
-    await user.type(screen.getByLabelText(copy("auth.email.field")), "maya@example.com");
-    await user.click(screen.getByRole("button", { name: emailLabel }));
-    expect(api.authOtpRequest).toHaveBeenCalledWith("email", "maya@example.com");
-    await screen.findByLabelText(copy("auth.code.enter", { destination: "maya@example.com" }));
-    expect(screen.queryByTestId("fake-code")).toBeNull(); // no fake_code from the API → nothing to show
-    await user.click(screen.getByRole("button", { name: resendLabel }));
-    expect(await screen.findByTestId("code-resent")).toHaveTextContent(copy("auth.code.resent", { destination: "maya@example.com" }));
-    expect(api.authOtpRequest).toHaveBeenCalledTimes(2);
-  });
-
-  it("errors render the API's copy key (auth.code_wrong, auth.code_locked), never a code", async () => {
-    vi.mocked(api.authOtpRequest).mockResolvedValue({ challenge_id: "ch-1", delivery: "FAKE", expires_at: "x", fake_code: "111111" });
-    vi.mocked(api.authOtpVerify).mockRejectedValueOnce(apiError(401, "OTP_INVALID", "auth.code_wrong")).mockRejectedValueOnce(apiError(429, "OTP_TOO_MANY_ATTEMPTS", "auth.code_locked"));
-    const onSession = vi.fn();
-    render(<SignIn variant="welcome_back" onSession={onSession} />);
-    await signInWithCode("(602) 555-0100", "000000");
-    expect(await screen.findByRole("alert")).toHaveTextContent(copy("auth.code_wrong"));
-    expect(screen.getByRole("alert")).not.toHaveTextContent("OTP_INVALID");
-    await user.click(screen.getByRole("button", { name: continueLabel }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(copy("auth.code_locked"));
+    render(<SignIn onSession={onSession} />);
+    await signInWithPassword("maya@example.com", "nope");
+    expect(await screen.findByRole("alert")).toHaveTextContent(copy("auth.password_wrong"));
+    expect(screen.getByRole("alert")).not.toHaveTextContent("PASSWORD_WRONG");
     expect(onSession).not.toHaveBeenCalled();
-  });
-
-  it("T12: Use my passkey is offered FIRST on a device that registered one; the assertion (assert_options → authenticator → assert) opens the session", async () => {
-    window.localStorage.setItem(PASSKEY_DEVICE_HINT, "1");
-    const cred = { id: "cred-1", response: { clientDataJSON: new Uint8Array([1, 2, 3]).buffer, authenticatorData: new Uint8Array([4]).buffer, signature: new Uint8Array([5, 6]).buffer } };
-    Object.defineProperty(window.navigator, "credentials", { value: { get: vi.fn().mockResolvedValue(cred), create: vi.fn() }, configurable: true });
-    vi.mocked(api.authPasskey).mockResolvedValueOnce({ challenge_id: "ch-p", challenge: "AQID", rp: { id: "localhost", name: "Supermortgage" }, allow_credentials: [] }).mockResolvedValueOnce({ level: "L1", session: "cookie" });
-    const onSession = vi.fn();
-    render(<SignIn variant="welcome_back" onSession={onSession} />);
-    const group = await screen.findByRole("group", { name: copy("auth.welcome_back") });
-    await waitFor(() => expect(within(group).getAllByRole("button")[0]).toHaveTextContent(passkeyLabel));
-    expect(within(group).getAllByRole("button")[0]).toHaveClass("sm-btn-primary");
-    expect(within(group).getByRole("button", { name: smsLabel })).not.toHaveClass("sm-btn-primary");
-    await user.click(within(group).getByRole("button", { name: passkeyLabel }));
-    await waitFor(() => expect(onSession).toHaveBeenCalledWith({ level: "L1", session: "cookie" }));
-    expect(api.authPasskey).toHaveBeenNthCalledWith(1, { action: "assert_options" });
-    expect(api.authPasskey).toHaveBeenNthCalledWith(2, { action: "assert", challenge_id: "ch-p", credential: { id: "cred-1", response: { clientDataJSON: "AQID", authenticatorData: "BA", signature: "BQY" } } });
-    expect(Array.from(b64urlDecode(b64urlEncode(new Uint8Array([250, 251, 252]))))).toEqual([250, 251, 252]);
-  });
-
-  it("a failed passkey says auth.passkey_failed (use a code instead)", async () => {
-    window.localStorage.setItem(PASSKEY_DEVICE_HINT, "1");
-    Object.defineProperty(window.navigator, "credentials", { value: { get: vi.fn().mockRejectedValue(new Error("NotAllowedError")), create: vi.fn() }, configurable: true });
-    vi.mocked(api.authPasskey).mockResolvedValueOnce({ challenge_id: "ch-p", challenge: "AQID", rp: { id: "localhost", name: "Supermortgage" } });
-    render(<SignIn variant="welcome_back" onSession={vi.fn()} />);
-    await user.click(await screen.findByRole("button", { name: passkeyLabel }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(copy("auth.passkey_failed"));
+    await user.click(screen.getByRole("button", { name: copy("account.signin.button") }));
+    await waitFor(() => expect(onSession).toHaveBeenCalledWith(SESSION));
+    expect(accountSignIn).toHaveBeenLastCalledWith("maya@example.com", "nope");
   });
 
   it("Continue with Google (FAKE mode): the FAKE identity form becomes the start hint; the app navigates to authorization_url; the deep-link token is retained", async () => {
     vi.mocked(api.authOidcStart).mockResolvedValue({ authorization_url: "/app/auth/google/callback?code=FAKE-1&state=st-1", state: "st-1", expires_at: "x" });
     const navigate = vi.fn();
-    render(<SignIn variant="welcome_back" onSession={vi.fn()} navigate={navigate} redirectUri={REDIRECT} deepLinkToken="tok-1" />);
+    render(<SignIn onSession={vi.fn()} navigate={navigate} redirectUri={REDIRECT} deepLinkToken="tok-1" />);
     await user.click(screen.getByRole("button", { name: googleLabel }));
     const form = screen.getByTestId("fake-google");
     expect(within(form).getByText("FAKE Google identity")).toHaveClass("sm-fake");
@@ -168,7 +103,7 @@ describe("32.14 S3/S6 — the sign-in screen", () => {
 
   it("an unverified FAKE claim is passed as email_verified=false; a refused start renders auth.google.failed", async () => {
     vi.mocked(api.authOidcStart).mockRejectedValue(apiError(400, "BAD_REQUEST", "auth.google.failed"));
-    render(<SignIn variant="welcome_back" onSession={vi.fn()} navigate={vi.fn()} redirectUri={REDIRECT} />);
+    render(<SignIn onSession={vi.fn()} navigate={vi.fn()} redirectUri={REDIRECT} />);
     await user.click(screen.getByRole("button", { name: googleLabel }));
     await user.type(screen.getByLabelText(copy("auth.email.field")), "x@example.com");
     await user.click(screen.getByLabelText("email_verified (FAKE claim)"));
@@ -215,10 +150,9 @@ describe("32.14 §3 — the Google callback page", () => {
 });
 
 describe("32.14 S5 — deep links (T16) and the vendor return", () => {
-  it("no session → the chooser (auth.welcome_back) with the token retained, no card and no loan data; after the code the target card is pinned on /app", async () => {
+  it("no session → the sign-in form (auth.welcome_back) with the token retained, no card and no loan data; after the sign-in the target card is pinned on /app", async () => {
     vi.mocked(api.deeplink).mockRejectedValueOnce(apiError(401, "AUTH_REQUIRED", "auth.sign_in")).mockResolvedValueOnce({ target: { card_instance_id: "card-9" } });
-    vi.mocked(api.authOtpRequest).mockResolvedValue({ challenge_id: "ch-1", delivery: "FAKE", expires_at: "x", fake_code: "246810" });
-    vi.mocked(api.authOtpVerify).mockResolvedValue({ level: "L1", session: "cookie" });
+    vi.mocked(accountSignIn).mockResolvedValue(SESSION);
     const navigate = vi.fn();
     render(<DeepLink token="tok-1" navigate={navigate} />);
     expect(await screen.findByRole("heading", { name: copy("auth.welcome_back") })).toBeInTheDocument();
@@ -226,7 +160,7 @@ describe("32.14 S5 — deep links (T16) and the vendor return", () => {
     expect(document.getElementById("otp")).not.toBeNull();
     expect(document.querySelectorAll("article[data-card-kind]")).toHaveLength(0);
     expect(document.body.textContent).not.toMatch(/\$\d/);
-    await signInWithCode();
+    await signInWithPassword();
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/app?card=card-9"));
     expect(api.deeplink).toHaveBeenCalledTimes(2);
     expect(api.deeplink).toHaveBeenLastCalledWith("tok-1");

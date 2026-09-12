@@ -2,7 +2,7 @@
 
 /**
  * 32.14 S5 (DELTA-14) — /app/d/{token}: GET /v1/borrower/deeplink/{token} through the proxy. No session → the API answers 401
- * and the sign-in chooser renders under `auth.welcome_back` with the token retained (state here; sessionStorage across the
+ * and the sign-in form (32.16 §2.0: e-mail + password, or Google) renders under `auth.welcome_back` with the token retained (state here; sessionStorage across the
  * Google round trip); after the session the same call resolves the target — the card pinned on /app (`?card=`), the document,
  * or the route. 404 → `deep_link.unknown`, 410 → `deep_link.expired`, each with the sign-in offer; another party's token → the
  * API's refusal (`PARTY_SCOPE` → `error.not_yours`) and no target. `ui_events{deep_link_opened}` is written by the API.
@@ -71,7 +71,7 @@ export function DeepLink({ token, navigate }: { token: string; navigate?: (url: 
             …
           </p>
         ) : null}
-        {state.kind === "sign_in" ? <SignIn variant="welcome_back" deepLinkToken={token} onSession={() => void resolve()} /> : null}
+        {state.kind === "sign_in" ? <SignIn deepLinkToken={token} onSession={() => void resolve()} /> : null}
         {state.kind === "refused" ? (
           <section className="sm-signin" data-testid="deep-link-refused" data-copy-key={state.copyKey}>
             <p className="sm-error" role="alert">

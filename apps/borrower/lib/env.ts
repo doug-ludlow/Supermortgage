@@ -21,3 +21,8 @@ export const NONPROD_BUILD = BUILD_ENVIRONMENT !== "" && !/^prod/i.test(BUILD_EN
  */
 export const SHOW_FAKE_MARKERS = FIXTURES_MODE || DEV_MODE || NONPROD_BUILD;
 export const THEME_DEFAULT: "dark" | "light" = "dark";
+/**
+ * 32.16 §2.0 / docs/ux/15 DELTA-15: the partner the account screen names in `entry.disclosure.first` before there is a
+ * session to read it from (`me.partner.legal_name` takes over once signed in). Set `NEXT_PUBLIC_PARTNER_LEGAL_NAME` at build.
+ */
+export const PARTNER_LEGAL_NAME = process.env.NEXT_PUBLIC_PARTNER_LEGAL_NAME ?? "your lender";

@@ -214,6 +214,7 @@ jobs:
           docker build \
             -f Dockerfile.borrower \
             --build-arg "NEXT_PUBLIC_ENVIRONMENT=${ENVIRONMENT}" \
+            --build-arg "NEXT_PUBLIC_PARTNER_LEGAL_NAME=${{ vars.PARTNER_LEGAL_NAME || 'Partner Bank' }}" \
             -t "${{ steps.tags.outputs.image }}" \
             -t "${{ steps.tags.outputs.branch_image }}" \
             .

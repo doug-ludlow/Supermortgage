@@ -3,6 +3,11 @@
  *
  *   POST /v1/borrower/auth/otp                    { action: "request", channel: sms|email, destination }  → { challenge_id, delivery, expires_at, fake_code? }
  *                                                 { action: "verify", challenge_id, code }               → L1 session { token, session, party, level }; with a bearer: refreshes that session's fresh-L1 instead
+ *   POST /v1/borrower/auth/account                32.16 DELTA-29, e-mail + password: { action: "create", email, password } → the e-mail code { challenge_id, delivery, expires_at, fake_code? }
+ *                                                 { action: "verify_email", challenge_id, code } → L1 session (auth_method password; the party's organic application and the goal card follow)
+ *                                                 { action: "sign_in", email, password } → L1 session | 401 PASSWORD_WRONG | 423 ACCOUNT_LOCKED | 403 EMAIL_UNVERIFIED {challenge_id, fake_code?}
+ *                                                 { action: "request_reset", email } → { ok } (+ challenge_id / fake_code when the e-mail exists — never whether it does)
+ *                                                 { action: "reset", challenge_id, code, password } → { ok }   (ACCOUNT_PER_HOUR per IP on create / sign_in)
  *   POST /v1/borrower/auth/passkey                { action: "register_options" | "register" | "assert_options" | "assert", … }  (WebAuthn; server-side verifier in ./webauthn.ts)
  *   POST /v1/borrower/auth/l2                     { ssn_last4, date_of_birth } matched against application_borrowers → L2
  *   POST /v1/borrower/identity/stripe/session     { application_id? } → ConnectCard + vendor session (FakeStripeIdentity) → L3 on the webhook
@@ -25,14 +30,15 @@ import type { Runtime } from "../app.ts";
 import type { Logger } from "../log.ts";
 import { PgBorrowerUiRepository } from "../../infra/db/borrower-ui.ts";
 import { normalizeDestination } from "../../infra/db/borrower-parties.ts";
-import { hashCode, type SessionRow } from "../../infra/db/borrower-sessions.ts";
+import { hashCode, type ChallengeRow, type SessionRow } from "../../infra/db/borrower-sessions.ts";
+import { DUMMY_PASSWORD_HASH, PgBorrowerCredentialRepository, isEmail, normalizeEmail } from "../../infra/db/borrower-credentials.ts";
 import { FakeEdelivery, type EdeliveryPort, type TelephonyWebhookPort } from "../../infra/integrations/delivery.ts";
 import { FakeGoogleOidc, type OidcPort } from "../../infra/integrations/oidc.ts";
 import { PgBorrowerOidcRepository } from "../../infra/db/borrower-oidc.ts";
 import { DOCUMENT_CLASSES } from "../../domain/verification/ops-22-1.ts";
 import { isUuid, toJson } from "../../infra/db/client.ts";
 import { decodeEntityData } from "../../infra/db/entities.ts";
-import { BorrowerAuth, OTP_MAX_ATTEMPTS, OTP_MINUTES, assertSubject, hasFreshL1, minutesAfter, type BorrowerContext } from "./auth.ts";
+import { BorrowerAuth, OTP_MAX_ATTEMPTS, OTP_MINUTES, assertSubject, bearerOf, hasFreshL1, minutesAfter, type BorrowerContext } from "./auth.ts";
 import { BorrowerError, toBorrowerError } from "./errors.ts";
 import { serialize, type ShapeName } from "./serialize.ts";
 import { b64url, sha256, verifyAssertion, verifyRegistration } from "./webauthn.ts";
@@ -47,6 +53,7 @@ import { createTalkRoutes, TALK_PATH, type TalkOptions, type TalkRoutes } from "
 import { createBorrowerChannels, type BorrowerChannels } from "./channels.ts";
 import { BorrowerFlows } from "./flows/index.ts";
 import { createLeadRoutes } from "./lead-routes.ts";
+import { ensureOrganicApplication } from "./flows/14-entry-lead.ts";
 import { connectorFailed } from "./flows/13-cross-cutting.ts";
 import type { CardInstanceRow } from "../../infra/db/borrower-ui.ts";
 
@@ -94,6 +101,10 @@ export interface BorrowerRouter {
 
 const MAX_BODY = 32 * 1024 * 1024;
 export const DOCUMENT_URL_MINUTES = 5;
+/** 32.16 DELTA-29: the per-IP throttle on account creation and password sign-in (in memory, best effort across instances — the lead route's pattern). */
+export const ACCOUNT_PER_HOUR = 20;
+/** 32.16 §2.0: a password is at least eight characters (the only strength rule the API states). */
+export const PASSWORD_MIN_LENGTH = 8;
 const SYSTEM_ACTOR = { kind: "system" as const, id: "borrower-api" };
 const WEBHOOK_ACTOR = { kind: "system" as const, id: "stripe-identity-webhook" };
 /** 02 §1.4: the document families a borrower may open (own-only families need the party's own application_borrowers row as subject). */
@@ -144,6 +155,7 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
   const urlSecret = opts.urlSecret ?? process.env["BORROWER_URL_SECRET"] ?? randomBytes(32).toString("hex");
   const returnUrlBase = opts.returnUrlBase ?? process.env["BORROWER_APP_URL"] ?? "https://app.supermortgage.example";
   const auth = new BorrowerAuth(runtime.db);
+  const credentials = new PgBorrowerCredentialRepository(runtime.db);   // 32.16 DELTA-29
   const ui = new PgBorrowerUiRepository(runtime.db);
   const reader = new BorrowerRecordReader(runtime.db);
   const hub = new BorrowerStreamHub(runtime.db);
@@ -173,6 +185,57 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
   const sessionBody = (r: { token: string; session: SessionRow; party: { id: string; party_type: string; legal_name: string } }) =>
     ({ token: r.token, level: r.session.level, session: { ...r.session, fresh_l1: hasFreshL1(r.session, now()) }, party: { party_id: r.party.id, party_type: r.party.party_type, display_name: r.party.legal_name, first_name: r.party.legal_name.split(" ")[0] } });
   const signUrl = (sessionId: string, documentId: string, exp: string): string => createHmac("sha256", urlSecret).update(`${sessionId}:${documentId}:${exp}`).digest("base64url");
+  const sixDigits = (): string => randomInt(0, 1_000_000).toString().padStart(6, "0");
+  /** A six-digit code on a challenge row (kind otp | email_verify | password_reset) carried by the platform's e-delivery adapter — the FakeEdelivery test double under INTEGRATIONS=fake, marked FAKE and echoed outside production. */
+  async function issueCode(i: { kind: "otp" | "email_verify" | "password_reset"; channel: "sms" | "email"; destination: string; party_id?: string | null; at: string; subject: string }): Promise<{ challenge: ChallengeRow; code: string; delivery_ref: string | null; expires_at: string }> {
+    const code = sixDigits(); const expires_at = minutesAfter(i.at, OTP_MINUTES);
+    const challenge = await auth.sessions.createChallenge({ kind: i.kind, channel: i.channel, destination: i.destination, party_id: i.party_id ?? null, code, expires_at, delivery: deliveryIsFake() ? "FAKE" : i.channel });
+    let delivery_ref: string | null = null;
+    if (edelivery) { const r = await edelivery.send({ messageId: `${i.kind}:${challenge.challenge_id}`, noticeId: `${i.kind}:${challenge.challenge_id}`, channel: i.channel, to: i.destination, subject: i.subject, consentId: "policy:authentication_otp" }, i.at); delivery_ref = r.messageId; }
+    return { challenge, code, delivery_ref, expires_at };
+  }
+  /** The FAKE code echo: only when the delivery is the test double and the environment is not production. */
+  const fakeCodeOf = (code: string): { fake_code?: string } => (deliveryIsFake() && nonProduction ? { fake_code: code } : {});
+  /** The code checks every kind shares (OTP verify's): unknown / consumed → OTP_INVALID, expired → OTP_EXPIRED, over OTP_MAX_ATTEMPTS → OTP_TOO_MANY_ATTEMPTS, wrong → OTP_INVALID; a match consumes the row. */
+  async function checkCode(kind: ChallengeRow["kind"], challengeId: string, code: string, at: string): Promise<ChallengeRow> {
+    const ch = await auth.sessions.challenge(challengeId);
+    if (!ch || ch.kind !== kind || ch.consumed_at) throw new BorrowerError(401, "OTP_INVALID");
+    if (Date.parse(ch.expires_at) <= Date.parse(at)) throw new BorrowerError(401, "OTP_EXPIRED");
+    const attempts = await auth.sessions.bumpAttempts(ch.challenge_id);
+    if (attempts > OTP_MAX_ATTEMPTS) throw new BorrowerError(429, "OTP_TOO_MANY_ATTEMPTS");
+    if (ch.code_hash !== hashCode(ch.challenge_id, code)) throw new BorrowerError(401, "OTP_INVALID");
+    await auth.sessions.consume(ch.challenge_id, at);
+    return ch;
+  }
+  /**
+   * What every L1 sign-in does once the session row exists, in this order: the conversation, the lead behind the cookie (32.14 DELTA-11), then — through an
+   * ACCOUNT door only (e-mail + password, Continue with Google: 32.16 §2.0 / §8 Phase 0 "anyone can create an account and land in a thread that says the
+   * disclosure and asks the goal") — the party's organic application when it has no subject, no lead of its own and no lead cookie (32.16 DELTA-29
+   * `ensureOrganicApplication`, so 3-entry's E3 asks the goal), then `flows.sessionOpened` (32.3 E1/E2: the disclosure is the first assistant content).
+   * A one-time code is not an account door: a code sign-in on a fresh e-mail stays a lead-stage party (32.3 T15, 32.14 DELTA-16 — unchanged).
+   */
+  async function landSession(req: IncomingMessage, opened: { session: SessionRow; party: { id: string } }, at: string, channel: "app" | "sms", door: "account" | "code"): Promise<void> {
+    await ui.conversationFor(opened.party.id);
+    const lead_id = await leads.linkAtVerify(req, opened.party.id, at);
+    if (door === "account") {
+      const organic = await ensureOrganicApplication({ runtime, ui, logger, blobs, defaultPartnerId }, { party_id: opened.party.id, lead_id, at, session_id: opened.session.session_id });
+      if (organic.created) logger.info("borrower.session.organic_application", { session_id: opened.session.session_id, party_id: opened.party.id, application_id: organic.application_id, lead_id: organic.lead_id });
+    }
+    await flows.sessionOpened({ party_id: opened.party.id, session_id: opened.session.session_id, channel, auth_method: opened.session.auth_method, at, lead_id });
+  }
+  /**
+   * 32.16 §2.0 / 01 §5: a money command refused for want of a fresh code sends one — to the mobile when one is on file (verified by a code when it was
+   * attached), else to the e-mail — on the session's party, so the app's "we just sent one" (`auth.fresh_code`) is true. The refusal itself is unchanged.
+   */
+  async function sendFreshL1Code(req: IncomingMessage, at: string): Promise<void> {
+    const token = bearerOf(req); if (!token) return;
+    const session = await auth.sessions.byToken(token); if (!session || session.revoked_at) return;
+    const party = await auth.parties.get(session.party_id); if (!party) return;
+    const phone = typeof party.contact["phone"] === "string" ? (party.contact["phone"] as string) : null; const email = typeof party.contact["email"] === "string" ? (party.contact["email"] as string) : null;
+    const channel: "sms" | "email" | null = phone ? "sms" : email ? "email" : null; const destination = phone ?? email; if (!channel || !destination) return;
+    const r = await issueCode({ kind: "otp", channel, destination, party_id: party.id, at, subject: "Your Supermortgage code" });
+    logger.info("borrower.fresh_l1.code_sent", { session_id: session.session_id, challenge_id: r.challenge.challenge_id, channel, delivery: r.challenge.delivery, delivery_ref: r.delivery_ref });
+  }
   const sameSig = (a: string, b: string): boolean => a.length === b.length && a.length > 0 && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 
   // ───────────────────────────── OTP (L1)
@@ -220,11 +283,9 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
       const resolved = await auth.parties.resolveOrCreateByDestination(channel, destination);
       await auth.sessions.setChallengeParty(ch.challenge_id, resolved.party.id);
       const opened = await auth.openSession({ party_id: resolved.party.id, auth_method: channel === "sms" ? "otp_phone" : "otp_email", now: at, otp: true, ip: ipOf(req), user_agent: uaOf(req) });
-      await ui.conversationFor(resolved.party.id);
-      // 32.14 DELTA-11: the lead behind the `sm_borrower_lead` cookie (header x-borrower-lead) is linked to the party before the hook runs (`lead.linked{party_id}`)
-      const lead_id = await leads.linkAtVerify(req, resolved.party.id, at);
+      // 32.14 DELTA-11: the lead behind the `sm_borrower_lead` cookie (header x-borrower-lead) is linked to the party before the hook runs (`lead.linked{party_id}`);
       // 32.3 E1/E2: the session hook runs before the response — the automation disclosure is the first assistant content on the channel the code came through (an SMS code = the SMS thread)
-      await flows.sessionOpened({ party_id: resolved.party.id, session_id: opened.session.session_id, channel: channel === "sms" ? "sms" : "app", auth_method: opened.session.auth_method, at, lead_id });
+      await landSession(req, opened, at, channel === "sms" ? "sms" : "app", "code");
       logger.info("borrower.session.opened", { session_id: opened.session.session_id, level: "L1", auth_method: opened.session.auth_method, party_created: resolved.created, linked_application_borrowers: resolved.linked_application_borrowers });
       send(res, 200, "session", sessionBody({ token: opened.token, session: opened.session, party: opened.party })); return;
     }
@@ -232,6 +293,88 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
   }
   const ipOf = (req: IncomingMessage): string | null => { const f = req.headers["x-forwarded-for"]; const s = Array.isArray(f) ? f[0] : f; return (s ? s.split(",")[0]!.trim() : req.socket?.remoteAddress) ?? null; };
   const uaOf = (req: IncomingMessage): string | null => (typeof req.headers["user-agent"] === "string" ? (req.headers["user-agent"] as string).slice(0, 512) : null);
+
+  // ───────────────────────────── 32.16 DELTA-29: e-mail + password accounts (docs/ux/17 §2.0)
+  const accountStarts = new Map<string, number[]>();   // per-IP create / sign_in instants within the hour
+  function accountThrottle(ip: string | null, at: string): void {
+    const key = ip ?? "?"; const t = Date.parse(at); const kept = (accountStarts.get(key) ?? []).filter((x) => x > t - 3_600_000);
+    if (kept.length >= ACCOUNT_PER_HOUR) throw new BorrowerError(429, "ACCOUNT_THROTTLED", undefined, `${ACCOUNT_PER_HOUR} account requests per hour per IP`);
+    kept.push(t); accountStarts.set(key, kept);
+  }
+  const emailOf = (b: Record<string, unknown>): string => { need(b, "email"); const email = normalizeEmail(str(b, "email")); if (!isEmail(email)) throw new RangeError("email is not a valid e-mail address"); return email; };
+  const passwordOf = (b: Record<string, unknown>): string => { const password = typeof b["password"] === "string" ? (b["password"] as string) : ""; if (!password) throw new RangeError("password is required"); if (password.length < PASSWORD_MIN_LENGTH) throw new BorrowerError(400, "PASSWORD_WEAK", undefined, `a password is at least ${PASSWORD_MIN_LENGTH} characters`); return password; };
+  const emailVerifyCode = (email: string, partyId: string, at: string) => issueCode({ kind: "email_verify", channel: "email", destination: email, party_id: partyId, at, subject: "Verify your e-mail for Supermortgage" });
+  /** An L1 password session: no code on the session (`last_l1_at` null — FRESH_L1_COMMANDS ask for one), the organic application and the disclosure first (landSession). */
+  async function openPasswordSession(req: IncomingMessage, res: ServerResponse, partyId: string, at: string, how: "verify_email" | "sign_in"): Promise<void> {
+    const opened = await auth.openSession({ party_id: partyId, auth_method: "password", now: at, otp: false, ip: ipOf(req), user_agent: uaOf(req) });
+    await landSession(req, opened, at, "app", "account");
+    logger.info("borrower.session.opened", { session_id: opened.session.session_id, level: "L1", auth_method: "password", how });
+    send(res, 200, "session", sessionBody({ token: opened.token, session: opened.session, party: opened.party }));
+  }
+  async function account(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const b = jsonOf(await readBody(req)); const action = str(b, "action"); const at = now();
+    if (action === "create") {
+      accountThrottle(ipOf(req), at);
+      const email = emailOf(b); const password = passwordOf(b);
+      if (await credentials.byEmail(email)) throw new BorrowerError(409, "ACCOUNT_EXISTS", undefined, "an account already uses that e-mail");
+      // the party: a servicing-book borrower whose e-mail is on file lands in their own party; a new e-mail creates one (the same resolver a code uses)
+      const resolved = await auth.parties.resolveOrCreateByDestination("email", email);
+      if (await credentials.byParty(resolved.party.id)) throw new BorrowerError(409, "ACCOUNT_EXISTS", undefined, "the party already has an account");
+      await credentials.create({ party_id: resolved.party.id, email, password, now: at });
+      const r = await emailVerifyCode(email, resolved.party.id, at);
+      logger.info("borrower.account.created", { party_id: resolved.party.id, party_created: resolved.created, linked_application_borrowers: resolved.linked_application_borrowers, challenge_id: r.challenge.challenge_id, delivery: r.challenge.delivery, delivery_ref: r.delivery_ref, vendor: deliveryIsFake() ? "FAKE" : "e-delivery" });
+      send(res, 200, "account_create", { challenge_id: r.challenge.challenge_id, delivery: r.challenge.delivery, expires_at: r.expires_at, ...fakeCodeOf(r.code) }); return;
+    }
+    if (action === "verify_email") {
+      need(b, "challenge_id", "code");
+      const ch = await checkCode("email_verify", str(b, "challenge_id"), str(b, "code"), at);
+      const row = ch.party_id ? await credentials.byParty(ch.party_id) : undefined;
+      if (!row || row.email !== normalizeEmail(ch.destination ?? "")) throw new BorrowerError(401, "OTP_INVALID", undefined, "the challenge names no account");
+      await credentials.markEmailVerified(row.party_id, at);
+      await credentials.clearFailures(row.party_id, at);
+      await openPasswordSession(req, res, row.party_id, at, "verify_email"); return;
+    }
+    if (action === "sign_in") {
+      accountThrottle(ipOf(req), at);
+      const email = emailOf(b); const password = typeof b["password"] === "string" ? (b["password"] as string) : ""; if (!password) throw new RangeError("password is required");
+      const row = await credentials.byEmail(email);
+      // unknown e-mail: the same answer as a wrong password, after the same work (no account enumeration by code or by timing)
+      if (!row) { await credentials.verifyPassword({ password_hash: DUMMY_PASSWORD_HASH }, password); throw new BorrowerError(401, "PASSWORD_WRONG"); }
+      if (credentials.isLocked(row, at)) { logger.info("borrower.account.locked", { party_id: row.party_id, locked_until: row.locked_until }); throw new BorrowerError(423, "ACCOUNT_LOCKED"); }
+      if (!(await credentials.verifyPassword(row, password))) {
+        const after = await credentials.recordFailure(row.party_id, at);
+        logger.info("borrower.account.sign_in.failed", { party_id: row.party_id, failed_attempts: after.failed_attempts, locked_until: after.locked_until });   // never the password
+        throw new BorrowerError(401, "PASSWORD_WRONG");
+      }
+      if (!row.email_verified_at) {
+        const r = await emailVerifyCode(row.email, row.party_id, at);
+        logger.info("borrower.account.sign_in.unverified", { party_id: row.party_id, challenge_id: r.challenge.challenge_id, delivery: r.challenge.delivery });
+        send(res, 403, "error", { ...new BorrowerError(403, "EMAIL_UNVERIFIED").body(), challenge_id: r.challenge.challenge_id, ...fakeCodeOf(r.code) }); return;
+      }
+      await credentials.clearFailures(row.party_id, at);
+      await openPasswordSession(req, res, row.party_id, at, "sign_in"); return;
+    }
+    if (action === "request_reset") {
+      const email = emailOf(b);
+      const row = await credentials.byEmail(email);
+      if (!row) { send(res, 200, "account_ok", { ok: true }); return; }   // always ok: no account enumeration
+      const r = await issueCode({ kind: "password_reset", channel: "email", destination: row.email, party_id: row.party_id, at, subject: "Reset your Supermortgage password" });
+      logger.info("borrower.account.reset_requested", { party_id: row.party_id, challenge_id: r.challenge.challenge_id, delivery: r.challenge.delivery, delivery_ref: r.delivery_ref });
+      send(res, 200, "account_ok", { ok: true, challenge_id: r.challenge.challenge_id, ...fakeCodeOf(r.code) }); return;
+    }
+    if (action === "reset") {
+      need(b, "challenge_id", "code"); const password = passwordOf(b);
+      const ch = await checkCode("password_reset", str(b, "challenge_id"), str(b, "code"), at);
+      const row = ch.party_id ? await credentials.byParty(ch.party_id) : undefined;
+      if (!row) throw new BorrowerError(401, "OTP_INVALID", undefined, "the challenge names no account");
+      await credentials.setPassword(row.party_id, password, at);
+      await credentials.clearFailures(row.party_id, at);   // the lock clears with the new password
+      if (!row.email_verified_at) await credentials.markEmailVerified(row.party_id, at);   // the reset code proved the e-mail too
+      logger.info("borrower.account.reset", { party_id: row.party_id, challenge_id: ch.challenge_id });
+      send(res, 200, "account_ok", { ok: true }); return;
+    }
+    throw new RangeError("action must be create, verify_email, sign_in, request_reset or reset");
+  }
 
   // ───────────────────────────── passkeys (WebAuthn)
   async function passkey(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -291,10 +434,9 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     if (action === "callback") {
       const marker = req.headers["x-fake-oidc"]; const fakeMarker = Array.isArray(marker) ? marker[0] : marker;
       const opened = await oidcAuth.callback(b, { at, ip: ipOf(req), user_agent: uaOf(req), fake_marker: fakeMarker });
-      await ui.conversationFor(opened.party.id);
-      // 32.3 E1/E2 as for a code: the session hook runs before the response — the disclosure is the first assistant content; a passkey-less L1 session (no last_l1_at)
-      const lead_id = await leads.linkAtVerify(req, opened.party.id, at);   // 32.14 DELTA-11: the lead cookie's lead is this party's now (as at OTP verify and passkey assert)
-      await flows.sessionOpened({ party_id: opened.party.id, session_id: opened.session.session_id, channel: "app", auth_method: opened.session.auth_method, at, lead_id });
+      // 32.3 E1/E2 as for a code: the session hook runs before the response — the disclosure is the first assistant content; a passkey-less L1 session (no last_l1_at);
+      // 32.14 DELTA-11: the lead cookie's lead is this party's now (as at OTP verify); 32.16 DELTA-29: a party with no subject gets its organic application first
+      await landSession(req, opened, at, "app", "account");
       logger.info("borrower.session.opened", { session_id: opened.session.session_id, level: "L1", auth_method: opened.session.auth_method, provider: oidcPort.provider, vendor: oidcPort.vendorName, party_created: opened.party_created, identity_created: opened.identity_created, resolved_by: opened.resolved_by, challenge_id: opened.challenge_id });
       send(res, 200, "session", sessionBody({ token: opened.token, session: opened.session, party: opened.party })); return;
     }
@@ -578,6 +720,7 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
       if (path === "/v1/borrower/lead" && method === "POST") { await leads.handle(req, res, url); return true; }   // 32.14 DELTA-11: no session — the anonymous minute (lead-routes.ts logs its own line)
       if (path === TALK_PATH && method === "POST") { await talk.handle(req, res); return true; }   // Talk: no session needed; the lead cookie and, after sign-in, the bearer (talk.ts logs its own line)
       if (method === "POST" && path === "/v1/borrower/auth/otp") await otp(req, res);
+      else if (method === "POST" && path === "/v1/borrower/auth/account") await account(req, res);   // 32.16 DELTA-29
       else if (method === "POST" && path === "/v1/borrower/auth/passkey") await passkey(req, res);
       else if (method === "POST" && path === "/v1/borrower/auth/oidc") await oidc(req, res);
       else if (method === "POST" && path === "/v1/borrower/auth/l2") await stepUpL2(req, res);
@@ -605,6 +748,8 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     } catch (e) {
       const be = toBorrowerError(e);
       if (be.status >= 500) logger.error("borrower.unhandled", { method, path, error: e });
+      // 32.16 §2.0 / 01 §5: a money command refused for want of a fresh code sends one (mobile if on file, else the e-mail) — the refusal body is unchanged
+      if (be.code === "FRESH_L1_REQUIRED") await sendFreshL1Code(req, now()).catch((err) => logger.error("borrower.fresh_l1.code_failed", { error: err instanceof Error ? err.message : String(err) }));
       send(res, be.status, "error", be.body());
       log(be.status, { code: be.code, ...(be.gate ? { gate: be.gate } : {}), reason: be.message });
     }

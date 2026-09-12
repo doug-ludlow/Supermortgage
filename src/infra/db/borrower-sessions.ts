@@ -10,14 +10,14 @@ import type { Queryable } from "./client.ts";
 import { toJson } from "./client.ts";
 
 export type SessionLevel = "L1" | "L2" | "L3";
-/** 32.14 §3: `oidc_google` (DELTA-12) is an L1 session opened without a code — `last_l1_at` stays null, the fresh-L1 rule is unchanged. */
-export type AuthMethod = "otp_phone" | "otp_email" | "passkey" | "oidc_google";
+/** 32.14 §3: `oidc_google` (DELTA-12) and 32.16 §2.0: `password` (DELTA-29) are L1 sessions opened without a code — `last_l1_at` stays null, the fresh-L1 rule is unchanged. */
+export type AuthMethod = "otp_phone" | "otp_email" | "passkey" | "oidc_google" | "password";
 export interface SessionRow {
   readonly session_id: string; readonly party_id: string; readonly level: SessionLevel; readonly auth_method: AuthMethod; readonly created_at: string; readonly last_seen_at: string;
   readonly last_l1_at: string | null; readonly expires_at: string; readonly revoked_at: string | null; readonly passkey_id: string | null; readonly ip: string | null; readonly user_agent: string | null;
 }
 export interface ChallengeRow {
-  readonly challenge_id: string; readonly kind: "otp" | "passkey_registration" | "passkey_assertion" | "oidc"; readonly party_id: string | null; readonly session_id: string | null; readonly channel: "sms" | "email" | null;
+  readonly challenge_id: string; readonly kind: "otp" | "passkey_registration" | "passkey_assertion" | "oidc" | "email_verify" | "password_reset"; readonly party_id: string | null; readonly session_id: string | null; readonly channel: "sms" | "email" | null;
   readonly destination: string | null; readonly code_hash: string | null; readonly challenge: string | null; readonly delivery: string | null; readonly delivery_ref: string | null; readonly attempts: number; readonly created_at: string; readonly expires_at: string; readonly consumed_at: string | null;
   /** 32.14 DELTA-12 (kind = oidc): the identity provider, the id-token nonce and sha256 of the PKCE verifier; `challenge` carries the OAuth `state`, `destination` the redirect URI. */
   readonly provider: string | null; readonly nonce: string | null; readonly code_verifier_hash: string | null;

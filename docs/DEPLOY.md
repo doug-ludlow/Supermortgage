@@ -433,3 +433,16 @@ the revision) after adding the version. Optional: `TALK_MODEL` (default
 `claude-opus-5`) and `TALK_EFFORT` (`low`, the default, `medium` or `high`) on
 the API service. Each turn is one or a few Messages API calls; the system prompt
 is cached across turns.
+
+## The account is the front door (32.16 Phase 0)
+
+`https://demo.supermortgage.com/app` opens on the sign-in screen; `/app/sign-up` creates an account
+(e-mail + password → a six-digit code to the e-mail → an L1 session), `/app/reset` resets a password.
+Continue with Google is on both screens (the FAKE provider under `INTEGRATIONS=fake`; the real one once the
+OAuth client exists, "Sign in with Google" above). The anonymous minute of 32.14 is no longer rendered
+(docs/ux/17 §0.4); its API routes remain. The automation disclosure on the account screen names the partner
+from the build argument `NEXT_PUBLIC_PARTNER_LEGAL_NAME` (repository variable `PARTNER_LEGAL_NAME`,
+"Partner Bank" when unset) because no session exists yet to read it from; inside the thread the partner
+comes from the API as before. Codes are delivered by the e-delivery adapter (the FAKE echoes the code on
+nonprod, as the OTP route does). A password session opens without a fresh code, so a money command still
+asks for one (`FRESH_L1_COMMANDS`).

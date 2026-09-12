@@ -99,6 +99,13 @@ export const ERROR_COPY_KEYS: Readonly<Record<string, string>> = {
   DOCUMENT_CONTENT_UNAVAILABLE: "documents.not_available",
   IDENTITY_NO_APPLICATION: "identity.no_application",
   IDENTITY_SESSION_UNKNOWN: "identity.session_unknown",
+  // 32.16 DELTA-29 (POST /v1/borrower/auth/account): e-mail + password accounts — the strings are the copy library's (`account.*` / `auth.*`)
+  ACCOUNT_EXISTS: "account.exists",                  // an account already uses that e-mail: sign in (or reset the password)
+  PASSWORD_WEAK: "account.password_weak",            // fewer than 8 characters
+  PASSWORD_WRONG: "auth.password_wrong",             // unknown e-mail or wrong password — never which
+  ACCOUNT_LOCKED: "auth.account_locked",             // ten failures: fifteen minutes, even with the right password
+  EMAIL_UNVERIFIED: "auth.email_unverified",         // the e-mail code was never entered: a fresh one is sent with the refusal
+  ACCOUNT_THROTTLED: DEFAULT_COPY_KEY,               // ACCOUNT_PER_HOUR per IP on create and sign_in
   BAD_REQUEST: DEFAULT_COPY_KEY,
   NOT_FOUND: DEFAULT_COPY_KEY,
   AI_OFF: "error.human_takes_over",

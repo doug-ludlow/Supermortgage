@@ -23,12 +23,14 @@
  * transitions an owning process's state except through its own bus tool.
  */
 import type { Actor, DomainEvent } from "../../../kernel/events/index.ts";
+import { randomUUID } from "node:crypto";
 import { isUuid, toJson } from "../../../infra/db/client.ts";
 import { PgBorrowerPartyRepository } from "../../../infra/db/borrower-parties.ts";
 import { PgLeadTokenRepository } from "../../../infra/db/lead-tokens.ts";
 import { civilDate } from "../../../domain/leads-pricing/ops-20-3.ts";
 import { stateName } from "../../../domain/governance/ops-31-1.ts";
 import type { BorrowerFlow, FlowDeps, SessionOpened } from "./index.ts";
+import { partnerOf } from "./3-entry.ts";   // (3-entry imports leadCarriesGoal from here: a module cycle, resolved at call time — nothing runs at load)
 
 export const FLOW_ID = "32.14";
 const INTAKE: Actor = { kind: "agent", id: "intake" };
@@ -111,6 +113,44 @@ async function resumeFromLead(deps: FlowDeps, s: SessionOpened): Promise<void> {
   // S3 (ii): ONE receipt line instead of the goal card — after the session's disclosure line (3-entry ran first); its `answers` token is composed here from the lead's facts (the shell substitutes message copy tokens at render; the sentence never goes in body_text)
   await deps.ui.appendMessage({ conversation_id: conv.conversation_id, at: s.at, sender: "agent", sender_ref: "agent:intake", channel: s.channel, body_text: RESUMED_LINE, subject_application_id: appId, voice_turn: s.channel === "voice", copy_tokens: { answers: resumedAnswers(lead, transaction_type, occupancy, state) } });
   deps.logger?.info("borrower.flow.32-14.resumed", { lead_id: s.lead_id, party_id: s.party_id, application_id: appId, transaction_type, occupancy, state });
+}
+
+// ---------------------------------------------------------------- 32.16 DELTA-29: the organic application behind a fresh account
+const BORROWER_APP: Actor = { kind: "agent", id: "borrower-app" };
+/**
+ * 32.16 §2.0 / §8 Phase 0 ("anyone can create an account and land in a thread that says the disclosure and asks the goal"): a party
+ * that has no application_borrowers row and no loan — an e-mail + password account, a code or a Google sign-in on an e-mail that is on
+ * file for no one — gets a 20.3 lead (32.2 `lead.start` as borrower-app in global scope with `party_id` set: channel web_chat,
+ * lead_channel organic, the partner from `partnerOf`) and the origination application from it, exactly as `resumeFromLead` builds one
+ * but with NO goal: `Runtime.createApplication{channel: organic}` keeps the lead's id (20.3's conversion names `applications.id = lead_id`),
+ * the party's provisional name is the borrower, the property is unknown, and 21.1's `startInterview` is NOT run — the goal is the borrower's
+ * to choose, so 3-entry's E3 sends `entry.goal.question` on the session that follows (the intake record does not exist yet). The account
+ * doors (e-mail + password, Google — never a one-time code: 32.3 T15's code sign-in is a lead-stage party) call this BEFORE `flows.sessionOpened`.
+ * Idempotent and narrow: a party with any subject, a session opened from an existing lead (the cookie's `lead_id` — the 32.14 flow owns it), or
+ * a party that already has a live 20.3 lead of its own (lead-stage: 3-entry re-delivers the disclosure on it) creates nothing.
+ *
+ * `applications.transaction_type` / `occupancy` are NOT NULL enums (0057): the row is opened as `limited_cash_out` / `primary` as a
+ * placeholder the way the lead's `transaction_intent` is `undecided` — the goal card is the ask, `application.setGoal` sets the real one.
+ */
+export async function ensureOrganicApplication(deps: FlowDeps, i: { party_id: string; lead_id?: string | null; at: string; session_id?: string | null }): Promise<{ application_id: string | null; lead_id: string | null; created: boolean }> {
+  const db = deps.runtime.db; const parties = new PgBorrowerPartyRepository(db);
+  const subjects = await parties.subjectsOf(i.party_id);
+  if (subjects.length) return { application_id: subjects[0]!.application_id, lead_id: null, created: false };
+  if (i.lead_id) return { application_id: null, lead_id: i.lead_id, created: false };   // a session opened from an existing lead: resumeFromLead builds the application when the lead carries a goal; otherwise the lead stays the ask
+  const live = await db.query<{ id: string }>(`SELECT id FROM entity_current WHERE kind = 'leads' AND data->>'party_id' = $1 AND coalesce(data->>'status', '') NOT IN ('converted', 'expired', 'closed_lost') AND coalesce(data->>'application_id', '') = '' LIMIT 1`, [i.party_id]);
+  if (live.length) return { application_id: null, lead_id: live[0]!.id, created: false };   // a lead-stage party already (a code sign-in, an SMS or voice entry): its lead is the ask
+  const party = (await db.query<{ legal_name: string; contact: P }>(`SELECT legal_name, contact FROM parties WHERE id = $1 AND party_type = 'borrower'`, [i.party_id]))[0]; if (!party) return { application_id: null, lead_id: null, created: false };
+  const partner = await partnerOf(deps);
+  if (!partner) { deps.logger?.error("borrower.flow.32-16.partner.unknown", { party_id: i.party_id }); return { application_id: null, lead_id: null, created: false }; }
+  const lead_id = randomUUID(); const interaction_id = randomUUID();
+  await deps.runtime.execute({ process: "32.2", name: "lead.start", loanId: "", actor: BORROWER_APP, run: { ...RUN },
+    input: { partner_id: partner.id, partner_name: partner.legal_name, party_id: i.party_id, lead_id, interaction_id, channel: "web_chat", lead_channel: "organic", consumer_state: null, time_zone: "America/New_York", ...(i.session_id ? { session_id: i.session_id } : {}) } });
+  const contact: P = {}; for (const k of ["email", "phone", "emails", "phones"]) if (party.contact?.[k] !== undefined) contact[k] = party.contact[k];
+  const created = await deps.runtime.createApplication({ id: lead_id, partner_party_id: partner.id, channel: "organic", transaction_type: "limited_cash_out", occupancy: "primary", intake_channel: "web", interview_language: "en-US", borrowers: [{ legal_name: party.legal_name, borrower_role: "borrower", contact }], property: null }, INTAKE);
+  const abId = created.application.borrowers[0]!.id;
+  await parties.linkApplicationBorrower(abId, i.party_id);
+  deps.logger?.info("borrower.flow.32-16.organic_application", { party_id: i.party_id, application_id: created.application.id, lead_id, partner_id: partner.id });
+  return { application_id: created.application.id, lead_id, created: true };
 }
 
 // ---------------------------------------------------------------- T19: the inactivity sweep and the purge

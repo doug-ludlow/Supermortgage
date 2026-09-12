@@ -20,9 +20,10 @@ export const LEVEL_RANK: Readonly<Record<SessionLevel, number>> = { L1: 1, L2: 2
 export const minutesAfter = (iso: string, minutes: number): string => new Date(Date.parse(iso) + minutes * 60_000).toISOString();
 export const daysAfter = (iso: string, days: number): string => new Date(Date.parse(iso) + days * 86_400_000).toISOString();
 
-/** 01 §5: a passkey session on a serviced loan lives 7 days; everything else expires 30 minutes after the last activity. */
+/** 01 §5: a passkey session on a serviced loan lives 7 days; everything else — a code, Google, and a password (32.16 DELTA-29: the same idle rules as otp_email) — expires 30 minutes after the last activity. */
 export function sessionExpiry(authMethod: AuthMethod, subjects: readonly Subject[], now: string): string {
   const servicing = subjects.some((s) => s.stage === "servicing");
+  if (authMethod === "password") return sessionExpiry("otp_email", subjects, now);
   return authMethod === "passkey" && servicing ? daysAfter(now, PASSKEY_SERVICING_DAYS) : minutesAfter(now, IDLE_MINUTES_PRE_FUNDING);
 }
 /** The fresh-L1 rule as a predicate: a one-time code verified within the last 10 minutes. */

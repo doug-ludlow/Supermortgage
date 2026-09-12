@@ -7026,5 +7026,32 @@
     "trigger": "On `GET /` of the borrower host (organic), a referral link, a deep link from a 20.2 touch, or Sign in; per lead before L1 and per party after",
     "source": "Projection of sections 20.2 (advertising content checklist), 20.3 (lead intake, assurance levels, disclosure, soft-pull prequalification, terms review), 20.4 (rate sheet, quote, disclaimer), 21.1 (application intake), 22.6 (identity), 31.1 (state licensing gate), 32.1/32.2 (shell, commands, sessions), 32.3 (the five-minute qualification this process hands off to), 32.13 (cross-cutting rules)",
     "deadline": "renders `SM_LEAD_INACTIVITY_EXPIRY_90`, `SM_MLO_PREAPP_TERMS_REVIEW_1BH`, `SM_QUOTE_VALIDITY_GATE`, `REGB_1002_9_DECISION_30` (owned by 20.3 / 21.x)"
+  },
+  {
+    "id": "32.16",
+    "title": "The conversational product: an account, then a conversation, with cards only when the rules need one",
+    "section": 32,
+    "section_title": "Borrower experience",
+    "words": 7818,
+    "timers": [],
+    "subsections": [
+      "Inputs and triggers",
+      "Data model",
+      "State machine",
+      "Timers and gates",
+      "Business rules and calculations",
+      "Integrations",
+      "Outputs and artifacts",
+      "AI agent design (AI-first)",
+      "Edge cases and failure modes",
+      "Test cases and acceptance criteria",
+      "Audit and evidence"
+    ],
+    "path": "sections/32-borrower-experience/32-16-the-conversational-product-an-account-then-a-conversation-wi.md",
+    "auto": "b — the model narrates the head of an agenda the flows own; every fact is a card the borrower resolves; every tool call is a bus command; the utterance guard runs before every reply; `mlo_of_record` reviews terms under `origination.ai_mlo_intake=assisted`",
+    "own": "Lender (partner; projections of 20–31) · Servicer · Sub (projections of 1–19) — Supermortgage renders the borrower experience; the system of record stays with the owning process",
+    "trigger": "On account creation or sign-in (e-mail + password, or Google); then on every borrower message or utterance on any channel; per party for the life of the relationship",
+    "source": "Projection of sections 20.3 (lead intake, disclosure, transfer to a human), 21.1 (SAFE classification, prohibited inquiries, ULAD validation), 18.1 (AI governance: systems, versions, evaluations, kill switch), 32.1/32.2 (cards, commands, sessions, read models), 32.3 (the qualification the conversation drives), 32.14 (Google sign-in, deep links, the partner from configuration, link my loan), 32.13 (cross-cutting rules)",
+    "deadline": "renders the 42 allow-listed timer codes through `timer.due` (owned by the sections that arm them); `SM_MLO_PREAPP_TERMS_REVIEW_1BH`, `REGB_1002_9_DECISION_30` (20.3 / 21.x)"
   }
 ]

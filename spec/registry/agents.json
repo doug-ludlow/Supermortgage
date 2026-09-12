@@ -496,15 +496,7 @@
     "authorization.record",
     "preference.set",
     "dispute.intake",
-    "decision.record",
-    "session.next",
-    "record.get",
-    "explain",
-    "timer.due",
-    "document.describe",
-    "card.propose",
-    "card.request",
-    "command.run"
+    "decision.record"
    ],
    "escalates_to": [
     "attorney",
@@ -1865,6 +1857,7 @@
    "processes": [
     "32.13",
     "32.14",
+    "32.17",
     "32.2"
    ],
    "tools": [
@@ -1872,6 +1865,10 @@
     "lead.requestRange",
     "lead.proceed",
     "party.linkLoan",
+    "video.open",
+    "video.turn",
+    "video.end",
+    "video.callback",
     "lead.start",
     "lead.acknowledgeAiDisclosure",
     "party.authenticate",
@@ -6080,6 +6077,23 @@
     "mlo_of_record",
     "officer"
    ]
+  },
+  {
+   "process": "32.17",
+   "agent": "borrower-app",
+   "agents_named": [
+    "borrower-app",
+    "intake",
+    "borrower-comms"
+   ],
+   "tools": [
+    "video.open",
+    "video.turn",
+    "video.end",
+    "video.callback"
+   ],
+   "guardrails": "the agent never sends `conversation.echo` or `conversation.respond` (no unguarded speech), never enables perception or recording, never passes the record to the vendor, never resolves a card from speech. Escalations: as 32.16 (three misses \u2192 `human.request`; the FAKE reviewer answers).",
+   "escalates_to": []
   },
   {
    "process": "32.2",

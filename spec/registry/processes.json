@@ -7053,5 +7053,32 @@
     "trigger": "On account creation or sign-in (e-mail + password, or Google); then on every borrower message or utterance on any channel; per party for the life of the relationship",
     "source": "Projection of sections 20.3 (lead intake, disclosure, transfer to a human), 21.1 (SAFE classification, prohibited inquiries, ULAD validation), 18.1 (AI governance: systems, versions, evaluations, kill switch), 32.1/32.2 (cards, commands, sessions, read models), 32.3 (the qualification the conversation drives), 32.14 (Google sign-in, deep links, the partner from configuration, link my loan), 32.13 (cross-cutting rules)",
     "deadline": "renders the 42 allow-listed timer codes through `timer.due` (owned by the sections that arm them); `SM_MLO_PREAPP_TERMS_REVIEW_1BH`, `REGB_1002_9_DECISION_30` (20.3 / 21.x)"
+  },
+  {
+    "id": "32.17",
+    "title": "The video agent: the same conversation, face to face, with the cards on the rail",
+    "section": 32,
+    "section_title": "Borrower experience",
+    "words": 3375,
+    "timers": [],
+    "subsections": [
+      "Inputs and triggers",
+      "Data model",
+      "State machine",
+      "Timers and gates",
+      "Business rules and calculations",
+      "Integrations",
+      "Outputs and artifacts",
+      "AI agent design (AI-first)",
+      "Edge cases and failure modes",
+      "Test cases and acceptance criteria",
+      "Audit and evidence"
+    ],
+    "path": "sections/32-borrower-experience/32-17-the-video-agent-the-same-conversation-face-to-face.md",
+    "auto": "b — the model of 32.16 speaks through a Tavus replica instead of typing; every fact is still a card the borrower taps; every tool call is still a bus command; the utterance guard still runs before a word is spoken",
+    "own": "Lender (partner; projections of 20–31) · Servicer · Sub (projections of 1–19) — Supermortgage renders the conversation; the system of record stays with the owning process",
+    "trigger": "On the borrower opening `/video` (the account door of 32.16 §2.0 first); then on every spoken turn for the length of the call; per party, any number of calls",
+    "source": "32.16 (the agent turn, the guard, the rail, the four card cases) unchanged; 20.3 (disclosure of an automated system; the lender named); Reg Z §1026.24 (a spoken rate carries its APR); Reg B / ECOA §1002.4 (no inference from appearance: the replica's perception layer is off); 19.x records (the transcript is the record, kept by Supermortgage, not the vendor)",
+    "deadline": "none of its own; `timer.due` renders the same allow-listed clocks as 32.16"
   }
 ]

@@ -33,7 +33,7 @@ Projection of sections 20.3 (lead intake, disclosure, transfer to a human), 21.1
 - `card_instances.props.proposal` `{fields[], source: "borrower_stated_unconfirmed", utterance_id, proposed_at}`; `card_instances.misses int`; `card_instance_events.kind` gains `voice_attestation` `{utterance_id, transcript_ref, read_back_copy_key, hash}`.
 - `journey_progress` — a projection in `borrower_record` (`{steps[{id, label_copy_key, state, at}], done, total}`), never stored.
 - `ai_systems` row `borrower-conversation`; `ai_system_versions` per prompt/model pair with `eval_run_id`; `ai_evaluations` per suite run; `ai_monitoring_metrics` per day (transfers per session, guard rejections per turn, misses per card, time to `du.findings.received`).
-- Baseline, read-only projection sources this process renders (owned by the sections in the Blueprint row; no table is re-declared): `agent_decisions`, `ai_evaluations`, `ai_monitoring_metrics`, `ai_system_versions`, `ai_systems`, `application_income`, `lead_tokens`, `oidc_identities`, `party_credentials`, `verifications`.
+- Baseline, read-only projection sources this process renders (owned by the sections in the Blueprint row; no table is re-declared): `agent_decisions`, `agent_turns`, `ai_evaluations`, `ai_monitoring_metrics`, `ai_system_versions`, `ai_systems`, `application_income`, `lead_tokens`, `oidc_identities`, `party_credentials`, `verifications`.
 
 ##### 5. Data model (UI-owned, `02` §1.6 style)
 
@@ -134,14 +134,14 @@ The account comes first, so the anonymous minute goes: S0–S2 and DELTA-11 (the
 | Section | Content | Expands to | Source |
 |---|---|---|---|
 | **Progress** | the journey's steps, done / current / upcoming, "n of m" | the step's receipt line and date | `journey_progress` (DELTA-26) — derived from `card_instances` and the event spine, never stored |
-| **Needed from you** | every pending card, current ask first, `due_at` when a timer applies | the full card component, resolved in place through `resolveCard` | `needed_from_you[]` + `card_instances{status=pending}` |
+| **Needed from you** | the current ask, open, and any caution row the platform raised; the other pending cards wait behind one line, "n more after this" (`needs.later`) — a card appears when it is needed, not when it exists; `due_at` when a timer applies | the full card component, resolved in place through `resolveCard` | `needed_from_you[]` + `card_instances{status=pending}` |
 | **Connections** | each vendor connection and its state | the `ConnectCard` (launch, what we get, fallback) or its receipt | `card_instances{kind=ConnectCard}` + `verifications` |
 | **Documents** | every disclosure, notice and document with status | the `DocumentCard` / `NoticeCard` with the viewer and "Confirm receipt" | `documents[]` |
 | **What we're doing** | conditions owned by us or a third party | the condition's line and `due_at` | `what_we_are_doing[]` |
 | **People** | borrowers, MLO of record, notary, settlement agent, servicing team | `PersonCard` / `InviteCard` | `people[]` |
 | **Numbers · Dates · Property · Loan** | as `01` §4 rows 5, 6, 9, 10 | read-only detail | projection |
 
-A card has exactly one home (the rail) and any number of references (thread chips, SMS deep links, e-mail links) — all resolve the same `card_instances` row. Expanding is client state; resolving is the API. Issues the platform raises (a frozen bureau, an expired document, a returned payment, an insurance lapse) are caution rows under Needed from you or Documents — never a toast, never a modal. The rail never computes a date or a figure (`02` §4). On a phone the status strip and bottom sheet of `01` §1.2 carry the same sections.
+A card has exactly one home (the rail) and any number of references (thread chips, SMS deep links, e-mail links) — all resolve the same `card_instances` row. Expanding is client state; resolving is the API. Connections, Documents, What we're doing and People start collapsed (their count beside the heading); a reference chip, a deep link or Edit opens the section its card is homed in. What the borrower sees without tapping anything is the progress, the one thing needed now, and the numbers. Issues the platform raises (a frozen bureau, an expired document, a returned payment, an insurance lapse) are caution rows under Needed from you or Documents — never a toast, never a modal. The rail never computes a date or a figure (`02` §4). On a phone the status strip and bottom sheet of `01` §1.2 carry the same sections.
 
 ###### 2.3 When a card exists — the four cases, and nothing else
 | Case | Why words can't carry it | Cards |
@@ -240,7 +240,7 @@ Refused by construction: any money command, any consent, any `resolveCard`, any 
 | 32.16-T8 | Given "what's escrow?" mid-R3, then the reply carries `explain.escrow` and restates the R3 ask; `session.next` before and after the turn is the same card. |
 | 32.16-T9 | Given three consecutive rejected or edited proposals on one card, then `human.request` runs with the transcript reference and `PersonCard{human_agent}` follows `human.transfer.completed`. |
 | 32.16-T10 | Given the 18.1 kill switch tripped for `intake`, then the turn is bypassed and the placeholder copy returns for every party until reset. |
-| 32.16-T11 | Given the shell at ≥ 1024 px, then no card component renders inside the thread; every pending card renders under Needed from you, current ask first, and expanding one shows its component. |
+| 32.16-T11 | Given the shell at ≥ 1024 px, then no card component renders inside the thread; under Needed from you only the current ask is open, the other pending cards wait behind one "n more after this" line, and expanding one shows its component. |
 | 32.16-T12 | Given a reference chip, when clicked, then the rail focuses and expands that `card_instance_id`; resolving it there updates the chip to its receipt. |
 | 32.16-T13 | Given the refinance fixture at R8, then `journey_progress` shows E1–R7 `done`, R8 `current`, and Progress renders "7 of 12". |
 | 32.16-T14 | Given `credit_reports.frozen_repositories` non-empty, then the rail shows a caution row with the lift-instructions card, and no toast or modal exists in the DOM. |

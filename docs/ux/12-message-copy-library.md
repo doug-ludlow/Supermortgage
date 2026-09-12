@@ -615,6 +615,7 @@ The rail and the thread (32.16 §2.1–2.2, DELTA-26). The rail's section names,
 - `rail.progress.title` — heading — "Progress" — *32.16 §2.2: the journey's steps, done / current / upcoming, from `journey_progress`.*
 - `rail.progress.count` — line — "{{done}} of {{total}}" — *32.16 §2.2: beside the Progress heading; `journey_progress.done` and `.total`, never counted by the rail.*
 - `rail.connections.title` — heading — "Connections" — *32.16 §2.2: each vendor connection and its state; expands to the `ConnectCard` or its receipt.*
+- `needs.later` — line — "{{n}} more after this" — *32.16 §2.2: the one line under the current ask that stands for the other pending cards; tapping it lists them, each one line, each expandable. Until then only the current ask (and any caution row) is on the rail — a card appears when it is needed, not when it exists.*
 - `rail.waiting_on_you` — line — "Waiting on you: {{label}} →" — *32.16 §2.1: the slim line under the header, shown only while the borrower has scrolled away from the current ask; tapping it focuses the card on the rail.*
 - `chip.reference` — chip — "{{label}} →" — *32.16 §2.1: the one-line reference the assistant attaches when it puts a card on the rail; tapping it focuses and expands that card. A resolved card's chip shows its receipt line instead.*
 - `chip.confirm` — button — "Confirm" — *32.16 §2.1 / §3.4: the confirm chip's tap — resolves the card through `resolveCard` with `evidence.source = borrower_stated`.*

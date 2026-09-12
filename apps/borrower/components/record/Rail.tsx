@@ -4,10 +4,10 @@
  * 32.16 §2.2 (DELTA-26) — the rail: where the cards live. Sections in this order, each collapsible, each hidden when empty:
  *
  *   Progress            `journey_progress` — steps done / current / upcoming, "n of m"; a step expands to its date
- *   Needed from you     every pending card, current ask first, `due_at` when a timer applies; a row expands in place to the
- *                       card's existing component and resolves there through `resolveCard`. Issues the platform raises (a
- *                       frozen bureau, an expired document, a returned payment, an insurance lapse) are caution rows here —
- *                       never a toast, never a modal (T14).
+ *   Needed from you     the current ask, open to its component, and any caution row the platform raised (a frozen bureau, an
+ *                       expired document, a returned payment, an insurance lapse — never a toast, never a modal, T14). The other
+ *                       pending cards wait behind one line, "n more after this": a card appears when it is needed, not when it
+ *                       exists. Every row resolves in place through `resolveCard`.
  *   Connections         each vendor connection and its state → the `ConnectCard` or its receipt
  *   Documents           every disclosure, notice and document with status → the `DocumentCard` / `NoticeCard` with the viewer
  *                       and "Confirm receipt"
@@ -15,10 +15,11 @@
  *   People              borrowers, MLO of record, notary, settlement agent, servicing team → `PersonCard` / `InviteCard`
  *   Numbers · Dates · Property · Loan   read-only, as 01 §4 rows 5, 6, 9, 10
  *
- * A card has exactly one home (here) and any number of references (thread chips, deep links). Expanding is client state;
+ * Connections, Documents, What we're doing and People start collapsed; a reference chip, a deep link or Edit opens the section
+ * its card is homed in. A card has exactly one home (here) and any number of references. Expanding is client state;
  * resolving is the API. The rail never computes a date or a figure — every value is the projection's own string.
  */
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { AnyCardInstance, ResolveRequest } from "@/lib/types/cards";
 import type { BorrowerRecord, JourneyStep, NeededItem, RecordDocument } from "@/lib/types/record";
 import type { CardComponentProps } from "@/components/cards/types";
@@ -78,6 +79,17 @@ export function neededRows(record: BorrowerRecord | undefined, cards: Record<str
   return out;
 }
 
+/** The section a card is homed in (32.16 §2.2): the focus target's section opens so the card is in view. */
+export function homeOf(card: AnyCardInstance | undefined, needed: boolean): "needed" | "connections" | "documents" | "doing" | "people" | null {
+  if (!card) return null;
+  if (needed) return "needed";
+  if (card.kind === "ConnectCard") return "connections";
+  if (card.kind === "DocumentCard" || card.kind === "NoticeCard") return "documents";
+  if (card.kind === "StatusCard") return "doing";
+  if (card.kind === "PersonCard" || card.kind === "InviteCard") return "people";
+  return card.status === "pending" ? "needed" : null;
+}
+
 /** One card's row: its one home on the rail (`rail-<card_instance_id>` is the focus target); expanded, the existing component renders in place. */
 function CardRow({ card, label, due, timezone, tone, current, expanded, onToggle, children, hint }: { card?: AnyCardInstance; label: string; due?: string; timezone: string; tone?: "caution"; current?: boolean; expanded: boolean; onToggle: () => void; children?: ReactNode; hint?: string }) {
   const id = card?.card_instance_id;
@@ -114,10 +126,18 @@ export function Rail({ record, cards, timezone, cardProps, resolve, busyCardId, 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const isExpanded = (id: string | undefined, dflt = false): boolean => (id ? (expanded[id] ?? dflt) : false);
   const toggle = (id: string) => setExpanded((e) => ({ ...e, [id]: !(e[id] ?? id === currentAskId) }));
+  // the sections a card can be homed in: Needed from you open, the reference sections closed until a card there is focused or the heading is tapped
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
+  const sectionOpen = (id: string, dflt: boolean): boolean => openSections[id] ?? dflt;
+  const setSection = (id: string, open: boolean) => setOpenSections((o) => ({ ...o, [id]: open }));
+  const [laterOpen, setLaterOpen] = useState(false);
 
   useEffect(() => {
     if (!focus) return;
     setExpanded((e) => ({ ...e, [focus.card_instance_id]: true }));
+    const home = homeOf(cards[focus.card_instance_id], neededIdsRef.current.has(focus.card_instance_id));
+    if (home) setSection(home, true);
+    if (home === "needed" && laterIdsRef.current.has(focus.card_instance_id)) setLaterOpen(true);
     const t = setTimeout(() => {
       const el = document.getElementById(`rail-${focus.card_instance_id}`);
       el?.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -135,6 +155,11 @@ export function Rail({ record, cards, timezone, cardProps, resolve, busyCardId, 
 
   const needed = useMemo(() => neededRows(record, cards, currentAskId), [record, cards, currentAskId]);
   const neededIds = useMemo(() => new Set(needed.map((r) => r.card?.card_instance_id).filter(Boolean)), [needed]);
+  // the current ask (the first row) and every caution row are on the rail now; the rest wait behind "n more after this"
+  const neededNow = useMemo(() => needed.filter((r, i) => i === 0 || (r.card && isIssueCard(r.card))), [needed]);
+  const neededLater = useMemo(() => needed.filter((r) => !neededNow.includes(r)), [needed, neededNow]);
+  const neededIdsRef = useRef(neededIds); neededIdsRef.current = neededIds;
+  const laterIdsRef = useRef(new Set<string>()); laterIdsRef.current = new Set(neededLater.map((r) => r.card?.card_instance_id).filter((x): x is string => !!x));
   const connections = useMemo(() => all.filter((c) => c.kind === "ConnectCard").sort((a, b) => (a.created_at < b.created_at ? 1 : -1)), [all]);
   const docCards = useMemo(() => all.filter((c) => c.kind === "DocumentCard" || c.kind === "NoticeCard"), [all]);
   const statusCards = useMemo(() => all.filter((c) => c.kind === "StatusCard" && c.status === "pending" && !isIssueCard(c)).sort((a, b) => (a.created_at < b.created_at ? 1 : -1)), [all]);
@@ -150,6 +175,18 @@ export function Rail({ record, cards, timezone, cardProps, resolve, busyCardId, 
   const orphanDocCards = docCards.filter((c) => !docRowsCardIds.has(c.card_instance_id)).sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
   const progress = record?.journey_progress ?? null;
   const doing = record?.what_we_are_doing ?? [];
+
+  const neededRow = (row: { card?: AnyCardInstance; item?: NeededItem; id: string }) => {
+    // the row's line: the item's copy-library line, else the card's own title — never the copy key the API falls back to when a card carries no `needed_label`
+    const label = (row.item ? copyOrUndefined(row.item.label_copy_key, row.item.copy_tokens) : undefined) ?? (row.card && (!row.item?.label || row.item.label === row.card.copy_key) ? cardTitle(row.card) : row.item?.label) ?? (row.card ? cardTitle(row.card) : row.id);
+    const due = row.item?.due_at ?? row.card?.expires_at;
+    const current = !!row.card && row.card.card_instance_id === currentAskId;
+    return (
+      <CardRow key={row.id} card={row.card} label={label} due={due} timezone={timezone} tone={row.card && isIssueCard(row.card) ? "caution" : undefined} current={current} expanded={isExpanded(row.card?.card_instance_id, current)} onToggle={() => row.card && toggle(row.card.card_instance_id)}>
+        {row.card ? render(row.card) : null}
+      </CardRow>
+    );
+  };
 
   if (!record && all.length === 0) return <p className="sm-empty">Your record appears here once we know what we're doing today.</p>;
 
@@ -184,30 +221,29 @@ export function Rail({ record, cards, timezone, cardProps, resolve, busyCardId, 
         </Section>
       ) : null}
 
-      <Section id="needed" title={copy("needs.title")} aside={needed.length ? <span data-testid="needed-count">({needed.length})</span> : undefined}>
+      <Section id="needed" title={copy("needs.title")} aside={needed.length ? <span data-testid="needed-count">({needed.length})</span> : undefined} open={sectionOpen("needed", true)} onToggle={(o) => setSection("needed", o)}>
         {needed.length === 0 ? (
           <p style={{ margin: 0 }} className="sm-primary-text" data-testid="needs-none">
             {copy("needs.none")}
           </p>
         ) : (
           <ul className="sm-rail-list" data-testid="needed-rows">
-            {needed.map((row) => {
-              // the row's line: the item's copy-library line, else the card's own title — never the copy key the API falls back to when a card carries no `needed_label`
-              const label = (row.item ? copyOrUndefined(row.item.label_copy_key, row.item.copy_tokens) : undefined) ?? (row.card && (!row.item?.label || row.item.label === row.card.copy_key) ? cardTitle(row.card) : row.item?.label) ?? (row.card ? cardTitle(row.card) : row.id);
-              const due = row.item?.due_at ?? row.card?.expires_at;
-              const current = !!row.card && row.card.card_instance_id === currentAskId;
-              return (
-                <CardRow key={row.id} card={row.card} label={label} due={due} timezone={timezone} tone={row.card && isIssueCard(row.card) ? "caution" : undefined} current={current} expanded={isExpanded(row.card?.card_instance_id, current)} onToggle={() => row.card && toggle(row.card.card_instance_id)}>
-                  {row.card ? render(row.card) : null}
-                </CardRow>
-              );
-            })}
+            {neededNow.map(neededRow)}
+            {neededLater.length ? (
+              <li className="sm-rail-row sm-rail-later" data-needed-later={neededLater.length} data-expanded={laterOpen ? "true" : "false"}>
+                <button type="button" className="sm-rail-toggle" aria-expanded={laterOpen} data-testid="needs-later" onClick={() => setLaterOpen((o) => !o)}>
+                  <span className="sm-rail-caret" aria-hidden="true">{laterOpen ? "▾" : "▸"}</span>
+                  <span className="sm-rail-label sm-muted">{copy("needs.later", { n: String(neededLater.length) })}</span>
+                </button>
+                {laterOpen ? <ul className="sm-rail-list">{neededLater.map(neededRow)}</ul> : null}
+              </li>
+            ) : null}
           </ul>
         )}
       </Section>
 
       {connections.length ? (
-        <Section id="connections" title={copy("rail.connections.title")}>
+        <Section id="connections" title={copy("rail.connections.title")} open={sectionOpen("connections", false)} onToggle={(o) => setSection("connections", o)}>
           <ul className="sm-rail-list">
             {connections.map((c) =>
               neededIds.has(c.card_instance_id) ? (
@@ -229,7 +265,7 @@ export function Rail({ record, cards, timezone, cardProps, resolve, busyCardId, 
       ) : null}
 
       {documents.length || orphanDocCards.length ? (
-        <Section id="documents" title="Documents" aside={documents.length + orphanDocCards.length ? <span>({documents.length + orphanDocCards.length})</span> : undefined}>
+        <Section id="documents" title="Documents" aside={documents.length + orphanDocCards.length ? <span>({documents.length + orphanDocCards.length})</span> : undefined} open={sectionOpen("documents", false)} onToggle={(o) => setSection("documents", o)}>
           <ul className="sm-rail-list">
             {documents.map((d) => {
               const c = cardForDoc(d);
@@ -261,7 +297,7 @@ export function Rail({ record, cards, timezone, cardProps, resolve, busyCardId, 
       ) : null}
 
       {doing.length || statusCards.length ? (
-        <Section id="doing" title={copy("needs.doing.title")}>
+        <Section id="doing" title={copy("needs.doing.title")} open={sectionOpen("doing", false)} onToggle={(o) => setSection("doing", o)}>
           <WhatWeAreDoing items={doing} />
           {statusCards.length ? (
             <ul className="sm-rail-list">
@@ -276,7 +312,7 @@ export function Rail({ record, cards, timezone, cardProps, resolve, busyCardId, 
       ) : null}
 
       {(record?.people.length ?? 0) || peopleCards.length ? (
-        <Section id="people" title="People">
+        <Section id="people" title="People" open={sectionOpen("people", false)} onToggle={(o) => setSection("people", o)}>
           <ul className="sm-list">
             {(record?.people ?? []).map((p) => (
               <li key={p.party_id}>

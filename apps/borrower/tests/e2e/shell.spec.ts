@@ -88,7 +88,10 @@ for (const fixture of ["refinance", "servicing"]) {
       if (vp.width < 768) await page.getByTestId("status-strip").click(); // the sheet is the rail
       const rail = page.getByTestId("record");
       if (fixture === "refinance") {
-        // ConnectCard (Truv) under Needed from you: expand its row, FAKE vendor marker and launch → in_progress
+        // ConnectCard (Truv) under Needed from you: it waits behind "n more after this" until it is the ask (32.16 §2.2); open the line, expand its row, FAKE vendor marker and launch → in_progress
+        const later = rail.getByTestId("needs-later");
+        await expect(later).toHaveText(/\d+ more after this/);
+        await later.click();
         const row = rail.locator('[data-rail-card="card-r3-truv"]');
         await row.locator("> button").click();
         const truv = rail.locator('article[data-card-id="card-r3-truv"]');

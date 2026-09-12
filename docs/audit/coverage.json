@@ -1,12 +1,12 @@
 {
- "brief": "spec units built 7743/7752 (99.9%): tids 2097/2105, tables 728/729, timers 2029/2029, notices 306/306, tools 1372/1372, figures 1211/1211; processes at 100%: 179/180",
+ "brief": "spec units built 7743/7771 (99.6%): tids 2097/2119, tables 728/730, timers 2029/2029, notices 306/306, tools 1372/1376, figures 1211/1211; processes at 100%: 179/181",
  "totals": {
   "tids": {
-   "spec": 2105,
+   "spec": 2119,
    "built": 2097
   },
   "tables": {
-   "spec": 729,
+   "spec": 730,
    "built": 728
   },
   "timers": {
@@ -18,7 +18,7 @@
    "built": 306
   },
   "tools": {
-   "spec": 1372,
+   "spec": 1376,
    "built": 1372
   },
   "figures": {
@@ -26,7 +26,7 @@
    "built": 1211
   },
   "units": {
-   "spec": 7752,
+   "spec": 7771,
    "built": 7743
   }
  },
@@ -218,9 +218,9 @@
    "done": 3
   },
   "32": {
-   "spec": 306,
+   "spec": 325,
    "built": 297,
-   "processes": 15,
+   "processes": 16,
    "done": 14
   }
  },
@@ -7796,6 +7796,69 @@
     "built": 31
    },
    "pct": 77.5
+  },
+  {
+   "process": "32.17",
+   "title": "The video agent: the same conversation, face to face, with the cards on the rail",
+   "tids": {
+    "spec": 14,
+    "built": 0,
+    "todo": 14,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14
+    ]
+   },
+   "tables": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "video_sessions"
+    ]
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "video.open",
+     "video.turn",
+     "video.end",
+     "video.callback"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 19,
+    "built": 0
+   },
+   "pct": 0.0
   }
  ]
 }

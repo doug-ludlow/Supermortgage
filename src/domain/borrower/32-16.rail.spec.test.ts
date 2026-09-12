@@ -218,7 +218,7 @@ test("32.16-T13: Given the refinance fixture at R8, then `journey_progress` show
   await ctx.close();
 });
 
-test("32.16-T11: Given the shell at ≥ 1024 px, then no card component renders inside the thread; every pending card renders under Needed from you, current ask first, and expanding one shows its component.", { skip }, async () => {
+test("32.16-T11: Given the shell at ≥ 1024 px, then no card component renders inside the thread; under Needed from you only the current ask is open, the other pending cards wait behind one \"n more after this\" line, and expanding one shows its component.", { skip }, async () => {
   assert.ok(J, "T13 drove the journey to R8"); await fresh();
   // two more asks the flows would raise on the way (the harness sends them through 32.1's send_card, as 32.13 does): a home ConfirmCard and an income ConnectCard
   const home = await sendCard(J, J.partyA, "ConfirmCard", "refi.home.confirm", { title: "Confirm your home", fields: [{ path: "property_address", label: "Address", value: "100 N Central Ave, Phoenix, AZ 85004", source: "public_records" }], commits_to: "application_properties" });
@@ -236,9 +236,22 @@ test("32.16-T11: Given the shell at ≥ 1024 px, then no card component renders 
   assert.equal(await page.locator('[data-testid="thread"] [data-copy-key="entry.disclosure.first"]').count(), 0, "the disclosure row is the footer, not a line in the log");
   assert.ok(await page.getByTestId("footer-disclosure").isVisible(), "the disclosure footer");
   assert.equal(await page.getByTestId("talk-to-person").count(), 0, "no Talk to a person control (32.16 §1 principle 8)");
-  // every pending card renders under Needed from you (informational kinds have their own sections: a status card under What we're doing, a person under People, a notice under Documents)
+  // a card appears when it is needed, not when it exists: only the current ask (and a caution row) is on the rail; the other pending cards wait behind one "n more after this" line
   const needed = page.locator('[data-testid="record"] [data-record-section="needed"]');
-  const rows = await needed.locator("[data-rail-card]").evaluateAll((els: unknown[]) => (els as { getAttribute(n: string): string | null }[]).map((e) => ({ id: e.getAttribute("data-rail-card"), expanded: e.getAttribute("data-expanded"), current: e.getAttribute("data-current-ask"), kind: e.getAttribute("data-card-kind") })));
+  const rowsOf = () => needed.locator("[data-rail-card]").evaluateAll((els: unknown[]) => (els as { getAttribute(n: string): string | null }[]).map((e) => ({ id: e.getAttribute("data-rail-card"), expanded: e.getAttribute("data-expanded"), current: e.getAttribute("data-current-ask"), kind: e.getAttribute("data-card-kind"), tone: e.getAttribute("data-tone") })));
+  const before = await rowsOf();
+  const first = ((rec["needed_from_you"] as Json[])[0]?.["card_instance_id"] as string | undefined) ?? (t.pinned_card?.["card_instance_id"] as string | undefined);
+  assert.ok(first, "the API names the current ask");
+  assert.deepEqual(before.filter((r) => r.tone !== "caution").map((r) => r.id), [first], `only the current ask is on the rail before the line is opened: ${JSON.stringify(before)}`);
+  const later = needed.getByTestId("needs-later");
+  assert.equal(await later.count(), 1, "the one line for the cards that wait");
+  assert.match((await later.textContent()) ?? "", /^\D*\d+ more after this$/);
+  assert.equal(await later.getAttribute("aria-expanded"), "false");
+  // the reference sections start collapsed: what the borrower sees without tapping is the progress, the one thing needed now and the numbers
+  for (const sec of ["connections", "documents", "doing", "people"]) { const el = page.locator(`[data-testid="record"] [data-record-section="${sec}"]`); if (await el.count()) assert.equal(await el.getAttribute("data-open"), "false", `${sec} starts collapsed`); }
+  await later.click();
+  const rows = await rowsOf();
+  // opened, every pending card has its row (informational kinds have their own sections: a status card under What we're doing, a person under People, a notice under Documents)
   const INFORMATIONAL = new Set(["StatusCard", "NoticeCard", "PersonCard", "InviteCard"]);
   for (const c of pending) {
     if (INFORMATIONAL.has(c.kind)) { assert.equal(await page.locator(`[data-testid="record"] [data-rail-card="${c.card_instance_id}"]`).count(), 1, `${c.kind} ${c.copy_key} has its row on the rail`); continue; }
@@ -246,8 +259,6 @@ test("32.16-T11: Given the shell at ≥ 1024 px, then no card component renders 
   }
   assert.ok(rows.some((r) => r.id === home) && rows.some((r) => r.id === truv));
   // current ask first: the record's first needed item (the API's order — due first, then oldest), expanded by default; the others collapsed to one line
-  const first = ((rec["needed_from_you"] as Json[])[0]?.["card_instance_id"] as string | undefined) ?? (t.pinned_card?.["card_instance_id"] as string | undefined);
-  assert.ok(first, "the API names the current ask");
   assert.equal(rows[0]!.id, first, `current ask first: ${JSON.stringify(rows)}`);
   assert.equal(rows[0]!.current, "true"); assert.equal(rows[0]!.expanded, "true");
   assert.equal(await needed.locator(`[data-rail-card="${first}"] article[data-card-id="${first}"]`).count(), 1, "the current ask shows its component");
@@ -276,9 +287,9 @@ test("32.16-T12: Given a reference chip, when clicked, then the rail focuses and
   const chip = page.locator(`[data-testid="thread"] [data-testid="reference-chip"][data-card-id="${cardId}"]`);
   await chip.waitFor({ timeout: 15_000 });
   assert.match(await chip.innerText(), /Which loan\? →/, "the chip is the card's one-line reference");
-  // collapsed on the rail until the chip is tapped (it is not the current ask: an older card is)
+  // not on the rail until the chip is tapped: it is not the current ask (an older card is), so it waits behind "n more after this" — or, once that line is open, sits collapsed
   const row = railRow(page, cardId);
-  assert.equal(await row.getAttribute("data-expanded"), "false", "collapsed before the tap");
+  assert.ok((await row.count()) === 0 || (await row.getAttribute("data-expanded")) === "false", "behind the line, or collapsed, before the tap");
   await chip.click();
   await page.waitForSelector(`[data-rail-card="${cardId}"][data-expanded="true"] article[data-card-id="${cardId}"]`, { timeout: 15_000 });
   await page.waitForTimeout(600);   // the smooth scroll into view
@@ -347,6 +358,7 @@ test("32.16-T15: Given a `DocumentCard{LE}` under Documents, when expanded, then
   const documents = page.locator('[data-testid="record"] [data-record-section="documents"]');
   const row = documents.locator(`[data-rail-card="${leCard.card_instance_id}"]`);
   await row.waitFor({ timeout: 15_000, state: "attached" });
+  if ((await documents.getAttribute("data-open")) === "false") await documents.locator("h2 > button").click(); // Documents starts collapsed (32.16 §2.2)
   assert.equal(await page.locator('[data-testid="thread"] article[data-card-kind]').count(), 0, "the LE is a document on the rail, not a card in the thread");
   if (leCard.status === "pending") {
     await row.locator("> button").click();

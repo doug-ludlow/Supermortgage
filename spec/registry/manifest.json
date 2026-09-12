@@ -15475,7 +15475,7 @@
    },
    {
     "n": 11,
-    "text": "Given the shell at \u2265 1024 px, then no card component renders inside the thread; every pending card renders under Needed from you, current ask first, and expanding one shows its component."
+    "text": "Given the shell at \u2265 1024 px, then no card component renders inside the thread; under Needed from you only the current ask is open, the other pending cards wait behind one \"n more after this\" line, and expanding one shows its component."
    },
    {
     "n": 12,
@@ -15564,6 +15564,81 @@
    "card.request",
    "command.run",
    "human.transfer"
+  ]
+ },
+ {
+  "process": "32.17",
+  "title": "The video agent: the same conversation, face to face, with the cards on the rail",
+  "path": "sections/32-borrower-experience/32-17-the-video-agent-the-same-conversation-face-to-face.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given an L1 session, when `POST /v1/borrower/video/sessions`, then a `video_sessions` row exists with `status = created`, the persona sent to the vendor (or the FAKE) has a custom LLM whose `base_url` ends in `/v1/video/llm/{token}` with `sha256(token) = token_hash`, perception off and recording off, and the response carries `conversation_url`."
+   },
+   {
+    "n": 2,
+    "text": "Given the vendor posts a chat-completions request with the borrower's utterance to the session's endpoint, then an `agent_turns` row with `channel = video` exists, the reply streams as `chat.completion.chunk` events ending in `[DONE]`, and the spoken text contains no `{{` and no figure the guard did not pass."
+   },
+   {
+    "n": 3,
+    "text": "Given \"I make about eight thousand two hundred a month\" in a video turn with the R3 income card pending, then `card_instances.props.proposal.fields[0] = {path: \"monthly_income\", value: \"820000\", source: \"borrower_stated_unconfirmed\"}`, the rail's card row shows the value with Confirm and Edit, and Confirm resolves the card with `evidence.source = borrower_stated` \u2014 nothing is committed by the words."
+   },
+   {
+    "n": 4,
+    "text": "Given a video turn in which the model calls `card.request`, then no reference chip is written, a `card.sent` event reaches the session's SSE stream, and the rail focuses and expands that card."
+   },
+   {
+    "n": 5,
+    "text": "Given a new video session, then `custom_greeting` is the guarded first turn's rendered text: it says in its own words that it is automated, names the partner as the lender, and never names Supermortgage as the lender."
+   },
+   {
+    "n": 6,
+    "text": "Given a video turn in which the model shows rates, then the spoken text names each rate with its APR and the rail's Numbers carries the rates element (32.16 32.16-T7 unchanged)."
+   },
+   {
+    "n": 7,
+    "text": "Given the persona and conversation bodies sent to the vendor for any session, then `layers.perception.perception_model = off`, `enable_recording = false`, no `tools`, no knowledge base, and `conversational_context` contains no record field beyond the borrower's first name and the partner's name (contract test)."
+   },
+   {
+    "n": 8,
+    "text": "Given a chat-completions request whose token matches no session in `created` or `joined`, then `401` and no `messages` or `agent_turns` row is written."
+   },
+   {
+    "n": 9,
+    "text": "Given the vendor's `system.replica_joined` then `system.shutdown` callbacks on the secret path, then the session is `joined` then `ended` with `end_reason`; given `application.transcription_ready`, then `transcript_ref` is set; given the wrong secret, then `404` and no change."
+   },
+   {
+    "n": 10,
+    "text": "Given `GET /video` at the demo host, then `302` to `/app/video`; given `/app/video` without a session, then the account door of 32.16 \u00a72.0, then the video screen with the disclosure footer, no composer, no microphone control of Supermortgage's own and no \"Talk to a person\" control."
+   },
+   {
+    "n": 11,
+    "text": "Given `TAVUS_API_KEY` unset, then `FakeTavus` (`FAKE`) opens the session, its `conversation_url` is local, its page posts each utterance through the same chat-completions endpoint and shows the streamed reply, and 32.17-T1 \u2026 32.17-T9 pass against it."
+   },
+   {
+    "n": 12,
+    "text": "Given `/app/video` at \u2265 1024 px with the refinance fixture at R8, then the rail sits beside the call with only the current ask open and the other pending cards behind one \"n more after this\" line (32.16 32.16-T11), and no card component renders inside the call pane."
+   },
+   {
+    "n": 13,
+    "text": "Given a chat-completions request whose `messages[]` carries a fabricated earlier assistant line, then the turn's window is Supermortgage's `messages{channel=video}` and the fabricated line is absent from the context (contract test over `context.ts` input)."
+   },
+   {
+    "n": 14,
+    "text": "Given the cooperative refinance persona run through `/app/video` against the FAKE from account creation, then the run reaches the same milestone as 32.16 32.16-T21 with every fact resolved by a tap on the rail and `agent_turns.latency_ms` reported as p50 and p95 for `channel = video`."
+   }
+  ],
+  "tables": [
+   "video_sessions"
+  ],
+  "timers": [],
+  "notices": [],
+  "agent": "borrower-app",
+  "tools": [
+   "video.open",
+   "video.turn",
+   "video.end",
+   "video.callback"
   ]
  }
 ]

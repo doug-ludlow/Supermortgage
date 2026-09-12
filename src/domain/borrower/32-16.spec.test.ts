@@ -304,11 +304,11 @@ test("32.16-T5: Given a model turn containing \"your rate is 6.125%\", then the 
   await journey.seedBook(); const loanId = await journey.adoptPriorLoan(a.party_id, { legal_name: email }); await settle();
   const rec = await api("GET", `/v1/borrower/record?subject=${loanId}`, undefined, bearer(a.token)); assert.equal(rec.status, 200, JSON.stringify(rec.body).slice(0, 300));
   const noteRate = String((rec.body["numbers"] as Json)["note_rate"]); assert.match(noteRate, /^\d+\.\d{3}$/);
-  scripted.use([{ when: /what is my rate/i, text: "Your rate is 6.125% and your payment is $3,402.62 a month.", then: "Your current rate is {{numbers.rate}}." }]);
+  scripted.use([{ when: /what is my rate/i, text: "Your rate is 6.125% and your payment is $3,402.62 a month.", then: "Your current rate is {{numbers.rate}}, the same figure your note shows." }]);
   const r = await message(a.token, "what is my rate?", { loan_id: loanId });
   assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body["routed_to"], "borrower-comms");
   // the guard rejected the raw figures, the regenerated turn wrote the token, the rendered message shows the projection's rate — the sentence never reached the thread
-  assert.equal(r.reply["body_text"], `Your current rate is ${noteRate}%.`); assert.doesNotMatch(String(r.reply["body_text"]), /6\.125|3,402/);
+  assert.equal(r.reply["body_text"], `Your current rate is ${noteRate}%, the same figure your note shows.`);   // a real sentence: the guard's substance check (7) refuses a regeneration under MIN_REPLY_WORDS assert.doesNotMatch(String(r.reply["body_text"]), /6\.125|3,402/);
   const rows = (await turnsOf(a.party_id)).filter((x) => x.message_id === (r.body["message"] as Json)["message_id"]).sort((x, y) => Number((x.guard_result as Json)["attempt"]) - Number((y.guard_result as Json)["attempt"])); assert.equal(rows.length, 2, "the rejected attempt and the accepted one are both rows");
   const rejected = rows[0]!; assert.equal(rejected.reply_message_id, null); assert.equal((rejected.guard_result as Json)["ok"], false); assert.equal((rejected.guard_result as Json)["rejected_by"], "provenance"); assert.match(String((rejected.guard_result as Json)["violation"]), /6\.125%/);
   const accepted = rows[1]!; assert.equal(accepted.reply_message_id, r.reply["message_id"]); assert.equal((accepted.guard_result as Json)["ok"], true); assert.equal((accepted.guard_result as Json)["attempt"], 2);
@@ -430,7 +430,7 @@ test("32.16-T10: Given the 18.1 kill switch tripped for `intake`, then the turn 
   assert.equal(await router.agent!.bypassed("intake"), null);
   const back = await message(two.token, "is this thing on?"); assert.match(String(back.reply["body_text"]), /^It is/); assert.equal((back.reply["copy_tokens"] as Json)["source"], "agent_turn");
 });
-test("32.16-T11: Given the shell at ≥ 1024 px, then no card component renders inside the thread; every pending card renders under Needed from you, current ask first, and expanding one shows its component.", { todo: true });
+test("32.16-T11: Given the shell at ≥ 1024 px, then no card component renders inside the thread; under Needed from you only the current ask is open, the other pending cards wait behind one \"n more after this\" line, and expanding one shows its component.", { todo: true });
 test("32.16-T12: Given a reference chip, when clicked, then the rail focuses and expands that `card_instance_id`; resolving it there updates the chip to its receipt.", { todo: true });
 test("32.16-T13: Given the refinance fixture at R8, then `journey_progress` shows E1–R7 `done`, R8 `current`, and Progress renders \"7 of 12\".", { todo: true });
 test("32.16-T14: Given `credit_reports.frozen_repositories` non-empty, then the rail shows a caution row with the lift-instructions card, and no toast or modal exists in the DOM.", { todo: true });

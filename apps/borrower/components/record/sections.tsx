@@ -37,12 +37,15 @@ export function useHighlight(value: unknown): boolean {
  * One rail section (32.16 §2.2): a heading that collapses and expands its body (client state; open by default), with an
  * optional count or aside beside the title. Sections with nothing to show are not rendered by their callers (01 §1.4).
  */
-export function Section({ id, title, aside, defaultOpen = true, children }: { id: string; title: string; aside?: ReactNode; defaultOpen?: boolean; children: ReactNode }) {
-  const [open, setOpen] = useState(defaultOpen);
+/** A rail section. Uncontrolled by default (`defaultOpen`); the Rail controls the sections a focused card can live in (`open` + `onToggle`) so a reference chip or deep link opens the section its card is homed in (32.16 §2.2). */
+export function Section({ id, title, aside, defaultOpen = true, open: openProp, onToggle, children }: { id: string; title: string; aside?: ReactNode; defaultOpen?: boolean; open?: boolean; onToggle?: (open: boolean) => void; children: ReactNode }) {
+  const [openState, setOpen] = useState(defaultOpen);
+  const open = openProp ?? openState;
+  const flip = () => (onToggle ? onToggle(!open) : setOpen((o) => !o));
   return (
     <section className="sm-record-section" aria-labelledby={`rec-${id}`} data-record-section={id} data-open={open ? "true" : "false"}>
       <h2 id={`rec-${id}`} className="sm-rail-h">
-        <button type="button" className="sm-rail-h-btn" aria-expanded={open} aria-controls={`rec-${id}-body`} onClick={() => setOpen((o) => !o)}>
+        <button type="button" className="sm-rail-h-btn" aria-expanded={open} aria-controls={`rec-${id}-body`} onClick={flip}>
           <span className="sm-rail-caret" aria-hidden="true">{open ? "▾" : "▸"}</span>
           <span>{title}</span>
         </button>

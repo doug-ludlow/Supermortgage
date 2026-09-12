@@ -1121,6 +1121,10 @@ a {
 .sm-rail-row {
   border-top: 1px solid var(--sm-border);
 }
+.sm-rail-later > .sm-rail-list {
+  margin: 0 0 0 0.75rem;
+  padding: 0;
+}
 .sm-rail-row:first-child {
   border-top: 0;
 }

@@ -37,6 +37,7 @@ import { THREAD_COPY_KEYS } from "./copy-keys.ts";
 import type { BorrowerFlows } from "./flows/index.ts";
 import { SUBJECT_FREE_COMMANDS, TERMINAL_ALLOWED_COMMANDS, terminalStateOf } from "./flows/13-cross-cutting.ts";
 import type { AgentTurnRequest, AgentTurnReply } from "./agent/turn.ts";
+import { ASKS_IF_HUMAN } from "./agent/guard.ts";
 
 export const BORROWER_APP_ACTOR: Actor = { kind: "agent", id: "borrower-app" };
 /** The commands a card or a direct endpoint may name: 32.2's 45 and 32.14's three (`lead.answer`, `lead.requestRange`, `lead.proceed` — the S4 proceed card's command; the L0 routes call the bus directly) — each executed as its own process's tool. */
@@ -239,9 +240,11 @@ export class BorrowerCommands {
       const id = await this.ui.appendMessage({ conversation_id: conv.conversation_id, at: now, sender: "agent", sender_ref: `agent:${routed_to}`, channel, body_text: extra.body ?? `{{copy:${copy_key}}}`, card_instance_id: extra.card_instance_id ?? null, subject_application_id: subject?.application_id ?? null, subject_loan_id: subject?.loan_id ?? null, voice_turn: channel === "voice" });
       return { ...(await this.ui.message(id))!, copy_key, deep_link: extra.deep_link ?? null };
     };
-    // T-X-05: an affirmative that answers a pending card executes nothing — the deep link is the answer (01 §6.4; a spoken yes never resolves a ConsentCard, 01 §3.5)
+    // T-X-05: an affirmative that answers a pending card executes nothing — the deep link is the answer (01 §6.4; a spoken yes never resolves a ConsentCard, 01 §3.5).
+    // docs/ux/17 §3.4: on the app with the agent turn configured, the words go to the turn instead — the model proposes them into the pending card and the
+    // confirm chip is the answer (the tap still resolves; nothing is committed by words). SMS and voice keep the deep link: there is no chip to tap there.
     const card = affirmativeFor(text, pending);
-    if (card) {
+    if (card && !(this.agentTurn && channel === "app")) {
       const link = await this.ui.createDeepLink({ party_id: ctx.party.id, target: { card_instance_id: card.card_instance_id }, now, created_for_message_id: messageId });
       const r = await reply(card.kind === "ConsentCard" && channel === "voice" ? THREAD_COPY_KEYS.voiceConsentLink : THREAD_COPY_KEYS.affirmativeNeedsCard, { card_instance_id: card.card_instance_id, deep_link: { token: link.token, path: `/d/${link.token}`, expires_at: link.expires_at }, body: `{{copy:${THREAD_COPY_KEYS.affirmativeNeedsCard}}} /d/${link.token}` });
       return { message, reply: r, routed_to, command_executed: false, command: null };
@@ -251,8 +254,9 @@ export class BorrowerCommands {
       const fr = await this.flows.message({ party_id: ctx.party.id, session_id: ctx.session.session_id, conversation_id: conv.conversation_id, message_id: messageId, text, channel, subject: subject ? { application_id: subject.application_id, loan_id: subject.loan_id } : null, claimed_subject: wanted, at: now });
       if (fr) return { message, reply: await reply(fr.copy_key, { card_instance_id: fr.card_instance_id ?? null, ...(fr.body_text ? { body: fr.body_text } : {}) }), routed_to, command_executed: !!fr.command, command: fr.command ?? null };
     }
-    // "human" at any time (01 §1.1, §7.1): the human.request command
-    if (/\b(human|real person|a person|talk to (a|someone)|representative|agent)\b/i.test(text) && subject) {
+    // "human" at any time (01 §1.1, §7.1): the human.request command — except the question whether the assistant is a person ("is this a real person?"), which
+    // docs/ux/17 §3.5 (6) has the agent turn answer in its own words (it must say it is automated and offer a callback, a dispute or a case) when a turn is configured
+    if (/\b(human|real person|a person|talk to (a|someone)|representative|agent)\b/i.test(text) && subject && !(this.agentTurn && ASKS_IF_HUMAN.test(text))) {
       const out = await this.runCommand(ctx, "human.request", { reason: "borrower_request", channel, utterance: text, subject: { application_id: subject.application_id, loan_id: subject.loan_id } }, now);
       return { message, reply: await reply(THREAD_COPY_KEYS.humanRequested, {}), routed_to, command_executed: true, command: out.command };
     }

@@ -354,12 +354,14 @@ test("22.2-T12: (disclosure data) Given the report received Oct 5, 2026, when sc
   assert.deepEqual(pb.scores.map((s) => s.score), [698, 712, 705]); assert.equal(pb.applicable_score, 705);
   for (const p of [pa, pb]) { assert.deepEqual(p.range, { min: 300, max: 850 }); assert.equal(p.date, "2026-10-05"); assert.deepEqual(p.cra, CRA); assert.equal(p.creditor_is_partner, true); assert.deepEqual(p.for_templates, ["NTC_FCRA_609G_CREDIT_SCORE", "NTC_REGV_1022_74_RBP_EXCEPTION"]); assert.ok(p.scores.every((s) => s.key_factors.length > 0 && s.key_factors.length <= 4)); }
   // only that borrower's data: A's payload carries none of B's scores and neither carries the representative score or the other borrower's id (§1022.75(c))
-  const ja = JSON.stringify(pa), jb = JSON.stringify(pb);
+  // (ids are random UUIDs and may contain any three digits by chance — they are scrubbed before the substring check)
+  const scrub = (v: unknown): string => JSON.stringify(v).replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, "<uuid>");
+  const ja = scrub(pa), jb = scrub(pb);
   for (const s of ["698", "712", "705", B]) assert.ok(!ja.includes(s), `A's payload leaks ${s}`);
   for (const s of ["742", "751", "760", A]) assert.ok(!jb.includes(s), `B's payload leaks ${s}`);
   assert.ok(!("representative_score" in pa));
   const ev = h.ofType("credit.score_disclosure.prepared"); assert.equal(ev.length, 2); assert.deepEqual(ev.map((e) => (e.payload as { borrower_id: string }).borrower_id).sort(), [A, B]);
-  assert.ok(!JSON.stringify(ev.find((e) => (e.payload as { borrower_id: string }).borrower_id === A)!.payload).includes("698"));
+  assert.ok(!scrub(ev.find((e) => (e.payload as { borrower_id: string }).borrower_id === A)!.payload).includes("698"));
   // the HMDA feed (28.3): model and the scores relied on
   assert.deepEqual(out.hmda, { score_model: "classic_fico", representative_score: 705, applicant_scores: { [A]: 751, [B]: 705 } });
   await h.refused(h.run("emitScoreDisclosureData", { report_id: id, borrower_id: A, recipient_borrower_id: B }), "NO_CROSS_BORROWER_DISCLOSURE");

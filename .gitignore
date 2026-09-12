@@ -7,3 +7,6 @@ coverage/
 
 # Python bytecode from the spec tools
 __pycache__/
+
+# node_modules as a directory or a symlink
+node_modules

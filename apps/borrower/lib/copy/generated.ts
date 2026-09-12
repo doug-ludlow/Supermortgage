@@ -562,6 +562,7 @@ export const COPY = {
   "account.have_account": { key: "account.have_account", kind: "link", text: "Already have an account? Sign in", notes: "32.16 §2.0: under the create form → /app/sign-in.", extras: [], section: "The conversational product (32.16)" },
   "account.new": { key: "account.new", kind: "link", text: "New here? Create an account", notes: "32.16 §2.0: under the sign-in form → /app/sign-up.", extras: [], section: "The conversational product (32.16)" },
   "account.verify.title": { key: "account.verify.title", kind: "heading", text: "Check your e-mail", notes: "32.16 §2.0: the code step after Create account; the field is `auth.code.enter` with the e-mail as the destination; the FAKE code is shown outside production.", extras: [], section: "The conversational product (32.16)" },
+  "account.on_file": { key: "account.on_file", kind: "line", text: "That e-mail is already on file with us. Enter the code we sent to it to show it's yours.", notes: "sign-up when the e-mail is on file for a borrower party or an application borrower: the code step; an e-mail on file for no one opens the session at once.", extras: [], section: "The conversational product (32.16)" },
   "account.exists": { key: "account.exists", kind: "refusal", text: "There's already an account for that e-mail. Sign in instead.", notes: "409 `ACCOUNT_EXISTS`.", extras: [], section: "The conversational product (32.16)" },
   "account.password_weak": { key: "account.password_weak", kind: "refusal", text: "Use at least 8 characters.", notes: "400 `PASSWORD_WEAK`.", extras: [], section: "The conversational product (32.16)" },
   "auth.password_wrong": { key: "auth.password_wrong", kind: "refusal", text: "That e-mail and password didn't match.", notes: "401 `PASSWORD_WRONG`; never says which.", extras: [], section: "The conversational product (32.16)" },
@@ -570,4 +571,4 @@ export const COPY = {
 } as const satisfies Record<string, CopyEntry>;
 
 export type CopyKey = keyof typeof COPY;
-export const COPY_KEY_COUNT = 555;
+export const COPY_KEY_COUNT = 556;

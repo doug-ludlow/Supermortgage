@@ -59,7 +59,19 @@ describe("32.16 §2.0 — create an account", () => {
     expect(screen.queryByRole("article")).toBeNull();
   });
 
-  it("Create account → accountCreate → the code step (account.verify.title, auth.code.enter with the e-mail, the FAKE code marked) → verify_email → /app", async () => {
+  it("Create account → accountCreate → a session at once for an e-mail on file for no one → /app; no code step", async () => {
+    vi.mocked(accountCreate).mockResolvedValue(SESSION);
+    const navigate = vi.fn();
+    render(<Account mode="sign_up" navigate={navigate} />);
+    await fillCredentials();
+    await user.click(screen.getByRole("button", { name: copy("account.create.button") }));
+    expect(accountCreate).toHaveBeenCalledWith(EMAIL, "correct horse");
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/app"));
+    expect(accountVerifyEmail).not.toHaveBeenCalled();
+    expect(screen.queryByRole("heading", { name: copy("account.verify.title") })).toBeNull();
+  });
+
+  it("an e-mail already on file for someone's record → the code step (account.verify.title, account.on_file, auth.code.enter with the e-mail, the FAKE code marked) → verify_email → /app", async () => {
     vi.mocked(accountCreate).mockResolvedValue({ challenge_id: "ch-1", delivery: "FAKE", expires_at: "2027-01-01T00:00:00Z", fake_code: "246810" });
     vi.mocked(accountVerifyEmail).mockResolvedValue(SESSION);
     const navigate = vi.fn();
@@ -68,6 +80,7 @@ describe("32.16 §2.0 — create an account", () => {
     await user.click(screen.getByRole("button", { name: copy("account.create.button") }));
     expect(accountCreate).toHaveBeenCalledWith(EMAIL, "correct horse");
     expect(await screen.findByRole("heading", { name: copy("account.verify.title") })).toBeInTheDocument();
+    expect(screen.getByTestId("account-on-file")).toHaveTextContent(copy("account.on_file"));
     const code = screen.getByLabelText(copy("auth.code.enter", { destination: EMAIL }));
     expect(code).toHaveAttribute("autocomplete", "one-time-code");
     const fake = screen.getByTestId("fake-code");

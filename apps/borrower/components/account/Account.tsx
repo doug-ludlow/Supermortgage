@@ -3,8 +3,9 @@
 /**
  * 32.16 §2.0 (DELTA-29) — the account: the first screen, and the only form. One component, three modes:
  *  - `sign_up`  (/app/sign-up): the disclosure line (`entry.disclosure.first`), e-mail, password, Create account, Continue with
- *    Google, "Already have an account? Sign in". Create → the code step (`account.verify.title`, the field is `auth.code.enter`
- *    with the e-mail; the FAKE code shown outside production) → `verify_email` → the session.
+ *    Google, "Already have an account? Sign in". Create → the session at once for an e-mail on file for no one; when the e-mail
+ *    is already on file for someone's record the code step first (`account.verify.title` + `account.on_file`, the field is
+ *    `auth.code.enter` with the e-mail; the FAKE code shown outside production) → `verify_email` → the session.
  *  - `sign_in`  (/app/sign-in, the header's Sign in, any 401 under `auth.welcome_back`): e-mail, password, Sign in, Google,
  *    "Forgot your password?", "New here? Create an account". `EMAIL_UNVERIFIED` (a fresh code was sent) → the code step.
  *  - `reset`    (/app/reset): e-mail → `request_reset` → code + new password → `reset` → `account.reset.done` + Sign in.
@@ -22,7 +23,7 @@
 import Link from "next/link";
 import { useId, useState, type FormEvent } from "react";
 import { api, ApiRequestError } from "@/lib/api/client";
-import { accountCreate, accountRequestReset, accountReset, accountSignIn, accountVerifyEmail, challengeOf, type AccountSession } from "@/lib/api/account";
+import { accountCreate, accountRequestReset, accountReset, accountSignIn, accountVerifyEmail, challengeOf, isChallenge, type AccountSession } from "@/lib/api/account";
 import { copy, copyExtra, copyOptions } from "@/lib/copy";
 import { PARTNER_LEGAL_NAME, SHOW_FAKE_MARKERS } from "@/lib/env";
 import { setPendingDeepLink } from "@/lib/auth/passkey";
@@ -50,7 +51,7 @@ export type AccountProps = {
   partnerLegalName?: string;
 };
 
-type CodeStep = { kind: "code"; email: string; challenge_id: string; fake_code?: string };
+type CodeStep = { kind: "code"; email: string; challenge_id: string; fake_code?: string; on_file?: boolean };
 type ResetCodeStep = { kind: "reset_code"; email: string; challenge_id?: string; fake_code?: string };
 type Step = { kind: "form" } | CodeStep | ResetCodeStep | { kind: "done" } | { kind: "google" };
 
@@ -101,8 +102,9 @@ export function Account({ mode, titleKey, onSession, onCancel, navigate, redirec
     if (!em || password.length < PASSWORD_MIN) return;
     void run(async () => {
       const r = await accountCreate(em, password);
+      if (!isChallenge(r)) { settle(r); return; }   // an e-mail on file for no one: the session at once, no code
       setCode("");
-      setStep({ kind: "code", email: em, challenge_id: r.challenge_id, fake_code: r.fake_code });
+      setStep({ kind: "code", email: em, challenge_id: r.challenge_id, fake_code: r.fake_code, on_file: true });   // on file for someone's record: prove the e-mail first
     });
   };
 
@@ -278,6 +280,11 @@ export function Account({ mode, titleKey, onSession, onCancel, navigate, redirec
 
       {step.kind === "code" ? (
         <form className="sm-signin-form" onSubmit={(e) => verify(e, step)} data-testid="account-code">
+          {step.on_file ? (
+            <p className="sm-muted" data-testid="account-on-file" data-copy-key="account.on_file">
+              {copy("account.on_file")}
+            </p>
+          ) : null}
           <label className="sm-label" htmlFor={`${id}-code`}>
             {copy("auth.code.enter", { destination: step.email })}
           </label>

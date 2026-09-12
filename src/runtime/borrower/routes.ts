@@ -305,7 +305,7 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
   const passwordOf = (b: Record<string, unknown>): string => { const password = typeof b["password"] === "string" ? (b["password"] as string) : ""; if (!password) throw new RangeError("password is required"); if (password.length < PASSWORD_MIN_LENGTH) throw new BorrowerError(400, "PASSWORD_WEAK", undefined, `a password is at least ${PASSWORD_MIN_LENGTH} characters`); return password; };
   const emailVerifyCode = (email: string, partyId: string, at: string) => issueCode({ kind: "email_verify", channel: "email", destination: email, party_id: partyId, at, subject: "Verify your e-mail for Supermortgage" });
   /** An L1 password session: no code on the session (`last_l1_at` null — FRESH_L1_COMMANDS ask for one), the organic application and the disclosure first (landSession). */
-  async function openPasswordSession(req: IncomingMessage, res: ServerResponse, partyId: string, at: string, how: "verify_email" | "sign_in"): Promise<void> {
+  async function openPasswordSession(req: IncomingMessage, res: ServerResponse, partyId: string, at: string, how: "create" | "verify_email" | "sign_in"): Promise<void> {
     const opened = await auth.openSession({ party_id: partyId, auth_method: "password", now: at, otp: false, ip: ipOf(req), user_agent: uaOf(req) });
     await landSession(req, opened, at, "app", "account");
     logger.info("borrower.session.opened", { session_id: opened.session.session_id, level: "L1", auth_method: "password", how });
@@ -316,14 +316,31 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     if (action === "create") {
       accountThrottle(ipOf(req), at);
       const email = emailOf(b); const password = passwordOf(b);
-      if (await credentials.byEmail(email)) throw new BorrowerError(409, "ACCOUNT_EXISTS", undefined, "an account already uses that e-mail");
-      // the party: a servicing-book borrower whose e-mail is on file lands in their own party; a new e-mail creates one (the same resolver a code uses)
+      const existing = await credentials.byEmail(email);
+      if (existing?.email_verified_at) throw new BorrowerError(409, "ACCOUNT_EXISTS", undefined, "an account already uses that e-mail");
+      // An unverified claim on an e-mail that is on file for someone's record: the last claimant's password stands and a fresh code goes to
+      // the e-mail — only the person who reads that inbox can finish (the row never opens a session until the code proves the e-mail).
+      if (existing) {
+        await credentials.setPassword(existing.party_id, password, at);
+        const r = await emailVerifyCode(existing.email, existing.party_id, at);
+        logger.info("borrower.account.reclaimed", { party_id: existing.party_id, challenge_id: r.challenge.challenge_id, delivery: r.challenge.delivery });
+        send(res, 200, "account_create", { challenge_id: r.challenge.challenge_id, delivery: r.challenge.delivery, expires_at: r.expires_at, ...fakeCodeOf(r.code) }); return;
+      }
+      // Is the e-mail on file for someone's record already (a borrower party, or an application borrower the interview created)? Then the account
+      // would land in that record, so possession of the e-mail is proven first with a six-digit code. An e-mail on file for no one is the new
+      // party's own by construction: no code, the session opens at once (docs/ux/17 §2.0).
+      const onFile = await auth.parties.destinationOnFile("email", email);
       const resolved = await auth.parties.resolveOrCreateByDestination("email", email);
       if (await credentials.byParty(resolved.party.id)) throw new BorrowerError(409, "ACCOUNT_EXISTS", undefined, "the party already has an account");
       await credentials.create({ party_id: resolved.party.id, email, password, now: at });
-      const r = await emailVerifyCode(email, resolved.party.id, at);
-      logger.info("borrower.account.created", { party_id: resolved.party.id, party_created: resolved.created, linked_application_borrowers: resolved.linked_application_borrowers, challenge_id: r.challenge.challenge_id, delivery: r.challenge.delivery, delivery_ref: r.delivery_ref, vendor: deliveryIsFake() ? "FAKE" : "e-delivery" });
-      send(res, 200, "account_create", { challenge_id: r.challenge.challenge_id, delivery: r.challenge.delivery, expires_at: r.expires_at, ...fakeCodeOf(r.code) }); return;
+      if (onFile) {
+        const r = await emailVerifyCode(email, resolved.party.id, at);
+        logger.info("borrower.account.created", { party_id: resolved.party.id, party_created: resolved.created, on_file: true, linked_application_borrowers: resolved.linked_application_borrowers, challenge_id: r.challenge.challenge_id, delivery: r.challenge.delivery, delivery_ref: r.delivery_ref, vendor: deliveryIsFake() ? "FAKE" : "e-delivery" });
+        send(res, 200, "account_create", { challenge_id: r.challenge.challenge_id, delivery: r.challenge.delivery, expires_at: r.expires_at, ...fakeCodeOf(r.code) }); return;
+      }
+      await credentials.markEmailVerified(resolved.party.id, at);
+      logger.info("borrower.account.created", { party_id: resolved.party.id, party_created: resolved.created, on_file: false });
+      await openPasswordSession(req, res, resolved.party.id, at, "create"); return;
     }
     if (action === "verify_email") {
       need(b, "challenge_id", "code");

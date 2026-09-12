@@ -15531,7 +15531,7 @@
    },
    {
     "n": 25,
-    "text": "Given e-mail + password on the account screen, then a six-digit code goes to the e-mail, entering it writes `party_credentials.email_verified_at` and opens `sessions{level: L1, auth_method: password}`, and the first assistant message of the session is `entry.disclosure.first`; a wrong code three times leaves no session."
+    "text": "Given e-mail + password on the account screen with an e-mail on file for no one, then no code is sent, `party_credentials.email_verified_at` is set and `sessions{level: L1, auth_method: password}` opens at once, and the first assistant message of the session is `entry.disclosure.first`; given an e-mail already on file for a party, then a six-digit code goes to that e-mail first, a wrong code three times leaves no session, and the right code lands in that party."
    },
    {
     "n": 26,

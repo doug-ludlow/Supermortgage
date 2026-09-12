@@ -36,7 +36,9 @@ async function post<T>(body: Record<string, unknown>): Promise<T> {
 }
 
 /** Create: a six-digit code goes to the e-mail. 409 `ACCOUNT_EXISTS` (account.exists) · 400 `PASSWORD_WEAK` (account.password_weak). */
-export const accountCreate = (email: string, password: string) => post<AccountChallenge>({ action: "create", email, password });
+/** A new e-mail answers the session at once; an e-mail already on file for someone's record answers a code challenge first (docs/ux/17 §2.0). */
+export const accountCreate = (email: string, password: string) => post<AccountSession | AccountChallenge>({ action: "create", email, password });
+export const isChallenge = (r: AccountSession | AccountChallenge): r is AccountChallenge => "challenge_id" in r;
 /** The code verifies the e-mail and opens the L1 session. 401 `OTP_INVALID` / `OTP_EXPIRED` · 429 `OTP_TOO_MANY_ATTEMPTS`. */
 export const accountVerifyEmail = (challenge_id: string, code: string) => post<AccountSession>({ action: "verify_email", challenge_id, code });
 /** 401 `PASSWORD_WRONG` · 423 `ACCOUNT_LOCKED` · 403 `EMAIL_UNVERIFIED` (+ `challenge_id`, `fake_code?`). */

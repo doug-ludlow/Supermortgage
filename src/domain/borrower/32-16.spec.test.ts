@@ -14,6 +14,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
+import { toJson } from "../../infra/db/client.ts";
 import { connect, reachable, type Db } from "../../infra/db/client.ts";
 import { acquireJourneyLock, type TestLock } from "../../infra/db/test-lock.ts";
 import { loadOverriddenRegistry } from "../timer-overrides.ts";
@@ -73,10 +74,9 @@ async function api(method: string, path: string, body?: unknown, headers: Record
 const bearer = (token: string): Record<string, string> => ({ authorization: `Bearer ${token}` });
 const account = (body: Json, ip?: string): Promise<Reply> => api("POST", "/v1/borrower/auth/account", body, {}, ip);
 const settle = () => router.flows!.settle();
-/** Create + verify: the whole front door for a new e-mail, back to the session body. */
+/** Create: the whole front door for an e-mail on file for no one — no code, the session body at once (docs/ux/17 §2.0). */
 async function signUp(email: string, password: string, ip?: string): Promise<{ token: string; party_id: string; session_id: string; body: Json }> {
-  const c = await account({ action: "create", email, password }, ip); assert.equal(c.status, 200, JSON.stringify(c.body));
-  const v = await account({ action: "verify_email", challenge_id: c.body["challenge_id"], code: c.body["fake_code"] }, ip); assert.equal(v.status, 200, JSON.stringify(v.body));
+  const v = await account({ action: "create", email, password }, ip); assert.equal(v.status, 200, JSON.stringify(v.body)); assert.ok(v.body["token"], `a session, not a code: ${JSON.stringify(v.body)}`);
   await settle();
   return { token: v.body["token"] as string, party_id: (v.body["party"] as Json)["party_id"] as string, session_id: (v.body["session"] as Json)["session_id"] as string, body: v.body };
 }
@@ -137,54 +137,65 @@ test("32.16-T21: Given the cooperative refinance persona under `INTEGRATIONS=fak
 test("32.16-T22: Given the hostile persona, then no gated SAFE class is sent, `human.request` runs within one turn of a distress classification, and the evidence check passes.", { todo: true });
 test("32.16-T23: Given an `ai_system_versions` row without a passing `eval_run_id`, then selecting it for `borrower-conversation` is refused.", { todo: true });
 test("32.16-T24: Given two days of `ai_monitoring_metrics` with transfers per session outside the 18.1 band, then the kill switch trips and 32.16-T10's behaviour follows.", { todo: true });
-test("32.16-T25: Given e-mail + password on the account screen, then a six-digit code goes to the e-mail, entering it writes `party_credentials.email_verified_at` and opens `sessions{level: L1, auth_method: password}`, and the first assistant message of the session is `entry.disclosure.first`; a wrong code three times leaves no session.", { skip }, async () => {
+test("32.16-T25: Given e-mail + password on the account screen with an e-mail on file for no one, then no code is sent, `party_credentials.email_verified_at` is set and `sessions{level: L1, auth_method: password}` opens at once, and the first assistant message of the session is `entry.disclosure.first`; given an e-mail already on file for a party, then a six-digit code goes to that e-mail first, a wrong code three times leaves no session, and the right code lands in that party.", { skip }, async () => {
   const IP = "10.25.0.1"; const email = `t25-${R}@example.test`; const password = `correct-horse-${R}`;
   // the only form: e-mail + password — fewer than eight characters is refused before anything is written; the e-mail is stored lowercased
   const weak = await account({ action: "create", email: email.toUpperCase(), password: "short" }, IP); assert.equal(weak.status, 400, JSON.stringify(weak.body)); assert.equal(weak.body["code"], "PASSWORD_WEAK"); assert.equal(weak.body["copy_key"], "account.password_weak");
   assert.equal(await credentialsOf(email), undefined, "nothing written");
-  const created = await account({ action: "create", email: email.toUpperCase(), password }, IP);
+  // (i) an e-mail on file for no one: no code — the session opens at once, the same body a code answers (token, level, session, party)
+  const created = await account({ action: "create", email: email.toUpperCase(), password }, IP); await settle();
   assert.equal(created.status, 200, JSON.stringify(created.body));
-  assert.deepEqual(Object.keys(created.body).sort(), ["challenge_id", "delivery", "expires_at", "fake_code"]); assert.equal(created.body["delivery"], "FAKE");
-  assert.match(String(created.body["fake_code"]), /^\d{6}$/, "a six-digit code"); assert.equal(created.body["expires_at"], new Date(Date.parse(NOW) + OTP_MINUTES * 60_000).toISOString());
-  // the code went to the e-mail on the OTP code path: an auth_challenges{kind: email_verify, channel: email} row carrying only the code's hash, and the FAKE e-delivery adapter's message to that address
-  const challengeId = created.body["challenge_id"] as string; const ch = (await challengeOf(challengeId))!;
-  assert.equal(ch.kind, "email_verify"); assert.equal(ch.channel, "email"); assert.equal(ch.destination, email); assert.equal(ch.consumed_at, null); assert.equal(ch.delivery, "FAKE"); assert.match(ch.code_hash ?? "", /^[0-9a-f]{64}$/);
-  const sent = edelivery().messages.get(`email_verify:${challengeId}`); assert.ok(sent, "the e-delivery adapter carried the code"); assert.equal(sent.message.to, email); assert.equal(sent.message.channel, "email"); assert.equal(sent.status, "sent");
-  // the account row: the e-mail lowercased, the password as a salted scrypt hash (never the password), unverified; the party exists but has no session
-  const cred0 = (await credentialsOf(email))!; assert.equal(cred0.email, email); assert.equal(cred0.email_verified_at, null); assert.match(cred0.password_hash, /^scrypt\$32768\$8\$1\$[A-Za-z0-9_-]{43}\$[A-Za-z0-9_-]{43}$/); assert.ok(!cred0.password_hash.includes(password));
-  assert.equal(ch.party_id, cred0.party_id); assert.equal(await partiesWithEmail(email), 1); assert.deepEqual(await sessionsOf(cred0.party_id), []);
+  assert.deepEqual(Object.keys(created.body).sort(), ["level", "party", "session", "token"]);
+  const session = created.body["session"] as Json; const party = created.body["party"] as Json;
+  assert.equal(created.body["level"], "L1"); assert.equal(session["level"], "L1"); assert.equal(session["auth_method"], "password"); assert.equal(session["last_l1_at"], null); assert.equal(session["fresh_l1"], false);
+  // the account row: the e-mail lowercased and its own (verified on creation), the password as a salted scrypt hash (never the password); one party; no code row, nothing delivered
+  const cred0 = (await credentialsOf(email))!; assert.equal(cred0.email, email); assert.equal(cred0.email_verified_at, NOW); assert.match(cred0.password_hash, /^scrypt\$32768\$8\$1\$[A-Za-z0-9_-]{43}\$[A-Za-z0-9_-]{43}$/); assert.ok(!cred0.password_hash.includes(password));
+  assert.equal(party["party_id"], cred0.party_id); assert.equal(await partiesWithEmail(email), 1);
+  assert.deepEqual(await challengesOf("email_verify", cred0.party_id), [], "no code for an e-mail on file for no one");
+  const rows = await sessionsOf(cred0.party_id); assert.equal(rows.length, 1); assert.deepEqual(rows[0], { session_id: session["session_id"], level: "L1", auth_method: "password", last_l1_at: null });
+  assert.equal((await me(created.body["token"] as string))["level"], "L1");
+  // the thread: the disclosure is the first assistant message of the session (32.3 E2), the goal card follows on the party's organic application (32.16 §8 Phase 0)
+  const t = await thread(created.body["token"] as string);
+  assertDisclosureThenGoal(t);
+  const apps = await applicationsOf(cred0.party_id); assert.equal(apps.length, 1); assert.equal(apps[0]!.channel, "organic");
+  const subjects = (await me(created.body["token"] as string))["subjects"] as Json[]; assert.equal(subjects.length, 1); assert.equal(subjects[0]!["application_id"], apps[0]!.id); assert.equal(subjects[0]!["stage"], "origination");
   const dup = await account({ action: "create", email, password: "another-password" }, IP); assert.equal(dup.status, 409); assert.equal(dup.body["code"], "ACCOUNT_EXISTS"); assert.equal(dup.body["copy_key"], "account.exists");
+  // (ii) an e-mail already on file for a party: the account would land in that record, so a six-digit code proves the e-mail first — no session until it does
+  const onFile = `t25-onfile-${R}@example.test`;
+  const onFileParty = (await db.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, contact) VALUES ('borrower', 'Riley On File', $1::jsonb) RETURNING id`, [toJson({ email: onFile })]))[0]!.id;
+  const claim = await account({ action: "create", email: onFile, password }, IP);
+  assert.equal(claim.status, 200, JSON.stringify(claim.body));
+  assert.deepEqual(Object.keys(claim.body).sort(), ["challenge_id", "delivery", "expires_at", "fake_code"]); assert.equal(claim.body["delivery"], "FAKE");
+  assert.match(String(claim.body["fake_code"]), /^\d{6}$/, "a six-digit code"); assert.equal(claim.body["expires_at"], new Date(Date.parse(NOW) + OTP_MINUTES * 60_000).toISOString());
+  // the code went to the e-mail on the OTP code path: an auth_challenges{kind: email_verify, channel: email} row carrying only the code's hash, and the FAKE e-delivery adapter's message to that address
+  const challengeId = claim.body["challenge_id"] as string; const ch = (await challengeOf(challengeId))!;
+  assert.equal(ch.kind, "email_verify"); assert.equal(ch.channel, "email"); assert.equal(ch.destination, onFile); assert.equal(ch.consumed_at, null); assert.equal(ch.delivery, "FAKE"); assert.match(ch.code_hash ?? "", /^[0-9a-f]{64}$/);
+  const sent = edelivery().messages.get(`email_verify:${challengeId}`); assert.ok(sent, "the e-delivery adapter carried the code"); assert.equal(sent.message.to, onFile); assert.equal(sent.message.channel, "email"); assert.equal(sent.status, "sent");
+  const claimed = (await credentialsOf(onFile))!; assert.equal(claimed.party_id, onFileParty, "the claim is on the party on file, not a new one"); assert.equal(claimed.email_verified_at, null); assert.equal(ch.party_id, onFileParty);
+  assert.equal(await partiesWithEmail(onFile), 1, "no new party"); assert.deepEqual(await sessionsOf(onFileParty), [], "no session before the code");
   // a wrong code three times: OTP_INVALID each time, the challenge stays open (attempts counted), and no session exists
   for (let k = 0; k < 3; k += 1) {
-    const wrong = await account({ action: "verify_email", challenge_id: challengeId, code: String(999_000 + k).padStart(6, "0") === created.body["fake_code"] ? "000001" : String(999_000 + k) }, IP);
+    const wrong = await account({ action: "verify_email", challenge_id: challengeId, code: String(999_000 + k).padStart(6, "0") === claim.body["fake_code"] ? "000001" : String(999_000 + k) }, IP);
     assert.equal(wrong.status, 401, JSON.stringify(wrong.body)); assert.equal(wrong.body["code"], "OTP_INVALID"); assert.equal(wrong.body["copy_key"], "auth.code_wrong"); assert.deepEqual(Object.keys(wrong.body).sort(), ["code", "copy_key"]);
   }
   assert.equal((await challengeOf(challengeId))!.attempts, 3); assert.equal((await challengeOf(challengeId))!.consumed_at, null);
-  assert.deepEqual(await sessionsOf(cred0.party_id), [], "no session after three wrong codes"); assert.equal((await credentialsOf(email))!.email_verified_at, null);
-  // a sign-in with the right password on the unverified e-mail: refused (EMAIL_UNVERIFIED) with a fresh code — the way back in
-  const unverified = await account({ action: "sign_in", email, password }, IP);
+  assert.deepEqual(await sessionsOf(onFileParty), [], "no session after three wrong codes"); assert.equal((await credentialsOf(onFile))!.email_verified_at, null);
+  // the right password on the unproven claim: refused (EMAIL_UNVERIFIED) with a fresh code — the way in is the inbox, never the password alone
+  const unverified = await account({ action: "sign_in", email: onFile, password }, IP);
   assert.equal(unverified.status, 403, JSON.stringify(unverified.body)); assert.equal(unverified.body["code"], "EMAIL_UNVERIFIED"); assert.equal(unverified.body["copy_key"], "auth.email_unverified");
   assert.deepEqual(Object.keys(unverified.body).sort(), ["challenge_id", "code", "copy_key", "fake_code"]); assert.notEqual(unverified.body["challenge_id"], challengeId, "a fresh challenge");
-  assert.deepEqual(await sessionsOf(cred0.party_id), []);
-  // the right code: email_verified_at written, an L1 session with auth_method password and NO code on it (last_l1_at null — money still needs a fresh code)
+  assert.deepEqual(await sessionsOf(onFileParty), []);
+  // the right code: email_verified_at written, an L1 password session on the party on file (no code on the session: money still needs a fresh one)
   const verified = await account({ action: "verify_email", challenge_id: unverified.body["challenge_id"], code: unverified.body["fake_code"] }, IP); await settle();
-  assert.equal(verified.status, 200, JSON.stringify(verified.body));
-  assert.deepEqual(Object.keys(verified.body).sort(), ["level", "party", "session", "token"]);
-  const session = verified.body["session"] as Json; const party = verified.body["party"] as Json;
-  assert.equal(verified.body["level"], "L1"); assert.equal(session["level"], "L1"); assert.equal(session["auth_method"], "password"); assert.equal(session["last_l1_at"], null); assert.equal(session["fresh_l1"], false);
-  assert.equal(party["party_id"], cred0.party_id);
-  const cred1 = (await credentialsOf(email))!; assert.equal(cred1.email_verified_at, NOW); assert.equal(cred1.failed_attempts, 0); assert.equal(cred1.locked_until, null);
+  assert.equal(verified.status, 200, JSON.stringify(verified.body)); assert.deepEqual(Object.keys(verified.body).sort(), ["level", "party", "session", "token"]);
+  assert.equal((verified.body["party"] as Json)["party_id"], onFileParty); assert.equal((verified.body["session"] as Json)["auth_method"], "password"); assert.equal((verified.body["session"] as Json)["last_l1_at"], null);
+  const cred1 = (await credentialsOf(onFile))!; assert.equal(cred1.email_verified_at, NOW); assert.equal(cred1.failed_attempts, 0); assert.equal(cred1.locked_until, null);
   assert.ok((await challengeOf(unverified.body["challenge_id"] as string))!.consumed_at, "the code is single use");
-  const rows = await sessionsOf(cred0.party_id); assert.equal(rows.length, 1); assert.deepEqual(rows[0], { session_id: session["session_id"], level: "L1", auth_method: "password", last_l1_at: null });
-  assert.equal((await me(verified.body["token"] as string))["level"], "L1");
-  // the thread: the disclosure is the first assistant message of the session (32.3 E2), the goal card follows on the party's organic application (32.16 §8 Phase 0)
-  const t = await thread(verified.body["token"] as string);
-  assertDisclosureThenGoal(t);
-  const apps = await applicationsOf(cred0.party_id); assert.equal(apps.length, 1); assert.equal(apps[0]!.channel, "organic");
-  const subjects = (await me(verified.body["token"] as string))["subjects"] as Json[]; assert.equal(subjects.length, 1); assert.equal(subjects[0]!["application_id"], apps[0]!.id); assert.equal(subjects[0]!["stage"], "origination");
+  assert.equal((await sessionsOf(onFileParty)).length, 1);
+  assertDisclosureThenGoal(await thread(verified.body["token"] as string));
   // the spent code and the wrong-code challenge are both dead: a replay opens nothing
   const replay = await account({ action: "verify_email", challenge_id: unverified.body["challenge_id"], code: unverified.body["fake_code"] }, IP); assert.equal(replay.status, 401); assert.equal(replay.body["code"], "OTP_INVALID");
-  assert.equal((await sessionsOf(cred0.party_id)).length, 1);
+  assert.equal((await sessionsOf(onFileParty)).length, 1);
 });
 test("32.16-T26: Given Continue with Google with `email_verified = true`, then a session opens with `auth_method: oidc_google` keyed on `sub`; with `email_verified = false` the sign-in is refused (`OIDC_EMAIL_UNVERIFIED`); a Google e-mail already on file lands in that party's thread.", { skip }, async () => {
   // (i) a verified Google e-mail nobody has: the session is L1 with auth_method oidc_google, keyed on the provider's sub (oidc_identities), no code on the session; the thread says the disclosure and asks the goal

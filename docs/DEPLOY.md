@@ -437,7 +437,8 @@ is cached across turns.
 ## The account is the front door (32.16 Phase 0)
 
 `https://demo.supermortgage.com/app` opens on the sign-in screen; `/app/sign-up` creates an account
-(e-mail + password → a six-digit code to the e-mail → an L1 session), `/app/reset` resets a password.
+(e-mail + password → an L1 session at once; a six-digit code first only when the e-mail is already on file for
+someone's record), `/app/reset` resets a password.
 Continue with Google is on both screens (the FAKE provider under `INTEGRATIONS=fake`; the real one once the
 OAuth client exists, "Sign in with Google" above). The anonymous minute of 32.14 is no longer rendered
 (docs/ux/17 §0.4); its API routes remain. The automation disclosure on the account screen names the partner

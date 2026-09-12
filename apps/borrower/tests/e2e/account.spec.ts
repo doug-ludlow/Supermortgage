@@ -2,8 +2,8 @@
  * 32.16 §2.0 (DELTA-29) e2e over the fixtures build at 1280 and 390 px: the account routes (/app/sign-up, /app/sign-in,
  * /app/reset) with `page.route` canned answers for `POST /v1/borrower/auth/account` (no API; the proxy would turn `token`
  * into the HttpOnly cookie). What is asserted is what the borrower sees: the disclosure line first on the sign-up, e-mail +
- * password + Google and nothing else (no code chooser, no passkey), create → the code step with the FAKE code → /app with the
- * thread; the sign-in refusals by copy key (auth.password_wrong, auth.account_locked, account.exists), EMAIL_UNVERIFIED →
+ * password + Google and nothing else (no code chooser, no passkey), create → /app with the thread at once (no code); an e-mail
+ * already on file for someone's record → the code step with the FAKE code → /app; the sign-in refusals by copy key (auth.password_wrong, auth.account_locked, account.exists), EMAIL_UNVERIFIED →
  * the code step; the reset to account.reset.done; axe AA on each screen.
  */
 import { expect, test, type Page, type Route } from "@playwright/test";
@@ -21,8 +21,9 @@ type Call = { path: string; body: Record<string, unknown> };
 
 /**
  * Canned account API: `taken@example.com` exists (verified, password PASSWORD); `locked@example.com` is locked;
- * `unverified@example.com` signs in to EMAIL_UNVERIFIED with a fresh code; any other e-mail can be created. A verified code
- * or a password sign-in flips `state.signedIn`, after which /me and /thread answer.
+ * `unverified@example.com` signs in to EMAIL_UNVERIFIED with a fresh code; `onfile@example.com` is on file for someone's record
+ * so create answers a challenge; any other e-mail is created and signed in at once. A created account, a verified code or a
+ * password sign-in flips `state.signedIn`, after which /me and /thread answer.
  */
 async function cannedApi(page: Page, state: { signedIn: boolean }): Promise<Call[]> {
   const calls: Call[] = [];
@@ -45,7 +46,9 @@ async function cannedApi(page: Page, state: { signedIn: boolean }): Promise<Call
         case "create":
           if (email === "taken@example.com") return json(route, 409, { code: "ACCOUNT_EXISTS", copy_key: "account.exists" });
           if (password.length < 8) return json(route, 400, { code: "PASSWORD_WEAK", copy_key: "account.password_weak" });
-          return json(route, 200, { challenge_id: "ch-create", delivery: "FAKE", expires_at: "2027-01-01T00:00:00.000Z", fake_code: CODE });
+          if (email === "onfile@example.com") return json(route, 200, { challenge_id: "ch-create", delivery: "FAKE", expires_at: "2027-01-01T00:00:00.000Z", fake_code: CODE });
+          state.signedIn = true;
+          return json(route, 200, SESSION);
         case "verify_email":
           if (body.code !== CODE) return json(route, 401, { code: "OTP_INVALID", copy_key: "auth.code_wrong" });
           state.signedIn = true;
@@ -77,7 +80,7 @@ async function axeClean(page: Page) {
 }
 
 test.describe("32.16 §2.0 — create an account", () => {
-  test("the disclosure line first, then e-mail + password + Google and nothing else; create → the code step with the FAKE code → /app with the thread; axe on both screens", async ({ page }) => {
+  test("the disclosure line first, then e-mail + password + Google and nothing else; create → /app with the thread at once, no code; axe", async ({ page }) => {
     const calls = await cannedApi(page, { signedIn: false });
     await page.goto("/app/sign-up");
     const form = page.locator("#otp");
@@ -97,8 +100,23 @@ test.describe("32.16 §2.0 — create an account", () => {
     await form.getByLabel(copy("account.email.field")).fill("maya@example.com");
     await form.getByLabel(copy("account.password.field")).fill(PASSWORD);
     await form.getByRole("button", { name: copy("account.create.button") }).click();
+    await page.waitForURL(/\/app\/?$/);
+    await expect(page.getByTestId("thread")).toBeVisible(); // the fixtures build lands on the recorded thread; the disclosure as the session's first message is the API's fact (32.16-T25)
+    await expect(page.getByTestId("action-bar")).toBeVisible();
+    expect(calls.find((c) => c.path === "v1/borrower/auth/account" && c.body.action === "create")!.body).toMatchObject({ email: "maya@example.com", password: PASSWORD });
+    expect(calls.filter((c) => c.path === "v1/borrower/auth/account").map((c) => c.body.action)).toEqual(["create"]); // no verify_email: the session opened on create
+  });
+
+  test("an e-mail already on file for someone's record → the code step (account.on_file, the FAKE code) → /app with the thread; axe", async ({ page }) => {
+    const calls = await cannedApi(page, { signedIn: false });
+    await page.goto("/app/sign-up");
+    const form = page.locator("#otp");
+    await form.getByLabel(copy("account.email.field")).fill("onfile@example.com");
+    await form.getByLabel(copy("account.password.field")).fill(PASSWORD);
+    await form.getByRole("button", { name: copy("account.create.button") }).click();
     await expect(form.getByTestId("account-title")).toHaveText(copy("account.verify.title"));
-    const code = form.getByLabel(copy("auth.code.enter", { destination: "maya@example.com" }));
+    await expect(form.getByTestId("account-on-file")).toHaveText(copy("account.on_file"));
+    const code = form.getByLabel(copy("auth.code.enter", { destination: "onfile@example.com" }));
     await expect(code).toBeVisible();
     await expect(form.getByTestId("fake-code")).toContainText(CODE);
     await expect(form.getByTestId("account-disclosure")).toHaveCount(0);
@@ -109,9 +127,7 @@ test.describe("32.16 §2.0 — create an account", () => {
     await code.fill(CODE);
     await form.getByRole("button", { name: continueLabel }).click();
     await page.waitForURL(/\/app\/?$/);
-    await expect(page.getByTestId("thread")).toBeVisible(); // the fixtures build lands on the recorded thread; the disclosure as the session's first message is the API's fact (32.16-T25)
-    await expect(page.getByTestId("action-bar")).toBeVisible();
-    expect(calls.find((c) => c.path === "v1/borrower/auth/account" && c.body.action === "create")!.body).toMatchObject({ email: "maya@example.com", password: PASSWORD });
+    await expect(page.getByTestId("thread")).toBeVisible();
     expect(calls.find((c) => c.path === "v1/borrower/auth/account" && c.body.action === "verify_email")!.body).toMatchObject({ challenge_id: "ch-create" });
   });
 

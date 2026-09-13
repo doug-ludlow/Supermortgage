@@ -673,6 +673,8 @@ The rail and the thread (32.16 §2.1–2.2, DELTA-26). The rail's section names,
 
 - `video.title` — heading — "Talk with Michelle" — *32.17 §2.2 / rule 9: /app/video — the call pane in the thread's place, the rail beside it; no composer, no microphone control of Supermortgage's own, no "Talk to a person".*
 - `video.starting` — line — "Starting your video call. Your camera and microphone are asked for first — nothing is recorded." — *32.17 rule 5: recording off; the camera is for presence only (open question 2).*
+- `video.joining` — line — "Joining the call…" — *32.17 rule 15: the room is being joined through the vendor's client; the stage is never blank without a word on it.*
+- `video.replica_joining` — line — "Michelle is joining…" — *32.17 rule 15: in the room, the replica's video not yet playing; the borrower's own camera is already in the picture-in-picture.*
 - `video.permission_denied` — line — "Without a camera or microphone we can still start the call; you can allow them in the call itself, or continue in the conversation." — *32.17: a refused permission never blocks the call; the thread at /app is always there.*
 - `video.unavailable` — line — "The video agent isn't available right now. Nothing is lost — you can continue in the conversation." — *32.17 edge cases: the vendor is down at open (video_sessions.status = failed, end_reason = vendor_unavailable); the page offers /app in these words, never a raw error.*
 - `video.continue_in_thread` — button — "Continue in the conversation" — *32.17: → /app.*

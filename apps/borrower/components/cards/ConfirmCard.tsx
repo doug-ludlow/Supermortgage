@@ -27,7 +27,9 @@ export function ConfirmCard({ card, timezone, onResolve, busy, error }: CardComp
   const helper = card.props.helper_copy_key ? copy(card.props.helper_copy_key, card.props.copy_tokens) : undefined;
   const options = card.props.options;
   const [editing, setEditing] = useState(false);
-  const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(fields.map((f) => [f.path, f.value])));
+  // 32.16 §3.4 / 32.17 rule 16: a proposal (what the call heard) fills the fields it names; Confirm here sends those values, so one Confirm is enough
+  const proposal = (card.props as { proposal?: { fields?: { path: string; value: string }[] } }).proposal;
+  const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(fields.map((f) => [f.path, proposal?.fields?.find((x) => x.path === f.path)?.value ?? f.value])));
   const pending = card.status === "pending";
 
   const confirm = () => {

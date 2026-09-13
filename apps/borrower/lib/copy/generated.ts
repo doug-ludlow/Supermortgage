@@ -635,6 +635,8 @@ export const COPY = {
   "disclosures.licenses.pending": { key: "disclosures.licenses.pending", kind: "line", text: "License details appear here as they are added.", notes: "32.16 §1 principle 8: the placeholder until the partner's licenses are configured.", extras: [], section: "The conversational product (32.16)" },
   "video.title": { key: "video.title", kind: "heading", text: "Talk with Michelle", extras: ["*32.17 §2.2 / rule 9: /app/video", "the call pane in the thread's place, the rail beside it; no composer, no microphone control of Supermortgage's own, no \"Talk to a person\".*"], section: "The video agent (32.17)" },
   "video.starting": { key: "video.starting", kind: "line", text: "Starting your video call. Your camera and microphone are asked for first — nothing is recorded.", notes: "32.17 rule 5: recording off; the camera is for presence only (open question 2).", extras: [], section: "The video agent (32.17)" },
+  "video.joining": { key: "video.joining", kind: "line", text: "Joining the call…", notes: "32.17 rule 15: the room is being joined through the vendor's client; the stage is never blank without a word on it.", extras: [], section: "The video agent (32.17)" },
+  "video.replica_joining": { key: "video.replica_joining", kind: "line", text: "Michelle is joining…", notes: "32.17 rule 15: in the room, the replica's video not yet playing; the borrower's own camera is already in the picture-in-picture.", extras: [], section: "The video agent (32.17)" },
   "video.permission_denied": { key: "video.permission_denied", kind: "line", text: "Without a camera or microphone we can still start the call; you can allow them in the call itself, or continue in the conversation.", notes: "32.17: a refused permission never blocks the call; the thread at /app is always there.", extras: [], section: "The video agent (32.17)" },
   "video.unavailable": { key: "video.unavailable", kind: "line", text: "The video agent isn't available right now. Nothing is lost — you can continue in the conversation.", notes: "32.17 edge cases: the vendor is down at open (video_sessions.status = failed, end_reason = vendor_unavailable); the page offers /app in these words, never a raw error.", extras: [], section: "The video agent (32.17)" },
   "video.continue_in_thread": { key: "video.continue_in_thread", kind: "button", text: "Continue in the conversation", notes: "32.17: → /app.", extras: [], section: "The video agent (32.17)" },
@@ -654,4 +656,4 @@ export const COPY = {
 } as const satisfies Record<string, CopyEntry>;
 
 export type CopyKey = keyof typeof COPY;
-export const COPY_KEY_COUNT = 639;
+export const COPY_KEY_COUNT = 641;

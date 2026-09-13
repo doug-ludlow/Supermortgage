@@ -192,13 +192,15 @@ export function createVideoRoutes(deps: VideoRoutesDeps): VideoRoutes {
     const conv = await ui.conversationFor(ctx.party.id); const subject = ctx.subjects[0] ?? null; const partner = await deps.partnerFor(ctx);
     // the greeting: the guarded first turn (32.16 §2.0) on a new account, else a fresh "the borrower is back" turn (32.16 §2.0 returning) so the replica opens with where things stand — never the first greeting replayed; the disclosure line speaks first (20.3; Utah §13-2-12; Cal. §17941)
     await agent?.settle();
-    const before = await newestTurnReply(conv.conversation_id);
+    const before = await newestTurnReply(conv.conversation_id); const turnStarted = Date.now();
     if (agent && (!before.reply || before.returning)) { await deps.firstTurn(req, { session: ctx.session, party: ctx.party, token: ctx.token }, at); await agent.settle(); await deps.flows.settle(); }
+    const first_turn_ms = Date.now() - turnStarted;
     const first = (await newestTurnReply(conv.conversation_id)).reply;
     const tokens = tokensFor(ctx, partner, (first?.copy_tokens as P | null) ?? null);
     const greeting = [copyText("entry.disclosure.first", tokens), first ? renderSpoken(first.body_text, tokens) : ""].filter(Boolean).join(" ").trim();
     // the per-session bearer (rule 6): 32 random bytes, base64url, in the persona's base_url; the row keeps its sha-256
     const token = randomBytes(32).toString("base64url"); const origin = publicOrigin(req); const video_session_id = randomUUID();
+    const vendorStarted = Date.now();
     const r = await execute("video.open", { subject_application_id: subject?.application_id ?? null, subject_loan_id: subject?.loan_id ?? null }, {
       video_session_id, party_id: ctx.party.id, session_id: ctx.session.session_id, conversation_id: conv.conversation_id, subject: { application_id: subject?.application_id ?? null, loan_id: subject?.loan_id ?? null },
       token, token_hash: sha256(token), base_url: `${origin}/v1/video/llm/${token}`, callback_url: `${origin}/v1/video/tavus/callback/${callbackSecret}`, greeting, first_name: tokens["party.first_name"], partner_name: partner.legal_name, ...(deps.replicaId ? { replica_id: deps.replicaId } : {}),
@@ -206,7 +208,7 @@ export function createVideoRoutes(deps: VideoRoutesDeps): VideoRoutes {
     const row = await currentVideoSession(runtime.db, video_session_id);
     if (!row) throw new BorrowerError(500, "INTERNAL", undefined, "video.open wrote no row");
     notify(row, row.status === "failed" ? "video.session.failed" : "video.session.opened", at);
-    logger.info("borrower.video.opened", { video_session_id, party_id: ctx.party.id, vendor: row.vendor, status: row.status, events: r.events.map((e) => e.type), greeting_chars: greeting.length });
+    logger.info("borrower.video.opened", { video_session_id, party_id: ctx.party.id, vendor: row.vendor, status: row.status, events: r.events.map((e) => e.type), greeting_chars: greeting.length, opened_account, first_turn_ms, vendor_ms: Date.now() - vendorStarted, total_ms: Date.now() - Date.parse(at) });
     send(res, row.status === "failed" ? 503 : 201, "video_session", view(row, { greeting, opened_account, ...(sessionToken ? { token: sessionToken, level: ctx.session.level, party: { party_id: ctx.party.id, first_name: tokens["party.first_name"] } } : {}) }));
   }
   async function status(req: IncomingMessage, res: ServerResponse, id: string): Promise<void> {

@@ -24,7 +24,13 @@ type CallLike = {
   localVideo(): boolean;
 };
 
-export type LiveCallProps = { join: JoinOptions; onLeft: (reason: "borrower_left" | "vendor_ended" | "error") => void; onJoined?: () => void };
+export type LiveCallProps = {
+  join: JoinOptions;
+  /** The borrower's own camera from the permission step: in the picture-in-picture from the first frame, until the room's own local track plays. */
+  preview?: MediaStream | null | undefined;
+  onLeft: (reason: "borrower_left" | "vendor_ended" | "error") => void;
+  onJoined?: () => void;
+};
 
 function attach(el: HTMLVideoElement | HTMLAudioElement | null, track: Track): void {
   if (!el) return;
@@ -35,23 +41,26 @@ function attach(el: HTMLVideoElement | HTMLAudioElement | null, track: Track): v
   void el.play().catch(() => undefined);
 }
 
-export function LiveCall({ join, onLeft, onJoined }: LiveCallProps) {
+export function LiveCall({ join, preview, onLeft, onJoined }: LiveCallProps) {
   const remoteVideo = useRef<HTMLVideoElement>(null); const remoteAudio = useRef<HTMLAudioElement>(null); const selfVideo = useRef<HTMLVideoElement>(null);
   const call = useRef<CallLike | null>(null);
   const [state, setState] = useState<"joining" | "in" | "left">("joining");
   const [mic, setMic] = useState(true); const [cam, setCam] = useState(!join.startVideoOff);
   const [replicaIn, setReplicaIn] = useState(false);
+  const [replicaVideo, setReplicaVideo] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const syncTracks = useCallback(() => {
     const c = call.current; if (!c) return;
     const ps = Object.values(c.participants());
     const local = ps.find((p) => p.local); const remote = ps.find((p) => !p.local);
-    attach(selfVideo.current, local?.tracks?.video?.state === "playable" ? local.tracks.video.persistentTrack ?? null : null);
+    attach(selfVideo.current, local?.tracks?.video?.state === "playable" ? local.tracks.video.persistentTrack ?? null : preview?.getVideoTracks()[0] ?? null);
     attach(remoteVideo.current, remote?.tracks?.video?.state === "playable" ? remote.tracks.video.persistentTrack ?? null : null);
     attach(remoteAudio.current, remote?.tracks?.audio?.state === "playable" ? remote.tracks.audio.persistentTrack ?? null : null);
-    setReplicaIn(!!remote);
-  }, []);
+    setReplicaIn(!!remote); setReplicaVideo(remote?.tracks?.video?.state === "playable");
+  }, [preview]);
+  // the self-view before the room's own track: the permission step's camera, from the first frame (32.17 rule 15)
+  useEffect(() => { if (!call.current) attach(selfVideo.current, preview?.getVideoTracks()[0] ?? null); }, [preview]);
 
   useEffect(() => {
     let cancelled = false; let c: CallLike | null = null;
@@ -82,7 +91,7 @@ export function LiveCall({ join, onLeft, onJoined }: LiveCallProps) {
       <div className="sm-video-pip" data-testid="video-pip" aria-label="Your camera">
         <video ref={selfVideo} autoPlay playsInline muted />
       </div>
-      {state === "joining" ? <p className="sm-video-overlay sm-muted" data-testid="video-status">{copy("video.starting")}</p> : null}
+      {state === "joining" ? <p className="sm-video-overlay sm-muted" data-testid="video-status">{copy("video.joining")}</p> : state === "in" && !replicaVideo ? <p className="sm-video-overlay sm-muted" data-testid="video-status">{copy("video.replica_joining")}</p> : null}
       {error ? <p className="sm-video-overlay sm-error" role="alert">{error}</p> : null}
       <div className="sm-video-controls" data-testid="video-controls">
         <button type="button" className="sm-btn" onClick={toggleMic} aria-pressed={!mic} data-testid="video-mic">{mic ? copy("video.mute") : copy("video.unmute")}</button>

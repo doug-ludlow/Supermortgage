@@ -50,7 +50,7 @@ import { BorrowerStreamHub } from "./stream.ts";
 import { BorrowerCommands } from "./commands.ts";
 import { BorrowerOidc } from "./oidc.ts";
 import { createTalkRoutes, TALK_PATH, type TalkOptions, type TalkRoutes } from "./talk.ts";
-import { AnthropicLlm, type LlmEffort } from "./agent/llm.ts";
+import { AnthropicLlm, type LlmEffort, type LlmSpeed } from "./agent/llm.ts";
 import { AgentTurnRunner } from "./agent/turn.ts";
 import type Anthropic from "@anthropic-ai/sdk";
 import { createBorrowerChannels, type BorrowerChannels } from "./channels.ts";
@@ -109,7 +109,7 @@ export interface BorrowerRouter {
   /** 32.16 DELTA-23: the agent turn runner, or null when no model is configured (the placeholder reply stands). */
   readonly agent: AgentTurnRunner | null;
 }
-export interface LlmOptions { readonly apiKey?: string | undefined; readonly model?: string | undefined; readonly effort?: LlmEffort | undefined; readonly promptVersion?: string | undefined; readonly client?: Anthropic | undefined }
+export interface LlmOptions { readonly apiKey?: string | undefined; readonly model?: string | undefined; readonly effort?: LlmEffort | undefined; readonly speed?: LlmSpeed | undefined; readonly promptVersion?: string | undefined; readonly client?: Anthropic | undefined }
 
 const MAX_BODY = 32 * 1024 * 1024;
 export const DOCUMENT_URL_MINUTES = 5;
@@ -197,7 +197,7 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
   const llmKey = (opts.llm?.apiKey ?? process.env["ANTHROPIC_API_KEY"] ?? "").trim();
   const agent: AgentTurnRunner | null = llmKey || opts.llm?.client
     ? new AgentTurnRunner({ runtime, ui, reader, flows, logger, hub, promptVersion: opts.llm?.promptVersion ?? process.env["LLM_PROMPT_VERSION"], partner: (ctx) => partnerFor(ctx),
-        llm: new AnthropicLlm({ apiKey: llmKey, model: opts.llm?.model ?? process.env["LLM_MODEL"] ?? process.env["TALK_MODEL"], effort: opts.llm?.effort ?? (process.env["LLM_EFFORT"] as LlmEffort | undefined), client: opts.llm?.client, logger }) })
+        llm: new AnthropicLlm({ apiKey: llmKey, model: opts.llm?.model ?? process.env["LLM_MODEL"] ?? process.env["TALK_MODEL"], effort: opts.llm?.effort ?? (process.env["LLM_EFFORT"] as LlmEffort | undefined), speed: opts.llm?.speed ?? (process.env["LLM_SPEED"] as LlmSpeed | undefined), client: opts.llm?.client, logger }) })
     : null;
   if (agent) commands.agentTurn = (req) => agent.run(req.ctx.party.id, req);
   else logger.warn("borrower.agent.not_configured", { reason: "ANTHROPIC_API_KEY is unset: the thread answers the copy library's placeholder reply (32.16 DELTA-23)" });

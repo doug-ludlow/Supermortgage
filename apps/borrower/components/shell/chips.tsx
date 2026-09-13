@@ -80,7 +80,7 @@ export function proposalReadback(c: AnyCardInstance, proposal: CardProposal): st
     const money = /(_cents$|income|amount|balance|payment|value|price)/i.test(f.path) && /^-?\d+$/.test(f.value);
     const enumLabel = def?.options?.find((o) => o.id === f.value)?.label;
     const value = enumLabel ?? (money ? formatMoney(f.value) : f.value);
-    parts.push(def?.label ? `${value} ${def.label}` : value);
+    parts.push(!def?.label ? value : /^[a-z]/.test(def.label) ? `${value} ${def.label}` : `${def.label}: ${value}`);
   }
   return parts.join(" · ");
 }

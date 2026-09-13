@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 7763/7775 (99.8%): tids 2111/2122, tables 729/730, timers 2029/2029, notices 306/306, tools 1377/1377, figures 1211/1211; processes at 100%: 180/181",
+ "brief": "spec units built 7774/7783 (99.9%): tids 2121/2129, tables 729/730, timers 2029/2029, notices 306/306, tools 1378/1378, figures 1211/1211; processes at 100%: 180/181",
  "totals": {
   "tids": {
-   "spec": 2122,
-   "built": 2111
+   "spec": 2129,
+   "built": 2121
   },
   "tables": {
    "spec": 730,
@@ -18,16 +18,16 @@
    "built": 306
   },
   "tools": {
-   "spec": 1377,
-   "built": 1377
+   "spec": 1378,
+   "built": 1378
   },
   "figures": {
    "spec": 1211,
    "built": 1211
   },
   "units": {
-   "spec": 7775,
-   "built": 7763
+   "spec": 7783,
+   "built": 7774
   }
  },
  "sections": {
@@ -218,8 +218,8 @@
    "done": 3
   },
   "32": {
-   "spec": 329,
-   "built": 317,
+   "spec": 337,
+   "built": 328,
    "processes": 16,
    "done": 15
   }
@@ -7750,8 +7750,8 @@
    "process": "32.16",
    "title": "The conversational product: an account, then a conversation, with cards only when the rules need one",
    "tids": {
-    "spec": 31,
-    "built": 20,
+    "spec": 32,
+    "built": 24,
     "todo": 8,
     "missing": [
      17,
@@ -7761,10 +7761,7 @@
      21,
      22,
      23,
-     24,
-     29,
-     30,
-     31
+     24
     ]
    },
    "tables": {
@@ -7796,17 +7793,17 @@
     "missing": []
    },
    "units": {
-    "spec": 44,
-    "built": 32
+    "spec": 45,
+    "built": 36
    },
-   "pct": 72.7
+   "pct": 80.0
   },
   {
    "process": "32.17",
    "title": "The video agent: the same conversation, face to face, with the cards on the rail",
    "tids": {
-    "spec": 14,
-    "built": 14,
+    "spec": 20,
+    "built": 20,
     "todo": 0,
     "missing": []
    },
@@ -7827,8 +7824,8 @@
     "missing": []
    },
    "tools": {
-    "spec": 4,
-    "built": 4,
+    "spec": 5,
+    "built": 5,
     "missing": []
    },
    "figures": {
@@ -7837,8 +7834,8 @@
     "missing": []
    },
    "units": {
-    "spec": 19,
-    "built": 19
+    "spec": 26,
+    "built": 26
    },
    "pct": 100.0
   }

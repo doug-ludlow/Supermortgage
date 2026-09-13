@@ -78,6 +78,8 @@ export function VideoShell({ fixturesMode, fixtureName, initialSubject }: VideoS
   const [setAside, setSetAside] = useState<Set<string>>(() => new Set());
   // 32.17 rule 16: the card Michelle asked for herself (card.request → card.sent) is the thing she is talking about — it rises ahead of the record's current ask while it is pending
   const [requestedId, setRequestedId] = useState<string | undefined>();
+  // 32.17 rule 16: under a proposal the confirm chip is the one Confirm on the screen; Edit opens the card beneath it (keyed by the ask's stamp, so a new proposal closes it)
+  const [editingAsk, setEditingAsk] = useState<string | null>(null);
   const beside = useMedia("(min-width: 1024px)");
   const streamRef = useRef<ReturnType<typeof openStream> | null>(null);
   const knownCards = useRef<Set<string>>(new Set());
@@ -209,12 +211,14 @@ export function VideoShell({ fixturesMode, fixtureName, initialSubject }: VideoS
                   {rise === "proposal" && proposalOf(ask) ? (
                     <div className="sm-rail-proposal" data-testid="ask-proposal">
                       <p className="sm-muted sm-rail-proposal-hint">{copy("video.rail_confirm.hint")}</p>
-                      <ConfirmChip card={ask} proposal={proposalOf(ask)!} busy={busyCardId === ask.card_instance_id} error={cardErrors[ask.card_instance_id]} onConfirm={(req) => void resolveCard(ask, req)} onEdit={() => undefined} />
+                      <ConfirmChip card={ask} proposal={proposalOf(ask)!} busy={busyCardId === ask.card_instance_id} error={cardErrors[ask.card_instance_id]} onConfirm={(req) => void resolveCard(ask, req)} onEdit={() => setEditingAsk(askStamp(ask))} />
                     </div>
                   ) : null}
-                  <CardBoundary card={ask}>
-                    <Card card={ask} timezone={timezone} {...cardProps} onResolve={(req) => resolveCard(ask, req)} busy={busyCardId === ask.card_instance_id} error={cardErrors[ask.card_instance_id]} />
-                  </CardBoundary>
+                  {rise !== "proposal" || editingAsk === askStamp(ask) ? (
+                    <CardBoundary card={ask}>
+                      <Card key={askStamp(ask)} card={ask} timezone={timezone} {...cardProps} onResolve={(req) => resolveCard(ask, req)} busy={busyCardId === ask.card_instance_id} error={cardErrors[ask.card_instance_id]} />
+                    </CardBoundary>
+                  ) : null}
                   <div className="sm-ask-overlay-actions">
                     <button type="button" className="sm-btn sm-btn-quiet" data-testid="ask-not-now" onClick={askAside}>{copy("ask.not_now")}</button>
                   </div>

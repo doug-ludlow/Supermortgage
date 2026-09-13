@@ -154,6 +154,12 @@ resource "google_cloud_run_v2_service" "api" {
         name  = "VIDEO_BORROWER_CAMERA"
         value = "on"
       }
+      # 32.16 DELTA-23: the agent turn's inference speed — "fast" opts into the Messages API's
+      # fast mode (the same model, faster output tokens, a higher price, its own rate limit).
+      env {
+        name  = "LLM_SPEED"
+        value = var.llm_speed
+      }
 
       resources {
         limits = {

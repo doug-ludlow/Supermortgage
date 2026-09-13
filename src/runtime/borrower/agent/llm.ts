@@ -13,6 +13,9 @@ import type { Logger } from "../../log.ts";
 type P = Record<string, unknown>;
 export const DEFAULT_LLM_MODEL = "claude-opus-5";
 export type LlmEffort = "low" | "medium" | "high";
+/** Inference speed: `fast` is the Messages API's fast mode (beta `fast-mode-2026-02-01`, `speed: "fast"` — the same model, faster output tokens at a higher price and its own rate limit); `standard` is the default. */
+export type LlmSpeed = "standard" | "fast";
+export const FAST_MODE_BETA = "fast-mode-2026-02-01";
 /** The tool-call budget of a turn (docs/ux/17 §3.7: six tool calls, one regeneration). */
 export const MAX_TOOL_CALLS = 6;
 
@@ -42,18 +45,26 @@ export interface LlmTurnOutput {
   readonly model: string;
 }
 
-export interface AnthropicLlmOptions { readonly apiKey?: string | undefined; readonly model?: string | undefined; readonly effort?: LlmEffort | undefined; /** tests: a scripted client in place of the network */ readonly client?: Anthropic | undefined; readonly logger?: Logger | undefined }
+export interface AnthropicLlmOptions { readonly apiKey?: string | undefined; readonly model?: string | undefined; readonly effort?: LlmEffort | undefined; readonly speed?: LlmSpeed | undefined; /** tests: a scripted client in place of the network */ readonly client?: Anthropic | undefined; readonly logger?: Logger | undefined }
 
 /** Claude on the Messages API: the manual loop (no beta dependency), the system prompt cached as a prefix, tools executed one response at a time. */
 export class AnthropicLlm {
   readonly name = "claude";
   readonly model: string;
   readonly effort: LlmEffort;
+  readonly speed: LlmSpeed;
   private readonly client: Anthropic;
   private readonly logger: Logger | undefined;
   constructor(opts: AnthropicLlmOptions = {}) {
     this.client = opts.client ?? new Anthropic(opts.apiKey ? { apiKey: opts.apiKey } : {});
-    this.model = opts.model || DEFAULT_LLM_MODEL; this.effort = opts.effort ?? "low"; this.logger = opts.logger;
+    this.model = opts.model || DEFAULT_LLM_MODEL; this.effort = opts.effort ?? "low"; this.speed = opts.speed ?? "standard"; this.logger = opts.logger;
+  }
+
+  /** One Messages API request: the stable endpoint, or the beta endpoint with fast mode when `speed = fast` (the response shape the loop reads is the same). */
+  private async create(params: Anthropic.MessageCreateParamsNonStreaming): Promise<Anthropic.Message> {
+    if (this.speed !== "fast") return this.client.messages.create(params);
+    const r = await this.client.beta.messages.create({ ...(params as unknown as Anthropic.Beta.Messages.MessageCreateParamsNonStreaming), speed: "fast", betas: [FAST_MODE_BETA] });
+    return r as unknown as Anthropic.Message;
   }
 
   async turn(input: LlmTurnInput): Promise<LlmTurnOutput> {
@@ -63,7 +74,7 @@ export class AnthropicLlm {
     let usage = { input_tokens: 0, output_tokens: 0 }; let requests = 0; let stop: string | null = null;
     // the loop ends on the first response without a tool call; a hard cap on requests keeps a model that keeps calling after the budget from looping
     for (let i = 0; i <= budget + 1; i++) {
-      const response = await this.client.messages.create({
+      const response = await this.create({
         model: this.model, max_tokens: input.maxTokens ?? 1024,
         output_config: { effort: this.effort },
         system: [{ type: "text", text: input.system, cache_control: { type: "ephemeral" } }],

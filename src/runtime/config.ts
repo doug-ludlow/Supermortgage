@@ -18,8 +18,8 @@ export interface RuntimeConfig {
   readonly googleOauth: { readonly clientId: string; readonly clientSecret: string; readonly redirectUri: string };
   /** Talk (src/runtime/borrower/talk.ts): the conversational entry's model. `apiKey` from Secret Manager `supermortgage-anthropic-api-key` (empty → 503 TALK_NOT_CONFIGURED on that route only); `model` defaults to claude-opus-5. */
   readonly talk: { readonly apiKey: string; readonly model: string; readonly effort: "low" | "medium" | "high" };
-  /** 32.16 DELTA-23: the agent turn's model (src/runtime/borrower/agent). The same `ANTHROPIC_API_KEY`; `LLM_MODEL` (fallback `TALK_MODEL`, default claude-opus-5), `LLM_EFFORT` (default low), `LLM_PROMPT_VERSION` (recorded on every agent_turns row). Empty key → the placeholder reply stands and the server logs it. */
-  readonly llm: { readonly apiKey: string; readonly model: string; readonly effort: "low" | "medium" | "high"; readonly promptVersion: string };
+  /** 32.16 DELTA-23: the agent turn's model (src/runtime/borrower/agent). The same `ANTHROPIC_API_KEY`; `LLM_MODEL` (fallback `TALK_MODEL`, default claude-opus-5), `LLM_EFFORT` (default low), `LLM_SPEED` (standard, or fast for the Messages API's fast mode — an opt-in: a higher price and its own rate limit), `LLM_PROMPT_VERSION` (recorded on every agent_turns row). Empty key → the placeholder reply stands and the server logs it. */
+  readonly llm: { readonly apiKey: string; readonly model: string; readonly effort: "low" | "medium" | "high"; readonly speed: "standard" | "fast"; readonly promptVersion: string };
   /** 32.17: the video agent. `tavusApiKey` from Secret Manager `supermortgage-tavus-api-key` (empty → FakeTavus, the FAKE, in every build stage); `replicaId` (`TAVUS_REPLICA_ID`, empty → the first stock replica the vendor lists); `callbackSecret` (`VIDEO_CALLBACK_SECRET`, the secret path segment of the vendor's callback URL; empty → a random per-process secret, so only the FAKE's in-process callbacks work); `borrowerCamera` (`VIDEO_BORROWER_CAMERA`, on | off — off joins audio-only); `publicApiUrl` (`VIDEO_API_URL`, the public origin the vendor reaches the custom-LLM endpoint and the callback on; empty → the request's own origin); `joinTimeoutS` (`VIDEO_JOIN_TIMEOUT_S`). */
   readonly video: { readonly tavusApiKey: string; readonly replicaId: string; readonly callbackSecret: string; readonly borrowerCamera: "on" | "off"; readonly publicApiUrl: string; readonly joinTimeoutS: number };
 }
@@ -45,7 +45,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RuntimeConfig 
   const talk = { apiKey: secret(env["ANTHROPIC_API_KEY"]), model: (env["TALK_MODEL"] ?? "").trim() || "claude-opus-5", effort: effortIn as "low" | "medium" | "high" };
   const llmEffort = (env["LLM_EFFORT"] ?? "low").trim();
   if (!["low", "medium", "high"].includes(llmEffort)) throw new Error("LLM_EFFORT must be low, medium or high");
-  const llm = { apiKey: talk.apiKey, model: (env["LLM_MODEL"] ?? "").trim() || talk.model, effort: llmEffort as "low" | "medium" | "high", promptVersion: (env["LLM_PROMPT_VERSION"] ?? "").trim() };
+  const llmSpeed = (env["LLM_SPEED"] ?? "standard").trim();
+  if (!["standard", "fast"].includes(llmSpeed)) throw new Error("LLM_SPEED must be standard or fast");
+  const llm = { apiKey: talk.apiKey, model: (env["LLM_MODEL"] ?? "").trim() || talk.model, effort: llmEffort as "low" | "medium" | "high", speed: llmSpeed as "standard" | "fast", promptVersion: (env["LLM_PROMPT_VERSION"] ?? "").trim() };
   const camera = (env["VIDEO_BORROWER_CAMERA"] ?? "on").trim().toLowerCase();
   if (camera !== "on" && camera !== "off") throw new Error("VIDEO_BORROWER_CAMERA must be on or off");
   const joinTimeoutS = Number((env["VIDEO_JOIN_TIMEOUT_S"] ?? "120").trim());

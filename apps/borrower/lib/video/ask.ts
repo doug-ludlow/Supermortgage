@@ -12,12 +12,26 @@ export type RiseReason = "proposal" | "requested" | "tap_only";
 /** The kinds Michelle can propose into from speech (the API's PROPOSABLE_KINDS, 32.16 §3.4); every other kind is answered on the card only. */
 export const SPEAKABLE_KINDS: ReadonlySet<string> = new Set(["ChoiceCard", "ConfirmCard", "ProfileCard"]);
 
-const proposalOf = (c: AskCardLike): { proposed_at?: unknown } | null => { const p = c.props["proposal"]; return p && typeof p === "object" ? (p as { proposed_at?: unknown }) : null; };
+type Proposal = { proposed_at?: unknown; fields?: { path?: unknown; value?: unknown }[] };
+const proposalOf = (c: AskCardLike): Proposal | null => { const p = c.props["proposal"]; return p && typeof p === "object" ? (p as Proposal) : null; };
+
+/**
+ * A proposal the borrower can confirm: every `required_paths` entry is in it, or already holds a value on the card. A proposal of
+ * one field where two are required (the name without the e-mail) would rise with a Confirm that can only refuse (CARD_FIELD_REQUIRED);
+ * the API refuses such a proposal (PROPOSAL_INCOMPLETE), and the screen keeps one off the stage if it ever arrives.
+ */
+export function proposalComplete(card: AskCardLike): boolean {
+  const p = proposalOf(card); if (!p) return false;
+  const required = Array.isArray(card.props["required_paths"]) ? (card.props["required_paths"] as unknown[]).map(String) : [];
+  const fields = Array.isArray(card.props["fields"]) ? (card.props["fields"] as { path?: unknown; value?: unknown }[]) : [];
+  const has = (path: string): boolean => (p.fields ?? []).some((f) => String(f.path) === path && String(f.value ?? "").trim() !== "") || fields.some((f) => String(f.path) === path && String(f.value ?? "").trim() !== "");
+  return required.every(has);
+}
 
 /** Why the card rises, or null when it stays off the screen. */
 export function riseReason(card: AskCardLike | null | undefined): RiseReason | null {
   if (!card) return null;
-  if (proposalOf(card)) return "proposal";
+  if (proposalOf(card) && proposalComplete(card)) return "proposal";
   if (card.props["requested_by"] === "card.request") return "requested";
   if (!SPEAKABLE_KINDS.has(card.kind)) return "tap_only";
   return null;

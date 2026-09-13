@@ -141,7 +141,7 @@ export class AgentTurnRunner {
     const run = { runId: `turn:${turn_id}`, modelVersion: this.d.llm.model, promptVersion: this.promptVersion };
     const execute = toolExecutor({ runtime, ledger, run, facts: { party_id: party.id, session_id: req.ctx.session.session_id, conversation_id: req.conversation_id, message_id: req.message_id, channel: req.channel, assurance_level: level, subject: req.subject, routed_to: req.routed_to, utterance: req.text } });
     const input = { system: context.system, messages: [{ role: "user" as const, content: context.situation }], tools: MODEL_TOOLS, execute, maxTokens: 2048 };
-    let out: LlmTurnOutput;
+    let out: LlmTurnOutput; const modelStarted = Date.now();
     try { out = await this.d.llm.turn(input); }
     catch (e) { logger.error("borrower.agent.model_failed", { turn_id, error: e instanceof Error ? e.message : String(e) }); return this.fallback(req, turn_id, next0.copy_key, null, ledger, context.hash, started, { input_tokens: 0, output_tokens: 0 }, "model_failed"); }
     // ---- the guard: one regeneration, then the step's default copy
@@ -194,7 +194,7 @@ export class AgentTurnRunner {
     await this.d.flows.settle();
     const next1 = sessionNextOf(record, await ui.cardsOf(party.id));
     this.d.hub.notify(party.id, { event_name: "message.appended", at: req.now, subject: { application_id: subjectIds.subject_application_id, loan_id: subjectIds.subject_loan_id }, ref: replyId });
-    logger.info("borrower.agent.turn", { turn_id, party_id: party.id, agent: req.routed_to, model: this.d.llm.model, prompt_version: this.promptVersion, calls: ledger.calls.map((c) => c.name), accepted, fallback, classification, next_before: next0.card_instance_id, next_after: next1.card_instance_id, ms: Date.now() - started, tokens_in: out.usage.input_tokens, tokens_out: out.usage.output_tokens });
+    logger.info("borrower.agent.turn", { turn_id, party_id: party.id, agent: req.routed_to, model: this.d.llm.model, prompt_version: this.promptVersion, calls: ledger.calls.map((c) => c.name), requests: out.requests, accepted, fallback, classification, next_before: next0.card_instance_id, next_after: next1.card_instance_id, ms: Date.now() - started, model_ms: Date.now() - modelStarted, before_model_ms: modelStarted - started, tokens_in: out.usage.input_tokens, tokens_out: out.usage.output_tokens });
     return { reply, copy_key, turn_id, guard, calls: ledger.calls, command_executed: ledger.calls.some((c) => !c.is_error && (c.name === "command.run" || c.name === "human.transfer" || c.name === "card.request")) || command !== null, command };
   }
 

@@ -420,6 +420,10 @@ export const TOOLS_32_16: readonly ToolDef[] = defineTools(PROCESS_32_16, INTAKE
         fields.push({ path, value, source: "borrower_stated_unconfirmed" });
       }
     }
+    // 32.17 rule 12 / 01 §3.18: a Confirm needs every required path — a proposal that leaves one empty (and the card holds no value for it) would rise with a Confirm that can only refuse (CARD_FIELD_REQUIRED), so it is refused here and the model asks for the rest first
+    const requiredPaths = Array.isArray(props["required_paths"]) ? (props["required_paths"] as string[]) : [];
+    const incomplete = requiredPaths.filter((p) => !fields.some((f) => f.path === p) && !String(known.get(p)?.["value"] ?? "").trim());
+    if (incomplete.length) throw new AgentToolRefused("PROPOSAL_INCOMPLETE", `the card needs ${requiredPaths.join(" and ")} together before it can be confirmed — ${incomplete.join(", ")} still missing: ask for it, then propose all of them in one call`);
     const prior = props["proposal"] && typeof props["proposal"] === "object" ? (props["proposal"] as P) : null;
     // §3.7: a proposal replacing an unconfirmed one means the earlier read-back was rejected — a miss; the third goes to a human (the turn runs human.request)
     const missInc = prior ? 1 : 0; const misses = Number(card.misses ?? 0) + missInc;

@@ -87,3 +87,13 @@ variable "borrower_default_partner_id" {
   type        = string
   default     = ""
 }
+
+variable "llm_speed" {
+  description = "32.16 DELTA-23: the agent turn's inference speed — standard, or fast for the Messages API's fast mode (opt-in: the same model at a higher price with its own rate limit)."
+  type        = string
+  default     = "standard"
+  validation {
+    condition     = contains(["standard", "fast"], var.llm_speed)
+    error_message = "llm_speed must be standard or fast."
+  }
+}

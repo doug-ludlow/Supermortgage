@@ -660,7 +660,9 @@ test("32.17-T14: Given the cooperative refinance persona run through `/app/video
 // ---------------------------------------------------------------- the video door (32.17 rules 11–14): T15–T18
 const IDENTITY_KEY = "identity.contact.title";
 const identityCardIn = (c: SceneCtx): string => { const cards = (c.situation["pending_cards"] as Json[] | undefined) ?? []; return String(cards.find((x) => x["copy_key"] === IDENTITY_KEY)?.["card_instance_id"] ?? ""); };
-const SAY_NAME: Scene = { when: /my name is dana reyes/i, calls: (c) => [{ name: "card_propose", input: { card_instance_id: identityCardIn(c), fields: [{ path: "legal_name", value: "Dana Reyes" }] } }], text: "Nice to meet you. What's the best e-mail address for you? It's how you get back into this conversation if we're cut off." };
+const SAY_NAME: Scene = { when: /my name is dana reyes/i, text: "Nice to meet you, Dana Reyes. What's the best e-mail address for you? It's how you get back into this conversation if we're cut off." };
+/** What a model that proposes the name alone gets: the refusal (the card needs both) — T16 drives it once to prove the tool refuses, then the scene above answers. */
+const PROPOSE_NAME_ALONE: Scene = { when: /my name is dana reyes/i, calls: (c) => [{ name: "card_propose", input: { card_instance_id: identityCardIn(c), fields: [{ path: "legal_name", value: "Dana Reyes" }] } }], text: "Nice to meet you, Dana Reyes. What's the best e-mail address for you? It's how you get back into this conversation if we're cut off." };
 const SAY_EMAIL: Scene = { when: /dana dot reyes at example dot test/i, calls: (c) => [{ name: "card_propose", input: { card_instance_id: identityCardIn(c), fields: [{ path: "legal_name", value: "Dana Reyes" }, { path: "email", value: "dana dot reyes at example dot test" }] } }], text: "Got it — your name and e-mail are on the card here: tap Confirm so they count, or fix them there. Then, what are we doing today: buying a home, lowering your rate or payment, or taking cash out?" };
 const HELLO_AGAIN: Scene = { when: /hello again/i, text: "Welcome back, {{party.first_name}}. The next thing I need from you is on the rail." };
 let door: { token: string; party_id: string; session_id: string; video_id: string; videoToken: string; greeting: string };
@@ -700,7 +702,7 @@ test("32.17-T15: Given `/app/video` with no session, when the visitor starts the
 });
 const isUuidLike = (s: string): boolean => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 
-test("32.17-T16: Given the video-door session, then the first need on the rail is the identity ConfirmCard (`identity.contact.title`, paths `legal_name` and `email`) ahead of the goal card, the greeting asks the borrower's name with no first name spoken, and a spoken \"My name is Dana Reyes\" proposes `legal_name = \"Dana Reyes\"` into that card and the reply asks for the e-mail next; nothing is written to `parties` before the tap.", { skip }, async () => {
+test("32.17-T16: Given the video-door session, then the first need on the rail is the identity ConfirmCard (`identity.contact.title`, paths `legal_name` and `email`) ahead of the goal card, the greeting asks the borrower's name with no first name spoken, and a spoken \"My name is Dana Reyes\" proposes nothing yet (the card needs both, and a proposal of the name alone is refused as `PROPOSAL_INCOMPLETE`) and the reply says the name back and asks for the e-mail next; nothing is written to `parties` before the tap.", { skip }, async () => {
   assert.ok(door, "T15 opened the door");
   const cards = await db.query<{ card_instance_id: string; kind: string; copy_key: string; status: string; props: Json }>(`SELECT card_instance_id, kind, copy_key, status, props FROM card_instances WHERE party_id = $1 ORDER BY created_at`, [door.party_id]);
   assert.equal(cards[0]!.copy_key, IDENTITY_KEY, `the identity card first: ${cards.map((c) => c.copy_key).join(", ")}`); assert.equal(cards[0]!.kind, "ConfirmCard"); assert.equal(cards[0]!.status, "pending");
@@ -712,18 +714,25 @@ test("32.17-T16: Given the video-door session, then the first need on the rail i
   // the greeting: Michelle, automated, the partner as lender, the name asked, no first name spoken (the platform's placeholder is never a name)
   assert.match(door.greeting, /Michelle/); assert.match(door.greeting, /automated/i); assert.ok(door.greeting.includes(partnerName)); assert.match(door.greeting, /your name/i);
   assert.doesNotMatch(door.greeting, /\bBorrower\b|\(video\)|@/, `no placeholder spoken: ${door.greeting}`);
-  // the name, spoken → proposed into the identity card; the reply asks the e-mail; parties untouched
+  // the name, spoken → nothing proposed yet (a proposal of the name alone is refused: the card needs both); the reply says it back and asks the e-mail; parties untouched
+  scripted.use([PROPOSE_NAME_ALONE, SAY_EMAIL, HELLO_AGAIN]);
   const r = await speak(door.videoToken, "My name is Dana Reyes"); assert.equal(r.status, 200); assert.ok(r.done);
-  const card = await cardRow(cards[0]!.card_instance_id); const proposal = card.props["proposal"] as Json;
-  assert.ok(proposal, "a proposal on the identity card"); assert.deepEqual((proposal["fields"] as Json[]).map((f) => ({ path: f["path"], value: f["value"] })), [{ path: "legal_name", value: "Dana Reyes" }]);
-  assert.match(r.text, /e-?mail/i, `the reply asks the e-mail next: ${r.text}`);
+  const card = await cardRow(cards[0]!.card_instance_id);
+  assert.equal(card.props["proposal"], undefined, "no proposal on the identity card from the name alone");
+  const turn = (await db.query<{ tool_calls: Json[] }>(`SELECT tool_calls FROM agent_turns WHERE party_id = $1 AND reply_message_id IS NOT NULL ORDER BY created_at DESC LIMIT 1`, [door.party_id]))[0]!;
+  const propose = turn.tool_calls.find((c) => c["name"] === "card.propose"); assert.ok(propose, `the turn tried card.propose: ${JSON.stringify(turn.tool_calls)}`);
+  assert.equal(propose["is_error"], true); assert.equal(propose["error"], "PROPOSAL_INCOMPLETE", `the tool refused the name alone: ${JSON.stringify(propose)}`);
+  assert.match(r.text, /Dana Reyes/, `the reply says the name back: ${r.text}`); assert.match(r.text, /e-?mail/i, `the reply asks the e-mail next: ${r.text}`);
+  scripted.use([SAY_NAME, SAY_EMAIL, HELLO_AGAIN]);
   const party = (await db.query<{ legal_name: string; contact: Json }>(`SELECT legal_name, contact FROM parties WHERE id = $1`, [door.party_id]))[0]!;
   assert.equal(party.legal_name, "Borrower (video)", "nothing written before the tap"); assert.equal(party.contact["email"], undefined);
 });
 
-test("32.17-T17: Given the name proposed, when the borrower says \"dana dot reyes at example dot test\", then `email = \"dana.reyes@example.test\"` is proposed beside the name and Confirm on the rail writes `parties.legal_name = \"Dana Reyes\"` and `parties.contact.email` (unverified, source video) through `video.identify`, logging `party.identified{fields}` without the values; the next turn greets by first name; a later `POST /v1/borrower/auth/otp` to that e-mail with its code opens a session on the same party whose thread carries the call's messages; a second `video.identify` and one naming an address on file for another account are refused.", { skip }, async () => {
+test("32.17-T17: Given the name heard, when the borrower says \"dana dot reyes at example dot test\", then `legal_name = \"Dana Reyes\"` and `email = \"dana.reyes@example.test\"` are proposed together in one call and Confirm on the rail writes `parties.legal_name = \"Dana Reyes\"` and `parties.contact.email` (unverified, source video) through `video.identify`, logging `party.identified{fields}` without the values; the next turn greets by first name; a later `POST /v1/borrower/auth/otp` to that e-mail with its code opens a session on the same party whose thread carries the call's messages; a second `video.identify` and one naming an address on file for another account are refused.", { skip }, async () => {
   assert.ok(door, "T15 opened the door");
   const email = "dana.reyes@example.test";
+  // a re-run on a kept database: the address an earlier run attached elsewhere would be "on file for another account" (the refusal this test proves last) — clear it first
+  await db.query(`UPDATE parties SET contact = contact - 'email' - 'email_verified' - 'email_source' WHERE contact->>'email' = $1 AND id <> $2`, [email, door.party_id]);
   const r = await speak(door.videoToken, "dana dot reyes at example dot test"); assert.equal(r.status, 200);
   const cardId = (await db.query<{ card_instance_id: string }>(`SELECT card_instance_id FROM card_instances WHERE party_id = $1 AND copy_key = $2`, [door.party_id, IDENTITY_KEY]))[0]!.card_instance_id;
   const proposal = (await cardRow(cardId)).props["proposal"] as Json;
@@ -842,8 +851,13 @@ test("32.17-T20: Given `/app/video` on a live call with the goal chosen and a ty
   const r = await speak(v.videoToken, "I make about eight thousand two hundred a month"); assert.equal(r.status, 200);
   const overlay = page.getByTestId("ask-overlay"); await overlay.waitFor({ state: "visible", timeout: 30_000 });
   assert.equal(await overlay.getAttribute("data-card-id"), incomeId); assert.equal(await overlay.getAttribute("data-reason"), "proposal");
-  assert.equal(await overlay.locator("article[data-card-kind]").count(), 1, "the one card"); assert.equal(await overlay.getByTestId("confirm-chip-confirm").count(), 1); assert.equal(await overlay.getByTestId("confirm-chip-edit").count(), 1);
-  assert.match((await overlay.getByTestId("confirm-chip-readback").textContent()) ?? "", /8,200|8200/, "what was heard");
+  // one Confirm on the screen: the chip's (what was heard, Confirm · Edit); the card itself opens under it on Edit, with what was heard already in its fields
+  assert.equal(await overlay.getByTestId("confirm-chip-confirm").count(), 1); assert.equal(await overlay.getByTestId("confirm-chip-edit").count(), 1);
+  assert.equal(await overlay.locator("article[data-card-kind]").count(), 0, "no second Confirm under the chip"); assert.equal(await overlay.getByRole("button", { name: /^Confirm$/ }).count(), 1, "one Confirm");
+  assert.match((await overlay.getByTestId("confirm-chip-readback").textContent()) ?? "", /Monthly income: \$8,200\.00|8,200|8200/, "what was heard, as label: value");
+  await overlay.getByTestId("confirm-chip-edit").click();
+  const opened = overlay.locator("article[data-card-kind]"); await opened.waitFor({ state: "visible", timeout: 10_000 });
+  assert.equal(await opened.count(), 1, "Edit opens the one card"); assert.match(await opened.innerText(), /820000|8,200/, "the card holds what was heard");
   const stage = (await page.getByTestId("video-live").boundingBox())!; const box = (await overlay.boundingBox())!;
   assert.ok(box.width < stage.width / 2 && box.x > stage.x + stage.width / 2, `a card over the stage, not a pane: ${JSON.stringify(box)} in ${JSON.stringify(stage)}`);
   await page.screenshot({ path: `${SCREENSHOTS}/t20-ask-1280.png`, fullPage: false }).catch(() => undefined);

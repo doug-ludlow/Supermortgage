@@ -15555,7 +15555,7 @@
    },
    {
     "n": 31,
-    "text": "Given the first turn with the goal card pending, then the model is prompted to lead with the Journey's top need (`next_in_words` comes from the Journey, the prompt version is `32.16-p4`) and the reply names that need in its own words."
+    "text": "Given the first turn with the goal card pending, then the model is prompted to lead with the Journey's top need (`next_in_words` comes from the Journey, the prompt version is `32.16-p5`) and the reply names that need in its own words."
    },
    {
     "n": 32,
@@ -15650,11 +15650,11 @@
    },
    {
     "n": 16,
-    "text": "Given the video-door session, then the first need on the rail is the identity ConfirmCard (`identity.contact.title`, paths `legal_name` and `email`) ahead of the goal card, the greeting asks the borrower's name with no first name spoken, and a spoken \"My name is Dana Reyes\" proposes `legal_name = \"Dana Reyes\"` into that card and the reply asks for the e-mail next; nothing is written to `parties` before the tap."
+    "text": "Given the video-door session, then the first need on the rail is the identity ConfirmCard (`identity.contact.title`, paths `legal_name` and `email`) ahead of the goal card, the greeting asks the borrower's name with no first name spoken, and a spoken \"My name is Dana Reyes\" proposes nothing yet (the card needs both, and a proposal of the name alone is refused as `PROPOSAL_INCOMPLETE`) and the reply says the name back and asks for the e-mail next; nothing is written to `parties` before the tap."
    },
    {
     "n": 17,
-    "text": "Given the name proposed, when the borrower says \"dana dot reyes at example dot test\", then `email = \"dana.reyes@example.test\"` is proposed beside the name and Confirm on the rail writes `parties.legal_name = \"Dana Reyes\"` and `parties.contact.email` (unverified, source video) through `video.identify`, logging `party.identified{fields}` without the values; the next turn greets by first name; a later `POST /v1/borrower/auth/otp` to that e-mail with its code opens a session on the same party whose thread carries the call's messages; a second `video.identify` and one naming an address on file for another account are refused."
+    "text": "Given the name heard, when the borrower says \"dana dot reyes at example dot test\", then `legal_name = \"Dana Reyes\"` and `email = \"dana.reyes@example.test\"` are proposed together in one call and Confirm on the rail writes `parties.legal_name = \"Dana Reyes\"` and `parties.contact.email` (unverified, source video) through `video.identify`, logging `party.identified{fields}` without the values; the next turn greets by first name; a later `POST /v1/borrower/auth/otp` to that e-mail with its code opens a session on the same party whose thread carries the call's messages; a second `video.identify` and one naming an address on file for another account are refused."
    },
    {
     "n": 18,

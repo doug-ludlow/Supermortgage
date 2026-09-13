@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * 32.17 — the call pane: the thread's place on /app/video. It asks for the camera and microphone first (a refusal never blocks
- * the call — the vendor's own room asks again, and the thread at /app is always there), opens the session through the API
+ * 32.17 — the call pane: the thread's place on /app/video. It asks for the camera and microphone (a refusal never blocks
+ * the call — the vendor's own room asks again, and the thread at /app is always there) while it opens the session through the API
  * (POST /v1/borrower/video/sessions → the persona with the custom LLM and the conversation at the vendor or the FAKE), and embeds
  * `conversation_url` — a Daily room on the live vendor, the FAKE page (/app/video/fake/{token}) on FakeTavus — in an iframe with
  * camera, microphone and autoplay allowed. Nothing else: no composer, no microphone control of Supermortgage's own (the call has
@@ -30,7 +30,7 @@ export type VideoCallProps = {
   onSession?: (s: VideoSession | null) => void;
 };
 
-type Phase = "idle" | "permissions" | "opening" | "live" | "ended" | "failed";
+type Phase = "idle" | "opening" | "live" | "ended" | "failed";
 export const IFRAME_ALLOW = "camera; microphone; autoplay; display-capture";
 
 /** The FAKE page is the app's own route: same origin as this page, whatever base the API named. */
@@ -59,26 +59,31 @@ export function VideoCall({ fixturesMode, firstName, statusTick, onSession }: Vi
     if (opening.current) return;
     opening.current = true;
     setError(null); setPermissionNote(null);
-    setPhase("permissions");
+    setPhase("opening");
     if (fixturesMode) {
       // FAKE fixtures mode: no API — a recorded call so the screen can be demoed (the layout, the rail, the footer)
       const fake: VideoSession = { video_session_id: "FAKE-video-session", status: "joined", vendor: "FAKE", conversation_url: null, end_reason: null, transcript_ref: null, created_at: new Date().toISOString(), joined_at: new Date().toISOString(), ended_at: null, subject: {}, conversation_id: "conv-1", replica_id: "r_FAKE_stock", borrower_camera: "on" };
       setSession(fake); onSession?.(fake); setPhase("live"); opening.current = false;
       return;
     }
-    // the camera for presence, the microphone for the words (32.17 open question 2: VIDEO_BORROWER_CAMERA=off joins audio-only — the API says which)
-    try {
-      if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-        for (const t of stream.getAudioTracks()) t.stop();   // the room takes its own tracks; the video track stays only for the FAKE's self-view tile and ends with the call
-        stopSelf(); selfStream.current = new MediaStream(stream.getVideoTracks()); setSelfOn(stream.getVideoTracks().length > 0);
+    // the camera for presence, the microphone for the words (32.17 open question 2: VIDEO_BORROWER_CAMERA=off joins audio-only — the API says which);
+    // the door is opened at the same time (the account, the first turn, the persona and the room at the vendor take seconds — they run while the browser asks)
+    const permissions = (async () => {
+      try {
+        if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+          for (const t of stream.getAudioTracks()) t.stop();   // the room takes its own tracks; the video track stays for the self-view tile until the room's own is playing, and ends with the call
+          stopSelf(); selfStream.current = new MediaStream(stream.getVideoTracks()); setSelfOn(stream.getVideoTracks().length > 0);
+        }
+      } catch {
+        setPermissionNote(copy("video.permission_denied"));
       }
-    } catch {
-      setPermissionNote(copy("video.permission_denied"));
-    }
-    setPhase("opening");
+    })();
+    const opened = openVideoSession();
+    opened.catch(() => undefined);
     try {
-      const s = await openVideoSession();
+      await permissions;
+      const s = await opened;
       setSession(s); onSession?.(s);
       setPhase(s.status === "failed" ? "failed" : "live");
     } catch (e) {
@@ -125,11 +130,16 @@ export function VideoCall({ fixturesMode, firstName, statusTick, onSession }: Vi
         ) : null}
       </div>
       <div className="sm-video-stage">
-        {phase === "permissions" || phase === "opening" ? (
-          <p className="sm-muted" data-testid="video-status">{copy("video.starting")}</p>
+        {phase === "opening" ? (
+          <>
+            <p className="sm-muted" data-testid="video-status">{copy("video.starting")}</p>
+            <div className="sm-video-pip" data-testid="video-pip" aria-label="Your camera" hidden={!selfOn}>
+              <video ref={selfVideo} autoPlay playsInline muted />
+            </div>
+          </>
         ) : null}
         {live && join ? (
-          <LiveCall join={join} onLeft={onLeft} />
+          <LiveCall join={join} preview={selfOn ? selfStream.current : null} onLeft={onLeft} />
         ) : live ? (
           <div className="sm-video-live" data-testid="video-live" data-state="in" data-replica="fake">
             {fixturesMode || !src ? (

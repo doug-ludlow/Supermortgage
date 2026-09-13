@@ -97,6 +97,11 @@ export const ERROR_COPY_KEYS: Readonly<Record<string, string>> = {
   DEEP_LINK_UNKNOWN: "deeplink.unknown",
   DOCUMENT_NOT_VISIBLE: "documents.not_available",
   DOCUMENT_CONTENT_UNAVAILABLE: "documents.not_available",
+  // 32.17 rule 12: the identity card's Confirm (video.identify) — each refusal in the copy library's words, never the generic line
+  IDENTITY_NAME_INVALID: "identity.contact.name_invalid",
+  IDENTITY_EMAIL_INVALID: "identity.contact.email_invalid",
+  IDENTITY_ALREADY_ON_FILE: "identity.contact.already_on_file",
+  IDENTITY_EMAIL_ON_FILE: "identity.contact.email_on_file",
   IDENTITY_NO_APPLICATION: "identity.no_application",
   IDENTITY_SESSION_UNKNOWN: "identity.session_unknown",
   // 32.16 DELTA-29 (POST /v1/borrower/auth/account): e-mail + password accounts — the strings are the copy library's (`account.*` / `auth.*`)

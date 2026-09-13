@@ -49,6 +49,8 @@ export type AccountProps = {
   deepLinkToken?: string;
   /** The partner named in the disclosure line; defaults to the build's `NEXT_PUBLIC_PARTNER_LEGAL_NAME`. */
   partnerLegalName?: string;
+  /** The address the form opens with (32.17 rule 12: the identity card's e-mail when it is on file for another account). */
+  initialEmail?: string;
 };
 
 type CodeStep = { kind: "code"; email: string; challenge_id: string; fake_code?: string; on_file?: boolean };
@@ -61,10 +63,10 @@ function errorCopy(e: unknown, fallback = "error.generic"): string {
   return e instanceof ApiRequestError ? copy(e.body.copy_key) : copy(fallback);
 }
 
-export function Account({ mode, titleKey, onSession, onCancel, navigate, redirectUri, deepLinkToken, partnerLegalName }: AccountProps) {
+export function Account({ mode, titleKey, onSession, onCancel, navigate, redirectUri, deepLinkToken, partnerLegalName, initialEmail }: AccountProps) {
   const id = useId();
   const [step, setStep] = useState<Step>({ kind: "form" });
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(initialEmail ?? "");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);

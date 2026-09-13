@@ -29,6 +29,7 @@ export const COPY = {
   "identity.contact.name_invalid": { key: "identity.contact.name_invalid", kind: "line", text: "That doesn't look like a name — letters only, please.", notes: "32.17 video.identify: IDENTITY_NAME_INVALID.", extras: [], section: "Entry and identity" },
   "identity.contact.email_invalid": { key: "identity.contact.email_invalid", kind: "line", text: "That doesn't look like an e-mail address — something like name@example.com.", notes: "32.17 video.identify: IDENTITY_EMAIL_INVALID.", extras: [], section: "Entry and identity" },
   "identity.contact.already_on_file": { key: "identity.contact.already_on_file", kind: "line", text: "Your name and e-mail are already on this account. Changing them takes a fresh code first.", extras: ["*32.17 video.identify: IDENTITY_ALREADY_ON_FILE", "a change is party.updateContact behind a fresh code.*"], section: "Entry and identity" },
+  "identity.contact.sign_in": { key: "identity.contact.sign_in", kind: "button", text: "Sign in with this e-mail", extras: ["*32.17 rule 12: the address is on file for another account", "the tap opens the sign-in form with it filled in; a code to it proves it is theirs and the conversation continues on that account.*"], section: "Entry and identity" },
   "identity.contact.email_on_file": { key: "identity.contact.email_on_file", kind: "line", text: "That e-mail already has an account here. Sign in with it — we'll send a code — or use a different address.", extras: ["*32.17 video.identify: IDENTITY_EMAIL_ON_FILE", "an address is never re-attached to a second account; the code proves whose it is.*"], section: "Entry and identity" },
   "identity.ssn.title": { key: "identity.ssn.title", kind: "ConfirmCard", text: "Your Social Security number", notes: "32.3 E5: the one typed field; masked; stored once.", extras: ["helper: \"We need it to pull your credit report. It's checked with the Social Security Administration and never shown again here.\""], section: "Entry and identity" },
   "entry.voice.started": { key: "entry.voice.started", kind: "line", text: "You're on a call with Michelle, an automated assistant. Anything you agree to here still needs a tap on a card we'll send you.", notes: "32.3 E1 voice; consents never by voice.", extras: [], section: "Entry and identity" },
@@ -657,4 +658,4 @@ export const COPY = {
 } as const satisfies Record<string, CopyEntry>;
 
 export type CopyKey = keyof typeof COPY;
-export const COPY_KEY_COUNT = 642;
+export const COPY_KEY_COUNT = 643;

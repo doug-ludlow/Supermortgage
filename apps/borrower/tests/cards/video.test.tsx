@@ -14,7 +14,8 @@ import { VideoShell } from "@/components/video/VideoShell";
 import { FakeVideoPage } from "@/components/video/FakeVideoPage";
 import { Rail } from "@/components/record/Rail";
 import { loadFixture } from "@/lib/fixtures";
-import type { AnyCardInstance, ResolveRequest } from "@/lib/types/cards";
+import type { AnyCardInstance, CardProposal, ResolveRequest } from "@/lib/types/cards";
+import { ConfirmChip } from "@/components/shell/chips";
 import { makeCard, TZ } from "./helpers";
 
 const user = userEvent.setup();
@@ -79,6 +80,15 @@ describe("32.17 discrepancy (1) — the rail's proposal strip (no thread to hold
     const ev = calls[0]!.evidence as { source?: string; fields?: { path: string; value_confirmed: string }[] };
     expect(ev.source).toBe("borrower_stated");
     expect(ev.fields?.[0]).toMatchObject({ path: "monthly_income", value_confirmed: "820000" });
+  });
+
+  it("a refusal that names a way out shows it under the line: the identity card's address on file → Sign in with this e-mail (32.17 rule 12)", async () => {
+    const onClick = vi.fn();
+    render(<ConfirmChip card={income()} proposal={(income().props as { proposal: CardProposal }).proposal} error={copy("identity.contact.email_on_file")} action={{ label: copy("identity.contact.sign_in"), onClick }} onConfirm={() => undefined} onEdit={() => undefined} />);
+    expect(screen.getByRole("alert")).toHaveTextContent("already has an account here");
+    await user.click(screen.getByTestId("confirm-chip-action"));
+    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("confirm-chip-action")).toHaveTextContent("Sign in with this e-mail");
   });
 
   it("the strip renders only when the shell asks for it (the thread keeps its confirm chip on /app)", () => {

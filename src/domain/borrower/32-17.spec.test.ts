@@ -781,6 +781,7 @@ test("32.17-T17: Given the name heard, when the borrower says \"dana dot reyes a
   const second = await api("POST", "/v1/borrower/video/sessions", {}, {}, "10.17.203.4"); await settle(); assert.equal(second.status, 201);
   const p2 = String((second.body["party"] as Json)["party_id"]); const card2 = (await db.query<{ card_instance_id: string }>(`SELECT card_instance_id FROM card_instances WHERE party_id = $1 AND copy_key = $2`, [p2, IDENTITY_KEY]))[0]!.card_instance_id;
   const dup = await api("POST", `/v1/borrower/cards/${card2}/resolve`, { evidence: { source: "borrower_stated", fields: [{ path: "legal_name", value_confirmed: "Sam Reyes", source: "borrower" }, { path: "email", value_confirmed: email, source: "borrower" }] } }, bearer(second.body["token"] as string)); await settle();
+  assert.equal(dup.body["copy_key"], "identity.contact.email_on_file", `the refusal in the copy library's words, never the generic line: ${JSON.stringify(dup.body)}`);
   assert.ok(dup.status >= 400, JSON.stringify(dup.body)); assert.match(JSON.stringify(dup.body), /IDENTITY_EMAIL_ON_FILE/);
   assert.equal((await db.query<{ legal_name: string; contact: Json }>(`SELECT legal_name, contact FROM parties WHERE id = $1`, [p2]))[0]!.contact["email"], undefined, "nothing attached");
   await api("POST", `/v1/borrower/video/sessions/${second.body["video_session_id"]}/end`, { reason: "borrower_left" }, bearer(second.body["token"] as string)); await settle();

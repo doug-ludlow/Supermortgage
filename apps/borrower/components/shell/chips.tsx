@@ -106,7 +106,7 @@ export function ReferenceChip({ card, timezone, onOpen }: { card: AnyCardInstanc
   );
 }
 
-export function ConfirmChip({ card, proposal, busy, error, onConfirm, onEdit }: { card: AnyCardInstance; proposal: CardProposal; busy?: boolean; error?: string; onConfirm: (req: ResolveRequest) => void; onEdit: (card_instance_id: string) => void }) {
+export function ConfirmChip({ card, proposal, busy, error, action, onConfirm, onEdit }: { card: AnyCardInstance; proposal: CardProposal; busy?: boolean; error?: string; /** A way out the refusal names (32.17 rule 12: "Sign in with this e-mail" when the address is on file for another account). */ action?: { label: string; onClick: () => void } | undefined; onConfirm: (req: ResolveRequest) => void; onEdit: (card_instance_id: string) => void }) {
   return (
     <div className="sm-confirm-chip" data-testid="confirm-chip" data-card-id={card.card_instance_id} role="group" aria-label={cardTitle(card)}>
       <span className="sm-confirm-chip-text" data-testid="confirm-chip-readback">
@@ -124,6 +124,11 @@ export function ConfirmChip({ card, proposal, busy, error, onConfirm, onEdit }: 
         <span className="sm-error" role="alert">
           {error}
         </span>
+      ) : null}
+      {error && action ? (
+        <button type="button" className="sm-btn" data-testid="confirm-chip-action" onClick={action.onClick} disabled={busy}>
+          {action.label}
+        </button>
       ) : null}
     </div>
   );

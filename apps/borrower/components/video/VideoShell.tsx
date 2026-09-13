@@ -69,6 +69,9 @@ export function VideoShell({ fixturesMode, fixtureName, initialSubject }: VideoS
   const [focus, setFocus] = useState<{ card_instance_id: string; seq: number } | undefined>();
   const [busyCardId, setBusyCardId] = useState<string | undefined>();
   const [cardErrors, setCardErrors] = useState<globalThis.Record<string, string>>({});
+  const [cardErrorCodes, setCardErrorCodes] = useState<globalThis.Record<string, string>>({});
+  // 32.17 rule 12: the identity card's address is on file for another account — the sign-in form opens with it, a code proves it is theirs
+  const [signInEmail, setSignInEmail] = useState<string | undefined>();
   const [loadError, setLoadError] = useState<string | undefined>();
   const [stream, setStream] = useState<StreamStatus>("closed");
   const [needsSignIn, setNeedsSignIn] = useState(false);
@@ -143,7 +146,7 @@ export function VideoShell({ fixturesMode, fixtureName, initialSubject }: VideoS
 
   const resolveCard = useCallback(async (card: AnyCardInstance, req: ResolveRequest) => {
     setBusyCardId(card.card_instance_id);
-    setCardErrors((e) => ({ ...e, [card.card_instance_id]: "" }));
+    setCardErrors((e) => ({ ...e, [card.card_instance_id]: "" })); setCardErrorCodes((e) => ({ ...e, [card.card_instance_id]: "" }));
     try {
       if (fixturesMode) {
         const resolved: AnyCardInstance = { ...card, status: "resolved", resolved_at: nowIso(), evidence: req.evidence } as AnyCardInstance;
@@ -157,8 +160,15 @@ export function VideoShell({ fixturesMode, fixtureName, initialSubject }: VideoS
       if (subject) setRecord(await api.record(subject));
     } catch (e) {
       setCardErrors((errs) => ({ ...errs, [card.card_instance_id]: e instanceof ApiRequestError ? copy(e.body.copy_key) : "That didn't go through. Nothing was changed — try again." }));
+      setCardErrorCodes((codes) => ({ ...codes, [card.card_instance_id]: e instanceof ApiRequestError ? e.body.code : "" }));
     } finally { setBusyCardId(undefined); }
   }, [fixturesMode, subject]);
+  /** The way out a refusal names: the identity card's address on file for another account → sign in with it (the form, the address filled in). */
+  const chipAction = useCallback((card: AnyCardInstance): { label: string; onClick: () => void } | undefined => {
+    if (cardErrorCodes[card.card_instance_id] !== "IDENTITY_EMAIL_ON_FILE") return undefined;
+    const email = (proposalOf(card)?.fields ?? []).find((f) => f.path === "email")?.value ?? "";
+    return { label: copy("identity.contact.sign_in"), onClick: () => { setSignInEmail(email); setSignInOpen(true); } };
+  }, [cardErrorCodes]);
 
   const launchVendor = useCallback(async (vendor: string, card_instance_id: string) => {
     if (fixturesMode) return { vendor_session_id: `FAKE-${vendor}-${card_instance_id}` };
@@ -197,7 +207,7 @@ export function VideoShell({ fixturesMode, fixtureName, initialSubject }: VideoS
             <>
               <div className="sm-thread-top" />
               <div className="sm-thread-scroll">
-                <Account mode="sign_in" titleKey="auth.welcome_back" partnerLegalName={me?.partner.legal_name} onSession={() => window.location.reload()} onCancel={signInOpen && !needsSignIn ? () => setSignInOpen(false) : undefined} />
+                <Account mode="sign_in" titleKey="auth.welcome_back" partnerLegalName={me?.partner.legal_name} initialEmail={signInEmail} onSession={() => window.location.reload()} onCancel={signInOpen && !needsSignIn ? () => setSignInOpen(false) : undefined} />
               </div>
             </>
           ) : (
@@ -211,7 +221,7 @@ export function VideoShell({ fixturesMode, fixtureName, initialSubject }: VideoS
                   {rise === "proposal" && proposalOf(ask) ? (
                     <div className="sm-rail-proposal" data-testid="ask-proposal">
                       <p className="sm-muted sm-rail-proposal-hint">{copy("video.rail_confirm.hint")}</p>
-                      <ConfirmChip card={ask} proposal={proposalOf(ask)!} busy={busyCardId === ask.card_instance_id} error={cardErrors[ask.card_instance_id]} onConfirm={(req) => void resolveCard(ask, req)} onEdit={() => setEditingAsk(askStamp(ask))} />
+                      <ConfirmChip card={ask} proposal={proposalOf(ask)!} busy={busyCardId === ask.card_instance_id} error={cardErrors[ask.card_instance_id]} action={chipAction(ask)} onConfirm={(req) => void resolveCard(ask, req)} onEdit={() => setEditingAsk(askStamp(ask))} />
                     </div>
                   ) : null}
                   {rise !== "proposal" || editingAsk === askStamp(ask) ? (

@@ -5,9 +5,10 @@
  * model reads the keys and writes the tokens; the API fills them after the guard. Nothing here computes a date or a figure: every
  * value is a stored one, formatted (cents → USD, a date's civil day) the way agent/context.ts formats the origination record.
  *
- * Pure over its input (no table, no bus): `record.get` and `explain` in src/app/tools/section32-16.ts hand it the projection they read.
- * agent/context.ts (the Stage 3 owner's) still projects `record.numbers` through its own allow-list, which drops `next_payment` (an
- * object) — `servicingView` is the helper its `compactRecord` should merge for a serviced loan (see the report of this stage).
+ * Pure over its input (no table, no bus): `record.get` and `explain` in src/app/tools/section32-16.ts hand it the projection they read,
+ * and agent/context.ts `buildContext` merges `servicingView` into the situation's record (as `record.servicing`, its tokens beside the
+ * compact record's) so a serviced loan's turn can name the next installment without a tool call — `compactRecord`'s own number
+ * allow-list drops `next_payment` (an object); this view is where it rides.
  */
 import type { BorrowerRecord } from "../record.ts";
 

@@ -1,5 +1,5 @@
 /**
- * The utterance guard (docs/ux/17 §3.5, DELTA-25) — before every reply is sent. Six checks over the model's sentence:
+ * The utterance guard (docs/ux/17 §3.5, DELTA-25) — before every reply is sent. Seven checks over the model's sentence:
  *
  *   (1) provenance   no raw money, percentage, date, phone, NMLSR or account figure outside a `{{token}}` — no digit at all outside a
  *                    token, and no spelled-out amount or percentage either; rejected → regenerated once with the violation named, then
@@ -15,6 +15,9 @@
  *   (5) scope        no DU, credit, fraud, QC or compliance internals; no eligibility statement before DU; no decline language ever
  *   (6) disclosure   the session's first row is the disclosure record (rendered as the header); "are you a real person?" is answered
  *                    in the model's words, and the reply must say it is automated and offer a way to reach a person
+ *   (7) substance    the reply leads with what the loan needs next in plain words (docs/ux/17 §1 principle 5, §3.7): a line under
+ *                    MIN_REPLY_WORDS words once its tokens are filled, or a bare question with no content ("What next?"), is rejected
+ *                    and regenerated once — the demo's "What next?" reply is what this check refuses
  *
  * Pure over its input (the turn runner supplies the SAFE permission it got from the bus); every rejection becomes an `agent_turns` row.
  */
@@ -47,7 +50,20 @@ export interface GuardResult {
   readonly regenerable: boolean;
   readonly quarantine_prompt_version: string | null;
   readonly classification: SafeClassification;
-  readonly checks: Readonly<Record<"provenance" | "compliance" | "safe" | "inquiries" | "scope" | "disclosure", GuardCheck>>;
+  readonly checks: Readonly<Record<"provenance" | "compliance" | "safe" | "inquiries" | "scope" | "disclosure" | "substance", GuardCheck>>;
+}
+
+// ---------------------------------------------------------------- (7) substance: the reply carries the next item in words, never a bare question
+/** The fewest words a reply may carry once its `{{token}}`s are filled (docs/ux/17 §3.7: the head of the agenda restated, in plain words). */
+export const MIN_REPLY_WORDS = 7;
+const BARE_QUESTION = /^\s*(?:what|what's|whats|so|and|ok|okay|now|next|anything else|what else|how about|hm+)?\s*(?:next|now|else|then|more)?\s*\?\s*$/i;
+/** A reply with no substance: fewer than MIN_REPLY_WORDS words with its tokens filled (a token counts as the words it fills), or a bare question such as "What next?". */
+export function substanceViolation(text: string, tokens: Readonly<Record<string, string>>): string | null {
+  const filled = text.replace(/\{\{([a-zA-Z0-9_.:-]+)\}\}/g, (all, k: string) => (k.startsWith("copy:") ? all : tokens[k] ?? "token"));
+  if (BARE_QUESTION.test(filled)) return `a bare question ("${filled.trim()}") with no content — lead with what the loan needs next in plain words`;
+  const words = filled.match(/[A-Za-z0-9{][^\s]*/g) ?? [];
+  if (words.length < MIN_REPLY_WORDS) return `only ${words.length} word${words.length === 1 ? "" : "s"} ("${filled.trim().slice(0, 80)}") — say what the loan needs next in plain words (at least ${MIN_REPLY_WORDS})`;
+  return null;
 }
 
 // ---------------------------------------------------------------- (1) provenance: no digit and no spelled-out amount outside a token
@@ -138,6 +154,8 @@ export function guardUtterance(i: GuardInput): GuardResult {
   // (6) disclosure — the first row of the session is the disclosure record; "are you a real person?" says it is automated and offers a way to reach a person
   const asked = ASKS_IF_HUMAN.test(i.borrowerText);
   add("disclosure", !i.disclosureFirst ? "the session's first row is not the disclosure record" : asked && !(SAYS_AUTOMATED.test(i.text) && OFFERS_PERSON.test(i.text)) ? "the borrower asked whether you are a person: say plainly that you are automated and offer a callback request, a dispute or a case" : null, asked);
+  // (7) substance — a reply under the minimum, or a bare question, says nothing about the next item; regenerated once with the violation named
+  add("substance", substanceViolation(i.text, i.tokens), true);
 
   const first = fail[0] ?? null;
   return { ok: !first, rejected_by: first?.by ?? null, violation: first?.violation ?? null, regenerable: fail.length > 0 && fail.every((f) => f.regenerable), quarantine_prompt_version: scan.quarantine_prompt_version, classification: i.classification, checks: checks as GuardResult["checks"] };

@@ -25,6 +25,8 @@ export interface StripeIdentityPort {
 }
 
 const DEFAULT_DOB: PlainDate = "1988-04-12" as PlainDate;
+/** A provisional party name (an e-mail address, the phone placeholder) — nothing the identity document could match against. */
+const provisionalName = (name: string | null | undefined): boolean => !name || name.includes("@") || /^borrower \(/i.test(name);
 export class FakeStripeIdentity implements StripeIdentityPort {
   readonly vendorName = "stripe_identity";
   readonly marker = "FAKE" as const;
@@ -61,12 +63,13 @@ export class FakeStripeIdentity implements StripeIdentityPort {
     if (outcome === "verified" && !this.sessions.get(id)!.extraction) this.complete(id, now);
     return { event: { id: event.id ?? `evt_FAKE_${randomUUID().slice(0, 8)}`, type: event.type, data: { object: { ...event.data!.object, id } } }, vendor_session_id: id, outcome };
   }
+  /** The vendor's data match compares the ID with what is on file; a party the account door named by its e-mail (or the code path's phone placeholder, 32.16 §2.0) has no name on file yet — the ID is what establishes it, so the FAKE reports no mismatch, as it does for a missing birth date. */
   async result(vendorSessionId: string): Promise<{ request: IdentitySessionRequest; extraction: IdentityExtraction; session_result: IdentitySessionResult } | undefined> {
     const s = this.sessions.get(vendorSessionId);
     if (!s || !s.extraction) return undefined;
     const x = s.extraction;
     const session_result: IdentitySessionResult = { session_id: vendorSessionId, vendor: this.vendorName, document_authentication_result: "pass", liveness_result: "pass", face_match_score: 0.97, face_match_threshold: 0.9,
-      id_document_type: x.id_document_type, id_document_issuer: x.id_document_issuer, id_document_expires_on: x.id_document_expires_on, data_match: { name: x.legal_name === s.request.legal_name, date_of_birth: s.request.date_of_birth === null || x.date_of_birth === s.request.date_of_birth, address: true } };
+      id_document_type: x.id_document_type, id_document_issuer: x.id_document_issuer, id_document_expires_on: x.id_document_expires_on, data_match: { name: x.legal_name === s.request.legal_name || provisionalName(s.request.legal_name), date_of_birth: s.request.date_of_birth === null || x.date_of_birth === s.request.date_of_birth, address: true } };
     return { request: s.request, extraction: x, session_result };
   }
 }

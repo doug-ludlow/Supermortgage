@@ -167,7 +167,9 @@ export class BorrowerRecordReader {
     // ---- subject
     const transaction_type = (app?.["transaction_type"] as string | null) ?? null; const occupancy = (app?.["occupancy"] as string | null) ?? null;
     const property = await this.property(appId, loan, entities, events);
-    const subjectOut = { application_id: appId, loan_id: loanId, label: subject.label, transaction_type, occupancy, stage };
+    // 01 §4 row 1: the header is purpose (Buying · Refinancing · Your loan, from transaction_type) · loan label — the label here is the loan's own name, never the purpose word again
+    // (the subject switcher's "Refinancing · <address>" label stays the parties repository's; an application without a loan number is named by its id's last four)
+    const subjectOut = { application_id: appId, loan_id: loanId, label: loanId ? subject.label : `Application ····${appId!.slice(-4)}`, transaction_type, occupancy, stage };
 
     // ---- status (01 §4 catalogue, read off the event spine; state_source = the state name and table the owning process wrote)
     const status = (exits ? exitsBadge(exits, asOf, timers) : null) ?? this.badge(app, loan, events, entities, byKind, ev, has);

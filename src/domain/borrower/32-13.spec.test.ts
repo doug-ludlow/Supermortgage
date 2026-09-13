@@ -207,9 +207,17 @@ async function pageFor(token: string | null, width: number, path = "/app"): Prom
   await page.goto(`${appBase}${path}`, { waitUntil: "load", timeout: 60_000 });   // never networkidle: the SSE stream stays open
   return { page, ctx };
 }
-/** 32.16 §2.2: a card's home is its rail row; expanding it (client state) renders the existing component. The current ask is open by default. */
+/** 32.16 §2.2: a card's home is its rail row; expanding it (client state) renders the existing component. The current ask is open by default; the other
+ * pending cards wait behind "n more after this" and the reference sections start collapsed (32.16-T11), so the row is revealed first: the line, then its section. */
 async function expandRail(page: Page, cardId: string): Promise<void> {
-  const row = page.locator(`[data-rail-card="${cardId}"]`).first(); await row.waitFor({ timeout: 30_000 });
+  const sel = `[data-rail-card="${cardId}"]`;
+  const later = page.getByTestId("needs-later").first();
+  if ((await page.locator(sel).count()) === 0 && (await later.count()) && (await later.getAttribute("aria-expanded")) === "false") await later.click();
+  const row = page.locator(sel).first(); await row.waitFor({ state: "attached", timeout: 30_000 });
+  const section = row.locator("xpath=ancestor::section[@data-record-section][1]");
+  if ((await section.count()) && (await section.getAttribute("data-open")) === "false") await section.locator("h2 > button").first().click();
+  if (!(await row.isVisible()) && (await later.count()) && (await later.getAttribute("aria-expanded")) === "false") await later.click();
+  await row.waitFor({ state: "visible", timeout: 30_000 });
   if ((await row.getAttribute("data-expanded")) !== "true") await row.locator("> button").click();
 }
 async function inViewport(page: Page, testId: string): Promise<boolean> {

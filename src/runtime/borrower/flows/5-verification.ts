@@ -39,7 +39,7 @@ const INTAKE: Actor = { kind: "agent", id: "intake" };
 const VERIFICATION: Actor = { kind: "agent", id: "verification" };
 const UNDERWRITER: Actor = { kind: "agent", id: "underwriter" };
 const RUN = { runId: "flow:32.5", modelVersion: "borrower flows (deterministic)", promptVersion: "32.5" } as const;
-const REACTS = new Set(["condition.opened", "condition.cleared", "condition.waived", "condition.superseded", "condition.reopened", "condition.waiting", "document_request.opened", "document_request.satisfied", "document_request.waived", "document_request.expired",
+const REACTS = new Set(["condition.opened", "condition.cleared", "condition.waived", "condition.superseded", "condition.reopened", "condition.waiting", "document_request.opened", "document_request.satisfied", "document_request.waived", "document_request.expired", "disclosure.le.delivered", "disclosure.le.mailed",
   "credit.udm.alert.received", "du.resubmission.required", "du.resubmission.waived", "asset.deposit.flagged_large", "application.party.invited", "application.joint_intent.affirmed", "human.transfer.requested"]);
 const USD = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const money = (cents: string | bigint | number): string => USD.format(Number(BigInt(String(cents))) / 100);
@@ -167,19 +167,30 @@ async function refreshChecklist(deps: FlowDeps, ctx: Ctx, parties: readonly Part
 // ---------------------------------------------------------------- 32.5 §1–§2 — conditions and the needs-list loop
 /** Applications whose pinned ChecklistCard needs a refresh after this batch (one refresh per commit, not one per condition). */
 const dirty = new Set<string>();
+/** 22.1's needs list for a borrower-visible condition: one request per document class the condition names, linked to the condition (never free-typed) — only once the LE is delivered (TRID FAQ; 22.1 R6). */
+async function openRequestsFor(deps: FlowDeps, ctx: Ctx, cond: Cond, ask: { uploads: string[]; letter: boolean }): Promise<void> {
+  if (!has(ctx, /^disclosure\.le\.(delivered|mailed)$/)) return;
+  const borrower_id = cond.borrower_id ?? intakeBorrowers(ctx).find((b) => b.credit_requested !== false)?.id ?? null;
+  if (borrower_id) for (const doc_class of [...ask.uploads, ...(ask.letter ? ["explanation_letter"] : [])]) {
+    // an explicit request id: 22.1's own `req-n` counter is per application while entity_records' key is global (the 32.4 test notes the same seam for 24.1/24.5)
+    try { await owning(deps, ctx, "22.1", "openRequest", VERIFICATION, { request_id: `req-${ctx.appId.slice(0, 8)}-${doc_class}-${randomUUID().slice(0, 8)}`, borrower_id, doc_class, reason_code: cond.du_message_id ?? cond.template_code, reason_text: cond.text, condition_id: cond.condition_id, qualifier: {}, at: ctx.now }); }
+    catch (err) { deps.logger?.error("borrower.flow.32-5.openRequest", { condition_id: cond.condition_id, doc_class, error: err instanceof Error ? err.message : String(err) }); }
+  }
+}
+/** The LE is out: every borrower-visible condition DU opened before it (a purchase underwritten on the to-be-determined file for its preapproval letter, 32.3 P8/P9, then the contract and the LE) gets its requests now — idempotent: a condition with a request already has its card. */
+async function onLeOut(deps: FlowDeps, ctx: Ctx): Promise<void> {
+  const conds = ctx.store.list("conditions", (d) => d.application_id === ctx.appId && d.borrower_visible === true && d.stage !== "post_closing" && ["open", "reopened", "waiting_borrower"].includes(String(d.status))).map((r) => r.data as unknown as Cond);
+  for (const cond of conds) {
+    if (ctx.store.list("document_requests", (d) => d.application_id === ctx.appId && d.condition_id === cond.condition_id).length) continue;
+    const ask = askOf(cond); if (!ask.uploads.length && !ask.letter) continue;
+    await openRequestsFor(deps, ctx, cond, ask); dirty.add(ctx.appId);
+  }
+}
 async function onConditionOpened(deps: FlowDeps, ctx: Ctx, e: DomainEvent): Promise<void> {
   const cond = condOf(ctx, String(pl(e)["condition_id"])); if (!cond || !cond.borrower_visible || cond.stage === "post_closing") return;
   const ask = askOf(cond);
   if (ask.uploads.length || ask.letter) {
-    // 22.1's needs list: one request per document class the condition names, linked to the condition (never free-typed) — only once the LE is delivered (TRID FAQ; 22.1 R6)
-    if (has(ctx, /^disclosure\.le\.(delivered|mailed)$/)) {
-      const borrower_id = cond.borrower_id ?? intakeBorrowers(ctx).find((b) => b.credit_requested !== false)?.id ?? null;
-      if (borrower_id) for (const doc_class of [...ask.uploads, ...(ask.letter ? ["explanation_letter"] : [])]) {
-        // an explicit request id: 22.1's own `req-n` counter is per application while entity_records' key is global (the 32.4 test notes the same seam for 24.1/24.5)
-        try { await owning(deps, ctx, "22.1", "openRequest", VERIFICATION, { request_id: `req-${ctx.appId.slice(0, 8)}-${doc_class}-${randomUUID().slice(0, 8)}`, borrower_id, doc_class, reason_code: cond.du_message_id ?? cond.template_code, reason_text: cond.text, condition_id: cond.condition_id, qualifier: {}, at: ctx.now }); }
-        catch (err) { deps.logger?.error("borrower.flow.32-5.openRequest", { condition_id: cond.condition_id, doc_class, error: err instanceof Error ? err.message : String(err) }); }
-      }
-    }
+    await openRequestsFor(deps, ctx, cond, ask);
     // 23.3's lifecycle step: the needs-list item is sent → `waiting_borrower` (the owning process transitions; the UI renders)
     if (cond.status === "open" || cond.status === "reopened") await owning(deps, ctx, "23.3", "reopenCondition", UNDERWRITER, { op: "waiting", condition_id: cond.condition_id, on: "borrower", reason: "needs-list item sent to the borrower (32.5)", at: ctx.now });
   } else if (conditionOwner(cond.evidence_kinds) !== "us" && (cond.status === "open" || cond.status === "reopened")) {
@@ -321,6 +332,7 @@ async function onHumanRequested(deps: FlowDeps, ctx: Ctx, e: DomainEvent): Promi
 async function react(deps: FlowDeps, ctx: Ctx, e: DomainEvent): Promise<void> {
   switch (e.type) {
     case "condition.opened": return onConditionOpened(deps, ctx, e);
+    case "disclosure.le.delivered": case "disclosure.le.mailed": return onLeOut(deps, ctx);
     case "condition.cleared": case "condition.waived": case "condition.superseded": case "condition.reopened": case "condition.waiting": return onConditionMoved(deps, ctx, e);
     case "document_request.opened": return onRequestOpened(deps, ctx, e);
     case "document_request.satisfied": case "document_request.waived": case "document_request.expired": return onRequestClosed(deps, ctx, e);

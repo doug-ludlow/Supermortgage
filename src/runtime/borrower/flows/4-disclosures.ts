@@ -169,7 +169,11 @@ async function propertyStateOf(deps: FlowDeps, ctx: Ctx): Promise<string | null>
   const intake = ctx.store.get("applications", ctx.appId)?.data as P | undefined;
   if (typeof intake?.["property_state"] === "string" && intake["property_state"]) return String(intake["property_state"]);
   const item = (intake?.["six_items"] as Record<string, P> | undefined)?.["property_address"]; const address = String(item?.["value"] ?? intake?.["property_address"] ?? "");
-  const m = /\b([A-Z]{2})\s+\d{5}(?:-\d{4})?\b/.exec(address); return m ? m[1]! : null;
+  const m = /\b([A-Z]{2})\s+\d{5}(?:-\d{4})?\b/.exec(address); if (m) return m[1]!;
+  // a purchase whose address arrived with the signed contract (32.3 C1/C2: 32.2 confirmField{purchase_contract} → 21.1 confirmPrefill, which keeps the item's hash, not its text): the confirmed contract row carries the address
+  const contract = ctx.store.list("purchase_contracts", (d) => d.application_id === ctx.appId).map((r) => r.data as P).at(-1);
+  const contractAddress = String(((contract?.["fields"] as Record<string, P> | undefined)?.["property_address"])?.["value"] ?? "");
+  const c = /\b([A-Z]{2})\s+\d{5}(?:-\d{4})?\b/.exec(contractAddress); return c ? c[1]! : null;
 }
 async function lockCompareCard(deps: FlowDeps, ctx: Ctx, flowKey: string, copy_key: "lock.compare.title" | "lock.relock.title"): Promise<boolean> {
   const quotes = validQuotes(ctx); if (!quotes.length) return false;   // 32.4 §4.4: never a rate that is not a pricing_quotes row within SM_QUOTE_VALIDITY_GATE

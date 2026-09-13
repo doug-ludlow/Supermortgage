@@ -637,6 +637,7 @@ export const COPY = {
   "video.starting": { key: "video.starting", kind: "line", text: "Starting your video call. Your camera and microphone are asked for first — nothing is recorded.", notes: "32.17 rule 5: recording off; the camera is for presence only (open question 2).", extras: [], section: "The video agent (32.17)" },
   "video.joining": { key: "video.joining", kind: "line", text: "Joining the call…", notes: "32.17 rule 15: the room is being joined through the vendor's client; the stage is never blank without a word on it.", extras: [], section: "The video agent (32.17)" },
   "video.replica_joining": { key: "video.replica_joining", kind: "line", text: "Michelle is joining…", notes: "32.17 rule 15: in the room, the replica's video not yet playing; the borrower's own camera is already in the picture-in-picture.", extras: [], section: "The video agent (32.17)" },
+  "video.replica_late": { key: "video.replica_late", kind: "line", text: "Michelle hasn't joined yet. You can keep waiting, or leave and start a new call.", extras: ["*32.17 rule 15: the room joined and the replica's video not playing after REPLICA_LATE_S seconds", "said on the stage, never a blank screen; Leave and a new call are one tap each.*"], section: "The video agent (32.17)" },
   "video.permission_denied": { key: "video.permission_denied", kind: "line", text: "Without a camera or microphone we can still start the call; you can allow them in the call itself, or continue in the conversation.", notes: "32.17: a refused permission never blocks the call; the thread at /app is always there.", extras: [], section: "The video agent (32.17)" },
   "video.unavailable": { key: "video.unavailable", kind: "line", text: "The video agent isn't available right now. Nothing is lost — you can continue in the conversation.", notes: "32.17 edge cases: the vendor is down at open (video_sessions.status = failed, end_reason = vendor_unavailable); the page offers /app in these words, never a raw error.", extras: [], section: "The video agent (32.17)" },
   "video.continue_in_thread": { key: "video.continue_in_thread", kind: "button", text: "Continue in the conversation", notes: "32.17: → /app.", extras: [], section: "The video agent (32.17)" },
@@ -656,4 +657,4 @@ export const COPY = {
 } as const satisfies Record<string, CopyEntry>;
 
 export type CopyKey = keyof typeof COPY;
-export const COPY_KEY_COUNT = 641;
+export const COPY_KEY_COUNT = 642;

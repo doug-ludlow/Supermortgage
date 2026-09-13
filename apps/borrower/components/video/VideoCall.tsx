@@ -132,7 +132,7 @@ export function VideoCall({ fixturesMode, firstName, statusTick, onSession }: Vi
       <div className="sm-video-stage">
         {phase === "opening" ? (
           <>
-            <p className="sm-muted" data-testid="video-status">{copy("video.starting")}</p>
+            <p className="sm-video-overlay sm-muted" data-testid="video-status">{copy("video.starting")}</p>
             <div className="sm-video-pip" data-testid="video-pip" aria-label="Your camera" hidden={!selfOn}>
               <video ref={selfVideo} autoPlay playsInline muted />
             </div>

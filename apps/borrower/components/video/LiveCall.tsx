@@ -10,6 +10,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { JoinOptions } from "@/lib/video/join";
 import { copy } from "@/lib/copy";
+import { SHOW_FAKE_MARKERS } from "@/lib/env";
+
+/** Seconds in the room without the replica's video before the stage says she is late (the call stays; Leave is one tap). */
+export const REPLICA_LATE_S = 40;
 
 type Track = MediaStreamTrack | null;
 type CallLike = {
@@ -49,6 +53,15 @@ export function LiveCall({ join, preview, onLeft, onJoined }: LiveCallProps) {
   const [replicaIn, setReplicaIn] = useState(false);
   const [replicaVideo, setReplicaVideo] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [participants, setParticipants] = useState(0);
+  const [joinedAt, setJoinedAt] = useState<number | null>(null);
+  const [waitS, setWaitS] = useState(0);
+  // the seconds since the room was joined while the replica's video is not yet playing (the late line, the dev-mode line)
+  useEffect(() => {
+    if (joinedAt === null || replicaVideo) return;
+    const t = setInterval(() => setWaitS(Math.floor((Date.now() - joinedAt) / 1000)), 1000);
+    return () => clearInterval(t);
+  }, [joinedAt, replicaVideo]);
 
   const syncTracks = useCallback(() => {
     const c = call.current; if (!c) return;
@@ -57,7 +70,7 @@ export function LiveCall({ join, preview, onLeft, onJoined }: LiveCallProps) {
     attach(selfVideo.current, local?.tracks?.video?.state === "playable" ? local.tracks.video.persistentTrack ?? null : preview?.getVideoTracks()[0] ?? null);
     attach(remoteVideo.current, remote?.tracks?.video?.state === "playable" ? remote.tracks.video.persistentTrack ?? null : null);
     attach(remoteAudio.current, remote?.tracks?.audio?.state === "playable" ? remote.tracks.audio.persistentTrack ?? null : null);
-    setReplicaIn(!!remote); setReplicaVideo(remote?.tracks?.video?.state === "playable");
+    setReplicaIn(!!remote); setReplicaVideo(remote?.tracks?.video?.state === "playable"); setParticipants(ps.length);
   }, [preview]);
   // the self-view before the room's own track: the permission step's camera, from the first frame (32.17 rule 15)
   useEffect(() => { if (!call.current) attach(selfVideo.current, preview?.getVideoTracks()[0] ?? null); }, [preview]);
@@ -70,7 +83,8 @@ export function LiveCall({ join, preview, onLeft, onJoined }: LiveCallProps) {
       if (cancelled) return;
       c = Daily.createCallObject({ subscribeToTracksAutomatically: true }); call.current = c;
       for (const ev of ["joined-meeting", "participant-joined", "participant-updated", "participant-left", "track-started", "track-stopped"]) c.on(ev, () => syncTracks());
-      c.on("joined-meeting", () => { setState("in"); onJoined?.(); });
+      c.on("joined-meeting", () => { setState("in"); setJoinedAt(Date.now()); onJoined?.(); });
+      c.on("nonfatal-error", (e) => { console.warn("video: non-fatal room error", e); });
       c.on("left-meeting", () => { setState("left"); onLeft("vendor_ended"); });
       c.on("error", (e) => { setError(String((e as { errorMsg?: string } | undefined)?.errorMsg ?? "call error")); setState("left"); onLeft("error"); });
       try { await c.join({ url: join.url, userName: join.userName, startVideoOff: join.startVideoOff, startAudioOff: join.startAudioOff }); syncTracks(); }
@@ -85,14 +99,15 @@ export function LiveCall({ join, preview, onLeft, onJoined }: LiveCallProps) {
   const leave = async () => { const c = call.current; call.current = null; setState("left"); if (c) { await c.leave().catch(() => undefined); await c.destroy().catch(() => undefined); } onLeft("borrower_left"); };
 
   return (
-    <div className="sm-video-live" data-testid="video-live" data-state={state} data-replica={replicaIn ? "in" : "waiting"}>
+    <div className="sm-video-live" data-testid="video-live" data-state={state} data-replica={replicaVideo ? "in" : replicaIn ? "joined" : "waiting"}>
       <video ref={remoteVideo} className="sm-video-remote" data-testid="video-remote" autoPlay playsInline />
       <audio ref={remoteAudio} autoPlay />
       <div className="sm-video-pip" data-testid="video-pip" aria-label="Your camera">
         <video ref={selfVideo} autoPlay playsInline muted />
       </div>
-      {state === "joining" ? <p className="sm-video-overlay sm-muted" data-testid="video-status">{copy("video.joining")}</p> : state === "in" && !replicaVideo ? <p className="sm-video-overlay sm-muted" data-testid="video-status">{copy("video.replica_joining")}</p> : null}
-      {error ? <p className="sm-video-overlay sm-error" role="alert">{error}</p> : null}
+      {state === "joining" ? <p className="sm-video-overlay sm-muted" data-testid="video-status">{copy("video.joining")}</p> : state === "in" && !replicaVideo ? <p className="sm-video-overlay sm-muted" data-testid="video-status" data-late={waitS >= REPLICA_LATE_S ? "1" : undefined}>{waitS >= REPLICA_LATE_S ? copy("video.replica_late") : copy("video.replica_joining")}</p> : null}
+      {error ? <p className="sm-video-overlay sm-error" role="alert" data-testid="video-error">{error}</p> : null}
+      {SHOW_FAKE_MARKERS ? <p className="sm-video-debug" data-testid="video-debug">{`room: ${state} · in the room: ${participants} · Michelle: ${replicaVideo ? "video playing" : replicaIn ? "joined, no video yet" : "not in the room"}${!replicaVideo && joinedAt !== null ? ` · ${waitS}s` : ""}`}</p> : null}
       <div className="sm-video-controls" data-testid="video-controls">
         <button type="button" className="sm-btn" onClick={toggleMic} aria-pressed={!mic} data-testid="video-mic">{mic ? copy("video.mute") : copy("video.unmute")}</button>
         <button type="button" className="sm-btn" onClick={toggleCam} aria-pressed={!cam} data-testid="video-camera">{cam ? copy("video.camera_off") : copy("video.camera_on")}</button>

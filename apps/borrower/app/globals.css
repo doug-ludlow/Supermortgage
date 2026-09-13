@@ -1363,11 +1363,32 @@ a {
   transform: scaleX(-1); /* a mirror, as a person expects of their own camera */
 }
 .sm-video-overlay {
+  /* the stage's one line while nothing plays (joining, Michelle joining, an error): centred, above the video, below the title strip's zone */
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  z-index: 4;
+  max-width: min(560px, calc(100% - 32px));
+  padding: 10px 14px;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+}
+.sm-video-overlay.sm-muted {
+  color: #ddd;
+}
+.sm-video-debug {
   position: absolute;
   left: 16px;
-  top: 12px;
+  bottom: 64px;
   margin: 0;
-  z-index: 2;
+  z-index: 4;
+  font-size: 0.8rem;
+  color: #bbb;
+  background: rgba(0, 0, 0, 0.55);
+  padding: 4px 8px;
 }
 .sm-video-controls {
   position: absolute;

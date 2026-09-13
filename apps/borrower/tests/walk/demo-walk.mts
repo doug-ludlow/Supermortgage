@@ -117,13 +117,24 @@ async function walk(browser: Browser): Promise<void> {
   // 10. the video door: a fresh context with no account reaches the call itself (32.17 rule 11) — never a 404, never a sign-in form; an account is opened on the spot
   const ctxV = await browser.newContext({ viewport: { width: 1280, height: 900 }, permissions: ["camera", "microphone"] });
   const pv = await ctxV.newPage();
+  const videoStarted = Date.now();
   await pv.goto(`${BASE}/video`, { waitUntil: "load", timeout: 60_000 }).catch(() => undefined);
   await pv.waitForSelector('[data-testid="video-call"][data-phase="live"], [data-testid="video-call"][data-phase="failed"]', { timeout: 90_000 }).catch(() => undefined);
+  const liveAfterMs = Date.now() - videoStarted;
   await pv.waitForTimeout(1500);
   await snap(pv, "video-door");
   const videoPhase = await pv.locator('[data-testid="video-call"]').getAttribute("data-phase").catch(() => null);
-  const videoOk = /\/app\/video/.test(pv.url()) && (await pv.locator('text=This page could not be found').count()) === 0 && videoPhase === "live" && (await pv.locator('[data-testid="account"], main form input[type="password"]').count()) === 0;
-  record(10, "/video with no account reaches the call itself: no sign-in form, the call live, an account opened on the spot", videoOk, `${pv.url()} phase=${videoPhase}`);
+  const videoVendor = await pv.locator('[data-testid="video-call"]').getAttribute("data-vendor").catch(() => null);
+  // on the live vendor the call is working only when the replica's video is playing on the stage (32.17 rule 15) — the seconds it takes are the black-screen time
+  let replica: string | null = null; let replicaAfterMs: number | null = null;
+  if (videoPhase === "live" && videoVendor && videoVendor !== "FAKE") {
+    await pv.waitForSelector('[data-testid="video-live"][data-replica="in"] video[data-testid="video-remote"]', { timeout: 75_000 }).then(() => { replicaAfterMs = Date.now() - videoStarted; }).catch(() => undefined);
+    replica = await pv.locator('[data-testid="video-live"]').getAttribute("data-replica").catch(() => null);
+    await snap(pv, "video-michelle");
+  }
+  const videoStatus = await pv.locator('[data-testid="video-status"], [data-testid="video-error"], [data-testid="video-debug"]').allInnerTexts().catch(() => [] as string[]);
+  const videoOk = /\/app\/video/.test(pv.url()) && (await pv.locator('text=This page could not be found').count()) === 0 && videoPhase === "live" && (await pv.locator('[data-testid="account"], main form input[type="password"]').count()) === 0 && (videoVendor === "FAKE" || replica === "in");
+  record(10, "/video with no account reaches the call itself: no sign-in form, the call live, an account opened on the spot", videoOk, `${pv.url()} phase=${videoPhase} vendor=${videoVendor} live after ${liveAfterMs}ms; Michelle ${replica === "in" ? `in the room after ${replicaAfterMs}ms` : `not in the room after 75s (${replica})`}; stage: ${JSON.stringify(videoStatus)}`);
   await ctxV.close();
 
   // 8. sign out

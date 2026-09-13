@@ -698,12 +698,17 @@ test("32.17-T15: Given `/app/video` with no session, when the visitor starts the
   door = { token: r.body["token"] as string, party_id, session_id: session.session_id, video_id: String(r.body["video_session_id"]), videoToken: m![1]!, greeting: `${String(r.body["greeting"] ?? "")} ${String(g.body["text"] ?? "")}`.trim() };
   assert.equal((await current(door.video_id)).status, "created");
   // the shell: no sign-in form in front of the call — the call pane live at once, the rail beside it once the call has opened the account
+  const conversationsBefore = fake.bodies.filter((b) => b.op === "createConversation").length;
   const { page, ctx } = await pageFor(null, 1280);
   await page.waitForSelector('[data-testid="shell"]', { timeout: 30_000 });
   assert.equal(await page.getByRole("heading", { name: copyText("auth.welcome_back") }).count(), 0, "no sign-in form");
   await page.waitForSelector('[data-testid="video-call"][data-phase="live"]', { timeout: 60_000 });
   await page.waitForSelector('[data-testid="record"] [data-record-section="needed"]', { timeout: 30_000, state: "attached" });
   assert.equal(await page.locator('main form input[type="password"]').count(), 0);
+  // one call for one visit: the shell's loading (the account's subject, the record, the cards) never re-opens the call — one conversation at the vendor, the pane still live on it
+  await new Promise((r) => setTimeout(r, 2500)); await settle();
+  assert.equal(fake.bodies.filter((b) => b.op === "createConversation").length - conversationsBefore, 1, "one vendor conversation for the page's visit");
+  assert.equal(await page.locator('[data-testid="video-call"][data-phase="live"]').count(), 1, "the call still live");
   await page.screenshot({ path: `${SCREENSHOTS}/t15-door-1280.png`, fullPage: false }).catch(() => undefined);
   await ctx.close();
   // a second open on the same session: the same party, no second account, a fresh greeting (the "borrower is back" turn once there are words; the first turn's words before that)

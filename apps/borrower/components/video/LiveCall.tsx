@@ -61,6 +61,9 @@ export const isReplicaStoppedSpeaking = (data: unknown): boolean => {
 /** The one message the page sends the vendor (rule 17): the opening turn's guarded text, as the interactions protocol's echo. */
 export const echoMessage = (conversationId: string, text: string): Record<string, unknown> => ({ message_type: "conversation", event_type: "conversation.echo", conversation_id: conversationId, properties: { text } });
 
+/** One call object at a time on the page (the vendor's client refuses a second): the next one is created only after the last has been destroyed. */
+let lastCallGone: Promise<unknown> = Promise.resolve();
+
 export function LiveCall({ join, preview, echo, vendorConversationId, onEchoed, onLeft, onJoined }: LiveCallProps) {
   const remoteVideo = useRef<HTMLVideoElement>(null); const remoteAudio = useRef<HTMLAudioElement>(null); const selfVideo = useRef<HTMLVideoElement>(null);
   const call = useRef<CallLike | null>(null);
@@ -70,6 +73,10 @@ export function LiveCall({ join, preview, echo, vendorConversationId, onEchoed, 
   const [replicaVideo, setReplicaVideo] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [participants, setParticipants] = useState(0);
+  // the room's events with the second they came, for the dev-mode line (what the deploy walk records when the replica never shows)
+  const startedAt = useRef(Date.now());
+  const [events, setEvents] = useState<string[]>([]);
+  const note = useCallback((what: string) => setEvents((cur) => [...cur.slice(-11), `${what}@${Math.round((Date.now() - startedAt.current) / 100) / 10}s`]), []);
   // rule 17: the echo goes once — after the replica's own greeting (its "stopped speaking" event), or ECHO_FALLBACK_S after its video started
   const [replicaVideoAt, setReplicaVideoAt] = useState<number | null>(null);
   const [replicaStopped, setReplicaStopped] = useState(0);
@@ -109,24 +116,29 @@ export function LiveCall({ join, preview, echo, vendorConversationId, onEchoed, 
     (async () => {
       const mod = await import("@daily-co/daily-js");
       const Daily = (mod.default ?? mod) as unknown as { createCallObject(o?: object): CallLike };
+      await lastCallGone;   // the previous call object (a call this page left) is gone before the next is made
       if (cancelled) return;
-      c = Daily.createCallObject({ subscribeToTracksAutomatically: true }); call.current = c;
+      try { c = Daily.createCallObject({ subscribeToTracksAutomatically: true }); }
+      catch (e) { setError(e instanceof Error ? e.message : String(e)); note("create-failed"); setState("left"); onLeft("error"); return; }
+      call.current = c;
       for (const ev of ["joined-meeting", "participant-joined", "participant-updated", "participant-left", "track-started", "track-stopped"]) c.on(ev, () => syncTracks());
+      for (const ev of ["joining-meeting", "joined-meeting", "participant-joined", "participant-left", "left-meeting", "error", "nonfatal-error", "camera-error"]) c.on(ev, () => note(ev));
+      c.on("track-started", (e) => { const p = (e as { participant?: { local?: boolean }; track?: { kind?: string } } | undefined); note(`track-${p?.track?.kind ?? "?"}-${p?.participant?.local ? "local" : "remote"}`); });
       c.on("joined-meeting", () => { setState("in"); setJoinedAt(Date.now()); onJoined?.(); });
       c.on("nonfatal-error", (e) => { console.warn("video: non-fatal room error", e); });
       c.on("app-message", (e) => { const data = (e as { data?: unknown } | undefined)?.data; if (isReplicaStoppedSpeaking(data)) setReplicaStopped((n) => n + 1); });
-      c.on("left-meeting", () => { setState("left"); onLeft("vendor_ended"); });
+      c.on("left-meeting", () => { if (!cancelled) { setState("left"); onLeft("vendor_ended"); } });
       c.on("error", (e) => { setError(String((e as { errorMsg?: string } | undefined)?.errorMsg ?? "call error")); setState("left"); onLeft("error"); });
       try { await c.join({ url: join.url, userName: join.userName, startVideoOff: join.startVideoOff, startAudioOff: join.startAudioOff }); syncTracks(); }
-      catch (e) { if (!cancelled) { setError(e instanceof Error ? e.message : String(e)); setState("left"); onLeft("error"); } }
+      catch (e) { if (!cancelled) { setError(e instanceof Error ? e.message : String(e)); note("join-failed"); setState("left"); onLeft("error"); } }
     })();
-    return () => { cancelled = true; const cc = c; call.current = null; if (cc) void cc.leave().catch(() => undefined).then(() => cc.destroy()).catch(() => undefined); };
+    return () => { cancelled = true; const cc = c; call.current = null; if (cc) lastCallGone = cc.leave().catch(() => undefined).then(() => cc.destroy()).catch(() => undefined); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [join.url, join.userName]);
 
   const toggleMic = () => { const c = call.current; if (!c) return; const next = !mic; c.setLocalAudio(next); setMic(next); };
   const toggleCam = () => { const c = call.current; if (!c) return; const next = !cam; c.setLocalVideo(next); setCam(next); };
-  const leave = async () => { const c = call.current; call.current = null; setState("left"); if (c) { await c.leave().catch(() => undefined); await c.destroy().catch(() => undefined); } onLeft("borrower_left"); };
+  const leave = async () => { const c = call.current; call.current = null; setState("left"); if (c) { lastCallGone = c.leave().catch(() => undefined).then(() => c.destroy()).catch(() => undefined); await lastCallGone; } onLeft("borrower_left"); };
 
   return (
     <div className="sm-video-live" data-testid="video-live" data-state={state} data-replica={replicaVideo ? "in" : replicaIn ? "joined" : "waiting"} data-echoed={echoed.current ? "1" : undefined}>
@@ -137,7 +149,7 @@ export function LiveCall({ join, preview, echo, vendorConversationId, onEchoed, 
       </div>
       {state === "joining" ? <p className="sm-video-overlay sm-muted" data-testid="video-status">{copy("video.joining")}</p> : state === "in" && !replicaVideo ? <p className="sm-video-overlay sm-muted" data-testid="video-status" data-late={waitS >= REPLICA_LATE_S ? "1" : undefined}>{waitS >= REPLICA_LATE_S ? copy("video.replica_late") : copy("video.replica_joining")}</p> : null}
       {error ? <p className="sm-video-overlay sm-error" role="alert" data-testid="video-error">{error}</p> : null}
-      {SHOW_FAKE_MARKERS ? <p className="sm-video-debug" data-testid="video-debug">{`room: ${state} · in the room: ${participants} · Michelle: ${replicaVideo ? "video playing" : replicaIn ? "joined, no video yet" : "not in the room"}${!replicaVideo && joinedAt !== null ? ` · ${waitS}s` : ""}`}</p> : null}
+      {SHOW_FAKE_MARKERS ? <p className="sm-video-debug" data-testid="video-debug">{`room: ${state} · in the room: ${participants} · Michelle: ${replicaVideo ? "video playing" : replicaIn ? "joined, no video yet" : "not in the room"}${!replicaVideo && joinedAt !== null ? ` · ${waitS}s` : ""} · ${events.join(" ")}`}</p> : null}
       <div className="sm-video-controls" data-testid="video-controls">
         <button type="button" className="sm-btn" onClick={toggleMic} aria-pressed={!mic} data-testid="video-mic">{mic ? copy("video.mute") : copy("video.unmute")}</button>
         <button type="button" className="sm-btn" onClick={toggleCam} aria-pressed={!cam} data-testid="video-camera">{cam ? copy("video.camera_off") : copy("video.camera_on")}</button>

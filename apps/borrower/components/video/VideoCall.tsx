@@ -55,6 +55,9 @@ export function VideoCall({ fixturesMode, firstName, statusTick, onSession }: Vi
   const greetingDone = useRef(false);
   const frame = useRef<HTMLIFrameElement>(null);
   const fakeEchoed = useRef(false);
+  // the shell's callback identity changes as it loads (the subject the door's account opens, the record, the cards): the call is opened once per mount and per "Start a new call", never again because a callback changed
+  const onSessionRef = useRef(onSession);
+  useEffect(() => { onSessionRef.current = onSession; }, [onSession]);
   const [permissionNote, setPermissionNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -68,7 +71,7 @@ export function VideoCall({ fixturesMode, firstName, statusTick, onSession }: Vi
     if (fixturesMode) {
       // FAKE fixtures mode: no API — a recorded call so the screen can be demoed (the layout, the rail, the footer)
       const fake: VideoSession = { video_session_id: "FAKE-video-session", status: "joined", vendor: "FAKE", conversation_url: null, end_reason: null, transcript_ref: null, created_at: new Date().toISOString(), joined_at: new Date().toISOString(), ended_at: null, subject: {}, conversation_id: "conv-1", vendor_conversation_id: null, replica_id: "r_FAKE_stock", borrower_camera: "on" };
-      setSession(fake); onSession?.(fake); setPhase("live"); opening.current = false;
+      setSession(fake); onSessionRef.current?.(fake); setPhase("live"); opening.current = false;
       return;
     }
     // the camera for presence, the microphone for the words (32.17 open question 2: VIDEO_BORROWER_CAMERA=off joins audio-only — the API says which);
@@ -89,13 +92,13 @@ export function VideoCall({ fixturesMode, firstName, statusTick, onSession }: Vi
     try {
       await permissions;
       const s = await opened;
-      setSession(s); onSession?.(s);
+      setSession(s); onSessionRef.current?.(s);
       setPhase(s.status === "failed" ? "failed" : "live");
     } catch (e) {
       if (e instanceof ApiRequestError && e.status === 503) { setPhase("failed"); }
       else { setError(e instanceof ApiRequestError ? copy(e.body.copy_key) : copy("error.generic")); setPhase("failed"); }
     } finally { opening.current = false; }
-  }, [fixturesMode, onSession]);
+  }, [fixturesMode]);
 
   useEffect(() => { void start(); }, [start, attempt]);
 
@@ -131,7 +134,7 @@ export function VideoCall({ fixturesMode, firstName, statusTick, onSession }: Vi
   useEffect(() => {
     if (fixturesMode || !session || !statusTick) return;
     let cancelled = false;
-    videoSession(session.video_session_id).then((s) => { if (cancelled) return; setSession(s); onSession?.(s); if (s.status === "ended") setPhase("ended"); if (s.status === "failed") setPhase("failed"); }).catch(() => undefined);
+    videoSession(session.video_session_id).then((s) => { if (cancelled) return; setSession(s); onSessionRef.current?.(s); if (s.status === "ended") setPhase("ended"); if (s.status === "failed") setPhase("failed"); }).catch(() => undefined);
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusTick]);
@@ -139,11 +142,11 @@ export function VideoCall({ fixturesMode, firstName, statusTick, onSession }: Vi
   const leave = useCallback(async () => {
     if (!session) return;
     stopSelf();
-    if (fixturesMode) { const ended = { ...session, status: "ended" as const, end_reason: "borrower_left", ended_at: new Date().toISOString() }; setSession(ended); onSession?.(ended); setPhase("ended"); return; }
-    try { const s = await endVideoSession(session.video_session_id); setSession(s); onSession?.(s); }
+    if (fixturesMode) { const ended = { ...session, status: "ended" as const, end_reason: "borrower_left", ended_at: new Date().toISOString() }; setSession(ended); onSessionRef.current?.(ended); setPhase("ended"); return; }
+    try { const s = await endVideoSession(session.video_session_id); setSession(s); onSessionRef.current?.(s); }
     catch { /* the row is the truth: re-read below */ }
     setPhase("ended");
-  }, [session, fixturesMode, onSession, stopSelf]);
+  }, [session, fixturesMode, stopSelf]);
   // the live room ended (the borrower left through the stage's own control, the vendor shut it down, an error): the session row is the truth
   const onLeft = useCallback((reason: "borrower_left" | "vendor_ended" | "error") => { if (reason === "borrower_left") void leave(); else if (reason === "error") setPhase("failed"); }, [leave]);
 

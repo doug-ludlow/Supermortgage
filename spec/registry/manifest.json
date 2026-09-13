@@ -15606,7 +15606,7 @@
    },
    {
     "n": 5,
-    "text": "Given a new video session, then `custom_greeting` is the guarded first turn's rendered text: it says in its own words that it is automated, names the partner as the lender, and never names Supermortgage as the lender."
+    "text": "Given a new video session, then `custom_greeting` is the disclosure line alone (automated, the partner as the lender, never Supermortgage as the lender) and the opening turn's text \u2014 `GET \u2026/greeting` once it has landed \u2014 is the guarded first turn's rendered text: no `{{token}}`, the partner named as the lender, never Supermortgage as the lender, and the account door's first turn reused, never run twice."
    },
    {
     "n": 6,
@@ -15667,6 +15667,10 @@
    {
     "n": 20,
     "text": "Given `/app/video` on a live call with the goal chosen and a typed income card pending, then a card only a tap can answer (a consent the goal opened) is on the screen on its own and \"Not now\" sets it aside; with only speakable cards left, nothing is on the screen until Michelle proposes into one or asks for one; when a spoken income figure is proposed into the income card, that one card rises over the stage with what was heard and Confirm and Edit, and Confirm resolves it and it leaves the screen."
+   },
+   {
+    "n": 21,
+    "text": "Given a new video session, then the open answers with `opening_turn = pending` and the vendor's `custom_greeting` = the disclosure line before the opening turn has landed (`GET \u2026/greeting` \u2192 `ready = false` until it does), the stream carries `video.session.greeting` when it lands and the greeting then reads `ready = true` with the turn's rendered text and its `reply_message_id`; on `/app/video` under the FAKE the replica's page shows that text once as its echoed line (`data-echo`); with nothing new to say (a reply already standing, nobody having spoken since) the standing reply is the one spoken, never a second first turn."
    }
   ],
   "tables": [

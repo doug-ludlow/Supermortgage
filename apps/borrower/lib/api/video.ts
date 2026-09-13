@@ -2,6 +2,7 @@
  * 32.17 — the video agent's API (src/runtime/borrower/video-routes.ts) as the page uses it:
  *   openVideoSession   POST /v1/borrower/video/sessions              → { video_session_id, conversation_url, status, vendor, … }
  *   videoSession       GET  /v1/borrower/video/sessions/{id}         → the current row (status, end_reason, …)
+ *   videoGreeting      GET  /v1/borrower/video/sessions/{id}/greeting → { ready, text }: the opening turn's rendered text once it has landed (rule 17)
  *   endVideoSession    POST /v1/borrower/video/sessions/{id}/end     → { status: ended }
  *   fakeVideoCallback  POST /v1/borrower/video/sessions/{id}/fake-callback   FAKE only: the FAKE page's join / leave → the same callback path
  *   videoChat          POST /v1/video/llm/{token}/chat/completions   the FAKE page's utterance as the vendor's own chat-completions request
@@ -25,12 +26,18 @@ export type VideoSession = {
   ended_at: string | null;
   subject: { application_id?: string | null; loan_id?: string | null };
   conversation_id: string;
+  /** The vendor's own conversation id (Tavus) — the echo names it; null on the FAKE and before the vendor answered. */
+  vendor_conversation_id: string | null;
   replica_id: string | null;
   borrower_camera: "on" | "off";
   /** The greeting the replica speaks first (the guarded first turn, rendered) — on the open response only. */
   greeting?: string;
+  /** 32.17 rule 17: whether an opening turn was started behind this open (its text comes from `videoGreeting` once it has landed). */
+  opening_turn?: "pending" | "none";
   fallback_copy_key?: string;
 };
+/** GET …/greeting: the opening turn's rendered text for the replica to speak once, when it has landed. */
+export type VideoGreeting = { video_session_id: string; ready: boolean; text: string | null; reply_message_id: string | null };
 
 async function request<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${apiBase()}${path}`, { method, credentials: "include", headers: { accept: "application/json", ...(body !== undefined ? { "content-type": "application/json" } : {}) }, body: body !== undefined ? JSON.stringify(body) : undefined });
@@ -44,6 +51,9 @@ async function request<T>(method: "GET" | "POST", path: string, body?: unknown):
 
 export const openVideoSession = (): Promise<VideoSession> => request<VideoSession>("POST", "/v1/borrower/video/sessions", {});
 export const videoSession = (id: string): Promise<VideoSession> => request<VideoSession>("GET", `/v1/borrower/video/sessions/${encodeURIComponent(id)}`);
+export const videoGreeting = (id: string): Promise<VideoGreeting> => request<VideoGreeting>("GET", `/v1/borrower/video/sessions/${encodeURIComponent(id)}/greeting`);
+/** The one message the page sends into the FAKE page's frame (rule 17): the opening turn's rendered text, for the FAKE replica to show and speak as the vendor's echo would. */
+export type FakeEchoMessage = { type: "supermortgage.video.echo"; text: string };
 export const endVideoSession = (id: string, reason = "borrower_left"): Promise<VideoSession> => request<VideoSession>("POST", `/v1/borrower/video/sessions/${encodeURIComponent(id)}/end`, { reason });
 export const fakeVideoCallback = (id: string, event_type: "system.replica_joined" | "system.shutdown" | "application.transcription_ready", properties: Record<string, unknown> = {}): Promise<{ received: boolean; outcome?: string }> =>
   request<{ received: boolean; outcome?: string }>("POST", `/v1/borrower/video/sessions/${encodeURIComponent(id)}/fake-callback`, { event_type, properties });

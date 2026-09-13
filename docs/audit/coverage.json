@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 7774/7783 (99.9%): tids 2121/2129, tables 729/730, timers 2029/2029, notices 306/306, tools 1378/1378, figures 1211/1211; processes at 100%: 180/181",
+ "brief": "spec units built 7775/7784 (99.9%): tids 2122/2130, tables 729/730, timers 2029/2029, notices 306/306, tools 1378/1378, figures 1211/1211; processes at 100%: 180/181",
  "totals": {
   "tids": {
-   "spec": 2129,
-   "built": 2121
+   "spec": 2130,
+   "built": 2122
   },
   "tables": {
    "spec": 730,
@@ -26,8 +26,8 @@
    "built": 1211
   },
   "units": {
-   "spec": 7783,
-   "built": 7774
+   "spec": 7784,
+   "built": 7775
   }
  },
  "sections": {
@@ -218,8 +218,8 @@
    "done": 3
   },
   "32": {
-   "spec": 337,
-   "built": 328,
+   "spec": 338,
+   "built": 329,
    "processes": 16,
    "done": 15
   }
@@ -7802,8 +7802,8 @@
    "process": "32.17",
    "title": "The video agent: the same conversation, face to face, with the cards on the rail",
    "tids": {
-    "spec": 20,
-    "built": 20,
+    "spec": 21,
+    "built": 21,
     "todo": 0,
     "missing": []
    },
@@ -7834,8 +7834,8 @@
     "missing": []
    },
    "units": {
-    "spec": 26,
-    "built": 26
+    "spec": 27,
+    "built": 27
    },
    "pct": 100.0
   }

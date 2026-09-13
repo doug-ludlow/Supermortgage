@@ -56,7 +56,7 @@ function useMedia(query: string): boolean {
   return m;
 }
 /** The named SSE frames this page follows (src/runtime/borrower/stream.ts): a card the call put on the rail, a card resolved, a reply appended, the session's own state. */
-const STREAM_EVENTS = ["card.sent", "card.resolved", "message.appended", "video.session.opened", "video.session.joined", "video.session.ended", "video.session.failed"] as const;
+const STREAM_EVENTS = ["card.sent", "card.resolved", "message.appended", "video.session.opened", "video.session.joined", "video.session.ended", "video.session.failed", "video.session.greeting"] as const;
 let seq = 0;
 
 export function VideoShell({ fixturesMode, fixtureName, initialSubject }: VideoShellProps) {

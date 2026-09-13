@@ -5,7 +5,7 @@
  * nine tools unchanged — src/runtime/borrower/agent/turn.ts runs it with `channel = video` from src/runtime/borrower/video-routes.ts).
  *
  *   video.open       creates the persona (custom LLM = the API's own chat-completions endpoint keyed per session; perception off) and
- *                    the conversation (recording off, the call limits of rule 8, the guarded first turn as the greeting, the first name
+ *                    the conversation (recording off, the call limits of rule 8, the disclosure line as the greeting — rule 17: the opening turn is spoken once it lands, the first name
  *                    and the partner's name as the only context) at the vendor — FakeTavus (FAKE) unless TAVUS_API_KEY is set — and
  *                    writes video_sessions{status = created}; a vendor error writes {status = failed, end_reason = vendor_unavailable}
  *   video.turn       the chat-completions endpoint's command record: the token was checked (videoSessionByToken, before anything is
@@ -78,7 +78,7 @@ export function personaBodyFor(i: { readonly base_url: string; readonly token: s
     layers: { llm: { model: CUSTOM_LLM_MODEL, base_url: i.base_url, api_key: i.token, speculative_inference: true }, perception: { perception_model: "off" } },
   };
 }
-/** The conversation: recording off, the call limits, the guarded first turn as the greeting, the first name and the partner's name as the only context. */
+/** The conversation: recording off, the call limits, the disclosure line as the greeting (rule 17 — the opening turn is echoed once it lands), the first name and the partner's name as the only context. */
 export function conversationBodyFor(i: { readonly persona_id: string; readonly replica_id: string; readonly callback_url: string; readonly greeting: string; readonly first_name: string; readonly partner_name: string }): TavusConversationRequest {
   return { persona_id: i.persona_id, replica_id: i.replica_id, callback_url: i.callback_url, custom_greeting: i.greeting, conversational_context: conversationalContext(i.first_name, i.partner_name), properties: { ...CALL_PROPERTIES } };
 }

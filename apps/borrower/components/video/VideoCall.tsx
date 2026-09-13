@@ -15,7 +15,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiRequestError } from "@/lib/api/client";
-import { endVideoSession, openVideoSession, videoSession, type VideoSession } from "@/lib/api/video";
+import { endVideoSession, openVideoSession, videoGreeting, videoSession, type FakeEchoMessage, type VideoSession } from "@/lib/api/video";
 import { copy } from "@/lib/copy";
 import { SHOW_FAKE_MARKERS } from "@/lib/env";
 import { joinOptionsFor } from "@/lib/video/join";
@@ -50,6 +50,11 @@ export function VideoCall({ fixturesMode, firstName, statusTick, onSession }: Vi
   const stopSelf = useCallback(() => { for (const t of selfStream.current?.getTracks() ?? []) t.stop(); selfStream.current = null; setSelfOn(false); }, []);
   useEffect(() => () => stopSelf(), [stopSelf]);
   useEffect(() => { const el = selfVideo.current; if (!el) return; el.srcObject = selfStream.current; if (selfStream.current) void el.play().catch(() => undefined); }, [selfOn, phase]);
+  // 32.17 rule 17: the opening turn's rendered text, read once it has landed (the stream's video.session.greeting tick, else a poll) — the replica speaks it once
+  const [greeting, setGreeting] = useState<string | null>(null);
+  const greetingDone = useRef(false);
+  const frame = useRef<HTMLIFrameElement>(null);
+  const fakeEchoed = useRef(false);
   const [permissionNote, setPermissionNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -58,11 +63,11 @@ export function VideoCall({ fixturesMode, firstName, statusTick, onSession }: Vi
   const start = useCallback(async () => {
     if (opening.current) return;
     opening.current = true;
-    setError(null); setPermissionNote(null);
+    setError(null); setPermissionNote(null); setGreeting(null); greetingDone.current = false; fakeEchoed.current = false;
     setPhase("opening");
     if (fixturesMode) {
       // FAKE fixtures mode: no API — a recorded call so the screen can be demoed (the layout, the rail, the footer)
-      const fake: VideoSession = { video_session_id: "FAKE-video-session", status: "joined", vendor: "FAKE", conversation_url: null, end_reason: null, transcript_ref: null, created_at: new Date().toISOString(), joined_at: new Date().toISOString(), ended_at: null, subject: {}, conversation_id: "conv-1", replica_id: "r_FAKE_stock", borrower_camera: "on" };
+      const fake: VideoSession = { video_session_id: "FAKE-video-session", status: "joined", vendor: "FAKE", conversation_url: null, end_reason: null, transcript_ref: null, created_at: new Date().toISOString(), joined_at: new Date().toISOString(), ended_at: null, subject: {}, conversation_id: "conv-1", vendor_conversation_id: null, replica_id: "r_FAKE_stock", borrower_camera: "on" };
       setSession(fake); onSession?.(fake); setPhase("live"); opening.current = false;
       return;
     }
@@ -93,6 +98,34 @@ export function VideoCall({ fixturesMode, firstName, statusTick, onSession }: Vi
   }, [fixturesMode, onSession]);
 
   useEffect(() => { void start(); }, [start, attempt]);
+
+  // the opening turn's text: asked on the stream's greeting tick and every 2 s until it has landed (rule 17), never after the call ended
+  useEffect(() => {
+    if (fixturesMode || !session || session.opening_turn !== "pending" || greetingDone.current || phase !== "live") return;
+    let cancelled = false;
+    const read = async (): Promise<boolean> => {
+      try { const g = await videoGreeting(session.video_session_id); if (cancelled) return true; if (g.ready && g.text) { greetingDone.current = true; setGreeting(g.text); return true; } }
+      catch { /* the next tick asks again */ }
+      return false;
+    };
+    void read();
+    const t = setInterval(() => { void read().then((done) => { if (done) clearInterval(t); }); }, 2000);
+    const stop = setTimeout(() => clearInterval(t), 120_000);
+    return () => { cancelled = true; clearInterval(t); clearTimeout(stop); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.video_session_id, session?.opening_turn, phase, statusTick, fixturesMode]);
+  // the FAKE page: the same one echo, as a same-origin message into its frame (it shows and speaks the line as the vendor's replica would)
+  useEffect(() => {
+    if (!greeting || fakeEchoed.current || session?.vendor !== "FAKE") return;
+    const w = frame.current?.contentWindow; if (!w) return;
+    const msg: FakeEchoMessage = { type: "supermortgage.video.echo", text: greeting };
+    const post = (): void => { if (fakeEchoed.current) return; fakeEchoed.current = true; w.postMessage(msg, window.location.origin); };
+    // the frame may still be loading: send on its load event too
+    const el = frame.current!; const onLoad = (): void => { w.postMessage(msg, window.location.origin); };
+    el.addEventListener("load", onLoad);
+    const t = setTimeout(post, 300);
+    return () => { clearTimeout(t); el.removeEventListener("load", onLoad); };
+  }, [greeting, session?.vendor]);
 
   // the stream said the session changed (joined, ended by the vendor, max_call_duration): re-read it
   useEffect(() => {
@@ -139,7 +172,7 @@ export function VideoCall({ fixturesMode, firstName, statusTick, onSession }: Vi
           </>
         ) : null}
         {live && join ? (
-          <LiveCall join={join} preview={selfOn ? selfStream.current : null} onLeft={onLeft} />
+          <LiveCall join={join} preview={selfOn ? selfStream.current : null} echo={greeting} vendorConversationId={session?.vendor_conversation_id ?? null} onLeft={onLeft} />
         ) : live ? (
           <div className="sm-video-live" data-testid="video-live" data-state="in" data-replica="fake">
             {fixturesMode || !src ? (
@@ -148,7 +181,7 @@ export function VideoCall({ fixturesMode, firstName, statusTick, onSession }: Vi
                 <p className="sm-muted">FAKE fixtures mode — no video agent is connected; the rail beside this pane is the recorded record.</p>
               </div>
             ) : (
-              <iframe className="sm-video-frame" data-testid="video-frame" title="Video agent" src={src} allow={IFRAME_ALLOW} />
+              <iframe ref={frame} className="sm-video-frame" data-testid="video-frame" title="Video agent" src={src} allow={IFRAME_ALLOW} />
             )}
             <div className="sm-video-pip" data-testid="video-pip" aria-label="Your camera" hidden={!selfOn}>
               <video ref={selfVideo} autoPlay playsInline muted />

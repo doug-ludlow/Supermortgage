@@ -23,7 +23,7 @@ const recognitionCtor = (): RecognitionCtor | null => {
   const w = window as unknown as { SpeechRecognition?: RecognitionCtor; webkitSpeechRecognition?: RecognitionCtor };
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 };
-type Line = { role: "you" | "replica"; text: string; at: string; id: number };
+type Line = { role: "you" | "replica"; text: string; at: string; id: number; echo?: boolean };
 let seq = 0;
 
 export function FakeVideoPage({ token, videoSessionId }: { token: string; videoSessionId: string | null }) {
@@ -49,6 +49,19 @@ export function FakeVideoPage({ token, videoSessionId }: { token: string; videoS
     if (typeof window === "undefined" || !("speechSynthesis" in window) || !t) return;
     try { window.speechSynthesis.speak(new SpeechSynthesisUtterance(t)); } catch { /* no voice: the words are on the page */ }
   }, []);
+  // 32.17 rule 17: the call pane's one echo — the opening turn's rendered text — shown and spoken as the replica's line (the vendor's conversation.echo, on the FAKE a same-origin message into this frame)
+  useEffect(() => {
+    const onMessage = (e: MessageEvent): void => {
+      if (e.origin !== window.location.origin) return;
+      const d = e.data as { type?: unknown; text?: unknown } | null;
+      if (!d || d.type !== "supermortgage.video.echo" || typeof d.text !== "string" || !d.text.trim()) return;
+      const id = (seq += 1);
+      setLines((cur) => [...cur, { role: "replica", text: d.text as string, at: new Date().toISOString(), id, echo: true }]);
+      speak(d.text);
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [speak]);
 
   const send = useCallback(async (t?: string) => {
     const msg = (t ?? text).trim();
@@ -92,7 +105,7 @@ export function FakeVideoPage({ token, videoSessionId }: { token: string; videoS
       </div>
       <div className="sm-fake-video-log" role="log" aria-label="What the video agent says" data-testid="fake-video-log">
         {lines.map((l) => (
-          <p key={l.id} className={`sm-fake-video-line sm-fake-video-${l.role}`} data-testid={l.role === "replica" ? "fake-video-replica" : "fake-video-you"} data-role={l.role}>
+          <p key={l.id} className={`sm-fake-video-line sm-fake-video-${l.role}`} data-testid={l.role === "replica" ? "fake-video-replica" : "fake-video-you"} data-role={l.role} data-echo={l.echo ? "1" : undefined}>
             {l.text || (l.role === "replica" ? "…" : "")}
           </p>
         ))}

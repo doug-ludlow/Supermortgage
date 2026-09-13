@@ -138,6 +138,12 @@ async function signedUpWithGoal(tag: string, option: "buy" | "lower_rate" | "cas
   return { token: a.token, party_id: a.party_id, app_id: apps[0]!.id, email: a.email };
 }
 /** POST /v1/borrower/video/sessions: the session opened at the FAKE; the per-session token is the last path segment of the FAKE page's URL. */
+/** GET …/greeting until the opening turn has landed (rule 17: it runs behind the open; the scripted model answers at once, the settle is a tick or two behind). */
+async function greetingOf(videoSessionId: string, token: string, timeoutMs = 15_000): Promise<Reply> {
+  const started = Date.now(); let last: Reply = { status: 0, body: {} };
+  while (Date.now() - started < timeoutMs) { last = await api("GET", `/v1/borrower/video/sessions/${videoSessionId}/greeting`, undefined, bearer(token)); if (last.status !== 200 || last.body["ready"] === true) return last; await new Promise((r) => setTimeout(r, 150)); }
+  return last;
+}
 async function openVideo(token: string): Promise<{ status: number; body: Json; id: string; videoToken: string }> {
   const r = await api("POST", "/v1/borrower/video/sessions", {}, bearer(token)); await settle();
   const url = String(r.body["conversation_url"] ?? ""); const m = /\/app\/video\/fake\/([A-Za-z0-9_-]+)/.exec(url);
@@ -346,21 +352,27 @@ test("32.17-T4: Given a video turn in which the model calls `card.request`, then
   await ctx.close();
 });
 
-test("32.17-T5: Given a new video session, then `custom_greeting` is the guarded first turn's rendered text: it says in its own words that it is automated, names the partner as the lender, and never names Supermortgage as the lender.", { skip }, async () => {
+test("32.17-T5: Given a new video session, then `custom_greeting` is the disclosure line alone (automated, the partner as the lender, never Supermortgage as the lender) and the opening turn's text — `GET …/greeting` once it has landed — is the guarded first turn's rendered text: no `{{token}}`, the partner named as the lender, never Supermortgage as the lender, and the account door's first turn reused, never run twice.", { skip }, async () => {
   const b = await signUp("t5"); const v = await openVideo(b.token); assert.equal(v.status, 201);
   const conv = fake.bodies.find((x) => x.op === "createConversation" && x.video_session_id === v.id)!; const greeting = String(conv.body["custom_greeting"]);
   assert.equal(greeting, v.body["greeting"], "the open response carries the same greeting");
-  // the guarded first turn (routes.ts firstTurn — the account door ran it; the video open reused it), rendered: the model's own words with the first name filled
-  const convId = (await db.query<{ conversation_id: string }>(`SELECT conversation_id FROM conversations WHERE party_id = $1`, [b.party_id]))[0]!.conversation_id;
-  const first = (await messagesOf(convId)).find((m) => m.sender === "agent" && (m.copy_tokens as Json | null)?.["source"] === "agent_turn")!; assert.ok(first, "the first turn's reply on the record");
-  const turn = (await turnsOf(b.party_id)).find((t) => t.reply_message_id === first.message_id)!; assert.ok(turn); assert.equal(turn.guard_result["ok"], true, "guarded");
-  assert.ok(greeting.endsWith(String(first.body_text).replace("{{party.first_name}}", "").trim()) || greeting.includes("Are you looking to buy a home"), `the first turn's rendered text is the greeting: ${greeting}`);
+  // rule 17: the vendor's greeting is the disclosure line alone — automated, the partner as the lender — spoken the moment the replica is in
   assert.doesNotMatch(greeting, /\{\{/, "rendered — no token");
   assert.match(greeting, /automated/i, "says it is automated");
   assert.ok(greeting.includes(partnerName), `names the partner: ${greeting}`);
   assert.match(greeting, new RegExp(`${partnerName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}, your lender|for ${partnerName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`), "the partner as the lender");
   assert.doesNotMatch(greeting, /Supermortgage[^.]{0,40}\b(your lender|the lender)\b/i, "never Supermortgage as the lender");
-  assert.equal(String((await turnsOf(b.party_id)).length), String((await turnsOf(b.party_id)).length), "no second first turn was run: the account door's is reused");
+  assert.doesNotMatch(greeting, /buy a home|your name/i, "the model's words are not in the vendor's greeting: they are the opening turn's, spoken once they land");
+  // the opening turn: the guarded first turn (routes.ts firstTurn — the account door ran it; the video open reused it), rendered with the first name filled, handed to the page by GET …/greeting
+  const convId = (await db.query<{ conversation_id: string }>(`SELECT conversation_id FROM conversations WHERE party_id = $1`, [b.party_id]))[0]!.conversation_id;
+  const first = (await messagesOf(convId)).find((m) => m.sender === "agent" && (m.copy_tokens as Json | null)?.["source"] === "agent_turn")!; assert.ok(first, "the first turn's reply on the record");
+  const turn = (await turnsOf(b.party_id)).find((t) => t.reply_message_id === first.message_id)!; assert.ok(turn); assert.equal(turn.guard_result["ok"], true, "guarded");
+  const g = await greetingOf(v.id, b.token); assert.equal(g.status, 200, JSON.stringify(g.body));
+  assert.equal(g.body["ready"], true, "the opening turn has landed"); const spoken = String(g.body["text"]);
+  assert.ok(spoken.length > 0 && (spoken.endsWith(String(first.body_text).replace("{{party.first_name}}", "").trim()) || spoken.includes("Are you looking to buy a home")), `the first turn's rendered text: ${spoken}`);
+  assert.doesNotMatch(spoken, /\{\{/, "rendered — no token"); assert.equal(g.body["reply_message_id"], first.message_id);
+  assert.doesNotMatch(spoken, /Supermortgage[^.]{0,40}\b(your lender|the lender)\b/i, "never Supermortgage as the lender");
+  assert.equal((await turnsOf(b.party_id)).filter((t) => t.reply_message_id !== null).length, 1, "no second first turn was run: the account door's is reused");
 });
 
 test("32.17-T6: Given a video turn in which the model shows rates, then the spoken text names each rate with its APR and the rail's Numbers carries the rates element (32.16 32.16-T7 unchanged).", { skip }, async () => {
@@ -681,7 +693,9 @@ test("32.17-T15: Given `/app/video` with no session, when the visitor starts the
   const cards = await db.query<{ copy_key: string; status: string }>(`SELECT copy_key, status FROM card_instances WHERE party_id = $1 ORDER BY created_at`, [party_id]);
   assert.ok(cards.some((c) => c.copy_key === "entry.goal.question" && c.status === "pending"), `the goal card: ${JSON.stringify(cards)}`);
   const url = String(r.body["conversation_url"] ?? ""); const m = /\/app\/video\/fake\/([A-Za-z0-9_-]+)/.exec(url); assert.ok(m, `a FAKE conversation_url: ${url}`);
-  door = { token: r.body["token"] as string, party_id, session_id: session.session_id, video_id: String(r.body["video_session_id"]), videoToken: m![1]!, greeting: String(r.body["greeting"] ?? "") };
+  assert.equal(r.body["opening_turn"], "pending", "the first turn runs behind the open (rule 17)");
+  const g = await greetingOf(String(r.body["video_session_id"]), r.body["token"] as string); assert.equal(g.status, 200); assert.equal(g.body["ready"], true, JSON.stringify(g.body));
+  door = { token: r.body["token"] as string, party_id, session_id: session.session_id, video_id: String(r.body["video_session_id"]), videoToken: m![1]!, greeting: `${String(r.body["greeting"] ?? "")} ${String(g.body["text"] ?? "")}`.trim() };
   assert.equal((await current(door.video_id)).status, "created");
   // the shell: no sign-in form in front of the call — the call pane live at once, the rail beside it once the call has opened the account
   const { page, ctx } = await pageFor(null, 1280);
@@ -697,7 +711,8 @@ test("32.17-T15: Given `/app/video` with no session, when the visitor starts the
   const again = await api("POST", "/v1/borrower/video/sessions", {}, bearer(door.token)); await settle();
   assert.equal(again.status, 201, JSON.stringify(again.body).slice(0, 300)); assert.equal(again.body["opened_account"], false); assert.equal(again.body["token"], undefined, "the token rides only on the door's response");
   assert.equal(await count("parties"), partiesBefore, "one account for one visitor: a session's own re-open creates none");
-  assert.ok(String(again.body["greeting"] ?? "").length > 0);
+  assert.ok(String(again.body["greeting"] ?? "").length > 0); assert.equal(again.body["opening_turn"], "pending", "a fresh opening turn behind the re-open");
+  const g2 = await greetingOf(String(again.body["video_session_id"]), door.token); assert.equal(g2.body["ready"], true, JSON.stringify(g2.body)); assert.ok(String(g2.body["text"] ?? "").length > 0);
   await api("POST", `/v1/borrower/video/sessions/${again.body["video_session_id"]}/end`, { reason: "borrower_left" }, bearer(door.token)); await settle();
 });
 const isUuidLike = (s: string): boolean => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
@@ -869,4 +884,40 @@ test("32.17-T20: Given `/app/video` on a live call with the goal chosen and a ty
   assert.equal(await page.locator(`[data-testid="ask-overlay"][data-card-id="${incomeId}"]`).count(), 0, "and it left the screen (another tap-only ask may rise next: that is the rule working)");
   await ctx.close();
   } finally { clock.set(was); }
+});
+
+test("32.17-T21: Given a new video session, then the open answers with `opening_turn = pending` and the vendor's `custom_greeting` = the disclosure line before the opening turn has landed (`GET …/greeting` → `ready = false` until it does), the stream carries `video.session.greeting` when it lands and the greeting then reads `ready = true` with the turn's rendered text and its `reply_message_id`; on `/app/video` under the FAKE the replica's page shows that text once as its echoed line (`data-echo`); with nothing new to say (a reply already standing, nobody having spoken since) the standing reply is the one spoken, never a second first turn.", { skip }, async () => {
+  const b = await signUp("t21");
+  // the open answers before the opening turn lands: the stream's greeting frame arrives while the open runs (the response itself is written before the turn's reply), and the greeting reads ready only then
+  let opened: Reply | null = null; let greetingBefore: Reply | null = null;
+  const frame = await streamEvent(b.token, "video.session.greeting", async () => {
+    opened = await api("POST", "/v1/borrower/video/sessions", {}, bearer(b.token));
+    greetingBefore = await api("GET", `/v1/borrower/video/sessions/${String(opened.body["video_session_id"])}/greeting`, undefined, bearer(b.token));
+  });
+  assert.ok(opened, "opened"); const o = opened as Reply; assert.equal(o.status, 201, JSON.stringify(o.body).slice(0, 200));
+  assert.equal(o.body["opening_turn"], "pending"); const id = String(o.body["video_session_id"]);
+  const conv = fake.bodies.find((x) => x.op === "createConversation" && x.video_session_id === id)!; assert.ok(conv, "the conversation was created at once");
+  assert.equal(String(conv.body["custom_greeting"]), String(o.body["greeting"])); assert.match(String(conv.body["custom_greeting"]), /automated/i); assert.doesNotMatch(String(conv.body["custom_greeting"]), /buy a home|your name/i, "the disclosure line alone");
+  assert.ok(frame, "video.session.greeting on the stream"); assert.equal(String((frame["payload_ref"] as Json)["event_id"]), id);
+  const gb = greetingBefore as Reply | null; assert.ok(gb && gb.status === 200, "the greeting route answers at once"); assert.equal(typeof gb!.body["ready"], "boolean");
+  await settle();
+  const g = await greetingOf(id, b.token); assert.equal(g.status, 200);
+  assert.equal(g.body["ready"], true, JSON.stringify(g.body)); const text = String(g.body["text"]); assert.ok(text.length > 0); assert.doesNotMatch(text, /\{\{/);
+  const convId = (await db.query<{ conversation_id: string }>(`SELECT conversation_id FROM conversations WHERE party_id = $1`, [b.party_id]))[0]!.conversation_id;
+  const first = (await messagesOf(convId)).find((m) => m.sender === "agent" && (m.copy_tokens as Json | null)?.["source"] === "agent_turn")!; assert.ok(first);
+  assert.equal(g.body["reply_message_id"], first.message_id, "the opening turn's own reply, not an older one");
+  await api("POST", `/v1/borrower/video/sessions/${id}/end`, { reason: "borrower_left" }, bearer(b.token)); await settle();
+  // the page under the FAKE: one echoed line — the opening turn's text — on the replica's page, once
+  const { page, ctx } = await pageFor(b.token, 1280);
+  await page.waitForSelector('[data-testid="video-call"][data-phase="live"]', { timeout: 60_000 });
+  const fakePage = page.frameLocator('[data-testid="video-frame"]');
+  await fakePage.locator('[data-testid="fake-video-replica"][data-echo="1"]').waitFor({ timeout: 30_000 });
+  const echoed = await fakePage.locator('[data-testid="fake-video-replica"][data-echo="1"]').allInnerTexts();
+  assert.equal(echoed.length, 1, `one echo: ${JSON.stringify(echoed)}`); assert.doesNotMatch(echoed[0]!, /\{\{/); assert.ok(echoed[0]!.trim().length > 0);
+  const vs = (await db.query<{ video_session_id: string }>(`SELECT video_session_id FROM video_sessions WHERE party_id = $1 ORDER BY created_at DESC LIMIT 1`, [b.party_id]))[0]!.video_session_id;
+  const g3 = await greetingOf(vs, b.token); assert.equal(g3.body["ready"], true); assert.equal(echoed[0]!.trim(), String(g3.body["text"]).trim(), "the echoed line is the greeting route's text, word for word");
+  await page.screenshot({ path: `${SCREENSHOTS}/t21-echo-1280.png`, fullPage: false }).catch(() => undefined);
+  await ctx.close();
+  // nothing new to say: the account's first turn already stands and nobody has spoken since — the standing reply is spoken, no second first turn is run
+  assert.equal((await turnsOf(b.party_id)).filter((t) => t.reply_message_id !== null).length, 1, "one turn for the account, however many calls opened on it");
 });

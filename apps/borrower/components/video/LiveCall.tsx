@@ -22,6 +22,7 @@ type CallLike = {
   destroy(): Promise<unknown>;
   on(ev: string, fn: (e?: unknown) => void): unknown;
   participants(): Record<string, { local?: boolean; user_name?: string; tracks?: { video?: { persistentTrack?: MediaStreamTrack; state?: string }; audio?: { persistentTrack?: MediaStreamTrack; state?: string } } }>;
+  sendAppMessage(data: unknown, to?: string): unknown;
   setLocalAudio(on: boolean): unknown;
   setLocalVideo(on: boolean): unknown;
   localAudio(): boolean;
@@ -32,6 +33,11 @@ export type LiveCallProps = {
   join: JoinOptions;
   /** The borrower's own camera from the permission step: in the picture-in-picture from the first frame, until the room's own local track plays. */
   preview?: MediaStream | null | undefined;
+  /** 32.17 rule 17: the opening turn's rendered text (GET …/greeting) — spoken by the replica once, as one conversation.echo, after its own greeting; null until it has landed. */
+  echo?: string | null | undefined;
+  /** The vendor's conversation id the echo names. */
+  vendorConversationId?: string | null | undefined;
+  onEchoed?: () => void;
   onLeft: (reason: "borrower_left" | "vendor_ended" | "error") => void;
   onJoined?: () => void;
 };
@@ -45,7 +51,17 @@ function attach(el: HTMLVideoElement | HTMLAudioElement | null, track: Track): v
   void el.play().catch(() => undefined);
 }
 
-export function LiveCall({ join, preview, onLeft, onJoined }: LiveCallProps) {
+/** Seconds after the replica's video started before the echo is sent when the vendor's "stopped speaking" event never comes. */
+export const ECHO_FALLBACK_S = 9;
+/** The vendor's interaction message: the replica finished speaking (Tavus `conversation.replica.stopped_speaking`; the older `conversation.stopped_speaking` counted the same way). */
+export const isReplicaStoppedSpeaking = (data: unknown): boolean => {
+  const t = data && typeof data === "object" ? String((data as { event_type?: unknown }).event_type ?? "") : "";
+  return /stopped_speaking$/.test(t) && !/user/.test(t);
+};
+/** The one message the page sends the vendor (rule 17): the opening turn's guarded text, as the interactions protocol's echo. */
+export const echoMessage = (conversationId: string, text: string): Record<string, unknown> => ({ message_type: "conversation", event_type: "conversation.echo", conversation_id: conversationId, properties: { text } });
+
+export function LiveCall({ join, preview, echo, vendorConversationId, onEchoed, onLeft, onJoined }: LiveCallProps) {
   const remoteVideo = useRef<HTMLVideoElement>(null); const remoteAudio = useRef<HTMLAudioElement>(null); const selfVideo = useRef<HTMLVideoElement>(null);
   const call = useRef<CallLike | null>(null);
   const [state, setState] = useState<"joining" | "in" | "left">("joining");
@@ -54,6 +70,19 @@ export function LiveCall({ join, preview, onLeft, onJoined }: LiveCallProps) {
   const [replicaVideo, setReplicaVideo] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [participants, setParticipants] = useState(0);
+  // rule 17: the echo goes once — after the replica's own greeting (its "stopped speaking" event), or ECHO_FALLBACK_S after its video started
+  const [replicaVideoAt, setReplicaVideoAt] = useState<number | null>(null);
+  const [replicaStopped, setReplicaStopped] = useState(0);
+  const [fallbackDue, setFallbackDue] = useState(false);
+  const echoed = useRef(false);
+  useEffect(() => { if (replicaVideo && replicaVideoAt === null) setReplicaVideoAt(Date.now()); }, [replicaVideo, replicaVideoAt]);
+  useEffect(() => { if (replicaVideoAt === null) return; const t = setTimeout(() => setFallbackDue(true), ECHO_FALLBACK_S * 1000); return () => clearTimeout(t); }, [replicaVideoAt]);
+  useEffect(() => {
+    const c = call.current; if (!c || echoed.current || !echo || !vendorConversationId || state !== "in" || replicaVideoAt === null) return;
+    if (!(replicaStopped > 0 || fallbackDue)) return;
+    echoed.current = true;
+    try { c.sendAppMessage(echoMessage(vendorConversationId, echo), "*"); onEchoed?.(); } catch (e) { console.warn("video: echo failed", e); }
+  }, [echo, vendorConversationId, state, replicaVideoAt, replicaStopped, fallbackDue, onEchoed]);
   const [joinedAt, setJoinedAt] = useState<number | null>(null);
   const [waitS, setWaitS] = useState(0);
   // the seconds since the room was joined while the replica's video is not yet playing (the late line, the dev-mode line)
@@ -85,6 +114,7 @@ export function LiveCall({ join, preview, onLeft, onJoined }: LiveCallProps) {
       for (const ev of ["joined-meeting", "participant-joined", "participant-updated", "participant-left", "track-started", "track-stopped"]) c.on(ev, () => syncTracks());
       c.on("joined-meeting", () => { setState("in"); setJoinedAt(Date.now()); onJoined?.(); });
       c.on("nonfatal-error", (e) => { console.warn("video: non-fatal room error", e); });
+      c.on("app-message", (e) => { const data = (e as { data?: unknown } | undefined)?.data; if (isReplicaStoppedSpeaking(data)) setReplicaStopped((n) => n + 1); });
       c.on("left-meeting", () => { setState("left"); onLeft("vendor_ended"); });
       c.on("error", (e) => { setError(String((e as { errorMsg?: string } | undefined)?.errorMsg ?? "call error")); setState("left"); onLeft("error"); });
       try { await c.join({ url: join.url, userName: join.userName, startVideoOff: join.startVideoOff, startAudioOff: join.startAudioOff }); syncTracks(); }
@@ -99,7 +129,7 @@ export function LiveCall({ join, preview, onLeft, onJoined }: LiveCallProps) {
   const leave = async () => { const c = call.current; call.current = null; setState("left"); if (c) { await c.leave().catch(() => undefined); await c.destroy().catch(() => undefined); } onLeft("borrower_left"); };
 
   return (
-    <div className="sm-video-live" data-testid="video-live" data-state={state} data-replica={replicaVideo ? "in" : replicaIn ? "joined" : "waiting"}>
+    <div className="sm-video-live" data-testid="video-live" data-state={state} data-replica={replicaVideo ? "in" : replicaIn ? "joined" : "waiting"} data-echoed={echoed.current ? "1" : undefined}>
       <video ref={remoteVideo} className="sm-video-remote" data-testid="video-remote" autoPlay playsInline />
       <audio ref={remoteAudio} autoPlay />
       <div className="sm-video-pip" data-testid="video-pip" aria-label="Your camera">

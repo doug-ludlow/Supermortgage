@@ -11,6 +11,7 @@
  *                                                          → { video_session_id, conversation_url, status, vendor, … }; a vendor outage → {status: failed}
  *                                                          with the copy library's line (video.unavailable) and the thread at /app
  *   GET  /v1/borrower/video/sessions/{id}                  the session's current row for the page (status, end_reason, conversation_url; never the token)
+ *   GET  /v1/borrower/video/sessions/{id}/greeting         rule 17: the opening turn's rendered text once it has landed ({ready, text}) — the page has the replica speak it once
  *   POST /v1/borrower/video/sessions/{id}/end              the borrower leaves: 32.17 video.end (the conversation ended, the persona deleted, {ended})
  *   POST /v1/borrower/video/sessions/{id}/fake-callback    FAKE only: the FAKE page's join and leave → the same callback path the vendor's HTTP callback runs
  *   POST /v1/video/llm/{token}/chat/completions            the vendor's custom-LLM call, one per spoken borrower turn (an OpenAI chat-completions request,
@@ -152,7 +153,7 @@ export function createVideoRoutes(deps: VideoRoutesDeps): VideoRoutes {
     return `${proto}://${host}`;
   };
   const subjectOf = (r: VideoSessionRow) => ({ application_id: r.subject_application_id, loan_id: r.subject_loan_id });
-  const view = (r: VideoSessionRow, extra: P = {}): P => ({ video_session_id: r.video_session_id, status: r.status, vendor: r.vendor, conversation_url: r.conversation_url, end_reason: r.end_reason, transcript_ref: r.transcript_ref, created_at: r.created_at, joined_at: r.joined_at, ended_at: r.ended_at, subject: subjectOf(r), conversation_id: r.conversation_id, replica_id: r.replica_id, borrower_camera: borrowerCamera, ...(r.status === "failed" ? { fallback_copy_key: VIDEO_UNAVAILABLE_COPY } : {}), ...extra });
+  const view = (r: VideoSessionRow, extra: P = {}): P => ({ video_session_id: r.video_session_id, status: r.status, vendor: r.vendor, conversation_url: r.conversation_url, end_reason: r.end_reason, transcript_ref: r.transcript_ref, created_at: r.created_at, joined_at: r.joined_at, ended_at: r.ended_at, subject: subjectOf(r), conversation_id: r.conversation_id, vendor_conversation_id: r.vendor_conversation_id, replica_id: r.replica_id, borrower_camera: borrowerCamera, ...(r.status === "failed" ? { fallback_copy_key: VIDEO_UNAVAILABLE_COPY } : {}), ...extra });
   const tokensFor = (ctx: BorrowerContext, partner: { legal_name: string; nmlsr_id: string }, extra: P | null = null): Record<string, string> => {
     const t: Record<string, string> = { "partner.legal_name": partner.legal_name || "your lender", "partner.nmlsr_id": partner.nmlsr_id || "", "party.first_name": ctx.party.legal_name.split(/\s+/)[0] ?? ctx.party.legal_name };
     for (const [k, v] of Object.entries(extra ?? {})) if (typeof v === "string" || typeof v === "number") t[k] = String(v);
@@ -161,6 +162,9 @@ export function createVideoRoutes(deps: VideoRoutesDeps): VideoRoutes {
   const execute = (name: string, row: { subject_application_id: string | null; subject_loan_id: string | null } | null, input: P) =>
     runtime.execute({ process: PROCESS_32_17, name, loanId: row?.subject_loan_id ?? "", ...(row?.subject_application_id ? { applicationId: row.subject_application_id } : {}), actor: BORROWER_APP, run: RUN, input });
   const notify = (r: VideoSessionRow, event_name: string, at: string): void => { hub.notify(r.party_id, { event_name, at, subject: subjectOf(r), ref: r.video_session_id }); };
+  /** Rule 17: the opening turns this instance started — the reply that was newest before the open (so the landed one is told apart), and whether the turn has landed. Bounded: an entry leaves after an hour. */
+  const openings = new Map<string, { before: string | null; ready: boolean; started_at_ms: number }>();
+  const sweepOpenings = (): void => { const cutoff = Date.now() - 3_600_000; for (const [k, v] of openings) if (v.started_at_ms < cutoff) openings.delete(k); };
 
   /** The newest agent-turn reply of the conversation (the greeting the replica speaks: the first turn on a new account, the "where things stand" turn on a return), or null. */
   async function newestTurnReply(conversationId: string): Promise<{ reply: MessageRow | null; returning: boolean }> {
@@ -190,16 +194,24 @@ export function createVideoRoutes(deps: VideoRoutesDeps): VideoRoutes {
       ctx = { session: o.session, party: { ...(await auth.parties.get(o.party.id))!, ...o.party }, subjects, token: o.token, ip: ipOf(req), userAgent: userAgentOf(req) };
     }
     const conv = await ui.conversationFor(ctx.party.id); const subject = ctx.subjects[0] ?? null; const partner = await deps.partnerFor(ctx);
-    // the greeting: the guarded first turn (32.16 §2.0) on a new account, else a fresh "the borrower is back" turn (32.16 §2.0 returning) so the replica opens with where things stand — never the first greeting replayed; the disclosure line speaks first (20.3; Utah §13-2-12; Cal. §17941)
-    await agent?.settle();
+    // 32.17 rule 17 — the call opens before the model speaks: the vendor's greeting is the disclosure line alone (20.3; Utah §13-2-12; Cal. §17941), spoken the moment the replica is in; the opening turn — the guarded first turn (32.16 §2.0) on a new account, else a fresh "the borrower is back" turn (§2.0 returning) — runs while the room is created and joined, and the page has the replica speak its rendered text once (GET …/greeting → one conversation.echo); the model's seconds never hold the screen black
     const before = await newestTurnReply(conv.conversation_id); const turnStarted = Date.now();
-    if (agent && (!before.reply || before.returning)) { await deps.firstTurn(req, { session: ctx.session, party: ctx.party, token: ctx.token }, at); await agent.settle(); await deps.flows.settle(); }
-    const first_turn_ms = Date.now() - turnStarted;
-    const first = (await newestTurnReply(conv.conversation_id)).reply;
-    const tokens = tokensFor(ctx, partner, (first?.copy_tokens as P | null) ?? null);
-    const greeting = [copyText("entry.disclosure.first", tokens), first ? renderSpoken(first.body_text, tokens) : ""].filter(Boolean).join(" ").trim();
+    const tokens = tokensFor(ctx, partner, null);
+    const greeting = copyText("entry.disclosure.first", tokens).trim();
     // the per-session bearer (rule 6): 32 random bytes, base64url, in the persona's base_url; the row keeps its sha-256
     const token = randomBytes(32).toString("base64url"); const origin = publicOrigin(req); const video_session_id = randomUUID();
+    // the opening turn, behind the response: whatever is queued lands first (the door's own first turn on a new account), then a fresh turn only when one is due — none yet, or the borrower has spoken since the last (returning); otherwise the newest reply stands and is the one spoken
+    const runsTurn = !!agent;
+    let openingTurn: Promise<void> | null = null;
+    if (runsTurn) {
+      openings.set(video_session_id, { before: null, ready: false, started_at_ms: turnStarted });
+      openingTurn = (async () => {
+        await agent!.settle(); await deps.flows.settle();
+        const b = await newestTurnReply(conv.conversation_id);
+        if (!b.reply || b.returning) { const o = openings.get(video_session_id); if (o) o.before = b.reply?.message_id ?? null; await deps.firstTurn(req, { session: ctx.session, party: ctx.party, token: ctx.token }, at); await agent!.settle(); await deps.flows.settle(); }
+      })();
+      openingTurn.catch((e) => logger.error("borrower.video.opening_turn.failed", { video_session_id, party_id: ctx.party.id, error: e instanceof Error ? e.message : String(e) }));
+    }
     const vendorStarted = Date.now();
     const r = await execute("video.open", { subject_application_id: subject?.application_id ?? null, subject_loan_id: subject?.loan_id ?? null }, {
       video_session_id, party_id: ctx.party.id, session_id: ctx.session.session_id, conversation_id: conv.conversation_id, subject: { application_id: subject?.application_id ?? null, loan_id: subject?.loan_id ?? null },
@@ -208,8 +220,29 @@ export function createVideoRoutes(deps: VideoRoutesDeps): VideoRoutes {
     const row = await currentVideoSession(runtime.db, video_session_id);
     if (!row) throw new BorrowerError(500, "INTERNAL", undefined, "video.open wrote no row");
     notify(row, row.status === "failed" ? "video.session.failed" : "video.session.opened", at);
-    logger.info("borrower.video.opened", { video_session_id, party_id: ctx.party.id, vendor: row.vendor, status: row.status, events: r.events.map((e) => e.type), greeting_chars: greeting.length, opened_account, first_turn_ms, vendor_ms: Date.now() - vendorStarted, total_ms: Date.now() - Date.parse(at) });
-    send(res, row.status === "failed" ? 503 : 201, "video_session", view(row, { greeting, opened_account, ...(sessionToken ? { token: sessionToken, level: ctx.session.level, party: { party_id: ctx.party.id, first_name: tokens["party.first_name"] } } : {}) }));
+    logger.info("borrower.video.opened", { video_session_id, party_id: ctx.party.id, vendor: row.vendor, status: row.status, events: r.events.map((e) => e.type), greeting_chars: greeting.length, opened_account, opening_turn: runsTurn ? "pending" : "none", had_reply: !!before.reply, returning: before.returning, vendor_ms: Date.now() - vendorStarted, total_ms: Date.now() - turnStarted });
+    send(res, row.status === "failed" ? 503 : 201, "video_session", view(row, { greeting, opened_account, opening_turn: runsTurn ? "pending" : "none", ...(sessionToken ? { token: sessionToken, level: ctx.session.level, party: { party_id: ctx.party.id, first_name: tokens["party.first_name"] } } : {}) }));
+    // the opening turn lands: the stream says so (video.session.greeting) and GET …/greeting hands the page its rendered text
+    if (openingTurn) void openingTurn.then(() => {
+      const o = openings.get(video_session_id); if (o) o.ready = true;
+      logger.info("borrower.video.greeting_ready", { video_session_id, party_id: ctx.party.id, opening_turn_ms: Date.now() - turnStarted });
+      notify(row, "video.session.greeting", now());
+    }, () => undefined);
+  }
+  // ---------------------------------------------------------------- GET /v1/borrower/video/sessions/{id}/greeting
+  /** The opening turn's rendered text for the replica to speak once (rule 17): `ready` when the turn has landed — the newest agent-turn reply that is not the one from before the open (this instance remembers it; another instance goes by the clock: a reply no older than the session), `text` its spoken rendering (tokens filled, never a `{{`); the disclosure line is not repeated (the vendor's greeting spoke it). */
+  async function greeting(req: IncomingMessage, res: ServerResponse, id: string): Promise<void> {
+    const at = now(); const ctx = await auth.authenticate(req, at);
+    const row = await currentVideoSession(runtime.db, id);
+    if (!row || row.party_id !== ctx.party.id) throw new BorrowerError(404, "NOT_FOUND");
+    const o = openings.get(id);
+    const newest = (await newestTurnReply(row.conversation_id)).reply;
+    // this instance: the turn has landed and the reply is not the one a fresh turn was to replace; another instance (no entry): the newest reply stands
+    const landed = !!newest && (o ? o.ready && newest.message_id !== o.before : true);
+    if (!landed) { send(res, 200, "video_greeting", { video_session_id: id, ready: false, text: null, reply_message_id: null }); return; }
+    const partner = await deps.partnerFor(ctx);
+    const text = renderSpoken(newest!.body_text, tokensFor(ctx, partner, (newest!.copy_tokens as P | null) ?? null));
+    send(res, 200, "video_greeting", { video_session_id: id, ready: true, text, reply_message_id: newest!.message_id });
   }
   async function status(req: IncomingMessage, res: ServerResponse, id: string): Promise<void> {
     const at = now(); const ctx = await auth.authenticate(req, at);
@@ -325,6 +358,7 @@ export function createVideoRoutes(deps: VideoRoutesDeps): VideoRoutes {
       if (method === "POST" && (m = VIDEO_CALLBACK_PATH.exec(path))) await callback(req, res, decodeURIComponent(m[1]!));
       else if (method === "POST" && path === "/v1/borrower/video/sessions") await open(req, res);
       else if (method === "GET" && (m = /^\/v1\/borrower\/video\/sessions\/([^/]+)$/.exec(path))) await status(req, res, decodeURIComponent(m[1]!));
+      else if (method === "GET" && (m = /^\/v1\/borrower\/video\/sessions\/([^/]+)\/greeting$/.exec(path))) { sweepOpenings(); await greeting(req, res, decodeURIComponent(m[1]!)); }
       else if (method === "POST" && (m = /^\/v1\/borrower\/video\/sessions\/([^/]+)\/end$/.exec(path))) await end(req, res, decodeURIComponent(m[1]!));
       else if (method === "POST" && (m = /^\/v1\/borrower\/video\/sessions\/([^/]+)\/fake-callback$/.exec(path))) await fakeCallback(req, res, decodeURIComponent(m[1]!));
       else { send(res, 404, "error", new BorrowerError(404, "NOT_FOUND").body()); log(404); return true; }

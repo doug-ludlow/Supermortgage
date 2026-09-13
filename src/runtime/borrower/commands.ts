@@ -251,20 +251,24 @@ export class BorrowerCommands {
       return { message, reply: r, routed_to, command_executed: false, command: null };
     }
     // a flow that answers this message itself (32.3 T2 "are you a real person?" → 20.3's script with the disclosure re-logged; P9 listings) — before the human path, which "real person" would otherwise match
+    const modelOwned = !!this.agentTurn && (channel === "app" || channel === "video");   // 32.16-T32: the thread is the model's on the app — a flow may still react to the words (its card, its command) but the model speaks; no "human" shortcut line; SMS and voice keep the scripted answers
+    let flowReaction: { copy_key: string; card_instance_id?: string | null; command?: string | null; body_text?: string | null } | null = null;
     if (this.flows) {
       const fr = await this.flows.message({ party_id: ctx.party.id, session_id: ctx.session.session_id, conversation_id: conv.conversation_id, message_id: messageId, text, channel: channel === "video" ? "app" : channel, subject: subject ? { application_id: subject.application_id, loan_id: subject.loan_id } : null, claimed_subject: wanted, at: now });
-      if (fr) return { message, reply: await reply(fr.copy_key, { card_instance_id: fr.card_instance_id ?? null, ...(fr.body_text ? { body: fr.body_text } : {}) }), routed_to, command_executed: !!fr.command, command: fr.command ?? null };
+      if (fr && !modelOwned) return { message, reply: await reply(fr.copy_key, { card_instance_id: fr.card_instance_id ?? null, ...(fr.body_text ? { body: fr.body_text } : {}) }), routed_to, command_executed: !!fr.command, command: fr.command ?? null };
+      if (fr) flowReaction = fr;   // the flow's card is the one the model's reply places; its command counts as executed
     }
     // "human" at any time (01 §1.1, §7.1): the human.request command — except the question whether the assistant is a person ("is this a real person?"), which
     // docs/ux/17 §3.5 (6) has the agent turn answer in its own words (it must say it is automated and offer a callback, a dispute or a case) when a turn is configured
-    if (/\b(human|real person|a person|talk to (a|someone)|representative|agent)\b/i.test(text) && subject && !(this.agentTurn && ASKS_IF_HUMAN.test(text))) {
+    if (!modelOwned && /\b(human|real person|a person|talk to (a|someone)|representative|agent)\b/i.test(text) && subject && !(this.agentTurn && ASKS_IF_HUMAN.test(text))) {
       const out = await this.runCommand(ctx, "human.request", { reason: "borrower_request", channel, utterance: text, subject: { application_id: subject.application_id, loan_id: subject.loan_id } }, now);
       return { message, reply: await reply(THREAD_COPY_KEYS.humanRequested, {}), routed_to, command_executed: true, command: out.command };
     }
     // 32.16 §3.1: the agent turn replaces the placeholder — the same order in front of it; the placeholder stands only without a model or under the kill switch
     if (this.agentTurn) {
-      const t = await this.agentTurn({ ctx, conversation_id: conv.conversation_id, message_id: messageId, text, channel, subject, routed_to, now, ...(started_at_ms !== undefined ? { started_at_ms } : {}) });
-      if (t) return { message, reply: { ...t.reply, copy_key: t.copy_key, deep_link: null }, routed_to, command_executed: t.command_executed, command: t.command };
+      const t = await this.agentTurn({ ctx, conversation_id: conv.conversation_id, message_id: messageId, text, channel, subject, routed_to, now, ...(started_at_ms !== undefined ? { started_at_ms } : {}), ...(flowReaction?.card_instance_id ? { placed_card_instance_id: flowReaction.card_instance_id } : {}) });
+      if (t) return { message, reply: { ...t.reply, copy_key: t.copy_key, deep_link: null }, routed_to, command_executed: t.command_executed || !!flowReaction?.command, command: t.command ?? flowReaction?.command ?? null };
+      if (flowReaction) return { message, reply: await reply(flowReaction.copy_key, { card_instance_id: flowReaction.card_instance_id ?? null, ...(flowReaction.body_text ? { body: flowReaction.body_text } : {}) }), routed_to, command_executed: !!flowReaction.command, command: flowReaction.command ?? null };   // the turn is bypassed (kill switch): the flow's own line stands
     }
     return { message, reply: await reply(routed_to === "intake" ? THREAD_COPY_KEYS.placeholderIntake : THREAD_COPY_KEYS.placeholderServicing, {}), routed_to, command_executed: false, command: null };
   }

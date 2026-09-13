@@ -50,6 +50,8 @@ export interface AgentTurnRequest {
   readonly message_id: string | null;
   readonly text: string;
   readonly channel: Channel;
+  /** 32.16-T32: a card a flow opened in reaction to these words (its onMessage) — the reply places it when the model placed none of its own */
+  readonly placed_card_instance_id?: string | undefined;
   readonly subject: Subject | null;
   readonly routed_to: "intake" | "borrower-comms";
   readonly now: string;
@@ -167,7 +169,10 @@ export class AgentTurnRunner {
     // the rates element(s) the turn's tools produced ride on their own rows, before the reply (§3.5 check 2)
     for (const el of ledger.elements) await ui.appendMessage({ conversation_id: req.conversation_id, at: req.now, sender: "system", sender_ref: `agent:${req.routed_to}`, channel: req.channel, body_text: null, copy_tokens: el, ...subjectIds });
     // 32.17 discrepancy (2): a video turn has no thread for a reference chip — a requested card is focused on the rail by its own `card.sent` event, so the reply carries no chip (a proposal keeps its card: the rail's Confirm strip reads the card's props.proposal)
-    const card_instance_id = ledger.proposed_card_instance_id ?? (req.channel === "video" ? null : ledger.requested_card_instance_id) ?? null;
+    // 32.16-T32: the model places the card it is asking about; when it placed none, the reply carries the Journey's top need's card the first time — one card on the rail per ask, never a flow's batch
+    const topCard = j.journey.needs.find((n) => !n.blocked_by && n.card_instance_id)?.card_instance_id ?? null;
+    const alreadyPlaced = topCard ? allMessages.some((m) => m.card_instance_id === topCard && m.sender === "agent" && (m.copy_tokens as P | null)?.["source"] === "agent_turn") : true;
+    const card_instance_id = ledger.proposed_card_instance_id ?? (req.channel === "video" ? null : (ledger.requested_card_instance_id ?? req.placed_card_instance_id ?? (fallback ? null : (alreadyPlaced ? null : topCard)))) ?? null;
     const copy_tokens: P = { source: "agent_turn", turn_id, ...(fallback ? { fallback: "default_copy", rejected_by: fallback, copy_key } : {}), ...(ledger.explained ? { explain: ledger.explained } : {}) };
     const replyId = await ui.appendMessage({ conversation_id: req.conversation_id, at: req.now, sender: "agent", sender_ref: `agent:${req.routed_to}`, channel: req.channel, body_text: body, card_instance_id, copy_tokens, voice_turn: req.channel === "voice", ...subjectIds });
     const reply = (await ui.message(replyId))!;

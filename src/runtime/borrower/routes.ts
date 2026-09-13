@@ -728,8 +728,13 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     const cardIds = [...new Set(page.map((m) => m.card_instance_id).filter((x): x is string => !!x))];
     const cards = new Map<string, CardInstanceRow>();
     for (const id of cardIds) { const c = await ui.card(id); if (c) cards.set(id, c); }
-    const pinned = (await ui.cardsOf(ctx.party.id, { status: "pending" }))[0] ?? null;
-    send(res, 200, "thread", { conversation_id: conv.conversation_id, messages: reader.threadMessages(page, cards, ctx.party.legal_name.split(" ")[0] ?? ctx.party.legal_name), pinned_card: pinned ? { ...pinned, subject: { application_id: pinned.subject_application_id, loan_id: pinned.subject_loan_id } } : null, next_after: page.at(-1)?.message_id ?? after, has_more: rows.length > limit });
+    // 32.16-T32: with the agent turn the current ask is the card the model placed last (its newest reply carrying a pending card); without it, the newest pending card
+    const pendingCards = await ui.cardsOf(ctx.party.id, { status: "pending" });
+    const placed = agent ? [...rows].reverse().find((m) => m.sender === "agent" && m.card_instance_id && pendingCards.some((c) => c.card_instance_id === m.card_instance_id) && (m.copy_tokens as Record<string, unknown> | null)?.["source"] === "agent_turn") : undefined;
+    const placedCard = placed ? pendingCards.find((c) => c.card_instance_id === placed.card_instance_id) : undefined;
+    const pinned = placedCard ?? pendingCards[0] ?? null;
+    const cardOut = (c: CardInstanceRow) => ({ ...c, subject: { application_id: c.subject_application_id, loan_id: c.subject_loan_id } });
+    send(res, 200, "thread", { conversation_id: conv.conversation_id, messages: reader.threadMessages(page, cards, ctx.party.legal_name.split(" ")[0] ?? ctx.party.legal_name, { modelOwned: !!agent }), cards: pendingCards.map(cardOut), pinned_placed_by: pinned ? (placedCard ? "model" : "newest") : null, pinned_card: pinned ? { ...pinned, subject: { application_id: pinned.subject_application_id, loan_id: pinned.subject_loan_id } } : null, next_after: page.at(-1)?.message_id ?? after, has_more: rows.length > limit });
   }
   async function history(req: IncomingMessage, res: ServerResponse, url: URL, view: string): Promise<void> {
     const at = now(); const ctx = await auth.authenticate(req, at);

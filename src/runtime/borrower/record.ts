@@ -509,8 +509,15 @@ export class BorrowerRecordReader {
   }
 
   // ---------------------------------------------------------------- 02 §1.2 thread_messages
-  threadMessages(rows: readonly MessageRow[], cards: ReadonlyMap<string, CardInstanceRow>, partyFirstName: string): Record<string, unknown>[] {
-    return rows.map((m) => {
+  /** docs/ux/17 §2.1 (32.16-T32): with the agent turn configured the thread is the model's — a flow's copy line and a flow-sent card chip are not shown (the model's reply carries the card it placed); the borrower's lines, the model's lines, a person's lines, the system rows (the disclosure, a rates element) stay. */
+  static flowAuthored(m: MessageRow): boolean {
+    if (m.sender !== "agent") return false;
+    const source = (m.copy_tokens as Record<string, unknown> | null)?.["source"];
+    if (source === "agent_turn") return false;
+    return (m.body_text ?? "").startsWith("{{copy:") || (!!m.card_instance_id && !m.body_text);
+  }
+  threadMessages(rows: readonly MessageRow[], cards: ReadonlyMap<string, CardInstanceRow>, partyFirstName: string, opts: { modelOwned?: boolean } = {}): Record<string, unknown>[] {
+    return rows.filter((m) => !opts.modelOwned || !BorrowerRecordReader.flowAuthored(m)).map((m) => {
       const card = m.card_instance_id ? cards.get(m.card_instance_id) : undefined;
       const sender_label = m.sender === "agent" ? "Supermortgage" : m.sender === "notice" ? "Notice" : m.sender === "borrower" ? partyFirstName : m.sender === "human" ? humanLabel(m.sender_ref) : "Supermortgage";
       return { message_id: m.message_id, conversation_id: m.conversation_id, at: m.at, sender: m.sender, sender_label, channel: m.channel, body_text: m.body_text, card_instance_id: m.card_instance_id, subject: { application_id: m.subject_application_id, loan_id: m.subject_loan_id }, voice_turn: m.voice_turn, delivery: { sent: true, delivered: true, read: m.sender === "borrower" }, copy_tokens: m.copy_tokens ?? null,

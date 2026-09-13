@@ -70,7 +70,7 @@ export const SHAPES = {
   document_link: { document_id: true, title: true, doc_class: true, mime_type: true, url: true, expires_at: true } satisfies Shape,
   deep_link: { token: true, target: { card_instance_id: true, document_id: true, route: true }, expires_at: true } satisfies Shape,
   record: RECORD,
-  thread: { conversation_id: true, messages: [MESSAGE], pinned_card: CARD, next_after: true, has_more: true } satisfies Shape,
+  thread: { conversation_id: true, messages: [MESSAGE], cards: [CARD], pinned_placed_by: true, pinned_card: CARD, next_after: true, has_more: true } satisfies Shape,
   history: { loan_id: true, view: true, rows: [HISTORY_ROW] } satisfies Shape,
   message_reply: { message: MESSAGE, reply: MESSAGE, routed_to: true, command_executed: true, command: true } satisfies Shape,
   card_resolved: { card: CARD, command: true, idempotent: true, result: "opaque", events: true } satisfies Shape,

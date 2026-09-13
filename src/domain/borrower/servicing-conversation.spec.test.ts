@@ -327,8 +327,9 @@ test("servicing conversation: \"what is escrow?\" — explain{escrow} on the ser
 test("servicing conversation: \"I lost my job and can't pay next month\" — 32.10's QRPC read-back card is the hardship intake (the flow answers first, 32.10 T2); the model's follow-up explanation carries no promise: decline language is refused by the guard and never reaches the thread, and the accepted words name no eligibility", { skip }, async () => {
   await signInAgain(MST("2026-12-17", "10:00"));
   const r = await say("I lost my job and can't pay next month");
-  assert.equal(r.reply["copy_key"], "hardship.heard", "32.10 T2: the flow's intake answers this line"); assert.equal(r.body["command"], "lossmit.requestAssistance");
-  const qrpc = (await cards()).find((c) => c.copy_key === "hardship.qrpc.confirm" && c.status === "pending")!; assert.ok(qrpc, "the hardship intake card: the read-back of what was understood"); assert.equal(qrpc.kind, "ConfirmCard"); assert.equal(qrpc.command_ref, "lossmit.requestAssistance");
+  // 32.16-T32: the flow still reacts (32.10 T2's intake — its card and its command) but the model speaks: the reply is the turn's, carrying the flow's card; no fixed hardship.heard line in the thread
+  assert.equal((r.reply["copy_tokens"] as Json)["source"], "agent_turn", "the model speaks; the flow's line is not posted"); assert.equal(r.body["command"], "lossmit.requestAssistance"); assert.equal(r.body["command_executed"], true);
+  const qrpc = (await cards()).find((c) => c.copy_key === "hardship.qrpc.confirm" && c.status === "pending")!; assert.ok(qrpc, "the hardship intake card: the read-back of what was understood"); assert.equal(r.reply["card_instance_id"], qrpc.card_instance_id, "the reply places the flow's card"); assert.equal(qrpc.kind, "ConfirmCard"); assert.equal(qrpc.command_ref, "lossmit.requestAssistance");
   assert.equal((await events("lossmit.application.received")).length, 1, "a stated hardship is an application (12.1)");
   // the model, asked what happens now: a first attempt with decline language is refused by the guard's scope check (never regenerated, never sent) — the step's default copy answers
   scripted.use([

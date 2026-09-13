@@ -128,7 +128,7 @@ export function toRecord(api: Json): BorrowerRecord {
 }
 
 /** The thread as the API sends it (messages carrying their card) → the shell's messages + card map. */
-export function toThread(api: Json): { messages: ThreadMessage[]; cards: AnyCardInstance[]; next_after?: string } {
+export function toThread(api: Json): { messages: ThreadMessage[]; cards: AnyCardInstance[]; next_after?: string; pinned_card_id?: string } {
   const messages: ThreadMessage[] = [];
   const cards: AnyCardInstance[] = [];
   for (const raw of Array.isArray(api.messages) ? api.messages : []) {
@@ -170,5 +170,20 @@ export function toThread(api: Json): { messages: ThreadMessage[]; cards: AnyCard
       } as unknown as AnyCardInstance);
     }
   }
-  return { messages, cards, ...(str(api.next_after) ? { next_after: str(api.next_after) } : {}) };
+  // 32.16-T32: the pending cards of the party ride beside the messages (a card the model has not referenced yet has no chip, but the rail still holds it behind "n more after this")
+  const known = new Set(cards.map((c) => c.card_instance_id));
+  for (const raw of Array.isArray(api.cards) ? api.cards : []) {
+    const c = obj(raw); const id = str(c.card_instance_id); if (!id || known.has(id)) continue; known.add(id);
+    const subject = obj(c.subject);
+    cards.push({
+      card_instance_id: id, conversation_id: str(c.conversation_id) || str(api.conversation_id), party_id: str(c.party_id),
+      subject: { application_id: str(subject.application_id) || null, loan_id: str(subject.loan_id) || null },
+      kind: str(c.kind) as CardKind, status: (str(c.status) as AnyCardInstance["status"]) || "pending", created_by: (str(c.created_by) || "system") as AnyCardInstance["created_by"],
+      copy_key: str(c.copy_key), created_at: str(c.created_at),
+      ...(str(c.resolved_at) ? { resolved_at: str(c.resolved_at) } : {}), ...(str(c.command_ref) ? { command_ref: str(c.command_ref) } : {}), ...(str(c.expires_at) ? { expires_at: str(c.expires_at) } : {}),
+      ...(c.evidence && typeof c.evidence === "object" ? { evidence: obj(c.evidence) } : {}), props: obj(c.props),
+    } as unknown as AnyCardInstance);
+  }
+  const pinnedId = str(api.pinned_placed_by) === "model" ? str(obj(api.pinned_card).card_instance_id) : "";   // 32.16-T32: the card the model placed last is the current ask; a merely-newest card defers to the record's own order
+  return { messages, cards, ...(str(api.next_after) ? { next_after: str(api.next_after) } : {}), ...(pinnedId ? { pinned_card_id: pinnedId } : {}) };
 }

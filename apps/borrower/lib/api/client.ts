@@ -59,7 +59,7 @@ export const api = {
   /** 32.16 §2.0 sign-out: the session is revoked upstream and the proxy drops both cookies (session and the anonymous chat's lead), so the next person on this browser starts clean. */
   signOut: () => request<{ signed_out: boolean }>("POST", "/v1/borrower/auth/sign-out", {}),
   record: async (subject: string): Promise<BorrowerRecord> => toRecord(await request<Record<string, unknown>>("GET", `/v1/borrower/record?subject=${encodeURIComponent(subjectId(subject))}`)),
-  thread: async (after?: string): Promise<{ messages: ThreadMessage[]; cards: AnyCardInstance[]; next_after?: string }> => toThread(await request<Record<string, unknown>>("GET", `/v1/borrower/thread?limit=500${after ? `&after=${encodeURIComponent(after)}` : ""}`)),
+  thread: async (after?: string): Promise<{ messages: ThreadMessage[]; cards: AnyCardInstance[]; next_after?: string; pinned_card_id?: string }> => toThread(await request<Record<string, unknown>>("GET", `/v1/borrower/thread?limit=500${after ? `&after=${encodeURIComponent(after)}` : ""}`)),
   sendMessage: (body_text: string, subject?: { application_id?: Uuid; loan_id?: Uuid }) => request<{ message: ThreadMessage }>("POST", "/v1/borrower/messages", { text: body_text, ...(subject && (subject.application_id || subject.loan_id) ? { subject: { application_id: subject.application_id ?? null, loan_id: subject.loan_id ?? null } } : {}) }),
   /** Card resolution → mapped command (02 §2); idempotency = card_instance_id. */
   resolveCard: (card_instance_id: Uuid, body: ResolveRequest) =>

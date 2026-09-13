@@ -15556,6 +15556,10 @@
    {
     "n": 31,
     "text": "Given the first turn with the goal card pending, then the model is prompted to lead with the Journey's top need (`next_in_words` comes from the Journey, the prompt version is `32.16-p3`) and the reply names that need in its own words."
+   },
+   {
+    "n": 32,
+    "text": "Given the agent turn configured, when an account is created and the borrower then types \"yes\" and \"I want a human\", then the thread carries no flow copy line and no flow-sent chip, the first reply carries the goal card, `pinned_card` is the card the model placed last, and both typed lines are answered by the turn (no deep-link line, no fixed human line)."
    }
   ],
   "tables": [

@@ -48,6 +48,7 @@ The account comes first, so the anonymous minute goes: S0–S2 and DELTA-11 (the
 - Assistant text (streamed), borrower text or voice transcript, human-agent turns, and **references**: a one-line chip the assistant attaches when it puts something on the rail ("Connect your payroll →"), which focuses and expands that rail item. No card renders in the thread on ≥ 768 px; below that the rail is the bottom sheet and the chip opens it.
 - **Confirm chips:** when the model proposes values into a pending `ConfirmCard` (§3.4), the thread shows the read-back as a chip ("$8,200 / month base pay · Acme Corp — Confirm · Edit"): the same `card_instances` row rendered small. Confirm resolves it; Edit expands it on the rail. This is the only actionable element in the thread, and it is a card.
 - A slim "waiting on you: {{label}} →" line under the header when the borrower scrolls away from the current ask. Provenance, day dividers, grouping, streaming: `01` §1.3 unchanged.
+- **The thread is the model's.** With the agent turn configured, the thread carries three things only: the borrower's words, the model's words, and the cards the model placed (the reference chip on the reply that asked). A flow's copy line and a flow-sent chip are not shown; a typed "yes" or "human" goes to the turn instead of a deep link or a fixed line; the model's reply carries the Journey's top need's card the first time it asks for it, so the rail shows one card per ask and never a flow's batch. The current ask on the rail is the card the model placed last. SMS and voice keep their deep links and scripted lines: there is no rail there.
 
 ### 2.2 The rail (right) — where the cards live
 
@@ -201,7 +202,7 @@ Refused by construction: any money command, any consent, any `resolveCard`, any 
 ### 8.7 Review (end of each phase)
 > Re-read docs/ux/17 §1 and §2.3. Show, for the refinance persona, every assistant message with its guard result, every tool call with its decision_id, and every card with its §2.3 case; list any digit outside a token, any scripted moment not verbatim, any card resolved without a tap or a voice attestation, any tool outside the contract, any card outside the four cases. Quote the 32.16 COVERAGE row.
 
-## 9. Acceptance tests (T-17-01 … T-17-31 → 32.16-T1 … T31)
+## 9. Acceptance tests (T-17-01 … T-17-32 → 32.16-T1 … T32)
 
 - **T-17-01** Given a borrower message that is not an affirmative, not a flow reply and not "human", then the reply is produced by the agent turn (an `agent_turns` row exists with `model_version`, `prompt_version`, `context_hash`) and no placeholder copy key is used.
 - **T-17-02** Given any turn, then its context contains no DU message, credit report field, findings text, fraud/QC entity or vendor payload (contract test over `context.ts`).
@@ -234,6 +235,7 @@ Refused by construction: any money command, any consent, any `resolveCard`, any 
 - **T-17-29** Given a record with pending cards, then the turn's situation carries `journey` — the current step with its process, `needs` in the order to ask (a proposal awaiting Confirm first, then the record's own order, a gated item last), each with `what`, `why`, `satisfy`, `process` and `owner: you` — and `next_in_words` names the top need; `journey.get` returns the same object.
 - **T-17-30** Given a current step whose process is not internal, then the situation carries `process_rules` for that process with worked examples dropped and no dollar or percent figure in it; given an underwriting step, then no `process_rules` is present and the context still contains no DU, credit, findings or vendor content.
 - **T-17-31** Given the first turn with the goal card pending, then the model is prompted to lead with the Journey's top need (`next_in_words` comes from the Journey, the prompt version is `32.16-p3`) and the reply names that need in its own words.
+- **T-17-32** Given the agent turn configured, when an account is created and the borrower then types "yes" and "I want a human", then the thread carries no flow copy line and no flow-sent chip, the first reply carries the goal card, `pinned_card` is the card the model placed last, and both typed lines are answered by the turn (no deep-link line, no fixed human line).
 
 ## 10. Definition of done
 1. `docs/audit/COVERAGE.md` shows 32.16 at 100 % of its units; the totals line is quoted in the last commit of each phase.

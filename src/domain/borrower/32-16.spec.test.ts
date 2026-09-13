@@ -815,3 +815,28 @@ test("32.16-T31: Given the first turn with the goal card pending, then the model
   assert.match(String(greeting["body_text"]), new RegExp(`First thing: ${String(top["what"]).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`), "the reply names the top need");
   const row = (await db.query<{ prompt_version: string }>(`SELECT prompt_version FROM agent_turns WHERE party_id = $1 ORDER BY created_at DESC LIMIT 1`, [a.party_id]))[0]!; assert.equal(row.prompt_version, "32.16-p3");
 });
+
+test("32.16-T32: Given the agent turn configured, when an account is created and the borrower then types \"yes\" and \"I want a human\", then the thread carries no flow copy line and no flow-sent chip, the first reply carries the goal card, `pinned_card` is the card the model placed last, and both typed lines are answered by the turn (no deep-link line, no fixed human line).", { skip }, async () => {
+  scripted.use([
+    { when: /^yes\.?$/i, text: "Got it. Pick the one that fits on the card here and we'll take it from there." },
+    { when: /want a human/i, text: "No one is live right now, but I can set up a callback, log a written question, or open a case — which would you like?" },
+  ]);
+  const a = await signUp(`t32-${R}@example.test`, `pw-t32-${R}`, "10.16.32.1"); await settle();
+  const t0 = await thread(a.token);
+  // the thread is the model's: the system disclosure row, then the model's greeting carrying the goal card — no flow line, no flow chip
+  const flowLines = t0.messages.filter((m) => m["sender"] === "agent" && (m["copy_tokens"] as Json | null)?.["source"] !== "agent_turn");
+  assert.deepEqual(flowLines, [], `no flow-authored line in the thread: ${JSON.stringify(flowLines.map((m) => [m["body_text"], m["card_instance_id"]]))}`);
+  const greeting = t0.messages.find((m) => m["sender"] === "agent")!; assert.equal((greeting["copy_tokens"] as Json)["source"], "agent_turn");
+  assert.equal((greeting["card"] as Json | null)?.["copy_key"], "entry.goal.question", "the first reply carries the goal card");
+  assert.equal(t0.pinned_card?.["card_instance_id"], greeting["card_instance_id"], "the pinned card is the one the model placed");
+  // a typed "yes": the turn answers (no deep-link line), the goal card stays pending
+  let r = await message(a.token, "yes"); assert.equal(r.status, 200, JSON.stringify(r.body));
+  let reply = r.reply; assert.equal((reply["copy_tokens"] as Json)["source"], "agent_turn"); assert.equal(reply["deep_link"] ?? null, null); assert.match(String(reply["body_text"]), /^Got it\. Pick the one/);
+  assert.equal((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM deep_links WHERE party_id = $1`, [a.party_id]))[0]!.n, "0", "no deep link minted for a typed yes");
+  // "I want a human": the turn answers in its words; no fixed human line, no human.request queued by a shortcut
+  r = await message(a.token, "I want a human"); assert.equal(r.status, 200, JSON.stringify(r.body));
+  reply = r.reply; assert.equal((reply["copy_tokens"] as Json)["source"], "agent_turn"); assert.match(String(reply["body_text"]), /callback/); assert.equal(r.body["command_executed"], false);
+  const t1 = await thread(a.token);
+  assert.equal(t1.messages.filter((m) => String(m["body_text"] ?? "").startsWith("{{copy:thread.")).length, 0, "no thread.* fixed line");
+  assert.deepEqual(t1.messages.filter((m) => m["sender"] === "agent" && (m["copy_tokens"] as Json | null)?.["source"] !== "agent_turn"), [], "still no flow-authored line");
+});

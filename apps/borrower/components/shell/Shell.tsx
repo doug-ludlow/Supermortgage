@@ -70,6 +70,8 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
   // 32.16 §2.0 (DELTA-29): a 401 from me, or the header's Sign in, renders the sign-in form under auth.welcome_back in place of the thread (the anonymous minute of docs/ux/15 is not built — docs/ux/17 §0.4)
   const [needsSignIn, setNeedsSignIn] = useState(false);
   const [signInOpen, setSignInOpen] = useState(false);
+  /** the API's pinned card: the card the model placed last (32.16-T32) — the current ask on the rail */
+  const [pinnedId, setPinnedId] = useState<string | undefined>(undefined);
   const [addMobileDone, setAddMobileDone] = useState(true);
   useEffect(() => setAddMobileDone(isAddMobileDone()), []); // after hydration: the dismissal lives in this browser only
   const beside = useMedia("(min-width: 1024px)");   // the rail sits beside the thread; below that it is the drawer / bottom sheet
@@ -100,6 +102,7 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
       }
       const t = await api.thread();
       setMessages(t.messages);
+      setPinnedId(t.pinned_card_id);
       setCards(Object.fromEntries(t.cards.map((c) => [c.card_instance_id, c])));
       setLoadError(undefined);
     } catch (e) {
@@ -244,7 +247,7 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
   );
 
   const cardProps = useMemo(() => ({ onOpen: link, onLaunchVendor: launchVendor, onUpload: upload, onMessage: sendMessage }), [link, launchVendor, upload, sendMessage]);
-  const ask = useMemo(() => currentAsk(cards, record?.needed_from_you[0]?.card_instance_id, initialCard), [cards, record?.needed_from_you, initialCard]);
+  const ask = useMemo(() => currentAsk(cards, record?.needed_from_you[0]?.card_instance_id, initialCard ?? pinnedId), [cards, record?.needed_from_you, initialCard, pinnedId]);
 
   const subjects = me?.subjects ?? [];
   const showSignIn = needsSignIn || signInOpen;

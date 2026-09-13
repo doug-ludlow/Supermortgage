@@ -25,7 +25,9 @@ import { AI_PERMITTED_ALWAYS, type SafeClassification } from "../../../domain/ap
 import { sessionNextOf, MISSES_TO_HUMAN } from "../../../app/tools/section32-16.ts";
 import { CommandRefused } from "../../../app/commands.ts";
 import type { BorrowerContext } from "../auth.ts";
-import { copyTemplates } from "../channels.ts";
+import { copyTemplates, copyText } from "../channels.ts";
+import { buildJourney } from "./journey.ts";
+import { rulesFor } from "./rules.ts";
 import { THREAD_COPY_KEYS } from "../copy-keys.ts";
 import type { BorrowerFlows } from "../flows/index.ts";
 import type { BorrowerRecordReader } from "../record.ts";
@@ -124,7 +126,11 @@ export class AgentTurnRunner {
     const partner = await this.d.partner(req.ctx);
     const safeMode = await this.flag("origination.ai_mlo_intake", "assisted");
     const next0 = sessionNextOf(record, cards);
-    const context = buildContext({ partyFirstName: firstNameOf(party.legal_name), level, channel: req.channel, routed_to: req.routed_to, safeMode, partnerName: partner.legal_name, record, cards, messages: window, lead, next: next0, borrowerText: req.text });
+    // 32.16-T29/T30: the Journey (where, what next in order, why, how) and the current step's scrubbed rules ride beside the compact record
+    const j = buildJourney({ record, cards, labelOf: (item) => (item.label_copy_key ? copyText(item.label_copy_key, item.copy_tokens ?? {}) : item.label) });
+    const stepProcess = j.journey.step?.process ?? (record?.subject.stage === "servicing" ? "2.1" : null);
+    const rulesText = rulesFor(stepProcess);
+    const context = buildContext({ partyFirstName: firstNameOf(party.legal_name), level, channel: req.channel, routed_to: req.routed_to, safeMode, partnerName: partner.legal_name, record, cards, messages: window, lead, next: next0, borrowerText: req.text, journey: j.journey, journeyTokens: j.tokens, rules: stepProcess && rulesText ? { process: stepProcess, text: rulesText } : null });
     const disclosureFirst = allMessages[0]?.body_text === "{{copy:entry.disclosure.first}}";
     // ---- the model, on the bus's tools
     const ledger = newLedger(); Object.assign(ledger.tokens, context.tokens);

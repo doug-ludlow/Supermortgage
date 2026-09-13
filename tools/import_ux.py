@@ -414,7 +414,7 @@ def commands_32_2():
 
 def agent_paragraph(k, meta):
     if k == 16:
-        return ('`intake` and `borrower-comms` agents (tools: `session.next`, `record.get`, `explain`, `timer.due`, `document.describe`, `card.propose`, `card.request`, `command.run`, `human.transfer`) — the '
+        return ('`intake` and `borrower-comms` agents (tools: `journey.get`, `session.next`, `record.get`, `explain`, `timer.due`, `document.describe`, `card.propose`, `card.request`, `command.run`, `human.transfer`) — the '
                 'tool contract of §3.3 (DELTA-24): every tool is a 32.16 bus command delegating to an existing tool through `commandInputFor` / `delegate()`; the model-facing schema is generated from '
                 '`TOOLS_32_16` at boot. End-to-end: the turn rebuilds its context from `borrower_record`, `session.next`, the last few messages and the copy library (nothing carried between turns), '
                 'calls the model with the contract, executes each tool call on the bus (an `agent_decisions` row each), runs the utterance guard (provenance, verbatim, SAFE, prohibited inquiries, '
@@ -628,9 +628,11 @@ def main():
         files[os.path.join(SECTION_DIR, f'{SECTION_N}-{k}-{slug(META[k]["title"])}.md')] = text
     files[os.path.join(SECTION_DIR, 'README.md')] = build_readme()
     files[os.path.join(SECTION_DIR, 'copy-library.md')] = build_copy_library()
-    # stale process files from an earlier title are removed so one process has one file
+    # stale process files from an earlier title are removed so one process has one file — only for the processes this importer
+    # owns (META); a markdown-first process written by hand under the section (32.17, spec/TEMPLATE-process.md) is never touched
+    owned = {f'{SECTION_N}-{k}-' for k in META}
     for old in glob.glob(os.path.join(SECTION_DIR, f'{SECTION_N}-[0-9]*-*.md')):
-        if old not in files:
+        if old not in files and any(os.path.basename(old).startswith(pre) for pre in owned):
             print('remove stale', os.path.relpath(old, ROOT))
             if not dry: os.remove(old)
     for p, text in files.items():

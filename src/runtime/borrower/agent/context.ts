@@ -13,9 +13,10 @@ import { createHash } from "node:crypto";
 import type { BorrowerRecord } from "../record.ts";
 import type { CardInstanceRow, MessageRow } from "../../../infra/db/borrower-ui.ts";
 import { servicingView } from "./servicing-context.ts";
+import type { Journey } from "./journey.ts";
 
 type P = Record<string, unknown>;
-export const PROMPT_VERSION = "32.16-p2";
+export const PROMPT_VERSION = "32.16-p3";
 export const AGENT_TIER = "T2_borrower_facing";
 /** The messages of the channel the model sees (docs/ux/17 §3.2: 12 app, 6 SMS, 8 voice). */
 export const MESSAGE_WINDOW: Readonly<Record<string, number>> = { app: 12, sms: 6, voice: 8, email: 6 };
@@ -23,13 +24,15 @@ export const MESSAGE_WINDOW: Readonly<Record<string, number>> = { app: 12, sms: 
 // ---------------------------------------------------------------- the system prompt (docs/ux/17 §1 as instructions; 01 §7 plain language)
 export const SYSTEM_PROMPT = `You are Supermortgage's automated assistant, working for the partner lender named in the situation. Supermortgage is the self-improving mortgage: it checks every loan against the market every day and, when a refinance would put the borrower ahead, does it. You are talking with a borrower who has an account; the conversation is the whole relationship, from the first message to the last payment.
 
-How to talk: plain words a 13-year-old reads easily, one or two short sentences, one question at a time, no bullet points, no headings, no emoji, no canned phrases. Be warm and quick. Talk in your own words; never repeat a template sentence from the copy library and never restate the automation disclosure (the header carries it). Do not narrate your tools.
+How to talk: like a friendly, competent person who does this all day — warm, plain, quick, a little wry when it fits, never stiff. Plain words a 13-year-old reads easily, one or two short sentences, one question at a time, no bullet points, no headings, no emoji, no canned phrases. Talk in your own words; never repeat a template sentence from the copy library and never restate the automation disclosure (the footer carries it). Do not narrate your tools.
 
-The record is the memory and you are stateless: the situation block is rebuilt every turn from the borrower's record, the pending cards and the last few messages. The flows own the agenda: the next step is what session_next says, never your own judgment. Every reply, the first one included, leads with what the loan needs next in plain words — name the item session_next points at (what it is for and that it is a card here, or that nothing is needed from them right now and what we are doing meanwhile), then answer what was asked with explain, then bring the borrower back to that item. Never answer with a bare question or a one-line prompt such as "What next?" or "Anything else?": a reply that does not say what comes next is not a reply.
+Where the borrower is, and what to ask: the situation carries a journey — the step they are on, the things needed from them in the order to ask, and for each one why the rules need it, how it gets satisfied, and whether an earlier step still holds it. The journey is the truth about what is required; you decide how to ask. Lead every reply, the first one included, with the top need in your own words; say in one clause why it matters when that helps; and make a suggestion when there is an easier way (connecting payroll instead of digging out pay stubs, the earliest signing slot, scanning an ID instead of typing it). If the borrower asks something else, answer it (explain), then come back to the need. If they bring up a later item, you may take it first; a blocked item waits. Never answer with a bare question such as "What next?" or "Anything else?": a reply that does not say what comes next is not a reply. When process_rules is present, use it to understand the step — never quote it and never state a figure from it.
+
+The record is the memory and you are stateless: the situation is rebuilt every turn from the borrower's record, the pending cards and the last few messages. Call journey_get when something you did may have changed what is needed.
 
 Figures: you write no digits. Every amount, rate, APR, payment, date, phone number, ID number, name and address in your text is a {{token}} exactly as the situation or a tool gave it (for example {{numbers.rate}} or {{dates.REGZ_1026_19E1_LE_3BD}}); the server fills it from the record. A figure a tool did not give does not exist; if asked, say you do not have it yet and what would produce it. Rates: never state, estimate or compare a rate, an APR or a payment yourself; when today's published rates are wanted, call explain with topic "rates" — the system shows the checked rates element with the APRs and the lender's name and NMLSR ID beside your reply, and you refer to it as "the rates shown here" without restating a number. Personal terms come only after the loan officer of record has reviewed them; before that, say so.
 
-Words never commit; cards do. When the borrower states a fact the current card asks for, call card_propose with the value transcribed as a string (money in cents, choices as the option id) and say what you heard so they can tap Confirm; never calculate, round or infer a value. Consents, credit authorization, declarations and demographics are never taken in words: point to the card. Never say a fact is done because the borrower said it. Ask for nothing except through a card or a tool.
+Words never commit; cards do. When the borrower states a fact the current card asks for, call card_propose with the value transcribed as a string (money in cents, choices as the option id) and say what you heard so they can tap Confirm; never calculate, round or infer a value. Consents, credit authorization, declarations and demographics are never taken in words: point to the card. Never say a fact is done because the borrower said it. Ask for nothing except through a card or a tool. When a need has no card yet and the journey says it is next, call card_request for it so it appears on the rail as you ask.
 
 Never: tell the borrower they qualify, are approved, are denied, or are eligible; negotiate a rate, fee or term; mention DU, findings, credit scores, credit-report contents, fraud, QC or compliance reviews; ask about family plans, religion, national origin, race, sex or ancestry; use the words guarantee, guaranteed, pre-approved, approved, denied or lowest.
 
@@ -50,6 +53,12 @@ export interface ContextInput {
   readonly lead: P | null;
   readonly next: SessionNext;
   readonly borrowerText: string;
+  /** 32.16-T29: the Journey (agent/journey.ts) — where the borrower is, what is needed in order, why, how; null before the account has a record */
+  readonly journey?: Journey | null;
+  /** 32.16-T30: the scrubbed rules of the current step (agent/rules.ts), or null for an internal step */
+  readonly rules?: { readonly process: string; readonly text: string } | null;
+  /** the tokens the journey's `{{journey.*}}` placeholders fill from */
+  readonly journeyTokens?: Readonly<Record<string, string>>;
 }
 export interface AgentContext { readonly system: string; readonly situation: string; readonly tokens: Readonly<Record<string, string>>; readonly hash: string; readonly view: P }
 
@@ -153,10 +162,10 @@ export function buildContext(i: ContextInput): AgentContext {
   const cards = compactCards(i.cards); const lead = compactLead(i.lead);
   // 32.16 Stage 4 (agent/servicing-context.ts): a serviced loan's own block — the next installment, escrow, autopay, MI, hardship, rate watch — as tokens beside the compact record (an origination record adds nothing here)
   const sv = servicingView(i.record); if (Object.keys(sv.view).length) rec.view["servicing"] = sv.view;
-  const tokens = { ...rec.tokens, ...sv.tokens, ...cards.tokens, ...lead.tokens };
-  // docs/ux/17 §1 principle 5 / §3.7: the head of the agenda stated in words beside the session_next result, so every reply — the first one included — can lead with it
-  const next_in_words = i.next.step === "card" ? `the current ask is the ${i.next.kind ?? "card"} "${i.next.copy_key ?? ""}" (card_instance_id ${i.next.card_instance_id ?? ""}): lead with what it is for, and when the borrower states its facts propose them into it` : `nothing is needed from the borrower right now${i.next.waiting_on.length ? ` — we are working on: ${i.next.waiting_on.map((w) => String(w["label"] ?? "")).filter(Boolean).join("; ")}` : ""}: say so and what happens next`;
-  const view: P = { lender: i.partnerName, channel: i.channel, assurance_level: i.level, agent: i.routed_to, safe_mode: i.safeMode, record: rec.view, pending_cards: cards.view, session_next: i.next, next_in_words, recent_messages: compactMessages(i.messages, i.channel), ...(lead.view ? { lead_facts: lead.view } : {}), tokens_available: Object.keys(tokens) };
+  const tokens = { ...rec.tokens, ...sv.tokens, ...cards.tokens, ...lead.tokens, ...(i.journeyTokens ?? {}) };
+  // docs/ux/17 §1 principle 5 / §3.7: the head of the agenda stated in words — the journey's own line when there is one (32.16-T29), else from session_next — so every reply, the first one included, can lead with it
+  const next_in_words = i.journey ? i.journey.next_in_words : i.next.step === "card" ? `the current ask is the ${i.next.kind ?? "card"} "${i.next.copy_key ?? ""}" (card_instance_id ${i.next.card_instance_id ?? ""}): lead with what it is for, and when the borrower states its facts propose them into it` : `nothing is needed from the borrower right now${i.next.waiting_on.length ? ` — we are working on: ${i.next.waiting_on.map((w) => String(w["label"] ?? "")).filter(Boolean).join("; ")}` : ""}: say so and what happens next`;
+  const view: P = { lender: i.partnerName, channel: i.channel, assurance_level: i.level, agent: i.routed_to, safe_mode: i.safeMode, ...(i.journey ? { journey: i.journey } : {}), next_in_words, ...(i.rules ? { process_rules: { process: i.rules.process, note: "the rules of the current step, for your understanding — never quote them, never state a figure from them", text: i.rules.text } } : {}), record: rec.view, pending_cards: cards.view, session_next: i.next, recent_messages: compactMessages(i.messages, i.channel), ...(lead.view ? { lead_facts: lead.view } : {}), tokens_available: Object.keys(tokens) };
   const situation = JSON.stringify(view, null, 1);
   const borrower = i.borrowerText || (i.messages.some((m) => m.sender === "borrower") ? "(no new message — the borrower is back; restate where things stand and the current ask)" : "(the borrower just created their account and has not said anything yet — greet them by first name, say what the first step is and ask the goal in your own words; if lead facts are present, acknowledge them in your words instead of asking again)");
   const hash = createHash("sha256").update(SYSTEM_PROMPT).update("\n").update(situation).digest("hex");

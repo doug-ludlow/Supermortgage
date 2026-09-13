@@ -36,6 +36,8 @@ import { seedEntryDemo } from "../../runtime/entry-seed.ts";
 import { copyText } from "../../runtime/borrower/channels.ts";
 import { LEAD_HEADER } from "../../runtime/borrower/lead-routes.ts";
 import { buildContext, SYSTEM_PROMPT, PROMPT_VERSION, AGENT_TIER } from "../../runtime/borrower/agent/context.ts";
+import { buildJourney } from "../../runtime/borrower/agent/journey.ts";
+import { rulesFor, RULES_MAX_CHARS } from "../../runtime/borrower/agent/rules.ts";
 import { MODEL_TOOLS_32_16, COMMAND_RUN_ALLOWLIST } from "../../app/tools/section32-16.ts";
 import type { BorrowerRecord } from "../../runtime/borrower/record.ts";
 import type { CardInstanceRow, MessageRow } from "../../infra/db/borrower-ui.ts";
@@ -87,7 +89,7 @@ function scriptedClient() {
     if (!calls?.length) { const t = scene.text; return text(typeof t === "function" ? t(ctx) : t); }
     return message(calls.map((c, i) => ({ type: "tool_use", id: `toolu_${i}_${randomUUID().slice(0, 6)}`, name: c.name, input: c.input }) as unknown as Anthropic.ContentBlock), "tool_use");
   };
-  return { client: { messages: { create } } as unknown as Anthropic, requests, toolResults, use(next: Scene[]): void { scenes = [FIRST_TURN, RETURNING, ...next]; } };
+  return { client: { messages: { create } } as unknown as Anthropic, requests, toolResults, use(next: Scene[]): void { scenes = [...next, FIRST_TURN, RETURNING]; } };   // a test's own scene wins over the defaults when both match
 }
 const scripted = scriptedClient();
 
@@ -207,7 +209,7 @@ test("32.16-T1: Given a borrower message that is not an affirmative, not a flow 
   const req = scripted.requests.at(-1)!;
   assert.deepEqual(req.system, [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }]); assert.equal(req.model, "scripted");
   assert.deepEqual((req.tools ?? []).map((x) => (x as { name: string }).name), MODEL_TOOLS_32_16.map((t) => t.model_name));
-  assert.deepEqual(MODEL_TOOLS_32_16.map((t) => t.name), ["session.next", "record.get", "explain", "timer.due", "document.describe", "card.propose", "card.request", "command.run", "human.transfer"]);
+  assert.deepEqual(MODEL_TOOLS_32_16.map((t) => t.name), ["session.next", "journey.get", "record.get", "explain", "timer.due", "document.describe", "card.propose", "card.request", "command.run", "human.transfer"]);
   assert.match(String(req.messages.at(-1)!.content), /\[situation\][\s\S]*"session_next"[\s\S]*\[borrower\]\nhow does this work\?/);
 });
 test("32.16-T2: Given any turn, then its context contains no DU message, credit report field, findings text, fraud/QC entity or vendor payload (contract test over `context.ts`).", async () => {
@@ -733,4 +735,83 @@ test("32.16 DELTA-29: ensureOrganicApplication is idempotent — a second sign-i
   const throttled = await account({ action: "sign_in", email, password }, THROTTLED_IP); assert.equal(throttled.status, 429, JSON.stringify(throttled.body)); assert.equal(throttled.body["code"], "ACCOUNT_THROTTLED"); assert.equal(throttled.body["copy_key"], "error.generic");
   const create = await account({ action: "create", email: `other-${R}@example.test`, password }, THROTTLED_IP); assert.equal(create.status, 429); assert.equal(create.body["code"], "ACCOUNT_THROTTLED");
   const elsewhere = await account({ action: "sign_in", email, password }, "10.28.0.3"); assert.equal(elsewhere.status, 200, JSON.stringify(elsewhere.body));
+});
+
+// ---------------------------------------------------------------- the Journey (docs/ux/17 §3.2 amended; T29–T31)
+test("32.16-T29: Given a record with pending cards, then the turn's situation carries `journey` — the current step with its process, `needs` in the order to ask (a proposal awaiting Confirm first, then the record's own order, a gated item last), each with `what`, `why`, `satisfy`, `process` and `owner: you` — and `next_in_words` names the top need; `journey.get` returns the same object.", async () => {
+  const now = NOW; const app = randomUUID(); const conv = randomUUID(); const party = randomUUID();
+  const mk = (id: string, kind: string, copy_key: string, props: Json, created_at: string): CardInstanceRow => ({ card_instance_id: id, conversation_id: conv, party_id: party, subject_application_id: app, subject_loan_id: null, kind, status: "pending", created_by: "agent:intake", copy_key, command_ref: "x", expires_at: null, created_at, resolved_at: null, props, evidence: null, misses: 0 } as unknown as CardInstanceRow);
+  const income = randomUUID(), assets = randomUUID(), lock = randomUUID(), esign = randomUUID();
+  const cards = [
+    mk(income, "ConfirmCard", "income.confirm.title", { fields: [{ path: "monthly_base_cents", label: "Monthly pay", value: "" }] }, "2026-09-11T10:00:00.000Z"),
+    mk(assets, "ConfirmCard", "assets.confirm.title", { fields: [{ path: "checking_cents", label: "Checking", value: "" }], proposal: { fields: [{ path: "checking_cents", value: "1200000", source: "borrower_stated_unconfirmed" }], proposed_at: now } }, "2026-09-11T10:01:00.000Z"),
+    mk(lock, "ChoiceCard", "lock.compare.title", { options: [{ id: "lock" }, { id: "float" }], gate: "the Loan Estimate must be received first" }, "2026-09-11T10:02:00.000Z"),
+    mk(esign, "ConsentCard", "consent.esign.title", {}, "2026-09-11T10:03:00.000Z"),
+  ];
+  const record = {
+    subject: { application_id: app, loan_id: null, label: "Application ····1234", transaction_type: "limited_cash_out", occupancy: "primary", stage: "origination" },
+    status: { badge: "Getting started", state_source: "app", one_liner: "x" }, read_only: false,
+    next: { label: "Loan Estimate", due_at: "2026-09-15T21:00:00.000Z", timer_code: "REGZ_1026_19E1_LE_3BD", calendar_note: "business days" },
+    needed_from_you: [
+      { item_id: "n-income", kind: "confirmation", label: "Confirm your income", card_instance_id: income, created_at: now, source: "card" },
+      { item_id: "n-assets", kind: "confirmation", label: "Confirm your assets", card_instance_id: assets, created_at: now, source: "card" },
+      { item_id: "n-lock", kind: "confirmation", label: "Lock your rate or keep floating", card_instance_id: lock, created_at: now, source: "card" },
+    ],
+    what_we_are_doing: [{ item_id: "d1", kind: "condition", label: "Title commitment", owner: "title_company", owner_copy_key: "needs.owner.title_company", status: "open", source: "conditions", created_at: now }],
+    needed_summary: { count: 3, nothing_needed: false, copy_key: "needs.title" }, numbers: {}, dates: [], documents: [], people: [], property: null, loan: null, offers: [], as_of: now,
+    journey_progress: { steps: [{ id: "R1", label_copy_key: "journey.refi.home", state: "done", at: now }, { id: "R2", label_copy_key: "journey.refi.credit", state: "done", at: now }, { id: "R3", label_copy_key: "journey.refi.income", state: "current", at: null }, { id: "R4", label_copy_key: "journey.refi.about_you", state: "upcoming", at: null }], done: 2, total: 4 },
+  } as unknown as BorrowerRecord;
+  const { journey, tokens } = buildJourney({ record, cards });
+  assert.equal(journey.stage, "origination"); assert.deepEqual(journey.step, { id: "R3", label_copy_key: "journey.refi.income", process: "22.3" }); assert.deepEqual(journey.progress, { done: 2, total: 4 });
+  // the order to ask: the proposal awaiting Confirm (assets) first, then the record's own order without the gated one (income, then the consent the record does not list), the gated lock last
+  assert.deepEqual(journey.needs.map((n) => n.id), [assets, income, esign, lock], JSON.stringify(journey.needs.map((n) => [n.id.slice(0, 8), n.what, n.blocked_by])));
+  for (const n of journey.needs) { assert.equal(n.owner, "you"); assert.ok(n.what && n.why && n.satisfy, JSON.stringify(n)); assert.ok(n.process, `process for ${n.what}`); }
+  const byId = Object.fromEntries(journey.needs.map((n) => [n.id, n]));
+  assert.equal(byId[assets]!.proposal_pending, true); assert.equal(byId[income]!.kind, "fact"); assert.match(byId[income]!.why, /ability to repay/i); assert.equal(byId[income]!.process, "22.3");
+  assert.equal(byId[esign]!.kind, "consent"); assert.match(byId[esign]!.satisfy, /tap/); assert.match(byId[esign]!.why, /E-SIGN/);
+  assert.equal(byId[lock]!.blocked_by, "the Loan Estimate must be received first"); assert.equal(byId[lock]!.kind, "choice"); assert.equal(byId[lock]!.process, "21.4");
+  assert.match(journey.next_in_words, /already answered "Confirm your assets"/);
+  assert.deepEqual(journey.waiting_on, [{ label: "Title commitment", owner: "title_company", status: "open" }]);
+  assert.deepEqual(journey.recently_done, [{ step: "R2", label_copy_key: "journey.refi.credit" }, { step: "R1", label_copy_key: "journey.refi.home" }]);
+  assert.deepEqual(journey.next_deadline, { label: "Loan Estimate", timer_code: "REGZ_1026_19E1_LE_3BD", due_at: "{{journey.next_deadline}}" }); assert.equal(tokens["journey.next_deadline"], "2026-09-15");
+  // without the proposal, the top need is the record's first item and next_in_words leads with it, its why and how
+  const j2 = buildJourney({ record, cards: cards.map((c) => (c.card_instance_id === assets ? { ...c, props: { fields: (c.props as Json)["fields"] } } as CardInstanceRow : c)) });
+  assert.equal(j2.journey.needs[0]!.id, income); assert.match(j2.journey.next_in_words, /^the next thing is "Confirm your income" \(fact\): .*ability to repay.*How it gets done: the borrower says it in words/s);
+  // the situation carries it, first, and its next_in_words is the journey's
+  const ctx = buildContext({ partyFirstName: "Jane", level: "L2", channel: "app", routed_to: "intake", safeMode: "assisted", partnerName: "Partner Bank", record, cards, messages: [], lead: null, next: { step: "card", card_instance_id: income, kind: "ConfirmCard", copy_key: "income.confirm.title", why_copy_key: null, allowed_answers: [], disallowed_topics: [], blocking_reason: null, waiting_on: [] }, borrowerText: "hi", journey: j2.journey, journeyTokens: j2.tokens, rules: null });
+  const view = JSON.parse(ctx.situation.slice(ctx.situation.indexOf("{"), ctx.situation.lastIndexOf("}") + 1)) as Json;
+  assert.ok(view["journey"], "journey in the situation"); assert.equal(view["next_in_words"], j2.journey.next_in_words); assert.equal(Object.keys(view).indexOf("journey") < Object.keys(view).indexOf("record"), true, "the journey comes before the record");
+  assert.ok(MODEL_TOOLS_32_16.some((t) => t.name === "journey.get" && t.model_name === "journey_get"), "journey.get is on the bus for the model");
+});
+
+test("32.16-T30: Given a current step whose process is not internal, then the situation carries `process_rules` for that process with worked examples dropped and no dollar or percent figure in it; given an underwriting step, then no `process_rules` is present and the context still contains no DU, credit, findings or vendor content.", async () => {
+  const income = rulesFor("22.3"); assert.ok(income && income.length > 500, "22.3's rules");
+  assert.doesNotMatch(income!, /\$[\d,]+|\d+(\.\d+)?\s?%/, "no dollar or percent figure"); assert.doesNotMatch(income!, /Worked example/i, "worked examples dropped"); assert.ok(income!.length <= RULES_MAX_CHARS + 2);
+  assert.match(income!, /VVOE|verification|income/i, "the rule in words with its citation");
+  for (const internal of ["23.1", "23.2", "23.3", "22.6", "28.4"]) assert.equal(rulesFor(internal), null, `${internal} is internal: no rules text`);
+  assert.equal(rulesFor("99.9"), null, "an unknown process has no rules");
+  const le = rulesFor("21.2"); assert.ok(le && /business[ _]day/i.test(le), "21.2's rules name the business-day clocks");
+  // the underwriting step (R8 → 23.3): the turn attaches nothing and the context contract of T2 holds
+  const record = { subject: { application_id: randomUUID(), loan_id: null, label: "Application ····1234", transaction_type: "limited_cash_out", occupancy: "primary", stage: "origination" }, status: { badge: "In review", state_source: "du", one_liner: "x" }, read_only: false, next: null, needed_from_you: [], what_we_are_doing: [], needed_summary: { count: 0, nothing_needed: true, copy_key: "needs.none" }, numbers: {}, dates: [], documents: [], people: [], property: null, loan: null, offers: [], as_of: NOW, journey_progress: { steps: [{ id: "R7", label_copy_key: "journey.refi.application", state: "done", at: NOW }, { id: "R8", label_copy_key: "journey.refi.underwriting", state: "current", at: null }], done: 1, total: 2 } } as unknown as BorrowerRecord;
+  const j = buildJourney({ record, cards: [] }); assert.equal(j.journey.step?.process, "23.3"); assert.equal(rulesFor(j.journey.step!.process), null);
+  const ctx = buildContext({ partyFirstName: "Jane", level: "L2", channel: "app", routed_to: "intake", safeMode: "assisted", partnerName: "Partner Bank", record, cards: [], messages: [], lead: null, next: { step: "idle", card_instance_id: null, kind: null, copy_key: null, why_copy_key: null, allowed_answers: [], disallowed_topics: [], blocking_reason: null, waiting_on: [] }, borrowerText: "how is it going?", journey: j.journey, journeyTokens: j.tokens, rules: null });
+  assert.ok(!ctx.situation.includes("process_rules"), "no rules for an internal step"); assert.match(j.journey.next_in_words, /nothing is needed from the borrower right now/);
+  for (const needle of ["DU RECOMMENDATION", "findings_text", "vendor_payload", "credit_report"]) assert.ok(!ctx.situation.includes(needle));
+  // a non-internal step: the rules ride in the situation with the note that they are never quoted
+  const ctx2 = buildContext({ partyFirstName: "Jane", level: "L2", channel: "app", routed_to: "intake", safeMode: "assisted", partnerName: "Partner Bank", record, cards: [], messages: [], lead: null, next: { step: "idle", card_instance_id: null, kind: null, copy_key: null, why_copy_key: null, allowed_answers: [], disallowed_topics: [], blocking_reason: null, waiting_on: [] }, borrowerText: "hi", journey: j.journey, journeyTokens: j.tokens, rules: { process: "22.3", text: income! } });
+  assert.match(ctx2.situation, /"process_rules": \{\s*"process": "22\.3",\s*"note": "the rules of the current step, for your understanding — never quote them, never state a figure from them"/);
+});
+
+test("32.16-T31: Given the first turn with the goal card pending, then the model is prompted to lead with the Journey's top need (`next_in_words` comes from the Journey, the prompt version is `32.16-p3`) and the reply names that need in its own words.", { skip }, async () => {
+  assert.equal(PROMPT_VERSION, "32.16-p3"); assert.match(SYSTEM_PROMPT, /the situation carries a journey/); assert.match(SYSTEM_PROMPT, /make a suggestion when there is an easier way/); assert.match(SYSTEM_PROMPT, /Be warm|warm, plain, quick/);
+  scripted.use([{ when: /just created their account/, text: (c) => { const j = c.situation["journey"] as Json; const top = ((j["needs"] as Json[])[0] ?? {})["what"]; return `Welcome. First thing: ${String(top)} — pick it on the card and we'll take it from there.`; } }]);
+  const a = await signUp(`t31-${R}@example.test`, `pw-t31-${R}`, "10.16.31.1"); await settle();
+  const t0 = await thread(a.token); assertDisclosureThenGoal(t0);
+  const req = scripted.requests.at(-1)!; const situation = String(req.messages.at(-1)!.content);
+  const view = JSON.parse(situation.slice(situation.indexOf("{"), situation.lastIndexOf("}") + 1)) as Json;
+  const journey = view["journey"] as Json; assert.ok(journey, "the journey rides in the first turn's situation");
+  const top = (journey["needs"] as Json[])[0]!; assert.equal(top["kind"], "choice"); assert.match(String(top["why"]), /goal/); assert.equal(view["next_in_words"], journey["next_in_words"]); assert.match(String(journey["next_in_words"]), /^the next thing is/);
+  const greeting = t0.messages.find((m) => m["sender"] === "agent" && (m["copy_tokens"] as Json | null)?.["source"] === "agent_turn")!;
+  assert.match(String(greeting["body_text"]), new RegExp(`First thing: ${String(top["what"]).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`), "the reply names the top need");
+  const row = (await db.query<{ prompt_version: string }>(`SELECT prompt_version FROM agent_turns WHERE party_id = $1 ORDER BY created_at DESC LIMIT 1`, [a.party_id]))[0]!; assert.equal(row.prompt_version, "32.16-p3");
 });

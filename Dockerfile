@@ -15,6 +15,8 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 COPY tsconfig.json ./
 COPY spec/registry ./spec/registry
+# the agent turn reads the current step's rules from the process files (src/runtime/borrower/agent/rules.ts); .dockerignore admits only spec/sections/*/*.md
+COPY spec/sections ./spec/sections
 COPY db ./db
 COPY src ./src
 # the copy library the API renders SMS, voice and talk lines from (src/runtime/borrower/channels.ts COPY_FILES)

@@ -183,7 +183,8 @@ const readBack = (yes: string, no: string) => (_s: Situation, r: readonly { name
 const head = (s: Situation): string => (s.session_next.step === "card" ? "The next thing for you is on the card here." : "Nothing is needed from you right now; I will say when something is.");
 const sent = (r: readonly { name: string; is_error: boolean; content: unknown }[]): boolean => r.some((x) => x.name === "card.request" && !x.is_error && (x.content as Json | null)?.["sent"] === true);
 const SCENES: readonly Scene[] = [
-  { when: /has not said anything yet/, calls: next(), text: "Hi {{party.first_name}}, welcome. Are you here to buy a home, lower the payment on the one you have, or take cash out?" },
+  // a name when the record has one, no name (never the e-mail) when it does not — an account made with an e-mail has none until the identity step
+  { when: /has not said anything yet/, calls: next(), text: (s) => `Hi${(((s.record ?? {}) as Json)["party"] as Json | undefined)?.["first_name"] ? " {{party.first_name}}" : ""}, welcome. Are you here to buy a home, lower the payment on the one you have, or take cash out?` },
   { when: /the borrower is back/, calls: next(), text: (s) => `Welcome back. ${head(s)}` },
   // the goal (32.3 E3): proposed into the ChoiceCard, confirmed by the tap
   { when: /lower my (monthly )?payment/i, calls: propose("entry.goal.question", { option_id: "lower_rate" }), text: readBack("Got it: {{proposal.option}}. Tap Confirm on the goal card here so it counts, and then we will look at the home.", "Got it. The goal card here is where that choice counts: pick the one that fits and tap it.") },
@@ -384,7 +385,7 @@ test("conversation: the refinance persona goes from sign-up to a boarded loan by
   clock.set(START); await b.signUp(); J.appId = b.app_id;
   const t0 = await b.thread(); const agent0 = t0.messages.filter((m) => m["sender"] !== "borrower");
   assert.equal(agent0[0]!["body_text"], "{{copy:entry.disclosure.first}}"); assert.equal(agent0[0]!["sender"], "system");
-  const greeting = agent0.find((m) => (m["copy_tokens"] as Json | null)?.["source"] === "agent_turn")!; assert.ok(greeting, "the first turn greeted"); assert.match(String(greeting["body_text"]), /^Hi \S+, welcome\. Are you here to buy a home/); assert.equal(t0.pinned_card?.["copy_key"], "entry.goal.question");
+  const greeting = agent0.find((m) => (m["copy_tokens"] as Json | null)?.["source"] === "agent_turn")!; assert.ok(greeting, "the first turn greeted"); assert.match(String(greeting["body_text"]), /^Hi(?: [A-Z][a-z]+)?, welcome\. Are you here to buy a home/); assert.equal(t0.pinned_card?.["copy_key"], "entry.goal.question");
   const first = (await b.turns()).find((x) => x.message_id === null)!; assert.ok(first, "the first turn's agent_turns row (no borrower message)"); assert.equal((first.guard_result as Json)["ok"], true);
   later(1); let r = await b.say("I want to lower my payment on the house.");
   await assertModelReply(b, r, { proposedInto: "entry.goal.question", text: /Lower my rate or payment/ });

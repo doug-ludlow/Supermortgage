@@ -42,6 +42,7 @@ import { PgBorrowerPartyRepository, type PartyRow, type Subject } from "../../in
 import { BorrowerRecordReader, timerAllowed, timerLabel, type BorrowerRecord } from "../../runtime/borrower/record.ts";
 import { copyText } from "../../runtime/borrower/channels.ts";
 import { compactRecord, type SessionNext } from "../../runtime/borrower/agent/context.ts";
+import { buildJourney } from "../../runtime/borrower/agent/journey.ts";
 import { servicingView, historyView, termsView, usd, type HistoryView } from "../../runtime/borrower/agent/servicing-context.ts";
 import { paymentFacts, paymentCard, extraPrincipalCard, autopayEnrollCard, autopayChoiceCard, escrowShortageCard, openShortage, SERVICING_ESIGN_SCOPES, type PaymentFacts, type CardSpec } from "../../runtime/borrower/flows/8-servicing-payments.ts";
 import { paidThrough } from "../../runtime/borrower/flows/9-servicing-requests.ts";
@@ -319,6 +320,8 @@ const subjectInput = (s: Subject | null, i: ToolInput): P => ({ ...(s?.applicati
 
 export const TOOLS_32_16: readonly ToolDef[] = defineTools(PROCESS_32_16, INTAKE, [
   tool("session.next", async (i, ctx, rt) => { const s = await situationOf(i, ctx, rt); return { ...sessionNextOf(s.record, s.cards), outcome: "read" }; }),
+  // 32.16-T29: the Journey — where the borrower is, what is needed in order, why, how — rebuilt from the record and the cards (agent/journey.ts); the same object the turn puts in the situation
+  tool("journey.get", async (i, ctx, rt) => { const s = await situationOf(i, ctx, rt); const j = buildJourney({ record: s.record, cards: s.cards, labelOf: (item) => (item.label_copy_key ? copyText(item.label_copy_key, item.copy_tokens ?? {}) : item.label) }); return { ...j.journey, outcome: "read" }; }),
 
   tool("record.get", async (i, ctx, rt) => {
     const s = await situationOf(i, ctx, rt);
@@ -469,6 +472,7 @@ export const TOOLS_32_16: readonly ToolDef[] = defineTools(PROCESS_32_16, INTAKE
 // ---------------------------------------------------------------- the model-facing schema (generated from the definitions at boot — agent/tools.ts turns it into Anthropic.Tool[])
 export interface ModelToolSchema { readonly name: string; readonly model_name: string; readonly description: string; readonly input_schema: P }
 const SCHEMAS: Readonly<Record<string, Omit<ModelToolSchema, "name" | "model_name">>> = {
+  "journey.get": { description: "Where the borrower is and what comes next: the current step, the things needed from them in the order to ask (each with why the rules need it, how it gets satisfied, and whether an earlier step still holds it), what we are waiting on, and the next deadline. The situation already carries it; call this after a tool call that may have changed what is needed.", input_schema: { type: "object", properties: {}, additionalProperties: false } },
   "session.next": { description: "The current ask on the borrower's record: the pending card with the highest priority (kind, copy key, what it asks for, what may be answered, topics to avoid), or idle with what we are doing. Call it first when unsure where things stand.", input_schema: { type: "object", properties: {}, additionalProperties: false } },
   "record.get": { description: "The borrower's compact record: status, next step, what is needed from them and from us, numbers, dates, documents, people, property and loan. Every figure, date and name comes back as a {{token}} you may write verbatim in your reply.", input_schema: { type: "object", properties: {}, additionalProperties: false } },
   "explain": { description: `A plain-words explanation of one topic: ${Object.keys(EXPLAIN_TOPICS).join(", ")}, program (this program's criteria), or rates (today's published rate range — the system then shows the checked rates element beside your reply; you restate no figure). On a serviced loan also ${Object.keys(SERVICING_EXPLAIN_TOPICS).join(", ")}: answered from the loan's own record and history, every figure and date a {{token}} you may write verbatim — never a figure of your own; payoff hands back no figure (the payoff card carries it).`, input_schema: { type: "object", properties: { topic: { type: "string", description: "one of the listed topics, program, rates, or a serviced loan's topic" } }, required: ["topic"], additionalProperties: false } },

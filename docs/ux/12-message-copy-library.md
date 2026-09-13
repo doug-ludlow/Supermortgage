@@ -676,6 +676,10 @@ The rail and the thread (32.16 §2.1–2.2, DELTA-26). The rail's section names,
 - `video.permission_denied` — line — "Without a camera or microphone we can still start the call; you can allow them in the call itself, or continue in the conversation." — *32.17: a refused permission never blocks the call; the thread at /app is always there.*
 - `video.unavailable` — line — "The video agent isn't available right now. Nothing is lost — you can continue in the conversation." — *32.17 edge cases: the vendor is down at open (video_sessions.status = failed, end_reason = vendor_unavailable); the page offers /app in these words, never a raw error.*
 - `video.continue_in_thread` — button — "Continue in the conversation" — *32.17: → /app.*
+- `video.mute` — button — "Mute" — *32.17 rule 15: the stage's own microphone control (the room's local audio off).*
+- `video.unmute` — button — "Unmute" — *32.17 rule 15.*
+- `video.camera_off` — button — "Camera off" — *32.17 rule 15: the borrower's own camera (the picture-in-picture tile) off; the call continues audio-only.*
+- `video.camera_on` — button — "Camera on" — *32.17 rule 15.*
 - `video.leave` — button — "Leave" — *32.17: POST /v1/borrower/video/sessions/{id}/end — the conversation ends at the vendor and the persona is deleted.*
 - `video.ended` — line — "The call has ended. Your cards and record stay as they are." — *32.17: ended{end_reason} for any reason — the borrower left, the vendor shut it down, max_call_duration.*
 - `video.new_call` — button — "Start a new call" — *32.17 edge cases: after max_call_duration or a leave, the rail stays live and a new call is one tap.*

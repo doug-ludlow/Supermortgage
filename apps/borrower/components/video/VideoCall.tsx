@@ -18,9 +18,13 @@ import { ApiRequestError } from "@/lib/api/client";
 import { endVideoSession, openVideoSession, videoSession, type VideoSession } from "@/lib/api/video";
 import { copy } from "@/lib/copy";
 import { SHOW_FAKE_MARKERS } from "@/lib/env";
+import { joinOptionsFor } from "@/lib/video/join";
+import { LiveCall } from "./LiveCall";
 
 export type VideoCallProps = {
   fixturesMode: boolean;
+  /** The borrower's first name when one is on file — the display name the room sees (32.17 rule 15); "You" otherwise. */
+  firstName?: string | null | undefined;
   /** The SSE stream's `video.session.*` events bump this; the pane re-reads its status. */
   statusTick?: number;
   onSession?: (s: VideoSession | null) => void;
@@ -36,9 +40,16 @@ export function frameSrc(s: VideoSession): string {
   return s.conversation_url;
 }
 
-export function VideoCall({ fixturesMode, statusTick, onSession }: VideoCallProps) {
+export function VideoCall({ fixturesMode, firstName, statusTick, onSession }: VideoCallProps) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [session, setSession] = useState<VideoSession | null>(null);
+  // 32.17 rule 15: on the FAKE the picture-in-picture is the borrower's own camera from the permission step (the live call's is the room's local track)
+  const selfStream = useRef<MediaStream | null>(null);
+  const selfVideo = useRef<HTMLVideoElement>(null);
+  const [selfOn, setSelfOn] = useState(false);
+  const stopSelf = useCallback(() => { for (const t of selfStream.current?.getTracks() ?? []) t.stop(); selfStream.current = null; setSelfOn(false); }, []);
+  useEffect(() => () => stopSelf(), [stopSelf]);
+  useEffect(() => { const el = selfVideo.current; if (!el) return; el.srcObject = selfStream.current; if (selfStream.current) void el.play().catch(() => undefined); }, [selfOn, phase]);
   const [permissionNote, setPermissionNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -59,7 +70,8 @@ export function VideoCall({ fixturesMode, statusTick, onSession }: VideoCallProp
     try {
       if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-        for (const t of stream.getTracks()) t.stop();   // the room takes its own tracks; nothing of the borrower's camera is kept here
+        for (const t of stream.getAudioTracks()) t.stop();   // the room takes its own tracks; the video track stays only for the FAKE's self-view tile and ends with the call
+        stopSelf(); selfStream.current = new MediaStream(stream.getVideoTracks()); setSelfOn(stream.getVideoTracks().length > 0);
       }
     } catch {
       setPermissionNote(copy("video.permission_denied"));
@@ -88,20 +100,25 @@ export function VideoCall({ fixturesMode, statusTick, onSession }: VideoCallProp
 
   const leave = useCallback(async () => {
     if (!session) return;
+    stopSelf();
     if (fixturesMode) { const ended = { ...session, status: "ended" as const, end_reason: "borrower_left", ended_at: new Date().toISOString() }; setSession(ended); onSession?.(ended); setPhase("ended"); return; }
     try { const s = await endVideoSession(session.video_session_id); setSession(s); onSession?.(s); }
     catch { /* the row is the truth: re-read below */ }
     setPhase("ended");
-  }, [session, fixturesMode, onSession]);
+  }, [session, fixturesMode, onSession, stopSelf]);
+  // the live room ended (the borrower left through the stage's own control, the vendor shut it down, an error): the session row is the truth
+  const onLeft = useCallback((reason: "borrower_left" | "vendor_ended" | "error") => { if (reason === "borrower_left") void leave(); else if (reason === "error") setPhase("failed"); }, [leave]);
 
   const src = session ? frameSrc(session) : "";
+  const join = session && session.vendor !== "FAKE" ? joinOptionsFor(session, firstName) : null;
+  const live = phase === "live" && !!session;
   return (
     <section className="sm-video-pane" data-testid="video-call" data-phase={phase} data-vendor={session?.vendor} aria-label="Video call">
       <div className="sm-video-bar">
         <span className="sm-primary-text" data-testid="video-title">{copy("video.title")}</span>
         {session?.vendor === "FAKE" && SHOW_FAKE_MARKERS ? <span className="sm-fake-banner" data-testid="video-fake-marker">{copy("video.fake.marker")}</span> : null}
         <span className="sm-header-spacer" />
-        {phase === "live" ? (
+        {phase === "live" && !join ? (
           <button type="button" className="sm-btn sm-btn-quiet" data-testid="video-leave" onClick={() => void leave()}>
             {copy("video.leave")}
           </button>
@@ -111,15 +128,22 @@ export function VideoCall({ fixturesMode, statusTick, onSession }: VideoCallProp
         {phase === "permissions" || phase === "opening" ? (
           <p className="sm-muted" data-testid="video-status">{copy("video.starting")}</p>
         ) : null}
-        {phase === "live" && session ? (
-          fixturesMode || !src ? (
-            <div className="sm-video-frame sm-fake-video" data-testid="video-frame-fake">
-              <p className="sm-primary-text">{copy("video.fake.marker")}</p>
-              <p className="sm-muted">FAKE fixtures mode — no video agent is connected; the rail beside this pane is the recorded record.</p>
+        {live && join ? (
+          <LiveCall join={join} onLeft={onLeft} />
+        ) : live ? (
+          <div className="sm-video-live" data-testid="video-live" data-state="in" data-replica="fake">
+            {fixturesMode || !src ? (
+              <div className="sm-video-frame sm-fake-video" data-testid="video-frame-fake">
+                <p className="sm-primary-text">{copy("video.fake.marker")}</p>
+                <p className="sm-muted">FAKE fixtures mode — no video agent is connected; the rail beside this pane is the recorded record.</p>
+              </div>
+            ) : (
+              <iframe className="sm-video-frame" data-testid="video-frame" title="Video agent" src={src} allow={IFRAME_ALLOW} />
+            )}
+            <div className="sm-video-pip" data-testid="video-pip" aria-label="Your camera" hidden={!selfOn}>
+              <video ref={selfVideo} autoPlay playsInline muted />
             </div>
-          ) : (
-            <iframe className="sm-video-frame" data-testid="video-frame" title="Video agent" src={src} allow={IFRAME_ALLOW} />
-          )
+          </div>
         ) : null}
         {phase === "ended" ? (
           <div className="sm-video-notice" data-testid="video-ended">

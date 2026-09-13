@@ -15659,6 +15659,10 @@
    {
     "n": 18,
     "text": "Given any turn on the app or the video, then the system prompt names the assistant Michelle and forbids calling itself Supermortgage; the vendor persona is named Michelle with the one-line pointer prompt; `video.title` names her; and no persona, conversation or greeting names Supermortgage as the lender (32.17-T5 unchanged)."
+   },
+   {
+    "n": 19,
+    "text": "Given `/app/video` at \u2265 1024 px on a live call (the FAKE stands in), then the stage fills the left column \u2014 the replica's frame is the column's width with no border and no vendor chrome \u2014 the borrower's own camera is a picture-in-picture tile in a corner of the stage, the controls under it are Supermortgage's own (mute, camera, leave), and the join options for a live room carry the borrower's first name as the display name (\"You\" with none on file) with no vendor pre-join screen (contract over `joinOptionsFor`)."
    }
   ],
   "tables": [

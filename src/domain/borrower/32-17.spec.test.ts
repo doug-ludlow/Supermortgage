@@ -750,3 +750,37 @@ test("32.17-T18: Given any turn on the app or the video, then the system prompt 
   // the door's own greeting introduced Michelle and named the partner as the lender
   assert.match(door.greeting, /I'm Michelle/); assert.ok(door.greeting.includes(partnerName));
 });
+
+test("32.17-T19: Given `/app/video` at ≥ 1024 px on a live call (the FAKE stands in), then the stage fills the left column — the replica's frame is the column's width with no border and no vendor chrome — the borrower's own camera is a picture-in-picture tile in a corner of the stage, the controls under it are Supermortgage's own (mute, camera, leave), and the join options for a live room carry the borrower's first name as the display name (\"You\" with none on file) with no vendor pre-join screen (contract over `joinOptionsFor`).", { skip }, async () => {
+  // the join options (apps/borrower/lib/video/join.ts): the vendor's room joined by the page's own client with the first name as the display name — never an e-mail, never the placeholder — and never the vendor's pre-join page
+  // the app's module, loaded by path at run time (the app is its own TypeScript project; the root program does not compile it)
+  const joinModule = `${ROOT}apps/borrower/lib/video/join.ts`;
+  const { displayNameOf, joinOptionsFor } = (await import(joinModule)) as { displayNameOf: (n: string | null) => string; joinOptionsFor: (s: { conversation_url: string | null; borrower_camera?: "on" | "off" }, n: string | null) => { url: string; userName: string; startVideoOff: boolean; startAudioOff: boolean } | null };
+  const live = { conversation_url: "https://tavus.daily.co/cabc123", borrower_camera: "on" as const };
+  assert.deepEqual(joinOptionsFor(live, "Dana"), { url: live.conversation_url, userName: "Dana", startVideoOff: false, startAudioOff: false });
+  assert.equal(joinOptionsFor(live, null)!.userName, "You"); assert.equal(joinOptionsFor(live, "dana@example.test")!.userName, "You"); assert.equal(joinOptionsFor(live, "Borrower")!.userName, "You");
+  assert.equal(joinOptionsFor({ ...live, borrower_camera: "off" }, "Dana")!.startVideoOff, true);
+  assert.equal(joinOptionsFor({ conversation_url: "/app/video/fake/tok", borrower_camera: "on" }, "Dana"), null, "the FAKE page is a frame, not a room");
+  assert.equal(displayNameOf("Dana Reyes"), "Dana");
+  const src = readFileSync(`${ROOT}apps/borrower/components/video/LiveCall.tsx`, "utf8");
+  assert.match(src, /createCallObject\(/, "call-object mode: the page renders the tracks, never the vendor's page"); assert.doesNotMatch(src, /createFrame\(|showLeaveButton|iframe/i, "no prebuilt frame, no pre-join screen");
+  // the stage under the FAKE: the column's width edge to edge, no border, the picture-in-picture tile in a corner, the page's own controls
+  const b = await signUp("t19");
+  const { page, ctx } = await openVideoShell(b.token, 1280);
+  const main = (await page.locator("main.sm-video-main").boundingBox())!; const stage = (await page.getByTestId("video-live").boundingBox())!; const frame = (await page.getByTestId("video-frame").boundingBox())!;
+  assert.ok(main && stage && frame, "the column, the stage and the replica's frame");
+  assert.ok(Math.abs(stage.width - main.width) <= 2 && Math.abs(frame.width - main.width) <= 2, `the stage and the frame are the column's width: main=${main.width} stage=${stage.width} frame=${frame.width}`);
+  assert.ok(stage.height >= main.height * 0.7, `the stage is most of the column: main=${main.height} stage=${stage.height}`);
+  type Styled = { ownerDocument: { defaultView: { getComputedStyle(e: unknown): { borderTopWidth: string; paddingLeft: string } } } };
+  assert.equal(await page.getByTestId("video-frame").evaluateAll((els) => { const e = els[0] as Styled; return e.ownerDocument.defaultView.getComputedStyle(e).borderTopWidth; }), "0px", "no frame around the replica");
+  assert.equal(await page.getByTestId("video-live").evaluateAll((els) => { const e = els[0] as Styled; return e.ownerDocument.defaultView.getComputedStyle(e).paddingLeft; }), "0px", "edge to edge");
+  const pip = page.getByTestId("video-pip"); await pip.waitFor({ state: "visible", timeout: 20_000 });
+  const tile = (await pip.boundingBox())!;
+  assert.ok(tile.width < stage.width / 3 && tile.height < stage.height / 2, `a tile, not a pane: ${tile.width}×${tile.height} in ${stage.width}×${stage.height}`);
+  assert.ok(tile.x + tile.width <= stage.x + stage.width + 1 && tile.y + tile.height <= stage.y + stage.height + 1 && tile.x > stage.x + stage.width / 2, "in the stage's right-hand corner");
+  assert.ok(await pip.locator("video").evaluateAll((vs) => (vs[0] as { srcObject: unknown } | undefined)?.srcObject !== null), "the borrower's own camera in the tile");
+  assert.equal(await page.locator('[data-testid="video-call"] button[aria-label*="Enter your name" i], [data-testid="video-call"] input[placeholder*="name" i]').count(), 0, "no vendor pre-join");
+  assert.equal(await page.getByTestId("video-leave").count(), 1, "the page's own leave");
+  await page.screenshot({ path: `${SCREENSHOTS}/t19-stage-1280.png`, fullPage: false }).catch(() => undefined);
+  await ctx.close();
+});

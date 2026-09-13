@@ -1228,10 +1228,12 @@ a {
   grid-template-rows: auto minmax(0, 1fr); /* notice · the call pane */
 }
 .sm-video-pane {
+  grid-row: 2; /* the column's stretched row — the notice row above it may be empty (32.17 rule 15: the stage is the whole column) */
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
   min-width: 0;
+  height: 100%;
 }
 .sm-video-bar {
   display: flex;
@@ -1247,16 +1249,73 @@ a {
   min-height: 0;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
-  padding: 12px 16px 16px;
-  gap: 8px;
+  padding: 0; /* 32.17 rule 15: the stage is the whole column — no frame around the replica */
+  gap: 0;
+  background: #000;
+}
+.sm-video-live {
+  position: relative;
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  background: #000;
+}
+.sm-video-remote {
+  width: 100%;
+  height: 100%;
+  min-height: 320px;
+  object-fit: cover;
+  background: #000;
+  display: block;
 }
 .sm-video-frame {
   width: 100%;
   height: 100%;
   min-height: 320px;
-  border: 1px solid var(--sm-border);
-  border-radius: var(--sm-radius);
+  border: 0;
+  border-radius: 0;
   background: #000;
+  display: block;
+}
+.sm-video-pip {
+  position: absolute;
+  right: 16px;
+  bottom: 64px;
+  width: clamp(120px, 22%, 260px);
+  aspect-ratio: 4 / 3;
+  border: 1px solid var(--sm-border-strong, var(--sm-border));
+  background: #000;
+  overflow: hidden;
+  z-index: 2;
+}
+.sm-video-pip video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transform: scaleX(-1); /* a mirror, as a person expects of their own camera */
+}
+.sm-video-overlay {
+  position: absolute;
+  left: 16px;
+  top: 12px;
+  margin: 0;
+  z-index: 2;
+}
+.sm-video-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--sm-border);
+  background: var(--sm-surface-2);
+  min-height: 44px;
+}
+.sm-video-stage > .sm-video-notice,
+.sm-video-stage > [data-testid="video-status"],
+.sm-video-stage > [data-testid="video-permission-note"] {
+  padding: 12px 16px;
 }
 .sm-video-notice {
   display: grid;
@@ -1264,6 +1323,7 @@ a {
   justify-items: start;
   align-content: start;
   max-width: 560px;
+  color: var(--sm-text);
 }
 .sm-fake-video {
   display: grid;

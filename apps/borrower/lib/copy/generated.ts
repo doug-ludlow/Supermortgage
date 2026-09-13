@@ -638,6 +638,10 @@ export const COPY = {
   "video.permission_denied": { key: "video.permission_denied", kind: "line", text: "Without a camera or microphone we can still start the call; you can allow them in the call itself, or continue in the conversation.", notes: "32.17: a refused permission never blocks the call; the thread at /app is always there.", extras: [], section: "The video agent (32.17)" },
   "video.unavailable": { key: "video.unavailable", kind: "line", text: "The video agent isn't available right now. Nothing is lost — you can continue in the conversation.", notes: "32.17 edge cases: the vendor is down at open (video_sessions.status = failed, end_reason = vendor_unavailable); the page offers /app in these words, never a raw error.", extras: [], section: "The video agent (32.17)" },
   "video.continue_in_thread": { key: "video.continue_in_thread", kind: "button", text: "Continue in the conversation", notes: "32.17: → /app.", extras: [], section: "The video agent (32.17)" },
+  "video.mute": { key: "video.mute", kind: "button", text: "Mute", notes: "32.17 rule 15: the stage's own microphone control (the room's local audio off).", extras: [], section: "The video agent (32.17)" },
+  "video.unmute": { key: "video.unmute", kind: "button", text: "Unmute", notes: "32.17 rule 15.", extras: [], section: "The video agent (32.17)" },
+  "video.camera_off": { key: "video.camera_off", kind: "button", text: "Camera off", notes: "32.17 rule 15: the borrower's own camera (the picture-in-picture tile) off; the call continues audio-only.", extras: [], section: "The video agent (32.17)" },
+  "video.camera_on": { key: "video.camera_on", kind: "button", text: "Camera on", notes: "32.17 rule 15.", extras: [], section: "The video agent (32.17)" },
   "video.leave": { key: "video.leave", kind: "button", text: "Leave", extras: ["*32.17: POST /v1/borrower/video/sessions/{id}/end", "the conversation ends at the vendor and the persona is deleted.*"], section: "The video agent (32.17)" },
   "video.ended": { key: "video.ended", kind: "line", text: "The call has ended. Your cards and record stay as they are.", extras: ["*32.17: ended{end_reason} for any reason", "the borrower left, the vendor shut it down, max_call_duration.*"], section: "The video agent (32.17)" },
   "video.new_call": { key: "video.new_call", kind: "button", text: "Start a new call", notes: "32.17 edge cases: after max_call_duration or a leave, the rail stays live and a new call is one tap.", extras: [], section: "The video agent (32.17)" },
@@ -649,4 +653,4 @@ export const COPY = {
 } as const satisfies Record<string, CopyEntry>;
 
 export type CopyKey = keyof typeof COPY;
-export const COPY_KEY_COUNT = 634;
+export const COPY_KEY_COUNT = 638;

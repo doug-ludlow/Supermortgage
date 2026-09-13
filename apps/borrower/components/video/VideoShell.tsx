@@ -188,7 +188,7 @@ export function VideoShell({ fixturesMode, fixtureName, initialSubject }: VideoS
               {loadError ? (
                 <p className="sm-error" role="alert" style={{ margin: 0, padding: "8px 16px" }}>{loadError}</p>
               ) : null}
-              <VideoCall fixturesMode={fixturesMode} statusTick={statusTick} onSession={onSession} />
+              <VideoCall fixturesMode={fixturesMode} firstName={me?.first_name} statusTick={statusTick} onSession={onSession} />
             </>
           )}
         </main>

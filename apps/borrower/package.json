@@ -19,6 +19,7 @@
     "test:e2e": "PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers playwright test"
   },
   "dependencies": {
+    "@daily-co/daily-js": "^0.92.2",
     "next": "16.3.4",
     "react": "19.3.0",
     "react-dom": "19.3.0"

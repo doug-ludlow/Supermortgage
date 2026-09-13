@@ -217,7 +217,8 @@ export function createTalkRoutes(deps: TalkDeps): TalkRoutes {
   // ---- the lead behind the cookie, or a new one (the same start as POST /v1/borrower/lead: partner, lead.start, the disclosure first)
   async function leadFor(req: IncomingMessage, at: string): Promise<{ lead_id: string; lead: P; lead_token: string | null; started: boolean }> {
     const token = leadTokenOf(req);
-    if (token) { const row = await leads.tokens.byToken(token); const lead = row && Date.parse(row.expires_at) > Date.parse(at) ? await leadOf(row.lead_id) : null; if (row && lead && lead["status"] !== "expired") { await leads.tokens.touch(row.token_hash, at); return { lead_id: row.lead_id, lead, lead_token: null, started: false }; } }
+    if (token) { const row = await leads.tokens.byToken(token); const lead = row && Date.parse(row.expires_at) > Date.parse(at) ? await leadOf(row.lead_id) : null; // a lead that is linked to a party is somebody's account now (32.14 lead.linked): it is never resumed by whoever opens this browser next — a fresh lead starts and its cookie replaces the old one
+      if (row && lead && lead["status"] !== "expired" && !lead["party_id"] && !row.linked_party_id) { await leads.tokens.touch(row.token_hash, at); return { lead_id: row.lead_id, lead, lead_token: null, started: false }; } }
     const partner = await partnerOf({ runtime, ui, logger, defaultPartnerId: deps.defaultPartnerId });
     if (!partner) throw new BorrowerError(503, "NOT_WIRED", undefined, "no partner: BORROWER_DEFAULT_PARTNER_ID is unset and no servicer party exists (32.14 DELTA-15)");
     const lead_id = randomUUID(); const interaction_id = randomUUID();

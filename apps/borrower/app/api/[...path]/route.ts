@@ -25,6 +25,7 @@ const HOP_BY_HOP = new Set(["connection", "keep-alive", "transfer-encoding", "te
 // 32.14 DELTA-12: auth/oidc's callback answers the same session body as OTP verify, so the cookie is set here too; the
 // `x-fake-oidc: FAKE` header the callback page sends in FAKE/dev mode is forwarded like any other non-hop-by-hop header.
 // 32.16 DELTA-29: auth/account (create → verify_email, sign_in) answers the same session body — the cookie is set here too.
+const SIGN_OUT_ROUTE = "v1/borrower/auth/sign-out";   // 32.16 §2.0: revokes the session upstream; both cookies are dropped here whatever upstream answers
 const AUTH_ROUTES = new Set(["v1/borrower/auth/otp", "v1/borrower/auth/passkey", "v1/borrower/auth/l2", "v1/borrower/auth/oidc", "v1/borrower/auth/account", "v1/borrower/talk"]);   // talk: verify_code answers the same `token` once
 // The /app/talk lead token lives in its own HttpOnly cookie (30 days) and rides to the API as `x-borrower-lead` on every
 // proxied request — the auth verify routes link the lead to the party from it. (docs/ux/15 DELTA-11, the anonymous minute
@@ -106,11 +107,18 @@ async function forward(req: NextRequest, ctx: { params: Promise<{ path: string[]
     if (AUTH_ROUTES.has(joined) && res.ok && typeof body.token === "string" && body.token) {
       cookies.push(sessionCookie(body.token, req));
       const { token: _token, ...rest } = body; body = { ...rest, session: "cookie" };
+      // the anonymous chat's lead rode on this request and is linked to the account now: its cookie ends here, so the next person on this browser starts their own (32.14 lead.linked; no leak between sessions)
+      if (lead) cookies.push(`${LEAD_COOKIE}=; HttpOnly; SameSite=Strict; Path=/app; Max-Age=0`);
     }
     for (const c of cookies) out.append("set-cookie", c);
     return Response.json(body, { status: res.status, headers: out });
   }
 
+  if (joined === SIGN_OUT_ROUTE) {
+    out.append("set-cookie", `${SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/app; Max-Age=0`);
+    out.append("set-cookie", `${LEAD_COOKIE}=; HttpOnly; SameSite=Strict; Path=/app; Max-Age=0`);
+    return Response.json({ signed_out: true }, { status: 200, headers: out });
+  }
   if (res.status === 401 && session) {
     // The session expired upstream: drop the cookie so the shell asks for a fresh code.
     out.set("set-cookie", `${SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/app; Max-Age=0`);

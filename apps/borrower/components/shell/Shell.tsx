@@ -260,6 +260,7 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
         onOpenRecord={() => setRecordOpen(true)}
         showSignIn={!me || fixturesMode}
         onSignIn={() => setSignInOpen(true)}
+        onSignOut={() => { void api.signOut().catch(() => undefined).then(() => window.location.assign("/app")); }}
       />
       {showSignIn ? <div className="sm-strip-slot" /> : <StatusStrip record={record} onOpen={() => setRecordOpen(true)} />}
       <div className="sm-body">

@@ -112,7 +112,11 @@ export function mloOfRecord(origEvents: readonly DomainEvent[], origStore: Entit
     const p = pl(e); const lo = (p["loan_officer"] as P | undefined) ?? (p["parties"] as P | undefined);
     if (lo && s(lo["nmlsr_id"] ?? lo["mlo_nmlsr_id"])) return { mlo_of_record_id: `mlo-${String(lo["nmlsr_id"] ?? lo["mlo_nmlsr_id"])}`, name: s(lo["name"] ?? lo["mlo_name"]) ?? "your loan officer", nmlsr_id: String(lo["nmlsr_id"] ?? lo["mlo_nmlsr_id"]) };
   }
-  const entry = roster.find((m) => m["nmls_status"] === "active" && (!state || (Array.isArray(m["licensed_states"]) && (m["licensed_states"] as string[]).includes(state))));
+  // the roster fallback is deterministic whatever order the rows were written in: a FAKE demo entry only when no real one qualifies, then the lightest open queue, then the id
+  const queueOf = (m: P): number => (typeof m["open_queue"] === "number" ? (m["open_queue"] as number) : Number.MAX_SAFE_INTEGER);
+  const entry = roster
+    .filter((m) => m["nmls_status"] === "active" && (!state || (Array.isArray(m["licensed_states"]) && (m["licensed_states"] as string[]).includes(state))))
+    .sort((a, b) => Number(!!a["fake"]) - Number(!!b["fake"]) || queueOf(a) - queueOf(b) || String(a["mlo_id"]).localeCompare(String(b["mlo_id"])))[0];;
   if (entry) return { mlo_of_record_id: String(entry["mlo_id"]), name: String(entry["name"]), nmlsr_id: String(entry["nmlsr_id"]) };
   return null;
 }

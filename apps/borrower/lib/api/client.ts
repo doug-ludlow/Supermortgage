@@ -56,6 +56,8 @@ async function request<T>(method: "GET" | "POST", path: string, body?: unknown, 
 /** 02 §7 routes, one function each. Paths are relative to /v1/borrower. */
 export const api = {
   me: async () => toMe(await request<Record<string, unknown>>("GET", "/v1/borrower/me")),
+  /** 32.16 §2.0 sign-out: the session is revoked upstream and the proxy drops both cookies (session and the anonymous chat's lead), so the next person on this browser starts clean. */
+  signOut: () => request<{ signed_out: boolean }>("POST", "/v1/borrower/auth/sign-out", {}),
   record: async (subject: string): Promise<BorrowerRecord> => toRecord(await request<Record<string, unknown>>("GET", `/v1/borrower/record?subject=${encodeURIComponent(subjectId(subject))}`)),
   thread: async (after?: string): Promise<{ messages: ThreadMessage[]; cards: AnyCardInstance[]; next_after?: string }> => toThread(await request<Record<string, unknown>>("GET", `/v1/borrower/thread?limit=500${after ? `&after=${encodeURIComponent(after)}` : ""}`)),
   sendMessage: (body_text: string, subject?: { application_id?: Uuid; loan_id?: Uuid }) => request<{ message: ThreadMessage }>("POST", "/v1/borrower/messages", { text: body_text, ...(subject && (subject.application_id || subject.loan_id) ? { subject: { application_id: subject.application_id ?? null, loan_id: subject.loan_id ?? null } } : {}) }),

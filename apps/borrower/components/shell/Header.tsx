@@ -20,9 +20,11 @@ export type HeaderProps = {
   /** No session (or FAKE fixtures mode, so the screen can be demoed): show Sign in. */
   showSignIn: boolean;
   onSignIn: () => void;
+  /** A session exists: Sign out revokes it and drops the cookies (32.16 §2.0 — a shared browser never carries one person's account to the next). */
+  onSignOut?: (() => void) | undefined;
 };
 
-export function Header({ fixturesMode, me, subject, onSubjectChange, streamLabel, onOpenRecord, showSignIn, onSignIn }: HeaderProps) {
+export function Header({ fixturesMode, me, subject, onSubjectChange, streamLabel, onOpenRecord, showSignIn, onSignIn, onSignOut }: HeaderProps) {
   const subjects = me?.subjects ?? [];
   return (
     <header className="sm-header" data-testid="header">
@@ -59,6 +61,11 @@ export function Header({ fixturesMode, me, subject, onSubjectChange, streamLabel
       {showSignIn ? (
         <button type="button" className="sm-btn" data-testid="sign-in-button" onClick={onSignIn}>
           Sign in
+        </button>
+      ) : null}
+      {!showSignIn && me && onSignOut ? (
+        <button type="button" className="sm-linkbtn" data-testid="sign-out-button" onClick={onSignOut}>
+          Sign out
         </button>
       ) : null}
       <button type="button" className="sm-btn sm-drawer-btn" onClick={onOpenRecord} aria-haspopup="dialog">

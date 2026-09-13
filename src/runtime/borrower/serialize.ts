@@ -58,6 +58,7 @@ export const SHAPES = {
   // 32.16 DELTA-29: POST /v1/borrower/auth/account — `create` answers the e-mail challenge (the code only as the FAKE echo outside production); `verify_email` / `sign_in` answer the session shape; `request_reset` / `reset` answer `account_ok` (a reset challenge id and the FAKE echo when the e-mail exists — never whether it does); an unverified sign-in's 403 carries the fresh challenge on the error shape
   account_create: { challenge_id: true, delivery: true, expires_at: true, fake_code: true } satisfies Shape,
   account_ok: { ok: true, challenge_id: true, fake_code: true } satisfies Shape,
+  signed_out: { signed_out: true } satisfies Shape,   // 32.16 §2.0 sign-out
   // 32.14 §3 (DELTA-12): Sign in with Google — the provider's authorization URL and the state the callback must echo; never the nonce, the code verifier, a token or a client secret
   oidc_start: { authorization_url: true, state: true, expires_at: true, delivery: true } satisfies Shape,
   passkey_options: { challenge_id: true, challenge: true, rp: { id: true, name: true }, user: { id: true, name: true, display_name: true }, pub_key_cred_params: [{ type: true, alg: true }], allow_credentials: [{ type: true, id: true, transports: true }], timeout_ms: true, attestation: true, expires_at: true } satisfies Shape,

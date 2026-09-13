@@ -157,6 +157,19 @@ test("talk: the facts through set_fact (dollars → bigint cents in code), the r
   assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body["step"], "signed_in");
   const sent = scripted.toolResults.at(-1)!; assert.ok(!("is_error" in sent && sent.is_error), JSON.stringify(sent)); assert.match(String(sent.content), /reply/);
   assert.equal((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM messages WHERE sender = 'borrower' AND body_text = 'can I pay ahead?'`))[0]!.n, "1");
+  // no leak between sessions (32.16 §2.0): the next person on this browser — the same lead cookie, no session — gets a fresh lead, not the first person's transcript or facts
+  const next = await post(TALK_PATH, {}, withLead);
+  assert.equal(next.status, 200, JSON.stringify(next.body));
+  assert.notEqual(String(next.body["lead_id"]), leadId, "a linked lead is never resumed by the next visitor");
+  assert.ok(typeof next.body["lead_token"] === "string" && next.body["lead_token"], "a fresh lead token replaces the old cookie");
+  assert.ok(!lines(next.body).some((l) => /450k|300k|Arizona|lower my payment/i.test(String(l["text"] ?? ""))), `no first-person facts in the next visitor's lines: ${JSON.stringify(lines(next.body).map((l) => l["text"]))}`);
+  assert.equal((await entity("leads", String(next.body["lead_id"])))?.["party_id"] ?? null, null, "the new lead belongs to no one");
+  // sign-out revokes the session: the bearer answers 401 from then on
+  const out = await post("/v1/borrower/auth/sign-out", {}, { authorization: `Bearer ${bearer}` });
+  assert.equal(out.status, 200, JSON.stringify(out.body)); assert.equal(out.body["signed_out"], true);
+  const after = await fetch(`${base}/v1/borrower/me`, { headers: { authorization: `Bearer ${bearer}` } });
+  assert.equal(after.status, 401, "a signed-out session is gone");
+  assert.equal((await post("/v1/borrower/auth/sign-out", {}, { authorization: `Bearer ${bearer}` })).status, 200, "sign-out is idempotent");
 });
 
 test("talk: the guard — a figure before the range and a forbidden word never reach the visitor; an L1-only tool before sign-in is refused to the model; a person is one call away", { skip }, async () => {

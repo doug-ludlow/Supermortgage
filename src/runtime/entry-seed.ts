@@ -77,7 +77,7 @@ export async function seedEntryDemo(runtime: Runtime, opts: EntrySeedOptions = {
   }
   const mlo: MloRosterMember = { mlo_id: "M-FAKE-DEMO", person_id: "p-fake-demo", name: "A. Lee (FAKE demo MLO)", nmls_id: "222333", employer: "partner", sponsor_license_id: `L-${states[0] ?? "AZ"}-PARTNER`, state_licenses: [], states_assignable: states, lo_comp_plan_id: null, capacity_per_day: 20, status: "active", assignable: true, open_queue: 0 };
   // both spellings the platform reads today (31.1 writes nmls_id / state_licenses / status; 21.1, 32.11 and the 32.14 S4 flow read nmlsr_id / licensed_states / nmls_status ∈ {active, inactive} — 21.1's MloRosterEntry; a recorded follow-up)
-  put("mlo_roster", mlo.mlo_id, { ...mlo, nmlsr_id: mlo.nmls_id, licensed_states: states, nmls_status: "active" });
+  put("mlo_roster", mlo.mlo_id, { ...mlo, nmlsr_id: mlo.nmls_id, licensed_states: states, nmls_status: "active", fake: true });   // `fake`: chosen only when no real roster entry qualifies (flows/11 mloOfRecord)
   put("partners", partner.id, { partner_id: partner.id, legal_name: partner.legal_name, nmlsr_id: nmlsr, fake: true });
   if (written.length) await runtime.uow.run({}, async () => undefined, { clock: runtime.clock, commit: async (q) => { await runtime.entities.save(store.versionsSince(mark), {}, q); } });
 

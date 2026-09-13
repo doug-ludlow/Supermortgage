@@ -273,6 +273,12 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
   const sameSig = (a: string, b: string): boolean => a.length === b.length && a.length > 0 && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 
   // ───────────────────────────── OTP (L1)
+  /** Sign-out: the bearer's session is revoked (idempotent; 200 without a bearer too, so the app can always clear its cookies). */
+  async function signOut(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const token = bearerOf(req); const at = new Date().toISOString();
+    if (token) { const session = await auth.sessions.byToken(token); if (session && !session.revoked_at) { await auth.sessions.revoke(session.session_id, at); logger.info("borrower.session.signed_out", { session_id: session.session_id, party_id: session.party_id }); } }
+    send(res, 200, "signed_out", { signed_out: true });
+  }
   async function otp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const b = jsonOf(await readBody(req)); const action = str(b, "action") || "request"; const at = now();
     if (action === "request") {
@@ -779,7 +785,8 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
       let m: RegExpExecArray | null;
       if (path === "/v1/borrower/lead" && method === "POST") { await leads.handle(req, res, url); return true; }   // 32.14 DELTA-11: no session — the anonymous minute (lead-routes.ts logs its own line)
       if (path === TALK_PATH && method === "POST") { await talk.handle(req, res); return true; }   // Talk: no session needed; the lead cookie and, after sign-in, the bearer (talk.ts logs its own line)
-      if (method === "POST" && path === "/v1/borrower/auth/otp") await otp(req, res);
+      if (method === "POST" && path === "/v1/borrower/auth/sign-out") await signOut(req, res);   // 32.16 §2.0: a shared browser never carries one person's account to the next
+      else if (method === "POST" && path === "/v1/borrower/auth/otp") await otp(req, res);
       else if (method === "POST" && path === "/v1/borrower/auth/account") await account(req, res);   // 32.16 DELTA-29
       else if (method === "POST" && path === "/v1/borrower/auth/passkey") await passkey(req, res);
       else if (method === "POST" && path === "/v1/borrower/auth/oidc") await oidc(req, res);

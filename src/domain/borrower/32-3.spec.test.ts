@@ -200,16 +200,20 @@ test("32.3-T3: Given `sessions.level = L1`, when the client requests `borrower_r
   const rec2 = await record(a.token, journey.appId); const numbers = rec2["numbers"] as Record<string, unknown>; assert.ok(numbers); assert.equal(numbers["figures_source"], "le_v1"); assert.equal(numbers["note_rate"], "6.125");
 });
 
-test("32.3-T4: Given L1 only, when `credit.authorize{hard_pull}` is called, then the API returns `{gate: SM_IDENTITY_IAL2_GATE}` and no `credit_authorizations` row is written.", { skip }, async () => {
+test("32.3-T4: Given L1 only, when the hard-pull authorization card is affirmed, then `credit.authorize{hard_pull}` writes the authorization at once — `credit.authorization.captured` twice over, 32.2's `hard_pull` and 20.3's own `hard_application` under one `authorization_id`, and the card resolved — with no identity gate in the way (32.17 rule 18: the ID scan is a step of its own when one needs it), and the same card affirmed again writes nothing more.", { skip }, async () => {
   clock.set(isoEt("2026-10-19", "09:10"));
   assert.equal((await db.query<{ level: string }>(`SELECT level FROM sessions WHERE session_id = $1`, [jane.sessionId]))[0]!.level, "L1");
-  const card = await pendingCard(jane.appId, jane.partyId, "consent.credit.title"); assert.equal(card.command_ref, "credit.authorize"); assert.equal(card.props["requires_level"], "L3");
+  const card = await pendingCard(jane.appId, jane.partyId, "consent.credit.title"); assert.equal(card.command_ref, "credit.authorize"); assert.equal(card.props["requires_level"], undefined, "no level on the card"); assert.equal(card.props["gate"], undefined, "no gate on the card");
   const r = await resolve(jane.token, card.card_instance_id, { evidence: { affirmation_method: "checkbox_with_text", typed_name: JANE.name, disclosure_version_shown: card.props["disclosure_version_id"] } });
-  assert.equal(r.status, 403); assert.equal(r.body["code"], "LEVEL_REQUIRED"); assert.equal(r.body["gate"], "SM_IDENTITY_IAL2_GATE"); assert.equal(r.body["copy_key"], "gate.identity.verify_first"); assert.deepEqual(Object.keys(r.body).sort(), ["code", "copy_key", "gate"]);
-  const direct = await command(jane.token, "credit.authorize", { kind: "hard_pull", lead_id: jane.leadId, text_hash: CREDIT_AUTHORIZATION_HASH }); assert.equal(direct.status, 403); assert.equal(direct.body["gate"], "SM_IDENTITY_IAL2_GATE");
-  assert.equal((await events(jane.appId, "credit.authorization.captured")).length, 0); assert.deepEqual((await lead(jane.leadId))["credit_authorizations"], []);
-  assert.equal((await db.query(`SELECT 1 FROM consents WHERE party_id = $1 AND kind = 'credit_authorization'`, [jane.partyId])).length, 0);
-  assert.equal(((await cardsOf(jane.appId, jane.partyId)).find((c) => c.card_instance_id === card.card_instance_id))!.status, "pending", "the card stays pending");
+  assert.equal(r.status, 201, JSON.stringify(r.body)); await settle();
+  const hardCaptured = async () => (await events(jane.appId, "credit.authorization.captured")).filter((e) => e.payload["kind"] === "hard_pull" || e.payload["kind"] === "hard_application");
+  const written = await hardCaptured(); const writtenOnce = written.length;
+  assert.deepEqual(written.map((e) => e.payload["kind"]).sort(), ["hard_application", "hard_pull"], "32.2's hard_pull and 20.3's hard_application, one each");
+  assert.equal(new Set(written.map((e) => e.payload["authorization_id"])).size, 1, "one authorization_id across both layers"); assert.ok(written[0]!.payload["authorization_id"], "the authorization_id on the event");
+  assert.equal(((await cardsOf(jane.appId, jane.partyId)).find((c) => c.card_instance_id === card.card_instance_id))!.status, "resolved", "the card resolved");
+  // the same card affirmed again writes nothing more
+  await resolve(jane.token, card.card_instance_id, { evidence: { affirmation_method: "checkbox_with_text", typed_name: JANE.name, disclosure_version_shown: card.props["disclosure_version_id"] } }); await settle();
+  assert.equal((await hardCaptured()).length, writtenOnce, "idempotent: nothing more written");
 });
 
 test("32.3-T5: Given Stripe extracted \"Jane Q. Public, 1990-04-01, 14 Elm St\", when the borrower taps Edit on the address and confirms \"22 Elm St\", then `application_borrowers.current_address = \"22 Elm St\"` with `source = borrower`, and name/DOB carry `source = stripe_identity`, all with `confirmed_at`.", { skip }, async () => {

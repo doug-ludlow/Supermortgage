@@ -44,3 +44,17 @@ export function askRises(card: AskCardLike | null | undefined, dismissed: Readon
   const why = riseReason(card); if (!why || !card) return null;
   return dismissed.has(askStamp(card)) ? null : why;
 }
+/**
+ * The one card for the stage: the newest proposal not set aside, else the card Michelle asked for, else the first of the record's needs
+ * (its own order) that rises and is not set aside — "Not now" on one moves the stage to the next, never to nothing while another
+ * tap is waiting. Null when nothing rises: the screen is the call.
+ */
+export function pickAsk<C extends AskCardLike & { status: string; created_at?: string }>(cards: Readonly<Record<string, C>>, needed: readonly string[], requestedId: string | undefined, dismissed: ReadonlySet<string>): C | null {
+  const pending = Object.values(cards).filter((c) => c.status === "pending");
+  const proposed = pending.filter((c) => !!proposalOf(c) && askRises(c, dismissed) === "proposal").sort((a, b) => (String(proposalOf(a)?.proposed_at ?? "") < String(proposalOf(b)?.proposed_at ?? "") ? 1 : -1))[0];
+  if (proposed) return proposed;
+  const requested = requestedId ? cards[requestedId] : undefined;
+  if (requested && requested.status === "pending" && askRises(requested, dismissed)) return requested;
+  for (const id of needed) { const c = cards[id]; if (c && c.status === "pending" && askRises(c, dismissed)) return c; }
+  return null;
+}

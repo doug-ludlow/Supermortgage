@@ -37,7 +37,7 @@ All writes are commands (`command → events → projections`). The UI calls the
 | `party.authenticate` | method (otp_phone · otp_email · passkey), code | — | `lead.authenticated{level}` | 20.3 / UI |
 | `party.startIdentity` / vendor webhook | vendor=stripe_identity | L1 | identity events → `SM_IDENTITY_IAL2_GATE` satisfied | 22.6 |
 | `consent.capture` | kind, disclosure_version_id, method, text_hash, scope[] | method per kind (32.1 §3.5) | `consent.granted{kind}` → `consent.esign.pending|verified|active` (7.4) | 7.4, 20.3 |
-| `credit.authorize` | kind ∈ {soft_pull, hard_pull}, text_hash, signature | L2 (soft) / L3 (hard); `FCRA_1681B_A3_SOFT_PULL_PURPOSE_GATE` | `credit.authorization.captured{kind}`, then `credit.softpull.requested` / `credit.report.received` | 20.3, 22.2 |
+| `credit.authorize` | kind ∈ {soft_pull, hard_pull}, text_hash, signature | L2 (soft; L1 when the consumer entered their own identity) / L1 (hard — no identity gate, 32.17 rule 18); `FCRA_1681B_A3_SOFT_PULL_PURPOSE_GATE` | `credit.authorization.captured{kind}`, then `credit.softpull.requested` / `credit.report.received` | 20.3, 22.2 |
 | `application.confirmField` | path, value, source | ConfirmCard resolve | field write with `confirmed_at`; six-item detector runs → `application.received`, `application.trid_received` | 21.1, 21.2 |
 | `application.setGoal` | transaction_type, occupancy, property (address or tbd), value_estimate?, loan_amount_sought? | — | `application.started` | 21.1 |
 | `application.answerDeclarations` | declarations[13] (all false = "none apply") | — | `declarations` row | 21.1 |

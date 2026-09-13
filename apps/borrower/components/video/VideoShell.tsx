@@ -38,7 +38,7 @@ import { proposalOf } from "@/components/record/Rail";
 import { Card } from "@/components/cards";
 import { CardBoundary } from "@/components/flows/13-cross-cutting/CardBoundary";
 import { cardTitle, ConfirmChip } from "@/components/shell/chips";
-import { askRises, askStamp } from "@/lib/video/ask";
+import { askRises, askStamp, pickAsk } from "@/lib/video/ask";
 import { nowIso } from "@/components/cards/CardFrame";
 import { VideoCall } from "./VideoCall";
 
@@ -183,7 +183,10 @@ export function VideoShell({ fixturesMode, fixtureName, initialSubject }: VideoS
   // no composer here: a card's "message" action has no thread to land in — it focuses the card instead
   const cardProps = useMemo(() => ({ onOpen: link, onLaunchVendor: launchVendor, onUpload: upload, onMessage: async () => undefined }), [link, launchVendor, upload]);
   // 32.17 discrepancy (1): a pending card the call proposed into is the thing to confirm now — it is the current ask (its row open, Confirm · Edit on it); else the record's current ask
-  const ask = useMemo(() => {
+  // 32.17 rule 16: the one card for the stage — the newest proposal, else the card Michelle asked for, else the first of the record's needs that rises and is not set aside ("Not now" moves to the next)
+  const ask = useMemo(() => pickAsk(cards, (record?.needed_from_you ?? []).map((n) => n.card_instance_id).filter((id): id is string => !!id), requestedId, setAside) ?? undefined, [cards, record?.needed_from_you, requestedId, setAside]);
+  // the drawer is the full rail (32.16 T11): its open row is the record's own current ask — the proposal, else the card Michelle asked for, else the record's first need — whatever the stage shows
+  const railAsk = useMemo(() => {
     const proposed = Object.values(cards).filter((c) => c.status === "pending" && !!proposalOf(c)).sort((a, b) => ((proposalOf(a)?.proposed_at ?? "") < (proposalOf(b)?.proposed_at ?? "") ? 1 : -1))[0];
     const requested = requestedId ? cards[requestedId] : undefined;
     return proposed ?? (requested && requested.status === "pending" ? requested : undefined) ?? currentAsk(cards, record?.needed_from_you[0]?.card_instance_id);
@@ -239,7 +242,7 @@ export function VideoShell({ fixturesMode, fixtureName, initialSubject }: VideoS
         </main>
         {showSignIn ? null : (
           <Record
-            record={record} cards={cards} timezone={timezone} cardProps={cardProps} resolve={resolveCard} busyCardId={busyCardId} cardErrors={cardErrors} currentAskId={ask?.card_instance_id} focus={focus} link={link} open={recordOpen} onClose={() => setRecordOpen(false)}
+            record={record} cards={cards} timezone={timezone} cardProps={cardProps} resolve={resolveCard} busyCardId={busyCardId} cardErrors={cardErrors} currentAskId={railAsk?.card_instance_id} focus={focus} link={link} open={recordOpen} onClose={() => setRecordOpen(false)}
             proposalStrip drawer
             extras={rates?.copy_tokens ? (
               <section className="sm-record-section" data-record-section="rates" data-testid="rail-rates">

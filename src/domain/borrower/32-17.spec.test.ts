@@ -739,7 +739,8 @@ test("32.17-T16: Given the video-door session, then the first need on the rail i
   const r = await speak(door.videoToken, "My name is Dana Reyes"); assert.equal(r.status, 200); assert.ok(r.done);
   const card = await cardRow(cards[0]!.card_instance_id);
   assert.equal(card.props["proposal"], undefined, "no proposal on the identity card from the name alone");
-  const turn = (await db.query<{ tool_calls: Json[] }>(`SELECT tool_calls FROM agent_turns WHERE party_id = $1 AND reply_message_id IS NOT NULL ORDER BY created_at DESC LIMIT 1`, [door.party_id]))[0]!;
+  // the utterance's own turn (the opening turn of a re-open may share the fixed clock's instant): the newest turn of the party that tried the propose
+  const turn = (await db.query<{ tool_calls: Json[] }>(`SELECT tool_calls FROM agent_turns WHERE party_id = $1 AND reply_message_id IS NOT NULL AND tool_calls::text LIKE '%card.propose%' ORDER BY created_at DESC LIMIT 1`, [door.party_id]))[0] ?? { tool_calls: [] as Json[] };
   const propose = turn.tool_calls.find((c) => c["name"] === "card.propose"); assert.ok(propose, `the turn tried card.propose: ${JSON.stringify(turn.tool_calls)}`);
   assert.equal(propose["is_error"], true); assert.equal(propose["error"], "PROPOSAL_INCOMPLETE", `the tool refused the name alone: ${JSON.stringify(propose)}`);
   assert.match(r.text, /Dana Reyes/, `the reply says the name back: ${r.text}`); assert.match(r.text, /e-?mail/i, `the reply asks the e-mail next: ${r.text}`);
@@ -926,4 +927,37 @@ test("32.17-T21: Given a new video session, then the open answers with `opening_
   await ctx.close();
   // nothing new to say: the account's first turn already stands and nobody has spoken since — the standing reply is spoken, no second first turn is run
   assert.equal((await turnsOf(b.party_id)).filter((t) => t.reply_message_id !== null).length, 1, "one turn for the account, however many calls opened on it");
+});
+
+test("32.17-T22: Given `/app/video` on a live call at L1 with the goal chosen, then the hard-pull credit consent carries no `requires_level` and no `gate`, the record lists it with no `blocked_by`, and when it rises and Agree is tapped the authorization writes at once — the card resolves, `credit.authorization.captured` is logged, the session still L1, no identity session opened — and the card leaves the stage.", { skip }, async () => {
+  const b = await signedUpWithGoal("t22", "lower_rate");
+  const consent = (await db.query<{ card_instance_id: string; props: Json }>(`SELECT card_instance_id, props FROM card_instances WHERE party_id = $1 AND copy_key = 'consent.credit.title' AND status = 'pending'`, [b.party_id]))[0]!;
+  const consentId = consent.card_instance_id;
+  assert.equal(consent.props["requires_level"], undefined, "no level on the card"); assert.equal(consent.props["gate"], undefined, "no gate on the card");
+  const rec = await api("GET", `/v1/borrower/record?subject=${b.app_id}`, undefined, bearer(b.token)); assert.equal(rec.status, 200);
+  const item = ((rec.body["needed_from_you"] as Json[]) ?? []).find((n) => n["card_instance_id"] === consentId); assert.ok(item, "the consent on the record"); assert.equal(item["blocked_by"], undefined, "nothing blocks it");
+  const v = await openVideo(b.token); assert.equal(v.status, 201);
+  const { page, ctx } = await openVideoShell(b.token, 1280);
+  const overlay = page.getByTestId("ask-overlay");
+  for (let i = 0; i < 8; i++) {
+    try { await overlay.waitFor({ state: "visible", timeout: 30_000 }); }
+    catch (e) {
+      const needed = ((rec.body["needed_from_you"] as Json[]) ?? []).slice(0, 5).map((n) => ({ kind: n["kind"], card: n["card_instance_id"], label: n["label_copy_key"] ?? n["label"] }));
+      const pending = await db.query<{ kind: string; copy_key: string }>(`SELECT kind, copy_key FROM card_instances WHERE party_id = $1 AND status = 'pending' ORDER BY created_at`, [b.party_id]);
+      const shell = await page.locator('[data-testid="shell"]').evaluateAll((els) => (els[0] as { outerHTML: string }).outerHTML.slice(0, 1200));
+      throw new Error(`no card rose over the stage (round ${i}): ${String(e).split("\n")[0]}; needed=${JSON.stringify(needed)}; pending=${JSON.stringify(pending)}; logs=${JSON.stringify((page as Page & { logs?: string[] }).logs?.slice(-8))}; shell=${shell}`);
+    }
+    if ((await overlay.getAttribute("data-card-id")) === consentId) break; await page.getByTestId("ask-not-now").click(); await new Promise((r) => setTimeout(r, 300));
+  }
+  assert.equal(await overlay.getAttribute("data-card-id"), consentId, "the consent rises");
+  await overlay.getByLabel(/I have read and agree/).click(); await overlay.getByLabel(/Type your full name/).fill("Dana Reyes"); await overlay.getByRole("button", { name: "Agree" }).click();
+  try { await page.locator(`[data-testid="ask-overlay"][data-card-id="${consentId}"]`).waitFor({ state: "detached", timeout: 20_000 }); }
+  catch (e) { const err = await overlay.locator(".sm-error").allInnerTexts().catch(() => [] as string[]); throw new Error(`the consent did not resolve at L1: ${String(e).split("\n")[0]}; errors=${JSON.stringify(err)}; card=${JSON.stringify(await cardRow(consentId))}`); }
+  await settle();
+  assert.equal((await cardRow(consentId)).status, "resolved", "the authorization written at L1");
+  const captured = await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM loan_events WHERE application_id = $1 AND type = 'credit.authorization.captured' AND payload->>'kind' = 'hard_pull'`, [b.app_id]); assert.equal(captured[0]!.n, "1", "one hard-pull capture from the tap (20.3's own `hard_application` row stands beside it)");
+  assert.equal((await db.query<{ level: string }>(`SELECT level FROM sessions WHERE party_id = $1 ORDER BY created_at DESC LIMIT 1`, [b.party_id]))[0]!.level, "L1", "no step-up asked");
+  assert.equal((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM card_instances WHERE party_id = $1 AND copy_key = 'identity.stripe.purpose'`, [b.party_id]))[0]!.n, "0", "no identity session opened for the pull");
+  await page.screenshot({ path: `${SCREENSHOTS}/t22-credit-1280.png`, fullPage: false }).catch(() => undefined);
+  await ctx.close();
 });

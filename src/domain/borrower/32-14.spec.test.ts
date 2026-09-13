@@ -727,7 +727,7 @@ test("32.14-T13: Given L1 and consumer-entered name, address, DOB and SSN, when 
   const rec2 = await record(x.token, x.appId); assert.equal((rec2["numbers"] as Json)["figures_source"], "quote", "the Record's Numbers block from the quote");
   const proceed = await pendingCard(x.appId, x.partyId, "entry.proceed.question"); assert.equal(proceed.command_ref, "lead.proceed"); assert.deepEqual((proceed.props["options"] as { id: string }[]).map((o) => o.id), ["proceed", "not_yet"]);
 });
-test("32.14-T14: Given `terms_presented`, when the borrower taps Show me my rate, then `application.received` is logged, `REGB_1002_9_DECISION_30` is armed, 32.3's E6 cards (`consent.esign.title`, `consent.tcpa.title`, `consent.credit.title{hard_pull}`) are sent, and `credit.authorize{hard_pull}` is still refused below L3 (32.3 T4 unchanged).", { skip }, async () => {
+test("32.14-T14: Given `terms_presented`, when the borrower taps Show me my rate, then `application.received` is logged, `REGB_1002_9_DECISION_30` is armed, 32.3's E6 cards (`consent.esign.title`, `consent.tcpa.title`, `consent.credit.title{hard_pull}`) are sent, and the hard-pull card affirmed at L2 writes the authorization at once — no identity gate (32.3 T4 as rewritten; 32.17 rule 18).", { skip }, async () => {
   // the REAL organic path, end to end: the anonymous minute on the lead (S0–S2), the code with the lead cookie (S3), the application from the lead, S4, then Proceed
   await seedS4(); clock.set(EDT("2026-10-21", "11:00"));
   const l = await refiLead("AZ"); const shown = await range(l.token); assert.equal(shown.status, 200, JSON.stringify(shown.body)); assert.ok(shown.body["range"], "the published range before any identity");
@@ -757,19 +757,18 @@ test("32.14-T14: Given `terms_presented`, when the borrower taps Show me my rate
   const received = await appEvents(x.appId, "application.received"); assert.ok(received.length >= 1); assert.equal(received[0]!.payload["transaction_type"], "limited_cash_out"); assert.equal(received[0]!.payload["occupancy"], "primary");
   const lead = (await entity("leads", x.appId))!; assert.equal(lead["status"], "converted"); assert.equal(lead["application_id"], x.appId);
   const regb = (await timersOf(x.appId)).find((t) => t.code === "REGB_1002_9_DECISION_30"); assert.ok(regb, "REGB_1002_9_DECISION_30 armed"); assert.equal(regb!.status, "armed");
-  // 32.3's E6 cards fire exactly as built: e-sign, TCPA (optional), the hard-pull authorization that needs L3
+  // 32.3's E6 cards fire exactly as built: e-sign, TCPA (optional), the hard-pull authorization (no gate on it — 32.17 rule 18)
   const esign = await pendingCard(x.appId, x.partyId, "consent.esign.title"); assert.equal(esign.command_ref, "consent.capture"); assert.equal(esign.props["consent_kind"], "esign");
   const tcpa = await pendingCard(x.appId, x.partyId, "consent.tcpa.title"); assert.equal(tcpa.props["optional"], true);
-  const hard = await pendingCard(x.appId, x.partyId, "consent.credit.title"); assert.equal(hard.command_ref, "credit.authorize"); assert.deepEqual(hard.props["scope"], ["hard_pull"]); assert.equal(hard.props["requires_level"], "L3"); assert.equal(hard.props["gate"], "SM_IDENTITY_IAL2_GATE"); assert.equal((hard.props["command_args"] as Json)["kind"], "hard_pull");
+  const hard = await pendingCard(x.appId, x.partyId, "consent.credit.title"); assert.equal(hard.command_ref, "credit.authorize"); assert.deepEqual(hard.props["scope"], ["hard_pull"]); assert.equal(hard.props["requires_level"], undefined); assert.equal(hard.props["gate"], undefined); assert.equal((hard.props["command_args"] as Json)["kind"], "hard_pull");
   assert.equal((await cardsOf(x.appId, x.partyId)).filter((c) => c.copy_key === "consent.credit.soft.title").length, 1, "the soft-pull card is not sent again");
-  // the hard pull still needs L3 (32.3 T4 unchanged): the L2 session is refused with the identity gate and nothing is written
+  // the hard pull needs no identity gate (32.3 T4 as rewritten): the L2 session's affirmation writes the authorization at once
   assert.equal(await sessionLevel(x.sessionId), "L2");
-  const refused = await resolve(x.token, hard.card_instance_id, { evidence: { affirmation_method: "checkbox_with_text", typed_name: QUINN.name, checkbox: true, disclosure_version_shown: hard.props["disclosure_version_id"] } });
-  assert.equal(refused.status, 403); assert.equal(refused.body["code"], "LEVEL_REQUIRED"); assert.equal(refused.body["gate"], "SM_IDENTITY_IAL2_GATE"); assert.equal(refused.body["copy_key"], "gate.identity.verify_first"); assert.deepEqual(Object.keys(refused.body).sort(), ["code", "copy_key", "gate"]);
-  const direct = await sapi("POST", "/v1/borrower/commands/credit.authorize", { kind: "hard_pull", lead_id: x.appId, text_hash: "sha256:hard", subject: { application_id: x.appId } }, x.token); assert.equal(direct.status, 403); assert.equal(direct.body["gate"], "SM_IDENTITY_IAL2_GATE");
-  assert.equal((await cardsOf(x.appId, x.partyId)).find((c) => c.card_instance_id === hard.card_instance_id)!.status, "pending", "the card stays pending");
-  assert.equal((await appEvents(x.appId, "credit.authorization.captured")).filter((e) => e.payload["kind"] === "hard_application" || e.payload["kind"] === "hard_pull").length, 0);
-  assert.equal((await appEvents(x.appId, "credit.report.ordered")).length, 0, "nothing ordered");
+  const hardBefore = (await appEvents(x.appId, "credit.authorization.captured")).filter((e) => e.payload["kind"] === "hard_application" || e.payload["kind"] === "hard_pull").length;
+  const hardAffirmed = await resolve(x.token, hard.card_instance_id, { evidence: { affirmation_method: "checkbox_with_text", typed_name: QUINN.name, checkbox: true, disclosure_version_shown: hard.props["disclosure_version_id"] } });
+  assert.equal(hardAffirmed.status, 201, JSON.stringify(hardAffirmed.body)); await settle();
+  assert.equal((await cardsOf(x.appId, x.partyId)).find((c) => c.card_instance_id === hard.card_instance_id)!.status, "resolved", "the card resolved at L2");
+  assert.ok((await appEvents(x.appId, "credit.authorization.captured")).filter((e) => e.payload["kind"] === "hard_application" || e.payload["kind"] === "hard_pull").length > hardBefore, "the authorization written");
 });
 test("32.14-T15: Given `terms_presented`, when the borrower taps Not yet, then nothing is ordered or pulled, `intent.deferred` is logged, the lead stays `terms_presented`, and `SM_LEAD_INACTIVITY_EXPIRY_90` remains the only clock.", { skip }, async () => {
   // Sam: the same S4 path to terms_presented (the FAKE bureau's tier from the last four 2323: 620 + 123 → 740–759)

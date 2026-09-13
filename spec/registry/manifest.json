@@ -14643,7 +14643,7 @@
    },
    {
     "n": 4,
-    "text": "Given L1 only, when `credit.authorize{hard_pull}` is called, then the API returns `{gate: SM_IDENTITY_IAL2_GATE}` and no `credit_authorizations` row is written."
+    "text": "Given L1 only, when the hard-pull authorization card is affirmed, then `credit.authorize{hard_pull}` writes the authorization at once \u2014 `credit.authorization.captured` twice over, 32.2's `hard_pull` and 20.3's own `hard_application` under one `authorization_id`, and the card resolved \u2014 with no identity gate in the way (32.17 rule 18: the ID scan is a step of its own when one needs it), and the same card affirmed again writes nothing more."
    },
    {
     "n": 5,
@@ -15387,7 +15387,7 @@
    },
    {
     "n": 14,
-    "text": "Given `terms_presented`, when the borrower taps Show me my rate, then `application.received` is logged, `REGB_1002_9_DECISION_30` is armed, 32.3's E6 cards (`consent.esign.title`, `consent.tcpa.title`, `consent.credit.title{hard_pull}`) are sent, and `credit.authorize{hard_pull}` is still refused below L3 (32.3 T4 unchanged)."
+    "text": "Given `terms_presented`, when the borrower taps Show me my rate, then `application.received` is logged, `REGB_1002_9_DECISION_30` is armed, 32.3's E6 cards (`consent.esign.title`, `consent.tcpa.title`, `consent.credit.title{hard_pull}`) are sent, and the hard-pull card affirmed at L2 writes the authorization at once \u2014 no identity gate (32.3 T4 as rewritten; 32.17 rule 18)."
    },
    {
     "n": 15,
@@ -15671,6 +15671,10 @@
    {
     "n": 21,
     "text": "Given a new video session, then the open answers with `opening_turn = pending` and the vendor's `custom_greeting` = the disclosure line before the opening turn has landed (`GET \u2026/greeting` \u2192 `ready = false` until it does), the stream carries `video.session.greeting` when it lands and the greeting then reads `ready = true` with the turn's rendered text and its `reply_message_id`; on `/app/video` under the FAKE the replica's page shows that text once as its echoed line (`data-echo`); with nothing new to say (a reply already standing, nobody having spoken since) the standing reply is the one spoken, never a second first turn."
+   },
+   {
+    "n": 22,
+    "text": "Given `/app/video` on a live call at L1 with the goal chosen, then the hard-pull credit consent carries no `requires_level` and no `gate`, the record lists it with no `blocked_by`, and when it rises and Agree is tapped the authorization writes at once \u2014 the card resolves, `credit.authorization.captured` is logged, the session still L1, no identity session opened \u2014 and the card leaves the stage."
    }
   ],
   "tables": [

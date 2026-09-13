@@ -48,8 +48,8 @@ export const COMMAND_NAMES: ReadonlySet<string> = new Set(TOOLS_32_2.map((t) => 
 export const CARD_COMMAND_NAMES: ReadonlySet<string> = new Set(PROCESS_OF.keys());
 /** 32.2 guardrails: the money-field commands — a fresh L1 code first, never an agent-side waiver. */
 export const FRESH_L1_COMMANDS: ReadonlySet<string> = new Set(["payment.makeOneTime", "payment.extraPrincipal", "autodraft.enroll", "autodraft.change", "autodraft.pause", "autodraft.revoke", "escrow.electShortage", "party.updateContact"]);
-/** 01 §5 / 02 §2: the level a command needs. 32.14 DELTA-13 / 20.3 rule 2: a soft pull is L1 when the consumer entered (or confirmed) name, address, DOB and SSN themselves — a fact the API states from the application_borrowers row (`consumerEnteredIdentity`), never the client's claim; L2 otherwise; a hard pull stays L3 (32.3 T4). */
-const LEVEL_REQUIRED: Readonly<Record<string, (args: Record<string, unknown>) => "L1" | "L2" | "L3">> = { "credit.authorize": (a) => (a["kind"] === "hard_pull" ? "L3" : a["consumer_entered_identity"] === true ? "L1" : "L2"), "party.startIdentity": () => "L1" };
+/** 01 §5 / 02 §2: the level a command needs. 32.14 DELTA-13 / 20.3 rule 2: a soft pull is L1 when the consumer entered (or confirmed) name, address, DOB and SSN themselves — a fact the API states from the application_borrowers row (`consumerEnteredIdentity`), never the client's claim; L2 otherwise. 32.17 rule 18 (decided 2026-09-13): a hard pull needs the borrower's authorization and a session, nothing more — the ID scan (L3) is a step of its own when one needs it. */
+const LEVEL_REQUIRED: Readonly<Record<string, (args: Record<string, unknown>) => "L1" | "L2" | "L3">> = { "credit.authorize": (a) => (a["kind"] === "hard_pull" ? "L1" : a["consumer_entered_identity"] === true ? "L1" : "L2"), "party.startIdentity": () => "L1" };
 const RANK = { L1: 1, L2: 2, L3: 3 } as const;
 /** 01 §6.4 / T-X-05: a borrower message that answers a pending card. Card props may carry their own `affirmatives`. */
 export const DEFAULT_AFFIRMATIVES = ["yes proceed", "proceed", "lock it", "lock", "i agree", "agree", "agreed", "confirm", "confirmed", "accept", "accepted", "yes", "yep", "yeah", "ok", "okay", "sounds good", "go ahead", "do it", "let's do it", "sign me up", "approve", "i consent", "consent", "sure"];
@@ -105,7 +105,7 @@ export class BorrowerCommands {
     // 32.14 DELTA-13 / 20.3 rule 2: whether the consumer entered or confirmed their own identity (the API's fact from the row the identity and SSN cards wrote — the client's `consumer_entered_identity` is overwritten, never trusted)
     const facts: Record<string, unknown> = { ...args };
     if (name === "credit.authorize" && args["kind"] !== "hard_pull") { const entered = await this.consumerEnteredIdentity(subject); facts["consumer_entered_identity"] = entered; input["consumer_entered_identity"] = entered; }
-    // 01 §5 / 32.3 T4: a hard pull needs L3 — the refusal names the identity gate (SM_IDENTITY_IAL2_GATE) so the client renders "verify your ID first"
+    // 01 §5: a command that still names a level above the session's is refused with the gate the client renders ("verify your ID first" for L3)
     const need = LEVEL_REQUIRED[name]?.(facts); if (need && RANK[ctx.session.level] < RANK[need]) throw new BorrowerError(403, "LEVEL_REQUIRED", need === "L3" ? "SM_IDENTITY_IAL2_GATE" : undefined, `${need} required; session is ${ctx.session.level}`);
     if (subject.application_borrower_id) {
       // the party's OWN borrower as the interview knows it (never the client's claim): the default subject of a borrower-scoped command, and the fact the own-party guardrails compare against

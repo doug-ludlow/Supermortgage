@@ -26,14 +26,20 @@ import { join } from "node:path";
 
 const BASE = (process.env["DEMO_BASE"] ?? "https://demo.supermortgage.com").replace(/\/$/, "");
 const OUT = process.env["WALK_OUT"] ?? "walk-out";
-const REPLY_TIMEOUT_MS = Number(process.env["WALK_REPLY_TIMEOUT_MS"] ?? 90_000);   // the real model, cold, through the guard
+const REPLY_TIMEOUT_MS = Number(process.env["WALK_REPLY_TIMEOUT_MS"] ?? 180_000);   // the real model, cold, through the guard and its tool calls
 mkdirSync(OUT, { recursive: true });
 
 type Check = { n: number; what: string; ok: boolean; detail: string };
 const checks: Check[] = [];
 const record = (n: number, what: string, ok: boolean, detail = ""): void => { checks.push({ n, what, ok, detail }); console.log(`${ok ? "ok " : "NOT"} ${n}. ${what}${detail ? ` — ${detail}` : ""}`); };
 let shot = 0;
-const snap = async (page: Page, name: string): Promise<void> => { shot += 1; await page.screenshot({ path: join(OUT, `${String(shot).padStart(2, "0")}-${name}.png`), fullPage: false }).catch(() => undefined); };
+const snap = async (page: Page, name: string): Promise<void> => {
+  shot += 1; await page.screenshot({ path: join(OUT, `${String(shot).padStart(2, "0")}-${name}.png`), fullPage: false }).catch(() => undefined);
+  // what the page says, in the log (the artifact host is not always reachable from where the report is read)
+  const thread = await page.locator('[data-testid="thread"] .sm-msg').evaluateAll((els: Element[]) => els.map((e) => `${e.getAttribute("data-sender")}: ${(e.querySelector(".sm-msg-body") as HTMLElement | null)?.innerText.replace(/\s+/g, " ").slice(0, 240) ?? "(no body)"}`)).catch(() => [] as string[]);
+  const rail = await page.locator('[data-testid="record"]').first().innerText().catch(() => "");
+  console.log(`--- ${name} @ ${page.url()}\n  thread: ${JSON.stringify(thread)}\n  rail: ${JSON.stringify(rail.replace(/\s+/g, " ").slice(0, 400))}`);
+};
 
 const FIXED_LINE = /\{\{|You told me:|Tap to confirm so it counts|Bringing a person in now|What next\?$|Anything else\?$/i;
 const agentLines = async (page: Page): Promise<string[]> => page.locator('[data-testid="thread"] .sm-msg[data-sender="agent"] .sm-msg-body').allInnerTexts();
@@ -94,7 +100,7 @@ async function walk(browser: Browser): Promise<void> {
   record(4, "the disclosure footer is on the screen", (await page.locator('[data-testid="footer-disclosure"]').count()) === 1 && (await page.locator('[data-testid="talk-to-person"]').count()) === 0);
 
   // 5–7. talk
-  const input = page.locator('[data-testid="action-bar"] textarea, [data-testid="action-bar"] input').first();
+  const input = page.locator('[data-testid="action-bar"] textarea, [data-testid="action-bar"] input:not([type="file"])').first();
   await input.fill("Buy a home");
   await page.locator('[data-testid="send"]').click();
   const after = await waitForAgentLines(page, 2);
@@ -147,6 +153,8 @@ try { await walk(browser); }
 catch (e) { record(0, "the walk itself ran to the end", false, e instanceof Error ? e.message : String(e)); }
 finally { await browser.close(); }
 const failed = checks.filter((c) => !c.ok);
-writeFileSync(join(OUT, "report.json"), JSON.stringify({ base: BASE, at: new Date().toISOString(), passed: checks.length - failed.length, failed: failed.length, checks }, null, 2));
+const report = { base: BASE, at: new Date().toISOString(), passed: checks.length - failed.length, failed: failed.length, checks };
+writeFileSync(join(OUT, "report.json"), JSON.stringify(report, null, 2));
+console.log(`\n--- report.json\n${JSON.stringify(report)}`);
 console.log(`\n${checks.length - failed.length} of ${checks.length} outcomes hold on ${BASE}`);
 process.exit(failed.length ? 1 : 0);

@@ -1,0 +1,38 @@
+name: walk
+# The demo walk on demand (docs/ux/17 §8.7): the same script deploy.yml runs after every deploy, against the demo as it is now.
+on:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: The demo's base URL
+        required: true
+        default: https://demo.supermortgage.com
+        type: string
+jobs:
+  walk:
+    name: demo walk (real browser, real model)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22", cache: npm, cache-dependency-path: apps/borrower/package-lock.json }
+      - name: Install the borrower app's dependencies and Chromium
+        working-directory: apps/borrower
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Walk the demo
+        working-directory: apps/borrower
+        env:
+          DEMO_BASE: ${{ inputs.base }}
+          WALK_OUT: walk-out
+        run: node --experimental-strip-types tests/walk/demo-walk.mts
+      - name: Keep the screenshots and the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-walk
+          path: apps/borrower/walk-out
+          if-no-files-found: warn
+          retention-days: 14

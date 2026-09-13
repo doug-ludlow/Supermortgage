@@ -18,7 +18,15 @@ jobs:
         with: { node-version: "22", cache: npm }
       - run: npm ci
       - run: npm run typecheck
-      - run: npm test
+      - name: npm test
+        run: npm test 2>&1 | tee /tmp/npm-test.log; exit "${PIPESTATUS[0]}"
+      - name: failing tests, named (the TAP stream above is long; this is the part to read)
+        if: failure()
+        run: |
+          echo "## Failing tests" >> "$GITHUB_STEP_SUMMARY"
+          grep -n "^not ok" /tmp/npm-test.log | tee -a "$GITHUB_STEP_SUMMARY" || true
+          echo "--- detail (first three) ---"
+          for n in $(grep -n "^not ok" /tmp/npm-test.log | head -3 | cut -d: -f1); do sed -n "${n},$((n+40))p" /tmp/npm-test.log; echo "..."; done
       - run: npm run spec:lint
       - name: migrations apply cleanly
         env: { DATABASE_URL: postgresql://sm:sm@localhost:5432/supermortgage }

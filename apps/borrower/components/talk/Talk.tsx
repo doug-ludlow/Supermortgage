@@ -77,7 +77,7 @@ export function Talk() {
 
   return (
     <main className="sm-talk" aria-label="Conversation" data-testid="talk">
-      <div role="log" aria-live="polite" data-step={signedIn ? "signed_in" : handoff ? "sign_up" : undefined}>
+      <div role="log" aria-live="polite" tabIndex={0} data-step={signedIn ? "signed_in" : handoff ? "sign_up" : undefined}>
         <ol className="sm-talk-log">
           {turns.map((l, i) => (
             <li key={i} className={`sm-talk-line sm-talk-${l.role}`} data-role={l.role} data-copy-key={l.copy_key}>
@@ -120,6 +120,7 @@ export function Talk() {
       <style>{`
         .sm-talk { max-width: 720px; margin: 0 auto; padding: 16px 16px 0; display: flex; flex-direction: column; height: 100dvh; box-sizing: border-box; }
         .sm-talk > [role="log"] { flex: 1; min-height: 0; overflow-y: auto; }
+        .sm-talk > [role="log"]:focus-visible { outline: 2px solid var(--sm-focus, currentColor); outline-offset: -2px; }
         .sm-talk-log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
         .sm-talk-line { line-height: 1.5; max-width: 60ch; }
         .sm-talk-you { display: block; }

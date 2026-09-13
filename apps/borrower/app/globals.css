@@ -1,45 +1,46 @@
-/* 01 §2 — dark theme (default). Exact tokens. Light theme is a second token set only. */
+/* The surface is black and white until it works (the product owner's call, 2026-09-13): one monospace family, no panels,
+   no radius, no shadow, no colour except state (positive, caution, info) and the FAKE marker. Dark is the default; light is
+   the same tokens inverted. The 01 §2 palette is retired; refinement comes after the demo walk holds. */
 :root,
 [data-theme="dark"] {
-  --sm-bg: #0a0a0b; /* app background */
-  --sm-surface: #141416; /* thread, record panels */
-  --sm-surface-2: #1c1c1f; /* cards */
-  --sm-surface-3: #24242a; /* card inner blocks, inputs */
-  --sm-border: #2a2a2e;
-  --sm-border-strong: #3a3a40;
-  --sm-text: #f5f5f7;
-  --sm-text-2: #c7c7cc; /* secondary */
-  --sm-text-3: #8e8e93; /* muted, timestamps */
-  --sm-accent: #ff3b30; /* brand; primary actions */
-  --sm-accent-hover: #ff544a;
-  --sm-accent-press: #e0342a;
-  --sm-on-accent: #ffffff;
-  --sm-positive: #34c759; /* completed, in your favor */
-  --sm-caution: #ff9f0a; /* needs attention, deadlines within 3 days */
-  --sm-info: #0a84ff; /* neutral status */
-  --sm-focus: #ff3b30; /* 3px outline, offset 2px */
+  --sm-bg: #000000; /* app background */
+  --sm-surface: #000000; /* thread, record panels */
+  --sm-surface-2: #000000; /* cards */
+  --sm-surface-3: #0f0f0f; /* card inner blocks, inputs */
+  --sm-border: #3a3a3a;
+  --sm-border-strong: #6a6a6a;
+  --sm-text: #ffffff;
+  --sm-text-2: #c8c8c8; /* secondary */
+  --sm-text-3: #8a8a8a; /* muted, timestamps */
+  --sm-accent: #ffffff; /* primary actions: white on black */
+  --sm-accent-hover: #e6e6e6;
+  --sm-accent-press: #cccccc;
+  --sm-on-accent: #000000;
+  --sm-positive: #7ddc8a; /* completed, in your favor — state only */
+  --sm-caution: #ffb340; /* needs attention, deadlines within 3 days — state only */
+  --sm-info: #7fb3ff; /* neutral status — state only */
+  --sm-focus: #ffffff; /* 3px outline, offset 2px */
   color-scheme: dark;
 }
 
-/* Light theme: tokens only (00 §3 rule "If the theme is switched to light, only tokens change"). */
 [data-theme="light"] {
-  --sm-bg: #f5f5f7;
+  --sm-bg: #ffffff;
   --sm-surface: #ffffff;
   --sm-surface-2: #ffffff;
-  --sm-surface-3: #f0f0f3;
-  --sm-border: #d9d9de;
-  --sm-border-strong: #b8b8c0;
-  --sm-text: #0a0a0b;
-  --sm-text-2: #3a3a40;
-  --sm-text-3: #5c5c63;
-  --sm-accent: #d70015;
-  --sm-accent-hover: #ff3b30;
-  --sm-accent-press: #b00010;
+  --sm-surface-3: #f2f2f2;
+  --sm-border: #c4c4c4;
+  --sm-border-strong: #8a8a8a;
+  --sm-text: #000000;
+  --sm-text-2: #333333;
+  --sm-text-3: #6a6a6a;
+  --sm-accent: #000000;
+  --sm-accent-hover: #1a1a1a;
+  --sm-accent-press: #333333;
   --sm-on-accent: #ffffff;
   --sm-positive: #1f8a3c;
-  --sm-caution: #b25e00;
+  --sm-caution: #a35a00;
   --sm-info: #0060c0;
-  --sm-focus: #d70015;
+  --sm-focus: #000000;
   color-scheme: light;
 }
 
@@ -51,9 +52,9 @@
   --sm-fs-22: 1.375rem;
   --sm-fs-28: 1.75rem;
   --sm-fs-36: 2.25rem;
-  --sm-radius: 12px;
+  --sm-radius: 0px;
   --sm-motion: 200ms ease-out;
-  --sm-font: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --sm-font: "SF Mono", Menlo, Consolas, "Liberation Mono", "DejaVu Sans Mono", monospace;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -121,7 +122,7 @@ a {
   font: inherit;
   font-size: var(--sm-fs-15);
   font-weight: 600;
-  border-radius: 10px;
+  border-radius: var(--sm-radius);
   padding: 10px 16px;
   border: 1px solid var(--sm-border-strong);
   background: var(--sm-surface-3);
@@ -174,7 +175,7 @@ a {
   background: var(--sm-surface-3);
   color: var(--sm-text);
   border: 1px solid var(--sm-border-strong);
-  border-radius: 10px;
+  border-radius: var(--sm-radius);
   padding: 10px 12px;
   min-height: 44px;
 }
@@ -238,7 +239,7 @@ a {
   font-weight: 700;
   color: var(--sm-bg);
   background: var(--sm-caution);
-  border-radius: 6px;
+  border-radius: var(--sm-radius);
   padding: 2px 8px;
   letter-spacing: 0.02em;
 }
@@ -358,7 +359,7 @@ a {
   font-size: var(--sm-fs-13);
   color: var(--sm-text-2);
   border: 1px solid var(--sm-border-strong);
-  border-radius: 6px;
+  border-radius: var(--sm-radius);
   padding: 0 6px;
 }
 .sm-voice-tag {
@@ -512,7 +513,7 @@ a {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border-radius: 999px;
+  border-radius: var(--sm-radius);
   padding: 3px 10px;
   font-weight: 600;
   font-size: var(--sm-fs-15);
@@ -575,7 +576,6 @@ a {
     left: auto;
     width: min(480px, 92vw);
     border-left: 1px solid var(--sm-border);
-    box-shadow: -12px 0 32px rgba(0, 0, 0, 0.45);
   }
 }
 @media (max-width: 767px) {
@@ -612,7 +612,7 @@ a {
   }
   .sm-record[data-open="true"] {
     top: 12vh;
-    border-radius: 16px 16px 0 0;
+    border-radius: var(--sm-radius);
     border-top: 1px solid var(--sm-border-strong);
     padding-top: 48px;
   }
@@ -664,7 +664,7 @@ a {
 }
 .sm-card-block {
   background: var(--sm-surface-3);
-  border-radius: 10px;
+  border-radius: var(--sm-radius);
   padding: 10px 12px;
   margin: 8px 0;
 }
@@ -683,7 +683,7 @@ a {
   font-weight: 700;
   color: var(--sm-bg);
   background: var(--sm-caution);
-  border-radius: 6px;
+  border-radius: var(--sm-radius);
   padding: 1px 6px;
   letter-spacing: 0.02em;
 }
@@ -733,7 +733,7 @@ a {
 }
 .sm-column {
   border: 1px solid var(--sm-border-strong);
-  border-radius: 10px;
+  border-radius: var(--sm-radius);
   padding: 10px;
   background: var(--sm-surface-3);
 }
@@ -764,7 +764,7 @@ a {
 }
 .sm-owner {
   font-size: var(--sm-fs-13);
-  border-radius: 999px;
+  border-radius: var(--sm-radius);
   border: 1px solid var(--sm-border-strong);
   padding: 1px 8px;
   color: var(--sm-text-2);
@@ -783,7 +783,7 @@ a {
 }
 .sm-viewer {
   border: 1px solid var(--sm-border-strong);
-  border-radius: 10px;
+  border-radius: var(--sm-radius);
   background: var(--sm-surface-3);
   min-height: 120px;
   display: flex;
@@ -842,7 +842,7 @@ a {
 .sm-avatar {
   width: 40px;
   height: 40px;
-  border-radius: 50%;
+  border-radius: var(--sm-radius);
   background: var(--sm-surface-3);
   display: inline-flex;
   align-items: center;
@@ -892,7 +892,7 @@ a {
 }
 .sm-fake-form {
   border: 1px dashed var(--sm-caution);
-  border-radius: 10px;
+  border-radius: var(--sm-radius);
   padding: 10px;
 }
 /* Google's standard sign-in button (brand guidelines: dark variant on the dark theme, light variant on light; Roboto 14/500, the "G" mark at 20px). */
@@ -904,7 +904,7 @@ a {
   width: 100%;
   min-height: 44px;
   padding: 0 12px;
-  border-radius: 4px;
+  border-radius: var(--sm-radius);
   border: 1px solid #8e918f;
   background: #131314;
   color: #e3e3e3;
@@ -1004,7 +1004,7 @@ a {
   background: var(--sm-surface-3);
   color: var(--sm-text);
   border: 1px solid var(--sm-border-strong);
-  border-radius: 999px;
+  border-radius: var(--sm-radius);
   padding: 6px 14px;
   min-height: 36px;
   cursor: pointer;

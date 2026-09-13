@@ -72,8 +72,8 @@ async function insertRow(q: Queryable, r: Omit<VideoSessionRow, "id" | "row_at">
 /** The persona: a one-line pointer as the system prompt (the real prompt is assembled per turn and never sent), the custom LLM keyed per session, perception off; no tools, no knowledge base. */
 export function personaBodyFor(i: { readonly base_url: string; readonly token: string; readonly partner_name: string; readonly replica_id?: string | undefined }): TavusPersonaRequest {
   return {
-    persona_name: `Supermortgage video agent for ${i.partner_name || "the lender"}`,
-    system_prompt: "You are Supermortgage's automated assistant. Every sentence you speak comes from the connected language model; add nothing of your own.",
+    persona_name: `Michelle — video agent for ${i.partner_name || "the lender"}`,
+    system_prompt: "You are Michelle, an automated assistant. Every sentence you speak comes from the connected language model; add nothing of your own.",
     ...(i.replica_id ? { default_replica_id: i.replica_id } : {}),
     layers: { llm: { model: CUSTOM_LLM_MODEL, base_url: i.base_url, api_key: i.token, speculative_inference: true }, perception: { perception_model: "off" } },
   };
@@ -85,6 +85,15 @@ export function conversationBodyFor(i: { readonly persona_id: string; readonly r
 /** A provisional party name (an e-mail address, the phone placeholder — src/runtime/borrower/vendors/fake-stripe-identity.ts provisionalName) is not a first name: the vendor never gets it. */
 export const firstNameForVendor = (name: string | null | undefined): string => { const first = (name ?? "").trim().split(/\s+/)[0] ?? ""; return !first || first.includes("@") || /^borrower$/i.test(first) || /\d/.test(first) ? "" : first; };
 export const conversationalContext = (firstName: string, partnerName: string): string => `The borrower's first name is ${firstNameForVendor(firstName) || "not on file yet"}. The lender is ${partnerName || "the partner lender"}.`;
+
+// ---------------------------------------------------------------- video.identify (32.17 rules 12–13): the name and the e-mail Michelle asked for, written once from the identity card's Confirm
+export const IDENTITY_CARD_COPY_KEY = "identity.contact.title";
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+export const normalizeSpokenEmail = (v: string): string => v.trim().toLowerCase().replace(/\s+at\s+/g, "@").replace(/\s+dot\s+/g, ".").replace(/\s+/g, "");
+export const isProvisionalName = (name: string | null | undefined): boolean => !name || name.includes("@") || /^borrower \(/i.test(name);
+/** A person's name as spoken: letters, spaces, hyphens, apostrophes, periods; two to eighty characters; never an address. */
+export const cleanName = (v: string): string => v.replace(/\s+/g, " ").trim();
+const validName = (v: string): boolean => v.length >= 2 && v.length <= 80 && !v.includes("@") && !/\d/.test(v) && /^[\p{L}][\p{L}\p{M}' .-]*$/u.test(v);
 
 // ---------------------------------------------------------------- helpers
 const need = (i: ToolInput, ...keys: string[]): void => { for (const k of keys) if (i[k] === undefined || i[k] === null || i[k] === "") throw new RangeError(`${k} is required`); };
@@ -127,6 +136,30 @@ export const TOOLS_32_17: readonly ToolDef[] = defineTools(PROCESS_32_17, BORROW
     if (row.status === "failed") ctx.events.append({ type: "video.session.failed", ...scopeOf(row), aggregate: { kind: "video_session", id: video_session_id }, actor: ctx.actor, payload: { video_session_id, vendor, party_id, reason: "vendor_unavailable", error } });
     return { ...summary(row), outcome: row.status === "failed" ? "failed" : "opened", ...(error ? { error } : {}) };
   }),
+
+  tool("video.identify", async (i, ctx, rt) => {
+    // the identity card's Confirm (a ConfirmCard with legal_name and email; commands.ts cardArgs hands the confirmed fields): the account's name and e-mail, once — a change later is party.updateContact behind a fresh code
+    need(i, "party_id"); const party_id = str(i, "party_id"); if (!isUuid(party_id)) throw new RangeError("party_id must be the party's uuid");
+    const db = dbOf(rt);
+    const fields = Array.isArray(i["fields"]) ? (i["fields"] as P[]) : [];
+    const given = (path: string): string => { const f = fields.find((x) => String(x["path"] ?? "") === path); const v = f?.["value"]; return v === undefined || v === null ? "" : String(v); };
+    const legal_name = cleanName(given("legal_name")); const email = normalizeSpokenEmail(given("email"));
+    if (!validName(legal_name)) throw new AgentToolRefused("IDENTITY_NAME_INVALID", "legal_name must be a person's name: letters only, two to eighty characters", "identity.contact.name_invalid");
+    if (!EMAIL_RE.test(email) || email.length > 254) throw new AgentToolRefused("IDENTITY_EMAIL_INVALID", "email must be an address like name@example.com", "identity.contact.email_invalid");
+    const party = (await db.query<{ id: string; legal_name: string; contact: P }>(`SELECT id, legal_name, contact FROM parties WHERE id = $1`, [party_id]))[0];
+    if (!party) throw new AgentToolRefused("PARTY_SCOPE", "no such party");
+    if (typeof party.contact["email"] === "string" && party.contact["email"]) throw new AgentToolRefused("IDENTITY_ALREADY_ON_FILE", "the account already has an e-mail; a change goes through party.updateContact behind a fresh code", "identity.contact.already_on_file");
+    // an address another account already carries is never re-attached here: the person signs in with it instead (a code to that address proves it is theirs)
+    const other = await db.query<{ id: string }>(`SELECT id FROM parties WHERE id <> $1 AND party_type = 'borrower' AND (lower(contact->>'email') = $2 OR contact->'emails' ? $2)`, [party_id, email]);
+    if (other.length) throw new AgentToolRefused("IDENTITY_EMAIL_ON_FILE", "that address already belongs to an account here; sign in with it (a code goes to it) or give another", "identity.contact.email_on_file");
+    const now = ctx.now;
+    defer(rt, async (q) => {
+      await q.query(`UPDATE parties SET legal_name = $2, contact = contact || $3::jsonb WHERE id = $1`, [party_id, legal_name, JSON.stringify({ email, email_verified: false, email_source: "video", identified_at: now })]);
+      await q.query(`UPDATE application_borrowers SET legal_name = $2, contact = coalesce(contact, '{}'::jsonb) || $3::jsonb WHERE party_id = $1`, [party_id, legal_name, JSON.stringify({ email })]);
+    });
+    ctx.events.append({ type: "party.identified", ...scopeOf({ subject_application_id: (obj(i, "subject")["application_id"] as string | null) ?? null, subject_loan_id: (obj(i, "subject")["loan_id"] as string | null) ?? null }), aggregate: { kind: "party", id: party_id }, actor: ctx.actor, payload: { party_id, fields: ["legal_name", "email"], card_instance_id: str(i, "card_instance_id") || null, was_provisional: isProvisionalName(party.legal_name), identified_at: now } });   // never the values
+    return { party_id, fields: ["legal_name", "email"], first_name: legal_name.split(" ")[0], email_verified: false, outcome: "identified", identified_at: now };
+  }, { decision: (i, out, ctx) => ({ action: "video.identify", rationale: `32.17 video.identify party_id=${str(i, "party_id")} fields=legal_name,email by ${ctx.actor.kind}:${ctx.actor.id}`, subject: { kind: "party", id: str(i, "party_id") } }) }),
 
   tool("video.turn", async (i, ctx, rt) => {
     need(i, "video_session_id", "party_id");

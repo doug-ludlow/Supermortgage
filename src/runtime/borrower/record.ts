@@ -322,7 +322,9 @@ export class BorrowerRecordReader {
     // clear to close without a scheduled closing → the ScheduleCard; a scheduled closing without the E-SIGN closing consent → the signature item
     if (has("clear_to_close.issued") && !has("closing.scheduled")) items.push({ item_id: "closing:schedule", kind: "schedule", label: "Pick your closing time", due_at: null, card_instance_id: cardFor((x) => x.kind === "ScheduleCard"), created_at: "", source: "closings" });
     if (closing && !has("closing.consent.verified") && !has("closing.consummated")) items.push({ item_id: `signing:${String(closing["closing_id"])}`, kind: "signature", label: "Agree to sign your closing documents electronically", due_at: (closing["scheduled_at"] as string | null) ?? null, card_instance_id: cardFor((x) => x.kind === "ConsentCard" && x.props["consent_kind"] === "esign" && x.props["scope"] !== undefined), created_at: "", source: "signing_sessions" });
-    return items.map((x) => ({ owner: "you" as const, ...x })).sort((a, b) => (a.due_at ?? "9999").localeCompare(b.due_at ?? "9999") || a.created_at.localeCompare(b.created_at));
+    // 32.17 rule 12: a card flagged `needed_first` (the video door's name-and-e-mail card) heads the list — it shares the session hook's instant with the goal card, so the clock cannot order them
+    const first = (x: { card_instance_id?: string | null }): number => (x.card_instance_id && cards.find((c) => c.card_instance_id === x.card_instance_id)?.props["needed_first"] === true ? 0 : 1);
+    return items.map((x) => ({ owner: "you" as const, ...x })).sort((a, b) => first(a) - first(b) || (a.due_at ?? "9999").localeCompare(b.due_at ?? "9999") || a.created_at.localeCompare(b.created_at));
   }
 
   /** 32.5 §1 "What we're doing": the live, borrower-visible conditions that are not the borrower's, with the owner the owning process's evidence kinds name. */

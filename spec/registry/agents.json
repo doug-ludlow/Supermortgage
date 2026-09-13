@@ -1870,6 +1870,7 @@
     "video.turn",
     "video.end",
     "video.callback",
+    "video.identify",
     "lead.start",
     "lead.acknowledgeAiDisclosure",
     "party.authenticate",
@@ -6092,7 +6093,8 @@
     "video.open",
     "video.turn",
     "video.end",
-    "video.callback"
+    "video.callback",
+    "video.identify"
    ],
    "guardrails": "the agent never sends `conversation.echo` or `conversation.respond` (no unguarded speech), never enables perception or recording, never passes the record to the vendor, never resolves a card from speech. Escalations: as 32.16 (three misses \u2192 `human.request`; the FAKE reviewer answers).",
    "escalates_to": []

@@ -21,8 +21,13 @@ Format: `key` — **card/message** — text — *notes*.
 - `identity.confirm.title` — ConfirmCard — "Here's what your ID says. Right?"
 - `identity.ssn.why` — ConfirmCard — "We need your Social Security number to pull your credit report. We check it with the Social Security Administration. It's never shown again here."
 - `identity.fallback` — StatusCard — "We'll take a closer look at your ID — nothing for you to do."
+- `identity.contact.title` — ConfirmCard — "Your name and e-mail" — helper: "Michelle asks for both on the call. Tap Confirm so they count, or fix them here." — *32.17 rule 12: the first need on an account the video door opened — legal_name and email, proposed by the model from what was said, written once by `video.identify` on Confirm; the e-mail is how the conversation is picked up from another device (a code goes to it).*
+- `identity.contact.name_invalid` — line — "That doesn't look like a name — letters only, please." — *32.17 video.identify: IDENTITY_NAME_INVALID.*
+- `identity.contact.email_invalid` — line — "That doesn't look like an e-mail address — something like name@example.com." — *32.17 video.identify: IDENTITY_EMAIL_INVALID.*
+- `identity.contact.already_on_file` — line — "Your name and e-mail are already on this account. Changing them takes a fresh code first." — *32.17 video.identify: IDENTITY_ALREADY_ON_FILE — a change is party.updateContact behind a fresh code.*
+- `identity.contact.email_on_file` — line — "That e-mail already has an account here. Sign in with it — we'll send a code — or use a different address." — *32.17 video.identify: IDENTITY_EMAIL_ON_FILE — an address is never re-attached to a second account; the code proves whose it is.*
 - `identity.ssn.title` — ConfirmCard — "Your Social Security number" — helper: "We need it to pull your credit report. It's checked with the Social Security Administration and never shown again here." — *32.3 E5: the one typed field; masked; stored once.*
-- `entry.voice.started` — line — "You're on a call with Supermortgage's automated assistant. Anything you agree to here still needs a tap on a card we'll send you." — *32.3 E1 voice; consents never by voice.*
+- `entry.voice.started` — line — "You're on a call with Michelle, an automated assistant. Anything you agree to here still needs a tap on a card we'll send you." — *32.3 E1 voice; consents never by voice.*
 
 ## Consents
 
@@ -668,7 +673,7 @@ The rail and the thread (32.16 §2.1–2.2, DELTA-26). The rail's section names,
 
 ## The video agent (32.17)
 
-- `video.title` — heading — "Talk face to face" — *32.17 §2.2 / rule 9: /app/video — the call pane in the thread's place, the rail beside it; no composer, no microphone control of Supermortgage's own, no "Talk to a person".*
+- `video.title` — heading — "Talk with Michelle" — *32.17 §2.2 / rule 9: /app/video — the call pane in the thread's place, the rail beside it; no composer, no microphone control of Supermortgage's own, no "Talk to a person".*
 - `video.starting` — line — "Starting your video call. Your camera and microphone are asked for first — nothing is recorded." — *32.17 rule 5: recording off; the camera is for presence only (open question 2).*
 - `video.permission_denied` — line — "Without a camera or microphone we can still start the call; you can allow them in the call itself, or continue in the conversation." — *32.17: a refused permission never blocks the call; the thread at /app is always there.*
 - `video.unavailable` — line — "The video agent isn't available right now. Nothing is lost — you can continue in the conversation." — *32.17 edge cases: the vendor is down at open (video_sessions.status = failed, end_reason = vendor_unavailable); the page offers /app in these words, never a raw error.*

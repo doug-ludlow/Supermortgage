@@ -100,6 +100,7 @@ const WHY: readonly (readonly [string, string])[] = [
   ["consent.irs", "tax transcripts need the borrower's own consent to the IRS before they can be requested"],
   ["consent.standing", "the standing consents (delivery, contact, credit) are the borrower's to manage at any time"],
   ["auth.identity", "identity must be verified before personal terms can be shown; a scan of an ID is fastest, typing it in works too"],
+  ["identity.contact", "the account was opened on the call with no name and no e-mail: the name is how we address the borrower, the e-mail is how they get back into this conversation from any device if the call drops (a code goes to it)"],
   ["identity.confirm", "the identity details must match the ID on file before a credit pull; a mismatch stops the file"],
   ["identity.ssn", "the Social Security number keys the credit report; the lender must verify it before pulling credit"],
   ["credit.freeze", "a frozen bureau cannot be read; the borrower lifts the freeze with the bureau, then the pull is retried"],
@@ -161,6 +162,7 @@ function processOf(copyKey: string, kind: string, stepProcess: string | null): s
   if (/^(income|refi\.income)/.test(k)) return "22.3";
   if (/^assets/.test(k)) return "22.4";
   if (/^(credit|consent\.credit|refi\.ssn|identity\.ssn)/.test(k)) return "22.2";
+  if (/^identity\.contact/.test(k)) return "32.17";
   if (/^(auth\.identity|identity)/.test(k)) return "22.6";
   if (/^(consent\.esign|consent\.tcpa|entry\.)/.test(k)) return "20.3";
   if (/^(intent|lock)/.test(k)) return "21.4";

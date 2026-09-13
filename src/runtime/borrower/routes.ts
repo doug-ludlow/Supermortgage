@@ -201,7 +201,7 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     : null;
   if (agent) commands.agentTurn = (req) => agent.run(req.ctx.party.id, req);
   else logger.warn("borrower.agent.not_configured", { reason: "ANTHROPIC_API_KEY is unset: the thread answers the copy library's placeholder reply (32.16 DELTA-23)" });
-  const video = createVideoRoutes({ runtime, logger, auth, ui, flows, commands, hub, agent, partnerFor, firstTurn, nonProduction, appBase: returnUrlBase, ...(opts.video ?? {}) });   // 32.17: the video agent — the same turn, spoken; the FAKE vendor unless TAVUS_API_KEY is set
+  const video = createVideoRoutes({ runtime, logger, auth, ui, flows, commands, hub, agent, partnerFor, firstTurn, openProvisionalSession, nonProduction, appBase: returnUrlBase, ...(opts.video ?? {}) });   // 32.17: the video agent — the same turn, spoken; the FAKE vendor unless TAVUS_API_KEY is set
 
   const send = (res: ServerResponse, status: number, shape: ShapeName, body: unknown): void => { res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }); res.end(toJson(serialize(shape, body))); };
   const sessionBody = (r: { token: string; session: SessionRow; party: { id: string; party_type: string; legal_name: string } }) =>
@@ -246,6 +246,20 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     await flows.sessionOpened({ party_id: opened.party.id, session_id: opened.session.session_id, channel, auth_method: opened.session.auth_method, at, lead_id });
     // 32.16 §2.0 "the first turn": through the account door the agent turn runs with no borrower text — the model greets and asks the goal in its own words (a lead's facts are in its context; no entry.resumed is posted by the turn). Queued per party behind the flows' session hooks; never blocks the account response.
     if (door === "account" && agent && channel === "app") firstTurn(req, opened, at).catch((e) => logger.error("borrower.agent.first_turn.failed", { party_id: opened.party.id, error: e instanceof Error ? e.message : String(e) }));
+  }
+  /**
+   * 32.17 rule 11 — the video door: a visitor with no session starts the call and an account is opened for them on the spot — a provisional party
+   * (no name, no contact), an L1 session with auth_method `video` (no code, no password), and, through the account door's landing, the organic
+   * application, the session hooks (the disclosure row, the identity card, the goal card) and the guarded first turn. The name and the e-mail
+   * come from the conversation (video.identify); the e-mail is then the credential a code opens the account with from another device.
+   */
+  async function openProvisionalSession(req: IncomingMessage, at: string): Promise<{ session: SessionRow; party: { id: string; party_type: string; legal_name: string }; token: string }> {
+    accountThrottle(ipOf(req), at);   // the same per-IP hour as an e-mail account
+    const party = await auth.parties.createProvisional("video");
+    const opened = await auth.openSession({ party_id: party.id, auth_method: "video", now: at, otp: false, ip: ipOf(req), user_agent: uaOf(req) });
+    await landSession(req, opened, at, "app", "account");
+    logger.info("borrower.session.opened", { session_id: opened.session.session_id, level: "L1", auth_method: "video", party_created: true, door: "video" });
+    return { session: opened.session, party: opened.party, token: opened.token };
   }
   async function firstTurn(req: IncomingMessage, opened: { session: SessionRow; party: { id: string }; token?: string }, at: string): Promise<void> {
     const ip = ipOf(req); const userAgent = uaOf(req);

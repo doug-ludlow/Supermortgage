@@ -78,6 +78,8 @@ export interface VideoRoutesDeps extends VideoRoutesOptions {
   readonly partnerFor: (ctx: BorrowerContext) => Promise<{ legal_name: string; nmlsr_id: string }>;
   /** routes.ts `firstTurn`: the guarded first turn of an account session (no borrower text) — reused for the greeting, never duplicated. */
   readonly firstTurn: (req: IncomingMessage, opened: { session: SessionRow; party: { id: string }; token?: string }, at: string) => Promise<void>;
+  /** routes.ts `openProvisionalSession` (32.17 rule 11): the video door — a provisional party and a `video` session for a visitor with no session, landed like an account. */
+  readonly openProvisionalSession: (req: IncomingMessage, at: string) => Promise<{ session: SessionRow; party: { id: string; party_type: string; legal_name: string }; token: string }>;
   readonly nonProduction: boolean;
   /** The app's public base (BORROWER_APP_URL): the FAKE's conversation_url is a page there. */
   readonly appBase: string;
@@ -160,10 +162,10 @@ export function createVideoRoutes(deps: VideoRoutesDeps): VideoRoutes {
     runtime.execute({ process: PROCESS_32_17, name, loanId: row?.subject_loan_id ?? "", ...(row?.subject_application_id ? { applicationId: row.subject_application_id } : {}), actor: BORROWER_APP, run: RUN, input });
   const notify = (r: VideoSessionRow, event_name: string, at: string): void => { hub.notify(r.party_id, { event_name, at, subject: subjectOf(r), ref: r.video_session_id }); };
 
-  /** The guarded first turn's reply (routes.ts firstTurn appended it as the first agent_turn reply of the conversation), or null. */
-  async function firstTurnReply(conversationId: string): Promise<MessageRow | null> {
+  /** The newest agent-turn reply of the conversation (the greeting the replica speaks: the first turn on a new account, the "where things stand" turn on a return), or null. */
+  async function newestTurnReply(conversationId: string): Promise<{ reply: MessageRow | null; returning: boolean }> {
     const rows = await ui.messagesAfter(conversationId, null, 500);
-    return rows.find((m) => m.sender === "agent" && (m.copy_tokens as P | null)?.["source"] === "agent_turn") ?? null;
+    return { reply: [...rows].reverse().find((m) => m.sender === "agent" && (m.copy_tokens as P | null)?.["source"] === "agent_turn") ?? null, returning: rows.some((m) => m.sender === "borrower") };
   }
   /** The party's own session row as the turn's context (the app session the video session was opened on; it must still be live). */
   async function contextOf(req: IncomingMessage, row: VideoSessionRow, at: string): Promise<BorrowerContext> {
@@ -178,12 +180,21 @@ export function createVideoRoutes(deps: VideoRoutesDeps): VideoRoutes {
 
   // ---------------------------------------------------------------- POST /v1/borrower/video/sessions
   async function open(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const at = now(); const ctx = await auth.authenticate(req, at);
+    const at = now();
+    // 32.17 rule 11 — the video door: no session → an account is opened on the spot (a provisional party, a `video` session, the organic application, the hooks, the first turn) and its token rides on this response once
+    let ctx: BorrowerContext; let opened_account = false; let sessionToken = "";
+    if (bearerOf(req)) ctx = await auth.authenticate(req, at);
+    else {
+      const o = await deps.openProvisionalSession(req, at); opened_account = true; sessionToken = o.token;
+      const subjects = await auth.parties.subjectsOf(o.party.id);
+      ctx = { session: o.session, party: { ...(await auth.parties.get(o.party.id))!, ...o.party }, subjects, token: o.token, ip: ipOf(req), userAgent: userAgentOf(req) };
+    }
     const conv = await ui.conversationFor(ctx.party.id); const subject = ctx.subjects[0] ?? null; const partner = await deps.partnerFor(ctx);
-    // the greeting: the guarded first turn (32.16 §2.0) — run through routes.ts firstTurn when the conversation has none yet, then rendered; the disclosure line speaks first (20.3; Utah §13-2-12; Cal. §17941)
+    // the greeting: the guarded first turn (32.16 §2.0) on a new account, else a fresh "the borrower is back" turn (32.16 §2.0 returning) so the replica opens with where things stand — never the first greeting replayed; the disclosure line speaks first (20.3; Utah §13-2-12; Cal. §17941)
     await agent?.settle();
-    let first = await firstTurnReply(conv.conversation_id);
-    if (!first && agent) { await deps.firstTurn(req, { session: ctx.session, party: ctx.party, token: ctx.token }, at); await agent.settle(); await deps.flows.settle(); first = await firstTurnReply(conv.conversation_id); }
+    const before = await newestTurnReply(conv.conversation_id);
+    if (agent && (!before.reply || before.returning)) { await deps.firstTurn(req, { session: ctx.session, party: ctx.party, token: ctx.token }, at); await agent.settle(); await deps.flows.settle(); }
+    const first = (await newestTurnReply(conv.conversation_id)).reply;
     const tokens = tokensFor(ctx, partner, (first?.copy_tokens as P | null) ?? null);
     const greeting = [copyText("entry.disclosure.first", tokens), first ? renderSpoken(first.body_text, tokens) : ""].filter(Boolean).join(" ").trim();
     // the per-session bearer (rule 6): 32 random bytes, base64url, in the persona's base_url; the row keeps its sha-256
@@ -196,7 +207,7 @@ export function createVideoRoutes(deps: VideoRoutesDeps): VideoRoutes {
     if (!row) throw new BorrowerError(500, "INTERNAL", undefined, "video.open wrote no row");
     notify(row, row.status === "failed" ? "video.session.failed" : "video.session.opened", at);
     logger.info("borrower.video.opened", { video_session_id, party_id: ctx.party.id, vendor: row.vendor, status: row.status, events: r.events.map((e) => e.type), greeting_chars: greeting.length });
-    send(res, row.status === "failed" ? 503 : 201, "video_session", view(row, { greeting }));
+    send(res, row.status === "failed" ? 503 : 201, "video_session", view(row, { greeting, opened_account, ...(sessionToken ? { token: sessionToken, level: ctx.session.level, party: { party_id: ctx.party.id, first_name: tokens["party.first_name"] } } : {}) }));
   }
   async function status(req: IncomingMessage, res: ServerResponse, id: string): Promise<void> {
     const at = now(); const ctx = await auth.authenticate(req, at);

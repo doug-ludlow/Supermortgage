@@ -23,7 +23,7 @@ export const daysAfter = (iso: string, days: number): string => new Date(Date.pa
 /** 01 §5: a passkey session on a serviced loan lives 7 days; everything else — a code, Google, and a password (32.16 DELTA-29: the same idle rules as otp_email) — expires 30 minutes after the last activity. */
 export function sessionExpiry(authMethod: AuthMethod, subjects: readonly Subject[], now: string): string {
   const servicing = subjects.some((s) => s.stage === "servicing");
-  if (authMethod === "password") return sessionExpiry("otp_email", subjects, now);
+  if (authMethod === "password" || authMethod === "video") return sessionExpiry("otp_email", subjects, now);   // 32.17 rule 11: the video door's provisional session idles out like a code session
   return authMethod === "passkey" && servicing ? daysAfter(now, PASSKEY_SERVICING_DAYS) : minutesAfter(now, IDLE_MINUTES_PRE_FUNDING);
 }
 /** The fresh-L1 rule as a predicate: a one-time code verified within the last 10 minutes. */

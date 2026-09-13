@@ -65,6 +65,13 @@ export class PgBorrowerPartyRepository {
     const party = rows[0]!;
     return { party, created: true, linked_application_borrowers: await this.linkUnlinkedBorrowers(party.id, channel, dest, q) };
   }
+  /** 32.17 rule 11: the party the video door opens before a name or an e-mail exists — a provisional name (never a first name to the model or the vendor) and an empty contact; video.identify fills both once. */
+  async createProvisional(door: "video", q: Queryable = this.db): Promise<PartyRow> {
+    const rows = await q.query<PartyRow & Record<string, unknown>>(`INSERT INTO parties (party_type, legal_name, contact) VALUES ('borrower', $1, $2::jsonb) RETURNING id, party_type, legal_name, contact, created_at`, [`Borrower (${door})`, toJson({ provisional: door })]);
+    return rows[0]!;
+  }
+  /** A name the platform made up (an e-mail address, "Borrower (phone)", "Borrower (video)") — not the borrower's own. */
+  static isProvisionalName(name: string | null | undefined): boolean { return !name || name.includes("@") || /^borrower \(/i.test(name); }
   /** Every unlinked application borrower whose contact carries the verified destination is this party (the code proved possession). */
   private async linkUnlinkedBorrowers(partyId: string, channel: "sms" | "email", dest: string, q: Queryable): Promise<number> {
     const key = channel === "email" ? "emails" : "phones";

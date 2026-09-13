@@ -15555,7 +15555,7 @@
    },
    {
     "n": 31,
-    "text": "Given the first turn with the goal card pending, then the model is prompted to lead with the Journey's top need (`next_in_words` comes from the Journey, the prompt version is `32.16-p3`) and the reply names that need in its own words."
+    "text": "Given the first turn with the goal card pending, then the model is prompted to lead with the Journey's top need (`next_in_words` comes from the Journey, the prompt version is `32.16-p4`) and the reply names that need in its own words."
    },
    {
     "n": 32,
@@ -15643,6 +15643,22 @@
    {
     "n": 14,
     "text": "Given the cooperative refinance persona run through `/app/video` against the FAKE from account creation, then the run reaches the same milestone as 32.16 32.16-T21 with every fact resolved by a tap on the rail and `agent_turns.latency_ms` reported as p50 and p95 for `channel = video`."
+   },
+   {
+    "n": 15,
+    "text": "Given `/app/video` with no session, when the visitor starts the call, then `POST /v1/borrower/video/sessions` without a bearer opens a provisional account \u2014 a `parties` row named `Borrower (video)` with no contact, a `sessions` row with `auth_method = video` at L1, the organic application and the goal card \u2014 and the video session on it, the response carrying the session token once and `opened_account = true`; no sign-in form was shown, and a second open with that session resumes the same party with a fresh greeting."
+   },
+   {
+    "n": 16,
+    "text": "Given the video-door session, then the first need on the rail is the identity ConfirmCard (`identity.contact.title`, paths `legal_name` and `email`) ahead of the goal card, the greeting asks the borrower's name with no first name spoken, and a spoken \"My name is Dana Reyes\" proposes `legal_name = \"Dana Reyes\"` into that card and the reply asks for the e-mail next; nothing is written to `parties` before the tap."
+   },
+   {
+    "n": 17,
+    "text": "Given the name proposed, when the borrower says \"dana dot reyes at example dot test\", then `email = \"dana.reyes@example.test\"` is proposed beside the name and Confirm on the rail writes `parties.legal_name = \"Dana Reyes\"` and `parties.contact.email` (unverified, source video) through `video.identify`, logging `party.identified{fields}` without the values; the next turn greets by first name; a later `POST /v1/borrower/auth/otp` to that e-mail with its code opens a session on the same party whose thread carries the call's messages; a second `video.identify` and one naming an address on file for another account are refused."
+   },
+   {
+    "n": 18,
+    "text": "Given any turn on the app or the video, then the system prompt names the assistant Michelle and forbids calling itself Supermortgage; the vendor persona is named Michelle with the one-line pointer prompt; `video.title` names her; and no persona, conversation or greeting names Supermortgage as the lender (32.17-T5 unchanged)."
    }
   ],
   "tables": [
@@ -15655,7 +15671,8 @@
    "video.open",
    "video.turn",
    "video.end",
-   "video.callback"
+   "video.callback",
+   "video.identify"
   ]
  }
 ]

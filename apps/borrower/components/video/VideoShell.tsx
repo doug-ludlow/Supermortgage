@@ -3,9 +3,11 @@
 /**
  * 32.17 — /app/video: the one shell of 32.16 with the thread replaced by the call pane (VideoCall) and the rail unchanged beside it
  * (Progress, Needed from you with the current ask open and the rest behind "n more after this", Connections, Documents, …, Numbers).
- * The account door of 32.16 §2.0 stands in front of it exactly as in front of /app: a 401 renders the sign-in form under
- * auth.welcome_back. No composer, no microphone control of Supermortgage's own, no "Talk to a person"; the disclosure footer
- * under everything (§1 principle 8).
+ * There is no account door here (32.17 rule 11): a visitor with no session sees the call pane at once, and starting the call opens
+ * an account on the spot (POST /v1/borrower/video/sessions answers the session token once; the proxy keeps it in the cookie) — the
+ * rail and the stream follow as soon as the session exists, and Michelle asks the name and the e-mail on the call. "Sign in" in
+ * the header stays for someone who already has an account. No composer, no microphone control of Supermortgage's own, no
+ * "Talk to a person"; the disclosure footer under everything (§1 principle 8).
  *
  * The confirm loop confirms on the rail (32.17 discrepancy 1): the pending card the model proposed into shows the stated values
  * with Confirm and Edit on its own row (`proposalStrip`), and Confirm resolves it with evidence.source = borrower_stated. A card
@@ -94,8 +96,9 @@ export function VideoShell({ fixturesMode, fixtureName, initialSubject }: VideoS
       setLoadError(undefined);
     } catch (e) {
       if (e instanceof ApiRequestError && e.status === 401) {
+        // no session yet: the call pane opens the account (32.17 rule 11); nothing to load until it has
         streamRef.current?.close(); streamRef.current = null; setStream("closed");
-        setNeedsSignIn(true); setLoadError(undefined);
+        setMe(undefined); setNeedsSignIn(false); setLoadError(undefined);
         return;
       }
       setLoadError(e instanceof ApiRequestError ? copy(e.body.copy_key) : "We can't reach your loan right now. Nothing is lost — try again in a moment.");
@@ -110,13 +113,20 @@ export function VideoShell({ fixturesMode, fixtureName, initialSubject }: VideoS
       return;
     }
     void loadFromApi();
+    return () => streamRef.current?.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fixturesMode, fixtureName]);
+  // the stream opens once a session exists (the account door, or the one the call just opened): a stream before that would only reconnect on 401
+  const openTheStream = useCallback(() => {
+    if (fixturesMode || streamRef.current) return;
     streamRef.current = openStream((ev) => {
       if (ev.event_name.startsWith("video.session.")) setStatusTick((t) => t + 1);
       void loadFromApi(ev.event_name);
     }, (s) => { setStream(s); if (s === "open" && loaded.current) void loadFromApi("stream.open"); }, STREAM_EVENTS);   // a (re)connect re-reads what a closed stream may have missed
-    return () => streamRef.current?.close();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fixturesMode, fixtureName]);
+  }, [fixturesMode, loadFromApi]);
+  useEffect(() => { if (me) openTheStream(); }, [me, openTheStream]);
+  // the call opened the account (or reopened on the existing one): re-read me, the record and the cards now that the cookie carries the session
+  const onSession = useCallback((s: VideoSession | null) => { setSession(s); if (s && s.status !== "failed" && !fixturesMode) void loadFromApi("video.session.opened"); }, [fixturesMode, loadFromApi]);
 
   const resolveCard = useCallback(async (card: AnyCardInstance, req: ResolveRequest) => {
     setBusyCardId(card.card_instance_id);
@@ -158,7 +168,7 @@ export function VideoShell({ fixturesMode, fixtureName, initialSubject }: VideoS
   const rates = useMemo(() => [...messages].filter((m) => m.channel === "video" && isRatesElement(m.copy_tokens)).sort((a, b) => (a.at < b.at ? 1 : -1))[0], [messages]);
 
   const subjects = me?.subjects ?? [];
-  const showSignIn = needsSignIn || signInOpen;
+  const showSignIn = signInOpen;   // only an explicit tap on Sign in: without a session the call pane is the door (32.17 rule 11)
 
   return (
     <div className="sm-shell" data-testid="shell" data-video="1" data-fixtures={fixturesMode ? "1" : undefined}>
@@ -178,7 +188,7 @@ export function VideoShell({ fixturesMode, fixtureName, initialSubject }: VideoS
               {loadError ? (
                 <p className="sm-error" role="alert" style={{ margin: 0, padding: "8px 16px" }}>{loadError}</p>
               ) : null}
-              <VideoCall fixturesMode={fixturesMode} statusTick={statusTick} onSession={setSession} />
+              <VideoCall fixturesMode={fixturesMode} statusTick={statusTick} onSession={onSession} />
             </>
           )}
         </main>

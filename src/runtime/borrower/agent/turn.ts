@@ -80,7 +80,7 @@ export interface AgentTurnDeps {
 /** The borrower's first name for the prompt: the first word of the legal name — or "" when there is no name yet (an account created with an e-mail carries the e-mail as its legal name until the identity step; the model never addresses anyone by an e-mail). */
 export function firstNameOf(legalName: string | null | undefined): string {
   const first = (legalName ?? "").trim().split(/\s+/)[0] ?? "";
-  return !first || first.includes("@") ? "" : first;
+  return !first || first.includes("@") || /^borrower$/i.test(first) ? "" : first;   // an e-mail address or "Borrower (video)" is the platform's placeholder, never a name to greet by
 }
 
 export class AgentTurnRunner {

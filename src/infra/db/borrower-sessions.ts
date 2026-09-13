@@ -11,7 +11,7 @@ import { toJson } from "./client.ts";
 
 export type SessionLevel = "L1" | "L2" | "L3";
 /** 32.14 §3: `oidc_google` (DELTA-12) and 32.16 §2.0: `password` (DELTA-29) are L1 sessions opened without a code — `last_l1_at` stays null, the fresh-L1 rule is unchanged. */
-export type AuthMethod = "otp_phone" | "otp_email" | "passkey" | "oidc_google" | "password";
+export type AuthMethod = "otp_phone" | "otp_email" | "passkey" | "oidc_google" | "password" | "video";
 export interface SessionRow {
   readonly session_id: string; readonly party_id: string; readonly level: SessionLevel; readonly auth_method: AuthMethod; readonly created_at: string; readonly last_seen_at: string;
   readonly last_l1_at: string | null; readonly expires_at: string; readonly revoked_at: string | null; readonly passkey_id: string | null; readonly ip: string | null; readonly user_agent: string | null;

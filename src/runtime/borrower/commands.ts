@@ -30,6 +30,7 @@ import type { Subject } from "../../infra/db/borrower-parties.ts";
 import { decodeEntityData } from "../../infra/db/entities.ts";
 import { TOOLS_32_2 } from "../../app/tools/section32-2.ts";
 import { TOOLS_32_14 } from "../../app/tools/section32-14.ts";
+import { TOOLS_32_17 } from "../../app/tools/section32-17.ts";
 import { commandInputFor } from "../../app/tools/section32-1.ts";
 import { assertSubject, hasFreshL1, requireFreshL1, type BorrowerContext } from "./auth.ts";
 import { BorrowerError } from "./errors.ts";
@@ -41,7 +42,7 @@ import { ASKS_IF_HUMAN } from "./agent/guard.ts";
 
 export const BORROWER_APP_ACTOR: Actor = { kind: "agent", id: "borrower-app" };
 /** The commands a card or a direct endpoint may name: 32.2's 45 and 32.14's three (`lead.answer`, `lead.requestRange`, `lead.proceed` — the S4 proceed card's command; the L0 routes call the bus directly) — each executed as its own process's tool. */
-const PROCESS_OF: ReadonlyMap<string, string> = new Map([...TOOLS_32_2.map((t) => [t.name, "32.2"] as const), ...TOOLS_32_14.map((t) => [t.name, "32.14"] as const)]);
+const PROCESS_OF: ReadonlyMap<string, string> = new Map([...TOOLS_32_2.map((t) => [t.name, "32.2"] as const), ...TOOLS_32_14.map((t) => [t.name, "32.14"] as const), ...TOOLS_32_17.filter((t) => t.name === "video.identify").map((t) => [t.name, "32.17"] as const)]);   // 32.17 rule 12: the identity card's command
 /** 32.2's own command surface — the 45 of 02 §2 (commands.test.ts); the 32.14 names a card or endpoint may also issue are `PROCESS_OF`'s. */
 export const COMMAND_NAMES: ReadonlySet<string> = new Set(TOOLS_32_2.map((t) => t.name));
 export const CARD_COMMAND_NAMES: ReadonlySet<string> = new Set(PROCESS_OF.keys());

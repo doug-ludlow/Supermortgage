@@ -153,7 +153,7 @@ export const partnerOf = async (deps: FlowDeps): Promise<{ id: string; legal_nam
 };
 const CHANNEL_20_3: Record<string, string> = { app: "web_chat", sms: "sms", voice: "voice_inbound" };
 /** The session's auth method as 20.3's `authenticate{method}` (32.2 `party.authenticate` maps the platform's names); `oidc_google` (32.14 DELTA-12) is L1 like a code; `password` (32.16 DELTA-29) is L1 on the e-mail a code verified at account creation. */
-const AUTH_20_3: Record<string, string> = { otp_phone: "otp_phone", otp_email: "otp_email", passkey: "passkey", oidc_google: "oidc_google", password: "otp_email" };
+const AUTH_20_3: Record<string, string> = { otp_phone: "otp_phone", otp_email: "otp_email", passkey: "passkey", oidc_google: "oidc_google", password: "otp_email", video: "otp_email" };   // 32.17: the video door's session — 20.3 knows no video method; the e-mail that follows is its credential
 const cents = (v: unknown): string | null => (v === undefined || v === null || v === "" ? null : typeof v === "bigint" ? v.toString() : String(v));
 
 // ---------------------------------------------------------------- E1/E2/E4: the session hook (every channel; the disclosure first)
@@ -190,6 +190,9 @@ async function sessionOpened(deps: FlowDeps, s: SessionOpened): Promise<void> {
       const borrowers = subjects.filter((x) => x.application_id === appId).map((b, k) => ({ id: `B${k + 1}`, legal_name: b.legal_name }));
       const property = ctx.property?.address_line1 ? { address: addressOf(ctx.property), state: ctx.property.state } : { tbd: true, state: ctx.property?.state ?? null };
       const base = { occupancy: ctx.app.occupancy, property, borrowers, time_zone: "America/New_York", partner_name: ctx.app.partner_name, property_state: ctx.property?.state ?? null, lead_id };
+      // 32.17 rule 12: a session the video door opened has no name and no e-mail yet — the identity ConfirmCard is the first need (Michelle asks the name, then the e-mail; the tap writes both through video.identify), ahead of the goal
+      if (s.auth_method === "video") await sendCard(deps, ctx, me, { kind: "ConfirmCard", copy_key: "identity.contact.title", flow_key: `identity.contact:${s.party_id}`, command_ref: "video.identify",
+        props: { title: "", fields: [{ path: "legal_name", label: "Your name", value: "", source: "borrower" }, { path: "email", label: "E-mail address", value: "", source: "borrower" }], required_paths: ["legal_name", "email"], commits_to: "your account", needed_first: true, statement: "This is how we address you, and the address that gets you back into this conversation from any device." } });
       await sendCard(deps, ctx, me, { kind: "ChoiceCard", copy_key: "entry.goal.question", flow_key: `goal:${appId}`, command_ref: "application.setGoal",
         props: { title: "", options: [{ id: "buy", label: "Buy a home", is_primary: ctx.app.transaction_type === "purchase" }, { id: "lower_rate", label: "Lower my rate or payment", is_primary: ctx.app.transaction_type === "limited_cash_out" }, { id: "cash_out", label: "Take cash out", is_primary: ctx.app.transaction_type === "cash_out" }], command: "application.setGoal",
           command_args_by_option: { buy: { ...base, transaction_type: "purchase" }, lower_rate: { ...base, transaction_type: "limited_cash_out" }, cash_out: { ...base, transaction_type: "cash_out" } }, affirmatives: ["buy a home", "lower my rate", "take cash out"] } });

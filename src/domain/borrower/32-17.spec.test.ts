@@ -32,6 +32,8 @@ import { LEAD_HEADER } from "../../runtime/borrower/lead-routes.ts";
 import { Journey, MST } from "../../runtime/borrower/fixtures/journey.ts";
 import { CALL_PROPERTIES, FakeTavus } from "../../infra/integrations/tavus.ts";
 import { conversationalContext, sha256 } from "../../app/tools/section32-17.ts";
+import { SYSTEM_PROMPT } from "../../runtime/borrower/agent/context.ts";
+import { TALK_SYSTEM } from "../../runtime/borrower/talk.ts";
 import { COOPERATIVE } from "./eval/personas.ts";
 import { agentTurnsAvailable, runPersona } from "./eval/runner.ts";
 import { evalDbReachable, openEvalHarness } from "./eval/harness.ts";
@@ -56,7 +58,11 @@ type Call = { name: string; input: Json };
 type SceneCtx = { situation: Json; borrower: string; toolResults: Json[] };
 type Scene = { when: RegExp; calls?: Call[] | ((c: SceneCtx) => Call[]); text: string | ((c: SceneCtx) => string); then?: string };
 /** The first turn of every account session (no borrower text): the model greets, says in its own words that it is automated, names the partner as the lender and asks the goal — the greeting the replica speaks (T5). */
-const FIRST_TURN: Scene = { when: /just created their account/, text: (c) => `Hi {{party.first_name}}, I'm the automated assistant working for ${String(c.situation["lender"] ?? "your lender")}, your lender. Are you looking to buy a home, lower your rate or payment, or take cash out?` };
+const firstNameIn = (c: SceneCtx): string | null => { const rec = c.situation["record"] as Json | null; const party = rec?.["party"] as Json | undefined; return typeof party?.["first_name"] === "string" ? (party["first_name"] as string) : null; };
+// the lender is named by the disclosure line that speaks first (entry.disclosure.first, rendered with the partner's name); the scene itself writes no figure — this harness's partner name carries digits the provenance check would refuse
+const FIRST_TURN: Scene = { when: /just created their account/, text: (c) => (firstNameIn(c) === null
+  ? "Hi, I'm Michelle, the automated assistant working for your lender. Before anything else, what's your name?"
+  : "Hi {{party.first_name}}, I'm Michelle, the automated assistant working for your lender. Are you looking to buy a home, lower your rate or payment, or take cash out?") };
 const RETURNING: Scene = { when: /the borrower is back/, text: "Welcome back, {{party.first_name}}. The next thing I need from you is on the rail." };
 function scriptedClient() {
   const requests: Anthropic.MessageCreateParamsNonStreaming[] = []; let scenes: Scene[] = [FIRST_TURN, RETURNING];
@@ -387,7 +393,7 @@ test("32.17-T7: Given the persona and conversation bodies sent to the vendor for
     assert.equal(body["tools"], undefined, "no tools"); assert.equal((layers["llm"] as Json)["tools"], undefined);
     for (const k of ["document_ids", "documents", "knowledge_base", "knowledge_base_ids", "memory_stores"]) assert.equal(body[k], undefined, `no knowledge base (${k})`);
     assert.deepEqual(Object.keys(layers).sort(), ["llm", "perception"], "only the two layers"); assert.deepEqual(Object.keys(layers["llm"] as Json).sort(), ["api_key", "base_url", "model", "speculative_inference"]);
-    assert.match(String(body["system_prompt"]), /^You are Supermortgage's automated assistant\. Every sentence you speak comes from the connected language model/, "a one-line pointer, never the real prompt");
+    assert.match(String(body["system_prompt"]), /^You are Michelle, an automated assistant\. Every sentence you speak comes from the connected language model/, "a one-line pointer, never the real prompt");
     assert.doesNotMatch(String(body["system_prompt"]), /session_next|borrower_record|pending_cards|\d/);
   }
   for (const c of conversations) {
@@ -461,18 +467,12 @@ test("32.17-T10: Given `GET /video` at the demo host, then `302` to `/app/video`
   const rule = /path_rule \{\s*paths = \["\/video", "\/video\/\*"\]\s*url_redirect \{([\s\S]*?)\}/.exec(lb); assert.ok(rule, "the /video path rule");
   assert.match(rule![1]!, /path_redirect\s*=\s*"\/app\/video"/); assert.match(rule![1]!, /redirect_response_code\s*=\s*"FOUND"/);
   const deploy = readFileSync(`${ROOT}.github/workflows/deploy.yml`, "utf8"); assert.match(deploy, /\/video"\)"\s*\n\s*test "\$\{code\}" = "302" \|\| \{ echo "expected 302 from \/video/, "the smoke test for /video → 302");
-  // /app/video without a session: the account door (the sign-in form under auth.welcome_back), no composer
-  const b = await signUp("t10");
+  // /app/video without a session: no account door (32.17 rule 11) — the call pane at once; starting the call opens the account and the rail follows
   const { page, ctx } = await pageFor(null, 1280);
   await page.waitForSelector('[data-testid="shell"]', { timeout: 30_000 });
-  const heading = page.getByRole("heading", { name: copyText("auth.welcome_back") }); await heading.first().waitFor({ timeout: 30_000 });
-  assert.equal(await page.getByTestId("action-bar").count(), 0); assert.equal(await page.getByTestId("video-call").count(), 0, "no call before the door");
-  assert.ok(await page.getByTestId("footer-disclosure").isVisible(), "the disclosure footer on the door too");
-  await page.screenshot({ path: `${SCREENSHOTS}/t10-door-1280.png`, fullPage: false }).catch(() => undefined);
-  // through the door: e-mail + password → the video screen
-  await page.getByLabel(copyText("account.email.field")).fill(b.email); await page.getByLabel(copyText("account.password.field")).fill(PASSWORD);
-  await page.locator('main form button[type="submit"]').first().click();   // the form's own Sign in (the header carries another)
+  assert.equal(await page.getByRole("heading", { name: copyText("auth.welcome_back") }).count(), 0, "no sign-in form in front of the call");
   await page.waitForSelector('[data-testid="video-call"][data-phase="live"]', { timeout: 60_000 });
+  await page.screenshot({ path: `${SCREENSHOTS}/t10-door-1280.png`, fullPage: false }).catch(() => undefined);
   await page.waitForSelector('[data-testid="record"] [data-record-section="needed"]', { timeout: 30_000, state: "attached" });
   assert.ok(await page.getByTestId("footer-disclosure").isVisible(), "the disclosure footer");
   assert.match((await page.getByTestId("footer-disclosure").innerText()), /NMLS #/);
@@ -635,4 +635,118 @@ test("32.17-T14: Given the cooperative refinance persona run through `/app/video
     process.stderr.write(`32.17-T14 ${JSON.stringify(report)}\n`);
     assert.ok(report.agent_turns_latency_ms.p50 <= report.request_to_last_chunk_ms.p95 + 5, "the turn's own latency is within the request's");
   } finally { await h.close(); }
+});
+
+// ---------------------------------------------------------------- the video door (32.17 rules 11–14): T15–T18
+const IDENTITY_KEY = "identity.contact.title";
+const identityCardIn = (c: SceneCtx): string => { const cards = (c.situation["pending_cards"] as Json[] | undefined) ?? []; return String(cards.find((x) => x["copy_key"] === IDENTITY_KEY)?.["card_instance_id"] ?? ""); };
+const SAY_NAME: Scene = { when: /my name is dana reyes/i, calls: (c) => [{ name: "card_propose", input: { card_instance_id: identityCardIn(c), fields: [{ path: "legal_name", value: "Dana Reyes" }] } }], text: "Nice to meet you. What's the best e-mail address for you? It's how you get back into this conversation if we're cut off." };
+const SAY_EMAIL: Scene = { when: /dana dot reyes at example dot test/i, calls: (c) => [{ name: "card_propose", input: { card_instance_id: identityCardIn(c), fields: [{ path: "legal_name", value: "Dana Reyes" }, { path: "email", value: "dana dot reyes at example dot test" }] } }], text: "Got it — your name and e-mail are on the card here: tap Confirm so they count, or fix them there. Then, what are we doing today: buying a home, lowering your rate or payment, or taking cash out?" };
+const HELLO_AGAIN: Scene = { when: /hello again/i, text: "Welcome back, {{party.first_name}}. The next thing I need from you is on the rail." };
+let door: { token: string; party_id: string; session_id: string; video_id: string; videoToken: string; greeting: string };
+
+test("32.17-T15: Given `/app/video` with no session, when the visitor starts the call, then `POST /v1/borrower/video/sessions` without a bearer opens a provisional account — a `parties` row named `Borrower (video)` with no contact, a `sessions` row with `auth_method = video` at L1, the organic application and the goal card — and the video session on it, the response carrying the session token once and `opened_account = true`; no sign-in form was shown, and a second open with that session resumes the same party with a fresh greeting.", { skip }, async () => {
+  scripted.use([SAY_NAME, SAY_EMAIL, HELLO_AGAIN]);
+  const r = await api("POST", "/v1/borrower/video/sessions", {}, {}, "10.17.201.7"); await settle();
+  assert.equal(r.status, 201, JSON.stringify(r.body).slice(0, 300));
+  assert.equal(r.body["opened_account"], true); assert.ok(typeof r.body["token"] === "string" && (r.body["token"] as string).length > 20, "the session token rides on the door's response once");
+  assert.equal(r.body["level"], "L1"); const party_id = String((r.body["party"] as Json)["party_id"]); assert.ok(isUuidLike(party_id));
+  const party = (await db.query<{ legal_name: string; contact: Json }>(`SELECT legal_name, contact FROM parties WHERE id = $1`, [party_id]))[0]!;
+  assert.equal(party.legal_name, "Borrower (video)"); assert.equal(party.contact["email"], undefined, "no contact yet"); assert.equal(party.contact["provisional"], "video");
+  const session = (await db.query<{ session_id: string; auth_method: string; level: string }>(`SELECT session_id, auth_method, level FROM sessions WHERE party_id = $1 ORDER BY created_at DESC`, [party_id]))[0]!;
+  assert.equal(session.auth_method, "video"); assert.equal(session.level, "L1");
+  const apps = await db.query<{ id: string }>(`SELECT a.id FROM applications a JOIN application_borrowers ab ON ab.application_id = a.id WHERE ab.party_id = $1`, [party_id]); assert.equal(apps.length, 1, "the organic application");
+  const cards = await db.query<{ copy_key: string; status: string }>(`SELECT copy_key, status FROM card_instances WHERE party_id = $1 ORDER BY created_at`, [party_id]);
+  assert.ok(cards.some((c) => c.copy_key === "entry.goal.question" && c.status === "pending"), `the goal card: ${JSON.stringify(cards)}`);
+  const url = String(r.body["conversation_url"] ?? ""); const m = /\/app\/video\/fake\/([A-Za-z0-9_-]+)/.exec(url); assert.ok(m, `a FAKE conversation_url: ${url}`);
+  door = { token: r.body["token"] as string, party_id, session_id: session.session_id, video_id: String(r.body["video_session_id"]), videoToken: m![1]!, greeting: String(r.body["greeting"] ?? "") };
+  assert.equal((await current(door.video_id)).status, "created");
+  // the shell: no sign-in form in front of the call — the call pane live at once, the rail beside it once the call has opened the account
+  const { page, ctx } = await pageFor(null, 1280);
+  await page.waitForSelector('[data-testid="shell"]', { timeout: 30_000 });
+  assert.equal(await page.getByRole("heading", { name: copyText("auth.welcome_back") }).count(), 0, "no sign-in form");
+  await page.waitForSelector('[data-testid="video-call"][data-phase="live"]', { timeout: 60_000 });
+  await page.waitForSelector('[data-testid="record"] [data-record-section="needed"]', { timeout: 30_000, state: "attached" });
+  assert.equal(await page.locator('main form input[type="password"]').count(), 0);
+  await page.screenshot({ path: `${SCREENSHOTS}/t15-door-1280.png`, fullPage: false }).catch(() => undefined);
+  await ctx.close();
+  // a second open on the same session: the same party, no second account, a fresh greeting (the "borrower is back" turn once there are words; the first turn's words before that)
+  const partiesBefore = await count("parties");
+  const again = await api("POST", "/v1/borrower/video/sessions", {}, bearer(door.token)); await settle();
+  assert.equal(again.status, 201, JSON.stringify(again.body).slice(0, 300)); assert.equal(again.body["opened_account"], false); assert.equal(again.body["token"], undefined, "the token rides only on the door's response");
+  assert.equal(await count("parties"), partiesBefore, "one account for one visitor: a session's own re-open creates none");
+  assert.ok(String(again.body["greeting"] ?? "").length > 0);
+  await api("POST", `/v1/borrower/video/sessions/${again.body["video_session_id"]}/end`, { reason: "borrower_left" }, bearer(door.token)); await settle();
+});
+const isUuidLike = (s: string): boolean => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+
+test("32.17-T16: Given the video-door session, then the first need on the rail is the identity ConfirmCard (`identity.contact.title`, paths `legal_name` and `email`) ahead of the goal card, the greeting asks the borrower's name with no first name spoken, and a spoken \"My name is Dana Reyes\" proposes `legal_name = \"Dana Reyes\"` into that card and the reply asks for the e-mail next; nothing is written to `parties` before the tap.", { skip }, async () => {
+  assert.ok(door, "T15 opened the door");
+  const cards = await db.query<{ card_instance_id: string; kind: string; copy_key: string; status: string; props: Json }>(`SELECT card_instance_id, kind, copy_key, status, props FROM card_instances WHERE party_id = $1 ORDER BY created_at`, [door.party_id]);
+  assert.equal(cards[0]!.copy_key, IDENTITY_KEY, `the identity card first: ${cards.map((c) => c.copy_key).join(", ")}`); assert.equal(cards[0]!.kind, "ConfirmCard"); assert.equal(cards[0]!.status, "pending");
+  assert.deepEqual((cards[0]!.props["fields"] as Json[]).map((f) => f["path"]), ["legal_name", "email"]); assert.deepEqual(cards[0]!.props["required_paths"], ["legal_name", "email"]);
+  assert.equal(cards[1]!.copy_key, "entry.goal.question", "the goal card behind it");
+  // the rail's order is the record's: the identity card is needed_from_you[0]
+  const rec = await api("GET", `/v1/borrower/record`, undefined, bearer(door.token));
+  if (rec.status === 200) { const needed = (rec.body["needed_from_you"] as Json[]) ?? []; assert.equal(needed[0]?.["card_instance_id"], cards[0]!.card_instance_id, `needed_from_you[0]: ${JSON.stringify(needed.map((n) => n["label_copy_key"] ?? n["label"]))}`); }
+  // the greeting: Michelle, automated, the partner as lender, the name asked, no first name spoken (the platform's placeholder is never a name)
+  assert.match(door.greeting, /Michelle/); assert.match(door.greeting, /automated/i); assert.ok(door.greeting.includes(partnerName)); assert.match(door.greeting, /your name/i);
+  assert.doesNotMatch(door.greeting, /\bBorrower\b|\(video\)|@/, `no placeholder spoken: ${door.greeting}`);
+  // the name, spoken → proposed into the identity card; the reply asks the e-mail; parties untouched
+  const r = await speak(door.videoToken, "My name is Dana Reyes"); assert.equal(r.status, 200); assert.ok(r.done);
+  const card = await cardRow(cards[0]!.card_instance_id); const proposal = card.props["proposal"] as Json;
+  assert.ok(proposal, "a proposal on the identity card"); assert.deepEqual((proposal["fields"] as Json[]).map((f) => ({ path: f["path"], value: f["value"] })), [{ path: "legal_name", value: "Dana Reyes" }]);
+  assert.match(r.text, /e-?mail/i, `the reply asks the e-mail next: ${r.text}`);
+  const party = (await db.query<{ legal_name: string; contact: Json }>(`SELECT legal_name, contact FROM parties WHERE id = $1`, [door.party_id]))[0]!;
+  assert.equal(party.legal_name, "Borrower (video)", "nothing written before the tap"); assert.equal(party.contact["email"], undefined);
+});
+
+test("32.17-T17: Given the name proposed, when the borrower says \"dana dot reyes at example dot test\", then `email = \"dana.reyes@example.test\"` is proposed beside the name and Confirm on the rail writes `parties.legal_name = \"Dana Reyes\"` and `parties.contact.email` (unverified, source video) through `video.identify`, logging `party.identified{fields}` without the values; the next turn greets by first name; a later `POST /v1/borrower/auth/otp` to that e-mail with its code opens a session on the same party whose thread carries the call's messages; a second `video.identify` and one naming an address on file for another account are refused.", { skip }, async () => {
+  assert.ok(door, "T15 opened the door");
+  const email = "dana.reyes@example.test";
+  const r = await speak(door.videoToken, "dana dot reyes at example dot test"); assert.equal(r.status, 200);
+  const cardId = (await db.query<{ card_instance_id: string }>(`SELECT card_instance_id FROM card_instances WHERE party_id = $1 AND copy_key = $2`, [door.party_id, IDENTITY_KEY]))[0]!.card_instance_id;
+  const proposal = (await cardRow(cardId)).props["proposal"] as Json;
+  const fields = (proposal["fields"] as Json[]).map((f) => ({ path: f["path"], value: f["value"] }));
+  assert.deepEqual(fields, [{ path: "legal_name", value: "Dana Reyes" }, { path: "email", value: "dana dot reyes at example dot test" }], "the proposal as transcribed (the command normalizes the spoken address)");
+  // Confirm on the rail: the confirmed fields → video.identify → the account's name and e-mail, once
+  const c = await api("POST", `/v1/borrower/cards/${cardId}/resolve`, { evidence: { source: "borrower_stated", fields: fields.map((f) => ({ path: f.path, value_confirmed: f.value, source: "borrower" })) } }, bearer(door.token)); await settle();
+  assert.equal(c.status, 201, JSON.stringify(c.body).slice(0, 400)); assert.equal((c.body["card"] as Json)["status"], "resolved");
+  const party = (await db.query<{ legal_name: string; contact: Json }>(`SELECT legal_name, contact FROM parties WHERE id = $1`, [door.party_id]))[0]!;
+  assert.equal(party.legal_name, "Dana Reyes"); assert.equal(party.contact["email"], email); assert.equal(party.contact["email_verified"], false); assert.equal(party.contact["email_source"], "video");
+  const ab = (await db.query<{ legal_name: string; contact: Json | null }>(`SELECT legal_name, contact FROM application_borrowers WHERE party_id = $1`, [door.party_id]))[0]!; assert.equal(ab.legal_name, "Dana Reyes"); assert.equal(ab.contact?.["email"], email);
+  const ev = (await db.query<{ payload: Json }>(`SELECT payload FROM loan_events WHERE type = 'party.identified' AND payload->>'party_id' = $1`, [door.party_id]))[0]!;
+  assert.deepEqual(ev.payload["fields"], ["legal_name", "email"]); assert.equal(ev.payload["was_provisional"], true); assert.doesNotMatch(JSON.stringify(ev.payload), /Dana|example\.test/, "never the values");
+  assert.ok((await decisionsOf("video.identify")).some((d) => d.rationale.includes(door.party_id) && d.agent === "borrower-app"), "video.identify wrote its agent_decisions row");
+  // the next turn greets by first name
+  const back = await speak(door.videoToken, "hello again"); assert.equal(back.status, 200); assert.match(back.text, /^Welcome back, Dana\./, back.text);
+  // another device: a code to that e-mail opens a session on the same party, and the thread is the call's
+  const otp = await api("POST", "/v1/borrower/auth/otp", { action: "request", channel: "email", destination: email }, {}, "10.17.202.9"); assert.equal(otp.status, 200, JSON.stringify(otp.body));
+  const v = await api("POST", "/v1/borrower/auth/otp", { action: "verify", challenge_id: otp.body["challenge_id"], code: otp.body["fake_code"] }, {}, "10.17.202.9"); await settle();
+  assert.equal(v.status, 200, JSON.stringify(v.body)); assert.equal((v.body["party"] as Json)["party_id"], door.party_id, "the same party"); assert.equal((v.body["party"] as Json)["first_name"], "Dana");
+  const t = await api("GET", "/v1/borrower/thread?limit=500", undefined, bearer(v.body["token"] as string));
+  const bodies = (t.body["messages"] as Json[]).map((m) => String(m["body_text"] ?? ""));
+  assert.ok(bodies.includes("My name is Dana Reyes") && bodies.includes("dana dot reyes at example dot test"), `the call's words in the thread: ${JSON.stringify(bodies).slice(0, 300)}`);
+  // a second video.identify on this account is refused; an address on file for another account is never re-attached
+  await assert.rejects(runtime.execute({ process: "32.17", name: "video.identify", loanId: "", actor: { kind: "agent", id: "borrower-app" }, run: { runId: "t17", modelVersion: "test", promptVersion: "test" }, input: { party_id: door.party_id, fields: [{ path: "legal_name", value: "Dana Reyes" }, { path: "email", value: "other@example.test" }] } }), /IDENTITY_ALREADY_ON_FILE/);
+  const second = await api("POST", "/v1/borrower/video/sessions", {}, {}, "10.17.203.4"); await settle(); assert.equal(second.status, 201);
+  const p2 = String((second.body["party"] as Json)["party_id"]); const card2 = (await db.query<{ card_instance_id: string }>(`SELECT card_instance_id FROM card_instances WHERE party_id = $1 AND copy_key = $2`, [p2, IDENTITY_KEY]))[0]!.card_instance_id;
+  const dup = await api("POST", `/v1/borrower/cards/${card2}/resolve`, { evidence: { source: "borrower_stated", fields: [{ path: "legal_name", value_confirmed: "Sam Reyes", source: "borrower" }, { path: "email", value_confirmed: email, source: "borrower" }] } }, bearer(second.body["token"] as string)); await settle();
+  assert.ok(dup.status >= 400, JSON.stringify(dup.body)); assert.match(JSON.stringify(dup.body), /IDENTITY_EMAIL_ON_FILE/);
+  assert.equal((await db.query<{ legal_name: string; contact: Json }>(`SELECT legal_name, contact FROM parties WHERE id = $1`, [p2]))[0]!.contact["email"], undefined, "nothing attached");
+  await api("POST", `/v1/borrower/video/sessions/${second.body["video_session_id"]}/end`, { reason: "borrower_left" }, bearer(second.body["token"] as string)); await settle();
+});
+
+test("32.17-T18: Given any turn on the app or the video, then the system prompt names the assistant Michelle and forbids calling itself Supermortgage; the vendor persona is named Michelle with the one-line pointer prompt; `video.title` names her; and no persona, conversation or greeting names Supermortgage as the lender (32.17-T5 unchanged).", { skip }, async () => {
+  assert.match(SYSTEM_PROMPT, /^You are Michelle, the automated assistant of the partner lender/); assert.match(SYSTEM_PROMPT, /never call yourself Supermortgage/); assert.match(SYSTEM_PROMPT, /never name Supermortgage as the lender/);
+  assert.match(TALK_SYSTEM, /^You are Michelle, an automated assistant built by Supermortgage/);
+  assert.match(copyText("video.title"), /Michelle/);
+  const personas = fake.bodies.filter((b) => b.op === "createPersona"); assert.ok(personas.length >= 1);
+  for (const p of personas) { assert.match(String(p.body["persona_name"]), /^Michelle — video agent for /); assert.match(String(p.body["system_prompt"]), /^You are Michelle, an automated assistant\./); assert.doesNotMatch(String(p.body["system_prompt"]), /Supermortgage/); }
+  for (const c of fake.bodies.filter((b) => b.op === "createConversation")) {
+    const greeting = String(c.body["custom_greeting"]); assert.doesNotMatch(greeting, /Supermortgage/, `the greeting never names Supermortgage: ${greeting}`);
+    assert.doesNotMatch(String(c.body["conversational_context"]), /Supermortgage/);
+  }
+  // the door's own greeting introduced Michelle and named the partner as the lender
+  assert.match(door.greeting, /I'm Michelle/); assert.ok(door.greeting.includes(partnerName));
 });

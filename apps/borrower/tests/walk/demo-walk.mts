@@ -18,7 +18,7 @@
  *   7. The rail's card follows the conversation (the current ask changes or stays the goal card, but never a batch).
  *   8. Sign out works: the next load shows the door, not the conversation.
  *   9. A second fresh context on the same host sees nothing of the first person.
- *  10. /video reaches the video page behind the door (the FAKE or the live replica, never a 404).
+ *  10. /video with no account reaches the call itself: no sign-in form, the call live, an account opened on the spot (32.17 rule 11).
  */
 import { chromium, type Browser, type Page } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -114,12 +114,17 @@ async function walk(browser: Browser): Promise<void> {
   const r1 = await railState(page);
   record(7, "the rail still shows one card, following the conversation (never a batch)", r1.openRows <= 1 && r1.visibleRows <= 1, `${JSON.stringify(r0)} → ${JSON.stringify(r1)}`);
 
-  // 10. /video behind the door (same session)
-  await page.goto(`${BASE}/video`, { waitUntil: "load", timeout: 60_000 }).catch(() => undefined);
-  await page.waitForTimeout(1500);
-  await snap(page, "video");
-  const videoOk = /\/app\/video/.test(page.url()) && (await page.locator('text=This page could not be found').count()) === 0 && (await page.locator('[data-testid="video-call"], [data-testid="video-frame"], [data-testid="video-frame-fake"], [data-testid="video-permission-note"], [data-testid="video-unavailable"], [data-testid="video-status"]').count()) > 0;
-  record(10, "/video reaches the video page behind the door (never a 404)", videoOk, page.url());
+  // 10. the video door: a fresh context with no account reaches the call itself (32.17 rule 11) — never a 404, never a sign-in form; an account is opened on the spot
+  const ctxV = await browser.newContext({ viewport: { width: 1280, height: 900 }, permissions: ["camera", "microphone"] });
+  const pv = await ctxV.newPage();
+  await pv.goto(`${BASE}/video`, { waitUntil: "load", timeout: 60_000 }).catch(() => undefined);
+  await pv.waitForSelector('[data-testid="video-call"][data-phase="live"], [data-testid="video-call"][data-phase="failed"]', { timeout: 90_000 }).catch(() => undefined);
+  await pv.waitForTimeout(1500);
+  await snap(pv, "video-door");
+  const videoPhase = await pv.locator('[data-testid="video-call"]').getAttribute("data-phase").catch(() => null);
+  const videoOk = /\/app\/video/.test(pv.url()) && (await pv.locator('text=This page could not be found').count()) === 0 && videoPhase === "live" && (await pv.locator('[data-testid="account"], main form input[type="password"]').count()) === 0;
+  record(10, "/video with no account reaches the call itself: no sign-in form, the call live, an account opened on the spot", videoOk, `${pv.url()} phase=${videoPhase}`);
+  await ctxV.close();
 
   // 8. sign out
   await page.goto(`${BASE}/app`, { waitUntil: "load", timeout: 60_000 });

@@ -63,7 +63,7 @@ export function Header({ fixturesMode, me, subject, onSubjectChange, streamLabel
           Sign in
         </button>
       ) : null}
-      {!showSignIn && me && onSignOut ? (
+      {me && onSignOut ? (
         <button type="button" className="sm-linkbtn" data-testid="sign-out-button" onClick={onSignOut}>
           Sign out
         </button>

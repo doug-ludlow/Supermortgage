@@ -187,12 +187,25 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
       }
       try {
         await api.sendMessage(text, record?.subject);
+        await loadFromApi();   // the reply rides back in the POST (the turn is awaited); the stream is a second signal, never the only one
       } catch {
         appendLocal({ sender: "system", sender_label: "Supermortgage", channel: "app", body_text: "Your message didn't send — it's marked unsent. We'll retry when the connection is back." });
       }
     },
-    [appendLocal, fixturesMode, record?.subject],
+    [appendLocal, fixturesMode, record?.subject, loadFromApi],
   );
+
+  // The stream is not the only way news arrives (a load balancer or proxy may buffer or drop it): while it is not open the thread is
+  // re-read every 5 s, and after sign-up the first turn is awaited by polling every 3 s until the model's first line is in (up to 3 min).
+  const firstReplyPolls = useRef(0);
+  useEffect(() => {
+    if (fixturesMode) return;
+    const haveAgentLine = messages.some((m) => m.sender === "agent");
+    const waitingForFirst = !!me && !haveAgentLine && firstReplyPolls.current < 60;
+    if (stream === "open" && !waitingForFirst) return;
+    const t = setInterval(() => { if (waitingForFirst) firstReplyPolls.current += 1; void loadFromApi(); }, waitingForFirst ? 3000 : 5000);
+    return () => clearInterval(t);
+  }, [fixturesMode, stream, me, messages, loadFromApi]);
 
   const attach = useCallback(
     async (file: File) => {

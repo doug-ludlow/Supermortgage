@@ -38,7 +38,9 @@ const snap = async (page: Page, name: string): Promise<void> => {
   // what the page says, in the log (the artifact host is not always reachable from where the report is read)
   const thread = await page.locator('[data-testid="thread"] .sm-msg').evaluateAll((els: Element[]) => els.map((e) => `${e.getAttribute("data-sender")}: ${(e.querySelector(".sm-msg-body") as HTMLElement | null)?.innerText.replace(/\s+/g, " ").slice(0, 240) ?? "(no body)"}`)).catch(() => [] as string[]);
   const rail = await page.locator('[data-testid="record"]').first().innerText().catch(() => "");
-  console.log(`--- ${name} @ ${page.url()}\n  thread: ${JSON.stringify(thread)}\n  rail: ${JSON.stringify(rail.replace(/\s+/g, " ").slice(0, 400))}`);
+  const header = await page.locator('[data-testid="header"]').first().innerText().catch(() => "");
+  const fixtures = await page.locator('[data-testid="shell"]').first().getAttribute("data-fixtures").catch(() => null);
+  console.log(`--- ${name} @ ${page.url()}\n  header: ${JSON.stringify(header.replace(/\s+/g, " "))} fixtures=${fixtures}\n  thread: ${JSON.stringify(thread)}\n  rail: ${JSON.stringify(rail.replace(/\s+/g, " ").slice(0, 400))}`);
 };
 
 const FIXED_LINE = /\{\{|You told me:|Tap to confirm so it counts|Bringing a person in now|What next\?$|Anything else\?$/i;

@@ -8,7 +8,7 @@ export type CardComponentProps<K extends CardKind> = {
   /** Open a related card / document (Record deep-links, checklist items). */
   onOpen?: (target: { card_instance_id?: string; document_id?: string }) => void;
   /** Vendor launch hook (ConnectCard / HandoffCard). In fixtures mode this is the FAKE vendor. */
-  onLaunchVendor?: (vendor: string, card_instance_id: string) => Promise<{ vendor_session_id: string }>;
+  onLaunchVendor?: (vendor: string, card_instance_id: string) => Promise<{ vendor_session_id: string; outcome?: string }>;   // outcome: the FAKE finished on the tap (32.17 rule 19) — verified | connected
   /** Attach/upload hook (UploadCard). */
   onUpload?: (file: File, document_class: string) => Promise<{ document_id: string }>;
   /** Post a borrower message from a card's quiet link (32.7 §4: "How to cancel" opens the rescission ChoiceCard through the thread, never a primary button). */

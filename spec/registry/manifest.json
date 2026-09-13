@@ -15675,6 +15675,10 @@
    {
     "n": 22,
     "text": "Given `/app/video` on a live call at L1 with the goal chosen, then the hard-pull credit consent carries no `requires_level` and no `gate`, the record lists it with no `blocked_by`, and when it rises and Agree is tapped the authorization writes at once \u2014 the card resolves, `credit.authorization.captured` is logged, the session still L1, no identity session opened \u2014 and the card leaves the stage."
+   },
+   {
+    "n": 23,
+    "text": "Given `/app/video` on a live call with the goal chosen and the consents affirmed, then the identity `ConnectCard{stripe_identity}` rises reading \"Verify with Stripe Identity\" and one tap resolves it \u2014 `identity.verified` logged, the session at L3, the card's evidence `outcome = connected`, one identity card on the record and nothing posted by the page \u2014 then the payroll `ConnectCard{truv_income}` rises reading \"Confirm income with Truv\" and one tap resolves it \u2014 `verification.received{kind=income}` logged, `props.state = connected`, a `verification_id` on the card \u2014 and each card leaves the stage for the next ask."
    }
   ],
   "tables": [

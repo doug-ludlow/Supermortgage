@@ -533,34 +533,31 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     const at = now(); const ctx = await auth.authenticate(req, at);
     const b = jsonOf(await readBody(req));
     const requested = str(b, "application_id");
+    const finishNow = b["fake_complete"] === true;   // 32.17 rule 19: the page asks the FAKE to finish on the tap; a real vendor ignores it and answers through its webhook
     const candidates = ctx.subjects.filter((s) => s.application_borrower_id && (!requested || s.application_id === requested));
     if (requested && !candidates.length) assertSubject(ctx, { application_id: requested });
     const subject = candidates[0];
     if (!subject || !subject.application_id || !subject.application_borrower_id) throw new BorrowerError(409, "IDENTITY_NO_APPLICATION", undefined, "no application on which this party is a borrower");
     const ab = (await auth.parties.applicationBorrowersOf(ctx.party.id)).find((r) => r.id === subject.application_borrower_id)!;
     const conv = await ui.conversationFor(ctx.party.id);
-    const card = await ui.createCard({ conversation_id: conv.conversation_id, party_id: ctx.party.id, subject_application_id: subject.application_id, kind: "ConnectCard", created_by: "agent:verification", copy_key: "identity.stripe.purpose", props: { vendor: "stripe_identity", state: "in_progress" }, command_ref: "party.startIdentity", now: at });
+    // 32.17 rule 19: the flow's own "Verify with Stripe Identity" card (32.3 E5, sent with the consents) is the card the session runs on — never a second identity card beside it; a party without one (a step-up asked elsewhere) gets one here
+    const flowCard = (await ui.cardsOf(ctx.party.id, { status: "pending" })).find((c) => c.kind === "ConnectCard" && c.copy_key === "identity.stripe.purpose" && c.props["vendor"] === "stripe_identity" && (!c.subject_application_id || c.subject_application_id === subject.application_id));
+    const card = flowCard ?? await ui.createCard({ conversation_id: conv.conversation_id, party_id: ctx.party.id, subject_application_id: subject.application_id, kind: "ConnectCard", created_by: "agent:verification", copy_key: "identity.stripe.purpose", props: { vendor: "stripe_identity", state: "in_progress" }, command_ref: "party.startIdentity", now: at });
     const address = (await runtime.db.query<{ a: string | null }>(`SELECT concat_ws(', ', address_line1, city, state || ' ' || postal_code) AS a FROM application_properties WHERE application_id = $1 ORDER BY is_subject DESC, created_at LIMIT 1`, [subject.application_id]))[0]?.a ?? null;
     const vs = await stripe.createSession({ party_id: ctx.party.id, application_id: subject.application_id, application_borrower_id: ab.id, legal_name: ab.legal_name, date_of_birth: ab.date_of_birth, address, return_url: `${returnUrlBase}/return/stripe_identity/${card.card_instance_id}` }, at);
-    await runtime.db.query(`UPDATE card_instances SET props = props || $2::jsonb WHERE card_instance_id = $1`, [card.card_instance_id, toJson({ vendor_session_id: vs.vendor_session_id, started_at: at })]);
+    await runtime.db.query(`UPDATE card_instances SET props = props || $2::jsonb WHERE card_instance_id = $1`, [card.card_instance_id, toJson({ vendor_session_id: vs.vendor_session_id, started_at: at, state: "in_progress" })]);
     await ui.logUiEvent({ party_id: ctx.party.id, session_id: ctx.session.session_id, conversation_id: conv.conversation_id, card_instance_id: card.card_instance_id, kind: "connector_started", at, ip: ctx.ip, user_agent: ctx.userAgent, payload: { vendor: "stripe_identity", vendor_session_id: vs.vendor_session_id } });
     const fake = stripe instanceof FakeStripeIdentity;
-    logger.info("borrower.identity.session", { card_instance_id: card.card_instance_id, vendor_session_id: vs.vendor_session_id, vendor: fake ? "FAKE" : stripe.vendorName });
-    send(res, 200, "identity_session", { vendor: "stripe_identity", vendor_session_id: vs.vendor_session_id, client_secret: vs.client_secret, return_url: vs.return_url, card_instance_id: card.card_instance_id, application_id: subject.application_id, status: vs.status, ...(fake ? { delivery: "FAKE" } : {}) });
+    logger.info("borrower.identity.session", { card_instance_id: card.card_instance_id, vendor_session_id: vs.vendor_session_id, vendor: fake ? "FAKE" : stripe.vendorName, finish_now: fake && finishNow });
+    // 32.17 rule 19: the FAKE finishes on the tap — the document "read" is the application's own facts and the settlement is the webhook's own (22.6 verifyIdentity, the prefill, L3, the card resolved); nothing is posted by the page
+    let settled: Awaited<ReturnType<typeof settleIdentity>> | null = null;
+    if (fake && finishNow) { (stripe as FakeStripeIdentity).complete(vs.vendor_session_id, at); settled = await settleIdentity({ card_instance_id: card.card_instance_id, party_id: ctx.party.id, props: { ...card.props, started_at: at } }, vs.vendor_session_id, at); }
+    send(res, 200, "identity_session", { vendor: "stripe_identity", vendor_session_id: vs.vendor_session_id, client_secret: vs.client_secret, return_url: vs.return_url, card_instance_id: card.card_instance_id, application_id: subject.application_id, status: settled ? "verified" : vs.status, ...(settled ?? {}), ...(fake ? { delivery: "FAKE" } : {}) });
   }
-  async function stripeWebhook(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const at = now(); const raw = (await readBody(req)).toString("utf8");
-    const sig = req.headers["stripe-signature"]; const parsed = await stripe.parseWebhook(raw, Array.isArray(sig) ? sig[0] : sig, at);
-    const cards = await runtime.db.query<{ card_instance_id: string; party_id: string; subject_application_id: string; props: Record<string, unknown>; status: string }>(`SELECT card_instance_id, party_id, subject_application_id, props, status FROM card_instances WHERE kind = 'ConnectCard' AND props->>'vendor_session_id' = $1`, [parsed.vendor_session_id]);
-    const card = cards[0];
-    if (!card) throw new BorrowerError(404, "IDENTITY_SESSION_UNKNOWN");
+  /** The verified session's settlement — the webhook's and the FAKE-on-tap's one path: the extraction to the prefill, 22.6's op, L3, the card resolved. */
+  async function settleIdentity(card: { card_instance_id: string; party_id: string; props: Record<string, unknown> }, vendorSessionId: string, at: string): Promise<{ outcome: string; level: "L3" | null; card_status: "resolved" | "pending"; application_id: string; prefilled: string[]; all_borrowers_verified: boolean; gate_open: boolean }> {
     const fake = stripe instanceof FakeStripeIdentity;
-    if (parsed.outcome === "ignored") { send(res, 200, "identity_webhook", { received: true, vendor: fake ? "FAKE" : stripe.vendorName, vendor_session_id: parsed.vendor_session_id, outcome: "ignored" }); return; }
-    if (parsed.outcome !== "verified") {
-      await ui.transitionCard(card.card_instance_id, parsed.outcome === "canceled" ? "cancelled" : "pending", "system", at, { vendor: "stripe_identity", vendor_session_id: parsed.vendor_session_id, outcome: parsed.outcome === "canceled" ? "failed" : "in_progress", completed_at: at });
-      send(res, 200, "identity_webhook", { received: true, vendor: fake ? "FAKE" : stripe.vendorName, vendor_session_id: parsed.vendor_session_id, outcome: parsed.outcome }); return;
-    }
-    const result = await stripe.result(parsed.vendor_session_id);
+    const result = await stripe.result(vendorSessionId);
     if (!result) throw new BorrowerError(404, "IDENTITY_SESSION_UNKNOWN");
     const applicationId = result.request.application_id; const abId = result.request.application_borrower_id;
     const borrowerIds = await auth.parties.applicationBorrowerIds(applicationId);
@@ -574,10 +571,26 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     const out = r.output as { outcome: string; level: string | null; all_borrowers_verified: boolean; gate: { open: boolean } };
     let raised = 0;
     if (out.outcome === "verified") raised = await auth.sessions.raisePartyLevel(card.party_id, "L3", at);
-    await ui.transitionCard(card.card_instance_id, out.outcome === "verified" ? "resolved" : "pending", "system", at, { vendor: "stripe_identity", vendor_session_id: parsed.vendor_session_id, started_at: card.props["started_at"] ?? null, completed_at: at, outcome: out.outcome === "verified" ? "connected" : "failed" });
-    await ui.logUiEvent({ party_id: card.party_id, card_instance_id: card.card_instance_id, kind: "connector_completed", at, payload: { vendor: "stripe_identity", vendor_session_id: parsed.vendor_session_id, outcome: out.outcome } });
-    logger.info("borrower.identity.webhook", { vendor: fake ? "FAKE" : stripe.vendorName, vendor_session_id: parsed.vendor_session_id, outcome: out.outcome, level: out.level, sessions_raised: raised, all_borrowers_verified: out.all_borrowers_verified, events: r.events.map((e) => e.type) });
-    send(res, 200, "identity_webhook", { received: true, vendor: fake ? "FAKE" : stripe.vendorName, vendor_session_id: parsed.vendor_session_id, outcome: out.outcome, level: out.outcome === "verified" ? "L3" : null, application_id: applicationId, prefilled: Object.keys(prefill), all_borrowers_verified: out.all_borrowers_verified, gate_open: out.gate.open });
+    const card_status = out.outcome === "verified" ? "resolved" : "pending";
+    await ui.transitionCard(card.card_instance_id, card_status, "system", at, { vendor: "stripe_identity", vendor_session_id: vendorSessionId, started_at: card.props["started_at"] ?? null, completed_at: at, outcome: out.outcome === "verified" ? "connected" : "failed" });
+    await ui.logUiEvent({ party_id: card.party_id, card_instance_id: card.card_instance_id, kind: "connector_completed", at, payload: { vendor: "stripe_identity", vendor_session_id: vendorSessionId, outcome: out.outcome } });
+    logger.info("borrower.identity.webhook", { vendor: fake ? "FAKE" : stripe.vendorName, vendor_session_id: vendorSessionId, outcome: out.outcome, level: out.level, sessions_raised: raised, all_borrowers_verified: out.all_borrowers_verified, events: r.events.map((e) => e.type) });
+    return { outcome: out.outcome, level: out.outcome === "verified" ? "L3" : null, card_status, application_id: applicationId, prefilled: Object.keys(prefill), all_borrowers_verified: out.all_borrowers_verified, gate_open: out.gate.open };
+  }
+  async function stripeWebhook(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const at = now(); const raw = (await readBody(req)).toString("utf8");
+    const sig = req.headers["stripe-signature"]; const parsed = await stripe.parseWebhook(raw, Array.isArray(sig) ? sig[0] : sig, at);
+    const cards = await runtime.db.query<{ card_instance_id: string; party_id: string; subject_application_id: string; props: Record<string, unknown>; status: string }>(`SELECT card_instance_id, party_id, subject_application_id, props, status FROM card_instances WHERE kind = 'ConnectCard' AND props->>'vendor_session_id' = $1`, [parsed.vendor_session_id]);
+    const card = cards[0];
+    if (!card) throw new BorrowerError(404, "IDENTITY_SESSION_UNKNOWN");
+    const fake = stripe instanceof FakeStripeIdentity;
+    if (parsed.outcome === "ignored") { send(res, 200, "identity_webhook", { received: true, vendor: fake ? "FAKE" : stripe.vendorName, vendor_session_id: parsed.vendor_session_id, outcome: "ignored" }); return; }
+    if (parsed.outcome !== "verified") {
+      await ui.transitionCard(card.card_instance_id, parsed.outcome === "canceled" ? "cancelled" : "pending", "system", at, { vendor: "stripe_identity", vendor_session_id: parsed.vendor_session_id, outcome: parsed.outcome === "canceled" ? "failed" : "in_progress", completed_at: at });
+      send(res, 200, "identity_webhook", { received: true, vendor: fake ? "FAKE" : stripe.vendorName, vendor_session_id: parsed.vendor_session_id, outcome: parsed.outcome }); return;
+    }
+    const settled = await settleIdentity(card, parsed.vendor_session_id, at);
+    send(res, 200, "identity_webhook", { received: true, vendor: fake ? "FAKE" : stripe.vendorName, vendor_session_id: parsed.vendor_session_id, ...settled });
   }
 
   // ───────────────────────────── me · deep links
@@ -693,20 +706,44 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     const at = now(); const ctx = await auth.authenticate(req, at);
     if (vendor !== "truv_income") throw new BorrowerError(404, "NOT_FOUND", undefined, `${vendor} is not a connector this API opens`);
     const b = jsonOf(await readBody(req)); need(b, "card_instance_id"); const cardId = str(b, "card_instance_id");
+    const finishNow = b["fake_complete"] === true;   // 32.17 rule 19
     if (!isUuid(cardId)) throw new BorrowerError(403, "PARTY_SCOPE", undefined, "card id must be a uuid");
-    const card = await ui.card(cardId);
+    let card = await ui.card(cardId);
     if (!card || card.party_id !== ctx.party.id) throw new BorrowerError(403, "PARTY_SCOPE", undefined, "the card is not this party's");
     if (card.kind !== "ConnectCard" || card.props["vendor"] !== "truv_income") throw new BorrowerError(409, "CARD_NOT_PENDING", undefined, "not a payroll ConnectCard");
     const subject = assertSubject(ctx, { application_id: card.subject_application_id });
-    const orderId = ((card.evidence?.["command_output"] as Record<string, unknown> | undefined)?.["order_id"] as string | undefined) ?? null;
+    const orderIdOf = (c: { evidence: Record<string, unknown> | null }): string | null => ((c.evidence?.["command_output"] as Record<string, unknown> | undefined)?.["order_id"] as string | undefined) ?? null;
+    // 32.17 rule 19: the tap is the order — a card still pending is resolved here first (verification.connect places 22.3's order); the page's own resolve after this answers the stored outcome
+    if (card.status === "pending" && !orderIdOf(card)) { await commands.resolveCard(ctx, cardId, { option_id: "connect", evidence: { vendor: "truv_income", vendor_session_id: "", started_at: at, outcome: "in_progress" } }, at); card = (await ui.card(cardId))!; }
+    const orderId = orderIdOf(card);
     if (!orderId) throw new BorrowerError(409, "CONNECT_NOT_STARTED", undefined, "resolve the ConnectCard first (verification.connect orders the report — 22.3)");
     const borrowerId = orderId.split(":")[1] ?? subject.application_borrower_id ?? "";
     const vs = await truv.createSession({ party_id: ctx.party.id, application_id: subject.application_id!, application_borrower_id: subject.application_borrower_id ?? "", borrower_id: borrowerId, card_instance_id: cardId, order_id: orderId }, at);
     await runtime.db.query(`UPDATE card_instances SET props = props || $2::jsonb WHERE card_instance_id = $1`, [cardId, toJson({ vendor_session_id: vs.vendor_session_id, started_at: at, state: "in_progress" })]);
     await ui.logUiEvent({ party_id: ctx.party.id, session_id: ctx.session.session_id, conversation_id: card.conversation_id, card_instance_id: cardId, kind: "connector_started", at, ip: ctx.ip, user_agent: ctx.userAgent, payload: { vendor: "truv_income", vendor_session_id: vs.vendor_session_id } });
     const fake = truv instanceof FakeTruv;
-    logger.info("borrower.connect.session", { card_instance_id: cardId, vendor_session_id: vs.vendor_session_id, vendor: fake ? "FAKE" : truv.vendorName });
-    send(res, 200, "connect_session", { vendor: "truv_income", vendor_session_id: vs.vendor_session_id, link_token: vs.link_token, card_instance_id: cardId, application_id: subject.application_id, status: vs.status, ...(fake ? { delivery: "FAKE" } : {}) });
+    logger.info("borrower.connect.session", { card_instance_id: cardId, vendor_session_id: vs.vendor_session_id, vendor: fake ? "FAKE" : truv.vendorName, finish_now: fake && finishNow });
+    // 32.17 rule 19: the FAKE finishes on the tap — its deterministic report lands the way the webhook's does (22.3 receive, the card connected); nothing is posted by the page
+    let settled: Awaited<ReturnType<typeof settleIncome>> | null = null;
+    if (fake && finishNow) { (truv as FakeTruv).complete(vs.vendor_session_id, at); settled = await settleIncome({ ...card, subject_application_id: subject.application_id! }, vs.vendor_session_id, at); }
+    send(res, 200, "connect_session", { vendor: "truv_income", vendor_session_id: vs.vendor_session_id, link_token: vs.link_token, card_instance_id: cardId, application_id: subject.application_id, status: settled ? "report_ready" : vs.status, ...(settled ?? {}), ...(fake ? { delivery: "FAKE" } : {}) });
+  }
+  /** The ready report's settlement — the webhook's and the FAKE-on-tap's one path: the report onto the card first, 22.3's receive, the card connected. */
+  async function settleIncome(card: { card_instance_id: string; party_id: string; subject_application_id: string; evidence: Record<string, unknown> | null }, vendorSessionId: string, at: string): Promise<{ outcome: "connected"; application_id: string; verification_id: string; report_reference_id: string; events: string[] }> {
+    const fake = truv instanceof FakeTruv;
+    const result = await truv.result(vendorSessionId); const request = result?.request; const report = result?.report;
+    if (!report) throw new BorrowerError(404, "NOT_FOUND", undefined, "no report on this vendor session");
+    const orderId = request?.order_id ?? ((card.evidence?.["command_output"] as Record<string, unknown> | undefined)?.["order_id"] as string | undefined) ?? null;
+    // the report lands on the ConnectCard FIRST: flow 32.3's income ConfirmCard (R3) is built from `evidence.report` by `report_reference_id` in the reaction to the command below, which runs on the command's commit — written afterwards, the reaction sometimes read an empty report (a card with no employer and no figure)
+    await runtime.db.query(`UPDATE card_instances SET evidence = coalesce(evidence, '{}'::jsonb) || $2::jsonb, props = props || $3::jsonb WHERE card_instance_id = $1`, [card.card_instance_id, toJson({ vendor: "truv_income", vendor_fake: "FAKE", vendor_session_id: vendorSessionId, report, report_reference_id: report.report_reference_id }), toJson({ state: "report_received", report_reference_id: report.report_reference_id })]);
+    // 22.3's own op through the bus: verification.received{kind=income} on the order the ConnectCard placed — the verifications row keeps the vendor's references; the figures stay on the card for the ConfirmCard (R3)
+    const r = await runtime.execute({ process: "22.3", name: "orderVerificationReport", loanId: "", applicationId: card.subject_application_id, actor: VERIFICATION_ACTOR,
+      input: { application_id: card.subject_application_id, op: "receive", borrower_id: request?.borrower_id ?? orderId?.split(":")[1] ?? "", kind: "income", supplier_code: "TRUV", report_reference_id: report.report_reference_id, vendor_data_as_of: report.vendor_data_as_of, report_document_id: report.report_document_id, authorization_consent_id: card.card_instance_id, ...(orderId ? { verification_id: orderId } : {}) } });
+    const out = r.output as { verification_id: string };
+    await runtime.db.query(`UPDATE card_instances SET evidence = coalesce(evidence, '{}'::jsonb) || $2::jsonb, props = props || $3::jsonb WHERE card_instance_id = $1`, [card.card_instance_id, toJson({ completed_at: at, outcome: "connected", verification_id: out.verification_id }), toJson({ state: "connected", completed_at: at })]);
+    await ui.logUiEvent({ party_id: card.party_id, card_instance_id: card.card_instance_id, kind: "connector_completed", at, payload: { vendor: "truv_income", vendor_session_id: vendorSessionId, outcome: "connected" } });
+    logger.info("borrower.connect.webhook", { vendor: fake ? "FAKE" : truv.vendorName, vendor_session_id: vendorSessionId, verification_id: out.verification_id, events: r.events.map((e) => e.type) });
+    return { outcome: "connected", application_id: card.subject_application_id, verification_id: out.verification_id, report_reference_id: report.report_reference_id, events: r.events.map((e) => e.type) };
   }
   async function truvWebhook(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const at = now(); const raw = (await readBody(req)).toString("utf8");
@@ -720,18 +757,8 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
       if (parsed.outcome === "failed") await connectorFailed({ runtime, ui }, card, at, { name: "truv_income", fake, vendor_session_id: parsed.vendor_session_id });
       send(res, 200, "connect_webhook", { received: true, vendor: fake ? "FAKE" : truv.vendorName, vendor_session_id: parsed.vendor_session_id, outcome: parsed.outcome, application_id: card.subject_application_id, events: [] }); return;
     }
-    const result = await truv.result(parsed.vendor_session_id); const request = result?.request; const report = parsed.report;
-    const orderId = request?.order_id ?? ((card.evidence?.["command_output"] as Record<string, unknown> | undefined)?.["order_id"] as string | undefined) ?? null;
-    // the report lands on the ConnectCard FIRST: flow 32.3's income ConfirmCard (R3) is built from `evidence.report` by `report_reference_id` in the reaction to the command below, which runs on the command's commit — written afterwards, the reaction sometimes read an empty report (a card with no employer and no figure)
-    await runtime.db.query(`UPDATE card_instances SET evidence = coalesce(evidence, '{}'::jsonb) || $2::jsonb, props = props || $3::jsonb WHERE card_instance_id = $1`, [card.card_instance_id, toJson({ vendor: "truv_income", vendor_fake: "FAKE", vendor_session_id: parsed.vendor_session_id, report, report_reference_id: report.report_reference_id }), toJson({ state: "report_received", report_reference_id: report.report_reference_id })]);
-    // 22.3's own op through the bus: verification.received{kind=income} on the order the ConnectCard placed — the verifications row keeps the vendor's references; the figures stay on the card for the ConfirmCard (R3)
-    const r = await runtime.execute({ process: "22.3", name: "orderVerificationReport", loanId: "", applicationId: card.subject_application_id, actor: VERIFICATION_ACTOR,
-      input: { application_id: card.subject_application_id, op: "receive", borrower_id: request?.borrower_id ?? orderId?.split(":")[1] ?? "", kind: "income", supplier_code: "TRUV", report_reference_id: report.report_reference_id, vendor_data_as_of: report.vendor_data_as_of, report_document_id: report.report_document_id, authorization_consent_id: card.card_instance_id, ...(orderId ? { verification_id: orderId } : {}) } });
-    const out = r.output as { verification_id: string };
-    await runtime.db.query(`UPDATE card_instances SET evidence = coalesce(evidence, '{}'::jsonb) || $2::jsonb, props = props || $3::jsonb WHERE card_instance_id = $1`, [card.card_instance_id, toJson({ completed_at: at, outcome: "connected", verification_id: out.verification_id }), toJson({ state: "connected", completed_at: at })]);
-    await ui.logUiEvent({ party_id: card.party_id, card_instance_id: card.card_instance_id, kind: "connector_completed", at, payload: { vendor: "truv_income", vendor_session_id: parsed.vendor_session_id, outcome: "connected" } });
-    logger.info("borrower.connect.webhook", { vendor: fake ? "FAKE" : truv.vendorName, vendor_session_id: parsed.vendor_session_id, verification_id: out.verification_id, events: r.events.map((e) => e.type) });
-    send(res, 200, "connect_webhook", { received: true, vendor: fake ? "FAKE" : truv.vendorName, vendor_session_id: parsed.vendor_session_id, outcome: "connected", application_id: card.subject_application_id, verification_id: out.verification_id, report_reference_id: report.report_reference_id, events: r.events.map((e) => e.type) });
+    const settled = await settleIncome(card, parsed.vendor_session_id, at);
+    send(res, 200, "connect_webhook", { received: true, vendor: fake ? "FAKE" : truv.vendorName, vendor_session_id: parsed.vendor_session_id, ...settled });
   }
   async function thread(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
     const at = now(); const ctx = await auth.authenticate(req, at);

@@ -172,8 +172,9 @@ export function VideoShell({ fixturesMode, fixtureName, initialSubject }: VideoS
 
   const launchVendor = useCallback(async (vendor: string, card_instance_id: string) => {
     if (fixturesMode) return { vendor_session_id: `FAKE-${vendor}-${card_instance_id}` };
-    if (vendor === "stripe_identity") return api.identitySession();
-    return api.connectSession(vendor, card_instance_id);
+    // 32.17 rule 19: every build stage's vendor is the FAKE — it finishes on the tap; a real vendor ignores the flag
+    if (vendor === "stripe_identity") return api.identitySession({ fake_complete: true });
+    return api.connectSession(vendor, card_instance_id, { fake_complete: true });
   }, [fixturesMode]);
   const upload = useCallback(async (file: File, document_class: string) => (fixturesMode ? { document_id: `FAKE-doc-${file.name}` } : api.uploadDocument(file, document_class)), [fixturesMode]);
   const link = useCallback((target: { message_id?: string; card_instance_id?: string; document_id?: string }) => {

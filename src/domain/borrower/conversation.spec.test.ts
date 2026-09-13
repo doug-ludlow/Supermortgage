@@ -416,8 +416,8 @@ test("conversation: the refinance persona goes from sign-up to a boarded loan by
   later(1); r = await b.say("It is my main home, at 100 N Central Ave in Phoenix, and I live there."); await assertModelReply(b, r, { proposedInto: "refi.home.confirm", text: /100 N Central Ave/ });
   const home = await b.pending("refi.home.confirm"); later(1); await b.tap(home, proposalEvidence(home));
   assert.equal((await events(b.app_id, "application.six_item.captured")).filter((e) => e.payload["item"] === "property_address").length, 1);
-  // the credit authorization (L3 in this sitting) — a ConsentCard, typed name; then the payroll connection card stays for later
-  const credit = await b.pending("consent.credit.title"); assert.equal(credit.props["requires_level"], "L3");
+  // the credit authorization — a ConsentCard, typed name, no level and no gate on it (32.17 rule 18: the hard pull writes at L1); then the payroll connection card stays for later
+  const credit = await b.pending("consent.credit.title"); assert.equal(credit.props["requires_level"], undefined, "no level on the card"); assert.equal(credit.props["gate"], undefined, "no gate on the card");
   later(1); await b.tap(credit, { evidence: { affirmation_method: "checkbox_with_text", typed_name: b.name, checkbox: true, disclosure_version_shown: credit.props["disclosure_version_id"] } });
   assert.equal((await events(b.app_id, "credit.authorization.captured")).filter((e) => e.payload["card_instance_id"] === credit.card_instance_id).length, 1, "32.2's authorization event names the card (20.3 captureConsent appends the lead's own row beside it)");
   // ── R3: income typed (the card on request, the figure proposed, the tap), then assets typed with the figure as the card's default

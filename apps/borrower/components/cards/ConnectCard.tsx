@@ -22,6 +22,13 @@ const STATE_LABEL: Record<ConnectState, string> = {
   failed: "Couldn't connect — we'll take documents instead",
   fallback_chosen: "Documents instead",
 };
+/** 32.17 rule 19: the button names the step, not the plumbing — the ID scan verifies, the payroll connection confirms income; the rest connect. */
+export function launchLabel(vendor: ConnectVendor, retry = false): string {
+  const label = VENDOR_LABEL[vendor];
+  if (retry) return `Try ${label} again`;
+  return vendor === "stripe_identity" ? `Verify with ${label}` : vendor === "truv_income" ? `Confirm income with ${label}` : `Connect with ${label}`;
+}
+const stateLabel = (vendor: ConnectVendor, state: ConnectState): string => (state === "connected" && vendor === "stripe_identity" ? "Verified" : STATE_LABEL[state]);
 
 /**
  * 01 §3.4 — launch a vendor SDK and report its outcome. Resolves on the vendor webhook
@@ -45,9 +52,11 @@ export function ConnectCard({ card, timezone, onResolve, onLaunchVendor, busy, e
     try {
       const started_at = nowIso();
       const session = onLaunchVendor ? await onLaunchVendor(vendor, card.card_instance_id) : { vendor_session_id: `fake-${vendor}-${card.card_instance_id}` };
-      setLocalState("in_progress");
+      // 32.17 rule 19: the FAKE finished on the tap (verified | connected) — the card confirms and its resolve answers the API's stored outcome; otherwise in_progress until the webhook
+      const finished = session.outcome === "verified" || session.outcome === "connected";
+      setLocalState(finished ? "connected" : "in_progress");
       // The evidence below is provisional; the API overwrites `outcome`/`completed_at` from the webhook.
-      const evidence: ConnectCardEvidence = { vendor, vendor_session_id: session.vendor_session_id, started_at, outcome: "in_progress" };
+      const evidence: ConnectCardEvidence = { vendor, vendor_session_id: session.vendor_session_id, started_at, ...(finished ? { completed_at: nowIso() } : {}), outcome: finished ? "connected" : "in_progress" };
       await onResolve({ evidence, option_id: "connect" });
     } catch {
       // 01 §10 degraded vendor: failed + upload fallback; no error code is shown to the borrower (T-X-12).
@@ -64,18 +73,18 @@ export function ConnectCard({ card, timezone, onResolve, onLaunchVendor, busy, e
   };
 
   return (
-    <CardFrame card={card} timezone={timezone} title={purpose_text || copy(card.copy_key)} receipt={`${label} — ${STATE_LABEL[effective]}`} announce={STATE_LABEL[effective]} fakeVendor={SHOW_FAKE_MARKERS ? label : undefined}>
+    <CardFrame card={card} timezone={timezone} title={purpose_text || copy(card.copy_key)} receipt={`${label} — ${stateLabel(vendor, effective)}`} announce={stateLabel(vendor, effective)} fakeVendor={SHOW_FAKE_MARKERS ? label : undefined}>
       <p>
         <strong>What we get:</strong> {what_we_get.length ? what_we_get.join(", ") : copyExtra(card.copy_key, "what_we_get")}
       </p>
       {pre_intent_optional ? <p>Optional now, saves paperwork later.</p> : null}
       <p className="sm-primary-text" data-testid="connect-state">
-        Status: {STATE_LABEL[effective]}
+        Status: {stateLabel(vendor, effective)}
       </p>
       {card.status === "pending" && (effective === "not_started" || effective === "failed") ? (
         <div className="sm-card-actions">
           <button type="button" className="sm-btn sm-btn-primary" onClick={launch} disabled={busy || launching}>
-            {effective === "failed" ? `Try ${label} again` : `Connect with ${label}`}
+            {launchLabel(vendor, effective === "failed")}
           </button>
           <button type="button" className="sm-btn" onClick={chooseFallback} disabled={busy || launching}>
             {fallback.label}

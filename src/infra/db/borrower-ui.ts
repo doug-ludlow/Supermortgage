@@ -16,6 +16,8 @@ export interface CardInstanceRow {
   readonly created_by: string; readonly copy_key: string; readonly props: Record<string, unknown>; readonly evidence: Record<string, unknown> | null; readonly command_ref: string | null; readonly expires_at: string | null; readonly created_at: string; readonly resolved_at: string | null;
   /** 32.16 §3.7 (0119): proposals rejected or edited on this card; the third transfers to a human. Absent on a row read through a select that predates the column. */
   readonly misses?: number;
+  /** 0123: the send order — same-instant siblings (one reaction's cards) sort by it; a bigint, read as text. Absent on a row read through a select that predates the column. */
+  readonly seq?: string;
 }
 export type DeepLinkTarget = { card_instance_id: string } | { document_id: string } | { route: string };
 export interface MessageRow {
@@ -29,7 +31,7 @@ export interface DeepLinkRow { readonly token: string; readonly party_id: string
 export const DEEP_LINK_DAYS = 7;
 export const newDeepLinkToken = (): string => randomBytes(24).toString("base64url");
 export const addDaysIso = (iso: string, days: number): string => new Date(Date.parse(iso) + days * 86_400_000).toISOString();
-const CARD_COLS = "card_instance_id, conversation_id, party_id, subject_application_id, subject_loan_id, kind, status, created_by, copy_key, props, evidence, command_ref, expires_at, created_at, resolved_at, misses";
+const CARD_COLS = "card_instance_id, conversation_id, party_id, subject_application_id, subject_loan_id, kind, status, created_by, copy_key, props, evidence, command_ref, expires_at, created_at, resolved_at, misses, seq::text AS seq";
 
 export class PgBorrowerUiRepository {
   private readonly db: Queryable;
@@ -73,7 +75,7 @@ export class PgBorrowerUiRepository {
   async cardsOf(partyId: string, opts: { status?: CardStatus; subject?: { application_id?: string | null; loan_id?: string | null } } = {}, q: Queryable = this.db): Promise<CardInstanceRow[]> {
     return q.query<CardInstanceRow & Record<string, unknown>>(
       `SELECT ${CARD_COLS} FROM card_instances WHERE party_id = $1 AND ($2::text IS NULL OR status = $2)
-         AND ($3::uuid IS NULL OR subject_application_id = $3 OR subject_application_id IS NULL) AND ($4::uuid IS NULL OR subject_loan_id = $4 OR subject_loan_id IS NULL) ORDER BY created_at DESC, card_instance_id`,
+         AND ($3::uuid IS NULL OR subject_application_id = $3 OR subject_application_id IS NULL) AND ($4::uuid IS NULL OR subject_loan_id = $4 OR subject_loan_id IS NULL) ORDER BY created_at DESC, seq DESC, card_instance_id`,
       [partyId, opts.status ?? null, opts.subject?.application_id ?? null, opts.subject?.loan_id ?? null]);
   }
   /** 02 §1.2 thread_messages: the conversation's messages after a cursor (message id or ISO instant), oldest first, paged. */

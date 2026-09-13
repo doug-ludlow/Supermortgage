@@ -226,8 +226,9 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
   const launchVendor = useCallback(
     async (vendor: string, card_instance_id: string) => {
       if (fixturesMode) return { vendor_session_id: `FAKE-${vendor}-${card_instance_id}` }; // FAKE vendor session
-      if (vendor === "stripe_identity") return api.identitySession();
-      return api.connectSession(vendor, card_instance_id);
+      // 32.17 rule 19: every build stage's vendor is the FAKE — it finishes on the tap; a real vendor ignores the flag
+      if (vendor === "stripe_identity") return api.identitySession({ fake_complete: true });
+      return api.connectSession(vendor, card_instance_id, { fake_complete: true });
     },
     [fixturesMode],
   );

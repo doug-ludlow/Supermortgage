@@ -90,8 +90,9 @@ export const api = {
   authOidcCallback: (provider: "google", code: string, state: string, opts: { fake?: boolean } = {}) =>
     request<{ level: "L1" | "L2" | "L3"; session: "cookie"; expires_at?: string }>("POST", "/v1/borrower/auth/oidc", { action: "callback", provider, code, state }, opts.fake ? { headers: { "x-fake-oidc": "FAKE" } } : {}),
   authL2: (ssn_last4: string, date_of_birth: string) => request<{ level: "L2" }>("POST", "/v1/borrower/auth/l2", { ssn_last4, date_of_birth }),
-  identitySession: () => request<{ client_secret: string; vendor_session_id: string; card_instance_id: string }>("POST", "/v1/borrower/identity/stripe/session"),
-  connectSession: (vendor: string, card_instance_id: Uuid) => request<{ link_token: string; vendor_session_id: string }>("POST", `/v1/borrower/connect/${encodeURIComponent(vendor)}/session`, { card_instance_id }),
+  // 32.17 rule 19: `fake_complete` asks the FAKE vendor to finish on the tap (outcome verified | connected comes back); a real vendor ignores it and answers through its webhook
+  identitySession: (body: { fake_complete?: boolean } = {}) => request<{ client_secret: string; vendor_session_id: string; card_instance_id: string; outcome?: string; level?: string | null }>("POST", "/v1/borrower/identity/stripe/session", body),
+  connectSession: (vendor: string, card_instance_id: Uuid, body: { fake_complete?: boolean } = {}) => request<{ link_token: string; vendor_session_id: string; outcome?: string; verification_id?: string }>("POST", `/v1/borrower/connect/${encodeURIComponent(vendor)}/session`, { card_instance_id, ...body }),
   deeplink: (token: string) => request<{ target: { card_instance_id?: Uuid; document_id?: Uuid; route?: string } }>("GET", `/v1/borrower/deeplink/${encodeURIComponent(token)}`),
   voiceSession: () => request<{ token: string }>("POST", "/v1/borrower/voice/session"),
   /** "Talk to a person" — emits human.transfer.requested (01 §1.1). */

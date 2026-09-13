@@ -79,9 +79,16 @@ describe("ConnectCard", () => {
     const card = makeCard("ConnectCard", { vendor: "truv_income", purpose_text: "Connect your payroll", what_we_get: ["employer"], fallback: { label: "Send paystubs instead" }, state: "not_started" });
     const { calls } = renderCard(card, { onLaunchVendor: async () => ({ vendor_session_id: "sess-1" }) });
     expect(screen.getByTestId("fake-vendor")).toHaveTextContent("FAKE vendor · Truv");
-    await user.click(screen.getByRole("button", { name: "Connect with Truv" }));
+    await user.click(screen.getByRole("button", { name: "Confirm income with Truv" }));
     expect(calls[0]?.evidence).toMatchObject({ vendor: "truv_income", vendor_session_id: "sess-1", outcome: "in_progress" });
     expect(screen.getByTestId("connect-state")).toHaveTextContent("In progress");
+  });
+  it("32.17 rule 19: the ID card reads Verify with Stripe Identity, and a FAKE that finished on the tap confirms as Verified", async () => {
+    const card = makeCard("ConnectCard", { vendor: "stripe_identity", purpose_text: "", what_we_get: ["your name"], fallback: { label: "Upload a photo of your ID instead" }, state: "not_started" });
+    const { calls } = renderCard(card, { onLaunchVendor: async () => ({ vendor_session_id: "vs-1", outcome: "verified" }) });
+    await user.click(screen.getByRole("button", { name: "Verify with Stripe Identity" }));
+    expect(calls[0]?.evidence).toMatchObject({ vendor: "stripe_identity", vendor_session_id: "vs-1", outcome: "connected" });
+    expect(screen.getByTestId("connect-state")).toHaveTextContent("Verified");
   });
   it("T-X-12: a vendor error shows failed + fallback and no error code", async () => {
     const card = makeCard("ConnectCard", { vendor: "plaid_assets", purpose_text: "Connect your bank", what_we_get: [], fallback: { label: "Upload statements" }, state: "not_started" });

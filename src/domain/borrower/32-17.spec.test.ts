@@ -957,7 +957,55 @@ test("32.17-T22: Given `/app/video` on a live call at L1 with the goal chosen, t
   assert.equal((await cardRow(consentId)).status, "resolved", "the authorization written at L1");
   const captured = await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM loan_events WHERE application_id = $1 AND type = 'credit.authorization.captured' AND payload->>'kind' = 'hard_pull'`, [b.app_id]); assert.equal(captured[0]!.n, "1", "one hard-pull capture from the tap (20.3's own `hard_application` row stands beside it)");
   assert.equal((await db.query<{ level: string }>(`SELECT level FROM sessions WHERE party_id = $1 ORDER BY created_at DESC LIMIT 1`, [b.party_id]))[0]!.level, "L1", "no step-up asked");
-  assert.equal((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM card_instances WHERE party_id = $1 AND copy_key = 'identity.stripe.purpose'`, [b.party_id]))[0]!.n, "0", "no identity session opened for the pull");
+  assert.equal((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM card_instances WHERE party_id = $1 AND copy_key = 'identity.stripe.purpose' AND props->>'vendor_session_id' IS NOT NULL`, [b.party_id]))[0]!.n, "0", "no identity session opened for the pull (the ID card waits as a step of its own — rule 19)");
   await page.screenshot({ path: `${SCREENSHOTS}/t22-credit-1280.png`, fullPage: false }).catch(() => undefined);
+  await ctx.close();
+});
+
+test("32.17-T23: Given `/app/video` on a live call with the goal chosen and the consents affirmed, then the identity `ConnectCard{stripe_identity}` rises reading \"Verify with Stripe Identity\" and one tap resolves it — `identity.verified` logged, the session at L3, the card's evidence `outcome = connected`, one identity card on the record and nothing posted by the page — then the payroll `ConnectCard{truv_income}` rises reading \"Confirm income with Truv\" and one tap resolves it — `verification.received{kind=income}` logged, `props.state = connected`, a `verification_id` on the card — and each card leaves the stage for the next ask.", { skip }, async () => {
+  const b = await signedUpWithGoal("t23", "lower_rate");
+  // the consents affirmed through the API (their own tests: T22, 32.3), so the connectors are the record's next needs
+  const affirm = async (copyKey: string) => {
+    const c = (await db.query<{ card_instance_id: string; props: Json }>(`SELECT card_instance_id, props FROM card_instances WHERE party_id = $1 AND copy_key = $2 AND status = 'pending'`, [b.party_id, copyKey]))[0]; if (!c) return;
+    const r = await api("POST", `/v1/borrower/cards/${c.card_instance_id}/resolve`, { evidence: { affirmation_method: "checkbox_with_text", typed_name: "Dana Reyes", disclosure_version_shown: c.props["disclosure_version_id"] } }, bearer(b.token)); assert.equal(r.status, 201, `${copyKey}: ${JSON.stringify(r.body)}`);
+  };
+  for (const k of ["consent.esign.title", "consent.tcpa.title", "consent.credit.title"]) await affirm(k); await settle();
+  const pendingOf = async (copyKey: string) => (await db.query<{ card_instance_id: string; props: Json }>(`SELECT card_instance_id, props FROM card_instances WHERE party_id = $1 AND copy_key = $2 AND status = 'pending'`, [b.party_id, copyKey]))[0]!;
+  const identity = await pendingOf("identity.stripe.purpose"); assert.ok(identity, "the flow sent the identity card with the consents"); assert.equal(identity.props["vendor"], "stripe_identity"); assert.equal(identity.props["state"], "not_started");
+  const income = await pendingOf("income.connect.purpose"); assert.ok(income, "the flow sent the payroll card"); assert.equal(income.props["vendor"], "truv_income");
+  const v = await openVideo(b.token); assert.equal(v.status, 201);
+  const { page, ctx } = await openVideoShell(b.token, 1280);
+  const overlay = page.getByTestId("ask-overlay");
+  const webhooks: string[] = []; (page as unknown as { on(event: "request", fn: (r: { url(): string }) => void): void }).on("request", (r) => { if (r.url().includes("/v1/webhooks/")) webhooks.push(r.url()); });
+  const riseOf = async (id: string, what: string) => {
+    for (let i = 0; i < 8; i++) {
+      try { await overlay.waitFor({ state: "visible", timeout: 30_000 }); }
+      catch (e) { const pending = await db.query<{ kind: string; copy_key: string }>(`SELECT kind, copy_key FROM card_instances WHERE party_id = $1 AND status = 'pending' ORDER BY created_at`, [b.party_id]); throw new Error(`${what} did not rise (round ${i}): ${String(e).split("\n")[0]}; pending=${JSON.stringify(pending)}; logs=${JSON.stringify((page as Page & { logs?: string[] }).logs?.slice(-8))}`); }
+      if ((await overlay.getAttribute("data-card-id")) === id) return;
+      await page.getByTestId("ask-not-now").click(); await new Promise((r) => setTimeout(r, 300));
+    }
+    throw new Error(`${what} did not rise; on the stage: ${await overlay.getAttribute("data-card-id")}`);
+  };
+  const tapped = async (id: string, button: string, what: string) => {
+    await overlay.getByRole("button", { name: button }).click();
+    try { await page.locator(`[data-testid="ask-overlay"][data-card-id="${id}"]`).waitFor({ state: "detached", timeout: 20_000 }); }
+    catch (e) { const err = await overlay.locator(".sm-error, [data-testid=\"connect-state\"]").allInnerTexts().catch(() => [] as string[]); throw new Error(`${what} did not leave the stage: ${String(e).split("\n")[0]}; card=${JSON.stringify(err)}; row=${JSON.stringify(await cardRow(id))}`); }
+    await settle();
+  };
+  // the ID scan: one tap, verified — the FAKE finished on the tap through the webhook's own settlement
+  await riseOf(identity.card_instance_id, "the identity card");
+  await tapped(identity.card_instance_id, "Verify with Stripe Identity", "the identity card");
+  const idRow = await cardRow(identity.card_instance_id); assert.equal(idRow.status, "resolved", "the identity card resolved"); assert.equal(idRow.evidence?.["outcome"], "connected", "verified on the card");
+  assert.equal((await db.query<{ level: string }>(`SELECT level FROM sessions WHERE party_id = $1 ORDER BY created_at DESC LIMIT 1`, [b.party_id]))[0]!.level, "L3", "the tap verified the session");
+  assert.ok((await db.query(`SELECT 1 FROM loan_events WHERE application_id = $1 AND type = 'identity.verified'`, [b.app_id])).length >= 1, "identity.verified logged");
+  assert.equal((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM card_instances WHERE party_id = $1 AND copy_key = 'identity.stripe.purpose'`, [b.party_id]))[0]!.n, "1", "one identity card on the record, never a second");
+  assert.deepEqual(webhooks, [], "nothing posted by the page");
+  // the income connection: one tap, connected — 22.3's receive on the order the tap placed
+  await riseOf(income.card_instance_id, "the income card");
+  await tapped(income.card_instance_id, "Confirm income with Truv", "the income card");
+  const incRow = await cardRow(income.card_instance_id); assert.equal(incRow.status, "resolved", "the income card resolved"); assert.equal(incRow.props["state"], "connected", "connected on the card"); assert.ok(incRow.evidence?.["verification_id"], `a verification_id on the card: ${JSON.stringify(incRow.evidence)}`);
+  assert.ok((await db.query(`SELECT 1 FROM loan_events WHERE application_id = $1 AND type = 'verification.received' AND payload->>'kind' = 'income'`, [b.app_id])).length >= 1, "verification.received{income} logged");
+  assert.deepEqual(webhooks, [], "nothing posted by the page");
+  await page.screenshot({ path: `${SCREENSHOTS}/t23-connectors-1280.png`, fullPage: false }).catch(() => undefined);
   await ctx.close();
 });

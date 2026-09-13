@@ -43,7 +43,8 @@ const snap = async (page: Page, name: string): Promise<void> => {
   console.log(`--- ${name} @ ${page.url()}\n  header: ${JSON.stringify(header.replace(/\s+/g, " "))} fixtures=${fixtures}\n  thread: ${JSON.stringify(thread)}\n  rail: ${JSON.stringify(rail.replace(/\s+/g, " ").slice(0, 400))}`);
 };
 
-const FIXED_LINE = /\{\{|You told me:|Tap to confirm so it counts|Bringing a person in now|What next\?$|Anything else\?$/i;
+// a fixed line, or the step's default copy standing in for the model (a card title as the reply, the placeholder): the model did not speak
+const FIXED_LINE = /\{\{|You told me:|Tap to confirm so it counts|Bringing a person in now|What next\?$|Anything else\?$|^What are we doing today\?$|I'm looking at your file now|I'm checking your loan now/i;
 const agentLines = async (page: Page): Promise<string[]> => page.locator('[data-testid="thread"] .sm-msg[data-sender="agent"] .sm-msg-body').allInnerTexts();
 const borrowerLines = async (page: Page): Promise<string[]> => page.locator('[data-testid="thread"] .sm-msg[data-sender="borrower"] .sm-msg-body').allInnerTexts();
 const waitForAgentLines = async (page: Page, atLeast: number): Promise<string[]> => {

@@ -1021,3 +1021,41 @@ test("32.17-T25: Given a fact the turn wrote from what was said, when the borrow
   assert.equal(((idCard.props["proposal"] as Json)["fields"] as Json[]).find((f) => f["path"] === "legal_name")!["value"], "Dana Reyes", "the written name stays the card's proposal");
   assert.equal((await db.query<{ legal_name: string }>(`SELECT legal_name FROM parties WHERE id = $1`, [door.party_id]))[0]!.legal_name, "Dana Reyes", "nothing changed");
 });
+
+test("32.17-T26: Given `/app/video` on a live call with the goal chosen, when the borrower taps \"Verify with Stripe Identity\" and the card leaves the stage, then the page posts `POST …/continue` for that card and Michelle speaks next without being spoken to: one agent turn with no borrower words (its `agent_turns` row has `message_id = null`, no borrower message is added to the thread), the reply in the thread as an agent turn naming the next ask, its rendered text echoed once on the call (on the FAKE page: a second `data-echo` replica line after the greeting, word for word the route's `text`); `POST …/continue` for a card still pending is refused `CARD_PENDING`, for another party's card `NOT_FOUND`.", { skip }, async () => {
+  const b = await signedUpWithGoal("t26", "lower_rate");
+  const pendingOf = async (copyKey: string) => (await db.query<{ card_instance_id: string; props: Json }>(`SELECT card_instance_id, props FROM card_instances WHERE party_id = $1 AND copy_key = $2 AND status = 'pending'`, [b.party_id, copyKey]))[0]!;
+  const identity = await pendingOf("identity.stripe.purpose"); assert.ok(identity, "the flow sent the identity card"); const income = await pendingOf("income.connect.purpose"); assert.ok(income, "the flow sent the payroll card");
+  // the continuation's scene: no borrower words — the situation names the card just finished; the model leads on to the next ask
+  const NEXT = "Your ID is verified, thank you. Next is your income: tap Confirm income with Truv and it comes straight from payroll, nothing to type.";
+  scripted.use([{ when: /just finished the ConnectCard "identity\.stripe\.purpose"/i, text: NEXT }]);
+  const v = await openVideo(b.token); assert.equal(v.status, 201);
+  // before the tap: a pending card cannot continue the call; another party's card is not found
+  const early = await api("POST", `/v1/borrower/video/sessions/${v.id}/continue`, { card_instance_id: identity.card_instance_id }, bearer(b.token)); assert.equal(early.status, 409, JSON.stringify(early.body)); assert.equal(early.body["code"], "CARD_PENDING");
+  const other = await signedUpWithGoal("t26-other", "buy"); const otherCard = (await db.query<{ card_instance_id: string }>(`SELECT card_instance_id FROM card_instances WHERE party_id = $1 AND status <> 'pending' LIMIT 1`, [other.party_id]))[0]!;
+  const notMine = await api("POST", `/v1/borrower/video/sessions/${v.id}/continue`, { card_instance_id: otherCard.card_instance_id }, bearer(b.token)); assert.equal(notMine.status, 404, JSON.stringify(notMine.body)); assert.equal(notMine.body["code"], "NOT_FOUND");
+  const convId = (await db.query<{ conversation_id: string }>(`SELECT conversation_id FROM conversations WHERE party_id = $1`, [b.party_id]))[0]!.conversation_id;
+  const borrowerLinesBefore = (await messagesOf(convId)).filter((m) => m.sender === "borrower").length; const turnsBefore = (await turnsOf(b.party_id)).filter((t) => t.reply_message_id !== null).length;
+  const { page, ctx } = await openVideoShell(b.token, 1280);
+  const overlay = page.getByTestId("ask-overlay"); const fakePage = page.frameLocator('[data-testid="video-frame"]');
+  const continues: string[] = []; (page as unknown as { on(event: "request", fn: (r: { url(): string; method(): string }) => void): void }).on("request", (r) => { if (/\/continue$/.test(r.url()) && r.method() === "POST") continues.push(r.url()); });
+  for (let i = 0; i < 8; i++) { await overlay.waitFor({ state: "visible", timeout: 30_000 }); if ((await overlay.getAttribute("data-card-id")) === identity.card_instance_id) break; await page.getByTestId("ask-not-now").click(); await new Promise((r) => setTimeout(r, 300)); }
+  assert.equal(await overlay.getAttribute("data-card-id"), identity.card_instance_id, "the identity card on the stage");
+  // the greeting goes first (rule 17); then the tap, the card leaves the stage, and Michelle speaks next — the continuation's line, echoed once on the FAKE page
+  await fakePage.locator('[data-testid="fake-video-replica"][data-echo="1"]').first().waitFor({ timeout: 30_000 });
+  await overlay.getByRole("button", { name: "Verify with Stripe Identity" }).click();
+  await page.locator(`[data-testid="ask-overlay"][data-card-id="${identity.card_instance_id}"]`).waitFor({ state: "detached", timeout: 20_000 });
+  await fakePage.locator('[data-testid="fake-video-replica"][data-echo="1"]', { hasText: /Your ID is verified/ }).waitFor({ timeout: 30_000 });
+  await settle();
+  assert.equal(continues.length, 1, `one POST …/continue for the tap: ${JSON.stringify(continues)}`); assert.match(continues[0]!, new RegExp(`/v1/borrower/video/sessions/[^/]+/continue$`));
+  const echoed = await fakePage.locator('[data-testid="fake-video-replica"][data-echo="1"]').allInnerTexts();
+  assert.equal(echoed.length, 2, `the greeting, then the continuation: ${JSON.stringify(echoed)}`); assert.equal(echoed[1]!.trim(), NEXT, "the continuation's line, word for word");
+  // the thread: the reply as an agent turn with no borrower words — no borrower message added, the agent_turns row with message_id = null
+  const msgs = await messagesOf(convId); const reply = [...msgs].reverse().find((m) => m.sender === "agent" && (m.copy_tokens as Json | null)?.["source"] === "agent_turn")!; assert.ok(reply, "the continuation's reply in the thread");
+  assert.equal(reply.body_text, NEXT); assert.equal(reply.channel, "video");
+  assert.equal(msgs.filter((m) => m.sender === "borrower").length, borrowerLinesBefore, "no borrower message was added by the tap");
+  const turns = (await turnsOf(b.party_id)).filter((t) => t.reply_message_id !== null); assert.equal(turns.length, turnsBefore + 1, "one turn for the continuation"); const cont = turns.find((t) => t.reply_message_id === reply.message_id)!; assert.ok(cont); assert.equal(cont.message_id, null, "no borrower message behind the turn");
+  assert.equal((await cardRow(identity.card_instance_id)).status, "resolved", "the tap stands");
+  await page.screenshot({ path: `${SCREENSHOTS}/t26-continue-1280.png`, fullPage: false }).catch(() => undefined);
+  await ctx.close();
+});

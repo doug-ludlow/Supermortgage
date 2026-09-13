@@ -15687,6 +15687,10 @@
    {
     "n": 25,
     "text": "Given a fact the turn wrote from what was said, when the borrower corrects it in words (\"make that eighty-five hundred\"), then `card.propose` lands on the resolved card and the turn resolves it again with `rewrite` \u2014 the command runs with the new value (`application_income` 850000), the card stays resolved with `evidence.rewrites = 1`, `card_rewritten` is logged and the reply reads the new value back; a correction of the video-door identity is refused by rule 12 (`IDENTITY_ALREADY_ON_FILE`, `identity.contact.already_on_file`) and the written values stay the card's proposal with the refusal on it."
+   },
+   {
+    "n": 26,
+    "text": "Given `/app/video` on a live call with the goal chosen, when the borrower taps \"Verify with Stripe Identity\" and the card leaves the stage, then the page posts `POST \u2026/continue` for that card and Michelle speaks next without being spoken to: one agent turn with no borrower words (its `agent_turns` row has `message_id = null`, no borrower message is added to the thread), the reply in the thread as an agent turn naming the next ask, its rendered text echoed once on the call (on the FAKE page: a second `data-echo` replica line after the greeting, word for word the route's `text`); `POST \u2026/continue` for a card still pending is refused `CARD_PENDING`, for another party's card `NOT_FOUND`."
    }
   ],
   "tables": [

@@ -23,7 +23,7 @@ import type { AnyCardInstance, ResolveRequest } from "@/lib/types/cards";
 import type { BorrowerMe, BorrowerRecord, ThreadMessage } from "@/lib/types/record";
 import { api, ApiRequestError } from "@/lib/api/client";
 import { openStream, type StreamStatus } from "@/lib/api/sse";
-import type { VideoSession } from "@/lib/api/video";
+import { videoContinue, type VideoEcho, type VideoSession } from "@/lib/api/video";
 import { loadFixture } from "@/lib/fixtures";
 import { copy } from "@/lib/copy";
 import { currentAsk } from "@/components/shell/Thread";
@@ -78,6 +78,11 @@ export function VideoShell({ fixturesMode, fixtureName, initialSubject }: VideoS
   const [signInOpen, setSignInOpen] = useState(false);
   const [statusTick, setStatusTick] = useState(0);
   const [session, setSession] = useState<VideoSession | null>(null);
+  // the resolve callback is stable across the session's changes: the current session by ref (32.17 rule 22 reads it after a tap)
+  const sessionRef = useRef<VideoSession | null>(null);
+  useEffect(() => { sessionRef.current = session; }, [session]);
+  // 32.17 rule 22: the lines the replica speaks after a tap, each once (keyed by the reply message)
+  const [echoes, setEchoes] = useState<VideoEcho[]>([]);
   const [setAside, setSetAside] = useState<Set<string>>(() => new Set());
   // 32.17 rule 16: the card Michelle asked for herself (card.request → card.sent) is the thing she is talking about — it rises ahead of the record's current ask while it is pending
   const [requestedId, setRequestedId] = useState<string | undefined>();
@@ -158,6 +163,12 @@ export function VideoShell({ fixturesMode, fixtureName, initialSubject }: VideoS
       const res = await api.resolveCard(card.card_instance_id, req);
       setCards((c) => ({ ...c, [card.card_instance_id]: res.card }));
       if (subject) setRecord(await api.record(subject));
+      // 32.17 rule 22: the tap continues the call — the turn that follows lands in the thread and the replica speaks it; a miss here never undoes the tap
+      const vs = sessionRef.current;
+      if (vs && vs.status !== "ended" && vs.status !== "failed" && res.card.status !== "pending") {
+        try { const c = await videoContinue(vs.video_session_id, card.card_instance_id); if (c.ready && c.text && c.reply_message_id) { const line = { id: c.reply_message_id, text: c.text }; setEchoes((q) => (q.some((x) => x.id === line.id) ? q : [...q, line])); } }
+        catch (e) { console.warn("video: continue failed", e); }
+      }
     } catch (e) {
       setCardErrors((errs) => ({ ...errs, [card.card_instance_id]: e instanceof ApiRequestError ? copy(e.body.copy_key) : "That didn't go through. Nothing was changed — try again." }));
       setCardErrorCodes((codes) => ({ ...codes, [card.card_instance_id]: e instanceof ApiRequestError ? e.body.code : "" }));
@@ -219,7 +230,7 @@ export function VideoShell({ fixturesMode, fixtureName, initialSubject }: VideoS
               {loadError ? (
                 <p className="sm-error" role="alert" style={{ margin: 0, padding: "8px 16px" }}>{loadError}</p>
               ) : null}
-              <VideoCall fixturesMode={fixturesMode} firstName={me?.first_name} statusTick={statusTick} onSession={onSession} />
+              <VideoCall fixturesMode={fixturesMode} firstName={me?.first_name} statusTick={statusTick} onSession={onSession} echoes={echoes} />
               {ask && rise ? (
                 <div className="sm-ask-overlay" data-testid="ask-overlay" data-card-id={ask.card_instance_id} data-reason={rise} role="dialog" aria-label={cardTitle(ask)}>
                   {rise === "proposal" && proposalOf(ask) ? (

@@ -60,6 +60,8 @@ export interface AgentTurnRequest {
   readonly now: string;
   /** 32.17 rule 10: when the request was received (ms since the epoch) — `agent_turns.latency_ms` then counts from receipt, not from the runner's start; the runner's own start otherwise. */
   readonly started_at_ms?: number | undefined;
+  /** 32.17 rule 22 (the tap continues the call): no borrower words — the card the borrower just finished on the screen; the model acknowledges it in a few words and goes on to the current ask. */
+  readonly continuation?: { card_instance_id: string; copy_key: string; kind: string; status: string } | undefined;
 }
 export interface AgentTurnReply {
   readonly reply: MessageRow;
@@ -146,7 +148,7 @@ export class AgentTurnRunner {
     const j = buildJourney({ record, cards, labelOf: (item) => (item.label_copy_key ? copyText(item.label_copy_key, item.copy_tokens ?? {}) : item.label) });
     const stepProcess = j.journey.step?.process ?? (record?.subject.stage === "servicing" ? "2.1" : null);
     const rulesText = rulesFor(stepProcess);
-    const context = buildContext({ partyFirstName: firstNameOf(party.legal_name), level, channel: req.channel, routed_to: req.routed_to, safeMode, partnerName: partner.legal_name, record, cards, messages: window, lead, next: next0, borrowerText: req.text, journey: j.journey, journeyTokens: j.tokens, humanRequested: !!req.human_requested, rules: stepProcess && rulesText ? { process: stepProcess, text: rulesText } : null });
+    const context = buildContext({ partyFirstName: firstNameOf(party.legal_name), level, channel: req.channel, routed_to: req.routed_to, safeMode, partnerName: partner.legal_name, record, cards, messages: window, lead, next: next0, borrowerText: req.text, continuation: req.continuation ?? null, journey: j.journey, journeyTokens: j.tokens, humanRequested: !!req.human_requested, rules: stepProcess && rulesText ? { process: stepProcess, text: rulesText } : null });
     const disclosureFirst = allMessages[0]?.body_text === "{{copy:entry.disclosure.first}}";
     // ---- the model, on the bus's tools
     const ledger = newLedger(); Object.assign(ledger.tokens, context.tokens); if (req.human_requested) ledger.human_requested = true;

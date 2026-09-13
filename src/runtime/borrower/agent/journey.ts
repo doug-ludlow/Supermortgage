@@ -100,7 +100,7 @@ const WHY: readonly (readonly [string, string])[] = [
   ["consent.irs", "tax transcripts need the borrower's own consent to the IRS before they can be requested"],
   ["consent.standing", "the standing consents (delivery, contact, credit) are the borrower's to manage at any time"],
   ["auth.identity", "identity must be verified before personal terms can be shown; a scan of an ID is fastest, typing it in works too"],
-  ["identity.contact", "the account was opened on the call with no name and no e-mail: the name is how we address the borrower, the e-mail is how they get back into this conversation from any device if the call drops (a code goes to it)"],
+  ["identity.contact", "the account was opened on the call with no name and no e-mail: the name is how we address the borrower, the e-mail is how they get back into this conversation from any device if the call drops (a code goes to it). legal_name is the name exactly as they said it, first and last — never spelled, expanded, corrected or reconstructed from the e-mail address (an address like janedoe35@… says nothing about the name); if only a first name was given, ask for the last name before proposing. email is the spoken address normalized (at → @, dot → ., lower case, no spaces)"],
   ["identity.confirm", "the identity details must match the ID on file before a credit pull; a mismatch stops the file"],
   ["identity.ssn", "the Social Security number keys the credit report; the lender must verify it before pulling credit"],
   ["credit.freeze", "a frozen bureau cannot be read; the borrower lifts the freeze with the bureau, then the pull is retried"],

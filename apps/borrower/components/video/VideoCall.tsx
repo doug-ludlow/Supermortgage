@@ -7,7 +7,8 @@
  * `conversation_url` — a Daily room on the live vendor, the FAKE page (/app/video/fake/{token}) on FakeTavus — in an iframe with
  * camera, microphone and autoplay allowed. Nothing else: no composer, no microphone control of Supermortgage's own (the call has
  * its own), no "Talk to a person" (32.16 §1 principle 8), no card component (the rail is the rail). The page never sends
- * conversation.echo or conversation.respond: the brain is the endpoint, never the page.
+ * conversation.respond: the brain is the endpoint, never the page. Its only messages to the vendor are echoes of text the API
+ * rendered — the opening turn (rule 17) and the turn that follows a tap (rule 22, `echoes`).
  *
  * `Leave` ends the session (POST …/end); an ended or timed-out call (`max_call_duration`) shows `video.ended` with the rail still
  * live and offers a new call; a vendor outage (`status = failed`) shows `video.unavailable` and the way to the conversation.
@@ -15,7 +16,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiRequestError } from "@/lib/api/client";
-import { endVideoSession, openVideoSession, videoGreeting, videoSession, type FakeEchoMessage, type VideoSession } from "@/lib/api/video";
+import { endVideoSession, openVideoSession, videoGreeting, videoSession, type FakeEchoMessage, type VideoEcho, type VideoSession } from "@/lib/api/video";
 import { copy } from "@/lib/copy";
 import { SHOW_FAKE_MARKERS } from "@/lib/env";
 import { joinOptionsFor } from "@/lib/video/join";
@@ -28,6 +29,8 @@ export type VideoCallProps = {
   /** The SSE stream's `video.session.*` events bump this; the pane re-reads its status. */
   statusTick?: number;
   onSession?: (s: VideoSession | null) => void;
+  /** 32.17 rule 22: the lines that follow a tap (the shell's POST …/continue), each spoken once by the replica. */
+  echoes?: readonly VideoEcho[];
 };
 
 type Phase = "idle" | "opening" | "live" | "ended" | "failed";
@@ -40,7 +43,7 @@ export function frameSrc(s: VideoSession): string {
   return s.conversation_url;
 }
 
-export function VideoCall({ fixturesMode, firstName, statusTick, onSession }: VideoCallProps) {
+export function VideoCall({ fixturesMode, firstName, statusTick, onSession, echoes }: VideoCallProps) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [session, setSession] = useState<VideoSession | null>(null);
   // 32.17 rule 15: on the FAKE the picture-in-picture is the borrower's own camera from the permission step (the live call's is the room's local track)
@@ -55,6 +58,17 @@ export function VideoCall({ fixturesMode, firstName, statusTick, onSession }: Vi
   const greetingDone = useRef(false);
   const frame = useRef<HTMLIFrameElement>(null);
   const fakeEchoed = useRef(false);
+  // the FAKE page says when its listener is up (a message posted before the frame has mounted is lost): the greeting and the continuations wait for it
+  const [fakeReady, setFakeReady] = useState(0);
+  useEffect(() => {
+    const onMessage = (e: MessageEvent): void => {
+      if (e.origin !== window.location.origin) return;
+      const d = e.data as { type?: unknown } | null;
+      if (d && d.type === "supermortgage.video.fake.ready" && frame.current && e.source === frame.current.contentWindow) setFakeReady((n) => n + 1);
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
   // the shell's callback identity changes as it loads (the subject the door's account opens, the record, the cards): the call is opened once per mount and per "Start a new call", never again because a callback changed
   const onSessionRef = useRef(onSession);
   useEffect(() => { onSessionRef.current = onSession; }, [onSession]);
@@ -66,7 +80,7 @@ export function VideoCall({ fixturesMode, firstName, statusTick, onSession }: Vi
   const start = useCallback(async () => {
     if (opening.current) return;
     opening.current = true;
-    setError(null); setPermissionNote(null); setGreeting(null); greetingDone.current = false; fakeEchoed.current = false;
+    setError(null); setPermissionNote(null); setGreeting(null); greetingDone.current = false; fakeEchoed.current = false; setFakeReady(0);
     setPhase("opening");
     if (fixturesMode) {
       // FAKE fixtures mode: no API — a recorded call so the screen can be demoed (the layout, the rail, the footer)
@@ -119,17 +133,25 @@ export function VideoCall({ fixturesMode, firstName, statusTick, onSession }: Vi
   }, [session?.video_session_id, session?.opening_turn, phase, statusTick, fixturesMode]);
   // the FAKE page: the same one echo, as a same-origin message into its frame (it shows and speaks the line as the vendor's replica would)
   useEffect(() => {
-    if (!greeting || fakeEchoed.current || session?.vendor !== "FAKE") return;
+    if (!greeting || fakeEchoed.current || session?.vendor !== "FAKE" || !fakeReady) return;
     const w = frame.current?.contentWindow; if (!w) return;
+    fakeEchoed.current = true;
     const msg: FakeEchoMessage = { type: "supermortgage.video.echo", text: greeting };
-    const post = (): void => { if (fakeEchoed.current) return; fakeEchoed.current = true; w.postMessage(msg, window.location.origin); };
-    // the frame may still be loading: send on its load event too
-    const el = frame.current!; const onLoad = (): void => { w.postMessage(msg, window.location.origin); };
-    el.addEventListener("load", onLoad);
-    const t = setTimeout(post, 300);
-    return () => { clearTimeout(t); el.removeEventListener("load", onLoad); };
-  }, [greeting, session?.vendor]);
+    w.postMessage(msg, window.location.origin);
+  }, [greeting, session?.vendor, fakeReady]);
 
+  // rule 22 on the FAKE page: each continuation line once, as the same same-origin message the greeting used
+  const fakeEchoes = useRef(new Set<string>());
+  useEffect(() => {
+    if (!echoes?.length || session?.vendor !== "FAKE" || !fakeReady || (greeting && !fakeEchoed.current)) return;   // after the greeting
+    const w = frame.current?.contentWindow; if (!w) return;
+    for (const e of echoes) {
+      if (fakeEchoes.current.has(e.id) || !e.text.trim()) continue;
+      fakeEchoes.current.add(e.id);
+      const msg: FakeEchoMessage = { type: "supermortgage.video.echo", text: e.text };
+      w.postMessage(msg, window.location.origin);
+    }
+  }, [echoes, session?.vendor, fakeReady, greeting]);
   // the stream said the session changed (joined, ended by the vendor, max_call_duration): re-read it
   useEffect(() => {
     if (fixturesMode || !session || !statusTick) return;
@@ -175,7 +197,7 @@ export function VideoCall({ fixturesMode, firstName, statusTick, onSession }: Vi
           </>
         ) : null}
         {live && join ? (
-          <LiveCall join={join} preview={selfOn ? selfStream.current : null} echo={greeting} vendorConversationId={session?.vendor_conversation_id ?? null} onLeft={onLeft} />
+          <LiveCall join={join} preview={selfOn ? selfStream.current : null} echo={greeting} echoes={echoes} vendorConversationId={session?.vendor_conversation_id ?? null} onLeft={onLeft} />
         ) : live ? (
           <div className="sm-video-live" data-testid="video-live" data-state="in" data-replica="fake">
             {fixturesMode || !src ? (

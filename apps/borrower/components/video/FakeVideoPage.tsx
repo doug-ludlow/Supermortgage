@@ -12,7 +12,7 @@
  * never the app session — the join/leave helper rides on the proxy's session cookie.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fakeVideoCallback, videoChat } from "@/lib/api/video";
+import { type FakeReadyMessage, fakeVideoCallback, videoChat } from "@/lib/api/video";
 import { ApiRequestError } from "@/lib/api/client";
 import { copy } from "@/lib/copy";
 
@@ -60,6 +60,8 @@ export function FakeVideoPage({ token, videoSessionId }: { token: string; videoS
       speak(d.text);
     };
     window.addEventListener("message", onMessage);
+    // the parent (the call pane) holds the greeting and the continuations until this frame is listening: say so once the listener is up
+    try { if (window.parent && window.parent !== window) { const ready: FakeReadyMessage = { type: "supermortgage.video.fake.ready" }; window.parent.postMessage(ready, window.location.origin); } } catch { /* not framed */ }
     return () => window.removeEventListener("message", onMessage);
   }, [speak]);
 

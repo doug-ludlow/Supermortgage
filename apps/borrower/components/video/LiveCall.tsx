@@ -35,6 +35,8 @@ export type LiveCallProps = {
   preview?: MediaStream | null | undefined;
   /** 32.17 rule 17: the opening turn's rendered text (GET …/greeting) — spoken by the replica once, as one conversation.echo, after its own greeting; null until it has landed. */
   echo?: string | null | undefined;
+  /** 32.17 rule 22: the lines that follow a tap (POST …/continue), each spoken once as its own conversation.echo, in order, as soon as the room is in. */
+  echoes?: readonly { id: string; text: string }[] | undefined;
   /** The vendor's conversation id the echo names. */
   vendorConversationId?: string | null | undefined;
   onEchoed?: () => void;
@@ -64,7 +66,7 @@ export const echoMessage = (conversationId: string, text: string): Record<string
 /** One call object at a time on the page (the vendor's client refuses a second): the next one is created only after the last has been destroyed. */
 let lastCallGone: Promise<unknown> = Promise.resolve();
 
-export function LiveCall({ join, preview, echo, vendorConversationId, onEchoed, onLeft, onJoined }: LiveCallProps) {
+export function LiveCall({ join, preview, echo, echoes, vendorConversationId, onEchoed, onLeft, onJoined }: LiveCallProps) {
   const remoteVideo = useRef<HTMLVideoElement>(null); const remoteAudio = useRef<HTMLAudioElement>(null); const selfVideo = useRef<HTMLVideoElement>(null);
   const call = useRef<CallLike | null>(null);
   const [state, setState] = useState<"joining" | "in" | "left">("joining");
@@ -90,6 +92,17 @@ export function LiveCall({ join, preview, echo, vendorConversationId, onEchoed, 
     echoed.current = true;
     try { c.sendAppMessage(echoMessage(vendorConversationId, echo), "*"); onEchoed?.(); } catch (e) { console.warn("video: echo failed", e); }
   }, [echo, vendorConversationId, state, replicaVideoAt, replicaStopped, fallbackDue, onEchoed]);
+  // rule 22: a continuation's line goes as soon as the room is in and the greeting has gone (or none is due) — each once, in order
+  const sentEchoes = useRef(new Set<string>());
+  useEffect(() => {
+    const c = call.current; if (!c || !echoes?.length || !vendorConversationId || state !== "in") return;
+    if (echo && !echoed.current) return;   // the greeting first
+    for (const e of echoes) {
+      if (sentEchoes.current.has(e.id) || !e.text.trim()) continue;
+      sentEchoes.current.add(e.id);
+      try { c.sendAppMessage(echoMessage(vendorConversationId, e.text), "*"); } catch (err) { console.warn("video: echo failed", err); }
+    }
+  }, [echoes, echo, vendorConversationId, state, replicaStopped, fallbackDue]);
   const [joinedAt, setJoinedAt] = useState<number | null>(null);
   const [waitS, setWaitS] = useState(0);
   // the seconds since the room was joined while the replica's video is not yet playing (the late line, the dev-mode line)

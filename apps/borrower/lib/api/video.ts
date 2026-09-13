@@ -3,6 +3,7 @@
  *   openVideoSession   POST /v1/borrower/video/sessions              → { video_session_id, conversation_url, status, vendor, … }
  *   videoSession       GET  /v1/borrower/video/sessions/{id}         → the current row (status, end_reason, …)
  *   videoGreeting      GET  /v1/borrower/video/sessions/{id}/greeting → { ready, text }: the opening turn's rendered text once it has landed (rule 17)
+ *   videoContinue      POST /v1/borrower/video/sessions/{id}/continue → { ready, text }: rule 22 — the turn that follows a card the borrower finished on the screen; the replica speaks it
  *   endVideoSession    POST /v1/borrower/video/sessions/{id}/end     → { status: ended }
  *   fakeVideoCallback  POST /v1/borrower/video/sessions/{id}/fake-callback   FAKE only: the FAKE page's join / leave → the same callback path
  *   videoChat          POST /v1/video/llm/{token}/chat/completions   the FAKE page's utterance as the vendor's own chat-completions request
@@ -54,6 +55,12 @@ export const videoSession = (id: string): Promise<VideoSession> => request<Video
 export const videoGreeting = (id: string): Promise<VideoGreeting> => request<VideoGreeting>("GET", `/v1/borrower/video/sessions/${encodeURIComponent(id)}/greeting`);
 /** The one message the page sends into the FAKE page's frame (rule 17): the opening turn's rendered text, for the FAKE replica to show and speak as the vendor's echo would. */
 export type FakeEchoMessage = { type: "supermortgage.video.echo"; text: string };
+/** The FAKE page's one message to its parent: its listener is up (the parent holds the greeting and the continuations until then — a message before the frame has mounted is lost). */
+export type FakeReadyMessage = { type: "supermortgage.video.fake.ready" };
+/** POST …/continue (32.17 rule 22): after a card is finished on the screen, the turn that follows — Michelle's next line, rendered for the replica to speak. */
+export const videoContinue = (id: string, card_instance_id: string): Promise<VideoGreeting> => request<VideoGreeting>("POST", `/v1/borrower/video/sessions/${encodeURIComponent(id)}/continue`, { card_instance_id });
+/** A line for the replica to speak after the greeting (rule 22): the reply message it renders names it, so each goes once. */
+export type VideoEcho = { id: string; text: string };
 export const endVideoSession = (id: string, reason = "borrower_left"): Promise<VideoSession> => request<VideoSession>("POST", `/v1/borrower/video/sessions/${encodeURIComponent(id)}/end`, { reason });
 export const fakeVideoCallback = (id: string, event_type: "system.replica_joined" | "system.shutdown" | "application.transcription_ready", properties: Record<string, unknown> = {}): Promise<{ received: boolean; outcome?: string }> =>
   request<{ received: boolean; outcome?: string }>("POST", `/v1/borrower/video/sessions/${encodeURIComponent(id)}/fake-callback`, { event_type, properties });

@@ -98,7 +98,7 @@ for (const fixture of ["refinance", "servicing"]) {
         await row.locator("> button").click();
         const truv = rail.locator('article[data-card-id="card-r3-truv"]');
         await expect(truv.getByTestId("fake-vendor")).toContainText("FAKE vendor");
-        await truv.getByRole("button", { name: "Connect with Truv" }).click();
+        await truv.getByRole("button", { name: "Confirm income with Truv" }).click();   // 32.17 rule 19: the button names the step
         await expect(truv.getByTestId("connect-state")).toContainText("In progress");
         // the confirm chip (32.16 §3.4): the model's proposal read back in the thread; Confirm resolves the card; the chip becomes the receipt
         if (vp.width < 768) await page.getByRole("button", { name: "Close your record" }).click();

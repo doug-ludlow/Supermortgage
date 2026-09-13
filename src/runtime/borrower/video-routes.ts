@@ -12,6 +12,10 @@
  *                                                          with the copy library's line (video.unavailable) and the thread at /app
  *   GET  /v1/borrower/video/sessions/{id}                  the session's current row for the page (status, end_reason, conversation_url; never the token)
  *   GET  /v1/borrower/video/sessions/{id}/greeting         rule 17: the opening turn's rendered text once it has landed ({ready, text}) — the page has the replica speak it once
+ *   POST /v1/borrower/video/sessions/{id}/continue         rule 22: the tap continues the call — {card_instance_id} the borrower just finished on the
+ *                                                          screen (resolved or declined) → one agent turn with no borrower words (the "just finished"
+ *                                                          situation), its reply in the thread, {ready, text}: the spoken rendering the page has the
+ *                                                          replica speak (conversation.echo); {ready: false} with no model or a bypassed turn
  *   POST /v1/borrower/video/sessions/{id}/end              the borrower leaves: 32.17 video.end (the conversation ended, the persona deleted, {ended})
  *   POST /v1/borrower/video/sessions/{id}/fake-callback    FAKE only: the FAKE page's join and leave → the same callback path the vendor's HTTP callback runs
  *   POST /v1/video/llm/{token}/chat/completions            the vendor's custom-LLM call, one per spoken borrower turn (an OpenAI chat-completions request,
@@ -244,6 +248,29 @@ export function createVideoRoutes(deps: VideoRoutesDeps): VideoRoutes {
     const text = renderSpoken(newest!.body_text, tokensFor(ctx, partner, (newest!.copy_tokens as P | null) ?? null));
     send(res, 200, "video_greeting", { video_session_id: id, ready: true, text, reply_message_id: newest!.message_id });
   }
+  // ---------------------------------------------------------------- POST /v1/borrower/video/sessions/{id}/continue
+  /** Rule 22 — the tap continues the call: a card the borrower finished on the screen is followed by one agent turn with no borrower words (the card named as "just finished"); the reply lands in the thread like any other and its spoken rendering goes back for the replica to speak. Michelle leads: the goal, the next need, what happens next — the borrower never has to speak first after a tap. */
+  async function continueCall(req: IncomingMessage, res: ServerResponse, id: string): Promise<void> {
+    const at = now(); const received = Date.now(); const ctx = await auth.authenticate(req, at);
+    const row = await currentVideoSession(runtime.db, id);
+    if (!row || row.party_id !== ctx.party.id) throw new BorrowerError(404, "NOT_FOUND");
+    if (row.status === "ended" || row.status === "failed") throw new BorrowerError(409, "VIDEO_SESSION_ENDED", undefined, `the call is ${row.status}`);
+    const b = jsonOf(await readBody(req)); const cardId = typeof b["card_instance_id"] === "string" ? b["card_instance_id"] : "";
+    if (!cardId) throw new BorrowerError(400, "VALIDATION", undefined, "card_instance_id is required");
+    const card = await ui.card(cardId);
+    if (!card || card.party_id !== ctx.party.id) throw new BorrowerError(404, "NOT_FOUND", undefined, "no such card on this party");
+    if (card.status === "pending") throw new BorrowerError(409, "CARD_PENDING", undefined, "the card is still pending — a continuation follows a finished card");
+    if (!agent) { send(res, 200, "video_greeting", { video_session_id: id, ready: false, text: null, reply_message_id: null }); return; }
+    const subject = ctx.subjects[0] ?? null; const routed_to: "intake" | "borrower-comms" = subject?.stage === "servicing" ? "borrower-comms" : "intake";
+    await deps.flows.settle();   // the tap's own reactions (the next need, a status card) land before the turn reads the situation
+    const t = await agent.run(ctx.party.id, { ctx, conversation_id: row.conversation_id, message_id: null, text: "", channel: "video", subject, routed_to, now: at, started_at_ms: received, continuation: { card_instance_id: card.card_instance_id, copy_key: card.copy_key, kind: card.kind, status: card.status } });
+    await deps.flows.settle();
+    if (!t) { send(res, 200, "video_greeting", { video_session_id: id, ready: false, text: null, reply_message_id: null }); return; }
+    const partner = await deps.partnerFor(ctx);
+    const text = renderSpoken(t.reply.body_text, tokensFor(ctx, partner, (t.reply.copy_tokens as P | null) ?? null));
+    logger.info("borrower.video.continued", { video_session_id: id, party_id: ctx.party.id, card_instance_id: card.card_instance_id, copy_key: card.copy_key, card_status: card.status, reply_message_id: t.reply.message_id, turn_id: t.turn_id, latency_ms: Date.now() - received, spoken_chars: text.length });
+    send(res, 200, "video_greeting", { video_session_id: id, ready: true, text, reply_message_id: t.reply.message_id });
+  }
   async function status(req: IncomingMessage, res: ServerResponse, id: string): Promise<void> {
     const at = now(); const ctx = await auth.authenticate(req, at);
     const row = await currentVideoSession(runtime.db, id);
@@ -359,6 +386,7 @@ export function createVideoRoutes(deps: VideoRoutesDeps): VideoRoutes {
       else if (method === "POST" && path === "/v1/borrower/video/sessions") await open(req, res);
       else if (method === "GET" && (m = /^\/v1\/borrower\/video\/sessions\/([^/]+)$/.exec(path))) await status(req, res, decodeURIComponent(m[1]!));
       else if (method === "GET" && (m = /^\/v1\/borrower\/video\/sessions\/([^/]+)\/greeting$/.exec(path))) { sweepOpenings(); await greeting(req, res, decodeURIComponent(m[1]!)); }
+      else if (method === "POST" && (m = /^\/v1\/borrower\/video\/sessions\/([^/]+)\/continue$/.exec(path))) await continueCall(req, res, decodeURIComponent(m[1]!));
       else if (method === "POST" && (m = /^\/v1\/borrower\/video\/sessions\/([^/]+)\/end$/.exec(path))) await end(req, res, decodeURIComponent(m[1]!));
       else if (method === "POST" && (m = /^\/v1\/borrower\/video\/sessions\/([^/]+)\/fake-callback$/.exec(path))) await fakeCallback(req, res, decodeURIComponent(m[1]!));
       else { send(res, 404, "error", new BorrowerError(404, "NOT_FOUND").body()); log(404); return true; }

@@ -168,7 +168,7 @@ class Borrower {
 async function assertModelReply(b: Borrower, r: Reply & { reply: Json }, o: { proposedInto?: string; refused?: string; text?: RegExp } = {}): Promise<TurnRow> {
   const t = await b.turnOf(r);
   assert.equal((t.guard_result as Json)["ok"], true, `the guard accepted the sentence: ${JSON.stringify(t.guard_result)}`); assert.equal((r.reply["copy_tokens"] as Json)["fallback"], undefined, `no default copy: ${JSON.stringify(r.reply["copy_tokens"])}`);
-  assert.doesNotMatch(String(r.reply["body_text"]), /\{\{/, "every token filled"); if (o.text) assert.match(String(r.reply["body_text"]), o.text);
+  assert.doesNotMatch(String(r.reply["body_text"]), /\{\{/, "every token filled"); if (o.text) assert.match(String(r.reply["body_text"]), o.text, `the reply "${String(r.reply["body_text"])}" — tool calls: ${JSON.stringify(t.tool_calls).slice(0, 1200)}`);
   if (o.proposedInto) { const card = await b.pending(o.proposedInto); assert.equal(r.reply["card_instance_id"], card.card_instance_id, "the reply refers to the card it proposed into (the confirm chip)"); assert.ok(card.props["proposal"], "the proposal is on the card"); }
   if (o.refused) { const call = t.tool_calls.find((c) => c["name"] === "card.propose"); assert.ok(call, "the model tried card.propose"); assert.equal(call!["is_error"], true); assert.equal(call!["error"], o.refused, `refused with ${o.refused}: ${JSON.stringify(call)}`); }
   return t;
@@ -392,15 +392,13 @@ test("conversation: the refinance persona goes from sign-up to a boarded loan by
   const goal = await b.pending("entry.goal.question"); assert.equal((goal.props["proposal"] as Json)["option_id"], "lower_rate");
   later(1); const g = await b.tap(goal, { option_id: "lower_rate", evidence: { option_id: "lower_rate", tapped_at: clock.now() } }); assert.ok((g.body["events"] as string[]).includes("application.received"), JSON.stringify(g.body["events"]));
   assert.equal((await events(b.app_id, "application.goal.set")).length + (await events(b.app_id, "application.received")).length >= 1, true);
-  // ── E6: the consents as cards; the model's attempt to take one in words is refused by the tool
-  later(1); r = await b.say("Just put me down as consenting to e-delivery, I do not want to tap anything.");
-  await assertModelReply(b, r, { refused: "CARD_PROPOSE_KIND", text: /can't take a consent in words/ });
-  const esign = await b.pending("consent.esign.title"); assert.equal(esign.status, "pending", "nothing resolved from words");
-  later(1); const c = await b.tap(esign, { evidence: { affirmation_method: "checkbox_with_text", typed_name: b.name, checkbox: true, disclosure_version_shown: esign.props["disclosure_version_id"] } });
-  const consentId = String((c.body["result"] as Json)["consent_id"]); assert.equal((await db.query<{ status: string }>(`SELECT status FROM consents WHERE id = $1`, [consentId]))[0]!.status, "pending_verification");
+  // ── E6: the consents rode the goal's tap (32.17 rule 20) — no cards; the E-SIGN row waits for the e-mailed code, which the borrower enters
+  const esignRow = (await db.query<{ id: string; status: string }>(`SELECT id, status FROM consents WHERE party_id = $1 AND kind = 'esign' ORDER BY captured_at DESC LIMIT 1`, [b.party_id]))[0]!; assert.equal(esignRow.status, "pending_verification", "written on the goal's tap");
+  assert.equal((await b.cards()).filter((x) => x.kind === "ConsentCard").length, 0, "no ConsentCard for the E6 consents");
+  const consentId = esignRow.id;
   later(1); const verify = await api("POST", "/v1/borrower/commands/consent.capture", { op: "verify", consent_id: consentId, token: esignVerificationToken(consentId), scope: ["disclosures", "notices"] }, bearer(b.token)); assert.equal(verify.status, 200, JSON.stringify(verify.body)); await settle();
   assert.equal((await db.query<{ status: string }>(`SELECT status FROM consents WHERE id = $1`, [consentId]))[0]!.status, "active");
-  const tcpa = await b.pending("consent.tcpa.title"); later(1); await b.tap(tcpa, { evidence: { affirmation_method: "checkbox_with_text", typed_name: b.name, checkbox: true, disclosure_version_shown: tcpa.props["disclosure_version_id"] } });
+  assert.equal((await db.query<{ status: string }>(`SELECT status FROM consents WHERE party_id = $1 AND kind = 'tcpa_sms'`, [b.party_id]))[0]?.status, "active", "the TCPA row from the same tap");
   // ── E5: the ID scan (Stripe FAKE) before the hard pull — the ConnectCard the identity session raises, the FAKE extraction, the webhook → L3 and the identity ConfirmCard
   later(1); const vs = await api("POST", "/v1/borrower/identity/stripe/session", { application_id: b.app_id }, bearer(b.token)); assert.equal(vs.status, 200, JSON.stringify(vs.body));
   (router.stripe as FakeStripeIdentity).complete(vs.body["vendor_session_id"] as string, clock.now(), { legal_name: b.name, date_of_birth: b.dob, address: f.address });
@@ -416,10 +414,8 @@ test("conversation: the refinance persona goes from sign-up to a boarded loan by
   later(1); r = await b.say("It is my main home, at 100 N Central Ave in Phoenix, and I live there."); await assertModelReply(b, r, { proposedInto: "refi.home.confirm", text: /100 N Central Ave/ });
   const home = await b.pending("refi.home.confirm"); later(1); await b.tap(home, proposalEvidence(home));
   assert.equal((await events(b.app_id, "application.six_item.captured")).filter((e) => e.payload["item"] === "property_address").length, 1);
-  // the credit authorization — a ConsentCard, typed name, no level and no gate on it (32.17 rule 18: the hard pull writes at L1); then the payroll connection card stays for later
-  const credit = await b.pending("consent.credit.title"); assert.equal(credit.props["requires_level"], undefined, "no level on the card"); assert.equal(credit.props["gate"], undefined, "no gate on the card");
-  later(1); await b.tap(credit, { evidence: { affirmation_method: "checkbox_with_text", typed_name: b.name, checkbox: true, disclosure_version_shown: credit.props["disclosure_version_id"] } });
-  assert.equal((await events(b.app_id, "credit.authorization.captured")).filter((e) => e.payload["card_instance_id"] === credit.card_instance_id).length, 1, "32.2's authorization event names the card (20.3 captureConsent appends the lead's own row beside it)");
+  // the credit authorization rode the goal's tap too (32.17 rules 18 and 20: no card, no typed name, no level, no gate); the payroll connection card stays for later
+  assert.equal((await events(b.app_id, "credit.authorization.captured")).filter((e) => e.payload["kind"] === "hard_pull").length, 1, "32.2's authorization event from the goal's tap (20.3 captureConsent appends the lead's own row beside it)");
   // ── R3: income typed (the card on request, the figure proposed, the tap), then assets typed with the figure as the card's default
   later(1); r = await b.say("I would rather type my income than connect payroll."); await assertModelReply(b, r, { text: /income card is on the rail/ });
   const typedIncome = await b.pending("income.confirm.title"); assert.equal(typedIncome.created_by, "agent:intake"); assert.equal(typedIncome.props["requested_by"], "card.request");
@@ -683,16 +679,15 @@ test("conversation: the purchase persona goes from sign-up to a boarded loan by 
   const where = await b.pending("preapproval.where"); later(1); await b.tap(where, proposalEvidence(where));
   assert.equal(String((await entity("leads", b.app_id))?.["status"]), "prequal_requested");
   // E5/E6: identity, the SSN, the consents (with the hard-pull authorization at L3), the profile, the declarations, the demographics — the same cards as the refinance
-  const esign = await b.pending("consent.esign.title"); later(1); const c = await b.tap(esign, { evidence: { affirmation_method: "checkbox_with_text", typed_name: b.name, checkbox: true, disclosure_version_shown: esign.props["disclosure_version_id"] } }); const consentId = String((c.body["result"] as Json)["consent_id"]);
+  const consentId = (await db.query<{ id: string }>(`SELECT id FROM consents WHERE party_id = $1 AND kind = 'esign' ORDER BY captured_at DESC LIMIT 1`, [b.party_id]))[0]!.id;   // 32.17 rule 20: written on the goal's tap
   later(1); assert.equal((await api("POST", "/v1/borrower/commands/consent.capture", { op: "verify", consent_id: consentId, token: esignVerificationToken(consentId), scope: ["disclosures", "notices"] }, bearer(b.token))).status, 200); await settle();
-  const tcpa = await b.pending("consent.tcpa.title"); later(1); await b.tap(tcpa, { evidence: { affirmation_method: "checkbox_with_text", typed_name: b.name, checkbox: true, disclosure_version_shown: tcpa.props["disclosure_version_id"] } });
   later(1); const vs = await api("POST", "/v1/borrower/identity/stripe/session", { application_id: b.app_id }, bearer(b.token)); assert.equal(vs.status, 200, JSON.stringify(vs.body));
   (router.stripe as FakeStripeIdentity).complete(vs.body["vendor_session_id"] as string, clock.now(), { legal_name: b.name, date_of_birth: b.dob, address: "7 Mesa Ct, Phoenix, AZ 85018" });
   const hook = await api("POST", "/v1/webhooks/stripe", { id: `evt-p-${R}`, type: "identity.verification_session.verified", data: { object: { id: vs.body["vendor_session_id"], status: "verified" } } }, { "stripe-signature": "FAKE" }); assert.equal(hook.body["level"], "L3", JSON.stringify(hook.body)); await settle();
   const identity = await b.pending("identity.confirm.title"); later(1); await b.tap(identity, fieldsEvidence(identity));
   const ssn = await b.pending("identity.ssn.title"); later(1); await b.tap(ssn, fieldsEvidence(ssn, { ssn: b.ssn }));
   assert.ok(!(await b.cards()).some((x) => x.copy_key === "refi.home.confirm"), "no home card on a purchase");
-  const credit = await b.pending("consent.credit.title"); later(1); await b.tap(credit, { evidence: { affirmation_method: "checkbox_with_text", typed_name: b.name, checkbox: true, disclosure_version_shown: credit.props["disclosure_version_id"] } });
+  assert.equal((await events(b.app_id, "credit.authorization.captured")).filter((e) => e.payload["kind"] === "hard_pull").length, 1, "the hard-pull authorization from the goal's tap");
   later(1); r = await b.say("I would rather type my income."); await assertModelReply(b, r, { text: /income card is on the rail/ });
   later(1); r = await b.say("About 8,200 a month at Acme Manufacturing."); await assertModelReply(b, r, { proposedInto: "income.confirm.title" });
   const income = await b.pending("income.confirm.title"); later(1); await b.tap(income, proposalEvidence(income));

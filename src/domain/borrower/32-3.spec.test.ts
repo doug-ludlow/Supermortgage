@@ -200,19 +200,19 @@ test("32.3-T3: Given `sessions.level = L1`, when the client requests `borrower_r
   const rec2 = await record(a.token, journey.appId); const numbers = rec2["numbers"] as Record<string, unknown>; assert.ok(numbers); assert.equal(numbers["figures_source"], "le_v1"); assert.equal(numbers["note_rate"], "6.125");
 });
 
-test("32.3-T4: Given L1 only, when the hard-pull authorization card is affirmed, then `credit.authorize{hard_pull}` writes the authorization at once — `credit.authorization.captured` twice over, 32.2's `hard_pull` and 20.3's own `hard_application` under one `authorization_id`, and the card resolved — with no identity gate in the way (32.17 rule 18: the ID scan is a step of its own when one needs it), and the same card affirmed again writes nothing more.", { skip }, async () => {
+test("32.3-T4: Given L1 only, when the goal is tapped, then the hard-pull authorization is written on that tap — `credit.authorization.captured` twice over, 32.2's `hard_pull` and 20.3's own `hard_application` under one `authorization_id`, the goal card named on it — with no ConsentCard, no typed name and no identity gate in the way (32.17 rules 18 and 20), and the same goal tapped again writes nothing more.", { skip }, async () => {
   clock.set(isoEt("2026-10-19", "09:10"));
   assert.equal((await db.query<{ level: string }>(`SELECT level FROM sessions WHERE session_id = $1`, [jane.sessionId]))[0]!.level, "L1");
-  const card = await pendingCard(jane.appId, jane.partyId, "consent.credit.title"); assert.equal(card.command_ref, "credit.authorize"); assert.equal(card.props["requires_level"], undefined, "no level on the card"); assert.equal(card.props["gate"], undefined, "no gate on the card");
-  const r = await resolve(jane.token, card.card_instance_id, { evidence: { affirmation_method: "checkbox_with_text", typed_name: JANE.name, disclosure_version_shown: card.props["disclosure_version_id"] } });
-  assert.equal(r.status, 201, JSON.stringify(r.body)); await settle();
+  const goal = (await cardsOf(jane.appId, jane.partyId)).find((c) => c.copy_key === "entry.goal.question")!; assert.ok(goal, "the goal card"); assert.equal(goal.status, "resolved", "tapped in the fixture");
+  assert.equal(typeof goal.props["statement"], "string", "the consents statement on the goal"); assert.equal(goal.props["statement_version"], "consents-on-goal-2026-09");
+  assert.equal((await cardsOf(jane.appId, jane.partyId)).filter((c) => c.kind === "ConsentCard").length, 0, "no ConsentCard for the E6 consents (rule 20)");
   const hardCaptured = async () => (await events(jane.appId, "credit.authorization.captured")).filter((e) => e.payload["kind"] === "hard_pull" || e.payload["kind"] === "hard_application");
   const written = await hardCaptured(); const writtenOnce = written.length;
   assert.deepEqual(written.map((e) => e.payload["kind"]).sort(), ["hard_application", "hard_pull"], "32.2's hard_pull and 20.3's hard_application, one each");
   assert.equal(new Set(written.map((e) => e.payload["authorization_id"])).size, 1, "one authorization_id across both layers"); assert.ok(written[0]!.payload["authorization_id"], "the authorization_id on the event");
-  assert.equal(((await cardsOf(jane.appId, jane.partyId)).find((c) => c.card_instance_id === card.card_instance_id))!.status, "resolved", "the card resolved");
-  // the same card affirmed again writes nothing more
-  await resolve(jane.token, card.card_instance_id, { evidence: { affirmation_method: "checkbox_with_text", typed_name: JANE.name, disclosure_version_shown: card.props["disclosure_version_id"] } }); await settle();
+  assert.equal(written.find((e) => e.payload["kind"] === "hard_pull")!.payload["card_instance_id"], goal.card_instance_id, "the goal's tap is the affirmation");
+  // the same goal tapped again writes nothing more (the card is resolved: the resolve answers the stored outcome)
+  const again = await resolve(jane.token, goal.card_instance_id, { option_id: "lower_rate", evidence: { option_id: "lower_rate", tapped_at: clock.now() } }); assert.equal(again.status, 200, JSON.stringify(again.body)); await settle();
   assert.equal((await hardCaptured()).length, writtenOnce, "idempotent: nothing more written");
 });
 
@@ -239,20 +239,17 @@ test("32.3-T5: Given Stripe extracted \"Jane Q. Public, 1990-04-01, 14 Elm St\",
   assert.equal((await events(jane.appId, "application.trid_received")).length, 0);
 });
 
-test("32.3-T6: Given an in-app voice call, when the borrower says \"yes, e-delivery is fine\", then no `consents{kind=esign}` row becomes `active`; the assistant sends the E-SIGN invitation link (20.3 T8).", { skip }, async () => {
+test("32.3-T6: Given an in-app voice call, when the borrower says \"yes, e-delivery is fine\", then no `consents{kind=esign}` row becomes `active`: the row the goal's tap wrote stays `pending_verification` and only the e-mailed code activates it — a spoken yes is never a consent (20.3 T8).", { skip }, async () => {
   clock.set(isoEt("2026-10-19", "09:22"));
-  const esign = await pendingCard(jane.appId, jane.partyId, "consent.esign.title");
+  const before = (await db.query<{ id: string; status: string }>(`SELECT id, status FROM consents WHERE party_id = $1 AND kind = 'esign' ORDER BY captured_at DESC LIMIT 1`, [jane.partyId]))[0]!; assert.equal(before.status, "pending_verification", "the goal's tap wrote the row; the code activates it");
   await api("POST", "/v1/borrower/voice/session", { application_id: jane.appId }, jane.token);
   const r = await api("POST", "/v1/borrower/messages", { text: "yes, e-delivery is fine", channel: "voice" }, jane.token); assert.equal(r.status, 200, JSON.stringify(r.body));
   const reply = r.body["reply"] as Record<string, unknown>;
-  assert.equal(r.body["command_executed"], false); assert.equal(reply["copy_key"], "consent.esign.title"); assert.equal(reply["card_instance_id"], esign.card_instance_id);
-  const link = reply["deep_link"] as { token: string; path: string } | null; assert.ok(link && link.path === `/d/${link.token}`, "the E-SIGN invitation link (the card's deep link)");
-  assert.equal(reply["channel"], "voice"); assert.equal(reply["voice_turn"], true);
-  assert.equal((await db.query(`SELECT 1 FROM consents WHERE party_id = $1 AND kind = 'esign'`, [jane.partyId])).length, 0, "no consents row at all from a spoken yes");
-  assert.equal(((await cardsOf(jane.appId, jane.partyId)).find((c) => c.card_instance_id === esign.card_instance_id))!.status, "pending");
-  // a voice resolve of the ConsentCard itself is refused too (01 §3.5)
-  const voiceTap = await resolve(jane.token, esign.card_instance_id, { channel: "voice", evidence: { affirmation_method: "voice" } }); assert.equal(voiceTap.status, 409); assert.equal(voiceTap.body["code"], "CARD_VOICE_CONSENT");
-  assert.equal((await db.query(`SELECT 1 FROM consents WHERE party_id = $1 AND kind = 'esign' AND status = 'active'`, [jane.partyId])).length, 0);
+  assert.equal(r.body["command_executed"], false, "words execute nothing"); assert.equal(reply["channel"], "voice"); assert.equal(reply["voice_turn"], true);
+  await settle();
+  assert.equal((await db.query<{ status: string }>(`SELECT status FROM consents WHERE id = $1`, [before.id]))[0]!.status, "pending_verification", "still waiting for the e-mailed code");
+  assert.equal((await db.query(`SELECT 1 FROM consents WHERE party_id = $1 AND kind = 'esign' AND status = 'active'`, [jane.partyId])).length, 0, "no esign row active from a spoken yes");
+  assert.equal((await events(jane.appId, "consent.esign.active")).length, 0);
 });
 
 test("32.3-T7: Given `consents{esign}` is `consented_pending_verification` when the LE is approved, then `disclosure.le.mailed` fires, the Record shows *Mailed*, and no `DocumentCard` for the LE is created until `active` and a re-delivery is made.", { skip }, async () => {
@@ -262,12 +259,11 @@ test("32.3-T7: Given `consents{esign}` is `consented_pending_verification` when 
   clock.set(isoEt("2026-10-19", "09:30"));
   const s = await signIn(KIM.email); kim.token = s.token; kim.partyId = s.party_id; kim.leadId = kim.appId;
   await setGoal(kim.appId, kim.partyId, kim.token, "lower_rate");
-  const esign = await pendingCard(kim.appId, kim.partyId, "consent.esign.title");
-  const r = await resolve(kim.token, esign.card_instance_id, { evidence: { affirmation_method: "checkbox_with_text", typed_name: KIM.name, checkbox: true, disclosure_version_shown: esign.props["disclosure_version_id"] } }); assert.equal(r.status, 201, JSON.stringify(r.body));
-  kim.consentId = String((r.body["result"] as Record<string, unknown>)["consent_id"]);
-  const row = (await db.query<{ status: string; verified: boolean; scope: string[] }>(`SELECT status, verified, scope FROM consents WHERE id = $1`, [kim.consentId]))[0]!;
+  // 32.17 rule 20: the E-SIGN row was written on the goal's tap — no card to affirm
+  const row = (await db.query<{ id: string; status: string; verified: boolean; scope: string[] }>(`SELECT id, status, verified, scope FROM consents WHERE party_id = $1 AND kind = 'esign' ORDER BY captured_at DESC LIMIT 1`, [kim.partyId]))[0]!; assert.ok(row, "the goal's tap wrote Kim's E-SIGN row");
+  kim.consentId = row.id;
   assert.equal(row.status, "pending_verification"); assert.equal(row.verified, false); assert.ok(row.scope.includes("disclosures"));
-  assert.ok((await events(kim.appId, "consent.esign.pending")).length === 1, "the verification e-mail went out (NTC_ESIGN_VERIFICATION_EMAIL, FAKE mailer)");
+  assert.equal((await events(kim.appId, "consent.esign.pending")).filter((e) => e.payload["party_id"] === kim.partyId).length, 1, "the verification e-mail went out once (NTC_ESIGN_VERIFICATION_EMAIL, FAKE mailer)");
   // the six items through 21.1 (the interview record the goal card opened), TRID Mon Oct 19 09:40 ET
   const scope = { app: kim.appId };
   await tool(scope, "21.1", "confirmPrefill", { op: "offer", item: "name", value: KIM.name }); await tool(scope, "21.1", "confirmPrefill", { item: "name" });
@@ -557,10 +553,10 @@ test("32.3-T21: Given `origination.ai_mlo_intake = assisted` and `terms.presenta
 test("32.3-T22: Given active E-SIGN scoped to `origination_disclosures`, when the LE is approved, then the `DocumentCard` renders and `disclosure.le.delivered{channel=esign_portal}` is logged; **Confirm receipt** writes `received_at` and `receipt_evidence = esign_confirmed`.", { skip }, async () => {
   // Jane's E-SIGN: the card (checkbox + typed name) → pending verification → the e-mailed code → active, scoped to the origination disclosures
   clock.set(isoEt("2026-10-20", "12:00")); jane.token = await fresh(JANE);
-  const esign = await pendingCard(jane.appId, jane.partyId, "consent.esign.title"); assert.deepEqual(esign.props["scope"], ["disclosures", "notices"]);
-  const c = await resolve(jane.token, esign.card_instance_id, { evidence: { affirmation_method: "checkbox_with_text", typed_name: JANE.name, checkbox: true, disclosure_version_shown: esign.props["disclosure_version_id"] } }); assert.equal(c.status, 201, JSON.stringify(c.body));
-  const consentId = String((c.body["result"] as Record<string, unknown>)["consent_id"]);
-  assert.equal((await db.query<{ status: string }>(`SELECT status FROM consents WHERE id = $1`, [consentId]))[0]!.status, "pending_verification");
+  // 32.17 rule 20: Jane's E-SIGN row was written on the goal's tap (pending verification, scoped to the origination disclosures) — the e-mailed code makes it active
+  const esignRow = (await db.query<{ id: string; status: string; scope: string[] }>(`SELECT id, status, scope FROM consents WHERE party_id = $1 AND kind = 'esign' ORDER BY captured_at DESC LIMIT 1`, [jane.partyId]))[0]!; assert.ok(esignRow, "the goal's tap wrote the row"); assert.deepEqual(esignRow.scope, ["disclosures", "notices"]);
+  const consentId = esignRow.id;
+  assert.equal(esignRow.status, "pending_verification");
   const bad = await command(jane.token, "consent.capture", { op: "verify", consent_id: consentId, token: "WRONG1" }); assert.equal(bad.status, 400);
   clock.set(isoEt("2026-10-20", "12:05"));
   const verify = await command(jane.token, "consent.capture", { op: "verify", consent_id: consentId, token: esignVerificationToken(consentId), scope: ["disclosures", "notices"] }); assert.equal(verify.status, 200, JSON.stringify(verify.body));

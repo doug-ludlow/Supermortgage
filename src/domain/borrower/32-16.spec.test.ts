@@ -802,8 +802,9 @@ test("32.16-T30: Given a current step whose process is not internal, then the si
   assert.match(ctx2.situation, /"process_rules": \{\s*"process": "22\.3",\s*"note": "the rules of the current step, for your understanding — never quote them, never state a figure from them"/);
 });
 
-test("32.16-T31: Given the first turn with the goal card pending, then the model is prompted to lead with the Journey's top need (`next_in_words` comes from the Journey, the prompt version is `32.16-p5`) and the reply names that need in its own words.", { skip }, async () => {
-  assert.equal(PROMPT_VERSION, "32.16-p5"); assert.match(SYSTEM_PROMPT, /the situation carries a journey/); assert.match(SYSTEM_PROMPT, /make a suggestion when there is an easier way/); assert.match(SYSTEM_PROMPT, /Be warm|warm, plain, quick/);
+test("32.16-T31: Given the first turn with the goal card pending, then the model is prompted to lead with the Journey's top need (`next_in_words` comes from the Journey, the prompt version is `32.16-p6`) and the reply names that need in its own words.", { skip }, async () => {
+  assert.equal(PROMPT_VERSION, "32.16-p6");   // p6: the goal card's consents statement, said once (32.17 rule 20)
+  assert.match(SYSTEM_PROMPT, /the situation carries a journey/); assert.match(SYSTEM_PROMPT, /make a suggestion when there is an easier way/); assert.match(SYSTEM_PROMPT, /Be warm|warm, plain, quick/);
   scripted.use([{ when: /just created their account/, text: (c) => { const j = c.situation["journey"] as Json; const top = ((j["needs"] as Json[])[0] ?? {})["what"]; return `Welcome. First thing: ${String(top)} — pick it on the card and we'll take it from there.`; } }]);
   const a = await signUp(`t31-${R}@example.test`, `pw-t31-${R}`, "10.16.31.1"); await settle();
   const t0 = await thread(a.token); assertDisclosureThenGoal(t0);
@@ -813,7 +814,7 @@ test("32.16-T31: Given the first turn with the goal card pending, then the model
   const top = (journey["needs"] as Json[])[0]!; assert.equal(top["kind"], "choice"); assert.match(String(top["why"]), /goal/); assert.equal(view["next_in_words"], journey["next_in_words"]); assert.match(String(journey["next_in_words"]), /^the next thing is/);
   const greeting = t0.messages.find((m) => m["sender"] === "agent" && (m["copy_tokens"] as Json | null)?.["source"] === "agent_turn")!;
   assert.match(String(greeting["body_text"]), new RegExp(`First thing: ${String(top["what"]).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`), "the reply names the top need");
-  const row = (await db.query<{ prompt_version: string }>(`SELECT prompt_version FROM agent_turns WHERE party_id = $1 ORDER BY created_at DESC LIMIT 1`, [a.party_id]))[0]!; assert.equal(row.prompt_version, "32.16-p5");
+  const row = (await db.query<{ prompt_version: string }>(`SELECT prompt_version FROM agent_turns WHERE party_id = $1 ORDER BY created_at DESC LIMIT 1`, [a.party_id]))[0]!; assert.equal(row.prompt_version, "32.16-p6");
 });
 
 test("32.16-T32: Given the agent turn configured, when an account is created and the borrower then types \"yes\" and \"I want a human\", then the thread carries no flow copy line and no flow-sent chip, the first reply carries the goal card, `pinned_card` is the card the model placed last, and both typed lines are answered by the turn (no deep-link line, no fixed human line).", { skip }, async () => {

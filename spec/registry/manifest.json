@@ -14643,7 +14643,7 @@
    },
    {
     "n": 4,
-    "text": "Given L1 only, when the hard-pull authorization card is affirmed, then `credit.authorize{hard_pull}` writes the authorization at once \u2014 `credit.authorization.captured` twice over, 32.2's `hard_pull` and 20.3's own `hard_application` under one `authorization_id`, and the card resolved \u2014 with no identity gate in the way (32.17 rule 18: the ID scan is a step of its own when one needs it), and the same card affirmed again writes nothing more."
+    "text": "Given L1 only, when the goal is tapped, then the hard-pull authorization is written on that tap \u2014 `credit.authorization.captured` twice over, 32.2's `hard_pull` and 20.3's own `hard_application` under one `authorization_id`, the goal card named on it \u2014 with no ConsentCard, no typed name and no identity gate in the way (32.17 rules 18 and 20), and the same goal tapped again writes nothing more."
    },
    {
     "n": 5,
@@ -14651,7 +14651,7 @@
    },
    {
     "n": 6,
-    "text": "Given an in-app voice call, when the borrower says \"yes, e-delivery is fine\", then no `consents{kind=esign}` row becomes `active`; the assistant sends the E-SIGN invitation link (20.3 T8)."
+    "text": "Given an in-app voice call, when the borrower says \"yes, e-delivery is fine\", then no `consents{kind=esign}` row becomes `active`: the row the goal's tap wrote stays `pending_verification` and only the e-mailed code activates it \u2014 a spoken yes is never a consent (20.3 T8)."
    },
    {
     "n": 7,
@@ -15387,7 +15387,7 @@
    },
    {
     "n": 14,
-    "text": "Given `terms_presented`, when the borrower taps Show me my rate, then `application.received` is logged, `REGB_1002_9_DECISION_30` is armed, 32.3's E6 cards (`consent.esign.title`, `consent.tcpa.title`, `consent.credit.title{hard_pull}`) are sent, and the hard-pull card affirmed at L2 writes the authorization at once \u2014 no identity gate (32.3 T4 as rewritten; 32.17 rule 18)."
+    "text": "Given `terms_presented`, when the borrower taps Show me my rate, then `application.received` is logged, `REGB_1002_9_DECISION_30` is armed, and the three E6 consents ride that tap (32.17 rule 20): the E-SIGN row `pending_verification`, the TCPA row `active`, the hard-pull authorization captured at once at L2 naming the Show me my rate card \u2014 no ConsentCard, no typed name, no identity gate (32.17 rule 18)."
    },
    {
     "n": 15,
@@ -15555,7 +15555,7 @@
    },
    {
     "n": 31,
-    "text": "Given the first turn with the goal card pending, then the model is prompted to lead with the Journey's top need (`next_in_words` comes from the Journey, the prompt version is `32.16-p5`) and the reply names that need in its own words."
+    "text": "Given the first turn with the goal card pending, then the model is prompted to lead with the Journey's top need (`next_in_words` comes from the Journey, the prompt version is `32.16-p6`) and the reply names that need in its own words."
    },
    {
     "n": 32,
@@ -15674,11 +15674,15 @@
    },
    {
     "n": 22,
-    "text": "Given `/app/video` on a live call at L1 with the goal chosen, then the hard-pull credit consent carries no `requires_level` and no `gate`, the record lists it with no `blocked_by`, and when it rises and Agree is tapped the authorization writes at once \u2014 the card resolves, `credit.authorization.captured` is logged, the session still L1, no identity session opened \u2014 and the card leaves the stage."
+    "text": "Given `/app/video` on a live call at L1 with the goal tapped, then the hard-pull authorization was written on that tap at L1 \u2014 `credit.authorization.captured{hard_pull}` once, naming the goal card, no `requires_level` and no `gate` anywhere, no ConsentCard on the record, the session still L1 and no vendor session opened on the ID card \u2014 and the first card over the stage is the ID card, never a consent."
    },
    {
     "n": 23,
-    "text": "Given `/app/video` on a live call with the goal chosen and the consents affirmed, then the identity `ConnectCard{stripe_identity}` rises reading \"Verify with Stripe Identity\" and one tap resolves it \u2014 `identity.verified` logged, the session at L3, the card's evidence `outcome = connected`, one identity card on the record and nothing posted by the page \u2014 then the payroll `ConnectCard{truv_income}` rises reading \"Confirm income with Truv\" and one tap resolves it \u2014 `verification.received{kind=income}` logged, `props.state = connected`, a `verification_id` on the card \u2014 and each card leaves the stage for the next ask."
+    "text": "Given `/app/video` on a live call with the goal chosen (its tap carried the consents \u2014 rule 20), then the identity `ConnectCard{stripe_identity}` rises reading \"Verify with Stripe Identity\" and one tap resolves it \u2014 `identity.verified` logged, the session at L3, the card's evidence `outcome = connected`, one identity card on the record and nothing posted by the page \u2014 then the payroll `ConnectCard{truv_income}` rises reading \"Confirm income with Truv\" and one tap resolves it \u2014 `verification.received{kind=income}` logged, `props.state = connected`, a `verification_id` on the card \u2014 and each card leaves the stage for the next ask."
+   },
+   {
+    "n": 24,
+    "text": "Given a new account's goal card, then it carries the consents statement (`props.statement`, `statement_version = consents-on-goal-2026-09`) and its tap writes the three rows for the party \u2014 `consents{esign}` `pending_verification` with the verification e-mail sent, `consents{tcpa_sms}` `active`, `credit.authorization.captured{hard_pull}` naming the goal card \u2014 each `method = single_tap` with no typed name; no ConsentCard is sent for them and none is on the record."
    }
   ],
   "tables": [

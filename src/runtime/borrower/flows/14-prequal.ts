@@ -43,6 +43,7 @@ import { civilDate } from "../../../domain/leads-pricing/ops-20-3.ts";
 import { FakeSoftPullBureau, type SoftPullBureauPort } from "../../../infra/integrations/credit.ts";
 import { mloOfRecord } from "./11-rate-watch.ts";
 import type { BorrowerFlow, FlowDeps, SessionOpened } from "./index.ts";
+import { CONSENTS_STATEMENT, CONSENTS_VERSION } from "./3-entry.ts";   // 32.17 rule 20: the consents statement under Show me my rate
 
 export const FLOW_ID = "32.14";
 const INTAKE: Actor = { kind: "agent", id: "intake" };
@@ -229,7 +230,7 @@ async function presentByLead(deps: FlowDeps, ctx: Ctx, e: DomainEvent): Promise<
 // ---------------------------------------------------------------- S4 step 6: proceed (→ 32.3) or not yet
 async function proceedCard(deps: FlowDeps, ctx: Ctx, party: Party, quoteId: string): Promise<void> {
   await sendCard(deps, ctx, party, { kind: "ChoiceCard", copy_key: "entry.proceed.question", flow_key: `prequal.proceed:${ctx.leadId}:${quoteId}`, command_ref: "lead.proceed",
-    props: { title: "", quote_id: quoteId, options: [{ id: "proceed", label: "Show me my rate", is_primary: true }, { id: "not_yet", label: "Not yet" }], command: "lead.proceed", command_args: { lead_id: ctx.leadId, quote_id: quoteId, borrower_name: party.legal_name, occupancy: ctx.app.occupancy },
+    props: { title: "", quote_id: quoteId, statement: CONSENTS_STATEMENT, statement_version: CONSENTS_VERSION, options: [{ id: "proceed", label: "Show me my rate", is_primary: true }, { id: "not_yet", label: "Not yet" }], command: "lead.proceed", command_args: { lead_id: ctx.leadId, quote_id: quoteId, borrower_name: party.legal_name, occupancy: ctx.app.occupancy },
       command_args_by_option: { proceed: { choice: "proceed" }, not_yet: { choice: "not_yet" } }, affirmatives: ["show me my rate", "my rate", "not yet"] } });
 }
 

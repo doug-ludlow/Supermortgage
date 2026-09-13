@@ -112,6 +112,11 @@ export function ConfirmChip({ card, proposal, busy, error, action, onConfirm, on
       <span className="sm-confirm-chip-text" data-testid="confirm-chip-readback">
         {proposalReadback(card, proposal)}
       </span>
+      {"statement" in card.props && typeof card.props.statement === "string" && card.props.statement ? (
+        <span className="sm-confirm-chip-statement sm-muted" data-testid="confirm-chip-statement">
+          {card.props.statement}
+        </span>
+      ) : null}
       <span className="sm-confirm-chip-actions">
         <button type="button" className="sm-btn sm-btn-primary" data-testid="confirm-chip-confirm" onClick={() => onConfirm(proposalResolveRequest(card, proposal))} disabled={busy}>
           {copy("chip.confirm")}

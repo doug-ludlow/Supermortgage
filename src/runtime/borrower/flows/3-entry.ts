@@ -8,7 +8,7 @@
  *
  *   session opened (any channel)                      the automation disclosure is the first assistant content (E2), then
  *                                                     20.3 lead.start / start interaction / lead.disclosure.delivered / lead.authenticated
- *   application.received                              ConsentCards (esign · tcpa · credit authorization) (E6), Truv ConnectCard (R3),
+ *   application.received                              the three E6 consents written on the tap that raised it (32.17 rule 20; a joint borrower's credit card stays), the ID and Truv ConnectCards (E5 / R3),
  *                                                     preapproval P1 ConfirmCard for a TBD purchase
  *   identity.verified                                 ConfirmCard {legal name, DOB, current address} from the Stripe extraction (E5)
  *   application.field.captured{current_address}       ConfirmCard {SSN} (E5) + ConfirmCard {your home} (R1)
@@ -63,6 +63,14 @@ export const CREDIT_AUTHORIZATION_VERSION = "credit-authorization-2026-09";
 export const CREDIT_AUTHORIZATION_HASH = sha(CREDIT_AUTHORIZATION_TEXT);
 export const ESIGN_DISCLOSURE_VERSION = "NTC_ESIGN_7001C_DISCLOSURE";
 export const ESIGN_SCOPE = ["disclosures", "notices"] as const;
+/**
+ * 32.17 rule 20 (decided 2026-09-13): the three E6 consents ride the goal. One statement under the goal card (and under 32.14's
+ * Show me my rate); the tap that raises `application.received` is the affirmation of all three — no ConsentCard, no checkbox,
+ * no typed name. Its hash is the E-SIGN and TCPA rows' text version; the credit sentence inside it keeps its own (CREDIT_AUTHORIZATION_HASH).
+ */
+export const CONSENTS_STATEMENT = `By continuing you agree to get your documents electronically (a code to your e-mail confirms it) and to texts about this application (reply STOP to end them), and you authorize the lender and Supermortgage on its behalf to obtain your consumer credit report from one or more consumer reporting agencies for this application (a hard inquiry). You can change any of these later from Your record.`;
+export const CONSENTS_VERSION = "consents-on-goal-2026-09";
+export const CONSENTS_HASH = sha(CONSENTS_STATEMENT);
 /** The FAKE print vendor's mailing-date evidence (a mailed disclosure needs one — 21.2 / 21.3). */
 export const fakeMailingProof = (ref: string): string => `PMV-FAKE-${ref}`;
 /** DELTA-03: the FAKE property-data adapter — deterministic public-record figures for a listing (never a real record). */
@@ -194,7 +202,7 @@ async function sessionOpened(deps: FlowDeps, s: SessionOpened): Promise<void> {
       if (s.auth_method === "video") await sendCard(deps, ctx, me, { kind: "ConfirmCard", copy_key: "identity.contact.title", flow_key: `identity.contact:${s.party_id}`, command_ref: "video.identify",
         props: { title: "", fields: [{ path: "legal_name", label: "Your name", value: "", source: "borrower" }, { path: "email", label: "E-mail address", value: "", source: "borrower" }], required_paths: ["legal_name", "email"], commits_to: "your account", needed_first: true, statement: "This is how we address you, and the address that gets you back into this conversation from any device." } });
       await sendCard(deps, ctx, me, { kind: "ChoiceCard", copy_key: "entry.goal.question", flow_key: `goal:${appId}`, command_ref: "application.setGoal",
-        props: { title: "", options: [{ id: "buy", label: "Buy a home", is_primary: ctx.app.transaction_type === "purchase" }, { id: "lower_rate", label: "Lower my rate or payment", is_primary: ctx.app.transaction_type === "limited_cash_out" }, { id: "cash_out", label: "Take cash out", is_primary: ctx.app.transaction_type === "cash_out" }], command: "application.setGoal",
+        props: { title: "", statement: CONSENTS_STATEMENT, statement_version: CONSENTS_VERSION, options: [{ id: "buy", label: "Buy a home", is_primary: ctx.app.transaction_type === "purchase" }, { id: "lower_rate", label: "Lower my rate or payment", is_primary: ctx.app.transaction_type === "limited_cash_out" }, { id: "cash_out", label: "Take cash out", is_primary: ctx.app.transaction_type === "cash_out" }], command: "application.setGoal",
           command_args_by_option: { buy: { ...base, transaction_type: "purchase" }, lower_rate: { ...base, transaction_type: "limited_cash_out" }, cash_out: { ...base, transaction_type: "cash_out" } }, affirmatives: ["buy a home", "lower my rate", "take cash out"] } });
     }
   }
@@ -203,21 +211,35 @@ async function sessionOpened(deps: FlowDeps, s: SessionOpened): Promise<void> {
 // ---------------------------------------------------------------- E6 / R3 / P1: the consent cards and the connectors on `application.received`
 async function consentCards(deps: FlowDeps, ctx: Ctx): Promise<void> {
   const lead_id = leadId(ctx);
+  // 32.17 rule 20: the consents ride the tap that raised application.received — the goal card (E3) or 32.14's Show me my rate — the statement was on that card; three rows written here, no ConsentCard, no typed name
+  // (the card's own row may still be 'pending' here: its resolve commits after the command's events — the newest goal / proceed card is the one tapped)
+  const tapped = (await deps.runtime.db.query<{ card_instance_id: string }>(`SELECT card_instance_id FROM card_instances WHERE subject_application_id = $1 AND copy_key IN ('entry.goal.question', 'entry.proceed.question') ORDER BY seq DESC LIMIT 1`, [ctx.appId]))[0] ?? null;
+  const onTap = async (name: string, input: P): Promise<void> => {
+    try { await deps.runtime.execute({ process: "32.2", name, loanId: "", applicationId: ctx.appId, actor: BORROWER_APP, run: { ...RUN }, input }); }
+    catch (e) {
+      // a refusal is kept on the tapped card (props.consents_errors) beside the log line: the record's reader and the tests see why a row is missing
+      const error = e instanceof Error ? e.message : String(e); deps.logger?.error("borrower.flow.32-3.consent_on_tap", { name, kind: input["kind"] ?? null, application_id: ctx.appId, error });
+      if (process.env["FLOW_DEBUG"]) process.stderr.write(`borrower.flow.32-3.consent_on_tap ${name} ${String(input["kind"] ?? "")} ${ctx.appId}: ${error}\n`);
+      if (tapped) await deps.runtime.db.query(`UPDATE card_instances SET props = jsonb_set(props, '{consents_errors}', coalesce(props->'consents_errors', '[]'::jsonb) || $2::jsonb) WHERE card_instance_id = $1`, [tapped.card_instance_id, JSON.stringify([{ name, kind: input["kind"] ?? null, party_id: input["party_id"], error: error.slice(0, 500) }])]);
+    }
+  };
   for (const party of ctx.parties) {
-    await sendCard(deps, ctx, party, { kind: "ConsentCard", copy_key: "consent.esign.title", flow_key: `consent.esign:${party.party_id}`, command_ref: "consent.capture",
-      props: { consent_kind: "esign", disclosure_version_id: ESIGN_DISCLOSURE_VERSION, scope: [...ESIGN_SCOPE], affirmation_method: "checkbox_with_text", title: "", body_text: "", requires_typed_name: true, verification_state: "none", affirmatives: ["e-delivery is fine", "e delivery is fine", "yes e-delivery", "yes e delivery", "electronic delivery is fine", "edelivery is fine"],
-        command_args: { kind: "esign", method: "checkbox_with_text", scope: [...ESIGN_SCOPE], disclosure_version_id: ESIGN_DISCLOSURE_VERSION, purpose: "informational" } } });
-    await sendCard(deps, ctx, party, { kind: "ConsentCard", copy_key: "consent.tcpa.title", flow_key: `consent.tcpa:${party.party_id}`, command_ref: "consent.capture",
-      props: { consent_kind: "tcpa_sms", disclosure_version_id: "NTC_TCPA_CONSENT_CONFIRMATION", scope: ["informational"], affirmation_method: "checkbox_with_text", title: "", body_text: "", optional: true, requires_typed_name: true, verification_state: "none", command_args: { kind: "tcpa_sms", method: "checkbox_with_text", purpose: "informational", disclosure_version_id: "NTC_TCPA_CONSENT_CONFIRMATION" } } });
-    await sendCard(deps, ctx, party, { kind: "ConsentCard", copy_key: "consent.credit.title", flow_key: `consent.credit:${party.party_id}`, command_ref: "credit.authorize",
-      props: { consent_kind: "credit_authorization", disclosure_version_id: CREDIT_AUTHORIZATION_VERSION, scope: ["hard_pull"], affirmation_method: "checkbox_with_text", title: "", body_text: CREDIT_AUTHORIZATION_TEXT, requires_typed_name: true, verification_state: "none",
-        command_args: { kind: "hard_pull", text_hash: CREDIT_AUTHORIZATION_HASH, authorization_kind: "hard_application", ...(lead_id ? { lead_id } : {}) } } });
-    // 32.17 rule 19 / E5: the ID scan is a card of its own — "Verify with Stripe Identity" — sent with the consents; the vendor session runs on this card (routes identitySession), never a second one; no command of its own: the vendor's settlement resolves it
-    await sendCard(deps, ctx, party, { kind: "ConnectCard", copy_key: "identity.stripe.purpose", flow_key: `connect.identity:${party.party_id}`,
-      props: { vendor: "stripe_identity", purpose_text: "", what_we_get: ["your name", "date of birth", "the address on your ID"], fallback: { label: "Upload a photo of your ID instead", document_class: "drivers_license" }, state: "not_started", vendor_fake: "FAKE" } });
-    // R3: the payroll connector — free to the borrower and optional before the LE (fee_paid_by=sm opens REGZ_1026_19E2_INTENT_FEE_GATE for it)
-    await sendCard(deps, ctx, party, { kind: "ConnectCard", copy_key: "income.connect.purpose", flow_key: `connect.income:${party.party_id}`, command_ref: "verification.connect",
-      props: { vendor: "truv_income", purpose_text: "", what_we_get: ["employer", "start date", "pay frequency", "base and variable pay", "year-to-date"], fallback: { label: "Type your monthly income now; we'll ask for paystubs later", document_class: "paystub" }, state: "not_started", pre_intent_optional: true, vendor_fake: "FAKE", command_args: { vendor: "truv_income", component: "income", fee_paid_by: "sm", ...(lead_id ? { lead_id } : {}) } } });
+    // once per party and application: application.received can fire more than once (the goal, then a preapproval request) and its reactions can overlap —
+    // the tapped card takes an atomic marker (its props) for the party; without a card, the party's own E-SIGN row is the marker
+    const claimed = tapped
+      ? (await deps.runtime.db.query(`UPDATE card_instances SET props = props || $2::jsonb WHERE card_instance_id = $1 AND NOT (props ? $3) RETURNING card_instance_id`, [tapped.card_instance_id, JSON.stringify({ [`consents_written:${party.party_id}`]: ctx.now }), `consents_written:${party.party_id}`])).length > 0
+      : (await deps.runtime.db.query(`SELECT 1 FROM consents WHERE party_id = $1 AND application_id = $2 AND kind = 'esign'`, [party.party_id, ctx.appId])).length === 0;
+    if (claimed) {
+      const common: P = { party_id: party.party_id, application_id: ctx.appId, method: "single_tap", channel: "app", text_hash: CONSENTS_HASH, purpose: "informational", ...(tapped ? { card_instance_id: tapped.card_instance_id } : {}) };
+      // E-SIGN: 7.4's row, pending the e-mailed code (the old card carried no lead_id either: 20.3's own esign row is the demonstration test's, 32.4-T1)
+      await onTap("consent.capture", { ...common, kind: "esign", scope: [...ESIGN_SCOPE], disclosure_version_id: ESIGN_DISCLOSURE_VERSION });
+      // TCPA for texts about this application: 7.4's row; 20.3's lead consent needs a number, which the borrower has not given yet (the old card carried none either)
+      await onTap("consent.capture", { ...common, kind: "tcpa_sms", scope: ["informational"], disclosure_version_id: "NTC_TCPA_CONSENT_CONFIRMATION" });
+      // the hard-pull authorization: the statement's own sentence, its text version the authorization's; a joint application's borrowers authorize after joint intent (32.5 §7) — their card stays
+      if (ctx.parties.length === 1) await onTap("credit.authorize", { party_id: party.party_id, application_id: ctx.appId, kind: "hard_pull", text_hash: CREDIT_AUTHORIZATION_HASH, authorization_kind: "hard_application", assurance_level: "L1", channel: "app", ...(tapped ? { card_instance_id: tapped.card_instance_id } : {}), ...(lead_id ? { lead_id } : {}) });
+      else await creditCard(deps, ctx, party, lead_id);
+    }
+    await connectorCards(deps, ctx, party);
   }
   if (isPurchase(ctx) && isTbd(ctx)) {
     await sendToAll(deps, ctx, StatusCard("preapproval.intro", `preapproval.intro:${ctx.appId}`, { copy_tokens: {} }));
@@ -225,6 +247,22 @@ async function consentCards(deps: FlowDeps, ctx: Ctx): Promise<void> {
       props: { title: "", fields: [{ path: "state", label: "State you're buying in", value: ctx.property?.state ?? "", source: "borrower" }, { path: "price_min_cents", label: "Price range — low", value: "", source: "borrower" }, { path: "price_max_cents", label: "Price range — high", value: "", source: "borrower" }, { path: "down_payment_cents", label: "Down payment", value: "", source: "borrower" }, { path: "first_time_buyer", label: "First-time buyer?", value: "yes", source: "borrower" }],
         commits_to: "prequalifications", money_paths: ["price_min_cents", "price_max_cents", "down_payment_cents"], required_paths: ["state", "price_min_cents", "price_max_cents", "down_payment_cents"], command_args: { path: "preapproval.where", commits_to: "prequalifications", ...(lead_id ? { lead_id } : {}) } } });
   }
+}
+/** The hard-pull ConsentCard for a borrower on a joint application (32.5 §7: after joint intent) — the one E6 card that is still a card. */
+async function creditCard(deps: FlowDeps, ctx: Ctx, party: Party, lead_id: string | null): Promise<void> {
+  await sendCard(deps, ctx, party, { kind: "ConsentCard", copy_key: "consent.credit.title", flow_key: `consent.credit:${party.party_id}`, command_ref: "credit.authorize",
+    props: { consent_kind: "credit_authorization", disclosure_version_id: CREDIT_AUTHORIZATION_VERSION, scope: ["hard_pull"], affirmation_method: "checkbox_with_text", title: "", body_text: CREDIT_AUTHORIZATION_TEXT, requires_typed_name: true, verification_state: "none",
+      command_args: { kind: "hard_pull", text_hash: CREDIT_AUTHORIZATION_HASH, authorization_kind: "hard_application", ...(lead_id ? { lead_id } : {}) } } });
+}
+/** E5 / R3: the connectors — the ID scan and the payroll connection, cards that finish on the tap (32.17 rule 19). */
+async function connectorCards(deps: FlowDeps, ctx: Ctx, party: Party): Promise<void> {
+  const lead_id = leadId(ctx);
+    // 32.17 rule 19 / E5: the ID scan is a card of its own — "Verify with Stripe Identity" — sent with the consents; the vendor session runs on this card (routes identitySession), never a second one; no command of its own: the vendor's settlement resolves it
+    await sendCard(deps, ctx, party, { kind: "ConnectCard", copy_key: "identity.stripe.purpose", flow_key: `connect.identity:${party.party_id}`,
+      props: { vendor: "stripe_identity", purpose_text: "", what_we_get: ["your name", "date of birth", "the address on your ID"], fallback: { label: "Upload a photo of your ID instead", document_class: "drivers_license" }, state: "not_started", vendor_fake: "FAKE" } });
+    // R3: the payroll connector — free to the borrower and optional before the LE (fee_paid_by=sm opens REGZ_1026_19E2_INTENT_FEE_GATE for it)
+    await sendCard(deps, ctx, party, { kind: "ConnectCard", copy_key: "income.connect.purpose", flow_key: `connect.income:${party.party_id}`, command_ref: "verification.connect",
+      props: { vendor: "truv_income", purpose_text: "", what_we_get: ["employer", "start date", "pay frequency", "base and variable pay", "year-to-date"], fallback: { label: "Type your monthly income now; we'll ask for paystubs later", document_class: "paystub" }, state: "not_started", pre_intent_optional: true, vendor_fake: "FAKE", command_args: { vendor: "truv_income", component: "income", fee_paid_by: "sm", ...(lead_id ? { lead_id } : {}) } } });
 }
 
 // ---------------------------------------------------------------- E5: identity → confirm, then the SSN, then R1

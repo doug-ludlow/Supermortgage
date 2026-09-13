@@ -7,7 +7,7 @@ import { copy, copyExtra } from "@/lib/copy";
 
 /** 01 §3.2 — 2–4 mutually exclusive options; resolves on tap; never captures a consent. */
 export function ChoiceCard({ card, timezone, onResolve, busy, error }: CardComponentProps<"ChoiceCard">) {
-  const { options, title, helper, disclosure_version_shown, copy_tokens } = card.props;
+  const { options, title, helper, disclosure_version_shown, copy_tokens, statement } = card.props;
   const heading = title || copy(card.copy_key, copy_tokens);   // 32.8: the library's sentence with the server's tokens when the card names only the key (`payment.refund.choice` {{money}})
   const helperText = helper || copyExtra(card.copy_key, "helper", copy_tokens);
   const chosen = (card.evidence as ChoiceCardEvidence | undefined)?.option_id;
@@ -33,6 +33,11 @@ export function ChoiceCard({ card, timezone, onResolve, busy, error }: CardCompo
           </button>
         ))}
       </div>
+      {statement && pending ? (
+        <p className="sm-card-footer" data-testid="choice-statement">
+          {statement}
+        </p>
+      ) : null}
       {error ? <p className="sm-error" role="alert">{error}</p> : null}
     </CardFrame>
   );

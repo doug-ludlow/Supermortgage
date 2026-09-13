@@ -129,6 +129,9 @@ export type ChoiceOption = { id: string; label: string; sublabel?: string; is_pr
 export type ChoiceCardProps = {
   title?: string;
   helper?: string;
+  /** 32.17 rule 20: a statement the tap agrees to (the goal card's consents line) — shown under the options and under the confirm chip; the API writes the rows on the tap. */
+  statement?: string;
+  statement_version?: string;
   options: ChoiceOption[];
   command: string;
   command_args_by_option: Record<string, Record<string, unknown>>;

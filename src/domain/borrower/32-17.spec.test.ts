@@ -530,6 +530,8 @@ test("32.17-T11: Given `TAVUS_API_KEY` unset, then `FakeTavus` (`FAKE`) opens th
   assert.equal((await current(v.id)).status, "joined", "the FAKE page's join is the same callback");
   const videoTurns = async () => (await turnsOf(b.party_id)).filter((t) => t.channel === "video");   // the fixed clock stamps every row alike: count by channel, never by order
   const turnsBefore = (await videoTurns()).length;
+  // a card over the stage (rule 16: the ID card is the first need after the goal) covers the FAKE page's composer — "Not now" on each until the stage is clear, as a borrower typing would
+  for (let i = 0; i < 4 && (await page.getByTestId("ask-overlay").count()); i++) { await page.getByTestId("ask-not-now").click(); await new Promise((r) => setTimeout(r, 300)); }
   await frame.getByTestId("fake-video-input").fill("can I just type it?"); await frame.getByTestId("fake-video-send").click();
   await frame.locator('[data-testid="fake-video-replica"]', { hasText: /You can — everything you say here/ }).waitFor({ timeout: 30_000 });
   await settle();
@@ -929,47 +931,30 @@ test("32.17-T21: Given a new video session, then the open answers with `opening_
   assert.equal((await turnsOf(b.party_id)).filter((t) => t.reply_message_id !== null).length, 1, "one turn for the account, however many calls opened on it");
 });
 
-test("32.17-T22: Given `/app/video` on a live call at L1 with the goal chosen, then the hard-pull credit consent carries no `requires_level` and no `gate`, the record lists it with no `blocked_by`, and when it rises and Agree is tapped the authorization writes at once — the card resolves, `credit.authorization.captured` is logged, the session still L1, no identity session opened — and the card leaves the stage.", { skip }, async () => {
+test("32.17-T22: Given `/app/video` on a live call at L1 with the goal tapped, then the hard-pull authorization was written on that tap at L1 — `credit.authorization.captured{hard_pull}` once, naming the goal card, no `requires_level` and no `gate` anywhere, no ConsentCard on the record, the session still L1 and no vendor session opened on the ID card — and the first card over the stage is the ID card, never a consent.", { skip }, async () => {
   const b = await signedUpWithGoal("t22", "lower_rate");
-  const consent = (await db.query<{ card_instance_id: string; props: Json }>(`SELECT card_instance_id, props FROM card_instances WHERE party_id = $1 AND copy_key = 'consent.credit.title' AND status = 'pending'`, [b.party_id]))[0]!;
-  const consentId = consent.card_instance_id;
-  assert.equal(consent.props["requires_level"], undefined, "no level on the card"); assert.equal(consent.props["gate"], undefined, "no gate on the card");
-  const rec = await api("GET", `/v1/borrower/record?subject=${b.app_id}`, undefined, bearer(b.token)); assert.equal(rec.status, 200);
-  const item = ((rec.body["needed_from_you"] as Json[]) ?? []).find((n) => n["card_instance_id"] === consentId); assert.ok(item, "the consent on the record"); assert.equal(item["blocked_by"], undefined, "nothing blocks it");
+  const goal = (await db.query<{ card_instance_id: string; status: string; props: Json }>(`SELECT card_instance_id, status, props FROM card_instances WHERE party_id = $1 AND copy_key = 'entry.goal.question'`, [b.party_id]))[0]!; assert.equal(goal.status, "resolved");
+  assert.equal((await db.query(`SELECT 1 FROM card_instances WHERE party_id = $1 AND kind = 'ConsentCard'`, [b.party_id])).length, 0, "no ConsentCard on the record (rule 20)");
+  assert.equal((await db.query(`SELECT 1 FROM card_instances WHERE party_id = $1 AND (props ? 'requires_level' OR props ? 'gate')`, [b.party_id])).length, 0, "no level and no gate on any card (rule 18)");
+  const captured = await db.query<{ payload: Json }>(`SELECT payload FROM loan_events WHERE application_id = $1 AND type = 'credit.authorization.captured' AND payload->>'kind' = 'hard_pull'`, [b.app_id]);
+  assert.equal(captured.length, 1, "one hard-pull capture from the goal's tap (20.3's own hard_application row stands beside it)"); assert.equal(captured[0]!.payload["card_instance_id"], goal.card_instance_id, "naming the goal card");
+  assert.equal((await db.query<{ level: string }>(`SELECT level FROM sessions WHERE party_id = $1 ORDER BY created_at DESC LIMIT 1`, [b.party_id]))[0]!.level, "L1", "no step-up asked");
+  const identity = (await db.query<{ card_instance_id: string; props: Json }>(`SELECT card_instance_id, props FROM card_instances WHERE party_id = $1 AND copy_key = 'identity.stripe.purpose' AND status = 'pending'`, [b.party_id]))[0]!; assert.ok(identity, "the ID card waits as a step of its own"); assert.equal(identity.props["vendor_session_id"], undefined, "no identity session opened for the pull");
   const v = await openVideo(b.token); assert.equal(v.status, 201);
   const { page, ctx } = await openVideoShell(b.token, 1280);
   const overlay = page.getByTestId("ask-overlay");
-  for (let i = 0; i < 8; i++) {
-    try { await overlay.waitFor({ state: "visible", timeout: 30_000 }); }
-    catch (e) {
-      const needed = ((rec.body["needed_from_you"] as Json[]) ?? []).slice(0, 5).map((n) => ({ kind: n["kind"], card: n["card_instance_id"], label: n["label_copy_key"] ?? n["label"] }));
-      const pending = await db.query<{ kind: string; copy_key: string }>(`SELECT kind, copy_key FROM card_instances WHERE party_id = $1 AND status = 'pending' ORDER BY created_at`, [b.party_id]);
-      const shell = await page.locator('[data-testid="shell"]').evaluateAll((els) => (els[0] as { outerHTML: string }).outerHTML.slice(0, 1200));
-      throw new Error(`no card rose over the stage (round ${i}): ${String(e).split("\n")[0]}; needed=${JSON.stringify(needed)}; pending=${JSON.stringify(pending)}; logs=${JSON.stringify((page as Page & { logs?: string[] }).logs?.slice(-8))}; shell=${shell}`);
-    }
-    if ((await overlay.getAttribute("data-card-id")) === consentId) break; await page.getByTestId("ask-not-now").click(); await new Promise((r) => setTimeout(r, 300));
-  }
-  assert.equal(await overlay.getAttribute("data-card-id"), consentId, "the consent rises");
-  await overlay.getByLabel(/I have read and agree/).click(); await overlay.getByLabel(/Type your full name/).fill("Dana Reyes"); await overlay.getByRole("button", { name: "Agree" }).click();
-  try { await page.locator(`[data-testid="ask-overlay"][data-card-id="${consentId}"]`).waitFor({ state: "detached", timeout: 20_000 }); }
-  catch (e) { const err = await overlay.locator(".sm-error").allInnerTexts().catch(() => [] as string[]); throw new Error(`the consent did not resolve at L1: ${String(e).split("\n")[0]}; errors=${JSON.stringify(err)}; card=${JSON.stringify(await cardRow(consentId))}`); }
-  await settle();
-  assert.equal((await cardRow(consentId)).status, "resolved", "the authorization written at L1");
-  const captured = await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM loan_events WHERE application_id = $1 AND type = 'credit.authorization.captured' AND payload->>'kind' = 'hard_pull'`, [b.app_id]); assert.equal(captured[0]!.n, "1", "one hard-pull capture from the tap (20.3's own `hard_application` row stands beside it)");
-  assert.equal((await db.query<{ level: string }>(`SELECT level FROM sessions WHERE party_id = $1 ORDER BY created_at DESC LIMIT 1`, [b.party_id]))[0]!.level, "L1", "no step-up asked");
-  assert.equal((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM card_instances WHERE party_id = $1 AND copy_key = 'identity.stripe.purpose' AND props->>'vendor_session_id' IS NOT NULL`, [b.party_id]))[0]!.n, "0", "no identity session opened for the pull (the ID card waits as a step of its own — rule 19)");
-  await page.screenshot({ path: `${SCREENSHOTS}/t22-credit-1280.png`, fullPage: false }).catch(() => undefined);
+  try { await overlay.waitFor({ state: "visible", timeout: 30_000 }); }
+  catch (e) { const pending = await db.query<{ kind: string; copy_key: string }>(`SELECT kind, copy_key FROM card_instances WHERE party_id = $1 AND status = 'pending' ORDER BY created_at`, [b.party_id]); throw new Error(`no card rose over the stage: ${String(e).split("\n")[0]}; pending=${JSON.stringify(pending)}; logs=${JSON.stringify((page as Page & { logs?: string[] }).logs?.slice(-8))}`); }
+  assert.equal(await overlay.getAttribute("data-card-id"), identity.card_instance_id, "the first card over the stage is the ID card, never a consent");
+  assert.equal(await overlay.locator('article[data-card-kind="ConsentCard"]').count(), 0);
+  await page.screenshot({ path: `${SCREENSHOTS}/t22-first-ask-1280.png`, fullPage: false }).catch(() => undefined);
   await ctx.close();
 });
 
-test("32.17-T23: Given `/app/video` on a live call with the goal chosen and the consents affirmed, then the identity `ConnectCard{stripe_identity}` rises reading \"Verify with Stripe Identity\" and one tap resolves it — `identity.verified` logged, the session at L3, the card's evidence `outcome = connected`, one identity card on the record and nothing posted by the page — then the payroll `ConnectCard{truv_income}` rises reading \"Confirm income with Truv\" and one tap resolves it — `verification.received{kind=income}` logged, `props.state = connected`, a `verification_id` on the card — and each card leaves the stage for the next ask.", { skip }, async () => {
+test("32.17-T23: Given `/app/video` on a live call with the goal chosen (its tap carried the consents — rule 20), then the identity `ConnectCard{stripe_identity}` rises reading \"Verify with Stripe Identity\" and one tap resolves it — `identity.verified` logged, the session at L3, the card's evidence `outcome = connected`, one identity card on the record and nothing posted by the page — then the payroll `ConnectCard{truv_income}` rises reading \"Confirm income with Truv\" and one tap resolves it — `verification.received{kind=income}` logged, `props.state = connected`, a `verification_id` on the card — and each card leaves the stage for the next ask.", { skip }, async () => {
   const b = await signedUpWithGoal("t23", "lower_rate");
-  // the consents affirmed through the API (their own tests: T22, 32.3), so the connectors are the record's next needs
-  const affirm = async (copyKey: string) => {
-    const c = (await db.query<{ card_instance_id: string; props: Json }>(`SELECT card_instance_id, props FROM card_instances WHERE party_id = $1 AND copy_key = $2 AND status = 'pending'`, [b.party_id, copyKey]))[0]; if (!c) return;
-    const r = await api("POST", `/v1/borrower/cards/${c.card_instance_id}/resolve`, { evidence: { affirmation_method: "checkbox_with_text", typed_name: "Dana Reyes", disclosure_version_shown: c.props["disclosure_version_id"] } }, bearer(b.token)); assert.equal(r.status, 201, `${copyKey}: ${JSON.stringify(r.body)}`);
-  };
-  for (const k of ["consent.esign.title", "consent.tcpa.title", "consent.credit.title"]) await affirm(k); await settle();
+  // the consents rode the goal's tap (rule 20, T24): the connectors are the record's next needs
+  assert.equal((await db.query(`SELECT 1 FROM card_instances WHERE party_id = $1 AND kind = 'ConsentCard' AND status = 'pending'`, [b.party_id])).length, 0, "no consent to tap first");
   const pendingOf = async (copyKey: string) => (await db.query<{ card_instance_id: string; props: Json }>(`SELECT card_instance_id, props FROM card_instances WHERE party_id = $1 AND copy_key = $2 AND status = 'pending'`, [b.party_id, copyKey]))[0]!;
   const identity = await pendingOf("identity.stripe.purpose"); assert.ok(identity, "the flow sent the identity card with the consents"); assert.equal(identity.props["vendor"], "stripe_identity"); assert.equal(identity.props["state"], "not_started");
   const income = await pendingOf("income.connect.purpose"); assert.ok(income, "the flow sent the payroll card"); assert.equal(income.props["vendor"], "truv_income");
@@ -1008,4 +993,21 @@ test("32.17-T23: Given `/app/video` on a live call with the goal chosen and the 
   assert.deepEqual(webhooks, [], "nothing posted by the page");
   await page.screenshot({ path: `${SCREENSHOTS}/t23-connectors-1280.png`, fullPage: false }).catch(() => undefined);
   await ctx.close();
+});
+
+test("32.17-T24: Given a new account's goal card, then it carries the consents statement (`props.statement`, `statement_version = consents-on-goal-2026-09`) and its tap writes the three rows for the party — `consents{esign}` `pending_verification` with the verification e-mail sent, `consents{tcpa_sms}` `active`, `credit.authorization.captured{hard_pull}` naming the goal card — each `method = single_tap` with no typed name; no ConsentCard is sent for them and none is on the record.", { skip }, async () => {
+  const b = await signedUpWithGoal("t24", "lower_rate");
+  const goal = (await db.query<{ card_instance_id: string; status: string; props: Json; evidence: Json | null }>(`SELECT card_instance_id, status, props, evidence FROM card_instances WHERE party_id = $1 AND copy_key = 'entry.goal.question'`, [b.party_id]))[0]!;
+  assert.equal(goal.status, "resolved"); assert.equal(goal.props["statement_version"], "consents-on-goal-2026-09"); assert.match(String(goal.props["statement"]), /documents electronically/); assert.match(String(goal.props["statement"]), /credit report/); assert.match(String(goal.props["statement"]), /texts/);
+  const rows = await db.query<{ kind: string; status: string; hw_sw_version: string | null; disclosure_text_hash: string | null; captured_via: string }>(`SELECT kind::text AS kind, status, hw_sw_version, disclosure_text_hash, captured_via FROM consents WHERE party_id = $1 AND kind IN ('esign', 'tcpa_sms') ORDER BY kind`, [b.party_id]);
+  assert.deepEqual(rows.map((r) => [r.kind, r.status]), [["esign", "pending_verification"], ["tcpa_sms", "active"]], "the E-SIGN and TCPA rows from the tap");
+  for (const r of rows) assert.ok(r.disclosure_text_hash, `${r.kind}: the statement's hash on the row`);
+  const granted = await db.query<{ payload: Json }>(`SELECT payload FROM loan_events WHERE application_id = $1 AND type = 'consent.granted'`, [b.app_id]);
+  const mine = granted.filter((e) => ["esign", "tcpa_sms"].includes(String(e.payload["kind"]))); assert.equal(mine.length, 2, JSON.stringify(granted.map((e) => e.payload["kind"])));
+  for (const e of mine) { assert.equal(e.payload["method"], "single_tap", `${String(e.payload["kind"])}: one tap`); assert.equal(e.payload["card_instance_id"], goal.card_instance_id, `${String(e.payload["kind"])}: the goal card`); }
+  assert.equal((await db.query(`SELECT 1 FROM loan_events WHERE application_id = $1 AND type = 'consent.esign.pending'`, [b.app_id])).length, 1, "the verification e-mail went out (FAKE mailer)");
+  const hard = await db.query<{ payload: Json }>(`SELECT payload FROM loan_events WHERE application_id = $1 AND type = 'credit.authorization.captured' AND payload->>'kind' = 'hard_pull'`, [b.app_id]);
+  assert.equal(hard.length, 1); assert.equal(hard[0]!.payload["card_instance_id"], goal.card_instance_id, "the hard-pull authorization names the goal card");
+  assert.ok(!JSON.stringify(goal.evidence ?? {}).includes("typed_name"), "no typed name anywhere on the tap");
+  assert.equal((await db.query(`SELECT 1 FROM card_instances WHERE party_id = $1 AND kind = 'ConsentCard'`, [b.party_id])).length, 0, "no ConsentCard sent, none on the record");
 });

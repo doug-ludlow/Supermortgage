@@ -37,6 +37,7 @@ import { guardUtterance, classifyUtterance, ASKS_IF_HUMAN, type GuardResult, typ
 import type { AnthropicLlm, LlmTurnOutput } from "./llm.ts";
 import { MODEL_TOOLS, newLedger, toolExecutor, type ToolLedger } from "./tools.ts";
 import { MODEL_TOOLS_32_16 } from "../../../app/tools/section32-16.ts";
+import { toBorrowerError } from "../errors.ts";
 
 type P = Record<string, unknown>;
 type Channel = "app" | "sms" | "email" | "voice" | "video";   // 32.17: a spoken turn through the video agent is the same turn with channel = video
@@ -69,10 +70,21 @@ export interface AgentTurnReply {
   readonly calls: ToolLedger["calls"];
   readonly command_executed: boolean;
   readonly command: string | null;
+  /** 32.17 rule 21: the card the turn wrote from the proposal (null when nothing was proposed, the reply fell back, or the write was refused — the proposal then waits on the card with the refusal). */
+  readonly committed: string | null;
+}
+/** The resolve body the Confirm tap would have sent (apps/borrower chips.tsx proposalResolveRequest), sent by the turn instead. */
+function turnCommitBody(card: { kind: string; props: P }, proposal: P, now: string, rewrite: boolean): P {
+  const option_id = typeof proposal["option_id"] === "string" ? (proposal["option_id"] as string) : null;
+  if (card.kind === "ChoiceCard" && option_id) return { option_id, ...(rewrite ? { rewrite: true } : {}), evidence: { option_id, tapped_at: now, committed_by: "turn", ...(typeof card.props["disclosure_version_shown"] === "string" ? { disclosure_version_shown: card.props["disclosure_version_shown"] } : {}) } };
+  const fields = (Array.isArray(proposal["fields"]) ? (proposal["fields"] as P[]) : []).map((f) => ({ path: String(f["path"] ?? ""), value: String(f["value"] ?? ""), value_confirmed: String(f["value"] ?? ""), source: "borrower", confirmed_at: now, answered_at: now }));
+  return { ...(option_id ? { option_id } : {}), ...(rewrite ? { rewrite: true } : {}), evidence: { fields, edited: false, source: "borrower_stated", committed_by: "turn" } };
 }
 export interface AgentTurnDeps {
   readonly runtime: Runtime; readonly ui: PgBorrowerUiRepository; readonly reader: BorrowerRecordReader; readonly flows: BorrowerFlows; readonly logger: Logger; readonly hub: BorrowerStreamHub;
   readonly llm: AnthropicLlm; readonly promptVersion?: string | undefined;
+  /** 32.17 rule 21 (words commit): the resolve path the Confirm tap used (BorrowerCommands.resolveCard) — the turn writes a complete proposal its accepted reply read back. */
+  readonly commit?: (ctx: BorrowerContext, cardId: string, body: P, now: string) => Promise<{ card: { status: string }; idempotent: boolean }>;
   /** The partner behind the party's first subject (routes.ts partnerFor): the lender's name the prompt names. */
   readonly partner: (ctx: BorrowerContext) => Promise<{ legal_name: string; nmlsr_id: string }>;
 }
@@ -163,6 +175,27 @@ export class AgentTurnRunner {
     }
     const accepted = guard?.ok === true;
     const classification = guard?.classification ?? null;
+    // ---- 32.17 rule 21: words commit — a complete proposal the accepted reply read back is written now, the way the Confirm tap wrote it; a refusal leaves the proposal on the card with its copy
+    let committed: string | null = null; let commitRefused: string | null = null;
+    if (accepted && ledger.proposed_card_instance_ids.length && this.d.commit) {
+      for (const proposedId of ledger.proposed_card_instance_ids) {   // every card the turn proposed into, in call order (one turn can carry the value, the amount and the product)
+        const proposed = await ui.card(proposedId);
+        const proposal = proposed?.props["proposal"] && typeof proposed.props["proposal"] === "object" ? (proposed.props["proposal"] as P) : null;
+        if (!proposed || !proposal || !(proposed.kind === "ConfirmCard" || proposed.kind === "ChoiceCard" || proposed.kind === "ProfileCard")) continue;
+        const rewrite = proposed.status === "resolved";
+        try {
+          const out = await this.d.commit(req.ctx, proposed.card_instance_id, turnCommitBody(proposed, proposal, req.now, rewrite), req.now);
+          if (out.card.status === "resolved" && !out.idempotent) { committed = proposed.card_instance_id; logger.info("borrower.agent.committed", { turn_id, card_instance_id: committed, copy_key: proposed.copy_key, rewrite }); if (proposed.props["commit_refused"]) await runtime.db.query(`UPDATE card_instances SET props = props - 'commit_refused' WHERE card_instance_id = $1`, [committed]); }
+        } catch (e) {
+          const err = toBorrowerError(e); commitRefused = err.code;
+          logger.warn("borrower.agent.commit_refused", { turn_id, card_instance_id: proposed.card_instance_id, copy_key: proposed.copy_key, code: err.code, rewrite, detail: e instanceof Error ? e.message : String(e) });
+          // the refusal stays on the card in the copy library's words (the chip shows it and its way out); a refused correction keeps the written values as the card's proposal
+          const ev = (proposed.evidence as P | null) ?? {};
+          const restored = rewrite ? { proposal: { ...(Array.isArray(ev["fields"]) ? { fields: (ev["fields"] as P[]).map((f) => ({ path: f["path"], value: f["value_confirmed"] ?? f["value"], source: "borrower_stated" })) } : {}), ...(typeof ev["option_id"] === "string" ? { option_id: ev["option_id"] } : {}), proposed_at: String(proposed.resolved_at ?? req.now), restored: true } } : {};
+          await runtime.db.query(`UPDATE card_instances SET props = props || $2::jsonb WHERE card_instance_id = $1`, [proposed.card_instance_id, JSON.stringify({ ...restored, commit_refused: { ...err.body(), at: req.now, rewrite, said: proposal } })]);
+        }
+      }
+    }
     // ---- the reply: the model's sentence with its tokens filled, or the step's default copy
     let body: string; let copy_key = ""; let fallback: string | null = null;
     if (accepted) { const f = fillTokens(out.text, ledger.tokens); body = f.text; if (f.unknown.length) logger.warn("borrower.agent.unknown_tokens", { turn_id, unknown: f.unknown }); }
@@ -194,8 +227,8 @@ export class AgentTurnRunner {
     await this.d.flows.settle();
     const next1 = sessionNextOf(record, await ui.cardsOf(party.id));
     this.d.hub.notify(party.id, { event_name: "message.appended", at: req.now, subject: { application_id: subjectIds.subject_application_id, loan_id: subjectIds.subject_loan_id }, ref: replyId });
-    logger.info("borrower.agent.turn", { turn_id, party_id: party.id, agent: req.routed_to, model: this.d.llm.model, prompt_version: this.promptVersion, calls: ledger.calls.map((c) => c.name), requests: out.requests, accepted, fallback, classification, next_before: next0.card_instance_id, next_after: next1.card_instance_id, ms: Date.now() - started, model_ms: Date.now() - modelStarted, before_model_ms: modelStarted - started, tokens_in: out.usage.input_tokens, tokens_out: out.usage.output_tokens });
-    return { reply, copy_key, turn_id, guard, calls: ledger.calls, command_executed: ledger.calls.some((c) => !c.is_error && (c.name === "command.run" || c.name === "human.transfer" || c.name === "card.request")) || command !== null, command };
+    logger.info("borrower.agent.turn", { turn_id, party_id: party.id, agent: req.routed_to, model: this.d.llm.model, prompt_version: this.promptVersion, committed, commit_refused: commitRefused, calls: ledger.calls.map((c) => c.name), requests: out.requests, accepted, fallback, classification, next_before: next0.card_instance_id, next_after: next1.card_instance_id, ms: Date.now() - started, model_ms: Date.now() - modelStarted, before_model_ms: modelStarted - started, tokens_in: out.usage.input_tokens, tokens_out: out.usage.output_tokens });
+    return { reply, copy_key, turn_id, guard, calls: ledger.calls, command_executed: ledger.calls.some((c) => !c.is_error && (c.name === "command.run" || c.name === "human.transfer" || c.name === "card.request")) || command !== null || committed !== null, command, committed };
   }
 
   /** The model failed outright: the step's default copy, recorded like any other attempt. */
@@ -203,7 +236,7 @@ export class AgentTurnRunner {
     const copy_key = stepCopyKey ?? (req.routed_to === "intake" ? THREAD_COPY_KEYS.placeholderIntake : THREAD_COPY_KEYS.placeholderServicing);
     const replyId = await this.d.ui.appendMessage({ conversation_id: req.conversation_id, at: req.now, sender: "agent", sender_ref: `agent:${req.routed_to}`, channel: req.channel, body_text: `{{copy:${copy_key}}}`, copy_tokens: { source: "agent_turn", turn_id, fallback: "default_copy", rejected_by: why, copy_key }, subject_application_id: req.subject?.application_id ?? null, subject_loan_id: req.subject?.loan_id ?? null });
     await this.record({ turn_id, req, reply_message_id: replyId, context_hash, ledger, classification: null, guard, latency_ms: Date.now() - started, usage, attempt: 1, fallback: why });
-    return { reply: (await this.d.ui.message(replyId))!, copy_key, turn_id, guard, calls: ledger.calls, command_executed: false, command: null };
+    return { reply: (await this.d.ui.message(replyId))!, copy_key, turn_id, guard, calls: ledger.calls, command_executed: false, command: null, committed: null };
   }
 
   /** 21.1's permission for the class, logged through the bus (safe_activity.logged / interview.utterance.blocked) when the application's intake record exists; local otherwise. */

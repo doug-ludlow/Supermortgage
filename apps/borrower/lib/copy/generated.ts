@@ -592,6 +592,7 @@ export const COPY = {
   "chip.reference": { key: "chip.reference", kind: "chip", text: "{{label}} →", notes: "32.16 §2.1: the one-line reference the assistant attaches when it puts a card on the rail; tapping it focuses and expands that card. A resolved card's chip shows its receipt line instead.", extras: [], section: "The conversational product (32.16)" },
   "chip.confirm": { key: "chip.confirm", kind: "button", text: "Confirm", extras: ["*32.16 §2.1 / §3.4: the confirm chip's tap", "resolves the card through `resolveCard` with `evidence.source = borrower_stated`.*"], section: "The conversational product (32.16)" },
   "chip.edit": { key: "chip.edit", kind: "button", text: "Edit", notes: "32.16 §2.1: expands the proposed card on the rail so the borrower can change a value.", extras: [], section: "The conversational product (32.16)" },
+  "chip.said_hint": { key: "chip.said_hint", kind: "line", text: "Not right? Just say so.", extras: ["*32.17 rule 21: under the receipt of a fact the turn wrote from what was said", "a correction is said, never tapped.*"], section: "The conversational product (32.16)" },
   "connection.not_connected": { key: "connection.not_connected", kind: "state", text: "not connected", notes: "32.16 §2.2 Connections row.", extras: [], section: "The conversational product (32.16)" },
   "connection.in_progress": { key: "connection.in_progress", kind: "state", text: "in progress", notes: "32.16 §2.2 Connections row.", extras: [], section: "The conversational product (32.16)" },
   "connection.connected": { key: "connection.connected", kind: "state", text: "connected", notes: "32.16 §2.2 Connections row.", extras: [], section: "The conversational product (32.16)" },
@@ -658,4 +659,4 @@ export const COPY = {
 } as const satisfies Record<string, CopyEntry>;
 
 export type CopyKey = keyof typeof COPY;
-export const COPY_KEY_COUNT = 643;
+export const COPY_KEY_COUNT = 644;

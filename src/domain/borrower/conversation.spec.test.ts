@@ -105,8 +105,6 @@ const MIN_P = makeMin("1000123", String(3_000_000_000 + (parseInt(R, 36) % 999_9
 /** The level P&I of a fixed-rate note (cents, rounded half up) — asserted equal to 26.1 computeNoteTerms' own figure before it is used anywhere. */
 function piCents(principal: bigint, ratePct: number, months: number): string { const r = ratePct / 100 / 12; const f = Math.pow(1 + r, months); return String(Math.round(Number(principal) * r * f / (f - 1))); }
 const fieldsEvidence = (card: CardRow, edits: Record<string, string> = {}, at = clock.now()) => ({ evidence: { fields: (card.props["fields"] as { path: string; value: string; source: string }[]).map((f) => ({ path: f.path, value_confirmed: edits[f.path] ?? f.value, source: f.source, confirmed_at: at })), edited: Object.keys(edits).length > 0 } });
-/** Confirm on a proposal the assistant read back (32.16 §3.4): `evidence.source = borrower_stated` with the proposed fields. */
-const proposalEvidence = (card: CardRow, at = clock.now()) => { const p = card.props["proposal"] as { fields?: { path: string; value: string }[] } | undefined; assert.ok(p?.fields?.length, `a proposal on ${card.copy_key}`); return { evidence: { source: "borrower_stated", fields: p!.fields!.map((f) => ({ path: f.path, value: f.value })), tapped_at: at } }; };
 const civilDateEt = (iso: string): string => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
 /** The clock forward: a day at a time at noon Eastern (src/runtime/demo-clock.ts DAY_STEP_TIME) so every day's sweeps run — the flows' tick (the LE/CD mailbox rules, the origination and servicing sweeps) and the runtime's (the FAKE reviewers, the breach pass) — then the target instant. */
 async function advance(to: string): Promise<void> {
@@ -157,6 +155,8 @@ class Borrower {
   }
   async cards(): Promise<CardRow[]> { await settle(); return cardsOf(this.party_id); }
   async pending(copyKey: string, where: (c: CardRow) => boolean = () => true): Promise<CardRow> { const c = (await this.cards()).filter((x) => x.copy_key === copyKey && x.status === "pending" && where(x)).at(-1); assert.ok(c, `a pending ${copyKey} card (pending: ${(await this.cards()).filter((x) => x.status === "pending").map((x) => x.copy_key).join(", ")})`); return c; };
+  /** 32.17 rule 21: the card the turn wrote from what was said — the newest resolved one under the key. */
+  async written(copyKey: string): Promise<CardRow> { const c = (await this.cards()).filter((x) => x.copy_key === copyKey && x.status === "resolved").at(-1); assert.ok(c, `a written ${copyKey} card (cards: ${(await this.cards()).filter((x) => x.copy_key === copyKey).map((x) => x.status).join(",")})`); return c; }
   async noPending(copyKey: string): Promise<void> { assert.ok(!(await this.cards()).some((x) => x.copy_key === copyKey && x.status === "pending"), `${copyKey} no longer pending`); }
   async thread(): Promise<{ conversation_id: string; messages: Json[]; pinned_card: Json | null }> { await settle(); const r = await api("GET", "/v1/borrower/thread?limit=1000", undefined, bearer(this.token)); assert.equal(r.status, 200, JSON.stringify(r.body).slice(0, 300)); return r.body as { conversation_id: string; messages: Json[]; pinned_card: Json | null }; }
   async record(subject = this.app_id): Promise<Json> { await settle(); const r = await api("GET", `/v1/borrower/record?subject=${subject}`, undefined, bearer(this.token)); assert.equal(r.status, 200, JSON.stringify(r.body).slice(0, 600)); return r.body; }
@@ -169,7 +169,7 @@ async function assertModelReply(b: Borrower, r: Reply & { reply: Json }, o: { pr
   const t = await b.turnOf(r);
   assert.equal((t.guard_result as Json)["ok"], true, `the guard accepted the sentence: ${JSON.stringify(t.guard_result)}`); assert.equal((r.reply["copy_tokens"] as Json)["fallback"], undefined, `no default copy: ${JSON.stringify(r.reply["copy_tokens"])}`);
   assert.doesNotMatch(String(r.reply["body_text"]), /\{\{/, "every token filled"); if (o.text) assert.match(String(r.reply["body_text"]), o.text, `the reply "${String(r.reply["body_text"])}" — tool calls: ${JSON.stringify(t.tool_calls).slice(0, 1200)}`);
-  if (o.proposedInto) { const card = await b.pending(o.proposedInto); assert.equal(r.reply["card_instance_id"], card.card_instance_id, "the reply refers to the card it proposed into (the confirm chip)"); assert.ok(card.props["proposal"], "the proposal is on the card"); }
+  if (o.proposedInto) { const card = await b.written(o.proposedInto); assert.equal(r.reply["card_instance_id"], card.card_instance_id, "the reply refers to the card it wrote (the receipt)"); assert.ok(card.props["proposal"], "the proposal is on the card"); assert.equal(card.evidence?.["committed_by"], "turn", `written by the turn (32.17 rule 21): ${JSON.stringify(card.props["commit_refused"] ?? null)}`); }
   if (o.refused) { const call = t.tool_calls.find((c) => c["name"] === "card.propose"); assert.ok(call, "the model tried card.propose"); assert.equal(call!["is_error"], true); assert.equal(call!["error"], o.refused, `refused with ${o.refused}: ${JSON.stringify(call)}`); }
   return t;
 }
@@ -187,39 +187,39 @@ const SCENES: readonly Scene[] = [
   { when: /has not said anything yet/, calls: next(), text: (s) => `Hi${(((s.record ?? {}) as Json)["party"] as Json | undefined)?.["first_name"] ? " {{party.first_name}}" : ""}, welcome. Are you here to buy a home, lower the payment on the one you have, or take cash out?` },
   { when: /the borrower is back/, calls: next(), text: (s) => `Welcome back. ${head(s)}` },
   // the goal (32.3 E3): proposed into the ChoiceCard, confirmed by the tap
-  { when: /lower my (monthly )?payment/i, calls: propose("entry.goal.question", { option_id: "lower_rate" }), text: readBack("Got it: {{proposal.option}}. Tap Confirm on the goal card here so it counts, and then we will look at the home.", "Got it. The goal card here is where that choice counts: pick the one that fits and tap it.") },
-  { when: /buy(ing)? (a )?(house|home)|still looking/i, calls: propose("entry.goal.question", { option_id: "buy" }), text: readBack("Got it: {{proposal.option}}. Tap Confirm on the goal card here so it counts, and then we will talk about where you are in the search.", "Got it. The goal card here is where that choice counts: pick the one that fits and tap it.") },
+  { when: /lower my (monthly )?payment/i, calls: propose("entry.goal.question", { option_id: "lower_rate" }), text: readBack("Got it: {{proposal.option}}. That's saved — say if it's not right — and then we will look at the home.", "Got it. The goal card here is where that choice counts: pick the one that fits and tap it.") },
+  { when: /buy(ing)? (a )?(house|home)|still looking/i, calls: propose("entry.goal.question", { option_id: "buy" }), text: readBack("Got it: {{proposal.option}}. That's saved — say if it's not right — and then we will talk about where you are in the search.", "Got it. The goal card here is where that choice counts: pick the one that fits and tap it.") },
   // a consent in words: the model tries and the tool refuses (docs/ux/17 §1 principle 6)
   { when: /put me down as consenting|count that as my consent/i, calls: (s) => { const id = pendingIn(s, "consent.esign.title"); return id ? [{ name: "card.propose", input: { card_instance_id: id, fields: [{ path: "typed_name", value: "as stated" }] } }] : next(); }, text: "I can't take a consent in words. The e-delivery card here is where it counts: check the box and type your name there." },
   // the SSN in words: masked on the card, never repeated
   { when: /my social (security number )?is/i, calls: (s) => { const id = pendingIn(s, "identity.ssn.title"); return id ? [{ name: "card.propose", input: { card_instance_id: id, fields: [{ path: "ssn", value: "123456789" }] } }] : next(); }, text: "I never repeat that here. Type it on the card, where it stays masked and is stored once." },
   // the home (32.3 R1)
-  { when: /main home|primary home|live there/i, calls: propose("refi.home.confirm", { fields: [{ path: "property_address", value: "100 N Central Ave, Phoenix, AZ 85004" }, { path: "occupancy", value: "primary" }] }), text: readBack("So the home is {{proposal.property_address}} and you live there as your main home. Tap Confirm on the home card if that's right.", "Got it. Confirm the home on the card here.") },
+  { when: /main home|primary home|live there/i, calls: propose("refi.home.confirm", { fields: [{ path: "property_address", value: "100 N Central Ave, Phoenix, AZ 85004" }, { path: "occupancy", value: "primary" }] }), text: readBack("So the home is {{proposal.property_address}} and you live there as your main home. That's saved — say if it's not right.", "Got it. Confirm the home on the card here.") },
   // income: the typed path (R3 SQ-03) — the card on request, then the figure proposed into it
   { when: /rather type|type (in )?my income/i, calls: [{ name: "card.request", input: { kind: "income" } }], text: (_s, r) => (sent(r) ? "Sure. The income card is on the rail; tell me the monthly figure and where you work and I will put them in for you to confirm." : "Let me get that card up for you.") },
-  { when: /a month at/i, calls: propose("income.confirm.title", { fields: [{ path: "employer", value: "Acme Manufacturing" }, { path: "monthly_income", value: "820000" }] }), text: readBack("I heard {{proposal.monthly_income}} a month at {{proposal.employer}}. Tap Confirm on the income card so it counts, or edit it there.", "Thanks. I will take that on the income card when we get there; nothing is written from words alone.") },
+  { when: /a month at/i, calls: propose("income.confirm.title", { fields: [{ path: "employer", value: "Acme Manufacturing" }, { path: "monthly_income", value: "820000" }] }), text: readBack("I heard {{proposal.monthly_income}} a month at {{proposal.employer}}. That's saved — say if it's not right.", "Thanks. I will take that on the income card when we get there; nothing is written from words alone.") },
   // assets: the typed path (SQ-01) with the figure as the card's editable default
-  { when: /in checking at|in my checking/i, calls: [{ name: "card.request", input: { kind: "assets", args: { amount_cents: "4000000", institution: "Chase" } } }], text: (_s, r) => (sent(r) ? "Thanks. The account card is on the rail with what you told me; check it and tap Confirm. A bank connection is asked for only if underwriting needs it." : "I will note the account; a card for it comes when it is needed.") },
+  { when: /in checking at|in my checking/i, calls: [{ name: "card.request", input: { kind: "assets", args: { amount_cents: "4000000", institution: "Chase" } } }], text: (_s, r) => (sent(r) ? "Thanks. The account card is on the rail with what you told me; check it and That's saved — say if it's not right. A bank connection is asked for only if underwriting needs it." : "I will note the account; a card for it comes when it is needed.") },
   // about you (R4): proposed into the ProfileCard
-  { when: /citizen/i, calls: propose("profile.title", { fields: [{ path: "citizenship_status", value: "us_citizen" }, { path: "marital_status", value: "unmarried" }, { path: "dependents", value: "0" }, { path: "military_service", value: "none" }, { path: "language_preference", value: "english" }] }), text: readBack("Here is what I have: {{proposal.citizenship_status}}, {{proposal.marital_status}}, dependents {{proposal.dependents}}, military service {{proposal.military_service}}, language {{proposal.language_preference}}. Tap Confirm on the profile card if that's right.", "Thanks. The profile card here takes those answers.") },
+  { when: /citizen/i, calls: propose("profile.title", { fields: [{ path: "citizenship_status", value: "us_citizen" }, { path: "marital_status", value: "unmarried" }, { path: "dependents", value: "0" }, { path: "military_service", value: "none" }, { path: "language_preference", value: "english" }] }), text: readBack("Here is what I have: {{proposal.citizenship_status}}, {{proposal.marital_status}}, dependents {{proposal.dependents}}, military service {{proposal.military_service}}, language {{proposal.language_preference}}. That's saved — say if it's not right.", "Thanks. The profile card here takes those answers.") },
   // declarations and demographics in words: refused
   { when: /mark (all )?the declarations|declarations (as|are) (all )?no/i, calls: propose("declarations.title", { option_id: "none" }), text: "Those answers are yours to give, not mine to enter. The declarations card here lists them; tap the one that fits." },
   { when: /white woman|not hispanic/i, calls: (s) => { const id = pendingIn(s, "demographics.title"); return id ? [{ name: "card.propose", input: { card_instance_id: id, fields: [{ path: "sex", value: "female" }] } }] : next(); }, text: "That part is answered on the card only, never through me. It is optional, and it never changes the outcome of your application." },
   // the six items (R7): value, amount and product proposed into their three cards
-  { when: /worth about|owe about/i, calls: (s) => [...propose("refi.value.confirm", { fields: [{ path: "property_value_estimate", value: "80000000" }] })(s), ...propose("refi.loan_amount.confirm", { fields: [{ path: "loan_amount_sought", value: "56000000" }] })(s), ...propose("refi.product.choice", { option_id: "FRM30" })(s)].filter((c) => c.name === "card.propose"), text: readBack("So the home is worth about {{proposal.property_value_estimate}}, you would like to borrow {{proposal.loan_amount_sought}}, and {{proposal.option}}. Tap Confirm on each of the three cards.", "Thanks. The value, the amount and the product each have a card here; confirm them there.") },
+  { when: /worth about|owe about/i, calls: (s) => [...propose("refi.value.confirm", { fields: [{ path: "property_value_estimate", value: "80000000" }] })(s), ...propose("refi.loan_amount.confirm", { fields: [{ path: "loan_amount_sought", value: "56000000" }] })(s), ...propose("refi.product.choice", { option_id: "FRM30" })(s)].filter((c) => c.name === "card.propose"), text: readBack("So the home is worth about {{proposal.property_value_estimate}}, you would like to borrow {{proposal.loan_amount_sought}}, and {{proposal.option}}. That's saved — say if it's not right.", "Thanks. The value, the amount and the product each have a card here; confirm them there.") },
   // the preapproval (P1/P8) for the purchase persona
-  { when: /looking in arizona|between four/i, calls: propose("preapproval.where", { fields: [{ path: "state", value: "AZ" }, { path: "price_min_cents", value: "45000000" }, { path: "price_max_cents", value: "52500000" }, { path: "down_payment_cents", value: "10500000" }, { path: "first_time_buyer", value: "yes" }] }), text: readBack("So: {{proposal.state}}, a price from {{proposal.price_min_cents}} to {{proposal.price_max_cents}}, {{proposal.down_payment_cents}} down, first home {{proposal.first_time_buyer}}. Tap Confirm on the card if that's right.", "Got it. The where-and-how-much card here takes those answers.") },
-  { when: /aim for|target price/i, calls: propose("preapproval.target", { fields: [{ path: "target_price_cents", value: "52500000" }, { path: "down_payment_cents", value: "10500000" }, { path: "loan_amount_sought", value: "42000000" }, { path: "product_code", value: "FRM30" }] }), text: readBack("So a target of {{proposal.target_price_cents}} with {{proposal.down_payment_cents}} down, borrowing {{proposal.loan_amount_sought}} on {{proposal.product_code}}. Tap Confirm on the card so it counts.", "Thanks. The target card here takes those figures.") },
-  { when: /don'?t know the seller|do not know the seller|never met the seller/i, calls: propose("contract.seller_relationship", { option_id: "no" }), text: readBack("Got it: {{proposal.option}}. Tap Confirm on the seller card here so it counts; it matters for how the sale is reviewed.", "Thanks. The seller card here asks whether you know the seller; tap the answer that fits.") },
+  { when: /looking in arizona|between four/i, calls: propose("preapproval.where", { fields: [{ path: "state", value: "AZ" }, { path: "price_min_cents", value: "45000000" }, { path: "price_max_cents", value: "52500000" }, { path: "down_payment_cents", value: "10500000" }, { path: "first_time_buyer", value: "yes" }] }), text: readBack("So: {{proposal.state}}, a price from {{proposal.price_min_cents}} to {{proposal.price_max_cents}}, {{proposal.down_payment_cents}} down, first home {{proposal.first_time_buyer}}. That's saved — say if it's not right.", "Got it. The where-and-how-much card here takes those answers.") },
+  { when: /aim for|target price/i, calls: propose("preapproval.target", { fields: [{ path: "target_price_cents", value: "52500000" }, { path: "down_payment_cents", value: "10500000" }, { path: "loan_amount_sought", value: "42000000" }, { path: "product_code", value: "FRM30" }] }), text: readBack("So a target of {{proposal.target_price_cents}} with {{proposal.down_payment_cents}} down, borrowing {{proposal.loan_amount_sought}} on {{proposal.product_code}}. That's saved — say if it's not right.", "Thanks. The target card here takes those figures.") },
+  { when: /don'?t know the seller|do not know the seller|never met the seller/i, calls: propose("contract.seller_relationship", { option_id: "no" }), text: readBack("Got it: {{proposal.option}}. That's saved — say if it's not right.", "Thanks. The seller card here asks whether you know the seller; tap the answer that fits.") },
   { when: /under contract|signed a contract/i, calls: [{ name: "card.request", input: { kind: "upload", args: { document_class: "purchase_contract" } } }], text: (_s, r) => (sent(r) ? "Congratulations. Send the signed contract with the upload card here and I will read the address and the price from it for you to confirm." : "Send the signed contract when you have it; the upload card appears here.") },
   // narration along the way: the head of the agenda, plain words, no figure
-  { when: /those debts|debts on my report/i, calls: next(), text: (s) => `The debts card shows what your report lists; check it and tap Confirm, then the current-loan card beside it. ${head(s)}` },
-  { when: /loan estimate|got the estimate/i, calls: [{ name: "explain", input: { topic: "loan_estimate" } }, ...next()], text: "The Loan Estimate is here as a document: it lays out the terms, the payment and the costs so you can compare. Open it, read to the end and tap Confirm receipt." },
+  { when: /those debts|debts on my report/i, calls: next(), text: (s) => `The debts card shows what your report lists; check it, then the current-loan card beside it. ${head(s)}` },
+  { when: /loan estimate|got the estimate/i, calls: [{ name: "explain", input: { topic: "loan_estimate" } }, ...next()], text: "The Loan Estimate is here as a document: it lays out the terms, the payment and the costs so you can compare. Open it, read to the end and That's saved — say if it's not right." },
   { when: /happy with it|ready to move forward/i, calls: next(), text: (s) => `Good. The go-ahead is a card: tap Proceed there and the lock choices follow. ${head(s)}` },
   { when: /which lock|should i lock/i, calls: next(), text: "The lock card shows the choices side by side with their periods; pick the one that fits, or keep floating. I cannot pick one for you." },
   { when: /what (else )?do you need from me/i, calls: [...next(), { name: "record.get", input: {} }], text: (s) => (s.session_next.step === "card" ? "Underwriting's list is on the rail: each upload card names the document it needs from you. Tap each card and add its file, and I will say when they are through." : head(s)) },
   { when: /appraiser|appraisal/i, calls: [{ name: "explain", input: { topic: "appraisal" } }, ...next()], text: "An appraiser visits to confirm the home's condition and value; nothing about the value goes through me. Pick a window that works on the schedule card here." },
-  { when: /closing disclosure|final numbers/i, calls: [{ name: "explain", input: { topic: "closing_disclosure" } }, ...next()], text: "The Closing Disclosure is the final form with your loan's actual terms and costs. Open it here, read it to the end and tap Confirm receipt; signing follows after the waiting period." },
+  { when: /closing disclosure|final numbers/i, calls: [{ name: "explain", input: { topic: "closing_disclosure" } }, ...next()], text: "The Closing Disclosure is the final form with your loan's actual terms and costs. Open it here, read it to the end and That's saved — say if it's not right." },
   { when: /when can we sign|sign on friday/i, calls: next(), text: "Pick a signing window on the schedule card here; signing electronically is the default, and paper is a choice on the card beside it." },
   { when: /set up autopay|autopay from my checking/i, calls: next(), text: "Autopay is a card on the rail: add the account and type your name there. It needs a fresh sign-in code, and you can stop it any time." },
   { when: /^thanks/i, text: "You are welcome. I am here whenever you need me." },
@@ -356,7 +356,7 @@ test("conversation: the demo's three defects — a goal answered Buy a home read
     const replyIx = th.messages.findIndex((m) => m["message_id"] === r.reply["message_id"]); assert.ok(replyIx > th.messages.findIndex((m) => m["message_id"] === myId), "the reply row follows the borrower's row");
     assert.ok(notified.includes(myId), `the stream hub was told about the borrower's row (${notified.length} notifications)`); assert.ok(notified.includes(String(r.reply["message_id"])), "…and about the reply");
     // (1) the goal card resolves to Buy a home: the record's subject, its label and the journey read purchase
-    const goal = await b.pending("entry.goal.question"); later(1); const g = await b.tap(goal, { option_id: "buy", evidence: { option_id: "buy", tapped_at: clock.now() } }); assert.equal(g.body["command"], "application.setGoal");
+    const goal = await b.written("entry.goal.question"); assert.equal((goal.evidence as Json)["option_id"], "buy", "the goal the turn wrote (32.17 rule 21)"); assert.equal((goal.evidence as Json)["command_ref"], "application.setGoal");
     const row = (await db.query<{ transaction_type: string; occupancy: string }>(`SELECT transaction_type::text AS transaction_type, occupancy::text AS occupancy FROM applications WHERE id = $1`, [b.app_id]))[0]!;
     assert.equal(row.transaction_type, "purchase", "applications.transaction_type follows the goal (section32-2.ts setGoal's deferred UPDATE, committed with the command)"); assert.equal(row.occupancy, "primary");
     rec = await b.record(); const subj = rec["subject"] as Json;
@@ -378,7 +378,7 @@ test("conversation: the demo's three defects — a goal answered Buy a home read
 });
 
 // ═══════════════════════════════════ the refinance persona: Morgan Ellis lowers the payment on 100 N Central Ave, Phoenix
-test("conversation: the refinance persona goes from sign-up to a boarded loan by talking — a card only where §2.3 requires one, every commit a tap, the FAKE vendors and reviewers in between", { skip }, async () => {
+test("conversation: the refinance persona goes from sign-up to a boarded loan by talking — a card only where §2.3 requires one, every stated fact written by the turn (32.17 rule 21), the FAKE vendors and reviewers in between", { skip }, async () => {
   const b = new Borrower(`morgan-${R}@example.test`, `pw-morgan-${R}`, "Morgan Ellis", "123-45-6789", "1988-03-14");
   const f: RefiFacts = { name: b.name, last: "Ellis", email: b.email, address: "100 N Central Ave, Phoenix, AZ 85004", quoteId: `Q-M-${R}`, lockQuoteId: "", decisionId: `D-REFI-M-${R}` };
   // ── E1–E3: the account, the disclosure, the greeting in the model's words, the goal proposed and confirmed
@@ -389,8 +389,8 @@ test("conversation: the refinance persona goes from sign-up to a boarded loan by
   const first = (await b.turns()).find((x) => x.message_id === null)!; assert.ok(first, "the first turn's agent_turns row (no borrower message)"); assert.equal((first.guard_result as Json)["ok"], true);
   later(1); let r = await b.say("I want to lower my payment on the house.");
   await assertModelReply(b, r, { proposedInto: "entry.goal.question", text: /Lower my rate or payment/ });
-  const goal = await b.pending("entry.goal.question"); assert.equal((goal.props["proposal"] as Json)["option_id"], "lower_rate");
-  later(1); const g = await b.tap(goal, { option_id: "lower_rate", evidence: { option_id: "lower_rate", tapped_at: clock.now() } }); assert.ok((g.body["events"] as string[]).includes("application.received"), JSON.stringify(g.body["events"]));
+  const goal = await b.written("entry.goal.question"); assert.equal((goal.props["proposal"] as Json)["option_id"], "lower_rate");
+  assert.equal((goal.evidence as Json)["committed_by"], "turn", "written by the turn (32.17 rule 21)"); assert.ok((await events(b.app_id, "application.received")).length >= 1, "the goal the turn wrote raised application.received");
   assert.equal((await events(b.app_id, "application.goal.set")).length + (await events(b.app_id, "application.received")).length >= 1, true);
   // ── E6: the consents rode the goal's tap (32.17 rule 20) — no cards; the E-SIGN row waits for the e-mailed code, which the borrower enters
   const esignRow = (await db.query<{ id: string; status: string }>(`SELECT id, status FROM consents WHERE party_id = $1 AND kind = 'esign' ORDER BY captured_at DESC LIMIT 1`, [b.party_id]))[0]!; assert.equal(esignRow.status, "pending_verification", "written on the goal's tap");
@@ -412,7 +412,7 @@ test("conversation: the refinance persona goes from sign-up to a boarded loan by
   assert.ok(!(await b.thread()).messages.some((m) => m["sender"] !== "borrower" && String(m["body_text"] ?? "").includes(b.last4)), "the assistant never repeated the number");
   // ── R1: the home, proposed and confirmed
   later(1); r = await b.say("It is my main home, at 100 N Central Ave in Phoenix, and I live there."); await assertModelReply(b, r, { proposedInto: "refi.home.confirm", text: /100 N Central Ave/ });
-  const home = await b.pending("refi.home.confirm"); later(1); await b.tap(home, proposalEvidence(home));
+  await b.written("refi.home.confirm");
   assert.equal((await events(b.app_id, "application.six_item.captured")).filter((e) => e.payload["item"] === "property_address").length, 1);
   // the credit authorization rode the goal's tap too (32.17 rules 18 and 20: no card, no typed name, no level, no gate); the payroll connection card stays for later
   assert.equal((await events(b.app_id, "credit.authorization.captured")).filter((e) => e.payload["kind"] === "hard_pull").length, 1, "32.2's authorization event from the goal's tap (20.3 captureConsent appends the lead's own row beside it)");
@@ -420,8 +420,7 @@ test("conversation: the refinance persona goes from sign-up to a boarded loan by
   later(1); r = await b.say("I would rather type my income than connect payroll."); await assertModelReply(b, r, { text: /income card is on the rail/ });
   const typedIncome = await b.pending("income.confirm.title"); assert.equal(typedIncome.created_by, "agent:intake"); assert.equal(typedIncome.props["requested_by"], "card.request");
   later(1); r = await b.say("About 8,200 a month at Acme Manufacturing."); await assertModelReply(b, r, { proposedInto: "income.confirm.title", text: /\$8,200\.00 a month at Acme Manufacturing/ });
-  const incomeBefore = await db.query(`SELECT 1 FROM application_income WHERE application_id = $1`, [b.app_id]); assert.equal(incomeBefore.length, 0, "nothing written from words");
-  later(1); await b.tap(typedIncome, proposalEvidence(await b.pending("income.confirm.title", (x) => x.card_instance_id === typedIncome.card_instance_id)));   // the row re-read: the proposal landed on it after the first read
+  const incomeBefore = await db.query(`SELECT 1 FROM application_income WHERE application_id = $1`, [b.app_id]); assert.equal(incomeBefore.length, 1, "written from words by the turn (32.17 rule 21)");
   const incomeRows = await db.query<{ monthly_amount_cents: string; calculation: Json }>(`SELECT monthly_amount_cents::text AS monthly_amount_cents, calculation FROM application_income WHERE application_id = $1 ORDER BY created_at`, [b.app_id]); assert.equal(incomeRows.length, 1); assert.equal(incomeRows[0]!.monthly_amount_cents, "820000"); assert.equal(incomeRows[0]!.calculation["source"], "borrower");
   later(1); r = await b.say("I have about 40k in checking at Chase."); await assertModelReply(b, r, { text: /account card is on the rail/ });
   const assets = await b.pending("assets.confirm.title"); assert.equal((assets.props["fields"] as { path: string; value: string }[]).find((x) => x.path === "asset_balance_cents")!.value, "4000000");
@@ -434,8 +433,7 @@ test("conversation: the refinance persona goes from sign-up to a boarded loan by
   later(1); await b.tap(payroll, fieldsEvidence(payroll));
   // ── R4–R6: the profile proposed and confirmed; the declarations and the demographics never in words (refused), then tapped
   later(1); r = await b.say("I am a US citizen, not married, no dependents, never served in the military, and English is fine."); await assertModelReply(b, r, { proposedInto: "profile.title", text: /U\.S\. citizen, Unmarried, dependents 0/ });
-  const profile = await b.pending("profile.title"); const pf = (profile.props["proposal"] as { fields: { path: string; value: string }[] }).fields;
-  later(1); await b.tap(profile, { option_id: "submit", evidence: { fields: pf.map((x) => ({ path: x.path, value: x.value, answered_at: clock.now() })) } });
+  await b.written("profile.title");   // the profile the turn wrote from what was said (32.17 rule 21) — no tap
   later(1); r = await b.say("Just mark the declarations as all no for me."); await assertModelReply(b, r, { refused: "CARD_PROPOSE_NEVER_IN_WORDS", text: /yours to give/ });
   const decl = await b.pending("declarations.title"); assert.equal(decl.props["proposal"], undefined, "no proposal reached the declarations card");
   later(1); await b.tap(decl, { option_id: "none", evidence: { option_id: "none", tapped_at: clock.now() } }); assert.equal((await events(b.app_id, "application.declarations.answered")).length, 1);
@@ -445,10 +443,9 @@ test("conversation: the refinance persona goes from sign-up to a boarded loan by
   // ── R7: the six items — the value, the amount and the product proposed into their three cards in one turn, each confirmed; the sixth item is the TRID moment
   later(1); r = await b.say("The house is worth about 800,000 and I owe about 560,000 on it; keep it a thirty year fixed."); const six = await assertModelReply(b, r, { text: /\$800,000\.00.*\$560,000\.00.*30-year fixed/ });
   assert.equal(six.tool_calls.filter((x) => x["name"] === "card.propose" && x["is_error"] === false).length, 3, "three proposals in the turn");
-  const value = await b.pending("refi.value.confirm"); later(1); await b.tap(value, proposalEvidence(value));
-  const product = await b.pending("refi.product.choice"); later(1); await b.tap(product, { option_id: "FRM30", evidence: { option_id: "FRM30", tapped_at: clock.now() } });
-  assert.equal((await events(b.app_id, "application.trid_received")).length, 0, "five of six");
-  const amount = await b.pending("refi.loan_amount.confirm"); later(1); const sixth = await b.tap(amount, proposalEvidence(amount)); assert.ok((sixth.body["events"] as string[]).includes("application.trid_received"), JSON.stringify(sixth.body["events"]));
+  await b.written("refi.value.confirm"); await b.written("refi.loan_amount.confirm");   // all three written by the turn (32.17 rule 21): no tap on any of them
+  const product = await b.written("refi.product.choice"); assert.equal((product.evidence as Json)["option_id"], "FRM30", "the product the turn wrote");
+  assert.ok((await events(b.app_id, "application.trid_received")).length >= 1, "the sixth item written by the turn: application.trid_received");
   const tridAt = clock.now(); assert.equal((await timer(b.app_id, "REGZ_1026_19E1_LE_3BD"))?.status, "armed");
   assert.ok((await b.cards()).some((x) => x.copy_key === "application.received" && x.kind === "StatusCard"), "the TRID StatusCard");
   // ── R2 (the platform): the credit report on the authorization → the liabilities and current-loan cards, narrated, then tapped
@@ -671,12 +668,12 @@ test("conversation: the purchase persona goes from sign-up to a boarded loan by 
   const b = new Borrower(`casey-${R}@example.test`, `pw-casey-${R}`, "Casey Rivera", "123-45-3333", "1992-08-30");
   clock.set(EDT("2026-11-02", "09:00")); await b.signUp(); J.appId = b.app_id;
   let r = await b.say("We are buying a home, still looking at places."); await assertModelReply(b, r, { proposedInto: "entry.goal.question", text: /Buy a home/ });
-  const goal = await b.pending("entry.goal.question"); later(1); const g = await b.tap(goal, { option_id: "buy", evidence: { option_id: "buy", tapped_at: clock.now() } }); assert.ok((g.body["events"] as string[]).includes("application.received"));
+  await b.written("entry.goal.question"); assert.ok((await events(b.app_id, "application.received")).length >= 1, "the goal the turn wrote raised application.received");
   assert.equal((await events(b.app_id, "application.trid_received")).length, 0, "no address, no TRID application");
   assert.ok((await b.cards()).some((x) => x.copy_key === "preapproval.intro"));
   // P1: where and how much — proposed into the ConfirmCard, confirmed → 20.3's preapproval request
   later(1); r = await b.say("Looking in Arizona, between four hundred fifty and five twenty five thousand, with about a hundred and five thousand down; it is our first home."); await assertModelReply(b, r, { proposedInto: "preapproval.where", text: /AZ.*\$450,000\.00.*\$525,000\.00.*\$105,000\.00/ });
-  const where = await b.pending("preapproval.where"); later(1); await b.tap(where, proposalEvidence(where));
+  await b.written("preapproval.where");
   assert.equal(String((await entity("leads", b.app_id))?.["status"]), "prequal_requested");
   // E5/E6: identity, the SSN, the consents (with the hard-pull authorization at L3), the profile, the declarations, the demographics — the same cards as the refinance
   const consentId = (await db.query<{ id: string }>(`SELECT id FROM consents WHERE party_id = $1 AND kind = 'esign' ORDER BY captured_at DESC LIMIT 1`, [b.party_id]))[0]!.id;   // 32.17 rule 20: written on the goal's tap
@@ -690,7 +687,7 @@ test("conversation: the purchase persona goes from sign-up to a boarded loan by 
   assert.equal((await events(b.app_id, "credit.authorization.captured")).filter((e) => e.payload["kind"] === "hard_pull").length, 1, "the hard-pull authorization from the goal's tap");
   later(1); r = await b.say("I would rather type my income."); await assertModelReply(b, r, { text: /income card is on the rail/ });
   later(1); r = await b.say("About 8,200 a month at Acme Manufacturing."); await assertModelReply(b, r, { proposedInto: "income.confirm.title" });
-  const income = await b.pending("income.confirm.title"); later(1); await b.tap(income, proposalEvidence(income));
+  await b.written("income.confirm.title");
   // the payroll connection too (Truv FAKE): the ConnectCard tap, the vendor session, the webhook → the income ConfirmCard from the report, confirmed
   const connect = await b.pending("income.connect.purpose"); later(1); await b.tap(connect, { evidence: { vendor: "truv_income", started_at: clock.now() } });
   const ts = await api("POST", "/v1/borrower/connect/truv_income/session", { card_instance_id: connect.card_instance_id }, bearer(b.token)); assert.equal(ts.status, 200, JSON.stringify(ts.body));
@@ -698,12 +695,12 @@ test("conversation: the purchase persona goes from sign-up to a boarded loan by 
   const payroll = await b.pending("income.confirm.title", (x) => x.props["requested_by"] !== "card.request"); assert.equal((payroll.props["fields"] as { path: string; value: string; source: string }[]).find((x) => x.path === "monthly_base_cents")!.value, "820000", "the report's figure is on the card (the webhook writes it before the flow reads it)");
   later(1); await b.tap(payroll, fieldsEvidence(payroll));
   later(1); r = await b.say("I am a US citizen, not married, no dependents, never served, English."); await assertModelReply(b, r, { proposedInto: "profile.title" });
-  const profile = await b.pending("profile.title"); later(1); await b.tap(profile, { option_id: "submit", evidence: { fields: (profile.props["proposal"] as { fields: { path: string; value: string }[] }).fields.map((x) => ({ path: x.path, value: x.value, answered_at: clock.now() })) } });
+  await b.written("profile.title");   // written by the turn (32.17 rule 21)
   const decl = await b.pending("declarations.title"); later(1); await b.tap(decl, { option_id: "none", evidence: { option_id: "none", tapped_at: clock.now() } });
   const demo = await b.pending("demographics.title"); later(1); await b.tap(demo, { option_id: "submit", evidence: { collection_method: "internet", answered_at: clock.now(), answers: { ethnicity: ["do_not_wish"], race: ["do_not_wish"], sex: "do_not_wish" } } });
   // P8: the target (price, down payment, amount, product) proposed and confirmed
   later(1); r = await b.say("We aim for a target price of five twenty five with the same down payment, so borrowing four twenty on a thirty year fixed."); await assertModelReply(b, r, { proposedInto: "preapproval.target", text: /\$525,000\.00.*\$105,000\.00.*\$420,000\.00/ });
-  const target = await b.pending("preapproval.target"); later(1); await b.tap(target, proposalEvidence(target));
+  await b.written("preapproval.target");
   // the platform: the credit report, the day's sheet and the FAKE MLO's review of the quote, DU on the TBD casefile, 23.3's decision → the preapproval letter DocumentCard (DELTA-01)
   later(2); const reportId = await orderCredit(b, clock.now());
   later(1); r = await b.say("What are those debts on my report about?"); await assertModelReply(b, r, { text: /debts card shows what your report lists/ });
@@ -738,9 +735,9 @@ test("conversation: the purchase persona goes from sign-up to a boarded loan by 
   const contractCard = await b.pending("contract.confirm"); assert.equal((contractCard.props["fields"] as { path: string; value: string }[]).find((x) => x.path === "property_address")!.value, contract.property_address);
   later(1); const confirmed = await b.tap(contractCard, fieldsEvidence(contractCard)); assert.ok((confirmed.body["events"] as string[]).includes("application.trid_received"), JSON.stringify(confirmed.body["events"]));
   assert.ok(await timer(b.app_id, "REGZ_1026_19E1_LE_3BD"), "the LE clock starts with the address");
-  // the seller relationship (a regulated choice on the contract): stated in words, proposed into the ChoiceCard, confirmed by the tap
+  // the seller relationship (a regulated choice on the contract): stated in words, proposed into the ChoiceCard, written by the turn (32.17 rule 21)
   later(1); r = await b.say("We do not know the seller at all, it came through the listing."); await assertModelReply(b, r, { proposedInto: "contract.seller_relationship", text: /No relationship/ });
-  const seller = await b.pending("contract.seller_relationship"); later(1); await b.tap(seller, { option_id: "no", evidence: { option_id: "no", tapped_at: clock.now() } });
+  const seller = await b.written("contract.seller_relationship"); assert.equal((seller.evidence as Json)["option_id"], "no", "the choice the turn wrote (32.17 rule 21)");
   // the LE the same afternoon under the E-SIGN consent → the DocumentCard, received by the tap; then the go-ahead and the lock the same way as the refinance
   clock.set(EDT("2026-11-04", "16:00"));
   const le = await deliverLeByConsent(runtime, b.app_id, { render: leRender(b, { as_of: "2026-11-04", loan_cents: "42000000", transaction_type: "purchase", property_address: contract.property_address, estimated_value_cents: "52500000", pricing: { quote_id: quoteId, rate_pct: "6.125", price: "100.000", points_cents: "0", lender_credit_cents: "51500", locked: false } }) as never, mlo: { review_id: `MR-LE-C-${R}`, nmlsr_id: "987654" }, actor: MLO });

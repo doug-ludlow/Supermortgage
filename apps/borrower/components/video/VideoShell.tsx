@@ -37,7 +37,7 @@ import { Record } from "@/components/record/Record";
 import { proposalOf } from "@/components/record/Rail";
 import { Card } from "@/components/cards";
 import { CardBoundary } from "@/components/flows/13-cross-cutting/CardBoundary";
-import { cardTitle, ConfirmChip } from "@/components/shell/chips";
+import { cardTitle, commitRefusedOf, ConfirmChip } from "@/components/shell/chips";
 import { askRises, askStamp, pickAsk } from "@/lib/video/ask";
 import { nowIso } from "@/components/cards/CardFrame";
 import { VideoCall } from "./VideoCall";
@@ -165,7 +165,7 @@ export function VideoShell({ fixturesMode, fixtureName, initialSubject }: VideoS
   }, [fixturesMode, subject]);
   /** The way out a refusal names: the identity card's address on file for another account → sign in with it (the form, the address filled in). */
   const chipAction = useCallback((card: AnyCardInstance): { label: string; onClick: () => void } | undefined => {
-    if (cardErrorCodes[card.card_instance_id] !== "IDENTITY_EMAIL_ON_FILE") return undefined;
+    if ((cardErrorCodes[card.card_instance_id] ?? commitRefusedOf(card)?.code) !== "IDENTITY_EMAIL_ON_FILE") return undefined;
     const email = (proposalOf(card)?.fields ?? []).find((f) => f.path === "email")?.value ?? "";
     return { label: copy("identity.contact.sign_in"), onClick: () => { setSignInEmail(email); setSignInOpen(true); } };
   }, [cardErrorCodes]);

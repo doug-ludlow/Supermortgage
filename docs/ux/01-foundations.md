@@ -231,7 +231,7 @@ WCAG 2.2 AA. Every card is keyboard-operable with visible focus; cards announce 
 
 ## 9. Telemetry and evidence
 
-`ui_events` (UI-owned, append-only): `{ui_event_id, party_id, session_id, conversation_id, card_instance_id?, kind ∈ {card_shown, card_resolved, document_opened, document_scrolled_to_end, consent_affirmed, connector_started, connector_completed, deep_link_opened, voice_started, human_requested}, at, ip, user_agent, disclosure_version_id?, payload}`. Domain evidence is written by the command handler into the owning table (`consents`, `intent_records`, `disclosures.receipt_evidence`, `credit_authorizations`, `condition_clearances`, `contacts`); `ui_events` is the corroborating trail. Retention follows the owning record's class (O12.3 / 19.x). No analytics vendor receives PII; product analytics use `party_id` hashes.
+`ui_events` (UI-owned, append-only): `{ui_event_id, party_id, session_id, conversation_id, card_instance_id?, kind ∈ {card_shown, card_resolved, card_rewritten, document_opened, document_scrolled_to_end, consent_affirmed, connector_started, connector_completed, deep_link_opened, voice_started, human_requested}, at, ip, user_agent, disclosure_version_id?, payload}`. Domain evidence is written by the command handler into the owning table (`consents`, `intent_records`, `disclosures.receipt_evidence`, `credit_authorizations`, `condition_clearances`, `contacts`); `ui_events` is the corroborating trail. Retention follows the owning record's class (O12.3 / 19.x). No analytics vendor receives PII; product analytics use `party_id` hashes.
 
 ## 10. Degraded modes
 

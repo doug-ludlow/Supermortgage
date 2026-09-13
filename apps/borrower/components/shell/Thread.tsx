@@ -20,7 +20,7 @@ import { civilDate, dayDividerLabel, formatDate } from "@/lib/format";
 import { copy } from "@/lib/copy";
 import { MessageBody } from "@/components/flows/3-entry";
 import { packageMembers } from "@/components/flows/4-disclosures";
-import { ConfirmChip, ReferenceChip, cardTitle } from "./chips";
+import { ConfirmChip, ReceiptChip, ReferenceChip, cardTitle } from "./chips";
 import { RatesElement, isRatesElement } from "./RatesElement";
 
 export type ThreadProps = {
@@ -61,6 +61,13 @@ export function currentAsk(cards: Record<string, AnyCardInstance>, neededFirst?:
 
 const proposalOf = (c: AnyCardInstance | undefined): CardProposal | undefined => {
   const p = c && c.status === "pending" ? ((c.props as { proposal?: CardProposal }).proposal ?? undefined) : undefined;
+  return p && ((p.fields && p.fields.length > 0) || p.option_id) ? p : undefined;
+};
+/** 32.17 rule 21: a card the turn wrote from what was said — its proposal is the receipt's read-back. */
+const writtenOf = (c: AnyCardInstance | undefined): CardProposal | undefined => {
+  if (!c || c.status !== "pending" && c.status !== "resolved") return undefined;
+  if (c.status !== "resolved" || (c.evidence as { committed_by?: string } | null)?.committed_by !== "turn") return undefined;
+  const p = (c.props as { proposal?: CardProposal }).proposal ?? undefined;
   return p && ((p.fields && p.fields.length > 0) || p.option_id) ? p : undefined;
 };
 
@@ -106,6 +113,8 @@ export function Thread({ messages, cards, timezone, partnerLegalName, showSubjec
   // 32.4 §2: the LE and its companions are one grouped reference — the package's chips render at its first message; the members render nothing of their own
   const packages = useMemo(() => packageMembers(sorted, cards), [sorted, cards]);
   // §3.4: every pending card the model proposed into reads back as a confirm chip at the foot of the log — the latest exchange
+  // 32.17 rule 21: the newest fact the turn wrote reads back as a receipt under the log — nothing to tap; a correction is said
+  const written = useMemo(() => Object.values(cards).map((card) => ({ card, proposal: writtenOf(card) })).filter((x): x is { card: AnyCardInstance; proposal: CardProposal } => !!x.proposal).sort((a, b) => String(b.card.resolved_at ?? "").localeCompare(String(a.card.resolved_at ?? ""))).slice(0, 1), [cards]);
   const proposals = useMemo(() => Object.values(cards).map((card) => ({ card, proposal: proposalOf(card) })).filter((x): x is { card: AnyCardInstance; proposal: CardProposal } => !!x.proposal).sort((a, b) => (a.proposal.proposed_at ?? "").localeCompare(b.proposal.proposed_at ?? "")), [cards]);
 
   return (
@@ -174,6 +183,11 @@ export function Thread({ messages, cards, timezone, partnerLegalName, showSubjec
             {proposals.map(({ card, proposal }) => (
               <ConfirmChip key={card.card_instance_id} card={card} proposal={proposal} busy={busyCardId === card.card_instance_id} error={cardErrors[card.card_instance_id]} onConfirm={(req) => void resolve(card, req)} onEdit={(id) => onOpenCard?.(id)} />
             ))}
+          </div>
+        ) : null}
+        {!proposals.length && written.length ? (
+          <div className="sm-thread-chips" data-testid="receipt-chips">
+            {written.map(({ card, proposal }) => <ReceiptChip key={card.card_instance_id} card={card} proposal={proposal} />)}
           </div>
         ) : null}
       </div>

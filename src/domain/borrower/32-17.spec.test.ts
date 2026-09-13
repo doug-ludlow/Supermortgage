@@ -290,36 +290,29 @@ test("32.17-T2: Given the vendor posts a chat-completions request with the borro
   assert.ok((await decisionsOf("video.turn")).some((d) => d.rationale.includes(videoA.id)), "video.turn recorded the turn on the bus");
 });
 
-test("32.17-T3: Given \"I make about eight thousand two hundred a month\" in a video turn with the R3 income card pending, then `card_instances.props.proposal.fields[0] = {path: \"monthly_income\", value: \"820000\", source: \"borrower_stated_unconfirmed\"}`, the rail's card row shows the value with Confirm and Edit, and Confirm resolves the card with `evidence.source = borrower_stated` — nothing is committed by the words.", { skip }, async () => {
+test("32.17-T3: Given \"I make about eight thousand two hundred a month\" in a video turn with the R3 income card pending, then the turn writes it (rule 21): `card_instances.props.proposal.fields[0] = {path: \"monthly_income\", value: \"820000\", source: \"borrower_stated_unconfirmed\"}`, the card resolved with `evidence.source = borrower_stated` and `committed_by = turn`, `application_income` gains the row — no Confirm on the rail, nothing rises over the stage for it, and the record drawer no longer lists it under Needed from you.", { skip }, async () => {
   const b = await signedUpWithGoal("t3"); const cardId = await sendIncomeCard(b);
   const v = await openVideo(b.token); assert.equal(v.status, 201);
   const incomeRows = () => db.query<{ monthly_amount_cents: string }>(`SELECT monthly_amount_cents::text AS monthly_amount_cents FROM application_income WHERE application_id = $1 ORDER BY created_at`, [b.app_id]);
   const before = await incomeRows();
-  scripted.use([{ when: /eight thousand two hundred a month/i, calls: (c) => [{ name: "card_propose", input: { card_instance_id: String((c.situation["pending_cards"] as Json[]).find((x) => x["copy_key"] === "income.confirm.title")!["card_instance_id"]), fields: [{ path: "monthly_income", value: "820000" }] } }], text: "I heard {{proposal.monthly_income}} a month — tap Confirm on the income card if that's right." }]);
+  scripted.use([{ when: /eight thousand two hundred a month/i, calls: (c) => [{ name: "card_propose", input: { card_instance_id: String((c.situation["pending_cards"] as Json[]).find((x) => x["copy_key"] === "income.confirm.title")!["card_instance_id"]), fields: [{ path: "monthly_income", value: "820000" }] } }], text: "I heard {{proposal.monthly_income}} a month — that's saved; say if it's not right." }]);
   const r = await speak(v.videoToken, "I make about eight thousand two hundred a month");
-  assert.equal(r.status, 200); assert.equal(r.text, "I heard $8,200.00 a month — tap Confirm on the income card if that's right.");
-  // the proposal on the card, unconfirmed; nothing committed by the words
-  const card = await cardRow(cardId); assert.equal(card.status, "pending");
-  assert.deepEqual(((card.props["proposal"] as Json)["fields"] as Json[])[0], { path: "monthly_income", value: "820000", source: "borrower_stated_unconfirmed" });
-  assert.deepEqual(await incomeRows(), before, "application_income unchanged until the tap");
-  // the rail: the card's row shows the stated value with Confirm and Edit (no thread on /app/video — 32.17 discrepancy 1); Confirm resolves it
-  const { page, ctx } = await openVideoShell(b.token, 1280);
-  // 32.17 rule 16: the proposed card rose over the stage with the same strip
-  const risen = page.locator(`[data-testid="ask-overlay"][data-card-id="${cardId}"][data-reason="proposal"]`); await risen.waitFor({ timeout: 30_000 });
-  assert.match(await risen.getByTestId("confirm-chip-readback").innerText(), /\$8,200\.00/);
-  await openRail(page);
-  const strip = page.locator(`[data-testid="record"] [data-testid="rail-proposal"][data-card-id="${cardId}"]`);
-  await strip.waitFor({ timeout: 30_000 });
-  assert.match(await strip.getByTestId("confirm-chip-readback").innerText(), /\$8,200\.00/);
-  assert.equal(await strip.getByTestId("confirm-chip-confirm").count(), 1); assert.equal(await strip.getByTestId("confirm-chip-edit").count(), 1);
-  assert.equal(await page.locator('[data-testid="thread"]').count(), 0, "no thread on the video screen");
-  await strip.getByTestId("confirm-chip-confirm").click();
-  const deadline = Date.now() + 20_000; let resolved = await cardRow(cardId);
-  while (resolved.status !== "resolved" && Date.now() < deadline) { await new Promise((r) => setTimeout(r, 250)); resolved = await cardRow(cardId); }
+  assert.equal(r.status, 200); assert.equal(r.text, "I heard $8,200.00 a month — that's saved; say if it's not right.");
   await settle();
-  assert.equal(resolved.status, "resolved"); assert.equal(resolved.evidence!["source"], "borrower_stated");
+  // the proposal on the card and the write in the same turn (rule 21): resolved by the turn, the income row landed
+  const card = await cardRow(cardId); assert.equal(card.status, "resolved", `the turn wrote it: ${JSON.stringify(card.props["commit_refused"] ?? null)}`);
+  assert.deepEqual(((card.props["proposal"] as Json)["fields"] as Json[])[0], { path: "monthly_income", value: "820000", source: "borrower_stated_unconfirmed" });
+  assert.equal(card.evidence!["source"], "borrower_stated"); assert.equal(card.evidence!["committed_by"], "turn");
   const after = await incomeRows(); assert.equal(after.length, before.length + 1); assert.equal(after.at(-1)!.monthly_amount_cents, "820000");
-  await page.screenshot({ path: `${SCREENSHOTS}/t3-rail-confirm-1280.png`, fullPage: false }).catch(() => undefined);
+  // the screen: no Confirm anywhere for it — nothing rises over the stage for a written fact; the drawer no longer lists it under Needed from you
+  const { page, ctx } = await openVideoShell(b.token, 1280);
+  await new Promise((res) => setTimeout(res, 1500));
+  assert.equal(await page.locator(`[data-testid="ask-overlay"][data-card-id="${cardId}"]`).count(), 0, "nothing rises for a written fact");
+  assert.equal(await page.getByTestId("confirm-chip-confirm").count(), 0, "no Confirm on the screen");
+  await openRail(page);
+  assert.equal(await page.locator(`[data-testid="record"] [data-record-section="needed"] [data-rail-card="${cardId}"]`).count(), 0, "not needed any more");
+  assert.equal(await page.locator('[data-testid="thread"]').count(), 0, "no thread on the video screen");
+  await page.screenshot({ path: `${SCREENSHOTS}/t3-written-1280.png`, fullPage: false }).catch(() => undefined);
   await ctx.close();
 });
 
@@ -623,7 +616,7 @@ test("32.17-T12: Given `/app/video` at ≥ 1024 px with the refinance fixture at
   await ctx.close();
 });
 
-test("32.17-T14: Given the cooperative refinance persona run through `/app/video` against the FAKE from account creation, then the run reaches the same milestone as 32.16 32.16-T21 with every fact resolved by a tap on the rail and `agent_turns.latency_ms` reported as p50 and p95 for `channel = video`.", { skip }, async () => {
+test("32.17-T14: Given the cooperative refinance persona run through `/app/video` against the FAKE from account creation, then the run reaches the same milestone as 32.16 32.16-T21 with every fact written by the turn from what was said (`evidence.committed_by = turn`) or resolved by a tap on the rail, and `agent_turns.latency_ms` reported as p50 and p95 for `channel = video`.", { skip }, async () => {
   assert.ok(await evalDbReachable(EVAL_DB_URL), `the eval database server at ${EVAL_DB_URL}`);
   // the eval harness (src/domain/borrower/eval): its own database, the scripted model with the persona's scenes, FakeTavus behind the video routes (no TAVUS_API_KEY)
   const h = await openEvalHarness({ dbUrl: EVAL_DB_URL });
@@ -656,7 +649,7 @@ test("32.17-T14: Given the cooperative refinance persona run through `/app/video
     // every fact resolved by a tap on the rail (evidence.source = borrower_stated on the proposed card; never by speech)
     const resolved = await h.db.query<{ card_instance_id: string; copy_key: string; evidence: Json | null; props: Json }>(`SELECT card_instance_id, copy_key, evidence, props FROM card_instances WHERE party_id = $1 AND status = 'resolved'`, [run.party_id]);
     assert.ok(resolved.length >= 1); for (const c of resolved) { assert.ok(c.evidence && (c.evidence["source"] === "borrower_stated" || c.evidence["option_id"] || c.evidence["fields"]), `${c.copy_key} resolved by a tap: ${JSON.stringify(c.evidence)}`); }
-    assert.ok(resolved.some((c) => c.copy_key === "entry.goal.question" && c.evidence?.["source"] === "borrower_stated"), "the goal the borrower stated on the call, confirmed by the tap");
+    assert.ok(resolved.some((c) => c.copy_key === "entry.goal.question" && (c.evidence?.["committed_by"] === "turn" || c.evidence?.["source"] === "borrower_stated")), "the goal the borrower stated on the call, written by the turn (rule 21) or confirmed by a tap");
     // the transcript is on messages{channel=video}: every utterance of the persona; the turns with channel = video; latency p50 / p95 reported
     const utterances = await h.db.query<{ body_text: string }>(`SELECT m.body_text FROM messages m JOIN conversations c ON c.conversation_id = m.conversation_id WHERE c.party_id = $1 AND m.sender = 'borrower' AND m.channel = 'video' ORDER BY m.created_at`, [run.party_id]);
     assert.deepEqual(utterances.map((u) => u.body_text), COOPERATIVE.steps.filter((s): s is { say: string } => "say" in s).map((s) => s.say));
@@ -724,7 +717,7 @@ test("32.17-T15: Given `/app/video` with no session, when the visitor starts the
 });
 const isUuidLike = (s: string): boolean => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 
-test("32.17-T16: Given the video-door session, then the first need on the rail is the identity ConfirmCard (`identity.contact.title`, paths `legal_name` and `email`) ahead of the goal card, the greeting asks the borrower's name with no first name spoken, and a spoken \"My name is Dana Reyes\" proposes nothing yet (the card needs both, and a proposal of the name alone is refused as `PROPOSAL_INCOMPLETE`) and the reply says the name back and asks for the e-mail next; nothing is written to `parties` before the tap.", { skip }, async () => {
+test("32.17-T16: Given the video-door session, then the first need on the rail is the identity ConfirmCard (`identity.contact.title`, paths `legal_name` and `email`) ahead of the goal card, the greeting asks the borrower's name with no first name spoken, and a spoken \"My name is Dana Reyes\" proposes nothing yet (the card needs both, and a proposal of the name alone is refused as `PROPOSAL_INCOMPLETE`) and the reply says the name back and asks for the e-mail next; nothing is written to `parties` before the e-mail is heard.", { skip }, async () => {
   assert.ok(door, "T15 opened the door");
   const cards = await db.query<{ card_instance_id: string; kind: string; copy_key: string; status: string; props: Json }>(`SELECT card_instance_id, kind, copy_key, status, props FROM card_instances WHERE party_id = $1 ORDER BY created_at`, [door.party_id]);
   assert.equal(cards[0]!.copy_key, IDENTITY_KEY, `the identity card first: ${cards.map((c) => c.copy_key).join(", ")}`); assert.equal(cards[0]!.kind, "ConfirmCard"); assert.equal(cards[0]!.status, "pending");
@@ -751,7 +744,7 @@ test("32.17-T16: Given the video-door session, then the first need on the rail i
   assert.equal(party.legal_name, "Borrower (video)", "nothing written before the tap"); assert.equal(party.contact["email"], undefined);
 });
 
-test("32.17-T17: Given the name heard, when the borrower says \"dana dot reyes at example dot test\", then `legal_name = \"Dana Reyes\"` and `email = \"dana.reyes@example.test\"` are proposed together in one call and Confirm on the rail writes `parties.legal_name = \"Dana Reyes\"` and `parties.contact.email` (unverified, source video) through `video.identify`, logging `party.identified{fields}` without the values; the next turn greets by first name; a later `POST /v1/borrower/auth/otp` to that e-mail with its code opens a session on the same party whose thread carries the call's messages; a second `video.identify` and one naming an address on file for another account are refused.", { skip }, async () => {
+test("32.17-T17: Given the name heard, when the borrower says \"dana dot reyes at example dot test\", then `legal_name = \"Dana Reyes\"` and `email = \"dana.reyes@example.test\"` are proposed together in one call and the turn writes `parties.legal_name = \"Dana Reyes\"` and `parties.contact.email` (unverified, source video) through `video.identify` with no tap (rule 21), logging `party.identified{fields}` without the values; the next turn greets by first name; a later `POST /v1/borrower/auth/otp` to that e-mail with its code opens a session on the same party whose thread carries the call's messages; a second `video.identify` and one naming an address on file for another account are refused.", { skip }, async () => {
   assert.ok(door, "T15 opened the door");
   const email = "dana.reyes@example.test";
   // a re-run on a kept database: the address an earlier run attached elsewhere would be "on file for another account" (the refusal this test proves last) — clear it first
@@ -761,9 +754,9 @@ test("32.17-T17: Given the name heard, when the borrower says \"dana dot reyes a
   const proposal = (await cardRow(cardId)).props["proposal"] as Json;
   const fields = (proposal["fields"] as Json[]).map((f) => ({ path: f["path"], value: f["value"] }));
   assert.deepEqual(fields, [{ path: "legal_name", value: "Dana Reyes" }, { path: "email", value: "dana dot reyes at example dot test" }], "the proposal as transcribed (the command normalizes the spoken address)");
-  // Confirm on the rail: the confirmed fields → video.identify → the account's name and e-mail, once
-  const c = await api("POST", `/v1/borrower/cards/${cardId}/resolve`, { evidence: { source: "borrower_stated", fields: fields.map((f) => ({ path: f.path, value_confirmed: f.value, source: "borrower" })) } }, bearer(door.token)); await settle();
-  assert.equal(c.status, 201, JSON.stringify(c.body).slice(0, 400)); assert.equal((c.body["card"] as Json)["status"], "resolved");
+  // the turn wrote it (rule 21): the proposed fields → video.identify → the account's name and e-mail, once, with no tap
+  await settle(); const written = await cardRow(cardId);
+  assert.equal(written.status, "resolved", `the turn wrote it: ${JSON.stringify(written.props["commit_refused"] ?? null)}`); assert.equal(written.evidence!["committed_by"], "turn");
   const party = (await db.query<{ legal_name: string; contact: Json }>(`SELECT legal_name, contact FROM parties WHERE id = $1`, [door.party_id]))[0]!;
   assert.equal(party.legal_name, "Dana Reyes"); assert.equal(party.contact["email"], email); assert.equal(party.contact["email_verified"], false); assert.equal(party.contact["email_source"], "video");
   const ab = (await db.query<{ legal_name: string; contact: Json | null }>(`SELECT legal_name, contact FROM application_borrowers WHERE party_id = $1`, [door.party_id]))[0]!; assert.equal(ab.legal_name, "Dana Reyes"); assert.equal(ab.contact?.["email"], email);
@@ -838,7 +831,7 @@ test("32.17-T19: Given `/app/video` at ≥ 1024 px on a live call (the FAKE stan
   await ctx.close();
 });
 
-test("32.17-T20: Given `/app/video` on a live call with the goal chosen and a typed income card pending, then a card only a tap can answer (a consent the goal opened) is on the screen on its own and \"Not now\" sets it aside; with only speakable cards left, nothing is on the screen until Michelle proposes into one or asks for one; when a spoken income figure is proposed into the income card, that one card rises over the stage with what was heard and Confirm and Edit, and Confirm resolves it and it leaves the screen.", { skip }, async () => {
+test("32.17-T20: Given `/app/video` on a live call with the goal chosen and a typed income card pending, then a card only a tap can answer (the ID scan the goal opened) is on the screen on its own and \"Not now\" sets it aside; with only speakable cards left, nothing is on the screen until Michelle asks for one; when a spoken income figure is heard, the turn writes it (rule 21) — the card resolves with `committed_by = turn`, nothing rises over the stage for it and no Confirm is on the screen — and the stage moves to the next tap-only ask.", { skip }, async () => {
   // the rule as a pure function (apps/borrower/lib/video/ask.ts), loaded by path at run time
   const askModule = `${ROOT}apps/borrower/lib/video/ask.ts`;
   const ask = (await import(askModule)) as { riseReason: (c: { card_instance_id: string; kind: string; props: Json } | null) => string | null; askRises: (c: { card_instance_id: string; kind: string; props: Json }, d: Set<string>) => string | null; askStamp: (c: { card_instance_id: string; kind: string; props: Json }) => string };
@@ -871,26 +864,16 @@ test("32.17-T20: Given `/app/video` on a live call with the goal chosen and a ty
   // with only speakable cards left (the income confirm), nothing is on the screen until a proposal
   assert.equal(await page.getByTestId("ask-overlay").count(), 0, "no card on the screen before a proposal");
   assert.equal(await page.locator('[data-testid="shell"] article[data-card-kind]:visible').count(), 0, "no card component on the screen at all (the drawer's are off the screen)");
-  // the spoken figure → proposed into the income card → that one card rises with Confirm and Edit
+  // the spoken figure → proposed into the income card → written by the turn (rule 21): the card resolves, nothing rises for it, no Confirm anywhere
   const r = await speak(v.videoToken, "I make about eight thousand two hundred a month"); assert.equal(r.status, 200);
-  const overlay = page.getByTestId("ask-overlay"); await overlay.waitFor({ state: "visible", timeout: 30_000 });
-  assert.equal(await overlay.getAttribute("data-card-id"), incomeId); assert.equal(await overlay.getAttribute("data-reason"), "proposal");
-  // one Confirm on the screen: the chip's (what was heard, Confirm · Edit); the card itself opens under it on Edit, with what was heard already in its fields
-  assert.equal(await overlay.getByTestId("confirm-chip-confirm").count(), 1); assert.equal(await overlay.getByTestId("confirm-chip-edit").count(), 1);
-  assert.equal(await overlay.locator("article[data-card-kind]").count(), 0, "no second Confirm under the chip"); assert.equal(await overlay.getByRole("button", { name: /^Confirm$/ }).count(), 1, "one Confirm");
-  assert.match((await overlay.getByTestId("confirm-chip-readback").textContent()) ?? "", /Monthly income: \$8,200\.00|8,200|8200/, "what was heard, as label: value");
-  await overlay.getByTestId("confirm-chip-edit").click();
-  const opened = overlay.locator("article[data-card-kind]"); await opened.waitFor({ state: "visible", timeout: 10_000 });
-  assert.equal(await opened.count(), 1, "Edit opens the one card"); assert.match(await opened.innerText(), /820000|8,200/, "the card holds what was heard");
-  const stage = (await page.getByTestId("video-live").boundingBox())!; const box = (await overlay.boundingBox())!;
-  assert.ok(box.width < stage.width / 2 && box.x > stage.x + stage.width / 2, `a card over the stage, not a pane: ${JSON.stringify(box)} in ${JSON.stringify(stage)}`);
-  await page.screenshot({ path: `${SCREENSHOTS}/t20-ask-1280.png`, fullPage: false }).catch(() => undefined);
-  await overlay.getByTestId("confirm-chip-confirm").click();
-  try { await overlay.waitFor({ state: "detached", timeout: 20_000 }); }
-  catch (e) { const err = await overlay.locator(".sm-error").allInnerTexts().catch(() => [] as string[]); throw new Error(`the card did not leave the screen after Confirm: ${String(e).split("\n")[0]}; card=${JSON.stringify(await cardRow(incomeId))}; overlay errors=${JSON.stringify(err)}; logs=${JSON.stringify((page as Page & { logs?: string[] }).logs?.slice(-12))}`); }
+  const deadline = Date.now() + 20_000; let row = await cardRow(incomeId);
+  while (row.status !== "resolved" && Date.now() < deadline) { await new Promise((res) => setTimeout(res, 250)); row = await cardRow(incomeId); }
   await settle();
-  assert.equal((await cardRow(incomeId)).status, "resolved", "Confirm resolved it");
-  assert.equal(await page.locator(`[data-testid="ask-overlay"][data-card-id="${incomeId}"]`).count(), 0, "and it left the screen (another tap-only ask may rise next: that is the rule working)");
+  assert.equal(row.status, "resolved", `the turn wrote it: ${JSON.stringify(row.props["commit_refused"] ?? null)}`); assert.equal(row.evidence!["committed_by"], "turn");
+  await new Promise((res) => setTimeout(res, 1000));
+  assert.equal(await page.locator(`[data-testid="ask-overlay"][data-card-id="${incomeId}"]`).count(), 0, "nothing rises over the stage for a written fact");
+  assert.equal(await page.getByRole("button", { name: /^Confirm$/ }).count(), 0, "no Confirm on the screen");
+  await page.screenshot({ path: `${SCREENSHOTS}/t20-written-1280.png`, fullPage: false }).catch(() => undefined);
   await ctx.close();
   } finally { clock.set(was); }
 });
@@ -1010,4 +993,31 @@ test("32.17-T24: Given a new account's goal card, then it carries the consents s
   assert.equal(hard.length, 1); assert.equal(hard[0]!.payload["card_instance_id"], goal.card_instance_id, "the hard-pull authorization names the goal card");
   assert.ok(!JSON.stringify(goal.evidence ?? {}).includes("typed_name"), "no typed name anywhere on the tap");
   assert.equal((await db.query(`SELECT 1 FROM card_instances WHERE party_id = $1 AND kind = 'ConsentCard'`, [b.party_id])).length, 0, "no ConsentCard sent, none on the record");
+});
+
+test("32.17-T25: Given a fact the turn wrote from what was said, when the borrower corrects it in words (\"make that eighty-five hundred\"), then `card.propose` lands on the resolved card and the turn resolves it again with `rewrite` — the command runs with the new value (`application_income` 850000), the card stays resolved with `evidence.rewrites = 1`, `card_rewritten` is logged and the reply reads the new value back; a correction of the video-door identity is refused by rule 12 (`IDENTITY_ALREADY_ON_FILE`, `identity.contact.already_on_file`) and the written values stay the card's proposal with the refusal on it.", { skip }, async () => {
+  const b = await signedUpWithGoal("t25"); const cardId = await sendIncomeCard(b);
+  const v = await openVideo(b.token); assert.equal(v.status, 201);
+  const incomeRows = () => db.query<{ monthly_amount_cents: string }>(`SELECT monthly_amount_cents::text AS monthly_amount_cents FROM application_income WHERE application_id = $1 ORDER BY created_at`, [b.app_id]);
+  const find = (c: { situation: Json }): string => String((((c.situation["pending_cards"] as Json[]) ?? []).find((x) => x["copy_key"] === "income.confirm.title") ?? ((c.situation["written_this_call"] as Json[]) ?? []).find((x) => x["copy_key"] === "income.confirm.title"))?.["card_instance_id"] ?? "");
+  scripted.use([
+    { when: /eight thousand two hundred/i, calls: (c) => [{ name: "card_propose", input: { card_instance_id: find(c), fields: [{ path: "monthly_income", value: "820000" }] } }], text: "I heard {{proposal.monthly_income}} a month — that's saved; say if it's not right." },
+    { when: /eighty[- ]five hundred/i, calls: (c) => [{ name: "card_propose", input: { card_instance_id: find(c), fields: [{ path: "monthly_income", value: "850000" }] } }], text: "Changed to {{proposal.monthly_income}} a month — that is saved; say if it is still not right." },
+  ]);
+  assert.equal((await speak(v.videoToken, "I make about eight thousand two hundred a month")).status, 200); await settle();
+  assert.equal((await cardRow(cardId)).status, "resolved", "written by the turn");
+  const r2 = await speak(v.videoToken, "make that eighty-five hundred"); assert.equal(r2.status, 200); assert.equal(r2.text, "Changed to $8,500.00 a month — that is saved; say if it is still not right."); await settle();
+  const again = await cardRow(cardId); assert.equal(again.status, "resolved"); assert.equal(again.evidence!["rewrites"], 1, JSON.stringify(again.evidence)); assert.equal(((again.props["proposal"] as Json)["fields"] as Json[])[0]!["value"], "850000");
+  assert.equal((await incomeRows()).at(-1)!.monthly_amount_cents, "850000");
+  assert.equal((await db.query(`SELECT 1 FROM ui_events WHERE card_instance_id = $1 AND kind = 'card_rewritten'`, [cardId])).length, 1, "card_rewritten logged");
+  // the video-door identity: a correction by words is refused by rule 12 (a change takes a fresh code) — the written values stay the card's proposal, the refusal waits on it in the copy library's words
+  assert.ok(door, "T15/T17 opened the door and wrote the identity");
+  const identityId = (await db.query<{ card_instance_id: string }>(`SELECT card_instance_id FROM card_instances WHERE party_id = $1 AND copy_key = $2`, [door.party_id, IDENTITY_KEY]))[0]!.card_instance_id;
+  const dv = await openVideo(door.token); assert.equal(dv.status, 201);
+  scripted.use([{ when: /spelled/i, calls: [{ name: "card_propose", input: { card_instance_id: identityId, fields: [{ path: "legal_name", value: "Dana Reyess" }, { path: "email", value: "dana.reyes@example.test" }] } }], text: "Got it — {{proposal.legal_name}}." }]);
+  const r3 = await speak(dv.videoToken, "my name is spelled Dana Reyess"); assert.equal(r3.status, 200); await settle();
+  const idCard = await cardRow(identityId); assert.equal(idCard.status, "resolved");
+  assert.equal((idCard.props["commit_refused"] as Json)["code"], "IDENTITY_ALREADY_ON_FILE", JSON.stringify(idCard.props["commit_refused"] ?? null)); assert.equal((idCard.props["commit_refused"] as Json)["copy_key"], "identity.contact.already_on_file");
+  assert.equal(((idCard.props["proposal"] as Json)["fields"] as Json[]).find((f) => f["path"] === "legal_name")!["value"], "Dana Reyes", "the written name stays the card's proposal");
+  assert.equal((await db.query<{ legal_name: string }>(`SELECT legal_name FROM parties WHERE id = $1`, [door.party_id]))[0]!.legal_name, "Dana Reyes", "nothing changed");
 });

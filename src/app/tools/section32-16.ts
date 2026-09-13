@@ -61,6 +61,8 @@ export const COMMAND_RUN_ALLOWLIST: readonly string[] = ["human.request", "refi.
 const COMMAND_PROCESS: Readonly<Record<string, string>> = { "human.request": "32.2", "refi.request": "32.2", "case.open": "32.2", "callback.schedule": "4.3", "preference.set": "11.3", "contact.log": "11.3", "dispute.intake": "11.3", "promise.record": "11.3" };
 /** Card kinds a proposal may go into (evidence the borrower states or confirms — §2.3); consents, demographics and payments never take words. */
 export const PROPOSABLE_KINDS: ReadonlySet<string> = new Set(["ConfirmCard", "ChoiceCard", "ProfileCard"]);
+/** 32.17 rule 21: a fact the turn wrote stays correctable by words — card.propose on the resolved card, the turn resolves it again with `rewrite` (the command runs again with the new values); video.identify's own rule (a change takes a fresh code) refuses on its own. */
+export const REWRITABLE_COMMANDS: ReadonlySet<string> = new Set(["application.setGoal", "application.confirmField", "video.identify"]);
 /** Commands whose card is never answered in words whatever its kind (docs/ux/17 §1 principle 6, §2.3 consent; 32.3 R5/R6): the consents, the credit authorization, the declarations and demographics, money and the closing/rescission elections — a proposal into their card is refused (CARD_PROPOSE_NEVER_IN_WORDS). */
 export const NEVER_PROPOSE_COMMANDS: ReadonlySet<string> = new Set(["consent.capture", "credit.authorize", "application.answerDeclarations", "application.answerDemographics", "payment.makeOneTime", "payment.extraPrincipal", "autodraft.enroll", "autodraft.change", "autodraft.pause", "autodraft.revoke", "closing.captureEsignConsent", "rescission.exercise", "escrow.electShortage"]);
 /** docs/ux/17 §3.7: the third miss on a card transfers to a human. */
@@ -393,7 +395,9 @@ export const TOOLS_32_16: readonly ToolDef[] = defineTools(PROCESS_32_16, INTAKE
     need(i, "card_instance_id"); const id = str(i, "card_instance_id"); if (!isUuid(id)) throw new RangeError("card_instance_id must be a uuid");
     const db = dbOf(rt); const card = await new PgBorrowerUiRepository(db).card(id);
     if (!card || card.party_id !== str(i, "party_id")) throw new AgentToolRefused("PARTY_SCOPE", "the card is not this party's", "error.not_yours");
-    if (card.status !== "pending") throw new AgentToolRefused("CARD_NOT_PENDING", `the card is ${card.status}`, "thread.card_not_pending");
+    // 32.17 rule 21: a card the turn already wrote takes a correction ("make that eighty-five hundred") when its command can run again
+    const rewrite = card.status === "resolved" && !!card.command_ref && REWRITABLE_COMMANDS.has(card.command_ref);
+    if (card.status !== "pending" && !rewrite) throw new AgentToolRefused("CARD_NOT_PENDING", `the card is ${card.status}`, "thread.card_not_pending");
     if (!PROPOSABLE_KINDS.has(card.kind)) throw new AgentToolRefused("CARD_PROPOSE_KIND", `a ${card.kind} is never answered in words — the borrower resolves it on the card`, "thread.card_needs_tap");
     if (card.command_ref && NEVER_PROPOSE_COMMANDS.has(card.command_ref)) throw new AgentToolRefused("CARD_PROPOSE_NEVER_IN_WORDS", `${card.command_ref} is the borrower's own act on the card (a consent, a declaration, a demographic answer, a payment) — never taken in words`, "thread.card_needs_tap");
     const props = card.props; const money = new Set(Array.isArray(props["money_paths"]) ? (props["money_paths"] as string[]) : []);
@@ -425,16 +429,16 @@ export const TOOLS_32_16: readonly ToolDef[] = defineTools(PROCESS_32_16, INTAKE
     const incomplete = requiredPaths.filter((p) => !fields.some((f) => f.path === p) && !String(known.get(p)?.["value"] ?? "").trim());
     if (incomplete.length) throw new AgentToolRefused("PROPOSAL_INCOMPLETE", `the card needs ${requiredPaths.join(" and ")} together before it can be confirmed — ${incomplete.join(", ")} still missing: ask for it, then propose all of them in one call`);
     const prior = props["proposal"] && typeof props["proposal"] === "object" ? (props["proposal"] as P) : null;
-    // §3.7: a proposal replacing an unconfirmed one means the earlier read-back was rejected — a miss; the third goes to a human (the turn runs human.request)
+    // §3.7: a proposal replacing an earlier one — unwritten, or written and now corrected — means the earlier read-back was wrong: a miss; the third goes to a human (the turn runs human.request)
     const missInc = prior ? 1 : 0; const misses = Number(card.misses ?? 0) + missInc;
     const proposal = { ...(fields.length ? { fields } : {}), ...(option_id ? { option_id } : {}), utterance_message_id: str(i, "message_id") || null, proposed_at: ctx.now, proposed_by: `agent:${ctx.actor.id}` };
-    defer(rt, async (q) => { await q.query(`UPDATE card_instances SET props = props || $2::jsonb, misses = misses + $3 WHERE card_instance_id = $1 AND status = 'pending'`, [id, toJson({ proposal }), missInc]); });
+    defer(rt, async (q) => { await q.query(`UPDATE card_instances SET props = props || $2::jsonb, misses = misses + $3 WHERE card_instance_id = $1 AND status IN ('pending', 'resolved')`, [id, toJson({ proposal }), missInc]); });
     ctx.events.append({ type: "card.proposed", ...(card.subject_loan_id ? { loanId: card.subject_loan_id } : {}), ...(card.subject_application_id ? { applicationId: card.subject_application_id } : {}), aggregate: { kind: "card_instance", id }, actor: ctx.actor, payload: { card_instance_id: id, party_id: card.party_id, kind: card.kind, copy_key: card.copy_key, paths: fields.map((f) => f.path), option_id, misses, message_id: str(i, "message_id") || null } });
     // the read-back tokens (`{{proposal.<path>}}` / `{{proposal.option}}`): the API fills them; the model never writes the figure
     const USD = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }); const tokens: Record<string, string> = {};
     for (const f of fields) { const spec = known.get(f.path); const opt = Array.isArray(spec?.["options"]) ? (spec!["options"] as P[]).find((o) => String(o["id"]) === f.value) : undefined; tokens[`proposal.${f.path}`] = money.has(f.path) || /_cents$/.test(f.path) ? USD.format(Number(BigInt(f.value)) / 100) : opt ? String(opt["label"] ?? f.value) : f.value; }
     if (option_id) tokens["proposal.option"] = String((props["options"] as P[]).find((o) => String(o["id"]) === option_id)?.["label"] ?? option_id);
-    return { card_instance_id: id, kind: card.kind, copy_key: card.copy_key, proposal: { ...(fields.length ? { fields } : {}), ...(option_id ? { option_id } : {}) }, misses, resolved: false, tokens, outcome: "proposed", note: `nothing is written until the borrower taps Confirm on the card; read the values back in your words as ${Object.keys(tokens).map((k) => `{{${k}}}`).join(", ")} and ask them to confirm` };
+    return { card_instance_id: id, kind: card.kind, copy_key: card.copy_key, proposal: { ...(fields.length ? { fields } : {}), ...(option_id ? { option_id } : {}) }, misses, resolved: false, rewrite, tokens, outcome: "proposed", note: `the turn writes this when you finish (32.17 rule 21: words commit) — never ask for a tap; read the values back in your words as ${Object.keys(tokens).map((k) => `{{${k}}}`).join(", ")} and ask them to confirm` };
   }, { guardrails: [never("CARD_PROPOSE_NEVER_RESOLVES", "docs/ux/17 §1 principle 6: words never commit — a proposal resolves nothing", (i) => i["resolve"] === true || i["confirm"] === true || i["evidence"] !== undefined, "the model proposes; only the borrower's tap (resolveCard) commits")] }),
 
   tool("card.request", async (i, ctx, rt) => {

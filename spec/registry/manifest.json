@@ -15447,7 +15447,7 @@
    },
    {
     "n": 4,
-    "text": "Given \"eight thousand two hundred a month\" with the R3 income card pending, then `card_instances.props.proposal.fields[0] = {path: \"monthly_income\", value: \"820000\", source: \"borrower_stated_unconfirmed\"}`, the thread shows the confirm chip, `application_income` is unchanged, and Confirm resolves the card with `evidence.source = borrower_stated`."
+    "text": "Given \"eight thousand two hundred a month\" with the R3 income card pending, then `card_instances.props.proposal.fields[0] = {path: \"monthly_income\", value: \"820000\", source: \"borrower_stated_unconfirmed\"}` and the turn writes it (32.17 rule 21): the card resolves with `evidence.source = borrower_stated` and `committed_by = turn`, `application_income` gains the row, the reply refers to the written card as a receipt and no Confirm is asked for; \"make that eighty-five hundred\" rewrites the same card to 850000 with `card_rewritten` logged."
    },
    {
     "n": 5,
@@ -15547,7 +15547,7 @@
    },
    {
     "n": 29,
-    "text": "Given a record with pending cards, then the turn's situation carries `journey` \u2014 the current step with its process, `needs` in the order to ask (a proposal awaiting Confirm first, then the record's own order, a gated item last), each with `what`, `why`, `satisfy`, `process` and `owner: you` \u2014 and `next_in_words` names the top need; `journey.get` returns the same object."
+    "text": "Given a record with pending cards, then the turn's situation carries `journey` \u2014 the current step with its process, `needs` in the order to ask (a proposal the turn could not write first, then the record's own order, a gated item last), each with `what`, `why`, `satisfy`, `process` and `owner: you` \u2014 and `next_in_words` names the top need; `journey.get` returns the same object."
    },
    {
     "n": 30,
@@ -15555,7 +15555,7 @@
    },
    {
     "n": 31,
-    "text": "Given the first turn with the goal card pending, then the model is prompted to lead with the Journey's top need (`next_in_words` comes from the Journey, the prompt version is `32.16-p6`) and the reply names that need in its own words."
+    "text": "Given the first turn with the goal card pending, then the model is prompted to lead with the Journey's top need (`next_in_words` comes from the Journey, the prompt version is `32.16-p7`) and the reply names that need in its own words."
    },
    {
     "n": 32,
@@ -15598,7 +15598,7 @@
    },
    {
     "n": 3,
-    "text": "Given \"I make about eight thousand two hundred a month\" in a video turn with the R3 income card pending, then `card_instances.props.proposal.fields[0] = {path: \"monthly_income\", value: \"820000\", source: \"borrower_stated_unconfirmed\"}`, the rail's card row shows the value with Confirm and Edit, and Confirm resolves the card with `evidence.source = borrower_stated` \u2014 nothing is committed by the words."
+    "text": "Given \"I make about eight thousand two hundred a month\" in a video turn with the R3 income card pending, then the turn writes it (rule 21): `card_instances.props.proposal.fields[0] = {path: \"monthly_income\", value: \"820000\", source: \"borrower_stated_unconfirmed\"}`, the card resolved with `evidence.source = borrower_stated` and `committed_by = turn`, `application_income` gains the row \u2014 no Confirm on the rail, nothing rises over the stage for it, and the record drawer no longer lists it under Needed from you."
    },
    {
     "n": 4,
@@ -15642,7 +15642,7 @@
    },
    {
     "n": 14,
-    "text": "Given the cooperative refinance persona run through `/app/video` against the FAKE from account creation, then the run reaches the same milestone as 32.16 32.16-T21 with every fact resolved by a tap on the rail and `agent_turns.latency_ms` reported as p50 and p95 for `channel = video`."
+    "text": "Given the cooperative refinance persona run through `/app/video` against the FAKE from account creation, then the run reaches the same milestone as 32.16 32.16-T21 with every fact written by the turn from what was said (`evidence.committed_by = turn`) or resolved by a tap on the rail, and `agent_turns.latency_ms` reported as p50 and p95 for `channel = video`."
    },
    {
     "n": 15,
@@ -15650,11 +15650,11 @@
    },
    {
     "n": 16,
-    "text": "Given the video-door session, then the first need on the rail is the identity ConfirmCard (`identity.contact.title`, paths `legal_name` and `email`) ahead of the goal card, the greeting asks the borrower's name with no first name spoken, and a spoken \"My name is Dana Reyes\" proposes nothing yet (the card needs both, and a proposal of the name alone is refused as `PROPOSAL_INCOMPLETE`) and the reply says the name back and asks for the e-mail next; nothing is written to `parties` before the tap."
+    "text": "Given the video-door session, then the first need on the rail is the identity ConfirmCard (`identity.contact.title`, paths `legal_name` and `email`) ahead of the goal card, the greeting asks the borrower's name with no first name spoken, and a spoken \"My name is Dana Reyes\" proposes nothing yet (the card needs both, and a proposal of the name alone is refused as `PROPOSAL_INCOMPLETE`) and the reply says the name back and asks for the e-mail next; nothing is written to `parties` before the e-mail is heard."
    },
    {
     "n": 17,
-    "text": "Given the name heard, when the borrower says \"dana dot reyes at example dot test\", then `legal_name = \"Dana Reyes\"` and `email = \"dana.reyes@example.test\"` are proposed together in one call and Confirm on the rail writes `parties.legal_name = \"Dana Reyes\"` and `parties.contact.email` (unverified, source video) through `video.identify`, logging `party.identified{fields}` without the values; the next turn greets by first name; a later `POST /v1/borrower/auth/otp` to that e-mail with its code opens a session on the same party whose thread carries the call's messages; a second `video.identify` and one naming an address on file for another account are refused."
+    "text": "Given the name heard, when the borrower says \"dana dot reyes at example dot test\", then `legal_name = \"Dana Reyes\"` and `email = \"dana.reyes@example.test\"` are proposed together in one call and the turn writes `parties.legal_name = \"Dana Reyes\"` and `parties.contact.email` (unverified, source video) through `video.identify` with no tap (rule 21), logging `party.identified{fields}` without the values; the next turn greets by first name; a later `POST /v1/borrower/auth/otp` to that e-mail with its code opens a session on the same party whose thread carries the call's messages; a second `video.identify` and one naming an address on file for another account are refused."
    },
    {
     "n": 18,
@@ -15666,7 +15666,7 @@
    },
    {
     "n": 20,
-    "text": "Given `/app/video` on a live call with the goal chosen and a typed income card pending, then a card only a tap can answer (a consent the goal opened) is on the screen on its own and \"Not now\" sets it aside; with only speakable cards left, nothing is on the screen until Michelle proposes into one or asks for one; when a spoken income figure is proposed into the income card, that one card rises over the stage with what was heard and Confirm and Edit, and Confirm resolves it and it leaves the screen."
+    "text": "Given `/app/video` on a live call with the goal chosen and a typed income card pending, then a card only a tap can answer (the ID scan the goal opened) is on the screen on its own and \"Not now\" sets it aside; with only speakable cards left, nothing is on the screen until Michelle asks for one; when a spoken income figure is heard, the turn writes it (rule 21) \u2014 the card resolves with `committed_by = turn`, nothing rises over the stage for it and no Confirm is on the screen \u2014 and the stage moves to the next tap-only ask."
    },
    {
     "n": 21,
@@ -15683,6 +15683,10 @@
    {
     "n": 24,
     "text": "Given a new account's goal card, then it carries the consents statement (`props.statement`, `statement_version = consents-on-goal-2026-09`) and its tap writes the three rows for the party \u2014 `consents{esign}` `pending_verification` with the verification e-mail sent, `consents{tcpa_sms}` `active`, `credit.authorization.captured{hard_pull}` naming the goal card \u2014 each `method = single_tap` with no typed name; no ConsentCard is sent for them and none is on the record."
+   },
+   {
+    "n": 25,
+    "text": "Given a fact the turn wrote from what was said, when the borrower corrects it in words (\"make that eighty-five hundred\"), then `card.propose` lands on the resolved card and the turn resolves it again with `rewrite` \u2014 the command runs with the new value (`application_income` 850000), the card stays resolved with `evidence.rewrites = 1`, `card_rewritten` is logged and the reply reads the new value back; a correction of the video-door identity is refused by rule 12 (`IDENTITY_ALREADY_ON_FILE`, `identity.contact.already_on_file`) and the written values stay the card's proposal with the refusal on it."
    }
   ],
   "tables": [

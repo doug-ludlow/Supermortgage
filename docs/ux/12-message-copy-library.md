@@ -627,6 +627,7 @@ The rail and the thread (32.16 §2.1–2.2, DELTA-26). The rail's section names,
 - `chip.reference` — chip — "{{label}} →" — *32.16 §2.1: the one-line reference the assistant attaches when it puts a card on the rail; tapping it focuses and expands that card. A resolved card's chip shows its receipt line instead.*
 - `chip.confirm` — button — "Confirm" — *32.16 §2.1 / §3.4: the confirm chip's tap — resolves the card through `resolveCard` with `evidence.source = borrower_stated`.*
 - `chip.edit` — button — "Edit" — *32.16 §2.1: expands the proposed card on the rail so the borrower can change a value.*
+- `chip.said_hint` — line — "Not right? Just say so." — *32.17 rule 21: under the receipt of a fact the turn wrote from what was said — a correction is said, never tapped.*
 - `connection.not_connected` — state — "not connected" — *32.16 §2.2 Connections row.*
 - `connection.in_progress` — state — "in progress" — *32.16 §2.2 Connections row.*
 - `connection.connected` — state — "connected" — *32.16 §2.2 Connections row.*

@@ -36,12 +36,14 @@ export interface ToolLedger {
   /** Rows the API renders beside the reply (a rates element): `messages{sender: system, body_text: null, copy_tokens}`. */
   readonly elements: P[];
   proposed_card_instance_id: string | null;
+  /** 32.17 rule 21: every card proposed into this turn, in call order — the turn writes each (one turn can carry the value, the amount and the product). */
+  readonly proposed_card_instance_ids: string[];
   proposed_misses: number;
   requested_card_instance_id: string | null;
   human_requested: boolean;
   explained: string | null;
 }
-export const newLedger = (): ToolLedger => ({ calls: [], tokens: {}, elements: [], proposed_card_instance_id: null, proposed_misses: 0, requested_card_instance_id: null, human_requested: false, explained: null });
+export const newLedger = (): ToolLedger => ({ calls: [], tokens: {}, elements: [], proposed_card_instance_id: null, proposed_card_instance_ids: [], proposed_misses: 0, requested_card_instance_id: null, human_requested: false, explained: null });
 
 export interface ExecutorDeps { readonly runtime: Runtime; readonly facts: TurnFacts; readonly ledger: ToolLedger; readonly run: { runId: string; modelVersion: string; promptVersion: string } }
 
@@ -62,7 +64,7 @@ export function toolExecutor(d: ExecutorDeps): LlmToolExecutor {
       const { tokens, element, ...visible } = out;
       if (tokens && typeof tokens === "object") Object.assign(ledger.tokens, tokens as Record<string, string>);
       if (element && typeof element === "object") ledger.elements.push(element as P);
-      if (name === "card.propose" && typeof out["card_instance_id"] === "string") { ledger.proposed_card_instance_id = out["card_instance_id"]; ledger.proposed_misses = Number(out["misses"] ?? 0); }
+      if (name === "card.propose" && typeof out["card_instance_id"] === "string") { ledger.proposed_card_instance_id = out["card_instance_id"]; if (!ledger.proposed_card_instance_ids.includes(out["card_instance_id"])) ledger.proposed_card_instance_ids.push(out["card_instance_id"]); ledger.proposed_misses = Number(out["misses"] ?? 0); }
       if (name === "card.request" && out["sent"] === true && typeof out["card_instance_id"] === "string") ledger.requested_card_instance_id = out["card_instance_id"];
       if (name === "human.transfer" || (name === "command.run" && input["name"] === "human.request")) ledger.human_requested = true;
       if (name === "explain" && typeof out["copy_key"] === "string" && out["outcome"] !== "refused") ledger.explained = out["copy_key"];

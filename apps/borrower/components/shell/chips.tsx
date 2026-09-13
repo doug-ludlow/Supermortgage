@@ -97,6 +97,18 @@ export function proposalResolveRequest(c: AnyCardInstance, proposal: CardProposa
   return { evidence, ...(proposal.option_id ? { option_id: proposal.option_id } : {}) };
 }
 
+/** 32.17 rule 21: the receipt of a fact the turn wrote from what was said — the read-back and "Not right? Just say so."; nothing to tap. */
+export function ReceiptChip({ card, proposal }: { card: AnyCardInstance; proposal: CardProposal }) {
+  return (
+    <div className="sm-confirm-chip sm-chip-receipt" data-testid="receipt-chip" data-card-id={card.card_instance_id} role="status" aria-label={cardTitle(card)}>
+      <span className="sm-confirm-chip-text" data-testid="receipt-chip-readback">
+        {proposalReadback(card, proposal)}
+      </span>
+      <span className="sm-muted" data-testid="receipt-chip-hint">{copy("chip.said_hint")}</span>
+    </div>
+  );
+}
+
 export function ReferenceChip({ card, timezone, onOpen }: { card: AnyCardInstance; timezone: string; onOpen: (card_instance_id: string) => void }) {
   const resolved = card.status !== "pending";
   return (
@@ -106,6 +118,11 @@ export function ReferenceChip({ card, timezone, onOpen }: { card: AnyCardInstanc
   );
 }
 
+/** 32.17 rule 21: the refusal the turn met when it tried to write the proposal (`props.commit_refused`, the copy library's words). */
+export function commitRefusedOf(card: AnyCardInstance): { code?: string; copy_key?: string } | undefined {
+  const r = (card.props as { commit_refused?: { code?: string; copy_key?: string } }).commit_refused;
+  return r && typeof r === "object" ? r : undefined;
+}
 export function ConfirmChip({ card, proposal, busy, error, action, onConfirm, onEdit }: { card: AnyCardInstance; proposal: CardProposal; busy?: boolean; error?: string; /** A way out the refusal names (32.17 rule 12: "Sign in with this e-mail" when the address is on file for another account). */ action?: { label: string; onClick: () => void } | undefined; onConfirm: (req: ResolveRequest) => void; onEdit: (card_instance_id: string) => void }) {
   return (
     <div className="sm-confirm-chip" data-testid="confirm-chip" data-card-id={card.card_instance_id} role="group" aria-label={cardTitle(card)}>
@@ -125,12 +142,12 @@ export function ConfirmChip({ card, proposal, busy, error, action, onConfirm, on
           {copy("chip.edit")}
         </button>
       </span>
-      {error ? (
-        <span className="sm-error" role="alert">
-          {error}
+      {error || commitRefusedOf(card)?.copy_key ? (
+        <span className="sm-error" role="alert" data-testid="confirm-chip-error">
+          {error ?? copyOrUndefined(commitRefusedOf(card)?.copy_key) ?? copy("error.generic")}
         </span>
       ) : null}
-      {error && action ? (
+      {(error || commitRefusedOf(card)) && action ? (
         <button type="button" className="sm-btn" data-testid="confirm-chip-action" onClick={action.onClick} disabled={busy}>
           {action.label}
         </button>

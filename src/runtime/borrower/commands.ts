@@ -37,6 +37,7 @@ import { BorrowerError } from "./errors.ts";
 import { THREAD_COPY_KEYS } from "./copy-keys.ts";
 import type { BorrowerFlows } from "./flows/index.ts";
 import { SUBJECT_FREE_COMMANDS, TERMINAL_ALLOWED_COMMANDS, terminalStateOf } from "./flows/13-cross-cutting.ts";
+import { REWRITABLE_COMMANDS } from "../../app/tools/section32-16.ts";
 import type { AgentTurnRequest, AgentTurnReply } from "./agent/turn.ts";
 import { ASKS_IF_HUMAN } from "./agent/guard.ts";
 
@@ -186,13 +187,15 @@ export class BorrowerCommands {
   }
 
   /** 02 §7 POST /v1/borrower/cards/{id}/resolve. */
-  async resolveCard(ctx: BorrowerContext, cardId: string, body: Record<string, unknown>, now: string): Promise<{ card: CardInstanceRow; command: string | null; idempotent: boolean; result: unknown; events: string[] }> {
+  async resolveCard(ctx: BorrowerContext, cardId: string, body: Record<string, unknown>, now: string): Promise<{ card: CardInstanceRow; command: string | null; idempotent: boolean; rewritten?: boolean; result: unknown; events: string[] }> {
     if (!isUuid(cardId)) throw new BorrowerError(403, "PARTY_SCOPE", undefined, "card id must be a uuid");
     const first = await this.ui.card(cardId);
     if (!first || first.party_id !== ctx.party.id) throw new BorrowerError(403, "PARTY_SCOPE", undefined, "the card is not this party's");
     const channel = typeof body["channel"] === "string" ? (body["channel"] as string) : "app";
-    if (first.status === "resolved") return { card: first, command: first.command_ref, idempotent: true, result: (first.evidence as Record<string, unknown> | null)?.["command_output"] ?? null, events: [] };
-    if (first.status !== "pending") throw new BorrowerError(409, "CARD_NOT_PENDING", undefined, `the card is ${first.status}`);
+    // 32.17 rule 21: a written fact stays correctable — `rewrite: true` on a resolved card whose command can run again runs it with the new values (the card stays resolved; card_rewritten is logged)
+    const rewrite = body["rewrite"] === true && first.status === "resolved" && !!first.command_ref && REWRITABLE_COMMANDS.has(first.command_ref);
+    if (first.status === "resolved" && !rewrite) return { card: first, command: first.command_ref, idempotent: true, result: (first.evidence as Record<string, unknown> | null)?.["command_output"] ?? null, events: [] };
+    if (first.status !== "pending" && !rewrite) throw new BorrowerError(409, "CARD_NOT_PENDING", undefined, `the card is ${first.status}`);
     if (channel === "voice" && (first.kind === "ConsentCard" || first.command_ref === "closing.captureEsignConsent" || first.command_ref === "consent.capture")) throw new BorrowerError(409, "CARD_VOICE_CONSENT", undefined, "a consent is never captured by voice — the card resolves by tap");
     if (first.expires_at && Date.parse(first.expires_at) <= Date.parse(now)) { await this.ui.transitionCard(cardId, "expired", "system", now); throw new BorrowerError(409, "CARD_NOT_PENDING", undefined, "the card expired"); }
     const subject = this.subjectFor(ctx, { application_id: first.subject_application_id, loan_id: first.subject_loan_id });
@@ -204,8 +207,8 @@ export class BorrowerCommands {
     return this.db.tx(async (q) => {
       await q.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [cardId]);
       const card = (await this.ui.card(cardId, q))!;
-      if (card.status === "resolved") return { card, command: card.command_ref, idempotent: true, result: (card.evidence as Record<string, unknown> | null)?.["command_output"] ?? null, events: [] };
-      if (card.status !== "pending") throw new BorrowerError(409, "CARD_NOT_PENDING", undefined, `the card is ${card.status}`);
+      if (card.status === "resolved" && !rewrite) return { card, command: card.command_ref, idempotent: true, result: (card.evidence as Record<string, unknown> | null)?.["command_output"] ?? null, events: [] };
+      if (card.status !== "pending" && !rewrite) throw new BorrowerError(409, "CARD_NOT_PENDING", undefined, `the card is ${card.status}`);
       let result: unknown = null; let events: string[] = [];
       // an option the card lists under `no_command_options` (Keep floating, Not yet, Wait) records the choice and issues no command (32.4 §3–4)
       const noCommand = optionId !== null && Array.isArray(card.props["no_command_options"]) && (card.props["no_command_options"] as unknown[]).includes(optionId);
@@ -217,11 +220,12 @@ export class BorrowerCommands {
         const out = await this.runCommand(ctx, card.command_ref, { ...args, ...card32.args, evidence: card32.stored, channel, subject: { application_id: subject.application_id, loan_id: subject.loan_id } }, now, cardId);
         result = out.result; events = out.events;
       }
-      const stored = { ...card32.stored, command_ref: card.command_ref, command_output: summarize(result) };
+      const priorRewrites = Number((card.evidence as Record<string, unknown> | null)?.["rewrites"] ?? 0);
+      const stored = { ...card32.stored, command_ref: card.command_ref, command_output: summarize(result), ...(rewrite ? { rewrites: priorRewrites + 1, rewritten_at: now } : {}) };
       const resolved = await this.ui.transitionCard(cardId, "resolved", `borrower:${ctx.party.id}`, now, stored, q);
-      await this.ui.logUiEvent({ party_id: ctx.party.id, session_id: ctx.session.session_id, conversation_id: card.conversation_id, card_instance_id: cardId, kind: card.kind === "ConsentCard" ? "consent_affirmed" : "card_resolved", at: now, ip: ctx.ip, user_agent: ctx.userAgent, disclosure_version_id: isUuid(evidence.disclosure_version_shown) ? evidence.disclosure_version_shown : null, payload: { option_id: optionId, channel, command_ref: card.command_ref, ...(card.kind === "DemographicsCard" ? {} : { evidence_keys: Object.keys(evidence) }) } }, q);
+      await this.ui.logUiEvent({ party_id: ctx.party.id, session_id: ctx.session.session_id, conversation_id: card.conversation_id, card_instance_id: cardId, kind: rewrite ? "card_rewritten" : card.kind === "ConsentCard" ? "consent_affirmed" : "card_resolved", at: now, ip: ctx.ip, user_agent: ctx.userAgent, disclosure_version_id: isUuid(evidence.disclosure_version_shown) ? evidence.disclosure_version_shown : null, payload: { option_id: optionId, channel, command_ref: card.command_ref, ...(card.kind === "DemographicsCard" ? {} : { evidence_keys: Object.keys(evidence) }) } }, q);
       await this.ui.appendMessage({ conversation_id: card.conversation_id, at: now, sender: "system", sender_ref: "borrower-api", channel: channel === "voice" || channel === "sms" || channel === "email" ? channel : "app", body_text: `{{copy:receipt.${card.copy_key}}}`, card_instance_id: cardId, subject_application_id: card.subject_application_id, subject_loan_id: card.subject_loan_id }, q);   // the collapsed receipt line (01 §1.3, 02 §1.3)
-      return { card: resolved, command: card.command_ref, idempotent: false, result, events };
+      return { card: resolved, command: card.command_ref, idempotent: false, ...(rewrite ? { rewritten: true } : {}), result, events };
     });
   }
 

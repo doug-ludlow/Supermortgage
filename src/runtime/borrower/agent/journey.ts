@@ -28,7 +28,7 @@ export interface JourneyNeed {
   readonly due_at: string | null;
   /** how it gets satisfied: what the borrower can say or tap */
   readonly satisfy: string;
-  /** a proposal from an earlier turn waits for Confirm on the card */
+  /** a proposal from an earlier turn the turn could not write (a refusal) waits on the card with its copy */
   readonly proposal_pending: boolean;
   /** a gate holds this one (an earlier step first); the model should not ask for it yet */
   readonly blocked_by: string | null;
@@ -39,7 +39,7 @@ export interface Journey {
   /** the current journey step (R1–R12 / P1–P9, C1–C7) and the process it belongs to; null when a serviced loan or before the goal */
   readonly step: { readonly id: string; readonly label_copy_key: string; readonly process: string } | null;
   readonly progress: { readonly done: number; readonly total: number } | null;
-  /** what is needed from the borrower, in the order to ask: unblocked first, in the record's own priority, a proposal awaiting Confirm first of all */
+  /** what is needed from the borrower, in the order to ask: unblocked first, in the record's own priority, a proposal the turn could not write first of all */
   readonly needs: readonly JourneyNeed[];
   /** what we or a third party are doing — nothing for the borrower to do about these */
   readonly waiting_on: readonly { readonly label: string; readonly owner: string; readonly status: string }[];
@@ -63,8 +63,8 @@ const NEED_KIND: Readonly<Record<string, NeedKind>> = {
   ConnectCard: "connect", UploadCard: "upload", DocumentCard: "document", NoticeCard: "acknowledge", ScheduleCard: "schedule", PaymentCard: "payment", HandoffCard: "other", ChecklistCard: "other",
 };
 const SATISFY: Readonly<Record<NeedKind, string>> = {
-  fact: "the borrower says it in words; you propose it into the card (card_propose) and they tap Confirm — words never commit",
-  choice: "the borrower picks in words; you propose the option (card_propose) and they tap Confirm, or they tap the option on the card",
+  fact: "the borrower says it in words; you propose it into the card (card_propose) and the turn writes it — read it back; they correct it by saying so",
+  choice: "the borrower picks in words; you propose the option (card_propose) and the turn writes it, or they tap the option on the card",
   consent: "a tap on the card only — a spoken yes is never a consent; say what it is for and that the tap is on the rail",
   connect: "a tap on the card launches the connection (about a minute); the fallback is typing it in or uploading",
   upload: "the borrower attaches the document on the card (the paperclip or the card's button); you can say what to send",
@@ -231,7 +231,7 @@ export function buildJourney(i: JourneyInput): { journey: Journey; tokens: Recor
     if (c.kind === "ConnectCard") { const st = String((c.props as P)["state"] ?? ""); if (st && !["not_started", "failed", "in_progress"].includes(st)) continue; }
     push(c, null);
   }
-  // order: a proposal awaiting Confirm first (the borrower already answered it), then unblocked in record order, then blocked
+  // order: a proposal the turn could not write first (the borrower already answered it), then unblocked in record order, then blocked
   const ordered = [...needs.filter((n) => n.proposal_pending), ...needs.filter((n) => !n.proposal_pending && !n.blocked_by), ...needs.filter((n) => !n.proposal_pending && n.blocked_by)];
 
   const waiting_on = (record?.what_we_are_doing ?? []).map((d) => ({ label: d.label, owner: d.owner, status: d.status }));

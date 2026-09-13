@@ -196,7 +196,7 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
   // 32.16 DELTA-23: the agent turn — Claude on the 32.16 bus tools in the placeholder's slot (agent/turn.ts); without a key (or a scripted client) the placeholder stands and the server says so
   const llmKey = (opts.llm?.apiKey ?? process.env["ANTHROPIC_API_KEY"] ?? "").trim();
   const agent: AgentTurnRunner | null = llmKey || opts.llm?.client
-    ? new AgentTurnRunner({ runtime, ui, reader, flows, logger, hub, promptVersion: opts.llm?.promptVersion ?? process.env["LLM_PROMPT_VERSION"], partner: (ctx) => partnerFor(ctx),
+    ? new AgentTurnRunner({ runtime, ui, reader, flows, logger, hub, promptVersion: opts.llm?.promptVersion ?? process.env["LLM_PROMPT_VERSION"], partner: (ctx) => partnerFor(ctx), commit: (ctx, id, body, now) => commands.resolveCard(ctx, id, body, now),
         llm: new AnthropicLlm({ apiKey: llmKey, model: opts.llm?.model ?? process.env["LLM_MODEL"] ?? process.env["TALK_MODEL"], effort: opts.llm?.effort ?? (process.env["LLM_EFFORT"] as LlmEffort | undefined), speed: opts.llm?.speed ?? (process.env["LLM_SPEED"] as LlmSpeed | undefined), client: opts.llm?.client, logger }) })
     : null;
   if (agent) commands.agentTurn = (req) => agent.run(req.ctx.party.id, req);

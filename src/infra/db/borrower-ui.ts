@@ -9,7 +9,7 @@ import type { Queryable } from "./client.ts";
 import { isUuid, toJson } from "./client.ts";
 
 export type CardStatus = "pending" | "resolved" | "expired" | "superseded" | "cancelled";
-export type UiEventKind = "card_shown" | "card_resolved" | "document_opened" | "document_scrolled_to_end" | "consent_affirmed" | "connector_started" | "connector_completed" | "deep_link_opened" | "voice_started" | "human_requested";
+export type UiEventKind = "card_shown" | "card_resolved" | "card_rewritten" | "document_opened" | "document_scrolled_to_end" | "consent_affirmed" | "connector_started" | "connector_completed" | "deep_link_opened" | "voice_started" | "human_requested";
 export interface ConversationRow { readonly conversation_id: string; readonly party_id: string; readonly locale: string; readonly timezone: string; readonly retention_class: string; readonly created_at: string; }
 export interface CardInstanceRow {
   readonly card_instance_id: string; readonly conversation_id: string; readonly party_id: string; readonly subject_application_id: string | null; readonly subject_loan_id: string | null; readonly kind: string; readonly status: CardStatus;

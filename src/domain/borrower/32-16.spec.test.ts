@@ -105,7 +105,7 @@ test.before(async () => {
   db = connect(DB_URL);
   runtime = new Runtime({ db, registry: loadOverriddenRegistry(), clock });
   partnerPartyId = (await db.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, servicer_number, mers_org_id) VALUES ('servicer', $1, '123456789', '1000123') RETURNING id`, [`Partner Bank ${R}`]))[0]!.id;
-  const logger = createLogger("json", (line) => { if (process.env["FLOW_DEBUG"] && /flow|error|unhandled|account|"status":[45]/i.test(line)) process.stderr.write(line + "\n"); });
+  const logger = createLogger("json", (line) => { if (process.env["FLOW_DEBUG"] && /flow|error|unhandled|account|agent\.commit|"status":[45]/i.test(line)) process.stderr.write(line + "\n"); });
   // 32.14: open states, the partner's NMLSR ID and an active FAKE rate sheet (T7's published range); 32.16 DELTA-23: the agent turn on the scripted Messages API client (model "scripted") — every account session's first turn and every non-affirmative message run through it
   await seedEntryDemo(runtime, { partner_id: partnerPartyId, states: ["AZ", "CO"], now: NOW });
   router = createBorrowerRouter({ runtime, logger, environment: "test", rpId: "localhost", allowedOrigins: ["http://localhost"], urlSecret: "test-secret", defaultPartnerId: partnerPartyId, llm: { client: scripted.client, model: "scripted" } });
@@ -273,7 +273,7 @@ test("32.16-T3: Given the model's tool calls in a turn, then each is a 32.16 bus
   const rec = scripted.toolResults.find((x) => x["record"]) as Json; assert.ok(rec); assert.equal(rec["tokens"], undefined, "the tokens never reach the model");
   const view = rec["record"] as Json; for (const v of Object.values((view["numbers"] as Json | null) ?? {})) assert.match(String(v), /^\{\{numbers\./); for (const d of view["dates"] as Json[]) assert.match(String(d["due_at"]), /^\{\{dates\./); if (view["next"]) assert.equal((view["next"] as Json)["due_at"], "{{next.due_at}}"); assert.equal((view["status"] as Json)["one_liner"], "{{status.one_liner}}");
 });
-test("32.16-T4: Given \"eight thousand two hundred a month\" with the R3 income card pending, then `card_instances.props.proposal.fields[0] = {path: \"monthly_income\", value: \"820000\", source: \"borrower_stated_unconfirmed\"}`, the thread shows the confirm chip, `application_income` is unchanged, and Confirm resolves the card with `evidence.source = borrower_stated`.", { skip }, async () => {
+test("32.16-T4: Given \"eight thousand two hundred a month\" with the R3 income card pending, then `card_instances.props.proposal.fields[0] = {path: \"monthly_income\", value: \"820000\", source: \"borrower_stated_unconfirmed\"}` and the turn writes it (32.17 rule 21): the card resolves with `evidence.source = borrower_stated` and `committed_by = turn`, `application_income` gains the row, the reply refers to the written card as a receipt and no Confirm is asked for; \"make that eighty-five hundred\" rewrites the same card to 850000 with `card_rewritten` logged.", { skip }, async () => {
   const b = await signedUpWithGoal("t4");
   // R3's "type it in" income card (the ConnectCard's fallback): the one typed field, in cents, committed to application_income on Confirm
   const sent = await runtime.execute({ process: "32.1", name: "send_card", loanId: "", applicationId: b.app_id, actor: INTAKE_ACTOR, input: { party_id: b.party_id, kind: "ConfirmCard", copy_key: "income.confirm.title", command_ref: "application.confirmField", subject: { application_id: b.app_id, loan_id: null }, created_by: "agent:intake",
@@ -281,26 +281,32 @@ test("32.16-T4: Given \"eight thousand two hundred a month\" with the R3 income 
   const cardId = (sent.output as { card_instance_id: string }).card_instance_id; await settle();
   const incomeRows = async () => db.query<{ monthly_amount_cents: string; source_kind: string; calculation: Json }>(`SELECT monthly_amount_cents::text AS monthly_amount_cents, source_kind, calculation FROM application_income WHERE application_id = $1 ORDER BY created_at`, [b.app_id]);
   const before = await incomeRows();
-  scripted.use([{ when: /eight thousand two hundred a month/i, calls: (c) => [{ name: "card_propose", input: { card_instance_id: String((c.situation["pending_cards"] as Json[]).find((x) => x["copy_key"] === "income.confirm.title")!["card_instance_id"]), fields: [{ path: "monthly_income", value: "820000" }] } }], text: "I heard {{proposal.monthly_income}} a month — tap Confirm on the income card if that's right." }]);
+  const incomeCardId = (c: { situation: Json }): string => String((((c.situation["pending_cards"] as Json[]) ?? []).find((x) => x["copy_key"] === "income.confirm.title") ?? ((c.situation["written_this_call"] as Json[]) ?? []).find((x) => x["copy_key"] === "income.confirm.title"))?.["card_instance_id"] ?? "");
+  scripted.use([
+    { when: /eight thousand two hundred a month/i, calls: (c) => [{ name: "card_propose", input: { card_instance_id: incomeCardId(c), fields: [{ path: "monthly_income", value: "820000" }] } }], text: "I heard {{proposal.monthly_income}} a month — that's saved; say if it's not right." },
+    { when: /eighty[- ]five hundred/i, calls: (c) => [{ name: "card_propose", input: { card_instance_id: incomeCardId(c), fields: [{ path: "monthly_income", value: "850000" }] } }], text: "Changed to {{proposal.monthly_income}} a month — that is saved; say if it is still not right." },
+  ]);
   const r = await message(b.token, "eight thousand two hundred a month");
   assert.equal(r.status, 200, JSON.stringify(r.body));
-  // the proposal on the card: transcribed, unconfirmed; nothing resolved, nothing written to application_income
-  const card = await cardRow(cardId); assert.equal(card.status, "pending"); const proposal = card.props["proposal"] as Json;
+  // the proposal on the card and, the same turn, the write (32.17 rule 21): the card resolved by the turn, the income row landed, no tap anywhere
+  const card = await cardRow(cardId); assert.equal(card.status, "resolved", "the turn wrote it"); const proposal = card.props["proposal"] as Json;
   assert.deepEqual((proposal["fields"] as Json[])[0], { path: "monthly_income", value: "820000", source: "borrower_stated_unconfirmed" });
   assert.equal(proposal["utterance_message_id"], (r.body["message"] as Json)["message_id"]); assert.equal(proposal["proposed_at"], NOW); assert.equal(card.misses, 0);
-  assert.deepEqual(await incomeRows(), before, "application_income unchanged until Confirm");
-  assert.equal((await eventsOf(b.app_id, "card.proposed")).length, 1); assert.equal((await eventsOf(b.app_id, "application.six_item.captured")).filter((e) => e.payload["item"] === "income").length, 0);
-  // the thread: the reply is the read-back with the figure filled from the proposal (the model wrote a token), referring to the card — the confirm chip
-  assert.equal(r.reply["body_text"], "I heard $8,200.00 a month — tap Confirm on the income card if that's right."); assert.equal(r.reply["card_instance_id"], cardId);
-  const t = await thread(b.token); const chip = t.messages.find((m) => m["message_id"] === r.reply["message_id"])!; assert.equal((chip["card"] as Json)["card_instance_id"], cardId); assert.deepEqual(((chip["card"] as Json)["props"] as Json)["proposal"], proposal);
-  const row = (await turnsOf(b.party_id)).find((x) => x.turn_id === (r.reply["copy_tokens"] as Json)["turn_id"])!; assert.equal(row.safe_classification, "data_capture"); assert.equal((row.guard_result as Json)["proposed_card_instance_id"], cardId);
-  // Confirm: the borrower's tap through resolveCard with evidence.source = borrower_stated — the card resolves and the stated income lands
-  const confirm = await api("POST", `/v1/borrower/cards/${cardId}/resolve`, { evidence: { source: "borrower_stated", fields: [{ path: "monthly_income", value: "820000" }], tapped_at: NOW } }, bearer(b.token)); await settle();
-  assert.equal(confirm.status, 201, JSON.stringify(confirm.body)); assert.equal(confirm.body["command"], "application.confirmField");
-  const resolved = await cardRow(cardId); assert.equal(resolved.status, "resolved"); assert.equal(resolved.evidence!["source"], "borrower_stated");
+  assert.equal(card.evidence!["source"], "borrower_stated"); assert.equal(card.evidence!["committed_by"], "turn");
   const after = await incomeRows(); assert.equal(after.length, before.length + 1); assert.equal(after.at(-1)!.monthly_amount_cents, "820000"); assert.equal(after.at(-1)!.source_kind, "base"); assert.equal((after.at(-1)!.calculation as Json)["source"], "borrower");
-  assert.equal((await eventsOf(b.app_id, "application.six_item.captured")).filter((e) => e.payload["item"] === "income").length, 1, "the six-item income counts when stated and confirmed (21.2)");
+  assert.equal((await eventsOf(b.app_id, "card.proposed")).length, 1); assert.equal((await eventsOf(b.app_id, "application.six_item.captured")).filter((e) => e.payload["item"] === "income").length, 1, "the six-item income counts when stated (21.2)");
+  // the thread: the reply is the read-back with the figure filled from the proposal, referring to the written card — the receipt, never a Confirm
+  assert.equal(r.reply["body_text"], "I heard $8,200.00 a month — that's saved; say if it's not right."); assert.equal(r.reply["card_instance_id"], cardId);
+  const t = await thread(b.token); const chip = t.messages.find((m) => m["message_id"] === r.reply["message_id"])!; assert.equal((chip["card"] as Json)["card_instance_id"], cardId); assert.equal((chip["card"] as Json)["status"], "resolved", "the receipt of a written fact");
+  const row = (await turnsOf(b.party_id)).find((x) => x.turn_id === (r.reply["copy_tokens"] as Json)["turn_id"])!; assert.equal(row.safe_classification, "data_capture"); assert.equal((row.guard_result as Json)["proposed_card_instance_id"], cardId);
+  // a correction in words rewrites the same card (rule 21): the command runs again, the card stays resolved, card_rewritten is logged
+  const r2 = await message(b.token, "make that eighty-five hundred"); assert.equal(r2.status, 200, JSON.stringify(r2.body)); await settle();
+  assert.equal(r2.reply["body_text"], "Changed to $8,500.00 a month — that is saved; say if it is still not right.", `the correction's reply: ${JSON.stringify(r2.reply["copy_tokens"])}; turn: ${JSON.stringify((await turnsOf(b.party_id)).find((x) => x.turn_id === (r2.reply["copy_tokens"] as Json)["turn_id"])?.tool_calls)}`);
+  const again = await cardRow(cardId); assert.equal(again.status, "resolved"); assert.equal(again.evidence!["rewrites"], 1, JSON.stringify(again.evidence)); assert.equal(((again.props["proposal"] as Json)["fields"] as Json[])[0]!["value"], "850000");
+  const after2 = await incomeRows(); assert.equal(after2.at(-1)!.monthly_amount_cents, "850000");
+  assert.equal((await db.query(`SELECT 1 FROM ui_events WHERE card_instance_id = $1 AND kind = 'card_rewritten'`, [cardId])).length, 1, "card_rewritten logged");
 });
+
 test("32.16-T5: Given a model turn containing \"your rate is 6.125%\", then the guard rejects it, the regenerated turn uses `{{numbers.rate}}`, and the rendered message shows the projection's rate.", { skip }, async () => {
   const email = `t5-${R}@example.test`; const a = await signUp(email, `pw-t5-${R}`, "10.16.5.1"); await settle();
   // a serviced loan on the account's party (the journey fixture's book): the record's numbers carry the note rate
@@ -385,17 +391,17 @@ test("32.16-T9: Given three consecutive rejected or edited proposals on one card
   const goal = (await thread(a.token)).pinned_card!; const goalId = goal["card_instance_id"] as string; const appId = (await applicationsOf(a.party_id))[0]!.id;
   const propose = (option: string): Call[] => [{ name: "card_propose", input: { card_instance_id: goalId, option_id: option } }];
   scripted.use([
-    { when: /cheaper payment/i, calls: propose("lower_rate"), text: "I heard {{proposal.option}} — tap Confirm on the goal card if that's right." },
-    { when: /mean purchasing/i, calls: propose("buy"), text: "Got you: {{proposal.option}} — tap Confirm if that's right." },
-    { when: /pulling equity out/i, calls: propose("cash_out"), text: "Understood: {{proposal.option}} — tap Confirm if that's right." },
+    { when: /cheaper payment/i, calls: propose("lower_rate"), text: "I heard {{proposal.option}} — that's saved; say if it's not right." },
+    { when: /mean purchasing/i, calls: propose("buy"), text: "Got you: {{proposal.option}} — changed; say if it's still not right." },
+    { when: /pulling equity out/i, calls: propose("cash_out"), text: "Understood: {{proposal.option}} — changed; say if it's still not right." },
     { when: /the first one/i, calls: propose("lower_rate"), text: "Back to {{proposal.option}} — I've also asked someone to look at this with you." },
   ]);
-  const r1 = await message(a.token, "I'd like a cheaper payment"); assert.equal(r1.reply["body_text"], "I heard Lower my rate or payment — tap Confirm on the goal card if that's right."); assert.equal((await cardRow(goalId)).misses, 0);
+  const r1 = await message(a.token, "I'd like a cheaper payment"); assert.equal(r1.reply["body_text"], "I heard Lower my rate or payment — that's saved; say if it's not right."); assert.equal((await cardRow(goalId)).misses, 0); assert.equal((await cardRow(goalId)).status, "resolved", "written by the turn (32.17 rule 21)");
   const r2 = await message(a.token, "actually I mean purchasing"); assert.match(String(r2.reply["body_text"]), /Buy a home/); assert.equal((await cardRow(goalId)).misses, 1, "a re-proposal is a rejected read-back: one miss");
   const r3 = await message(a.token, "hmm no, pulling equity out"); assert.match(String(r3.reply["body_text"]), /Take cash out/); assert.equal((await cardRow(goalId)).misses, 2);
   assert.equal((await eventsOf(appId, "human.transfer.requested")).length, 0, "not yet");
   const r4 = await message(a.token, "sorry, the first one"); assert.match(String(r4.reply["body_text"]), /Lower my rate or payment/);
-  const card = await cardRow(goalId); assert.equal(card.misses, 3); assert.equal(card.status, "pending", "nothing resolved by words"); assert.equal((card.props["proposal"] as Json)["option_id"], "lower_rate");
+  const card = await cardRow(goalId); assert.equal(card.misses, 3); assert.equal(card.status, "resolved", "written and corrected by words (32.17 rule 21)"); assert.equal((card.props["proposal"] as Json)["option_id"], "lower_rate"); assert.equal(card.evidence!["option_id"], "lower_rate", "the last correction is the record"); assert.equal(card.evidence!["rewrites"], 3);
   // the third miss: human.request ran with the transcript reference (the conversation and the message), the turn's row says so
   const requested = await eventsOf(appId, "human.transfer.requested"); assert.ok(requested.length >= 1, "human.request ran");
   const withRef = requested.find((e) => typeof e.payload["transcript_ref"] === "string")!; assert.ok(withRef, JSON.stringify(requested.map((e) => e.payload)));
@@ -738,7 +744,7 @@ test("32.16 DELTA-29: ensureOrganicApplication is idempotent — a second sign-i
 });
 
 // ---------------------------------------------------------------- the Journey (docs/ux/17 §3.2 amended; T29–T31)
-test("32.16-T29: Given a record with pending cards, then the turn's situation carries `journey` — the current step with its process, `needs` in the order to ask (a proposal awaiting Confirm first, then the record's own order, a gated item last), each with `what`, `why`, `satisfy`, `process` and `owner: you` — and `next_in_words` names the top need; `journey.get` returns the same object.", async () => {
+test("32.16-T29: Given a record with pending cards, then the turn's situation carries `journey` — the current step with its process, `needs` in the order to ask (a proposal the turn could not write first, then the record's own order, a gated item last), each with `what`, `why`, `satisfy`, `process` and `owner: you` — and `next_in_words` names the top need; `journey.get` returns the same object.", async () => {
   const now = NOW; const app = randomUUID(); const conv = randomUUID(); const party = randomUUID();
   const mk = (id: string, kind: string, copy_key: string, props: Json, created_at: string): CardInstanceRow => ({ card_instance_id: id, conversation_id: conv, party_id: party, subject_application_id: app, subject_loan_id: null, kind, status: "pending", created_by: "agent:intake", copy_key, command_ref: "x", expires_at: null, created_at, resolved_at: null, props, evidence: null, misses: 0 } as unknown as CardInstanceRow);
   const income = randomUUID(), assets = randomUUID(), lock = randomUUID(), esign = randomUUID();
@@ -802,8 +808,8 @@ test("32.16-T30: Given a current step whose process is not internal, then the si
   assert.match(ctx2.situation, /"process_rules": \{\s*"process": "22\.3",\s*"note": "the rules of the current step, for your understanding — never quote them, never state a figure from them"/);
 });
 
-test("32.16-T31: Given the first turn with the goal card pending, then the model is prompted to lead with the Journey's top need (`next_in_words` comes from the Journey, the prompt version is `32.16-p6`) and the reply names that need in its own words.", { skip }, async () => {
-  assert.equal(PROMPT_VERSION, "32.16-p6");   // p6: the goal card's consents statement, said once (32.17 rule 20)
+test("32.16-T31: Given the first turn with the goal card pending, then the model is prompted to lead with the Journey's top need (`next_in_words` comes from the Journey, the prompt version is `32.16-p7`) and the reply names that need in its own words.", { skip }, async () => {
+  assert.equal(PROMPT_VERSION, "32.16-p7");   // p7: words commit (32.17 rule 21); p6: the goal card's consents statement, said once (rule 20)
   assert.match(SYSTEM_PROMPT, /the situation carries a journey/); assert.match(SYSTEM_PROMPT, /make a suggestion when there is an easier way/); assert.match(SYSTEM_PROMPT, /Be warm|warm, plain, quick/);
   scripted.use([{ when: /just created their account/, text: (c) => { const j = c.situation["journey"] as Json; const top = ((j["needs"] as Json[])[0] ?? {})["what"]; return `Welcome. First thing: ${String(top)} — pick it on the card and we'll take it from there.`; } }]);
   const a = await signUp(`t31-${R}@example.test`, `pw-t31-${R}`, "10.16.31.1"); await settle();
@@ -814,7 +820,7 @@ test("32.16-T31: Given the first turn with the goal card pending, then the model
   const top = (journey["needs"] as Json[])[0]!; assert.equal(top["kind"], "choice"); assert.match(String(top["why"]), /goal/); assert.equal(view["next_in_words"], journey["next_in_words"]); assert.match(String(journey["next_in_words"]), /^the next thing is/);
   const greeting = t0.messages.find((m) => m["sender"] === "agent" && (m["copy_tokens"] as Json | null)?.["source"] === "agent_turn")!;
   assert.match(String(greeting["body_text"]), new RegExp(`First thing: ${String(top["what"]).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`), "the reply names the top need");
-  const row = (await db.query<{ prompt_version: string }>(`SELECT prompt_version FROM agent_turns WHERE party_id = $1 ORDER BY created_at DESC LIMIT 1`, [a.party_id]))[0]!; assert.equal(row.prompt_version, "32.16-p6");
+  const row = (await db.query<{ prompt_version: string }>(`SELECT prompt_version FROM agent_turns WHERE party_id = $1 ORDER BY created_at DESC LIMIT 1`, [a.party_id]))[0]!; assert.equal(row.prompt_version, "32.16-p7");
 });
 
 test("32.16-T32: Given the agent turn configured, when an account is created and the borrower then types \"yes\" and \"I want a human\", then the thread carries no flow copy line and no flow-sent chip, the first reply carries the goal card, `pinned_card` is the card the model placed last, and both typed lines are answered by the turn (no deep-link line, no fixed human line).", { skip }, async () => {

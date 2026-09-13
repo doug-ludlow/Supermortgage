@@ -171,6 +171,8 @@ async function runStep(deps: RunnerDeps, step: Step, auth: Record<string, string
   if ("confirm" in step) {
     const card = cards.find((c) => c.props["proposal"] && typeof c.props["proposal"] === "object");
     if (!card && step.confirm === "if_proposed") return;   // nothing was read back: the simulator has nothing to tap
+    // 32.17 rule 21: the turn writes a complete proposal itself — a written card (evidence.committed_by = turn) needs no tap; the step is satisfied
+    if (!card && (await deps.db.query(`SELECT 1 FROM card_instances WHERE party_id = $1 AND status = 'resolved' AND evidence->>'committed_by' = 'turn'`, [partyId])).length > 0) return;
     if (!card) throw new Error("confirm: no pending card carries a proposal to confirm");
     const proposal = card.props["proposal"] as P;
     const fields = Array.isArray(proposal["fields"]) ? (proposal["fields"] as P[]).map((f) => ({ path: String(f["path"]), value: String(f["value"]) })) : [];

@@ -291,7 +291,7 @@ export type BorrowerRecord = {
 
 /** 02 §1.2 `thread_messages` */
 export type MessageSender = "borrower" | "agent" | "human" | "notice" | "system";
-export type MessageChannel = "app" | "sms" | "email" | "voice" | "mail";
+export type MessageChannel = "app" | "sms" | "email" | "voice" | "mail" | "video";   // 32.17: the video agent's spoken turns
 
 export type ThreadMessage = {
   /**

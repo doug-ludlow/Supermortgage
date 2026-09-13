@@ -19,7 +19,7 @@ export interface CardInstanceRow {
 }
 export type DeepLinkTarget = { card_instance_id: string } | { document_id: string } | { route: string };
 export interface MessageRow {
-  readonly message_id: string; readonly conversation_id: string; readonly at: string; readonly sender: "borrower" | "agent" | "human" | "notice" | "system"; readonly sender_ref: string | null; readonly channel: "app" | "sms" | "email" | "voice" | "mail";
+  readonly message_id: string; readonly conversation_id: string; readonly at: string; readonly sender: "borrower" | "agent" | "human" | "notice" | "system"; readonly sender_ref: string | null; readonly channel: "app" | "sms" | "email" | "voice" | "mail" | "video";
   readonly body_text: string | null; readonly card_instance_id: string | null; readonly subject_application_id: string | null; readonly subject_loan_id: string | null; readonly external_ref: string | null; readonly voice_turn: boolean; readonly created_at: string;
   /** 32.14 DELTA-11: the tokens a `{{copy:key}}` line renders with (the way cards carry theirs) — `entry.resumed`'s `answers`; null on every other line. */
   readonly copy_tokens: Record<string, unknown> | null;
@@ -50,7 +50,7 @@ export class PgBorrowerUiRepository {
     await q.query(`UPDATE oidc_identities SET retention_class = $2 WHERE party_id = (SELECT party_id FROM conversations WHERE conversation_id = $1)`, [conversationId, retentionClass]);
   }
 
-  async appendMessage(i: { message_id?: string; conversation_id: string; at: string; sender: "borrower" | "agent" | "human" | "notice" | "system"; sender_ref?: string | null; channel: "app" | "sms" | "email" | "voice" | "mail"; body_text?: string | null; card_instance_id?: string | null; subject_application_id?: string | null; subject_loan_id?: string | null; external_ref?: string | null; voice_turn?: boolean; copy_tokens?: Record<string, unknown> | null }, q: Queryable = this.db): Promise<string> {
+  async appendMessage(i: { message_id?: string; conversation_id: string; at: string; sender: "borrower" | "agent" | "human" | "notice" | "system"; sender_ref?: string | null; channel: "app" | "sms" | "email" | "voice" | "mail" | "video"; body_text?: string | null; card_instance_id?: string | null; subject_application_id?: string | null; subject_loan_id?: string | null; external_ref?: string | null; voice_turn?: boolean; copy_tokens?: Record<string, unknown> | null }, q: Queryable = this.db): Promise<string> {
     const id = i.message_id ?? randomUUID();
     await q.query(`INSERT INTO messages (message_id, conversation_id, at, sender, sender_ref, channel, body_text, card_instance_id, subject_application_id, subject_loan_id, external_ref, voice_turn, copy_tokens) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)`,
       [id, i.conversation_id, i.at, i.sender, i.sender_ref ?? null, i.channel, i.body_text ?? null, i.card_instance_id ?? null, i.subject_application_id ?? null, i.subject_loan_id ?? null, i.external_ref ?? null, i.voice_turn ?? false, i.copy_tokens ? toJson(i.copy_tokens) : null]);

@@ -39,6 +39,8 @@ export interface RunnerDeps {
   readonly log?: ((line: string, extra?: P) => void) | undefined;
   /** Runs before each persona (the harness swaps the scripted model's scenes to the persona's here). */
   readonly beforePersona?: ((persona: Persona) => void | Promise<void>) | undefined;
+  /** 32.17 T14: a `say` step through another surface than POST /v1/borrower/messages (the video agent's chat-completions endpoint); the taps stay the rail's. */
+  readonly say?: ((text: string, auth: Record<string, string>, partyId: string) => Promise<void>) | undefined;
 }
 export interface Account { readonly email: string; readonly password: string }
 export interface PersonaMetrics { readonly pass: boolean; readonly checks: Record<string, { pass: boolean; violations: number }>; readonly messages: number; readonly borrower_messages: number; readonly agent_messages: number; readonly model_replies: number; readonly turns: number | null; readonly guard_rejections: number; readonly fallbacks: number; readonly tool_calls: number; readonly resolved_cards: number; readonly events: number; readonly errors: number; readonly skipped: string | null }
@@ -143,6 +145,7 @@ export async function runPersona(deps: RunnerDeps, persona: Persona, opts: { acc
 
 async function runStep(deps: RunnerDeps, step: Step, auth: Record<string, string>, partyId: string): Promise<void> {
   if ("say" in step) {
+    if (deps.say) { await deps.say(step.say, auth, partyId); return; }
     const r = await call(deps.base, "POST", "/v1/borrower/messages", { text: step.say }, auth);
     if (r.status !== 200) throw new Error(`POST /v1/borrower/messages ${r.status} ${describe(r.body)}`);
     return;

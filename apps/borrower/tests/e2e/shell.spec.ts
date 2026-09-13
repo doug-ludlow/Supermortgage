@@ -63,7 +63,8 @@ for (const fixture of ["refinance", "servicing"]) {
         await expect(rail.locator('[data-rail-card][data-current-ask="true"][data-expanded="true"] article[data-card-kind]')).toHaveCount(1);
         await expect(page.getByTestId("waiting-on-you")).toHaveCount(0);
         const sections = await rail.locator("[data-record-section]").evaluateAll((els) => els.map((e) => e.getAttribute("data-record-section")));
-        const order = ["status", "progress", "needed", "connections", "documents", "doing", "people", "numbers", "dates", "property", "loan"];
+        // the rail is the card: Needed from you first, then everything else behind "Your record" in the record's order (32.16 §2.2)
+        const order = ["needed", "record", "status", "progress", "connections", "documents", "doing", "people", "numbers", "dates", "property", "loan"];
         expect(sections.filter((s) => order.includes(s!)).map((s) => order.indexOf(s!))).toEqual([...sections.filter((s) => order.includes(s!)).map((s) => order.indexOf(s!))].sort((a, b) => a - b));
         if (fixture === "refinance") await expect(rail.getByTestId("progress-count")).toHaveText("10 of 12");
       } else {
@@ -76,7 +77,8 @@ for (const fixture of ["refinance", "servicing"]) {
         await expect(page.getByTestId("record")).toBeHidden();
         await strip.click();
         await expect(page.getByTestId("record")).toBeVisible();
-        await expect(page.getByTestId("record").locator('[data-record-section="status"]')).toBeVisible();
+        await expect(page.getByTestId("record").locator('[data-record-section="needed"]')).toBeVisible();   // the sheet is the rail: the card first, the record behind "Your record"
+        await expect(page.getByTestId("record").locator('[data-record-section="record"]')).toHaveAttribute("data-open", "false");
         await page.getByRole("button", { name: "Close your record" }).click();
         await expect(page.getByTestId("record")).toBeHidden();
       }

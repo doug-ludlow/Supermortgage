@@ -11,7 +11,8 @@ export type StreamStatus = "connecting" | "open" | "reconnecting" | "closed";
 
 export type StreamHandle = { close: () => void; status: () => StreamStatus };
 
-export function openStream(onEvent: StreamHandler, onStatus?: (s: StreamStatus) => void): StreamHandle {
+/** `named`: SSE frames carry `event: <name>` (src/runtime/borrower/stream.ts), which EventSource delivers to a listener of that name, never to `onmessage` — a page that wants them lists them (32.17: the video shell follows card.sent and video.session.*). */
+export function openStream(onEvent: StreamHandler, onStatus?: (s: StreamStatus) => void, named: readonly string[] = []): StreamHandle {
   let source: EventSource | null = null;
   let status: StreamStatus = "connecting";
   let attempt = 0;
@@ -31,13 +32,15 @@ export function openStream(onEvent: StreamHandler, onStatus?: (s: StreamStatus) 
       attempt = 0;
       set("open");
     };
-    source.onmessage = (m) => {
+    const deliver = (m: MessageEvent) => {
       try {
         onEvent(JSON.parse(m.data) as StreamEvent);
       } catch {
         /* malformed frame: ignore, the next projection fetch heals */
       }
     };
+    source.onmessage = deliver;
+    for (const name of named) source.addEventListener(name, deliver as EventListener);
     source.onerror = () => {
       source?.close();
       source = null;

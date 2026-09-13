@@ -228,7 +228,8 @@ export class BorrowerCommands {
   async borrowerMessage(ctx: BorrowerContext, body: Record<string, unknown>, now: string): Promise<{ message: MessageRow; reply: MessageRow & { copy_key: string; deep_link: { token: string; path: string; expires_at: string } | null }; routed_to: "intake" | "borrower-comms"; command_executed: boolean; command: string | null }> {
     const text = typeof body["text"] === "string" ? (body["text"] as string).trim() : ""; if (!text) throw new RangeError("text is required");
     if (text.length > 4000) throw new RangeError("text is over 4000 characters");
-    const channelIn = typeof body["channel"] === "string" ? (body["channel"] as string) : "app"; const channel = (["app", "sms", "email", "voice"].includes(channelIn) ? channelIn : "app") as "app" | "sms" | "email" | "voice";
+    const channelIn = typeof body["channel"] === "string" ? (body["channel"] as string) : "app"; const channel = (["app", "sms", "email", "voice", "video"].includes(channelIn) ? channelIn : "app") as "app" | "sms" | "email" | "voice" | "video";   // 32.17: video is the same turn, spoken
+    const started_at_ms = typeof body["received_at_ms"] === "number" ? (body["received_at_ms"] as number) : undefined;   // 32.17 rule 10: the video endpoint's receipt time (never a client's — the route sets it)
     const wanted = (body["subject"] as { application_id?: string | null; loan_id?: string | null } | undefined) ?? null;
     const subject = ctx.subjects.length ? this.subjectFor(ctx, wanted) : null;
     const routed_to: "intake" | "borrower-comms" = subject?.stage === "servicing" ? "borrower-comms" : "intake";
@@ -244,14 +245,14 @@ export class BorrowerCommands {
     // docs/ux/17 §3.4: on the app with the agent turn configured, the words go to the turn instead — the model proposes them into the pending card and the
     // confirm chip is the answer (the tap still resolves; nothing is committed by words). SMS and voice keep the deep link: there is no chip to tap there.
     const card = affirmativeFor(text, pending);
-    if (card && !(this.agentTurn && channel === "app")) {
+    if (card && !(this.agentTurn && (channel === "app" || channel === "video"))) {   // 32.17 rule 3: a spoken affirmative goes to the turn too — the model proposes, the rail's Confirm resolves
       const link = await this.ui.createDeepLink({ party_id: ctx.party.id, target: { card_instance_id: card.card_instance_id }, now, created_for_message_id: messageId });
       const r = await reply(card.kind === "ConsentCard" && channel === "voice" ? THREAD_COPY_KEYS.voiceConsentLink : THREAD_COPY_KEYS.affirmativeNeedsCard, { card_instance_id: card.card_instance_id, deep_link: { token: link.token, path: `/d/${link.token}`, expires_at: link.expires_at }, body: `{{copy:${THREAD_COPY_KEYS.affirmativeNeedsCard}}} /d/${link.token}` });
       return { message, reply: r, routed_to, command_executed: false, command: null };
     }
     // a flow that answers this message itself (32.3 T2 "are you a real person?" → 20.3's script with the disclosure re-logged; P9 listings) — before the human path, which "real person" would otherwise match
     if (this.flows) {
-      const fr = await this.flows.message({ party_id: ctx.party.id, session_id: ctx.session.session_id, conversation_id: conv.conversation_id, message_id: messageId, text, channel, subject: subject ? { application_id: subject.application_id, loan_id: subject.loan_id } : null, claimed_subject: wanted, at: now });
+      const fr = await this.flows.message({ party_id: ctx.party.id, session_id: ctx.session.session_id, conversation_id: conv.conversation_id, message_id: messageId, text, channel: channel === "video" ? "app" : channel, subject: subject ? { application_id: subject.application_id, loan_id: subject.loan_id } : null, claimed_subject: wanted, at: now });
       if (fr) return { message, reply: await reply(fr.copy_key, { card_instance_id: fr.card_instance_id ?? null, ...(fr.body_text ? { body: fr.body_text } : {}) }), routed_to, command_executed: !!fr.command, command: fr.command ?? null };
     }
     // "human" at any time (01 §1.1, §7.1): the human.request command — except the question whether the assistant is a person ("is this a real person?"), which
@@ -262,7 +263,7 @@ export class BorrowerCommands {
     }
     // 32.16 §3.1: the agent turn replaces the placeholder — the same order in front of it; the placeholder stands only without a model or under the kill switch
     if (this.agentTurn) {
-      const t = await this.agentTurn({ ctx, conversation_id: conv.conversation_id, message_id: messageId, text, channel, subject, routed_to, now });
+      const t = await this.agentTurn({ ctx, conversation_id: conv.conversation_id, message_id: messageId, text, channel, subject, routed_to, now, ...(started_at_ms !== undefined ? { started_at_ms } : {}) });
       if (t) return { message, reply: { ...t.reply, copy_key: t.copy_key, deep_link: null }, routed_to, command_executed: t.command_executed, command: t.command };
     }
     return { message, reply: await reply(routed_to === "intake" ? THREAD_COPY_KEYS.placeholderIntake : THREAD_COPY_KEYS.placeholderServicing, {}), routed_to, command_executed: false, command: null };

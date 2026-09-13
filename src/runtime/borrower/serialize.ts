@@ -82,6 +82,9 @@ export const SHAPES = {
   // 32.14 §4: the telephony vendor's inbound webhooks (SMS and voice entry on the same lead) — what went out to the number (copy keys and rendered lines), never a session token, never the number itself
   sms_webhook: { received: true, vendor: true, channel: true, lead_id: true, step: true, outbound: [{ copy_key: true, text: true, message_id: true }], events: true, session_opened: true, level: true, fake_code: true, refused: { code: true, gate: true, copy_key: true } } satisfies Shape,
   talk_turn: { lead_id: true, agent: true, model: true, transcript: [{ role: true, text: true, copy_key: true, at: true }], lines: [{ role: true, text: true, copy_key: true, at: true }], step: true, session_opened: true, level: true, token: true, lead_token: true, fake_code: true } satisfies Shape,   // talk.ts: `token` and `lead_token` leave once and the proxy turns them into cookies
+  // 32.17: the video agent — the session as the page reads it (never token_hash, never the token), the vendor's callback receipt, the FAKE page's callback helper
+  video_session: { video_session_id: true, status: true, vendor: true, conversation_url: true, end_reason: true, transcript_ref: true, created_at: true, joined_at: true, ended_at: true, subject: { application_id: true, loan_id: true }, conversation_id: true, replica_id: true, borrower_camera: true, greeting: true, fallback_copy_key: true } satisfies Shape,
+  video_callback: { received: true, vendor: true, event_type: true, outcome: true, video_session_id: true, status: true } satisfies Shape,
   voice_webhook: { received: true, vendor: true, channel: true, call_id: true, lead_id: true, step: true, say: [{ copy_key: true, text: true }], texted: [{ copy_key: true, text: true, message_id: true }], events: true, session_opened: true, level: true, fake_code: true, refused: { code: true, gate: true, copy_key: true } } satisfies Shape,
 } as const;
 export type ShapeName = keyof typeof SHAPES;

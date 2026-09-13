@@ -124,6 +124,37 @@ resource "google_cloud_run_v2_service" "api" {
         }
       }
 
+      # 32.17: the video agent — a real version of the Tavus key turns the live vendor on
+      # (the FAKE stands in on the placeholder); the callback secret is the secret path segment
+      # of the vendor's callback URL; VIDEO_API_URL is the public origin the vendor reaches
+      # the custom-LLM endpoint and the callback on (the load balancer's hostname).
+      env {
+        name = "TAVUS_API_KEY"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.tavus_api_key.secret_id
+            version = "latest"
+          }
+        }
+      }
+      env {
+        name = "VIDEO_CALLBACK_SECRET"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.video_callback_secret.secret_id
+            version = "latest"
+          }
+        }
+      }
+      env {
+        name  = "VIDEO_API_URL"
+        value = "https://${var.api_hostname}"
+      }
+      env {
+        name  = "VIDEO_BORROWER_CAMERA"
+        value = "on"
+      }
+
       resources {
         limits = {
           cpu    = "1"

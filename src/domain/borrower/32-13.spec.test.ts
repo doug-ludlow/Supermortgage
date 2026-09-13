@@ -214,8 +214,8 @@ async function expandRail(page: Page, cardId: string): Promise<void> {
   const later = page.getByTestId("needs-later").first();
   if ((await page.locator(sel).count()) === 0 && (await later.count()) && (await later.getAttribute("aria-expanded")) === "false") await later.click();
   const row = page.locator(sel).first(); await row.waitFor({ state: "attached", timeout: 30_000 });
-  const section = row.locator("xpath=ancestor::section[@data-record-section][1]");
-  if ((await section.count()) && (await section.getAttribute("data-open")) === "false") await section.locator("h2 > button").first().click();
+  const sections = row.locator("xpath=ancestor::section[@data-record-section]");   // outermost first: "Your record", then the card's own section
+  for (let k = 0; k < (await sections.count()); k++) { const sec = sections.nth(k); if ((await sec.getAttribute("data-open")) === "false") await sec.locator("> h2 > button").click(); }
   if (!(await row.isVisible()) && (await later.count()) && (await later.getAttribute("aria-expanded")) === "false") await later.click();
   await row.waitFor({ state: "visible", timeout: 30_000 });
   if ((await row.getAttribute("data-expanded")) !== "true") await row.locator("> button").click();

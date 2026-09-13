@@ -29,7 +29,8 @@ import { WhatWeAreDoing, PartyDeliveries } from "@/components/flows/5-verificati
 import { ExitBanner } from "@/components/flows/12-exits";
 import { copy, copyOrUndefined } from "@/lib/copy";
 import { formatDate, plural, withinDays } from "@/lib/format";
-import { cardTitle, connectionState } from "@/components/shell/chips";
+import { cardTitle, connectionState, ConfirmChip } from "@/components/shell/chips";
+import type { CardProposal } from "@/lib/types/cards";
 import { DatesSection, HeaderSection, LoanSection, NumbersSection, PropertySection, ROLE_LABEL, Section, StatusBadgeView, docStatus, personLine, type RecordLink } from "./sections";
 
 export type RailProps = {
@@ -45,6 +46,14 @@ export type RailProps = {
   /** A card to focus: expanded, its section opened, scrolled into view (a reference chip, `?card=`, a deep link, Edit). Each new value focuses again. */
   focus?: { card_instance_id: string; seq: number };
   link: RecordLink;
+  /** 32.17 discrepancy (1): the shell has no thread (the video agent) — a pending card the model proposed into shows its stated values with Confirm · Edit on its own row here; Confirm resolves it with evidence.source = borrower_stated. */
+  proposalStrip?: boolean;
+};
+
+/** The proposal a pending card carries (32.16 §3.4 `props.proposal`), or undefined. */
+export const proposalOf = (c: AnyCardInstance | undefined): CardProposal | undefined => {
+  const p = c && c.status === "pending" ? ((c.props as { proposal?: CardProposal }).proposal ?? undefined) : undefined;
+  return p && ((p.fields && p.fields.length > 0) || p.option_id) ? p : undefined;
 };
 
 /** Issues the platform raises render as caution rows (32.16 §2.2): the lift instructions for a frozen bureau, a stale or re-requested document, a returned payment, an insurance lapse. */
@@ -91,8 +100,21 @@ export function homeOf(card: AnyCardInstance | undefined, needed: boolean): "nee
 }
 
 /** One card's row: its one home on the rail (`rail-<card_instance_id>` is the focus target); expanded, the existing component renders in place. */
-function CardRow({ card, label, due, timezone, tone, current, expanded, onToggle, children, hint }: { card?: AnyCardInstance; label: string; due?: string; timezone: string; tone?: "caution"; current?: boolean; expanded: boolean; onToggle: () => void; children?: ReactNode; hint?: string }) {
+function CardRow({ card, label, due, timezone, tone, current, expanded, onToggle, children, hint, strip, bare }: { card?: AnyCardInstance; label: string; due?: string; timezone: string; tone?: "caution"; current?: boolean; expanded: boolean; onToggle: () => void; children?: ReactNode; hint?: string; /** 32.17: a proposed card's Confirm · Edit, shown whether or not the row is expanded */ strip?: ReactNode; /** the current ask: the card alone, no row line above it (its own heading is the question — asked once) */ bare?: boolean }) {
   const id = card?.card_instance_id;
+  if (bare && card) {
+    return (
+      <li className="sm-rail-row sm-rail-bare" data-rail-card={id} data-card-kind={card.kind} data-card-status={card.status} data-expanded="true" data-tone={tone} data-current-ask={current ? "true" : undefined} id={`rail-${id}`}>
+        {due ? (
+          <p className="sm-muted sm-rail-due">
+            <time dateTime={due} className={withinDays(due, 3) ? "sm-caution-text" : undefined}>by {formatDate(due, timezone)}</time>
+          </p>
+        ) : null}
+        {strip}
+        <div className="sm-rail-card">{children}</div>
+      </li>
+    );
+  }
   return (
     <li className="sm-rail-row" data-rail-card={id} data-card-kind={card?.kind} data-card-status={card?.status} data-expanded={expanded ? "true" : "false"} data-tone={tone} data-current-ask={current ? "true" : undefined} id={id ? `rail-${id}` : undefined}>
       {card ? (
@@ -117,12 +139,13 @@ function CardRow({ card, label, due, timezone, tone, current, expanded, onToggle
           ) : null}
         </span>
       )}
+      {strip}
       {expanded && card ? <div className="sm-rail-card">{children}</div> : null}
     </li>
   );
 }
 
-export function Rail({ record, cards, timezone, cardProps, resolve, busyCardId, cardErrors, currentAskId, focus, link }: RailProps) {
+export function Rail({ record, cards, timezone, cardProps, resolve, busyCardId, cardErrors, currentAskId, focus, link, proposalStrip }: RailProps) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const isExpanded = (id: string | undefined, dflt = false): boolean => (id ? (expanded[id] ?? dflt) : false);
   const toggle = (id: string) => setExpanded((e) => ({ ...e, [id]: !(e[id] ?? id === currentAskId) }));
@@ -137,6 +160,7 @@ export function Rail({ record, cards, timezone, cardProps, resolve, busyCardId, 
     setExpanded((e) => ({ ...e, [focus.card_instance_id]: true }));
     const home = homeOf(cards[focus.card_instance_id], neededIdsRef.current.has(focus.card_instance_id));
     if (home) setSection(home, true);
+    if (home && home !== "needed") setSection("record", true);   // the reference sections live behind "Your record"
     if (home === "needed" && laterIdsRef.current.has(focus.card_instance_id)) setLaterOpen(true);
     const t = setTimeout(() => {
       const el = document.getElementById(`rail-${focus.card_instance_id}`);
@@ -181,8 +205,15 @@ export function Rail({ record, cards, timezone, cardProps, resolve, busyCardId, 
     const label = (row.item ? copyOrUndefined(row.item.label_copy_key, row.item.copy_tokens) : undefined) ?? (row.card && (!row.item?.label || row.item.label === row.card.copy_key) ? cardTitle(row.card) : row.item?.label) ?? (row.card ? cardTitle(row.card) : row.id);
     const due = row.item?.due_at ?? row.card?.expires_at;
     const current = !!row.card && row.card.card_instance_id === currentAskId;
+    const proposal = proposalStrip ? proposalOf(row.card) : undefined;
     return (
-      <CardRow key={row.id} card={row.card} label={label} due={due} timezone={timezone} tone={row.card && isIssueCard(row.card) ? "caution" : undefined} current={current} expanded={isExpanded(row.card?.card_instance_id, current)} onToggle={() => row.card && toggle(row.card.card_instance_id)}>
+      <CardRow key={row.id} card={row.card} label={label} due={due} timezone={timezone} tone={row.card && isIssueCard(row.card) ? "caution" : undefined} current={current} expanded={isExpanded(row.card?.card_instance_id, current)} onToggle={() => row.card && toggle(row.card.card_instance_id)} bare={current}
+        strip={row.card && proposal ? (
+          <div className="sm-rail-proposal" data-testid="rail-proposal" data-card-id={row.card.card_instance_id}>
+            <p className="sm-muted sm-rail-proposal-hint">{copy("video.rail_confirm.hint")}</p>
+            <ConfirmChip card={row.card} proposal={proposal} busy={busyCardId === row.card.card_instance_id} error={cardErrors[row.card.card_instance_id]} onConfirm={(req) => void resolve(row.card!, req)} onEdit={(id) => { setExpanded((e) => ({ ...e, [id]: true })); }} />
+          </div>
+        ) : null}>
         {row.card ? render(row.card) : null}
       </CardRow>
     );
@@ -190,37 +221,10 @@ export function Rail({ record, cards, timezone, cardProps, resolve, busyCardId, 
 
   if (!record && all.length === 0) return <p className="sm-empty">Your record appears here once we know what we're doing today.</p>;
 
+  // the rail is the card: what is needed now, alone, at the top. Everything else — the loan's header and status, the journey's progress, connections,
+  // documents, what we're doing, people, numbers, dates, property, loan — waits behind one collapsed "Your record" line (32.16 §2.2).
   return (
     <div className="sm-rail" data-testid="rail">
-      {record ? (
-        <>
-          <HeaderSection r={record} />
-          <div className="sm-rail-status" data-record-section="status">
-            <StatusBadgeView badge={record.status.badge} />
-            <ExitBanner r={record} />
-          </div>
-        </>
-      ) : null}
-
-      {progress && progress.total > 0 ? (
-        <Section id="progress" title={copy("rail.progress.title")} aside={<span data-testid="progress-count">{copy("rail.progress.count", { done: progress.done, total: progress.total })}</span>}>
-          <ol className="sm-steps" data-testid="progress-steps">
-            {progress.steps.map((st) => (
-              <li key={st.id} data-step-id={st.id} data-state={st.state} className="sm-step">
-                <details>
-                  <summary>
-                    <span className="sm-step-mark" aria-hidden="true">{STEP_MARK[st.state]}</span>
-                    <span className="sm-visually-hidden">{st.state}: </span>
-                    <span>{copyOrUndefined(st.label_copy_key) ?? st.id}</span>
-                  </summary>
-                  <p className="sm-muted sm-step-at">{st.at ? formatDate(st.at, timezone, "datetime") : st.state === "current" ? "in progress" : "—"}</p>
-                </details>
-              </li>
-            ))}
-          </ol>
-        </Section>
-      ) : null}
-
       <Section id="needed" title={copy("needs.title")} aside={needed.length ? <span data-testid="needed-count">({needed.length})</span> : undefined} open={sectionOpen("needed", true)} onToggle={(o) => setSection("needed", o)}>
         {needed.length === 0 ? (
           <p style={{ margin: 0 }} className="sm-primary-text" data-testid="needs-none">
@@ -242,8 +246,39 @@ export function Rail({ record, cards, timezone, cardProps, resolve, busyCardId, 
         )}
       </Section>
 
+      <Section id="record" title={copy("rail.record.title")} aside={progress && progress.total > 0 ? <span data-testid="progress-count">{copy("rail.progress.count", { done: progress.done, total: progress.total })}</span> : undefined} open={sectionOpen("record", false)} onToggle={(o) => setSection("record", o)}>
+      {record ? (
+        <>
+          <HeaderSection r={record} />
+          <div className="sm-rail-status" data-record-section="status">
+            <StatusBadgeView badge={record.status.badge} />
+            <ExitBanner r={record} />
+          </div>
+        </>
+      ) : null}
+
+      {progress && progress.total > 0 ? (
+        <Section id="progress" title={copy("rail.progress.title")} aside={<span>{copy("rail.progress.count", { done: progress.done, total: progress.total })}</span>}>
+          <ol className="sm-steps" data-testid="progress-steps">
+            {progress.steps.map((st) => (
+              <li key={st.id} data-step-id={st.id} data-state={st.state} className="sm-step">
+                <details>
+                  <summary>
+                    <span className="sm-step-mark" aria-hidden="true">{STEP_MARK[st.state]}</span>
+                    <span className="sm-visually-hidden">{st.state}: </span>
+                    <span>{copyOrUndefined(st.label_copy_key) ?? st.id}</span>
+                  </summary>
+                  <p className="sm-muted sm-step-at">{st.at ? formatDate(st.at, timezone, "datetime") : st.state === "current" ? "in progress" : "—"}</p>
+                </details>
+              </li>
+            ))}
+          </ol>
+        </Section>
+      ) : null}
+
+
       {connections.length ? (
-        <Section id="connections" title={copy("rail.connections.title")} open={sectionOpen("connections", false)} onToggle={(o) => setSection("connections", o)}>
+        <Section id="connections" title={copy("rail.connections.title")} open={sectionOpen("connections", true)} onToggle={(o) => setSection("connections", o)}>
           <ul className="sm-rail-list">
             {connections.map((c) =>
               neededIds.has(c.card_instance_id) ? (
@@ -265,7 +300,7 @@ export function Rail({ record, cards, timezone, cardProps, resolve, busyCardId, 
       ) : null}
 
       {documents.length || orphanDocCards.length ? (
-        <Section id="documents" title="Documents" aside={documents.length + orphanDocCards.length ? <span>({documents.length + orphanDocCards.length})</span> : undefined} open={sectionOpen("documents", false)} onToggle={(o) => setSection("documents", o)}>
+        <Section id="documents" title="Documents" aside={documents.length + orphanDocCards.length ? <span>({documents.length + orphanDocCards.length})</span> : undefined} open={sectionOpen("documents", true)} onToggle={(o) => setSection("documents", o)}>
           <ul className="sm-rail-list">
             {documents.map((d) => {
               const c = cardForDoc(d);
@@ -297,7 +332,7 @@ export function Rail({ record, cards, timezone, cardProps, resolve, busyCardId, 
       ) : null}
 
       {doing.length || statusCards.length ? (
-        <Section id="doing" title={copy("needs.doing.title")} open={sectionOpen("doing", false)} onToggle={(o) => setSection("doing", o)}>
+        <Section id="doing" title={copy("needs.doing.title")} open={sectionOpen("doing", true)} onToggle={(o) => setSection("doing", o)}>
           <WhatWeAreDoing items={doing} />
           {statusCards.length ? (
             <ul className="sm-rail-list">
@@ -312,7 +347,7 @@ export function Rail({ record, cards, timezone, cardProps, resolve, busyCardId, 
       ) : null}
 
       {(record?.people.length ?? 0) || peopleCards.length ? (
-        <Section id="people" title="People" open={sectionOpen("people", false)} onToggle={(o) => setSection("people", o)}>
+        <Section id="people" title="People" open={sectionOpen("people", true)} onToggle={(o) => setSection("people", o)}>
           <ul className="sm-list">
             {(record?.people ?? []).map((p) => (
               <li key={p.party_id}>
@@ -343,6 +378,7 @@ export function Rail({ record, cards, timezone, cardProps, resolve, busyCardId, 
           <LoanSection r={record} />
         </>
       ) : null}
+      </Section>
       {record && record.needed_from_you.length ? <p className="sm-visually-hidden">{plural(record.needed_from_you.length, "thing", "things")} needed from you</p> : null}
     </div>
   );

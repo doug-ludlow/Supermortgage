@@ -137,3 +137,61 @@ resource "google_secret_manager_secret_iam_member" "runtime_anthropic_api_key" {
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.runtime.email}"
 }
+
+# 32.17 — the video agent (src/runtime/borrower/video-routes.ts): the Tavus API key and the
+# secret path segment of the vendor's callback URL. Set by hand in Secret Manager
+# (docs/DEPLOY.md "The video agent"); the placeholder reads as unset — the FAKE vendor stands
+# in (every build stage), and the callback path answers 404 to everything.
+resource "google_secret_manager_secret" "tavus_api_key" {
+  secret_id = "supermortgage-tavus-api-key"
+
+  replication {
+    auto {}
+  }
+
+  labels = local.labels
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_secret_manager_secret_version" "tavus_api_key" {
+  secret      = google_secret_manager_secret.tavus_api_key.id
+  secret_data = "unset"
+
+  lifecycle {
+    ignore_changes = [secret_data]
+  }
+}
+
+resource "google_secret_manager_secret_iam_member" "runtime_tavus_api_key" {
+  secret_id = google_secret_manager_secret.tavus_api_key.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.runtime.email}"
+}
+
+resource "google_secret_manager_secret" "video_callback_secret" {
+  secret_id = "supermortgage-video-callback-secret"
+
+  replication {
+    auto {}
+  }
+
+  labels = local.labels
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_secret_manager_secret_version" "video_callback_secret" {
+  secret      = google_secret_manager_secret.video_callback_secret.id
+  secret_data = "unset"
+
+  lifecycle {
+    ignore_changes = [secret_data]
+  }
+}
+
+resource "google_secret_manager_secret_iam_member" "runtime_video_callback_secret" {
+  secret_id = google_secret_manager_secret.video_callback_secret.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.runtime.email}"
+}

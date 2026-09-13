@@ -59,8 +59,10 @@ type SceneCtx = { situation: Json; borrower: string; toolResults: Json[] };
 /** A scene answers a borrower line: the tool calls first (one response), then the sentence on their results; `then` answers the guard's one regeneration. */
 type Scene = { when: RegExp; calls?: Call[] | ((c: SceneCtx) => Call[]); text: string | ((c: SceneCtx) => string); then?: string };
 /** The first turn of every account session (no borrower text): the model greets and asks the goal in its own words; a lead's facts are acknowledged, never `entry.resumed`. */
-const FIRST_TURN: Scene = { when: /just created their account/, text: (c) => (c.situation["lead_facts"] ? "Welcome, {{party.first_name}} — I have what you told us so far, so let's pick up from there." : "Hi {{party.first_name}}. Are you looking to buy a home, lower your rate or payment, or take cash out?") };
-const RETURNING: Scene = { when: /the borrower is back/, text: "Welcome back, {{party.first_name}}. The next thing I need from you is on the rail." };
+// the scripted model does what the prompt tells a real one: a name when the record has one, no name (never the e-mail) when it does not — an account made with an e-mail has none until the identity step
+const named = (c: { situation: Json }): boolean => !!((c.situation["party"] as Json | undefined)?.["first_name"]);
+const FIRST_TURN: Scene = { when: /just created their account/, text: (c) => (c.situation["lead_facts"] ? `Welcome${named(c) ? ", {{party.first_name}}" : ""} — I have what you told us so far, so let's pick up from there.` : `Hi${named(c) ? " {{party.first_name}}" : ""}. Are you looking to buy a home, lower your rate or payment, or take cash out?`) };
+const RETURNING: Scene = { when: /the borrower is back/, text: (c) => `Welcome back${named(c) ? ", {{party.first_name}}" : ""}. The next thing I need from you is on the rail.` };
 function scriptedClient() {
   const requests: Anthropic.MessageCreateParamsNonStreaming[] = []; const toolResults: Json[] = []; let scenes: Scene[] = [FIRST_TURN, RETURNING];
   let scene: Scene | undefined; let ctx: SceneCtx = { situation: {}, borrower: "", toolResults: [] };
@@ -187,7 +189,7 @@ test("32.16-T1: Given a borrower message that is not an affirmative, not a flow 
   // the first turn of the session (§2.0): the model greeted in its own words after the disclosure row and the goal card — no placeholder, no entry.resumed
   const t0 = await thread(a.token); assertDisclosureThenGoal(t0);
   const greetings = t0.messages.filter((m) => m["sender"] === "agent" && (m["copy_tokens"] as Json | null)?.["source"] === "agent_turn");
-  assert.equal(greetings.length, 1, "one first turn"); assert.match(String(greetings[0]!["body_text"]), /^Hi \S+\. Are you looking to buy a home/); assert.doesNotMatch(String(greetings[0]!["body_text"]), /\{\{/);
+  assert.equal(greetings.length, 1, "one first turn"); assert.match(String(greetings[0]!["body_text"]), /^Hi(?: [A-Z][a-z]+)?\. Are you looking to buy a home/); assert.doesNotMatch(String(greetings[0]!["body_text"]), /@/, "never the e-mail as a name"); assert.doesNotMatch(String(greetings[0]!["body_text"]), /\{\{/);
   assert.equal(t0.messages.filter((m) => String(m["body_text"] ?? "").startsWith("{{copy:entry.resumed")).length, 0, "the turn posts no entry.resumed");
   // a plain question: not an affirmative, not a flow reply, not "human" → the agent turn answers in the placeholder's slot
   const r = await message(a.token, "how does this work?");
@@ -339,7 +341,7 @@ test("32.16-T7: Given a turn in which the model shows rates, then the reply carr
   for (const [step, value] of [["goal", "lower_rate"], ["occupancy", "primary"], ["state", "AZ"]] as const) { const x = await api("POST", "/v1/borrower/lead", { action: "answer", step, value }, withLead, "10.16.7.1"); assert.equal(x.status, 200, `${step}: ${JSON.stringify(x.body)}`); }
   const created = await api("POST", "/v1/borrower/auth/account", { action: "create", email: `t7-${R}@example.test`, password: `pw-t7-${R}` }, withLead, "10.16.7.1"); assert.equal(created.status, 200, JSON.stringify(created.body)); await settle();
   const token = created.body["token"] as string; const partyId = (created.body["party"] as Json)["party_id"] as string; const appId = (await applicationsOf(partyId))[0]!.id;
-  const first = (await thread(token)).messages.find((m) => m["sender"] === "agent" && (m["copy_tokens"] as Json | null)?.["source"] === "agent_turn")!; assert.match(String(first["body_text"]), /^Welcome, \S+ — I have what you told us so far/, "the lead's facts acknowledged in the model's words");
+  const first = (await thread(token)).messages.find((m) => m["sender"] === "agent" && (m["copy_tokens"] as Json | null)?.["source"] === "agent_turn")!; assert.match(String(first["body_text"]), /^Welcome(?:, [A-Z][a-z]+)? — I have what you told us so far/, "the lead's facts acknowledged in the model's words");
   // (i) rates: the model calls explain{rates}; the API renders the checked range as the rates element before the reply; the sentence restates no figure
   scripted.use([{ when: /what are rates today/i, calls: [{ name: "explain", input: { topic: "rates" } }], text: "Today's published rates are shown here, with the APR beside each. They depend on credit and the loan size, so the exact rate comes after a soft credit check." }]);
   const r = await message(token, "what are rates today?");

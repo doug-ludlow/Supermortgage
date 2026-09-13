@@ -163,6 +163,18 @@ resource "google_compute_url_map" "https" {
       }
     }
 
+    # 32.17: the video agent lives at /app/video (the borrower app); "/video" and "/video/*" answer
+    # 302 → /app/video the way "/" answers 302 → /app (the deploy workflow's smoke test covers it).
+    path_rule {
+      paths = ["/video", "/video/*"]
+      url_redirect {
+        path_redirect          = "/app/video"
+        redirect_response_code = "FOUND"
+        strip_query            = false
+        https_redirect         = true
+      }
+    }
+
     path_rule {
       paths   = ["/app", "/app/*"]
       service = google_compute_backend_service.borrower.id

@@ -17,6 +17,8 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const ALLOWED_PREFIX = "v1/borrower/";
+// 32.17: the FAKE video page posts the vendor's own calls (the custom-LLM request; the token in the path authenticates it) through this origin
+const ALLOWED_VIDEO_PREFIX = "v1/video/llm/";
 const SESSION_COOKIE = "sm_borrower_session";
 const SESSION_MAX_AGE_S = 7 * 24 * 3600; // 7 days with a passkey (01 §5); the API enforces the real idle expiry
 const HOP_BY_HOP = new Set(["connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade", "proxy-authorization", "proxy-authenticate", "host", "content-length"]);
@@ -45,7 +47,7 @@ function sessionCookie(token: string, req: NextRequest): string {
 async function forward(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }): Promise<Response> {
   const { path } = await ctx.params;
   const joined = path.join("/");
-  if (!joined.startsWith(ALLOWED_PREFIX)) {
+  if (!joined.startsWith(ALLOWED_PREFIX) && !joined.startsWith(ALLOWED_VIDEO_PREFIX)) {
     return Response.json({ code: "not_found", copy_key: "error.generic" }, { status: 404 });
   }
   const base = upstreamBase();
@@ -71,7 +73,7 @@ async function forward(req: NextRequest, ctx: { params: Promise<{ path: string[]
   const fwd = req.headers.get("x-forwarded-for");
   if (fwd) headers.set("x-forwarded-for", fwd);
 
-  const isSse = joined === "v1/borrower/stream";
+  const isSse = joined === "v1/borrower/stream";   // the chat-completions reply of the video path streams too, with the upstream's own event-stream headers copied above
   const res = await fetch(url, {
     method: req.method,
     headers,

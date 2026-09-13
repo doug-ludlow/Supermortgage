@@ -20,6 +20,8 @@ export interface RuntimeConfig {
   readonly talk: { readonly apiKey: string; readonly model: string; readonly effort: "low" | "medium" | "high" };
   /** 32.16 DELTA-23: the agent turn's model (src/runtime/borrower/agent). The same `ANTHROPIC_API_KEY`; `LLM_MODEL` (fallback `TALK_MODEL`, default claude-opus-5), `LLM_EFFORT` (default low), `LLM_PROMPT_VERSION` (recorded on every agent_turns row). Empty key → the placeholder reply stands and the server logs it. */
   readonly llm: { readonly apiKey: string; readonly model: string; readonly effort: "low" | "medium" | "high"; readonly promptVersion: string };
+  /** 32.17: the video agent. `tavusApiKey` from Secret Manager `supermortgage-tavus-api-key` (empty → FakeTavus, the FAKE, in every build stage); `replicaId` (`TAVUS_REPLICA_ID`, empty → the first stock replica the vendor lists); `callbackSecret` (`VIDEO_CALLBACK_SECRET`, the secret path segment of the vendor's callback URL; empty → a random per-process secret, so only the FAKE's in-process callbacks work); `borrowerCamera` (`VIDEO_BORROWER_CAMERA`, on | off — off joins audio-only); `publicApiUrl` (`VIDEO_API_URL`, the public origin the vendor reaches the custom-LLM endpoint and the callback on; empty → the request's own origin); `joinTimeoutS` (`VIDEO_JOIN_TIMEOUT_S`). */
+  readonly video: { readonly tavusApiKey: string; readonly replicaId: string; readonly callbackSecret: string; readonly borrowerCamera: "on" | "off"; readonly publicApiUrl: string; readonly joinTimeoutS: number };
 }
 
 /** Secret Manager needs a first version before Cloud Run can start the service; Terraform writes this placeholder and a human replaces it. */
@@ -44,5 +46,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RuntimeConfig 
   const llmEffort = (env["LLM_EFFORT"] ?? "low").trim();
   if (!["low", "medium", "high"].includes(llmEffort)) throw new Error("LLM_EFFORT must be low, medium or high");
   const llm = { apiKey: talk.apiKey, model: (env["LLM_MODEL"] ?? "").trim() || talk.model, effort: llmEffort as "low" | "medium" | "high", promptVersion: (env["LLM_PROMPT_VERSION"] ?? "").trim() };
-  return { databaseUrl, apiToken, host: env["HOST"] ?? "0.0.0.0", port, integrations, logFormat: env["LOG_FORMAT"] === "text" ? "text" : "json", environment: env["ENVIRONMENT"] ?? "nonprod", borrowerDefaultPartnerId, googleOauth, talk, llm };
+  const camera = (env["VIDEO_BORROWER_CAMERA"] ?? "on").trim().toLowerCase();
+  if (camera !== "on" && camera !== "off") throw new Error("VIDEO_BORROWER_CAMERA must be on or off");
+  const joinTimeoutS = Number((env["VIDEO_JOIN_TIMEOUT_S"] ?? "120").trim());
+  if (!Number.isInteger(joinTimeoutS) || joinTimeoutS < 1) throw new Error("VIDEO_JOIN_TIMEOUT_S must be a positive integer of seconds");
+  const video = { tavusApiKey: secret(env["TAVUS_API_KEY"]), replicaId: secret(env["TAVUS_REPLICA_ID"]), callbackSecret: secret(env["VIDEO_CALLBACK_SECRET"]), borrowerCamera: camera as "on" | "off", publicApiUrl: (env["VIDEO_API_URL"] ?? "").trim().replace(/\/$/, ""), joinTimeoutS };
+  return { databaseUrl, apiToken, host: env["HOST"] ?? "0.0.0.0", port, integrations, logFormat: env["LOG_FORMAT"] === "text" ? "text" : "json", environment: env["ENVIRONMENT"] ?? "nonprod", borrowerDefaultPartnerId, googleOauth, talk, llm, video };
 }

@@ -349,11 +349,16 @@ jobs:
             --resolve "${API_HOSTNAME}:443:${LB_IP}" \
             "https://${API_HOSTNAME}/")"
           test "${code}" = "302" || { echo "expected 302 from /, got ${code}"; exit 1; }
+          # 32.17: /video → 302 /app/video (infra/terraform/lb.tf path rule beside the "/" one)
+          code="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --resolve "${API_HOSTNAME}:443:${LB_IP}" \
+            "https://${API_HOSTNAME}/video")"
+          test "${code}" = "302" || { echo "expected 302 from /video, got ${code}"; exit 1; }
           code="$(curl --silent --output /dev/null --write-out '%{http_code}' \
             --resolve "${API_HOSTNAME}:443:${LB_IP}" \
             "https://${API_HOSTNAME}/ops")"
           test "${code}" = "401" || { echo "expected 401 from /ops without a token, got ${code}"; exit 1; }
-          echo "/ redirects to /app; /ops answers via ${LB_IP}"
+          echo "/ redirects to /app; /video redirects to /app/video; /ops answers via ${LB_IP}"
 
       - name: Board the demo transfer batch (workflow_dispatch with seed_demo)
         if: github.event.inputs.seed_demo == 'true'

@@ -11,7 +11,7 @@ What you end up with, in one Google Cloud project:
 | Cloud Run job `supermortgage-migrate` | applies `db/migrations/*.sql`; run before every deploy |
 | Cloud Run job `supermortgage-sweep` | one pass every minute (Cloud Scheduler): the borrower flows' scheduled tick, the daily refinance check (06:30 ET), the FAKE reviewers, due timers and the outbox |
 | Cloud SQL (PostgreSQL 16) `supermortgage-nonprod` | the database, encrypted with a customer-managed key, daily backups + point-in-time recovery |
-| Secret Manager | `supermortgage-database-url`, `supermortgage-api-token` |
+| Secret Manager | `supermortgage-database-url`, `supermortgage-api-token` (also `supermortgage-anthropic-api-key`, `supermortgage-tavus-api-key`, `supermortgage-video-callback-secret` — placeholders until set by hand) |
 | Artifact Registry `supermortgage` | container images built by GitHub Actions |
 | Global HTTPS load balancer + Cloud Armor | `demo.supermortgage.com` (API and console on one name), Google-managed certificate, rate limiting |
 | Cloud Run service `supermortgage-borrower` | the borrower app (`apps/borrower`, Next.js standalone from `Dockerfile.borrower`, built with `--build-arg NEXT_PUBLIC_ENVIRONMENT=<environment>` so a nonprod bundle shows the FAKE vendor paths the `INTEGRATIONS=fake` API expects — Google sign-in included), served at `https://demo.supermortgage.com/app` by a `/app/*` URL-map rule to its own serverless NEG — infrastructure and the second build/deploy job are in `docs/ux/deploy-borrower.patch`, applied after review |
@@ -534,6 +534,40 @@ the revision) after adding the version. Optional: `TALK_MODEL` (default
 `claude-opus-5`) and `TALK_EFFORT` (`low`, the default, `medium` or `high`) on
 the API service. Each turn is one or a few Messages API calls; the system prompt
 is cached across turns.
+
+## The video agent (32.17)
+
+`https://demo.supermortgage.com/video` answers 302 → `/app/video` (infra/terraform/lb.tf, beside the
+`/` → `/app` rule; the deploy workflow's smoke test checks it). `/app/video` is the 32.16 shell with the
+thread replaced by a Tavus Conversational Video Interface replica that speaks the same words the agent
+turn would have typed — the account door first, the rail beside the call, the disclosure footer under it
+(`src/runtime/borrower/video-routes.ts`, `apps/borrower/components/video`). The vendor is the face and the
+voice only: its persona's language model is a *custom LLM* pointed at this API's own
+`POST /v1/video/llm/{token}/chat/completions`, keyed per video session, with perception off and recording
+off; every spoken turn is a 32.16 turn with `channel = video` (`agent_turns`, `messages{channel=video}`).
+
+Without a vendor key the FAKE stands in — `FakeTavus` (`FAKE`, in every build stage): its
+`conversation_url` is the app's own page `/app/video/fake/{token}`, which posts each utterance through the
+same chat-completions endpoint and triggers the same callbacks. The boot log says which
+(`video agent vendor {vendor: "FAKE" | "tavus"}`).
+
+Turning the live vendor on takes two secrets, as new versions of the placeholders Terraform created:
+
+```sh
+printf '%s' '<tavus api key>' | gcloud secrets versions add supermortgage-tavus-api-key --data-file=- --project supermortgage-nonprod
+printf '%s' "$(openssl rand -hex 24)" | gcloud secrets versions add supermortgage-video-callback-secret --data-file=- --project supermortgage-nonprod
+```
+
+The API service reads them as `TAVUS_API_KEY` and `VIDEO_CALLBACK_SECRET` (`latest`). The environment
+also carries `VIDEO_API_URL` (the public origin the vendor reaches the custom-LLM endpoint and the callback
+`https://<api host>/v1/video/tavus/callback/<secret>` on — Terraform sets it to the API hostname),
+`VIDEO_BORROWER_CAMERA` (`on`, the default — the camera is on for presence, nothing is recorded; `off`
+joins audio-only), and optionally `TAVUS_REPLICA_ID` (a branded replica; unset → the first stock replica
+the vendor lists **[UNVERIFIED — the stock-replica listing filter]**) and `VIDEO_JOIN_TIMEOUT_S`
+(default 120). Redeploy (or restart the revision) after adding the versions. Nothing about the record ever
+reaches the vendor: the persona's system prompt is a one-line pointer, the conversation's context is the
+borrower's first name and the partner's name, and the vendor's transcript is kept as a reference on
+`video_sessions.transcript_ref`, never as the record.
 
 ## The account is the front door (32.16 Phase 0)
 

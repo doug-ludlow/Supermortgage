@@ -111,7 +111,8 @@ async function resumeFromLead(deps: FlowDeps, s: SessionOpened): Promise<void> {
     if (estimate !== null) await deps.runtime.execute({ process: "21.1", name: "confirmPrefill", loanId: "", applicationId: appId, actor: INTAKE, run: { ...RUN }, input: { application_id: appId, op: "offer", item: "property_value_estimate", value: estimate } });
   } catch (e) { deps.logger?.error("borrower.flow.32-14.interview", { lead_id: s.lead_id, application_id: appId, error: e instanceof Error ? e.message : String(e) }); }
   // S3 (ii): ONE receipt line instead of the goal card — after the session's disclosure line (3-entry ran first); its `answers` token is composed here from the lead's facts (the shell substitutes message copy tokens at render; the sentence never goes in body_text)
-  await deps.ui.appendMessage({ conversation_id: conv.conversation_id, at: s.at, sender: "agent", sender_ref: "agent:intake", channel: s.channel, body_text: RESUMED_LINE, subject_application_id: appId, voice_turn: s.channel === "voice", copy_tokens: { answers: resumedAnswers(lead, transaction_type, occupancy, state) } });
+  // 32.16 §2.0: with an agent turn configured the model's first turn reads the lead back in its own words (the facts are in its context) — no canned read-back line then
+  if (!deps.agentTurn) await deps.ui.appendMessage({ conversation_id: conv.conversation_id, at: s.at, sender: "agent", sender_ref: "agent:intake", channel: s.channel, body_text: RESUMED_LINE, subject_application_id: appId, voice_turn: s.channel === "voice", copy_tokens: { answers: resumedAnswers(lead, transaction_type, occupancy, state) } });
   deps.logger?.info("borrower.flow.32-14.resumed", { lead_id: s.lead_id, party_id: s.party_id, application_id: appId, transaction_type, occupancy, state });
 }
 

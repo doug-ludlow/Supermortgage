@@ -68,8 +68,10 @@ describe("32.4 grouped LE package (T3, T4)", () => {
     // the rail's Documents section: each document its own card, expanded in place; the LE card (requires_ack) carries the receipt action
     render(<Rail record={{ ...base, timezone: TZ, documents: [] }} cards={cards} timezone={TZ} cardProps={{}} resolve={async (c, req) => onResolve(req)} cardErrors={{}} link={noop} />);
     const docs = document.querySelector('[data-record-section="documents"]')!;
-    expect(docs.getAttribute("data-open")).toBe("false"); // Documents starts collapsed (32.16 §2.2): a card appears when it is needed
-    fireEvent.click(docs.querySelector("h2 > button")!);
+    const rec = document.querySelector('[data-record-section="record"]')!;
+    expect(rec.getAttribute("data-open")).toBe("false"); // everything but the current ask waits behind "Your record" (32.16 §2.2): a card appears when it is needed
+    fireEvent.click(rec.querySelector(":scope > h2 > button")!);
+    if (docs.getAttribute("data-open") === "false") fireEvent.click(docs.querySelector(":scope > h2 > button")!);
     for (const id of ["c-le", "c-arm", "c-charm"]) fireEvent.click(docs.querySelector(`[data-rail-card="${id}"] > button`)!);
     expect(within(docs as HTMLElement).getAllByRole("article")).toHaveLength(3);
     expect(within(docs as HTMLElement).getByRole("button", { name: "Confirm receipt" })).toBeInTheDocument();

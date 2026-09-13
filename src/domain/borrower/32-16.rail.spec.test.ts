@@ -209,8 +209,11 @@ test("32.16-T13: Given the refinance fixture at R8, then `journey_progress` show
   assert.equal(journeyProgress({ stage: "origination", transaction_type: "purchase", events: [], cards: [] })!.total, 16);
   // Progress renders "7 of 12" on the rail, R8 marked current, the earlier steps done
   const { page, ctx } = await openShell(tokA, 1280);
+  // "7 of 12" is on the "Your record" line (always in view); the steps are inside it, one tap away
+  const recordSec = page.locator('[data-testid="record"] [data-record-section="record"]');
+  assert.equal((await recordSec.getByTestId("progress-count").innerText()).trim(), "7 of 12");
+  await recordSec.locator("> h2 > button").click();
   const progress = page.locator('[data-testid="record"] [data-record-section="progress"]');
-  assert.equal((await progress.getByTestId("progress-count").innerText()).trim(), "7 of 12");
   assert.equal(await progress.locator('[data-step-id][data-state="done"]').count(), 7);
   assert.equal(await progress.locator('[data-step-id="R8"][data-state="current"]').count(), 1);
   assert.equal(await progress.locator('[data-step-id][data-state="upcoming"]').count(), 4);
@@ -247,8 +250,11 @@ test("32.16-T11: Given the shell at ≥ 1024 px, then no card component renders 
   assert.equal(await later.count(), 1, "the one line for the cards that wait");
   assert.match((await later.textContent()) ?? "", /^\D*\d+ more after this$/);
   assert.equal(await later.getAttribute("aria-expanded"), "false");
-  // the reference sections start collapsed: what the borrower sees without tapping is the progress, the one thing needed now and the numbers
-  for (const sec of ["connections", "documents", "doing", "people"]) { const el = page.locator(`[data-testid="record"] [data-record-section="${sec}"]`); if (await el.count()) assert.equal(await el.getAttribute("data-open"), "false", `${sec} starts collapsed`); }
+  // the rail is the card: everything else (header, status, progress, connections, documents, what we're doing, people, numbers, dates, property, loan) waits behind one collapsed "Your record" line
+  const recordSection = page.locator('[data-testid="record"] [data-record-section="record"]');
+  assert.equal(await recordSection.getAttribute("data-open"), "false", "Your record starts collapsed");
+  for (const sec of ["progress", "connections", "documents", "doing", "people", "numbers"]) { const el = recordSection.locator(`[data-record-section="${sec}"]`); if (await el.count()) assert.ok(!(await el.first().isVisible()), `${sec} is behind Your record`); }
+  assert.equal(await needed.locator(`[data-rail-card="${first}"] > button`).count(), 0, "the current ask is the card alone — no row line repeating its question");
   await later.click();
   const rows = await rowsOf();
   // opened, every pending card has its row (informational kinds have their own sections: a status card under What we're doing, a person under People, a notice under Documents)
@@ -358,7 +364,9 @@ test("32.16-T15: Given a `DocumentCard{LE}` under Documents, when expanded, then
   const documents = page.locator('[data-testid="record"] [data-record-section="documents"]');
   const row = documents.locator(`[data-rail-card="${leCard.card_instance_id}"]`);
   await row.waitFor({ timeout: 15_000, state: "attached" });
-  if ((await documents.getAttribute("data-open")) === "false") await documents.locator("h2 > button").click(); // Documents starts collapsed (32.16 §2.2)
+  const recordSec = page.locator('[data-testid="record"] [data-record-section="record"]');
+  if ((await recordSec.getAttribute("data-open")) === "false") await recordSec.locator("> h2 > button").click(); // Documents lives behind "Your record" (32.16 §2.2)
+  if ((await documents.getAttribute("data-open")) === "false") await documents.locator("> h2 > button").click();
   assert.equal(await page.locator('[data-testid="thread"] article[data-card-kind]').count(), 0, "the LE is a document on the rail, not a card in the thread");
   if (leCard.status === "pending") {
     await row.locator("> button").click();
@@ -401,7 +409,7 @@ test("32.16-T16: Given a phone width, then the status strip shows the badge, nex
   assert.deepEqual(sectionsSheet, sectionsWide, "the sheet carries the same sections");
   for (const id of ["status", "progress", "needed", "documents"]) assert.ok(sectionsSheet.includes(id), `${id} on the sheet`);
   assert.ok(await page.locator('[data-testid="record"] [data-record-section="needed"]').isVisible());
-  assert.equal((await page.locator('[data-testid="record"] [data-record-section="progress"] [data-testid="progress-count"]').innerText()).trim(), `${(rec["journey_progress"] as Json)["done"]} of ${(rec["journey_progress"] as Json)["total"]}`);
+  assert.equal((await page.locator('[data-testid="record"] [data-record-section="record"] [data-testid="progress-count"]').innerText()).trim(), `${(rec["journey_progress"] as Json)["done"]} of ${(rec["journey_progress"] as Json)["total"]}`);
   // a reference chip opens the sheet at that card (32.16 §2.1: below 768 the rail is the bottom sheet and the chip opens it)
   await page.getByRole("button", { name: "Close your record" }).click();
   await page.waitForSelector('[data-testid="record"][data-open="true"]', { timeout: 15_000, state: "detached" });   // closed = display:none, never "visible"

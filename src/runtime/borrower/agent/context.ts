@@ -80,8 +80,10 @@ export function numberTokens(numbers: P | null): { view: P; tokens: Record<strin
 /** The compact record (docs/ux/17 §3.3 `record.get`): status, next, needed/doing, numbers, dates, documents, people, property, loan — figures, dates and names as tokens. */
 export function compactRecord(record: BorrowerRecord | null, o: { level: string; partyFirstName: string }): { view: P; tokens: Record<string, string> } {
   const tokens: Record<string, string> = { "party.first_name": o.partyFirstName };
-  if (!record) return { view: { subject: null, note: "no application or loan yet: the goal card is the first ask", party: { first_name: "{{party.first_name}}" } }, tokens };
-  const view: P = { party: { first_name: "{{party.first_name}}" } };
+  // no name on file yet (an account made with an e-mail): the model greets without a name — never the e-mail, never "there"
+  const party: P = o.partyFirstName ? { first_name: "{{party.first_name}}" } : { first_name: null, note: "no name on file yet: do not address the borrower by name or by e-mail; greet without one" };
+  if (!record) return { view: { subject: null, note: "no application or loan yet: the goal card is the first ask", party }, tokens };
+  const view: P = { party };
   view["subject"] = { stage: record.subject.stage, transaction_type: record.subject.transaction_type, occupancy: record.subject.occupancy, has_application: !!record.subject.application_id, has_loan: !!record.subject.loan_id };
   view["status"] = { badge: record.status.badge, one_liner: "{{status.one_liner}}", read_only: record.read_only };
   tokens["status.one_liner"] = record.status.one_liner;

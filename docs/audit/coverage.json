@@ -1,13 +1,13 @@
 {
- "brief": "spec units built 7743/7771 (99.6%): tids 2097/2119, tables 728/730, timers 2029/2029, notices 306/306, tools 1372/1376, figures 1211/1211; processes at 100%: 179/181",
+ "brief": "spec units built 7762/7771 (99.9%): tids 2111/2119, tables 729/730, timers 2029/2029, notices 306/306, tools 1376/1376, figures 1211/1211; processes at 100%: 180/181",
  "totals": {
   "tids": {
    "spec": 2119,
-   "built": 2097
+   "built": 2111
   },
   "tables": {
    "spec": 730,
-   "built": 728
+   "built": 729
   },
   "timers": {
    "spec": 2029,
@@ -19,7 +19,7 @@
   },
   "tools": {
    "spec": 1376,
-   "built": 1372
+   "built": 1376
   },
   "figures": {
    "spec": 1211,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 7771,
-   "built": 7743
+   "built": 7762
   }
  },
  "sections": {
@@ -219,9 +219,9 @@
   },
   "32": {
    "spec": 325,
-   "built": 297,
+   "built": 316,
    "processes": 16,
-   "done": 14
+   "done": 15
   }
  },
  "done": [
@@ -403,7 +403,8 @@
   "32.11",
   "32.12",
   "32.13",
-  "32.14"
+  "32.14",
+  "32.17"
  ],
  "processes": [
   {
@@ -7802,31 +7803,14 @@
    "title": "The video agent: the same conversation, face to face, with the cards on the rail",
    "tids": {
     "spec": 14,
-    "built": 0,
-    "todo": 14,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14
-    ]
+    "built": 14,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "video_sessions"
-    ]
+    "built": 1,
+    "missing": []
    },
    "timers": {
     "spec": 0,
@@ -7841,13 +7825,8 @@
    },
    "tools": {
     "spec": 4,
-    "built": 0,
-    "missing": [
-     "video.open",
-     "video.turn",
-     "video.end",
-     "video.callback"
-    ]
+    "built": 4,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -7856,9 +7835,9 @@
    },
    "units": {
     "spec": 19,
-    "built": 0
+    "built": 19
    },
-   "pct": 0.0
+   "pct": 100.0
   }
  ]
 }

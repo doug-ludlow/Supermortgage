@@ -37,7 +37,7 @@ import { MODEL_TOOLS, newLedger, toolExecutor, type ToolLedger } from "./tools.t
 import { MODEL_TOOLS_32_16 } from "../../../app/tools/section32-16.ts";
 
 type P = Record<string, unknown>;
-type Channel = "app" | "sms" | "email" | "voice";
+type Channel = "app" | "sms" | "email" | "voice" | "video";   // 32.17: a spoken turn through the video agent is the same turn with channel = video
 const INTAKE: Actor = { kind: "agent", id: "intake" };
 const AI_SYSTEM_CODE = "borrower-conversation";
 
@@ -51,6 +51,8 @@ export interface AgentTurnRequest {
   readonly subject: Subject | null;
   readonly routed_to: "intake" | "borrower-comms";
   readonly now: string;
+  /** 32.17 rule 10: when the request was received (ms since the epoch) — `agent_turns.latency_ms` then counts from receipt, not from the runner's start; the runner's own start otherwise. */
+  readonly started_at_ms?: number | undefined;
 }
 export interface AgentTurnReply {
   readonly reply: MessageRow;
@@ -67,6 +69,12 @@ export interface AgentTurnDeps {
   readonly llm: AnthropicLlm; readonly promptVersion?: string | undefined;
   /** The partner behind the party's first subject (routes.ts partnerFor): the lender's name the prompt names. */
   readonly partner: (ctx: BorrowerContext) => Promise<{ legal_name: string; nmlsr_id: string }>;
+}
+
+/** The borrower's first name for the prompt: the first word of the legal name — or "" when there is no name yet (an account created with an e-mail carries the e-mail as its legal name until the identity step; the model never addresses anyone by an e-mail). */
+export function firstNameOf(legalName: string | null | undefined): string {
+  const first = (legalName ?? "").trim().split(/\s+/)[0] ?? "";
+  return !first || first.includes("@") ? "" : first;
 }
 
 export class AgentTurnRunner {
@@ -103,7 +111,7 @@ export class AgentTurnRunner {
   async settle(): Promise<void> { await Promise.all([...this.queues.values()].map((p) => p.catch(() => undefined))); }
 
   private async turn(req: AgentTurnRequest): Promise<AgentTurnReply | null> {
-    const { runtime, ui, logger } = this.d; const started = Date.now();
+    const { runtime, ui, logger } = this.d; const started = req.started_at_ms ?? Date.now();
     const why = await this.bypassed(req.routed_to);
     if (why) { logger.warn("borrower.agent.bypassed", { party_id: req.ctx.party.id, agent: req.routed_to, why }); return null; }
     const turn_id = randomUUID(); const party = req.ctx.party; const level = req.ctx.session.level;
@@ -116,7 +124,7 @@ export class AgentTurnRunner {
     const partner = await this.d.partner(req.ctx);
     const safeMode = await this.flag("origination.ai_mlo_intake", "assisted");
     const next0 = sessionNextOf(record, cards);
-    const context = buildContext({ partyFirstName: party.legal_name.split(/\s+/)[0] ?? party.legal_name, level, channel: req.channel, routed_to: req.routed_to, safeMode, partnerName: partner.legal_name, record, cards, messages: window, lead, next: next0, borrowerText: req.text });
+    const context = buildContext({ partyFirstName: firstNameOf(party.legal_name), level, channel: req.channel, routed_to: req.routed_to, safeMode, partnerName: partner.legal_name, record, cards, messages: window, lead, next: next0, borrowerText: req.text });
     const disclosureFirst = allMessages[0]?.body_text === "{{copy:entry.disclosure.first}}";
     // ---- the model, on the bus's tools
     const ledger = newLedger(); Object.assign(ledger.tokens, context.tokens);
@@ -152,7 +160,8 @@ export class AgentTurnRunner {
     const subjectIds = { subject_application_id: req.subject?.application_id ?? null, subject_loan_id: req.subject?.loan_id ?? null };
     // the rates element(s) the turn's tools produced ride on their own rows, before the reply (§3.5 check 2)
     for (const el of ledger.elements) await ui.appendMessage({ conversation_id: req.conversation_id, at: req.now, sender: "system", sender_ref: `agent:${req.routed_to}`, channel: req.channel, body_text: null, copy_tokens: el, ...subjectIds });
-    const card_instance_id = ledger.proposed_card_instance_id ?? ledger.requested_card_instance_id ?? null;
+    // 32.17 discrepancy (2): a video turn has no thread for a reference chip — a requested card is focused on the rail by its own `card.sent` event, so the reply carries no chip (a proposal keeps its card: the rail's Confirm strip reads the card's props.proposal)
+    const card_instance_id = ledger.proposed_card_instance_id ?? (req.channel === "video" ? null : ledger.requested_card_instance_id) ?? null;
     const copy_tokens: P = { source: "agent_turn", turn_id, ...(fallback ? { fallback: "default_copy", rejected_by: fallback, copy_key } : {}), ...(ledger.explained ? { explain: ledger.explained } : {}) };
     const replyId = await ui.appendMessage({ conversation_id: req.conversation_id, at: req.now, sender: "agent", sender_ref: `agent:${req.routed_to}`, channel: req.channel, body_text: body, card_instance_id, copy_tokens, voice_turn: req.channel === "voice", ...subjectIds });
     const reply = (await ui.message(replyId))!;

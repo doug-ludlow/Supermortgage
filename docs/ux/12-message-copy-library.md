@@ -615,6 +615,7 @@ The rail and the thread (32.16 §2.1–2.2, DELTA-26). The rail's section names,
 - `rail.progress.title` — heading — "Progress" — *32.16 §2.2: the journey's steps, done / current / upcoming, from `journey_progress`.*
 - `rail.progress.count` — line — "{{done}} of {{total}}" — *32.16 §2.2: beside the Progress heading; `journey_progress.done` and `.total`, never counted by the rail.*
 - `rail.connections.title` — heading — "Connections" — *32.16 §2.2: each vendor connection and its state; expands to the `ConnectCard` or its receipt.*
+- `rail.record.title` — heading — "Your record" — *32.16 §2.2: the one collapsed line under the current ask that holds everything else on the rail — the loan's header and status, Progress, Connections, Documents, What we're doing, People, Numbers, Dates, Property, Loan. The rail is the card; the record is one tap away.*
 - `needs.later` — line — "{{n}} more after this" — *32.16 §2.2: the one line under the current ask that stands for the other pending cards; tapping it lists them, each one line, each expandable. Until then only the current ask (and any caution row) is on the rail — a card appears when it is needed, not when it exists.*
 - `rail.waiting_on_you` — line — "Waiting on you: {{label}} →" — *32.16 §2.1: the slim line under the header, shown only while the borrower has scrolled away from the current ask; tapping it focuses the card on the rail.*
 - `chip.reference` — chip — "{{label}} →" — *32.16 §2.1: the one-line reference the assistant attaches when it puts a card on the rail; tapping it focuses and expands that card. A resolved card's chip shows its receipt line instead.*
@@ -662,6 +663,22 @@ The rail and the thread (32.16 §2.1–2.2, DELTA-26). The rail's section names,
 - `disclosures.nmls` — link — "NMLS consumer access" — *32.16 §1 principle 8: → nmlsconsumeraccess.org.*
 - `disclosures.licenses` — heading — "State licenses" — *32.16 §1 principle 8: the lender's licenses by state.*
 - `disclosures.licenses.pending` — line — "License details appear here as they are added." — *32.16 §1 principle 8: the placeholder until the partner's licenses are configured.*
+
+## The video agent (32.17)
+
+- `video.title` — heading — "Talk face to face" — *32.17 §2.2 / rule 9: /app/video — the call pane in the thread's place, the rail beside it; no composer, no microphone control of Supermortgage's own, no "Talk to a person".*
+- `video.starting` — line — "Starting your video call. Your camera and microphone are asked for first — nothing is recorded." — *32.17 rule 5: recording off; the camera is for presence only (open question 2).*
+- `video.permission_denied` — line — "Without a camera or microphone we can still start the call; you can allow them in the call itself, or continue in the conversation." — *32.17: a refused permission never blocks the call; the thread at /app is always there.*
+- `video.unavailable` — line — "The video agent isn't available right now. Nothing is lost — you can continue in the conversation." — *32.17 edge cases: the vendor is down at open (video_sessions.status = failed, end_reason = vendor_unavailable); the page offers /app in these words, never a raw error.*
+- `video.continue_in_thread` — button — "Continue in the conversation" — *32.17: → /app.*
+- `video.leave` — button — "Leave" — *32.17: POST /v1/borrower/video/sessions/{id}/end — the conversation ends at the vendor and the persona is deleted.*
+- `video.ended` — line — "The call has ended. Your cards and record stay as they are." — *32.17: ended{end_reason} for any reason — the borrower left, the vendor shut it down, max_call_duration.*
+- `video.new_call` — button — "Start a new call" — *32.17 edge cases: after max_call_duration or a leave, the rail stays live and a new call is one tap.*
+- `video.fake.marker` — line — "FAKE video agent" — *32.17 discrepancy (3): the FakeTavus page in every build stage — a text box and a Web Speech input in the replica's place; every line it shows came through the same chat-completions endpoint the vendor would call.*
+- `video.fake.input` — field — "Say something to the video agent" — *32.17: the FAKE page's text box (typed, or the browser's own speech recognition when available).*
+- `video.fake.send` — button — "Say it" — *32.17: posts the utterance as the vendor's chat-completions request.*
+- `video.fake.listen` — button — "Speak" — *32.17: the Web Speech API input when the browser has one.*
+- `video.rail_confirm.hint` — line — "Said on the call — tap Confirm so it counts, or Edit it here." — *32.17 discrepancy (1): the confirm loop confirms on the rail — the pending card's row shows the stated values with Confirm and Edit; only the tap resolves (evidence.source = borrower_stated).*
 
 ## Channel variants (rules)
 - **SMS**: first sentence + deep link; never a number the borrower hasn't seen in-app first (no rates, balances or payoff figures by SMS); STOP footer on the first message of a thread.

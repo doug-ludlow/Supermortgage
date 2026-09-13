@@ -57,6 +57,7 @@ import { createBorrowerChannels, type BorrowerChannels } from "./channels.ts";
 import { BorrowerFlows } from "./flows/index.ts";
 import { entryPartner, isSupermortgage } from "./partner.ts";
 import { createLeadRoutes } from "./lead-routes.ts";
+import { createVideoRoutes, type VideoRoutesOptions } from "./video-routes.ts";   // 32.17: the video agent (mounted in handle below)
 import { ensureOrganicApplication } from "./flows/14-entry-lead.ts";
 import { connectorFailed } from "./flows/13-cross-cutting.ts";
 import type { CardInstanceRow } from "../../infra/db/borrower-ui.ts";
@@ -85,6 +86,8 @@ export interface BorrowerRouterOptions {
   readonly defaultPartnerId?: string;
   /** 32.14 §4: the telephony vendor's inbound webhook adapter for /v1/webhooks/sms and /v1/webhooks/voice (FakeTelephonyWebhooks unless a real one is wired). */
   readonly telephonyWebhooks?: TelephonyWebhookPort;
+  /** 32.17: the video agent — FakeTavus (FAKE) unless `tavusApiKey` (TAVUS_API_KEY) is set; the callback secret, the replica, the camera setting (src/runtime/borrower/video-routes.ts). */
+  readonly video?: VideoRoutesOptions | undefined;
 }
 export interface BorrowerRouter {
   handle(req: IncomingMessage, res: ServerResponse, url: URL, method: string): Promise<boolean>;
@@ -173,7 +176,8 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
   runtime.onCommitted((events) => { hub.publish(events).catch((e) => logger.error("borrower.stream.publish", { error: e })); });
   // the 32.x flows react to the same post-commit feed: the owning processes' events become the cards the borrower sees (src/runtime/borrower/flows)
   const defaultPartnerId = (opts.defaultPartnerId ?? process.env["BORROWER_DEFAULT_PARTNER_ID"] ?? "").trim() || undefined;   // 32.14 DELTA-15
-  const flows = new BorrowerFlows({ runtime, ui, logger, blobs, defaultPartnerId }); flows.start();
+  const agentConfigured = !!((opts.llm?.apiKey ?? process.env["ANTHROPIC_API_KEY"] ?? "").trim() || opts.llm?.client);   // 32.16 DELTA-23: the agent turn exists (decided below); flows/14 then posts no read-back line
+  const flows = new BorrowerFlows({ runtime, ui, logger, blobs, defaultPartnerId, agentTurn: agentConfigured }); flows.start();
   // 32.14 DELTA-11: the anonymous minute (POST /v1/borrower/lead, no session) and the lead→party link at verify (src/runtime/borrower/lead-routes.ts)
   const leads = createLeadRoutes({ runtime, logger, flows, defaultPartnerId });
   // 32.14 DELTA-12: Sign in with Google — the runtime's oidc port (the FAKE provider under INTEGRATIONS=fake); the PKCE verifier is derived from the router's secret
@@ -197,6 +201,7 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     : null;
   if (agent) commands.agentTurn = (req) => agent.run(req.ctx.party.id, req);
   else logger.warn("borrower.agent.not_configured", { reason: "ANTHROPIC_API_KEY is unset: the thread answers the copy library's placeholder reply (32.16 DELTA-23)" });
+  const video = createVideoRoutes({ runtime, logger, auth, ui, flows, commands, hub, agent, partnerFor, firstTurn, nonProduction, appBase: returnUrlBase, ...(opts.video ?? {}) });   // 32.17: the video agent — the same turn, spoken; the FAKE vendor unless TAVUS_API_KEY is set
 
   const send = (res: ServerResponse, status: number, shape: ShapeName, body: unknown): void => { res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }); res.end(toJson(serialize(shape, body))); };
   const sessionBody = (r: { token: string; session: SessionRow; party: { id: string; party_type: string; legal_name: string } }) =>
@@ -766,6 +771,7 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
 
   async function handle(req: IncomingMessage, res: ServerResponse, url: URL, method: string): Promise<boolean> {
     const path = url.pathname;
+    if (await video.handle(req, res, url, method)) return true;   // 32.17: /v1/borrower/video/* and /v1/video/* (the vendor's custom-LLM call and callbacks) — video-routes.ts logs its own line
     if (!path.startsWith("/v1/borrower/") && path !== "/v1/webhooks/stripe" && path !== "/v1/webhooks/truv" && path !== "/v1/webhooks/sms" && path !== "/v1/webhooks/voice") return false;
     const started = Date.now();
     const log = (status: number, extra: Record<string, unknown> = {}): void => logger.info("http", { method, path, status, ms: Date.now() - started, surface: "borrower", ...extra });

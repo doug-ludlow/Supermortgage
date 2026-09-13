@@ -401,3 +401,46 @@ jobs:
             echo
             echo "API token: \`gcloud secrets versions access latest --secret supermortgage-api-token --project ${{ vars.GCP_PROJECT_ID }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # The demo walk (docs/ux/17 §8.7): after every deploy, a real browser with the
+  # real model creates a fresh account on the deployed demo and checks the ten
+  # things a person must see work (apps/borrower/tests/walk/demo-walk.mts). The
+  # screenshots and report.json are the artifact "demo-walk" — the only claim of
+  # "working" the surface accepts. A failed outcome fails this job, never the
+  # deploy that preceded it.
+  walk:
+    name: demo walk (real browser, real model)
+    needs: [terraform, deploy]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22", cache: npm, cache-dependency-path: apps/borrower/package-lock.json }
+      - name: Install the borrower app's dependencies and Chromium
+        working-directory: apps/borrower
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Walk the demo
+        working-directory: apps/borrower
+        env:
+          DEMO_BASE: https://${{ needs.terraform.outputs.api_hostname }}
+          WALK_OUT: walk-out
+        run: node --experimental-strip-types tests/walk/demo-walk.mts
+      - name: Keep the screenshots and the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-walk
+          path: apps/borrower/walk-out
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Summary
+        if: always()
+        working-directory: apps/borrower
+        run: |
+          if [ -f walk-out/report.json ]; then
+            { echo "## Demo walk"; echo; node -e 'const r=require("./walk-out/report.json"); console.log(`${r.passed} of ${r.checks.length} outcomes hold on ${r.base}`); console.log(); for (const c of r.checks) console.log(`- ${c.ok ? "ok" : "NOT ok"} ${c.n}. ${c.what}${c.detail ? " — " + c.detail.replace(/\n/g, " ") : ""}`)'; } >> "$GITHUB_STEP_SUMMARY"
+          fi

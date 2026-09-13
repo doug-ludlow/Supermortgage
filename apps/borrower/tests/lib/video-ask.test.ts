@@ -1,0 +1,24 @@
+// 32.17 rule 16 / T20 — when a card rises over the stage: a proposal, a request by Michelle, or a kind only a tap answers; Not now under a stamp.
+import { describe, expect, it } from "vitest";
+import { askRises, askStamp, riseReason } from "@/lib/video/ask";
+
+const goal = { card_instance_id: "g", kind: "ChoiceCard", props: {} };
+const income = { card_instance_id: "i", kind: "ConfirmCard", props: { proposal: { proposed_at: "2026-09-13T10:00:00Z", fields: [] } } };
+describe("riseReason", () => {
+  it("keeps a speakable card off the screen until a proposal or a request", () => {
+    expect(riseReason(goal)).toBeNull(); expect(riseReason(null)).toBeNull();
+    expect(riseReason(income)).toBe("proposal");
+    expect(riseReason({ ...goal, props: { requested_by: "card.request" } })).toBe("requested");
+  });
+  it("raises a kind only a tap can answer", () => {
+    for (const kind of ["ConsentCard", "ConnectCard", "UploadCard", "ScheduleCard", "PaymentCard", "DocumentCard", "DemographicsCard", "OfferCard"]) expect(riseReason({ card_instance_id: "c", kind, props: {} })).toBe("tap_only");
+  });
+});
+describe("askRises", () => {
+  it("sets a card aside under its stamp and raises it again on a new proposal", () => {
+    const aside = new Set([askStamp(income)]);
+    expect(askRises(income, aside)).toBeNull();
+    expect(askRises({ ...income, props: { proposal: { proposed_at: "2026-09-13T10:05:00Z" } } }, aside)).toBe("proposal");
+    expect(askRises({ ...goal, props: { requested_by: "card.request" } }, new Set([askStamp(goal)]))).toBe("requested");
+  });
+});

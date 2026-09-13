@@ -20,6 +20,8 @@ export type RecordProps = {
   link: RecordLink;
   /** Open as the drawer (768–1023) or the bottom sheet (< 768); ignored beside the thread. */
   open: boolean;
+  /** 32.17 rule 16: the drawer at every width (the video shell) — never beside a stage. */
+  drawer?: boolean;
   onClose: () => void;
   /** 32.17 discrepancy (1): no thread to hold the confirm chip — a proposed card's row carries Confirm · Edit on the rail. */
   proposalStrip?: boolean;
@@ -28,9 +30,9 @@ export type RecordProps = {
 };
 
 /** 32.16 §2.2 — the rail (the Record panel): the sections of `Rail`, beside the thread at ≥ 1024, a drawer at 768–1023, the bottom sheet the status strip opens on a phone. */
-export function Record({ open, onClose, extras, ...rail }: RecordProps) {
+export function Record({ open, onClose, extras, drawer, ...rail }: RecordProps) {
   return (
-    <aside className="sm-record" data-open={open} aria-label="Your record" data-testid="record">
+    <aside className="sm-record" data-open={open} data-drawer={drawer ? "always" : undefined} aria-label="Your record" data-testid="record">
       {open ? (
         <button type="button" className="sm-btn sm-btn-quiet sm-record-close" onClick={onClose} aria-label="Close your record">
           ✕ Close

@@ -680,6 +680,7 @@ The rail and the thread (32.16 §2.1–2.2, DELTA-26). The rail's section names,
 - `video.unmute` — button — "Unmute" — *32.17 rule 15.*
 - `video.camera_off` — button — "Camera off" — *32.17 rule 15: the borrower's own camera (the picture-in-picture tile) off; the call continues audio-only.*
 - `video.camera_on` — button — "Camera on" — *32.17 rule 15.*
+- `ask.not_now` — button — "Not now" — *32.17 rule 16: sets the card that rose over the stage aside until Michelle proposes into it or asks for it again; nothing changes.*
 - `video.leave` — button — "Leave" — *32.17: POST /v1/borrower/video/sessions/{id}/end — the conversation ends at the vendor and the persona is deleted.*
 - `video.ended` — line — "The call has ended. Your cards and record stay as they are." — *32.17: ended{end_reason} for any reason — the borrower left, the vendor shut it down, max_call_duration.*
 - `video.new_call` — button — "Start a new call" — *32.17 edge cases: after max_call_duration or a leave, the rail stays live and a new call is one tap.*

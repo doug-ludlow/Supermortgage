@@ -35,13 +35,17 @@ test.describe("the video agent (refinance fixture)", () => {
     expect(await inViewport(page, "footer-disclosure")).toBe(true);
   });
 
-  test("32.17-T12 (the screen): at ≥ 1024 the rail sits beside the call with only the current ask open and the rest behind one line; no card inside the call pane; Leave ends the call and offers a new one with the rail still live", async ({ page }) => {
+  test("32.17-T12 (the screen): the stage alone — no rail beside the call, no card inside the call pane; Your record opens the rail as a drawer with only the current ask open and the rest behind one line; Leave ends the call and offers a new one with the rail still live", async ({ page }) => {
     const vp = page.viewportSize()!;
+    const call = (await page.getByTestId("video-call").boundingBox())!;
+    const body = (await page.locator(".sm-body").boundingBox())!;
+    expect(Math.abs(call.width - body.width)).toBeLessThanOrEqual(2);   // 32.17 rule 16: the stage is the body's width at every size
+    expect(await page.getByTestId("record").boundingBox()).toBeNull();   // no rail on the screen until asked for
+    await expect(page.getByTestId("video-call").locator("article[data-card-kind]")).toHaveCount(0);
     if (vp.width >= 1024) {
-      const record = (await page.getByTestId("record").boundingBox())!;
-      const call = (await page.getByTestId("video-call").boundingBox())!;
-      expect(record.x).toBeGreaterThan(call.x + call.width - 4);
       await expect(page.getByTestId("status-strip")).toBeHidden();
+      await page.locator('[data-testid="header"] button[aria-haspopup="dialog"]').first().click();
+      await expect(page.locator('[data-testid="record"][data-open="true"]')).toBeVisible();
       const needed = page.locator('[data-testid="record"] [data-record-section="needed"]');
       const rows = needed.locator("[data-rail-card]:not([data-tone='caution'])");
       await expect(rows).toHaveCount(1);
@@ -50,8 +54,12 @@ test.describe("the video agent (refinance fixture)", () => {
       const later = needed.getByTestId("needs-later");
       await expect(later).toHaveText(/\d+ more after this$/);
       await expect(later).toHaveAttribute("aria-expanded", "false");
+      await page.locator('[data-testid="record"] .sm-record-close').click();
+      expect(await page.getByTestId("record").boundingBox()).toBeNull();
     }
-    await expect(page.getByTestId("video-call").locator("article[data-card-kind]")).toHaveCount(0);
+    // a card that rose over the stage (the fixture's current ask needs a tap) never covers Leave
+    const ask = page.getByTestId("ask-overlay");
+    if (await ask.count()) { const a = (await ask.boundingBox())!; const leave = (await page.getByTestId("video-leave").boundingBox())!; expect(a.y).toBeGreaterThanOrEqual(leave.y + leave.height - 1); }
     await page.getByTestId("video-leave").click();
     await expect(page.getByTestId("video-ended")).toBeVisible();
     await expect(page.getByTestId("video-new-call")).toBeVisible();

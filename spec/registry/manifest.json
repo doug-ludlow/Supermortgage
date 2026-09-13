@@ -15634,7 +15634,7 @@
    },
    {
     "n": 12,
-    "text": "Given `/app/video` at \u2265 1024 px with the refinance fixture at R8, then the rail sits beside the call with only the current ask open and the other pending cards behind one \"n more after this\" line (32.16 32.16-T11), and no card component renders inside the call pane."
+    "text": "Given `/app/video` at \u2265 1024 px with the refinance fixture at R8, then the stage alone is on the screen \u2014 no rail beside the call and no card component inside the call pane \u2014 and the header's \"Your record\" opens the full rail as a drawer with only the current ask open and the other pending cards behind one \"n more after this\" line (32.16 32.16-T11); closing it returns to the stage."
    },
    {
     "n": 13,
@@ -15663,6 +15663,10 @@
    {
     "n": 19,
     "text": "Given `/app/video` at \u2265 1024 px on a live call (the FAKE stands in), then the stage fills the left column \u2014 the replica's frame is the column's width with no border and no vendor chrome \u2014 the borrower's own camera is a picture-in-picture tile in a corner of the stage, the controls under it are Supermortgage's own (mute, camera, leave), and the join options for a live room carry the borrower's first name as the display name (\"You\" with none on file) with no vendor pre-join screen (contract over `joinOptionsFor`)."
+   },
+   {
+    "n": 20,
+    "text": "Given `/app/video` on a live call with the goal chosen and a typed income card pending, then a card only a tap can answer (a consent the goal opened) is on the screen on its own and \"Not now\" sets it aside; with only speakable cards left, nothing is on the screen until Michelle proposes into one or asks for one; when a spoken income figure is proposed into the income card, that one card rises over the stage with what was heard and Confirm and Edit, and Confirm resolves it and it leaves the screen."
    }
   ],
   "tables": [

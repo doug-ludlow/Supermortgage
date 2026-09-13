@@ -118,7 +118,7 @@ export function VideoCall({ fixturesMode, firstName, statusTick, onSession }: Vi
         <span className="sm-primary-text" data-testid="video-title">{copy("video.title")}</span>
         {session?.vendor === "FAKE" && SHOW_FAKE_MARKERS ? <span className="sm-fake-banner" data-testid="video-fake-marker">{copy("video.fake.marker")}</span> : null}
         <span className="sm-header-spacer" />
-        {phase === "live" && !join ? (
+        {phase === "live" && !join && !src ? (
           <button type="button" className="sm-btn sm-btn-quiet" data-testid="video-leave" onClick={() => void leave()}>
             {copy("video.leave")}
           </button>

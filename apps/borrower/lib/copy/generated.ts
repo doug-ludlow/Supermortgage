@@ -642,6 +642,7 @@ export const COPY = {
   "video.unmute": { key: "video.unmute", kind: "button", text: "Unmute", notes: "32.17 rule 15.", extras: [], section: "The video agent (32.17)" },
   "video.camera_off": { key: "video.camera_off", kind: "button", text: "Camera off", notes: "32.17 rule 15: the borrower's own camera (the picture-in-picture tile) off; the call continues audio-only.", extras: [], section: "The video agent (32.17)" },
   "video.camera_on": { key: "video.camera_on", kind: "button", text: "Camera on", notes: "32.17 rule 15.", extras: [], section: "The video agent (32.17)" },
+  "ask.not_now": { key: "ask.not_now", kind: "button", text: "Not now", notes: "32.17 rule 16: sets the card that rose over the stage aside until Michelle proposes into it or asks for it again; nothing changes.", extras: [], section: "The video agent (32.17)" },
   "video.leave": { key: "video.leave", kind: "button", text: "Leave", extras: ["*32.17: POST /v1/borrower/video/sessions/{id}/end", "the conversation ends at the vendor and the persona is deleted.*"], section: "The video agent (32.17)" },
   "video.ended": { key: "video.ended", kind: "line", text: "The call has ended. Your cards and record stay as they are.", extras: ["*32.17: ended{end_reason} for any reason", "the borrower left, the vendor shut it down, max_call_duration.*"], section: "The video agent (32.17)" },
   "video.new_call": { key: "video.new_call", kind: "button", text: "Start a new call", notes: "32.17 edge cases: after max_call_duration or a leave, the rail stays live and a new call is one tap.", extras: [], section: "The video agent (32.17)" },
@@ -653,4 +654,4 @@ export const COPY = {
 } as const satisfies Record<string, CopyEntry>;
 
 export type CopyKey = keyof typeof COPY;
-export const COPY_KEY_COUNT = 638;
+export const COPY_KEY_COUNT = 639;

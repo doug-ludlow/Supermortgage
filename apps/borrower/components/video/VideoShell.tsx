@@ -9,6 +9,10 @@
  * the header stays for someone who already has an account. No composer, no microphone control of Supermortgage's own, no
  * "Talk to a person"; the disclosure footer under everything (§1 principle 8).
  *
+ * The screen is the call (32.17 rule 16): the stage is the whole body, the rail is a drawer behind the header's "Your record",
+ * and one card rises over the stage only when a tap is needed — Michelle proposed into it, asked for it, or it is a kind no
+ * words can answer (lib/video/ask.ts). "Not now" sets it aside until she proposes or asks again.
+ *
  * The confirm loop confirms on the rail (32.17 discrepancy 1): the pending card the model proposed into shows the stated values
  * with Confirm and Edit on its own row (`proposalStrip`), and Confirm resolves it with evidence.source = borrower_stated. A card
  * the model requested arrives over the same SSE stream as `card.sent` (discrepancy 2): the rail focuses and expands it — no chip.
@@ -31,6 +35,10 @@ import { RatesElement, isRatesElement } from "@/components/shell/RatesElement";
 import { PARTNER_LEGAL_NAME } from "@/lib/env";
 import { Record } from "@/components/record/Record";
 import { proposalOf } from "@/components/record/Rail";
+import { Card } from "@/components/cards";
+import { CardBoundary } from "@/components/flows/13-cross-cutting/CardBoundary";
+import { cardTitle, ConfirmChip } from "@/components/shell/chips";
+import { askRises, askStamp } from "@/lib/video/ask";
 import { nowIso } from "@/components/cards/CardFrame";
 import { VideoCall } from "./VideoCall";
 
@@ -67,6 +75,9 @@ export function VideoShell({ fixturesMode, fixtureName, initialSubject }: VideoS
   const [signInOpen, setSignInOpen] = useState(false);
   const [statusTick, setStatusTick] = useState(0);
   const [session, setSession] = useState<VideoSession | null>(null);
+  const [setAside, setSetAside] = useState<Set<string>>(() => new Set());
+  // 32.17 rule 16: the card Michelle asked for herself (card.request → card.sent) is the thing she is talking about — it rises ahead of the record's current ask while it is pending
+  const [requestedId, setRequestedId] = useState<string | undefined>();
   const beside = useMedia("(min-width: 1024px)");
   const streamRef = useRef<ReturnType<typeof openStream> | null>(null);
   const knownCards = useRef<Set<string>>(new Set());
@@ -90,7 +101,7 @@ export function VideoShell({ fixturesMode, fixtureName, initialSubject }: VideoS
       setCards(next);
       // 32.17 discrepancy (2): a card the call put on the rail (card.sent over the stream; or one `card.request` raised, seen on any later re-fetch should a frame be missed) is focused and expanded there — the newest pending card this page had not seen
       const fresh = loaded.current ? t.cards.filter((c) => c.status === "pending" && !knownCards.current.has(c.card_instance_id) && (reason === "card.sent" || (c.props as { requested_by?: string }).requested_by === "card.request")).sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0] : undefined;
-      if (fresh) focusCard(fresh.card_instance_id);
+      if (fresh) { focusCard(fresh.card_instance_id); if ((fresh.props as { requested_by?: string }).requested_by === "card.request") setRequestedId(fresh.card_instance_id); }
       knownCards.current = new Set(t.cards.map((c) => c.card_instance_id));
       loaded.current = true;
       setLoadError(undefined);
@@ -162,8 +173,12 @@ export function VideoShell({ fixturesMode, fixtureName, initialSubject }: VideoS
   // 32.17 discrepancy (1): a pending card the call proposed into is the thing to confirm now — it is the current ask (its row open, Confirm · Edit on it); else the record's current ask
   const ask = useMemo(() => {
     const proposed = Object.values(cards).filter((c) => c.status === "pending" && !!proposalOf(c)).sort((a, b) => ((proposalOf(a)?.proposed_at ?? "") < (proposalOf(b)?.proposed_at ?? "") ? 1 : -1))[0];
-    return proposed ?? currentAsk(cards, record?.needed_from_you[0]?.card_instance_id);
-  }, [cards, record?.needed_from_you]);
+    const requested = requestedId ? cards[requestedId] : undefined;
+    return proposed ?? (requested && requested.status === "pending" ? requested : undefined) ?? currentAsk(cards, record?.needed_from_you[0]?.card_instance_id);
+  }, [cards, record?.needed_from_you, requestedId]);
+  // 32.17 rule 16: the one card over the stage, and why it is there
+  const rise = askRises(ask, setAside);
+  const askAside = useCallback(() => { if (ask) setSetAside((s) => new Set([...s, askStamp(ask)])); }, [ask]);
   // the latest rates element the call produced (32.16 T7): drawn under the rail's Numbers
   const rates = useMemo(() => [...messages].filter((m) => m.channel === "video" && isRatesElement(m.copy_tokens)).sort((a, b) => (a.at < b.at ? 1 : -1))[0], [messages]);
 
@@ -189,13 +204,29 @@ export function VideoShell({ fixturesMode, fixtureName, initialSubject }: VideoS
                 <p className="sm-error" role="alert" style={{ margin: 0, padding: "8px 16px" }}>{loadError}</p>
               ) : null}
               <VideoCall fixturesMode={fixturesMode} firstName={me?.first_name} statusTick={statusTick} onSession={onSession} />
+              {ask && rise ? (
+                <div className="sm-ask-overlay" data-testid="ask-overlay" data-card-id={ask.card_instance_id} data-reason={rise} role="dialog" aria-label={cardTitle(ask)}>
+                  {rise === "proposal" && proposalOf(ask) ? (
+                    <div className="sm-rail-proposal" data-testid="ask-proposal">
+                      <p className="sm-muted sm-rail-proposal-hint">{copy("video.rail_confirm.hint")}</p>
+                      <ConfirmChip card={ask} proposal={proposalOf(ask)!} busy={busyCardId === ask.card_instance_id} error={cardErrors[ask.card_instance_id]} onConfirm={(req) => void resolveCard(ask, req)} onEdit={() => undefined} />
+                    </div>
+                  ) : null}
+                  <CardBoundary card={ask}>
+                    <Card card={ask} timezone={timezone} {...cardProps} onResolve={(req) => resolveCard(ask, req)} busy={busyCardId === ask.card_instance_id} error={cardErrors[ask.card_instance_id]} />
+                  </CardBoundary>
+                  <div className="sm-ask-overlay-actions">
+                    <button type="button" className="sm-btn sm-btn-quiet" data-testid="ask-not-now" onClick={askAside}>{copy("ask.not_now")}</button>
+                  </div>
+                </div>
+              ) : null}
             </>
           )}
         </main>
         {showSignIn ? null : (
           <Record
             record={record} cards={cards} timezone={timezone} cardProps={cardProps} resolve={resolveCard} busyCardId={busyCardId} cardErrors={cardErrors} currentAskId={ask?.card_instance_id} focus={focus} link={link} open={recordOpen} onClose={() => setRecordOpen(false)}
-            proposalStrip
+            proposalStrip drawer
             extras={rates?.copy_tokens ? (
               <section className="sm-record-section" data-record-section="rates" data-testid="rail-rates">
                 <h2 className="sm-rail-h"><span>Numbers · today's rates</span></h2>

@@ -1226,23 +1226,86 @@ a {
 /* 32.17 — the video agent: the call pane in the thread's place (/app/video), the FAKE page, the rail's proposal strip */
 .sm-video-main {
   grid-template-rows: auto minmax(0, 1fr); /* notice · the call pane */
+  position: relative; /* the ask overlay rises over the stage */
+  border-right: 0;
+}
+/* 32.17 rule 16: the screen is the call — one column, the record a drawer at every width, the bar and the controls over the video */
+.sm-shell[data-video="1"] .sm-body {
+  grid-template-columns: minmax(0, 1fr);
+}
+.sm-shell[data-video="1"] .sm-drawer-btn {
+  display: inline-flex;
+}
+.sm-record[data-drawer="always"] {
+  display: none;
+}
+.sm-record[data-drawer="always"][data-open="true"] {
+  display: block;
+  position: fixed;
+  inset: 0;
+  left: auto;
+  width: min(480px, 92vw);
+  z-index: 30;
+  background: var(--sm-surface);
+  border-left: 1px solid var(--sm-border);
+  padding-top: 56px;
+}
+@media (max-width: 767px) {
+  .sm-record[data-drawer="always"][data-open="true"] {
+    left: 0;
+    width: 100%;
+    top: 12vh;
+    border-left: 0;
+    border-top: 1px solid var(--sm-border-strong);
+    padding-top: 48px;
+  }
+}
+.sm-ask-overlay {
+  position: absolute;
+  right: 16px;
+  top: 60px; /* below the stage's title strip: Leave stays reachable (32.17 rule 16) */
+  z-index: 5;
+  width: min(440px, calc(100% - 32px));
+  max-height: calc(100% - 128px); /* and above the controls strip */
+  overflow-y: auto;
+  background: var(--sm-surface);
+  color: var(--sm-text);
+  border: 1px solid var(--sm-border-strong, var(--sm-border));
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+.sm-ask-overlay-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 .sm-video-pane {
   grid-row: 2; /* the column's stretched row — the notice row above it may be empty (32.17 rule 15: the stage is the whole column) */
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   min-height: 0;
   min-width: 0;
   height: 100%;
+  position: relative;
+  background: #000;
 }
 .sm-video-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 3;
   display: flex;
   align-items: center;
   gap: 8px 12px;
   padding: 8px 16px;
-  border-bottom: 1px solid var(--sm-border);
-  background: var(--sm-surface-2);
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0));
+  color: #fff;
   min-height: 44px;
+  pointer-events: none; /* a strip over the video: only its own controls take a tap */
+}
+.sm-video-bar > button {
+  pointer-events: auto; /* the spacer and the title never take a tap */
 }
 .sm-video-stage {
   position: relative;
@@ -1258,7 +1321,7 @@ a {
   min-height: 0;
   height: 100%;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr);
   background: #000;
 }
 .sm-video-remote {
@@ -1289,6 +1352,9 @@ a {
   overflow: hidden;
   z-index: 2;
 }
+.sm-video-pip {
+  pointer-events: none; /* a self-view: nothing to tap; taps reach the stage under it (the FAKE page's controls included) */
+}
 .sm-video-pip video {
   width: 100%;
   height: 100%;
@@ -1304,13 +1370,20 @@ a {
   z-index: 2;
 }
 .sm-video-controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 8px 16px;
-  border-top: 1px solid var(--sm-border);
-  background: var(--sm-surface-2);
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0));
   min-height: 44px;
+}
+.sm-video-stage > .sm-video-notice {
+  padding-top: 56px;
 }
 .sm-video-stage > .sm-video-notice,
 .sm-video-stage > [data-testid="video-status"],
@@ -1324,11 +1397,14 @@ a {
   align-content: start;
   max-width: 560px;
   color: var(--sm-text);
+  position: relative;
+  z-index: 6; /* an ended or failed call's notice stays reachable under a card that rose (32.17 rule 16) */
 }
 .sm-fake-video {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   min-height: 320px;
+  padding-top: 64px; /* under the stage's title strip (32.17 rule 16): the page's own Leave is never beneath the strip's */
   height: 100%;
   background: var(--sm-surface);
   color: var(--sm-text);

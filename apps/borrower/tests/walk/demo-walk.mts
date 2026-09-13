@@ -125,6 +125,7 @@ async function walk(browser: Browser): Promise<void> {
   await page.goto(`${BASE}/app`, { waitUntil: "load", timeout: 60_000 });
   await page.waitForSelector('[data-testid="thread"]', { timeout: 60_000 }).catch(() => undefined);
   const signOut = page.locator('[data-testid="sign-out-button"]');
+  await signOut.waitFor({ state: "visible", timeout: 20_000 }).catch(() => undefined);   // the header shows Sign out once GET /me has answered — after the thread renders
   const hadSignOut = (await signOut.count()) === 1;
   if (hadSignOut) { await signOut.click(); await page.waitForTimeout(2000); }
   await page.goto(`${BASE}/app`, { waitUntil: "load", timeout: 60_000 });

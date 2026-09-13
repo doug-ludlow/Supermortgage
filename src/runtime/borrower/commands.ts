@@ -260,14 +260,18 @@ export class BorrowerCommands {
     }
     // "human" at any time (01 §1.1, §7.1): the human.request command — except the question whether the assistant is a person ("is this a real person?"), which
     // docs/ux/17 §3.5 (6) has the agent turn answer in its own words (it must say it is automated and offer a callback, a dispute or a case) when a turn is configured
-    if (!modelOwned && /\b(human|real person|a person|talk to (a|someone)|representative|agent)\b/i.test(text) && subject && !(this.agentTurn && ASKS_IF_HUMAN.test(text))) {
+    // 32.16-T32: on the model-owned thread the same word still queues the request (01 §1.1 is a rule, not the model's choice) — the turn is told, its ledger carries the flag, and the model says so in its own words
+    let humanRequested: string | null = null;
+    if (/\b(human|real person|a person|talk to (a|someone)|representative|agent)\b/i.test(text) && subject && !(this.agentTurn && ASKS_IF_HUMAN.test(text))) {
       const out = await this.runCommand(ctx, "human.request", { reason: "borrower_request", channel, utterance: text, subject: { application_id: subject.application_id, loan_id: subject.loan_id } }, now);
-      return { message, reply: await reply(THREAD_COPY_KEYS.humanRequested, {}), routed_to, command_executed: true, command: out.command };
+      if (!modelOwned) return { message, reply: await reply(THREAD_COPY_KEYS.humanRequested, {}), routed_to, command_executed: true, command: out.command };
+      humanRequested = out.command;
     }
     // 32.16 §3.1: the agent turn replaces the placeholder — the same order in front of it; the placeholder stands only without a model or under the kill switch
     if (this.agentTurn) {
-      const t = await this.agentTurn({ ctx, conversation_id: conv.conversation_id, message_id: messageId, text, channel, subject, routed_to, now, ...(started_at_ms !== undefined ? { started_at_ms } : {}), ...(flowReaction?.card_instance_id ? { placed_card_instance_id: flowReaction.card_instance_id } : {}) });
-      if (t) return { message, reply: { ...t.reply, copy_key: t.copy_key, deep_link: null }, routed_to, command_executed: t.command_executed || !!flowReaction?.command, command: t.command ?? flowReaction?.command ?? null };
+      const t = await this.agentTurn({ ctx, conversation_id: conv.conversation_id, message_id: messageId, text, channel, subject, routed_to, now, ...(started_at_ms !== undefined ? { started_at_ms } : {}), ...(flowReaction?.card_instance_id ? { placed_card_instance_id: flowReaction.card_instance_id } : {}), ...(humanRequested ? { human_requested: true } : {}) });
+      if (t) return { message, reply: { ...t.reply, copy_key: t.copy_key, deep_link: null }, routed_to, command_executed: t.command_executed || !!flowReaction?.command || !!humanRequested, command: humanRequested ?? t.command ?? flowReaction?.command ?? null };
+      if (humanRequested) return { message, reply: await reply(THREAD_COPY_KEYS.humanRequested, {}), routed_to, command_executed: true, command: humanRequested };   // the turn is bypassed (kill switch): the scripted line stands
       if (flowReaction) return { message, reply: await reply(flowReaction.copy_key, { card_instance_id: flowReaction.card_instance_id ?? null, ...(flowReaction.body_text ? { body: flowReaction.body_text } : {}) }), routed_to, command_executed: !!flowReaction.command, command: flowReaction.command ?? null };   // the turn is bypassed (kill switch): the flow's own line stands
     }
     return { message, reply: await reply(routed_to === "intake" ? THREAD_COPY_KEYS.placeholderIntake : THREAD_COPY_KEYS.placeholderServicing, {}), routed_to, command_executed: false, command: null };

@@ -833,9 +833,9 @@ test("32.16-T32: Given the agent turn configured, when an account is created and
   let r = await message(a.token, "yes"); assert.equal(r.status, 200, JSON.stringify(r.body));
   let reply = r.reply; assert.equal((reply["copy_tokens"] as Json)["source"], "agent_turn"); assert.equal(reply["deep_link"] ?? null, null); assert.match(String(reply["body_text"]), /^Got it\. Pick the one/);
   assert.equal((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM deep_links WHERE party_id = $1`, [a.party_id]))[0]!.n, "0", "no deep link minted for a typed yes");
-  // "I want a human": the turn answers in its words; no fixed human line, no human.request queued by a shortcut
+  // "I want a human": the turn answers in its words — no fixed human line — while the word itself still queues human.request (01 §1.1; the eval's human persona measures it within one turn)
   r = await message(a.token, "I want a human"); assert.equal(r.status, 200, JSON.stringify(r.body));
-  reply = r.reply; assert.equal((reply["copy_tokens"] as Json)["source"], "agent_turn"); assert.match(String(reply["body_text"]), /callback/); assert.equal(r.body["command_executed"], false);
+  reply = r.reply; assert.equal((reply["copy_tokens"] as Json)["source"], "agent_turn"); assert.match(String(reply["body_text"]), /callback/); assert.equal(r.body["command_executed"], true); assert.equal(r.body["command"], "human.request");
   const t1 = await thread(a.token);
   assert.equal(t1.messages.filter((m) => String(m["body_text"] ?? "").startsWith("{{copy:thread.")).length, 0, "no thread.* fixed line");
   assert.deepEqual(t1.messages.filter((m) => m["sender"] === "agent" && (m["copy_tokens"] as Json | null)?.["source"] !== "agent_turn"), [], "still no flow-authored line");

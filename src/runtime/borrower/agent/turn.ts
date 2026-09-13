@@ -52,6 +52,8 @@ export interface AgentTurnRequest {
   readonly channel: Channel;
   /** 32.16-T32: a card a flow opened in reaction to these words (its onMessage) — the reply places it when the model placed none of its own */
   readonly placed_card_instance_id?: string | undefined;
+  /** 32.16-T32 / 01 §1.1: the runtime already queued human.request for these words — the ledger carries the flag and the model is told to say so, never to queue again */
+  readonly human_requested?: boolean | undefined;
   readonly subject: Subject | null;
   readonly routed_to: "intake" | "borrower-comms";
   readonly now: string;
@@ -132,10 +134,10 @@ export class AgentTurnRunner {
     const j = buildJourney({ record, cards, labelOf: (item) => (item.label_copy_key ? copyText(item.label_copy_key, item.copy_tokens ?? {}) : item.label) });
     const stepProcess = j.journey.step?.process ?? (record?.subject.stage === "servicing" ? "2.1" : null);
     const rulesText = rulesFor(stepProcess);
-    const context = buildContext({ partyFirstName: firstNameOf(party.legal_name), level, channel: req.channel, routed_to: req.routed_to, safeMode, partnerName: partner.legal_name, record, cards, messages: window, lead, next: next0, borrowerText: req.text, journey: j.journey, journeyTokens: j.tokens, rules: stepProcess && rulesText ? { process: stepProcess, text: rulesText } : null });
+    const context = buildContext({ partyFirstName: firstNameOf(party.legal_name), level, channel: req.channel, routed_to: req.routed_to, safeMode, partnerName: partner.legal_name, record, cards, messages: window, lead, next: next0, borrowerText: req.text, journey: j.journey, journeyTokens: j.tokens, humanRequested: !!req.human_requested, rules: stepProcess && rulesText ? { process: stepProcess, text: rulesText } : null });
     const disclosureFirst = allMessages[0]?.body_text === "{{copy:entry.disclosure.first}}";
     // ---- the model, on the bus's tools
-    const ledger = newLedger(); Object.assign(ledger.tokens, context.tokens);
+    const ledger = newLedger(); Object.assign(ledger.tokens, context.tokens); if (req.human_requested) ledger.human_requested = true;
     const run = { runId: `turn:${turn_id}`, modelVersion: this.d.llm.model, promptVersion: this.promptVersion };
     const execute = toolExecutor({ runtime, ledger, run, facts: { party_id: party.id, session_id: req.ctx.session.session_id, conversation_id: req.conversation_id, message_id: req.message_id, channel: req.channel, assurance_level: level, subject: req.subject, routed_to: req.routed_to, utterance: req.text } });
     const input = { system: context.system, messages: [{ role: "user" as const, content: context.situation }], tools: MODEL_TOOLS, execute, maxTokens: 2048 };

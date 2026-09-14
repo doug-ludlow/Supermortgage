@@ -64,7 +64,7 @@ function Value({ value, className }: { value: string; className?: string }) {
 }
 
 export function badgeTone(badge: StatusBadge): "positive" | "caution" | "info" | "neutral" {
-  if (["Funded", "Your loan", "Current", "Rate locked", "Clear to close", "Preapproved", "Prequalified", "Paid off"].includes(badge)) return "positive";
+  if (["Funded", "Your loan", "Current", "Rate locked", "Clear to close", "Preapproved", "Prequalified", "Paid off", "Monitored"].includes(badge)) return "positive";
   if (["Past due", "Behind", "What's missing", "Cancel window", "Payment due", "Counteroffer", "Bankruptcy — protections in effect"].includes(badge)) return "caution";
   if (["Closed", "Withdrawn", "Decision letter sent", "Transferred out", "Cancelled"].includes(badge)) return "neutral";   // 32.12: read-only after cutover
   return "info";
@@ -188,30 +188,46 @@ export function NumbersSection({ r }: { r: BorrowerRecord }) {
     return (
       <Section id="numbers" title="Numbers">
         <dl className="sm-kv">
-          <dt>Balance</dt>
-          <dd className="sm-big">
-            <Value value={formatMoney(n.upb_cents)} />
-          </dd>
-          <dt>Next payment</dt>
-          <dd>
-            <Value value={formatMoney(n.next_payment.amount_cents)} /> on <time dateTime={n.next_payment.due_on}>{formatDate(`${n.next_payment.due_on}T12:00:00Z`, "UTC")}</time>
-          </dd>
-          <dt>Principal & interest</dt>
-          <dd>
-            <Value value={formatMoney(n.next_payment.pi_cents)} />
-          </dd>
-          <dt>Escrow</dt>
-          <dd>
-            <Value value={formatMoney(n.next_payment.escrow_cents)} />
-          </dd>
-          <dt>Escrow balance</dt>
-          <dd>
-            <Value value={formatMoney(n.escrow_balance_cents)} />
-          </dd>
-          <dt>Rate</dt>
-          <dd>
-            <Value value={formatRate(n.note_rate)} />
-          </dd>
+          {n.upb_cents ? (
+            <>
+              <dt>Balance</dt>
+              <dd className="sm-big">
+                <Value value={formatMoney(n.upb_cents)} />
+              </dd>
+            </>
+          ) : null}
+          {n.next_payment ? (
+            <>
+              <dt>Next payment</dt>
+              <dd>
+                <Value value={formatMoney(n.next_payment.amount_cents)} /> on <time dateTime={n.next_payment.due_on}>{formatDate(`${n.next_payment.due_on}T12:00:00Z`, "UTC")}</time>
+              </dd>
+              <dt>Principal & interest</dt>
+              <dd>
+                <Value value={formatMoney(n.next_payment.pi_cents)} />
+              </dd>
+              <dt>Escrow</dt>
+              <dd>
+                <Value value={formatMoney(n.next_payment.escrow_cents)} />
+              </dd>
+            </>
+          ) : null}
+          {n.escrow_balance_cents ? (
+            <>
+              <dt>Escrow balance</dt>
+              <dd>
+                <Value value={formatMoney(n.escrow_balance_cents)} />
+              </dd>
+            </>
+          ) : null}
+          {n.note_rate ? (
+            <>
+              <dt>Rate</dt>
+              <dd>
+                <Value value={formatRate(n.note_rate)} />
+              </dd>
+            </>
+          ) : null}
           {n.days_past_due > 0 ? (
             <>
               <dt>Days past due</dt>
@@ -407,6 +423,7 @@ export const ROLE_LABEL: Record<RecordPerson["role"], string> = {
   settlement_agent: "Settlement agent",
   continuity_of_contact_team: "Your team",
   appraiser: "Appraiser",
+  servicer_of_record: "Your servicer",
 };
 
 export function PeopleSection({ r }: { r: BorrowerRecord }) {

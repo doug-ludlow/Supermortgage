@@ -75,7 +75,7 @@ async function signInWithPassword(form: ReturnType<Page["locator"]>, password = 
 }
 
 test.describe("32.16 §2.0 — Sign in from the header (32.14 S6)", () => {
-  test("opens the account form under auth.welcome_back in place of the thread; no action bar while signed out; no code chooser, no passkey; axe; a wrong password → auth.password_wrong; the right one → the thread", async ({ page }) => {
+  test("opens the account form under auth.welcome_back in place of Workspace Home; no action bar while signed out; no code chooser, no passkey; axe; a wrong password → auth.password_wrong; the right one → Workspace Home, Guide opens the thread", async ({ page }) => {
     await cannedApi(page, { signedIn: false });
     await page.goto("/app?fixture=refinance");
     await expect(page.getByTestId("shell")).toBeVisible();
@@ -98,6 +98,8 @@ test.describe("32.16 §2.0 — Sign in from the header (32.14 S6)", () => {
     await expect(form.getByRole("alert")).not.toContainText("PASSWORD_WRONG");
     await form.getByLabel(copy("account.password.field")).fill(PASSWORD);
     await form.getByRole("button", { name: copy("account.signin.button") }).click();
+    await expect(page.getByTestId("workspace-home")).toBeVisible();
+    await page.getByTestId("nav-guide").click();
     await expect(page.getByTestId("thread")).toBeVisible();
     await expect(page.getByTestId("action-bar")).toBeVisible();
   });
@@ -130,7 +132,8 @@ test.describe("32.14 S5 — deep links and the return page", () => {
     await axeClean(page);
     await signInWithPassword(form);
     await page.waitForURL(/\/app\?card=card-r3-truv$/);
-    await expect(page.locator('[data-rail-card="card-r3-truv"]')).toHaveAttribute("data-expanded", "true");   // 32.16 §2.2: focused and expanded on the rail (the sheet, on a phone)
+    await expect(page.getByTestId("workspace-home")).toBeVisible();
+    await expect(page.locator('[data-rail-card="card-r3-truv"]')).toHaveAttribute("data-expanded", "true");   // docs/ux/18: focused and expanded in Home Approvals
     await expect(page.locator('article[data-card-id="card-r3-truv"]')).toBeInViewport();
     expect(calls.filter((c) => c.path === "v1/borrower/deeplink/tok-card")).toHaveLength(2);
     const signIn = calls.find((c) => c.path === "v1/borrower/auth/account")!;

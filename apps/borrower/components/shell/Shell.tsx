@@ -6,6 +6,7 @@
  * rail is a drawer, below 768 the status strip opens it as the bottom sheet. Data comes from the 02 §7 API through lib/api,
  * or — with NEXT_PUBLIC_FIXTURES=1 — from apps/borrower/fixtures/*.json (FAKE: recorded, no agent, no vendors).
  */
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AnyCardInstance, ResolveRequest } from "@/lib/types/cards";
 import type { BorrowerMe, BorrowerRecord, ThreadMessage } from "@/lib/types/record";
@@ -22,14 +23,21 @@ import { Account } from "@/components/account/Account";   // 32.16 §2.0 (DELTA-
 import { AddMobilePrompt, isAddMobileDone } from "./AddMobile";
 import { PARTNER_LEGAL_NAME } from "@/lib/env";
 import { Record } from "@/components/record/Record";
+import { WorkspaceHome } from "@/components/workspace/WorkspaceHome";
 import { nowIso } from "@/components/cards/CardFrame";
+
+export type ShellSurface = "workspace" | "guide";
 
 export type ShellProps = {
   fixturesMode: boolean;
   fixtureName?: string;
   initialSubject?: string;
-  /** 32.14 S5: `?card=` — that card is focused and expanded on the rail (a deep link or a vendor return lands here). */
+  /** 32.14 S5: `?card=` — that card is focused and expanded on the rail / Home Approvals (a deep link or a vendor return lands here). */
   initialCard?: string;
+  /** docs/ux/18: post-auth default is Workspace Home; `/guide` is the conversation. */
+  surface?: ShellSurface;
+  /** Preserve fixture/subject/card across Home ↔ Guide. */
+  querySuffix?: string;
 };
 
 function useMedia(query: string): boolean {
@@ -54,7 +62,7 @@ function stampAfter(messages: ThreadMessage[]): string {
   return new Date(t).toISOString();
 }
 
-export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }: ShellProps) {
+export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard, surface = "workspace", querySuffix = "" }: ShellProps) {
   const [me, setMe] = useState<BorrowerMe | undefined>();
   const [record, setRecord] = useState<BorrowerRecord | undefined>();
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
@@ -73,8 +81,10 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
   /** the API's pinned card: the card the model placed last (32.16-T32) — the current ask on the rail */
   const [pinnedId, setPinnedId] = useState<string | undefined>(undefined);
   const [addMobileDone, setAddMobileDone] = useState(true);
+  const [guideOpen, setGuideOpen] = useState(false);
   useEffect(() => setAddMobileDone(isAddMobileDone()), []); // after hydration: the dismissal lives in this browser only
   const beside = useMedia("(min-width: 1024px)");   // the rail sits beside the thread; below that it is the drawer / bottom sheet
+  const railBeside = surface === "guide" && beside; // Workspace Home: Record is always a drawer (glance owns Numbers)
   const streamRef = useRef<ReturnType<typeof openStream> | null>(null);
 
   const timezone = record?.timezone ?? "America/Phoenix";
@@ -84,9 +94,9 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
   const focusCard = useCallback(
     (card_instance_id: string) => {
       setFocus({ card_instance_id, seq: (seq += 1) });
-      if (!beside) setRecordOpen(true);
+      if (!railBeside) setRecordOpen(surface === "guide");
     },
-    [beside],
+    [railBeside, surface],
   );
 
   // ---- load ---------------------------------------------------------------
@@ -132,6 +142,13 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
     return () => streamRef.current?.close();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fixturesMode, fixtureName]);
+
+  // Subject switcher: re-read the record for the selection (the 5s poll is not the only signal).
+  useEffect(() => {
+    if (fixturesMode && fixtureName !== "api") return;
+    if (!subject || needsSignIn) return;
+    void api.record(subject).then((r) => { if (r) setRecord(r); }).catch(() => undefined);
+  }, [subject, fixturesMode, fixtureName, needsSignIn]);
 
   // `?card=` (a deep link, a vendor return): focus that card once the thread has it
   const initialFocused = useRef(false);
@@ -265,55 +282,96 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
 
   const subjects = me?.subjects ?? [];
   const showSignIn = needsSignIn || signInOpen;
+  const conversation = showSignIn ? (
+    <>
+      <div className="sm-thread-top" />
+      <div className="sm-thread-scroll">
+        <Account mode="sign_in" titleKey="auth.welcome_back" partnerLegalName={me?.partner.legal_name} onSession={() => window.location.reload()} onCancel={signInOpen && !needsSignIn ? () => setSignInOpen(false) : undefined} />
+      </div>
+    </>
+  ) : (
+    <Thread
+      notice={loadError}
+      banner={me?.auth_method === "oidc_google" && !addMobileDone ? <AddMobilePrompt onDone={() => setAddMobileDone(true)} /> : null}
+      messages={messages}
+      cards={cards}
+      timezone={timezone}
+      partnerLegalName={partner}
+      showSubjectLabels={subjects.length > 1}
+      scrollTo={scrollTo}
+      currentAskId={ask?.card_instance_id}
+      onOpenCard={focusCard}
+      resolve={resolveCard}
+      busyCardId={busyCardId}
+      cardErrors={cardErrors}
+    />
+  );
 
   return (
-    <div className="sm-shell" data-testid="shell" data-fixtures={fixturesMode ? "1" : undefined}>
-      <Header
-        fixturesMode={fixturesMode}
-        me={me}
-        subject={subject}
-        onSubjectChange={setSubject}
-        streamLabel={!fixturesMode && stream !== "open" && stream !== "closed" ? (stream === "reconnecting" ? "reconnecting…" : "connecting…") : undefined}
-        onOpenRecord={() => setRecordOpen(true)}
-        showSignIn={!me || fixturesMode}
-        onSignIn={() => setSignInOpen(true)}
-        onSignOut={() => { void api.signOut().catch(() => undefined).then(() => window.location.assign("/app")); }}
-      />
+    <div className="sm-shell" data-testid="shell" data-fixtures={fixturesMode ? "1" : undefined} data-surface={surface}>
+        <Header
+          fixturesMode={fixturesMode}
+          me={me}
+          subject={subject}
+          onSubjectChange={setSubject}
+          streamLabel={!fixturesMode && stream !== "open" && stream !== "closed" ? (stream === "reconnecting" ? "reconnecting…" : "connecting…") : undefined}
+          onOpenRecord={() => setRecordOpen(true)}
+          showSignIn={!me || fixturesMode}
+          onSignIn={() => setSignInOpen(true)}
+          onSignOut={() => { void api.signOut().catch(() => undefined).then(() => window.location.assign("/app")); }}
+          surface={surface}
+          onOpenGuide={surface === "workspace" ? () => setGuideOpen(true) : undefined}
+          querySuffix={querySuffix}
+        />
       {showSignIn ? <div className="sm-strip-slot" /> : <StatusStrip record={record} onOpen={() => setRecordOpen(true)} />}
       <div className="sm-body">
-        <main className="sm-thread" aria-label="Conversation">
-          {showSignIn ? (
-            <>
-              <div className="sm-thread-top" />
-              <div className="sm-thread-scroll">
-                <Account mode="sign_in" titleKey="auth.welcome_back" partnerLegalName={me?.partner.legal_name} onSession={() => window.location.reload()} onCancel={signInOpen && !needsSignIn ? () => setSignInOpen(false) : undefined} />
-              </div>
-            </>
-          ) : (
-            <Thread
-              notice={loadError}
-              banner={me?.auth_method === "oidc_google" && !addMobileDone ? <AddMobilePrompt onDone={() => setAddMobileDone(true)} /> : null}
-              messages={messages}
+        {surface === "workspace" && !showSignIn ? (
+          <main className="sm-workspace-main" aria-label={copy("workspace.home.title")}>
+            <WorkspaceHome
+              record={record}
               cards={cards}
               timezone={timezone}
-              partnerLegalName={partner}
-              showSubjectLabels={subjects.length > 1}
-              scrollTo={scrollTo}
-              currentAskId={ask?.card_instance_id}
-              onOpenCard={focusCard}
+              cardProps={cardProps}
               resolve={resolveCard}
               busyCardId={busyCardId}
               cardErrors={cardErrors}
+              currentAskId={ask?.card_instance_id}
+              focus={focus}
+              onOpenGuide={() => setGuideOpen(true)}
+              onFocusCard={focusCard}
+              onOpenRecord={() => setRecordOpen(true)}
+              onOpenDocument={(document_id) => { window.location.assign(`/app/doc/${encodeURIComponent(document_id)}`); }}
             />
-          )}
-          {showSignIn ? null : (   // signed out there is no session to send to: no input bar until sign-in
-            <ActionBar onSend={(t) => void sendMessage(t)} onAttach={(f) => void attach(f)} />
-          )}
-        </main>
-        {showSignIn ? null : (
-          <Record record={record} cards={cards} timezone={timezone} cardProps={cardProps} resolve={resolveCard} busyCardId={busyCardId} cardErrors={cardErrors} currentAskId={ask?.card_instance_id} focus={focus} link={link} open={recordOpen} onClose={() => setRecordOpen(false)} />
+          </main>
+        ) : (
+          <main className="sm-thread" aria-label="Conversation">
+            {conversation}
+            {showSignIn ? null : <ActionBar onSend={(t) => void sendMessage(t)} onAttach={(f) => void attach(f)} />}
+          </main>
+        )}
+        {showSignIn || (surface === "workspace" && !recordOpen) ? null : (
+          <Record record={record} cards={cards} timezone={timezone} cardProps={cardProps} resolve={resolveCard} busyCardId={busyCardId} cardErrors={cardErrors} currentAskId={ask?.card_instance_id} focus={surface === "guide" ? focus : undefined} link={link} open={recordOpen} drawer={surface === "workspace"} onClose={() => setRecordOpen(false)} />
         )}
       </div>
+      {surface === "workspace" && guideOpen && !showSignIn ? (
+        <div className="sm-guide-drawer" data-testid="guide-drawer" role="dialog" aria-modal="true" aria-labelledby="guide-drawer-title">
+          <div className="sm-guide-drawer-bar">
+            <h2 id="guide-drawer-title">{copy("workspace.guide.title")}</h2>
+            <Link className="sm-linkbtn" href={`/guide${querySuffix}`} data-testid="guide-full">
+              {copy("workspace.guide.full")}
+            </Link>
+            <button type="button" className="sm-btn sm-btn-quiet" data-testid="guide-close" onClick={() => setGuideOpen(false)}>
+              {copy("workspace.guide.close")}
+            </button>
+          </div>
+          <div className="sm-guide-drawer-body">
+            <div className="sm-thread" role="region" aria-label="Conversation">
+              {conversation}
+              <ActionBar onSend={(t) => void sendMessage(t)} onAttach={(f) => void attach(f)} />
+            </div>
+          </div>
+        </div>
+      ) : null}
       <FooterDisclosure partner={me?.partner} />
     </div>
   );

@@ -1,12 +1,13 @@
 "use client";
 
 /**
- * 32.16 §1 principle 8 — the header is the brand and Sign in, nothing else (the way Rocket's is): the brand, the FAKE-mode
- * banner when the build shows FAKE markers, the loan switch for a party with more than one subject, the signed-in party's
- * first name, and Sign in when there is no session. No e-mail, no assurance level, no sentence: the AI disclosure is the
- * footer (`FooterDisclosure`). The rail opener stays for the drawer breakpoint (768–1023).
+ * Header: brand, Dual Mode nav (Home / Guide — docs/ux/18), FAKE banner, subject switcher,
+ * Sign in / out. The AI disclosure is the footer. The rail opener stays for the drawer breakpoint
+ * and for Workspace Home (the Record is a drawer on that surface at every width).
  */
+import Link from "next/link";
 import type { BorrowerMe } from "@/lib/types/record";
+import { copy } from "@/lib/copy";
 import { SHOW_FAKE_MARKERS } from "@/lib/env";
 
 export type HeaderProps = {
@@ -22,17 +23,42 @@ export type HeaderProps = {
   onSignIn: () => void;
   /** A session exists: Sign out revokes it and drops the cookies (32.16 §2.0 — a shared browser never carries one person's account to the next). */
   onSignOut?: (() => void) | undefined;
+  /** docs/ux/18: which Dual Mode surface this shell is. */
+  surface?: "workspace" | "guide";
+  /** Workspace: Guide in the header opens the drawer (the conversation stays one tap away). */
+  onOpenGuide?: () => void;
+  /** Preserve fixture/subject/card across Home ↔ Guide (docs/ux/18). */
+  querySuffix?: string;
 };
 
-export function Header({ fixturesMode, me, subject, onSubjectChange, streamLabel, onOpenRecord, showSignIn, onSignIn, onSignOut }: HeaderProps) {
+export function Header({ fixturesMode, me, subject, onSubjectChange, streamLabel, onOpenRecord, showSignIn, onSignIn, onSignOut, surface = "workspace", onOpenGuide, querySuffix = "" }: HeaderProps) {
   const subjects = me?.subjects ?? [];
+  const suffix = querySuffix;
   return (
     <header className="sm-header" data-testid="header">
-      <span className="sm-brand">Supermortgage</span>
+      <Link href={`/${suffix}`} className="sm-brand" data-testid="brand">
+        Supermortgage
+      </Link>
       {SHOW_FAKE_MARKERS ? (
         <span className="sm-fake-banner" data-testid="fake-banner" title="Fixtures/dev mode: recorded data, FAKE vendors and agents">
           FAKE {fixturesMode ? "fixtures" : "dev"} mode
         </span>
+      ) : null}
+      {me ? (
+        <nav className="sm-header-nav" aria-label={copy("workspace.home.title")} data-testid="workspace-nav">
+          <Link href={`/${suffix}`} className="sm-nav-link" data-testid="nav-home" data-current={surface === "workspace" ? "true" : undefined} aria-current={surface === "workspace" ? "page" : undefined}>
+            {copy("workspace.nav.home")}
+          </Link>
+          {surface === "workspace" && onOpenGuide ? (
+            <button type="button" className="sm-nav-link sm-nav-link-btn" data-testid="nav-guide" onClick={onOpenGuide}>
+              {copy("workspace.nav.guide")}
+            </button>
+          ) : (
+            <Link href={`/guide${suffix}`} className="sm-nav-link" data-testid="nav-guide" data-current={surface === "guide" ? "true" : undefined} aria-current={surface === "guide" ? "page" : undefined}>
+              {copy("workspace.nav.guide")}
+            </Link>
+          )}
+        </nav>
       ) : null}
       {subjects.length > 1 ? (
         <label className="sm-visually-hidden" htmlFor="subject-switch">

@@ -18,7 +18,7 @@ async function inViewport(page: Page, testId: string): Promise<boolean> {
 for (const fixture of ["refinance", "servicing"]) {
   test.describe(`${fixture} fixture`, () => {
     test.beforeEach(async ({ page }) => {
-      await page.goto(`/app?fixture=${fixture}`);
+      await page.goto(`/app/guide?fixture=${fixture}`);
       await expect(page.getByTestId("shell")).toBeVisible();
       await expect(page.getByTestId("fake-banner")).toBeVisible();
     });
@@ -136,3 +136,59 @@ for (const fixture of ["refinance", "servicing"]) {
     });
   });
 }
+
+test.describe("docs/ux/18 W1 — Workspace Home", () => {
+  test("post-auth landing is Workspace Home with a visible loan glance, not the empty thread", async ({ page }) => {
+    await page.goto("/app?fixture=servicing");
+    await expect(page.getByTestId("workspace-home")).toBeVisible();
+    await expect(page.getByTestId("workspace-glance")).toBeVisible();
+    await expect(page.getByTestId("workspace-numbers")).toBeVisible();
+    await expect(page.getByTestId("workspace-numbers")).toContainText("Balance");
+    await expect(page.getByTestId("workspace-autopay")).toBeVisible();
+    await expect(page.locator("main.sm-thread")).toHaveCount(0);
+    await expect(page.getByTestId("record")).toHaveCount(0); // Record is a closed drawer; Numbers live on the glance, not a collapsed rail section
+  });
+
+  test("Approvals list pending cards and resolve through the existing card", async ({ page }) => {
+    await page.goto("/app?fixture=servicing");
+    const home = page.getByTestId("workspace-home");
+    const pay = home.locator('[data-rail-card="card-s-pay"]');
+    await expect(pay).toHaveAttribute("data-expanded", "true");
+    await pay.locator("article[data-card-kind=PaymentCard]").getByRole("button", { name: "Pay now" }).click();
+    await expect(home.locator('[data-rail-card="card-s-pay"]')).toHaveCount(0);
+    await expect(home.getByTestId("workspace-approvals-empty")).toBeVisible();
+  });
+
+  test("Guide is reachable from Home without typing into chat; Pay is a shortcut", async ({ page }) => {
+    await page.goto("/app?fixture=servicing");
+    await expect(page.getByTestId("shortcut-pay")).toBeVisible();
+    await page.getByTestId("nav-guide").click();
+    await expect(page.getByTestId("guide-drawer")).toBeVisible();
+    await expect(page.getByTestId("thread")).toBeVisible();
+    await expect(page.getByTestId("action-bar")).toBeVisible();
+    await page.getByTestId("guide-close").click();
+    await expect(page.getByTestId("guide-drawer")).toHaveCount(0);
+    await expect(page.getByTestId("workspace-home")).toBeVisible();
+  });
+
+  test("Monitored loan: partner still services; Pay is hidden; glance is not collapsed", async ({ page }) => {
+    await page.goto("/app?fixture=monitored");
+    const glance = page.getByTestId("workspace-glance");
+    await expect(glance).toHaveAttribute("data-monitored", "true");
+    await expect(page.getByTestId("workspace-status-line")).toContainText("Mesa Verde Mortgage Servicing still services this loan");
+    await expect(page.getByTestId("workspace-status-line")).toContainText("watching for a refinance");
+    await expect(page.getByTestId("shortcut-pay")).toHaveCount(0);
+    await expect(page.getByTestId("workspace-no-pay")).toContainText("Payments stay with Mesa Verde Mortgage Servicing");
+    await expect(page.getByTestId("workspace-happening-list")).toContainText("The rate is not there yet");
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    const results = await new AxeBuilder({ page: page as never }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();
+    expect(results.violations.map((v) => v.id)).toEqual([]);
+  });
+
+  test("refinance Home shows application numbers on the glance and the Application shortcut", async ({ page }) => {
+    await page.goto("/app?fixture=refinance");
+    await expect(page.getByTestId("workspace-numbers")).toContainText("Rate");
+    await expect(page.getByTestId("shortcut-application")).toBeVisible();
+    await expect(page.getByTestId("shortcut-pay")).toHaveCount(0);
+  });
+});

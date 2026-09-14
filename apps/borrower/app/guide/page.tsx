@@ -13,11 +13,11 @@ function querySuffix(sp: Record<string, string | string[] | undefined>): string 
   return s ? `?${s}` : "";
 }
 
-/** Route `/` → Workspace Home for the authenticated party (docs/ux/18 / 01 §1.5). */
-export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+/** Route `/guide` → Guide (Michelle): thread + rail + action bar (docs/ux/18 / 17 §2). */
+export default async function GuidePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const sp = await searchParams;
   const fixture = typeof sp.fixture === "string" ? sp.fixture : undefined;
   const subject = typeof sp.subject === "string" ? sp.subject : undefined;
-  const card = typeof sp.card === "string" ? sp.card : undefined; // 32.14 S5: a deep link or a vendor return lands with the card pinned
-  return <Shell surface="workspace" fixturesMode={FIXTURES_MODE} fixtureName={fixture} initialSubject={subject} initialCard={card} querySuffix={querySuffix(sp)} />;
+  const card = typeof sp.card === "string" ? sp.card : undefined;
+  return <Shell surface="guide" fixturesMode={FIXTURES_MODE} fixtureName={fixture} initialSubject={subject} initialCard={card} querySuffix={querySuffix(sp)} />;
 }

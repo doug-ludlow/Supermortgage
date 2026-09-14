@@ -33,6 +33,31 @@ export function toMe(api: Json): BorrowerMe {
   };
 }
 
+function toPartnerBook(v: unknown): BorrowerRecord["partner_book"] {
+  const p = obj(v);
+  if (p.monitored !== true) return undefined;
+  const review = p.review && typeof p.review === "object" ? obj(p.review) : null;
+  const outcome = str(review?.outcome);
+  return {
+    partner_party_id: str(p.partner_party_id) || null,
+    partner_name: str(p.partner_name) || null,
+    loan_last4: str(p.loan_last4) || null,
+    as_of_date: str(p.as_of_date) || null,
+    monitored: true,
+    commands_unavailable: (Array.isArray(p.commands_unavailable) ? p.commands_unavailable : []).map((row) => ({ command: str(obj(row).command), code: "LOAN_MONITORED" as const })),
+    review: review
+      ? {
+          as_of_date: str(review.as_of_date),
+          outcome: (["candidate", "watching", "not_now", "excluded"].includes(outcome) ? outcome : "not_now") as "candidate" | "watching" | "not_now" | "excluded",
+          reasons_copy_keys: (Array.isArray(review.reasons_copy_keys) ? review.reasons_copy_keys : []).filter((k): k is string => typeof k === "string"),
+          offer_card_instance_id: str(review.offer_card_instance_id) || null,
+          ...(str(review.watch_rate_token) ? { watch_rate_token: str(review.watch_rate_token) } : {}),
+          ...(str(review.opportunity_id) ? { opportunity_id: str(review.opportunity_id) } : {}),
+        }
+      : null,
+  };
+}
+
 function toSubject(s: Json): RecordSubject {
   const tt = str(s.transaction_type);
   return {
@@ -54,16 +79,22 @@ function stateSource(v: unknown): { state: string; table: string } {
 
 function toNumbers(n: Json | null, stage: string): BorrowerRecord["numbers"] {
   if (!n) return undefined;
-  if (stage === "servicing" || isCents(n.upb_cents)) {
+  const partnerFacts = str(n.figures_source) === "partner_book_facts";
+  if (stage === "servicing" || isCents(n.upb_cents) || partnerFacts) {
     const np = obj(n.next_payment);
-    if (!isCents(n.upb_cents) || !isCents(np.amount_cents) || !isRate(n.note_rate)) return undefined; // a paid-off or not-yet-boarded loan: no figures to show, nothing computed here
+    // a paid-off or empty loan: nothing to show. Partner-book facts may omit next_payment.amount_cents — still show UPB / rate.
+    if (!isCents(n.upb_cents) && !isRate(n.note_rate) && !isCents(np.amount_cents)) return undefined;
+    const next = isCents(np.amount_cents)
+      ? { due_on: str(np.due_on), amount_cents: np.amount_cents, pi_cents: isCents(np.pi_cents) ? np.pi_cents : "0", escrow_cents: isCents(np.escrow_cents) ? np.escrow_cents : "0" }
+      : undefined;
     return {
       phase: "post_funding",
-      upb_cents: n.upb_cents,
-      next_payment: { due_on: str(np.due_on), amount_cents: np.amount_cents, pi_cents: isCents(np.pi_cents) ? np.pi_cents : "0", escrow_cents: isCents(np.escrow_cents) ? np.escrow_cents : "0" },
-      escrow_balance_cents: isCents(n.escrow_balance_cents) ? n.escrow_balance_cents : "0",
-      note_rate: str(n.note_rate),
+      ...(isCents(n.upb_cents) ? { upb_cents: n.upb_cents } : {}),
+      ...(next ? { next_payment: next } : {}),
+      ...(isCents(n.escrow_balance_cents) ? { escrow_balance_cents: n.escrow_balance_cents } : {}),
+      ...(isRate(n.note_rate) ? { note_rate: str(n.note_rate) } : {}),
       days_past_due: typeof n.days_past_due === "number" ? n.days_past_due : 0,
+      ...(str(n.figures_source) ? { figures_source: str(n.figures_source) } : {}),
     };
   }
   const lock = obj(n.lock);
@@ -100,7 +131,10 @@ export function toRecord(api: Json): BorrowerRecord {
     status: { badge: str(status.badge) as BorrowerRecord["status"]["badge"], state_source: stateSource(status.state_source), one_liner: str(status.one_liner), ...(status.one_liner_tokens && typeof status.one_liner_tokens === "object" ? { one_liner_tokens: status.one_liner_tokens as Record<string, string | string[]> } : {}) },   // 32.8 §2: the badge one-liner's tokens
     ...(next ? { next } : {}),
     needed_from_you: (Array.isArray(api.needed_from_you) ? api.needed_from_you : []) as BorrowerRecord["needed_from_you"],
+    ...(Array.isArray(api.what_we_are_doing) ? { what_we_are_doing: api.what_we_are_doing as BorrowerRecord["what_we_are_doing"] } : {}),
+    ...(api.needed_summary && typeof api.needed_summary === "object" ? { needed_summary: api.needed_summary as BorrowerRecord["needed_summary"] } : {}),
     ...(toNumbers(api.numbers && typeof api.numbers === "object" ? (api.numbers as Json) : null, stage) ? { numbers: toNumbers(api.numbers as Json, stage) } : {}),
+    ...(toPartnerBook(api.partner_book) ? { partner_book: toPartnerBook(api.partner_book) } : {}),
     dates: (Array.isArray(api.dates) ? api.dates : []) as BorrowerRecord["dates"],
     documents: (Array.isArray(api.documents) ? api.documents : []).map((d) => ({ ...obj(d), requires_ack: obj(d).requires_ack === true, title: str(obj(d).title) || str(obj(d).kind) })) as unknown as BorrowerRecord["documents"],
     people: (Array.isArray(api.people) ? api.people : []).map((p) => ({ ...obj(p), party_id: str(obj(p).party_id) || `${str(obj(p).role)}:${str(obj(p).display_name)}`, progress: obj(p).progress && typeof obj(p).progress === "object" ? obj(p).progress : undefined })) as unknown as BorrowerRecord["people"],

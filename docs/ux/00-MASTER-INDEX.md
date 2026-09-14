@@ -4,7 +4,7 @@
 
 ## 0. What this package is
 
-This is the borrower-facing user-experience specification for the Supermortgage platform. It specifies the `borrower-app` package (Next.js, per the architecture baseline and the origination addendum §2) as **one shell** that carries a borrower from first contact through qualification, disclosure, verification, closing, funding, thirty years of servicing, and every refinance in between.
+This is the borrower-facing user-experience specification for the Supermortgage platform. It specifies the `borrower-app` package (Next.js, per the architecture baseline and the origination addendum §2) as **one shell** — one party account, two first-class surfaces (docs/ux/18 Dual Mode) — that carries a borrower from first contact through qualification, disclosure, verification, closing, funding, thirty years of servicing, and every refinance in between. **Workspace** is the post-auth home (a dashboard projected from `borrower_record`). **Guide** (Michelle) is the conversation. **Autopilot** is the platform's initiative: awareness and occasional card approvals, not a second portal.
 
 It does not describe a new system. Every screen, card, message and number in this package is a **projection of state the two build specs already define**, every borrower action is a **command the build specs already gate**, and every clock the borrower sees is a **timer the Timer Engine already runs**. Where the UI needs a read model the backend does not have, this package declares it as a projection over existing tables (02-data-contracts) and names the owning spec.
 
@@ -31,16 +31,19 @@ The ops-console, partner-facing surfaces, and the portfolio-onboarding path (tra
 | `12-message-copy-library.md` | Every system message keyed to the event that emits it |
 | `13-acceptance-tests.md` | Given/When/Then tests per screen, mapped to build-spec test IDs |
 | `14-claude-code-build-plan.md` | Build order, package layout, prompts, definition of done |
+| `15-entry-sign-up-and-sign-in.md` | Account, Google, deep links — imported as 32.14; anonymous minute superseded by 17 |
+| `17-the-conversational-product.md` | Account, then Guide (the conversation) with cards only when the rules need one — imported as 32.16; post-auth landing amended by 18 |
+| `18-autopilot-and-workspace.md` | Dual Mode: Autopilot + Workspace + Guide. Amends “conversation-only home”. **Not** a 32.x process (32.18 is the DU moment). This PR = W0+W1 |
 
 ## 2. Principles (fixed)
 
 1. **Happy path first.** Design the case that happens most: one borrower, primary residence, W-2 income, connectable payroll and bank, a property with public records, a DU Approve/Eligible. Everything else is a *side quest* — a self-contained detour with a trigger, its own cards, its own evidence and a return point. Side quests never restructure the main flow.
 2. **Verify from the source, never from the borrower.** Identity from the document (Stripe Identity), income and employment from payroll (a DU validation-service supplier), assets from the bank (Plaid asset report), liabilities from the credit report, property from public records and the flood vendor, the existing loan from the credit report and the recorded instrument. The borrower *confirms*; typing is the fallback.
 3. **Ask once, confirm many.** A fact the platform already holds is presented as a `ConfirmCard`, never re-typed. Because O2.1 rule 1 makes a prefilled item count as *submitted* only at the borrower's explicit confirmation, every confirmation is a first-class evidence event.
-4. **The assistant proposes and explains; the component commits.** Nothing legally consequential — a consent, a disclosure receipt, a lock, an intent to proceed, a signature, an authorization — exists only as chat text. Each has a typed card that produces the evidence row the build spec requires.
-5. **The Record is a projection, not a page.** The right pane renders `borrower_record` (02-data-contracts §1) — state, next event and date, needed-from-you, numbers, documents, people, property, loan. It is never hand-authored per screen.
-6. **Initiative belongs to the platform.** In servicing, system-initiated messages (payment posted, escrow result, PMI ending, rate-watch, "nothing needed this month") must outnumber borrower-initiated ones. Every proactive message carries its action inline.
-7. **Nothing invented.** No state, timer, notice, command, table or role appears in this package that does not exist in the build specs — except the UI-layer objects declared in 02-data-contracts (`ui_events`, `card_instances`, `conversations`, `deep_links`), which are explicitly new and owned by `borrower-app`.
+4. **The assistant proposes and explains; the component commits.** Nothing legally consequential — a consent, a disclosure receipt, a lock, an intent to proceed, a signature, an authorization — exists only as chat text. Each has a typed card that produces the evidence row the build spec requires. Workspace shortcuts and Approvals expand those cards; they do not invent a second commit path (docs/ux/18).
+5. **The Record is a projection, not a page.** The Guide rail (right pane) and Workspace Home both render `borrower_record` (02-data-contracts §1) — state, next event and date, needed-from-you, numbers, documents, people, property, loan. Neither is hand-authored per screen. Workspace Home is first-class (docs/ux/18); it is not a competing source of truth.
+6. **Initiative belongs to the platform.** In servicing, system-initiated awareness (payment posted, escrow result, PMI ending, rate-watch, "nothing needed this month", Autopilot digest) must outnumber borrower-initiated hunting. Every proactive item carries its action inline — a card, not a sentence that silently commits.
+7. **Nothing invented.** No state, timer, notice, command, table or role appears in this package that does not exist in the build specs — except the UI-layer objects declared in 02-data-contracts (`ui_events`, `card_instances`, `conversations`, `deep_links`) and Dual Mode routes/projections over those reads (docs/ux/18), which are explicitly UI-owned.
 
 ## 3. Binding rules for Claude Code
 

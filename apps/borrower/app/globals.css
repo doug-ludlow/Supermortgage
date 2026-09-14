@@ -250,6 +250,7 @@ a {
   grid-template-rows: minmax(0, 1fr); /* Thread and Record scroll inside the body, never past it */
   min-height: 0;
   min-width: 0;
+  overflow: hidden;
 }
 @media (max-width: 1279px) {
   .sm-body {
@@ -1466,4 +1467,131 @@ a {
 .sm-rail-proposal-hint {
   margin: 0 0 4px;
   font-size: var(--sm-fs-13);
+}
+
+/* ---------- Dual Mode Workspace (docs/ux/18 W1) ---------- */
+a.sm-brand {
+  color: inherit;
+  text-decoration: none;
+}
+.sm-header-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.sm-nav-link,
+.sm-nav-link-btn {
+  font: inherit;
+  color: var(--sm-text-2);
+  text-decoration: none;
+  background: none;
+  border: 0;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.sm-nav-link[data-current="true"],
+.sm-nav-link[aria-current="page"] {
+  color: var(--sm-text);
+  font-weight: 700;
+}
+.sm-shell[data-surface="workspace"] .sm-body {
+  grid-template-columns: minmax(0, 1fr);
+  overflow: hidden; /* Workspace scrolls inside this row; do not paint under the disclosure footer */
+}
+.sm-shell[data-surface="workspace"] .sm-drawer-btn {
+  display: inline-flex;
+}
+@media (max-width: 767px) {
+  .sm-shell[data-surface="workspace"] .sm-drawer-btn {
+    display: none; /* status strip opens the Record on phones, same as Guide */
+  }
+}
+.sm-workspace-main {
+  min-height: 0;
+  min-width: 0;
+  height: 100%;
+  overflow: auto;
+  background: var(--sm-bg);
+}
+.sm-workspace {
+  max-width: 52rem;
+  padding: 20px 20px 48px;
+  display: grid;
+  gap: 28px;
+}
+.sm-workspace-head h1 {
+  margin: 0;
+  font-size: var(--sm-fs-28);
+  font-weight: 700;
+}
+.sm-workspace-head p {
+  margin: 6px 0 0;
+}
+.sm-workspace-block h2 {
+  margin: 0 0 12px;
+  font-size: var(--sm-fs-17);
+  font-weight: 700;
+}
+.sm-glance {
+  background: var(--sm-surface);
+  border: 1px solid var(--sm-border);
+  border-radius: 12px;
+  padding: 16px 20px;
+}
+.sm-glance-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 0 0 8px;
+}
+.sm-glance-numbers {
+  margin: 12px 0 0;
+}
+.sm-workspace-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.sm-workspace-docs {
+  margin-top: 16px;
+}
+.sm-workspace-docs h3 {
+  margin: 0 0 8px;
+  font-size: var(--sm-fs-15);
+}
+.sm-guide-drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--sm-bg);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.sm-guide-drawer-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--sm-border);
+}
+.sm-guide-drawer-bar h2 {
+  margin: 0;
+  font-size: var(--sm-fs-17);
+  flex: 1;
+}
+.sm-guide-drawer-body {
+  min-height: 0;
+  display: grid;
+}
+.sm-guide-drawer-body .sm-thread {
+  height: 100%;
+  border-right: 0;
+}
+@media (min-width: 768px) {
+  .sm-guide-drawer {
+    left: auto;
+    width: min(520px, 92vw);
+    border-left: 1px solid var(--sm-border);
+  }
 }

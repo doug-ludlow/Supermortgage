@@ -6,7 +6,7 @@ This folder is the borrower-facing UX build specification for the Supermortgage 
 - **Origination Build Spec v1.0** — sections O1–O12 (`supermortgage-origination-spec/sections/spec-O01…O12`, `01-architecture-baseline-addendum.md`, `05-process-inventory.md`, `timer-registry.csv`)
 
 ## Where to put it
-`docs/ux/` in the monorepo, next to `docs/servicing/` and `docs/origination/`. Read order: `00-MASTER-INDEX.md` → `01-foundations.md` → `02-data-contracts.md` → files 03–10 in order → 11 → 12 → 13 → 14.
+`docs/ux/` in the monorepo, next to `docs/servicing/` and `docs/origination/`. Read order: `00-MASTER-INDEX.md` → `01-foundations.md` → `02-data-contracts.md` → files 03–10 in order → 11 → 12 → 13 → 14 → 15 → 17 → **18 (Dual Mode: Autopilot + Workspace + Guide)**.
 
 ## Ground rules for the implementer (from 00 §3)
 1. Nothing in the UI invents a state, timer, notice, command or table. Every name used here exists in the two build specs, except the UI-owned tables listed in `02-data-contracts.md` §1.6.

@@ -5,7 +5,7 @@ import { THEME_DEFAULT } from "@/lib/env";
 
 export const metadata: Metadata = {
   title: "Supermortgage",
-  description: "Your loan, in one conversation.",
+  description: "Your loan — Workspace and Guide.",
   robots: { index: false, follow: false },
 };
 

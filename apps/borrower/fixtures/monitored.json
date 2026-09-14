@@ -1,0 +1,101 @@
+{
+  "name": "monitored",
+  "source": "docs/ux/18 Dual Mode W1 — a partner-book (monitored) loan. The partner still services; Supermortgage is watching for a refinance. FAKE: recorded, no live agent.",
+  "me": {
+    "party_id": "party-monitored",
+    "first_name": "Priya",
+    "level": "L1",
+    "subjects": [
+      {
+        "loan_id": "loan-monitored-0001",
+        "label": "Your loan · 88 N 1st Ave",
+        "transaction_type": "purchase",
+        "occupancy": "primary"
+      }
+    ],
+    "partner": {
+      "legal_name": "Saguaro Home Lending, LLC",
+      "nmlsr_id": "1873421"
+    }
+  },
+  "record": {
+    "timezone": "America/Phoenix",
+    "subject": {
+      "loan_id": "loan-monitored-0001",
+      "label": "Your loan · 88 N 1st Ave",
+      "transaction_type": "purchase",
+      "occupancy": "primary"
+    },
+    "header": {
+      "address_line": "88 N 1st Ave, Phoenix, AZ 85003",
+      "purpose": "Your loan",
+      "loan_label": "30-year fixed · with Mesa Verde"
+    },
+    "status": {
+      "badge": "Monitored",
+      "state_source": {
+        "state": "monitored",
+        "table": "loans.status=monitored"
+      },
+      "one_liner": "partner_book.monitored",
+      "one_liner_tokens": {
+        "servicer": "Mesa Verde Mortgage Servicing"
+      }
+    },
+    "needed_from_you": [],
+    "what_we_are_doing": [],
+    "numbers": {
+      "phase": "post_funding",
+      "upb_cents": "31200000",
+      "note_rate": "6.750",
+      "days_past_due": 0,
+      "figures_source": "partner_book_facts"
+    },
+    "dates": [],
+    "documents": [],
+    "people": [
+      {
+        "party_id": "party-servicer",
+        "role": "servicer_of_record",
+        "display_name": "Mesa Verde Mortgage Servicing"
+      }
+    ],
+    "property": {
+      "address": "88 N 1st Ave, Phoenix, AZ 85003",
+      "tbd": false,
+      "occupancy": "primary"
+    },
+    "partner_book": {
+      "partner_party_id": "partner-mesa",
+      "partner_name": "Mesa Verde Mortgage Servicing",
+      "loan_last4": "4417",
+      "as_of_date": "2026-09-01",
+      "monitored": true,
+      "commands_unavailable": [
+        { "command": "payment.makeOneTime", "code": "LOAN_MONITORED" },
+        { "command": "autodraft.enroll", "code": "LOAN_MONITORED" }
+      ],
+      "review": {
+        "as_of_date": "2026-09-01",
+        "outcome": "watching",
+        "reasons_copy_keys": ["refi.review.watching", "refi.review.reason.rate_delta_bps"],
+        "offer_card_instance_id": null
+      }
+    }
+  },
+  "messages": [
+    {
+      "message_id": "msg-m-hello",
+      "conversation_id": "conv-monitored",
+      "at": "2026-09-01T15:00:00.000Z",
+      "sender": "agent",
+      "sender_label": "Supermortgage",
+      "channel": "app",
+      "body_text": "Your loan ending 4417 with Mesa Verde Mortgage Servicing is on the record here.",
+      "subject": { "loan_id": "loan-monitored-0001", "label": "Your loan · 88 N 1st Ave" },
+      "voice_turn": false,
+      "delivery": { "sent": true, "delivered": true, "read": false }
+    }
+  ],
+  "cards": []
+}

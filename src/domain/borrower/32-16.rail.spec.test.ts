@@ -160,7 +160,7 @@ async function inViewport(page: Page, sel: string): Promise<boolean> {
   return !!box && box.y >= 0 && box.x >= 0 && box.y + box.height <= vp.height && box.x + box.width <= vp.width;
 }
 /** The shell rendered from this test's API: the shell region, the conversation with at least one line, the rail with Needed from you. */
-async function openShell(token: string, width: number, path = "/app"): Promise<{ page: Page; ctx: Context }> {
+async function openShell(token: string, width: number, path = "/app/guide"): Promise<{ page: Page; ctx: Context }> {
   const p = await pageFor(token, width, path);
   await p.page.waitForSelector('[data-testid="shell"]', { timeout: 30_000 });
   try { await p.page.waitForSelector('[data-testid="thread"] .sm-msg', { timeout: 30_000 }); await p.page.waitForSelector('[data-testid="record"] [data-record-section="needed"]', { timeout: 30_000, state: "attached" }); }

@@ -52,7 +52,8 @@ export type StatusBadge =
   | "Servicing moving"
   | "Transferred out"
   | "Cancelled" // 32.7 §4: `rescission_periods.status = rescinded` — the Record is read-only
-  | "Bankruptcy — protections in effect"; // 32.10 §9: a verified bankruptcy petition (14.1) — collection outreach stopped, informational notices only
+  | "Bankruptcy — protections in effect" // 32.10 §9: a verified bankruptcy petition (14.1) — collection outreach stopped, informational notices only
+  | "Monitored"; // 33.1: loans.status = monitored — the partner still services; Supermortgage is watching for a refinance
 
 export type RecordStatus = {
   badge: StatusBadge;
@@ -124,13 +125,15 @@ export type PreFundingNumbers = {
 
 export type PostFundingNumbers = {
   phase: "post_funding";
-  upb_cents: Cents;
-  next_payment: { due_on: string; amount_cents: Cents; pi_cents: Cents; escrow_cents: Cents };
-  escrow_balance_cents: Cents;
-  note_rate: Rate;
+  upb_cents?: Cents;
+  next_payment?: { due_on: string; amount_cents: Cents; pi_cents: Cents; escrow_cents: Cents };
+  escrow_balance_cents?: Cents;
+  note_rate?: Rate;
   days_past_due: number; // regx_days_delinquent
   /** 32.9 §3 / 7.3: the engine's estimate once the initial ARM notice (`NTC_REGZ_20D_ARM_INITIAL`) is sent — never recomputed by the shell. */
   arm_estimate?: ArmEstimate;
+  /** 33.1: partner-book facts may be the only figures (`partner_book_facts`); a serviced loan omits this. */
+  figures_source?: "partner_book_facts" | string;
 };
 
 /** 32.9 §3: `arm.initial_notice.sent` on the record — the change date and first new payment due from the schedule row the notice covers, the estimated rate and P&I the 7.3 engine disclosed. */
@@ -191,7 +194,8 @@ export type RecordPerson = {
     | "notary"
     | "settlement_agent"
     | "continuity_of_contact_team"
-    | "appraiser";
+    | "appraiser"
+    | "servicer_of_record";
   display_name: string;
   progress?: { consents_ok: boolean; confirmations_ok: boolean; signed: boolean };
   nmlsr_id?: string;
@@ -253,6 +257,26 @@ export type HardshipBlock = {
   bankruptcy?: { chapter?: string; statement_mode?: string };
 };
 
+/** 33.1 rule 6 / 33.2 rule 7: partner-book block on `borrower_record` (API allow-list in serialize.ts). */
+export type PartnerBookReview = {
+  as_of_date: string;
+  outcome: "candidate" | "watching" | "not_now" | "excluded";
+  reasons_copy_keys: string[];
+  watch_rate_token?: string;
+  offer_card_instance_id: string | null;
+  opportunity_id?: string | null;
+};
+
+export type PartnerBook = {
+  partner_party_id: string | null;
+  partner_name: string | null;
+  loan_last4: string | null;
+  as_of_date: string | null;
+  monitored: true;
+  commands_unavailable: { command: string; code: "LOAN_MONITORED" }[];
+  review?: PartnerBookReview | null;
+};
+
 export type RecordOffer = {
   refi_opportunity_id: Uuid;
   status: "detected" | "offer_ready" | "offered" | "converted" | "declined" | "expired" | "suppressed" | "requested";
@@ -282,6 +306,11 @@ export type BorrowerRecord = {
   offers?: RecordOffer[];
   /** 32.16 §2.2: the Progress section; absent for a serviced loan. */
   journey_progress?: JourneyProgress | null;
+  /**
+   * 33.1 / docs/ux/18: a monitored loan — the partner is the servicer of record and keeps servicing it.
+   * Null / absent for every other subject. Never implies Supermortgage is the lender.
+   */
+  partner_book?: PartnerBook | null;
   /** Header helpers (01 §4 row 1) */
   header: { address_line: string; purpose: "Buying" | "Refinancing" | "Your loan"; loan_label: string };
   timezone: string; // borrower time zone, e.g. America/Phoenix

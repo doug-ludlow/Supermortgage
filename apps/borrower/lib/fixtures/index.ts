@@ -9,6 +9,7 @@ import type { AnyCardInstance } from "@/lib/types/cards";
 import type { BorrowerMe, BorrowerRecord, ThreadMessage } from "@/lib/types/record";
 import refinance from "@/fixtures/refinance.json";
 import servicing from "@/fixtures/servicing.json";
+import monitored from "@/fixtures/monitored.json";
 
 export type Fixture = {
   name: string;
@@ -22,6 +23,7 @@ export type Fixture = {
 export const FIXTURES: Record<string, Fixture> = {
   refinance: refinance as unknown as Fixture,
   servicing: servicing as unknown as Fixture,
+  monitored: monitored as unknown as Fixture,
 };
 
 export const DEFAULT_FIXTURE = "refinance";

@@ -214,7 +214,7 @@ export function VideoShell({ fixturesMode, fixtureName, initialSubject }: VideoS
 
   return (
     <div className="sm-shell" data-testid="shell" data-video="1" data-fixtures={fixturesMode ? "1" : undefined}>
-      <Header fixturesMode={fixturesMode} me={me} subject={subject} onSubjectChange={setSubject} streamLabel={!fixturesMode && stream !== "open" && stream !== "closed" ? (stream === "reconnecting" ? "reconnecting…" : "connecting…") : undefined} onOpenRecord={() => setRecordOpen(true)} showSignIn={!me || fixturesMode} onSignIn={() => setSignInOpen(true)} />
+      <Header fixturesMode={fixturesMode} me={me} subject={subject} onSubjectChange={setSubject} streamLabel={!fixturesMode && stream !== "open" && stream !== "closed" ? (stream === "reconnecting" ? "reconnecting…" : "connecting…") : undefined} onOpenRecord={() => setRecordOpen(true)} showSignIn={!me || fixturesMode} onSignIn={() => setSignInOpen(true)} surface="guide" />
       {showSignIn ? <div className="sm-strip-slot" /> : <StatusStrip record={record} onOpen={() => setRecordOpen(true)} />}
       <div className="sm-body">
         <main className="sm-thread sm-video-main" aria-label="Video call">

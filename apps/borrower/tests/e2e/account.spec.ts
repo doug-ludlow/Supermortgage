@@ -104,8 +104,8 @@ test.describe("32.16 §2.0 — create an account", () => {
     await form.getByLabel(copy("account.password.field")).fill(PASSWORD);
     await form.getByRole("button", { name: copy("account.create.button") }).click();
     await page.waitForURL(/\/app\/?$/);
-    await expect(page.getByTestId("thread")).toBeVisible(); // the fixtures build lands on the recorded thread; the disclosure as the session's first message is the API's fact (32.16-T25)
-    await expect(page.getByTestId("action-bar")).toBeVisible();
+    await expect(page.getByTestId("workspace-home")).toBeVisible(); // docs/ux/18: post-auth landing is Workspace Home
+    await expect(page.getByTestId("nav-guide")).toBeVisible();
     expect(calls.find((c) => c.path === "v1/borrower/auth/account" && c.body.action === "create")!.body).toMatchObject({ email: "maya@example.com", password: PASSWORD });
     expect(calls.filter((c) => c.path === "v1/borrower/auth/account").map((c) => c.body.action)).toEqual(["create"]); // no verify_email: the session opened on create
   });
@@ -130,7 +130,7 @@ test.describe("32.16 §2.0 — create an account", () => {
     await code.fill(CODE);
     await form.getByRole("button", { name: continueLabel }).click();
     await page.waitForURL(/\/app\/?$/);
-    await expect(page.getByTestId("thread")).toBeVisible();
+    await expect(page.getByTestId("workspace-home")).toBeVisible();
     expect(calls.find((c) => c.path === "v1/borrower/auth/account" && c.body.action === "verify_email")!.body).toMatchObject({ challenge_id: "ch-create" });
   });
 
@@ -170,7 +170,7 @@ test.describe("32.16 §2.0 — sign in", () => {
     await form.getByLabel(copy("account.password.field")).fill(PASSWORD);
     await form.getByRole("button", { name: copy("account.signin.button") }).click();
     await page.waitForURL(/\/app\/?$/);
-    await expect(page.getByTestId("thread")).toBeVisible();
+    await expect(page.getByTestId("workspace-home")).toBeVisible();
   });
 
   test("EMAIL_UNVERIFIED → auth.email_unverified over the code step (a fresh code was sent); the code opens the session", async ({ page }) => {
@@ -186,7 +186,7 @@ test.describe("32.16 §2.0 — sign in", () => {
     await form.getByLabel(copy("auth.code.enter", { destination: "unverified@example.com" })).fill(CODE);
     await form.getByRole("button", { name: continueLabel }).click();
     await page.waitForURL(/\/app\/?$/);
-    await expect(page.getByTestId("thread")).toBeVisible();
+    await expect(page.getByTestId("workspace-home")).toBeVisible();
     expect(calls.find((c) => c.path === "v1/borrower/auth/account" && c.body.action === "verify_email")!.body).toMatchObject({ challenge_id: "ch-unverified", code: CODE });
   });
 });

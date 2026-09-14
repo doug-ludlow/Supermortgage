@@ -746,6 +746,42 @@ The rail and the thread (32.16 §2.1–2.2, DELTA-26). The rail's section names,
 - `video.fake.listen` — button — "Speak" — *32.17: the Web Speech API input when the browser has one.*
 - `video.rail_confirm.hint` — line — "Said on the call — tap Confirm so it counts, or Edit it here." — *32.17 discrepancy (1): the confirm loop confirms on the rail — the pending card's row shows the stated values with Confirm and Edit; only the tap resolves (evidence.source = borrower_stated).*
 
+## Dual Mode — Workspace Home (docs/ux/18, W1)
+
+- `workspace.home.title` — heading — "Workspace" — *H1 of the authenticated home.*
+- `workspace.home.subtitle` — body — "Your loans, applications, and the things that need you." — *Under the title.*
+- `workspace.glance.title` — heading — "This loan" — *Loan glance heading when a subject exists.*
+- `workspace.glance.empty` — empty — "No loan or application is attached yet. When one is, the numbers live here." — *No subject on the party.*
+- `workspace.glance.balance` — label — "Balance" — *Post-funding UPB.*
+- `workspace.glance.rate` — label — "Rate" — *Note rate.*
+- `workspace.glance.next_payment` — label — "Next payment" — *Amount of the next installment.*
+- `workspace.glance.due` — label — "Due" — *Next payment due date.*
+- `workspace.glance.pi` — label — "Principal and interest" — *Pre-funding monthly P&I.*
+- `workspace.glance.loan_amount` — label — "Loan amount" — *Pre-funding amount.*
+- `workspace.glance.lock` — label — "Lock" — *Lock status line.*
+- `workspace.glance.autopay_on` — status — "Autopay on" — *When autodraft_enrollments is active.*
+- `workspace.glance.autopay_off` — status — "Autopay off" — *Servicing, not enrolled.*
+- `workspace.approvals.title` — heading — "Needs your attention" — *Approvals inbox heading.*
+- `workspace.approvals.empty` — empty — "Nothing waiting on you." — *No pending Needed cards.*
+- `workspace.happening.title` — heading — "What's happening" — *Autopilot digest heading.*
+- `workspace.happening.empty` — empty — "When something is in motion, it shows here." — *Honest empty when Status / what_we_are_doing / partner_book.review have nothing extra to say.*
+- `workspace.shortcuts.title` — heading — "Shortcuts" — *Shortcut row heading.*
+- `workspace.shortcuts.pay` — action — "Pay" — *Pay shortcut; focuses a pending PaymentCard.*
+- `workspace.shortcuts.statements` — action — "Statements" — *Opens the documents list (W1; W2 is the statements tree).*
+- `workspace.shortcuts.documents` — action — "Documents" — *Opens the documents list.*
+- `workspace.shortcuts.application` — action — "Application" — *Shown when an application_id is on the subject.*
+- `workspace.shortcuts.no_pay_partner` — empty — "Payments stay with {{servicer}}." — *Monitored loan; Pay hidden. Token is the servicer of record.*
+- `workspace.pay.none` — empty — "No payment is waiting on a card right now." — *Pay tapped with no pending PaymentCard.*
+- `workspace.documents.title` — heading — "Documents" — *In-place documents list on Home.*
+- `workspace.documents.empty` — empty — "No documents on this loan yet." — *Empty documents[].*
+- `workspace.guide.open` — action — "Guide" — *Opens Michelle from Workspace.*
+- `workspace.guide.close` — action — "Close Guide" — *Closes the drawer.*
+- `workspace.guide.title` — heading — "Guide" — *Drawer title. Michelle is the Guide.*
+- `workspace.guide.full` — action — "Open full Guide" — *Drawer link to /guide.*
+- `workspace.nav.home` — action — "Home" — *Header link to Workspace Home.*
+- `workspace.nav.guide` — action — "Guide" — *Header control for the conversation.*
+- `partner_book.monitored` — status — "{{servicer}} still services this loan. Supermortgage is watching for a refinance." — *Status one-liner for loans.status = monitored (33.1 rule 6). Never names Supermortgage as the lender. {{servicer}} is the partner / servicer of record.*
+
 ## Channel variants (rules)
 - **SMS**: first sentence + deep link; never a number the borrower hasn't seen in-app first (no rates, balances or payoff figures by SMS); STOP footer on the first message of a thread.
 - **E-mail**: full text; subject = the card title; marketing e-mails carry the CAN-SPAM footer and the `partner` postal address.

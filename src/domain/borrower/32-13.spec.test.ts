@@ -226,7 +226,7 @@ async function inViewport(page: Page, testId: string): Promise<boolean> {
 }
 /** The shell's thread rendered from this test's API: the shell region, then the conversation with at least one message. */
 async function openShell(token: string, width: number): Promise<{ page: Page; ctx: Context }> {
-  const p = await pageFor(token, width);
+  const p = await pageFor(token, width, "/app/guide");
   await p.page.waitForSelector('[data-testid="shell"]', { timeout: 30_000 });
   try { await p.page.waitForSelector('[data-testid="thread"] .sm-msg', { timeout: 30_000 }); }
   catch (e) { const notice = await p.page.locator(".sm-error").allInnerTexts().catch(() => [] as string[]); const failed = await p.page.locator('[data-testid="card-error"]').evaluateAll((els: unknown[]) => (els as { getAttribute(n: string): string | null }[]).map((e) => `${e.getAttribute("data-card-kind")}: ${e.getAttribute("data-error")}`)).catch(() => [] as string[]); (p.page as Page & { logs?: string[] }).logs?.push(`card errors=${JSON.stringify(failed)}`); throw new Error(`the shell rendered no thread: ${e instanceof Error ? e.message.split("\n")[0] : String(e)}; notice=${JSON.stringify(notice)}; page logs=${JSON.stringify((p.page as Page & { logs?: string[] }).logs?.slice(-10))}; app log=${appLog.slice(-1500)}`); }

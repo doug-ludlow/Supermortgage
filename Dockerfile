@@ -1,10 +1,11 @@
 # Supermortgage runtime image — one image, three modes (see src/runtime/main.ts):
 #   docker run IMAGE serve | sweep | migrate
-# Node 22 runs the TypeScript sources directly (type stripping); psql is present for db/migrate.sh.
+# Node 22 runs the TypeScript sources directly (type stripping); psql is present for db/migrate.sh;
+# xmllint (libxml2-utils) validates DU documents against the vendored schema chain (src/infra/integrations/du-schema).
 FROM node:22-bookworm-slim
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends postgresql-client ca-certificates \
+ && apt-get install -y --no-install-recommends postgresql-client ca-certificates libxml2-utils \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

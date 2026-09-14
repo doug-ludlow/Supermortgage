@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Fannie Mae DU ULAD Extension File -->
+<xsd:schema xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:DU="http://www.datamodelextension.org/Schema/DU" targetNamespace="http://www.datamodelextension.org/Schema/DU" elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<xsd:import schemaLocation="MISMODataTypesB324.xsd"/>
+	<xsd:import namespace="http://www.w3.org/1999/xlink" schemaLocation="xlinkMISMOB324.xsd"/>
+	<xsd:group name="grpLOAN_DETAIL_EXTENSION">
+		<xsd:sequence>
+			<xsd:element name="LOAN_DETAIL_EXTENSION" type="DU:grpLOAN_DETAIL_EXTENSION"/>
+		</xsd:sequence>
+	</xsd:group>
+	<xsd:group name="grpLOAN_EXTENSION">
+		<xsd:sequence>
+			<xsd:element name="LOAN_EXTENSION" type="DU:LOAN_EXTENSION"/>
+		</xsd:sequence>
+	</xsd:group>
+	<xsd:group name="grpEMPLOYMENT_EXTENSION">
+		<xsd:sequence>
+			<xsd:element name="EMPLOYMENT_EXTENSION" type="DU:EMPLOYMENT_EXTENSION"/>
+		</xsd:sequence>
+	</xsd:group>
+	<xsd:group name="grpPROPERTY_VALUATION_DETAIL_EXTENSION">
+		<xsd:sequence>
+			<xsd:element name="PROPERTY_VALUATION_DETAIL_EXTENSION" type="DU:PROPERTY_VALUATION_DETAIL_EXTENSION"/>
+		</xsd:sequence>
+	</xsd:group>
+	<xsd:group name="grpBORROWER_EXTENSION">
+		<xsd:sequence>
+			<xsd:element name="BORROWER_EXTENSION" type="DU:BORROWER_EXTENSION"/>
+		</xsd:sequence>
+	</xsd:group>
+	<xsd:group name="grpCONSTRUCTION_EXTENSION">
+		<xsd:sequence>
+			<xsd:element name="CONSTRUCTION_EXTENSION" type="DU:CONSTRUCTION_EXTENSION"/>
+		</xsd:sequence>
+	</xsd:group>
+	<xsd:complexType name="grpLOAN_DETAIL_EXTENSION">
+		<xsd:sequence>
+			<xsd:element name="EnergyImprovementAmount" type="MISMOAmount" minOccurs="0">
+				<xsd:annotation>
+					<xsd:documentation>The amount of new energy improvements included in the purchase or limited cash-out transaction, and any non-Property Assessed Clean Energy (PACE) energy debt being paid off with the limited cash-out transaction must be provided in this field.</xsd:documentation>
+				</xsd:annotation>
+			</xsd:element>
+			<xsd:element name="PACELoanPayoffAmount" type="MISMOAmount" minOccurs="0">
+				<xsd:annotation>
+					<xsd:documentation>The payoff amount of any existing PACE loans.</xsd:documentation>
+				</xsd:annotation>
+			</xsd:element>
+			<xsd:element name="SharedEquityAmount" type="MISMOAmount" minOccurs="0">
+				<xsd:annotation>
+					<xsd:documentation>The portion of the down payment paid by a third party as part of a shared equity agreement.</xsd:documentation>
+				</xsd:annotation>
+			</xsd:element>
+		</xsd:sequence>
+	</xsd:complexType>
+	<xsd:complexType name="BORROWER_EXTENSION">
+		<xsd:sequence>
+			<xsd:element name="BORROWER_FEATURES" type="DU:BORROWER_FEATURES" minOccurs="0"/>
+		</xsd:sequence>
+		<xsd:attributeGroup ref="AttributeExtension">
+			<xsd:annotation>
+				<xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+			</xsd:annotation>
+		</xsd:attributeGroup>
+	</xsd:complexType>
+	<xsd:complexType name="BORROWER_FEATURES">
+		<xsd:sequence>
+			<xsd:element name="BORROWER_FEATURE" type="DU:BORROWER_FEATURE" minOccurs="0" maxOccurs="10"/>
+		</xsd:sequence>
+	</xsd:complexType>
+	<xsd:complexType name="BORROWER_FEATURE">
+		<xsd:sequence>
+			<xsd:element name="DUPolicyFeatureDescription" type="MISMOString" minOccurs="0">
+				<xsd:annotation>
+					<xsd:documentation>A free-form text field used by the lender to inform DU about certain policy features regarding the borrower, as specified by Fannie Mae.  Can be documented on the URLA in a continuation sheet.</xsd:documentation>
+				</xsd:annotation>
+			</xsd:element>
+		</xsd:sequence>
+	</xsd:complexType>
+	<xsd:complexType name="LOAN_EXTENSION">
+		<xsd:sequence>
+			<xsd:element name="UNDERWRITING_VERIFICATIONS" type="DU:UNDERWRITING_VERIFICATIONS" minOccurs="0"/>
+		</xsd:sequence>
+		<xsd:attributeGroup ref="AttributeExtension">
+			<xsd:annotation>
+				<xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+			</xsd:annotation>
+		</xsd:attributeGroup>
+	</xsd:complexType>
+	<xsd:complexType name="UNDERWRITING_VERIFICATIONS">
+		<xsd:sequence>
+			<xsd:element name="UNDERWRITING_VERIFICATION" type="DU:UNDERWRITING_VERIFICATION" minOccurs="0" maxOccurs="50"/>
+		</xsd:sequence>
+	</xsd:complexType>
+	<xsd:complexType name="UNDERWRITING_VERIFICATION">
+		<xsd:sequence>
+			<xsd:element name="VerificationReportIdentifier" type="MISMOString" minOccurs="0">
+				<xsd:annotation>
+					<xsd:documentation>Reference number of the report to be retrieved from the verification or calculation report supplier</xsd:documentation>
+				</xsd:annotation>
+			</xsd:element>
+			<!--Change to extension-->
+			<xsd:element name="VerificationReportSupplierType" type="MISMOString" minOccurs="0">
+				<xsd:annotation>
+					<xsd:documentation>A value from a Fannie Mae list that represents the name of the verification data provider or calculation report supplier</xsd:documentation>
+				</xsd:annotation>
+			</xsd:element>
+			<xsd:element name="VerificationReportType" type="DU:VerificationReportTypeEnum" minOccurs="0">
+				<xsd:annotation>
+					<xsd:documentation>A value from a Fannie Mae list of report datasets used to verify a borrower's disclosed income, employment, and/or assets; or calculate a borrower’s  income</xsd:documentation>
+				</xsd:annotation>
+			</xsd:element>
+		</xsd:sequence>
+		<xsd:attribute name="SequenceNumber" type="MISMOSequenceNumber_Base">
+			<xsd:annotation>
+				<xsd:documentation>An integer value used to provide an order to multi-instance sibling elements. The value must be unique for each sibling element.</xsd:documentation>
+			</xsd:annotation>
+		</xsd:attribute>
+		<xsd:attributeGroup ref="xlink:MISMOresourceLink">
+			<xsd:annotation>
+				<xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+			</xsd:annotation>
+		</xsd:attributeGroup>
+	</xsd:complexType>
+	<xsd:simpleType name="VerificationReportTypeEnum">
+		<xsd:restriction base="xsd:string">
+			<xsd:enumeration value="IncomeCalculator"/>
+			<xsd:enumeration value="TAXTRANSCRIPT"/>
+			<xsd:enumeration value="VOD"/>
+			<xsd:enumeration value="VOE"/>
+		</xsd:restriction>
+	</xsd:simpleType>
+	<xsd:complexType name="EMPLOYMENT_EXTENSION">
+		<xsd:sequence>
+			<xsd:element name="ForeignIncomeIndicator" type="MISMOIndicator" minOccurs="0">
+				<xsd:annotation>
+					<xsd:documentation>When true, indicates that the amount of income is earned through a foreign corporation/government and is paid in foreign currency.</xsd:documentation>
+				</xsd:annotation>
+			</xsd:element>
+			<xsd:element name="SeasonalIncomeIndicator" type="MISMOIndicator" minOccurs="0">
+				<xsd:annotation>
+					<xsd:documentation>When true, indicates that the amount of income is only earned during a portion of the calendar year</xsd:documentation>
+				</xsd:annotation>
+			</xsd:element>
+		</xsd:sequence>
+		<xsd:attributeGroup ref="AttributeExtension">
+			<xsd:annotation>
+				<xsd:documentation>An implementation of the ability to extend an instance document by using any attribute. To change from Lax to make an redefinition restriction of AttributeExtension attribute group.</xsd:documentation>
+			</xsd:annotation>
+		</xsd:attributeGroup>
+	</xsd:complexType>
+	<xsd:complexType name="PROPERTY_VALUATION_DETAIL_EXTENSION">
+		<xsd:sequence>
+			<xsd:element name="PropertyDataIdentifier" type="MISMOString" minOccurs="0">
+				<xsd:annotation>
+					<xsd:documentation>A unique identifier assigned by Fannie Mae for appraisal data collected for this loan.</xsd:documentation>
+				</xsd:annotation>
+			</xsd:element>
+		</xsd:sequence>
+	</xsd:complexType>
+	<xsd:complexType name="CONSTRUCTION_EXTENSION">
+		<xsd:sequence>
+			<xsd:element name="LandValueAmountType" type="DU:LandValueAmountTypeEnum" minOccurs="0">
+				<xsd:annotation>
+					<xsd:documentation>A value from a prescribed list that specifies whether the Original Cost or Appraised Value of the lot / land to be used for DU calculation purposes.</xsd:documentation>
+				</xsd:annotation>
+			</xsd:element>
+		</xsd:sequence>
+		<xsd:attribute name="SequenceNumber" type="MISMOSequenceNumber_Base">
+			<xsd:annotation>
+				<xsd:documentation>An integer value used to provide an order to multi-instance sibling elements. The value must be unique for each sibling element.</xsd:documentation>
+			</xsd:annotation>
+		</xsd:attribute>
+		<xsd:attributeGroup ref="xlink:MISMOresourceLink">
+			<xsd:annotation>
+				<xsd:documentation>An xlink attribute group for defining the end point of a relationship.</xsd:documentation>
+			</xsd:annotation>
+		</xsd:attributeGroup>
+	</xsd:complexType>
+	<xsd:simpleType name="LandValueAmountTypeEnum">
+		<xsd:restriction base="xsd:string">
+			<xsd:enumeration value="Appraised"/>
+			<xsd:enumeration value="Original"/>
+			<xsd:enumeration value="NotApplicable"/>
+		</xsd:restriction>
+	</xsd:simpleType>
+</xsd:schema>

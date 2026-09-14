@@ -1,0 +1,5 @@
+# The vendored DU schema chain and Fannie Mae's eighteen samples are somebody else's bytes
+# (src/infra/integrations/du-schema/README.md): never normalized on checkout or commit, so a
+# sha256 of a file in the tree is the sha256 of the file in the release it came from.
+src/infra/integrations/du-schema/xsd/** -text
+src/infra/integrations/du-schema/samples/** -text

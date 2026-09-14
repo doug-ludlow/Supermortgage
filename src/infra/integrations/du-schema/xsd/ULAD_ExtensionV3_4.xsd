@@ -1,0 +1,452 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- edited with XMLSpy v2015 rel. 3 (x64) (http://www.altova.com) by Technology Installations (FANNIE MAE) -->
+<!-- Fannie Mae and Freddie Mac ULAD Extension File -->
+<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:ULAD="http://www.datamodelextension.org/Schema/ULAD" targetNamespace="http://www.datamodelextension.org/Schema/ULAD" elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<xsd:import schemaLocation="MISMODataTypesB324.xsd"/>
+	<xsd:group name="grpASSET_DETAIL_EXTENSION">
+		<xsd:sequence>
+			<xsd:element name="ASSET_DETAIL_EXTENSION" type="ULAD:ASSET_DETAIL_EXTENSION"/>
+		</xsd:sequence>
+	</xsd:group>
+	<xsd:group name="grpDECLARATION_DETAIL_EXTENSION">
+		<xsd:sequence>
+			<xsd:element name="DECLARATION_DETAIL_EXTENSION" type="ULAD:DECLARATION_DETAIL_EXTENSION"/>
+		</xsd:sequence>
+	</xsd:group>
+	<xsd:group name="grpGOVERNMENT_MONITORING_DETAIL_EXTENSION">
+		<xsd:sequence>
+			<xsd:element name="GOVERNMENT_MONITORING_DETAIL_EXTENSION" type="ULAD:GOVERNMENT_MONITORING_DETAIL_EXTENSION"/>
+		</xsd:sequence>
+	</xsd:group>
+	<xsd:group name="grpGOVERNMENT_MONITORING_EXTENSION">
+		<xsd:sequence>
+			<xsd:element name="GOVERNMENT_MONITORING_EXTENSION" type="ULAD:GOVERNMENT_MONITORING_EXTENSION"/>
+		</xsd:sequence>
+	</xsd:group>
+	<xsd:group name="grpHMDA_RACE_DESIGNATION_EXTENSION">
+		<xsd:sequence>
+			<xsd:element name="HMDA_RACE_DESIGNATION_EXTENSION" type="ULAD:HMDA_RACE_DESIGNATION_EXTENSION"/>
+		</xsd:sequence>
+	</xsd:group>
+	<xsd:group name="grpURLA_TOTAL_EXTENSION">
+		<xsd:sequence>
+			<xsd:element name="URLA_TOTAL_EXTENSION" type="ULAD:URLA_TOTAL_EXTENSION"/>
+		</xsd:sequence>
+	</xsd:group>
+	<xsd:group name="grpLANGUAGE_EXTENSION">
+		<xsd:sequence>
+			<xsd:element name="LANGUAGE_EXTENSION" type="ULAD:LANGUAGE_EXTENSION"/>
+		</xsd:sequence>
+	</xsd:group>
+	<xsd:group name="grpQUALIFICATION_EXTENSION">
+		<xsd:sequence>
+			<xsd:element name="QUALIFICATION_EXTENSION" type="ULAD:QUALIFICATION_EXTENSION"/>
+		</xsd:sequence>
+	</xsd:group>
+	<xsd:complexType name="ASSET_DETAIL_EXTENSION">
+		<xsd:sequence>
+			<xsd:element name="IncludedInAssetAccountIndicator" minOccurs="0">
+				<xsd:annotation>
+					<xsd:documentation>When true, indicates that item is included in the value of an asset account being reported by a borrower.</xsd:documentation>
+				</xsd:annotation>
+				<xsd:complexType>
+					<xsd:simpleContent>
+						<xsd:restriction base="MISMOIndicator"/>
+					</xsd:simpleContent>
+				</xsd:complexType>
+			</xsd:element>
+		</xsd:sequence>
+	</xsd:complexType>
+	<xsd:complexType name="DECLARATION_DETAIL_EXTENSION">
+		<xsd:sequence>
+			<xsd:element name="SpecialBorrowerSellerRelationshipIndicator" minOccurs="0">
+				<xsd:annotation>
+					<xsd:documentation>When true, indicates that the borrower has a family relationship or business affiliation with the seller of the property.</xsd:documentation>
+				</xsd:annotation>
+				<xsd:complexType>
+					<xsd:simpleContent>
+						<xsd:restriction base="MISMOIndicator"/>
+					</xsd:simpleContent>
+				</xsd:complexType>
+			</xsd:element>
+		</xsd:sequence>
+	</xsd:complexType>
+	<xsd:complexType name="GOVERNMENT_MONITORING_DETAIL_EXTENSION">
+		<xsd:sequence>
+			<xsd:element name="ApplicationTakenMethodType" minOccurs="0">
+				<xsd:annotation>
+					<xsd:documentation>A value from a MISMO prescribed list that specifies the method used to take the application.</xsd:documentation>
+				</xsd:annotation>
+				<xsd:complexType>
+					<xsd:simpleContent>
+						<xsd:restriction base="ApplicationTakenMethodEnum"/>
+					</xsd:simpleContent>
+				</xsd:complexType>
+			</xsd:element>
+			<xsd:element name="HMDAGenderType" minOccurs="0">
+				<xsd:annotation>
+					<xsd:documentation>A value from a MISMO prescribed list that represents the borrower's or interviewer's statement about the borrower's gender.</xsd:documentation>
+				</xsd:annotation>
+				<xsd:complexType>
+					<xsd:simpleContent>
+						<xsd:restriction base="ULAD:HMDAGenderTypeEnum"/>
+					</xsd:simpleContent>
+				</xsd:complexType>
+			</xsd:element>
+		</xsd:sequence>
+	</xsd:complexType>
+	<xsd:complexType name="HMDAGenderTypeEnum">
+		<xsd:annotation>
+			<xsd:documentation>A value from a MISMO prescribed list that represents the borrower's or interviewer's statement about the borrower's gender.</xsd:documentation>
+		</xsd:annotation>
+		<xsd:simpleContent>
+			<xsd:extension base="ULAD:HMDAGenderTypeBase">
+				<xsd:attribute name="DataNotSuppliedReasonType">
+					<xsd:annotation>
+						<xsd:documentation>A value from a MISMO prescribed list that specifies the reason a specific data point is not included in the message.</xsd:documentation>
+					</xsd:annotation>
+					<xsd:simpleType>
+						<xsd:restriction base="DataNotSuppliedReasonBase"/>
+					</xsd:simpleType>
+				</xsd:attribute>
+				<xsd:attribute name="DataNotSuppliedReasonTypeAdditionalDescription">
+					<xsd:annotation>
+						<xsd:documentation>A free-form text field used to provide a supplemental comment or remark regarding the Data Not Supplied Reason Type.</xsd:documentation>
+					</xsd:annotation>
+					<xsd:simpleType>
+						<xsd:restriction base="MISMOString_Base"/>
+					</xsd:simpleType>
+				</xsd:attribute>
+				<xsd:attribute name="DataNotSuppliedReasonTypeOtherDescription">
+					<xsd:annotation>
+						<xsd:documentation>A free-form text field used to capture the enumeration when Other is selected for Data Not Supplied Reason Type.</xsd:documentation>
+					</xsd:annotation>
+					<xsd:simpleType>
+						<xsd:restriction base="MISMOString_Base"/>
+					</xsd:simpleType>
+				</xsd:attribute>
+				<xsd:attribute name="SensitiveIndicator">
+					<xsd:annotation>
+						<xsd:documentation>Allows producers and consumers of XML instance documents that are valid MISMO V3 documents to mark any data point to be treated as sensitive. MISMO recommends that any use of a data point labeled as "Sensitive Information" in the LDD ALWAYS have this attribute set to "true".</xsd:documentation>
+					</xsd:annotation>
+					<xsd:simpleType>
+						<xsd:restriction base="MISMOIndicator_Base"/>
+					</xsd:simpleType>
+				</xsd:attribute>
+			</xsd:extension>
+		</xsd:simpleContent>
+	</xsd:complexType>
+	<xsd:simpleType name="HMDAGenderTypeBase">
+		<xsd:annotation>
+			<xsd:documentation>Term: HMDA Gender Type Definition: A value from a MISMO prescribed list that represents the borrower's or interviewer's statement about the borrower's gender.</xsd:documentation>
+		</xsd:annotation>
+		<xsd:restriction base="xsd:string">
+			<xsd:enumeration value="ApplicantSelectedBothMaleAndFemale">
+				<xsd:annotation>
+					<xsd:documentation>Both Male and Female were selected by the borrower.</xsd:documentation>
+				</xsd:annotation>
+			</xsd:enumeration>
+			<xsd:enumeration value="Female">
+				<xsd:annotation>
+					<xsd:documentation/>
+				</xsd:annotation>
+			</xsd:enumeration>
+			<xsd:enumeration value="InformationNotProvidedUnknown">
+				<xsd:annotation>
+					<xsd:documentation>Information was not provided by borrower in a mail, telephone, or internet application. Category as defined by the Home Mortgage Disclosure Act.</xsd:documentation>
+				</xsd:annotation>
+			</xsd:enumeration>
+			<xsd:enumeration value="Male">
+				<xsd:annotation>
+					<xsd:documentation/>
+				</xsd:annotation>
+			</xsd:enumeration>
+			<xsd:enumeration value="NotApplicable">
+				<xsd:annotation>
+					<xsd:documentation>Used for loans where the borrower is an institution, corporation, or partnership.</xsd:documentation>
+				</xsd:annotation>
+			</xsd:enumeration>
+			<xsd:enumeration value="Other">
+				<xsd:annotation>
+					<xsd:documentation/>
+				</xsd:annotation>
+			</xsd:enumeration>
+		</xsd:restriction>
+	</xsd:simpleType>
+	<xsd:complexType name="GOVERNMENT_MONITORING_EXTENSION">
+		<xsd:sequence>
+			<xsd:element name="HMDA_ETHNICITIES" type="ULAD:HMDA_ETHNICITIES" minOccurs="0"/>
+		</xsd:sequence>
+	</xsd:complexType>
+	<xsd:complexType name="HMDA_ETHNICITIES">
+		<xsd:sequence>
+			<xsd:element name="HMDA_ETHNICITY" type="ULAD:HMDA_ETHNICITY" minOccurs="0" maxOccurs="unbounded"/>
+		</xsd:sequence>
+	</xsd:complexType>
+	<xsd:complexType name="HMDA_ETHNICITY">
+		<xsd:sequence>
+			<xsd:element name="HMDAEthnicityType" minOccurs="0">
+				<xsd:annotation>
+					<xsd:documentation>A value from a MISMO prescribed list that represents the borrower's or interviewer's statement about the borrower's ethnicity as defined in the Home Mortgage Disclosure Act (HMDA).</xsd:documentation>
+				</xsd:annotation>
+				<xsd:complexType>
+					<xsd:simpleContent>
+						<xsd:restriction base="HMDAEthnicityEnum"/>
+					</xsd:simpleContent>
+				</xsd:complexType>
+			</xsd:element>
+		</xsd:sequence>
+		<xsd:attribute name="SequenceNumber">
+			<xsd:annotation>
+				<xsd:documentation>An integer value used to provide an order to multi-instance sibling elements. The value must be unique for each sibling element.</xsd:documentation>
+			</xsd:annotation>
+			<xsd:simpleType>
+				<xsd:restriction base="MISMOSequenceNumber_Base"/>
+			</xsd:simpleType>
+		</xsd:attribute>
+	</xsd:complexType>
+	<xsd:complexType name="HMDA_RACE_DESIGNATION_EXTENSION">
+		<xsd:sequence>
+			<xsd:element name="HMDARaceDesignationOtherAsianDescription" minOccurs="0">
+				<xsd:annotation>
+					<xsd:documentation>A free-form text field used to capture information specific to HMDA Race Designation category of Other Asian.</xsd:documentation>
+				</xsd:annotation>
+				<xsd:complexType>
+					<xsd:simpleContent>
+						<xsd:restriction base="MISMOString"/>
+					</xsd:simpleContent>
+				</xsd:complexType>
+			</xsd:element>
+			<xsd:element name="HMDARaceDesignationOtherPacificIslanderDescription" minOccurs="0">
+				<xsd:annotation>
+					<xsd:documentation>A free-form text field used to capture information specific to HMDA Race Designation category of Other Pacific Islander.</xsd:documentation>
+				</xsd:annotation>
+				<xsd:complexType>
+					<xsd:simpleContent>
+						<xsd:restriction base="MISMOString"/>
+					</xsd:simpleContent>
+				</xsd:complexType>
+			</xsd:element>
+			<xsd:element name="HMDARaceDesignationType" minOccurs="0">
+				<xsd:annotation>
+					<xsd:documentation>A value from a MISMO prescribed list that represents the borrower's or interviewer's statement about the borrower's ethnicity as defined in the Home Mortgage Disclosure Act (HMDA).</xsd:documentation>
+				</xsd:annotation>
+				<xsd:complexType>
+					<xsd:simpleContent>
+						<xsd:restriction base="ULAD:HMDARaceDesignationTypeEnum"/>
+					</xsd:simpleContent>
+				</xsd:complexType>
+			</xsd:element>
+		</xsd:sequence>
+	</xsd:complexType>
+	<xsd:complexType name="HMDARaceDesignationTypeEnum">
+		<xsd:annotation>
+			<xsd:documentation>A value from a MISMO prescribed list that represents the borrower's or interviewer's statement about the borrower's race designation as defined in the Home Mortgage Disclosure Act.</xsd:documentation>
+		</xsd:annotation>
+		<xsd:simpleContent>
+			<xsd:extension base="ULAD:HMDARaceDesignationTypeBase">
+				<xsd:attribute name="DataNotSuppliedReasonType">
+					<xsd:annotation>
+						<xsd:documentation>A value from a MISMO prescribed list that specifies the reason a specific data point is not included in the message.</xsd:documentation>
+					</xsd:annotation>
+					<xsd:simpleType>
+						<xsd:restriction base="DataNotSuppliedReasonBase"/>
+					</xsd:simpleType>
+				</xsd:attribute>
+				<xsd:attribute name="DataNotSuppliedReasonTypeAdditionalDescription">
+					<xsd:annotation>
+						<xsd:documentation>A free-form text field used to provide a supplemental comment or remark regarding the Data Not Supplied Reason Type.</xsd:documentation>
+					</xsd:annotation>
+					<xsd:simpleType>
+						<xsd:restriction base="MISMOString_Base"/>
+					</xsd:simpleType>
+				</xsd:attribute>
+				<xsd:attribute name="DataNotSuppliedReasonTypeOtherDescription">
+					<xsd:annotation>
+						<xsd:documentation>A free-form text field used to capture the enumeration when Other is selected for Data Not Supplied Reason Type.</xsd:documentation>
+					</xsd:annotation>
+					<xsd:simpleType>
+						<xsd:restriction base="MISMOString_Base"/>
+					</xsd:simpleType>
+				</xsd:attribute>
+				<xsd:attribute name="SensitiveIndicator">
+					<xsd:annotation>
+						<xsd:documentation>Allows producers and consumers of XML instance documents that are valid MISMO V3 documents to mark any data point to be treated as sensitive. MISMO recommends that any use of a data point labeled as "Sensitive Information" in the LDD ALWAYS have this attribute set to "true".</xsd:documentation>
+					</xsd:annotation>
+					<xsd:simpleType>
+						<xsd:restriction base="MISMOIndicator_Base"/>
+					</xsd:simpleType>
+				</xsd:attribute>
+			</xsd:extension>
+		</xsd:simpleContent>
+	</xsd:complexType>
+	<xsd:simpleType name="HMDARaceDesignationTypeBase">
+		<xsd:annotation>
+			<xsd:documentation>Term: HMDA Race Designation Type Definition: A value from a MISMO prescribed list that represents the borrower's or interviewer's statement about the borrower's race designation as defined in the Home Mortgage Disclosure Act.</xsd:documentation>
+		</xsd:annotation>
+		<xsd:restriction base="xsd:string">
+			<xsd:enumeration value="AsianIndian">
+				<xsd:annotation>
+					<xsd:documentation>Asian race designation as defined by the Home Mortgage Disclosure Act.</xsd:documentation>
+				</xsd:annotation>
+			</xsd:enumeration>
+			<xsd:enumeration value="Chinese">
+				<xsd:annotation>
+					<xsd:documentation>Asian race designation as defined by the Home Mortgage Disclosure Act.</xsd:documentation>
+				</xsd:annotation>
+			</xsd:enumeration>
+			<xsd:enumeration value="Filipino">
+				<xsd:annotation>
+					<xsd:documentation>Asian race designation as defined by the Home Mortgage Disclosure Act.</xsd:documentation>
+				</xsd:annotation>
+			</xsd:enumeration>
+			<xsd:enumeration value="GuamanianOrChamorro">
+				<xsd:annotation>
+					<xsd:documentation>Native Hawaiian or Pacific Islander race designation as defined by the Home Mortgage Disclosure Act.</xsd:documentation>
+				</xsd:annotation>
+			</xsd:enumeration>
+			<xsd:enumeration value="Japanese">
+				<xsd:annotation>
+					<xsd:documentation>Asian Race designation as defined by the Home Mortgage Disclosure Act.</xsd:documentation>
+				</xsd:annotation>
+			</xsd:enumeration>
+			<xsd:enumeration value="Korean">
+				<xsd:annotation>
+					<xsd:documentation>Asian Race designation as defined by the Home Mortgage Disclosure Act.</xsd:documentation>
+				</xsd:annotation>
+			</xsd:enumeration>
+			<xsd:enumeration value="NativeHawaiian">
+				<xsd:annotation>
+					<xsd:documentation>Native Hawaiian or Pacific Islander race designation as defined by the Home Mortgage Disclosure Act.</xsd:documentation>
+				</xsd:annotation>
+			</xsd:enumeration>
+			<xsd:enumeration value="Other">
+				<xsd:annotation>
+					<xsd:documentation/>
+				</xsd:annotation>
+			</xsd:enumeration>
+			<xsd:enumeration value="OtherAsian">
+				<xsd:annotation>
+					<xsd:documentation>Used to specify an Asian Race Designation that is not already included in the HMDA Race Designation Type enumeration list. The name of the Other Asian type may be entered in the HMDA Race Designation Other Asian Description.</xsd:documentation>
+				</xsd:annotation>
+			</xsd:enumeration>
+			<xsd:enumeration value="OtherPacificIslander">
+				<xsd:annotation>
+					<xsd:documentation>Used to specify a Pacific Islander Race Designation that is not already included in the HMDA Race Designation Type enumeration list. The name of the Other Pacific Islander type may be entered in the HMDA Race Designation Other Pacific Islander Description.</xsd:documentation>
+				</xsd:annotation>
+			</xsd:enumeration>
+			<xsd:enumeration value="Samoan">
+				<xsd:annotation>
+					<xsd:documentation>Native Hawaiian or Pacific Islander race designation as defined by the Home Mortgage Disclosure Act.</xsd:documentation>
+				</xsd:annotation>
+			</xsd:enumeration>
+			<xsd:enumeration value="Vietnamese">
+				<xsd:annotation>
+					<xsd:documentation>Asian race designation as defined by the Home Mortgage Disclosure Act.</xsd:documentation>
+				</xsd:annotation>
+			</xsd:enumeration>
+		</xsd:restriction>
+	</xsd:simpleType>
+	<xsd:complexType name="URLA_TOTAL_EXTENSION">
+		<xsd:sequence>
+			<xsd:element name="URLAAccountBasedAssetTotalAmount" minOccurs="0">
+				<xsd:annotation>
+					<xsd:documentation>The total dollar amount of assets associated with an account. Collected in the Total field for Section 2a on the URLA.</xsd:documentation>
+				</xsd:annotation>
+				<xsd:complexType>
+					<xsd:simpleContent>
+						<xsd:restriction base="MISMOAmount"/>
+					</xsd:simpleContent>
+				</xsd:complexType>
+			</xsd:element>
+			<xsd:element name="URLANonAccountBasedAssetTotalAmount" minOccurs="0">
+				<xsd:annotation>
+					<xsd:documentation>The total dollar amount of assets not associated with an account. Collected in the Total field for Section 2b on the URLA.</xsd:documentation>
+				</xsd:annotation>
+				<xsd:complexType>
+					<xsd:simpleContent>
+						<xsd:restriction base="MISMOAmount"/>
+					</xsd:simpleContent>
+				</xsd:complexType>
+			</xsd:element>
+			<xsd:element name="URLATotalCreditsAmount" minOccurs="0">
+				<xsd:annotation>
+					<xsd:documentation>The total dollar amount of all credits applied to the subject transaction.</xsd:documentation>
+				</xsd:annotation>
+				<xsd:complexType>
+					<xsd:simpleContent>
+						<xsd:restriction base="MISMOAmount"/>
+					</xsd:simpleContent>
+				</xsd:complexType>
+			</xsd:element>
+			<xsd:element name="URLATotalMortgageLoansAmount" minOccurs="0">
+				<xsd:annotation>
+					<xsd:documentation>The total dollar amount of all new mortgage loans being simultaneously originated on the subject property.</xsd:documentation>
+				</xsd:annotation>
+				<xsd:complexType>
+					<xsd:simpleContent>
+						<xsd:restriction base="MISMOAmount"/>
+					</xsd:simpleContent>
+				</xsd:complexType>
+			</xsd:element>
+			<xsd:element name="URLATotalOtherCreditsAmount" minOccurs="0">
+				<xsd:annotation>
+					<xsd:documentation>The total dollar amount of other credits applied to the subject transaction as defined in the URLA Instructions.</xsd:documentation>
+				</xsd:annotation>
+				<xsd:complexType>
+					<xsd:simpleContent>
+						<xsd:restriction base="MISMOAmount"/>
+					</xsd:simpleContent>
+				</xsd:complexType>
+			</xsd:element>
+			<xsd:element name="URLATotalSellerCreditsAmount" minOccurs="0">
+				<xsd:annotation>
+					<xsd:documentation>The total dollar amount of seller credits applied to the subject transaction.</xsd:documentation>
+				</xsd:annotation>
+				<xsd:complexType>
+					<xsd:simpleContent>
+						<xsd:restriction base="MISMOAmount"/>
+					</xsd:simpleContent>
+				</xsd:complexType>
+			</xsd:element>
+		</xsd:sequence>
+	</xsd:complexType>
+	<xsd:complexType name="LANGUAGE_EXTENSION">
+		<xsd:sequence>
+			<xsd:element name="LanguageCodeOtherDescription" minOccurs="0">
+				<xsd:annotation>
+					<xsd:documentation>A free-form text field that specifies an "Other" language name.</xsd:documentation>
+				</xsd:annotation>
+				<xsd:complexType>
+					<xsd:simpleContent>
+						<xsd:restriction base="MISMOString"/>
+					</xsd:simpleContent>
+				</xsd:complexType>
+			</xsd:element>
+			<xsd:element name="LanguageRefusalIndicator" minOccurs="0">
+				<xsd:annotation>
+					<xsd:documentation>When true, indicates the party has stated that they do not wish to provide language information.</xsd:documentation>
+				</xsd:annotation>
+				<xsd:complexType>
+					<xsd:simpleContent>
+						<xsd:restriction base="MISMOIndicator"/>
+					</xsd:simpleContent>
+				</xsd:complexType>
+			</xsd:element>
+		</xsd:sequence>
+	</xsd:complexType>
+	<xsd:complexType name="QUALIFICATION_EXTENSION">
+		<xsd:sequence>
+			<xsd:element name="PositiveRentalHistoryIndicator" minOccurs="0">
+				<xsd:annotation>
+					<xsd:documentation>When true, indicates that at least one of the borrowers on the loan application has documented positive rental history according to the FHA guidelines.</xsd:documentation>
+				</xsd:annotation>
+				<xsd:complexType>
+					<xsd:simpleContent>
+						<xsd:restriction base="MISMOIndicator"/>
+					</xsd:simpleContent>
+				</xsd:complexType>
+			</xsd:element>
+		</xsd:sequence>
+	</xsd:complexType>
+</xsd:schema>

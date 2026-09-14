@@ -17,6 +17,8 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: "22", cache: npm }
       - run: npm ci
+      - name: xmllint on the runner (src/infra/integrations/du-schema throws without it; it never skips)
+        run: sudo apt-get update -q >/dev/null && sudo apt-get install -y -q libxml2-utils >/dev/null
       - run: npm run typecheck
       - name: npm test
         run: npm test 2>&1 | tee /tmp/npm-test.log; exit "${PIPESTATUS[0]}"

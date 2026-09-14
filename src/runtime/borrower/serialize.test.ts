@@ -6,6 +6,8 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { connect, reachable } from "../../infra/db/client.ts";
 import { ALL_ALLOWED_FIELDS, FORBIDDEN_FIELDS, SHAPES, serialize } from "./serialize.ts";
 import { BorrowerError, toBorrowerError } from "./errors.ts";
@@ -13,9 +15,20 @@ import { CommandRefused } from "../../app/commands.ts";
 import { GateClosed } from "../../app/evaluators.ts";
 import { GATE_COPY_KEYS, copyKeyFor } from "./copy-keys.ts";
 
-const DB_URL = process.env["TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_test";
-const up = await reachable(DB_URL);
-const skip = up ? false : `no Postgres at ${DB_URL}`;
+// the journey-suite pattern: a private `<base>_serialize` database dropped, created and migrated here through the admin URL — never the base, never a shared one
+const BASE_URL = process.env["TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_test";
+const DB_URL = ((): string => { const u = new URL(BASE_URL); u.pathname = `${u.pathname}_serialize`; return u.toString(); })();
+const ADMIN_URL = ((): string => { const u = new URL(DB_URL); u.pathname = "/postgres"; return u.toString(); })();
+const up = await reachable(ADMIN_URL);
+if (!up && process.env["REQUIRE_DB"]) throw new Error(`REQUIRE_DB set but ${ADMIN_URL} is not reachable`);
+const skip = up ? false : `no Postgres at ${ADMIN_URL}`;
+// the schema grep reads information_schema: the private database is created and migrated here, never assumed
+test.before(async () => {
+  if (skip) return;
+  const name = new URL(DB_URL).pathname.slice(1);
+  const a = connect(ADMIN_URL); await a.query(`DROP DATABASE IF EXISTS ${name}`); await a.query(`CREATE DATABASE ${name}`); await a.end();
+  execFileSync(fileURLToPath(new URL("../../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
+});
 
 test("serializer: a shape keeps only the fields it names, at every depth, and turns bigint into decimal strings", () => {
   const out = serialize("me", { party: { party_id: "p1", party_type: "borrower", display_name: "Avery Fixture", tin_encrypted: "x", contact: { email: "a@b" } }, level: "L2", risk_assessment: { score: 1 }, session: { session_id: "s1", level: "L2", token_hash: "h", ip: "1.1.1.1", fresh_l1: true },

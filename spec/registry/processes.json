@@ -7113,9 +7113,10 @@
     "title": "The partner book import: the tape and the supplement become monitored loans and real accounts",
     "section": 33,
     "section_title": "The partner book: monitored loans, real accounts and refinance readiness",
-    "words": 4054,
+    "words": 4591,
     "timers": [
-      "SM_PARTNER_BOOK_INVITATION_REMINDER_14"
+      "SM_PARTNER_BOOK_INVITATION_REMINDER_14",
+      "SM_PARTNER_BOOK_TAPE_EXPECTED_7"
     ],
     "subsections": [
       "Inputs and triggers",
@@ -7194,5 +7195,115 @@
     "trigger": "Daily at 07:15 America/New_York for every candidate and every open refinance application from a monitored loan; on the homeowner's Yes (the refinance application is opened); on every verification event afterwards",
     "source": "22.2 (credit report validity: four months on the note date), 22.3 (income: DU validation, VVOE window), 22.4 (assets: the 45-day statement rule; the 365-day report), 22.6 (identity IAL2, `valid_until`), 20.3 rule 10 and 32.2 (consents), 21.1 (the application opened with `prior_loan_id`), 32.11 §3–§5 (the compressed refinance application; data refreshed only after a Yes), 32.18 (the DU moment)",
     "deadline": "A readiness row per candidate by 07:30 ET; the DU moment as soon as the last item lands (32.18)"
+  },
+  {
+    "id": "34.1",
+    "title": "Staff sign-in and roles: accounts, the doors, the action log, the access review",
+    "section": 34,
+    "section_title": "The operator portal: staff sign-in, the account directory, partner book operations and evidence",
+    "words": 2395,
+    "timers": [
+      "SM_STAFF_ACCESS_REVIEW_90"
+    ],
+    "subsections": [
+      "Inputs and triggers",
+      "Data model",
+      "State machine",
+      "Timers and gates",
+      "Business rules and calculations",
+      "Integrations",
+      "Outputs and artifacts",
+      "AI agent design (AI-first)",
+      "Edge cases and failure modes",
+      "Test cases and acceptance criteria",
+      "Audit and evidence"
+    ],
+    "path": "sections/34-operator-portal/34-1-staff-sign-in-and-roles-accounts-the-doors-the-action-log-the-access-review.md",
+    "auto": "c — a person signs in and acts; the platform records, refuses and reviews",
+    "own": "Platform operator (Supermortgage's own staff; internal only — no partner users)",
+    "trigger": "On every portal request; an invitation when an admin adds a staff member; the access review every 90 days",
+    "source": "GLBA Safeguards Rule 16 CFR §314.4(c)(1) and (c)(5) (access controls, multi-factor authentication for any individual accessing customer information); NYDFS 23 NYCRR §500.7 and §500.12 (access privileges reviewed periodically; MFA); 19.2 (security, access logging); 18.1 (AI governance: a human actor on every override); 32.2 and 32.14 (the door mechanics reused)",
+    "deadline": "A session idles out at 30 minutes; the access review every 90 calendar days"
+  },
+  {
+    "id": "34.2",
+    "title": "The account directory: every person, their activity and their record, masked by role",
+    "section": 34,
+    "section_title": "The operator portal: staff sign-in, the account directory, partner book operations and evidence",
+    "words": 2014,
+    "timers": [],
+    "subsections": [
+      "Inputs and triggers",
+      "Data model",
+      "State machine",
+      "Timers and gates",
+      "Business rules and calculations",
+      "Integrations",
+      "Outputs and artifacts",
+      "AI agent design (AI-first)",
+      "Edge cases and failure modes",
+      "Test cases and acceptance criteria",
+      "Audit and evidence"
+    ],
+    "path": "sections/34-operator-portal/34-2-the-account-directory-every-person-their-activity-and-their-record-masked-by-role.md",
+    "auto": "c — a staff member searches and reads; the platform projects, masks and logs",
+    "own": "Platform operator (the system of record for every account; the partner remains servicer of record for a monitored loan)",
+    "trigger": "On every directory request by a signed-in staff member (34.1)",
+    "source": "GLBA §1016.13 and 16 CFR §314.4(c) (customer information only to authorized users, least privilege); 19.1/19.2 (records, retention, access logging); 32.2 (sessions, assurance levels), 32.16 (agent turns as records), 18.1 (AI systems and their decision records); 33.1 (monitored loans, the partner's contact)",
+    "deadline": "None of its own; the export honours the owning records' retention classes"
+  },
+  {
+    "id": "34.3",
+    "title": "Partner book operations: uploads, import history, the book, reviews, readiness, the daily report",
+    "section": 34,
+    "section_title": "The operator portal: staff sign-in, the account directory, partner book operations and evidence",
+    "words": 1874,
+    "timers": [],
+    "subsections": [
+      "Inputs and triggers",
+      "Data model",
+      "State machine",
+      "Timers and gates",
+      "Business rules and calculations",
+      "Integrations",
+      "Outputs and artifacts",
+      "AI agent design (AI-first)",
+      "Edge cases and failure modes",
+      "Test cases and acceptance criteria",
+      "Audit and evidence"
+    ],
+    "path": "sections/34-operator-portal/34-3-partner-book-operations-uploads-import-history-the-book-reviews-readiness-the-daily-report.md",
+    "auto": "c — a staff member uploads and resolves; the agents of section 33 do the work; the portal shows it",
+    "own": "Platform operator over the partner's book (the partner is servicer of record of every monitored loan; 33.1)",
+    "trigger": "On upload (weekly for the first partner); every morning after 33.2's and 33.3's passes; on demand",
+    "source": "33.1 (the import, the report, regular tapes, `book.resolve`), 33.2 (the review and the examiner's daily report), 33.3 (readiness); GLBA §1016.13 (the partner's data used for the partner's program); 20.1 rule 8 (the fair-lending extract the report links)",
+    "deadline": "The next tape 7 calendar days after the last as-of date (33.1 `SM_PARTNER_BOOK_TAPE_EXPECTED_7`); the review by 07:30 ET and readiness by 07:30 ET each day (33.2, 33.3)"
+  },
+  {
+    "id": "34.4",
+    "title": "Evidence and controls: clocks, escalations, the outbox, AI systems, the evidence pack",
+    "section": 34,
+    "section_title": "The operator portal: staff sign-in, the account directory, partner book operations and evidence",
+    "words": 1756,
+    "timers": [],
+    "subsections": [
+      "Inputs and triggers",
+      "Data model",
+      "State machine",
+      "Timers and gates",
+      "Business rules and calculations",
+      "Integrations",
+      "Outputs and artifacts",
+      "AI agent design (AI-first)",
+      "Edge cases and failure modes",
+      "Test cases and acceptance criteria",
+      "Audit and evidence"
+    ],
+    "path": "sections/34-operator-portal/34-4-evidence-and-controls-clocks-escalations-the-outbox-ai-systems-the-evidence-pack.md",
+    "auto": "c — a staff member reads, completes, requeues, trips or exports; the platform records",
+    "own": "Platform operator",
+    "trigger": "On demand by a signed-in staff member; the evidence pack on request and for the examiner's periodic review",
+    "source": "18.1 (AI governance: systems, versions, evaluations, the kill switch, the human override), 18.2 (audit and evidence), 19.1 (records and retention), 31.x (AI governance and fair lending on the origination side); the sections' own timers (breach actions and escalation roles)",
+    "deadline": "Escalations carry the owning timer's severity and due date; the evidence pack for a request within 5 business days (18.2)"
   }
 ]

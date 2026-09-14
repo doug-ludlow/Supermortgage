@@ -67,7 +67,9 @@ import { refiDailyRun, type RefiDailyReport } from "./refi-daily.ts";
 import { partnerBookReviewRun, type ReviewRunReport } from "./partner-book-review.ts";
 import { readinessRun, type ReadinessRunReport } from "./partner-book-readiness.ts";
 import type { AnalystLlm } from "./partner-book-analyst.ts";
-import { sendPartnerBookReminders } from "./partner-book.ts";
+import { notifyPartnerBookTapeLate, sendPartnerBookReminders } from "./partner-book.ts";
+import { sweepDailyReports, type SweepDailyReportsResult } from "./book-ops/routes.ts";
+import { escalateLongTrips, expireKillSwitchRequests } from "./controls/ai.ts";
 import type { Logger } from "./log.ts";
 
 export interface RuntimeDeps {
@@ -111,6 +113,12 @@ export interface SweepReport {
   readonly partner_book_readiness: ReadinessRunReport;
   /** 33.1: the reminders SM_PARTNER_BOOK_INVITATION_REMINDER_14's breach action sent on this pass (src/runtime/partner-book.ts sendPartnerBookReminders). */
   readonly partner_book_reminders: number;
+  /** 33.1 rule 8: the late-tape notices SM_PARTNER_BOOK_TAPE_EXPECTED_7's breach action logged on this pass (`partner_book.tape.late`, one per breached clock — src/runtime/partner-book.ts notifyPartnerBookTapeLate). */
+  readonly partner_book_tape_late: number;
+  /** 34.3 rule 6: the daily report per partner-day once 33.3's receipt exists, and from 07:45 ET the ops_analyst escalation for a day without its receipts (src/runtime/book-ops/routes.ts sweepDailyReports) — after the readiness pass; null when the hook failed. */
+  readonly partner_book_daily_reports: SweepDailyReportsResult | null;
+  /** 34.4 rule 4: kill-switch requests no admin confirmed within 10 minutes expired on this pass, and the compliance escalations opened for switches tripped more than 24 hours (src/runtime/controls/ai.ts). */
+  readonly controls: { readonly kill_requests_expired: number; readonly long_trips_escalated: number };
 }
 export class ToolNotFound extends Error { constructor(process: string, name: string) { super(`no tool ${name} in process ${process}`); this.name = "ToolNotFound"; } }
 
@@ -249,6 +257,14 @@ export class Runtime {
     let partnerBookReadiness: ReadinessRunReport;
     try { partnerBookReadiness = await readinessRun(this, nowIso, { logger: this.logger }); }
     catch (e) { const msg = e instanceof Error ? e.message : String(e); this.logger?.error("partner book readiness run failed", { at: nowIso, error: e }); partnerBookReadiness = { checked: 0, ready: 0, not_ready: 0, skipped: `failed: ${msg}`, as_of_date: nowIso.slice(0, 10), ran: false, loans_skipped: [], line: `partner book readiness: failed (${msg})` }; }
+    // 34.3 rule 6: after the readiness pass, the daily report per partner-day (idempotent — appended only when something changed) and, from 07:45 ET, the ops_analyst escalation for a day without its receipts — errors logged, never thrown
+    let partnerBookDailyReports: SweepDailyReportsResult | null = null;
+    try { partnerBookDailyReports = await sweepDailyReports(this, nowIso); }
+    catch (e) { this.logger?.error("partner book daily reports failed", { at: nowIso, error: e }); }
+    // 34.4 rule 4: an unconfirmed kill-switch request expires at 10 minutes (logged, nothing trips); a switch tripped more than 24 hours opens one compliance escalation — errors logged, never thrown
+    let controls: SweepReport["controls"] = { kill_requests_expired: 0, long_trips_escalated: 0 };
+    try { controls = { kill_requests_expired: await expireKillSwitchRequests(this, nowIso), long_trips_escalated: (await escalateLongTrips(this, nowIso)).length }; }
+    catch (e) { this.logger?.error("controls sweep failed", { at: nowIso, error: e }); }
     let reviewers: FakeReviewerReport | null = null;
     if (this.reviewers) { try { reviewers = await this.reviewers.tick(this, nowIso); } catch (e) { this.logger?.error("fake reviewers failed", { at: nowIso, error: e }); } }
     const due = await this.uow.timers.due(nowIso);
@@ -276,8 +292,11 @@ export class Runtime {
     // 33.1 T10: the breach action of SM_PARTNER_BOOK_INVITATION_REMINDER_14 — one reminder on the same channel while the party has no session, then nothing more; never fails the sweep
     let partnerBookReminders = 0;
     try { partnerBookReminders = (await sendPartnerBookReminders(this, nowIso)).sent; } catch (e) { this.logger?.error("partner book reminders failed", { at: nowIso, error: e }); }
+    // 33.1 T12 / rule 8: the breach action of SM_PARTNER_BOOK_TAPE_EXPECTED_7 — once per breached clock `partner_book.tape.late` beside the ops_analyst escalation the breach pass opened; a second sweep adds nothing
+    let partnerBookTapeLate = 0;
+    try { partnerBookTapeLate = (await notifyPartnerBookTapeLate(this, nowIso)).late; } catch (e) { this.logger?.error("partner book tape-late notice failed", { at: nowIso, error: e }); }
     const outbox = await this.db.query<{ adapter: string; status: string; count: string }>(`SELECT adapter, status, count(*)::text AS count FROM integration_messages WHERE status IN ('queued', 'failed') GROUP BY adapter, status ORDER BY adapter, status`).catch(() => []);
-    return { at: nowIso, due: due.length, breaches, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })), refi, reviewers, partner_book_review: partnerBookReview, partner_book_readiness: partnerBookReadiness, partner_book_reminders: partnerBookReminders };
+    return { at: nowIso, due: due.length, breaches, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })), refi, reviewers, partner_book_review: partnerBookReview, partner_book_readiness: partnerBookReadiness, partner_book_reminders: partnerBookReminders, partner_book_tape_late: partnerBookTapeLate, partner_book_daily_reports: partnerBookDailyReports, controls };
   }
 
   async ready(): Promise<boolean> { try { await this.db.query("SELECT 1"); return true; } catch { return false; } }

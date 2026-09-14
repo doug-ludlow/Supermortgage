@@ -18,6 +18,15 @@
  *   seedPartnerBookDemo      rule 7: the fixture book under the demo partner (idempotent; `main.ts seed-demo` and POST /v1/partner-book/seed-demo).
  *   sendPartnerBookReminders the breach action of SM_PARTNER_BOOK_INVITATION_REMINDER_14: one reminder on the same channel while no
  *                            session exists for the party, then nothing more (the reminder row is the idempotency; the clock stays closed).
+ *   holdsOf / isOnHold       rule 8: a monitored loan absent from the partner's later full tape is on hold (`not_on_latest_tape`) — its latest
+ *                            partner_book_facts.as_of_date is older than the partner's latest loaded import's, and no `partner_book.loan.resolved
+ *                            {resolution=keep}` within the last 7 days lifts it. No column: the hold is read from the rows the import already writes.
+ *                            33.2's review reads `holdsOf` and marks a held loan `not_now` with reason `not_on_latest_tape`.
+ *   resolvePartnerBookLoan   rule 8: `book.resolve` on the bus (an ops_analyst act) — the route and the console call it.
+ *   partnerBookStatus        rule 8: per partner "book as of <date>, next expected <date>" — the console's line, from the imports and the clock.
+ *   notifyPartnerBookTapeLate the breach action of SM_PARTNER_BOOK_TAPE_EXPECTED_7 (rule 8): once per breached clock `partner_book.tape.late
+ *                            {partner_id, last_as_of_date, expected_by}` (global) beside the ops_analyst escalation the sweep's breach pass
+ *                            opened for it; the event is the idempotency, so a second sweep adds nothing. Runs from Runtime.sweep.
  *
  * Never a destination in a payload, a decision, a report or a log line: sha256 hashes only (rule 3 / T4).
  */
@@ -29,10 +38,10 @@ import { EntityStore } from "../app/tools.ts";
 import { EscalationService } from "../app/escalations.ts";
 import { NoticeService } from "../notices/service.ts";
 import type { Actor } from "../kernel/events/index.ts";
-import { plainDate, type PlainDate } from "../kernel/calendar/date.ts";
+import { addDays, plainDate, type PlainDate } from "../kernel/calendar/date.ts";
 import { type ImportReport, type GapKind, emptyGaps, parseBook, profileById, readTabular, rowsWithExceptions, sha256Hex, contactDestinations, lastFour } from "../domain/partner-book/import.ts";
 import { DEMO_AS_OF, DEMO_PARTNER, demoBook } from "../domain/partner-book/fixtures/partner-book-demo.ts";
-import { INVITATION_TEMPLATE, PARTNER_BOOK_MODEL, PARTNER_BOOK_PROMPT, PARTNER_BOOK_RULE_SET, PORTFOLIO_AGENT, type BookPlan, type InvitationInput, type InvitationSubject, invitationEdelivery, inviteDecision, planPartnerBook, provisionAccount, sendInvitation } from "../app/tools/section33-1.ts";
+import { INVITATION_TEMPLATE, KEEP_LIFTS_HOLD_DAYS, PARTNER_BOOK_MODEL, PARTNER_BOOK_PROMPT, PARTNER_BOOK_RULE_SET, PORTFOLIO_AGENT, RESOLUTIONS, type BookPlan, type InvitationInput, type InvitationSubject, invitationEdelivery, inviteDecision, planPartnerBook, provisionAccount, sendInvitation } from "../app/tools/section33-1.ts";
 import { partnerById } from "./borrower/partner.ts";
 import { FAKE_PARTNER_NMLSR_ID } from "./entry-seed.ts";
 import type { Runtime } from "./app.ts";
@@ -124,6 +133,15 @@ export async function ensurePartner(rt: Runtime, partner: PartnerBookImportInput
   return { id: plan.id, legal_name: plan.legal_name, written };
 }
 
+/**
+ * 34.3-T1 / 34.1 rule 3 (review finding): a staff upload names the person. The `book.import` decision record carries the
+ * human actor as `approved_by` / `approved_role` — exactly as the bus names a human on a decision (src/app/commands.ts) — and
+ * `partner_book.import.completed` is appended AS the person (the actor columns) with `actor_id` in its payload; the seed and
+ * the system paths keep the portfolio agent as the event's actor and no approver.
+ */
+const approvedBy = (actor: Actor): { approvedBy?: string; approvedRole?: string } => (actor.kind === "human" ? { approvedBy: actor.id, ...(actor.role ? { approvedRole: actor.role } : {}) } : {});
+const importActor = (actor: Actor): Actor => (actor.kind === "human" ? actor : PORTFOLIO_AGENT);
+
 export async function importPartnerBook(rt: Runtime, input: PartnerBookImportInput, actor: Actor): Promise<PartnerBookImportResult> {
   const profile = profileById(input.profile);
   const asOf: PlainDate = plainDate(input.as_of_date);
@@ -150,9 +168,9 @@ export async function importPartnerBook(rt: Runtime, input: PartnerBookImportInp
     await rt.uow.run({}, async (ctx) => {
       escalations = new EscalationService(ctx.events, ctx.clock);
       escalations.open({ kind: "human_portal_task", ownerRole: "ops_analyst", severity: "3", payload: { import_id: importId, partner_party_id: partner.id, reason: "rejected: the file is not the profile", profile: profile.id, missing_headers: parsed.rejected!.missing_headers, expected_headers: [...profile.required] } }, PORTFOLIO_AGENT);
-      ctx.decide({ agent: "portfolio", action: "book.import", ruleSetVersion: PARTNER_BOOK_RULE_SET, modelVersion: PARTNER_BOOK_MODEL, promptVersion: PARTNER_BOOK_PROMPT, confidence: 1, subject: { kind: "partner_book_import", id: importId },
+      ctx.decide({ agent: "portfolio", action: "book.import", ruleSetVersion: PARTNER_BOOK_RULE_SET, modelVersion: PARTNER_BOOK_MODEL, promptVersion: PARTNER_BOOK_PROMPT, confidence: 1, subject: { kind: "partner_book_import", id: importId }, ...approvedBy(actor),
         rationale: `rejected: profile ${profile.id} requires headers the file lacks (${parsed.rejected!.missing_headers.join(", ")}); rows_total ${parsed.rows_total}; nothing written` });
-      ctx.events.append({ type: "partner_book.import.completed", aggregate: { kind: "partner_book_import", id: importId }, actor: PORTFOLIO_AGENT, payload: { import_id: importId, partner_id: partner.id, as_of_date: asOf, status: "rejected", rows_total: parsed.rows_total, rows_loaded: 0, rows_exception: 0, loans_created: 0, loans_updated: 0, parties_created: 0, parties_linked: 0, invitations_sent: 0, gaps: report.gaps, missing_headers: parsed.rejected!.missing_headers, origination: true } });
+      ctx.events.append({ type: "partner_book.import.completed", aggregate: { kind: "partner_book_import", id: importId }, actor: importActor(actor), payload: { import_id: importId, partner_id: partner.id, actor_id: actorId, as_of_date: asOf, status: "rejected", rows_total: parsed.rows_total, rows_loaded: 0, rows_exception: 0, loans_created: 0, loans_updated: 0, parties_created: 0, parties_linked: 0, invitations_sent: 0, gaps: report.gaps, missing_headers: parsed.rejected!.missing_headers, origination: true } });
     }, { clock: rt.clock, commit: async (q) => {
       await q.query(`INSERT INTO partner_book_imports (id, partner_party_id, as_of_date, profile, status, tape_sha256, supplement_sha256, rows_total, rows_loaded, rows_exception, report, actor_id) VALUES ($1, $2, $3, $4, 'rejected', $5, $6, $7, 0, 0, $8::jsonb, $9)`, [importId, partner.id, asOf, profile.id, tapeHash, supplementHash, parsed.rows_total, toJson(report), actorId]);
       for (const e of escalations?.list() ?? []) await rt.escalationRepo.save(e, q);
@@ -177,7 +195,7 @@ export async function importPartnerBook(rt: Runtime, input: PartnerBookImportInp
 
   const report: ImportReport = { profile: profile.id, exceptions: plan.exceptions, gaps: plan.gaps, gaps_by_loan: plan.gaps_by_loan, rejected: null,
     supplement: { rows: parsed.supplement_rows, matched: plan.loans.filter((l) => l.row.supplement !== null).length, orphans: plan.exceptions.filter((e) => e.code === "supplement_orphan").length },
-    loans: plan.loans.map((l) => ({ loan_id: l.loan_id, servicer_loan_number: l.row.servicer_loan_number, party_id: realParty(l.party.party_id), change: l.change })), invitations: [] };
+    loans: plan.loans.map((l) => ({ loan_id: l.loan_id, servicer_loan_number: l.row.servicer_loan_number, party_id: realParty(l.party.party_id), change: l.change })), not_on_tape: plan.not_on_tape.map((n) => ({ ...n })), invitations: [] };
   const invitationRows: { id: string; party_id: string; loan_id: string; channel: "email" | "sms"; destination_hash: string; notice_id: string; message_id: string; sent_at: string; bounced: boolean }[] = [];
   const invited = new Set<string>();   // "<party>:<channel>" — rule 4: once per provisioned party; the idempotency key partner_book:<import>:<party>:<channel> holds one message
   const noticeIds: string[] = [];
@@ -226,11 +244,14 @@ export async function importPartnerBook(rt: Runtime, input: PartnerBookImportInp
         }
       }
     }
+    // rule 8: a loan on the book absent from this later full tape is never silently closed — `partner_book.loan.not_on_tape` (loan-scoped), the loan stays monitored on hold until the next tape carries it or book.resolve closes it
+    for (const n of plan.not_on_tape) ctx.events.append({ type: "partner_book.loan.not_on_tape", loanId: n.loan_id, aggregate: { kind: "loan", id: n.loan_id }, actor: PORTFOLIO_AGENT,
+      payload: { loan_id: n.loan_id, servicer_loan_number: n.servicer_loan_number, as_of_date: asOf, last_as_of_date: n.last_as_of_date, import_id: importId, partner_id: partner.id, hold: "not_on_latest_tape", origination: true } });
     const invitationsSent = invitationRows.length;
-    ctx.decide({ agent: "portfolio", action: "book.import", ruleSetVersion: PARTNER_BOOK_RULE_SET, modelVersion: PARTNER_BOOK_MODEL, promptVersion: PARTNER_BOOK_PROMPT, confidence: 1, subject: { kind: "partner_book_import", id: importId },
+    ctx.decide({ agent: "portfolio", action: "book.import", ruleSetVersion: PARTNER_BOOK_RULE_SET, modelVersion: PARTNER_BOOK_MODEL, promptVersion: PARTNER_BOOK_PROMPT, confidence: 1, subject: { kind: "partner_book_import", id: importId }, ...approvedBy(actor),
       rationale: `profile ${profile.id} as of ${asOf}: rows_total ${parsed.rows_total}, rows_loaded ${plan.loans.length}, rows_exception ${rowsWithExceptions(plan.exceptions)}; loans created ${created}, updated ${updated}, unchanged ${plan.loans.length - created - updated}; parties created ${plan.parties_created}, linked ${plan.parties_linked}; invitations ${invitationsSent}; gaps ${toJson(plan.gaps)}` });
-    ctx.events.append({ type: "partner_book.import.completed", aggregate: { kind: "partner_book_import", id: importId }, actor: PORTFOLIO_AGENT,
-      payload: { import_id: importId, partner_id: partner.id, as_of_date: asOf, status: "loaded", rows_total: parsed.rows_total, rows_loaded: plan.loans.length, rows_exception: rowsWithExceptions(plan.exceptions), loans_created: created, loans_updated: updated, parties_created: plan.parties_created, parties_linked: plan.parties_linked, invitations_sent: invitationsSent, gaps: plan.gaps, origination: true } });
+    ctx.events.append({ type: "partner_book.import.completed", aggregate: { kind: "partner_book_import", id: importId }, actor: importActor(actor),
+      payload: { import_id: importId, partner_id: partner.id, actor_id: actorId, as_of_date: asOf, status: "loaded", rows_total: parsed.rows_total, rows_loaded: plan.loans.length, rows_exception: rowsWithExceptions(plan.exceptions), loans_created: created, loans_updated: updated, parties_created: plan.parties_created, parties_linked: plan.parties_linked, invitations_sent: invitationsSent, gaps: plan.gaps, origination: true } });
     return { invitationsSent };
   }, { clock: rt.clock,
     before: async (q) => { await writePartnerParty(q, partner, input.partner); await writeBaselineRows(q, plan, partner.id, realParty, asOf); },
@@ -246,7 +267,7 @@ export async function importPartnerBook(rt: Runtime, input: PartnerBookImportInp
 
   await registerPartnerProgram(rt, partner, actor);   // 20.1 loadUniverse{op=register_program} for a partner without a program, once the book is committed
 
-  rt.logger?.info("partner book import loaded", { import_id: importId, partner_party_id: partner.id, as_of_date: asOf, rows_total: parsed.rows_total, rows_loaded: plan.loans.length, rows_exception: rowsWithExceptions(plan.exceptions), loans_created: created, loans_updated: updated, parties_created: plan.parties_created, parties_linked: plan.parties_linked, invitations_sent: r.result.invitationsSent, events: r.events.length, timers: r.timers.length });
+  rt.logger?.info("partner book import loaded", { import_id: importId, partner_party_id: partner.id, as_of_date: asOf, rows_total: parsed.rows_total, rows_loaded: plan.loans.length, rows_exception: rowsWithExceptions(plan.exceptions), loans_created: created, loans_updated: updated, parties_created: plan.parties_created, parties_linked: plan.parties_linked, invitations_sent: r.result.invitationsSent, not_on_latest_tape: plan.not_on_tape.length, events: r.events.length, timers: r.timers.length });
   return { import_id: importId, status: "loaded", partner_party_id: partner.id, rows_total: parsed.rows_total, rows_loaded: plan.loans.length, rows_exception: rowsWithExceptions(plan.exceptions), loans_created: created, loans_updated: updated, parties_created: plan.parties_created, parties_linked: plan.parties_linked, invitations_sent: r.result.invitationsSent, report, loans: report.loans };
 }
 
@@ -380,4 +401,105 @@ export async function sendPartnerBookReminders(runtime: Runtime, nowIso: string)
     runtime.logger?.info("partner book reminder sent", { timer_id: row.timer_id, loan_id: row.loan_id, party_id: row.party_id, channel: row.channel, loan_last4: lastFour(row.servicer_loan_number), destination_hash: res.destination_hash });
   }
   return { sent };
+}
+
+// ---------------------------------------------------------------- rule 8: regular tapes — the hold, the resolution, the late tape
+
+export type PartnerBookHold = { loan_id: string; servicer_loan_number: string; partner_party_id: string; partner_legal_name: string; last_as_of_date: string; partner_as_of_date: string; party_id: string | null; not_on_tape_since: string | null };
+const HOLD_SQL = `SELECT l.id::text AS loan_id, l.servicer_loan_number, l.partner_party_id::text AS partner_party_id, pp.legal_name AS partner_legal_name, f.last_as_of_date, i.partner_as_of_date,
+       (SELECT b.party_id::text FROM loan_borrowers lb JOIN borrowers b ON b.id = lb.borrower_id WHERE lb.loan_id = l.id ORDER BY lb.is_primary DESC, b.created_at LIMIT 1) AS party_id,
+       (SELECT min(e.occurred_at)::text FROM loan_events e WHERE e.loan_id = l.id AND e.type = 'partner_book.loan.not_on_tape' AND e.payload->>'as_of_date' > f.last_as_of_date) AS not_on_tape_since
+  FROM loans l
+  JOIN parties pp ON pp.id = l.partner_party_id
+  JOIN LATERAL (SELECT max(pf.as_of_date)::text AS last_as_of_date FROM partner_book_facts pf WHERE pf.loan_id = l.id) f ON f.last_as_of_date IS NOT NULL
+  JOIN LATERAL (SELECT max(pi.as_of_date)::text AS partner_as_of_date FROM partner_book_imports pi WHERE pi.partner_party_id = l.partner_party_id AND pi.status = 'loaded') i ON i.partner_as_of_date IS NOT NULL
+ WHERE l.status = 'monitored' AND f.last_as_of_date < i.partner_as_of_date
+   AND ($1::uuid IS NULL OR l.partner_party_id = $1::uuid) AND ($2::uuid IS NULL OR l.id = $2::uuid)
+   AND NOT EXISTS (SELECT 1 FROM loan_events k WHERE k.loan_id = l.id AND k.type = 'partner_book.loan.resolved' AND k.payload->>'resolution' = 'keep' AND k.occurred_at > ($3::timestamptz - make_interval(days => $4::int)))
+ ORDER BY pp.legal_name, l.servicer_loan_number`;
+
+/**
+ * Rule 8: the partner's monitored loans on hold (`not_on_latest_tape`) — the latest partner_book_facts row is older than the partner's latest
+ * loaded import's as-of date and no `partner_book.loan.resolved{resolution=keep}` within the last 7 days (KEEP_LIFTS_HOLD_DAYS) lifts it.
+ * `partnerPartyId` narrows to one partner; `now` defaults to the runtime clock. No column is written: the hold is read from the rows the
+ * import already keeps, so the next tape that carries the loan lifts it by itself.
+ */
+export async function holdsOf(rt: { readonly db: Queryable; readonly clock: { now(): string } }, partnerPartyId?: string | null, now: string = rt.clock.now()): Promise<PartnerBookHold[]> {
+  return rt.db.query<PartnerBookHold>(HOLD_SQL, [partnerPartyId && /^[0-9a-f-]{36}$/i.test(partnerPartyId) ? partnerPartyId : null, null, now, KEEP_LIFTS_HOLD_DAYS]);
+}
+/** Rule 8: is this loan on hold (`not_on_latest_tape`) now? */
+export async function isOnHold(rt: { readonly db: Queryable; readonly clock: { now(): string } }, loanId: string, now: string = rt.clock.now()): Promise<boolean> {
+  if (!/^[0-9a-f-]{36}$/i.test(loanId)) return false;
+  return (await rt.db.query<PartnerBookHold>(HOLD_SQL, [null, loanId, now, KEEP_LIFTS_HOLD_DAYS])).length > 0;
+}
+/** Rule 8 for 33.2's pass: which of `loanIds` are on hold today (one query). */
+export async function heldLoanIds(rt: { readonly db: Queryable; readonly clock: { now(): string } }, loanIds: readonly string[], now: string = rt.clock.now()): Promise<Set<string>> {
+  if (!loanIds.length) return new Set();
+  const all = await rt.db.query<PartnerBookHold>(HOLD_SQL, [null, null, now, KEEP_LIFTS_HOLD_DAYS]);
+  const want = new Set(loanIds);
+  return new Set(all.filter((h) => want.has(h.loan_id)).map((h) => h.loan_id));
+}
+
+export type PartnerBookResolveInput = { readonly resolution: string; readonly reason: string };
+/** Rule 8: `book.resolve` on the bus, loan-scoped, as the human the route / console names (the bus refuses any role but ops_analyst). */
+export async function resolvePartnerBookLoan(rt: Runtime, loanId: string, input: PartnerBookResolveInput, actor: Actor): Promise<{ output: unknown; events: number; decision_id: string | null }> {
+  if (!/^[0-9a-f-]{36}$/i.test(loanId)) throw new RangeError("loan_id is a uuid");
+  if (!RESOLUTIONS.includes(input.resolution)) throw new RangeError(`resolution is one of ${RESOLUTIONS.join(" | ")} (33.1 rule 8)`);
+  if (!input.reason || !input.reason.trim()) throw new RangeError("reason is required");
+  const r = await rt.execute({ process: "33.1", name: "book.resolve", loanId, actor, input: { loan_id: loanId, resolution: input.resolution, reason: input.reason.trim() } });
+  rt.logger?.info("partner book loan resolved", { loan_id: loanId, resolution: input.resolution, actor: `${actor.kind}:${actor.id}`, events: r.events.length });
+  return { output: r.output, events: r.events.length, decision_id: r.decisionId ?? null };
+}
+
+export type PartnerBookStatus = { partner_party_id: string; partner_legal_name: string; as_of_date: string | null; imports: number; monitored_loans: number; on_hold: number; next_expected: string | null; tape_clock: { timer_id: string; status: string; due_at: string | null; breached_at: string | null } | null; late: boolean };
+/** Rule 8: per partner, "book as of <date>, next expected <date>" — the console's line: the latest loaded import's as-of date, the open SM_PARTNER_BOOK_TAPE_EXPECTED_7 clock (global; its armed_by event names the partner) and the holds. */
+export async function partnerBookStatus(rt: Runtime, now: string = rt.clock.now()): Promise<PartnerBookStatus[]> {
+  const partners = await rt.db.query<{ partner_party_id: string; partner_legal_name: string; as_of_date: string | null; imports: string; monitored_loans: string }>(
+    `SELECT p.id::text AS partner_party_id, p.legal_name AS partner_legal_name, (SELECT max(i.as_of_date)::text FROM partner_book_imports i WHERE i.partner_party_id = p.id AND i.status = 'loaded') AS as_of_date,
+            (SELECT count(*)::text FROM partner_book_imports i WHERE i.partner_party_id = p.id) AS imports, (SELECT count(*)::text FROM loans l WHERE l.partner_party_id = p.id AND l.status = 'monitored') AS monitored_loans
+       FROM parties p WHERE p.party_type = 'servicer' AND EXISTS (SELECT 1 FROM partner_book_imports i WHERE i.partner_party_id = p.id) ORDER BY p.legal_name`);
+  const clocks = await rt.db.query<{ timer_id: string; status: string; due_at: string | null; breached_at: string | null; partner_id: string | null; anchor_date: string }>(
+    `SELECT t.id::text AS timer_id, t.status::text AS status, t.due_at::text AS due_at, t.breached_at::text AS breached_at, e.payload->>'partner_id' AS partner_id, t.anchor_date::text AS anchor_date
+       FROM timers t JOIN loan_events e ON e.id = t.armed_by_event_id WHERE t.code = 'SM_PARTNER_BOOK_TAPE_EXPECTED_7' AND t.status IN ('armed', 'breached') ORDER BY t.armed_at DESC`);
+  const holds = await holdsOf(rt, null, now);
+  return partners.map((p) => {
+    const clock = clocks.find((c) => c.partner_id === p.partner_party_id) ?? null;
+    const expected = p.as_of_date ? addDays(plainDate(p.as_of_date), 7) : null;   // the timer table's +7 calendar_days from the as-of date
+    return { partner_party_id: p.partner_party_id, partner_legal_name: p.partner_legal_name, as_of_date: p.as_of_date, imports: Number(p.imports), monitored_loans: Number(p.monitored_loans), on_hold: holds.filter((h) => h.partner_party_id === p.partner_party_id).length,
+      next_expected: expected, tape_clock: clock ? { timer_id: clock.timer_id, status: clock.status, due_at: clock.due_at, breached_at: clock.breached_at } : null, late: clock ? clock.status === "breached" : expected !== null && expected < now.slice(0, 10) };
+  });
+}
+
+/**
+ * The breach action of SM_PARTNER_BOOK_TAPE_EXPECTED_7 (timer table: "sev 3 → `ops_analyst` (the partner's next tape is late; the book is
+ * stale)"; rule 8; T12): for every breached clock without its `partner_book.tape.late` event, one global event `{partner_id, last_as_of_date,
+ * expected_by, timer_id}` — the partner and the as-of date come from the `partner_book.import.completed` event that armed the clock — and the
+ * ops_analyst's escalation: the sweep's breach pass opened one for the breach (sla_timer_id = the clock; src/runtime/app.ts sweep), which this
+ * action leaves standing rather than opening a second; when none exists (a clock breached outside the sweep) it opens the one. The event is the idempotency: a second sweep adds nothing. The book keeps being reviewed on its last facts (edge cases).
+ */
+export async function notifyPartnerBookTapeLate(runtime: Runtime, nowIso: string): Promise<{ late: number }> {
+  const due = await runtime.db.query<{ timer_id: string; due_date: string | null; due_at: string | null; breached_at: string; anchor_date: string; partner_id: string | null; as_of_date: string | null; import_id: string | null }>(
+    `SELECT t.id::text AS timer_id, t.due_date::text AS due_date, t.due_at::text AS due_at, t.breached_at::text AS breached_at, t.anchor_date::text AS anchor_date, e.payload->>'partner_id' AS partner_id, e.payload->>'as_of_date' AS as_of_date, e.payload->>'import_id' AS import_id
+       FROM timers t JOIN loan_events e ON e.id = t.armed_by_event_id
+      WHERE t.code = 'SM_PARTNER_BOOK_TAPE_EXPECTED_7' AND t.status = 'breached' AND t.breached_at <= $1
+        AND NOT EXISTS (SELECT 1 FROM loan_events x WHERE x.type = 'partner_book.tape.late' AND x.payload->>'timer_id' = t.id::text)
+      ORDER BY t.breached_at, t.id`, [nowIso]);
+  let late = 0;
+  for (const row of due) {
+    const partnerId = row.partner_id && /^[0-9a-f-]{36}$/i.test(row.partner_id) ? row.partner_id : null;
+    const partner = partnerId ? (await runtime.db.query<{ legal_name: string }>(`SELECT legal_name FROM parties WHERE id = $1`, [partnerId]))[0] ?? null : null;
+    const lastAsOf = row.as_of_date ?? row.anchor_date; const expectedBy = row.due_date ?? (row.due_at ? row.due_at.slice(0, 10) : addDays(plainDate(lastAsOf.slice(0, 10)), 7));
+    // the breach pass's escalation for this clock (one per breach; sev 3 → ops_analyst) — completed by nothing here, named by the partner so the queue reads it
+    const existing = (await runtime.db.query<{ id: string; owner_role: string | null }>(`SELECT id::text AS id, owner_role FROM escalations WHERE sla_timer_id = $1::uuid AND status = 'open' ORDER BY opened_at LIMIT 1`, [row.timer_id]))[0] ?? null;
+    let escalations: EscalationService | undefined;
+    await runtime.uow.run({}, async (ctx) => {
+      escalations = new EscalationService(ctx.events, ctx.clock);
+      const payload = { partner_id: partnerId, partner_legal_name: partner?.legal_name ?? null, last_as_of_date: lastAsOf, expected_by: expectedBy, timer_id: row.timer_id, import_id: row.import_id, breached_at: row.breached_at, origination: true };
+      ctx.events.append({ type: "partner_book.tape.late", aggregate: partnerId ? { kind: "partner", id: partnerId } : { kind: "global", id: "*" }, actor: PORTFOLIO_AGENT, payload });
+      if (!existing) escalations.open({ kind: "sev3", ownerRole: "ops_analyst", severity: "3", slaTimerId: row.timer_id, payload: { timer_code: "SM_PARTNER_BOOK_TAPE_EXPECTED_7", timer_id: row.timer_id, partner_id: partnerId, partner_legal_name: partner?.legal_name ?? null, last_as_of_date: lastAsOf, expected_by: expectedBy, breach: "the partner's next tape is late; the book is stale (33.1 rule 8)" } }, PORTFOLIO_AGENT);
+    }, { clock: runtime.clock, commit: async (q) => { for (const e of escalations?.list() ?? []) await runtime.escalationRepo.save(e, q); } });
+    late++;
+    runtime.logger?.warn("partner book tape late", { timer_id: row.timer_id, partner_party_id: partnerId, last_as_of_date: lastAsOf, expected_by: expectedBy, escalation: existing?.id ?? "opened" });
+  }
+  return { late };
 }

@@ -15793,6 +15793,18 @@
    {
     "n": 10,
     "text": "Given an invitation 14 calendar days old with no session on the party, when the sweep passes, then one reminder is sent on the same channel (`kind = reminder`), `SM_PARTNER_BOOK_INVITATION_REMINDER_14` reads `breached` with the reminder as its action and a second sweep sends nothing more; given a party that activated on day 3, then no reminder is sent."
+   },
+   {
+    "n": 11,
+    "text": "Given the fixture tape re-uploaded with a later as-of date and loan 5's row removed, then loan 5 stays `monitored`, `partner_book.loan.not_on_tape` is logged for it, the report counts `not_on_latest_tape = 1`, the next 33.2 review reads loan 5 `not_now` with reason `not_on_latest_tape`, and its party still signs in to the same record; given `book.resolve{resolution=paid_off}` by an `ops_analyst`, then `loans.status = paid_off`, `partner_book.loan.resolved` is logged and no review row follows."
+   },
+   {
+    "n": 12,
+    "text": "Given the first import, then `SM_PARTNER_BOOK_TAPE_EXPECTED_7` is armed on the global subject with `due_at` 7 calendar days after the as-of date; given a second import 5 days later, then the clock is satisfied and re-armed from the new as-of date; given no import by the due date, when the sweep passes, then it reads `breached`, one `ops_analyst` escalation and `partner_book.tape.late` exist, and a second sweep adds nothing."
+   },
+   {
+    "n": 13,
+    "text": "Given loan 12 imported without a supplement row (`gaps: contact`, no invitation), when a later supplement carries its e-mail, then the party's contact gains it, `NTC_SM_PARTNER_BOOK_INVITATION` is sent to it once, `partner_book.invitation.sent{kind=invitation}` is logged and `SM_PARTNER_BOOK_INVITATION_REMINDER_14` is armed from that day."
    }
   ],
   "tables": [
@@ -15801,7 +15813,8 @@
    "partner_book_invitations"
   ],
   "timers": [
-   "SM_PARTNER_BOOK_INVITATION_REMINDER_14"
+   "SM_PARTNER_BOOK_INVITATION_REMINDER_14",
+   "SM_PARTNER_BOOK_TAPE_EXPECTED_7"
   ],
   "notices": [
    "NTC_SM_PARTNER_BOOK_INVITATION"
@@ -15811,7 +15824,8 @@
    "book.import",
    "account.provision",
    "account.invite",
-   "book.report"
+   "book.report",
+   "book.resolve"
   ]
  },
  {
@@ -15907,6 +15921,199 @@
    "readiness.check",
    "readiness.read",
    "refi.open"
+  ]
+ },
+ {
+  "process": "34.1",
+  "title": "Staff sign-in and roles: accounts, the doors, the action log, the access review",
+  "path": "sections/34-operator-portal/34-1-staff-sign-in-and-roles-accounts-the-doors-the-action-log-the-access-review.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given the bootstrap admin, when they invite a colleague with roles `[ops_analyst]`, then a `staff_users{status=invited}` row exists with the e-mail hashed, `NTC_SM_STAFF_INVITATION` is sent to that e-mail (the FAKE port holds it, naming the inviter and the roles and no borrower data), `staff.invited` is logged without the e-mail, and the colleague's `POST /ops/api/auth/code` + `verify` yields an enrol token that opens no session (`GET /ops/api/me` with it answers 401)."
+   },
+   {
+    "n": 2,
+    "text": "Given the enrol token, when the colleague sets a 12-character password and signs in with e-mail and password, then a session opens with `factors = [email_code, password]`, `GET /ops/api/me` answers their id and roles, `staff.enrolled` and `staff.signed_in` are logged; given an 11-character or breached password, then `PASSWORD_WEAK` and no credential row."
+   },
+   {
+    "n": 3,
+    "text": "Given a session, when the clock passes 30 minutes idle, then the next request answers 401 `SESSION_EXPIRED` and the row reads revoked; given five wrong passwords in a row, then the sixth attempt answers `ACCOUNT_LOCKED`, `staff.signin.locked` is logged and a `compliance` escalation exists."
+   },
+   {
+    "n": 4,
+    "text": "Given an `ops_analyst` session, when they call an officer-only route (a campaign approval) then 403 `ROLE_REQUIRED{officer}` before any write; given an `officer` session, then the same call runs on the bus with `actor = {human, <staff_user_id>, officer}` and the decision record names them; given a request with only the legacy `x-actor-*` headers and no bearer, then 401."
+   },
+   {
+    "n": 5,
+    "text": "Given an admin, when they change a colleague's roles, then `staff.role.changed{roles_before, roles_after, by}` is logged, the colleague's open sessions are revoked, and a decision record carries the rationale; when they try to change their own roles, then `NO_SELF_ROLE_CHANGE`; when they try to disable the last admin, then `LAST_ADMIN_STAYS`."
+   },
+   {
+    "n": 6,
+    "text": "Given every request of a session (reads and writes), then one `staff_actions` row per request exists with route, subject ids, command and result, and no row carries a name, an e-mail, a phone number or a money figure."
+   },
+   {
+    "n": 7,
+    "text": "Given a passkey registered on an enrolled session, when the user signs in with the passkey and the password, then a session opens with `factors = [passkey, password]` and no code was sent; given the passkey alone, then no session."
+   },
+   {
+    "n": 8,
+    "text": "Given the last access review 90 calendar days ago, when the sweep passes, then `SM_STAFF_ACCESS_REVIEW_90` reads `breached` with one `compliance` escalation; given `staff.access.review` recording keep/change/disable for every active user, then the changes are applied through `staff.role.set`/`staff.disable`, `staff.access_review.completed` is logged, the clock is satisfied and re-armed 90 days out."
+   }
+  ],
+  "tables": [
+   "staff_access_reviews",
+   "staff_actions",
+   "staff_credentials",
+   "staff_sessions",
+   "staff_users"
+  ],
+  "timers": [
+   "SM_STAFF_ACCESS_REVIEW_90"
+  ],
+  "notices": [
+   "NTC_SM_STAFF_INVITATION"
+  ],
+  "agent": "security-records",
+  "tools": [
+   "staff.invite",
+   "staff.signin",
+   "staff.role.set",
+   "staff.disable",
+   "staff.access.review"
+  ]
+ },
+ {
+  "process": "34.2",
+  "title": "The account directory: every person, their activity and their record, masked by role",
+  "path": "sections/34-operator-portal/34-2-the-account-directory-every-person-their-activity-and-their-record-masked-by-role.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given the fixture book imported and one homegrown account, when an `ops_analyst` searches by the last four of loan 1's servicer loan number, by \"Garcia\", by the first six characters of the e-mail and by the phone's last four digits, then each search lists Maria Garcia once with masked contact, `directory.searched` is logged with a query hash and no query text, and a two-character query is refused."
+   },
+   {
+    "n": 2,
+    "text": "Given loan 1's homeowner signed in twice (code, then password), when the analyst opens the account, then the page shows origin `partner book`, both sessions with doors and levels and no token, the monitored loan as the subject with the partner's latest facts as of their date, the latest review verdict and the readiness summary, e-mail and phone masked, and no SSN or date of birth."
+   },
+   {
+    "n": 3,
+    "text": "Given the same account, when `compliance` unmasks contact and identity with a reason, then the full e-mail and phone and the supplement's SSN last four and date of birth are shown for 15 minutes, `directory.unmasked{fields, reason}` is logged with a decision record, and after 15 minutes the fields are masked again; given an `ops_analyst`, then `ROLE_REQUIRED{compliance}`."
+   },
+   {
+    "n": 4,
+    "text": "Given the homeowner's thread with a first turn, a question and a resolved card, when the analyst reads the activity stream, then it lists in time order the invitation notice, the activation event, the sessions, the assistant's turns (model and prompt versions, guard result), the borrower's messages with tokens resolved as displayed, the card and its resolution, the daily review decision, and the analyst's own look, each with its kind and actor; filtering by kind `turn` leaves the turns only."
+   },
+   {
+    "n": 5,
+    "text": "Given `compliance` exports the account, then a document exists on `documents` with a hash, `directory_exports` and `directory.exported` record it, and the pack carries the person's rows only (no other party's message, card or event appears)."
+   },
+   {
+    "n": 6,
+    "text": "Given any directory response, then no field carries a full SSN, a credential hash, a session token or a vendor payload (contract test over every route with a fixture account whose rows carry each)."
+   }
+  ],
+  "tables": [
+   "directory_exports",
+   "directory_unmasks"
+  ],
+  "timers": [],
+  "notices": [],
+  "agent": "security-records",
+  "tools": [
+   "directory.search",
+   "directory.account",
+   "directory.activity",
+   "directory.unmask",
+   "directory.export"
+  ]
+ },
+ {
+  "process": "34.3",
+  "title": "Partner book operations: uploads, import history, the book, reviews, readiness, the daily report",
+  "path": "sections/34-operator-portal/34-3-partner-book-operations-uploads-import-history-the-book-reviews-readiness-the-daily-report.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given an `ops_analyst` session, when they upload the fixture tape and supplement, then the import runs with `actor = {human, <staff_user_id>, ops_analyst}` (the import's decision record and `partner_book.import.completed` name them), the report page lists 12 rows loaded, the exceptions and gap counts, and the `staff_actions` row carries the import id; given the same files again, then `already_loaded` linking the first import."
+   },
+   {
+    "n": 2,
+    "text": "Given a second upload with a later as-of date, loan 1's UPB one payment lower and loan 5 absent, then the history lists both imports, the second reads 1 updated / 10 unchanged / 1 on hold, its detail shows loan 1's UPB before and after, and the hold queue lists loan 5 with its last as-of date."
+   },
+   {
+    "n": 3,
+    "text": "Given loan 5 on hold, when the analyst resolves it `paid_off` with a reason, then 33.1's `book.resolve` ran with the staff actor, `loans.status = paid_off`, `partner_book.loan.resolved` is logged, the hold queue is empty and the loan's page shows the resolution."
+   },
+   {
+    "n": 4,
+    "text": "Given the 33.2 and 33.3 passes for a day, when the analyst opens the day view, then reviews count 2 candidates / 6 watching / 0 not now / 3 excluded (the fixture's 12-row tape with loan 5 paid off in T3: 11 monitored loans), readiness counts the candidates checked with not-ready by missing item, both run receipts show with their times, and loan 1's page shows its review (verdict, reasons in words, rationale, engine facts) and readiness (items with status and source)."
+   },
+   {
+    "n": 5,
+    "text": "Given the sweep after the readiness pass, then one `partner_book_daily_reports` row exists for the partner and day with the review counts, the fair-lending extract id, the readiness counts, `last_as_of_date` and `next_expected`; given `compliance` exports it, then a hashed document exists and `staff_actions` records the export."
+   },
+   {
+    "n": 6,
+    "text": "Given every partner-book response, then homeowners' contact is masked as 34.2 masks it, invitations show hashes and dates only, and no figure on any page differs from the stored facts, the engine's opportunity row or a row count (contract test over the routes against the fixture)."
+   }
+  ],
+  "tables": [
+   "partner_book_daily_reports"
+  ],
+  "timers": [],
+  "notices": [],
+  "agent": "portfolio",
+  "tools": [
+   "book.history",
+   "book.loans",
+   "book.loan",
+   "book.day",
+   "book.daily_report"
+  ]
+ },
+ {
+  "process": "34.4",
+  "title": "Evidence and controls: clocks, escalations, the outbox, AI systems, the evidence pack",
+  "path": "sections/34-operator-portal/34-4-evidence-and-controls-clocks-escalations-the-outbox-ai-systems-the-evidence-pack.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given breached and armed clocks on the fixture book (the invitation reminders, the review clock), when an `ops_analyst` opens the clocks view, then each lists its code, subject, due date, severity and breach role, and no route exists that changes a timer row (contract test: every `/ops/api/controls/timers*` route is `GET`)."
+   },
+   {
+    "n": 2,
+    "text": "Given an open `ops_analyst` escalation, when the analyst completes it with a disposition and a reason, then the owning section's completion ran with `actor = {human, <staff_user_id>, ops_analyst}`, `escalation.completed` is logged and the decision record carries the reason; given a `compliance` escalation and an `ops_analyst` session, then `ROLE_REQUIRED{compliance}`."
+   },
+   {
+    "n": 3,
+    "text": "Given a failed outbox message, when it is requeued three times by hand, then each requeue is logged with the actor and the message is `queued`; the fourth attempt is refused `REQUEUE_CAP_3` and an `ops_analyst` escalation exists."
+   },
+   {
+    "n": 4,
+    "text": "Given `compliance` requests the kill switch for `intake` with a reason, then nothing trips until an `admin` confirms the same request id within 10 minutes; once confirmed `ai.kill_switch.tripped{by, confirmed_by, reason}` is logged, the AI view shows it tripped, a borrower turn returns the placeholder (32.16 T-17-10), and the reset needs the same two people; an unconfirmed request expires at 10 minutes with nothing tripped."
+   },
+   {
+    "n": 5,
+    "text": "Given `compliance` requests the evidence pack for loan 1 of the fixture, then one document exists with a hash, `evidence_packs.manifest` lists events, decisions, notices with rendered text and checklists, timers with histories, the partner-book facts, reviews and readiness, agent turns with model and prompt versions, consents and the staff actions on the loan, each with a count and a hash, and no row of another loan or person is in it."
+   },
+   {
+    "n": 6,
+    "text": "Given any controls response, then no money field was written by the portal (the ledger and money columns before and after every controls route are identical in a contract test), and every action route recorded a `staff_actions` row and a decision record naming the person."
+   }
+  ],
+  "tables": [
+   "evidence_packs"
+  ],
+  "timers": [],
+  "notices": [],
+  "agent": "compliance-sentinel",
+  "tools": [
+   "controls.timers",
+   "controls.escalation.complete",
+   "controls.outbox.requeue",
+   "controls.ai.kill",
+   "controls.evidence.pack"
   ]
  }
 ]

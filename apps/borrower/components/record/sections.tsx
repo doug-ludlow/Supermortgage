@@ -397,17 +397,23 @@ export function personLine(p: RecordPerson): string {
   }
   return bits.join(" · ");
 }
+/** Every role src/runtime/borrower/record.ts emits on `people` (the application_borrowers.borrower_role column passes through: db 0057) has a label here. */
 export const ROLE_LABEL: Record<RecordPerson["role"], string> = {
   borrower: "Borrower",
   co_borrower: "Co-borrower",
+  non_occupant_co_borrower: "Co-borrower (not living in the home)",
   non_borrowing_spouse: "Non-borrowing spouse",
+  trustee: "Trustee",
   mlo_of_record: "Loan officer",
   human_agent: "Your contact",
   notary: "Notary",
   settlement_agent: "Settlement agent",
   continuity_of_contact_team: "Your team",
   appraiser: "Appraiser",
+  servicer_of_record: "Your servicer",   // 33.1 rule 6: the partner keeps servicing a monitored loan; the row carries its contact number
 };
+/** The role beside a name: the label, or a role a newer API emits spelled plainly (never "undefined" on the rail). */
+export const roleLabel = (role: string): string => ROLE_LABEL[role as RecordPerson["role"]] ?? role.replace(/_/g, " ");
 
 export function PeopleSection({ r }: { r: BorrowerRecord }) {
   if (r.people.length === 0) return null;
@@ -417,7 +423,7 @@ export function PeopleSection({ r }: { r: BorrowerRecord }) {
         {r.people.map((p) => (
           <li key={p.party_id}>
             <span>
-              {p.display_name} <span className="sm-source">· {ROLE_LABEL[p.role]}</span>
+              {p.display_name} <span className="sm-source">· {roleLabel(p.role)}</span>
             </span>
             <span className="sm-muted">
               <Value value={personLine(p)} />

@@ -2912,5 +2912,13 @@
    "33.1"
   ],
   "context": "4. **The invitation.** Once per provisioned party, `account.invite` renders `NTC_SM_PARTNER_BOOK_INVITATION` by e-mail (channel policy `electronic_ok_without_esign`: the notice is about the account, not a disclosure) with the partner's name, the loan's last four, the sign-in address and the sentence that a code will be sent to this e-mail; by SMS only under the consent rule above. `partner_book.in"
+ },
+ {
+  "code": "NTC_SM_STAFF_INVITATION",
+  "owner_process": "34.1",
+  "mentions": [
+   "34.1"
+  ],
+  "context": "- Notice `NTC_SM_STAFF_INVITATION` (e-mail: the inviter's name, the roles, the sign-in address, \"a code will be sent to this e-mail\"; no borrower data)."
  }
 ]

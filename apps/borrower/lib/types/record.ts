@@ -185,13 +185,16 @@ export type RecordPerson = {
   role:
     | "borrower"
     | "co_borrower"
+    | "non_occupant_co_borrower"   // application_borrowers.borrower_role (db 0057) — record.ts passes the column through
     | "non_borrowing_spouse"
+    | "trustee"
     | "mlo_of_record"
     | "human_agent"
     | "notary"
     | "settlement_agent"
     | "continuity_of_contact_team"
-    | "appraiser";
+    | "appraiser"
+    | "servicer_of_record";   // 33.1 rule 6: the partner book's servicer of record (record.ts pushes it for a monitored loan)
   display_name: string;
   progress?: { consents_ok: boolean; confirmations_ok: boolean; signed: boolean };
   nmlsr_id?: string;

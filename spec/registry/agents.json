@@ -117,7 +117,9 @@
     "19.2",
     "19.3",
     "19.4",
-    "31.3"
+    "31.3",
+    "34.1",
+    "34.2"
    ],
    "tools": [
     "buildTrialBalance",
@@ -151,14 +153,25 @@
     "fnma_notices.recordSent",
     "portfolio.count",
     "ai_systems.upsert",
-    "records.anchor"
+    "records.anchor",
+    "staff.invite",
+    "staff.signin",
+    "staff.role.set",
+    "staff.disable",
+    "staff.access.review",
+    "directory.search",
+    "directory.account",
+    "directory.activity",
+    "directory.unmask",
+    "directory.export"
    ],
    "escalates_to": [
     "attorney",
     "officer",
     "signing_officer",
     "fnma_portal_operator",
-    "lossmit_reviewer"
+    "lossmit_reviewer",
+    "compliance"
    ]
   },
   {
@@ -1834,14 +1847,20 @@
   {
    "agent": "compliance-sentinel",
    "processes": [
-    "31.1"
+    "31.1",
+    "34.4"
    ],
    "tools": [
     "nmls.sync",
     "licenses.upsert",
     "matrix.propose",
     "license_requirements",
-    "verified"
+    "verified",
+    "controls.timers",
+    "controls.escalation.complete",
+    "controls.outbox.requeue",
+    "controls.ai.kill",
+    "controls.evidence.pack"
    ],
    "escalates_to": [
     "attorney",
@@ -1850,7 +1869,8 @@
     "licensed_specialist",
     "mlo_of_record",
     "officer",
-    "underwriting_reviewer"
+    "underwriting_reviewer",
+    "compliance"
    ]
   },
   {
@@ -1929,16 +1949,24 @@
   {
    "agent": "portfolio",
    "processes": [
-    "33.1"
+    "33.1",
+    "34.3"
    ],
    "tools": [
     "book.import",
     "account.provision",
     "account.invite",
-    "book.report"
+    "book.report",
+    "book.resolve",
+    "book.history",
+    "book.loans",
+    "book.loan",
+    "book.day",
+    "book.daily_report"
    ],
    "escalates_to": [
-    "officer"
+    "officer",
+    "compliance"
    ]
   },
   {
@@ -6334,7 +6362,8 @@
     "book.import",
     "account.provision",
     "account.invite",
-    "book.report"
+    "book.report",
+    "book.resolve"
    ],
    "guardrails": "never a consumer report, never a payment, statement, escrow or delinquency action on a monitored loan (`LOAN_MONITORED`), never an investor column outside `facts`/`raw`, never a party linked on an unverified e-mail alone, never an SMS without consent evidence (`NO_TCPA_EVIDENCE`), never a destination in a log line or a report (hashes only). Escalations: `ops_analyst` for a rejected file (wrong layout) and for `contact_conflict` rows; `officer` for nothing \u2014 no money field moves here.",
    "escalates_to": [
@@ -6376,6 +6405,81 @@
    ],
    "guardrails": "never a vendor order, a consumer report or a card before the homeowner's Yes (`NO_PULL_BEFORE_YES`); never an application without the borrower's own engagement (`YES_REQUIRED`: the actor is the borrower's command or the resolved OfferCard); never a second open application on the same loan; never a figure the agent computed on the application (the candidate's and the borrower's only). Escalations: `compliance-sentinel` on a missed day; `ops_analyst` when an application cannot be opened (no party, no property).",
    "escalates_to": []
+  },
+  {
+   "process": "34.1",
+   "agent": "security-records",
+   "agents_named": [
+    "security-records"
+   ],
+   "tools": [
+    "staff.invite",
+    "staff.signin",
+    "staff.role.set",
+    "staff.disable",
+    "staff.access.review"
+   ],
+   "guardrails": "`TWO_FACTORS` (no session on one factor), `NO_SELF_ROLE_CHANGE`, `LAST_ADMIN_STAYS`, `NO_HEADER_ACTOR_IN_PRODUCTION`, `NO_PII_IN_LOG` (the action log carries ids only). Escalations: `compliance` on a late access review and on five failed sign-ins for one account in an hour; `admin` for nothing automatic.",
+   "escalates_to": [
+    "compliance",
+    "officer"
+   ]
+  },
+  {
+   "process": "34.2",
+   "agent": "security-records",
+   "agents_named": [
+    "security-records"
+   ],
+   "tools": [
+    "directory.search",
+    "directory.account",
+    "directory.activity",
+    "directory.unmask",
+    "directory.export"
+   ],
+   "guardrails": "`ROLE_MASK` (the projection is masked for the role before it leaves the tool), `NO_FULL_SSN`, `NO_SECRETS` (hashes, tokens, vendor payloads never projected), `REASON_REQUIRED` on unmask and export, `LOG_EVERY_LOOK`, `READ_ONLY` (the tools write only their own log rows). Escalations: `compliance` when one staff member unmasks more than 20 people in a day.",
+   "escalates_to": [
+    "compliance",
+    "officer"
+   ]
+  },
+  {
+   "process": "34.3",
+   "agent": "portfolio",
+   "agents_named": [
+    "portfolio"
+   ],
+   "tools": [
+    "book.history",
+    "book.loans",
+    "book.loan",
+    "book.day",
+    "book.daily_report"
+   ],
+   "guardrails": "`READ_ONLY` (the five tools write only the report row), `NO_COMPUTED_FIGURE`, `ROLE_MASK` (34.2), `NO_DESTINATION` (invitations shown as hashes and dates). Escalations: `ops_analyst` when a day has no review or readiness receipt by 07:45 ET (the clocks' own breaches are 33.2's and 33.3's).",
+   "escalates_to": [
+    "compliance",
+    "officer"
+   ]
+  },
+  {
+   "process": "34.4",
+   "agent": "compliance-sentinel",
+   "agents_named": [
+    "compliance-sentinel"
+   ],
+   "tools": [
+    "controls.timers",
+    "controls.escalation.complete",
+    "controls.outbox.requeue",
+    "controls.ai.kill",
+    "controls.evidence.pack"
+   ],
+   "guardrails": "`NO_CLOCK_EDIT`, `ROLE_REQUIRED`, `TWO_PERSON_KILL`, `REQUEUE_CAP_3`, `NO_MONEY_FIELD`, `PACK_IS_STORED_ROWS` (nothing computed or summarized by a model in a pack). Escalations: `ops_analyst` on the fourth requeue; `compliance` when a kill switch stays tripped more than 24 hours.",
+   "escalates_to": [
+    "compliance"
+   ]
   }
  ]
 }

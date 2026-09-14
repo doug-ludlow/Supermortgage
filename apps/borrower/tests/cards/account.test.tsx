@@ -3,13 +3,14 @@
  * the fresh-L1 gate) are asserted in src/domain/borrower/32-16.spec.test.ts; here, with lib/api/account mocked: create → the
  * code step (the FAKE code marked) → verify_email → the session lands on /app; the refusals render their copy keys and never
  * a code (account.exists, account.password_weak, auth.password_wrong, auth.account_locked); EMAIL_UNVERIFIED goes to the code
- * step; the reset flow ends on account.reset.done with the sign-in link; the disclosure line heads the sign-up; passkeys and
- * one-time-code sign-in are offered nowhere.
+ * step; the reset flow ends on account.reset.done with the sign-in link; the disclosure line heads the sign-up; passkeys are
+ * offered nowhere and the only one-time-code sign-in is the sign-in page's code door (33.1 rule 5, `account-code-request`:
+ * api.authOtpRequest → the code step → api.authOtpVerify lands the session as the password path does).
  */
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiRequestError } from "@/lib/api/client";
+import { api, ApiRequestError } from "@/lib/api/client";
 import { accountCreate, accountRequestReset, accountReset, accountSignIn, accountVerifyEmail } from "@/lib/api/account";
 import { copy, copyExtra, copyOptions } from "@/lib/copy";
 import { Account } from "@/components/account/Account";
@@ -20,7 +21,7 @@ vi.mock("@/lib/api/account", async (importOriginal) => {
 });
 vi.mock("@/lib/api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("@/lib/api/client")>();
-  return { ...mod, api: { ...mod.api, authOidcStart: vi.fn() } };
+  return { ...mod, api: { ...mod.api, authOidcStart: vi.fn(), authOtpRequest: vi.fn(), authOtpVerify: vi.fn() } };
 });
 
 const user = userEvent.setup();
@@ -180,6 +181,102 @@ describe("32.16 §2.0 — sign in", () => {
     await user.click(screen.getByRole("button", { name: continueLabel }));
     expect(accountVerifyEmail).toHaveBeenCalledWith("ch-7", "135791");
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/app"));
+  });
+});
+
+describe("33.1 rule 5 — the code door on the sign-in page (the invitation: enter this e-mail on the sign-in page and we will send a code)", () => {
+  const OTP_SESSION = { level: "L1" as const, session: "cookie" as const, expires_at: "2027-01-01T00:00:00Z" };
+  const CHALLENGE = { challenge_id: "ch-otp", delivery: "FAKE" as const, expires_at: "2027-01-01T00:00:00Z", fake_code: "123456" };
+
+  it("Send me a code (account.code.request, data-testid account-code-request, type=button) sits beside Sign in on the sign-in form only, wants the e-mail alone, and the password path is unchanged", async () => {
+    const first = render(<Account mode="sign_in" />);
+    const door = screen.getByTestId("account-code-request");
+    expect(door).toHaveTextContent(copy("account.code.request"));
+    expect(door).toHaveAttribute("type", "button");
+    expect(door).toBeDisabled();
+    expect(within(screen.getByTestId("account-form")).getByTestId("account-code-request")).toBe(door);
+    expect(screen.getByText(copyExtra("account.code.request", "helper")!)).toBeInTheDocument();
+    await user.type(screen.getByLabelText(copy("account.email.field")), EMAIL);
+    expect(door).toBeEnabled();
+    expect(screen.getByRole("button", { name: copy("account.signin.button") })).toBeDisabled(); // the password path still wants the password
+    expect(api.authOtpRequest).not.toHaveBeenCalled();
+    first.unmount();
+    const second = render(<Account mode="sign_up" />);
+    expect(screen.queryByTestId("account-code-request")).toBeNull();
+    second.unmount();
+    render(<Account mode="reset" />);
+    expect(screen.queryByTestId("account-code-request")).toBeNull();
+  });
+
+  it("the e-mail + Send me a code → api.authOtpRequest(email) → the code step (account.verify.title, auth.code.enter with the e-mail, one input, one submit, the FAKE code marked, no account.on_file line) → api.authOtpVerify → /app; the account route is never called", async () => {
+    vi.mocked(api.authOtpRequest).mockResolvedValue(CHALLENGE);
+    vi.mocked(api.authOtpVerify).mockResolvedValue(OTP_SESSION);
+    const navigate = vi.fn();
+    render(<Account mode="sign_in" navigate={navigate} />);
+    await user.type(screen.getByLabelText(copy("account.email.field")), EMAIL);
+    await user.click(screen.getByTestId("account-code-request"));
+    expect(api.authOtpRequest).toHaveBeenCalledWith("email", EMAIL);
+    expect(await screen.findByRole("heading", { name: copy("account.verify.title") })).toBeInTheDocument();
+    const form = screen.getByTestId("account-code");
+    expect(screen.getByTestId("account")).toHaveAttribute("data-step", "code");
+    expect(screen.queryByTestId("account-on-file")).toBeNull(); // the code door never says whether the e-mail is on file
+    expect(form.querySelectorAll("input")).toHaveLength(1); // the walk fills `[data-testid="account-code"] input`
+    expect(form.querySelectorAll('button[type="submit"]')).toHaveLength(1); // … and clicks `[data-testid="account-code"] button[type="submit"]`
+    const code = screen.getByLabelText(copy("auth.code.enter", { destination: EMAIL }));
+    expect(code).toHaveAttribute("autocomplete", "one-time-code");
+    expect(screen.getByTestId("fake-code")).toHaveTextContent("FAKE code · 123456");
+    expect(screen.getByRole("button", { name: continueLabel })).toBeDisabled();
+    await user.type(code, "123456");
+    await user.click(screen.getByRole("button", { name: continueLabel }));
+    expect(api.authOtpVerify).toHaveBeenCalledWith("ch-otp", "123456");
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/app"));
+    expect(accountVerifyEmail).not.toHaveBeenCalled();
+    expect(accountSignIn).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("account-error")).toBeNull();
+  });
+
+  it("onSession takes the code door's session exactly as the password path's", async () => {
+    vi.mocked(api.authOtpRequest).mockResolvedValue({ challenge_id: "ch-otp", delivery: "email", expires_at: "x" });
+    vi.mocked(api.authOtpVerify).mockResolvedValue(OTP_SESSION);
+    const onSession = vi.fn();
+    const navigate = vi.fn();
+    render(<Account mode="sign_in" onSession={onSession} navigate={navigate} />);
+    await user.type(screen.getByLabelText(copy("account.email.field")), EMAIL);
+    await user.click(screen.getByTestId("account-code-request"));
+    expect(screen.queryByTestId("fake-code")).toBeNull(); // no fake_code from the API → nothing to show
+    await user.type(await screen.findByLabelText(copy("auth.code.enter", { destination: EMAIL })), "654321");
+    await user.click(screen.getByRole("button", { name: continueLabel }));
+    await waitFor(() => expect(onSession).toHaveBeenCalledWith(OTP_SESSION));
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("refusals render in account-error and never a code: a refused request keeps the form; a wrong code says auth.code_wrong on the code step, then auth.code_locked; no session; Back returns to the form", async () => {
+    vi.mocked(api.authOtpRequest).mockRejectedValueOnce(apiError(400, "BAD_REQUEST", "error.generic")).mockResolvedValueOnce(CHALLENGE);
+    vi.mocked(api.authOtpVerify).mockRejectedValueOnce(apiError(401, "OTP_INVALID", "auth.code_wrong")).mockRejectedValueOnce(apiError(429, "OTP_TOO_MANY_ATTEMPTS", "auth.code_locked"));
+    const navigate = vi.fn();
+    render(<Account mode="sign_in" navigate={navigate} />);
+    await user.type(screen.getByLabelText(copy("account.email.field")), EMAIL);
+    await user.click(screen.getByTestId("account-code-request"));
+    expect(await screen.findByTestId("account-error")).toHaveTextContent(copy("error.generic"));
+    expect(document.body.textContent).not.toContain("BAD_REQUEST");
+    expect(screen.getByTestId("account-form")).toBeInTheDocument();
+    expect(screen.queryByTestId("account-code")).toBeNull();
+    await user.click(screen.getByTestId("account-code-request"));
+    const code = await screen.findByLabelText(copy("auth.code.enter", { destination: EMAIL }));
+    expect(screen.queryByTestId("account-error")).toBeNull(); // a new request clears the old refusal
+    for (const expected of ["auth.code_wrong", "auth.code_locked"]) {
+      await user.clear(code);
+      await user.type(code, "000000");
+      await user.click(screen.getByRole("button", { name: continueLabel }));
+      await waitFor(() => expect(screen.getByTestId("account-error")).toHaveTextContent(copy(expected)));
+      expect(screen.getByTestId("account-code")).toBeInTheDocument();
+    }
+    expect(document.body.textContent).not.toContain("OTP_INVALID");
+    expect(api.authOtpVerify).toHaveBeenCalledTimes(2);
+    expect(navigate).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByTestId("account-form")).toBeInTheDocument();
+    expect(screen.getByTestId("account-code-request")).toBeEnabled(); // the e-mail is still typed
   });
 });
 

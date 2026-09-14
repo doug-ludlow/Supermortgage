@@ -176,7 +176,7 @@ export class BorrowerRecordReader {
   // ---- shared loads
   private async events(appId: string | null, loanId: string | null): Promise<Ev[]> {
     if (!appId && !loanId) return [];
-    return this.db.query<Ev & Record<string, unknown>>(`SELECT sequence::text AS sequence, type, occurred_at, loan_id, application_id, payload FROM loan_events WHERE ($1::uuid IS NOT NULL AND application_id = $1) OR ($2::uuid IS NOT NULL AND loan_id = $2) ORDER BY sequence`, [appId, loanId]);
+    return this.db.query<Ev & Record<string, unknown>>(`SELECT sequence::text AS sequence, type, occurred_at, loan_id, application_id, payload FROM loan_events WHERE ($1::uuid IS NOT NULL AND application_id = $1) OR ($2::uuid IS NOT NULL AND loan_id = $2) ORDER BY loan_events.sequence`, [appId, loanId]);   // qualified: a bare `sequence` would resolve to the text alias and sort "1192" before "826"
   }
   private async entities(appId: string | null, loanId: string | null): Promise<Entity[]> {
     if (!appId && !loanId) return [];

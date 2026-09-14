@@ -43,6 +43,7 @@ import type { Occupancy, PropertyType } from "../domain/leads-pricing/ops-20-4.t
 import { monthsBetween } from "../domain/partner-book/import.ts";
 import type { Fact } from "../domain/partner-book/profiles/m3-v1.ts";
 import { ANALYST_MAX_PER_DAY, analystTurn, type AnalystLlm, type AnalystTurnResult } from "./partner-book-analyst.ts";
+import { heldLoanIds } from "./partner-book.ts";
 import { deliverOffers, expireOffers, openOffersOf } from "./partner-book-offers.ts";
 import type { Runtime } from "./app.ts";
 import type { Logger } from "./log.ts";
@@ -244,8 +245,10 @@ export async function monitoredUniverseRows(rt: Runtime, asOf: PlainDate): Promi
  * months, or a candidate the engine could not price (`pricing_refused:…` — no cost schedule for its state) → `not_now`; otherwise (no_benefit, a rate delta under the floor, any fire-rule miss: the loan is current and
  * eligible, the numbers are not there today) → `watching`.
  */
-export function verdictOf(i: { opportunity: Pick<RefiOpportunity, "status" | "suppression_reasons"> | null; exceptions: readonly string[]; value_as_of: PlainDate | null; as_of: PlainDate }): { verdict: ReviewVerdict; reasons: string[] } {
+export function verdictOf(i: { opportunity: Pick<RefiOpportunity, "status" | "suppression_reasons"> | null; exceptions: readonly string[]; value_as_of: PlainDate | null; as_of: PlainDate; held?: boolean }): { verdict: ReviewVerdict; reasons: string[] } {
   const opp = i.opportunity;
+  // 33.1 rule 8: a loan absent from the partner's latest tape is held out of the review — `not_now`, reason `not_on_latest_tape` — until the next tape carries it or book.resolve{keep} lifts the hold (src/runtime/partner-book.ts holdsOf)
+  if (i.held) return { verdict: "not_now", reasons: [HOLD_REASON, ...(opp?.status === "suppressed" ? [...(opp.suppression_reasons ?? [])] : [])] };
   if (!opp) return { verdict: "excluded", reasons: ["not_in_universe"] };
   const sup = [...(opp.suppression_reasons ?? [])];
   if (opp.status === "suppressed" && sup.some((r) => EXCLUSION_REASONS.includes(r))) return { verdict: "excluded", reasons: sup };
@@ -282,14 +285,15 @@ export function reviewFactsOf(i: { row: UniverseLoan; opportunity: RefiOpportuni
 }
 
 /** One loan's review of the day from the engine's rows (the `refi_universe` row 20.1 loaded and the day's `refi_opportunities` row). */
-export function reviewOf(i: { loan_id: string; party_id: string | null; as_of: PlainDate; program_id: string; row: UniverseLoan | null; opportunity: RefiOpportunity | null; exceptions: readonly string[] }): Review {
+export function reviewOf(i: { loan_id: string; party_id: string | null; as_of: PlainDate; program_id: string; row: UniverseLoan | null; opportunity: RefiOpportunity | null; exceptions: readonly string[]; held?: boolean }): Review {
   const opp = i.opportunity;
-  const v = i.row ? verdictOf({ opportunity: opp, exceptions: i.exceptions, value_as_of: i.row.value_estimate.as_of, as_of: i.as_of }) : { verdict: "excluded" as const, reasons: ["not_in_universe"] };
+  const v = i.held ? verdictOf({ opportunity: opp, exceptions: i.exceptions, value_as_of: i.row?.value_estimate.as_of ?? null, as_of: i.as_of, held: true }) : i.row ? verdictOf({ opportunity: opp, exceptions: i.exceptions, value_as_of: i.row.value_estimate.as_of, as_of: i.as_of }) : { verdict: "excluded" as const, reasons: ["not_in_universe"] };
   if (!i.row) {
-    const facts: ReviewFacts = { note_rate_pct: "0.000", candidate_rate_pct: null, rate_delta_bps: null, upb_cents: "0", value_cents: "0", value_source: "partner_fmv", value_as_of: i.as_of, value_confidence: "low", ltv: "0.0000", remaining_term_months: 0, pi_cents: "0", candidate_pi_cents: null, candidate_loan_amount_cents: null, monthly_delta_cents: null, npv_cents: null, breakeven_months: null, seven_year_delta_cents: null, days_delinquent: 0, flags: ["not_in_universe", ...i.exceptions] };
-    return { loan_id: i.loan_id, party_id: i.party_id, as_of_date: i.as_of, program_id: i.program_id, opportunity_id: opp?.opportunity_id ?? null, opportunity_status: opp?.status ?? null, verdict: "excluded", reasons: v.reasons, facts, engine_explanation: "excluded: the loan is not in the day's universe" };
+    const facts: ReviewFacts = { note_rate_pct: "0.000", candidate_rate_pct: null, rate_delta_bps: null, upb_cents: "0", value_cents: "0", value_source: "partner_fmv", value_as_of: i.as_of, value_confidence: "low", ltv: "0.0000", remaining_term_months: 0, pi_cents: "0", candidate_pi_cents: null, candidate_loan_amount_cents: null, monthly_delta_cents: null, npv_cents: null, breakeven_months: null, seven_year_delta_cents: null, days_delinquent: 0, flags: [...(i.held ? [HOLD_REASON] : []), "not_in_universe", ...i.exceptions] };
+    return { loan_id: i.loan_id, party_id: i.party_id, as_of_date: i.as_of, program_id: i.program_id, opportunity_id: opp?.opportunity_id ?? null, opportunity_status: opp?.status ?? null, verdict: v.verdict, reasons: v.reasons, facts, engine_explanation: i.held ? `not_now: ${v.reasons.join(", ")}` : "excluded: the loan is not in the day's universe" };
   }
   const facts = reviewFactsOf({ row: i.row, opportunity: opp, exceptions: i.exceptions, as_of: i.as_of, verdict: v.verdict });
+  if (i.held && !facts.flags.includes(HOLD_REASON)) facts.flags.unshift(HOLD_REASON);
   const engine_explanation = v.verdict === "candidate" && opp?.explanation_text ? opp.explanation_text : `${v.verdict}: ${v.reasons.join(", ")}`;
   return { loan_id: i.loan_id, party_id: i.party_id, as_of_date: i.as_of, program_id: i.program_id, opportunity_id: opp?.opportunity_id ?? null, opportunity_status: opp?.status ?? null, verdict: v.verdict, reasons: v.reasons, facts, engine_explanation };
 }
@@ -319,7 +323,10 @@ export function reviewTokenValues(f: ReviewFacts): Record<string, string> {
   if (f.watch_rate_pct !== undefined) out["facts.watch_rate"] = pct(f.watch_rate_pct);
   return out;
 }
+/** 33.1 rule 8: the review's reason for a loan absent from the partner's latest tape (the literal the copy library keys `refi.review.reason.not_on_latest_tape`). */
+export const HOLD_REASON = "not_on_latest_tape";
 const REASON_WORDS: Readonly<Record<string, string>> = {
+  not_on_latest_tape: "the loan was not on the partner's latest tape and is on hold until it returns or an operator resolves it",
   rate_delta: "the rate reduction clears the program's floor", npv_positive: "the savings over the holding period are positive", seven_year_delta_positive: "the total cost over seven years is lower", prescreen: "the loan passes the eligibility prescreen", state_rule: "the state's borrower's-interest rule is met",
   no_benefit: "the numbers are not there today", prescreen_failed: "the eligibility prescreen is not met", state_rule_failed: "the state's borrower's-interest rule is not met", not_priceable: "no rate on today's sheet covers the costs", not_priced: "the candidate could not be priced",
   cooldown: "the homeowner declined an offer recently", frequency_cap: "the homeowner has had the program's offers for the year", premium_recapture_window: "the loan is inside the investor's recapture window", marketing_suppression: "the homeowner asked not to be solicited",
@@ -384,11 +391,12 @@ export async function reviewsOfDay(db: Queryable, asOf: PlainDate, loanIds: read
 }
 
 /** The engine's rows for a set of monitored loans on a day: the `refi_universe` row, the `refi_opportunities` row, the loan's open offer (an earlier opportunity `offered` and unexpired, or `engaged`), the import exceptions, the party. */
-export async function reviewInputs(db: Queryable, loanIds: readonly string[], asOf: PlainDate, programId: string): Promise<{ rows: Map<string, UniverseLoan>; opportunities: Map<string, RefiOpportunity>; open_offers: Map<string, RefiOpportunity>; exceptions: Map<string, string[]>; parties: Map<string, string | null> }> {
-  const [rowsRaw, oppsRaw, open_offers, exceptions, parties] = await Promise.all([entityRowsById(db, "refi_universe", loanIds), entityRowsById(db, "refi_opportunities", loanIds.map((id) => opportunityIdFor(id, asOf, programId))), openOffersOf(db, loanIds, asOf), loanLoadExceptions(db, loanIds), partiesOfLoans(db, loanIds)]);
+export async function reviewInputs(db: Queryable, loanIds: readonly string[], asOf: PlainDate, programId: string, now?: string): Promise<{ rows: Map<string, UniverseLoan>; opportunities: Map<string, RefiOpportunity>; open_offers: Map<string, RefiOpportunity>; exceptions: Map<string, string[]>; parties: Map<string, string | null>; holds: Set<string> }> {
+  const [rowsRaw, oppsRaw, open_offers, exceptions, parties, holds] = await Promise.all([entityRowsById(db, "refi_universe", loanIds), entityRowsById(db, "refi_opportunities", loanIds.map((id) => opportunityIdFor(id, asOf, programId))), openOffersOf(db, loanIds, asOf), loanLoadExceptions(db, loanIds), partiesOfLoans(db, loanIds),
+    heldLoanIds({ db, clock: { now: () => now ?? `${asOf}T23:59:59.000Z` } }, loanIds)]);   // 33.1 rule 8: the loans on hold (not_on_latest_tape) as of the pass
   const rows = new Map([...rowsRaw.entries()].map(([id, d]) => [id, d as unknown as UniverseLoan]));
   const opportunities = new Map<string, RefiOpportunity>(); for (const [, d] of oppsRaw) { const o = d as unknown as RefiOpportunity; opportunities.set(o.loan_id, o); }
-  return { rows, opportunities, open_offers, exceptions, parties };
+  return { rows, opportunities, open_offers, exceptions, parties, holds };
 }
 /**
  * The opportunity the day's review reads: the day's row, unless the loan has an open offer (an earlier opportunity `offered`
@@ -432,12 +440,12 @@ export async function partnerBookReviewRun(rt: Runtime, nowIso: string, opts: Re
     let turns = 0; let written = 0; let already = 0; let error: string | null = null;
     const candidateOpps: string[] = [];
     try {
-      const [inputs, existing] = await Promise.all([reviewInputs(rt.db, ids, asOf, program.program_id), reviewsOfDay(rt.db, asOf, ids)]);
+      const [inputs, existing] = await Promise.all([reviewInputs(rt.db, ids, asOf, program.program_id, nowIso), reviewsOfDay(rt.db, asOf, ids)]);
       for (const l of mine) {
         const prior = existing.get(l.loan_id);
         // a turn is counted whenever the model ran (an agent_turns row: a written rationale or a post-run skip carrying its turn_id); a skip is the row's `analyst.skipped` whatever ran
         if (prior) { already += 1; counts[prior.verdict] += 1; if (prior.verdict === "candidate" && prior.opportunity_id) candidateOpps.push(prior.opportunity_id); if (typeof prior.analyst["skipped"] === "string") skippedBy[String(prior.analyst["skipped"])] = (skippedBy[String(prior.analyst["skipped"])] ?? 0) + 1; if (typeof prior.analyst["turn_id"] === "string") turns += 1; continue; }
-        const review = reviewOf({ loan_id: l.loan_id, party_id: inputs.parties.get(l.loan_id) ?? null, as_of: asOf, program_id: program.program_id, row: inputs.rows.get(l.loan_id) ?? null, opportunity: reviewOpportunityOf(inputs.opportunities.get(l.loan_id) ?? null, inputs.open_offers.get(l.loan_id) ?? null), exceptions: inputs.exceptions.get(l.loan_id) ?? [] });
+        const review = reviewOf({ loan_id: l.loan_id, party_id: inputs.parties.get(l.loan_id) ?? null, as_of: asOf, program_id: program.program_id, row: inputs.rows.get(l.loan_id) ?? null, opportunity: reviewOpportunityOf(inputs.opportunities.get(l.loan_id) ?? null, inputs.open_offers.get(l.loan_id) ?? null), exceptions: inputs.exceptions.get(l.loan_id) ?? [], held: inputs.holds.has(l.loan_id) });
         // rule 4: the analyst's turn — capped per pass; the model off / rate-limited / refused / an error skips the turn, never the review
         let turn: AnalystTurnResult;
         if (turns >= maxTurns) turn = { skipped: "cap" };

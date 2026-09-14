@@ -357,8 +357,13 @@ jobs:
           code="$(curl --silent --output /dev/null --write-out '%{http_code}' \
             --resolve "${API_HOSTNAME}:443:${LB_IP}" \
             "https://${API_HOSTNAME}/ops")"
-          test "${code}" = "401" || { echo "expected 401 from /ops without a token, got ${code}"; exit 1; }
-          echo "/ redirects to /app; /video redirects to /app/video; /ops answers via ${LB_IP}"
+          # 34.1 rule 1: the door page is public by design (the staff sign in there); the console API without a session is 401 AUTH_REQUIRED (34.1-T4)
+          test "${code}" = "200" || { echo "expected 200 from /ops (the sign-in page), got ${code}"; exit 1; }
+          code="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --resolve "${API_HOSTNAME}:443:${LB_IP}" \
+            "https://${API_HOSTNAME}/ops/api/me")"
+          test "${code}" = "401" || { echo "expected 401 from /ops/api/me without a session, got ${code}"; exit 1; }
+          echo "/ redirects to /app; /video redirects to /app/video; /ops serves the sign-in page and /ops/api/me refuses without a session via ${LB_IP}"
 
       - name: Board the demo transfer batch (workflow_dispatch with seed_demo)
         if: github.event.inputs.seed_demo == 'true'

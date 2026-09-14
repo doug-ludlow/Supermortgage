@@ -464,6 +464,7 @@ Format: `key` — **card/message** — text — *notes*.
 - `offer.good_through` — OfferCard line — "Offer good through {{date}}" — *32.11 §2: `SM_REFI_OPPORTUNITY_EXPIRY_30.due_at`, rendered, never computed.*
 - `ratewatch.standing.on` — Loan — "Your payroll and bank connections stay on — turn them off any time from the card in your thread." — *32.11 §5 (DELTA-05): the Loan section row; the manage card is the act.*
 - `ratewatch.standing.off` — Loan — "Payroll and bank connections are off. For a future refinance we'll ask you to connect again." — *32.11 §5.*
+- `partner_book.monitored` — StatusCard — "Your loan is on the record here. {{servicer}} services it; your payments and statements stay with them." — *33.1 rule 6: the status one-liner of a monitored loan (badge `Monitored`; the token `servicer` is the partner's legal name, the servicer of record). It says only that the loan is on the record here and who services it: nothing about the daily review, rates or offers (32.11 §1; 33.1 rule 5).*
 - `refi.review.candidate` — reply — "We checked your loan this morning and a refinance looks worth it. The offer is on the card here, with the terms." — *33.2 rule 7: the daily review's `candidate` verdict — the card holds every figure; the reply names none.*
 - `refi.review.watching` — reply — "We checked your loan this morning. The rate is not there yet. We check every morning and will tell you when it is." — *33.2 rule 7: `watching` — no rate in the reply.*
 - `refi.review.not_now` — reply — "We checked your loan this morning. A refinance is not on the table right now. We keep checking every morning." — *33.2 rule 7: `not_now` — the reason line follows in the library's words.*
@@ -500,6 +501,7 @@ Format: `key` — **card/message** — text — *notes*.
 - `refi.review.reason.transfer_out_pending` — reason — "The loan is moving to another servicer."
 - `refi.review.reason.delinquent` — reason — "The loan is behind on payments."
 - `refi.review.reason.other` — reason — "Something on the loan holds an offer back today."
+- `refi.review.reason.not_on_latest_tape` — reason — "Your servicer's latest update did not include this loan, so we hold off until it does." — *33.1 rule 8: the loan was absent from the partner's latest tape; the review reads `not_now` until the next tape carries it or an operator resolves it.*
 - `refi.readiness.ready` — reply — "Underwriting has what it needs for your refinance. The checklist here shows what comes next." — *33.3 rule 4 / T5: the readiness row reads `ready = true` — the reply points at the checklist card; no figure.*
 - `refi.readiness.missing.contact` — line — "We need an e-mail and a phone number for you." — *33.3 rule 1: `contact` — the contact card is asked first.*
 - `refi.readiness.missing.account` — line — "Sign in once so your account is set up." — *33.3 rule 1: `account` — a sign-in, never a card.*
@@ -668,6 +670,7 @@ The lines the borrower API and the shell author themselves (src/runtime/borrower
 - `auth.password_wrong` — refusal — "That e-mail and password didn't match." — *401 `PASSWORD_WRONG`; never says which.*
 - `auth.account_locked` — refusal — "Too many tries. Wait fifteen minutes, or reset your password." — *423 `ACCOUNT_LOCKED`: ten failures lock for fifteen minutes (`locked_until`).*
 - `auth.email_unverified` — refusal — "Enter the code we just e-mailed you to finish setting up." — *403 `EMAIL_UNVERIFIED` on sign-in: a fresh code was sent; the app shows the code step.*
+- `account.code.request` — button — "Send me a code" — helper: "No password needed. We e-mail you a six-digit code and you type it in here." — *33.1 rule 5: the code door on the sign-in page for an e-mail on file (the invitation says "enter this e-mail address on the sign-in page and we will send a code"): `POST /v1/borrower/auth/otp {action: request, channel: email}`, then `auth.code.enter` and `{action: verify}` opens the session on the party that carries the e-mail, exactly as the password path lands it; the password path is unchanged; the API never says whether an e-mail is on file.*
 
 The rail and the thread (32.16 §2.1–2.2, DELTA-26). The rail's section names, the Progress count, the reference and confirm chips, the rates element and the journey's step labels — every visible string of the conversation shell. The assistant's own lines are the model's words; nothing here is spoken in the stream.
 

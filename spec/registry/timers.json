@@ -22330,6 +22330,17 @@
     "breach": "sev 3 → `portfolio` (one reminder on the same channel, then the clock closes)"
   },
   {
+    "code": "SM_PARTNER_BOOK_TAPE_EXPECTED_7",
+    "section": 33,
+    "process": "33.1",
+    "kind": "recurring",
+    "trigger": "`partner_book.import.completed`",
+    "anchor": "`as_of_date`",
+    "offset": "+7 calendar_days",
+    "satisfied": "`partner_book.import.completed`",
+    "breach": "sev 3 → `ops_analyst` (the partner's next tape is late; the book is stale)"
+  },
+  {
     "code": "SM_PARTNER_BOOK_REVIEW_DAILY",
     "section": 33,
     "process": "33.2",
@@ -22350,5 +22361,16 @@
     "offset": "+1 calendar_days",
     "satisfied": "`partner_book.readiness.run_completed`",
     "breach": "sev 3 → `compliance-sentinel` (readiness was not checked today)"
+  },
+  {
+    "code": "SM_STAFF_ACCESS_REVIEW_90",
+    "section": 34,
+    "process": "34.1",
+    "kind": "recurring",
+    "trigger": "`staff.access_review.completed`",
+    "anchor": "`reviewed_at`",
+    "offset": "+90 calendar_days",
+    "satisfied": "`staff.access_review.completed`",
+    "breach": "sev 3 → `compliance` (the quarterly access review is late)"
   }
 ]

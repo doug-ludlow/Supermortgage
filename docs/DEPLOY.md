@@ -587,9 +587,11 @@ asks for one (`FRESH_L1_COMMANDS`).
 
 ## The conversation trace (docs/ux/17 §6, DELTA-28's console view)
 
-Two read-only routes on the ops console API (src/console/server.ts, behind `API_TOKEN` and the console's
-`x-actor-id` / `x-actor-role` headers like every other `/api/*` call; every read is access-logged with the
-address masked): `GET /api/ai/conversation?party_id=<uuid>` or `?email=<address>` returns, for one borrower, in
+Two read-only routes on the ops console API (src/console/server.ts, on a staff session holding an ops role —
+`ops_analyst`, `officer` or `compliance`; an `admin`-only session is 403 `ROLE_REQUIRED` on every borrower read
+(34.1 rule 2) — or, outside production only, the `x-actor-id` / `x-actor-role` headers together with the
+`API_TOKEN` bearer (the deploy workflow's smoke calls; in production the headers open nothing); every read is
+access-logged with the address masked): `GET /api/ai/conversation?party_id=<uuid>` or `?email=<address>` returns, for one borrower, in
 order, the thread (`messages`: message_id, at, sender, sender_ref, body_text, card_instance_id, copy_tokens),
 every card (`cards`: card_instance_id, kind, copy_key, status, `props.proposal`, `evidence.option_id`,
 created_at, resolved_at) and every `agent_turns` row (`turns`: turn_id, message_id, reply_message_id,

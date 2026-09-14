@@ -22,6 +22,14 @@ import { writeXlsx } from "../../infra/files/xlsx.ts";
 import { scheduledUpb } from "../leads-pricing/ops-20-1.ts";
 import { M3_V1 } from "./profiles/m3-v1.ts";
 import { DEMO_AS_OF, DEMO_PARTNER, demoBook, demoMin, type DemoLoan } from "./fixtures/partner-book-demo.ts";
+// 33.1-T11 … T13 (rule 8): the review runtime with the FAKE rate feed (33.2's harness), the hold readers, the review's reason literal and its copy key
+import { readFileSync } from "node:fs";
+import { addDays, plainDate } from "../../kernel/calendar/date.ts";
+import { FakeRateFeed } from "../../infra/integrations/rates.ts";
+import { seedEntryDemo } from "../../runtime/entry-seed.ts";
+import { holdsOf, isOnHold } from "../../runtime/partner-book.ts";
+import { HOLD_REASON } from "../../runtime/partner-book-review.ts";
+import { refiReviewReasonKey } from "../../runtime/borrower/copy-keys.ts";
 
 const BASE_URL = process.env["TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_test";
 const DB_URL = ((): string => { const u = new URL(BASE_URL); u.pathname = `${u.pathname}_33_1`; return u.toString(); })();
@@ -84,7 +92,7 @@ type LoanRow = { id: string; servicer_loan_number: string; status: string; fnma_
 const loansOf = async (partnerId: string): Promise<LoanRow[]> => db.query<LoanRow>(`SELECT id, servicer_loan_number, status, fnma_loan_number, min, original_upb_cents::text AS original_upb_cents, property_id, partner_party_id FROM loans WHERE partner_party_id = $1 ORDER BY servicer_loan_number`, [partnerId]);
 const loanByNumber = async (n: number): Promise<LoanRow> => { const l = (await loansOf(partnerPartyId)).find((x) => x.servicer_loan_number === loanN(n).servicer_loan_number); assert.ok(l, `loan ${n} on the book`); return l; };
 const partyOfLoan = async (loanId: string): Promise<{ id: string; legal_name: string; contact: Json; party_type: string }> => { const r = (await db.query<{ id: string; legal_name: string; contact: Json; party_type: string }>(`SELECT p.id, p.legal_name, p.contact, p.party_type FROM loan_borrowers lb JOIN borrowers b ON b.id = lb.borrower_id JOIN parties p ON p.id = b.party_id WHERE lb.loan_id = $1 ORDER BY lb.is_primary DESC LIMIT 1`, [loanId]))[0]; assert.ok(r, "the loan's party"); return r; };
-const events = async (type: string, loanId?: string) => db.query<{ type: string; loan_id: string | null; payload: Json; sequence: string }>(`SELECT type, loan_id::text AS loan_id, payload, sequence::text AS sequence FROM loan_events WHERE type = $1 AND ($2::uuid IS NULL OR loan_id = $2::uuid) ORDER BY sequence`, [type, loanId ?? null]);
+const events = async (type: string, loanId?: string) => db.query<{ type: string; loan_id: string | null; payload: Json; sequence: string }>(`SELECT type, loan_id::text AS loan_id, payload, sequence::text AS sequence FROM loan_events WHERE type = $1 AND ($2::uuid IS NULL OR loan_id = $2::uuid) ORDER BY loan_events.sequence`, [type, loanId ?? null]);
 type TimerRow = { id: string; loan_id: string; status: string; anchor_date: string; due_date: string | null; due_at: string | null; satisfied_at: string | null; breached_at: string | null };
 const reminderTimers = async (loanId?: string): Promise<TimerRow[]> => db.query<TimerRow>(`SELECT id, loan_id::text AS loan_id, status, anchor_date::text AS anchor_date, due_date::text AS due_date, due_at::text AS due_at, satisfied_at::text AS satisfied_at, breached_at::text AS breached_at FROM timers WHERE code = 'SM_PARTNER_BOOK_INVITATION_REMINDER_14' AND ($1::uuid IS NULL OR loan_id = $1::uuid) ORDER BY armed_at, id`, [loanId ?? null]);
 const latestFacts = async (loanId: string): Promise<{ as_of_date: string; facts: Json; raw: Json; import_id: string }> => (await db.query<{ as_of_date: string; facts: Json; raw: Json; import_id: string }>(`SELECT as_of_date::text AS as_of_date, facts, raw, import_id::text AS import_id FROM partner_book_facts WHERE loan_id = $1 ORDER BY as_of_date DESC, created_at DESC LIMIT 1`, [loanId]))[0]!;
@@ -463,4 +471,180 @@ test("33.1 rule 4: one homeowner with two loans on the tape is provisioned per l
   clock.set(new Date(Date.parse(timers[0]!.due_at!) + 86_400_000).toISOString());
   const again = await api("POST", "/v1/sweep", {}, bearer(TOKEN)); assert.equal(again.status, 200); assert.equal(again.body["partner_book_reminders"], 0);
   assert.equal((await db.query(`SELECT 1 FROM partner_book_invitations WHERE party_id = $1 AND kind = 'reminder'`, [party.id])).length, 1);
+});
+
+// ---------------------------------------------------------------- rule 8: regular tapes (T11–T13) — after T10 and the rule-4 probe the clock stands past 2026-10-14 ET; every tape below is a later as-of snapshot
+/** As-of dates of the later tapes: T11 (loan 5 absent), T12 (5 days later — the second import of the clock's story), T13 (the supplement that supplies loan 12's e-mail). */
+const T11_AS_OF = "2026-10-11"; const T12_AS_OF = "2026-10-16"; const T13_AS_OF = "2026-10-21";
+const colOf = (key: string): number => { const i = M3_V1.columns.findIndex((c) => c.key === key); assert.ok(i >= 0, `the profile's ${key} column`); return i; };
+/** The fixture tape as a later snapshot: every row's as-of date moved to `asOf`, the loans in `without` (by n) removed — the same facts otherwise (`change=unchanged`), so the hold is only about absence. */
+function tapeAsOf(asOf: string, without: readonly number[] = []): Uint8Array {
+  const skip = new Set(without.map((n) => loanN(n).servicer_loan_number));
+  const rows = book.tapeRows.filter((r, i) => i === 0 || !skip.has(String(r[colOf("servicer_loan_number")]))).map((r) => [...r]);
+  for (let i = 1; i < rows.length; i += 1) rows[i]![colOf("as_of_date")] = asOf;
+  return writeXlsx(rows, "M3");
+}
+type TapeClock = { id: string; subject_kind: string; subject_id: string; loan_id: string | null; status: string; anchor_date: string; due_date: string | null; due_at: string | null; satisfied_at: string | null; breached_at: string | null; import_id: string | null; partner_id: string | null; as_of_date: string | null };
+const tapeClocks = async (): Promise<TapeClock[]> => db.query<TapeClock>(`SELECT t.id::text AS id, t.subject_kind, t.subject_id, t.loan_id::text AS loan_id, t.status::text AS status, t.anchor_date::text AS anchor_date, t.due_date::text AS due_date, t.due_at::text AS due_at, t.satisfied_at::text AS satisfied_at, t.breached_at::text AS breached_at, e.payload->>'import_id' AS import_id, e.payload->>'partner_id' AS partner_id, e.payload->>'as_of_date' AS as_of_date FROM timers t JOIN loan_events e ON e.id = t.armed_by_event_id WHERE t.code = 'SM_PARTNER_BOOK_TAPE_EXPECTED_7' ORDER BY t.armed_at, t.id`);
+type ReviewRow = { loan_id: string; as_of_date: string; verdict: string; reasons: string[]; facts: Json };
+const reviewsAsOf = async (asOf: string, loanId?: string): Promise<ReviewRow[]> => db.query<ReviewRow>(`SELECT loan_id::text AS loan_id, as_of_date::text AS as_of_date, verdict::text AS verdict, reasons, facts FROM partner_book_reviews WHERE as_of_date = $1 AND ($2::uuid IS NULL OR loan_id = $2::uuid) ORDER BY loan_id`, [asOf, loanId ?? null]);
+/** The daily review needs 20.1's run of the day, which needs a rate feed: a second runtime over the same database with the FAKE feed, seeded the way 33.2's harness seeds it (sheet, program, LLPA matrix, cost schedules). */
+let reviewRuntime: Runtime | undefined;
+async function reviewRuntimeSeeded(): Promise<Runtime> {
+  if (reviewRuntime) return reviewRuntime;
+  reviewRuntime = new Runtime({ db, registry: loadOverriddenRegistry(), clock, logger: createLogger("json", (line) => { logLines.push(line); }), rateFeed: new FakeRateFeed() });
+  const seed = await seedEntryDemo(reviewRuntime, { partner_id: partnerPartyId, nmlsr_id: DEMO_PARTNER.nmlsr_id });
+  assert.equal(seed.partner_id, partnerPartyId, "the seed's partner is the fixture partner");
+  return reviewRuntime;
+}
+
+test("33.1-T11: Given the fixture tape re-uploaded with a later as-of date and loan 5's row removed, then loan 5 stays `monitored`, `partner_book.loan.not_on_tape` is logged for it, the report counts `not_on_latest_tape = 1`, the next 33.2 review reads loan 5 `not_now` with reason `not_on_latest_tape`, and its party still signs in to the same record; given `book.resolve{resolution=paid_off}` by an `ops_analyst`, then `loans.status = paid_off`, `partner_book.loan.resolved` is logged and no review row follows.", { skip }, async () => {
+  await imported();
+  const loan5 = await loanByNumber(5); const party5 = await partyOfLoan(loan5.id); const l5 = loanN(5);
+  assert.equal(loan5.status, "monitored"); assert.equal((await latestFacts(loan5.id)).as_of_date, "2026-10-01", "T3's snapshot is loan 5's latest");
+  assert.deepEqual(await holdsOf(runtime, partnerPartyId), [], "nothing is on hold before the re-upload");
+  // the later full tape without loan 5's row (as of 2026-10-11), the same supplement
+  clock.set("2026-10-15T12:00:00.000Z");
+  const r = await api("POST", "/v1/partner-book/imports", { partner: DEMO_PARTNER, as_of_date: T11_AS_OF, profile: "m3-v1", tape: { filename: "partner-book-2026-10-11.xlsx", content_base64: b64(tapeAsOf(T11_AS_OF, [5])) }, supplement: { filename: "partner-book-demo-supplement.csv", content_base64: b64(book.supplement) } }, { ...bearer(TOKEN), "x-actor-id": "u-ops-analyst" });
+  assert.equal(r.status, 200, JSON.stringify(r.body).slice(0, 800)); assert.equal(r.body["status"], "loaded"); const importId = r.body["import_id"] as string;
+  assert.equal(r.body["rows_total"], 11); assert.equal(r.body["rows_loaded"], 11); assert.equal(r.body["loans_created"], 0); assert.equal(r.body["invitations_sent"], 0);
+  const report = r.body["report"] as Json; const gaps = report["gaps"] as Json;
+  assert.equal(gaps["not_on_latest_tape"], 1, "the report counts not_on_latest_tape = 1");
+  assert.deepEqual((report["gaps_by_loan"] as Json)[l5.servicer_loan_number], ["not_on_latest_tape"]);
+  assert.deepEqual(report["not_on_tape"], [{ loan_id: loan5.id, servicer_loan_number: l5.servicer_loan_number, last_as_of_date: "2026-10-01" }]);
+  assert.ok(!(report["loans"] as Json[]).some((x) => x["loan_id"] === loan5.id), "loan 5 is not a row of the file");
+  // loan 5 stays monitored, on hold; the event is logged once, loan-scoped, with origination context
+  assert.equal((await loanByNumber(5)).status, "monitored"); assert.equal((await latestFacts(loan5.id)).as_of_date, "2026-10-01", "no facts row for a loan the tape does not carry");
+  const notOnTape = await events("partner_book.loan.not_on_tape", loan5.id);
+  assert.equal(notOnTape.length, 1); assert.equal(notOnTape[0]!.loan_id, loan5.id);
+  assert.equal(notOnTape[0]!.payload["loan_id"], loan5.id); assert.equal(notOnTape[0]!.payload["servicer_loan_number"], l5.servicer_loan_number); assert.equal(notOnTape[0]!.payload["as_of_date"], T11_AS_OF); assert.equal(notOnTape[0]!.payload["origination"], true); assert.equal(notOnTape[0]!.payload["import_id"], importId);
+  assert.equal((await events("partner_book.loan.not_on_tape")).length, 1, "no other loan is absent");
+  const holds = await holdsOf(runtime, partnerPartyId);
+  assert.deepEqual(holds.map((h) => [h.loan_id, h.last_as_of_date, h.partner_as_of_date]), [[loan5.id, "2026-10-01", T11_AS_OF]]);
+  assert.equal(holds[0]!.party_id, party5.id); assert.equal(await isOnHold(runtime, loan5.id), true); assert.equal(await isOnHold(runtime, (await loanByNumber(1)).id), false);
+  const holdsApi = await api("GET", "/v1/partner-book/holds", undefined, bearer(TOKEN)); assert.equal(holdsApi.status, 200); assert.deepEqual((holdsApi.body["holds"] as Json[]).map((h) => h["loan_id"]), [loan5.id]);
+  const status = (holdsApi.body["partners"] as Json[]).find((p) => p["partner_party_id"] === partnerPartyId)!; assert.equal(status["as_of_date"], T11_AS_OF); assert.equal(status["next_expected"], addDays(plainDate(T11_AS_OF), 7)); assert.equal(status["on_hold"], 1);
+  // the next 33.2 review (07:05 ET the next morning, 20.1's run first): loan 5 not_now with reason not_on_latest_tape — the other loans reviewed as before
+  const rr = await reviewRuntimeSeeded();
+  clock.set("2026-10-16T11:05:00.000Z");
+  const sweep = await rr.sweep();
+  assert.ok(sweep.refi?.ran, `the refinance check ran: ${sweep.refi?.reason}`); assert.ok(sweep.partner_book_review.ran, `the review ran: ${sweep.partner_book_review.reason}`);
+  const review5 = (await reviewsAsOf("2026-10-16", loan5.id))[0]; assert.ok(review5, "loan 5's review row of the day");
+  assert.equal(review5.verdict, "not_now"); assert.equal(review5.reasons[0], HOLD_REASON); assert.equal(HOLD_REASON, "not_on_latest_tape"); assert.ok((review5.facts["flags"] as string[]).includes("not_on_latest_tape"));
+  const written5 = (await events("partner_book.review.written", loan5.id)).filter((e) => e.payload["as_of_date"] === "2026-10-16"); assert.equal(written5.length, 1); assert.equal(written5[0]!.payload["verdict"], "not_now"); assert.ok((written5[0]!.payload["reasons"] as string[]).includes("not_on_latest_tape"));
+  const others = (await reviewsAsOf("2026-10-16")).filter((x) => x.loan_id !== loan5.id && (holds.length === 1));
+  assert.ok(others.length >= 11, `the rest of the book reviewed (${others.length})`); assert.ok(others.every((x) => !x.reasons.includes("not_on_latest_tape")), "only the absent loan carries the hold reason");
+  // the reason's copy key exists in the library (33.2 rule 7: the situation carries the key, the model answers in the library's words)
+  assert.equal(refiReviewReasonKey("not_on_latest_tape"), "refi.review.reason.not_on_latest_tape");
+  const copyMd = readFileSync(fileURLToPath(new URL("../../../spec/sections/32-borrower-experience/copy-library.md", import.meta.url)), "utf8"); assert.ok(copyMd.includes("- `refi.review.reason.not_on_latest_tape`"), "the copy library authors the reason");
+  assert.ok(readFileSync(fileURLToPath(new URL("../../../docs/ux/12-message-copy-library.md", import.meta.url)), "utf8").includes("- `refi.review.reason.not_on_latest_tape`"));
+  // its party still signs in to the same record
+  const s = await signInByCode(l5.email!, "10.33.11.5");
+  assert.equal(s.party_id, party5.id, "the same party"); assert.equal(s.session["level"], "L1");
+  const me = await api("GET", "/v1/borrower/me", undefined, bearer(s.token)); assert.equal(me.status, 200, JSON.stringify(me.body));
+  const subjects = me.body["subjects"] as Json[]; assert.equal(subjects.length, 1); assert.equal(subjects[0]!["loan_id"], loan5.id, "the same record"); assert.equal(subjects[0]!["stage"], "servicing");
+  assert.equal((await loanByNumber(5)).status, "monitored", "the hold changes nothing for the homeowner");
+  // book.resolve is an ops_analyst act: another role is refused and writes nothing
+  const denied = await api("POST", `/v1/partner-book/loans/${loan5.id}/resolve`, { resolution: "paid_off", reason: "the partner reports the loan paid in full on 2026-10-09" }, { ...bearer(TOKEN), "x-actor-id": "u-officer", "x-actor-role": "officer" });
+  assert.equal(denied.status, 409, JSON.stringify(denied.body)); assert.equal(denied.body["code"], "ROLE_DENIED", "the bus's typed refusal (a refused guardrail writes nothing but the refusal event)"); assert.equal((await loanByNumber(5)).status, "monitored"); assert.equal((await events("partner_book.loan.resolved", loan5.id)).length, 0);
+  const badRes = await api("POST", `/v1/partner-book/loans/${loan5.id}/resolve`, { resolution: "closed", reason: "x" }, { ...bearer(TOKEN), "x-actor-id": "u-ops-analyst", "x-actor-role": "ops_analyst" }); assert.equal(badRes.status, 400);
+  // book.resolve{resolution=paid_off} by an ops_analyst
+  const resolved = await api("POST", `/v1/partner-book/loans/${loan5.id}/resolve`, { resolution: "paid_off", reason: "the partner reports the loan paid in full on 2026-10-09" }, { ...bearer(TOKEN), "x-actor-id": "u-ops-analyst", "x-actor-role": "ops_analyst" });
+  assert.equal(resolved.status, 200, JSON.stringify(resolved.body).slice(0, 600)); assert.equal(resolved.body["resolution"], "paid_off"); assert.equal(resolved.body["status"], "paid_off"); assert.equal(resolved.body["was_on_hold"], true); assert.ok(resolved.body["decision_id"]);
+  const after5 = (await db.query<{ status: string }>(`SELECT status::text AS status FROM loans WHERE id = $1`, [loan5.id]))[0]!; assert.equal(after5.status, "paid_off");
+  const resolvedEvents = await events("partner_book.loan.resolved", loan5.id);
+  assert.equal(resolvedEvents.length, 1); assert.equal(resolvedEvents[0]!.payload["loan_id"], loan5.id); assert.equal(resolvedEvents[0]!.payload["resolution"], "paid_off"); assert.equal(resolvedEvents[0]!.payload["reason"], "the partner reports the loan paid in full on 2026-10-09"); assert.equal(resolvedEvents[0]!.payload["origination"], true);
+  const decision = await db.query<{ agent: string; rationale: string; rule_set_version: string }>(`SELECT agent, rationale, rule_set_version FROM agent_decisions WHERE action = 'book.resolve' AND loan_id = $1`, [loan5.id]);
+  assert.equal(decision.length, 1); assert.equal(decision[0]!.agent, "portfolio"); assert.equal(decision[0]!.rule_set_version, "partner_book.m3.v1"); assert.match(decision[0]!.rationale, /paid_off .*ops_analyst/);
+  assert.deepEqual(await holdsOf(runtime, partnerPartyId), [], "a resolved loan is no longer on hold");
+  // no review row follows: the next morning's pass reviews the monitored book without loan 5
+  clock.set("2026-10-17T11:05:00.000Z");
+  const next = await rr.sweep(); assert.ok(next.partner_book_review.ran, `the next review ran: ${next.partner_book_review.reason}`);
+  assert.equal((await reviewsAsOf("2026-10-17", loan5.id)).length, 0, "no review row for a paid_off loan"); assert.ok((await reviewsAsOf("2026-10-17")).length >= 11);
+  assert.equal((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM partner_book_reviews WHERE loan_id = $1`, [loan5.id]))[0]!.n, String((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM partner_book_reviews WHERE loan_id = $1 AND as_of_date <= '2026-10-16'`, [loan5.id]))[0]!.n));
+  // a resolved loan is resolved once
+  const again = await api("POST", `/v1/partner-book/loans/${loan5.id}/resolve`, { resolution: "keep", reason: "x" }, { ...bearer(TOKEN), "x-actor-id": "u-ops-analyst", "x-actor-role": "ops_analyst" }); assert.equal(again.status, 400, JSON.stringify(again.body)); assert.equal((await events("partner_book.loan.resolved", loan5.id)).length, 1);
+});
+
+test("33.1-T12: Given the first import, then `SM_PARTNER_BOOK_TAPE_EXPECTED_7` is armed on the global subject with `due_at` 7 calendar days after the as-of date; given a second import 5 days later, then the clock is satisfied and re-armed from the new as-of date; given no import by the due date, when the sweep passes, then it reads `breached`, one `ops_analyst` escalation and `partner_book.tape.late` exist, and a second sweep adds nothing.", { skip }, async () => {
+  const first = await imported();
+  // the first import's clock: global subject, anchor = the as-of date, due end of day (ET) 7 calendar days later — satisfied since by the later tapes (T3, the probe, T11), each re-arming from its own as-of date
+  const c1 = (await tapeClocks()).find((c) => c.import_id === first["import_id"]); assert.ok(c1, "the clock the first import armed");
+  assert.equal(c1.subject_kind, "global"); assert.equal(c1.subject_id, "*"); assert.equal(c1.loan_id, null); assert.equal(c1.partner_id, partnerPartyId);
+  assert.equal(c1.anchor_date, DEMO_AS_OF); assert.equal(c1.due_date, addDays(plainDate(DEMO_AS_OF), 7)); assert.equal(c1.due_date, "2026-09-08");
+  assert.equal(new Date(c1.due_at!).toISOString(), "2026-09-09T03:59:00.000Z", "end of day America/New_York on the due date"); assert.equal(c1.status, "satisfied"); assert.ok(c1.satisfied_at);
+  const armedBefore = (await tapeClocks()).filter((c) => c.status === "armed"); assert.equal(armedBefore.length, 1, "one armed clock on the platform"); assert.equal(armedBefore[0]!.as_of_date, T11_AS_OF); assert.equal(armedBefore[0]!.due_date, addDays(plainDate(T11_AS_OF), 7));
+  // a second import 5 days later (as of 2026-10-16; loan 5 is paid off and off the tape): the clock is satisfied and re-armed from the new as-of date
+  clock.set("2026-10-17T13:00:00.000Z");
+  const second = await api("POST", "/v1/partner-book/imports", { partner: DEMO_PARTNER, as_of_date: T12_AS_OF, profile: "m3-v1", tape: { filename: "partner-book-2026-10-16.xlsx", content_base64: b64(tapeAsOf(T12_AS_OF, [5])) }, supplement: { filename: "partner-book-demo-supplement.csv", content_base64: b64(book.supplement) } }, bearer(TOKEN));
+  assert.equal(second.status, 200, JSON.stringify(second.body).slice(0, 800)); assert.equal(second.body["status"], "loaded"); assert.equal(second.body["rows_loaded"], 11); assert.equal(((second.body["report"] as Json)["gaps"] as Json)["not_on_latest_tape"], 0, "a paid_off loan is not held");
+  assert.equal(Number(T12_AS_OF.slice(8)) - Number(T11_AS_OF.slice(8)), 5);
+  const clocks = await tapeClocks();
+  const prev = clocks.find((c) => c.id === armedBefore[0]!.id)!; assert.equal(prev.status, "satisfied"); assert.ok(prev.satisfied_at);
+  const armed = clocks.filter((c) => c.status === "armed"); assert.equal(armed.length, 1, "re-armed once");
+  assert.equal(armed[0]!.import_id, second.body["import_id"]); assert.equal(armed[0]!.anchor_date, T12_AS_OF); assert.equal(armed[0]!.due_date, addDays(plainDate(T12_AS_OF), 7)); assert.equal(armed[0]!.subject_kind, "global"); assert.equal(armed[0]!.partner_id, partnerPartyId);
+  assert.equal((await api("GET", "/v1/partner-book/holds", undefined, bearer(TOKEN))).body["partners"] && ((await api("GET", "/v1/partner-book/holds", undefined, bearer(TOKEN))).body["partners"] as Json[]).find((p) => p["partner_party_id"] === partnerPartyId)!["next_expected"], addDays(plainDate(T12_AS_OF), 7));
+  // rule 8 (review finding): a rejected upload is not a tape — a wrong-layout file for the known partner ("writes nothing") neither satisfies nor re-arms the clock: the same timer, still armed, anchored on the loaded as-of date; the console's as-of date and the clock agree
+  const bad = await api("POST", "/v1/partner-book/imports", { partner: DEMO_PARTNER, as_of_date: "2026-10-17", profile: "m3-v1", tape: { filename: "bad-2026-10-17.xlsx", content_base64: b64(writeXlsx([["Loan", "Name"], ["1", "x"]], "M3")) } }, bearer(TOKEN));
+  assert.equal(bad.status, 200, JSON.stringify(bad.body).slice(0, 400)); assert.equal(bad.body["status"], "rejected"); assert.equal(bad.body["partner_party_id"], partnerPartyId);
+  assert.ok((await events("partner_book.import.completed")).some((e) => e.payload["status"] === "rejected" && e.payload["import_id"] === bad.body["import_id"]), "the rejected import's event is logged");
+  const afterBad = await tapeClocks(); const stillArmed = afterBad.filter((c) => c.status === "armed");
+  assert.equal(afterBad.length, clocks.length, "no clock armed by the rejected file"); assert.equal(stillArmed.length, 1); assert.equal(stillArmed[0]!.id, armed[0]!.id, "the same clock"); assert.equal(stillArmed[0]!.anchor_date, T12_AS_OF); assert.equal(stillArmed[0]!.due_date, addDays(plainDate(T12_AS_OF), 7)); assert.equal(stillArmed[0]!.satisfied_at, null);
+  const partnerLine = ((await api("GET", "/v1/partner-book/holds", undefined, bearer(TOKEN))).body["partners"] as Json[]).find((p) => p["partner_party_id"] === partnerPartyId)!; assert.equal(partnerLine["as_of_date"], T12_AS_OF); assert.equal(partnerLine["next_expected"], addDays(plainDate(T12_AS_OF), 7)); assert.equal(partnerLine["late"], false);
+  // no import by the due date: the sweep breaches it — one ops_analyst escalation and one partner_book.tape.late
+  const timerId = armed[0]!.id;
+  const escalationsOf = async () => db.query<{ id: string; kind: string; owner_role: string | null; status: string; payload: Json }>(`SELECT id::text AS id, kind, owner_role, status, payload FROM escalations WHERE sla_timer_id = $1::uuid ORDER BY opened_at`, [timerId]);
+  const lateOf = async () => (await events("partner_book.tape.late")).filter((e) => e.payload["timer_id"] === timerId);
+  assert.equal((await lateOf()).length, 0); assert.equal((await escalationsOf()).length, 0);
+  clock.set(new Date(Date.parse(armed[0]!.due_at!) + 60_000).toISOString());
+  const sweep = await api("POST", "/v1/sweep", {}, bearer(TOKEN)); assert.equal(sweep.status, 200, JSON.stringify(sweep.body).slice(0, 800));
+  const breach = (sweep.body["breaches"] as Json[]).filter((b) => b["code"] === "SM_PARTNER_BOOK_TAPE_EXPECTED_7");
+  assert.equal(breach.length, 1); assert.equal(breach[0]!["timer_id"], timerId); assert.equal(breach[0]!["loan_id"], null); assert.deepEqual(breach[0]!["escalate_to"], ["ops_analyst"]); assert.equal(breach[0]!["severity"], 3);
+  assert.equal(sweep.body["partner_book_tape_late"], 1);
+  const breached = (await tapeClocks()).find((c) => c.id === timerId)!; assert.equal(breached.status, "breached"); assert.ok(breached.breached_at);
+  const esc = await escalationsOf(); assert.equal(esc.length, 1, "one ops_analyst escalation"); assert.equal(esc[0]!.owner_role, "ops_analyst"); assert.equal(esc[0]!.status, "open"); assert.equal(esc[0]!.payload["timer_code"], "SM_PARTNER_BOOK_TAPE_EXPECTED_7");
+  const late = await lateOf(); assert.equal(late.length, 1); assert.equal(late[0]!.loan_id, null, "global");
+  assert.equal(late[0]!.payload["partner_id"], partnerPartyId); assert.equal(late[0]!.payload["last_as_of_date"], T12_AS_OF); assert.equal(late[0]!.payload["expected_by"], addDays(plainDate(T12_AS_OF), 7)); assert.equal(late[0]!.payload["origination"], true);
+  const status = ((await api("GET", "/v1/partner-book/holds", undefined, bearer(TOKEN))).body["partners"] as Json[]).find((p) => p["partner_party_id"] === partnerPartyId)!;
+  assert.equal(status["late"], true); assert.equal((status["tape_clock"] as Json)["status"], "breached"); assert.equal(status["as_of_date"], T12_AS_OF);
+  // a second sweep adds nothing
+  clock.set(new Date(Date.parse(armed[0]!.due_at!) + 86_400_000).toISOString());
+  const again = await api("POST", "/v1/sweep", {}, bearer(TOKEN)); assert.equal(again.status, 200); assert.equal(again.body["partner_book_tape_late"], 0);
+  assert.equal((await lateOf()).length, 1); assert.equal((await escalationsOf()).length, 1); assert.equal((await tapeClocks()).filter((c) => c.status === "armed").length, 0, "no clock re-armed by the breach");
+  assert.equal((await tapeClocks()).find((c) => c.id === timerId)!.status, "breached");
+});
+
+test("33.1-T13: Given loan 12 imported without a supplement row (`gaps: contact`, no invitation), when a later supplement carries its e-mail, then the party's contact gains it, `NTC_SM_PARTNER_BOOK_INVITATION` is sent to it once, `partner_book.invitation.sent{kind=invitation}` is logged and `SM_PARTNER_BOOK_INVITATION_REMINDER_14` is armed from that day.", { skip }, async () => {
+  const first = await imported(); const l12 = loanN(12); const loan12 = await loanByNumber(12); const party12 = await partyOfLoan(loan12.id);
+  assert.equal(l12.email, null); assert.equal(l12.phone, null);
+  assert.ok((((first["report"] as Json)["gaps_by_loan"] as Json)[l12.servicer_loan_number] as string[]).includes("contact"), "provisioned with gaps: contact");
+  assert.equal(party12.contact["email"] ?? null, null); assert.equal(party12.contact["phone"] ?? null, null);
+  assert.equal((await db.query(`SELECT 1 FROM partner_book_invitations WHERE party_id = $1`, [party12.id])).length, 0, "no invitation so far"); assert.equal((await reminderTimers(loan12.id)).length, 0);
+  // the later supplement carries loan 12's e-mail (the tape a later snapshot, loan 5 paid off and off the tape)
+  const email = `linda.marsh.${R}@example.com`;
+  const supplement = book.supplement + [l12.servicer_loan_number, email, "", l12.name].join(",") + "\r\n";
+  clock.set("2026-10-25T13:00:00.000Z");
+  const r = await api("POST", "/v1/partner-book/imports", { partner: DEMO_PARTNER, as_of_date: T13_AS_OF, profile: "m3-v1", tape: { filename: "partner-book-2026-10-21.xlsx", content_base64: b64(tapeAsOf(T13_AS_OF, [5])) }, supplement: { filename: "partner-book-2026-10-21-supplement.csv", content_base64: b64(supplement) } }, bearer(TOKEN));
+  assert.equal(r.status, 200, JSON.stringify(r.body).slice(0, 800)); assert.equal(r.body["status"], "loaded"); const importId = r.body["import_id"] as string;
+  assert.equal(r.body["rows_loaded"], 11); assert.equal(r.body["loans_created"], 0); assert.equal(r.body["parties_created"], 0); assert.equal(r.body["invitations_sent"], 1, "the one party the supplement first reaches");
+  const report = r.body["report"] as Json; assert.ok(!((report["gaps_by_loan"] as Json)[l12.servicer_loan_number] as string[]).includes("contact"), "no contact gap any more");
+  const inv = report["invitations"] as Json[]; assert.equal(inv.length, 1); assert.equal(inv[0]!["party_id"], party12.id); assert.equal(inv[0]!["loan_id"], loan12.id); assert.equal(inv[0]!["channel"], "email"); assert.equal(inv[0]!["held_reason"], null); assert.ok(!JSON.stringify(r.body).includes(email), "never a destination in the report");
+  // the party's contact gains the e-mail (the same party: no new party, borrowers.party_id unchanged)
+  const after = await partyOfLoan(loan12.id); assert.equal(after.id, party12.id); assert.equal(after.contact["email"], email); assert.equal(after.legal_name, l12.name);
+  assert.equal((await db.query(`SELECT 1 FROM parties WHERE party_type = 'borrower' AND contact->>'email' = $1`, [email])).length, 1);
+  // the invitation, once: the row, the FAKE message naming the partner and the last four, the notice, the event, the decision
+  const rows = await db.query<{ kind: string; channel: string; message_id: string; notice_id: string; sent_at: string; import_id: string }>(`SELECT kind, channel, message_id, notice_id::text AS notice_id, sent_at::text AS sent_at, import_id::text AS import_id FROM partner_book_invitations WHERE party_id = $1 ORDER BY sent_at`, [party12.id]);
+  assert.deepEqual(rows.map((x) => [x.kind, x.channel, x.message_id, x.import_id]), [["invitation", "email", `partner_book:${importId}:${party12.id}:email`, importId]]);
+  const msg = edelivery().messages.get(rows[0]!.message_id); assert.ok(msg, "the FAKE port holds the invitation"); assert.equal(msg.message.to, email); assert.equal(msg.status, "sent"); assert.ok(msg.message.subject?.includes(DEMO_PARTNER.legal_name)); assert.ok(msg.message.subject?.includes(l12.servicer_loan_number.slice(-4)));
+  const notice = runtime.noticeMemory.get(rows[0]!.notice_id); assert.ok(notice); assert.equal(notice.templateCode, "NTC_SM_PARTNER_BOOK_INVITATION"); assert.equal(notice.status, "sent"); assert.equal(notice.payload["kind"], "invitation"); assert.ok(notice.rendered.text.includes(DEMO_PARTNER.legal_name));
+  const sent = await events("partner_book.invitation.sent", loan12.id);
+  assert.equal(sent.length, 1); assert.equal(sent[0]!.payload["kind"], "invitation"); assert.equal(sent[0]!.payload["party_id"], party12.id); assert.equal(sent[0]!.payload["channel"], "email"); assert.equal(sent[0]!.payload["notice_id"], rows[0]!.notice_id); assert.equal(sent[0]!.payload["origination"], true); assert.ok(!JSON.stringify(sent[0]!.payload).includes(email));
+  assert.equal((await db.query(`SELECT 1 FROM agent_decisions WHERE action = 'account.invite' AND loan_id = $1`, [loan12.id])).length, 1);
+  // the reminder clock, armed from that day: anchor = the sent_at's day (ET), due 14 calendar days later
+  const timers = await reminderTimers(loan12.id); assert.equal(timers.length, 1); assert.equal(timers[0]!.status, "armed");
+  assert.equal(timers[0]!.anchor_date, "2026-10-25"); assert.equal(timers[0]!.due_date, addDays(plainDate("2026-10-25"), 14)); assert.equal(timers[0]!.due_date, "2026-11-08"); assert.equal(new Date(timers[0]!.due_at!).toISOString(), "2026-11-09T04:59:00.000Z", "end of day America/New_York (EST) on the due date");
+  // once: the next snapshot with the same supplement invites nobody again
+  const again = await api("POST", "/v1/partner-book/imports", { partner: DEMO_PARTNER, as_of_date: "2026-10-26", profile: "m3-v1", tape: { filename: "partner-book-2026-10-26.xlsx", content_base64: b64(tapeAsOf("2026-10-26", [5])) }, supplement: { filename: "partner-book-2026-10-21-supplement.csv", content_base64: b64(supplement) } }, bearer(TOKEN));
+  assert.equal(again.status, 200, JSON.stringify(again.body).slice(0, 400)); assert.equal(again.body["status"], "loaded"); assert.equal(again.body["invitations_sent"], 0);
+  assert.equal((await db.query(`SELECT 1 FROM partner_book_invitations WHERE party_id = $1`, [party12.id])).length, 1); assert.equal((await events("partner_book.invitation.sent", loan12.id)).length, 1); assert.equal((await reminderTimers(loan12.id)).length, 1);
 });

@@ -8,6 +8,11 @@
  *    `auth.code.enter` with the e-mail; the FAKE code shown outside production) → `verify_email` → the session.
  *  - `sign_in`  (/app/sign-in, the header's Sign in, any 401 under `auth.welcome_back`): e-mail, password, Sign in, Google,
  *    "Forgot your password?", "New here? Create an account". `EMAIL_UNVERIFIED` (a fresh code was sent) → the code step.
+ *    The code door (33.1 rule 5 — the partner book's invitation says "enter this e-mail address on the sign-in page and we will
+ *    send a code"): `account.code.request` beside Sign in (`data-testid="account-code-request"`, e-mail only, no password) →
+ *    `POST /v1/borrower/auth/otp {action: request, channel: email}` → the same code step (`via: "otp"`) → `{action: verify}`
+ *    lands the session exactly as the password path does (the proxy turns `token` into the cookie); refusals render in
+ *    `account-error`. The password path is unchanged.
  *  - `reset`    (/app/reset): e-mail → `request_reset` → code + new password → `reset` → `account.reset.done` + Sign in.
  * Passkeys are not offered anywhere (docs/ux/17 §0.4); codes are kept for e-mail verification, reset and the fresh-L1 step-up.
  * On a session the caller decides what happens next (`onSession`); by default the app lands on /app. The proxy has already
@@ -53,7 +58,8 @@ export type AccountProps = {
   initialEmail?: string;
 };
 
-type CodeStep = { kind: "code"; email: string; challenge_id: string; fake_code?: string; on_file?: boolean };
+/** `via: "otp"` — the sign-in page's code door (33.1 rule 5): the challenge is an auth/otp one, verified by `api.authOtpVerify`; otherwise an account `verify_email` challenge. */
+type CodeStep = { kind: "code"; email: string; challenge_id: string; fake_code?: string; on_file?: boolean; via?: "otp" };
 type ResetCodeStep = { kind: "reset_code"; email: string; challenge_id?: string; fake_code?: string };
 type Step = { kind: "form" } | CodeStep | ResetCodeStep | { kind: "done" } | { kind: "google" };
 
@@ -130,9 +136,20 @@ export function Account({ mode, titleKey, onSession, onCancel, navigate, redirec
       .finally(() => setBusy(false));
   };
 
+  // 33.1 rule 5: the code door — a six-digit code to the e-mail typed above, no password; the API never says whether the e-mail is on file
+  const requestCode = () => {
+    const em = email.trim();
+    if (!em) return;
+    void run(async () => {
+      const r = await api.authOtpRequest("email", em);
+      setCode("");
+      setStep({ kind: "code", email: em, challenge_id: r.challenge_id, fake_code: r.fake_code, via: "otp" });
+    });
+  };
+
   const verify = (e: FormEvent, s: CodeStep) => {
     e.preventDefault();
-    void run(async () => settle(await accountVerifyEmail(s.challenge_id, code.trim())));
+    void run(async () => settle(s.via === "otp" ? await api.authOtpVerify(s.challenge_id, code.trim()) : await accountVerifyEmail(s.challenge_id, code.trim())));
   };
 
   const requestReset = (e: FormEvent) => {
@@ -246,8 +263,15 @@ export function Account({ mode, titleKey, onSession, onCancel, navigate, redirec
               <button type="submit" className="sm-btn sm-btn-primary" disabled={busy || !email.trim() || !password}>
                 {copy("account.signin.button")}
               </button>
+              {/* 33.1 rule 5: the code door — the e-mail alone; type="button" so the password's `required` never blocks it */}
+              <button type="button" className="sm-btn sm-btn-quiet" data-testid="account-code-request" onClick={requestCode} disabled={busy || !email.trim()}>
+                {copy("account.code.request")}
+              </button>
               {cancel}
             </div>
+            <p className="sm-source" data-copy-key="account.code.request">
+              {copyExtra("account.code.request", "helper")}
+            </p>
           </form>
           {googleBlock}
           <p>

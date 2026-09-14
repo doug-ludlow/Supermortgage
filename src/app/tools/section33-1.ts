@@ -18,6 +18,9 @@
  *   account.invite     act   rule 4 for one provisioned party: NTC_SM_PARTNER_BOOK_INVITATION rendered through the Notice Registry and
  *                            sent on the e-delivery port; SMS only with a consents{tcpa_sms} id (NO_TCPA_EVIDENCE).
  *   book.report        read  an import's row, report and counts for the console.
+ *   book.resolve       act   rule 8 — the operator's resolution of a loan absent from the partner's latest tape (an `ops_analyst` action):
+ *                            `paid_off` / `transferred_out` move `loans.status` (from `monitored` only) and log `partner_book.loan.resolved`;
+ *                            `keep` logs the event only, which lifts the hold for 7 days (src/runtime/partner-book.ts holdsOf).
  *
  * Guardrails (the paragraph's list): NO_CONSUMER_REPORT, LOAN_MONITORED, NO_INVESTOR_FIELDS_OUTSIDE_FACTS, NO_LINK_ON_UNVERIFIED_EMAIL,
  * NO_TCPA_EVIDENCE, NO_DESTINATION_IN_LOG. Never a destination in a payload, a rationale, a report or a log line — sha256 only.
@@ -46,6 +49,9 @@ export const PARTNER_BOOK_MODEL = "deterministic";
 export const PARTNER_BOOK_PROMPT = "33.1-v1";
 export const partnerBookRun = (): AgentRunInfo => ({ runId: randomUUID(), modelVersion: PARTNER_BOOK_MODEL, promptVersion: PARTNER_BOOK_PROMPT, confidence: 1 });
 export const INVITATION_TEMPLATE = "NTC_SM_PARTNER_BOOK_INVITATION";
+/** Rule 8: `book.resolve{resolution ∈ paid_off | transferred_out | keep}`; `keep` lifts the `not_on_latest_tape` hold for 7 days. */
+export const RESOLUTIONS: readonly string[] = ["paid_off", "transferred_out", "keep"];
+export const KEEP_LIFTS_HOLD_DAYS = 7;
 /** The sign-in address the invitation carries: the app base + /app (src/runtime/borrower/routes.ts returnUrlBase). */
 export const signInUrl = (): string => `${(process.env["BORROWER_APP_URL"] ?? "https://app.supermortgage.example").replace(/\/+$/, "")}/app`;
 
@@ -104,7 +110,10 @@ export type BookPlan = {
   readonly parties_created: number;
   readonly parties_linked: number;
   readonly invitations: number;
+  /** Rule 8: the partner's monitored loans whose latest facts are older than this tape's as-of date and which the tape does not carry — on hold, never closed. */
+  readonly not_on_tape: NotOnTape[];
 };
+export type NotOnTape = { readonly loan_id: string; readonly servicer_loan_number: string; readonly last_as_of_date: string };
 
 /** Every borrower party on the platform with its destinations (rule 3's lookup; the scan mirrors src/infra/db/borrower-parties.ts emailOrPhone). */
 export async function existingBorrowerParties(db: Queryable): Promise<ExistingParty[]> {
@@ -123,7 +132,7 @@ export async function planPartnerBook(db: Queryable, parsed: ParsedBook, partner
   const exceptions: RowException[] = [...parsed.exceptions];
   const gaps = emptyGaps(); const gapsByLoan: Record<string, GapKind[]> = {};
   const existingParties = await existingBorrowerParties(db);
-  const known = partnerPartyId ? await db.query<{ id: string; servicer_loan_number: string; status: string }>(`SELECT id, servicer_loan_number, status FROM loans WHERE partner_party_id = $1`, [partnerPartyId]) : [];
+  const known = partnerPartyId ? await db.query<{ id: string; servicer_loan_number: string; status: string; last_as_of_date: string | null }>(`SELECT l.id, l.servicer_loan_number, l.status, (SELECT max(f.as_of_date)::text FROM partner_book_facts f WHERE f.loan_id = l.id) AS last_as_of_date FROM loans l WHERE l.partner_party_id = $1`, [partnerPartyId]) : [];
   const knownByNumber = new Map(known.map((l) => [l.servicer_loan_number, l]));
   const loans: LoanPlan[] = [];
   let created = 0, linked = 0, invitations = 0;
@@ -175,7 +184,13 @@ export async function planPartnerBook(db: Queryable, parsed: ParsedBook, partner
     gapsByLoan[row.servicer_loan_number] = gapList;
     loans.push({ row, loan_id: loanId, existing: !!prior, change, derivation, prior_terms_from: priorTermsFrom, property_id: propertyId, borrower_id: borrowerId, party: { existing_party_id: existingPartyId, resolution, party_id: partyId, contact_update: contactUpdate }, channels, sms_consent_id: smsConsent, invite, gaps: gapList });
   }
-  return { as_of_date: asOf, partner_party_id: partnerPartyId, loans, exceptions, gaps, gaps_by_loan: gapsByLoan, parties_created: created, parties_linked: linked, invitations };
+  // rule 8: a monitored loan of the partner absent from a LATER full tape (its latest facts predate this as-of date; a same-day supplement or
+  // partial tape marks nothing) stays monitored on hold — counted under `not_on_latest_tape`, keyed by servicer loan number, never a row of the file
+  const onTape = new Set(loans.map((l) => l.row.servicer_loan_number));
+  const notOnTape: NotOnTape[] = known.filter((l) => l.status === "monitored" && !onTape.has(l.servicer_loan_number) && l.last_as_of_date !== null && l.last_as_of_date < asOf)
+    .map((l) => ({ loan_id: l.id, servicer_loan_number: l.servicer_loan_number, last_as_of_date: l.last_as_of_date! })).sort((a, b) => a.servicer_loan_number.localeCompare(b.servicer_loan_number));
+  for (const n of notOnTape) { gaps.not_on_latest_tape++; gapsByLoan[n.servicer_loan_number] = [...(gapsByLoan[n.servicer_loan_number] ?? []), "not_on_latest_tape"]; }
+  return { as_of_date: asOf, partner_party_id: partnerPartyId, loans, exceptions, gaps, gaps_by_loan: gapsByLoan, parties_created: created, parties_linked: linked, invitations, not_on_tape: notOnTape };
 }
 
 // ───────── provisioning (rule 3) and the invitation (rule 4) — shared by the seam and the bus ─────────
@@ -276,7 +291,7 @@ export const TOOLS_33_1: readonly ToolDef[] = defineTools(PROCESS_33_1, PORTFOLI
       const db = dbOf(rt);
       const plan = await planPartnerBook(db, parsed, await partnerPartyByName(db, partner["legal_name"]), asOf);
       return { status: "plan", profile: profile.id, as_of_date: asOf, partner_party_id: plan.partner_party_id, rows_total: parsed.rows_total, rows_loaded: plan.loans.length, rows_exception: rowsWithExceptions(plan.exceptions), exceptions: plan.exceptions, gaps: plan.gaps,
-        loans_created: plan.loans.filter((l) => l.change === "created").length, loans_updated: plan.loans.filter((l) => l.change === "updated").length, loans_unchanged: plan.loans.filter((l) => l.change === "unchanged").length, parties_created: plan.parties_created, parties_linked: plan.parties_linked, invitations: plan.invitations,
+        loans_created: plan.loans.filter((l) => l.change === "created").length, loans_updated: plan.loans.filter((l) => l.change === "updated").length, loans_unchanged: plan.loans.filter((l) => l.change === "unchanged").length, parties_created: plan.parties_created, parties_linked: plan.parties_linked, invitations: plan.invitations, not_on_tape: plan.not_on_tape,
         loans: plan.loans.map((l) => ({ servicer_loan_number: l.row.servicer_loan_number, change: l.change, party: l.party.existing_party_id ? "existing" : l.party.resolution?.kind === "link" ? "link" : "create", channels: l.channels, invite: l.invite, gaps: l.gaps })) };
     }),
     decision: (i, output) => { const o = obj(output); return { action: "book.import", subject: { kind: "partner_book_import_plan", id: `${str(obj(i["partner"]) as ToolInput, "legal_name")}@${str(i, "as_of_date")}` },
@@ -331,6 +346,33 @@ export const TOOLS_33_1: readonly ToolDef[] = defineTools(PROCESS_33_1, PORTFOLI
       return { sent: !r.held_reason, notice_id: r.notice_id, message_id: r.message_id, channel, kind, sent_at: r.sent_at, bounced: r.bounced, destination_hash: r.destination_hash, held_reason: r.held_reason };
     }),
     decision: (i, output, ctx) => { const o = obj(output); return { action: "account.invite", subject: { kind: "party", id: str(i, "party_id") }, rationale: `${str(i, "kind") || "invitation"} by ${str(i, "channel") || "email"} to party ${str(i, "party_id")} on loan ${str(i, "loan_id")}: ${o["sent"] ? "sent" : `not sent (${String(o["reason"] ?? o["held_reason"] ?? "held")})`} by ${ctx.actor.kind}:${ctx.actor.id}` }; } },
+
+  // rule 8: "an operator resolves it with `book.resolve{loan_id, resolution ∈ paid_off | transferred_out | keep, reason}` (an `ops_analyst` action; `paid_off`/`transferred_out`
+  // move `loans.status` and log `partner_book.loan.resolved`; `keep` lifts the hold for 7 days)" — a human act of the ops_analyst, never an agent's; the loan is the command's scope
+  { name: "book.resolve", kind: "act", ruleSetVersion: PARTNER_BOOK_RULE_SET, humanOnly: true, humanRoles: ["ops_analyst"], guardrails: [NO_DESTINATION_IN_LOG, LOAN_MONITORED, NO_CONSUMER_REPORT],
+    handler: compute(async (i, ctx, rt) => {
+      need(i, "loan_id", "resolution", "reason"); const db = dbOf(rt); const loanId = str(i, "loan_id"); const resolution = str(i, "resolution"); const reason = str(i, "reason");
+      if (!RESOLUTIONS.includes(resolution)) throw new RangeError(`resolution is one of ${RESOLUTIONS.join(" | ")} (33.1 rule 8)`);
+      if (ctx.loanId && ctx.loanId !== loanId) throw new RangeError(`loan_id ${loanId} is not the command's loan ${ctx.loanId}`);
+      const loan = (await db.query<{ id: string; servicer_loan_number: string; status: string; partner_party_id: string | null; last_as_of_date: string | null; partner_as_of_date: string | null }>(
+        `SELECT l.id, l.servicer_loan_number, l.status, l.partner_party_id::text AS partner_party_id, (SELECT max(f.as_of_date)::text FROM partner_book_facts f WHERE f.loan_id = l.id) AS last_as_of_date,
+                (SELECT max(i.as_of_date)::text FROM partner_book_imports i WHERE i.partner_party_id = l.partner_party_id AND i.status = 'loaded') AS partner_as_of_date
+           FROM loans l WHERE l.id = $1`, [loanId]))[0];
+      if (!loan) throw new RangeError(`no loan ${loanId}`);
+      if (!loan.partner_party_id || loan.last_as_of_date === null) throw new RangeError(`loan ${loanId} is not on a partner book (no partner_book_facts row)`);
+      if (loan.status !== "monitored") throw new RangeError(`loan ${loanId} is ${loan.status}, not monitored — nothing to resolve (33.1 rule 8)`);
+      const onHold = loan.partner_as_of_date !== null && loan.last_as_of_date < loan.partner_as_of_date;
+      if (resolution !== "keep") {
+        // the status moves in the command's transaction, from `monitored` only (the state machine's transition; a refinance that funded first wins)
+        const defer = rt.services["deferWrite"] as ((fn: (q: Queryable) => Promise<void>) => void) | undefined; if (!defer) throw new PortUnavailable("service:deferWrite");
+        defer(async (q) => { await q.query(`UPDATE loans SET status = $2 WHERE id = $1 AND status = 'monitored'`, [loanId, resolution]); });
+      }
+      ctx.events.append({ type: "partner_book.loan.resolved", loanId, aggregate: { kind: "loan", id: loanId }, actor: ctx.actor,
+        payload: { loan_id: loanId, servicer_loan_number: loan.servicer_loan_number, partner_id: loan.partner_party_id, resolution, reason, last_as_of_date: loan.last_as_of_date, partner_as_of_date: loan.partner_as_of_date, was_on_hold: onHold, ...(resolution === "keep" ? { hold_lifted_days: KEEP_LIFTS_HOLD_DAYS } : { status: resolution }), origination: true } });
+      return { loan_id: loanId, servicer_loan_number: loan.servicer_loan_number, resolution, status: resolution === "keep" ? "monitored" : resolution, was_on_hold: onHold, last_as_of_date: loan.last_as_of_date, partner_as_of_date: loan.partner_as_of_date, ...(resolution === "keep" ? { hold_lifted_days: KEEP_LIFTS_HOLD_DAYS } : {}) };
+    }),
+    decision: (i, output, ctx) => { const o = obj(output); return { action: "book.resolve", subject: { kind: "loan", id: str(i, "loan_id") },
+      rationale: `${str(i, "resolution")} for the loan ending ${lastFour(String(o["servicer_loan_number"] ?? str(i, "loan_id")))} by ${ctx.actor.kind}:${ctx.actor.id}${ctx.actor.role ? ` (${ctx.actor.role})` : ""}: ${str(i, "reason")}; ${o["was_on_hold"] ? "the loan was on hold (not_on_latest_tape)" : "the loan was not on hold"}${str(i, "resolution") === "keep" ? `; the hold is lifted for ${KEEP_LIFTS_HOLD_DAYS} days` : `; loans.status → ${str(i, "resolution")}`}` }; } },
 
   { name: "book.report", kind: "read", handler: compute(async (i, _ctx, rt) => {
       const db = dbOf(rt);

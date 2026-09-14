@@ -5,7 +5,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createConsoleServer, listen } from "./server.ts";
+import { createConsoleServer, listen, section34RouteTable } from "./server.ts";
+import type { Runtime } from "../runtime/app.ts";
 import { MemoryConsoleStore } from "./memory-store.ts";
 import { MemoryEventStore, FixedClock, SYSTEM, type Actor } from "../kernel/events/index.ts";
 import { MemoryLedger } from "../kernel/ledger/ledger.ts";
@@ -129,5 +130,51 @@ test("console: human actions are role-checked and leave events — officer compl
     assert.equal((await s.call("/api/agents/ai-off", "officer", { method: "POST", body: JSON.stringify({ agent: "nope", why: "x" }) })).status, 409);
     r = await s.call("/api/notices/supersede", "ops_analyst", { method: "POST", body: JSON.stringify({ id: s.held.id, replacementId: "nope" }) });
     assert.equal(r.status, 409);
+  } finally { s.server.close(); }
+});
+
+test("console: section 34 (34.2 directory, 34.3 book operations, 34.4 controls) is mounted from the core modules' own route tables with their roles; without a runtime those paths answer 501 RUNTIME_UNAVAILABLE", async () => {
+  // the tables are data: building them touches no database (the runtime is only held for the handlers)
+  const rows = section34RouteTable({} as unknown as Runtime).map((r) => [r.section, r.method, r.path, r.roles.join("|"), r.command ?? ""]);
+  assert.deepEqual(rows, [
+    ["34.2", "GET", "/ops/api/directory/search", "ops_analyst|officer|compliance", "directory.search"],
+    ["34.2", "GET", "/ops/api/directory/accounts/{party_id}", "ops_analyst|officer|compliance", "directory.account"],
+    ["34.2", "GET", "/ops/api/directory/accounts/{party_id}/activity", "ops_analyst|officer|compliance", "directory.activity"],
+    ["34.2", "POST", "/ops/api/directory/accounts/{party_id}/unmask", "compliance|officer", "directory.unmask"],
+    ["34.2", "POST", "/ops/api/directory/accounts/{party_id}/export", "compliance", "directory.export"],
+    ["34.3", "GET", "/ops/api/partner-book/partners", "ops_analyst|officer|compliance", ""],
+    ["34.3", "GET", "/ops/api/partner-book/imports", "ops_analyst|officer|compliance", ""],
+    ["34.3", "GET", "/ops/api/partner-book/imports/{id}", "ops_analyst|officer|compliance", ""],
+    ["34.3", "GET", "/ops/api/partner-book/loans", "ops_analyst|officer|compliance", ""],
+    ["34.3", "GET", "/ops/api/partner-book/loans/{id}", "ops_analyst|officer|compliance", ""],
+    ["34.3", "GET", "/ops/api/partner-book/reviews", "ops_analyst|officer|compliance", ""],
+    ["34.3", "GET", "/ops/api/partner-book/readiness", "ops_analyst|officer|compliance", ""],
+    ["34.3", "GET", "/ops/api/partner-book/daily-report", "ops_analyst|officer|compliance", "book.daily_report"],
+    ["34.3", "POST", "/ops/api/partner-book/daily-report/export", "compliance", "book.daily_report:export"],
+    ["34.3", "POST", "/ops/api/partner-book/loans/{id}/resolve", "ops_analyst", "book.resolve"],
+    ["34.4", "GET", "/ops/api/controls/timers", "ops_analyst|officer|compliance|admin", ""],
+    ["34.4", "GET", "/ops/api/controls/timers/:id", "ops_analyst|officer|compliance|admin", ""],
+    ["34.4", "GET", "/ops/api/controls/escalations", "ops_analyst|officer|compliance|admin", ""],
+    ["34.4", "GET", "/ops/api/controls/escalations/:id", "ops_analyst|officer|compliance|admin", ""],
+    ["34.4", "POST", "/ops/api/controls/escalations/:id/complete", "ops_analyst|officer|compliance", "controls.escalation.complete"],
+    ["34.4", "GET", "/ops/api/controls/outbox", "ops_analyst|officer|compliance|admin", ""],
+    ["34.4", "GET", "/ops/api/controls/outbox/:id", "ops_analyst|officer|compliance|admin", ""],
+    ["34.4", "POST", "/ops/api/controls/outbox/:id/requeue", "ops_analyst|officer", "controls.outbox.requeue"],
+    ["34.4", "GET", "/ops/api/controls/ai", "ops_analyst|officer|compliance|admin", ""],
+    ["34.4", "GET", "/ops/api/controls/ai/:code", "ops_analyst|officer|compliance|admin", ""],
+    ["34.4", "POST", "/ops/api/controls/ai/:code/kill", "compliance|admin", "controls.ai.kill"],
+    ["34.4", "POST", "/ops/api/controls/ai/:code/reset", "compliance|admin", "controls.ai.kill"],
+    ["34.4", "POST", "/ops/api/controls/evidence", "compliance", "controls.evidence.pack"],
+    ["34.4", "GET", "/ops/api/controls/evidence", "compliance", ""],
+    ["34.4", "GET", "/ops/api/controls/evidence/:id", "compliance", ""]]);
+  // no route under /ops/api/controls/timers is anything but GET (34.4 rule 1); the search's query string is never logged as typed (34.2 rule 4)
+  assert.ok(section34RouteTable({} as unknown as Runtime).every((r) => !r.path.startsWith("/ops/api/controls/timers") || r.method === "GET"));
+  assert.equal(section34RouteTable({} as unknown as Runtime).find((r) => r.command === "directory.search")!.logged_query, false);
+  const s = await scenario();
+  try {
+    for (const path of ["/api/directory/search?q=abc", "/api/controls/timers", "/api/partner-book/partners", "/ops/api/directory/search?q=abc"]) {
+      const r = await s.call(path, "ops_analyst"); assert.equal(r.status, 501, path); assert.equal(r.body["code"], "RUNTIME_UNAVAILABLE", path);
+    }
+    assert.equal((await s.call("/api/directory/search?q=abc", null)).status, 401, "no actor is still 401 first");
   } finally { s.server.close(); }
 });

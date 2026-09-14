@@ -121,7 +121,8 @@ export const ERROR_COPY_KEYS: Readonly<Record<string, string>> = {
 export const REFI_REVIEW_COPY_KEYS: Readonly<Record<"candidate" | "watching" | "not_now" | "excluded", string>> = { candidate: "refi.review.candidate", watching: "refi.review.watching", not_now: "refi.review.not_now", excluded: "refi.review.excluded" };
 /** The engine's reason codes the library authors a line for (20.1's fire-rule misses, exclusions and gates; 33.2's own): a formatted reason ("rate_delta_bps -50 < 25", "pricing_refused:…") maps by its leading code. */
 export const REFI_REVIEW_REASON_CODES: readonly string[] = ["rate_delta", "npv_positive", "seven_year_delta_positive", "prescreen", "state_rule", "rate_delta_bps", "no_benefit", "npv_cents", "seven_year_total_cost_delta", "lifetime_interest_delta", "not_priced", "not_priceable", "pricing_refused", "prescreen_failed", "state_rule_failed",
-  "cooldown", "frequency_cap", "premium_recapture_window", "marketing_suppression", "implausible_value", "value_stale", "declined", "expired", "not_active", "not_in_universe", "bankruptcy_active", "foreclosure_referred", "lossmit_plan_active", "deceased_or_sii_pending", "transfer_out_pending", "delinquent"];
+  "cooldown", "frequency_cap", "premium_recapture_window", "marketing_suppression", "implausible_value", "value_stale", "declined", "expired", "not_active", "not_in_universe", "bankruptcy_active", "foreclosure_referred", "lossmit_plan_active", "deceased_or_sii_pending", "transfer_out_pending", "delinquent",
+  "not_on_latest_tape"];   // 33.1 rule 8: the loan was absent from the partner's latest tape (held out of the review until it returns or an operator resolves it)
 export const REFI_REVIEW_REASON_OTHER_KEY = "refi.review.reason.other";
 export function refiReviewReasonKey(reason: string): string {
   const code = /^[a-z][a-z0-9_]*/.exec(reason.trim())?.[0] ?? "";

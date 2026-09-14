@@ -407,7 +407,7 @@ test("32.7-T8: Given the borrower opens \"How to cancel\" and confirms, then `re
   assert.deepEqual(rec["needed_from_you"], []); assert.ok(!dates(rec).some((d) => d.timer_code === "REGZ_1026_23_RESCISSION_3SBD_GATE"), "the cancel window is gone");
   assert.equal(badge(await record(appE.B, j2.appId)).badge, "Cancelled");
   // read-only: a second tap on the confirmation answers the stored outcome; the schedule/closing commands are refused for a rescinded application
-  const again = await api("POST", `/v1/borrower/cards/${choice.card_instance_id}/resolve`, { option_id: "cancel" }, tok); assert.equal(again.status, 200); assert.equal(again.body["idempotent"], true);
+  const again = await api("POST", `/v1/borrower/cards/${choice.card_instance_id}/resolve`, { option_id: "cancel" }, tok); assert.equal(again.status, 200, JSON.stringify({ body: again.body, card: (await cardsOf(j2.appId)).filter((c) => c.card_instance_id === choice.card_instance_id).map((c) => [c.status, c.resolved_at, c.evidence]) })); assert.equal(again.body["idempotent"], true);
   const t = await thread(A); assert.ok(t.pinned === null, "no pinned ask on a cancelled application"); assert.ok(t.messages.some((m) => m["card_instance_id"] === cancelled.card_instance_id));
 });
 

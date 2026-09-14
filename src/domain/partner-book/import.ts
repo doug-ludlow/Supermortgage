@@ -121,10 +121,15 @@ export function parseSupplement(file: ParsedFile): SupplementRow[] {
 
 // ───────── the book ─────────
 
-/** The spec's gap counts plus the delivery's: `contact_bounced` (Integrations: a bounce) and `invitation_held` (the registry's checklist held the rendered invitation — the ops_analyst's work item). */
-export type GapKind = "contact" | "tin" | "dob" | "mailing_address" | "coborrower" | "consents" | "contact_bounced" | "invitation_held";
+/**
+ * The spec's gap counts (`contact, tin, dob, mailing_address, coborrower, consents, not_on_latest_tape` — Outputs and artifacts) plus the
+ * delivery's: `contact_bounced` (Integrations: a bounce) and `invitation_held` (the registry's checklist held the rendered invitation — the
+ * ops_analyst's work item). `not_on_latest_tape` (rule 8) counts the partner's monitored loans a later full tape no longer carries — they are
+ * never rows of the file, so the count is the plan's (src/app/tools/section33-1.ts planPartnerBook), keyed by servicer loan number in gaps_by_loan.
+ */
+export type GapKind = "contact" | "tin" | "dob" | "mailing_address" | "coborrower" | "consents" | "not_on_latest_tape" | "contact_bounced" | "invitation_held";
 export type GapCounts = Record<GapKind, number>;
-export const emptyGaps = (): GapCounts => ({ contact: 0, tin: 0, dob: 0, mailing_address: 0, coborrower: 0, consents: 0, contact_bounced: 0, invitation_held: 0 });
+export const emptyGaps = (): GapCounts => ({ contact: 0, tin: 0, dob: 0, mailing_address: 0, coborrower: 0, consents: 0, not_on_latest_tape: 0, contact_bounced: 0, invitation_held: 0 });
 
 export type ParsedRow = {
   readonly row: number;                          // 1-based data row of the tape
@@ -305,6 +310,8 @@ export type ImportReport = {
   readonly rejected: { readonly missing_headers: string[] } | null;
   readonly supplement: { readonly rows: number; readonly matched: number; readonly orphans: number };
   readonly loans: ImportLoanLine[];
+  /** Rule 8: the partner's monitored loans absent from this later full tape — on hold (`not_on_latest_tape`), never silently closed; `partner_book.loan.not_on_tape` logged per loan. */
+  readonly not_on_tape?: { loan_id: string; servicer_loan_number: string; last_as_of_date: string }[];
   /** Per invitation: the party, the loan, the channel and the destination's hash — never the destination; `held_reason` when the checklist held the rendered notice (nothing was sent). */
   readonly invitations: { party_id: string; loan_id: string; channel: "email" | "sms"; destination_hash: string; notice_id: string | null; bounced: boolean; held_reason: string | null }[];
 };

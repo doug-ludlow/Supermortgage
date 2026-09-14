@@ -8,6 +8,10 @@
  *   seed-demo  board the built-in 100-loan demo transfer batch (fixtures/transfer-batch-demo), the 32.14 entry demo (open states, the
  *            partner's NMLSR ID, a FAKE rate sheet) and the 33.1 partner book (the 12-loan fixture tape + supplement under the demo
  *            partner: monitored loans, one party per homeowner, the invitations — src/runtime/partner-book.ts), all idempotent, then exit
+ *   staff-bootstrap <email>  34.1 operational prerequisites: the first admin — creates the first `staff_users{roles=[admin]}` row when no
+ *            staff_users row exists and sends NTC_SM_STAFF_INVITATION (a code to that e-mail opens enrolment); a no-op once any staff row
+ *            exists ("nothing else creates an admin without an admin"), then exit. `serve` reads STAFF_BOOTSTRAP_ADMIN_EMAIL once at start
+ *            and does the same (src/runtime/staff/auth.ts bootstrapStaffAdmin).
  */
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -29,6 +33,7 @@ import { rateFeedFromEnv } from "../infra/integrations/rates.ts";
 import { fakeReviewersFromEnv } from "../infra/integrations/reviewers.ts";
 import { BorrowerFlows } from "./borrower/flows/index.ts";
 import { PgBorrowerUiRepository } from "../infra/db/borrower-ui.ts";
+import { bootstrapStaffAdmin } from "./staff/auth.ts";
 
 const mode = process.argv[2] ?? "serve";
 const logger = createLogger(process.env["LOG_FORMAT"] === "text" ? "text" : "json");
@@ -80,9 +85,23 @@ if (mode === "seed-demo") {
   } catch (e) { logger.error("seed-demo failed", { error: e }); await db.end().catch(() => undefined); process.exit(1); }
 }
 
-if (mode !== "serve") { logger.error(`unknown mode ${mode}; use serve | sweep | migrate | seed-demo`); process.exit(2); }
+if (mode === "staff-bootstrap") {
+  try {
+    const email = (process.argv[3] ?? process.env["STAFF_BOOTSTRAP_ADMIN_EMAIL"] ?? "").trim();
+    if (!email) { logger.error("staff-bootstrap: an e-mail is required (`main.ts staff-bootstrap <email>` or STAFF_BOOTSTRAP_ADMIN_EMAIL)"); await db.end(); process.exit(2); }
+    const r = await bootstrapStaffAdmin(runtime, email, { logger });
+    logger.info("staff-bootstrap", { created: r.created, staff_user_id: r.staff_user_id, reason: r.reason });   // never the e-mail
+    await db.end();
+    process.exit(0);
+  } catch (e) { logger.error("staff-bootstrap failed", { error: e }); await db.end().catch(() => undefined); process.exit(1); }
+}
+
+if (mode !== "serve") { logger.error(`unknown mode ${mode}; use serve | sweep | migrate | seed-demo | staff-bootstrap`); process.exit(2); }
 if (!config.apiToken) logger.warn("API_TOKEN is empty: every route is open (ALLOW_INSECURE_NO_TOKEN=1)");
 // 32.14: the Phase I partner from configuration (DELTA-15); Sign in with Google is the FAKE provider under INTEGRATIONS=fake (DELTA-12 — the real adapter is wired with the client secret when another INTEGRATIONS value exists)
+// 34.1: STAFF_BOOTSTRAP_ADMIN_EMAIL is read once at start — the first admin is invited when no staff_users row exists (a no-op otherwise; the value is never logged)
+const bootstrapEmail = (process.env["STAFF_BOOTSTRAP_ADMIN_EMAIL"] ?? "").trim();
+if (bootstrapEmail) { try { const r = await bootstrapStaffAdmin(runtime, bootstrapEmail, { logger }); logger.info("staff-bootstrap (STAFF_BOOTSTRAP_ADMIN_EMAIL)", { created: r.created, staff_user_id: r.staff_user_id, reason: r.reason }); } catch (e) { logger.error("staff-bootstrap failed (STAFF_BOOTSTRAP_ADMIN_EMAIL)", { error: e }); } }
 const server = createApiServer({ runtime, apiToken: config.apiToken, logger, borrower: { environment: config.environment, defaultPartnerId: config.borrowerDefaultPartnerId, talk: { apiKey: config.talk.apiKey, model: config.talk.model, effort: config.talk.effort }, llm: { apiKey: config.llm.apiKey, model: config.llm.model, effort: config.llm.effort, speed: config.llm.speed, promptVersion: config.llm.promptVersion }, video: { tavusApiKey: config.video.tavusApiKey, replicaId: config.video.replicaId, callbackSecret: config.video.callbackSecret, borrowerCamera: config.video.borrowerCamera, publicApiUrl: config.video.publicApiUrl, joinTimeoutS: config.video.joinTimeoutS } } });
 // 32.17: the video agent's vendor — FakeTavus (FAKE) unless TAVUS_API_KEY is set; the vendor is the face and the voice only, the brain stays here (src/runtime/borrower/video-routes.ts)
 logger.info("video agent vendor", { vendor: config.video.tavusApiKey ? "tavus" : "FAKE", replica: config.video.replicaId || (config.video.tavusApiKey ? "first stock replica" : "FAKE"), callback_secret: config.video.callbackSecret ? "configured" : "random per process (FAKE in-process callbacks only)", borrower_camera: config.video.borrowerCamera });

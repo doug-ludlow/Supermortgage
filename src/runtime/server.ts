@@ -21,7 +21,7 @@
  *   POST /v1/transfers/batches/demo                 board the built-in 100-loan demo batch (fixtures/transfer-batch-demo)
  *   POST /v1/entry/seed-demo                        32.14 demo seed (FAKE): readiness rows for the demo states, partner NMLSR ID, an active rate sheet (idempotent)
  *   GET  /v1/transfers/batches/{batchId}            a batch's boarding summary
- *   /, /index.html, /api/*                          the ops console (src/console) — its x-actor-id / x-actor-role headers name the human
+ *   /ops, /ops/api/*, /api/*                        the ops console (src/console) — 34.1: a staff session (cookie sm_staff / a session bearer) names the human; x-actor-id / x-actor-role survive only for the deploy workflow behind the ops bearer outside production
  *
  *   Borrower API (docs/ux/02 §7; src/runtime/borrower/routes.ts) — authenticated by a borrower session token, never by API_TOKEN:
  *   POST /v1/borrower/auth/otp                      { action: request, channel: sms|email, destination } → { challenge_id, delivery: FAKE|sms|email, expires_at }; { action: verify, challenge_id, code } → L1 session { token, … } (with a bearer: refreshes that session's fresh-L1)
@@ -69,7 +69,7 @@ import { isUuid } from "../infra/db/client.ts";
 import { plainDate } from "../kernel/calendar/date.ts";
 import type { Logger } from "./log.ts";
 import { createBorrowerRouter, parseMultipart, type BorrowerRouter, type BorrowerRouterOptions } from "./borrower/routes.ts";
-import { importPartnerBook, listPartnerBookImports, partnerBookReport, seedPartnerBookDemo, type PartnerBookImportInput } from "./partner-book.ts";
+import { holdsOf, importPartnerBook, listPartnerBookImports, partnerBookReport, partnerBookStatus, resolvePartnerBookLoan, seedPartnerBookDemo, type PartnerBookImportInput } from "./partner-book.ts";
 import { seedEntryDemo } from "./entry-seed.ts";
 import { OffsetClock, advanceDemoClock, demoClockStatus } from "./demo-clock.ts";
 
@@ -129,6 +129,19 @@ async function partnerBookInput(req: IncomingMessage): Promise<PartnerBookImport
     as_of_date: fields["as_of_date"], profile: "m3-v1", tape: files["tape"], ...(files["supplement"] ? { supplement: files["supplement"] } : {}) };
 }
 const ACTOR_KINDS = new Set(["human", "agent", "system"]);
+/**
+ * Section 34 (review findings): none of the operator portal's tools (34.1 staff acts, 34.2 directory looks / unmask / export,
+ * 34.3 book operations, 34.4 controls — the two-person kill switch, the evidence pack) runs on the generic tool routes — there
+ * the actor is whatever the request body names, so one holder of the ops bearer token could mint an admin, trip or reset the
+ * AI kill switch alone by naming two fabricated staff ids, or attribute a look or an export to a staff id with no row ("The
+ * ops bearer token leaks → … in production it opens nothing"; 34.1 rule 3: "The actor on the bus is the session's"; 34.4 rule
+ * 4: "two people's decision"). Their only HTTP entry is the console's session path (src/console/server.ts /ops/api/…), where
+ * the actor is the signed-in staff member; the first admin comes from `main.ts staff-bootstrap`. The acts verify the actor
+ * from rows as well (src/runtime/staff/auth.ts requireStaffActor, src/runtime/controls/common.ts requireStaffRole, the 34.2
+ * tools' staffOf) — this refusal is the outer layer.
+ */
+const staffToolsOnly = (process: string): boolean => /^34\./.test(process);
+const STAFF_TOOLS_REFUSED = { error: "forbidden", code: "STAFF_TOOLS_ARE_SESSION_ONLY", hint: "section 34 tools (34.1 staff, 34.2 directory, 34.3 book operations, 34.4 controls) run only on the ops console's session routes (/ops/api/…); the first admin is `main.ts staff-bootstrap <email>`" };
 function actorOf(v: unknown): Actor {
   const a = v as { kind?: unknown; id?: unknown; role?: unknown } | undefined;
   if (!a || typeof a !== "object" || typeof a.kind !== "string" || !ACTOR_KINDS.has(a.kind) || typeof a.id !== "string" || !a.id) throw new RangeError("actor must be { kind: human|agent|system, id, role? }");
@@ -159,7 +172,8 @@ const same = (a: string, b: string): boolean => a.length === b.length && a.lengt
 export function createApiServer(opts: ServerOptions): Server {
   const { runtime, logger } = opts;
   // DELTA-30: the console's queue rows name the FAKE reviewer that will fill them (src/infra/integrations/reviewers.ts) when the runtime runs one
-  const consoleServer = opts.console === false ? null : createConsoleServer({ store: new PgConsoleStore(runtime.db, runtime.registry, runtime.agents, { fakeReviewers: runtime.reviewers ? { roles: runtime.reviewers.roles, delaySeconds: runtime.reviewers.delaySeconds } : null }), clock: runtime.clock });
+  // 34.1: the console resolves the staff session itself (cookie sm_staff / a session bearer) and honours the legacy x-actor-* headers only behind the ops bearer outside production — so /ops and its /api are dispatched before the token check below
+  const consoleServer = opts.console === false ? null : createConsoleServer({ store: new PgConsoleStore(runtime.db, runtime.registry, runtime.agents, { fakeReviewers: runtime.reviewers ? { roles: runtime.reviewers.roles, delaySeconds: runtime.reviewers.delaySeconds } : null }), clock: runtime.clock, runtime, apiToken: opts.apiToken, environment: opts.borrower?.environment ?? process.env["ENVIRONMENT"] ?? "nonprod", logger });
   const authorized = (req: IncomingMessage): boolean => (opts.apiToken ? same(tokenOf(req), opts.apiToken) : true);
   const borrower = opts.borrowerRouter ?? createBorrowerRouter({ runtime, logger, ...(opts.borrower ?? {}) });
   // the demo clock routes refuse in production (docs/DEPLOY.md "The demo clock"); the borrower options carry the environment main.ts read from ENVIRONMENT
@@ -186,6 +200,8 @@ export function createApiServer(opts: ServerOptions): Server {
       }
       // the borrower API authenticates its own sessions (and the vendor webhook its signature); the ops token is never accepted there
       if (await borrower.handle(req, res, url, method)) return;
+      // 32.14 §6.3 / 34.1: the ops console page lives at /ops and its JSON API at /ops/api/* (and the legacy /api/*); the console authenticates its own staff sessions (src/console/server.ts) — the ops token is one way in only for the deploy workflow's header actor
+      if (consoleServer && (path === "/ops" || path === "/ops/" || path === "/ops/index.html" || path.startsWith("/ops/api/") || path.startsWith("/api/"))) { consoleServer.emit("request", req, res); return; }
       if (!authorized(req)) { done(401, { error: "unauthorized", hint: "Authorization: Bearer <API_TOKEN>" }); return; }
       if (method === "GET" && path === "/v1/tools") { done(200, { tools: runtime.listTools() }); return; }
       let m: RegExpExecArray | null;
@@ -193,6 +209,7 @@ export function createApiServer(opts: ServerOptions): Server {
         const loanId = m[1] ? decodeURIComponent(m[1]) : "";
         if (loanId && !isUuid(loanId)) throw new RangeError("loanId must be the loan's uuid (loans.id)");
         const process = decodeURIComponent(m[2]!); const name = decodeURIComponent(m[3]!);
+        if (staffToolsOnly(process)) { done(403, STAFF_TOOLS_REFUSED, { tool: `${process} ${name}` }); return; }
         const b = await readJson(req);
         const actor = actorOf(b["actor"]);
         const input = toolInput(b["input"]);
@@ -206,6 +223,7 @@ export function createApiServer(opts: ServerOptions): Server {
         const applicationId = decodeURIComponent(m[1]!);
         if (!isUuid(applicationId)) throw new RangeError("applicationId must be the application's uuid (applications.id)");
         const process = decodeURIComponent(m[2]!); const name = decodeURIComponent(m[3]!);
+        if (staffToolsOnly(process)) { done(403, STAFF_TOOLS_REFUSED, { tool: `${process} ${name}` }); return; }
         const b = await readJson(req);
         const actor = actorOf(b["actor"]);
         const input = toolInput(b["input"]);
@@ -317,6 +335,15 @@ export function createApiServer(opts: ServerOptions): Server {
         done(200, r, { import: r.import_id, status: r.status, rows_total: r.rows_total, rows_loaded: r.rows_loaded, loans_created: r.loans_created, invitations_sent: r.invitations_sent }); return;
       }
       if (method === "GET" && path === "/v1/partner-book/imports") { done(200, { imports: await listPartnerBookImports(runtime, url.searchParams.get("partner_party_id") ?? undefined) }); return; }
+      // 33.1 rule 8: the holds (loans absent from the partner's latest tape) and per partner "book as of <date>, next expected <date>"
+      if (method === "GET" && path === "/v1/partner-book/holds") { done(200, { as_of: runtime.clock.now(), partners: await partnerBookStatus(runtime), holds: await holdsOf(runtime, url.searchParams.get("partner_party_id")) }); return; }
+      // 33.1 rule 8: `book.resolve{loan_id, resolution ∈ paid_off | transferred_out | keep, reason}` — an ops_analyst act on the bus (x-actor-role defaults to ops_analyst; any other role is refused ROLE_DENIED)
+      if (method === "POST" && (m = /^\/v1\/partner-book\/loans\/([^/]+)\/resolve$/.exec(path))) {
+        const b = await readJson(req);
+        const actorHeader = String(req.headers["x-actor-id"] ?? "");
+        const r = await resolvePartnerBookLoan(runtime, decodeURIComponent(m[1]!), { resolution: String(b["resolution"] ?? ""), reason: String(b["reason"] ?? "") }, { kind: "human", id: actorHeader || "ops", ...(req.headers["x-actor-role"] ? { role: String(req.headers["x-actor-role"]) } : { role: "ops_analyst" }) });
+        done(200, { ...(r.output as Record<string, unknown>), events: r.events, decision_id: r.decision_id }, { loan: decodeURIComponent(m[1]!), resolution: String(b["resolution"] ?? "") }); return;
+      }
       if (method === "GET" && (m = /^\/v1\/partner-book\/imports\/([^/]+)$/.exec(path))) {
         const r = await partnerBookReport(runtime, decodeURIComponent(m[1]!));
         if (!r) done(404, { error: "no_such_import" }); else done(200, r);
@@ -344,8 +371,6 @@ export function createApiServer(opts: ServerOptions): Server {
         done(404, { error: "not found" }); return;
       }
       if (method === "POST" && path === "/v1/sweep") { if (borrower.flows) await borrower.flows.tick(runtime.clock.now()); const report = await runtime.sweep(); done(200, report, { due: report.due, breaches: report.breaches.length }); return; }
-      // 32.14 §6.3: the root of the host is the borrower thread (the load balancer sends / to /app); the ops console page lives at /ops and its JSON API stays at /api/*
-      if (consoleServer && (path === "/ops" || path === "/ops/" || path === "/ops/index.html" || path.startsWith("/api/"))) { consoleServer.emit("request", req, res); return; }
       done(404, { error: "not found" });
     } catch (e) {
       if (e instanceof CommandRefused) { done(409, { error: "refused", command: e.command, code: e.code, citation: e.citation, reason: e.message }, { refused: e.code }); return; }

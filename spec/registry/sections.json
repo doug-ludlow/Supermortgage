@@ -414,5 +414,16 @@
       "33.2",
       "33.3"
     ]
+  },
+  {
+    "n": 34,
+    "title": "The operator portal: staff sign-in, the account directory, partner book operations and evidence",
+    "path": "sections/34-operator-portal",
+    "processes": [
+      "34.1",
+      "34.2",
+      "34.3",
+      "34.4"
+    ]
   }
 ]

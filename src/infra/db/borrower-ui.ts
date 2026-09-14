@@ -102,7 +102,12 @@ export class PgBorrowerUiRepository {
   }
   async transitionCard(id: string, to: CardStatus, actor: string, at: string, evidence: Record<string, unknown> | null = null, q: Queryable = this.db): Promise<CardInstanceRow> {
     const before = await this.card(id, q); if (!before) throw new RangeError(`no card ${id}`);
-    const rows = await q.query<CardInstanceRow & Record<string, unknown>>(`UPDATE card_instances SET status = $2, evidence = COALESCE($3::jsonb, evidence), resolved_at = CASE WHEN $2 = 'resolved' THEN $4 ELSE resolved_at END WHERE card_instance_id = $1 RETURNING ${CARD_COLS}`, [id, to, evidence ? toJson(evidence) : null, at]);
+    // cancelled / superseded / expired are sweeps off `pending` (every caller selected the card as pending) and apply only while the row is still pending — the
+    // party's own resolve of the same card may be committing on another connection (its command's events are what queued the sweep): a resolved row is never
+    // overwritten, whichever side reads first; the sweep sees the row as it now stands and stands down without logging a transition
+    const sweep = to === "cancelled" || to === "superseded" || to === "expired";
+    const rows = await q.query<CardInstanceRow & Record<string, unknown>>(`UPDATE card_instances SET status = $2, evidence = COALESCE($3::jsonb, evidence), resolved_at = CASE WHEN $2 = 'resolved' THEN $4 ELSE resolved_at END WHERE card_instance_id = $1 AND ($5::boolean = false OR status = 'pending') RETURNING ${CARD_COLS}`, [id, to, evidence ? toJson(evidence) : null, at, sweep]);
+    if (!rows[0]) { const now = await this.card(id, q); if (!now) throw new RangeError(`no card ${id}`); return now; }
     await q.query(`INSERT INTO card_instance_events (card_instance_id, from_status, to_status, at, actor, evidence) VALUES ($1, $2, $3, $4, $5, $6::jsonb)`, [id, before.status, to, at, actor, evidence ? toJson(evidence) : null]);
     return rows[0]!;
   }

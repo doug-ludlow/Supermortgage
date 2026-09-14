@@ -175,6 +175,11 @@ import { EVALUATORS_32_13 } from "../domain/borrower/evaluators-32-13.ts";
 import { EVALUATORS_33_1 } from "../domain/partner-book/evaluators-33-1.ts";
 import { EVALUATORS_33_2 } from "../domain/partner-book/evaluators-33-2.ts";
 import { EVALUATORS_33_3 } from "../domain/partner-book/evaluators-33-3.ts";
+// ---- §34 process-owned files (scaffolded by tools/workflows/wire_orig.py)
+import { EVALUATORS_34_1 } from "../domain/operator-portal/evaluators-34-1.ts";
+import { EVALUATORS_34_2 } from "../domain/operator-portal/evaluators-34-2.ts";
+import { EVALUATORS_34_3 } from "../domain/operator-portal/evaluators-34-3.ts";
+import { EVALUATORS_34_4 } from "../domain/operator-portal/evaluators-34-4.ts";
 
 export const EVALUATORS: Record<string, Evaluator> = {
   // ---- §1 transfers in
@@ -330,6 +335,7 @@ export const EVALUATORS: Record<string, Evaluator> = {
   ...EVALUATORS_20_1, ...EVALUATORS_20_2, ...EVALUATORS_20_3, ...EVALUATORS_20_4, ...EVALUATORS_21_1, ...EVALUATORS_21_2, ...EVALUATORS_21_3, ...EVALUATORS_21_4, ...EVALUATORS_21_5, ...EVALUATORS_21_6, ...EVALUATORS_22_1, ...EVALUATORS_22_2, ...EVALUATORS_22_3, ...EVALUATORS_22_4, ...EVALUATORS_22_5, ...EVALUATORS_22_6, ...EVALUATORS_23_1, ...EVALUATORS_23_2, ...EVALUATORS_23_3, ...EVALUATORS_23_4, ...EVALUATORS_24_1, ...EVALUATORS_24_2, ...EVALUATORS_24_3, ...EVALUATORS_24_4, ...EVALUATORS_24_5, ...EVALUATORS_24_6, ...EVALUATORS_25_1, ...EVALUATORS_25_2, ...EVALUATORS_25_3, ...EVALUATORS_25_4, ...EVALUATORS_26_1, ...EVALUATORS_26_2, ...EVALUATORS_26_3, ...EVALUATORS_26_4, ...EVALUATORS_27_1, ...EVALUATORS_27_2, ...EVALUATORS_28_1, ...EVALUATORS_28_2, ...EVALUATORS_28_3, ...EVALUATORS_28_4, ...EVALUATORS_29_1, ...EVALUATORS_29_2, ...EVALUATORS_29_3, ...EVALUATORS_29_4, ...EVALUATORS_30_1, ...EVALUATORS_30_2, ...EVALUATORS_30_3, ...EVALUATORS_30_4, ...EVALUATORS_31_1, ...EVALUATORS_31_2, ...EVALUATORS_31_3,
   ...EVALUATORS_32_1, ...EVALUATORS_32_2, ...EVALUATORS_32_3, ...EVALUATORS_32_4, ...EVALUATORS_32_5, ...EVALUATORS_32_6, ...EVALUATORS_32_7, ...EVALUATORS_32_8, ...EVALUATORS_32_9, ...EVALUATORS_32_10, ...EVALUATORS_32_11, ...EVALUATORS_32_12, ...EVALUATORS_32_13,
   ...EVALUATORS_33_1, ...EVALUATORS_33_2, ...EVALUATORS_33_3,
+  ...EVALUATORS_34_1, ...EVALUATORS_34_2, ...EVALUATORS_34_3, ...EVALUATORS_34_4,
 };
 
 export class UnknownEvaluator extends Error { constructor(ref: string) { super(`no evaluator registered for ${ref}`); this.name = "UnknownEvaluator"; } }

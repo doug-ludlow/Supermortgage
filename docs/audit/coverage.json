@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 7926/7996 (99.1%): tids 2194/2232, tables 744/757, timers 2034/2035, notices 308/308, tools 1413/1431, figures 1233/1233; processes at 100%: 189/192",
+ "brief": "spec units built 7927/7996 (99.1%): tids 2195/2232, tables 744/757, timers 2034/2035, notices 308/308, tools 1413/1431, figures 1233/1233; processes at 100%: 189/192",
  "totals": {
   "tids": {
    "spec": 2232,
-   "built": 2194
+   "built": 2195
   },
   "tables": {
    "spec": 757,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 7996,
-   "built": 7926
+   "built": 7927
   }
  },
  "sections": {
@@ -165,7 +165,7 @@
   },
   "23": {
    "spec": 289,
-   "built": 219,
+   "built": 220,
    "processes": 7,
    "done": 4
   },
@@ -6007,8 +6007,8 @@
    "title": "Assemble and emit the DU Specification document (MISMO 3.4 B324 + DU/ULAD extensions)",
    "tids": {
     "spec": 12,
-    "built": 0,
-    "todo": 12,
+    "built": 1,
+    "todo": 11,
     "missing": [
      1,
      2,
@@ -6020,7 +6020,6 @@
      8,
      9,
      10,
-     11,
      12
     ]
    },
@@ -6059,9 +6058,9 @@
    },
    "units": {
     "spec": 17,
-    "built": 0
+    "built": 1
    },
-   "pct": 0.0
+   "pct": 5.9
   },
   {
    "process": "23.7",

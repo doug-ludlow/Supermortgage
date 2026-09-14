@@ -11329,6 +11329,233 @@
   ]
  },
  {
+  "process": "23.5",
+  "title": "The relationship graph and the modeled set: what a DU submission is assembled from",
+  "path": "sections/23-desktop-underwriter-and-the-credit-decision/23-5-the-relationship-graph-and-the-modeled-set.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given a live `du_assets` row, when the transaction commits with no `du_asset_parties` row for it, then COMMIT is refused with `DU_GRAPH_ORPHAN` and no row exists afterwards."
+   },
+   {
+    "n": 2,
+    "text": "Given an asset with two owner arcs, when one arc is deleted in a later transaction, then COMMIT succeeds; when the second is deleted, then COMMIT is refused."
+   },
+   {
+    "n": 3,
+    "text": "Given an owned property and a liability secured by it with UPB $250,000.00, when a second liability of $40,000.00 is secured by the same property, then `du_owned_properties.lien_upb_cents` reads 29000000 with no caller having written it; when the first is retired, then it reads 4000000."
+   },
+   {
+    "n": 4,
+    "text": "Given an owner arc whose asset is on application A and whose borrower is on application B, when written, then it is refused with `DU_GRAPH_CROSSES_APPLICATIONS`."
+   },
+   {
+    "n": 5,
+    "text": "Given a borrower whose `du_declarations` row has `bankruptcy = Yes`, when the transaction commits with no `du_bankruptcy_filings` row, then COMMIT is refused; given the row has `bankruptcy = No`, when a filing is inserted, then COMMIT is refused."
+   },
+   {
+    "n": 6,
+    "text": "Given a declarations write whose `asserted_by_actor` is an agent actor, then it is refused with `DU_DECLARATION_NOT_SELF_ATTESTED`; given it is another borrower's actor on the same application, then it is refused with the same code."
+   },
+   {
+    "n": 7,
+    "text": "Given a borrower's written bankruptcy explanation submitted on the declarations card, when the row is read back, then `bankruptcy_explanation` holds it verbatim."
+   },
+   {
+    "n": 8,
+    "text": "Given a borrower with a Prior residence and no Current one, when the transaction commits, then it is refused; given `residency_basis = Rent` and `monthly_rent_cents IS NULL`, then the CHECK refuses the row."
+   },
+   {
+    "n": 9,
+    "text": "Given an application with Borrower 1, when three more borrowing parties are appended concurrently, then they receive ordinals 2, 3 and 4 with no duplicate; when a fifth is appended, then it is refused."
+   },
+   {
+    "n": 10,
+    "text": "Given `applications.du_casefile_id` set to `1234567890`, when the same value is written again, then it is a no-op; when `0987654321` is written, then the update raises `DU_CASEFILE_ID_WRITE_ONCE`."
+   },
+   {
+    "n": 11,
+    "text": "Given each of the 22 DU `AssetType` values, when written under a `kind` whose URLA section does not admit it, then the per-kind CHECK refuses the row; when written under the admitting kind, then it is accepted \u2014 and the three admitted lists partition the 22 with no overlap."
+   },
+   {
+    "n": 12,
+    "text": "Given two borrowers linked by `du_joint_credit_report_links`, when a third is linked to the same primary, then the group has one primary; when a link is written whose `to_` borrower already belongs to another group, then it is refused."
+   },
+   {
+    "n": 13,
+    "text": "Given a `du_owned_properties` row, when a caller writes `application_id` different from its asset's, then the trigger overwrites it with the asset's; when a caller writes `lien_upb_cents`, then the value is discarded and re-derived."
+   },
+   {
+    "n": 14,
+    "text": "Given a borrowing party demoted to `non_borrowing_spouse` while sole owner of a live asset, then the role change is refused until the asset is repointed or retired."
+   }
+  ],
+  "tables": [
+   "du_asset_parties",
+   "du_assets",
+   "du_bankruptcy_filings",
+   "du_declarations",
+   "du_expense_parties",
+   "du_expenses",
+   "du_joint_credit_report_links",
+   "du_liabilities",
+   "du_liability_parties",
+   "du_owned_properties",
+   "du_residences"
+  ],
+  "timers": [],
+  "notices": [],
+  "agent": "underwriter",
+  "tools": [
+   "writeDuAsset",
+   "writeDuLiability",
+   "writeDuExpense",
+   "writeDuOwnedProperty",
+   "linkOwner",
+   "unlinkOwner",
+   "assertDeclarations",
+   "writeResidence",
+   "appendBorrower",
+   "linkJointCreditReport",
+   "readDuGraph"
+  ]
+ },
+ {
+  "process": "23.6",
+  "title": "Assemble and emit the DU Specification document (MISMO 3.4 B324 + DU/ULAD extensions)",
+  "path": "sections/23-desktop-underwriter-and-the-credit-decision/23-6-assemble-and-emit-the-du-specification-document.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given each of the eighteen samples in `corpus/samples/`, when it is loaded into a 23.5 graph and re-emitted, then the emitted document validates against the vendored chain and matches the sample container-for-container and arc-for-arc after label normalization."
+   },
+   {
+    "n": 2,
+    "text": "Given sample DI-C09, when re-emitted, then the `RELATIONSHIPS` block carries exactly its arcs: the two-owner asset yields two `ASSET_IsAssociatedWith_ROLE` arcs, the two-obligor liability two `LIABILITY_IsAssociatedWith_ROLE` arcs, one `ASSET_IsAssociatedWith_LIABILITY`, and one `CURRENT_INCOME_ITEM_IsAssociatedWith_EMPLOYER` per employed income item."
+   },
+   {
+    "n": 3,
+    "text": "Given the refinance fixture (23.1-T1), when the document is emitted, then every container's children appear in `CHILD_ORDER` sequence, and moving any one child breaks schema validation."
+   },
+   {
+    "n": 4,
+    "text": "Given a data point whose value is in the MISMO enumeration but not in `DU_ENUMERATIONS`, when emitted, then the emission is refused with `DU_ENUM_NOT_SUPPORTED` naming the XPath, and no `documents` row is written."
+   },
+   {
+    "n": 5,
+    "text": "Given a required data point with no value, when emitted, then the emission is refused with `DU_REQUIRED_MISSING` naming the XPath; given a conditional data point whose condition statement is false for this loan, then its absence is accepted."
+   },
+   {
+    "n": 6,
+    "text": "Given a first submission, when emitted, then `AutomatedUnderwritingCaseIdentifier` is absent; given `applications.du_casefile_id = 1234567890` and `submission_number = 2`, then it is present with that value."
+   },
+   {
+    "n": 7,
+    "text": "Given the same graph emitted twice, then the two documents are byte-identical and `du_documents.sha256` is equal; given one asset's balance changes by one cent, then the hashes differ."
+   },
+   {
+    "n": 8,
+    "text": "Given the 23.5 graph for the refinance fixture, when emitted, then `xlink:label` values are unique across the document and every `xlink:from`/`xlink:to` names a label the document contains."
+   },
+   {
+    "n": 9,
+    "text": "Given a wage income item with no employer, when emitted, then `EmploymentIncomeIndicator` is false and no employer arc is written for it."
+   },
+   {
+    "n": 10,
+    "text": "Given `du:verify` run on a checkout with no `DU_SPEC_DIR`, then it re-derives every child sequence from the vendored chain, re-counts the arcs the samples exercise, checks every `Du*` CHECK constraint in the migrations against `DU_ENUMERATIONS`, reports the workbook check as skipped by name, and fails on any drift in `order.ts` or `arcroles.ts`."
+   },
+   {
+    "n": 11,
+    "text": "Given a hand edit to `generated/order.ts` that swaps two children, when `npm test` runs, then `du:verify` fails the build naming the container."
+   },
+   {
+    "n": 12,
+    "text": "Given a request built from the refinance fixture, then `request_hash` equals the SHA-256 of the transmitted bytes and 23.1's duplicate-suppression test (23.1-T1's second identical build) still passes."
+   }
+  ],
+  "tables": [
+   "du_documents"
+  ],
+  "timers": [],
+  "notices": [],
+  "agent": "underwriter",
+  "tools": [
+   "assembleDuDocument",
+   "validateDuDocumentAgainstSchema",
+   "diffDuDocumentAgainstSample",
+   "readDuDocument"
+  ]
+ },
+ {
+  "process": "23.7",
+  "title": "Preflight: what DU rejects that the schema accepts, and the port contract for a real submission",
+  "path": "sections/23-desktop-underwriter-and-the-credit-decision/23-7-preflight-and-the-du-port-contract.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given each of the eighteen samples re-emitted (23.6-T1), when preflight runs, then every check passes and `SM_DU_PREFLIGHT_GATE` opens."
+   },
+   {
+    "n": 2,
+    "text": "Given a document whose `RELATIONSHIP` names an `xlink:to` label not in the document, when preflight runs, then it is refused with `DU_PREFLIGHT_DANGLING_ARC` naming the arc \u2014 and the same document validates against the XSD chain."
+   },
+   {
+    "n": 3,
+    "text": "Given a document with two containers labelled `ASSET_1`, then `DU_PREFLIGHT_DUPLICATE_LABEL`; given an arcrole URI not among the eleven, then `DU_PREFLIGHT_UNKNOWN_ARCROLE`; given `UNDERWRITING_VERIFICATION_IsAssociatedWith_ASSET`, then `DU_PREFLIGHT_DISPUTED_ARC` \u2014 each while the XSD chain validates the document."
+   },
+   {
+    "n": 4,
+    "text": "Given a document with five `PARTY` containers each holding a borrower `ROLE`, when preflight runs, then `DU_PREFLIGHT_BORROWER_COUNT`; given none, then `DU_PREFLIGHT_NOTHING_TO_UNDERWRITE`."
+   },
+   {
+    "n": 5,
+    "text": "Given a document whose `RELATIONSHIPS` container has been removed while `ASSET` containers remain, then `DU_PREFLIGHT_NO_GRAPH`."
+   },
+   {
+    "n": 6,
+    "text": "Given two `ASSET` containers with the same institution, subtype and last4 owned by different borrowers on one application, then `DU_PREFLIGHT_DUPLICATE_ASSET` naming both labels."
+   },
+   {
+    "n": 7,
+    "text": "Given `submission_number = 1` and an `AutomatedUnderwritingCaseIdentifier` present, then `DU_PREFLIGHT_CASEFILE_ID`; given `submission_number = 2` and the identifier absent or different from `applications.du_casefile_id`, then the same code."
+   },
+   {
+    "n": 8,
+    "text": "Given the FAKE port receives a document that fails `xmllint` against the chain, then it answers `DuTransportError` with status 400 and records no submission."
+   },
+   {
+    "n": 9,
+    "text": "Given the refinance fixture's first submission through the FAKE port, when the ack returns `du_casefile_id`, then `applications.du_casefile_id` holds it; when the second submission's ack returns the same value, then nothing changes; when it returns a different value, then an `escalation{fnma_portal_operator}` is opened with `DU_CASEFILE_ID_CONFLICT` and the column is unchanged."
+   },
+   {
+    "n": 10,
+    "text": "Given a preflight refusal, when 23.1's `submit` is invoked for that document, then it is refused with the preflight code and no `du.submitted` event exists."
+   },
+   {
+    "n": 11,
+    "text": "Given a wage income item whose `EmploymentIncomeIndicator` is true and which has no `CURRENT_INCOME_ITEM_IsAssociatedWith_EMPLOYER` arc, then `DU_PREFLIGHT_EMPLOYER_ARC` naming the income item's label."
+   },
+   {
+    "n": 12,
+    "text": "Given a casefile whose `seller_number` is empty, then `DU_PREFLIGHT_CREDENTIALS` before any other check runs."
+   }
+  ],
+  "tables": [
+   "du_preflight_results"
+  ],
+  "timers": [
+   "SM_DU_PREFLIGHT_GATE"
+  ],
+  "notices": [],
+  "agent": "underwriter",
+  "tools": [
+   "runDuPreflight",
+   "readDuPreflight",
+   "explainDuRefusal"
+  ]
+ },
+ {
   "process": "24.1",
   "title": "Valuation method selection and ordering (value acceptance, value acceptance + property data, hybrid, desktop, traditional), appraiser independence, and property data collection",
   "path": "sections/24-property-valuation-eligibility-title-hazard-flood-insurance/24-1-valuation-method-selection-and-ordering-value-acceptance-val.md",

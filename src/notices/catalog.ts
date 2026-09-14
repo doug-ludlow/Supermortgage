@@ -189,6 +189,10 @@ import { VERSIONS_34_1, OVERRIDES_34_1 } from "./authored/section34-1.ts";
 import { VERSIONS_34_2, OVERRIDES_34_2 } from "./authored/section34-2.ts";
 import { VERSIONS_34_3, OVERRIDES_34_3 } from "./authored/section34-3.ts";
 import { VERSIONS_34_4, OVERRIDES_34_4 } from "./authored/section34-4.ts";
+// ---- §23.5–§23.7 process-owned files (scaffolded by tools/workflows/wire_orig.py)
+import { VERSIONS_23_5, OVERRIDES_23_5 } from "./authored/section23-5.ts";
+import { VERSIONS_23_6, OVERRIDES_23_6 } from "./authored/section23-6.ts";
+import { VERSIONS_23_7, OVERRIDES_23_7 } from "./authored/section23-7.ts";
 
 interface CatalogEntry { readonly code: string; readonly owner_process: string; readonly mentions: readonly string[]; readonly context: string; }
 
@@ -236,6 +240,7 @@ const OVERRIDES: Record<string, Partial<NoticeTemplate>> = {
   ...OVERRIDES_32_1, ...OVERRIDES_32_2, ...OVERRIDES_32_3, ...OVERRIDES_32_4, ...OVERRIDES_32_5, ...OVERRIDES_32_6, ...OVERRIDES_32_7, ...OVERRIDES_32_8, ...OVERRIDES_32_9, ...OVERRIDES_32_10, ...OVERRIDES_32_11, ...OVERRIDES_32_12, ...OVERRIDES_32_13,
   ...OVERRIDES_33_1, ...OVERRIDES_33_2, ...OVERRIDES_33_3,
   ...OVERRIDES_34_1, ...OVERRIDES_34_2, ...OVERRIDES_34_3, ...OVERRIDES_34_4,
+  ...OVERRIDES_23_5, ...OVERRIDES_23_6, ...OVERRIDES_23_7,
   NTC_REGZ_20D_ARM_INITIAL: { separateDocument: true, mayCombineWith: ["NTC_REGZ_41_STMT_STD", "NTC_REGZ_41_STMT_DELQ"], citation: "12 CFR 1026.20(d); H-4(D)(3)/(4)" },
   NTC_REGZ_20C_ARM_ADJ: { citation: "12 CFR 1026.20(c); H-4(D)(1)/(2)" },
   NTC_REGX_39B_EARLY_INTERVENTION: { mayCombineWith: ["NTC_FNMA_D2_2_05_BSP_FORM745"], citation: "12 CFR 1024.39(b); Appendix MS-4(A)" },
@@ -460,4 +465,5 @@ export const AUTHORED_VERSIONS: readonly VersionInput[] = [
   ...VERSIONS_32_1, ...VERSIONS_32_2, ...VERSIONS_32_3, ...VERSIONS_32_4, ...VERSIONS_32_5, ...VERSIONS_32_6, ...VERSIONS_32_7, ...VERSIONS_32_8, ...VERSIONS_32_9, ...VERSIONS_32_10, ...VERSIONS_32_11, ...VERSIONS_32_12, ...VERSIONS_32_13,
   ...VERSIONS_33_1, ...VERSIONS_33_2, ...VERSIONS_33_3,
   ...VERSIONS_34_1, ...VERSIONS_34_2, ...VERSIONS_34_3, ...VERSIONS_34_4,
+  ...VERSIONS_23_5, ...VERSIONS_23_6, ...VERSIONS_23_7,
 ];

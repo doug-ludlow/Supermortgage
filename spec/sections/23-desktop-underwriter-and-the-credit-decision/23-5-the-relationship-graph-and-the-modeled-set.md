@@ -1,0 +1,122 @@
+# 23.5 — The relationship graph and the modeled set: what a DU submission is assembled from
+
+| Attribute | Value |
+|---|---|
+| Section | 23 — Desktop Underwriter and the credit decision |
+| Automation class | a (fully automated) — the database holds the invariants; no human touches a row |
+| Capacity | Lender (partner is the Fannie Mae seller; SM assembles as TSP) · system of record for the application graph is `applications` and the `du_*` tables below |
+| Trigger & frequency | On every write to an application's assets, liabilities, expenses, owned property, declarations, residences or borrowers; read by 23.6 at every submission |
+| Governing source | Fannie Mae DU Specification v1.9.3 (DU Map, Enumerations, Cardinality, ArcRoles tabs); MISMO v3.4 B324 reference model; DU Specification Test Case Suite (June 2026, 18 cases); URLA 1/2021 sections 1a, 2, 3, 5 |
+| Key deadlines | none of its own — a malformed graph blocks 23.6 at the preflight gate |
+| Timers | none |
+
+### Blueprint row
+Desktop Underwriter does not receive a nested document with an `ASSET` inside a `BORROWER`. It receives a flat set of labelled containers plus a `RELATIONSHIPS` block whose `RELATIONSHIP` elements arc between labels by arcrole URI. This process makes the application's data able to answer every arc DU can ask for: who owns each asset, liability and expense (many-to-many, never zero owners); which asset secures which liability; which income item belongs to which employer; which borrowers share a credit report; which borrower position each party holds (Borrower 1 through 4); and the borrower's own answers to the fourteen URLA section 5 declarations, their follow-ups, and a two-year residence history with a stated housing basis. Every invariant is enforced in Postgres — by CHECK, unique index or deferred constraint trigger — so a second writer who never read this document still cannot produce a row 23.6 cannot emit.
+
+### Verified requirement (as of 2026-09-14)
+**ArcRoles tab, DU Specification v1.9.3** — the tab defines **eleven** arcs (not 82 rows, not 23: the tab describes every arc twice, once under "Establishing Endpoints in the Relationship" and once as a `RELATIONSHIP` block). Nine of the eleven appear across the eighteen shipped test cases, in 349 instances: `ASSET_IsAssociatedWith_ROLE` (126), `LIABILITY_IsAssociatedWith_ROLE` (120), `CURRENT_INCOME_ITEM_IsAssociatedWith_EMPLOYER` (53), `ASSET_IsAssociatedWith_LIABILITY` (23), `ROLE_SharesJointCreditReportWith_ROLE` (9), `LOAN_IsAssociatedWith_ROLE` (9), `COUNSELING_EVENT_IsAssociatedWith_ROLE` (6), `EXPENSE_IsAssociatedWith_ROLE` (2), `UNDERWRITING_VERIFICATION_IsAssociatedWith_ROLE` (1). The two never exercised — `UNDERWRITING_VERIFICATION_IsAssociatedWith_ASSET` and `…_EMPLOYER` — are also the two whose endpoint columns disagree with their arcrole names (`OWNED_PROPERTY_DETAIL` vs `ASSET`; `EMPLOYMENT` vs `EMPLOYER`). **[PARTIALLY VERIFIED — the tie is a question for Fannie Mae; the generated table carries both names and a `disputed` flag and picks neither.]**
+
+**Cardinality tab** — 171 distinct container XPaths (not 174). DU permits up to **four** borrowers per casefile; the XSD does not enforce it. Each of `ASSETS`, `LIABILITIES`, `EXPENSES` admits at most 50 children per DU (the `du_container_fits_fifty` trigger). **[PARTIALLY VERIFIED — the 50 cap is read from the Cardinality tab; confirm against the current release before go-live.]**
+
+**URLA section 5 (1/2021)** — fourteen declaration questions per borrower, with conditional follow-ups: 5a.A occupancy → property usage and prior title type; 5b bankruptcy → chapter(s) (7, 11, 12, 13), and the borrower's written explanation. A declaration is the borrower's own statement; DU reads it from `DECLARATION` and `DECLARATION_DETAIL`, never derives it. **[VERIFIED against the URLA form and DU Map tab.]**
+
+**URLA section 1a residence** — current address with `ResidencyBasisType` ∈ {Own, Rent, LivingRentFree} and, when under two years, prior residence(s). Rent carries a monthly amount. **[VERIFIED.]**
+
+**Discrepancies vs blueprint**: (1) 21.1/32.x collect declarations as a jsonb `answers` blob and a single "none apply / something applies" card — the build replaces the blob with typed columns and the card with the fourteen questions and their follow-ups (32.x amendment). (2) 22.4 stores assets on `application_assets` with a single nullable `application_borrower_id` — one owner or none — which cannot express a joint account; the build adds the ownership join tables and makes `application_assets` a projection. (3) The blueprint had residence history as a side quest (SQ-06) only when credit shows < 2 years; DU needs the current residence with its basis on every file — the basis question moves onto the main path, the prior-residence ask stays conditional.
+
+### Operational prerequisites
+- MISMO End User License Agreement accepted by somebody with authority (the five MISMO XSDs in the vendored chain carry the notice). Owner: officer. Blocks nothing in this process; blocks any production submission.
+- DU Integration Agreement / TSP onboarding under the partner's seller number (23.1 already owns this; nothing new here).
+- `xmllint` on every CI runner (the schema suite throws when it is missing rather than reporting green).
+
+### Build spec
+#### Inputs and triggers
+- Commands from 22.4 (assets and liabilities from a Plaid/credit pull), 22.3 (income and employment), 21.1/32.x (declarations, residences, borrower add), 22.2 (joint credit report association).
+- Every write runs inside one transaction; the deferred triggers below fire at COMMIT.
+- Read by 23.6 `assembleDuDocument` on every submission.
+
+#### Data model
+New tables (all keyed to `applications`; retention class `fnma_loan_file_life_plus_4y`; PII columns encrypted per 19.x):
+- **`du_assets`** (new): `id uuid pk`, `application_id` → `applications`, `kind` ∈ {DEPOSIT_ACCOUNT, OTHER_ASSET, GIFT_OR_GRANT, OWNED_PROPERTY}, `asset_type` (DU `AssetType`, constrained per kind by CHECK — the 22 values partition by URLA section), `asset_type_other_description`, `funds_source_type`, `institution_name`, `account_identifier_encrypted`, `account_last4`, `cash_or_market_value_cents bigint`, `identity_key text` (22.4's re-pull identity; unique with `application_id`), the lineage columns `source_verification_id`, `first_seen_verification_id`, `last_seen_verification_id`, `retired_by_verification_id` → `verifications` (0081; the 22.4 asset report that produced, last confirmed or retired the row), `created_at`. A live asset must have ≥ 1 owner arc (deferred constraint trigger `du_assets_have_an_owner`). ≤ 50 live per application.
+- **`du_owned_properties`** (new): `id uuid pk`, `asset_id` → `du_assets(id, kind)` composite FK against a generated `asset_kind` column (so an owned property can only hang off an asset of kind OWNED_PROPERTY), `application_id` (inherited by trigger, never written by a caller), `address` columns, `property_usage`, `disposition` ∈ {PendingSale, Retain, Sold}, `is_subject boolean`, `market_value_cents`, `monthly_rental_income_cents`, `monthly_expenses_cents`, `lien_upb_cents bigint` (derived by trigger from the liabilities secured by it; no caller writes it). One subject property per application (partial unique index).
+- **`du_liabilities`** (new): `id uuid pk`, `application_id`, `liability_type` (DU `LiabilityType`), `mortgage_type`, `creditor_name`, `account_identifier_encrypted`, `account_last4`, `monthly_payment_cents`, `unpaid_balance_cents`, `remaining_term_months`, `paid_off_at_or_before_closing boolean`, `secured_by_owned_property_id` → `du_owned_properties` (nullable; the `ASSET_IsAssociatedWith_LIABILITY` arc — a FK not a join table because no sample shows one liability secured by two properties while one property with two liens is ordinary), `identity_key`, the same lineage columns as `du_assets` → `verifications` (0081) for a row a 22.4 pull produced plus `source_credit_report_id` → `credit_reports` (0079) for a tradeline a 22.2 pull produced (exactly one source non-null), `created_at`. Must stay inside its own application (trigger). ≥ 1 obligor arc. ≤ 50 live.
+- **`du_expenses`** (new): `id uuid pk`, `application_id`, `expense_type` ∈ {Alimony, ChildSupport, JobRelatedExpenses, Other, SeparateMaintenanceExpense}, `monthly_payment_cents`, `remaining_term_months`, `created_at`. ≥ 1 payer arc. ≤ 50 live.
+- **`du_asset_parties`** (new): `asset_id` → `du_assets`, `application_borrower_id` → `application_borrowers`, `role text default 'owner'`, unique on the pair. The `ASSET_IsAssociatedWith_ROLE` arc. Both ends must be on the same application (trigger); the borrower must hold a borrowing role (trigger).
+- **`du_liability_parties`** (new): same shape for `LIABILITY_IsAssociatedWith_ROLE`.
+- **`du_expense_parties`** (new): same shape for `EXPENSE_IsAssociatedWith_ROLE`.
+- **`du_joint_credit_report_links`** (new): `application_id`, `from_application_borrower_id`, `to_application_borrower_id`, `created_at`. The self-loop arc `ROLE_SharesJointCreditReportWith_ROLE`. One group per additional borrower (unique on `to_`); each group has exactly one primary (trigger `du_joint_credit_groups_have_one_primary`).
+- **`du_declarations`** (new): `application_borrower_id` (unique — one row per borrower), the fourteen section 5 answers as typed columns (DU `DuYesNo`: `text` with CHECK IN ('Yes', 'No') and the DU data point in the column comment — every `Du*` enumeration in these tables is a CHECK list, never a Postgres enum), `property_usage` (5a.A follow-up), `prior_property_title` (5a.A follow-up), `undisclosed_borrowed_funds_cents`, `bankruptcy_explanation text` (the borrower's written explanation — never discarded), `asserted_by_actor jsonb` (the kernel `Actor` `{kind, id, role}` of the borrower's own session — `kind = human`, `role = borrower`, `id` the party behind the row's `application_borrower_id`, which 32.2 stamps from the signed-in session's `party_id` / `own_borrower_id` and never from the client's claim; must be the borrower's own: an agent actor — `borrower-app`, `underwriter` or any other — is refused outright with `DU_DECLARATION_NOT_SELF_ATTESTED`, and so is another party's actor, because a borrower may not answer for another — trigger `du_declarations_are_self_attested`), `asserted_at`.
+- **`du_bankruptcy_filings`** (new): `declaration_id` → `du_declarations`, `chapter` ∈ {ChapterSeven, ChapterEleven, ChapterTwelve, ChapterThirteen}, unique on the pair. Deferred trigger: a declared bankruptcy with no chapter, or a chapter on an undeclared bankruptcy, is refused at COMMIT — including the deletion of the last chapter in a later transaction.
+- **`du_residences`** (new): `application_borrower_id`, `residency_type` ∈ {Current, Prior} (unique with the borrower for Current), `residency_basis` ∈ {Own, Rent, LivingRentFree}, `monthly_rent_cents` (required iff Rent), address columns, `duration_months`, `created_at`. Deferred trigger `du_residences_keep_a_current_home`: a borrower with any residence row must have exactly one Current.
+- Baseline tables written: `application_borrowers` (+ `borrower_ordinal int` 1–4, NOT NULL for a borrowing role — `borrower_role` ∈ {borrower, co_borrower, non_occupant_co_borrower} — and forbidden for a non-borrowing one — `non_borrowing_spouse`, `trustee` —, exactly one ordinal 1 per application, unique per ordinal; existing rows backfilled), `applications` (+ `du_casefile_id varchar(30)` — DU's own casefile identifier, unique where not null, write-once by trigger: rewriting the same value is a no-op, a different value raises), `application_income` (+ `employer_id` naming the employer the item is earned from — the employment 22.3 verifies on `employment_verifications` (0080) — and `employment_income boolean` with CHECK `employment_income = (employer_id IS NOT NULL)`; rule 2), `application_assets` / `application_liabilities` / `application_reo` (become read projections of the `du_*` tables — see Open questions), `loan_events` (`du.graph.asset.written`, `du.graph.liability.written`, `du.graph.declaration.asserted`, `du.graph.residence.written`, `du.graph.borrower.appended`).
+
+#### State machine
+No object-level state of its own. Rows are live or retired (`retired_by_verification_id` set); a retired row is excluded from every arc and every count. Ownership arcs have no state: they exist or they do not, and the deferred triggers make "an owned thing with no owner" unreachable at COMMIT.
+
+#### Timers and gates
+| Timer code | Kind | Trigger event | Anchor | Offset & unit | Satisfied by | Breach action |
+|---|---|---|---|---|---|---|
+
+Jurisdiction overrides: none.
+
+#### Business rules and calculations
+1. **Ownership is a join table, not a column.** An asset, liability or expense may have one or several owners, all of them borrowing parties on the same application, and never none. Enforced by `du_rows_have_an_owner` (deferred, at COMMIT, on insert and update of the owned row) and `du_link_removal_rechecks_its_parent` (deferred, on delete of an arc). A revive, a role flip and an account deletion all re-run the check.
+2. **The employer arc is derived, not stored twice.** `application_income.employment_income` is true exactly when the row names an employer (`application_income.employer_id`; CHECK `employment_income = (employer_id IS NOT NULL)`). 23.6 emits `CURRENT_INCOME_ITEM_IsAssociatedWith_EMPLOYER` from the FK and `EmploymentIncomeIndicator` from the same fact, so the two cannot disagree.
+3. **A liability's lien total is derived.** `du_owned_properties.lien_upb_cents` is re-summed by triggers on both sides whenever a liability secured by the property is written, retired or repointed.
+4. **Declarations are asked, never derived.** No code path may write a `du_declarations` row from a credit report, a lien search or a property record. A declaration reading "No" from an absence of evidence is the defect this rule exists to prevent.
+5. **Identity across a re-pull.** 22.4's identity key is prefixed by the `application_borrowers` row (the borrowing party) whose pull produced it, so two borrowers pulling one joint account produce two rows with two owner sets — and 22.4's reconciliation, not this process, may later merge them into one row with two arcs. A joint account never lands under the wrong owner because of a key collision.
+6. **Four borrowers, in order.** `borrower_ordinal` is allocated under a row lock on the application as the smallest free position, so two concurrent appends cannot take the same one.
+7. **Counseling is absent on purpose.** No `COUNSELING_EVENT` table exists until HomeReady is offered; because it is an arc, it cannot be added as an afterthought and 23.2's HomeReady path must open this process first.
+
+#### Integrations
+- None outbound. Inbound writers are 22.2, 22.3, 22.4 (vendor pulls through their existing FAKEs) and 21.1/32.x (borrower-stated rows).
+
+#### Outputs and artifacts
+- The rows above; `loan_events` as listed; nothing borrower-facing.
+
+#### AI agent design (AI-first)
+`underwriter` agent (package `agents/underwriter`; this process uses tools `writeDuAsset`, `writeDuLiability`, `writeDuExpense`, `writeDuOwnedProperty`, `linkOwner`, `unlinkOwner`, `assertDeclarations`, `writeResidence`, `appendBorrower`, `linkJointCreditReport`, `readDuGraph`). End-to-end: the agent never writes a row alone — every writer takes the row and its owners together and refuses to run outside a transaction. What it never does: assert a declaration (only the borrower's own actor may), write `lien_upb_cents` or `application_id` on an owned property, or pick a winner for a disputed arc endpoint. Decision record: none of its own — writes cite the 22.x/21.x decision that produced the data. Guardrails: an agent actor on `asserted_by_actor` raises `DU_DECLARATION_NOT_SELF_ATTESTED`; a borrower answering for another raises the same.
+
+#### Edge cases and failure modes
+- Two borrowers each connect the same joint checking account → two `du_assets` rows with disjoint owners until 22.4 reconciles; the reconciliation writes one row with two arcs and retires the other.
+- An asset's last owner is unlinked in a later transaction → COMMIT refused with `DU_GRAPH_ORPHAN`.
+- A borrower is demoted from a borrowing role while owning rows → refused (`application_borrowers_keep_their_du_rows_valid`); repoint or retire first.
+- A declared bankruptcy whose last chapter is deleted → COMMIT refused.
+- A second Current residence for one borrower → unique index violation.
+- A fifth borrower → `borrower_ordinal` CHECK violation; DU permits four.
+- The 51st live asset → `du_assets_fit_fifty` refuses.
+- An account deletion (19.x) → the party's declarations and arcs go with it, and any owned row left ownerless is retired, not orphaned.
+
+#### Test cases and acceptance criteria
+| ID | Acceptance test |
+|---|---|
+| 23.5-T1 | Given a live `du_assets` row, when the transaction commits with no `du_asset_parties` row for it, then COMMIT is refused with `DU_GRAPH_ORPHAN` and no row exists afterwards. |
+| 23.5-T2 | Given an asset with two owner arcs, when one arc is deleted in a later transaction, then COMMIT succeeds; when the second is deleted, then COMMIT is refused. |
+| 23.5-T3 | Given an owned property and a liability secured by it with UPB $250,000.00, when a second liability of $40,000.00 is secured by the same property, then `du_owned_properties.lien_upb_cents` reads 29000000 with no caller having written it; when the first is retired, then it reads 4000000. |
+| 23.5-T4 | Given an owner arc whose asset is on application A and whose borrower is on application B, when written, then it is refused with `DU_GRAPH_CROSSES_APPLICATIONS`. |
+| 23.5-T5 | Given a borrower whose `du_declarations` row has `bankruptcy = Yes`, when the transaction commits with no `du_bankruptcy_filings` row, then COMMIT is refused; given the row has `bankruptcy = No`, when a filing is inserted, then COMMIT is refused. |
+| 23.5-T6 | Given a declarations write whose `asserted_by_actor` is an agent actor, then it is refused with `DU_DECLARATION_NOT_SELF_ATTESTED`; given it is another borrower's actor on the same application, then it is refused with the same code. |
+| 23.5-T7 | Given a borrower's written bankruptcy explanation submitted on the declarations card, when the row is read back, then `bankruptcy_explanation` holds it verbatim. |
+| 23.5-T8 | Given a borrower with a Prior residence and no Current one, when the transaction commits, then it is refused; given `residency_basis = Rent` and `monthly_rent_cents IS NULL`, then the CHECK refuses the row. |
+| 23.5-T9 | Given an application with Borrower 1, when three more borrowing parties are appended concurrently, then they receive ordinals 2, 3 and 4 with no duplicate; when a fifth is appended, then it is refused. |
+| 23.5-T10 | Given `applications.du_casefile_id` set to `1234567890`, when the same value is written again, then it is a no-op; when `0987654321` is written, then the update raises `DU_CASEFILE_ID_WRITE_ONCE`. |
+| 23.5-T11 | Given each of the 22 DU `AssetType` values, when written under a `kind` whose URLA section does not admit it, then the per-kind CHECK refuses the row; when written under the admitting kind, then it is accepted — and the three admitted lists partition the 22 with no overlap. |
+| 23.5-T12 | Given two borrowers linked by `du_joint_credit_report_links`, when a third is linked to the same primary, then the group has one primary; when a link is written whose `to_` borrower already belongs to another group, then it is refused. |
+| 23.5-T13 | Given a `du_owned_properties` row, when a caller writes `application_id` different from its asset's, then the trigger overwrites it with the asset's; when a caller writes `lien_upb_cents`, then the value is discarded and re-derived. |
+| 23.5-T14 | Given a borrowing party demoted to `non_borrowing_spouse` while sole owner of a live asset, then the role change is refused until the asset is repointed or retired. |
+
+#### Audit and evidence
+An examiner is shown, per application: the live graph as `readDuGraph` returns it (every container with its arcs), the `loan_events` that wrote each row and who asserted each declaration, and the trigger names that guarantee each invariant — exportable as one JSON document per application.
+
+### Open questions / decisions
+1. Do `application_assets`, `application_liabilities` and `application_reo` (0057) become views over the `du_*` tables, or stay as 22.4's write target with a sync into `du_*`? **Default: views. One writer, one truth; 22.4's writers move to the `du_*` tables in the same change.**
+2. Should the disputed endpoints of the two `UNDERWRITING_VERIFICATION_*` arcs be raised with Fannie Mae now? **Default: yes, through the TSP channel; until answered 23.6 refuses to emit either arc.**
+3. Vendoring the DU Specification workbook (728K, reissued several times a year) alongside the XSD chain so CI can verify the four workbook-derived tables? **Default: not vendored; `DU_SPEC_DIR` on the runner that regenerates, and `du:verify` names what it skipped.**
+
+### Sources
+- Fannie Mae, DU Specification v1.9.3 — DU Map, Enumerations, Cardinality, ArcRoles tabs (workbook; not in tree).
+- Fannie Mae, DU Specification Test Case Suite, June 2026 — DI-C01 … DI-VA04 (eighteen cases; `corpus/samples/`).
+- MISMO Reference Model v3.4 Build 324 — `MISMO_3.4.0_B324.xsd` and companions (`corpus/xsd/`).
+- Fannie Mae, `DU_Wrapper_3.4.0_B324.xsd`, `DU_ExtensionV3_4.xsd`, `ULAD_ExtensionV3_4.xsd`.
+- Uniform Residential Loan Application (Form 1003), 1/2021 — sections 1a, 2, 3, 5.
+- Homestead-Mortgages `docs/du-graph.md`, `docs/du-readiness.md` (re-measured at `07e594f`, 2026-09-14).

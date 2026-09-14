@@ -188,6 +188,10 @@ import { applySatisfiedOverrides_34_1 } from "./operator-portal/timers-34-1.ts";
 import { applySatisfiedOverrides_34_2 } from "./operator-portal/timers-34-2.ts";
 import { applySatisfiedOverrides_34_3 } from "./operator-portal/timers-34-3.ts";
 import { applySatisfiedOverrides_34_4 } from "./operator-portal/timers-34-4.ts";
+// ---- §23.5–§23.7 process-owned files (scaffolded by tools/workflows/wire_orig.py)
+import { applySatisfiedOverrides_23_5 } from "./underwriting/timers-23-5.ts";
+import { applySatisfiedOverrides_23_6 } from "./underwriting/timers-23-6.ts";
+import { applySatisfiedOverrides_23_7 } from "./underwriting/timers-23-7.ts";
 
 export const SECTION_OVERRIDES: ReadonlyArray<readonly [section: string, apply: (reg: TimerRegistry) => void]> = [
   ["1.1", applyBoardingTimerOverrides],
@@ -216,7 +220,8 @@ export const PROCESS_OVERRIDES: ReadonlyArray<(reg: TimerRegistry) => void> = [a
   applySatisfiedOverrides_20_1, applySatisfiedOverrides_20_2, applySatisfiedOverrides_20_3, applySatisfiedOverrides_20_4, applySatisfiedOverrides_21_1, applySatisfiedOverrides_21_2, applySatisfiedOverrides_21_3, applySatisfiedOverrides_21_4, applySatisfiedOverrides_21_5, applySatisfiedOverrides_21_6, applySatisfiedOverrides_22_1, applySatisfiedOverrides_22_2, applySatisfiedOverrides_22_3, applySatisfiedOverrides_22_4, applySatisfiedOverrides_22_5, applySatisfiedOverrides_22_6, applySatisfiedOverrides_23_1, applySatisfiedOverrides_23_2, applySatisfiedOverrides_23_3, applySatisfiedOverrides_23_4, applySatisfiedOverrides_24_1, applySatisfiedOverrides_24_2, applySatisfiedOverrides_24_3, applySatisfiedOverrides_24_4, applySatisfiedOverrides_24_5, applySatisfiedOverrides_24_6, applySatisfiedOverrides_25_1, applySatisfiedOverrides_25_2, applySatisfiedOverrides_25_3, applySatisfiedOverrides_25_4, applySatisfiedOverrides_26_1, applySatisfiedOverrides_26_2, applySatisfiedOverrides_26_3, applySatisfiedOverrides_26_4, applySatisfiedOverrides_27_1, applySatisfiedOverrides_27_2, applySatisfiedOverrides_28_1, applySatisfiedOverrides_28_2, applySatisfiedOverrides_28_3, applySatisfiedOverrides_28_4, applySatisfiedOverrides_29_1, applySatisfiedOverrides_29_2, applySatisfiedOverrides_29_3, applySatisfiedOverrides_29_4, applySatisfiedOverrides_30_1, applySatisfiedOverrides_30_2, applySatisfiedOverrides_30_3, applySatisfiedOverrides_30_4, applySatisfiedOverrides_31_1, applySatisfiedOverrides_31_2, applySatisfiedOverrides_31_3,
   applySatisfiedOverrides_32_1, applySatisfiedOverrides_32_2, applySatisfiedOverrides_32_3, applySatisfiedOverrides_32_4, applySatisfiedOverrides_32_5, applySatisfiedOverrides_32_6, applySatisfiedOverrides_32_7, applySatisfiedOverrides_32_8, applySatisfiedOverrides_32_9, applySatisfiedOverrides_32_10, applySatisfiedOverrides_32_11, applySatisfiedOverrides_32_12, applySatisfiedOverrides_32_13,
   applySatisfiedOverrides_33_1, applySatisfiedOverrides_33_2, applySatisfiedOverrides_33_3,
-  applySatisfiedOverrides_34_1, applySatisfiedOverrides_34_2, applySatisfiedOverrides_34_3, applySatisfiedOverrides_34_4];
+  applySatisfiedOverrides_34_1, applySatisfiedOverrides_34_2, applySatisfiedOverrides_34_3, applySatisfiedOverrides_34_4,
+  applySatisfiedOverrides_23_5, applySatisfiedOverrides_23_6, applySatisfiedOverrides_23_7];
 
 export function applyAllTimerOverrides(reg: TimerRegistry): TimerRegistry {
   for (const [, apply] of SECTION_OVERRIDES) apply(reg);

@@ -17017,6 +17017,17 @@
     "breach": "owned elsewhere"
   },
   {
+    "code": "SM_DU_PREFLIGHT_GATE",
+    "section": 23,
+    "process": "23.7",
+    "kind": "not_before_gate",
+    "trigger": "`du.document.emitted`",
+    "anchor": "`emitted_at`",
+    "offset": "0",
+    "satisfied": "`du.preflight.passed`",
+    "breach": "hold; `du.submitted` cannot be emitted for the document"
+  },
+  {
     "code": "REGZ_1026_19E2_INTENT_FEE_GATE",
     "section": 24,
     "process": "24.1",

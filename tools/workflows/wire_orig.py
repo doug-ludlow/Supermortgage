@@ -16,7 +16,10 @@ DIR = {20: 'leads-pricing', 21: 'application', 22: 'verification', 23: 'underwri
 SERIES = [(range(20, 32), '// ---- §20–§31 process-owned files (scaffolded by tools/workflows/wire_orig.py)', '13_9', 'foreclosure/timers-13-9.ts', 'foreclosure/evaluators-13-9.ts', 'section13-9.ts', 'authored/section13-9.ts'),
           (range(32, 33), '// ---- §32 process-owned files (scaffolded by tools/workflows/wire_orig.py)', '31_3', 'governance/timers-31-3.ts', 'governance/evaluators-31-3.ts', 'section31-3.ts', 'authored/section31-3.ts'),
           (range(33, 34), '// ---- §33 process-owned files (scaffolded by tools/workflows/wire_orig.py)', '32_13', 'borrower/timers-32-13.ts', 'borrower/evaluators-32-13.ts', 'section32-18.ts', 'authored/section32-13.ts'),
-          (range(34, 35), '// ---- §34 process-owned files (scaffolded by tools/workflows/wire_orig.py)', '33_3', 'partner-book/timers-33-3.ts', 'partner-book/evaluators-33-3.ts', 'section33-3.ts', 'authored/section33-3.ts')]
+          (range(34, 35), '// ---- §34 process-owned files (scaffolded by tools/workflows/wire_orig.py)', '33_3', 'partner-book/timers-33-3.ts', 'partner-book/evaluators-33-3.ts', 'section33-3.ts', 'authored/section33-3.ts'),
+          # processes registered into a section after its series' block landed get a block of their own (an explicit process set wins over a
+          # section range): 23.5–23.7 (the DU graph, document and preflight — the Homestead hand-off) anchored after the last §33 spread
+          ({'23.5', '23.6', '23.7'}, '// ---- §23.5–§23.7 process-owned files (scaffolded by tools/workflows/wire_orig.py)', '33_3', 'partner-book/timers-33-3.ts', 'partner-book/evaluators-33-3.ts', 'section33-3.ts', 'authored/section33-3.ts')]
 m = json.load(open(f'{R}/spec/registry/manifest.json'))
 procs = [p['process'] for p in m if int(p['process'].split('.')[0]) in DIR]
 def pdir(pid): return DIR[int(pid.split('.')[0])]
@@ -25,10 +28,19 @@ def w(path, text):
     os.makedirs(os.path.dirname(path), exist_ok=True); open(path, 'w').write(text); return True
 made = []
 _to = open(f'{R}/src/domain/timer-overrides.ts').read()
+def in_series(pid, sec):
+    """A series names either a range of sections or an explicit set of process ids."""
+    return pid in sec if isinstance(sec, (set, frozenset)) else int(pid.split('.')[0]) in sec
+def series_of(pid):
+    """The series a process belongs to; an explicit process set wins over the section range that also covers it."""
+    for s in sorted(SERIES, key=lambda s: not isinstance(s[0], (set, frozenset))):
+        if in_series(pid, s[0]): return s
+    return None
 def series_wired(pid):
     """A series whose marker is already in the aggregators is left alone entirely — its later processes (32.14+) own
     only the files they need, and a stub created here would never be wired."""
-    return any(int(pid.split('.')[0]) in sec and mark in _to for sec, mark, *_ in SERIES)
+    s = series_of(pid)
+    return s is not None and s[1] in _to
 for pid in procs:
     if series_wired(pid): continue
     n, k = pid.split('.'); d = pdir(pid); nk = f'{n}_{k}'
@@ -94,8 +106,9 @@ def aid(path):
     """The anchor process id spelled by an anchor path ('borrower/timers-32-13.ts' → '32_13', 'section32-18.ts' → '32_18'):
     each aggregator's last spread may belong to a different process (tools stop at 32.18, the others at 32.13)."""
     return re.search(r'(\d+)-(\d+)\.ts$', path).group(1) + '_' + re.search(r'(\d+)-(\d+)\.ts$', path).group(2)
-for sections, MARK, _a, t_anchor, e_anchor, tool_anchor, n_anchor in SERIES:
-    ps = [p for p in procs if int(p.split('.')[0]) in sections]
+for entry in SERIES:
+    sections, MARK, _a, t_anchor, e_anchor, tool_anchor, n_anchor = entry
+    ps = [p for p in procs if series_of(p) is entry]
     if not ps: continue
     a = aid(t_anchor)
     # 1. timer-overrides.ts — PROCESS_OVERRIDES gains the series' process functions after the anchor process

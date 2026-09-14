@@ -1,16 +1,16 @@
 {
- "brief": "spec units built 7926/7926 (100.0%): tids 2194/2194, tables 744/744, timers 2034/2034, notices 308/308, tools 1413/1413, figures 1233/1233; processes at 100%: 189/189",
+ "brief": "spec units built 7926/7996 (99.1%): tids 2194/2232, tables 744/757, timers 2034/2035, notices 308/308, tools 1413/1431, figures 1233/1233; processes at 100%: 189/192",
  "totals": {
   "tids": {
-   "spec": 2194,
+   "spec": 2232,
    "built": 2194
   },
   "tables": {
-   "spec": 744,
+   "spec": 757,
    "built": 744
   },
   "timers": {
-   "spec": 2034,
+   "spec": 2035,
    "built": 2034
   },
   "notices": {
@@ -18,7 +18,7 @@
    "built": 308
   },
   "tools": {
-   "spec": 1413,
+   "spec": 1431,
    "built": 1413
   },
   "figures": {
@@ -26,7 +26,7 @@
    "built": 1233
   },
   "units": {
-   "spec": 7926,
+   "spec": 7996,
    "built": 7926
   }
  },
@@ -164,9 +164,9 @@
    "done": 6
   },
   "23": {
-   "spec": 219,
+   "spec": 289,
    "built": 219,
-   "processes": 4,
+   "processes": 7,
    "done": 4
   },
   "24": {
@@ -5921,6 +5921,209 @@
     "built": 67
    },
    "pct": 100.0
+  },
+  {
+   "process": "23.5",
+   "title": "The relationship graph and the modeled set: what a DU submission is assembled from",
+   "tids": {
+    "spec": 14,
+    "built": 0,
+    "todo": 14,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14
+    ]
+   },
+   "tables": {
+    "spec": 11,
+    "built": 0,
+    "missing": [
+     "du_asset_parties",
+     "du_assets",
+     "du_bankruptcy_filings",
+     "du_declarations",
+     "du_expense_parties",
+     "du_expenses",
+     "du_joint_credit_report_links",
+     "du_liabilities",
+     "du_liability_parties",
+     "du_owned_properties",
+     "du_residences"
+    ]
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 11,
+    "built": 0,
+    "missing": [
+     "writeDuAsset",
+     "writeDuLiability",
+     "writeDuExpense",
+     "writeDuOwnedProperty",
+     "linkOwner",
+     "unlinkOwner",
+     "assertDeclarations",
+     "writeResidence",
+     "appendBorrower",
+     "linkJointCreditReport",
+     "readDuGraph"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 36,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "23.6",
+   "title": "Assemble and emit the DU Specification document (MISMO 3.4 B324 + DU/ULAD extensions)",
+   "tids": {
+    "spec": 12,
+    "built": 0,
+    "todo": 12,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "du_documents"
+    ]
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "assembleDuDocument",
+     "validateDuDocumentAgainstSchema",
+     "diffDuDocumentAgainstSample",
+     "readDuDocument"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 17,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "23.7",
+   "title": "Preflight: what DU rejects that the schema accepts, and the port contract for a real submission",
+   "tids": {
+    "spec": 12,
+    "built": 0,
+    "todo": 12,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ]
+   },
+   "tables": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "du_preflight_results"
+    ]
+   },
+   "timers": {
+    "spec": 1,
+    "built": 0,
+    "armable": 1,
+    "missing": [
+     "SM_DU_PREFLIGHT_GATE"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "runDuPreflight",
+     "readDuPreflight",
+     "explainDuRefusal"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 17,
+    "built": 0
+   },
+   "pct": 0.0
   },
   {
    "process": "24.1",

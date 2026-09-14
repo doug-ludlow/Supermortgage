@@ -1255,7 +1255,10 @@
     "21.6",
     "23.1",
     "23.2",
-    "23.3"
+    "23.3",
+    "23.5",
+    "23.6",
+    "23.7"
    ],
    "tools": [
     "computeCompletion",
@@ -1296,7 +1299,25 @@
     "runCtcChecklist",
     "issueClearToClose",
     "evaluateReliefLedger",
-    "prepareAdverseDecision"
+    "prepareAdverseDecision",
+    "writeDuAsset",
+    "writeDuLiability",
+    "writeDuExpense",
+    "writeDuOwnedProperty",
+    "linkOwner",
+    "unlinkOwner",
+    "assertDeclarations",
+    "writeResidence",
+    "appendBorrower",
+    "linkJointCreditReport",
+    "readDuGraph",
+    "assembleDuDocument",
+    "validateDuDocumentAgainstSchema",
+    "diffDuDocumentAgainstSample",
+    "readDuDocument",
+    "runDuPreflight",
+    "readDuPreflight",
+    "explainDuRefusal"
    ],
    "escalates_to": [
     "human_agent",
@@ -5071,6 +5092,60 @@
    "escalates_to": [
     "officer",
     "underwriting_reviewer"
+   ]
+  },
+  {
+   "process": "23.5",
+   "agent": "underwriter",
+   "agents_named": [
+    "underwriter"
+   ],
+   "tools": [
+    "writeDuAsset",
+    "writeDuLiability",
+    "writeDuExpense",
+    "writeDuOwnedProperty",
+    "linkOwner",
+    "unlinkOwner",
+    "assertDeclarations",
+    "writeResidence",
+    "appendBorrower",
+    "linkJointCreditReport",
+    "readDuGraph"
+   ],
+   "guardrails": "an agent actor on `asserted_by_actor` raises `DU_DECLARATION_NOT_SELF_ATTESTED`; a borrower answering for another raises the same.",
+   "escalates_to": []
+  },
+  {
+   "process": "23.6",
+   "agent": "underwriter",
+   "agents_named": [
+    "underwriter"
+   ],
+   "tools": [
+    "assembleDuDocument",
+    "validateDuDocumentAgainstSchema",
+    "diffDuDocumentAgainstSample",
+    "readDuDocument"
+   ],
+   "guardrails": "the agent cannot write to `documents` except through `assembleDuDocument`; a document that fails schema validation is never persisted.",
+   "escalates_to": []
+  },
+  {
+   "process": "23.7",
+   "agent": "underwriter",
+   "agents_named": [
+    "underwriter"
+   ],
+   "tools": [
+    "runDuPreflight",
+    "readDuPreflight",
+    "explainDuRefusal"
+   ],
+   "guardrails": "no bypass exists \u2014 there is no `officer` waiver for a preflight refusal, because every refusal is a document DU would reject. Escalations: `fnma_portal_operator` on `DU_CASEFILE_ID_CONFLICT`.",
+   "escalates_to": [
+    "fnma_portal_operator",
+    "officer"
    ]
   },
   {

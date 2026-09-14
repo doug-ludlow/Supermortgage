@@ -180,6 +180,10 @@ import { EVALUATORS_34_1 } from "../domain/operator-portal/evaluators-34-1.ts";
 import { EVALUATORS_34_2 } from "../domain/operator-portal/evaluators-34-2.ts";
 import { EVALUATORS_34_3 } from "../domain/operator-portal/evaluators-34-3.ts";
 import { EVALUATORS_34_4 } from "../domain/operator-portal/evaluators-34-4.ts";
+// ---- §23.5–§23.7 process-owned files (scaffolded by tools/workflows/wire_orig.py)
+import { EVALUATORS_23_5 } from "../domain/underwriting/evaluators-23-5.ts";
+import { EVALUATORS_23_6 } from "../domain/underwriting/evaluators-23-6.ts";
+import { EVALUATORS_23_7 } from "../domain/underwriting/evaluators-23-7.ts";
 
 export const EVALUATORS: Record<string, Evaluator> = {
   // ---- §1 transfers in
@@ -336,6 +340,7 @@ export const EVALUATORS: Record<string, Evaluator> = {
   ...EVALUATORS_32_1, ...EVALUATORS_32_2, ...EVALUATORS_32_3, ...EVALUATORS_32_4, ...EVALUATORS_32_5, ...EVALUATORS_32_6, ...EVALUATORS_32_7, ...EVALUATORS_32_8, ...EVALUATORS_32_9, ...EVALUATORS_32_10, ...EVALUATORS_32_11, ...EVALUATORS_32_12, ...EVALUATORS_32_13,
   ...EVALUATORS_33_1, ...EVALUATORS_33_2, ...EVALUATORS_33_3,
   ...EVALUATORS_34_1, ...EVALUATORS_34_2, ...EVALUATORS_34_3, ...EVALUATORS_34_4,
+  ...EVALUATORS_23_5, ...EVALUATORS_23_6, ...EVALUATORS_23_7,
 };
 
 export class UnknownEvaluator extends Error { constructor(ref: string) { super(`no evaluator registered for ${ref}`); this.name = "UnknownEvaluator"; } }

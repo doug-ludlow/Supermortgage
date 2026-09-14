@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type Anthropic from "@anthropic-ai/sdk";
-import { COOPERATIVE, FAKE_SUITE, HOSTILE, HUMAN, PERSONAS, PURCHASE, REFINANCE, SERVICING_PAYOFF, personaById, sceneToolNames } from "./personas.ts";
+import { COOPERATIVE, COOPERATIVE_DU, FAKE_SUITE, HOSTILE, HUMAN, PERSONAS, PURCHASE, REFINANCE, SERVICING_PAYOFF, personaById, sceneToolNames } from "./personas.ts";
 import { DEFAULT_FALLBACK_TEXT, DEFAULT_REGENERATE_TEXT, modelToolName, parseSituation, scriptedClient, TURN_TOOLS } from "./scripted-client.ts";
 import { datasetHash } from "./runner.ts";
 
@@ -14,7 +14,11 @@ const situation = (borrower: string, next: Record<string, unknown> = { step: "ca
 const DIGIT_OR_AMOUNT = /\d|\b(?:hundred|thousand|million|percent|dollars?|cents)\b/i;
 
 test("eval personas: the nine personas of docs/ux/17 §6 plus the refinance and purchase journeys, each with utterances, scenes and a target; the FAKE suite is those that start from account creation", () => {
-  assert.deepEqual(PERSONAS.map((p) => p.id), ["cooperative", "terse", "rambling", "anxious", "hostile", "non-native", "human", "refinance", "purchase", "servicing-payoff"]);
+  assert.deepEqual(PERSONAS.map((p) => p.id), ["cooperative", "terse", "rambling", "anxious", "hostile", "non-native", "human", "refinance", "cooperative-du", "purchase", "servicing-payoff"]);
+  // 32.16 T21 / 32.18: the cooperative refinance borrower to the DU moment — the connectors on the FAKE (payroll and assets), the ID scan, the one typed field (the SSN), the target the findings
+  assert.deepEqual(COOPERATIVE_DU.target, { kind: "event", type: "du.findings.received" });
+  assert.ok(COOPERATIVE_DU.steps.some((s) => "identity" in s), "the ID scan step"); assert.ok(COOPERATIVE_DU.steps.some((s) => "connect" in s && s.connect.vendor === "plaid_assets" && s.connect.copy_key === "assets.connect.purpose"), "the assets connector step");
+  assert.deepEqual(COOPERATIVE_DU.steps.filter((s) => "resolve" in s && s.resolve.fields && !s.resolve.as_shown && s.resolve.copy_key !== "profile.title").map((s) => ("resolve" in s ? s.resolve.copy_key : "")), ["identity.ssn.title"], "the SSN is the one typed field");
   for (const p of PERSONAS) { assert.ok(p.steps.some((s) => "say" in s), `${p.id} says something`); assert.ok(p.scenes.length > 0, `${p.id} has scenes`); assert.ok(p.label); }
   assert.deepEqual(REFINANCE.target, { kind: "event", type: "application.received" }); assert.deepEqual(PURCHASE.target, { kind: "event", type: "application.received" });
   assert.deepEqual(SERVICING_PAYOFF.target, { kind: "card", copy_key: "payoff.request", card_kind: "ChoiceCard" }); assert.equal(SERVICING_PAYOFF.requires, "serviced_loan");

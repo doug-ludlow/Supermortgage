@@ -78,7 +78,7 @@ export const SHAPES = {
   error: { code: true, gate: true, copy_key: true, challenge_id: true, fake_code: true } satisfies Shape,   // challenge_id / fake_code: EMAIL_UNVERIFIED only (32.16 DELTA-29) — every other refusal carries {code, gate?, copy_key} and nothing else
   // 32.3: the in-app voice session (E1 "a call to the published number"; the disclosure is spoken first) and the FAKE payroll connector (R3)
   voice_session: { session_id: true, channel: true, vendor: true, started_at: true, first_message: MESSAGE } satisfies Shape,
-  connect_session: { vendor: true, vendor_session_id: true, link_token: true, card_instance_id: true, application_id: true, status: true, delivery: true } satisfies Shape,
+  connect_session: { vendor: true, vendor_session_id: true, link_token: true, card_instance_id: true, application_id: true, status: true, delivery: true, outcome: true, verification_id: true, report_reference_id: true, accounts: true, events: true } satisfies Shape,   // 32.17 rule 19 / 32.18 rule 1: the FAKE's settlement on the tap rides on the response
   connect_webhook: { received: true, vendor: true, vendor_session_id: true, outcome: true, application_id: true, verification_id: true, report_reference_id: true, events: true } satisfies Shape,
   // 32.14 §4: the telephony vendor's inbound webhooks (SMS and voice entry on the same lead) — what went out to the number (copy keys and rendered lines), never a session token, never the number itself
   sms_webhook: { received: true, vendor: true, channel: true, lead_id: true, step: true, outbound: [{ copy_key: true, text: true, message_id: true }], events: true, session_opened: true, level: true, fake_code: true, refused: { code: true, gate: true, copy_key: true } } satisfies Shape,

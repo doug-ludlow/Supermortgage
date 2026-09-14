@@ -335,14 +335,16 @@ test("32.3-T9: Given two borrowers with different score models, then the UI show
 });
 
 test("32.3-T10: Given `credit.report.received` at 09:00 Tuesday, then `NTC_FCRA_609G_CREDIT_SCORE` is delivered by end of Wednesday (`FCRA_609G_SCORE_NOTICE_1BD`).", { skip }, async () => {
-  // Kim's tri-merge Tue Oct 20 09:00 ET (E-SIGN active since T7 → the score notice is e-delivered by 21.3 the same morning)
+  // 32.18 rule 2: the platform pulled Kim's tri-merge itself at the six items (T7, Mon Oct 19 09:40 ET) on the goal tap's authorization — the same one-creditor-business-day rule from that receipt (Monday → end of Tuesday);
+  // her E-SIGN was still pending verification at that moment, so 21.3 delivered the §609(g) notice by mail the same morning (T7's own guard), and the tap-time re-delivery never repeats it (all borrowers covered).
   clock.set(isoEt("2026-10-20", "09:00")); kim.token = await fresh(KIM);
-  const order = await tool({ app: kim.appId }, "22.2", "orderCreditReport", { borrower_ids: ["B1"], permissible_purpose: "credit_transaction_604a3A", certification_ref: "CERT-PARTNER-1681E-2026", borrower_authorization_ref: `AUTH-KIM-${R}`, subscriber_code: "SUB-PARTNER-0417", fee_sm_borne: true, at: isoEt("2026-10-20", "09:00") }, VERIFICATION);
-  kim.reportId = order.output["report_id"] as string; assert.ok(order.events.some((e) => e.type === "credit.report.received"));
+  const received = (await events(kim.appId, "credit.report.received")).filter((e) => typeof e.payload["report_id"] === "string"); assert.equal(received.length, 1, "one pull: the platform's at the six items (no second order)");
+  kim.reportId = received[0]!.payload["report_id"] as string; assert.equal(received[0]!.occurred_at, isoEt("2026-10-19", "09:40"), "pulled at the sixth item");
+  assert.equal((await events(kim.appId, "credit.report.ordered")).length, 1, "one order (the fee is Supermortgage's: SIX_ITEMS_AND_FEE_FIRST)");
   await settle();
-  const delivered = (await events(kim.appId, "score_disclosure.delivered")); assert.equal(delivered.length, 1, "21.3 delivered the §609(g) notice"); assert.equal(delivered[0]!.payload["all_borrowers_covered"], true); assert.equal(delivered[0]!.payload["channel"], "esign_portal");
+  const delivered = (await events(kim.appId, "score_disclosure.delivered")); assert.equal(delivered.length, 1, "21.3 delivered the §609(g) notice once"); assert.equal(delivered[0]!.payload["all_borrowers_covered"], true); assert.equal(delivered[0]!.payload["channel"], "mail", "E-SIGN pending at the pull → paper (21.3's guard)");
   const t = await timer(kim.appId, "FCRA_609G_SCORE_NOTICE_1BD"); assert.ok(t, "the timer armed on credit.report.received");
-  assert.equal(wallClock(Date.parse(t!.due_at!), "America/New_York").date, "2026-10-21", "end of Wednesday, creditor calendar"); assert.equal(t!.status, "satisfied"); assert.ok(delivered[0]!.occurred_at <= t!.due_at!);
+  assert.equal(wallClock(Date.parse(t!.due_at!), "America/New_York").date, "2026-10-20", "end of the next creditor business day (Monday's receipt → Tuesday)"); assert.equal(t!.status, "satisfied"); assert.ok(delivered[0]!.occurred_at <= t!.due_at!);
   const cards = await cardsOf(kim.appId, kim.partyId);
   const notice = cards.find((c) => c.kind === "DocumentCard" && c.copy_key === "companion.score_notice"); assert.ok(notice, "the score notice DocumentCard (requires_ack=false)"); assert.equal(notice!.props["notice_code"], "NTC_FCRA_609G_CREDIT_SCORE"); assert.equal(notice!.props["requires_ack"], false);
   assert.ok(cards.some((c) => c.copy_key === "credit.liabilities.confirm"), "the liabilities ConfirmCard");
@@ -473,7 +475,7 @@ test("32.3-T17: Given income confirmed at 10:02, SSN authorization at 10:03, add
   const t = await timer(jane.appId, "REGZ_1026_19E1_LE_3BD"); assert.ok(t); assert.equal(t!.status, "armed");
   assert.equal(t!.due_at, "2026-10-23T03:59:00.000Z", "Mon Oct 19 → Thu Oct 22, 23:59 creditor (Eastern) time"); assert.equal(wallClock(Date.parse(t!.due_at!), "America/New_York").date, "2026-10-22");
   await settle();
-  const rec = await record(jane.token, jane.appId); assert.equal((rec["status"] as { badge: string }).badge, "Application received"); assert.equal((rec["next"] as { timer_code: string; due_at: string }).timer_code, "REGZ_1026_19E1_LE_3BD"); assert.equal((rec["next"] as { due_at: string }).due_at, t!.due_at);
+  const rec = await record(jane.token, jane.appId); assert.equal((rec["status"] as { badge: string }).badge, "Verifying", "32.18 rule 2: the platform pulled credit at the sixth item, so the record is already verifying"); assert.equal((rec["next"] as { timer_code: string; due_at: string }).timer_code, "REGZ_1026_19E1_LE_3BD"); assert.equal((rec["next"] as { due_at: string }).due_at, t!.due_at);
   const status = (await cardsOf(jane.appId, jane.partyId)).find((c) => c.copy_key === "application.received"); assert.ok(status, "the StatusCard"); assert.equal(status!.props["next_event_at"], t!.due_at);
 });
 

@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 7775/7784 (99.9%): tids 2122/2130, tables 729/730, timers 2029/2029, notices 306/306, tools 1378/1378, figures 1211/1211; processes at 100%: 180/181",
+ "brief": "spec units built 7792/7800 (99.9%): tids 2135/2142, tables 729/730, timers 2029/2029, notices 306/306, tools 1379/1379, figures 1214/1214; processes at 100%: 181/182",
  "totals": {
   "tids": {
-   "spec": 2130,
-   "built": 2122
+   "spec": 2142,
+   "built": 2135
   },
   "tables": {
    "spec": 730,
@@ -18,16 +18,16 @@
    "built": 306
   },
   "tools": {
-   "spec": 1378,
-   "built": 1378
+   "spec": 1379,
+   "built": 1379
   },
   "figures": {
-   "spec": 1211,
-   "built": 1211
+   "spec": 1214,
+   "built": 1214
   },
   "units": {
-   "spec": 7784,
-   "built": 7775
+   "spec": 7800,
+   "built": 7792
   }
  },
  "sections": {
@@ -218,10 +218,10 @@
    "done": 3
   },
   "32": {
-   "spec": 338,
-   "built": 329,
-   "processes": 16,
-   "done": 15
+   "spec": 354,
+   "built": 346,
+   "processes": 17,
+   "done": 16
   }
  },
  "done": [
@@ -404,7 +404,8 @@
   "32.12",
   "32.13",
   "32.14",
-  "32.17"
+  "32.17",
+  "32.18"
  ],
  "processes": [
   {
@@ -7751,14 +7752,13 @@
    "title": "The conversational product: an account, then a conversation, with cards only when the rules need one",
    "tids": {
     "spec": 32,
-    "built": 24,
-    "todo": 8,
+    "built": 25,
+    "todo": 7,
     "missing": [
      17,
      18,
      19,
      20,
-     21,
      22,
      23,
      24
@@ -7794,16 +7794,16 @@
    },
    "units": {
     "spec": 45,
-    "built": 36
+    "built": 37
    },
-   "pct": 80.0
+   "pct": 82.2
   },
   {
    "process": "32.17",
    "title": "The video agent: the same conversation, face to face, with the cards on the rail",
    "tids": {
-    "spec": 21,
-    "built": 21,
+    "spec": 26,
+    "built": 26,
     "todo": 0,
     "missing": []
    },
@@ -7834,8 +7834,49 @@
     "missing": []
    },
    "units": {
-    "spec": 27,
-    "built": 27
+    "spec": 32,
+    "built": 32
+   },
+   "pct": 100.0
+  },
+  {
+   "process": "32.18",
+   "title": "The DU moment: the assets connection, the credit pull and the underwriting run from the conversation",
+   "tids": {
+    "spec": 7,
+    "built": 7,
+    "todo": 0,
+    "missing": []
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 1,
+    "built": 1,
+    "missing": []
+   },
+   "figures": {
+    "spec": 3,
+    "built": 3,
+    "missing": []
+   },
+   "units": {
+    "spec": 11,
+    "built": 11
    },
    "pct": 100.0
   }

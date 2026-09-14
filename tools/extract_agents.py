@@ -27,7 +27,8 @@ for f in sorted(glob.glob(os.path.join(root, 'spec/sections/*/*.md'))):
     names = [a for a in re.findall(r'`([a-z][a-z\-]+)`', para) if a in KNOWN]
     owner = names[0] if names else None
     tools = []
-    tm = re.search(r'tools?(?: allowlist)?[^`{]{0,20}[{(]?\s*((?:`[A-Za-z0-9_./*\- ]+`\s*(?:\([^)]*\))?\s*(?:,|and)?\s*){2,})', para, re.I)
+    # a parenthesized "(tools: `a`, `b`)" list is the list even when it names one tool (32.18 owns exactly one); otherwise two or more backticked names after "tools"
+    tm = re.search(r'\(tools?:\s*((?:`[A-Za-z0-9_./*\- ]+`\s*,?\s*)+)\)', para) or re.search(r'tools?(?: allowlist)?[^`{]{0,20}[{(]?\s*((?:`[A-Za-z0-9_./*\- ]+`\s*(?:\([^)]*\))?\s*(?:,|and)?\s*){2,})', para, re.I)
     if tm:
         tools = re.findall(r'`([A-Za-z][A-Za-z0-9_./*\-]*)`', tm.group(1))
     else:

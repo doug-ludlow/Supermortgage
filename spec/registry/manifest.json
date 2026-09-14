@@ -15706,5 +15706,47 @@
    "video.callback",
    "video.identify"
   ]
+ },
+ {
+  "process": "32.18",
+  "title": "The DU moment: the assets connection, the credit pull and the underwriting run from the conversation",
+  "path": "sections/32-borrower-experience/32-18-the-du-moment-assets-credit-and-the-underwriting-run-from-the-conversation.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given a new account whose goal was tapped (the connectors sent), then a `ConnectCard{plaid_assets}` (`assets.connect.purpose`, \"Connect with Plaid\") is on the record beside the identity and payroll cards; when the page opens `POST /v1/borrower/connect/plaid_assets/session` with `fake_complete: true` on it, then in that request `verification.received{kind=assets, supplier_code=plaid, report_days=365}` is logged, a `verifications` row carries the report reference, one `application_assets` row per account of the FAKE report exists (institution, last four, balance, `verified = true`), the card is `connected` with the `verification_id`, and nothing was posted by the page."
+   },
+   {
+    "n": 2,
+    "text": "Given the hard-pull authorization written on the goal's tap and the SSN captured as the one typed field, when the six items are in (`application.trid_received`), then the platform orders the credit report once \u2014 `credit.report.ordered` then `credit.report.received` with a usable tri-merge report (22.2; `permissible_purpose = credit_transaction_604a3A`, the partner's certification reference, `fee_sm_borne` \u2014 22.2 refuses an order without the borrower's authorization reference, so the report proves it was given) \u2014 and 32.3 R2's liabilities ConfirmCard follows; before the six items nothing is ordered, and a second capture orders nothing more (one `credit_reports` row)."
+   },
+   {
+    "n": 3,
+    "text": "Given an application with the six items, a usable credit report, income on file and the assets report connected, when the last of them lands, then in that settlement `du.casefile.created`, `du.credit.associated`, `du.submitted`, `du.findings.received` and `du.findings.interpreted` are logged once each; the submission's snapshot is built from the tables (`loan_purpose = limited_cash_out_refinance`, the loan amount and value as stated, `product = fixed_30` over 360, `qualifying_income_cents` = \u03a3 `application_income`, every borrower with `ssn_last4 = tin_last4`) and the request's `validation_report_refs` name the asset report (`supplier_type = plaid`, `report_type = asset_verification_365d`); the StatusCard `du.running` and the ChecklistCard are on the record; a further prerequisite event runs nothing more (one `du_casefiles` row)."
+   },
+   {
+    "n": 4,
+    "text": "Given the worked example's application ($560,000.00 sought at 6.125% on a home worth $800,000.00, $8,200.00 a month of qualifying income, no tradelines on the fixture bureau's report), then the snapshot carries `total_obligations_cents` = $3,402.62 (the proposed P&I alone) and `qualifying_income_cents` = $8,200.00, and the FAKE findings show `dti_du = 41.50`."
+   },
+   {
+    "n": 5,
+    "text": "Given the 12-month asset report on the request and a stated income within 10% of the report's payroll deposits, then the findings carry `validation_results` `assets`, `employment` and `income` `validated` for the borrower, the interpretation's relief covers the three, and no income documentation condition (`COND_DU_VERIFY_INCOME_BASE`) is opened for the borrower; given a stated income 20% above the deposits, `income` is `not_validated`, `employment` and `assets` stay `validated`, and the income documentation condition is opened (its evidence the paystub and the W-2) and stays open for 23.3's decision to request."
+   },
+   {
+    "n": 6,
+    "text": "Given the findings interpreted, when the borrower asks how underwriting went, then the situation carries `underwriting{validated, conditions_for_you, checklist_card_instance_id}` and the reply says underwriting has run and names the checklist card, contains no DU message text, none of the words Approve, Eligible, Ineligible or Refer, and no figure; every `/v1/borrower/*` payload stays free of findings fields (32.3 T-03-19 unchanged)."
+   },
+   {
+    "n": 7,
+    "text": "Given the refinance persona's conversation (32.16's fixture: the goal, the home, the income, the connectors on the FAKE, the profile, the declarations, the demographics, the SSN, the value, the amount and the product), then `du.findings.received` is on the application before any Loan Estimate, with no platform-side DU call by the test, and 24.1's `readDuOffer` reads the FAKE findings' offer object as `value_acceptance` (the appraisal order after the intent proceeds on it)."
+   }
+  ],
+  "tables": [],
+  "timers": [],
+  "notices": [],
+  "agent": "borrower-app",
+  "tools": [
+   "underwriting.run"
+  ]
  }
 ]

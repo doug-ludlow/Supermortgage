@@ -15,10 +15,12 @@ export type Step =
   | { readonly say: string }
   /** The borrower taps Confirm on the card the assistant proposed on (props.proposal) — the one act that commits (docs/ux/17 §1 principle 6). `true` is strict (no proposal is an error of the run); `"if_proposed"` is the tap a simulator makes only when a read-back is waiting (the income card is sent by the flows later in the journey). */
   | { readonly confirm: true | "if_proposed" }
-  /** The borrower resolves a pending card by copy key (an option, or fields) — the rail's tap. `as_shown` confirms a ConfirmCard's prefilled fields as the card shows them (each with the source the platform holds); `fields` are then edits. */
-  | { readonly resolve: { readonly copy_key: string; readonly option_id?: string; readonly fields?: readonly { path: string; value: string }[]; readonly as_shown?: boolean } }
-  /** The borrower taps a ConnectCard and the FAKE vendor reports back (R3: the payroll connector — verification.connect, the vendor session, the vendor's webhook with `report`). */
-  | { readonly connect: { readonly copy_key: string; readonly vendor: "truv_income"; readonly report?: Record<string, string> } };
+  /** The borrower resolves a pending card by copy key (an option, or fields) — the rail's tap. `as_shown` confirms a ConfirmCard's prefilled fields as the card shows them (each with the source the platform holds); `fields` are then edits; `evidence` is the tap's own shape when the card has one (the DemographicsCard's answers). */
+  | { readonly resolve: { readonly copy_key: string; readonly option_id?: string; readonly fields?: readonly { path: string; value: string }[]; readonly as_shown?: boolean; readonly evidence?: Record<string, unknown> } }
+  /** The borrower taps a ConnectCard and the FAKE vendor reports back (R3: the payroll connector — verification.connect, the vendor session, the vendor's webhook with `report`; 32.18 rule 1: the assets connector, finished on the tap). */
+  | { readonly connect: { readonly copy_key: string; readonly vendor: "truv_income" | "plaid_assets"; readonly report?: Record<string, string> } }
+  /** The borrower runs the ID scan on the FAKE (E5, 32.17 rule 19): the identity session with `fake_complete` — the identity ConfirmCard follows, then the SSN card. */
+  | { readonly identity: true };
 export interface Persona {
   readonly id: string;
   readonly label: string;
@@ -114,6 +116,32 @@ export const REFINANCE: Persona = { id: "refinance", label: "Refinance journey b
   { say: "How does this work from here?" },
   { say: "Thanks." },
 ] };
+/** Propose into the pending card with this copy key (whichever `session.next` names), else just look (the conversation persona's own helper, conversation.spec.test.ts). */
+const pendingIn = (s: Situation, copyKey: string): string | null => { const c = [...s.pending_cards].reverse().find((x) => x["copy_key"] === copyKey); return c ? String(c["card_instance_id"]) : null; };
+const proposeInto = (copyKey: string, input: P) => (s: Situation): Call[] => { const id = pendingIn(s, copyKey); return id ? [{ name: "card.propose", input: { card_instance_id: id, ...input } }] : next(); };
+const NAME: Scene = { when: /my name is|i am called|call me/i, calls: proposeInto("identity.confirm.title", { fields: [{ path: "legal_name", value: "Dana Reyes" }] }), text: readBack("Thank you, {{proposal.legal_name}}. I have written your name with the birth date and address the scan read; say if any of it is off.", "Thanks. Your name goes on the identity card here once the scan has read it.") };
+const HOME: Scene = { when: /main home|primary home|live there/i, calls: proposeInto("refi.home.confirm", { fields: [{ path: "property_address", value: "100 N Central Ave, Phoenix, AZ 85004" }, { path: "occupancy", value: "primary" }] }), text: readBack("So the home is {{proposal.property_address}} and you live there as your main home. That is saved; say if it is not right.", "Got it. Confirm the home on the card here.") };
+const SIX_ITEMS: Scene = { when: /worth about|owe about/i, calls: (s) => [...proposeInto("refi.value.confirm", { fields: [{ path: "property_value_estimate", value: "80000000" }] })(s), ...proposeInto("refi.loan_amount.confirm", { fields: [{ path: "loan_amount_sought", value: "56000000" }] })(s), ...proposeInto("refi.product.choice", { option_id: "FRM30" })(s)].filter((c) => c.name === "card.propose"), text: readBack("So the home is worth about {{proposal.property_value_estimate}}, you would like to borrow {{proposal.loan_amount_sought}}, and {{proposal.option}}. That is saved; say if it is not right.", "Thanks. The value, the amount and the product each have a card here; confirm them there.") };
+const UNDERWRITING: Scene = { when: /underwriting|how did it go|any news/i, calls: [{ name: "record.get", input: {} }, ...next()], text: (s) => `Underwriting has answered. What it still needs from you is on the checklist here, and nothing about the answer itself goes through me. ${headOfAgenda(s)}` };
+/**
+ * 32.16 T21 / 32.18: the cooperative refinance borrower from account creation to the DU moment — the goal in words (written by the turn, 32.17 rule 21), the ID scan on the FAKE, the name in words, the SSN typed on its card (the one typed field), the home in words, the payroll and the assets connectors on the FAKE, the profile, the declarations and the demographics tapped, the value, the amount and the product in words (the sixth item: TRID → the platform's credit pull → the DU run, 32.18 rules 2–3), then the read-back asked for.
+ */
+export const COOPERATIVE_DU: Persona = { id: "cooperative-du", label: "Cooperative refinance borrower to the DU moment", stage: "origination", target: { kind: "event", type: "du.findings.received" }, scenes: [NAME, HOME, SIX_ITEMS, UNDERWRITING, ...COMMON], steps: [
+  { say: "Hi! I want to lower my monthly payment on the house." }, { confirm: true },
+  { identity: true },
+  { say: "My name is Dana Reyes." },
+  { resolve: { copy_key: "identity.ssn.title", fields: [{ path: "ssn", value: "123-45-6789" }] } },
+  { say: "It is my main home, at 100 N Central Ave in Phoenix, and I live there." },
+  { connect: { copy_key: "income.connect.purpose", vendor: "truv_income", report: REFINANCE_PAYROLL_REPORT } },
+  { resolve: { copy_key: "income.confirm.title", as_shown: true } },
+  { connect: { copy_key: "assets.connect.purpose", vendor: "plaid_assets" } },
+  { resolve: { copy_key: "profile.title", option_id: "submit", fields: REFINANCE_PROFILE } },
+  { resolve: { copy_key: "declarations.title", option_id: "none", evidence: { option_id: "none" } } },
+  { resolve: { copy_key: "demographics.title", option_id: "submit", evidence: { collection_method: "internet", answered_at: "2026-09-10T16:00:00.000Z", answers: { ethnicity: ["do_not_wish"], race: ["do_not_wish"], sex: "do_not_wish" } } } },
+  { say: "The house is worth about 800,000 and I owe about 560,000 on it; keep it a thirty year fixed." },
+  { say: "How did underwriting go?" },
+  { say: "Thanks." },
+] };
 export const PURCHASE: Persona = { id: "purchase", label: "Purchase journey by conversation", stage: "origination", target: { kind: "event", type: "application.received" }, scenes: COMMON, steps: [
   { say: "We are buying a house and need a loan." }, { confirm: true },
   { say: "My take-home is about eight thousand two hundred a month." }, { confirm: "if_proposed" },
@@ -125,7 +153,7 @@ export const SERVICING_PAYOFF: Persona = { id: "servicing-payoff", label: "Servi
 ] };
 
 /** Every persona of docs/ux/17 §6, by id. */
-export const PERSONAS: readonly Persona[] = [COOPERATIVE, TERSE, RAMBLING, ANXIOUS, HOSTILE, NON_NATIVE, HUMAN, REFINANCE, PURCHASE, SERVICING_PAYOFF];
+export const PERSONAS: readonly Persona[] = [COOPERATIVE, TERSE, RAMBLING, ANXIOUS, HOSTILE, NON_NATIVE, HUMAN, REFINANCE, COOPERATIVE_DU, PURCHASE, SERVICING_PAYOFF];
 /** The FAKE-model suite `npm run eval:fake` runs from account creation (the servicing persona needs a serviced loan: EVAL_SERVICING_ACCOUNT). */
 export const FAKE_SUITE: readonly Persona[] = PERSONAS.filter((p) => !p.requires);
 export const personaById = (id: string): Persona | undefined => PERSONAS.find((p) => p.id === id);

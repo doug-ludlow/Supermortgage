@@ -263,6 +263,48 @@ async function connectorCards(deps: FlowDeps, ctx: Ctx, party: Party): Promise<v
     // R3: the payroll connector — free to the borrower and optional before the LE (fee_paid_by=sm opens REGZ_1026_19E2_INTENT_FEE_GATE for it)
     await sendCard(deps, ctx, party, { kind: "ConnectCard", copy_key: "income.connect.purpose", flow_key: `connect.income:${party.party_id}`, command_ref: "verification.connect",
       props: { vendor: "truv_income", purpose_text: "", what_we_get: ["employer", "start date", "pay frequency", "base and variable pay", "year-to-date"], fallback: { label: "Type your monthly income now; we'll ask for paystubs later", document_class: "paystub" }, state: "not_started", pre_intent_optional: true, vendor_fake: "FAKE", command_args: { vendor: "truv_income", component: "income", fee_paid_by: "sm", ...(lead_id ? { lead_id } : {}) } } });
+    // 32.18 rule 1: the assets connection rides with the connectors — a 365-day DU validation service report (assets, employment and income validated from one place); no command of its own: the vendor's settlement (routes assetsSession / settleAssets) writes the report
+    await sendCard(deps, ctx, party, { kind: "ConnectCard", copy_key: "assets.connect.purpose", flow_key: `connect.assets:${party.party_id}`,
+      props: { vendor: "plaid_assets", purpose_text: "", what_we_get: ["balances", "twelve months of deposits"], fallback: { label: "Send two months of statements per account instead", document_class: "bank_statement" }, state: "not_started", pre_intent_optional: true, vendor_fake: "FAKE" } });
+}
+
+// ---------------------------------------------------------------- 32.18 rule 2: the credit pull is the platform's — on the hard-pull authorization and the SSN, once
+const CREDIT_ORDER = { permissible_purpose: "credit_transaction_604a3A", certification_ref: process.env["CREDIT_CERTIFICATION_REF"] ?? "CERT-PARTNER-FAKE-2026", subscriber_code: process.env["CREDIT_SUBSCRIBER_CODE"] ?? "SUB-PARTNER-FAKE" } as const;
+async function creditPull(deps: FlowDeps, ctx: Ctx): Promise<void> {
+  if (has(ctx, "credit.report.ordered") || has(ctx, "credit.report.received")) return;
+  if (!has(ctx, "application.trid_received")) return;   // 22.2 R1 / §1026.19(e)(2)(i)(B): no hard pull before the six items (the fee is SM-borne — the other half of SIX_ITEMS_AND_FEE_FIRST)
+  const intake = ctx.store.get("applications", ctx.appId)?.data as P | undefined; const borrowers = (intake?.["borrowers"] as P[] | undefined) ?? [];
+  const ssnOnFile = has(ctx, "application.six_item.captured", (x) => x["item"] === "ssn") || (await deps.runtime.db.query(`SELECT 1 FROM application_borrowers WHERE application_id = $1 AND tin_last4 IS NOT NULL`, [ctx.appId])).length > 0;
+  if (!ssnOnFile) return;
+  // the hard-pull authorization the goal's tap wrote (32.17 rule 20 → 20.3 captureConsent): on the lead record's credit_authorizations[]
+  const authorizations = Array.isArray(ctx.lead?.["credit_authorizations"]) ? (ctx.lead!["credit_authorizations"] as P[]) : [];
+  const authz = authorizations.filter((a) => a["kind"] === "hard_application").map((a) => String(a["authorization_id"])).at(-1);
+  if (!authz) return;
+  const borrower_ids = borrowers.map((b) => String(b["id"])).filter(Boolean);
+  if (!borrower_ids.length) return;
+  try {
+    const order = await exec(deps, ctx.appId, "22.2", "orderCreditReport", VERIFICATION, { application_id: ctx.appId, borrower_ids, ...CREDIT_ORDER, borrower_authorization_ref: authz, fee_sm_borne: true });
+    const reportId = String((order.output as P)["report_id"]);
+    await exec(deps, ctx.appId, "22.2", "parseCreditReport", VERIFICATION, { application_id: ctx.appId, report_id: reportId });
+    deps.logger?.info("borrower.flow.32-18.credit.ordered", { application_id: ctx.appId, report_id: reportId, borrower_ids, authorization_id: authz });
+  } catch (err) { deps.logger?.warn("borrower.flow.32-18.credit.refused", { application_id: ctx.appId, error: err instanceof Error ? err.message : String(err), code: (err as { code?: string }).code ?? null }); }
+}
+
+// ---------------------------------------------------------------- 32.18 rule 3: the DU moment — the last prerequisite runs underwriting.run once
+async function duMoment(deps: FlowDeps, ctx: Ctx): Promise<void> {
+  if (!has(ctx, "application.trid_received")) return;
+  if (has(ctx, "du.casefile.created") || has(ctx, "du.submitted")) return;
+  const report = ctx.store.list("credit_reports", (d) => d["application_id"] === ctx.appId && d["state"] === "usable").at(-1); if (!report) return;
+  const intake = ctx.store.get("applications", ctx.appId)?.data as P | undefined;
+  const incomeOnFile = (await deps.runtime.db.query(`SELECT 1 FROM application_income WHERE application_id = $1`, [ctx.appId])).length > 0 || has(ctx, "verification.received", (x) => x["kind"] === "income") || (typeof intake?.["income_monthly_cents"] === "string" && intake["income_monthly_cents"] !== "");
+  if (!incomeOnFile) return;
+  // the assets card settled: connected, or no assets card pending (declined / never sent); a pending one is the current ask and DU waits for it
+  const assetsPending = (await deps.runtime.db.query(`SELECT 1 FROM card_instances WHERE subject_application_id = $1 AND kind = 'ConnectCard' AND props->>'vendor' = 'plaid_assets' AND status = 'pending'`, [ctx.appId])).length > 0;
+  if (assetsPending) return;
+  try {
+    const r = await exec(deps, ctx.appId, "32.18", "underwriting.run", BORROWER_APP, { application_id: ctx.appId });
+    deps.logger?.info("borrower.flow.32-18.du.ran", { application_id: ctx.appId, ...(r.output as P), events: r.events.map((e) => e.type) });
+  } catch (err) { deps.logger?.warn("borrower.flow.32-18.du.refused", { application_id: ctx.appId, error: err instanceof Error ? err.message : String(err), code: (err as { code?: string }).code ?? null, ...(process.env["FLOW_DEBUG"] && err instanceof Error && err.stack ? { stack: err.stack.split("\n").slice(0, 6).join(" | ") } : {}) }); }
 }
 
 // ---------------------------------------------------------------- E5: identity → confirm, then the SSN, then R1
@@ -480,7 +522,7 @@ async function contractCard(deps: FlowDeps, ctx: Ctx, e: DomainEvent): Promise<v
 async function react(deps: FlowDeps, ctx: Ctx, e: DomainEvent): Promise<void> {
   const p = pl(e);
   switch (e.type) {
-    case "application.received": await consentCards(deps, ctx); return;
+    case "application.received": await consentCards(deps, ctx); await creditPull(deps, ctx); return;   // 32.18 rule 2: the goal's tap wrote the authorization — the SSN may already be on file
     case "identity.verified": await identityCard(deps, ctx, e); return;
     case "application.field.captured": {
       const field = String(p["field"] ?? "");
@@ -490,21 +532,25 @@ async function react(deps: FlowDeps, ctx: Ctx, e: DomainEvent): Promise<void> {
     }
     case "application.six_item.captured": {
       if (p["item"] === "income") for (const party of partiesFor(ctx, p["borrower_id"])) await profileCard(deps, ctx, party);
+      if (p["item"] === "ssn") await creditPull(deps, ctx);   // 32.18 rule 2
+      if (p["item"] === "income") await duMoment(deps, ctx);   // 32.18 rule 3
       return;
     }
     case "application.declarations.answered": for (const party of partiesFor(ctx, p["borrower_id"])) await demographicsCard(deps, ctx, party); return;
     case "application.demographics.collected": for (const party of partiesFor(ctx, p["borrower_id"])) await sixItemCards(deps, ctx, party); return;
     case "application.trid_received": {
       const due = await timerDue(deps, ctx.appId, "REGZ_1026_19E1_LE_3BD");
-      await sendToAll(deps, ctx, StatusCard("application.received", `application.received:${ctx.appId}`, { next_event_label: timerLabel("REGZ_1026_19E1_LE_3BD"), next_event_at: due, copy_tokens: { date: String(p["trid_application_date"] ?? e.occurredAt.slice(0, 10)), due: due ?? "" } })); return;
+      await sendToAll(deps, ctx, StatusCard("application.received", `application.received:${ctx.appId}`, { next_event_label: timerLabel("REGZ_1026_19E1_LE_3BD"), next_event_at: due, copy_tokens: { date: String(p["trid_application_date"] ?? e.occurredAt.slice(0, 10)), due: due ?? "" } }));
+      await creditPull(deps, ctx);   // 32.18 rule 2: the six items are in — the pull (its report's reaction runs the DU moment)
+      await duMoment(deps, ctx); return;   // 32.18 rule 3
     }
-    case "verification.received": await incomeCard(deps, ctx, e); return;
+    case "verification.received": await incomeCard(deps, ctx, e); await duMoment(deps, ctx); return;   // 32.18 rule 3: the income or the assets report may be the last prerequisite
     case "credit.report.ordered": {
       // T9: a re-order after a report (one score model for every borrower — 22.2 R11 / 23.1 T11): the neutral line, never a score
       if (has(ctx, "credit.report.received", (x) => typeof x["report_id"] === "string" && x["report_id"] !== p["report_id"]) || has(ctx, "du.submission.errored", (x) => x["error_code"] === "SCORE_MODEL_MIXED")) await sendToAll(deps, ctx, StatusCard("credit.rerun.neutral", `credit.rerun:${String(p["client_order_id"] ?? e.id)}`, { copy_tokens: {} }));
       return;
     }
-    case "credit.report.received": if (typeof p["report_id"] === "string" && p["source"] !== "origination") await creditCards(deps, ctx, e); return;
+    case "credit.report.received": if (typeof p["report_id"] === "string" && p["source"] !== "origination") await creditCards(deps, ctx, e); await duMoment(deps, ctx); return;   // 32.18 rule 3
     case "du.findings.received": await sendToAll(deps, ctx, StatusCard("du.running", `du.running:${String(p["casefile_id"])}:${String(p["submission_number"])}`, { copy_tokens: {} })); return;
     case "du.findings.interpreted": await checklistCard(deps, ctx, e); return;
     case "terms.presentation.requested": await termsPendingCards(deps, ctx, e); return;

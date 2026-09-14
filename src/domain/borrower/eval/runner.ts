@@ -156,14 +156,23 @@ async function runStep(deps: RunnerDeps, step: Step, auth: Record<string, string
     if (r.status !== 200 && r.status !== 201) throw new Error(`resolve ${card.copy_key} ${r.status} ${describe(r.body)}`);
     return r;
   };
+  if ("identity" in step) {
+    // E5 on the FAKE (32.17 rule 19): the page opens the Stripe Identity session on the flow's own card with `fake_complete`, and the FAKE finishes in that request — 22.6 verifyIdentity, the prefill, L3, the identity ConfirmCard next
+    const vs = await call(deps.base, "POST", "/v1/borrower/identity/stripe/session", { fake_complete: true }, auth);
+    if (vs.status !== 200) throw new Error(`identity session ${vs.status} ${describe(vs.body)}`);
+    return;
+  }
   if ("connect" in step) {
-    // R3, the FAKE payroll connector as the app drives it: the ConnectCard's tap (verification.connect orders the report), the vendor session, the vendor's webhook with the report
+    // R3, the FAKE payroll connector as the app drives it: the ConnectCard's tap (verification.connect orders the report), the vendor session, the vendor's webhook with the report;
+    // 32.18 rule 1, the FAKE assets connector: the tap, then the vendor session with `fake_complete` (32.17 rule 19) — the 365-day report lands in that request, no webhook
     const card = cards.find((c) => c.copy_key === step.connect.copy_key);
     if (!card) throw new Error(`connect: no pending ConnectCard ${step.connect.copy_key}`);
     // paced as the app is: the tap, then (the flows' reactions to it settled) the vendor session the app opens, then the vendor's callback — the report arrives after the tap's own reactions, never racing them
     await resolveCard(card, { evidence: { vendor: step.connect.vendor, started_at: new Date().toISOString() } }); await deps.settle?.();
-    const vs = await call(deps.base, "POST", `/v1/borrower/connect/${step.connect.vendor}/session`, { card_instance_id: card.card_instance_id }, auth);
+    const fakeComplete = step.connect.vendor === "plaid_assets";
+    const vs = await call(deps.base, "POST", `/v1/borrower/connect/${step.connect.vendor}/session`, { card_instance_id: card.card_instance_id, ...(fakeComplete ? { fake_complete: true } : {}) }, auth);
     if (vs.status !== 200) throw new Error(`connect session ${step.connect.vendor} ${vs.status} ${describe(vs.body)}`); await deps.settle?.();
+    if (fakeComplete) return;
     const hook = await call(deps.base, "POST", "/v1/webhooks/truv", { type: "voie.report.ready", data: { vendor_session_id: vs.body["vendor_session_id"], report: step.connect.report ?? {} } }, { "x-truv-signature": "FAKE" });
     if (hook.status !== 200) throw new Error(`truv webhook ${hook.status} ${describe(hook.body)}`);
     return;
@@ -181,6 +190,8 @@ async function runStep(deps: RunnerDeps, step: Step, auth: Record<string, string
   }
   const card = cards.find((c) => c.copy_key === step.resolve.copy_key);
   if (!card) throw new Error(`resolve: no pending card ${step.resolve.copy_key}`);
+  // a card whose evidence has its own shape (the DemographicsCard's answers, a ChoiceCard's option): the tap as the app posts it
+  if (step.resolve.evidence) { await resolveCard(card, { ...(step.resolve.option_id ? { option_id: step.resolve.option_id } : {}), evidence: { ...step.resolve.evidence, tapped_at: new Date().toISOString() } }); return; }
   // `as_shown`: the Confirm tap on a ConfirmCard's prefilled fields as the card shows them (each with the source the platform holds), any explicit field an edit
   const shown = step.resolve.as_shown && Array.isArray(card.props["fields"]) ? (card.props["fields"] as P[]).filter((f) => f["value"] !== undefined && f["value"] !== null && String(f["value"]) !== "").map((f) => ({ path: String(f["path"]), value_confirmed: String(f["value"]), source: String(f["source"] ?? "borrower") })) : [];
   const edits = step.resolve.fields ?? [];

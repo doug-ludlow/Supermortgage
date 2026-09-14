@@ -218,6 +218,7 @@ const SCENES: readonly Scene[] = [
   { when: /happy with it|ready to move forward/i, calls: next(), text: (s) => `Good. The go-ahead is a card: tap Proceed there and the lock choices follow. ${head(s)}` },
   { when: /which lock|should i lock/i, calls: next(), text: "The lock card shows the choices side by side with their periods; pick the one that fits, or keep floating. I cannot pick one for you." },
   { when: /what (else )?do you need from me/i, calls: [...next(), { name: "record.get", input: {} }], text: (s) => (s.session_next.step === "card" ? "Underwriting's list is on the rail: each upload card names the document it needs from you. Tap each card and add its file, and I will say when they are through." : head(s)) },
+  { when: /need to come by|need an appraisal/i, calls: [{ name: "explain", input: { topic: "appraisal" } }, ...next()], text: "No appraiser visit is needed: underwriting accepted the home's value from its own data, and the status card here says so." },
   { when: /appraiser|appraisal/i, calls: [{ name: "explain", input: { topic: "appraisal" } }, ...next()], text: "An appraiser visits to confirm the home's condition and value; nothing about the value goes through me. Pick a window that works on the schedule card here." },
   { when: /closing disclosure|final numbers/i, calls: [{ name: "explain", input: { topic: "closing_disclosure" } }, ...next()], text: "The Closing Disclosure is the final form with your loan's actual terms and costs. Open it here, read it to the end and That's saved — say if it's not right." },
   { when: /when can we sign|sign on friday/i, calls: next(), text: "Pick a signing window on the schedule card here; signing electronically is the default, and paper is a choice on the card beside it." },
@@ -260,20 +261,6 @@ function leRender(b: Borrower, over: Json): Json {
   return { ...r, as_of: D(String(r["as_of"])), fees: ((r["fees"] as Json[] | undefined) ?? []).map((f) => ({ ...f, estimated_at: D(String(f["estimated_at"])) })) };
 }
 const BORROWER_IDENTITY = (b: Borrower, last: string) => [{ borrower_id: "B1", last_name: last, suffix: null, ssn_last4: b.last4 }];
-/** 23.1's casefile, the credit association, the DU request and its findings (Approve/Eligible, the worked example's messages), 23.2's interpretation → the conditions (32.3 R8 / 32.5). */
-async function duRun(b: Borrower, f: RefiFacts, reportId: string, times: { findings_at: string; interpreted_at: string }): Promise<{ submission_id: string; interpretation_id: string | null; request_hash: string }> {
-  clock.set(times.findings_at);
-  const cf0 = createCasefile(new MemoryEventStore(clock), { application_id: b.app_id, seller_number: "123456789", system_id_ref: "SYS-PARTNER-01", tsp_product_ref: "SM-TSP", score_model: "classic_fico", created_at: clock.now() }).casefile;
-  await tool(b.app_id, "23.1", "associateCredit", { casefile: cf0, reports: [await entity("credit_reports", reportId)], borrowers: BORROWER_IDENTITY(b, f.last), app_score_model: "classic_fico" }, UNDERWRITER);
-  const snapshot = { application_id: b.app_id, loan_purpose: "limited_cash_out_refinance", occupancy: "principal_residence", product: "fixed_30", amortization: "fixed", loan_term: 360, property_type: "sfr_detached", sales_price_cents: null, appraised_value_cents: "80000000", loan_amount_cents: "56000000", note_rate_pct: "6.125", qualifying_income_cents: "820000", total_obligations_cents: "312000", borrowers: BORROWER_IDENTITY(b, f.last), max_ltv_pct: "95.00" };
-  const built = await tool(b.app_id, "23.1", "buildDuRequest", { casefile_id: cf0.casefile_id, submission_type: "credit_and_underwriting", reason: "initial", snapshot }, UNDERWRITER);
-  await tool(b.app_id, "23.1", "submitCasefile", { casefile_id: cf0.casefile_id, request: built.output["request"], projected_note_date: "2026-11-06", scif_facts: { borrowers: [{ id: "B1", scif_presented_at: START }] } }, UNDERWRITER);
-  const findings = await tool(b.app_id, "23.1", "fetchFindings", { casefile_id: cf0.casefile_id, submission_number: 1 }, UNDERWRITER); const submission = findings.output["submission"] as Json;
-  clock.set(times.interpreted_at);
-  const interp = await tool(b.app_id, "23.2", "parseFindings", { op: "interpret", submission_id: submission["submission_id"], submission_number: 1, recommendation: "approve_eligible", messages: K<Json[]>("DU_MESSAGES"), validation_results: [], value_acceptance_offer: { offered: true, property_value_cents: "80000000" }, mi_requirement: { required: false, coverage_pct: null }, du_release: "2026-09-25", policy_generation: "2026_09_26", request_hash: built.output["request_hash"], findings_received_at: times.findings_at, facts: { ...K<Json>("DU_FACTS"), borrower_ids: ["B1"] } }, UNDERWRITER);
-  await settle();
-  return { submission_id: String(submission["submission_id"]), interpretation_id: ((interp.output["interpretation"] as { interpretation_id?: string } | undefined)?.interpretation_id) ?? null, request_hash: String(built.output["request_hash"]) };
-}
 /** 22.1's own pipeline after an upload (the FAKE classifier and extractor as the verification agent) up to the review that satisfies the request. */
 async function review(b: Borrower, document_id: string, doc_class: string, fields: Json): Promise<void> {
   await tool(b.app_id, "22.1", "classifyDocument", { document_id, doc_class, confidence: 0.98 }, VERIFICATION);
@@ -431,6 +418,13 @@ test("conversation: the refinance persona goes from sign-up to a boarded loan by
   later(1); const truv = await api("POST", "/v1/webhooks/truv", { type: "voie.report.ready", data: { vendor_session_id: ts.body["vendor_session_id"], report: { employer: "Acme Manufacturing (FAKE payroll)", monthly_base_cents: "820000" } } }, { "x-truv-signature": "FAKE" }); assert.equal(truv.status, 200, JSON.stringify(truv.body)); await settle();
   const payroll = await b.pending("income.confirm.title", (x) => x.props["requested_by"] !== "card.request"); assert.equal((payroll.props["fields"] as { path: string; value: string; source: string }[]).find((x) => x.path === "monthly_base_cents")!.source, "payroll_connection");
   later(1); await b.tap(payroll, fieldsEvidence(payroll));
+  // ── the assets connection (32.18 rule 1, the Plaid FAKE): the ConnectCard tap, the vendor session, the webhook → the 365-day report on file (the accounts as application_assets rows) and the card connected
+  const assetsConnect = await b.pending("assets.connect.purpose"); assert.equal(assetsConnect.kind, "ConnectCard"); assert.equal(assetsConnect.props["vendor"], "plaid_assets");
+  later(1); await b.tap(assetsConnect, { evidence: { vendor: "plaid_assets", started_at: clock.now() } });
+  const ps = await api("POST", "/v1/borrower/connect/plaid_assets/session", { card_instance_id: assetsConnect.card_instance_id }, bearer(b.token)); assert.equal(ps.status, 200, JSON.stringify(ps.body));
+  later(1); const plaid = await api("POST", "/v1/webhooks/plaid", { type: "asset_report.ready", data: { vendor_session_id: ps.body["vendor_session_id"] } }, { "plaid-verification": "FAKE" }); assert.equal(plaid.status, 200, JSON.stringify(plaid.body)); await settle();
+  assert.equal((await events(b.app_id, "verification.received")).filter((e) => e.payload["kind"] === "assets").length, 1, "22.4's assets verification from the report");
+  assert.ok((await db.query(`SELECT 1 FROM application_assets WHERE application_id = $1 AND verified = true`, [b.app_id])).length >= 2, "the report's accounts");
   // ── R4–R6: the profile proposed and confirmed; the declarations and the demographics never in words (refused), then tapped
   later(1); r = await b.say("I am a US citizen, not married, no dependents, never served in the military, and English is fine."); await assertModelReply(b, r, { proposedInto: "profile.title", text: /U\.S\. citizen, Unmarried, dependents 0/ });
   await b.written("profile.title");   // the profile the turn wrote from what was said (32.17 rule 21) — no tap
@@ -448,8 +442,17 @@ test("conversation: the refinance persona goes from sign-up to a boarded loan by
   assert.ok((await events(b.app_id, "application.trid_received")).length >= 1, "the sixth item written by the turn: application.trid_received");
   const tridAt = clock.now(); assert.equal((await timer(b.app_id, "REGZ_1026_19E1_LE_3BD"))?.status, "armed");
   assert.ok((await b.cards()).some((x) => x.copy_key === "application.received" && x.kind === "StatusCard"), "the TRID StatusCard");
-  // ── R2 (the platform): the credit report on the authorization → the liabilities and current-loan cards, narrated, then tapped
-  later(2); const reportId = await orderCredit(b, clock.now());
+  // ── R2 (the platform, 32.18 rule 2): the tri-merge pulled in the sixth item's settlement on the goal tap's authorization → the liabilities and current-loan cards, narrated, then tapped
+  const pulled = (await events(b.app_id, "credit.report.received")).filter((e) => typeof e.payload["report_id"] === "string"); assert.equal(pulled.length, 1, "one pull, the platform's, at the six items");
+  const reportId = String(pulled[0]!.payload["report_id"]);
+  // ── R8 (the platform, 32.18 rule 3): the DU moment ran in the same settlement — the report, the income and the assets were the last prerequisites — with the 365-day asset report on the casefile; DU validated the assets, the employment and the income
+  assert.equal((await events(b.app_id, "du.findings.received")).length, 1, "the platform ran DU at its moment"); assert.equal((await events(b.app_id, "du.findings.interpreted")).length, 1);
+  const duSubmission = (await entitiesOf("du_submissions", b.app_id))[0]!; assert.ok(duSubmission, "23.1's submission row");
+  assert.ok(Array.isArray(duSubmission.data["validation_report_refs"]) && (duSubmission.data["validation_report_refs"] as Json[]).some((x) => x["report_type"] === "asset_verification_365d"), "the 12-month asset report reference on the casefile");
+  const validated = Object.fromEntries(((duSubmission.data["validation_results"] as Json[] | undefined) ?? []).map((v) => [String(v["component"]), String(v["outcome"])]));
+  assert.deepEqual(validated, { assets: "validated", employment: "validated", income: "validated" }, "the DU validation service on the 365-day report (32.18 rule 5)");
+  const du = { submission_id: String(duSubmission.data["submission_id"] ?? duSubmission.id), request_hash: String(duSubmission.data["request_hash"]), interpretation_id: (await entitiesOf("du_findings_interpretations", b.app_id))[0]?.id ?? null };
+  later(2);
   later(1); r = await b.say("What are those debts on my report about?"); await assertModelReply(b, r, { text: /debts card shows what your report lists/ });
   const liabilities = await b.pending("credit.liabilities.confirm"); later(1); await b.tap(liabilities, fieldsEvidence(liabilities));
   const current = await b.pending("refi.current_loan.confirm"); later(1); await b.tap(current, fieldsEvidence(current));
@@ -480,24 +483,22 @@ test("conversation: the refinance persona goes from sign-up to a boarded loan by
   const lock = await tool(b.app_id, "21.4", "executeLock", { lock_id: lockId, executed_at: clock.now() }, PRICING); assert.equal(lock.output["status"], "executed");
   await tool(b.app_id, "21.4", "requestCommitment", { lock_id: lockId, at: MST("2026-10-20", "10:20") }, PRICING); await settle();
   assert.ok((await b.cards()).some((x) => x.copy_key === "lock.executed"), "the lock StatusCard");
-  // ── the appraisal (24.1) the same morning — after the intent (24.1 R2 refuses an SM-borne order before it) and before DU (24.1 reads the DU offer as a string while 23.1's FAKE findings carry an object; journey.ts orders before DU for the same reason): the order, the appraiser assigned (SM_APPRAISER_LICENSE_GATE) → the access ScheduleCard, narrated, the window tapped
-  clock.set(MST("2026-10-20", "10:30")); await tool(b.app_id, "24.1", "readDuOffer", {}, VALUATION);
-  const vo = await tool(b.app_id, "24.1", "placeOrder", { transaction_type: "limited_cash_out", occupancy: "primary", units: 1, property_type: "sfr", ltv_bps: 7000, fee_paid_by: "sm", fee_quote_cents: "65000", fee_test: K<Json>("FEE_TEST"), property_state: "AZ", vendor_party_id: "amc-1", channel: "amc", amc_registration: K<Json>("AMC_REG"), order_payload: { ...K<Json>("ORDER_PAYLOAD"), access_contact: { name: b.name, phone: "602-555-0101" } }, le_effective_receipt_date: "2026-10-19", ordered_at: clock.now(), time_zone: TZ }, VALUATION);
-  const orderId = vo.output["order_id"] as string;
-  const assigned = await tool(b.app_id, "24.1", "verifyAppraiserLicense", { order_id: orderId, assigned_at: MST("2026-10-20", "10:45"), appraiser: { party_id: `APR-AZ-${R}`, license_state: "AZ", license_type: "certified_residential", license_number: "AZ-CR-12345", license_expires_on: "2027-12-31", asc_registry_status: "active", asc_registry_checked_on: "2026-10-20" } }, VALUATION); assert.equal(assigned.output["status"], "assigned"); await settle();
-  later(1); r = await b.say("When does the appraiser come by?"); await assertModelReply(b, r, { text: /schedule card here/ });
-  const access = await b.pending("valuation.schedule"); assert.equal(access.kind, "ScheduleCard"); const slot = (access.props["slots"] as { id: string; starts_at: string }[])[2]!;
-  later(1); const sched = await b.tap(access, { option_id: slot.id, evidence: { slot_id: slot.id } }); assert.equal(sched.body["command"], "valuation.scheduleAccess");
-  assert.equal((await events(b.app_id, "valuation.inspection.scheduled")).length, 1);
+  // ── the valuation (24.1) the same morning — after the intent (24.1 R2) and after DU ran at its moment: the FAKE findings offered value acceptance (24.1 reads the object offer, 32.18 rule 7), R1's menu takes it — no appraisal order, no appraiser, no access window; the StatusCard says so and the model explains it in words
+  clock.set(MST("2026-10-20", "10:30")); const offer = await tool(b.app_id, "24.1", "readDuOffer", {}, VALUATION); assert.equal(offer.output["offer_type"], "value_acceptance");
+  const sel = await tool(b.app_id, "24.1", "selectMethod", { transaction_type: "limited_cash_out", occupancy: "primary", units: 1, property_type: "sfr", ltv_bps: 7000, at: clock.now(), time_zone: TZ }, VALUATION); assert.equal(sel.output["method"], "value_acceptance", JSON.stringify(sel.output)); await settle();
+  assert.equal((await events(b.app_id, "valuation.method.selected")).length, 1); assert.ok((await b.cards()).some((x) => x.copy_key === "valuation.value_acceptance" && x.kind === "StatusCard"), "the value-acceptance StatusCard (32.6 T4)");
+  later(1); r = await b.say("Does an appraiser need to come by?"); await assertModelReply(b, r, { text: /No appraiser visit is needed/ });
+  assert.ok(!(await b.cards()).some((x) => x.copy_key === "valuation.schedule"), "no access ScheduleCard: nothing to schedule");
   // the revised LE (v2) under the lock's changed circumstance, e-delivered Wed Oct 21 → the DocumentCard, received by the tap
   await advance(EDT("2026-10-21", "09:00"));
   const cc = lock.events.find((e) => e.type === "changed_circumstance.recorded")!; const consent = (await db.query<{ id: string; scope: string[]; captured_at: string }>(`SELECT id, scope, captured_at FROM consents WHERE id = $1`, [consentId]))[0]!;
   const v2 = leRender(b, { as_of: "2026-10-21", property_address: f.address, disclosure_id: `LE-${b.app_id.slice(0, 8)}-2`, pricing: { quote_id: f.lockQuoteId, rate_pct: "6.125", price: "100.000", points_cents: "0", lender_credit_cents: "261700", locked: true, lock_expires_at: String(lock.output["expires_at"]), lock_time_zone: TZ }, cc_ids: [cc.payload["cc_id"]] });
   await tool(b.app_id, "21.5", "renderRevisedLE", { ...v2, fees: (v2["fees"] as Json[]).map((x) => ({ ...x, estimated_at: "2026-10-21" })) }, DISCLOSURE);
   await tool(b.app_id, "21.5", "deliverDisclosure", { disclosure_id: v2["disclosure_id"], channel: "esign_portal", at: EDT("2026-10-21", "09:05"), consent: { id: consent.id, scope: consent.scope, granted_at: consent.captured_at } }, DISCLOSURE); await settle();
-  // ── R8 (the platform): DU (FAKE) Wed Oct 21 → the findings interpreted → the conditions → the UploadCards; the model narrates the list in plain words; the uploads are taps, 22.1 reviews, 23.3 clears
-  const du = await duRun(b, f, reportId, { findings_at: MST("2026-10-21", "09:00"), interpreted_at: MST("2026-10-21", "09:12") });
-  const conds = await entitiesOf("conditions", b.app_id); const cond = (code: string) => { const x = conds.find((y) => y.data["template_code"] === code); assert.ok(x, `condition ${code}`); return x; };
+  // ── the conditions DU's findings left (interpreted at the DU moment, 32.18 rule 3): the validated income and employment ask for nothing; the mortgage history and the insurance are the borrower's, the rest the platform's; the UploadCards; the model narrates the list in plain words; the uploads are taps, 22.1 reviews, 23.3 clears
+  clock.set(MST("2026-10-21", "09:00"));
+  const conds = await entitiesOf("conditions", b.app_id);
+  assert.ok(!conds.some((y) => y.data["template_code"] === "COND_DU_VERIFY_INCOME_BASE") && !conds.some((y) => y.data["template_code"] === "COND_DU_VERIFY_EMPLOYMENT_VOE"), `DU validated the income and the employment from the asset report (32.18 rule 5): ${conds.map((y) => y.data["template_code"]).join(", ")}`); const cond = (code: string) => { const x = conds.find((y) => y.data["template_code"] === code); assert.ok(x, `condition ${code}`); return x; };
   // ── the decision (23.3) the same morning: the conditional approval while its conditions are open (rule 2: the letter lists the borrower-facing ones), its letter → the StatusCard and the NoticeCard
   clock.set(MST("2026-10-21", "09:30"));
   await tool(b.app_id, "23.3", "assessRisk", { risk_input: K<Json>("RISK"), decision_id: f.decisionId }, UNDERWRITER);
@@ -509,9 +510,9 @@ test("conversation: the refinance persona goes from sign-up to a boarded loan by
   clock.set(MST("2026-10-21", "10:00")); await b.signIn("L2");
   const revised = await b.pending("revised_le.delivered"); later(1); await b.tap(revised, { option_id: "confirm", evidence: { opened_at: clock.now(), scrolled_to_end: true } });
   later(1); r = await b.say("What do you need from me now?"); await assertModelReply(b, r, { text: /Underwriting's list is on the rail/ });
-  const uploads = (await b.cards()).filter((x) => x.kind === "UploadCard" && x.status === "pending"); assert.ok(uploads.length >= 4, `the borrower's uploads (${uploads.map((x) => x.props["document_class"]).join(", ")})`);
+  const uploads = (await b.cards()).filter((x) => x.kind === "UploadCard" && x.status === "pending"); assert.ok(uploads.length >= 3, `the borrower's uploads (${uploads.map((x) => x.props["document_class"]).join(", ")})`);
   const requests = await entitiesOf("document_requests", b.app_id);
-  const docs: [string, string, Json, string][] = [["paystub", "COND_DU_VERIFY_INCOME_BASE", { employer_name: "Acme Manufacturing", pay_date: "2026-10-09", pay_period_start: "2026-09-26", pay_period_end: "2026-10-09", gross_current_cents: "378500", gross_ytd_cents: "7570000" }, "2026-10-09"], ["w2", "COND_DU_VERIFY_INCOME_BASE", { employer_name: "Acme Manufacturing", tax_year: 2025, wages_cents: "9840000" }, "2026-01-31"], ["mortgage_statement", "COND_DU_LIABILITY_MORTGAGE_HISTORY", { servicer: "Prior Servicer", statement_date: "2026-10-01", unpaid_balance_cents: "54820000" }, "2026-10-01"], ["homeowners_policy", "COND_DU_PROPERTY_HAZARD_INSURANCE", { carrier: "FAKE Mutual", policy_number: "HO-1", effective_date: "2026-05-01", expiration_date: "2027-05-01" }, "2026-05-01"]];
+  const docs: [string, string, Json, string][] = [["mortgage_statement", "COND_DU_LIABILITY_MORTGAGE_HISTORY", { servicer: "Prior Servicer", statement_date: "2026-10-01", unpaid_balance_cents: "54820000" }, "2026-10-01"], ["homeowners_policy", "COND_DU_PROPERTY_HAZARD_INSURANCE", { carrier: "FAKE Mutual", policy_number: "HO-1", effective_date: "2026-05-01", expiration_date: "2027-05-01" }, "2026-05-01"]];
   const reviewed = new Map<string, { document_id: string; kind: string; document_date: string }[]>();
   for (const [cls, code, fields, dated] of docs) {
     const card = uploads.find((x) => x.props["document_class"] === cls); assert.ok(card, `an UploadCard for the ${cls}`); assert.equal(card.command_ref, "document.upload"); assert.equal(card.props["condition_id"], cond(code).id);
@@ -522,15 +523,13 @@ test("conversation: the refinance persona goes from sign-up to a boarded loan by
   }
   // 23.3 clears each condition on every piece of evidence its template asks for (the income condition wants the paystub and the W-2 together)
   for (const [code, evidence] of reviewed) await clear(b, cond(code).id, evidence);
-  assert.ok((await events(b.app_id, "condition.cleared")).length >= 3, "the borrower's conditions cleared");
-  for (const code of ["COND_DU_VERIFY_INCOME_BASE", "COND_DU_LIABILITY_MORTGAGE_HISTORY", "COND_DU_PROPERTY_HAZARD_INSURANCE"]) assert.equal((await entity("conditions", cond(code).id))!["status"], "cleared", code);
+  assert.ok((await events(b.app_id, "condition.cleared")).length >= 2, "the borrower's conditions cleared");
+  for (const code of ["COND_DU_LIABILITY_MORTGAGE_HISTORY", "COND_DU_PROPERTY_HAZARD_INSURANCE"]) assert.equal((await entity("conditions", cond(code).id))!["status"], "cleared", code);
   // the identity item is the borrower's on DU's list (an UploadCard for the ID) but the Stripe scan already verified them: the platform's evidence clears it and its card closes with the condition
   assert.deepEqual((await b.cards()).filter((x) => x.kind === "UploadCard" && x.status === "pending").map((x) => `${x.copy_key}:${x.props["document_class"]}`), ["upload.title:drivers_license"], "only the ID upload stays open until the identity condition clears");
   // the third-party items (the employer, the title company, the prior servicer, the identity vendor, the flood vendor) are the platform's: their evidence arrives outside the thread; the FAKE underwriting reviewer clears each (never a waiver: a DU message is never waived)
-  await clearPlatformConditions(b, ["COND_DU_VERIFY_INCOME_BASE", "COND_DU_LIABILITY_MORTGAGE_HISTORY", "COND_DU_PROPERTY_HAZARD_INSURANCE"], "2026-10-21", "2026-11-06");
+  await clearPlatformConditions(b, ["COND_DU_LIABILITY_MORTGAGE_HISTORY", "COND_DU_PROPERTY_HAZARD_INSURANCE"], "2026-10-21", "2026-11-06");
   assert.deepEqual((await b.cards()).filter((x) => x.kind === "UploadCard" && x.status === "pending").map((x) => `${x.copy_key}:${x.props["document_class"]}`), [], "every upload ask answered or closed by its condition");
-  // the appraiser's visit (the window the borrower picked Oct 20): 24.1 completes the inspection
-  clock.set(new Date(Date.parse(slot.starts_at) + 90 * 60_000).toISOString()); await tool(b.app_id, "24.1", "scheduleInspection", { order_id: orderId, op: "complete", completed_at: clock.now() }, VALUATION);
   // ── title (24.4): the settlement agent vetted, the commitment, the CPL, the wire verification — the platform's own items
   await advance(MST("2026-10-27", "09:00")); const AGENT = J.AGENT_PARTY; const UW_PARTY = `TU-AZ-${R}`;
   await tool(b.app_id, "24.4", "vetSettlementAgent", { party_id: AGENT, agent_type: "title_agency", state: "AZ", property_state: "AZ", license_active: true, license_number: "AZ-TA-4471", eo_policy_limit_cents: "200000000", eo_expires_on: "2027-06-30", fidelity_limit_cents: "100000000", alta_registry_id: "ALTA-AZ-4471", underwriter_confirmed_by: UW_PARTY, best_practices_attestation_at: "2026-08-15", wire_instructions_on_letterhead: true, cpl_available: true, underwriter_callback_number_verified: true, referral_consideration: false, at: clock.now() }, CLOSER);
@@ -694,6 +693,10 @@ test("conversation: the purchase persona goes from sign-up to a boarded loan by 
   later(1); const truv = await api("POST", "/v1/webhooks/truv", { type: "voie.report.ready", data: { vendor_session_id: ts.body["vendor_session_id"], report: { employer: "Acme Manufacturing (FAKE payroll)", monthly_base_cents: "820000" } } }, { "x-truv-signature": "FAKE" }); assert.equal(truv.status, 200, JSON.stringify(truv.body)); await settle();
   const payroll = await b.pending("income.confirm.title", (x) => x.props["requested_by"] !== "card.request"); assert.equal((payroll.props["fields"] as { path: string; value: string; source: string }[]).find((x) => x.path === "monthly_base_cents")!.value, "820000", "the report's figure is on the card (the webhook writes it before the flow reads it)");
   later(1); await b.tap(payroll, fieldsEvidence(payroll));
+  // the assets connection (32.18 rule 1, the Plaid FAKE): the tap finishes it (32.17 rule 19) — the 365-day report on file for the DU moment after the contract
+  const assetsConnect = await b.pending("assets.connect.purpose"); later(1); await b.tap(assetsConnect, { evidence: { vendor: "plaid_assets", started_at: clock.now() } });
+  const ps = await api("POST", "/v1/borrower/connect/plaid_assets/session", { card_instance_id: assetsConnect.card_instance_id, fake_complete: true }, bearer(b.token)); assert.equal(ps.status, 200, JSON.stringify(ps.body)); await settle();
+  assert.equal((await events(b.app_id, "verification.received")).filter((e) => e.payload["kind"] === "assets").length, 1, "22.4's assets verification from the report");
   later(1); r = await b.say("I am a US citizen, not married, no dependents, never served, English."); await assertModelReply(b, r, { proposedInto: "profile.title" });
   await b.written("profile.title");   // written by the turn (32.17 rule 21)
   const decl = await b.pending("declarations.title"); later(1); await b.tap(decl, { option_id: "none", evidence: { option_id: "none", tapped_at: clock.now() } });

@@ -122,6 +122,8 @@ export interface DuSubmission {
   readonly validation_results: readonly ValidationResult[]; readonly value_acceptance_offer: DuFindings["value_acceptance_offer"]; readonly mi_requirement: DuFindings["mi_requirement"]; readonly dti_du: string | null; readonly ltv_du: string | null; readonly cltv_du: string | null; readonly hcltv_du: string | null;
   readonly reserves_required_cents: Cents | null; readonly total_funds_to_verify_cents: Cents | null; readonly qualifying_rate: string | null; readonly note_rate: string; readonly loan_amount_cents: Cents; readonly is_final: boolean; readonly closed_loan_snapshot_hash: string | null; readonly findings_hash: string | null;
   readonly snapshot: UladSnapshot; readonly rationale: string | null; readonly submitted_via: "di_channel" | "du_ui_fallback"; readonly agent_run_id: string | null;
+  /** The DU validation service report references the request carried (32.18 rule 3: the asset report on the casefile). */
+  readonly validation_report_refs?: DuRequest["validation_report_refs"];
 }
 export interface DuResubmissionCheck {
   readonly id: string; readonly application_id: string; readonly casefile_id: string; readonly baseline_submission_id: string; readonly trigger_event: string; readonly field: CheckField; readonly old_value: unknown; readonly new_value: unknown;
@@ -265,19 +267,59 @@ export const closedLoanData = (s: UladSnapshot | ClosedLoanData): ClosedLoanData
 /** Rule 5 / gate: the closed-loan snapshot hash — the eight B3-2-10 fields plus note rate, loan amount, term and product (CD-final values). */
 export const closedLoanSnapshotHash = (s: UladSnapshot | ClosedLoanData): string => sha256(canonical(closedLoanData(s)));
 /** The spec's fixture findings: Approve/Eligible with a value-acceptance offer; DTI/LTV computed from the echoed request; recommendation overridable per test. */
+/** What the FAKE DU knows about an asset verification report it is asked to validate against (32.18 rule 5): the payroll deposit stream the FAKE Plaid registered under the report reference. */
+export interface FakeAssetReportFacts { readonly payroll_deposits?: { readonly employer: string; readonly monthly_cents: string | bigint; readonly months: number } | undefined; readonly report_days?: number | undefined }
+/** 32.18 rule 5 — the FAKE DU validation service: an asset reference validates assets for every borrower; a 365-day reference with at least two months of payroll deposits validates employment; income is validated when the snapshot's qualifying income is within 10% of the report's monthly deposits, else not_validated. A 30/60-day reference validates assets only; no reference, no results. The real DU replaces this arithmetic with its own matching. */
+export function fakeValidationResults(req: DuRequest, lookup: (identifier: string) => FakeAssetReportFacts | undefined, received_at: string): ValidationResult[] {
+  const refs = req.validation_report_refs.filter((r) => /^asset/i.test(r.report_type) || /assetreport|asset_report/i.test(r.supplier_type));
+  if (!refs.length) return [];
+  const out: ValidationResult[] = [];
+  const closeBy = civilDateEt(new Date(Date.parse(received_at) + 120 * 86_400_000).toISOString());
+  for (const b of req.snapshot.borrowers) {
+    out.push({ component: "assets", borrower_id: b.borrower_id, outcome: "validated", report_reference_id: refs[0]!.identifier });
+    const twelve = refs.find((r) => /365/.test(r.report_type) || (lookup(r.identifier)?.report_days ?? 0) >= 365); if (!twelve) continue;
+    const facts = lookup(twelve.identifier); const deposits = facts?.payroll_deposits;
+    if (!deposits || deposits.months < 2) continue;
+    out.push({ component: "employment", borrower_id: b.borrower_id, outcome: "validated", close_by_date: closeBy, report_reference_id: twelve.identifier });
+    const monthly = BigInt(deposits.monthly_cents); const stated = req.snapshot.qualifying_income_cents;
+    const within = monthly > 0n && (stated > monthly ? stated - monthly : monthly - stated) * 10n <= monthly;
+    out.push({ component: "income", borrower_id: b.borrower_id, outcome: within ? "validated" : "not_validated", close_by_date: closeBy, report_reference_id: twelve.identifier });
+  }
+  return out;
+}
+/** 32.18 rule 5 — the FAKE DU's verification messages as DU 12.1 issues them (the fixtures' catalog: V1001 income, V1003 employment, V1004 assets, V1006/V1010 the refinanced lien, V1008 hazard, V1009 title, V1012 identity, V1014 flood): a component the validation service validated gets no documentation message, as the real findings omit it. */
+export function fakeDuMessages(req: DuRequest, validation: readonly ValidationResult[]): DuMessage[] {
+  const validated = (component: ValidationResult["component"], borrower_id: string): boolean => validation.some((v) => v.component === component && v.borrower_id === borrower_id && v.outcome === "validated");
+  const out: DuMessage[] = [];
+  for (const b of req.snapshot.borrowers) {
+    if (!validated("income", b.borrower_id)) out.push({ id: "V1001", category: "verification", text: "Verify base income with the most recent paystub (30 days) and W-2 (1 year)", borrower_id: b.borrower_id });
+    if (!validated("employment", b.borrower_id)) out.push({ id: "V1003", category: "verification", text: "Verbal verification of employment within 10 business days of the note date", borrower_id: b.borrower_id });
+    if (!validated("assets", b.borrower_id) && req.snapshot.loan_purpose === "purchase") out.push({ id: "V1004", category: "verification", text: "Verify the funds for closing with the two most recent statements for each account", borrower_id: b.borrower_id });
+  }
+  if (req.snapshot.loan_purpose !== "purchase") { out.push({ id: "V1006", category: "verification", text: "Verify 12-month mortgage payment history on the existing lien" }); out.push({ id: "V1010", category: "verification", text: "Obtain the payoff statement for the existing first mortgage" }); }
+  out.push({ id: "V1008", category: "verification", text: "Obtain evidence of hazard insurance coverage" }, { id: "V1009", category: "verification", text: "Obtain the title commitment" }, { id: "V1012", category: "verification", text: "Verify the borrowers' identity" }, { id: "V1014", category: "verification", text: "Obtain the flood zone determination" });
+  return out;
+}
 export class FakeDuPort implements DuPort {
   readonly requests: { req: DuRequest; submission_number: number }[] = [];
   private readonly clock: { now(): string };
   private readonly recommend: (req: DuRequest) => Recommendation;
   private readonly extra: Partial<DuFindings>;
-  constructor(clock: { now(): string }, opts: { recommend?: (req: DuRequest) => Recommendation; findings?: Partial<DuFindings> } = {}) {
+  private readonly assetReport: (identifier: string) => FakeAssetReportFacts | undefined;
+  private readonly messagesFor: ((req: DuRequest, validation: readonly ValidationResult[]) => DuMessage[]) | null;
+  constructor(clock: { now(): string }, opts: { recommend?: (req: DuRequest) => Recommendation; findings?: Partial<DuFindings>; assetReport?: (identifier: string) => FakeAssetReportFacts | undefined; messages?: (req: DuRequest, validation: readonly ValidationResult[]) => DuMessage[] } = {}) {
     this.clock = clock; this.recommend = opts.recommend ?? ((req) => (dtiBps(req.snapshot.total_obligations_cents, req.snapshot.qualifying_income_cents) > DU_MAX_DTI_BPS ? "approve_ineligible" : "approve_eligible")); this.extra = opts.findings ?? {};
+    this.assetReport = opts.assetReport ?? (() => undefined); this.messagesFor = opts.messages ?? null;
   }
   async submit(req: DuRequest, submission_number: number): Promise<DuSubmitAck> { this.requests.push({ req, submission_number }); return { casefile_id: req.casefile_id, submission_number, acked_at: this.clock.now() }; }
   async fetchFindings(casefile_id: string, submission_number: number): Promise<DuFindings> {
     const r = this.requests.find((x) => x.req.casefile_id === casefile_id && x.submission_number === submission_number);
     if (!r) throw new DuTransportError(`no submission ${submission_number} on casefile ${casefile_id}`, 404);
-    return fixtureFindings(r.req, submission_number, this.clock.now(), this.recommend(r.req), this.extra);
+    const now = this.clock.now();
+    // 32.18 rule 5: the validation service's results from the request's asset report references (a test's explicit `findings.validation_results` still wins)
+    const validation = this.extra.validation_results ?? fakeValidationResults(r.req, this.assetReport, now);
+    const messages = this.extra.messages ?? (this.messagesFor ? this.messagesFor(r.req, validation) : undefined);
+    return fixtureFindings(r.req, submission_number, now, this.recommend(r.req), { ...this.extra, validation_results: validation, ...(messages ? { messages } : {}) });
   }
 }
 /** A DI channel returning transport errors (T13). */
@@ -339,7 +381,7 @@ export async function submitCasefile(events: EventStore, port: DuPort, casefile:
   const base: DuSubmission = { submission_id: randomUUID(), casefile_id: casefile.casefile_id, application_id: casefile.application_id, submission_number, submission_type: r.submission_type, reason: r.reason, request_document_id: `doc:du-request:${casefile.casefile_id}:${submission_number}`, request_hash: r.request_hash, du_version: DU_VERSION, du_release_applied,
     return_file_types: r.return_file_types, findings_document_id: null, findings_json_document_id: null, findings_pdf_document_id: null, submitted_at: i.at, acked_at: null, findings_received_at: null, status: "queued", error_code: null, error_message: null, recommendation: null, messages: [], risk_factors: {}, validation_results: [], value_acceptance_offer: null, mi_requirement: null,
     dti_du: null, ltv_du: null, cltv_du: null, hcltv_du: null, reserves_required_cents: null, total_funds_to_verify_cents: null, qualifying_rate: null, note_rate: r.snapshot.note_rate_pct, loan_amount_cents: r.snapshot.loan_amount_cents, is_final: false, closed_loan_snapshot_hash: r.reason === "final_closed_loan_match" ? closedLoanSnapshotHash(r.snapshot) : null, findings_hash: null,
-    snapshot: r.snapshot, rationale: i.rationale ?? null, submitted_via: "di_channel", agent_run_id: i.agent_run_id ?? null };
+    snapshot: r.snapshot, rationale: i.rationale ?? null, submitted_via: "di_channel", agent_run_id: i.agent_run_id ?? null, validation_report_refs: r.validation_report_refs };
   const out: DomainEvent[] = [];
   let attempt = 0, elapsed = 0, ack: DuSubmitAck | null = null;
   while (attempt < DI_BACKOFF_MINUTES.length && !ack) {

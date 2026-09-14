@@ -219,7 +219,10 @@ const HYBRID_MSG = /DU offers hybrid appraisals/i, DESKTOP_MSG = /Form 1004 Desk
 export function readDuOffer(events: EventStore, applicationId: string): DuOffer {
   const e = forApp(events, applicationId, "du.findings.received").at(-1);
   if (!e) return { offer_type: "none", du_submission_id: null, offer_issued_at: null, hybrid_offered: false, desktop_offered: false, recommendation: null, event_id: null, submission_number: null };
-  const pl = p(e); const raw = String(pl.value_acceptance_offer ?? "none");
+  const pl = p(e);
+  // 32.18 rule 7: 23.1's findings carry the offer as an object ({offered, property_value_cents}); the string forms stay for the fixtures that name them
+  const v = pl.value_acceptance_offer;
+  const raw = v && typeof v === "object" ? ((v as { offered?: unknown }).offered === true ? "value_acceptance" : "none") : String(v ?? "none");
   if (raw !== "value_acceptance" && raw !== "value_acceptance_pd" && raw !== "none") throw new RangeError(`value_acceptance_offer ${JSON.stringify(raw)} is not one of value_acceptance/value_acceptance_pd/none`);
   const msgs = Array.isArray(pl.messages) ? (pl.messages as unknown[]).map(String) : Array.isArray(pl.du_messages) ? (pl.du_messages as unknown[]).map(String) : [];
   const issued = typeof pl.offer_issued_at === "string" ? pl.offer_issued_at : typeof pl.received_at === "string" ? pl.received_at : e.occurredAt;

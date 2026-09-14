@@ -30,6 +30,7 @@
  *   - `OrigExternal.onPlatform` reads the live `loans` table before the transaction (HF-017 semantics), so the service's
  *     servicing-loan-number sequence skips numbers already allocated.
  */
+import { lookupFakeAssetReport } from "./borrower/vendors/fake-plaid.ts";
 import { createHash, randomUUID } from "node:crypto";
 import type { Queryable } from "../infra/db/client.ts";
 import { toJson } from "../infra/db/client.ts";
@@ -269,7 +270,7 @@ import { CompanionDisclosureService } from "../domain/application/ops-21-3.ts";
 import { LoanEstimateService, AGENT as LE_AGENT, PHOENIX_CREDITOR, civilDate, type LeRenderInput, type EsignConsent, type DeliveryChannel } from "../domain/application/ops-21-2.ts";
 import { FixturePricing, type PricingPort, type RateSheet as LockRateSheet } from "../domain/application/ops-21-4.ts";
 import type { RateSheet as PricedRateSheet } from "../domain/leads-pricing/ops-20-4.ts";
-import { FakeDuPort } from "../domain/underwriting/ops-23-1.ts";
+import { FakeDuPort, fakeDuMessages } from "../domain/underwriting/ops-23-1.ts";
 import type { CreditBureauPort, CreditOrder, CreditReportResponse, BorrowerCredit } from "../domain/verification/ops-22-2.ts";
 import { FakeCbsv, FakeOfacScreener, FakeFraudTool, FakeMers as FakeMersSearch, identityPass, type IdentityVendorPort, type IdentityMethod, type IdentitySessionResult } from "../domain/verification/ops-22-6.ts";
 import { FakeAmc, FakePropertyDataApi } from "../domain/property/ops-24-1.ts";
@@ -370,7 +371,7 @@ export function originationServices(clock: Clock): OriginationServiceSet {
     tolerance: new ToleranceService({ events, clock: fclock, ledger, escalations: esc }),
     companion: new CompanionDisclosureService({ events, clock: fclock, escalations: esc }),
     // vendor ports (INTEGRATIONS=fake)
-    credit_bureau: new FixtureCreditBureau(fclock), "fnma-du": new FakeDuPort(fclock),
+    credit_bureau: new FixtureCreditBureau(fclock), "fnma-du": new FakeDuPort(fclock, { assetReport: lookupFakeAssetReport, messages: fakeDuMessages }),   // 32.18 rule 5: the FAKE validation service reads the FAKE Plaid's reports
     identity_vendor: new PassingIdentityVendor(), cbsv: new FakeCbsv(), ofac_screener: new FakeOfacScreener(), fraud_tool: new FakeFraudTool(), mers: new FakeMersSearch(),
     amc: new FakeAmc(), propertyData: new FakePropertyDataApi(), ucdp: new FakeUcdp(), title: new FakeTitleVendor(), wire_verification: new FakeWireVerification(), alta_registry: new FakeAltaRegistry(), state_doi: new FakeStateDoi(),
     "26.2.eregistry": new UniqueERegistry26(), "26.2.ron": new FakeRonPlatform(), earlycheck: new FakeEarlyCheck(), pewl: new FakePewl({ price: "100.875" }), warehouse,

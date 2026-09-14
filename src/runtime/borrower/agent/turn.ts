@@ -79,7 +79,11 @@ export interface AgentTurnReply {
 function turnCommitBody(card: { kind: string; props: P }, proposal: P, now: string, rewrite: boolean): P {
   const option_id = typeof proposal["option_id"] === "string" ? (proposal["option_id"] as string) : null;
   if (card.kind === "ChoiceCard" && option_id) return { option_id, ...(rewrite ? { rewrite: true } : {}), evidence: { option_id, tapped_at: now, committed_by: "turn", ...(typeof card.props["disclosure_version_shown"] === "string" ? { disclosure_version_shown: card.props["disclosure_version_shown"] } : {}) } };
-  const fields = (Array.isArray(proposal["fields"]) ? (proposal["fields"] as P[]) : []).map((f) => ({ path: String(f["path"] ?? ""), value: String(f["value"] ?? ""), value_confirmed: String(f["value"] ?? ""), source: "borrower", confirmed_at: now, answered_at: now }));
+  const proposed = (Array.isArray(proposal["fields"]) ? (proposal["fields"] as P[]) : []).map((f) => ({ path: String(f["path"] ?? ""), value: String(f["value"] ?? ""), value_confirmed: String(f["value"] ?? ""), source: "borrower", confirmed_at: now, answered_at: now }));
+  // the card's other prefilled values go with the write as the Confirm tap would have sent them (confirmed as shown, each with the source the platform holds): a name said in words keeps the birth date and address the scan read (E5), a value said in words keeps the AVM's source beside it
+  const shown = (Array.isArray(card.props["fields"]) ? (card.props["fields"] as P[]) : []).filter((f) => typeof f["path"] === "string" && !proposed.some((p) => p.path === f["path"]) && f["value"] !== undefined && f["value"] !== null && String(f["value"]).trim() !== "")
+    .map((f) => ({ path: String(f["path"]), value: String(f["value"]), value_confirmed: String(f["value"]), source: String(f["source"] ?? "borrower"), confirmed_at: now }));
+  const fields = [...proposed, ...shown];
   return { ...(option_id ? { option_id } : {}), ...(rewrite ? { rewrite: true } : {}), evidence: { fields, edited: false, source: "borrower_stated", committed_by: "turn" } };
 }
 export interface AgentTurnDeps {

@@ -49,6 +49,7 @@ export const COPY = {
   "credit.liabilities.confirm": { key: "credit.liabilities.confirm", kind: "ConfirmCard", text: "Your debts, from your credit report. Anything missing?", extras: [], section: "Refinance and purchase intake" },
   "credit.liabilities.student_zero": { key: "credit.liabilities.student_zero", kind: "helper", text: "For a student loan showing $0, the program counts 1% of the balance. A statement showing your plan payment changes that.", extras: [], section: "Refinance and purchase intake" },
   "income.connect.purpose": { key: "income.connect.purpose", kind: "ConnectCard", text: "Connect your payroll so we can check your income without paystubs.", extras: ["what_we_get: \"employer, start date, pay frequency, base and variable pay, year-to-date\"", "fallback: \"type your monthly income now; we'll ask for paystubs later\"."], section: "Refinance and purchase intake" },
+  "assets.connect.purpose": { key: "assets.connect.purpose", kind: "ConnectCard", text: "Link the bank accounts that hold your down payment and savings. That lets underwriting check your assets, your job and your income in one step.", notes: "32.18 rule 1: the assets connection rides with the identity and payroll cards; the report validates assets, employment and income through DU.", extras: ["what_we_get: \"balances and twelve months of deposits\"", "fallback: \"send two months of statements per account instead\""], section: "Refinance and purchase intake" },
   "income.confirm.title": { key: "income.confirm.title", kind: "ConfirmCard", text: "Your income from {{employer}}. This becomes the income you're stating on your application.", extras: [], section: "Refinance and purchase intake" },
   "income.other.question": { key: "income.other.question", kind: "field", text: "Any other income you want us to count? (Social Security, pension, child support, rental)", extras: ["default `None`."], section: "Refinance and purchase intake" },
   "profile.title": { key: "profile.title", kind: "ProfileCard", text: "A few things only you can tell us.", extras: [], section: "Refinance and purchase intake" },
@@ -659,4 +660,4 @@ export const COPY = {
 } as const satisfies Record<string, CopyEntry>;
 
 export type CopyKey = keyof typeof COPY;
-export const COPY_KEY_COUNT = 644;
+export const COPY_KEY_COUNT = 645;

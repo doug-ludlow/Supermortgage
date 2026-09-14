@@ -49,6 +49,7 @@ Format: `key` — **card/message** — text — *notes*.
 - `credit.liabilities.confirm` — ConfirmCard — "Your debts, from your credit report. Anything missing?"
 - `credit.liabilities.student_zero` — helper — "For a student loan showing $0, the program counts 1% of the balance. A statement showing your plan payment changes that."
 - `income.connect.purpose` — ConnectCard — "Connect your payroll so we can check your income without paystubs." — what_we_get: "employer, start date, pay frequency, base and variable pay, year-to-date" — fallback: "type your monthly income now; we'll ask for paystubs later".
+- `assets.connect.purpose` — ConnectCard — "Link the bank accounts that hold your down payment and savings. That lets underwriting check your assets, your job and your income in one step." — what_we_get: "balances and twelve months of deposits" — fallback: "send two months of statements per account instead" — *32.18 rule 1: the assets connection rides with the identity and payroll cards; the report validates assets, employment and income through DU.*
 - `income.confirm.title` — ConfirmCard — "Your income from {{employer}}. This becomes the income you're stating on your application."
 - `income.other.question` — field — "Any other income you want us to count? (Social Security, pension, child support, rental)" — default `None`.
 - `profile.title` — ProfileCard — "A few things only you can tell us."

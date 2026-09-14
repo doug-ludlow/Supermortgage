@@ -87,6 +87,8 @@ export interface BorrowerRecord {
   read_only: boolean;
   next: { label: string; due_at: string; timer_code: string; calendar_note: string } | null;
   needed_from_you: NeededItem[];
+  /** 32.18 rule 6: once findings exist — when underwriting ran, the components the report validated, how many conditions wait on the borrower, the checklist card. Never a DU message, a recommendation or a figure. */
+  underwriting: { ran_at: string; validated: string[]; conditions_for_you: number; checklist_card_instance_id: string | null } | null;
   /** 32.5 §1: the items we or a third party own, and the one count the status strip shows (zero → the nothing-needed state, copy key `needs.none`). */
   what_we_are_doing: DoingItem[];
   needed_summary: { count: number; nothing_needed: boolean; copy_key: "needs.title" | "needs.none" };
@@ -222,7 +224,16 @@ export class BorrowerRecordReader {
     // ---- journey progress (32.16 §2.2): the subject's own cards and the event spine, never stored
     const journey_progress = journeyProgress({ stage, transaction_type, events, cards: cards.filter((c) => (!c.subject_application_id || c.subject_application_id === appId) && (!c.subject_loan_id || c.subject_loan_id === loanId)) });
 
-    return { subject: subjectOut, status, read_only: READ_ONLY_BADGES.has(status.badge), next, needed_from_you: neededOut, what_we_are_doing, needed_summary, numbers, dates, documents, people, property, loan: loanSection, offers: exits && (exits.paidInFull || exits.transfer) ? [] : offers, journey_progress, as_of: asOf };   // 32.12: rate-watch ends with the loan
+    // 32.18 rule 6: the underwriting view for the turn — from the newest submission with findings and the conditions that are the borrower's
+    const findingsEv = ev("du.findings.received");
+    const underwriting = findingsEv ? (() => {
+      const sub = byKind("du_submissions").map((e) => e.data).filter((d) => d["findings_received_at"]).sort((a, b) => String(a["findings_received_at"]).localeCompare(String(b["findings_received_at"]))).at(-1);
+      const validated = [...new Set(((sub?.["validation_results"] as Record<string, unknown>[] | undefined) ?? []).filter((v) => v["outcome"] === "validated").map((v) => String(v["component"])))].sort();
+      const checklist = cards.find((c) => c.kind === "ChecklistCard" && c.status === "pending") ?? cards.find((c) => c.kind === "ChecklistCard");
+      const yours = byKind("conditions").map((e) => e.data).filter((d) => conditionIsBorrowers(d) && !["cleared", "waived", "superseded"].includes(String(d["status"] ?? ""))).length;
+      return { ran_at: String(findingsEv.payload["received_at"] ?? findingsEv.occurred_at ?? ""), validated, conditions_for_you: yours, checklist_card_instance_id: checklist?.card_instance_id ?? null };
+    })() : null;
+    return { subject: subjectOut, status, read_only: READ_ONLY_BADGES.has(status.badge), next, needed_from_you: neededOut, underwriting, what_we_are_doing, needed_summary, numbers, dates, documents, people, property, loan: loanSection, offers: exits && (exits.paidInFull || exits.transfer) ? [] : offers, journey_progress, as_of: asOf };   // 32.12: rate-watch ends with the loan
   }
 
   private badge(app: Record<string, unknown> | null, loan: Record<string, unknown> | null, events: Ev[], _entities: Entity[], byKind: (k: string) => Entity[], ev: (t: string, w?: (p: Record<string, unknown>) => boolean) => Ev | undefined, has: (t: string | RegExp, w?: (p: Record<string, unknown>) => boolean) => boolean): BorrowerRecord["status"] {

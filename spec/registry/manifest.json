@@ -15748,5 +15748,165 @@
   "tools": [
    "underwriting.run"
   ]
+ },
+ {
+  "process": "33.1",
+  "title": "The partner book import: the tape and the supplement become monitored loans and real accounts",
+  "path": "sections/33-partner-book/33-1-the-partner-book-import-monitored-loans-and-real-accounts.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given the fixture tape (`.xlsx`, 118 columns, 12 rows) and its supplement posted to `POST /v1/partner-book/imports` under profile `m3-v1`, then the import is `loaded` with `rows_total = 12`, `rows_loaded = 12`, 12 `loans{status=monitored}` with `fnma_loan_number` null and `servicer_loan_number` the partner's, 12 `loan_terms{source=partner_tape}`, 12 `properties`, 12 `borrowers` each with `party_id`, 12 `partner_book_facts` rows whose `facts` carry every mapped column and whose `raw` carries the unmapped ones, and `partner_book.import.completed` on the log."
+   },
+   {
+    "n": 2,
+    "text": "Given loan 1 of the fixture after import, then `loan_terms.note_rate_bps = 72500`, `pi_cents = 306979`, `escrow_payment_cents = 61250`, `remaining_term_months = 337`, `maturity_date = 2054-10-01`, `loans.original_upb_cents = 45000000`, `loans.min` is the tape's 18-digit MIN, and the facts row reads UPB $441,366.13, P&I $3,069.79, T&I $612.50 and FMV $605,000.00 as decimal-string cents with their as-of dates."
+   },
+   {
+    "n": 3,
+    "text": "Given the same two files posted again, then the answer is `already_loaded` with the first import id and no row is written; given the tape with a later as-of date and loan 1's UPB one payment lower, then a second facts row exists, the first `loan_terms` row is closed and the new one open, and `partner_book.loan.loaded{change=updated}` is logged for loan 1 and `change=unchanged` for the others."
+   },
+   {
+    "n": 4,
+    "text": "Given the import, then every provisioned party is a `parties{borrower}` row whose `legal_name` is the tape's name and whose `contact` carries the supplement's normalized e-mail and E.164 phone, `partner_book.account.provisioned` is logged per loan with `channels`, the loan without a supplement row is provisioned with `gaps: contact` and no invitation, and no destination appears in any event payload, decision rationale or log line."
+   },
+   {
+    "n": 5,
+    "text": "Given a homegrown party already on the platform with the fixture's loan 7 e-mail and the same name, then the import links loan 7's borrower to that party (`linked_existing_party = true`, no new party); given the same e-mail on a party with a different name, then the loan gets its own party without that e-mail and the report carries a `contact_conflict` exception."
+   },
+   {
+    "n": 6,
+    "text": "Given the import, then `NTC_SM_PARTNER_BOOK_INVITATION` is sent by e-mail to every party with an e-mail (the FAKE delivery port holds one message per party naming the partner and the loan's last four and no rate, offer or figure), no SMS goes to any number without TCPA consent evidence, `partner_book.invitation.sent{kind=invitation}` is logged per message and `SM_PARTNER_BOOK_INVITATION_REMINDER_14` is armed with `due_at` 14 calendar days after `sent_at`."
+   },
+   {
+    "n": 7,
+    "text": "Given a homeowner from the fixture who requests a code to the e-mail on file and verifies it, then the session opens on the provisioned party at L1, `GET /v1/borrower/me` lists the monitored loan as the subject labelled with the partner's last four, no organic application and no organic lead exist for the party, `partner_book.account.activated` is logged once and the reminder clock is satisfied."
+   },
+   {
+    "n": 8,
+    "text": "Given that first session, then the thread's first assistant turn greets the homeowner by first name, names the partner as the servicer and the loan, and carries no digit, rate or offer; given the same homeowner creating a password through the account door with the e-mail on file, then the code verifies on the same party and a later password sign-in reaches the same loan."
+   },
+   {
+    "n": 9,
+    "text": "Given the monitored loan on the record, then the badge is `Monitored`, `numbers` carries the facts' UPB, note rate, P&I, T&I and next due date, the servicer of record is the partner, and `payment.makeOneTime`, `autodraft.enroll` and `escrow.requestAnalysis` refuse with `LOAN_MONITORED`."
+   },
+   {
+    "n": 10,
+    "text": "Given an invitation 14 calendar days old with no session on the party, when the sweep passes, then one reminder is sent on the same channel (`kind = reminder`), `SM_PARTNER_BOOK_INVITATION_REMINDER_14` reads `breached` with the reminder as its action and a second sweep sends nothing more; given a party that activated on day 3, then no reminder is sent."
+   }
+  ],
+  "tables": [
+   "partner_book_facts",
+   "partner_book_imports",
+   "partner_book_invitations"
+  ],
+  "timers": [
+   "SM_PARTNER_BOOK_INVITATION_REMINDER_14"
+  ],
+  "notices": [
+   "NTC_SM_PARTNER_BOOK_INVITATION"
+  ],
+  "agent": "portfolio",
+  "tools": [
+   "book.import",
+   "account.provision",
+   "account.invite",
+   "book.report"
+  ]
+ },
+ {
+  "process": "33.2",
+  "title": "The daily refinance review: every monitored loan reviewed each day by the refinance analyst",
+  "path": "sections/33-partner-book/33-2-the-daily-refinance-review-of-the-partner-book.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given the fixture book imported and the FAKE sheet published, when the sweep passes at 07:00 ET, then `20.1 loadUniverse{op=load_row}` has written a `refi_universe` row per monitored loan carrying `value_estimate{source=partner_fmv, confidence=medium}` and `representative_score` from the tape and no investor or prohibited-basis key, 20.1's run evaluated every monitored loan, one `partner_book_reviews` row per loan exists for the day, `partner_book.review.run_completed` is logged with the counts and `SM_PARTNER_BOOK_REVIEW_DAILY` is satisfied and re-armed for tomorrow."
+   },
+   {
+    "n": 2,
+    "text": "Given loan 1 of the fixture on the first review, then the review's facts read note rate 7.250%, UPB $441,366.13, P&I $3,069.79, value $605,000.00 and LTV 0.7295, the opportunity is `offer_ready` with a candidate at 6.125% and a rate delta of 112.5 basis points, the review's candidate loan amount, candidate P&I, monthly delta and NPV equal the opportunity row's to the cent, and the verdict is `candidate`."
+   },
+   {
+    "n": 3,
+    "text": "Given loan 9 (5.875%, current) and loan 11 (an active bankruptcy) on the same review, then loan 9's verdict is `watching` with `watch_rate_pct` 5.625 and no offer, and loan 11's verdict is `excluded` with reason `bankruptcy_active` and no opportunity beyond `suppressed`."
+   },
+   {
+    "n": 4,
+    "text": "Given the analyst's scripted turn for loan 1, then `review.facts` answered with tokens and no raw figure, `review.write` stored a rationale whose only figures are tokens and the flags the scene set, an `agent_turns` row exists for the turn with `model_version` and `prompt_version`, and `agent_decisions` carries the analyst's decision; given a scripted rationale with a digit outside a token, then the guard refuses it, one regeneration runs, and on a second violation the review is written with `analyst.skipped = provenance` and the engine's explanation text."
+   },
+   {
+    "n": 5,
+    "text": "Given loan 1's `offer_ready` opportunity and a party with an e-mail, when `offer.deliver` runs, then the partner's campaign and creative exist and are approved, a 20.2 touch was scheduled and sent by e-mail (the FAKE delivery holds the offer message), `marketing.touch.sent` and `refi.opportunity.offered` are logged, `SM_REFI_OFFER_SLA_2BD` is satisfied, and the OfferCard is on the homeowner's rail with the record's rate-watch block reading `offer_open`; given a party with no e-mail, then only the portal channel is used and nothing is sent."
+   },
+   {
+    "n": 6,
+    "text": "Given an offered opportunity 30 days old with no answer, when the sweep passes, then `offer.expire` runs `refi.opportunity.expired`, the OfferCard is cancelled, and the next review reads the loan under the cooldown gate."
+   },
+   {
+    "n": 7,
+    "text": "Given the homeowner of loan 1 signed in, when they ask whether refinancing makes sense, then the turn's situation carries `partner_book.review{verdict=candidate}` and the reply points at the offer card in words with no figure outside a token; given the homeowner of loan 9, then the reply says the rate is not there yet and that the book is checked every morning, with no rate."
+   }
+  ],
+  "tables": [
+   "partner_book_reviews"
+  ],
+  "timers": [
+   "SM_PARTNER_BOOK_REVIEW_DAILY"
+  ],
+  "notices": [],
+  "agent": "refi-analyst",
+  "tools": [
+   "review.run",
+   "review.facts",
+   "review.write",
+   "offer.deliver",
+   "offer.expire"
+  ]
+ },
+ {
+  "process": "33.3",
+  "title": "Refinance readiness: what a refinance needs, what is on file, what is asked for",
+  "path": "sections/33-partner-book/33-3-refinance-readiness-what-is-on-file-and-what-is-asked-for.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given loan 1 a `candidate` on the day's review and no application, when the sweep passes at 07:15 ET, then one `readiness_checks` row exists for the loan with `ready = false`, `contact`, `account` (after the homeowner's first sign-in) and `value` present, `identity`, `ssn`, `credit`, `income`, `assets`, `esign` and `credit_authorization` missing, no vendor order, no card and no consumer report, `partner_book.readiness.checked` logged and `SM_PARTNER_BOOK_READINESS_DAILY` satisfied and re-armed."
+   },
+   {
+    "n": 2,
+    "text": "Given the homeowner of loan 1 taps Yes on the OfferCard, then `refi.open` creates one application with `channel = refi_trigger`, `prior_loan_id` = the loan, the party linked on `application_borrowers`, the property with the facts' value, 20.3's conversion, `refi.opportunity.converted` and `partner_book.refinance.opened` logged, the identity, payroll and assets connector cards and the six-item cards on the rail, and a second Yes creates nothing more."
+   },
+   {
+    "n": 3,
+    "text": "Given the open refinance application, when the homeowner completes the FAKE identity scan, types the SSN, connects Truv and Plaid on the FAKE and confirms the six items, then the readiness row is recomputed on each event, the missing list shrinks in order, `ready = true` once credit, income, assets, identity, ssn, esign and the hard-pull authorization are present, and 32.18's DU moment has run (`du.findings.received` on the application)."
+   },
+   {
+    "n": 4,
+    "text": "Given an identity verified on an earlier application with `valid_until` before the projected note date, then `identity` reads `stale` and the scan card is asked again; given a standing payroll connection, then `income` is refreshed by 22.3's order and no payroll card is asked."
+   },
+   {
+    "n": 5,
+    "text": "Given the homeowner asks what is still needed, then the turn's situation carries `readiness{ready, missing}` and the reply names only the missing items in the copy library's words and points at the current card; given `ready = true`, then the reply says underwriting has what it needs and points at the checklist."
+   },
+   {
+    "n": 6,
+    "text": "Given a loan not a candidate, then no readiness row is written for it; given a funded refinance, then no further rows are written for that loan and the monitored loan reads `paid_off`."
+   }
+  ],
+  "tables": [
+   "readiness_checks"
+  ],
+  "timers": [
+   "SM_PARTNER_BOOK_READINESS_DAILY"
+  ],
+  "notices": [],
+  "agent": "refi-readiness",
+  "tools": [
+   "readiness.run",
+   "readiness.check",
+   "readiness.read",
+   "refi.open"
+  ]
  }
 ]

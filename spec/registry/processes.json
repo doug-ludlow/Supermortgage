@@ -7107,5 +7107,92 @@
     "trigger": "On the last of the DU prerequisites landing on an application (the six items, the credit report, the income, the assets connection settled); once per application",
     "source": "Selling Guide B3-2-01/-02 (DU; the DU validation service — a 12-month asset verification report validates assets, employment and income), B3-2-11 (findings are Fannie Mae-confidential); FCRA §604(a)(3)(A) (the pull on the borrower's authorization); 32.3 R2/R3/R7/R8 and P7 (the cards); 32.16 §3 (the turn, the guard, the rail) unchanged",
     "deadline": "32.3 timeline: DU result 1–3 minutes after the application is complete (R8); 23.2's `SM_DU_CONDITIONS_SLA_4H` (conditions materialize within 4 hours)"
+  },
+  {
+    "id": "33.1",
+    "title": "The partner book import: the tape and the supplement become monitored loans and real accounts",
+    "section": 33,
+    "section_title": "The partner book: monitored loans, real accounts and refinance readiness",
+    "words": 4054,
+    "timers": [
+      "SM_PARTNER_BOOK_INVITATION_REMINDER_14"
+    ],
+    "subsections": [
+      "Inputs and triggers",
+      "Data model",
+      "State machine",
+      "Timers and gates",
+      "Business rules and calculations",
+      "Integrations",
+      "Outputs and artifacts",
+      "AI agent design (AI-first)",
+      "Edge cases and failure modes",
+      "Test cases and acceptance criteria",
+      "Audit and evidence"
+    ],
+    "path": "sections/33-partner-book/33-1-the-partner-book-import-monitored-loans-and-real-accounts.md",
+    "auto": "a — the operator uploads two files; the `portfolio` agent loads, provisions and invites; no human touches a row",
+    "own": "Platform (Supermortgage holds the account and the relationship); the partner stays servicer of record of every monitored loan and is the lender of the refinance program",
+    "trigger": "On upload of a partner tape (and its e-mail/phone supplement); re-uploads as new as-of snapshots; the first sign-in of each homeowner",
+    "source": "GLBA §1016.13 (the partner's data used for the partner's program); CAN-SPAM 15 U.S.C. §7702(17) (the invitation is a transactional/relationship message about an existing account); TCPA 47 U.S.C. §227(b) (a text only with the partner's consent evidence); FCRA §604 (no consumer report is obtained on import); 32.14 rule 8 and 32.2 (accounts, doors, levels); 20.1 rules 6–8 (the program is the partner's; the universe is investor-blind; selection inputs are the allowlist)",
+    "deadline": "The invitation on the day of import; one reminder at 14 days if the account is not yet activated"
+  },
+  {
+    "id": "33.2",
+    "title": "The daily refinance review: every monitored loan reviewed each day by the refinance analyst",
+    "section": 33,
+    "section_title": "The partner book: monitored loans, real accounts and refinance readiness",
+    "words": 3323,
+    "timers": [
+      "SM_PARTNER_BOOK_REVIEW_DAILY"
+    ],
+    "subsections": [
+      "Inputs and triggers",
+      "Data model",
+      "State machine",
+      "Timers and gates",
+      "Business rules and calculations",
+      "Integrations",
+      "Outputs and artifacts",
+      "AI agent design (AI-first)",
+      "Edge cases and failure modes",
+      "Test cases and acceptance criteria",
+      "Audit and evidence"
+    ],
+    "path": "sections/33-partner-book/33-2-the-daily-refinance-review-of-the-partner-book.md",
+    "auto": "a — the engine decides, the analyst explains, the offer goes out; no human starts it; the officer approves the partner's campaign once",
+    "own": "Lender (the partner's refinance program, 20.1 rule 6); Supermortgage runs the engine and the analyst on the partner's book",
+    "trigger": "Daily at 07:00 America/New_York after 20.1's 06:30 run, over every monitored loan; on every re-upload the next morning's run reads the new facts",
+    "source": "20.1 rules 1–9 (the universe, the candidate, the benefit, the fire rule, the fair-lending extract, the investor-blind view, the selection allowlist); Reg B §1002.4 / §1002.5(b) (no prohibited-basis input); FCRA §604 and §615(d) (no report for selection; a firm offer only through 20.2's prescreen path); GLBA §1016.13; 32.11 (the borrower-facing surface); 18.1 (the analyst's model governance)",
+    "deadline": "The review by 07:30 ET each day; an offer delivered within 2 servicer business days of `offer_ready` (20.1's `SM_REFI_OFFER_SLA_2BD`); an offer expires at 30 days (`SM_REFI_OPPORTUNITY_EXPIRY_30`)"
+  },
+  {
+    "id": "33.3",
+    "title": "Refinance readiness: what a refinance needs, what is on file, what is asked for",
+    "section": 33,
+    "section_title": "The partner book: monitored loans, real accounts and refinance readiness",
+    "words": 2355,
+    "timers": [
+      "SM_PARTNER_BOOK_READINESS_DAILY"
+    ],
+    "subsections": [
+      "Inputs and triggers",
+      "Data model",
+      "State machine",
+      "Timers and gates",
+      "Business rules and calculations",
+      "Integrations",
+      "Outputs and artifacts",
+      "AI agent design (AI-first)",
+      "Edge cases and failure modes",
+      "Test cases and acceptance criteria",
+      "Audit and evidence"
+    ],
+    "path": "sections/33-partner-book/33-3-refinance-readiness-what-is-on-file-and-what-is-asked-for.md",
+    "auto": "a — the readiness agent checks daily and asks through the assistant; no human starts it",
+    "own": "Lender (the partner's refinance; Supermortgage assembles the file through the owning processes' tools)",
+    "trigger": "Daily at 07:15 America/New_York for every candidate and every open refinance application from a monitored loan; on the homeowner's Yes (the refinance application is opened); on every verification event afterwards",
+    "source": "22.2 (credit report validity: four months on the note date), 22.3 (income: DU validation, VVOE window), 22.4 (assets: the 45-day statement rule; the 365-day report), 22.6 (identity IAL2, `valid_until`), 20.3 rule 10 and 32.2 (consents), 21.1 (the application opened with `prior_loan_id`), 32.11 §3–§5 (the compressed refinance application; data refreshed only after a Yes), 32.18 (the DU moment)",
+    "deadline": "A readiness row per candidate by 07:30 ET; the DU moment as soon as the last item lands (32.18)"
   }
 ]

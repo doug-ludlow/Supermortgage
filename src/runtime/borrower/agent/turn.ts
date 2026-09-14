@@ -150,7 +150,7 @@ export class AgentTurnRunner {
     const next0 = sessionNextOf(record, cards);
     // 32.16-T29/T30: the Journey (where, what next in order, why, how) and the current step's scrubbed rules ride beside the compact record
     const j = buildJourney({ record, cards, labelOf: (item) => (item.label_copy_key ? copyText(item.label_copy_key, item.copy_tokens ?? {}) : item.label) });
-    const stepProcess = j.journey.step?.process ?? (record?.subject.stage === "servicing" ? "2.1" : null);
+    const stepProcess = j.journey.step?.process ?? (record?.partner_book?.monitored ? "33.1" : record?.subject.stage === "servicing" ? "2.1" : null);   // 33.1: a monitored loan's rules are the partner book's, not cashiering's
     const rulesText = rulesFor(stepProcess);
     const context = buildContext({ partyFirstName: firstNameOf(party.legal_name), level, channel: req.channel, routed_to: req.routed_to, safeMode, partnerName: partner.legal_name, record, cards, messages: window, lead, next: next0, borrowerText: req.text, continuation: req.continuation ?? null, journey: j.journey, journeyTokens: j.tokens, humanRequested: !!req.human_requested, rules: stepProcess && rulesText ? { process: stepProcess, text: rulesText } : null });
     const disclosureFirst = allMessages[0]?.body_text === "{{copy:entry.disclosure.first}}";

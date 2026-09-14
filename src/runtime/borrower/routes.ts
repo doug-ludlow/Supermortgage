@@ -60,6 +60,7 @@ import { entryPartner, isSupermortgage } from "./partner.ts";
 import { createLeadRoutes } from "./lead-routes.ts";
 import { createVideoRoutes, type VideoRoutesOptions } from "./video-routes.ts";   // 32.17: the video agent (mounted in handle below)
 import { ensureOrganicApplication } from "./flows/14-entry-lead.ts";
+import { monitoredLoansOf } from "./flows/15-partner-book.ts";
 import { connectorFailed } from "./flows/13-cross-cutting.ts";
 import type { CardInstanceRow } from "../../infra/db/borrower-ui.ts";
 
@@ -250,7 +251,9 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     }
     await flows.sessionOpened({ party_id: opened.party.id, session_id: opened.session.session_id, channel, auth_method: opened.session.auth_method, at, lead_id });
     // 32.16 §2.0 "the first turn": through the account door the agent turn runs with no borrower text — the model greets and asks the goal in its own words (a lead's facts are in its context; no entry.resumed is posted by the turn). Queued per party behind the flows' session hooks; never blocks the account response.
-    if (door === "account" && agent && channel === "app") firstTurn(req, opened, at).catch((e) => logger.error("borrower.agent.first_turn.failed", { party_id: opened.party.id, error: e instanceof Error ? e.message : String(e) }));
+    // 33.1 rule 5: through the code door too when the party's subjects carry a monitored loan (the partner book) and no application — the turn greets by name and names the partner as the servicer and the loan; no goal question, no rate, no offer, no figure
+    const monitoredDoor = door === "code" && !!agent && channel === "app" ? await monitoredCodeDoor(opened.party.id) : false;
+    if ((door === "account" || monitoredDoor) && agent && channel === "app") firstTurn(req, opened, at).catch((e) => logger.error("borrower.agent.first_turn.failed", { party_id: opened.party.id, error: e instanceof Error ? e.message : String(e) }));
   }
   /**
    * 32.17 rule 11 — the video door: a visitor with no session starts the call and an account is opened for them on the spot — a provisional party
@@ -265,6 +268,12 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     await landSession(req, opened, at, "app", "account");
     logger.info("borrower.session.opened", { session_id: opened.session.session_id, level: "L1", auth_method: "video", party_created: true, door: "video" });
     return { session: opened.session, party: opened.party, token: opened.token };
+  }
+  /** 33.1 rule 5: a code sign-in that lands on a monitored loan and no application (a homeowner from the partner book) runs the first turn like an account door. */
+  async function monitoredCodeDoor(partyId: string): Promise<boolean> {
+    const subjects = await auth.parties.subjectsOf(partyId);
+    if (!subjects.length || subjects.some((s) => s.application_id)) return false;
+    return (await monitoredLoansOf(runtime.db, partyId, subjects)).length > 0;
   }
   async function firstTurn(req: IncomingMessage, opened: { session: SessionRow; party: { id: string }; token?: string }, at: string): Promise<void> {
     const ip = ipOf(req); const userAgent = uaOf(req);
@@ -526,7 +535,9 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     const last4 = str(b, "ssn_last4"); const dob = str(b, "date_of_birth");
     if (!/^\d{4}$/.test(last4) || !/^\d{4}-\d{2}-\d{2}$/.test(dob)) throw new RangeError("ssn_last4 is four digits; date_of_birth is YYYY-MM-DD");
     const rows = await auth.parties.applicationBorrowersOf(ctx.party.id);
-    const matched = rows.some((r) => r.tin_last4 === last4 && r.date_of_birth === dob);
+    // 33.1 rule 6: a monitored party's L2 is the SSN last four and DOB the partner's supplement carried on its `borrowers` row (party_id), when it did — else the identity step of a refinance application (33.3)
+    const own = await runtime.db.query<{ tin_last4: string | null; date_of_birth: string | null }>(`SELECT tin_last4, date_of_birth::text AS date_of_birth FROM borrowers WHERE party_id = $1`, [ctx.party.id]);
+    const matched = [...rows, ...own].some((r) => r.tin_last4 === last4 && r.date_of_birth === dob);
     logger.info("borrower.l2.attempt", { session_id: ctx.session.session_id, matched });   // never the values
     if (!matched) throw new BorrowerError(403, "L2_MATCH_FAILED");
     await auth.sessions.raiseLevel(ctx.session.session_id, "L2");

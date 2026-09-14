@@ -15,6 +15,8 @@ const CARD: Shape = { card_instance_id: true, conversation_id: true, party_id: t
 const MESSAGE: Shape = { message_id: true, conversation_id: true, at: true, sender: true, sender_label: true, channel: true, body_text: true, card_instance_id: true, subject: { application_id: true, loan_id: true }, voice_turn: true, delivery: { sent: true, delivered: true, read: true }, card: CARD, deep_link: { token: true, path: true, expires_at: true }, copy_key: true, automation_marker: true, copy_tokens: "opaque" };   // 32.14 DELTA-11: a line's copy tokens (entry.resumed's answers), the way cards carry theirs
 const NUMBERS: Shape = { note_rate: true, apr: true, pi_payment_cents: true, escrow_payment_cents: true, loan_amount_cents: true, cash_to_close_cents: true, monthly_savings_cents: true, lock: { status: true, expires_at: true, expires_on: true, period_days: true }, figures_source: true,
   upb_cents: true, next_payment: { due_on: true, amount_cents: true, pi_cents: true, escrow_cents: true }, escrow_balance_cents: true, days_past_due: true, paid_off: { payoff_date: true, escrow_refund_pending_cents: true },
+  // 33.1 rule 6: a monitored loan's figures from the partner's latest facts row (figures_source partner_book_facts) — the next due and last payment dates as the partner states them
+  next_due_date: true, last_payment_date: true, as_of_date: true,
   // 32.9 §3 / 7.3: the engine's ARM estimate once the initial notice is sent
   arm_estimate: { basis: true, change_on: true, first_new_payment_due: true, estimated_rate: true, estimated_pi_cents: true, notice_id: true, sent_on: true } };
 const RECORD: Shape = {
@@ -34,6 +36,8 @@ const RECORD: Shape = {
   offers: [{ refi_opportunity_id: true, status: true, offered_at: true, expires_at: true, terms: { current_rate: true, offered_rate: true, apr: true, new_pi_payment_cents: true, monthly_savings_cents: true, costs_to_borrower_cents: true } }],
   // 32.16 §2.2 (DELTA-26): the Progress rail section — step ids, copy keys and states only
   journey_progress: { steps: [{ id: true, label_copy_key: true, state: true, at: true }], done: true, total: true },
+  // 33.1 rule 6: the partner-book block of a monitored loan — the servicer of record, the loan's last four, the facts' as-of date, the commands the surface lists as unavailable (never a destination, never the facts row itself)
+  partner_book: { partner_party_id: true, partner_name: true, loan_last4: true, as_of_date: true, monitored: true, commands_unavailable: [{ command: true, code: true }] },
   as_of: true,
 };
 const HISTORY_ROW: Shape = { kind: true, id: true, payment_id: true, status: true, amount_cents: true, received_on: true, credited_as_of: true, channel: true, designation: true, allocation: { principal_cents: true, interest_cents: true, escrow_cents: true, fees_cents: true },

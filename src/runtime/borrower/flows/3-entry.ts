@@ -39,6 +39,7 @@ import { deliverLoanEstimate, type LoanEstimateDeliveryInput } from "../../origi
 import type { Runtime } from "../../app.ts";
 import { timerLabel } from "../record.ts";
 import { leadCarriesGoal } from "./14-entry-lead.ts";
+import { isMonitoredOnly } from "./15-partner-book.ts";
 import { entryPartner } from "../partner.ts";
 import type { BorrowerFlow, FlowDeps, FlowReply, InboundMessage, SessionOpened } from "./index.ts";
 
@@ -174,6 +175,8 @@ async function sessionOpened(deps: FlowDeps, s: SessionOpened): Promise<void> {
   // E2: the automation disclosure is the first assistant content of the session — before any card, any line, any answer (T1).
   // 32.16 §2.0 (docs/ux/17 principle 8): on the app the row is the session's disclosure record with `sender: system` — the shell renders it as the header's AI tag, never a bubble; SMS sends it and voice reads it, so those channels keep the assistant line
   await deps.ui.appendMessage({ conversation_id: conv.conversation_id, at: s.at, sender: s.channel === "app" ? "system" : "agent", sender_ref: "agent:intake", channel: s.channel, body_text: "{{copy:entry.disclosure.first}}", subject_application_id: appId, voice_turn: s.channel === "voice" });
+  // 33.1 rule 5: a party whose every subject is a monitored loan (the partner book) gets the disclosure and nothing else here — no 20.3 lead, no organic application, no goal card; flows/15-partner-book.ts logs the activation
+  if (await isMonitoredOnly(deps.runtime.db, s.party_id)) return;
   const store = new EntityStore(); store.seed(await deps.runtime.entities.load(appId ? { applicationId: appId } : {}));
   const existing = (appId ? store.get("leads", appId)?.data : undefined) ?? store.list("leads", (d) => d.party_id === s.party_id).map((r) => r.data)[0];
   const lead_id = existing ? String(existing["lead_id"]) : (appId ?? randomUUID());

@@ -9,10 +9,12 @@ import json, os, re
 R = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
 DIR = {20: 'leads-pricing', 21: 'application', 22: 'verification', 23: 'underwriting', 24: 'property', 25: 'compliance-disclosures',
        26: 'closing', 27: 'warehouse', 28: 'qc-hmda', 29: 'secondary', 30: 'orig-boarding', 31: 'governance',
-       32: 'borrower'}  # §32 borrower experience (tools/import_ux.py): API-level node:test + Playwright driven from node:test
+       32: 'borrower',  # §32 borrower experience (tools/import_ux.py): API-level node:test + Playwright driven from node:test
+       33: 'partner-book'}  # §33 the partner book: monitored loans, real accounts, daily refinance review and readiness
 # wiring series: (sections, marker, anchor process whose import/spread the block follows)
 SERIES = [(range(20, 32), '// ---- §20–§31 process-owned files (scaffolded by tools/workflows/wire_orig.py)', '13_9', 'foreclosure/timers-13-9.ts', 'foreclosure/evaluators-13-9.ts', 'section13-9.ts', 'authored/section13-9.ts'),
-          (range(32, 33), '// ---- §32 process-owned files (scaffolded by tools/workflows/wire_orig.py)', '31_3', 'governance/timers-31-3.ts', 'governance/evaluators-31-3.ts', 'section31-3.ts', 'authored/section31-3.ts')]
+          (range(32, 33), '// ---- §32 process-owned files (scaffolded by tools/workflows/wire_orig.py)', '31_3', 'governance/timers-31-3.ts', 'governance/evaluators-31-3.ts', 'section31-3.ts', 'authored/section31-3.ts'),
+          (range(33, 34), '// ---- §33 process-owned files (scaffolded by tools/workflows/wire_orig.py)', '32_13', 'borrower/timers-32-13.ts', 'borrower/evaluators-32-13.ts', 'section32-18.ts', 'authored/section32-13.ts')]
 m = json.load(open(f'{R}/spec/registry/manifest.json'))
 procs = [p['process'] for p in m if int(p['process'].split('.')[0]) in DIR]
 def pdir(pid): return DIR[int(pid.split('.')[0])]
@@ -20,7 +22,13 @@ def w(path, text):
     if os.path.exists(path): return False
     os.makedirs(os.path.dirname(path), exist_ok=True); open(path, 'w').write(text); return True
 made = []
+_to = open(f'{R}/src/domain/timer-overrides.ts').read()
+def series_wired(pid):
+    """A series whose marker is already in the aggregators is left alone entirely — its later processes (32.14+) own
+    only the files they need, and a stub created here would never be wired."""
+    return any(int(pid.split('.')[0]) in sec and mark in _to for sec, mark, *_ in SERIES)
 for pid in procs:
+    if series_wired(pid): continue
     n, k = pid.split('.'); d = pdir(pid); nk = f'{n}_{k}'
     if w(f'{R}/src/domain/{d}/timers-{n}-{k}.ts', f'''/**
  * §{pid} timer overrides (process-owned; applied after every section's so they win the merge — see
@@ -80,22 +88,30 @@ def wire(path, mark, imports, import_after, replacements):
     open(path, 'w').write(s); return True
 
 wired = 0
-for sections, MARK, a, t_anchor, e_anchor, tool_anchor, n_anchor in SERIES:
+def aid(path):
+    """The anchor process id spelled by an anchor path ('borrower/timers-32-13.ts' → '32_13', 'section32-18.ts' → '32_18'):
+    each aggregator's last spread may belong to a different process (tools stop at 32.18, the others at 32.13)."""
+    return re.search(r'(\d+)-(\d+)\.ts$', path).group(1) + '_' + re.search(r'(\d+)-(\d+)\.ts$', path).group(2)
+for sections, MARK, _a, t_anchor, e_anchor, tool_anchor, n_anchor in SERIES:
     ps = [p for p in procs if int(p.split('.')[0]) in sections]
     if not ps: continue
+    a = aid(t_anchor)
     # 1. timer-overrides.ts — PROCESS_OVERRIDES gains the series' process functions after the anchor process
     wire(f'{R}/src/domain/timer-overrides.ts', MARK, [f'import {{ applySatisfiedOverrides_{nk(p)} }} from "./{pdir(p)}/timers-{nd(p)[0]}-{nd(p)[1]}.ts";' for p in ps],
          f'import {{ applySatisfiedOverrides_{a} }} from "./{t_anchor}";\n',
          [(f'applySatisfiedOverrides_{a}];', f'applySatisfiedOverrides_{a},\n  ' + ', '.join(f'applySatisfiedOverrides_{nk(p)}' for p in ps) + '];')])
     # 2. app/evaluators.ts
+    a = aid(e_anchor)
     wire(f'{R}/src/app/evaluators.ts', MARK, [f'import {{ EVALUATORS_{nk(p)} }} from "../domain/{pdir(p)}/evaluators-{nd(p)[0]}-{nd(p)[1]}.ts";' for p in ps],
          f'import {{ EVALUATORS_{a} }} from "../domain/{e_anchor}";\n',
          [(f'...EVALUATORS_{a},\n', f'...EVALUATORS_{a},\n  ' + ', '.join(f'...EVALUATORS_{nk(p)}' for p in ps) + ',\n')])
     # 3. app/tools/index.ts
+    a = aid(tool_anchor)
     wire(f'{R}/src/app/tools/index.ts', MARK, [f'import {{ TOOLS_{nk(p)} }} from "./section{nd(p)[0]}-{nd(p)[1]}.ts";' for p in ps],
          f'import {{ TOOLS_{a} }} from "./{tool_anchor}";\n',
          [(f'...TOOLS_{a}];', f'...TOOLS_{a},\n  ' + ', '.join(f'...TOOLS_{nk(p)}' for p in ps) + '];')])
     # 4. notices/catalog.ts
+    a = aid(n_anchor)
     wire(f'{R}/src/notices/catalog.ts', MARK, [f'import {{ VERSIONS_{nk(p)}, OVERRIDES_{nk(p)} }} from "./authored/section{nd(p)[0]}-{nd(p)[1]}.ts";' for p in ps],
          f'import {{ VERSIONS_{a}, OVERRIDES_{a} }} from "./{n_anchor}";\n',
          [(f'...OVERRIDES_{a},\n', f'...OVERRIDES_{a},\n  ' + ', '.join(f'...OVERRIDES_{nk(p)}' for p in ps) + ',\n'),

@@ -60,6 +60,7 @@ import type { RateFeedPort } from "../infra/integrations/rates.ts";
 import type { FakeReviewers, FakeReviewerReport } from "../infra/integrations/reviewers.ts";
 import { originationServices, type OriginationServiceSet } from "./origination.ts";
 import { refiDailyRun, type RefiDailyReport } from "./refi-daily.ts";
+import { sendPartnerBookReminders } from "./partner-book.ts";
 import type { Logger } from "./log.ts";
 
 export interface RuntimeDeps {
@@ -95,6 +96,8 @@ export interface SweepReport {
   readonly refi: RefiDailyReport | null;
   /** The FAKE reviewers' pass (null when they are off). */
   readonly reviewers: FakeReviewerReport | null;
+  /** 33.1: the reminders SM_PARTNER_BOOK_INVITATION_REMINDER_14's breach action sent on this pass (src/runtime/partner-book.ts sendPartnerBookReminders). */
+  readonly partner_book_reminders: number;
 }
 export class ToolNotFound extends Error { constructor(process: string, name: string) { super(`no tool ${name} in process ${process}`); this.name = "ToolNotFound"; } }
 
@@ -247,8 +250,11 @@ export class Runtime {
         return persisted;
       }).then((persisted) => this.uow.notifyCommitted(persisted));
     }
+    // 33.1 T10: the breach action of SM_PARTNER_BOOK_INVITATION_REMINDER_14 — one reminder on the same channel while the party has no session, then nothing more; never fails the sweep
+    let partnerBookReminders = 0;
+    try { partnerBookReminders = (await sendPartnerBookReminders(this, nowIso)).sent; } catch (e) { this.logger?.error("partner book reminders failed", { at: nowIso, error: e }); }
     const outbox = await this.db.query<{ adapter: string; status: string; count: string }>(`SELECT adapter, status, count(*)::text AS count FROM integration_messages WHERE status IN ('queued', 'failed') GROUP BY adapter, status ORDER BY adapter, status`).catch(() => []);
-    return { at: nowIso, due: due.length, breaches, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })), refi, reviewers };
+    return { at: nowIso, due: due.length, breaches, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })), refi, reviewers, partner_book_reminders: partnerBookReminders };
   }
 
   async ready(): Promise<boolean> { try { await this.db.query("SELECT 1"); return true; } catch { return false; } }

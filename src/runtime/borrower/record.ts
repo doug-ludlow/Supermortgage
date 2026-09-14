@@ -22,6 +22,7 @@ import type { Queryable } from "../../infra/db/client.ts";
 import { decodeEntityData } from "../../infra/db/entities.ts";
 import { DOCUMENT_CLASSES } from "../../domain/verification/ops-22-1.ts";
 import type { Subject } from "../../infra/db/borrower-parties.ts";
+import { MONITORED_REFUSED_COMMANDS } from "./flows/15-partner-book.ts";
 import { journeyProgress, type JourneyProgress } from "./journey-progress.ts";   // 32.16 §2.2 / DELTA-26: the Progress rail section, derived, never stored
 import type { CardInstanceRow, MessageRow } from "../../infra/db/borrower-ui.ts";
 import { rateWatchSection } from "./flows/11-rate-watch.ts";
@@ -99,6 +100,8 @@ export interface BorrowerRecord {
   property: Record<string, unknown> | null;
   loan: Record<string, unknown> | null;
   offers: Record<string, unknown>[];
+  /** 33.1 rule 6: a monitored loan (the partner book) — the partner as the servicer of record, the loan's last four, the facts' as-of date, and the payment/autopay/escrow/hardship commands the surface lists as unavailable (each refuses LOAN_MONITORED). Null for every other subject. */
+  partner_book?: { partner_party_id: string | null; partner_name: string | null; loan_last4: string | null; as_of_date: string | null; monitored: true; commands_unavailable: { command: string; code: "LOAN_MONITORED" }[] } | null;
   /** 32.16 §2.2 (DELTA-26): the journey's steps — done / current / upcoming — from the event spine and card_instances (src/runtime/borrower/journey-progress.ts); null for a serviced loan. */
   journey_progress: JourneyProgress | null;
   as_of: string;
@@ -106,6 +109,8 @@ export interface BorrowerRecord {
 interface Ev { sequence: string; type: string; occurred_at: string; loan_id: string | null; application_id: string | null; payload: Record<string, unknown> }
 interface Entity { kind: string; id: string; data: Record<string, unknown>; updated_at: string }
 interface Timer { id: string; code: string; status: string; due_at: string | null; due_date: string | null; armed_at: string }
+/** 33.1: what the record reads for a monitored loan — the partner (servicer of record) and the latest partner_book_facts row. */
+interface MonitoredFacts { partner_party_id: string | null; partner_name: string | null; partner_phone: string | null; loan_last4: string | null; as_of_date: string | null; facts: Record<string, unknown> | null }
 
 const cents = (v: unknown): string | null => (v === undefined || v === null || v === "" ? null : typeof v === "bigint" ? v.toString() : typeof v === "number" ? Math.round(v).toString() : /^-?\d+$/.test(String(v)) ? String(v) : null);
 const rate = (v: unknown): string | null => (v === undefined || v === null || v === "" ? null : String(v));
@@ -161,6 +166,8 @@ export class BorrowerRecordReader {
       this.events(appId, loanId), this.entities(appId, loanId), this.timers(appId, loanId)]);
     // 32.12: the exit facts of a serviced loan (payoff funds / paid in full / housekeeping complete; the goodbye run and its stored timing; the successor's notice choice)
     const exits = loan ? await loadExitsContext(this.db, loanId!, events) : null;
+    // 33.1 rule 6: a monitored loan (the partner book) — the partner is the servicer of record and the latest partner_book_facts row is the record's figures (never ledger or statements)
+    const monitored = loan?.["status"] === "monitored" ? await this.monitoredFacts(loanId!, loan) : null;
     const byKind = (kind: string): Entity[] => entities.filter((e) => e.kind === kind);
     const ev = (type: string, where: (p: Record<string, unknown>) => boolean = () => true): Ev | undefined => events.filter((e) => e.type === type && where(e.payload)).at(-1);
     const has = (type: string | RegExp, where: (p: Record<string, unknown>) => boolean = () => true): boolean => events.some((e) => (typeof type === "string" ? e.type === type : type.test(e.type)) && where(e.payload));
@@ -174,7 +181,7 @@ export class BorrowerRecordReader {
     const subjectOut = { application_id: appId, loan_id: loanId, label: loanId ? subject.label : `Application ····${appId!.slice(-4)}`, transaction_type, occupancy, stage };
 
     // ---- status (01 §4 catalogue, read off the event spine; state_source = the state name and table the owning process wrote)
-    const status = (exits ? exitsBadge(exits, asOf, timers) : null) ?? this.badge(app, loan, events, entities, byKind, ev, has);
+    const status = (exits ? exitsBadge(exits, asOf, timers) : null) ?? this.badge(app, loan, events, entities, byKind, ev, has, monitored?.partner_name ?? null);
 
     // ---- next / dates (02 §4 allow-list; never a computed date)
     const allowed = timers.filter((t) => timerAllowed(t.code) && t.due_at);
@@ -207,12 +214,14 @@ export class BorrowerRecordReader {
     const needed_summary = { count: neededOut.length, nothing_needed: neededOut.length === 0, copy_key: (neededOut.length ? "needs.title" : "needs.none") as "needs.title" | "needs.none" };
 
     // ---- numbers
-    const numbers = loan ? await this.servicingNumbers(loanId!, loan, events, byKind) : this.originationNumbers(app, byKind, events, transaction_type);
+    const numbers = loan ? (monitored ? this.monitoredNumbers(loan, monitored) : await this.servicingNumbers(loanId!, loan, events, byKind)) : this.originationNumbers(app, byKind, events, transaction_type);
 
     // ---- documents (02 §1.4)
     const documents = exits ? exitsDocumentsFor(await this.documents(party, subject, byKind, events, cards), exits, { party_id: party.id, role: subject.role }) : await this.documents(party, subject, byKind, events, cards);
     // ---- people
     const people = await this.people(party, subject, byKind, events, loan);
+    // 33.1 rule 6: the partner as the servicer of record, with its contact (the number the contract's people row carries as `direct_number`)
+    if (monitored) people.push({ party_id: monitored.partner_party_id, role: "servicer_of_record", display_name: monitored.partner_name ?? "Your servicer", direct_number: monitored.partner_phone, progress: null });
     // ---- loan (servicing) and offers
     const loanSection = loan ? await this.loanSection(loanId!, loan, byKind, events, timers) : null;
     // 32.11 §1 / §5: the Rate-watch block (passive until an opportunity exists) and the standing connections (DELTA-05) on the Loan section — src/runtime/borrower/flows/11-rate-watch.ts
@@ -233,12 +242,36 @@ export class BorrowerRecordReader {
       const yours = byKind("conditions").map((e) => e.data).filter((d) => conditionIsBorrowers(d) && !["cleared", "waived", "superseded"].includes(String(d["status"] ?? ""))).length;
       return { ran_at: String(findingsEv.payload["received_at"] ?? findingsEv.occurred_at ?? ""), validated, conditions_for_you: yours, checklist_card_instance_id: checklist?.card_instance_id ?? null };
     })() : null;
-    return { subject: subjectOut, status, read_only: READ_ONLY_BADGES.has(status.badge), next, needed_from_you: neededOut, underwriting, what_we_are_doing, needed_summary, numbers, dates, documents, people, property, loan: loanSection, offers: exits && (exits.paidInFull || exits.transfer) ? [] : offers, journey_progress, as_of: asOf };   // 32.12: rate-watch ends with the loan
+    // 33.1 rule 6: the partner-book block — the servicer of record, the loan's last four, the facts' as-of date and the commands the surface lists as unavailable
+    const partner_book: BorrowerRecord["partner_book"] = monitored ? { partner_party_id: monitored.partner_party_id, partner_name: monitored.partner_name, loan_last4: monitored.loan_last4, as_of_date: monitored.as_of_date, monitored: true, commands_unavailable: [...MONITORED_REFUSED_COMMANDS].map((command) => ({ command, code: "LOAN_MONITORED" as const })) } : null;
+    return { subject: subjectOut, status, read_only: READ_ONLY_BADGES.has(status.badge), next, needed_from_you: neededOut, underwriting, what_we_are_doing, needed_summary, numbers, dates, documents, people, property, loan: loanSection, offers: exits && (exits.paidInFull || exits.transfer) ? [] : offers, journey_progress, partner_book, as_of: asOf };   // 32.12: rate-watch ends with the loan
   }
 
-  private badge(app: Record<string, unknown> | null, loan: Record<string, unknown> | null, events: Ev[], _entities: Entity[], byKind: (k: string) => Entity[], ev: (t: string, w?: (p: Record<string, unknown>) => boolean) => Ev | undefined, has: (t: string | RegExp, w?: (p: Record<string, unknown>) => boolean) => boolean): BorrowerRecord["status"] {
+  /** 33.1 rule 6: the servicer of record (the partner's parties row) and the latest partner_book_facts row of a monitored loan — the record's figures come from here, never from ledger or statements. */
+  private async monitoredFacts(loanId: string, loan: Record<string, unknown>): Promise<MonitoredFacts> {
+    const partner = loan["partner_party_id"] ? (await this.db.query<{ id: string; legal_name: string; contact: Record<string, unknown> | null }>(`SELECT id, legal_name, contact FROM parties WHERE id = $1`, [loan["partner_party_id"] as string]))[0] : undefined;
+    const row = (await this.db.query<{ as_of_date: string; facts: Record<string, unknown> | null }>(`SELECT as_of_date::text AS as_of_date, facts FROM partner_book_facts WHERE loan_id = $1 ORDER BY as_of_date DESC, created_at DESC LIMIT 1`, [loanId]))[0];
+    const contact = partner?.contact ?? {};
+    const phone = [contact["phone"], contact["tollfree"], contact["direct_number"], Array.isArray(contact["phones"]) ? (contact["phones"] as unknown[])[0] : undefined].find((p): p is string => typeof p === "string" && p.length > 0) ?? null;
+    return { partner_party_id: partner?.id ?? null, partner_name: partner?.legal_name ?? null, partner_phone: phone, loan_last4: String(loan["servicer_loan_number"] ?? "").slice(-4) || null, as_of_date: row?.as_of_date ?? null, facts: row?.facts ?? null };
+  }
+  /** 33.1 rule 6 / worked example A: `numbers` of a monitored loan from the latest facts — UPB, note rate, P&I, T&I, next due date, last payment date (the loan_terms row stands in for a figure the facts lack); never ledger_lines or statement_cycles. */
+  private monitoredNumbers(loan: Record<string, unknown>, m: MonitoredFacts): Record<string, unknown> {
+    const f = m.facts ?? {};
+    const upb = cents(f["upb_cents"]); const pi = cents(f["pi_cents"]) ?? cents(loan["pi_cents"]); const ti = cents(f["ti_cents"]) ?? cents(loan["escrow_payment_cents"]);
+    const note_rate = typeof f["note_rate_pct"] === "string" && f["note_rate_pct"] ? String(f["note_rate_pct"]) : bpsToPct(loan["note_rate_bps"]);
+    const due_on = typeof f["next_due_date"] === "string" ? String(f["next_due_date"]) : null; const last = typeof f["last_payment_date"] === "string" ? String(f["last_payment_date"]) : null;
+    const mba = String(f["mba_delinquency_status"] ?? ""); const days_past_due = /^\d+$/.test(mba) ? Number(mba) : null;   // the partner's stated MBA status, never a count computed here
+    return { upb_cents: upb, note_rate, pi_payment_cents: pi, escrow_payment_cents: ti, next_due_date: due_on, last_payment_date: last,
+      next_payment: { due_on, amount_cents: cents(f["total_due_cents"]) ?? (pi && ti ? (BigInt(pi) + BigInt(ti)).toString() : pi), pi_cents: pi, escrow_cents: ti },
+      escrow_balance_cents: cents(f["escrow_balance_cents"]), days_past_due, figures_source: "partner_book_facts", as_of_date: m.as_of_date };
+  }
+
+  private badge(app: Record<string, unknown> | null, loan: Record<string, unknown> | null, events: Ev[], _entities: Entity[], byKind: (k: string) => Entity[], ev: (t: string, w?: (p: Record<string, unknown>) => boolean) => Ev | undefined, has: (t: string | RegExp, w?: (p: Record<string, unknown>) => boolean) => boolean, servicerName: string | null = null): BorrowerRecord["status"] {
     const b = (badge: string, state_source: string, one_liner: string) => ({ badge, state_source, one_liner });
     if (loan) {
+      // 33.1 rule 6: the partner book — monitored, not serviced; the one-liner names the servicer of record (copy key `partner_book.monitored`, token `servicer`)
+      if (loan["status"] === "monitored") return { ...b("Monitored", "loans.status=monitored", "partner_book.monitored"), one_liner_tokens: { servicer: servicerName ?? "" } };
       if (loan["status"] === "paid_off" || has("loan.paid_in_full")) return b("Paid off", "loans.status=paid_off", "payoff.paid_in_full");
       if (loan["status"] === "transferred" || loan["transfer_out_at"]) return b("Closed", `loans.status=${String(loan["status"])}`, "transfer.goodbye");
       // 32.10 §9 / §5–6: the hardship states over the delinquency counters — a verified bankruptcy petition (14.1) until the case ends; an active forbearance (12.4 `workout_plan.activated` … `workout_plan.ended`) reads "Paused"; an accepted offer (12.2 `lossmit.offer.responded{accepted}`, a TPP's first trial payment included) reads "On a plan" until the trial fails or the plan ends

@@ -68,7 +68,8 @@ import { encodeTransferBatch, type TransferBatchFiles } from "../domain/boarding
 import { isUuid } from "../infra/db/client.ts";
 import { plainDate } from "../kernel/calendar/date.ts";
 import type { Logger } from "./log.ts";
-import { createBorrowerRouter, type BorrowerRouter, type BorrowerRouterOptions } from "./borrower/routes.ts";
+import { createBorrowerRouter, parseMultipart, type BorrowerRouter, type BorrowerRouterOptions } from "./borrower/routes.ts";
+import { importPartnerBook, listPartnerBookImports, partnerBookReport, seedPartnerBookDemo, type PartnerBookImportInput } from "./partner-book.ts";
 import { seedEntryDemo } from "./entry-seed.ts";
 import { OffsetClock, advanceDemoClock, demoClockStatus } from "./demo-clock.ts";
 
@@ -91,6 +92,41 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
   const v = JSON.parse(text) as unknown;
   if (!v || typeof v !== "object" || Array.isArray(v)) throw new RangeError("request body must be a JSON object");
   return v as Record<string, unknown>;
+}
+/** The raw body (a multipart upload) under the same size cap as JSON. */
+async function readRaw(req: IncomingMessage): Promise<Buffer> {
+  const chunks: Buffer[] = []; let size = 0;
+  for await (const c of req) { size += (c as Buffer).length; if (size > MAX_BODY) throw new RangeError(`request body over ${MAX_BODY} bytes`); chunks.push(c as Buffer); }
+  return Buffer.concat(chunks);
+}
+/** 33.1 inputs: JSON `{partner, as_of_date, profile, tape: {filename, content_base64}, supplement?}` or multipart fields `partner` (JSON), `as_of_date`, `profile` and files `tape`, `supplement`. */
+async function partnerBookInput(req: IncomingMessage): Promise<PartnerBookImportInput> {
+  const ctype = String(req.headers["content-type"] ?? "");
+  let fields: Record<string, unknown>; let files: Record<string, { filename: string; content: Uint8Array } | undefined> = {};
+  if (/^multipart\/form-data/i.test(ctype)) {
+    const mp = parseMultipart(await readRaw(req), ctype);
+    fields = { ...mp.fields, ...(typeof mp.fields["partner"] === "string" && mp.fields["partner"].trim().startsWith("{") ? { partner: JSON.parse(mp.fields["partner"]) as unknown } : {}) };
+    for (const f of mp.files) files[f.field] = { filename: f.filename ?? `${f.field}.csv`, content: new Uint8Array(f.bytes) };
+  } else {
+    fields = await readJson(req);
+    const file = (v: unknown, what: string): { filename: string; content: Uint8Array } | undefined => {
+      if (!v || typeof v !== "object") return undefined;
+      const o = v as Record<string, unknown>;
+      const filename = typeof o["filename"] === "string" && o["filename"] ? o["filename"] : `${what}.csv`;
+      if (typeof o["content_base64"] === "string") return { filename, content: new Uint8Array(Buffer.from(o["content_base64"], "base64")) };
+      if (typeof o["content"] === "string") return { filename, content: new Uint8Array(Buffer.from(o["content"], "utf8")) };
+      throw new RangeError(`${what} needs { filename, content_base64 }`);
+    };
+    files = { tape: file(fields["tape"], "tape"), supplement: file(fields["supplement"], "supplement") };
+  }
+  const partner = fields["partner"] as Record<string, unknown> | undefined;
+  if (!partner || typeof partner !== "object" || typeof partner["legal_name"] !== "string" || !partner["legal_name"]) throw new RangeError("partner is required: { legal_name, nmlsr_id, servicer_number?, mers_org_id? }");
+  if (typeof partner["nmlsr_id"] !== "string" || !partner["nmlsr_id"]) throw new RangeError("partner.nmlsr_id is required");
+  if (typeof fields["as_of_date"] !== "string" || !fields["as_of_date"]) throw new RangeError("as_of_date is required (YYYY-MM-DD)");
+  const profile = String(fields["profile"] ?? "m3-v1"); if (profile !== "m3-v1") throw new RangeError(`profile must be m3-v1 (got ${profile})`);
+  if (!files["tape"]) throw new RangeError("tape is required (.xlsx or .csv)");
+  return { partner: { legal_name: partner["legal_name"], nmlsr_id: partner["nmlsr_id"], ...(typeof partner["servicer_number"] === "string" && partner["servicer_number"] ? { servicer_number: partner["servicer_number"] } : {}), ...(typeof partner["mers_org_id"] === "string" && partner["mers_org_id"] ? { mers_org_id: partner["mers_org_id"] } : {}) },
+    as_of_date: fields["as_of_date"], profile: "m3-v1", tape: files["tape"], ...(files["supplement"] ? { supplement: files["supplement"] } : {}) };
 }
 const ACTOR_KINDS = new Set(["human", "agent", "system"]);
 function actorOf(v: unknown): Actor {
@@ -272,6 +308,26 @@ export function createApiServer(opts: ServerOptions): Server {
         const rec = await runtime.entities.current("transfer_batches", decodeURIComponent(m[1]!));
         if (!rec) done(404, { error: "no_such_batch" }); else done(200, rec.data);
         return;
+      }
+      // 33.1 the partner book: the operator uploads the tape and the supplement (JSON content_base64 or multipart); the portfolio agent loads, provisions and invites — src/runtime/partner-book.ts
+      if (method === "POST" && path === "/v1/partner-book/imports") {
+        const actorHeader = String(req.headers["x-actor-id"] ?? "");
+        const input = await partnerBookInput(req);
+        const r = await importPartnerBook(runtime, input, { kind: "human", id: actorHeader || "ops", ...(req.headers["x-actor-role"] ? { role: String(req.headers["x-actor-role"]) } : { role: "ops_analyst" }) });
+        done(200, r, { import: r.import_id, status: r.status, rows_total: r.rows_total, rows_loaded: r.rows_loaded, loans_created: r.loans_created, invitations_sent: r.invitations_sent }); return;
+      }
+      if (method === "GET" && path === "/v1/partner-book/imports") { done(200, { imports: await listPartnerBookImports(runtime, url.searchParams.get("partner_party_id") ?? undefined) }); return; }
+      if (method === "GET" && (m = /^\/v1\/partner-book\/imports\/([^/]+)$/.exec(path))) {
+        const r = await partnerBookReport(runtime, decodeURIComponent(m[1]!));
+        if (!r) done(404, { error: "no_such_import" }); else done(200, r);
+        return;
+      }
+      // 33.1 rule 7: the fixture book under the demo partner (FAKE, idempotent — already_loaded on a rerun); never in production
+      if (method === "POST" && path === "/v1/partner-book/seed-demo") {
+        if (environment === "production") { done(403, { error: "forbidden", reason: "the demo book does not exist in production (ENVIRONMENT=production)" }); return; }
+        const b = await readJson(req);
+        const r = await seedPartnerBookDemo(runtime, { ...(typeof b["partner_id"] === "string" ? { partner_id: b["partner_id"] as string } : {}) });
+        done(200, r, { import: r.import_id, status: r.status, rows_loaded: r.rows_loaded, invitations_sent: r.invitations_sent }); return;
       }
       // the demo clock (src/runtime/demo-clock.ts): advance the hosted demo through days in minutes, running the sweep minute for every calendar day crossed; ops token; never in production
       if (path === "/v1/demo/clock" || path === "/v1/demo/advance") {

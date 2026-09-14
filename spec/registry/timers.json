@@ -22317,5 +22317,38 @@
     "offset": "",
     "satisfied": "",
     "breach": "per 32.8–32.12 (as stated in each)"
+  },
+  {
+    "code": "SM_PARTNER_BOOK_INVITATION_REMINDER_14",
+    "section": 33,
+    "process": "33.1",
+    "kind": "deadline",
+    "trigger": "`partner_book.invitation.sent{kind=invitation}`",
+    "anchor": "`sent_at`",
+    "offset": "+14 calendar_days",
+    "satisfied": "`partner_book.account.activated`",
+    "breach": "sev 3 → `portfolio` (one reminder on the same channel, then the clock closes)"
+  },
+  {
+    "code": "SM_PARTNER_BOOK_REVIEW_DAILY",
+    "section": 33,
+    "process": "33.2",
+    "kind": "recurring",
+    "trigger": "`partner_book.review.run_completed`",
+    "anchor": "`as_of_date`",
+    "offset": "+1 calendar_days",
+    "satisfied": "`partner_book.review.run_completed`",
+    "breach": "sev 3 → `compliance-sentinel` (the book was not reviewed today)"
+  },
+  {
+    "code": "SM_PARTNER_BOOK_READINESS_DAILY",
+    "section": 33,
+    "process": "33.3",
+    "kind": "recurring",
+    "trigger": "`partner_book.readiness.run_completed`",
+    "anchor": "`as_of_date`",
+    "offset": "+1 calendar_days",
+    "satisfied": "`partner_book.readiness.run_completed`",
+    "breach": "sev 3 → `compliance-sentinel` (readiness was not checked today)"
   }
 ]

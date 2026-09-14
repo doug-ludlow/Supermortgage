@@ -37,13 +37,13 @@ async function fixture(db: Db): Promise<Fixture> {
   return new PgLoanRepository(db).createFixture({ fnmaLoanNumber: uniq(), servicerLoanNumber: `SM-${randomUUID()}`, instrumentDate: D("2021-07-15"), originalUpbCents: 26_000_000n, originalTermMonths: 360, firstPaymentDate: D("2021-09-01"), maturityDate: D("2051-08-01") });
 }
 
-test("migrations: every file under db/migrations is applied to the test database (751 tables: public + restricted_fl)", { skip }, async () => {
+test("migrations: every file under db/migrations is applied to the test database (756 tables: public + restricted_fl)", { skip }, async () => {
   execFileSync(fileURLToPath(new URL("../../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL);
   const [m] = await db.query<{ c: bigint }>(`SELECT count(*)::bigint AS c FROM schema_migrations`);
   assert.equal(m!.c, BigInt(readdirSync(fileURLToPath(new URL("../../../db/migrations", import.meta.url))).filter((f) => f.endsWith(".sql")).length));
   const [t] = await db.query<{ c: bigint }>(`SELECT count(*)::bigint AS c FROM information_schema.tables WHERE table_schema IN ('public', 'restricted_fl') AND table_type = 'BASE TABLE'`);
-  assert.equal(t!.c, 751n);   // the count a fresh `db/migrate.sh` run produces through 0123 (public + restricted_fl base tables; 0116 oidc_identities, 0117 lead_tokens, 0118 party_credentials, 0119 agent_turns, 0120 demo_clock, 0121 video_sessions; 0122 and 0123 add columns only; 0124 widens a check)
+  assert.equal(t!.c, 756n);   // the count a fresh `db/migrate.sh` run produces through 0125 (public + restricted_fl base tables; 0116 oidc_identities, 0117 lead_tokens, 0118 party_credentials, 0119 agent_turns, 0120 demo_clock, 0121 video_sessions; 0122 and 0123 add columns only; 0124 widens a check; 0125 partner_book_imports, partner_book_facts, partner_book_invitations, partner_book_reviews, readiness_checks)
 });
 
 test("loan_events is append-only: rows persist with database sequences and refuse UPDATE/DELETE", { skip }, async () => {

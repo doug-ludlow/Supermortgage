@@ -1,33 +1,33 @@
 {
- "brief": "spec units built 7792/7800 (99.9%): tids 2135/2142, tables 729/730, timers 2029/2029, notices 306/306, tools 1379/1379, figures 1214/1214; processes at 100%: 181/182",
+ "brief": "spec units built 7823/7855 (99.6%): tids 2145/2165, tables 734/735, timers 2030/2032, notices 307/307, tools 1383/1392, figures 1224/1224; processes at 100%: 182/185",
  "totals": {
   "tids": {
-   "spec": 2142,
-   "built": 2135
+   "spec": 2165,
+   "built": 2145
   },
   "tables": {
-   "spec": 730,
-   "built": 729
+   "spec": 735,
+   "built": 734
   },
   "timers": {
-   "spec": 2029,
-   "built": 2029
+   "spec": 2032,
+   "built": 2030
   },
   "notices": {
-   "spec": 306,
-   "built": 306
+   "spec": 307,
+   "built": 307
   },
   "tools": {
-   "spec": 1379,
-   "built": 1379
+   "spec": 1392,
+   "built": 1383
   },
   "figures": {
-   "spec": 1214,
-   "built": 1214
+   "spec": 1224,
+   "built": 1224
   },
   "units": {
-   "spec": 7800,
-   "built": 7792
+   "spec": 7855,
+   "built": 7823
   }
  },
  "sections": {
@@ -222,6 +222,12 @@
    "built": 346,
    "processes": 17,
    "done": 16
+  },
+  "33": {
+   "spec": 55,
+   "built": 31,
+   "processes": 3,
+   "done": 1
   }
  },
  "done": [
@@ -405,7 +411,8 @@
   "32.13",
   "32.14",
   "32.17",
-  "32.18"
+  "32.18",
+  "33.1"
  ],
  "processes": [
   {
@@ -7879,6 +7886,159 @@
     "built": 11
    },
    "pct": 100.0
+  },
+  {
+   "process": "33.1",
+   "title": "The partner book import: the tape and the supplement become monitored loans and real accounts",
+   "tids": {
+    "spec": 10,
+    "built": 10,
+    "todo": 0,
+    "missing": []
+   },
+   "tables": {
+    "spec": 3,
+    "built": 3,
+    "missing": []
+   },
+   "timers": {
+    "spec": 1,
+    "built": 1,
+    "armable": 1,
+    "missing": []
+   },
+   "notices": {
+    "spec": 1,
+    "built": 1,
+    "missing": []
+   },
+   "tools": {
+    "spec": 4,
+    "built": 4,
+    "missing": []
+   },
+   "figures": {
+    "spec": 6,
+    "built": 6,
+    "missing": []
+   },
+   "units": {
+    "spec": 25,
+    "built": 25
+   },
+   "pct": 100.0
+  },
+  {
+   "process": "33.2",
+   "title": "The daily refinance review: every monitored loan reviewed each day by the refinance analyst",
+   "tids": {
+    "spec": 7,
+    "built": 0,
+    "todo": 7,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "tables": {
+    "spec": 1,
+    "built": 1,
+    "missing": []
+   },
+   "timers": {
+    "spec": 1,
+    "built": 0,
+    "armable": 1,
+    "missing": [
+     "SM_PARTNER_BOOK_REVIEW_DAILY"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 5,
+    "built": 0,
+    "missing": [
+     "review.run",
+     "review.facts",
+     "review.write",
+     "offer.deliver",
+     "offer.expire"
+    ]
+   },
+   "figures": {
+    "spec": 4,
+    "built": 4,
+    "missing": []
+   },
+   "units": {
+    "spec": 18,
+    "built": 5
+   },
+   "pct": 27.8
+  },
+  {
+   "process": "33.3",
+   "title": "Refinance readiness: what a refinance needs, what is on file, what is asked for",
+   "tids": {
+    "spec": 6,
+    "built": 0,
+    "todo": 6,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "tables": {
+    "spec": 1,
+    "built": 1,
+    "missing": []
+   },
+   "timers": {
+    "spec": 1,
+    "built": 0,
+    "armable": 1,
+    "missing": [
+     "SM_PARTNER_BOOK_READINESS_DAILY"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "readiness.run",
+     "readiness.check",
+     "readiness.read",
+     "refi.open"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 12,
+    "built": 1
+   },
+   "pct": 8.3
   }
  ]
 }

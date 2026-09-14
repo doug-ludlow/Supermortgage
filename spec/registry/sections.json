@@ -404,5 +404,15 @@
       "32.17",
       "32.18"
     ]
+  },
+  {
+    "n": 33,
+    "title": "The partner book: monitored loans, real accounts and refinance readiness",
+    "path": "sections/33-partner-book",
+    "processes": [
+      "33.1",
+      "33.2",
+      "33.3"
+    ]
   }
 ]

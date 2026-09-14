@@ -2904,5 +2904,13 @@
    "31.2"
   ],
   "context": "- Consumer artifacts owned elsewhere and parameterized here: `NTC_CO_SB26_189_ADMT_NOTICE{pre_use, adverse_outcome_explanation}` (21.6), `NTC_SM_AI_INTERACTION_DISCLOSURE` (20.3; UT/CA/CO overlays), `NTC_REGB_1002_9_ADVERSE_ACTION` reason text (21.6). New (owned here): `NTC_CA_CPPA_7220_ADMT_PRE_USE` (California pre-use notice variant; delivered with the 21.3 companion notices for California appli"
+ },
+ {
+  "code": "NTC_SM_PARTNER_BOOK_INVITATION",
+  "owner_process": "33.1",
+  "mentions": [
+   "33.1"
+  ],
+  "context": "4. **The invitation.** Once per provisioned party, `account.invite` renders `NTC_SM_PARTNER_BOOK_INVITATION` by e-mail (channel policy `electronic_ok_without_esign`: the notice is about the account, not a disclosure) with the partner's name, the loan's last four, the sign-in address and the sentence that a code will be sent to this e-mail; by SMS only under the consent rule above. `partner_book.in"
  }
 ]

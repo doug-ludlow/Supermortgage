@@ -1925,6 +1925,50 @@
     "officer",
     "underwriting_reviewer"
    ]
+  },
+  {
+   "agent": "portfolio",
+   "processes": [
+    "33.1"
+   ],
+   "tools": [
+    "book.import",
+    "account.provision",
+    "account.invite",
+    "book.report"
+   ],
+   "escalates_to": [
+    "officer"
+   ]
+  },
+  {
+   "agent": "refi-analyst",
+   "processes": [
+    "33.2"
+   ],
+   "tools": [
+    "review.run",
+    "review.facts",
+    "review.write",
+    "offer.deliver",
+    "offer.expire"
+   ],
+   "escalates_to": [
+    "officer"
+   ]
+  },
+  {
+   "agent": "refi-readiness",
+   "processes": [
+    "33.3"
+   ],
+   "tools": [
+    "readiness.run",
+    "readiness.check",
+    "readiness.read",
+    "refi.open"
+   ],
+   "escalates_to": []
   }
  ],
  "processes": [
@@ -6279,6 +6323,59 @@
     "officer",
     "underwriting_reviewer"
    ]
+  },
+  {
+   "process": "33.1",
+   "agent": "portfolio",
+   "agents_named": [
+    "portfolio"
+   ],
+   "tools": [
+    "book.import",
+    "account.provision",
+    "account.invite",
+    "book.report"
+   ],
+   "guardrails": "never a consumer report, never a payment, statement, escrow or delinquency action on a monitored loan (`LOAN_MONITORED`), never an investor column outside `facts`/`raw`, never a party linked on an unverified e-mail alone, never an SMS without consent evidence (`NO_TCPA_EVIDENCE`), never a destination in a log line or a report (hashes only). Escalations: `ops_analyst` for a rejected file (wrong layout) and for `contact_conflict` rows; `officer` for nothing \u2014 no money field moves here.",
+   "escalates_to": [
+    "officer"
+   ]
+  },
+  {
+   "process": "33.2",
+   "agent": "refi-analyst",
+   "agents_named": [
+    "refi-analyst",
+    "intake",
+    "compliance-sentinel"
+   ],
+   "tools": [
+    "review.run",
+    "review.facts",
+    "review.write",
+    "offer.deliver",
+    "offer.expire"
+   ],
+   "guardrails": "`ANALYST_NEVER_DECIDES` (the verdict, the rate and every figure are the engine's; `review.write` refuses a verdict or a number), `NO_CREDIT_PULL` and `NO_PRESCREEN` (never a consumer report for selection), `NO_INVESTOR_FIELDS` and `NO_PROHIBITED_BASIS` on the row (20.1's), `NO_UNCONSENTED_TEXT_OR_VOICE` (20.2's gates), `PROVENANCE` on the rationale (no figure outside a token). Escalations: `compliance-sentinel` on a missed day; `officer` for the campaign and creative approvals; `ops_analyst` when a loan's facts carry an implausible value.",
+   "escalates_to": [
+    "officer"
+   ]
+  },
+  {
+   "process": "33.3",
+   "agent": "refi-readiness",
+   "agents_named": [
+    "refi-readiness",
+    "compliance-sentinel"
+   ],
+   "tools": [
+    "readiness.run",
+    "readiness.check",
+    "readiness.read",
+    "refi.open"
+   ],
+   "guardrails": "never a vendor order, a consumer report or a card before the homeowner's Yes (`NO_PULL_BEFORE_YES`); never an application without the borrower's own engagement (`YES_REQUIRED`: the actor is the borrower's command or the resolved OfferCard); never a second open application on the same loan; never a figure the agent computed on the application (the candidate's and the borrower's only). Escalations: `compliance-sentinel` on a missed day; `ops_analyst` when an application cannot be opened (no party, no property).",
+   "escalates_to": []
   }
  ]
 }

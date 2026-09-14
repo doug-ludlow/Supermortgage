@@ -11,8 +11,12 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Actor } from "../kernel/events/index.ts";
 import { type ConsoleStore, READ_ONLY_ROLES, CONSOLE_ROLES, maskEmail } from "./store.ts";
+import type { Runtime } from "../runtime/app.ts";
+import { parseMultipart } from "../runtime/borrower/routes.ts";
+import { importPartnerBook, listPartnerBookImports, partnerBookReport, type PartnerBookImportInput } from "../runtime/partner-book.ts";
 
-export interface ConsoleServerOptions { readonly store: ConsoleStore; readonly clock?: { now(): string }; readonly uiHtml?: string; }
+/** `runtime` is what the 33.1 partner-book view needs (the upload runs `importPartnerBook`; the loans list reads the facts); without it those routes answer 501. */
+export interface ConsoleServerOptions { readonly store: ConsoleStore; readonly clock?: { now(): string }; readonly uiHtml?: string; readonly runtime?: Runtime; }
 
 const UI_PATH = fileURLToPath(new URL("./ui/index.html", import.meta.url));
 
@@ -25,6 +29,48 @@ function actorOf(req: IncomingMessage): Actor | null {
 async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = []; for await (const c of req) chunks.push(c as Buffer);
   const text = Buffer.concat(chunks).toString("utf8"); return text ? (JSON.parse(text) as Record<string, unknown>) : {};
+}
+const MAX_UPLOAD = 64 * 1024 * 1024;
+async function raw(req: IncomingMessage): Promise<Buffer> {
+  const chunks: Buffer[] = []; let size = 0;
+  for await (const c of req) { size += (c as Buffer).length; if (size > MAX_UPLOAD) throw new RangeError(`request body over ${MAX_UPLOAD} bytes`); chunks.push(c as Buffer); }
+  return Buffer.concat(chunks);
+}
+const UUID = /^[0-9a-f-]{36}$/i;
+/**
+ * 33.1 (rule 1; docs/ux/17 §6 "the operator's console view"): the upload form's multipart body → the import input. Fields
+ * `partner_legal_name`, `partner_nmlsr_id`, `as_of_date`, `profile` (m3-v1) and the two files `tape` (required) and `supplement`.
+ */
+async function partnerBookUpload(req: IncomingMessage): Promise<PartnerBookImportInput> {
+  const ctype = String(req.headers["content-type"] ?? "");
+  if (!/^multipart\/form-data/i.test(ctype)) throw new RangeError("the upload is multipart/form-data: partner_legal_name, partner_nmlsr_id, as_of_date, profile, tape (file), supplement (file)");
+  const mp = parseMultipart(await raw(req), ctype);
+  const field = (k: string): string => (mp.fields[k] ?? "").trim();
+  const file = (k: string): { filename: string; content: Uint8Array } | undefined => { const f = mp.files.find((x) => x.field === k && x.bytes.length); return f ? { filename: f.filename ?? `${k}.csv`, content: new Uint8Array(f.bytes) } : undefined; };
+  if (!field("partner_legal_name")) throw new RangeError("partner_legal_name is required");
+  if (!field("partner_nmlsr_id")) throw new RangeError("partner_nmlsr_id is required");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(field("as_of_date"))) throw new RangeError("as_of_date is required (YYYY-MM-DD)");
+  const profile = field("profile") || "m3-v1"; if (profile !== "m3-v1") throw new RangeError(`unknown profile ${profile}`);
+  const tape = file("tape"); if (!tape) throw new RangeError("tape file is required");
+  const supplement = file("supplement");
+  return { partner: { legal_name: field("partner_legal_name"), nmlsr_id: field("partner_nmlsr_id"), ...(field("partner_servicer_number") ? { servicer_number: field("partner_servicer_number") } : {}), ...(field("partner_mers_org_id") ? { mers_org_id: field("partner_mers_org_id") } : {}) }, as_of_date: field("as_of_date"), profile, tape, ...(supplement ? { supplement } : {}) };
+}
+/** 33.1 rule 6 / 33.2: every monitored loan with its latest partner facts (the figures the borrower record shows), the primary borrower's party and whether that party has activated (`partner_book.account.activated` logged) — never a destination. */
+async function monitoredLoans(rt: Runtime, partnerPartyId: string | null): Promise<Record<string, unknown>[]> {
+  return rt.db.query(`SELECT l.id::text AS loan_id, l.servicer_loan_number, l.partner_party_id::text AS partner_party_id, pp.legal_name AS partner_name,
+      b.legal_name AS borrower_name, b.party_id, pr.state, pr.city, f.as_of_date,
+      f.facts->>'upb_cents' AS upb_cents, f.facts->>'note_rate_pct' AS note_rate_pct, f.facts->>'pi_cents' AS pi_cents, f.facts->>'ti_cents' AS ti_cents,
+      f.facts->>'next_due_date' AS next_due_date, f.facts->>'last_payment_date' AS last_payment_date, f.facts->>'mba_delinquency_status' AS mba_delinquency_status,
+      (SELECT count(*)::int FROM partner_book_invitations i WHERE i.loan_id = l.id AND i.kind = 'invitation') AS invitations,
+      (SELECT count(*)::int FROM partner_book_invitations i WHERE i.loan_id = l.id AND i.kind = 'reminder') AS reminders,
+      EXISTS (SELECT 1 FROM loan_events e WHERE e.loan_id = l.id AND e.type = 'partner_book.account.activated') AS activated
+    FROM loans l
+    JOIN parties pp ON pp.id = l.partner_party_id
+    LEFT JOIN properties pr ON pr.id = l.property_id
+    LEFT JOIN LATERAL (SELECT bo.legal_name, bo.party_id::text AS party_id FROM loan_borrowers lb JOIN borrowers bo ON bo.id = lb.borrower_id WHERE lb.loan_id = l.id ORDER BY lb.is_primary DESC LIMIT 1) b ON true
+    LEFT JOIN LATERAL (SELECT as_of_date::text AS as_of_date, facts FROM partner_book_facts pf WHERE pf.loan_id = l.id ORDER BY pf.as_of_date DESC, pf.created_at DESC LIMIT 1) f ON true
+    WHERE l.status = 'monitored' AND ($1::uuid IS NULL OR l.partner_party_id = $1::uuid)
+    ORDER BY pp.legal_name, l.servicer_loan_number LIMIT 1000`, [partnerPartyId]);
 }
 const json = (res: ServerResponse, status: number, data: unknown): void => { res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }); res.end(JSON.stringify(data)); };
 
@@ -65,10 +111,26 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
         // 32.14 T18: the entry funnel — counts per stage from loan_events/lead events only (src/console/pg-store.ts funnel)
         if (url.pathname === "/api/funnel") { json(res, 200, await store.funnel({ from: url.searchParams.get("from") ?? new Date(Date.parse(now) - 30 * 86_400_000).toISOString(), to: url.searchParams.get("to") ?? now })); return; }
         if (url.pathname === "/api/dashboard") { json(res, 200, await store.dashboard(now)); return; }
+        // 33.1: the partner book — the imports (newest first), one import's report (per-row exceptions and gap counts, never a destination) and the monitored loans with their latest facts
+        if (url.pathname.startsWith("/api/partner-book/")) {
+          const rt = opts.runtime; if (!rt) { json(res, 501, { error: "the partner book needs the runtime (createConsoleServer({ runtime }))" }); return; }
+          const partner = url.searchParams.get("partner_party_id"); const partnerId = partner && UUID.test(partner) ? partner : null;
+          if (url.pathname === "/api/partner-book/imports") { json(res, 200, { as_of: now, imports: await listPartnerBookImports(rt, partnerId ?? undefined) }); return; }
+          if (url.pathname === "/api/partner-book/loans") { json(res, 200, { as_of: now, loans: await monitoredLoans(rt, partnerId) }); return; }
+          const pm = /^\/api\/partner-book\/imports\/([^/]+)$/.exec(url.pathname);
+          if (pm) { const r = await partnerBookReport(rt, decodeURIComponent(pm[1]!)); if (!r) json(res, 404, { error: "no such import" }); else json(res, 200, r); return; }
+        }
         json(res, 404, { error: "not found" }); return;
       }
       if (req.method === "POST") {
         if (READ_ONLY_ROLES.has(actor.role!)) { json(res, 403, { error: `${actor.role} is read-only` }); return; }
+        // 33.1: the operator uploads the tape and the supplement; the portfolio agent loads, provisions and invites (src/runtime/partner-book.ts importPartnerBook); the actor is the console's human
+        if (url.pathname === "/api/partner-book/imports") {
+          const rt = opts.runtime; if (!rt) { json(res, 501, { error: "the partner book needs the runtime (createConsoleServer({ runtime }))" }); return; }
+          let input: PartnerBookImportInput;
+          try { input = await partnerBookUpload(req); } catch (e) { if (e instanceof RangeError) { json(res, 400, { error: e.message }); return; } throw e; }
+          json(res, 200, await importPartnerBook(rt, input, actor)); return;
+        }
         const b = await body(req);
         const id = String(b["id"] ?? "");
         const evidence = b["evidenceDocumentId"] ? String(b["evidenceDocumentId"]) : null;

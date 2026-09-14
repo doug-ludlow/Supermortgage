@@ -37,6 +37,7 @@ import { BorrowerError } from "./errors.ts";
 import { THREAD_COPY_KEYS } from "./copy-keys.ts";
 import type { BorrowerFlows } from "./flows/index.ts";
 import { SUBJECT_FREE_COMMANDS, TERMINAL_ALLOWED_COMMANDS, terminalStateOf } from "./flows/13-cross-cutting.ts";
+import { MONITORED_REFUSED_COMMANDS, monitoredServicerOf } from "./flows/15-partner-book.ts";
 import { REWRITABLE_COMMANDS } from "../../app/tools/section32-16.ts";
 import type { AgentTurnRequest, AgentTurnReply } from "./agent/turn.ts";
 import { ASKS_IF_HUMAN } from "./agent/guard.ts";
@@ -160,8 +161,15 @@ export class BorrowerCommands {
 
   /** A direct command (02 §7 POST /v1/borrower/commands/{name}). */
   async runCommand(ctx: BorrowerContext, name: string, body: Record<string, unknown>, now: string, cardInstanceId: string | null = null): Promise<CommandOutcome> {
-    if (!CARD_COMMAND_NAMES.has(name)) throw new BorrowerError(404, "COMMAND_UNKNOWN", undefined, `${name} is not a 32.2 or 32.14 command`);
     const wanted = (body["subject"] as { application_id?: string | null; loan_id?: string | null } | undefined) ?? { application_id: typeof body["application_id"] === "string" ? body["application_id"] : null, loan_id: typeof body["loan_id"] === "string" ? body["loan_id"] : null };
+    // 33.1 rule 6: a monitored loan (the partner book) is serviced by the partner — no payment, autopay, escrow or hardship command runs here: LOAN_MONITORED naming the
+    // servicer, before the command-name gate (`escrow.requestAnalysis` is not a 32.2 command) and before any write. The loan is the body's when it is one of the party's own, else the party's first subject.
+    if (MONITORED_REFUSED_COMMANDS.has(name)) {
+      const loanId = wanted.loan_id ? (ctx.subjects.some((s) => s.loan_id === wanted.loan_id) ? wanted.loan_id : null) : wanted.application_id ? null : (ctx.subjects[0]?.loan_id ?? null);
+      const servicer = loanId ? await monitoredServicerOf(this.db, loanId) : null;
+      if (servicer) throw new BorrowerError(409, "LOAN_MONITORED", undefined, `${servicer.partner_name ?? "the servicer of record"} services this loan (33.1 rule 6): ${name} is not available here`);
+    }
+    if (!CARD_COMMAND_NAMES.has(name)) throw new BorrowerError(404, "COMMAND_UNKNOWN", undefined, `${name} is not a 32.2 or 32.14 command`);
     // 20.3 T12 / 32.3 T15: the demographic request exists only on an application — a lead-stage party (no application subject) is refused before anything runs
     if (name === "application.answerDemographics" && !ctx.subjects.some((s) => s.application_id)) throw new BorrowerError(409, "NO_DEMOGRAPHIC_AT_LEAD", undefined, "demographic information is requested only at application (21.1), never at the lead stage");
     // 32.14 DELTA-16 / SUBJECT_FREE_COMMANDS: a signed-in party with no application or loan yet (a Google e-mail not on file) runs a subject-free command — party.linkLoan — on no subject; every other command needs one

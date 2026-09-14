@@ -131,7 +131,8 @@ async function entity(kind: string, id: string): Promise<Record<string, unknown>
   const rows = await db.query<{ data: unknown }>(`SELECT data FROM entity_current WHERE kind = $1 AND id = $2`, [kind, id]);
   return rows[0] ? decodeEntityData(rows[0].data) : null;
 }
-const eventsOf = async (where: string, params: unknown[]) => db.query<{ type: string; loan_id: string | null; application_id: string | null; sequence: string; payload: Record<string, unknown> }>(`SELECT type, loan_id, application_id, sequence::text, payload FROM loan_events WHERE ${where} ORDER BY sequence`, params);
+// ORDER BY the table column, not the `sequence::text` output column a bare `ORDER BY sequence` resolves to (that sorted the log lexicographically — "77" after "510" — as soon as an application's first event had fewer digits than its boarding events)
+const eventsOf = async (where: string, params: unknown[]) => db.query<{ type: string; loan_id: string | null; application_id: string | null; sequence: string; payload: Record<string, unknown> }>(`SELECT type, loan_id, application_id, sequence::text, payload FROM loan_events WHERE ${where} ORDER BY loan_events.sequence`, params);
 
 // ---- fixtures shared by the phases (the sections' own worked examples: $560,000 LCOR at 6.125% / 360 on $800,000 in Phoenix; 45-day lock; consummation Fri Nov 6, 2026; disbursement Thu Nov 12)
 const PARTNER_ID = "partner-1", PROGRAM_ID = `prog-refi-${R}`, CAMPAIGN = `camp-refi-${R}`, CREATIVE = `cr-email-${R}`, SCRUB_ID = `scrub-${R}`, QUOTE = `Q-A-${R}`, FUNDING_ID = `F-${R}`, CLOSING_ID = `CLS-${R}`, SESSION_ID = `SES-${R}`, CONSENT_ID = `CONS-${R}`;

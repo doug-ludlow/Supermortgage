@@ -1,8 +1,10 @@
 # Supermortgage
 
-One platform that acquires, originates and services mortgages, run by agents, with people only where the law puts them.
+Supermortgage is the Self-Improving Mortgage - homeowners are continuously automatically refinanced at the best possible interest rates. The average US homeowner will save nearly $100,000 over the life of their loan by using Supermortgage.
 
-A servicer partner hands us its book and every homeowner on it becomes an account the same minute. An agent reviews each loan every morning against live rates and the partner's own values. When a refinance is worth their attention the offer goes out, the homeowner says Yes to Michelle (the assistant), and the file is assembled, underwritten, closed, funded, delivered to Fannie Mae and boarded without anyone touching a row. The new loan is serviced on the same platform and reviewed again the next morning.
+Supermortgage is a holistic mortgage system - One platform that acquires, originates and services mortgages, run by agents, with people only where the law puts them.
+
+Our initial customer base comes throughout partnerships with Mortgage Service Providers. A servicer partner hands us its book and every homeowner on it becomes a member. An agent reviews each loan every morning against live rates and the partner's own values. When a refinance is worth their attention the offer goes out, the homeowner says yes to our AI Agents, and the file is assembled, underwritten, closed, funded, delivered to Fannie Mae and boarded without anyone touching a single row. The new loan is serviced on the same platform and reviewed again the next morning.
 
 ```
 partner tape → accounts + invitation → daily review → offer → Yes → readiness asks

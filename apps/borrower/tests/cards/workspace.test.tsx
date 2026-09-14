@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 import { WorkspaceHome } from "@/components/workspace/WorkspaceHome";
 import { loadFixture } from "@/lib/fixtures";
 import { copy } from "@/lib/copy";
-import type { AnyCardInstance } from "@/lib/types/cards";
+import type { AnyCardInstance, ResolveRequest } from "@/lib/types/cards";
 
 const user = userEvent.setup();
 const cardMap = (cards: AnyCardInstance[]) => Object.fromEntries(cards.map((c) => [c.card_instance_id, c]));
@@ -44,7 +44,7 @@ describe("docs/ux/18 W1 — Workspace Home", () => {
 
   it("Approvals resolve a PaymentCard through resolveCard (no parallel commit)", async () => {
     const f = loadFixture("servicing");
-    const resolve = vi.fn(async () => undefined);
+    const resolve = vi.fn(async (_card: AnyCardInstance, _req: ResolveRequest) => undefined);
     render(
       <WorkspaceHome
         record={f.record}

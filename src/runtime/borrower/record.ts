@@ -24,6 +24,8 @@ import { DOCUMENT_CLASSES } from "../../domain/verification/ops-22-1.ts";
 import type { Subject } from "../../infra/db/borrower-parties.ts";
 import { MONITORED_REFUSED_COMMANDS } from "./flows/15-partner-book.ts";
 import { REFI_REVIEW_COPY_KEYS, refiReviewReasonKey } from "./copy-keys.ts";   // 33.2 rule 7: the daily review's verdict and reasons as copy keys
+import { readinessCopyKeys } from "./copy-keys.ts";   // 33.3 rule 4: the readiness row's missing items (or the ready line) as copy keys
+import type { ReadinessItemName } from "../partner-book-readiness.ts";   // 33.3: the item names of a readiness_checks row (type only)
 import { journeyProgress, type JourneyProgress } from "./journey-progress.ts";   // 32.16 §2.2 / DELTA-26: the Progress rail section, derived, never stored
 import type { CardInstanceRow, MessageRow } from "../../infra/db/borrower-ui.ts";
 import { rateWatchSection } from "./flows/11-rate-watch.ts";
@@ -104,7 +106,11 @@ export interface BorrowerRecord {
   /** 33.1 rule 6: a monitored loan (the partner book) — the partner as the servicer of record, the loan's last four, the facts' as-of date, and the payment/autopay/escrow/hardship commands the surface lists as unavailable (each refuses LOAN_MONITORED). Null for every other subject. */
   partner_book?: { partner_party_id: string | null; partner_name: string | null; loan_last4: string | null; as_of_date: string | null; monitored: true; commands_unavailable: { command: string; code: "LOAN_MONITORED" }[];
     /** 33.2 rule 7: the latest daily review of the loan (`partner_book_reviews`) — the verdict, the copy keys that say it and its reasons, the watch rate as a token name (its value never leaves the API: the serializer drops `watch_rate_pct`; the turn's tokens fill `{{partner_book.watch_rate}}`), the pending OfferCard when there is one. Null before the first review. */
-    review: PartnerBookReview | null } | null;
+    review: PartnerBookReview | null;
+    /** 33.3 rule 4: the latest readiness row of the loan (mirror of `readiness` below for the loan subject). Null before the first check. */
+    readiness: ReadinessView | null } | null;
+  /** 33.3 rule 4 / T5: the refinance readiness of a monitored loan or of a refinance application opened from one (`readiness_checks`, the latest row) — ready, the missing items in the order asked, the copy keys that say them, the current ask's card among the cards the 32.x flows already opened. Never a figure; null for every other subject and before the first check. */
+  readiness?: ReadinessView | null;
   /** 32.16 §2.2 (DELTA-26): the journey's steps — done / current / upcoming — from the event spine and card_instances (src/runtime/borrower/journey-progress.ts); null for a serviced loan. */
   journey_progress: JourneyProgress | null;
   as_of: string;
@@ -115,6 +121,8 @@ interface Timer { id: string; code: string; status: string; due_at: string | nul
 /** 33.1: what the record reads for a monitored loan — the partner (servicer of record) and the latest partner_book_facts row. */
 interface MonitoredFacts { partner_party_id: string | null; partner_name: string | null; partner_phone: string | null; loan_last4: string | null; as_of_date: string | null; facts: Record<string, unknown> | null }
 /** 33.2 rule 7: what the record carries of the day's review — never a figure of the review's facts (those stay on the row for the examiner). */
+/** 33.3 rule 4: what the record carries of the latest readiness row — the items by name, never the row's sources or dates beyond the as-of (those stay for the examiner). `current_card_instance_id` is the first missing item's pending card among the party's cards — readiness reads, it never opens one. */
+export interface ReadinessView { loan_id: string; application_id: string | null; as_of_date: string; ready: boolean; missing: ReadinessItemName[]; /** `refi.readiness.ready`, or `refi.readiness.missing.<item>` per missing item in order (copy-keys.ts) */ copy_keys: string[]; current_card_instance_id: string | null; readiness_check_id: string }
 export interface PartnerBookReview { as_of_date: string; /** the row's `verdict` — named `outcome` on the wire: `verdict` is a forbidden serializer field (the QC/compliance sense, serialize.ts FORBIDDEN_FIELDS) */ outcome: "candidate" | "watching" | "not_now" | "excluded"; reasons_copy_keys: string[]; watch_rate_token?: "{{partner_book.watch_rate}}"; /** server-side only (dropped by the serializer): the rate the loan would need to see, for the turn's token */ watch_rate_pct?: string; offer_card_instance_id: string | null; opportunity_id: string | null }
 
 const cents = (v: unknown): string | null => (v === undefined || v === null || v === "" ? null : typeof v === "bigint" ? v.toString() : typeof v === "number" ? Math.round(v).toString() : /^-?\d+$/.test(String(v)) ? String(v) : null);
@@ -130,6 +138,22 @@ const addMonth = (d: string): string => { const y = Number(d.slice(0, 4)), m = N
 const withAt = (e: Entity): Record<string, unknown> => ({ ...e.data, updated_at: e.updated_at });
 const latest = <T extends Record<string, unknown>>(rows: T[]): T | undefined => rows.slice().sort((a, b) => String(b["updated_at"] ?? "").localeCompare(String(a["updated_at"] ?? "")))[0];
 
+/** 33.3 rule 4: the card each readiness item is asked through — the ones the 32.3 / 32.11 / 32.18 flows open (identity → the ID scan ConnectCard; ssn → the typed SSN card or 32.11's on-file confirm; income / assets → the Truv / Plaid ConnectCards; esign / credit_authorization / verification_authorization → their ConsentCards; contact → the name-and-e-mail card; value → the value confirm). `credit` is 22.2's order and `account` a sign-in: never a card; `insurance` / `payoff` are conditions after DU. */
+const READINESS_CARD_OF: Readonly<Record<ReadinessItemName, ((c: CardInstanceRow) => boolean) | null>> = {
+  contact: (c) => c.kind === "ConfirmCard" && /contact/.test(c.copy_key),
+  account: null,
+  esign: (c) => c.kind === "ConsentCard" && (c.copy_key.startsWith("consent.esign") || c.props["consent_kind"] === "esign"),
+  credit_authorization: (c) => c.kind === "ConsentCard" && (c.copy_key === "consent.credit.title" || c.props["consent_kind"] === "credit_authorization"),
+  verification_authorization: (c) => c.kind === "ConsentCard" && (c.copy_key.startsWith("consent.verification") || c.props["consent_kind"] === "blanket_verification_authorization"),
+  identity: (c) => c.kind === "ConnectCard" && (c.props["vendor"] === "stripe_identity" || c.copy_key === "identity.stripe.purpose"),
+  ssn: (c) => c.kind === "ConfirmCard" && (c.copy_key === "identity.ssn.title" || c.copy_key === "refi.ssn.confirm"),
+  credit: null,
+  income: (c) => c.kind === "ConnectCard" && (c.props["vendor"] === "truv_income" || c.copy_key === "income.connect.purpose"),
+  assets: (c) => c.kind === "ConnectCard" && (c.props["vendor"] === "plaid_assets" || c.copy_key === "assets.connect.purpose"),
+  value: (c) => c.kind === "ConfirmCard" && (c.copy_key === "refi.value.confirm" || c.copy_key === "value.confirm.title"),
+  insurance: null,
+  payoff: null,
+};
 /** 32.6 §1.3 / §1.5 / 01 §4: the badges under which the Record is read-only. */
 const READ_ONLY_BADGES: ReadonlySet<string> = new Set(["Decision letter sent", "Withdrawn", "Closed", "Transferred out", "Cancelled"]);   // 32.7 §4 / T8: rescinded → the Record is read-only   // 32.12 §2: read-only after cutover
 /** 01 §4 row 9 / 32.6 §2–§5: the Property section's state labels (the state names stay the owning process's; the label is the borrower's). */
@@ -244,6 +268,11 @@ export class BorrowerRecordReader {
     });
     // 33.2 rule 7: the latest daily review of a monitored loan — the verdict and its copy keys; the watch rate stays a token
     const review = monitored ? await this.partnerBookReview(loanId!, party.id, cards) : null;
+    // 33.3 rule 4: the readiness checklist — for the monitored loan itself and for a refinance application opened from one (applications.prior_loan_id on a loan still monitored); the current ask is the first missing item's card among the cards the flows already opened
+    const readinessLoanId = monitored ? loanId! : typeof app?.["prior_loan_id"] === "string" ? await this.monitoredPriorLoan(String(app["prior_loan_id"])) : null;
+    const readiness = readinessLoanId ? await this.readiness(readinessLoanId, cards) : null;
+    // rule 4: the current ask heads the needed-from-you list (the journey the turn reads takes the record's order; the card itself is one the 32.3/32.18 flows opened)
+    if (readiness?.current_card_instance_id) { const k = neededOut.findIndex((n) => n.card_instance_id === readiness.current_card_instance_id); if (k > 0) neededOut.unshift(...neededOut.splice(k, 1)); }
 
     // ---- journey progress (32.16 §2.2): the subject's own cards and the event spine, never stored
     const journey_progress = journeyProgress({ stage, transaction_type, events, cards: cards.filter((c) => (!c.subject_application_id || c.subject_application_id === appId) && (!c.subject_loan_id || c.subject_loan_id === loanId)) });
@@ -258,10 +287,25 @@ export class BorrowerRecordReader {
       return { ran_at: String(findingsEv.payload["received_at"] ?? findingsEv.occurred_at ?? ""), validated, conditions_for_you: yours, checklist_card_instance_id: checklist?.card_instance_id ?? null };
     })() : null;
     // 33.1 rule 6: the partner-book block — the servicer of record, the loan's last four, the facts' as-of date and the commands the surface lists as unavailable
-    const partner_book: BorrowerRecord["partner_book"] = monitored ? { partner_party_id: monitored.partner_party_id, partner_name: monitored.partner_name, loan_last4: monitored.loan_last4, as_of_date: monitored.as_of_date, monitored: true, commands_unavailable: [...MONITORED_REFUSED_COMMANDS].map((command) => ({ command, code: "LOAN_MONITORED" as const })), review } : null;
-    return { subject: subjectOut, status, read_only: READ_ONLY_BADGES.has(status.badge), next, needed_from_you: neededOut, underwriting, what_we_are_doing, needed_summary, numbers, dates, documents, people, property, loan: loanSection, offers: exits && (exits.paidInFull || exits.transfer) ? [] : offers, journey_progress, partner_book, as_of: asOf };   // 32.12: rate-watch ends with the loan
+    const partner_book: BorrowerRecord["partner_book"] = monitored ? { partner_party_id: monitored.partner_party_id, partner_name: monitored.partner_name, loan_last4: monitored.loan_last4, as_of_date: monitored.as_of_date, monitored: true, commands_unavailable: [...MONITORED_REFUSED_COMMANDS].map((command) => ({ command, code: "LOAN_MONITORED" as const })), review, readiness } : null;
+    return { subject: subjectOut, status, read_only: READ_ONLY_BADGES.has(status.badge), next, needed_from_you: neededOut, underwriting, what_we_are_doing, needed_summary, numbers, dates, documents, people, property, loan: loanSection, offers: exits && (exits.paidInFull || exits.transfer) ? [] : offers, journey_progress, partner_book, readiness, as_of: asOf };   // 32.12: rate-watch ends with the loan
   }
 
+  /** 33.3 rule 4: the monitored loan a refinance application was opened from (`applications.prior_loan_id`), while the loan is still monitored — once the refinance funded the loan reads paid_off and the rows stop (rule 5). */
+  private async monitoredPriorLoan(priorLoanId: string): Promise<string | null> {
+    const r = (await this.db.query<{ id: string }>(`SELECT id::text AS id FROM loans WHERE id = $1 AND status = 'monitored'`, [priorLoanId]))[0];
+    return r?.id ?? null;
+  }
+  /** 33.3 rule 4: the latest `readiness_checks` row of the loan (the same order readinessRead takes: newest created_at, then the `partner_book.readiness.checked` sequence within one instant) → ready, the missing items in the order asked, their copy keys, and the first missing item's pending card among the party's cards. */
+  private async readiness(loanId: string, cards: readonly CardInstanceRow[]): Promise<ReadinessView | null> {
+    const row = (await this.db.query<{ id: string; application_id: string | null; as_of_date: string; ready: boolean; missing: unknown }>(`SELECT r.id::text AS id, r.application_id::text AS application_id, r.as_of_date::text AS as_of_date, r.ready, r.missing FROM readiness_checks r LEFT JOIN LATERAL (SELECT max(e.sequence) AS seq FROM loan_events e WHERE e.loan_id = r.loan_id AND e.type = 'partner_book.readiness.checked' AND e.payload->>'readiness_check_id' = r.id::text) ev ON true WHERE r.loan_id = $1 ORDER BY r.created_at DESC, ev.seq DESC NULLS LAST LIMIT 1`, [loanId]))[0];
+    if (!row) return null;
+    const missing = (Array.isArray(row.missing) ? row.missing : []).filter((m): m is ReadinessItemName => typeof m === "string" && m in READINESS_CARD_OF);
+    const pending = cards.filter((c) => c.status === "pending" && (c.kind !== "ConnectCard" || ["not_started", "failed", "in_progress", undefined].includes(c.props["state"] as string | undefined)));
+    let current: string | null = null;
+    for (const m of missing) { const pred = READINESS_CARD_OF[m]; const card = pred ? pending.find(pred) : undefined; if (card) { current = card.card_instance_id; break; } }
+    return { loan_id: loanId, application_id: row.application_id, as_of_date: row.as_of_date, ready: row.ready === true, missing, copy_keys: readinessCopyKeys(row.ready === true, missing), current_card_instance_id: current, readiness_check_id: row.id };
+  }
   /** 33.1 rule 6: the servicer of record (the partner's parties row) and the latest partner_book_facts row of a monitored loan — the record's figures come from here, never from ledger or statements. */
   private async monitoredFacts(loanId: string, loan: Record<string, unknown>): Promise<MonitoredFacts> {
     const partner = loan["partner_party_id"] ? (await this.db.query<{ id: string; legal_name: string; contact: Record<string, unknown> | null }>(`SELECT id, legal_name, contact FROM parties WHERE id = $1`, [loan["partner_party_id"] as string]))[0] : undefined;

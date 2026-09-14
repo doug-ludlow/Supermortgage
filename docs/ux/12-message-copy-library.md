@@ -498,6 +498,20 @@ Format: `key` — **card/message** — text — *notes*.
 - `refi.review.reason.transfer_out_pending` — reason — "The loan is moving to another servicer."
 - `refi.review.reason.delinquent` — reason — "The loan is behind on payments."
 - `refi.review.reason.other` — reason — "Something on the loan holds an offer back today."
+- `refi.readiness.ready` — reply — "Underwriting has what it needs for your refinance. The checklist here shows what comes next." — *33.3 rule 4 / T5: the readiness row reads `ready = true` — the reply points at the checklist card; no figure.*
+- `refi.readiness.missing.contact` — line — "We need an e-mail and a phone number for you." — *33.3 rule 1: `contact` — the contact card is asked first.*
+- `refi.readiness.missing.account` — line — "Sign in once so your account is set up." — *33.3 rule 1: `account` — a sign-in, never a card.*
+- `refi.readiness.missing.esign` — line — "Agree to get your loan documents online." — *33.3 rule 1: `esign` — the E-SIGN consent card.*
+- `refi.readiness.missing.credit_authorization` — line — "Say yes to the credit check on the card here." — *33.3 rule 1: `credit_authorization` — the hard-pull authorization on the goal card (32.17 rule 20).*
+- `refi.readiness.missing.verification_authorization` — line — "Let us check your pay and your accounts when we need to." — *33.3 rule 1: `verification_authorization` — the standing authorization; not required for ready.*
+- `refi.readiness.missing.identity` — line — "Verify who you are with a photo of your ID and a selfie." — *33.3 rule 1: `identity` — the ID scan card; a stale verification is asked once more.*
+- `refi.readiness.missing.ssn` — line — "Type your Social Security number on the card here." — *33.3 rule 1: `ssn` — the one typed field.*
+- `refi.readiness.missing.credit` — line — "We pull your credit report once the items above are in." — *33.3 rule 1: `credit` — 22.2's order; nothing for the borrower to do.*
+- `refi.readiness.missing.income` — line — "Connect your payroll so we can check your income." — *33.3 rule 1: `income` — the payroll card; a standing connection is refreshed, not re-asked.*
+- `refi.readiness.missing.assets` — line — "Link the bank accounts that hold your savings." — *33.3 rule 1: `assets` — the Plaid card.*
+- `refi.readiness.missing.value` — line — "We need a fresh value for your home from your servicer." — *33.3 rule 1: `value` — the partner's facts; nothing for the borrower to do.*
+- `refi.readiness.missing.insurance` — line — "We need proof that your home is insured." — *33.3 rule 1: `insurance` — a condition after underwriting; not required for ready.*
+- `refi.readiness.missing.payoff` — line — "We need the payoff figure from your servicer." — *33.3 rule 1: `payoff` — the partner's facts; not required for ready.*
 
 ## Exits
 

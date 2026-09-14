@@ -19,6 +19,8 @@ const NUMBERS: Shape = { note_rate: true, apr: true, pi_payment_cents: true, esc
   next_due_date: true, last_payment_date: true, as_of_date: true,
   // 32.9 §3 / 7.3: the engine's ARM estimate once the initial notice is sent
   arm_estimate: { basis: true, change_on: true, first_new_payment_due: true, estimated_rate: true, estimated_pi_cents: true, notice_id: true, sent_on: true } };
+/** 33.3 rule 4: the readiness block as it leaves — on the record for a monitored loan and for a refinance application opened from one, mirrored under partner_book for the loan subject. */
+const READINESS: Shape = { loan_id: true, application_id: true, as_of_date: true, ready: true, missing: true, copy_keys: true, current_card_instance_id: true, readiness_check_id: true };
 const RECORD: Shape = {
   subject: { application_id: true, loan_id: true, label: true, transaction_type: true, occupancy: true, stage: true },
   status: { badge: true, state_source: true, one_liner: true, one_liner_tokens: "opaque" },
@@ -38,7 +40,9 @@ const RECORD: Shape = {
   journey_progress: { steps: [{ id: true, label_copy_key: true, state: true, at: true }], done: true, total: true },
   // 33.1 rule 6: the partner-book block of a monitored loan — the servicer of record, the loan's last four, the facts' as-of date, the commands the surface lists as unavailable (never a destination, never the facts row itself)
   // 33.2 rule 7: the daily review's outcome (the row's verdict — `verdict` itself is a forbidden field name here) and its copy keys; the watch rate leaves only as its token name (`watch_rate_token`), never as a figure — the value stays server-side for the turn's tokens
-  partner_book: { partner_party_id: true, partner_name: true, loan_last4: true, as_of_date: true, monitored: true, commands_unavailable: [{ command: true, code: true }], review: { as_of_date: true, outcome: true, reasons_copy_keys: true, watch_rate_token: true, offer_card_instance_id: true } },
+  // 33.3 rule 4: the readiness checklist — ready, the missing items by name in the order asked, their copy keys and the current ask's card; never an item's source row, date or validity (those stay on readiness_checks for the examiner)
+  partner_book: { partner_party_id: true, partner_name: true, loan_last4: true, as_of_date: true, monitored: true, commands_unavailable: [{ command: true, code: true }], review: { as_of_date: true, outcome: true, reasons_copy_keys: true, watch_rate_token: true, offer_card_instance_id: true }, readiness: READINESS },
+  readiness: READINESS,
   as_of: true,
 };
 const HISTORY_ROW: Shape = { kind: true, id: true, payment_id: true, status: true, amount_cents: true, received_on: true, credited_as_of: true, channel: true, designation: true, allocation: { principal_cents: true, interest_cents: true, escrow_cents: true, fees_cents: true },

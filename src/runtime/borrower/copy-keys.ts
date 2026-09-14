@@ -128,6 +128,19 @@ export function refiReviewReasonKey(reason: string): string {
   return REFI_REVIEW_REASON_CODES.includes(code) ? `refi.review.reason.${code}` : REFI_REVIEW_REASON_OTHER_KEY;
 }
 
+/** 33.3 rule 4 / T5: the readiness checklist as the copy library says it — one line per item still missing or stale (`refi.readiness.missing.<item>`, in the order asked) and the one line for a ready file (`refi.readiness.ready`); the situation carries the keys, the model names the items in its own words and points at the current card, never a figure. */
+export type ReadinessCopyItem = "contact" | "account" | "esign" | "credit_authorization" | "verification_authorization" | "identity" | "ssn" | "credit" | "income" | "assets" | "value" | "insurance" | "payoff";
+export const READINESS_COPY_KEYS: Readonly<Record<ReadinessCopyItem, string>> = {
+  contact: "refi.readiness.missing.contact", account: "refi.readiness.missing.account", esign: "refi.readiness.missing.esign", credit_authorization: "refi.readiness.missing.credit_authorization", verification_authorization: "refi.readiness.missing.verification_authorization",
+  identity: "refi.readiness.missing.identity", ssn: "refi.readiness.missing.ssn", credit: "refi.readiness.missing.credit", income: "refi.readiness.missing.income", assets: "refi.readiness.missing.assets", value: "refi.readiness.missing.value", insurance: "refi.readiness.missing.insurance", payoff: "refi.readiness.missing.payoff",
+};
+export const READINESS_READY_KEY = "refi.readiness.ready";
+/** The keys of one readiness row: the ready line alone, or one line per missing item in the row's order (an unknown item name never maps to a key). */
+export function readinessCopyKeys(ready: boolean, missing: readonly string[]): string[] {
+  if (ready) return [READINESS_READY_KEY];
+  return missing.map((m) => READINESS_COPY_KEYS[m as ReadinessCopyItem]).filter((k): k is string => typeof k === "string");
+}
+
 export function copyKeyFor(code: string, gate?: string): string {
   if (gate && GATE_COPY_KEYS[gate]) return GATE_COPY_KEYS[gate]!;
   if (GATE_COPY_KEYS[code]) return GATE_COPY_KEYS[code]!;

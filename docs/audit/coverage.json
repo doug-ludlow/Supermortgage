@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 7845/7864 (99.8%): tids 2152/2165, tables 734/735, timers 2031/2032, notices 307/307, tools 1388/1392, figures 1233/1233; processes at 100%: 183/185",
+ "brief": "spec units built 7856/7864 (99.9%): tids 2158/2165, tables 734/735, timers 2032/2032, notices 307/307, tools 1392/1392, figures 1233/1233; processes at 100%: 184/185",
  "totals": {
   "tids": {
    "spec": 2165,
-   "built": 2152
+   "built": 2158
   },
   "tables": {
    "spec": 735,
@@ -11,7 +11,7 @@
   },
   "timers": {
    "spec": 2032,
-   "built": 2031
+   "built": 2032
   },
   "notices": {
    "spec": 307,
@@ -19,7 +19,7 @@
   },
   "tools": {
    "spec": 1392,
-   "built": 1388
+   "built": 1392
   },
   "figures": {
    "spec": 1233,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 7864,
-   "built": 7845
+   "built": 7856
   }
  },
  "sections": {
@@ -225,9 +225,9 @@
   },
   "33": {
    "spec": 64,
-   "built": 53,
+   "built": 64,
    "processes": 3,
-   "done": 2
+   "done": 3
   }
  },
  "done": [
@@ -413,7 +413,8 @@
   "32.17",
   "32.18",
   "33.1",
-  "33.2"
+  "33.2",
+  "33.3"
  ],
  "processes": [
   {
@@ -7975,16 +7976,9 @@
    "title": "Refinance readiness: what a refinance needs, what is on file, what is asked for",
    "tids": {
     "spec": 6,
-    "built": 0,
-    "todo": 6,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6
-    ]
+    "built": 6,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 1,
@@ -7993,11 +7987,9 @@
    },
    "timers": {
     "spec": 1,
-    "built": 0,
+    "built": 1,
     "armable": 1,
-    "missing": [
-     "SM_PARTNER_BOOK_READINESS_DAILY"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -8006,13 +7998,8 @@
    },
    "tools": {
     "spec": 4,
-    "built": 0,
-    "missing": [
-     "readiness.run",
-     "readiness.check",
-     "readiness.read",
-     "refi.open"
-    ]
+    "built": 4,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -8021,9 +8008,9 @@
    },
    "units": {
     "spec": 12,
-    "built": 1
+    "built": 12
    },
-   "pct": 8.3
+   "pct": 100.0
   }
  ]
 }

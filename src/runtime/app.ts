@@ -14,7 +14,9 @@
  *     per partner program, whose `refi.trigger.run_completed` satisfies SM_REFI_TRIGGER_DAILY before the breach pass
  *     below could breach it), then 33.2's daily review of the partner book (src/runtime/partner-book-review.ts: once per
  *     day at/after 07:00 ET over every monitored loan — the review rows, the analyst's turns, offer delivery and expiry,
- *     `partner_book.review.run_completed` satisfying SM_PARTNER_BOOK_REVIEW_DAILY), the FAKE reviewers when they are on (src/infra/integrations/reviewers.ts, DELTA-30: every
+ *     `partner_book.review.run_completed` satisfying SM_PARTNER_BOOK_REVIEW_DAILY), then 33.3's readiness pass (src/runtime/partner-book-readiness.ts:
+ *     once per day at/after 07:15 ET over every candidate and every open refinance application from a monitored loan — one readiness_checks row each,
+ *     `partner_book.readiness.run_completed` satisfying SM_PARTNER_BOOK_READINESS_DAILY), the FAKE reviewers when they are on (src/infra/integrations/reviewers.ts, DELTA-30: every
  *     pending human item older than the delay approved through its owning tool), then
  *     breach every armed timer whose due instant has passed (timer.breached
  *     events, an escalation per breach to the registry's escalation role) and
@@ -63,6 +65,7 @@ import type { FakeReviewers, FakeReviewerReport } from "../infra/integrations/re
 import { originationServices, type OriginationServiceSet } from "./origination.ts";
 import { refiDailyRun, type RefiDailyReport } from "./refi-daily.ts";
 import { partnerBookReviewRun, type ReviewRunReport } from "./partner-book-review.ts";
+import { readinessRun, type ReadinessRunReport } from "./partner-book-readiness.ts";
 import type { AnalystLlm } from "./partner-book-analyst.ts";
 import { sendPartnerBookReminders } from "./partner-book.ts";
 import type { Logger } from "./log.ts";
@@ -104,6 +107,8 @@ export interface SweepReport {
   readonly reviewers: FakeReviewerReport | null;
   /** 33.2: the daily refinance review of the partner book (src/runtime/partner-book-review.ts partnerBookReviewRun) — after the refinance check, before the breach pass. */
   readonly partner_book_review: ReviewRunReport;
+  /** 33.3: the daily refinance readiness pass over the candidates and the open refinance applications (src/runtime/partner-book-readiness.ts readinessRun) — after the review, before the breach pass. */
+  readonly partner_book_readiness: ReadinessRunReport;
   /** 33.1: the reminders SM_PARTNER_BOOK_INVITATION_REMINDER_14's breach action sent on this pass (src/runtime/partner-book.ts sendPartnerBookReminders). */
   readonly partner_book_reminders: number;
 }
@@ -240,6 +245,10 @@ export class Runtime {
     let partnerBookReview: ReviewRunReport;
     try { partnerBookReview = await partnerBookReviewRun(this, nowIso, { logger: this.logger, llm: this.analystLlm }); }
     catch (e) { const msg = e instanceof Error ? e.message : String(e); this.logger?.error("partner book review run failed", { at: nowIso, error: e }); partnerBookReview = { at: nowIso, as_of_date: nowIso.slice(0, 10) as ReviewRunReport["as_of_date"], ran: false, reason: `failed: ${msg}`, monitored_loans: 0, programs: [], line: `partner book review: failed (${msg})` }; }
+    // 33.3: the daily readiness pass after the review (it reads the day's verdicts) — errors logged, never thrown
+    let partnerBookReadiness: ReadinessRunReport;
+    try { partnerBookReadiness = await readinessRun(this, nowIso, { logger: this.logger }); }
+    catch (e) { const msg = e instanceof Error ? e.message : String(e); this.logger?.error("partner book readiness run failed", { at: nowIso, error: e }); partnerBookReadiness = { checked: 0, ready: 0, not_ready: 0, skipped: `failed: ${msg}`, as_of_date: nowIso.slice(0, 10), ran: false, loans_skipped: [], line: `partner book readiness: failed (${msg})` }; }
     let reviewers: FakeReviewerReport | null = null;
     if (this.reviewers) { try { reviewers = await this.reviewers.tick(this, nowIso); } catch (e) { this.logger?.error("fake reviewers failed", { at: nowIso, error: e }); } }
     const due = await this.uow.timers.due(nowIso);
@@ -268,7 +277,7 @@ export class Runtime {
     let partnerBookReminders = 0;
     try { partnerBookReminders = (await sendPartnerBookReminders(this, nowIso)).sent; } catch (e) { this.logger?.error("partner book reminders failed", { at: nowIso, error: e }); }
     const outbox = await this.db.query<{ adapter: string; status: string; count: string }>(`SELECT adapter, status, count(*)::text AS count FROM integration_messages WHERE status IN ('queued', 'failed') GROUP BY adapter, status ORDER BY adapter, status`).catch(() => []);
-    return { at: nowIso, due: due.length, breaches, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })), refi, reviewers, partner_book_review: partnerBookReview, partner_book_reminders: partnerBookReminders };
+    return { at: nowIso, due: due.length, breaches, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })), refi, reviewers, partner_book_review: partnerBookReview, partner_book_readiness: partnerBookReadiness, partner_book_reminders: partnerBookReminders };
   }
 
   async ready(): Promise<boolean> { try { await this.db.query("SELECT 1"); return true; } catch { return false; } }

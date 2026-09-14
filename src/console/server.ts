@@ -55,7 +55,7 @@ async function partnerBookUpload(req: IncomingMessage): Promise<PartnerBookImpor
   const supplement = file("supplement");
   return { partner: { legal_name: field("partner_legal_name"), nmlsr_id: field("partner_nmlsr_id"), ...(field("partner_servicer_number") ? { servicer_number: field("partner_servicer_number") } : {}), ...(field("partner_mers_org_id") ? { mers_org_id: field("partner_mers_org_id") } : {}) }, as_of_date: field("as_of_date"), profile, tape, ...(supplement ? { supplement } : {}) };
 }
-/** 33.1 rule 6 / 33.2: every monitored loan with its latest partner facts (the figures the borrower record shows), the primary borrower's party and whether that party has activated (`partner_book.account.activated` logged) — never a destination. */
+/** 33.1 rule 6 / 33.2 / 33.3: every monitored loan with its latest partner facts (the figures the borrower record shows), the primary borrower's party and whether that party has activated (`partner_book.account.activated` logged), the latest daily review (verdict, reasons, the analyst's rationale or why it was skipped — 33.2) and the latest readiness row (ready, missing, the refinance application — 33.3) — never a destination. */
 async function monitoredLoans(rt: Runtime, partnerPartyId: string | null): Promise<Record<string, unknown>[]> {
   return rt.db.query(`SELECT l.id::text AS loan_id, l.servicer_loan_number, l.partner_party_id::text AS partner_party_id, pp.legal_name AS partner_name,
       b.legal_name AS borrower_name, b.party_id, pr.state, pr.city, f.as_of_date,
@@ -63,14 +63,22 @@ async function monitoredLoans(rt: Runtime, partnerPartyId: string | null): Promi
       f.facts->>'next_due_date' AS next_due_date, f.facts->>'last_payment_date' AS last_payment_date, f.facts->>'mba_delinquency_status' AS mba_delinquency_status,
       (SELECT count(*)::int FROM partner_book_invitations i WHERE i.loan_id = l.id AND i.kind = 'invitation') AS invitations,
       (SELECT count(*)::int FROM partner_book_invitations i WHERE i.loan_id = l.id AND i.kind = 'reminder') AS reminders,
-      EXISTS (SELECT 1 FROM loan_events e WHERE e.loan_id = l.id AND e.type = 'partner_book.account.activated') AS activated
+      EXISTS (SELECT 1 FROM loan_events e WHERE e.loan_id = l.id AND e.type = 'partner_book.account.activated') AS activated,
+      rv.as_of_date AS review_as_of_date, rv.verdict AS review_verdict, rv.reasons AS review_reasons, rv.analyst->>'rationale' AS review_rationale, rv.analyst->>'skipped' AS review_analyst_skipped, rv.analyst->'flags' AS review_flags,
+      rc.as_of_date AS readiness_as_of_date, rc.ready AS readiness_ready, rc.missing AS readiness_missing, rc.application_id AS readiness_application_id, rc.created_at AS readiness_checked_at
     FROM loans l
     JOIN parties pp ON pp.id = l.partner_party_id
     LEFT JOIN properties pr ON pr.id = l.property_id
     LEFT JOIN LATERAL (SELECT bo.legal_name, bo.party_id::text AS party_id FROM loan_borrowers lb JOIN borrowers bo ON bo.id = lb.borrower_id WHERE lb.loan_id = l.id ORDER BY lb.is_primary DESC LIMIT 1) b ON true
     LEFT JOIN LATERAL (SELECT as_of_date::text AS as_of_date, facts FROM partner_book_facts pf WHERE pf.loan_id = l.id ORDER BY pf.as_of_date DESC, pf.created_at DESC LIMIT 1) f ON true
+    LEFT JOIN LATERAL (SELECT as_of_date::text AS as_of_date, verdict, reasons, analyst FROM partner_book_reviews r WHERE r.loan_id = l.id ORDER BY r.as_of_date DESC, r.created_at DESC LIMIT 1) rv ON true
+    LEFT JOIN LATERAL (SELECT as_of_date::text AS as_of_date, ready, missing, application_id::text AS application_id, created_at::text AS created_at FROM readiness_checks c WHERE c.loan_id = l.id ORDER BY c.created_at DESC LIMIT 1) rc ON true
     WHERE l.status = 'monitored' AND ($1::uuid IS NULL OR l.partner_party_id = $1::uuid)
     ORDER BY pp.legal_name, l.servicer_loan_number LIMIT 1000`, [partnerPartyId]);
+}
+/** 33.3 audit and evidence: one monitored loan's readiness rows by date with each item's source row, as-of and validity (the examiner's view), oldest first. */
+async function readinessRows(rt: Runtime, loanId: string): Promise<Record<string, unknown>[]> {
+  return rt.db.query(`SELECT r.id::text AS id, r.party_id::text AS party_id, r.application_id::text AS application_id, r.as_of_date::text AS as_of_date, r.items, r.ready, r.missing, r.decision_id::text AS decision_id, r.created_at::text AS created_at FROM readiness_checks r LEFT JOIN LATERAL (SELECT max(e.sequence) AS seq FROM loan_events e WHERE e.loan_id = r.loan_id AND e.type = 'partner_book.readiness.checked' AND e.payload->>'readiness_check_id' = r.id::text) ev ON true WHERE r.loan_id = $1 ORDER BY r.created_at, ev.seq NULLS FIRST, r.id`, [loanId]);
 }
 const json = (res: ServerResponse, status: number, data: unknown): void => { res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }); res.end(JSON.stringify(data)); };
 
@@ -117,6 +125,9 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
           const partner = url.searchParams.get("partner_party_id"); const partnerId = partner && UUID.test(partner) ? partner : null;
           if (url.pathname === "/api/partner-book/imports") { json(res, 200, { as_of: now, imports: await listPartnerBookImports(rt, partnerId ?? undefined) }); return; }
           if (url.pathname === "/api/partner-book/loans") { json(res, 200, { as_of: now, loans: await monitoredLoans(rt, partnerId) }); return; }
+          // 33.3: the readiness rows of one monitored loan (the examiner's view — every item with its source, as-of and validity)
+          const rm = /^\/api\/partner-book\/loans\/([^/]+)\/readiness$/.exec(url.pathname);
+          if (rm) { const id = decodeURIComponent(rm[1]!); if (!UUID.test(id)) { json(res, 400, { error: "loan_id is a uuid" }); return; } json(res, 200, { as_of: now, loan_id: id, rows: await readinessRows(rt, id) }); return; }
           const pm = /^\/api\/partner-book\/imports\/([^/]+)$/.exec(url.pathname);
           if (pm) { const r = await partnerBookReport(rt, decodeURIComponent(pm[1]!)); if (!r) json(res, 404, { error: "no such import" }); else json(res, 200, r); return; }
         }

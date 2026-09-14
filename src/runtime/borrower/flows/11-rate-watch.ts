@@ -239,6 +239,7 @@ async function yesCardFor(deps: FlowDeps, loanId: string, opportunityId: string)
 }
 async function convert(deps: FlowDeps, ctx: LoanCtx, opportunityId: string, leadId: string, engaged: DomainEvent): Promise<void> {
   const opp = opportunityOf(ctx, opportunityId); const loan = ctx.loan; const row = universeOf(ctx);
+  // 33.3 rule 3: a monitored loan (the partner book, 33.1) has no origination application — its Yes is opened by `refiOpen` (src/runtime/partner-book-readiness.ts, called from flows/16-readiness.ts on the same event); this convert defers and returns here
   if (!opp || !loan || !ctx.loan?.origination_application_id) return;
   // only the borrower's own Yes on the card converts here (an ops-driven engagement converts through 20.3's own path): the engagement was written by the borrower command surface (32.2 offer.respond) or the resolved OfferCard says yes
   const lead = ctx.store.get("leads", leadId)?.data as P | undefined;

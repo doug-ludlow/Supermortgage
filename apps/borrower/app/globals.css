@@ -1495,6 +1495,7 @@ a.sm-brand {
 }
 .sm-shell[data-surface="workspace"] .sm-body {
   grid-template-columns: minmax(0, 1fr);
+  overflow: hidden; /* Workspace scrolls inside this row; do not paint under the disclosure footer */
 }
 .sm-shell[data-surface="workspace"] .sm-drawer-btn {
   display: inline-flex;
@@ -1507,6 +1508,7 @@ a.sm-brand {
 .sm-workspace-main {
   min-height: 0;
   min-width: 0;
+  height: 100%;
   overflow: auto;
   background: var(--sm-bg);
 }

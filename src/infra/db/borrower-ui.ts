@@ -111,6 +111,18 @@ export class PgBorrowerUiRepository {
     await q.query(`INSERT INTO card_instance_events (card_instance_id, from_status, to_status, at, actor, evidence) VALUES ($1, $2, $3, $4, $5, $6::jsonb)`, [id, before.status, to, at, actor, evidence ? toJson(evidence) : null]);
     return rows[0]!;
   }
+  /**
+   * 32.12 §3: a deliberate withdrawal of a card by the platform — an informational notice card another flow filed for a party who must not receive it
+   * (a confirmed successor who declined the borrower's notices). Unlike the sweeps in transitionCard it also takes a `resolved` row: informational cards
+   * resolve on delivery and no party ever resolves them, so there is no concurrent resolve to protect. Logged as pending|resolved → cancelled.
+   */
+  async withdrawCard(id: string, actor: string, at: string, evidence: Record<string, unknown> | null = null, q: Queryable = this.db): Promise<CardInstanceRow> {
+    const before = await this.card(id, q); if (!before) throw new RangeError(`no card ${id}`);
+    const rows = await q.query<CardInstanceRow & Record<string, unknown>>(`UPDATE card_instances SET status = 'cancelled', evidence = COALESCE($2::jsonb, evidence) WHERE card_instance_id = $1 AND status IN ('pending', 'resolved') RETURNING ${CARD_COLS}`, [id, evidence ? toJson(evidence) : null]);
+    if (!rows[0]) return before;
+    await q.query(`INSERT INTO card_instance_events (card_instance_id, from_status, to_status, at, actor, evidence) VALUES ($1, $2, 'cancelled', $3, $4, $5::jsonb)`, [id, before.status, at, actor, evidence ? toJson(evidence) : null]);
+    return rows[0]!;
+  }
 
   /** 01 §6.5: a random token → target; expires in 7 days; never encodes loan data (the target is a row, not a payload). */
   async createDeepLink(i: { token?: string; party_id: string; target: DeepLinkTarget; now: string; created_for_message_id?: string | null; single_use?: boolean; expires_at?: string }, q: Queryable = this.db): Promise<DeepLinkRow> {

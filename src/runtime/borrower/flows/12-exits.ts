@@ -131,7 +131,7 @@ async function sendToAll(deps: FlowDeps, ctx: Ctx, c: CardSpec, parties: readonl
 async function withdrawStatementsFromDeclined(deps: FlowDeps, ctx: Ctx): Promise<void> {
   if (!ctx.declined.size) return;
   const rows = await deps.runtime.db.query<{ card_instance_id: string; party_id: string; status: string }>(`SELECT card_instance_id, party_id, status FROM card_instances WHERE subject_loan_id = $1 AND party_id = ANY($2::uuid[]) AND status IN ('pending', 'resolved') AND (props->>'notice_code' ~ 'STMT' OR props->>'notice_code' ~ 'STATEMENT')`, [ctx.loanId, [...ctx.declined]]);
-  for (const r of rows) await deps.ui.transitionCard(r.card_instance_id, "cancelled", "system", ctx.now, { reason: "successor_declined_notices", rule: "4.4 NTC_REGX_32C_SII_ACK choice (32.12 §3)", resolved_by: "system:flow-32.12" });
+  for (const r of rows) await deps.ui.withdrawCard(r.card_instance_id, "system", ctx.now, { reason: "successor_declined_notices", rule: "4.4 NTC_REGX_32C_SII_ACK choice (32.12 §3)", resolved_by: "system:flow-32.12" });
 }
 const StatusCard = (copy_key: string, flow_key: string, props: P = {}): CardSpec => ({ kind: "StatusCard", copy_key, props: { state_label: "", ...props }, flow_key, informational: true });
 const NoticeCard = (copy_key: string, flow_key: string, notice_code: string, props: P = {}): CardSpec => ({ kind: "NoticeCard", copy_key, props: { notice_code, title: "", rendered_document_id: randomUUID(), plain_language: "", line: "", template_version: null, channel: "app", ...props }, flow_key, informational: true });

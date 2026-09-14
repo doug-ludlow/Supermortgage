@@ -20,21 +20,21 @@ From `npm run audit` (`tools/audit.py`), which measures the tree against `spec/r
 
 | Unit of the spec | Built / spec |
 |---|---|
-| T-numbered acceptance tests, one verbatim `node:test` each | 2,152 / 2,165 |
+| T-numbered acceptance tests, one verbatim `node:test` each | 2,158 / 2,165 |
 | Data-model tables created by a migration | 734 / 735 |
 | Timer codes the engine can arm and satisfy | 2,032 / 2,032 |
 | Notice templates authored with content rules | 307 / 307 |
 | Agent tools registered as commands on the bus | 1,392 / 1,392 |
 | Worked-example money figures reproduced by a test | 1,233 / 1,233 |
-| **All spec units** | **7,850 / 7,864 (99.8%)** |
-| Processes at 100% of their units | 183 / 185 |
+| **All spec units** | **7,856 / 7,864 (99.9%)** |
+| Processes at 100% of their units | 184 / 185 |
 
 | Area | Sections | Units built / spec |
 |---|---|---|
 | Servicing | §1–§19 | 4,583 / 4,583 |
 | Origination | §20–§31 | 2,863 / 2,863 |
 | Borrower experience | §32 | 346 / 354 |
-| The partner book | §33 | 58 / 64 (33.3 in build) |
+| The partner book | §33 | 64 / 64 |
 
 After every deploy a real browser with the real model walks the deployed demo and checks ten things a person must see work (`apps/borrower/tests/walk/demo-walk.mts`); a failed outcome fails the deploy. That walk, not the fractions, is the platform's claim that the surface works.
 
@@ -46,7 +46,7 @@ After every deploy a real browser with the real model walks the deployed demo an
 
 **Borrower experience (section 32).** The doors (e-mail or phone code, password, passkey, OIDC), the conversation with Michelle, the cards, the record, the journey, the model turn with its guard (no figure the model typed, no DU or credit words, no approval language), the video agent, and the DU moment: the platform pulls credit and runs DU itself the moment the six items are in.
 
-**The partner book (section 33).** 33.1: a partner's tape (the first partner's 118-column layout) and its e-mail/phone supplement become monitored loans and real accounts with an invitation and a reminder; the partner keeps servicing them. 33.2: the daily refinance review — 20.1's engine over the partner's facts, an analyst that writes the reason in plain words but cannot decide, offers delivered through the marketing gates and expired. 33.3 (in build): refinance readiness — what a refinance needs, what is on file and how fresh, the Yes that opens the refinance from a monitored loan, and the asks until DU runs.
+**The partner book (section 33).** 33.1: a partner's tape (the first partner's 118-column layout) and its e-mail/phone supplement become monitored loans and real accounts with an invitation and a reminder; the partner keeps servicing them. 33.2: the daily refinance review — 20.1's engine over the partner's facts, an analyst that writes the reason in plain words but cannot decide, offers delivered through the marketing gates and expired. 33.3: refinance readiness — what a refinance needs, what is on file and how fresh, the Yes that opens the refinance from a monitored loan, and the asks until DU runs.
 
 **Surfaces.**
 
@@ -142,7 +142,7 @@ The process is spec-first and measured; the rules are in [CLAUDE.md](CLAUDE.md).
 
 ## Next
 
-1. 33.3 refinance readiness (in build), then regular tapes on 33.1: a loan that disappears from a later tape is held and resolved by a person, a late tape breaches a clock, a late e-mail gets a late invitation.
+1. Regular tapes on 33.1: a loan that disappears from a later tape is held and resolved by a person, a late tape breaches a clock, a late e-mail gets a late invitation.
 2. Section 34, the operator portal: staff sign-in with roles, the account directory and every person's activity, partner book operations, evidence and controls. Internal only.
 3. The partner book seeded on the deployed demo and an eleventh walk outcome: a homeowner from the book signs in from the invitation, says Yes, and reaches DU.
 4. The path to production in [docs/DEPLOY.md](docs/DEPLOY.md), and the first real vendor adapter on the nonprod path.

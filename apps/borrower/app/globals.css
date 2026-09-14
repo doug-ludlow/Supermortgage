@@ -250,6 +250,7 @@ a {
   grid-template-rows: minmax(0, 1fr); /* Thread and Record scroll inside the body, never past it */
   min-height: 0;
   min-width: 0;
+  overflow: hidden;
 }
 @media (max-width: 1279px) {
   .sm-body {

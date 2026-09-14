@@ -34,7 +34,7 @@ import { addBusinessDays, regzSpecific } from "../../kernel/calendar/business.ts
 import { wallClock } from "../../kernel/calendar/zoned.ts";
 import type { Actor, DomainEvent, EventStore } from "../../kernel/events/index.ts";
 import { prepaidInterest } from "../orig-boarding/ops-30-2.ts";
-import { type QuoteContext, type QuoteInputs, type PricingQuote, type Occupancy, type PropertyType, type TransactionType, priceQuote, rateFromPct, pctOfCents } from "./ops-20-4.ts";
+import { type QuoteContext, type QuoteInputs, type PricingQuote, type Occupancy, type PropertyType, type TransactionType, priceQuote, costScheduleForState, rateFromPct, pctOfCents } from "./ops-20-4.ts";
 
 export const INTAKE_AGENT: Actor = { kind: "agent", id: "intake" };
 export const RULE_SET_VERSION_20_1 = "sm.refi_trigger.v1";
@@ -118,7 +118,7 @@ export function assertInvestorBlind(row: Record<string, unknown>): void {
 
 // ============================================================ the universe (rule 1)
 export type MiStatus = "none" | "bpmi_active" | "lpmi" | "cancelled" | "terminated";
-export interface ValueEstimate { readonly source: "origination_indexed" | "avm"; readonly value_cents: Cents; readonly as_of: PlainDate; readonly confidence: "high" | "medium" | "low"; }
+export interface ValueEstimate { readonly source: "origination_indexed" | "avm" | "partner_fmv" | "partner_bpo" | "partner_appraisal"; readonly value_cents: Cents; readonly as_of: PlainDate; readonly confidence: "high" | "medium" | "low"; }
 /** One row of `v_refi_universe` (investor-blind): servicing facts the selection may read plus the candidate-construction inputs. */
 export interface UniverseLoan {
   readonly loan_id: string; readonly partner_id: string; readonly status: "active" | "paid_off" | "foreclosed" | "reo" | "transferred_out" | "repurchased" | "charged_off" | "staged";
@@ -126,7 +126,7 @@ export interface UniverseLoan {
   readonly original_upb_cents: Cents; readonly original_term_months: number; readonly note_rate_pct: string; readonly pi_cents: Cents; readonly payments_made: number; readonly upb_cents: Cents; readonly next_due_date: PlainDate; readonly remaining_term_months: number;
   readonly escrowed: boolean; readonly escrow_monthly_cents: Cents; readonly net_escrow_deposit_estimate_cents: Cents; readonly taxes_annual_cents: Cents | null; readonly insurance_annual_cents: Cents | null;
   readonly mi_status: MiStatus; readonly mi_monthly_cents: Cents; readonly occupancy: Occupancy; readonly property_type: PropertyType; readonly units: 1 | 2 | 3 | 4; readonly property_state: string; readonly county: string; readonly county_limit_cents: Cents | null;
-  readonly value_estimate: ValueEstimate; readonly representative_score: number | null; readonly score_source: "origination_file";
+  readonly value_estimate: ValueEstimate; readonly representative_score: number | null; readonly score_source: "origination_file" | "partner_file";
   readonly regx_days_delinquent: number; readonly bankruptcy_active: boolean; readonly foreclosure_referred: boolean; readonly lossmit_plan_active: boolean; readonly deceased_or_sii_pending: boolean; readonly transfer_out_pending: boolean;
   readonly refi_do_not_solicit: boolean; readonly refi_last_offered_at: string | null; readonly refi_offers_12m: number; readonly arm_first_adjustment_date: PlainDate | null;
 }
@@ -291,7 +291,9 @@ export function candidateQuoteInputs(loan: UniverseLoan, c: CandidateTerms): Quo
 /** Rule 3: `priceCandidate(loan_snapshot, product, lock_days)` — 20.4's pass-through solve; idempotent on (run_id, loan_id, product). The agent never chooses the rate. */
 export function priceCandidate(events: EventStore | null, ctx: QuoteContext, loan: UniverseLoan, c: CandidateTerms, meta: { run_id: string; quoted_at: string }, actor: Actor = INTAKE_AGENT): { candidate: CandidateTerms; quote: PricingQuote } {
   const inputs = candidateQuoteInputs(loan, c);
-  const quote = priceQuote(events, ctx, inputs, { quote_id: `Q-${meta.run_id}-${loan.loan_id}-${c.product_code}-${c.term_months}`, purpose: "candidate", quoted_at: meta.quoted_at, loan_id: loan.loan_id }, actor).quote;
+  // a multi-state universe (the partner book, 33.2): the cost schedule for the loan's own state / transaction / valuation method among those in force, else the context's one (20.4 refuses a state mismatch)
+  const priced = { ...ctx, cost_schedule: costScheduleForState(ctx.cost_schedules, inputs, ctx.cost_schedule) };
+  const quote = priceQuote(events, priced, inputs, { quote_id: `Q-${meta.run_id}-${loan.loan_id}-${c.product_code}-${c.term_months}`, purpose: "candidate", quoted_at: meta.quoted_at, loan_id: loan.loan_id }, actor).quote;
   return { candidate: { ...c, note_rate: quote.note_rate, pi_cents: quote.outcome === "priced" ? quote.pi_cents : null, quote_id: quote.quote_id, prepaid_interest_cents: quote.outcome === "priced" ? quote.prepaid_interest_cents : c.prepaid_interest_cents, prepaid_days: quote.outcome === "priced" ? quote.prepaid_interest_days : c.prepaid_days, cash_back_cents: quote.outcome === "priced" ? c.loan_amount_cents - c.payoff_estimate_cents - quote.prepaid_interest_cents - c.cash_out_requested_cents : c.cash_back_cents }, quote };
 }
 

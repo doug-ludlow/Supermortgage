@@ -15825,7 +15825,7 @@
    },
    {
     "n": 2,
-    "text": "Given loan 1 of the fixture on the first review, then the review's facts read note rate 7.250%, UPB $441,366.13, P&I $3,069.79, value $605,000.00 and LTV 0.7295, the opportunity is `offer_ready` with a candidate at 6.125% and a rate delta of 112.5 basis points, the review's candidate loan amount, candidate P&I, monthly delta and NPV equal the opportunity row's to the cent, and the verdict is `candidate`."
+    "text": "Given loan 1 of the fixture on the first review, then the review's facts read note rate 7.250%, UPB $441,366.13, P&I $3,069.79, value $605,000.00 and LTV 0.7295, the opportunity is `offer_ready` with a candidate at 6.375% (the lowest sheet rate whose premium covers the costs) and a rate delta of 87.5 basis points, the review's candidate loan amount, candidate P&I, monthly delta and NPV equal the opportunity row's to the cent, and the verdict is `candidate`."
    },
    {
     "n": 3,

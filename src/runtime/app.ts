@@ -12,7 +12,9 @@
  *     the daily refinance check when a rate feed is wired (src/runtime/refi-daily.ts: once per calendar day at/after
  *     06:30 ET — the day's rate sheet through 20.4, the universe from `v_refi_universe`, `20.1 emitOfferReady{op=run}`
  *     per partner program, whose `refi.trigger.run_completed` satisfies SM_REFI_TRIGGER_DAILY before the breach pass
- *     below could breach it), the FAKE reviewers when they are on (src/infra/integrations/reviewers.ts, DELTA-30: every
+ *     below could breach it), then 33.2's daily review of the partner book (src/runtime/partner-book-review.ts: once per
+ *     day at/after 07:00 ET over every monitored loan — the review rows, the analyst's turns, offer delivery and expiry,
+ *     `partner_book.review.run_completed` satisfying SM_PARTNER_BOOK_REVIEW_DAILY), the FAKE reviewers when they are on (src/infra/integrations/reviewers.ts, DELTA-30: every
  *     pending human item older than the delay approved through its owning tool), then
  *     breach every armed timer whose due instant has passed (timer.breached
  *     events, an escalation per breach to the registry's escalation role) and
@@ -60,6 +62,8 @@ import type { RateFeedPort } from "../infra/integrations/rates.ts";
 import type { FakeReviewers, FakeReviewerReport } from "../infra/integrations/reviewers.ts";
 import { originationServices, type OriginationServiceSet } from "./origination.ts";
 import { refiDailyRun, type RefiDailyReport } from "./refi-daily.ts";
+import { partnerBookReviewRun, type ReviewRunReport } from "./partner-book-review.ts";
+import type { AnalystLlm } from "./partner-book-analyst.ts";
 import { sendPartnerBookReminders } from "./partner-book.ts";
 import type { Logger } from "./log.ts";
 
@@ -74,6 +78,8 @@ export interface RuntimeDeps {
   readonly rateFeed?: RateFeedPort | null;
   /** DELTA-30: the FAKE reviewers the sweep runs every pass (null / absent → off; `fakeReviewersFromEnv`). */
   readonly reviewers?: FakeReviewers | null;
+  /** 33.2 rule 4: the refinance analyst's model (AnthropicLlm in deploy, the scripted client in tests; null / absent → the turn is skipped `model_off`, never the review). */
+  readonly analystLlm?: AnalystLlm | null;
   readonly logger?: Logger;
 }
 /** A command is scoped to a loan (`loanId`), to an application before funding (`applicationId`), or to both during the 30.2 hand-off. */
@@ -96,6 +102,8 @@ export interface SweepReport {
   readonly refi: RefiDailyReport | null;
   /** The FAKE reviewers' pass (null when they are off). */
   readonly reviewers: FakeReviewerReport | null;
+  /** 33.2: the daily refinance review of the partner book (src/runtime/partner-book-review.ts partnerBookReviewRun) — after the refinance check, before the breach pass. */
+  readonly partner_book_review: ReviewRunReport;
   /** 33.1: the reminders SM_PARTNER_BOOK_INVITATION_REMINDER_14's breach action sent on this pass (src/runtime/partner-book.ts sendPartnerBookReminders). */
   readonly partner_book_reminders: number;
 }
@@ -124,6 +132,7 @@ export class Runtime {
   readonly clock: Clock;
   readonly rateFeed: RateFeedPort | null;
   readonly reviewers: FakeReviewers | null;
+  readonly analystLlm: AnalystLlm | null;
   readonly logger: Logger | undefined;
   readonly uow: PgUnitOfWork;
   readonly entities: PgEntityRepository;
@@ -138,7 +147,7 @@ export class Runtime {
 
   constructor(deps: RuntimeDeps) {
     this.db = deps.db; this.registry = deps.registry; this.agents = deps.agents ?? new AgentRegistry(); this.ports = deps.ports ?? fakePorts(); this.clock = deps.clock ?? systemClock;
-    this.rateFeed = deps.rateFeed ?? null; this.reviewers = deps.reviewers ?? null; this.logger = deps.logger;
+    this.rateFeed = deps.rateFeed ?? null; this.reviewers = deps.reviewers ?? null; this.analystLlm = deps.analystLlm ?? null; this.logger = deps.logger;
     this.noticeRegistry = deps.notices ?? (() => { const r = buildRegistry(); publishAuthored(r); publishSection02(r); registerPreapprovalLetter(r); return r; })();   // 32.8: 2.x's own authored pieces (AUTODRAFT-*, LC-*, SUSP-*) beside the catalog   // DELTA-01: the preapproval letter beside the catalog
     this.uow = new PgUnitOfWork(this.db, this.registry); this.entities = new PgEntityRepository(this.db); this.escalationRepo = new PgEscalationRepository(this.db); this.applications = new PgApplicationRepository(this.db);
     this.bus = new CommandBus(this.agents);
@@ -180,7 +189,8 @@ export class Runtime {
       escalations = new EscalationService(ctx.events, ctx.clock); escalations.seed(openEscalations);
       const notices = this.ports.printMail && this.ports.edelivery ? new NoticeService({ registry: this.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: this.ports.printMail, edelivery: this.ports.edelivery, notices: this.noticeMemory }) : undefined;
       // `agents` (the live registry, so a tool that delegates to another agent's tool keeps the allowlists and AI-off state), `db` (read-only lookups a borrower-surface tool needs) and `deferWrite` (a row committed with the command) ride on the services map
-      const rt: ToolRuntime = { store, escalations, services: { ...this.originationServices.forCommand(ctx, store, escalations), agents: this.agents, db: this.db, deferWrite: (fn: (q: Queryable) => Promise<void>) => { deferred.push(fn); } }, ports: this.ports, ...(notices ? { notices } : {}) };
+      // `runtime` (this) lets a pass-shaped tool (33.2 review.run / offer.deliver / offer.expire) run the runtime pass it wraps — its own units of work, sequential to this command's
+      const rt: ToolRuntime = { store, escalations, services: { ...this.originationServices.forCommand(ctx, store, escalations), agents: this.agents, db: this.db, runtime: this, deferWrite: (fn: (q: Queryable) => Promise<void>) => { deferred.push(fn); } }, ports: this.ports, ...(notices ? { notices } : {}) };
       const cmd = bindTools(rt, this.agents, [def]).get(toolKey(def.process, def.name))!;
       return this.bus.execute(cmd, req.actor, req.input, ctx, { ...(req.run ? { run: req.run } : {}), ...(req.approvedBy ? { approvedBy: req.approvedBy } : {}) });
     }, { clock: this.clock, commit: async (q) => {
@@ -224,8 +234,12 @@ export class Runtime {
     let refi: RefiDailyReport | null = null;
     if (this.rateFeed) {
       try { refi = await refiDailyRun(this, nowIso, { feed: this.rateFeed, logger: this.logger }); }
-      catch (e) { const msg = e instanceof Error ? e.message : String(e); this.logger?.error("refi daily run failed", { at: nowIso, error: e }); refi = { at: nowIso, as_of_date: nowIso.slice(0, 10) as RefiDailyReport["as_of_date"], ran: false, reason: `failed: ${msg}`, rate_sheet: null, universe: { view_rows: 0, loaded: 0, unchanged: 0, skipped: [] }, programs: [], line: `refi daily: failed (${msg})` }; }
+      catch (e) { const msg = e instanceof Error ? e.message : String(e); this.logger?.error("refi daily run failed", { at: nowIso, error: e }); refi = { at: nowIso, as_of_date: nowIso.slice(0, 10) as RefiDailyReport["as_of_date"], ran: false, reason: `failed: ${msg}`, rate_sheet: null, universe: { view_rows: 0, loaded: 0, unchanged: 0, skipped: [], monitored: { rows: 0, skipped: 0, open_offer: 0 } }, programs: [], line: `refi daily: failed (${msg})` }; }
     }
+    // 33.2: the daily review of the partner book after the refinance check (it reads the day's run) — errors logged, never thrown
+    let partnerBookReview: ReviewRunReport;
+    try { partnerBookReview = await partnerBookReviewRun(this, nowIso, { logger: this.logger, llm: this.analystLlm }); }
+    catch (e) { const msg = e instanceof Error ? e.message : String(e); this.logger?.error("partner book review run failed", { at: nowIso, error: e }); partnerBookReview = { at: nowIso, as_of_date: nowIso.slice(0, 10) as ReviewRunReport["as_of_date"], ran: false, reason: `failed: ${msg}`, monitored_loans: 0, programs: [], line: `partner book review: failed (${msg})` }; }
     let reviewers: FakeReviewerReport | null = null;
     if (this.reviewers) { try { reviewers = await this.reviewers.tick(this, nowIso); } catch (e) { this.logger?.error("fake reviewers failed", { at: nowIso, error: e }); } }
     const due = await this.uow.timers.due(nowIso);
@@ -254,7 +268,7 @@ export class Runtime {
     let partnerBookReminders = 0;
     try { partnerBookReminders = (await sendPartnerBookReminders(this, nowIso)).sent; } catch (e) { this.logger?.error("partner book reminders failed", { at: nowIso, error: e }); }
     const outbox = await this.db.query<{ adapter: string; status: string; count: string }>(`SELECT adapter, status, count(*)::text AS count FROM integration_messages WHERE status IN ('queued', 'failed') GROUP BY adapter, status ORDER BY adapter, status`).catch(() => []);
-    return { at: nowIso, due: due.length, breaches, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })), refi, reviewers, partner_book_reminders: partnerBookReminders };
+    return { at: nowIso, due: due.length, breaches, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })), refi, reviewers, partner_book_review: partnerBookReview, partner_book_reminders: partnerBookReminders };
   }
 
   async ready(): Promise<boolean> { try { await this.db.query("SELECT 1"); return true; } catch { return false; } }

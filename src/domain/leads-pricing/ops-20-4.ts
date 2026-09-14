@@ -554,7 +554,13 @@ export function lockWindowCheck(q: Pick<PricingQuote, "valid_until" | "status">,
 // ============================================================ the quote (rule 9: every id and version on the row)
 export type QuotePurpose = "candidate" | "lead_quote" | "lock" | "relock" | "reprice" | "commitment";
 export type QuoteStatus = "draft" | "presented" | "superseded" | "expired" | "locked";
-export interface QuoteContext { readonly sheet: RateSheet; readonly tables: readonly LlpaTable[]; readonly cost_schedule: SmCostSchedule; readonly fee_schedule: FeeSchedule | null; readonly policy?: { residual_credit_cap_bps?: string }; }
+/** The pricing context of one quote. `cost_schedule` is the schedule the quote prices with; `cost_schedules` (optional) is every schedule in force, from which a per-loan caller (20.1 `priceCandidate` over a multi-state universe) picks the one for the loan's state / transaction / valuation method, falling back to `cost_schedule`. */
+export interface QuoteContext { readonly sheet: RateSheet; readonly tables: readonly LlpaTable[]; readonly cost_schedule: SmCostSchedule; readonly cost_schedules?: readonly SmCostSchedule[]; readonly fee_schedule: FeeSchedule | null; readonly policy?: { residual_credit_cap_bps?: string }; }
+/** The cost schedule for a state / transaction type / valuation method among those in force, else `fallback` (20.4 rule 3: a schedule is per state and transaction; `thirdPartyCosts` refuses a mismatch). */
+export function costScheduleForState(schedules: readonly SmCostSchedule[] | undefined, i: { readonly state: string; readonly transaction_type: TransactionType; readonly valuation_method: string }, fallback: SmCostSchedule): SmCostSchedule {
+  const rows = schedules ?? [];
+  return rows.find((s) => s.state === i.state && s.transaction_type === i.transaction_type && s.valuation_method === i.valuation_method) ?? rows.find((s) => s.state === i.state && s.transaction_type === i.transaction_type) ?? fallback;
+}
 export interface QuoteMeta { readonly quote_id: string; readonly purpose: QuotePurpose; readonly quoted_at: string; readonly lead_id?: string | null; readonly application_id?: string | null; readonly loan_id?: string | null; readonly engine_version?: string; }
 export interface PricingQuote extends LlpaResult, SolveResult {
   readonly quote_id: string; readonly lead_id: string | null; readonly application_id: string | null; readonly loan_id: string | null; readonly purpose: QuotePurpose;

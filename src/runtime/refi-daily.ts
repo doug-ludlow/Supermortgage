@@ -40,6 +40,8 @@ import { decodeEntityData } from "../infra/db/entities.ts";
 import type { RateFeedPort } from "../infra/integrations/rates.ts";
 import { INTAKE_AGENT, INVESTOR_FIELDS, NO_GATE_FACTS, RefiRefused, assertInvestorBlind, scheduledUpb, monthsBetween, type GateFacts, type PartnerProgram, type UniverseLoan, type ValueEstimate, type MiStatus } from "../domain/leads-pricing/ops-20-1.ts";
 import { activeSheetAt, type RateSheet, type Occupancy, type PropertyType } from "../domain/leads-pricing/ops-20-4.ts";
+import { monitoredUniverseRows } from "./partner-book-review.ts";
+import { openOffersOf } from "./partner-book-offers.ts";
 import type { Runtime } from "./app.ts";
 import type { Logger } from "./log.ts";
 
@@ -68,13 +70,13 @@ export interface RefiDailyProgramRun {
 export interface RefiDailyReport {
   readonly at: string; readonly as_of_date: PlainDate; readonly ran: boolean; readonly reason: string | null;
   readonly rate_sheet: { rate_sheet_id: string; published: boolean; source: string; price_count: number } | null;
-  readonly universe: { view_rows: number; loaded: number; unchanged: number; skipped: readonly { loan_id: string; reason: string }[] };
+  readonly universe: { view_rows: number; loaded: number; unchanged: number; skipped: readonly { loan_id: string; reason: string }[]; /** 33.2 rule 1: the monitored loans whose rows came from partner_book_facts (never ledger / installments / transfer rows) — rows built, rows skipped (their reasons are in `skipped`) */ monitored: { rows: number; skipped: number; /** 33.2 rule 5: monitored loans held out of the run because an offer is open on them (`offered` and unexpired, or `engaged`) — the row is loaded, the loan is not evaluated again until the offer closes */ open_offer: number } };
   readonly programs: readonly RefiDailyProgramRun[];
   readonly line: string;
 }
 export interface RefiDailyOptions { readonly feed: RateFeedPort; readonly logger?: Logger | undefined; /** run regardless of the wall clock (tests) */ readonly force?: boolean }
 
-const skipped = (nowIso: string, asOf: PlainDate, reason: string, extra: Partial<RefiDailyReport> = {}): RefiDailyReport => ({ at: nowIso, as_of_date: asOf, ran: false, reason, rate_sheet: null, universe: { view_rows: 0, loaded: 0, unchanged: 0, skipped: [] }, programs: [], line: `refi daily ${asOf}: not run (${reason})`, ...extra });
+const skipped = (nowIso: string, asOf: PlainDate, reason: string, extra: Partial<RefiDailyReport> = {}): RefiDailyReport => ({ at: nowIso, as_of_date: asOf, ran: false, reason, rate_sheet: null, universe: { view_rows: 0, loaded: 0, unchanged: 0, skipped: [], monitored: { rows: 0, skipped: 0, open_offer: 0 } }, programs: [], line: `refi daily ${asOf}: not run (${reason})`, ...extra });
 
 /** Has `program_id` completed a run for `asOf` (any scope — the fixture's loan-scoped runs count too)? */
 export async function ranToday(rt: Runtime, asOf: PlainDate, programId: string): Promise<boolean> {
@@ -118,7 +120,7 @@ export async function refiDailyRun(rt: Runtime, nowIso: string, opts: RefiDailyO
 
   // 2. the universe from the view
   const u = await universeFromView(rt, asOf);
-  const universe = { view_rows: u.rows.length, loaded: 0, unchanged: 0, skipped: [...u.skipped] as { loan_id: string; reason: string }[] };
+  const universe = { view_rows: u.rows.length, loaded: 0, unchanged: 0, skipped: [...u.skipped] as { loan_id: string; reason: string }[], monitored: { ...u.monitored } };
   const currentRows = new Map(u.currentRows.map((r) => [r.id, canon(r.data)]));
   const loaded: UniverseLoan[] = [];
   for (const row of u.rows) {
@@ -132,7 +134,7 @@ export async function refiDailyRun(rt: Runtime, nowIso: string, opts: RefiDailyO
   // 3. one run per partner program (the partner's own loans — rule 6), then the decision rows
   const programsOut: RefiDailyProgramRun[] = [];
   for (const p of due) {
-    const mine = loaded.filter((l) => l.partner_id === p.partner_id);
+    const mine = loaded.filter((l) => l.partner_id === p.partner_id && !(l.loan_id in u.open_offers));   // 33.2 rule 5: a monitored loan with an open offer is not evaluated again (one open offer per loan)
     const run_id = runIdFor(asOf, p.program_id);
     try {
       const r = await rt.execute({ process: "20.1", name: "emitOfferReady", loanId: "", actor: INTAKE_AGENT, input: { op: "run", run_id, trigger_kind: "scheduled", program_id: p.program_id, as_of_date: asOf, at: nowIso, loans: mine, gate_facts: Object.fromEntries(mine.map((l) => [l.loan_id, u.facts[l.loan_id] ?? NO_GATE_FACTS])) } });
@@ -156,28 +158,38 @@ export async function refiDailyRun(rt: Runtime, nowIso: string, opts: RefiDailyO
   const inUniverse = programsOut.reduce((a, p) => a + p.loans_in_universe, 0); const evaluated = programsOut.reduce((a, p) => a + p.loans_evaluated, 0); const offers = programsOut.reduce((a, p) => a + p.opportunities_detected, 0);
   const suppressed: Record<string, number> = {}; for (const p of programsOut) for (const [k, v] of Object.entries(p.suppressed_by_reason)) suppressed[k] = (suppressed[k] ?? 0) + v;
   const errors = programsOut.filter((p) => p.error).map((p) => `${p.program_id}: ${p.error}`);
-  const line = `refi daily ${asOf}: sheet=${rate_sheet?.rate_sheet_id ?? "none"}${rate_sheet?.published ? " (published)" : ""} programs=${programsOut.length} view_rows=${universe.view_rows} loaded=${universe.loaded} unchanged=${universe.unchanged} skipped=${universe.skipped.length} universe=${inUniverse} evaluated=${evaluated} offers=${offers} suppressed=${JSON.stringify(suppressed)}${errors.length ? ` errors=${JSON.stringify(errors)}` : ""}`;
+  const line = `refi daily ${asOf}: sheet=${rate_sheet?.rate_sheet_id ?? "none"}${rate_sheet?.published ? " (published)" : ""} programs=${programsOut.length} view_rows=${universe.view_rows} loaded=${universe.loaded} unchanged=${universe.unchanged} skipped=${universe.skipped.length} universe=${inUniverse} evaluated=${evaluated} offers=${offers} suppressed=${JSON.stringify(suppressed)}${universe.monitored.open_offer ? ` monitored_open_offer=${universe.monitored.open_offer}` : ""}${errors.length ? ` errors=${JSON.stringify(errors)}` : ""}`;
   log?.info("refi daily run", { at: nowIso, as_of_date: asOf, rate_sheet, universe: { ...universe, skipped: universe.skipped.length }, programs: programsOut, line });
   return { at: nowIso, as_of_date: asOf, ran: true, reason: null, rate_sheet, universe, programs: programsOut, line };
 }
 
 // ---------------------------------------------------------------- the universe: v_refi_universe + the run-time joins
-export interface UniverseFromView { readonly rows: UniverseLoan[]; readonly facts: Record<string, GateFacts>; readonly skipped: { loan_id: string; reason: string }[]; readonly currentRows: { id: string; data: Row }[] }
+export interface UniverseFromView { readonly rows: UniverseLoan[]; readonly facts: Record<string, GateFacts>; readonly skipped: { loan_id: string; reason: string }[]; readonly currentRows: { id: string; data: Row }[]; /** 33.2 rule 1: the monitored loans' rows (from partner_book_facts) counted — they are among `rows`, their skips among `skipped` */ readonly monitored: { rows: number; skipped: number; open_offer: number }; /** 33.2 rule 5: the monitored loans with an open offer (loan_id → the open opportunity id) — their rows are loaded, they are held out of the engine's run */ readonly open_offers: Record<string, string> }
 const occupancyOf = (v: unknown): Occupancy => { const x = String(v ?? "").toLowerCase(); return x === "second_home" || x === "second" ? "second_home" : x === "investment" || x === "investor" ? "investment" : "primary"; };
 const propertyTypeOf = (v: unknown): PropertyType => { const x = String(v ?? "sfr").toLowerCase(); return (["sfr", "pud", "condo", "coop", "manufactured_home"] as const).find((t) => t === x) ?? (x === "manufactured" ? "manufactured_home" : "sfr"); };
 const unitsOf = (v: unknown): 1 | 2 | 3 | 4 => { const n = Number(v ?? 1); return n === 2 || n === 3 || n === 4 ? n : 1; };
 const ratePct = (bps: unknown): string => (Number(bps ?? 0) / 10_000).toFixed(3);   // loan_terms.note_rate_bps is ×10 (6.375 % = 63750; 0001_baseline)
 const TAX_TYPES = new Set(["county_tax", "city_tax", "school_tax", "other_tax"]); const INS_TYPES = new Set(["hazard", "flood", "wind", "earthquake"]);
 
-/** Every active loan of the investor-blind view with its run-time joins; refuses if the view exposes an investor column. */
+/**
+ * Every active loan of the investor-blind view with its run-time joins; refuses if the view exposes an investor column.
+ * A `monitored` loan (33.1's partner book; the view includes them since 0125) is never joined to the ledger, the
+ * installments, the transfer batch or the origination rows: its row is 33.2 rule 1's, built from the latest
+ * partner_book_facts row by src/runtime/partner-book-review.ts monitoredUniverseRows, and rides beside the serviced rows
+ * through the same `load_row` / run path (gate facts: no purchase date — the partner keeps the loan; the prior decline and
+ * offer history from the loan's own `refi_gate_facts` row).
+ */
 export async function universeFromView(rt: Runtime, asOf: PlainDate): Promise<UniverseFromView> {
   const cols = (await rt.db.query<{ column_name: string }>(`SELECT column_name FROM information_schema.columns WHERE table_name = 'v_refi_universe'`)).map((r) => r.column_name);
   const bad = cols.filter((k) => INVESTOR_FIELDS.includes(k));
   if (bad.length) throw new RefiRefused("investor_field_visible", `v_refi_universe exposes ${bad.join(", ")} — the trigger's read model is investor-blind by construction (B2-1.3-04); the run cannot start`);
-  const view = await rt.db.query<Row>(`SELECT loan_id::text AS loan_id, partner_id::text AS partner_id, status::text AS status, note_date::text AS note_date, consummation_date::text AS consummation_date, first_payment_date::text AS first_payment_date, original_upb_cents::text AS original_upb_cents, original_term_months, amortization::text AS amortization, note_rate_bps, pi_cents::text AS pi_cents, escrow_monthly_cents::text AS escrow_monthly_cents, escrowed, remaining_term_months, maturity_date::text AS maturity_date, property_state, county, occupancy, property_type, units, refi_do_not_solicit, refi_last_offered_at, refi_offers_12m FROM v_refi_universe ORDER BY loan_id`);
+  const allView = await rt.db.query<Row>(`SELECT loan_id::text AS loan_id, partner_id::text AS partner_id, status::text AS status, note_date::text AS note_date, consummation_date::text AS consummation_date, first_payment_date::text AS first_payment_date, original_upb_cents::text AS original_upb_cents, original_term_months, amortization::text AS amortization, note_rate_bps, pi_cents::text AS pi_cents, escrow_monthly_cents::text AS escrow_monthly_cents, escrowed, remaining_term_months, maturity_date::text AS maturity_date, property_state, county, occupancy, property_type, units, refi_do_not_solicit, refi_last_offered_at, refi_offers_12m FROM v_refi_universe ORDER BY loan_id`);
+  const view = allView.filter((r) => String(r["status"]) !== "monitored");
+  const monitoredIds = allView.filter((r) => String(r["status"]) === "monitored").map((r) => String(r["loan_id"]));
   const ids = view.map((r) => String(r["loan_id"]));
+  const allIds = [...ids, ...monitoredIds];
   const skippedOut: { loan_id: string; reason: string }[] = [];
-  if (!ids.length) return { rows: [], facts: {}, skipped: skippedOut, currentRows: [] };
+  if (!allIds.length) return { rows: [], facts: {}, skipped: skippedOut, currentRows: [], monitored: { rows: 0, skipped: 0, open_offer: 0 }, open_offers: {} };
   const [principal, installments, flags, loansExtra, purchased, origValues, origScores, escrow, vendorRows, factRows] = await Promise.all([
     rt.db.query<Row>(`SELECT loan_id::text AS loan_id, sum(amount_cents)::text AS s FROM ledger_lines WHERE scope = 'loan' AND account = 'principal' AND loan_id = ANY($1::uuid[]) GROUP BY loan_id`, [ids]),
     rt.db.query<Row>(`SELECT loan_id::text AS loan_id, min(due_date)::text AS due FROM loan_installments WHERE status = 'due' AND loan_id = ANY($1::uuid[]) GROUP BY loan_id`, [ids]),
@@ -187,8 +199,8 @@ export async function universeFromView(rt: Runtime, asOf: PlainDate): Promise<Un
     rt.db.query<Row>(`SELECT DISTINCT ON (a.loan_id) a.loan_id::text AS loan_id, ap.estimated_value_cents::text AS value_cents, a.created_at::text AS created_at FROM applications a JOIN application_properties ap ON ap.application_id = a.id AND ap.is_subject WHERE a.loan_id = ANY($1::uuid[]) AND ap.estimated_value_cents IS NOT NULL ORDER BY a.loan_id, a.created_at DESC`, [ids]).catch(() => [] as Row[]),
     rt.db.query<Row>(`SELECT DISTINCT ON (a.loan_id) a.loan_id::text AS loan_id, cr.representative_score FROM credit_reports cr JOIN applications a ON a.id = cr.application_id WHERE a.loan_id = ANY($1::uuid[]) AND cr.representative_score IS NOT NULL ORDER BY a.loan_id, cr.report_date DESC`, [ids]).catch(() => [] as Row[]),
     rt.db.query<Row>(`SELECT ea.loan_id::text AS loan_id, el.line_type::text AS line_type, sum(el.annual_amount_cents)::text AS s FROM escrow_lines el JOIN escrow_accounts ea ON ea.id = el.escrow_account_id WHERE el.active AND ea.loan_id = ANY($1::uuid[]) GROUP BY ea.loan_id, el.line_type`, [ids]).catch(() => [] as Row[]),
-    rt.db.query<Row>(`SELECT id, data, loan_id::text AS loan_id FROM entity_current WHERE kind = 'refi_universe' AND id = ANY($1::text[])`, [ids]),
-    rt.db.query<Row>(`SELECT id, data FROM entity_current WHERE kind = 'refi_gate_facts' AND id = ANY($1::text[])`, [ids]),
+    rt.db.query<Row>(`SELECT id, data, loan_id::text AS loan_id FROM entity_current WHERE kind = 'refi_universe' AND id = ANY($1::text[])`, [allIds]),
+    rt.db.query<Row>(`SELECT id, data FROM entity_current WHERE kind = 'refi_gate_facts' AND id = ANY($1::text[])`, [allIds]),
   ]);
   const by = <T extends Row>(rows: readonly T[]): Map<string, T> => new Map(rows.map((r) => [String(r["loan_id"]), r]));
   const principalBy = by(principal), instBy = by(installments), flagsBy = by(flags), extraBy = by(loansExtra), purchasedBy = by(purchased), valueBy = by(origValues), scoreBy = by(origScores);
@@ -245,5 +257,19 @@ export async function universeFromView(rt: Runtime, asOf: PlainDate): Promise<Un
       facts[loan_id] = { fnma_purchase_date: dateOf(purchasedBy.get(loan_id)?.["purchase_date"]) ?? dateOf(prior["fnma_purchase_date"]), declined_on: dateOf(prior["declined_on"]), offered_at: Array.isArray(prior["offered_at"]) ? (prior["offered_at"] as string[]) : [] };
     } catch (e) { skippedOut.push({ loan_id, reason: e instanceof Error ? e.message : String(e) }); }
   }
-  return { rows, facts, skipped: skippedOut, currentRows };
+  // 33.2 rule 1: the monitored loans' rows from the partner's facts — the gate facts carry no purchase date (the loan was never purchased through 29.4) and the loan's own decline / offer history
+  const monitored = { rows: 0, skipped: 0, open_offer: 0 }; const open_offers: Record<string, string> = {};
+  if (monitoredIds.length) {
+    const m = await monitoredUniverseRows(rt, asOf);
+    // 33.2 rule 5: one open offer per loan — a monitored loan whose offer is open (`offered` and unexpired, or `engaged`) keeps its row current but is held out of the run (no duplicate offer_ready, no second touch, no SM_REFI_OFFER_SLA_2BD on an undelivered duplicate); the review pass continues the open offer
+    for (const [loanId, o] of await openOffersOf(rt.db, monitoredIds, asOf)) open_offers[loanId] = o.opportunity_id;
+    for (const row of m.rows) {
+      if (!monitoredIds.includes(row.loan_id)) continue;
+      rows.push(row); monitored.rows += 1; if (row.loan_id in open_offers) monitored.open_offer += 1;
+      const prior = factsBy.get(row.loan_id) ?? {};
+      facts[row.loan_id] = { fnma_purchase_date: null, declined_on: dateOf(prior["declined_on"]), offered_at: Array.isArray(prior["offered_at"]) ? (prior["offered_at"] as string[]) : [] };
+    }
+    for (const sk of m.skipped) { skippedOut.push({ loan_id: sk.loan_id, reason: `monitored: ${sk.reason}` }); monitored.skipped += 1; }
+  }
+  return { rows, facts, skipped: skippedOut, currentRows, monitored, open_offers };
 }

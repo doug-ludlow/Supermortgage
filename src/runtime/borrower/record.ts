@@ -23,6 +23,7 @@ import { decodeEntityData } from "../../infra/db/entities.ts";
 import { DOCUMENT_CLASSES } from "../../domain/verification/ops-22-1.ts";
 import type { Subject } from "../../infra/db/borrower-parties.ts";
 import { MONITORED_REFUSED_COMMANDS } from "./flows/15-partner-book.ts";
+import { REFI_REVIEW_COPY_KEYS, refiReviewReasonKey } from "./copy-keys.ts";   // 33.2 rule 7: the daily review's verdict and reasons as copy keys
 import { journeyProgress, type JourneyProgress } from "./journey-progress.ts";   // 32.16 §2.2 / DELTA-26: the Progress rail section, derived, never stored
 import type { CardInstanceRow, MessageRow } from "../../infra/db/borrower-ui.ts";
 import { rateWatchSection } from "./flows/11-rate-watch.ts";
@@ -101,7 +102,9 @@ export interface BorrowerRecord {
   loan: Record<string, unknown> | null;
   offers: Record<string, unknown>[];
   /** 33.1 rule 6: a monitored loan (the partner book) — the partner as the servicer of record, the loan's last four, the facts' as-of date, and the payment/autopay/escrow/hardship commands the surface lists as unavailable (each refuses LOAN_MONITORED). Null for every other subject. */
-  partner_book?: { partner_party_id: string | null; partner_name: string | null; loan_last4: string | null; as_of_date: string | null; monitored: true; commands_unavailable: { command: string; code: "LOAN_MONITORED" }[] } | null;
+  partner_book?: { partner_party_id: string | null; partner_name: string | null; loan_last4: string | null; as_of_date: string | null; monitored: true; commands_unavailable: { command: string; code: "LOAN_MONITORED" }[];
+    /** 33.2 rule 7: the latest daily review of the loan (`partner_book_reviews`) — the verdict, the copy keys that say it and its reasons, the watch rate as a token name (its value never leaves the API: the serializer drops `watch_rate_pct`; the turn's tokens fill `{{partner_book.watch_rate}}`), the pending OfferCard when there is one. Null before the first review. */
+    review: PartnerBookReview | null } | null;
   /** 32.16 §2.2 (DELTA-26): the journey's steps — done / current / upcoming — from the event spine and card_instances (src/runtime/borrower/journey-progress.ts); null for a serviced loan. */
   journey_progress: JourneyProgress | null;
   as_of: string;
@@ -111,10 +114,14 @@ interface Entity { kind: string; id: string; data: Record<string, unknown>; upda
 interface Timer { id: string; code: string; status: string; due_at: string | null; due_date: string | null; armed_at: string }
 /** 33.1: what the record reads for a monitored loan — the partner (servicer of record) and the latest partner_book_facts row. */
 interface MonitoredFacts { partner_party_id: string | null; partner_name: string | null; partner_phone: string | null; loan_last4: string | null; as_of_date: string | null; facts: Record<string, unknown> | null }
+/** 33.2 rule 7: what the record carries of the day's review — never a figure of the review's facts (those stay on the row for the examiner). */
+export interface PartnerBookReview { as_of_date: string; /** the row's `verdict` — named `outcome` on the wire: `verdict` is a forbidden serializer field (the QC/compliance sense, serialize.ts FORBIDDEN_FIELDS) */ outcome: "candidate" | "watching" | "not_now" | "excluded"; reasons_copy_keys: string[]; watch_rate_token?: "{{partner_book.watch_rate}}"; /** server-side only (dropped by the serializer): the rate the loan would need to see, for the turn's token */ watch_rate_pct?: string; offer_card_instance_id: string | null; opportunity_id: string | null }
 
 const cents = (v: unknown): string | null => (v === undefined || v === null || v === "" ? null : typeof v === "bigint" ? v.toString() : typeof v === "number" ? Math.round(v).toString() : /^-?\d+$/.test(String(v)) ? String(v) : null);
 const rate = (v: unknown): string | null => (v === undefined || v === null || v === "" ? null : String(v));
 const bpsToPct = (bps: unknown): string | null => (bps === undefined || bps === null ? null : (Number(bps) / 10_000).toFixed(3));   // loan_terms.note_rate_bps 61250 → "6.125"; a decimal string, never a float on the wire
+/** A rate as 20.1 / 20.4 write it — a fraction ("0.06375"), a percent ("6.375") or bps (63750) — rendered "6.375" (the rate-watch block's own convention, flows/11-rate-watch.ts pct). */
+const pctOf = (v: unknown): string | null => { if (v === undefined || v === null || v === "") return null; const n = Number(v); if (!Number.isFinite(n)) return null; return (n < 1 ? n * 100 : n > 100 ? n / 10_000 : n).toFixed(3); };
 const firstName = (legal: string): string => legal.split(/\s+/)[0] ?? legal;
 const USD = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const money = (v: unknown): string => { const c = cents(v); return c === null ? "" : USD.format(Number(BigInt(c)) / 100); };
@@ -227,8 +234,16 @@ export class BorrowerRecordReader {
     // 32.11 §1 / §5: the Rate-watch block (passive until an opportunity exists) and the standing connections (DELTA-05) on the Loan section — src/runtime/borrower/flows/11-rate-watch.ts
     if (loanSection && exits) Object.assign(loanSection, exitsLoanFields(exits, events, loanSection["autodraft"] as Record<string, unknown> | undefined));   // 32.12: autopay end / termination, rate-watch void
     if (loanSection && loan) Object.assign(loanSection, await rateWatchSection(this.db, { loanId: loanId!, partyId: party.id, note_rate_bps: loan["note_rate_bps"], product_code: (loan["product_code"] as string | null | undefined) ?? null, opportunities: byKind("refi_opportunities").map((o) => o.data), cards, asOf }));
-    const offers = byKind("refi_opportunities").filter((o) => ["offer_ready", "offered", "engaged"].includes(String(o.data["status"]))).map((o) => ({ refi_opportunity_id: o.id, status: o.data["status"], offered_at: o.data["offered_at"] ?? o.data["created_at"] ?? null, expires_at: o.data["expires_at"] ?? o.data["offer_expires_at"] ?? null,
-      terms: { current_rate: rate((o.data["current_terms"] as Record<string, unknown> | undefined)?.["note_rate"] ?? loan?.["note_rate_bps"] !== undefined ? bpsToPct(loan?.["note_rate_bps"]) : null), offered_rate: rate((o.data["candidate_terms"] as Record<string, unknown> | undefined)?.["note_rate"]), new_pi_payment_cents: cents((o.data["candidate_terms"] as Record<string, unknown> | undefined)?.["pi_cents"]), monthly_savings_cents: cents((o.data["benefit"] as Record<string, unknown> | undefined)?.["pi_delta_cents"] ?? o.data["pi_delta_cents"]), costs_to_borrower_cents: "0" } }));
+    // 20.1's row as it is: `existing_terms` / `candidate_terms` (note_rate a fraction "0.06375" → "6.375"), `benefit_metrics`, `offer_valid_until` (the +30-day validity 20.1 wrote at `offered`); `offered_at` from `refi.opportunity.offered`, else the detection instant; the APR from the candidate's 20.4 quote when one was priced
+    const offers = byKind("refi_opportunities").filter((o) => ["offer_ready", "offered", "engaged"].includes(String(o.data["status"]))).map((o) => {
+      const d = o.data; const ex = (d["existing_terms"] as Record<string, unknown> | undefined) ?? (d["current_terms"] as Record<string, unknown> | undefined); const c = (d["candidate_terms"] as Record<string, unknown> | undefined) ?? {}; const b = (d["benefit_metrics"] as Record<string, unknown> | undefined) ?? (d["benefit"] as Record<string, unknown> | undefined) ?? {};
+      const offered = ev("refi.opportunity.offered", (p) => p["opportunity_id"] === o.id); const quote = (typeof c["quote_id"] === "string" ? byKind("pricing_quotes").find((q) => q.id === c["quote_id"])?.data : undefined) ?? byKind("pricing_quotes").find((q) => q.id === `Q-OFFER-${o.id}`)?.data;   // the run's quote, else 32.11's presented quote of the offer
+      const savings = cents(b["pi_delta_cents"] ?? d["pi_delta_cents"]); const costs = cents(b["borrower_paid_costs_cents"]) ?? "0";
+      return { refi_opportunity_id: o.id, status: d["status"], offered_at: (offered?.payload["offered_at"] as string | undefined) ?? offered?.occurred_at ?? d["offered_at"] ?? d["detected_at"] ?? d["created_at"] ?? null, expires_at: d["offer_valid_until"] ?? d["expires_at"] ?? d["offer_expires_at"] ?? null,
+        terms: { current_rate: pctOf(ex?.["note_rate"]) ?? bpsToPct(loan?.["note_rate_bps"]), offered_rate: pctOf(c["note_rate"]), apr: pctOf(quote?.["apr_estimate"]) ?? null, new_pi_payment_cents: cents(c["pi_cents"]), monthly_savings_cents: savings === null ? null : (BigInt(savings) < 0n ? -BigInt(savings) : BigInt(savings)).toString(), costs_to_borrower_cents: costs } };
+    });
+    // 33.2 rule 7: the latest daily review of a monitored loan — the verdict and its copy keys; the watch rate stays a token
+    const review = monitored ? await this.partnerBookReview(loanId!, party.id, cards) : null;
 
     // ---- journey progress (32.16 §2.2): the subject's own cards and the event spine, never stored
     const journey_progress = journeyProgress({ stage, transaction_type, events, cards: cards.filter((c) => (!c.subject_application_id || c.subject_application_id === appId) && (!c.subject_loan_id || c.subject_loan_id === loanId)) });
@@ -243,7 +258,7 @@ export class BorrowerRecordReader {
       return { ran_at: String(findingsEv.payload["received_at"] ?? findingsEv.occurred_at ?? ""), validated, conditions_for_you: yours, checklist_card_instance_id: checklist?.card_instance_id ?? null };
     })() : null;
     // 33.1 rule 6: the partner-book block — the servicer of record, the loan's last four, the facts' as-of date and the commands the surface lists as unavailable
-    const partner_book: BorrowerRecord["partner_book"] = monitored ? { partner_party_id: monitored.partner_party_id, partner_name: monitored.partner_name, loan_last4: monitored.loan_last4, as_of_date: monitored.as_of_date, monitored: true, commands_unavailable: [...MONITORED_REFUSED_COMMANDS].map((command) => ({ command, code: "LOAN_MONITORED" as const })) } : null;
+    const partner_book: BorrowerRecord["partner_book"] = monitored ? { partner_party_id: monitored.partner_party_id, partner_name: monitored.partner_name, loan_last4: monitored.loan_last4, as_of_date: monitored.as_of_date, monitored: true, commands_unavailable: [...MONITORED_REFUSED_COMMANDS].map((command) => ({ command, code: "LOAN_MONITORED" as const })), review } : null;
     return { subject: subjectOut, status, read_only: READ_ONLY_BADGES.has(status.badge), next, needed_from_you: neededOut, underwriting, what_we_are_doing, needed_summary, numbers, dates, documents, people, property, loan: loanSection, offers: exits && (exits.paidInFull || exits.transfer) ? [] : offers, journey_progress, partner_book, as_of: asOf };   // 32.12: rate-watch ends with the loan
   }
 
@@ -254,6 +269,16 @@ export class BorrowerRecordReader {
     const contact = partner?.contact ?? {};
     const phone = [contact["phone"], contact["tollfree"], contact["direct_number"], Array.isArray(contact["phones"]) ? (contact["phones"] as unknown[])[0] : undefined].find((p): p is string => typeof p === "string" && p.length > 0) ?? null;
     return { partner_party_id: partner?.id ?? null, partner_name: partner?.legal_name ?? null, partner_phone: phone, loan_last4: String(loan["servicer_loan_number"] ?? "").slice(-4) || null, as_of_date: row?.as_of_date ?? null, facts: row?.facts ?? null };
+  }
+  /** 33.2 rule 7: the latest `partner_book_reviews` row of the loan → the verdict, the copy keys (`refi.review.<verdict>` then one per engine reason), the watch rate as a token name with its value kept server-side, the pending OfferCard of this party. */
+  private async partnerBookReview(loanId: string, partyId: string, cards: readonly CardInstanceRow[]): Promise<PartnerBookReview | null> {
+    const row = (await this.db.query<{ as_of_date: string; verdict: PartnerBookReview["outcome"]; reasons: unknown; facts: Record<string, unknown> | null; opportunity_id: string | null }>(`SELECT as_of_date::text AS as_of_date, verdict, reasons, facts, opportunity_id FROM partner_book_reviews WHERE loan_id = $1 ORDER BY as_of_date DESC, created_at DESC LIMIT 1`, [loanId]))[0];
+    if (!row) return null;
+    const reasons = Array.isArray(row.reasons) ? (row.reasons as unknown[]).map(String) : [];
+    const keys = [REFI_REVIEW_COPY_KEYS[row.verdict] ?? "refi.review.not_now", ...reasons.map(refiReviewReasonKey)].filter((k, i, all) => all.indexOf(k) === i);
+    const card = cards.find((c) => c.kind === "OfferCard" && c.status === "pending" && c.subject_loan_id === loanId && c.party_id === partyId && (!row.opportunity_id || c.props["refi_opportunity_id"] === row.opportunity_id)) ?? cards.find((c) => c.kind === "OfferCard" && c.status === "pending" && c.subject_loan_id === loanId && c.party_id === partyId);
+    const watch = row.verdict === "watching" && typeof row.facts?.["watch_rate_pct"] === "string" ? String(row.facts["watch_rate_pct"]) : null;
+    return { as_of_date: row.as_of_date, outcome: row.verdict, reasons_copy_keys: keys, ...(watch ? { watch_rate_token: "{{partner_book.watch_rate}}" as const, watch_rate_pct: watch } : {}), offer_card_instance_id: card?.card_instance_id ?? null, opportunity_id: row.opportunity_id };
   }
   /** 33.1 rule 6 / worked example A: `numbers` of a monitored loan from the latest facts — UPB, note rate, P&I, T&I, next due date, last payment date (the loan_terms row stands in for a figure the facts lack); never ledger_lines or statement_cycles. */
   private monitoredNumbers(loan: Record<string, unknown>, m: MonitoredFacts): Record<string, unknown> {

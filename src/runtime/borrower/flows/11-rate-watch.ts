@@ -484,6 +484,10 @@ async function reactApp(deps: FlowDeps, ctx: AppCtx, e: DomainEvent): Promise<vo
 /** A typed "can I refinance?" on a serviced loan → 32.2 refi.request (20.1's request path: no solicitation gates; the recapture acknowledgment stays internal) — the reply names no rate (T1, T4). */
 async function onMessage(deps: FlowDeps, m: InboundMessage): Promise<FlowReply | null> {
   const loanId = m.subject?.loan_id ?? null; if (!loanId || !REFI_REQUEST.test(m.text)) return null;
+  // 33.2 rule 7: a monitored loan (the partner book) is not serviced here — the homeowner's question is answered by the turn from the situation's
+  // `partner_book.review` (the daily review's verdict), never by opening 20.1's request path ("no new command"); 33.3 owns the homeowner's Yes.
+  const status = (await deps.runtime.db.query<{ status: string }>(`SELECT status::text AS status FROM loans WHERE id = $1`, [loanId]))[0]?.status ?? null;
+  if (status === "monitored") return null;
   const ctx = await loanContext(deps, loanId);
   const row = universeOf(ctx); const programs = ctx.store.list("partner_programs").map((r) => r.data as P);
   // the loan's program: the one its open/most recent opportunity runs under, else the partner's registered program (20.1's own default order)

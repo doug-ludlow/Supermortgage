@@ -462,6 +462,42 @@ Format: `key` — **card/message** — text — *notes*.
 - `offer.good_through` — OfferCard line — "Offer good through {{date}}" — *32.11 §2: `SM_REFI_OPPORTUNITY_EXPIRY_30.due_at`, rendered, never computed.*
 - `ratewatch.standing.on` — Loan — "Your payroll and bank connections stay on — turn them off any time from the card in your thread." — *32.11 §5 (DELTA-05): the Loan section row; the manage card is the act.*
 - `ratewatch.standing.off` — Loan — "Payroll and bank connections are off. For a future refinance we'll ask you to connect again." — *32.11 §5.*
+- `refi.review.candidate` — reply — "We checked your loan this morning and a refinance looks worth it. The offer is on the card here, with the terms." — *33.2 rule 7: the daily review's `candidate` verdict — the card holds every figure; the reply names none.*
+- `refi.review.watching` — reply — "We checked your loan this morning. The rate is not there yet. We check every morning and will tell you when it is." — *33.2 rule 7: `watching` — no rate in the reply.*
+- `refi.review.not_now` — reply — "We checked your loan this morning. A refinance is not on the table right now. We keep checking every morning." — *33.2 rule 7: `not_now` — the reason line follows in the library's words.*
+- `refi.review.excluded` — reply — "We checked your loan this morning. A refinance is not something we can offer on it right now. We keep checking every morning." — *33.2 rule 7: `excluded`.*
+- `refi.review.reason.rate_delta` — reason — "Today's rate is low enough to make a real difference." — *33.2: the fire rule's rate condition met.*
+- `refi.review.reason.npv_positive` — reason — "Over seven years you come out ahead."
+- `refi.review.reason.seven_year_delta_positive` — reason — "The total cost over seven years is lower."
+- `refi.review.reason.prescreen` — reason — "The loan fits the program."
+- `refi.review.reason.state_rule` — reason — "It passes your state's rules for a refinance."
+- `refi.review.reason.rate_delta_bps` — reason — "Today's rate is not far enough below yours." — *20.1 fire rule: the rate delta is under the floor.*
+- `refi.review.reason.no_benefit` — reason — "The numbers do not put you ahead today."
+- `refi.review.reason.npv_cents` — reason — "Over seven years the saving is not there yet."
+- `refi.review.reason.seven_year_total_cost_delta` — reason — "The total cost over seven years is not lower yet."
+- `refi.review.reason.lifetime_interest_delta` — reason — "You would pay more interest over the life of the loan."
+- `refi.review.reason.not_priced` — reason — "We could not price a new loan for you today."
+- `refi.review.reason.not_priceable` — reason — "We could not price a new loan for you today."
+- `refi.review.reason.pricing_refused` — reason — "We could not price a new loan for you today."
+- `refi.review.reason.prescreen_failed` — reason — "The loan does not fit the program today."
+- `refi.review.reason.state_rule_failed` — reason — "Your state's rules do not allow a refinance offer today."
+- `refi.review.reason.cooldown` — reason — "You asked us to stay quiet about offers for a while."
+- `refi.review.reason.frequency_cap` — reason — "We offered recently and will not offer again so soon."
+- `refi.review.reason.premium_recapture_window` — reason — "Your loan is too new for a refinance offer."
+- `refi.review.reason.marketing_suppression` — reason — "You turned proactive offers off."
+- `refi.review.reason.implausible_value` — reason — "The home value on file does not look right, so we hold off."
+- `refi.review.reason.value_stale` — reason — "The home value on file is too old to use."
+- `refi.review.reason.declined` — reason — "You said not now to the last offer."
+- `refi.review.reason.expired` — reason — "The last offer ran out."
+- `refi.review.reason.not_active` — reason — "The loan is not in the daily check."
+- `refi.review.reason.not_in_universe` — reason — "The loan is not in the daily check."
+- `refi.review.reason.bankruptcy_active` — reason — "There is an active bankruptcy on the loan."
+- `refi.review.reason.foreclosure_referred` — reason — "The loan is in foreclosure."
+- `refi.review.reason.lossmit_plan_active` — reason — "A payment plan is in process on the loan."
+- `refi.review.reason.deceased_or_sii_pending` — reason — "The loan is waiting on a change of the borrower of record."
+- `refi.review.reason.transfer_out_pending` — reason — "The loan is moving to another servicer."
+- `refi.review.reason.delinquent` — reason — "The loan is behind on payments."
+- `refi.review.reason.other` — reason — "Something on the loan holds an offer back today."
 
 ## Exits
 

@@ -37,7 +37,8 @@ const RECORD: Shape = {
   // 32.16 §2.2 (DELTA-26): the Progress rail section — step ids, copy keys and states only
   journey_progress: { steps: [{ id: true, label_copy_key: true, state: true, at: true }], done: true, total: true },
   // 33.1 rule 6: the partner-book block of a monitored loan — the servicer of record, the loan's last four, the facts' as-of date, the commands the surface lists as unavailable (never a destination, never the facts row itself)
-  partner_book: { partner_party_id: true, partner_name: true, loan_last4: true, as_of_date: true, monitored: true, commands_unavailable: [{ command: true, code: true }] },
+  // 33.2 rule 7: the daily review's outcome (the row's verdict — `verdict` itself is a forbidden field name here) and its copy keys; the watch rate leaves only as its token name (`watch_rate_token`), never as a figure — the value stays server-side for the turn's tokens
+  partner_book: { partner_party_id: true, partner_name: true, loan_last4: true, as_of_date: true, monitored: true, commands_unavailable: [{ command: true, code: true }], review: { as_of_date: true, outcome: true, reasons_copy_keys: true, watch_rate_token: true, offer_card_instance_id: true } },
   as_of: true,
 };
 const HISTORY_ROW: Shape = { kind: true, id: true, payment_id: true, status: true, amount_cents: true, received_on: true, credited_as_of: true, channel: true, designation: true, allocation: { principal_cents: true, interest_cents: true, escrow_cents: true, fees_cents: true },

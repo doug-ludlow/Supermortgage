@@ -9,8 +9,8 @@
  *      (`state.nmls_id_present`); without it `lead.requestRange` refuses RANGE_CONTENT_CHECK.
  *   3. An active 20.4 rate sheet (`rs-FAKE-demo-…`, FAKE prices) — 20.3 rule 7's published range is the sheet's low–high.
  *   4. What the daily refinance check (src/runtime/refi-daily.ts) needs to run on the demo book: the partner's 20.1 program
- *      (`prog-refi-<partner>`, the data-model defaults), 20.4's LLPA matrix 09.09.2026 staged and activated, and one FAKE
- *      LCOR cost schedule (20.1 worked example 1's $3,485 of third-party costs) approved by a FAKE officer.
+ *      (`prog-refi-<partner>`, the data-model defaults), 20.4's LLPA matrix 09.09.2026 staged and activated, and a FAKE
+ *      LCOR cost schedule per demo state (20.1 worked example 1's $3,485 of third-party costs) approved by a FAKE officer.
  *
  * Idempotent: a row that exists is left alone; a sheet is published only when none is active at `now`. Runs from
  * `main.ts seed-demo` after the demo transfer batch and from `POST /v1/entry/seed-demo` (ops token). Never in production.
@@ -42,6 +42,8 @@ export const FAKE_COST_ITEMS: readonly Record<string, unknown>[] = [
   ["settlement_agent_fee", "Settlement fee", "TitleSettlementAgentFee", "C_can_shop", "FAKE Title", "95000", "list_provider", true], ["recording_fee", "Recording", "RecordingFeeForDeed", "E_taxes_gov", "County", "6100", "government", false], ["ron_enote", "eNote / RON", "NotaryFee", "B_cannot_shop", "RON vendor", "28000", "creditor_selected_third_party", false],
 ].map(([fee_code, description, mismo_fee_type, le_section, vendor, amount_cents, provider_source, shoppable]) => ({ fee_code, description, mismo_fee_type, le_section, vendor, amount_cents: BigInt(String(amount_cents)), provider_source, shoppable }));   // bigint cents: an in-process execute is not the HTTP path's `*_cents` revival
 export const FAKE_COST_SCHEDULE_ID = "cs-FAKE-lcor-hybrid";
+/** FAKE: one LCOR cost schedule per demo state (20.4 rule 3: a schedule is per state; 33.2's book spans the demo states) — the first state keeps FAKE_COST_SCHEDULE_ID, the others `cs-FAKE-lcor-hybrid-<ST>`. */
+export const fakeCostScheduleId = (state: string, first: string): string => (state === first ? FAKE_COST_SCHEDULE_ID : `${FAKE_COST_SCHEDULE_ID}-${state}`);
 export const FAKE_LLPA_MATRIX_VERSION = "09.09.2026";
 const SEED_OFFICER: Actor = { kind: "human", id: "seed-demo", role: "officer" };
 const INTAKE_AGENT: Actor = { kind: "agent", id: "intake" };
@@ -96,6 +98,11 @@ export async function seedEntryDemo(runtime: Runtime, opts: EntrySeedOptions = {
   const programId = `prog-refi-${partner.id.slice(0, 8)}`;
   if (!store.list("partner_programs").some((r) => r.data.partner_id === partner.id)) { await runtime.execute({ process: "20.1", name: "loadUniverse", loanId: "", actor: INTAKE_AGENT, input: { op: "register_program", program: { program_id: programId, partner_id: partner.id, effective_from: on, approved_by: "human:seed-demo (FAKE officer)" } } }); refi.push(`partner_programs/${programId}`); }
   if (!store.get("llpa_tables", `llpa-${FAKE_LLPA_MATRIX_VERSION}`)) { await runtime.execute({ process: "20.4", name: "loadLlpaTable", loanId: "", actor: PRICING_AGENT, input: { op: "stage", matrix_version: FAKE_LLPA_MATRIX_VERSION, activate: true } }); refi.push(`llpa_tables/llpa-${FAKE_LLPA_MATRIX_VERSION}`); }
-  if (!store.get("sm_cost_schedules", FAKE_COST_SCHEDULE_ID)) { await runtime.execute({ process: "20.4", name: "buildFeeItems", loanId: "", actor: SEED_OFFICER, input: { op: "cost_schedule", cost_schedule_id: FAKE_COST_SCHEDULE_ID, partner_id: partner.id, state: states[0] ?? "AZ", transaction_type: "limited_cash_out", valuation_method: "hybrid", items: FAKE_COST_ITEMS, effective_from: on, approved_by: "human:seed-demo (FAKE officer)" } }); refi.push(`sm_cost_schedules/${FAKE_COST_SCHEDULE_ID}`); }
+  // one FAKE LCOR cost schedule per demo state (the same $3,485 of items): 20.4 prices a loan only with its own state's schedule, and 33.2's partner book spans the demo states
+  const first = states[0] ?? "AZ";
+  for (const st of states.length ? states : [first]) {
+    const id = fakeCostScheduleId(st, first);
+    if (!store.get("sm_cost_schedules", id)) { await runtime.execute({ process: "20.4", name: "buildFeeItems", loanId: "", actor: SEED_OFFICER, input: { op: "cost_schedule", cost_schedule_id: id, partner_id: partner.id, state: st, transaction_type: "limited_cash_out", valuation_method: "hybrid", items: FAKE_COST_ITEMS, effective_from: on, approved_by: "human:seed-demo (FAKE officer)" } }); refi.push(`sm_cost_schedules/${id}`); }
+  }
   return { partner_id: partner.id, partner_name: partner.legal_name, states, written, rate_sheet_id, rate_sheet_published: published, refi };
 }

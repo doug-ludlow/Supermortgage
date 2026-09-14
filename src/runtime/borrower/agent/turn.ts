@@ -153,7 +153,9 @@ export class AgentTurnRunner {
     const stepProcess = j.journey.step?.process ?? (record?.partner_book?.monitored ? "33.1" : record?.subject.stage === "servicing" ? "2.1" : null);   // 33.1: a monitored loan's rules are the partner book's, not cashiering's
     const rulesText = rulesFor(stepProcess);
     const context = buildContext({ partyFirstName: firstNameOf(party.legal_name), level, channel: req.channel, routed_to: req.routed_to, safeMode, partnerName: partner.legal_name, record, cards, messages: window, lead, next: next0, borrowerText: req.text, continuation: req.continuation ?? null, journey: j.journey, journeyTokens: j.tokens, humanRequested: !!req.human_requested, rules: stepProcess && rulesText ? { process: stepProcess, text: rulesText } : null });
-    const disclosureFirst = allMessages[0]?.body_text === "{{copy:entry.disclosure.first}}";
+    // 32.16 rule 6: the session's first row is the disclosure record — the first row that carries text. A row that only carries a card (a StatusCard or
+    // OfferCard a flow placed on the rail before the party's first session — 33.2's proactive offer on a monitored loan) has no text and is not the thread's header.
+    const disclosureFirst = allMessages.find((m) => typeof m.body_text === "string" && m.body_text !== "")?.body_text === "{{copy:entry.disclosure.first}}";
     // ---- the model, on the bus's tools
     const ledger = newLedger(); Object.assign(ledger.tokens, context.tokens); if (req.human_requested) ledger.human_requested = true;
     const run = { runId: `turn:${turn_id}`, modelVersion: this.d.llm.model, promptVersion: this.promptVersion };

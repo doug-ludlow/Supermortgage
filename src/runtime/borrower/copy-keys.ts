@@ -117,6 +117,17 @@ export const ERROR_COPY_KEYS: Readonly<Record<string, string>> = {
   FRAUD_HOLD: DEFAULT_COPY_KEY,
 };
 
+/** 33.2 rule 7: the daily refinance review's verdict as the copy library says it (`refi.review.<verdict>`) and one line per engine reason code (`refi.review.reason.<code>`) — the situation carries the keys, the model answers in its own words, never a figure. */
+export const REFI_REVIEW_COPY_KEYS: Readonly<Record<"candidate" | "watching" | "not_now" | "excluded", string>> = { candidate: "refi.review.candidate", watching: "refi.review.watching", not_now: "refi.review.not_now", excluded: "refi.review.excluded" };
+/** The engine's reason codes the library authors a line for (20.1's fire-rule misses, exclusions and gates; 33.2's own): a formatted reason ("rate_delta_bps -50 < 25", "pricing_refused:…") maps by its leading code. */
+export const REFI_REVIEW_REASON_CODES: readonly string[] = ["rate_delta", "npv_positive", "seven_year_delta_positive", "prescreen", "state_rule", "rate_delta_bps", "no_benefit", "npv_cents", "seven_year_total_cost_delta", "lifetime_interest_delta", "not_priced", "not_priceable", "pricing_refused", "prescreen_failed", "state_rule_failed",
+  "cooldown", "frequency_cap", "premium_recapture_window", "marketing_suppression", "implausible_value", "value_stale", "declined", "expired", "not_active", "not_in_universe", "bankruptcy_active", "foreclosure_referred", "lossmit_plan_active", "deceased_or_sii_pending", "transfer_out_pending", "delinquent"];
+export const REFI_REVIEW_REASON_OTHER_KEY = "refi.review.reason.other";
+export function refiReviewReasonKey(reason: string): string {
+  const code = /^[a-z][a-z0-9_]*/.exec(reason.trim())?.[0] ?? "";
+  return REFI_REVIEW_REASON_CODES.includes(code) ? `refi.review.reason.${code}` : REFI_REVIEW_REASON_OTHER_KEY;
+}
+
 export function copyKeyFor(code: string, gate?: string): string {
   if (gate && GATE_COPY_KEYS[gate]) return GATE_COPY_KEYS[gate]!;
   if (GATE_COPY_KEYS[code]) return GATE_COPY_KEYS[code]!;

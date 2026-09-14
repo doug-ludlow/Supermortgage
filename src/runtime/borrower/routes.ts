@@ -53,6 +53,8 @@ import { BorrowerOidc } from "./oidc.ts";
 import { createTalkRoutes, TALK_PATH, type TalkOptions, type TalkRoutes } from "./talk.ts";
 import { AnthropicLlm, type LlmEffort, type LlmSpeed } from "./agent/llm.ts";
 import { AgentTurnRunner } from "./agent/turn.ts";
+import { createVoiceRoutes, type VoiceRoutes } from "./voice.ts";
+import type { SttPort, TtsPort } from "./agent/speech.ts";
 import type Anthropic from "@anthropic-ai/sdk";
 import { createBorrowerChannels, type BorrowerChannels } from "./channels.ts";
 import { BorrowerFlows } from "./flows/index.ts";
@@ -92,6 +94,8 @@ export interface BorrowerRouterOptions {
   readonly telephonyWebhooks?: TelephonyWebhookPort;
   /** 32.17: the video agent — FakeTavus (FAKE) unless `tavusApiKey` (TAVUS_API_KEY) is set; the callback secret, the replica, the camera setting (src/runtime/borrower/video-routes.ts). */
   readonly video?: VideoRoutesOptions | undefined;
+  /** 32.16 DELTA-27: the speech front end (src/runtime/borrower/agent/speech.ts) — FakeStt / FakeTts unless a real adapter is wired. */
+  readonly speech?: { readonly stt?: SttPort | undefined; readonly tts?: TtsPort | undefined } | undefined;
 }
 export interface BorrowerRouter {
   handle(req: IncomingMessage, res: ServerResponse, url: URL, method: string): Promise<boolean>;
@@ -111,6 +115,8 @@ export interface BorrowerRouter {
   /** 32.14 §4: SMS and voice entry on the same lead (src/runtime/borrower/channels.ts) — the two telephony webhooks and the number → lead key. */
   readonly talk: TalkRoutes;
   readonly channels: BorrowerChannels;
+  /** 32.16 DELTA-27: the in-app voice turn (POST /v1/borrower/voice/utterance) and its FAKE speech ports (src/runtime/borrower/voice.ts). */
+  readonly voice: VoiceRoutes;
   /** 32.16 DELTA-23: the agent turn runner, or null when no model is configured (the placeholder reply stands). */
   readonly agent: AgentTurnRunner | null;
 }
@@ -196,7 +202,7 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
   const edelivery: EdeliveryPort | undefined = runtime.ports.edelivery;
   const deliveryIsFake = (): boolean => !edelivery || edelivery instanceof FakeEdelivery;
   // 32.14 §4: SMS and voice entry on the same lead — the telephony vendor's inbound webhooks (./channels.ts; the FAKE adapter unless a real one is wired)
-  const channels = createBorrowerChannels({ runtime, logger, auth, ui, flows, commands, telephony: opts.telephonyWebhooks, nonProduction, defaultPartnerId });
+  const channels = createBorrowerChannels({ runtime, logger, auth, ui, flows, commands, telephony: opts.telephonyWebhooks, nonProduction, defaultPartnerId, voice: () => voice });   // `voice` is built below; read at call time
   // Talk: the anonymous minute and sign-in as one conversation with Claude on the same tools (./talk.ts); 503 TALK_NOT_CONFIGURED without the key
   const talk = createTalkRoutes({ runtime, logger, auth, ui, flows, commands, leads, nonProduction, defaultPartnerId, talk: opts.talk });
   // 32.16 DELTA-23: the agent turn — Claude on the 32.16 bus tools in the placeholder's slot (agent/turn.ts); without a key (or a scripted client) the placeholder stands and the server says so
@@ -207,6 +213,8 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     : null;
   if (agent) commands.agentTurn = (req) => agent.run(req.ctx.party.id, req);
   else logger.warn("borrower.agent.not_configured", { reason: "ANTHROPIC_API_KEY is unset: the thread answers the copy library's placeholder reply (32.16 DELTA-23)" });
+  // 32.16 DELTA-27: the in-app voice turn — the speech FAKEs, the read-back attestation, the low-confidence misses, the same agent turn on channel voice
+  const voice = createVoiceRoutes({ runtime, logger, auth, ui, reader, flows, commands, hub, agent, partnerFor, stt: opts.speech?.stt, tts: opts.speech?.tts });
   const video = createVideoRoutes({ runtime, logger, auth, ui, flows, commands, hub, agent, partnerFor, firstTurn, openProvisionalSession, nonProduction, appBase: returnUrlBase, ...(opts.video ?? {}) });   // 32.17: the video agent — the same turn, spoken; the FAKE vendor unless TAVUS_API_KEY is set
 
   const send = (res: ServerResponse, status: number, shape: ShapeName, body: unknown): void => { res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }); res.end(toJson(serialize(shape, body))); };
@@ -924,6 +932,7 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
       else if (method === "POST" && path === "/v1/webhooks/sms") send(res, 200, "sms_webhook", await channels.sms(req));
       else if (method === "POST" && path === "/v1/webhooks/voice") send(res, 200, "voice_webhook", await channels.voice(req));
       else if (method === "POST" && path === "/v1/borrower/voice/session") await voiceSession(req, res);
+      else if (method === "POST" && path === "/v1/borrower/voice/utterance") { await voice.utterance(req, res); return true; }   // 32.16 DELTA-27 (voice.ts logs its own line)
       else if (method === "POST" && (m = /^\/v1\/borrower\/connect\/([a-z_]+)\/session$/.exec(path))) await connectSession(req, res, m[1]!);
       else if (method === "GET" && path === "/v1/borrower/me") await me(req, res);
       else if (method === "GET" && (m = /^\/v1\/borrower\/deeplink\/([^/]+)$/.exec(path))) await deepLink(req, res, decodeURIComponent(m[1]!));
@@ -949,5 +958,5 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     }
     return true;
   }
-  return { handle, auth, ui, stripe, blobs, truv, plaid, hub, commands, reader, flows, oidc: oidcPort, channels, talk, agent };
+  return { handle, auth, ui, stripe, blobs, truv, plaid, hub, commands, reader, flows, oidc: oidcPort, channels, talk, agent, voice };
 }

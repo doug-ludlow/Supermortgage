@@ -438,7 +438,11 @@ export const TOOLS_32_16: readonly ToolDef[] = defineTools(PROCESS_32_16, INTAKE
     const USD = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }); const tokens: Record<string, string> = {};
     for (const f of fields) { const spec = known.get(f.path); const opt = Array.isArray(spec?.["options"]) ? (spec!["options"] as P[]).find((o) => String(o["id"]) === f.value) : undefined; tokens[`proposal.${f.path}`] = money.has(f.path) || /_cents$/.test(f.path) ? USD.format(Number(BigInt(f.value)) / 100) : opt ? String(opt["label"] ?? f.value) : f.value; }
     if (option_id) tokens["proposal.option"] = String((props["options"] as P[]).find((o) => String(o["id"]) === option_id)?.["label"] ?? option_id);
-    return { card_instance_id: id, kind: card.kind, copy_key: card.copy_key, proposal: { ...(fields.length ? { fields } : {}), ...(option_id ? { option_id } : {}) }, misses, resolved: false, rewrite, tokens, outcome: "proposed", note: `the turn writes this when you finish (32.17 rule 21: words commit) — never ask for a tap; read the values back in your words as ${Object.keys(tokens).map((k) => `{{${k}}}`).join(", ")} and ask them to confirm` };
+    // 32.16 §2.4 (DELTA-27): on a voice channel the read-back is the ask — the borrower's spoken "yes" resolves the card through the voice attestation; nothing is written by the turn there
+    const note = str(i, "channel") === "voice"
+      ? `read the values back in your words as ${Object.keys(tokens).map((k) => `{{${k}}}`).join(", ")} and ask whether that is right — a spoken yes records it (a consent, a payment or a masked field never can: those are the card's tap)`
+      : `the turn writes this when you finish (32.17 rule 21: words commit) — never ask for a tap; read the values back in your words as ${Object.keys(tokens).map((k) => `{{${k}}}`).join(", ")} and ask them to confirm`;
+    return { card_instance_id: id, kind: card.kind, copy_key: card.copy_key, proposal: { ...(fields.length ? { fields } : {}), ...(option_id ? { option_id } : {}) }, misses, resolved: false, rewrite, tokens, outcome: "proposed", note };
   }, { guardrails: [never("CARD_PROPOSE_NEVER_RESOLVES", "docs/ux/17 §1 principle 6: words never commit — a proposal resolves nothing", (i) => i["resolve"] === true || i["confirm"] === true || i["evidence"] !== undefined, "the model proposes; only the borrower's tap (resolveCard) commits")] }),
 
   tool("card.request", async (i, ctx, rt) => {

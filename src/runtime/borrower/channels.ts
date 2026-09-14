@@ -63,6 +63,8 @@ export interface BorrowerChannelDeps {
   readonly defaultPartnerId?: string | undefined;
   /** DELTA-15: the partner's numeric NMLSR ID for the published range's footer (`BORROWER_DEFAULT_PARTNER_NMLSR_ID` when unset). */
   readonly defaultPartnerNmlsrId?: string | undefined;
+  /** 32.16 DELTA-27: the spoken turn (src/runtime/borrower/voice.ts) a live call's speech goes through after L1 — the STT confidence, the read-back attestation, the same agent turn; borrowerMessage on channel voice when absent. Read lazily (routes.ts builds it after the channels). */
+  readonly voice?: (() => { spoken(ctx: BorrowerContext, i: { transcript: string | null; confidence?: number | null }, at: string): Promise<{ reply: { body_text: string | null; copy_key: string }; routed_to: string; command_executed: boolean }> } | null) | undefined;
 }
 /** One outbound text: the copy key it renders, the rendered text, the e-delivery message id. */
 export interface OutboundLine { readonly copy_key: string; readonly text: string; readonly message_id: string; }
@@ -397,7 +399,8 @@ export function createBorrowerChannels(deps: BorrowerChannelDeps): BorrowerChann
     if (lead?.party_id && t.input) {
       const ctx = await liveContext(lead.party_id, t.at);
       if (ctx) {
-        const r = await commands.borrowerMessage(ctx, { text: t.input, channel: t.channel }, t.at); out.lead_id = lead.lead_id; out.level = ctx.session.level;
+        const spoken = t.channel === "voice" ? deps.voice?.() ?? null : null;   // DELTA-27: a call's speech is a spoken turn (the vendor's transcript carries no confidence: heard as it came)
+        const r = spoken ? await spoken.spoken(ctx, { transcript: t.input }, t.at) : await commands.borrowerMessage(ctx, { text: t.input, channel: t.channel }, t.at); out.lead_id = lead.lead_id; out.level = ctx.session.level;
         const key = r.reply.copy_key; const text = (r.reply.body_text ?? `{{copy:${key}}}`).replace(/\{\{copy:([a-z0-9_.]+)\}\}/g, (_all, k: string) => copyText(k, partnerTokens(lead!.data)));
         if (t.channel === "voice") out.spoken.push({ copy_key: key, text }); else await out.text(key, text, "policy:session_thread");
         logger.info("borrower.channels.message", { lead_id: lead.lead_id, party_id: lead.party_id, channel: t.channel, routed_to: r.routed_to, command_executed: r.command_executed, reply_copy_key: key, vendor });

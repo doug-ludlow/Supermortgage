@@ -56,6 +56,11 @@ const RANK = { L1: 1, L2: 2, L3: 3 } as const;
 /** 01 §6.4 / T-X-05: a borrower message that answers a pending card. Card props may carry their own `affirmatives`. */
 export const DEFAULT_AFFIRMATIVES = ["yes proceed", "proceed", "lock it", "lock", "i agree", "agree", "agreed", "confirm", "confirmed", "accept", "accepted", "yes", "yep", "yeah", "ok", "okay", "sounds good", "go ahead", "do it", "let's do it", "sign me up", "approve", "i consent", "consent", "sure"];
 const normalize = (s: string): string => s.toLowerCase().replace(/[^a-z0-9' ]+/g, " ").replace(/\s+/g, " ").trim();
+/** 32.16 §2.4 / DELTA-27: a bare affirmative — one of the affirmatives and nothing else ("yes", "yes please"); "yes, but the address is…" is words, never a yes. */
+export function isBareAffirmative(text: string): boolean {
+  const t = normalize(text); if (!t || t.length > 40) return false;
+  return DEFAULT_AFFIRMATIVES.some((p) => t === p || t === `${p} please` || t === `${p} thanks` || t === `${p} thank you`);
+}
 export function affirmativeFor(text: string, cards: readonly CardInstanceRow[]): CardInstanceRow | undefined {
   const t = normalize(text); if (!t || t.length > 80) return undefined;
   for (const c of cards) {
@@ -238,7 +243,7 @@ export class BorrowerCommands {
   }
 
   /** 02 §7 POST /v1/borrower/messages. */
-  async borrowerMessage(ctx: BorrowerContext, body: Record<string, unknown>, now: string): Promise<{ message: MessageRow; reply: MessageRow & { copy_key: string; deep_link: { token: string; path: string; expires_at: string } | null }; routed_to: "intake" | "borrower-comms"; command_executed: boolean; command: string | null }> {
+  async borrowerMessage(ctx: BorrowerContext, body: Record<string, unknown>, now: string, trusted: { stt?: Record<string, unknown> | undefined } = {}): Promise<{ message: MessageRow; reply: MessageRow & { copy_key: string; deep_link: { token: string; path: string; expires_at: string } | null }; routed_to: "intake" | "borrower-comms"; command_executed: boolean; command: string | null }> {
     const text = typeof body["text"] === "string" ? (body["text"] as string).trim() : ""; if (!text) throw new RangeError("text is required");
     if (text.length > 4000) throw new RangeError("text is over 4000 characters");
     const channelIn = typeof body["channel"] === "string" ? (body["channel"] as string) : "app"; const channel = (["app", "sms", "email", "voice", "video"].includes(channelIn) ? channelIn : "app") as "app" | "sms" | "email" | "voice" | "video";   // 32.17: video is the same turn, spoken
@@ -247,7 +252,9 @@ export class BorrowerCommands {
     const subject = ctx.subjects.length ? this.subjectFor(ctx, wanted) : null;
     const routed_to: "intake" | "borrower-comms" = subject?.stage === "servicing" ? "borrower-comms" : "intake";
     const conv = await this.ui.conversationFor(ctx.party.id);
-    const messageId = await this.ui.appendMessage({ conversation_id: conv.conversation_id, at: now, sender: "borrower", sender_ref: `party:${ctx.party.id}`, channel, body_text: text, subject_application_id: subject?.application_id ?? null, subject_loan_id: subject?.loan_id ?? null, voice_turn: channel === "voice" });
+    // 32.16 DELTA-27: a spoken utterance carries its speech-to-text facts (the FAKE's vendor, confidence and utterance id) as the API's own — src/runtime/borrower/voice.ts passes them in `trusted`; a client's body cannot (the messages route passes none)
+    const stt = channel === "voice" && trusted.stt && typeof trusted.stt === "object" ? { stt: trusted.stt } : null;
+    const messageId = await this.ui.appendMessage({ conversation_id: conv.conversation_id, at: now, sender: "borrower", sender_ref: `party:${ctx.party.id}`, channel, body_text: text, subject_application_id: subject?.application_id ?? null, subject_loan_id: subject?.loan_id ?? null, voice_turn: channel === "voice", ...(stt ? { copy_tokens: stt } : {}) });
     const message = (await this.ui.message(messageId))!;
     const pending = await this.ui.cardsOf(ctx.party.id, { status: "pending" });
     const reply = async (copy_key: string, extra: { card_instance_id?: string | null; deep_link?: { token: string; path: string; expires_at: string } | null; body?: string }) => {
@@ -260,7 +267,8 @@ export class BorrowerCommands {
     const card = affirmativeFor(text, pending);
     if (card && !(this.agentTurn && (channel === "app" || channel === "video"))) {   // 32.17 rule 3: a spoken affirmative goes to the turn too — the model proposes, the rail's Confirm resolves
       const link = await this.ui.createDeepLink({ party_id: ctx.party.id, target: { card_instance_id: card.card_instance_id }, now, created_for_message_id: messageId });
-      const r = await reply(card.kind === "ConsentCard" && channel === "voice" ? THREAD_COPY_KEYS.voiceConsentLink : THREAD_COPY_KEYS.affirmativeNeedsCard, { card_instance_id: card.card_instance_id, deep_link: { token: link.token, path: `/d/${link.token}`, expires_at: link.expires_at }, body: `{{copy:${THREAD_COPY_KEYS.affirmativeNeedsCard}}} /d/${link.token}` });
+      const key = card.kind === "ConsentCard" && channel === "voice" ? THREAD_COPY_KEYS.voiceConsentLink : THREAD_COPY_KEYS.affirmativeNeedsCard;   // 32.16-T18: a spoken "I agree" on a consent is answered with the consent's own line and the link, never a resolve
+      const r = await reply(key, { card_instance_id: card.card_instance_id, deep_link: { token: link.token, path: `/d/${link.token}`, expires_at: link.expires_at }, body: `{{copy:${key}}} /d/${link.token}` });
       return { message, reply: r, routed_to, command_executed: false, command: null };
     }
     // a flow that answers this message itself (32.3 T2 "are you a real person?" → 20.3's script with the disclosure re-logged; P9 listings) — before the human path, which "real person" would otherwise match

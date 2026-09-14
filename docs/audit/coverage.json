@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 7856/7864 (99.9%): tids 2158/2165, tables 734/735, timers 2032/2032, notices 307/307, tools 1392/1392, figures 1233/1233; processes at 100%: 184/185",
+ "brief": "spec units built 7863/7864 (100.0%): tids 2165/2165, tables 734/735, timers 2032/2032, notices 307/307, tools 1392/1392, figures 1233/1233; processes at 100%: 184/185",
  "totals": {
   "tids": {
    "spec": 2165,
-   "built": 2158
+   "built": 2165
   },
   "tables": {
    "spec": 735,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 7864,
-   "built": 7856
+   "built": 7863
   }
  },
  "sections": {
@@ -219,7 +219,7 @@
   },
   "32": {
    "spec": 354,
-   "built": 346,
+   "built": 353,
    "processes": 17,
    "done": 16
   },
@@ -7761,17 +7761,9 @@
    "title": "The conversational product: an account, then a conversation, with cards only when the rules need one",
    "tids": {
     "spec": 32,
-    "built": 25,
-    "todo": 7,
-    "missing": [
-     17,
-     18,
-     19,
-     20,
-     22,
-     23,
-     24
-    ]
+    "built": 32,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 3,
@@ -7803,9 +7795,9 @@
    },
    "units": {
     "spec": 45,
-    "built": 37
+    "built": 44
    },
-   "pct": 82.2
+   "pct": 97.8
   },
   {
    "process": "32.17",

@@ -33,8 +33,10 @@
  *   runUnitByHand        JOB_NOT_CLAIMABLE unless it is `queued` with its `run_after` passed, claims it in the command's own
  *                        transaction (`lease_holder = byhand:<actor>`, a zero-row claim rolls the command back) and appends
  *                        `job.unit.claimed`; the unit runs AFTER the commit through `runClaimed` — never inside the dispatcher's
- *                        command (nothing nested, D4). The executor adopts a `byhand:%` lease before claiming new rows, so a
- *                        by-hand claim never waits for its lease to expire; the done write checks the holder (LEASE_LOST) so a
+ *                        command (nothing nested, D4). The executor adopts a `byhand:%` lease whose heartbeat is stale
+ *                        (jobs.ts BYHAND_ADOPT_AFTER_MS — the dispatcher heartbeats while it runs the unit, a claim nobody runs
+ *                        goes stale within 90 s) before claiming new rows, so a by-hand claim never waits for its lease to
+ *                        expire and a live by-hand run is never run twice; the done, failed and dead writes check the holder (LEASE_LOST) so a
  *                        unit whose lease moved on commits nothing.
  *   retryFailed          `cycles.retry{job_id}` (rule 7): a `failed` job before its `run_after` is queued now — the attempt it then
  *                        runs is the only one consumed (`job_events{requeued, early: true}`).
@@ -68,7 +70,7 @@ import type { Runtime } from "../../runtime/app.ts";
 import type { Logger } from "../../runtime/log.ts";
 import { CYCLES_VERSION, ET, EVT, cycleByCode, dependencyMet, expectedBy, monthOf, periodEndOf, periodKeysDue, priorMonthOf, type CycleDef, type PeriodDue, type Unit, type UnitContext } from "./cycles.ts";
 import { CYCLES } from "./runners.ts";
-import { CLAIM_LIMIT, EXECUTOR_BUDGET_MS, HEARTBEAT_MS, JOB_COLS, LEASE_MS, appendJobEvent, backoff, claimJobs, errorClassOf, getJob, heartbeat, plusMs, wallClockOf, type JobRow } from "./jobs.ts";
+import { BYHAND_ADOPT_AFTER_MS, CLAIM_LIMIT, EXECUTOR_BUDGET_MS, HEARTBEAT_MS, JOB_COLS, LEASE_MS, appendJobEvent, backoff, claimJobs, errorClassOf, getJob, heartbeat, plusMs, wallClockOf, type JobRow } from "./jobs.ts";
 import { PLANNER_LOCK_KEY, PgSessionLock, type SessionLock } from "./planner-lock.ts";
 import { CANCEL_STALL_ON } from "./timers-35-3.ts";
 
@@ -79,7 +81,7 @@ export const UNIT_MODEL_VERSION = "deterministic";
 export const UNIT_PROMPT_VERSION = "35.3-v1";
 export const UNIT_COMMAND = "cycles.run_unit";
 export const PLAN_COMMAND = "cycles.plan";
-/** A by-hand claim's `lease_holder` (`byhand:<actor.kind>:<actor.id>`) — what the executor adopts before claiming new rows (D6). */
+/** A by-hand claim's `lease_holder` (`byhand:<actor.kind>:<actor.id>`) — what the executor adopts, once its heartbeat is stale, before claiming new rows (D6). */
 export const BYHAND_PREFIX = "byhand:";
 export const byHandHolder = (a: Actor): string => `${BYHAND_PREFIX}${a.kind}:${a.id}`;
 /** Error classes that die on the first attempt (rule 7: an `unavailable` failure; edge case 3: a missing runner). */
@@ -127,7 +129,7 @@ export interface PlanOutput {
   readonly period_keys: readonly string[]; readonly runs_opened: number; readonly jobs_planned: number; readonly leases_reclaimed: number; readonly unblocked: number; readonly requeued: number;
   readonly receipts_reconciled: number; readonly overdue: number; readonly errors: readonly { cycle_code: string; period_key: string | null; error: string }[]; readonly duration_ms: number;
 }
-export interface ExecutorReport { readonly holder: string; readonly claimed: number; readonly done: number; readonly failed: number; readonly dead: number; /** units whose lease moved on before they committed (LEASE_LOST) — the holder of record's run is the run */ readonly lost: number; readonly receipts: number; readonly budget_spent: boolean; readonly ms: number; }
+export interface ExecutorReport { readonly holder: string; readonly claimed: number; readonly done: number; readonly failed: number; readonly dead: number; /** units whose lease moved on before they committed (LEASE_LOST) — the holder of record's run is the run */ readonly lost: number; /** the receipts THIS executor elected (rule 5's last unit) — never a receipt another executor, a by-hand run or the planner elected while this one ran */ readonly receipts: number; readonly budget_spent: boolean; readonly ms: number; }
 export interface ReceiptResult { readonly elected: boolean; readonly run_id: string; readonly receipt_id: string | null; readonly reason: "elected" | "exists" | "raced" | "no_run" | "cancelled" | "not_full"; }
 
 export class CyclesService {
@@ -620,14 +622,14 @@ export function unitContextOf(def: CycleDef, job: JobRow, actor: Actor): UnitCon
   return { job_id: job.id, run_id: job.run_id, cycle_code: def.cycle_code, period_key: job.period_key, period_end: periodEndOf(def, job.period_key), unit_id: job.unit_id, loan_id: job.loan_id, application_id: job.application_id, as_of_date: D(String(job.period_key).slice(0, 10).length === 10 ? String(job.period_key).slice(0, 10) : periodEndOf(def, job.period_key)), input: job.input ?? {}, actor, attempt: job.attempts };
 }
 
-/** The job's `done` write, guarded by the lease: a job whose lease moved on (reclaimed by the planner and re-run, or adopted by an executor) commits nothing — the transaction rolls back with LEASE_LOST and the new holder's run is the run. */
+/** The job's `done` write, guarded by the lease: a job whose lease moved on (reclaimed by the planner and re-run, or adopted by an executor) commits nothing — the transaction rolls back with LEASE_LOST and the new holder's run is the run. `markFailed` and `markDead` carry the same guard: a stale attempt's throw records no failure, arms no SM_JOB_DEAD_2H and opens no escalation on a job it no longer holds. */
 async function markDone(q: Queryable, job: JobRow, holder: string, decisionId: string, wall: string): Promise<void> {
   const r = await q.query<{ id: string }>(`UPDATE jobs SET status = 'done', decision_id = $2, finished_at = $3::timestamptz, lease_holder = NULL, lease_until = NULL WHERE id = $1 AND status = 'running' AND lease_holder = $4 RETURNING id::text AS id`, [job.id, decisionId, wall, holder]);
   if (!r.length) throw new CyclesRefused("LEASE_LOST", { job_id: job.id, holder });
 }
 const isLeaseLost = (e: unknown): boolean => e instanceof CyclesRefused && e.code === "LEASE_LOST";
 
-export interface RunClaimedOptions { readonly electReceipt?: boolean; readonly actor?: Actor; /** the human (or agent) who dispatched the unit by hand — the decision's approver when human (D7); the unit still runs as the owner agent. */ readonly dispatchedBy?: Actor; }
+export interface RunClaimedOptions { readonly electReceipt?: boolean; readonly actor?: Actor; /** the human (or agent) who dispatched the unit by hand — the decision's approver when human (D7); the unit still runs as the owner agent. */ readonly dispatchedBy?: Actor; /** told of this unit's receipt election (the executor's tally of the receipts it elected). */ readonly onReceipt?: (r: ReceiptResult) => void; }
 /** One claimed job through its runner (see the header) — returns the outcome for the executor's tally; never throws for a unit's own failure. */
 export async function runClaimed(rt: Runtime, job: JobRow, holder: string, opts: RunClaimedOptions = {}): Promise<"done" | "failed" | "dead" | "lost"> {
   const svc = cyclesOf(rt); const def = svc.def(job.cycle_code);
@@ -655,7 +657,7 @@ export async function runClaimed(rt: Runtime, job: JobRow, holder: string, opts:
         counters = { ...c };
       } });
     }
-    if (countersFull(counters) && opts.electReceipt !== false) await svc.electReceipt(job.run_id, `unit:${job.id}`);
+    if (countersFull(counters) && opts.electReceipt !== false) { const r = await svc.electReceipt(job.run_id, `unit:${job.id}`); opts.onReceipt?.(r); }
     return "done";
   } catch (e) {
     // the lease moved on while the unit ran (reclaimed and re-run, or adopted): its transaction rolled back and the holder of record owns the job — no bookkeeping here
@@ -663,9 +665,15 @@ export async function runClaimed(rt: Runtime, job: JobRow, holder: string, opts:
     const errorClass = errorClassOf(e); const message = (e instanceof Error ? e.message : String(e)).slice(0, 2000);
     const deadNow = classify(e) === "unavailable" || DEAD_AT_ONCE.has(errorClass) || job.attempts >= job.max_attempts;
     rt.logger?.warn("cycles: unit threw", { job_id: job.id, cycle_code: job.cycle_code, unit_id: job.unit_id, attempt: job.attempts, error_class: errorClass, dead: deadNow, error: message });
-    if (deadNow) { await markDead(rt, job, holder, errorClass, message, def); return "dead"; }
-    await markFailed(rt, job, holder, errorClass, message);
-    return "failed";
+    // the failure's bookkeeping is guarded by the lease too: a stale attempt (reclaimed and re-run by another holder, adopted, or already done) records nothing — its `job.unit.failed` / `job.unit.dead` would arm a clock, open an escalation and move `units_dead` on a job it no longer holds
+    try {
+      if (deadNow) { await markDead(rt, job, holder, errorClass, message, def); return "dead"; }
+      await markFailed(rt, job, holder, errorClass, message);
+      return "failed";
+    } catch (e2) {
+      if (isLeaseLost(e2)) { rt.logger?.warn("cycles: unit lost its lease before its failure was recorded", { job_id: job.id, cycle_code: job.cycle_code, unit_id: job.unit_id, holder, error_class: errorClass }); return "lost"; }
+      throw e2;
+    }
   } finally { clearInterval(hb); }
 }
 /** Rule 7: `failed` with `run_after = wall + backoff(attempt)` — `job.unit.failed` on the job's aggregate. */
@@ -673,7 +681,8 @@ async function markFailed(rt: Runtime, job: JobRow, holder: string, errorClass: 
   const wall = wallClockOf(rt).now(); const runAfter = plusMs(wall, backoff(job.attempts));
   await rt.uow.run({}, (ctx) => { ctx.events.append({ type: EVT.FAILED, aggregate: { kind: "job", id: job.id }, actor: OPS_STEWARD, payload: { job_id: job.id, run_id: job.run_id, cycle_code: job.cycle_code, period_key: job.period_key, unit_id: job.unit_id, attempt: job.attempts, error_class: errorClass, run_after: runAfter } }); },
     { clock: rt.clock, commit: async (q) => {
-      await q.query(`UPDATE jobs SET status = 'failed', run_after = $2::timestamptz, last_error_class = $3, last_error = $4, lease_holder = NULL, lease_until = NULL WHERE id = $1 AND status = 'running'`, [job.id, runAfter, errorClass, message]);
+      const r = await q.query<{ id: string }>(`UPDATE jobs SET status = 'failed', run_after = $2::timestamptz, last_error_class = $3, last_error = $4, lease_holder = NULL, lease_until = NULL WHERE id = $1 AND status = 'running' AND lease_holder = $5 RETURNING id::text AS id`, [job.id, runAfter, errorClass, message, holder]);
+      if (!r.length) throw new CyclesRefused("LEASE_LOST", { job_id: job.id, holder });
       await appendJobEvent(q, { job_id: job.id, kind: "failed", attempt: job.attempts, holder, actor: OPS_STEWARD, error_class: errorClass, error: message, at: wall, detail: { run_after: runAfter } });
       await q.query(`UPDATE cycle_runs SET status = 'running' WHERE id = $1 AND status = 'planned'`, [job.run_id]);
     } });
@@ -687,7 +696,8 @@ async function markDead(rt: Runtime, job: JobRow, holder: string, errorClass: st
     escalations = new EscalationService(ctx.events, ctx.clock);
     escalations.open({ kind: "sev3", ownerRole: def?.escalation_role ?? "ops_analyst", severity: "3", ...(job.loan_id ? { loanId: job.loan_id } : {}), payload: { cycle_code: job.cycle_code, period_key: job.period_key, unit_id: job.unit_id, error_class: errorClass, job_id: job.id, run_id: job.run_id, attempts: job.attempts, choices: ["requeue", "abandon"] } }, OPS_STEWARD);
   }, { clock: rt.clock, commit: async (q) => {
-    await q.query(`UPDATE jobs SET status = 'dead', last_error_class = $2, last_error = $3, finished_at = $4::timestamptz, lease_holder = NULL, lease_until = NULL WHERE id = $1 AND status = 'running'`, [job.id, errorClass, message, wall]);
+    const r = await q.query<{ id: string }>(`UPDATE jobs SET status = 'dead', last_error_class = $2, last_error = $3, finished_at = $4::timestamptz, lease_holder = NULL, lease_until = NULL WHERE id = $1 AND status = 'running' AND lease_holder = $5 RETURNING id::text AS id`, [job.id, errorClass, message, wall, holder]);
+    if (!r.length) throw new CyclesRefused("LEASE_LOST", { job_id: job.id, holder });
     await appendJobEvent(q, { job_id: job.id, kind: "dead", attempt: job.attempts, holder, actor: OPS_STEWARD, error_class: errorClass, error: message, at: wall, detail: { dead_at: deadAt } });
     await q.query(`UPDATE cycle_runs SET units_dead = units_dead + 1, status = CASE WHEN status = 'planned' THEN 'running' ELSE status END WHERE id = $1`, [job.run_id]);
     for (const e of escalations?.list() ?? []) await rt.escalationRepo.save(e, q);
@@ -710,17 +720,18 @@ export async function runExecutor(rt: Runtime, opts: ExecutorOptions = {}): Prom
   const holder = opts.holder ?? `sweep:${randomUUID()}`; const started = Date.now();
   const budget = opts.drain === "all" ? Number.POSITIVE_INFINITY : opts.budgetMs ?? EXECUTOR_BUDGET_MS;
   const limit = opts.claimLimit ?? CLAIM_LIMIT;
-  let claimed = 0, done = 0, failed = 0, dead = 0, lost = 0; let budgetSpent = false;
-  const before = async (): Promise<number> => Number((await rt.db.query<{ n: string }>(`SELECT count(*)::text AS n FROM cycle_receipts`))[0]!.n);
-  const receiptsBefore = await before();
+  let claimed = 0, done = 0, failed = 0, dead = 0, lost = 0, receipts = 0; let budgetSpent = false;
+  // the receipts this executor elected — a tally of its own elections, never a table-count delta (three executors over one queue would each see the one receipt appear)
+  const onReceipt = (r: ReceiptResult): void => { if (r.elected) receipts += 1; };
+  const unitOpts: RunClaimedOptions = { onReceipt, ...(opts.electReceipt !== undefined ? { electReceipt: opts.electReceipt } : {}) };
   const tally = (r: Awaited<ReturnType<typeof runClaimed>>): void => { if (r === "done") done += 1; else if (r === "failed") failed += 1; else if (r === "dead") dead += 1; else lost += 1; };
-  // D6: a job claimed by hand (`lease_holder = byhand:<actor>`) whose dispatcher has not run it yet is adopted under this holder before any new claim, so a by-hand claim never waits for its lease to expire
+  // D6: a job claimed by hand (`lease_holder = byhand:<actor>`) that nobody is running — its heartbeat is stale (jobs.ts BYHAND_ADOPT_AFTER_MS; a dispatcher running the unit heartbeats every 30 s) — is adopted under this holder before any new claim, so a by-hand claim never waits for its lease to expire and a live by-hand run is never run twice
   {
     const wall = wallClockOf(rt).now();
-    const adopted = await rt.db.query<JobRow>(`UPDATE jobs SET lease_holder = $1, lease_until = $2::timestamptz + interval '5 minutes', heartbeat_at = $2::timestamptz WHERE status = 'running' AND lease_holder LIKE $3 RETURNING ${JOB_COLS}`, [holder, wall, `${BYHAND_PREFIX}%`]);
+    const adopted = await rt.db.query<JobRow>(`UPDATE jobs SET lease_holder = $1, lease_until = $2::timestamptz + interval '5 minutes', heartbeat_at = $2::timestamptz WHERE status = 'running' AND lease_holder LIKE $3 AND (heartbeat_at IS NULL OR heartbeat_at <= $2::timestamptz - ($4::int * interval '1 millisecond')) RETURNING ${JOB_COLS}`, [holder, wall, `${BYHAND_PREFIX}%`, BYHAND_ADOPT_AFTER_MS]);
     for (const j of adopted) {
       await rt.db.query(`INSERT INTO job_events (job_id, kind, attempt, holder, actor_kind, actor_id, detail, at) VALUES ($1, 'claimed', $2, $3, 'agent', 'ops-steward', $4::jsonb, $5::timestamptz)`, [j.id, j.attempts, holder, toJson({ adopted_by_hand_claim: true, unit_id: j.unit_id }), wall]);
-      claimed += 1; tally(await runClaimed(rt, j, holder, { ...(opts.electReceipt !== undefined ? { electReceipt: opts.electReceipt } : {}) }));
+      claimed += 1; tally(await runClaimed(rt, j, holder, unitOpts));
     }
   }
   for (;;) {
@@ -731,9 +742,9 @@ export async function runExecutor(rt: Runtime, opts: ExecutorOptions = {}): Prom
     claimed += batch.length;
     await rt.uow.run({}, (ctx) => { for (const j of batch) ctx.events.append({ type: EVT.CLAIMED, aggregate: { kind: "job", id: j.id }, actor: OPS_STEWARD, payload: { job_id: j.id, run_id: j.run_id, cycle_code: j.cycle_code, period_key: j.period_key, unit_id: j.unit_id, holder, lease_until: j.lease_until, attempt: j.attempts } }); },
       { clock: rt.clock, commit: async (q) => { for (const j of batch) { await appendJobEvent(q, { job_id: j.id, kind: "claimed", attempt: j.attempts, holder, actor: OPS_STEWARD, at: wall, detail: { lease_until: j.lease_until, unit_id: j.unit_id } }); } await q.query(`UPDATE cycle_runs SET status = 'running' WHERE status = 'planned' AND id = ANY($1::uuid[])`, [[...new Set(batch.map((j) => j.run_id))]]); } });
-    for (const j of batch) tally(await runClaimed(rt, j, holder, { ...(opts.electReceipt !== undefined ? { electReceipt: opts.electReceipt } : {}) }));
+    for (const j of batch) tally(await runClaimed(rt, j, holder, unitOpts));
   }
-  return { holder, claimed, done, failed, dead, lost, receipts: (await before()) - receiptsBefore, budget_spent: budgetSpent, ms: Date.now() - started };
+  return { holder, claimed, done, failed, dead, lost, receipts, budget_spent: budgetSpent, ms: Date.now() - started };
 }
 
 // ───────────────────────────── the sweep's pass (Inputs and triggers; rule 10)

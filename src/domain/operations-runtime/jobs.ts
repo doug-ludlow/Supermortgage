@@ -10,7 +10,7 @@
  *
  * Budget constants: `EXECUTOR_BUDGET_MS` = 240 s of the sweep job's 300 s timeout (infra/terraform/run.tf:351-352; the demo
  * advance's DEFAULT_ADVANCE_BUDGET_MS precedent, src/runtime/demo-clock.ts:62); `CLAIM_LIMIT` = rule 6's `n = 20`; `LEASE_MS` =
- * 5 minutes; `HEARTBEAT_MS` = 30 s.
+ * 5 minutes; `HEARTBEAT_MS` = 30 s; `BYHAND_ADOPT_AFTER_MS` = 3 × HEARTBEAT_MS, the staleness after which an executor adopts a by-hand claim (D6).
  */
 import type { Queryable } from "../../infra/db/client.ts";
 import { toJson } from "../../infra/db/client.ts";
@@ -22,6 +22,8 @@ export const EXECUTOR_BUDGET_MS = 240_000;
 export const CLAIM_LIMIT = 20;
 export const LEASE_MS = 300_000;
 export const HEARTBEAT_MS = 30_000;
+/** A by-hand claim (`lease_holder = byhand:<actor>`, D6) is adopted by an executor only once its heartbeat is this stale — three missed beats: the dispatcher that runs the unit (service.ts runUnitByHand → runClaimed) heartbeats while it runs, so a live by-hand run is never run a second time (rule 6: no unit runs twice); a claim nobody runs (the generic tools route answers `{claimed: true}` and stops) goes stale within 90 s and the next executor pass takes it, long before its 5-minute lease expires. */
+export const BYHAND_ADOPT_AFTER_MS = 3 * HEARTBEAT_MS;
 
 /** The delay before the next attempt after the `attempt`-th failure: 60 s, 120 s, 240 s … capped at 15 minutes. */
 export function backoff(attempt: number): number { return Math.min(JOB_RETRY.baseDelayMs * 2 ** Math.max(0, attempt - 1), JOB_RETRY.maxDelayMs); }

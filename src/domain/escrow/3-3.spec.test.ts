@@ -115,19 +115,32 @@ test("3.3-T3: Given `regx_days_delinquent = 45` at analysis, then status = `exem
   assert.equal(sent.shortage_explained, true); assert.equal(eventMatches(f5.satisfiedPattern!, events.ofType("escrow.statement.sent")[0]!), true);
   assert.equal(events.ofType("escrow.statement.sent").filter((e) => e.payload.statement_type === "annual").length, 0);                                                                          // still no annual statement
   assert.equal(engine.byCode("REGX_1024_17F5_SHORTAGE_NOTICE_ANNUAL").length, 0);   // (kernel note: a recurring row satisfied inside TimerEngine.onEvent re-arms and re-satisfies on the same event — proved here against the registry pattern instead)
-  // Edge case "Exemption applied, then borrower becomes current and requests statement → provide (no new timer; log request date and send within 5 business days as policy)": exempt_hold → borrower_requested_while_current → rendered.
-  await assert.rejects(run("renderStatement", { ...RENDER_INPUT, requested_on: "2027-08-02", regx_days_delinquent_at_request: 45 }), /only once the loan becomes current/);
-  const onRequest = (await run("renderStatement", { ...RENDER_INPUT, requested_on: "2027-08-02", regx_days_delinquent_at_request: 0 })).output as { status: string; rendered: boolean; request: { requested_on: string; send_target_on: string; new_timer: null }; items: Record<string, unknown> };
-  assert.deepEqual([onRequest.status, onRequest.rendered, onRequest.request, Object.keys(onRequest.items).length], ["rendered_on_request", true, { requested_on: "2027-08-02", send_target_on: "2027-08-09", new_timer: null }, 8]);
+  // Edge case (§1024.17(i)(2) contains no request-based duty): a borrower request while held is an RFI (4.2). While the loan is still delinquent it is logged, arms nothing and the hold stays.
+  type OnRequest = { status: string; rendered: boolean; request: { requested_on: string; send_target_on: string; rfi_case: string; account_current: boolean; new_timer: string | null; history_due_on: string | null; exemption_ended_on: string | null }; items: Record<string, unknown> };
+  const whileDelinquent = (await run("renderStatement", { ...RENDER_INPUT, requested_on: "2027-07-20", regx_days_delinquent_at_request: 45 })).output as OnRequest;
+  assert.deepEqual([whileDelinquent.status, whileDelinquent.request], ["rendered_on_request", { requested_on: "2027-07-20", send_target_on: "2027-07-27", rfi_case: "4.2", account_current: false, new_timer: null, history_due_on: null, exemption_ended_on: null }]);
+  const rfi = lastOf(events, "escrow.statement.requested"); assert.deepEqual([rfi.payload.disposition, rfi.payload.account_current, rfi.payload.new_timer, rfi.causationId], ["rfi", false, null, h.hold_event_id]);
+  assert.ok(openExemptHold(events, "L-1")); assert.equal(events.ofType("escrow.statement.exemption_ended").length, 0); assert.equal(timer("REGX_1024_17I2_POST_EXEMPTION_HISTORY_90").length, 0);
+  // Once the loan is current the 90-day history arms on the account-current date whether or not the borrower asked: a request on a current loan is itself that evidence (anchor = the request date when no earlier date is known).
+  const onRequest = (await run("renderStatement", { ...RENDER_INPUT, requested_on: "2027-08-02", regx_days_delinquent_at_request: 0 })).output as OnRequest;
+  assert.deepEqual([onRequest.status, onRequest.rendered, onRequest.request, Object.keys(onRequest.items).length], ["rendered_on_request", true, { requested_on: "2027-08-02", send_target_on: "2027-08-09", rfi_case: "4.2", account_current: true, new_timer: "REGX_1024_17I2_POST_EXEMPTION_HISTORY_90", history_due_on: "2027-10-31", exemption_ended_on: "2027-08-02" }, 8]);
   assert.equal(addBusinessDays(D("2027-08-02"), 5, servicer), "2027-08-09");
-  const req = lastOf(events, "escrow.statement.requested"); assert.deepEqual([req.payload.disposition, req.payload.requested_on, req.payload.send_target_on, req.causationId], ["borrower_requested_while_current", "2027-08-02", "2027-08-09", h.hold_event_id]);
-  assert.throws(() => recordBorrowerRequest(events, { loan_id: "L-1", requested_on: D("2027-05-01"), regx_days_delinquent_at_request: 0, actor: SYSTEM }), /before the exemption was applied/);
-  assert.ok(openExemptHold(events, "L-1"));                                                                                                                                                  // still held until the statement goes out
-  recordStatementSent(events, { loan_id: "L-1", template: "NTC_REGX_1024_17I_ANNUAL_ESCROW_STMT", statement_type: "annual", sent_on: D("2027-08-05"), due_on: D("2027-08-09"), actor: SYSTEM, history_to: D("2027-06-30") });
-  assert.equal(openExemptHold(events, "L-1"), null);                                                                                                                                         // the statement the hold withheld was provided: nothing left to catch up
-  events.append({ type: "loan.reinstated", loanId: "L-1", actor: SYSTEM, payload: { reinstated_on: "2027-09-10" } });
-  assert.deepEqual([settleExemption(events, "L-1").ended, events.ofType("escrow.statement.exemption_ended").length, timer("REGX_1024_17I2_POST_EXEMPTION_HISTORY_90").length], [null, 0, 0]);   // no new timer
+  const req = lastOf(events, "escrow.statement.requested"); assert.deepEqual([req.payload.disposition, req.payload.requested_on, req.payload.current_on, req.payload.send_target_on, req.causationId], ["rfi", "2027-08-02", "2027-08-02", "2027-08-09", h.hold_event_id]);
+  const endedOnRequest = lastOf(events, "escrow.statement.exemption_ended"); assert.deepEqual([endedOnRequest.payload.ended_by, endedOnRequest.payload.exemption_ended_on, endedOnRequest.payload.history_due_on, endedOnRequest.causationId], ["escrow.statement.requested", "2027-08-02", "2027-10-31", req.id]);
+  const armed = timer("REGX_1024_17I2_POST_EXEMPTION_HISTORY_90")[0]!; assert.deepEqual([armed.status, armed.anchorDate, armed.dueDate], ["armed", "2027-08-02", "2027-10-31"]);
+  assert.equal(openExemptHold(events, "L-1"), null);                                                                                                                                         // the exemption ended on the account-current date
   assert.throws(() => recordBorrowerRequest(events, { loan_id: "L-1", requested_on: D("2027-09-12"), regx_days_delinquent_at_request: 0, actor: SYSTEM }), /no open \(i\)\(2\) exemption/);
+  // The policy 5-BD send of the history statement answers the request and satisfies the timer early; a later reinstatement finds nothing open — no second clock.
+  recordStatementSent(events, { loan_id: "L-1", template: POST_EXEMPTION_NOTICE, statement_type: "post_exemption_history", sent_on: D("2027-08-05"), due_on: D("2027-10-31"), actor: SYSTEM, history_to: D("2027-08-02") });
+  assert.equal(armed.status, "satisfied");
+  events.append({ type: "loan.reinstated", loanId: "L-1", actor: SYSTEM, payload: { reinstated_on: "2027-09-10" } });
+  assert.deepEqual([settleExemption(events, "L-1").ended, events.ofType("escrow.statement.exemption_ended").length, timer("REGX_1024_17I2_POST_EXEMPTION_HISTORY_90").length], [null, 1, 1]);   // no new timer
+  // The known account-current date anchors the clock, not the request date: L-2 (held above) became current 2027-07-28 and asked 2027-08-02 → due 2027-10-26.
+  const r2 = recordBorrowerRequest(events, { loan_id: "L-2", requested_on: D("2027-08-02"), regx_days_delinquent_at_request: 0, current_since: D("2027-07-28"), history_from: D("2026-07-01"), actor: SYSTEM });
+  assert.deepEqual([r2.status, r2.account_current, r2.new_timer, r2.ended!.exemption_ended_on, r2.ended!.due_on, r2.ended!.history_from], ["rfi_logged", true, "REGX_1024_17I2_POST_EXEMPTION_HISTORY_90", "2027-07-28", "2027-10-26", "2026-07-01"]);
+  assert.deepEqual(engine.byCode("REGX_1024_17I2_POST_EXEMPTION_HISTORY_90").filter((t) => t.loanId === "L-2").map((t) => [t.anchorDate, t.dueDate]), [["2027-07-28", "2027-10-26"]]);
+  assert.throws(() => recordBorrowerRequest(events, { loan_id: "L-2", requested_on: D("2027-05-01"), regx_days_delinquent_at_request: 0, actor: SYSTEM }), /no open \(i\)\(2\) exemption/);
+  assert.throws(() => recordBorrowerRequest(events, { loan_id: "L-3", requested_on: D("2027-05-01"), regx_days_delinquent_at_request: 0, actor: SYSTEM }), /no open \(i\)\(2\) exemption/);
 });
 test("3.3-T4: Given exemption ended 2027-09-10 by reinstatement, then `REGX_1024_17I2_POST_EXEMPTION_HISTORY_90` due 2027-12-09 and the history covers from the last statement.", async () => {
   assert.equal(postExemptionDeadline(D("2027-09-10")), "2027-12-09");             // REGX_1024_17I2_POST_EXEMPTION_HISTORY_90
@@ -139,9 +152,10 @@ test("3.3-T4: Given exemption ended 2027-09-10 by reinstatement, then `REGX_1024
   assert.throws(() => endExemption(events, { loan_id: "L-1", ended_by: "loan.reinstated", ended_on: D("2027-09-10"), actor: SYSTEM }), /no open \(i\)\(2\) exemption/);
   const hold = recordExemptHold(events, { loan_id: "L-1", reason: "delinquent_30", shortage_cents: 0n, as_of: D("2027-05-16"), actor: SYSTEM }); assert.equal(hold.status, "exempt_hold");
   assert.equal(timer("REGX_1024_17I2_POST_EXEMPTION_HISTORY_90").length, 0);                                                                                                                  // the hold arms no history clock
-  // A bankruptcy case closing does not make a delinquent loan current: the cause is refused on the log and the hold stays open.
+  // A bankruptcy case closing does not make a delinquent loan current: the cause is refused on the log and the hold stays open (the exemption re-applies at the next analysis if > 30 days overdue).
   events.append({ type: "bankruptcy.case.closed", loanId: "L-1", actor: SYSTEM, payload: { closed_on: "2027-08-01" } });
-  assert.match(String(events.ofType("escrow.statement.exemption_end.refused")[0]!.payload.reason), /does not end a delinquent_30 exemption/); assert.ok(openExemptHold(events, "L-1")); assert.equal(timer("REGX_1024_17I2_POST_EXEMPTION_HISTORY_90").length, 0);
+  assert.match(String(events.ofType("escrow.statement.exemption_end.refused")[0]!.payload.reason), /bankruptcy\.case\.closed on a still-delinquent loan does not end a delinquent_30 exemption/); assert.ok(openExemptHold(events, "L-1")); assert.equal(timer("REGX_1024_17I2_POST_EXEMPTION_HISTORY_90").length, 0);
+  assert.throws(() => endExemption(events, { loan_id: "L-1", ended_by: "bankruptcy.case.closed", ended_on: D("2027-08-01"), actor: SYSTEM }), /still-delinquent loan does not end/);
   assert.throws(() => endExemption(events, { loan_id: "L-1", ended_by: "loan.reinstated", ended_on: D("2027-05-01"), actor: SYSTEM }), /before the exemption was applied/);
   // Exemption ended 2027-09-10 by reinstatement (§13's event, ingested): `escrow.statement.exemption_ended{exemption_ended_on=2027-09-10}` arms the 90-day row on that date, not on the day it was recorded.
   const cause = events.append({ type: "loan.reinstated", loanId: "L-1", actor: SYSTEM, payload: { reinstated_on: "2027-09-10", tendered_cents: "512345" } });
@@ -159,12 +173,16 @@ test("3.3-T4: Given exemption ended 2027-09-10 by reinstatement, then `REGX_1024
   const sent = (await run("sendNotice", { notice_id: n.id, due_on: t.dueDate })).output as Notice; assert.equal(sent.status, "sent");
   const se = lastOf(events, "escrow.statement.sent"); assert.deepEqual([se.payload.template, se.payload.statement_type, se.payload.history_to, se.payload.sent_on, se.payload.due_on, se.actor.id], [POST_EXEMPTION_NOTICE, "post_exemption_history", "2027-09-10", "2027-10-25", "2027-12-09", "escrow"]);
   assert.equal(t.status, "satisfied"); assert.equal(engine.byCode("REGX_1024_17I2_POST_EXEMPTION_HISTORY_90").length, 1);
-  // A foreclosure-action hold ends by dismissal of the action (or reinstatement); the next history continues from the history statement's period end.
+  // A foreclosure-action hold ends when the loan is reinstated or otherwise becomes current — never by a dismissal on a still-delinquent loan; the next history continues from the history statement's period end.
   const fc = recordExemptHold(events, { loan_id: "L-1", reason: "foreclosure_action", shortage_cents: 0n, as_of: D("2028-05-16"), actor: SYSTEM }); assert.equal(fc.reason, "foreclosure_action");
   assert.throws(() => endExemptionFromEvent(events, events.append({ type: "payment.posted", loanId: "L-1", actor: SYSTEM, payload: {} }), SYSTEM), /not an exemption-ending event/);
   off();                                                                                                                                                                                     // lazy ingestion below, without the reactor
-  const dismissal = events.append({ type: "foreclosure.case.cancelled", loanId: "L-1", actor: SYSTEM, payload: { cancelled_on: "2028-09-10" } });
-  const r3 = settleExemption(events, "L-1", SYSTEM).ended!; assert.deepEqual([r3.ended_by, r3.exemption_ended_on, r3.history_from, r3.due_on, r3.event.causationId], ["foreclosure.case.cancelled", "2028-09-10", "2027-09-11", "2028-12-09", dismissal.id]);
+  const dismissal = events.append({ type: "foreclosure.case.cancelled", loanId: "L-1", actor: SYSTEM, payload: { cancelled_on: "2028-09-01" } });
+  const s3 = settleExemption(events, "L-1", SYSTEM); assert.equal(s3.ended, null); assert.equal(s3.refused.length, 1);
+  assert.deepEqual([s3.refused[0]!.payload.cause, s3.refused[0]!.causationId], ["foreclosure.case.cancelled", dismissal.id]); assert.match(String(s3.refused[0]!.payload.reason), /foreclosure\.case\.cancelled on a still-delinquent loan does not end a foreclosure_action exemption/);
+  assert.ok(openExemptHold(events, "L-1")); assert.equal(timer("REGX_1024_17I2_POST_EXEMPTION_HISTORY_90").length, 1);                                                                       // nothing armed on the dismissal
+  const cure = events.append({ type: "loan.reinstated", loanId: "L-1", actor: SYSTEM, payload: { reinstated_on: "2028-09-10" } });
+  const r3 = settleExemption(events, "L-1", SYSTEM).ended!; assert.deepEqual([r3.ended_by, r3.exemption_ended_on, r3.history_from, r3.due_on, r3.event.causationId], ["loan.reinstated", "2028-09-10", "2027-09-11", "2028-12-09", cure.id]);
   assert.equal(timer("REGX_1024_17I2_POST_EXEMPTION_HISTORY_90")[1]!.dueDate, "2028-12-09");
   assert.equal(endExemptionFromEvent(events, events.append({ type: "loan.reinstated", loanId: "L-1", actor: SYSTEM, payload: { reinstated_on: "2028-09-12" } }), SYSTEM), null);
   assert.deepEqual(settleExemption(events, "L-1", SYSTEM), { ended: null, refused: [] });                                                                                                   // nothing open: a later cause owes nothing
@@ -174,9 +192,17 @@ test("3.3-T4: Given exemption ended 2027-09-10 by reinstatement, then `REGX_1024
   const viaTool = (await run("renderStatement", RENDER_INPUT)).output as { settled: string | null; status: string };
   const r4 = lastOf(events, "escrow.statement.exemption_ended"); assert.deepEqual([viaTool.settled, viaTool.status, r4.payload.ended_by, r4.payload.exemption_ended_on, r4.payload.history_from, r4.payload.history_due_on, r4.actor.id], ["history_due", "rendered", "loan.reinstated", "2029-09-10", "2027-09-11", "2029-12-09", "escrow"]);   // rule 6: from the day after the last statement actually sent (the 2027 history), not the unsent 2028 one — "may be longer than 1 year"
   assert.equal(events.ofType("escrow.statement.exemption_end.refused").length, refusedBefore); assert.equal(timer("REGX_1024_17I2_POST_EXEMPTION_HISTORY_90")[2]!.dueDate, "2029-12-09");
-  // A dismissal closes the case the same way (§13.3 `foreclosure.case.closed`): it ends a foreclosure-action hold on `closed_on`.
-  recordExemptHold(events, { loan_id: "L-1", reason: "foreclosure_action", shortage_cents: 0n, as_of: D("2030-05-16"), actor: SYSTEM }); events.append({ type: "foreclosure.case.closed", loanId: "L-1", actor: SYSTEM, payload: { reason: "dismissed", closed_on: "2030-09-10" } });
-  assert.deepEqual([settleExemption(events, "L-1").ended!.ended_by, settleExemption(events, "L-1").ended, timer("REGX_1024_17I2_POST_EXEMPTION_HISTORY_90")[3]!.dueDate], ["foreclosure.case.closed", null, "2030-12-09"]);
+  // A dismissal (§13.3 `foreclosure.case.closed`) on a still-delinquent loan ends nothing; one that records the account as current ends the hold on the account-current date it carries (`current_on`), not on `closed_on`.
+  recordExemptHold(events, { loan_id: "L-1", reason: "foreclosure_action", shortage_cents: 0n, as_of: D("2030-05-16"), actor: SYSTEM }); events.append({ type: "foreclosure.case.closed", loanId: "L-1", actor: SYSTEM, payload: { reason: "dismissed", closed_on: "2030-09-01" } });
+  const s5 = settleExemption(events, "L-1"); assert.equal(s5.ended, null); assert.equal(s5.refused.length, 1); assert.ok(openExemptHold(events, "L-1")); assert.equal(timer("REGX_1024_17I2_POST_EXEMPTION_HISTORY_90").length, 3);
+  events.append({ type: "foreclosure.case.closed", loanId: "L-1", actor: SYSTEM, payload: { reason: "dismissed", closed_on: "2030-09-12", account_current: true, current_on: "2030-09-10" } });
+  const r5 = settleExemption(events, "L-1").ended!;
+  assert.deepEqual([r5.ended_by, r5.exemption_ended_on, r5.due_on, settleExemption(events, "L-1").ended, timer("REGX_1024_17I2_POST_EXEMPTION_HISTORY_90")[3]!.dueDate], ["foreclosure.case.closed", "2030-09-10", "2030-12-09", null, "2030-12-09"]);
+  // "Otherwise becomes current" without a formal reinstatement: §10.2's `loan.became_current{became_current_on}` ends a delinquency hold on that date.
+  const cured = approvedLoan("2027-05-18T15:00:00.000Z", {}); recordExemptHold(cured.events, { loan_id: "L-1", reason: "delinquent_30", shortage_cents: 0n, as_of: D("2027-05-16"), actor: SYSTEM });
+  cured.events.append({ type: "loan.became_current", loanId: "L-1", actor: SYSTEM, payload: { became_current_on: "2027-09-10", cure_date: "2027-09-10", effective_on: "2027-10-01" } });
+  const r6 = settleExemption(cured.events, "L-1").ended!; assert.deepEqual([r6.ended_by, r6.exemption_ended_on, r6.due_on, r6.history_from], ["loan.became_current", "2027-09-10", "2027-12-09", "2026-07-01"]);
+  assert.deepEqual(cured.timer("REGX_1024_17I2_POST_EXEMPTION_HISTORY_90").map((t) => [t.anchorDate, t.dueDate]), [["2027-09-10", "2027-12-09"]]);
   // With no prior statement on the log, the history runs from the start of the computation year the held statement was for (the previous year end + 1).
   const fresh = approvedLoan("2027-05-18T15:00:00.000Z", {}); recordExemptHold(fresh.events, { loan_id: "L-1", reason: "delinquent_30", shortage_cents: 0n, as_of: D("2027-05-16"), actor: SYSTEM });
   assert.equal(endExemption(fresh.events, { loan_id: "L-1", ended_by: "loan.reinstated", ended_on: D("2027-09-10"), actor: SYSTEM }).history_from, "2026-07-01");

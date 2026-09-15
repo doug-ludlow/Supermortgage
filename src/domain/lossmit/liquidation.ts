@@ -2,7 +2,7 @@
 import type { Cents } from "../../kernel/money/cents.ts";
 import { divRound } from "../../kernel/money/decimal.ts";
 import { type PlainDate, addDays, daysBetween, dayOfWeek } from "../../kernel/calendar/date.ts";
-import { addBusinessDays, servicer } from "../../kernel/calendar/business.ts";
+import { addBusinessDays, fannieEt } from "../../kernel/calendar/business.ts";
 
 /** D2-3.3-01 cash-contribution gates: not evaluated if prohibited by law, without a complete BRP, or for PCS servicemembers; required when reserves >$10,000 or the F-1-14 housing ratio ≤40%. */
 export interface ContributionFacts { readonly housing_ratio_pct?: string | number | null; readonly brp_complete?: boolean; readonly pcs_servicemember?: boolean; readonly prohibited_by_law?: boolean; }
@@ -25,7 +25,8 @@ export function netProceeds(price: Cents, costs: { commission: Cents; prorations
   const total = Object.values(costs).reduce((a, b) => a + b, 0n);
   return { net_cents: price - total, commission_ok: costs.commission * 100n <= price * 6n, subordinate_ok: costs.subordinate_liens <= 600_000n };
 }
-export function shortSaleClocks(offerOn: PlainDate, approvalOn?: PlainDate): { ack_by: PlainDate; decision_by: PlainDate; close_by: PlainDate | null } { return { ack_by: addBusinessDays(offerOn, 5, servicer), decision_by: addDays(offerOn, 30), close_by: approvalOn ? addDays(approvalOn, 60) : null }; }
+/** D2-3.3-01 clocks: the 5-business-day acknowledgment runs on the Guide's business-day calendar (`business_days_fannie_et` — not Sat/Sun, FRBNY closures, Fannie Mae DC closures); the 30/60-day clocks are calendar days. */
+export function shortSaleClocks(offerOn: PlainDate, approvalOn?: PlainDate): { ack_by: PlainDate; decision_by: PlainDate; close_by: PlainDate | null } { return { ack_by: addBusinessDays(offerOn, 5, fannieEt), decision_by: addDays(offerOn, 30), close_by: approvalOn ? addDays(approvalOn, 60) : null }; }
 /** D2-3.3-01: active MLS status for at least 5 consecutive calendar days *including a Saturday and a Sunday* before an offer is reviewed. */
 export function listingRule(activeFrom: PlainDate, asOf: PlainDate): { consecutive_days: number; includes_saturday: boolean; includes_sunday: boolean; met: boolean } {
   const days = asOf < activeFrom ? 0 : daysBetween(activeFrom, asOf) + 1;

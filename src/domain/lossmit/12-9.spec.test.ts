@@ -5,6 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { plainDate as D } from "../../kernel/calendar/date.ts";
+import { addBusinessDays, fannieEt } from "../../kernel/calendar/business.ts";
 import { shortSaleIntake, delegationRouting, settlementReview, dilExitOption, liquidationHolds, militaryIndulgence, dilCase, shortSaleClosingClock } from "./ops.ts";
 import { relocation, netProceeds, contribution, negotiated, listingRule, listingRuleMet, shortSaleClocks, dilClocks, deedTiming, incentive } from "./liquidation.ts";
 import { recordValuationReceived, recordClosingFundsReceived, recordInspectionReport, disburseRelocation, recordNodRescinded, recordForeclosureSaleScheduled, attachSaleScheduleListener, projectLiquidationCase, LIQUIDATION_ACTOR } from "./ops-12-9.ts";
@@ -57,7 +58,7 @@ function liquidationHarness(loanId: string, nowIso: string) {
   return { clock, events, timers, rt, run, rejects, notice, at, timer, emitted, env: () => ({ ...env, now: clock.now() }) };
 }
 
-test("12.9-T1: Given a complete BRP and an initial offer received 2026-10-05 (loan 8 months delinquent), when processed, then the acknowledgment is sent by 2026-10-12 (5 BD), the valuation is ordered on eligibility, and the approval/counter/decline is sent by 2026-11-04 (30 days).", async () => {
+test("12.9-T1: Given a complete BRP and an initial offer received 2026-10-05 (loan 8 months delinquent), when processed, then the acknowledgment is sent by 2026-10-13 (5 Fannie Mae business days: Oct 6, 7, 8, 9, 13 — Columbus Day 2026-10-12 is a Federal Reserve Bank holiday), the valuation is ordered on eligibility, and the approval/counter/decline is sent by 2026-11-04 (30 days).", async () => {
   const r = shortSaleIntake({ offer_received_on: D("2026-10-05"), brp_complete: true, months_delinquent: 8 });
   assert.equal(r.eligible, true); assert.equal(r.ack_notice, "NTC_FNMA_D23301_SS_OFFER_ACK"); assert.equal(r.valuation_ordered, true);
   // D2-3.3-01 tiering (12.9 rule 1): 8 months → 90 days–18 months, complete BRP required unless a listed exception applies; >18 months and Chapter 7 discharge need no BRP; current/<90 days needs the BRP and, under 60 days, imminent default with a qualifying hardship.
@@ -70,8 +71,9 @@ test("12.9-T1: Given a complete BRP and an initial offer received 2026-10-05 (lo
   assert.equal(shortSaleIntake({ offer_received_on: D("2026-10-05"), brp_complete: true, months_delinquent: 0, days_delinquent: 0, imminent_default: true, qualifying_hardship: true }).eligible, true);
   assert.equal(shortSaleIntake({ offer_received_on: D("2026-10-05"), brp_complete: true, months_delinquent: 2, days_delinquent: 65 }).eligible, true);   // 60–89 days: BRP suffices
   assert.throws(() => shortSaleIntake({ offer_received_on: D("2026-10-05"), brp_complete: false, months_delinquent: 8, exceptions: ["low_fico"] }), /unknown D2-3.3-01 BRP exception/);
-  // 5 servicer business days from 2026-10-05 skip Columbus Day (2026-10-12) → 2026-10-13 (the spec's 10-12 counts the holiday; see docs/AUDIT-NOTES.md)
-  assert.equal(r.ack_by, "2026-10-13"); assert.equal(r.decision_by, "2026-11-04"); assert.deepEqual(r.decision_notices, ["NTC_FNMA_D23301_SS_APPROVAL", "NTC_FNMA_D23301_SS_COUNTER", "NTC_FNMA_D23301_SS_DECLINE"]);
+  // D2-3.3-01 'five business days' on the Guide glossary calendar (`business_days_fannie_et`: not Sat/Sun, FRBNY closures, Fannie Mae DC closures): Oct 6, 7, 8, 9, 13 — Columbus Day Mon 2026-10-12 is a Federal Reserve Bank holiday → 2026-10-13.
+  assert.equal(r.ack_by, "2026-10-13"); assert.equal(addBusinessDays(D("2026-10-05"), 5, fannieEt), "2026-10-13"); assert.equal(fannieEt.isBusinessDay(D("2026-10-12")), false);
+  assert.deepEqual(["2026-10-06", "2026-10-07", "2026-10-08", "2026-10-09", "2026-10-13"].map((d) => fannieEt.isBusinessDay(D(d))), [true, true, true, true, true]); assert.equal(r.decision_by, "2026-11-04"); assert.deepEqual(r.decision_notices, ["NTC_FNMA_D23301_SS_APPROVAL", "NTC_FNMA_D23301_SS_COUNTER", "NTC_FNMA_D23301_SS_DECLINE"]);
   // The same file on the bus: the offer arms the 5-BD ack and 30-day decision clocks, the valuation order arms F-1-14's 10-day SLA, and the real events satisfy each.
   const h = liquidationHarness("L-129-T1", "2026-10-05T15:00:00.000Z");
   await h.run("liquidation.case.*", { id: "liq-T1", kind: "short_sale", status: "listing", state: "TX" });
@@ -208,8 +210,8 @@ test("12.9-T7: (DIL window) acceptance 2026-10-15 → documents due 2026-12-14; 
 test("12.9-T8: (deed timing) sale 2026-12-01; executed deed received 2026-11-05 (26 days before) → Fannie Mae prior approval required; received 2026-10-30 → allowed; recordation submitted within 5 BD; lien release within 30 BD after inspection confirms vacancy.", async () => {
   assert.equal(deedTiming(D("2026-11-05"), D("2026-12-01")), "fnma_prior_approval"); assert.equal(deedTiming(D("2026-10-30"), D("2026-12-01")), "allowed");
   const r = dilCase({ acceptance_on: D("2026-10-15"), exit_option: "immediate", deed_accepted_on: D("2026-10-30"), vacancy_confirmed_on: D("2026-11-10") });
-  assert.equal(r.deed_recordation_submit_by, "2026-11-06");   // 5 servicer BD after acceptance of the executed deed (FNMA_D23302_DIL_DEED_RECORD_5BD)
-  assert.equal(r.lien_release_due, "2026-12-24");            // 30 servicer BD after the later of acceptance and the vacancy/security inspection (FNMA_D23302_DIL_LIEN_RELEASE_30BD; Thanksgiving skipped)
+  assert.equal(r.deed_recordation_submit_by, "2026-11-06");   // 5 Fannie Mae BD after acceptance of the executed deed (FNMA_D23302_DIL_DEED_RECORD_5BD; Guide glossary business days)
+  assert.equal(r.lien_release_due, "2026-12-24");            // 30 Fannie Mae BD after the later of acceptance and the vacancy/security inspection (FNMA_D23302_DIL_LIEN_RELEASE_30BD; Thanksgiving skipped)
   assert.equal(dilCase({ acceptance_on: D("2026-10-15"), exit_option: "immediate" }).lien_release_due, null);
   // Loan A on the bus: the 13.x sale date (2026-12-01) is re-stated for the open Mortgage Release with `dil_case_open` and the 30-day deed cut-off (2026-11-01); the deed accepted 2026-11-05 satisfies the gate late and needs Fannie Mae's prior approval.
   const a = liquidationHarness("L-129-T8a", "2026-10-20T15:00:00.000Z");

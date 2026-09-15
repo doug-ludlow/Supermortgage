@@ -17,7 +17,7 @@ import { EntityStore, toolCommand, type ToolRuntime } from "../../app/tools.ts";
 import { TOOLS_5_6 } from "../../app/tools/section5-6.ts";
 import type { UowContext } from "../../infra/db/unit-of-work.ts";
 import type { DecisionInput } from "../../infra/db/decisions.ts";
-import { mbsRepurchasePrice, portfolioAaRepurchasePrice, appealLadder, dpoIndemnification } from "./repurchase.ts";
+import { mbsRepurchasePrice, portfolioAaRepurchasePrice, appealLadder, dpoIndemnification, mandatoryRepurchaseSchedule, REPURCHASE_TYPES } from "./repurchase.ts";
 import { crsAaRequest } from "./remittance.ts";
 import { projectLar96 } from "./lar.ts";
 import { applyInvestorTimerOverrides } from "./timers.ts";
@@ -181,6 +181,29 @@ test("5.6-T7: Given an MBS Express pool repurchase reported in October, then uns
   h.clock.set(iso("2026-11-12", "12:00"));
   await h.run("recordDecision", { ...LOAN, decision_kind: "ownership_updated", mers_confirmation_id: "MERS-TOB-1", custodian_release_id: "F2009-1", investor: "partner", updated_on: "2026-11-12" });
   assert.equal(own.status, "satisfied"); assert.equal(h.ofType("repurchase.ownership.updated")[0]!.payload.status, "closed");
+});
+test("5.6-T8: Given a regular servicing option loan with LPI Sept 1, 2025 and a Fannie Mae repurchase demand received in July 2027 (22 months past due), then `type = mandatory_24mo`, the repurchase is reported as activity in the September 2027 period (the month containing Sept 1, 2027, the due date of the 24th consecutive past-due installment) with LAR 65 on the removal clock, and the `officer` escalation exists from the demand.", async () => {
+  // A1-3-02: installments past due are counted from the LPI — Oct 1, 2025 … Jul 1, 2027 = 22 at the July 2027 demand; the 24th (Sept 1, 2027) fixes the reporting month
+  const s = mandatoryRepurchaseSchedule(D("2025-09-01"), D("2027-07-15"));
+  assert.deepEqual(s, { type: "mandatory_24mo", months_past_due_at_demand: 22, demand_expected_on: "2027-07-01", due_date_24th: "2027-09-01", reporting_period: "2027-09", demand_at_22_months: true });
+  assert.equal(mandatoryRepurchaseSchedule(D("2025-09-01"), D("2027-06-30")).months_past_due_at_demand, 21);
+  assert.ok(REPURCHASE_TYPES.includes("mandatory_24mo") && REPURCHASE_TYPES.includes("mandatory_event"));
+  // the demand: `type = mandatory_24mo`, the reporting period on the case, and the officer escalation from receipt
+  const h = harness(iso("2027-07-15", "10:00"));
+  await assert.rejects(h.run("recordDecision", { ...LOAN, decision_kind: "demand_received", received_on: "2027-07-15", demand_kind: "mandatory_24mo", amount_cents: 20049750n, demand_document_id: "doc-demand-24" }), (e: unknown) => e instanceof RangeError && /lpi/.test(e.message));
+  const d = await h.run("recordDecision", { ...LOAN, decision_kind: "demand_received", received_on: "2027-07-15", demand_kind: "mandatory_24mo", lpi: "2025-09-01", amount_cents: 20049750n, demand_document_id: "doc-demand-24" });
+  assert.equal(d.decision_kind, "demand_received");
+  const ev = h.ofType("repurchase.demand.received")[0]!;
+  assert.deepEqual([ev.payload.type, ev.payload.demand_kind, ev.payload.months_past_due_at_demand, ev.payload.due_date_24th, ev.payload.reporting_period, ev.payload.report_as_activity_in, ev.payload.escalation, ev.payload.case_type], ["mandatory_24mo", "mandatory_24mo", 22, "2027-09-01", "2027-09", "2027-09", "officer", "qc_finding"]);
+  const esc = h.escalations.opened.find((e) => e.kind === "officer")!; assert.equal(esc.loanId, "L-1"); assert.equal(esc.payload.type, "mandatory_24mo"); assert.equal(esc.payload.reporting_period, "2027-09"); assert.equal(esc.payload.due_date_24th, "2027-09-01");
+  assert.equal(h.timer("FNMA_A1302_REPURCHASE_PAY_60").dueDate, "2027-09-13");
+  // the repurchase is processed in the September 2027 period and the LAR 65 rides the removal clock (next fannie_et BD 20:00 ET)
+  h.clock.set(iso("2027-09-15", "10:00")); h.doc("doc-approval-1");
+  const out = await h.run("projectEvent", { ...LOAN, approval_document_id: "doc-approval-1", processed_at: iso("2027-09-15", "09:30"), effective_date: "2027-09-15", remittance_type: "S/S", scheduled_upb_cents: 19950000n, ptr: "6.000" });
+  const lar = out.event as { action_code: string; processed_at: string; due_at: string };
+  assert.deepEqual([out.blocked, lar.action_code, lar.due_at], [false, "65", iso("2027-09-16", "20:00")]);
+  assert.equal(h.ofType("repurchase.processed")[0]!.payload.activity_period, "2027-09", "reported as activity in the month containing the 24th past-due installment's due date");
+  const clock = h.timer("FNMA_IRM_REPURCHASE_AC65_NEXTBD_2000"); assert.equal(clock.status, "armed"); assert.equal(clock.anchorDate, "2027-09-15"); assert.equal(toIso(clock.dueAt!), iso("2027-09-16", "20:00"));
 });
 
 test("5.6 FNMA_A1302_DOCS_30: file selected for review Sept 15, 2026 → documents due Oct 15; the submission satisfies it; an empty submission is refused", async () => {

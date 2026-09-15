@@ -18,14 +18,15 @@ import { SECTION_05_TOOLS } from "../../app/tools/section05.ts";
 import type { UowContext } from "../../infra/db/unit-of-work.ts";
 import type { DecisionInput } from "../../infra/db/decisions.ts";
 import { FakeFnmaLsdu, FakeFnmaServicingEvents } from "../../infra/integrations/fnma.ts";
-import { fannieBusinessDay, larDeadlineMs, lar83DeadlineMs, iredSweepDate, iredSweepRunMs, iredDeadlineMs, bd2CloseMs, periodAnchors } from "./period.ts";
-import { scheduledMonth } from "./remittance.ts";
+import { fannieBusinessDay, larDeadlineMs, lar83DeadlineMs, iredSweepDate, iredSweepRunMs, iredDeadlineMs, bd2CloseMs, periodAnchors, nonRemovalCorrectionCloseMs } from "./period.ts";
+import { scheduledMonth, saInterest } from "./remittance.ts";
+import type { LarPayload } from "./types.ts";
 import { projectLar96, projectLar97, parseLar96, validateLar80, zoned, unzoned, idempotencyKey, LAR96_POSITIONS } from "./lar.ts";
 import { SequenceAllocator, buildLarBatch, applyBatch, type BatchEvent, type InvestorEventRow } from "./batch.ts";
-import { ET, triageHardReject, headOfLine, postCloseRemovalError, escrowDepositRouting, bulkAckWatch, workException, LAR_DECISION_FIELDS, softRejectInterest, closeSoftRejectAtPeriodClose, periodCloseChecklist } from "./ops.ts";
+import { ET, noPaymentAmounts, restatedCorrection, triageHardReject, headOfLine, postCloseRemovalError, escrowDepositRouting, bulkAckWatch, workException, LAR_DECISION_FIELDS, softRejectInterest, closeSoftRejectAtPeriodClose, periodCloseChecklist } from "./ops.ts";
 import { createInvestorEvent, submitLarFile, recordSubmissionAck, ingestLarFeedback, ingestServicingEventResponses, recordTriage, closeSoftRejectsAtPeriodClose, openReportingPeriod, iredSweepRun, bulkCutoffSweep, closeReportingPeriod, completeEscrowAttestation, monthEnd, compFeeLadder, compensatoryFeeWatch, ingestSmduDeferralAcceptance, channelMode, type TrackedEvent } from "./ops-5-1.ts";
 
-const SN = "123456789", FL = "4000000001", FL2 = "4000000002";
+const SN = "123456789", FL = "4000000001", FL2 = "4000000002", FL3 = "4000000003", FL4 = "4000000004";
 const at = (d: string, hhmm: string) => zonedEpochMs(D(d), hhmm, ET);
 /** The registry as the services load it (section + process overrides): the patterns every emitted event is checked against. */
 const REG = loadOverriddenRegistry();
@@ -97,15 +98,33 @@ test("5.1-T2: Given a loan with no payment by CD22 (Thu 2026-10-22), when the 18
   const nov = engine("2026-11-01T09:00:00.000Z");
   openReportingPeriod(nov.events, { month_of: D("2026-11-01"), servicer_number: SN, loans: [{ loan_id: "L-1", fnma_loan_number: FL, reporting: "summary" }] });
   assert.equal(toIso(nov.timers.byCode("FNMA_IRM_LAR_IRED_CD22_2000")[0]!.dueAt!), toIso(at("2026-11-20", "20:00"))); assert.equal(toIso(nov.timers.byCode("FNMA_LL202605_NOPAYMENT_CD22")[0]!.dueAt!), toIso(at("2026-11-20", "23:59")));
-  // the 18:00 ET sweep on Thu Oct 22 (never earlier): L-2 has an accepted payment, L-1 has none → one payment.none row (LAR 96, unchanged LPI/UPB, zero interest/principal, action 00)
+  // the 18:00 ET sweep on Thu Oct 22 (never earlier): L-2 has an accepted payment; L-1 (A/A), L-3 (S/A) and L-4 (S/S) have none → payment.none rows (LAR 96, unchanged LPI and actual UPB,
+  // action 00) whose interest/principal follow the remittance type (rule 4): A/A zero; S/A the advanced month; S/S the scheduled interest and principal on the prior scheduled UPB
   const seq = new SequenceAllocator({ "L-1": 3 });
-  const loans = [{ loan_id: "L-1", fnma_loan_number: FL, reporting: "summary" as const, accepted_payment_event: false, position: { lpi_date: D("2026-09-01"), upb_cents: 25_000_000n, nib_cents: 0n } }, { loan_id: "L-2", fnma_loan_number: FL2, reporting: "summary" as const, accepted_payment_event: true, position: { lpi_date: D("2026-10-01"), upb_cents: 10_000_000n, nib_cents: 0n } }];
+  const loans = [{ loan_id: "L-1", fnma_loan_number: FL, reporting: "summary" as const, accepted_payment_event: false, position: { lpi_date: D("2026-09-01"), upb_cents: 25_000_000n, nib_cents: 0n, remittance_type: "AA" as const } }, { loan_id: "L-2", fnma_loan_number: FL2, reporting: "summary" as const, accepted_payment_event: true, position: { lpi_date: D("2026-10-01"), upb_cents: 10_000_000n, nib_cents: 0n } },
+    { loan_id: "L-3", fnma_loan_number: FL3, reporting: "summary" as const, accepted_payment_event: false, position: { lpi_date: D("2026-09-01"), upb_cents: 19_950_000n, nib_cents: 0n, remittance_type: "SA" as const, ptr: "6.000" } },
+    { loan_id: "L-4", fnma_loan_number: FL4, reporting: "summary" as const, accepted_payment_event: false, position: { lpi_date: D("2026-09-01"), upb_cents: 25_000_000n, nib_cents: 0n, remittance_type: "SS" as const, ptr: "6.000", note_rate: "6.500", pi_cents: 158_017n, scheduled_upb_cents: 25_000_000n } }];
   assert.throws(() => iredSweepRun(events, seq, { month_of: D("2026-10-01"), servicer_number: SN, now_ms: at("2026-10-22", "17:59"), loans }), RangeError);
   clock.set(toIso(at("2026-10-22", "18:00")));
   const run = iredSweepRun(events, seq, { month_of: D("2026-10-01"), servicer_number: SN, now_ms: at("2026-10-22", "18:00"), loans });
-  assert.deepEqual(run.sweep.project_none_for, ["L-1"]); assert.equal(run.projections.length, 1);
+  assert.deepEqual(run.sweep.project_none_for, ["L-1", "L-3", "L-4"]); assert.equal(run.projections.length, 3);
   const p = run.projections[0]!; assert.deepEqual([p.created.family, p.created.per_loan_sequence, p.projection.event_type], ["nonpayment", 3, "payment.none"]);
   assert.deepEqual([p.lar!.fields.lpi, p.lar!.fields.upb, p.lar!.fields.interest, p.lar!.fields.principal, p.lar!.fields.action_code], ["0926", "0002500000{", "0000000000{", "0000000000{", "00"]);
+  assert.deepEqual([p.projection.amounts.remittance_type, p.projection.amounts.basis, p.projection.amounts.months_delinquent], ["AA", "aa_nothing_advanced", 1]);
+  // S/A (IRM 2-04 pp. 26–27): one month's interest on the prior actual UPB at the PTR — $199,500 × 6% ÷ 12 = $997.50 — for the LPI month and each month through the third
+  const sa = run.projections[1]!; assert.deepEqual([sa.lar!.fields.lpi, sa.lar!.fields.upb, sa.lar!.fields.interest, sa.lar!.fields.principal], ["0926", "0001995000{", "0000009975{", "0000000000{"]);
+  assert.deepEqual([sa.projection.amounts.interest_cents, sa.projection.amounts.basis, sa.projection.amounts.months_delinquent], [99_750n, "sa_advanced_month", 1]);
+  assert.equal(saInterest(19_950_000n, "6.000", 3), 99_750n);
+  // … then negative three months' interest (−$2,992.50) in the month the loan becomes four months delinquent, nothing after; a concurrent-sales participation pool loan keeps advancing (C-3-01)
+  const sa4 = noPaymentAmounts({ lpi_date: D("2026-06-01"), upb_cents: 19_950_000n, nib_cents: 0n, remittance_type: "SA", ptr: "6.000" }, D("2026-10-01"));
+  assert.deepEqual([sa4.months_delinquent, sa4.interest_cents, sa4.principal_cents, sa4.basis], [4, -299_250n, 0n, "sa_recovery_three_months"]);
+  assert.deepEqual([noPaymentAmounts({ lpi_date: D("2026-05-01"), upb_cents: 19_950_000n, nib_cents: 0n, remittance_type: "SA", ptr: "6.000" }, D("2026-10-01")).interest_cents, noPaymentAmounts({ lpi_date: D("2026-05-01"), upb_cents: 19_950_000n, nib_cents: 0n, remittance_type: "SA", ptr: "6.000", concurrent_sales_participation_pool: true }, D("2026-10-01")).interest_cents], [0n, 99_750n]);
+  assert.equal(noPaymentAmounts({ lpi_date: D("2026-09-01"), upb_cents: 19_950_000n, nib_cents: 0n, remittance_type: "SA", ptr: "6.000", participation_pct: "50" }, D("2026-10-01")).interest_cents, 49_875n, "× Fannie Mae's percentage interest");
+  // S/S (IRM p. 15/18): scheduled interest on the prior scheduled UPB ($250,000 × 6% ÷ 12 = $1,250.00) plus the scheduled principal ($1,580.17 − $1,354.17 = $226.00); the scheduled UPB advances to $249,774.00 while actual UPB and LPI do not
+  const ss = run.projections[2]!; assert.deepEqual([ss.lar!.fields.lpi, ss.lar!.fields.upb, ss.lar!.fields.interest, ss.lar!.fields.principal, ss.lar!.fields.action_code], ["0926", "0002500000{", "0000012500{", "0000002260{", "00"]);
+  assert.deepEqual([ss.projection.amounts.interest_cents, ss.projection.amounts.principal_cents, ss.projection.amounts.scheduled_upb_after_cents, ss.projection.amounts.basis], [125_000n, 22_600n, 24_977_400n, "ss_scheduled"]);
+  assert.equal(ss.projection.payload.upb_cents, 25_000_000n, "the LAR carries the unchanged actual UPB, not the advanced scheduled UPB");
+  assert.throws(() => noPaymentAmounts({ lpi_date: D("2026-09-01"), upb_cents: 1n, nib_cents: 0n, remittance_type: "SS", ptr: "6.000" }, D("2026-10-01")), /note_rate and pi_cents/);
   assert.ok(run.sweep.run_ms < p.projection.submit_by_ms); assert.equal(toIso(p.projection.submit_by_ms), toIso(at("2026-10-22", "20:00")));
   // submitted through the adapter at 18:20 — before 20:00 ET
   const lsdu = new FakeFnmaLsdu();
@@ -126,6 +145,25 @@ test("5.1-T2: Given a loan with no payment by CD22 (Thu 2026-10-22), when the 18
   assert.ok(eventMatches(sat("FNMA_LL202605_NOPAYMENT_CD22"), accepted));
   assert.equal(noneL1.status, "satisfied"); assert.equal(noneL1.satisfiedByEventId, accepted.id);
   assert.equal(none.find((x) => x.loanId === "L-2")!.status, "armed", "the floors are per loan");
+});
+test("5.1 rule 8 / edge case — reversal after submission, same period: the correcting LAR restates the period's full position (IRM 2-01 'not cumulative'), never a negative delta", () => {
+  // the S/S payment reported Oct 13 (LPI 10/26, UPB $249,774.00, interest $1,250.00, principal $226.00) is reversed Oct 15: the correction carries LPI 09/26, UPB $250,000.00 and the
+  // period's scheduled amounts unchanged ($1,250.00 / $226.00 — S/S interest and principal are owed whether or not collected), not −$1,250.00 / −$226.00
+  const m = scheduledMonth(25_000_000n, "6.500", "6.000", 158_017n);
+  const submitted: LarPayload = { lpi_date: D("2026-10-01"), upb_cents: m.ending_scheduled_upb_cents, nib_cents: 0n, interest_cents: m.fnma_interest_cents, principal_cents: m.fnma_principal_cents, other_fees_cents: 0n, action_code: "00", action_date: D("2026-10-13") };
+  const c = restatedCorrection({ position_after_reversal: { lpi_date: D("2026-09-01"), upb_cents: 25_000_000n, nib_cents: 0n, remittance_type: "SS", ptr: "6.000", note_rate: "6.500", pi_cents: 158_017n, scheduled_upb_cents: 25_000_000n }, month_of: D("2026-10-01"), other_fees_cents: 0n, action_date: D("2026-10-15"), superseded: submitted });
+  assert.deepEqual([c.payload.lpi_date, c.payload.upb_cents, c.payload.interest_cents, c.payload.principal_cents, c.payload.action_code], ["2026-09-01", 25_000_000n, 125_000n, 22_600n, "00"]);
+  assert.equal(c.not_cumulative, true); assert.deepEqual(c.delta_rejected, { interest_cents: -125_000n, principal_cents: -22_600n });
+  assert.notDeepEqual([c.payload.interest_cents, c.payload.principal_cents], [c.delta_rejected.interest_cents, c.delta_rejected.principal_cents]);
+  const lar = projectLar96(SN, FL, c.payload); assert.deepEqual([lar.fields.lpi, lar.fields.upb, lar.fields.interest, lar.fields.principal], ["0926", "0002500000{", "0000012500{", "0000002260{"]);
+  // A/A: nothing stands after the reversal → zero interest and principal, the position rolled back; S/A: the advanced month stays on the restated LAR
+  assert.deepEqual([restatedCorrection({ position_after_reversal: { lpi_date: D("2026-09-01"), upb_cents: 25_000_000n, nib_cents: 0n, remittance_type: "AA" }, month_of: D("2026-10-01"), other_fees_cents: 0n, action_date: D("2026-10-15"), superseded: submitted }).payload.interest_cents,
+    restatedCorrection({ position_after_reversal: { lpi_date: D("2026-09-01"), upb_cents: 19_950_000n, nib_cents: 0n, remittance_type: "SA", ptr: "6.000" }, month_of: D("2026-10-01"), other_fees_cents: 0n, action_date: D("2026-10-15"), superseded: submitted }).payload.interest_cents], [0n, 99_750n]);
+  // the correcting event is a new row (new sequence, `supersedes_event_id`, same October period) due before BD1 20:00 ET of November (Mon 2026-11-02)
+  const events = new MemoryEventStore(new FixedClock(toIso(at("2026-10-15", "10:00"))));
+  const corr = createInvestorEvent(events, new SequenceAllocator({ "L-1": 2 }), { loan_id: "L-1", servicer_number: SN, fnma_loan_number: FL, event_type: "payment.reversal", effective_date: D("2026-10-15"), processed_at_ms: at("2026-10-15", "10:00"), payload: c.payload, mode: "legacy", open_periods: ["2026-10"], supersedes_event_id: "ie-oct-1" });
+  assert.deepEqual([corr.per_loan_sequence, corr.activity_period, corr.event.payload.supersedes_event_id, corr.family], [2, "2026-10", "ie-oct-1", "payment"]);
+  assert.equal(toIso(nonRemovalCorrectionCloseMs("2026-10")), toIso(at("2026-11-02", "20:00")));
 });
 test("5.1-T3: Given a payoff processed Mon 2026-11-02 (BD1), then the action-code-60 LAR is due Tue 2026-11-03 **17:00** ET (BD2); processed Fri 2026-10-30 → due Mon 2026-11-02 20:00 ET.", () => {
   assert.equal(fannieBusinessDay(D("2026-11-02"), 1), "2026-11-02");

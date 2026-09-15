@@ -107,39 +107,53 @@ test("3.8-T6: Given an advance for unpaid taxes on a waived loan on 2027-12-11, 
   const escrowed = escrowBus("L-1", "2027-12-11T15:00:00.000Z", ["3.8"]); await escrowed.run("3.7", "postAdvance", ESCROW_AGENT, { amount_cents: 76_000n, advance_cents: 26_000n });
   assert.equal(escrowed.events.ofType("escrow.waiver.revoked").length, 0); assert.equal(escrowed.ctx.timers.byCode("FNMA_B101_WAIVER_REVOKE_ON_ADVANCE_0").length, 0);
 });
-test("3.8-T7: Given a Flex Mod trial offer being prepared for a waived loan current on T&I, then the exception is documented and the offer proceeds; given T&I delinquent, then the offer is blocked until escrow is established.", async () => {
-  assert.deepEqual(workoutEscrowGate({ waived: true, current_on_ti: true, exception_documented: true }), { ok: true, block: null });
-  assert.match(workoutEscrowGate({ waived: true, current_on_ti: false, exception_documented: true }).block!, /establish escrow before the offer/);
-  assert.match(workoutEscrowGate({ waived: true, current_on_ti: true, exception_documented: false }).block!, /document the Flex Mod/);
-  // Through the engine: the §12 hand-off (3.2 ingestTrialPlanOfferPrepared) arms FNMA_B101_WAIVER_REVOKE_BEFORE_TRIAL_GATE on the waived loan; the documented Flex Mod exception (current on T&I) clears it and the offer proceeds.
+test("3.8-T7: Given a disaster-hardship Flex Mod trial offer being prepared for a waived loan current on T&I, then the exception is documented and the offer proceeds; given a standard Flex Mod (any T&I status) or T&I delinquent, then the offer is blocked until escrow is established.", async () => {
+  // B-1-01: the exception needs both limbs — current on T&I AND a Flex Mod "in accordance with Evaluating or Soliciting a Borrower with a Disaster-Related Hardship … in D2-3.2-06".
+  assert.deepEqual(workoutEscrowGate({ waived: true, current_on_ti: true, flex_mod_disaster_hardship: true, exception_documented: true }), { ok: true, block: null });
+  assert.match(workoutEscrowGate({ waived: true, current_on_ti: false, flex_mod_disaster_hardship: true, exception_documented: true }).block!, /T&I delinquent: establish escrow before the offer/);
+  assert.match(workoutEscrowGate({ waived: true, current_on_ti: true, flex_mod_disaster_hardship: false, exception_documented: true }).block!, /standard Flex Mod: establish escrow before the offer/);
+  assert.match(workoutEscrowGate({ waived: true, current_on_ti: false, flex_mod_disaster_hardship: false, exception_documented: false }).block!, /T&I delinquent/);
+  assert.match(workoutEscrowGate({ waived: true, current_on_ti: true, flex_mod_disaster_hardship: true, exception_documented: false }).block!, /document the Flex Mod/);
+  assert.deepEqual(workoutEscrowGate({ waived: false, current_on_ti: false, flex_mod_disaster_hardship: false, exception_documented: false }), { ok: true, block: null });
+  // Through the engine: the §12 hand-off (3.2 ingestTrialPlanOfferPrepared) arms FNMA_B101_WAIVER_REVOKE_BEFORE_TRIAL_GATE on the waived loan; the documented disaster-hardship Flex Mod exception (current on T&I) clears it and the offer proceeds.
   const current = escrowBus("L-1", "2027-12-01T15:00:00.000Z", ["3.8"]);
   await current.run("3.8", "approveWaiver", ESCROW_AGENT, { waiver_id: "W-7", request: { ...BASE, upb_cents: cents("239900"), requested_on: D("2027-11-20"), next_due_dates: [D("2028-01-01"), D("2028-02-01")] } });
   assert.equal(isWaived(current.events, "L-1"), true);
   ingestTrialPlanOfferPrepared(current.events, { loan_id: "L-1", offer_id: "O-1", program: "flex_modification", offer_date: D("2027-12-05") }, ESCROW_AGENT);
   const gate = current.ctx.timers.byCode("FNMA_B101_WAIVER_REVOKE_BEFORE_TRIAL_GATE")[0]!; assert.deepEqual([gate.status, gate.note], ["armed", "evaluator:3.8.escrowEstablishedOrExceptionDocumented"]);
-  const ok = trialOfferEscrowGate(current.events, { loan_id: "L-1", offer_id: "O-1", program: "flex_modification", current_on_ti: true }, ESCROW_AGENT);
+  const ok = trialOfferEscrowGate(current.events, { loan_id: "L-1", offer_id: "O-1", program: "flex_modification", current_on_ti: true, flex_mod_disaster_hardship: true }, ESCROW_AGENT);
   assert.deepEqual([ok.proceed, ok.basis, ok.block], [true, "exception_documented", null]);
   assert.deepEqual(current.events.all().map((e) => e.type).filter((t) => t.startsWith("escrow.waiver.")), ["escrow.waiver.requested", "escrow.waiver.evaluating", "escrow.waiver.decided", "escrow.waiver.exception_documented", "escrow.waiver.trial_gate.cleared"]);
-  assert.equal(current.events.ofType("escrow.waiver.exception_documented")[0]!.payload.exception, "flex_mod_current_on_ti"); assert.equal(gate.status, "satisfied");
+  const documented = current.events.ofType("escrow.waiver.exception_documented")[0]!; assert.deepEqual([documented.payload.exception, documented.payload.flex_mod_disaster_hardship, documented.payload.current_on_ti], ["flex_mod_disaster_hardship_current_on_ti", true, true]); assert.match(String(documented.payload.basis), /Disaster-Related Hardship/); assert.equal(gate.status, "satisfied");
   assert.equal(evaluateGate("3.8.escrowEstablishedOrExceptionDocumented", { escrow_established: false, exception_documented: true }).open, true);
+  // A standard Flex Mod trial on a waived loan requires escrow first whatever the T&I status: current on T&I, no disaster-hardship path → blocked, no exception documented, the gate stays armed.
+  const standard = escrowBus("L-1", "2027-12-01T15:00:00.000Z", ["3.8"]);
+  await standard.run("3.8", "approveWaiver", ESCROW_AGENT, { waiver_id: "W-10", request: { ...BASE, upb_cents: cents("239900"), requested_on: D("2027-11-20"), next_due_dates: [D("2028-01-01"), D("2028-02-01")] } });
+  ingestTrialPlanOfferPrepared(standard.events, { loan_id: "L-1", offer_id: "O-4", program: "flex_modification", offer_date: D("2027-12-05") }, ESCROW_AGENT);
+  const std = trialOfferEscrowGate(standard.events, { loan_id: "L-1", offer_id: "O-4", program: "flex_modification", current_on_ti: true, flex_mod_disaster_hardship: false }, ESCROW_AGENT);
+  assert.deepEqual([std.proceed, std.basis], [false, null]); assert.match(std.block!, /standard Flex Mod: establish escrow before the offer/);
+  assert.equal(trialOfferEscrowGate(standard.events, { loan_id: "L-1", offer_id: "O-4", program: "flex_modification", current_on_ti: true }, ESCROW_AGENT).proceed, false);   // the flag absent = a standard Flex Mod
+  assert.equal(standard.events.ofType("escrow.waiver.exception_documented").length, 0); assert.equal(standard.events.ofType("escrow.waiver.trial_offer_blocked").length, 2);
+  assert.equal(standard.ctx.timers.byCode("FNMA_B101_WAIVER_REVOKE_BEFORE_TRIAL_GATE")[0]!.status, "armed");
+  assert.throws(() => trialOfferEscrowGate(standard.events, { loan_id: "L-1", offer_id: "O-4", program: "flex_modification", current_on_ti: true, flex_mod_disaster_hardship: "yes" as unknown as boolean }, ESCROW_AGENT), /flex_mod_disaster_hardship must be a boolean/);
   // T&I delinquent: the offer is blocked (the gate stays armed) until the 3.7 advance revokes the waiver and establishes escrow; the re-run offer then clears the gate on the establishment.
   const delinquent = escrowBus("L-1", "2027-12-10T15:00:00.000Z", ["3.8"]);
   await delinquent.run("3.8", "approveWaiver", ESCROW_AGENT, { waiver_id: "W-8", request: { ...BASE, upb_cents: cents("239900"), requested_on: D("2027-11-20"), next_due_dates: [D("2028-01-01"), D("2028-02-01")] } });
   ingestTrialPlanOfferPrepared(delinquent.events, { loan_id: "L-1", offer_id: "O-2", program: "flex_modification", offer_date: D("2027-12-15") }, ESCROW_AGENT);
-  const blocked = trialOfferEscrowGate(delinquent.events, { loan_id: "L-1", offer_id: "O-2", program: "flex_modification", current_on_ti: false }, ESCROW_AGENT);
+  const blocked = trialOfferEscrowGate(delinquent.events, { loan_id: "L-1", offer_id: "O-2", program: "flex_modification", current_on_ti: false, flex_mod_disaster_hardship: true }, ESCROW_AGENT);
   assert.deepEqual([blocked.proceed, blocked.basis], [false, null]); assert.match(blocked.block!, /T&I delinquent: establish escrow before the offer/);
   const gate2 = delinquent.ctx.timers.byCode("FNMA_B101_WAIVER_REVOKE_BEFORE_TRIAL_GATE")[0]!; assert.equal(gate2.status, "armed");
   assert.equal(evaluateGate("3.8.escrowEstablishedOrExceptionDocumented", { escrow_established: false, exception_documented: false }).open, false);
   await delinquent.run("3.7", "postAdvance", ESCROW_AGENT, { amount_cents: cents("2400"), advance_cents: cents("2400"), penalty_cents: cents("120"), cause: "unpaid_tax_waived_loan", item: "county tax", waived: true });
   assert.equal(isWaived(delinquent.events, "L-1"), false);
-  const cleared = trialOfferEscrowGate(delinquent.events, { loan_id: "L-1", offer_id: "O-2", program: "flex_modification", current_on_ti: false }, ESCROW_AGENT);
+  const cleared = trialOfferEscrowGate(delinquent.events, { loan_id: "L-1", offer_id: "O-2", program: "flex_modification", current_on_ti: false, flex_mod_disaster_hardship: true }, ESCROW_AGENT);
   assert.deepEqual([cleared.proceed, cleared.basis, gate2.status], [true, "escrow_established", "satisfied"]);
   // A payment deferral has no Flex Mod exception: a waived loan current on T&I is still blocked (B-1-01: revoke before the trial period).
   const deferral = escrowBus("L-1", "2027-12-01T15:00:00.000Z", ["3.8"]);
   await deferral.run("3.8", "approveWaiver", ESCROW_AGENT, { waiver_id: "W-9", request: { ...BASE, upb_cents: cents("239900"), requested_on: D("2027-11-20"), next_due_dates: [D("2028-01-01"), D("2028-02-01")] } });
   ingestTrialPlanOfferPrepared(deferral.events, { loan_id: "L-1", offer_id: "O-3", program: "other_modification", offer_date: D("2027-12-05") }, ESCROW_AGENT);
-  assert.match(trialOfferEscrowGate(deferral.events, { loan_id: "L-1", offer_id: "O-3", program: "other_modification", current_on_ti: true }, ESCROW_AGENT).block!, /no escrow-waiver exception/);
-  assert.throws(() => trialOfferEscrowGate(deferral.events, { loan_id: "L-1", offer_id: "O-9", program: "flex_modification", current_on_ti: true }, ESCROW_AGENT), /ingest the §12 hand-off first/);
+  assert.match(trialOfferEscrowGate(deferral.events, { loan_id: "L-1", offer_id: "O-3", program: "other_modification", current_on_ti: true, flex_mod_disaster_hardship: true }, ESCROW_AGENT).block!, /no escrow-waiver exception/);
+  assert.throws(() => trialOfferEscrowGate(deferral.events, { loan_id: "L-1", offer_id: "O-9", program: "flex_modification", current_on_ti: true, flex_mod_disaster_hardship: true }, ESCROW_AGENT), /ingest the §12 hand-off first/);
 });
 test("3.8-T8: Given a Minnesota loan reaching its 5th anniversary, then the right-to-discontinue notice is sent within 60 days; a written election with no >30-day delinquency in 12 months is approved even if the Fannie Mae 80% test fails (per open question 1 default).", async () => {
   const r = minnesotaDiscontinue({ mortgage_date: D("2022-03-15"), today: D("2027-03-20"), written_election: true, late_over_30_in_12m: 0, fnma_80_test_passed: false });

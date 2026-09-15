@@ -92,11 +92,11 @@ export function intake_12_1(i: ToolInput, ctx: CommandContext, rt: ToolRuntime):
         ctx.events.append({ type: d.event!.type, loanId, actor: ctx.actor, payload: d.event!.payload });
         return { ...rec.data, application_id: rec.id, duplicative: true, timers_started: d.timers_started, courtesy_notice: d.courtesy_notice, fnma_evaluation_required: true };
       }
-      const late = lateApplicationIntake({ loan_id: loanId, received_on: received, sale_on: optDate(i, "sale_on"), application_id: appId });
+      const late = lateApplicationIntake({ loan_id: loanId, received_on: received, sale_on: optDate(i, "sale_on"), application_id: appId, brp_complete: flag(i, "brp_complete") });
       if (!late) return undefined;
       const rec = rt.store.put("lossmit_applications", appId, { ...late.record, regime: str(i, "regime") || "2013", ...(str(i, "state") ? { state: str(i, "state") } : {}) }, ctx.actor, ctx.now);
       ctx.events.append({ type: late.event.type, loanId, actor: ctx.actor, payload: late.event.payload });
-      return { ...rec.data, application_id: rec.id, b2_applies: false, days_before_sale: late.days_before_sale, d2205_notice: late.d2205_notice, d2205_notice_due: late.d2205_notice_due, expedited_review: true, timers_started: [] as string[] };
+      return { ...rec.data, application_id: rec.id, b2_applies: false, days_before_sale: late.days_before_sale, d2205_notice: late.d2205_notice, d2205_notice_due: late.d2205_notice_due, expedited_review: true, incomplete_information_notice: late.incomplete_information_notice, plan_explanation_required: late.plan_explanation_required, within_37_days: late.within_37_days, timers_started: [] as string[] };
     }
   }
 }

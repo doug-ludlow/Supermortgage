@@ -10,7 +10,7 @@
  */
 import { type PlainDate, addDays, daysBetween } from "../../kernel/calendar/date.ts";
 import { zonedEpochMs } from "../../kernel/calendar/zoned.ts";
-import { ackDue, fortyFiveDayTest, protectionTier, reasonableDate, type ProtectionTier, type ReasonableDateInputs } from "./application.ts";
+import { ackDue, fortyFiveDayTest, protectionTier, reasonableDate, d2205LateApplicationDuties, type ProtectionTier, type ReasonableDateInputs } from "./application.ts";
 import { caPerDocumentAcks, nprmRfa, duplicativeDetermination, ackBreach, ACK_TIMER_CODES, type Hold, type Escalation } from "./ops.ts";
 import { transferorClocks, transfereeAckDue, deemedReceived } from "../transfers/lossmit-inflight.ts";
 
@@ -99,22 +99,25 @@ export function carryoverIntake(i: { readonly loan_id: string; readonly transfer
 }
 
 // ============================================================ rule 3 / T5 — application ≤45 days before a scheduled sale
-export interface LateApplicationIntake { readonly b2_applies: false; readonly days_before_sale: number; readonly protection_tier: ProtectionTier; readonly d2205_notice: "NTC_FNMA_D2205_LATE_BRP_PLAN"; readonly d2205_notice_due: PlainDate; readonly expedited_review: true; readonly record: Record<string, unknown>; readonly event: { type: "lossmit.application.received_within_45_days"; payload: Record<string, unknown> }; }
+export interface LateApplicationIntake { readonly b2_applies: false; readonly days_before_sale: number; readonly protection_tier: ProtectionTier; readonly d2205_notice: "NTC_FNMA_D2205_LATE_BRP_PLAN"; readonly d2205_notice_due: PlainDate; readonly expedited_review: true; readonly incomplete_information_notice: "required" | "optional" | "not_applicable"; readonly plan_explanation_required: boolean; readonly within_37_days: boolean; readonly record: Record<string, unknown>; readonly event: { type: "lossmit.application.received_within_45_days"; payload: Record<string, unknown> }; }
 /**
  * Rule 12.1 rule 3 (§1024.41(b)(2)(i); comment 41(b)(2)(i)-1): received within 45 days of a scheduled sale → no (b)(2)
  * acknowledgment duty, so the receipt is not the `lossmit.application.received` the ack clocks key on; Fannie Mae's
- * D2-2-05 "explanation of plan" acknowledgment goes out within 5 servicer business days and 12.2's expedited review is
- * queued. Returns null when (b)(2) applies (the ordinary receipt path runs).
+ * D2-2-05 acknowledgment still goes out within 5 Fannie Mae business days in every case — with the Incomplete Information
+ * Notice unless the incomplete BRP arrived ≤37 days before the sale (then optional), and with the explanation of the
+ * evaluation/suspension plan for a complete BRP received ≤37 days before the sale (rule 3, amended) — and 12.2's expedited
+ * review is queued. Returns null when (b)(2) applies (the ordinary receipt path runs).
  */
-export function lateApplicationIntake(i: { readonly loan_id: string; readonly received_on: PlainDate; readonly sale_on: PlainDate | null; readonly application_id: string }): LateApplicationIntake | null {
+export function lateApplicationIntake(i: { readonly loan_id: string; readonly received_on: PlainDate; readonly sale_on: PlainDate | null; readonly application_id: string; readonly brp_complete?: boolean }): LateApplicationIntake | null {
   if (!i.loan_id) throw new RangeError("loan_id is required");
   const receivedOn = requireDate(i.received_on, "received_on");
   const t = fortyFiveDayTest(receivedOn, i.sale_on);
   if (t.b2_applies || !i.sale_on) return null;
   const tier = protectionTier(receivedOn, i.sale_on);
-  const record = { loan_id: i.loan_id, status: "received", received_on: receivedOn, foreclosure_sale_date_at_receipt: i.sale_on, protection_tier: tier.protection_tier, b2_applies: false, d2205_notice_due: t.d2205_notice_due, expedited_review: true, ack_due: null };
-  return { b2_applies: false, days_before_sale: tier.days_before_sale!, protection_tier: tier.protection_tier, d2205_notice: "NTC_FNMA_D2205_LATE_BRP_PLAN", d2205_notice_due: t.d2205_notice_due!, expedited_review: true, record,
-    event: { type: "lossmit.application.received_within_45_days", payload: { application_id: i.application_id, received_date: receivedOn, sale_date: i.sale_on, days_before_sale: tier.days_before_sale, b2_applies: false, protection_tier: tier.protection_tier, d2205_notice: "NTC_FNMA_D2205_LATE_BRP_PLAN", d2205_notice_due: t.d2205_notice_due, expedited_review: true } } };
+  const duties = d2205LateApplicationDuties({ days_before_sale: tier.days_before_sale!, brp_complete: i.brp_complete === true });
+  const record = { loan_id: i.loan_id, status: "received", received_on: receivedOn, foreclosure_sale_date_at_receipt: i.sale_on, protection_tier: tier.protection_tier, b2_applies: false, d2205_notice_due: t.d2205_notice_due, expedited_review: true, ack_due: null, incomplete_information_notice: duties.incomplete_information_notice, plan_explanation_required: duties.plan_explanation_required };
+  return { b2_applies: false, days_before_sale: tier.days_before_sale!, protection_tier: tier.protection_tier, d2205_notice: "NTC_FNMA_D2205_LATE_BRP_PLAN", d2205_notice_due: t.d2205_notice_due!, expedited_review: true, incomplete_information_notice: duties.incomplete_information_notice, plan_explanation_required: duties.plan_explanation_required, within_37_days: duties.within_37_days, record,
+    event: { type: "lossmit.application.received_within_45_days", payload: { application_id: i.application_id, received_date: receivedOn, sale_date: i.sale_on, days_before_sale: tier.days_before_sale, b2_applies: false, protection_tier: tier.protection_tier, d2205_notice: "NTC_FNMA_D2205_LATE_BRP_PLAN", d2205_notice_due: t.d2205_notice_due, expedited_review: true, brp_complete: i.brp_complete === true, incomplete_information_notice: duties.incomplete_information_notice, plan_explanation_required: duties.plan_explanation_required, within_37_days: duties.within_37_days } } };
 }
 
 // ============================================================ rule 8 / T6–T7 — §1024.41(i) duplicative application
@@ -187,7 +190,7 @@ export function ackBreachResponse(i: { readonly code: string; readonly received_
   const b = ackBreach({ received_on: receivedOn, produced: false, tz });
   const regx = i.code === "REGX_1024_41B2_LM_ACK_5";
   const severity: "sev1" | "sev2" = regx ? "sev1" : "sev2";
-  const escalation = { kind: "officer" as const, severity, reason: regx ? `12.1: §1024.41(b)(2)(i)(B) acknowledgment not produced by ${ackDue(receivedOn, tz).due_on} (day 5); NoE-risk flag set (§1024.35(b)(7))` : `12.1: D2-2-05 acknowledgment not produced within 5 servicer business days of ${receivedOn}`, at_ms: b.escalation!.at_ms! };
+  const escalation = { kind: "officer" as const, severity, reason: regx ? `12.1: §1024.41(b)(2)(i)(B) acknowledgment not produced by ${ackDue(receivedOn, tz).due_on} (day 5); NoE-risk flag set (§1024.35(b)(7))` : `12.1: D2-2-05 acknowledgment not produced within 5 Fannie Mae business days of ${receivedOn}`, at_ms: b.escalation!.at_ms! };
   return { code: i.code, escalation, noe_risk_flag: regx, ack_resend_required: true, day6: b.day6, escalate_at_ms: zonedEpochMs(b.day6, "00:05", tz),
     event: { type: "lossmit.ack.breached", payload: { code: i.code, timer_id: i.timer_id, received_date: receivedOn, ack_due: ackDue(receivedOn, tz).due_on, day6: b.day6, severity, noe_risk_flag: regx, ack_resend_required: true } } };
 }

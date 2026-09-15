@@ -118,32 +118,38 @@ export function isWaived(events: EventStore, loanId: string): boolean {
   return waived;
 }
 
-/** Workout programs whose trial offer the gate applies to (3.2 WorkoutProgram spelling); the Flex Mod exception is D2-3.2-06's alone. */
+/** Workout programs whose trial offer the gate applies to (3.2 WorkoutProgram spelling); the Flex Mod exception is D2-3.2-06's disaster-related-hardship path alone. */
 const FLEX_MOD = "flex_modification";
-export interface TrialGateInput { readonly loan_id: string; readonly offer_id: string; readonly program: string; readonly current_on_ti: boolean; /** Overrides the event-derived waiver status (e.g. a boarded-waived loan whose evidence lives in the boarding record). */ readonly waived?: boolean; }
+export interface TrialGateInput { readonly loan_id: string; readonly offer_id: string; readonly program: string; readonly current_on_ti: boolean; /** The Flex Mod is offered under D2-3.2-06's "Evaluating or Soliciting a Borrower with a Disaster-Related Hardship" path (B-1-01's only exception); absent/false = a standard Flex Mod, which always requires escrow first. */ readonly flex_mod_disaster_hardship?: boolean; /** Overrides the event-derived waiver status (e.g. a boarded-waived loan whose evidence lives in the boarding record). */ readonly waived?: boolean; }
 export interface TrialGateResult { readonly proceed: boolean; readonly waived: boolean; readonly basis: "escrow_established" | "exception_documented" | null; readonly block: string | null; readonly event: DomainEvent; readonly timer: typeof TRIAL_GATE_TIMER; }
 /**
  * Rule 5 / T7: before a modification trial the waiver is revoked and escrow established, unless the borrower is current on all
- * T&I items and the modification is a Flex Mod (D2-3.2-06) — then the exception is documented (`escrow.waiver.exception_documented`)
- * and the offer proceeds. Either clearance is recorded as `escrow.waiver.trial_gate.cleared{basis}` (the fact that closes
- * FNMA_B101_WAIVER_REVOKE_BEFORE_TRIAL_GATE); a delinquent-T&I waived loan is blocked (`escrow.waiver.trial_offer_blocked`)
- * until the 3.7 advance revokes the waiver and establishes the account. Needs the §12 hand-off ingested first (ops-3-2).
+ * T&I items AND the modification is a Flex Mod offered under D2-3.2-06's disaster-related-hardship path (B-1-01: "… and the
+ * mortgage loan modification is a Fannie Mae Flex Modification in accordance with Evaluating or Soliciting a Borrower with a
+ * Disaster-Related Hardship for a Fannie Mae Flex Modification in D2-3.2-06") — then the exception is documented
+ * (`escrow.waiver.exception_documented`) and the offer proceeds. Either clearance is recorded as
+ * `escrow.waiver.trial_gate.cleared{basis}` (the fact that closes FNMA_B101_WAIVER_REVOKE_BEFORE_TRIAL_GATE); a delinquent-T&I
+ * waived loan, and a standard Flex Mod trial on a waived loan whatever its T&I status, is blocked
+ * (`escrow.waiver.trial_offer_blocked`) until the waiver is revoked and the account established (the 3.7 advance, or the
+ * revocation itself). Needs the §12 hand-off ingested first (ops-3-2).
  */
 export function trialOfferEscrowGate(events: EventStore, i: TrialGateInput, actor: Actor): TrialGateResult {
   need(!!i.loan_id && !!i.offer_id, "loan_id and offer_id are required");
   need(typeof i.current_on_ti === "boolean", "current_on_ti must state whether the borrower is current on all taxes, insurance and related items");
   const prepared = loanEvents(events, { loan_id: i.loan_id }, "lossmit.trial_plan.offer_prepared").filter((e) => e.payload.offer_id === i.offer_id).at(-1);
   need(prepared !== undefined, `no prepared trial plan offer ${i.offer_id} on ${i.loan_id}: ingest the §12 hand-off first (ops-3-2 ingestTrialPlanOfferPrepared)`);
+  need(i.flex_mod_disaster_hardship === undefined || typeof i.flex_mod_disaster_hardship === "boolean", "flex_mod_disaster_hardship must be a boolean when given");
   const waived = i.waived ?? isWaived(events, i.loan_id);
-  const exception = waived && i.program === FLEX_MOD && i.current_on_ti;
-  const gate = workoutEscrowGate({ waived, current_on_ti: i.current_on_ti, exception_documented: exception });
-  const common = { offer_id: i.offer_id, program: i.program, waived, current_on_ti: i.current_on_ti, timer: TRIAL_GATE_TIMER };
+  const disasterFlexMod = i.program === FLEX_MOD && i.flex_mod_disaster_hardship === true;
+  const exception = waived && disasterFlexMod && i.current_on_ti;
+  const gate = workoutEscrowGate({ waived, current_on_ti: i.current_on_ti, flex_mod_disaster_hardship: disasterFlexMod, exception_documented: exception });
+  const common = { offer_id: i.offer_id, program: i.program, flex_mod_disaster_hardship: disasterFlexMod, waived, current_on_ti: i.current_on_ti, timer: TRIAL_GATE_TIMER };
   if (!waived) {
     const event = events.append({ type: "escrow.waiver.trial_gate.cleared", loanId: i.loan_id, actor, causationId: prepared!.id, payload: { ...common, basis: "escrow_established" } });
     return { proceed: true, waived, basis: "escrow_established", block: null, event, timer: TRIAL_GATE_TIMER };
   }
   if (gate.ok) {
-    const documented = events.append({ type: "escrow.waiver.exception_documented", loanId: i.loan_id, actor, causationId: prepared!.id, payload: { ...common, exception: "flex_mod_current_on_ti", basis: "B-1-01 (revoke before the trial period unless current on all T&I items and the modification is a Flex Modification, D2-3.2-06)" } });
+    const documented = events.append({ type: "escrow.waiver.exception_documented", loanId: i.loan_id, actor, causationId: prepared!.id, payload: { ...common, exception: "flex_mod_disaster_hardship_current_on_ti", basis: "B-1-01 (revoke before the trial period unless current on all T&I items and the modification is a Flex Modification in accordance with Evaluating or Soliciting a Borrower with a Disaster-Related Hardship for a Fannie Mae Flex Modification in D2-3.2-06)" } });
     const event = events.append({ type: "escrow.waiver.trial_gate.cleared", loanId: i.loan_id, actor, causationId: documented.id, payload: { ...common, basis: "exception_documented", exception_event_id: documented.id } });
     return { proceed: true, waived, basis: "exception_documented", block: null, event, timer: TRIAL_GATE_TIMER };
   }

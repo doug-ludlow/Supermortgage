@@ -27,7 +27,8 @@ import { delinquencyMilestone } from "../early-intervention/ops.ts";
 import { capStructure, deferralSolicitationClocks, deferralOfferOnCompleteApp, deferralLedger, smduDeferralOutage, recordableAgreement, arrears } from "./ops.ts";
 import { nib, newPayment, timeline, screen, type DeferralFacts } from "./deferral.ts";
 import { balanceAfter } from "./flexmod.ts";
-import { watchDeferralEvents, confirmCustodianDelivery, recordedOriginalReceived, notifyFnmaLegal, recordContractualPayment, postDeferralRedelinquency, offerDeferral, completeDeferral, type DeferralEnv } from "./ops-12-6.ts";
+import { watchDeferralEvents, confirmCustodianDelivery, recordedOriginalReceived, notifyFnmaLegal, recordContractualPayment, postDeferralRedelinquency, offerDeferral, completeDeferral, reconcileUpbLpi, expireSolicitation, type DeferralEnv } from "./ops-12-6.ts";
+import { postDeferralSolicitationExpiry } from "./ops.ts";
 
 /** The worked loan: $250,000 / 6.5% / 360, first payment 2021-11-01; LPI 2026-05-01 = 55 payments made; the four deferred installments would have taken it to 59. */
 const PRE_DEFERRAL_UPB = balanceAfter(25_000_000n, "6.500", 360, 55);
@@ -66,29 +67,30 @@ function harness(nowIso = "2026-09-20T14:00:00.000Z") {
   return { clock, events, timers, rt, run, refused, rejects, emitted, armed, satisfied, notice, env, deferral, decisions, noticeReg };
 }
 type H = ReturnType<typeof harness>;
-/** Offer (or solicit) on the screen, accept through the 12.2 offer response, report the contractual payments (LAR) and complete in SMDU. */
+/** Offer (or solicit) on the screen, accept through the 12.2 offer response, report the contractual payments (LAR — only material where a full contractual payment is required), reconcile the pre-deferral UPB/LPI (IRM 4-01) and complete in SMDU. */
 async function offerAcceptComplete(h: H, o: { facts?: DeferralFacts; basis?: string; offer_on?: string; accept_on: string; complete_on: string; recording_required?: boolean; processing_month_elected?: boolean; skip_completion?: boolean } ) {
   const facts = o.facts ?? T1_FACTS;
   await h.run("deferral.screen", { facts, basis: o.basis ?? "streamlined", ...(o.recording_required ? { recording_required: true } : {}), ...(o.processing_month_elected ? { processing_month_elected: true } : {}) }, { now: o.offer_on ?? `${facts.evaluation_date}T14:00:00.000Z` });
   await h.run("lossmit.evaluation.*", { op: "offer_response", response: "accepted", option: "payment_deferral", accepted_via: "written", responded_on: o.accept_on }, { process: "12.2", now: `${o.accept_on}T15:00:00.000Z` });
   const led = await h.run("ledger.arrears_breakdown", { pi_cents: 158_017n, months_deferred: 4, escrow_advances_cents: 105_000n, servicing_advances_cents: 0n, late_charges_cents: 25_200n, pre_deferral_ib_upb_cents: PRE_DEFERRAL_UPB, scheduled_ib_upb_cents: SCHEDULED_UPB });
   await h.run("investor.report_contractual_payments", { deferral_ledger_id: led.deferral_ledger_id });
+  reconcileUpbLpi(h.env(), { loan_id: LOAN, smdu_upb_cents: PRE_DEFERRAL_UPB, smdu_lpi: D("2026-05-01"), investor_reporting_upb_cents: PRE_DEFERRAL_UPB, investor_reporting_lpi: D("2026-05-01") });
   if (o.skip_completion) return;
   await h.run("smdu.case.submit", { workout: "payment_deferral", partner_servicer_number: "123456789", campaign_id: "PD-2026" }, { now: `${o.complete_on}T16:00:00.000Z` });
 }
 
-test("12.6-T1: Given the 4-payment example, when accepted 2026-09-22, then NIB = $7,370.68, late charges $252.00 waived, new payment $2,131.17, SMDU entry by 2026-09-30, LAR/events by 2026-09-29, effective 2026-10-01, agreement sent by completion + 5 days, custodian by 2026-10-26.", async () => {
+test("12.6-T1: Given the 4-payment example, when accepted 2026-09-22, then NIB = $7,370.68, late charges $252.00 waived, new payment $2,131.17, SMDU entry by 2026-09-30, effective 2026-10-01, agreement sent by completion + 5 days, custodian by 2026-10-26.", async () => {
   const s = screen(T1_FACTS);
   assert.deepEqual(s, { eligible: true, contractual_payment_required: false, months_deferred: 4 });
   assert.equal(nib(158_017n, 4, 105_000n, 0n), 737_068n);
   const led = deferralLedger({ pi_cents: 158_017n, months_deferred: 4, escrow_advances_cents: 105_000n, servicing_advances_cents: 0n, late_charges_cents: arrears({ piti_cents: 210_000n, unpaid_installments: 4, late_charge_cents: 6_300n, late_charges: 4 }).late_charges_cents, pre_deferral_ib_upb_cents: PRE_DEFERRAL_UPB, scheduled_ib_upb_cents: SCHEDULED_UPB });
   assert.equal(led.postings.find((p) => p.account === "late_charges_due")!.credit, 25_200n);
   assert.deepEqual(newPayment(158_017n, 52_000n, 186_000n), { shortage_monthly_cents: 3_100n, payment_cents: 213_117n });
-  // Accepted and completed 2026-09-22: the evaluation month governs — no processing month is needed or elected.
+  // Accepted and completed 2026-09-22: the evaluation month governs — no processing month is needed or elected. No full contractual payment is required (4 months delinquent; cumulative 4 ≤ 12), so no LAR precedes completion (F-1-22 / IRM 4-01, amended rule 3); the 1-BD-before-month-end date the timeline still computes (2026-09-29) is where a required payment's LAR would have to land.
   const tl = timeline(D("2026-09-20"), { completion_on: D("2026-09-22") });
   assert.equal(tl.processing_month, false); assert.equal(tl.entry_deadline, "2026-09-30"); assert.equal(tl.lar_deadline, "2026-09-29"); assert.equal(tl.effective, "2026-10-01"); assert.equal(tl.agreement_by, "2026-09-27"); assert.equal(tl.custodian_by, "2026-10-26");
 
-  // The same example on the bus: screen → offer (BRP basis) → Evaluation Notice → acceptance 2026-09-22 → LAR → SMDU completion → agreement → custodian, each clock armed and satisfied by the events the tools emit.
+  // The same example on the bus: screen → offer (BRP basis) → Evaluation Notice → acceptance 2026-09-22 → UPB/LPI reconciliation (IRM 4-01) → SMDU completion → agreement → custodian, each clock armed and satisfied by the events the tools emit.
   const h = harness();
   const offered = await h.run("deferral.screen", { facts: T1_FACTS, basis: "brp", application_complete: true });
   assert.equal(offered.eligible, true); assert.equal((offered.deferral as Record<string, unknown>).status, "offered"); assert.equal((offered.deferral as Record<string, unknown>).evaluation_notice_required, true);
@@ -99,15 +101,18 @@ test("12.6-T1: Given the 4-payment example, when accepted 2026-09-22, then NIB =
   await h.run("lossmit.evaluation.*", { op: "offer_response", response: "accepted", option: "payment_deferral", accepted_via: "written", responded_on: "2026-09-22" }, { process: "12.2", now: "2026-09-22T15:00:00.000Z" });
   const accepted = h.emitted("payment_deferral.accepted"); assert.equal(accepted.length, 1);
   assert.equal(accepted[0]!.payload.accepted_on, "2026-09-22"); assert.equal(accepted[0]!.payload.completion_month_end, "2026-09-30"); assert.equal(accepted[0]!.payload.lar_by, "2026-09-29"); assert.equal(accepted[0]!.payload.processing_month, false);
-  h.armed("FNMA_D23204_DEFERRAL_SMDU_ENTRY_EOM", "2026-09-30"); h.armed("FNMA_F122_DEFERRAL_LAR_BEFORE_EOM_1BD");
-  // Completion before the LAR is refused (F-1-22); the case is not submitted.
-  await h.rejects("smdu.case.submit", { workout: "payment_deferral", partner_servicer_number: "123456789", campaign_id: "PD-2026" }, /assertLarBeforeCompletion/);
+  h.armed("FNMA_D23204_DEFERRAL_SMDU_ENTRY_EOM", "2026-09-30");
+  assert.equal(accepted[0]!.payload.contractual_payment_required, false); assert.equal(h.timers.byCode("FNMA_F122_DEFERRAL_LAR_BEFORE_EOM_1BD").length, 0);   // no full contractual payment required → no LAR clock (F-1-22 / IRM 4-01)
+  // Completion before the pre-deferral UPB/LPI are confirmed to match the investor reporting system is refused (IRM 4-01); a mismatch is recorded and still blocks; the case is not submitted.
+  await h.rejects("smdu.case.submit", { workout: "payment_deferral", partner_servicer_number: "123456789", campaign_id: "PD-2026" }, /assertUpbLpiMatchesInvestorReporting/);
+  const mismatch = reconcileUpbLpi(h.env(), { loan_id: LOAN, smdu_upb_cents: PRE_DEFERRAL_UPB, smdu_lpi: D("2026-05-01"), investor_reporting_upb_cents: PRE_DEFERRAL_UPB + 1n, investor_reporting_lpi: D("2026-04-01") });
+  assert.equal(mismatch.match, false); assert.equal(mismatch.mismatches.length, 2); assert.equal(mismatch.event.type, "investor.upb_lpi.reconciled"); assert.equal(mismatch.event.payload.match, false);
+  await h.rejects("smdu.case.submit", { workout: "payment_deferral", partner_servicer_number: "123456789", campaign_id: "PD-2026" }, /assertUpbLpiMatchesInvestorReporting/);
   assert.equal(h.emitted("smdu.case.submitted").length, 0);
   const led2 = await h.run("ledger.arrears_breakdown", { pi_cents: 158_017n, months_deferred: 4, escrow_advances_cents: 105_000n, servicing_advances_cents: 0n, late_charges_cents: 25_200n, pre_deferral_ib_upb_cents: PRE_DEFERRAL_UPB, scheduled_ib_upb_cents: SCHEDULED_UPB });
   assert.equal(led2.deferred_principal_cents, 737_068n);
-  await h.run("investor.report_contractual_payments", { deferral_ledger_id: led2.deferral_ledger_id });
-  h.events.append({ type: "investor.event.accepted", loanId: LOAN, actor: INVESTOR_REPORTING, payload: { kind: "contractual_payments", months: 4, accepted_on: "2026-09-22" } });   // the 5.x ack
-  h.satisfied("FNMA_F122_DEFERRAL_LAR_BEFORE_EOM_1BD", "investor.event.accepted");
+  const ok = reconcileUpbLpi(h.env(), { loan_id: LOAN, smdu_upb_cents: PRE_DEFERRAL_UPB, smdu_lpi: D("2026-05-01"), investor_reporting_upb_cents: PRE_DEFERRAL_UPB, investor_reporting_lpi: D("2026-05-01") });
+  assert.equal(ok.match, true); assert.equal(ok.event.payload.rule, "IRM 4-01"); assert.equal(ok.event.payload.smdu_upb_cents, PRE_DEFERRAL_UPB.toString());
   const done = await h.run("smdu.case.submit", { workout: "payment_deferral", partner_servicer_number: "123456789", campaign_id: "PD-2026" });
   assert.equal(done.effective_date, "2026-10-01"); assert.equal(done.entry_deadline, "2026-09-30"); assert.equal(done.processing_month, false);
   const completed = h.emitted("payment_deferral.completed"); assert.equal(completed.length, 1); assert.equal(completed[0]!.payload.completed_on, "2026-09-22"); assert.equal(completed[0]!.payload.agreement_by, "2026-09-27"); assert.equal(completed[0]!.payload.custodian_by, "2026-10-26"); assert.equal(completed[0]!.payload.campaign_id, "PD-2026");
@@ -143,7 +148,9 @@ test("12.6-T2: (window) 1 month delinquent → ineligible (reason `INV_FNMA_D232
   await h.run("deferral.screen", { facts: { months_delinquent: 7, ...base }, basis: "streamlined" });
   assert.equal(h.emitted("payment_deferral.screened_ineligible").length, 2); assert.equal(h.emitted("payment_deferral.offered").length, 0);
   await offerAcceptComplete(h, { facts: { months_delinquent: 6, ...base }, accept_on: "2026-09-22", complete_on: "2026-09-25", skip_completion: true });
-  assert.equal(h.deferral().contractual_payment_required, true); assert.equal(h.deferral().status, "awaiting_contractual_payment"); assert.equal(h.emitted("payment_deferral.offered")[0]!.payload.months_deferred, 6);
+  assert.equal(h.deferral().contractual_payment_required, true); assert.equal(h.deferral().status, "awaiting_contractual_payment");
+  // 6 months delinquent → a full contractual payment is required, so its LAR is due one Fannie Mae business day before the completion month-end (F-1-22): 2026-09-29.
+  h.armed("FNMA_F122_DEFERRAL_LAR_BEFORE_EOM_1BD", "2026-09-29"); assert.equal(h.emitted("payment_deferral.accepted")[0]!.payload.contractual_payment_required, true); assert.equal(h.emitted("payment_deferral.offered")[0]!.payload.months_deferred, 6);
   await h.rejects("smdu.case.submit", { workout: "payment_deferral", partner_servicer_number: "123456789", campaign_id: "PD-2026" }, /FNMA_D23204_CONTRACTUAL_PAYMENT_GATE/, { now: "2026-09-25T16:00:00.000Z" });
   assert.equal(h.emitted("smdu.case.submitted").length, 0);
   const partial = recordContractualPayment(h.env(), { loan_id: LOAN, received_on: D("2026-09-24"), amount_cents: 100_000n, contractual_payment_cents: 210_000n });
@@ -339,4 +346,23 @@ test("12.6 completion is refused without the SMDU submission and outside the 12.
   const c = completeDeferral(env, { loan_id: LOAN });
   assert.equal(c.effective_date, "2026-11-01"); assert.equal(c.entry_deadline, "2026-10-31"); assert.equal(c.processing_month, false); assert.equal(c.deferral.smdu_case_id, "SMDU-9"); assert.equal(c.deferral.status, "completed");
   assert.throws(() => completeDeferral(env, { loan_id: LOAN }), /already completed/);
+});
+
+test("12.6 solicitation window lapses (SM_DEFERRAL_SOLICIT_ACCEPT_WINDOW → `payment_deferral.solicitation.expired`): a post-forbearance deferral solicitation unanswered by its acceptance date expires with `no_response=true, qrpc, delinquency_days`; 12.8's FNMA_D23206_POSTDEFERRAL_SOLICIT_EXPIRY_FLEX_15 then wants the Flex Mod solicitation within 15 days when no QRPC and ≥90 days delinquent (D2-3.2-06)", () => {
+  const h = harness();
+  offerDeferral(h.env(), { loan_id: LOAN, basis: "post_forbearance", facts: T1_FACTS });
+  assert.equal(h.deferral().status, "solicited");
+  assert.throws(() => expireSolicitation(h.env(), { loan_id: LOAN, acceptance_date: D("2026-10-31"), qrpc: false, delinquency_days: 120, expired_on: D("2026-10-15") }), /has not passed/);
+  const r = expireSolicitation(h.env(), { loan_id: LOAN, acceptance_date: D("2026-10-31"), qrpc: false, delinquency_days: 120, expired_on: D("2026-11-01") });
+  assert.equal(r.deferral.status, "expired"); assert.equal(r.flex_solicitation_due, "2026-11-15"); assert.equal(r.event.type, "payment_deferral.solicitation.expired");
+  assert.deepEqual([r.event.payload.no_response, r.event.payload.qrpc, r.event.payload.delinquency_days, r.event.payload.acceptance_date, r.event.payload.basis, r.event.payload.next], [true, false, 120, "2026-10-31", "post_forbearance", "flex_mod_solicitation_15"]);
+  assert.throws(() => expireSolicitation(h.env(), { loan_id: LOAN, deferral_id: String(r.deferral.id), acceptance_date: D("2026-10-31"), qrpc: false, delinquency_days: 120 }), /only an unanswered solicitation expires/);   // an expired solicitation does not expire twice
+  // The 12.8 rule on the expiry facts: 15 days from the acceptance date; QRPC, a response or <90 days delinquent → no Flex solicitation.
+  assert.deepEqual(postDeferralSolicitationExpiry({ acceptance_date: D("2026-10-31"), no_response: true, qrpc: false, months_delinquent: 4 }), { solicitation: "flex_mod", notice: "NTC_FNMA_D23206_SOLICIT_STREAMLINED", by: "2026-11-15", timer: "FNMA_D23206_POSTDEFERRAL_SOLICIT_EXPIRY_FLEX_15" });
+  assert.equal(postDeferralSolicitationExpiry({ acceptance_date: D("2026-10-31"), no_response: true, qrpc: true, months_delinquent: 4 }).reason, "qrpc_achieved");
+  assert.equal(postDeferralSolicitationExpiry({ acceptance_date: D("2026-10-31"), no_response: true, qrpc: false, months_delinquent: 2 }).reason, "under_90_days_delinquent");
+  assert.equal(postDeferralSolicitationExpiry({ acceptance_date: D("2026-10-31"), no_response: false, qrpc: false, months_delinquent: 4 }).reason, "responded");
+  const g = harness(); offerDeferral(g.env(), { loan_id: LOAN, basis: "post_repayment", facts: T1_FACTS });
+  const under = expireSolicitation(g.env(), { loan_id: LOAN, acceptance_date: D("2026-10-31"), qrpc: false, delinquency_days: 75, expired_on: D("2026-11-01") });
+  assert.equal(under.flex_solicitation_due, null); assert.equal(under.event.payload.next, "re_screen_next_month");
 });

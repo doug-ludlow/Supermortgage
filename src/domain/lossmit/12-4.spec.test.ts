@@ -190,9 +190,20 @@ test("12.4-T5: (no QRPC at expiry) deferral-eligible (4 months delinquent) → p
   await h.notice("NTC_FNMA_D23204_SOLICIT_POST_FORB", { option: "payment_deferral", as_of: "2027-01-08" }); h.satisfied("FNMA_D23204_POSTFORB_DEFERRAL_SOLICIT_15", "notice.sent");
   await h.run("workout_plan.*", { op: "close", id: "wp-1", closed_reason: "converted_deferral" }); h.satisfied("FNMA_D23201_FORB_EXPIRY_DISPOSITION", "workout_plan.closed");
   const g = harness(); await offerAndActivate(g);
-  await g.run("workout_plan.*", { op: "expire", id: "wp-1", qrpc: false, deferral_eligible: false, flex_eligible: true }, { now: "2027-01-01T14:00:00.000Z" });
+  await g.run("workout_plan.*", { op: "expire", id: "wp-1", qrpc: false, deferral_eligible: false, flex_eligible: true, delinquency_days: 120 }, { now: "2027-01-01T14:00:00.000Z" });
+  assert.equal(g.emitted("workout_plan.ended")[0]!.payload.delinquency_days, 120);
   g.armed("FNMA_D23206_POSTFORB_FLEX_SOLICIT_15", "2027-01-15"); assert.equal(g.timers.byCode("FNMA_D23204_POSTFORB_DEFERRAL_SOLICIT_15").length, 0);
   await g.notice("NTC_FNMA_D23206_SOLICIT_STREAMLINED", { option: "flex_modification", as_of: "2027-01-08" }); g.satisfied("FNMA_D23206_POSTFORB_FLEX_SOLICIT_15", "notice.sent");
+  // D2-3.2-06 (amended): the post-forbearance Flex Mod solicitation needs ≥90 days delinquent — a 2-month-delinquent (75-day) loan at expiry arms no Flex solicitation clock (the disaster reduced-criteria path has no 90-day condition).
+  assert.deepEqual(postForbearanceDisposition({ term_end: D("2026-12-31"), qrpc: false, months_delinquent: 2, deferral_eligible: false }), { solicitation: null, notice: null, by: null, reason: "under_90_days_delinquent" });
+  assert.equal(postForbearanceDisposition({ term_end: D("2026-12-31"), qrpc: false, months_delinquent: 2, deferral_eligible: false, disaster: true }).solicitation, "flex_mod");
+  const u = harness(); await offerAndActivate(u);
+  await u.run("workout_plan.*", { op: "expire", id: "wp-1", qrpc: false, deferral_eligible: false, flex_eligible: true, delinquency_days: 75 }, { now: "2027-01-01T14:00:00.000Z" });
+  assert.equal(u.emitted("workout_plan.ended")[0]!.payload.delinquency_days, 75); assert.equal(u.timers.byCode("FNMA_D23206_POSTFORB_FLEX_SOLICIT_15").length, 0); assert.equal(u.timers.byCode("FNMA_D23204_POSTFORB_DEFERRAL_SOLICIT_15").length, 0);
+  // Without a stated figure the days delinquent at expiry are the 2 months at plan start plus the 3-month term (2026-10-01 → 2026-12-31): 60 + 91 = 151 ≥ 90.
+  const v = harness(); await offerAndActivate(v);
+  await v.run("workout_plan.*", { op: "expire", id: "wp-1", qrpc: false, deferral_eligible: false, flex_eligible: true }, { now: "2027-01-01T14:00:00.000Z" });
+  assert.equal(v.emitted("workout_plan.ended")[0]!.payload.delinquency_days, 151); v.armed("FNMA_D23206_POSTFORB_FLEX_SOLICIT_15", "2027-01-15");
 });
 test("12.4-T6: (disaster) FEMA IA area, current at disaster, 1 month delinquent → 3-month plan without QRPC; QRPC attempts logged every ≤7 days.", async () => {
   const r = disasterForbearanceOffer({ fema_ia: true, current_at_disaster: true, months_delinquent: 1, attempts: [D("2026-10-01"), D("2026-10-08"), D("2026-10-15")] });

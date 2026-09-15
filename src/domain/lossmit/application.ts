@@ -1,14 +1,28 @@
 /** §12.1 Acknowledge loss-mit application — classification, 45-day test, completeness, reasonable date, duplicative test. */
 import { type PlainDate, addDays, daysBetween } from "../../kernel/calendar/date.ts";
-import { addBusinessDays, federal, servicer } from "../../kernel/calendar/business.ts";
+import { addBusinessDays, federal, fannieEt } from "../../kernel/calendar/business.ts";
 import { zonedEpochMs } from "../../kernel/calendar/zoned.ts";
 
 export function classify(c: { has_evaluative_info: boolean; confidence: number }): "application" | "rfa_only" { return c.has_evaluative_info || c.confidence < 0.8 ? "application" : "rfa_only"; }
 export function ackDue(receivedOn: PlainDate, loanTz = "America/New_York"): { due_on: PlainDate; due_at_ms: number } { const d = addBusinessDays(receivedOn, 5, federal); return { due_on: d, due_at_ms: zonedEpochMs(d, "23:59", loanTz) }; }
-/** §1024.41(b)(2) applies only when received > 45 days before a scheduled sale; otherwise D2-2-05 plan notice within 5 servicer BD. */
+/**
+ * §1024.41(b)(2) applies only when received > 45 days before a scheduled sale; otherwise Reg X imposes no (b)(2) duty but
+ * Fannie Mae D2-2-05 still requires its acknowledgment within 5 business days — Guide business days (`business_days_fannie_et`:
+ * not Sat/Sun, FRBNY closures, Fannie Mae DC closures), never the servicer's §1024.31 calendar (12.1 timer table, amended).
+ */
 export function fortyFiveDayTest(receivedOn: PlainDate, saleOn: PlainDate | null): { b2_applies: boolean; d2205_notice_due: PlainDate | null } {
-  if (saleOn && receivedOn > addDays(saleOn, -45)) return { b2_applies: false, d2205_notice_due: addBusinessDays(receivedOn, 5, servicer) };
+  if (saleOn && receivedOn > addDays(saleOn, -45)) return { b2_applies: false, d2205_notice_due: addBusinessDays(receivedOn, 5, fannieEt) };
   return { b2_applies: true, d2205_notice_due: null };
+}
+/**
+ * D2-2-05 duties for an application received within 45 days of a scheduled sale (12.1 rule 3, amended): the 5-business-day
+ * acknowledgment in every case; the Incomplete Information Notice unless the *incomplete* BRP arrived 37 days or less before
+ * the sale (then optional — "authorized, but not required"); the explanation of the servicer's plans for evaluating the
+ * borrower and suspending the sale, if appropriate, for a *complete* BRP received 37 days or less before the sale.
+ */
+export function d2205LateApplicationDuties(i: { days_before_sale: number; brp_complete: boolean }): { acknowledgment_required: true; incomplete_information_notice: "required" | "optional" | "not_applicable"; plan_explanation_required: boolean; within_37_days: boolean } {
+  const within37 = i.days_before_sale <= 37;
+  return { acknowledgment_required: true, incomplete_information_notice: i.brp_complete ? "not_applicable" : within37 ? "optional" : "required", plan_explanation_required: i.brp_complete && within37, within_37_days: within37 };
 }
 /** 12.1 `lossmit_applications.protection_tier` at receipt: ≥90 days before a scheduled sale (or no sale) → ge_90; >37 → gt_37; else le_37 (§1024.41(c)(1), (e)(1), (h)(1)). */
 export type ProtectionTier = "ge_90" | "gt_37" | "le_37";

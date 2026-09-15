@@ -345,3 +345,21 @@ test("12.3 timer patterns: every override matches the events the handlers append
   assert.equal(eventMatches(def("NY_419_7H_APPEAL_WINDOW_14_POSTMARK").triggerPattern!, ev("lossmit.denial.postmarked", denialPostmarked({ notice_id: "n", state: "NY", printed_on: D("2026-11-02"), postmark_on: D("2026-11-03") }).events[0]!.payload)), true);
   assert.equal(eventMatches(def("SM_APPEAL_INDEPENDENCE_GATE").triggerPattern!, ev("lossmit.appeal.reviewer_assigned", assignReviewer({ appeal_id: "a1", candidate_id: "u-r", candidate_role: "lossmit_reviewer", evaluator_id: "u-e", assigned_on: D("2026-11-13") }).events[0]!.payload)), true);
 });
+
+test("12.3 rule 1 (§1024.30(c)(2)): an appeal on a loan that is not the borrower's principal residence is a courtesy reconsideration only — `ineligibility_reason=not_principal_residence`, no Reg X (g)(1) hold, no 30-day decision clock; a principal residence (or an unknown flag) is eligible", async () => {
+  const inv = receiveAppeal({ appeal_id: "a-inv", application_id: "app-1", evaluation_id: "eval-1", denial_provided_on: D("2026-11-02"), received_on: D("2026-11-12"), channel: "written", complete_on: D("2026-10-07"), sale_on: null, first_filing_made: false, denied_modification: true, in_foreclosure: false, principal_residence: false });
+  assert.equal(inv.eligible, false); assert.equal(inv.ineligibility_reason, "not_principal_residence"); assert.equal(inv.courtesy_reconsideration, true); assert.equal(inv.notice, "NTC_REGX_41H_APPEAL_INELIGIBLE"); assert.equal(inv.fnma_d2207_variance, null);
+  assert.equal(inv.events[0]!.payload.principal_residence, false); assert.equal(inv.events[0]!.payload.courtesy_reconsideration, true);
+  const pr = receiveAppeal({ appeal_id: "a-pr", application_id: "app-1", evaluation_id: "eval-1", denial_provided_on: D("2026-11-02"), received_on: D("2026-11-12"), channel: "written", complete_on: D("2026-10-07"), sale_on: null, first_filing_made: false, denied_modification: true, in_foreclosure: false, principal_residence: true });
+  assert.equal(pr.eligible, true); assert.equal(pr.courtesy_reconsideration, false);
+  assert.equal(receiveAppeal({ appeal_id: "a-unk", application_id: "app-1", evaluation_id: "eval-1", denial_provided_on: D("2026-11-02"), received_on: D("2026-11-12"), channel: "written", complete_on: D("2026-10-07"), sale_on: null, first_filing_made: false, denied_modification: true, in_foreclosure: false }).eligible, true);
+  // On the bus: the investment-property appeal arms neither the (g)(1) hold nor the (h)(4) decision clock; the principal-residence appeal arms both.
+  const h = harness("2026-11-02T15:00:00Z"); await h.denial("2026-11-02T15:00:00Z");
+  const r = await h.receive("2026-11-12T14:00:00Z", { principal_residence: false, payload: sample("NTC_REGX_41H_APPEAL_INELIGIBLE") });
+  assert.equal(r.eligible, false); assert.equal(r.ineligibility_reason, "not_principal_residence"); assert.equal(r.notice, "NTC_REGX_41H_APPEAL_INELIGIBLE");
+  assert.equal(one(h.emitted("lossmit.appeal.received")).payload.courtesy_reconsideration, true);
+  assert.equal(h.timer("REGX_1024_41G1_APPEAL_HOLD").length, 0); assert.equal(h.timer("REGX_1024_41H4_APPEAL_DECIDE_30").length, 0);
+  const g = harness("2026-11-02T15:00:00Z"); await g.denial("2026-11-02T15:00:00Z");
+  const r2 = await g.receive("2026-11-12T14:00:00Z", { principal_residence: true });
+  assert.equal(r2.eligible, true); assert.equal(g.timer("REGX_1024_41G1_APPEAL_HOLD").length, 1); assert.equal(g.timer("REGX_1024_41H4_APPEAL_DECIDE_30")[0]!.dueDate, "2026-12-12");
+});

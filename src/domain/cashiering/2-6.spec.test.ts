@@ -26,7 +26,7 @@ function harness(nowIso: string, loan: LoanCashState) {
   return { clock, events, ledger, svc, pay, state: () => store.get(loan.loan_id)! };
 }
 void AGENT; void harness; void L1;
-import { newTrial, trialReceipt, trialReturn, trialMonthEnd, trialStatementDisclosure, bookingGate } from "./trial.ts";
+import { newTrial, trialReceipt, trialReturn, trialMonthEnd, trialStatementDisclosure, bookingGate, modificationEffectiveDate, isProcessingMonth, larSequenceAtClosing } from "./trial.ts";
 import { TrialCashieringOps, BookingRefused, CapitalizationRefused } from "./ops-2-6.ts";
 import { recordFee } from "./latecharges.ts";
 import { CashieringOps } from "./ops.ts";
@@ -156,8 +156,54 @@ test("2.6-T4: Given all trial payments satisfied, when 12.8 books the modificati
   const lc = timers.byCode("FNMA_D23206_LC_WAIVE_ON_CONVERSION_0")[0]!; assert.equal(lc.dueDate, "2027-01-01"); assert.equal(lc.status, "satisfied");
   assert.equal(events.ofType("late_charges.all_waived")[0]!.payload.reason, "trial_conversion"); assert.equal(events.ofType("fee.waived").length, 6); assert.equal(r.state.late_charges_due_cents, 0n);
   assert.equal(bookingGate(r.state).ok, true); assert.equal(trial.status, "modification_effective");
-  const booked = tops.bookModification(trial, r.state, D("2027-01-01"));
+  // F-1-27 default effective date: the first day of the month following the TPP (trial 3 due 2026-12-01 → 2027-01-01), no processing month
+  assert.deepEqual(modificationEffectiveDate(trial), { effective_on: "2027-01-01", processing_month: null, basis: "F-1-27: effective on the first day of the month following the Trial Period Plan" });
+  // IRM 4-03 (rule 7): the 08/01 contractual application on 2026-12-01 moved LPI/UPB in the final trial month; the case closes in December (2026-12-31) →
+  // the December cycle reports that contractual LAR first and the post-modification LAR lands in the January cycle: two LARs, two reporting cycles
+  assert.deepEqual(trial.contractual_applications, ["2026-11-02", "2026-12-01"]);
+  const booked = tops.bookModification(trial, r.state, D("2027-01-01"), { closed_on: D("2026-12-31") });
   assert.equal(booked.type, "lossmit.modification.booked"); assert.equal(booked.payload.late_charges_waived_cents, "47406"); assert.equal(booked.payload.capitalized_total_cents, "391002"); assert.equal(booked.payload.late_charges_in_capitalization_cents, "0"); assert.equal(booked.payload.capitalization_date, "2026-12-31");
+  assert.equal(booked.payload.closed_on, "2026-12-31");
+  assert.deepEqual(booked.payload.lar_sequence, { lars: 2, cycles: 2, contractual_lar_cycle: "2026-12", post_modification_lar_cycle: "2027-01", cite: "IRM 4-03: contractual payment reported before the post-modification balances — two LARs and two reporting cycles" });
+  const decemberContractual = events.ofType("investor_events.created").filter((e) => e.payload.type === "payment.contractual" && String(e.payload.effective_date).startsWith("2026-12"));
+  assert.equal(decemberContractual.length, 1); assert.equal(decemberContractual[0]!.payload.lpi_date, "2026-08-01"); assert.equal(decemberContractual[0]!.payload.upb_cents, "24931831");   // the LAR that must precede the post-modification balances
+  // otherwise (the case closes in January, or no contractual installment was applied in the final trial month): one post-modification LAR
+  assert.equal(larSequenceAtClosing(trial, D("2027-01-05")).lars, 1); assert.equal(larSequenceAtClosing(trial, D("2027-01-05")).post_modification_lar_cycle, "2027-01");
+  assert.deepEqual(larSequenceAtClosing({ ...trial, contractual_applications: [D("2026-11-02")] }, D("2026-12-31")), { lars: 1, cycles: 1, contractual_lar_cycle: null, post_modification_lar_cycle: "2026-12", cite: "IRM 4-03: one post-modification LAR (no final-month contractual application closed in the same month)" });
+  // F-1-27 cut-off-date variant (written equal-treatment policy, cut-off 2026-12-15 — after trial 3's 2026-12-01 due date): effective 2027-02-01; January 2027 is the
+  // payment-free processing month — no schedule row, so no FNMA_D23206_TRIAL_PAYMENT_EOM clock exists for it and the month-end sweep cannot fail the trial
+  {
+    const clock2 = new FixedClock("2026-10-01T14:00:00.000Z"); const events2 = new MemoryEventStore(clock2);
+    const timers2 = new TimerEngine(loadOverriddenRegistry(), events2, { processes: ["2.6"] });
+    const tops2 = new TrialCashieringOps({ events: events2, clock: clock2 }); const ops2 = tops2.ops;
+    const s2 = L1({ lpi_date: D("2026-06-01"), trial_active: true, overlays: [{ kind: "trial_pending_waiver", from: D("2026-09-10") }] }, D("2026-07-01"), 6);
+    const trial2 = ops2.startTrial(newTrial("SMDU-3", "L-1", TRIAL_MONTHS()));
+    assert.throws(() => modificationEffectiveDate(trial2, { cut_off_on: D("2026-12-01"), policy_ref: "SM-LM-07" }), RangeError);   // the cut-off must fall after the final trial payment's due date
+    const eff = modificationEffectiveDate(trial2, { cut_off_on: D("2026-12-15"), policy_ref: "SM-LM-07" });
+    assert.equal(eff.effective_on, "2027-02-01"); assert.equal(eff.processing_month, "2027-01"); assert.match(eff.basis, /first day of the second month following the final Trial Period Plan payment/);
+    assert.equal(isProcessingMonth(trial2, eff.effective_on, D("2027-01-15")), true); assert.equal(isProcessingMonth(trial2, D("2027-01-01"), D("2027-01-15")), false);
+    for (const d of ["2026-07-17", "2026-08-17", "2026-09-17"]) recordFee(s2, { id: `v-${d}`, fee_type: "late_charge", installment_due_date: D(d.slice(0, 8) + "01"), amount_cents: 7_901n, state: "assessed", assessed_on: D(d), collected_cents: 0n });
+    let r2 = ops2.trialReceipt(trial2, s2, 195_900n, D("2026-10-01"));
+    for (const [due, run, next] of [["2026-10-01", "2026-10-17", "2026-11-02"], ["2026-11-01", "2026-11-17", "2026-12-01"]] as const) {
+      clock2.set(`${run}T05:30:00.000Z`); assert.equal(ops2.runAssessment({ state: r2.state, installment_due_date: D(due), received_toward_basis_cents: 0n, run_on: D(run), unposted_receipts_on_or_before_grace: 0 }).outcome, "accrued_suspended");
+      clock2.set(`${next}T14:00:00.000Z`); r2 = ops2.trialReceipt(trial2, r2.state, 195_900n, D(next));
+    }
+    clock2.set("2026-12-17T05:30:00.000Z"); assert.equal(ops2.runAssessment({ state: r2.state, installment_due_date: D("2026-12-01"), received_toward_basis_cents: 0n, run_on: D("2026-12-17"), unposted_receipts_on_or_before_grace: 0 }).outcome, "accrued_suspended");
+    assert.equal(trial2.held_cents, 149_186n); assert.equal(r2.state.upb_cents, 24_931_831n);                     // the figures are unchanged by the effective-date choice
+    assert.equal(timers2.byCode("FNMA_D23206_TRIAL_PAYMENT_EOM").length, 3);                                        // one clock per schedule row (Oct, Nov, Dec) — none for January
+    assert.ok(timers2.byCode("FNMA_D23206_TRIAL_PAYMENT_EOM").every((t) => t.status === "satisfied"));
+    clock2.set("2026-12-31T14:00:00.000Z");
+    const done2 = tops2.completeTrial(trial2, r2.state, { interest_cents: 4n * ((24_931_831n * 65n + 6_000n) / 12_000n), escrow_advances_cents: 0n }, eff.effective_on);
+    assert.equal(done2.residual.residual_cents, 149_186n); assert.equal(done2.residual.capitalized_interest_cents, 391_002n);
+    const residual2 = timers2.byCode("FNMA_C1102_TRIAL_RESIDUAL_BEFORE_EFFECTIVE_0")[0]!; assert.equal(residual2.anchorDate, "2027-02-01"); assert.equal(residual2.dueDate, "2027-01-31"); assert.equal(residual2.status, "satisfied");
+    // no January trial payment is required: the processing-month sweep misses nothing, the trial stays complete, and no EOM clock breaches at 2027-01-31 23:59
+    clock2.set("2027-01-31T23:59:00.000Z");
+    assert.deepEqual(ops2.trialMonthEnd(trial2, r2.state, D("2027-01-31")), { missed: null, failed: false, released: [], funds: { outcome: "none", item: null, plan: null } });
+    assert.equal(trial2.status, "trial_completed"); assert.equal(events2.ofType("trial_payment.missed").length, 0); assert.equal(events2.ofType("lossmit.trial.failed").length, 0);
+    assert.equal(timers2.evaluate("2027-02-01T05:00:00.000Z").some((b) => b.def.code === "FNMA_D23206_TRIAL_PAYMENT_EOM"), false);
+    clock2.set("2027-02-01T14:00:00.000Z"); assert.equal(tops2.modificationEffective(trial2, r2.state, eff.effective_on), 47_406n);
+    assert.equal(timers2.byCode("FNMA_D23206_LC_WAIVE_ON_CONVERSION_0")[0]!.dueDate, "2027-02-01");
+  }
   // the same tool waives for trial_conversion through the engine (state, receivable and event move together), and suspends an assessed charge into the trial overlay
   const s2 = L1({ trial_active: true }, D("2026-07-01"), 6);
   recordFee(s2, { id: "lc-a", fee_type: "late_charge", installment_due_date: D("2026-07-01"), amount_cents: 7_901n, state: "assessed", assessed_on: D("2026-07-17"), collected_cents: 0n });

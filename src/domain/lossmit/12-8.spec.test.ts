@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { plainDate as D, addMonths, type PlainDate } from "../../kernel/calendar/date.ts";
-import { streamlinedSolicitationWindow, mbsExecutionGate, modDocumentClocks, conversionLedger, postConversionLedger, flexIncentive, flexEligibilityDenial, mirLookup, bindingConditions, form3179Changes, roundCents } from "./ops.ts";
+import { streamlinedSolicitationWindow, mbsExecutionGate, mbsReclassificationDate, modDocumentClocks, preExecutionChecks, escrowEstablishmentGate, escrowShortageSpread, conversionLedger, postConversionLedger, flexIncentive, flexEligibilityDenial, mirLookup, bindingConditions, form3179Changes, roundCents } from "./ops.ts";
 import { MemoryEventStore, FixedClock, type Actor } from "../../kernel/events/index.ts";
 import { MemoryLedger } from "../../kernel/ledger/ledger.ts";
 import { waterfall, balanceAfter, accruedInterest, trialSchedule, trialCount, trialMonthMet, type WaterfallInputs, type WaterfallResult } from "./flexmod.ts";
@@ -169,15 +169,34 @@ test("12.8-T6: (solicitation window) day 90 on 2026-11-02 with no BRP → solici
   const ok = streamlinedSolicitationWindow({ day90_on: D("2026-11-02"), brp_complete: false, sale_on: null, judicial: false }); assert.equal(ok.solicit_by, "2026-11-17"); assert.equal(ok.allowed, true);
   const near = streamlinedSolicitationWindow({ day90_on: D("2026-11-02"), brp_complete: false, sale_on: D("2026-11-25"), judicial: false }); assert.equal(near.allowed, false); assert.match(near.refusal!, /SALE_PROXIMITY/);
 });
-test("12.8-T7: (MBS) MBS loan → servicer execution blocked until `smdu.case.reclassified`; effective date re-dated if needed.", () => {
+test("12.8-T7: (MBS) MBS loan → servicer execution blocked until `smdu.case.reclassified`; reclassification occurs in the final trial month only if the final trial payment is received and reported to Fannie Mae by the 15th calendar day of that month (F-1-25); if the final payment arrives after the 15th but before the end of the TPP, the TPP is extended one month and the reclassification date is the 15th of the extended month (`FNMA_F122_TPP_PAYMENT_REPORT` must land by the 15th).", () => {
   const blocked = mbsExecutionGate({ mbs: true, reclassified_on: null, effective: D("2027-01-01") }); assert.equal(blocked.execution_allowed, false); assert.match(blocked.refusal!, /smdu\.case\.reclassified/);
   const late = mbsExecutionGate({ mbs: true, reclassified_on: D("2027-01-05"), effective: D("2027-01-01") }); assert.equal(late.execution_allowed, true); assert.equal(late.effective, "2027-02-01"); assert.equal(late.redated, true);
   assert.equal(mbsExecutionGate({ mbs: false, reclassified_on: null, effective: D("2027-01-01") }).execution_allowed, true);
+  // F-1-25 on the worked example's three-month TPP (final trial payment due 2026-12-01): received and reported by the 15th → reclassified 2026-12-15 in the final month.
+  const onTime = mbsReclassificationDate({ final_trial_due: D("2026-12-01"), final_payment_received_on: D("2026-12-10"), reported_to_fnma_on: D("2026-12-11") });
+  assert.deepEqual([onTime.reclassification_date, onTime.tpp_extended_months, onTime.extended_final_due, onTime.trial_failed], ["2026-12-15", 0, null, false]);
+  // Received after the 15th but before the end of the TPP → the TPP is extended one month (final due 2027-01-01) and the reclassification date is 2027-01-15.
+  const afterFifteenth = mbsReclassificationDate({ final_trial_due: D("2026-12-01"), final_payment_received_on: D("2026-12-20"), reported_to_fnma_on: D("2026-12-21") });
+  assert.deepEqual([afterFifteenth.reclassification_date, afterFifteenth.tpp_extended_months, afterFifteenth.extended_final_due, afterFifteenth.trial_failed], ["2027-01-15", 1, "2027-01-01", false]);
+  // Received by the 15th but Fannie Mae not notified by the 15th (the FNMA_F122_TPP_PAYMENT_REPORT report landed late) → extended another month.
+  const lateReport = mbsReclassificationDate({ final_trial_due: D("2026-12-01"), final_payment_received_on: D("2026-12-14"), reported_to_fnma_on: D("2026-12-16") });
+  assert.equal(lateReport.reclassification_date, "2027-01-15"); assert.equal(lateReport.tpp_extended_months, 1); assert.match(lateReport.basis, /FNMA_F122_TPP_PAYMENT_REPORT/);
+  assert.equal(mbsReclassificationDate({ final_trial_due: D("2026-12-01"), final_payment_received_on: D("2026-12-15"), reported_to_fnma_on: D("2026-12-15") }).reclassification_date, "2026-12-15");   // the 15th itself is in time
+  assert.equal(mbsReclassificationDate({ final_trial_due: D("2026-12-01"), final_payment_received_on: D("2027-01-02"), reported_to_fnma_on: null }).trial_failed, true);   // after the month ends: a trial failure, not a reclassification case
+  // The re-dated effective date follows: reclassification 2027-01-15 is after the 2027-01-01 effective date → execution re-dated to 2027-02-01.
+  assert.equal(mbsExecutionGate({ mbs: true, reclassified_on: afterFifteenth.reclassification_date!, effective: D("2027-01-01") }).effective, "2027-02-01");
 });
 test("12.8-T8: (documents) Form 3179 sent 2026-12-01; borrower e-signs 2026-12-10; `signing_officer` executes 2026-12-28; recording required → certified copy of the executed agreement to the custodian by 2027-01-04 (25 days from 2026-12-10), e-recorded 2027-01-05, original to the custodian within 5 BD of receipt from the recorder; an unrecorded agreement instead goes as the fully executed original by 2027-01-04.", () => {
   const r = modDocumentClocks({ form_3179_sent_on: D("2026-12-01"), borrower_signed_on: D("2026-12-10"), servicer_executed_on: D("2026-12-28"), servicer_role: "signing_officer", recording_required: true, erecorded_on: D("2027-01-05"), recorded_original_received_on: D("2027-01-20") });
   assert.equal(r.allowed, true); assert.deepEqual(r.custodian_anchor, { basis: "executed_agreement_received", on: "2026-12-10" }); assert.equal(r.certified_copy_to_custodian_by, "2027-01-04"); assert.equal(r.erecorded_on, "2027-01-05"); assert.equal(r.original_to_custodian_by, "2027-01-27"); assert.equal(r.servicer_executed_on, "2026-12-28");
   const unrecorded = modDocumentClocks({ form_3179_sent_on: D("2026-12-01"), borrower_signed_on: D("2026-12-10"), servicer_executed_on: D("2026-12-28"), servicer_role: "signing_officer", recording_required: false }); assert.equal(unrecorded.unrecorded_original_by, "2027-01-04"); assert.equal(unrecorded.erecorded_on, null);
+  // F-1-27 (rule 8, amended — Guide-mandated): before servicer execution the taxes/assessments that could become a first lien are confirmed current and, because the agreement will be recorded, a title endorsement (or similar title insurance product) is obtained.
+  assert.equal(r.f127_pre_execution.allowed, false); assert.match(r.f127_pre_execution.refusal!, /taxes and assessments.*not confirmed current/); assert.match(r.f127_pre_execution.refusal!, /title endorsement/);
+  const ready = modDocumentClocks({ form_3179_sent_on: D("2026-12-01"), borrower_signed_on: D("2026-12-10"), servicer_executed_on: D("2026-12-28"), servicer_role: "signing_officer", recording_required: true, erecorded_on: D("2027-01-05"), recorded_original_received_on: D("2027-01-20"), taxes_assessments_current: true, title_endorsement_ordered: true });
+  assert.deepEqual(ready.f127_pre_execution, { allowed: true, refusal: null, title_endorsement_required: true, missing: [] }); assert.equal(ready.original_to_custodian_by, "2027-01-27");   // 5 Guide business days from 2027-01-20 (Jan 21, 22, 25, 26, 27)
+  assert.deepEqual(preExecutionChecks({ recording_required: false, taxes_assessments_current: true, title_endorsement_ordered: false }), { allowed: true, refusal: null, title_endorsement_required: false, missing: [] });   // unrecorded: the endorsement is not mandated (open question 4 policy)
+  assert.equal(preExecutionChecks({ recording_required: true, taxes_assessments_current: true, title_endorsement_ordered: false }).allowed, false);
   // The three binding conditions (D2-3.2-06) hold only once the trial is complete and both parties have executed; Form 3179 leaves on the template with catalog riders only.
   assert.equal(bindingConditions({ tpp_completed: true, borrower_executed_on: D("2026-12-10"), servicer_executed_on: D("2026-12-28"), servicer_role: "signing_officer" }).binding, true);
   const notYet = bindingConditions({ tpp_completed: true, borrower_executed_on: D("2026-12-10") }); assert.equal(notYet.binding, false); assert.match(notYet.refusal!, /not executed and dated by the servicer/);
@@ -235,4 +254,22 @@ test("12.8 worked figures: IB UPB $236,765.47; interest $1,282.48 × 8 = $10,259
   const lateCharge = roundCents(158017n * 4n, 100n); assert.equal(lateCharge, 6321n);
   const led = conversionLedger({ ...W, late_charges_cents: 8n * lateCharge, effective: D("2027-01-01"), loan_data_change_acked: true }); assert.equal(led.late_charges_waived_cents, 50568n);
   assert.equal(led.postings.find((p) => p.account === "escrow_advances")!.credit, 420000n); assert.equal(led.postings.find((p) => p.account === "corporate_advances")!.credit, 18000n);
+});
+
+test("12.8 B-1-01 (FNMA_B101_ESCROW_ESTABLISH_BEFORE_TRIAL, amended): no TPP offer until the escrow waiver is revoked and the account established — the only exception is a disaster-hardship Flex Mod with T&I current; the shortage is spread over 60 months unless the borrower elects a lump sum or a shorter period of not less than 12 months", async () => {
+  assert.deepEqual(escrowEstablishmentGate({ escrow_established: true, taxes_insurance_current: false, disaster_flex_mod: false }), { allowed: true, exception_applied: false, refusal: null });
+  const refused = escrowEstablishmentGate({ escrow_established: false, taxes_insurance_current: true, disaster_flex_mod: false }); assert.equal(refused.allowed, false); assert.match(refused.refusal!, /FNMA_B101_ESCROW_ESTABLISH_BEFORE_TRIAL/);
+  assert.equal(escrowEstablishmentGate({ escrow_established: false, taxes_insurance_current: false, disaster_flex_mod: true }).allowed, false);   // disaster alone is not enough: T&I must be current too
+  assert.deepEqual(escrowEstablishmentGate({ escrow_established: false, taxes_insurance_current: true, disaster_flex_mod: true }), { allowed: true, exception_applied: true, refusal: null });
+  // The $1,860.00 shortage of the worked example: 60 months → $31.00; the borrower may elect 12 months ($155.00) or a lump sum; 11 months is refused.
+  assert.deepEqual(escrowShortageSpread(186_000n, { kind: "default_60" }), { months: 60, monthly_cents: 3_100n, lump_sum_cents: 0n, basis: "B-1-01: equal monthly payments over 60 months" });
+  assert.equal(escrowShortageSpread(186_000n, { kind: "shorter", months: 12 }).monthly_cents, 15_500n); assert.equal(escrowShortageSpread(186_000n, { kind: "lump_sum" }).lump_sum_cents, 186_000n);
+  assert.throws(() => escrowShortageSpread(186_000n, { kind: "shorter", months: 11 }), /not less than 12 months/);
+  // On the service: a non-disaster Flex Mod with no escrow account is refused at the offer; the same loan with the account established is offered.
+  const h = flexHarness("2026-09-09T14:00:00.000Z");
+  h.evaluateLoan("L-escrow", true);
+  await assert.rejects(h.svc.offerTpp({ loan_id: "L-escrow", notice_sent_on: D("2026-09-11"), ti_monthly_cents: 52_000n, shortage_monthly_cents: 3_100n, escrow_analysis_on: D("2026-09-08"), escrow_established: false, taxes_insurance_current: true }), /FNMA_B101_ESCROW_ESTABLISH_BEFORE_TRIAL/);
+  assert.equal(h.emitted("lossmit.tpp.offered").length, 0);
+  const offered = await h.svc.offerTpp({ loan_id: "L-escrow", notice_sent_on: D("2026-09-11"), ti_monthly_cents: 52_000n, shortage_monthly_cents: 3_100n, escrow_analysis_on: D("2026-09-08"), escrow_established: true });
+  assert.equal(offered.trial.first_due, "2026-10-01"); assert.equal(h.emitted("lossmit.tpp.offered")[0]!.payload.escrow_exception_disaster_ti_current, false); assert.equal(h.emitted("lossmit.tpp.offered")[0]!.payload.valuation_copy_notice, true);   // BRP-based: the package carries the right-to-valuation-copies notice (D2-3.2-06)
 });

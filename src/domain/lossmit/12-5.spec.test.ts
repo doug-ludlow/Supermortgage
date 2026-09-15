@@ -24,8 +24,8 @@ import { NoticeService } from "../../notices/service.ts";
 import { buildRegistry, publishAuthored } from "../../notices/catalog.ts";
 import { render } from "../../notices/render.ts";
 import { evaluateChecklist } from "../../notices/checklist.ts";
-import { repaymentBrpGate, repaymentExtension, lateChargeTreatment, repaymentFailureSolicitation, caLateFeeBar, repaymentReporting, capRetest, arrears, shortTermPlanOffer, roundCents } from "./ops.ts";
-import { repaymentTerms, repaymentPlan } from "./plans.ts";
+import { repaymentBrpGate, repaymentExtension, f116RecommendationPackage, lateChargeTreatment, repaymentFailureSolicitation, caLateFeeBar, repaymentReporting, capRetest, arrears, shortTermPlanOffer, roundCents } from "./ops.ts";
+import { repaymentTerms, repaymentPlan, repaymentReclassification } from "./plans.ts";
 import { combinedTermGate, ingestInvestorAck, INCENTIVE_CENTS, scheduleRows, type RepaymentEnv } from "./ops-12-5.ts";
 
 // ---- the 12.5 tools on the command bus with a TimerEngine over the overridden registry (12.5 rows plus the shared Reg X codes whose owning definition sits in 12.1 / 12.4) ----
@@ -61,9 +61,14 @@ function harness(nowIso = "2026-10-01T14:00:00.000Z") {
 }
 const PLAN = { start_on: "2026-11-01", term_months: 8, arrears_cents: 642_600n, contractual_cents: 210_000n, days_delinquent: 95, brp_complete: true, qrpc: true };
 
-test("12.5-T1: Given PITI $2,100.00 and arrears $6,426.00, when terms are computed, then 6 months is rejected (151.0%) and 8 months accepted ($2,903.25; 138.25%); the schedule sums exactly to $6,426.00 with rounding in the last installment.", async () => {
+test("12.5-T1: Given PITI $2,100.00, arrears $6,426.00 and a stated capacity of $2,950.00, when terms are computed, then 6 months is rejected (151.0% > cap), 7 months is rejected ($3,018.00 > capacity) and 8 months accepted ($2,903.25; 138.25%); the schedule sums exactly to $6,426.00 with rounding in the last installment.", async () => {
   const six = repaymentTerms(642_600n, 210_000n, 6); assert.equal(six.installment_cents, 107_100n); assert.equal(six.total_monthly_cents, 317_100n); assert.equal(six.pct_of_contractual, "151.00"); assert.equal(six.allowed, false);
-  const eight = repaymentTerms(642_600n, 210_000n, 8); assert.equal(eight.installment_cents, 80_325n); assert.equal(eight.total_monthly_cents, 290_325n); assert.equal(eight.pct_of_contractual, "138.25"); assert.equal(eight.allowed, true);
+  // 7 months: $6,426.00 ÷ 7 = $918.00 → $2,100.00 + $918.00 = $3,018.00 = 143.71% — within the 150% cap but above the borrower's stated capacity of $2,950.00 (rule 4, amended).
+  const seven = repaymentTerms(642_600n, 210_000n, 7); assert.equal(seven.installment_cents, 91_800n); assert.equal(seven.total_monthly_cents, 301_800n); assert.equal(seven.pct_of_contractual, "143.71"); assert.equal(seven.allowed, true); assert.ok(seven.total_monthly_cents > 295_000n);
+  const eight = repaymentTerms(642_600n, 210_000n, 8); assert.equal(eight.installment_cents, 80_325n); assert.equal(eight.total_monthly_cents, 290_325n); assert.equal(eight.pct_of_contractual, "138.25"); assert.equal(eight.allowed, true); assert.ok(eight.total_monthly_cents <= 295_000n);
+  // Rule 3: the term is the smallest number of months ≤12 satisfying both the cap and the stated capacity — 8 with the $2,950.00 capacity; without a capacity figure the cap alone would pick 7.
+  const withCapacity = repaymentPlan(642_600n, 210_000n, 295_000n); assert.equal(withCapacity.eligible, true); if (withCapacity.eligible) { assert.equal(withCapacity.terms.months, 8); assert.equal(withCapacity.terms.total_monthly_cents, 290_325n); assert.equal(withCapacity.regx_short_term, false); }
+  const capOnly = repaymentPlan(642_600n, 210_000n, null); assert.equal(capOnly.eligible, true); if (capOnly.eligible) assert.equal(capOnly.terms.months, 7);
   assert.equal(eight.installment_cents * 7n + eight.final_installment_cents, 642_600n);
   const odd = repaymentTerms(642_601n, 210_000n, 8); assert.equal(odd.installment_cents, 80_326n); assert.equal(odd.installment_cents * 7n + odd.final_installment_cents, 642_601n); assert.ok(odd.final_installment_cents < odd.installment_cents);   // ceil-to-cent, residual in the last installment
   // Through the bus: the 6-month request is refused by the 150% cap gate (its `workout_plan.term.create` facts close `12.5.paymentCap150`); the 8-month plan writes an 8-row schedule summing to $6,426.00.
@@ -118,6 +123,8 @@ test("12.5-T5: (failure clock) payment missed at 2026-11-30 month-end, no QRPC, 
   assert.deepEqual(repaymentFailureSolicitation({ missed_month_end: D("2026-11-30"), qrpc: false, months_delinquent: 4, deferral_eligible: true }), { solicitation: "payment_deferral", notice: "NTC_FNMA_D23204_SOLICIT_POST_REPAY", by: "2026-12-15" });
   assert.deepEqual(repaymentFailureSolicitation({ missed_month_end: D("2026-11-30"), qrpc: false, months_delinquent: 4, deferral_eligible: false }), { solicitation: "flex_mod", notice: "NTC_FNMA_D23206_SOLICIT_STREAMLINED", by: "2026-12-15" });
   assert.equal(repaymentFailureSolicitation({ missed_month_end: D("2026-11-30"), qrpc: true, months_delinquent: 4, deferral_eligible: true }).solicitation, null);
+  // D2-3.2-06 (amended): the post-repayment Flex Mod solicitation requires ≥90 days delinquent — a 2-month (60-day) loan gets none.
+  assert.deepEqual(repaymentFailureSolicitation({ missed_month_end: D("2026-11-30"), qrpc: false, months_delinquent: 2, deferral_eligible: false }), { solicitation: null, notice: null, by: null, reason: "under_90_days_delinquent" });
   // Through the engine: the November row is short at month end → `workout_plan.payment.missed`; op=fail emits `workout_plan.ended{status=failed, qrpc=false, deferral_eligible}` which arms the 15th-of-following-month clock; the solicitation notice satisfies it.
   const deferral = harness("2026-11-30T23:00:00.000Z");
   await deferral.run("workout_plan.*", { id: "rp-5", ...PLAN, days_delinquent: 120 });
@@ -132,7 +139,12 @@ test("12.5-T5: (failure clock) payment missed at 2026-11-30 month-end, no QRPC, 
   const flex = harness("2026-11-30T23:00:00.000Z");
   await flex.run("workout_plan.*", { id: "rp-5f", ...PLAN, days_delinquent: 120 });
   await flex.run("workout_plan.*", { id: "rp-5f", op: "fail", ended_on: "2026-11-30", qrpc: false, deferral_eligible: false, flex_eligible: true });
+  assert.equal(flex.last("workout_plan.ended").payload.delinquency_days, 149);   // 120 days at the 2026-11-01 start + 29 days to the 2026-11-30 failure (≥90 → the Flex clock arms)
   assert.equal(flex.one("FNMA_D23206_POSTREPAY_FLEX_SOLICIT_15TH").dueDate, "2026-12-15"); assert.equal(flex.timer("FNMA_D23204_POSTREPAY_DEFERRAL_SOLICIT_15TH").length, 0);
+  const under = harness("2026-11-30T23:00:00.000Z");
+  await under.run("workout_plan.*", { id: "rp-5u", ...PLAN, days_delinquent: 40, term_months: 3, arrears_cents: 210_000n, brp_complete: false });
+  await under.run("workout_plan.*", { id: "rp-5u", op: "fail", ended_on: "2026-11-30", qrpc: false, deferral_eligible: false, flex_eligible: true, delinquency_days: 69 });
+  assert.equal(under.last("workout_plan.ended").payload.delinquency_days, 69); assert.equal(under.timer("FNMA_D23206_POSTREPAY_FLEX_SOLICIT_15TH").length, 0);   // under 90 days: no post-repayment Flex solicitation (D2-3.2-06, amended)
   await flex.run("notice.render_send", { template_code: "NTC_FNMA_D23206_SOLICIT_STREAMLINED", recipients: RECIPIENTS, payload: flex.sample("NTC_FNMA_D23206_SOLICIT_STREAMLINED", "2026-12-01"), as_of: "2026-12-01" });
   assert.equal(flex.one("FNMA_D23206_POSTREPAY_FLEX_SOLICIT_15TH").status, "satisfied");
   assert.equal(flex.timers.evaluate("2026-12-16T05:00:00.000Z").length, 0, "a solicitation sent by the 15th never breaches");
@@ -219,6 +231,25 @@ test("12.5 worked figures: PITI $2,100.00; 3 × $2,100.00 = $6,300.00 + 2 × $63
   const eight = repaymentTerms(642600n, 210000n, 8); assert.equal(eight.total_monthly_cents, 290325n); assert.equal(eight.allowed, true);
   const twelve = repaymentTerms(642600n, 210000n, 12); assert.equal(twelve.installment_cents, 53550n); assert.equal(twelve.total_monthly_cents, 263550n);
   const cap = repaymentPlan(642600n, 210000n, 250000n); assert.equal(cap.eligible, false);
+  // Rule 4 (amended): 7 months $918.00 → $3,018.00 = 143.71% (cap met, above the $2,950.00 stated capacity); 8 months $803.25 → $2,903.25 = 138.25% allowed.
+  const seven = repaymentTerms(642600n, 210000n, 7); assert.equal(seven.installment_cents, 91800n); assert.equal(seven.total_monthly_cents, 301800n); assert.equal(seven.pct_of_contractual, "143.71"); assert.equal(seven.allowed, true);
+  const chosen = repaymentPlan(642600n, 210000n, 295000n); assert.ok(chosen.eligible && chosen.terms.months === 8 && chosen.terms.installment_cents === 80325n && chosen.terms.total_monthly_cents === 290325n);
+});
+
+test("12.5 F-1-25 (MBS loans, amended): a repayment plan reclassifies the loan only in pools issued 2007-06-01 through 2008-12-01 — 18 months from the first day of the month the plan commences (forbearance in those pools: after the sixth consecutive month); every other pool issue date is not reclassified during an active plan", () => {
+  const r = repaymentReclassification({ mbs: true, pool_issue_date: D("2008-03-01"), plan_kind: "repayment_plan", plan_start: D("2026-11-01") });
+  assert.equal(r.reclassifies, true); assert.equal(r.reclassification_date, "2028-05-01");
+  assert.equal(repaymentReclassification({ mbs: true, pool_issue_date: D("2007-06-01"), plan_kind: "repayment_plan", plan_start: D("2026-11-15") }).reclassification_date, "2028-05-01");   // first day of the month the plan commences + 18 months
+  assert.equal(repaymentReclassification({ mbs: true, pool_issue_date: D("2008-12-01"), plan_kind: "forbearance", plan_start: D("2026-10-01") }).reclassification_date, "2027-03-31");   // after the sixth consecutive month
+  assert.deepEqual([repaymentReclassification({ mbs: true, pool_issue_date: D("2009-01-01"), plan_kind: "repayment_plan", plan_start: D("2026-11-01") }).reclassifies, repaymentReclassification({ mbs: true, pool_issue_date: D("2007-05-01"), plan_kind: "repayment_plan", plan_start: D("2026-11-01") }).reclassifies, repaymentReclassification({ mbs: false, pool_issue_date: null, plan_kind: "repayment_plan", plan_start: D("2026-11-01") }).reclassifies], [false, false, false]);
+});
+
+test("12.5 F-1-16 (amended): the >12-month recommendation goes to the Fannie Mae Servicing Representative (F-4-02) with the plan copy, the complete BRP and, if applicable, the MI/guarantor approval — F-1-16 names no system channel", () => {
+  const p = f116RecommendationPackage({ term_months: 14, brp_complete: true, mi_insured: true, mi_approval_id: "MI-APP-1" });
+  assert.equal(p.recipient, "fnma_servicing_representative"); assert.equal(p.ready, true); assert.deepEqual(p.items, ["copy of the repayment plan", "complete BRP", "evidence of the mortgage insurer's or guarantor's approval"]); assert.match(p.channel, /F-4-02/);
+  assert.deepEqual(f116RecommendationPackage({ term_months: 14, brp_complete: true, mi_insured: false }).items, ["copy of the repayment plan", "complete BRP"]);   // uninsured: no MI item ('if applicable')
+  const missing = f116RecommendationPackage({ term_months: 14, brp_complete: false, mi_insured: true }); assert.equal(missing.ready, false); assert.deepEqual(missing.missing, ["complete BRP", "evidence of the mortgage insurer's or guarantor's approval"]);
+  assert.throws(() => f116RecommendationPackage({ term_months: 12, brp_complete: true, mi_insured: false }), /needs no F-1-16/);
 });
 
 // ---- the 12.5 timer rows the T-ids do not exercise end to end: the combined 36-month gate and the per-row month-end payment clock ----

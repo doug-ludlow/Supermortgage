@@ -31,6 +31,7 @@ import { newEnrollment, variableAmountNoticeStatus, draftAmount, type Authorizat
 import { SYSTEM } from "../../kernel/events/index.ts";
 import { TimerEngine } from "../../kernel/timers/index.ts";
 import { loadOverriddenRegistry } from "../timer-overrides.ts";
+import { addBusinessDays, fannieEt } from "../../kernel/calendar/business.ts";
 import { CashieringOps } from "./ops.ts";
 import { NoticeRegistry } from "../../notices/registry.ts";
 import { publishSection02 } from "../../notices/authored/section02.ts";
@@ -204,7 +205,7 @@ test("2.4-T6: Given an MBS loan, when a reapplication of prepayments to cure del
   assert.deepEqual(events.ofType("investor_events.created").map((e) => [e.payload.type, e.payload.reverses_event_id]), [["payment.reversal", "evt-curtailment-2026-09-03"]]);
   assert.throws(() => ops.requestReapplication(portfolio, { ...req, original_curtailment_event_ids: [] }), RangeError);
 });
-test("2.4-T7: Given a re-amortization executed 2026-10-20 effective 2026-12-01, then a new `loan_terms` version exists, Form 181 is delivered to the custodian within 10 BD, LAR 83/`rate_payment.change` is submitted within 5 BD of the calculation date, and 12.8's eligibility check does not count it as a modification.", () => {
+test("2.4-T7: Given a re-amortization executed 2026-10-20 effective 2026-12-01, then a new `loan_terms` version exists, Form 181 is delivered to the custodian within 10 BD, LAR 83/`rate_payment.change` is submitted by 20:00 ET the next Fannie Mae business day after the new `loan_terms` version is booked (booked Tue 2026-10-20 → due Wed 2026-10-21 20:00 ET; C-4.3-01), and 12.8's eligibility check does not count it as a modification.", () => {
   const clock = new FixedClock("2026-10-20T15:00:00.000Z"); const events = new MemoryEventStore(clock);
   const timers = new TimerEngine(loadOverriddenRegistry(), events, { processes: ["2.4"] });
   const ops = new CashieringOps({ events, clock });
@@ -217,11 +218,19 @@ test("2.4-T7: Given a re-amortization executed 2026-10-20 effective 2026-12-01, 
   assert.equal(act.loan_terms_version, 2); assert.equal(act.state.loan_terms_version, 2);
   assert.equal(act.state.installments.find((i) => i.due_date === "2026-12-01")!.pi_cents, 127_162n); assert.equal(act.state.installments.find((i) => i.due_date === "2026-11-01")!.pi_cents, 158_017n);
   assert.equal(events.ofType("loan_terms.activated")[0]!.payload.reason, "reamortization");
-  // LAR 83 / rate_payment.change: emitted here, submitted by 5.1 within 5 fannie_et BD of the calculation date (20:00 ET 2026-10-27)
-  const lar = timers.byCode("FNMA_IRM_LAR83_5BD_2000")[0]!; assert.equal(lar.dueDate, "2026-10-27"); assert.equal(act.lar83_due_by, "2026-10-27");
-  const inv = events.ofType("investor_events.created").find((x) => x.payload.type === "rate_payment.change")!; assert.deepEqual(inv.payload.lar_codes, ["83"]); assert.equal(inv.payload.new_pi_cents, "127162");
-  clock.set("2026-10-22T15:00:00.000Z"); events.append({ type: "investor_events.submitted", loanId: "L-1", actor: SYSTEM, causationId: inv.id, payload: { event_type: "rate_payment.change", type: "rate_payment.change", lar: "83", submitted_at: clock.now() } });   // 5.1's submission event (its timers.ts owns the row)
-  assert.equal(lar.status, "satisfied");
+  // LAR 83 / rate_payment.change: an *unscheduled* TT83 (IRM 3-03 states no deadline for it; its 5th-business-day clock is for scheduled changes only), so
+  // C-4.3-01's general non-removal rule governs — by 20:00 ET on the next Fannie Mae business day after the servicer processes the transaction:
+  // booked Tue 2026-10-20 (11:00 ET) → due Wed 2026-10-21 20:00 ET (= 2026-10-22T00:00:00Z in EDT); no Fannie Mae holiday intervenes
+  const def83 = loadOverriddenRegistry().get("FNMA_C4301_LAR83_REAMORT_NEXTBD_2000")!; assert.equal(def83.process, "2.4"); assert.equal(def83.kindNorm, "deadline"); assert.equal(def83.offsetParsed.kind, "next_business_day");
+  const activated = events.ofType("loan_terms.activated")[0]!; assert.ok(eventMatches(def83.triggerPattern!, activated)); assert.equal(activated.payload.processed_at, "2026-10-20T15:00:00.000Z"); assert.equal(activated.payload.processed_on, "2026-10-20");
+  assert.equal(act.processed_on, "2026-10-20"); assert.equal(act.lar83_due_by, "2026-10-21"); assert.equal(addBusinessDays(D("2026-10-20"), 1, fannieEt), "2026-10-21");
+  const lar = timers.byCode("FNMA_C4301_LAR83_REAMORT_NEXTBD_2000")[0]!; assert.equal(lar.status, "armed"); assert.equal(lar.anchorDate, "2026-10-20"); assert.equal(lar.dueDate, "2026-10-21"); assert.equal(new Date(lar.dueAt!).toISOString(), "2026-10-22T00:00:00.000Z");
+  assert.equal(timers.byCode("FNMA_IRM_LAR83_5BD_2000").length, 0);   // 5.1's scheduled-change clock is not the re-amortization clock (2.4 no longer lists it)
+  const inv = events.ofType("investor_events.created").find((x) => x.payload.type === "rate_payment.change")!; assert.deepEqual(inv.payload.lar_codes, ["83"]); assert.equal(inv.payload.new_pi_cents, "127162"); assert.equal(inv.payload.tt83_change, "unscheduled"); assert.equal(inv.payload.due_by, "2026-10-21");
+  // a submission acknowledged on the due day before 20:00 ET (2026-10-21 14:00 ET) satisfies the clock on time
+  clock.set("2026-10-21T18:00:00.000Z"); assert.equal(timers.evaluate(clock.now()).some((b) => b.def.code === "FNMA_C4301_LAR83_REAMORT_NEXTBD_2000"), false);
+  const sub = events.append({ type: "investor_events.submitted", loanId: "L-1", actor: SYSTEM, causationId: inv.id, payload: { event_type: "rate_payment.change", type: "rate_payment.change", lar: "83", submitted_at: clock.now() } });   // 5.1's acknowledgement event (ops-5-1 recordSubmissionAck)
+  assert.ok(eventMatches(def83.satisfiedPattern!, sub)); assert.equal(lar.status, "satisfied"); assert.equal(lar.satisfiedByEventId, sub.id);
   // Form 181 delivered to the custodian on 2026-10-28 (6 BD) closes the delivery clock
   clock.set("2026-10-28T15:00:00.000Z"); ops.recordForm181Delivery("L-1", reamortization_id, { delivered_on: D("2026-10-28"), custodian_id: "CUST-1", document_id: "doc-181" });
   assert.equal(f181.status, "satisfied"); assert.equal(events.ofType("custodian.delivery.evidenced")[0]!.payload.document, "form_181");

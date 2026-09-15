@@ -10,11 +10,14 @@
  * or the approval fact's `borrower_current`), the log's open foreclosure action / bankruptcy case — and either records the
  * hold (`escrow.statement.exempt_hold`, domain/escrow/ops-3-3.ts applyExemptionPolicy → ops.ts recordExemptHold: the
  * REGX_1024_17I_ANNUAL_STMT_30 satisfier with a valid (i)(2) reason; no statement rendered) or assembles the statement
- * (with the §14 legend on a bankruptcy loan). On a held loan, `requested_on` + `regx_days_delinquent_at_request` is the
- * borrower's request while current (`escrow.statement.requested`, send target +5 business days, no new timer) and the
- * statement renders; its annual send closes the hold. Before deciding, the tool ingests lazily the §13.3 / §14.1 cause
- * events already on the log (settleExemption) so a reinstatement recorded while no reactor listened still ends the hold
- * on its own date — the REGX_1024_17I2_POST_EXEMPTION_HISTORY_90 trigger; the history's send is sendNotice's
+ * (with the §14 legend on a bankruptcy loan). On a held loan, `requested_on` + `regx_days_delinquent_at_request` (+ the
+ * known `current_since`) is a borrower request — an information request (§1024.36; `rfi` case 4.2: "(i)(2) contains no
+ * request-based duty") logged as `escrow.statement.requested` with a +5-business-day send target (policy); a request on a
+ * loan that is current is itself the account "otherwise becoming current", so it ends the hold on that date and arms
+ * REGX_1024_17I2_POST_EXEMPTION_HISTORY_90 (`request.new_timer`), and the statement renders as the history that answers
+ * it; a request while still delinquent arms nothing. Before deciding, the tool ingests lazily the §13.3 / §14.1 / §10.2
+ * cause events already on the log (settleExemption) so a reinstatement recorded while no reactor listened still ends the
+ * hold on its own date — the REGX_1024_17I2_POST_EXEMPTION_HISTORY_90 trigger; the history's send is sendNotice's
  * recordStatementSent (`escrow.statement.sent{statement_type=post_exemption_history}`).
  */
 import { compute, str, cents, type ToolDef, type ToolInput } from "../tools.ts";
@@ -50,11 +53,11 @@ export const renderAnnualStatement_3_3 = compute((i: ToolInput, ctx, rt) => {
   const yearEnd = isDate(i.year_end) ? D(i.year_end) : isDate(p(approval).computation_year_end) ? p(approval).computation_year_end as PlainDate : (() => { throw new RangeError("year_end is required (the computation year end the statement covers)"); })();
   const yearStart = isDate(i.year_start) ? D(i.year_start) : addDays(addMonths(yearEnd, -12), 1);
   const approvedOn = isDate(i.approved_on) ? D(i.approved_on) : D(approval.occurredAt.slice(0, 10));
-  // The state machine's `due` step: a hold is recorded once (rule 5); on a held loan only the borrower's request while current renders.
+  // The state machine's `due` step: a hold is recorded once (rule 5); on a held loan a borrower request (an RFI) renders the statement that answers it — the history once the loan is current.
   let request: ReturnType<typeof recordBorrowerRequest> | null = null;
   let policy: ReturnType<typeof applyExemptionPolicy>;
   if (openExemptHold(ctx.events, loanId) && (i.requested_on !== undefined || i.regx_days_delinquent_at_request !== undefined)) {
-    request = recordBorrowerRequest(ctx.events, { loan_id: loanId, requested_on: D(str(i, "requested_on")), regx_days_delinquent_at_request: Number(i.regx_days_delinquent_at_request), actor: ctx.actor });
+    request = recordBorrowerRequest(ctx.events, { loan_id: loanId, requested_on: D(str(i, "requested_on")), regx_days_delinquent_at_request: Number(i.regx_days_delinquent_at_request), current_since: isDate(i.current_since) ? D(i.current_since) : null, history_from: isDate(i.history_from) ? D(i.history_from) : null, actor: ctx.actor });
     policy = { status: "render", exemption: null, bankruptcy: facts.bankruptcy_open && facts.bankruptcy_chapter ? { chapter: facts.bankruptcy_chapter } : null, as_of: asOf, analysis_id: analysisId };
   } else {
     policy = applyExemptionPolicy(ctx.events, { loan_id: loanId, analysis_id: analysisId, as_of: asOf, regx_days_delinquent: days, facts, shortage_cents: shortageOf(rec?.decision), actor: ctx.actor });
@@ -63,7 +66,7 @@ export const renderAnnualStatement_3_3 = compute((i: ToolInput, ctx, rt) => {
   const decision = (i.decision as Decision | undefined) ?? (rec?.decision as Decision | undefined);
   const s = assembleAnnualStatement({ year_start: yearStart, year_end: yearEnd, approved_on: approvedOn, new_payment_cents: cents(i.new_payment_cents), prior_escrow_portion_cents: cents(i.prior_escrow_portion_cents), history: (i.history as StatementHistoryRow[]) ?? [],
     ...(decision ? { decision } : { decision_text: str(i, "decision_text") }), ...(i.plan ? { plan: i.plan as Plan } : {}), ...(i.prior_projection ? { prior_projection: i.prior_projection as Projection } : {}), low_point_explanation: (i.low_point_explanation as string[]) ?? [], bankruptcy: policy.bankruptcy });
-  return { ...s, status: request ? "rendered_on_request" : "rendered", rendered: true, exemption: null, analysis_id: analysisId, regx_days_delinquent: days, facts, request: request ? { requested_on: request.requested_on, send_target_on: request.send_target_on, new_timer: null } : null, settled: settled.ended?.status ?? null };
+  return { ...s, status: request ? "rendered_on_request" : "rendered", rendered: true, exemption: null, analysis_id: analysisId, regx_days_delinquent: days, facts, request: request ? { requested_on: request.requested_on, send_target_on: request.send_target_on, rfi_case: request.rfi_case, account_current: request.account_current, new_timer: request.new_timer, history_due_on: request.ended?.due_on ?? null, exemption_ended_on: request.ended?.exemption_ended_on ?? null } : null, settled: settled.ended?.status ?? null };
 });
 
 export const TOOLS_3_3: readonly ToolDef[] = [];

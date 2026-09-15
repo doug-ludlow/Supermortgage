@@ -158,7 +158,7 @@ export interface Fee {
   collection_hold?: string | null;
 }
 
-export type OverlayKind = "transfer_window_60" | "forbearance_active" | "scra_reduced_rate" | "bankruptcy_active" | "repayment_plan_pending_waiver" | "trial_pending_waiver" | "foreclosure_referred" | "noe_dispute" | "posting_backlog";
+export type OverlayKind = "transfer_window_60" | "forbearance_active" | "scra_reduced_rate" | "bankruptcy_active" | "repayment_plan_pending_waiver" | "trial_pending_waiver" | "foreclosure_referred" | "noe_dispute" | "posting_backlog" | "deferral_completed";
 export interface Overlay { readonly kind: OverlayKind; readonly from: PlainDate; readonly to?: PlainDate | null; readonly defaulted_on?: PlainDate | null; readonly installment_due_date?: PlainDate; /** `late_charge_suppressions.source_case_id` (2.7 data model). */ readonly source_case_id?: string; }
 
 /** Resolved defaults for the optional 2.2–2.7 fields. */

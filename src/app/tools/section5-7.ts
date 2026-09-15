@@ -14,7 +14,7 @@
  *     `delinquency_report_lines.submitted{status_code}` (FNMA_F121_DQ_REPORT_BD2, FNMA_F121_AW_ONE_MONTH); late → `officer`
  *     compensatory-fee escalation; confidence < 0.85 → `human_agent` review before BD2; `{op=corrections}` = the CD10
  *     correction file with its ack → `delinquency_reports.corrections_accepted` (FNMA_F121_DQ_CORRECT_CD10);
- *   parseExceptionReport: BD4 exception report → `delinquency_reports.exception_parsed` (FNMA_F121_DQ_EXCEPTIONS_BD4);
+ *   parseExceptionReport: exception report (second calendar day after BD2, F-1-21) → `delinquency_reports.exception_parsed` (FNMA_F121_DQ_EXCEPTIONS_BD4);
  *     `{op=final}` = CD11 final report reconciled → `delinquency_reports.final_reconciled{status}` (FNMA_F121_DQ_FINAL_CD11);
  *     `{op=connect_report}` = a Fannie Mae Connect report-available notice → `fnma.connect.report.available{report}`;
  *   submitDqEvent: the LL-2026-05 delinquency event → `delinquency_events.submitted` (FNMA_LL202605_DQ_EVENT_NEXTBD_0300);

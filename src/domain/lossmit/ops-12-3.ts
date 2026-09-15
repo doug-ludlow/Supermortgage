@@ -27,7 +27,7 @@ import { assignAppealReviewer, appealExtendsAcceptance, appealDecisionBreach } f
 export interface EmittedEvent { readonly type: string; readonly payload: Record<string, unknown>; }
 
 export type AppealChannel = "written" | "portal" | "email" | "fax" | "mail" | "oral";
-export type IneligibilityReason = "tier_lt_90_after_filing" | "non_modification_option" | "late" | "duplicative_prior_complete" | "not_principal_residence_fnma";
+export type IneligibilityReason = "tier_lt_90_after_filing" | "non_modification_option" | "late" | "duplicative_prior_complete" | "not_principal_residence";
 export type AppealDecision = "granted_new_offer" | "granted_original_offer_reinstated" | "denied";
 export type AppealStatus = "received" | "eligibility_checked" | "ineligible" | "under_review" | "decided_granted" | "decided_denied" | "notice_provided" | "awaiting_response" | "accepted" | "deemed_rejected" | "closed";
 export const APPEAL_CHANNELS: readonly AppealChannel[] = ["written", "portal", "email", "fax", "mail", "oral"];
@@ -59,6 +59,8 @@ export interface AppealReceiptResult {
   readonly decision_due: PlainDate; readonly decision_anchor_date: PlainDate; readonly assign_reviewer_by: PlainDate;
   readonly court_delay_request_by: PlainDate | null; readonly written_confirmation_required: boolean;
   readonly fnma_d2207_variance: string | null; readonly notice: "NTC_REGX_41H_APPEAL_ACK" | "NTC_REGX_41H_APPEAL_INELIGIBLE";
+  /** Rule 1 (amended): a non-principal-residence appeal is outside §§1024.39–.41 (§1024.30(c)(2)) and D2-2-07 alike — a courtesy reconsideration only. */
+  readonly courtesy_reconsideration: boolean; readonly principal_residence: boolean | null;
   readonly hold_id: string; readonly original_offer_pending: boolean; readonly events: EmittedEvent[];
 }
 export function receiveAppeal(i: AppealReceipt): AppealReceiptResult {
@@ -71,10 +73,14 @@ export function receiveAppeal(i: AppealReceipt): AppealReceiptResult {
   const late = i.received_on > windowEnds;
   const t = tier(i.complete_on, i.sale_on);
   const regx = appealEligible(t, i.first_filing_made, i.denied_modification);
-  const reason: IneligibilityReason | null = !i.denied_modification ? "non_modification_option" : !regx ? "tier_lt_90_after_filing" : late ? "late" : null;
+  // Rule 1 (amended): `eligible = principal_residence AND (tier ge_90 OR no first filing) AND modification denial` — §1024.30(c)(2)
+  // limits §§1024.39–.41 (and so the (h) appeal) to loans secured by the borrower's principal residence, as does D2-2-07;
+  // a non-principal-residence appeal is a courtesy reconsideration only. Null = unknown, treated as a principal residence.
+  const reason: IneligibilityReason | null = !i.denied_modification ? "non_modification_option" : i.principal_residence === false ? "not_principal_residence" : !regx ? "tier_lt_90_after_filing" : late ? "late" : null;
   const eligible = reason === null;
-  // Rule 1: Fannie Mae's principal-residence / prior-complete-BRP limits do not narrow Reg X — the appeal is granted and the D2-2-07 variance is reported.
-  const variance = eligible && i.principal_residence === false ? "not_principal_residence_fnma" : eligible && i.prior_complete_brp_continuously_delinquent ? "duplicative_prior_complete" : null;
+  const courtesy = reason === "not_principal_residence";
+  // The prior-complete-BRP limit is Fannie Mae's alone (D2-2-07) — Reg X §1024.41(i) is decided on the application, so it is reported as a variance, not an ineligibility.
+  const variance = eligible && i.prior_complete_brp_continuously_delinquent ? "duplicative_prior_complete" : null;
   const dl = appealDeadlines(i.received_on, undefined, i.transfer_date ?? undefined);
   const anchor = i.transfer_date ? max(i.received_on, i.transfer_date) : i.received_on;
   const assignBy = addBusinessDays(i.received_on, 1, servicer);
@@ -85,7 +91,7 @@ export function receiveAppeal(i: AppealReceipt): AppealReceiptResult {
   events.push({ type: "lossmit.appeal.received", payload: {
     appeal_id: i.appeal_id, application_id: i.application_id, evaluation_id: i.evaluation_id, denial_notice_id: i.denial_notice_id ?? null,
     received_date: i.received_on, received_at: i.received_at ?? null, channel: i.channel, written_confirmation_required: i.channel === "oral",
-    eligible, ineligibility_reason: reason, tier: t, first_filing_made: i.first_filing_made, sale_on: i.sale_on, denied_modification: i.denied_modification,
+    eligible, ineligibility_reason: reason, tier: t, first_filing_made: i.first_filing_made, sale_on: i.sale_on, denied_modification: i.denied_modification, principal_residence: i.principal_residence ?? null, courtesy_reconsideration: courtesy,
     appeal_window_ends: windowEnds, late, state, decision_due: dl.decision_due, decision_anchor_date: anchor, transfer_date: i.transfer_date ?? null, k4_anchor_date: i.transfer_date ? anchor : null,
     original_offer_pending: offerPending, original_offer_id: i.original_offer?.offer_id ?? null, in_foreclosure: i.in_foreclosure,
     fnma_d2207_variance: variance, new_information: (i.new_information_doc_ids?.length ?? 0) > 0, new_information_doc_ids: [...(i.new_information_doc_ids ?? [])], hold_id: holdId } });
@@ -97,7 +103,7 @@ export function receiveAppeal(i: AppealReceipt): AppealReceiptResult {
   // E-3.4-01: while the appeal is pending, counsel is instructed to request that the court delay the next legal action.
   if (i.in_foreclosure) events.push({ type: "attorney.instruction.sent", payload: { instruction_id: `ai-${i.appeal_id}-court-delay`, kind: "appeal_pending_delay", appeal_id: i.appeal_id, instruction: COUNSEL_INSTRUCTION, due_by: courtBy, ack_required: true } });
   return { appeal_id: i.appeal_id, status: eligible ? "under_review" : "ineligible", eligible, ineligibility_reason: reason, tier: t, appeal_window_ends: windowEnds, late, decision_due: dl.decision_due, decision_anchor_date: anchor, assign_reviewer_by: assignBy,
-    court_delay_request_by: courtBy, written_confirmation_required: i.channel === "oral", fnma_d2207_variance: variance, notice: eligible ? "NTC_REGX_41H_APPEAL_ACK" : "NTC_REGX_41H_APPEAL_INELIGIBLE", hold_id: holdId, original_offer_pending: eligible && offerPending, events };
+    court_delay_request_by: courtBy, written_confirmation_required: i.channel === "oral", fnma_d2207_variance: variance, courtesy_reconsideration: courtesy, principal_residence: i.principal_residence ?? null, notice: eligible ? "NTC_REGX_41H_APPEAL_ACK" : "NTC_REGX_41H_APPEAL_INELIGIBLE", hold_id: holdId, original_offer_pending: eligible && offerPending, events };
 }
 
 // ============================================================ reviewer assignment behind the independence gate (rule 4; §1024.41(h)(3); comment 41(h)(3)-1)

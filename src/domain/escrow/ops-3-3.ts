@@ -12,24 +12,31 @@
  *                                 (rule 5 / open question 1): only delinquent_30 and foreclosure_action hold; a
  *                                 bankruptcy loan's statement is produced with the §14 legend. Called by the 3.3
  *                                 renderStatement tool (src/app/tools/section3-3.ts renderAnnualStatement_3_3).
- *   recordBorrowerRequest (here)  `exempt_hold` → `borrower_requested_while_current` → `rendered`: the request is logged as
- *                                 escrow.statement.requested{requested_on, send_target_on = +5 business days} and the
- *                                 annual statement's send closes the hold — "provide (no new timer; log request date and
- *                                 send within 5 business days as policy)".
+ *   recordBorrowerRequest (here)  a borrower request while held is an information request (§1024.36; 3.3 inputs: "`rfi`
+ *                                 case (4.2) … (i)(2) contains no request-based duty"): logged as
+ *                                 escrow.statement.requested{requested_on, account_current, send_target_on = +5 business
+ *                                 days (policy)}. It never replaces or cancels the 90-day history: a request on a loan that
+ *                                 is current is itself evidence the account "otherwise became current", so it ends the hold
+ *                                 (endExemption, anchor = the known account-current date, else the request date) and the
+ *                                 history statement answers it; a request while still delinquent arms nothing.
  *   settleExemption / exemptionReactors_3_3 (here)
- *                                 ingest `loan.reinstated` (§13.3 reinstatementTendered), `foreclosure.case.closed` (§13.3's
- *                                 spelling of the action ending; the spec's `foreclosure.case.cancelled` is accepted too)
- *                                 and `bankruptcy.case.closed` (§14.1) "where an (i)(2) exemption was applied" — eagerly
- *                                 as subscribers, and lazily by the 3.3 tools over the cause events already on the log —
- *                                 through endExemptionFromEvent → endExemption; a cause that cannot end the open hold is
- *                                 recorded as `escrow.statement.exemption_end.refused{reason}` (never silently dropped).
+ *                                 ingest `loan.reinstated` (§13.3 reinstatementTendered), `loan.became_current` (§10.2's cure
+ *                                 fact), `foreclosure.case.closed` (§13.3's spelling of the action ending; the spec's
+ *                                 `foreclosure.case.cancelled` is accepted too) and `bankruptcy.case.closed` (§14.1) "where an
+ *                                 (i)(2) exemption was applied" — eagerly as subscribers, and lazily by the 3.3 tools over
+ *                                 the cause events already on the log — through endExemptionFromEvent → endExemption. Only a
+ *                                 loan that "is reinstated or otherwise becomes current" ends the hold: a case closing on a
+ *                                 still-delinquent loan (no `account_current=true` on the event) is recorded as
+ *                                 `escrow.statement.exemption_end.refused{reason}` (never silently dropped) and the hold
+ *                                 stays — the exemption re-applies at the next analysis if > 30 days overdue.
  *   endExemption (here)           escrow.statement.exemption_ended{exemption_ended_on, history_from, history_to, …}
  *                                 — the REGX_1024_17I2_POST_EXEMPTION_HISTORY_90 trigger, anchored on `exemption_ended_on`
- *                                 (§1024.17(i)(2): "a history of the account since the last annual statement (which may be
- *                                 longer than 1 year) within 90 days" of the date the servicer stops applying the exemption;
- *                                 spec inputs: "anchor = the date the servicer stops applying the exemption (system: the
- *                                 reinstatement/closure event date)"). State machine: exempt_hold → exemption_ended →
- *                                 history_due (90-day timer) → rendered → sent.
+ *                                 = the date the account became current (§1024.17(i)(2): "if the servicer does not issue an
+ *                                 annual statement pursuant to this exemption and the loan subsequently is reinstated or
+ *                                 otherwise becomes current, the servicer shall provide a history of the account since the
+ *                                 last annual statement (which may be longer than 1 year) within 90 days of the date the
+ *                                 account became current"), never the end of a bankruptcy or foreclosure case. State
+ *                                 machine: exempt_hold → exemption_ended → history_due (90-day timer) → rendered → sent.
  *   sendNotice (section03.ts)     escrow.statement.sent{statement_type=post_exemption_history} through recordStatementSent —
  *                                 what the row is satisfied by.
  *
@@ -52,18 +59,25 @@ export const EXEMPTION_END_REFUSED_EVENT = "escrow.statement.exemption_end.refus
 export const ESCROW_AGENT: Actor = { kind: "agent", id: "escrow" };
 
 /**
- * 3.3 inputs: the events that stop an (i)(2) exemption "where an (i)(2) exemption was applied" — the spec's spellings
- * (`loan.reinstated` / `bankruptcy.case.closed` / `foreclosure.case.cancelled`) plus `foreclosure.case.closed`, which is how
- * §13.3 actually records a foreclosure action ending (ops-13-3.ts reinstatementTendered: `foreclosure.case.closed{reason,
- * closed_on}` alongside `loan.reinstated{reinstated_on}`; a dismissal closes the case the same way).
+ * 3.3 inputs: the events that can stop an (i)(2) exemption "where an (i)(2) exemption was applied" — §1024.17(i)(2) ends it
+ * only when the loan "is reinstated or otherwise becomes current": `loan.reinstated` (§13.3 reinstatementTendered) and
+ * `loan.became_current` (§10.2's cure fact) are the account becoming current by definition; the spec's
+ * `bankruptcy.case.closed` / `foreclosure.case.cancelled` and `foreclosure.case.closed` (how §13.3 actually records a
+ * foreclosure action ending — `foreclosure.case.closed{reason, closed_on}` alongside `loan.reinstated{reinstated_on}`; a
+ * dismissal closes the case the same way) end the hold only when they record the account as current (`account_current=true`,
+ * anchored on their `current_on`); on a still-delinquent loan they are refused. `escrow.statement.requested` is the request
+ * path's own cause (recordBorrowerRequest) and is never subscribed to.
  */
-export type ExemptionEndedBy = "loan.reinstated" | "bankruptcy.case.closed" | "foreclosure.case.cancelled" | "foreclosure.case.closed";
-export const EXEMPTION_ENDING_EVENTS: readonly ExemptionEndedBy[] = ["loan.reinstated", "bankruptcy.case.closed", "foreclosure.case.cancelled", "foreclosure.case.closed"];
-/** Exemption reasons (data model `exemption_reason`) and the cause that ends each: delinquency ends when the loan is current/reinstated; a foreclosure action ends by reinstatement or by the case closing (dismissal); a bankruptcy hold by the case closing. */
+export type ExemptionEndedBy = "loan.reinstated" | "loan.became_current" | "bankruptcy.case.closed" | "foreclosure.case.cancelled" | "foreclosure.case.closed" | "escrow.statement.requested";
+/** The §13 / §14 / §10 causes the reactors subscribe to and settleExemption ingests from the log. */
+export const EXEMPTION_ENDING_EVENTS: readonly ExemptionEndedBy[] = ["loan.reinstated", "loan.became_current", "bankruptcy.case.closed", "foreclosure.case.cancelled", "foreclosure.case.closed"];
+const ENDING_CAUSES: readonly ExemptionEndedBy[] = [...EXEMPTION_ENDING_EVENTS, "escrow.statement.requested"];
+/** Causes that are the account becoming current by definition; every other cause must carry `account_current=true`. */
+const CURRENT_BY_DEFINITION: readonly ExemptionEndedBy[] = ["loan.reinstated", "loan.became_current"];
+/** Exemption reasons (data model `exemption_reason`); whichever applied, the hold ends the same way — the account becoming current. */
 type ExemptionReason = "delinquent_30" | "foreclosure_action" | "bankruptcy";
-const ENDS: Record<ExemptionReason, readonly ExemptionEndedBy[]> = { delinquent_30: ["loan.reinstated"], foreclosure_action: ["loan.reinstated", "foreclosure.case.cancelled", "foreclosure.case.closed"], bankruptcy: ["bankruptcy.case.closed"] };
-/** The date field each cause event carries (the "reinstatement/closure event date"); the event's own date otherwise. */
-const CAUSE_DATE_FIELDS: Record<ExemptionEndedBy, readonly string[]> = { "loan.reinstated": ["reinstated_on", "tendered_on", "effective_on"], "bankruptcy.case.closed": ["closed_on"], "foreclosure.case.cancelled": ["cancelled_on", "dismissed_on"], "foreclosure.case.closed": ["closed_on", "dismissed_on"] };
+/** The date field each cause event carries for the date the account became current (a closure that records the account as current names it as `current_on`); the event's own date otherwise. */
+const CAUSE_DATE_FIELDS: Record<ExemptionEndedBy, readonly string[]> = { "loan.reinstated": ["reinstated_on", "tendered_on", "effective_on"], "loan.became_current": ["became_current_on", "cure_date", "current_on"], "bankruptcy.case.closed": ["current_on", "closed_on"], "foreclosure.case.cancelled": ["current_on", "cancelled_on", "dismissed_on"], "foreclosure.case.closed": ["current_on", "closed_on", "dismissed_on"], "escrow.statement.requested": ["current_on", "requested_on"] };
 /** Statement types whose `history_to` is a period end the next history continues from (rule 6: "[last statement end, exemption end]"). */
 const HISTORY_BEARING: readonly StatementType[] = ["annual", "short_year_transfer", "short_year_payoff", "short_year_reset", "post_exemption_history"];
 /** Bankruptcy case events after which the case is no longer open (§14.1 docket ingestion: `bankruptcy.case.closed{closed_on}` and its siblings). */
@@ -72,7 +86,10 @@ const FORECLOSURE_ACTION_ENDS = ["foreclosure.case.closed", "foreclosure.case.ca
 
 const isDate = (v: unknown): v is PlainDate => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
 const isReason = (v: unknown): v is ExemptionReason => v === "delinquent_30" || v === "foreclosure_action" || v === "bankruptcy";
-const isCause = (v: unknown): v is ExemptionEndedBy => (EXEMPTION_ENDING_EVENTS as readonly unknown[]).includes(v);
+const isCause = (v: unknown): v is ExemptionEndedBy => (ENDING_CAUSES as readonly unknown[]).includes(v);
+const isIngestedCause = (v: unknown): v is ExemptionEndedBy => (EXEMPTION_ENDING_EVENTS as readonly unknown[]).includes(v);
+/** Whether a cause event is the account becoming current: by definition for a reinstatement / cure, else only when the event says so. */
+const causeMakesCurrent = (cause: DomainEvent): boolean => isCause(cause.type) && (CURRENT_BY_DEFINITION.includes(cause.type) || p(cause).account_current === true);
 const p = (e: DomainEvent): Record<string, unknown> => e.payload as Record<string, unknown>;
 const ofLoan = (events: EventStore, loanId: string, type: string): DomainEvent[] => events.ofType(type).filter((e) => e.loanId === loanId);
 const last = <T>(xs: readonly T[]): T | undefined => xs[xs.length - 1];
@@ -142,9 +159,9 @@ export function applyExemptionPolicy(events: EventStore, i: ApplyExemptionInput)
 
 /**
  * The loan's open (i)(2) hold: the latest `escrow.statement.exempt_hold` with neither an `escrow.statement.exemption_ended`
- * nor an annual `escrow.statement.sent` after it — the statement the hold withheld, provided on the borrower's request
- * while current (edge case: "provide (no new timer …)"; state machine `exempt_hold → borrower_requested_while_current →
- * rendered`), leaves nothing to catch up, so a later reinstatement owes no 90-day history.
+ * nor an annual `escrow.statement.sent` after it — §1024.17(i)(2) owes the history only "if the servicer does not issue an
+ * annual statement pursuant to this exemption", so an annual statement the servicer nevertheless issues while the hold is
+ * open (state machine: discharges the hold) leaves nothing to catch up and a later reinstatement owes no 90-day history.
  */
 export function openExemptHold(events: EventStore, loanId: string): DomainEvent | null {
   const hold = last(ofLoan(events, loanId, EXEMPT_HOLD_EVENT));
@@ -157,36 +174,61 @@ export function openExemptHold(events: EventStore, loanId: string): DomainEvent 
 export interface BorrowerRequestInput {
   readonly loan_id: string;
   readonly requested_on: PlainDate;
-  /** The loan's delinquency on the request date (the (i)(2) request path applies only once "the loan becomes current"). */
+  /** The loan's delinquency on the request date: 0 = current — the account "otherwise became current", which is what ends the hold. */
   readonly regx_days_delinquent_at_request: number;
+  /** The date the account became current, when known (the anchor of the 90-day history); the request date is the first evidence otherwise. */
+  readonly current_since?: PlainDate | null;
+  /** Passed through to endExemption when the loan's log carries no statement period end or approval to continue the history from. */
+  readonly history_from?: PlainDate | null;
   readonly actor: Actor;
 }
+export interface BorrowerRequestRecorded {
+  readonly status: "rfi_logged";
+  readonly event: DomainEvent;
+  readonly requested_on: PlainDate;
+  readonly send_target_on: PlainDate;
+  readonly hold_event_id: string;
+  readonly rfi_case: "4.2";
+  readonly account_current: boolean;
+  /** Armed only when the loan is current at the request: the account became current, the history is owed within 90 days of that date. */
+  readonly new_timer: "REGX_1024_17I2_POST_EXEMPTION_HISTORY_90" | null;
+  readonly ended: ExemptionEnded | null;
+}
 /**
- * Edge case "Exemption applied, then borrower becomes current and requests statement → provide (no new timer; log request
- * date and send within 5 business days as policy)": validates the open hold and that the loan is current, logs the request
- * as `escrow.statement.requested{disposition=borrower_requested_while_current, requested_on, send_target_on}`; the annual
- * statement's `escrow.statement.sent` then closes the hold (openExemptHold) — no exemption_ended, no 90-day clock.
+ * 3.3 inputs / edge case: a borrower request while an (i)(2) hold is open is an information request (§1024.36; `rfi` case
+ * 4.2 — "(i)(2) contains no request-based duty"), logged as `escrow.statement.requested{disposition=rfi, requested_on,
+ * account_current, send_target_on = +5 business days (policy)}`. It "does not replace or cancel the 90-day history once the
+ * loan becomes current": a request on a loan that is current (0 days delinquent) is itself evidence the account otherwise
+ * became current, so the hold ends there and then (endExemption; anchor = `current_since` when known, else the request date)
+ * and the history statement, sent by the policy target, answers the request and satisfies the timer early. A request while
+ * the loan is still delinquent arms nothing and leaves the hold open.
  */
-export function recordBorrowerRequest(events: EventStore, i: BorrowerRequestInput): { status: "borrower_requested_while_current"; event: DomainEvent; requested_on: PlainDate; send_target_on: PlainDate; hold_event_id: string; new_timer: null } {
+export function recordBorrowerRequest(events: EventStore, i: BorrowerRequestInput): BorrowerRequestRecorded {
   if (!i.loan_id) throw new RangeError("loan_id is required");
   if (!isDate(i.requested_on)) throw new RangeError("requested_on must be a date");
   if (!Number.isFinite(i.regx_days_delinquent_at_request) || i.regx_days_delinquent_at_request < 0) throw new RangeError("regx_days_delinquent_at_request must be a non-negative number");
+  if (i.current_since !== undefined && i.current_since !== null && !isDate(i.current_since)) throw new RangeError("current_since must be a date (the date the account became current) when given");
   const hold = openExemptHold(events, i.loan_id);
-  if (!hold) throw new RangeError(`no open (i)(2) exemption on loan ${i.loan_id}: the statement is not held — render it on the ordinary path`);
-  if (i.regx_days_delinquent_at_request > 30) throw new RangeError(`loan ${i.loan_id} is ${i.regx_days_delinquent_at_request} days delinquent on ${i.requested_on}: §1024.17(i)(2) provides the held statement on request only once the loan becomes current`);
+  if (!hold) throw new RangeError(`no open (i)(2) exemption on loan ${i.loan_id}: the statement is not held — render it on the ordinary path (a request is an RFI, 4.2)`);
   const startedAt = isDate(p(hold).as_of) ? p(hold).as_of as PlainDate : plainDate(hold.occurredAt.slice(0, 10));
   if (i.requested_on < startedAt) throw new RangeError(`requested_on ${i.requested_on} is before the exemption was applied (${startedAt})`);
+  const current = i.regx_days_delinquent_at_request === 0;
+  const currentOn = current ? (i.current_since ?? i.requested_on) : null;
+  if (currentOn && currentOn > i.requested_on) throw new RangeError(`current_since ${currentOn} is after the request date ${i.requested_on}`);
   const sendTarget = addBusinessDays(i.requested_on, 5, servicer);
-  const event = events.append({ type: STATEMENT_REQUESTED_EVENT, loanId: i.loan_id, actor: i.actor, causationId: hold.id, payload: { statement_type: "annual", disposition: "borrower_requested_while_current", requested_on: i.requested_on, regx_days_delinquent_at_request: i.regx_days_delinquent_at_request, send_target_on: sendTarget, send_target_rule: "5 business_days_servicer (3.3 edge case, policy)", hold_event_id: hold.id, new_timer: null } });
-  return { status: "borrower_requested_while_current", event, requested_on: i.requested_on, send_target_on: sendTarget, hold_event_id: hold.id, new_timer: null };
+  const event = events.append({ type: STATEMENT_REQUESTED_EVENT, loanId: i.loan_id, actor: i.actor, causationId: hold.id, payload: { statement_type: current ? "post_exemption_history" : "annual", disposition: "rfi", rfi_case: "4.2", basis: "§1024.36 information request (policy) — §1024.17(i)(2) contains no request-based duty", requested_on: i.requested_on, regx_days_delinquent_at_request: i.regx_days_delinquent_at_request, account_current: current, ...(currentOn ? { current_on: currentOn } : {}), send_target_on: sendTarget, send_target_rule: "5 business_days_servicer (3.3 edge case, policy)", hold_event_id: hold.id, new_timer: current ? "REGX_1024_17I2_POST_EXEMPTION_HISTORY_90" : null } });
+  const ended = current ? endExemption(events, { loan_id: i.loan_id, ended_by: "escrow.statement.requested", ended_on: currentOn!, account_current: true, history_from: i.history_from ?? null, actor: i.actor, causation_id: event.id }) : null;
+  return { status: "rfi_logged", event, requested_on: i.requested_on, send_target_on: sendTarget, hold_event_id: hold.id, rfi_case: "4.2", account_current: current, new_timer: ended ? ended.timer : null, ended };
 }
 
 // ───────────────────────────── the exemption's end (3.3-T4) ─────────────────────────────
 export interface EndExemptionInput {
   readonly loan_id: string;
   readonly ended_by: ExemptionEndedBy;
-  /** The date the servicer stops applying the exemption — the reinstatement / dismissal / closure date. */
+  /** The date the account became current — the reinstatement / cure date, or the `current_on` a closure records. */
   readonly ended_on: PlainDate;
+  /** Required true for a cause that is not the account becoming current by definition (a case closing): §1024.17(i)(2) ends the exemption only when the loan "is reinstated or otherwise becomes current". */
+  readonly account_current?: boolean;
   /** First day the history covers when the loan's log carries no prior statement period end (the day after the last statement's period). */
   readonly history_from?: PlainDate | null;
   readonly actor: Actor;
@@ -223,20 +265,23 @@ export function historyStartFromLog(events: EventStore, loanId: string, before: 
 }
 
 /**
- * 3.3 inputs: `loan.reinstated` / `bankruptcy.case.closed` / `foreclosure.case.cancelled` (§13.3: `foreclosure.case.closed`)
+ * 3.3 inputs: the loan "is reinstated or otherwise becomes current" (`loan.reinstated` / `loan.became_current`, or a
+ * `bankruptcy.case.closed` / `foreclosure.case.cancelled` / `foreclosure.case.closed` that records the account as current)
  * where an (i)(2) exemption was applied → the post-exemption history becomes due. Validates the hold (exists, still open,
- * ended by this cause, ended on or after it started), fixes the history period and appends `escrow.statement.exemption_ended`
- * — the REGX_1024_17I2_POST_EXEMPTION_HISTORY_90 trigger, anchored on its `exemption_ended_on` (+ 90 calendar days).
+ * ended on or after it started) and the cause (a case closing on a still-delinquent loan ends nothing — the exemption
+ * re-applies at the next analysis if > 30 days overdue), fixes the history period and appends
+ * `escrow.statement.exemption_ended` — the REGX_1024_17I2_POST_EXEMPTION_HISTORY_90 trigger, anchored on its
+ * `exemption_ended_on` = the date the account became current (+ 90 calendar days).
  */
 export function endExemption(events: EventStore, i: EndExemptionInput): ExemptionEnded {
   if (!i.loan_id) throw new RangeError("loan_id is required");
-  if (!isCause(i.ended_by)) throw new RangeError(`ended_by must be one of ${EXEMPTION_ENDING_EVENTS.join(", ")}`);
-  if (!isDate(i.ended_on)) throw new RangeError("ended_on must be a date (the reinstatement / dismissal / closure date)");
+  if (!isCause(i.ended_by)) throw new RangeError(`ended_by must be one of ${ENDING_CAUSES.join(", ")}`);
+  if (!isDate(i.ended_on)) throw new RangeError("ended_on must be a date (the date the account became current)");
   const hold = openExemptHold(events, i.loan_id);
   if (!hold) throw new RangeError(`no open (i)(2) exemption on loan ${i.loan_id}: nothing to end (§1024.17(i)(2) applies only where the exemption was applied)`);
   const reason = p(hold).reason;
   if (!isReason(reason)) throw new RangeError(`exempt hold on loan ${i.loan_id} carries no valid (i)(2) reason`);
-  if (!ENDS[reason].includes(i.ended_by)) throw new RangeError(`${i.ended_by} does not end a ${reason} exemption (${reason === "delinquent_30" ? "the loan must become current: loan.reinstated" : reason === "foreclosure_action" ? "loan.reinstated, foreclosure.case.closed or foreclosure.case.cancelled" : "bankruptcy.case.closed"})`);
+  if (!CURRENT_BY_DEFINITION.includes(i.ended_by) && i.account_current !== true) throw new RangeError(`${i.ended_by} on a still-delinquent loan does not end a ${reason} exemption (§1024.17(i)(2): the history is owed within 90 days of the date the account became current — the loan must be reinstated (loan.reinstated / loan.became_current) or the closure must record the account as current (account_current=true, current_on); the exemption re-applies at the next analysis if > 30 days overdue)`);
   const startedAt = isDate(p(hold).as_of) ? p(hold).as_of as PlainDate : plainDate(hold.occurredAt.slice(0, 10));
   if (i.ended_on < startedAt) throw new RangeError(`ended_on ${i.ended_on} is before the exemption was applied (${startedAt})`);
   const historyFrom = historyStartFromLog(events, i.loan_id, hold) ?? (isDate(i.history_from) ? i.history_from : null);   // the log first: the caller cannot shorten the history
@@ -251,16 +296,17 @@ export function endExemption(events: EventStore, i: EndExemptionInput): Exemptio
 }
 
 /**
- * Ingestion of the cause itself: a `loan.reinstated` (§13.3) / `foreclosure.case.closed` (§13.3) / `foreclosure.case.cancelled`
- * / `bankruptcy.case.closed` (§14.1) event already on the loan's log ends the exemption on the date it carries (the
- * reinstatement / closure date), else on its own civil date. Returns null when the loan has no open hold (the ordinary case
- * — most reinstatements owe no history).
+ * Ingestion of the cause itself: a `loan.reinstated` (§13.3) / `loan.became_current` (§10.2) / `foreclosure.case.closed`
+ * (§13.3) / `foreclosure.case.cancelled` / `bankruptcy.case.closed` (§14.1) event already on the loan's log ends the
+ * exemption on the account-current date it carries (reinstatement / cure date, or a closure's `current_on`), else on its
+ * own civil date; a closure that does not record the account as current is refused by endExemption. Returns null when the
+ * loan has no open hold (the ordinary case — most reinstatements owe no history).
  */
 export function endExemptionFromEvent(events: EventStore, cause: DomainEvent, actor: Actor, opts: { history_from?: PlainDate | null } = {}): ExemptionEnded | null {
-  if (!isCause(cause.type)) throw new RangeError(`${cause.type} is not an exemption-ending event (${EXEMPTION_ENDING_EVENTS.join(", ")})`);
+  if (!isIngestedCause(cause.type)) throw new RangeError(`${cause.type} is not an exemption-ending event (${EXEMPTION_ENDING_EVENTS.join(", ")})`);
   if (!cause.loanId) throw new RangeError(`${cause.type} ${cause.id} carries no loan`);
   if (!openExemptHold(events, cause.loanId)) return null;
-  return endExemption(events, { loan_id: cause.loanId, ended_by: cause.type, ended_on: causeDate(cause), history_from: opts.history_from ?? null, actor, causation_id: cause.id });
+  return endExemption(events, { loan_id: cause.loanId, ended_by: cause.type, ended_on: causeDate(cause), account_current: causeMakesCurrent(cause), history_from: opts.history_from ?? null, actor, causation_id: cause.id });
 }
 
 /** One cause against the open hold: ended, or the refusal recorded as `escrow.statement.exemption_end.refused` (the hold stays visible); null when there is nothing to end. */
@@ -285,7 +331,7 @@ export function settleExemption(events: EventStore, loanId: string, actor: Actor
   const hold = openExemptHold(events, loanId);
   if (!hold) return { ended: null, refused };
   const tried = new Set(ofLoan(events, loanId, EXEMPTION_END_REFUSED_EVENT).map((e) => String(p(e).cause_event_id)));
-  const causes = events.all().filter((e) => e.loanId === loanId && e.sequence > hold.sequence && isCause(e.type) && !tried.has(e.id)).sort((a, b) => a.sequence - b.sequence);
+  const causes = events.all().filter((e) => e.loanId === loanId && e.sequence > hold.sequence && isIngestedCause(e.type) && !tried.has(e.id)).sort((a, b) => a.sequence - b.sequence);
   for (const cause of causes) {
     const r = ingestCause(events, cause, actor);
     if (!r) break;                                               // the hold is closed — later causes owe nothing
@@ -295,12 +341,12 @@ export function settleExemption(events: EventStore, loanId: string, actor: Actor
 }
 
 /**
- * 3.3 inputs, wired on the event store (eager ingestion): §13.3's `loan.reinstated` / `foreclosure.case.closed`, the spec's
- * `foreclosure.case.cancelled` and §14.1's `bankruptcy.case.closed` end an open (i)(2) hold on the date they carry
- * (endExemptionFromEvent). A cause that cannot end the open hold (e.g. a bankruptcy case closing on a delinquency hold) or
- * an unusable date is recorded as `escrow.statement.exemption_end.refused{reason}` so the hold stays visible; a loan with
- * no hold owes nothing. Returns the unsubscribe. Wire it wherever the app builds its unit of work; settleExemption covers
- * the causes appended while nothing was listening.
+ * 3.3 inputs, wired on the event store (eager ingestion): §13.3's `loan.reinstated` / `foreclosure.case.closed`, §10.2's
+ * `loan.became_current`, the spec's `foreclosure.case.cancelled` and §14.1's `bankruptcy.case.closed` end an open (i)(2) hold
+ * on the account-current date they carry (endExemptionFromEvent). A cause that cannot end the open hold (a case closing on a
+ * still-delinquent loan) or an unusable date is recorded as `escrow.statement.exemption_end.refused{reason}` so the hold
+ * stays visible; a loan with no hold owes nothing. Returns the unsubscribe. Wire it wherever the app builds its unit of
+ * work; settleExemption covers the causes appended while nothing was listening.
  */
 export function exemptionReactors_3_3(events: EventStore, actor: Actor = ESCROW_AGENT): () => void {
   const offs = EXEMPTION_ENDING_EVENTS.map((type) => events.subscribe(type, (e) => { ingestCause(events, e, actor); }));

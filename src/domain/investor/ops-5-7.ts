@@ -261,7 +261,7 @@ export function ingestEventResponse(em: Emitter, i: { readonly loan_id: string; 
 // ───── Fannie Mae Connect report availability; reclass deselection (5.4 window, CD11–CD15) ─────
 export type ConnectReport = "delinquency_exception_summary" | "delinquency_exception_details" | "delinquency_final" | "eligible_for_deselection";
 const CONNECT_REPORTS: readonly ConnectReport[] = ["delinquency_exception_summary", "delinquency_exception_details", "delinquency_final", "eligible_for_deselection"];
-/** An inbound Fannie Mae Connect notice that a report is available (BD4–BD6 exception reports, CD11–CD13 final report, ~CD11 Eligible for Deselection) → `fnma.connect.report.available{report}`. */
+/** An inbound Fannie Mae Connect notice that a report is available (exception reports on the second calendar day after BD2 — F-1-21, CD11–CD13 final report, ~CD11 Eligible for Deselection) → `fnma.connect.report.available{report}`. */
 export function ingestConnectReport(em: Emitter, i: { readonly report: string; readonly period: string; readonly document_id: string; readonly available_at_ms?: number; readonly servicer_number?: string | null; readonly loan_count?: number }): { report: ConnectReport; period: string; subject: Subject; event: DomainEvent } {
   need((CONNECT_REPORTS as readonly string[]).includes(i.report), `report ${i.report || "(none)"} is not one of ${CONNECT_REPORTS.join("/")}`);
   need(typeof i.document_id === "string" && i.document_id !== "", "document_id is required: the report is stored before it is acted on");

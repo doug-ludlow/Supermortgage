@@ -194,12 +194,22 @@ test("2.7-T6: Given an SCRA period starting 2026-10-15, when installments fall d
   const k = h.ops.assess({ state: h.state, installment_due_date: D("2026-09-01"), run_on: D("2026-09-17"), unposted_receipts_on_or_before_grace: 0 }); assert.equal(k.outcome, "assessed"); const kFee = (k as { fee: Fee }).fee;
   h.clock.set("2026-10-17T05:30:00.000Z"); assert.equal(h.ops.assess({ state: h.state, installment_due_date: D("2026-10-01"), run_on: D("2026-10-17"), unposted_receipts_on_or_before_grace: 0 }).outcome, "assessed");
   assert.equal(h.state.late_charges_due_cents, 15_802n);
-  // 13.9: active duty from 2026-10-15 → `scra.period.started` arms the waiver gate; the charge assessed after 10-15 is waived (`fee.waived{scra}`), K's pre-service charge is held no_collection
+  // an August charge posted 2026-10-16 after a posting-backlog deferral (grace end 08-16 → it became due 08-17, before the call to duty): D2-3.4-01 waives
+  // charges that "became due after the servicemember was called to active duty", so this pre-service charge is held, whatever day it was posted
+  recordFee(h.state, { id: "aug-backlog", fee_type: "late_charge", installment_due_date: D("2026-08-01"), amount_cents: 7_901n, state: "assessed", assessed_on: D("2026-10-16"), grace_end_on: D("2026-08-16"), collected_cents: 0n });
+  assert.equal(h.state.late_charges_due_cents, 23_703n);
+  // 13.9: called to active duty 2026-10-15, the 6% cap effective for installments from 2026-11-01 → `scra.period.started` arms the waiver gate; the October charge
+  // (grace end 10/16, became due 10/17 — after the call but before the reduced-rate period starts) is waived (`fee.waived{scra}`, D2-3.4-01 — broader than
+  // C-1.1-02's reduced-rate period); K's pre-service charge (became due 09-17) and the backlog-posted August charge are held no_collection (C-1.1-02)
   h.clock.set("2026-10-20T14:00:00.000Z");
-  const r = h.ops.scraPeriodStarted(h.state, { case_id: "SCRA-1", service_begin_on: D("2026-10-15") });
-  assert.deepEqual(r.waived.map((f) => [f.installment_due_date, f.state, f.waived_reason]), [["2026-10-01", "waived", "scra"]]); assert.deepEqual(r.held.map((f) => f.id), [kFee.id]);
-  assert.equal(kFee.state, "assessed"); assert.equal(kFee.collection_hold, "scra_reduced_rate"); assert.equal(h.state.late_charges_due_cents, 7_901n);
-  assert.ok(eventMatches(def.triggerPattern!, h.events.ofType("scra.period.started")[0]!));
+  assert.throws(() => h.ops.scraPeriodStarted(h.state, { case_id: "SCRA-0", service_begin_on: D("2026-10-15"), reduced_rate_from: D("2026-10-01") }), RangeError);   // the cap cannot start before the call to duty
+  const r = h.ops.scraPeriodStarted(h.state, { case_id: "SCRA-1", service_begin_on: D("2026-10-15"), reduced_rate_from: D("2026-11-01") });
+  assert.deepEqual(r.waived.map((f) => [f.installment_due_date, f.state, f.waived_reason]), [["2026-10-01", "waived", "scra"]]); assert.deepEqual(r.held.map((f) => f.id), [kFee.id, "aug-backlog"]);
+  assert.equal(kFee.state, "assessed"); assert.equal(kFee.collection_hold, "scra_reduced_rate"); assert.equal(h.state.late_charges_due_cents, 15_802n);
+  const started = h.events.ofType("scra.period.started")[0]!; assert.equal(started.payload.called_to_duty_on, "2026-10-15"); assert.equal(started.payload.reduced_rate_from, "2026-11-01"); assert.match(String(started.payload.cite), /D2-3\.4-01/);
+  assert.deepEqual((h.state.overlays ?? []).filter((o) => o.kind === "scra_reduced_rate").map((o) => o.from), ["2026-11-01"]);   // the reduced-rate period, not the call-to-duty date
+  const heldEv = h.events.ofType("fee.collection.held"); assert.deepEqual(heldEv.map((e) => [e.payload.fee_id, e.payload.became_due_on, e.payload.called_to_duty_on]), [[kFee.id, "2026-09-17", "2026-10-15"], ["aug-backlog", "2026-08-17", "2026-10-15"]]);
+  assert.ok(eventMatches(def.triggerPattern!, started));
   const waived = h.events.ofType("fee.waived"); assert.equal(waived.length, 1); assert.ok(eventMatches(def.satisfiedPattern!, waived[0]!)); assert.equal(waived[0]!.payload.scra, true);
   const gate = h.timers.byCode("FNMA_C1102_MILITARY_INDULGENCE_LC_WAIVER_GATE")[0]!; assert.equal(gate.status, "satisfied"); assert.equal(gate.satisfiedByEventId, waived[0]!.id);
   assert.equal(evaluateGate("2.7.scraLateChargeWaiver", { scra_reduced_rate_period_active: true }).open, false);
@@ -207,11 +217,11 @@ test("2.7-T6: Given an SCRA period starting 2026-10-15, when installments fall d
   h.clock.set("2026-11-17T05:30:00.000Z"); const nov = h.ops.assess({ state: h.state, installment_due_date: D("2026-11-01"), run_on: D("2026-11-17"), unposted_receipts_on_or_before_grace: 0 });
   assert.equal(nov.outcome, "not_assessed"); if (nov.outcome === "not_assessed") assert.equal(nov.reason, "scra_reduced_rate");
   h.clock.set("2026-12-17T05:30:00.000Z"); assert.equal(h.ops.assess({ state: h.state, installment_due_date: D("2026-12-01"), run_on: D("2026-12-17"), unposted_receipts_on_or_before_grace: 0 }).outcome, "not_assessed");
-  assert.equal(h.state.fees!.length, 2); assert.equal(h.events.ofType("fee.assessed").length, 2);
+  assert.equal(h.state.fees!.length, 3); assert.equal(h.events.ofType("fee.assessed").length, 2);
   // the pre-service $79.01 is not collected during the period: a collection attempt is refused (C-1.1-02; 50 U.S.C. 3937(d)(1)); 2.7-Q6 default after the period: waive
   const c = h.ops.collect(h.state, kFee.id, 7_901n, D("2026-12-17"), { payment_id: "p-dec", from: "remainder" });
   assert.equal(c.ok, false); if (!c.ok) { assert.equal(c.code, "COLLECTION_HOLD"); assert.match(c.reason, /scra_reduced_rate/); }
-  assert.equal(kFee.collected_cents, 0n); assert.equal(h.state.late_charges_due_cents, 7_901n); assert.equal(h.events.ofType("fee.collected").length, 0);
+  assert.equal(kFee.collected_cents, 0n); assert.equal(h.state.late_charges_due_cents, 15_802n); assert.equal(h.events.ofType("fee.collected").length, 0);
   assert.equal(h.events.ofType("fee.collection.held")[0]!.payload.post_period_default, "waive (2.7-Q6)");
   // the agent's fees.assess is refused for an installment in the period (OVERLAYS guardrail)
   const agents = new AgentRegistry(); const cmds = bindTools({ store: new EntityStore(), ports: {}, escalations: new EscalationService(h.events, h.clock), services: {} }, agents); const bus = new CommandBus(agents);
@@ -387,4 +397,46 @@ test("2.7-T13: Given late charges collected in September, when 5.1 builds the pe
   assert.equal(h.timers.byCode("FNMA_A2304_LC_COLLECTED_REPORT_MONTHLY").filter((t) => t.status === "armed").length, 3);
   h.events.append({ type: "investor_events.acked", loanId: "L-1", actor: AGENT, payload: { type: "fees.collected", period: "2026-09", fees_collected_cents: "15802" } });
   assert.equal(h.timers.byCode("FNMA_A2304_LC_COLLECTED_REPORT_MONTHLY").filter((t) => t.status === "satisfied").length, 3);
+});
+test("2.7-T14: Given late charges of 25,200¢ and a stop-payment fee assessed on a loan whose payment deferral case is completed in SMDU on 2026-09-29, when `smdu.case.completed{case_type=deferral}` is processed, then every late charge, penalty and stop-payment fee on the loan is `waived{reason=deferral_completion}` the same day and `FNMA_D23204_LC_WAIVE_ON_DEFERRAL_COMPLETION_0` is satisfied.", () => {
+  const h = lc("2026-09-29T14:00:00.000Z", L1({ lpi_date: D("2026-05-01") }, D("2026-06-01"), 6));
+  const def = loadOverriddenRegistry().get("FNMA_D23204_LC_WAIVE_ON_DEFERRAL_COMPLETION_0")!;
+  assert.equal(def.process, "2.7"); assert.equal(def.kindNorm, "deadline"); assert.equal(def.offsetParsed.kind, "same_day");
+  // three late charges of 8,400¢ (5% of a 168,000¢ P&I) = 25,200¢ — one of them suspended under an earlier repayment-plan overlay — plus a 2,500¢ stop-payment (returned-item) fee
+  recordFee(h.state, { id: "lc-jun", fee_type: "late_charge", installment_due_date: D("2026-06-01"), amount_cents: 8_400n, state: "assessed", assessed_on: D("2026-06-17"), grace_end_on: D("2026-06-16"), collected_cents: 0n });
+  recordFee(h.state, { id: "lc-jul", fee_type: "late_charge", installment_due_date: D("2026-07-01"), amount_cents: 8_400n, state: "assessed", assessed_on: D("2026-07-17"), grace_end_on: D("2026-07-16"), collected_cents: 0n });
+  recordFee(h.state, { id: "lc-aug", fee_type: "late_charge", installment_due_date: D("2026-08-01"), amount_cents: 8_400n, state: "accrued_suspended", suppression: "repayment_plan_pending_waiver", assessed_on: D("2026-08-17"), grace_end_on: D("2026-08-16"), collected_cents: 0n });
+  recordFee(h.state, { id: "nsf-1", fee_type: "nsf_fee", installment_due_date: null, amount_cents: 2_500n, state: "assessed", assessed_on: D("2026-08-20"), collected_cents: 0n, returned_payment_id: "p-aug" });
+  assert.equal(h.state.late_charges_due_cents, 16_800n); assert.equal(h.state.nsf_fees_due_cents, 2_500n);   // the suspended charge is not yet receivable: 8,400 + 8,400
+  assert.equal(h.timers.byCode("FNMA_D23204_LC_WAIVE_ON_DEFERRAL_COMPLETION_0").length, 0);
+  // 12.6 completes the payment deferral: the SMDU case submission is the completion (D2-3.2-04) — the section12 `smdu.case.submit` tool's event arms the same-day clock
+  const completed = h.events.append({ type: "smdu.case.submitted", loanId: "L-1", actor: AGENT, payload: { workout: "payment_deferral", submitted_on: "2026-09-29", case_id: "PD-1", disaster: false, campaign_id: null } });
+  assert.ok(eventMatches(def.triggerPattern!, completed));
+  const t = h.timers.byCode("FNMA_D23204_LC_WAIVE_ON_DEFERRAL_COMPLETION_0")[0]!; assert.equal(t.status, "armed"); assert.equal(t.anchorDate, "2026-09-29"); assert.equal(t.dueDate, "2026-09-29");
+  // 2.7's reaction (rule 3(x) / rule 5): every late charge, penalty and stop-payment fee on the loan is waived the same day — the suspended charge included
+  const r = h.ops.deferralCompleted(h.state, { case_id: "PD-1", workout: "payment_deferral", completed_on: D("2026-09-29") });
+  assert.equal(r.total_cents, 27_700n); assert.equal(r.returned_payment_fees_cents, 2_500n);   // 25,200¢ of late charges + the 2,500¢ stop-payment fee
+  assert.deepEqual(r.waived.map((f) => [f.id, f.state, f.waived_reason]), [["lc-jun", "waived", "deferral_completion"], ["lc-jul", "waived", "deferral_completion"], ["lc-aug", "waived", "deferral_completion"], ["nsf-1", "waived", "deferral_completion"]]);
+  assert.equal(h.state.late_charges_due_cents, 0n); assert.equal(h.state.nsf_fees_due_cents, 0n); assert.equal(h.ops.billableLateCharges(h.state), 0n);
+  const waivers = h.events.ofType("fee.waived"); assert.equal(waivers.length, 4);
+  assert.ok(waivers.every((e) => e.payload.reason === "deferral_completion" && e.payload.deferral_completion === true && e.payload.waived_on === "2026-09-29"));
+  assert.equal(waivers.reduce((sum, e) => sum + BigInt(e.payload.waived_cents as string), 0n), 27_700n);
+  const all = h.events.ofType("late_charges.all_waived")[0]!; assert.ok(eventMatches(def.satisfiedPattern!, all));
+  assert.deepEqual([all.payload.reason, all.payload.total_cents, all.payload.count, all.payload.returned_payment_fees_waived_cents, all.payload.fee_types], ["deferral_completion", "27700", 4, "2500", ["late_charge", "nsf_fee"]]);
+  assert.equal(t.status, "satisfied"); assert.equal(t.satisfiedByEventId, all.id); assert.equal(t.satisfiedAt!.slice(0, 10), "2026-09-29");
+  assert.deepEqual((h.state.overlays ?? []).map((o) => [o.kind, o.from, o.to, o.source_case_id]), [["deferral_completed", "2026-09-29", "2026-09-29", "PD-1"]]);
+  assert.equal(h.events.ofType("case.deferral.completed")[0]!.payload.cite, "Servicing Guide D2-3.2-04 (Payment Deferral)");
+  assert.equal(h.events.ofType("late_charge.suppression.closed")[0]!.payload.outcome, "waived_on_deferral_completion");
+  // the disaster payment deferral (D2-3.2-05, 12.7) arms and satisfies the same clock
+  const h2 = lc("2026-09-29T14:00:00.000Z", L1());
+  const dd = h2.events.append({ type: "smdu.case.submitted", loanId: "L-1", actor: AGENT, payload: { workout: "disaster_payment_deferral", submitted_on: "2026-09-29", case_id: "DPD-1", disaster: true } });
+  assert.ok(eventMatches(def.triggerPattern!, dd)); assert.equal(h2.timers.byCode("FNMA_D23204_LC_WAIVE_ON_DEFERRAL_COMPLETION_0")[0]!.status, "armed");
+  assert.equal(h2.ops.deferralCompleted(h2.state, { case_id: "DPD-1", workout: "disaster_payment_deferral", completed_on: D("2026-09-29") }).total_cents, 0n);
+  assert.equal(h2.timers.byCode("FNMA_D23204_LC_WAIVE_ON_DEFERRAL_COMPLETION_0")[0]!.status, "satisfied");
+  assert.equal(h2.events.ofType("case.deferral.completed")[0]!.payload.cite, "Servicing Guide D2-3.2-05 (Disaster Payment Deferral)");
+  // a Flex Mod trial submission is not a deferral completion: it arms nothing here, and the op refuses a non-deferral workout
+  const h3 = lc("2026-09-29T14:00:00.000Z", L1());
+  h3.events.append({ type: "smdu.case.submitted", loanId: "L-1", actor: AGENT, payload: { workout: "flex_mod_tpp", submitted_on: "2026-09-29", case_id: "FM-1" } });
+  assert.equal(h3.timers.byCode("FNMA_D23204_LC_WAIVE_ON_DEFERRAL_COMPLETION_0").length, 0);
+  assert.throws(() => h3.ops.deferralCompleted(h3.state, { case_id: "FM-1", workout: "flex_mod_tpp" as "payment_deferral", completed_on: D("2026-09-29") }), RangeError);
 });

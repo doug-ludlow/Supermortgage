@@ -119,7 +119,7 @@ test("12.6/12.7 completion is the SMDU case submission: `smdu.case.submitted{wor
   assert.equal(s.eligible, false); assert.equal(s.reason, "INV_FNMA_D23204_SEASONING_12M");
   assert.equal(h.emitted("payment_deferral.offer_requested").length, 1); assert.equal(h.emitted("payment_deferral.screened_ineligible").length, 1); assert.equal(h.timer("FNMA_D23204_DEFERRAL_ELIGIBILITY_GATES").length, 1);
   await h.run("12.2", "lossmit.evaluation.*", { op: "offer_response", response: "accepted", option: "payment_deferral", accepted_via: "written" });
-  assert.equal(h.timer("FNMA_D23204_DEFERRAL_SMDU_ENTRY_EOM")[0]!.dueDate, "2026-10-31"); assert.equal(h.timer("FNMA_F122_DEFERRAL_LAR_BEFORE_EOM_1BD").length, 1);
+  assert.equal(h.timer("FNMA_D23204_DEFERRAL_SMDU_ENTRY_EOM")[0]!.dueDate, "2026-10-31"); assert.equal(h.timer("FNMA_F122_DEFERRAL_LAR_BEFORE_EOM_1BD").length, 0);   // the LAR clock arms only on `payment_deferral.accepted{contractual_payment_required=true}` (F-1-22 / IRM 4-01, 12.6 amended) — no deferral record here, no required payment
   await h.run("12.6", "smdu.case.submit", { workout: "payment_deferral", partner_servicer_number: "123456789", campaign_id: "PD-2026" });
   const sub = h.emitted("smdu.case.submitted"); assert.equal(sub.length, 1); assert.equal(sub[0]!.payload.submitted_on, "2026-10-05"); assert.equal(sub[0]!.payload.disaster, false);
   assert.equal(h.timer("FNMA_D23204_DEFERRAL_SMDU_ENTRY_EOM")[0]!.status, "satisfied");

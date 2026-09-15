@@ -5,6 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { plainDate as D, addDays } from "../../kernel/calendar/date.ts";
+import { addBusinessDays, federal, fannieEt, servicer } from "../../kernel/calendar/business.ts";
 import { zonedEpochMs } from "../../kernel/calendar/zoned.ts";
 import { MemoryEventStore, FixedClock, eventMatches, type Actor } from "../../kernel/events/index.ts";
 import { MemoryLedger } from "../../kernel/ledger/ledger.ts";
@@ -23,9 +24,9 @@ import { NoticeService } from "../../notices/service.ts";
 import { buildRegistry, publishAuthored } from "../../notices/catalog.ts";
 import { render } from "../../notices/render.ts";
 import { evaluateChecklist } from "../../notices/checklist.ts";
-import { facialCompletion, rfaFlow, aiOutageFallback, caPerDocumentAcks, nprmRfa, ackBreach, duplicativeDetermination, ACK_TIMER_CODES } from "./ops.ts";
-import { ackDue, classify, completeness, reasonableDate, fortyFiveDayTest, duplicative } from "./application.ts";
-import { documentReceipt, carryoverIntake, reasonableDateDecision, ackBreachResponse, facialHold } from "./ops-12-1.ts";
+import { facialCompletion, rfaFlow, aiOutageFallback, caPerDocumentAcks, nprmRfa, ackBreach, duplicativeDetermination, solicitationDuty, ACK_TIMER_CODES } from "./ops.ts";
+import { ackDue, classify, completeness, reasonableDate, fortyFiveDayTest, duplicative, d2205LateApplicationDuties } from "./application.ts";
+import { documentReceipt, carryoverIntake, reasonableDateDecision, ackBreachResponse, facialHold, lateApplicationIntake } from "./ops-12-1.ts";
 
 const registry = () => { const reg = buildRegistry(); publishAuthored(reg); return reg; };
 
@@ -108,7 +109,7 @@ test("12.1-T2: (holiday arithmetic) received Fri 2026-11-20 → ack due Mon 2026
   await h.send("NTC_REGX_41B2_ACK_INCOMPLETE", { notice_date: "2026-11-30", received_date: "2026-11-20", reasonable_date: "2026-12-30", days_to_reasonable_date: 30, business_days_after_receipt: 5 }, { application_id: "lma-2" });
   assert.equal(t[0]!.status, "satisfied"); assert.equal(h.timers.evaluate("2026-12-01T04:58:00.000Z").length, 0);
 });
-test("12.1-T3: (milestone cap and floor) (a) sale 2026-11-20, ack sent 2026-09-15 → reasonable date = min(2026-10-15, sale−38 = 2026-10-13) = **2026-10-13**; (b) same sale, ack sent 2026-10-08 → cap 2026-10-13 is earlier than the 7-day floor 2026-10-15 → the floor wins (comment 41(b)(2)(ii)-3; comment 41(k)(2)-1 logic) → **2026-10-15**, and `milestone_conflict=true` routes the file to `lossmit_reviewer` for expedited handling.", async () => {
+test("12.1-T3: (milestone cap and floor) (a) sale 2026-11-20, ack sent 2026-09-15 → reasonable date = min(2026-10-15, sale−38 = 2026-10-13) = **2026-10-13**; (b) same sale, ack sent 2026-10-08 → cap 2026-10-13 is earlier than the 7-day floor 2026-10-15 → the floor wins (comment 41(b)(2)(ii)-3; comment 41(k)(2)(ii)-3 logic) → **2026-10-15**, and `milestone_conflict=true` routes the file to `lossmit_reviewer` for expedited handling.", async () => {
   const a = reasonableDate({ ack_sent_on: D("2026-09-15"), earliest_unpaid_due: D("2026-08-01"), sale_on: D("2026-11-20"), oldest_doc_date: null });
   assert.equal(a.date, "2026-10-13"); assert.equal(a.basis, "sale-38"); assert.equal(a.milestone_conflict, false);
   const da = reasonableDateDecision({ ack_sent_on: D("2026-09-15"), earliest_unpaid_due: D("2026-08-01"), sale_on: D("2026-11-20"), oldest_doc_date: null });
@@ -124,14 +125,16 @@ test("12.1-T3: (milestone cap and floor) (a) sale 2026-11-20, ack sent 2026-09-1
   const esc = h.escalations.opened; assert.equal(esc.length, 1); assert.equal(esc[0]!.kind, "lossmit_reviewer"); assert.equal(esc[0]!.ownerRole, "lossmit_reviewer"); assert.match(String(esc[0]!.payload.reason), /milestone_conflict.*expedited/);
   assert.equal(h.emitted("escalation.created").length, 1);
 });
-test("12.1-T4: (facially complete) all listed items received 2026-10-01 → `facially_complete_at=2026-10-01`; verification finds a stale paystub → supplemental request 2026-10-02 with date ≥2026-10-09; `foreclosure_holds{kind=regx_f2_prefiling}` active throughout; borrower complies 2026-10-07 → `deemed_complete_date=2026-10-01`, `complete_at=2026-10-07`; (c)(3) notice by 2026-10-14.", async () => {
+test("12.1-T4: (facially complete) all listed items received 2026-10-01 → `facially_complete_at=2026-10-01`; verification finds a stale paystub → supplemental request 2026-10-02 with date ≥2026-10-09; `foreclosure_holds{kind=regx_f2_prefiling}` active throughout; borrower complies 2026-10-07 → `deemed_complete_date=2026-10-01`, `complete_at=2026-10-07`; (c)(3) notice by 2026-10-15 (Oct 8, 9, 13, 14, 15 — Columbus Day Mon 2026-10-12 is a legal public holiday).", async () => {
   const items = ["form_710", "paystubs", "bank_statement", "hardship_letter"];
   const r = facialCompletion({ required_items: items, received: items.map((item) => ({ item, on: D("2026-10-01") })), verification: { stale_item: "paystubs", found_on: D("2026-10-02") }, borrower_complied_on: D("2026-10-07") });
   assert.equal(r.facially_complete_at, "2026-10-01"); assert.equal(r.supplemental_request!.on, "2026-10-02"); assert.ok(r.supplemental_request!.respond_by >= "2026-10-09");
   assert.deepEqual(r.holds.map((h) => [h.kind, h.active]), [["regx_f2_prefiling", true]]);
   assert.equal(r.deemed_complete_date, "2026-10-01"); assert.equal(r.complete_at, "2026-10-07");
-  // 5 federal business days from 2026-10-07 skip Columbus Day (2026-10-12): the (c)(3) notice is due 2026-10-15 (the spec's 10-14 counts the holiday; see docs/AUDIT-NOTES.md).
+  // §1024.41(c)(3): 5 days excluding legal public holidays, Saturdays and Sundays from 2026-10-07 → Oct 8, 9, 13, 14, 15 — Columbus Day (Mon 2026-10-12, second Monday of October) is a legal public holiday on the federal calendar.
   assert.equal(r.c3_notice_by, "2026-10-15");
+  assert.equal(federal.isBusinessDay(D("2026-10-12")), false); assert.equal(addBusinessDays(D("2026-10-07"), 5, federal), "2026-10-15");
+  assert.deepEqual(["2026-10-08", "2026-10-09", "2026-10-13", "2026-10-14", "2026-10-15"].map((d) => federal.isBusinessDay(D(d))), [true, true, true, true, true]);
   assert.equal(facialCompletion({ required_items: items, received: items.slice(1).map((item) => ({ item, on: D("2026-10-01") })) }).facially_complete_at, null);
   assert.equal(facialHold({ facially_complete_on: D("2026-10-01"), first_filing_made: false }).kind, "regx_f2_prefiling"); assert.equal(facialHold({ facially_complete_on: D("2026-10-01"), first_filing_made: true }).kind, "regx_g_dual_track");
   // On the bus: the last listed item arrives 2026-10-01 → `lossmit.application.facially_complete` arms the (c)(2)(iv) gate and the pre-filing hold is written.
@@ -164,10 +167,21 @@ test("12.1-T5: (≤45 days) sale 2026-10-20, received 2026-09-10 → (b)(2) not 
   const r = fortyFiveDayTest(D("2026-09-10"), D("2026-10-20"));
   assert.deepEqual(r, { b2_applies: false, d2205_notice_due: "2026-09-17" });
   assert.equal(fortyFiveDayTest(D("2026-09-10"), D("2027-01-15")).b2_applies, true); assert.equal(fortyFiveDayTest(D("2026-09-10"), null).b2_applies, true);
+  // Rule 3 (amended): 40 days before the sale → the full D2-2-05 acknowledgment and the Incomplete Information Notice remain due (only ≤37 days makes the IIN optional; the plan explanation is for a complete BRP ≤37 days before the sale).
+  assert.deepEqual(d2205LateApplicationDuties({ days_before_sale: 40, brp_complete: false }), { acknowledgment_required: true, incomplete_information_notice: "required", plan_explanation_required: false, within_37_days: false });
+  assert.deepEqual(d2205LateApplicationDuties({ days_before_sale: 30, brp_complete: false }), { acknowledgment_required: true, incomplete_information_notice: "optional", plan_explanation_required: false, within_37_days: true });
+  assert.deepEqual(d2205LateApplicationDuties({ days_before_sale: 37, brp_complete: true }), { acknowledgment_required: true, incomplete_information_notice: "not_applicable", plan_explanation_required: true, within_37_days: true });
+  const late30 = lateApplicationIntake({ loan_id: LOAN, received_on: D("2026-09-20"), sale_on: D("2026-10-20"), application_id: "lma-5b", brp_complete: false })!;
+  assert.equal(late30.days_before_sale, 30); assert.equal(late30.incomplete_information_notice, "optional"); assert.equal(late30.plan_explanation_required, false); assert.equal(late30.d2205_notice_due, "2026-09-25");
+  assert.equal(lateApplicationIntake({ loan_id: LOAN, received_on: D("2026-09-20"), sale_on: D("2026-10-20"), application_id: "lma-5c", brp_complete: true })!.plan_explanation_required, true);
+  // The D2-2-05 clock runs on the Guide's business-day calendar, not the servicer's: received Wed 2026-10-07 → Oct 8, 9, 13, 14, 15 (Columbus Day skipped) → 2026-10-15.
+  assert.equal(fortyFiveDayTest(D("2026-10-07"), D("2026-11-10")).d2205_notice_due, "2026-10-15"); assert.equal(fannieEt.isBusinessDay(D("2026-10-12")), false);
   // On the bus: the receipt takes the D2-2-05 plan path — no `lossmit.application.received`, so neither (b)(2) clock arms; the plan notice is due within 5 servicer BD and the expedited review is queued.
   const h = harness("2026-09-10T14:00:00.000Z");
   const app = await h.run(OPEN, { id: "lma-5", has_evaluative_info: true, received_on: "2026-09-10", sale_on: "2026-10-20" });
-  assert.equal(app.b2_applies, false); assert.equal(app.days_before_sale, 40); assert.equal(app.protection_tier, "gt_37"); assert.equal(app.d2205_notice, "NTC_FNMA_D2205_LATE_BRP_PLAN");   // 40 days before the sale: (b)(2) does not apply (≤45), yet §1024.41(b)(3) still fixes the >37 tier at receipt assert.equal(app.d2205_notice_due, "2026-09-17"); assert.equal(app.expedited_review, true); assert.deepEqual(app.timers_started, []);
+  assert.equal(app.b2_applies, false); assert.equal(app.days_before_sale, 40); assert.equal(app.protection_tier, "gt_37"); assert.equal(app.d2205_notice, "NTC_FNMA_D2205_LATE_BRP_PLAN");
+  assert.equal(app.incomplete_information_notice, "required"); assert.equal(app.plan_explanation_required, false); assert.equal(app.within_37_days, false);   // 38–44 days: full D2-2-05 acknowledgment + Incomplete Information Notice (rule 3, amended)
+  assert.equal(h.emitted("lossmit.application.received_within_45_days")[0]!.payload.incomplete_information_notice, "required");   // 40 days before the sale: (b)(2) does not apply (≤45), yet §1024.41(b)(3) still fixes the >37 tier at receipt assert.equal(app.d2205_notice_due, "2026-09-17"); assert.equal(app.expedited_review, true); assert.deepEqual(app.timers_started, []);
   assert.equal(h.emitted("lossmit.application.received").length, 0); assert.equal(h.emitted("lossmit.application.received_within_45_days").length, 1);
   for (const code of ACK_TIMER_CODES) assert.equal(h.timer(code).length, 0, code);
   // The D2-2-05 "explanation of plan" acknowledgment names the sale, the expedited-review plan, the suspension statement and the no-guarantee statement.
@@ -217,6 +231,10 @@ test('12.1-T8: (RFA only) call "what programs do you have?" with no financial in
   assert.equal(r.kind, "rfa_only"); assert.equal(r.ack_timer, null); assert.equal(r.spoc_assignment, true); assert.equal(r.solicitation_package_sent, true); assert.equal(r.application_opened_on, "2026-10-20");
   const app = rfaFlow({ utterance: "what programs do you have?", has_evaluative_info: false, confidence: 0.6, state: "TX" });
   assert.equal(app.kind, "application"); assert.equal(app.ack_timer, "REGX_1024_41B2_LM_ACK_5");   // the registry code (12.1 timer table), never an invented one
+  // D2-2-04 (amended): by day 45 without QRPC/resolution, Form 745 (or equivalent) alone satisfies FNMA_D2204_SOLICITATION_45; QRPC achieved without a resolution → the full Package now (unless one was already sent); a resolution ends the duty.
+  assert.deepEqual(solicitationDuty({ qrpc_achieved: false, resolution_obtained: false, package_previously_sent: false }), { package_due: "day_45", form_745_alone_satisfies: true, timer: "FNMA_D2204_SOLICITATION_45", basis: "D2-2-04: no QRPC and no resolution by day 45 — Form 745 (or equivalent) alone or the Borrower Solicitation Package" });
+  const qrpc = solicitationDuty({ qrpc_achieved: true, resolution_obtained: false, package_previously_sent: false }); assert.equal(qrpc.package_due, "now"); assert.equal(qrpc.form_745_alone_satisfies, false); assert.equal(qrpc.timer, null);
+  assert.equal(solicitationDuty({ qrpc_achieved: true, resolution_obtained: false, package_previously_sent: true }).package_due, null); assert.equal(solicitationDuty({ qrpc_achieved: false, resolution_obtained: true, package_previously_sent: false }).package_due, null);
   // On the bus: the call is an RFA — `lossmit.rfa.received`, never `lossmit.application.received`, so no acknowledgment clock arms; the CA SPOC is assigned and the D2-2-04 package (Form 745 + 710 + 4506-C) goes out.
   const h = harness("2026-09-10T14:00:00.000Z");
   const rfa = await h.run(OPEN, { id: "lma-8", utterance: "what programs do you have?", has_evaluative_info: false, confidence: 0.95, state: "CA" });
@@ -362,4 +380,22 @@ test("12.1 NY overlay: `lossmit.application.received{state=NY}` arms NY_419_7D_A
   await h.send("NTC_REGX_41B2_ACK_INCOMPLETE", { notice_date: "2026-11-25", received_date: "2026-11-20", reasonable_date: "2026-12-28", days_to_reasonable_date: 33, business_days_after_receipt: 3 }, { application_id: "lma-ny" });
   assert.equal(ny[0]!.status, "satisfied"); assert.equal(h.timer("REGX_1024_41B2_LM_ACK_5")[0]!.status, "satisfied");
   assert.equal(h.timers.evaluate("2026-12-01T05:00:00.000Z").length, 0);
+});
+
+test("12.1 §1024.30(c)(2): an application on a loan that is not the borrower's principal residence arms only Fannie Mae's D2-2-05 clock (5 `business_days_fannie_et`, Columbus Day skipped) — no `REGX_1024_41*` clock; a principal residence (or an unknown flag) arms both", async () => {
+  const h = harness("2026-10-07T14:00:00.000Z");
+  const app = await h.run(OPEN, { id: "lma-inv", has_evaluative_info: true, received_on: "2026-10-07", principal_residence: false, state: "TX" });
+  assert.equal(app.principal_residence, false); assert.equal(h.emitted("lossmit.application.received")[0]!.payload.principal_residence, false);
+  assert.equal(h.timer("REGX_1024_41B2_LM_ACK_5").length, 0);   // §1024.30(c)(2): §§1024.39–.41 apply only to a principal residence
+  const fnma = h.timer("FNMA_D2205_BRP_ACK_5BD"); assert.equal(fnma.length, 1); assert.equal(fnma[0]!.dueDate, "2026-10-15");   // Oct 8, 9, 13, 14, 15 on the Guide calendar (Columbus Day 2026-10-12 is an FRBNY holiday)
+  assert.equal(addBusinessDays(D("2026-10-07"), 5, fannieEt), "2026-10-15"); assert.equal(addBusinessDays(D("2026-10-07"), 5, servicer), "2026-10-15");
+  h.clock.set("2026-10-20T14:00:00.000Z");
+  await h.run(OPEN, { id: "lma-inv", op: "update", status: "complete", has_evaluative_info: true, received_on: "2026-10-07", complete_on: "2026-10-20" });
+  assert.equal(h.emitted("lossmit.application.completed")[0]!.payload.principal_residence, false); assert.equal(h.timer("REGX_1024_41C3_COMPLETE_NOTICE_5").length, 0);
+  const g = harness("2026-10-07T14:00:00.000Z");
+  await g.run(OPEN, { id: "lma-pr", has_evaluative_info: true, received_on: "2026-10-07", principal_residence: true, state: "TX" });
+  for (const code of ACK_TIMER_CODES) { const t = g.timer(code); assert.equal(t.length, 1, code); assert.equal(t[0]!.dueDate, "2026-10-15", code); }
+  const u = harness("2026-10-07T14:00:00.000Z");
+  await u.run(OPEN, { id: "lma-unk", has_evaluative_info: true, received_on: "2026-10-07", state: "TX" });
+  assert.equal(u.emitted("lossmit.application.received")[0]!.payload.principal_residence, null); assert.equal(u.timer("REGX_1024_41B2_LM_ACK_5").length, 1);   // unknown → treated as a principal residence (conservative)
 });

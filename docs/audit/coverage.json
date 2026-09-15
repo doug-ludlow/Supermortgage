@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 8012/8717 (91.9%): tids 2237/2438, tables 765/848, timers 2038/2093, notices 308/308, tools 1431/1572, figures 1233/1458; processes at 100%: 192/204",
+ "brief": "spec units built 8021/8726 (91.9%): tids 2239/2440, tables 765/848, timers 2040/2095, notices 308/308, tools 1431/1572, figures 1238/1463; processes at 100%: 192/204",
  "totals": {
   "tids": {
-   "spec": 2438,
-   "built": 2237
+   "spec": 2440,
+   "built": 2239
   },
   "tables": {
    "spec": 848,
    "built": 765
   },
   "timers": {
-   "spec": 2093,
-   "built": 2038
+   "spec": 2095,
+   "built": 2040
   },
   "notices": {
    "spec": 308,
@@ -22,12 +22,12 @@
    "built": 1431
   },
   "figures": {
-   "spec": 1458,
-   "built": 1233
+   "spec": 1463,
+   "built": 1238
   },
   "units": {
-   "spec": 8717,
-   "built": 8012
+   "spec": 8726,
+   "built": 8021
   }
  },
  "sections": {
@@ -38,14 +38,14 @@
    "done": 7
   },
   "2": {
-   "spec": 223,
-   "built": 223,
+   "spec": 225,
+   "built": 225,
    "processes": 7,
    "done": 7
   },
   "3": {
-   "spec": 334,
-   "built": 334,
+   "spec": 336,
+   "built": 336,
    "processes": 9,
    "done": 9
   },
@@ -56,8 +56,8 @@
    "done": 5
   },
   "5": {
-   "spec": 293,
-   "built": 293,
+   "spec": 294,
+   "built": 294,
    "processes": 7,
    "done": 7
   },
@@ -98,8 +98,8 @@
    "done": 5
   },
   "12": {
-   "spec": 425,
-   "built": 425,
+   "spec": 429,
+   "built": 429,
    "processes": 9,
    "done": 9
   },
@@ -974,8 +974,8 @@
    "process": "2.7",
    "title": "Late charge assessment",
    "tids": {
-    "spec": 13,
-    "built": 13,
+    "spec": 14,
+    "built": 14,
     "todo": 0,
     "missing": []
    },
@@ -985,9 +985,9 @@
     "missing": []
    },
    "timers": {
-    "spec": 13,
-    "built": 13,
-    "armable": 13,
+    "spec": 14,
+    "built": 14,
+    "armable": 14,
     "missing": []
    },
    "notices": {
@@ -1006,8 +1006,8 @@
     "missing": []
    },
    "units": {
-    "spec": 36,
-    "built": 36
+    "spec": 38,
+    "built": 38
    },
    "pct": 100.0
   },
@@ -1206,13 +1206,13 @@
     "missing": []
    },
    "figures": {
-    "spec": 6,
-    "built": 6,
+    "spec": 8,
+    "built": 8,
     "missing": []
    },
    "units": {
-    "spec": 29,
-    "built": 29
+    "spec": 31,
+    "built": 31
    },
    "pct": 100.0
   },
@@ -1794,8 +1794,8 @@
    "process": "5.6",
    "title": "Repurchase reporting",
    "tids": {
-    "spec": 7,
-    "built": 7,
+    "spec": 8,
+    "built": 8,
     "todo": 0,
     "missing": []
    },
@@ -1826,8 +1826,8 @@
     "missing": []
    },
    "units": {
-    "spec": 29,
-    "built": 29
+    "spec": 30,
+    "built": 30
    },
    "pct": 100.0
   },
@@ -3461,13 +3461,13 @@
     "missing": []
    },
    "figures": {
-    "spec": 13,
-    "built": 13,
+    "spec": 16,
+    "built": 16,
     "missing": []
    },
    "units": {
-    "spec": 49,
-    "built": 49
+    "spec": 52,
+    "built": 52
    },
    "pct": 100.0
   },
@@ -3568,9 +3568,9 @@
     "missing": []
    },
    "timers": {
-    "spec": 22,
-    "built": 22,
-    "armable": 22,
+    "spec": 23,
+    "built": 23,
+    "armable": 23,
     "missing": []
    },
    "notices": {
@@ -3589,8 +3589,8 @@
     "missing": []
    },
    "units": {
-    "spec": 64,
-    "built": 64
+    "spec": 65,
+    "built": 65
    },
    "pct": 100.0
   },

@@ -23,7 +23,7 @@ import type { UowContext } from "../../infra/db/unit-of-work.ts";
 import type { DecisionInput } from "../../infra/db/decisions.ts";
 import { scheduleForward, saInterest, aaRemittance, payoffInterest, crsAaRequest, specialRemittanceDeadline, classifyVariance, compensatoryFee, fundingDecision } from "./remittance.ts";
 import { calendarDraftDate, fundingGateMs, bd1CatchUpMs, surplusResolveDueOn, periodAnchors } from "./period.ts";
-import { ET, advanceTransfer, saReinstatementInterest, aaPaymentSplit, perDiemInterest, aaSweepBatch, aaAutoDraftSchedule, ssPayoffShortfallEntries, reconcileDraftDebit, form472Schedule3, compensatoryFeeInstance } from "./ops.ts";
+import { ET, advanceTransfer, saReinstatementInterest, aaPaymentSplit, perDiemInterest, aaSweepBatch, aaAutoDraftSchedule, ssPayoffShortfallEntries, reconcileDraftDebit, form472Schedule3, compensatoryFeeInstance, COMPFEE_DAY_COUNT_CONVENTION } from "./ops.ts";
 import { crsLineText, crsSettlementDate, draftDateFor, nextRemittanceDate, proceedsPlan, computeRemittanceCalculation, validateDraftNotification, cycleSubject } from "./ops-5-2.ts";
 
 const at = (d: string, hhmm: string) => zonedEpochMs(D(d), hhmm, ET);
@@ -184,24 +184,24 @@ test("5.2-T6: Given payoff funds received Oct 16 on the $199,500 loan, then inte
   assert.equal(e.lines.reduce((s, l) => s + l.amountCents, 0n), 0n); assert.ok(e.lines.every((l) => /ss_payoff_interest/.test(l.ruleRef)));
   assert.throws(() => computeRemittanceCalculation({ loan_id: "L-1", activity_period: "2026-10", remittance_type: "SS", basis: "payoff", prior_actual_upb_cents: 19950000n, prior_scheduled_upb_cents: 19950000n, note_rate: "6.500", ptr: "6.000", pi_cents: 126093n, principal_collected_cents: 19950000n, accepted_at: iso("2026-10-16", "12:00") }), /computed by 16.2/);
 });
-test("5.2-T7: Given a BD3 draft notification showing $1,476.39 expected and a −$1,476.39 Stop Advance credit, then the variance classifier labels `sda_credit`, the draft expectation for the loan is $0, and no advance transfer is made.", async () => {
-  const v = classifyVariance(147639n, 0n, { sda_credit_cents: -147639n });
+test("5.2-T7: Given a BD3 draft notification showing $1,476.38 expected and a −$1,476.38 Stop Advance credit, then the variance classifier labels `sda_credit`, the draft expectation for the loan is $0, and no advance transfer is made.", async () => {
+  const v = classifyVariance(147638n, 0n, { sda_credit_cents: -147638n });
   assert.equal(v.class, "sda_credit"); assert.equal(v.draft_expectation_cents, 0n);
   const a = advanceTransfer({ expected_draft_cents: v.draft_expectation_cents, custodial_available_cents: 0n, facility_available_cents: 5000000n, at_ms: at("2026-04-15", "16:00"), draft_date: D("2026-04-16") });
   assert.equal(a.amount_cents, 0n); assert.deepEqual(a.ledger, []); assert.equal(a.status, "funded");
-  // the process: the March-activity S/S draft expects $1,476.39; the BD3 notification nets it to $0 with the Stop Advance credit; the funding check then moves nothing
+  // the process: the March-activity S/S draft expects $1,476.38 (IRM p.18: the scheduled UPB keeps amortizing while delinquent — $249,088.61 × 6% ÷ 12 = $1,245.44 + principal $230.94; 5.4 rule 3); the BD3 notification nets it to $0 with the Stop Advance credit; the funding check then moves nothing
   const h = harness(iso("2026-04-01", "09:00"));
   const draftOn = draftDateFor(D("2026-03-01"), { remittance_type: "ss", cycle: "standard" })!;
-  await h.run("buildCrsBatch", { op: "open_period", month_of: "2026-03-01", servicer_number: SERVICER, cycles: [{ remittance_type: "ss", cycle: "standard", expected_cents: 147_639n, custodial_account_id: "C-PI-SS" }] });
+  await h.run("buildCrsBatch", { op: "open_period", month_of: "2026-03-01", servicer_number: SERVICER, cycles: [{ remittance_type: "ss", cycle: "standard", expected_cents: 147_638n, custodial_account_id: "C-PI-SS" }] });
   await h.run("buildCrsBatch", { op: "close_period", month_of: "2026-03-01", servicer_number: SERVICER });
   const bd3 = h.timer("FNMA_F120_DRAFT_NOTICE_BD3"); assert.equal(toIso(bd3.dueAt!), iso("2026-04-03", "12:00"));
   h.clock.set(iso("2026-04-03", "09:00"));
-  await h.run("pullDraftNotifications", { notifications: [{ notification_id: "dn-bd3", kind: "bd3", filing_date: "2026-04-03", servicer_number: SERVICER, remittance_code: "003", draft_date: draftOn, amount_cents: 0n, period: "2026-03", loan_level: [{ fnma_loan_number: "1000000001", loan_id: "L-1", amount_cents: 0n, sda_credit_cents: -147_639n }] }] });
-  const rec = await h.run("pullDraftNotifications", { op: "reconcile", notification_id: "dn-bd3", expected: [{ fnma_loan_number: "1000000001", loan_id: "L-1", expected_cents: 147_639n }] });
+  await h.run("pullDraftNotifications", { notifications: [{ notification_id: "dn-bd3", kind: "bd3", filing_date: "2026-04-03", servicer_number: SERVICER, remittance_code: "003", draft_date: draftOn, amount_cents: 0n, period: "2026-03", loan_level: [{ fnma_loan_number: "1000000001", loan_id: "L-1", amount_cents: 0n, sda_credit_cents: -147_638n }] }] });
+  const rec = await h.run("pullDraftNotifications", { op: "reconcile", notification_id: "dn-bd3", expected: [{ fnma_loan_number: "1000000001", loan_id: "L-1", expected_cents: 147_638n }] });
   const lv = (rec.variances as { class: string; draft_expectation_cents: bigint; officer: boolean }[])[0]!;
   assert.equal(lv.class, "sda_credit"); assert.equal(lv.draft_expectation_cents, 0n); assert.equal(lv.officer, false); assert.equal(rec.draft_expectation_cents, 0n); assert.equal(rec.escalation_id, null);
   assert.equal(bd3.status, "satisfied"); assert.equal(h.store.get("remittances", "rem-2026-03:ss:standard")!.data.draft_expectation_cents, 0n);
-  const x = await h.run("explainVariance", { expected_cents: 147_639n, notified_cents: 0n, sda_credit_cents: -147_639n });
+  const x = await h.run("explainVariance", { expected_cents: 147_638n, notified_cents: 0n, sda_credit_cents: -147_638n });
   assert.equal(x.class, "sda_credit"); assert.equal(x.no_advance_transfer, true); assert.equal(x.escalation_id, null);
   h.clock.set(toIso(fundingGateMs(draftOn)));
   const f = await h.run("postLedger", { op: "fund_draft", period: "2026-03", remittance_type: "ss", draft_date: draftOn, custodial_account_id: "C-PI-SS", custodial_available_cents: 0n, facility_available_cents: 5_000_000n });
@@ -290,11 +290,14 @@ test("5.2-T11: Given short-sale proceeds received Thu Oct 8, 2026 (sale closed W
   const ev = h.ofType("remittances.instructed"); assert.deepEqual(ev.map((e) => [e.loanId, e.payload.crs_code]), [["L-1", "357"], ["L-1", "324"]]);
   assert.ok(eventMatches(h.def("FNMA_F120_SHORTSALE_PROCEEDS_2BD").satisfiedPattern!, ev[0]!)); assert.equal(inst.status, "satisfied_late");
 });
-test("5.2-T12: Given a late S/S draft of $50,000 that settles 3 days late with prime 7.50%, then the estimated compensatory fee is max($250, 50,000 × 3 × 0.105 ÷ 365 = $43.15) = $250 and an instance is recorded.", async () => {
+test("5.2-T12: Given a late S/S draft of $50,000 that settles 3 days late with prime 7.50%, then the estimated compensatory fee is max($250, 50,000 × 3 × 0.105 ÷ 365 = $43.15) = $250 under the platform's annual-rate-applied-daily assumption (A1-4.2-01 says \"Multiply the calculated late remittance by the number of days the remittance is late, and then … Multiply that product by the sum of the prime interest rate, plus 3%\" with no ÷365 — literal reading $15,750; the instance records `day_count_convention=annual_365_assumed` pending Fannie Mae confirmation) and an instance is recorded.", async () => {
   assert.equal(compensatoryFee(5000000n, 3, "7.50"), 25000n);
   const i = compensatoryFeeInstance({ amount_cents: 5000000n, days_late: 3, prime_pct: "7.50", prior_instances_within_year: 0 });
   assert.equal(i.formula_cents, 4315n); assert.equal(i.minimum_cents, 25000n); assert.equal(i.fee_cents, 25000n); assert.equal(i.instance_number, 1);
-  assert.deepEqual(i.instance, { kind: "late_remittance", amount_cents: 5000000n, days_late: 3, fee_cents: 25000n });
+  assert.deepEqual(i.instance, { kind: "late_remittance", amount_cents: 5000000n, days_late: 3, fee_cents: 25000n, day_count_convention: "annual_365_assumed" });
+  // A1-4.2-01 literally: 50,000 × 3 × 0.105 = $15,750 with no ÷365 — the calculator applies the annual rate daily and says so on the instance (pending Fannie Mae confirmation)
+  assert.equal(i.day_count_convention, "annual_365_assumed"); assert.equal(COMPFEE_DAY_COUNT_CONVENTION, "annual_365_assumed");
+  assert.equal(5000000n * 3n * 105n / 1000n, 1575000n, "the literal (no ÷365) product is $15,750; the ÷365 assumption is what makes it $43.15");
   assert.equal(compensatoryFeeInstance({ amount_cents: 5000000n, days_late: 3, prime_pct: "7.50", prior_instances_within_year: 1 }).fee_cents, 50000n);
   assert.equal(compensatoryFeeInstance({ amount_cents: 5000000n, days_late: 3, prime_pct: "7.50", prior_instances_within_year: 2 }).fee_cents, 100000n);
   assert.deepEqual(fundingDecision(1000000n, 700000n), { shortfall_cents: 300000n, advance: true, dual_control: false });
@@ -304,7 +307,7 @@ test("5.2-T12: Given a late S/S draft of $50,000 that settles 3 days late with p
   const hit = (m.matched as { status: string; days_late: number; compfee_instance_id: string }[])[0]!;
   assert.equal(hit.status, "matched"); assert.equal(hit.days_late, 3);
   const row = h.store.get("compfee_instances", hit.compfee_instance_id)!.data;
-  assert.deepEqual([row.kind, row.days_late, row.fee_cents, row.minimum_cents, row.instance_number], ["late_remittance", 3, 25_000n, 25_000n, 1]);
+  assert.deepEqual([row.kind, row.days_late, row.fee_cents, row.minimum_cents, row.instance_number, row.day_count_convention], ["late_remittance", 3, 25_000n, 25_000n, 1, "annual_365_assumed"]);
   assert.equal(h.escalations.opened.find((e) => e.kind === "officer")!.payload.fee_cents, 25_000n); assert.equal(h.ofType("remittances.drafted")[0]!.payload.late, true);
 });
 

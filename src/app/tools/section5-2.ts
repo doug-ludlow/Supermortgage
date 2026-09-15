@@ -38,7 +38,7 @@ import { plainDate as D, type PlainDate } from "../../kernel/calendar/date.ts";
 import { addBusinessDays, fannieEt } from "../../kernel/calendar/business.ts";
 import { zonedEpochMs, wallClock, toIso } from "../../kernel/calendar/zoned.ts";
 import { classifyVariance, fundingDecision, crsAaRequest } from "../../domain/investor/remittance.ts";
-import { ET, reconcileDraftDebit, compensatoryFeeInstance } from "../../domain/investor/ops.ts";
+import { COMPFEE_DAY_COUNT_CONVENTION, ET, reconcileDraftDebit, compensatoryFeeInstance } from "../../domain/investor/ops.ts";
 import {
   typeCode, aaSweep, monthEnd, openRemittancePeriod, closeRemittancePeriod, recordRemittanceCalculation, prepareCrsBatch, confirmCrsUpload, duplicate001, crsSettlementDate, crsInstructionNeeded, crsInstructionConfirmed,
   fundDraft, validateDraftNotification, ingestDraftNotification, reconcileDraftNotification, recordProceedsReceipt, schedule3, resolveShortageSurplus, isLastWorkDayOfMonth, lastDayOf, daysLate, RULE_SET_VERSION,
@@ -273,7 +273,7 @@ function matchOp(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): unknown {
       const prime = optStr(i, "prime_pct");
       const inst = prime ? compensatoryFeeInstance({ amount_cents: d.amount_cents, days_late: lateDays, prime_pct: prime, prior_instances_within_year: prior }) : null;
       compfee = `cf-${m.id}-${d.date}`;
-      rt.store.put("compfee_instances", compfee, { kind: "late_remittance", remittance_id: m.id, amount_cents: d.amount_cents, days_late: lateDays, fee_cents: inst?.fee_cents ?? null, minimum_cents: inst?.minimum_cents ?? null, instance_number: prior + 1, prime_pct: prime, recorded_at: ctx.now }, ctx.actor, ctx.now);
+      rt.store.put("compfee_instances", compfee, { kind: "late_remittance", remittance_id: m.id, amount_cents: d.amount_cents, days_late: lateDays, fee_cents: inst?.fee_cents ?? null, minimum_cents: inst?.minimum_cents ?? null, instance_number: prior + 1, prime_pct: prime, day_count_convention: COMPFEE_DAY_COUNT_CONVENTION, recorded_at: ctx.now }, ctx.actor, ctx.now);
       rt.escalations.open({ kind: "officer", severity: "sev1", loanId, payload: { reason: "5.2 Escalations: compensatory-fee instance (late draft settlement)", remittance_id: m.id, days_late: lateDays, fee_cents: inst?.fee_cents ?? null, instance_number: prior + 1 } }, ctx.actor);
     }
     matched.push({ debit_id: d.id, remittance_id: m.id, status: rec.status, variance_cents: rec.variance_cents, days_late: lateDays, compfee_instance_id: compfee });

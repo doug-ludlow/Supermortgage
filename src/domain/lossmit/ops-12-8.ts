@@ -31,7 +31,7 @@ import { type PlainDate, addDays, addMonths, daysBetween, endOfMonth, parts, ymd
 import type { Ledger } from "../../kernel/ledger/ledger.ts";
 import type { Cents } from "../../kernel/money/cents.ts";
 import { waterfall, trialCount, trialSchedule, type WaterfallInputs, type WaterfallResult } from "./flexmod.ts";
-import { streamlinedSolicitationWindow, mbsExecutionGate, bindingConditions, form3179Changes, flexIncentive, mirLookup, postConversionLedger, flexEligibilityDenial } from "./ops.ts";
+import { streamlinedSolicitationWindow, mbsExecutionGate, bindingConditions, form3179Changes, flexIncentive, mirLookup, postConversionLedger, flexEligibilityDenial, escrowEstablishmentGate, preExecutionChecks } from "./ops.ts";
 
 export const FLEXMOD_ACTOR: Actor = { kind: "agent", id: "lossmit-underwriter" };
 export const RULE_SET_VERSION = "fnma.flexmod.2025-08";
@@ -187,11 +187,13 @@ export class FlexModService {
    * shortage); effective the 1st of the month after the trial (or the second month under a written processing-month
    * policy). No TPP offer without a fresh valuation and a completed escrow analysis (guardrail; B-1-01).
    */
-  async offerTpp(i: { loan_id: string; notice_sent_on: PlainDate; ti_monthly_cents: Cents; shortage_monthly_cents: Cents; escrow_analysis_on: PlainDate | null; escrow_established: boolean; processing_month?: boolean; notice?: NoticeInput | null }): Promise<{ trial: TrialPlan; notice_id: string | null }> {
+  async offerTpp(i: { loan_id: string; notice_sent_on: PlainDate; ti_monthly_cents: Cents; shortage_monthly_cents: Cents; escrow_analysis_on: PlainDate | null; escrow_established: boolean; taxes_insurance_current?: boolean; processing_month?: boolean; notice?: NoticeInput | null }): Promise<{ trial: TrialPlan; notice_id: string | null }> {
     const m = this.require(i.loan_id);
     if (m.status !== "eligible" || !m.waterfall) throw new RangeError(`loan ${i.loan_id} is not an eligible Flex Modification (status ${m.status})`);
     if (!m.valuation || daysBetween(m.valuation.as_of, m.evaluation_date) > 90) throw new RangeError("FRESH_VALUATION: no TPP offer without a valuation ≤90 days old at evaluation (12.8 guardrail; F-1-27)");
     if (!i.escrow_analysis_on) throw new RangeError("FRESH_VALUATION: no TPP offer without an escrow analysis (12.8 guardrail; B-1-01)");
+    // B-1-01 (FNMA_B101_ESCROW_ESTABLISH_BEFORE_TRIAL, amended): the escrow waiver is revoked and the account established before the trial begins — the only exception is a disaster-hardship Flex Mod with T&I current.
+    const escrowGate = escrowEstablishmentGate({ escrow_established: i.escrow_established, taxes_insurance_current: i.taxes_insurance_current === true, disaster_flex_mod: m.disaster }); if (!escrowGate.allowed) throw new RangeError(escrowGate.refusal!);
     const count = trialCount(m.delinquent_31_plus);
     const s = trialSchedule(i.notice_sent_on, count, i.ti_monthly_cents, i.shortage_monthly_cents, m.waterfall.pi_cents, i.processing_month === true);
     const trial: TrialPlan = { months: count, due_dates: s.due_dates, first_due: s.due_dates[0]!, trial_pi_cents: m.waterfall.pi_cents, trial_escrow_cents: i.ti_monthly_cents + i.shortage_monthly_cents, trial_total_cents: s.trial_payment_cents, effective: s.effective, capitalization_date: addMonths(s.effective, -1), form_3179_by: s.form_3179_by, incentive_deadline: s.incentive_deadline, processing_month: i.processing_month === true };
@@ -202,7 +204,7 @@ export class FlexModService {
       const sent = await this.deps.notices.send(n.id); if (sent.status !== "sent") throw new RangeError(`Evaluation Notice ${n.id} not sent (${sent.status})`); noticeId = sent.id;
     }
     this.patch(i.loan_id, { status: "tpp_offered", trial, terms });
-    this.emit("lossmit.tpp.offered", i.loan_id, { modification_id: m.id, template: TPP_OFFER_TEMPLATE, notice_id: noticeId, notice_sent_on: i.notice_sent_on, first_trial_due_date: trial.first_due, trial_months: count, trial_payment_cents: str(trial.trial_total_cents), effective_date: trial.effective, capitalization_date: trial.capitalization_date, escrow_established: i.escrow_established, escrow_analysis_on: i.escrow_analysis_on, processing_month: trial.processing_month });
+    this.emit("lossmit.tpp.offered", i.loan_id, { modification_id: m.id, template: TPP_OFFER_TEMPLATE, notice_id: noticeId, notice_sent_on: i.notice_sent_on, first_trial_due_date: trial.first_due, trial_months: count, trial_payment_cents: str(trial.trial_total_cents), effective_date: trial.effective, capitalization_date: trial.capitalization_date, escrow_established: i.escrow_established, escrow_exception_disaster_ti_current: escrowGate.exception_applied, escrow_analysis_on: i.escrow_analysis_on, processing_month: trial.processing_month, valuation_copy_notice: m.basis === "brp" });
     return { trial, notice_id: noticeId };
   }
 
@@ -298,9 +300,11 @@ export class FlexModService {
     return rec;
   }
   /** `signing_officer` executes and dates Form 3179 for the servicer/MERS (Officer Signature Date) — only once the three binding conditions hold and, for MBS, after reclassification. */
-  servicerExecute(i: { loan_id: string; actor: Actor; officer_signature_date: PlainDate }): { effective_date: PlainDate; capitalization_date: PlainDate } {
+  servicerExecute(i: { loan_id: string; actor: Actor; officer_signature_date: PlainDate; taxes_assessments_current?: boolean; title_endorsement_ordered?: boolean }): { effective_date: PlainDate; capitalization_date: PlainDate } {
     const m = this.require(i.loan_id); if (!m.terms) throw new RangeError("no terms to execute");
     if (i.actor.role !== "signing_officer") throw new RangeError("SIGNING_OFFICER_EXECUTES: Form 3179 is executed for the servicer/MERS by signing_officer (12.8 escalations)");
+    // F-1-27 (rule 8, amended — Guide-mandated): taxes/assessments that could become a first lien are current; a title endorsement is obtained when the agreement will be recorded.
+    const pre = preExecutionChecks({ recording_required: m.recording_required, taxes_assessments_current: i.taxes_assessments_current === true, title_endorsement_ordered: i.title_endorsement_ordered === true }); if (!pre.allowed) throw new RangeError(pre.refusal!);
     const gate = mbsExecutionGate({ mbs: m.mbs, reclassified_on: m.reclassified_at, effective: m.terms.effective_date }); if (!gate.execution_allowed) throw new RangeError(gate.refusal!);
     const bind = bindingConditions({ tpp_completed: m.final_trial_payment_cleared_at !== null && ["tpp_completed", "docs_out", "borrower_executed"].includes(m.status), borrower_executed_on: m.borrower_executed_at, servicer_executed_on: i.officer_signature_date, servicer_role: "signing_officer" }); if (!bind.binding) throw new RangeError(`BINDING_CONDITIONS: ${bind.refusal}`);
     this.patch(i.loan_id, { status: "servicer_executed", servicer_executed_at: i.officer_signature_date, officer_signature_date: i.officer_signature_date });

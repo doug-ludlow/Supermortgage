@@ -1155,15 +1155,15 @@
     "breach": "refused → workout path (12.x)"
   },
   {
-    "code": "FNMA_IRM_LAR83_5BD_2000",
+    "code": "FNMA_C4301_LAR83_REAMORT_NEXTBD_2000",
     "section": 2,
     "process": "2.4",
-    "kind": "(Section 5)",
-    "trigger": "re-amortization effective (`loan_terms.activated`)",
-    "anchor": "scheduled calculation date",
-    "offset": "5 `business_days_fannie_et` 20:00 ET",
-    "satisfied": "`rate_payment.change` submitted",
-    "breach": "(5.1)"
+    "kind": "deadline (IRM 3-03 sets no deadline for an *unscheduled* TT83 — its 5th-business-day 8 p.m. ET clock applies only to scheduled changes; C-4.3-01's general non-removal rule governs)",
+    "trigger": "`loan_terms.activated{reason=reamortization}` (new `loan_terms` version booked at execution — 2026-10-20 in example H; 2.4 owns this code, 5.1's `FNMA_IRM_LAR83_5BD_2000` remains for scheduled changes)",
+    "anchor": "`processed_at`",
+    "offset": "next business day 20:00 America/New_York (`business_days_fannie_et`, 1)",
+    "satisfied": "`rate_payment.change` (TT83, unscheduled) submitted",
+    "breach": "(5.1) sev-2"
   },
   {
     "code": "FNMA_LL202605_EVENT_NEXTBD_0300",
@@ -1303,7 +1303,7 @@
     "process": "2.6",
     "kind": "deadline",
     "trigger": "`lossmit.trial.completed`",
-    "anchor": "modification effective date − 1",
+    "anchor": "modification effective date − 1 (effective date = first day of the month after the TPP, or — under the servicer's written cut-off-date policy — the first day of the second month after the final trial payment, with a payment-free \"processing month\" that `FNMA_D23206_TRIAL_PAYMENT_EOM` must not treat as a missed trial payment)",
     "offset": "before the modification is booked (12.8's booking command asserts this gate)",
     "satisfied": "`trial.residual.applied` (capitalization reduced)",
     "breach": "booking refused; sev-2"
@@ -1337,7 +1337,7 @@
     "kind": "(13.2)",
     "trigger": "trial active and performing",
     "anchor": "—",
-    "offset": "no FC sale/first notice",
+    "offset": "no motion for judgment/order of sale and no foreclosure sale (§1024.41(g); the first notice/filing bar is §1024.41(f), a separate gate)",
     "satisfied": "—",
     "breach": "(13.2)"
   },
@@ -1414,7 +1414,7 @@
     "kind": "gate",
     "trigger": "`scra.period.started`",
     "anchor": "—",
-    "offset": "no collection during the reduced-rate period; assessed amounts waived",
+    "offset": "no collection during the reduced-rate period (C-1.1-02) and waiver of any late charge that became due after the servicemember was called to active duty (D2-3.4-01 — broader than the reduced-rate period)",
     "satisfied": "`fee.waived{scra}`",
     "breach": "13.9 escalation"
   },
@@ -1439,6 +1439,17 @@
     "offset": "same day",
     "satisfied": "`fee.waived` for charges accrued during the plan",
     "breach": "sev-2"
+  },
+  {
+    "code": "FNMA_D23204_LC_WAIVE_ON_DEFERRAL_COMPLETION_0",
+    "section": 2,
+    "process": "2.7",
+    "kind": "deadline",
+    "trigger": "`smdu.case.completed{case_type=deferral}` (12.6 payment deferral, D2-3.2-04; 12.7 disaster payment deferral, D2-3.2-05)",
+    "anchor": "completion date",
+    "offset": "same day",
+    "satisfied": "all `late_charge` fees (and returned-payment/stop-payment fees) on the loan `waived{reason=deferral_completion}`",
+    "breach": "12.6/12.7 completion asserts this gate; sev-2"
   },
   {
     "code": "FNMA_D23206_LC_WAIVE_ON_CONVERSION_0",
@@ -1643,8 +1654,8 @@
     "section": 3,
     "process": "3.3",
     "kind": "deadline",
-    "trigger": "`escrow.statement.exemption_ended`",
-    "anchor": "exemption end date",
+    "trigger": "`escrow.statement.exemption_ended` — emitted only when the loan \"is reinstated or otherwise becomes current\" (`loan.reinstated`, or the account otherwise becoming current) while an (i)(2) hold is open; `bankruptcy.case.closed` / `foreclosure.case.cancelled` on a still-delinquent loan do not emit it (the exemption re-applies at the next analysis if > 30 days overdue)",
+    "anchor": "date the account became current (`exemption_ended_on`)",
     "offset": "90 calendar_days",
     "satisfied": "`escrow.statement.sent` (post_exemption_history)",
     "breach": "sev-2"
@@ -2019,7 +2030,7 @@
     "kind": "not_before_gate",
     "trigger": "`lossmit.trial_plan.offer_prepared`",
     "anchor": "—",
-    "offset": "escrow established (or exception documented: current on T&I + Flex Mod)",
+    "offset": "escrow established (or exception documented: current on T&I AND the Flex Mod is offered under the D2-3.2-06 disaster-related-hardship path — `flex_mod_disaster_hardship=true`; a standard Flex Mod trial on a waived loan always requires escrow first)",
     "satisfied": "`escrow.account.established` or `escrow.waiver.exception_documented`",
     "breach": "trial offer command refused"
   },
@@ -3381,7 +3392,7 @@
     "section": 5,
     "process": "5.4",
     "kind": "deadline",
-    "trigger": "Eligible for Deselection report (~CD11)",
+    "trigger": "Eligible for Deselection report (~CD11) — ONLY for loans in MBS pools issued June 1, 2007 through December 1, 2008 reported with a forbearance-plan (after the sixth consecutive month) or repayment-plan (18 months from plan start) status code",
     "anchor": "CD11",
     "offset": "by CD15",
     "satisfied": "deselection decision recorded (`human_portal_task` if deselecting)",
@@ -3568,8 +3579,8 @@
     "section": 5,
     "process": "5.7",
     "kind": "deadline (inbound)",
-    "trigger": "BD4",
-    "anchor": "BD4 12:00 ET",
+    "trigger": "BD2 (`fannie_et`)",
+    "anchor": "BD2 + 2 calendar days, 12:00 ET (next `fannie_et` business day 12:00 ET when that day is not a business day; the published Delinquency Reporting Calendar date overrides when loaded — F-1-21: \"on the second calendar day following the second business day of the month\")",
     "offset": "0",
     "satisfied": "exception report parsed",
     "breach": "sev-2 → `human_portal_task` pull"
@@ -7297,7 +7308,7 @@
     "section": 12,
     "process": "12.1",
     "kind": "deadline",
-    "trigger": "`lossmit.application.received` (received ≥45 days before any scheduled sale)",
+    "trigger": "`lossmit.application.received` (received ≥45 days before any scheduled sale; principal residence — §1024.30(c)(2) limits §§1024.39–.41 to loans secured by the borrower's principal residence, so every `REGX_1024_41*` row here arms only when `lossmit_applications.principal_residence≠false`; the `FNMA_*` clocks arm regardless)",
     "anchor": "`received_date`",
     "offset": "5 `business_days_federal`",
     "satisfied": "`notice.sent` (`NTC_REGX_41B2_ACK_COMPLETE` or `_INCOMPLETE`)",
@@ -7310,7 +7321,7 @@
     "kind": "deadline",
     "trigger": "same",
     "anchor": "`received_date`",
-    "offset": "5 `business_days_servicer`",
+    "offset": "5 `business_days_fannie_et`",
     "satisfied": "same notice (dual-cited template)",
     "breach": "`officer` sev-2"
   },
@@ -7385,10 +7396,10 @@
     "section": 12,
     "process": "12.1",
     "kind": "deadline",
-    "trigger": "`loan.delinquency.day_reached{fnma_day=45}` and no QRPC/resolution",
+    "trigger": "`loan.delinquency.day_reached{fnma_day=45}` and no QRPC/resolution (a Package already sent on `contact.qrpc.achieved{resolution=none}` satisfies it in advance)",
     "anchor": "day 45",
     "offset": "0",
-    "satisfied": "`notice.sent{NTC_FNMA_D2204_SOLICITATION}`",
+    "satisfied": "`notice.sent{NTC_FNMA_D2204_SOLICITATION}` (full Package) or `solicitation_package.sent{kind=form_745}` (Form 745 or equivalent alone — D2-2-04)",
     "breach": "sev-2; STAR metric"
   },
   {
@@ -7440,7 +7451,7 @@
     "section": 12,
     "process": "12.2",
     "kind": "deadline",
-    "trigger": "`lossmit.application.completed` (tier gt_37/ge_90)",
+    "trigger": "`lossmit.application.completed` (tier gt_37/ge_90; principal residence — §1024.30(c)(2), 12.3 rule 1: `principal_residence≠false`)",
     "anchor": "`complete_at` (for (c))",
     "offset": "30 `calendar_days` (23:59 servicer-local; if day 30 is a weekend the notice must be provided by the preceding business day — policy)",
     "satisfied": "`notice.provided{NTC_REGX_41C1_OFFER",
@@ -7572,7 +7583,7 @@
     "section": 12,
     "process": "12.2",
     "kind": "not_before_gate",
-    "trigger": "`lossmit.application.facially_complete/completed` (tier gt_37/ge_90)",
+    "trigger": "`lossmit.application.facially_complete/completed` (tier gt_37/ge_90; principal residence — §1024.30(c)(2): `principal_residence≠false`)",
     "anchor": "—",
     "offset": "until (g)(1)–(3) condition",
     "satisfied": "`foreclosure_holds.closed` on the matching row",
@@ -7627,7 +7638,7 @@
     "section": 12,
     "process": "12.3",
     "kind": "deadline (borrower)",
-    "trigger": "`notice.provided{denial of modification}` with tier ge_90 or (f) period",
+    "trigger": "`notice.provided{denial of modification}` with tier ge_90 or (f) period, principal residence (§1024.30(c)(2))",
     "anchor": "`provided_at`",
     "offset": "14 `calendar_days`",
     "satisfied": "`lossmit.appeal.received`",
@@ -7726,7 +7737,7 @@
     "section": 12,
     "process": "12.3",
     "kind": "not_before_gate",
-    "trigger": "`lossmit.appeal.received`",
+    "trigger": "`lossmit.appeal.received{principal_residence≠false}` (rule 8: the hold opens on receipt before eligibility is confirmed; §1024.30(c)(2): a non-principal-residence courtesy reconsideration opens no Reg X hold)",
     "anchor": "—",
     "offset": "until appeal denied or window lapses",
     "satisfied": "`foreclosure_holds.closed{kind=lm_appeal_pending}`",
@@ -7902,7 +7913,7 @@
     "section": 12,
     "process": "12.4",
     "kind": "deadline",
-    "trigger": "`workout_plan.expired{qrpc=false, deferral_eligible=false, flex_eligible=true}`",
+    "trigger": "`workout_plan.expired{qrpc=false, deferral_eligible=false, flex_eligible=true, delinquency_days>=90}`",
     "anchor": "`term_end`",
     "offset": "15 `calendar_days`",
     "satisfied": "`notice.sent{NTC_FNMA_D23206_SOLICIT_STREAMLINED}`",
@@ -8045,7 +8056,7 @@
     "section": 12,
     "process": "12.5",
     "kind": "deadline",
-    "trigger": "`workout_plan.failed{qrpc=false, deferral_eligible=false, flex_eligible=true}`",
+    "trigger": "`workout_plan.failed{qrpc=false, deferral_eligible=false, flex_eligible=true, delinquency_days>=90}`",
     "anchor": "same",
     "offset": "15th of the following month",
     "satisfied": "`notice.sent{NTC_FNMA_D23206_SOLICIT_STREAMLINED}`",
@@ -8148,7 +8159,7 @@
     "anchor": "send date",
     "offset": "through the last day of the solicitation month (policy; ≥14 days)",
     "satisfied": "acceptance",
-    "breach": "expire; re-screen next month"
+    "breach": "expire → `payment_deferral.solicitation.expired{no_response=true, qrpc, delinquency_days, acceptance_date}` (12.8 `FNMA_D23206_POSTDEFERRAL_SOLICIT_EXPIRY_FLEX_15`: Flex Mod solicitation within 15 days when no QRPC and ≥90 days delinquent — D2-3.2-06); re-screen next month"
   },
   {
     "code": "FNMA_D23204_CONTRACTUAL_PAYMENT_GATE",
@@ -8166,7 +8177,7 @@
     "section": 12,
     "process": "12.6",
     "kind": "deadline",
-    "trigger": "`payment_deferral.accepted`",
+    "trigger": "`payment_deferral.accepted{contractual_payment_required=true}`",
     "anchor": "last day of completion month",
     "offset": "−1 `business_days_fannie_et`",
     "satisfied": "contractual-payment LAR/event accepted (5.x `FNMA_IRM_DEFERRAL_LAR_BEFORE_EOM_1BD`)",
@@ -8223,7 +8234,7 @@
     "kind": "deadline",
     "trigger": "`erecording.recorded_document.received`",
     "anchor": "receipt",
-    "offset": "5 `business_days_servicer`",
+    "offset": "5 `business_days_fannie_et`",
     "satisfied": "custodian delivery of original",
     "breach": "sev-2"
   },
@@ -8375,7 +8386,7 @@
     "section": 12,
     "process": "12.8",
     "kind": "deadline",
-    "trigger": "12.4/12.5/12.6 routes",
+    "trigger": "12.4/12.5/12.6 routes (post-forbearance and post-repayment only when ≥90 days delinquent)",
     "anchor": "plan end / failure month / day 60",
     "offset": "15 days / 15th of next month / day 75",
     "satisfied": "same",
@@ -8410,7 +8421,7 @@
     "kind": "not_before_gate",
     "trigger": "`tpp_offered`",
     "anchor": "—",
-    "offset": "escrow account established/analysis completed before the first trial due date",
+    "offset": "escrow waiver revoked and escrow account established/analysis completed before the first trial due date (exception only when T&I are current AND the Flex Mod is a disaster-hardship Flex Mod; shortage spread in equal monthly payments over 60 months unless the borrower elects a lump sum or a shorter period of not less than 12 months)",
     "satisfied": "`escrow.account.established`",
     "breach": "offer blocked"
   },
@@ -8509,7 +8520,7 @@
     "kind": "not_before_gate",
     "trigger": "MBS loan `tpp_completed`",
     "anchor": "—",
-    "offset": "`smdu.case.reclassified`",
+    "offset": "`smdu.case.reclassified` (F-1-25: in the final trial month only if the final trial payment is received and reported by the 15th; later but before the end of the TPP → TPP extended one month, reclassification on the 15th of the extended month)",
     "satisfied": "—",
     "breach": "execution blocked"
   },
@@ -8542,7 +8553,7 @@
     "kind": "deadline",
     "trigger": "`erecording.recorded_document.received`",
     "anchor": "receipt",
-    "offset": "5 `business_days_servicer`",
+    "offset": "5 `business_days_fannie_et`",
     "satisfied": "custodian delivery",
     "breach": "sev-2"
   },
@@ -8591,6 +8602,17 @@
     "breach": "new Flex Mod TPP refused (denial reason code)"
   },
   {
+    "code": "FNMA_D23206_POSTDEFERRAL_SOLICIT_EXPIRY_FLEX_15",
+    "section": 12,
+    "process": "12.8",
+    "kind": "deadline",
+    "trigger": "`payment_deferral.solicitation.expired{no_response=true, qrpc=false, delinquency_days>=90}`",
+    "anchor": "`acceptance_date`",
+    "offset": "+15 calendar_days",
+    "satisfied": "`notice.sent{template=NTC_FNMA_D23206_SOLICIT_STREAMLINED}`",
+    "breach": "sev-2"
+  },
+  {
     "code": "FNMA_D23301_SS_LISTING_MLS_5D",
     "section": 12,
     "process": "12.9",
@@ -8630,7 +8652,7 @@
     "kind": "deadline",
     "trigger": "`lossmit.shortsale.offer.received`",
     "anchor": "receipt",
-    "offset": "5 `business_days_servicer`",
+    "offset": "5 `business_days_fannie_et`",
     "satisfied": "`notice.sent{NTC_FNMA_D23301_SS_OFFER_ACK}`",
     "breach": "`officer` sev-2"
   },
@@ -8652,7 +8674,7 @@
     "kind": "deadline",
     "trigger": "`revised_offer.received`",
     "anchor": "receipt",
-    "offset": "10 `business_days_servicer`",
+    "offset": "10 `business_days_fannie_et`",
     "satisfied": "decision notice",
     "breach": "sev-2"
   },
@@ -8762,7 +8784,7 @@
     "kind": "deadline",
     "trigger": "`deed.executed.received` (accepted)",
     "anchor": "acceptance",
-    "offset": "5 `business_days_servicer`",
+    "offset": "5 `business_days_fannie_et`",
     "satisfied": "`erecording.submitted`",
     "breach": "sev-1"
   },
@@ -8773,7 +8795,7 @@
     "kind": "deadline",
     "trigger": "acceptance + inspection confirms vacant/secure",
     "anchor": "later date",
-    "offset": "30 `business_days_servicer`",
+    "offset": "30 `business_days_fannie_et`",
     "satisfied": "lien release recorded (16.x/`signing_officer`)",
     "breach": "sev-1"
   },

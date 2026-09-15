@@ -24,4 +24,11 @@ export function applySatisfiedOverrides_2_7(reg: TimerRegistry): void {
   // The repayment-plan waiver is due the day the plan completes and is satisfied by the waivers of the charges accrued during the plan.
   o("FNMA_D23202_REPAYMENT_WAIVE_ON_COMPLETION_0", { anchorField: "completed_on", satisfied: "`fee.waived{reason=workout_completion}`",
     why: "§2.7 timer table: trigger '`case.repayment.completed`', anchor 'completion', offset 'same day', satisfied by '`fee.waived` for charges accrued during the plan' — LateChargeOps.repaymentCompleted emits `case.repayment.completed{completed_on}` and waives each plan-period charge with reason `workout_completion` (D2-3.2-02: 'waive late charges accrued during the repayment plan period'); a courtesy or SCRA waiver of some other charge does not close it." });
+  // The deferral-completion waiver: 12.6/12.7 spell the completion `smdu.case.submitted{workout, submitted_on}` (D2-3.2-04: a payment deferral
+  // is completed when the case is submitted in Fannie Mae's servicing solutions system; the section12 `smdu.case.submit` tool emits it) — the
+  // registry row's `smdu.case.completed{case_type=deferral}` is that event; it is satisfied by LateChargeOps.deferralCompleted's sweep
+  // (`late_charges.all_waived{reason=deferral_completion}` — every late charge and returned-payment/stop-payment fee on the loan), not by a
+  // single `fee.waived`, because the Guide waives them all.
+  o("FNMA_D23204_LC_WAIVE_ON_DEFERRAL_COMPLETION_0", { trigger: "`smdu.case.submitted{workout∈{payment_deferral, disaster_payment_deferral}}`", anchorField: "submitted_on", offset: "same day", satisfied: "`late_charges.all_waived{reason=deferral_completion}`",
+    why: "§2.7 timer table: trigger '`smdu.case.completed{case_type=deferral}` (12.6 payment deferral, D2-3.2-04; 12.7 disaster payment deferral, D2-3.2-05)', anchor 'completion date', offset 'same day', satisfied by 'all `late_charge` fees (and returned-payment/stop-payment fees) on the loan `waived{reason=deferral_completion}`', breach '12.6/12.7 completion asserts this gate; sev-2' — D2-3.2-04/-05: 'The servicer must waive all late charges, penalties, stop payment fees, or similar charges upon completing a payment deferral.'" });
 }

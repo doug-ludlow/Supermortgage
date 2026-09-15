@@ -29,3 +29,18 @@ export function repaymentPlan(arrears: Cents, contractual: Cents, capacityCents?
   return { eligible: false, reason: "cannot_afford_repayment_plan", next: "payment_deferral" };
 }
 export function solicitationDue(failureMonthEnd: PlainDate): PlainDate { return addDays(addMonths(failureMonthEnd, 0), 15); }
+
+/**
+ * F-1-25 (12.5 Terms, amended): an MBS loan under a repayment plan is not reclassified — except in pools issued
+ * June 1, 2007 through December 1, 2008, where reclassification occurs 18 months from the first day of the month the plan
+ * commences (a forbearance plan in those pools: after the sixth consecutive month). The pool issue date decides.
+ */
+export function repaymentReclassification(i: { mbs: boolean; pool_issue_date: PlainDate | null; plan_kind: "repayment_plan" | "forbearance"; plan_start: PlainDate }): { reclassifies: boolean; reclassification_date: PlainDate | null; basis: string } {
+  if (!i.mbs || !i.pool_issue_date) return { reclassifies: false, basis: i.mbs ? "F-1-25: pool issue date unknown — treated as 'all other pool issue dates' (no reclassification during an active plan) pending 5.x confirmation" : "portfolio/MBS-out loan: A1-3-06 reclassification does not apply", reclassification_date: null };
+  const window = i.pool_issue_date >= ("2007-06-01" as PlainDate) && i.pool_issue_date <= ("2008-12-01" as PlainDate);
+  if (!window) return { reclassifies: false, reclassification_date: null, basis: "F-1-25: all other pool issue dates — the loan is not reclassified during an active repayment plan" };
+  const monthStart = addDays(i.plan_start, 1 - Number(i.plan_start.slice(8, 10)));
+  return i.plan_kind === "repayment_plan"
+    ? { reclassifies: true, reclassification_date: addMonths(monthStart, 18), basis: "F-1-25: pool issued 2007-06-01 through 2008-12-01 — 18 months from the first day of the month in which the plan commences" }
+    : { reclassifies: true, reclassification_date: endOfMonth(addMonths(monthStart, 5)), basis: "F-1-25: pool issued 2007-06-01 through 2008-12-01 — forbearance reclassified after the sixth consecutive month" };
+}

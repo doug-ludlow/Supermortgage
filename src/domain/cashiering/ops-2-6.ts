@@ -25,7 +25,7 @@ import type { EventStore, Actor, DomainEvent } from "../../kernel/events/index.t
 import { type PlainDate, addDays } from "../../kernel/calendar/date.ts";
 import type { Cents } from "../../kernel/money/cents.ts";
 import { CashieringOps, CASHIERING_OPS_ACTOR, type OpsDeps } from "./ops.ts";
-import { bookingGate, trialCompletion as pureTrialCompletion, type TrialOverlay } from "./trial.ts";
+import { bookingGate, trialCompletion as pureTrialCompletion, larSequenceAtClosing, type TrialOverlay } from "./trial.ts";
 import type { LoanCashState, Fee } from "./types.ts";
 
 type Payload = Record<string, unknown>;
@@ -137,7 +137,8 @@ export class TrialCashieringOps {
    * 12.8's booking command as 2.6 asserts it: refused while the trial is incomplete/failed, the residual has not been applied,
    * the capitalization has not been computed (or included late charges), or any late charge on the loan is unwaived.
    */
-  bookModification(trial: TrialOverlay, state: LoanCashState, effectiveOn: PlainDate): DomainEvent {
+  bookModification(trial: TrialOverlay, state: LoanCashState, effectiveOn: PlainDate, opts: { closed_on?: PlainDate } = {}): DomainEvent {
+    const closedOn = opts.closed_on ?? (this.clock.now().slice(0, 10) as PlainDate);   // the case's closing (F-1-22 Officer Signature Date) — IRM 4-03 sequences the LARs on it
     const refuse = (code: BookingRefusalCode, reason: string): never => {
       this.emit("lossmit.modification.booking.refused", trial.loan_id, { case_id: trial.case_id, effective_date: effectiveOn, code, reason, cite: "§2.6 timer table (booking refused; 12.8's booking command asserts the residual and waiver gates); Servicing Guide D2-3.2-06; F-1-27" }, { kind: "modification", id: trial.case_id });
       throw new BookingRefused(code, reason);
@@ -151,6 +152,6 @@ export class TrialCashieringOps {
     const g = bookingGate(state);
     if (!g.ok) refuse("LATE_CHARGE_UNWAIVED", `FNMA_D23206_LC_WAIVE_ON_CONVERSION_0: ${g.reason}`);
     const waived = (state.fees ?? []).filter((f) => f.fee_type === "late_charge" && f.state === "waived" && f.waived_reason === "trial_conversion").reduce((s, f) => s + (f.amount_cents - f.collected_cents), 0n);
-    return this.emit("lossmit.modification.booked", trial.loan_id, { case_id: trial.case_id, loan_id: trial.loan_id, effective_date: effectiveOn, capitalization_date: cap!.capitalization_date, capitalized_total_cents: str(cap!.capitalized_total_cents), capitalized_interest_cents: str(cap!.capitalized_interest_cents), late_charges_in_capitalization_cents: "0", late_charges_waived_cents: str(waived), residual_applied_cents: str(trial.applied_cents), booked_at: this.clock.now(), cite: "Servicing Guide F-1-27; D2-3.2-06; C-1.1-02" }, { kind: "modification", id: trial.case_id });
+    return this.emit("lossmit.modification.booked", trial.loan_id, { case_id: trial.case_id, loan_id: trial.loan_id, effective_date: effectiveOn, capitalization_date: cap!.capitalization_date, capitalized_total_cents: str(cap!.capitalized_total_cents), capitalized_interest_cents: str(cap!.capitalized_interest_cents), late_charges_in_capitalization_cents: "0", late_charges_waived_cents: str(waived), residual_applied_cents: str(trial.applied_cents), booked_at: this.clock.now(), closed_on: closedOn, lar_sequence: larSequenceAtClosing(trial, closedOn), cite: "Servicing Guide F-1-27; D2-3.2-06; C-1.1-02; IRM 4-03" }, { kind: "modification", id: trial.case_id });
   }
 }

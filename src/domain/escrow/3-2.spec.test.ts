@@ -37,9 +37,8 @@ test("3.2-T3: Given projected actual $1,250.00, then surplus $143.32 → refund 
   const { p, d } = annual(cents("1250"));
   assert.deepEqual(d, { kind: "refund", surplus_cents: 14_332n, due_on: "2027-06-15" }); assert.equal(newPayment(p, d).payment_cents, 13_833n);
 });
-test("3.2-T4: Given projected actual $1,080.00, then surplus $26.68 → monthly credit $2.22, first-month extra credit $0.04, payment $136.11.", () => {
-  // Spec discrepancy: $1,080.00 is $26.68 *below* the $1,106.68 target, so the engine reports a shortage of $26.68 (kept calendar/arithmetic-correct);
-  // the surplus branch the test describes needs a projected actual of $1,133.36.
+test("3.2-T4: Given projected actual $1,133.36, then surplus $26.68 → monthly credit $2.22, first-month extra credit $0.04, payment $136.11.", () => {
+  // §1024.17(b): a surplus is the amount by which the balance *exceeds* the target — $1,133.36 − $1,106.68 = $26.68. The former $1,080.00 figure is $26.68 *below* target: a shortage, never a surplus.
   const short = annual(cents("1080")).d; assert.equal(short.kind, "shortage"); if (short.kind === "shortage") assert.equal(short.shortage_cents, 2_668n);
   const { p, d } = annual(cents("1133.36"));
   assert.deepEqual(d, { kind: "credit", surplus_cents: 2_668n, credit_monthly_cents: 222n, first_month_extra_cents: 4n });

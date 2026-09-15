@@ -22,6 +22,7 @@ import { applyInvestorTimerOverrides } from "./timers.ts";
 import { applySatisfiedOverrides_5_7 } from "./timers-5-7.ts";
 import { ET, dqExceptionCycle, reconcileFinalReport, dqEventForAction, amnTransmission, consistencyBlock, lineReviewFlag } from "./ops.ts";
 import { validateDelinquencyEvent, deriveEventStatusTypes, lineConsistencyErrors, correctionsDueMs, PERIODS_DELINQUENT, SERVICER_ACTION_TYPES } from "./ops-5-7.ts";
+import { periodAnchors } from "./period.ts";
 
 const at = (d: string, hhmm: string) => zonedEpochMs(D(d), hhmm, ET);
 const iso = (d: string, hhmm: string) => toIso(at(d, hhmm));
@@ -42,7 +43,7 @@ function harness(nowIso: string) {
   const run = async (name: string, input: Record<string, unknown>, actor: Actor = AGENT): Promise<Record<string, unknown>> => (await bus.execute(cmds.get(name)!, actor, input, ctx)).output as Record<string, unknown>;
   const timer = (code: string, subjectId?: string) => { const all = timers.byCode(code).filter((t) => subjectId === undefined || t.subject.id === subjectId); assert.ok(all.length, `${code} armed${subjectId ? ` for ${subjectId}` : ""}`); return all[all.length - 1]!; };
   /** The month-end event the period timers arm on (5.1/5.2 emit it with the period aggregate; the 5.7 report events carry the same subject). */
-  const monthEnd = (period: string, periodEnd: string) => events.append({ type: "period.month_end", actor: SYSTEM, aggregate: { kind: "period", id: period }, occurredAt: iso(periodEnd, "23:59"), payload: { period, period_end: periodEnd } });
+  const monthEnd = (period: string, periodEnd: string) => events.append({ type: "period.month_end", actor: SYSTEM, aggregate: { kind: "period", id: period }, occurredAt: iso(periodEnd, "23:59"), payload: { period, period_end: periodEnd, bd2_following: periodAnchors(D(periodEnd)).bd2_following } });
   return { clock, events, timers, escalations, decisions, run, timer, monthEnd, def: (code: string) => REG.get(code)! };
 }
 const WORKED: LoanStatusFacts = { fnma_delinquency_status: "60", lpi: D("2026-08-01"), actions: [{ kind: "qrpc_no_solution", at: "2026-10-20T15:00:00Z", evidence_event_id: "qrpc-1" }], hardship: "unemployment", contact_achieved: true };
@@ -141,10 +142,13 @@ test("5.7-T5: Given BD4 exception report lists 3 critical exceptions (invalid re
   const f = reconcileFinalReport({ lines, final: lines.map((l) => ({ ...l, exception: null })) });
   assert.equal(f.critical_remaining, 0); assert.deepEqual(f.mismatched, []); assert.equal(f.status, "final");
   assert.equal(reconcileFinalReport({ lines, final: [{ loan_id: "L1", status_code: "42", exception: "E-REASON" }, ...lines.slice(1).map((l) => ({ ...l, exception: null }))] }).status, "exceptions_open");
-  // the engine: the September file's cycle — BD4 (Mon Oct 5) exception report parsed arms the correction clock at Fri Oct 9 17:00 ET (Sat Oct 10 rolled back);
+  // the engine: the September file's cycle — the exception report posts on the second calendar day after BD2 (F-1-21: BD2 Fri Oct 2 + 2 = Sun Oct 4 → Mon Oct 5 12:00 ET, the published calendar's Oct 5 — not BD4 Tue Oct 6);
+  // once parsed it arms the correction clock at Fri Oct 9 17:00 ET (Sat Oct 10 rolled back);
   // the acknowledged correction file satisfies it; the CD11 final report (Sun Oct 11 12:00 ET, an inbound calendar-day row) reconciled to zero critical satisfies FINAL_CD11
   const h = harness(iso("2026-10-05", "12:00")); h.monthEnd("2026-09", "2026-09-30");
-  const bd4 = h.timer("FNMA_F121_DQ_EXCEPTIONS_BD4"); assert.equal(toIso(bd4.dueAt!), iso("2026-10-06", "12:00"));
+  const bd4 = h.timer("FNMA_F121_DQ_EXCEPTIONS_BD4"); assert.equal(bd4.anchorDate, "2026-10-02"); assert.equal(bd4.dueDate, "2026-10-05"); assert.equal(toIso(bd4.dueAt!), iso("2026-10-05", "12:00"));
+  // the other 2026 cycles of the published calendar: Sept 4 (BD2 Wed Sep 2 + 2), Nov 5 (BD2 Tue Nov 3 + 2), Dec 4 (BD2 Wed Dec 2 + 2)
+  for (const [pe, want] of [["2026-08-31", "2026-09-04"], ["2026-10-31", "2026-11-05"], ["2026-11-30", "2026-12-04"]] as const) { const e = harness(iso(pe, "23:59")); e.monthEnd(pe.slice(0, 7), pe); assert.equal(e.timer("FNMA_F121_DQ_EXCEPTIONS_BD4").dueDate, want, `exception report for the ${pe} file`); }
   const cd11 = h.timer("FNMA_F121_DQ_FINAL_CD11"); assert.equal(cd11.dueDate, "2026-10-11"); assert.equal(toIso(cd11.dueAt!), iso("2026-10-11", "12:00"));
   const parsed = await h.run("parseExceptionReport", { file_month: "2026-09-01", exceptions: [...exceptions], published_cd10: "2026-10-10", document_id: "doc-exc-1" });
   assert.equal((parsed.critical as unknown[]).length, 3); assert.equal(bd4.status, "satisfied");

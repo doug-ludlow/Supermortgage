@@ -60,7 +60,7 @@ export function applyCashieringTimerOverrides(reg: TimerRegistry): void {
     why: "§2.6 timer table: capitalized amount excludes `late_charges` (F-1-27)." });
   // ---- 2.7 late charges ----------------------------------------------------
   o("FNMA_A2304_LC_COLLECTED_REPORT_MONTHLY", { offset: "monthly", why: "§2.7 timer table: collected late charges reported with the loan's next LAR/event (5.1 `fees.collected`) — monthly cycle." });
-  o("FNMA_C1102_MILITARY_INDULGENCE_LC_WAIVER_GATE", { evaluator: "2.7.scraLateChargeWaiver", why: "§2.7 timer table: no late-charge collection during the SCRA reduced-rate period; assessed amounts waived (C-1.1-02)." });
+  o("FNMA_C1102_MILITARY_INDULGENCE_LC_WAIVER_GATE", { evaluator: "2.7.scraLateChargeWaiver", why: "§2.7 timer table: no late-charge collection during the SCRA reduced-rate period (C-1.1-02) and waiver of any late charge that became due after the servicemember was called to active duty (D2-3.4-01 — broader than the reduced-rate period; F-1-19 has no late-charge text)." });
   o("FNMA_D2203_PAYMENT_REMINDER_CD20", { trigger: "`payment.cycle.unpaid_day16`", anchorField: "due_date", offset: "by the 20th, 23:59 local",
     why: "§2.7 timer table: unpaid installment → payment reminder by the 20th of the month (D2-2-03)." });
   o("NOTE_6A_LATE_CHARGE_GRACE_GATE", { anchorField: "grace_end_on", offset: "0 (rolled to the next servicer business day)",
@@ -88,7 +88,7 @@ export function applyCashieringTimerOverrides(reg: TimerRegistry): void {
   o("NACHA_RETURN_RATE_MONTHLY_WATCH", { satisfied: "`report.produced{report=nacha_return_rate}`", why: "§2.3 timer table: 'report produced'." });
   o("REGE_1005_10C_WRITTEN_CONFIRMATION_14", { satisfied: "`autodraft.revocation.confirmed_in_writing`", why: "§2.3 timer table: optional written confirmation of an oral revocation (default not required)." });
   o("SM_REAMORT_FORM181_DELIVERY_10BD", { satisfied: "`custodian.delivery.evidenced{document=form_181}`", why: "§2.4 timer table: 'custodian (and eVault for eMortgages) delivery evidence'." });
-  // FNMA_IRM_LAR83_5BD_2000: §5.1's timers.ts (applied after this file) owns the row — trigger `loan_terms.*`, anchor `calculation_date`, satisfied `investor_events.submitted{event_type=rate_payment.change}`; 2.4 emits the `loan_terms.activated` and the `rate_payment.change` investor event (ops.activateReamortizedTerms).
+  // FNMA_C4301_LAR83_REAMORT_NEXTBD_2000 (the re-amortization's unscheduled TT83, C-4.3-01 next business day 20:00 ET): ./timers-2-4.ts owns the override; 2.4 emits the `loan_terms.activated{reason=reamortization, processed_at}` and the `rate_payment.change` investor event (ops.activateReamortizedTerms). FNMA_IRM_LAR83_5BD_2000 is 5.1's scheduled-change clock and is no longer a 2.4 row.
   o("SM_BIWEEKLY_HALF_STALE_45", { satisfied: "`suspense.item.closed{outcome∈{matched, applied, reclassified}}`", why: "§2.5 timer table: 'matched/applied' — the stale half is reclassified to partial_payment at day 45 (2.5-T5)." });
   o("SM_INHOUSE_SPLIT_APPLY_ON_DUE_DATE_0", { anchorField: "settlement_date", satisfied: "`payment.posted{arrangement=inhouse_split}`", why: "§2.5 timer table: `payment.applied{credited_as_of ≤ grace end}` — the posting of the accumulated halves." });
   o("SM_CONTRACTOR_DORMANT_60", { satisfied: "`arrangement.updated{status∈{active, ended}}`", why: "§2.5 timer table: 'new remittance or ended' — either re-activates or ends the arrangement." });

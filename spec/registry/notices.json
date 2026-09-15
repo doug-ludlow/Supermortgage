@@ -1446,7 +1446,7 @@
    "12.1",
    "32.10"
   ],
-  "context": "- `NTC_FNMA_D2204_SOLICITATION` (Form 745 + Form 710 + 4506-C), `NTC_FNMA_D2205_LATE_BRP_PLAN`, `NTC_REGX_41I_DUPLICATIVE`, `NTC_CA_2924_10_ACK`."
+  "context": "- `NTC_FNMA_D2204_SOLICITATION` (Form 745 + Form 710 + 4506-C; by day 45 without QRPC/resolution Form 745 or equivalent alone also satisfies D2-2-04), `NTC_FNMA_D2205_LATE_BRP_PLAN`, `NTC_REGX_41I_DUPLICATIVE`, `NTC_CA_2924_10_ACK`."
  },
  {
   "code": "NTC_FNMA_D2204_SOLICITATION",
@@ -1463,7 +1463,7 @@
    "12.1",
    "32.10"
   ],
-  "context": "3. **45-day test.** If a foreclosure sale is scheduled and `received_date > sale_date \u2212 45 days`, (b)(2) does not apply; the D2-2-05 \"explanation of plan\" acknowledgment (`NTC_FNMA_D2205_LATE_BRP_PLAN`) is still sent within 5 servicer business days, and 12.2's expedited review applies."
+  "context": "3. **45-day test.** If a foreclosure sale is scheduled and `received_date > sale_date \u2212 45 days`, Reg X (b)(2) does not apply. Fannie Mae D2-2-05 still requires the 5-business-day acknowledgment in every case \u2014 for a complete BRP received **37 days or less** before the sale it also carries the explanation of the servicer's plans for evaluating the borrower and suspending the sale, if appropriate ("
  },
  {
   "code": "NTC_REGX_41B2_INCOMPLETE_CLOSED",
@@ -1722,7 +1722,7 @@
   "mentions": [
    "12.8"
   ],
-  "context": "- `NTC_FNMA_D23206_TPP_OFFER` (Evaluation Notice, BRP-based; \u00a71024.41(c)(1) content; NY grant-notice items): trial amounts/dates, the month-end rule, estimated modified terms (rate, term, forborne amount, P&I), that the modification is not binding until the three conditions are met, escrow establishment, late-charge waiver at conversion, acceptance by first payment, appeal rights for any denied op"
+  "context": "- `NTC_FNMA_D23206_TPP_OFFER` (Evaluation Notice, BRP-based; for BRP-based requests submitted through the servicing solutions system the package immediately includes notice of the borrower's right to receive a copy of all appraisals and other valuations developed for the modification, and copies of those valuations are provided (D2-3.2-06); \u00a71024.41(c)(1) content; NY grant-notice items): trial amo"
  },
  {
   "code": "NTC_FNMA_D23206_TPP_REMINDER",

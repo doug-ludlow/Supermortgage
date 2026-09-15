@@ -23,7 +23,7 @@ import { assignActivityPeriod, larDeadlineMs, eventDeadlineMs, periodAnchors, ir
 import { validateLar80, idempotencyKey, type Lar96 } from "./lar.ts";
 import { SequenceAllocator } from "./batch.ts";
 import { EVENT_FAMILY, type InvestorEventType, type EventFamily, type ChannelMode, type LarPayload } from "./types.ts";
-import { ET, noActivityProjection, iredSweep, periodCloseChecklist, exceptionDetectedEvent, workException, closeSoftRejectAtPeriodClose, type PeriodCloseFacts, type PeriodCloseChecklist, type RootCause, type LarDecisionRecord, type NoActivityProjection } from "./ops.ts";
+import { ET, noActivityProjection, iredSweep, periodCloseChecklist, exceptionDetectedEvent, workException, closeSoftRejectAtPeriodClose, type PeriodCloseFacts, type PeriodCloseChecklist, type RootCause, type LarDecisionRecord, type NoActivityProjection, type NoPaymentPosition } from "./ops.ts";
 
 const SERVICER = /^\d{9}$/, FNMA_LOAN = /^\d{10}$/, PERIOD = /^\d{4}-\d{2}$/;
 const periodAggregate = (servicer: string, period: string): { kind: "period"; id: string } => ({ kind: "period", id: `${servicer}:${period}` });
@@ -209,8 +209,9 @@ export function openReportingPeriod(store: EventStore, i: { readonly month_of: P
     payload: { ...anchors, servicer_number: i.servicer_number, loan_id: l.loan_id, fnma_loan_number: l.fnma_loan_number, reporting: l.reporting, mode: l.mode ?? "legacy" } }));
   return { anchors, opened, enrolled };
 }
-export interface SweepLoan extends EnrolledLoan { readonly accepted_payment_event: boolean; readonly position: { lpi_date: PlainDate | null; upb_cents: Cents; nib_cents: Cents }; }
-/** Rule 4: the 18:00 ET IRED sweep — every summary-reporting loan without an accepted `payment.*` event in the period gets a `payment.none` row (LAR 96 with unchanged LPI/UPB, or the No Payment Event under `mode=event`), created here and then submitted through the adapter. */
+/** The position the sweep projects from: LPI, actual UPB, NIB, plus the remittance facts rule 4 needs (`remittance_type` absent = A/A; S/A `ptr`; S/S `ptr`, `note_rate`, `pi_cents`, prior `scheduled_upb_cents`). */
+export interface SweepLoan extends EnrolledLoan { readonly accepted_payment_event: boolean; readonly position: NoPaymentPosition; }
+/** Rule 4: the 18:00 ET IRED sweep — every summary-reporting loan without an accepted `payment.*` event in the period gets a `payment.none` row (LAR 96 with unchanged LPI and actual UPB, interest/principal by remittance type — A/A nothing, S/A the advanced month or the month-4 recovery, S/S the scheduled interest and principal; or the No Payment Event under `mode=event`), created here and then submitted through the adapter. */
 export function iredSweepRun(store: EventStore, seq: SequenceAllocator, i: { readonly month_of: PlainDate; readonly servicer_number: string; readonly loans: readonly SweepLoan[]; readonly now_ms: number; readonly actor?: Actor }): { readonly sweep: ReturnType<typeof iredSweep>; readonly projections: { loan_id: string; projection: NoActivityProjection; created: CreatedInvestorEvent; lar: Lar96 | null }[] } {
   const sweep = iredSweep({ month_of: i.month_of, loans: i.loans.filter((l) => l.reporting === "summary") });
   need(i.now_ms >= iredSweepRunMs(i.month_of), `the IRED sweep runs at 18:00 ET on ${sweep.sweep_on} (2-hour buffer to the 20:00 ET deadline)`);

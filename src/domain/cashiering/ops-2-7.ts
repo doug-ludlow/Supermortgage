@@ -13,9 +13,14 @@
  *   - `repaymentOpened` / `repaymentCompleted` (rule 3(v), D2-3.2-02): charges accrue suspended during the plan;
  *     `case.repayment.completed{completed_on}` arms `FNMA_D23202_REPAYMENT_WAIVE_ON_COMPLETION_0` and the same call
  *     waives every charge accrued during the plan the same day (`fee.waived{reason=workout_completion}`, its satisfier).
- *   - `scraPeriodStarted` (rule 3(iii), C-1.1-02 / 50 U.S.C. 3937): 13.9's period → `scra_reduced_rate` overlay; charges
- *     assessed on/after the service start are waived (`fee.waived{scra}`, the satisfier of
- *     `FNMA_C1102_MILITARY_INDULGENCE_LC_WAIVER_GATE`); pre-service charges are held `no_collection` (example O).
+ *   - `scraPeriodStarted` (rule 3(iii), C-1.1-02 / D2-3.4-01 / 50 U.S.C. 3937): 13.9's period → `scra_reduced_rate` overlay from
+ *     the cap's first installment; every late charge that became due (grace end + 1) after the servicemember was called to active
+ *     duty is waived (`fee.waived{scra}`, the satisfier of `FNMA_C1102_MILITARY_INDULGENCE_LC_WAIVER_GATE`; D2-3.4-01 — broader
+ *     than the reduced-rate period); charges that became due before the call are held `no_collection` (C-1.1-02; example O).
+ *   - `deferralCompleted` (rule 3(x) / rule 5, D2-3.2-04 / D2-3.2-05): 12.6's or 12.7's `smdu.case.completed{case_type=deferral}`
+ *     (the platform spells it `smdu.case.submitted{workout∈{payment_deferral, disaster_payment_deferral}}`, the trigger of
+ *     `FNMA_D23204_LC_WAIVE_ON_DEFERRAL_COMPLETION_0`) → every late charge, penalty and stop-payment fee on the loan is waived the
+ *     same day (`fee.waived{reason=deferral_completion}` per fee; `late_charges.all_waived{reason=deferral_completion}` satisfies it).
  *   - `bankruptcyFiled` (rule 3(iv)): charges accrue suspended `{bankruptcy_active}` with no collection and no statement
  *     billing; each one is exposed to 14.2 as `fee.incurred_postpetition{incurred_on}` (Rule 3002.1(c): the trigger of
  *     `BK_3002_1C_FEE_NOTICE_180`); `bkExposureList` is the 14.2 exposure list with incurred dates.
@@ -157,20 +162,51 @@ export class LateChargeOps {
     return { waived, total_cents: total };
   }
   /**
-   * 13.9's period: `scra.period.started{service_begin_on}` → no assessment for installments due in the period, charges assessed on/after the
-   * service start waived (`fee.waived{scra}`), pre-service charges held `no_collection` (C-1.1-02; 50 U.S.C. 3937(d)(1); example O).
+   * 13.9's period: `scra.period.started{service_begin_on, reduced_rate_from}` → no assessment for installments in the reduced-rate
+   * period (from `reduced_rate_from`, the 6% cap's first installment — default the call-to-duty date); every late charge that became
+   * due (grace end + 1) after the servicemember was called to active duty (`service_begin_on`) is waived (`fee.waived{scra}`;
+   * D2-3.4-01 "must waive any late charges that became due after the servicemember was called to active duty" — broader than the
+   * reduced-rate period: example O's 10/01 charge, due 10/17 after the 10/15 call, is waived although the cap starts 11/01); a charge
+   * that became due before the call is a pre-service charge whatever day it was posted and is held `no_collection` for the period
+   * (C-1.1-02; 50 U.S.C. 3937(d)(1)); post-period default 2.7-Q6: waive.
    */
-  scraPeriodStarted(state: LoanCashState, period: { case_id: string; service_begin_on: PlainDate; service_end_on?: PlainDate | null }): { waived: Fee[]; held: Fee[] } {
+  scraPeriodStarted(state: LoanCashState, period: { case_id: string; service_begin_on: PlainDate; service_end_on?: PlainDate | null; reduced_rate_from?: PlainDate | null }): { waived: Fee[]; held: Fee[] } {
     if (!isDate(period.service_begin_on)) throw new RangeError(`scraPeriodStarted: service_begin_on must be a date (got ${String(period.service_begin_on)})`);
-    this.openSuppression(state, "scra_reduced_rate", "no_collection", { case_id: period.case_id, plan_start: period.service_begin_on, plan_end: period.service_end_on ?? null }, { cite: "Servicing Guide C-1.1-02; 50 U.S.C. 3937" });
-    this.emit("scra.period.started", state.loan_id, { case_id: period.case_id, service_begin_on: period.service_begin_on, service_end_on: period.service_end_on ?? null, late_charges: "no assessment; assessed amounts waived; pre-service charges no_collection", cite: "Servicing Guide C-1.1-02; 50 U.S.C. 3937(d)(1)" }, { kind: "case", id: period.case_id });
+    const reducedRateFrom = period.reduced_rate_from ?? period.service_begin_on;
+    if (!isDate(reducedRateFrom) || reducedRateFrom < period.service_begin_on) throw new RangeError(`scraPeriodStarted: reduced_rate_from ${String(reducedRateFrom)} must be a date on/after the call to active duty ${period.service_begin_on}`);
+    this.openSuppression(state, "scra_reduced_rate", "no_collection", { case_id: period.case_id, plan_start: reducedRateFrom, plan_end: period.service_end_on ?? null }, { called_to_duty_on: period.service_begin_on, cite: "Servicing Guide C-1.1-02; D2-3.4-01; 50 U.S.C. 3937" });
+    this.emit("scra.period.started", state.loan_id, { case_id: period.case_id, service_begin_on: period.service_begin_on, called_to_duty_on: period.service_begin_on, reduced_rate_from: reducedRateFrom, service_end_on: period.service_end_on ?? null, late_charges: "no assessment in the reduced-rate period; charges that became due after the call to active duty waived (D2-3.4-01); charges that became due before it no_collection (C-1.1-02)", cite: "Servicing Guide C-1.1-02; D2-3.4-01; 50 U.S.C. 3937(d)(1)" }, { kind: "case", id: period.case_id });
     const waived: Fee[] = []; const held: Fee[] = [];
     for (const f of state.fees ?? []) {
       if (f.fee_type !== "late_charge" || (f.state !== "assessed" && f.state !== "accrued_suspended")) continue;
-      if (f.assessed_on >= period.service_begin_on) { const r = this.ops.waive(state, f.id, "scra", this.actor, this.today()); if (r.ok) waived.push(f); }
-      else { f.collection_hold = "scra_reduced_rate"; held.push(f); this.emit("fee.collection.held", state.loan_id, { fee_id: f.id, hold: "scra_reduced_rate", amount_cents: str(f.amount_cents), from: period.service_begin_on, post_period_default: "waive (2.7-Q6)" }, feeAgg(f.id)); }
+      const becameDueOn = f.grace_end_on ? addDays(f.grace_end_on, 1) : f.assessed_on;   // the note's late charge becomes due the day after the grace end (rule 9 `late_fee_date`)
+      if (becameDueOn >= period.service_begin_on) { const r = this.ops.waive(state, f.id, "scra", this.actor, this.today()); if (r.ok) waived.push(f); }
+      else { f.collection_hold = "scra_reduced_rate"; held.push(f); this.emit("fee.collection.held", state.loan_id, { fee_id: f.id, hold: "scra_reduced_rate", amount_cents: str(f.amount_cents), became_due_on: becameDueOn, called_to_duty_on: period.service_begin_on, from: reducedRateFrom, post_period_default: "waive (2.7-Q6)", cite: "Servicing Guide C-1.1-02 (no collection during the reduced-rate period); D2-3.4-01 waives only charges that became due after the call to active duty" }, feeAgg(f.id)); }
     }
     return { waived, held };
+  }
+  /**
+   * 12.6's / 12.7's deferral completion (D2-3.2-04 / D2-3.2-05: "The servicer must waive all late charges, penalties, stop payment fees,
+   * or similar charges upon completing a payment deferral"): every open late charge and returned-payment/stop-payment fee on the loan —
+   * suspended or held under any other overlay included — is waived the same day (`fee.waived{reason=deferral_completion}` per fee;
+   * `late_charges.all_waived{reason=deferral_completion}` is the satisfier of `FNMA_D23204_LC_WAIVE_ON_DEFERRAL_COMPLETION_0`). The
+   * trigger is the loss-mitigation case's own completion event (`smdu.case.submitted{workout}` — D2-3.2-04: completed when the case is
+   * submitted in Fannie Mae's servicing solutions system); this op is the 2.7 reaction to it and records the `deferral_completed` overlay.
+   */
+  deferralCompleted(state: LoanCashState, completion: { case_id: string; workout: "payment_deferral" | "disaster_payment_deferral"; completed_on: PlainDate }): { waived: Fee[]; total_cents: Cents; returned_payment_fees_cents: Cents } {
+    if (!completion.case_id) throw new RangeError("deferralCompleted: case_id is required");
+    if (completion.workout !== "payment_deferral" && completion.workout !== "disaster_payment_deferral") throw new RangeError(`deferralCompleted: workout ${String(completion.workout)} is not a payment deferral (D2-3.2-04) or disaster payment deferral (D2-3.2-05)`);
+    if (!isDate(completion.completed_on)) throw new RangeError(`deferralCompleted: completed_on must be a date (got ${String(completion.completed_on)})`);
+    const cite = completion.workout === "payment_deferral" ? "Servicing Guide D2-3.2-04 (Payment Deferral)" : "Servicing Guide D2-3.2-05 (Disaster Payment Deferral)";
+    const overlay: Overlay = { kind: "deferral_completed", from: completion.completed_on, to: completion.completed_on, source_case_id: completion.case_id };
+    state.overlays = [...(state.overlays ?? []).filter((o) => !(o.kind === "deferral_completed" && o.source_case_id === completion.case_id)), overlay];
+    this.emit("case.deferral.completed", state.loan_id, { case_id: completion.case_id, workout: completion.workout, completed_on: completion.completed_on, late_charges: "all late charges, penalties, stop payment fees, or similar charges waived", cite }, { kind: "case", id: completion.case_id });
+    const open = (state.fees ?? []).filter((f) => f.state === "assessed" || f.state === "accrued_suspended");
+    const returnedPaymentFees = open.filter((f) => f.fee_type !== "late_charge").reduce((t, f) => t + (f.amount_cents - f.collected_cents), 0n);
+    const total = this.ops.waiveAll(state, "deferral_completion", this.actor, completion.completed_on, { fee_types: ["late_charge", "nsf_fee"] });
+    const waived = open.filter((f) => f.state === "waived");
+    this.emit("late_charge.suppression.closed", state.loan_id, { loan_id: state.loan_id, reason: "deferral_completed", source_case_id: completion.case_id, ends_on: completion.completed_on, outcome: "waived_on_deferral_completion", waived_count: waived.length, waived_cents: str(total), returned_payment_fees_waived_cents: str(returnedPaymentFees), cite }, { kind: "case", id: completion.case_id });
+    return { waived, total_cents: total, returned_payment_fees_cents: returnedPaymentFees };
   }
   /** 14.1's petition: charges accrue suspended `{bankruptcy_active}` — no collection, no statement billing; each is exposed to 14.2 by `assess`. */
   bankruptcyFiled(state: LoanCashState, filing: { case_id: string; chapter: 7 | 11 | 12 | 13; petition_date: PlainDate }): Suppression {
@@ -232,7 +268,7 @@ export class LateChargeOps {
   billableLateCharges(state: LoanCashState): Cents {
     return (state.fees ?? []).filter((f) => f.fee_type === "late_charge" && (f.state === "assessed" || f.state === "partially_collected")).reduce((s, f) => s + f.amount_cents - f.collected_cents, 0n);
   }
-  /** 7.1 (§1026.41(d)(2)(ii)) and the D2-2-03 reminder: the fee if unpaid, the date it is imposed, and the late charges due. */
+  /** 7.1 (§1026.41(d)(1)(ii)) and the D2-2-03 reminder: the fee if unpaid, the date it is imposed, and the late charges due. */
   reminderData(state: LoanCashState, due: PlainDate): { late_fee_amount_if_unpaid: Cents; late_fee_date: PlainDate; late_charges_due_cents: Cents } {
     return { ...lateFeeDisclosure(state, due), late_charges_due_cents: this.billableLateCharges(state) };
   }

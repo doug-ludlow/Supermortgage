@@ -817,7 +817,7 @@
    },
    {
     "n": 7,
-    "text": "Given a re-amortization executed 2026-10-20 effective 2026-12-01, then a new `loan_terms` version exists, Form 181 is delivered to the custodian within 10 BD, LAR 83/`rate_payment.change` is submitted within 5 BD of the calculation date, and 12.8's eligibility check does not count it as a modification."
+    "text": "Given a re-amortization executed 2026-10-20 effective 2026-12-01, then a new `loan_terms` version exists, Form 181 is delivered to the custodian within 10 BD, LAR 83/`rate_payment.change` is submitted by 20:00 ET the next Fannie Mae business day after the new `loan_terms` version is booked (booked Tue 2026-10-20 \u2192 due Wed 2026-10-21 20:00 ET; C-4.3-01), and 12.8's eligibility check does not count it as a modification."
    },
    {
     "n": 8,
@@ -842,7 +842,7 @@
    "FNMA_C1201_DELINQUENT_CURE_FIRST_GATE",
    "FNMA_C1201_NIB_ORDER_GATE",
    "FNMA_C1201_REAPPLY_ELIGIBILITY_GATE",
-   "FNMA_IRM_LAR83_5BD_2000",
+   "FNMA_C4301_LAR83_REAMORT_NEXTBD_2000",
    "FNMA_LL202605_EVENT_NEXTBD_0300",
    "SM_CURTAILMENT_PAYOFF_ROUTE_GATE",
    "SM_REAMORT_FORM181_DELIVERY_10BD"
@@ -1032,6 +1032,10 @@
    {
     "n": 13,
     "text": "Given late charges collected in September, when 5.1 builds the period's LAR/event, then `fees.collected` equals \u03a3 `collected_cents` for the period."
+   },
+   {
+    "n": 14,
+    "text": "Given late charges of 25,200\u00a2 and a stop-payment fee assessed on a loan whose payment deferral case is completed in SMDU on 2026-09-29, when `smdu.case.completed{case_type=deferral}` is processed, then every late charge, penalty and stop-payment fee on the loan is `waived{reason=deferral_completion}` the same day and `FNMA_D23204_LC_WAIVE_ON_DEFERRAL_COMPLETION_0` is satisfied."
    }
   ],
   "tables": [
@@ -1044,6 +1048,7 @@
    "FNMA_D2203_PAYMENT_REMINDER_CD20",
    "FNMA_D23201_FORBEARANCE_NO_ACCRUAL_GATE",
    "FNMA_D23202_REPAYMENT_WAIVE_ON_COMPLETION_0",
+   "FNMA_D23204_LC_WAIVE_ON_DEFERRAL_COMPLETION_0",
    "FNMA_D23206_LC_WAIVE_ON_CONVERSION_0",
    "NOTE_6A_LATE_CHARGE_GRACE_GATE",
    "NOTE_6A_ONLY_ONCE_GATE",
@@ -1150,7 +1155,7 @@
    },
    {
     "n": 4,
-    "text": "Given projected actual $1,080.00, then surplus $26.68 \u2192 monthly credit $2.22, first-month extra credit $0.04, payment $136.11."
+    "text": "Given projected actual $1,133.36, then surplus $26.68 \u2192 monthly credit $2.22, first-month extra credit $0.04, payment $136.11."
    },
    {
     "n": 5,
@@ -1535,7 +1540,7 @@
    },
    {
     "n": 10,
-    "text": "Given an Illinois tax payment confirmed 2027-06-03, then `NTC_IL_765_910_15_TAX_PAID` is sent within 45 business days (by 2027-08-06 assuming no servicer holidays beyond federal)."
+    "text": "Given an Illinois tax payment confirmed 2027-06-03, then `NTC_IL_765_910_15_TAX_PAID` is sent within 45 business days (by 2027-08-09: weekends, Juneteenth observed Fri 2027-06-18 and Independence Day observed Mon 2027-07-05 excluded; no servicer holidays beyond federal)."
    },
    {
     "n": 11,
@@ -1623,7 +1628,7 @@
    },
    {
     "n": 7,
-    "text": "Given a Flex Mod trial offer being prepared for a waived loan current on T&I, then the exception is documented and the offer proceeds; given T&I delinquent, then the offer is blocked until escrow is established."
+    "text": "Given a disaster-hardship Flex Mod trial offer being prepared for a waived loan current on T&I, then the exception is documented and the offer proceeds; given a standard Flex Mod (any T&I status) or T&I delinquent, then the offer is blocked until escrow is established."
    },
    {
     "n": 8,
@@ -2333,7 +2338,7 @@
    },
    {
     "n": 7,
-    "text": "Given a BD3 draft notification showing $1,476.39 expected and a \u2212$1,476.39 Stop Advance credit, then the variance classifier labels `sda_credit`, the draft expectation for the loan is $0, and no advance transfer is made."
+    "text": "Given a BD3 draft notification showing $1,476.38 expected and a \u2212$1,476.38 Stop Advance credit, then the variance classifier labels `sda_credit`, the draft expectation for the loan is $0, and no advance transfer is made."
    },
    {
     "n": 8,
@@ -2353,7 +2358,7 @@
    },
    {
     "n": 12,
-    "text": "Given a late S/S draft of $50,000 that settles 3 days late with prime 7.50%, then the estimated compensatory fee is max($250, 50,000 \u00d7 3 \u00d7 0.105 \u00f7 365 = $43.15) = $250 and an instance is recorded."
+    "text": "Given a late S/S draft of $50,000 that settles 3 days late with prime 7.50%, then the estimated compensatory fee is max($250, 50,000 \u00d7 3 \u00d7 0.105 \u00f7 365 = $43.15) = $250 under the platform's annual-rate-applied-daily assumption (A1-4.2-01 says \"Multiply the calculated late remittance by the number of days the remittance is late, and then \u2026 Multiply that product by the sum of the prime interest rate, plus 3%\" with no \u00f7365 \u2014 literal reading $15,750; the instance records `day_count_convention=annual_365_assumed` pending Fannie Mae confirmation) and an instance is recorded."
    }
   ],
   "tables": [
@@ -2411,7 +2416,7 @@
    },
    {
     "n": 2,
-    "text": "Given a payoff processed Mon Nov 2, 2026 (BD1), then the AC 60 deadline is Tue Nov 3 17:00 ET and, for an S/S loan, no full-month interest is charged if reported by BD2."
+    "text": "Given a payoff processed Mon Nov 2, 2026 (BD1), then the AC 60 deadline is Tue Nov 3 17:00 ET and, for an S/S MBS loan, no full-month interest is charged if reported by BD2; for a portfolio S/S loan a full month's interest at PTR is still due."
    },
    {
     "n": 3,
@@ -2498,7 +2503,7 @@
    },
    {
     "n": 5,
-    "text": "Given a regular servicing option S/S loan six consecutive months delinquent, then no SDA is predicted, advances continue, and the deselection decision task is created on CD11 and due CD15."
+    "text": "Given a regular servicing option S/S loan six consecutive months delinquent that is not reported with a forbearance-plan or repayment-plan status code, then no SDA is predicted, advances continue, and no deselection task is created (A1-3-06 six-month selection carries no deselection window); given a loan in an MBS pool issued June 1, 2007\u2013December 1, 2008 reported with a forbearance-plan status code that appears on the Eligible for Deselection report (~CD11), then the deselection decision task is created on CD11 and due CD15."
    },
    {
     "n": 6,
@@ -2627,6 +2632,10 @@
    {
     "n": 7,
     "text": "Given an MBS Express pool repurchase reported in October, then unscheduled principal is funded for the BD4 November draft (Thu Nov 5, 2026)."
+   },
+   {
+    "n": 8,
+    "text": "Given a regular servicing option loan with LPI Sept 1, 2025 and a Fannie Mae repurchase demand received in July 2027 (22 months past due), then `type = mandatory_24mo`, the repurchase is reported as activity in the September 2027 period (the month containing Sept 1, 2027, the due date of the 24th consecutive past-due installment) with LAR 65 on the removal clock, and the `officer` escalation exists from the demand."
    }
   ],
   "tables": [
@@ -5469,11 +5478,11 @@
    },
    {
     "n": 3,
-    "text": "(milestone cap and floor) (a) sale 2026-11-20, ack sent 2026-09-15 \u2192 reasonable date = min(2026-10-15, sale\u221238 = 2026-10-13) = **2026-10-13**; (b) same sale, ack sent 2026-10-08 \u2192 cap 2026-10-13 is earlier than the 7-day floor 2026-10-15 \u2192 the floor wins (comment 41(b)(2)(ii)-3; comment 41(k)(2)-1 logic) \u2192 **2026-10-15**, and `milestone_conflict=true` routes the file to `lossmit_reviewer` for expedited handling."
+    "text": "(milestone cap and floor) (a) sale 2026-11-20, ack sent 2026-09-15 \u2192 reasonable date = min(2026-10-15, sale\u221238 = 2026-10-13) = **2026-10-13**; (b) same sale, ack sent 2026-10-08 \u2192 cap 2026-10-13 is earlier than the 7-day floor 2026-10-15 \u2192 the floor wins (comment 41(b)(2)(ii)-3; comment 41(k)(2)(ii)-3 logic) \u2192 **2026-10-15**, and `milestone_conflict=true` routes the file to `lossmit_reviewer` for expedited handling."
    },
    {
     "n": 4,
-    "text": "(facially complete) all listed items received 2026-10-01 \u2192 `facially_complete_at=2026-10-01`; verification finds a stale paystub \u2192 supplemental request 2026-10-02 with date \u22652026-10-09; `foreclosure_holds{kind=regx_f2_prefiling}` active throughout; borrower complies 2026-10-07 \u2192 `deemed_complete_date=2026-10-01`, `complete_at=2026-10-07`; (c)(3) notice by 2026-10-14."
+    "text": "(facially complete) all listed items received 2026-10-01 \u2192 `facially_complete_at=2026-10-01`; verification finds a stale paystub \u2192 supplemental request 2026-10-02 with date \u22652026-10-09; `foreclosure_holds{kind=regx_f2_prefiling}` active throughout; borrower complies 2026-10-07 \u2192 `deemed_complete_date=2026-10-01`, `complete_at=2026-10-07`; (c)(3) notice by 2026-10-15 (Oct 8, 9, 13, 14, 15 \u2014 Columbus Day Mon 2026-10-12 is a legal public holiday)."
    },
    {
     "n": 5,
@@ -5831,7 +5840,7 @@
   "tids": [
    {
     "n": 1,
-    "text": "Given PITI $2,100.00 and arrears $6,426.00, when terms are computed, then 6 months is rejected (151.0%) and 8 months accepted ($2,903.25; 138.25%); the schedule sums exactly to $6,426.00 with rounding in the last installment."
+    "text": "Given PITI $2,100.00, arrears $6,426.00 and a stated capacity of $2,950.00, when terms are computed, then 6 months is rejected (151.0% > cap), 7 months is rejected ($3,018.00 > capacity) and 8 months accepted ($2,903.25; 138.25%); the schedule sums exactly to $6,426.00 with rounding in the last installment."
    },
    {
     "n": 2,
@@ -5910,7 +5919,7 @@
   "tids": [
    {
     "n": 1,
-    "text": "Given the 4-payment example, when accepted 2026-09-22, then NIB = $7,370.68, late charges $252.00 waived, new payment $2,131.17, SMDU entry by 2026-09-30, LAR/events by 2026-09-29, effective 2026-10-01, agreement sent by completion + 5 days, custodian by 2026-10-26."
+    "text": "Given the 4-payment example, when accepted 2026-09-22, then NIB = $7,370.68, late charges $252.00 waived, new payment $2,131.17, SMDU entry by 2026-09-30, effective 2026-10-01, agreement sent by completion + 5 days, custodian by 2026-10-26."
    },
    {
     "n": 2,
@@ -6081,7 +6090,7 @@
    },
    {
     "n": 7,
-    "text": "(MBS) MBS loan \u2192 servicer execution blocked until `smdu.case.reclassified`; effective date re-dated if needed."
+    "text": "(MBS) MBS loan \u2192 servicer execution blocked until `smdu.case.reclassified`; reclassification occurs in the final trial month only if the final trial payment is received and reported to Fannie Mae by the 15th calendar day of that month (F-1-25); if the final payment arrives after the 15th but before the end of the TPP, the TPP is extended one month and the reclassification date is the 15th of the extended month (`FNMA_F122_TPP_PAYMENT_REPORT` must land by the 15th)."
    },
    {
     "n": 8,
@@ -6118,6 +6127,7 @@
    "FNMA_D23206_FORM3179_BORROWER_EXECUTE_BEFORE_EFFECTIVE",
    "FNMA_D23206_FORM3179_SERVICER_EXECUTE_BEFORE_EFFECTIVE",
    "FNMA_D23206_NO_NEW_TRIAL_12M",
+   "FNMA_D23206_POSTDEFERRAL_SOLICIT_EXPIRY_FLEX_15",
    "FNMA_D23206_POSTFORB_FLEX_SOLICIT_15",
    "FNMA_D23206_SOLICIT_SALE_PROXIMITY_GATE",
    "FNMA_D23206_TPP_FIRST_DUE_15TH_RULE",
@@ -6153,7 +6163,7 @@
   "tids": [
    {
     "n": 1,
-    "text": "Given a complete BRP and an initial offer received 2026-10-05 (loan 8 months delinquent), when processed, then the acknowledgment is sent by 2026-10-12 (5 BD), the valuation is ordered on eligibility, and the approval/counter/decline is sent by 2026-11-04 (30 days)."
+    "text": "Given a complete BRP and an initial offer received 2026-10-05 (loan 8 months delinquent), when processed, then the acknowledgment is sent by 2026-10-13 (5 Fannie Mae business days: Oct 6, 7, 8, 9, 13 \u2014 Columbus Day 2026-10-12 is a Federal Reserve Bank holiday), the valuation is ordered on eligibility, and the approval/counter/decline is sent by 2026-11-04 (30 days)."
    },
    {
     "n": 2,

@@ -50,7 +50,7 @@ export function rfaFlow(i: { utterance: string; has_evaluative_info: boolean; co
   const later = i.later && classify({ has_evaluative_info: i.later.has_evaluative_info, confidence: 1 }) === "application" ? i.later.on : null;
   return { kind, ack_timer: kind === "application" ? "REGX_1024_41B2_LM_ACK_5" : null, spoc_assignment: i.state === "CA", solicitation_package_sent: kind === "rfa_only", application_opened_on: kind === "application" ? null : later };
 }
-/** The acknowledgment clocks an application arms (12.1 timer table): the Reg X federal-business-day clock and Fannie Mae's servicer-business-day twin. */
+/** The acknowledgment clocks an application arms (12.1 timer table): the Reg X federal-business-day clock and Fannie Mae's twin on the Guide's business-day calendar (`business_days_fannie_et`, D2-2-05 / Guide glossary). */
 export const ACK_TIMER_CODES = ["REGX_1024_41B2_LM_ACK_5", "FNMA_D2205_BRP_ACK_5BD"] as const;
 
 /** Rule 12.1 §1024.41(i): a duplicative application removes the procedural rights, so the determination is reviewer-approved; Fannie Mae's evaluation still runs; no (b)(2)/(c)(3) clocks; a courtesy notice goes out. */
@@ -227,11 +227,31 @@ export function preExpiryOutreach(i: { term_end: PlainDate; attempts: readonly P
   return { begin_by: beginBy, began_on_time: sorted.length > 0 && sorted[0]! <= beginBy, cadence_ok: sorted.length > 0 && maxGap <= 3 && (last === null || last <= i.term_end), max_gap_days: maxGap, prescreen_on: i.qrpc_on ?? null };
 }
 
-/** Rule 12.4/12.6: forbearance expiry without QRPC → deferral solicitation (if eligible) or Flex Mod solicitation by term end + 15. */
-export function postForbearanceDisposition(i: { term_end: PlainDate; qrpc: boolean; months_delinquent: number; deferral_eligible: boolean }): { solicitation: "payment_deferral" | "flex_mod" | null; notice: "NTC_FNMA_D23204_SOLICIT_POST_FORB" | "NTC_FNMA_D23206_SOLICIT_STREAMLINED" | null; by: PlainDate | null } {
+/**
+ * Rule 12.4/12.6: forbearance expiry without QRPC → deferral solicitation (if eligible) or Flex Mod solicitation by term
+ * end + 15 — the Flex Mod solicitation only when the loan is at least 90 days delinquent and the borrower is otherwise
+ * eligible (D2-3.2-06, non-disaster path; the disaster reduced-criteria path carries no 90-day condition). `delinquency_days`
+ * defaults to 30 × `months_delinquent`.
+ */
+export function postForbearanceDisposition(i: { term_end: PlainDate; qrpc: boolean; months_delinquent: number; deferral_eligible: boolean; delinquency_days?: number | null; disaster?: boolean }): { solicitation: "payment_deferral" | "flex_mod" | null; notice: "NTC_FNMA_D23204_SOLICIT_POST_FORB" | "NTC_FNMA_D23206_SOLICIT_STREAMLINED" | null; by: PlainDate | null; reason?: "under_90_days_delinquent" } {
   if (i.qrpc) return { solicitation: null, notice: null, by: null };
   const by = addDays(i.term_end, 15);
-  return i.deferral_eligible ? { solicitation: "payment_deferral", notice: "NTC_FNMA_D23204_SOLICIT_POST_FORB", by } : { solicitation: "flex_mod", notice: "NTC_FNMA_D23206_SOLICIT_STREAMLINED", by };
+  if (i.deferral_eligible) return { solicitation: "payment_deferral", notice: "NTC_FNMA_D23204_SOLICIT_POST_FORB", by };
+  if (!flexSolicitationDelinquencyMet(i)) return { solicitation: null, notice: null, by: null, reason: "under_90_days_delinquent" };
+  return { solicitation: "flex_mod", notice: "NTC_FNMA_D23206_SOLICIT_STREAMLINED", by };
+}
+/** D2-3.2-06 post-forbearance / post-repayment / post-deferral-solicitation Flex Mod solicitations require ≥90 days delinquent (the disaster reduced-criteria path has no 90-day condition). */
+export function flexSolicitationDelinquencyMet(i: { months_delinquent: number; delinquency_days?: number | null; disaster?: boolean }): boolean {
+  return i.disaster === true || (i.delinquency_days ?? i.months_delinquent * 30) >= 90;
+}
+/** `workout_plan.ended{delinquency_days}` (12.4/12.5, amended): the days delinquent when the plan ends — stated by the caller, else 30 × months, else the days delinquent at plan start plus the days elapsed (forbearance suspends payments, so the delinquency grows through the term). */
+export function delinquencyDaysAtPlanEnd(i: { delinquency_days?: number | null; months_delinquent?: number | null; start_days_delinquent?: number | null; months_delinquent_at_start?: number | null; term_start?: PlainDate | null; term_end?: PlainDate | null; ended_on: PlainDate }): number {
+  if (i.delinquency_days != null && Number.isFinite(Number(i.delinquency_days))) return Number(i.delinquency_days);
+  if (i.months_delinquent != null && Number(i.months_delinquent) > 0) return Number(i.months_delinquent) * 30;
+  const startDays = i.start_days_delinquent != null && Number(i.start_days_delinquent) > 0 ? Number(i.start_days_delinquent) : Number(i.months_delinquent_at_start ?? 0) * 30;
+  // An expiry is recorded on or after the term end: the delinquency is measured at the term end, a failure/termination at the day it happened.
+  const measuredAt = i.term_end && i.term_end < i.ended_on ? i.term_end : i.ended_on;
+  return startDays + (i.term_start && i.term_start <= measuredAt ? daysBetween(i.term_start, measuredAt) : 0);
 }
 
 /** Rule 12.4 D2-3.2-01 disaster: FEMA IA area + current at the disaster → up to 3 months without QRPC; attempts every ≤7 days. */
@@ -274,6 +294,15 @@ export function repaymentExtension(i: { term_months: number; fnma_approval_id?: 
   if (i.term_months <= 12) return { package: null, status: "not_required" };
   return { package: "F-1-16", status: i.fnma_approval_id ? "approved" : "extension_pending" };
 }
+/** F-1-16 (12.5 Integrations, amended): the >12-month recommendation goes to the Fannie Mae Servicing Representative (F-4-02, List of Contacts) with the plan copy, the complete BRP and, if applicable, the MI/guarantor approval — the Guide names no system channel. */
+export function f116RecommendationPackage(i: { term_months: number; brp_complete: boolean; mi_insured: boolean; mi_approval_id?: string | null }): { recipient: "fnma_servicing_representative"; channel: "F-4-02 List of Contacts (no system channel named by F-1-16)"; items: string[]; ready: boolean; missing: string[] } {
+  const missing: string[] = [];
+  if (i.term_months <= 12) throw new RangeError(`a ${i.term_months}-month plan needs no F-1-16 recommendation (≤12 months)`);
+  if (!i.brp_complete) missing.push("complete BRP");
+  if (i.mi_insured && !i.mi_approval_id) missing.push("evidence of the mortgage insurer's or guarantor's approval");
+  const items = ["copy of the repayment plan", "complete BRP", ...(i.mi_insured ? ["evidence of the mortgage insurer's or guarantor's approval"] : [])];
+  return { recipient: "fnma_servicing_representative", channel: "F-4-02 List of Contacts (no system channel named by F-1-16)", items, ready: missing.length === 0, missing };
+}
 
 /** Rule 12.5 D2-3.2-02 late charges: suppressed during the plan; waived at completion; on failure they accrue from the failed month only. */
 export function lateChargeTreatment(i: { plan_months: number; outcome: "active" | "completed" | "failed"; failed_month?: number | null; late_charge_cents: Cents }): { suppressed_months: number[]; written_off_cents: Cents; write_off_reason: "D2-3.2-02" | null; accrue_from_month: number | null; accrued_cents: Cents } {
@@ -283,11 +312,20 @@ export function lateChargeTreatment(i: { plan_months: number; outcome: "active" 
   return { suppressed_months: months, written_off_cents: 0n, write_off_reason: null, accrue_from_month: null, accrued_cents: 0n };
 }
 
-/** Rule 12.5: a missed month-end payment without QRPC → deferral or Flex Mod solicitation by month-end + 15. */
-export function repaymentFailureSolicitation(i: { missed_month_end: PlainDate; qrpc: boolean; months_delinquent: number; deferral_eligible: boolean }): { solicitation: "payment_deferral" | "flex_mod" | null; notice: "NTC_FNMA_D23204_SOLICIT_POST_REPAY" | "NTC_FNMA_D23206_SOLICIT_STREAMLINED" | null; by: PlainDate | null } {
+/** Rule 12.5: a missed month-end payment without QRPC → deferral or Flex Mod solicitation by month-end + 15; the Flex Mod solicitation only when the loan is at least 90 days delinquent and otherwise eligible (D2-3.2-06). */
+export function repaymentFailureSolicitation(i: { missed_month_end: PlainDate; qrpc: boolean; months_delinquent: number; deferral_eligible: boolean; delinquency_days?: number | null; disaster?: boolean }): { solicitation: "payment_deferral" | "flex_mod" | null; notice: "NTC_FNMA_D23204_SOLICIT_POST_REPAY" | "NTC_FNMA_D23206_SOLICIT_STREAMLINED" | null; by: PlainDate | null; reason?: "under_90_days_delinquent" } {
   if (i.qrpc) return { solicitation: null, notice: null, by: null };
   const by = solicitationDue(i.missed_month_end);
-  return i.deferral_eligible ? { solicitation: "payment_deferral", notice: "NTC_FNMA_D23204_SOLICIT_POST_REPAY", by } : { solicitation: "flex_mod", notice: "NTC_FNMA_D23206_SOLICIT_STREAMLINED", by };
+  if (i.deferral_eligible) return { solicitation: "payment_deferral", notice: "NTC_FNMA_D23204_SOLICIT_POST_REPAY", by };
+  if (!flexSolicitationDelinquencyMet(i)) return { solicitation: null, notice: null, by: null, reason: "under_90_days_delinquent" };
+  return { solicitation: "flex_mod", notice: "NTC_FNMA_D23206_SOLICIT_STREAMLINED", by };
+}
+/** D2-3.2-06 (12.8, amended): a post-forbearance/post-repayment deferral solicitation that expires unanswered → Flex Mod solicitation within 15 days of the acceptance date when no QRPC and ≥90 days delinquent. */
+export function postDeferralSolicitationExpiry(i: { acceptance_date: PlainDate; no_response: boolean; qrpc: boolean; months_delinquent: number; delinquency_days?: number | null }): { solicitation: "flex_mod" | null; notice: "NTC_FNMA_D23206_SOLICIT_STREAMLINED" | null; by: PlainDate | null; timer: "FNMA_D23206_POSTDEFERRAL_SOLICIT_EXPIRY_FLEX_15" | null; reason?: "responded" | "qrpc_achieved" | "under_90_days_delinquent" } {
+  if (!i.no_response) return { solicitation: null, notice: null, by: null, timer: null, reason: "responded" };
+  if (i.qrpc) return { solicitation: null, notice: null, by: null, timer: null, reason: "qrpc_achieved" };
+  if (!flexSolicitationDelinquencyMet(i)) return { solicitation: null, notice: null, by: null, timer: null, reason: "under_90_days_delinquent" };
+  return { solicitation: "flex_mod", notice: "NTC_FNMA_D23206_SOLICIT_STREAMLINED", by: addDays(i.acceptance_date, 15), timer: "FNMA_D23206_POSTDEFERRAL_SOLICIT_EXPIRY_FLEX_15" };
 }
 
 /** Rule 12.5 §1024.41(c)(2)(iii) / 12.5-T6: a short-term plan on an incomplete application → terms notice within 5 federal business days; the performance hold is active while the borrower performs. */
@@ -388,7 +426,8 @@ export type CustodianAnchor = { basis: "effective_date"; on: PlainDate } | { bas
 export function recordableAgreement(i: { recording_required: boolean; executed_by_role: string; borrower_signed_on: PlainDate; custodian_anchor: CustodianAnchor; erecorded_on?: PlainDate | null; recorded_original_received_on?: PlainDate | null }): { allowed: boolean; refusal: string | null; custodian_anchor: CustodianAnchor; certified_copy_to_custodian_by: PlainDate; erecorded_on: PlainDate | null; original_to_custodian_by: PlainDate | null; unrecorded_original_by: PlainDate | null } {
   const ok = !i.recording_required || i.executed_by_role === "signing_officer";
   const certBy = addDays(i.custodian_anchor.on, 25);
-  return { allowed: ok, refusal: ok ? null : "a recordable agreement is executed only by signing_officer (12.6/12.8 guardrail)", custodian_anchor: i.custodian_anchor, certified_copy_to_custodian_by: certBy, erecorded_on: i.recording_required ? (i.erecorded_on ?? null) : null, original_to_custodian_by: i.recorded_original_received_on ? addBusinessDays(i.recorded_original_received_on, 5, servicer) : null, unrecorded_original_by: i.recording_required ? null : certBy };
+  // The recorder's original reaches the custodian within 5 business days of receipt — Guide business days (`business_days_fannie_et`; D2-3.2-04 / F-1-27, 12.6/12.8 timer tables as amended).
+  return { allowed: ok, refusal: ok ? null : "a recordable agreement is executed only by signing_officer (12.6/12.8 guardrail)", custodian_anchor: i.custodian_anchor, certified_copy_to_custodian_by: certBy, erecorded_on: i.recording_required ? (i.erecorded_on ?? null) : null, original_to_custodian_by: i.recorded_original_received_on ? addBusinessDays(i.recorded_original_received_on, 5, fannieEt) : null, unrecorded_original_by: i.recording_required ? null : certBy };
 }
 
 // ============================================================ 12.7 disaster deferral
@@ -450,8 +489,67 @@ export function mbsExecutionGate(i: { mbs: boolean; reclassified_on: PlainDate |
 }
 
 /** Rule 12.8 documents: certified copy to the custodian 25 days from borrower signature; original within 5 BD of receipt from the recorder; unrecorded → fully executed original by the same date. */
-export function modDocumentClocks(i: { form_3179_sent_on: PlainDate; borrower_signed_on: PlainDate; servicer_executed_on: PlainDate; servicer_role: string; recording_required: boolean; erecorded_on?: PlainDate | null; recorded_original_received_on?: PlainDate | null }): ReturnType<typeof recordableAgreement> & { servicer_executed_on: PlainDate } {
-  return { ...recordableAgreement({ recording_required: i.recording_required, executed_by_role: i.servicer_role, borrower_signed_on: i.borrower_signed_on, custodian_anchor: { basis: "executed_agreement_received", on: i.borrower_signed_on }, erecorded_on: i.erecorded_on ?? null, recorded_original_received_on: i.recorded_original_received_on ?? null }), servicer_executed_on: i.servicer_executed_on };
+export function modDocumentClocks(i: { form_3179_sent_on: PlainDate; borrower_signed_on: PlainDate; servicer_executed_on: PlainDate; servicer_role: string; recording_required: boolean; erecorded_on?: PlainDate | null; recorded_original_received_on?: PlainDate | null; taxes_assessments_current?: boolean; title_endorsement_ordered?: boolean }): ReturnType<typeof recordableAgreement> & { servicer_executed_on: PlainDate; f127_pre_execution: ReturnType<typeof preExecutionChecks> } {
+  return { ...recordableAgreement({ recording_required: i.recording_required, executed_by_role: i.servicer_role, borrower_signed_on: i.borrower_signed_on, custodian_anchor: { basis: "executed_agreement_received", on: i.borrower_signed_on }, erecorded_on: i.erecorded_on ?? null, recorded_original_received_on: i.recorded_original_received_on ?? null }), servicer_executed_on: i.servicer_executed_on,
+    f127_pre_execution: preExecutionChecks({ recording_required: i.recording_required, taxes_assessments_current: i.taxes_assessments_current === true, title_endorsement_ordered: i.title_endorsement_ordered === true }) };
+}
+/**
+ * F-1-27 "Executing and Recording the Loan Modification Agreement" (12.8 rule 8 / open question 4, amended — Guide-mandated,
+ * not policy): before execution the servicer must "Ensure all real estate taxes and assessments that could become a first
+ * lien are current" (manufactured homes taxed as personal property, personal property taxes, condo/HOA fees, utility
+ * assessments, ground rent, other assessments) and "Obtain a title endorsement or similar title insurance product issued
+ * by a title insurance company if the Loan Modification Agreement will be recorded".
+ */
+export function preExecutionChecks(i: { recording_required: boolean; taxes_assessments_current: boolean; title_endorsement_ordered: boolean }): { allowed: boolean; refusal: string | null; title_endorsement_required: boolean; missing: string[] } {
+  const missing: string[] = [];
+  if (!i.taxes_assessments_current) missing.push("real estate taxes and assessments that could become a first lien are not confirmed current (F-1-27)");
+  if (i.recording_required && !i.title_endorsement_ordered) missing.push("title endorsement or similar title insurance product not obtained for an agreement that will be recorded (F-1-27)");
+  return { allowed: missing.length === 0, refusal: missing.length ? `F127_PRE_EXECUTION: ${missing.join("; ")}` : null, title_endorsement_required: i.recording_required, missing };
+}
+/**
+ * F-1-25 (12.8-T7, amended): an MBS loan is reclassified in the final trial month only if the final trial payment is
+ * received *and* reported to Fannie Mae on or before the 15th calendar day (the reclassification / voluntary repurchase
+ * date); a final payment after the 15th but before the end of the TPP extends the TPP one month and the reclassification
+ * date becomes the 15th of the extended month; a payment in time but not reported by the 15th extends it another month
+ * (`FNMA_F122_TPP_PAYMENT_REPORT` must land by the 15th). A payment after the month ends is a trial failure, not a reclassification case.
+ */
+export function mbsReclassificationDate(i: { final_trial_due: PlainDate; final_payment_received_on: PlainDate | null; reported_to_fnma_on: PlainDate | null }): { reclassification_date: PlainDate | null; tpp_extended_months: 0 | 1; extended_final_due: PlainDate | null; trial_failed: boolean; basis: string } {
+  const p = parts(i.final_trial_due); const fifteenth = ymd(p.y, p.m, 15); const monthEnd = endOfMonth(i.final_trial_due);
+  if (!i.final_payment_received_on || i.final_payment_received_on > monthEnd) return { reclassification_date: null, tpp_extended_months: 0, extended_final_due: null, trial_failed: true, basis: "final trial payment not received by the last day of its month — Trial Period Plan failed (D2-3.2-06)" };
+  const nextFifteenth = addMonths(fifteenth, 1); const nextDue = addMonths(i.final_trial_due, 1);
+  if (i.final_payment_received_on > fifteenth) return { reclassification_date: nextFifteenth, tpp_extended_months: 1, extended_final_due: nextDue, trial_failed: false, basis: "final payment after the 15th but before the end of the TPP — TPP extended one month; reclassification on the 15th of the extended month (F-1-25)" };
+  if (!i.reported_to_fnma_on || i.reported_to_fnma_on > fifteenth) return { reclassification_date: nextFifteenth, tpp_extended_months: 1, extended_final_due: nextDue, trial_failed: false, basis: "final payment received by the 15th but Fannie Mae not notified by the 15th — extended one month (F-1-25; FNMA_F122_TPP_PAYMENT_REPORT must land by the 15th)" };
+  return { reclassification_date: fifteenth, tpp_extended_months: 0, extended_final_due: null, trial_failed: false, basis: "final payment received and reported by the 15th calendar day of the final trial month — reclassified that month (F-1-25)" };
+}
+/**
+ * B-1-01 (12.8 escrow, amended): revoke any escrow waiver and establish the escrow account before the trial period begins;
+ * the only exception is a loan whose taxes/assessments/insurance are current AND whose modification is a disaster-hardship
+ * Flex Mod. The shortage is spread in equal monthly payments over 60 months unless the borrower decides to pay it in a
+ * lump sum up-front or over a shorter period of not less than 12 months (the borrower's election, not the servicer's).
+ */
+export function escrowEstablishmentGate(i: { escrow_established: boolean; taxes_insurance_current: boolean; disaster_flex_mod: boolean }): { allowed: boolean; exception_applied: boolean; refusal: string | null } {
+  if (i.escrow_established) return { allowed: true, exception_applied: false, refusal: null };
+  const exception = i.taxes_insurance_current && i.disaster_flex_mod;
+  return { allowed: exception, exception_applied: exception, refusal: exception ? null : "FNMA_B101_ESCROW_ESTABLISH_BEFORE_TRIAL: revoke any escrow waiver and establish the escrow account before the trial period begins — the only exception is a disaster-hardship Flex Mod whose taxes, assessments and insurance are current (B-1-01)" };
+}
+export function escrowShortageSpread(shortageCents: Cents, election: { kind: "default_60" } | { kind: "lump_sum" } | { kind: "shorter"; months: number }): { months: number; monthly_cents: Cents; lump_sum_cents: Cents; basis: string } {
+  if (election.kind === "lump_sum") return { months: 0, monthly_cents: 0n, lump_sum_cents: shortageCents, basis: "B-1-01: borrower elected to pay the escrow shortage in a lump sum up-front" };
+  const months = election.kind === "default_60" ? 60 : election.months;
+  if (!Number.isInteger(months) || months < 12 || months > 60) throw new RangeError(`B-1-01: a shorter escrow shortage repayment period must be not less than 12 months and not more than 60 (got ${months})`);
+  return { months, monthly_cents: divRound(shortageCents, BigInt(months), "HALF_UP"), lump_sum_cents: 0n, basis: months === 60 ? "B-1-01: equal monthly payments over 60 months" : `B-1-01: borrower elected a shorter period of ${months} months (not less than 12)` };
+}
+/**
+ * D2-2-04 (12.1 Fannie Mae layer, amended): the Borrower Solicitation Package is due (a) at any time during the delinquency
+ * when QRPC has been achieved without a resolution, if a Package has not previously been sent, and (b) by the 45th day of
+ * delinquency when QRPC has not been achieved or no resolution obtained — in case (b) a Borrower Solicitation Letter
+ * (Form 745) or equivalent alone also satisfies the duty.
+ */
+export function solicitationDuty(i: { qrpc_achieved: boolean; resolution_obtained: boolean; package_previously_sent: boolean }): { package_due: "now" | "day_45" | null; form_745_alone_satisfies: boolean; timer: "FNMA_D2204_SOLICITATION_45" | null; basis: string } {
+  if (i.resolution_obtained) return { package_due: null, form_745_alone_satisfies: false, timer: null, basis: "D2-2-04: a resolution to the delinquency was obtained — no solicitation duty" };
+  if (i.qrpc_achieved) return i.package_previously_sent
+    ? { package_due: null, form_745_alone_satisfies: false, timer: null, basis: "D2-2-04: QRPC achieved without a resolution, but a Borrower Solicitation Package was previously sent" }
+    : { package_due: "now", form_745_alone_satisfies: false, timer: null, basis: "D2-2-04: QRPC achieved without a resolution and no Package sent before — send the Borrower Solicitation Package now" };
+  return { package_due: "day_45", form_745_alone_satisfies: true, timer: "FNMA_D2204_SOLICITATION_45", basis: "D2-2-04: no QRPC and no resolution by day 45 — Form 745 (or equivalent) alone or the Borrower Solicitation Package" };
 }
 
 /**
@@ -627,9 +725,10 @@ export function militaryIndulgence(i: { dmdc_verified: boolean; loan_originated_
 /** Rule 12.9 DIL clocks in one record: 60/90 document window, weekly updates past day 60, lien release 30 BD after vacancy confirmation. */
 export function dilCase(i: { acceptance_on: PlainDate; exit_option: "immediate" | "transition_3m" | "lease_12m"; interior_bpo_within_90_days?: boolean; deed_accepted_on?: PlainDate | null; vacancy_confirmed_on?: PlainDate | null; updates?: readonly PlainDate[] }): { docs_deadline: PlainDate; docs_extended_deadline: PlainDate; inspection_order_by: PlainDate | null; weekly_updates_required_from: PlainDate; weekly_cadence_ok: boolean; deed_recordation_submit_by: PlainDate | null; lien_release_due: PlainDate | null } {
   const sorted = [...(i.updates ?? [])].sort(); let maxGap = 0; for (let k = 1; k < sorted.length; k++) maxGap = Math.max(maxGap, daysBetween(sorted[k - 1]!, sorted[k]!));
-  // Lien release: 30 servicer BD after the later of acceptance and the inspection confirming vacancy/security (`FNMA_D23302_DIL_LIEN_RELEASE_30BD`); deed submitted for recordation within 5 BD of acceptance (`FNMA_D23302_DIL_DEED_RECORD_5BD`); interior inspection within 60 days unless an interior BPO ≤90 days exists (`FNMA_D23302_DIL_INSPECTION_60`).
+  // Lien release: 30 Fannie Mae BD after the later of acceptance and the inspection confirming vacancy/security (`FNMA_D23302_DIL_LIEN_RELEASE_30BD`); deed submitted for recordation within 5 BD of acceptance (`FNMA_D23302_DIL_DEED_RECORD_5BD`); interior inspection within 60 days unless an interior BPO ≤90 days exists (`FNMA_D23302_DIL_INSPECTION_60`).
   const lienAnchor = i.vacancy_confirmed_on ? (i.vacancy_confirmed_on > i.acceptance_on ? i.vacancy_confirmed_on : i.acceptance_on) : null;
-  return { docs_deadline: addDays(i.acceptance_on, 60), docs_extended_deadline: addDays(i.acceptance_on, 90), inspection_order_by: i.interior_bpo_within_90_days === true ? null : addDays(i.acceptance_on, 60), weekly_updates_required_from: addDays(i.acceptance_on, 60), weekly_cadence_ok: maxGap <= 7, deed_recordation_submit_by: i.deed_accepted_on ? addBusinessDays(i.deed_accepted_on, 5, servicer) : null, lien_release_due: lienAnchor ? addBusinessDays(lienAnchor, 30, servicer) : null };
+  // Both D2-3.3-02 business-day clocks run on the Guide's business-day calendar (`business_days_fannie_et`; 12.9 timer table as amended).
+  return { docs_deadline: addDays(i.acceptance_on, 60), docs_extended_deadline: addDays(i.acceptance_on, 90), inspection_order_by: i.interior_bpo_within_90_days === true ? null : addDays(i.acceptance_on, 60), weekly_updates_required_from: addDays(i.acceptance_on, 60), weekly_cadence_ok: maxGap <= 7, deed_recordation_submit_by: i.deed_accepted_on ? addBusinessDays(i.deed_accepted_on, 5, fannieEt) : null, lien_release_due: lienAnchor ? addBusinessDays(lienAnchor, 30, fannieEt) : null };
 }
 
 export const shortSaleRelocationCents = 750_000n;

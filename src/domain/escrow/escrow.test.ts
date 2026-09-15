@@ -32,8 +32,7 @@ test("annual example — base $138.33, target $1,106.68, shortage $406.68 → $3
   assert.equal(newPayment(p, d).payment_cents, 17_222n); assert.equal(effectiveDate(D("2027-07-01"), D("2027-05-20")), "2027-07-01"); assert.equal(effectiveDate(D("2027-07-01"), D("2027-06-10")), "2027-08-01");
   const s = decide({ projection: p, projected_actual_cents: cents("1250"), as_of: D("2027-05-16"), regx_days_delinquent: 0 });
   assert.deepEqual(s, { kind: "refund", surplus_cents: 14_332n, due_on: "2027-06-15" }); assert.equal(newPayment(p, s).payment_cents, 13_833n);
-  // The spec's $1,080.00 variant ("surplus $26.68") is a $26.68 *shortage* against the $1,106.68 target (see the 3.2 spec test for T4).
-  // The surplus branch it describes requires $1,133.36 — used here; flagged for the audit.
+  // 3.2 variant 2 / 3.5 worked (c): projected actual $1,133.36 against the $1,106.68 target → surplus $26.68 (§1024.17(b): the balance exceeds the target).
   const c = decide({ projection: p, projected_actual_cents: cents("1133.36"), as_of: D("2027-05-16"), regx_days_delinquent: 0 });
   assert.deepEqual(c, { kind: "credit", surplus_cents: 2_668n, credit_monthly_cents: 222n, first_month_extra_cents: 4n }); assert.equal(newPayment(p, c).payment_cents, 13_611n); assert.equal(newPayment(p, c).first_month_cents, 13_607n);
   const def = decide({ projection: p, projected_actual_cents: -cents("150"), as_of: D("2027-05-16"), regx_days_delinquent: 0 });
@@ -102,7 +101,7 @@ test("3.7: scheduling with discount capture, advances, installment choice, hazar
   assert.equal(installmentChoice({ annual_discount_pct: null, installment_fee: false }, true), "installments"); assert.equal(installmentChoice({ annual_discount_pct: "3", installment_fee: false }, true), "annual"); assert.equal(installmentChoice({ annual_discount_pct: "3", installment_fee: false }, true, "installments"), "installments");
   assert.deepEqual(hazardDecision(45, null, false), { pay: true, inability_to_disburse: false, lpi_gate_open: false }); assert.deepEqual(hazardDecision(45, "underwriting", false), { pay: false, inability_to_disburse: true, lpi_gate_open: true }); assert.equal(hazardDecision(45, "non_payment", false).pay, true);
   const ET = "America/New_York"; assert.equal(toIso(eventDeadlineMs(zonedEpochMs(D("2027-07-15"), "18:00", ET))), toIso(zonedEpochMs(D("2027-07-16"), "03:00", ET))); assert.equal(toIso(eventDeadlineMs(zonedEpochMs(D("2027-07-16"), "10:00", ET))), toIso(zonedEpochMs(D("2027-07-19"), "03:00", ET)));
-  // The spec's Illinois example hand-counts 2027-08-06; excluding both Juneteenth (obs. Fri 6/18) and Independence Day (obs. Mon 7/5) gives 8/09 (see 3-7.spec.test.ts).
+  // 3.7-T10: 45 servicer business days after 2027-06-03, excluding Juneteenth (obs. Fri 6/18) and Independence Day (obs. Mon 7/5) → 2027-08-09.
   assert.equal(ilTaxPaidNoticeDue(D("2027-06-03")), "2027-08-09");
 });
 

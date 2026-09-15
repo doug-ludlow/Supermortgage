@@ -181,7 +181,7 @@ export function monthEnd(em: Emitter, i: { period_end: PlainDate; servicer_numbe
   if (i.unremitted_cents < 0n) throw new RangeError("unremitted collections cannot be negative");
   const period = periodOf(i.period_end); const subject = cycleSubject(period, "aa", "standard");
   const catchUp = toIso(bd1CatchUpMs(i.period_end));
-  em.events.append({ type: "period.month_end", aggregate: subject, actor: em.actor, payload: { period, period_end: i.period_end, servicer_number: i.servicer_number, aa_collections_unremitted: i.unremitted_cents > 0n, unremitted_cents: i.unremitted_cents, bd1_catch_up_at: catchUp } });
+  em.events.append({ type: "period.month_end", aggregate: subject, actor: em.actor, payload: { period, period_end: i.period_end, servicer_number: i.servicer_number, bd2_following: fannieBusinessDay(nextMonth(i.period_end), 2), aa_collections_unremitted: i.unremitted_cents > 0n, unremitted_cents: i.unremitted_cents, bd1_catch_up_at: catchUp } });
   return { period, aa_collections_unremitted: i.unremitted_cents > 0n, bd1_catch_up_at: catchUp, subject };
 }
 

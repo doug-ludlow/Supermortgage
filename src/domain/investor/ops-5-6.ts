@@ -21,7 +21,7 @@ import { wallClock, toIso, zonedEpochMs } from "../../kernel/calendar/zoned.ts";
 import type { Actor, DomainEvent } from "../../kernel/events/types.ts";
 import type { EventStore } from "../../kernel/events/store.ts";
 import type { Cents } from "../../kernel/money/cents.ts";
-import { appealLadder } from "./repurchase.ts";
+import { appealLadder, mandatoryRepurchaseSchedule, type RepurchaseType, type MandatoryRepurchaseSchedule } from "./repurchase.ts";
 import { crsAaRequest } from "./remittance.ts";
 import { calendarDraftDate, nextMonth, periodStart, period as periodOf } from "./period.ts";
 import { ET, projectLar65, mbsExpressUnscheduledDraft } from "./ops.ts";
@@ -35,17 +35,28 @@ const officerOnly = (a: Actor, what: string): void => need(a.kind === "human" &&
 const agg = (repurchaseId: string) => ({ kind: "repurchase", id: repurchaseId });
 
 // ───────────────────────────── demand intake and the A1-3-02 ladder ─────────────────────────────
-export type DemandKind = "repurchase" | "indemnification" | "make_whole" | "dpo";
-export interface DemandInput { readonly repurchase_id: string; readonly loan_id: string; readonly received_on: PlainDate; readonly demand_kind: DemandKind; readonly amount_cents: Cents; readonly demand_document_id: string; readonly loan_liquidated?: boolean; }
-/** Fannie Mae-initiated demand (letter / Loan Quality Connect) ingested into a `qc_finding` case: pay-by and first appeal 60 calendar days from receipt (A1-3-02); a liquidated loan is a make-whole (edge case: payment only, no LAR). */
-export function ingestRepurchaseDemand(em: Emitter, i: DemandInput): { readonly event: DomainEvent; readonly pay_by: PlainDate; readonly first_appeal_by: PlainDate; readonly route: "repurchase" | "make_whole"; readonly case_type: "qc_finding" } {
+export type DemandKind = "repurchase" | "indemnification" | "make_whole" | "dpo" | "mandatory_24mo";
+export const DEMAND_KINDS: readonly DemandKind[] = ["repurchase", "indemnification", "make_whole", "dpo", "mandatory_24mo"];
+export interface DemandInput { readonly repurchase_id: string; readonly loan_id: string; readonly received_on: PlainDate; readonly demand_kind: DemandKind; readonly amount_cents: Cents; readonly demand_document_id: string; readonly loan_liquidated?: boolean; /** A1-3-02 mandatory (24-month) demand: the LPI the 22/24 months are measured from. */ readonly lpi?: PlainDate | null; }
+/**
+ * Fannie Mae-initiated demand (letter / Loan Quality Connect) ingested into a `qc_finding` case: pay-by and first appeal 60 calendar days from receipt
+ * (A1-3-02); a liquidated loan is a make-whole (edge case: payment only, no LAR). A `mandatory_24mo` demand (rule 1: regular servicing option loan
+ * 22 months past due) carries the LPI-derived schedule — the repurchase is reported as activity in the month containing the due date of the 24th
+ * consecutive past-due installment — and is an `officer` escalation from receipt (the responsible party funds it; the agent never commits the partner).
+ */
+export function ingestRepurchaseDemand(em: Emitter, i: DemandInput): { readonly event: DomainEvent; readonly pay_by: PlainDate; readonly first_appeal_by: PlainDate; readonly route: "repurchase" | "make_whole"; readonly case_type: "qc_finding"; readonly type: RepurchaseType; readonly schedule: MandatoryRepurchaseSchedule | null; readonly escalation: "officer" | null } {
   needId(i.repurchase_id, "repurchase_id"); needId(i.loan_id, "loan_id"); needId(i.demand_document_id, "demand_document_id");
+  need(DEMAND_KINDS.includes(i.demand_kind), `demand_kind must be one of ${DEMAND_KINDS.join("/")}`);
   const received = needDate(i.received_on, "received_on"); need(i.amount_cents >= 0n, "amount_cents cannot be negative");
   const ladder = appealLadder(received);
   const route = i.loan_liquidated || i.demand_kind === "make_whole" ? "make_whole" : "repurchase";
+  const schedule = i.demand_kind === "mandatory_24mo" ? mandatoryRepurchaseSchedule(needDate(i.lpi, "lpi (a mandatory 24-month demand is measured from the LPI date)"), received) : null;
+  const type: RepurchaseType = i.demand_kind === "mandatory_24mo" ? "mandatory_24mo" : route === "make_whole" ? "make_whole" : i.demand_kind === "dpo" ? "dpo_indemnification" : "fnma_demand";
+  const escalation = schedule ? "officer" : null;
   const event = em.events.append({ type: "repurchase.demand.received", loanId: i.loan_id, aggregate: agg(i.repurchase_id), actor: em.actor, occurredAt: em.now,
-    payload: { repurchase_id: i.repurchase_id, received_at: received, demand_kind: i.demand_kind, amount_cents: i.amount_cents.toString(), demand_document_id: i.demand_document_id, pay_by: ladder.pay_by, first_appeal_by: ladder.first_appeal_by, route, case_type: "qc_finding", crs_code: route === "make_whole" ? "309" : null } });
-  return { event, pay_by: ladder.pay_by, first_appeal_by: ladder.first_appeal_by, route, case_type: "qc_finding" };
+    payload: { repurchase_id: i.repurchase_id, received_at: received, demand_kind: i.demand_kind, type, amount_cents: i.amount_cents.toString(), demand_document_id: i.demand_document_id, pay_by: ladder.pay_by, first_appeal_by: ladder.first_appeal_by, route, case_type: "qc_finding", crs_code: route === "make_whole" ? "309" : null, escalation,
+      ...(schedule ? { lpi: i.lpi, months_past_due_at_demand: schedule.months_past_due_at_demand, demand_expected_on: schedule.demand_expected_on, due_date_24th: schedule.due_date_24th, reporting_period: schedule.reporting_period, report_as_activity_in: schedule.reporting_period } : {}) } });
+  return { event, pay_by: ladder.pay_by, first_appeal_by: ladder.first_appeal_by, route, case_type: "qc_finding", type, schedule, escalation };
 }
 /** A1-3-02: "documentation within 30 days of file selection" — the selection notice is the anchor. */
 export function documentsDueOn(selectedOn: PlainDate): PlainDate { return addDays(selectedOn, 30); }

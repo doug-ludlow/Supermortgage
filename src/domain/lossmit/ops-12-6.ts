@@ -34,7 +34,7 @@
  */
 import type { Actor, DomainEvent, EventStore } from "../../kernel/events/index.ts";
 import { type PlainDate, plainDate, addDays, addMonths, startOfMonth } from "../../kernel/calendar/date.ts";
-import { addBusinessDays, servicer } from "../../kernel/calendar/business.ts";
+import { addBusinessDays, servicer, fannieEt } from "../../kernel/calendar/business.ts";
 import type { Cents } from "../../kernel/money/cents.ts";
 import { screen, timeline, type DeferralFacts, type Screen } from "./deferral.ts";
 import { capStructure } from "./ops.ts";
@@ -150,7 +150,7 @@ export function recordContractualPayment(env: DeferralEnv, i: ContractualPayment
 }
 
 // ---------------------------------------------------------------------------------------------- completion (SMDU case submission)
-export interface CompleteInput { readonly loan_id: string; readonly deferral_id?: string | null; readonly completed_on?: PlainDate | null; readonly processing_month_elected?: boolean; readonly lar_acked?: boolean; }
+export interface CompleteInput { readonly loan_id: string; readonly deferral_id?: string | null; readonly completed_on?: PlainDate | null; readonly processing_month_elected?: boolean; readonly lar_acked?: boolean; readonly upb_lpi_matched?: boolean; }
 /**
  * "Fannie Mae considers a payment deferral to be completed when the case is submitted into Fannie Mae's servicing
  * solutions system, including entry of loan-level information such as the applicable campaign ID" (D2-3.2-04). The
@@ -161,18 +161,26 @@ export interface CompleteInput { readonly loan_id: string; readonly deferral_id?
  */
 /**
  * The state machine's completion guards, run *before* the case is submitted (the 12.6 `smdu.case.submit` tool) and
- * again by `completeDeferral`: `assertContractualPaymentIfRequired`, `assertLarBeforeCompletion` (the 12.6
- * `investor.report_contractual_payments` submission or the 5.x `investor.event.accepted{kind=contractual_payments}`
- * ack on the loan, or the caller's `lar_acked` assertion) and `assertEntryByMonthEnd`. A loan without a
- * `payment_deferrals` record (a case entered outside the 12.6 offer path) has nothing to assert against.
+ * again by `completeDeferral`: `assertContractualPaymentIfRequired`; `assertLarBeforeCompletion` — only when a full
+ * monthly contractual payment is required (6 months delinquent at evaluation, cumulative cap exceeded, or disaster
+ * deferral at 12 months — F-1-22 / IRM 4-01: the LAR-movement rule "is only applicable in instances where a full
+ * monthly contractual payment is required"), satisfied by the 12.6 `investor.report_contractual_payments` submission,
+ * the 5.x `investor.event.accepted{kind=contractual_payments}` ack, or the caller's `lar_acked` assertion;
+ * `assertUpbLpiMatchesInvestorReporting` otherwise — IRM 4-01: if the pre-deferral UPB or LPI in the servicing solutions
+ * system does not agree with the last reported UPB/LPI in Fannie Mae's investor reporting system the deferral is not
+ * processed (`reconcileUpbLpi` records the check as `investor.upb_lpi.reconciled{match}`); and `assertEntryByMonthEnd`.
+ * A loan without a `payment_deferrals` record (a case entered outside the 12.6 offer path) has nothing to assert against.
  */
 export function assertDeferralCompletable(env: DeferralEnv, i: CompleteInput): { deferral: DeferralRecord | undefined; completed_on: PlainDate; entry_deadline: PlainDate; processing_month: boolean; effective_date: PlainDate } {
   const completedOn = i.completed_on ?? today(env);
   const rec = deferralFor(env, i.loan_id, i.deferral_id);
   if (rec && rec.data.status === "completed") throw new RangeError(`payment deferral ${rec.id} is already completed`);
   if (rec?.data.contractual_payment_required === true && !rec.data.contractual_payment_received_at) throw new RangeError("FNMA_D23204_CONTRACTUAL_PAYMENT_GATE: the full contractual payment has not been received in the solicitation/processing month (D2-3.2-04 rule 4)");
+  const larNeeded = rec?.data.contractual_payment_required === true;
   const larAcked = i.lar_acked === true || env.events.byLoan(i.loan_id).some((e) => e.type === "investor.contractual_payments.reported" || (e.type === "investor.event.accepted" && e.payload.kind === "contractual_payments"));
-  if (rec && !larAcked) throw new RangeError("assertLarBeforeCompletion: the full monthly contractual payment must be reported via LAR before completing the deferral (F-1-22)");
+  if (rec && larNeeded && !larAcked) throw new RangeError("assertLarBeforeCompletion: the required full monthly contractual payment must be reported via LAR before completing the deferral, at least one business day before month-end (F-1-22)");
+  const reconciled = i.upb_lpi_matched === true || env.events.byLoan(i.loan_id).some((e) => e.type === "investor.upb_lpi.reconciled" && e.payload.match === true && (!rec || e.payload.deferral_id == null || e.payload.deferral_id === rec.id));
+  if (rec && !larNeeded && !reconciled) throw new RangeError("assertUpbLpiMatchesInvestorReporting: the pre-deferral UPB and LPI in the servicing solutions system must match the last values reported to the investor reporting system before the case is processed (IRM 4-01)");
   const evaluation = d(rec?.data.evaluation_date) ?? completedOn;
   const tl = timeline(evaluation, { completion_on: completedOn, processing_month_elected: i.processing_month_elected === true || rec?.data.processing_month === true });
   if (completedOn > tl.entry_deadline) throw new RangeError(`assertEntryByMonthEnd: entered ${completedOn} after the ${tl.processing_month ? "processing" : "evaluation"}-month deadline ${tl.entry_deadline} — re-evaluate eligibility next month (D2-3.2-04)`);
@@ -194,13 +202,43 @@ export function completeDeferral(env: DeferralEnv, i: CompleteInput): { deferral
   return { deferral: next.data, completed, effective, effective_date: tl.effective, entry_deadline: tl.entry_deadline, processing_month: tl.processing_month };
 }
 
+// ---------------------------------------------------------------------------------------------- IRM 4-01 UPB/LPI reconciliation and the solicitation window (amended rule 3; SM_DEFERRAL_SOLICIT_ACCEPT_WINDOW)
+export interface UpbLpiReconcileInput { readonly loan_id: string; readonly deferral_id?: string | null; readonly smdu_upb_cents: Cents; readonly smdu_lpi: PlainDate; readonly investor_reporting_upb_cents: Cents; readonly investor_reporting_lpi: PlainDate; readonly checked_on?: PlainDate | null; }
+/** IRM 4-01: the pre-deferral UPB and LPI entered in the servicing solutions system must agree with the last reported UPB/LPI in Fannie Mae's investor reporting system, otherwise the payment deferral is not processed. Recorded as `investor.upb_lpi.reconciled{match, mismatches}`; a mismatch never blocks the record, only completion. */
+export function reconcileUpbLpi(env: DeferralEnv, i: UpbLpiReconcileInput): { match: boolean; mismatches: string[]; event: DomainEvent } {
+  const rec = deferralFor(env, i.loan_id, i.deferral_id);
+  const mismatches: string[] = [];
+  if (i.smdu_upb_cents !== i.investor_reporting_upb_cents) mismatches.push(`UPB ${i.smdu_upb_cents} in the servicing solutions system vs ${i.investor_reporting_upb_cents} last reported`);
+  if (i.smdu_lpi !== i.investor_reporting_lpi) mismatches.push(`LPI ${i.smdu_lpi} in the servicing solutions system vs ${i.investor_reporting_lpi} last reported`);
+  const match = mismatches.length === 0;
+  const event = emit(env, "investor.upb_lpi.reconciled", i.loan_id, { deferral_id: rec?.id ?? null, match, mismatches, smdu_upb_cents: i.smdu_upb_cents.toString(), smdu_lpi: i.smdu_lpi, investor_reporting_upb_cents: i.investor_reporting_upb_cents.toString(), investor_reporting_lpi: i.investor_reporting_lpi, checked_on: i.checked_on ?? today(env), rule: "IRM 4-01" });
+  return { match, mismatches, event };
+}
+export interface SolicitationExpiryInput { readonly loan_id: string; readonly deferral_id?: string | null; readonly acceptance_date: PlainDate; readonly qrpc: boolean; readonly delinquency_days: number; readonly expired_on?: PlainDate | null; }
+/**
+ * `SM_DEFERRAL_SOLICIT_ACCEPT_WINDOW` lapses with no response: the solicited deferral expires and
+ * `payment_deferral.solicitation.expired{no_response=true, qrpc, delinquency_days, acceptance_date}` is the trigger of 12.8's
+ * `FNMA_D23206_POSTDEFERRAL_SOLICIT_EXPIRY_FLEX_15` (D2-3.2-06: Flex Mod solicitation within 15 days after the expiration of a
+ * post-forbearance / post-repayment payment deferral solicitation when QRPC has not been achieved and the loan is ≥90 days delinquent).
+ */
+export function expireSolicitation(env: DeferralEnv, i: SolicitationExpiryInput): { deferral: Record<string, unknown>; event: DomainEvent; flex_solicitation_due: PlainDate | null } {
+  const rec = requireDeferral(env, i.loan_id, i.deferral_id);
+  if (rec.data.status !== "solicited") throw new RangeError(`payment deferral ${rec.id} is ${String(rec.data.status)} — only an unanswered solicitation expires (D2-3.2-04)`);
+  const expiredOn = i.expired_on ?? today(env);
+  if (expiredOn < i.acceptance_date) throw new RangeError(`solicitation acceptance date ${i.acceptance_date} has not passed on ${expiredOn}`);
+  const flexDue = !i.qrpc && i.delinquency_days >= 90 ? addDays(i.acceptance_date, 15) : null;
+  const next = patch(env, rec, { status: "expired", expired_on: expiredOn, acceptance_date: i.acceptance_date, flex_solicitation_due: flexDue });
+  const event = emit(env, "payment_deferral.solicitation.expired", i.loan_id, { deferral_id: rec.id, basis: rec.data.basis, no_response: true, qrpc: i.qrpc, delinquency_days: i.delinquency_days, acceptance_date: i.acceptance_date, expired_on: expiredOn, flex_solicitation_due: flexDue, next: flexDue ? "flex_mod_solicitation_15" : "re_screen_next_month" });
+  return { deferral: next.data, event, flex_solicitation_due: flexDue };
+}
+
 // ---------------------------------------------------------------------------------------------- recording and custodian (T10)
 export interface RecordedOriginalInput { readonly loan_id: string; readonly deferral_id?: string | null; readonly document_id: string; readonly received_on: PlainDate; }
-/** The recorder returns the original of a recordable agreement (`jurisdiction_rules.deferral_recording=true`) — the custodian gets it within 5 `business_days_servicer`. */
+/** The recorder returns the original of a recordable agreement (`jurisdiction_rules.deferral_recording=true`) — the custodian gets it within 5 `business_days_fannie_et` (D2-3.2-04 "5 business days" = Guide business days; 12.6 timer table as amended). */
 export function recordedOriginalReceived(env: DeferralEnv, i: RecordedOriginalInput): { deferral: Record<string, unknown>; event: DomainEvent; original_to_custodian_by: PlainDate } {
   const rec = requireDeferral(env, i.loan_id, i.deferral_id);
   if (rec.data.recording_required !== true) throw new RangeError(`payment deferral ${rec.id} is not a recordable agreement (jurisdiction_rules.deferral_recording=false)`);
-  const by = addBusinessDays(i.received_on, 5, servicer);
+  const by = addBusinessDays(i.received_on, 5, fannieEt);
   const next = patch(env, rec, { recorded_at: i.received_on, recorded_original_received_at: i.received_on, recorded_document_id: i.document_id });
   const event = emit(env, "erecording.recorded_document.received", i.loan_id, { deferral_id: rec.id, document_id: i.document_id, received_on: i.received_on, receipt: i.received_on, original_to_custodian_by: by });
   return { deferral: next.data, event, original_to_custodian_by: by };

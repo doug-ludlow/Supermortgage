@@ -25,7 +25,7 @@ import { applySatisfiedOverrides_5_4 } from "./timers-5-4.ts";
 import { scheduleForward, classifyVariance } from "./remittance.ts";
 import { larDeadlineMs } from "./period.ts";
 import { predictSda, advanceSchedule, applyRecovery, consecutiveMonthsDelinquent, firstExcludedDraft, sdaBoundaryReconciliation, fmReceivableForPeriods, contractualPaymentsTotal, type SdaState } from "./sda.ts";
-import { ET, matchReimbursements, regularOptionSixMonths, sdaStatusVariance, form496Line12, FORM_496_LINE_12_EXPLANATION, sdaPayoffRemittance, servicingFeeComponent, advanceTransfer } from "./ops.ts";
+import { ET, matchReimbursements, regularOptionSixMonths, deselectionReportPopulation, sdaStatusVariance, form496Line12, FORM_496_LINE_12_EXPLANATION, sdaPayoffRemittance, servicingFeeComponent, advanceTransfer } from "./ops.ts";
 import { sdaEntryModel, bd3ReconcileMs, twoCyclesFrom } from "./ops-5-4.ts";
 
 const at = (d: string, hhmm: string) => zonedEpochMs(D(d), hhmm, ET);
@@ -35,7 +35,7 @@ const REG = (() => { const r = loadRegistry(); applyInvestorTimerOverrides(r); a
 const AGENTS = loadAgentsFile();
 const escalatesTo = (process: string) => AGENTS.processes.find((p) => p.process === process)!.escalates_to;
 const AGENT: Actor = { kind: "agent", id: "custodial-recon" };
-const LOAN = "L-SS", REG_LOAN = "L-REG", SERVICER = "123456789";
+const LOAN = "L-SS", REG_LOAN = "L-REG", FB_LOAN = "L-FB-2008POOL", SERVICER = "123456789";
 /** The 5.4 tools (plus any sibling process's, e.g. 5.2's funding gate) on the bus over a real timer engine (5.4 rows only), the entity store and the escalation service. */
 function harness(nowIso: string, loanId = LOAN, extraTools: readonly ToolDef[] = []) {
   const clock = new FixedClock(nowIso); const events = new MemoryEventStore(clock); const ledger = new MemoryLedger();
@@ -176,26 +176,34 @@ test("5.4-T4: Given a completed payment deferral on an SDA loan, then all `advan
   assert.equal(p.escalation, "irr_package"); assert.equal(typeof p.escalation_id, "string");
   const esc = g.escalations.opened[0]!; assert.equal(esc.kind, "officer"); assert.equal(esc.ownerRole, "officer"); assert.equal(esc.payload.package, "irr_package"); assert.deepEqual(esc.payload.outstanding_periods, ["2027-01", "2027-02"]);
 });
-test("5.4-T5: Given a regular servicing option S/S loan six consecutive months delinquent, then no SDA is predicted, advances continue, and the deselection decision task is created on CD11 and due CD15.", async () => {
-  const r = regularOptionSixMonths({ lpi: D("2026-10-01"), period_end: D("2027-04-30"), type: "SS", option: "regular" });
+test("5.4-T5: Given a regular servicing option S/S loan six consecutive months delinquent that is not reported with a forbearance-plan or repayment-plan status code, then no SDA is predicted, advances continue, and no deselection task is created (A1-3-06 six-month selection carries no deselection window); given a loan in an MBS pool issued June 1, 2007–December 1, 2008 reported with a forbearance-plan status code that appears on the Eligible for Deselection report (~CD11), then the deselection decision task is created on CD11 and due CD15.", async () => {
+  const r = regularOptionSixMonths({ lpi: D("2026-10-01"), period_end: D("2027-04-30"), type: "SS", option: "regular", delinquency_status_code: "42" });
   assert.equal(r.months_delinquent, 6); assert.equal(r.sda, "not_applicable"); assert.equal(r.advances_continue, true); assert.equal(r.reclass_selection_expected, true);
-  assert.deepEqual(r.deselection_task, { created_on: "2027-05-11", due_on: "2027-05-15" });
+  assert.equal(r.deselection_population, false); assert.equal(r.deselection_task, null, "A1-3-06 selection at six months: no deselection window");
   assert.equal(regularOptionSixMonths({ lpi: D("2026-10-01"), period_end: D("2027-04-30"), type: "SS", option: "special" }).sda, "predicted");
+  // F-1-25 population: June 1, 2007–December 1, 2008 pool + forbearance-plan (09) / repayment-plan (12) status code → the CD11–CD15 window; anything else, no task
+  assert.equal(deselectionReportPopulation({ pool_issue_date: D("2008-03-01"), delinquency_status_code: "09" }), true); assert.equal(deselectionReportPopulation({ pool_issue_date: D("2007-06-01"), delinquency_status_code: "12" }), true); assert.equal(deselectionReportPopulation({ pool_issue_date: D("2008-12-01"), delinquency_status_code: "09" }), true);
+  assert.equal(deselectionReportPopulation({ pool_issue_date: D("2009-01-01"), delinquency_status_code: "09" }), false); assert.equal(deselectionReportPopulation({ pool_issue_date: D("2007-05-01"), delinquency_status_code: "09" }), false); assert.equal(deselectionReportPopulation({ pool_issue_date: D("2008-03-01"), delinquency_status_code: "42" }), false); assert.equal(deselectionReportPopulation({ pool_issue_date: null, delinquency_status_code: "09" }), false);
+  const fb = regularOptionSixMonths({ lpi: D("2026-10-01"), period_end: D("2027-04-30"), type: "SS", option: "regular", pool_issue_date: D("2008-03-01"), delinquency_status_code: "09" });
+  assert.equal(fb.deselection_population, true); assert.deepEqual(fb.deselection_task, { created_on: "2027-05-11", due_on: "2027-05-15" });
   const h = harness(iso("2027-04-30", "23:59"), REG_LOAN);
   const run = await h.run("predictSdaEntry", { op: "period_end", period_end: "2027-04-30", servicer_number: SERVICER, loans: [{ loan_id: REG_LOAN, lpi: "2026-10-01", remittance_type: "SS", servicing_option: "regular", prior_status: "not_applicable" }] });
   const res = (run.results as { loan_id: string; status: string; action: string; consecutive_months_delinquent: number; reclass_selection_expected: boolean }[])[0]!;
   assert.equal(res.status, "not_applicable"); assert.equal(res.action, "none"); assert.equal(res.consecutive_months_delinquent, 6); assert.equal(res.reclass_selection_expected, true);
   assert.equal(h.ofType("sda_status.predicted", REG_LOAN).length, 0);
-  const exp = h.ofType("reclass.selection.expected", REG_LOAN)[0]!; assert.equal(exp.payload.servicing_option, "regular"); assert.deepEqual(exp.payload.deselection_window, { created_on: "2027-05-11", due_on: "2027-05-15" });
+  const exp = h.ofType("reclass.selection.expected", REG_LOAN)[0]!; assert.equal(exp.payload.servicing_option, "regular"); assert.equal(exp.payload.deselection_population, false); assert.equal(exp.payload.deselection_window, null, "the six-month selection carries no deselection window");
   const sel = h.timer("FNMA_A1306_RECLASS_SELECTION_6M", REG_LOAN); assert.equal(sel.dueDate, "2027-04-30");
-  // the Eligible for Deselection report posts on CD11 → the decision task for the loan, due CD15
+  // the Eligible for Deselection report posts on CD11 listing the 2008-pool forbearance loan (F-1-25 population) → its decision task, due CD15; the regular
+  // servicing option loan selected under A1-3-06 gets no task even when Fannie Mae lists it (a status-42 row is outside the population → variance, no task)
   h.clock.set(iso("2027-05-11", "09:00"));
-  const ing = await h.run("parseRemittanceDetail", { op: "ingest", report: { report: "eligible_for_deselection", report_id: "EFD-2027-05", period: "2027-04", posted_on: "2027-05-11", loans: [{ fnma_loan_number: "1000000002", loan_id: REG_LOAN }] } });
-  assert.deepEqual(ing.eligible, [REG_LOAN]); assert.equal(ing.decide_by, "2027-05-15");
-  const task = h.ofType("reclass.deselection.eligible", REG_LOAN)[0]!; assert.equal(task.payload.posted_on, "2027-05-11"); assert.equal(task.payload.decide_by, "2027-05-15");
-  const des = h.timer("FNMA_F125_RECLASS_DESELECT_CD15", REG_LOAN); assert.equal(des.status, "armed"); assert.equal(des.dueDate, "2027-05-15"); assert.equal(des.anchorDate, "2027-05-11");
+  const ing = await h.run("parseRemittanceDetail", { op: "ingest", report: { report: "eligible_for_deselection", report_id: "EFD-2027-05", period: "2027-04", posted_on: "2027-05-11", loans: [{ fnma_loan_number: "1000000003", loan_id: FB_LOAN, pool_issue_date: "2008-03-01", delinquency_status_code: "09" }, { fnma_loan_number: "1000000002", loan_id: REG_LOAN, pool_issue_date: "2009-01-01", delinquency_status_code: "42" }] } });
+  assert.deepEqual(ing.eligible, [FB_LOAN]); assert.deepEqual(ing.not_in_population, [REG_LOAN]); assert.equal(ing.decide_by, "2027-05-15");
+  assert.equal(h.ofType("reclass.deselection.eligible", REG_LOAN).length, 0); assert.equal(h.timers.byCode("FNMA_F125_RECLASS_DESELECT_CD15").filter((x) => x.subject.id === REG_LOAN).length, 0, "no deselection task for the A1-3-06 six-month selection");
+  assert.equal(h.ofType("reclass.deselection.population_variance", REG_LOAN)[0]!.payload.delinquency_status_code, "42");
+  const task = h.ofType("reclass.deselection.eligible", FB_LOAN)[0]!; assert.equal(task.payload.posted_on, "2027-05-11"); assert.equal(task.payload.decide_by, "2027-05-15");
+  const des = h.timer("FNMA_F125_RECLASS_DESELECT_CD15", FB_LOAN); assert.equal(des.status, "armed"); assert.equal(des.dueDate, "2027-05-15"); assert.equal(des.anchorDate, "2027-05-11");
   h.clock.set(iso("2027-05-13", "11:00"));
-  const dec = await h.run("openPortalTask", { op: "deselection", report_id: "EFD-2027-05", decision: "deselect", decided_on: "2027-05-13", rationale: "repayment plan agreed; keep the loan in the MBS pool" });
+  const dec = await h.run("openPortalTask", { op: "deselection", loan_id: FB_LOAN, report_id: "EFD-2027-05", decision: "deselect", decided_on: "2027-05-13", rationale: "forbearance plan performing; keep the loan in the MBS pool" });
   assert.equal(dec.portal_task, true); assert.equal(des.status, "satisfied");
   assert.equal(h.escalations.opened[0]!.kind, "human_portal_task"); assert.equal(h.escalations.opened[0]!.ownerRole, "fnma_portal_operator");
   // a reclass purchase advice (effective the 1st of the reclass month) closes the informational selection row

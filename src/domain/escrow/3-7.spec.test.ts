@@ -5,6 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { plainDate as D } from "../../kernel/calendar/date.ts";
+import { addBusinessDays, servicer } from "../../kernel/calendar/business.ts";
 import { cents } from "../../kernel/money/cents.ts";
 import { schedule, fundsCheck, installmentChoice, hazardDecision, ilTaxPaidNoticeDue, leadHonored, LEAD_DAYS } from "./disbursement.ts";
 import { EscrowEventLedger, attestationSchedule, setupEventsAtCutover, nonEscrowDelinquency, replanAfterReject, BillDeduper, releaseApproval, cancellationOverlay, advanceEntries } from "./ops.ts";
@@ -208,11 +209,10 @@ test("3.7-T9: Given cutover on 2026-11-16, then Setup events exist for every act
   assert.ok(eventMatches(parseEventPattern("`escrow.setup_events.accepted{pct=100}`")!, bus.events.ofType("escrow.setup_events.accepted")[1]!));
   await assert.rejects(bus.run("3.7", "releaseDisbursement", ESCROW_AGENT, { op: "cutover", cutover_on: "2026-12-15", loans }), /after the LL-2026-05 mandate 2026-12-01/);
 });
-test("3.7-T10: Given an Illinois tax payment confirmed 2027-06-03, then `NTC_IL_765_910_15_TAX_PAID` is sent within 45 business days (by 2027-08-06 assuming no servicer holidays beyond federal).", async () => {
-  // Spec discrepancy: the hand-count 2027-08-06 skips only one holiday; the servicer calendar excludes both Juneteenth (obs. Fri 2027-06-18) and
-  // Independence Day (obs. Mon 2027-07-05), so 45 servicer business days after Thu 2027-06-03 is Mon 2027-08-09 (kept calendar-correct).
+test("3.7-T10: Given an Illinois tax payment confirmed 2027-06-03, then `NTC_IL_765_910_15_TAX_PAID` is sent within 45 business days (by 2027-08-09: weekends, Juneteenth observed Fri 2027-06-18 and Independence Day observed Mon 2027-07-05 excluded; no servicer holidays beyond federal).", async () => {
+  // 45 servicer business days after Thu 2027-06-03: June 4–30 = 18 (Juneteenth obs. Fri 06-18 excluded), July = 21 (Independence Day obs. Mon 07-05 excluded) → 39, Aug 2–6 → 44, Mon 2027-08-09 = 45.
   const due = ilTaxPaidNoticeDue(D("2027-06-03"));
-  assert.equal(due, "2027-08-09"); assert.ok(due >= D("2027-08-06"));
+  assert.equal(due, "2027-08-09"); assert.equal(addBusinessDays(D("2027-06-03"), 45, servicer), "2027-08-09");
   assert.equal(ilTaxPaidNoticeDue(D("2027-01-04")), "2027-03-10");                // 45 BD over MLK (1/18) and Presidents' Day (2/15)
   // Through the bus: the confirmed IL tax payment arms the 45-BD row on the paid date; the registry's `notice.sent{template}` closes it.
   const bus = escrowBus("L-1", "2027-06-03T20:00:00.000Z", ["3.7"]); wireNotices(bus);

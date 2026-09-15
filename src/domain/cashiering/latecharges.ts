@@ -98,7 +98,8 @@ export function recordFee(state: LoanCashState, fee: Fee): void {
   if (fee.state === "assessed") { if (fee.fee_type === "late_charge") state.late_charges_due_cents += fee.amount_cents; else state.nsf_fees_due_cents += fee.amount_cents; }
 }
 
-export type WaiverReason = "workout_completion" | "trial_conversion" | "scra" | "error_correction" | "transfer_misdirected" | "fnma_request" | "bankruptcy_plan" | "courtesy";
+/** 2.7 rule 5 reason codes; `deferral_completion` is D2-3.2-04/-05 (every late charge, penalty and stop-payment fee waived on completing a payment deferral). */
+export type WaiverReason = "workout_completion" | "trial_conversion" | "deferral_completion" | "scra" | "error_correction" | "transfer_misdirected" | "fnma_request" | "bankruptcy_plan" | "courtesy";
 export type WaiverResult = { ok: true; waived_cents: Cents } | { ok: false; code: "NEEDS_OFFICER" | "NOT_WAIVABLE"; reason: string };
 
 /** 2.7 rule 5: automatic reasons always; one courtesy waiver per loan per 12 months by the agent, more only with `officer`. */
@@ -106,8 +107,8 @@ export function waiveLateCharge(state: LoanCashState, feeId: string, reason: Wai
   const fee = (state.fees ?? []).find((f) => f.id === feeId);
   if (!fee || (fee.state !== "assessed" && fee.state !== "accrued_suspended")) return { ok: false, code: "NOT_WAIVABLE", reason: "fee not open" };
   if (reason === "courtesy" && cashCfg(state).courtesy >= 1 && actor.role !== "officer") return { ok: false, code: "NEEDS_OFFICER", reason: "one courtesy waiver per loan per 12 months; further waivers need officer approval" };
-  if (fee.state === "assessed") state.late_charges_due_cents -= fee.amount_cents - fee.collected_cents;
-  fee.state = "waived"; fee.waived_reason = reason;
+  if (fee.state === "assessed") { if (fee.fee_type === "late_charge") state.late_charges_due_cents -= fee.amount_cents - fee.collected_cents; else state.nsf_fees_due_cents -= fee.amount_cents - fee.collected_cents; }
+  fee.state = "waived"; fee.waived_reason = reason; fee.collection_hold = null;
   if (reason === "courtesy") state.courtesy_waivers_12m = cashCfg(state).courtesy + 1;
   return { ok: true, waived_cents: fee.amount_cents - fee.collected_cents };
 }

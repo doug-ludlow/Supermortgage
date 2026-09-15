@@ -16,7 +16,7 @@ import { addBusinessDays, rollBack, fannieEt, fannieEtObserved } from "../../ker
 import { zonedEpochMs, wallClock } from "../../kernel/calendar/zoned.ts";
 import { divRound } from "../../kernel/money/decimal.ts";
 import type { Cents } from "../../kernel/money/cents.ts";
-import { monthInterest, gfeeCheckFigure, fundingDecision, compensatoryFee, crsAaRequest, CRS_AA_THRESHOLD_CENTS } from "./remittance.ts";
+import { monthInterest, gfeeCheckFigure, fundingDecision, compensatoryFee, crsAaRequest, CRS_AA_THRESHOLD_CENTS, saInterest, scheduledMonth } from "./remittance.ts";
 import { bd2CloseMs, eventDeadlineMs, larDeadlineMs, calendarDraftDate, fundingGateMs, fannieBusinessDay, nextMonth, firstOfMonth, iredSweepDate, iredSweepRunMs, iredDeadlineMs, periodEndOf, periodStart, surplusResolveDueOn, bulkCutoffMs, removalCorrectionCloseMs, nonRemovalCorrectionCloseMs } from "./period.ts";
 import { validateF121Layout } from "./delinquency-status.ts";
 export { validateF121Layout };
@@ -143,13 +143,17 @@ export function aaPaymentSplit(upb: Cents, noteRate: string, ptr: string, piCent
 // 5.3 — payoff clocks, DRA reconciliation, REOgram, P360 event, confidence hold, TPS proceeds
 // ---------------------------------------------------------------------------
 /** 5.2 rule 2 / edge "Payoff on BD1 reported by BD2 (S/S)": no full-month interest when processed on BD1 and reported by the BD2 17:00 ET clock. */
-export function ssPayoffInterest(f: { scheduled_upb_cents: Cents; ptr: string; processed_at_ms: number; reported_at_ms: number }): { full_month_cents: Cents; waived: boolean; charged_cents: Cents; deadline_ms: number } {
+/**
+ * 5.2 rule 2 / 5.3-T2 (F-1-20): an S/S payoff owes a full month's interest at the PTR; the "processed on BD1 and reported by BD2" exception
+ * sits only in F-1-20's "MBS mortgage loans" bullet — a portfolio S/S loan owes the full month with no exception, whatever the timing.
+ */
+export function ssPayoffInterest(f: { scheduled_upb_cents: Cents; ptr: string; processed_at_ms: number; reported_at_ms: number; mbs: boolean }): { full_month_cents: Cents; waived: boolean; waiver_basis: "mbs_bd1_reported_by_bd2" | "portfolio_no_exception" | "mbs_not_bd1_or_late"; charged_cents: Cents; deadline_ms: number } {
   const processedOn = wallClock(f.processed_at_ms, ET).date;
   const onBd1 = fannieBusinessDay(processedOn, 1) === processedOn;
   const deadline = larDeadlineMs(f.processed_at_ms, true);
-  const waived = onBd1 && f.reported_at_ms <= deadline;
+  const waived = f.mbs && onBd1 && f.reported_at_ms <= deadline;
   const full = monthInterest(f.scheduled_upb_cents, f.ptr);
-  return { full_month_cents: full, waived, charged_cents: waived ? 0n : full, deadline_ms: deadline };
+  return { full_month_cents: full, waived, waiver_basis: waived ? "mbs_bd1_reported_by_bd2" : f.mbs ? "mbs_not_bd1_or_late" : "portfolio_no_exception", charged_cents: waived ? 0n : full, deadline_ms: deadline };
 }
 export interface DraMilestone { readonly type: string; readonly date: PlainDate; }
 /** 5.3 rule 7: a DRA sale-held without our `foreclosure.sale.held` within 1 BD → sev-1 and the REOgram confirmation task pre-created (due 1 `fannie_et` BD); our sale events without a DRA entry within 2 BD → task to the firm. */
@@ -210,13 +214,25 @@ export function matchReimbursements(f: { advances: readonly AdvanceRow[]; credit
   const all = out.every((a) => a.status !== "outstanding");
   return { advances: out, all_reimbursed: all, unmatched_credit_cents: pool, escalation: !all && f.cycles_elapsed >= 2 ? "irr_package" : null };
 }
-/** 5.4 rule 1 / F-1-25: regular servicing option S/S loans never enter SDA; at six consecutive months Fannie Mae's reclass selection is expected and the deselection decision task runs CD11 → CD15. */
-export function regularOptionSixMonths(f: { lpi: PlainDate; period_end: PlainDate; type: RemittanceType; option: "special" | "regular" }): { months_delinquent: number; sda: SdaStatus; advances_continue: boolean; reclass_selection_expected: boolean; deselection_task: { created_on: PlainDate; due_on: PlainDate } | null } {
+/** F-1-25: the Eligible for Deselection report lists only loans in MBS pools issued June 1, 2007 through December 1, 2008 that are reported with a forbearance-plan (`09`) or repayment-plan (`12`) delinquency status code. */
+export const DESELECTION_POOL_WINDOW: { readonly from: PlainDate; readonly to: PlainDate } = { from: ymd(2007, 6, 1), to: ymd(2008, 12, 1) };
+export const DESELECTION_STATUS_CODES: readonly string[] = ["09", "12"];
+export function deselectionReportPopulation(f: { pool_issue_date: PlainDate | null; delinquency_status_code: string | null }): boolean {
+  return f.pool_issue_date !== null && f.pool_issue_date >= DESELECTION_POOL_WINDOW.from && f.pool_issue_date <= DESELECTION_POOL_WINDOW.to && f.delinquency_status_code !== null && DESELECTION_STATUS_CODES.includes(f.delinquency_status_code);
+}
+/** The CD11 → CD15 deselection decision window that an Eligible for Deselection report posted on `posted_on` opens (F-1-25). */
+export function deselectionWindow(postedOn: PlainDate): { created_on: PlainDate; due_on: PlainDate } { const { y, m } = parts(postedOn); return { created_on: ymd(y, m, 11), due_on: ymd(y, m, 15) }; }
+/**
+ * 5.4 rule 1 / A1-3-06: regular servicing option S/S loans never enter SDA; at six consecutive months Fannie Mae's reclass selection is expected
+ * and advances continue. The six-month selection carries no deselection window: the F-1-25 CD11 → CD15 decision exists only for a loan in the
+ * deselection population (June 1, 2007–December 1, 2008 pool with a forbearance-/repayment-plan status code) that the report lists.
+ */
+export function regularOptionSixMonths(f: { lpi: PlainDate; period_end: PlainDate; type: RemittanceType; option: "special" | "regular"; pool_issue_date?: PlainDate | null; delinquency_status_code?: string | null }): { months_delinquent: number; sda: SdaStatus; advances_continue: boolean; reclass_selection_expected: boolean; deselection_population: boolean; deselection_task: { created_on: PlainDate; due_on: PlainDate } | null } {
   const months = consecutiveMonthsDelinquent(f.lpi, f.period_end);
   const sda = predictSda(f.lpi, f.type, f.option, f.period_end).status;
   const six = f.option === "regular" && months >= 6;
-  const next = nextMonth(f.period_end); const { y, m } = parts(next);
-  return { months_delinquent: months, sda, advances_continue: !sdaApplies(f.type, f.option) || sda !== "active", reclass_selection_expected: six, deselection_task: six ? { created_on: ymd(y, m, 11), due_on: ymd(y, m, 15) } : null };
+  const population = deselectionReportPopulation({ pool_issue_date: f.pool_issue_date ?? null, delinquency_status_code: f.delinquency_status_code ?? null });
+  return { months_delinquent: months, sda, advances_continue: !sdaApplies(f.type, f.option) || sda !== "active", reclass_selection_expected: six, deselection_population: population, deselection_task: population ? deselectionWindow(nextMonth(f.period_end)) : null };
 }
 /** 5.4 T6: Fannie Mae's report shows Stop Advance where we predicted fewer months → sev-2 variance comparing LPI dates and the 5.1 reporting history. */
 export function sdaStatusVariance(f: { predicted: SdaStatus; predicted_months: number; fnma_status: "stop_advance" | "advancing"; our_lpi: PlainDate; fnma_lpi: PlainDate | null; reporting_history: readonly { period: string; lpi: PlainDate; status: string }[] }): { variance: { severity: "sev2"; kind: "sda_status_mismatch"; our_lpi: PlainDate; fnma_lpi: PlainDate | null; predicted_months: number; reporting_history: readonly { period: string; lpi: PlainDate; status: string }[] } | null; authoritative: "fnma" } {
@@ -288,7 +304,7 @@ export function mbsExpressUnscheduledDraft(reportedInMonth: PlainDate): PlainDat
 // 5.7 — exception/correction cycle, event-rail derivation, late transmission
 // ---------------------------------------------------------------------------
 export interface DqException { readonly loan_id: string; readonly code: string; readonly severity: "critical" | "noncritical"; }
-/** 5.7 rule 8: BD4 exception report → critical corrections by CD10 (the published calendar date, or its preceding `fannie_et` BD); CD11 final report reconciles line by line. */
+/** 5.7 rule 8: the exception report (second calendar day after BD2, F-1-21) → critical corrections by CD10 (the published calendar date, or its preceding `fannie_et` BD); CD11 final report reconciles line by line. */
 export function dqExceptionCycle(f: { file_month: PlainDate; exceptions: readonly DqException[]; published_cd10: PlainDate }): { critical: DqException[]; noncritical: DqException[]; corrections_due_on: PlainDate; corrections_due_ms: number; final_report_on: PlainDate; status: "exceptions_open" | "final" } {
   const critical = f.exceptions.filter((e) => e.severity === "critical"), noncritical = f.exceptions.filter((e) => e.severity !== "critical");
   const due = rollBack(f.published_cd10, fannieEt); const { y, m } = parts(f.file_month);
@@ -333,14 +349,56 @@ export function lineReviewFlag(f: { confidence: number; period_month: PlainDate;
 // ---------------------------------------------------------------------------
 // 5.1 — IRED "no activity" projection, period-close checklist, exception events
 // ---------------------------------------------------------------------------
-export interface NoActivityProjection { readonly event_type: "payment.none"; readonly payload: LarPayload; readonly lar: Lar96 | null; readonly json_event: { "Loan Identifier": string; "Loan Actual UPB Amount": string; "Loan Last Paid Installment Due Date": string | null; "Loan Event Sequence Number": number } | null; readonly sweep_run_ms: number; readonly submit_by_ms: number }
-/** 5.1 rule 4: on the IRED sweep every summary-reporting loan without an accepted `payment.*` event in the period gets `payment.none` — LAR 96 with unchanged LPI/UPB, zero interest/principal, action `00` (or the No Payment Event under `mode=event`). */
-export function noActivityProjection(f: { month_of: PlainDate; mode: ChannelMode; servicer_number: string; fnma_loan_number: string; sequence: number; position: { lpi_date: PlainDate | null; upb_cents: Cents; nib_cents: Cents } }): NoActivityProjection {
+/**
+ * The loan's reporting position when no payment stands in the period (5.1 rule 4; the same facts a correcting LAR restates under rule 8).
+ * `remittance_type` absent = A/A (nothing advanced). S/A needs `ptr`; S/S needs `ptr`, `note_rate`, `pi_cents` (and `scheduled_upb_cents`,
+ * the prior scheduled UPB — defaults to the actual UPB when the loan has never fallen behind).
+ */
+export interface NoPaymentPosition { readonly lpi_date: PlainDate | null; readonly upb_cents: Cents; readonly nib_cents: Cents; readonly remittance_type?: RemittanceType; readonly ptr?: string; readonly note_rate?: string; readonly pi_cents?: Cents; readonly scheduled_upb_cents?: Cents; readonly participation_pct?: string; readonly concurrent_sales_participation_pool?: boolean; }
+export interface NoPaymentAmounts { readonly remittance_type: RemittanceType; readonly months_delinquent: number; readonly interest_cents: Cents; readonly principal_cents: Cents; readonly scheduled_upb_after_cents: Cents | null; readonly basis: "aa_nothing_advanced" | "sa_advanced_month" | "sa_recovery_three_months" | "sa_not_advancing" | "sa_concurrent_sales_pool_advancing" | "ss_scheduled"; }
+/**
+ * 5.1 rule 4 (IRM 2-04 pp. 15–18, 26–27; C-3-01): what a summary-reporting loan reports for a period with no payment — **A/A** zero interest and
+ * principal; **S/A** one month's interest on the prior actual UPB at the PTR (× Fannie Mae %) for the LPI month and each successive month through
+ * the third delinquent month, then negative three months' interest in the month the loan becomes four months delinquent (a concurrent-sales
+ * participation pool loan keeps advancing through the foreclosure sale date — C-3-01); **S/S** the scheduled interest on the prior scheduled UPB
+ * plus the scheduled principal reduction, the scheduled UPB advancing even though actual UPB and LPI do not. Months delinquent are counted from
+ * the LPI to the period's last day (`consecutiveMonthsDelinquent`).
+ */
+export function noPaymentAmounts(position: NoPaymentPosition, monthOf: PlainDate): NoPaymentAmounts {
+  const type = position.remittance_type ?? "AA";
+  const months = position.lpi_date ? consecutiveMonthsDelinquent(position.lpi_date, periodEndOf(firstOfMonth(monthOf))) : 0;
+  const participation = position.participation_pct ?? "100";
+  if (type === "AA") return { remittance_type: "AA", months_delinquent: months, interest_cents: 0n, principal_cents: 0n, scheduled_upb_after_cents: null, basis: "aa_nothing_advanced" };
+  if (!position.ptr) throw new RangeError(`the no-payment projection for an ${type === "SA" ? "S/A" : "S/S"} loan needs the pass-through rate (ptr)`);
+  if (type === "SA") {
+    if (position.concurrent_sales_participation_pool) return { remittance_type: "SA", months_delinquent: months, interest_cents: saInterest(position.upb_cents, position.ptr, 1, participation), principal_cents: 0n, scheduled_upb_after_cents: null, basis: "sa_concurrent_sales_pool_advancing" };
+    const interest = saInterest(position.upb_cents, position.ptr, months, participation);
+    return { remittance_type: "SA", months_delinquent: months, interest_cents: interest, principal_cents: 0n, scheduled_upb_after_cents: null, basis: months <= 3 ? "sa_advanced_month" : months === 4 ? "sa_recovery_three_months" : "sa_not_advancing" };
+  }
+  if (!position.note_rate || position.pi_cents === undefined) throw new RangeError("the no-payment projection for an S/S loan needs note_rate and pi_cents (the scheduled installment)");
+  const m = scheduledMonth(position.scheduled_upb_cents ?? position.upb_cents, position.note_rate, position.ptr, position.pi_cents, participation);
+  return { remittance_type: "SS", months_delinquent: months, interest_cents: m.fnma_interest_cents, principal_cents: m.fnma_principal_cents, scheduled_upb_after_cents: m.ending_scheduled_upb_cents, basis: "ss_scheduled" };
+}
+export interface NoActivityProjection { readonly event_type: "payment.none"; readonly payload: LarPayload; readonly amounts: NoPaymentAmounts; readonly lar: Lar96 | null; readonly json_event: { "Loan Identifier": string; "Loan Actual UPB Amount": string; "Loan Last Paid Installment Due Date": string | null; "Loan Event Sequence Number": number } | null; readonly sweep_run_ms: number; readonly submit_by_ms: number }
+/** 5.1 rule 4: on the IRED sweep every summary-reporting loan without an accepted `payment.*` event in the period gets `payment.none` — a LAR 96 with unchanged LPI and actual UPB, action `00`, interest/principal by remittance type (`noPaymentAmounts`) — or the No Payment Event under `mode=event`. */
+export function noActivityProjection(f: { month_of: PlainDate; mode: ChannelMode; servicer_number: string; fnma_loan_number: string; sequence: number; position: NoPaymentPosition }): NoActivityProjection {
   const sweepOn = iredSweepDate(f.month_of);
-  const payload: LarPayload = { lpi_date: f.position.lpi_date, upb_cents: f.position.upb_cents, nib_cents: f.position.nib_cents, interest_cents: 0n, principal_cents: 0n, other_fees_cents: 0n, action_code: "00", action_date: sweepOn };
+  const amounts = noPaymentAmounts(f.position, f.month_of);
+  const payload: LarPayload = { lpi_date: f.position.lpi_date, upb_cents: f.position.upb_cents, nib_cents: f.position.nib_cents, interest_cents: amounts.interest_cents, principal_cents: amounts.principal_cents, other_fees_cents: 0n, action_code: "00", action_date: sweepOn };
   const lar = f.mode === "event" ? null : projectLar96(f.servicer_number, f.fnma_loan_number, payload);
   const json = f.mode === "legacy" ? null : { "Loan Identifier": f.fnma_loan_number, "Loan Actual UPB Amount": (Number(f.position.upb_cents) / 100).toFixed(2), "Loan Last Paid Installment Due Date": f.position.lpi_date, "Loan Event Sequence Number": f.sequence };
-  return { event_type: "payment.none", payload, lar, json_event: json, sweep_run_ms: iredSweepRunMs(f.month_of), submit_by_ms: iredDeadlineMs(f.month_of) };
+  return { event_type: "payment.none", payload, amounts, lar, json_event: json, sweep_run_ms: iredSweepRunMs(f.month_of), submit_by_ms: iredDeadlineMs(f.month_of) };
+}
+/**
+ * 5.1 rule 8 / edge case "Reversal after submission, same period" (IRM 2-01: Fannie Mae's recorded activity is not cumulative — "the last LAR
+ * processed successfully is the activity recorded"): a correcting LAR 96 restates the period's **full** position as it now stands after the
+ * reversal — LPI and actual UPB rolled back, the period's interest/principal recomputed for the remittance type (`noPaymentAmounts`: the S/S
+ * scheduled amounts are unchanged by the reversal, S/A keeps its advance, A/A reports nothing) — never a negative delta against the earlier LAR.
+ */
+export function restatedCorrection(f: { position_after_reversal: NoPaymentPosition; month_of: PlainDate; other_fees_cents: Cents; action_date: PlainDate; superseded: LarPayload }): { payload: LarPayload; amounts: NoPaymentAmounts; not_cumulative: true; delta_rejected: { interest_cents: Cents; principal_cents: Cents } } {
+  const amounts = noPaymentAmounts(f.position_after_reversal, f.month_of);
+  const payload: LarPayload = { lpi_date: f.position_after_reversal.lpi_date, upb_cents: f.position_after_reversal.upb_cents, nib_cents: f.position_after_reversal.nib_cents, interest_cents: amounts.interest_cents, principal_cents: amounts.principal_cents, other_fees_cents: f.other_fees_cents, action_code: "00", action_date: f.action_date };
+  return { payload, amounts, not_cumulative: true, delta_rejected: { interest_cents: -f.superseded.interest_cents, principal_cents: -f.superseded.principal_cents } };
 }
 /** The IRED sweep over a period: loans with an accepted payment event are left alone; the rest are projected `payment.none` between the 18:00 ET run and the 20:00 ET deadline. */
 export function iredSweep(f: { month_of: PlainDate; loans: readonly { loan_id: string; accepted_payment_event: boolean }[] }): { sweep_on: PlainDate; run_ms: number; deadline_ms: number; project_none_for: string[] } {
@@ -424,11 +482,16 @@ export function form472Schedule3(f: { period: string; opening_cents: Cents; remi
   const explanation = kind === "balanced" ? "cumulative cash remitted equals P&I reported after timing items" : `${kind} of ${unexplained}¢ after explained items: ${f.explained_items.map((i) => `${i.kind} ${i.amount_cents}¢ (${i.note})`).join("; ") || "none"}${due ? `; surplus first seen ${f.surplus_first_seen} — resolve by ${due} (FNMA_IRM_SURPLUS_RESOLVE_90)` : ""}`;
   return { closing_cents: closing, explained_cents: explained, unexplained_cents: unexplained, kind, surplus_resolve_due_on: due, explanation, artifact: { form: "472", schedule: "3", period: f.period, lines: [{ label: "opening shortage/surplus", amount_cents: f.opening_cents }, { label: "cash remitted", amount_cents: f.remitted_cents }, { label: "P&I reported (accepted LARs)", amount_cents: -f.reported_pi_cents }, ...f.explained_items.map((i) => ({ label: `explained: ${i.kind}`, amount_cents: i.amount_cents })), { label: "closing (unexplained)", amount_cents: unexplained }] } };
 }
-/** A1-4.2-01 ladder (5.2 rule 11 / T12): the minimum is $250 for the first instance, $500 for the second and $1,000 for each subsequent instance within a year; the instance is recorded in `compfee_instances`. */
-export function compensatoryFeeInstance(f: { amount_cents: Cents; days_late: number; prime_pct: string; prior_instances_within_year: number; kind?: string }): { fee_cents: Cents; minimum_cents: Cents; formula_cents: Cents; instance_number: number; instance: { kind: string; amount_cents: Cents; days_late: number; fee_cents: Cents } } {
+/**
+ * A1-4.2-01 states the late-remittance fee as "late remittance × days late × (prime + 3%)" with no ÷365 (literal reading of the 5.2-T12 example:
+ * $15,750); the platform applies the annual rate daily (÷365) and records that assumption on every instance, pending Fannie Mae confirmation.
+ */
+export const COMPFEE_DAY_COUNT_CONVENTION = "annual_365_assumed" as const;
+/** A1-4.2-01 ladder (5.2 rule 11 / T12): the minimum is $250 for the first instance, $500 for the second and $1,000 for each subsequent instance within a year; the instance is recorded in `compfee_instances` with its day-count convention. */
+export function compensatoryFeeInstance(f: { amount_cents: Cents; days_late: number; prime_pct: string; prior_instances_within_year: number; kind?: string }): { fee_cents: Cents; minimum_cents: Cents; formula_cents: Cents; instance_number: number; day_count_convention: typeof COMPFEE_DAY_COUNT_CONVENTION; instance: { kind: string; amount_cents: Cents; days_late: number; fee_cents: Cents; day_count_convention: typeof COMPFEE_DAY_COUNT_CONVENTION } } {
   const n = f.prior_instances_within_year + 1;
   const minimum = n === 1 ? 25_000n : n === 2 ? 50_000n : 100_000n;
   const formula = compensatoryFee(f.amount_cents, f.days_late, f.prime_pct, 0n);
   const fee = compensatoryFee(f.amount_cents, f.days_late, f.prime_pct, minimum);
-  return { fee_cents: fee, minimum_cents: minimum, formula_cents: formula, instance_number: n, instance: { kind: f.kind ?? "late_remittance", amount_cents: f.amount_cents, days_late: f.days_late, fee_cents: fee } };
+  return { fee_cents: fee, minimum_cents: minimum, formula_cents: formula, instance_number: n, day_count_convention: COMPFEE_DAY_COUNT_CONVENTION, instance: { kind: f.kind ?? "late_remittance", amount_cents: f.amount_cents, days_late: f.days_late, fee_cents: fee, day_count_convention: COMPFEE_DAY_COUNT_CONVENTION } };
 }

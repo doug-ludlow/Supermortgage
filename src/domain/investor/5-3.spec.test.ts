@@ -67,13 +67,16 @@ test("5.3-T1: Given payoff funds wired and cleared Thu Oct 15, 2026 on an A/A lo
   const crs = crsAaRequest(19950000n + interest, D("2026-10-16"), false);
   assert.equal(crs.instruct, true); assert.equal(crs.code, "001"); assert.equal(PROCEEDS_CRS_CODE["60"], "001"); assert.equal(crs.settlement_date, "2026-10-19");
 });
-test("5.3-T2: Given a payoff processed Mon Nov 2, 2026 (BD1), then the AC 60 deadline is Tue Nov 3 17:00 ET and, for an S/S loan, no full-month interest is charged if reported by BD2.", () => {
+test("5.3-T2: Given a payoff processed Mon Nov 2, 2026 (BD1), then the AC 60 deadline is Tue Nov 3 17:00 ET and, for an S/S MBS loan, no full-month interest is charged if reported by BD2; for a portfolio S/S loan a full month's interest at PTR is still due.", () => {
   const processed = zonedEpochMs(D("2026-11-02"), "15:10", ET);
   assert.equal(toIso(larDeadlineMs(processed, true)), toIso(zonedEpochMs(D("2026-11-03"), "17:00", ET)));
-  const onTime = ssPayoffInterest({ scheduled_upb_cents: 24908861n, ptr: "6.000", processed_at_ms: processed, reported_at_ms: zonedEpochMs(D("2026-11-03"), "12:00", ET) });
-  assert.equal(onTime.waived, true); assert.equal(onTime.charged_cents, 0n); assert.equal(onTime.full_month_cents, 124544n);
-  const late = ssPayoffInterest({ scheduled_upb_cents: 24908861n, ptr: "6.000", processed_at_ms: processed, reported_at_ms: zonedEpochMs(D("2026-11-04"), "09:00", ET) });
-  assert.equal(late.waived, false); assert.equal(late.charged_cents, 124544n);
+  const onTime = ssPayoffInterest({ scheduled_upb_cents: 24908861n, ptr: "6.000", processed_at_ms: processed, reported_at_ms: zonedEpochMs(D("2026-11-03"), "12:00", ET), mbs: true });
+  assert.equal(onTime.waived, true); assert.equal(onTime.charged_cents, 0n); assert.equal(onTime.full_month_cents, 124544n); assert.equal(onTime.waiver_basis, "mbs_bd1_reported_by_bd2");
+  const late = ssPayoffInterest({ scheduled_upb_cents: 24908861n, ptr: "6.000", processed_at_ms: processed, reported_at_ms: zonedEpochMs(D("2026-11-04"), "09:00", ET), mbs: true });
+  assert.equal(late.waived, false); assert.equal(late.charged_cents, 124544n); assert.equal(late.waiver_basis, "mbs_not_bd1_or_late");
+  // F-1-20 places the BD1/BD2 exception only in the "MBS mortgage loans" bullet: a portfolio S/S payoff owes the full month at PTR however promptly it is reported
+  const portfolio = ssPayoffInterest({ scheduled_upb_cents: 24908861n, ptr: "6.000", processed_at_ms: processed, reported_at_ms: zonedEpochMs(D("2026-11-03"), "12:00", ET), mbs: false });
+  assert.equal(portfolio.waived, false); assert.equal(portfolio.charged_cents, 124544n); assert.equal(portfolio.full_month_cents, 124544n); assert.equal(portfolio.waiver_basis, "portfolio_no_exception");
 });
 test("5.3-T3: Given an MI-insured conventional loan foreclosed with Fannie Mae acquiring, then code 72 is selected; uninsured → 70; third-party purchaser → 71 with CRS 311 proceeds.", () => {
   assert.equal(actionCode("foreclosure_fnma_acquires", "mi"), "72"); assert.equal(actionCode("foreclosure_fnma_acquires", "fha"), "72"); assert.equal(actionCode("foreclosure_fnma_acquires", "none"), "70");

@@ -367,10 +367,12 @@ export function waiverCloseout(balanceCents: Cents, billsWithin30Cents: Cents, e
   return { refund_cents: balanceCents - billsWithin30Cents, refund_by: addDays(effectiveOn, 30), short_year_statement_by: addDays(effectiveOn, 60), event_balance_cents: 0n };
 }
 /** T7: a Flex Mod trial offer on a waived loan proceeds only with the documented exception (current on T&I); delinquent T&I blocks until escrow is established. */
-export function workoutEscrowGate(f: { waived: boolean; current_on_ti: boolean; exception_documented: boolean }): { ok: boolean; block: string | null } {
+export function workoutEscrowGate(f: { waived: boolean; current_on_ti: boolean; /** The Flex Mod is offered under D2-3.2-06's disaster-related-hardship path — the only Flex Mod B-1-01 excepts. */ flex_mod_disaster_hardship: boolean; exception_documented: boolean }): { ok: boolean; block: string | null } {
   if (!f.waived) return { ok: true, block: null };
-  if (f.current_on_ti && f.exception_documented) return { ok: true, block: null };
-  return { ok: false, block: f.current_on_ti ? "document the Flex Mod escrow-waiver exception before the offer" : "T&I delinquent: establish escrow before the offer (B-1-01)" };
+  if (f.current_on_ti && f.flex_mod_disaster_hardship && f.exception_documented) return { ok: true, block: null };
+  if (!f.current_on_ti) return { ok: false, block: "T&I delinquent: establish escrow before the offer (B-1-01)" };
+  if (!f.flex_mod_disaster_hardship) return { ok: false, block: "standard Flex Mod: establish escrow before the offer (B-1-01 excepts only a Flex Mod offered under the D2-3.2-06 disaster-related-hardship path)" };
+  return { ok: false, block: "document the Flex Mod disaster-hardship escrow-waiver exception before the offer" };
 }
 
 // ---------------------------------------------------------------- 3.9 rate calendars, verification, 1099

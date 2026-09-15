@@ -3814,7 +3814,7 @@
     "custodian.deliver",
     "timers.*"
    ],
-   "guardrails": "ineligibility determinations go to `lossmit_reviewer` before any notice (adverse determination); NIB math is code; cannot complete without the LAR/event ack and, where required, the contractual payment; cannot include late charges or escrow shortage in the NIB.",
+   "guardrails": "ineligibility determinations go to `lossmit_reviewer` before any notice (adverse determination); NIB math is code; cannot complete without the pre-deferral UPB/LPI matching the investor reporting system and, where a full contractual payment is required, its LAR/event ack and the payment; cannot include late charges or escrow shortage in the NIB.",
    "escalates_to": [
     "fnma_portal_operator",
     "human_agent",

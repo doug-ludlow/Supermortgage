@@ -39,7 +39,7 @@ import type { DomainEvent } from "../../kernel/events/index.ts";
 import type { ScheduledMonth } from "./remittance.ts";
 import { type SdaState, type SdaStatus, predictSda, consecutiveMonthsDelinquent, sdaApplies, applyRecovery, fmReceivableForPeriods } from "./sda.ts";
 import { period as periodOf, nextMonth, calendarDraftDate, fannieBusinessDay, periodStart, larDeadlineMs } from "./period.ts";
-import { ET, matchReimbursements, sdaStatusVariance, sdaPayoffRemittance, advanceTransfer, type AdvanceRow, type AdvanceTransfer } from "./ops.ts";
+import { deselectionReportPopulation, deselectionWindow, ET, matchReimbursements, sdaStatusVariance, sdaPayoffRemittance, advanceTransfer, type AdvanceRow, type AdvanceTransfer } from "./ops.ts";
 import { advanceEntrySet, cycleSubject, type Emitter, type Subject, type Cycle } from "./ops-5-2.ts";
 import type { EntrySetInput } from "../../kernel/ledger/ledger.ts";
 import type { EventStore } from "../../kernel/events/index.ts";
@@ -91,7 +91,7 @@ export function sdaEntryModel(predictedEntryPeriod: string): SdaEntryModel {
 }
 
 // ───── FNMA_C301_SDA_PREDICT_EOM: the period-end prediction run ─────
-export interface EomLoanFacts { readonly loan_id: string; readonly lpi: PlainDate; readonly remittance_type: RemittanceTypeUpper; readonly servicing_option: ServicingOption; readonly prior_status: SdaStatus; readonly reclass_selection_expected?: boolean; }
+export interface EomLoanFacts { readonly loan_id: string; readonly lpi: PlainDate; readonly remittance_type: RemittanceTypeUpper; readonly servicing_option: ServicingOption; readonly prior_status: SdaStatus; readonly reclass_selection_expected?: boolean; readonly pool_issue_date?: PlainDate | null; readonly delinquency_status_code?: string | null; }
 export interface EomLoanResult { readonly loan_id: string; readonly status: SdaStatus; readonly consecutive_months_delinquent: number; readonly predicted_entry_period: string | null; readonly action: "set" | "cleared" | "kept" | "none"; readonly reclass_selection_expected: boolean; readonly entry_model: SdaEntryModel | null; }
 /**
  * The period-end run reports on the servicer's period subject (`servicer_number`, or an explicit `period_subject`), and "set/cleared for
@@ -123,11 +123,13 @@ export function predictSdaEntries(em: Emitter, i: { period_end: PlainDate; loans
         else { action = "set"; em.events.append({ type: "sda_status.predicted", loanId: l.loan_id, actor: em.actor, payload: { prediction: "set", period, period_end: i.period_end, consecutive_months_delinquent: months, lpi: l.lpi, ...model, predicted_at: em.now } }); }
       } else if (l.prior_status === "predicted") { action = "cleared"; em.events.append({ type: "sda_status.prediction_cleared", loanId: l.loan_id, actor: em.actor, payload: { prediction: "cleared", period, period_end: i.period_end, consecutive_months_delinquent: months, lpi: l.lpi, cleared_at: em.now } }); }
     }
-    // rule 1 / A1-3-06: regular servicing option S/S loans advance until removal; six consecutive months → reclass selection expected, deselection window CD11–CD15
+    // rule 1 / A1-3-06: regular servicing option S/S loans advance until removal; six consecutive months → reclass selection expected. The selection carries no
+    // deselection window: the F-1-25 CD11–CD15 decision exists only for a loan in the deselection population (June 1, 2007–Dec 1, 2008 pool, forbearance-/repayment-plan status) that the report lists
     let expected = l.reclass_selection_expected === true;
     if (l.remittance_type === "SS" && l.servicing_option === "regular" && months >= 6 && !expected) {
-      expected = true; reclass.push(l.loan_id); const { y, m } = parts(nextMonth(i.period_end));
-      em.events.append({ type: "reclass.selection.expected", loanId: l.loan_id, actor: em.actor, payload: { servicing_option: "regular", remittance_type: "SS", consecutive_months_delinquent: months, period, period_end: i.period_end, lpi: l.lpi, deselection_window: { created_on: ymd(y, m, 11), due_on: ymd(y, m, 15) }, expected_at: em.now } });
+      expected = true; reclass.push(l.loan_id);
+      const population = deselectionReportPopulation({ pool_issue_date: l.pool_issue_date ?? null, delinquency_status_code: l.delinquency_status_code ?? null });
+      em.events.append({ type: "reclass.selection.expected", loanId: l.loan_id, actor: em.actor, payload: { servicing_option: "regular", remittance_type: "SS", consecutive_months_delinquent: months, period, period_end: i.period_end, lpi: l.lpi, deselection_population: population, deselection_window: population ? deselectionWindow(nextMonth(i.period_end)) : null, expected_at: em.now } });
     }
     results.push({ loan_id: l.loan_id, status, consecutive_months_delinquent: months, predicted_entry_period: pred.predicted_entry_period, action, reclass_selection_expected: expected, entry_model: model });
   }
@@ -138,7 +140,7 @@ export function predictSdaEntries(em: Emitter, i: { period_end: PlainDate; loans
 
 // ───── inbound Fannie Mae Connect reports ─────
 export type ConnectReportKind = "sda_status" | "cash_adjustments" | "eligible_for_deselection";
-export interface ConnectReportLoan { readonly fnma_loan_number: string; readonly loan_id: string | null; readonly stop_advance_status: "stop_advance" | "advancing" | null; readonly start_date: PlainDate | null; readonly adjusted_start_date: PlainDate | null; readonly expiration_date: PlainDate | null; readonly outstanding_pi_receivable_cents: Cents; readonly lpi: PlainDate | null; readonly amount_cents: Cents | null; readonly adjustment_type: string | null; }
+export interface ConnectReportLoan { readonly fnma_loan_number: string; readonly loan_id: string | null; readonly stop_advance_status: "stop_advance" | "advancing" | null; readonly start_date: PlainDate | null; readonly adjusted_start_date: PlainDate | null; readonly expiration_date: PlainDate | null; readonly outstanding_pi_receivable_cents: Cents; readonly lpi: PlainDate | null; readonly amount_cents: Cents | null; readonly adjustment_type: string | null; /** Eligible for Deselection rows (F-1-25): the pool issue date and the reported delinquency status code the population is defined by. */ readonly pool_issue_date: PlainDate | null; readonly delinquency_status_code: string | null; }
 export interface ConnectReportRow { readonly report: ConnectReportKind; readonly report_id: string; readonly period: string; readonly posted_on: PlainDate; readonly source: "api" | "connect_pull"; readonly document_id: string | null; readonly loans: readonly ConnectReportLoan[]; }
 export function validateConnectReport(r: Record<string, unknown>): ConnectReportRow {
   const s = (k: string): string => { const v = r[k]; if (typeof v !== "string" || v === "") throw new RangeError(`connect report: ${k} is required`); return v; };
@@ -154,21 +156,32 @@ export function validateConnectReport(r: Record<string, unknown>): ConnectReport
     const st = raw as "stop_advance" | "advancing" | null;
     if (report === "sda_status" && st === null) throw new RangeError(`connect report: loans[${n}].stop_advance_status is required on the Remittance Detail – P&I`);
     return { fnma_loan_number: ln, loan_id: typeof x.loan_id === "string" && x.loan_id !== "" ? x.loan_id : null, stop_advance_status: st, start_date: d(x.start_date, `loans[${n}].start_date`), adjusted_start_date: d(x.adjusted_start_date, `loans[${n}].adjusted_start_date`), expiration_date: d(x.expiration_date, `loans[${n}].expiration_date`),
-      outstanding_pi_receivable_cents: x.outstanding_pi_receivable_cents === undefined || x.outstanding_pi_receivable_cents === null ? 0n : c(x.outstanding_pi_receivable_cents, `loans[${n}].outstanding_pi_receivable_cents`), lpi: d(x.lpi, `loans[${n}].lpi`), amount_cents: x.amount_cents === undefined || x.amount_cents === null ? null : c(x.amount_cents, `loans[${n}].amount_cents`), adjustment_type: typeof x.adjustment_type === "string" ? x.adjustment_type : null };
+      outstanding_pi_receivable_cents: x.outstanding_pi_receivable_cents === undefined || x.outstanding_pi_receivable_cents === null ? 0n : c(x.outstanding_pi_receivable_cents, `loans[${n}].outstanding_pi_receivable_cents`), lpi: d(x.lpi, `loans[${n}].lpi`), amount_cents: x.amount_cents === undefined || x.amount_cents === null ? null : c(x.amount_cents, `loans[${n}].amount_cents`), adjustment_type: typeof x.adjustment_type === "string" ? x.adjustment_type : null, pool_issue_date: d(x.pool_issue_date, `loans[${n}].pool_issue_date`), delinquency_status_code: typeof x.delinquency_status_code === "string" && x.delinquency_status_code !== "" ? x.delinquency_status_code : null };
   });
   const period = typeof r.period === "string" && /^\d{4}-\d{2}$/.test(r.period) ? r.period : periodOf(addMonths(plainDate(posted), -1));
   return { report, report_id: typeof r.report_id === "string" && r.report_id !== "" ? r.report_id : `${report}-${period}-${posted}`, period, posted_on: plainDate(posted), source, document_id: typeof r.document_id === "string" ? r.document_id : null, loans };
 }
-/** `fnma.connect.report.available{report}` on the report subject; the deselection report also posts the per-loan CD11 decision task (`reclass.deselection.eligible`, act by CD15 — F-1-25). */
-export function ingestConnectReport(em: Emitter, row: ConnectReportRow): { subject: Subject; reconcile_by_at: string | null; decide_by: PlainDate | null; eligible: string[]; unmapped: string[] } {
+/**
+ * `fnma.connect.report.available{report}` on the report subject; the deselection report also posts the per-loan CD11 decision task (`reclass.deselection.eligible`,
+ * act by CD15 — F-1-25). The report lists only loans in MBS pools issued June 1, 2007 through December 1, 2008 reported with a forbearance-plan or
+ * repayment-plan status code: a listed row whose facts are known and fall outside that population gets no task and is returned as `not_in_population`
+ * (a report-content variance for the Investor Reporting Representative), never a deselection decision.
+ */
+export function ingestConnectReport(em: Emitter, row: ConnectReportRow): { subject: Subject; reconcile_by_at: string | null; decide_by: PlainDate | null; eligible: string[]; unmapped: string[]; not_in_population: string[] } {
   const subject = reportSubject(row.report_id);
   const reconcileBy = row.report === "eligible_for_deselection" ? null : toIso(bd3ReconcileMs(row.period));
   const { y, m } = parts(row.posted_on); const decideBy = row.report === "eligible_for_deselection" ? ymd(y, m, 15) : null;
   em.events.append({ type: "fnma.connect.report.available", aggregate: subject, actor: em.actor, payload: { report: row.report, report_id: row.report_id, period: row.period, period_end: endOfMonth(periodStart(row.period)), posted_on: row.posted_on, source: row.source, document_id: row.document_id, loan_count: row.loans.length, received_at: em.now, reconcile_by_at: reconcileBy, decide_by: decideBy } });
-  const eligible: string[] = []; const unmapped: string[] = [];
+  const eligible: string[] = []; const unmapped: string[] = []; const not_in_population: string[] = [];
   for (const l of row.loans) {
     if (!l.loan_id) { unmapped.push(l.fnma_loan_number); continue; }
     if (row.report === "eligible_for_deselection") {
+      const known = l.pool_issue_date !== null || l.delinquency_status_code !== null;
+      if (known && !deselectionReportPopulation({ pool_issue_date: l.pool_issue_date, delinquency_status_code: l.delinquency_status_code })) {
+        not_in_population.push(l.loan_id);
+        em.events.append({ type: "reclass.deselection.population_variance", loanId: l.loan_id, aggregate: subject, actor: em.actor, payload: { report_id: row.report_id, fnma_loan_number: l.fnma_loan_number, period: row.period, posted_on: row.posted_on, pool_issue_date: l.pool_issue_date, delinquency_status_code: l.delinquency_status_code, reason: "F-1-25: the Eligible for Deselection population is June 1, 2007–December 1, 2008 MBS pools reported with a forbearance-plan or repayment-plan status code; no deselection task" } });
+        continue;
+      }
       eligible.push(l.loan_id);
       em.events.append({ type: "reclass.deselection.eligible", loanId: l.loan_id, aggregate: subject, actor: em.actor, payload: { report_id: row.report_id, fnma_loan_number: l.fnma_loan_number, period: row.period, posted_on: row.posted_on, decide_by: decideBy, task: "deselection_decision", portal_task_if_deselecting: true } });
     } else {
@@ -176,7 +189,7 @@ export function ingestConnectReport(em: Emitter, row: ConnectReportRow): { subje
       em.events.append({ type: "fnma.connect.report.line", loanId: l.loan_id, aggregate: subject, actor: em.actor, payload: { report: row.report, report_id: row.report_id, period: row.period, posted_on: row.posted_on, fnma_loan_number: l.fnma_loan_number, stop_advance_status: l.stop_advance_status, start_date: l.start_date, adjusted_start_date: l.adjusted_start_date, expiration_date: l.expiration_date, outstanding_pi_receivable_cents: l.outstanding_pi_receivable_cents, lpi: l.lpi, amount_cents: l.amount_cents, adjustment_type: l.adjustment_type, document_id: row.document_id } });
     }
   }
-  return { subject, reconcile_by_at: reconcileBy, decide_by: decideBy, eligible, unmapped };
+  return { subject, reconcile_by_at: reconcileBy, decide_by: decideBy, eligible, unmapped, not_in_population };
 }
 /** The Remittance Detail – P&I lines ingested for a report, by loan. */
 export function reportLines(events: EventStore, reportId: string): Map<string, FnmaSdaLine> {

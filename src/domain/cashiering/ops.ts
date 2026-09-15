@@ -12,7 +12,8 @@
 import { randomUUID } from "node:crypto";
 import type { EventStore, Actor, DomainEvent } from "../../kernel/events/index.ts";
 import { type PlainDate, addDays, addYears, endOfMonth } from "../../kernel/calendar/date.ts";
-import { addBusinessDays, servicer, fannieEt, type Calendar } from "../../kernel/calendar/business.ts";
+import { addBusinessDays, nextBusinessDay, servicer, fannieEt, type Calendar } from "../../kernel/calendar/business.ts";
+import { wallClock } from "../../kernel/calendar/zoned.ts";
 import type { Cents } from "../../kernel/money/cents.ts";
 import { type LoanCashState, type Fee } from "./types.ts";
 import { allocate, type AllocationPlan } from "./allocation.ts";
@@ -213,13 +214,22 @@ export class CashieringOps {
     this.queueNotice(state.loan_id, "REAMORT-EFFECTIVE-v1", { reamortization_id: id, new_pi_cents: str(re.new_pi_cents), effective_on: re.effective_on, doubles_as_reg_e_10_day_notice: true }, { kind: "reamortization", id });
     return { reamortization_id: id };
   }
-  /** The new `loan_terms` version takes effect: `loan_terms.activated` (arms LAR 83 / Reg E notice clocks) and the `rate_payment.change` investor event 5.1 submits. */
-  activateReamortizedTerms(state: LoanCashState, re: Reamortization, reamortizationId: string, calculationDate: PlainDate, nextDraftOn: PlainDate | null = re.effective_on): { state: LoanCashState; loan_terms_version: number; lar83_due_by: PlainDate } {
+  /**
+   * The new `loan_terms` version is booked: `loan_terms.activated{reason=reamortization, processed_at}` (arms the TT83 clock
+   * `FNMA_C4301_LAR83_REAMORT_NEXTBD_2000` and the Reg E notice clock) and the `rate_payment.change` investor event 5.1 submits.
+   * 2.4 rule 6 / example H: the re-amortization is an *unscheduled* TT83 — IRM 3-03 states no deadline for it (its 5th-business-day
+   * clock is for scheduled changes only), so C-4.3-01's general non-removal rule governs: due by 20:00 ET on the next Fannie Mae
+   * business day after the servicer processes the transaction in its system (booked Tue 2026-10-20 → due Wed 2026-10-21 20:00 ET).
+   * `calculationDate` is the re-amortization's computation date carried on the TT83 record; it is not the clock's anchor.
+   */
+  activateReamortizedTerms(state: LoanCashState, re: Reamortization, reamortizationId: string, calculationDate: PlainDate, nextDraftOn: PlainDate | null = re.effective_on): { state: LoanCashState; loan_terms_version: number; processed_on: PlainDate; lar83_due_by: PlainDate } {
     const r = activateReamortizedTerms(state, re);
-    const lar83_due_by = addBusinessDays(calculationDate, 5, fannieEt);
-    this.emit("loan_terms.activated", state.loan_id, { reason: "reamortization", reamortization_id: reamortizationId, loan_terms_version: r.loan_terms_version, effective_on: re.effective_on, new_pi_cents: str(re.new_pi_cents), calculation_date: calculationDate, scheduled_settlement_date: nextDraftOn, next_draft_on: nextDraftOn }, { kind: "reamortization", id: reamortizationId });
-    this.emit("investor_events.created", state.loan_id, { type: "rate_payment.change", mode: "lar", lar_codes: ["83"], reamortization_id: reamortizationId, effective_date: re.effective_on, calculation_date: calculationDate, new_pi_cents: str(re.new_pi_cents), rate_pct: re.note_rate_pct, processed_at: this.clock.now(), due_by: lar83_due_by }, { kind: "reamortization", id: reamortizationId });
-    return { ...r, lar83_due_by };
+    const processed_at = this.clock.now();
+    const processed_on = wallClock(Date.parse(processed_at), "America/New_York").date;   // the ET civil date the transaction is processed (C-4.3-01)
+    const lar83_due_by = nextBusinessDay(processed_on, fannieEt);
+    this.emit("loan_terms.activated", state.loan_id, { reason: "reamortization", reamortization_id: reamortizationId, loan_terms_version: r.loan_terms_version, effective_on: re.effective_on, new_pi_cents: str(re.new_pi_cents), calculation_date: calculationDate, processed_at, processed_on, lar83_due_by, scheduled_settlement_date: nextDraftOn, next_draft_on: nextDraftOn }, { kind: "reamortization", id: reamortizationId });
+    this.emit("investor_events.created", state.loan_id, { type: "rate_payment.change", mode: "lar", lar_codes: ["83"], tt83_change: "unscheduled", reamortization_id: reamortizationId, effective_date: re.effective_on, calculation_date: calculationDate, new_pi_cents: str(re.new_pi_cents), rate_pct: re.note_rate_pct, processed_at, due_by: lar83_due_by, cite: "Servicing Guide C-4.3-01 (next business day 8 p.m. ET); IRM 3-03 (unscheduled TT83)" }, { kind: "reamortization", id: reamortizationId });
+    return { ...r, processed_on, lar83_due_by };
   }
   /** Delivery evidence for the executed Form 181 (custodian; eVault for eMortgages) — `custodian.delivery.evidenced{document=form_181}`. */
   recordForm181Delivery(loanId: string, reamortizationId: string, evidence: { delivered_on: PlainDate; custodian_id: string; document_id: string; evault_reference?: string }): DomainEvent {
@@ -366,11 +376,16 @@ export class CashieringOps {
     } else this.emit("late_charge.waive.refused", state.loan_id, { fee_id: feeId, reason, code: r.code, why: r.reason }, { kind: "fee", id: feeId });
     return r;
   }
-  /** Waive every open late charge (trial conversion, workout completion, SCRA): `fee.waived` per fee and one `late_charges.all_waived{reason}`. */
-  waiveAll(state: LoanCashState, reason: WaiverReason, actor: Actor, on: PlainDate): Cents {
-    let total = 0n; let count = 0;
-    for (const f of state.fees ?? []) if (f.fee_type === "late_charge" && (f.state === "assessed" || f.state === "accrued_suspended")) { const r = this.waive(state, f.id, reason, actor, on); if (r.ok) { total += r.waived_cents; count++; } }
-    this.emit("late_charges.all_waived", state.loan_id, { reason, total_cents: str(total), count, on, capitalized_cents: "0" });
+  /**
+   * Waive every open late charge (trial conversion, workout completion, SCRA): `fee.waived` per fee and one `late_charges.all_waived{reason}`.
+   * `fee_types` widens the sweep — D2-3.2-04/-05 (`reason=deferral_completion`) waives "all late charges, penalties, stop payment fees,
+   * or similar charges", i.e. the returned-payment/stop-payment `nsf_fee` rows too.
+   */
+  waiveAll(state: LoanCashState, reason: WaiverReason, actor: Actor, on: PlainDate, opts: { fee_types?: readonly Fee["fee_type"][] } = {}): Cents {
+    const types = opts.fee_types ?? ["late_charge"];
+    let total = 0n; let count = 0; let returnedPaymentFees = 0n;
+    for (const f of state.fees ?? []) if (types.includes(f.fee_type) && (f.state === "assessed" || f.state === "accrued_suspended")) { const r = this.waive(state, f.id, reason, actor, on); if (r.ok) { total += r.waived_cents; count++; if (f.fee_type !== "late_charge") returnedPaymentFees += r.waived_cents; } }
+    this.emit("late_charges.all_waived", state.loan_id, { reason, total_cents: str(total), count, on, capitalized_cents: "0", fee_types: [...types], returned_payment_fees_waived_cents: str(returnedPaymentFees) });
     return total;
   }
   /** 2.7 rule 7 / T10: the returned-payment fee where authority exists, once per returned item, with `LC-NSF-FEE-v1`. */

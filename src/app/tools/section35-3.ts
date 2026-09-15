@@ -18,17 +18,28 @@
  *                     `job.unit.resolved{job_id, by, disposition}` satisfies SM_JOB_DEAD_2H; decision `jobs.requeue:<op>` names the
  *                     person (the bus adds `approvedBy`) and the reason.
  *   writeDecision     the kernel's decision row (src/app/tools.ts decision(); the section01.ts precedent).
- *   cycles.run_unit, cycles.retry and cycles.escalate land with the executor's commit group.
+ *   cycles.run_unit   act `{job_id}` — the by-hand dispatcher (D6): the command claims the job in its own transaction
+ *                     (`byhand:<actor>` lease, `job.unit.claimed`, JOB_NOT_CLAIMABLE for anything but a due `queued` job — worked
+ *                     example A's second run of a `done` job) and answers `{claimed: true, holder}`; the unit runs after the commit
+ *                     (service.ts runUnitByHand, or the next executor pass adopts the lease). `decision: () => null` — the unit's
+ *                     own decision is the owner agent's, written by 35.3 with a pre-minted id in the unit's transaction (D7).
+ *   cycles.retry      act `{job_id}` — an agent's early retry of a `failed` unit before its `run_after` (rule 7: the attempt it
+ *                     then runs is the only one consumed).
+ *   cycles.escalate   act `{run_id | job_id, reason}` — one escalation to the registry row's role with the standard payload.
  *
  * Guardrails (the paragraph's list): NO_MONEY_FIELD (34.4's regex: no money key, `changes`, `data`, waiver or refund — rule 12),
  * NO_CLOCK_EDIT (34.4's keys: nothing here satisfies, extends, cancels or re-dates a timer — rule 12), UNIT_RUNS_AS_OWNER (an input
  * naming an actor or agent to run as is refused — rule 8), ROLE_REQUIRED (pause, resume, requeue, abandon, cancel are an
- * `ops_analyst`'s: an agent is refused by the guardrail, not by HUMAN_ONLY, so the refusal code is the paragraph's — T13).
+ * `ops_analyst`'s: an agent is refused by the guardrail, not by HUMAN_ONLY, so the refusal code is the paragraph's — T13),
+ * NO_CLIENT_STATE (rule 8 / T13: a unit's input carries ids and dates only — `state`, `custodial`, `changes` or a `*_cents` key,
+ * at the top level or under a nested `input`, is refused before any row or event is written; jobs.ts clientStateKey),
+ * JOB_RETRY_CAP_3 (rule 7: `max_attempts`, `reset_attempts` or `force` on a dispatch or retry is refused — the cap is the policy's).
  */
 import { defineTools, compute, decision, guard, never, str, PortUnavailable, type ToolDef, type ToolInput, type ToolRuntime } from "../tools.ts";
 import type { CommandContext } from "../commands.ts";
 import type { Runtime } from "../../runtime/app.ts";
 import { CYCLES_PROCESS, OPS_STEWARD, cyclesOf, type PlanOutput } from "../../domain/operations-runtime/service.ts";
+import { clientStateKey } from "../../domain/operations-runtime/jobs.ts";
 
 const runtimeOf = (rt: ToolRuntime): Runtime => { const r = rt.services["runtime"] as Runtime | undefined; if (!r) throw new PortUnavailable("service:runtime"); return r; };
 const has = (i: ToolInput, k: string): boolean => i[k] !== undefined && i[k] !== null && i[k] !== "" && i[k] !== false;
@@ -50,6 +61,10 @@ export const UNIT_RUNS_AS_OWNER = never("UNIT_RUNS_AS_OWNER", "35.3 AI agent des
 /** Requeue, abandon, pause and cancel are an `ops_analyst`'s acts: an agent (or a human without the role) is refused ROLE_REQUIRED naming the role (T13). */
 export const roleRequired = (when: (i: ToolInput) => boolean, what: string): ReturnType<typeof guard> =>
   guard("ROLE_REQUIRED", "35.3 AI agent design: 'ROLE_REQUIRED (requeue, abandon, pause, cancel are `ops_analyst`)'; rule 7: 'an agent actor is refused ROLE_REQUIRED (T13)'", (i, ctx) => (!when(i) ? undefined : ctx.actor.kind !== "human" || ctx.actor.role !== "ops_analyst" ? `${what} is an ops_analyst's act; ${ctx.actor.kind}:${ctx.actor.id}${ctx.actor.role ? ` (${ctx.actor.role})` : ""} is refused — requires ops_analyst` : undefined));
+/** Rule 8 / T13: a unit's input is ids and dates — `state`, `custodial`, `changes` or any `*_cents` key (top-level or under a nested `input`) is client state, refused before anything is written. Listed first so the refusal code is NO_CLIENT_STATE even where NO_MONEY_FIELD would also match. */
+export const NO_CLIENT_STATE = guard("NO_CLIENT_STATE", "35.3 rule 8: 'the job's `input` carries ids and dates only; an `input` that carries `state`, `custodial`, a `*_cents` field or a `changes` object is refused `NO_CLIENT_STATE` before anything is written (T13)'", (i) => { const k = clientStateKey(i); return k ? `the unit's facts are derived server-side inside the owner's command; \`${k}\` is client state and is refused` : undefined; });
+/** Rule 7: the retry cap is the policy's (JOB_RETRY.maxAttempts = 3) — a dispatch or retry that names `max_attempts`, `reset_attempts` or `force` is refused; only an ops_analyst's jobs.requeue starts a new series. */
+export const JOB_RETRY_CAP_3 = never("JOB_RETRY_CAP_3", "35.3 rule 7: 'JOB_RETRY = { maxAttempts: 3, … }; a `dead` unit is requeued (`attempts` reset to 0, `max_attempts` 3 again) or abandoned only by `jobs.requeue` from an `ops_analyst`'", (i) => has(i, "max_attempts") || has(i, "reset_attempts") || has(i, "force"), "the retry cap is the policy's three attempts; nothing raises, resets or forces it — a dead unit is an ops_analyst's jobs.requeue");
 /** A reason is required on every human act here (pause, resume, requeue, abandon, escalate). */
 export const reasonRequired = (when: (i: ToolInput) => boolean): ReturnType<typeof guard> => guard("REASON_REQUIRED", "35.3 state machine: 'active ⇄ paused (ops_analyst with a reason, logged)'; rule 7: 'requeues with a reason'", (i) => (when(i) && !str(i, "reason") ? "a reason is required" : undefined));
 
@@ -86,5 +101,15 @@ export const TOOLS_35_3: readonly ToolDef[] = defineTools(CYCLES_PROCESS, OPS_ST
       throw new RangeError("jobs.requeue op is requeue or abandon");
     }),
     decision: (i, output, ctx) => { const o = obj(output); return { action: `jobs.requeue:${str(i, "op")}`, subject: { kind: String(o["cycle_code"] ?? "job"), id: String(o["unit_id"] ?? str(i, "job_id")) }, rationale: `${str(i, "op")} of ${String(o["cycle_code"] ?? "")} ${String(o["period_key"] ?? "")} unit ${String(o["unit_id"] ?? "")} (job ${str(i, "job_id")}) by ${by(ctx)}: ${str(i, "reason")}` }; } },
+  // D6: the by-hand dispatcher — claims in-command (the deferred claim row; zero rows roll the command back), the unit runs after the commit (service.ts runUnitByHand)
+  { name: "cycles.run_unit", kind: "act", ruleSetVersion: "cycles.v1", guardrails: [NO_CLIENT_STATE, UNIT_RUNS_AS_OWNER, NO_MONEY_FIELD, NO_CLOCK_EDIT, JOB_RETRY_CAP_3],
+    handler: compute((i, ctx, rt) => cyclesOf(runtimeOf(rt)).claimByHandIn(ctx, rt, str(i, "job_id"))),
+    decision: () => null },
+  { name: "cycles.retry", kind: "act", ruleSetVersion: "cycles.v1", guardrails: [NO_CLIENT_STATE, UNIT_RUNS_AS_OWNER, NO_MONEY_FIELD, NO_CLOCK_EDIT, JOB_RETRY_CAP_3],
+    handler: compute((i, ctx, rt) => cyclesOf(runtimeOf(rt)).retryFailed(ctx, rt, str(i, "job_id"))),
+    decision: (i, output, ctx) => { const o = obj(output); return { action: "cycles.retry", subject: { kind: String(o["cycle_code"] ?? "job"), id: String(o["unit_id"] ?? str(i, "job_id")) }, rationale: `early retry of ${String(o["cycle_code"] ?? "")} ${String(o["period_key"] ?? "")} unit ${String(o["unit_id"] ?? "")} (job ${str(i, "job_id")}, attempt ${String(o["attempts"] ?? "")} of ${String(o["max_attempts"] ?? "")}) by ${by(ctx)}` }; } },
+  { name: "cycles.escalate", kind: "act", ruleSetVersion: "cycles.v1", guardrails: [NO_CLIENT_STATE, UNIT_RUNS_AS_OWNER, NO_MONEY_FIELD, NO_CLOCK_EDIT, reasonRequired(always)],
+    handler: compute((i, ctx, rt) => cyclesOf(runtimeOf(rt)).escalateByHand(ctx, rt, { ...(str(i, "run_id") ? { run_id: str(i, "run_id") } : {}), ...(str(i, "job_id") ? { job_id: str(i, "job_id") } : {}), reason: str(i, "reason") })),
+    decision: (i, output, ctx) => { const o = obj(output); return { action: "cycles.escalate", subject: { kind: String(o["cycle_code"] ?? "cycle"), id: String(o["job_id"] ?? o["run_id"] ?? str(i, "job_id") ?? str(i, "run_id")) }, rationale: `${String(o["kind"] ?? "escalation")} to ${String(o["owner_role"] ?? "")} for ${String(o["cycle_code"] ?? "")} ${String(o["period_key"] ?? "")}${o["unit_id"] ? ` unit ${String(o["unit_id"])}` : ""} by ${by(ctx)}: ${str(i, "reason")}` }; } },
   { name: "writeDecision", kind: "act", handler: decision() },
 ]);

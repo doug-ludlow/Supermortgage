@@ -137,6 +137,17 @@ export function fakePorts(): Ports {
     connect: new FakeFnmaConnect(), pacer: new FakePacer(), dmdc: new FakeDmdc(), erecording: new FakeErecording(), mers: new FakeMers(), lpi: new FakeLpiTracking(), flood: new FakeFlood(), taxService: new FakeTaxService(), mi: new FakeMi(), oidc: new FakeGoogleOidc() };
 }
 
+/**
+ * The breach escalation's owner role from the registry row's breach column: its first backticked token, unless that token is
+ * the placeholder `escalation_role` (35.3's SM_JOB_DEAD_2H: "sev 3 → the registry row's `escalation_role`" — the role lives on the
+ * `cycle_registry` row, not in the column; src/kernel/timers/registry.ts parseSeverity collects every backticked token, so the
+ * generic fallback would otherwise open the escalation to a literal `escalation_role`). Undefined → the caller's default.
+ */
+export function resolveBreachRole(b: { readonly escalateTo: readonly string[] }): string | undefined {
+  const first = b.escalateTo[0];
+  return first === undefined || first === "escalation_role" ? undefined : first;
+}
+
 /** The unit of work's store with the scope's loan stamped on every appended event that carries neither a loan nor an application key. */
 function withDefaultLoan(inner: MemoryEventStore, loanId: string): MemoryEventStore {
   const append: MemoryEventStore["append"] = (input) => inner.append(input.loanId === undefined && input.applicationId === undefined ? { ...input, loanId } : input);
@@ -259,8 +270,8 @@ export class Runtime {
    * Neither daily pass can fail the sweep: a failure is logged and reported, the breach pass still runs.
    */
   async sweep(nowIso: string = this.clock.now(), opts: { readonly cycles?: "run" | "skip" } = {}): Promise<SweepReport> {
-    // 35.3 (Inputs and triggers): the cycles pass first — `cycles.plan` under its planner lock (35.1's lease and outbox lines go above it at merge); a refused lock or a missing databaseUrl skips it and every other pass still runs. Plan only here: the executor runs from the demo step and the sweep job's executor budget once the unit runners land.
-    const cycles: CyclesSweepReport | null = opts.cycles === "skip" ? null : await cyclesSweepPass(this, nowIso, { execute: false });
+    // 35.3 (Inputs and triggers): the cycles pass first — `cycles.plan` under its planner lock (35.1's lease and outbox lines go above it at merge), then the executor claims and runs every claimable unit until the queue is empty or rule 6's 240 s budget is spent; a refused lock or a missing databaseUrl skips it and every other pass still runs.
+    const cycles: CyclesSweepReport | null = opts.cycles === "skip" ? null : await cyclesSweepPass(this, nowIso, { execute: true });
     let refi: RefiDailyReport | null = null;
     if (this.rateFeed) {
       try { refi = await refiDailyRun(this, nowIso, { feed: this.rateFeed, logger: this.logger }); }
@@ -295,7 +306,7 @@ export class Runtime {
         const escalations = new EscalationService(events, this.clock);
         for (const b of engine.evaluate(nowIso)) {
           const sev = b.severity ?? 4;
-          const owner = b.escalateTo[0] ?? "ops_analyst";
+          const owner = resolveBreachRole(b) ?? "ops_analyst";
           escalations.open({ kind: `sev${sev}`, ownerRole: owner, ...(b.instance.loanId ? { loanId: b.instance.loanId } : {}), severity: String(sev), slaTimerId: b.instance.id,
             payload: { timer_code: b.instance.code, timer_id: b.instance.id, due_at: b.instance.dueAt !== undefined ? new Date(b.instance.dueAt).toISOString() : null, breach: b.breachText } }, { kind: "system", id: "sweep" });
           breaches.push({ loan_id: b.instance.loanId ?? null, code: b.instance.code, severity: b.severity, escalate_to: [...b.escalateTo], timer_id: b.instance.id });

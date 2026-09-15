@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 8066/8756 (92.1%): tids 2249/2458, tables 770/848, timers 2054/2097, notices 308/308, tools 1439/1578, figures 1246/1467; processes at 100%: 192/205",
+ "brief": "spec units built 8091/8756 (92.4%): tids 2257/2458, tables 770/848, timers 2054/2097, notices 308/308, tools 1442/1578, figures 1260/1467; processes at 100%: 192/205",
  "totals": {
   "tids": {
    "spec": 2458,
-   "built": 2249
+   "built": 2257
   },
   "tables": {
    "spec": 848,
@@ -19,15 +19,15 @@
   },
   "tools": {
    "spec": 1578,
-   "built": 1439
+   "built": 1442
   },
   "figures": {
    "spec": 1467,
-   "built": 1246
+   "built": 1260
   },
   "units": {
    "spec": 8756,
-   "built": 8066
+   "built": 8091
   }
  },
  "sections": {
@@ -237,7 +237,7 @@
   },
   "35": {
    "spec": 715,
-   "built": 42,
+   "built": 67,
    "processes": 12,
    "done": 0
   }
@@ -8439,21 +8439,17 @@
    },
    "figures": {
     "spec": 7,
-    "built": 1,
+    "built": 5,
     "missing": [
-     "$1,345.02",
-     "$1,612.34",
      "$2,045.12",
-     "$248,043.23",
-     "$267.32",
-     "$432.78"
+     "$248,043.23"
     ]
    },
    "units": {
     "spec": 42,
-    "built": 2
+    "built": 6
    },
-   "pct": 4.8
+   "pct": 14.3
   },
   {
    "process": "35.2",
@@ -8561,20 +8557,12 @@
    "title": "Cycles, jobs and receipts: the planner, the jobs table, `cycles.run_unit` on the bus and the registry of every scheduled cycle",
    "tids": {
     "spec": 16,
-    "built": 5,
-    "todo": 11,
+    "built": 13,
+    "todo": 3,
     "missing": [
-     3,
-     4,
-     5,
-     6,
      7,
      8,
-     9,
-     10,
-     12,
-     13,
-     16
+     12
     ]
    },
    "tables": {
@@ -8595,30 +8583,19 @@
    },
    "tools": {
     "spec": 9,
-    "built": 6,
-    "missing": [
-     "cycles.run_unit",
-     "cycles.retry",
-     "cycles.escalate"
-    ]
+    "built": 9,
+    "missing": []
    },
    "figures": {
     "spec": 7,
-    "built": 1,
-    "missing": [
-     "$1,345.02",
-     "$1,612.34",
-     "$2,125.74",
-     "$267.32",
-     "$432.78",
-     "$80.62"
-    ]
+    "built": 7,
+    "missing": []
    },
    "units": {
     "spec": 40,
-    "built": 20
+    "built": 37
    },
-   "pct": 50.0
+   "pct": 92.5
   },
   {
    "process": "35.4",
@@ -8692,9 +8669,8 @@
    },
    "figures": {
     "spec": 19,
-    "built": 0,
+    "built": 1,
     "missing": [
-     "$0.00",
      "$1,233,000.00",
      "$1,250.00",
      "$1,253,050.55",
@@ -8717,9 +8693,9 @@
    },
    "units": {
     "spec": 55,
-    "built": 0
+    "built": 1
    },
-   "pct": 0.0
+   "pct": 1.8
   },
   {
    "process": "35.5",
@@ -8934,9 +8910,8 @@
    },
    "figures": {
     "spec": 40,
-    "built": 0,
+    "built": 1,
     "missing": [
-     "$0.00",
      "$1,067.72",
      "$1,096.67",
      "$1,240.00",
@@ -8980,9 +8955,9 @@
    },
    "units": {
     "spec": 80,
-    "built": 3
+    "built": 4
    },
-   "pct": 3.8
+   "pct": 5.0
   },
   {
    "process": "35.7",
@@ -9147,9 +9122,8 @@
    },
    "figures": {
     "spec": 22,
-    "built": 1,
+    "built": 2,
     "missing": [
-     "$1,345.02",
      "$1,352.94",
      "$1,665.00",
      "$1,785.43",
@@ -9174,9 +9148,9 @@
    },
    "units": {
     "spec": 63,
-    "built": 2
+    "built": 3
    },
-   "pct": 3.2
+   "pct": 4.8
   },
   {
    "process": "35.9",
@@ -9369,9 +9343,8 @@
    },
    "figures": {
     "spec": 27,
-    "built": 0,
+    "built": 1,
     "missing": [
-     "$0.00",
      "$107.30",
      "$2,062.50",
      "$2,521.38",
@@ -9402,9 +9375,9 @@
    },
    "units": {
     "spec": 65,
-    "built": 0
+    "built": 1
    },
-   "pct": 0.0
+   "pct": 1.5
   },
   {
    "process": "35.11",

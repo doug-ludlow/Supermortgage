@@ -152,17 +152,23 @@ export function expectedBy(rule: string | null, anchor: PlainDate, calendar: Day
 }
 
 // ─────────────────────────── dependencies (rule 3's blocked → queued)
-/** The period key of a `{cycle_code, period_of}` dependency for a unit of period `period_key` / `period_end`. */
-export function dependencyPeriod(dep: { readonly period_of?: "same_day" | "last_day_of_month" | "bd1_following_month" }, period: PeriodDue, cals: CalendarSet = defaultCalendars): string {
+/**
+ * The period key of a `{cycle_code, period_of}` dependency for a unit of period `period_key` / `period_end`. `same_day` (the
+ * table's "cashiering_daily (same day)" / "the day's postings are on the statement") is the day the unit was PLANNED — the run's
+ * `as_of_date` — not the unit's own period key: a statement for `cycle_due_date 2026-10-01` planned on its statement date
+ * 2026-10-17 waits on `cashiering_daily:2026-10-17` (worked example A / T9), an escrow analysis for `2026-10` on the day it was
+ * planned; for a `day` cycle the two coincide. Without an as-of (a caller that has none) the unit's period key stands.
+ */
+export function dependencyPeriod(dep: { readonly period_of?: "same_day" | "last_day_of_month" | "bd1_following_month" }, period: PeriodDue, cals: CalendarSet = defaultCalendars, asOfDate?: PlainDate): string {
   switch (dep.period_of ?? "same_day") {
-    case "same_day": return period.period_key;
+    case "same_day": return asOfDate ?? period.period_key;
     case "last_day_of_month": return endOfMonth(period.period_end);
     // amendment order 11: `investor_period_close` depends on `lar_daily` for BD1 of the following month (the period's last non-removal LARs), on `business_days_fannie_et`
     case "bd1_following_month": return addBusinessDays(endOfMonth(period.period_end), 1, cals.business_days_fannie_et);
   }
 }
 /** The period an event-typed dependency names: `payload.period_key ?? payload.period ?? period_end.slice(0, 7)` (A2); `ledger.period.closed` must also name the unit's custodial account. */
-export async function dependencyMet(q: Queryable, dep: Dependency, unit: { readonly period: PeriodDue; readonly input: Record<string, unknown> }, cals: CalendarSet = defaultCalendars): Promise<boolean> {
+export async function dependencyMet(q: Queryable, dep: Dependency, unit: { readonly period: PeriodDue; readonly input: Record<string, unknown>; /** the run's as_of_date — what a `same_day` receipt dependency names */ readonly as_of_date?: PlainDate }, cals: CalendarSet = defaultCalendars): Promise<boolean> {
   if ("event" in dep) {
     const rows = await q.query<{ payload: Record<string, unknown> }>(`SELECT payload FROM loan_events WHERE type = $1`, [dep.event]);
     const period = unit.period.period_key;
@@ -175,7 +181,7 @@ export async function dependencyMet(q: Queryable, dep: Dependency, unit: { reado
       return true;
     });
   }
-  const rows = await q.query<{ n: string }>(`SELECT count(*)::text AS n FROM cycle_receipts WHERE cycle_code = $1 AND period_key = $2`, [dep.cycle_code, dependencyPeriod(dep, unit.period, cals)]);
+  const rows = await q.query<{ n: string }>(`SELECT count(*)::text AS n FROM cycle_receipts WHERE cycle_code = $1 AND period_key = $2`, [dep.cycle_code, dependencyPeriod(dep, unit.period, cals, unit.as_of_date)]);
   return Number(rows[0]?.n ?? "0") > 0;
 }
 
@@ -262,7 +268,8 @@ export const CYCLE_ROWS: readonly CycleDef[] = [
   def({ cycle_code: "remittance", owner_process: "5.2", owner_agent: "investor-reporting", unit_scope: "account", schedule: "A/A: BD1 16:00 ET (F-1-20: prior-month collections received after the 4 p.m. ET cut-off); draft notices BD3 (F-1-20; the 12:00 ET is 5.2's); S/S per F-1-20 (portfolio: 18th calendar day; MBS: per remittance cycle)", period_grammar: "month", period_of: "prior_month", calendar: "business_days_fannie_et", selector: selectors.pi_accounts_by_remittance, receipt_event: "investor.remittance.run_completed", depends_on: [{ cycle_code: "investor_period_close" }], serves_timer: "FNMA_F120_AA_BD1_PRIOR_MONTH", escalation_role: "officer", expected_by_rule: "BD1 16:00 ET" }),
   def({ cycle_code: "custodial_recon_daily", owner_process: "6.3", owner_agent: "custodial-recon", unit_scope: "account", schedule: "daily, every custodial account (6.3's three-way)", period_grammar: "day", selector: selectors.custodial_accounts, receipt_event: "custodial.recon.run_completed", depends_on: onCashiering(), serves_timer: "FNMA_C1101_DEPOSIT_CUSTODIAL_24H", expected_by_rule: "same_day 23:59 ET" }),
   def({ cycle_code: "form_496_monthly", owner_process: "35.4", owner_agent: "custodial-recon", unit_scope: "account", schedule: "after both closes; drafted by BD10 (6.3 policy), completed within 45 days (6.3's reading of the Form 496 instructions; Servicing Guide F-1-03 requires the monthly reconciliation and its retention)", period_grammar: "month", period_of: "prior_month", calendar: "business_days_fannie_et", selector: selectors.pi_accounts_by_remittance, receipt_event: "custodial.form496.run_completed", depends_on: [{ event: DEP_EVENTS.LEDGER_PERIOD_CLOSED }, { event: DEP_EVENTS.INVESTOR_PERIOD_CLOSED }], serves_timer: "FNMA_F496_PI_RECON_45", escalation_role: "officer", expected_by_rule: "BD10 23:59 ET" }),
-  def({ cycle_code: "metro2_monthly", owner_process: "8.1", owner_agent: "credit-reporting", unit_scope: "global", schedule: "00:05 ET on the 1st, as of the last day of the prior month; built by 12:00 ET", period_grammar: "month", period_of: "prior_month", selector: selectors.global, receipt_event: "credit.cycle.run_completed", depends_on: onCashiering("last_day_of_month"), serves_timer: "FNMA_C41_01_METRO2_SNAPSHOT_EOM", escalation_role: "officer", expected_by_rule: "+1 calendar_days" }),
+  // the table's unit scope is `period (month)`: the unit is the period itself (`unit_id = period_key`, the decision's subject_id — T16)
+  def({ cycle_code: "metro2_monthly", owner_process: "8.1", owner_agent: "credit-reporting", unit_scope: "period", schedule: "00:05 ET on the 1st, as of the last day of the prior month; built by 12:00 ET", period_grammar: "month", period_of: "prior_month", selector: selectors.period, receipt_event: "credit.cycle.run_completed", depends_on: onCashiering("last_day_of_month"), serves_timer: "FNMA_C41_01_METRO2_SNAPSHOT_EOM", escalation_role: "officer", expected_by_rule: "+1 calendar_days" }),
   def({ cycle_code: "arm_changes", owner_process: "7.2", owner_agent: "disclosures", unit_scope: "loan", schedule: "daily: every arm_schedule row whose notice window opens today (first_new_payment_due − 120 days; mail by − 60)", period_grammar: "day", selector: selectors.arm_windows_opening, receipt_event: "arm.adjustment.run_completed", serves_timer: "REGZ_1026_20C_ADJ_NOTICE_60", expected_by_rule: "same_day 23:59 ET" }),
   def({ cycle_code: "mi_changes", owner_process: "10.x", owner_agent: "pmi", unit_scope: "loan", schedule: "daily: every mi_schedules row whose 80% / 78% / midpoint date is today or passed unhandled", period_grammar: "day", selector: selectors.mi_dates_reached, receipt_event: "mi.schedule.run_completed", depends_on: onCashiering(), serves_timer: "HPA_4902C_MIDPOINT_TERMINATE_0", expected_by_rule: "same_day 23:59 ET" }),
   def({ cycle_code: "document_integrity", owner_process: "35.2", owner_agent: "security-records", unit_scope: "global", schedule: "daily 02:30 ET", period_grammar: "day", selector: selectors.global, receipt_event: "document.integrity.run_completed", receipt_emitted_by: "owner", serves_timer: "SM_DOC_INTEGRITY_DAILY", expected_by_rule: "same_day 23:59 ET" }),

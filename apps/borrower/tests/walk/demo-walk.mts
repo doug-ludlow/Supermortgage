@@ -20,7 +20,8 @@
  *   9. A second fresh context on the same host sees nothing of the first person.
  *  10. /video with no account reaches the call itself: no sign-in form, the call live, an account opened on the spot (32.17 rule 11).
  *  11. A homeowner from the partner book (33.1 rules 5–6): the code door on the fixture e-mail lands in the conversation; the first
- *      message names the partner as the servicer and carries no digit; the record reads Monitored with the partner as servicer and the
+ *      message names the partner as the servicer (the partner the deployed record carries — the configured partner on nonprod, 33.1 rule 7)
+ *      and carries no digit; the record reads Monitored with the partner as servicer and the
  *      loan's last four; no goal card and no organic application ask on the rail; sign out. An unseeded book fails, never passes.
  */
 import { chromium, type Browser, type Page } from "@playwright/test";
@@ -239,6 +240,13 @@ async function walk(browser: Browser): Promise<void> {
     if (me.status !== 200 || !loanSubject) {
       record(11, "a partner-book homeowner signs in by code: the first turn names the partner, the record reads Monitored, no goal card", false, `${NOT_SEEDED} (GET /me ${me.status}: ${subjects.length} subject(s), none a loan; door: ${door.how})`);
     } else {
+      // 33.1 rule 7: the demo book loads under the configured partner (BORROWER_DEFAULT_PARTNER_ID's party — "Partner Bank (FAKE demo)" on
+      // nonprod) and only under DEMO_PARTNER when none is configured — so the partner the first turn must name and the loan's last four are
+      // read from the deployed record's partner_book, never assumed from the fixture; the fixture values stand in only when the record has none
+      const rec = await apiOnPage(page3, "GET", `/v1/borrower/record?subject=${encodeURIComponent(String(loanSubject["loan_id"]))}`);
+      const pb = rec.status === 200 && rec.body["partner_book"] && typeof rec.body["partner_book"] === "object" ? (rec.body["partner_book"] as Record<string, unknown>) : {};
+      const expectedPartner = typeof pb["partner_name"] === "string" && pb["partner_name"] ? (pb["partner_name"] as string) : PARTNER_BOOK.partner;
+      const expectedLast4 = typeof pb["loan_last4"] === "string" && pb["loan_last4"] ? (pb["loan_last4"] as string) : PARTNER_BOOK.loanLast4;
       await page3.goto(`${BASE}/app`, { waitUntil: "load", timeout: 60_000 });
       await page3.waitForSelector('[data-testid="thread"]', { timeout: 60_000 }).catch(() => undefined);
       const landed = /^\/app\/?$/.test(new URL(page3.url()).pathname) && (await page3.locator('[data-testid="thread"]').count()) === 1 && (await page3.locator('[data-testid="account"]').count()) === 0;
@@ -259,9 +267,9 @@ async function walk(browser: Browser): Promise<void> {
       const nothingNeeded = (await rail.locator('[data-testid="needs-none"]').count()) === 1;
       const greetsByName = greeting.includes(PARTNER_BOOK.firstName);   // rule 5: by first name (logged; the verdict is the partner and no figure)
       // the first-turn instruction (src/runtime/borrower/agent/context.ts) has the assistant say "your loan ending {{partner_book.loan_last4}}" — those four digits are the one number a first turn may carry; any other digit, a %, a $ or an unresolved token fails
-      const digitsOtherThanLast4 = /\d/.test(greeting.split(PARTNER_BOOK.loanLast4).join(""));
-      const greetingOk = !!greeting && greeting.includes(PARTNER_BOOK.partner) && !digitsOtherThanLast4 && !/[%$]/.test(greeting) && !FIXED_LINE.test(greeting) && !greeting.includes("@");
-      const monitoredOk = /\bMonitored\b/.test(badge) && peopleText.includes(PARTNER_BOOK.partner) && headerLine.endsWith(PARTNER_BOOK.loanLast4);
+      const digitsOtherThanLast4 = /\d/.test(greeting.split(expectedLast4).join(""));
+      const greetingOk = !!greeting && greeting.includes(expectedPartner) && !digitsOtherThanLast4 && !/[%$]/.test(greeting) && !FIXED_LINE.test(greeting) && !greeting.includes("@");
+      const monitoredOk = /\bMonitored\b/.test(badge) && peopleText.includes(expectedPartner) && headerLine.endsWith(expectedLast4);
       const noGoalOk = goalCards === 0 && neededCards === 0 && nothingNeeded;
       // sign out: the header's control, then the next load is the door
       const signOut3 = page3.locator('[data-testid="sign-out-button"]');
@@ -274,7 +282,7 @@ async function walk(browser: Browser): Promise<void> {
       const doorAfter3 = (await page3.locator('[data-testid="account"], [data-testid="sign-in-button"]').count()) > 0 && (await page3.locator('[data-testid="thread"] .sm-msg').count()) === 0;
       record(11, "a partner-book homeowner signs in by code: the first turn names the partner, the record reads Monitored, no goal card",
         landed && greetingOk && monitoredOk && noGoalOk && hadSignOut3 && doorAfter3,
-        `door=${door.how} landed=${landed} byName=${greetsByName} greeting=${JSON.stringify(greeting.slice(0, 200))} badge=${JSON.stringify(badge)} header=${JSON.stringify(headerLine)} people=${JSON.stringify(peopleText.slice(0, 160))} numbers=${JSON.stringify(numbersText.slice(0, 160))} goalCards=${goalCards} neededCards=${neededCards} nothingNeeded=${nothingNeeded} signOut=${hadSignOut3} doorAfter=${doorAfter3}`);
+        `door=${door.how} partner=${JSON.stringify(expectedPartner)} last4=${expectedLast4} landed=${landed} byName=${greetsByName} greeting=${JSON.stringify(greeting.slice(0, 200))} badge=${JSON.stringify(badge)} header=${JSON.stringify(headerLine)} people=${JSON.stringify(peopleText.slice(0, 160))} numbers=${JSON.stringify(numbersText.slice(0, 160))} goalCards=${goalCards} neededCards=${neededCards} nothingNeeded=${nothingNeeded} signOut=${hadSignOut3} doorAfter=${doorAfter3}`);
     }
   }
   await ctx3.close();

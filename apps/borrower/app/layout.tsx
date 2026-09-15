@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
+import "./mobile-shell.css";
 import { THEME_DEFAULT } from "@/lib/env";
 
 export const metadata: Metadata = {

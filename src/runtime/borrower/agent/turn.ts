@@ -185,7 +185,8 @@ export class AgentTurnRunner {
     const classification = guard?.classification ?? null;
     // ---- 32.17 rule 21: words commit — a complete proposal the accepted reply read back is written now, the way the Confirm tap wrote it; a refusal leaves the proposal on the card with its copy
     let committed: string | null = null; let commitRefused: string | null = null;
-    if (accepted && ledger.proposed_card_instance_ids.length && this.d.commit) {
+    // 32.16 §2.4 / §3.4 (DELTA-27): on a voice channel words do not commit — the model reads the proposal back and the borrower's "yes" is the attestation that resolves it (resolve_card_by_evidence{channel: voice}, src/runtime/borrower/voice.ts); the proposal waits on the card until then
+    if (accepted && ledger.proposed_card_instance_ids.length && this.d.commit && req.channel !== "voice") {
       for (const proposedId of ledger.proposed_card_instance_ids) {   // every card the turn proposed into, in call order (one turn can carry the value, the amount and the product)
         const proposed = await ui.card(proposedId);
         const proposal = proposed?.props["proposal"] && typeof proposed.props["proposal"] === "object" ? (proposed.props["proposal"] as P) : null;
@@ -242,7 +243,7 @@ export class AgentTurnRunner {
   /** The model failed outright: the step's default copy, recorded like any other attempt. */
   private async fallback(req: AgentTurnRequest, turn_id: string, stepCopyKey: string | null, guard: GuardResult | null, ledger: ToolLedger, context_hash: string, started: number, usage: { input_tokens: number; output_tokens: number }, why: string): Promise<AgentTurnReply> {
     const copy_key = stepCopyKey ?? (req.routed_to === "intake" ? THREAD_COPY_KEYS.placeholderIntake : THREAD_COPY_KEYS.placeholderServicing);
-    const replyId = await this.d.ui.appendMessage({ conversation_id: req.conversation_id, at: req.now, sender: "agent", sender_ref: `agent:${req.routed_to}`, channel: req.channel, body_text: `{{copy:${copy_key}}}`, copy_tokens: { source: "agent_turn", turn_id, fallback: "default_copy", rejected_by: why, copy_key }, subject_application_id: req.subject?.application_id ?? null, subject_loan_id: req.subject?.loan_id ?? null });
+    const replyId = await this.d.ui.appendMessage({ conversation_id: req.conversation_id, at: req.now, sender: "agent", sender_ref: `agent:${req.routed_to}`, channel: req.channel, body_text: `{{copy:${copy_key}}}`, copy_tokens: { source: "agent_turn", turn_id, fallback: "default_copy", rejected_by: why, copy_key }, voice_turn: req.channel === "voice", subject_application_id: req.subject?.application_id ?? null, subject_loan_id: req.subject?.loan_id ?? null });
     await this.record({ turn_id, req, reply_message_id: replyId, context_hash, ledger, classification: null, guard, latency_ms: Date.now() - started, usage, attempt: 1, fallback: why });
     return { reply: (await this.d.ui.message(replyId))!, copy_key, turn_id, guard, calls: ledger.calls, command_executed: false, command: null, committed: null };
   }
@@ -280,10 +281,16 @@ export class AgentTurnRunner {
     return typeof row?.value === "string" ? row.value : fallback;
   }
 
+  /** 18.1 / 32.16-T23: the `ai_system_versions` row selected for `borrower-conversation` (src/domain/borrower/eval/governance.ts selectVersion — status `deployed`), stamped on every turn row; null while none is selected. */
+  private async selectedVersionId(q: Queryable): Promise<string | null> {
+    const row = (await q.query<{ id: string }>(`SELECT id FROM ai_system_versions WHERE system_code = $1 AND status = 'deployed' ORDER BY approved_at DESC NULLS LAST, id LIMIT 1`, [AI_SYSTEM_CODE]))[0];
+    return row?.id ?? null;
+  }
   /** The append-only `agent_turns` row (0119): one per attempt. */
   private async record(r: { turn_id: string; req: AgentTurnRequest; reply_message_id: string | null; context_hash: string; ledger: ToolLedger; classification: SafeClassification | null; guard: GuardResult | null; latency_ms: number; usage: { input_tokens: number; output_tokens: number }; attempt: number; fallback?: string | null }, q: Queryable = this.d.runtime.db): Promise<void> {
     const guard_result = { ...(r.guard ? { ok: r.guard.ok, rejected_by: r.guard.rejected_by, violation: r.guard.violation, regenerable: r.guard.regenerable, checks: r.guard.checks } : { ok: false, rejected_by: r.fallback ?? "model_refused" }), attempt: r.attempt, ...(r.fallback ? { fallback: "default_copy", reason: r.fallback } : {}), elements: r.ledger.elements.map((e) => e["element"]), proposed_card_instance_id: r.ledger.proposed_card_instance_id, misses: r.ledger.proposed_misses, human_requested: r.ledger.human_requested };
-    await q.query(`INSERT INTO agent_turns (turn_id, conversation_id, party_id, session_id, message_id, reply_message_id, channel, ai_system_version_id, model_version, prompt_version, tier, context_hash, tool_calls, safe_classification, guard_result, latency_ms, tokens_in, tokens_out, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, NULL, $8, $9, $10, $11, $12::jsonb, $13, $14::jsonb, $15, $16, $17, $18)`,
-      [r.turn_id, r.req.conversation_id, r.req.ctx.party.id, r.req.ctx.session.session_id, r.req.message_id, r.reply_message_id, r.req.channel, this.d.llm.model, this.promptVersion, AGENT_TIER, r.context_hash, JSON.stringify(r.ledger.calls), r.classification, JSON.stringify(guard_result), r.latency_ms, r.usage.input_tokens, r.usage.output_tokens, r.req.now]);
+    const version_id = await this.selectedVersionId(q);
+    await q.query(`INSERT INTO agent_turns (turn_id, conversation_id, party_id, session_id, message_id, reply_message_id, channel, ai_system_version_id, model_version, prompt_version, tier, context_hash, tool_calls, safe_classification, guard_result, latency_ms, tokens_in, tokens_out, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $19, $8, $9, $10, $11, $12::jsonb, $13, $14::jsonb, $15, $16, $17, $18)`,
+      [r.turn_id, r.req.conversation_id, r.req.ctx.party.id, r.req.ctx.session.session_id, r.req.message_id, r.reply_message_id, r.req.channel, this.d.llm.model, this.promptVersion, AGENT_TIER, r.context_hash, JSON.stringify(r.ledger.calls), r.classification, JSON.stringify(guard_result), r.latency_ms, r.usage.input_tokens, r.usage.output_tokens, r.req.now, version_id]);
   }
 }

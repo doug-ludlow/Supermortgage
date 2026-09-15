@@ -66,6 +66,12 @@ export class AgentRegistry {
     if (tripped) this.off.set(agent, `kill switch: override rate ${arr.slice(-2).map((r) => (100 * r).toFixed(1) + "%").join(", ")} on ${day} (18.1)`);
     return { tripped };
   }
+  /**
+   * 18.1 rule D.5 for a monitored metric other than the T1 override rate (32.16-T24: `ai_monitoring_metrics` transfers per session on the
+   * T2 `borrower-conversation` system, evaluated by src/domain/borrower/eval/governance.ts): the caller found two consecutive out-of-band
+   * days and trips the switch for the agent — the same AI-off state the bus refuses on (AI_OFF) and the borrower turn bypasses (T10).
+   */
+  tripKillSwitch(agent: string, why: string): void { this.off.set(agent, why); }
   aiState(agent: string): AiState {
     const why = this.off.get(agent);
     return { off: why !== undefined, ...(why !== undefined ? { why } : {}), tier: this.tiers.get(agent) ?? "T1_consequential" };

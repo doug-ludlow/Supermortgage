@@ -349,7 +349,7 @@ test("purchase g. POST /v1/applications/{id}/fund at 15:20 EST Wed Nov 18 boards
 test("purchase h. the cards the 32.x flows raised for the two borrowers along the way, each with its §2.3 case (docs/ux/17 §2.3; CARD_CASES): every `card.sent` maps through its kind and the trigger the flows registry recorded, the evidence / consent / integration / document-or-choice cases all appear, the contract's ConfirmCard was raised on the extraction, and no card exists because the assistant decided to send one", { skip }, async () => {
   await settle();
   const flows = router.flows!; const ids = [...parties.values()];
-  const sent = await db.query<{ sequence: string; occurred_at: string; payload: P }>(`SELECT sequence::text AS sequence, occurred_at, payload FROM loan_events WHERE type = 'card.sent' AND payload->>'party_id' = ANY($1::text[]) ORDER BY sequence`, [ids]);
+  const sent = await db.query<{ sequence: string; occurred_at: string; payload: P }>(`SELECT sequence::text AS sequence, occurred_at, payload FROM loan_events WHERE type = 'card.sent' AND payload->>'party_id' = ANY($1::text[]) ORDER BY loan_events.sequence`, [ids]);
   assert.ok(sent.length >= 15, `a purchase raises cards from the consents to boarding (${sent.length})`);
   const cards = await db.query<{ card_instance_id: string; status: string; props: P }>(`SELECT card_instance_id, status, props FROM card_instances WHERE card_instance_id = ANY($1::uuid[])`, [sent.map((e) => String(e.payload["card_instance_id"]))]);
   const rows = new Map(cards.map((c) => [c.card_instance_id, c]));

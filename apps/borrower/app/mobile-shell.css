@@ -1,4 +1,4 @@
-/* P0: mobile tab chrome + two-pane from 768px (Doug). Does not replace globals.css tokens. */
+/* P0 mobile chrome. Must not share a grid row with .sm-footer (globals.css). */
 
 .sm-tab-nav {
   display: none;
@@ -7,6 +7,9 @@
 .sm-tab-page {
   overflow-y: auto;
   min-height: 0;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
   padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
 }
 
@@ -71,11 +74,26 @@
 }
 
 @media (max-width: 767px) {
+  /* header · strip · body · tabs · footer — five rows so nav and footer cannot sit side by side */
   .sm-shell[data-mobile-shell="1"] {
-    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  }
+  .sm-shell[data-mobile-shell="1"] > * {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+  .sm-shell[data-mobile-shell="1"] .sm-header {
+    grid-row: 1;
+  }
+  .sm-shell[data-mobile-shell="1"] .sm-strip,
+  .sm-shell[data-mobile-shell="1"] .sm-strip-slot {
+    grid-row: 2;
   }
   .sm-shell[data-mobile-shell="1"] .sm-body {
+    grid-row: 3;
     grid-template-columns: minmax(0, 1fr);
+    width: 100%;
   }
   .sm-shell[data-mobile-shell="1"] .sm-record {
     display: none;
@@ -83,10 +101,19 @@
   .sm-tab-nav {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    grid-row: 4;
+    grid-row: 4 !important;
+    grid-column: 1 / -1 !important;
     border-top: 1px solid var(--sm-border);
     background: var(--sm-surface);
     padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+    z-index: 4;
+  }
+  .sm-shell[data-mobile-shell="1"] .sm-footer {
+    grid-row: 5 !important;
+    grid-column: 1 / -1 !important;
+    padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+    font-size: 11px;
+    line-height: 1.35;
   }
   .sm-tab-btn {
     font: inherit;

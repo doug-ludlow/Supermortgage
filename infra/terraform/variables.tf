@@ -94,6 +94,12 @@ variable "staff_bootstrap_admin_email" {
   default     = "douglasludlow@gmail.com"
 }
 
+variable "staff_bootstrap_admin_roles" {
+  description = "34.1 operational prerequisites (nonprod only): the roles the bootstrap admin's row holds, a comma list of ops_analyst, officer, compliance, admin (admin is always among them). Read beside the e-mail and honoured only when ENVIRONMENT is not production — in production the first row holds admin only whatever this says and the bootstrap log names the setting as ignored; the other roles are then granted by a second admin's staff.role.set with a rationale. On an empty staff table the first row is created with these roles; when the table holds exactly the bootstrap row (invited by nobody) with a strict subset of them, the row is upgraded once through staff.role.set (rationale 'bootstrap roles (nonprod)', its sessions revoked); otherwise nothing changes."
+  type        = string
+  default     = "ops_analyst,officer,compliance,admin"
+}
+
 variable "llm_speed" {
   description = "32.16 DELTA-23: the agent turn's inference speed — standard, or fast for the Messages API's fast mode (opt-in: the same model at a higher price with its own rate limit)."
   type        = string

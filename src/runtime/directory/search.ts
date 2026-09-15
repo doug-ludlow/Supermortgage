@@ -19,6 +19,7 @@ import { normalizePhone } from "../../infra/db/borrower-parties.ts";
 import type { Actor } from "../../kernel/events/index.ts";
 import type { Runtime } from "../app.ts";
 import { lastFour, maskEmail, maskPhone } from "./mask.ts";
+import { unidentifiedVideoPartySql } from "./scope.ts";
 
 export const SEARCH_MIN_CHARS = 3;
 export const SEARCH_MAX_RESULTS = 50;
@@ -59,6 +60,9 @@ export function classifyQuery(q: string): { kind: "last4" | "phone" | "email" | 
 
 const escapeLike = (s: string): string => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
+/** 34.2's un-identified video party (scope.ts): never searchable as a person — by name, e-mail, phone or id — whether its session is open or closed. */
+const NOT_A_PERSON = unidentifiedVideoPartySql("parties");
+
 /** The rows of `parties` (borrower) matching the query, with which fields matched — the expression indexes of 0128 serve the three prefix predicates. */
 async function matchParties(db: Queryable, c: ReturnType<typeof classifyQuery>): Promise<Row[]> {
   const pre = `${escapeLike(c.value)}%`;
@@ -66,19 +70,19 @@ async function matchParties(db: Queryable, c: ReturnType<typeof classifyQuery>):
     return db.query<Row>(`SELECT id::text AS party_id, legal_name, contact, false AS m_name, false AS m_email,
         (right(directory_e164(contact->>'phone'), 4) = $1 OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(contact->'phones') = 'array' THEN contact->'phones' ELSE '[]'::jsonb END) ph WHERE right(directory_e164(ph), 4) = $1)) AS m_phone,
         right(id::text, 4) = $1 AS m_party
-      FROM parties WHERE party_type = 'borrower' AND (right(directory_e164(contact->>'phone'), 4) = $1 OR right(id::text, 4) = $1
+      FROM parties WHERE party_type = 'borrower' AND NOT ${NOT_A_PERSON} AND (right(directory_e164(contact->>'phone'), 4) = $1 OR right(id::text, 4) = $1
         OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(contact->'phones') = 'array' THEN contact->'phones' ELSE '[]'::jsonb END) ph WHERE right(directory_e164(ph), 4) = $1))
       ORDER BY legal_name, id LIMIT ${SEARCH_MAX_RESULTS + 1}`, [c.value]);
   }
   if (c.kind === "phone") {
     return db.query<Row>(`SELECT id::text AS party_id, legal_name, contact, false AS m_name, false AS m_email, true AS m_phone, false AS m_party
-      FROM parties WHERE party_type = 'borrower' AND (directory_e164(contact->>'phone') LIKE $1
+      FROM parties WHERE party_type = 'borrower' AND NOT ${NOT_A_PERSON} AND (directory_e164(contact->>'phone') LIKE $1
         OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(contact->'phones') = 'array' THEN contact->'phones' ELSE '[]'::jsonb END) ph WHERE directory_e164(ph) LIKE $1))
       ORDER BY legal_name, id LIMIT ${SEARCH_MAX_RESULTS + 1}`, [pre]);
   }
   if (c.kind === "email") {
     return db.query<Row>(`SELECT id::text AS party_id, legal_name, contact, false AS m_name, true AS m_email, false AS m_phone, false AS m_party
-      FROM parties WHERE party_type = 'borrower' AND (lower(contact->>'email') LIKE $1
+      FROM parties WHERE party_type = 'borrower' AND NOT ${NOT_A_PERSON} AND (lower(contact->>'email') LIKE $1
         OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(contact->'emails') = 'array' THEN contact->'emails' ELSE '[]'::jsonb END) em WHERE lower(em) LIKE $1))
       ORDER BY legal_name, id LIMIT ${SEARCH_MAX_RESULTS + 1}`, [pre]);
   }
@@ -87,7 +91,7 @@ async function matchParties(db: Queryable, c: ReturnType<typeof classifyQuery>):
       (lower(legal_name) LIKE $1 OR lower(legal_name) LIKE $2) AS m_name,
       (lower(contact->>'email') LIKE $1 OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(contact->'emails') = 'array' THEN contact->'emails' ELSE '[]'::jsonb END) em WHERE lower(em) LIKE $1)) AS m_email,
       false AS m_phone, (id::text LIKE $1) AS m_party
-    FROM parties WHERE party_type = 'borrower' AND (lower(legal_name) LIKE $1 OR lower(legal_name) LIKE $2 OR lower(contact->>'email') LIKE $1 OR id::text LIKE $1
+    FROM parties WHERE party_type = 'borrower' AND NOT ${NOT_A_PERSON} AND (lower(legal_name) LIKE $1 OR lower(legal_name) LIKE $2 OR lower(contact->>'email') LIKE $1 OR id::text LIKE $1
       OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(contact->'emails') = 'array' THEN contact->'emails' ELSE '[]'::jsonb END) em WHERE lower(em) LIKE $1))
     ORDER BY legal_name, id LIMIT ${SEARCH_MAX_RESULTS + 1}`, [pre, `% ${pre}`]);
 }
@@ -108,8 +112,8 @@ async function matchApplications(db: Queryable, c: ReturnType<typeof classifyQue
     FROM applications a WHERE ${c.kind === "last4" ? "right(a.id::text, 4) = $1" : "a.id::text LIKE $1"} ORDER BY a.created_at LIMIT ${SEARCH_MAX_RESULTS + 1}`, [c.kind === "last4" ? c.value : `${escapeLike(c.value)}%`]);
 }
 
-/** The subjects of the listed parties in one query (the search shows last-four identifiers and the loan status, never a figure). */
-async function subjectsOf(db: Queryable, partyIds: readonly string[]): Promise<Map<string, DirectorySearchHit["subjects"][number][]>> {
+/** The subjects of the listed parties in one query (the search shows last-four identifiers and the loan status, never a figure) — the accounts list (34.5, list.ts) reads the same shape. */
+export async function subjectsOf(db: Queryable, partyIds: readonly string[]): Promise<Map<string, DirectorySearchHit["subjects"][number][]>> {
   const out = new Map<string, DirectorySearchHit["subjects"][number][]>();
   if (!partyIds.length) return out;
   const loans = await db.query<{ party_id: string; loan_id: string; servicer_loan_number: string | null; status: string; origination_application_id: string | null }>(
@@ -157,7 +161,7 @@ export async function directorySearch(db: Queryable, input: DirectorySearchInput
   if (total > SEARCH_MAX_RESULTS) throw new DirectorySearchRefused("NARROW_QUERY", `${total} matches; narrow the query`, total);
   // the rows a loan or application match named but the party query did not select
   const missing = [...matched.entries()].filter(([, m]) => !m.row).map(([id]) => id);
-  if (missing.length) for (const r of await db.query<Row>(`SELECT id::text AS party_id, legal_name, contact, false AS m_name, false AS m_email, false AS m_phone, false AS m_party FROM parties WHERE id = ANY($1::uuid[]) AND party_type = 'borrower'`, [missing])) matched.get(r.party_id)!.row = r;
+  if (missing.length) for (const r of await db.query<Row>(`SELECT id::text AS party_id, legal_name, contact, false AS m_name, false AS m_email, false AS m_phone, false AS m_party FROM parties WHERE id = ANY($1::uuid[]) AND party_type = 'borrower' AND NOT ${NOT_A_PERSON}`, [missing])) matched.get(r.party_id)!.row = r;
   const ids = [...matched.keys()].filter((id) => matched.get(id)!.row);
   const [subjects, origins] = await Promise.all([subjectsOf(db, ids), originsOf(db, ids)]);
   const results: DirectorySearchHit[] = ids.map((id) => { const m = matched.get(id)!; const r = m.row!; const o = origins.get(id)!; const email = typeof r.contact["email"] === "string" ? r.contact["email"] : Array.isArray(r.contact["emails"]) ? String((r.contact["emails"] as unknown[])[0] ?? "") : ""; const phone = typeof r.contact["phone"] === "string" ? r.contact["phone"] : Array.isArray(r.contact["phones"]) ? String((r.contact["phones"] as unknown[])[0] ?? "") : "";

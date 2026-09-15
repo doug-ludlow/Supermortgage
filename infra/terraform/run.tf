@@ -23,6 +23,8 @@ locals {
     GOOGLE_OAUTH_REDIRECT = "https://${var.api_hostname}/app/auth/google/callback"
     # 34.1 operational prerequisites: the first admin — read once at start; creates the admin and sends the invitation only while no staff_users row exists (a no-op afterwards)
     STAFF_BOOTSTRAP_ADMIN_EMAIL = var.staff_bootstrap_admin_email
+    # 34.1 operational prerequisites (nonprod only): the bootstrap row's roles — ignored when ENVIRONMENT is production (the row holds admin only); the one-row upgrade runs through staff.role.set
+    STAFF_BOOTSTRAP_ADMIN_ROLES = var.staff_bootstrap_admin_roles
   }
   cloudsql_volume = "cloudsql"
   cloudsql_mount  = "/cloudsql"

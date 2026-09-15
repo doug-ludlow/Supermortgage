@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 8021/8726 (91.9%): tids 2239/2440, tables 765/848, timers 2040/2095, notices 308/308, tools 1431/1572, figures 1238/1463; processes at 100%: 192/204",
+ "brief": "spec units built 8027/8749 (91.7%): tids 2243/2457, tables 765/848, timers 2040/2095, notices 308/308, tools 1433/1578, figures 1238/1463; processes at 100%: 192/205",
  "totals": {
   "tids": {
-   "spec": 2440,
-   "built": 2239
+   "spec": 2457,
+   "built": 2243
   },
   "tables": {
    "spec": 848,
@@ -18,16 +18,16 @@
    "built": 308
   },
   "tools": {
-   "spec": 1572,
-   "built": 1431
+   "spec": 1578,
+   "built": 1433
   },
   "figures": {
    "spec": 1463,
    "built": 1238
   },
   "units": {
-   "spec": 8726,
-   "built": 8021
+   "spec": 8749,
+   "built": 8027
   }
  },
  "sections": {
@@ -230,9 +230,9 @@
    "done": 3
   },
   "34": {
-   "spec": 57,
-   "built": 57,
-   "processes": 4,
+   "spec": 80,
+   "built": 63,
+   "processes": 5,
    "done": 4
   },
   "35": {
@@ -8149,8 +8149,8 @@
    "process": "34.1",
    "title": "Staff sign-in and roles: accounts, the doors, the action log, the access review",
    "tids": {
-    "spec": 8,
-    "built": 8,
+    "spec": 9,
+    "built": 9,
     "todo": 0,
     "missing": []
    },
@@ -8181,8 +8181,8 @@
     "missing": []
    },
    "units": {
-    "spec": 20,
-    "built": 20
+    "spec": 21,
+    "built": 21
    },
    "pct": 100.0
   },
@@ -8308,6 +8308,66 @@
     "built": 12
    },
    "pct": 100.0
+  },
+  {
+   "process": "34.5",
+   "title": "The portal's information architecture and the accounts list",
+   "tids": {
+    "spec": 16,
+    "built": 3,
+    "todo": 13,
+    "missing": [
+     3,
+     4,
+     5,
+     6,
+     7,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 6,
+    "built": 2,
+    "missing": [
+     "directory.counts",
+     "pipeline.list",
+     "loans.list",
+     "notice.read"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 22,
+    "built": 5
+   },
+   "pct": 22.7
   },
   {
    "process": "35.1",

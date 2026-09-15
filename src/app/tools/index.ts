@@ -194,6 +194,7 @@ import { TOOLS_34_1 } from "./section34-1.ts";
 import { TOOLS_34_2 } from "./section34-2.ts";
 import { TOOLS_34_3 } from "./section34-3.ts";
 import { TOOLS_34_4 } from "./section34-4.ts";
+import { TOOLS_34_5 } from "./section34-5.ts";
 // ---- §23.5–§23.7 process-owned files (scaffolded by tools/workflows/wire_orig.py)
 import { TOOLS_23_5 } from "./section23-5.ts";
 import { TOOLS_23_6 } from "./section23-6.ts";
@@ -217,7 +218,7 @@ export const ALL_TOOLS: readonly ToolDef[] = [...SECTION_01_TOOLS, ...SECTION_02
   ...TOOLS_20_1, ...TOOLS_20_2, ...TOOLS_20_3, ...TOOLS_20_4, ...TOOLS_21_1, ...TOOLS_21_2, ...TOOLS_21_3, ...TOOLS_21_4, ...TOOLS_21_5, ...TOOLS_21_6, ...TOOLS_22_1, ...TOOLS_22_2, ...TOOLS_22_3, ...TOOLS_22_4, ...TOOLS_22_5, ...TOOLS_22_6, ...TOOLS_23_1, ...TOOLS_23_2, ...TOOLS_23_3, ...TOOLS_23_4, ...TOOLS_24_1, ...TOOLS_24_2, ...TOOLS_24_3, ...TOOLS_24_4, ...TOOLS_24_5, ...TOOLS_24_6, ...TOOLS_25_1, ...TOOLS_25_2, ...TOOLS_25_3, ...TOOLS_25_4, ...TOOLS_26_1, ...TOOLS_26_2, ...TOOLS_26_3, ...TOOLS_26_4, ...TOOLS_27_1, ...TOOLS_27_2, ...TOOLS_28_1, ...TOOLS_28_2, ...TOOLS_28_3, ...TOOLS_28_4, ...TOOLS_29_1, ...TOOLS_29_2, ...TOOLS_29_3, ...TOOLS_29_4, ...TOOLS_30_1, ...TOOLS_30_2, ...TOOLS_30_3, ...TOOLS_30_4, ...TOOLS_31_1, ...TOOLS_31_2, ...TOOLS_31_3,
   ...TOOLS_32_1, ...TOOLS_32_2, ...TOOLS_32_3, ...TOOLS_32_4, ...TOOLS_32_5, ...TOOLS_32_6, ...TOOLS_32_7, ...TOOLS_32_8, ...TOOLS_32_9, ...TOOLS_32_10, ...TOOLS_32_11, ...TOOLS_32_12, ...TOOLS_32_13, ...TOOLS_32_14, ...TOOLS_32_16, ...TOOLS_32_17, ...TOOLS_32_18,
   ...TOOLS_33_1, ...TOOLS_33_2, ...TOOLS_33_3,
-  ...TOOLS_34_1, ...TOOLS_34_2, ...TOOLS_34_3, ...TOOLS_34_4,
+  ...TOOLS_34_1, ...TOOLS_34_2, ...TOOLS_34_3, ...TOOLS_34_4, ...TOOLS_34_5,
   ...TOOLS_23_5, ...TOOLS_23_6, ...TOOLS_23_7,
   ...TOOLS_35_1, ...TOOLS_35_2, ...TOOLS_35_3, ...TOOLS_35_4, ...TOOLS_35_5, ...TOOLS_35_6, ...TOOLS_35_7, ...TOOLS_35_8, ...TOOLS_35_9, ...TOOLS_35_10, ...TOOLS_35_11, ...TOOLS_35_12];
 

@@ -285,20 +285,31 @@ const byOf = (d: StaffActDeps): string | null => (d.actor.kind === "human" ? d.a
 const P = (o: Record<string, unknown>): Record<string, unknown> => ({ ...o, origination: true });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ACTOR_CITATION = "34.1 rule 2: 'Roles are the only authority' — 'admin manages staff users and roles'; rule 3: 'The actor on the bus is the session's'; operational prerequisites: 'nothing else creates an admin without an admin'; edge cases: 'The ops bearer token leaks → … in production it opens nothing'";
+/** The bootstrap's system actor (Operational prerequisites): the only non-human actor a staff act ever accepts, and only in the two bootstrap conditions below. */
+export const STAFF_BOOTSTRAP_ACTOR: Actor = { kind: "system", id: "staff-bootstrap" };
+/** `ENVIRONMENT` is production (the NO_HEADER_ACTOR_IN_PRODUCTION reading: `production` or `prod`). */
+export const isProductionEnvironment = (environment: string | undefined = process.env["ENVIRONMENT"]): boolean => { const e = environment ?? "nonprod"; return e === "production" || e === "prod"; };
 /**
  * Review finding (the first build trusted the actor the request named, so anyone with the ops bearer token could mint an admin
  * through /v1/tools/34.1/*): the acts verify the actor from rows. A human actor must be an ACTIVE staff_users row holding one of
  * `roles` — a forged `{human, <any id>, admin}` or the nonprod header actor is ROLE_DENIED; the system actor is accepted only
- * where `system` allows it (staff.invite while staff_users is empty — the bootstrap); an agent actor never runs a staff act.
+ * where `system` allows it: `bootstrap` (staff.invite while staff_users is empty — the first admin) and `bootstrap_upgrade`
+ * (Q1 of the portal proposal, 2026-09-15: staff.role.set by `staff-bootstrap` on the one row of a nonprod table — the target,
+ * invited by nobody — the one-row upgrade of the Operational prerequisites; never in production, never with two or more rows);
+ * an agent actor never runs a staff act.
  */
-async function requireStaffActor(d: StaffActDeps, repo: PgStaffRepository, command: string, roles: readonly StaffRole[], system: "bootstrap" | "never" = "never"): Promise<void> {
+async function requireStaffActor(d: StaffActDeps, repo: PgStaffRepository, command: string, roles: readonly StaffRole[], system: "bootstrap" | "bootstrap_upgrade" | "never" = "never", target?: string): Promise<void> {
   if (d.actor.kind === "human") {
     const row = UUID.test(d.actor.id) ? await repo.user(d.actor.id) : undefined;
     if (!row || row.status !== "active" || !row.roles.some((r) => roles.includes(r))) throw new CommandRefused(command, "ROLE_DENIED", ACTOR_CITATION, `${command} needs an active staff member holding ${roles.join(" or ")}; the actor ${d.actor.id} is ${!row ? "not a staff user" : row.status !== "active" ? row.status : `[${row.roles.join(", ")}]`}`);
     return;
   }
   if (d.actor.kind === "system" && system === "bootstrap" && (await repo.count()) === 0) return;
-  throw new CommandRefused(command, "ROLE_DENIED", ACTOR_CITATION, `${command} is a staff act: ${d.actor.kind}:${d.actor.id} may not run it${system === "bootstrap" ? " (the system actor invites only the first admin, while staff_users is empty)" : ""}`);
+  if (d.actor.kind === "system" && system === "bootstrap_upgrade" && d.actor.id === STAFF_BOOTSTRAP_ACTOR.id && !isProductionEnvironment() && target && UUID.test(target) && (await repo.count()) === 1) {
+    const row = await repo.user(target);
+    if (row && row.invited_by === null) return;
+  }
+  throw new CommandRefused(command, "ROLE_DENIED", ACTOR_CITATION, `${command} is a staff act: ${d.actor.kind}:${d.actor.id} may not run it${system === "bootstrap" ? " (the system actor invites only the first admin, while staff_users is empty)" : system === "bootstrap_upgrade" ? " (the bootstrap's system actor upgrades only the one row of a nonprod staff table — the bootstrap e-mail's, invited by nobody)" : ""}`);
 }
 
 /** The decision record schema of 34.1's AI agent design: `{staff_user_id, action, roles_before, roles_after, rationale, by, rule_set_version: staff.access.v1, model_version: deterministic, prompt_version: 34.1-v1, confidence: 1}`. */
@@ -389,7 +400,7 @@ export interface RoleSetInput { readonly staff_user_id: string; readonly roles: 
 export interface RoleSetResult { readonly staff_user_id: string; readonly changed: boolean; readonly roles_before: readonly StaffRole[]; readonly roles_after: readonly StaffRole[]; readonly sessions_revoked: readonly string[]; readonly by: string | null }
 export async function staffRoleSet(d: StaffActDeps, i: RoleSetInput, opts: { decide?: boolean; viaReview?: boolean } = {}): Promise<RoleSetResult> {
   const repo = new PgStaffRepository(d.db);
-  if (!opts.viaReview) await requireStaffActor(d, repo, "staff.role.set", ["admin"]);   // the review verified compliance | admin already
+  if (!opts.viaReview) await requireStaffActor(d, repo, "staff.role.set", ["admin"], "bootstrap_upgrade", i.staff_user_id);   // the review verified compliance | admin already; the bootstrap's one-row upgrade is the system actor's only role change
   const by = byOf(d);
   if (isSelfChange(by, i.staff_user_id)) throw new CommandRefused("staff.role.set", NO_SELF_ROLE_CHANGE.code, NO_SELF_ROLE_CHANGE.citation, `${by} may not change their own roles`);
   const user = await repo.user(i.staff_user_id);
@@ -457,13 +468,61 @@ export async function staffAccessReview(d: StaffActDeps, i: AccessReviewInput): 
   return { review_id, reviewed_by, reviewed_at: d.now, users: plan.entries, changes: plan.changes.length, applied };
 }
 
-// ───────── the first admin (Operational prerequisites: main.ts staff-bootstrap <email> / STAFF_BOOTSTRAP_ADMIN_EMAIL)
-export async function bootstrapStaffAdmin(runtime: Runtime, email: string, opts: { logger?: Logger; legal_name?: string } = {}): Promise<{ created: boolean; staff_user_id: string | null; reason: string }> {
+// ───────── the first admin (Operational prerequisites: main.ts staff-bootstrap <email> / STAFF_BOOTSTRAP_ADMIN_EMAIL, with STAFF_BOOTSTRAP_ADMIN_ROLES outside production)
+export const BOOTSTRAP_ROLES_RATIONALE = "bootstrap roles (nonprod)";
+export interface BootstrapOptions {
+  readonly logger?: Logger; readonly legal_name?: string;
+  /** `STAFF_BOOTSTRAP_ADMIN_ROLES`: a comma list or an array (default `admin`); honoured only when `environment` is not production. */
+  readonly roles?: string | readonly string[] | null | undefined;
+  /** `ENVIRONMENT` (default: the process's); in production the roles setting is ignored and the first row holds `[admin]`. */
+  readonly environment?: string;
+}
+export interface BootstrapResult { readonly created: boolean; readonly upgraded: boolean; readonly staff_user_id: string | null; readonly roles: readonly StaffRole[]; readonly reason: string }
+/**
+ * The roles the bootstrap gives (Operational prerequisites, Q1 of the portal proposal 2026-09-15): the setting outside production
+ * — `admin` always among them, because the first row is the admin nothing else can create — and `[admin]` whatever the setting
+ * says in production, where privileged authority is granted by a second admin's `staff.role.set` with a rationale, never by a
+ * deployment variable. `ignored` says the production reading dropped roles the setting asked for.
+ */
+export function bootstrapRoles(setting: string | readonly string[] | null | undefined, environment?: string): { roles: StaffRole[]; requested: StaffRole[]; ignored: boolean; production: boolean } {
+  const raw = setting === undefined || setting === null || (typeof setting === "string" && !setting.trim()) || (Array.isArray(setting) && !setting.length) ? ["admin"] : setting;
+  const requested = normalizeRoles([...(typeof raw === "string" ? raw.split(",") : raw), "admin"]);
+  const production = isProductionEnvironment(environment);
+  const roles: StaffRole[] = production ? ["admin"] : requested;
+  return { roles, requested, ignored: production && !sameRoles(requested, roles), production };
+}
+/**
+ * `staff_users` empty → the first row, invited by the system actor with the roles above, NTC_SM_STAFF_INVITATION sent (a code to
+ * that e-mail opens enrolment). Nonprod only, one upgrade and nothing else: the table holding exactly one row — the bootstrap
+ * e-mail's, `invited_by` null — whose roles are a strict subset of the setting is upgraded through the real `staff.role.set` path
+ * with the bootstrap's system actor and the rationale `bootstrap roles (nonprod)`: `staff.role.changed{roles_before, roles_after,
+ * by}` and a decision record are written and the row's open sessions are revoked (rule 5); nothing is deleted. In production,
+ * with two or more rows, when the one row is not the bootstrap's or was invited by an admin, or when the roles already equal
+ * the setting, the bootstrap creates and changes nothing (34.1-T9). The e-mail is never logged.
+ */
+export async function bootstrapStaffAdmin(runtime: Runtime, email: string, opts: BootstrapOptions = {}): Promise<BootstrapResult> {
   const repo = new PgStaffRepository(runtime.db);
   if (!isEmail(email)) throw new RangeError("staff-bootstrap needs a valid e-mail address");
-  if ((await repo.count()) > 0) { opts.logger?.info("staff-bootstrap: skipped", { reason: "staff_users is not empty — nothing else creates an admin without an admin" }); return { created: false, staff_user_id: null, reason: "staff_users is not empty" }; }
-  const r = await runtime.execute({ process: "34.1", name: "staff.invite", loanId: "", actor: { kind: "system", id: "staff-bootstrap" }, input: { email, legal_name: opts.legal_name ?? "Administrator", roles: ["admin"], rationale: "the first admin (34.1 operational prerequisites)" } });
-  const out = r.output as InviteResult;
-  opts.logger?.info("staff-bootstrap: the first admin invited", { staff_user_id: out.staff_user_id, notice_id: out.notice_id, bounced: out.bounced, held_reason: out.held_reason });
-  return { created: true, staff_user_id: out.staff_user_id, reason: "invited" };
+  const { roles, requested, ignored, production } = bootstrapRoles(opts.roles, opts.environment);
+  if (ignored) opts.logger?.info("staff-bootstrap: STAFF_BOOTSTRAP_ADMIN_ROLES ignored in production", { requested, roles, environment: opts.environment ?? process.env["ENVIRONMENT"] ?? "nonprod", reason: "the roles setting is honoured only when ENVIRONMENT ≠ production; the first row holds [admin] and a second admin's staff.role.set grants the rest (34.1 operational prerequisites)" });
+  const n = await repo.count();
+  if (n === 0) {
+    const r = await runtime.execute({ process: "34.1", name: "staff.invite", loanId: "", actor: STAFF_BOOTSTRAP_ACTOR, input: { email, legal_name: opts.legal_name ?? "Administrator", roles, rationale: `the first admin (34.1 operational prerequisites)${production ? "" : `; roles from STAFF_BOOTSTRAP_ADMIN_ROLES (nonprod)`}` } });
+    const out = r.output as InviteResult;
+    opts.logger?.info("staff-bootstrap: the first admin invited", { staff_user_id: out.staff_user_id, roles: out.roles, notice_id: out.notice_id, bounced: out.bounced, held_reason: out.held_reason });
+    return { created: true, upgraded: false, staff_user_id: out.staff_user_id, roles: out.roles, reason: "invited" };
+  }
+  const skipped = (reason: string, extra: Record<string, unknown> = {}): BootstrapResult => { opts.logger?.info("staff-bootstrap: skipped", { reason, rows: n, ...extra }); return { created: false, upgraded: false, staff_user_id: null, roles, reason }; };
+  if (production) return skipped("staff_users is not empty — nothing else creates an admin without an admin; no upgrade in production");
+  if (n !== 1) return skipped("staff_users is not empty — nothing else creates an admin without an admin; the one-row upgrade needs exactly one row");
+  const row = (await repo.users())[0]!;
+  if (row.email_hash !== emailHash(email)) return skipped("staff_users is not empty; the one row is not the bootstrap e-mail's");
+  if (row.invited_by !== null) return skipped("staff_users is not empty; the one row was invited by an admin, not the bootstrap", { staff_user_id: row.id });
+  if (row.status === "disabled") return skipped("staff_users is not empty; the one row is disabled", { staff_user_id: row.id });
+  if (sameRoles(row.roles, roles)) return skipped("staff_users is not empty; the roles already equal the setting", { staff_user_id: row.id, roles: row.roles });
+  if (!row.roles.every((r) => roles.includes(r))) return skipped("staff_users is not empty; the one row's roles are not a subset of the setting — the bootstrap never removes a role", { staff_user_id: row.id, roles: row.roles });
+  const r = await runtime.execute({ process: "34.1", name: "staff.role.set", loanId: "", actor: STAFF_BOOTSTRAP_ACTOR, input: { staff_user_id: row.id, roles, rationale: BOOTSTRAP_ROLES_RATIONALE } });
+  const out = r.output as RoleSetResult;
+  opts.logger?.info("staff-bootstrap: the one row upgraded (nonprod)", { staff_user_id: out.staff_user_id, roles_before: out.roles_before, roles_after: out.roles_after, sessions_revoked: out.sessions_revoked.length, rationale: BOOTSTRAP_ROLES_RATIONALE });
+  return { created: false, upgraded: out.changed, staff_user_id: out.staff_user_id, roles: out.roles_after, reason: "upgraded" };
 }

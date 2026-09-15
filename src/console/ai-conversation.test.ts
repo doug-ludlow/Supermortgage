@@ -106,7 +106,10 @@ test("GET /api/ai/conversation?party_id=|email= and /api/ai/conversation/recent:
   for (let k = 1; k < c.turns.length; k++) assert.ok(String(c.turns[k]!["created_at"]) >= String(c.turns[k - 1]!["created_at"]), "turns in order");
   // by e-mail (the account's credential row, lowercased): the same trace
   const byEmail = await api("GET", `/api/ai/conversation?email=${encodeURIComponent(email.toUpperCase())}`, undefined, ops()); assert.equal(byEmail.status, 200, JSON.stringify(byEmail.body).slice(0, 300));
-  assert.deepEqual(byEmail.body, byId.body);
+  // 34.1 rule 3 (amended 2026-09-15): every answer names the role that acted — the examiner's look and the analyst's differ by that field alone
+  assert.equal(byId.body["acted_as"], "examiner"); assert.equal(byEmail.body["acted_as"], "ops_analyst");
+  const sansRole = ({ acted_as: _acted, ...rest }: Json): Json => rest;
+  assert.deepEqual(sansRole(byEmail.body), sansRole(byId.body));
   // the address lives only where the thread itself says it (the app's `{{party.first_name}}` falls back to the e-mail for a party with no name yet — the greeting's own body text); every field the console adds is masked
   assert.ok(!JSON.stringify(withoutText(byEmail.body)).includes(email), "outside the message bodies the trace never carries the address");
 

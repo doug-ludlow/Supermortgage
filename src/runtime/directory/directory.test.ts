@@ -193,6 +193,28 @@ test("search: a household sharing an e-mail lists both; a loan with no party lis
 });
 
 // ---------------------------------------------------------------- the account page (rules 1–2)
+test("search / account / activity / unmask / export: a video-door party that has not identified (`Borrower (video)`, contact {provisional: video}) is never listed and never searchable as a person — by name, id prefix or last four, its session open or closed — and every read of it answers NOT_FOUND; once `video.identify` has put an e-mail on the contact it is a row", { skip }, async () => {
+  const ghost = (await db.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, contact) VALUES ('borrower', 'Borrower (video)', $1::jsonb) RETURNING id::text AS id`, [JSON.stringify({ provisional: "video" })]))[0]!.id;
+  const sessions = new PgBorrowerSessionRepository(db);
+  const open = await sessions.createSession({ party_id: ghost, level: "L1", auth_method: "video", now: NOW, expires_at: "2026-09-15T14:00:00.000Z" }); secrets.push(sha256(open.token), open.token);
+  const listed = async (q: string): Promise<boolean> => { const r = await directorySearch(db, { q, roles: ["compliance"], staff_user_id: compliance.staff_user_id }); return r.results.some((x) => x.party_id === ghost); };
+  const probes = ["Borrower", "Borrower (video)", ghost.slice(0, 8), ghost.slice(-4)];
+  for (const closed of [false, true]) {
+    if (closed) await db.query(`UPDATE sessions SET revoked_at = $2 WHERE party_id = $1`, [ghost, NOW]);
+    for (const q of probes) assert.equal(await listed(q), false, `${q} lists the un-identified video party (session ${closed ? "closed" : "open"})`);
+    assert.equal(await run("directory.account", compliance, { party_id: ghost }), null, `the account page (session ${closed ? "closed" : "open"})`);
+    assert.equal(await run("directory.activity", compliance, { party_id: ghost }), null, `the stream (session ${closed ? "closed" : "open"})`);
+    await refusedWith(run("directory.unmask", compliance, { party_id: ghost, fields: ["contact"], reason: "34.2 probe" }), "NOT_FOUND");
+    await refusedWith(run("directory.export", compliance, { party_id: ghost, reason: "34.2 probe" }), "NOT_FOUND");
+  }
+  // identified (32.17 rule 12: the name and the e-mail arrive through video.identify): a person from that moment
+  await db.query(`UPDATE parties SET legal_name = 'Vida Ghost', contact = $2::jsonb WHERE id = $1`, [ghost, JSON.stringify({ provisional: "video", email: "vida.ghost@example.com" })]);
+  const r = await directorySearch(db, { q: "Vida Ghost", roles: ["ops_analyst"] });
+  assert.deepEqual(r.results.filter((x) => x.party_id === ghost).map((x) => [x.legal_name, x.email, x.origin]), [["Vida Ghost", maskEmail("vida.ghost@example.com"), "video_door"]]);
+  assert.ok(await listed(ghost.slice(0, 8)), "searchable by id once identified");
+  const a = await run("directory.account", compliance, { party_id: ghost }) as Json; assert.equal(a["origin_kind"], "video_door"); assertNoSecrets(a, "the identified video party's account");
+});
+
 test("account: an ops_analyst sees origin partner book, both sessions with doors and levels and no token, the monitored loan with the partner's facts as of their date, the review verdict and the readiness summary, masked contact and no SSN or date of birth", { skip }, async () => {
   const a = await run("directory.account", analyst, { party_id: mariaId }) as Json;
   assert.equal(a["origin"], `partner book: ${DEMO_PARTNER.legal_name}`); assert.equal(a["origin_kind"], "partner_book"); assert.equal(a["status"], "active");

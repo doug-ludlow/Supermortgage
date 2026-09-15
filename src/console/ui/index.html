@@ -32,6 +32,8 @@ details{margin-top:4px}details summary{cursor:pointer;color:var(--muted)}pre{mar
 .toast{position:fixed;bottom:18px;right:18px;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--good);padding:10px 14px;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.15)}.toast.bad{border-left-color:var(--bad)}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media (max-width:900px){.layout{grid-template-columns:1fr}nav{display:flex;overflow:auto}nav h3{display:none}.grid2{grid-template-columns:1fr}}
 .empty{padding:30px;text-align:center;color:var(--muted);background:var(--panel);border:1px dashed var(--line);border-radius:10px}
+.refusal{padding:20px;color:var(--ink);background:var(--panel);border:1px dashed var(--line);border-radius:10px}.refusal.inline{display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap;padding:2px 0;background:none;border:0}.refusal button{margin-left:4px}
+a.tile{display:block;color:inherit;text-decoration:none}a.tile:hover{border-color:var(--accent)}
 </style>
 </head>
 <body>
@@ -39,8 +41,9 @@ details{margin-top:4px}details summary{cursor:pointer;color:var(--muted)}pre{mar
   <h1>Supermortgage <span>ops console</span></h1>
   <div class="actor">
     <span id="who" hidden></span>
-    <label id="legacyActor" hidden>Acting as <input id="actorId" size="14" placeholder="user id"></label>
-    <select id="actorRole" title="the role this request acts under (34.1 rule 3)"></select>
+    <label id="legacyActor" hidden>Actor <input id="actorId" size="14" placeholder="user id"></label>
+    <label id="actAs" title="34.1 rule 3: the role your acts run under — a default, never a gate. A read this role does not open acts as the least-privileged role you hold that does, and the answer names it; an act needs the role named, so a refusal offers &quot;Act as&quot; for each role you hold.">Act as <select id="actorRole"></select></label>
+    <span id="actingAs" class="chip" hidden title="the role the last answer named (x-acted-as): a read this session's picked role does not open fell back to it"></span>
     <span id="readonly" class="chip" hidden>read-only</span>
     <button id="signout" class="ghost" hidden>Sign out</button>
   </div>
@@ -53,30 +56,77 @@ details{margin-top:4px}details summary{cursor:pointer;color:var(--muted)}pre{mar
 <script>
 (() => {
 const $ = (s, el = document) => el.querySelector(s);
-const state = { view: "dashboard", kind: null, loanId: null, tab: "events", roles: [], readOnly: false, counts: {}, me: null, staff: true, door: { step: "email", email: "", token: null, hasPassword: false, fakeCode: null, returnTo: null }, apiBase: location.pathname.startsWith("/ops") ? "/ops/api" : "/api" };
+const state = { view: "home", kind: null, loanId: null, tab: "events", roles: [], readOnly: false, counts: {}, me: null, home: null, actedAs: null, staff: true, door: { step: "email", email: "", token: null, hasPassword: false, fakeCode: null, returnTo: null }, apiBase: location.pathname.startsWith("/ops") ? "/ops/api" : "/api" };
 const STAFF_ROLES = ["ops_analyst", "officer", "compliance", "admin"];
+const OPS = ["ops_analyst", "officer", "compliance"];   // 34.1 rule 2: admin touches no borrower
 const KINDS = [["queue", "My queue"], ["escalation", "Escalations"], ["portal_task", "Portal tasks"], ["held_notice", "Held notices"], ["dead_letter", "Dead letters"], ["breached_timer", "Breached timers"]];
+/**
+ * 34.5 rule 1: the areas, in their order, and the roles that open each — a static map of the server's gates (src/console/server.ts: OPS_ROLES on every
+ * legacy read, 34.2 / 34.3 the ops roles, 34.4 controls read by every role, 34.1 admin / compliance | admin) and of `portal.home`'s `areas`. The sidebar
+ * shows only what the session's held roles open: nothing on it is a link to a refusal. Pipeline and the Operations boards arrive with increment 2.
+ */
+const NAV = [
+  ["Work", [["home", "Home", STAFF_ROLES, null], ...KINDS.slice(1).map(([k, label]) => ["home", label, OPS, k])]],
+  ["Records", [["people", "People & accounts", OPS, null], ["loans", "Loans", OPS, null], ["book", "Partner book", OPS, null]]],
+  ["Oversight", [["dashboard", "Compliance Sentinel", OPS, null], ["controls", "Controls", STAFF_ROLES, null], ["agents", "Agents & AI path", OPS, null], ["ai", "AI conversations", OPS, null]]],
+  ["Staff", [["staff", "Staff & roles", ["admin"], null], ["access_review", "Access review", ["compliance", "admin"], null]]],
+];
+const VIEWS = new Set(NAV.flatMap(([, links]) => links.map(([v]) => v)));
+/** A record view belongs to the area it opened from (the sidebar's active link). */
+const AREA_OF = { loan: "loans", directory: "people", directory_account: "people", book_import: "book", book_loan: "book", controls_clock: "controls", controls_pack: "controls", ai_party: "ai", queue: "home", kind: "home" };
+let renders = 0;
 const money = (c) => { const n = BigInt(c); const neg = n < 0n; const a = neg ? -n : n; return (neg ? "-$" : "$") + (a / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + "." + (a % 100n).toString().padStart(2, "0"); };
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const when = (iso) => iso ? new Date(iso).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : "";
-/** 34.1 rule 3: the actor is the session's; the role picker chooses among the roles the session holds. Without a staff runtime (npm run console --demo) the legacy header actor picker stands in. */
+/** 34.1 rule 3: the actor is the session's; the "Act as" picker names the role a request is asked for among the roles the session holds. Without a staff runtime (npm run console --demo) the legacy header actor picker stands in. */
 function actor() { if (state.me && state.me.source === "session") return { id: state.me.staff_user_id, role: $("#actorRole").value || state.me.role }; return { id: $("#actorId").value.trim() || "ops-user", role: $("#actorRole").value }; }
-/** `opts.role` names the role an act runs under (34.1 rule 3: an unmask as compliance, a resolve as ops_analyst) when it differs from the picker's; every refusal surfaces as `CODE: reason` text. */
+/** The role the server says acted (`x-acted-as`, 34.1 rule 3 amended 2026-09-15): shown in the header as "acting as <role>" whenever it differs from the picker — a read the picked role does not open fell back to the least-privileged held role that does. */
+function actedAs(role) { state.actedAs = role || null; const c = $("#actingAs"); const picked = $("#actorRole").value; if (role && picked && role !== picked) { c.textContent = `acting as ${role}`; c.hidden = false; } else c.hidden = true; }
+/**
+ * Every request is asked for as the picker's role (`x-staff-role`), or as `opts.role` when an "Act as" offer re-sends an act with the role named. A refusal
+ * is a typed error: `code`, `status`, `data` (the server's `{role, held, act_as}`), `roleAsked`, and `retry(role)` — the same request with that role named.
+ */
 async function api(path, opts = {}) {
   const a = actor();
   const form = typeof FormData !== "undefined" && opts.body instanceof FormData;   // a multipart upload sets its own content-type (boundary)
   const url = path.startsWith("/api/") ? state.apiBase + path.slice(4) : path;
   const role = opts.role || a.role;
+  const { role: _r, ...init } = opts;
   const headers = { ...(form ? {} : { "content-type": "application/json" }), ...(state.staff ? { "x-staff-role": role } : { "x-actor-id": a.id, "x-actor-role": role }), ...(opts.headers || {}) };
-  const res = await fetch(url, { ...opts, credentials: "same-origin", headers });
+  const res = await fetch(url, { ...init, credentials: "same-origin", headers });
   const data = await res.json().catch(() => ({}));
+  actedAs(res.headers.get("x-acted-as"));
   if (res.status === 401 && state.staff && (data.code === "AUTH_REQUIRED" || data.code === "SESSION_EXPIRED")) { door(data.code === "SESSION_EXPIRED" ? "Your session ended (30 minutes idle or 12 hours). Sign in again; you will return to where you were." : null); throw new Error(data.code); }
-  if (!res.ok) { const err = new Error(data.code ? `${data.code}: ${data.reason || (data.error !== String(data.code).toLowerCase() && data.error) || res.statusText}${data.role ? ` (needs ${data.role})` : ""}` : data.error || data.reason || res.statusText); err.code = data.code || null; err.status = res.status; err.data = data; throw err; }
+  if (!res.ok) { const err = new Error(data.code ? `${data.code}: ${data.reason || (data.error !== String(data.code).toLowerCase() && data.error) || res.statusText}${data.role ? ` (needs ${data.role})` : ""}` : data.error || data.reason || res.statusText); err.code = data.code || null; err.status = res.status; err.data = data; err.roleAsked = role || null; err.actAs = Array.isArray(data.act_as) ? data.act_as : []; err.retry = (asRole) => api(path, { ...opts, role: asRole }); throw err; }
   return data;
 }
-/** The first of `roles` the session holds (the role an act is sent under), else the picker's role — the server refuses with ROLE_REQUIRED when none is held. */
-const roleFor = (...roles) => roles.find((x) => holds(x)) || actor().role;
-const opsRole = () => holds("ops_analyst") || holds("officer") || holds("compliance") || !state.staff;
+/** The roles the session holds (34.1); in the legacy header mode the one the header names. */
+const heldRoles = () => (state.me && state.me.roles) || (state.staff ? [] : [$("#actorRole").value].filter(Boolean));
+const holds = (role) => heldRoles().includes(role);
+const opsRole = () => OPS.some(holds);
+/**
+ * 34.5 rule 3: a refusal is a short line naming the role it needs — never the server's string as the page — and, on an act the account could take as a role it
+ * holds, an "Act as <role>" button per role in `act_as`, each re-sending the same request with that role named (never silently). A GET falls back on the
+ * server, so a page refusal names a role the account does not hold and offers nothing.
+ */
+function refusalHtml(err, opts = {}) {
+  const d = err.data || {}; const role = d.role || ""; const offer = err.actAs || []; const held = Array.isArray(d.held) ? d.held : heldRoles();
+  const why = held.includes(role) ? (err.roleAsked && err.roleAsked !== role ? `; it was asked for as <b>${esc(err.roleAsked)}</b>` : "") : ` — this account does not hold it (you hold ${esc(held.join(", ") || "no role")})`;
+  return `<div class="refusal ${opts.inline ? "inline" : ""}" data-refusal="${esc(d.code || err.code || "REFUSED")}" data-role="${esc(role)}" data-offer="${esc(offer.join(" "))}"><span class="chip bad">needs ${esc(role || "another role")}</span> <span class="muted">This ${opts.inline ? "act" : "page"} needs <b>${esc(role)}</b>${why}.</span>${offer.map((r) => ` <button class="ghost" type="button" data-act-as="${esc(r)}">Act as ${esc(r)}</button>`).join("")}</div>`;
+}
+const wireActAs = (el, retry) => el.querySelectorAll("button[data-act-as]").forEach((b) => b.addEventListener("click", (e) => { e.preventDefault(); retry(b.dataset.actAs); }));
+/**
+ * An act (34.1 rule 3 / 34.5 rule 3): sent under the picker's role. A 403 ROLE_REQUIRED naming roles the account holds is offered where the control sits as
+ * "Act as <role>" — the same request re-sent with that role named; any other refusal is its code and reason as text. `onOk(result, actedRole)`.
+ */
+async function attempt(out, request, onOk, role) {
+  try { const r = await request(role); await onOk(r, r && r.acted_as || state.actedAs || role || actor().role); }
+  catch (err) {
+    if (!out) { toast(err.message, true); return; }
+    if (err.code === "ROLE_REQUIRED") { out.innerHTML = refusalHtml(err, { inline: true }); wireActAs(out, (asRole) => attempt(out, request, onOk, asRole)); }
+    else line(out, err.message, true);
+  }
+}
 const short = (id) => (id ? `<span class="mono" title="${esc(id)}">${esc(String(id)).slice(0, 8)}…</span>` : "—");
 const mono = (s) => (s === null || s === undefined || s === "" ? "—" : `<span class="mono">${esc(s)}</span>`);
 const dash = (v) => (v === null || v === undefined || v === "" ? "—" : esc(v));
@@ -93,8 +143,8 @@ const tabsOf = (tabs, current) => `<div class="tabs">${tabs.map(([k, t]) => `<bu
 /** The door (34.1 rule 1): e-mail → a code by e-mail → a password (set at enrolment) → the session; the view the user was on is kept as the return path. */
 function door(message) {
   if (state.view !== "door") state.door.returnTo = { view: state.view, kind: state.kind, loanId: state.loanId, importId: state.importId };
-  state.view = "door"; state.me = null; state.door.step = "email"; state.door.token = null; state.door.message = message || null;
-  $("#nav").hidden = true; $("#who").hidden = true; $("#signout").hidden = true; $("#actorRole").hidden = true;
+  state.view = "door"; state.me = null; state.home = null; state.door.step = "email"; state.door.token = null; state.door.message = message || null;
+  $("#nav").hidden = true; $("#who").hidden = true; $("#signout").hidden = true; $("#actAs").hidden = true; $("#actingAs").hidden = true;
   render();
 }
 async function doorSubmit(step, f) {
@@ -105,8 +155,8 @@ async function doorSubmit(step, f) {
   else if (step === "password") {
     const r = await api("/api/auth/signin", { method: "POST", body: JSON.stringify({ email: state.door.email, password: v("password") }) });
     state.door.token = null; state.door.fakeCode = null; state.door.step = "email";
-    const back = state.door.returnTo || { view: "dashboard" }; state.door.returnTo = null;
-    Object.assign(state, { view: back.view === "door" ? "dashboard" : back.view, kind: back.kind || null, loanId: back.loanId || null, importId: back.importId || null });
+    const back = state.door.returnTo || { view: "home" }; state.door.returnTo = null;
+    Object.assign(state, { view: back.view === "door" ? "home" : back.view, kind: back.kind || null, loanId: back.loanId || null, importId: back.importId || null });
     await whoami(); toast(`Signed in as ${r.legal_name || r.staff_user_id.slice(0, 8)} (${r.factors.join(" + ")})`); await refreshCounts(); render(); return;
   }
   render();
@@ -121,22 +171,36 @@ function doorView() {
 }
 async function whoami() {
   const me = await api("/api/me"); state.me = me; state.readOnly = !!me.readOnly;
-  const sel = $("#actorRole"); sel.innerHTML = (me.roles || []).map((x) => `<option ${x === me.role ? "selected" : ""}>${x}</option>`).join(""); sel.hidden = false;
+  // the picker's default is the role the server chose with no preference: the least-privileged role held (ops_analyst < officer < compliance < admin)
+  const sel = $("#actorRole"); sel.innerHTML = (me.roles || []).map((x) => `<option ${x === me.role ? "selected" : ""}>${x}</option>`).join(""); $("#actAs").hidden = false;
   if (me.source === "session") { $("#who").textContent = `${me.legal_name || me.staff_user_id.slice(0, 8)} · ${(me.session && me.session.factors || []).join(" + ")}`; $("#who").hidden = false; $("#signout").hidden = false; $("#legacyActor").hidden = true; }
   else { $("#who").hidden = true; $("#signout").hidden = true; $("#legacyActor").hidden = false; }
   $("#readonly").hidden = !state.readOnly; $("#nav").hidden = false;
   return me;
 }
-const holds = (role) => !!(state.me && (state.me.roles || []).includes(role));
 function toast(msg, bad) { const t = $("#toast"); t.textContent = msg; t.className = "toast" + (bad ? " bad" : ""); t.hidden = false; clearTimeout(t._h); t._h = setTimeout(() => (t.hidden = true), 3500); }
+/** The sidebar (34.5 rule 1): each area once, only when a held role opens it; the queue kinds carry the counts Home answered. */
 function nav() {
-  const n = $("#nav"); const c = state.counts;
-  n.innerHTML = `<h3>Work</h3>` + KINDS.map(([k, label]) => `<a href="#" data-view="${k === "queue" ? "queue" : "kind"}" data-kind="${k}" class="${(state.view === "queue" && k === "queue") || (state.view === "kind" && state.kind === k) ? "active" : ""}">${label}<span class="count">${k === "queue" ? "" : (c[k] ?? "")}</span></a>`).join("")
-    // 34.2 the directory and 34.3 the book are the ops roles' (ops_analyst | officer | compliance — 34.1 rule 2: admin touches no borrower); 34.4 controls read for every role, evidence for compliance | admin
-    + `<h3>Records</h3><a href="#" data-view="loans" class="${state.view === "loans" || state.view === "loan" ? "active" : ""}">Loans</a>${opsRole() ? `<a href="#" data-view="directory" class="${state.view.startsWith("directory") ? "active" : ""}">Directory</a><a href="#" data-view="book" class="${state.view.startsWith("book") ? "active" : ""}">Book</a>` : ""}<h3>Oversight</h3><a href="#" data-view="dashboard" class="${state.view === "dashboard" ? "active" : ""}">Compliance Sentinel</a><a href="#" data-view="controls" class="${state.view.startsWith("controls") ? "active" : ""}">Controls</a>${holds("admin") ? `<a href="#" data-view="staff" class="${state.view === "staff" ? "active" : ""}">Staff &amp; roles</a>` : ""}${holds("compliance") || holds("admin") ? `<a href="#" data-view="access_review" class="${state.view === "access_review" ? "active" : ""}">Access review</a>` : ""}<a href="#" data-view="agents" class="${state.view === "agents" ? "active" : ""}">Agents &amp; AI path</a><a href="#" data-view="ai" class="${state.view === "ai" || state.view === "ai_party" ? "active" : ""}">AI conversations</a>`;
-  n.querySelectorAll("a").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); state.view = a.dataset.view; state.kind = a.dataset.kind || null; render(); }));
+  const n = $("#nav"); const c = state.counts; const held = heldRoles(); const area = AREA_OF[state.view] || state.view;
+  n.innerHTML = NAV.map(([group, links]) => {
+    const shown = links.filter(([, , roles]) => roles.some((r) => held.includes(r)));
+    return shown.length ? `<h3>${group}</h3>` + shown.map(([view, label, , kind]) => `<a href="#${view}${kind ? `?kind=${kind}` : ""}" data-view="${view}" data-kind="${kind || ""}" data-area="${esc(label)}" class="${area === view && (state.kind || null) === kind ? "active" : ""}">${esc(label)}<span class="count">${kind ? (c[kind] ?? "") : ""}</span></a>`).join("") : "";
+  }).join("");
+  n.querySelectorAll("a").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); go(a.dataset.view, { kind: a.dataset.kind || null }); }));
 }
-async function refreshCounts() { try { const d = await api("/api/dashboard"); state.counts = d.queues; state.dash = d; } catch (e) { /* unauthenticated until a role is chosen */ } nav(); }
+/** Open an area (the address bar follows, so an area can be reached by address — and answers 403 ROLE_REQUIRED naming the role when the roles held do not open it). */
+function go(view, extra = {}) { state.view = view; state.kind = extra.kind || null; if (extra.tab !== undefined) state.tab = extra.tab; history.replaceState(null, "", `#${view}${state.kind ? `?kind=${encodeURIComponent(state.kind)}` : ""}`); render(); }
+function fromHash() { const h = location.hash.replace(/^#/, ""); if (!h) return null; const [v, q] = h.split("?"); if (!VIEWS.has(v)) return null; return { view: v, kind: new URLSearchParams(q || "").get("kind") || null }; }
+window.addEventListener("hashchange", () => { const h = fromHash(); if (h && state.view !== "door") { state.view = h.view; state.kind = h.kind; render(); } });
+/** Home is the one read every account can make (34.5 rule 2): the sidebar counts come from its merged queue; an admin-only session gets no count (rule 2, 34.1 rule 2). */
+async function refreshCounts() {
+  try {
+    if (!state.staff) { const d = await api("/api/dashboard"); state.dash = d; state.counts = d.queues; }   // no staff runtime (npm run console --demo): the Sentinel's counts stand in
+    else { const h = await api("/api/portal/home"); state.home = h; state.counts = h.my_queue ? h.my_queue.by_kind : {}; }
+  } catch (e) { state.home = null; state.counts = {}; }
+  nav();
+}
+async function onRoleChange() { state.dash = null; state.home = null; actedAs(null); await refreshCounts(); render(); }
 function actionsFor(item) {
   if (state.readOnly) return `<span class="muted">read-only</span>`;
   switch (item.kind) {
@@ -147,23 +211,68 @@ function actionsFor(item) {
     default: return `<span class="muted">work the loan</span>`;
   }
 }
+/** A queue row's act, sent as the picker's role; refused with roles the account holds → the "Act as" offer beside the button (never a silent re-role). */
 async function act(btn) {
-  const id = btn.dataset.id; const kind = btn.dataset.act;
-  try {
-    if (kind === "escalation") { const ev = prompt("Evidence document id (required for a completed escalation):"); if (ev === null) return; await api("/api/escalations/complete", { method: "POST", body: JSON.stringify({ id, evidenceDocumentId: ev || null }) }); }
-    if (kind === "portal_task") { const ev = prompt("Confirmation / evidence document id:"); if (ev === null) return; await api("/api/portal-tasks/complete", { method: "POST", body: JSON.stringify({ id, evidenceDocumentId: ev || null }) }); }
-    if (kind === "held_notice") { const r = prompt("Id of the corrected notice that supersedes this one:"); if (!r) return; await api("/api/notices/supersede", { method: "POST", body: JSON.stringify({ id, replacementId: r }) }); }
-    if (kind === "dead_letter") await api("/api/outbox/requeue", { method: "POST", body: JSON.stringify({ id }) });
-    toast("Done — recorded as " + actor().role + ":" + actor().id); await refreshCounts(); render();
-  } catch (e) { toast(e.message, true); }
+  const id = btn.dataset.id; const kind = btn.dataset.act; const out = $(`[data-actout="${kind}:${id}"]`);
+  let path = ""; let payload = null;
+  if (kind === "escalation") { const ev = prompt("Evidence document id (required for a completed escalation):"); if (ev === null) return; path = "/api/escalations/complete"; payload = { id, evidenceDocumentId: ev || null }; }
+  if (kind === "portal_task") { const ev = prompt("Confirmation / evidence document id:"); if (ev === null) return; path = "/api/portal-tasks/complete"; payload = { id, evidenceDocumentId: ev || null }; }
+  if (kind === "held_notice") { const r = prompt("Id of the corrected notice that supersedes this one:"); if (!r) return; path = "/api/notices/supersede"; payload = { id, replacementId: r }; }
+  if (kind === "dead_letter") { path = "/api/outbox/requeue"; payload = { id }; }
+  if (!path) return;
+  await attempt(out, (role) => api(path, { method: "POST", role, body: JSON.stringify(payload) }), async (r, as) => { toast(`Done — recorded as ${as}:${actor().id}`); state.home = null; await refreshCounts(); render(); });
 }
 function queueTable(items) {
   if (!items.length) return `<div class="empty">Nothing in this queue.</div>`;
-  return `<table><thead><tr><th>Opened</th><th>Item</th><th>Owner</th><th>Loan</th><th>Detail</th><th></th></tr></thead><tbody>` + items.map((i) => `<tr><td class="muted">${when(i.openedAt)}${i.dueAt ? `<br><span class="chip warn">due ${when(i.dueAt)}</span>` : ""}</td><td><b>${esc(i.title)}</b><br><span class="chip">${i.kind.replace("_", " ")}</span> ${i.severity ? `<span class="chip ${esc(i.severity)}">${esc(i.severity)}</span>` : ""}</td><td>${esc(i.ownerRole)}</td><td>${i.loanId ? `<a href="#" data-loan="${esc(i.loanId)}" class="mono">${esc(i.loanId).slice(0, 8)}…</a>` : "—"}</td><td><details><summary>detail</summary><pre>${esc(JSON.stringify(i.detail, null, 1))}</pre></details></td><td>${actionsFor(i)}</td></tr>`).join("") + `</tbody></table>`;
+  return `<table><thead><tr><th>Opened</th><th>Item</th><th>Owner</th><th>Loan</th><th>Detail</th><th></th></tr></thead><tbody>` + items.map((i) => `<tr><td class="muted">${when(i.openedAt)}${i.dueAt ? `<br><span class="chip warn">due ${when(i.dueAt)}</span>` : ""}</td><td><b>${esc(i.title)}</b><br><span class="chip">${i.kind.replace("_", " ")}</span> ${i.severity ? `<span class="chip ${esc(i.severity)}">${esc(i.severity)}</span>` : ""}</td><td>${esc(i.ownerRole)}</td><td>${i.loanId ? `<a href="#" data-loan="${esc(i.loanId)}" class="mono">${esc(i.loanId).slice(0, 8)}…</a>` : "—"}</td><td><details><summary>detail</summary><pre>${esc(JSON.stringify(i.detail, null, 1))}</pre></details></td><td>${actionsFor(i)} <span data-actout="${esc(i.kind)}:${esc(i.id)}"></span></td></tr>`).join("") + `</tbody></table>`;
+}
+// ───────── 34.5 Home: My queue for every role held (rule 2; Q5) — one merged list with the role each row needs, the clocks due and breached, the escalations by role, the counts, the FAKE roster; the admin tiles; never a refusal
+const tile = (k, v, cls = "", sub = "") => `<div class="tile"><div class="k">${k}</div><div class="v ${cls}">${v}</div>${sub ? `<div class="muted">${sub}</div>` : ""}</div>`;
+const clockRow = (t) => [`<a href="#" data-clock="${esc(t.timer_id)}" class="mono">${esc(t.code)}</a><br><span class="muted">${esc(t.process || "")}</span>`, `${esc(t.subject_kind)} ${short(t.subject_id)}${t.loan_id ? `<br>loan ${short(t.loan_id)}` : ""}`, `${dash(t.due_date)}${t.due_at ? `<br><span class="muted">${esc(when(t.due_at))}</span>` : ""}${t.breached_at ? `<br><span class="chip bad">breached ${esc(when(t.breached_at))}</span>` : ""}`, `${dash(t.breach_role)}${t.severity ? ` <span class="chip">sev ${esc(t.severity)}</span>` : ""}`];
+const clocksTable = (rows) => (rows.length ? table(rows.map(clockRow), ["Clock", "Subject", "Due", "Breach role"]) : `<div class="empty">None.</div>`);
+function homeQueueTable(rows) {
+  if (!rows.length) return `<div class="empty">Nothing waits for the roles you hold.</div>`;
+  return `<table data-my-queue><thead><tr><th>Opened</th><th>Item</th><th>Needs</th><th>Loan</th><th>Detail</th><th></th></tr></thead><tbody>` + rows.map((r) => `<tr data-queue-row="${esc(r.kind)}:${esc(r.id)}"><td class="muted">${when(r.opened_at)}${r.due_at ? `<br><span class="chip warn">due ${when(r.due_at)}</span>` : ""}</td><td><b>${esc(r.title)}</b><br><span class="chip">${esc(r.kind.replace("_", " "))}</span> ${r.severity ? `<span class="chip ${esc(r.severity)}">${esc(r.severity)}</span>` : ""}${r.fake_reviewer ? ` <span class="chip warn" title="a FAKE reviewer fills this role in this environment">FAKE ${esc(r.fake_reviewer.role)} approves in ${esc(r.fake_reviewer.approves_after_s)} s</span>` : ""}</td><td><span class="chip ${r.held ? "good" : ""}" data-needs="${esc(r.needs)}">${esc(r.needs)}</span>${r.held ? "" : `<br><span class="muted">not a role you hold</span>`}</td><td>${r.loan_id ? `<a href="#" data-loan="${esc(r.loan_id)}" class="mono">${esc(r.loan_id).slice(0, 8)}…</a>` : "—"}</td><td>${jsonDetails("detail", r.detail)}</td><td>${actionsFor(r)} <span data-actout="${esc(r.kind)}:${esc(r.id)}"></span></td></tr>`).join("") + `</tbody></table>`;
+}
+const ADMIN_TILE_VIEW = { staff: "staff", access_review: "access_review", controls: "controls" };
+function adminTile(t) {
+  const d = t.detail || {}; let v = "";
+  if (t.code === "staff") v = `${d.active ?? 0} active · ${d.invited ?? 0} invited · ${d.disabled ?? 0} disabled`;
+  else if (t.code === "access_review") v = d.clock ? `${esc(d.clock.status)} · due ${esc(d.clock.due_date || d.clock.due_at || "—")}` : "no review yet — the clock arms with the first";
+  else v = esc(d.note || "");
+  return `<a href="#${ADMIN_TILE_VIEW[t.code]}" class="tile" data-view="${ADMIN_TILE_VIEW[t.code]}" data-tile="${esc(t.code)}"><div class="k">${esc(t.label)}</div><div class="muted" style="margin-top:6px">${v}</div></a>`;
+}
+async function renderHome(m) {
+  const kindForm = `<form id="kindf" class="row"><label>Kind <select name="kind"><option value="">every kind</option>${KINDS.slice(1).map(([k, l]) => `<option value="${k}" ${state.kind === k ? "selected" : ""}>${l}</option>`).join("")}</select></label>`;
+  if (!state.staff) {
+    // no staff runtime (npm run console --demo): the legacy role queue of the header's actor and the Sentinel's tiles stand in for portal.home
+    const [items, d] = await Promise.all([api(state.kind ? `/api/queue?kind=${encodeURIComponent(state.kind)}` : "/api/queue"), api("/api/dashboard")]); state.dash = d;
+    m.innerHTML = `<h2>Home <span class="muted">— header actor ${esc(actor().role)} (no staff runtime: the legacy role queue)</span></h2><h2 data-section="my_queue">My queue <span class="muted">— ${items.length} item(s)</span></h2>${kindForm}</form>` + queueTable(items)
+      + `<div class="tiles">${tile("Clocks due in 24h", d.timers.dueNext24h, d.timers.dueNext24h ? "warn" : "")}${tile("Clocks breached", d.timers.breached, d.timers.breached ? "bad" : "")}${tile("Open escalations", d.queues.escalation)}${tile("Dead letters", d.queues.dead_letter, d.queues.dead_letter ? "bad" : "")}${tile("Held notices", d.notices.held, d.notices.held ? "warn" : "")}${tile("Portal tasks", d.queues.portal_task)}</div>`;
+    const lf = $("#kindf"); if (lf) lf.kind.addEventListener("change", () => go("home", { kind: lf.kind.value || null }));
+    return;
+  }
+  const h = !state.kind && state.home ? state.home : await api(`/api/portal/home${state.kind ? `?kind=${encodeURIComponent(state.kind)}` : ""}`);
+  if (!state.kind) state.home = h;
+  const q = h.my_queue; const c = h.counts; const cl = h.clocks; const es = h.escalations;
+  let html = `<h2>Home <span class="muted">— as of ${when(h.as_of)} · you hold ${esc((h.roles || []).join(", "))} · this read acted as ${esc(h.acted_as)}</span></h2>`;
+  if (q) html += `<h2 data-section="my_queue">My queue <span class="muted">— ${q.count} item(s) waiting for ${esc((h.ops_roles || []).join(", "))}</span></h2>`
+    + `${kindForm}<span class="muted">Every held role's work in one list; each row names the role it needs. "Act as" filters nothing here — it is the role an act is sent under.</span></form>`
+    + homeQueueTable(q.rows);
+  html += `<div class="tiles">` + (cl ? tile("Clocks due in 24h", cl.counts.due_24h, cl.counts.due_24h ? "warn" : "") + tile("Clocks breached", cl.counts.breached, cl.counts.breached ? "bad" : "") : "")
+    + (es ? tile("Open escalations", es.open, "", Object.entries(es.open_by_role || {}).map(([r, n]) => `${esc(r)} ${n}`).join(" · ") || "none by role") : "")
+    + (c ? tile("Dead letters", c.dead_letters, c.dead_letters ? "bad" : "") + tile("Held notices", c.held_notices, c.held_notices ? "warn" : "") + tile("Portal tasks", c.portal_tasks) : "") + `</div>`;
+  if (h.fake_reviewers) html += `<p class="muted" data-fake-roster><span class="chip warn">FAKE</span> reviewers fill ${esc((h.fake_reviewers.roles || []).join(", "))} in this environment — each approves after ${esc(h.fake_reviewers.delay_s)} s.</p>`;
+  if (cl) html += `<div class="grid2"><div><h2>Breached clocks (${cl.breached.length})</h2>${clocksTable(cl.breached)}</div><div><h2>Due within 24 hours (${cl.due_24h.length})</h2>${clocksTable(cl.due_24h)}</div></div>`;
+  if (h.admin) html += `<h2>Staff</h2><div class="tiles">${(h.admin.tiles || []).map(adminTile).join("")}</div><p class="muted" data-other-areas>${esc(h.admin.other_areas)}</p>`;
+  m.innerHTML = html;
+  const kf = $("#kindf"); if (kf) kf.kind.addEventListener("change", () => go("home", { kind: kf.kind.value || null }));
 }
 async function render() {
   nav(); const m = $("#main");
   try {
+    if (state.view === "queue" || state.view === "kind") state.view = "home";
+    if (state.view === "directory") state.view = "people";
     if (state.view === "door") {
       m.innerHTML = doorView();
       m.querySelectorAll("form[data-door]").forEach((f) => f.addEventListener("submit", async (e) => { e.preventDefault(); const b = f.querySelector("button"); b.disabled = true; try { await doorSubmit(f.dataset.door, f); } catch (err) { toast(err.message, true); b.disabled = false; } }));
@@ -176,14 +285,16 @@ async function render() {
       const r = await api("/api/staff");
       const roleBoxes = (u) => STAFF_ROLES.map((x) => `<label><input type="checkbox" data-role-of="${esc(u.staff_user_id)}" value="${x}" ${u.roles.includes(x) ? "checked" : ""} ${u.status === "disabled" ? "disabled" : ""}> ${x}</label>`).join(" ");
       m.innerHTML = `<h2>Staff &amp; roles <span class="muted">— as of ${when(r.as_of)}</span></h2>
-        <form id="invite" class="row"><input name="email" type="email" placeholder="colleague@supermortgage" size="28" required><input name="legal_name" placeholder="Legal name" size="18">${STAFF_ROLES.map((x) => `<label><input type="checkbox" name="roles" value="${x}" ${x === "ops_analyst" ? "checked" : ""}> ${x}</label>`).join(" ")}<button class="primary" type="submit">Invite</button></form>
+        <form id="invite" class="row"><input name="email" type="email" placeholder="colleague@supermortgage" size="28" required><input name="legal_name" placeholder="Legal name" size="18">${STAFF_ROLES.map((x) => `<label><input type="checkbox" name="roles" value="${x}" ${x === "ops_analyst" ? "checked" : ""}> ${x}</label>`).join(" ")}<button class="primary" type="submit">Invite</button><span id="inviteout"></span></form>
         <p class="muted">The invitation goes by e-mail (NTC_SM_STAFF_INVITATION): the inviter's name, the roles, the sign-in address, "a code will be sent to this e-mail". The address itself is stored hashed and encrypted and appears nowhere else.</p>`
-        + table(r.users.map((u) => [`<b>${esc(u.legal_name || "—")}</b><br><span class="mono muted">${esc(u.email_masked || "")} · ${esc(u.staff_user_id).slice(0, 8)}…</span>`, `<span class="chip ${u.status === "active" ? "good" : u.status === "disabled" ? "bad" : "warn"}">${esc(u.status)}</span>${u.locked_until && new Date(u.locked_until) > new Date() ? ` <span class="chip bad">locked until ${when(u.locked_until)}</span>` : ""}`, roleBoxes(u), `${(u.factors || []).join(", ") || "—"}<br><span class="muted">${u.open_sessions} open session${u.open_sessions === 1 ? "" : "s"}</span>`, `<span class="muted">${when(u.invited_at)}${u.enrolled_at ? `<br>enrolled ${when(u.enrolled_at)}` : ""}</span>`, u.status === "disabled" ? "" : `<button class="ghost" data-save-roles="${esc(u.staff_user_id)}">Save roles</button> <button class="ghost" data-disable="${esc(u.staff_user_id)}">Disable</button>${u.status === "invited" ? ` <button class="ghost" data-reinvite="${esc(u.staff_user_id)}" title="re-send the invitation (a corrected address supersedes the old one)">Re-invite</button>` : ""}`]), ["Person", "Status", "Roles", "Factors", "Invited", ""])
+        + table(r.users.map((u) => [`<b>${esc(u.legal_name || "—")}</b><br><span class="mono muted">${esc(u.email_masked || "")} · ${esc(u.staff_user_id).slice(0, 8)}…</span>`, `<span class="chip ${u.status === "active" ? "good" : u.status === "disabled" ? "bad" : "warn"}">${esc(u.status)}</span>${u.locked_until && new Date(u.locked_until) > new Date() ? ` <span class="chip bad">locked until ${when(u.locked_until)}</span>` : ""}`, roleBoxes(u), `${(u.factors || []).join(", ") || "—"}<br><span class="muted">${u.open_sessions} open session${u.open_sessions === 1 ? "" : "s"}</span>`, `<span class="muted">${when(u.invited_at)}${u.enrolled_at ? `<br>enrolled ${when(u.enrolled_at)}` : ""}</span>`, u.status === "disabled" ? "" : `<button class="ghost" data-save-roles="${esc(u.staff_user_id)}">Save roles</button> <button class="ghost" data-disable="${esc(u.staff_user_id)}">Disable</button>${u.status === "invited" ? ` <button class="ghost" data-reinvite="${esc(u.staff_user_id)}" title="re-send the invitation (a corrected address supersedes the old one)">Re-invite</button>` : ""} <span data-staffout="${esc(u.staff_user_id)}"></span>`]), ["Person", "Status", "Roles", "Factors", "Invited", ""])
         + `<h2>My passkey</h2><p class="muted">A passkey replaces the e-mail code as the possession factor (the password stays). <button class="ghost" id="addPasskey">Add a passkey on this device</button></p>`;
-      $("#invite").addEventListener("submit", async (e) => { e.preventDefault(); const f = e.target; const roles = [...f.querySelectorAll('input[name="roles"]:checked')].map((x) => x.value); try { const out = await api("/api/staff/invite", { method: "POST", body: JSON.stringify({ email: f.email.value.trim(), legal_name: f.legal_name.value.trim() || null, roles }) }); toast(`Invited ${out.staff_user_id.slice(0, 8)}… as ${out.roles.join(", ")}${out.bounced ? " — the e-mail bounced" : ""}`, out.bounced); render(); } catch (err) { toast(err.message, true); } });
-      m.querySelectorAll("[data-save-roles]").forEach((b) => b.addEventListener("click", async () => { const id = b.dataset.saveRoles; const roles = [...m.querySelectorAll(`input[data-role-of="${id}"]:checked`)].map((x) => x.value); const rationale = prompt("Rationale for the role change (recorded on the decision):"); if (rationale === null) return; try { const out = await api(`/api/staff/${id}/roles`, { method: "PUT", body: JSON.stringify({ roles, rationale }) }); toast(out.changed ? `Roles set: ${out.roles_after.join(", ")} (${out.sessions_revoked.length} session(s) revoked)` : "No change"); render(); } catch (err) { toast(err.message, true); } }));
-      m.querySelectorAll("[data-disable]").forEach((b) => b.addEventListener("click", async () => { const rationale = prompt("Rationale for disabling this account (recorded on the decision):"); if (rationale === null) return; try { await api(`/api/staff/${b.dataset.disable}/disable`, { method: "POST", body: JSON.stringify({ rationale }) }); toast("Disabled; open sessions revoked"); render(); } catch (err) { toast(err.message, true); } }));
-      m.querySelectorAll("[data-reinvite]").forEach((b) => b.addEventListener("click", async () => { const email = prompt("E-mail to re-invite (a corrected address supersedes the old one):"); if (!email) return; const u = r.users.find((x) => x.staff_user_id === b.dataset.reinvite); try { await api("/api/staff/invite", { method: "POST", body: JSON.stringify({ email, legal_name: u && u.legal_name, roles: u ? u.roles : ["ops_analyst"] }) }); toast("Invitation re-sent"); render(); } catch (err) { toast(err.message, true); } }));
+      // every act is sent as the picker's role; an admin acting as another role is offered "Act as admin" on the row, never re-roled silently (34.5 rule 3)
+      const staffOut = (id) => m.querySelector(`[data-staffout="${id}"]`);
+      $("#invite").addEventListener("submit", (e) => { e.preventDefault(); const f = e.target; const roles = [...f.querySelectorAll('input[name="roles"]:checked')].map((x) => x.value); attempt($("#inviteout"), (role) => api("/api/staff/invite", { method: "POST", role, body: JSON.stringify({ email: f.email.value.trim(), legal_name: f.legal_name.value.trim() || null, roles }) }), (out) => { toast(`Invited ${out.staff_user_id.slice(0, 8)}… as ${out.roles.join(", ")}${out.bounced ? " — the e-mail bounced" : ""}`, out.bounced); render(); }); });
+      m.querySelectorAll("[data-save-roles]").forEach((b) => b.addEventListener("click", () => { const id = b.dataset.saveRoles; const roles = [...m.querySelectorAll(`input[data-role-of="${id}"]:checked`)].map((x) => x.value); const rationale = prompt("Rationale for the role change (recorded on the decision):"); if (rationale === null) return; attempt(staffOut(id), (role) => api(`/api/staff/${id}/roles`, { method: "PUT", role, body: JSON.stringify({ roles, rationale }) }), (out) => { toast(out.changed ? `Roles set: ${out.roles_after.join(", ")} (${out.sessions_revoked.length} session(s) revoked)` : "No change"); render(); }); }));
+      m.querySelectorAll("[data-disable]").forEach((b) => b.addEventListener("click", () => { const id = b.dataset.disable; const rationale = prompt("Rationale for disabling this account (recorded on the decision):"); if (rationale === null) return; attempt(staffOut(id), (role) => api(`/api/staff/${id}/disable`, { method: "POST", role, body: JSON.stringify({ rationale }) }), () => { toast("Disabled; open sessions revoked"); render(); }); }));
+      m.querySelectorAll("[data-reinvite]").forEach((b) => b.addEventListener("click", () => { const id = b.dataset.reinvite; const email = prompt("E-mail to re-invite (a corrected address supersedes the old one):"); if (!email) return; const u = r.users.find((x) => x.staff_user_id === id); attempt(staffOut(id), (role) => api("/api/staff/invite", { method: "POST", role, body: JSON.stringify({ email, legal_name: u && u.legal_name, roles: u ? u.roles : ["ops_analyst"] }) }), () => { toast("Invitation re-sent"); render(); }); }));
       $("#addPasskey").addEventListener("click", async () => {
         try {
           if (!navigator.credentials || !window.PublicKeyCredential) throw new Error("this browser has no WebAuthn");
@@ -200,10 +311,11 @@ async function render() {
       const clockChip = !c ? `<span class="chip warn">no review yet — the clock arms with the first review</span>` : c.status === "breached" ? `<span class="chip bad">overdue since ${esc(c.due_date)} — a compliance escalation is open</span>` : c.status === "armed" ? `<span class="chip good">next review due ${esc(c.due_date)}</span>` : `<span class="chip">${esc(c.status)} · due ${esc(c.due_date)}</span>`;
       m.innerHTML = `<h2>Access review <span class="muted">— every 90 calendar days (16 CFR §314.4(c)(1); 23 NYCRR §500.7)</span></h2><p>${clockChip}${r.escalation && !r.escalation.completed_at ? ` <span class="chip bad">escalation ${esc(r.escalation.id).slice(0, 8)}… open since ${when(r.escalation.opened_at)}</span>` : ""}</p>
         <form id="review">` + table(r.active_users.map((u) => [`<b>${esc(u.legal_name || "—")}</b><br><span class="mono muted">${esc(u.email_masked || "")} · ${esc(u.staff_user_id).slice(0, 8)}…</span>`, u.roles.join(", "), `${(u.factors || []).join(", ") || "—"}`, `<select data-decision="${esc(u.staff_user_id)}"><option value="keep">keep</option><option value="change">change roles</option><option value="disable">disable</option></select> <span data-roles-for="${esc(u.staff_user_id)}" hidden>${STAFF_ROLES.map((x) => `<label><input type="checkbox" data-review-role="${esc(u.staff_user_id)}" value="${x}" ${u.roles.includes(x) ? "checked" : ""}> ${x}</label>`).join(" ")}</span>`]), ["Person", "Roles today", "Factors", "Decision"])
-        + `<div class="row" style="margin-top:12px"><input name="rationale" placeholder="Rationale (recorded on the decision)" size="50" required><button class="primary" type="submit">Record the review</button></div></form>
+        + `<div class="row" style="margin-top:12px"><input name="rationale" placeholder="Rationale (recorded on the decision)" size="50" required><button class="primary" type="submit">Record the review</button><span id="reviewout"></span></div></form>
         <h2>Past reviews (${r.reviews.length})</h2>` + table(r.reviews.map((x) => [when(x.reviewed_at), `<span class="mono">${esc(x.reviewed_by).slice(0, 8)}…</span>`, (x.users || []).length, (x.users || []).filter((u) => u.decision !== "keep").map((u) => `${esc(u.staff_user_id).slice(0, 8)}… ${esc(u.decision)}${u.decision === "change" ? ` → ${(u.roles_after || []).join(", ")}` : ""}`).join("; ") || "<span class='muted'>no change</span>"]), ["Reviewed", "By", "Users", "Changes"]);
       m.querySelectorAll("[data-decision]").forEach((sel) => sel.addEventListener("change", () => { m.querySelector(`[data-roles-for="${sel.dataset.decision}"]`).hidden = sel.value !== "change"; }));
-      $("#review").addEventListener("submit", async (e) => { e.preventDefault(); const f = e.target; const decisions = [...m.querySelectorAll("[data-decision]")].map((sel) => ({ staff_user_id: sel.dataset.decision, decision: sel.value, ...(sel.value === "change" ? { roles: [...m.querySelectorAll(`input[data-review-role="${sel.dataset.decision}"]:checked`)].map((x) => x.value) } : {}) })); try { const out = await api("/api/staff/access-review", { method: "POST", body: JSON.stringify({ decisions, rationale: f.rationale.value.trim() }) }); toast(`Review recorded: ${out.users.length} users, ${out.changes} change(s); the clock is re-armed 90 days out`); render(); } catch (err) { toast(err.message, true); } });
+      $("#review").addEventListener("submit", (e) => { e.preventDefault(); const f = e.target; const decisions = [...m.querySelectorAll("[data-decision]")].map((sel) => ({ staff_user_id: sel.dataset.decision, decision: sel.value, ...(sel.value === "change" ? { roles: [...m.querySelectorAll(`input[data-review-role="${sel.dataset.decision}"]:checked`)].map((x) => x.value) } : {}) })); attempt($("#reviewout"), (role) => api("/api/staff/access-review", { method: "POST", role, body: JSON.stringify({ decisions, rationale: f.rationale.value.trim() }) }), (out) => { toast(`Review recorded: ${out.users.length} users, ${out.changes} change(s); the clock is re-armed 90 days out`); render(); }); });
+    } else if (state.view === "home") { await renderHome(m);
     } else if (state.view === "dashboard") {
       const d = state.dash || await api("/api/dashboard"); state.dash = d;
       m.innerHTML = `<h2>Compliance Sentinel <span class="muted">as of ${when(d.asOf)}</span></h2><div class="tiles">
@@ -216,13 +328,10 @@ async function render() {
         <div class="tile"><div class="k">Dead letters</div><div class="v ${d.queues.dead_letter ? "bad" : ""}">${d.queues.dead_letter}</div></div>
         <div class="tile"><div class="k">Notices sent, 7d</div><div class="v">${d.notices.sentLast7d}</div></div></div>
         <div class="grid2"><div><h2>Breaches by severity</h2>${table(Object.entries(d.timers.breachedBySeverity), ["Severity", "Breached"])}</div><div><h2>Breaches by section</h2>${table(Object.entries(d.timers.breachedBySection).sort((a, b) => Number(a[0]) - Number(b[0])), ["Section", "Breached"])}</div></div>`;
-    } else if (state.view === "queue" || state.view === "kind") {
-      const items = await api(state.view === "queue" ? "/api/queue" : `/api/queue?kind=${state.kind}`);
-      m.innerHTML = `<h2>${state.view === "queue" ? `My queue <span class="muted">— ${actor().role}</span>` : KINDS.find(([k]) => k === state.kind)[1]}</h2>` + queueTable(items);
     } else if (state.view === "loans") {
       m.innerHTML = `<h2>Loans</h2><div class="row"><input id="q" placeholder="Fannie Mae loan number, servicer number or id" size="40"><button class="primary" id="go">Search</button></div><div id="results"></div>`;
       const go = async () => { const rows = await api(`/api/loans?q=${encodeURIComponent($("#q").value)}`); $("#results").innerHTML = rows.length ? `<table><thead><tr><th>Fannie Mae #</th><th>Servicer #</th><th>Status</th><th>Boarded</th><th></th></tr></thead><tbody>` + rows.map((l) => `<tr><td class="mono">${esc(l.fnmaLoanNumber)}</td><td class="mono">${esc(l.servicerLoanNumber)}</td><td><span class="chip">${esc(l.status)}</span></td><td class="muted">${when(l.boardedAt)}</td><td><a href="#" data-loan="${esc(l.id)}">open</a></td></tr>`).join("") + `</tbody></table>` : `<div class="empty">No loans match.</div>`; };
-      $("#go").addEventListener("click", go); $("#q").addEventListener("keydown", (e) => e.key === "Enter" && go()); go();
+      $("#go").addEventListener("click", go); $("#q").addEventListener("keydown", (e) => e.key === "Enter" && go()); await go();   // the read is part of the render (34.5-T8): a refusal renders through refusalHtml below
     } else if (state.view === "loan") {
       const l = await api(`/api/loans/${encodeURIComponent(state.loanId)}`);
       const open = await api(`/api/queue?loanId=${encodeURIComponent(state.loanId)}&kind=`);
@@ -236,7 +345,7 @@ async function render() {
       if (state.tab === "queue") body = queueTable(open);
       m.innerHTML = `<h2>Loan <span class="mono">${esc(l.fnmaLoanNumber)}</span> <span class="muted">${esc(l.servicerLoanNumber)}</span> <span class="chip">${esc(l.status)}</span></h2><div class="tabs">${tabs.map(([k, t]) => `<button data-tab="${k}" class="${state.tab === k ? "active" : ""}">${t}</button>`).join("")}</div>${body}`;
       m.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => { state.tab = b.dataset.tab; render(); }));
-    } else if (state.view === "directory") { await renderDirectory(m);
+    } else if (state.view === "people") { await renderPeople(m);
     } else if (state.view === "directory_account") { await renderAccount(m);
     } else if (state.view === "book") { await renderBook(m);
     } else if (state.view === "book_import") { await renderBookImport(m);
@@ -246,8 +355,8 @@ async function render() {
     } else if (state.view === "controls_pack") { await renderPack(m);
     } else if (state.view === "agents") {
       const d = await api("/api/dashboard"); state.dash = d;
-      m.innerHTML = `<h2>Agents &amp; AI path</h2><p class="muted">When an agent's AI path is off, its queue is worked here by people with the same commands and rule codes (18.1 kill switch, operator AI-off).</p>` + table(d.agents.map((a) => [esc(a.agent), esc(a.tier), a.off ? `<span class="chip bad">off</span> <span class="muted">${esc(a.why || "")}</span>` : `<span class="chip good">on</span>`, a.decisionsLast7d, state.readOnly ? "" : (a.off ? `<button class="ghost" data-ai="${esc(a.agent)}" data-on="1">Enable AI path</button>` : `<button class="ghost" data-ai="${esc(a.agent)}">Set AI off</button>`)]), ["Agent", "Tier", "AI path", "Decisions, 7d", ""]);
-      m.querySelectorAll("[data-ai]").forEach((b) => b.addEventListener("click", async () => { try { const why = b.dataset.on ? null : prompt("Reason for switching the AI path off:"); if (!b.dataset.on && !why) return; await api("/api/agents/ai-off", { method: "POST", body: JSON.stringify({ agent: b.dataset.ai, why }) }); toast("Recorded"); render(); } catch (e) { toast(e.message, true); } }));
+      m.innerHTML = `<h2>Agents &amp; AI path</h2><p class="muted">When an agent's AI path is off, its queue is worked here by people with the same commands and rule codes (18.1 kill switch, operator AI-off).</p>` + table(d.agents.map((a) => [esc(a.agent), esc(a.tier), a.off ? `<span class="chip bad">off</span> <span class="muted">${esc(a.why || "")}</span>` : `<span class="chip good">on</span>`, a.decisionsLast7d, state.readOnly ? "" : (a.off ? `<button class="ghost" data-ai="${esc(a.agent)}" data-on="1">Enable AI path</button>` : `<button class="ghost" data-ai="${esc(a.agent)}">Set AI off</button>`) + ` <span data-aiout="${esc(a.agent)}"></span>`]), ["Agent", "Tier", "AI path", "Decisions, 7d", ""]);
+      m.querySelectorAll("[data-ai]").forEach((b) => b.addEventListener("click", () => { const why = b.dataset.on ? null : prompt("Reason for switching the AI path off:"); if (!b.dataset.on && !why) return; attempt(m.querySelector(`[data-aiout="${b.dataset.ai}"]`), (role) => api("/api/agents/ai-off", { method: "POST", role, body: JSON.stringify({ agent: b.dataset.ai, why }) }), () => { toast("Recorded"); render(); }); }));
     } else if (state.view === "ai") {
       // DELTA-28 (docs/ux/17 §6): the most recent agent turns across parties (GET /api/ai/conversation/recent) — the party's e-mail masked; "open" is the per-party trace
       const r = await api("/api/ai/conversation/recent?limit=20");
@@ -263,33 +372,79 @@ async function render() {
         + `<h2>Agent turns (${c.turns.length})</h2>` + table(c.turns.map((t) => [when(t.created_at), esc(t.borrower_text ?? "— (first turn)"), esc(t.reply_text ?? "— (no reply)"), `<span class="mono">${esc(t.model_version)} / ${esc(t.prompt_version)}</span>`, `<details><summary>${t.tool_calls.length} call(s)</summary><pre>${esc(JSON.stringify(t.tool_calls, null, 1))}</pre></details>`, guardChip(t.guard_result), esc(t.safe_classification || ""), `${t.latency_ms ?? "—"} ms · ${t.tokens_in ?? "—"}/${t.tokens_out ?? "—"}`]), ["At", "Borrower said", "Reply", "Model / prompt", "Tools", "Guard", "SAFE", "Latency · tokens"]);
       m.querySelectorAll("[data-view-back]").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); state.view = a.dataset.viewBack; render(); }));
     }
-  } catch (e) { m.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+  } catch (e) {
+    // 34.5 rule 3: a refused page is a line naming the role (a page read falls back on the server, so the role named is one this account does not hold); any other failure is its message
+    if (e.code === "ROLE_REQUIRED") { m.innerHTML = refusalHtml(e); wireActAs(m, (role) => { $("#actorRole").value = role; onRoleChange(); }); }
+    else m.innerHTML = `<div class="empty" data-error="${esc(e.code || "")}">${esc(e.message)}</div>`;
+  } finally { document.body.dataset.renderedView = state.view; document.body.dataset.rendered = String(++renders); }
 }
-// ───────── 34.2 the directory: search (≥ 3 characters; names and masked contact only; the query reaches the log as its hash), the account page, the activity stream, the unmask (compliance | officer, 15 minutes) and the export (compliance)
-async function renderDirectory(m) {
-  m.innerHTML = `<h2>Directory <span class="muted">— every person, masked by role</span></h2><form id="dirq" class="row"><input name="q" placeholder="name, e-mail, phone, servicer loan number or application id — 3+ characters" size="60" value="${esc(state.dirQ || "")}" autofocus><button class="primary" type="submit">Search</button></form><div id="dirout"></div>`;
+// ───────── 34.5 People & accounts: the accounts list (directory.list — every borrower party from every door, newest first, the columns of rule 4, the filters of rule 5, a cursor of 50, masked as the search is, one logged look per page) with 34.2's search box kept; a row opens 34.2's account page
+const LIST_ORIGINS = [["front_door", "front door"], ["video_door", "video door"], ["partner_book", "partner book"]];
+const LIST_DOORS = [["password", "password"], ["oidc_google", "Google"], ["otp_email", "e-mail code"], ["otp_phone", "SMS code"], ["passkey", "passkey"], ["video", "video"]];
+const LIST_STAGES = ["lead", "account", "application", "decision", "closing", "funded", "boarded", "monitored"];
+const LIST_SORTS = [["newest", "newest"], ["last_seen", "last seen"], ["name", "name"]];
+const PARTNER_SOURCE = { application: "lender of record", loan: "servicer of record", configured: "entry partner (configured)" };
+const LIST_HEADERS = ["Person", "Origin", "Doors used", "Status", "Verified", "Stage", "Subjects", "Partner", "Created · first seen · last seen"];
+function personRow(x) {
+  const subjects = (x.subjects || []).map((s) => `${s.loan_last4 ? `loan ${esc(s.loan_last4)}` : ""}${s.application_last4 ? `${s.loan_last4 ? " · " : ""}application ${esc(s.application_last4)}` : ""}${s.status ? ` <span class="chip">${esc(s.status)}</span>` : ""}`).join("<br>") || "—";
+  return [`<a href="#" data-account="${esc(x.party_id)}"><b>${x.legal_name ? esc(x.legal_name) : `<span class="muted">name not captured</span>`}</b></a><br>${mono(x.email)} ${mono(x.phone)}<br>${short(x.party_id)}`,
+    `${esc(x.origin_label)}${(x.origins || []).length > 1 ? `<br><span class="muted">${esc(x.origins.join(" · "))}</span>` : ""}`,
+    list(x.doors),
+    `${stateChip(x.status, ["active"])}${x.open_session ? ` <span class="chip good">open session</span>` : ""}${x.signed_in_today ? `<br><span class="muted">signed in today</span>` : ""}`,
+    x.email_verified_at ? `verified<br><span class="muted">${when(x.email_verified_at)}</span>` : `<span class="chip warn">unverified</span>`,
+    `${esc(x.stage)}${x.activated ? ` <span class="chip good">activated</span>` : ""}`,
+    subjects,
+    x.partner ? `${esc(x.partner.partner_name)}<br><span class="muted">${esc(PARTNER_SOURCE[x.partner.source] || x.partner.source)}</span>` : "—",
+    `${when(x.created_at)}<br><span class="muted">${x.first_seen_at ? when(x.first_seen_at) : "never signed in"} · ${x.last_seen_at ? when(x.last_seen_at) : "—"}</span>`];
+}
+async function renderPeople(m) {
+  const pf = state.pf || {}; const qs = new URLSearchParams(); for (const [k, v] of Object.entries(pf)) if (v) qs.set(k, v);
+  const r = await api(`/api/directory/list${qs.toString() ? `?${qs}` : ""}`); state.list = { next: r.next, rows: r.rows.length };
+  let partners = []; try { partners = (await api("/api/partner-book/partners")).partners || []; } catch (e) { partners = []; }
+  const opt = (name, label, values, chosen) => `<select name="${name}" title="${esc(label)}"><option value="">${esc(label)}: any</option>${values.map(([v, l]) => `<option value="${esc(v)}" ${chosen === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
+  const flag = (name, label) => opt(name, label, [["true", "yes"], ["false", "no"]], pf[name]);
+  m.innerHTML = `<h2>People &amp; accounts <span class="muted">— every person, from every door, masked by role</span></h2>`
+    + `<form id="dirq" class="row"><input name="q" placeholder="search: name, e-mail, phone, servicer loan number or application id — 3+ characters" size="60" value="${esc(state.dirQ || "")}"><button class="primary" type="submit">Search</button></form><div id="dirout"></div>`
+    + `<div class="tabs"><button type="button" class="active" data-ltab="accounts">Accounts</button><button type="button" disabled title="arrives with increment 2 (34.5-T4): leads, interviews and boarded loans without a party; un-named video visits as a count">Not yet an account</button></div>`
+    + `<form id="pf" class="row">${opt("origin", "origin", LIST_ORIGINS, pf.origin)}${opt("door", "door", LIST_DOORS, pf.door)}${opt("status", "status", [["invited", "invited"], ["active", "active"]], pf.status)}${flag("verified", "verified")}${opt("stage", "stage", LIST_STAGES.map((s) => [s, s]), pf.stage)}${partners.length ? partnerSelect(partners, "partner", pf.partner) : `<input name="partner" placeholder="partner party id" size="20" value="${esc(pf.partner || "")}">`}<label>created since <input name="created_since" type="date" value="${esc(pf.created_since || "")}"></label><label>until <input name="created_until" type="date" value="${esc(pf.created_until || "")}"></label><label>last seen since <input name="last_seen_since" type="date" value="${esc(pf.last_seen_since || "")}"></label>${flag("has_application", "has an application")}${flag("has_loan", "has a loan")}${flag("signed_in_today", "signed in today")}${opt("sort", "sort", LIST_SORTS, pf.sort)}<button class="ghost" type="submit">Filter</button> <a href="#" id="pfclear">clear</a></form>`
+    + `<p class="muted" id="listmeta"><span data-list-results>${r.results}</span> on this page${r.next ? " · more available" : ""} · ${esc(r.sort)} first · as of ${when(r.as_of)} · this look ${mono(String(r.filters_hash).slice(0, 12))}… (the filters are logged as their hash, never as text)</p>`
+    + `<div id="listout">${r.rows.length ? table(r.rows.map(personRow), LIST_HEADERS) : `<div class="empty">No account matches these filters.</div>`}</div>`
+    + `<p>${r.next ? `<button class="ghost" id="more" data-cursor="${esc(r.next)}">Show more</button>` : `<span class="muted">every matching account is listed</span>`}</p>`;
+  // the search box (34.2 rule 4: ≥ 3 characters; the query reaches the log as its hash)
   const out = $("#dirout");
-  const go = async () => {
+  const search = async () => {
     const q = $("#dirq input").value.trim(); state.dirQ = q;
     if (q.length < 3) { out.innerHTML = `<p><span class="chip bad">QUERY_TOO_SHORT: at least three characters</span></p>`; return; }
     try {
-      const r = await api(`/api/directory/search?q=${encodeURIComponent(q)}`);
-      const subjects = (h) => (h.subjects || []).map((s) => `${s.loan_last4 ? `loan …${esc(s.loan_last4)}` : s.application_last4 ? `application …${esc(s.application_last4)}` : "—"}${s.status ? ` <span class="chip">${esc(s.status)}</span>` : ""}`).join("<br>") || "—";
-      out.innerHTML = `<p class="muted">${r.count} result(s) · query hash ${mono(r.query_hash)}</p>`
-        + (r.results.length ? table(r.results.map((h) => [`<a href="#" data-account="${esc(h.party_id)}"><b>${esc(h.legal_name)}</b></a><br>${short(h.party_id)}`, `${mono(h.email)}<br>${mono(h.phone)}`, `${esc(String(h.origin).replace("_", " "))}${h.partner_name ? `<br><span class="muted">${esc(h.partner_name)}</span>` : ""}`, list(h.matched_on), subjects(h)]), ["Person", "Contact (masked)", "Origin", "Matched on", "Subjects"]) : `<div class="empty">No account matches.</div>`)
-        + ((r.no_account_yet || []).length ? `<h2>No account yet</h2>` + table(r.no_account_yet.map((n) => [`loan …${esc(n.loan_last4 || "")}`, dash(n.partner_name), dash(n.status), short(n.loan_id)]), ["Loan", "Partner", "Status", "Loan id"]) : "");
-    } catch (e) { out.innerHTML = `<p><span class="chip bad">${esc(e.message)}</span></p>`; }
+      const s = await api(`/api/directory/search?q=${encodeURIComponent(q)}`);
+      const subjects = (h) => (h.subjects || []).map((x) => `${x.loan_last4 ? `loan …${esc(x.loan_last4)}` : x.application_last4 ? `application …${esc(x.application_last4)}` : "—"}${x.status ? ` <span class="chip">${esc(x.status)}</span>` : ""}`).join("<br>") || "—";
+      out.innerHTML = `<p class="muted">${s.count} result(s) · query hash ${mono(s.query_hash)}</p>`
+        + (s.results.length ? table(s.results.map((h) => [`<a href="#" data-account="${esc(h.party_id)}"><b>${esc(h.legal_name)}</b></a><br>${short(h.party_id)}`, `${mono(h.email)}<br>${mono(h.phone)}`, `${esc(String(h.origin).replace("_", " "))}${h.partner_name ? `<br><span class="muted">${esc(h.partner_name)}</span>` : ""}`, list(h.matched_on), subjects(h)]), ["Person", "Contact (masked)", "Origin", "Matched on", "Subjects"]) : `<div class="empty">No account matches.</div>`)
+        + ((s.no_account_yet || []).length ? `<h2>No account yet</h2>` + table(s.no_account_yet.map((n) => [`loan …${esc(n.loan_last4 || "")}`, dash(n.partner_name), dash(n.status), short(n.loan_id)]), ["Loan", "Partner", "Status", "Loan id"]) : "");
+    } catch (e) { out.innerHTML = e.code === "ROLE_REQUIRED" ? refusalHtml(e, { inline: true }) : `<p><span class="chip bad">${esc(e.message)}</span></p>`; }
   };
-  $("#dirq").addEventListener("submit", (e) => { e.preventDefault(); go(); });
-  if (state.dirQ && state.dirQ.length >= 3) await go();
+  $("#dirq").addEventListener("submit", (e) => { e.preventDefault(); search(); });
+  if (state.dirQ && state.dirQ.length >= 3) await search();
+  // the filters, and the next page appended under the same filters (a cursor of 50; a party created while paging appears once)
+  const pfEl = $("#pf"); pfEl.addEventListener("submit", (e) => { e.preventDefault(); const f = {}; for (const el of pfEl.elements) if (el.name && el.value) f[el.name] = el.value; state.pf = f; render(); });
+  $("#pfclear").addEventListener("click", (e) => { e.preventDefault(); state.pf = {}; render(); });
+  const more = $("#more"); if (more) more.addEventListener("click", async () => {
+    more.disabled = true; const q2 = new URLSearchParams(qs); q2.set("cursor", more.dataset.cursor);
+    try {
+      const n = await api(`/api/directory/list?${q2}`); const body = m.querySelector("#listout tbody");
+      if (body) body.insertAdjacentHTML("beforeend", n.rows.map((x) => `<tr>${personRow(x).map((c) => `<td>${c}</td>`).join("")}</tr>`).join("")); else $("#listout").innerHTML = table(n.rows.map(personRow), LIST_HEADERS);
+      state.list.rows += n.rows.length; $("[data-list-results]").textContent = String(state.list.rows);
+      if (n.next) { more.dataset.cursor = n.next; more.disabled = false; } else more.replaceWith(Object.assign(document.createElement("span"), { className: "muted", textContent: "every matching account is listed" }));
+    } catch (e) { more.disabled = false; toast(e.message, true); }
+  });
 }
 const ACTIVITY_KINDS = ["message", "card", "turn", "event", "decision", "notice", "session", "staff_look"];
 const fact = (o, k) => (o && o[k] !== undefined && o[k] !== null ? o[k] : null);
 async function renderAccount(m) {
   const id = state.partyId; const f = state.act || {};
   const qs = new URLSearchParams(); if (f.kind) qs.set("kind", f.kind); if (f.from) qs.set("from", f.from); if (f.to) qs.set("to", f.to);
-  // 34.2 rule 2: the projection is masked for the acting role (an ops_analyst is always masked) — while this session holds an unmask on the person, the page reads as the role that unmasked (compliance | officer)
-  const opts = state.lastUnmask && state.lastUnmask.party_id === id && Date.parse(state.lastUnmask.expires_at) > Date.now() ? { role: roleFor("compliance", "officer") } : {};
+  // 34.2 rule 2: the projection is masked for the acting role (an ops_analyst is always masked) — while this session holds an unmask on the person, the page reads as the role the unmask was taken as (compliance | officer): a read may name a held role (34.5 rule 3); an act never substitutes one
+  const opts = state.lastUnmask && state.lastUnmask.party_id === id && state.lastUnmask.role && Date.parse(state.lastUnmask.expires_at) > Date.now() ? { role: state.lastUnmask.role } : {};
   const [a, act] = await Promise.all([api(`/api/directory/accounts/${encodeURIComponent(id)}`, opts), api(`/api/directory/accounts/${encodeURIComponent(id)}/activity${qs.toString() ? `?${qs}` : ""}`, opts)]);
   const c = a.contact || {}; const idn = a.identity || {}; const canUnmask = holds("compliance") || holds("officer"); const canExport = holds("compliance");
   const onFile = (v) => (idn.unmasked ? dash(v) : idn.on_file ? "on file · masked" : "not on file");
@@ -299,12 +454,12 @@ async function renderAccount(m) {
     s.review ? `${stateChip(s.review.verdict || "—", ["candidate"], ["excluded"])} <span class="muted">${esc(s.review.as_of_date || "")}</span><br>${list(s.review.reasons)}${jsonDetails("review", s.review)}` : "—",
     s.readiness ? `${s.readiness.ready ? stateChip("ready", ["ready"]) : stateChip("not ready")} <span class="muted">${esc(s.readiness.as_of_date || "")}</span><br>${list(s.readiness.missing)}${jsonDetails("readiness", s.readiness)}` : "—"];
   const lastUnmask = state.lastUnmask && state.lastUnmask.party_id === id ? state.lastUnmask : null; const lastExport = state.lastExport && state.lastExport.party_id === id ? state.lastExport : null;
-  m.innerHTML = `<h2>${esc(a.legal_name)} <span class="chip ${a.status === "active" ? "good" : "warn"}">${esc(a.status)}</span> <span class="muted">${esc(a.party_id)}</span></h2><p class="muted"><a href="#" data-view-back="directory">← directory</a> · as of ${when(a.as_of)}</p>`
+  m.innerHTML = `<h2>${esc(a.legal_name)} <span class="chip ${a.status === "active" ? "good" : "warn"}">${esc(a.status)}</span> <span class="muted">${esc(a.party_id)}</span></h2><p class="muted"><a href="#" data-view-back="people">← people &amp; accounts</a> · as of ${when(a.as_of)}</p>`
     + kv([["Origin", `${esc(a.origin)}${a.partner ? ` — ${esc(a.partner.partner_name)} ${short(a.partner.partner_party_id)}` : ""}`], ["Doors used", list(a.doors)], ["First session", a.first_session_at ? when(a.first_session_at) : "never signed in"], ["Last session", a.last_session_at ? when(a.last_session_at) : "—"], ["Created", when(a.created_at)],
       ["E-mail", `${mono(c.email)}${(c.emails || []).length > 1 ? ` <span class="muted">+${c.emails.length - 1} more</span>` : ""}`], ["Phone", mono(c.phone)], ["City / state", `${dash(c.city)} ${dash(c.state)}`], ["Contact", c.unmasked ? `<span class="chip warn">unmasked for this session</span>` : `<span class="chip">masked</span>`],
       ["SSN last four", onFile(idn.ssn_last4)], ["Date of birth", onFile(idn.date_of_birth)], ["Credentials", list(a.credential_kinds)], ["Your mask level", `contact ${a.mask && a.mask.contact ? "open" : "masked"} · identity ${a.mask && a.mask.identity ? "open" : "masked"}`]])
-    + (canUnmask ? `<form id="unmask" class="row" style="margin-top:12px"><label><input type="checkbox" name="fields" value="contact" checked> contact</label><label><input type="checkbox" name="fields" value="identity"> identity</label><input name="reason" placeholder="Reason (recorded on the decision)" size="40" required><button class="primary" type="submit">Unmask for 15 minutes</button><span id="unmaskout">${lastUnmask ? `<span class="chip warn">unmasked ${esc(lastUnmask.fields.join(", "))} until ${esc(when(lastUnmask.expires_at))} · decision ${esc(String(lastUnmask.decision_id || "").slice(0, 8))}…</span>` : ""}</span></form>` : `<p class="muted">Unmasking is compliance's or an officer's, with a reason, for 15 minutes of their session.</p>`)
-    + (canExport ? `<form id="export" class="row"><input name="reason" placeholder="Reason for the export (recorded)" size="40" required><button class="primary" type="submit">Export the record</button><span id="exportout">${lastExport ? `<span class="chip good">document ${esc(lastExport.document_id)} · sha256 ${esc(lastExport.sha256)} · ${esc(lastExport.byte_size)} bytes</span>` : ""}</span></form>` : "")
+    + (canUnmask ? `<form id="unmask" class="row" style="margin-top:12px"><label><input type="checkbox" name="fields" value="contact" checked> contact</label><label><input type="checkbox" name="fields" value="identity"> identity</label><input name="reason" placeholder="Reason (recorded on the decision)" size="40" required><button class="primary" type="submit">Unmask for 15 minutes</button><span id="unmaskout">${lastUnmask ? `<span class="chip warn">unmasked ${esc(lastUnmask.fields.join(", "))} as ${esc(lastUnmask.role || "")} until ${esc(when(lastUnmask.expires_at))} · decision ${esc(String(lastUnmask.decision_id || "").slice(0, 8))}…</span>` : ""}</span></form>` : `<p class="muted">Unmask — <span class="chip">needs: officer or compliance</span> — with a reason, for 15 minutes of their session; this account holds neither.</p>`)
+    + (canExport ? `<form id="export" class="row"><input name="reason" placeholder="Reason for the export (recorded)" size="40" required><button class="primary" type="submit">Export the record</button><span id="exportout">${lastExport ? `<span class="chip good">document ${esc(lastExport.document_id)} · sha256 ${esc(lastExport.sha256)} · ${esc(lastExport.byte_size)} bytes</span>` : ""}</span></form>` : `<p class="muted">Export — <span class="chip">needs: compliance</span> — the one-person evidence pack; this account does not hold it.</p>`)
     + `<h2>Subjects (${(a.subjects || []).length})</h2>` + table((a.subjects || []).map(subjectRow), ["Subject", "Status", "The partner's facts", "Review", "Readiness"])
     + `<h2>Sessions (${(a.sessions || []).length})</h2>` + table((a.sessions || []).map((s) => [when(s.created_at), esc(s.door), esc(s.level), esc(s.auth_method), when(s.last_seen_at), s.revoked_at ? `revoked ${when(s.revoked_at)}` : s.open ? stateChip("open", ["open"]) : `expired ${when(s.expires_at)}`, short(s.session_id)]), ["Opened", "Door", "Level", "Method", "Last seen", "State", "Session"])
     + `<h2>Consents (${(a.consents || []).length})</h2>` + table((a.consents || []).map((x) => [esc(x.kind), yesno(x.granted), esc(x.provenance), yesno(x.verified), when(x.captured_at), x.revoked_at ? when(x.revoked_at) : "—", dash(x.channel), short(x.loan_id)]), ["Kind", "Granted", "Provenance", "Verified", "Captured", "Revoked", "Channel", "Loan"])
@@ -313,8 +468,9 @@ async function renderAccount(m) {
     + ((act.rows || []).length ? table(act.rows.map((x) => [when(x.at), `<span class="chip">${esc(x.kind)}</span>`, esc(x.actor), esc(x.summary), `${esc(x.table)} ${short(x.row_id)}${jsonDetails("detail", x.detail)}`]), ["At", "Kind", "Actor", "Summary", "Row"]) : `<div class="empty">No activity in this range.</div>`);
   m.querySelectorAll("[data-view-back]").forEach((x) => x.addEventListener("click", (e) => { e.preventDefault(); state.view = x.dataset.viewBack; render(); }));
   $("#actf").addEventListener("submit", (e) => { e.preventDefault(); const g = e.target; state.act = { kind: g.kind.value, from: g.from.value, to: g.to.value }; render(); });
-  const um = $("#unmask"); if (um) um.addEventListener("submit", async (e) => { e.preventDefault(); const fields = [...um.querySelectorAll('input[name="fields"]:checked')].map((x) => x.value); try { const r = await api(`/api/directory/accounts/${encodeURIComponent(id)}/unmask`, { method: "POST", role: roleFor("compliance", "officer"), body: JSON.stringify({ fields, reason: um.reason.value.trim() }) }); state.lastUnmask = { ...r, party_id: id }; render(); } catch (err) { line($("#unmaskout"), err.message, true); } });
-  const ex = $("#export"); if (ex) ex.addEventListener("submit", async (e) => { e.preventDefault(); try { const r = await api(`/api/directory/accounts/${encodeURIComponent(id)}/export`, { method: "POST", role: roleFor("compliance"), body: JSON.stringify({ reason: ex.reason.value.trim() }) }); state.lastExport = { ...r, party_id: id }; render(); } catch (err) { line($("#exportout"), err.message, true); } });
+  // the acts (34.2 unmask, export) as the picker's role — refused with the "Act as" offer when the account holds the role it needs (34.5 rule 3)
+  const um = $("#unmask"); if (um) um.addEventListener("submit", (e) => { e.preventDefault(); const fields = [...um.querySelectorAll('input[name="fields"]:checked')].map((x) => x.value); attempt($("#unmaskout"), (role) => api(`/api/directory/accounts/${encodeURIComponent(id)}/unmask`, { method: "POST", role, body: JSON.stringify({ fields, reason: um.reason.value.trim() }) }), (r, as) => { state.lastUnmask = { ...r, party_id: id, role: as }; render(); }); });
+  const ex = $("#export"); if (ex) ex.addEventListener("submit", (e) => { e.preventDefault(); attempt($("#exportout"), (role) => api(`/api/directory/accounts/${encodeURIComponent(id)}/export`, { method: "POST", role, body: JSON.stringify({ reason: ex.reason.value.trim() }) }), (r) => { state.lastExport = { ...r, party_id: id }; render(); }); });
 }
 // ───────── 34.3 the book: partners and the upload, the import history, the loans and the hold queue, the day, the daily report — every figure a stored fact or a row count from the API
 const BOOK_TABS = [["partners", "Partners & upload"], ["imports", "Imports"], ["loans", "Loans & holds"], ["day", "The day"], ["report", "Daily report"]];
@@ -328,7 +484,8 @@ function wireResolve(m) {
     const loanId = btn.dataset.resolve; const resolution = m.querySelector(`[data-resolution="${loanId}"]`).value; const reason = m.querySelector(`[data-reason="${loanId}"]`).value.trim(); const out = m.querySelector(`[data-resolve-out="${loanId}"]`);
     if (!reason) { line(out, "BAD_REQUEST: a reason is required", true); return; }
     btn.disabled = true;
-    try { const r = await api(`/api/partner-book/loans/${encodeURIComponent(loanId)}/resolve`, { method: "POST", role: roleFor("ops_analyst"), body: JSON.stringify({ resolution, reason }) }); toast(`Resolved ${r.resolution}: ${(r.events || []).join(", ") || "recorded"}`); render(); } catch (err) { line(out, err.message, true); btn.disabled = false; }
+    await attempt(out, (role) => api(`/api/partner-book/loans/${encodeURIComponent(loanId)}/resolve`, { method: "POST", role, body: JSON.stringify({ resolution, reason }) }), (r) => { toast(`Resolved ${r.resolution}: ${(r.events || []).join(", ") || "recorded"}`); render(); });
+    btn.disabled = false;
   });
 }
 async function renderBook(m) {
@@ -378,13 +535,13 @@ async function renderBook(m) {
   const lf = $("#lf"); if (lf) lf.addEventListener("submit", (e) => { e.preventDefault(); state.lf = { partner: lf.partner.value, status: lf.status.value, hold: lf.hold.value, verdict: lf.verdict.value, ready: lf.ready.value }; render(); });
   const df = $("#df"); if (df) df.addEventListener("submit", (e) => { e.preventDefault(); state.df = { as_of: df.as_of.value, partner: df.partner.value }; render(); });
   const rf = $("#rf"); if (rf) rf.addEventListener("submit", (e) => { e.preventDefault(); state.rf = { partner: rf.partner.value, as_of: rf.as_of.value }; render(); });
-  const rx = $("#rx"); if (rx) rx.addEventListener("click", async () => { const qs = new URLSearchParams(); qs.set("partner", $("#rf").partner.value); const asOf = $("#rf").as_of.value; try { const r = await api(`/api/partner-book/daily-report/export`, { method: "POST", role: roleFor("compliance"), body: JSON.stringify({ partner: $("#rf").partner.value, ...(asOf ? { as_of: asOf } : {}) }) }); state.lastReportExport = r; render(); } catch (err) { line($("#rxout"), err.message, true); } });
+  const rx = $("#rx"); if (rx) rx.addEventListener("click", () => { const asOf = $("#rf").as_of.value; attempt($("#rxout"), (role) => api(`/api/partner-book/daily-report/export`, { method: "POST", role, body: JSON.stringify({ partner: $("#rf").partner.value, ...(asOf ? { as_of: asOf } : {}) }) }), (r) => { state.lastReportExport = r; render(); }); });
   wireResolve(m);
-  const f = $("#pbform"); if (f) f.addEventListener("submit", async (e) => { e.preventDefault(); const btn = f.querySelector("button"); btn.disabled = true;
-    try { const r = await api("/api/partner-book/imports", { method: "POST", role: roleFor("ops_analyst"), body: new FormData(f) });
-      if (!r.import_id) { line($("#pbout"), `rejected: missing headers ${((r.report && r.report.rejected && r.report.rejected.missing_headers) || []).join(", ")}`, true); btn.disabled = false; return; }
-      state.uploadResult = r; state.view = "book_import"; state.importId = r.import_id; render(); }
-    catch (err) { line($("#pbout"), err.message, true); btn.disabled = false; } });
+  const f = $("#pbform"); if (f) f.addEventListener("submit", async (e) => { e.preventDefault(); const btn = f.querySelector("button"); btn.disabled = true; const body = new FormData(f);
+    await attempt($("#pbout"), (role) => api("/api/partner-book/imports", { method: "POST", role, body }), (r) => {
+      if (!r.import_id) { line($("#pbout"), `rejected: missing headers ${((r.report && r.report.rejected && r.report.rejected.missing_headers) || []).join(", ")}`, true); return; }
+      state.uploadResult = r; state.view = "book_import"; state.importId = r.import_id; render(); });
+    btn.disabled = false; });
 }
 async function renderBookImport(m) {
   const r = await api(`/api/partner-book/imports/${encodeURIComponent(state.importId)}`); const rep = r.report || {}; const up = state.uploadResult && state.uploadResult.import_id === r.import_id ? state.uploadResult : null;
@@ -418,8 +575,8 @@ async function renderBookLoan(m) {
   m.querySelectorAll("[data-view-back]").forEach((x) => x.addEventListener("click", (e) => { e.preventDefault(); state.view = x.dataset.viewBack; render(); }));
   wireResolve(m);
 }
-// ───────── 34.4 controls: the clocks (GET only — shown, never edited), escalations with a named completion, the outbox with the bounded requeue, the AI systems and the two-person kill switch, the evidence packs
-const CONTROL_TABS = () => [["clocks", "Clocks"], ["escalations", "Escalations"], ["outbox", "Outbox"], ["ai", "AI systems"], ...(holds("compliance") || holds("admin") || !state.staff ? [["evidence", "Evidence packs"]] : [])];
+// ───────── 34.4 controls: the clocks (GET only — shown, never edited), escalations with a named completion, the outbox with the bounded requeue, the AI systems and the two-person kill switch, the evidence packs (compliance only — 34.4 rule 5; the tab is shown to no one else)
+const CONTROL_TABS = () => [["clocks", "Clocks"], ["escalations", "Escalations"], ["outbox", "Outbox"], ["ai", "AI systems"], ...(holds("compliance") ? [["evidence", "Evidence packs"]] : [])];
 const busLine = (r) => `${(r.events || []).join(", ") || "recorded"}${r.decisionId ? ` · decision ${String(r.decisionId).slice(0, 8)}…` : ""}`;
 async function renderControls(m) {
   const tabs = CONTROL_TABS(); if (!tabs.some(([k]) => k === state.tab)) state.tab = "clocks"; let body = "";
@@ -444,15 +601,15 @@ async function renderControls(m) {
   } else if (state.tab === "ai") {
     const v = await api("/api/controls/ai"); const ks = (k) => `${stateChip(k.state, ["armed"], ["tripped"])}${k.state === "tripped" ? `<br><span class="muted">since ${esc(when(k.tripped_at))} by ${esc(String(k.by || "")).slice(0, 8)}… confirmed by ${esc(String(k.confirmed_by || "")).slice(0, 8)}… — ${esc(k.reason || "")}</span>` : ""}${k.flag === false ? `<br><span class="muted">flag off</span>` : ""}${k.ai_off ? `<br><span class="muted">AI off: ${esc(k.ai_off)}</span>` : ""}`;
     const pr = (p) => (p ? `<span class="chip warn">${esc(p.action)} requested</span><br><span class="mono">${esc(p.request_id)}</span><br><span class="muted">by ${esc(String(p.by)).slice(0, 8)}… (${esc(p.by_role || "")}) · expires ${esc(when(p.expires_at))}</span>` : "—");
-    const last = state.lastKill ? `<p><span class="chip ${state.lastKill.bad ? "bad" : "good"}">${esc(state.lastKill.text)}</span></p>` : "";
-    body = `<p class="muted">As of ${when(v.as_of)} · ${v.expired_now} request(s) expired on this read · tripping or resetting a system takes a compliance request and an admin confirmation of the same request id within 10 minutes (34.4 rule 4)</p>`
+    const last = state.lastKill ? `<p><span class="chip good">${esc(state.lastKill.text)}</span></p>` : "";
+    body = `<p class="muted">As of ${when(v.as_of)} · ${v.expired_now} request(s) expired on this read · tripping or resetting a system takes a compliance request and an admin confirmation of the same request id within 10 minutes (34.4 rule 4) — each sent as the role you act as</p>`
       + `<form id="kf" class="row"><input name="code" placeholder="system code (e.g. intake)" size="18" required><select name="action"><option value="kill">trip (kill)</option><option value="reset">reset</option></select><input name="reason" placeholder="Reason (compliance requests)" size="30"><input name="request_id" placeholder="request id (admin confirms)" size="38"><button class="primary" type="submit">Send</button><span id="kout"></span></form>${last}`
       + `<h2>Systems (${(v.systems || []).length})</h2>` + table((v.systems || []).map((s) => [`<b>${esc(s.code)}</b><br><span class="muted">${esc(s.name || "")}</span>`, `${dash(s.kind)} · ${dash(s.risk_tier)}<br><span class="muted">${dash(s.owner_role)}</span>`, dash(s.status), `${dash(s.model_version)} / ${dash(s.prompt_version)}<br><span class="muted">${(s.versions || []).length} version(s)</span>${jsonDetails("versions and evaluations", s.versions)}`, ks(s.kill_switch), pr(s.pending_request), s.registry_agent ? (s.registry_agent.off ? `<span class="chip bad">off</span> ${esc(s.registry_agent.why || "")}` : `<span class="chip good">on</span>`) : "—"]), ["System", "Kind · tier · owner", "Status", "Model / prompt", "Kill switch", "Pending request", "Agent"])
       + `<h2>Agents (${(v.agents || []).length})</h2>` + table((v.agents || []).map((a) => [`<b>${esc(a.agent)}</b><br><span class="muted">${esc((a.processes || []).join(", "))}</span>`, esc(a.tier), a.off ? `<span class="chip bad">off</span> ${esc(a.why || "")}` : `<span class="chip good">on</span>`, ks(a.kill_switch), pr(a.pending_request)]), ["Agent", "Tier", "AI path", "Kill switch", "Pending request"])
       + `<h2>Requests (${(v.requests || []).length})</h2>` + table((v.requests || []).map((r) => [mono(r.request_id), esc(r.code), esc(r.action), stateChip(r.status, ["confirmed"], ["expired"]), `${esc(String(r.by)).slice(0, 8)}… (${esc(r.by_role || "")})`, when(r.requested_at), when(r.expires_at), r.confirmed_by ? `${esc(String(r.confirmed_by)).slice(0, 8)}… ${esc(when(r.resolved_at))}` : "—", esc(r.reason)]), ["Request", "System", "Action", "Status", "By", "Requested", "Expires", "Confirmed", "Reason"]);
   } else if (state.tab === "evidence") {
-    const ev = await api("/api/controls/evidence", { role: roleFor("compliance") }); const last = state.lastPack ? `<p><span class="chip ${state.lastPack.bad ? "bad" : "good"}">${esc(state.lastPack.text)}</span></p>` : "";
-    body = `<form id="evf" class="row"><select name="kind"><option value="loan">loan</option><option value="application">application</option><option value="party">party</option><option value="period">period</option></select><input name="id" placeholder="subject id (uuid)" size="38"><input name="from" type="date" title="period from"><input name="to" type="date" title="period to"><input name="sections" placeholder="sections (optional, comma-separated)" size="34"><button class="primary" type="submit">Request the pack (compliance)</button></form>${last}`
+    const ev = await api("/api/controls/evidence"); const last = state.lastPack ? `<p><span class="chip good">${esc(state.lastPack.text)}</span></p>` : "";
+    body = `<form id="evf" class="row"><select name="kind"><option value="loan">loan</option><option value="application">application</option><option value="party">party</option><option value="period">period</option></select><input name="id" placeholder="subject id (uuid)" size="38"><input name="from" type="date" title="period from"><input name="to" type="date" title="period to"><input name="sections" placeholder="sections (optional, comma-separated)" size="34"><button class="primary" type="submit">Request the pack (compliance)</button><span id="evout"></span></form>${last}`
       + `<h2>Packs (${(ev.packs || []).length})</h2>` + ((ev.packs || []).length ? table(ev.packs.map((p) => [when(p.created_at), `<a href="#" data-pack="${esc(p.id)}" class="mono">${esc(String(p.id)).slice(0, 8)}…</a>`, `${esc(p.subject_kind)} ${p.subject_id ? short(p.subject_id) : ""}${p.from_date ? ` ${esc(p.from_date)} → ${esc(p.to_date)}` : ""}`, mono(p.sha256), p.manifest ? `${p.manifest.part_count} part(s) · ${(p.manifest.sections || []).length} section(s)` : "—", p.produced_by ? short(p.produced_by) : "—", p.document_id ? short(p.document_id) : "—"]), ["Produced", "Pack", "Subject", "sha256", "Manifest", "By", "Document"]) : `<div class="empty">No pack yet.</div>`);
   }
   m.innerHTML = `<h2>Controls <span class="muted">— clocks, escalations, the outbox, AI systems, evidence</span></h2>${tabsOf(tabs, state.tab)}${body}`;
@@ -460,10 +617,11 @@ async function renderControls(m) {
   const cf = $("#cf"); if (cf) cf.addEventListener("submit", (e) => { e.preventDefault(); state.cf = { status: cf.status.value, code: cf.code.value.trim(), subject: cf.subject.value.trim(), due_before: cf.due_before.value }; render(); });
   const ef = $("#ef"); if (ef) ef.addEventListener("submit", (e) => { e.preventDefault(); state.ef = { status: ef.status.value, role: ef.role.value.trim() }; render(); });
   const of = $("#of"); if (of) of.addEventListener("submit", (e) => { e.preventDefault(); state.of = { adapter: of.adapter.value.trim(), status: of.status.value }; render(); });
-  m.querySelectorAll("[data-complete]").forEach((b) => b.addEventListener("click", async () => { const id = b.dataset.complete; const out = m.querySelector(`[data-eout="${id}"]`); const disposition = m.querySelector(`[data-disposition="${id}"]`).value; const reason = m.querySelector(`[data-ereason="${id}"]`).value.trim(); if (!reason) { line(out, "BAD_REQUEST: a reason is required", true); return; } try { const r = await api(`/api/controls/escalations/${encodeURIComponent(id)}/complete`, { method: "POST", role: roleFor(b.dataset.role, "ops_analyst", "officer", "compliance"), body: JSON.stringify({ disposition, reason }) }); toast(`Completed: ${busLine(r)}`); render(); } catch (err) { line(out, err.message, true); } }));
-  m.querySelectorAll("[data-requeue]").forEach((b) => b.addEventListener("click", async () => { const id = b.dataset.requeue; const out = m.querySelector(`[data-rqout="${id}"]`); try { const r = await api(`/api/controls/outbox/${encodeURIComponent(id)}/requeue`, { method: "POST", role: roleFor("ops_analyst", "officer"), body: JSON.stringify({}) }); const o = r.output || {}; toast(`Requeued (${o.requeue_no} of 3, ${o.requeues_left} left)`); render(); } catch (err) { line(out, err.message, true); } }));
-  const kf = $("#kf"); if (kf) kf.addEventListener("submit", async (e) => { e.preventDefault(); const code = kf.code.value.trim(); const rid = kf.request_id.value.trim(); const confirm = !!rid; try { const r = await api(`/api/controls/ai/${encodeURIComponent(code)}/${kf.action.value}`, { method: "POST", role: confirm ? roleFor("admin") : roleFor("compliance"), body: JSON.stringify(confirm ? { request_id: rid } : { reason: kf.reason.value.trim() }) }); const o = r.output || {}; state.lastKill = { text: confirm ? `${o.event || "confirmed"}: ${code} is ${o.state || "—"} — by ${String(o.by || "").slice(0, 8)}… confirmed by ${String(o.confirmed_by || "").slice(0, 8)}… (${o.reason || ""})` : `requested ${o.action || kf.action.value} of ${code}: request ${o.request_id || "—"} expires ${when(o.expires_at)} — an admin confirms it` }; render(); } catch (err) { state.lastKill = { text: err.message, bad: true }; render(); } });
-  const evf = $("#evf"); if (evf) evf.addEventListener("submit", async (e) => { e.preventDefault(); const kind = evf.kind.value; const id = evf.id.value.trim(); const subject = kind === "period" ? { period: { from: evf.from.value, to: evf.to.value } } : { [`${kind}_id`]: id }; const sections = evf.sections.value.split(",").map((s) => s.trim()).filter(Boolean); try { const r = await api("/api/controls/evidence", { method: "POST", role: roleFor("compliance"), body: JSON.stringify({ subject, ...(sections.length ? { sections } : {}) }) }); const o = r.output || {}; state.lastPack = { text: `pack ${o.id} · sha256 ${o.sha256} · ${o.part_count} part(s) · ${o.byte_size} bytes · ${busLine(r)}` }; render(); } catch (err) { state.lastPack = { text: err.message, bad: true }; render(); } });
+  // every act as the picker's role (34.5 rule 3): a completion an escalation's owner role must take, a requeue, the two-person kill switch's request (compliance) and confirmation (admin), the pack (compliance) — refused with the "Act as" offer where the control sits, never re-roled by the page
+  m.querySelectorAll("[data-complete]").forEach((b) => b.addEventListener("click", () => { const id = b.dataset.complete; const out = m.querySelector(`[data-eout="${id}"]`); const disposition = m.querySelector(`[data-disposition="${id}"]`).value; const reason = m.querySelector(`[data-ereason="${id}"]`).value.trim(); if (!reason) { line(out, "BAD_REQUEST: a reason is required", true); return; } attempt(out, (role) => api(`/api/controls/escalations/${encodeURIComponent(id)}/complete`, { method: "POST", role, body: JSON.stringify({ disposition, reason }) }), (r) => { toast(`Completed: ${busLine(r)}`); render(); }); }));
+  m.querySelectorAll("[data-requeue]").forEach((b) => b.addEventListener("click", () => { const id = b.dataset.requeue; const out = m.querySelector(`[data-rqout="${id}"]`); attempt(out, (role) => api(`/api/controls/outbox/${encodeURIComponent(id)}/requeue`, { method: "POST", role, body: JSON.stringify({}) }), (r) => { const o = r.output || {}; toast(`Requeued (${o.requeue_no} of 3, ${o.requeues_left} left)`); render(); }); }));
+  const kf = $("#kf"); if (kf) kf.addEventListener("submit", (e) => { e.preventDefault(); const code = kf.code.value.trim(); const rid = kf.request_id.value.trim(); const confirm = !!rid; attempt($("#kout"), (role) => api(`/api/controls/ai/${encodeURIComponent(code)}/${kf.action.value}`, { method: "POST", role, body: JSON.stringify(confirm ? { request_id: rid } : { reason: kf.reason.value.trim() }) }), (r) => { const o = r.output || {}; state.lastKill = { text: confirm ? `${o.event || "confirmed"}: ${code} is ${o.state || "—"} — by ${String(o.by || "").slice(0, 8)}… confirmed by ${String(o.confirmed_by || "").slice(0, 8)}… (${o.reason || ""})` : `requested ${o.action || kf.action.value} of ${code}: request ${o.request_id || "—"} expires ${when(o.expires_at)} — an admin confirms it` }; render(); }); });
+  const evf = $("#evf"); if (evf) evf.addEventListener("submit", (e) => { e.preventDefault(); const kind = evf.kind.value; const id = evf.id.value.trim(); const subject = kind === "period" ? { period: { from: evf.from.value, to: evf.to.value } } : { [`${kind}_id`]: id }; const sections = evf.sections.value.split(",").map((s) => s.trim()).filter(Boolean); attempt($("#evout"), (role) => api("/api/controls/evidence", { method: "POST", role, body: JSON.stringify({ subject, ...(sections.length ? { sections } : {}) }) }), (r) => { const o = r.output || {}; state.lastPack = { text: `pack ${o.id} · sha256 ${o.sha256} · ${o.part_count} part(s) · ${o.byte_size} bytes · ${busLine(r)}` }; render(); }); });
 }
 async function renderClock(m) {
   const t = await api(`/api/controls/timers/${encodeURIComponent(state.clockId)}`);
@@ -473,7 +631,7 @@ async function renderClock(m) {
   m.querySelectorAll("[data-view-back]").forEach((x) => x.addEventListener("click", (e) => { e.preventDefault(); state.view = x.dataset.viewBack; render(); }));
 }
 async function renderPack(m) {
-  const p = await api(`/api/controls/evidence/${encodeURIComponent(state.packId)}${state.verifyPack === state.packId ? "?verify=1" : ""}`, { role: roleFor("compliance") }); const man = p.manifest || {}; const ver = p.verification;
+  const p = await api(`/api/controls/evidence/${encodeURIComponent(state.packId)}${state.verifyPack === state.packId ? "?verify=1" : ""}`); const man = p.manifest || {}; const ver = p.verification;
   m.innerHTML = `<h2>Evidence pack <span class="mono">${esc(String(p.id)).slice(0, 8)}…</span></h2><p class="muted"><a href="#" data-view-back="controls">← controls</a> · ${esc(p.id)}</p>`
     + kv([["Subject", `${esc(p.subject_kind)} ${p.subject_id ? mono(p.subject_id) : ""}${p.from_date ? ` ${esc(p.from_date)} → ${esc(p.to_date)}` : ""}`], ["Produced", `${when(p.created_at)} by ${p.produced_by ? mono(p.produced_by) : "—"} (${esc(man.produced_role || "")})`], ["sha256", mono(p.sha256)], ["Document", `${p.document_id ? mono(p.document_id) : "—"} · ${p.document_available ? "stored" : "content not in this store"}`], ["Sections", list(p.sections)], ["Parts", `${man.part_count ?? "—"} (part size ${man.part_size ?? "—"} events) · sets sha256 ${mono(man.sets_sha256)}`], ["Rule set", dash(man.rule_set_version)]])
     + `<p><button class="ghost" id="verify">Verify (re-hash the stored rows)</button> ${ver ? `<span class="chip ${ver.verified ? "good" : "bad"}">${ver.verified ? "verified: every section and part re-hashes to the manifest" : "verification failed"}</span>` : ""}</p>`
@@ -486,6 +644,7 @@ async function renderPack(m) {
 /** The guard's verdict on a turn as a chip: `{ok: true}` passes; anything with a rejection or a fallback is flagged. */
 function guardChip(g) { const bad = g && (g.ok === false || g.rejected || (Array.isArray(g.failures) && g.failures.length) || g.fallback); return bad ? `<span class="chip warn" title="${esc(JSON.stringify(g))}">rejected</span>` : `<span class="chip good">ok</span>`; }
 $("#main").addEventListener("click", (e) => {
+  const area = e.target.closest("#main [data-view]"); if (area) { e.preventDefault(); go(area.dataset.view, { kind: area.dataset.kind || null }); return; }
   const party = e.target.closest("[data-party]"); if (party) { e.preventDefault(); state.view = "ai_party"; state.partyQuery = party.dataset.party; render(); return; }
   const account = e.target.closest("[data-account]"); if (account) { e.preventDefault(); state.view = "directory_account"; state.partyId = account.dataset.account; state.act = null; render(); return; }
   const imp = e.target.closest("[data-import]"); if (imp) { e.preventDefault(); state.view = "book_import"; state.importId = imp.dataset.import; render(); return; }
@@ -500,17 +659,18 @@ async function boot() {
   const r = await fetch(state.apiBase + "/roles").then((x) => x.json());
   state.staff = !!r.staff;
   const sel = $("#actorRole");
+  const h = fromHash(); if (h) { state.view = h.view; state.kind = h.kind; }   // an area reached by address
   $("#signout").addEventListener("click", async () => { try { await api("/api/auth/signout", { method: "POST", body: "{}" }); } catch {} state.door.returnTo = null; door("Signed out."); });
   if (state.staff) {
-    // 34.1: the session names the actor; the picker chooses the role among the ones held (x-staff-role); 401 opens the door and keeps the return path
-    sel.addEventListener("change", async () => { state.dash = null; await refreshCounts(); render(); });
+    // 34.1: the session names the actor; the "Act as" picker names the role a request is asked for among the ones held (x-staff-role); 401 opens the door and keeps the return path
+    sel.addEventListener("change", onRoleChange);
     try { await whoami(); await refreshCounts(); render(); } catch (e) { /* the door is up */ }
     return;
   }
   // no staff runtime (npm run console --demo): the legacy header actor picker, honoured by the server only outside production
-  $("#legacyActor").hidden = false; sel.innerHTML = r.roles.map((x) => `<option>${x}</option>`).join("");
+  $("#legacyActor").hidden = false; $("#actAs").hidden = false; sel.innerHTML = r.roles.map((x) => `<option>${x}</option>`).join("");
   try { const saved = JSON.parse(localStorage.getItem("sm.actor") || "null"); if (saved) { $("#actorId").value = saved.id; sel.value = saved.role; } } catch {}
-  const onActor = async () => { try { localStorage.setItem("sm.actor", JSON.stringify(actor())); } catch {} state.readOnly = r.readOnly.includes(actor().role); $("#readonly").hidden = !state.readOnly; state.dash = null; await refreshCounts(); render(); };
+  const onActor = async () => { try { localStorage.setItem("sm.actor", JSON.stringify(actor())); } catch {} state.readOnly = r.readOnly.includes(actor().role); $("#readonly").hidden = !state.readOnly; state.dash = null; state.home = null; await refreshCounts(); render(); };
   sel.addEventListener("change", onActor); $("#actorId").addEventListener("change", onActor);
   onActor();
 }

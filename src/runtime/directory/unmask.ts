@@ -18,6 +18,7 @@ import { wallClock } from "../../kernel/calendar/zoned.ts";
 import { EscalationService } from "../../app/escalations.ts";
 import type { Runtime } from "../app.ts";
 import { UNMASK_ROLES, isUnmaskField, type UnmaskField } from "./mask.ts";
+import { unidentifiedVideoPartySql } from "./scope.ts";
 
 export const UNMASK_MINUTES = 15;
 export const UNMASK_ESCALATION_PER_DAY = 20;
@@ -63,7 +64,7 @@ export async function directoryUnmask(rt: Runtime, i: DirectoryUnmaskInput, acto
   const reason = String(i.reason ?? "").trim();
   if (!reason) throw new DirectoryRefused(400, "REASON_REQUIRED", "an unmask needs a reason");
   if (!i.staff_user_id) throw new DirectoryRefused(401, "SESSION_REQUIRED", "an unmask is granted to a staff session");
-  const party = (await rt.db.query<{ id: string }>(`SELECT id::text AS id FROM parties WHERE id = $1 AND party_type = 'borrower'`, [i.party_id]))[0];
+  const party = (await rt.db.query<{ id: string }>(`SELECT id::text AS id FROM parties WHERE id = $1 AND party_type = 'borrower' AND NOT ${unidentifiedVideoPartySql("parties")}`, [i.party_id]))[0];   // an un-identified video party is no person (scope.ts)
   if (!party) throw new DirectoryRefused(404, "NOT_FOUND", `no account ${i.party_id}`);
   const now = rt.clock.now();
   const granted_at = now; const expires_at = new Date(Date.parse(now) + UNMASK_MINUTES * 60_000).toISOString();

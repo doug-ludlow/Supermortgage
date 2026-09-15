@@ -18,11 +18,24 @@ export interface PartyScope {
   readonly conversation_id: string | null;
 }
 
-/** The party's scope, or null when the id names no borrower party (a servicer or an investor is not in the directory). */
+/**
+ * 34.2 (amended 2026-09-15, the portal proposal): a video-door party that has not identified (`Borrower (video)`,
+ * `contact = {provisional: video}`, no e-mail) is no person in the directory — "never listed and never searchable as a person,
+ * whether its session is open or closed" (32.17: nothing of it is shown to anyone else). One predicate: in SQL for the accounts
+ * list (list.ts), the search (search.ts) and the unmask (unmask.ts) — `alias` names the `parties` row in the query — and in
+ * TypeScript for the scope every account, activity and export read starts from. It becomes a row the moment `video.identify`
+ * has put an e-mail on the contact.
+ */
+export const unidentifiedVideoPartySql = (alias: string): string =>
+  `(coalesce(${alias}.contact->>'provisional', '') = 'video' AND coalesce(${alias}.contact->>'email', '') = '' AND NOT (jsonb_typeof(${alias}.contact->'emails') = 'array' AND jsonb_array_length(${alias}.contact->'emails') > 0))`;
+export const isUnidentifiedVideoParty = (contact: Record<string, unknown>): boolean =>
+  contact["provisional"] === "video" && (contact["email"] == null || String(contact["email"]) === "") && !(Array.isArray(contact["emails"]) && contact["emails"].length > 0);
+
+/** The party's scope, or null when the id names no borrower party (a servicer or an investor is not in the directory) or an un-identified video party (no person yet: NOT_FOUND on every read). */
 export async function partyScope(db: Queryable, partyId: string): Promise<PartyScope | null> {
   const parties = new PgBorrowerPartyRepository(db);
   const party = await parties.get(partyId);
-  if (!party || party.party_type !== "borrower") return null;
+  if (!party || party.party_type !== "borrower" || isUnidentifiedVideoParty(party.contact)) return null;
   const subjects = await parties.subjectsOf(partyId);
   const [borrowers, abs, conv] = await Promise.all([
     db.query<{ id: string }>(`SELECT id::text AS id FROM borrowers WHERE party_id = $1 ORDER BY created_at`, [partyId]),

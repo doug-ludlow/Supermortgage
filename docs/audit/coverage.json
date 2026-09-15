@@ -1,13 +1,13 @@
 {
- "brief": "spec units built 7927/7996 (99.1%): tids 2195/2232, tables 744/757, timers 2034/2035, notices 308/308, tools 1413/1431, figures 1233/1233; processes at 100%: 189/192",
+ "brief": "spec units built 7953/7997 (99.4%): tids 2209/2232, tables 756/758, timers 2034/2035, notices 308/308, tools 1413/1431, figures 1233/1233; processes at 100%: 189/192",
  "totals": {
   "tids": {
    "spec": 2232,
-   "built": 2195
+   "built": 2209
   },
   "tables": {
-   "spec": 757,
-   "built": 744
+   "spec": 758,
+   "built": 756
   },
   "timers": {
    "spec": 2035,
@@ -26,8 +26,8 @@
    "built": 1233
   },
   "units": {
-   "spec": 7996,
-   "built": 7927
+   "spec": 7997,
+   "built": 7953
   }
  },
  "sections": {
@@ -164,8 +164,8 @@
    "done": 6
   },
   "23": {
-   "spec": 289,
-   "built": 220,
+   "spec": 290,
+   "built": 246,
    "processes": 7,
    "done": 4
   },
@@ -5927,41 +5927,16 @@
    "title": "The relationship graph and the modeled set: what a DU submission is assembled from",
    "tids": {
     "spec": 14,
-    "built": 0,
-    "todo": 14,
+    "built": 13,
+    "todo": 1,
     "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14
+     7
     ]
    },
    "tables": {
-    "spec": 11,
-    "built": 0,
-    "missing": [
-     "du_asset_parties",
-     "du_assets",
-     "du_bankruptcy_filings",
-     "du_declarations",
-     "du_expense_parties",
-     "du_expenses",
-     "du_joint_credit_report_links",
-     "du_liabilities",
-     "du_liability_parties",
-     "du_owned_properties",
-     "du_residences"
-    ]
+    "spec": 12,
+    "built": 12,
+    "missing": []
    },
    "timers": {
     "spec": 0,
@@ -5997,18 +5972,18 @@
     "missing": []
    },
    "units": {
-    "spec": 36,
-    "built": 0
+    "spec": 37,
+    "built": 25
    },
-   "pct": 0.0
+   "pct": 67.6
   },
   {
    "process": "23.6",
    "title": "Assemble and emit the DU Specification document (MISMO 3.4 B324 + DU/ULAD extensions)",
    "tids": {
     "spec": 12,
-    "built": 1,
-    "todo": 11,
+    "built": 2,
+    "todo": 10,
     "missing": [
      1,
      2,
@@ -6019,7 +5994,6 @@
      7,
      8,
      9,
-     10,
      12
     ]
    },
@@ -6058,9 +6032,9 @@
    },
    "units": {
     "spec": 17,
-    "built": 1
+    "built": 2
    },
-   "pct": 5.9
+   "pct": 11.8
   },
   {
    "process": "23.7",

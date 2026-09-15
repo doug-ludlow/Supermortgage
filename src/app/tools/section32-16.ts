@@ -399,7 +399,7 @@ export const TOOLS_32_16: readonly ToolDef[] = defineTools(PROCESS_32_16, INTAKE
     const rewrite = card.status === "resolved" && !!card.command_ref && REWRITABLE_COMMANDS.has(card.command_ref);
     if (card.status !== "pending" && !rewrite) throw new AgentToolRefused("CARD_NOT_PENDING", `the card is ${card.status}`, "thread.card_not_pending");
     if (!PROPOSABLE_KINDS.has(card.kind)) throw new AgentToolRefused("CARD_PROPOSE_KIND", `a ${card.kind} is never answered in words — the borrower resolves it on the card`, "thread.card_needs_tap");
-    if (card.command_ref && NEVER_PROPOSE_COMMANDS.has(card.command_ref)) throw new AgentToolRefused("CARD_PROPOSE_NEVER_IN_WORDS", `${card.command_ref} is the borrower's own act on the card (a consent, a declaration, a demographic answer, a payment) — never taken in words`, "thread.card_needs_tap");
+    if ((card.command_ref && NEVER_PROPOSE_COMMANDS.has(card.command_ref)) || card.props["declarations_seq"]) throw new AgentToolRefused("CARD_PROPOSE_NEVER_IN_WORDS", `${card.command_ref ?? "application.answerDeclarations"} is the borrower's own act on the card (a consent, a declaration, a demographic answer, a payment) — never taken in words`, "thread.card_needs_tap");   // 32.3 R5: every card of the declarations sequence, the no-command ones before the last included
     const props = card.props; const money = new Set(Array.isArray(props["money_paths"]) ? (props["money_paths"] as string[]) : []);
     const masked = new Set(Array.isArray(props["masked_paths"]) ? (props["masked_paths"] as string[]) : []);
     const known = new Map((Array.isArray(props["fields"]) ? (props["fields"] as P[]) : []).map((f) => [String(f["path"] ?? ""), f] as const));

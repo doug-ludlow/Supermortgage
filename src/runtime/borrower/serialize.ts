@@ -30,6 +30,8 @@ const RECORD: Shape = {
   what_we_are_doing: [{ item_id: true, kind: true, label: true, owner: true, owner_copy_key: true, status: true, source: true, created_at: true }],
   needed_summary: { count: true, nothing_needed: true, copy_key: true },
   numbers: NUMBERS,
+  // 32.5 §7 / T12: the borrower's accounts — a live du_assets row each (a shared account once, `joint`), the institution and last four only, never a balance or an account number (`accounts`, never `assets`: 32.13 T6)
+  accounts: [{ asset_id: true, kind: true, institution: true, account_last4: true, verified: true, joint: true }],
   dates: [{ timer_code: true, label: true, due_at: true, calendar: true, status: true, tone: true }],
   documents: [{ document_id: true, notice_id: true, disclosure_id: true, notice_code: true, title: true, kind: true, status: true, delivered_at: true, received_at: true, received_on: true, mailed_at: true, requires_ack: true, channel: true, template_version: true, le_version: true, copy_of_disclosure_id: true, card_instance_id: true, deliveries: [{ borrower_id: true, display_name: true, channel: true, status: true, at: true }] }],
   people: [{ party_id: true, role: true, display_name: true, progress: { consents_ok: true, confirmations_ok: true, signed: true }, nmlsr_id: true, direct_number: true, commission_state: true, is_you: true, waiting: true }],

@@ -337,6 +337,41 @@ export async function unlinkOwner(q: Queryable, kind: OwnedKind, rowId: string, 
   return { unlinked: r.length > 0 };
 }
 
+// ─── 22.4's reconciliation of one account two borrowers each pulled (rule 5) ──────────────────────────────────────
+export interface RetireAssetInput {
+  /** The row that goes: retired, never deleted (you cannot diff against a row you deleted), and excluded from every arc and count from COMMIT on. */
+  readonly id: string;
+  /** The later pull's `verifications` row — the spec's spelling of "retired" is this column set; the trigger stamps retired_at. */
+  readonly retiredByVerificationId: string;
+  /** The row that survives in its place (the earlier created twin), confirmed by the same pull: it must be live, and its `last_seen_verification_id` becomes the retiring pull's. */
+  readonly survivorId?: string | undefined;
+}
+/**
+ * Retire one asset row in favour of another, inside the transaction that adds the retiring pull's owner arcs to the
+ * survivor (`linkOwner`), so the deferred checks judge the merged set at COMMIT: two borrowers' pulls of one account are
+ * two rows with disjoint owners until 22.4 reconciles them into one row with two arcs (23.5 rule 5 / edge cases). Both
+ * rows are locked `FOR NO KEY UPDATE` first, so two pulls reconciling the same pair serialize. A row already retired by
+ * this verification is left alone (a re-receive is one receive); a survivor that is not live refuses the merge.
+ */
+export async function retireAsset(q: Queryable, input: RetireAssetInput): Promise<{ retired: boolean }> {
+  await assertInsideTransaction(q, "retireAsset");
+  if (input.survivorId === input.id) throw new RangeError("retireAsset: the survivor and the retired row are one row");
+  const ids = input.survivorId ? [input.id, input.survivorId] : [input.id];
+  const rows = await q.query<{ id: string; application_id: string; retired_at: string | null; retired_by_verification_id: string | null }>(`SELECT id, application_id, retired_at, retired_by_verification_id FROM du_assets WHERE id = ANY($1::uuid[]) ORDER BY id FOR NO KEY UPDATE`, [ids]);
+  const loser = rows.find((r) => r.id === input.id);
+  if (!loser) throw new RangeError(`retireAsset: no du_assets row ${input.id}`);
+  if (input.survivorId) {
+    const survivor = rows.find((r) => r.id === input.survivorId);
+    if (!survivor) throw new RangeError(`retireAsset: no du_assets row ${input.survivorId} to survive`);
+    if (survivor.application_id !== loser.application_id) throw new DuWriterError("DU_GRAPH_CROSS_APPLICATION", `retireAsset: ${input.survivorId} and ${input.id} are on different applications`);
+    if (survivor.retired_at !== null) throw new DuWriterError("DU_WRITER_SURVIVOR_RETIRED", `retireAsset: the survivor ${input.survivorId} is retired; a merge lands on a live row`);
+    await update(q, "du_assets", survivor.id, { last_seen_verification_id: input.retiredByVerificationId });
+  }
+  if (loser.retired_at !== null && loser.retired_by_verification_id === input.retiredByVerificationId) return { retired: false };
+  await update(q, "du_assets", loser.id, { retired_at: new Date().toISOString(), retired_by_verification_id: input.retiredByVerificationId });
+  return { retired: true };
+}
+
 // ─── the declaration is asked (rule 4): the fourteen answers, their follow-ups, the chapters and the explanation ────
 export interface AssertDeclarationsInput {
   readonly applicationBorrowerId: string;

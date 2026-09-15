@@ -252,7 +252,7 @@ As R11; the recommended period covers the contract closing date + 7 days; the ca
 | SQ-02 Explanations | inquiries ≤ 90 days; large deposits; address gaps | `ExplanationCard` per item → `inquiry_explanation` / `explanation_letter` |
 | SQ-03 Non-connectable income | Truv fails / employer not covered / self-employed | typed income; `UploadCard{paystub, w2}`; self-employed → SQ-18 |
 | SQ-04 Gift funds · SQ-04-INS Insurance selection | gift answered yes · purchase | `UploadCard{gift_letter, gift_transfer_evidence}` · C6 |
-| SQ-05 Declarations detail | "Something applies" | 13-item checklist; waiting-period explanations |
+| SQ-05 Declarations detail | "Something applies" | the fourteen questions one ChoiceCard at a time, follow-ups on a Yes; waiting-period explanations |
 | SQ-06 Residence history | < 2 years at current address | prior address fields |
 | SQ-07 Vesting / owner mismatch | owner of record ≠ borrower | trust docs; spouse on title; recent transfer explanation |
 | SQ-08 HOA / condo documents | `project_reviews.pending_docs` | `UploadCard{hoa_questionnaire, hoa_budget, hoa_dues_statement}` or HandoffCard to the HOA |

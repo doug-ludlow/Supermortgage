@@ -69,9 +69,9 @@ Jurisdiction overrides: none owned; state copy variants come from `jurisdiction_
 
 | File | Tests | Count |
 |---|---|---|
-| 03 Entry and qualification | 32.3-T1 … 32.3-T30 | 30 |
+| 03 Entry and qualification | 32.3-T1 … 32.3-T32 | 32 |
 | 04 Disclosures, intent, lock | 32.4-T1 … 32.4-T10 | 10 |
-| 05 Verification, conditions, co-borrowers | 32.5-T1 … 32.5-T11 | 11 |
+| 05 Verification, conditions, co-borrowers | 32.5-T1 … 32.5-T13 | 13 |
 | 06 Decision, property, title, insurance, MI | 32.6-T1 … 32.6-T12 | 12 |
 | 07 CD, closing, rescission, funding, boarding | 32.7-T1 … 32.7-T13 | 13 |
 | 08a Payments, statements, escrow | 32.8-T1 … 32.8-T11 | 11 |
@@ -120,9 +120,9 @@ A file's screens are accepted when: all its tests pass; 32.13-T1…16 pass on th
 
 **SQ-04-INS Insurance selection (purchase)** · Trigger: purchase, hazard `requirement_computed` · Entry: `ChoiceCard` have a quote / help me get quotes · Sequence: `UploadCard{binder}` or `ConnectCard{carrier_connect}`; the requirement facts (32.6 §5) · Evidence: `insurance.evidence.received → verified` · Return: PTD condition cleared · Spec: 24.5.
 
-**SQ-05 Declarations detail** · Trigger: "Something here applies" · Entry: 13-item checklist (`ChecklistCard` variant with yes/no per item) · Sequence: each yes opens its follow-up — bankruptcy/foreclosure/short sale/DIL dates (waiting periods B3-5.3-07 explained as criteria, never a decline); judgments/lawsuits → documents; undisclosed borrowed funds → source; alimony/child support → order upload (22.5); co-signed debt → 12-month payment evidence · Evidence: `declarations` values with dates · Return: R6 · Spec: 21.1, 22.2, 22.5.
+**SQ-05 Declarations detail** · Trigger: "Something here applies" · Entry: the fourteen URLA section 5 questions one `ChoiceCard` at a time (Yes / No; 32.3 R5 — 5a.A and 5a.E were answered on their own cards before the list, the thirteen listed items follow one per card) · Sequence: each Yes opens its follow-up — 5a.A: property usage and how title was held; bankruptcy: the chapter(s), one tap each with "another?" between them, and an optional written explanation (the B3-5.3-07 waiting periods for a bankruptcy, foreclosure, short sale or deed-in-lieu explained as criteria, never a decline; the dates with the documents, 22.2); judgments / lawsuits → documents; undisclosed borrowed funds → the amount (5a.3.1) and its source; alimony / child support → the order upload (22.5); co-signed debt → 12-month payment evidence — and the last card's tap runs `application.answerDeclarations` once with all fourteen answers, their follow-ups, the chapters and the explanation (23.5 `assertDeclarations`, the borrower's own actor) · Evidence: `declarations` values with dates; the borrower's `du_declarations` row · Return: R6 · Spec: 21.1, 22.2, 22.5, 23.5.
 
-**SQ-06 Residence history** · Trigger: credit report shows < 2 years at the current address · Entry: `ConfirmCard{prior address, dates, own/rent}` · Return: R4 · Spec: 21.1 (URLA 1a).
+**SQ-06 Residence history** · Trigger: under two years at the current address — the months the borrower stated on the E5 address card, or the credit report when it later shows less · Entry: `ConfirmCard{prior address, how you lived there (Own / Rent with the monthly rent / Living rent-free), months there}` → a Prior `du_residences` row (23.5 `writeResidence`) · Return: R4 · Spec: 21.1 (URLA 1a), 23.5.
 
 **SQ-07 Vesting / owner mismatch** · Trigger: owner of record ≠ borrower; trust; spouse on title; recent transfer · Entry: `ChoiceCard` (it's in a trust / my spouse is on title / I recently bought it / other) · Sequence: `UploadCard{trust_agreement|trust_certification}` (`SM_TRUST_POA_REVIEW_GATE`); `InviteCard{non_borrowing_spouse}`; `ExplanationCard` for a recent transfer (title seasoning `FNMA_B2_1_3_03_TITLE_SEASONING_6M`) · Return: R1 / title cleared (32.6 §4) · Spec: 24.4, 21.1.
 

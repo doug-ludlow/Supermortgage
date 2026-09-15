@@ -56,6 +56,11 @@ output "secret_names" {
   }
 }
 
+output "api_token_secret" {
+  description = "Secret Manager secret ID of the API token, on its own for the deploy workflow's demo walk (outcome 12 reads the DU record through the ops API): gcloud secrets versions access latest --secret <this>"
+  value       = google_secret_manager_secret.api_token.secret_id
+}
+
 output "migrate_job" {
   description = "Cloud Run job that applies db/migrations before each deploy."
   value       = google_cloud_run_v2_job.migrate.name

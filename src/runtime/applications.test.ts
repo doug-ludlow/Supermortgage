@@ -7,8 +7,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { connect, reachable, type Db } from "../infra/db/client.ts";
+import { persistDuDocument } from "../domain/underwriting/du/persist.ts";
+import { DU_PREFLIGHT_RULE_SET, persistDuPreflight } from "../domain/underwriting/du/preflight.ts";
+import type { DuDocument } from "../domain/underwriting/du/emit.ts";
 import { loadOverriddenRegistry } from "../domain/timer-overrides.ts";
 import { FixedClock } from "../kernel/events/index.ts";
 import { Runtime } from "./app.ts";
@@ -112,4 +115,42 @@ test("the LE bridge (POST /v1/applications/{id}/disclosures/le) is the MLO of re
   assert.equal(early.status, 400); assert.match(String(early.body["reason"]), /trid_received/);
   const events = await db.query<{ type: string }>(`SELECT type FROM loan_events WHERE application_id = $1`, [appId]);
   assert.ok(events.every((e) => !e.type.startsWith("disclosure.")), "nothing was delivered");
+});
+
+test("the ops record carries the DU hand-off's facts: `application.du_casefile_id` (null until DU's first ack; write-once thereafter) and a `du` block — the application's du_documents rows (id, casefile_id, submission_number, sha256 hex, required_missing, emitted_at) and the preflight results", { skip }, async () => {
+  const opened = await call("POST", "/v1/applications", { actor: ACTOR, application: { partner_party_id: partnerPartyId, channel: "organic", transaction_type: "limited_cash_out", occupancy: "primary", borrowers: [{ legal_name: "Erin Fixture" }] } });
+  const appId = (opened.body["application"] as { id: string }).id;
+  const fresh = await call("GET", `/v1/applications/${appId}`);
+  assert.equal(fresh.status, 200);
+  assert.equal((fresh.body["application"] as Record<string, unknown>)["du_casefile_id"], null, "no casefile id before a submission has been answered");
+  assert.deepEqual(fresh.body["du"], { documents: [], preflight: [] });
+  // an emitted document (23.6 persist.ts, the same writer 23.1's buildDuRequest comes through) and DU's own identifier on the row (23.7 writes it from the ack — migration 0133)
+  const bytes = new TextEncoder().encode(`<MESSAGE application="${appId}"/>`);
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  const document: DuDocument = { bytes, sha256, stats: { container_count: 3, relationship_count: 1, borrower_count: 1, disputed_arcs_skipped: 0 }, labels: new Map(), gaps: [] };
+  const casefile_id = `CF-${appId.slice(0, 8)}`;
+  const persisted = await persistDuDocument(db, { application_id: appId, casefile_id, submission_number: 1, document, emitted_at: "2026-10-05T17:45:00.000Z" });
+  // two preflight runs over it (23.7 persistDuPreflight, migration 0136): a refusal, then a pass — the record lists both, oldest first, each with its checks
+  const refused = await persistDuPreflight(db, { application_id: appId, du_document_id: persisted.du_document_id, document_id: persisted.document_id, casefile_id, submission_number: 1, ran_at: "2026-10-05T17:45:01.000Z",
+    result: { passed: false, rule_set_version: DU_PREFLIGHT_RULE_SET, checks: [{ code: "DU_PREFLIGHT_CREDENTIALS", passed: true }, { code: "DU_PREFLIGHT_DANGLING_ARC", passed: false, xpath: "MESSAGE/DEAL_SETS/DEAL_SET/DEALS/DEAL/RELATIONSHIPS/RELATIONSHIP[1]", detail: "an arc names a label that is not in the document" }], refusal: { code: "DU_PREFLIGHT_DANGLING_ARC", xpath: "MESSAGE/DEAL_SETS/DEAL_SET/DEALS/DEAL/RELATIONSHIPS/RELATIONSHIP[1]", rule: "23.7 rule 1", detail: "an arc names a label that is not in the document" } } });
+  const passed = await persistDuPreflight(db, { application_id: appId, du_document_id: persisted.du_document_id, document_id: persisted.document_id, casefile_id, submission_number: 1, ran_at: "2026-10-05T17:46:00.000Z",
+    result: { passed: true, rule_set_version: DU_PREFLIGHT_RULE_SET, checks: [{ code: "DU_PREFLIGHT_CREDENTIALS", passed: true }, { code: "DU_PREFLIGHT_DANGLING_ARC", passed: true }], refusal: null } });
+  await db.query(`UPDATE applications SET du_casefile_id = $2 WHERE id = $1`, [appId, "1234567890"]);
+  const rec = await call("GET", `/v1/applications/${appId}`);
+  assert.equal(rec.status, 200);
+  assert.equal((rec.body["application"] as Record<string, unknown>)["du_casefile_id"], "1234567890");
+  const du = rec.body["du"] as { documents: Record<string, unknown>[]; preflight: unknown[] };
+  assert.equal(du.documents.length, 1);
+  const d = du.documents[0]!;
+  assert.equal(d["id"], persisted.du_document_id); assert.equal(d["casefile_id"], casefile_id); assert.equal(d["submission_number"], 1); assert.equal(d["submission_id"], null);
+  assert.equal(d["sha256"], sha256); assert.equal(d["required_missing"], 0); assert.equal(d["container_count"], 3); assert.equal(d["borrower_count"], 1);
+  assert.match(String(d["emitted_at"]), /^2026-10-05/); assert.equal(d["xml"], undefined, "never the bytes on the record");
+  // the du_preflight_results rows, oldest first, each with its checks — the refusal is a row too (23.7: every run is recorded), never the bytes
+  const pf = du.preflight as Record<string, unknown>[];
+  assert.deepEqual(pf.map((p) => [p["id"], p["passed"], p["du_document_id"], p["submission_number"], p["casefile_id"]]), [[refused.id, false, persisted.du_document_id, 1, casefile_id], [passed.id, true, persisted.du_document_id, 1, casefile_id]]);
+  assert.deepEqual((pf[0]!["checks"] as Record<string, unknown>[]).map((c) => [c["code"], c["passed"]]), [["DU_PREFLIGHT_CREDENTIALS", true], ["DU_PREFLIGHT_DANGLING_ARC", false]]);
+  assert.equal((pf[0]!["checks"] as Record<string, unknown>[])[1]!["xpath"], "MESSAGE/DEAL_SETS/DEAL_SET/DEALS/DEAL/RELATIONSHIPS/RELATIONSHIP[1]"); assert.match(String(pf[0]!["ran_at"]), /^2026-10-05/); assert.match(String(pf[1]!["ran_at"]), /^2026-10-05/);
+  assert.ok(pf[0]!["ran_at"]! < pf[1]!["ran_at"]!, "oldest first");
+  // write-once: a different casefile id on the same application is refused by the row itself (0133's trigger)
+  await assert.rejects(db.query(`UPDATE applications SET du_casefile_id = $2 WHERE id = $1`, [appId, "0987654321"]), /DU_CASEFILE_ID_WRITE_ONCE/);
 });

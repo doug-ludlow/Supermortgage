@@ -14875,7 +14875,7 @@
    },
    {
     "n": 5,
-    "text": "Given Stripe extracted \"Jane Q. Public, 1990-04-01, 14 Elm St\", when the borrower taps Edit on the address and confirms \"22 Elm St\", then `application_borrowers.current_address = \"22 Elm St\"` with `source = borrower`, and name/DOB carry `source = stripe_identity`, all with `confirmed_at`."
+    "text": "Given Stripe extracted \"Jane Q. Public, 1990-04-01, 14 Elm St\", when the borrower taps Edit on the address and confirms \"22 Elm St\", then `application_borrowers.current_address = \"22 Elm St\"` with `source = borrower`, and name/DOB carry `source = stripe_identity`, all with `confirmed_at`; the same card asks how she lives there \u2014 Own, Rent (with the monthly rent) or Living rent-free \u2014 and the months at the address, and the tap writes her Current `du_residences` row through 23.5 `writeResidence` in the confirm's own transaction."
    },
    {
     "n": 6,
@@ -14911,7 +14911,7 @@
    },
    {
     "n": 14,
-    "text": "Given \"None of these apply\", then thirteen `declarations` values are `false` and `evidence.list_version_hash` is set."
+    "text": "Given \"None of these apply\", then thirteen `declarations` values are `false` and `evidence.list_version_hash` is set, and the borrower's `du_declarations` row carries the fourteen typed URLA section 5 answers \u2014 the thirteen listed items `No`, 5a.A as the borrower answered it on the card before the list \u2014 asserted through 23.5 `assertDeclarations` by the borrower's own session actor (`asserted_by_actor.role = borrower`), never by the assistant or the platform."
    },
    {
     "n": 15,
@@ -14976,6 +14976,14 @@
    {
     "n": 30,
     "text": "Given SMS reply \"yes that's my income\" to a pending income `ConfirmCard`, then the card stays pending and the assistant replies with the deep link (32.1 \u00a76.4)."
+   },
+   {
+    "n": 31,
+    "text": "Given \"Something here applies\", then the fourteen URLA section 5 questions are asked one `ChoiceCard` at a time (Yes / No): a Yes on 5a.A asks the property usage and how title was held, a Yes on bankruptcy asks the chapter(s) and offers a free-text explanation, and every card before the last issues no command; when the last card is tapped, `application.answerDeclarations` runs once with the fourteen typed answers as the borrower's own actor, so `du_declarations` holds `bankruptcy = Yes` with one `du_bankruptcy_filings` row per chapter chosen and `bankruptcy_explanation` verbatim, `intent_to_occupy = Yes` with `homeowner_past_three_years`, `property_usage` and `prior_property_title` as answered, and thirteen `declarations` values follow the answers; an agent, platform or staff actor issuing the same command is refused before anything is written."
+   },
+   {
+    "n": 32,
+    "text": "Given the borrower confirms the current address with basis Rent at $2,100.00 a month and 14 months at the address, then `du_residences` holds exactly one Current row for the borrower (`residency_basis = Rent`, `monthly_rent_cents = 210000`, `duration_months = 14`) written through 23.5 `writeResidence`, the prior-residence card (SQ-06) is sent because the stay is under two years, and its confirmation adds a Prior row carrying its own address, basis and months; given Own (or Living rent-free) and 36 months, then the Current row carries no rent and no prior-residence card is sent; re-confirming the current address replaces the Current row rather than adding one."
    }
   ],
   "tables": [],
@@ -15084,6 +15092,14 @@
    {
     "n": 11,
     "text": "Given zero `owner=you` items, then the Record shows the nothing-needed state and the status strip count is 0."
+   },
+   {
+    "n": 12,
+    "text": "Given two borrowers on one application each connect the FAKE Plaid report that names the same account (equal institution, subtype and last four), then after the second pull exactly one live `du_assets` row exists for the account with two `du_asset_parties` arcs (one per borrower) and the other row is retired with `retired_by_verification_id` = the second pull's verification, the Record's assets show the account once, and the graph 23.6 reads carries one `ASSET` container for it with two owner arcs \u2014 22.4's reconciliation, not the emitter, does the merging."
+   },
+   {
+    "n": 13,
+    "text": "Given an invited co-borrower who affirmed joint intent, then their own declarations card runs the fourteen-question sequence of 32.3 R5 (`cob.declarations`), a tap on it from the inviter's session is refused (`PARTY_SCOPE`), and the invitee's last tap writes their `du_declarations` row with `asserted_by_actor` = the invitee's own session while the inviter's row is untouched."
    }
   ],
   "tables": [],
@@ -15967,6 +15983,10 @@
    {
     "n": 7,
     "text": "Given the refinance persona's conversation (32.16's fixture: the goal, the home, the income, the connectors on the FAKE, the profile, the declarations, the demographics, the SSN, the value, the amount and the product), then `du.findings.received` is on the application before any Loan Estimate, with no platform-side DU call by the test, and 24.1's `readDuOffer` reads the FAKE findings' offer object as `value_acceptance` (the appraisal order after the intent proceeds on it)."
+   },
+   {
+    "n": 8,
+    "text": "Given the DU moment's document reports a required data point as missing (23.6's `du.document.emitted{required_missing, gaps}`, and 23.7's `du.preflight.refused` once preflight runs), then a gap the borrower supplies \u2014 a section 5 declaration, the current residence with its basis, the home's estate type or its existing clean-energy lien answer \u2014 makes the card that collects it the current ask on the rail (the declarations card, the address confirm card, the home card) in the copy library's words, with no DU word in any `/v1/borrower/*` payload or thread line, and its resolution re-runs the assembly so the gap closes; a gap the platform derives from what the borrower already gave \u2014 the last name from the legal name, the taxpayer identifier from the typed SSN, the state and the attachment type from the confirmed home \u2014 never becomes a borrower ask; and the refinance persona's journey (T7's cards, the home card carrying the estate type and the clean-energy lien answer) emits its document with `required_missing = 0`."
    }
   ],
   "tables": [],

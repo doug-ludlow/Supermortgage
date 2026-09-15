@@ -217,7 +217,7 @@ export class BorrowerCommands {
     // the flows' reactions to the party's previous commit finish before the card's command hydrates its store (outside the transaction: the reactions need their own connections)
     await this.settled();
     // the card's own lock: a second tap waits here and then answers the stored outcome (idempotency key = card_instance_id)
-    return this.db.tx(async (q) => {
+    const out = await this.db.tx(async (q) => {
       await q.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [cardId]);
       const card = (await this.ui.card(cardId, q))!;
       if (card.status === "resolved" && !rewrite) return { card, command: card.command_ref, idempotent: true, result: (card.evidence as Record<string, unknown> | null)?.["command_output"] ?? null, events: [] };
@@ -240,6 +240,10 @@ export class BorrowerCommands {
       await this.ui.appendMessage({ conversation_id: card.conversation_id, at: now, sender: "system", sender_ref: "borrower-api", channel: channel === "voice" || channel === "sms" || channel === "email" ? channel : "app", body_text: `{{copy:receipt.${card.copy_key}}}`, card_instance_id: cardId, subject_application_id: card.subject_application_id, subject_loan_id: card.subject_loan_id }, q);   // the collapsed receipt line (01 §1.3, 02 §1.3)
       return { card: resolved, command: card.command_ref, idempotent: false, ...(rewrite ? { rewritten: true } : {}), result, events };
     });
+    // 32.3 R5 / SQ-05: the flows hear the borrower's own tap once it committed — a no-command option (the choice before the list, a Yes/No on one
+    // question) raises no domain event, and the next card of the sequence is sent on it by the flow, never by the assistant (DELTA-26: trigger `card.resolved`)
+    if (!out.idempotent && this.flows) await this.flows.cardResolved({ card: out.card, option_id: optionId, evidence: (out.card.evidence as Record<string, unknown> | null) ?? {}, party_id: ctx.party.id, session_id: ctx.session.session_id, at: now });
+    return out;
   }
 
   /** 02 §7 POST /v1/borrower/messages. */

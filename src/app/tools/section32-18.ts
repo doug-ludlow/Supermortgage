@@ -9,6 +9,9 @@
  *                      vendors the whole moment is one settlement (du.casefile.created … du.findings.interpreted). Idempotent: an
  *                      application with a casefile answers {ran: false}. An incomplete snapshot is refused (DU_SNAPSHOT_INCOMPLETE);
  *                      nothing is submitted. The 32.16 turn never calls this — the flow does, on the last prerequisite.
+ *                      `reassemble: true` on an application that already has a casefile (rule 7: a gap card resolved) re-runs 23.6's
+ *                      assembly and 23.7's preflight over the graph as it now stands — a further du.document.emitted — and submits
+ *                      nothing: the resubmission is 23.1's (rule 6).
  */
 import { defineTools, compute, str, PortUnavailable, type ToolDef, type ToolInput, type ToolRuntime } from "../tools.ts";
 import type { CommandContext } from "../commands.ts";
@@ -82,13 +85,27 @@ export async function uladSnapshotOf(rt: ToolRuntime, application_id: string): P
   return { snapshot, sources: { product_code: productCode, rate_source: rateSource, pi_cents: pi.toString(), other_debts_cents: (cents(debts[0]?.total) ?? 0n).toString(), income_rows: income[0]?.total ?? null } };
 }
 
+/** The snapshot as the bus carries it: the bigint figures as digit strings. */
+const snapshotWire = (snapshot: UladSnapshot): P => ({ ...snapshot, sales_price_cents: snapshot.sales_price_cents === null ? null : snapshot.sales_price_cents.toString(), appraised_value_cents: snapshot.appraised_value_cents.toString(), loan_amount_cents: snapshot.loan_amount_cents.toString(), qualifying_income_cents: snapshot.qualifying_income_cents.toString(), total_obligations_cents: snapshot.total_obligations_cents.toString() });
+/** The asset verification reports on the request (32.18 rule 3 / B3-2-02): every `verifications{kind=assets}` row. */
+const assetReportRefs = (rt: ToolRuntime, application_id: string): { supplier_type: string; identifier: string; report_type: string }[] =>
+  rt.store.list("verifications", (d) => d["application_id"] === application_id && d["kind"] === "assets").map((r) => r.data as P).map((v) => ({ supplier_type: String(v["supplier_code"] ?? "plaid").toLowerCase(), identifier: String(v["report_reference_id"]), report_type: `asset_verification_${String(v["report_days"] ?? 365)}d` }));
 const intakeTransaction = (rt: ToolRuntime, application_id: string): string => String(((rt.store.get("applications", application_id)?.data ?? {}) as P)["transaction_type"] ?? "limited_cash_out");
 
 export const TOOLS_32_18: readonly ToolDef[] = defineTools(PROCESS_32_18, BORROWER_APP, [
   { name: "underwriting.run", kind: "act", handler: compute(async (i, ctx: CommandContext, rt) => {
     need(i, "application_id"); const application_id = str(i, "application_id");
     const existing = rt.store.list("du_casefiles", (d) => d["application_id"] === application_id).map((r) => r.data as unknown as DuCasefile).filter((c) => c.status !== "superseded" && c.status !== "archived");
-    if (existing.length) return { ran: false, reason: "casefile_exists", casefile_id: existing[0]!.casefile_id };
+    if (existing.length) {
+      if (i["reassemble"] !== true) return { ran: false, reason: "casefile_exists", casefile_id: existing[0]!.casefile_id };
+      // 32.18 rule 7: a gap card resolved on an application that already has a casefile — the assembly re-runs over the graph as it now stands (23.6's build
+      // and 23.7's preflight on the same emission: a further du.document.emitted with its own required_missing, the gaps that remain re-sent by the flow),
+      // and the resubmission itself stays 23.1's (rule 6 / evaluateResubmission): nothing is transmitted here
+      const casefile = existing[0]!;
+      const { snapshot } = await uladSnapshotOf(rt, application_id);
+      const built = await delegate(rt, ctx, "23.1", "buildDuRequest", { application_id, casefile_id: casefile.casefile_id, casefile, submission_type: "credit_and_underwriting", reason: "data_change", snapshot: snapshotWire(snapshot), validation_report_refs: assetReportRefs(rt, application_id) }) as P;
+      return { ran: false, reason: "reassembled", reassembled: true, casefile_id: casefile.casefile_id, du_document_id: built["du_document_id"], request_hash: built["request_hash"], required_missing: built["required_missing"], preflight: built["preflight"] };
+    }
     const reports = rt.store.list("credit_reports", (d) => d["application_id"] === application_id && d["state"] === "usable").map((r) => r.data as P);
     if (!reports.length) throw new DuSnapshotIncomplete(["credit_report"]);
     const { snapshot, sources } = await uladSnapshotOf(rt, application_id);
@@ -102,9 +119,8 @@ export const TOOLS_32_18: readonly ToolDef[] = defineTools(PROCESS_32_18, BORROW
     const assoc = await delegate(rt, ctx, "23.1", "associateCredit", { application_id, casefile: created.casefile, reports: uniq, borrowers: snapshot.borrowers, app_score_model: score_model }) as P;
     const casefile = assoc["casefile"] as DuCasefile;
     // the asset verification reports on the request (32.18 rule 3 / B3-2-02)
-    const verifications = rt.store.list("verifications", (d) => d["application_id"] === application_id && d["kind"] === "assets").map((r) => r.data as P);
-    const validation_report_refs = verifications.map((v) => ({ supplier_type: String(v["supplier_code"] ?? "plaid").toLowerCase(), identifier: String(v["report_reference_id"]), report_type: `asset_verification_${String(v["report_days"] ?? 365)}d` }));
-    const built = await delegate(rt, ctx, "23.1", "buildDuRequest", { application_id, casefile_id: casefile.casefile_id, casefile, submission_type: "credit_and_underwriting", reason: "initial", snapshot: { ...snapshot, sales_price_cents: snapshot.sales_price_cents === null ? null : snapshot.sales_price_cents.toString(), appraised_value_cents: snapshot.appraised_value_cents.toString(), loan_amount_cents: snapshot.loan_amount_cents.toString(), qualifying_income_cents: snapshot.qualifying_income_cents.toString(), total_obligations_cents: snapshot.total_obligations_cents.toString() }, validation_report_refs }) as P;
+    const validation_report_refs = assetReportRefs(rt, application_id);
+    const built = await delegate(rt, ctx, "23.1", "buildDuRequest", { application_id, casefile_id: casefile.casefile_id, casefile, submission_type: "credit_and_underwriting", reason: "initial", snapshot: snapshotWire(snapshot), validation_report_refs }) as P;
     // SCIF presented (21.1 gate): the profile card's resolution, else the application's receipt
     const db = dbOf(rt);
     const profile = (await db.query<{ at: string | null }>(`SELECT to_char(resolved_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS at FROM card_instances WHERE subject_application_id = $1 AND kind = 'ProfileCard' AND status = 'resolved' ORDER BY resolved_at DESC LIMIT 1`, [application_id]))[0]?.at;

@@ -15,7 +15,7 @@
 import type { DomainEvent } from "../../../kernel/events/index.ts";
 import type { Runtime } from "../../app.ts";
 import type { Logger } from "../../log.ts";
-import type { PgBorrowerUiRepository } from "../../../infra/db/borrower-ui.ts";
+import type { CardInstanceRow, PgBorrowerUiRepository } from "../../../infra/db/borrower-ui.ts";
 import type { BlobStorePort } from "../vendors/fake-blob-store.ts";
 import { FLOW_3_ENTRY } from "./3-entry.ts";
 import { FLOW_4_DISCLOSURES } from "./4-disclosures.ts";
@@ -27,12 +27,13 @@ import { FLOW_9_SERVICING_REQUESTS } from "./9-servicing-requests.ts";
 import { FLOW_10_HARDSHIP } from "./10-hardship.ts";
 import { FLOW_11_RATE_WATCH } from "./11-rate-watch.ts";
 import { FLOW_12_EXITS } from "./12-exits.ts";
-import { FLOW_13_CROSS_CUTTING, SESSION_TRIGGER, MESSAGE_TRIGGER, TICK_TRIGGER, COMMAND_TRIGGERS } from "./13-cross-cutting.ts";
+import { FLOW_13_CROSS_CUTTING, SESSION_TRIGGER, MESSAGE_TRIGGER, TICK_TRIGGER, COMMAND_TRIGGERS, CARD_TRIGGER } from "./13-cross-cutting.ts";
 import { FLOW_14_ENTRY_SIGN_IN } from "./14-entry-sign-in.ts";
 import { FLOW_14_ENTRY_LEAD } from "./14-entry-lead.ts";
 import { FLOW_14_PREQUAL } from "./14-prequal.ts";
 import { FLOW_15_PARTNER_BOOK } from "./15-partner-book.ts";
 import { FLOW_16_READINESS } from "./16-readiness.ts";
+import { FLOW_18_DU_GAPS } from "./18-du-gaps.ts";
 
 export interface FlowDeps { readonly runtime: Runtime; readonly ui: PgBorrowerUiRepository; readonly logger?: Logger | undefined; /** the uploaded bytes (32.3 C1: the FAKE contract extraction reads them) */ readonly blobs?: BlobStorePort | undefined; /** 32.14 DELTA-15: the Phase I partner party id from configuration (`BORROWER_DEFAULT_PARTNER_ID`); unset → the newest servicer party that is not Supermortgage itself (partner.ts) */ readonly defaultPartnerId?: string | undefined; /** 32.16 §2.0: an agent turn is configured — the first turn greets with the lead's facts in its context, so flows/14 posts no `entry.resumed` read-back line (no canned sentence in the stream) */ readonly agentTurn?: boolean | undefined }
 /** A borrower session opened on a channel (32.3 E1–E2: the automation disclosure is the first assistant content of every session, every channel). */
@@ -47,7 +48,9 @@ export interface FlowReply { readonly copy_key: string; readonly body_text?: str
  * commits with no context active was sent inside a command's own unit of work (`triggers` = the owning events committed
  * with it) or by nobody the flows know of (`triggers` empty — the assistant's own decision, §2.3's forbidden case).
  */
-export interface CardTrigger { readonly source: "event" | "session" | "message" | "tick" | "command"; readonly flow: string | null; readonly triggers: readonly string[] }
+export interface CardTrigger { readonly source: "event" | "session" | "message" | "tick" | "command" | "card"; readonly flow: string | null; readonly triggers: readonly string[] }
+/** 32.3 R5 / SQ-05: a card the borrower resolved on their own session (`commands.resolveCard` — the API route, the agent turn's commit, voice; never an idempotent re-tap), with the choice and the evidence the row now carries. A tap that ran a command has its events for the flows; a tap that ran none has only this. */
+export interface CardResolved { readonly card: CardInstanceRow; readonly option_id: string | null; readonly evidence: Record<string, unknown>; readonly party_id: string; readonly session_id: string; readonly at: string }
 const CARD_TRIGGER_CAP = 5000;
 const BUS_OR_THREAD_EVENT = /^(command|card|message)\./;
 
@@ -64,6 +67,8 @@ export interface BorrowerFlow {
   onSessionOpened?(deps: FlowDeps, session: SessionOpened): Promise<void>;
   /** A borrower message the flow answers itself (returns null to leave it to the generic reply). */
   onMessage?(deps: FlowDeps, message: InboundMessage): Promise<FlowReply | null>;
+  /** A card the borrower resolved (32.3 R5 / SQ-05): a no-command tap raises no domain event, so a flow that sequences cards on it hears it here, after the resolution committed. */
+  onCardResolved?(deps: FlowDeps, resolved: CardResolved): Promise<void>;
 }
 
 /** Every registered flow — sibling processes append theirs (additive). */
@@ -71,7 +76,8 @@ export interface BorrowerFlow {
 // 32.14's S4 flow (DELTA-13) follows the lead flow: its identity ask opens once 3-entry's session hook and the application from the lead have run, and its reactions to the 20.3 soft-pull / review events run after 3-entry's R9 cards for the same commit
 // 33.3's readiness flow sits right after 32.11's rate-watch flow: on the same `refi.opportunity.engaged` 32.11's convert defers for a monitored loan (no origination application) and 33.3's refi.open opens the refinance application; on `application.received` 32.11's compressed cards go first, then 33.3's connector cards
 // 33.1's partner-book flow sits right after 3-entry: its session hook logs `partner_book.account.activated` for a monitored loan once the disclosure row is down (3-entry stands down for a monitored-only party — no lead, no application); it reacts to nothing
-export const FLOWS: BorrowerFlow[] = [FLOW_3_ENTRY, FLOW_15_PARTNER_BOOK, FLOW_14_ENTRY_LEAD, FLOW_14_PREQUAL, FLOW_4_DISCLOSURES, FLOW_6_DECISION_PROPERTY, FLOW_5_VERIFICATION, FLOW_7_CLOSING, FLOW_8_SERVICING, FLOW_9_SERVICING_REQUESTS, FLOW_10_HARDSHIP, FLOW_11_RATE_WATCH, FLOW_16_READINESS, FLOW_12_EXITS, FLOW_13_CROSS_CUTTING, FLOW_14_ENTRY_SIGN_IN];
+// 32.18's gap flow (rule 7) sits after 12-exits: its re-sent card must be the last one raised by the DU moment's settlement (5-verification's needs checklist rides the same commit), so the rail pins it as the current ask
+export const FLOWS: BorrowerFlow[] = [FLOW_3_ENTRY, FLOW_15_PARTNER_BOOK, FLOW_14_ENTRY_LEAD, FLOW_14_PREQUAL, FLOW_4_DISCLOSURES, FLOW_6_DECISION_PROPERTY, FLOW_5_VERIFICATION, FLOW_7_CLOSING, FLOW_8_SERVICING, FLOW_9_SERVICING_REQUESTS, FLOW_10_HARDSHIP, FLOW_11_RATE_WATCH, FLOW_16_READINESS, FLOW_12_EXITS, FLOW_18_DU_GAPS, FLOW_13_CROSS_CUTTING, FLOW_14_ENTRY_SIGN_IN];
 
 export class BorrowerFlows {
   private readonly deps: FlowDeps;
@@ -130,6 +136,10 @@ export class BorrowerFlows {
   async message(message: InboundMessage): Promise<FlowReply | null> {
     for (const f of this.flows) if (f.onMessage) { try { const r = await this.within({ source: "message", flow: f.id, triggers: [MESSAGE_TRIGGER] }, () => f.onMessage!(this.deps, message)); if (r) return r; } catch (e) { this.deps.logger?.error("borrower.flow.message.failed", { flow: f.id, error: e instanceof Error ? e.message : String(e) }); } }
     return null;
+  }
+  /** The card hooks, in flow order (awaited by `commands.resolveCard` once the resolution committed): a card raised here is attributed to the borrower's own tap (`card.resolved` — DELTA-26 / 32.16 T28). */
+  async cardResolved(resolved: CardResolved): Promise<void> {
+    for (const f of this.flows) if (f.onCardResolved) { try { await this.within({ source: "card", flow: f.id, triggers: [CARD_TRIGGER] }, () => f.onCardResolved!(this.deps, resolved)); } catch (e) { this.deps.logger?.error("borrower.flow.card.failed", { flow: f.id, card_instance_id: resolved.card.card_instance_id, error: e instanceof Error ? e.message : String(e) }); } }
   }
   /** Resolves when every queued reaction (including the ones a reaction's own commands queued) has run. */
   async settle(): Promise<void> { while (this.inflight > 0) await this.queue; }

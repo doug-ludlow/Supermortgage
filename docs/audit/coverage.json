@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 7997/7997 (100.0%): tids 2232/2232, tables 758/758, timers 2035/2035, notices 308/308, tools 1431/1431, figures 1233/1233; processes at 100%: 192/192",
+ "brief": "spec units built 8002/8002 (100.0%): tids 2237/2237, tables 758/758, timers 2035/2035, notices 308/308, tools 1431/1431, figures 1233/1233; processes at 100%: 192/192",
  "totals": {
   "tids": {
-   "spec": 2232,
-   "built": 2232
+   "spec": 2237,
+   "built": 2237
   },
   "tables": {
    "spec": 758,
@@ -26,8 +26,8 @@
    "built": 1233
   },
   "units": {
-   "spec": 7997,
-   "built": 7997
+   "spec": 8002,
+   "built": 8002
   }
  },
  "sections": {
@@ -218,8 +218,8 @@
    "done": 3
   },
   "32": {
-   "spec": 354,
-   "built": 354,
+   "spec": 359,
+   "built": 359,
    "processes": 17,
    "done": 17
   },
@@ -7405,8 +7405,8 @@
    "process": "32.3",
    "title": "Entry and the five-minute qualification",
    "tids": {
-    "spec": 30,
-    "built": 30,
+    "spec": 32,
+    "built": 32,
     "todo": 0,
     "missing": []
    },
@@ -7437,8 +7437,8 @@
     "missing": []
    },
    "units": {
-    "spec": 30,
-    "built": 30
+    "spec": 32,
+    "built": 32
    },
    "pct": 100.0
   },
@@ -7487,8 +7487,8 @@
    "process": "32.5",
    "title": "Verification, needs list, conditions, second borrower",
    "tids": {
-    "spec": 11,
-    "built": 11,
+    "spec": 13,
+    "built": 13,
     "todo": 0,
     "missing": []
    },
@@ -7519,8 +7519,8 @@
     "missing": []
    },
    "units": {
-    "spec": 11,
-    "built": 11
+    "spec": 13,
+    "built": 13
    },
    "pct": 100.0
   },
@@ -7979,8 +7979,8 @@
    "process": "32.18",
    "title": "The DU moment: the assets connection, the credit pull and the underwriting run from the conversation",
    "tids": {
-    "spec": 7,
-    "built": 7,
+    "spec": 8,
+    "built": 8,
     "todo": 0,
     "missing": []
    },
@@ -8011,8 +8011,8 @@
     "missing": []
    },
    "units": {
-    "spec": 11,
-    "built": 11
+    "spec": 12,
+    "built": 12
    },
    "pct": 100.0
   },

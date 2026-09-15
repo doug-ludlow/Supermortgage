@@ -790,8 +790,9 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     const subject = assertSubject(ctx, { application_id: card.subject_application_id });
     // the tap is the order: a pending card is resolved here first (no command of its own — the vendor's settlement writes the report); the page's own resolve afterwards answers the stored outcome
     if (card.status === "pending") { await commands.resolveCard(ctx, cardId, { option_id: "connect", evidence: { vendor: "plaid_assets", vendor_session_id: "", started_at: at, outcome: "in_progress" } }, at); card = (await ui.card(cardId))!; }
-    // the borrower's authorization (B3-2-02): the goal card's tap carried the consents (32.17 rule 20) — its hard-pull authorization row is the reference
-    const authz = (await hardPullAuthorization(subject.application_id!)) ?? cardId;
+    // the borrower's authorization (B3-2-02): this party's own hard-pull authorization (an invited co-borrower's ConsentCard after joint intent, 32.5 §7), else the goal card's tap that carried the consents (32.17 rule 20) — its hard-pull authorization row is the reference
+    const own = (await runtime.db.query<{ authorization_id: string }>(`SELECT authorization_id::text AS authorization_id FROM credit_authorizations WHERE party_id = $1 AND (application_id = $2 OR lead_id = $2) AND kind = 'hard_application' ORDER BY captured_at DESC LIMIT 1`, [ctx.party.id, subject.application_id!]))[0]?.authorization_id ?? null;
+    const authz = own ?? (await hardPullAuthorization(subject.application_id!)) ?? cardId;
     const vs = await plaid.createSession({ party_id: ctx.party.id, application_id: subject.application_id!, application_borrower_id: subject.application_borrower_id ?? "", borrower_id: subject.application_borrower_id ?? "", card_instance_id: cardId, authorization_consent_id: authz }, at);
     await runtime.db.query(`UPDATE card_instances SET props = props || $2::jsonb WHERE card_instance_id = $1`, [cardId, toJson({ vendor_session_id: vs.vendor_session_id, started_at: at, state: "in_progress" })]);
     await ui.logUiEvent({ party_id: ctx.party.id, session_id: ctx.session.session_id, conversation_id: card.conversation_id, card_instance_id: cardId, kind: "connector_started", at, ip: ctx.ip, user_agent: ctx.userAgent, payload: { vendor: "plaid_assets", vendor_session_id: vs.vendor_session_id } });

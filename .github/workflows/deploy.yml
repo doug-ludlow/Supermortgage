@@ -87,6 +87,7 @@ jobs:
       console_hostname: ${{ steps.out.outputs.console_hostname }}
       borrower_url: ${{ steps.out.outputs.borrower_url }}
       dns_records: ${{ steps.out.outputs.dns_records }}
+      api_token_secret: ${{ steps.out.outputs.api_token_secret }}
     steps:
       - uses: actions/checkout@v4
 
@@ -131,6 +132,7 @@ jobs:
             echo "console_hostname=$(terraform output -raw console_url | sed 's#^https://##')"
             echo "borrower_url=$(terraform output -raw borrower_url)"
             echo "dns_records=$(terraform output -json godaddy_dns_records | jq -c .)"
+            echo "api_token_secret=$(terraform output -raw api_token_secret)"
           } >> "$GITHUB_OUTPUT"
 
   build:
@@ -409,18 +411,38 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # The demo walk (docs/ux/17 §8.7): after every deploy, a real browser with the
-  # real model creates a fresh account on the deployed demo and checks the ten
+  # real model creates a fresh account on the deployed demo and checks the twelve
   # things a person must see work (apps/borrower/tests/walk/demo-walk.mts). The
   # screenshots and report.json are the artifact "demo-walk" — the only claim of
   # "working" the surface accepts. A failed outcome fails this job, never the
-  # deploy that preceded it.
+  # deploy that preceded it. Outcome 12 (the DU moment) reads the application's
+  # record through the ops API, so the job authenticates to Google Cloud the way
+  # the deploy job does and reads the API token out of Secret Manager into
+  # WALK_OPS_TOKEN (masked); without it the outcome fails by name, never passes.
   walk:
     name: demo walk (real browser, real model)
     needs: [terraform, deploy]
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Read the API token for outcome 12 (the ops record of the DU moment)
+        env:
+          API_TOKEN_SECRET: ${{ needs.terraform.outputs.api_token_secret }}
+        run: |
+          token="$(gcloud secrets versions access latest --secret "${API_TOKEN_SECRET}" --project "${{ vars.GCP_PROJECT_ID }}")"
+          echo "::add-mask::${token}"
+          echo "WALK_OPS_TOKEN=${token}" >> "$GITHUB_ENV"
+
       - uses: actions/setup-node@v4
         with: { node-version: "22", cache: npm, cache-dependency-path: apps/borrower/package-lock.json }
       - name: Install the borrower app's dependencies and Chromium
@@ -433,6 +455,7 @@ jobs:
         env:
           DEMO_BASE: https://${{ needs.terraform.outputs.api_hostname }}
           WALK_OUT: walk-out
+          # WALK_OPS_TOKEN rides in from $GITHUB_ENV (the step above)
         run: node --experimental-strip-types tests/walk/demo-walk.mts
       - name: Keep the screenshots and the report
         if: always()

@@ -30,6 +30,10 @@ import { isUuid, toJson } from "../../infra/db/client.ts";
 import { plainDate as D, addYears } from "../../kernel/calendar/date.ts";
 import { duTool, SELF_ATTESTED } from "./section23-5.ts";
 import { writeEmployer } from "../../domain/underwriting/du/writer.ts";
+import { hasTransaction } from "./section23-5.ts";
+import { parseAddressLine, postalDigits, residenceInput } from "./residence.ts";
+import { ESTATE_TYPE_OF_OPTION, PROPERTY_TYPES, yesNoOf } from "./property.ts";
+import { encryptTin, tinCipherKey } from "../../infra/pii/tin.ts";
 
 export const BORROWER_APP = "borrower-app";
 /**
@@ -129,6 +133,30 @@ async function recordLeadTridItem(rt: ToolRuntime, ctx: CommandContext, i: ToolI
 /** A six-item write: a typed/edited value is `borrower_stated` (captureField); an accepted prefill is `borrower_confirmed_prefill` (confirmPrefill) — 21.1 rule 1 / 21.2 rule 2. */
 const captureSix = (rt: ToolRuntime, ctx: CommandContext, application_id: string, item: string, value: string, source: string, borrower_id: string | undefined): Promise<Record<string, unknown>> =>
   (source === "borrower" ? delegate(rt, ctx, "21.1", "captureField", { application_id, field: item, value, ...(borrower_id ? { borrower_id } : {}) }) : delegate(rt, ctx, "21.1", "confirmPrefill", { application_id, item, value, ...(borrower_id ? { borrower_id } : {}), confirmed: true })) as Promise<Record<string, unknown>>;
+/**
+ * 32.18 rule 7: the subject `application_properties` row from the home card (R1) or the contract card (C1) — the confirmed address parsed into its
+ * columns (`state` is what 23.6 emits as StateCode), the type and units when confirmed, the estate (`estate_type`) and the clean-energy lien
+ * (`existing_clean_energy_lien`) when answered. Only what was found or answered is written (coalesce keeps the rest); a row is created when the
+ * application has none. Deferred into the command's transaction; a runtime without one (the unit harness) writes nothing and says so.
+ */
+async function propertyFacts(rt: ToolRuntime, application_id: string, address: string, get: (p: string) => { value: string; source: string } | undefined, mode: "upsert" | "update_only" = "upsert"): Promise<Record<string, unknown>> {
+  const parts = parseAddressLine(address);
+  const typeRaw = get("property_type")?.value.trim().toLowerCase() ?? ""; const property_type = PROPERTY_TYPES.has(typeRaw) ? typeRaw : null;
+  const unitsRaw = get("units")?.value.trim() ?? ""; const units = /^[1-4]$/.test(unitsRaw) ? Number(unitsRaw) : null;
+  const estateRaw = get("estate_type")?.value.trim().toLowerCase() ?? ""; const estate_type = ESTATE_TYPE_OF_OPTION[estateRaw] ? estateRaw : null;
+  const lien = yesNoOf(get("existing_clean_energy_lien")?.value.trim().toLowerCase());
+  const facts = { address_line1: parts.address_line_text ?? null, city: parts.city_name ?? null, state: parts.state_code ?? null, postal_code: parts.postal_code ?? null, property_type, units, estate_type, existing_clean_energy_lien: lien };
+  if (!hasTransaction(rt)) return { ...facts, written: false };
+  defer(rt, async (q) => {
+    const updated = await q.query<{ id: string }>(
+      `UPDATE application_properties SET address_line1 = coalesce($2, address_line1), city = coalesce($3, city), state = coalesce($4, state), postal_code = coalesce($5, postal_code), property_type = coalesce($6, property_type), units = coalesce($7, units), estate_type = coalesce($8, estate_type), existing_clean_energy_lien = coalesce($9, existing_clean_energy_lien)
+         WHERE id = (SELECT id FROM application_properties WHERE application_id = $1 ORDER BY is_subject DESC, created_at, id LIMIT 1) RETURNING id`,
+      [application_id, facts.address_line1, facts.city, facts.state, facts.postal_code, facts.property_type, facts.units, facts.estate_type, facts.existing_clean_energy_lien]);
+    if (!updated.length && mode === "upsert") await q.query(`INSERT INTO application_properties (application_id, address_line1, city, state, postal_code, property_type, units, estate_type, existing_clean_energy_lien, is_subject) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)`,
+      [application_id, facts.address_line1, facts.city, facts.state, facts.postal_code, facts.property_type, facts.units, facts.estate_type, facts.existing_clean_energy_lien]);
+  });
+  return { ...facts, written: true };
+}
 async function confirmFields(i: ToolInput, ctx: CommandContext, rt: ToolRuntime, application_id: string, path: string): Promise<Record<string, unknown>> {
   const fields = fieldsOf(i); const abId = isUuid(str(i, "application_borrower_id")) ? str(i, "application_borrower_id") : ""; const borrower_id = str(i, "borrower_id") || undefined; const now = ctx.now;
   const get = (p: string): ConfirmedField | undefined => fields.find((f) => f.path === p && f.value !== "");
@@ -140,20 +168,58 @@ async function confirmFields(i: ToolInput, ctx: CommandContext, rt: ToolRuntime,
   switch (path) {
     case "identity": {   // E5: name → the six-item `name`; DOB and current address are plain fields (each with its source and confirmed_at)
       const name = get("legal_name"); const dob = get("date_of_birth"); const addr = get("current_address");
-      if (name) { trid = await captureSix(rt, ctx, application_id, "name", name.value, name.source, borrower_id); prefill("legal_name", name); await recordLeadTridItem(rt, ctx, i, "name", name.source, name.value); if (abId) defer(rt, async (q) => { await q.query(`UPDATE application_borrowers SET legal_name = $2 WHERE id = $1`, [abId, name.value]); }); }
+      if (name) {
+        trid = await captureSix(rt, ctx, application_id, "name", name.value, name.source, borrower_id); prefill("legal_name", name); await recordLeadTridItem(rt, ctx, i, "name", name.source, name.value);
+        // 32.18 rule 7: the legal name is what 23.6 splits into FirstName / LastName — the borrower row takes it whether the ID's reading was accepted or edited, and the party's display
+        // name follows only while it is still the account door's placeholder (the e-mail the account was created with, or a door's provisional label — src/infra/db/borrower-parties.ts,
+        // the same rule borrower-oidc.ts applies to a provider's name); a name the party chose elsewhere (32.17 video.identify, an OIDC profile) is not overwritten by an ID card
+        if (abId) defer(rt, async (q) => {
+          await q.query(`UPDATE application_borrowers SET legal_name = $2 WHERE id = $1`, [abId, name.value.trim()]);
+          await q.query(`UPDATE parties p SET legal_name = $2 FROM application_borrowers ab WHERE ab.id = $1 AND p.id = ab.party_id AND p.party_type = 'borrower' AND (lower(p.legal_name) = lower(coalesce(p.contact->>'email', '')) OR p.legal_name LIKE 'Borrower (%') AND p.legal_name IS DISTINCT FROM $2`, [abId, name.value.trim()]);
+        });
+      }
       if (dob) { await plain("date_of_birth", dob.value); prefill("date_of_birth", dob); if (abId && /^\d{4}-\d{2}-\d{2}$/.test(dob.value)) defer(rt, async (q) => { await q.query(`UPDATE application_borrowers SET date_of_birth = $2::date WHERE id = $1`, [abId, dob.value]); }); }
       if (addr) { await plain("current_address", addr.value); prefill("current_address", addr); }
+      // 32.3 E5 / 23.5 discrepancy 3: the residence basis (Own · Rent with the monthly rent · Living rent-free) and the months at the address are asked on every file; the tap writes the
+      // borrower's Current du_residences row through 23.5 writeResidence in this same transaction (T5, T32) — one Current per borrower, so a re-confirmation replaces it. The row needs the
+      // borrower's edge (application_borrower_id) and the transaction the hosted Runtime provides; a unit harness without one keeps its records (prefill) and writes no graph row.
+      const basis = get("residency_basis");
+      if (basis) {
+        const months = need_("months_at_address"); const rent = get("monthly_rent_cents");
+        const residence = residenceInput("Current", { basis_option: basis.value, monthly_rent_cents: rent?.value ?? "", months: months.value }, parseAddressLine(addr?.value ?? ""));
+        prefill("residency_basis", basis); prefill("months_at_address", months); if (residence["residency_basis"] === "Rent" && rent) prefill("monthly_rent_cents", rent);
+        if (abId && hasTransaction(rt)) results["residence"] = await duTool(rt, ctx, "writeResidence", { application_id, application_borrower_id: abId, residence });
+        else results["residence"] = { residency_type: "Current", residency_basis: residence["residency_basis"], duration_months: residence["duration_months"], written: false };
+      }
+      break;
+    }
+    case "prior_residence": {   // SQ-06 (32.13): under two years at the current address — the prior address, basis and months → a Prior du_residences row, which carries its own address (CHECK du_residences_prior_carries_its_own_address)
+      const line = need_("prior_address_line"); const city = need_("prior_city"); const state = need_("prior_state"); const zip = need_("prior_postal_code"); const basis = need_("prior_residency_basis"); const months = need_("prior_months_at_address");
+      const state_code = state.value.trim().toUpperCase(); if (!/^[A-Z]{2}$/.test(state_code)) throw new RangeError("prior_state must be a two-letter state code");
+      const postal_code = postalDigits(zip.value); if (!postal_code) throw new RangeError("prior_postal_code must be a five-digit ZIP (or nine digits)");
+      const address = { address_line_text: line.value.trim().slice(0, 50), city_name: city.value.trim().slice(0, 35), state_code, postal_code, country_code: "US" };
+      const residence = residenceInput("Prior", { basis_option: basis.value, monthly_rent_cents: get("prior_monthly_rent_cents")?.value ?? "", months: months.value }, address);
+      if (abId && hasTransaction(rt)) results["residence"] = await duTool(rt, ctx, "writeResidence", { application_id, application_borrower_id: abId, residence });
+      else results["residence"] = { residency_type: "Prior", residency_basis: residence["residency_basis"], duration_months: residence["duration_months"], written: false };
       break;
     }
     case "ssn": {   // E5: the one typed field — stored once (last four beside the encrypted TIN's slot), never echoed, never in prefill
       const f = need_("ssn"); const digits = f.value.replace(/\D/g, ""); if (digits.length !== 9) throw new RangeError("ssn must be nine digits");
       trid = await captureSix(rt, ctx, application_id, "ssn", f.value, "borrower", borrower_id); await recordLeadTridItem(rt, ctx, i, "ssn", "borrower", "ssn:provided");
-      if (abId) defer(rt, async (q) => { await q.query(`UPDATE application_borrowers SET tin_last4 = $2 WHERE id = $1`, [abId, digits.slice(-4)]); });
+      // 32.18 rule 7: the nine digits at rest under the platform's cipher (src/infra/pii/tin.ts — AES-256-GCM, TIN_CIPHER_KEY, the FAKE key outside production) beside the last four,
+      // in the same deferred write; the only reader is 23.6's assembly (du/emit.ts loadGraph → TAXPAYER_IDENTIFIER on the Fannie Mae-confidential document). Never in prefill, a log line or a payload.
+      const tin = encryptTin(digits, tinCipherKey());
+      if (abId) defer(rt, async (q) => { await q.query(`UPDATE application_borrowers SET tin_last4 = $2, tin_encrypted = $3 WHERE id = $1`, [abId, digits.slice(-4), tin]); });
       results["ssn"] = "stored"; break;
     }
     case "property_address": {   // R1: the address counts as the six-item property address when confirmed (20.3 T5 / 32.3 T8); type, units and occupancy are plain fields
       const f = need_("property_address"); trid = await captureSix(rt, ctx, application_id, "property_address", f.value, f.source, borrower_id); await recordLeadTridItem(rt, ctx, i, "property_address", f.source, f.value);
       for (const k of ["property_type", "units", "occupancy"]) { const x = get(k); if (x) await plain(k, x.value); }
+      // 32.18 rule 7: the confirmed home reaches the subject application_properties row too — the address parsed into its columns (23.6 reads
+      // SUBJECT_PROPERTY/ADDRESS/StateCode from `state`; residence.ts's parser, only the parts it found), the type and units the borrower confirmed
+      // (AttachmentType derives from the type), and the two facts only the borrower gives — the estate and the clean-energy lien (0137). The string
+      // capture above stays the six-item item; this write is the row's. A refinance opened from the account door has no row yet: one is created.
+      results["property"] = await propertyFacts(rt, application_id, f.value, get);
       break;
     }
     case "income": {   // R3: Confirm = the borrower's stated income for this transaction (21.2 rule 2); the row keeps the source and the confirmation time (T11)
@@ -189,6 +255,9 @@ async function confirmFields(i: ToolInput, ctx: CommandContext, rt: ToolRuntime,
       const addr = get("property_address"); const price = get("purchase_price_cents"); if (!addr && !price) throw new RangeError("property_address or purchase_price_cents is required");
       if (price) { const v = cents(price.value).toString(); await captureSix(rt, ctx, application_id, "property_value_estimate", v, price.source, borrower_id); await recordLeadTridItem(rt, ctx, i, "property_value_estimate", price.source, v); }
       if (addr) { trid = await captureSix(rt, ctx, application_id, "property_address", addr.value, addr.source, borrower_id); await recordLeadTridItem(rt, ctx, i, "property_address", addr.source, addr.value); }
+      // 32.18 rule 7: the confirmed address (parsed) reaches an existing subject application_properties row only — a to-be-determined purchase has none (fixtures/journey-purchase.ts
+      // GAP 1 stands: no row is created here, so the TBD reading downstream is unchanged); the estate and the clean-energy lien are the re-sent home card's asks on a purchase (3-entry.ts homeCard)
+      if (addr) results["property"] = await propertyFacts(rt, application_id, addr.value, get, "update_only");
       const document_id = str(i, "document_id"); const confirmed = Object.fromEntries(fields.map((f) => [f.path, { value: f.value, source: f.source, confirmed_at: now }]));
       rt.store.put("purchase_contracts", document_id || `${application_id}:contract`, { application_id, document_id: document_id || null, fields: confirmed, confirmed_at: now, card_instance_id: cardId(i) }, ctx.actor, ctx.now);
       const dateOr = (k: string): string | null => { const v = get(k)?.value ?? ""; return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null; };
@@ -404,7 +473,9 @@ export const TOOLS_32_2: readonly ToolDef[] = defineTools(PROCESS, BORROWER_APP,
   // `party_id` is never consulted: who declares is the actor, and the trigger du_declarations_are_self_attested judges it against the row's party.
   cmd("application.answerDeclarations", "write", async (i, ctx, rt) => {
     const application_id = needApp(i, ctx); const answers = obj(i, "answers"); const fourteen = Object.keys(answers).length > 0;
-    const declarations = fourteen ? DECLARATION_COLUMN_FOR_LIST_ITEM.map((col) => col !== null && answers[col] === "Yes") : list(i, "declarations");
+    // the thirteen-item record: the card's own list when the sequence carried it beside the answers (32.3 R5 / SQ-05 — alimony/child support is a listed item with no column), else derived from the fourteen
+    const carried = list(i, "declarations");
+    const declarations = fourteen && carried.length !== 13 ? DECLARATION_COLUMN_FOR_LIST_ITEM.map((col) => col !== null && answers[col] === "Yes") : carried;
     if (declarations.length !== 13) throw new RangeError("declarations[13] or the fourteen typed answers is required (URLA Section 5; all false = none apply)");
     const borrower_id = str(i, "borrower_id") || "all"; const id = `${application_id}:${borrower_id}`;
     let asserted: Record<string, unknown> | null = null;

@@ -97,6 +97,8 @@ export interface BorrowerRecord {
   what_we_are_doing: DoingItem[];
   needed_summary: { count: number; nothing_needed: boolean; copy_key: "needs.title" | "needs.none" };
   numbers: Record<string, unknown> | null;
+  /** 32.5 §7 / T12: the accounts held for this borrower — every live `du_assets` row with an owner arc for the subject's borrower (a shared account 22.4 reconciled is one row, `joint`); no balance (32.5 §4). Empty for a serviced loan. Named `accounts`, not `assets`: 32.13 T6 forbids an `assets` key anywhere in a co-borrower's responses (the other party's file), and these are the party's own Plaid accounts. */
+  accounts: { asset_id: string; kind: string; institution: string | null; account_last4: string | null; verified: boolean; joint: boolean }[];
   dates: { timer_code: string; label: string; due_at: string; calendar: string; status: string }[];
   documents: Record<string, unknown>[];
   people: Record<string, unknown>[];
@@ -246,6 +248,8 @@ export class BorrowerRecordReader {
 
     // ---- numbers
     const numbers = loan ? (monitored ? this.monitoredNumbers(loan, monitored) : await this.servicingNumbers(loanId!, loan, events, byKind)) : this.originationNumbers(app, byKind, events, transaction_type);
+    // ---- assets (32.5 §7 / T12): the accounts the platform holds for this borrower — the live du_assets rows with an owner arc for the subject's borrower (0134's projection: a retired row never appears), so a shared account 22.4 reconciled shows once with `joint`; never a balance (32.5 §4: amounts are the LE/CD's)
+    const accounts = !loan && appId && subject.application_borrower_id ? await this.accountsOf(appId, subject.application_borrower_id) : [];
 
     // ---- documents (02 §1.4)
     const documents = exits ? exitsDocumentsFor(await this.documents(party, subject, byKind, events, cards), exits, { party_id: party.id, role: subject.role }) : await this.documents(party, subject, byKind, events, cards);
@@ -288,7 +292,7 @@ export class BorrowerRecordReader {
     })() : null;
     // 33.1 rule 6: the partner-book block — the servicer of record, the loan's last four, the facts' as-of date and the commands the surface lists as unavailable
     const partner_book: BorrowerRecord["partner_book"] = monitored ? { partner_party_id: monitored.partner_party_id, partner_name: monitored.partner_name, loan_last4: monitored.loan_last4, as_of_date: monitored.as_of_date, monitored: true, commands_unavailable: [...MONITORED_REFUSED_COMMANDS].map((command) => ({ command, code: "LOAN_MONITORED" as const })), review, readiness } : null;
-    return { subject: subjectOut, status, read_only: READ_ONLY_BADGES.has(status.badge), next, needed_from_you: neededOut, underwriting, what_we_are_doing, needed_summary, numbers, dates, documents, people, property, loan: loanSection, offers: exits && (exits.paidInFull || exits.transfer) ? [] : offers, journey_progress, partner_book, readiness, as_of: asOf };   // 32.12: rate-watch ends with the loan
+    return { subject: subjectOut, status, read_only: READ_ONLY_BADGES.has(status.badge), next, needed_from_you: neededOut, underwriting, what_we_are_doing, needed_summary, numbers, accounts, dates, documents, people, property, loan: loanSection, offers: exits && (exits.paidInFull || exits.transfer) ? [] : offers, journey_progress, partner_book, readiness, as_of: asOf };   // 32.12: rate-watch ends with the loan
   }
 
   /** 33.3 rule 4: the monitored loan a refinance application was opened from (`applications.prior_loan_id`), while the loan is still monitored — once the refinance funded the loan reads paid_off and the rows stop (rule 5). */
@@ -451,6 +455,14 @@ export class BorrowerRecordReader {
       const owner = status === "satisfied_pending_review" ? "us" : conditionOwner((d["evidence_kinds"] as unknown[] | undefined) ?? []);
       out.push({ item_id: c.id, kind: "condition", label: String(d["text"] ?? d["template_code"] ?? "Condition"), owner, owner_copy_key: OWNER_COPY_KEYS[owner], status, source: "conditions", created_at: String(d["opened_at"] ?? c.updated_at) }); }
     return out.sort((a, b) => a.created_at.localeCompare(b.created_at));
+  }
+
+  /** 32.5 §7 / T12: the borrower's accounts from 0134's `application_assets` projection (live `du_assets` rows only — 22.4's reconciliation retires the twin of a shared account), each with whether another borrower shares it. */
+  private async accountsOf(appId: string, applicationBorrowerId: string): Promise<BorrowerRecord["accounts"]> {
+    const rows = await this.db.query<{ id: string; asset_kind: string; institution: string | null; account_last4: string | null; verified: boolean; owners: number }>(
+      `SELECT v.id::text AS id, v.asset_kind, v.institution, v.account_last4, v.verified, (SELECT count(*)::int FROM du_asset_parties p WHERE p.asset_id = v.id) AS owners
+         FROM application_assets v WHERE v.application_id = $1 AND EXISTS (SELECT 1 FROM du_asset_parties p WHERE p.asset_id = v.id AND p.application_borrower_id = $2) ORDER BY v.created_at, v.id`, [appId, applicationBorrowerId]);
+    return rows.map((r) => ({ asset_id: r.id, kind: r.asset_kind, institution: r.institution, account_last4: r.account_last4, verified: r.verified === true, joint: Number(r.owners) > 1 }));
   }
 
   private originationNumbers(app: Record<string, unknown> | null, byKind: (k: string) => Entity[], events: Ev[], transaction_type: string | null): Record<string, unknown> | null {

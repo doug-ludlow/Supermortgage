@@ -79,6 +79,21 @@ export async function readDuDocument(q: Queryable, by: { du_document_id?: string
     container_count: Number(r["container_count"]), relationship_count: Number(r["relationship_count"]), borrower_count: Number(r["borrower_count"]), required_missing: Number(r["required_missing"]), emitted_at: String(r["emitted_at"]), byte_size: Number(r["byte_size"]), xml: String(r["xml"] ?? ""), submission_number: Number(r["submission_number"] ?? 0) };
 }
 
+/** The ops record's view of an application's emitted documents (src/runtime/app.ts applicationRecord `du.documents`): the hash and the counts, never the bytes. `submission_number` is read from the documents row's metadata (the du_documents table carries `submission_id`, nullable until 23.1 records the row). */
+export interface DuDocumentSummary {
+  readonly id: string; readonly casefile_id: string; readonly submission_id: string | null; readonly submission_number: number | null; readonly document_id: string;
+  readonly sha256: string; readonly spec_version: string; readonly mismo_build: string; readonly container_count: number; readonly relationship_count: number; readonly borrower_count: number; readonly required_missing: number; readonly emitted_at: string;
+}
+/** Every emitted document of an application, oldest first (append-only: a re-emission is a further row). */
+export async function listDuDocuments(q: Queryable, applicationId: string): Promise<DuDocumentSummary[]> {
+  const rows = await q.query<Record<string, unknown>>(
+    `SELECT d.id::text AS id, d.casefile_id, d.submission_id::text AS submission_id, doc.metadata->>'submission_number' AS submission_number, d.document_id::text AS document_id, encode(d.sha256, 'hex') AS sha256,
+            d.spec_version, d.mismo_build, d.container_count, d.relationship_count, d.borrower_count, d.required_missing, d.emitted_at::text AS emitted_at
+       FROM du_documents d JOIN documents doc ON doc.id = d.document_id WHERE d.application_id = $1 ORDER BY d.emitted_at, d.created_at`, [applicationId]);
+  return rows.map((r) => ({ id: String(r["id"]), casefile_id: String(r["casefile_id"]), submission_id: r["submission_id"] === null ? null : String(r["submission_id"]), submission_number: r["submission_number"] === null || r["submission_number"] === undefined ? null : Number(r["submission_number"]), document_id: String(r["document_id"]),
+    sha256: String(r["sha256"]), spec_version: String(r["spec_version"]), mismo_build: String(r["mismo_build"]), container_count: Number(r["container_count"]), relationship_count: Number(r["relationship_count"]), borrower_count: Number(r["borrower_count"]), required_missing: Number(r["required_missing"]), emitted_at: String(r["emitted_at"]) }));
+}
+
 export interface EmittedInput { readonly application_id: string; readonly casefile_id: string; readonly submission_number: number; readonly submission_id?: string | null; readonly document_id: string; readonly du_document_id: string; readonly document: DuDocument; readonly emitted_at: string; }
 
 /** `du.document.emitted{sha256, container_count, relationship_count}` — with `application_id` and `emitted_at` in the payload, which 23.7's `SM_DU_PREFLIGHT_GATE` arms on and anchors to (timers-23-7.ts). */

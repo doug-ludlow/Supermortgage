@@ -29,7 +29,9 @@ import { createBorrowerRouter, type BorrowerRouter } from "../../runtime/borrowe
 import { FakeStripeIdentity } from "../../runtime/borrower/vendors/fake-stripe-identity.ts";
 import { Journey, MST, EDT, MLO, OFFICER } from "../../runtime/borrower/fixtures/journey.ts";
 import { FORBIDDEN_FIELDS } from "../../runtime/borrower/serialize.ts";
-import { deliverLeByConsent, DECLARATIONS_LIST_HASH, CREDIT_AUTHORIZATION_HASH } from "../../runtime/borrower/flows/3-entry.ts";
+import { deliverLeByConsent, DECLARATIONS, DECLARATIONS_LIST_HASH, CREDIT_AUTHORIZATION_HASH } from "../../runtime/borrower/flows/3-entry.ts";
+import { DU_DECLARATION_ANSWERS } from "../../domain/underwriting/du/writer.ts";
+import type { Actor } from "../../kernel/events/index.ts";
 import { esignVerificationToken } from "../../app/tools/section32-2.ts";
 import { newDecisionFile } from "../application/ops-21-6.ts";
 import { wallClock } from "../../kernel/calendar/zoned.ts";
@@ -216,7 +218,7 @@ test("32.3-T4: Given L1 only, when the goal is tapped, then the hard-pull author
   assert.equal((await hardCaptured()).length, writtenOnce, "idempotent: nothing more written");
 });
 
-test("32.3-T5: Given Stripe extracted \"Jane Q. Public, 1990-04-01, 14 Elm St\", when the borrower taps Edit on the address and confirms \"22 Elm St\", then `application_borrowers.current_address = \"22 Elm St\"` with `source = borrower`, and name/DOB carry `source = stripe_identity`, all with `confirmed_at`.", { skip }, async () => {
+test("32.3-T5: Given Stripe extracted \"Jane Q. Public, 1990-04-01, 14 Elm St\", when the borrower taps Edit on the address and confirms \"22 Elm St\", then `application_borrowers.current_address = \"22 Elm St\"` with `source = borrower`, and name/DOB carry `source = stripe_identity`, all with `confirmed_at`; the same card asks how she lives there — Own, Rent (with the monthly rent) or Living rent-free — and the months at the address, and the tap writes her Current `du_residences` row through 23.5 `writeResidence` in the confirm's own transaction.", { skip }, async () => {
   clock.set(isoEt("2026-10-19", "09:15"));
   const vs = await api("POST", "/v1/borrower/identity/stripe/session", { application_id: jane.appId }, jane.token); assert.equal(vs.status, 200, JSON.stringify(vs.body));
   (router.stripe as FakeStripeIdentity).complete(vs.body["vendor_session_id"] as string, clock.now(), { legal_name: "Jane Q. Public", date_of_birth: "1990-04-01", address: "14 Elm St" });
@@ -226,17 +228,80 @@ test("32.3-T5: Given Stripe extracted \"Jane Q. Public, 1990-04-01, 14 Elm St\",
   assert.equal((await db.query<{ level: string }>(`SELECT level FROM sessions WHERE session_id = $1`, [jane.sessionId]))[0]!.level, "L3", "every live session of the party rose to L3");
   const card = await pendingCard(jane.appId, jane.partyId, "identity.confirm.title");
   const fields = card.props["fields"] as { path: string; value: string; source: string }[];
-  assert.deepEqual(fields.map((f) => [f.path, f.value, f.source]), [["legal_name", "Jane Q. Public", "stripe_identity"], ["date_of_birth", "1990-04-01", "stripe_identity"], ["current_address", "14 Elm St", "stripe_identity"]]);
+  assert.deepEqual(fields.map((f) => [f.path, f.value, f.source]), [["legal_name", "Jane Q. Public", "stripe_identity"], ["date_of_birth", "1990-04-01", "stripe_identity"], ["current_address", "14 Elm St", "stripe_identity"], ["residency_basis", "", "borrower"], ["monthly_rent_cents", "", "borrower"], ["months_at_address", "", "borrower"]]);
+  // E5 / 23.5 discrepancy 3: the same card asks how she lives there — Own · Rent (with the monthly rent) · Living rent-free — and the months at the address, on every file
+  assert.deepEqual((fields.find((f) => f.path === "residency_basis") as unknown as { options: { id: string; label: string }[] }).options.map((o) => o.id), ["own", "rent", "living_rent_free"]);
+  assert.deepEqual(card.props["required_paths"], ["residency_basis", "months_at_address"]); assert.deepEqual(card.props["money_paths"], ["monthly_rent_cents"]); assert.equal(card.props["helper_copy_key"], "identity.residence.why");
   clock.set(isoEt("2026-10-19", "09:20"));
-  const r = await resolve(jane.token, card.card_instance_id, fieldsEvidence(card, { current_address: "22 Elm St" })); assert.equal(r.status, 201, JSON.stringify(r.body));
+  // 01 §3.18: without the residence answers the tap is refused and nothing is written (the card stays pending)
+  const short = await resolve(jane.token, card.card_instance_id, fieldsEvidence(card, { current_address: "22 Elm St" })); assert.equal(short.status, 409, JSON.stringify(short.body)); assert.equal(short.body["code"], "CARD_FIELD_REQUIRED");
+  assert.equal((await db.query(`SELECT 1 FROM du_residences WHERE application_borrower_id = (SELECT id FROM application_borrowers WHERE application_id = $1)`, [jane.appId])).length, 0);
+  const r = await resolve(jane.token, card.card_instance_id, fieldsEvidence(card, { current_address: "22 Elm St", residency_basis: "own", months_at_address: "30" })); assert.equal(r.status, 201, JSON.stringify(r.body));
+  // the tap wrote her Current du_residences row through 23.5 writeResidence in the confirm's own transaction: Own, no rent, 30 months, the street line from the confirmed address
+  const residences = await db.query<{ residency_type: string; residency_basis: string; monthly_rent_cents: string | null; duration_months: number; address_line_text: string | null }>(`SELECT r.residency_type, r.residency_basis, r.monthly_rent_cents::text AS monthly_rent_cents, r.duration_months, r.address_line_text FROM du_residences r JOIN application_borrowers ab ON ab.id = r.application_borrower_id WHERE ab.application_id = $1`, [jane.appId]);
+  assert.deepEqual(residences, [{ residency_type: "Current", residency_basis: "Own", monthly_rent_cents: null, duration_months: 30, address_line_text: "22 Elm St" }]);
+  const written = (await events(jane.appId, "du.graph.residence.written")); assert.equal(written.length, 1); assert.equal(written[0]!.payload["residency_basis"], "Own"); assert.equal(written[0]!.payload["duration_months"], 30);
+  assert.equal((r.body["events"] as string[]).includes("du.graph.residence.written"), true, "the residence write is the confirm command's own event (one transaction)");
   const ab = (await db.query<{ prefill: Record<string, { value: string; source: string; confirmed_at: string | null }>; legal_name: string; date_of_birth: string }>(`SELECT prefill, legal_name, date_of_birth::text AS date_of_birth FROM application_borrowers WHERE application_id = $1`, [jane.appId]))[0]!;
   assert.equal(ab.prefill["current_address"]!.value, "22 Elm St"); assert.equal(ab.prefill["current_address"]!.source, "borrower"); assert.equal(ab.prefill["current_address"]!.confirmed_at, isoEt("2026-10-19", "09:20"));
   assert.equal(ab.prefill["legal_name"]!.source, "stripe_identity"); assert.equal(ab.prefill["legal_name"]!.confirmed_at, isoEt("2026-10-19", "09:20")); assert.equal(ab.prefill["date_of_birth"]!.source, "stripe_identity"); assert.equal(ab.prefill["date_of_birth"]!.confirmed_at, isoEt("2026-10-19", "09:20"));
   assert.equal(ab.legal_name, "Jane Q. Public"); assert.equal(ab.date_of_birth, "1990-04-01");
+  assert.equal(ab.prefill["residency_basis"]!.value, "own"); assert.equal(ab.prefill["months_at_address"]!.value, "30"); assert.equal(ab.prefill["months_at_address"]!.source, "borrower");
+  assert.equal((await cardsOf(jane.appId, jane.partyId)).filter((c) => c.copy_key === "identity.prior_residence.title").length, 0, "30 months at the address: no SQ-06 card");
   // 21.1 rule 1: the extracted name counts as submitted only now; the lead's trid item follows
   const intake = (await entity("applications", jane.appId))!; assert.equal((intake["six_items"] as Record<string, { source: string }>)["name"]!.source, "borrower_confirmed_prefill");
   assert.equal(tridItem(await lead(jane.leadId), "name").present, true);
   assert.equal((await events(jane.appId, "application.trid_received")).length, 0);
+});
+
+test("32.3-T32: Given the borrower confirms the current address with basis Rent at $2,100.00 a month and 14 months at the address, then `du_residences` holds exactly one Current row for the borrower (`residency_basis = Rent`, `monthly_rent_cents = 210000`, `duration_months = 14`) written through 23.5 `writeResidence`, the prior-residence card (SQ-06) is sent because the stay is under two years, and its confirmation adds a Prior row carrying its own address, basis and months; given Own (or Living rent-free) and 36 months, then the Current row carries no rent and no prior-residence card is sent; re-confirming the current address replaces the Current row rather than adding one.", { skip }, async () => {
+  // two organic refinance borrowers of their own: Rene rents (14 months — under two years) and Sol owns (36 months); each reaches E5 through the goal tap and the Stripe FAKE
+  const rowsOf = async (appId: string) => db.query<{ id: string; residency_type: string; residency_basis: string; monthly_rent_cents: string | null; duration_months: number; address_line_text: string | null; city_name: string | null; state_code: string | null; postal_code: string | null }>(`SELECT r.id, r.residency_type, r.residency_basis, r.monthly_rent_cents::text AS monthly_rent_cents, r.duration_months, r.address_line_text, r.city_name, r.state_code, r.postal_code FROM du_residences r JOIN application_borrowers ab ON ab.id = r.application_borrower_id WHERE ab.application_id = $1 ORDER BY r.residency_type, r.created_at`, [appId]);
+  const toIdentityCard = async (b: { email: string; name: string; tin_last4: string; dob: string }, address: string): Promise<{ appId: string; partyId: string; token: string; card: CardRow }> => {
+    const appId = await openBorrower(b, "limited_cash_out", { address_line1: address.split(",")[0], city: "Phoenix", state: "AZ", postal_code: "85004", county: "Maricopa", property_type: "sfr", units: 1 });
+    const s = await signIn(b.email); await thread(s.token); await setGoal(appId, s.party_id, s.token, "lower_rate");
+    const vs = await api("POST", "/v1/borrower/identity/stripe/session", { application_id: appId }, s.token); assert.equal(vs.status, 200, JSON.stringify(vs.body));
+    (router.stripe as FakeStripeIdentity).complete(vs.body["vendor_session_id"] as string, clock.now(), { legal_name: b.name, date_of_birth: b.dob, address });
+    const hook = await api("POST", "/v1/webhooks/stripe", { id: `evt-${randomUUID().slice(0, 8)}`, type: "identity.verification_session.verified", data: { object: { id: vs.body["vendor_session_id"], status: "verified" } } }, undefined, { "stripe-signature": "FAKE" }); assert.equal(hook.status, 200, JSON.stringify(hook.body));
+    await settle();
+    return { appId, partyId: s.party_id, token: s.token, card: await pendingCard(appId, s.party_id, "identity.confirm.title") };
+  };
+  clock.set(isoEt("2026-10-19", "09:22"));
+  const rene = await toIdentityCard({ email: `rene-${R}@example.test`, name: "Rene Alvarez", tin_last4: "5555", dob: "1991-06-15" }, "100 N Central Ave, Phoenix, AZ 85004");
+  // Rent at $2,100.00 a month, 14 months at the address
+  const r1 = await resolve(rene.token, rene.card.card_instance_id, fieldsEvidence(rene.card, { residency_basis: "rent", monthly_rent_cents: "210000", months_at_address: "14" })); assert.equal(r1.status, 201, JSON.stringify(r1.body));
+  let rows = await rowsOf(rene.appId);
+  assert.equal(rows.length, 1); assert.deepEqual(rows.map((x) => [x.residency_type, x.residency_basis, x.monthly_rent_cents, x.duration_months, x.address_line_text, x.city_name, x.state_code, x.postal_code]), [["Current", "Rent", "210000", 14, "100 N Central Ave", "Phoenix", "AZ", "85004"]]);
+  const currentId = rows[0]!.id;
+  assert.equal((await events(rene.appId, "du.graph.residence.written")).length, 1, "written through 23.5 writeResidence");
+  // under two years: the prior-residence card (SQ-06) is sent — the prior address, how they lived there and the months there
+  const prior = await pendingCard(rene.appId, rene.partyId, "identity.prior_residence.title");
+  assert.equal(prior.kind, "ConfirmCard"); assert.equal(prior.command_ref, "application.confirmField"); assert.equal((prior.props["command_args"] as Record<string, unknown>)["path"], "prior_residence");
+  assert.deepEqual((prior.props["fields"] as { path: string }[]).map((f) => f.path), ["prior_address_line", "prior_city", "prior_state", "prior_postal_code", "prior_residency_basis", "prior_monthly_rent_cents", "prior_months_at_address"]);
+  assert.deepEqual(prior.props["required_paths"], ["prior_address_line", "prior_city", "prior_state", "prior_postal_code", "prior_residency_basis", "prior_months_at_address"]);
+  // a Prior row carries its own address: without the ZIP the tap is refused and nothing is written
+  const noZip = await resolve(rene.token, prior.card_instance_id, fieldsEvidence(prior, { prior_address_line: "8 Mesa Dr", prior_city: "Tempe", prior_state: "AZ", prior_residency_basis: "living_rent_free", prior_months_at_address: "22" })); assert.equal(noZip.status, 409, JSON.stringify(noZip.body)); assert.equal(noZip.body["code"], "CARD_FIELD_REQUIRED");
+  assert.equal((await rowsOf(rene.appId)).length, 1);
+  const p1 = await resolve(rene.token, prior.card_instance_id, fieldsEvidence(prior, { prior_address_line: "8 Mesa Dr", prior_city: "Tempe", prior_state: "AZ", prior_postal_code: "85281", prior_residency_basis: "rent", prior_monthly_rent_cents: "165000", prior_months_at_address: "22" })); assert.equal(p1.status, 201, JSON.stringify(p1.body));
+  rows = await rowsOf(rene.appId);
+  assert.deepEqual(rows.map((x) => [x.residency_type, x.residency_basis, x.monthly_rent_cents, x.duration_months, x.address_line_text, x.city_name, x.state_code, x.postal_code]), [["Current", "Rent", "210000", 14, "100 N Central Ave", "Phoenix", "AZ", "85004"], ["Prior", "Rent", "165000", 22, "8 Mesa Dr", "Tempe", "AZ", "85281"]]);
+  // re-confirming the current address (32.17 rule 21: application.confirmField takes a rewrite) replaces the Current row — the same id, now Own with no rent — rather than adding one; the Prior row stays
+  clock.set(isoEt("2026-10-19", "09:24"));
+  const again = await resolve(rene.token, rene.card.card_instance_id, { ...fieldsEvidence(rene.card, { residency_basis: "own", months_at_address: "15" }), rewrite: true }); assert.equal(again.status, 201, JSON.stringify(again.body));
+  rows = await rowsOf(rene.appId);
+  assert.deepEqual(rows.map((x) => [x.id === currentId, x.residency_type, x.residency_basis, x.monthly_rent_cents, x.duration_months]), [[true, "Current", "Own", null, 15], [false, "Prior", "Rent", "165000", 22]]);
+  assert.equal((await cardsOf(rene.appId, rene.partyId)).filter((c) => c.copy_key === "identity.prior_residence.title").length, 1, "the prior-residence card is one card per borrower (idempotent on its flow_key)");
+  // Sol owns, 36 months: the Current row carries no rent and no prior-residence card is sent
+  const sol = await toIdentityCard({ email: `sol-${R}@example.test`, name: "Sol Bennett", tin_last4: "6666", dob: "1979-12-03" }, "42 Palo Verde Ln, Phoenix, AZ 85004");
+  const r2 = await resolve(sol.token, sol.card.card_instance_id, fieldsEvidence(sol.card, { residency_basis: "own", months_at_address: "36" })); assert.equal(r2.status, 201, JSON.stringify(r2.body));
+  rows = await rowsOf(sol.appId);
+  assert.deepEqual(rows.map((x) => [x.residency_type, x.residency_basis, x.monthly_rent_cents, x.duration_months]), [["Current", "Own", null, 36]]);
+  assert.equal((await cardsOf(sol.appId, sol.partyId)).filter((c) => c.copy_key === "identity.prior_residence.title").length, 0, "36 months: no SQ-06 card");
+  // Living rent-free with a rent typed anyway: the basis wins — the row carries no rent (CHECK du_residences_rent_iff_rent_basis); Rent without a rent is refused before anything is written
+  const wrong = await resolve(sol.token, sol.card.card_instance_id, { ...fieldsEvidence(sol.card, { residency_basis: "rent", months_at_address: "36" }), rewrite: true }); assert.notEqual(wrong.status, 201, JSON.stringify(wrong.body));
+  assert.deepEqual((await rowsOf(sol.appId)).map((x) => [x.residency_type, x.residency_basis, x.monthly_rent_cents, x.duration_months]), [["Current", "Own", null, 36]]);
+  const free = await resolve(sol.token, sol.card.card_instance_id, { ...fieldsEvidence(sol.card, { residency_basis: "living_rent_free", monthly_rent_cents: "50000", months_at_address: "36" }), rewrite: true }); assert.equal(free.status, 201, JSON.stringify(free.body));
+  assert.deepEqual((await rowsOf(sol.appId)).map((x) => [x.residency_type, x.residency_basis, x.monthly_rent_cents, x.duration_months]), [["Current", "LivingRentFree", null, 36]]);
 });
 
 test("32.3-T6: Given an in-app voice call, when the borrower says \"yes, e-delivery is fine\", then no `consents{kind=esign}` row becomes `active`: the row the goal's tap wrote stays `pending_verification` and only the e-mailed code activates it — a spoken yes is never a consent (20.3 T8).", { skip }, async () => {
@@ -304,7 +369,7 @@ test("32.3-T8: Given the borrower confirms the property address, then `trid_item
   const card = await pendingCard(jane.appId, jane.partyId, "refi.home.confirm");
   const fields = card.props["fields"] as { path: string; value: string; source: string }[];
   assert.equal(fields.find((f) => f.path === "property_address")!.value, "22 Elm St", "the address Jane confirmed (edited) is the candidate property"); assert.equal(fields.find((f) => f.path === "property_address")!.source, "borrower");
-  const r = await resolve(jane.token, card.card_instance_id, fieldsEvidence(card)); assert.equal(r.status, 201, JSON.stringify(r.body));
+  const r = await resolve(jane.token, card.card_instance_id, fieldsEvidence(card, { estate_type: "fee_simple", existing_clean_energy_lien: "no" })); assert.equal(r.status, 201, JSON.stringify(r.body));   // 32.18 rule 7: the home card asks both on every file
   const after = await lead(jane.leadId); const item = tridItem(after, "property_address");
   assert.equal(item.present, true); assert.equal(item.source, "consumer_stated"); assert.equal(item.at, isoEt("2026-10-19", "09:25"));
   assert.equal(after["trid_application_at"], null); assert.equal((await events(jane.appId, "application.trid_received")).length, 0);
@@ -404,19 +469,39 @@ test("32.3-T13: Given the Profile card, when the borrower taps Confirm without c
   assert.equal((await events(jane.appId, "application.field.captured")).filter((e) => e.payload["field"] === "marital_status").length, 0);
 });
 
-test("32.3-T14: Given \"None of these apply\", then thirteen `declarations` values are `false` and `evidence.list_version_hash` is set.", { skip }, async () => {
+test("32.3-T14: Given \"None of these apply\", then thirteen `declarations` values are `false` and `evidence.list_version_hash` is set, and the borrower's `du_declarations` row carries the fourteen typed URLA section 5 answers — the thirteen listed items `No`, 5a.A as the borrower answered it on the card before the list — asserted through 23.5 `assertDeclarations` by the borrower's own session actor (`asserted_by_actor.role = borrower`), never by the assistant or the platform.", { skip }, async () => {
   clock.set(isoEt("2026-10-19", "09:56"));
   const profile = await pendingCard(jane.appId, jane.partyId, "profile.title");
   const ok = await resolve(jane.token, profile.card_instance_id, { option_id: "submit", evidence: { fields: [{ path: "citizenship_status", value: "us_citizen", answered_at: clock.now() }, { path: "marital_status", value: "unmarried", answered_at: clock.now() }, { path: "dependents", value: "0", answered_at: clock.now() }, { path: "military_service", value: "none", answered_at: clock.now() }, { path: "language_preference", value: "english", answered_at: clock.now() }] } });
   assert.equal(ok.status, 201, JSON.stringify(ok.body));
-  const ab = (await db.query<{ citizenship_status: string | null; marital_status: string | null; language_preference: string | null }>(`SELECT citizenship_status, marital_status, language_preference FROM application_borrowers WHERE application_id = $1`, [jane.appId]))[0]!;
-  assert.deepEqual(ab, { citizenship_status: "us_citizen", marital_status: "unmarried", language_preference: "english" });
+  const ab = (await db.query<{ id: string; citizenship_status: string | null; marital_status: string | null; language_preference: string | null }>(`SELECT id, citizenship_status, marital_status, language_preference FROM application_borrowers WHERE application_id = $1`, [jane.appId]))[0]!;
+  assert.deepEqual({ citizenship_status: ab.citizenship_status, marital_status: ab.marital_status, language_preference: ab.language_preference }, { citizenship_status: "us_citizen", marital_status: "unmarried", language_preference: "english" });
+  // 5a.A precedes the list on every file (23.5 rule 4: a No written from a tap that never asked it would misstate occupancy): the ChoiceCard runs no command; its tap raises the list
+  assert.equal((await cardsOf(jane.appId, jane.partyId)).filter((c) => c.copy_key === "declarations.title").length, 0, "the list is not on the rail before 5a.A is answered");
+  const occ = await pendingCard(jane.appId, jane.partyId, "declarations.occupancy"); assert.equal(occ.kind, "ChoiceCard"); assert.equal(occ.command_ref, null); assert.deepEqual((occ.props["options"] as { id: string }[]).map((o) => o.id), ["yes_no_prior", "yes_prior", "no"]);
+  const o = await resolve(jane.token, occ.card_instance_id, { option_id: "yes_no_prior", evidence: { option_id: "yes_no_prior", tapped_at: clock.now() } }); assert.equal(o.status, 201, JSON.stringify(o.body)); assert.equal(o.body["command"], null); assert.deepEqual(o.body["events"], []);
+  assert.equal((await db.query(`SELECT 1 FROM du_declarations WHERE application_borrower_id = $1`, [ab.id])).length, 0, "nothing is asserted before the last tap");
+  // 5a.E (a lien that could take priority — a PACE / clean-energy lien) is not on the list either: its own ChoiceCard after 5a.A and before the list, no command; the None tap never answers it from silence (23.5 rule 4)
+  assert.equal((await cardsOf(jane.appId, jane.partyId)).filter((c) => c.copy_key === "declarations.title").length, 0, "the list is not on the rail before 5a.E is answered");
+  const lienCard = await pendingCard(jane.appId, jane.partyId, "declarations.clean_energy_lien"); assert.equal(lienCard.kind, "ChoiceCard"); assert.equal(lienCard.command_ref, null); assert.deepEqual((lienCard.props["options"] as { id: string }[]).map((x) => x.id), ["yes", "no"]);
+  const l = await resolve(jane.token, lienCard.card_instance_id, { option_id: "no", evidence: { option_id: "no", tapped_at: clock.now() } }); assert.equal(l.status, 201, JSON.stringify(l.body)); assert.equal(l.body["command"], null); assert.deepEqual(l.body["events"], []);
+  assert.equal((await db.query(`SELECT 1 FROM du_declarations WHERE application_borrower_id = $1`, [ab.id])).length, 0, "nothing is asserted before the last tap");
   const decl = await pendingCard(jane.appId, jane.partyId, "declarations.title"); assert.equal(decl.kind, "ChoiceCard"); assert.equal((decl.props["list"] as string[]).length, 13); assert.equal(decl.props["list_version_hash"], DECLARATIONS_LIST_HASH);
+  const none = (decl.props["command_args_by_option"] as Record<string, Record<string, unknown>>)["none"]!; assert.equal(Object.keys(none["answers"] as Record<string, string>).length, 14, "the None tap carries the fourteen typed answers"); assert.deepEqual(none["follow_ups"], { homeowner_past_three_years: "No" });
+  assert.equal((none["answers"] as Record<string, string>)["property_proposed_clean_energy_lien"], "No", "5a.E as tapped on its own card"); assert.equal((none["answers"] as Record<string, string>)["intent_to_occupy"], "Yes", "5a.A as tapped on its own card");
   const r = await resolve(jane.token, decl.card_instance_id, { option_id: "none", evidence: { option_id: "none", tapped_at: clock.now() } }); assert.equal(r.status, 201, JSON.stringify(r.body));
   const card = (r.body["card"] as Record<string, unknown>); const evidence = card["evidence"] as Record<string, unknown>;
   assert.equal(evidence["list_version_hash"], DECLARATIONS_LIST_HASH); assert.equal(evidence["option_id"], "none");
-  const row = await entity("declarations", `${jane.appId}:B1`); assert.ok(row); assert.equal((row!["declarations"] as boolean[]).length, 13); assert.ok((row!["declarations"] as boolean[]).every((v) => v === false)); assert.equal(row!["none_apply"], true);
+  const row = await entity("declarations", `${jane.appId}:B1`); assert.ok(row); assert.equal((row!["declarations"] as boolean[]).length, 13); assert.ok((row!["declarations"] as boolean[]).every((v) => v === false)); assert.equal(row!["none_apply"], true); assert.equal(row!["asserted_in_du_graph"], true);
   assert.equal((await events(jane.appId, "application.declarations.answered")).length, 1);
+  // the borrower's du_declarations row: the thirteen listed items No, 5a.A as tapped (Yes / not a homeowner in three years), asserted by the borrower's own session actor — never the app's agent, never the platform
+  const du = (await db.query<Record<string, unknown>>(`SELECT * FROM du_declarations WHERE application_borrower_id = $1`, [ab.id]))[0]!; assert.ok(du, "one du_declarations row for Jane");
+  for (const k of DU_DECLARATION_ANSWERS) assert.equal(du[k], k === "intent_to_occupy" ? "Yes" : "No", k);
+  assert.equal(du["homeowner_past_three_years"], "No"); assert.equal(du["property_usage"], null); assert.equal(du["undisclosed_borrowed_funds_cents"], null);
+  assert.deepEqual(du["asserted_by_actor"], { kind: "human", id: jane.partyId, role: "borrower" });
+  assert.equal((await db.query(`SELECT 1 FROM du_bankruptcy_filings WHERE declaration_id = $1`, [du["id"]])).length, 0);
+  const asserted = await events(jane.appId, "du.graph.declaration.asserted"); assert.equal(asserted.length, 1); assert.equal(asserted[0]!.payload["party_id"], jane.partyId);
+  assert.equal((await events(jane.appId, "command.executed")).filter((e) => e.payload["command"] === "application.answerDeclarations").length, 1, "the command ran once");
 });
 
 test("32.3-T15: Given `applications.status = started` is not yet reached, when a client posts `application.answerDemographics`, then the API refuses (20.3 T12).", { skip }, async () => {
@@ -807,4 +892,83 @@ test("32.3-T30: Given SMS reply \"yes that's my income\" to a pending income `Co
   assert.equal((await db.query(`SELECT 1 FROM application_income WHERE application_id = $1`, [casey.appId])).length, 0, "nothing committed from the text");
   // the link resolves to the card for the same party after L1
   const target = await api("GET", `/v1/borrower/deeplink/${link.token}`, undefined, sms.token); assert.equal(target.status, 200); assert.deepEqual(target.body["target"], { card_instance_id: income.card_instance_id });
+});
+
+// Phase 7 amendments (the Homestead DU handoff): scaffolded as todo; implement by replacing each line with the real test (never edit the name)
+test("32.3-T31: Given \"Something here applies\", then the fourteen URLA section 5 questions are asked one `ChoiceCard` at a time (Yes / No): a Yes on 5a.A asks the property usage and how title was held, a Yes on bankruptcy asks the chapter(s) and offers a free-text explanation, and every card before the last issues no command; when the last card is tapped, `application.answerDeclarations` runs once with the fourteen typed answers as the borrower's own actor, so `du_declarations` holds `bankruptcy = Yes` with one `du_bankruptcy_filings` row per chapter chosen and `bankruptcy_explanation` verbatim, `intent_to_occupy = Yes` with `homeowner_past_three_years`, `property_usage` and `prior_property_title` as answered, and thirteen `declarations` values follow the answers; an agent, platform or staff actor issuing the same command is refused before anything is written.", { skip }, async () => {
+  // Sam: an organic refinance whose R5 begins with "Something here applies" — SQ-05, the thirteen listed items one card at a time after 5a.A, the follow-ups on a Yes, one command at the end
+  const SAM = { email: `sam-${R}@example.test`, name: "Sam Okoro", tin_last4: "5555", dob: "1986-06-06" };
+  clock.set(isoEt("2026-10-19", "11:00"));
+  const appId = await openBorrower(SAM, "limited_cash_out", { address_line1: "77 Mesa Rd", city: "Phoenix", state: "AZ", postal_code: "85018", county: "Maricopa", property_type: "sfr", units: 1 });
+  const s = await signIn(SAM.email); await settle();
+  await setGoal(appId, s.party_id, s.token, "lower_rate");
+  const abId = (await db.query<{ id: string }>(`SELECT id FROM application_borrowers WHERE application_id = $1`, [appId]))[0]!.id;
+  // R4 through the ProfileCard's own command: citizenship captured → the 5a.A card (and nothing else of R5 yet)
+  const prof = await command(s.token, "application.confirmField", { path: "profile", fields: [["citizenship_status", "us_citizen"], ["marital_status", "married"], ["dependents", "0"], ["military_service", "none"], ["language_preference", "english"]].map(([path, value]) => ({ path, value, source: "borrower" })), application_id: appId });
+  assert.ok(prof.status < 300, JSON.stringify(prof.body));
+  const own: Actor = { kind: "human", id: s.party_id, role: "borrower" };
+  const noRow = async (why: string) => assert.equal((await db.query(`SELECT 1 FROM du_declarations WHERE application_borrower_id = $1`, [abId])).length, 0, why);
+  const tapChoice = async (key: string, option: string): Promise<CardRow> => {   // every card before the last: the tap runs nothing — no events, no row (the response's `command` echoes the card's command_ref, null on all but the list and the last question)
+    const c = await pendingCard(appId, s.party_id, key); clock.set(new Date(Date.parse(clock.now()) + 60_000).toISOString());
+    const r = await resolve(s.token, c.card_instance_id, { option_id: option, evidence: { option_id: option, tapped_at: clock.now() } }); assert.equal(r.status, 201, `${key} ${option}: ${JSON.stringify(r.body)}`);
+    assert.equal(r.body["command"], c.command_ref); assert.deepEqual(r.body["events"], [], `${key}: no command on ${option}`); assert.equal((r.body["card"] as Record<string, unknown>)["status"], "resolved"); await noRow(`${key}: nothing asserted before the last tap`);
+    return c;
+  };
+  // 5a.A: Yes, and owned another home in the past three years → the usage and how title was held, then the list
+  const occ = await tapChoice("declarations.occupancy", "yes_prior"); assert.equal(occ.command_ref, null);
+  assert.equal((await cardsOf(appId, s.party_id)).filter((c) => c.copy_key === "declarations.title").length, 0, "the list waits for the 5a.A follow-ups");
+  await tapChoice("declarations.prior_usage", "SecondHome"); await tapChoice("declarations.prior_title", "JointWithSpouse");
+  // 5a.E on its own card (the list does not carry it): Yes here, so the row's answer is the tap's, never a derived No
+  assert.equal((await cardsOf(appId, s.party_id)).filter((c) => c.copy_key === "declarations.title").length, 0, "the list waits for 5a.E");
+  const lienCard = await tapChoice("declarations.clean_energy_lien", "yes"); assert.equal(lienCard.command_ref, null); assert.deepEqual((lienCard.props["options"] as { id: string }[]).map((o) => o.id), ["yes", "no"]);
+  const list = await tapChoice("declarations.title", "some"); assert.deepEqual(list.props["side_quest_on"], { some: "SQ-05" });
+  // SQ-05: the thirteen listed items one ChoiceCard at a time — a lawsuit, a bankruptcy and borrowed funds Yes, the rest No
+  const YES = new Set([2, 6, 7]); const explanation = "Chapter 7 in 2021 after my spouse's medical bills — discharged 2022-03-04.\n\tEvery account since has been paid on time, \"as agreed\". ";
+  for (let n = 0; n < DECLARATIONS.length - 1; n++) {
+    const card = await tapChoice("declarations.item", YES.has(n) ? "yes" : "no"); assert.equal(card.props["item_index"], n, `question ${n + 1} in order`); assert.equal(card.props["item_text"], DECLARATIONS[n]); assert.deepEqual((card.props["options"] as { id: string }[]).map((o) => o.id), ["yes", "no"]); assert.equal(card.command_ref, null);
+    if (n === 6) {   // bankruptcy: the waiting-period line in the assistant's words (never a decline), the chapter, the optional explanation kept verbatim
+      const lines = (await thread(s.token)).messages.filter((m) => m["body_text"] === "{{copy:declarations.waiting_period}}"); assert.equal(lines.length, 1, "B3-5.3-07 explained once, on the Yes"); assert.equal(lines[0]!["sender"], "agent");
+      // the chapter(s): one tap each — Chapter 7, then "another?" Yes, then Chapter 13 from a card that no longer offers Chapter 7, then "another?" No
+      const ch1 = await tapChoice("declarations.bankruptcy.chapter", "ChapterSeven"); assert.deepEqual((ch1.props["options"] as { id: string }[]).map((o) => o.id), ["ChapterSeven", "ChapterThirteen", "ChapterEleven", "ChapterTwelve"]);
+      assert.equal((await cardsOf(appId, s.party_id)).filter((c) => c.copy_key === "declarations.bankruptcy.explain").length, 0, "the explanation waits for the chapters");
+      const another = await tapChoice("declarations.bankruptcy.another", "yes"); assert.deepEqual((another.props["options"] as { id: string }[]).map((o) => o.id), ["no", "yes"]); assert.deepEqual(another.props["chapters_so_far"], ["ChapterSeven"]);
+      const ch2 = await tapChoice("declarations.bankruptcy.chapter", "ChapterThirteen"); assert.deepEqual((ch2.props["options"] as { id: string }[]).map((o) => o.id), ["ChapterThirteen", "ChapterEleven", "ChapterTwelve"], "a chapter already named is off the card");
+      const done = await tapChoice("declarations.bankruptcy.another", "no"); assert.deepEqual(done.props["chapters_so_far"], ["ChapterSeven", "ChapterThirteen"]);
+      const ex = await pendingCard(appId, s.party_id, "declarations.bankruptcy.explain"); assert.equal(ex.kind, "ExplanationCard"); assert.equal(ex.props["optional"], true); assert.equal(ex.command_ref, null);
+      const r = await resolve(s.token, ex.card_instance_id, { option_id: "submit", evidence: { text: explanation, text_hash: `sha256:${sha(explanation)}`, attestation: "", attested_at: clock.now() } }); assert.equal(r.status, 201, JSON.stringify(r.body)); assert.equal(r.body["command"], null); await noRow("the explanation runs no command");
+    }
+    if (n === 7) {   // borrowed funds: the amount (required exactly when C = Yes)
+      const amt = await pendingCard(appId, s.party_id, "declarations.borrowed_funds.amount"); assert.equal(amt.kind, "ConfirmCard"); assert.equal(amt.command_ref, null); assert.deepEqual(amt.props["required_paths"], ["undisclosed_borrowed_funds_cents"]);
+      const empty = await resolve(s.token, amt.card_instance_id, { evidence: { fields: [{ path: "undisclosed_borrowed_funds_cents", value_confirmed: "", source: "borrower", confirmed_at: clock.now() }], edited: true } }); assert.equal(empty.status, 409); assert.equal(empty.body["code"], "CARD_FIELD_REQUIRED");
+      const r = await resolve(s.token, amt.card_instance_id, { evidence: { fields: [{ path: "undisclosed_borrowed_funds_cents", value_confirmed: "1500000", source: "borrower", confirmed_at: clock.now() }], edited: true } }); assert.equal(r.status, 201, JSON.stringify(r.body)); assert.equal(r.body["command"], null); await noRow("the amount runs no command");
+    }
+  }
+  // the last card carries everything: the fourteen answers, the follow-ups, the chapter, the explanation, the thirteen-item list — and only it names the command
+  const lastCard = await pendingCard(appId, s.party_id, "declarations.item"); assert.equal(lastCard.props["item_index"], DECLARATIONS.length - 1); assert.equal(lastCard.command_ref, "application.answerDeclarations");
+  const args = (lastCard.props["command_args_by_option"] as Record<string, Record<string, unknown>>)["no"]!; const answers = args["answers"] as Record<string, string>;
+  assert.equal(Object.keys(answers).length, 14); assert.equal(answers["bankruptcy"], "Yes"); assert.equal(answers["party_to_lawsuit"], "Yes"); assert.equal(answers["undisclosed_borrowed_funds"], "Yes"); assert.equal(answers["intent_to_occupy"], "Yes"); assert.equal(answers["special_borrower_seller_relationship"], "No"); assert.equal(answers["property_proposed_clean_energy_lien"], "Yes", "5a.E as tapped on its own card");
+  assert.deepEqual(args["follow_ups"], { homeowner_past_three_years: "Yes", property_usage: "SecondHome", prior_property_title: "JointWithSpouse", undisclosed_borrowed_funds_cents: "1500000" }); assert.deepEqual(args["bankruptcy_chapters"], ["ChapterSeven", "ChapterThirteen"]); assert.equal(args["bankruptcy_explanation"], explanation);
+  const before = await cardsOf(appId, s.party_id); const sequence = before.filter((c) => c.props["declarations_seq"]); assert.equal(sequence.filter((c) => c.status === "resolved").length, 23, `5a.A + 2 follow-ups + 5a.E + the list + 12 questions + 2 chapters with "another?" after each + explanation + amount before the last: ${sequence.map((c) => `${c.copy_key}:${c.status}`).join(" ")}`);
+  for (const c of sequence.filter((x) => x.status === "resolved")) { assert.equal(c.command_ref, c.copy_key === "declarations.title" ? "application.answerDeclarations" : null, `${c.copy_key} names no command (the list names it for its None option only)`); assert.equal((c.evidence as Record<string, unknown>)["command_output"], null, `${c.copy_key}: no command ran on the tap`); }
+  // an agent, the platform or staff issuing the same command: refused at the bus before anything is written (23.5 rule 4 / T6; 32.2 humanOnly + borrower role + DU_DECLARATION_NOT_SELF_ATTESTED)
+  const input = { ...args, application_id: appId, party_id: s.party_id, application_borrower_id: abId, card_instance_id: lastCard.card_instance_id };
+  const run = (actor: Actor) => runtime.execute({ process: "32.2", name: "application.answerDeclarations", loanId: "", applicationId: appId, actor, input, run: { runId: `t31-${actor.id}`, modelVersion: "test", promptVersion: "32.3" } });
+  const refused = (code: string) => (e: unknown): boolean => { assert.equal((e as Error).name, "CommandRefused", (e as Error).message); assert.equal((e as { code?: string }).code, code, (e as Error).message); return true; };
+  await assert.rejects(run({ kind: "agent", id: "borrower-app" }), refused("HUMAN_ONLY")); await assert.rejects(run({ kind: "agent", id: "intake" }), refused("NOT_ALLOWLISTED"));   // the app's own agent is allowlisted for the command and still refused as not human; the intake agent is not even allowlisted
+  await assert.rejects(run({ kind: "system", id: "platform" }), refused("DU_DECLARATION_NOT_SELF_ATTESTED"));
+  await assert.rejects(run({ kind: "human", id: "ops-1", role: "ops_analyst" }), refused("ROLE_DENIED")); await assert.rejects(run({ kind: "human", id: "u-officer-1", role: "officer" }), refused("ROLE_DENIED"));
+  await noRow("a refused command wrote nothing"); assert.equal((await events(appId, "application.declarations.answered")).length, 0); assert.equal((await events(appId, "du.graph.declaration.asserted")).length, 0);
+  // the borrower's own tap on the last card: the command once, as the session's human actor
+  const last = await resolve(s.token, lastCard.card_instance_id, { option_id: "no", evidence: { option_id: "no", tapped_at: clock.now() } }); assert.equal(last.status, 201, JSON.stringify(last.body)); assert.equal(last.body["command"], "application.answerDeclarations"); assert.ok((last.body["events"] as string[]).includes("application.declarations.answered"));
+  assert.equal((last.body["card"] as Record<string, unknown>)["evidence"] && ((last.body["card"] as Record<string, unknown>)["evidence"] as Record<string, unknown>)["list_version_hash"], DECLARATIONS_LIST_HASH);
+  const executed = (await events(appId, "command.executed")).filter((e) => e.payload["command"] === "application.answerDeclarations"); assert.equal(executed.length, 1, "application.answerDeclarations ran once"); assert.equal((executed[0]!.payload as Record<string, unknown>)["command"], "application.answerDeclarations");
+  assert.equal((await events(appId, "application.declarations.answered")).length, 1); assert.equal((await events(appId, "du.graph.declaration.asserted")).length, 1);
+  const du = (await db.query<Record<string, unknown>>(`SELECT * FROM du_declarations WHERE application_borrower_id = $1`, [abId]))[0]!; assert.ok(du, "one du_declarations row for Sam");
+  assert.deepEqual(du["asserted_by_actor"], own);
+  for (const k of DU_DECLARATION_ANSWERS) assert.equal(du[k], answers[k], k);
+  assert.equal(du["bankruptcy"], "Yes"); assert.equal(du["intent_to_occupy"], "Yes"); assert.equal(du["homeowner_past_three_years"], "Yes"); assert.equal(du["property_usage"], "SecondHome"); assert.equal(du["prior_property_title"], "JointWithSpouse"); assert.equal(du["party_to_lawsuit"], "Yes"); assert.equal(du["undisclosed_borrowed_funds"], "Yes"); assert.equal(String(du["undisclosed_borrowed_funds_cents"]), "1500000");
+  assert.equal(du["bankruptcy_explanation"], explanation, "verbatim — the newline, the tab, the quotes and the trailing space");
+  assert.deepEqual((await db.query<{ chapter: string }>(`SELECT chapter FROM du_bankruptcy_filings WHERE declaration_id = $1 ORDER BY chapter`, [du["id"]])).map((x) => x.chapter), ["ChapterSeven", "ChapterThirteen"], "one du_bankruptcy_filings row per chapter chosen"); assert.equal(du["property_proposed_clean_energy_lien"], "Yes");
+  const row = await entity("declarations", `${appId}:B1`); assert.ok(row); assert.deepEqual(row!["declarations"], DECLARATIONS.map((_x, k) => YES.has(k)), "the thirteen values follow the answers"); assert.equal(row!["none_apply"], false); assert.equal(row!["asserted_in_du_graph"], true);
+  const demo = (await cardsOf(appId, s.party_id)).find((c) => c.copy_key === "demographics.title"); assert.ok(demo, "R6 follows the one command");
 });

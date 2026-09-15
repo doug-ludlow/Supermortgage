@@ -190,6 +190,8 @@ export interface CardCaseRow { readonly case: CardCase; readonly why: string; re
 /** The session hook, the borrower's message, the 32.16 tool commands and the sweep — the triggers that are not owning-process events. */
 export const SESSION_TRIGGER = "session.opened"; export const MESSAGE_TRIGGER = "borrower.message"; export const TICK_TRIGGER = "tick";
 export const COMMAND_TRIGGERS: readonly string[] = ["card.request", "human.request"];
+/** 32.3 R5 / SQ-05: the borrower's own tap on a card that issues no command (a `no_command_options` choice, an explanation, an amount) — the next card of a sequence is raised by it, never by the assistant (`BorrowerFlows.cardResolved`). */
+export const CARD_TRIGGER = "card.resolved";
 /** The 32.16 §2.3 forbidden trigger: no owning event, no hook, no command — the assistant's own decision. */
 export const CHAT_TRIGGER = "chat";
 const ASK = [MESSAGE_TRIGGER, ...COMMAND_TRIGGERS];   // the borrower asked (a payment, a change, a person): §4 "card.request for payments and changes"
@@ -201,17 +203,21 @@ export const CARD_CASES: Readonly<Record<string, CardCaseRow>> = {
     "credit.report.received", "credit.udm.alert.received", "document.received", "document.classified", "document.extracted", "application.joint_intent.affirmed",
     "application.party.invited", "lead.*", "prequal.*",   // 32.14 S4: the identity the consumer enters, on the lead's own events
     "contact.logged", "qrpc.*", "lossmit.request.*", "lossmit.application.received", MESSAGE_TRIGGER, "card.request",   // 32.10 T2: the QRPC read-back after "I lost my job"
+    CARD_TRIGGER,   // 32.3 SQ-05: the borrowed-funds amount, asked by the borrower's own Yes on the card before it
+    "du.document.emitted", "du.preflight.refused",   // 32.18 rule 7: the address confirm card and the home card re-sent for a gap 23.6's assembly (23.7's preflight) names — the owning process's event, never the assistant's decision
   ] },
   ChoiceCard: { case: "evidence", why: "declarations, the goal and the product are the borrower's own answers; proceed, lock, counteroffer, MI, escrow shortage are the borrower's choices, not the assistant's", triggers: [
     "application.received", "application.field.captured", "application.demographics.collected", "application.joint_intent.affirmed", "document.received", "document.classified", "document.extracted",
     "lead.*", "prequal.*", "terms.presented", "mlo.review.completed", SESSION_TRIGGER,   // the only kind a session hook sends: 32.3 E3's goal, 32.14 S4's how-to-prove-identity
+    CARD_TRIGGER,   // 32.3 R5 / SQ-05: the next declaration question is raised by the borrower's own tap on the one before it
+    "du.document.emitted", "du.preflight.refused",   // 32.18 rule 7: the declarations sequence's first card re-sent for a DECLARATION gap 23.6's assembly (23.7's preflight) names
     "disclosure.le.received", "disclosure.le.deemed_received", "lock.expiry.warned", "lock.expired", "decision.issued", "valuation.value_used.set", "clear_to_close.issued", "disclosure.cd.waiting_period.computed",
     "rescission.*", "consent.granted", "autodraft.status.changed", "escrow.statement.sent", "escrow.analysis.*", "case.opened", "suspense.item.created",
     "mi.cancel.*", "mi.value_check_needed", "notice.sent", "lossmit.denial.provided", "lossmit.offer.sent", "workout_plan.*", "payoff.*", ...ASK,
   ] },
   ProfileCard: { case: "evidence", why: "Reg B fields take no defaults", triggers: ["application.six_item.captured", "application.field.captured", "application.joint_intent.affirmed", "application.received", "verification.received"] },
   DemographicsCard: { case: "evidence", why: "demographics are the borrower's own answers, never inferred", triggers: ["application.declarations.answered", "application.joint_intent.affirmed", "application.received"] },
-  ExplanationCard: { case: "evidence", why: "an explanation is the borrower's own statement (22.1 / 22.4)", triggers: ["document_request.opened", "asset.deposit.flagged_large", "condition.opened", ...ASK] },
+  ExplanationCard: { case: "evidence", why: "an explanation is the borrower's own statement (22.1 / 22.4; 32.3 SQ-05's bankruptcy explanation)", triggers: ["document_request.opened", "asset.deposit.flagged_large", "condition.opened", ...ASK, CARD_TRIGGER] },
   // ---- Consent: E-SIGN's demonstrable-consent test; credit authorization with a typed name; TCPA's exact text
   ConsentCard: { case: "consent", why: "E-SIGN's demonstrable-consent test; credit authorization with a typed name; TCPA's exact text", triggers: [
     "application.received", "lead.*", "prequal.*", "disclosure.le.mailed", "disclosure.le.delivered", "application.party.invited", "consent.esign.*", "consent.granted", "consent.revoked",
@@ -248,7 +254,7 @@ export const CARD_CASES: Readonly<Record<string, CardCaseRow>> = {
 };
 
 /** The trigger names that are not owning-process events (the hooks, the borrower's asks, the sweep) — `event:*` in a row never matches these. */
-const NON_EVENT_TRIGGERS: ReadonlySet<string> = new Set([SESSION_TRIGGER, MESSAGE_TRIGGER, TICK_TRIGGER, CHAT_TRIGGER, ...COMMAND_TRIGGERS]);
+const NON_EVENT_TRIGGERS: ReadonlySet<string> = new Set([SESSION_TRIGGER, MESSAGE_TRIGGER, TICK_TRIGGER, CHAT_TRIGGER, CARD_TRIGGER, ...COMMAND_TRIGGERS]);
 /** The thread's own events (a card, a message, a session) and the bus's receipts (`command.executed` / `command.refused`) are never the owning-process fact that raises a card. */
 const UI_EVENT = /^(card|message|ui|session|thread|deep_link|command)\./;
 function triggerMatches(pattern: string, trigger: string): boolean {

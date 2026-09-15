@@ -27,6 +27,11 @@ import { createBorrowerRouter, type BorrowerRouter } from "../../runtime/borrowe
 import { Journey, MST } from "../../runtime/borrower/fixtures/journey.ts";
 import { paystubFloor, requestSchedule } from "../verification/ops-22-1.ts";
 import { plainDate as D, addDays } from "../../kernel/calendar/date.ts";
+import { FAKE_ASSET_ACCOUNTS } from "../../runtime/borrower/vendors/fake-plaid.ts";
+import { deterministicUuid } from "../underwriting/du/writer.ts";
+import { readDuGraph } from "../underwriting/du/graph.ts";
+import { loadGraph } from "../underwriting/du/emit.ts";
+import { DECLARATIONS, firstDeclarationsCard } from "../../runtime/borrower/flows/3-entry.ts";
 
 const DB_URL = process.env["TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_test";
 const up = await reachable(DB_URL);
@@ -332,7 +337,7 @@ test("32.5-T7: Given a co-borrower invite, then a `credit.authorize` for the inv
   assert.notEqual(later.body["code"], "SM_O21_JOINT_INTENT_GATE", JSON.stringify(later.body)); assert.notEqual(later.body["gate"], "SM_O21_JOINT_INTENT_GATE");
   // then R2–R6 for themselves
   await settle(); const after = await cardsOf(j.appId, partyC);
-  for (const [kind, key] of [["ConnectCard", "income.connect.purpose"], ["ConfirmCard", "credit.liabilities.confirm"], ["ProfileCard", "profile.title"], ["ChoiceCard", "declarations.title"], ["DemographicsCard", "demographics.title"]] as const) assert.ok(after.some((c) => c.kind === kind && c.copy_key === key && c.status === "pending"), `${kind} ${key} for the invitee`);
+  for (const [kind, key] of [["ConnectCard", "income.connect.purpose"], ["ConfirmCard", "credit.liabilities.confirm"], ["ProfileCard", "profile.title"], ["ChoiceCard", "declarations.occupancy"], ["DemographicsCard", "demographics.title"]] as const) assert.ok(after.some((c) => c.kind === kind && c.copy_key === key && c.status === "pending"), `${kind} ${key} for the invitee`);   // R5 opens with 5a.A (32.3 R5); the list follows the invitee's own tap (T13)
   assert.ok(Date.parse(ji.created_at) <= Math.min(...after.filter((c) => ["ProfileCard", "DemographicsCard"].includes(c.kind)).map((c) => Date.parse(c.created_at))), "joint intent came first");
 });
 
@@ -409,4 +414,124 @@ test("32.5-T11: Given zero `owner=you` items, then the Record shows the nothing-
   assert.equal((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM card_instances WHERE party_id = $1 AND kind = 'ChecklistCard' AND status = 'pending'`, [partyA]))[0]!.n, "0", "no checklist is pinned when there is nothing to list");
   const t = await thread(A); assert.notEqual(t.pinned?.["kind"], "ChecklistCard");
   // the strip renders `needed_from_you.length` and the section renders `needs.none` for an empty list — asserted on the real components in apps/borrower/tests/cards/flow-5-verification.test.tsx
+});
+
+// Phase 7 amendments (the Homestead DU handoff): scaffolded as todo; implement by replacing each line with the real test (never edit the name)
+test("32.5-T12: Given two borrowers on one application each connect the FAKE Plaid report that names the same account (equal institution, subtype and last four), then after the second pull exactly one live `du_assets` row exists for the account with two `du_asset_parties` arcs (one per borrower) and the other row is retired with `retired_by_verification_id` = the second pull's verification, the Record's assets show the account once, and the graph 23.6 reads carries one `ASSET` container for it with two owner arcs — 22.4's reconciliation, not the emitter, does the merging.", { skip }, async () => {
+  const { j, A, partyA } = await openApp(); const C = `casey-${j.R}@example.test`;
+  const ASSETS_CARD = { kind: "ConnectCard", copy_key: "assets.connect.purpose", props: { vendor: "plaid_assets", purpose_text: "", what_we_get: ["balances", "twelve months of deposits"], fallback: { label: "Send two months of statements per account instead", document_class: "bank_statement" }, state: "not_started", pre_intent_optional: true, vendor_fake: "FAKE" } };
+  const plaid = async (token: string, card: CardRow): Promise<Rec> => { const s = await api("POST", "/v1/borrower/connect/plaid_assets/session", { card_instance_id: card.card_instance_id, fake_complete: true }, token); assert.equal(s.status, 200, JSON.stringify(s.body)); assert.equal(s.body["outcome"], "connected"); assert.equal(s.body["delivery"], "FAKE"); await settle(); return s.body; };
+  const assetsCardOf = async (partyId: string): Promise<CardRow | undefined> => (await cardsOf(j.appId, partyId)).filter((c) => c.kind === "ConnectCard" && c.props["vendor"] === "plaid_assets" && c.status === "pending").at(-1);
+  // Alex: the interview's borrower — the assets ConnectCard 3-entry sends with the connectors (this journey drives 21.1 directly, so the intake agent puts the same card in front of Alex here)
+  clock.set(MST("2026-10-05", "12:30")); const tokA = (await signIn(A)).token;
+  if (!(await assetsCardOf(partyA))) await j.tool({ app: j.appId }, "32.1", "send_card", { party_id: partyA, ...ASSETS_CARD, subject: { application_id: j.appId } }, INTAKE);
+  // Casey: invited by Alex, affirms joint intent on their own card (T7's path) — then their own R2–R6 cards AND their own assets ConnectCard (32.5 §7 as amended: `cob.assets`)
+  const invite = await j.tool({ app: j.appId }, "32.1", "send_card", { party_id: partyA, kind: "InviteCard", copy_key: "coborrower.invite", command_ref: "application.inviteParty", subject: { application_id: j.appId }, props: { party_role: "co_borrower", title: "", contact_fields: ["first_name", "last_name", "email"], copy_tokens: { first_name: "Casey" } } }, INTAKE);
+  const inv = await api("POST", `/v1/borrower/cards/${invite.output["card_instance_id"]}/resolve`, { option_id: "invite", evidence: { party_role: "co_borrower", contact: { first_name: "Casey", last_name: "Cosigner", email: C }, invited_at: clock.now() }, args: { role: "co_borrower", contact: { first_name: "Casey", last_name: "Cosigner", email: C }, legal_name: "Casey Cosigner" } }, tokA);
+  assert.equal(inv.status, 201, JSON.stringify(inv.body)); const partyC = String((inv.body["result"] as Rec)["party_id"]); await settle();
+  clock.set(MST("2026-10-05", "12:34")); const sC = await signIn(C); assert.equal(sC.party_id, partyC); const tokC = sC.token;
+  const ji = (await cardsOf(j.appId, partyC)).find((c) => c.kind === "ConsentCard" && c.props["consent_kind"] === "joint_intent")!; assert.ok(ji, "ConsentCard{joint_intent}");
+  const aff = await api("POST", `/v1/borrower/cards/${ji.card_instance_id}/resolve`, { option_id: "affirm", evidence: { consent_kind: "joint_intent", method: "checkbox_with_text", typed_name: "Casey Cosigner", checked: true, affirmed_at: clock.now() } }, tokC); assert.equal(aff.status, 201, JSON.stringify(aff.body)); await settle();
+  const cardC = (await assetsCardOf(partyC))!; assert.ok(cardC, "the invitee's own ConnectCard{plaid_assets}"); assert.equal(cardC.copy_key, "assets.connect.purpose"); assert.equal(cardC.props["vendor_fake"], "FAKE"); assert.equal(cardC.command_ref, null, "no command of its own: the vendor's settlement resolves it");
+  assert.equal(cardC.props["flow_key"], `cob.assets:${partyC}`, "flow_key cob.assets:<party_id>");
+  const abA = (await db.query<{ id: string }>(`SELECT id::text AS id FROM application_borrowers WHERE application_id = $1 AND party_id = $2`, [j.appId, partyA]))[0]!.id;
+  const abC = (await db.query<{ id: string }>(`SELECT id::text AS id FROM application_borrowers WHERE application_id = $1 AND party_id = $2`, [j.appId, partyC]))[0]!.id;
+  // the first pull (Alex): one du_assets row per FAKE account, Alex the one owner — nothing to reconcile yet
+  const cardA = (await assetsCardOf(partyA))!; const first = await plaid(tokA, cardA);
+  type AssetRow = { id: string; institution_name: string; asset_type: string; account_last4: string; retired_at: string | null; retired_by_verification_id: string | null; owners: string[] };
+  const rowsOf = () => db.query<AssetRow>(`SELECT a.id::text AS id, a.institution_name, a.asset_type, a.account_last4, a.retired_at::text AS retired_at, a.retired_by_verification_id::text AS retired_by_verification_id, coalesce(array_agg(p.application_borrower_id::text ORDER BY p.created_at) FILTER (WHERE p.id IS NOT NULL), '{}') AS owners FROM du_assets a LEFT JOIN du_asset_parties p ON p.asset_id = a.id WHERE a.application_id = $1 GROUP BY a.id ORDER BY a.created_at, a.id`, [j.appId]);
+  const afterFirst = await rowsOf(); assert.equal(afterFirst.length, FAKE_ASSET_ACCOUNTS.length); for (const r of afterFirst) { assert.deepEqual(r.owners, [abA]); assert.equal(r.retired_at, null); }
+  const firstIds = new Map(afterFirst.map((r) => [r.account_last4, r.id]));
+  // the second pull (Casey): the same FAKE accounts under Casey's own prefix — two rows per account for a moment, then 22.4's reconciliation in the same transaction: Alex's row survives with Casey's arc, Casey's row is retired by Casey's pull
+  clock.set(MST("2026-10-05", "12:40")); const second = await plaid(tokC, cardC);
+  const secondVerificationId = String(second["verification_id"]); assert.ok(secondVerificationId.startsWith(`${j.appId}:${abC}:assets:`), `the pull is the invitee's own: ${secondVerificationId}`); assert.notEqual(secondVerificationId, first["verification_id"]);
+  const secondRow = deterministicUuid("verifications", secondVerificationId);
+  assert.equal((await db.query<{ borrower_id: string }>(`SELECT borrower_id::text AS borrower_id FROM verifications WHERE verification_id = $1`, [secondRow]))[0]?.borrower_id, abC, "the verifications row names the invitee");
+  const all = await rowsOf(); assert.equal(all.length, 2 * FAKE_ASSET_ACCOUNTS.length, "the retired rows stay (never deleted)");
+  for (const acct of FAKE_ASSET_ACCOUNTS) {
+    const twins = all.filter((r) => r.account_last4 === acct.last4 && r.institution_name === acct.institution); assert.equal(twins.length, 2, acct.last4);
+    const live = twins.filter((r) => r.retired_at === null); assert.equal(live.length, 1, `exactly one live du_assets row for ····${acct.last4}`);
+    assert.equal(live[0]!.id, firstIds.get(acct.last4), "the earlier-created row survives"); assert.deepEqual([...live[0]!.owners].sort(), [abA, abC].sort(), "two du_asset_parties arcs, one per borrower");
+    const retired = twins.find((r) => r.retired_at !== null)!; assert.deepEqual(retired.owners, [abC]); assert.equal(retired.retired_by_verification_id, secondRow, "retired by the second pull's verification");
+  }
+  assert.equal((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM du_assets WHERE application_id = $1 AND retired_at IS NULL AND last_seen_verification_id = $2`, [j.appId, secondRow]))[0]!.n, String(FAKE_ASSET_ACCOUNTS.length), "the survivors were last seen by the second pull");
+  // the merge went through 23.5's own arc writer: du.graph.owner.linked per account, citing the receive — and the arc was added in the receive's transaction (23.5 rule 1 judged the set at COMMIT)
+  const linked = (await events(j.appId, "du.graph.owner.linked")).filter((e) => e.payload["application_borrower_id"] === abC && e.payload["kind"] === "asset");
+  assert.deepEqual(linked.map((e) => e.payload["row_id"]).sort(), [...firstIds.values()].sort()); for (const e of linked) assert.equal(e.payload["cites_decision_id"], `verification.received:${secondVerificationId}`);
+  // the Record's assets (its `accounts` list — never an `assets` key, 32.13 T6): each account once, for either borrower, marked joint — the projection reads live rows only
+  for (const [email, ab] of [[A, abA], [C, abC]] as const) {
+    const rec = await record(email, j.appId); const mine = rec["accounts"] as Rec[]; assert.equal(rec["assets"], undefined, "no `assets` key on the Record");
+    assert.deepEqual(mine.map((x) => [x["account_last4"], x["kind"], x["joint"], x["verified"]]).sort(), FAKE_ASSET_ACCOUNTS.map((a) => [a.last4, a.account_type, true, true]).sort(), `${ab}: ${JSON.stringify(mine)}`);
+    assert.deepEqual(mine.map((x) => x["asset_id"]).sort(), [...firstIds.values()].sort()); for (const x of mine) assert.equal(x["balance_cents"], undefined, "no balance on the Record (32.5 §4)");
+  }
+  assert.equal((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM application_assets WHERE application_id = $1`, [j.appId]))[0]!.n, String(FAKE_ASSET_ACCOUNTS.length), "0134's projection shows each account once");
+  // the graph as 23.5 reads it and as 23.6 loads it: one ASSET container per account with two ASSET_IsAssociatedWith_ROLE arcs — the emitter merged nothing
+  const graph = await readDuGraph(db, j.appId); assert.equal(graph.assets.length, FAKE_ASSET_ACCOUNTS.length); for (const a of graph.assets) assert.deepEqual(a.owners.map((o) => o.application_borrower_id).sort(), [abA, abC].sort());
+  const loaded = await loadGraph(db, j.appId); const containers = loaded.containers.filter((c) => c.kind === "ASSET"); assert.equal(containers.length, FAKE_ASSET_ACCOUNTS.length);
+  for (const c of containers) assert.deepEqual(loaded.arcs.filter((a) => a.arcrole === "ASSET_IsAssociatedWith_ROLE" && a.from === c.id).map((a) => a.to).sort(), [`role:${abA}`, `role:${abC}`].sort(), `two owner arcs on ${c.id}`);
+  assert.equal(loaded.arcs.filter((a) => a.arcrole === "ASSET_IsAssociatedWith_ROLE").length, 2 * FAKE_ASSET_ACCOUNTS.length);
+  // the merge holds across a re-pull (23.5 rule 5 is an invariant, not a one-shot): Casey pulls a third time — writeDuAsset matches Casey's retired row under Casey's own key and revives it
+  // (writer.ts revision: "an account reported again is live again"), and 22.4's reconciliation retires it again in the same transaction in favour of the survivor, which already carries Casey's arc —
+  // never "one borrower holds two live rows", never a second live twin for 23.7's DU_PREFLIGHT_DUPLICATE_ASSET
+  clock.set(MST("2026-10-05", "12:50")); await j.tool({ app: j.appId }, "32.1", "send_card", { party_id: partyC, ...ASSETS_CARD, props: { ...ASSETS_CARD.props, flow_key: `cob.assets:${partyC}:again` }, subject: { application_id: j.appId } }, INTAKE);
+  const cardC2 = (await assetsCardOf(partyC))!; assert.ok(cardC2, "a fresh assets card for Casey's re-pull"); const third = await plaid(tokC, cardC2);
+  const thirdVerificationId = String(third["verification_id"]); assert.notEqual(thirdVerificationId, secondVerificationId); const thirdRow = deterministicUuid("verifications", thirdVerificationId);
+  const afterThird = await rowsOf(); assert.equal(afterThird.length, 2 * FAKE_ASSET_ACCOUNTS.length, "no new row: the re-pull matched Casey's own row");
+  for (const acct of FAKE_ASSET_ACCOUNTS) {
+    const twins = afterThird.filter((r) => r.account_last4 === acct.last4 && r.institution_name === acct.institution); const live = twins.filter((r) => r.retired_at === null);
+    assert.equal(live.length, 1, `exactly one live du_assets row for ····${acct.last4} after the third pull`); assert.equal(live[0]!.id, firstIds.get(acct.last4), "the survivor is still the earliest row"); assert.deepEqual([...live[0]!.owners].sort(), [abA, abC].sort());
+    const retired = twins.find((r) => r.retired_at !== null)!; assert.deepEqual(retired.owners, [abC]); assert.equal(retired.retired_by_verification_id, thirdRow, "retired again, by the third pull's verification");
+  }
+  assert.equal((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM du_assets WHERE application_id = $1 AND retired_at IS NULL AND last_seen_verification_id = $2`, [j.appId, thirdRow]))[0]!.n, String(FAKE_ASSET_ACCOUNTS.length), "the survivors were last seen by the third pull");
+  assert.equal((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM application_assets WHERE application_id = $1`, [j.appId]))[0]!.n, String(FAKE_ASSET_ACCOUNTS.length), "0134's projection still shows each account once");
+  assert.equal((await readDuGraph(db, j.appId)).assets.length, FAKE_ASSET_ACCOUNTS.length, "one ASSET per account for 23.6");
+});
+test("32.5-T13: Given an invited co-borrower who affirmed joint intent, then their own declarations card runs the fourteen-question sequence of 32.3 R5 (`cob.declarations`), a tap on it from the inviter's session is refused (`PARTY_SCOPE`), and the invitee's last tap writes their `du_declarations` row with `asserted_by_actor` = the invitee's own session while the inviter's row is untouched.", { skip }, async () => {
+  const j = second.j!; const { A, C, partyA, partyC } = second; assert.ok(j && partyC, "T7's invitee (Casey) on Alex's application");
+  clock.set(MST("2026-10-05", "13:30"));
+  // the invitee's own R5 opens with 5a.A under the cob.declarations prefix (32.3 R5's sequence — the list, SQ-05 on "Something applies"); no command on that card
+  const occ = (await cardsOf(j.appId, partyC)).find((c) => c.copy_key === "declarations.occupancy" && c.status === "pending")!; assert.ok(occ, "the invitee's own 5a.A card"); assert.equal(occ.kind, "ChoiceCard"); assert.equal(occ.props["flow_key"], `cob.declarations.occupancy:${partyC}`); assert.equal(occ.command_ref, null);
+  assert.deepEqual((occ.props["options"] as { id: string }[]).map((o) => o.id), ["yes_no_prior", "yes_prior", "no"]);
+  const abC = (await db.query<{ id: string }>(`SELECT id FROM application_borrowers WHERE application_id = $1 AND party_id = $2`, [j.appId, partyC]))[0]!.id;
+  const abA = (await db.query<{ id: string }>(`SELECT id FROM application_borrowers WHERE application_id = $1 AND party_id = $2`, [j.appId, partyA]))[0]!.id;
+  const rowsA = () => db.query<Record<string, unknown>>(`SELECT id, asserted_by_actor, asserted_at::text AS asserted_at, intent_to_occupy, property_proposed_clean_energy_lien FROM du_declarations WHERE application_borrower_id = $1`, [abA]);
+  // the inviter's own row first (their own sequence, their own session — 5a.A, 5a.E, None), so "untouched" below compares against a row that exists
+  const tokA0 = (await signIn(A)).token;
+  const abAIntake = ((await entity("applications", j.appId))!["borrowers"] as Rec[]).find((b) => b["legal_name"] !== "Casey Cosigner" && b["legal_name"] !== "Sam Cosigner")?.["id"] as string | undefined;
+  if (!(await cardsOf(j.appId, partyA)).some((c) => c.copy_key === "declarations.occupancy" && c.status === "pending")) await j.tool({ app: j.appId }, "32.1", "send_card", { party_id: partyA, ...firstDeclarationsCard({ prefix: "declarations", key: abA, borrower_id: abAIntake ?? "B1" }), subject: { application_id: j.appId } }, INTAKE);
+  const tapA = async (key: string, option: string): Promise<Reply> => { const card = (await cardsOf(j.appId, partyA)).filter((x) => x.copy_key === key && x.status === "pending").at(-1)!; assert.ok(card, `pending ${key} for the inviter`); assert.equal(String(card.props["flow_key"]).startsWith("declarations."), true, "the inviter's own prefix"); const r = await api("POST", `/v1/borrower/cards/${card.card_instance_id}/resolve`, { option_id: option, evidence: { option_id: option, tapped_at: clock.now() } }, tokA0); assert.equal(r.status, 201, `${key}: ${JSON.stringify(r.body)}`); await settle(); return r; };
+  await tapA("declarations.occupancy", "yes_no_prior"); await tapA("declarations.clean_energy_lien", "no"); const aNone = await tapA("declarations.title", "none"); assert.equal(aNone.body["command"], "application.answerDeclarations");
+  const inviterBefore = await rowsA(); assert.equal(inviterBefore.length, 1, "the inviter's own du_declarations row, before the invitee taps anything"); assert.deepEqual(inviterBefore[0]!["asserted_by_actor"], { kind: "human", id: partyA, role: "borrower" });
+  // the inviter's session tapping the invitee's card: refused before anything runs (PARTY_SCOPE); the card stays pending, no row exists
+  const tokA = (await signIn(A)).token;
+  const wrong = await api("POST", `/v1/borrower/cards/${occ.card_instance_id}/resolve`, { option_id: "yes_no_prior", evidence: { option_id: "yes_no_prior", tapped_at: clock.now() } }, tokA);
+  assert.equal(wrong.status, 403, JSON.stringify(wrong.body)); assert.equal(wrong.body["code"], "PARTY_SCOPE");
+  await settle(); assert.equal(((await cardsOf(j.appId, partyC)).find((c) => c.card_instance_id === occ.card_instance_id))!.status, "pending");
+  assert.equal((await db.query(`SELECT 1 FROM du_declarations WHERE application_borrower_id = $1`, [abC])).length, 0, "nothing asserted for the invitee by the inviter");
+  // the invitee's own session: 5a.A (no command), then the list — "None" runs application.answerDeclarations once as the invitee's own actor
+  clock.set(MST("2026-10-05", "13:32")); const tokC = (await signIn(C)).token;
+  const tap = async (key: string, option: string): Promise<{ card: CardRow; r: Reply }> => {
+    const card = (await cardsOf(j.appId, partyC)).filter((x) => x.copy_key === key && x.status === "pending").at(-1)!; assert.ok(card, `pending ${key} for the invitee`);
+    const r = await api("POST", `/v1/borrower/cards/${card.card_instance_id}/resolve`, { option_id: option, evidence: { option_id: option, tapped_at: clock.now() } }, tokC); assert.equal(r.status, 201, `${key}: ${JSON.stringify(r.body)}`); await settle(); return { card, r };
+  };
+  const o = await tap("declarations.occupancy", "yes_no_prior"); assert.equal(o.r.body["command"], null); assert.deepEqual(o.r.body["events"], []);
+  const e = await tap("declarations.clean_energy_lien", "no"); assert.equal(e.r.body["command"], null); assert.equal(e.card.props["flow_key"], `cob.declarations.clean_energy_lien:${partyC}`);
+  // "Something here applies" → SQ-05 under the cob prefix: the thirteen listed items one ChoiceCard at a time, every card before the last without a command, the last tap the one command
+  const l = await tap("declarations.title", "some"); assert.deepEqual(l.r.body["events"], [], "no command on Something applies (the response echoes the card's command_ref; nothing ran)"); assert.equal(l.card.props["flow_key"], `cob.declarations.list:${partyC}`); assert.equal((l.card.props["list"] as string[]).length, 13); assert.deepEqual(l.card.props["side_quest_on"], { some: "SQ-05" });
+  const none = (l.card.props["command_args_by_option"] as Record<string, Record<string, unknown>>)["none"]!; assert.equal(Object.keys(none["answers"] as Record<string, string>).length, 14, "the fourteen typed answers ride the None tap too");
+  let last: { card: CardRow; r: Reply } | null = null;
+  for (let n = 0; n < DECLARATIONS.length; n++) {
+    const q = await tap("declarations.item", n === 10 ? "yes" : "no");   // a co-signed debt: Yes; the rest No
+    assert.equal(q.card.props["flow_key"], `cob.declarations.q:${n}:${partyC}`, `question ${n + 1} under the invitee's own prefix`); assert.equal(q.card.props["item_index"], n);
+    if (n < DECLARATIONS.length - 1) { assert.equal(q.card.command_ref, null); assert.deepEqual(q.r.body["events"], [], `question ${n + 1} runs nothing`); assert.equal((await db.query(`SELECT 1 FROM du_declarations WHERE application_borrower_id = $1`, [abC])).length, 0, "nothing asserted before the last tap"); }
+    last = q;
+  }
+  assert.equal(last!.card.command_ref, "application.answerDeclarations"); assert.equal(last!.r.body["command"], "application.answerDeclarations"); assert.ok((last!.r.body["events"] as string[]).includes("application.declarations.answered"));
+  const du = (await db.query<Record<string, unknown>>(`SELECT * FROM du_declarations WHERE application_borrower_id = $1`, [abC]))[0]!; assert.ok(du, "the invitee's own du_declarations row");
+  assert.deepEqual(du["asserted_by_actor"], { kind: "human", id: partyC, role: "borrower" }, "asserted by the invitee's own session, never the inviter's or the app's");
+  assert.equal(du["intent_to_occupy"], "Yes"); assert.equal(du["homeowner_past_three_years"], "No"); assert.equal(du["property_proposed_clean_energy_lien"], "No"); assert.equal(du["bankruptcy"], "No"); assert.equal(du["outstanding_judgments"], "No"); assert.equal(du["undisclosed_comaker_of_note"], "Yes", "the one Yes, as tapped");
+  assert.deepEqual(await rowsA(), inviterBefore, "the inviter's row is untouched");
+  assert.equal((await events(j.appId, "du.graph.declaration.asserted")).filter((e) => e.payload["party_id"] === partyC).length, 1);
+  const cobBorrowerId = (last!.card.props["command_args_by_option"] as Record<string, Record<string, unknown>>)["no"]!["borrower_id"];
+  assert.equal((await events(j.appId, "application.declarations.answered")).filter((e) => e.payload["borrower_id"] === cobBorrowerId).length, 1, "one command for the invitee's borrower");
 });

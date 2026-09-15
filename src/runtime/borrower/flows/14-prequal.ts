@@ -43,7 +43,7 @@ import { civilDate } from "../../../domain/leads-pricing/ops-20-3.ts";
 import { FakeSoftPullBureau, type SoftPullBureauPort } from "../../../infra/integrations/credit.ts";
 import { mloOfRecord } from "./11-rate-watch.ts";
 import type { BorrowerFlow, FlowDeps, SessionOpened } from "./index.ts";
-import { CONSENTS_STATEMENT, CONSENTS_VERSION } from "./3-entry.ts";   // 32.17 rule 20: the consents statement under Show me my rate
+import { CONSENTS_STATEMENT, CONSENTS_VERSION, RESIDENCE_FIELDS } from "./3-entry.ts";   // 32.17 rule 20: the consents statement under Show me my rate; 32.3 E5: the residence asks on the typed identity card
 
 export const FLOW_ID = "32.14";
 const INTAKE: Actor = { kind: "agent", id: "intake" };
@@ -140,11 +140,16 @@ async function identityHowCard(deps: FlowDeps, ctx: Ctx, party: Party): Promise<
     props: { title: "", options: [{ id: "scan", label: "Scan my ID (30 seconds)", is_primary: true, action: { kind: "identity_session", vendor: "stripe_identity", vendor_fake: "FAKE" } }, { id: "type", label: "Type it in" }], command: "application.confirmField",
       command_args: { path: "identity_entry", commits_to: "applications", lead_id: ctx.leadId }, command_args_by_option: { scan: {}, type: { fields: [{ path: IDENTITY_ENTRY_FIELD, value: "typed", source: "borrower" }] } }, no_command_options: ["scan"], affirmatives: ["scan my id", "type it in"] } });
 }
-/** "Type it in": the same ConfirmCard 32.3 E5 sends from the vendor's extraction, with empty fields the consumer types (source=borrower); the SSN card follows from 3-entry on `current_address` (E5 unchanged). */
+/**
+ * "Type it in": the same ConfirmCard 32.3 E5 sends from the vendor's extraction, with empty fields the consumer types (source=borrower) — and, as on every
+ * file (32.3 E5 / 23.5 discrepancy 3), how they live there and the months at the address, so the tap writes the Current du_residences row through the
+ * identity command path (application_borrower_id names the row's edge); the SSN card follows from 3-entry on `current_address` (E5 unchanged).
+ */
 async function typedIdentityCard(deps: FlowDeps, ctx: Ctx, party: Party): Promise<void> {
+  const residence = RESIDENCE_FIELDS();
   await sendCard(deps, ctx, party, { kind: "ConfirmCard", copy_key: "identity.confirm.title", flow_key: `identity.confirm:${party.application_borrower_id}`, command_ref: "application.confirmField",
-    props: { title: "", fields: [{ path: "legal_name", label: "Legal name", value: "", source: "borrower" }, { path: "date_of_birth", label: "Date of birth", value: "", source: "borrower" }, { path: "current_address", label: "Current address", value: "", source: "borrower" }], required_paths: ["legal_name", "date_of_birth", "current_address"], commits_to: "application_borrowers", source: "borrower", entry: "typed",
-      command_args: { path: "identity", commits_to: "application_borrowers", lead_id: ctx.leadId } } });
+    props: { title: "", fields: [{ path: "legal_name", label: "Legal name", value: "", source: "borrower" }, { path: "date_of_birth", label: "Date of birth", value: "", source: "borrower" }, { path: "current_address", label: "Current address", value: "", source: "borrower" }, ...residence.fields], required_paths: ["legal_name", "date_of_birth", "current_address", ...residence.required_paths], money_paths: residence.money_paths, required_when: residence.required_when, helper_copy_key: "identity.residence.why", commits_to: "application_borrowers", source: "borrower", entry: "typed",
+      command_args: { path: "identity", commits_to: "application_borrowers", application_borrower_id: party.application_borrower_id, lead_id: ctx.leadId } } });
 }
 
 // ---------------------------------------------------------------- S4 step 2: the soft-pull authorization at L1 (DELTA-13)

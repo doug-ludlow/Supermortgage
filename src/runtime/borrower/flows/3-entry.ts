@@ -10,17 +10,20 @@
  *                                                     20.3 lead.start / start interaction / lead.disclosure.delivered / lead.authenticated
  *   application.received                              the three E6 consents written on the tap that raised it (32.17 rule 20; a joint borrower's credit card stays), the ID and Truv ConnectCards (E5 / R3),
  *                                                     preapproval P1 ConfirmCard for a TBD purchase
- *   identity.verified                                 ConfirmCard {legal name, DOB, current address} from the Stripe extraction (E5)
- *   application.field.captured{current_address}       ConfirmCard {SSN} (E5) + ConfirmCard {your home} (R1)
+ *   identity.verified                                 ConfirmCard {legal name, DOB, current address, how you live there, months there} from the Stripe extraction (E5; the tap writes the Current du_residences row)
+ *   application.field.captured{current_address}       ConfirmCard {SSN} (E5) + ConfirmCard {prior residence} under two years (SQ-06) + ConfirmCard {your home} (R1)
  *   verification.received{income}                     ConfirmCard {income} from the FAKE Truv report (R3)
  *   application.six_item.captured{income}             ProfileCard (R4)
  *   application.field.captured{citizenship_status}    ChoiceCard {declarations} (R5)
  *   application.declarations.answered                 DemographicsCard (R6)
+ *   card resolved (the borrower's own tap)            the next card of the R5 sequence — 5a.A's follow-ups, 5a.E, the thirteen-item list, SQ-05's questions one at a time — until the last tap runs application.answerDeclarations once (onCardResolved);
+ *                                                     a re-sent gap card resolved with its command re-runs the assembly (32.18 rule 7; reassembleAfterGapCard)
  *   application.demographics.collected                ConfirmCards {value (AVM), loan amount}, ChoiceCard {product} (R7) / P8 for a TBD purchase
  *   application.trid_received                         StatusCard `application.received` (next: REGZ_1026_19E1_LE_3BD.due_at)
  *   credit.report.received (22.2)                     ConfirmCards {liabilities, current loan}; 21.3 score notices ingested and delivered (R2)
  *   credit.report.ordered after a report              StatusCard `credit.rerun.neutral` (T9)
  *   du.findings.received / .interpreted               StatusCard `du.running` / ChecklistCard of the borrower-visible conditions (R8)
+ *   du.document.emitted{required_missing > 0}         32.18 rule 7: each gap the borrower supplies → its card re-sent (declarations / residence / home); a platform gap logged (gapCards, run by flows/18-du-gaps.ts after the other flows' cards of the settlement)
  *   terms.presentation.requested                      StatusCard `terms.pending_mlo` (next: SM_MLO_PREAPP_TERMS_REVIEW_1BH.due_at) + PersonCard (R9)
  *   mlo.review.completed{approved} / terms.presented  20.3 present → StatusCard `terms.presented` (personal terms: L2+)
  *   intent.to_proceed.rejected_premature              the `intent.too_early` line (R10)
@@ -35,6 +38,8 @@ import type { Actor, DomainEvent } from "../../../kernel/events/index.ts";
 import { EntityStore } from "../../../app/tools.ts";
 import { quoteValidAt, DISCLAIMER_TEMPLATE, DISCLAIMER_STATEMENT } from "../../../domain/leads-pricing/ops-20-4.ts";
 import { esignVerificationToken } from "../../../app/tools/section32-2.ts";
+import { RESIDENCY_BASIS_OPTIONS } from "../../../app/tools/residence.ts";
+import { CLEAN_ENERGY_LIEN_OPTIONS, ESTATE_OPTIONS } from "../../../app/tools/property.ts";
 import { deliverLoanEstimate, type LoanEstimateDeliveryInput } from "../../origination.ts";
 import type { Runtime } from "../../app.ts";
 import { timerLabel } from "../record.ts";
@@ -84,7 +89,7 @@ export function fakePropertyPull(address: string): { taxes_annual_cents: string;
 interface Party { readonly party_id: string; readonly application_borrower_id: string; readonly legal_name: string; readonly prefill: Record<string, unknown> }
 interface Ctx { readonly appId: string; readonly events: readonly DomainEvent[]; readonly store: EntityStore; readonly parties: readonly Party[]; readonly now: string; readonly app: AppRow | null; readonly property: PropertyRow | null; readonly lead: Record<string, unknown> | null }
 interface AppRow { readonly id: string; readonly channel: string; readonly transaction_type: string; readonly occupancy: string; readonly partner_party_id: string; readonly partner_name: string }
-interface PropertyRow { readonly address_line1: string | null; readonly city: string | null; readonly state: string | null; readonly postal_code: string | null; readonly property_type: string | null; readonly units: number | null; readonly estimated_value_cents: string | null }
+interface PropertyRow { readonly address_line1: string | null; readonly city: string | null; readonly state: string | null; readonly postal_code: string | null; readonly property_type: string | null; readonly units: number | null; readonly estimated_value_cents: string | null; readonly estate_type: string | null; readonly existing_clean_energy_lien: boolean | null }
 type P = Record<string, unknown>;
 const pl = (e: DomainEvent): P => e.payload as P;
 const has = (ctx: Ctx, type: string, where: (p: P) => boolean = () => true): boolean => ctx.events.some((e) => e.type === type && where(pl(e)));
@@ -97,7 +102,7 @@ async function context(deps: FlowDeps, appId: string): Promise<Ctx> {
     deps.runtime.entities.load({ applicationId: appId }),
     deps.runtime.db.query<Party & Record<string, unknown>>(`SELECT party_id, id AS application_borrower_id, legal_name, prefill FROM application_borrowers WHERE application_id = $1 AND party_id IS NOT NULL ORDER BY created_at, id`, [appId]),
     deps.runtime.db.query<AppRow & Record<string, unknown>>(`SELECT a.id, a.channel::text AS channel, a.transaction_type::text AS transaction_type, a.occupancy::text AS occupancy, a.partner_party_id, p.legal_name AS partner_name FROM applications a JOIN parties p ON p.id = a.partner_party_id WHERE a.id = $1`, [appId]),
-    deps.runtime.db.query<PropertyRow & Record<string, unknown>>(`SELECT address_line1, city, state, postal_code, property_type, units, estimated_value_cents::text AS estimated_value_cents FROM application_properties WHERE application_id = $1 ORDER BY is_subject DESC, created_at LIMIT 1`, [appId])]);
+    deps.runtime.db.query<PropertyRow & Record<string, unknown>>(`SELECT address_line1, city, state, postal_code, property_type, units, estimated_value_cents::text AS estimated_value_cents, estate_type, existing_clean_energy_lien FROM application_properties WHERE application_id = $1 ORDER BY is_subject DESC, created_at LIMIT 1`, [appId])]);
   const store = new EntityStore(); store.seed(records);
   const lead = (store.get("leads", appId)?.data as P | undefined) ?? (store.list("leads", (d) => d.application_id === appId || parties.some((p) => p.party_id === d.party_id)).map((r) => r.data as P)[0] ?? null);
   return { appId, events, store, parties, now: deps.runtime.clock.now(), app: apps[0] ?? null, property: props[0] ?? null, lead };
@@ -310,16 +315,136 @@ async function duMoment(deps: FlowDeps, ctx: Ctx): Promise<void> {
   } catch (err) { deps.logger?.warn("borrower.flow.32-18.du.refused", { application_id: ctx.appId, error: err instanceof Error ? err.message : String(err), code: (err as { code?: string }).code ?? null, ...(process.env["FLOW_DEBUG"] && err instanceof Error && err.stack ? { stack: err.stack.split("\n").slice(0, 6).join(" | ") } : {}) }); }
 }
 
-// ---------------------------------------------------------------- E5: identity → confirm, then the SSN, then R1
+// ---------------------------------------------------------------- 32.18 rule 7: a gap the borrower supplies becomes the card; a gap the platform holds is derived, never asked
+/**
+ * 23.6 assembles with `conditionality = report` and names every required data point it could not fill on
+ * `du.document.emitted{required_missing, gaps[{code, path}]}`; 23.7's preflight runs on the same emission (23.1 buildDuRequest) and a
+ * refusal is `du.preflight.refused{code, xpath, rule}` — one XPath, mapped the same way (23.7 Open question 1: a refusal that maps to a
+ * borrower ask goes to the rail directly, never through 23.2). Each gap's XPath maps to the card that collects it, (re)sent as the current ask under a flow_key suffixed by the
+ * emission, so one emission sends one card and a later emission with the same gap sends a fresh one:
+ *   BORROWER/DECLARATION/*                                        → the declarations sequence's first card (32.3 R5), for the PARTY the path names
+ *   BORROWER/RESIDENCES/*                                         → the address confirm card with its basis (32.3 E5; the identity command path)
+ *   SUBJECT_PROPERTY/PROPERTY_DETAIL/PropertyEstateType | PropertyExistingCleanEnergyLienIndicator → the home card (32.3 R1)
+ * Every other gap is the platform's — LastName from the legal name, TAXPAYER_IDENTIFIER from the typed SSN, StateCode and AttachmentType
+ * from the confirmed home — and is logged (`borrower.flow.32-18.gap.platform`), never asked. Michelle's line beside the card is the copy
+ * library's `application.gap.resend`; nothing here names what runs behind it. When a re-sent card resolves with its command and the application
+ * already has a casefile, the assembly re-runs on that resolution (reassembleAfterGapCard → underwriting.run{reassemble}: a further
+ * du.document.emitted, 23.7's preflight on it, the gaps still open re-sent under the new emission); the resubmission itself is 23.1's.
+ * The reaction runs from flows/18-du-gaps.ts, registered after the flows whose cards ride the same settlement (5-verification's needs checklist
+ * on `du.findings.interpreted`), so the re-sent card is the newest pending one — the rail's current ask (01 §1.3).
+ */
+const GAP_DECLARATION = /\/ROLES\/ROLE\/BORROWER\/DECLARATION\//;
+const GAP_RESIDENCE = /\/ROLES\/ROLE\/BORROWER\/RESIDENCES\//;
+const GAP_HOME = /\/SUBJECT_PROPERTY\/PROPERTY_DETAIL\/(?:PropertyEstateType|PropertyExistingCleanEnergyLienIndicator)$/;
+const PARTY_INDEX = /\/PARTIES\/PARTY(?:\[(\d+)\])?\//;
+const BORROWING_ROLES = `('borrower', 'co_borrower', 'non_occupant_co_borrower')`;
+interface Gap { readonly code: string; readonly path: string }
+/** The gaps an emission names (`gaps[{code, path | xpath}]`), or the one a preflight refusal names (23.7 emitDuPreflight: `{code, xpath, rule, detail}`). */
+function gapsOf(e: DomainEvent): Gap[] {
+  const p = pl(e);
+  if (e.type === "du.preflight.refused") return typeof p["xpath"] === "string" ? [{ code: String(p["code"] ?? "DU_PREFLIGHT_REFUSED"), path: p["xpath"] }] : [];
+  const list = Array.isArray(p["gaps"]) ? (p["gaps"] as P[]) : [];
+  return list.map((g) => ({ code: String(g["code"] ?? "DU_REQUIRED_MISSING"), path: String(g["path"] ?? g["xpath"] ?? "") })).filter((g) => g.path);
+}
+/** The 32.18 rule 7 reaction as flows/18-du-gaps.ts runs it: one context per application, the gaps of every emission (and every preflight refusal) in commit order. */
+export async function reactDuGaps(deps: FlowDeps, events: readonly DomainEvent[]): Promise<void> {
+  const byApp = new Map<string, DomainEvent[]>();
+  for (const e of events) { const app = e.applicationId ?? (typeof pl(e)["application_id"] === "string" ? String(pl(e)["application_id"]) : null); if (!app) continue; const list = byApp.get(app) ?? []; list.push(e); byApp.set(app, list); }
+  for (const [appId, list] of byApp) {
+    const ctx = await context(deps, appId);
+    if (!ctx.parties.length || !asksHere(ctx)) continue;   // no conversation to put a card in; a refi-trigger lead's cards are 32.11's (its home card shares the flow_key, so a gap there is 32.11's to re-send)
+    for (const e of list) { if (e.type === "du.document.emitted" && !(Number(pl(e)["required_missing"] ?? 0) > 0)) continue; try { await gapCards(deps, ctx, e); } catch (err) { deps.logger?.error("borrower.flow.32-18.gap.failed", { event: e.type, application_id: appId, error: err instanceof Error ? err.message : String(err) }); } }
+  }
+}
+async function gapCards(deps: FlowDeps, ctx: Ctx, e: DomainEvent): Promise<void> {
+  const gaps = gapsOf(e); if (!gaps.length) return;
+  const emission = String(pl(e)["du_document_id"] ?? e.id).replace(/-/g, "").slice(0, 8);
+  // PARTY[n] is the nth borrowing party in 23.6's order (projectGraph: borrower_ordinal, then created_at); a path with no index names the only one
+  const ordered = await deps.runtime.db.query<{ id: string }>(`SELECT id::text AS id FROM application_borrowers WHERE application_id = $1 AND borrower_role IN ${BORROWING_ROLES} ORDER BY borrower_ordinal, created_at, id`, [ctx.appId]);
+  const partiesAt = (path: string): readonly Party[] => { const n = PARTY_INDEX.exec(path)?.[1]; const ab = n ? ordered[Number(n) - 1]?.id : ordered.length === 1 ? ordered[0]!.id : null; const own = ab ? ctx.parties.filter((p) => p.application_borrower_id === ab) : ctx.parties; return own.length ? own : ctx.parties; };
+  // one card per gap and party (rule 7): a sequence still open under any of the party's prefixes — the interview's `declarations.<step>:<ab>`, an invitee's `cob.declarations.<step>:<party>` (32.5 §7), an earlier emission's `…:gap:<emission>` — is the current ask already
+  const pendingLike = async (party: Party, prefixes: readonly string[]): Promise<boolean> => (await deps.runtime.db.query(`SELECT 1 FROM card_instances WHERE party_id = $1 AND status = 'pending' AND props->>'flow_key' LIKE ANY ($2::text[])`, [party.party_id, prefixes.map((p) => `${p}%`)])).length > 0;
+  const resent = new Map<string, string[]>();   // party_id → the cards sent for this emission (the line is said once per party, beside the first)
+  const resend = async (party: Party, ask: "declarations" | "residence" | "home", spec: CardSpec, pendingPrefixes: readonly string[]): Promise<void> => {
+    if (resent.get(party.party_id)?.includes(ask)) return;
+    if (await pendingLike(party, pendingPrefixes)) { deps.logger?.info("borrower.flow.32-18.gap.pending", { application_id: ctx.appId, party_id: party.party_id, ask }); return; }
+    if (await existingCard(deps, party.party_id, spec.flow_key)) return;   // this emission's card is already on the rail (a delivery replayed)
+    const id = await sendCard(deps, ctx, party, spec); if (!id) return;
+    const first = !resent.has(party.party_id); resent.set(party.party_id, [...(resent.get(party.party_id) ?? []), ask]);
+    if (first) await say(deps, ctx, party, "application.gap.resend", { card_instance_id: id });
+    deps.logger?.info("borrower.flow.32-18.gap.card", { application_id: ctx.appId, party_id: party.party_id, ask, card_instance_id: id, emission });
+  };
+  for (const gap of gaps) {
+    if (GAP_DECLARATION.test(gap.path)) {
+      // an invited co-borrower's sequence runs under `cob.declarations.<step>:<party_id>` (32.5 §7 / 5-verification.ts) and is resolved only by the invitee: the re-sent card keeps that prefix, and either prefix pending is the open sequence
+      for (const party of partiesAt(gap.path)) { const seq = declarationsSeqOf(ctx, party); await resend(party, "declarations", firstDeclarationsCard({ prefix: seq.prefix, key: `${seq.key}:gap:${emission}`, borrower_id: intakeBorrowerId(ctx, party) }), [`declarations.%:${party.application_borrower_id}`, `cob.declarations.%:${party.party_id}`]); }
+    } else if (GAP_RESIDENCE.test(gap.path)) {
+      for (const party of partiesAt(gap.path)) await resend(party, "residence", residenceCard(ctx, party, `identity.confirm:${party.application_borrower_id}:gap:${emission}`), [`identity.confirm:${party.application_borrower_id}`]);
+    } else if (GAP_HOME.test(gap.path)) {
+      for (const party of ctx.parties) await resend(party, "home", homeCard(ctx, party, `refi.home:${party.application_borrower_id}:gap:${emission}`), [`refi.home:${party.application_borrower_id}`]);
+    } else {
+      deps.logger?.info("borrower.flow.32-18.gap.platform", { application_id: ctx.appId, code: gap.code, path: gap.path, emission });
+    }
+  }
+}
+/** The declarations sequence's flow-key prefix and party key for a party: `cob.declarations:<party_id>` for an invited co-borrower (32.5 §7, `application.party.invited`), `declarations:<application_borrower_id>` for the interview's own borrowers. */
+function declarationsSeqOf(ctx: Ctx, party: Party): { prefix: string; key: string } {
+  const invited = has(ctx, "application.party.invited", (p) => p["party_id"] === party.party_id);
+  return invited ? { prefix: "cob.declarations", key: party.party_id } : { prefix: "declarations", key: party.application_borrower_id };
+}
+/** The address confirm card re-sent for the residence basis (32.3 E5): the ID's name, birth date and address when the scan read them, else the address asked; the residence asks; the identity command path. */
+function residenceCard(ctx: Ctx, party: Party, flowKey: string): CardSpec {
+  const name = prefillOf(party, "legal_name"); const dob = prefillOf(party, "date_of_birth"); const addr = prefillOf(party, "current_address") ?? prefillOf(party, "address");
+  const residence = RESIDENCE_FIELDS();
+  return { kind: "ConfirmCard", copy_key: "identity.confirm.title", flow_key: flowKey, command_ref: "application.confirmField",
+    props: { title: "", fields: [...(name ? [{ path: "legal_name", label: "Legal name", value: name.value, source: name.source }] : []), ...(dob ? [{ path: "date_of_birth", label: "Date of birth", value: dob.value, source: dob.source }] : []), { path: "current_address", label: "Current address", value: addr?.value ?? "", source: addr?.source ?? "borrower" }, ...residence.fields], commits_to: "application_borrowers",
+      required_paths: ["current_address", ...residence.required_paths], money_paths: residence.money_paths, required_when: residence.required_when, helper_copy_key: "identity.residence.why",
+      command_args: { path: "identity", commits_to: "application_borrowers", application_borrower_id: party.application_borrower_id, ...(leadId(ctx) ? { lead_id: leadId(ctx) } : {}) } } };
+}
+
+// ---------------------------------------------------------------- E5: identity → confirm (with the residence basis and the months), then the SSN, then R1; SQ-06 under two years
+/**
+ * 32.3 E5 / 23.5 discrepancy 3: DU needs the current residence with its basis on every casefile, so the identity card asks how the borrower lives there
+ * (Own · Rent with the monthly rent · Living rent-free) and the months at the address on every file; the tap's command (application.confirmField{path=identity})
+ * writes the Current du_residences row. `prefix` builds the same three asks for the prior-residence card (SQ-06). The rent field shows only when Rent is chosen
+ * (`when`), and the API requires it then (`required_when`); `input` and `options` are what the borrower app renders and what 32.16's proposal validation reads.
+ */
+export const RESIDENCE_FIELDS = (prefix = ""): { fields: P[]; required_paths: string[]; money_paths: string[]; required_when: P } => ({
+  fields: [
+    { path: `${prefix}residency_basis`, label: prefix ? "How you lived there" : "How you live there", value: "", source: "borrower", options: RESIDENCY_BASIS_OPTIONS },
+    { path: `${prefix}monthly_rent_cents`, label: "Monthly rent", value: "", source: "borrower", input: "money", when: { path: `${prefix}residency_basis`, equals: "rent" } },
+    { path: `${prefix}months_at_address`, label: prefix ? "Months you lived there" : "Months at this address", value: "", source: "borrower", input: "number" },
+  ],
+  required_paths: [`${prefix}residency_basis`, `${prefix}months_at_address`], money_paths: [`${prefix}monthly_rent_cents`], required_when: { [`${prefix}monthly_rent_cents`]: { path: `${prefix}residency_basis`, equals: "rent" } },
+});
+/** 32.13 SQ-06: under two years at the current address — the stated months on the E5 card (`du_residences.duration_months` of the borrower's Current row). */
+export const SQ06_UNDER_MONTHS = 24;
 async function identityCard(deps: FlowDeps, ctx: Ctx, e: DomainEvent): Promise<void> {
   const abId = String(pl(e)["borrower_id"] ?? "");
   for (const party of ctx.parties.filter((p) => p.application_borrower_id === abId)) {
     const name = prefillOf(party, "legal_name"); const dob = prefillOf(party, "date_of_birth"); const addr = prefillOf(party, "address") ?? prefillOf(party, "current_address");
     if (!name || !dob || !addr) continue;
+    const residence = RESIDENCE_FIELDS();
     await sendCard(deps, ctx, party, { kind: "ConfirmCard", copy_key: "identity.confirm.title", flow_key: `identity.confirm:${party.application_borrower_id}`, command_ref: "application.confirmField",
-      props: { title: "", fields: [{ path: "legal_name", label: "Legal name", value: name.value, source: name.source }, { path: "date_of_birth", label: "Date of birth", value: dob.value, source: dob.source }, { path: "current_address", label: "Current address", value: addr.value, source: addr.source }], commits_to: "application_borrowers",
-        command_args: { path: "identity", commits_to: "application_borrowers", ...(leadId(ctx) ? { lead_id: leadId(ctx) } : {}) } } });
+      props: { title: "", fields: [{ path: "legal_name", label: "Legal name", value: name.value, source: name.source }, { path: "date_of_birth", label: "Date of birth", value: dob.value, source: dob.source }, { path: "current_address", label: "Current address", value: addr.value, source: addr.source }, ...residence.fields], commits_to: "application_borrowers",
+        required_paths: residence.required_paths, money_paths: residence.money_paths, required_when: residence.required_when, helper_copy_key: "identity.residence.why",
+        command_args: { path: "identity", commits_to: "application_borrowers", application_borrower_id: party.application_borrower_id, ...(leadId(ctx) ? { lead_id: leadId(ctx) } : {}) } } });
   }
+}
+/**
+ * SQ-06 residence history (32.13; 32.3 E5): under two years at the current address → `ConfirmCard{prior address, how you lived there, months there}` → a Prior
+ * du_residences row through application.confirmField{path=prior_residence}. The trigger today is the months the borrower stated on the E5 card, read from the
+ * Current du_residences row the confirm's own transaction wrote (22.2's credit report exposes no address-tenure fact on the bus yet; when it does, a report
+ * showing less than the stated months is the second trigger the spec names — the same card, the same flow_key).
+ */
+async function priorResidenceCard(deps: FlowDeps, ctx: Ctx, party: Party): Promise<void> {
+  const current = (await deps.runtime.db.query<{ duration_months: number }>(`SELECT duration_months FROM du_residences WHERE application_borrower_id = $1 AND residency_type = 'Current'`, [party.application_borrower_id]))[0];
+  if (!current || Number(current.duration_months) >= SQ06_UNDER_MONTHS) return;
+  const residence = RESIDENCE_FIELDS("prior_");
+  await sendCard(deps, ctx, party, { kind: "ConfirmCard", copy_key: "identity.prior_residence.title", flow_key: `identity.prior_residence:${party.application_borrower_id}`, command_ref: "application.confirmField",
+    props: { title: "", fields: [{ path: "prior_address_line", label: "Street address", value: "", source: "borrower" }, { path: "prior_city", label: "City", value: "", source: "borrower" }, { path: "prior_state", label: "State", value: "", source: "borrower" }, { path: "prior_postal_code", label: "ZIP code", value: "", source: "borrower", input: "number" }, ...residence.fields], commits_to: "du_residences",
+      required_paths: ["prior_address_line", "prior_city", "prior_state", "prior_postal_code", ...residence.required_paths], money_paths: residence.money_paths, required_when: residence.required_when, helper_copy_key: "identity.prior_residence.why",
+      command_args: { path: "prior_residence", commits_to: "du_residences", application_borrower_id: party.application_borrower_id, ...(leadId(ctx) ? { lead_id: leadId(ctx) } : {}) } } });
 }
 async function afterIdentity(deps: FlowDeps, ctx: Ctx, e: DomainEvent): Promise<void> {
   const borrowerId = pl(e)["borrower_id"];
@@ -328,14 +453,31 @@ async function afterIdentity(deps: FlowDeps, ctx: Ctx, e: DomainEvent): Promise<
     // the one typed field: masked, stored once, never echoed (masked_paths keeps it out of the evidence trail)
     await sendCard(deps, ctx, party, { kind: "ConfirmCard", copy_key: "identity.ssn.title", flow_key: `identity.ssn:${party.application_borrower_id}`, command_ref: "application.confirmField",
       props: { title: "", fields: [{ path: "ssn", label: "Social Security number", value: "", source: "borrower" }], commits_to: "application_borrowers", masked_paths: ["ssn"], required_paths: ["ssn"], helper_copy_key: "identity.ssn.why", gate: "FNMA_B2_2_01_SSN_VALIDATION_GATE", command_args: { path: "ssn", source: "borrower", ...lead } } });
-    if (!isPurchase(ctx)) {
-      const confirmed = prefillOf(party, "current_address") ?? prefillOf(party, "address"); const address = confirmed?.value ?? addressOf(ctx.property) ?? "";
-      await sendCard(deps, ctx, party, { kind: "ConfirmCard", copy_key: "refi.home.confirm", flow_key: `refi.home:${party.application_borrower_id}`, command_ref: "application.confirmField",
-        props: { title: "", fields: [{ path: "property_address", label: "Property address", value: address, source: confirmed?.source ?? "stripe_identity" }, { path: "property_type", label: "Property type", value: ctx.property?.property_type ?? "sfr", source: "public_records" }, { path: "units", label: "Units", value: String(ctx.property?.units ?? 1), source: "public_records" }, { path: "occupancy", label: "Your primary home", value: ctx.app?.occupancy ?? "primary", source: "borrower" }], commits_to: "application_properties",
-          command_args: { path: "property_address", commits_to: "application_properties", ...lead } } });
-    }
+    await priorResidenceCard(deps, ctx, party);   // SQ-06: the address history when the stay at the current address is under two years (after the SSN card — the credit pull's one typed field stays the next ask)
+    if (!isPurchase(ctx)) await sendCard(deps, ctx, party, homeCard(ctx, party, `refi.home:${party.application_borrower_id}`));
   }
 }
+/**
+ * 32.3 R1 / 32.18 rule 7: the home card — the address (the ID's, or the row's), the type and units from the record, "your primary home", and the two
+ * facts only the borrower gives, asked on every file: the estate (own the land · a leasehold → PropertyEstateType) and a PACE / clean-energy loan on
+ * the home (→ PropertyExistingCleanEnergyLienIndicator). Both are required before Confirm; the tap's command (application.confirmField{path=property_address})
+ * writes them and the parsed address to the subject application_properties row (0137). The same spec is re-sent under a fresh flow_key when 23.6's
+ * assembly names either as a gap (gapCards).
+ */
+function homeCard(ctx: Ctx, party: Party, flowKey: string): CardSpec {
+  const lead = leadId(ctx) ? { lead_id: leadId(ctx) } : {};
+  const confirmed = prefillOf(party, "current_address") ?? prefillOf(party, "address"); const address = confirmed?.value ?? addressOf(ctx.property) ?? "";
+  const lien = ctx.property?.existing_clean_energy_lien; const lienValue = lien === true ? "yes" : lien === false ? "no" : "";
+  return { kind: "ConfirmCard", copy_key: "refi.home.confirm", flow_key: flowKey, command_ref: "application.confirmField",
+    props: { title: "", fields: [{ path: "property_address", label: "Property address", value: address, source: confirmed?.source ?? "stripe_identity" }, { path: "property_type", label: "Property type", value: ctx.property?.property_type ?? "sfr", source: "public_records" }, { path: "units", label: "Units", value: String(ctx.property?.units ?? 1), source: "public_records" }, { path: "occupancy", label: "Your primary home", value: ctx.app?.occupancy ?? "primary", source: "borrower" },
+      ...HOME_ASKS(ctx.property?.estate_type ?? "", lienValue)], commits_to: "application_properties", required_paths: ["property_address", "estate_type", "existing_clean_energy_lien"], helper_copy_key: "refi.home.why",
+      command_args: { path: "property_address", commits_to: "application_properties", ...lead } } };
+}
+/** The two asks of the home card (and of the purchase contract card; 32.11's compressed home card too): a select each, the copy library's `refi.home.estate` / `refi.home.clean_energy_lien`. */
+export const HOME_ASKS = (estate: string, lien: string): P[] => [
+  { path: "estate_type", label: "Do you own the land, or is it a leasehold?", value: estate, source: "borrower", options: ESTATE_OPTIONS },
+  { path: "existing_clean_energy_lien", label: "Is there a PACE or clean-energy loan on the home?", value: lien, source: "borrower", options: CLEAN_ENERGY_LIEN_OPTIONS },
+];
 
 // ---------------------------------------------------------------- R3: the FAKE Truv report → the income ConfirmCard
 async function incomeCard(deps: FlowDeps, ctx: Ctx, e: DomainEvent): Promise<void> {
@@ -366,11 +508,177 @@ async function profileCard(deps: FlowDeps, ctx: Ctx, party: Party): Promise<void
       { path: "language_preference", label: "Language preference (Form 1103)", required: true, options: [{ id: "english", label: "English" }, { id: "spanish", label: "Spanish" }, { id: "chinese", label: "Chinese" }, { id: "korean", label: "Korean" }, { id: "tagalog", label: "Tagalog" }, { id: "vietnamese", label: "Vietnamese" }, { id: "other", label: "Other" }, { id: "not_answered", label: "I'd rather not say" }] }],
       required_paths: ["citizenship_status", "marital_status", "dependents", "military_service"], scif_notice: "NTC_FNMA_1103_SCIF", command_args: { path: "profile", commits_to: "application_borrowers", ...lead } } });
 }
+// ---------------------------------------------------------------- R5: the declarations as a ChoiceCard sequence that ends in ONE application.answerDeclarations (23.5 rule 4; SQ-05)
+/**
+ * The state one declarations card hands the next (`props.declarations_seq`): 5a.A and 5a.E as answered on their own cards before the list
+ * (the two URLA section 5 questions the list does not carry — 23.5 rule 4: never derived from a "none apply" tap), the thirteen listed
+ * items as SQ-05 asks them one at a time, the bankruptcy chapter(s) — one tap each, "another?" between them — and the written explanation, the borrowed-funds amount. Every
+ * card of the sequence but the last issues no command; the last card's tap carries the whole of it as `application.answerDeclarations`'s
+ * input — the fourteen typed URLA section 5 answers, their follow-ups, the chapters and the explanation — and the API executes it as the
+ * borrower's own actor (commands.ts runCommand; 23.5 assertDeclarations refuses any other). The inviter's twin (32.5 §7 `cob.declarations`)
+ * runs the same sequence under its own flow-key prefix, resolved only by the invitee's session (PARTY_SCOPE).
+ */
+export interface DeclarationsSeq {
+  /** the flow-key prefix (`declarations` for the interview's own borrowers, `cob.declarations` for an invited co-borrower) and the party-specific suffix */
+  readonly prefix: string; readonly key: string;
+  /** 21.1's own borrower id ("B1") — the legacy `declarations` record's key */
+  readonly borrower_id: string;
+  readonly step: string;
+  readonly intent_to_occupy: "Yes" | "No" | null;
+  readonly homeowner_past_three_years: "Yes" | "No" | null;
+  readonly property_usage: string | null;
+  readonly prior_property_title: string | null;
+  /** 5a.E — a lien that could take priority over the first mortgage (a PACE / clean-energy lien): asked on its own card before the list, like 5a.A (23.5 rule 4: it is not on the list, so a "none apply" tap cannot answer it) */
+  readonly property_proposed_clean_energy_lien: "Yes" | "No" | null;
+  /** the thirteen listed items as answered in SQ-05 (null = not asked yet); "None of these apply" writes thirteen false */
+  readonly items: readonly (boolean | null)[];
+  readonly bankruptcy_chapters: readonly string[];
+  readonly bankruptcy_explanation: string | null;
+  readonly undisclosed_borrowed_funds_cents: string | null;
+}
+export interface DeclarationsCardSpec { readonly kind: string; readonly copy_key: string; readonly flow_key: string; readonly command_ref?: string; readonly props: P }
+/** The list item (0-based) whose Yes opens a follow-up: bankruptcy → the chapter(s) and the optional explanation; borrowed funds → the amount. */
+const ITEM_BANKRUPTCY = 6; const ITEM_BORROWED_FUNDS = 7; const ITEM_LAST = DECLARATIONS.length - 1;
+/** A Yes here opens the B3-5.3-07 waiting-period explanation in the assistant's own words — criteria, never a decline (deed-in-lieu, short sale, foreclosure, bankruptcy). */
+const ITEMS_WITH_WAITING_PERIOD: ReadonlySet<number> = new Set([3, 4, 5, 6]);
+/** 5b.8.1 BankruptcyChapterType — the four chapters, in the order the card lists them. */
+const BANKRUPTCY_CHAPTERS: readonly { id: string; label: string }[] = [{ id: "ChapterSeven", label: "Chapter 7" }, { id: "ChapterThirteen", label: "Chapter 13" }, { id: "ChapterEleven", label: "Chapter 11" }, { id: "ChapterTwelve", label: "Chapter 12" }];
+/** The DU column each listed item answers (32.2 DECLARATION_COLUMN_FOR_LIST_ITEM); alimony/child support is URLA 2d, an expense, and answers no column. */
+const COLUMN_FOR_ITEM: readonly (string | null)[] = ["outstanding_judgments", "presently_delinquent", "party_to_lawsuit", "prior_property_deed_in_lieu_conveyed", "prior_property_short_sale_completed", "prior_property_foreclosure_completed", "bankruptcy", "undisclosed_borrowed_funds", "undisclosed_credit_application", "undisclosed_mortgage_application", "undisclosed_comaker_of_note", null, "special_borrower_seller_relationship"];
+const seqOf = (props: P): DeclarationsSeq | null => { const s = props["declarations_seq"]; return s && typeof s === "object" && !Array.isArray(s) && typeof (s as P)["step"] === "string" ? (s as unknown as DeclarationsSeq) : null; };
+const yesNo = (v: boolean | null): "Yes" | "No" => (v === true ? "Yes" : "No");
+/** The fourteen typed answers, their follow-ups, the chapters, the explanation and the legacy thirteen-item list — the one command's input as of this state. */
+export function declarationsCommandArgs(seq: DeclarationsSeq): P {
+  const items = seq.items.map((v) => v === true);
+  const answers: Record<string, "Yes" | "No"> = { intent_to_occupy: seq.intent_to_occupy ?? "No" };
+  COLUMN_FOR_ITEM.forEach((col, k) => { if (col) answers[col] = yesNo(items[k] ?? false); });
+  // URLA 5a.E (a lien that could take priority — a PACE / clean-energy lien) is not on the list: it is asked on its own card before the list (the `clean_energy_lien` step), never copied from another item's answer (23.5 rule 4)
+  answers["property_proposed_clean_energy_lien"] = seq.property_proposed_clean_energy_lien ?? "No";
+  const follow_ups: P = {};
+  if (seq.intent_to_occupy === "Yes") follow_ups["homeowner_past_three_years"] = seq.homeowner_past_three_years ?? "No";
+  if (seq.intent_to_occupy === "Yes" && seq.homeowner_past_three_years === "Yes") { follow_ups["property_usage"] = seq.property_usage; if (seq.prior_property_title) follow_ups["prior_property_title"] = seq.prior_property_title; }
+  if (items[ITEM_BORROWED_FUNDS]) follow_ups["undisclosed_borrowed_funds_cents"] = seq.undisclosed_borrowed_funds_cents;
+  return { answers, follow_ups, bankruptcy_chapters: items[ITEM_BANKRUPTCY] ? [...seq.bankruptcy_chapters] : [], ...(seq.bankruptcy_explanation !== null ? { bankruptcy_explanation: seq.bankruptcy_explanation } : {}),
+    declarations: items, borrower_id: seq.borrower_id, list_version: DECLARATIONS_LIST_VERSION, list_version_hash: DECLARATIONS_LIST_HASH };
+}
+const seqCard = (seq: DeclarationsSeq, step: string, c: { kind: string; copy_key: string; command_ref?: string; props: P }): DeclarationsCardSpec => ({ kind: c.kind, copy_key: c.copy_key, flow_key: `${seq.prefix}.${step}:${seq.key}`, ...(c.command_ref ? { command_ref: c.command_ref } : {}), props: { title: "", ...c.props, declarations_seq: { ...seq, step } } });
+/** A step's name without its ordinal (`bk_chapter:2` → `bk_chapter`): the bankruptcy cards repeat, one per chapter, each under its own flow_key. */
+const stepBase = (step: string): string => step.split(":")[0]!;
+/** The bankruptcy step for the chapter about to be named / just named: the first without an ordinal (`bk_chapter`), the later ones with it (`bk_chapter:2`, …). */
+const bkStep = (base: "bk_chapter" | "bk_another", seq: DeclarationsSeq): string => (seq.bankruptcy_chapters.length ? `${base}:${seq.bankruptcy_chapters.length + (base === "bk_chapter" ? 1 : 0)}` : base);
+/** The card for a step of the sequence. */
+function declarationsStepCard(seq: DeclarationsSeq, step: string): DeclarationsCardSpec {
+  const NO_COMMAND = (ids: string[]): P => ({ no_command_options: ids });
+  switch (stepBase(step)) {
+    case "occupancy":   // 5a.A on every file, the follow-up folded into the common case
+      return seqCard(seq, step, { kind: "ChoiceCard", copy_key: "declarations.occupancy", props: { options: [{ id: "yes_no_prior", label: "Yes, and I haven't owned another home in the past three years", is_primary: true }, { id: "yes_prior", label: "Yes, and I've owned another home in the past three years" }, { id: "no", label: "No, I won't live here" }], command: "application.answerDeclarations", command_args_by_option: { yes_no_prior: {}, yes_prior: {}, no: {} }, ...NO_COMMAND(["yes_no_prior", "yes_prior", "no"]) } });
+    case "prior_usage":   // 5a.1.2 PriorPropertyUsageType
+      return seqCard(seq, step, { kind: "ChoiceCard", copy_key: "declarations.prior_usage", props: { options: [{ id: "PrimaryResidence", label: "My main home", is_primary: true }, { id: "SecondHome", label: "A second home" }, { id: "Investment", label: "An investment property" }], command: "application.answerDeclarations", command_args_by_option: { PrimaryResidence: {}, SecondHome: {}, Investment: {} }, ...NO_COMMAND(["PrimaryResidence", "SecondHome", "Investment"]) } });
+    case "prior_title":   // 5a.1.3 PriorPropertyTitleType
+      return seqCard(seq, step, { kind: "ChoiceCard", copy_key: "declarations.prior_title", props: { options: [{ id: "Sole", label: "By myself", is_primary: true }, { id: "JointWithSpouse", label: "With my spouse" }, { id: "JointWithOtherThanSpouse", label: "With someone else" }], command: "application.answerDeclarations", command_args_by_option: { Sole: {}, JointWithSpouse: {}, JointWithOtherThanSpouse: {} }, ...NO_COMMAND(["Sole", "JointWithSpouse", "JointWithOtherThanSpouse"]) } });
+    case "clean_energy_lien":   // 5a.E PropertyProposedCleanEnergyLienIndicator — on every file, its own card before the list (23.5 rule 4: not on the list, never derived from another item's answer)
+      return seqCard(seq, step, { kind: "ChoiceCard", copy_key: "declarations.clean_energy_lien", props: { options: [{ id: "yes", label: "Yes" }, { id: "no", label: "No", is_primary: true }], command: "application.answerDeclarations", command_args_by_option: { yes: {}, no: {} }, ...NO_COMMAND(["yes", "no"]) } });
+    case "list": {   // the thirteen items, one tap: "None" runs the command with everything so far; "Something applies" opens SQ-05
+      const none = declarationsCommandArgs({ ...seq, items: DECLARATIONS.map(() => false) });
+      return seqCard(seq, step, { kind: "ChoiceCard", copy_key: "declarations.title", command_ref: "application.answerDeclarations", props: { options: [{ id: "none", label: "None of these apply to me", is_primary: true }, { id: "some", label: "Something here applies" }], command: "application.answerDeclarations", list: DECLARATIONS, list_version: DECLARATIONS_LIST_VERSION, list_version_hash: DECLARATIONS_LIST_HASH,
+        command_args_by_option: { none, some: {} }, ...NO_COMMAND(["some"]), side_quest_on: { some: "SQ-05" }, affirmatives: ["none of these apply", "none apply", "nothing applies"] } });
+    }
+    case "bk_chapter": {   // 5b.8.1 BankruptcyChapterType — one tap names a chapter; the chapters already named are off the card, and `bk_another` asks whether there is one more (the second and later cards carry the chapter's ordinal in their step, so each has its own flow_key)
+      const left = BANKRUPTCY_CHAPTERS.filter((c) => !seq.bankruptcy_chapters.includes(c.id));
+      const options = left.map((c, k) => (k === 0 ? { ...c, is_primary: true } : c));
+      return seqCard(seq, bkStep("bk_chapter", seq), { kind: "ChoiceCard", copy_key: "declarations.bankruptcy.chapter", props: { options, command: "application.answerDeclarations", command_args_by_option: Object.fromEntries(left.map((c) => [c.id, {}])), chapters_so_far: [...seq.bankruptcy_chapters], ...NO_COMMAND(left.map((c) => c.id)) } });
+    }
+    case "bk_another":   // more than one filing in the seven years: the chapters accumulate one tap at a time (one du_bankruptcy_filings row per chapter chosen)
+      return seqCard(seq, bkStep("bk_another", seq), { kind: "ChoiceCard", copy_key: "declarations.bankruptcy.another", props: { options: [{ id: "no", label: "No, that was the only one", is_primary: true }, { id: "yes", label: "Yes, another chapter" }], command: "application.answerDeclarations", command_args_by_option: { no: {}, yes: {} }, chapters_so_far: [...seq.bankruptcy_chapters], ...NO_COMMAND(["no", "yes"]) } });
+    case "bk_explanation":   // the borrower's own words, optional, kept verbatim on the row (23.5 data model: never discarded)
+      return seqCard(seq, step, { kind: "ExplanationCard", copy_key: "declarations.bankruptcy.explain", props: { subject: "", prompt: "", min_length: 1, optional: true, subject_copy_key: "declarations.bankruptcy.explain", prompt_copy_key: "declarations.bankruptcy.explain.prompt", ...NO_COMMAND(["submit", "skip"]) } });
+    case "borrowed_amount":   // 5a.3.1 — required exactly when C = Yes (du_declarations_borrowed_amount_follows_indicator)
+      return seqCard(seq, step, { kind: "ConfirmCard", copy_key: "declarations.borrowed_funds.amount", props: { fields: [{ path: "undisclosed_borrowed_funds_cents", label: "Amount you are borrowing", value: "", source: "borrower" }], commits_to: "du_declarations", money_paths: ["undisclosed_borrowed_funds_cents"], required_paths: ["undisclosed_borrowed_funds_cents"] } });
+    default: {
+      const m = /^q:(\d+)$/.exec(step); if (!m) throw new RangeError(`declarations: no step ${step}`);
+      const n = Number(m[1]); const item = DECLARATIONS[n]; if (item === undefined) throw new RangeError(`declarations: no item ${n}`);
+      const props: P = { options: [{ id: "yes", label: "Yes" }, { id: "no", label: "No", is_primary: true }], command: "application.answerDeclarations", copy_tokens: { item, n: String(n + 1), of: String(DECLARATIONS.length) }, item_index: n, item_text: item };
+      if (n === ITEM_LAST) {   // the last card's tap runs the command once with all fourteen answers, their follow-ups, the chapters and the explanation
+        const withLast = (v: boolean) => declarationsCommandArgs({ ...seq, items: seq.items.map((x, k) => (k === n ? v : x)) });
+        return seqCard(seq, step, { kind: "ChoiceCard", copy_key: "declarations.item", command_ref: "application.answerDeclarations", props: { ...props, command_args_by_option: { yes: withLast(true), no: withLast(false) }, list_version: DECLARATIONS_LIST_VERSION, list_version_hash: DECLARATIONS_LIST_HASH } });
+      }
+      return seqCard(seq, step, { kind: "ChoiceCard", copy_key: "declarations.item", props: { ...props, command_args_by_option: { yes: {}, no: {} }, ...NO_COMMAND(["yes", "no"]) } });
+    }
+  }
+}
+/** The first card of the sequence (5a.A, on every file). */
+export function firstDeclarationsCard(o: { prefix: string; key: string; borrower_id: string }): DeclarationsCardSpec {
+  return declarationsStepCard({ prefix: o.prefix, key: o.key, borrower_id: o.borrower_id, step: "occupancy", intent_to_occupy: null, homeowner_past_three_years: null, property_usage: null, prior_property_title: null, property_proposed_clean_energy_lien: null, items: DECLARATIONS.map(() => null), bankruptcy_chapters: [], bankruptcy_explanation: null, undisclosed_borrowed_funds_cents: null }, "occupancy");
+}
+/** Money typed on the amount card: cents as digits, or dollars with an optional $ and cents; null when it reads as neither. */
+const moneyCents = (v: unknown): string | null => { const s = String(v ?? "").trim(); if (/^\d+$/.test(s)) return s; const m = /^\$?\s*(\d[\d,]*)(?:\.(\d{1,2}))?$/.exec(s); return m ? (BigInt(m[1]!.replace(/,/g, "")) * 100n + BigInt((m[2] ?? "").padEnd(2, "0"))).toString() : null; };
+/**
+ * The next card after one of the sequence resolved with `option_id` and `evidence` — null when the resolved card ran the command (the list's
+ * "None", the last question) and the sequence is over. Also says whether the tap opened the waiting-period explanation (B3-5.3-07).
+ */
+export function nextDeclarationsCard(card: { props: P; kind: string }, optionId: string | null, evidence: P): { next: DeclarationsCardSpec | null; waiting_period: boolean } {
+  const seq = seqOf(card.props); if (!seq) return { next: null, waiting_period: false };
+  const go = (s: DeclarationsSeq, step: string): { next: DeclarationsCardSpec; waiting_period: boolean } => ({ next: declarationsStepCard(s, step), waiting_period: false });
+  const afterItem = (s: DeclarationsSeq, n: number): { next: DeclarationsCardSpec | null; waiting_period: boolean } => (n >= ITEM_LAST ? { next: null, waiting_period: false } : go(s, `q:${n + 1}`));
+  switch (stepBase(seq.step)) {
+    case "occupancy": {   // 5a.A, then 5a.E on its own card, then the list
+      if (optionId === "yes_prior") return go({ ...seq, intent_to_occupy: "Yes", homeowner_past_three_years: "Yes" }, "prior_usage");
+      if (optionId === "no") return go({ ...seq, intent_to_occupy: "No", homeowner_past_three_years: null }, "clean_energy_lien");
+      return go({ ...seq, intent_to_occupy: "Yes", homeowner_past_three_years: "No" }, "clean_energy_lien");
+    }
+    case "prior_usage": return go({ ...seq, property_usage: optionId ?? "PrimaryResidence" }, "prior_title");
+    case "prior_title": return go({ ...seq, prior_property_title: optionId ?? "Sole" }, "clean_energy_lien");
+    case "clean_energy_lien": return go({ ...seq, property_proposed_clean_energy_lien: optionId === "yes" ? "Yes" : "No" }, "list");
+    case "list": return optionId === "some" ? go(seq, "q:0") : { next: null, waiting_period: false };
+    case "bk_chapter": {   // the chapter named joins the ones before it; "another?" follows while a chapter is still unnamed
+      const chapters = optionId && BANKRUPTCY_CHAPTERS.some((c) => c.id === optionId) && !seq.bankruptcy_chapters.includes(optionId) ? [...seq.bankruptcy_chapters, optionId] : [...seq.bankruptcy_chapters];
+      const s = { ...seq, bankruptcy_chapters: chapters };
+      return go(s, chapters.length < BANKRUPTCY_CHAPTERS.length ? "bk_another" : "bk_explanation");
+    }
+    case "bk_another": return go(seq, optionId === "yes" ? "bk_chapter" : "bk_explanation");
+    case "bk_explanation": { const text = typeof evidence["text"] === "string" ? (evidence["text"] as string) : ""; return afterItem({ ...seq, bankruptcy_explanation: optionId === "skip" || text === "" ? null : text }, ITEM_BANKRUPTCY); }
+    case "borrowed_amount": { const f = (Array.isArray(evidence["fields"]) ? (evidence["fields"] as P[]) : []).find((x) => x["path"] === "undisclosed_borrowed_funds_cents"); return afterItem({ ...seq, undisclosed_borrowed_funds_cents: moneyCents(f?.["value_confirmed"] ?? f?.["value"]) }, ITEM_BORROWED_FUNDS); }
+    default: {
+      const m = /^q:(\d+)$/.exec(seq.step); if (!m) return { next: null, waiting_period: false };
+      const n = Number(m[1]); const yes = optionId === "yes"; const s = { ...seq, items: seq.items.map((x, k) => (k === n ? yes : x)) };
+      const waiting_period = yes && ITEMS_WITH_WAITING_PERIOD.has(n);
+      if (yes && n === ITEM_BANKRUPTCY) return { ...go(s, "bk_chapter"), waiting_period };
+      if (yes && n === ITEM_BORROWED_FUNDS) return { ...go(s, "borrowed_amount"), waiting_period };
+      return { ...afterItem(s, n), waiting_period };
+    }
+  }
+}
 async function declarationsCard(deps: FlowDeps, ctx: Ctx, party: Party): Promise<void> {
-  const borrower_id = intakeBorrowerId(ctx, party);
-  await sendCard(deps, ctx, party, { kind: "ChoiceCard", copy_key: "declarations.title", flow_key: `declarations:${party.application_borrower_id}`, command_ref: "application.answerDeclarations",
-    props: { title: "", options: [{ id: "none", label: "None of these apply to me", is_primary: true }, { id: "some", label: "Something here applies" }], command: "application.answerDeclarations", list: DECLARATIONS, list_version: DECLARATIONS_LIST_VERSION, list_version_hash: DECLARATIONS_LIST_HASH,
-      command_args_by_option: { none: { declarations: DECLARATIONS.map(() => false), borrower_id, list_version: DECLARATIONS_LIST_VERSION, list_version_hash: DECLARATIONS_LIST_HASH }, some: {} }, no_command_options: ["some"], side_quest_on: { some: "SQ-05" }, affirmatives: ["none of these apply", "none apply", "nothing applies"] } });
+  await sendCard(deps, ctx, party, firstDeclarationsCard({ prefix: "declarations", key: party.application_borrower_id, borrower_id: intakeBorrowerId(ctx, party) }));
+}
+/** A card of the sequence resolved by the borrower's own tap (BorrowerFlows.cardResolved): the next question, and the waiting-period line when the tap opened one. */
+async function onCardResolved(deps: FlowDeps, r: { card: { props: P; kind: string; subject_application_id: string | null; party_id: string }; option_id: string | null; evidence: P }): Promise<void> {
+  if (!r.card.subject_application_id) return;
+  if (seqOf(r.card.props)) {
+    const { next, waiting_period } = nextDeclarationsCard(r.card, r.option_id, r.evidence);
+    if (next || waiting_period) {
+      const ctx = await context(deps, r.card.subject_application_id); const party = ctx.parties.find((p) => p.party_id === r.card.party_id);
+      if (party) { if (waiting_period) await say(deps, ctx, party, "declarations.waiting_period"); if (next) await sendCard(deps, ctx, party, next); }
+    }
+  }
+  await reassembleAfterGapCard(deps, r);
+}
+/**
+ * 32.18 rule 7 / T8: a re-sent gap card (flow_key `…:gap:<emission>`) whose tap ran its command — the sequence's last card, the address confirm, the
+ * home card — resolved on an application that already has a casefile: the assembly re-runs on that resolution (underwriting.run{reassemble}: 23.6's
+ * build and 23.7's preflight over the graph as it now stands, a further du.document.emitted) so the gap closes; a gap still open is re-sent by
+ * reactDuGaps under the new emission's key (the pending check keeps one card per ask), and the resubmission itself stays 23.1's.
+ */
+async function reassembleAfterGapCard(deps: FlowDeps, r: { card: { props: P; subject_application_id: string | null }; evidence: P }): Promise<void> {
+  const appId = r.card.subject_application_id; if (!appId) return;
+  if (!String(r.card.props["flow_key"] ?? "").includes(":gap:")) return;
+  if (r.evidence["command_output"] === null || r.evidence["command_output"] === undefined) return;   // a card of the sequence before the last: nothing was written yet
+  const ctx = await context(deps, appId);
+  if (!has(ctx, "du.casefile.created")) return;
+  try {
+    const out = await exec(deps, appId, "32.18", "underwriting.run", BORROWER_APP, { application_id: appId, reassemble: true });
+    deps.logger?.info("borrower.flow.32-18.gap.reassembled", { application_id: appId, flow_key: r.card.props["flow_key"], ...(out.output as P) });
+  } catch (err) { deps.logger?.warn("borrower.flow.32-18.gap.reassemble_refused", { application_id: appId, flow_key: r.card.props["flow_key"], error: err instanceof Error ? err.message : String(err), code: (err as { code?: string }).code ?? null }); }
 }
 async function demographicsCard(deps: FlowDeps, ctx: Ctx, party: Party): Promise<void> {
   const borrower_id = intakeBorrowerId(ctx, party);
@@ -514,6 +822,8 @@ async function contractCard(deps: FlowDeps, ctx: Ctx, e: DomainEvent): Promise<v
   const lead = leadId(ctx) ? { lead_id: leadId(ctx) } : {};
   const fields = [["property_address", "Property address"], ["purchase_price_cents", "Purchase price"], ["closing_date", "Closing date"], ["contract_date", "Contract date"], ["earnest_money_cents", "Earnest money"], ["earnest_money_holder", "Earnest money held by"], ["financing_contingency_date", "Financing contingency"], ["appraisal_contingency_date", "Appraisal contingency"], ["seller_concessions_cents", "Seller concessions"], ["seller_names", "Seller(s)"]] as const;
   await sendToAll(deps, ctx, { kind: "ConfirmCard", copy_key: "contract.confirm", flow_key: `contract.confirm:${documentId}`, command_ref: "application.confirmField",
+    // 32.18 rule 7 on the purchase path: this card carries the extraction's fields only (32.3 T29: every field `source = document_extraction`), so the estate and the clean-energy lien are
+    // not asked here — a to-be-determined purchase has no property row to hold them yet (journey-purchase.ts GAP 1) and the assembly's gap re-sends the home card (homeCard) that asks both
     props: { title: "", fields: fields.map(([path, label]) => ({ path, label, value: s(path), source: "document_extraction", confirmed_at: null })), commits_to: "purchase_contracts", money_paths: ["purchase_price_cents", "earnest_money_cents", "seller_concessions_cents"], extraction_id: x?.["extraction_id"] ?? null, extractor: "FAKE", required_paths: ["property_address", "purchase_price_cents"],
       command_args: { path: "purchase_contract", commits_to: "purchase_contracts", document_id: documentId, ...lead } } });
   // the declarations addendum (URLA Section 5, relationship with the seller)
@@ -649,4 +959,5 @@ export const FLOW_3_ENTRY: BorrowerFlow = {
   },
   onSessionOpened: sessionOpened,
   onMessage,
+  onCardResolved,   // R5 / SQ-05: the next declaration question on the borrower's own tap (the inviter's `cob.declarations` twin included)
 };

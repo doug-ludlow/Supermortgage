@@ -292,6 +292,14 @@ export interface PreflightResultRow {
   readonly id: string; readonly du_document_id: string; readonly document_id: string; readonly application_id: string; readonly casefile_id: string; readonly submission_number: number;
   readonly passed: boolean; readonly checks: readonly PreflightCheck[]; readonly ran_at: string;
 }
+/** Every preflight run of an application, oldest first (append-only: a re-run after a re-emission is a further row) — the ops record's `du.preflight` (src/runtime/app.ts applicationRecord; the deploy walk's twelfth outcome reads it). */
+export async function listDuPreflight(q: Queryable, applicationId: string): Promise<PreflightResultRow[]> {
+  const rows = await q.query<Record<string, unknown>>(
+    `SELECT p.id::text AS id, p.document_id::text AS du_document_id, d.document_id::text AS document_id, p.application_id::text AS application_id, d.casefile_id, (doc.metadata->>'submission_number')::int AS submission_number, p.passed, p.checks, p.ran_at::text AS ran_at
+       FROM du_preflight_results p JOIN du_documents d ON d.id = p.document_id JOIN documents doc ON doc.id = d.document_id WHERE p.application_id = $1 ORDER BY p.ran_at, p.created_at`, [applicationId]);
+  return rows.map((r) => ({ id: String(r["id"]), du_document_id: String(r["du_document_id"]), document_id: String(r["document_id"]), application_id: String(r["application_id"]), casefile_id: String(r["casefile_id"]), submission_number: Number(r["submission_number"]), passed: Boolean(r["passed"]),
+    checks: (typeof r["checks"] === "string" ? JSON.parse(r["checks"]) : r["checks"]) as PreflightCheck[], ran_at: String(r["ran_at"]) }));
+}
 /** The latest preflight result by du_documents id, documents id, or application. */
 export async function readDuPreflight(q: Queryable, by: { du_document_id?: string | null; document_id?: string | null; application_id?: string | null }): Promise<PreflightResultRow | null> {
   const where = by.du_document_id ? ["p.document_id = $1", by.du_document_id] : by.document_id ? ["d.document_id = $1", by.document_id] : by.application_id ? ["p.application_id = $1", by.application_id] : null;

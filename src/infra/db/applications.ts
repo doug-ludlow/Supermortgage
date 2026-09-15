@@ -43,14 +43,17 @@ export interface ApplicationRow {
   readonly id: string; readonly partner_party_id: string; readonly channel: ApplicationChannel; readonly transaction_type: TransactionType; readonly occupancy: Occupancy;
   readonly product_code: string | null; readonly status: string; readonly application_date: string | null; readonly trid_application_date: string | null; readonly hmda_application_date: string | null;
   readonly mlo_of_record_id: string | null; readonly mlo_nmlsr_id: string | null; readonly ai_intake_mode: string; readonly intake_channel: string | null; readonly interview_language: string | null;
-  readonly six_items: Record<string, unknown>; readonly prior_loan_id: string | null; readonly loan_id: string | null; readonly created_at: string; readonly updated_at: string;
+  readonly six_items: Record<string, unknown>; readonly prior_loan_id: string | null; readonly loan_id: string | null;
+  /** 23.5 / migration 0133: DU's own AutomatedUnderwritingCaseIdentifier, minted by DU and returned on the first ack; write-once (DU_CASEFILE_ID_WRITE_ONCE), null until a submission has been answered. 23.7 writes it from the FAKE ack. */
+  readonly du_casefile_id: string | null;
+  readonly created_at: string; readonly updated_at: string;
 }
 export interface ApplicationRecord extends ApplicationRow {
   readonly borrowers: readonly { id: string; borrower_role: string; legal_name: string; borrower_id: string | null }[];
   readonly properties: readonly { id: string; address_line1: string; city: string; state: string; postal_code: string; property_id: string | null }[];
 }
 
-const APP_COLS = "id, partner_party_id, channel, transaction_type, occupancy, product_code, status, application_date, trid_application_date, hmda_application_date, mlo_of_record_id, mlo_nmlsr_id, ai_intake_mode, intake_channel, interview_language, six_items, prior_loan_id, loan_id, created_at, updated_at";
+const APP_COLS = "id, partner_party_id, channel, transaction_type, occupancy, product_code, status, application_date, trid_application_date, hmda_application_date, mlo_of_record_id, mlo_nmlsr_id, ai_intake_mode, intake_channel, interview_language, six_items, prior_loan_id, loan_id, du_casefile_id, created_at, updated_at";
 
 export class PgApplicationRepository {
   private readonly db: Queryable;

@@ -34,6 +34,8 @@
  */
 import { randomUUID } from "node:crypto";
 import type { Db, Queryable } from "../infra/db/client.ts";
+import { listDuDocuments, type DuDocumentSummary } from "../domain/underwriting/du/persist.ts";
+import { listDuPreflight, type PreflightResultRow } from "../domain/underwriting/du/preflight.ts";
 import { PgUnitOfWork, type UowResult, type CommittedListener } from "../infra/db/unit-of-work.ts";
 import { PgEntityRepository, type EntityScope } from "../infra/db/entities.ts";
 import { PgApplicationRepository, type ApplicationInput, type ApplicationRecord } from "../infra/db/applications.ts";
@@ -229,12 +231,18 @@ export class Runtime {
     return { application: app!, event: r.result, timers: r.timers };
   }
 
-  /** The application's record: the row, its events, open timers and decisions — and, once funded, the loan it became. */
-  async applicationRecord(id: string): Promise<{ application: ApplicationRecord; events: readonly DomainEvent[]; timers: readonly TimerInstance[]; decisions: readonly { id: string; action: string; agent: string }[] } | undefined> {
+  /**
+   * The application's record: the row, its events, open timers and decisions — and, once funded, the loan it became.
+   * `du` is the DU hand-off's own facts beside the events (the deploy walk's twelfth outcome reads them here through
+   * GET /v1/applications/{id}): the `du_documents` rows 23.6 emitted (the hash and the counts, never the bytes) and the
+   * 23.7 preflight results; `application.du_casefile_id` is DU's own identifier from the first ack (migration 0133).
+   */
+  async applicationRecord(id: string): Promise<{ application: ApplicationRecord; events: readonly DomainEvent[]; timers: readonly TimerInstance[]; decisions: readonly { id: string; action: string; agent: string }[]; du: { documents: readonly DuDocumentSummary[]; preflight: readonly PreflightResultRow[] } } | undefined> {
     const application = await this.applications.get(id);
     if (!application) return undefined;
-    const [events, timers, decisions] = await Promise.all([this.uow.events.byApplication(id), this.uow.timers.forApplication(id), this.uow.decisions.byApplication(id)]);
-    return { application, events, timers, decisions: decisions.map((d) => ({ id: d.id, action: d.action, agent: d.agent })) };
+    // `preflight`: the application's `du_preflight_results` rows, oldest first (23.7 runDuPreflight on every emission → du.preflight.passed / du.preflight.refused{code, xpath, rule}; migration 0136) — every run, passing or not, with its checks; never a fabricated pass
+    const [events, timers, decisions, documents, preflight] = await Promise.all([this.uow.events.byApplication(id), this.uow.timers.forApplication(id), this.uow.decisions.byApplication(id), listDuDocuments(this.db, id), listDuPreflight(this.db, id)]);
+    return { application, events, timers, decisions: decisions.map((d) => ({ id: d.id, action: d.action, agent: d.agent })), du: { documents, preflight } };
   }
 
   /**

@@ -53,6 +53,7 @@ import { wallClock } from "../../../kernel/calendar/zoned.ts";
 import { EntityStore } from "../../../app/tools.ts";
 import { ET } from "../../partner-book-review.ts";
 import { PROJECTED_NOTE_DAYS, RefiOpenRefused, applicationClosedByEvent, identityOnFile, readinessCheck, refiOpen } from "../../partner-book-readiness.ts";
+import { RESIDENCE_FIELDS } from "./3-entry.ts";
 import type { BorrowerFlow, FlowDeps } from "./index.ts";
 
 export const FLOW_ID = "33.3";
@@ -174,8 +175,12 @@ async function afterIdentity(deps: FlowDeps, ctx: AppCtx, e: DomainEvent): Promi
   const prefillOf = (party: Party, key: string): { value: string; source: string } | null => { const p = party.prefill[key] as { value?: unknown; source?: unknown } | undefined; return p && p.value !== undefined && p.value !== null ? { value: String(p.value), source: typeof p.source === "string" ? p.source : "borrower" } : null; };
   for (const party of ctx.parties.filter((p) => !abId || p.application_borrower_id === abId)) {
     const name = prefillOf(party, "legal_name"); const dob = prefillOf(party, "date_of_birth"); const addr = prefillOf(party, "address") ?? prefillOf(party, "current_address");
+    // 32.3 E5 (unchanged here): the residence basis and the months at the address are asked on every file — the tap writes the Current du_residences row through 23.5 writeResidence (the row's edge is application_borrower_id)
+    const residence = RESIDENCE_FIELDS();
     if (name && dob && addr) await sendCard(deps, ctx, party, { kind: "ConfirmCard", copy_key: "identity.confirm.title", flow_key: `identity.confirm:${party.application_borrower_id}`, command_ref: "application.confirmField",
-      props: { title: "", fields: [{ path: "legal_name", label: "Legal name", value: name.value, source: name.source }, { path: "date_of_birth", label: "Date of birth", value: dob.value, source: dob.source }, { path: "current_address", label: "Current address", value: addr.value, source: addr.source }], commits_to: "application_borrowers", command_args: { path: "identity", commits_to: "application_borrowers", ...(lead_id ? { lead_id } : {}) } } });
+      props: { title: "", fields: [{ path: "legal_name", label: "Legal name", value: name.value, source: name.source }, { path: "date_of_birth", label: "Date of birth", value: dob.value, source: dob.source }, { path: "current_address", label: "Current address", value: addr.value, source: addr.source }, ...residence.fields], commits_to: "application_borrowers",
+        required_paths: residence.required_paths, money_paths: residence.money_paths, required_when: residence.required_when, helper_copy_key: "identity.residence.why",
+        command_args: { path: "identity", commits_to: "application_borrowers", application_borrower_id: party.application_borrower_id, ...(lead_id ? { lead_id } : {}) } } });
     await ssnCard(deps, ctx, party);
   }
 }

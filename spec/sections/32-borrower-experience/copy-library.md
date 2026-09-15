@@ -19,6 +19,12 @@ Format: `key` — **card/message** — text — *notes*.
 - `entry.identify.why` — helper — "Your code keeps this conversation yours. We'll never text you marketing without asking first."
 - `identity.stripe.purpose` — ConnectCard — "Verify your identity with a photo of your ID and a selfie. Takes about a minute." — what_we_get: "your name, date of birth and the address on your ID".
 - `identity.confirm.title` — ConfirmCard — "Here's what your ID says. Right?"
+- `identity.residence.why` — helper — "Tell us how you live at this address and how long you have been there. Every application needs both." — *32.3 E5 / 23.5: the residence basis and the months are asked on every file; the tap writes the borrower's Current residence.*
+- `identity.residence.basis` — field — "How you live there" — options `I own it` · `I rent` · `Living rent-free` — *32.3 E5: the residence basis on the identity card; Rent opens the monthly rent field.*
+- `identity.residence.rent` — field — "Monthly rent" — *32.3 E5: shown when the borrower rents; a money field.*
+- `identity.residence.months` — field — "Months at this address" — *32.3 E5: a whole number of months; under 24 opens SQ-06.*
+- `identity.prior_residence.title` — ConfirmCard — "Where did you live before this address?" — fields: street address · city · state · ZIP · "how you lived there" · monthly rent (if you rented) · months there — *32.13 SQ-06: under two years at the current address; the tap writes a Prior residence with its own address.*
+- `identity.prior_residence.why` — helper — "You have been at your address less than two years, so we need the one before it too." — *32.13 SQ-06.*
 - `identity.ssn.why` — ConfirmCard — "We need your Social Security number to pull your credit report. We check it with the Social Security Administration. It's never shown again here."
 - `identity.fallback` — StatusCard — "We'll take a closer look at your ID — nothing for you to do."
 - `identity.contact.title` — ConfirmCard — "Your name and e-mail" — helper: "Michelle asks for both on the call. Tap Confirm so they count, or fix them here." — *32.17 rule 12: the first need on an account the video door opened — legal_name and email, proposed by the model from what was said, written once by `video.identify` on Confirm; the e-mail is how the conversation is picked up from another device (a code goes to it).*
@@ -46,7 +52,11 @@ Format: `key` — **card/message** — text — *notes*.
 
 ## Refinance and purchase intake
 
-- `refi.home.confirm` — ConfirmCard — "Your home — right?" — fields: address · type · "your primary home".
+- `refi.home.confirm` — ConfirmCard — "Your home — right?" — fields: address · type · units · "your primary home" · "Do you own the land, or is it a leasehold?" · "Is there a PACE or clean-energy loan on the home?" — *32.18 rule 7: the two questions are asked on every file; the tap writes them to the home's row beside the parsed address.*
+- `refi.home.why` — helper — "Two quick questions about the home itself. Every application needs them." — *32.18 rule 7 / 32.3 R1.*
+- `refi.home.estate` — field — "Do you own the land, or is it a leasehold?" — options `I own the land` · `It is a leasehold` — *32.18 rule 7: the home card asks it on every file; the tap writes `application_properties.estate_type`.*
+- `refi.home.clean_energy_lien` — field — "Is there a PACE or clean-energy loan on the home?" — options `No` · `Yes` — *32.18 rule 7: asked on every file; the tap writes `application_properties.existing_clean_energy_lien`.*
+- `application.gap.resend` — line — "One more thing before your application is done — it is on the card here." — *32.18 rule 7: a card sent again for an answer the application still needs (a declaration, the residence, the home's two questions); plain words, nothing about what runs behind it.*
 - `refi.current_loan.confirm` — ConfirmCard — "Your current loan, from your credit report and county records. Correct?"
 - `credit.liabilities.confirm` — ConfirmCard — "Your debts, from your credit report. Anything missing?"
 - `credit.liabilities.student_zero` — helper — "For a student loan showing $0, the program counts 1% of the balance. A statement showing your plan payment changes that."
@@ -55,7 +65,18 @@ Format: `key` — **card/message** — text — *notes*.
 - `income.confirm.title` — ConfirmCard — "Your income from {{employer}}. This becomes the income you're stating on your application."
 - `income.other.question` — field — "Any other income you want us to count? (Social Security, pension, child support, rental)" — default `None`.
 - `profile.title` — ProfileCard — "A few things only you can tell us."
+- `declarations.occupancy` — ChoiceCard — "Will you live in this home as your main home?" — options `Yes, and I haven't owned another home in the past three years` · `Yes, and I've owned another home in the past three years` · `No, I won't live here` — helper: "Your answers go on your application just as you give them." — *32.3 R5 / 23.5 rule 4: 5a.A on every file, asked before the list; the tap runs no command.*
+- `declarations.prior_usage` — ChoiceCard — "What kind of home was the one you owned?" — options `My main home` · `A second home` · `An investment property` — *32.3 R5: 5a.1.2, after a Yes to having owned another home.*
+- `declarations.prior_title` — ChoiceCard — "How did you hold title to it?" — options `By myself` · `With my spouse` · `With someone else` — *32.3 R5: 5a.1.3.*
+- `declarations.clean_energy_lien` — ChoiceCard — "Will this home have a lien that comes before the mortgage? A PACE or clean-energy loan paid with your property taxes is one." — options `Yes` · `No` — helper: "Answer for this home. If you're not sure, No is fine — we'll ask again if the records show one." — *32.3 R5 / 23.5 rule 4: URLA 5a.E on every file, its own card between 5a.A and the list; the tap runs no command.*
 - `declarations.title` — ChoiceCard — "Does any of this apply to you?" — options `None of these apply to me` · `Something here applies`.
+- `declarations.item` — ChoiceCard — "Does this apply to you: {{item}}?" — options `Yes` · `No` — helper: "Question {{n}} of {{of}}. Answer for yourself only." — *32.3 SQ-05: one question per card; every card before the last runs no command.*
+- `declarations.bankruptcy.chapter` — ChoiceCard — "Which chapter was the bankruptcy?" — options `Chapter 7` · `Chapter 13` · `Chapter 11` · `Chapter 12` — helper: "If there was more than one, start with the most recent; we'll ask about the others next." — *32.3 SQ-05: 5b.8.1.*
+- `declarations.bankruptcy.another` — ChoiceCard — "Did you file under any other chapter too?" — options `No, that was the only one` · `Yes, another chapter` — *32.3 SQ-05: the chapters accumulate one tap at a time (one filing row per chapter); the tap runs no command.*
+- `declarations.bankruptcy.explain` — ExplanationCard — "Anything you want to add about the bankruptcy?" — *32.3 SQ-05: optional; kept as written (23.5 data model).*
+- `declarations.bankruptcy.explain.prompt` — prompt — "In your own words. This is optional, so you can skip it. What you write is kept just as you wrote it."
+- `declarations.borrowed_funds.amount` — ConfirmCard — "How much are you borrowing for the down payment or closing costs?" — helper: "The amount, in dollars." — *32.3 SQ-05: 5a.3.1, required with a Yes.*
+- `declarations.waiting_period` — line — "Thanks for telling us. A past bankruptcy, foreclosure, short sale or deed in lieu doesn't end this. Loan programs ask that some time has passed since it. We'll go over the dates with you and check which programs fit." — *32.3 SQ-05: B3-5.3-07 as criteria, in the assistant's words, never a decline.*
 - `demographics.title` — DemographicsCard — the prescribed statement (App. B instruction 2) — options include `I do not wish to provide`.
 - `value.confirm.title` — ConfirmCard — "Our estimate of your home's value is {{money}}. Use this, or enter your own?"
 - `loan_amount.confirm.title` — ConfirmCard — "Loan amount: {{money}} — enough to pay off your current loan with no closing costs to you."

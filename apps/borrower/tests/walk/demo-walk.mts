@@ -3,12 +3,12 @@
  *
  *   DEMO_BASE=https://demo.supermortgage.com node --experimental-strip-types tests/walk/demo-walk.mts
  *
- * It creates a fresh account, talks, and checks the eleven things a person must see work; every step leaves a screenshot in
+ * It creates a fresh account, talks, and checks the twelve things a person must see work; every step leaves a screenshot in
  * WALK_OUT (default walk-out/) and the verdicts land in report.json. It is the only claim of "working" the surface accepts:
  * the audit fractions measure the engine; this measures the experience. A check that fails fails the job — it never
  * hides behind a fraction.
  *
- * The eleven outcomes:
+ * The twelve outcomes:
  *   1. A fresh window reaches the account door, and creating an account lands in the conversation.
  *   2. The first message is the model's: it names the first step; no e-mail as a name; no template token; no fixed sentence.
  *   3. The rail shows one open card and one "Your record" line — nothing else.
@@ -23,13 +23,23 @@
  *      message names the partner as the servicer (the partner the deployed record carries — the configured partner on nonprod, 33.1 rule 7)
  *      and carries no digit; the record reads Monitored with the partner as servicer and the
  *      loan's last four; no goal card and no organic application ask on the rail; sign out. An unseeded book fails, never passes.
+ *  12. A fresh borrower reaches the DU moment (32.18): signed up on the page, the journey is driven through the page's own proxy with
+ *      the taps and the FAKE connector sessions only — never a message to the model, so it is deterministic (du-journey.mts) — and the
+ *      DU-side facts are read through the ops API with WALK_OPS_TOKEN (GET /v1/applications/{id}): the emitted document exists in
+ *      du_documents (du.document.emitted's du_document_id and sha256), du.submitted and du.findings.received are logged, preflight
+ *      passed (du.preflight.passed) and the FAKE ack's ten-digit du_casefile_id is on the application. No token, no pass.
  */
 import { chromium, type Browser, type Page } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { driveToDuMoment, duVerdict, waitForDuMoment, JourneyError, type ApiFn, type OpsRecord } from "./du-journey.mts";
 
 const BASE = (process.env["DEMO_BASE"] ?? "https://demo.supermortgage.com").replace(/\/$/, "");
 const OUT = process.env["WALK_OUT"] ?? "walk-out";
+// outcome 12 reads the DU record through the ops API (src/runtime/server.ts GET /v1/applications/{id}, `Authorization: Bearer <API_TOKEN>`): deploy.yml reads the token from Secret Manager, walk.yml from the WALK_OPS_TOKEN repository secret
+const OPS_TOKEN = (process.env["WALK_OPS_TOKEN"] ?? "").trim();
+const NO_OPS_TOKEN = "WALK_OPS_TOKEN not provided: outcome 12 reads the DU record through the ops API";
+const DU_STEP_TIMEOUT_MS = Number(process.env["WALK_DU_STEP_TIMEOUT_MS"] ?? 90_000);   // per card waited for: the deployed flows react asynchronously (the FAKE bureau, the FAKE DU run)
 const REPLY_TIMEOUT_MS = Number(process.env["WALK_REPLY_TIMEOUT_MS"] ?? 180_000);   // the real model, cold, through the guard and its tool calls
 // 33.1 rule 7 / worked example A: loan 1 of the fixture book the demo seed imports (src/domain/partner-book/fixtures/partner-book-demo.ts:
 // DEMO_PARTNER.legal_name, SEEDS[0].email, `NL-${100000 + 1}`) — copied here, not imported: this file runs from apps/borrower against the deployed demo
@@ -286,6 +296,45 @@ async function walk(browser: Browser): Promise<void> {
     }
   }
   await ctx3.close();
+
+  // 12. a fresh borrower reaches the DU moment (32.18): the journey through the page's proxy — cards and FAKE connector sessions only, no message —
+  // then the DU-side facts from the ops record. Without the ops token the outcome is NOT ok, by name; it never passes by default.
+  const WHAT_12 = "a fresh borrower reaches the DU moment: the emitted document exists in du_documents, preflight passed, and the FAKE ack's du_casefile_id is on the application";
+  if (!OPS_TOKEN) {
+    record(12, WHAT_12, false, NO_OPS_TOKEN);
+  } else {
+    const ctx4 = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const page4 = await ctx4.newPage();
+    const email4 = `walk-du-${run}@example.test`;
+    const journeyLog: string[] = [];
+    let applicationId = ""; let taps: string[] = [];
+    try {
+      await signUp(page4, email4, `${password}-du`);
+      await snap(page4, "du-after-sign-up");
+      const api: ApiFn = (method, path, body) => apiOnPage(page4, method, path, body);
+      const driven = await driveToDuMoment(api, { timeoutMs: DU_STEP_TIMEOUT_MS, log: (line) => { journeyLog.push(line); console.log(`  12: ${line}`); } });
+      applicationId = driven.application_id; taps = driven.taps;
+      await page4.reload({ waitUntil: "load", timeout: 60_000 }).catch(() => undefined);
+      await page4.waitForSelector('[data-testid="thread"]', { timeout: 60_000 }).catch(() => undefined);
+      await snap(page4, "du-after-six-items");
+      // the DU-side facts through the ops API — the bearer, never the page's session (the ops routes refuse borrower sessions and the borrower routes the token)
+      const readRecord = async (): Promise<OpsRecord> => {
+        const res = await fetch(`${BASE}/v1/applications/${encodeURIComponent(applicationId)}`, { headers: { accept: "application/json", authorization: `Bearer ${OPS_TOKEN}` } });
+        if (res.status !== 200) throw new JourneyError("ops record", `GET /v1/applications/{id} answered ${res.status}${res.status === 401 || res.status === 403 ? " (is WALK_OPS_TOKEN the deployed API_TOKEN?)" : ""}: ${(await res.text()).slice(0, 200)}`);
+        return (await res.json()) as OpsRecord;
+      };
+      const rec = await waitForDuMoment(readRecord, { timeoutMs: DU_STEP_TIMEOUT_MS * 2 });
+      const verdict = duVerdict(rec);
+      await snap(page4, "du-moment");
+      record(12, WHAT_12, verdict.ok, `application=${applicationId} taps=${taps.length} [${taps.join(", ")}]; ${verdict.detail}`);
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : String(e);
+      const tapped = journeyLog.filter((l) => l.startsWith("tapped ")).map((l) => l.slice(7));
+      await snap(page4, "du-failed");
+      record(12, WHAT_12, false, `${reason} — application=${applicationId || "(none yet)"} taps so far: [${tapped.join(", ")}]; journey: ${JSON.stringify(journeyLog.slice(-6))}`);
+    }
+    await ctx4.close();
+  }
 
   if (pageErrors.length) console.log(`page errors: ${JSON.stringify(pageErrors.slice(0, 5))}`);
   await ctx.close();

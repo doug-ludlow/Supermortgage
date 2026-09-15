@@ -5,6 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import type Anthropic from "@anthropic-ai/sdk";
@@ -21,6 +22,10 @@ import { seedEntryDemo } from "../../runtime/entry-seed.ts";
 import { FakeStripeIdentity } from "../../runtime/borrower/vendors/fake-stripe-identity.ts";
 import { FAKE_ASSET_ACCOUNTS, FAKE_PAYROLL_DEPOSITS } from "../../runtime/borrower/vendors/fake-plaid.ts";
 import { REFINANCE_PROFILE } from "./eval/personas.ts";
+import { readDuDocument } from "../underwriting/du/persist.ts";
+import { decryptTin, tinCipherKey } from "../../infra/pii/tin.ts";
+import { reactDuGaps } from "../../runtime/borrower/flows/3-entry.ts";
+import type { FlowDeps, CardTrigger } from "../../runtime/borrower/flows/index.ts";
 
 const DB_URL = process.env["TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_test";
 const up = await reachable(DB_URL);
@@ -68,6 +73,8 @@ const scripted = scriptedClient();
 
 let journeyLock: TestLock | undefined;
 let db: Db; let runtime: Runtime; let router: BorrowerRouter; let base = ""; let close: () => Promise<void> = async () => undefined; let partnerPartyId = "";
+/** The flow's own log lines about 32.18 rule 7's gaps (`borrower.flow.32-18.gap.*`) — T8 reads the platform-gap lines here. */
+const flowLog: string[] = [];
 
 test.before(async () => {
   if (skip) return;
@@ -76,7 +83,7 @@ test.before(async () => {
   db = connect(DB_URL);
   runtime = new Runtime({ db, registry: loadOverriddenRegistry(), clock });
   partnerPartyId = (await db.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, servicer_number, mers_org_id) VALUES ('servicer', $1, '123456789', '1000123') RETURNING id`, [`Partner Bank ${R}`]))[0]!.id;
-  const logger = createLogger("json", (line) => { if (process.env["FLOW_DEBUG"] && /flow|error|unhandled|32-18|"status":[45]/i.test(line)) process.stderr.write(line + "\n"); });
+  const logger = createLogger("json", (line) => { if (/32-18\.gap/.test(line)) flowLog.push(line); if (process.env["FLOW_DEBUG"] && /flow|error|unhandled|32-18|"status":[45]/i.test(line)) process.stderr.write(line + "\n"); });
   await seedEntryDemo(runtime, { partner_id: partnerPartyId, states: ["AZ", "CO"], now: NOW });
   router = createBorrowerRouter({ runtime, logger, environment: "test", rpId: "localhost", allowedOrigins: ["http://localhost", "http://127.0.0.1"], urlSecret: "test-secret", defaultPartnerId: partnerPartyId, llm: { client: scripted.client, model: "scripted" } });
   const server = createApiServer({ runtime, apiToken: TOKEN, logger, console: false, borrowerRouter: router });
@@ -111,19 +118,22 @@ async function signedUpWithGoal(tag: string, name = "Dana Reyes"): Promise<B> {
   const t = await api("GET", "/v1/borrower/thread?limit=500", undefined, bearer(token)); const goal = t.body["pinned_card"] as Json; assert.equal(goal["copy_key"], "entry.goal.question");
   const g = await api("POST", `/v1/borrower/cards/${goal["card_instance_id"]}/resolve`, { option_id: "lower_rate", evidence: { option_id: "lower_rate", tapped_at: clock.now() } }, bearer(token)); assert.equal(g.status, 201, JSON.stringify(g.body)); await settle();
   const apps = await db.query<{ id: string }>(`SELECT a.id FROM applications a JOIN application_borrowers ab ON ab.application_id = a.id WHERE ab.party_id = $1 ORDER BY a.created_at`, [party_id]); assert.equal(apps.length, 1);
-  const legal = (await db.query<{ legal_name: string }>(`SELECT legal_name FROM parties WHERE id = $1`, [party_id]))[0]!.legal_name;
-  return { token, party_id, app_id: apps[0]!.id, email, name: legal };
+  // the account door names the party by its e-mail (borrower-parties.ts); the name the ID reads (identity(): the FAKE's extraction) is `name` — 32.18 rule 7: it is what 23.6 splits into FirstName / LastName
+  return { token, party_id, app_id: apps[0]!.id, email, name };
 }
-const ADDRESS = "100 N Central Ave, Phoenix, AZ 85004"; const DOB = "1988-04-12"; const SSN = "123-45-6789";
+const ADDRESS = "100 N Central Ave, Phoenix, AZ 85004"; const DOB = "1988-04-12";
+/** The typed SSN — its digits chosen so they coincide with no other fixture figure (the FAKE partner's seller number is 123456789), so T8's "never on a payload" checks are unambiguous. */
+const SSN = "531-47-2468"; const SSN_DIGITS = SSN.replace(/\D/g, ""); const SSN_ANYWHERE = new RegExp(`${SSN_DIGITS.slice(0, 3)}-?${SSN_DIGITS.slice(3, 5)}-?${SSN_DIGITS.slice(5)}`);
 /** E5: the ID scan on the FAKE (the extraction named so the identity ConfirmCard has something to confirm), the identity confirmed, the SSN typed. */
 async function identity(b: B): Promise<void> {
   const vs = await api("POST", "/v1/borrower/identity/stripe/session", { application_id: b.app_id }, bearer(b.token)); assert.equal(vs.status, 200, JSON.stringify(vs.body));
   (router.stripe as FakeStripeIdentity).complete(vs.body["vendor_session_id"] as string, clock.now(), { legal_name: b.name, date_of_birth: DOB, address: ADDRESS });
   const hook = await api("POST", "/v1/webhooks/stripe", { id: `evt-${randomUUID().slice(0, 8)}`, type: "identity.verification_session.verified", data: { object: { id: vs.body["vendor_session_id"], status: "verified" } } }, { "stripe-signature": "FAKE" }); assert.equal(hook.status, 200, JSON.stringify(hook.body)); await settle();
-  const card = await pending(b, "identity.confirm.title"); await tap(b, card, fieldsEvidence(card));
+  const card = await pending(b, "identity.confirm.title"); await tap(b, card, fieldsEvidence(card, { residency_basis: "own", months_at_address: "72" }));   // 32.3 E5: the residence basis and the months on the same card (six years, owned: no SQ-06)
 }
 async function typeSsn(b: B): Promise<void> { const ssn = await pending(b, "identity.ssn.title"); await tap(b, ssn, fieldsEvidence(ssn, { ssn: SSN })); }
-async function home(b: B): Promise<void> { const card = await pending(b, "refi.home.confirm"); await tap(b, card, fieldsEvidence(card, { property_address: ADDRESS })); }
+/** R1: the home confirmed with the two facts only the borrower gives (32.18 rule 7: the estate and the clean-energy lien, asked on every file). */
+async function home(b: B, edits: Record<string, string> = {}): Promise<void> { const card = await pending(b, "refi.home.confirm"); await tap(b, card, fieldsEvidence(card, { property_address: ADDRESS, estate_type: "fee_simple", existing_clean_energy_lien: "no", ...edits })); }
 /** R3 on the FAKE: the payroll connection finishing on the tap, then the income ConfirmCard as the report shows it (an edit states a different figure — T5). */
 async function income(b: B, edits: Record<string, string> = {}): Promise<void> {
   const connect = await pending(b, "income.connect.purpose");
@@ -132,12 +142,14 @@ async function income(b: B, edits: Record<string, string> = {}): Promise<void> {
 }
 async function assets(b: B): Promise<Reply> { const card = await pending(b, "assets.connect.purpose"); const s = await api("POST", "/v1/borrower/connect/plaid_assets/session", { card_instance_id: card.card_instance_id, fake_complete: true }, bearer(b.token)); assert.equal(s.status, 200, JSON.stringify(s.body)); await settle(); return s; }
 /** R4–R7: the profile, the declarations, the demographics, then the six items' cards (the value, the amount, the product). */
-async function aboutYouAndSixItems(b: B, o: { value?: string; amount?: string } = {}): Promise<void> {
+async function aboutYouAndSixItems(b: B, o: { value?: string; amount?: string; /** runs before the amount's tap — the sixth item, on which the DU moment runs (T8 alters the tables between the cards and the run) */ beforeAmount?: () => Promise<void> } = {}): Promise<void> {
   const profile = await pending(b, "profile.title"); await tap(b, profile, { option_id: "submit", evidence: { fields: REFINANCE_PROFILE.map((x) => ({ path: x.path, value: x.value, answered_at: clock.now() })) } });
+  const occ = await pending(b, "declarations.occupancy"); await tap(b, occ, { option_id: "yes_no_prior", evidence: { option_id: "yes_no_prior", tapped_at: clock.now() } });   // 32.3 R5: 5a.A precedes the list on every file
+  const lien = await pending(b, "declarations.clean_energy_lien"); await tap(b, lien, { option_id: "no", evidence: { option_id: "no", tapped_at: clock.now() } });   // then 5a.E on its own card
   const decl = await pending(b, "declarations.title"); await tap(b, decl, { option_id: "none", evidence: { option_id: "none", tapped_at: clock.now() } });
   const demo = await pending(b, "demographics.title"); await tap(b, demo, { option_id: "submit", evidence: { collection_method: "internet", answered_at: clock.now(), answers: { ethnicity: ["do_not_wish"], race: ["do_not_wish"], sex: "do_not_wish" } } });
   const value = await pending(b, "refi.value.confirm"); await tap(b, value, fieldsEvidence(value, { property_value_estimate: o.value ?? "80000000" }));
-  const amount = await pending(b, "refi.loan_amount.confirm"); await tap(b, amount, fieldsEvidence(amount, { loan_amount_sought: o.amount ?? "56000000" }));
+  const amount = await pending(b, "refi.loan_amount.confirm"); if (o.beforeAmount) await o.beforeAmount(); await tap(b, amount, fieldsEvidence(amount, { loan_amount_sought: o.amount ?? "56000000" }));
   const product = (await cardsOf(b.party_id)).filter((x) => x.copy_key === "refi.product.choice" && x.status === "pending").at(-1);
   if (product) await tap(b, product, { option_id: "FRM30", evidence: { option_id: "FRM30", tapped_at: clock.now() } });
 }
@@ -272,4 +284,157 @@ test("32.18-T7: Given the refinance persona's conversation (32.16's fixture: the
   // 32.18 rule 7: 24.1 reads the FAKE findings' offer object as value_acceptance
   const offer = await runtime.execute({ process: "24.1", name: "readDuOffer", loanId: "", applicationId: b.app_id, actor: { kind: "agent", id: "valuation" }, input: { application_id: b.app_id }, run: { runId: `t7:${R}`, modelVersion: "test", promptVersion: "test" } });
   assert.equal((offer.output as Json)["offer_type"], "value_acceptance", JSON.stringify(offer.output)); assert.equal((offer.output as Json)["recommendation"], "approve_eligible");
+});
+
+/** The guard's INTERNALS words (src/runtime/borrower/agent/guard.ts) and the hand-off's own — none may reach a thread line, a card prop or a borrower payload. */
+const DU_INTERNALS = /\b(?:DU|desktop underwriter|findings?|preflight|casefile|MISMO|ULAD|XPath|data point|tradelines?|credit score)\b/i;
+/** Every key at any depth of a payload — 32.13 T3/T6's contract: `tin` / `ssn` / `tin_encrypted` are never a key on a /v1/borrower/* response. */
+const keysOf = (v: unknown, out: Set<string> = new Set()): Set<string> => { if (Array.isArray(v)) v.forEach((x) => keysOf(x, out)); else if (v && typeof v === "object") for (const [k, x] of Object.entries(v as Json)) { out.add(k); keysOf(x, out); } return out; };
+const emittedGaps = async (appId: string): Promise<{ payload: Json; gaps: { code: string; path: string }[] }[]> => (await events(appId, "du.document.emitted")).map((e) => ({ payload: e.payload, gaps: (e.payload["gaps"] as { code: string; path: string }[] | undefined) ?? [] }));
+const pendingKeys = async (partyId: string): Promise<string[]> => (await cardsOf(partyId)).filter((c) => c.status === "pending").map((c) => `${c.copy_key}@${String(c.props["flow_key"])}`);
+const borrowerRowsOf = async (appId: string) => db.query<{ id: string; legal_name: string; tin_last4: string | null; tin_encrypted: Buffer | null }>(`SELECT id::text AS id, legal_name, tin_last4, tin_encrypted FROM application_borrowers WHERE application_id = $1 ORDER BY created_at`, [appId]);
+
+test("32.18-T8: Given the DU moment's document reports a required data point as missing (23.6's `du.document.emitted{required_missing, gaps}`, and 23.7's `du.preflight.refused` once preflight runs), then a gap the borrower supplies — a section 5 declaration, the current residence with its basis, the home's estate type or its existing clean-energy lien answer — makes the card that collects it the current ask on the rail (the declarations card, the address confirm card, the home card) in the copy library's words, with no DU word in any `/v1/borrower/*` payload or thread line, and its resolution re-runs the assembly so the gap closes; a gap the platform derives from what the borrower already gave — the last name from the legal name, the taxpayer identifier from the typed SSN, the state and the attachment type from the confirmed home — never becomes a borrower ask; and the refinance persona's journey (T7's cards, the home card carrying the estate type and the clean-energy lien answer) emits its document with `required_missing = 0`.", { skip }, async () => {
+  // ── (1) the refinance persona's journey (T7's cards; the home card carrying the estate type and the clean-energy lien answer) emits its document with required_missing = 0
+  const b = await toDu("t8");
+  const [emitted, ...more] = await emittedGaps(b.app_id); assert.ok(emitted, "du.document.emitted on the DU moment"); assert.equal(more.length, 0, "one emission");
+  assert.equal(Number(emitted.payload["required_missing"]), 0, `no gap: ${JSON.stringify(emitted.gaps)}`); assert.deepEqual(emitted.gaps, []);
+  const doc = await readDuDocument(db, { application_id: b.app_id }); assert.ok(doc, "the du_documents row"); assert.equal(doc.required_missing, 0);
+  // the platform's own points, derived at assembly from what the borrower already gave (rule 7): the last name from the legal name (23.6's split), the taxpayer identifier from the SSN typed on E5
+  // (application_borrowers.tin_encrypted, decrypted for the document only), the state and the attachment type from the confirmed home (the address parsed into application_properties; sfr → Detached);
+  // and the two the home card asked
+  for (const s of ["<FirstName>Dana</FirstName>", "<LastName>Reyes</LastName>", "<TaxpayerIdentifierType>SocialSecurityNumber</TaxpayerIdentifierType>", `<TaxpayerIdentifierValue>${SSN_DIGITS}</TaxpayerIdentifierValue>`, "<StateCode>AZ</StateCode>", "<AttachmentType>Detached</AttachmentType>", "<PropertyEstateType>FeeSimple</PropertyEstateType>", "<PropertyExistingCleanEnergyLienIndicator>false</PropertyExistingCleanEnergyLienIndicator>"]) assert.ok(doc.xml.includes(s), `${s} on the document`);
+  const [row] = await borrowerRowsOf(b.app_id); assert.equal(row!.legal_name, "Dana Reyes", "the legal name the identity card confirmed"); assert.equal(row!.tin_last4, SSN_DIGITS.slice(-4)); assert.ok(row!.tin_encrypted, "the nine digits at rest, encrypted"); assert.equal(decryptTin(row!.tin_encrypted!, tinCipherKey()), SSN_DIGITS);
+  assert.equal((await db.query<{ legal_name: string }>(`SELECT legal_name FROM parties WHERE id = $1`, [b.party_id]))[0]!.legal_name, "Dana Reyes", "the party's display name follows the confirmed legal name (it was the account's e-mail)");
+  const prop = (await db.query<Json>(`SELECT address_line1, city, state, postal_code, property_type, units, estate_type, existing_clean_energy_lien FROM application_properties WHERE application_id = $1 AND is_subject`, [b.app_id]))[0]!;
+  assert.deepEqual(prop, { address_line1: "100 N Central Ave", city: "Phoenix", state: "AZ", postal_code: "85004", property_type: "sfr", units: 1, estate_type: "fee_simple", existing_clean_energy_lien: false }, "the home card's tap wrote the subject row: the parsed address, the type and units, the two asked facts");
+  assert.ok(!(await pendingKeys(b.party_id)).some((k) => k.includes(":gap:")), `no card was re-sent on a zero-gap journey: ${(await pendingKeys(b.party_id)).join(", ")}`);
+  const zeroPending = (await pendingKeys(b.party_id)).map((k) => k.split("@")[0]!).sort();   // what a zero-gap journey leaves pending (R2's cards): the yardstick for (2) and (3)
+  // the SSN never leaves: no `tin` / `ssn` key and no nine digits on any borrower payload (32.13 T3/T6, 32.3 T12/T19), none on the ops record either (the document's bytes are Fannie Mae-confidential, never listed)
+  for (const path of [`/v1/borrower/record?subject=${b.app_id}`, "/v1/borrower/thread?limit=500", "/v1/borrower/me"]) { const p = await api("GET", path, undefined, bearer(b.token)); assert.equal(p.status, 200, path); const keys = keysOf(p.body); for (const k of ["tin", "ssn", "tin_encrypted"]) assert.ok(!keys.has(k), `${path}: no key ${k}`); assert.doesNotMatch(JSON.stringify(p.body), SSN_ANYWHERE, `${path}: the digits never travel`); }
+  const ops = await api("GET", `/v1/applications/${b.app_id}`, undefined, bearer(TOKEN)); assert.equal(ops.status, 200, JSON.stringify(ops.body).slice(0, 300)); assert.doesNotMatch(JSON.stringify(ops.body), SSN_ANYWHERE, "the ops record never carries the identifier"); assert.doesNotMatch(JSON.stringify(ops.body), /tin_encrypted|TaxpayerIdentifier/, "the ops record carries the hash and the counts, never the bytes");
+  assert.equal(((ops.body["du"] as Json)["documents"] as Json[]).at(-1)!["required_missing"], 0, "the ops record's du.documents row reads zero");
+  // 23.7 on the same emission: the document passes preflight (no refusal on the bus), the du_preflight_results row is on the ops record, and DU's own ten-digit casefile id is on the application from the FAKE port's first ack (rule 9) — what the deploy walk's twelfth outcome reads
+  assert.equal((await events(b.app_id, "du.preflight.passed")).length, 1, "du.preflight.passed once"); assert.equal((await events(b.app_id, "du.preflight.refused")).length, 0, "no refusal");
+  const preflight = (ops.body["du"] as Json)["preflight"] as Json[]; assert.equal(preflight.length, 1, "one preflight run on the record"); assert.equal(preflight[0]!["passed"], true); assert.equal(preflight[0]!["du_document_id"], doc.du_document_id); assert.ok((preflight[0]!["checks"] as Json[]).length >= 1 && (preflight[0]!["checks"] as Json[]).every((c) => c["passed"] === true), "every check passed");
+  assert.match(String((ops.body["application"] as Json)["du_casefile_id"] ?? ""), /^\d{10}$/, `applications.du_casefile_id is the FAKE port's ten-digit id: ${String((ops.body["application"] as Json)["du_casefile_id"])}`);
+  assert.equal((await events(b.app_id, "du.casefile_id.recorded")).length, 1, "written once, from the first ack");
+
+  // ── (2) a gap the borrower supplies becomes the card: the declarations row gone and the estate unanswered when the assembly runs → the declarations card and the home card re-sent as the current ask
+  const g = await signedUpWithGoal("t8g");
+  await identity(g); await typeSsn(g); await home(g); await income(g); await assets(g);
+  await aboutYouAndSixItems(g, { beforeAmount: async () => {
+    const abs = (await borrowerRowsOf(g.app_id)).map((r) => r.id);
+    await db.query(`DELETE FROM du_bankruptcy_filings WHERE declaration_id IN (SELECT id FROM du_declarations WHERE application_borrower_id = ANY ($1::uuid[]))`, [abs]);
+    await db.query(`DELETE FROM du_declarations WHERE application_borrower_id = ANY ($1::uuid[])`, [abs]);
+    await db.query(`UPDATE application_properties SET estate_type = NULL WHERE application_id = $1`, [g.app_id]);
+  } });
+  const [gapEmission] = await emittedGaps(g.app_id); assert.ok(gapEmission, "du.document.emitted on the DU moment");
+  assert.ok(Number(gapEmission.payload["required_missing"]) > 0, "the document reports gaps"); const gapPaths = gapEmission.gaps.map((x) => x.path);
+  assert.ok(gapPaths.some((p) => /\/BORROWER\/DECLARATION\//.test(p)), `a section 5 declaration among the gaps: ${gapPaths.join(", ")}`); assert.ok(gapPaths.some((p) => p.endsWith("/PROPERTY_DETAIL/PropertyEstateType")), "the estate type among the gaps");
+  assert.ok(!gapPaths.some((p) => /LastName|TAXPAYER_IDENTIFIER|StateCode|AttachmentType|PropertyExistingCleanEnergyLien|RESIDENCES/.test(p)), `nothing else is missing on this journey: ${gapPaths.join(", ")}`);
+  const gCards = await cardsOf(g.party_id); const gPending = gCards.filter((c) => c.status === "pending");
+  const emission = String(gapEmission.payload["du_document_id"]).replace(/-/g, "").slice(0, 8); const abId = (await borrowerRowsOf(g.app_id))[0]!.id;
+  const declRe = gPending.find((c) => c.copy_key === "declarations.occupancy" && c.props["flow_key"] === `declarations.occupancy:${abId}:gap:${emission}`); assert.ok(declRe, `the declarations sequence's first card re-sent under the emission's flow_key (pending: ${gPending.map((c) => `${c.copy_key}@${String(c.props["flow_key"])}`).join(", ")})`);
+  assert.equal((declRe.props["declarations_seq"] as Json)["borrower_id"], (gCards.find((c) => c.copy_key === "declarations.occupancy" && c.status === "resolved")!.props["declarations_seq"] as Json)["borrower_id"], "the same borrower's sequence; the tapped card stays resolved");
+  const homeRe = gPending.find((c) => c.copy_key === "refi.home.confirm" && c.props["flow_key"] === `refi.home:${abId}:gap:${emission}`); assert.ok(homeRe, "the home card re-sent under the emission's flow_key");
+  const homeFields = homeRe.props["fields"] as { path: string; value: string; options?: unknown[] }[]; assert.ok(homeFields.some((f) => f.path === "estate_type" && f.value === "" && Array.isArray(f.options)), "the estate asked (a select, unanswered)"); assert.ok(homeFields.some((f) => f.path === "existing_clean_energy_lien" && f.value === "no"), "the lien answer the row still holds, shown");
+  assert.deepEqual(homeRe.props["required_paths"], ["property_address", "estate_type", "existing_clean_energy_lien"]); assert.equal(homeRe.props["helper_copy_key"], "refi.home.why");
+  // the current ask on the rail is the newest pending card (01 §1.3): one of the two re-sent; nothing else pending was raised by the emission
+  const newest = gPending.at(-1)!;   // cardsOf orders by created_at then seq — the FixedClock stamps every card alike, so seq is the order the read model pins by (01 §1.3)
+  assert.ok([declRe.card_instance_id, homeRe.card_instance_id].includes(newest.card_instance_id), `the current ask is a re-sent card: ${newest.copy_key}`);
+  assert.deepEqual(gPending.filter((c) => c !== declRe && c !== homeRe).map((c) => c.copy_key).sort(), zeroPending, `two cards re-sent, no other: ${gPending.map((c) => c.copy_key).join(", ")}`);
+  // Michelle's line beside the card is the copy library's, once, and no thread line or card prop names what runs behind it
+  const thread = await api("GET", "/v1/borrower/thread?limit=500", undefined, bearer(g.token)); assert.equal(thread.status, 200);
+  const lines = (thread.body["messages"] as Json[]).filter((m) => m["sender"] !== "borrower");
+  // the line is flow-authored (`agent:intake`, a copy key): on a model-owned thread (32.16 §2.0, this harness) the read model hides it and the turn explains the card in its own words — the row is the evidence
+  const resendLines = await db.query<{ card_instance_id: string | null }>(`SELECT card_instance_id FROM messages WHERE subject_application_id = $1 AND body_text = '{{copy:application.gap.resend}}'`, [g.app_id]);
+  assert.equal(resendLines.length, 1, "the re-send line once per party and emission"); assert.equal(resendLines[0]!.card_instance_id, declRe.card_instance_id, "beside the first re-sent card");
+  for (const m of lines) assert.doesNotMatch(String(m["body_text"] ?? ""), DU_INTERNALS, `thread line: ${String(m["body_text"])}`);
+  for (const c of [declRe, homeRe]) assert.doesNotMatch(JSON.stringify(c.props), DU_INTERNALS, `${c.copy_key} props`);
+  assert.doesNotMatch(JSON.stringify(thread.body), /required_missing|du_document|gaps|xpath/i, "no emission fact on the thread payload");
+  const copyMd = readFileSync(fileURLToPath(new URL("../../../spec/sections/32-borrower-experience/copy-library.md", import.meta.url)), "utf8").split("\n");
+  for (const key of ["application.gap.resend", "refi.home.why", "refi.home.estate", "refi.home.clean_energy_lien", "refi.home.confirm", "declarations.occupancy", "identity.confirm.title"]) { const line = copyMd.find((l) => l.startsWith(`- \`${key}\``)); assert.ok(line, `${key} in the copy library`); const text = /— "([^"]*)"/.exec(line)?.[1] ?? ""; assert.doesNotMatch(text, DU_INTERNALS, `${key}: ${text}`); }
+  // the card resolves in the copy library's words: the home card's tap writes the estate — and its resolution re-runs the assembly (rule 7: underwriting.run{reassemble} over the graph as it now stands, 23.7's preflight on the emission), so the estate gap closes; the declaration gap stays until its own card resolves
+  await tap(g, homeRe, fieldsEvidence(homeRe, { estate_type: "leasehold" }));
+  assert.equal((await db.query<{ e: string }>(`SELECT estate_type AS e FROM application_properties WHERE application_id = $1 AND is_subject`, [g.app_id]))[0]!.e, "leasehold");
+  assert.equal((await cardRow(homeRe.card_instance_id)).status, "resolved"); assert.ok(!(await pendingKeys(g.party_id)).some((k) => k.startsWith("refi.home.confirm@")), "no second home card while the first re-send stood");
+  const afterHome = await emittedGaps(g.app_id); assert.equal(afterHome.length, 2, "the home card's resolution re-ran the assembly: a second du.document.emitted");
+  assert.ok(!afterHome[1]!.gaps.some((x) => x.path.endsWith("/PROPERTY_DETAIL/PropertyEstateType")), `the estate gap closed: ${afterHome[1]!.gaps.map((x) => x.path).join(", ")}`); assert.ok(afterHome[1]!.gaps.some((x) => /\/BORROWER\/DECLARATION\//.test(x.path)), "the declaration gap stays until its card resolves");
+  assert.equal((await pendingKeys(g.party_id)).filter((k) => k.startsWith("declarations.occupancy@")).length, 1, "the open declarations sequence is the current ask still — not re-sent under the second emission");
+  assert.equal((await entitiesOf("du_casefiles", g.app_id)).length, 1, "one casefile: the re-assembly submits nothing (23.1 owns the resubmission)"); assert.equal((await events(g.app_id, "du.submitted")).length, 1);
+  // the re-sent declarations sequence under the emission's key: 5a.A, 5a.E, None — the last tap asserts the fourteen answers and re-runs the assembly once more: no gap left
+  const occRe = declRe; await tap(g, occRe, { option_id: "yes_no_prior", evidence: { option_id: "yes_no_prior", tapped_at: clock.now() } });
+  const lienRe = await pending(g, "declarations.clean_energy_lien"); assert.equal(lienRe.props["flow_key"], `declarations.clean_energy_lien:${abId}:gap:${emission}`); await tap(g, lienRe, { option_id: "no", evidence: { option_id: "no", tapped_at: clock.now() } });
+  assert.equal((await emittedGaps(g.app_id)).length, 2, "a card of the sequence before the last runs nothing and re-assembles nothing");
+  const listRe = await pending(g, "declarations.title"); assert.equal(listRe.props["flow_key"], `declarations.list:${abId}:gap:${emission}`); await tap(g, listRe, { option_id: "none", evidence: { option_id: "none", tapped_at: clock.now() } });
+  assert.equal((await db.query(`SELECT 1 FROM du_declarations WHERE application_borrower_id = $1`, [abId])).length, 1, "the borrower's du_declarations row is back, asserted by the tap");
+  const closed = await emittedGaps(g.app_id); assert.equal(closed.length, 3, "the last tap re-ran the assembly"); assert.equal(Number(closed[2]!.payload["required_missing"]), 0, `the gap closed: ${closed[2]!.gaps.map((x) => x.path).join(", ")}`); assert.deepEqual(closed[2]!.gaps, []);
+  assert.equal((await events(g.app_id, "du.preflight.passed")).length, 3, "23.7's preflight ran on every emission"); assert.equal((await events(g.app_id, "du.preflight.refused")).length, 0);
+  assert.deepEqual((await pendingKeys(g.party_id)).map((k) => k.split("@")[0]!).sort(), zeroPending, "nothing re-sent on a zero-gap emission: the rail as a zero-gap journey leaves it");
+  assert.equal((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM du_documents WHERE application_id = $1`, [g.app_id]))[0]!.n, "3", "three du_documents rows: the DU moment's and the two re-assemblies");
+
+  // ── (2b) the other two gaps the borrower supplies: the current residence with its basis (E5's address card, re-sent with the residence asks) and the existing clean-energy lien answer (the home card)
+  const r = await signedUpWithGoal("t8r");
+  await identity(r); await typeSsn(r); await home(r); await income(r); await assets(r);
+  await aboutYouAndSixItems(r, { beforeAmount: async () => {
+    const abs = (await borrowerRowsOf(r.app_id)).map((x) => x.id);
+    await db.query(`DELETE FROM du_residences WHERE application_borrower_id = ANY ($1::uuid[])`, [abs]);
+    await db.query(`UPDATE application_properties SET existing_clean_energy_lien = NULL WHERE application_id = $1`, [r.app_id]);
+  } });
+  const [rEmission] = await emittedGaps(r.app_id); assert.ok(rEmission, "du.document.emitted on the DU moment"); const rPaths = rEmission.gaps.map((x) => x.path);
+  assert.ok(rPaths.some((x) => /\/BORROWER\/RESIDENCES\//.test(x)), `the current residence among the gaps: ${rPaths.join(", ")}`); assert.ok(rPaths.some((x) => x.endsWith("/PROPERTY_DETAIL/PropertyExistingCleanEnergyLienIndicator")), `the lien answer among the gaps: ${rPaths.join(", ")}`);
+  assert.ok(!rPaths.some((x) => /DECLARATION|LastName|TAXPAYER_IDENTIFIER|SUBJECT_PROPERTY\/ADDRESS\/StateCode|AttachmentType|PropertyEstateType/.test(x)), `nothing else is missing on this journey: ${rPaths.join(", ")}`);
+  const rAb = (await borrowerRowsOf(r.app_id))[0]!.id; const rEm = String(rEmission.payload["du_document_id"]).replace(/-/g, "").slice(0, 8); const rPending = (await cardsOf(r.party_id)).filter((c) => c.status === "pending");
+  const resRe = rPending.find((c) => c.copy_key === "identity.confirm.title" && c.props["flow_key"] === `identity.confirm:${rAb}:gap:${rEm}`); assert.ok(resRe, `the address confirm card re-sent with the residence asks (pending: ${rPending.map((c) => `${c.copy_key}@${String(c.props["flow_key"])}`).join(", ")})`);
+  const resFields = resRe.props["fields"] as { path: string; value: string; source: string }[]; assert.deepEqual(resFields.map((f) => f.path), ["legal_name", "date_of_birth", "current_address", "residency_basis", "monthly_rent_cents", "months_at_address"]); assert.equal(resFields.find((f) => f.path === "current_address")!.value, ADDRESS, "the confirmed address, shown");
+  assert.deepEqual(resRe.props["required_paths"], ["current_address", "residency_basis", "months_at_address"]); assert.equal(resRe.props["helper_copy_key"], "identity.residence.why"); assert.equal((resRe.props["command_args"] as Json)["path"], "identity");
+  const homeR = rPending.find((c) => c.copy_key === "refi.home.confirm" && c.props["flow_key"] === `refi.home:${rAb}:gap:${rEm}`); assert.ok(homeR, "the home card re-sent for the lien answer");
+  const homeRFields = homeR.props["fields"] as { path: string; value: string }[]; assert.equal(homeRFields.find((f) => f.path === "existing_clean_energy_lien")!.value, "", "the lien asked, unanswered"); assert.equal(homeRFields.find((f) => f.path === "estate_type")!.value, "fee_simple", "the estate the row still holds, shown");
+  assert.deepEqual(rPending.filter((c) => c !== resRe && c !== homeR).map((c) => c.copy_key).sort(), zeroPending, "two cards re-sent, no other");
+  for (const c of [resRe, homeR]) assert.doesNotMatch(JSON.stringify(c.props), DU_INTERNALS, `${c.copy_key} props`);
+  // the residence card's tap: Rent at $1,800.00, 72 months → the Current du_residences row through 23.5 writeResidence in the confirm's own transaction — and the assembly re-runs, the residence gap closing, the lien gap standing (its card still pending, not re-sent)
+  const resTap = await tap(r, resRe, fieldsEvidence(resRe, { residency_basis: "rent", monthly_rent_cents: "180000", months_at_address: "72" })); assert.ok((resTap.body["events"] as string[]).includes("du.graph.residence.written"));
+  assert.deepEqual(await db.query<{ residency_type: string; residency_basis: string; monthly_rent_cents: string; duration_months: number }>(`SELECT residency_type, residency_basis, monthly_rent_cents::text AS monthly_rent_cents, duration_months FROM du_residences WHERE application_borrower_id = $1`, [rAb]), [{ residency_type: "Current", residency_basis: "Rent", monthly_rent_cents: "180000", duration_months: 72 }]);
+  const afterRes = await emittedGaps(r.app_id); assert.equal(afterRes.length, 2, "the residence card's resolution re-ran the assembly"); assert.ok(!afterRes[1]!.gaps.some((x) => /RESIDENCES/.test(x.path)), "the residence gap closed"); assert.ok(afterRes[1]!.gaps.some((x) => x.path.endsWith("PropertyExistingCleanEnergyLienIndicator")), "the lien gap stands");
+  assert.equal((await pendingKeys(r.party_id)).filter((k) => k.startsWith("refi.home.confirm@")).length, 1, "the pending home card is the ask still — not re-sent under the second emission");
+  await tap(r, homeR, fieldsEvidence(homeR, { existing_clean_energy_lien: "yes" }));
+  assert.equal((await db.query<{ l: boolean }>(`SELECT existing_clean_energy_lien AS l FROM application_properties WHERE application_id = $1 AND is_subject`, [r.app_id]))[0]!.l, true);
+  const rClosed = await emittedGaps(r.app_id); assert.equal(rClosed.length, 3); assert.equal(Number(rClosed[2]!.payload["required_missing"]), 0, `the gaps closed: ${rClosed[2]!.gaps.map((x) => x.path).join(", ")}`);
+  assert.ok((await readDuDocument(db, { application_id: r.app_id }))!.xml.includes("<PropertyExistingCleanEnergyLienIndicator>true</PropertyExistingCleanEnergyLienIndicator>"), "the newest document carries the answer as tapped");
+
+  // ── (2c) 23.7's du.preflight.refused{code, xpath, rule} maps the same way (23.7 Open question 1: a refusal at a borrower point goes to the rail directly): a refusal naming a
+  // section 5 point re-sends the declarations sequence under that emission's key; one naming a platform point (an ASSET) is logged and never asked. The FAKE port's documents pass
+  // preflight (part 1), so the refusal is delivered to the flow's reaction as 23.7 would append it — flows/18-du-gaps.ts reacts to the event type, not to who emitted it.
+  const flows = router.flows as unknown as { deps: FlowDeps; within<T>(t: CardTrigger, fn: () => Promise<T>): Promise<T> };
+  const refusal = (xpath: string, code: string) => ({ id: randomUUID(), type: "du.preflight.refused", occurredAt: clock.now(), applicationId: r.app_id, aggregate: { kind: "application", id: r.app_id }, actor: { kind: "agent" as const, id: "underwriter" }, sequence: 0, payload: { application_id: r.app_id, du_document_id: randomUUID(), document_id: randomUUID(), passed: false, code, xpath, rule: "23.7 rule 1", detail: "" } });
+  const refusedAt = `/MESSAGE/DEAL_SETS/DEAL_SET/DEALS/DEAL/PARTIES/PARTY/ROLES/ROLE/BORROWER/DECLARATION/DECLARATION_DETAIL/BankruptcyIndicator`;
+  const refusalEvent = refusal(refusedAt, "DU_PREFLIGHT_ORPHAN"); const platformRefusal = refusal(`/MESSAGE/DEAL_SETS/DEAL_SET/DEALS/DEAL/ASSETS/ASSET[1]/ASSET_DETAIL/AssetType`, "DU_PREFLIGHT_DUPLICATE_ASSET");
+  const platformLogged = flowLog.filter((l) => l.includes("32-18.gap.platform")).length;
+  await flows.within({ source: "event", flow: "32.18", triggers: ["du.preflight.refused"] }, () => reactDuGaps(flows.deps, [refusalEvent, platformRefusal])); await settle();
+  const refEm = String(refusalEvent.payload["du_document_id"]).replace(/-/g, "").slice(0, 8);
+  const refCard = (await cardsOf(r.party_id)).find((c) => c.copy_key === "declarations.occupancy" && c.props["flow_key"] === `declarations.occupancy:${rAb}:gap:${refEm}`); assert.ok(refCard, `the declarations sequence re-sent for the refusal's point (pending: ${(await pendingKeys(r.party_id)).join(", ")})`); assert.equal(refCard.status, "pending");
+  assert.equal((await pendingKeys(r.party_id)).filter((k) => k.includes(`:gap:${String(platformRefusal.payload["du_document_id"]).replace(/-/g, "").slice(0, 8)}`)).length, 0, "a refusal at a platform point sends nothing");
+  const platformNow = flowLog.slice(platformLogged).filter((l) => l.includes("32-18.gap.platform") && l.includes(r.app_id)); assert.equal(platformNow.length, 1, "the platform point logged once, never asked"); assert.ok(platformNow[0]!.includes("DU_PREFLIGHT_DUPLICATE_ASSET"));
+  assert.doesNotMatch(JSON.stringify(refCard.props), DU_INTERNALS, "no DU word on the re-sent card");
+
+  // ── (3) a gap the platform derives never becomes a borrower ask: the last name, the taxpayer identifier, the state and the attachment type missing at assembly → logged, no card
+  const p = await signedUpWithGoal("t8p");
+  await identity(p); await typeSsn(p); await home(p); await income(p); await assets(p);
+  const platformBefore = flowLog.filter((l) => l.includes("32-18.gap.platform")).length;
+  await aboutYouAndSixItems(p, { beforeAmount: async () => {
+    await db.query(`UPDATE application_borrowers SET legal_name = 'Dana', tin_encrypted = NULL WHERE application_id = $1`, [p.app_id]);
+    await db.query(`UPDATE application_properties SET state = NULL, property_type = NULL WHERE application_id = $1`, [p.app_id]);
+  } });
+  const [platformEmission] = await emittedGaps(p.app_id); assert.ok(platformEmission, "du.document.emitted on the DU moment");
+  const platformPaths = platformEmission.gaps.map((x) => x.path);
+  for (const point of ["INDIVIDUAL/NAME/LastName", "TAXPAYER_IDENTIFIER/TaxpayerIdentifierType", "TAXPAYER_IDENTIFIER/TaxpayerIdentifierValue", "SUBJECT_PROPERTY/ADDRESS/StateCode", "PROPERTY_DETAIL/AttachmentType"]) assert.ok(platformPaths.some((x) => x.endsWith(point)), `${point} among the gaps: ${platformPaths.join(", ")}`);
+  assert.ok(!platformPaths.some((x) => /DECLARATION|RESIDENCES|PropertyEstateType|PropertyExistingCleanEnergyLien/.test(x)), `only the platform's points are missing: ${platformPaths.join(", ")}`);
+  assert.ok(!(await pendingKeys(p.party_id)).some((k) => k.includes(":gap:")), `no card re-sent for a platform gap: ${(await pendingKeys(p.party_id)).join(", ")}`);
+  assert.deepEqual((await pendingKeys(p.party_id)).map((k) => k.split("@")[0]!).sort(), zeroPending, "the rail as a zero-gap journey leaves it: nothing asked");
+  const platformLines = flowLog.slice(platformBefore).filter((l) => l.includes("32-18.gap.platform") && l.includes(p.app_id)); assert.equal(platformLines.length, platformPaths.length, `every platform gap logged, none asked: ${platformLines.length} of ${platformPaths.length}`);
+  for (const l of platformLines) assert.doesNotMatch(l, SSN_ANYWHERE, "the log names the path, never a value");
+  const pThread = await api("GET", "/v1/borrower/thread?limit=500", undefined, bearer(p.token)); assert.equal(pThread.status, 200);
+  assert.ok(!(pThread.body["messages"] as Json[]).some((m) => m["body_text"] === "{{copy:application.gap.resend}}"), "no re-send line for a platform gap");
+  assert.equal((await db.query(`SELECT 1 FROM messages WHERE subject_application_id = $1 AND body_text = '{{copy:application.gap.resend}}'`, [p.app_id])).length, 0, "no re-send line written for a platform gap");
 });

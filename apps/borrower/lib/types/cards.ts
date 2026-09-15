@@ -159,7 +159,9 @@ export type ConfirmSource =
   | "document_extraction"
   /** 32.3: a value the borrower typed or edited (source=borrower — 21.1 rule 1) */
   | "borrower";
-export type ConfirmField = { path: string; label: string; value: string; source: ConfirmSource; /** 32.3 T29: null until the borrower confirms */ confirmed_at?: string | null };
+/** 32.3 E5: a field the card asks (no platform value): a choice (`options` — a select of option ids), a whole number, a money amount (a decimal string of cents on the wire), or text; `when` shows it only while another field holds the value (the monthly rent while "I rent" is chosen). */
+export type ConfirmFieldAsk = { options?: { id: string; label: string }[]; input?: "number" | "money" | "text"; when?: { path: string; equals: string } };
+export type ConfirmField = { path: string; label: string; value: string; source: ConfirmSource; /** 32.3 T29: null until the borrower confirms */ confirmed_at?: string | null } & ConfirmFieldAsk;
 export type ConfirmCardProps = {
   title?: string;
   fields: ConfirmField[];
@@ -170,6 +172,11 @@ export type ConfirmCardProps = {
   options?: { id: string; label: string; is_primary?: boolean }[];
   /** 32.16 §3.4: the model's proposed values (cents or enum ids), read back as a confirm chip in the thread. */
   proposal?: CardProposal;
+  /** 01 §3.18 / 32.3 E5: paths that need a value before Confirm (the API refuses without them — CARD_FIELD_REQUIRED); money paths carry cents strings; `required_when` adds a path only while another holds a value (the rent iff renting). */
+  required_paths?: string[];
+  money_paths?: string[];
+  masked_paths?: string[];
+  required_when?: Record<string, { path: string; equals: string }>;
 };
 export type ConfirmCardEvidence = {
   fields: { path: string; value_confirmed: string; source: ConfirmSource; confirmed_at: Timestamptz }[];
@@ -336,8 +343,8 @@ export type UploadCardProps = {
 export type UploadCardEvidence = { document_class: string; file_name: string; uploaded_at: Timestamptz };
 
 /** 3.10 ExplanationCard */
-export type ExplanationCardProps = { subject: string; prompt: string; min_length: number; /** 32.5 §3: subject and prompt from the copy library (`explain.deposit.subject` / `explain.deposit`) with their tokens */ subject_copy_key?: string; prompt_copy_key?: string; copy_tokens?: Record<string, string> };
-export type ExplanationCardEvidence = { text_hash: string; attestation: string; attested_at: Timestamptz };
+export type ExplanationCardProps = { subject: string; prompt: string; min_length: number; /** 32.5 §3: subject and prompt from the copy library (`explain.deposit.subject` / `explain.deposit`) with their tokens */ subject_copy_key?: string; prompt_copy_key?: string; copy_tokens?: Record<string, string>; /** 32.3 SQ-05: the borrower may skip it (the bankruptcy explanation) — no typed name, the text rides the sequence's last tap */ optional?: boolean };
+export type ExplanationCardEvidence = { text_hash: string; attestation: string; attested_at: Timestamptz; /** 32.3 SQ-05: an optional explanation skipped */ skipped?: boolean };
 
 /** 3.11 ScheduleCard */
 export type SchedulePurpose = "appraisal_access" | "pdc_access" | "ron_session" | "callback";

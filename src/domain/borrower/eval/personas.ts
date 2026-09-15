@@ -119,8 +119,9 @@ export const REFINANCE: Persona = { id: "refinance", label: "Refinance journey b
 /** Propose into the pending card with this copy key (whichever `session.next` names), else just look (the conversation persona's own helper, conversation.spec.test.ts). */
 const pendingIn = (s: Situation, copyKey: string): string | null => { const c = [...s.pending_cards].reverse().find((x) => x["copy_key"] === copyKey); return c ? String(c["card_instance_id"]) : null; };
 const proposeInto = (copyKey: string, input: P) => (s: Situation): Call[] => { const id = pendingIn(s, copyKey); return id ? [{ name: "card.propose", input: { card_instance_id: id, ...input } }] : next(); };
-const NAME: Scene = { when: /my name is|i am called|call me/i, calls: proposeInto("identity.confirm.title", { fields: [{ path: "legal_name", value: "Dana Reyes" }] }), text: readBack("Thank you, {{proposal.legal_name}}. I have written your name with the birth date and address the scan read; say if any of it is off.", "Thanks. Your name goes on the identity card here once the scan has read it.") };
-const HOME: Scene = { when: /main home|primary home|live there/i, calls: proposeInto("refi.home.confirm", { fields: [{ path: "property_address", value: "100 N Central Ave, Phoenix, AZ 85004" }, { path: "occupancy", value: "primary" }] }), text: readBack("So the home is {{proposal.property_address}} and you live there as your main home. That is saved; say if it is not right.", "Got it. Confirm the home on the card here.") };
+// 32.3 E5: the identity card also asks how the borrower lives at the address and for how many months (required together — the proposal carries all of them in one call)
+const NAME: Scene = { when: /my name is|i am called|call me/i, calls: proposeInto("identity.confirm.title", { fields: [{ path: "legal_name", value: "Dana Reyes" }, { path: "residency_basis", value: "own" }, { path: "months_at_address", value: "72" }] }), text: readBack("Thank you, {{proposal.legal_name}}. I have written your name with the birth date and address the scan read, that you own the home and have been there {{proposal.months_at_address}} months; say if any of it is off.", "Thanks. Your name goes on the identity card here once the scan has read it.") };
+const HOME: Scene = { when: /main home|primary home|live there/i, calls: proposeInto("refi.home.confirm", { fields: [{ path: "property_address", value: "100 N Central Ave, Phoenix, AZ 85004" }, { path: "occupancy", value: "primary" }, { path: "estate_type", value: "fee_simple" }, { path: "existing_clean_energy_lien", value: "no" }] }), text: readBack("So the home is {{proposal.property_address}} and you live there as your main home. That is saved; say if it is not right.", "Got it. Confirm the home on the card here.") };
 const SIX_ITEMS: Scene = { when: /worth about|owe about/i, calls: (s) => [...proposeInto("refi.value.confirm", { fields: [{ path: "property_value_estimate", value: "80000000" }] })(s), ...proposeInto("refi.loan_amount.confirm", { fields: [{ path: "loan_amount_sought", value: "56000000" }] })(s), ...proposeInto("refi.product.choice", { option_id: "FRM30" })(s)].filter((c) => c.name === "card.propose"), text: readBack("So the home is worth about {{proposal.property_value_estimate}}, you would like to borrow {{proposal.loan_amount_sought}}, and {{proposal.option}}. That is saved; say if it is not right.", "Thanks. The value, the amount and the product each have a card here; confirm them there.") };
 const UNDERWRITING: Scene = { when: /underwriting|how did it go|any news/i, calls: [{ name: "record.get", input: {} }, ...next()], text: (s) => `Underwriting has answered. What it still needs from you is on the checklist here, and nothing about the answer itself goes through me. ${headOfAgenda(s)}` };
 /**
@@ -129,13 +130,15 @@ const UNDERWRITING: Scene = { when: /underwriting|how did it go|any news/i, call
 export const COOPERATIVE_DU: Persona = { id: "cooperative-du", label: "Cooperative refinance borrower to the DU moment", stage: "origination", target: { kind: "event", type: "du.findings.received" }, scenes: [NAME, HOME, SIX_ITEMS, UNDERWRITING, ...COMMON], steps: [
   { say: "Hi! I want to lower my monthly payment on the house." }, { confirm: true },
   { identity: true },
-  { say: "My name is Dana Reyes." },
+  { say: "My name is Dana Reyes. I own the house and have lived there six years." },
   { resolve: { copy_key: "identity.ssn.title", fields: [{ path: "ssn", value: "123-45-6789" }] } },
-  { say: "It is my main home, at 100 N Central Ave in Phoenix, and I live there." },
+  { say: "It is my main home, at 100 N Central Ave in Phoenix, and I live there. I own the land, and there is no PACE or clean-energy loan on it." },   // 32.18 rule 7: the home card asks both on every file
   { connect: { copy_key: "income.connect.purpose", vendor: "truv_income", report: REFINANCE_PAYROLL_REPORT } },
   { resolve: { copy_key: "income.confirm.title", as_shown: true } },
   { connect: { copy_key: "assets.connect.purpose", vendor: "plaid_assets" } },
   { resolve: { copy_key: "profile.title", option_id: "submit", fields: REFINANCE_PROFILE } },
+  { resolve: { copy_key: "declarations.occupancy", option_id: "yes_no_prior", evidence: { option_id: "yes_no_prior" } } },   // 32.3 R5: 5a.A on the card before the list
+  { resolve: { copy_key: "declarations.clean_energy_lien", option_id: "no", evidence: { option_id: "no" } } },   // 5a.E on its own card (23.5 rule 4: never derived from the None tap)
   { resolve: { copy_key: "declarations.title", option_id: "none", evidence: { option_id: "none" } } },
   { resolve: { copy_key: "demographics.title", option_id: "submit", evidence: { collection_method: "internet", answered_at: "2026-09-10T16:00:00.000Z", answers: { ethnicity: ["do_not_wish"], race: ["do_not_wish"], sex: "do_not_wish" } } } },
   { say: "The house is worth about 800,000 and I owe about 560,000 on it; keep it a thirty year fixed." },

@@ -188,9 +188,12 @@ async function affirm(b: B, card: CardInstanceRow): Promise<Reply> { return tap(
 async function verifyEsign(b: B, consentId: string): Promise<void> { const r = await api("POST", "/v1/borrower/commands/consent.capture", { op: "verify", consent_id: consentId, token: esignVerificationToken(consentId), scope: ["disclosures", "notices"] }, bearer(b.token)); assert.equal(r.status, 200, JSON.stringify(r.body).slice(0, 600)); await settle(); }
 /** 32.11 §3's compressed cards: the home (servicing record), the name, the profile, the declarations, the demographics, the value (the partner's), the loan amount (the candidate's), the product when asked. */
 async function sixItems(b: B): Promise<void> {
-  const home = await pending(b, "refi.home.confirm"); await tap(b, home, fieldsEvidence(home));
+  const home = await pending(b, "refi.home.confirm"); await tap(b, home, fieldsEvidence(home, { estate_type: "fee_simple", existing_clean_energy_lien: "no" }));   // 32.18 rule 7: the home card asks both on every file
   const name = await pending(b, "refi.name.confirm"); await tap(b, name, fieldsEvidence(name));
   const profile = await pending(b, "refi.profile.confirm"); await tap(b, profile, fieldsEvidence(profile, Object.fromEntries(REFINANCE_PROFILE.map((x) => [x.path, x.value]))));
+  // 32.3 R5's sequence on the compressed application too (32.11 T6): 5a.A, then 5a.E, then the list — the None tap asserts the fourteen answers as the homeowner's own actor
+  const occ = await pending(b, "declarations.occupancy"); await tap(b, occ, { option_id: "yes_no_prior", evidence: { option_id: "yes_no_prior", tapped_at: clock.now() } });
+  const lien = await pending(b, "declarations.clean_energy_lien"); await tap(b, lien, { option_id: "no", evidence: { option_id: "no", tapped_at: clock.now() } });
   const decl = await pending(b, "declarations.title"); await tap(b, decl, { option_id: "none", evidence: { option_id: "none", tapped_at: clock.now() } });
   const demo = await pending(b, "demographics.title"); await tap(b, demo, { option_id: "submit", evidence: { collection_method: "internet", answered_at: clock.now(), answers: { ethnicity: ["do_not_wish"], race: ["do_not_wish"], sex: "do_not_wish" } } });
   const value = await pending(b, "value.confirm.title"); await tap(b, value, fieldsEvidence(value));
@@ -325,7 +328,8 @@ test("33.3-T2: Given the homeowner of loan 1 taps Yes on the OfferCard, then `re
   assert.deepEqual([...connectors].sort(), [["assets.connect.purpose", "plaid_assets"], ["identity.stripe.purpose", "stripe_identity"], ["income.connect.purpose", "truv_income"]], `the three connectors once each: ${JSON.stringify(connectors)}`);
   for (const c of onApp.filter((x) => x.kind === "ConnectCard")) assert.equal(c.props["vendor_fake"], "FAKE");
   const pendingKeys = onApp.filter((c) => c.status === "pending").map((c) => c.copy_key);
-  for (const key of ["refi.home.confirm", "refi.name.confirm", "value.confirm.title", "loan_amount.confirm.title", "refi.profile.confirm", "declarations.title", "demographics.title", "consent.credit.title", "consent.esign.extend"]) assert.equal(pendingKeys.filter((k) => k === key).length, 1, `${key} once on the rail: ${pendingKeys.join(", ")}`);
+  for (const key of ["refi.home.confirm", "refi.name.confirm", "value.confirm.title", "loan_amount.confirm.title", "refi.profile.confirm", "declarations.occupancy", "demographics.title", "consent.credit.title", "consent.esign.extend"]) assert.equal(pendingKeys.filter((k) => k === key).length, 1, `${key} once on the rail: ${pendingKeys.join(", ")}`);
+  assert.equal(pendingKeys.filter((k) => k === "declarations.title").length, 0, "the list follows 5a.A and 5a.E (32.3 R5's sequence), never first");
   const valueCard = onApp.find((c) => c.copy_key === "value.confirm.title")!; assert.equal((valueCard.props["fields"] as Json[])[0]!["value"], "60500000", "the partner's value on the card (the AVM stand-in)");
   const amountCard = onApp.find((c) => c.copy_key === "loan_amount.confirm.title")!; assert.equal((amountCard.props["fields"] as Json[])[0]!["value"], String((opp["candidate_terms"] as Json)["loan_amount_cents"]), "the candidate's loan amount (20.1), never a computed one");
   const masked = onApp.find((c) => c.copy_key === "refi.ssn.confirm"); assert.ok(masked && masked.status !== "pending", "32.11's masked SSN-on-file card is withdrawn: the SSN is typed (rule 4)");
@@ -363,7 +367,9 @@ test("33.3-T3: Given the open refinance application, when the homeowner complete
   const idv = await appEvents(app.id, "identity.verified"); assert.equal(idv.length, 1); assert.equal(idv[0]!.payload["all_borrowers_verified"], true);
   const r1 = await recomputed("after the scan", ["identity"]); const idItem = itemOf(r1, "identity"); assert.equal(idItem.source_table, "verifications"); assert.ok(idItem.valid_until! >= PROJECTED, `${idItem.valid_until} ≥ ${PROJECTED}`);
   assert.deepEqual(r1.missing, ["ssn", "income", "assets", "esign", "credit_authorization", "credit"]);
-  const confirm = await pending(b, "identity.confirm.title"); await tap(b, confirm, fieldsEvidence(confirm));
+  const confirm = await pending(b, "identity.confirm.title"); assert.deepEqual(confirm.props["required_paths"], ["residency_basis", "months_at_address"], "32.3 E5: the residence asks on the card");
+  await tap(b, confirm, fieldsEvidence(confirm, { residency_basis: "own", months_at_address: "72" }));   // 32.3 E5: the residence basis and the months on the same card
+  assert.deepEqual(await db.query<{ residency_type: string; residency_basis: string; duration_months: number }>(`SELECT residency_type, residency_basis, duration_months FROM du_residences WHERE application_borrower_id = (SELECT id FROM application_borrowers WHERE application_id = $1 AND party_id = $2)`, [app.id, party.id]), [{ residency_type: "Current", residency_basis: "Own", duration_months: 72 }], "the tap wrote the Current du_residences row (23.5 writeResidence)");
   // the SSN typed (32.18 rule 1: the one typed field) → application.six_item.captured{ssn} → ssn present
   await typeSsn(b);
   assert.equal((await appEvents(app.id, "application.six_item.captured")).filter((e) => e.payload["item"] === "ssn").length, 1);

@@ -25,9 +25,9 @@ Stripe Identity, Plaid, Truv, IRS IVES, carrier connection, the RON platform, DU
 | 00-MASTER-INDEX.md, 14-claude-code-build-plan.md | this README | — | — |
 | 01-foundations.md | 32.1 | — | — |
 | 02-data-contracts.md | 32.2 | — | — |
-| 03-entry-and-qualification.md | 32.3 | T-03-01 … T-03-30 | 32.3-T1 … 32.3-T30 |
+| 03-entry-and-qualification.md | 32.3 | T-03-01 … T-03-30 | 32.3-T1 … 32.3-T30 (+ 32.3-T31, 32.3-T32: the Homestead DU handoff Phase 7 amendments) |
 | 04-disclosures-intent-lock.md | 32.4 | T-04-01 … T-04-10 | 32.4-T1 … 32.4-T10 |
-| 05-verification-conditions-coborrowers.md | 32.5 | T-05-01 … T-05-11 | 32.5-T1 … 32.5-T11 |
+| 05-verification-conditions-coborrowers.md | 32.5 | T-05-01 … T-05-11 | 32.5-T1 … 32.5-T11 (+ 32.5-T12, 32.5-T13: the Homestead DU handoff Phase 7 amendments) |
 | 06-decision-property-title-insurance-mi.md | 32.6 | T-06-01 … T-06-12 | 32.6-T1 … 32.6-T12 |
 | 07-cd-closing-rescission-funding-boarding.md | 32.7 | T-07-01 … T-07-13 | 32.7-T1 … 32.7-T13 |
 | 08a-servicing-payments-statements-escrow.md | 32.8 | T-08a-01 … T-08a-11 | 32.8-T1 … 32.8-T11 |

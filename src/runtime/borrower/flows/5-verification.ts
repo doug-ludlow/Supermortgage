@@ -22,7 +22,9 @@
  *   application.party.invited{co_borrower}         21.1 captureField{field=borrower} (arms SM_O21_JOINT_INTENT_GATE), the invitee's deep link, then
  *                                                  ConsentCard{joint_intent} FIRST — before any credit card (T7)
  *   application.party.invited{non_borrowing_spouse} 21.1 captureField{field=non_borrowing_spouse}: no Profile / Demographics / income / liability card, ever (T8)
- *   application.joint_intent.affirmed              the invitee's R2–R6: ConnectCard{truv_income}, ConfirmCard{liabilities}, ProfileCard, declarations, DemographicsCard
+ *   application.joint_intent.affirmed              the invitee's R2–R6: ConnectCard{truv_income}, ConfirmCard{liabilities}, ProfileCard, declarations, DemographicsCard,
+ *                                                  and their own ConnectCard{plaid_assets} (`cob.assets`) — a shared account both borrowers pull is one du_assets row with
+ *                                                  two owner arcs after 22.4's reconciliation, the other row retired by the later pull (T12)
  *   human.transfer.requested                       PersonCard{human_agent}; a human sends cards and never resolves one for the borrower (T10)
  *   tick                                           22.1's nightly freshness sweep (`computeFreshness{op=sweep}`) against the scheduled note date for every
  *                                                  application with a closing on the calendar — `document.expiring` / `document.expired` and the replacement request (T4)
@@ -32,6 +34,7 @@ import type { Actor, DomainEvent } from "../../../kernel/events/index.ts";
 import { EntityStore } from "../../../app/tools.ts";
 import { DOCUMENT_CLASSES } from "../../../domain/verification/ops-22-1.ts";
 import { conditionIsBorrowers, conditionOwner, OWNER_COPY_KEYS, timerLabel } from "../record.ts";
+import { firstDeclarationsCard } from "./3-entry.ts";
 import type { BorrowerFlow, FlowDeps } from "./index.ts";
 
 export const FLOW_ID = "32.5";
@@ -317,8 +320,14 @@ async function onJointIntentAffirmed(deps: FlowDeps, ctx: Ctx, e: DomainEvent): 
     await sendCard(deps, ctx, party, { kind: "ConnectCard", copy_key: "income.connect.purpose", flow_key: `cob.income:${party.party_id}`, command_ref: "verification.connect", props: { vendor: "truv_income", vendor_fake: "FAKE", state: "not_started", what_we_get: "", fallback: "", command_args: { vendor: "truv_income", borrower_id: id, fee_paid_by: "sm" } } });
     await sendCard(deps, ctx, party, { kind: "ConfirmCard", copy_key: "credit.liabilities.confirm", flow_key: `cob.liabilities:${party.party_id}`, command_ref: "application.confirmField", props: { commits_to: "application_liabilities", fields: [], command_args: { path: "liabilities", borrower_id: id, value: { confirmed: true } } } });
     await sendCard(deps, ctx, party, { kind: "ProfileCard", copy_key: "profile.title", flow_key: `cob.profile:${party.party_id}`, command_ref: "application.confirmField", props: { title: "", fields: [{ path: "marital_status", label: "Marital status", required: true, options: [{ id: "married", label: "Married" }, { id: "unmarried", label: "Unmarried" }, { id: "separated", label: "Separated" }] }, { path: "citizenship_status", label: "Citizenship", required: true, options: [{ id: "us_citizen", label: "U.S. citizen" }, { id: "permanent_resident", label: "Permanent resident" }, { id: "non_permanent_resident", label: "Non-permanent resident" }] }], command_args: { path: "profile", borrower_id: id } } });
-    await sendCard(deps, ctx, party, { kind: "ChoiceCard", copy_key: "declarations.title", flow_key: `cob.declarations:${party.party_id}`, command_ref: "application.answerDeclarations", props: { title: "", options: [{ id: "none", label: "None of these apply to me", is_primary: true }, { id: "something", label: "Something here applies" }], command: "application.answerDeclarations", command_args_by_option: { none: { borrower_id: id, declarations: Array.from({ length: 13 }, () => false) }, something: {} }, no_command_options: ["something"] } });
+    // 32.5 §7 / 32.3 R5: the same fourteen-question sequence as the interview's own borrowers (5a.A first, then the list, SQ-05 on "Something applies"), under the `cob.declarations` prefix; the next card of it is raised by the invitee's own tap (3-entry's onCardResolved) and the last tap runs application.answerDeclarations as the invitee's session actor — the inviter's tap is refused (PARTY_SCOPE; 23.5 rule 4)
+    await sendCard(deps, ctx, party, firstDeclarationsCard({ prefix: "cob.declarations", key: party.party_id, borrower_id: id }));
     await sendCard(deps, ctx, party, { kind: "DemographicsCard", copy_key: "demographics.title", flow_key: `cob.demographics:${party.party_id}`, command_ref: "application.answerDemographics", props: { collection_method: "internet", statement_text: "", ethnicity: [{ id: "hispanic_or_latino", label: "Hispanic or Latino" }, { id: "not_hispanic_or_latino", label: "Not Hispanic or Latino" }, { id: "do_not_wish", label: "I do not wish to provide this information" }], race: [{ id: "american_indian_or_alaska_native", label: "American Indian or Alaska Native" }, { id: "asian", label: "Asian" }, { id: "black_or_african_american", label: "Black or African American" }, { id: "native_hawaiian_or_other_pacific_islander", label: "Native Hawaiian or Other Pacific Islander" }, { id: "white", label: "White" }, { id: "do_not_wish", label: "I do not wish to provide this information" }], sex: [{ id: "female", label: "Female" }, { id: "male", label: "Male" }, { id: "do_not_wish", label: "I do not wish to provide this information" }], available: true, command_args: { borrower_id: id, collection_method: "internet" } } });
+    // 32.5 §7 / 32.18 rule 1: their own assets connection — the same card 3-entry sends the interview's borrowers (no command of its own: routes assetsSession / settleAssets settle the
+    // report onto the card and run 22.4's receive with the invitee's own application_borrowers row as the pull's borrower, so the rows are theirs); a shared account both pulled is one
+    // row with two owner arcs after 22.4's reconciliation (T12). DU waits while this card is pending like any assets card (3-entry duMoment).
+    await sendCard(deps, ctx, party, { kind: "ConnectCard", copy_key: "assets.connect.purpose", flow_key: `cob.assets:${party.party_id}`,
+      props: { vendor: "plaid_assets", purpose_text: "", what_we_get: ["balances", "twelve months of deposits"], fallback: { label: "Send two months of statements per account instead", document_class: "bank_statement" }, state: "not_started", pre_intent_optional: true, vendor_fake: "FAKE" } });
   }
 }
 

@@ -27,6 +27,8 @@ import { DU_FORMATS, type DuFormat } from "./generated/lengths.ts";
 import { DU_CONDITIONALITY, DU_CONDITION_STATEMENTS, type DuCondition, type DuConditionalityEntry } from "./generated/conditionality.ts";
 import { DU_ARCROLES, DU_RELATIONSHIP_XPATH } from "./generated/arcroles.ts";
 import { parseXml, type XmlElement } from "./xml.ts";
+import { decryptTin, tinCipherKey } from "../../../infra/pii/tin.ts";
+import { attachmentOf, ESTATE_TYPE_OF_OPTION } from "./property-facts.ts";
 
 // ---------------------------------------------------------------------------------------------------------------------
 // The graph
@@ -940,23 +942,54 @@ export async function loadGraph(q: Queryable, application_id: string): Promise<D
   // readDuGraph returns the income items that name an employer (23.5 rule 2: the arc). A wage item with none is still a
   // CURRENT_INCOME_ITEM — EmploymentIncomeIndicator false, no arc (23.6 Edge cases, T9) — so the rest are read here.
   const unemployed = await q.query<Row>(`SELECT * FROM application_income WHERE application_id = $1 AND employer_id IS NULL ORDER BY created_at, id`, [application_id]);
-  const graph = projectGraph({ ...rows, income_items: [...rows.income_items, ...unemployed].sort((a, b) => (stamp(a) < stamp(b) ? -1 : stamp(a) > stamp(b) ? 1 : id(a) < id(b) ? -1 : 1)) });
+  const projected = projectGraph({ ...rows, income_items: [...rows.income_items, ...unemployed].sort((a, b) => (stamp(a) < stamp(b) ? -1 : stamp(a) > stamp(b) ? 1 : id(a) < id(b) ? -1 : 1)) });
+  const graph = await withTaxpayerIdentifiers(q, application_id, projected);
   // 23.6 Inputs: `application_properties` — the subject property's address (COLLATERAL/SUBJECT_PROPERTY/ADDRESS, 4a.3)
   // and its unit count. The loan's own terms are not in any table: 23.1's snapshot carries them (ops-23-1.ts
   // dealFromSnapshot) and `withDeal` lays them over this graph.
-  const property = (await q.query<Row>(`SELECT address_line1, address_line2, city, state, postal_code, units FROM application_properties WHERE application_id = $1 AND is_subject ORDER BY created_at, id LIMIT 1`, [application_id]))[0];
+  // 32.18 rule 7: the row also carries the two facts only the borrower gives — the estate (PropertyEstateType, L2.3) and
+  // the clean-energy lien (PropertyExistingCleanEnergyLienIndicator, L1.10), asked on the home card and stored in its own
+  // vocabulary (0137) — and the confirmed type, from which AttachmentType is derived (property-facts.ts: Detached /
+  // Attached; a type that says neither, a PUD say, leaves the point absent — rule 4, never a default).
+  const property = (await q.query<Row>(`SELECT address_line1, address_line2, city, state, postal_code, units, property_type, estate_type, existing_clean_energy_lien FROM application_properties WHERE application_id = $1 AND is_subject ORDER BY created_at, id LIMIT 1`, [application_id]))[0];
   if (!property) return graph;
   const S = `${DEAL.slice("MESSAGE/".length)}/COLLATERALS/COLLATERAL/SUBJECT_PROPERTY`;
   const postal = str(property, "postal_code")?.replace(/-/g, "") ?? null;
+  const estate = str(property, "estate_type");
   const subject = values({
     [`${S}/ADDRESS/AddressLineText`]: str(property, "address_line1"),
     [`${S}/ADDRESS/AddressUnitIdentifier`]: str(property, "address_line2"),
     [`${S}/ADDRESS/CityName`]: str(property, "city"),
     [`${S}/ADDRESS/PostalCode`]: postal && /^(\d{5}|\d{9})$/.test(postal) ? postal : null,
     [`${S}/ADDRESS/StateCode`]: str(property, "state"),
+    [`${S}/PROPERTY_DETAIL/AttachmentType`]: attachmentOf(str(property, "property_type")),
     [`${S}/PROPERTY_DETAIL/FinancedUnitCount`]: num(property, "units"),
+    [`${S}/PROPERTY_DETAIL/PropertyEstateType`]: estate === null ? null : ESTATE_TYPE_OF_OPTION[estate] ?? null,
+    [`${S}/PROPERTY_DETAIL/PropertyExistingCleanEnergyLienIndicator`]: bool(property, "existing_clean_energy_lien"),
   });
   return { ...graph, message: { ...subject, ...graph.message } };
+}
+
+/**
+ * 32.18 rule 7: `TAXPAYER_IDENTIFIERS/TAXPAYER_IDENTIFIER` (1a.3, required) on each borrowing PARTY from the SSN the borrower
+ * typed on 32.3 E5's one typed field — `application_borrowers.tin_encrypted` (0057, pii), decrypted here under the platform's
+ * cipher (src/infra/pii/tin.ts) and put on the document only: the value is never logged, never on a payload, and the graph
+ * that carries it lives for the assembly. A row with no cipher text leaves the data point absent (a gap the platform owns,
+ * never a borrower ask); one that cannot be decrypted is a configuration fault named by borrower id, never by value.
+ */
+async function withTaxpayerIdentifiers(q: Queryable, application_id: string, graph: DuGraph): Promise<DuGraph> {
+  const rows = await q.query<{ id: string; tin_encrypted: Buffer | Uint8Array | null }>(`SELECT id::text AS id, tin_encrypted FROM application_borrowers WHERE application_id = $1 AND tin_encrypted IS NOT NULL`, [application_id]);
+  if (!rows.length) return graph;
+  const key = tinCipherKey();
+  const tins = new Map<string, string>();
+  for (const r of rows) {
+    if (!r.tin_encrypted) continue;
+    let digits: string;
+    try { digits = decryptTin(r.tin_encrypted, key); } catch { throw new Error(`application_borrowers.tin_encrypted cannot be read for borrower ${r.id} (TIN_CIPHER_KEY differs from the one it was written under)`); }
+    if (/^\d{9}$/.test(digits)) tins.set(`party:${r.id}`, digits);
+  }
+  if (!tins.size) return graph;
+  return { ...graph, containers: graph.containers.map((c) => (c.kind === "PARTY" && tins.has(c.id) ? { ...c, values: { ...c.values, "TAXPAYER_IDENTIFIERS/TAXPAYER_IDENTIFIER/TaxpayerIdentifierType": "SocialSecurityNumber", "TAXPAYER_IDENTIFIERS/TAXPAYER_IDENTIFIER/TaxpayerIdentifierValue": tins.get(c.id)! } } : c)) };
 }
 
 /** A graph with no rows: what a request built from 23.1's snapshot alone starts from (the deal facts come from `withDeal`). */

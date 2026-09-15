@@ -268,6 +268,9 @@ export type RecordOffer = {
 export type JourneyStep = { id: string; label_copy_key: string; state: "done" | "current" | "upcoming"; at: Timestamptz | null };
 export type JourneyProgress = { steps: JourneyStep[]; done: number; total: number };
 
+/** 32.5 §7 / T12: an account the platform holds for the borrower (a live du_assets row); `joint` when another borrower on the application shares it. */
+export type RecordAsset = { asset_id: Uuid; kind: string; institution: string | null; account_last4: string | null; verified: boolean; joint: boolean };
+
 export type BorrowerRecord = {
   subject: RecordSubject;
   status: RecordStatus;
@@ -277,6 +280,8 @@ export type BorrowerRecord = {
   what_we_are_doing?: DoingItem[];
   needed_summary?: { count: number; nothing_needed: boolean; copy_key: "needs.title" | "needs.none" };
   numbers?: RecordNumbers;
+  /** 32.5 §7: the accounts held for this borrower — one row per live account (a shared account once, `joint`); the institution and last four only, never a balance. */
+  accounts?: RecordAsset[];
   dates: RecordDate[];
   documents: RecordDocument[];
   people: RecordPerson[];

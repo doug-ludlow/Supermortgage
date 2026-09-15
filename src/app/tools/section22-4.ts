@@ -16,8 +16,8 @@ import { CommandRefused, type CommandContext } from "../commands.ts";
 import { plainDate as D, type PlainDate } from "../../kernel/calendar/date.ts";
 import { isUuid, toJson, type Queryable } from "../../infra/db/client.ts";
 import { duTool, hasTransaction } from "./section23-5.ts";
-import { deterministicUuid, resolveBorrowerEdge } from "../../domain/underwriting/du/writer.ts";
-import { assetIdentityKeys, resolveIdentities, subjectPrefix } from "../../domain/underwriting/du/identity.ts";
+import { DuWriterError, deterministicUuid, resolveBorrowerEdge, retireAsset } from "../../domain/underwriting/du/writer.ts";
+import { assetIdentityKeys, normalized, resolveIdentities, subjectPrefix } from "../../domain/underwriting/du/identity.ts";
 import { DocumentGateClosed, assertGateOpen, openRequest, scheduledNoteDate, type DocumentRequest, type NeedsListItem, type ReliedDocument } from "../../domain/verification/ops-22-1.ts";
 import {
   AGENT, RULE_SET_VERSION, AssetGateClosed, anticipatedSalesProceeds, applyIpcTest, assertAssetGateOpen, assetDecisionRecord, buildWorksheet, communitySecond, computeReserves, correctGiftLetter, declareAsset, declareSubordinateFinancing, donorInterestedPartyCheck, emdCheck, evaluateDeposits, finalizeAssets,
@@ -57,7 +57,81 @@ async function writeAssetsToDuGraph(i: ToolInput, ctx: CommandContext, rt: ToolR
       cites_decision_id: `verification.received:${v.verification_id}` })) as { asset_id: string };
     assets.push(out.asset_id);
   }
-  return { written: true, verification_row_id: rowId, assets, ambiguous: plan.ambiguous.map((g) => ({ identity_key: g.identityKey.replace(subjectPrefix("pull"), "p:<borrower>:"), row_ids: g.rowIds })) };
+  const merged = await reconcileJointAccounts(ctx, rt, app, { rowId, verificationId: v.verification_id, borrowerRef, accounts, assets });
+  return { written: true, verification_row_id: rowId, assets, merged, ambiguous: plan.ambiguous.map((g) => ({ identity_key: g.identityKey.replace(subjectPrefix("pull"), "p:<borrower>:"), row_ids: g.rowIds })) };
+}
+/**
+ * 22.4's reconciliation of a shared account (32.5 §7; 23.5 rule 5 / edge cases): two borrowers' pulls of one account are
+ * two live `du_assets` rows with equal institution, subtype and last four under disjoint owners, because 22.4's identity
+ * key is prefixed per borrower. After this pull's rows are written, each of its accounts is looked up on the COMMITTED
+ * state (the way writeDuAsset looks its row up before the transaction) for live twins owned by other borrowers; the
+ * earliest-created row survives, gains the others' owner arcs through 23.5 linkOwner (`du.graph.owner.linked`, citing
+ * the receive) and the others are retired in the same transaction with `retired_by_verification_id` = this pull's
+ * `verifications` row (writer.ts retireAsset, the deferred write — the deferred triggers judge the merged set at
+ * COMMIT). A group in which one borrower holds two rows (a pull that could not tell two accounts apart) is left alone
+ * and named for the preflight. The emitter (23.6) never merges: it reads one row with two arcs.
+ *
+ * The merge is an invariant across re-pulls, not a one-shot: a later re-pull by the borrower whose row was retired
+ * revives that row (writer.ts matched() finds it under its own identity key; revision() clears retired_at — "an
+ * account reported again is live again"), while the pool read sees only the committed live twin, which already carries
+ * that borrower's arc. That revived row is the same account coming back, not a second holding: it is retired again in
+ * favour of the survivor (never counted as a second row of its borrower), so one live row with two arcs holds after
+ * every pull and 23.7's DU_PREFLIGHT_DUPLICATE_ASSET has nothing to refuse.
+ *
+ * The pool read decides the plan the events name; the deferred write re-reads the twins under the application's
+ * identity lock (writer.ts lockIdentitySpace — the lock every writeAsset takes) and refuses the command when the locked
+ * set is not the one the plan was made on (DU_WRITER_IDENTITY_MOVED, "re-run the pull" — the same rule as assertLanded):
+ * two borrowers' first pulls of one account racing each other cannot both insert and neither reconcile.
+ */
+async function reconcileJointAccounts(ctx: CommandContext, rt: ToolRuntime, app: string, pull: { rowId: string; verificationId: string; borrowerRef: string; accounts: readonly Record<string, unknown>[]; assets: readonly string[] }): Promise<{ survivor_asset_id: string; retired_asset_ids: string[]; owners_linked: string[]; skipped?: string }[]> {
+  const db = rt.services["db"] as Queryable | undefined; const defer = rt.services["deferWrite"] as (fn: (q: Queryable) => Promise<void>) => void;
+  if (!db) return [];
+  const edge = await resolveBorrowerEdge(db, app, pull.borrowerRef);
+  const out: { survivor_asset_id: string; retired_asset_ids: string[]; owners_linked: string[]; skipped?: string }[] = [];
+  const seen = new Set<string>();
+  for (const [k, a] of pull.accounts.entries()) {
+    const mine = pull.assets[k]!; if (seen.has(mine)) continue;
+    const type = DU_ASSET_TYPE_FOR_ACCOUNT[String(a["account_type"] ?? "")] ?? null; const last4 = String(a["last4"] ?? "").slice(-4) || null; const institution = normalized(optStr(a, "institution"));
+    if (!type || !last4 || !institution) continue;
+    const facts = { type, last4, institution };
+    // the committed twins: live DEPOSIT_ACCOUNT rows of this application with the same facts, each with its owner set (this pull's own row is among them only when it matched a live row on a re-pull)
+    const committed = await liveTwins(db, app, facts);
+    const revived = !committed.some((r) => r.id === mine);   // this pull's row is not live on the pool: inserted now, or a retired twin this re-pull revives
+    const group = revived ? [...committed, { id: mine, created_at: "", owners: [edge] }] : committed;   // a row this pull is inserting is the latest by construction
+    // the deferred write judges the same twins under the identity lock: a row another pull committed between the pool read and this commit moves the set (this pull's own rows — inserted, revived or matched — are its own and never a move), and the command is refused rather than left with two live rows
+    const own = new Set(pull.assets);
+    const planned = committed.map((r) => r.id).filter((id) => !own.has(id)).sort().join(",");
+    defer(async (q) => {
+      await q.query(`SELECT pg_advisory_xact_lock(hashtext('du_row_identity'), hashtext($1::text))`, [app]);
+      const locked = (await liveTwins(q, app, facts)).map((r) => r.id).filter((id) => !own.has(id)).sort().join(",");
+      if (locked !== planned) throw new DuWriterError("DU_WRITER_IDENTITY_MOVED", `receiveAssets: the live du_assets rows for ${institution}/${type}/${last4} moved between the lookup and this commit (planned [${planned}], found [${locked}]) — another pull committed the account; nothing is written, re-run the pull`);
+    });
+    if (group.length < 2) continue;
+    for (const r of group) seen.add(r.id);
+    const survivor = group[0]!; const losers = group.slice(1);
+    // one borrower holding two live rows is not a joint account — unless the second is this pull's revived twin of a survivor that already carries the borrower (the same account coming back): that one is retired again below, never counted
+    const held = new Map<string, number>();
+    for (const r of group) for (const o of r.owners) { if (r.id === mine && revived && survivor.owners.includes(o)) continue; held.set(o, (held.get(o) ?? 0) + 1); }
+    if ([...held.values()].some((n) => n > 1)) { out.push({ survivor_asset_id: survivor.id, retired_asset_ids: [], owners_linked: [], skipped: `one borrower holds ${group.length} live rows for ${institution}/${type}/${last4}: not a joint account, left for the preflight` }); continue; }
+    const linked: string[] = [];
+    for (const loser of losers) for (const owner of loser.owners) {
+      if (survivor.owners.includes(owner) || linked.includes(owner)) continue;
+      await duTool(rt, ctx, "linkOwner", { application_id: app, kind: "asset", row_id: survivor.id, application_borrower_id: owner, cites_decision_id: `verification.received:${pull.verificationId}` });
+      linked.push(owner);
+    }
+    // after writeDuAsset's own deferred write (registered before this one): the revived twin is live again by now and is retired again here, in favour of the same survivor
+    defer(async (q) => { for (const loser of losers) await retireAsset(q, { id: loser.id, retiredByVerificationId: pull.rowId, survivorId: survivor.id }); });
+    out.push({ survivor_asset_id: survivor.id, retired_asset_ids: losers.map((l) => l.id), owners_linked: linked });
+  }
+  return out;
+}
+/** The live DEPOSIT_ACCOUNT rows of the application with these facts, each with its owner set, earliest created first. */
+async function liveTwins(q: Queryable, app: string, facts: { type: string; last4: string; institution: string }): Promise<{ id: string; created_at: string; owners: string[] }[]> {
+  return q.query<{ id: string; created_at: string; owners: string[] }>(
+    `SELECT a.id, a.created_at::text AS created_at, coalesce(array_agg(p.application_borrower_id::text ORDER BY p.created_at, p.id) FILTER (WHERE p.id IS NOT NULL), '{}') AS owners
+       FROM du_assets a LEFT JOIN du_asset_parties p ON p.asset_id = a.id
+      WHERE a.application_id = $1 AND a.retired_at IS NULL AND a.kind = 'DEPOSIT_ACCOUNT' AND a.asset_type = $2 AND a.account_last4 = $3 AND regexp_replace(lower(coalesce(a.institution_name, '')), '[^a-z0-9]', '', 'g') = $4
+      GROUP BY a.id ORDER BY a.created_at, a.id`, [app, facts.type, facts.last4, facts.institution]);
 }
 const at = (i: ToolInput, k: string, ctx: CommandContext): string => (typeof i[k] === "string" && i[k] ? String(i[k]) : ctx.now);
 const optDate = (i: Record<string, unknown>, k: string): PlainDate | null => (i[k] === undefined || i[k] === null || i[k] === "" ? null : D(String(i[k])));
@@ -147,7 +221,8 @@ export const TOOLS_22_4: readonly ToolDef[] = defineTools("22.4", "verification"
         // 23.5: the report's accounts are the application's assets — one du_assets row per account with an owner arc from the pull's borrower, written through 23.5
         // writeDuAsset in this command's transaction (the `verifications` row the lineage columns name goes first, in the same transaction). A re-pull matches on the
         // identity key (identity.ts: the subject borrower's prefix, the vendor's account id where the adapter gives one, else institution + subtype + last four); two
-        // accounts of one pull the key cannot tell apart are refused a match (tier 3: `unmatched:` keys) and named in `du_graph.ambiguous` for the preflight.
+        // accounts of one pull the key cannot tell apart are refused a match (tier 3: `unmatched:` keys) and named in `du_graph.ambiguous` for the preflight. A shared account
+        // another borrower already pulled is reconciled in the same transaction (reconcileJointAccounts: one row with two owner arcs, the twin retired by this pull — `du_graph.merged`).
         const du_graph = hasTransaction(rt) && !flag(i, "skip_du_graph") ? await writeAssetsToDuGraph(i, ctx, rt, app, r.verification) : { written: false, reason: "no transaction in this runtime (a unit harness): the verifications record holds the accounts" };
         return { verification_id: r.verification.verification_id, kind: "assets", supplier_code: r.verification.supplier_code, report_reference_id: r.verification.report_reference_id, report_days, accounts: r.verification.accounts.length, large_deposit_messages: r.verification.large_deposit_messages.map((m) => m.du_message_id), event_id: r.event.id, du_graph };
       }

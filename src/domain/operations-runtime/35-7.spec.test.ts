@@ -248,6 +248,7 @@ test("35.7-T2: Given an active staff user holding `officer`, when an `admin` cal
   clock.set(at(11 * MIN));
   const expired = await api("POST", `/ops/api/roles/grants/${late.body["request_id"]}/confirm`, {}, bearer(sessions["cara"]!.token));
   assert.equal(expired.status, 409, JSON.stringify(expired.body)); assert.equal(expired.body["code"], "REQUEST_EXPIRED");
+  await runtime.sweep();   // the sweep's stale-request pass logs the expiry (a refused command persists nothing)
   assert.equal((await events("role.grant.request.expired")).filter((e) => e.payload["request_id"] === late.body["request_id"]).length, 1);
   assert.equal((await grants(ids["oli"]!, "bsa_officer")).length, 0);
 });

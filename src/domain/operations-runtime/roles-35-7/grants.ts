@@ -128,8 +128,7 @@ export async function confirmGrant(d: StaffActDeps, i: { request_id: string; env
   if (!r) throw new RolesRefused(404, "REQUEST_NOT_FOUND", `no grant request ${i.request_id || "(none)"}`, { request_id: i.request_id });
   if (r.resolved === "granted") { const g = await latestGrant(d.db, r.staff_user_id, r.role, r.environment); return { status: "already_held", grant_id: g?.id ?? null, request_id: r.request_id, staff_user_id: r.staff_user_id, role: r.role, environment: r.environment, by: r.by, confirmed_by: g?.confirmed_by ?? null, staffed: false }; }
   if (r.resolved === "expired" || Date.parse(r.expires_at) <= Date.parse(d.now)) {
-    // the refusal persists nothing of this command, so the expiry is logged in its own transaction (the sweep would log it a minute later anyway)
-    if (r.resolved !== "expired") await d.runtime.uow.run({}, (ctx) => ctx.events.append(grantRequestExpiredEvent(r, d.now)), { clock: d.runtime.clock });
+    // the refusal persists nothing of this command (a nested unit of work inside a command is the command's own transaction under 35.1's seam); the sweep's stale-request pass logs `role.grant.request.expired` (rolesSweepPass)
     throw new RolesRefused(409, "REQUEST_EXPIRED", `grant request ${r.request_id} expired at ${r.expires_at}; the grant never activated (35.7 rule 3)`, { request_id: r.request_id, expires_at: r.expires_at });
   }
   const confirmer = await requireActiveStaff(d.db, d.actor, ["compliance"], what, r.environment);

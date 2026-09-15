@@ -97,8 +97,7 @@ export async function handoverEnable(d: StaffActDeps, i: EnableInput): Promise<E
   const { request, resolved } = found;
   if (resolved?.action === "enabled") return { status: "already_enabled", environment: request.environment, role: request.role, request_id: request.request_id, requested_by: request.requested_by, confirmed_by: resolved.confirmed_by, holders: resolved.holders, pending_items: resolved.pending_items, effective_at: resolved.effective_at, by: nameOf(d.actor) };
   if (resolved || Date.parse(request.expires_at ?? "") <= Date.parse(d.now)) {
-    // the refusal persists nothing of this command, so the expiry row and event are written in their own transaction (the sweep would write them a minute later anyway)
-    if (!resolved) await d.runtime.uow.run({}, (ctx) => ctx.events.append(handoverExpiredEvent(request, d.now)), { clock: d.runtime.clock, commit: async (q) => { await expireHandoverRow(q, request, d.now); } });
+    // the refusal persists nothing of this command; the sweep's stale-request pass writes the expired row and `handover.request.expired` (rolesSweepPass)
     throw new RolesRefused(409, "REQUEST_EXPIRED", `handover request ${request.request_id} expired at ${request.expires_at}; the FAKE still fills ${request.role}`, { request_id: request.request_id, expires_at: request.expires_at });
   }
   if (d.actor.kind === "human" && request.requested_by === d.actor.id) throw new RolesRefused(403, "TWO_PERSON_HANDOVER", `the handover of ${request.role} is two people's decision: ${d.actor.id} requested it and may not confirm it (35.7 rule 7)`, { request_id: request.request_id, role: request.role });

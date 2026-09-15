@@ -10,6 +10,7 @@ import type { ApplicationRecord } from "../../infra/db/applications.ts";
 import type { Actor, FixedClock } from "../../kernel/events/index.ts";
 import { plainDate as D, addDays, addMonths, type PlainDate } from "../../kernel/calendar/date.ts";
 import type { Cents } from "../../kernel/money/cents.ts";
+import { toIso, zonedEpochMs } from "../../kernel/calendar/zoned.ts";
 import { makeMin } from "../boarding/min.ts";
 import { amortizedBalance } from "../boarding/demo-batch.ts";
 import { PARTNER_ORG, TRANSFEROR_ORG } from "../boarding/fixtures.ts";
@@ -160,3 +161,19 @@ export async function insertUnconfiguredLoan(db: Db, partnerPartyId: string): Pr
   await db.query(`INSERT INTO loan_installments (loan_id, due_date, pi_cents, interest_cents, principal_cents, escrow_cents, status) VALUES ($1, '2026-10-01', 189620, 151915, 37705, 41230, 'due')`, [loanId]);
   return loanId;
 }
+
+// ---------------------------------------------------------------- the lockbox cycle's fixtures and readers (G3)
+/** A Chicago wall-clock instant (the lockbox's zone; DST ends 2026-11-01, so 2026-11-02 is CST) — computed, never a hard-coded offset. */
+export const chicagoInstant = (date: PlainDate, hhmm: string): string => toIso(zonedEpochMs(date, hhmm, "America/Chicago"));
+export interface BatchRead extends Record<string, unknown> { readonly id: string; readonly lockbox_id: string; readonly file_name: string; readonly sha256: string; readonly document_id: string | null; readonly receipt_date: string; readonly cutoff_tz: string; readonly items: number; readonly control_total_cents: bigint; readonly items_identified: number; readonly items_unidentified: number; readonly items_rejected: number; readonly status: string; readonly variance_cents: bigint; readonly posted_at: string | null; }
+export const readBatches = async (db: Db, sha256?: string): Promise<BatchRead[]> => db.query<BatchRead>(`SELECT id, lockbox_id, file_name, sha256, document_id, receipt_date::text AS receipt_date, cutoff_tz, items, control_total_cents, items_identified, items_unidentified, items_rejected, status, variance_cents, posted_at::text AS posted_at FROM lockbox_batches ${sha256 ? "WHERE sha256 = $1" : ""} ORDER BY created_at, id`, sha256 ? [sha256] : []);
+export interface ItemRead extends Record<string, unknown> { readonly id: string; readonly batch_id: string; readonly item_no: number; readonly scanline: string; readonly loan_number_read: string | null; readonly amount_cents: bigint; readonly check_number: string | null; readonly payer_name: string | null; readonly scanned_at: string; readonly after_cutoff: boolean; readonly received_on: string; readonly matched_loan_id: string | null; readonly match_method: string; readonly payment_id: string | null; readonly suspense_item_id: string | null; readonly disposition: string; readonly resolved_by: Record<string, unknown> | null; }
+export const readItems = async (db: Db, batchId: string): Promise<ItemRead[]> => db.query<ItemRead>(`SELECT id, batch_id, item_no, scanline, loan_number_read, amount_cents, check_number, payer_name, scanned_at::text AS scanned_at, after_cutoff, received_on::text AS received_on, matched_loan_id, match_method, payment_id, suspense_item_id, disposition, resolved_by FROM lockbox_items WHERE batch_id = $1 ORDER BY item_no`, [batchId]);
+/** A clock armed on an aggregate subject (a lockbox batch: loan_id NULL, subject_kind / subject_id the aggregate), oldest first. */
+export const readSubjectTimer = async (db: Db, code: string, kind: string, id: string): Promise<GlobalTimerRow[]> => db.query<GlobalTimerRow>(`SELECT id, code, status::text AS status, subject_kind, subject_id, anchor_date::text AS anchor_date, due_date::text AS due_date, satisfied_by_event_id, armed_by_event_id FROM timers WHERE code = $1 AND subject_kind = $2 AND subject_id = $3 ORDER BY armed_at, due_at`, [code, kind, id]);
+export interface TypedEventRow extends Record<string, unknown> { readonly id: string; readonly type: string; readonly sequence: bigint; readonly actor_id: string; readonly payload: Record<string, unknown>; readonly aggregate_kind: string | null; readonly aggregate_id: string | null; readonly loan_id: string | null; }
+/** Every event of one type on the whole log (global and loan-keyed), in sequence. */
+export const readEventsOfType = async (db: Db, type: string): Promise<TypedEventRow[]> => db.query<TypedEventRow>(`SELECT id, type, sequence, actor_id, payload, aggregate_kind, aggregate_id, loan_id FROM loan_events WHERE type = $1 ORDER BY loan_events.sequence`, [type]);
+export interface SetLineRead extends Record<string, unknown> { readonly set_id: string; readonly description: string; readonly effective_date: string; readonly sequence: number; readonly scope: string; readonly account: string; readonly loan_id: string | null; readonly custodial_account_id: string | null; readonly amount_cents: bigint; readonly rule_ref: string; }
+/** The lines of the entry set with this description, in sequence (a receipt set has two). */
+export const readSet = async (db: Db, description: string): Promise<SetLineRead[]> => db.query<SetLineRead>(`SELECT s.id AS set_id, s.description, s.effective_date::text AS effective_date, l.sequence, l.scope::text AS scope, l.account, l.loan_id, l.custodial_account_id, l.amount_cents, l.rule_ref FROM ledger_entry_sets s JOIN ledger_lines l ON l.set_id = s.id WHERE s.description = $1 ORDER BY s.posted_at, l.sequence`, [description]);

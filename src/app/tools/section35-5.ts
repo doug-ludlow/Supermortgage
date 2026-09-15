@@ -7,16 +7,27 @@
  * src/domain/operations-runtime/installments.ts and servicing-config.ts; the guardrails here are the spec's codes —
  * NO_MONEY_FIELD (no tool of this process changes a money field outside the owning engine's command), the `compliance` gates of
  * rule 9 (an explicit time zone or profile on a config row; every profile activation); the daily unit (`cashiering.run_unit`, rule set
- * `cashiering.allocation.v1`, NO_CLIENT_STATE). The lockbox and ACH cycles are the later groups' tools (lockbox.*, ach.*).
+ * `cashiering.allocation.v1`, NO_CLIENT_STATE); the lockbox cycle (`lockbox.ingest`, the agent's runner; `lockbox.item.resolve`, a human act of
+ * `ops_analyst` / `officer` — CONTROL_TOTAL_MATCH and NO_MONEY_FIELD; src/domain/operations-runtime/lockbox.ts). The ACH cycle is G4's (ach.*).
  */
 import { defineTools, decision, humanWhen, needsRole, never, type ToolDef, type ToolInput } from "../tools.ts";
 import { installmentsRead, installmentsReproject, installmentsWrite, MONEY_KEY, RULE_SET_SCHEDULE } from "../../domain/operations-runtime/installments.ts";
 import { RULE_SET_CONFIG, servicerProfileWrite, servicingConfigWrite } from "../../domain/operations-runtime/servicing-config.ts";
 import { RULE_SET_ALLOCATION, cashieringRunUnit } from "../../domain/operations-runtime/cashiering-cycle.ts";
+import { lockboxIngest, lockboxItemResolve, type BatchOutcome } from "../../domain/operations-runtime/lockbox.ts";
 
 const moneyKeys = (i: ToolInput): string[] => Object.keys(i).filter((k) => MONEY_KEY.test(k));
 const NO_MONEY_FIELD = never("NO_MONEY_FIELD", "35.5 guardrails: no tool here changes a money field outside the owning engine's command with the owning role", (i) => moneyKeys(i).length > 0, "a money field on the input (the schedule is arithmetic on the note's terms; 2.1/2.7/2.3 own the cash)");
 const out = (o: unknown): Record<string, unknown> => (o && typeof o === "object" ? (o as Record<string, unknown>) : {});
+const batchesOf = (o: unknown): readonly BatchOutcome[] => (Array.isArray(out(o).batches) ? (out(o).batches as BatchOutcome[]) : []);
+/** The ingest's decision: one per run, naming every batch — posted, in variance (CONTROL_TOTAL_MATCH) or the first batch a duplicate file names (DUPLICATE_FILE). */
+const ingestDecision = (i: ToolInput, o: unknown): { action: string; rationale: string; subject: { kind: string; id: string }; ruleCode?: string } => {
+  const batches = batchesOf(o); const first = batches[0];
+  const line = (b: BatchOutcome): string => b.status === "duplicate" ? `${b.file_name} (sha256 ${b.sha256}) is a duplicate of batch ${b.duplicate_of} — nothing written` : b.status === "variance" ? `batch ${b.batch_id} (${b.file_name}, receipt ${b.receipt_date}) CONTROL_TOTAL_MATCH: Σ items ${b.sum_cents} ≠ control ${b.control_total_cents}, variance ${b.variance_cents}¢ — nothing posted, officer ${b.escalation_id ?? ""}` : `batch ${b.batch_id} (${b.file_name}, receipt ${b.receipt_date}) posted: ${b.posted} to payments, ${b.unidentified} to 6.5 suspense, variance 0`;
+  const rationale = `cashiering.allocation.v1: lockbox ${String(i.lockbox_id ?? "")} ${String(i.as_of_date ?? "")} run ${String(out(o).run_id ?? "")}: ${batches.length ? batches.map(line).join("; ") : `no file queued (files ${String(out(o).files ?? 0)})`}`;
+  const ruleCode = batches.length && batches.every((b) => b.status === "duplicate") ? "DUPLICATE_FILE" : batches.some((b) => b.status === "variance") ? "CONTROL_TOTAL_MATCH" : undefined;
+  return { action: "lockbox.ingest", rationale, subject: first ? { kind: "lockbox_batch", id: first.batch_id } : { kind: "cycle_run", id: String(out(o).run_id ?? "") }, ...(ruleCode ? { ruleCode } : {}) };
+};
 
 export const TOOLS_35_5: readonly ToolDef[] = defineTools("35.5", "cashiering", [
   { name: "installments.write", kind: "act", ruleSetVersion: RULE_SET_SCHEDULE, handler: installmentsWrite, guardrails: [NO_MONEY_FIELD],
@@ -36,5 +47,10 @@ export const TOOLS_35_5: readonly ToolDef[] = defineTools("35.5", "cashiering", 
   { name: "servicer_profile.write", kind: "act", ruleSetVersion: RULE_SET_CONFIG, humanRoles: ["compliance"], handler: servicerProfileWrite, decision: () => null,
     guardrails: [NO_MONEY_FIELD, humanWhen("PROFILE_ACTIVATION_IS_HUMAN", "35.5 rule 9: activating a profile version needs `compliance` and writes a decision", (i) => i.op === "activate", "an agent may draft a servicer profile version, never activate one"),
       needsRole("PROFILE_ACTIVATION_IS_COMPLIANCE", "35.5 rule 9: activating a profile version needs `compliance`", (i) => i.op === "activate", ["compliance"], "activating a servicer profile version")] },
+  // rule 7: the lockbox_ingest unit — the agent's runner (its own units of work, sequential to this command's); the decision names every batch of the run
+  { name: "lockbox.ingest", kind: "act", ruleSetVersion: RULE_SET_ALLOCATION, handler: lockboxIngest, guardrails: [NO_MONEY_FIELD], decision: ingestDecision },
+  // rule 7 / AI agent design: an unmatched item is resolved by a person (`ops_analyst`; `officer` when an amount changes — an amount here is NO_MONEY_FIELD for everyone: that is 6.5's command)
+  { name: "lockbox.item.resolve", kind: "act", ruleSetVersion: RULE_SET_ALLOCATION, humanOnly: true, humanRoles: ["ops_analyst", "officer"], handler: lockboxItemResolve, guardrails: [NO_MONEY_FIELD],
+    decision: (i, o) => ({ action: "lockbox.item.resolve", rationale: `cashiering.allocation.v1: lockbox item ${String(i.item_id ?? "")} ${out(o).loan_id ? `identified to loan ${String(out(o).loan_id)} (manual; payment ${String(out(o).payment_id ?? "")}${out(o).parked_on ? `, parked on ${String(out(o).parked_on)} until 2.1 posts it` : ""})` : `closed as ${String(out(o).disposition ?? i.disposition ?? "")}`}; ${String(i.reason ?? "")}`, subject: { kind: "lockbox_item", id: String(i.item_id ?? "") } }) },
   { name: "writeDecision", kind: "act", handler: decision() },
 ]);

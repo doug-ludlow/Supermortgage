@@ -12,7 +12,11 @@
  * trigger, below). `armServicingSideClocks` at the end arms this section's loan clocks on servicing-side events the engine skips.
  * Emitter of the daily receipt: src/domain/operations-runtime/cashiering-cycle.ts electDailyReceipt — `cashiering.daily.run_completed{as_of_date,
  * run_id, loans, posted, late_charges_assessed, amount_change_checks, units_total, units_done, units_dead, units_skipped, origination: true}` once per
- * day in a global unit of work (35.3's `electReceipt` owns the literal at its merge).
+ * day in a global unit of work (35.3's `electReceipt` owns the literal at its merge). Emitter of the lockbox clocks' trigger and satisfier:
+ * src/domain/operations-runtime/lockbox.ts ingestLockboxFile — `lockbox.batch.received{lockbox_id, batch_id, receipt_date, lockbox_receipt_date,
+ * received_on, items, control_total_cents, sha256, …, origination: true}` on the batch aggregate (arms SM_LOCKBOX_BATCH_POSTED_1BD on the batch and
+ * re-arms the global SM_LOCKBOX_FILE_EXPECTED_1BD; 2.1's and 6.1's deposit clocks read their own anchor spellings from the same payload) and
+ * `lockbox.batch.posted{batch_id, posted, unidentified, rejected}` once every item is a payment or a suspense item.
  */
 import type { TimerDef, TimerRegistry } from "../../kernel/timers/registry.ts";
 import { isOriginationContext, type TimerEngine } from "../../kernel/timers/engine.ts";

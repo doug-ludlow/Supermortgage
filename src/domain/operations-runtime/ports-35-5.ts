@@ -40,13 +40,31 @@ export interface NewPaymentRow {
   readonly loan_id: string; readonly amount_cents: Cents; readonly received_on: PlainDate; readonly credited_as_of?: PlainDate; readonly channel: string; readonly instrument?: string;
   readonly designation?: string; readonly status?: "received" | "identified"; readonly idempotency_key?: string; readonly curtailment_cents?: Cents; readonly payer_name?: string | null; readonly check_number?: string | null;
   readonly source_batch_id?: string | null; readonly source_item_id?: string | null; readonly autodraft_trace?: string | null; readonly enrollment_id?: string | null; readonly ach_entry_id?: string | null; readonly received_at?: string | null;
+  /** A caller-minted uuid (the lockbox ingest posts the receipt set naming it before the row is written); else the port mints one. */
+  readonly payment_id?: string;
+  /**
+   * 35.5 rule 7: a lockbox item's receipt set (Dr clearing_cash / Cr suspense_unapplied) is posted at ingest on its `received_on` (credit as of
+   * receipt); the posting run reuses it instead of posting a second one (src/app/tools/section2-1.ts). `receipt_parked_account` names the custodial
+   * suspense the credit sits in when the item was identified after the ingest parked it (6.5's unidentified item, resolved through
+   * `lockbox.item.resolve`) — 2.1 releases it to the loan's suspense at posting, in its own receipt-shaped set.
+   */
+  readonly receipt_entry_set_id?: string | null; readonly ledger_entry_set_ids?: readonly string[]; readonly receipt_parked_account?: { readonly custodial_account_id: string; readonly account: string } | null;
+  readonly match_method?: string | null; readonly scanline?: string | null;
   readonly actor?: Actor;
 }
-export interface NewSuspenseItem { readonly loan_id: string | null; readonly amount_cents: Cents; readonly received_on: PlainDate; readonly source: string; readonly reason_code: string; readonly payment_id?: string | null; readonly batch_id?: string | null; readonly item_no?: number | null; readonly receipt_entry_set_id?: string | null; readonly actor?: Actor; }
+export interface NewSuspenseItem {
+  readonly loan_id: string | null; readonly amount_cents: Cents; readonly received_on: PlainDate; readonly source: string; readonly reason_code: string; readonly payment_id?: string | null; readonly batch_id?: string | null; readonly item_no?: number | null; readonly receipt_entry_set_id?: string | null;
+  /** 6.5's suspense is keyed by the custodial account the funds sit in (0003 suspense_items.custodial_account_id): the lockbox's clearing account for an unidentified item. */
+  readonly custodial_account_id?: string | null; readonly payer_name?: string | null; readonly check_number?: string | null; readonly scanline?: string | null; readonly loan_number_read?: string | null;
+  readonly actor?: Actor;
+}
+export interface SuspenseRow { readonly id: string; readonly version: number; readonly data: Row; }
 export interface CashRowsPort {
   /** `payments` rows in `received` / `identified` for the loan, in receipt order (received_on, then version). */
   receivedPayments(loanId: string, overlay?: EntityStore): Promise<PaymentRow[]>;
   paymentById(loanId: string, paymentId: string, overlay?: EntityStore): Promise<PaymentRow | undefined>;
+  /** One suspense item by id — a loan's, or a loan-less one (6.5's unidentified lockbox item is a global row until it is matched). */
+  suspenseItemById(suspenseItemId: string, overlay?: EntityStore): Promise<SuspenseRow | undefined>;
   /** The reversal a returned item recorded on the payment (JSONB `payments.reversal`; 35.1's `payment_reversals` projector — Ask 1). */
   reversalsFor(loanId: string, paymentId: string): Promise<ReversalRow[]>;
   /** A uuid id; deduplicated against the store by `idempotency_key`; appends `payment.received`. */
@@ -70,6 +88,10 @@ export function jsonbCashRows(rt: Runtime): CashRowsPort {
         .sort((a, b) => String(a.data.received_on ?? "").localeCompare(String(b.data.received_on ?? "")) || String(a.data.received_at ?? "").localeCompare(String(b.data.received_at ?? "")) || a.version - b.version);
     },
     async paymentById(loanId, paymentId, overlay) { const r = (await loanStore(loanId, overlay)).get("payments", paymentId); return r && r.data.loan_id === loanId ? { id: r.id, version: r.version, data: r.data } : undefined; },
+    async suspenseItemById(suspenseItemId, overlay) {
+      const hit = overlay?.get("suspense_items", suspenseItemId) ?? (await rt.entities.current("suspense_items", suspenseItemId));
+      return hit ? { id: hit.id, version: hit.version, data: hit.data } : undefined;
+    },
     async reversalsFor(loanId, paymentId) {
       const r = (await loanStore(loanId)).get("payments", paymentId); const rev = r?.data.reversal as Row | undefined;
       return rev ? [{ payment_id: paymentId, reason: String(rev.reason ?? ""), return_code: (rev.return_code as string | null) ?? null, reversed_at: String(rev.reversed_at ?? ""), entry_set_ids: Array.isArray(rev.entry_set_ids) ? (rev.entry_set_ids as string[]) : [] }] : [];
@@ -78,18 +100,22 @@ export function jsonbCashRows(rt: Runtime): CashRowsPort {
       const key = row.idempotency_key ?? createHash("sha256").update(`${row.channel}|${row.loan_id}|${row.received_on}|${s(row.amount_cents)}|${row.source_batch_id ?? ""}|${row.source_item_id ?? ""}|${row.autodraft_trace ?? ""}`).digest("hex");
       const dup = store.list("payments", (d) => d.loan_id === row.loan_id && d.idempotency_key === key)[0];
       if (dup) return { payment_id: dup.id, duplicate: true };
-      const payment_id = randomUUID(); const actor = row.actor ?? CASHIERING_AGENT; const creditedAsOf = row.credited_as_of ?? row.received_on;
+      const payment_id = row.payment_id ?? randomUUID(); const actor = row.actor ?? CASHIERING_AGENT; const creditedAsOf = row.credited_as_of ?? row.received_on;
+      if (store.get("payments", payment_id)) throw new RangeError(`payment ${payment_id} already exists on this loan`);
       // the shape section2-3.ts settle writes for an ACH-settled receipt (35.1's payments projector copies it unchanged)
       store.put("payments", payment_id, { payment_id, loan_id: row.loan_id, amount_cents: s(row.amount_cents), received_on: row.received_on, credited_as_of: creditedAsOf, channel: row.channel, instrument: row.instrument ?? (row.channel.startsWith("ach") ? "ach" : "check"), designation: row.designation ?? "contractual", status: row.status ?? "received",
         identification_confidence: 1, conforming: true, idempotency_key: key, ...(row.curtailment_cents !== undefined ? { curtailment_cents: s(row.curtailment_cents) } : {}), ...(row.payer_name ? { payer_name: row.payer_name } : {}), ...(row.check_number ? { check_number: row.check_number } : {}),
-        ...(row.source_batch_id ? { source_batch_id: row.source_batch_id } : {}), ...(row.source_item_id ? { source_item_id: row.source_item_id } : {}), ...(row.autodraft_trace ? { autodraft_trace: row.autodraft_trace } : {}), ...(row.enrollment_id ? { enrollment_id: row.enrollment_id } : {}), ...(row.ach_entry_id ? { ach_entry_id: row.ach_entry_id } : {}), received_at: row.received_at ?? ctx.clock.now() }, actor, ctx.clock.now());
+        ...(row.source_batch_id ? { source_batch_id: row.source_batch_id } : {}), ...(row.source_item_id ? { source_item_id: row.source_item_id } : {}), ...(row.autodraft_trace ? { autodraft_trace: row.autodraft_trace } : {}), ...(row.enrollment_id ? { enrollment_id: row.enrollment_id } : {}), ...(row.ach_entry_id ? { ach_entry_id: row.ach_entry_id } : {}),
+        ...(row.receipt_entry_set_id ? { receipt_entry_set_id: row.receipt_entry_set_id } : {}), ...(row.ledger_entry_set_ids ? { ledger_entry_set_ids: [...row.ledger_entry_set_ids] } : {}), ...(row.receipt_parked_account ? { receipt_parked_account: { ...row.receipt_parked_account } } : {}),
+        ...(row.match_method ? { match_method: row.match_method } : {}), ...(row.scanline ? { scanline: row.scanline } : {}), received_at: row.received_at ?? ctx.clock.now() }, actor, ctx.clock.now());
       ctx.events.append({ type: "payment.received", loanId: row.loan_id, aggregate: { kind: "payment", id: payment_id }, actor, payload: { payment_id, loan_id: row.loan_id, amount_cents: s(row.amount_cents), received_on: row.received_on, credited_as_of: creditedAsOf, channel: row.channel, designation: row.designation ?? "contractual", status: row.status ?? "received", idempotency_key: key, ...(row.source_batch_id ? { source_batch_id: row.source_batch_id, source_item_id: row.source_item_id ?? null } : {}) } });
       return { payment_id, duplicate: false };
     },
     writeSuspenseItem(store, ctx, row) {
       const suspense_item_id = randomUUID(); const actor = row.actor ?? CASHIERING_AGENT;
       // the section2-1.ts shape (a 2.2 hold row), with 6.5's source and reason
-      store.put("suspense_items", suspense_item_id, { id: suspense_item_id, loan_id: row.loan_id, payment_id: row.payment_id ?? null, amount_cents: s(row.amount_cents), received_on: row.received_on, source: row.source, reason_code: row.reason_code, status: "open", batch_id: row.batch_id ?? null, item_no: row.item_no ?? null, receipt_entry_set_id: row.receipt_entry_set_id ?? null, opened_at: ctx.clock.now() }, actor, ctx.clock.now());
+      store.put("suspense_items", suspense_item_id, { id: suspense_item_id, loan_id: row.loan_id, payment_id: row.payment_id ?? null, amount_cents: s(row.amount_cents), received_on: row.received_on, credited_as_of: row.received_on, source: row.source, reason_code: row.reason_code, status: "open", batch_id: row.batch_id ?? null, item_no: row.item_no ?? null, receipt_entry_set_id: row.receipt_entry_set_id ?? null,
+        custodial_account_id: row.custodial_account_id ?? null, payer_name: row.payer_name ?? null, check_number: row.check_number ?? null, scanline: row.scanline ?? null, loan_number_read: row.loan_number_read ?? null, opened_at: ctx.clock.now() }, actor, ctx.clock.now());
       return { suspense_item_id };
     },
     writeFee(store, ctx, fee) { store.put("fees", fee.id, feeRecord({ ...fee }), CASHIERING_AGENT, ctx.clock.now()); return { fee_id: fee.id }; },

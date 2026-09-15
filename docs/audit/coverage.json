@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 8128/8756 (92.8%): tids 2255/2458, tables 769/848, timers 2046/2097, notices 308/308, tools 1440/1578, figures 1310/1467; processes at 100%: 192/205",
+ "brief": "spec units built 8139/8756 (93.0%): tids 2256/2458, tables 772/848, timers 2047/2097, notices 308/308, tools 1442/1578, figures 1314/1467; processes at 100%: 192/205",
  "totals": {
   "tids": {
    "spec": 2458,
-   "built": 2255
+   "built": 2256
   },
   "tables": {
    "spec": 848,
-   "built": 769
+   "built": 772
   },
   "timers": {
    "spec": 2097,
-   "built": 2046
+   "built": 2047
   },
   "notices": {
    "spec": 308,
@@ -19,15 +19,15 @@
   },
   "tools": {
    "spec": 1578,
-   "built": 1440
+   "built": 1442
   },
   "figures": {
    "spec": 1467,
-   "built": 1310
+   "built": 1314
   },
   "units": {
    "spec": 8756,
-   "built": 8128
+   "built": 8139
   }
  },
  "sections": {
@@ -237,7 +237,7 @@
   },
   "35": {
    "spec": 715,
-   "built": 104,
+   "built": 115,
    "processes": 12,
    "done": 0
   }
@@ -8746,10 +8746,9 @@
    "title": "The installment schedule and the daily cashiering cycle: `loan_installments` at fund and at transfer boarding, the whole-book 2.1/2.7/2.3 sweep, lockbox ingest, ACH origination and NACHA returns as cycles, and the per-loan jurisdiction, time-zone and servicer-identity configuration",
    "tids": {
     "spec": 16,
-    "built": 11,
-    "todo": 5,
+    "built": 12,
+    "todo": 4,
     "missing": [
-     7,
      8,
      9,
      10,
@@ -8758,21 +8757,16 @@
    },
    "tables": {
     "spec": 8,
-    "built": 5,
-    "missing": [
-     "ach_return_files",
-     "lockbox_batches",
-     "lockbox_items"
-    ]
+    "built": 8,
+    "missing": []
    },
    "timers": {
     "spec": 8,
-    "built": 5,
+    "built": 6,
     "armable": 8,
     "missing": [
      "SM_ACH_FILE_BUILD_1BD",
-     "SM_ACH_RETURN_ACTIONED_1BD",
-     "SM_LOCKBOX_BATCH_POSTED_1BD"
+     "SM_ACH_RETURN_ACTIONED_1BD"
     ]
    },
    "notices": {
@@ -8782,10 +8776,8 @@
    },
    "tools": {
     "spec": 12,
-    "built": 7,
+    "built": 9,
     "missing": [
-     "lockbox.ingest",
-     "lockbox.item.resolve",
      "ach.file.build",
      "ach.returns.ingest",
      "ach.return.action"
@@ -8793,24 +8785,20 @@
    },
    "figures": {
     "spec": 53,
-    "built": 44,
+    "built": 48,
     "missing": [
      "$1,351.71",
-     "$1,500.00",
-     "$1.00",
      "$100.00",
      "$2,292.57",
      "$228.46",
-     "$249,218.31",
-     "$6,000.07",
-     "$6,001.07"
+     "$249,218.31"
     ]
    },
    "units": {
     "spec": 97,
-    "built": 72
+    "built": 83
    },
-   "pct": 74.2
+   "pct": 85.6
   },
   {
    "process": "35.6",

@@ -2,8 +2,8 @@
 
 /**
  * The one shell (32.16 §2.1–2.2) plus P0 mobile tabs (Doug 2026-09-15):
- * <768 Apply / Chat / My Loan / Tasks / Account; ≥768 Thread + Record two-pane.
- * Data from the 02 §7 API through lib/api, or NEXT_PUBLIC_FIXTURES=1 fixtures.
+ * <768 Apply / Chat / My Loan / Tasks / Account — these tabs ARE the rails,
+ * including when signed out. ≥768 Thread + Record two-pane.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AnyCardInstance, ResolveRequest } from "@/lib/types/cards";
@@ -27,6 +27,7 @@ import { ApplyTab } from "./tabs/ApplyTab";
 import { MyLoanTab } from "./tabs/MyLoanTab";
 import { TasksTab } from "./tabs/TasksTab";
 import { AccountSettingsTab } from "./tabs/AccountSettingsTab";
+import { SignedOutGate } from "./tabs/SignedOutGate";
 
 export type ShellProps = {
   fixturesMode: boolean;
@@ -73,10 +74,11 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
   const [signInOpen, setSignInOpen] = useState(false);
   const [pinnedId, setPinnedId] = useState<string | undefined>(undefined);
   const [addMobileDone, setAddMobileDone] = useState(true);
-  const [tab, setTab] = useState<TabId>("chat");
+  const [tab, setTab] = useState<TabId>("account");
   useEffect(() => setAddMobileDone(isAddMobileDone()), []);
   const desktop = useMedia("(min-width: 768px)");
   const streamRef = useRef<ReturnType<typeof openStream> | null>(null);
+  const signedOutLanded = useRef(false);
 
   const timezone = record?.timezone ?? "America/Phoenix";
   const partner = me?.partner.legal_name || PARTNER_LEGAL_NAME;
@@ -267,8 +269,63 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
 
   const subjects = me?.subjects ?? [];
   const showSignIn = needsSignIn || signInOpen;
-  const mobileTabs = !desktop && !showSignIn;
-  const showChat = desktop || !mobileTabs || tab === "chat";
+  const mobileTabs = !desktop;
+  const goAccount = useCallback(() => setTab("account"), []);
+
+  useEffect(() => {
+    if (mobileTabs && needsSignIn && !signedOutLanded.current) {
+      signedOutLanded.current = true;
+      setTab("account");
+    }
+  }, [mobileTabs, needsSignIn]);
+
+  const thread = showSignIn && desktop ? (
+    <>
+      <div className="sm-thread-top" />
+      <div className="sm-thread-scroll">
+        <Account mode="sign_in" titleKey="auth.welcome_back" partnerLegalName={me?.partner.legal_name} onSession={() => window.location.reload()} onCancel={signInOpen && !needsSignIn ? () => setSignInOpen(false) : undefined} />
+      </div>
+    </>
+  ) : (
+    <Thread
+      notice={loadError}
+      banner={me?.auth_method === "oidc_google" && !addMobileDone ? <AddMobilePrompt onDone={() => setAddMobileDone(true)} /> : null}
+      messages={messages}
+      cards={cards}
+      timezone={timezone}
+      partnerLegalName={partner}
+      showSubjectLabels={subjects.length > 1}
+      scrollTo={scrollTo}
+      currentAskId={ask?.card_instance_id}
+      onOpenCard={focusCard}
+      resolve={resolveCard}
+      busyCardId={busyCardId}
+      cardErrors={cardErrors}
+    />
+  );
+
+  let mobileBody;
+  if (tab === "apply") mobileBody = showSignIn ? <SignedOutGate title="Apply" onSignIn={goAccount} /> : <ApplyTab record={record} onOpenTask={openTask} />;
+  else if (tab === "loan") mobileBody = showSignIn ? <SignedOutGate title="My Loan" onSignIn={goAccount} /> : <MyLoanTab record={record} />;
+  else if (tab === "tasks") mobileBody = showSignIn ? <SignedOutGate title="Tasks" onSignIn={goAccount} /> : <TasksTab record={record} onOpenTask={openTask} />;
+  else if (tab === "account") {
+    mobileBody = showSignIn ? (
+      <div className="sm-tab-page" data-testid="tab-page-account">
+        <Account mode="sign_in" titleKey="auth.welcome_back" partnerLegalName={me?.partner.legal_name} onSession={() => window.location.reload()} />
+      </div>
+    ) : (
+      <AccountSettingsTab me={me} />
+    );
+  } else {
+    mobileBody = showSignIn ? (
+      <SignedOutGate title="Chat" onSignIn={goAccount} />
+    ) : (
+      <main className="sm-thread" aria-label="Conversation">
+        {thread}
+        <ActionBar onSend={(t) => void sendMessage(t)} onAttach={(f) => void attach(f)} />
+      </main>
+    );
+  }
 
   return (
     <div className="sm-shell" data-testid="shell" data-fixtures={fixturesMode ? "1" : undefined} data-mobile-shell={mobileTabs ? "1" : undefined} data-tab={tab}>
@@ -280,52 +337,23 @@ export function Shell({ fixturesMode, fixtureName, initialSubject, initialCard }
         streamLabel={!fixturesMode && stream !== "open" && stream !== "closed" ? (stream === "reconnecting" ? "reconnecting…" : "connecting…") : undefined}
         onOpenRecord={() => setRecordOpen(true)}
         showSignIn={!me || fixturesMode}
-        onSignIn={() => setSignInOpen(true)}
+        onSignIn={() => { if (mobileTabs) setTab("account"); else setSignInOpen(true); }}
         onSignOut={() => { void api.signOut().catch(() => undefined).then(() => window.location.assign("/app")); }}
       />
-      {showSignIn ? <div className="sm-strip-slot" /> : <StatusStrip record={record} onOpen={() => (desktop ? setRecordOpen(true) : setTab("tasks"))} />}
+      {mobileTabs || showSignIn ? <div className="sm-strip-slot" /> : <StatusStrip record={record} onOpen={() => (desktop ? setRecordOpen(true) : setTab("tasks"))} />}
       <div className="sm-body">
-        {showChat ? (
-          <main className="sm-thread" aria-label="Conversation">
-            {showSignIn ? (
-              <>
-                <div className="sm-thread-top" />
-                <div className="sm-thread-scroll">
-                  <Account mode="sign_in" titleKey="auth.welcome_back" partnerLegalName={me?.partner.legal_name} onSession={() => window.location.reload()} onCancel={signInOpen && !needsSignIn ? () => setSignInOpen(false) : undefined} />
-                </div>
-              </>
-            ) : (
-              <Thread
-                notice={loadError}
-                banner={me?.auth_method === "oidc_google" && !addMobileDone ? <AddMobilePrompt onDone={() => setAddMobileDone(true)} /> : null}
-                messages={messages}
-                cards={cards}
-                timezone={timezone}
-                partnerLegalName={partner}
-                showSubjectLabels={subjects.length > 1}
-                scrollTo={scrollTo}
-                currentAskId={ask?.card_instance_id}
-                onOpenCard={focusCard}
-                resolve={resolveCard}
-                busyCardId={busyCardId}
-                cardErrors={cardErrors}
-              />
-            )}
-            {showSignIn ? null : (
-              <ActionBar onSend={(t) => void sendMessage(t)} onAttach={(f) => void attach(f)} />
-            )}
-          </main>
-        ) : tab === "apply" ? (
-          <ApplyTab record={record} onOpenTask={openTask} />
-        ) : tab === "loan" ? (
-          <MyLoanTab record={record} />
-        ) : tab === "tasks" ? (
-          <TasksTab record={record} onOpenTask={openTask} />
+        {mobileTabs ? (
+          mobileBody
         ) : (
-          <AccountSettingsTab me={me} />
-        )}
-        {showSignIn || (mobileTabs && tab !== "chat") ? null : (
-          <Record record={record} cards={cards} timezone={timezone} cardProps={cardProps} resolve={resolveCard} busyCardId={busyCardId} cardErrors={cardErrors} currentAskId={ask?.card_instance_id} focus={focus} link={link} open={recordOpen} onClose={() => setRecordOpen(false)} />
+          <>
+            <main className="sm-thread" aria-label="Conversation">
+              {thread}
+              {showSignIn ? null : <ActionBar onSend={(t) => void sendMessage(t)} onAttach={(f) => void attach(f)} />}
+            </main>
+            {showSignIn ? null : (
+              <Record record={record} cards={cards} timezone={timezone} cardProps={cardProps} resolve={resolveCard} busyCardId={busyCardId} cardErrors={cardErrors} currentAskId={ask?.card_instance_id} focus={focus} link={link} open={recordOpen} onClose={() => setRecordOpen(false)} />
+            )}
+          </>
         )}
       </div>
       {mobileTabs ? <BottomNav tab={tab} onTab={setTab} taskCount={record?.needed_from_you.length ?? 0} /> : null}

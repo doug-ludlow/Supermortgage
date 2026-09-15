@@ -56,7 +56,8 @@ const rateFeed = rateFeedFromEnv(process.env); const reviewers = fakeReviewersFr
 // the demo clock (docs/DEPLOY.md "The demo clock"; src/runtime/demo-clock.ts): outside production every mode — serve, sweep, seed-demo — runs on the system clock plus the persisted demo offset (the latest demo_clock row), so the API, the sweep job and the flows agree on the instant; production is the system clock, full stop
 const demoClock = config.environment === "production" ? null : await loadDemoClock(db, { logger });
 const clock = demoClock ?? systemClock;
-const runtime = new Runtime({ db, registry: loadOverriddenRegistry(), rateFeed, reviewers, logger, clock });
+// 35.3: the database URL rides on the runtime for the planner lock's dedicated client (`pg_try_advisory_lock(35_003)` on the application database — the pool exposes no client)
+const runtime = new Runtime({ db, registry: loadOverriddenRegistry(), rateFeed, reviewers, logger, clock, databaseUrl: config.databaseUrl });
 
 if (mode === "sweep") {
   try {

@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 8034/8756 (91.8%): tids 2244/2458, tables 765/848, timers 2042/2097, notices 308/308, tools 1433/1578, figures 1242/1467; processes at 100%: 192/205",
+ "brief": "spec units built 8065/8756 (92.1%): tids 2249/2458, tables 770/848, timers 2054/2097, notices 308/308, tools 1438/1578, figures 1246/1467; processes at 100%: 192/205",
  "totals": {
   "tids": {
    "spec": 2458,
-   "built": 2244
+   "built": 2249
   },
   "tables": {
    "spec": 848,
-   "built": 765
+   "built": 770
   },
   "timers": {
    "spec": 2097,
-   "built": 2042
+   "built": 2054
   },
   "notices": {
    "spec": 308,
@@ -19,15 +19,15 @@
   },
   "tools": {
    "spec": 1578,
-   "built": 1433
+   "built": 1438
   },
   "figures": {
    "spec": 1467,
-   "built": 1242
+   "built": 1246
   },
   "units": {
    "spec": 8756,
-   "built": 8034
+   "built": 8065
   }
  },
  "sections": {
@@ -237,7 +237,7 @@
   },
   "35": {
    "spec": 715,
-   "built": 10,
+   "built": 41,
    "processes": 12,
    "done": 0
   }
@@ -8411,11 +8411,10 @@
    },
    "timers": {
     "spec": 3,
-    "built": 0,
+    "built": 1,
     "armable": 3,
     "missing": [
      "SM_OUTBOX_DEAD_LETTER_REVIEW_1BD",
-     "SM_PROJECTION_LAG_DAILY",
      "SM_SWEEP_HEARTBEAT_DAILY"
     ]
    },
@@ -8440,22 +8439,21 @@
    },
    "figures": {
     "spec": 7,
-    "built": 0,
+    "built": 1,
     "missing": [
      "$1,345.02",
      "$1,612.34",
      "$2,045.12",
      "$248,043.23",
-     "$248,310.55",
      "$267.32",
      "$432.78"
     ]
    },
    "units": {
     "spec": 42,
-    "built": 0
+    "built": 2
    },
-   "pct": 0.0
+   "pct": 4.8
   },
   {
    "process": "35.2",
@@ -8503,10 +8501,9 @@
    },
    "timers": {
     "spec": 4,
-    "built": 0,
+    "built": 1,
     "armable": 4,
     "missing": [
-     "SM_DOC_INTEGRITY_DAILY",
      "SM_DOC_WORM_DRAIN_1D",
      "SM_ESIGN_ENVELOPE_EXPIRY_30",
      "SM_MAIL_MANIFEST_2BD"
@@ -8555,20 +8552,18 @@
    },
    "units": {
     "spec": 58,
-    "built": 2
+    "built": 3
    },
-   "pct": 3.4
+   "pct": 5.2
   },
   {
    "process": "35.3",
    "title": "Cycles, jobs and receipts: the planner, the jobs table, `cycles.run_unit` on the bus and the registry of every scheduled cycle",
    "tids": {
     "spec": 16,
-    "built": 0,
-    "todo": 16,
+    "built": 5,
+    "todo": 11,
     "missing": [
-     1,
-     2,
      3,
      4,
      5,
@@ -8577,34 +8572,21 @@
      8,
      9,
      10,
-     11,
      12,
      13,
-     14,
-     15,
      16
     ]
    },
    "tables": {
     "spec": 5,
-    "built": 0,
-    "missing": [
-     "cycle_receipts",
-     "cycle_registry",
-     "cycle_runs",
-     "job_events",
-     "jobs"
-    ]
+    "built": 5,
+    "missing": []
    },
    "timers": {
     "spec": 3,
-    "built": 0,
+    "built": 3,
     "armable": 3,
-    "missing": [
-     "SM_CYCLE_PLANNER_DAILY",
-     "SM_CYCLE_RUN_STALLED_1D",
-     "SM_JOB_DEAD_2H"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -8613,27 +8595,21 @@
    },
    "tools": {
     "spec": 9,
-    "built": 0,
+    "built": 5,
     "missing": [
-     "cycles.registry",
-     "cycles.plan",
      "cycles.run_unit",
-     "cycles.receipt",
      "cycles.retry",
      "cycles.escalate",
-     "jobs.list",
-     "jobs.requeue",
-     "writeDecision"
+     "jobs.requeue"
     ]
    },
    "figures": {
     "spec": 7,
-    "built": 0,
+    "built": 1,
     "missing": [
      "$1,345.02",
      "$1,612.34",
      "$2,125.74",
-     "$248,310.55",
      "$267.32",
      "$432.78",
      "$80.62"
@@ -8641,9 +8617,9 @@
    },
    "units": {
     "spec": 40,
-    "built": 0
+    "built": 19
    },
-   "pct": 0.0
+   "pct": 47.5
   },
   {
    "process": "35.4",
@@ -8787,12 +8763,11 @@
    },
    "timers": {
     "spec": 8,
-    "built": 1,
+    "built": 2,
     "armable": 8,
     "missing": [
      "SM_ACH_FILE_BUILD_1BD",
      "SM_ACH_RETURN_ACTIONED_1BD",
-     "SM_CASHIERING_DAILY_RECEIPT_1D",
      "SM_INSTALLMENT_REPROJECT_1BD",
      "SM_INSTALLMENT_SCHEDULE_AT_BOARD_0",
      "SM_LOAN_SERVICING_CONFIG_AT_BOARD_0",
@@ -8883,9 +8858,9 @@
    },
    "units": {
     "spec": 97,
-    "built": 2
+    "built": 3
    },
-   "pct": 2.1
+   "pct": 3.1
   },
   {
    "process": "35.6",
@@ -8929,10 +8904,9 @@
    },
    "timers": {
     "spec": 5,
-    "built": 2,
+    "built": 3,
     "armable": 5,
     "missing": [
-     "SM_ORCH_OPEN_BOOK_DAILY",
      "SM_ORCH_PURCHASE_RECON_1BD",
      "SM_ORCH_STEP_STALLED_2BD"
     ]
@@ -9007,9 +8981,9 @@
    },
    "units": {
     "spec": 80,
-    "built": 2
+    "built": 3
    },
-   "pct": 2.5
+   "pct": 3.8
   },
   {
    "process": "35.7",
@@ -9051,10 +9025,9 @@
    },
    "timers": {
     "spec": 4,
-    "built": 0,
+    "built": 1,
     "armable": 4,
     "missing": [
-     "SM_HANDOVER_BOARD_DAILY",
      "SM_ROLE_BREAKGLASS_REVIEW_1BD",
      "SM_ROLE_GRANT_DORMANT_30D",
      "SM_ROLE_QUEUE_UNSTAFFED_1BD"
@@ -9095,9 +9068,9 @@
    },
    "units": {
     "spec": 44,
-    "built": 2
+    "built": 3
    },
-   "pct": 4.5
+   "pct": 6.8
   },
   {
    "process": "35.8",
@@ -9140,14 +9113,13 @@
    },
    "timers": {
     "spec": 5,
-    "built": 0,
+    "built": 1,
     "armable": 5,
     "missing": [
      "SM_WORK_APPROVAL_1BD",
      "SM_WORK_ITEM_AGE_2BD",
      "SM_WORK_ITEM_AGE_5BD",
-     "SM_WORK_ITEM_CLAIM_4H",
-     "SM_WORK_LOG_RECON_DAILY"
+     "SM_WORK_ITEM_CLAIM_4H"
     ]
    },
    "notices": {
@@ -9176,7 +9148,7 @@
    },
    "figures": {
     "spec": 22,
-    "built": 0,
+    "built": 1,
     "missing": [
      "$1,345.02",
      "$1,352.94",
@@ -9186,7 +9158,6 @@
      "$2,192.57",
      "$2,412.90",
      "$227.23",
-     "$248,310.55",
      "$249,546.77",
      "$249,774.00",
      "$250,390.82",
@@ -9204,9 +9175,9 @@
    },
    "units": {
     "spec": 63,
-    "built": 0
+    "built": 2
    },
-   "pct": 0.0
+   "pct": 3.2
   },
   {
    "process": "35.9",
@@ -9251,14 +9222,13 @@
    },
    "timers": {
     "spec": 6,
-    "built": 0,
+    "built": 1,
     "armable": 6,
     "missing": [
      "SM_BREACH_ACTION_RECON_DAILY",
      "SM_CASE_MILESTONE_OVERDUE_5BD",
      "SM_CASE_REFERRAL_DECISION_2BD",
      "SM_CLAIM_PACKAGE_5BD",
-     "SM_DEFAULT_CASE_DAILY",
      "SM_DOCKET_REACTION_1BD"
     ]
    },
@@ -9322,9 +9292,9 @@
    },
    "units": {
     "spec": 72,
-    "built": 0
+    "built": 1
    },
-   "pct": 0.0
+   "pct": 1.4
   },
   {
    "process": "35.10",
@@ -9570,13 +9540,11 @@
    },
    "timers": {
     "spec": 6,
-    "built": 0,
+    "built": 2,
     "armable": 6,
     "missing": [
      "SM_NONPROD_REAL_DATA_PURGE_1BD",
      "SM_PROD_GO_LIVE_ATTEST_GATE",
-     "SM_PROD_PARALLEL_RUN_DAILY",
-     "SM_PROD_POSTURE_DAILY",
      "SM_PROD_POSTURE_DRIFT_1BD",
      "SM_PROD_RESTORE_DRILL_90D"
     ]
@@ -9608,10 +9576,9 @@
    },
    "figures": {
     "spec": 7,
-    "built": 0,
+    "built": 1,
     "missing": [
      "$1,250.00",
-     "$248,310.55",
      "$3,412.92",
      "$3,417.92",
      "$5.00",
@@ -9621,9 +9588,9 @@
    },
    "units": {
     "spec": 58,
-    "built": 2
+    "built": 5
    },
-   "pct": 3.4
+   "pct": 8.6
   }
  ]
 }

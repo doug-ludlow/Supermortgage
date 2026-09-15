@@ -14,6 +14,10 @@
  * boarding is refused by the state machine until the date (1.1 state
  * machine). A seed of a past-dated batch runs with the clock at the transfer
  * date so `loan.boarded` satisfies SM_BOARD_FIRST_CYCLE as it would have.
+ *
+ * 35.1 rule 10: this is the seed path. `1.1 boardLoan` on the bus (src/app/tools/section01.ts) writes exactly the same set
+ * through `insertBoardingRows` in the command's `before` hook, and this function refuses with SEED_ONLY under
+ * ENVIRONMENT=production (src/runtime/config.ts's environment precedent).
  */
 import { createHash, randomUUID } from "node:crypto";
 import type { Queryable } from "../infra/db/client.ts";
@@ -73,7 +77,11 @@ export function batchUuid(batchId: string): string {
 const pctToBps = (pct: string | null, scale: number): number | null => (pct === null ? null : Math.round(Number(pct) * scale));
 const monthsBetween = (a: PlainDate, b: PlainDate): number => (Number(b.slice(0, 4)) - Number(a.slice(0, 4))) * 12 + (Number(b.slice(5, 7)) - Number(a.slice(5, 7)));
 
-export async function boardTransferBatch(rt: Runtime, input: TransferBatchInput, files: TransferBatchFiles, actor: Actor): Promise<TransferBatchSummary> {
+/** 35.1 rule 10: the seed path never runs in production — `1.1 boardLoan` on the bus is the production write. */
+export class SeedOnly extends Error { readonly code = "SEED_ONLY"; constructor() { super("SEED_ONLY: boardTransferBatch is the seed path; under ENVIRONMENT=production a batch boards through `1.1 boardLoan` on the bus (35.1 rule 10)"); this.name = "SeedOnly"; } }
+
+export async function boardTransferBatch(rt: Runtime, input: TransferBatchInput, files: TransferBatchFiles, actor: Actor, opts: { readonly environment?: string } = {}): Promise<TransferBatchSummary> {
+  if ((opts.environment ?? process.env["ENVIRONMENT"]) === "production") throw new SeedOnly();
   const uuid = batchUuid(input.batch_id);
   const existing = await rt.entities.current("transfer_batches", input.batch_id);
   if (existing) return { ...(existing.data as unknown as TransferBatchSummary), status: "already_on_platform" };
@@ -126,36 +134,7 @@ export async function boardTransferBatch(rt: Runtime, input: TransferBatchInput,
 
     // ---- persist: rows first (the events reference them), then the log, ledger, timers, escalations
     const upbTotal = staged.reduce((s, bl) => s + (bl.staged.upb_cents ?? 0n), 0n);
-    const escrowTotal = staged.reduce((s, bl) => s + bl.staged.escrow_balance_cents, 0n);
-    await q.query(`INSERT INTO transfer_batches (id, transfer_type, transferor_party_id, transferor_servicer_number, partner_servicer_number, sale_date, transfer_date, respa_effective_date, d_code, status, loan_count, upb_total_cents, escrow_total_cents, rule_set_version)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-      [uuid, input.transfer_type ?? "servicing_sale_with_sub", transferorParty, input.transferor_servicer_number, input.partner_servicer_number, input.sale_date ?? null, input.transfer_date, input.respa_effective_date ?? input.transfer_date, input.d_code ?? null, boarded.length ? "cutover" : "staging", staged.length, upbTotal, escrowTotal, ctx.rule_set_version]);
-    const runId = randomUUID();
-    for (const bl of staged) {
-      const s = bl.staged; const isBoarded = boardedIds.has(bl.id);
-      const prop = await q.query<{ id: string }>(`INSERT INTO properties (address_line1, city, state, postal_code, tax_parcel_verified, occupancy) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-        [s.property.address_line1 ?? "(unknown)", s.property.city ?? "(unknown)", s.property.state ?? "XX", s.property.postal_code ?? "00000", s.tax_parcel_verified, s.property.occupancy ?? null]);
-      await q.query(`INSERT INTO loans (id, fnma_loan_number, servicer_loan_number, transferor_loan_number, min, mers_eligible, partner_party_id, prior_servicer_party_id, property_id, status, instrument_date, origination_date, original_upb_cents, original_term_months, first_payment_date, maturity_date, emortgage, boarded_at, boarding_batch_id, default_status_at_boarding, fdcpa_debt_collector_flag, regx_days_delinquent_at_boarding, fnma_delinquency_status_at_boarding)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
-        [bl.id, s.fnma_loan_number ?? `PENDING${bl.id.slice(0, 3)}`, `SM-${s.transferor_loan_number}`, s.transferor_loan_number, s.min, s.mers_eligible, partnerParty, transferorParty, prop[0]!.id, isBoarded ? "active" : "staged",
-          s.instrument_date, s.origination_date, s.original_upb_cents ?? 1n, s.original_term_months ?? 360, s.first_payment_date ?? s.instrument_date, s.maturity_date ?? s.instrument_date, !!s.custody?.enote_evault_ref,
-          isBoarded ? clock.now() : null, uuid, bl.default_status_at_boarding ?? null, bl.fdcpa_debt_collector_flag ?? null, bl.regx_days_delinquent_at_boarding ?? null, bl.fnma_delinquency_status_at_boarding ?? null]);
-      const b = await q.query<{ id: string }>(`INSERT INTO borrowers (legal_name, tin_last4, preferred_language, scra_active) VALUES ($1, $2, $3, $4) RETURNING id`, [s.borrower.legal_name ?? "(unknown)", s.borrower.tin ? s.borrower.tin.replace(/\D/g, "").slice(-4) : null, s.borrower.preferred_language ?? null, s.scra.active]);
-      await q.query(`INSERT INTO loan_borrowers (loan_id, borrower_id, role, is_primary) VALUES ($1, $2, 'borrower', true)`, [bl.id, b[0]!.id]);
-      if (isBoarded) {
-        const a = s.arm ?? {};
-        await q.query(`INSERT INTO loan_terms (loan_id, effective_from, source, amortization, note_rate_bps, pi_cents, escrow_payment_cents, escrowed, interest_method, remittance_type, late_charge_pct_bps, late_charge_grace_days, maturity_date, remaining_term_months, deferred_principal_cents, forborne_principal_cents, arm_index, arm_margin_bps, arm_initial_cap_bps, arm_periodic_cap_bps, arm_lifetime_cap_bps, arm_lookback_days)
-          VALUES ($1, $2, 'boarding', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)`,
-          [bl.id, input.transfer_date, s.amortization, pctToBps(s.note_rate_pct, 10_000) ?? 0, s.pi_cents ?? 0n, s.escrow_payment_cents, s.escrowed, s.interest_method ?? "30_360", s.remittance_type ?? "A/A", pctToBps(s.late_charge_pct, 1000), s.late_charge_grace_days, s.maturity_date ?? input.transfer_date,
-            s.first_payment_date && s.next_due_date && s.original_term_months !== null ? s.original_term_months - monthsBetween(s.first_payment_date, s.next_due_date) : null, s.deferred_principal_cents, s.forborne_principal_cents, a.index ?? null, a.margin_bps ?? null, a.initial_cap_bps ?? null, a.periodic_cap_bps ?? null, a.lifetime_cap_bps ?? null, a.lookback_days ?? null]);
-      }
-      await q.query(`INSERT INTO transfer_batch_loans (id, batch_id, transferor_loan_number, fnma_loan_number, min, loan_id, boarding_status, boarding_hold, default_status_at_boarding, regx_days_delinquent_at_boarding, fnma_delinquency_status_at_boarding, fdcpa_debt_collector_flag, lossmit_in_process, fc_active, bk_active, scra_active, sii_present, emortgage, acp_enrolled)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
-        [bl.id, uuid, s.transferor_loan_number, s.fnma_loan_number ?? `PENDING${bl.id.slice(0, 3)}`, s.min, isBoarded ? bl.id : null, bl.status, bl.boarding_hold, bl.default_status_at_boarding ?? null, bl.regx_days_delinquent_at_boarding ?? null, bl.fnma_delinquency_status_at_boarding ?? null, bl.fdcpa_debt_collector_flag ?? null,
-          s.lossmit.in_process, s.foreclosure.active, s.bankruptcy.active, s.scra.active, s.sii.present, !!s.custody?.enote_evault_ref, s.acp_enrolled]);
-      for (const v of bl.validations) await q.query(`INSERT INTO boarding_validations (batch_loan_id, run_id, rule_code, severity, result, expected, actual, message, rule_set_version) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9)`,
-        [bl.id, runId, v.code, v.severity, v.result, v.expected === undefined ? null : toJson(v.expected), v.actual === undefined ? null : toJson(v.actual), v.message ?? null, ctx.rule_set_version]);
-    }
+    await insertBoardingRows(q, { uuid, input, transferorParty, partnerParty, staged, boardedIds, boardedAt: clock.now(), ruleSetVersion: ctx.rule_set_version });
     const persisted = await rt.uow.events.append(events.since(0), q);
     for (const set of ledger.sets()) await rt.uow.ledger.post(set, q);
     await rt.uow.timers.save(timers.all(), q);
@@ -171,13 +150,57 @@ export async function boardTransferBatch(rt: Runtime, input: TransferBatchInput,
   });
 }
 
-async function partyId(q: Queryable, type: "transferor" | "servicer", name: string, servicerNumber: string, mersOrgId: string): Promise<string> {
+export interface BoardingRowInputs { readonly uuid: string; readonly input: TransferBatchInput; readonly transferorParty: string; readonly partnerParty: string; readonly staged: readonly BatchLoan[]; readonly boardedIds: ReadonlySet<string>; readonly boardedAt: string; readonly ruleSetVersion: string; }
+/**
+ * The boarding set (35.1 rule 10): `transfer_batches`, then per staged loan `properties`, `loans`, `borrowers`, `loan_borrowers`,
+ * `loan_terms` (boarded loans), `transfer_batch_loans` and `boarding_validations` — the rows the events reference, written before
+ * the log. The seed route writes them in its own transaction; `1.1 boardLoan` on the bus writes them in the command's `before` hook.
+ */
+export async function insertBoardingRows(q: Queryable, r: BoardingRowInputs): Promise<void> {
+  const { uuid, input, transferorParty, partnerParty, staged, boardedIds } = r;
+  const upbTotal = staged.reduce((s, bl) => s + (bl.staged.upb_cents ?? 0n), 0n);
+  const escrowTotal = staged.reduce((s, bl) => s + bl.staged.escrow_balance_cents, 0n);
+  const boarded = staged.filter((bl) => boardedIds.has(bl.id));
+  await q.query(`INSERT INTO transfer_batches (id, transfer_type, transferor_party_id, transferor_servicer_number, partner_servicer_number, sale_date, transfer_date, respa_effective_date, d_code, status, loan_count, upb_total_cents, escrow_total_cents, rule_set_version)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+    [uuid, input.transfer_type ?? "servicing_sale_with_sub", transferorParty, input.transferor_servicer_number, input.partner_servicer_number, input.sale_date ?? null, input.transfer_date, input.respa_effective_date ?? input.transfer_date, input.d_code ?? null, boarded.length ? "cutover" : "staging", staged.length, upbTotal, escrowTotal, r.ruleSetVersion]);
+  const runId = randomUUID();
+  for (const bl of staged) {
+    const s = bl.staged; const isBoarded = boardedIds.has(bl.id);
+    const prop = await q.query<{ id: string }>(`INSERT INTO properties (address_line1, city, state, postal_code, tax_parcel_verified, occupancy) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [s.property.address_line1 ?? "(unknown)", s.property.city ?? "(unknown)", s.property.state ?? "XX", s.property.postal_code ?? "00000", s.tax_parcel_verified, s.property.occupancy ?? null]);
+    await q.query(`INSERT INTO loans (id, fnma_loan_number, servicer_loan_number, transferor_loan_number, min, mers_eligible, partner_party_id, prior_servicer_party_id, property_id, status, instrument_date, origination_date, original_upb_cents, original_term_months, first_payment_date, maturity_date, emortgage, boarded_at, boarding_batch_id, default_status_at_boarding, fdcpa_debt_collector_flag, regx_days_delinquent_at_boarding, fnma_delinquency_status_at_boarding)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
+      [bl.id, s.fnma_loan_number ?? `PENDING${bl.id.slice(0, 3)}`, `SM-${s.transferor_loan_number}`, s.transferor_loan_number, s.min, s.mers_eligible, partnerParty, transferorParty, prop[0]!.id, isBoarded ? "active" : "staged",
+        s.instrument_date, s.origination_date, s.original_upb_cents ?? 1n, s.original_term_months ?? 360, s.first_payment_date ?? s.instrument_date, s.maturity_date ?? s.instrument_date, !!s.custody?.enote_evault_ref,
+        isBoarded ? r.boardedAt : null, uuid, bl.default_status_at_boarding ?? null, bl.fdcpa_debt_collector_flag ?? null, bl.regx_days_delinquent_at_boarding ?? null, bl.fnma_delinquency_status_at_boarding ?? null]);
+    const b = await q.query<{ id: string }>(`INSERT INTO borrowers (legal_name, tin_last4, preferred_language, scra_active) VALUES ($1, $2, $3, $4) RETURNING id`, [s.borrower.legal_name ?? "(unknown)", s.borrower.tin ? s.borrower.tin.replace(/\D/g, "").slice(-4) : null, s.borrower.preferred_language ?? null, s.scra.active]);
+    await q.query(`INSERT INTO loan_borrowers (loan_id, borrower_id, role, is_primary) VALUES ($1, $2, 'borrower', true)`, [bl.id, b[0]!.id]);
+    if (isBoarded) {
+      const a = s.arm ?? {};
+      await q.query(`INSERT INTO loan_terms (loan_id, effective_from, source, amortization, note_rate_bps, pi_cents, escrow_payment_cents, escrowed, interest_method, remittance_type, late_charge_pct_bps, late_charge_grace_days, maturity_date, remaining_term_months, deferred_principal_cents, forborne_principal_cents, arm_index, arm_margin_bps, arm_initial_cap_bps, arm_periodic_cap_bps, arm_lifetime_cap_bps, arm_lookback_days)
+        VALUES ($1, $2, 'boarding', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)`,
+        [bl.id, input.transfer_date, s.amortization, pctToBps(s.note_rate_pct, 10_000) ?? 0, s.pi_cents ?? 0n, s.escrow_payment_cents, s.escrowed, s.interest_method ?? "30_360", s.remittance_type ?? "A/A", pctToBps(s.late_charge_pct, 1000), s.late_charge_grace_days, s.maturity_date ?? input.transfer_date,
+          s.first_payment_date && s.next_due_date && s.original_term_months !== null ? s.original_term_months - monthsBetween(s.first_payment_date, s.next_due_date) : null, s.deferred_principal_cents, s.forborne_principal_cents, a.index ?? null, a.margin_bps ?? null, a.initial_cap_bps ?? null, a.periodic_cap_bps ?? null, a.lifetime_cap_bps ?? null, a.lookback_days ?? null]);
+    }
+    await q.query(`INSERT INTO transfer_batch_loans (id, batch_id, transferor_loan_number, fnma_loan_number, min, loan_id, boarding_status, boarding_hold, default_status_at_boarding, regx_days_delinquent_at_boarding, fnma_delinquency_status_at_boarding, fdcpa_debt_collector_flag, lossmit_in_process, fc_active, bk_active, scra_active, sii_present, emortgage, acp_enrolled)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
+      [bl.id, uuid, s.transferor_loan_number, s.fnma_loan_number ?? `PENDING${bl.id.slice(0, 3)}`, s.min, isBoarded ? bl.id : null, bl.status, bl.boarding_hold, bl.default_status_at_boarding ?? null, bl.regx_days_delinquent_at_boarding ?? null, bl.fnma_delinquency_status_at_boarding ?? null, bl.fdcpa_debt_collector_flag ?? null,
+        s.lossmit.in_process, s.foreclosure.active, s.bankruptcy.active, s.scra.active, s.sii.present, !!s.custody?.enote_evault_ref, s.acp_enrolled]);
+    for (const v of bl.validations) await q.query(`INSERT INTO boarding_validations (batch_loan_id, run_id, rule_code, severity, result, expected, actual, message, rule_set_version) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9)`,
+      [bl.id, runId, v.code, v.severity, v.result, v.expected === undefined ? null : toJson(v.expected), v.actual === undefined ? null : toJson(v.actual), v.message ?? null, r.ruleSetVersion]);
+  }
+}
+
+/** The transferor and the servicer parties, found or inserted (rule 10: the same rows the seed route writes). */
+export async function partyId(q: Queryable, type: "transferor" | "servicer", name: string, servicerNumber: string, mersOrgId: string): Promise<string> {
   const found = await q.query<{ id: string }>(`SELECT id FROM parties WHERE party_type = $1 AND servicer_number = $2 LIMIT 1`, [type, servicerNumber]);
   if (found[0]) return found[0].id;
   const made = await q.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, servicer_number, mers_org_id) VALUES ($1, $2, $3, $4) RETURNING id`, [type, name, servicerNumber, mersOrgId]);
   return made[0]!.id;
 }
-async function custodialAccount(q: Queryable, partnerPartyId: string, kind: string): Promise<string> {
+/** A custodial account of the partner (clearing for the opening entries), found or inserted. */
+export async function custodialAccount(q: Queryable, partnerPartyId: string, kind: string): Promise<string> {
   const found = await q.query<{ id: string }>(`SELECT id FROM custodial_accounts WHERE partner_party_id = $1 AND kind = $2 LIMIT 1`, [partnerPartyId, kind]);
   if (found[0]) return found[0].id;
   const made = await q.query<{ id: string }>(`INSERT INTO custodial_accounts (partner_party_id, kind, remittance_type) VALUES ($1, $2, 'A/A') RETURNING id`, [partnerPartyId, kind]);

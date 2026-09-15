@@ -17,7 +17,8 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { readdirSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -89,4 +90,24 @@ export function xmllintErrors(file: string): string[] {
     );
   }
   return errors;
+}
+
+/**
+ * `xmllintErrors` over bytes in memory — the emitted document as 23.6 hands it
+ * to the port, not a file on disk. The bytes go to a private temporary file
+ * for the length of one `xmllint` run and nowhere else; the FAKE DU port
+ * (`../du.ts`) validates every submission this way before it answers, so a
+ * FAKE run exercises the same chain a real Direct Integration adapter would
+ * be refused by.
+ */
+export function xmllintErrorsOf(bytes: Uint8Array | string): string[] {
+  const dir = mkdtempSync(join(tmpdir(), "du-xmllint-"));
+  try {
+    const file = join(dir, "document.xml");
+    writeFileSync(file, bytes);
+    // The diagnostics name the file by its path; the temporary directory is nobody's evidence, so they name `document.xml`.
+    return xmllintErrors(file).map((line) => line.split(file).join("document.xml"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }

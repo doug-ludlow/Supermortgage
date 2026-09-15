@@ -177,6 +177,12 @@ const MOUNT: Readonly<Record<DuContainerKind, { readonly parentKind: DuContainer
   UNDERWRITING_VERIFICATION: { parentKind: "LOAN", path: "EXTENSION/OTHER/DU:LOAN_EXTENSION/DU:UNDERWRITING_VERIFICATIONS/DU:UNDERWRITING_VERIFICATION", label: "UNDERWRITING_VERIFICATION", sequenceNumber: true },
 };
 const KIND_ORDER: readonly DuContainerKind[] = ["ASSET", "LIABILITY", "EXPENSE", "LOAN", "PARTY", "ROLE", "EMPLOYER", "CURRENT_INCOME_ITEM", "COUNSELING_EVENT", "UNDERWRITING_VERIFICATION"];
+/** The canonical path of each container kind's element (MESSAGE-rooted; MOUNT read the other way) — what 23.7's preflight recognizes a container by. */
+export const DU_CONTAINER_PATHS: Readonly<Record<string, DuContainerKind>> = Object.fromEntries(KIND_ORDER.map((kind) => {
+  const parts: string[] = [];
+  for (let k: DuContainerKind | null = kind; k !== null; k = MOUNT[k].parentKind) parts.unshift(MOUNT[k].path);
+  return [`MESSAGE/${parts.join("/")}`, kind];
+})) as Readonly<Record<string, DuContainerKind>>;
 
 /**
  * Which DU enumeration governs a data point, by name and — where one name is filed under several form fields with

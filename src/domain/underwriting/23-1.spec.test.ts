@@ -19,10 +19,13 @@ import { TOOLS_23_1 } from "../../app/tools/section23-1.ts";
 import type { UowContext } from "../../infra/db/unit-of-work.ts";
 import type { DecisionInput } from "../../infra/db/decisions.ts";
 import type { CreditReport, ScoreModel } from "../verification/ops-22-2.ts";
-import { createCasefile, associateCredit, buildDuRequest, submitCasefile, receiveFindings, ingestOperatorFindings, evaluateResubmission, assertFinalSubmissionMatches, recordFinalSubmission, archivalWatch, archivalClocks, policyGeneration, duReleaseApplied, detectIdentityChange, recordIdentityChange, recordImpactMemo, tagAdapterRelease, confirmReturnFileFormat, returnFileTypeGate, finalMatchGate, finalMatchFacts, closedLoanSnapshotHash,
-  dtiBps, dtiTest, rateTest, loanAmountTest, refiAmountTolerance, reservesTest, incomeLimitedTest, closedLoanFieldsTest, ltvPct, llpaLtvBand, piCents, piUnrounded, decisionRecord, FakeDuPort, OutageDuPort, DuRefused, DI_OUTAGE_AFTER_MINUTES, AGENT,
+import { createCasefile, associateCredit, buildDuRequest, buildDuRequestWithDocument, submitCasefile, receiveFindings, ingestOperatorFindings, evaluateResubmission, assertFinalSubmissionMatches, recordFinalSubmission, archivalWatch, archivalClocks, policyGeneration, duReleaseApplied, detectIdentityChange, recordIdentityChange, recordImpactMemo, tagAdapterRelease, confirmReturnFileFormat, returnFileTypeGate, finalMatchGate, finalMatchFacts, closedLoanSnapshotHash,
+  dtiBps, dtiTest, rateTest, loanAmountTest, refiAmountTolerance, reservesTest, incomeLimitedTest, closedLoanFieldsTest, ltvPct, llpaLtvBand, piCents, piUnrounded, decisionRecord, duSubmitRequest, DuRefused, DI_OUTAGE_AFTER_MINUTES, AGENT,
   type DuCasefile, type DuSubmission, type UladSnapshot, type BorrowerIdentity, type DuRequest, type SubmissionReason, type SubmissionType } from "./ops-23-1.ts";
-import { FIXTURE_DU_CASEFILE_ID, refinanceFixtureGraph } from "./fixtures/du-refinance-fixture.ts";
+import { FakeDuPort, OutageDuPort } from "../../infra/integrations/du.ts";
+import { refinanceFixtureGraph } from "./fixtures/du-refinance-fixture.ts";
+import { emitDuDocumentEmitted } from "./du/persist.ts";
+import { emitDuPreflight, runDuPreflight } from "./du/preflight.ts";
 
 // ─────────────────────────────────────────────────────────────── fixtures (spec README: refinance Mon Oct 5, 2026; purchase Mon Oct 19, 2026)
 const B1: BorrowerIdentity = { borrower_id: "B1", last_name: "Rivera", suffix: null, ssn_last4: "1234" };
@@ -58,12 +61,20 @@ function harness(nowIso: string, opts: { port?: FakeDuPort | OutageDuPort; recom
   const submit = async (cf: DuCasefile, s: UladSnapshot, prior: readonly DuSubmission[], o: { type?: SubmissionType; reason?: SubmissionReason; at?: string; note?: PlainDate | null; escalate?: boolean; built_at?: string; return_file_types?: DuRequest["return_file_types"] } = {}) => {
     const at = o.at ?? clock.now(); clock.set(at);
     // 23.6: the request is the DU Specification document assembled from the fixture's 23.5 graph (the snapshot's deal facts laid over it); a
-    // resubmission carries the identifier DU minted on the first ack (rule 8 — the FAKE port mints it in 23.7; the fixture stands in for that write).
-    const graph = refinanceFixtureGraph(s, { du_casefile_id: prior.length ? FIXTURE_DU_CASEFILE_ID : null });
-    const request = buildDuRequest(cf, { submission_type: o.type ?? (prior.length ? "underwriting_only" : "credit_and_underwriting"), reason: o.reason ?? (prior.length ? "tolerance_breach" : "initial"), built_at: o.built_at ?? at, snapshot: s, graph, prior_submission_number: prior.at(-1)?.submission_number ?? null, ...(o.return_file_types ? { return_file_types: o.return_file_types } : {}) });
+    // resubmission carries the identifier DU minted on the first ack (rule 8) — the FAKE port's, as the prior submission's ack recorded it (23.7 rule 9).
+    const du_casefile_id = prior.find((p) => p.du_casefile_id)?.du_casefile_id ?? null;
+    const graph = refinanceFixtureGraph(s, { du_casefile_id });
+    const submission_type = o.type ?? (prior.length ? "underwriting_only" : "credit_and_underwriting");
+    const { request, document } = buildDuRequestWithDocument(cf, { submission_type, reason: o.reason ?? (prior.length ? "tolerance_breach" : "initial"), built_at: o.built_at ?? at, snapshot: s, graph, prior_submission_number: prior.at(-1)?.submission_number ?? null, ...(o.return_file_types ? { return_file_types: o.return_file_types } : {}) });
+    // 23.7: the path the bus tool takes (src/app/tools/section23-1.ts buildDuRequest) — the emission arms SM_DU_PREFLIGHT_GATE, the
+    // underwriter's preflight opens it, and only then does submit transmit; a request nobody emitted is preflighted by submit itself.
+    const submission_number = cf.submission_count + 1;
+    emitDuDocumentEmitted(events, { application_id: cf.application_id, casefile_id: cf.casefile_id, submission_number, document, document_id: request.document_id, du_document_id: `du-doc:${request.document_id}`, emitted_at: at });
+    const preflight = runDuPreflight(document.bytes, { du_casefile_id }, cf, { submission_number, submission_type });
+    emitDuPreflight(events, { application_id: cf.application_id, du_document_id: `du-doc:${request.document_id}`, document_id: request.document_id, sha256: request.request_hash, casefile_id: cf.casefile_id, submission_number, result: preflight, ran_at: at });
     const r = await submitCasefile(events, port, cf, { request, at, prior, projected_note_date: o.note === undefined ? D("2026-11-06") : o.note, scif_facts: scifFacts(s), escalations: o.escalate ? escalations : null });
     if (r.outage) return { ...r, request, findings: null };
-    const f = await port.fetchFindings(cf.casefile_id, r.submission.submission_number);
+    const f = await port.fetchFindings(r.submission.du_casefile_id!, r.submission.submission_number);   // 23.7 rule 9: by DU's identifier, the ack's
     const got = receiveFindings(events, r.casefile, r.submission, f);
     return { ...r, request, submission: got.submission, casefile: got.casefile, findings: f };
   };
@@ -343,8 +354,8 @@ test("23.1-T13: Given the DI channel returns transport errors for 30 minutes on 
   assert.match(String(esc.payload.reason), /accessdodu\.fanniemae\.com/); assert.match(String(esc.payload.reason), /no scraping\/RPA/);
   assert.equal(h.escalations.list().length, 1);
   // manual submission: the operator uploads the SM-generated file and the exported findings are ingested, matched to the queued du_submissions row by casefile ID
-  const fake = new FakeDuPort(h.clock); await fake.submit(r.request, 99);
-  const uploaded = { ...(await fake.fetchFindings(cf1.casefile_id, 99)), submission_number: 99 };
+  const fake = new FakeDuPort(h.clock); const ack = await fake.submit(duSubmitRequest(cf1, r.request, 99));
+  const uploaded = { ...(await fake.fetchFindings(ack.du_casefile_id, 99)), submission_number: 99 };
   assert.throws(() => ingestOperatorFindings(h.events, r.casefile, [r.submission], uploaded, AGENT), /fnma_portal_operator/);
   const got = ingestOperatorFindings(h.events, r.casefile, [r.submission], uploaded, OPERATOR);
   assert.equal(got.submission.submission_id, r.submission.submission_id); assert.equal(got.submission.submission_number, 1); assert.equal(got.submission.status, "findings_received"); assert.equal(got.submission.submitted_via, "du_ui_fallback"); assert.equal(got.submission.error_code, null); assert.equal(got.submission.recommendation, "approve_eligible");

@@ -17,6 +17,9 @@ import { FakePrintMail, FakeEdelivery, FakeTelephony } from "./delivery.ts";
 import { FakeMetro2, FakeEoscar, eoscarOutageRouting } from "./credit.ts";
 import { FakeLpiTracking, FakeFlood, nfhlScreeningAllowed, FakeTaxService, FakeMi } from "./property.ts";
 import { FakePacer, pacerMatchAccepted, FakeDmdc, dmdcOutcome, FakeErecording } from "./legal.ts";
+import { readFileSync } from "node:fs";
+import { DuTransportError, FakeDuPort, OutageDuPort, fakeDuCasefileId, sha256Hex } from "./du.ts";
+import { samplePaths } from "./du-schema/index.ts";
 
 const T0 = "2026-09-03T14:00:00.000Z";
 const LAR = (loan: string, eventId: string, seq: number) => ({ fnmaLoanNumber: loan, eventId, sequence: seq, record: `96${loan.padEnd(10)}${"0".repeat(68)}`.slice(0, 80) });
@@ -341,4 +344,26 @@ test("rate feed (20.4 daily sheet, 20.1 SM_REFI_TRIGGER_DAILY): the FAKE is the 
   await assert.rejects(new FredRateFeed({ fetchImpl: (async () => { throw new Error("ECONNRESET"); }) as unknown as typeof fetch }).latest("2026-10-02T00:00:00.000Z"), (e: unknown) => e instanceof TransientFailure);
   await assert.rejects(new FredRateFeed({ fetchImpl: stub("observation_date,MORTGAGE30US\n2026-10-01,.\n") }).latest("2026-10-02T00:00:00.000Z"), (e: unknown) => e instanceof PermanentRejection && e.code === "FRED_NO_OBSERVATION");
   await assert.rejects(new FredRateFeed({ fetchImpl: stub("observation_date,MORTGAGE30US\n2026-10-01,62.7\n") }).latest("2026-10-02T00:00:00.000Z"), (e: unknown) => e instanceof PermanentRejection && e.code === "FRED_VALUE_OUT_OF_RANGE");
+});
+
+test("DU (23.7 rule 9): the FAKE validates the bytes against the vendored chain before answering — 400 on a document xmllint refuses (nothing recorded), 400 on a hash that is not the bytes', a deterministic ten-digit casefile id on submission 1 echoed after, 404 for findings nobody submitted; the outage fake is the channel (503)", async () => {
+  const du = new FakeDuPort({ now: () => T0 });
+  const bytes = new Uint8Array(readFileSync(samplePaths()[0]!));   // a shipped sample: validates against the chain
+  const base = { casefile_id: "cf-1", seller_number: "123456789", system_id_ref: "SYS-1" };
+  const ack = await du.submit({ ...base, document_bytes: bytes, sha256: sha256Hex(bytes), submission_number: 1 });
+  assert.match(ack.du_casefile_id, /^[1-9]\d{9}$/); assert.equal(ack.du_casefile_id, fakeDuCasefileId("cf-1")); assert.equal(ack.acked_at, T0);
+  assert.equal((await du.submit({ ...base, document_bytes: bytes, sha256: sha256Hex(bytes), submission_number: 2 })).du_casefile_id, ack.du_casefile_id, "echoed on a resubmission");
+  assert.notEqual(fakeDuCasefileId("cf-2"), ack.du_casefile_id); assert.equal(fakeDuCasefileId("cf-1"), fakeDuCasefileId("cf-1"));
+  assert.equal(du.requests.length, 2);
+  // Well-formed, schema-invalid: an element the chain does not know, at the end of MESSAGE.
+  const broken = new TextEncoder().encode(new TextDecoder().decode(bytes).replace("</MESSAGE>", "<NOT_IN_THE_SCHEMA/></MESSAGE>"));
+  await assert.rejects(du.submit({ ...base, document_bytes: broken, sha256: sha256Hex(broken), submission_number: 3 }), (e: unknown) => e instanceof DuTransportError && e.status === 400 && /does not validate/.test(e.message));
+  await assert.rejects(du.submit({ ...base, document_bytes: bytes, sha256: "0".repeat(64), submission_number: 3 }), (e: unknown) => e instanceof DuTransportError && e.status === 400 && /sha256/.test(e.message));
+  await assert.rejects(du.submit({ ...base, seller_number: "", document_bytes: bytes, sha256: sha256Hex(bytes), submission_number: 3 }), (e: unknown) => e instanceof DuTransportError && e.status === 400 && /seller_number/.test(e.message));
+  assert.equal(du.requests.length, 2, "a refused submission is not recorded"); assert.equal(du.refused.length, 3); assert.ok(du.refused[0]!.errors[0]!.includes("NOT_IN_THE_SCHEMA"));
+  await assert.rejects(du.fetchFindings("1000000000", 1), (e: unknown) => e instanceof DuTransportError && e.status === 404);
+  await assert.rejects(du.fetchFindings(ack.du_casefile_id, 1), RangeError, "findings are the fixture over 23.1's request — the FAKE seam the domain's submit passes; without it the FAKE says so");
+  const outage = new OutageDuPort();
+  await assert.rejects(outage.submit(), (e: unknown) => e instanceof DuTransportError && e.status === 503); assert.equal(outage.attempts, 1);
+  await assert.rejects(outage.fetchFindings(), (e: unknown) => e instanceof DuTransportError && e.status === 503);
 });

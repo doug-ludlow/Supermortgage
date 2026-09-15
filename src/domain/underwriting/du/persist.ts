@@ -61,6 +61,8 @@ export interface DuDocumentRow {
   readonly du_document_id: string; readonly application_id: string; readonly casefile_id: string; readonly submission_id: string | null; readonly document_id: string;
   readonly sha256: string; readonly spec_version: string; readonly mismo_build: string; readonly container_count: number; readonly relationship_count: number; readonly borrower_count: number; readonly required_missing: number;
   readonly emitted_at: string; readonly byte_size: number; readonly xml: string;
+  /** From the documents row's metadata (0129 keeps no column for it): the submission the document was assembled for. */
+  readonly submission_number: number;
 }
 
 /** One emitted document by its du_documents id, its documents id, or the latest for an application. */
@@ -69,12 +71,12 @@ export async function readDuDocument(q: Queryable, by: { du_document_id?: string
   if (!where) throw new RangeError("readDuDocument needs du_document_id, document_id or application_id");
   const rows = await q.query<Record<string, unknown>>(
     `SELECT d.id::text AS du_document_id, d.application_id::text AS application_id, d.casefile_id, d.submission_id::text AS submission_id, d.document_id::text AS document_id, encode(d.sha256, 'hex') AS sha256, d.spec_version, d.mismo_build,
-            d.container_count, d.relationship_count, d.borrower_count, d.required_missing, d.emitted_at::text AS emitted_at, doc.byte_size, doc.metadata->>'xml' AS xml
+            d.container_count, d.relationship_count, d.borrower_count, d.required_missing, d.emitted_at::text AS emitted_at, doc.byte_size, doc.metadata->>'xml' AS xml, (doc.metadata->>'submission_number')::int AS submission_number
        FROM du_documents d JOIN documents doc ON doc.id = d.document_id WHERE ${where[0]} ORDER BY d.emitted_at DESC, d.created_at DESC LIMIT 1`, [where[1]]);
   const r = rows[0];
   if (!r) return null;
   return { du_document_id: String(r["du_document_id"]), application_id: String(r["application_id"]), casefile_id: String(r["casefile_id"]), submission_id: r["submission_id"] === null ? null : String(r["submission_id"]), document_id: String(r["document_id"]), sha256: String(r["sha256"]), spec_version: String(r["spec_version"]), mismo_build: String(r["mismo_build"]),
-    container_count: Number(r["container_count"]), relationship_count: Number(r["relationship_count"]), borrower_count: Number(r["borrower_count"]), required_missing: Number(r["required_missing"]), emitted_at: String(r["emitted_at"]), byte_size: Number(r["byte_size"]), xml: String(r["xml"] ?? "") };
+    container_count: Number(r["container_count"]), relationship_count: Number(r["relationship_count"]), borrower_count: Number(r["borrower_count"]), required_missing: Number(r["required_missing"]), emitted_at: String(r["emitted_at"]), byte_size: Number(r["byte_size"]), xml: String(r["xml"] ?? ""), submission_number: Number(r["submission_number"] ?? 0) };
 }
 
 export interface EmittedInput { readonly application_id: string; readonly casefile_id: string; readonly submission_number: number; readonly submission_id?: string | null; readonly document_id: string; readonly du_document_id: string; readonly document: DuDocument; readonly emitted_at: string; }

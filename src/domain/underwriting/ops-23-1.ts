@@ -1,12 +1,14 @@
 /**
  * §23.1 DU casefile creation, submission, resubmission tolerances (B3-2-10 as executable logic), versioning and the
- * casefile lifecycle — the `underwriter` agent's DU rules as small pure functions over the `fnma-du` port (defined
- * here; src/infra would wire the Direct Integration XML adapter, tests use the fake below).
+ * casefile lifecycle — the `underwriter` agent's DU rules as small pure functions over the `fnma-du` port
+ * (src/infra/integrations/du.ts: the 23.7 rule 9 contract, the schema-validating FAKE and the outage fake; a real
+ * Direct Integration adapter would live beside them).
  *
  * UNVERIFIED (as the spec marks it): the DU Direct Integration transport/auth, the casefile create/submit
  * choreography, credit-provider codes and the Return File Type value list live in login-gated Fannie Mae material
- * (DU Spec / FAQ, "[PARTIALLY VERIFIED]"). The port interface below is the platform's contract for that adapter; the
- * fake returns the spec's fixture findings and echoes the request data so hashes can be matched.
+ * (DU Spec / FAQ, "[PARTIALLY VERIFIED]"). The port's contract (23.7 rule 9) takes the emitted bytes and their hash
+ * and answers with DU's own casefile identifier; the FAKE returns the spec's fixture findings (`fixtureFindings`,
+ * `fakeValidationResults`, `fakeDuMessages` below — 32.18 rule 5's validation service) over the request it was sent.
  *
  * Reused, never re-implemented: 22.2's `assertDuSubmittable`, `b3210ToleranceCheck`, `dtiTenths`, `expiresAt` and its
  * credit-report expiry gate; 22.1's document gates (`assertGateOpen`); 22.3's `closeByGate`; 21.1's SCIF gate via
@@ -16,8 +18,10 @@
  * clocks — see timers-23-1.ts):
  *   du.casefile.created{casefile_id, created_at, policy_generation, archive_540_due_at}          [arms FNMA_B3_2_01_DU_ARCHIVE_540]
  *   du.credit.associated{casefile_id, score_model, borrowers[]}
- *   du.submitted{submission_number, casefile_id, submission_type, reason, request_hash, du_release_applied}
+ *   du.submitted{submission_number, casefile_id, submission_type, reason, request_hash, du_release_applied, du_casefile_id}
  *                                                                        [satisfies FNMA_B3_2_01_DU_ARCHIVE_270 (any DU update resets it)]
+ *   du.casefile_id.recorded{du_casefile_id, submission_number}   (23.7 rule 9: applications.du_casefile_id written once, from the first ack)
+ *   du.casefile_id.conflict{du_casefile_id_on_file, du_casefile_id_acked, escalation_id}   (a later ack names a different one: DU_CASEFILE_ID_CONFLICT → fnma_portal_operator)
  *   du.findings.received{submission_number, recommendation, messages, validation_results, value_acceptance_offer, mi_requirement,
  *                        findings_hash, last_updated_at}                 [arms FNMA_B3_2_01_DU_ARCHIVE_270; 23.2/23.3/24.1/24.6/22.4 consume]
  *   du.submission.errored{submission_number, error_code, attempt}
@@ -43,7 +47,10 @@ import { assertDuSubmittable, b3210ToleranceCheck, dtiTenths, assertGateOpen as 
 import { assertGateOpen as assertDocumentGateOpen, type ReliedDocument } from "../verification/ops-22-1.ts";
 import { closeByGate } from "../verification/ops-22-3.ts";
 import { LTV_BANDS, MIN_MI_LTV_BANDS } from "../leads-pricing/ops-20-4.ts";
+import type { Queryable } from "../../infra/db/client.ts";
+import { DuTransportError, type DuPort, type DuSubmitAck, type DuSubmitRequest } from "../../infra/integrations/du.ts";
 import { assembleDuDocument, emptyGraph, withDeal, type DuDeal, type DuDocument, type DuGap, type DuGraph, type DuValue } from "./du/emit.ts";
+import { emitDuPreflight, preflightGate, runDuPreflight, type PreflightResult } from "./du/preflight.ts";
 
 export type { ScoreModel };
 export const AGENT: Actor = { kind: "agent", id: "underwriter" };
@@ -126,6 +133,8 @@ export interface DuSubmission {
   readonly snapshot: UladSnapshot; readonly rationale: string | null; readonly submitted_via: "di_channel" | "du_ui_fallback"; readonly agent_run_id: string | null;
   /** The DU validation service report references the request carried (32.18 rule 3: the asset report on the casefile). */
   readonly validation_report_refs?: DuRequest["validation_report_refs"];
+  /** DU's own casefile identifier from this submission's ack (23.7 rule 9) — null until acked; the key `fetchFindings` takes. */
+  readonly du_casefile_id: string | null;
 }
 export interface DuResubmissionCheck {
   readonly id: string; readonly application_id: string; readonly casefile_id: string; readonly baseline_submission_id: string; readonly trigger_event: string; readonly field: CheckField; readonly old_value: unknown; readonly new_value: unknown;
@@ -341,15 +350,15 @@ export function buildDuRequestWithDocument(casefile: DuCasefile, i: BuildRequest
     document: { sha256: doc.sha256, container_count: doc.stats.container_count, relationship_count: doc.stats.relationship_count, borrower_count: doc.stats.borrower_count, disputed_arcs_skipped: doc.stats.disputed_arcs_skipped, required_missing: doc.gaps.length, gaps: doc.gaps } } };
 }
 
-// ============================================================ the fnma-du port (UNVERIFIED transport; fake for tests)
-export class DuTransportError extends Error { readonly status: number; constructor(message: string, status = 503) { super(message); this.name = "DuTransportError"; this.status = status; } }
-export interface DuSubmitAck { readonly casefile_id: string; readonly submission_number: number; readonly acked_at: string; }
-export interface DuPort { submit(req: DuRequest, submission_number: number): Promise<DuSubmitAck>; fetchFindings(casefile_id: string, submission_number: number): Promise<DuFindings>; }
+// ============================================================ the fnma-du port: src/infra/integrations/du.ts (23.7 rule 9); the spec's fixture findings live here
+/** 23.7 rule 9: what `submitCasefile` hands the port — the emitted bytes, their hash, the casefile's credentials (and, for the FAKE, the request they came from). */
+export function duSubmitRequest(casefile: Pick<DuCasefile, "casefile_id" | "seller_number" | "system_id_ref">, request: DuRequest, submission_number: number): DuSubmitRequest {
+  return { document_bytes: new TextEncoder().encode(request.xml_document), sha256: request.request_hash, casefile_id: casefile.casefile_id, submission_number, seller_number: casefile.seller_number, system_id_ref: casefile.system_id_ref, source: request };
+}
 export interface ClosedLoanData { readonly occupancy: string; readonly product: string; readonly amortization: string; readonly loan_term: number; readonly property_type: string; readonly loan_purpose: string; readonly sales_price_cents: Cents | null; readonly appraised_value_cents: Cents; readonly note_rate_pct: string; readonly loan_amount_cents: Cents; }
 export const closedLoanData = (s: UladSnapshot | ClosedLoanData): ClosedLoanData => ({ occupancy: s.occupancy, product: s.product, amortization: s.amortization, loan_term: s.loan_term, property_type: s.property_type, loan_purpose: s.loan_purpose, sales_price_cents: s.sales_price_cents, appraised_value_cents: s.appraised_value_cents, note_rate_pct: s.note_rate_pct, loan_amount_cents: s.loan_amount_cents });
 /** Rule 5 / gate: the closed-loan snapshot hash — the eight B3-2-10 fields plus note rate, loan amount, term and product (CD-final values). */
 export const closedLoanSnapshotHash = (s: UladSnapshot | ClosedLoanData): string => sha256(canonical(closedLoanData(s)));
-/** The spec's fixture findings: Approve/Eligible with a value-acceptance offer; DTI/LTV computed from the echoed request; recommendation overridable per test. */
 /** What the FAKE DU knows about an asset verification report it is asked to validate against (32.18 rule 5): the payroll deposit stream the FAKE Plaid registered under the report reference. */
 export interface FakeAssetReportFacts { readonly payroll_deposits?: { readonly employer: string; readonly monthly_cents: string | bigint; readonly months: number } | undefined; readonly report_days?: number | undefined }
 /** 32.18 rule 5 — the FAKE DU validation service: an asset reference validates assets for every borrower; a 365-day reference with at least two months of payroll deposits validates employment; income is validated when the snapshot's qualifying income is within 10% of the report's monthly deposits, else not_validated. A 30/60-day reference validates assets only; no reference, no results. The real DU replaces this arithmetic with its own matching. */
@@ -383,34 +392,7 @@ export function fakeDuMessages(req: DuRequest, validation: readonly ValidationRe
   out.push({ id: "V1008", category: "verification", text: "Obtain evidence of hazard insurance coverage" }, { id: "V1009", category: "verification", text: "Obtain the title commitment" }, { id: "V1012", category: "verification", text: "Verify the borrowers' identity" }, { id: "V1014", category: "verification", text: "Obtain the flood zone determination" });
   return out;
 }
-export class FakeDuPort implements DuPort {
-  readonly requests: { req: DuRequest; submission_number: number }[] = [];
-  private readonly clock: { now(): string };
-  private readonly recommend: (req: DuRequest) => Recommendation;
-  private readonly extra: Partial<DuFindings>;
-  private readonly assetReport: (identifier: string) => FakeAssetReportFacts | undefined;
-  private readonly messagesFor: ((req: DuRequest, validation: readonly ValidationResult[]) => DuMessage[]) | null;
-  constructor(clock: { now(): string }, opts: { recommend?: (req: DuRequest) => Recommendation; findings?: Partial<DuFindings>; assetReport?: (identifier: string) => FakeAssetReportFacts | undefined; messages?: (req: DuRequest, validation: readonly ValidationResult[]) => DuMessage[] } = {}) {
-    this.clock = clock; this.recommend = opts.recommend ?? ((req) => (dtiBps(req.snapshot.total_obligations_cents, req.snapshot.qualifying_income_cents) > DU_MAX_DTI_BPS ? "approve_ineligible" : "approve_eligible")); this.extra = opts.findings ?? {};
-    this.assetReport = opts.assetReport ?? (() => undefined); this.messagesFor = opts.messages ?? null;
-  }
-  async submit(req: DuRequest, submission_number: number): Promise<DuSubmitAck> { this.requests.push({ req, submission_number }); return { casefile_id: req.casefile_id, submission_number, acked_at: this.clock.now() }; }
-  async fetchFindings(casefile_id: string, submission_number: number): Promise<DuFindings> {
-    const r = this.requests.find((x) => x.req.casefile_id === casefile_id && x.submission_number === submission_number);
-    if (!r) throw new DuTransportError(`no submission ${submission_number} on casefile ${casefile_id}`, 404);
-    const now = this.clock.now();
-    // 32.18 rule 5: the validation service's results from the request's asset report references (a test's explicit `findings.validation_results` still wins)
-    const validation = this.extra.validation_results ?? fakeValidationResults(r.req, this.assetReport, now);
-    const messages = this.extra.messages ?? (this.messagesFor ? this.messagesFor(r.req, validation) : undefined);
-    return fixtureFindings(r.req, submission_number, now, this.recommend(r.req), { ...this.extra, validation_results: validation, ...(messages ? { messages } : {}) });
-  }
-}
-/** A DI channel returning transport errors (T13). */
-export class OutageDuPort implements DuPort {
-  attempts = 0;
-  async submit(): Promise<DuSubmitAck> { this.attempts++; throw new DuTransportError("DI channel: connection reset", 503); }
-  async fetchFindings(): Promise<DuFindings> { throw new DuTransportError("DI channel: connection reset", 503); }
-}
+/** The spec's fixture findings (the FAKE port's answer — src/infra/integrations/du.ts): Approve/Eligible with a value-acceptance offer; DTI/LTV computed from the echoed request; recommendation overridable per test. */
 export function fixtureFindings(req: DuRequest, submission_number: number, received_at: string, recommendation: Recommendation = "approve_eligible", extra: Partial<DuFindings> = {}): DuFindings {
   const s = req.snapshot;
   const dti = dtiBps(s.total_obligations_cents, s.qualifying_income_cents);
@@ -436,8 +418,22 @@ export interface SubmitInput {
   readonly relied_documents?: readonly ReliedDocument[];
   readonly rationale?: string | null; readonly reviewer_approval_ref?: string | null; readonly agent_run_id?: string | null;
   readonly escalations?: { open(input: EscalationInput, by: Actor): Escalation } | null;
+  /** 23.7: the preflight result for this request's document, when the caller holds it; otherwise the gate is read off the bus (`preflightGate`), and with no emission there the checks run here (`assertPreflightGateOpen`). */
+  readonly preflight?: PreflightResult | null;
+  /** 23.7 rule 9: where `applications.du_casefile_id` is read before transmit and written from the ack (`recordDuCasefileId`); without one, the prior submissions' acks stand in for the column. */
+  readonly db?: DuCasefileIdStore | null;
 }
-export interface SubmitResult { readonly submission: DuSubmission; readonly casefile: DuCasefile; readonly events: DomainEvent[]; readonly outage: { escalation: Escalation | null; attempts: number; declared_at: string } | null; readonly cutover: DomainEvent | null; }
+/**
+ * 23.7 rule 9's column, as the runtime hands it to `submitCasefile`: `read` is the pool (the SELECT before anything is
+ * transmitted), `defer` queues the UPDATE into the command's transaction (src/runtime/app.ts `deferWrite`), so the
+ * column commits with `du.submitted` and `du.casefile_id.recorded` — or not at all, if the command fails after the ack.
+ */
+export interface DuCasefileIdStore { readonly read: Queryable; readonly defer: (fn: (q: Queryable) => Promise<void>) => void; }
+export interface SubmitResult { readonly submission: DuSubmission; readonly casefile: DuCasefile; readonly events: DomainEvent[]; readonly outage: { escalation: Escalation | null; attempts: number; declared_at: string } | null; readonly cutover: DomainEvent | null;
+  /** 23.7 rule 9: what the ack's `du_casefile_id` did to `applications.du_casefile_id` (null on the outage and rejection paths — no ack). */
+  readonly du_casefile: DuCasefileIdRecord | null;
+  /** 23.7 rule 9 / 23.1 error path: DU refused the document (HTTP 400-class) — the submission row is `error`/`DU_REJECTED`, nothing was transmitted, no retry (null otherwise). */
+  readonly rejected: { status: number; message: string } | null; }
 const addMinutes = (iso: string, m: number): string => new Date(Date.parse(iso) + m * 60_000).toISOString();
 /** Guards (state machine): SCIF presented; credit associated for every borrower; report not expired at the projected note date (or reason credit_refresh); duplicate hash suppressed; resubmission cap; final submission passes 22.1's credit-docs gate. */
 export function assertSubmittable(casefile: DuCasefile, i: SubmitInput): void {
@@ -456,23 +452,65 @@ export function assertSubmittable(casefile: DuCasefile, i: SubmitInput): void {
   if (n >= RESUBMISSION_RATIONALE_AFTER && !i.rationale) throw new DuRefused("RESUBMISSION_RATIONALE_REQUIRED", "23.1 rule 6: after the 10th submission the agent attaches a rationale for each further submission", `submission ${n + 1} needs a rationale`);
   if (r.reason === "final_closed_loan_match" && i.projected_note_date && i.relied_documents) assertDocumentGateOpen(casefile.application_id, "FNMA_B1_1_03_CREDIT_DOCS_4M", { relied_documents: i.relied_documents, scheduled_note_date: i.projected_note_date });
 }
+/**
+ * 23.7 `SM_DU_PREFLIGHT_GATE` (not_before_gate; armed on `du.document.emitted`, satisfied by `du.preflight.passed`): a
+ * refused document is refused here with the preflight code and the XPath, and `du.submitted` is never emitted for it
+ * (23.7-T10); an emitted document nobody preflighted is held too (`SM_DU_PREFLIGHT_GATE`). A request no emission on
+ * this bus preceded armed no gate and nobody ran the checks — the spec's trigger row is "on every submission", before
+ * any bytes reach the port, and no bypass exists — so they run here, over the bytes that would go on the wire, with
+ * the result on the bus (`du.preflight.passed` / `du.preflight.refused`, `inline: true`; no du_documents row exists to
+ * persist it against). `du_casefile_id_on_file` is `applications.du_casefile_id` as read before transmit (rule 7).
+ * There is no `officer` waiver: every refusal is a document DU would reject.
+ */
+export function assertPreflightGateOpen(events: EventStore, casefile: DuCasefile, i: SubmitInput, du_casefile_id_on_file: string | null, actor: Actor = AGENT): { state: "handed" | "passed" | "inline"; result: PreflightResult | null } {
+  const r = i.request;
+  const refuse = (f: NonNullable<PreflightResult["refusal"]>): never => { throw new DuRefused(f.code, `23.7 SM_DU_PREFLIGHT_GATE — ${f.rule}`, `preflight refused the document at ${f.xpath}: ${f.detail}`, "23.2"); };
+  if (i.preflight) {
+    if (i.preflight.passed) return { state: "handed", result: i.preflight };
+    return refuse(i.preflight.refusal!);
+  }
+  const g = preflightGate(events, { document_id: r.document_id, sha256: r.request_hash });
+  if (g.open) return { state: "passed", result: null };
+  if (g.state !== "not_armed") throw new DuRefused(g.code ?? "SM_DU_PREFLIGHT_GATE", `23.7 SM_DU_PREFLIGHT_GATE — ${g.rule ?? "hold; du.submitted cannot be emitted for the document"}`, g.reason, g.state === "refused" ? "23.2" : "23.7");
+  const submission_number = casefile.submission_count + 1;
+  const result = runDuPreflight(r.xml_document, { du_casefile_id: du_casefile_id_on_file }, casefile, { submission_number, submission_type: r.submission_type });
+  emitDuPreflight(events, { application_id: casefile.application_id, du_document_id: r.document_id, document_id: r.document_id, sha256: r.request_hash, casefile_id: casefile.casefile_id, submission_number, result, ran_at: i.at, actor, inline: true });
+  if (result.passed) return { state: "inline", result };
+  return refuse(result.refusal!);
+}
 export async function submitCasefile(events: EventStore, port: DuPort, casefile: DuCasefile, i: SubmitInput, actor: Actor = AGENT): Promise<SubmitResult> {
   assertSubmittable(casefile, i);
+  // 23.7 rule 9: the column is read before anything is transmitted — an application that is not a row is refused here, never after DU has
+  // acked (an ack is never dropped) — and feeds rule 7 (the identifier on the wire on a resubmission). Without a database the prior acks play it.
+  const on_file = i.db ? await readDuCasefileIdColumn(i.db.read, casefile.application_id) : (i.prior.find((p) => p.du_casefile_id)?.du_casefile_id ?? null);
+  assertPreflightGateOpen(events, casefile, i, on_file, actor);
   const r = i.request;
   const submission_number = casefile.submission_count + 1;
   const du_release_applied = duReleaseApplied(i.at);
   const base: DuSubmission = { submission_id: randomUUID(), casefile_id: casefile.casefile_id, application_id: casefile.application_id, submission_number, submission_type: r.submission_type, reason: r.reason, request_document_id: r.document_id, request_hash: r.request_hash, du_version: DU_VERSION, du_release_applied,
     return_file_types: r.return_file_types, findings_document_id: null, findings_json_document_id: null, findings_pdf_document_id: null, submitted_at: i.at, acked_at: null, findings_received_at: null, status: "queued", error_code: null, error_message: null, recommendation: null, messages: [], risk_factors: {}, validation_results: [], value_acceptance_offer: null, mi_requirement: null,
     dti_du: null, ltv_du: null, cltv_du: null, hcltv_du: null, reserves_required_cents: null, total_funds_to_verify_cents: null, qualifying_rate: null, note_rate: r.snapshot.note_rate_pct, loan_amount_cents: r.snapshot.loan_amount_cents, is_final: false, closed_loan_snapshot_hash: r.reason === "final_closed_loan_match" ? closedLoanSnapshotHash(r.snapshot) : null, findings_hash: null,
-    snapshot: r.snapshot, rationale: i.rationale ?? null, submitted_via: "di_channel", agent_run_id: i.agent_run_id ?? null, validation_report_refs: r.validation_report_refs };
+    snapshot: r.snapshot, rationale: i.rationale ?? null, submitted_via: "di_channel", agent_run_id: i.agent_run_id ?? null, validation_report_refs: r.validation_report_refs, du_casefile_id: null };
   const out: DomainEvent[] = [];
   let attempt = 0, elapsed = 0, ack: DuSubmitAck | null = null;
   while (attempt < DI_BACKOFF_MINUTES.length && !ack) {
     attempt++;
     const attempted_at = addMinutes(i.at, elapsed);
-    try { ack = await port.submit(r, submission_number); }
+    try { ack = await port.submit(duSubmitRequest(casefile, r, submission_number)); }
     catch (e) {
       if (!(e instanceof DuTransportError)) throw e;
+      if (e.status >= 400 && e.status < 500) {
+        // DU refused what it was sent (the FAKE: xmllint against the chain, 23.7-T8) — a rejection, not the channel: no retry, no
+        // transmission, 23.1's error path. Like the outage branch this RETURNS rather than throws, so the command that carries it
+        // commits: the du_submissions row moves to `error` with `error_code = DU_REJECTED` "without a transmission" (23.7 Data model)
+        // and `du.submission.errored` reaches loan_events (a handler that throws persists nothing — src/infra/db/unit-of-work.ts).
+        // 23.7's preflight exists so this is never seen for a reason the corpus already knows; a new one is added to preflight in the
+        // same commit as its triage (23.7 Edge cases).
+        out.push(emit(events, casefile.application_id, "du.submission.errored", { casefile_id: casefile.casefile_id, submission_number, error_code: "DU_REJECTED", status: e.status, error_message: e.message, attempt, attempted_at, request_hash: r.request_hash, request_document_id: base.request_document_id, retry_in_minutes: null, transmitted: false,
+          citation: "23.7 rule 9 / 23.1 error path: DU refused the document (HTTP 400-class); the error code is added to preflight with its triage", next: "23.7" }, attempted_at, actor));
+        const submission: DuSubmission = { ...base, status: "error", error_code: "DU_REJECTED", error_message: e.message };
+        return { submission, casefile: { ...casefile, status: "error", submission_count: submission_number, red_flag_excessive_resubmissions: submission_number > RESUBMISSION_RATIONALE_AFTER }, events: out, outage: null, cutover: null, du_casefile: null, rejected: { status: e.status, message: e.message } };
+      }
       const wait = DI_BACKOFF_MINUTES[attempt - 1]!; elapsed += wait;
       out.push(emit(events, casefile.application_id, "du.submission.errored", { casefile_id: casefile.casefile_id, submission_number, error_code: "DI_TRANSPORT", error_message: e.message, attempt, attempted_at, retry_in_minutes: attempt < DI_BACKOFF_MINUTES.length ? wait : null }, attempted_at, actor));
     }
@@ -483,15 +521,73 @@ export async function submitCasefile(events: EventStore, port: DuPort, casefile:
     const submission: DuSubmission = { ...base, status: "queued", error_code: "DI_TRANSPORT_OUTAGE", error_message: `${attempt} attempts over ${DI_OUTAGE_AFTER_MINUTES} minutes failed` };
     const escalation = i.escalations ? i.escalations.open({ kind: "human_portal_task", ownerRole: "fnma_portal_operator", applicationId: casefile.application_id, severity: "sev2", payload: { reason: "DU Direct Integration outage — upload the SM-generated request through the DU web UI (accessdodu.fanniemae.com); no scraping/RPA", casefile_id: casefile.casefile_id, submission_number, request_document_id: base.request_document_id, request_hash: r.request_hash, request_file: r.xml_document, return_file_types: r.return_file_types, attempts: attempt, outage_declared_at: declared_at } }, actor) : null;
     out.push(emit(events, casefile.application_id, "du.submission.errored", { casefile_id: casefile.casefile_id, submission_number, error_code: "DI_TRANSPORT_OUTAGE", attempt, escalation_id: escalation?.id ?? null, owner_role: "fnma_portal_operator", request_document_id: base.request_document_id }, declared_at, actor));
-    return { submission, casefile: { ...casefile, status: "error", submission_count: submission_number, red_flag_excessive_resubmissions: submission_number > RESUBMISSION_RATIONALE_AFTER }, events: out, outage: { escalation, attempts: attempt, declared_at }, cutover: null };
+    return { submission, casefile: { ...casefile, status: "error", submission_count: submission_number, red_flag_excessive_resubmissions: submission_number > RESUBMISSION_RATIONALE_AFTER }, events: out, outage: { escalation, attempts: attempt, declared_at }, cutover: null, du_casefile: null, rejected: null };
   }
-  const submission: DuSubmission = { ...base, status: "acked", acked_at: ack.acked_at };
+  const submission: DuSubmission = { ...base, status: "acked", acked_at: ack.acked_at, du_casefile_id: ack.du_casefile_id };
   const last_updated_on = civilDateEt(i.at);
   const next: DuCasefile = { ...casefile, status: "submitted", submission_count: submission_number, last_updated_at: i.at, last_updated_on, ...archivalClocks(casefile.created_on, last_updated_on), red_flag_excessive_resubmissions: submission_number > RESUBMISSION_RATIONALE_AFTER };
-  out.push(emit(events, casefile.application_id, "du.submitted", { casefile_id: casefile.casefile_id, submission_number, submission_type: r.submission_type, reason: r.reason, request_hash: r.request_hash, request_document_id: base.request_document_id, du_version: DU_VERSION, du_release_applied, policy_generation: casefile.policy_generation, return_file_types: r.return_file_types, last_updated_at: i.at, is_final_candidate: r.reason === "final_closed_loan_match" }, i.at, actor));
+  out.push(emit(events, casefile.application_id, "du.submitted", { casefile_id: casefile.casefile_id, submission_number, submission_type: r.submission_type, reason: r.reason, request_hash: r.request_hash, request_document_id: base.request_document_id, du_version: DU_VERSION, du_release_applied, policy_generation: casefile.policy_generation, return_file_types: r.return_file_types, last_updated_at: i.at, is_final_candidate: r.reason === "final_closed_loan_match", du_casefile_id: ack.du_casefile_id, acked_at: ack.acked_at }, i.at, actor));
+  // 23.7 rule 9: DU's identifier is written once, from the first ack; a later ack naming a different one is a conflict for fnma_portal_operator, never an overwrite.
+  const du_casefile = await recordDuCasefileId(i.db ?? null, events, casefile, { submission_number, du_casefile_id: ack.du_casefile_id, at: ack.acked_at, known: on_file, escalations: i.escalations ?? null }, actor);
+  out.push(...du_casefile.events);
   const cutover = prevRelease && prevRelease !== du_release_applied ? emit(events, casefile.application_id, "du.version.cutover_applied", { casefile_id: casefile.casefile_id, submission_number, from: prevRelease, to: du_release_applied, policy_generation: casefile.policy_generation, creation_keyed_unchanged: ["du_validation_service.fixed_base_income_minimums", "du_validation_service.close_by_business_days"], submission_keyed_applied: ["cu_driven_ineligible", "lava_zone_messages", "message_catalog_11_25_7"] }, i.at, actor) : null;
   if (cutover) out.push(cutover);
-  return { submission, casefile: next, events: out, outage: null, cutover };
+  return { submission, casefile: next, events: out, outage: null, cutover, du_casefile, rejected: null };
+}
+
+// ============================================================ 23.7 rule 9 — DU's casefile identifier, written once
+export const DU_CASEFILE_ID_WRITE_ONCE = "DU_CASEFILE_ID_WRITE_ONCE";
+export interface RecordDuCasefileIdInput {
+  readonly submission_number: number;
+  /** What the ack carried. */
+  readonly du_casefile_id: string;
+  readonly at: string;
+  /** `applications.du_casefile_id` as read before transmit (`readDuCasefileIdColumn`) — or, with no database, the prior submissions' acks. The outcome is decided from it alone; the trigger is the backstop at commit. */
+  readonly known?: string | null;
+  readonly escalations?: { open(input: EscalationInput, by: Actor): Escalation } | null;
+}
+export interface DuCasefileIdRecord {
+  /** `written`: the column was null and the ack's id is queued for the command's commit; `unchanged`: it already held the same id (the trigger's same-value no-op); `conflict`: it holds a different one (what the trigger would refuse as DU_CASEFILE_ID_WRITE_ONCE) — escalated, never written. */
+  readonly outcome: "written" | "unchanged" | "conflict";
+  /** What `applications.du_casefile_id` holds after the call. */
+  readonly on_file: string;
+  readonly acked: string;
+  readonly escalation: Escalation | null;
+  readonly events: DomainEvent[];
+}
+/** `applications.du_casefile_id` as it stands — read on the pool before anything is transmitted (23.7 rule 9). An application that is not a row is refused before the port is touched, never after an ack. */
+export async function readDuCasefileIdColumn(q: Queryable, application_id: string): Promise<string | null> {
+  const rows = await q.query<{ du_casefile_id: string | null }>(`SELECT du_casefile_id FROM applications WHERE id = $1`, [application_id]);
+  if (!rows.length) throw new DuRefused("APPLICATION_ROW_MISSING", "23.7 rule 9: applications.du_casefile_id is written from the first ack — the application is a row before anything is transmitted", `no applications row ${application_id}; nothing was transmitted`, "21.1");
+  return rows[0]!.du_casefile_id;
+}
+/**
+ * The findings ingest's write of `applications.du_casefile_id` from the first ack (23.7 rule 9; 23.5's column). The
+ * outcome is decided from the column as read before transmit (`known` — `readDuCasefileIdColumn`, or the prior acks in
+ * the unit harness): null → `written`, the UPDATE deferred into the command's transaction (`store.defer`) so it commits
+ * with `du.submitted` and `du.casefile_id.recorded` or not at all; the same id → `unchanged`, nothing written; a
+ * different id → `conflict`, `escalation{fnma_portal_operator, DU_CASEFILE_ID_CONFLICT}`, nothing written (23.7-T9).
+ * db/migrations/0127_du_graph.sql's write-once trigger stays the backstop: if the column changed between the read and
+ * the commit it raises DU_CASEFILE_ID_WRITE_ONCE and the whole command rolls back. Every outcome but `unchanged` is an event.
+ */
+export async function recordDuCasefileId(store: DuCasefileIdStore | null, events: EventStore, casefile: Pick<DuCasefile, "casefile_id" | "application_id">, i: RecordDuCasefileIdInput, actor: Actor = AGENT): Promise<DuCasefileIdRecord> {
+  if (!/^\d{1,30}$/.test(i.du_casefile_id)) throw new RangeError(`du_casefile_id ${JSON.stringify(i.du_casefile_id)} is not DU's AutomatedUnderwritingCaseIdentifier (digits, at most 30)`);
+  const before: string | null = i.known ?? null;
+  const conflict = before !== null && before !== i.du_casefile_id;
+  const out: DomainEvent[] = [];
+  if (conflict) {
+    const payload = { code: "DU_CASEFILE_ID_CONFLICT", reason: "DU_CASEFILE_ID_CONFLICT: a later acknowledgement named a DU casefile identifier different from the one on file; applications.du_casefile_id is write-once (23.7 rule 9) — confirm with Fannie Mae which casefile this application is on", casefile_id: casefile.casefile_id, submission_number: i.submission_number, du_casefile_id_on_file: before, du_casefile_id_acked: i.du_casefile_id, column: "applications.du_casefile_id", overwritten: false };
+    const escalation = i.escalations ? i.escalations.open({ kind: "human_portal_task", ownerRole: "fnma_portal_operator", applicationId: casefile.application_id, severity: "sev2", payload }, actor) : null;
+    out.push(emit(events, casefile.application_id, "du.casefile_id.conflict", { ...payload, escalation_id: escalation?.id ?? null, owner_role: "fnma_portal_operator" }, i.at, actor));
+    return { outcome: "conflict", on_file: before!, acked: i.du_casefile_id, escalation, events: out };
+  }
+  if (before === null) {
+    const application_id = casefile.application_id, du_casefile_id = i.du_casefile_id;
+    if (store) store.defer(async (q) => { await q.query(`UPDATE applications SET du_casefile_id = $2 WHERE id = $1`, [application_id, du_casefile_id]); });
+    out.push(emit(events, casefile.application_id, "du.casefile_id.recorded", { casefile_id: casefile.casefile_id, submission_number: i.submission_number, du_casefile_id, column: "applications.du_casefile_id", write_once: true, persisted: Boolean(store) }, i.at, actor));
+    return { outcome: "written", on_file: i.du_casefile_id, acked: i.du_casefile_id, escalation: null, events: out };
+  }
+  return { outcome: "unchanged", on_file: before, acked: i.du_casefile_id, escalation: null, events: out };
 }
 /** DU findings (JSON v2 + PDF) parsed into the submission row; the `du.findings.received` payload is what 23.2/23.3/24.1/24.6/22.4 consume. */
 export function receiveFindings(events: EventStore, casefile: DuCasefile, submission: DuSubmission, f: DuFindings, actor: Actor = AGENT, via: DuSubmission["submitted_via"] = submission.submitted_via): { submission: DuSubmission; casefile: DuCasefile; event: DomainEvent } {

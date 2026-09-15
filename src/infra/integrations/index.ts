@@ -12,3 +12,4 @@ export * from "./credit.ts";
 export * from "./property.ts";
 export * from "./legal.ts";
 export * from "./oidc.ts";
+export * from "./du.ts";

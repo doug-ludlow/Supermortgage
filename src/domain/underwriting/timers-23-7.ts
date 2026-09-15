@@ -11,7 +11,9 @@
  * `du.preflight.passed` (23.7) — so `npm run spec:lint -- --verbose` lists it under neither "prose offsets" nor
  * "unparsed triggers" nor "still unarmable" nor "not satisfiable". Spec breach column: "hold; `du.submitted` cannot be
  * emitted for the document" — the hold is 23.1's `submit` evaluating the gate (23.7-T10), not a registry concern.
- * tools/audit.py counts the code as built only once source emits both events (Phase 6: emit.ts / preflight.ts).
+ * tools/audit.py counts the code as built once source emits both events: du/persist.ts appends `du.document.emitted`
+ * (23.6) and du/preflight.ts appends `du.preflight.passed` / `du.preflight.refused` (23.7) — both with `applicationId`
+ * and `application_id`, so the engine arms on the emission and satisfies on the pass for the same application.
  *
  * Phase 6 note — origination context. This is a section-23 (≥ 20) row, so the engine arms it ONLY for an event that
  * carries origination context (src/kernel/timers/engine.ts isOriginationContext: `DomainEvent.applicationId`, an

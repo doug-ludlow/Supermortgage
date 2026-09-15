@@ -29,6 +29,7 @@ import { samplePaths, xmllintErrors } from "../../infra/integrations/du-schema/i
 import { assembleDuDocument, DU_MISMO_BUILD, DU_SPEC_VERSION, DuEmitError, emptyGraph, loadGraph, withDeal, type DuDocument, type DuGraph } from "../../domain/underwriting/du/emit.ts";
 import { diffDuDocument } from "../../domain/underwriting/du/xml.ts";
 import { emitDuDocumentEmitted, emitDuDocumentRefused, persistDuDocument, readDuDocument as readDuDocumentRow } from "../../domain/underwriting/du/persist.ts";
+import { persistDuPreflight, emitDuPreflight, runDuPreflight } from "../../domain/underwriting/du/preflight.ts";
 import { dealFromSnapshot, type DuCasefile, type SubmissionType } from "../../domain/underwriting/ops-23-1.ts";
 import { casefileIn, snapshotIn } from "./section23-1.ts";
 
@@ -83,9 +84,14 @@ export const TOOLS_23_6: readonly ToolDef[] = defineTools(PROCESS_23_6, "underwr
       const row = { application_id, casefile_id: cf.casefile_id, submission_number, submission_id: str(i, "submission_id") || null, document, document_id, du_document_id, emitted_at };
       const defer = rt.services["deferWrite"] as ((fn: (q: Queryable) => Promise<void>) => void) | undefined;
       const persisted = Boolean(defer && isUuid(application_id));
-      if (persisted) defer!(async (q) => { await persistDuDocument(q, row); });
+      // 23.7: preflight runs unprompted on every emission; its row follows the du_documents row it references in the same deferred write.
+      const preflight = runDuPreflight(document.bytes, { du_casefile_id: graph.du_casefile_id }, cf, { submission_number, submission_type });
+      const pf = { application_id, du_document_id, document_id, sha256: document.sha256, casefile_id: cf.casefile_id, submission_number, result: preflight, ran_at: emitted_at, actor: ctx.actor };
+      if (persisted) defer!(async (q) => { await persistDuDocument(q, row); await persistDuPreflight(q, pf); });
       emitDuDocumentEmitted(ctx.events, row, ctx.actor);
-      return { application_id, casefile_id: cf.casefile_id, submission_number, document_id, du_document_id, sha256: document.sha256, spec_version: DU_SPEC_VERSION, mismo_build: DU_MISMO_BUILD, container_count: document.stats.container_count, relationship_count: document.stats.relationship_count, borrower_count: document.stats.borrower_count, disputed_arcs_skipped: document.stats.disputed_arcs_skipped, required_missing: document.gaps.length, gaps: document.gaps, byte_size: document.bytes.byteLength, persisted, xml_document: new TextDecoder().decode(document.bytes) };
+      emitDuPreflight(ctx.events, pf);
+      return { application_id, casefile_id: cf.casefile_id, submission_number, document_id, du_document_id, sha256: document.sha256, spec_version: DU_SPEC_VERSION, mismo_build: DU_MISMO_BUILD, container_count: document.stats.container_count, relationship_count: document.stats.relationship_count, borrower_count: document.stats.borrower_count, disputed_arcs_skipped: document.stats.disputed_arcs_skipped, required_missing: document.gaps.length, gaps: document.gaps, byte_size: document.bytes.byteLength, persisted, xml_document: new TextDecoder().decode(document.bytes),
+        preflight: { passed: preflight.passed, gate: preflight.passed ? "open" : "held", refusal: preflight.refusal, checks: preflight.checks } };
     }),
     decision: (_i, output) => { const o = (output ?? {}) as P; return { action: "assembleDuDocument", subject: { kind: "du_documents", id: String(o["du_document_id"] ?? "") }, ruleCode: "23.6", evidenceDocumentIds: o["document_id"] ? [String(o["document_id"])] : [],
       rationale: JSON.stringify({ application_id: o["application_id"], casefile_id: o["casefile_id"], submission_number: o["submission_number"], sha256: o["sha256"], spec_version: o["spec_version"], container_count: o["container_count"], relationship_count: o["relationship_count"], rule_set_version: RULE_SET, model_version: null }) }; } },

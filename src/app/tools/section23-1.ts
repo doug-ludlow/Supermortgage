@@ -7,7 +7,8 @@
  * evaluateResubmission, snapshotClosedLoan, assertFinalSubmissionMatches, writeDecision, openEscalation. State lives in
  * the entity store (`du_casefiles`, `du_submissions`, `du_resubmission_checks`); events go through ops-23-1.ts so the
  * archival clocks, the final-match gate and 22.5's resubmission SLA arm and close. The DU adapter is the `fnma-du`
- * service (a port defined in ops-23-1.ts — the Direct Integration transport is UNVERIFIED login-gated material).
+ * service (the port in src/infra/integrations/du.ts, 23.7 rule 9 — the Direct Integration transport is UNVERIFIED
+ * login-gated material; the FAKE validates the bytes against the chain and mints DU's casefile identifier).
  * Guardrails encode the paragraph: never edit ULAD data except from a `verifications`/`documents`/`changed_circumstances`
  * source; never suppress a liability or income change to stay within tolerance; never submit without a report for every
  * borrower; never mix score models; never exceed the resubmission cap without `underwriting_reviewer`; never disclose
@@ -19,10 +20,12 @@ import { plainDate as D, type PlainDate } from "../../kernel/calendar/date.ts";
 import type { CreditReport } from "../../domain/verification/ops-22-2.ts";
 import { randomUUID } from "node:crypto";
 import { isUuid, type Queryable } from "../../infra/db/client.ts";
+import type { DuPort } from "../../infra/integrations/du.ts";
 import { DuEmitError, loadGraph } from "../../domain/underwriting/du/emit.ts";
 import { emitDuDocumentEmitted, emitDuDocumentRefused, persistDuDocument } from "../../domain/underwriting/du/persist.ts";
+import { persistDuPreflight, emitDuPreflight, runDuPreflight } from "../../domain/underwriting/du/preflight.ts";
 import { buildDuRequestWithDocument, associateCredit, submitCasefile, receiveFindings, ingestOperatorFindings, evaluateResubmission, closedLoanSnapshotHash, closedLoanData, assertFinalSubmissionMatches, recordFinalSubmission, decisionRecord, RESUBMISSION_REVIEW_AFTER, RESUBMISSION_RATIONALE_AFTER,
-  type DuCasefile, type DuSubmission, type DuPort, type DuRequest, type DuFindings, type UladSnapshot, type BorrowerIdentity, type SubmissionType, type SubmissionReason, type ReturnFileType, type ScoreModel } from "../../domain/underwriting/ops-23-1.ts";
+  type DuCasefile, type DuSubmission, type DuRequest, type DuFindings, type UladSnapshot, type BorrowerIdentity, type SubmissionType, type SubmissionReason, type ReturnFileType, type ScoreModel } from "../../domain/underwriting/ops-23-1.ts";
 
 /** Missing-input refusals are RangeErrors (never TypeErrors) — src/app/tools.test.ts executes every tool with `{}`. */
 const need = (i: ToolInput, ...keys: string[]): void => { const missing = keys.filter((k) => i[k] === undefined || i[k] === null || i[k] === ""); if (missing.length) throw new RangeError(`23.1 tool needs ${missing.join(", ")}`); };
@@ -65,10 +68,17 @@ export const TOOLS_23_1: readonly ToolDef[] = defineTools("23.1", "underwriter",
     const { request: req, document } = built;
     const du_document_id = randomUUID();
     const row = { application_id: cf.application_id, casefile_id: cf.casefile_id, submission_number, document, document_id: req.document_id, du_document_id, emitted_at: built_at };
+    // 23.7: the underwriter runs preflight unprompted on every emission (AI agent design). Its row rides in the same deferred
+    // write as the du_documents row it references; du.preflight.passed opens SM_DU_PREFLIGHT_GATE for submitCasefile, and a
+    // refusal holds it — submit then refuses with the preflight code (23.7-T10), never transmits, never edits the document.
+    const preflight = runDuPreflight(document.bytes, { du_casefile_id: graph?.du_casefile_id ?? null }, cf, { submission_number, submission_type: t });
+    const pf = { application_id: cf.application_id, du_document_id, document_id: req.document_id, sha256: req.request_hash, casefile_id: cf.casefile_id, submission_number, result: preflight, ran_at: built_at, actor: ctx.actor };
     const defer = rt.services["deferWrite"] as ((fn: (q: Queryable) => Promise<void>) => void) | undefined;
-    if (defer && isUuid(cf.application_id)) defer(async (q) => { await persistDuDocument(q, row); });
+    if (defer && isUuid(cf.application_id)) defer(async (q) => { await persistDuDocument(q, row); await persistDuPreflight(q, pf); });
     emitDuDocumentEmitted(ctx.events, row, ctx.actor);
-    return { request: req, request_hash: req.request_hash, return_file_types: req.return_file_types, mismo_version: req.mismo_version, document_id: req.document_id, du_document_id, sha256: req.request_hash, container_count: document.stats.container_count, relationship_count: document.stats.relationship_count, required_missing: document.gaps.length, persisted: Boolean(defer && isUuid(cf.application_id)) };
+    emitDuPreflight(ctx.events, pf);
+    return { request: req, request_hash: req.request_hash, return_file_types: req.return_file_types, mismo_version: req.mismo_version, document_id: req.document_id, du_document_id, sha256: req.request_hash, container_count: document.stats.container_count, relationship_count: document.stats.relationship_count, required_missing: document.gaps.length, persisted: Boolean(defer && isUuid(cf.application_id)),
+      preflight: { passed: preflight.passed, gate: preflight.passed ? "open" : "held", refusal: preflight.refusal, checks: preflight.checks } };
   }), guardrails: [NO_ULAD_EDIT, never("REPORT_FOR_EVERY_BORROWER", "23.1 guardrails: never submit without a report for every borrower", (i) => i.skip_credit_association === true, "every borrower's credit report is associated before an underwriting submission")] },
   { name: "associateCredit", kind: "act", handler: compute((i, ctx, rt) => {
     const cf = casefileIn(i, rt); need(i, "reports", "borrowers");
@@ -79,9 +89,18 @@ export const TOOLS_23_1: readonly ToolDef[] = defineTools("23.1", "underwriter",
   { name: "submitCasefile", kind: "act", handler: compute(async (i, ctx, rt) => {
     const cf = casefileIn(i, rt); need(i, "request");
     const req = i.request as DuRequest; const prior = submissionsOf(i, rt, cf);
-    const r = await submitCasefile(ctx.events, port(rt), cf, { request: req, at: ctx.now, prior, projected_note_date: dateIn(i, "projected_note_date"), scif_facts: (i.scif_facts as Record<string, unknown> | undefined) ?? {}, ...(Array.isArray(i.relied_documents) ? { relied_documents: i.relied_documents as never[] } : {}), rationale: (i.rationale as string | undefined) ?? null, reviewer_approval_ref: (i.reviewer_approval_ref as string | undefined) ?? null, agent_run_id: ctx.run?.runId ?? null, escalations: rt.escalations }, ctx.actor);
+    // 23.7 rule 9: applications.du_casefile_id is read on the pool before anything is transmitted (an application that is not a row is
+    // refused there, never after an ack) and the outcome — written / unchanged / conflict — is decided from that read; the UPDATE is
+    // deferred into this command's transaction (rt.services.deferWrite) so the column commits with du.submitted and
+    // du.casefile_id.recorded or not at all, 0127's write-once trigger the backstop at commit. A conflict opens its escalation inside
+    // this command and writes nothing. Without a database (or an application that is not a row) the prior submissions' acks stand in.
+    // A DU rejection (HTTP 400-class) is a returned result, not a throw, so the `error`/DU_REJECTED du_submissions row and
+    // du.submission.errored persist with the command (a handler that throws persists nothing).
+    const db = rt.services["db"] as Queryable | undefined;
+    const defer = rt.services["deferWrite"] as ((fn: (q: Queryable) => Promise<void>) => void) | undefined;
+    const r = await submitCasefile(ctx.events, port(rt), cf, { request: req, at: ctx.now, prior, projected_note_date: dateIn(i, "projected_note_date"), scif_facts: (i.scif_facts as Record<string, unknown> | undefined) ?? {}, ...(Array.isArray(i.relied_documents) ? { relied_documents: i.relied_documents as never[] } : {}), rationale: (i.rationale as string | undefined) ?? null, reviewer_approval_ref: (i.reviewer_approval_ref as string | undefined) ?? null, agent_run_id: ctx.run?.runId ?? null, escalations: rt.escalations, db: db && defer && isUuid(cf.application_id) ? { read: db, defer } : null }, ctx.actor);
     persist(rt, ctx, "du_casefiles", cf.casefile_id, r.casefile); persist(rt, ctx, "du_submissions", r.submission.submission_id, r.submission);
-    return { submission: r.submission, casefile: r.casefile, outage: r.outage ? { attempts: r.outage.attempts, escalation_id: r.outage.escalation?.id ?? null, declared_at: r.outage.declared_at } : null, events: r.events.map((e) => e.type) };
+    return { submission: r.submission, casefile: r.casefile, outage: r.outage ? { attempts: r.outage.attempts, escalation_id: r.outage.escalation?.id ?? null, declared_at: r.outage.declared_at } : null, rejected: r.rejected, du_casefile: r.du_casefile ? { outcome: r.du_casefile.outcome, on_file: r.du_casefile.on_file, acked: r.du_casefile.acked, escalation_id: r.du_casefile.escalation?.id ?? null } : null, events: r.events.map((e) => e.type) };
   }), guardrails: [NO_ULAD_EDIT, NO_SUPPRESSION,
     never("REPORT_FOR_EVERY_BORROWER", "23.1 guardrails: never submit without a report for every borrower", (i) => i.skip_credit_association === true || i.borrowers_without_report === true, "every borrower's credit report is associated before submission"),
     never("RESUBMISSION_CAP_REVIEW", `23.1 rule 6 / B3-2-11 excessive resubmissions: never exceed the resubmission cap (${RESUBMISSION_REVIEW_AFTER}) without underwriting_reviewer`, (i) => Number((i.casefile as { submission_count?: number } | undefined)?.submission_count ?? i.submission_count ?? 0) >= RESUBMISSION_REVIEW_AFTER && !i.reviewer_approval_ref, "underwriting_reviewer review (reviewer_approval_ref) is required before the next submission"),
@@ -97,7 +116,9 @@ export const TOOLS_23_1: readonly ToolDef[] = defineTools("23.1", "underwriter",
     }
     need(i, "submission_number");
     const sub = prior.find((s) => s.submission_number === Number(i.submission_number)); if (!sub) throw new RangeError(`23.1 fetchFindings: no du_submissions row ${String(i.submission_number)} on casefile ${cf.casefile_id}`);
-    const f = await port(rt).fetchFindings(cf.casefile_id, sub.submission_number);
+    // 23.7 rule 9: findings are fetched by DU's casefile identifier (the ack's), never ours.
+    if (!sub.du_casefile_id) throw new RangeError(`23.1 fetchFindings: submission ${sub.submission_number} on casefile ${cf.casefile_id} was never acknowledged by DU (status ${sub.status}); operator-uploaded findings go through op: ingest_operator_upload`);
+    const f = await port(rt).fetchFindings(sub.du_casefile_id, sub.submission_number);
     const r = receiveFindings(ctx.events, cf, sub, f, ctx.actor);
     persist(rt, ctx, "du_casefiles", cf.casefile_id, r.casefile); persist(rt, ctx, "du_submissions", r.submission.submission_id, r.submission);
     return { submission: r.submission, casefile: r.casefile, recommendation: r.submission.recommendation, messages: r.submission.messages, hand_off: { "23.2": "findings interpretation", "24.1": "value_acceptance_offer", "24.6": "mi_requirement", "22.4": "reserves_required_cents" } };

@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 7980/7997 (99.8%): tids 2220/2232, tables 757/758, timers 2034/2035, notices 308/308, tools 1428/1431, figures 1233/1233; processes at 100%: 191/192",
+ "brief": "spec units built 7997/7997 (100.0%): tids 2232/2232, tables 758/758, timers 2035/2035, notices 308/308, tools 1431/1431, figures 1233/1233; processes at 100%: 192/192",
  "totals": {
   "tids": {
    "spec": 2232,
-   "built": 2220
+   "built": 2232
   },
   "tables": {
    "spec": 758,
-   "built": 757
+   "built": 758
   },
   "timers": {
    "spec": 2035,
-   "built": 2034
+   "built": 2035
   },
   "notices": {
    "spec": 308,
@@ -19,7 +19,7 @@
   },
   "tools": {
    "spec": 1431,
-   "built": 1428
+   "built": 1431
   },
   "figures": {
    "spec": 1233,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 7997,
-   "built": 7980
+   "built": 7997
   }
  },
  "sections": {
@@ -165,9 +165,9 @@
   },
   "23": {
    "spec": 290,
-   "built": 273,
+   "built": 290,
    "processes": 7,
-   "done": 6
+   "done": 7
   },
   "24": {
    "spec": 314,
@@ -373,6 +373,7 @@
   "23.4",
   "23.5",
   "23.6",
+  "23.7",
   "24.1",
   "24.2",
   "24.3",
@@ -6011,37 +6012,20 @@
    "title": "Preflight: what DU rejects that the schema accepts, and the port contract for a real submission",
    "tids": {
     "spec": 12,
-    "built": 0,
-    "todo": 12,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "du_preflight_results"
-    ]
+    "built": 1,
+    "missing": []
    },
    "timers": {
     "spec": 1,
-    "built": 0,
+    "built": 1,
     "armable": 1,
-    "missing": [
-     "SM_DU_PREFLIGHT_GATE"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -6050,12 +6034,8 @@
    },
    "tools": {
     "spec": 3,
-    "built": 0,
-    "missing": [
-     "runDuPreflight",
-     "readDuPreflight",
-     "explainDuRefusal"
-    ]
+    "built": 3,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -6064,9 +6044,9 @@
    },
    "units": {
     "spec": 17,
-    "built": 0
+    "built": 17
    },
-   "pct": 0.0
+   "pct": 100.0
   },
   {
    "process": "24.1",

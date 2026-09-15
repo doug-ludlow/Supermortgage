@@ -9,10 +9,9 @@
 //   REQUIRE_DB=1 TEST_DATABASE_URL=postgresql://sm:sm@localhost/supermortgage_<label> node --test src/runtime/controls/controls.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import { connect, reachable, type Db } from "../../infra/db/client.ts";
+import { connect, type Db } from "../../infra/db/client.ts";
+import { testDatabase } from "../../infra/db/test-db.ts";
 import { loadOverriddenRegistry } from "../../domain/timer-overrides.ts";
 import { FixedClock } from "../../kernel/events/index.ts";
 import type { Actor } from "../../kernel/events/index.ts";
@@ -30,12 +29,7 @@ import { KILL_CONFIRM_MINUTES, aiView, confirmKillSwitch, expireKillSwitchReques
 import { EVIDENCE_SECTIONS, buildEvidencePack, getEvidencePack, verifyEvidencePack } from "./evidence.ts";
 import { assertNoTimerWrite, controlsRoutes, matchControlsRoute, type ControlsRoute } from "./routes.ts";
 
-const BASE_URL = process.env["TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_test";
-const DB_URL = ((): string => { const u = new URL(BASE_URL); u.pathname = `${u.pathname}_controls`; return u.toString(); })();
-const ADMIN_URL = ((): string => { const u = new URL(DB_URL); u.pathname = "/postgres"; return u.toString(); })();
-const up = await reachable(ADMIN_URL);
-if (!up && process.env["REQUIRE_DB"]) throw new Error(`REQUIRE_DB set but ${ADMIN_URL} is not reachable`);
-const skip = up ? false : `no Postgres at ${ADMIN_URL}`;
+const { url: DB_URL, skip } = await testDatabase(import.meta.url);
 type Json = Record<string, unknown>;
 
 const SEED_AT = "2026-09-01T16:00:00.000Z";                 // the fixture book's as-of day: the invitations go out, the reminders arm +14 calendar days
@@ -73,9 +67,6 @@ const openEscalation = async (ownerRole: string, loanId: string | null, payload:
 
 test.before(async () => {
   if (skip) return;
-  const name = new URL(DB_URL).pathname.slice(1);
-  const a = connect(ADMIN_URL); await a.query(`DROP DATABASE IF EXISTS ${name}`); await a.query(`CREATE DATABASE ${name}`); await a.end();
-  execFileSync(fileURLToPath(new URL("../../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL); repo = new PgStaffRepository(db);
   const logger = createLogger("json", (line) => { logLines.push(line); if (process.env["FLOW_DEBUG"] && /error/i.test(line)) process.stderr.write(line + "\n"); });
   runtime = new Runtime({ db, registry: loadOverriddenRegistry(), clock, logger, rateFeed: null, reviewers: null, analystLlm: null });

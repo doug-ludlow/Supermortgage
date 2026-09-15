@@ -9,10 +9,9 @@
 // (flows.tick + runtime.sweep, as src/runtime/demo-clock.ts does). Skips without Postgres (not a spec unit).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
-import { connect, reachable, type Db } from "../../infra/db/client.ts";
+import { connect, type Db } from "../../infra/db/client.ts";
+import { testDatabase } from "../../infra/db/test-db.ts";
 import { decodeEntityData } from "../../infra/db/entities.ts";
 import { loadOverriddenRegistry } from "../timer-overrides.ts";
 import { FixedClock, MemoryEventStore } from "../../kernel/events/index.ts";
@@ -40,11 +39,7 @@ import { rescissionExpiry } from "../compliance-disclosures/ops-25-3.ts";
 import { plainDate as D } from "../../kernel/calendar/date.ts";
 import { makeMin } from "../../domain/boarding/min.ts";
 
-const DB_URL = process.env["CONVERSATION_TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_conversation_test";
-const ADMIN_URL = ((): string => { const u = new URL(DB_URL); u.pathname = "/postgres"; return u.toString(); })();
-const up = await reachable(ADMIN_URL);   // the database itself is dropped and created by the setup
-if (!up && process.env["REQUIRE_DB"]) throw new Error(`REQUIRE_DB set but ${DB_URL} is not reachable`);
-const skip = up ? false : `no Postgres at ${DB_URL}`;
+const { url: DB_URL, skip } = await testDatabase(import.meta.url);
 const TOKEN = "ops-" + randomUUID();
 /** A run tag without digits: the party's provisional name is its e-mail (the account door), and the assistant greets by it — no figure may ride in it. */
 const R = randomUUID().replace(/-/g, "").replace(/[0-9]/g, (d) => "ghijklmnop"[Number(d)]!).slice(0, 6);
@@ -64,9 +59,6 @@ const scripted = scriptedClient([], { fallbackText: "Sorry, I did not catch that
 
 test.before(async () => {
   if (skip) return;
-  const name = new URL(DB_URL).pathname.slice(1);
-  const a = connect(ADMIN_URL); await a.query(`DROP DATABASE IF EXISTS ${name}`); await a.query(`CREATE DATABASE ${name}`); await a.end();
-  execFileSync(fileURLToPath(new URL("../../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL);
   const logger = createLogger("json", (line) => { if (process.env["FLOW_DEBUG"] && /flow|error|unhandled|agent|reviewer|BAD_REQUEST|"reason"/i.test(line)) process.stderr.write(line + "\n"); });
   // DELTA-30: every human a journey waits on is a FAKE that approves on the next sweep (delay 0 — the clock is ours)

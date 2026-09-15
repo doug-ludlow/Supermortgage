@@ -33,10 +33,9 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import { connect, reachable, type Db } from "../infra/db/client.ts";
+import { connect, type Db } from "../infra/db/client.ts";
+import { testDatabase } from "../infra/db/test-db.ts";
 import { loadOverriddenRegistry } from "../domain/timer-overrides.ts";
 import { FixedClock } from "../kernel/events/index.ts";
 import { Runtime } from "./app.ts";
@@ -46,12 +45,7 @@ import { createBorrowerRouter, type BorrowerRouter } from "./borrower/routes.ts"
 import { CARD_CASES, CHAT_TRIGGER, assertCardCase, cardCaseOf } from "./borrower/flows/13-cross-cutting.ts";
 import { PurchaseJourney, EDT, EST } from "./borrower/fixtures/journey-purchase.ts";
 
-const DB_URL = process.env["PURCHASE_TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_purchase_test";
-/** The server is what has to be reachable: the test's own database is dropped and created in `before` (talk.test.ts's pattern). */
-const ADMIN_URL = (() => { const u = new URL(DB_URL); u.pathname = "/postgres"; return u.toString(); })();
-const up = await reachable(ADMIN_URL);
-if (!up && process.env["REQUIRE_DB"]) throw new Error(`REQUIRE_DB set but ${DB_URL} is not reachable`);
-const skip = up ? false : `no Postgres at ${DB_URL}`;
+const { url: DB_URL, skip } = await testDatabase(import.meta.url);
 const TOKEN = "t-" + randomUUID();
 const R = randomUUID().slice(0, 8);
 const EMAIL_A = `casey-${R}@example.test`; const EMAIL_B = `riley-${R}@example.test`;
@@ -66,10 +60,7 @@ let du: Awaited<ReturnType<PurchaseJourney["duSubmitAndInterpret"]>>;
 
 test.before(async () => {
   if (skip) return;
-  // own database: dropped and created here, then migrated — nothing this file writes can collide with another test run's journey
-  const name = new URL(DB_URL).pathname.slice(1);
-  const a = connect(ADMIN_URL); await a.query(`DROP DATABASE IF EXISTS ${name}`); await a.query(`CREATE DATABASE ${name}`); await a.end();
-  execFileSync(fileURLToPath(new URL("../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
+  // own database from the harness — nothing this file writes can collide with another test run's journey
   db = connect(DB_URL);
   runtime = new Runtime({ db, registry: loadOverriddenRegistry(), clock });
   partnerPartyId = (await db.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, servicer_number, mers_org_id) VALUES ('servicer', $1, '123456789', '1000123') RETURNING id`, [`Partner Bank ${R}`]))[0]!.id;

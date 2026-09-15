@@ -7,12 +7,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { COOPERATIVE, HOSTILE, HUMAN, REFINANCE, type Persona } from "./personas.ts";
 import { agentTurnsAvailable, runPersona, runSuite, SUITE_CODE } from "./runner.ts";
-import { DEFAULT_EVAL_DB_URL, evalDbName, evalDbReachable, openEvalHarness, promptHashOf, type EvalHarness } from "./harness.ts";
+import { evalDbName, openEvalHarness, promptHashOf, type EvalHarness } from "./harness.ts";
+import { testDatabase } from "../../../infra/db/test-db.ts";
 import type { Scene } from "./scripted-client.ts";
 
-const DB_URL = process.env["EVAL_TEST_DATABASE_URL"] ?? DEFAULT_EVAL_DB_URL.replace(/supermortgage_eval$/, "supermortgage_eval_test");
-const up = await evalDbReachable(DB_URL);
-const h: EvalHarness | null = up ? await openEvalHarness({ dbUrl: DB_URL }) : null;
+const { url: DB_URL, skip: noDb } = await testDatabase(import.meta.url, { suffix: "_eval", provision: false });   // openEvalHarness provisions it
+const h: EvalHarness | null = noDb ? null : await openEvalHarness({ dbUrl: DB_URL });
 const skip: string | false = !h ? `no Postgres at ${DB_URL}`
   : !(await agentTurnsAvailable(h.db)) ? "agent_turns (db/migrations/0119, the turn builder's) is not in the database"
   : !h.agentConfigured ? "createBorrowerRouter built no agent from the injected client: the `llm: { client, model }` option (DELTA-23) is not wired yet"

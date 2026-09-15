@@ -6,10 +6,9 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { connect, reachable, type Db } from "../infra/db/client.ts";
+import { testDatabase } from "../infra/db/test-db.ts";
 import { PgLoanRepository } from "../infra/db/loans.ts";
 import type { PlainDate } from "../kernel/calendar/date.ts";
 import { loadOverriddenRegistry } from "../domain/timer-overrides.ts";
@@ -19,10 +18,7 @@ import { createApiServer, listen } from "./server.ts";
 import { createLogger } from "./log.ts";
 import { encodeEntityData, decodeEntityData } from "../infra/db/entities.ts";
 
-const DB_URL = process.env["TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_test";
-const up = await reachable(DB_URL);
-if (!up && process.env["REQUIRE_DB"]) throw new Error(`REQUIRE_DB set but ${DB_URL} is not reachable`);
-const skip = up ? false : `no Postgres at ${DB_URL}`;
+const { url: DB_URL, skip } = await testDatabase(import.meta.url);
 const TOKEN = "test-token-" + randomUUID();
 
 let db: Db; let base = ""; let runtime: Runtime; const lines: string[] = []; let close: () => Promise<void> = async () => undefined;
@@ -36,7 +32,6 @@ const newLoan = async (): Promise<string> => (await new PgLoanRepository(db).cre
 
 test.before(async () => {
   if (skip) return;
-  execFileSync(fileURLToPath(new URL("../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL);
   runtime = new Runtime({ db, registry: loadOverriddenRegistry(), clock });
   const server = createApiServer({ runtime, apiToken: TOKEN, logger: createLogger("json", (l) => lines.push(l)) });

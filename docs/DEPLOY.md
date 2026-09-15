@@ -312,8 +312,8 @@ EarlyCheck, PE–WL, warehouse). Two runtime routes bridge what the tool surface
 `loan.funded`, 26.1's note hash, 26.2's consummation and MIN from the application's record before falling back to the
 demo fixture for what the record does not state. Money in every tool `input` is a decimal string of cents.
 
-The end-to-end proof is `node --test src/runtime/lifecycle.test.ts` against a migrated `supermortgage_test` database
-(`DATABASE_URL=postgresql://sm:sm@localhost/supermortgage_test db/migrate.sh`): one borrower from the refinance
+The end-to-end proof is `node --test src/runtime/lifecycle.test.ts` on its own database, cloned from the migrated
+template by src/infra/db/test-db.ts (`REQUIRE_DB=1` to insist on Postgres): one borrower from the refinance
 trigger on the existing loan through funding, boarding, purchase, payment, payoff and the next refinance, every step
 over HTTP. It is re-runnable against the same database: entity ids are platform-wide, so the fixture ids it writes in
 loan or application scope carry a per-run suffix.
@@ -349,7 +349,7 @@ command the webhook executes on the bus (`identity.verified` satisfies `SM_IDENT
 22.1 `ingestDocument` command an upload executes, `ui_events`, and the `esign_portal` notice channel (DELTA-08:
 `notice_deliveries.card_instance_id` beside `rendered_document_id`).
 
-The proof is `node --test src/runtime/borrower/borrower.test.ts` against a migrated `supermortgage_test`.
+The proof is `node --test src/runtime/borrower/borrower.test.ts` on its own database from src/infra/db/test-db.ts.
 
 ## 7. What is and is not real in nonprod
 

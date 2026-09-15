@@ -8,10 +8,9 @@
 // client) and the borrower turn. Own database `<base>_33_2`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import { connect, reachable, type Db } from "../../infra/db/client.ts";
+import { connect, type Db } from "../../infra/db/client.ts";
+import { testDatabase } from "../../infra/db/test-db.ts";
 import { decodeEntityData } from "../../infra/db/entities.ts";
 import { PgBorrowerUiRepository, type CardInstanceRow } from "../../infra/db/borrower-ui.ts";
 import type { Subject } from "../../infra/db/borrower-parties.ts";
@@ -42,12 +41,7 @@ import { INVESTOR_FIELDS, PROHIBITED_SELECTION_FIELDS, scheduledUpb } from "../l
 import { M3_V1 } from "./profiles/m3-v1.ts";
 import { DEMO_AS_OF, DEMO_PARTNER, demoBook, demoMin, type DemoLoan } from "./fixtures/partner-book-demo.ts";
 
-const BASE_URL = process.env["TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_test";
-const DB_URL = ((): string => { const u = new URL(BASE_URL); u.pathname = `${u.pathname}_33_2`; return u.toString(); })();
-const ADMIN_URL = ((): string => { const u = new URL(DB_URL); u.pathname = "/postgres"; return u.toString(); })();
-const up = await reachable(ADMIN_URL);   // the database itself is dropped and created by the setup
-if (!up && process.env["REQUIRE_DB"]) throw new Error(`REQUIRE_DB set but ${ADMIN_URL} is not reachable`);
-const skip = up ? false : `no Postgres at ${ADMIN_URL}`;
+const { url: DB_URL, skip } = await testDatabase(import.meta.url);
 const TOKEN = "ops-" + randomUUID();
 type Json = Record<string, unknown>;
 /** The first review day: 2026-09-15 07:05 America/New_York (EDT) — after 20.1's 06:30 run and this process's 07:00 pass. */
@@ -96,9 +90,6 @@ const PORTAL_LOAN_NUMBER = "NL-100013";
 
 test.before(async () => {
   if (skip) return;
-  const name = new URL(DB_URL).pathname.slice(1);
-  const a = connect(ADMIN_URL); await a.query(`DROP DATABASE IF EXISTS ${name}`); await a.query(`CREATE DATABASE ${name}`); await a.end();
-  execFileSync(fileURLToPath(new URL("../../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL);
   const logger = createLogger("json", (line) => { logLines.push(line); if (process.env["FLOW_DEBUG"] && /flow|error|unhandled|partner|analyst|"status":[45]/i.test(line)) process.stderr.write(line + "\n"); });
   // the FAKE feed publishes the day's sheet (20.1), the FAKE MLO approves the offer's terms on the next sweep (32.11), the scripted analyst plays rule 4's turn

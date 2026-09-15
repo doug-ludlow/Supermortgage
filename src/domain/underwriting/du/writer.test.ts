@@ -3,16 +3,15 @@
  * all; a re-pull that matches in place and revives; a supersede that retires in the same transaction; the employer's
  * named rules (identity.ts EMPLOYER_IDENTITY_RULES) as the database sees them; and the borrower reference resolver.
  * The 23.5 T-ids (23-5.spec.test.ts) prove what the DATABASE refuses; this file proves what the writer refuses before
- * the database has to. Own database `<base>_du_writer`, dropped and created per run; skips without Postgres
+ * the database has to. Own database from src/infra/db/test-db.ts, dropped and created per run; skips without Postgres
  * (REQUIRE_DB=1 makes that a failure).
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
-import { connect, reachable, type Db, type Queryable } from "../../../infra/db/client.ts";
+import { connect, type Db, type Queryable } from "../../../infra/db/client.ts";
+import { testDatabase } from "../../../infra/db/test-db.ts";
 import { encodeEntityData } from "../../../infra/db/entities.ts";
 import { writeAsset, writeLiability, writeExpense, writeOwnedProperty, writeEmployer, mergeEmployers, assertDeclarations, writeResidence, resolveBorrowerEdge, deterministicUuid, assertInsideTransaction, DU_DECLARATION_ANSWERS, type DuOwner, type NonEmpty } from "./writer.ts";
 import { assetIdentityKeys } from "./identity.ts";
@@ -21,19 +20,11 @@ import { Runtime } from "../../../runtime/app.ts";
 import { loadOverriddenRegistry } from "../../timer-overrides.ts";
 import { FixedClock } from "../../../kernel/events/index.ts";
 
-const BASE_URL = process.env["TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_test";
-const DB_URL = ((): string => { const u = new URL(BASE_URL); u.pathname = `${u.pathname}_du_writer`; return u.toString(); })();
-const ADMIN_URL = ((): string => { const u = new URL(DB_URL); u.pathname = "/postgres"; return u.toString(); })();
-const up = await reachable(ADMIN_URL);
-if (!up && process.env["REQUIRE_DB"]) throw new Error(`REQUIRE_DB set but ${ADMIN_URL} is not reachable`);
-const skip = up ? false : `no Postgres at ${ADMIN_URL}`;
+const { url: DB_URL, skip } = await testDatabase(import.meta.url);
 
 let db: Db; let partner = "";
 test.before(async () => {
   if (skip) return;
-  const name = new URL(DB_URL).pathname.slice(1);
-  const a = connect(ADMIN_URL); await a.query(`DROP DATABASE IF EXISTS ${name}`); await a.query(`CREATE DATABASE ${name}`); await a.end();
-  execFileSync(fileURLToPath(new URL("../../../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL);
   partner = (await db.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name) VALUES ('servicer', 'FAKE Partner du_writer') RETURNING id`))[0]!.id;
 });

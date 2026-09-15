@@ -9,10 +9,9 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import { connect, reachable, type Db } from "../infra/db/client.ts";
+import { connect, type Db } from "../infra/db/client.ts";
+import { testDatabase } from "../infra/db/test-db.ts";
 import { loadOverriddenRegistry } from "../domain/timer-overrides.ts";
 import { FixedClock } from "../kernel/events/index.ts";
 import { wallClock } from "../kernel/calendar/zoned.ts";
@@ -21,11 +20,7 @@ import { createApiServer, listen } from "./server.ts";
 import { createLogger } from "./log.ts";
 import { DEMO_ZONE, MAX_ADVANCE_DAYS, DEFAULT_ADVANCE_BUDGET_MS, OffsetClock, loadDemoClock, planSteps, targetOf, budgetOf, refiDailyOutcome, advanceDemoClock } from "./demo-clock.ts";
 
-const DB_URL = process.env["DEMO_CLOCK_TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_demo_clock_test";
-const ADMIN_URL = (() => { const u = new URL(DB_URL); u.pathname = "/postgres"; return u.toString(); })();
-const up = await reachable(ADMIN_URL);
-if (!up && process.env["REQUIRE_DB"]) throw new Error(`REQUIRE_DB set but ${ADMIN_URL} is not reachable`);
-const skip = up ? false : `no Postgres at ${ADMIN_URL}`;
+const { url: DB_URL, skip } = await testDatabase(import.meta.url);
 const TOKEN = "t-" + randomUUID();
 const DAY = 86_400_000;
 /** Thu Sep 10, 2026 12:00 EDT — nine days after the demo batch's transfer date, on the wall clock the other runtime suites use. */
@@ -89,9 +84,6 @@ const borrowerOptions = { environment: "test", rpId: "localhost", allowedOrigins
 
 test.before(async () => {
   if (skip) return;
-  const name = new URL(DB_URL).pathname.slice(1);
-  const a = connect(ADMIN_URL); await a.query(`DROP DATABASE IF EXISTS ${name}`); await a.query(`CREATE DATABASE ${name}`); await a.end();
-  execFileSync(fileURLToPath(new URL("../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL);
   clock = await loadDemoClock(db, { base: new FixedClock(T0) });   // the "system" clock stands still, so every instant below is exact
   runtime = new Runtime({ db, registry: loadOverriddenRegistry(), clock });

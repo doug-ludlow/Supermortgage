@@ -1,13 +1,16 @@
 /**
- * Session-level Postgres advisory lock for tests that drive a whole origination journey on the shared test
- * database. The journey fixtures write the same global rows (the LLPA matrix, the daily rate sheet, the partner
- * program) with read-then-bump versioning, so two journeys running concurrently in `node --test`'s parallel file
- * workers race on them. Every journey-driving test file takes this lock in `test.before` and releases it in
- * `test.after`; files that only touch loan- or application-scoped rows do not need it.
+ * Session-level Postgres advisory locks for tests that share something other than a database. Every suite has its
+ * own database now (src/infra/db/test-db.ts), so the journey lock that once serialised journey-driving files on the
+ * shared test database is no longer taken by any file; it stays for a suite that needs it. The browser lock is:
+ * the three suites that build and drive the Next.js shell under Chromium (32.13, 32.16 rail, 32.17) each spawn a
+ * standalone server and a browser, and three at once on a small runner starve the video and the frame waits — so
+ * they take it in `test.before` and release it in `test.after`. Advisory locks are cluster-wide, so any database
+ * on the server (the file's own) carries the session.
  */
 import pg from "pg";
 
 export const JOURNEY_LOCK_KEY = 32_001;
+export const BROWSER_LOCK_KEY = 32_003;
 
 export interface TestLock { release(): Promise<void> }
 
@@ -18,3 +21,6 @@ export async function acquireJourneyLock(connectionString: string, key: number =
   let released = false;
   return { async release() { if (released) return; released = true; try { await client.query("SELECT pg_advisory_unlock($1)", [key]); } finally { await client.end(); } } };
 }
+
+/** One browser-driven shell suite at a time (see the module comment). */
+export const acquireBrowserLock = (connectionString: string): Promise<TestLock> => acquireJourneyLock(connectionString, BROWSER_LOCK_KEY);

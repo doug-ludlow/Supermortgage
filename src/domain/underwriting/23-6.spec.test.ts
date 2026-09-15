@@ -11,7 +11,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { spawnSync, execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -20,7 +20,8 @@ import {
   arcRolesInCorpus, assetTypeListsInMigration, diffAssetTypeChecks, diffDuEnumChecks, duEnumChecksInMigrations, duGraphMigrationPaths,
   migrationSources, parseGeneratedArcRoles, parseGeneratedAssetTypeSections, parseGeneratedEnums, parseGeneratedOrder, schemaOrderProblems,
 } from "../../../tools/build-du.mjs";
-import { connect, reachable, type Db, type Queryable } from "../../infra/db/client.ts";
+import { connect, type Db, type Queryable } from "../../infra/db/client.ts";
+import { testDatabase } from "../../infra/db/test-db.ts";
 import { MemoryLedger } from "../../kernel/ledger/ledger.ts";
 import { TimerEngine } from "../../kernel/timers/index.ts";
 import { loadOverriddenRegistry } from "../timer-overrides.ts";
@@ -73,19 +74,11 @@ const arcsOf = (root: XmlElement): { from: string; to: string; arcrole: string }
 const withValues = (g: DuGraph, id: string, edit: (v: Record<string, DuContainer["values"][string]>) => void): DuGraph => ({ ...g, containers: g.containers.map((c) => { if (c.id !== id) return c; const v: Record<string, DuContainer["values"][string]> = { ...c.values }; edit(v); return { ...c, values: v }; }) });
 
 // ───────────────────────────────────────────────────────────── the database half (T4, T7): own database, every migration
-const BASE_URL = process.env["TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_test";
-const DB_URL = ((): string => { const u = new URL(BASE_URL); u.pathname = `${u.pathname}_23_6`; return u.toString(); })();
-const ADMIN_URL = ((): string => { const u = new URL(DB_URL); u.pathname = "/postgres"; return u.toString(); })();
-const up = await reachable(ADMIN_URL);
-if (!up && process.env["REQUIRE_DB"]) throw new Error(`REQUIRE_DB set but ${ADMIN_URL} is not reachable`);
-const skipDb = up ? false : `no Postgres at ${ADMIN_URL}`;
+const { url: DB_URL, skip: skipDb } = await testDatabase(import.meta.url);
 let db: Db | null = null;
 let partnerPartyId = "";
 test.before(async () => {
   if (skipDb) return;
-  const name = new URL(DB_URL).pathname.slice(1);
-  const a = connect(ADMIN_URL); await a.query(`DROP DATABASE IF EXISTS ${name}`); await a.query(`CREATE DATABASE ${name}`); await a.end();
-  execFileSync(fileURLToPath(new URL("../../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL);
   partnerPartyId = (await db.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name) VALUES ('servicer', 'FAKE Partner 23.6') RETURNING id`))[0]!.id;
 });

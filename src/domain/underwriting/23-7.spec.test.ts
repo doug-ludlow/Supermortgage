@@ -17,13 +17,12 @@
 // a rejection is a returned `error` submission, never a throw, so the row and du.submission.errored persist.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { MemoryEventStore, FixedClock } from "../../kernel/events/index.ts";
 import { TimerEngine } from "../../kernel/timers/index.ts";
 import { loadOverriddenRegistry } from "../timer-overrides.ts";
 import { EscalationService } from "../../app/escalations.ts";
-import { connect, reachable, type Db, type Queryable } from "../../infra/db/client.ts";
+import { connect, type Db, type Queryable } from "../../infra/db/client.ts";
+import { testDatabase } from "../../infra/db/test-db.ts";
 import { xmllintErrorsOf } from "../../infra/integrations/du-schema/index.ts";
 import { DuTransportError, FakeDuPort, fakeDuCasefileId, sha256Hex } from "../../infra/integrations/du.ts";
 import { DU_ARCROLES } from "./du/generated/arcroles.ts";
@@ -53,18 +52,10 @@ const SAMPLE_GRAPH = { du_casefile_id: null };
 const scifFactsOf = (s: UladSnapshot) => ({ borrowers: s.borrowers.map((b) => ({ id: b.borrower_id, scif_presented_at: "2026-10-05T16:00:00.000Z" })) });
 
 // ───────────────────────────────────────────────────────────── the database half (T9): own database, every migration
-const BASE_URL = process.env["TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_test";
-const DB_URL = ((): string => { const u = new URL(BASE_URL); u.pathname = `${u.pathname}_23_7`; return u.toString(); })();
-const ADMIN_URL = ((): string => { const u = new URL(DB_URL); u.pathname = "/postgres"; return u.toString(); })();
-const up = await reachable(ADMIN_URL);
-if (!up && process.env["REQUIRE_DB"]) throw new Error(`REQUIRE_DB set but ${ADMIN_URL} is not reachable`);
-const skipDb = up ? false : `no Postgres at ${ADMIN_URL}`;
+const { url: DB_URL, skip: skipDb } = await testDatabase(import.meta.url);
 let db: Db | null = null;
 test.before(async () => {
   if (skipDb) return;
-  const name = new URL(DB_URL).pathname.slice(1);
-  const a = connect(ADMIN_URL); await a.query(`DROP DATABASE IF EXISTS ${name}`); await a.query(`CREATE DATABASE ${name}`); await a.end();
-  execFileSync(fileURLToPath(new URL("../../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL);
 });
 test.after(async () => { if (db) await db.end(); });

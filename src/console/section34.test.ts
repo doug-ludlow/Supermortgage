@@ -10,10 +10,9 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import { connect, reachable, type Db } from "../infra/db/client.ts";
+import { connect, type Db } from "../infra/db/client.ts";
+import { testDatabase } from "../infra/db/test-db.ts";
 import { loadOverriddenRegistry } from "../domain/timer-overrides.ts";
 import { FixedClock } from "../kernel/events/index.ts";
 import { Runtime, type SweepReport } from "../runtime/app.ts";
@@ -25,12 +24,7 @@ import { queryHash } from "../runtime/directory/search.ts";
 import { UNMASK_MINUTES } from "../runtime/directory/unmask.ts";
 import { DEMO_AS_OF, DEMO_PARTNER, demoBook } from "../domain/partner-book/fixtures/partner-book-demo.ts";
 
-const BASE_URL = process.env["TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_test";
-const DB_URL = ((): string => { const u = new URL(BASE_URL); u.pathname = `${u.pathname}_console34`; return u.toString(); })();
-const ADMIN_URL = ((): string => { const u = new URL(DB_URL); u.pathname = "/postgres"; return u.toString(); })();
-const up = await reachable(ADMIN_URL);
-if (!up && process.env["REQUIRE_DB"]) throw new Error(`REQUIRE_DB set but ${ADMIN_URL} is not reachable`);
-const skip = up ? false : `no Postgres at ${ADMIN_URL}`;
+const { url: DB_URL, skip } = await testDatabase(import.meta.url);
 type Json = Record<string, unknown>;
 
 /** 2026-09-15 07:20 America/New_York: past 20.1's 06:30 run, 33.2's 07:00 review and 33.3's 07:15 pass; before 34.3's 07:45 receipt escalation. */
@@ -68,9 +62,6 @@ const actions = async (where = "", p: unknown[] = []): Promise<ActionRow[]> => {
 
 test.before(async () => {
   if (skip) return;
-  const name = new URL(DB_URL).pathname.slice(1);
-  const a = connect(ADMIN_URL); await a.query(`DROP DATABASE IF EXISTS ${name}`); await a.query(`CREATE DATABASE ${name}`); await a.end();
-  execFileSync(fileURLToPath(new URL("../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL);
   const logger = createLogger("json", (line) => { if (process.env["FLOW_DEBUG"] && /error/i.test(line)) process.stderr.write(line + "\n"); });
   runtime = new Runtime({ db, registry: loadOverriddenRegistry(), clock, logger, rateFeed: new FakeRateFeed(), analystLlm: null });

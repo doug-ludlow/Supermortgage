@@ -3,24 +3,18 @@
 // (skipped when it is not reachable — it is not a spec unit).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { connect, reachable, type Db } from "../infra/db/index.ts";
+import { connect, type Db } from "../infra/db/index.ts";
+import { testDatabase } from "../infra/db/test-db.ts";
 import { FixedClock } from "../kernel/events/index.ts";
 import { loadOverriddenRegistry } from "../domain/timer-overrides.ts";
 import { Runtime } from "./app.ts";
 import { seedEntryDemo, FAKE_PARTNER_NMLSR_ID } from "./entry-seed.ts";
 
-const DB_URL = process.env["ENTRY_SEED_TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_entry_seed";
-const up = await reachable(DB_URL);
-const skip = up ? false : `no Postgres at ${DB_URL}`;
+const { url: DB_URL, skip } = await testDatabase(import.meta.url);
 let db: Db; let runtime: Runtime;
 test.before(async () => {
   if (skip) return;
   // a fresh database every run (the seed is idempotent, and the test asserts what the FIRST run writes)
-  const name = new URL(DB_URL).pathname.slice(1); const admin = new URL(DB_URL); admin.pathname = "/postgres";
-  const a = connect(admin.toString()); await a.query(`DROP DATABASE IF EXISTS ${name}`); await a.query(`CREATE DATABASE ${name}`); await a.end();
-  execFileSync(fileURLToPath(new URL("../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL);
   runtime = new Runtime({ db, registry: loadOverriddenRegistry(), clock: new FixedClock("2025-01-10T15:00:00.000Z") });
 });

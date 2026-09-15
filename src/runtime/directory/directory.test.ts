@@ -6,11 +6,10 @@
 // compliance user with portal sessions. Own database `<base>_directory`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { connect, reachable, toJson, type Db } from "../../infra/db/client.ts";
+import { connect, toJson, type Db } from "../../infra/db/client.ts";
+import { testDatabase } from "../../infra/db/test-db.ts";
 import { PgBorrowerUiRepository } from "../../infra/db/borrower-ui.ts";
 import { PgBorrowerSessionRepository } from "../../infra/db/borrower-sessions.ts";
 import { loadOverriddenRegistry } from "../../domain/timer-overrides.ts";
@@ -31,12 +30,7 @@ import { EVIDENCE_SECTIONS, verifyEvidencePack } from "../controls/evidence.ts";
 import { maskEmail, maskPhone, maskLevelFor, redactSsn, stripSecrets } from "./mask.ts";
 import { directoryRoutes, directoryLoggedRoute, matchDirectoryRoute, type DirectoryRoute, type DirectoryStaff } from "./routes.ts";
 
-const BASE_URL = process.env["TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_test";
-const DB_URL = ((): string => { const u = new URL(BASE_URL); u.pathname = `${u.pathname}_directory`; return u.toString(); })();
-const ADMIN_URL = ((): string => { const u = new URL(DB_URL); u.pathname = "/postgres"; return u.toString(); })();
-const up = await reachable(ADMIN_URL);
-if (!up && process.env["REQUIRE_DB"]) throw new Error(`REQUIRE_DB set but ${ADMIN_URL} is not reachable`);
-const skip = up ? false : `no Postgres at ${ADMIN_URL}`;
+const { url: DB_URL, skip } = await testDatabase(import.meta.url);
 type Json = Record<string, unknown>;
 const NOW = "2026-09-15T13:00:00.000Z";
 const clock = new FixedClock(NOW);
@@ -68,9 +62,6 @@ async function staffUser(name: string, roles: string[]): Promise<{ staff_user_id
 
 test.before(async () => {
   if (skip) return;
-  const name = new URL(DB_URL).pathname.slice(1);
-  const a = connect(ADMIN_URL); await a.query(`DROP DATABASE IF EXISTS ${name}`); await a.query(`CREATE DATABASE ${name}`); await a.end();
-  execFileSync(fileURLToPath(new URL("../../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL);
   const logger = createLogger("json", () => undefined);
   runtime = new Runtime({ db, registry: loadOverriddenRegistry(), clock, logger });

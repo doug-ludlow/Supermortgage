@@ -12,14 +12,15 @@
 // (src/domain/borrower/eval) with its `say` steps on the video endpoint. Skips without a database.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync, spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createRequire } from "node:module";
 import { cpSync, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import type Anthropic from "@anthropic-ai/sdk";
-import { connect, reachable, type Db } from "../../infra/db/client.ts";
-import { acquireJourneyLock, type TestLock } from "../../infra/db/test-lock.ts";
+import { connect, type Db } from "../../infra/db/client.ts";
+import { testDatabase } from "../../infra/db/test-db.ts";
+import { acquireBrowserLock, type TestLock } from "../../infra/db/test-lock.ts";
 import { loadOverriddenRegistry } from "../timer-overrides.ts";
 import { FixedClock } from "../../kernel/events/index.ts";
 import { Runtime } from "../../runtime/app.ts";
@@ -38,11 +39,8 @@ import { COOPERATIVE } from "./eval/personas.ts";
 import { agentTurnsAvailable, runPersona } from "./eval/runner.ts";
 import { evalDbReachable, openEvalHarness } from "./eval/harness.ts";
 
-const DB_URL = process.env["TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_test";
+const { url: DB_URL, skip } = await testDatabase(import.meta.url);
 const EVAL_DB_URL = process.env["TEST_EVAL_DATABASE_URL"] ?? DB_URL.replace(/\/([^/]+)$/, "/$1_eval");
-const up = await reachable(DB_URL);
-if (!up && process.env["REQUIRE_DB"]) throw new Error(`REQUIRE_DB set but ${DB_URL} is not reachable`);
-const skip = up ? false : `no Postgres at ${DB_URL}`;
 const TOKEN = "ops-" + randomUUID();
 const R = randomUUID().slice(0, 8);
 const NOW = "2026-09-12T16:00:00.000Z";
@@ -94,13 +92,12 @@ const scripted = scriptedClient();
 /** The FAKE vendor (32.17 T11): every body it was given is on `bodies`; its conversation_url is the app's own page. */
 const fake = new FakeTavus({ appBase: "http://127.0.0.1:3999" });
 
-let journeyLock: TestLock | undefined;
 let db: Db; let runtime: Runtime; let router: BorrowerRouter; let base = ""; let close: () => Promise<void> = async () => undefined; let partnerPartyId = ""; let partnerName = "";
 
+let browserLock: TestLock | undefined;
 test.before(async () => {
   if (skip) return;
-  journeyLock = await acquireJourneyLock(DB_URL);   // T12's journey fixture writes the book's global rows
-  execFileSync(fileURLToPath(new URL("../../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
+  browserLock = await acquireBrowserLock(DB_URL);   // one Chromium-driven shell suite at a time (src/infra/db/test-lock.ts)
   db = connect(DB_URL);
   runtime = new Runtime({ db, registry: loadOverriddenRegistry(), clock });
   partnerName = `Partner Bank ${R}`;
@@ -112,7 +109,7 @@ test.before(async () => {
   base = `http://127.0.0.1:${await listen(server, 0, "127.0.0.1")}`;
   close = () => new Promise((resolve) => { router.hub.close(); server.closeAllConnections?.(); server.close(() => db.end().then(() => resolve())); });
 });
-test.after(async () => { if (!skip) { await stopShell(); await router.flows?.settle(); await close(); await journeyLock?.release(); } });
+test.after(async () => { if (!skip) { await stopShell(); await router.flows?.settle(); await close(); await browserLock?.release(); } });
 
 // ---------------------------------------------------------------- helpers over the borrower API and the vendor's own calls
 type Reply = { status: number; body: Json };

@@ -211,9 +211,9 @@ export function fourDayRule(i: FourDayInput): FourDayCheck {
 export const refundDueOn = (consummationOn: PlainDate): PlainDate => addDays(consummationOn, 60);
 
 // ============================================================ rules 2–4, 9: the tolerance test
-export interface ActualItem { readonly fee_code: string; readonly amount_cents: Cents; readonly item?: FeeItemInput; readonly paid_by?: PaidBy; readonly estimate_source?: string; readonly estimated_at?: PlainDate; }
+export interface ActualItem { readonly fee_code: string; readonly amount_cents: Cents; readonly item?: FeeItemInput; readonly paid_by?: PaidBy; readonly estimate_source?: string; readonly estimated_at?: PlainDate; /** rule 3 / comment 19(e)(3)(ii)-5: `false` when the estimated service was not actually performed (e.g., a pest inspection never obtained) — its baseline leaves `baseline_sum` */ readonly performed?: boolean; }
 export interface ZeroResult { readonly fee_code: string; readonly baseline_cents: Cents; readonly actual_cents: Cents; readonly excess_cents: Cents; }
-export interface TenPctResult { readonly items: readonly { fee_code: string; baseline_cents: Cents; actual_cents: Cents }[]; readonly baseline_sum_cents: Cents; readonly actual_sum_cents: Cents; readonly limit_cents: Cents; readonly excess_cents: Cents; }
+export interface TenPctResult { readonly items: readonly { fee_code: string; baseline_cents: Cents; actual_cents: Cents; /** comment 19(e)(3)(ii)-5: the service was not performed — `removed_baseline_cents` left `baseline_sum` */ not_performed?: true; removed_baseline_cents?: Cents }[]; readonly baseline_sum_cents: Cents; readonly actual_sum_cents: Cents; readonly limit_cents: Cents; readonly excess_cents: Cents; }
 export interface UnlimitedResult { readonly fee_code: string; readonly baseline_cents: Cents; readonly actual_cents: Cents; readonly estimate_source: string; readonly estimated_at: PlainDate; readonly reasonableness: "consistent" | "stale_source" | "unsupported"; }
 export interface ToleranceTestRow {
   readonly test_id: string; readonly application_id: string; readonly stage: Stage; readonly run_at: string; readonly run_on: PlainDate; readonly baseline_snapshot_id: string; readonly comparison_disclosure_id: string;
@@ -237,7 +237,8 @@ export function toleranceTest(items: readonly BaselineItem[], i: ToleranceTestIn
   const cls = (a: ActualItem): ToleranceClass => classOf(a.item!);
   const zero_results: ZeroResult[] = [...consumer.filter((f) => f.tolerance_class === "zero").map((f) => { const actual = actualOf.get(f.fee_code)?.amount_cents ?? 0n; const ex = actual - f.baseline_amount_cents; return { fee_code: f.fee_code, baseline_cents: f.baseline_amount_cents, actual_cents: actual, excess_cents: ex > 0n ? ex : 0n }; }),
     ...extra.filter((a) => cls(a) === "zero").map((a) => ({ fee_code: a.fee_code, baseline_cents: 0n, actual_cents: a.amount_cents, excess_cents: a.amount_cents }))];
-  const bucketItems = [...bucketOf(consumer).map((f) => ({ fee_code: f.fee_code, baseline_cents: f.baseline_amount_cents, actual_cents: actualOf.get(f.fee_code)?.amount_cents ?? 0n })), ...extra.filter((a) => cls(a) === "ten_percent").map((a) => ({ fee_code: a.fee_code, baseline_cents: 0n, actual_cents: a.amount_cents }))];
+  // rule 3 / comment 19(e)(3)(ii)-5: "the aggregate amount of estimated charges must reflect charges for services that are actually performed" — a bucket service not obtained leaves `baseline_sum`
+  const bucketItems: TenPctResult["items"][number][] = [...bucketOf(consumer).map((f) => { const a = actualOf.get(f.fee_code); if (a?.performed === false) { if (a.amount_cents !== 0n) throw new RangeError(`${f.fee_code}: a service not actually performed cannot carry a charge (${S(a.amount_cents)} cents)`); return { fee_code: f.fee_code, baseline_cents: 0n, actual_cents: 0n, not_performed: true as const, removed_baseline_cents: f.baseline_amount_cents }; } return { fee_code: f.fee_code, baseline_cents: f.baseline_amount_cents, actual_cents: a?.amount_cents ?? 0n }; }), ...extra.filter((a) => cls(a) === "ten_percent").map((a) => ({ fee_code: a.fee_code, baseline_cents: 0n, actual_cents: a.amount_cents }))];
   const baseline_sum_cents = bucketItems.reduce((s, x) => s + x.baseline_cents, 0n), actual_sum_cents = bucketItems.reduce((s, x) => s + x.actual_cents, 0n), limit_cents = tenPercentLimitCents(baseline_sum_cents);
   const tenExcess = actual_sum_cents - limit_cents;
   const ten_pct_result: TenPctResult = { items: bucketItems, baseline_sum_cents, actual_sum_cents, limit_cents, excess_cents: tenExcess > 0n ? tenExcess : 0n };
@@ -400,7 +401,7 @@ export class ToleranceService {
     if (check.route !== "le") this.reflectOnCD(cc_id, i.information_received_at); else cc.status = "revised_le_scheduled";
     return { cc, event, evaluation };
   }
-  /** Rule 6 + guardrail: never without a `changed_circumstances` row with `valid=true`, evidence and a basis; zero items → only the affected ones; bucket → the whole bucket to revised estimates when `exceeds`; basis (E) → everything; never when the bucket increase is at or below 10 %. */
+  /** Rule 6 + guardrail: never without a `changed_circumstances` row with `valid=true`, evidence and a basis; zero items → only the affected ones; bucket → only the affected items to their revised estimates when `exceeds` (comments 19(e)(3)(iv)(A)-2 and (B)-1); basis (E) → everything; never when the bucket increase is at or below 10 %. */
   resetBaseline(ccId: string, at?: string): { reset: readonly string[]; event: DomainEvent | null } {
     const cc = this.cc(ccId); const s = this.state(cc.application_id); const when = at ?? this.clock.now();
     if (!cc.valid) throw new ToleranceRefused("NO_RESET_WITHOUT_VALID_CC", "12 CFR 1026.19(e)(3)(iv); 21.5 guardrails", `changed circumstance ${ccId} is not valid (${cc.invalid_reason ?? "evaluated_invalid"}) — the original baseline governs`);
@@ -415,7 +416,7 @@ export class ToleranceService {
         const revised = cc.revised_amounts[f.fee_code];
         if (f.tolerance_class === "zero" && revised !== undefined && cc.affected_fee_codes.includes(f.fee_code)) { if (f.le_section === "J_lender_credit" && revised > f.baseline_amount_cents) throw new ToleranceRefused("NO_LENDER_CREDIT_REDUCTION", "comment 19(e)(3)(i)-5 (CFPB TRID FAQ); 21.5 guardrails", "never reduce lender credits"); bump(f, revised, `basis (${cc.basis}) reset to the revised estimate`); }
         else if (f.tolerance_class === "ten_percent" && f.paid_by === "borrower" && revised !== undefined && !bucketReset) throw new ToleranceRefused("BUCKET_THRESHOLD_NOT_EXCEEDED", "12 CFR 1026.19(e)(3)(iv)(A) 'increase by more than 10 percent'; 21.5 guardrails", `never reset a ten-percent baseline when the aggregate increase (${S(cc.ten_pct_threshold_test?.increase_cents ?? 0n)} cents) is at or below 10 %`);
-        else if (f.tolerance_class === "ten_percent" && f.paid_by === "borrower" && bucketReset) bump(f, revised ?? f.current_amount_cents, "basis (A)/(B)/(C) bucket reset: the whole bucket refreshes to the revised estimates (open question 3 default)");
+        else if (f.tolerance_class === "ten_percent" && f.paid_by === "borrower" && bucketReset && revised !== undefined && cc.affected_fee_codes.includes(f.fee_code)) bump(f, revised, "basis (A)/(B)/(C) bucket reset: only the affected item resets to its revised estimate — comments 19(e)(3)(iv)(A)-2 and (B)-1; unaffected bucket items keep their original baselines (rule 6)");
       }
     }
     cc.baseline_reset = reset.length > 0;

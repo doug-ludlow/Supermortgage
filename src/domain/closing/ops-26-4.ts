@@ -291,7 +291,7 @@ export function decideAssignments(i: { state: string; mom_available?: boolean; o
   if (i.originator_is_servicer === false) throw new PostClosingRefused("INTERVENING_ASSIGNMENT_OUT_OF_MODEL", "B8-6-01 applies where the originating lender is not the servicer at sale — not this model (partner originates and services)", "originator ≠ servicer");
   const nonMom = i.mom_available === false || NON_MOM_STATES.includes(i.state.toUpperCase());
   if (nonMom) return { kind: "form_3749_to_mers", registration_kind: "non_mom_assignment", intervening: false, to_fannie_mae: false, trailing_kind: "recorded_assignment_to_mers", executed_by: "signing_officer", basis: "B8-7-01: in the state of Maine, sellers/servicers must use the MERS Mortgage Assignment (Form 3749); MERS_PROC_NON_MOM_REGISTER_7 anchors on its execution date" };
-  return { kind: "none", registration_kind: "mom", intervening: false, to_fannie_mae: false, trailing_kind: null, executed_by: null, basis: "E-2-01 lists no assignment; RDC v15 'Removed mortgage assignments from required documents'; B8-6-01 is moot for MERS-registered loans — no assignment to MERS, to Fannie Mae or intervening" };
+  return { kind: "none", registration_kind: "mom", intervening: false, to_fannie_mae: false, trailing_kind: null, executed_by: null, basis: "E-2-01 lists no assignment except the NY CEMA row's 'all required mortgage assignments' (custodial documents inside the Form 3172 package; the Exhibit A prior notes stay in the partner's possession); RDC v15 'Removed mortgage assignments from required documents'; B8-6-01 is moot for MERS-registered loans — no assignment to MERS, to Fannie Mae or intervening is prepared" };
 }
 /** The signing_officer's execution of the Form 3749 at closing → `closing.assignment_to_mers.executed{assignment_executed_on}` (arms MERS_PROC_NON_MOM_REGISTER_7). */
 export function recordAssignmentExecuted(events: EventStore, k: Keys, i: { state: string; document_id: string; executed_at: string; time_zone: string; signing_officer_party_id: string }): { event: DomainEvent; registration_due_at: PlainDate; assignment_executed_on: PlainDate } {
@@ -299,9 +299,10 @@ export function recordAssignmentExecuted(events: EventStore, k: Keys, i: { state
   const assignment_executed_on = localDate(i.executed_at, i.time_zone); const registration_due_at = addDays(assignment_executed_on, MERS_REGISTRATION_DAYS);
   return { assignment_executed_on, registration_due_at, event: emit(events, k, "closing.assignment_to_mers.executed", { state: i.state, form: "3749", document_id: i.document_id, executed_at: i.executed_at, assignment_executed_on, signing_officer_party_id: i.signing_officer_party_id, registration_due_at, trailing_kind: "recorded_assignment_to_mers" }, i.executed_at, { kind: "human", id: i.signing_officer_party_id, role: "signing_officer" }) };
 }
-/** 26.4-T12 population check: `closing_documents.kind` containing "assignment" outside Maine must return zero rows. */
-export function assignmentPopulationCheck(rows: readonly { application_id: string; state: string; kind: string }[]): { application_id: string; state: string; kind: string }[] {
-  return rows.filter((r) => /assignment/i.test(r.kind) && !NON_MOM_STATES.includes(r.state.toUpperCase()));
+export interface AssignmentPopulationRow { readonly application_id: string; readonly state: string; readonly kind: string; /** NY CEMA loan: its consolidated prior-lender assignments are custodial documents inside the Form 3172 package (E-2-01), not a population defect. */ readonly cema?: boolean; }
+/** 26.4-T12 population check: `closing_documents.kind` containing "assignment" outside Maine and outside NY CEMA loans must return zero rows (E-2-01 lists no assignment except the NY CEMA row's "all required mortgage assignments"). */
+export function assignmentPopulationCheck(rows: readonly AssignmentPopulationRow[]): AssignmentPopulationRow[] {
+  return rows.filter((r) => /assignment/i.test(r.kind) && !NON_MOM_STATES.includes(r.state.toUpperCase()) && r.cema !== true);
 }
 
 // ============================================================ rule 4: paper-note custody chain (`routeNote`, shipments)
@@ -466,6 +467,8 @@ export function trailingDueAt(kind: TrailingKind, p: Pick<TrailingProfile, "reco
     default: return { anchor_event: "loan.funded", anchor_on: null, due_at: null };
   }
 }
+/** `blocks`: the recorded security instrument and the final policy/AOL block the QC file (28.2), the servicing file and the foreclosure referral. The referral block is a foreclosure-counsel need — Servicing Guide E-1.1-02 lists the note/allonge or LNA, the mortgagee-of-record and unrecorded-assignment items and manufactured-home documents, not the recorded instrument or the policy. */
+export const FORECLOSURE_REFERRAL_BLOCKING_KINDS: readonly TrailingKind[] = ["recorded_security_instrument", "final_title_policy", "final_aol"];
 const FROM: Record<TrailingKind, ExpectedFrom> = { recorded_security_instrument: "erecording_vendor", final_title_policy: "title_underwriter", recorded_assignment: "county", mi_certificate: "mi_company", flood_cert: "flood_vendor", recorded_poa: "county", recorded_subordination: "county", recorded_cema_3172: "county", recorded_tx_affidavit_3185: "county", recorded_assignment_to_mers: "county", recorded_release_prior_lien: "prior_servicer", final_aol: "settlement_agent", custodian_trust_receipt: "custodian", custodian_certification: "custodian", recorded_correction: "county" };
 /** The expected-document set from the document-set profile at `loan.funded` → one `trailing_document.expected{kinds, funded_on}` (arms SM_O74_TRAILING_DOC_ESCALATE_120 on the funding date) and `trailing_document.opened{kind, due_at}` per item with a due date. */
 export function expectTrailingDocuments(events: EventStore, p: TrailingProfile, at: string): { rows: TrailingDocument[]; events: readonly DomainEvent[] } {
@@ -477,7 +480,7 @@ export function expectTrailingDocuments(events: EventStore, p: TrailingProfile, 
   const k = { application_id: p.application_id, loan_id: p.loan_id ?? null };
   const rows: TrailingDocument[] = kinds.map((kind) => { const d = trailingDueAt(kind, p); const src = kind === "recorded_security_instrument" && p.recording?.channel === "paper" ? "county" : FROM[kind];
     return { id: `${p.application_id}:${kind}`, application_id: p.application_id, loan_id: p.loan_id ?? null, kind, expected_from: src, source_party_id: null, anchor_event: d.anchor_event, anchor_on: d.anchor_on, due_at: d.due_at, received_at: kind === "flood_cert" && p.flood_lol_on_file ? at : null, document_id: null, review_status: "pending", defects: [], followups: [], escalation_id: null,
-      blocks: kind === "recorded_security_instrument" || kind === "final_title_policy" || kind === "final_aol" ? ["qc_file", "servicing_file", "foreclosure_referral"] : ["servicing_file"], status: d.due_at ? "open" : "expected", waived_by: null, waived_reason: null, closed_at: null, funded_on: p.funded_on }; });
+      blocks: FORECLOSURE_REFERRAL_BLOCKING_KINDS.includes(kind) ? ["qc_file", "servicing_file", "foreclosure_referral"] : ["servicing_file"], status: d.due_at ? "open" : "expected", waived_by: null, waived_reason: null, closed_at: null, funded_on: p.funded_on }; });
   const evs: DomainEvent[] = [emit(events, k, "trailing_document.expected", { kinds, count: kinds.length, funded_on: p.funded_on, escalate_on: addDays(p.funded_on, TRAILING_ESCALATE_DAYS), note_form: p.note_form }, at)];
   for (const r of rows) if (r.due_at) evs.push(emit(events, k, "trailing_document.opened", { trailing_document_id: r.id, kind: r.kind, expected_from: r.expected_from, anchor_event: r.anchor_event, anchor_on: r.anchor_on, due_at: r.due_at }, at));
   return { rows, events: evs };

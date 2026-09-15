@@ -210,7 +210,7 @@ test("21.4-T6: Given a lock request at 6.125 %/100.000 with a stale rate sheet (
   await h.refused(h.run("executeLock", { lock_id: req.lock_id, op: "approve", quote_id: req.quote_id, mlo_nmlsr_id: NMLSR }), "MLO_APPROVAL_IS_HUMAN");
 });
 
-test("21.4-T7: Given the CD was provided Mon Nov 2, 2026 and the borrower locks Tue Nov 3 at 6.250 % with $700.00 points, then no `disclosure.le.revised` is produced; a `changed_circumstances{kind='rate_lock', reflected_on='cd'}` row is created; 25.2 receives the terms; and the borrower was warned before execution that the closing may move to Mon Nov 9.", async () => {
+test("21.4-T7: Given the CD was provided Mon Nov 2, 2026 and the borrower locks Tue Nov 3 at 6.250 % with $700.00 points, then no `disclosure.le.revised` is produced; a `changed_circumstances{kind='rate_lock', reflected_on='cd'}` row is created; 25.2 receives the terms; and the borrower was warned before execution that the Fri Nov 6 closing holds only with confirmed receipt of the corrected CD on Tue Nov 3 (a mailed corrected CD would move consummation to Tue Nov 10).", async () => {
   const h = harness(mst("2026-10-05", "10:41"));
   await h.throughIntent();
   h.at(mst("2026-11-02", "10:00")); h.cdProvided(mst("2026-11-02", "10:00"));
@@ -222,7 +222,9 @@ test("21.4-T7: Given the CD was provided Mon Nov 2, 2026 and the borrower locks 
   const assess = await h.run("executeLock", { lock_id: req.lock_id, op: "assess_late_lock", executed_at: mst("2026-11-03", "10:10"), ...late });
   const w = assess.warning as ReturnType<typeof lateLockWarning>; const a = assess.revised_le as ReturnType<typeof assessRevisedLe>;
   assert.equal(a.revised_le_permitted, false); assert.equal(a.reflected_on, "cd"); assert.equal(a.latest_receipt_on, "2026-11-02");   // Thu 5 (1), Wed 4 (2), Tue 3 (3), Mon 2 (4) — already past, and the CD went out Nov 2
-  assert.equal(w.exceeds_apr_tolerance, true); assert.equal(w.earliest_consummation_on, "2026-11-09"); assert.equal(w.closing_moves, true); assert.match(w.text, /moves your closing to 2026-11-09/);
+  assert.equal(w.exceeds_apr_tolerance, true); assert.equal(w.earliest_consummation_on, "2026-11-06"); assert.equal(w.closing_moves, false);   // received Tue Nov 3 in person/e-confirmed: Wed 4 = 1, Thu 5 = 2, Fri 6 = 3 — the Fri Nov 6 closing holds (comment 19(f)(1)(iii)-1)
+  assert.equal(w.closing_holds_only_with_confirmed_receipt, true); assert.deepEqual(w.mailed, { placed_in_mail_on: "2026-11-03", deemed_received_on: "2026-11-06", earliest_consummation_on: "2026-11-10", closing_moves: true });   // mailed Nov 3: deemed received Fri Nov 6 (Wed 4, Thu 5, Fri 6); then Sat 7 = 1, Sun 8 excluded, Mon 9 = 2, Tue 10 = 3
+  assert.match(w.text, /keeps your 2026-11-06 closing only if you confirm receipt of the corrected Closing Disclosure today/); assert.match(w.text, /mailed corrected Closing Disclosure would move your closing to 2026-11-10/);
   assert.equal(w.apr_before_pct, "6.125"); assert.equal(w.apr_after_pct, "6.262");   // rate +0.125 plus $700 points on $560,000 (spec: "about 6.262 %")
   await h.refused(h.run("executeLock", { lock_id: req.lock_id, executed_at: mst("2026-11-03", "10:15"), ...late }), "LATE_LOCK_WARNING_REQUIRED");
   const out = await h.run("executeLock", { lock_id: req.lock_id, executed_at: mst("2026-11-03", "10:15"), borrower_warned_at: mst("2026-11-03", "10:12"), ...late });
@@ -367,6 +369,7 @@ test("21.4 worked figures: P&I $3,402.62 on the $560,000 / 6.125 % fixture; the 
   assert.equal(aprEstimatePct(56_000_000n, "6.125", 0n), "6.125"); assert.equal(aprEstimatePct(56_000_000n, "6.250", 70_000n), "6.262");
   assert.equal(lockExpiry(D("2026-10-07"), 45).display, "11/23/2026 at 5:00 p.m. MST"); assert.equal(commitmentExpiry(D("2026-11-23"), D("2026-10-07")), "2026-12-07");
   const late = lateLockWarning({ loan_amount_cents: 56_000_000n, before: { note_rate_pct: "6.125", points_cents: 0n }, after: { note_rate_pct: "6.250", points_cents: 70_000n }, corrected_cd_received_on: D("2026-11-03"), scheduled_consummation_on: D("2026-11-06") });
-  assert.equal(late.earliest_consummation_on, "2026-11-09");   // Wed 4, Thu 5, Fri 6 (3 specific business days) → Sat Nov 7 → Mon Nov 9 (Sunday excluded)
+  assert.equal(late.earliest_consummation_on, "2026-11-06"); assert.equal(late.closing_moves, false);   // Wed 4 = 1, Thu 5 = 2, Fri 6 = 3: consummation may occur on the third specific business day following receipt (comment 19(f)(1)(iii)-1)
+  assert.equal(late.mailed.deemed_received_on, "2026-11-06"); assert.equal(late.mailed.earliest_consummation_on, "2026-11-10"); assert.equal(late.closing_holds_only_with_confirmed_receipt, true);   // mailed Nov 3 → deemed received Fri Nov 6 → Sat 7 = 1, Sun 8 excluded, Mon 9 = 2, Tue 10 = 3 (Veterans Day Nov 11 never enters the count)
   const typed: PlainDate = D("2026-10-07"); assert.equal(typed, "2026-10-07");
 });

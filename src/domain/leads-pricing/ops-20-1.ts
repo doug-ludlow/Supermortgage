@@ -13,8 +13,8 @@
  *
  * Events (every payload carries `origination: true` so the 20.1 timer rows arm — src/kernel/timers/engine.ts
  * isOriginationContext; `loanId` is the SERVICING loan the opportunity is about):
- *   refi.opportunity.detected{opportunity_id, loan_id, run_id, program_id, trigger_kind, transaction_type, property_state, borrower_interest_rule_applies, as_of_date}
- *       [arms FNMA_B2_1_3_03_CASHOUT_NOTE_SEASONING_12M / FNMA_B2_1_3_03_TITLE_SEASONING_6M (transaction_type=cash_out), MA_183_28C_BORROWER_INTEREST_60M (property_state=MA, borrower_interest_rule_applies=true)]
+ *   refi.opportunity.detected{opportunity_id, loan_id, run_id, program_id, trigger_kind, transaction_type, loan_purpose, note_date, property_state, borrower_interest_rule_applies, as_of_date}
+ *       [arms FNMA_B2_1_3_03_CASHOUT_NOTE_SEASONING_12M / FNMA_B2_1_3_03_TITLE_SEASONING_6M (transaction_type=cash_out), FNMA_B2_1_3_04_CASHOUT_TO_LCOR_30D (transaction_type=limited_cash_out, loan_purpose=cash_out), MA_183_28C_BORROWER_INTEREST_60M (property_state=MA, borrower_interest_rule_applies=true)]
  *   refi.opportunity.suppressed{opportunity_id, reason, reasons, opens_on}   [satisfies SM_REFI_OFFER_SLA_2BD's alternative branch by policy]
  *   refi.borrower_interest.determined{opportunity_id, pass, factors, months_since_consummation}   [satisfies MA_183_28C_BORROWER_INTEREST_60M]
  *   refi.opportunity.offer_ready{opportunity_id, detected_at, present_same_term_first, benefit_disclosure}   [arms SM_REFI_OFFER_SLA_2BD]
@@ -43,6 +43,8 @@ export const ET = "America/New_York";
 /** Rule 2 / B2-1.3-02 (SEL-2025-08): LCOR cash back ≤ max(1 % of the new loan amount, $2,000). */
 export const LCOR_CASH_BACK_FLOOR_CENTS = 200_000n;
 export const LCOR_CASH_BACK_PCT = "1";
+/** B2-1.3-04: "A transaction is not eligible as a limited cash-out refinance if the borrower completed a cash-out refinance transaction with a note date 30 days or less prior to the application date" — the gate opens on day 31. */
+export const CASHOUT_TO_LCOR_INELIGIBLE_DAYS = 30;
 /** Rule 2: the loan amount rounds up to the next $1,000 only while the cash back stays under the cap. */
 export const ROUNDING_STEP_CENTS = 100_000n;
 /** Eligibility Matrix (DU 12.1, eff. Aug 5, 2026) LTV limits for the prescreen (rule 2). */
@@ -94,7 +96,7 @@ export function assertGlbaUse(program: PartnerProgram): string {
 export const INVESTOR_FIELDS: readonly string[] = ["investor_id", "investor", "fnma_loan_number", "pool_number", "remittance_type", "mbs_flag", "sfc_codes", "mbs_pool", "investor_name"];
 export const PROHIBITED_SELECTION_FIELDS: readonly string[] = ["zip", "zip_code", "postal_code", "census_tract", "language_preference", "preferred_language", "age", "date_of_birth", "name", "legal_name", "borrower_name", "race", "ethnicity", "sex", "gender", "national_origin", "religion", "marital_status", "applicant_demographics", "credit_score", "representative_score_pull"];
 /** Rule 8: the only columns the objective selection rule set may read. */
-export const SELECTION_COLUMN_ALLOWLIST: readonly string[] = ["loan_id", "status", "note_rate_pct", "upb_cents", "remaining_term_months", "amortization", "product_code", "occupancy", "ltv_estimate", "property_state", "regx_days_delinquent", "mi_status", "mi_monthly_cents", "refi_do_not_solicit", "consent_flags", "bankruptcy_active", "foreclosure_referred", "lossmit_plan_active", "deceased_or_sii_pending", "transfer_out_pending", "escrowed", "pi_cents", "escrow_monthly_cents", "value_estimate", "note_date", "first_payment_date", "original_upb_cents", "original_term_months", "arm_first_adjustment_date"];
+export const SELECTION_COLUMN_ALLOWLIST: readonly string[] = ["loan_id", "status", "note_rate_pct", "upb_cents", "remaining_term_months", "amortization", "product_code", "loan_purpose", "occupancy", "ltv_estimate", "property_state", "regx_days_delinquent", "mi_status", "mi_monthly_cents", "refi_do_not_solicit", "consent_flags", "bankruptcy_active", "foreclosure_referred", "lossmit_plan_active", "deceased_or_sii_pending", "transfer_out_pending", "escrowed", "pi_cents", "escrow_monthly_cents", "value_estimate", "note_date", "first_payment_date", "original_upb_cents", "original_term_months", "arm_first_adjustment_date"];
 export interface RefiRuleSet { readonly version: string; readonly referenced_columns: readonly string[]; readonly approved_by: string | null; readonly reviewed_by_compliance: boolean; readonly view_definition_hash: string; }
 export const SM_REFI_RULE_SET_V1: RefiRuleSet = { version: RULE_SET_VERSION_20_1, referenced_columns: SELECTION_COLUMN_ALLOWLIST, approved_by: "human:u-officer", reviewed_by_compliance: true, view_definition_hash: sha(SELECTION_COLUMN_ALLOWLIST) };
 /** T5 / O1-IT7: the static check fails the build when the rule set references an investor field or a prohibited-basis proxy; the run cannot start. */
@@ -122,7 +124,10 @@ export interface ValueEstimate { readonly source: "origination_indexed" | "avm" 
 /** One row of `v_refi_universe` (investor-blind): servicing facts the selection may read plus the candidate-construction inputs. */
 export interface UniverseLoan {
   readonly loan_id: string; readonly partner_id: string; readonly status: "active" | "paid_off" | "foreclosed" | "reo" | "transferred_out" | "repurchased" | "charged_off" | "staged";
-  readonly product_code: string; readonly amortization: "fixed" | "arm"; readonly note_date: PlainDate; readonly first_payment_date: PlainDate; readonly consummation_date: PlainDate; readonly title_date: PlainDate;
+  readonly product_code: string; readonly amortization: "fixed" | "arm";
+  /** The existing loan's transaction type from `loan_terms` (purchase / limited_cash_out / cash_out) — read by FNMA_B2_1_3_04_CASHOUT_TO_LCOR_30D (B2-1.3-04); absent on a legacy row means not a cash-out. */
+  readonly loan_purpose?: TransactionType | null;
+  readonly note_date: PlainDate; readonly first_payment_date: PlainDate; readonly consummation_date: PlainDate; readonly title_date: PlainDate;
   readonly original_upb_cents: Cents; readonly original_term_months: number; readonly note_rate_pct: string; readonly pi_cents: Cents; readonly payments_made: number; readonly upb_cents: Cents; readonly next_due_date: PlainDate; readonly remaining_term_months: number;
   readonly escrowed: boolean; readonly escrow_monthly_cents: Cents; readonly net_escrow_deposit_estimate_cents: Cents; readonly taxes_annual_cents: Cents | null; readonly insurance_annual_cents: Cents | null;
   readonly mi_status: MiStatus; readonly mi_monthly_cents: Cents; readonly occupancy: Occupancy; readonly property_type: PropertyType; readonly units: 1 | 2 | 3 | 4; readonly property_state: string; readonly county: string; readonly county_limit_cents: Cents | null;
@@ -130,11 +135,15 @@ export interface UniverseLoan {
   readonly regx_days_delinquent: number; readonly bankruptcy_active: boolean; readonly foreclosure_referred: boolean; readonly lossmit_plan_active: boolean; readonly deceased_or_sii_pending: boolean; readonly transfer_out_pending: boolean;
   readonly refi_do_not_solicit: boolean; readonly refi_last_offered_at: string | null; readonly refi_offers_12m: number; readonly arm_first_adjustment_date: PlainDate | null;
 }
-/** Facts the GATES read (never the selection): the recapture anchor (29.4's `fnma_purchase_date`), the last decline, the rolling offer history. */
-export interface GateFacts { readonly fnma_purchase_date: PlainDate | null; readonly declined_on: PlainDate | null; readonly offered_at: readonly string[]; }
+/**
+ * Facts the GATES read (never the selection): the recapture anchor (29.4's `fnma_purchase_date`), the last decline, the
+ * rolling offer history, and the closing-to-delivery pipeline (B2-1.3-04: `delivery_pending` — closed or held by the
+ * partner, queued for delivery, no `loan.purchased` yet; `held_out_of_delivery` — 29.x has recorded the hold for this refinance).
+ */
+export interface GateFacts { readonly fnma_purchase_date: PlainDate | null; readonly declined_on: PlainDate | null; readonly offered_at: readonly string[]; readonly delivery_pending?: boolean; readonly held_out_of_delivery?: boolean; }
 export const NO_GATE_FACTS: GateFacts = { fnma_purchase_date: null, declined_on: null, offered_at: [] };
 export type Path = "proactive" | "borrower_request";
-export type ExclusionReason = "not_active" | "bankruptcy_active" | "foreclosure_referred" | "lossmit_plan_active" | "delinquent" | "marketing_suppression" | "deceased_or_sii_pending" | "transfer_out_pending" | "premium_recapture_window" | "cooldown" | "frequency_cap";
+export type ExclusionReason = "not_active" | "bankruptcy_active" | "foreclosure_referred" | "lossmit_plan_active" | "delinquent" | "marketing_suppression" | "deceased_or_sii_pending" | "transfer_out_pending" | "delivery_in_process" | "premium_recapture_window" | "cooldown" | "frequency_cap";
 export interface UniverseResult { readonly purpose: string; readonly included: UniverseLoan[]; readonly excluded: { loan_id: string; reason: ExclusionReason; opens_on: PlainDate | null }[]; readonly loans_in_universe: number; }
 /**
  * Rule 1: every active loan on the subserviced book (any investor, any remittance type) minus the exclusions; the
@@ -159,6 +168,7 @@ export function loadUniverse(program: PartnerProgram, ruleSet: RefiRuleSet, rows
     if (path === "proactive") {
       if (row.regx_days_delinquent > 0) { out("delinquent"); continue; }                           // open question 6: current loans only
       if (row.refi_do_not_solicit) { out("marketing_suppression"); continue; }
+      if (f.delivery_pending === true) { out("delivery_in_process"); continue; }                // B2-1.3-04: a loan in the process of being refinanced may not be delivered — the closing-to-delivery pipeline is never solicited
       const rec = premiumRecaptureGate({ fnma_purchase_date: f.fnma_purchase_date, as_of: asOf, days: program.premium_recapture_suppression_days });
       if (!rec.open) { out("premium_recapture_window", rec.opens_on); continue; }
       const cd = resolicitCooldownGate({ declined_on: f.declined_on, as_of: asOf, days: program.resolicit_cooldown_days });
@@ -247,7 +257,7 @@ export function ltvLimit(occupancy: Occupancy, amortization: "fixed" | "arm", tr
  * cash-out only on borrower request. Value = indexed origination value / AVM (low confidence widens the band: > 90 %
  * suppressed). The > 95 % Fannie Mae-ownership condition is an eligibility flag verified after engagement (T9).
  */
-export function buildCandidate(loan: UniverseLoan, o: { transaction_type?: TransactionType; term_months?: number; schedule?: CandidateSchedule; as_of: PlainDate; borrower_request?: boolean; cash_out_requested_cents?: Cents }): { candidate: CandidateTerms; prescreen: EligibilityPrescreen } {
+export function buildCandidate(loan: UniverseLoan, o: { transaction_type?: TransactionType; term_months?: number; schedule?: CandidateSchedule; as_of: PlainDate; application_date?: PlainDate; borrower_request?: boolean; cash_out_requested_cents?: Cents }): { candidate: CandidateTerms; prescreen: EligibilityPrescreen } {
   const transaction_type = o.transaction_type ?? "limited_cash_out";
   if (transaction_type === "purchase") throw new RangeError("a refinance candidate is limited_cash_out or cash_out");
   if (transaction_type === "cash_out" && !o.borrower_request) throw new RefiRefused("cash_out_requires_borrower_request", "cash-out candidates are constructed only on borrower request, never proactively (rule 2; guardrail)");
@@ -271,11 +281,14 @@ export function buildCandidate(loan: UniverseLoan, o: { transaction_type?: Trans
   const product_ok = loan.amortization === "fixed" || loan.amortization === "arm"; if (!product_ok) reasons.push("product");
   const delinquency_ok = loan.regx_days_delinquent === 0; if (!delinquency_ok) reasons.push("delinquent");
   if (transaction_type === "limited_cash_out" && cash_back_cents > cashBackCap(loan_amount_cents)) reasons.push("cash_back_exceeds_cap");
+  // B2-1.3-04: an LCOR on an existing CASH-OUT refinance is ineligible while the application date (the run / request date is the earliest one) is 30 days or less after that note date
+  const lcor30 = transaction_type === "limited_cash_out" ? cashoutToLcorGate({ loan_purpose: loan.loan_purpose ?? null, note_date: loan.note_date, application_date: o.application_date ?? o.as_of }) : null;
+  const seasoning_ok = lcor30 ? lcor30.open : true; if (lcor30 && !lcor30.open) reasons.push(lcor30.reason!);
   const requires_fnma_ownership_check = x10000 > FNMA_OWNERSHIP_CHECK_LTV_X10000 && ltv_ok;
   return {
     candidate: { transaction_type, product_code: REFI_PRODUCT_CODE, term_months, amortization: "fixed", payoff_estimate_cents: payoff.payoff_cents, per_diem_cents: payoff.per_diem_cents, payoff_days: payoff.days, prepaid_interest_cents: prepaid.prepaid_interest_cents, prepaid_days: prepaid.days, net_escrow_deposit_cents: loan.net_escrow_deposit_estimate_cents,
       loan_amount_cents, rounded_to_thousand: useRounded, cash_back_cents, cash_back_cap_cents: cashBackCap(loan_amount_cents), cash_out_requested_cents: o.cash_out_requested_cents ?? 0n, value_cents: loan.value_estimate.value_cents, value_source: loan.value_estimate.source, ltv, ltv_x10000: x10000, schedule, note_rate: null, pi_cents: null, quote_id: null },
-    prescreen: { ltv_ok, seasoning_ok: true, occupancy_ok, delinquency_ok, product_ok, state_rule_ok: null, requires_fnma_ownership_check, fnma_owned: null, ltv_limit_x10000: limit, reasons },
+    prescreen: { ltv_ok, seasoning_ok, occupancy_ok, delinquency_ok, product_ok, state_rule_ok: null, requires_fnma_ownership_check, fnma_owned: null, ltv_limit_x10000: limit, reasons },
   };
 }
 
@@ -387,12 +400,30 @@ export function offerFrequencyCapGate(f: { offered_at: readonly string[]; as_of:
   if (counted.length < max) return gateOpen(true, null, "");
   return gateOpen(false, addMonths(counted[counted.length - max]!, 12), `${counted.length} offers in the rolling 12 months ≥ cap ${max}`);
 }
-/** FNMA_B2_1_3_03_CASHOUT_NOTE_SEASONING_12M: the new note date must be ≥ the existing note date + 12 months (Nov 20, 2025 → earliest Nov 20, 2026). */
-export function cashoutNoteSeasoningGate(f: { note_date: PlainDate; new_note_date: PlainDate }): GateResult & { earliest_new_note_date: PlainDate; earliest_disbursement_date: PlainDate } {
+export type CashoutNoteSeasoningException = "subordinate_liens_only" | "co_owner_buyout_legal_agreement";
+/**
+ * FNMA_B2_1_3_03_CASHOUT_NOTE_SEASONING_12M: the new note date must be ≥ the existing FIRST mortgage's note date + 12
+ * months (Nov 20, 2025 → earliest Nov 20, 2026). B2-1.3-03: the rule "does not apply to any existing subordinate liens
+ * being paid off through the transaction, or when buying out a co-owner pursuant to a legal agreement" — those two
+ * exceptions open the gate; subordinate liens are never the anchor (only the first mortgage's note date is measured).
+ */
+export function cashoutNoteSeasoningGate(f: { note_date: PlainDate; new_note_date: PlainDate; exception?: CashoutNoteSeasoningException | null }): GateResult & { earliest_new_note_date: PlainDate; earliest_disbursement_date: PlainDate } {
   const earliest = addMonths(f.note_date, 12);
-  // rescission after a signing on the earliest note date: 3 Reg Z specific business days (Saturdays count), disbursement the day after midnight of the third
+  // rescission after a signing on the earliest note date: 3 Reg Z specific business days (§1026.2(a)(6): all calendar days except Sundays and federal holidays — Saturdays count), disbursement the day after midnight of the third
   const earliest_disbursement_date = addDays(addBusinessDays(earliest, 3, regzSpecific), 1);
+  if (f.exception) return { ...gateOpen(true, earliest, ""), earliest_new_note_date: earliest, earliest_disbursement_date };
   return { ...gateOpen(f.new_note_date >= earliest, earliest, `existing note ${f.note_date} is ${daysBetween(f.note_date, f.new_note_date)} days old at ${f.new_note_date}; cash-out eligible on/after ${earliest} (B2-1.3-03)`), earliest_new_note_date: earliest, earliest_disbursement_date };
+}
+/**
+ * FNMA_B2_1_3_04_CASHOUT_TO_LCOR_30D: an LCOR is not eligible when the existing loan is a cash-out refinance whose note
+ * date is 30 days or less before the new application date (B2-1.3-04); the gate opens on day 31, the first eligible
+ * application date (existing cash-out note Sept 8, 2026 → an application dated Oct 8 is day 30, ineligible; Oct 9 opens).
+ * Any other existing purpose (purchase, LCOR, unknown) → the gate does not apply.
+ */
+export function cashoutToLcorGate(f: { loan_purpose: TransactionType | null | undefined; note_date: PlainDate; application_date: PlainDate }): GateResult {
+  if (f.loan_purpose !== "cash_out") return gateOpen(true, null, "");
+  const opens_on = addDays(f.note_date, CASHOUT_TO_LCOR_INELIGIBLE_DAYS + 1);
+  return gateOpen(f.application_date >= opens_on, opens_on, `existing cash-out note ${f.note_date} is ${daysBetween(f.note_date, f.application_date)} days before the ${f.application_date} application date (30 days or less): not eligible as a limited cash-out refinance until ${opens_on} (B2-1.3-04)`);
 }
 /** FNMA_B2_1_3_03_TITLE_SEASONING_6M: at least one borrower on title ≥ 6 months before the new loan's disbursement (inheritance / legal award / delayed financing excepted). */
 export function titleSeasoningGate(f: { title_date: PlainDate; disbursement_date: PlainDate; exception?: "inheritance" | "legal_award" | "delayed_financing" | null }): GateResult {
@@ -425,7 +456,7 @@ export function borrowerInterestRule(f: { property_state: string; existing_consu
 }
 export interface GateStatus { readonly code: string; readonly status: "open" | "closed" | "not_applicable"; readonly opens_on: PlainDate | null; readonly reason: string | null; }
 /** `checkGates`: every gate the opportunity is subject to, with its status; `assertGateOpen` refuses on a closed one. */
-export function checkGates(f: { path: Path; transaction_type: TransactionType; as_of: PlainDate; program: PartnerProgram; facts: GateFacts; loan: Pick<UniverseLoan, "note_date" | "title_date" | "property_state" | "consummation_date">; schedule: CandidateSchedule; state_determination: BorrowerInterestDetermination | null }): GateStatus[] {
+export function checkGates(f: { path: Path; transaction_type: TransactionType; as_of: PlainDate; program: PartnerProgram; facts: GateFacts; loan: Pick<UniverseLoan, "note_date" | "title_date" | "property_state" | "consummation_date" | "loan_purpose">; schedule: CandidateSchedule; state_determination: BorrowerInterestDetermination | null }): GateStatus[] {
   const out: GateStatus[] = [];
   const push = (code: string, g: GateResult, applicable = true) => out.push({ code, status: !applicable ? "not_applicable" : g.open ? "open" : "closed", opens_on: g.opens_on, reason: applicable ? g.reason : null });
   push("FNMA_C1_1_01_PREMIUM_RECAPTURE_120", premiumRecaptureGate({ fnma_purchase_date: f.facts.fnma_purchase_date, as_of: f.as_of, days: f.program.premium_recapture_suppression_days }), f.path === "proactive");
@@ -433,6 +464,7 @@ export function checkGates(f: { path: Path; transaction_type: TransactionType; a
   push("SM_REFI_OFFER_FREQUENCY_CAP", offerFrequencyCapGate({ offered_at: f.facts.offered_at, as_of: f.as_of, max_offers_per_loan_per_12m: f.program.max_offers_per_loan_per_12m }), f.path === "proactive");
   push("FNMA_B2_1_3_03_CASHOUT_NOTE_SEASONING_12M", cashoutNoteSeasoningGate({ note_date: f.loan.note_date, new_note_date: f.schedule.consummation_date }), f.transaction_type === "cash_out");
   push("FNMA_B2_1_3_03_TITLE_SEASONING_6M", titleSeasoningGate({ title_date: f.loan.title_date, disbursement_date: f.schedule.disbursement_date }), f.transaction_type === "cash_out");
+  push("FNMA_B2_1_3_04_CASHOUT_TO_LCOR_30D", cashoutToLcorGate({ loan_purpose: f.loan.loan_purpose ?? null, note_date: f.loan.note_date, application_date: f.as_of }), f.transaction_type === "limited_cash_out");
   const sd = f.state_determination;
   out.push({ code: "MA_183_28C_BORROWER_INTEREST_60M", status: !sd || !sd.applies ? "not_applicable" : sd.pass ? "open" : "closed", opens_on: sd?.applies ? addMonths(f.loan.consummation_date, MA_28C_WINDOW_MONTHS) : null, reason: sd?.applies && !sd.pass ? `${sd.rule}: no borrower's-interest factor` : null });
   return out;
@@ -445,16 +477,16 @@ export function assertGateOpen(gates: readonly GateStatus[], code: string): Gate
 
 // ============================================================ the opportunity (data model; state machine)
 export type OpportunityStatus = "detected" | "suppressed" | "offer_ready" | "offered" | "engaged" | "converted" | "declined" | "expired" | "requested";
-export interface ExistingTerms { readonly note_rate: string; readonly upb_cents: Cents; readonly remaining_term_months: number; readonly pi_cents: Cents; readonly escrow_monthly_cents: Cents; readonly mi_monthly_cents: Cents; readonly mi_status: MiStatus; readonly occupancy: Occupancy; readonly product: string; readonly note_date: PlainDate; readonly first_payment_date: PlainDate; readonly investor_blind_hash: string; }
+export interface ExistingTerms { readonly note_rate: string; readonly upb_cents: Cents; readonly remaining_term_months: number; readonly pi_cents: Cents; readonly escrow_monthly_cents: Cents; readonly mi_monthly_cents: Cents; readonly mi_status: MiStatus; readonly occupancy: Occupancy; readonly product: string; readonly loan_purpose: TransactionType | null; readonly note_date: PlainDate; readonly first_payment_date: PlainDate; readonly investor_blind_hash: string; }
 export interface RefiOpportunity {
   readonly opportunity_id: string; readonly run_id: string | null; readonly loan_id: string; readonly program_id: string; readonly trigger_kind: TriggerKind; readonly as_of_date: PlainDate; readonly detected_at: string;
   readonly existing_terms: ExistingTerms; readonly value_estimate: ValueEstimate; readonly candidate_terms: CandidateTerms | null; readonly same_term_candidate: { term_months: number; pi_cents: Cents; note_rate: string } | null; readonly benefit_metrics: BenefitMetrics | null; readonly eligibility_prescreen: EligibilityPrescreen | null;
   readonly gates: readonly GateStatus[]; readonly state_determination: BorrowerInterestDetermination | null; readonly status: OpportunityStatus; readonly suppression_reasons: readonly string[]; readonly present_same_term_first: boolean; readonly offer_valid_until: PlainDate | null;
   readonly campaign_id: string | null; readonly lead_id: string | null; readonly application_id: string | null; readonly decision_id: string | null; readonly alternatives: readonly { transaction_type: TransactionType; status: "deferred" | "offered"; earliest_note_date: PlainDate | null; earliest_disbursement_date: PlainDate | null; reason: string }[];
-  readonly officer_acknowledgment_required: boolean; readonly explanation_text: string; readonly inputs_hash: string; readonly rule_set_version: string; readonly created_at: string;
+  readonly officer_acknowledgment_required: boolean; /** B2-1.3-04: the request waits for 29.x to hold the loan out of delivery (`held_out_of_delivery`). */ readonly delivery_hold_required?: boolean; readonly explanation_text: string; readonly inputs_hash: string; readonly rule_set_version: string; readonly created_at: string;
 }
 export const idempotencyKey = (loanId: string, asOf: PlainDate, programId: string): string => `${loanId}|${asOf}|${programId}`;
-export const existingTermsOf = (loan: UniverseLoan): ExistingTerms => ({ note_rate: rateFromPct(loan.note_rate_pct), upb_cents: loan.upb_cents, remaining_term_months: loan.remaining_term_months, pi_cents: loan.pi_cents, escrow_monthly_cents: loan.escrow_monthly_cents, mi_monthly_cents: loan.mi_monthly_cents, mi_status: loan.mi_status, occupancy: loan.occupancy, product: loan.product_code, note_date: loan.note_date, first_payment_date: loan.first_payment_date, investor_blind_hash: sha([loan.loan_id, "investor_blind"]) });
+export const existingTermsOf = (loan: UniverseLoan): ExistingTerms => ({ note_rate: rateFromPct(loan.note_rate_pct), upb_cents: loan.upb_cents, remaining_term_months: loan.remaining_term_months, pi_cents: loan.pi_cents, escrow_monthly_cents: loan.escrow_monthly_cents, mi_monthly_cents: loan.mi_monthly_cents, mi_status: loan.mi_status, occupancy: loan.occupancy, product: loan.product_code, loan_purpose: loan.loan_purpose ?? null, note_date: loan.note_date, first_payment_date: loan.first_payment_date, investor_blind_hash: sha([loan.loan_id, "investor_blind"]) });
 const base = (o: { opportunity_id: string; loan_id: string; run_id: string | null; program: PartnerProgram; trigger_kind: TriggerKind; as_of: PlainDate; at: string; loan: UniverseLoan }): RefiOpportunity => ({ opportunity_id: o.opportunity_id, run_id: o.run_id, loan_id: o.loan_id, program_id: o.program.program_id, trigger_kind: o.trigger_kind, as_of_date: o.as_of, detected_at: o.at, existing_terms: existingTermsOf(o.loan), value_estimate: o.loan.value_estimate, candidate_terms: null, same_term_candidate: null, benefit_metrics: null, eligibility_prescreen: null, gates: [], state_determination: null, status: "detected", suppression_reasons: [], present_same_term_first: false, offer_valid_until: null, campaign_id: null, lead_id: null, application_id: null, decision_id: null, alternatives: [], officer_acknowledgment_required: false, explanation_text: "", inputs_hash: "", rule_set_version: RULE_SET_VERSION_20_1, created_at: o.at });
 const ev = (events: EventStore, type: string, loanId: string, at: string, payload: Record<string, unknown>, actor: Actor, aggregate?: { kind: string; id: string }) => events.append({ type, actor, occurredAt: at, loanId, ...(aggregate ? { aggregate } : {}), payload: { ...payload, origination: true, source: "origination" } });
 
@@ -492,7 +524,7 @@ export function evaluateLoan(events: EventStore, ctx: PipelineContext, loan: Uni
   let opp = base({ opportunity_id, loan_id: loan.loan_id, run_id: ctx.run_id, program: ctx.program, trigger_kind: o.trigger_kind, as_of: ctx.as_of, at: ctx.at, loan });
   const requested = o.transaction_type ?? "limited_cash_out";
   const ruleApplies = ctx.jurisdiction_rules[loan.property_state] !== undefined && monthsBetween(loan.consummation_date, schedule.consummation_date) < (ctx.jurisdiction_rules[loan.property_state]?.window_months ?? MA_28C_WINDOW_MONTHS);
-  push(ev(events, "refi.opportunity.detected", loan.loan_id, ctx.at, { opportunity_id, loan_id: loan.loan_id, run_id: ctx.run_id, program_id: ctx.program.program_id, trigger_kind: o.trigger_kind, transaction_type: requested, property_state: loan.property_state, borrower_interest_rule_applies: ruleApplies, as_of_date: ctx.as_of, note_date: loan.note_date, title_date: loan.title_date, consummation_date: loan.consummation_date, purpose: purposeTag(ctx.program) }, actor, { kind: "refi_opportunity", id: opportunity_id }));
+  push(ev(events, "refi.opportunity.detected", loan.loan_id, ctx.at, { opportunity_id, loan_id: loan.loan_id, run_id: ctx.run_id, program_id: ctx.program.program_id, trigger_kind: o.trigger_kind, transaction_type: requested, property_state: loan.property_state, borrower_interest_rule_applies: ruleApplies, as_of_date: ctx.as_of, loan_purpose: loan.loan_purpose ?? null, note_date: loan.note_date, title_date: loan.title_date, consummation_date: loan.consummation_date, purpose: purposeTag(ctx.program) }, actor, { kind: "refi_opportunity", id: opportunity_id }));
   // cash-out seasoning (B2-1.3-03): closed gates replace the cash-out candidate by an LCOR now and defer the cash-out
   let transaction_type: TransactionType = requested; const alternatives: RefiOpportunity["alternatives"][number][] = [];
   if (requested === "cash_out") {
@@ -514,9 +546,10 @@ export function evaluateLoan(events: EventStore, ctx: PipelineContext, loan: Uni
   const sd = metrics ? borrowerInterestRule({ property_state: loan.property_state, existing_consummation_date: loan.consummation_date, candidate_consummation_date: schedule.consummation_date, rules: ctx.jurisdiction_rules, pi_delta_cents: metrics.pi_delta_cents, borrower_paid_costs_cents: metrics.borrower_paid_costs_cents, rate_delta_bps: metrics.rate_delta_bps, breakeven_months: metrics.breakeven_months, cash_proceeds_cents: opp.candidate_terms!.cash_out_requested_cents, arm_to_fixed: loan.amortization === "arm", bona_fide_need: o.bona_fide_need ?? false }) : null;
   if (sd?.applies) push(ev(events, "refi.borrower_interest.determined", loan.loan_id, ctx.at, { opportunity_id, pass: sd.pass, factors: sd.factors, months_since_consummation: sd.months_since_consummation, rule: sd.rule, property_state: loan.property_state }, actor, { kind: "refi_opportunity", id: opportunity_id }));
   const gates = checkGates({ path: o.path, transaction_type, as_of: ctx.as_of, program: ctx.program, facts, loan, schedule, state_determination: sd });
-  for (const g of gates) if (g.status === "closed" && g.code !== "MA_183_28C_BORROWER_INTEREST_60M") suppression.push(g.code === "FNMA_C1_1_01_PREMIUM_RECAPTURE_120" ? "premium_recapture_window" : g.code === "SM_REFI_RESOLICIT_COOLDOWN_90" ? "cooldown" : g.code === "SM_REFI_OFFER_FREQUENCY_CAP" ? "frequency_cap" : g.code);
+  for (const g of gates) if (g.status === "closed" && g.code !== "MA_183_28C_BORROWER_INTEREST_60M") suppression.push(g.code === "FNMA_C1_1_01_PREMIUM_RECAPTURE_120" ? "premium_recapture_window" : g.code === "SM_REFI_RESOLICIT_COOLDOWN_90" ? "cooldown" : g.code === "SM_REFI_OFFER_FREQUENCY_CAP" ? "frequency_cap" : g.code === "FNMA_B2_1_3_04_CASHOUT_TO_LCOR_30D" ? "cashout_to_lcor_30d" : g.code);
   if (o.path === "proactive" && loan.refi_do_not_solicit) suppression.push("marketing_suppression");
-  const prescreen_ok = built.prescreen.ltv_ok && built.prescreen.occupancy_ok && built.prescreen.product_ok && (o.path === "proactive" ? built.prescreen.delinquency_ok : true);
+  if (o.path === "proactive" && facts.delivery_pending === true) suppression.push("delivery_in_process");   // B2-1.3-04: never solicit a loan in the closing-to-delivery pipeline
+  const prescreen_ok = built.prescreen.ltv_ok && built.prescreen.seasoning_ok && built.prescreen.occupancy_ok && built.prescreen.product_ok && (o.path === "proactive" ? built.prescreen.delinquency_ok : true);
   const fire = metrics ? fireRule(metrics, ctx.program, { prescreen_ok, state_rule_ok: sd ? sd.pass : true, suppression_reasons: suppression }) : { fire: false, present_same_term_first: false, reasons: [...suppression, "not_priced"] };
   opp = { ...opp, gates, state_determination: sd, eligibility_prescreen: { ...built.prescreen, state_rule_ok: sd ? sd.pass : null }, suppression_reasons: fire.reasons, present_same_term_first: fire.present_same_term_first, inputs_hash: sha({ loan, facts, as_of: ctx.as_of, rule_set: ctx.rule_set.version, sheet: ctx.pricing.sheet.rate_sheet_id }) };
   if (fire.fire && metrics && opp.candidate_terms) {
@@ -524,7 +557,7 @@ export function evaluateLoan(events: EventStore, ctx: PipelineContext, loan: Uni
     opp = { ...opp, status: o.path === "borrower_request" ? "requested" : "detected", explanation_text };
     opp = markOfferReady(events, opp, ctx.at, actor, push);
   } else {
-    const primary = fire.reasons.find((r) => ["premium_recapture_window", "cooldown", "frequency_cap", "marketing_suppression", "not_priceable"].includes(r)) ?? fire.reasons[0] ?? "no_benefit";
+    const primary = fire.reasons.find((r) => ["premium_recapture_window", "cooldown", "frequency_cap", "marketing_suppression", "delivery_in_process", "cashout_to_lcor_30d", "not_priceable"].includes(r)) ?? fire.reasons[0] ?? "no_benefit";
     const gate = gates.find((g) => g.status === "closed");
     opp = { ...opp, status: "suppressed" };
     push(ev(events, "refi.opportunity.suppressed", loan.loan_id, ctx.at, { opportunity_id, reason: primary, reasons: fire.reasons, opens_on: gate?.opens_on ?? null, due_at: gate?.opens_on ?? null, gate: gate?.code ?? null }, actor, { kind: "refi_opportunity", id: opportunity_id }));
@@ -570,7 +603,7 @@ export function runTrigger(events: EventStore, ctx: PipelineContext, i: RunInput
     const ex = universe.excluded.find((x) => x.loan_id === loan.loan_id);
     if (ex) {
       const opp: RefiOpportunity = { ...base({ opportunity_id: `opp-${loan.loan_id}-${ctx.as_of}-${ctx.program.program_id}`, loan_id: loan.loan_id, run_id: i.run_id, program: ctx.program, trigger_kind: i.trigger_kind, as_of: ctx.as_of, at: ctx.at, loan }), status: "suppressed", suppression_reasons: [ex.reason], gates: checkGates({ path: "proactive", transaction_type: "limited_cash_out", as_of: ctx.as_of, program: ctx.program, facts: i.gate_facts[loan.loan_id] ?? NO_GATE_FACTS, loan, schedule: ctx.schedule ?? defaultSchedule(ctx.as_of), state_determination: null }) };
-      out.push(ev(events, "refi.opportunity.detected", loan.loan_id, ctx.at, { opportunity_id: opp.opportunity_id, loan_id: loan.loan_id, run_id: i.run_id, program_id: ctx.program.program_id, trigger_kind: i.trigger_kind, transaction_type: "limited_cash_out", property_state: loan.property_state, borrower_interest_rule_applies: false, as_of_date: ctx.as_of, purpose: universe.purpose }, actor, { kind: "refi_opportunity", id: opp.opportunity_id }));
+      out.push(ev(events, "refi.opportunity.detected", loan.loan_id, ctx.at, { opportunity_id: opp.opportunity_id, loan_id: loan.loan_id, run_id: i.run_id, program_id: ctx.program.program_id, trigger_kind: i.trigger_kind, transaction_type: "limited_cash_out", loan_purpose: loan.loan_purpose ?? null, note_date: loan.note_date, property_state: loan.property_state, borrower_interest_rule_applies: false, as_of_date: ctx.as_of, purpose: universe.purpose }, actor, { kind: "refi_opportunity", id: opp.opportunity_id }));
       out.push(ev(events, "refi.opportunity.suppressed", loan.loan_id, ctx.at, { opportunity_id: opp.opportunity_id, reason: ex.reason, reasons: [ex.reason], opens_on: ex.opens_on, due_at: ex.opens_on, gate: ex.reason === "premium_recapture_window" ? "FNMA_C1_1_01_PREMIUM_RECAPTURE_120" : ex.reason === "cooldown" ? "SM_REFI_RESOLICIT_COOLDOWN_90" : ex.reason === "frequency_cap" ? "SM_REFI_OFFER_FREQUENCY_CAP" : null }, actor, { kind: "refi_opportunity", id: opp.opportunity_id }));
       opportunities.push(opp); continue;
     }
@@ -614,7 +647,8 @@ export function requestOpportunity(events: EventStore, ctx: PipelineContext, loa
   const requestedAt = r.requested_at; const asOf = isoDateEt(requestedAt);
   const rec = premiumRecaptureGate({ fnma_purchase_date: facts.fnma_purchase_date, as_of: asOf, days: ctx.program.premium_recapture_suppression_days });
   const opportunity_id = `opp-${loan.loan_id}-${asOf}-${ctx.program.program_id}-req`;
-  const requestedEv = ev(events, "refi.opportunity.requested", loan.loan_id, requestedAt, { opportunity_id, loan_id: loan.loan_id, requested_at: requestedAt, transaction_type, cash_out_requested_cents: String(r.cash_out_requested_cents ?? 0n), officer_acknowledgment_required: !rec.open, recapture_window_opens_on: rec.opens_on, path: "borrower_request", fcra_basis: "15 U.S.C. 1681b(a)(3)(F) available at 20.3 (consumer-initiated)" }, actor, { kind: "refi_opportunity", id: opportunity_id });
+  const holdRequired = facts.delivery_pending === true && facts.held_out_of_delivery !== true;
+  const requestedEv = ev(events, "refi.opportunity.requested", loan.loan_id, requestedAt, { opportunity_id, loan_id: loan.loan_id, requested_at: requestedAt, transaction_type, cash_out_requested_cents: String(r.cash_out_requested_cents ?? 0n), officer_acknowledgment_required: !rec.open, recapture_window_opens_on: rec.opens_on, delivery_hold_required: holdRequired, path: "borrower_request", fcra_basis: "15 U.S.C. 1681b(a)(3)(F) available at 20.3 (consumer-initiated)" }, actor, { kind: "refi_opportunity", id: opportunity_id });
   let escalation: { id: string; kind: string } | null = null; let recapture_estimate: { premium_cents: Cents; note: string } | null = null;
   if (!rec.open) {
     recapture_estimate = { premium_cents: pctOfCents(loan.upb_cents, "0.875"), note: "premium (price − par) × UPB at purchase, less LLPAs and the 50 bps processing fee, at Fannie Mae's discretion (C1-1-01)" };
@@ -624,8 +658,14 @@ export function requestOpportunity(events: EventStore, ctx: PipelineContext, loa
       return { opportunity: opp, events: [requestedEv], quote: null, escalation, recapture_estimate };
     }
   }
+  // B2-1.3-04: a loan in the closing-to-delivery pipeline may not be delivered while it is being refinanced — the request proceeds only once 29.x holds the loan out of delivery (the partner officer directs the hold)
+  if (holdRequired) {
+    if (esc) escalation = esc.open({ kind: "officer", loanId: loan.loan_id, payload: { opportunity_id, reason: "delivery_hold_required", basis: "B2-1.3-04: sellers/servicers may not deliver a loan to Fannie Mae that is in the process of being refinanced" } }, actor);
+    const opp: RefiOpportunity = { ...base({ opportunity_id, loan_id: loan.loan_id, run_id: null, program: ctx.program, trigger_kind: "borrower_request", as_of: asOf, at: requestedAt, loan }), status: "requested", officer_acknowledgment_required: !rec.open, delivery_hold_required: true, gates: checkGates({ path: "borrower_request", transaction_type, as_of: asOf, program: ctx.program, facts, loan, schedule: ctx.schedule ?? defaultSchedule(asOf), state_determination: null }) };
+    return { opportunity: opp, events: [requestedEv], quote: null, escalation, recapture_estimate };
+  }
   const r2 = evaluateLoan(events, { ...ctx, as_of: asOf, at: requestedAt, run_id: null }, loan, facts, { trigger_kind: "borrower_request", path: "borrower_request", transaction_type, opportunity_id, ...(r.cash_out_requested_cents !== undefined ? { cash_out_requested_cents: r.cash_out_requested_cents } : {}), ...(r.bona_fide_need !== undefined ? { bona_fide_need: r.bona_fide_need } : {}) }, actor);
-  return { ...r2, opportunity: { ...r2.opportunity, officer_acknowledgment_required: !rec.open }, events: [requestedEv, ...r2.events], escalation, recapture_estimate };
+  return { ...r2, opportunity: { ...r2.opportunity, officer_acknowledgment_required: !rec.open, delivery_hold_required: false }, events: [requestedEv, ...r2.events], escalation, recapture_estimate };
 }
 /** The LLM's only classification job on the request path: borrower free text → transaction type (never the rate, amount or fire decision). */
 export const classifyRequest = (text: string): TransactionType => (/cash[- ]?out|take (some )?cash|equity out|\$\s?\d[\d,]*\s*(cash|out)/i.test(text) ? "cash_out" : "limited_cash_out");
@@ -714,7 +754,13 @@ export function offerFrequencyCapGateFacts(f: Record<string, unknown>): { open: 
 }
 export function cashoutNoteSeasoningGateFacts(f: Record<string, unknown>): { open: boolean; reason?: string } {
   const note = dateFact(f.note_date), nn = dateFact(f.new_note_date) ?? dateFact(f.consummation_date); if (!note || !nn) return { open: false, reason: "note_date and new_note_date are required" };
-  const g = cashoutNoteSeasoningGate({ note_date: note, new_note_date: nn }); return g.open ? { open: true } : { open: false, reason: g.reason! };
+  const g = cashoutNoteSeasoningGate({ note_date: note, new_note_date: nn, exception: (f.exception as CashoutNoteSeasoningException | null | undefined) ?? null }); return g.open ? { open: true } : { open: false, reason: g.reason! };
+}
+/** FNMA_B2_1_3_04_CASHOUT_TO_LCOR_30D over `{ loan_purpose (the existing loan's), note_date, application_date | as_of }`. */
+export function cashoutToLcorGateFacts(f: Record<string, unknown>): { open: boolean; reason?: string } {
+  const note = dateFact(f.note_date), app = dateFact(f.application_date) ?? asOfFact(f); if (!note || !app) return { open: false, reason: "note_date and application_date (or as_of) are required" };
+  const purpose = (f.loan_purpose ?? f.existing_loan_purpose ?? null) as TransactionType | null;
+  const g = cashoutToLcorGate({ loan_purpose: purpose, note_date: note, application_date: app }); return g.open ? { open: true } : { open: false, reason: g.reason! };
 }
 export function titleSeasoningGateFacts(f: Record<string, unknown>): { open: boolean; reason?: string } {
   const t = dateFact(f.title_date), d = dateFact(f.disbursement_date); if (!t || !d) return { open: false, reason: "title_date and disbursement_date are required" };

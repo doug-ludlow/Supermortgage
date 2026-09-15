@@ -198,6 +198,17 @@ test("21.5-T4: Given bucket baseline 186,500 cents and CD actuals title 115,000,
   // worked example 1's actual CD: settlement +$25 and a $25 CPL → 191,500 ≤ 205,150 → pass
   const ok = toleranceTest(items, { application_id: "APP-T4", stage: "cd_initial", run_at: MST("2026-11-02", "09:00"), comparison_disclosure_id: "CD-1", lender_credit_actual_cents: -261_700n, actuals: [...FEES.filter((f) => f.le_section !== "J_lender_credit").map((f) => ({ fee_code: f.fee_code, amount_cents: f.fee_code === "title_settlement" ? 52_000n : f.amount_cents })), { fee_code: "title_cpl", amount_cents: 2_500n, item: CPL(2_500n) }] });
   assert.equal(ok.ten_pct_result.actual_sum_cents, 191_500n); assert.equal(ok.status, "pass"); assert.equal(ok.total_excess_cents, 0n);
+  // rule 3 / comment 19(e)(3)(ii)-5: a $100 pest inspection estimated on the LE (bucket 196,500) but never obtained leaves `baseline_sum` — the same 186,500 baseline, 205,150 limit and 9,350-cent excess
+  const pest = fee("pest_inspection", "Pest Inspection Fee", "C_can_shop", "PestInspectionFee", 10_000n, "list_provider", true, "vendor_quote", "N7-pest-2026-10-05", false);
+  const withPest = baselineFromFees([...FEES, pest].map((f) => ({ ...f, tolerance_class: deriveToleranceClass(f), baseline_amount_cents: f.amount_cents, baseline_disclosure_id: "LE-1" })), "LE-1", MST("2026-10-05", "16:10")); assert.equal(bucketBaselineSum(withPest), 196_500n);
+  const cdActuals = (pestRow: { fee_code: string; amount_cents: bigint; performed?: boolean }) => [...FEES.filter((f) => f.le_section !== "J_lender_credit").map((f) => ({ fee_code: f.fee_code, amount_cents: f.fee_code === "title_settlement" ? 70_000n : f.amount_cents })), pestRow, { fee_code: "title_cpl", amount_cents: 7_500n, item: cpl }];
+  const np = toleranceTest(withPest, { application_id: "APP-T4", stage: "cd_initial", run_at: MST("2026-11-02", "09:00"), comparison_disclosure_id: "CD-1", lender_credit_actual_cents: -261_700n, actuals: cdActuals({ fee_code: "pest_inspection", amount_cents: 0n, performed: false }) });
+  assert.equal(np.ten_pct_result.baseline_sum_cents, 186_500n); assert.equal(np.ten_pct_result.limit_cents, 205_150n); assert.equal(np.ten_pct_result.actual_sum_cents, 214_500n); assert.equal(np.ten_pct_result.excess_cents, 9_350n); assert.equal(np.total_excess_cents, 9_350n);
+  assert.deepEqual(np.ten_pct_result.items.find((x) => x.fee_code === "pest_inspection"), { fee_code: "pest_inspection", baseline_cents: 0n, actual_cents: 0n, not_performed: true, removed_baseline_cents: 10_000n });
+  // without the removal the phantom $100 estimate would lift the limit to 216,150 and hide the $93.50 excess; a charge for a service not performed is refused
+  const kept = toleranceTest(withPest, { application_id: "APP-T4", stage: "cd_initial", run_at: MST("2026-11-02", "09:00"), comparison_disclosure_id: "CD-1", lender_credit_actual_cents: -261_700n, actuals: cdActuals({ fee_code: "pest_inspection", amount_cents: 0n }) });
+  assert.equal(kept.ten_pct_result.baseline_sum_cents, 196_500n); assert.equal(kept.ten_pct_result.limit_cents, 216_150n); assert.equal(kept.total_excess_cents, 0n);
+  assert.throws(() => toleranceTest(withPest, { application_id: "APP-T4", stage: "cd_initial", run_at: MST("2026-11-02", "09:00"), comparison_disclosure_id: "CD-1", lender_credit_actual_cents: -261_700n, actuals: cdActuals({ fee_code: "pest_inspection", amount_cents: 5_000n, performed: false }) }), RangeError);
 });
 test("21.5-T5: Given a bucket baseline of 186,505 cents, then `limit_cents` = 205,155 (floor of 205,155.5) and the reset `threshold_cents` = 18,651 (ceil of 18,650.5).", () => {
   assert.equal(tenPercentLimitCents(186_505n), 205_155n); assert.equal(resetThresholdCents(186_505n), 18_651n);
@@ -380,6 +391,23 @@ test("21.5-T12: Given a valid changed circumstance whose revised LE is delivered
   assert.equal(h.escalations.list().filter((e) => e.kind === "sev1").length, 1); assert.equal(h.svc.decisionRecord({ cc_id: cc.cc_id, test_id: cd.test_id, application_id: "APP-T12", model_version: "m1", prompt_version: "p1", rationale: "late revised LE; original baseline; cure" }).cure_cents, "20000");
 });
 
+test("21.5 rule 6: a valid bucket reset touches only the affected items — unaffected bucket items keep their original baselines (comments 19(e)(3)(iv)(A)-2 and (B)-1; open question 3 resolved)", () => {
+  const h = harness(MST("2026-10-05", "10:41")); h.initialLe("APP-R6", "LE-R6", MST("2026-10-05", "10:41"), MST("2026-10-05", "16:10"), MST("2026-10-05", "17:42"));
+  assert.equal(bucketBaselineSum(h.svc.baseline("APP-R6")), 186_500n);
+  const at = MST("2026-10-20", "14:30"); h.clock.set(at);
+  // settlement $495 → $681.52 (+18,652 cents, one cent over the 18,650 threshold) for a transaction-specific reason that says nothing about the title premium, endorsements or recording
+  const { cc, evaluation } = h.svc.recordChangedCircumstance({ application_id: "APP-R6", basis: "A3", narrative: "the settlement agent reports the borrower's second lien needs a subordination closing session and a second signing appointment: new information specific to the transaction", evidence_document_ids: ["DOC-SETTLEMENT-MSG-1"], information_received_at: at, revised: [{ fee_code: "title_settlement", amount_cents: 68_152n }], transaction_specific: true, source_event_id: "EVT-TITLE-1" });
+  assert.equal(evaluation.valid, true); assert.equal(evaluation.reset_scope, "bucket"); assert.deepEqual({ ...evaluation.threshold_test, items: undefined }, { bucket_baseline_cents: 186_500n, bucket_revised_cents: 205_152n, increase_cents: 18_652n, threshold_cents: 18_650n, exceeds: true, items: undefined });
+  assert.equal(cc.baseline_reset, true); assert.deepEqual(cc.affected_fee_codes, ["title_settlement"]); assert.deepEqual(h.emitted("fee.baseline.reset").map((e) => e.payload.fee_codes), [["title_settlement"]]);
+  assert.equal(h.svc.baselineOf("APP-R6", "title_settlement").baseline_amount_cents, 68_152n); assert.equal(h.svc.baselineOf("APP-R6", "title_settlement").baseline_reset_cc_id, cc.cc_id);
+  for (const [code, original] of [["title_lenders_policy", 115_000n], ["title_endorsements", 15_000n], ["recording", 7_000n]] as const) { const f = h.svc.baselineOf("APP-R6", code); assert.equal(f.baseline_amount_cents, original, `${code} keeps its original baseline`); assert.equal(f.baseline_reset_cc_id, null, `${code} is unaffected`); }
+  // bucket_baseline_sum = Σ original baselines of unaffected items + revised estimate of the affected item
+  assert.equal(bucketBaselineSum(h.svc.baseline("APP-R6")), 115_000n + 68_152n + 15_000n + 7_000n); assert.equal(bucketBaselineSum(h.svc.baseline("APP-R6")), 205_152n);
+  // at the CD an unrelated title-premium rise ($1,150 → $1,250) is compared to the original 115,000 estimate inside the aggregate: limit floor(205,152 × 1.1) = 225,667; actual 125,000 + 68,152 + 15,000 + 7,000 = 215,152 → pass
+  h.clock.set(MST("2026-11-02", "09:00"));
+  const { test: t } = h.svc.runToleranceTest({ application_id: "APP-R6", stage: "cd_initial", run_at: h.clock.now(), comparison_disclosure_id: "CD-1", actuals: h.actuals({ title_settlement: 68_152n, title_lenders_policy: 125_000n }), lender_credit_actual_cents: -261_700n });
+  assert.equal(t.ten_pct_result.baseline_sum_cents, 205_152n); assert.equal(t.ten_pct_result.limit_cents, 225_667n); assert.equal(t.ten_pct_result.actual_sum_cents, 215_152n); assert.equal(t.ten_pct_result.excess_cents, 0n); assert.equal(t.status, "pass");
+});
 test("21.5 worked figures: bucket 186,500 → limit $2,051.50 and threshold $186.50; CD 1,150 + 700 + 150 + 70 + 75 = $2,145.00 → $93.50 cure; purchase bucket 222,000 → $2,442.00 / $222.00; 18 days × $93.97 = $1,691.46; $575,000 at 6.125 % → P&I $3,493.76 (basis C, due Thu Oct 29); the $200.00 cure and Tue Jan 5, 2027 refund", () => {
   const items = baselineItems();
   assert.equal(tenPercentLimitCents(186_500n), 205_150n);   // $2,051.50

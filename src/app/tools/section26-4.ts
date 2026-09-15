@@ -78,7 +78,7 @@ export const TOOLS_26_4: readonly ToolDef[] = defineTools("26.4", "post-closing"
   { name: "computeMersAnchor", kind: "read", handler: compute((i, ctx, rt) => {
       switch (op(i)) {
         case "assignments": need(i, "state"); return decideAssignments({ state: str(i, "state"), ...(i.mom_available !== undefined ? { mom_available: i.mom_available === true } : {}), ...(i.originator_is_servicer !== undefined ? { originator_is_servicer: i.originator_is_servicer === true } : {}) });
-        case "assignment_population": return { offending: assignmentPopulationCheck((Array.isArray(i.rows) ? i.rows : rt.store.list("closing_documents").map((r) => ({ application_id: String(r.data.application_id ?? ""), state: String(r.data.state ?? ""), kind: String(r.data.kind ?? "") }))) as { application_id: string; state: string; kind: string }[]) };
+        case "assignment_population": return { offending: assignmentPopulationCheck((Array.isArray(i.rows) ? i.rows : rt.store.list("closing_documents").map((r) => ({ application_id: String(r.data.application_id ?? ""), state: String(r.data.state ?? ""), kind: String(r.data.kind ?? ""), cema: r.data.cema === true || r.data.ny_cema === true }))) as { application_id: string; state: string; kind: string; cema?: boolean }[]) };
         case "shipment_plan": return shipmentPlan(date(i.advance_date, "advance_date"));
         case "followup_schedule": return { dates: followupSchedule(date(i.due_at, "due_at"), date(i.through, "through")) };
         case "endorsement_gate": return ensureEndorsement(endorsementOf(rt, i), noteFacts(i));

@@ -129,8 +129,9 @@ export interface FeeGateCheck {
 }
 /**
  * `gate_open = (today_creditor_tz ≥ le_effective_receipt_date) ∧ (∃ intent_records.valid)`; the credit-report
- * exception applies only to `fee_kind='credit_report'` and only up to the vendor's invoiced cost (comment
- * 19(e)(2)(i)(B)-1 as understood — the engine caps the collected amount at the invoice). "Impose" includes capturing a
+ * exception applies only to `fee_kind='credit_report'` and only up to the vendor's invoiced cost (SM policy — comment
+ * 19(e)(2)(i)(B)-1 requires only a bona fide and reasonable amount, accurately labelled "credit report fee", and sets no
+ * actual-cost cap; the invoice cap is the engine's own). "Impose" includes capturing a
  * payment method, so `capture_payment_method` runs through the same evaluation.
  */
 export function evaluateFeeGate(f: FeeGateFacts): { result: FeeGateResult; collected_cents: Cents; reason: string } {
@@ -264,17 +265,42 @@ export function aprEstimatePct(loanAmountCents: Cents, noteRatePct: string, prep
   while (hi - lo > 1) { const mid = Math.floor((lo + hi) / 2); const pm = levelPayment(financed, ratePercent(`${Math.floor(mid / 1000)}.${String(mid % 1000).padStart(3, "0")}`), termMonths); if (pm < payment) lo = mid; else hi = mid; }
   return `${Math.floor(hi / 1000)}.${String(hi % 1000).padStart(3, "0")}`;
 }
-export interface LateLockWarning { readonly apr_before_pct: string; readonly apr_after_pct: string; readonly apr_change_x1000: number; readonly exceeds_apr_tolerance: boolean; readonly earliest_consummation_on: PlainDate; readonly closing_moves: boolean; readonly text: string; }
-/** The borrower is warned before a lock that late: a corrected CD whose APR moves > 1/8 point restarts the 3-specific-business-day wait (25.2 owns the computation; this process only warns). */
+export const MAILBOX_PRESUMPTION_SBD = 3;                   // §1026.19(f)(1)(iii): a mailed CD is received three specific business days after it is placed in the mail
+export interface LateLockWarning {
+  readonly apr_before_pct: string; readonly apr_after_pct: string; readonly apr_change_x1000: number; readonly exceeds_apr_tolerance: boolean;
+  /** corrected CD delivered in person / e-confirmed on `corrected_cd_received_on`: consummation may occur on the third specific business day following receipt (comment 19(f)(1)(iii)-1) */
+  readonly earliest_consummation_on: PlainDate; readonly closing_moves: boolean;
+  /** the scheduled closing survives only because receipt is confirmed on the delivery day — a mailed corrected CD would move it */
+  readonly closing_holds_only_with_confirmed_receipt: boolean;
+  /** the mailed alternative: deemed received three specific business days after mailing (§1026.19(f)(1)(iii)), then the same three-day wait */
+  readonly mailed: { readonly placed_in_mail_on: PlainDate; readonly deemed_received_on: PlainDate; readonly earliest_consummation_on: PlainDate; readonly closing_moves: boolean };
+  readonly text: string;
+}
+/**
+ * The borrower is warned before a lock that late: a corrected CD whose APR moves > 1/8 point restarts the 3-specific-business-day wait (25.2 owns the
+ * computation; this process only warns). Comment 19(f)(1)(iii)-1: "consummation may occur any time on the third business day following delivery" — there is
+ * no day-after. Worked example 2(b): received Tue Nov 3 → Wed 4 = 1, Thu 5 = 2, Fri 6 = 3 → the Fri Nov 6 closing holds; mailed Nov 3 → deemed received
+ * Fri Nov 6 (Wed 4, Thu 5, Fri 6) → Sat 7 = 1, Sun 8 excluded, Mon 9 = 2, Tue 10 = 3 → Tue Nov 10 (Veterans Day Nov 11 never enters the count).
+ * `corrected_cd_received_on` is the day the corrected CD is delivered: received that day when in person/e-confirmed, or placed in the mail that day.
+ */
 export function lateLockWarning(i: { loan_amount_cents: Cents; before: { note_rate_pct: string; points_cents: Cents }; after: { note_rate_pct: string; points_cents: Cents }; corrected_cd_received_on: PlainDate; scheduled_consummation_on: PlainDate; cal?: Calendar }): LateLockWarning {
   const apr_before_pct = aprEstimatePct(i.loan_amount_cents, i.before.note_rate_pct, i.before.points_cents), apr_after_pct = aprEstimatePct(i.loan_amount_cents, i.after.note_rate_pct, i.after.points_cents);
   const x = (s: string) => Math.round(Number(s) * 1000); const apr_change_x1000 = x(apr_after_pct) - x(apr_before_pct);
   const exceeds = Math.abs(apr_change_x1000) > APR_TOLERANCE_X1000;
-  const dayAfterWait = addDays(addBusinessDays(i.corrected_cd_received_on, CD_WAITING_PERIOD_SBD, regzSpecific), 1);
-  const earliest = exceeds ? rollForward(dayAfterWait, i.cal ?? creditor) : i.scheduled_consummation_on;
+  // the third specific business day following receipt is itself a permitted consummation day; a closing is scheduled on a creditor business day
+  const thirdSpecificDay = (received: PlainDate): PlainDate => rollForward(addBusinessDays(received, CD_WAITING_PERIOD_SBD, regzSpecific), i.cal ?? creditor);
+  const earliest = exceeds ? thirdSpecificDay(i.corrected_cd_received_on) : i.scheduled_consummation_on;
   const closing_moves = earliest > i.scheduled_consummation_on;
-  return { apr_before_pct, apr_after_pct, apr_change_x1000, exceeds_apr_tolerance: exceeds, earliest_consummation_on: earliest, closing_moves,
-    text: closing_moves ? `Locking today moves your closing to ${earliest}: the corrected Closing Disclosure changes the APR by more than 1/8 percentage point (${apr_before_pct}% → ${apr_after_pct}%), which restarts the three-business-day waiting period.` : "Locking today does not move your closing date." };
+  const deemed_received_on = addBusinessDays(i.corrected_cd_received_on, MAILBOX_PRESUMPTION_SBD, regzSpecific);
+  const mailedEarliest = exceeds ? thirdSpecificDay(deemed_received_on) : i.scheduled_consummation_on;
+  const mailed = { placed_in_mail_on: i.corrected_cd_received_on, deemed_received_on, earliest_consummation_on: mailedEarliest, closing_moves: mailedEarliest > i.scheduled_consummation_on };
+  const closing_holds_only_with_confirmed_receipt = exceeds && !closing_moves && mailed.closing_moves;
+  const why = `the corrected Closing Disclosure changes the APR by more than 1/8 percentage point (${apr_before_pct}% → ${apr_after_pct}%), which restarts the three-business-day waiting period`;
+  const text = !exceeds ? "Locking today does not move your closing date."
+    : closing_moves ? `Locking today moves your closing to ${earliest}: ${why}.`
+    : closing_holds_only_with_confirmed_receipt ? `Locking today keeps your ${i.scheduled_consummation_on} closing only if you confirm receipt of the corrected Closing Disclosure today: ${why}; a mailed corrected Closing Disclosure would move your closing to ${mailed.earliest_consummation_on}.`
+    : `Locking today keeps your ${i.scheduled_consummation_on} closing: ${why}, and the corrected Closing Disclosure still reaches you in time.`;
+  return { apr_before_pct, apr_after_pct, apr_change_x1000, exceeds_apr_tolerance: exceeds, earliest_consummation_on: earliest, closing_moves, closing_holds_only_with_confirmed_receipt, mailed, text };
 }
 
 // ---- Rule 11 / guardrails: request → MLO approval → execution -------------------------------

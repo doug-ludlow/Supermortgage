@@ -21,7 +21,7 @@ import type { DecisionInput } from "../../infra/db/decisions.ts";
 import { levelPayment, ratePercent } from "../../kernel/money/cents.ts";
 import { type RateSheet, type LlpaTable, type SmCostSchedule, type QuoteContext, FNMA_LLPA_09_09_2026, publishRateSheet, loadLlpaTables } from "./ops-20-4.ts";
 import { type UniverseLoan, type GateFacts, type PipelineContext, type RefiOpportunity, DEFAULT_PROGRAM, SM_REFI_RULE_SET_V1, MA_183_28C, NO_GATE_FACTS, RefiRefused,
-  scheduledUpb, perDiem365, payoffEstimate, remainingInterest, npvOfDelta, balanceAfter, assertPi, buildCandidate, priceCandidate, computeBenefit, fireRule, borrowerInterestRule, cashoutNoteSeasoningGate, titleSeasoningGate, resolicitCooldownGate, premiumRecaptureGate, checkGates, assertGateOpen,
+  scheduledUpb, perDiem365, payoffEstimate, remainingInterest, npvOfDelta, balanceAfter, assertPi, buildCandidate, priceCandidate, computeBenefit, fireRule, borrowerInterestRule, cashoutNoteSeasoningGate, cashoutToLcorGate, titleSeasoningGate, resolicitCooldownGate, premiumRecaptureGate, checkGates, assertGateOpen,
   loadUniverse, staticCheckRuleSet, evaluateLoan, runTrigger, requestOpportunity, recordOffered, engageOpportunity, declineOpportunity, fnmaOwnershipCheck, assessPremiumRecapture, defaultSchedule, monthsBetween } from "./ops-20-1.ts";
 
 const AGENT: Actor = { kind: "agent", id: "intake" };
@@ -39,7 +39,7 @@ const grid45 = (rows: [string, string][]) => rows.map(([r, p]) => ({ product_cod
 /** Worked example 1's illustrative 45-day best-efforts sheet (6.375 → 101.875 … 5.875 → 99.750), published 06:35 ET, expiring 17:00 ET. */
 const SHEET = (events: MemoryEventStore, date = "2026-10-01", offset = "-04:00"): RateSheet => publishRateSheet(events, { rate_sheet_id: `rs-${date}`, partner_id: "partner-1", source: "pe_whole_loan_api", published_at: ET(date, "06:35", offset), expires_at: ET(date, "17:00", offset), published_by: "agent:pricing", prices: grid45([["6.375", "101.875"], ["6.250", "101.375"], ["6.125", "100.875"], ["6.000", "100.375"], ["5.875", "99.750"]]) }).sheet;
 const TABLES = (events: MemoryEventStore): LlpaTable[] => loadLlpaTables(events, FNMA_LLPA_09_09_2026, { at: ET("2026-09-10", "12:00"), status: "active" }).tables;
-/** The fixture loan on the subserviced book: $565,000, 30-year fixed 7.000 %, note Fri Sept 18, 2024, first payment Nov 1, 2024, 24 payments made; escrowed, no MI, Phoenix AZ; investor field populated in `loans` but hidden by `v_refi_universe`. */
+/** The fixture loan on the subserviced book: $565,000, 30-year fixed 7.000 %, note Wed Sept 18, 2024, first payment Nov 1, 2024, 24 payments made; escrowed, no MI, Phoenix AZ; investor field populated in `loans` but hidden by `v_refi_universe`. */
 const LOAN_A: UniverseLoan = { loan_id: "L-565", partner_id: "partner-1", status: "active", product_code: "FRM30", amortization: "fixed", note_date: D("2024-09-18"), first_payment_date: D("2024-11-01"), consummation_date: D("2024-09-18"), title_date: D("2019-06-14"),
   original_upb_cents: 56500000n, original_term_months: 360, note_rate_pct: "7.000", pi_cents: 375896n, payments_made: 24, upb_cents: 55310641n, next_due_date: D("2026-11-01"), remaining_term_months: 336,
   escrowed: true, escrow_monthly_cents: 55500n, net_escrow_deposit_estimate_cents: 300000n, taxes_annual_cents: 480000n, insurance_annual_cents: 186000n, mi_status: "none", mi_monthly_cents: 0n, occupancy: "primary", property_type: "sfr", units: 1, property_state: "AZ", county: "Maricopa", county_limit_cents: 83275000n,
@@ -156,6 +156,44 @@ test("20.1-T4: Given a cash-out request on 2026-10-05 for an existing loan with 
   assert.deepEqual(EVALUATORS_20_1["20.1.cashoutNoteSeasoningGate"]!({ note_date: "2025-11-20", new_note_date: "2026-11-06" }).open, false);
   assert.deepEqual(EVALUATORS_20_1["20.1.cashoutNoteSeasoningGate"]!({ note_date: "2025-11-20", new_note_date: "2026-11-20" }), { open: true });
   assert.throws(() => buildCandidate(loan, { transaction_type: "cash_out", schedule, as_of: D("2026-10-05") }), (e: unknown) => e instanceof RefiRefused && e.code === "cash_out_requires_borrower_request");
+  // B2-1.3-03's exceptions open the 12-month gate (subordinate liens paid off through the transaction; a co-owner buyout pursuant to a legal agreement); the anchor is always the first mortgage's note date
+  assert.equal(cashoutNoteSeasoningGate({ note_date: D("2025-11-20"), new_note_date: D("2026-11-06"), exception: "co_owner_buyout_legal_agreement" }).open, true);
+  assert.deepEqual(EVALUATORS_20_1["20.1.cashoutNoteSeasoningGate"]!({ note_date: "2025-11-20", new_note_date: "2026-11-06", exception: "subordinate_liens_only" }), { open: true });
+  // B2-1.3-04 (verified requirement, B2-1.3-02 paragraph): the LCOR substituted here is fine — the fixture's existing loan is the Nov 2025 PURCHASE, not a cash-out
+  assert.equal(o.gates.find((g) => g.code === "FNMA_B2_1_3_04_CASHOUT_TO_LCOR_30D")!.status, "open"); assert.equal(o.eligibility_prescreen!.seasoning_ok, true);
+  assert.equal(h.timers.byCode("FNMA_B2_1_3_04_CASHOUT_TO_LCOR_30D").length, 0);                                                                  // a cash-out detection never arms the LCOR gate
+  // … whereas an LCOR on an existing CASH-OUT refinance with note date Tue Sept 8, 2026 is not eligible while the application date is 30 days or less after it (day 30 = Thu Oct 8); the gate opens on day 31, Fri Oct 9
+  assert.deepEqual(cashoutToLcorGate({ loan_purpose: "cash_out", note_date: D("2026-09-08"), application_date: D("2026-10-08") }), { open: false, opens_on: "2026-10-09", reason: "existing cash-out note 2026-09-08 is 30 days before the 2026-10-08 application date (30 days or less): not eligible as a limited cash-out refinance until 2026-10-09 (B2-1.3-04)" });
+  assert.deepEqual(cashoutToLcorGate({ loan_purpose: "cash_out", note_date: D("2026-09-08"), application_date: D("2026-10-09") }), { open: true, opens_on: "2026-10-09", reason: null });
+  assert.deepEqual(cashoutToLcorGate({ loan_purpose: "purchase", note_date: D("2026-09-08"), application_date: D("2026-09-09") }), { open: true, opens_on: null, reason: null });
+  assert.equal(EVALUATORS_20_1["20.1.cashoutToLcorGate"]!({ loan_purpose: "cash_out", note_date: "2026-09-08", application_date: "2026-10-08" }).open, false); assert.deepEqual(EVALUATORS_20_1["20.1.cashoutToLcorGate"]!({ loan_purpose: "cash_out", note_date: "2026-09-08", as_of: "2026-10-09" }), { open: true });
+  const recent: UniverseLoan = { ...LOAN_A, loan_id: "L-recent-cashout", loan_purpose: "cash_out", note_date: D("2026-09-08"), consummation_date: D("2026-09-08"), first_payment_date: D("2026-11-01"), payments_made: 0, upb_cents: 56500000n, next_due_date: D("2026-11-01"), remaining_term_months: 360 };
+  const early = requestOpportunity(h.events, ctx, recent, NO_GATE_FACTS, { requested_at: ET("2026-10-05", "09:00"), free_text: "can I refinance?" });             // day 27
+  assert.equal(early.opportunity.status, "suppressed"); assert.deepEqual(early.opportunity.suppression_reasons, ["prescreen_failed", "cashout_to_lcor_30d"]); assert.equal(early.opportunity.eligibility_prescreen!.seasoning_ok, false);
+  assert.match(early.opportunity.eligibility_prescreen!.reasons[0]!, /not eligible as a limited cash-out refinance until 2026-10-09 \(B2-1\.3-04\)/);
+  assert.deepEqual(early.opportunity.gates.find((g) => g.code === "FNMA_B2_1_3_04_CASHOUT_TO_LCOR_30D")!.opens_on, "2026-10-09"); assert.equal(early.opportunity.candidate_terms!.transaction_type, "limited_cash_out");   // deferred, never re-labelled a cash-out
+  const sup = ofType(h.events, "refi.opportunity.suppressed").at(-1)!; assert.deepEqual([sup.payload.reason, sup.payload.opens_on, sup.payload.gate], ["cashout_to_lcor_30d", "2026-10-09", "FNMA_B2_1_3_04_CASHOUT_TO_LCOR_30D"]);
+  const armed = h.timers.byCode("FNMA_B2_1_3_04_CASHOUT_TO_LCOR_30D"); assert.equal(armed.length, 1); assert.equal(armed[0]!.anchorDate, "2026-09-08"); assert.equal(armed[0]!.note, "evaluator:20.1.cashoutToLcorGate");   // armed by refi.opportunity.detected{transaction_type=limited_cash_out, loan_purpose=cash_out}
+  const day31 = requestOpportunity(h.events, ctxOf(h.events, { as_of: "2026-10-09", at: ET("2026-10-09", "09:00"), sheet: SHEET(h.events, "2026-10-09"), run_id: null }), recent, NO_GATE_FACTS, { requested_at: ET("2026-10-09", "09:00"), free_text: "can I refinance?" });
+  assert.equal(day31.opportunity.status, "offer_ready"); assert.equal(day31.opportunity.eligibility_prescreen!.seasoning_ok, true); assert.equal(day31.opportunity.gates.find((g) => g.code === "FNMA_B2_1_3_04_CASHOUT_TO_LCOR_30D")!.status, "open");
+});
+
+test("20.1 B2-1.3-04 delivery in process: a loan in the closing-to-delivery pipeline (no `loan.purchased`) is suppressed on the proactive path with reason delivery_in_process; the borrower-request path proceeds only with the loan held out of delivery", () => {
+  const h = harness(ET("2026-10-01", "06:41")); const facts: GateFacts = { ...NO_GATE_FACTS, delivery_pending: true };
+  assert.deepEqual(loadUniverse(DEFAULT_PROGRAM, SM_REFI_RULE_SET_V1, [LOAN_A], { "L-565": facts }, D("2026-10-01")).excluded, [{ loan_id: "L-565", reason: "delivery_in_process", opens_on: null }]);
+  assert.deepEqual(loadUniverse(DEFAULT_PROGRAM, SM_REFI_RULE_SET_V1, [LOAN_A], { "L-565": facts }, D("2026-10-01"), "borrower_request").included.map((l) => l.loan_id), ["L-565"]);
+  const r = runOnce(h.events, ctxOf(h.events), [LOAN_A], { "L-565": facts });
+  assert.equal(r.opportunities[0]!.status, "suppressed"); assert.deepEqual(r.opportunities[0]!.suppression_reasons, ["delivery_in_process"]); assert.equal(r.run.suppressed_by_reason.delivery_in_process, 1);
+  assert.equal(ofType(h.events, "refi.opportunity.suppressed")[0]!.payload.reason, "delivery_in_process"); assert.equal(ofType(h.events, "refi.opportunity.offer_ready").length, 0);
+  const direct = evaluateLoan(h.events, ctxOf(h.events), LOAN_A, facts, { trigger_kind: "scheduled", path: "proactive" }); assert.equal(direct.opportunity.status, "suppressed"); assert.ok(direct.opportunity.suppression_reasons.includes("delivery_in_process"));
+  // the borrower asks Mon Oct 5: the request waits for 29.x to hold the loan out of delivery (partner officer escalation), then proceeds
+  const ctx5 = ctxOf(h.events, { as_of: "2026-10-05", at: ET("2026-10-05", "09:30"), sheet: SHEET(h.events, "2026-10-05"), run_id: null });
+  const waiting = requestOpportunity(h.events, ctx5, LOAN_A, facts, { requested_at: ET("2026-10-05", "09:30"), free_text: "can I refinance?" }, h.rt.escalations);
+  assert.equal(waiting.opportunity.status, "requested"); assert.equal(waiting.opportunity.delivery_hold_required, true); assert.equal(waiting.escalation!.kind, "officer"); assert.equal(waiting.quote, null);
+  assert.equal(ofType(h.events, "refi.opportunity.requested").at(-1)!.payload.delivery_hold_required, true); assert.equal(ofType(h.events, "refi.opportunity.offer_ready").length, 0);
+  assert.equal(h.rt.escalations.list().filter((e) => e.kind === "officer" && e.loanId === "L-565" && (e.payload as { reason?: string }).reason === "delivery_hold_required").length, 1);
+  const held = requestOpportunity(h.events, ctx5, LOAN_A, { ...facts, held_out_of_delivery: true }, { requested_at: ET("2026-10-05", "09:45"), free_text: "can I refinance?" }, h.rt.escalations);
+  assert.equal(held.opportunity.status, "offer_ready"); assert.equal(held.opportunity.delivery_hold_required, false); assert.equal(held.escalation, null); assert.equal(ofType(h.events, "refi.opportunity.requested").at(-1)!.payload.delivery_hold_required, false);
 });
 
 test("20.1-T5: Given the rule set references column `investor_id` (injected in a test build), then the static check fails and the run cannot start; given a `partner_programs.kind` whose product owner is SM, then `loadUniverse` refuses with `glba_use_violation`.", async () => {

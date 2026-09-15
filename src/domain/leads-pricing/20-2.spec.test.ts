@@ -217,13 +217,13 @@ test("20.2-T5: Given an inbound \"STOP\" at 2026-10-06 13:02, then `consent.revo
   assert.deepEqual([q.ingestion.revoked, q.suppression, ofType(h.events, "sms.confirmation.queued").length], [false, null, 1]);
 });
 
-test("20.2-T6: Given an email opt-out received 2026-10-06, then `CANSPAM_7704_A4_OPTOUT_10BD.due_at = 2026-10-20` and `marketing_suppressions{email_optout}` is recorded the same day; an email queued 2026-10-07 is suppressed.", async () => {
+test("20.2-T6: Given an email opt-out received 2026-10-06, then `CANSPAM_7704_A4_OPTOUT_10BD.due_at = 2026-10-21` and `marketing_suppressions{email_optout}` is recorded the same day; an email queued 2026-10-07 is suppressed.", async () => {
   const h = harness(MST("2026-10-06", "10:00")); const { creatives } = seedCampaign(h);
   const out = await h.run("scheduleTouch", { op: "record_suppression", suppression_id: "sup-email-1", kind: "email_optout", party_id: "party-1", loan_id: "loan-1", email_id: "email-1", requested_at: MST("2026-10-06", "10:00"), channel_received: "email", source_touch_id: "t-email-1", time_zone: PHOENIX });
   assert.deepEqual([out.kind, out.requested_on, out.processed_at, out.honor_until], ["email_optout", "2026-10-06", MST("2026-10-06", "10:00"), null]);   // recorded the same day (policy: immediate at commit)
   const t = h.timers.byCode("CANSPAM_7704_A4_OPTOUT_10BD"); assert.equal(t.length, 1);
   assert.equal(t[0]!.anchorDate, "2026-10-06");
-  assert.equal(t[0]!.dueDate, "2026-10-21");   // spec says 2026-10-20; +10 business_days_servicer from Tue Oct 6 skips Columbus Day (Mon Oct 12): Oct 7, 8, 9, 13, 14, 15, 16, 19, 20, 21 — the same off-by-one the verification report corrected for the TCPA ceiling
+  assert.equal(t[0]!.dueDate, "2026-10-21");   // +10 business_days_servicer from Tue Oct 6 skips Columbus Day (Mon Oct 12): Oct 7, 8, 9, 13, 14, 15, 16, 19, 20, 21 (worked example 2: the same day as the TCPA ceiling's 10 business_days_federal)
   assert.equal(t[0]!.status, "satisfied");
   assert.deepEqual(ofType(h.events, "marketing.suppression.requested").map((e) => e.payload.kind), ["email_optout"]);
   assert.equal((out as { legal_due_on: string }).legal_due_on, "2026-10-21");

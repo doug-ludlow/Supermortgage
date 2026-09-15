@@ -48,6 +48,8 @@ import { makeMin } from "../domain/boarding/min.ts";
 import { PARTNER_ORG } from "../domain/boarding/fixtures.ts";
 import { boardFundedApplication, noteTermsHash, ORIGINATION_CONSENT_CLASSES, SERVICING_CONSENT_CLASSES, type LetterRecord, type LoanFundedPayload, type OrigExternal, type OrigValidation, type OriginationSnapshot } from "../domain/orig-boarding/ops-30-2.ts";
 import { DEFAULT_LICENSED_STATES } from "./transfers.ts";
+import { wallClock } from "../kernel/calendar/zoned.ts";
+import { onLoanBoardedProject, onLoanBoardedPersist, type BoardingProjection } from "../domain/operations-runtime/boarding-hook.ts";
 import type { Runtime } from "./app.ts";
 
 export class ApplicationNotFound extends Error { constructor(id: string) { super(`no application ${id}`); this.name = "ApplicationNotFound"; } }
@@ -127,6 +129,7 @@ export async function fundApplication(rt: Runtime, applicationId: string, snapsh
 
   let escalations: EscalationService | undefined;
   let outcome: Awaited<ReturnType<typeof boardFundedApplication>> | undefined;
+  let boarding35: BoardingProjection | undefined;
   const r = await rt.uow.run(scope, async (ctx) => {
     escalations = new EscalationService(ctx.events, ctx.clock);
     const notices = rt.ports.printMail && rt.ports.edelivery ? new NoticeService({ registry: rt.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: rt.ports.printMail, edelivery: rt.ports.edelivery }) : undefined;
@@ -140,6 +143,12 @@ export async function fundApplication(rt: Runtime, applicationId: string, snapsh
     const rec = res.service.record(applicationId);
     const summary: Record<string, unknown> = { application_id: applicationId, loan_id: loanId, servicing_loan_number: res.servicing_loan_number, status: res.status, validations: res.validations, opening_entry_set_id: res.ledger_set?.id ?? null, letters: res.letters, funded_event_id: rec.funded_event_id, boarded_at: rec.boarded_at ?? null, snapshot_hash: rec.mapped.snapshot_hash };
     store.put(ENTITY_KIND, applicationId, summary, actor, ctx.clock.now());
+    // 35.5 rules 1 and 9: the installment schedule and the servicing configuration in the same transaction as `loan.boarded` — projected here
+    // (events, clocks, decisions prepared), persisted by the commit hook once the `before` hook has written loans / loan_terms v1
+    const m = rec.mapped; const t = m.loan_terms;
+    boarding35 = await onLoanBoardedProject(rt.db, ctx, { loan_id: loanId, source: "fund", terms_id: null, upb_cents: m.loans.original_loan_amount_cents, first_due: m.loans.first_payment_date, first_payment_date: m.loans.first_payment_date, maturity_date: m.loans.maturity_date,
+      original_upb_cents: m.loans.original_loan_amount_cents, original_term_months: t.original_term_months, note_rate_pct: t.note_rate, note_rate_bps: pctToScaled(t.note_rate, 10_000), pi_cents: t.pi_cents, escrow_payment_cents: t.escrow_payment_cents + t.mi_premium_cents, amortization: t.amortization_type,
+      state: snapshot.property.state ?? null, late_charge_pct: (pctToScaled(t.late_charge_pct, 1000) / 1000).toFixed(3), late_charge_grace_days: t.late_charge_grace_days, boarded_on: wallClock(Date.parse(rec.boarded_at ?? ctx.clock.now()), "America/New_York").date }, { registry: rt.registry, escalations });
     return res;
   }, {
     clock: rt.clock,
@@ -148,6 +157,7 @@ export async function fundApplication(rt: Runtime, applicationId: string, snapsh
     commit: async (q) => {
       await rt.entities.save(store.versionsSince(mark), scope, q);
       for (const e of escalations?.list() ?? []) await rt.escalationRepo.save(e, q);
+      if (boarding35) await onLoanBoardedPersist(q, rt.uow.decisions, boarding35);   // 35.5: installment_schedule_runs, loan_installments, loan_servicing_configs and their decisions
     },
   });
   const res = r.result;

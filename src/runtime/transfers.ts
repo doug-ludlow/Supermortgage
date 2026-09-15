@@ -26,6 +26,8 @@ import { BoardingService, type BatchLoan, type Scorecard } from "../domain/board
 import type { BatchContext, ExternalPositions, FnmaPosition, MersRecord } from "../domain/boarding/types.ts";
 import { decodeTransferBatch, type TransferBatchFiles } from "../domain/boarding/tape-codec.ts";
 import { EscalationService } from "../app/escalations.ts";
+import { wallClock } from "../kernel/calendar/zoned.ts";
+import { onLoanBoardedProject, onLoanBoardedPersist } from "../domain/operations-runtime/boarding-hook.ts";
 import type { Runtime } from "./app.ts";
 
 export interface TransferBatchInput {
@@ -144,10 +146,16 @@ export async function boardTransferBatch(rt: Runtime, input: TransferBatchInput,
       await q.query(`INSERT INTO loan_borrowers (loan_id, borrower_id, role, is_primary) VALUES ($1, $2, 'borrower', true)`, [bl.id, b[0]!.id]);
       if (isBoarded) {
         const a = s.arm ?? {};
-        await q.query(`INSERT INTO loan_terms (loan_id, effective_from, source, amortization, note_rate_bps, pi_cents, escrow_payment_cents, escrowed, interest_method, remittance_type, late_charge_pct_bps, late_charge_grace_days, maturity_date, remaining_term_months, deferred_principal_cents, forborne_principal_cents, arm_index, arm_margin_bps, arm_initial_cap_bps, arm_periodic_cap_bps, arm_lifetime_cap_bps, arm_lookback_days)
-          VALUES ($1, $2, 'boarding', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)`,
+        const terms = await q.query<{ id: string }>(`INSERT INTO loan_terms (loan_id, effective_from, source, amortization, note_rate_bps, pi_cents, escrow_payment_cents, escrowed, interest_method, remittance_type, late_charge_pct_bps, late_charge_grace_days, maturity_date, remaining_term_months, deferred_principal_cents, forborne_principal_cents, arm_index, arm_margin_bps, arm_initial_cap_bps, arm_periodic_cap_bps, arm_lifetime_cap_bps, arm_lookback_days)
+          VALUES ($1, $2, 'boarding', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) RETURNING id`,
           [bl.id, input.transfer_date, s.amortization, pctToBps(s.note_rate_pct, 10_000) ?? 0, s.pi_cents ?? 0n, s.escrow_payment_cents, s.escrowed, s.interest_method ?? "30_360", s.remittance_type ?? "A/A", pctToBps(s.late_charge_pct, 1000), s.late_charge_grace_days, s.maturity_date ?? input.transfer_date,
             s.first_payment_date && s.next_due_date && s.original_term_months !== null ? s.original_term_months - monthsBetween(s.first_payment_date, s.next_due_date) : null, s.deferred_principal_cents, s.forborne_principal_cents, a.index ?? null, a.margin_bps ?? null, a.initial_cap_bps ?? null, a.periodic_cap_bps ?? null, a.lifetime_cap_bps ?? null, a.lookback_days ?? null]);
+        // 35.5 rules 1 and 9: the installment schedule and the servicing configuration in this transaction, against the batch's log, engine and clock
+        // (src/domain/operations-runtime/boarding-hook.ts): the rows from the tape's UPB and next due date; a refusal rolls the batch back
+        const projected = await onLoanBoardedProject(q, { events, timers, clock }, { loan_id: bl.id, source: "transfer", terms_id: terms[0]!.id, upb_cents: s.upb_cents ?? 0n, first_due: s.next_due_date ?? input.transfer_date, first_payment_date: s.first_payment_date ?? s.instrument_date, maturity_date: s.maturity_date ?? input.transfer_date,
+          original_upb_cents: s.original_upb_cents, original_term_months: s.original_term_months, note_rate_pct: s.note_rate_pct ?? "0", note_rate_bps: pctToBps(s.note_rate_pct, 10_000) ?? 0, pi_cents: s.pi_cents, escrow_payment_cents: s.escrow_payment_cents, amortization: s.amortization,
+          state: s.property.state, late_charge_pct: ((pctToBps(s.late_charge_pct, 1000) ?? 5000) / 1000).toFixed(3), late_charge_grace_days: s.late_charge_grace_days ?? 15, boarded_on: wallClock(Date.parse(clock.now()), "America/New_York").date }, { registry: rt.registry, escalations, batchId: uuid });
+        await onLoanBoardedPersist(q, rt.uow.decisions, projected);
       }
       await q.query(`INSERT INTO transfer_batch_loans (id, batch_id, transferor_loan_number, fnma_loan_number, min, loan_id, boarding_status, boarding_hold, default_status_at_boarding, regx_days_delinquent_at_boarding, fnma_delinquency_status_at_boarding, fdcpa_debt_collector_flag, lossmit_in_process, fc_active, bk_active, scra_active, sii_present, emortgage, acp_enrolled)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,

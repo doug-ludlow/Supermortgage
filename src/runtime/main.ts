@@ -26,6 +26,7 @@ import { Runtime } from "./app.ts";
 import { createApiServer, listen } from "./server.ts";
 import { boardTransferBatch } from "./transfers.ts";
 import { generateDemoBatch, DEMO_BATCH } from "../domain/boarding/demo-batch.ts";
+import { registerReprojectionReactor } from "../domain/operations-runtime/installments.ts";
 import { encodeTransferBatch } from "../domain/boarding/tape-codec.ts";
 import { seedEntryDemo } from "./entry-seed.ts";
 import { seedPartnerBookDemo } from "./partner-book.ts";
@@ -57,6 +58,8 @@ const rateFeed = rateFeedFromEnv(process.env); const reviewers = fakeReviewersFr
 const demoClock = config.environment === "production" ? null : await loadDemoClock(db, { logger });
 const clock = demoClock ?? systemClock;
 const runtime = new Runtime({ db, registry: loadOverriddenRegistry(), rateFeed, reviewers, logger, clock });
+// 35.5 rule 3: every committed `loan_terms.*` event (2.4, 7.2, 3.6, 12.8) re-projects the loan's installment schedule through `installments.reproject` on the bus
+registerReprojectionReactor(runtime);
 
 if (mode === "sweep") {
   try {

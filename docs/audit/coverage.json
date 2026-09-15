@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 8034/8756 (91.8%): tids 2244/2458, tables 765/848, timers 2042/2097, notices 308/308, tools 1433/1578, figures 1242/1467; processes at 100%: 192/205",
+ "brief": "spec units built 8104/8756 (92.6%): tids 2249/2458, tables 768/848, timers 2045/2097, notices 308/308, tools 1439/1578, figures 1295/1467; processes at 100%: 192/205",
  "totals": {
   "tids": {
    "spec": 2458,
-   "built": 2244
+   "built": 2249
   },
   "tables": {
    "spec": 848,
-   "built": 765
+   "built": 768
   },
   "timers": {
    "spec": 2097,
-   "built": 2042
+   "built": 2045
   },
   "notices": {
    "spec": 308,
@@ -19,15 +19,15 @@
   },
   "tools": {
    "spec": 1578,
-   "built": 1433
+   "built": 1439
   },
   "figures": {
    "spec": 1467,
-   "built": 1242
+   "built": 1295
   },
   "units": {
    "spec": 8756,
-   "built": 8034
+   "built": 8104
   }
  },
  "sections": {
@@ -237,7 +237,7 @@
   },
   "35": {
    "spec": 715,
-   "built": 10,
+   "built": 80,
    "processes": 12,
    "done": 0
   }
@@ -8538,26 +8538,22 @@
    },
    "figures": {
     "spec": 11,
-    "built": 0,
+    "built": 4,
     "missing": [
      "$1,234.56",
      "$1,912.65",
      "$1,914.67",
      "$1,916.67",
      "$116.71",
-     "$2,334.29",
-     "$2,946.79",
-     "$400,000.00",
      "$5,743.99",
-     "$6,010.29",
-     "$612.50"
+     "$6,010.29"
     ]
    },
    "units": {
     "spec": 58,
-    "built": 2
+    "built": 6
    },
-   "pct": 3.4
+   "pct": 10.3
   },
   {
    "process": "35.3",
@@ -8717,9 +8713,8 @@
    },
    "figures": {
     "spec": 19,
-    "built": 0,
+    "built": 1,
     "missing": [
-     "$0.00",
      "$1,233,000.00",
      "$1,250.00",
      "$1,253,050.55",
@@ -8742,21 +8737,18 @@
    },
    "units": {
     "spec": 55,
-    "built": 0
+    "built": 1
    },
-   "pct": 0.0
+   "pct": 1.8
   },
   {
    "process": "35.5",
    "title": "The installment schedule and the daily cashiering cycle: `loan_installments` at fund and at transfer boarding, the whole-book 2.1/2.7/2.3 sweep, lockbox ingest, ACH origination and NACHA returns as cycles, and the per-loan jurisdiction, time-zone and servicer-identity configuration",
    "tids": {
     "spec": 16,
-    "built": 0,
-    "todo": 16,
+    "built": 5,
+    "todo": 11,
     "missing": [
-     1,
-     2,
-     3,
      4,
      5,
      6,
@@ -8765,8 +8757,6 @@
      9,
      10,
      11,
-     12,
-     13,
      14,
      15,
      16
@@ -8774,28 +8764,22 @@
    },
    "tables": {
     "spec": 8,
-    "built": 1,
+    "built": 4,
     "missing": [
      "ach_return_files",
      "cashiering_unit_runs",
-     "installment_schedule_runs",
-     "loan_servicing_configs",
      "lockbox_batches",
-     "lockbox_items",
-     "servicer_profiles"
+     "lockbox_items"
     ]
    },
    "timers": {
     "spec": 8,
-    "built": 1,
+    "built": 4,
     "armable": 8,
     "missing": [
      "SM_ACH_FILE_BUILD_1BD",
      "SM_ACH_RETURN_ACTIONED_1BD",
      "SM_CASHIERING_DAILY_RECEIPT_1D",
-     "SM_INSTALLMENT_REPROJECT_1BD",
-     "SM_INSTALLMENT_SCHEDULE_AT_BOARD_0",
-     "SM_LOAN_SERVICING_CONFIG_AT_BOARD_0",
      "SM_LOCKBOX_BATCH_POSTED_1BD"
     ]
    },
@@ -8806,86 +8790,43 @@
    },
    "tools": {
     "spec": 12,
-    "built": 0,
+    "built": 6,
     "missing": [
-     "installments.write",
-     "installments.reproject",
-     "installments.read",
      "cashiering.run_unit",
      "lockbox.ingest",
      "lockbox.item.resolve",
      "ach.file.build",
      "ach.returns.ingest",
-     "ach.return.action",
-     "servicing_config.write",
-     "servicer_profile.write",
-     "writeDecision"
+     "ach.return.action"
     ]
    },
    "figures": {
     "spec": 53,
-    "built": 0,
+    "built": 37,
     "missing": [
      "$1,351.71",
      "$1,500.00",
-     "$1,517.11",
-     "$1,519.15",
      "$1,580.17",
-     "$1,890.67",
-     "$1,896.20",
-     "$1,900.91",
-     "$1,971.20",
      "$1.00",
-     "$10.24",
      "$100.00",
-     "$17.27",
      "$2,192.57",
      "$2,292.57",
      "$2,308.50",
-     "$2,334.29",
-     "$2,476.44",
-     "$2,855.56",
-     "$2,858.33",
-     "$2,946.79",
      "$228.46",
      "$249,218.31",
      "$249,546.77",
      "$249,774.00",
-     "$25.00",
-     "$279,702.10",
-     "$280,081.19",
-     "$280,458.24",
-     "$3,088.94",
-     "$3,384.35",
-     "$3,401.62",
-     "$3,402.62",
-     "$300,000.00",
-     "$370,543.62",
-     "$371,048.86",
-     "$377.05",
-     "$379.09",
-     "$4.71",
-     "$400,000.00",
-     "$412.30",
-     "$505.24",
-     "$544.29",
-     "$547.06",
-     "$558,908.65",
-     "$559,455.71",
-     "$560,000.00",
      "$6,000.07",
      "$6,001.07",
      "$612.40",
-     "$612.50",
-     "$664,942.20",
      "$79.01"
     ]
    },
    "units": {
     "spec": 97,
-    "built": 2
+    "built": 56
    },
-   "pct": 2.1
+   "pct": 57.7
   },
   {
    "process": "35.6",
@@ -8961,9 +8902,8 @@
    },
    "figures": {
     "spec": 40,
-    "built": 0,
+    "built": 4,
     "missing": [
-     "$0.00",
      "$1,067.72",
      "$1,096.67",
      "$1,240.00",
@@ -8974,8 +8914,6 @@
      "$10,052.69",
      "$2,062.50",
      "$2,774.00",
-     "$25.00",
-     "$3,402.62",
      "$3,485.00",
      "$4,090.12",
      "$403,760.00",
@@ -8989,7 +8927,6 @@
      "$549,550.64",
      "$556,852.07",
      "$557,249.57",
-     "$560,000.00",
      "$564,503.33",
      "$566,300.00",
      "$6,579.52",
@@ -9007,9 +8944,9 @@
    },
    "units": {
     "spec": 80,
-    "built": 2
+    "built": 6
    },
-   "pct": 2.5
+   "pct": 7.5
   },
   {
    "process": "35.7",
@@ -9176,7 +9113,7 @@
    },
    "figures": {
     "spec": 22,
-    "built": 0,
+    "built": 1,
     "missing": [
      "$1,345.02",
      "$1,352.94",
@@ -9193,7 +9130,6 @@
      "$34.00",
      "$44.22",
      "$556,852.07",
-     "$560,000.00",
      "$612.40",
      "$619.08",
      "$700.00",
@@ -9204,9 +9140,9 @@
    },
    "units": {
     "spec": 63,
-    "built": 0
+    "built": 1
    },
-   "pct": 0.0
+   "pct": 1.6
   },
   {
    "process": "35.9",
@@ -9400,9 +9336,8 @@
    },
    "figures": {
     "spec": 27,
-    "built": 0,
+    "built": 4,
     "missing": [
-     "$0.00",
      "$107.30",
      "$2,062.50",
      "$2,521.38",
@@ -9420,12 +9355,9 @@
      "$443,503.04",
      "$443,765.81",
      "$450,000.00",
-     "$559,455.71",
-     "$560,000.00",
      "$561,977.09",
      "$562,084.39",
      "$575,000.00",
-     "$612.50",
      "$687.50",
      "$87.59",
      "$93.88"
@@ -9433,9 +9365,9 @@
    },
    "units": {
     "spec": 65,
-    "built": 0
+    "built": 4
    },
-   "pct": 0.0
+   "pct": 6.2
   },
   {
    "process": "35.11",
@@ -9608,22 +9540,20 @@
    },
    "figures": {
     "spec": 7,
-    "built": 0,
+    "built": 2,
     "missing": [
      "$1,250.00",
      "$248,310.55",
      "$3,412.92",
      "$3,417.92",
-     "$5.00",
-     "$62.50",
      "$67.50"
     ]
    },
    "units": {
     "spec": 58,
-    "built": 2
+    "built": 4
    },
-   "pct": 3.4
+   "pct": 6.9
   }
  ]
 }

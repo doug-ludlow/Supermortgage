@@ -43,7 +43,7 @@ import { PgNoticeRepository } from "../../infra/db/notices.ts";
 import type { EdeliveryPort, EdeliveryMessage } from "../../infra/integrations/delivery.ts";
 import { FakeEdelivery } from "../../infra/integrations/delivery.ts";
 import { plainDate } from "../../kernel/calendar/date.ts";
-import { SERVICER_CONTACT } from "../servicing.ts";
+import { FAKE_SERVICER_PROFILE_V1 } from "../../domain/operations-runtime/servicing-config.ts";
 import type { Runtime } from "../app.ts";
 import type { Logger } from "../log.ts";
 import { PgStaffRepository, emailHash, encryptEmail, decryptEmail, isEmail, normalizeEmail, newToken, hashToken, hashCode, staffEmailKey, type StaffUserRow, type StaffSessionRow, type StaffChallengeRow, type StaffFactor, type PasskeySecret } from "./repo.ts";
@@ -343,7 +343,7 @@ export async function staffInvite(d: StaffActDeps, i: InviteInput): Promise<Invi
     const edelivery: EdeliveryPort = { send: (m: EdeliveryMessage, now: string) => real.send(m.noticeId === notice?.id ? { ...m, messageId: `staff_invite:${id}:${m.messageId.split(":").pop() ?? "1"}`, subject } : m, now), events: (since: string) => real.events(since) };
     const notices = new NoticeService({ registry: rt.noticeRegistry, events: d.events, clock: d.clock, printMail: rt.ports.printMail, edelivery, notices: rt.noticeMemory });
     const recipient: Recipient = { partyId: id, name: legal_name ?? "Colleague", mailingAddress: null, email: normalizeEmail(i.email) };
-    notice = notices.render({ templateCode: STAFF_INVITATION_TEMPLATE, recipients: [recipient], payload: { inviter_name, roles: roles.join(", "), sign_in_url: opsSignInUrl(), platform_postal_address: SERVICER_CONTACT.servicer_address }, asOf: plainDate(d.now.slice(0, 10)) });
+    notice = notices.render({ templateCode: STAFF_INVITATION_TEMPLATE, recipients: [recipient], payload: { inviter_name, roles: roles.join(", "), sign_in_url: opsSignInUrl(), platform_postal_address: FAKE_SERVICER_PROFILE_V1.servicer_address }, asOf: plainDate(d.now.slice(0, 10)) });
     if (notice.status === "held") held_reason = notice.heldReason ?? "held";
     else { try { const sent = await notices.send(notice.id); bounced = sent.deliveries.some((x) => x.emailStatus === "bounced"); } catch (e) { if (notice.deliveries.some((x) => x.emailStatus === "bounced")) bounced = true; else throw e; } }
     const n = notice;

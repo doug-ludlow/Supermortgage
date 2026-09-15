@@ -39,29 +39,27 @@ import type { Consent, ConsentStatus } from "../domain/notices/esign.ts";
 import { StatementCycleService } from "../domain/notices/ops-7-1.ts";
 import { DISCLOSURES_AGENT as STATEMENT_AGENT } from "../notices/service.ts";   // the `disclosures` agent constant lives in src/notices/service.ts (ops-7-1.ts exports none) — import path corrected by the 32.5 build to unblock the shared journey fixture
 import { requestForm1098Furnish, recordBounceSuspect } from "../domain/notices/ops-7-4.ts";
+import { escrowPortionOn, escrowVersionFrom, readSchedule, type LoanTerms } from "../domain/operations-runtime/installments.ts";
+import { servicerBlockFor, servicingConfigIfAny, type ServicerBlock } from "../domain/operations-runtime/servicing-config.ts";
 import type { Runtime } from "./app.ts";
 
+// 35.5 rule 4 / rule 9: the schedule arithmetic and the terms type live with the schedule (src/domain/operations-runtime/installments.ts); the importers of this module keep their names
+export { escrowPortionOn, type LoanTerms };
+
 export const CASHIERING_AGENT: Actor = { kind: "agent", id: "cashiering" };
-/** FAKE servicer contact block every servicing notice carries (the authored samples' values; no real address). */
-export const SERVICER_CONTACT = { servicer_name: "Supermortgage LLC", servicer_tin: "12-3456789", servicer_phone: "(800) 555-0100", servicer_address: "PO Box 1, Testville TX 75001", exclusive_address: "PO Box 2, Testville TX 75001", remittance_address: "Supermortgage, PO Box 7, Testville TX 75001", portal_url: "https://portal.example.com/statements", counselor_url: "consumerfinance.gov/find-a-housing-counselor", hud_phone: "(800) 569-4287" } as const;
+// The servicer block every servicing notice carries is the loan's `servicer_profiles` version in force on the notice date (35.5 rule 9,
+// src/domain/operations-runtime/servicing-config.ts servicerBlockFor) — the FAKE build's seeded version 1 carries the former constant's values.
 type Row = Record<string, unknown>;
 const c = (v: unknown): Cents => (typeof v === "bigint" ? v : v === undefined || v === null || v === "" ? 0n : BigInt(String(v)));
 const s = (v: Cents): string => v.toString();
 
 export interface LoanRow { readonly id: string; readonly instrument_date: PlainDate; readonly original_upb_cents: Cents; readonly first_payment_date: PlainDate; readonly boarded_at: string | null; readonly servicer_loan_number: string; readonly partner_party_id: string; readonly property_id: string; readonly status: string; readonly origination_application_id: string | null; }
-export interface LoanTerms { readonly pi_cents: Cents; readonly escrow_payment_cents: Cents; readonly note_rate_bps: number; readonly late_charge_pct: string; readonly late_charge_grace_days: number; readonly late_charge_max_cents: Cents | null; readonly escrowed: boolean; readonly escrow_version: { escrow_payment_cents: Cents; effective_from: PlainDate; step_down_on: PlainDate | null; step_down_to_cents: Cents | null } | null; }
 export interface LoanFacts { readonly loan: LoanRow; readonly terms: LoanTerms; readonly custodial: { clearing: string; pi: string; ti: string } | null; readonly state: LoanCashState; readonly store: EntityStore; readonly balances: { principal: Cents; escrow: Cents; suspense_unapplied: Cents; late_charges: Cents; interest_due: Cents }; readonly received_payments: Row[]; }
 
 async function balances(db: Queryable, loanId: string): Promise<LoanFacts["balances"]> {
   const rows = await db.query<{ account: string; s: string }>(`SELECT account, sum(amount_cents)::text AS s FROM ledger_lines WHERE scope = 'loan' AND loan_id = $1 GROUP BY account`, [loanId]);
   const of = (a: string): Cents => c(rows.find((r) => r.account === a)?.s ?? "0");
   return { principal: of("principal"), escrow: -of("escrow"), suspense_unapplied: -of("suspense_unapplied"), late_charges: -of("late_charges"), interest_due: -of("interest_due") };
-}
-/** The escrow portion of the installment due on `due`: the 3.6 loan_terms version from its effective date (and the step-down after the plan) else the boarded terms. */
-export function escrowPortionOn(terms: LoanTerms, due: PlainDate): Cents {
-  const v = terms.escrow_version;
-  if (v && due >= v.effective_from) { if (v.step_down_on && due >= v.step_down_on && v.step_down_to_cents !== null) return v.step_down_to_cents; return v.escrow_payment_cents; }
-  return terms.escrow_payment_cents;
 }
 /** The 2.x LoanCashState of a boarded loan as of a date — every installment from the first payment date through the month after `asOf`, satisfied where a posted payment applied it. */
 export async function loanCashState(rt: Runtime, loanId: string, asOf: PlainDate): Promise<LoanFacts> {
@@ -70,11 +68,13 @@ export async function loanCashState(rt: Runtime, loanId: string, asOf: PlainDate
   const termsRow = (await rt.db.query<Row>(`SELECT pi_cents::text AS pi_cents, escrow_payment_cents::text AS escrow_payment_cents, note_rate_bps, late_charge_pct_bps, late_charge_grace_days, late_charge_max_cents::text AS late_charge_max_cents, escrowed FROM loan_terms WHERE loan_id = $1 ORDER BY effective_from DESC, created_at DESC LIMIT 1`, [loanId]))[0];
   if (!termsRow) throw new RangeError(`no loan_terms for ${loanId}`);
   const store = new EntityStore(); store.seed(await rt.entities.load({ loanId }));
-  const lt = store.get("loan_terms", loanId)?.data;
-  const escrowVersion = lt && lt.escrow_payment_cents !== undefined && typeof lt.escrow_payment_effective_from === "string" ? { escrow_payment_cents: c(lt.escrow_payment_cents), effective_from: D(lt.escrow_payment_effective_from), step_down_on: typeof lt.escrow_step_down_on === "string" ? D(lt.escrow_step_down_on) : null, step_down_to_cents: lt.escrow_step_down_to_cents !== undefined ? c(lt.escrow_step_down_to_cents) : null } : null;
+  const escrowVersion = escrowVersionFrom(store.get("loan_terms", loanId)?.data);
   const loan: LoanRow = { id: loanId, instrument_date: D(String(loanRow.instrument_date)), original_upb_cents: c(loanRow.original_upb_cents), first_payment_date: D(String(loanRow.first_payment_date)), boarded_at: (loanRow.boarded_at as string | null) ?? null, servicer_loan_number: String(loanRow.servicer_loan_number ?? ""), partner_party_id: String(loanRow.partner_party_id), property_id: String(loanRow.property_id), status: String(loanRow.status), origination_application_id: (loanRow.origination_application_id as string | null) ?? null };
   const bps = Number(termsRow.late_charge_pct_bps ?? 5000);
-  const terms: LoanTerms = { pi_cents: c(termsRow.pi_cents), escrow_payment_cents: c(termsRow.escrow_payment_cents), note_rate_bps: Number(termsRow.note_rate_bps), late_charge_pct: String(bps / 1000), late_charge_grace_days: Number(termsRow.late_charge_grace_days ?? 15), late_charge_max_cents: termsRow.late_charge_max_cents === null || termsRow.late_charge_max_cents === undefined ? null : c(termsRow.late_charge_max_cents), escrowed: termsRow.escrowed === true, escrow_version: escrowVersion };
+  // 35.5 rule 9: the late-charge terms 2.7 assesses are the configuration row's (2.7's lateChargeTerms against the state's bound at boarding); the note's when the loan has no row yet
+  const config = await servicingConfigIfAny(rt.db, loanId, asOf);
+  const lc = config?.late_charge_terms;
+  const terms: LoanTerms = { pi_cents: c(termsRow.pi_cents), escrow_payment_cents: c(termsRow.escrow_payment_cents), note_rate_bps: Number(termsRow.note_rate_bps), late_charge_pct: lc?.pct ?? String(bps / 1000), late_charge_grace_days: lc?.grace_days ?? Number(termsRow.late_charge_grace_days ?? 15), late_charge_max_cents: termsRow.late_charge_max_cents === null || termsRow.late_charge_max_cents === undefined ? null : c(termsRow.late_charge_max_cents), escrowed: termsRow.escrowed === true, escrow_version: escrowVersion };
   const bal = await balances(rt.db, loanId);
   const cust = await rt.db.query<{ id: string; kind: string }>(`SELECT id, kind FROM custodial_accounts WHERE partner_party_id = $1 AND kind IN ('clearing', 'pi', 'ti') ORDER BY created_at`, [loan.partner_party_id]);
   const last = (kind: string): string | undefined => cust.filter((x) => x.kind === kind).at(-1)?.id;
@@ -84,13 +84,31 @@ export async function loanCashState(rt: Runtime, loanId: string, asOf: PlainDate
   for (const p of payments) if (p.status === "posted" && Array.isArray(p.installments)) for (const due of p.installments as string[]) satisfied.set(due, { payment_id: String(p.payment_id ?? ""), credited_as_of: D(String(p.credited_as_of ?? p.received_on)), received_on: D(String(p.received_on)) });
   const installments: InstallmentProjection[] = [];
   const horizon = addMonths(asOf, 1);
-  for (let due = loan.first_payment_date, k = 0; due <= horizon && k < 480; due = addMonths(loan.first_payment_date, ++k)) {
-    const hit = satisfied.get(due);
-    installments.push({ due_date: due, pi_cents: terms.pi_cents, escrow_cents: escrowPortionOn(terms, due), status: hit ? "satisfied" : "due", ...(hit ? { satisfied_on: hit.received_on, credited_as_of: hit.credited_as_of, satisfied_by_payment_id: hit.payment_id } : {}) });
+  // 35.5 rule 4: the engines read the schedule — the loan_installments rows 35.5 wrote at boarding / reprojection (schedule_run_id set), each row's own
+  // P&I, escrow and status, a posted payment in the store overlaying `satisfied`; a loan without a written schedule (a fixture boarded by hand) keeps the projection loop
+  const written = (await readSchedule(rt.db, loanId, { to: horizon })).filter((r) => r.schedule_run_id !== null);
+  let lpiFromRows: PlainDate | null = null;
+  if (written.length) {
+    for (const r of written) {
+      const hit = satisfied.get(r.due_date);
+      const rowSatisfied = r.status === "satisfied" || r.status === "prepaid";
+      // 3.6's effective-dated escrow version in the entity store overlays the row's escrow column until the reprojection reactor rewrites it (rule 3: "3.x escrow changes (escrow column only)")
+      installments.push({ due_date: r.due_date, pi_cents: r.pi_cents, escrow_cents: escrowVersion ? escrowPortionOn({ escrow_payment_cents: r.escrow_cents, escrow_version: escrowVersion }, r.due_date) : r.escrow_cents, status: hit ? "satisfied" : (r.status as InstallmentProjection["status"]),
+        ...(hit ? { satisfied_on: hit.received_on, credited_as_of: hit.credited_as_of, satisfied_by_payment_id: hit.payment_id } : rowSatisfied ? { ...(r.satisfied_on ? { satisfied_on: r.satisfied_on } : {}), ...(r.credited_as_of ? { credited_as_of: r.credited_as_of } : {}), ...(r.satisfied_by_payment_id ? { satisfied_by_payment_id: r.satisfied_by_payment_id } : {}) } : {}) });
+    }
+    const paidRows = written.filter((r) => r.status === "satisfied" || r.status === "prepaid").map((r) => r.due_date);
+    // the LPI: the latest satisfied row, else the installment before the schedule's first row (a transfer tape's next due date is the first unpaid one)
+    const firstRow = written[0]!;
+    lpiFromRows = [...paidRows].sort().at(-1) ?? (firstRow.due_date > loan.first_payment_date ? addMonths(firstRow.due_date, -1) : null);
+  } else {
+    for (let due = loan.first_payment_date, k = 0; due <= horizon && k < 480; due = addMonths(loan.first_payment_date, ++k)) {
+      const hit = satisfied.get(due);
+      installments.push({ due_date: due, pi_cents: terms.pi_cents, escrow_cents: escrowPortionOn(terms, due), status: hit ? "satisfied" : "due", ...(hit ? { satisfied_on: hit.received_on, credited_as_of: hit.credited_as_of, satisfied_by_payment_id: hit.payment_id } : {}) });
+    }
   }
   const fees: Fee[] = store.list("fees", (d) => d.loan_id === loanId && (d.fee_type === "late_charge" || d.fee_type === "nsf_fee")).map((r) => ({ id: r.id, fee_type: r.data.fee_type as Fee["fee_type"], installment_due_date: typeof r.data.installment_due_date === "string" ? D(r.data.installment_due_date) : null, amount_cents: c(r.data.amount_cents), state: (r.data.state as Fee["state"]) ?? "assessed", assessed_on: D(String(r.data.assessed_on)), ...(typeof r.data.grace_end_on === "string" ? { grace_end_on: D(r.data.grace_end_on) } : {}), collected_cents: c(r.data.collected_cents) } as Fee));
   const lcDue = fees.filter((f) => f.fee_type === "late_charge" && (f.state === "assessed" || f.state === "partially_collected")).reduce((a, f) => a + f.amount_cents - f.collected_cents, 0n);
-  const lpi = [...satisfied.keys()].sort().at(-1) ?? null;
+  const lpi = [...satisfied.keys(), ...(lpiFromRows ? [lpiFromRows] : [])].sort().at(-1) ?? null;
   const state: LoanCashState = { loan_id: loanId, instrument_date: loan.instrument_date, lien: "first", escrowed: terms.escrowed, note_rate_pct: (terms.note_rate_bps / 10_000).toFixed(3), remittance_type: "A/A", upb_cents: bal.principal, lpi_date: lpi ? D(lpi) : null, installments, late_charges_due_cents: lcDue, nsf_fees_due_cents: 0n, other_fees_due_cents: 0n, suspense_unapplied_cents: bal.suspense_unapplied > 0n ? bal.suspense_unapplied : 0n, holds: [], trial_active: false, plan_active: false, partial_count_12m: 0, opted_out_of_50_rule: false,
     late_charge_pct: terms.late_charge_pct, late_charge_grace_days: terms.late_charge_grace_days, late_charge_cap_cents: terms.late_charge_max_cents, late_charge_basis: "pi", fees, overlays: [], courtesy_waivers_12m: 0, loan_terms_version: 1 };
   return { loan, terms, custodial, state, store, balances: bal, received_payments: payments.filter((p) => p.status === "received" || p.status === "identified") };
@@ -172,7 +190,7 @@ export async function servicingDailySweep(rt: Runtime, nowIso: string = rt.clock
 // ---------------------------------------------------------------- 7.1: the periodic statement run
 export interface StatementRunInput { readonly cycle_due_date: PlainDate; readonly statement_date?: PlainDate; readonly cycle?: number; readonly now?: string; }
 export interface StatementRunResult { readonly notice_id: string; readonly availability_notice_id: string | null; readonly channel: "electronic" | "mail"; readonly bounced_party_ids: string[]; readonly mailed_at: string | null; readonly statement_date: PlainDate; readonly events: readonly { type: string; payload: Record<string, unknown> }[]; }
-function statementPayload(f: LoanFacts, borrowerName: string, statementDate: PlainDate, due: PlainDate): Record<string, unknown> {
+function statementPayload(f: LoanFacts, borrowerName: string, statementDate: PlainDate, due: PlainDate, block: ServicerBlock): Record<string, unknown> {
   const st = f.state; const inst = st.installments.find((x) => x.due_date === due) ?? st.installments[st.installments.length - 1]!;
   const interest = divRound(st.upb_cents * BigInt(f.terms.note_rate_bps), 12_000_000n, "HALF_UP"); const principal = inst.pi_cents - interest; const escrow = inst.escrow_cents;
   const pastDue = st.installments.filter((x) => x.status === "due" && x.due_date < due).reduce((a, x) => a + x.pi_cents + x.escrow_cents, 0n);
@@ -193,7 +211,8 @@ function statementPayload(f: LoanFacts, borrowerName: string, statementDate: Pla
     ytd: { total_cents: total(ytd), principal_cents: sum(ytd, "principal_cents"), interest_cents: sum(ytd, "interest_cents"), escrow_cents: sum(ytd, "escrow_cents"), fees_cents: sum(ytd, "late_charge_cents"), suspense_held_cents: suspense }, ytd_ledger_total_cents: total(ytd),
     ...(suspense > 0n ? { suspense_instructions: `We received ${usd(suspense)}, which is being held. We need ${usd(c(heldItem?.balance_needed_cents))} more to apply a full payment.` } : {}),
     transactions: [...lastPay.map((p) => ({ date: String(p.received_on), description: "Payment received", amount_cents: c(p.amount_cents) })), ...lateFeeDebits.map((x) => ({ date: x.assessed_on, description: "Late fee", amount_cents: x.amount_cents }))], late_fee_debits: lateFeeDebits.length,
-    servicer_phone: SERVICER_CONTACT.servicer_phone, servicer_address: SERVICER_CONTACT.servicer_address, exclusive_address: SERVICER_CONTACT.exclusive_address, account_last4: f.loan.servicer_loan_number.slice(-4), upb_cents: st.upb_cents, rate_pct: st.note_rate_pct, prepay_penalty: false, counselor_url: SERVICER_CONTACT.counselor_url, hud_phone: SERVICER_CONTACT.hud_phone,
+    // the servicer block of the profile version in force on the statement date (35.5 rule 9; §1024.35(c) exclusive address on every periodic statement)
+    servicer_name: block.servicer_name, servicer_phone: block.servicer_phone, servicer_address: block.servicer_address, exclusive_address: block.exclusive_address, remittance_address: block.remittance_address, portal_url: block.portal_url, account_last4: f.loan.servicer_loan_number.slice(-4), upb_cents: st.upb_cents, rate_pct: st.note_rate_pct, prepay_penalty: false, counselor_url: block.counselor_url, hud_phone: block.hud_phone,
     regx_days_delinquent: regxDays, borrower_name: borrowerName, reminder_panel: false, delinquency: null };
 }
 const USD = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
@@ -206,17 +225,18 @@ export async function sendPeriodicStatement(rt: Runtime, loanId: string, input: 
   const nowIso = input.now ?? rt.clock.now(); const statementDate = input.statement_date ?? D(nowIso.slice(0, 10));
   if (!rt.ports.printMail || !rt.ports.edelivery) throw new RangeError("print/mail and e-delivery ports are not wired");
   const facts = await loanCashState(rt, loanId, statementDate); const parties = await servicingParties(rt, loanId);
+  const block = await servicerBlockFor(rt.db, loanId, statementDate);   // 35.5 rule 9: the servicer identity as of the statement date (CONFIG_REQUIRED when none is in force)
   const suspect: { party_id: string; consent_id: string | null }[] = [];
   let result: StatementRunResult | null = null;
   const r = await rt.uow.run({ loanId, ...(facts.loan.origination_application_id ? { applicationId: facts.loan.origination_application_id } : {}) }, async (ctx) => {
-    const notices = new NoticeService({ registry: rt.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: rt.ports.printMail!, edelivery: rt.ports.edelivery! });
+    const notices = new NoticeService({ registry: rt.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: rt.ports.printMail!, edelivery: rt.ports.edelivery!, notices: rt.noticeMemory });   // the runtime's notice memory (32.12): the rendered statement / 1098 is readable after the run like any command's notice
     const cycles = new StatementCycleService({ events: ctx.events, clock: ctx.clock, notices });
     const recipients = recipientsOf(parties);
     // comment 41(c)-3: the availability e-mail goes to every party whose active consent covers periodic statements; a hard bounce flips that party's consent to suspect (7.4 rule 8) before the statement's own channel decision
     const electronic = recipients.filter((x) => x.consent?.status === "active" && x.consent.classes.includes("periodic_statements") && x.email);
     let availabilityId: string | null = null; const bounced: string[] = [];
     if (electronic.length) {
-      const avail = notices.render({ templateCode: "NTC_REGZ_41_STMT_AVAIL_EMAIL", loanId, recipients: electronic, payload: { statement_date: statementDate, account_last4: facts.loan.servicer_loan_number.slice(-4), portal_url: SERVICER_CONTACT.portal_url, consent_status: "active", servicer_phone: SERVICER_CONTACT.servicer_phone }, asOf: statementDate });
+      const avail = notices.render({ templateCode: "NTC_REGZ_41_STMT_AVAIL_EMAIL", loanId, recipients: electronic, payload: { statement_date: statementDate, account_last4: facts.loan.servicer_loan_number.slice(-4), portal_url: block.portal_url, consent_status: "active", servicer_phone: block.servicer_phone }, asOf: statementDate });
       const sent = await notices.send(avail.id); availabilityId = sent.id;
       for (const d of sent.deliveries) if (d.emailStatus === "bounced") {
         const party = parties.find((p) => p.party_id === d.partyId); bounced.push(d.partyId);
@@ -224,7 +244,7 @@ export async function sendPeriodicStatement(rt: Runtime, loanId: string, input: 
         suspect.push({ party_id: d.partyId, consent_id: party?.consent_ids.esign ?? null });
       }
     }
-    const rendered = cycles.renderStatement(loanId, { cycle_due_date: input.cycle_due_date, statement_date: statementDate, template: "NTC_REGZ_41_STMT_STD", variant: "standard", payload: statementPayload(facts, parties[0]?.legal_name ?? "Borrower", statementDate, input.cycle_due_date), recipients, reminder_panel: false, ...(input.cycle !== undefined ? { cycle: input.cycle } : {}) });
+    const rendered = cycles.renderStatement(loanId, { cycle_due_date: input.cycle_due_date, statement_date: statementDate, template: "NTC_REGZ_41_STMT_STD", variant: "standard", payload: statementPayload(facts, parties[0]?.legal_name ?? "Borrower", statementDate, input.cycle_due_date, block), recipients, reminder_panel: false, ...(input.cycle !== undefined ? { cycle: input.cycle } : {}) });
     if (rendered.status === "held") throw new RangeError(`statement held: ${rendered.held_reason}`);
     const out = await cycles.sendStatement(rendered.notice.id);
     let mailedAt: string | null = null; let channel: "electronic" | "mail" = "electronic";
@@ -251,17 +271,18 @@ export async function furnishForm1098(rt: Runtime, loanId: string, input: { tax_
   if (!rt.ports.printMail || !rt.ports.edelivery) throw new RangeError("print/mail and e-delivery ports are not wired");
   const facts = await loanCashState(rt, loanId, on); const parties = await servicingParties(rt, loanId); const payer = parties[0];
   if (!payer) throw new RangeError("no borrower party on the loan");
+  const block = await servicerBlockFor(rt.db, loanId, on);   // 35.5 rule 9: the servicer's name, TIN and addresses on the 1098 are the profile's
   // box 1 from the ledger: interest credited to interest_due by the year's allocation sets; box 2: the principal balance at the year's start
   const interest = (await rt.db.query<{ s: string }>(`SELECT coalesce(-sum(l.amount_cents), 0)::text AS s FROM ledger_lines l JOIN ledger_entry_sets e ON e.id = l.set_id WHERE l.scope = 'loan' AND l.loan_id = $1 AND l.account = 'interest_due' AND l.amount_cents < 0 AND e.effective_date >= $2::date AND e.effective_date < $3::date`, [loanId, `${y}-01-01`, `${y + 1}-01-01`]))[0]!.s;
   const upbJan1 = (await rt.db.query<{ s: string }>(`SELECT coalesce(sum(l.amount_cents), 0)::text AS s FROM ledger_lines l JOIN ledger_entry_sets e ON e.id = l.set_id WHERE l.scope = 'loan' AND l.loan_id = $1 AND l.account = 'principal' AND e.effective_date < $2::date`, [loanId, `${y}-01-01`]))[0]!.s;
   const prop = (await rt.db.query<Row>(`SELECT pr.address_line1, pr.city, pr.state, pr.postal_code FROM loans l JOIN properties pr ON pr.id = l.property_id WHERE l.id = $1`, [loanId]))[0];
   let result: Form1098Result | null = null;
   await rt.uow.run({ loanId, ...(facts.loan.origination_application_id ? { applicationId: facts.loan.origination_application_id } : {}) }, async (ctx) => {
-    const notices = new NoticeService({ registry: rt.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: rt.ports.printMail!, edelivery: rt.ports.edelivery! });
+    const notices = new NoticeService({ registry: rt.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: rt.ports.printMail!, edelivery: rt.ports.edelivery!, notices: rt.noticeMemory });   // the runtime's notice memory (32.12): the rendered statement / 1098 is readable after the run like any command's notice
     const cycles = new StatementCycleService({ events: ctx.events, clock: ctx.clock, notices });
     const gate = requestForm1098Furnish({ events: ctx.events }, { loan_id: loanId, tax_year: y, party_id: payer.party_id, channel: "electronic", consents: parties.flatMap((p) => (p.irs_estatement ? [p.irs_estatement] : [])) });
     const out = await cycles.furnish1098(loanId, { tax_year: y, interest_received_cents: c(interest), upb_jan1_cents: c(upbJan1), furnished_on: on, recipients: recipientsOf(parties, "irs_estatement"),
-      payload: { servicer_name: SERVICER_CONTACT.servicer_name, servicer_tin: SERVICER_CONTACT.servicer_tin, payer_name: payer.legal_name, account_number: facts.loan.servicer_loan_number, property_address: prop ? `${String(prop.address_line1)}, ${String(prop.city)}, ${String(prop.state)} ${String(prop.postal_code)}` : payer.mailing_address ?? "", box3_origination_date: facts.loan.instrument_date, box4_cents: 0n, box5_cents: 0n, box6_cents: 0n, box10_cents: 0n, box11_acquisition_date: null, servicer_phone: SERVICER_CONTACT.servicer_phone, servicer_address: SERVICER_CONTACT.servicer_address, exclusive_address: SERVICER_CONTACT.exclusive_address } });
+      payload: { servicer_name: block.servicer_name, servicer_tin: block.servicer_tin, payer_name: payer.legal_name, account_number: facts.loan.servicer_loan_number, property_address: prop ? `${String(prop.address_line1)}, ${String(prop.city)}, ${String(prop.state)} ${String(prop.postal_code)}` : payer.mailing_address ?? "", box3_origination_date: facts.loan.instrument_date, box4_cents: 0n, box5_cents: 0n, box6_cents: 0n, box10_cents: 0n, box11_acquisition_date: null, servicer_phone: block.servicer_phone, servicer_address: block.servicer_address, exclusive_address: block.exclusive_address } });
     if (out.channel === "paper") runProduction(rt, nowIso);
     result = { notice_id: out.notice.id, channel: out.channel, gate_open: gate.gate_open, box1_cents: s(out.box1_cents), box2_cents: s(out.box2_cents), furnished_on: on };
     return result;

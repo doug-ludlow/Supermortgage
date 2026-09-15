@@ -24,7 +24,9 @@
  * person's name "FAKE reviewer", the actor id on every event, `notes`/`rationale` prefixed "FAKE reviewer", and the
  * console queue row of a pending item whose owner is a FAKE role (PgConsoleStore is built over the runtime's reviewers).
  *
- *   FAKE_REVIEWERS=off          disables every filler (the queue is left to a person)
+ *   FAKE_REVIEWERS=off          disables every filler (the queue is left to a person); ENVIRONMENT=production disables them whatever
+ *                               the other variables say (35.7 rule 6, NO_FAKE_IN_PRODUCTION); a role handed over to a person (35.7 role_handovers)
+ *                               is dropped from the set every tick (`refresh`)
  *   FAKE_REVIEWER_DELAY_S=20    the delay before a pending item is approved (default 20 s — long enough to see the wait)
  *
  * Runs from the sweep (src/runtime/app.ts Runtime.sweep, every minute in nonprod): `tick(rt, now)` approves every pending
@@ -33,6 +35,7 @@
  */
 import type { Actor } from "../../kernel/events/index.ts";
 import type { Runtime } from "../../runtime/app.ts";
+import type { Queryable } from "../db/client.ts";
 import type { Logger } from "../../runtime/log.ts";
 import { PgConsoleStore } from "../../console/pg-store.ts";
 import { decodeEntityData } from "../db/entities.ts";
@@ -48,10 +51,15 @@ type Row = Record<string, unknown>;
 type Scope = { loan_id: string | null; application_id: string | null };
 export interface FakeReviewerAction { readonly kind: string; readonly role: string; readonly ref: string; readonly tool: string; readonly scope: Scope; readonly outcome: "approved" | "left_open" | "failed"; readonly detail?: string }
 export interface FakeReviewerReport { readonly at: string; readonly delay_s: number; readonly cutoff: string; readonly pending: number; readonly actions: readonly FakeReviewerAction[]; readonly line: string }
-export interface FakeReviewerOptions { readonly delaySeconds?: number; readonly roles?: readonly string[]; readonly logger?: Logger | undefined }
+export interface FakeReviewerOptions { readonly delaySeconds?: number; readonly roles?: readonly string[]; readonly logger?: Logger | undefined;
+  /** 35.7 rule 6: the environment's CURRENT FAKE set read from Postgres (the default minus the roles handed over to a person — src/domain/operations-runtime/roles-35-7/env.ts currentFakeSet); `refresh(rt)` and every `tick` consult it. Absent → the static `roles`. */
+  readonly resolver?: (rt: Runtime) => Promise<readonly string[]> }
 
 /** The roles the environment's FAKE reviewers fill (empty when FAKE_REVIEWERS=off) — the console marks their pending queue rows. */
 export function fakeReviewerRolesFromEnv(env: NodeJS.ProcessEnv = process.env): readonly string[] {
+  // 35.7 rule 6 (NO_FAKE_IN_PRODUCTION): ENVIRONMENT = production forces the empty set whatever the other two say — the partner-book-offers.ts rule applied here
+  const environment = env["ENVIRONMENT"] ?? "nonprod";
+  if (environment === "production" || environment === "prod") return [];
   if ((env["FAKE_REVIEWERS"] ?? "").trim().toLowerCase() === "off") return [];
   if ((env["INTEGRATIONS"] ?? "fake") !== "fake") return [];
   return FAKE_REVIEWER_ROLES;
@@ -68,24 +76,61 @@ export function fakeReviewersFromEnv(env: NodeJS.ProcessEnv = process.env, logge
 
 const s = (v: unknown): string | null => (v === null || v === undefined || v === "" ? null : String(v));
 
+/** The pending terms reviews (mlo_of_record's queue): 20.3's `terms.presentation.requested{quote_id, lead_id}` with no `mlo.review.completed` for the quote, requested at or before `cutoff` — the selector the tick and 35.7's queue scan share. */
+export async function pendingTermsReviewRows(q: Queryable, cutoff: string): Promise<{ quote_id: string; lead_id: string | null; loan_id: string | null; application_id: string | null; requested_at: string }[]> {
+  const rows = await q.query<Row>(
+    `SELECT DISTINCT ON (e.payload->>'quote_id') e.payload->>'quote_id' AS quote_id, e.loan_id, e.application_id, e.payload, e.occurred_at::text AS occurred_at
+       FROM loan_events e
+      WHERE e.type = 'terms.presentation.requested' AND e.occurred_at <= $1::timestamptz
+        AND NOT EXISTS (SELECT 1 FROM loan_events r WHERE r.type = 'mlo.review.completed' AND r.payload->>'quote_id' = e.payload->>'quote_id')
+      ORDER BY e.payload->>'quote_id', e.sequence DESC`, [cutoff]);
+  return rows.map((r) => ({ quote_id: String(r["quote_id"]), lead_id: s(((r["payload"] as Row) ?? {})["lead_id"]), loan_id: s(r["loan_id"]), application_id: s(r["application_id"]), requested_at: String(r["occurred_at"]) }));
+}
+/** The prefunding QC holds (qc_officer's queue): a `qc_reviews` entity of kind prefunding selected or in review as of `cutoff`. */
+export async function pendingPrefundingHoldRows(q: Queryable, cutoff: string): Promise<{ review_id: string; application_id: string; status: string; updated_at: string; data: Row }[]> {
+  const rows = await q.query<Row>(`SELECT id, data, updated_at::text AS updated_at FROM entity_current WHERE kind = 'qc_reviews' AND updated_at <= $1::timestamptz ORDER BY updated_at`, [cutoff]);
+  const out: { review_id: string; application_id: string; status: string; updated_at: string; data: Row }[] = [];
+  for (const r of rows) {
+    const d = decodeEntityData(r["data"]) as Row; if (d["kind"] !== "prefunding" || !["selected", "in_review"].includes(String(d["status"]))) continue;
+    const appId = s(d["application_id"]); if (!appId) continue;
+    out.push({ review_id: String(d["review_id"] ?? r["id"]), application_id: appId, status: String(d["status"]), updated_at: String(r["updated_at"]), data: d });
+  }
+  return out;
+}
+
 export class FakeReviewers {
   readonly vendorName = "FAKE" as const;
   readonly delaySeconds: number;
-  readonly roles: readonly string[];
+  /** The roles the FAKE fills NOW — the environment's default at construction, replaced by `refresh(rt)` / every `tick` with the current set from Postgres (35.7 rule 6: a role handed over to a person stops being filled from the confirmation). */
+  roles: readonly string[];
+  /** The environment's default set (rule 6), before any handover. */
+  readonly defaultRoles: readonly string[];
   private readonly logger: Logger | undefined;
-  constructor(opts: FakeReviewerOptions = {}) { this.delaySeconds = opts.delaySeconds ?? FAKE_REVIEWER_DELAY_S_DEFAULT; this.roles = opts.roles ?? FAKE_REVIEWER_ROLES; this.logger = opts.logger; }
+  private readonly resolver: ((rt: Runtime) => Promise<readonly string[]>) | null;
+  constructor(opts: FakeReviewerOptions = {}) { this.delaySeconds = opts.delaySeconds ?? FAKE_REVIEWER_DELAY_S_DEFAULT; this.roles = opts.roles ?? FAKE_REVIEWER_ROLES; this.defaultRoles = this.roles; this.logger = opts.logger; this.resolver = opts.resolver ?? null; }
   /** The FAKE person filling a role: a human actor whose id says so on every row it writes. */
   actor(role: string): Actor { return { kind: "human", id: `FAKE:${role}`, role }; }
   fills(role: string): boolean { return this.roles.includes(role); }
+  /** 35.7 rule 6: re-read the current FAKE set from Postgres (the default minus the roles whose latest role_handovers row in this environment is `enabled`); the default resolver is the 35.7 module's, so 1..N instances and the sweep job agree. */
+  async refresh(rt: Runtime): Promise<readonly string[]> {
+    const resolve = this.resolver ?? (async (r: Runtime) => { const m = await import("../../domain/operations-runtime/roles-35-7/env.ts"); return m.currentFakeSet(r.db, r.environment, m.envDefault(r.env, r.environment).roles.filter((x) => this.defaultRoles.includes(x))); });
+    try { this.roles = await resolve(rt); } catch (e) { this.logger?.warn("fake reviewers: the current FAKE set could not be read; the last known set stands", { error: e instanceof Error ? e.message : String(e) }); }
+    return this.roles;
+  }
 
-  /** One pass: every pending item older than the delay is approved through its owning process's tool. Never throws — a refused item is reported, not retried in a loop. */
+  /** One pass: every pending item older than the delay is approved through its owning process's tool. Never throws — a refused item is reported, not retried in a loop. Every approval leaves a global `fake_reviewer.approved` receipt (35.7 T15 / 35.11: the day's FAKE-approval count). */
   async tick(rt: Runtime, nowIso: string = rt.clock.now()): Promise<FakeReviewerReport> {
+    await this.refresh(rt);
     const cutoff = new Date(Date.parse(nowIso) - this.delaySeconds * 1000).toISOString();
     const actions: FakeReviewerAction[] = [];
     let pending = 0;
+    const receipt = async (a: Omit<FakeReviewerAction, "outcome" | "detail">): Promise<void> => {
+      try { await rt.uow.run({}, (ctx) => ctx.events.append({ type: "fake_reviewer.approved", aggregate: { kind: "fake_reviewer", id: a.ref.slice(0, 200) }, actor: this.actor(a.role), payload: { kind: a.kind, role: a.role, ref: a.ref, tool: a.tool, loan_id: a.scope.loan_id, application_id: a.scope.application_id, as_of_date: new Date(nowIso).toISOString().slice(0, 10), environment: rt.environment, at: nowIso, origination: true } }), { clock: rt.clock }); }
+      catch (e) { this.logger?.warn("fake reviewer receipt failed", { ...a, error: e instanceof Error ? e.message : String(e) }); }
+    };
     const run = async (a: Omit<FakeReviewerAction, "outcome" | "detail">, fn: () => Promise<string | undefined>): Promise<void> => {
       pending += 1;
-      try { const detail = await fn(); actions.push({ ...a, outcome: "approved", ...(detail ? { detail } : {}) }); }
+      try { const detail = await fn(); actions.push({ ...a, outcome: "approved", ...(detail ? { detail } : {}) }); await receipt(a); }
       catch (e) { const msg = e instanceof Error ? e.message : String(e); actions.push({ ...a, outcome: "failed", detail: msg }); this.logger?.warn("fake reviewer refused", { ...a, error: msg }); }
     };
     if (this.fills("mlo_of_record")) await this.termsReviews(rt, nowIso, cutoff, run);
@@ -99,14 +144,9 @@ export class FakeReviewers {
 
   // ---- the MLO of record's terms review: 20.3's `terms.presentation.requested{quote_id, lead_id}` (the event that arms SM_MLO_PREAPP_TERMS_REVIEW_1BH on the lead's loan or application) with no `mlo.review.completed` for the quote yet
   private async termsReviews(rt: Runtime, nowIso: string, cutoff: string, run: (a: Omit<FakeReviewerAction, "outcome" | "detail">, fn: () => Promise<string | undefined>) => Promise<void>): Promise<void> {
-    const rows = await rt.db.query<Row>(
-      `SELECT DISTINCT ON (e.payload->>'quote_id') e.payload->>'quote_id' AS quote_id, e.loan_id, e.application_id, e.payload
-         FROM loan_events e
-        WHERE e.type = 'terms.presentation.requested' AND e.occurred_at <= $1::timestamptz
-          AND NOT EXISTS (SELECT 1 FROM loan_events r WHERE r.type = 'mlo.review.completed' AND r.payload->>'quote_id' = e.payload->>'quote_id')
-        ORDER BY e.payload->>'quote_id', e.sequence DESC`, [cutoff]);
+    const rows = await pendingTermsReviewRows(rt.db, cutoff);
     for (const r of rows) {
-      const quoteId = String(r["quote_id"]); const p = (r["payload"] as Row) ?? {}; const leadId = s(p["lead_id"]); const scope: Scope = { loan_id: s(r["loan_id"]), application_id: s(r["application_id"]) };
+      const quoteId = r.quote_id; const leadId = r.lead_id; const scope: Scope = { loan_id: r.loan_id, application_id: r.application_id };
       if (!leadId) { continue; }
       await run({ kind: "terms_review", role: "mlo_of_record", ref: quoteId, tool: "20.3 requestQuote{op=review}", scope }, async () => {
         const out = await rt.execute({ process: "20.3", name: "requestQuote", loanId: scope.loan_id ?? "", ...(scope.application_id ? { applicationId: scope.application_id } : {}), actor: this.actor("mlo_of_record"),
@@ -118,10 +158,9 @@ export class FakeReviewers {
 
   // ---- the prefunding QC hold: a selected review is opened and closed no_defect by the qc_officer identity (28.1 independence: never a production agent)
   private async prefundingHolds(rt: Runtime, nowIso: string, cutoff: string, run: (a: Omit<FakeReviewerAction, "outcome" | "detail">, fn: () => Promise<string | undefined>) => Promise<void>): Promise<void> {
-    const rows = await rt.db.query<Row>(`SELECT id, data, updated_at FROM entity_current WHERE kind = 'qc_reviews' AND updated_at <= $1::timestamptz ORDER BY updated_at`, [cutoff]);
+    const rows = await pendingPrefundingHoldRows(rt.db, cutoff);
     for (const r of rows) {
-      const d = decodeEntityData(r["data"]) as Row; if (d["kind"] !== "prefunding" || !["selected", "in_review"].includes(String(d["status"]))) continue;
-      const reviewId = String(d["review_id"] ?? r["id"]); const appId = s(d["application_id"]); if (!appId) continue;
+      const d = r.data; const reviewId = r.review_id; const appId = r.application_id;
       await run({ kind: "qc_prefunding_hold", role: "qc_officer", ref: reviewId, tool: "28.1 openReview + closeReview{no_defect}", scope: { loan_id: null, application_id: appId } }, async () => {
         const actor = this.actor("qc_officer");
         if (d["status"] === "selected") await rt.execute({ process: "28.1", name: "openReview", loanId: "", applicationId: appId, actor, input: { review_id: reviewId, run: { run_id: `FAKE-qc-${reviewId}`.slice(0, 200), model_version: FAKE_REVIEWER_NAME, prompt_version: "DELTA-30" }, application_agent_runs: [] } });
@@ -180,5 +219,6 @@ export class FakeReviewers {
     const store = new PgConsoleStore(rt.db, rt.registry, rt.agents);
     const r = await store.completeEscalation(id, actor, null, nowIso);
     actions.push(r.ok ? { ...a, outcome: "approved", detail: "completed from the queue" } : { ...a, outcome: "failed", detail: r.reason });
+    if (r.ok) { try { await rt.uow.run({}, (ctx) => ctx.events.append({ type: "fake_reviewer.approved", aggregate: { kind: "fake_reviewer", id: a.ref.slice(0, 200) }, actor, payload: { kind: a.kind, role: a.role, ref: a.ref, tool: a.tool, loan_id: a.scope.loan_id, application_id: a.scope.application_id, as_of_date: new Date(nowIso).toISOString().slice(0, 10), environment: rt.environment, at: nowIso, origination: true } }), { clock: rt.clock }); } catch (e) { this.logger?.warn("fake reviewer receipt failed", { ...a, error: e instanceof Error ? e.message : String(e) }); } }
   }
 }

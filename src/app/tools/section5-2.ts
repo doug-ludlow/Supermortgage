@@ -93,10 +93,13 @@ const noTiForPi = guard("NO_TI_FOR_PI", "5.2 guardrail: never uses escrow (T&I) 
   const ls = linesOf(i); const creditsTi = ls.some((l) => TI.test(acct(l)) && amt(l) < 0n); const piDraft = ls.some((l) => PI_DRAFT.test(acct(l)) && !TI.test(acct(l)) && amt(l) > 0n);
   return creditsTi && piDraft ? "P&I drafts are never funded from the T&I custodial account" : undefined; });
 const advanceCommandsOnly = guard("ADVANCE_COMMANDS_ONLY", "5.2 guardrail: cannot move money between custodial and corporate accounts except through the advance/fee_sweep commands", (i) => (!fundOp(i) && custodialCorporateTransfer(i) !== null && !["advance", "fee_sweep"].includes(str(i, "transfer_kind")) ? "custodial↔corporate movements go through the `advance`/`fee_sweep` commands (declare transfer_kind)" : undefined));
+/** 5.2 guardrail: a single custodial↔corporate transfer greater than $250,000.00, or a day's total greater than $1,000,000.00, needs officer (dual) control — the thresholds 35.7 rule 4 asserts by the cent. */
+export const DUAL_CONTROL_SINGLE_TRANSFER_CENTS = 25_000_000n;
+export const DUAL_CONTROL_DAILY_CENTS = 100_000_000n;
 const dualControl = guard("DUAL_CONTROL_250K", "5.2 guardrail: single custodial↔corporate transfer > $250,000 or daily > $1,000,000 requires officer approval", (i, ctx) => {
   const t = fundOp(i) ? (fundShortfall(i).advance ? { cents: fundShortfall(i).shortfall_cents, direction: "corporate_to_custodial" as const } : null) : custodialCorporateTransfer(i);
   if (!t) return undefined; const daily = dailyTransferCents(ctx);
-  return (t.cents > 25_000_000n || daily + t.cents > 100_000_000n) && !hasRole(ctx.actor, ["officer"]) ? `dual control: ${t.direction} of ${t.cents}¢ (today ${daily}¢ already) needs an officer; requires officer` : undefined; });
+  return (t.cents > DUAL_CONTROL_SINGLE_TRANSFER_CENTS || daily + t.cents > DUAL_CONTROL_DAILY_CENTS) && !hasRole(ctx.actor, ["officer"]) ? `dual control: ${t.direction} of ${t.cents}¢ (today ${daily}¢ already) needs an officer; requires officer` : undefined; });
 const noAdvanceOnStopAdvance = guard("NO_ADVANCE_ON_STOP_ADVANCE", "5.4 guardrail (shared): never fund an advance for a loan Fannie Mae has flagged Stop Advance", (i, ctx) => {
   const t = custodialCorporateTransfer(i); const advance = fundOp(i) ? typeof i.loan_id === "string" && fundShortfall(i).advance : (t !== null && t.direction === "corporate_to_custodial") || linesOf(i).some((l) => /servicer_advance_receivable|advance_receivable/i.test(acct(l)) && amt(l) > 0n);
   return advance && sdaActive(ctx, loanOf(i, ctx)) ? "Fannie Mae has set Stop Advance for the loan: no delinquency advance is funded (F-1-20)" : undefined; });
@@ -400,6 +403,8 @@ const explainVariance: Omit<ToolDef, "process" | "agent"> = { name: "explainVari
   decision: (i, out) => { const o = out as { class?: string; variance_cents?: bigint; draft_expectation_cents?: bigint; kind?: string; unexplained_cents?: bigint } | null; return { action: `explainVariance:${str(i, "op") || "classify"}`, rationale: o?.class ? `expected ${str(i, "expected_cents")}¢, notified ${str(i, "notified_cents")}¢, variance ${String(o.variance_cents)}¢, classification=${o.class}, draft expectation ${String(o.draft_expectation_cents)}¢` : o?.kind ? `Schedule 3 ${str(i, "period")}: ${o.kind} ${String(o.unexplained_cents)}¢` : str(i, "explanation") || `explainVariance:${str(i, "op")}` }; } };
 
 const postLedger: Omit<ToolDef, "process" | "agent"> = { name: "postLedger", kind: "write", ruleSetVersion: RULE_SET_VERSION, moneyFields: ["entry_set", "expected_draft_cents"],
+  // 35.7 rule 2 / rule 4: the second person for a transfer greater than $250,000 (strict) is an approval record by a distinct officer (roles.approve); the surfaces enforce it before the bus. Conservative: a fund_draft whose figures the input does not carry (a stored expectation, a bank-feed balance) asks for the record too; the daily > $1,000,000 clause needs the ledger and stays this guard's (one officer).
+  dualControl: { role: "officer", threshold: (i) => (fundOp(i) ? (i.expected_draft_cents === undefined || i.custodial_available_cents === undefined || fundShortfall(i).shortfall_cents > DUAL_CONTROL_SINGLE_TRANSFER_CENTS) : (custodialCorporateTransfer(i)?.cents ?? 0n) > DUAL_CONTROL_SINGLE_TRANSFER_CENTS) },
   handler: compute((i, ctx, rt) => {
     if (fundOp(i)) return fundDraftOp(i, ctx, rt);
     const set = i.entry_set as EntrySetInput | undefined;

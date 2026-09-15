@@ -34,6 +34,7 @@ import { systemClock } from "../kernel/events/index.ts";
 import { loadDemoClock } from "./demo-clock.ts";
 import { rateFeedFromEnv } from "../infra/integrations/rates.ts";
 import { fakeReviewersFromEnv } from "../infra/integrations/reviewers.ts";
+import { bootstrapReviewerRoles } from "../domain/operations-runtime/roles-35-7/bootstrap.ts";
 import { BorrowerFlows } from "./borrower/flows/index.ts";
 import { PgBorrowerUiRepository } from "../infra/db/borrower-ui.ts";
 import { bootstrapStaffAdmin } from "./staff/auth.ts";
@@ -56,7 +57,7 @@ const rateFeed = rateFeedFromEnv(process.env); const reviewers = fakeReviewersFr
 // the demo clock (docs/DEPLOY.md "The demo clock"; src/runtime/demo-clock.ts): outside production every mode — serve, sweep, seed-demo — runs on the system clock plus the persisted demo offset (the latest demo_clock row), so the API, the sweep job and the flows agree on the instant; production is the system clock, full stop
 const demoClock = config.environment === "production" ? null : await loadDemoClock(db, { logger });
 const clock = demoClock ?? systemClock;
-const runtime = new Runtime({ db, registry: loadOverriddenRegistry(), rateFeed, reviewers, logger, clock });
+const runtime = new Runtime({ db, registry: loadOverriddenRegistry(), rateFeed, reviewers, logger, clock, environment: config.environment, env: process.env });
 
 if (mode === "sweep") {
   try {
@@ -105,6 +106,8 @@ if (!config.apiToken) logger.warn("API_TOKEN is empty: every route is open (ALLO
 // 34.1: STAFF_BOOTSTRAP_ADMIN_EMAIL (and, outside production, STAFF_BOOTSTRAP_ADMIN_ROLES) is read once at start — the first admin is invited when no staff_users row exists, the nonprod one-row upgrade runs when it applies (a no-op otherwise; the e-mail is never logged)
 const bootstrapEmail = (process.env["STAFF_BOOTSTRAP_ADMIN_EMAIL"] ?? "").trim();
 if (bootstrapEmail) { try { const r = await bootstrapStaffAdmin(runtime, bootstrapEmail, { logger, roles: process.env["STAFF_BOOTSTRAP_ADMIN_ROLES"], environment: config.environment }); logger.info("staff-bootstrap (STAFF_BOOTSTRAP_ADMIN_EMAIL)", { created: r.created, upgraded: r.upgraded, staff_user_id: r.staff_user_id, roles: r.roles, reason: r.reason }); } catch (e) { logger.error("staff-bootstrap failed (STAFF_BOOTSTRAP_ADMIN_EMAIL)", { error: e }); } }
+// 35.7 (34.5 decision Q2): on nonprod the owner's enrolled account may hold every grantable reviewer role, granted by FAKE:admin and confirmed by FAKE:compliance through the real roles.grant path — STAFF_BOOTSTRAP_REVIEWER_ROLES=all | a comma list; refused in production
+if (bootstrapEmail && (process.env["STAFF_BOOTSTRAP_REVIEWER_ROLES"] ?? "").trim() && config.environment !== "production" && config.environment !== "prod") { try { const r = await bootstrapReviewerRoles(runtime, bootstrapEmail, { roles: process.env["STAFF_BOOTSTRAP_REVIEWER_ROLES"], logger }); logger.info("35.7 reviewer-role bootstrap", { staff_user_id: r.staff_user_id, granted: r.granted, skipped: r.skipped, reason: r.reason }); } catch (e) { logger.error("35.7 reviewer-role bootstrap failed", { error: e }); } }
 const server = createApiServer({ runtime, apiToken: config.apiToken, logger, borrower: { environment: config.environment, defaultPartnerId: config.borrowerDefaultPartnerId, talk: { apiKey: config.talk.apiKey, model: config.talk.model, effort: config.talk.effort }, llm: { apiKey: config.llm.apiKey, model: config.llm.model, effort: config.llm.effort, speed: config.llm.speed, promptVersion: config.llm.promptVersion }, video: { tavusApiKey: config.video.tavusApiKey, replicaId: config.video.replicaId, callbackSecret: config.video.callbackSecret, borrowerCamera: config.video.borrowerCamera, publicApiUrl: config.video.publicApiUrl, joinTimeoutS: config.video.joinTimeoutS } } });
 // 32.17: the video agent's vendor — FakeTavus (FAKE) unless TAVUS_API_KEY is set; the vendor is the face and the voice only, the brain stays here (src/runtime/borrower/video-routes.ts)
 logger.info("video agent vendor", { vendor: config.video.tavusApiKey ? "tavus" : "FAKE", replica: config.video.replicaId || (config.video.tavusApiKey ? "first stock replica" : "FAKE"), callback_secret: config.video.callbackSecret ? "configured" : "random per process (FAKE in-process callbacks only)", borrower_camera: config.video.borrowerCamera });

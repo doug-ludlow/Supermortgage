@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 8034/8756 (91.8%): tids 2244/2458, tables 765/848, timers 2042/2097, notices 308/308, tools 1433/1578, figures 1242/1467; processes at 100%: 192/205",
+ "brief": "spec units built 8079/8756 (92.3%): tids 2261/2458, tables 770/848, timers 2046/2097, notices 308/308, tools 1444/1578, figures 1250/1467; processes at 100%: 193/205",
  "totals": {
   "tids": {
    "spec": 2458,
-   "built": 2244
+   "built": 2261
   },
   "tables": {
    "spec": 848,
-   "built": 765
+   "built": 770
   },
   "timers": {
    "spec": 2097,
-   "built": 2042
+   "built": 2046
   },
   "notices": {
    "spec": 308,
@@ -19,15 +19,15 @@
   },
   "tools": {
    "spec": 1578,
-   "built": 1433
+   "built": 1444
   },
   "figures": {
    "spec": 1467,
-   "built": 1242
+   "built": 1250
   },
   "units": {
    "spec": 8756,
-   "built": 8034
+   "built": 8079
   }
  },
  "sections": {
@@ -237,9 +237,9 @@
   },
   "35": {
    "spec": 715,
-   "built": 10,
+   "built": 55,
    "processes": 12,
-   "done": 0
+   "done": 1
   }
  },
  "done": [
@@ -434,7 +434,8 @@
   "34.1",
   "34.2",
   "34.3",
-  "34.4"
+  "34.4",
+  "35.7"
  ],
  "processes": [
   {
@@ -8717,9 +8718,8 @@
    },
    "figures": {
     "spec": 19,
-    "built": 0,
+    "built": 1,
     "missing": [
-     "$0.00",
      "$1,233,000.00",
      "$1,250.00",
      "$1,253,050.55",
@@ -8742,9 +8742,9 @@
    },
    "units": {
     "spec": 55,
-    "built": 0
+    "built": 1
    },
-   "pct": 0.0
+   "pct": 1.8
   },
   {
    "process": "35.5",
@@ -8961,9 +8961,8 @@
    },
    "figures": {
     "spec": 40,
-    "built": 0,
+    "built": 1,
     "missing": [
-     "$0.00",
      "$1,067.72",
      "$1,096.67",
      "$1,240.00",
@@ -9007,58 +9006,29 @@
    },
    "units": {
     "spec": 80,
-    "built": 2
+    "built": 3
    },
-   "pct": 2.5
+   "pct": 3.8
   },
   {
    "process": "35.7",
    "title": "Operating roles, identity and the FAKE handover: a person for every kernel role, credentials that cannot be self-asserted on `/v1`, reviewer-role disjointness, the role queues and the handover board",
    "tids": {
     "spec": 17,
-    "built": 0,
-    "todo": 17,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15,
-     16,
-     17
-    ]
+    "built": 17,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 7,
-    "built": 2,
-    "missing": [
-     "api_principals",
-     "breakglass_uses",
-     "role_grants",
-     "role_handovers",
-     "role_queue_snapshots"
-    ]
+    "built": 7,
+    "missing": []
    },
    "timers": {
     "spec": 4,
-    "built": 0,
+    "built": 4,
     "armable": 4,
-    "missing": [
-     "SM_HANDOVER_BOARD_DAILY",
-     "SM_ROLE_BREAKGLASS_REVIEW_1BD",
-     "SM_ROLE_GRANT_DORMANT_30D",
-     "SM_ROLE_QUEUE_UNSTAFFED_1BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -9067,37 +9037,19 @@
    },
    "tools": {
     "spec": 11,
-    "built": 0,
-    "missing": [
-     "roles.grant",
-     "roles.revoke",
-     "roles.queue",
-     "roles.approve",
-     "roles.breakglass",
-     "principals.issue",
-     "principals.revoke",
-     "handover.plan",
-     "handover.enable",
-     "handover.board",
-     "writeDecision"
-    ]
+    "built": 11,
+    "missing": []
    },
    "figures": {
     "spec": 5,
-    "built": 0,
-    "missing": [
-     "$10,000.00",
-     "$10,000.01",
-     "$249,999.99",
-     "$250,000.00",
-     "$260,000.00"
-    ]
+    "built": 5,
+    "missing": []
    },
    "units": {
     "spec": 44,
-    "built": 2
+    "built": 44
    },
-   "pct": 4.5
+   "pct": 100.0
   },
   {
    "process": "35.8",
@@ -9400,9 +9352,8 @@
    },
    "figures": {
     "spec": 27,
-    "built": 0,
+    "built": 1,
     "missing": [
-     "$0.00",
      "$107.30",
      "$2,062.50",
      "$2,521.38",
@@ -9433,9 +9384,9 @@
    },
    "units": {
     "spec": 65,
-    "built": 0
+    "built": 1
    },
-   "pct": 0.0
+   "pct": 1.5
   },
   {
    "process": "35.11",

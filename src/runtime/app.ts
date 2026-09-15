@@ -72,6 +72,7 @@ import type { AnalystLlm } from "./partner-book-analyst.ts";
 import { notifyPartnerBookTapeLate, sendPartnerBookReminders } from "./partner-book.ts";
 import { sweepDailyReports, type SweepDailyReportsResult } from "./book-ops/routes.ts";
 import { escalateLongTrips, expireKillSwitchRequests } from "./controls/ai.ts";
+import { rolesSweepPass, type RolesSweepReport } from "../domain/operations-runtime/roles-35-7/sweep.ts";
 import type { Logger } from "./log.ts";
 
 export interface RuntimeDeps {
@@ -88,6 +89,10 @@ export interface RuntimeDeps {
   /** 33.2 rule 4: the refinance analyst's model (AnthropicLlm in deploy, the scripted client in tests; null / absent → the turn is skipped `model_off`, never the review). */
   readonly analystLlm?: AnalystLlm | null;
   readonly logger?: Logger;
+  /** 35.7: the one environment source — `ENVIRONMENT` (nonprod | production | …); the FAKE set (rule 6), the grants' environment key, the /v1 door and the handover read it here. Defaults to process.env. */
+  readonly environment?: string;
+  /** 35.7: the environment variables the FAKE set's default is derived from (INTEGRATIONS, FAKE_REVIEWERS, ENVIRONMENT); a test passes its own. Defaults to process.env. */
+  readonly env?: NodeJS.ProcessEnv;
 }
 /** A command is scoped to a loan (`loanId`), to an application before funding (`applicationId`), or to both during the 30.2 hand-off. */
 export interface ExecuteRequest { readonly process: string; readonly name: string; readonly loanId: string; readonly applicationId?: string; readonly actor: Actor; readonly input: ToolInput; readonly run?: AgentRunInfo; readonly approvedBy?: Actor; }
@@ -121,6 +126,8 @@ export interface SweepReport {
   readonly partner_book_daily_reports: SweepDailyReportsResult | null;
   /** 34.4 rule 4: kill-switch requests no admin confirmed within 10 minutes expired on this pass, and the compliance escalations opened for switches tripped more than 24 hours (src/runtime/controls/ai.ts). */
   readonly controls: { readonly kill_requests_expired: number; readonly long_trips_escalated: number };
+  /** 35.7: the roles pass (src/domain/operations-runtime/roles-35-7/sweep.ts rolesSweepPass) — the daily queue scan at/after 06:30 ET, the re-scan of roles with open items, the break-glass / request / principal expiries; after the FAKE reviewers, before the breach pass; null when it failed. */
+  readonly roles: RolesSweepReport | null;
 }
 export class ToolNotFound extends Error { constructor(process: string, name: string) { super(`no tool ${name} in process ${process}`); this.name = "ToolNotFound"; } }
 
@@ -149,6 +156,9 @@ export class Runtime {
   readonly reviewers: FakeReviewers | null;
   readonly analystLlm: AnalystLlm | null;
   readonly logger: Logger | undefined;
+  /** 35.7: the environment this runtime runs in (`ENVIRONMENT`), and the variables the FAKE set's default reads. */
+  readonly environment: string;
+  readonly env: NodeJS.ProcessEnv;
   readonly uow: PgUnitOfWork;
   readonly entities: PgEntityRepository;
   readonly escalationRepo: PgEscalationRepository;
@@ -163,6 +173,7 @@ export class Runtime {
   constructor(deps: RuntimeDeps) {
     this.db = deps.db; this.registry = deps.registry; this.agents = deps.agents ?? new AgentRegistry(); this.ports = deps.ports ?? fakePorts(); this.clock = deps.clock ?? systemClock;
     this.rateFeed = deps.rateFeed ?? null; this.reviewers = deps.reviewers ?? null; this.analystLlm = deps.analystLlm ?? null; this.logger = deps.logger;
+    this.env = deps.env ?? process.env; this.environment = deps.environment ?? this.env["ENVIRONMENT"] ?? "nonprod";
     this.noticeRegistry = deps.notices ?? (() => { const r = buildRegistry(); publishAuthored(r); publishSection02(r); registerPreapprovalLetter(r); return r; })();   // 32.8: 2.x's own authored pieces (AUTODRAFT-*, LC-*, SUSP-*) beside the catalog   // DELTA-01: the preapproval letter beside the catalog
     this.uow = new PgUnitOfWork(this.db, this.registry); this.entities = new PgEntityRepository(this.db); this.escalationRepo = new PgEscalationRepository(this.db); this.applications = new PgApplicationRepository(this.db);
     this.bus = new CommandBus(this.agents);
@@ -275,6 +286,9 @@ export class Runtime {
     catch (e) { this.logger?.error("controls sweep failed", { at: nowIso, error: e }); }
     let reviewers: FakeReviewerReport | null = null;
     if (this.reviewers) { try { reviewers = await this.reviewers.tick(this, nowIso); } catch (e) { this.logger?.error("fake reviewers failed", { at: nowIso, error: e }); } }
+    // 35.7: the roles pass after the FAKE reviewers (a FAKE approval of the day is counted by the daily scan that follows) and before the breach pass (a day's scan receipt never breaches) — errors logged, never thrown
+    let roles: RolesSweepReport | null = null;
+    try { roles = await rolesSweepPass(this, nowIso, { runId: null }); } catch (e) { this.logger?.error("roles sweep failed", { at: nowIso, error: e }); }
     const due = await this.uow.timers.due(nowIso);
     const breaches: SweepReport["breaches"][number][] = [];
     if (due.length) {
@@ -304,7 +318,7 @@ export class Runtime {
     let partnerBookTapeLate = 0;
     try { partnerBookTapeLate = (await notifyPartnerBookTapeLate(this, nowIso)).late; } catch (e) { this.logger?.error("partner book tape-late notice failed", { at: nowIso, error: e }); }
     const outbox = await this.db.query<{ adapter: string; status: string; count: string }>(`SELECT adapter, status, count(*)::text AS count FROM integration_messages WHERE status IN ('queued', 'failed') GROUP BY adapter, status ORDER BY adapter, status`).catch(() => []);
-    return { at: nowIso, due: due.length, breaches, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })), refi, reviewers, partner_book_review: partnerBookReview, partner_book_readiness: partnerBookReadiness, partner_book_reminders: partnerBookReminders, partner_book_tape_late: partnerBookTapeLate, partner_book_daily_reports: partnerBookDailyReports, controls };
+    return { at: nowIso, due: due.length, breaches, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })), refi, reviewers, partner_book_review: partnerBookReview, partner_book_readiness: partnerBookReadiness, partner_book_reminders: partnerBookReminders, partner_book_tape_late: partnerBookTapeLate, partner_book_daily_reports: partnerBookDailyReports, controls, roles };
   }
 
   async ready(): Promise<boolean> { try { await this.db.query("SELECT 1"); return true; } catch { return false; } }

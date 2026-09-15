@@ -9,7 +9,7 @@
   "reg_z": "as of 2026-09-11",
   "irs": "f1098, p1179"
  },
- "note": "Ordered list of concrete spec amendments from docs/audit/VERIFICATION.md, servicing first (sections 1–17) then origination (20–29). Each names the file, the heading, the old text, the new text, what it affects (T-ids, timers, figures, rules) and the source; apply one process at a time with the matching test change, and re-register (npm run spec:register && npm run spec:manifest && npm run audit) after each.",
+ "note": "Ordered list of concrete spec amendments from docs/audit/VERIFICATION.md, servicing first (sections 1–17) then origination (20–29). Each names the file, the heading, the old text, the new text, what it affects (T-ids, timers, figures, rules) and the source; apply one process at a time with the matching test change, and re-register (npm run spec:register && npm run spec:manifest && npm run audit) after each. Amendments for section 35 (batch \"35-consistency-pass\") apply after batch E, together with the places 35.x quotes that batches A–E changed.",
  "amendments": [
   {
    "file": "spec/sections/05-investor-reporting-remittance-fannie-mae/5-2-remittance-of-p-i.md",
@@ -4597,6 +4597,944 @@
    "priority": 9,
    "occurrences": 1,
    "order": 138
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-4-month-end-and-year-end-close.md",
+   "process": "35.4",
+   "section_heading": "### Verified requirement — Tax-year information returns",
+   "old_text": "1099-A/1099-C for Fannie Mae-owned loans are filed by Fannie Mae under its TIN 52-0883107 (Servicing Guide C-4.2-01 / F-1-23 as quoted by 7.1) — the tax-year close produces the candidate list only, never a Supermortgage filing **[UNVERIFIED — F-1-23's text was not opened by this file; 7.1 quotes it and no section builds the 1099-A/C hand-off; open question 4]**.",
+   "new_text": "1099-A/1099-C are filed by the servicer — Supermortgage — electronically on Fannie Mae's behalf: Fannie Mae's name on the first Lender/Creditor line followed by the servicer's address and contact information, Fannie Mae's TIN 52-0883107 in the Lender's/Creditor's TIN field and the servicer loan number in the account-number field, for portfolio loans (participation pools at 50% or more) and MBS loans not serviced under the regular servicing option; in the owner of record's name for regular-servicing-option MBS loans and sub-50% participations; followed by a Summary of IRS Form 1099-A and 1099-C Filing (Form 1100) to Fannie Mae; and never a 1099-C for a loan Fannie Mae has assigned to a collection vendor (its list arrives by January 5) (Servicing Guide C-4.2-01, 06/09/2021, pp. 233–234; F-1-23, 06/09/2021, pp. 672–673 — re-read 2026-09-15). The tax-year close therefore opens 1099-A/C furnish and file steps beside the 1098 and 1099-INT steps, never a hand-off list.",
+   "affects": [
+    "35.4 Verified requirement ¶5",
+    "35.4 rule 10",
+    "35.4-T11"
+   ],
+   "rationale": "The Guide places the 1099-A/C filing on the servicer (in Fannie Mae's name and TIN), not on Fannie Mae; a platform that only produces a candidate list would miss IRS filings whose penalties C-4.2-01 charges back to the servicer.",
+   "source": "servicing-guide-08-12-26-final.txt pp.247-248 (C-4.2-01), pp.686-687 (F-1-23)",
+   "test_change": "35.4-T11 gains 1099-A/C furnish/file steps (see amendment 6); a new T-id for the F-1-23 header fields and Form 1100 is 7.1/15.x's to add.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 1,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-4-month-end-and-year-end-close.md",
+   "process": "35.4",
+   "section_heading": "#### Business rules and calculations — rule 10",
+   "old_text": "and the 1099-A/C candidate set is every loan with a 15.x liquidation or a discharge in the year (hand-off list only).",
+   "new_text": "and the 1099-A/C set is every loan with a 15.x acquisition by Fannie Mae or a third party (the redemption period ended or the Mortgage Release accepted), a known abandonment, or a discharge of debt in the year — filed by Supermortgage on Fannie Mae's behalf under C-4.2-01/F-1-23 (Fannie Mae's name and TIN 52-0883107, servicer loan number as the account number, Form 1100 to Fannie Mae, the January 5 no-1099-C list honoured).",
+   "affects": [
+    "35.4 rule 10"
+   ],
+   "rationale": "Same as amendment 1.",
+   "source": "servicing-guide-08-12-26-final.txt pp.247-248, 686-687",
+   "test_change": "none beyond amendment 6.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 2,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-4-month-end-and-year-end-close.md",
+   "process": "35.4",
+   "section_heading": "#### Business rules and calculations — rule 10 (tax-year period steps)",
+   "old_text": "writes `tax_year_closes` and the candidate-list document, opens the kind `tax_year` close period with its four steps, and emits `close.tax_year.closed{tax_year, reportable_loans, ioe_1099_loans}`.",
+   "new_text": "writes `tax_year_closes` and the 1099-A/C filing-list document, opens the kind `tax_year` close period with its six steps, and emits `close.tax_year.closed{tax_year, reportable_loans, ioe_1099_loans, form_1099_ac_loans}`.",
+   "affects": [
+    "35.4 rule 10",
+    "35.4-T11"
+   ],
+   "rationale": "Same as amendment 1.",
+   "source": "servicing-guide-08-12-26-final.txt pp.247-248, 686-687",
+   "test_change": "35.4-T11 asserts the six-step set.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 3,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-4-month-end-and-year-end-close.md",
+   "process": "35.4",
+   "section_heading": "#### Business rules and calculations — rule 1 (kind tax_year steps)",
+   "old_text": "The kind `tax_year` period (opened by `close.tax_year`) has four steps: `form_1098_furnish` (7.1, cycle `form_1098` → `tax_form.1098.run_completed{tax_year}`, per loan — 35.3's def), `form_1099_int_furnish` (3.9), then `form_1098_file` and `form_1099_int_file` (each depends on its furnish step; receipts `tax_form.1098.filed{tax_year}` with IRS acceptance and `escrow_interest_1099.filed`).",
+   "new_text": "The kind `tax_year` period (opened by `close.tax_year`) has six steps: `form_1098_furnish` (7.1, cycle `form_1098` → `tax_form.1098.run_completed{tax_year}`, per loan — 35.3's def), `form_1099_int_furnish` (3.9), `form_1099_ac_furnish` (15.x — Copy B to the borrower in Fannie Mae's name, C-4.2-01/F-1-23), then `form_1098_file`, `form_1099_int_file` and `form_1099_ac_file` (each depends on its furnish step; receipts `tax_form.1098.filed{tax_year}` with IRS acceptance, `escrow_interest_1099.filed`, and `tax_form.1099ac.filed{tax_year, form_1100_submitted: true}`).",
+   "affects": [
+    "35.4 rule 1",
+    "35.4-T11"
+   ],
+   "rationale": "Same as amendment 1.",
+   "source": "servicing-guide-08-12-26-final.txt pp.686-687",
+   "test_change": "35.4-T11 step list.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 4,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-4-month-end-and-year-end-close.md",
+   "process": "35.4",
+   "section_heading": "#### Data model — close_period_steps.code / tax_year_closes",
+   "old_text": "form_1098_furnish, form_1099_int_furnish, form_1098_file, form_1099_int_file}",
+   "new_text": "form_1098_furnish, form_1099_int_furnish, form_1099_ac_furnish, form_1098_file, form_1099_int_file, form_1099_ac_file}",
+   "affects": [
+    "35.4 Data model close_period_steps"
+   ],
+   "rationale": "Same as amendment 1.",
+   "source": "servicing-guide-08-12-26-final.txt pp.686-687",
+   "test_change": "db.test enum check.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 5,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-4-month-end-and-year-end-close.md",
+   "process": "35.4",
+   "section_heading": "#### Test cases — 35.4-T11",
+   "old_text": "with steps `form_1098_furnish`, `form_1099_int_furnish`, `form_1098_file`, `form_1099_int_file`,",
+   "new_text": "with steps `form_1098_furnish`, `form_1099_int_furnish`, `form_1099_ac_furnish`, `form_1098_file`, `form_1099_int_file`, `form_1099_ac_file`,",
+   "affects": [
+    "35.4-T11"
+   ],
+   "rationale": "Same as amendment 1.",
+   "source": "servicing-guide-08-12-26-final.txt pp.686-687",
+   "test_change": "src/domain/operations-runtime/35-4.spec.test.ts 35.4-T11: expected step set gains the two 1099-A/C steps.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 6,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-4-month-end-and-year-end-close.md",
+   "process": "35.4",
+   "section_heading": "#### Data model — tax_year_closes",
+   "old_text": "`form_1099_ac_candidates int` (liquidations and discharges in the year; F-1-23 hand-off list, no filing)",
+   "new_text": "`form_1099_ac_loans int` (acquisitions, abandonments and discharges in the year; filed by Supermortgage on Fannie Mae's behalf under C-4.2-01/F-1-23, Form 1100 submitted)",
+   "affects": [
+    "35.4 Data model tax_year_closes"
+   ],
+   "rationale": "Same as amendment 1.",
+   "source": "servicing-guide-08-12-26-final.txt pp.247-248",
+   "test_change": "column rename in the 35.4 migration and its db.test.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 7,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-4-month-end-and-year-end-close.md",
+   "process": "35.4",
+   "section_heading": "### Open questions / decisions — 4",
+   "old_text": "4. Who hands the 1099-A/C candidate list to Fannie Mae, and in what form? **Default: the list is a document on the tax-year row for `fnma_portal_operator`; no Supermortgage filing; confirm F-1-23's procedure with the Investor Reporting Representative before the first tax-year close [UNVERIFIED].**",
+   "new_text": "4. Resolved (Servicing Guide C-4.2-01 / F-1-23, re-read 2026-09-15): Supermortgage files Forms 1099-A/1099-C electronically on Fannie Mae's behalf (Fannie Mae's name and TIN 52-0883107, the servicer loan number as the account number) and submits Form 1100 to Fannie Mae; the tax-year row keeps the filing list as its document and the `fnma_portal_operator` submits Form 1100.",
+   "affects": [
+    "35.4 open question 4"
+   ],
+   "rationale": "Same as amendment 1.",
+   "source": "servicing-guide-08-12-26-final.txt pp.686-687",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 8,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-4-month-end-and-year-end-close.md",
+   "process": "35.4",
+   "section_heading": "| Capacity |",
+   "old_text": "Supermortgage furnishes and files Form 1098 and 1099-INT in its own name and TIN (7.1, 3.9); the partner is the system of record only for what Fannie Mae holds",
+   "new_text": "Supermortgage furnishes and files Form 1098 and 1099-INT in its own name and TIN (7.1, 3.9; Servicing Guide C-4.2-01) and Forms 1099-A/1099-C in Fannie Mae's name and TIN on Fannie Mae's behalf (C-4.2-01, F-1-23); the partner is the system of record only for what Fannie Mae holds",
+   "affects": [
+    "35.4 Capacity"
+   ],
+   "rationale": "Same as amendment 1.",
+   "source": "servicing-guide-08-12-26-final.txt pp.248-249",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 9,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-3-cycles-jobs-and-receipts.md",
+   "process": "35.3",
+   "section_heading": "| Governing source |",
+   "old_text": "5.1 (Investor Reporting Manual: LAR by the next business day 20:00 ET; period close BD2 17:00 ET)",
+   "new_text": "5.1 (Investor Reporting Manual 2-01: a LAR by 20:00 ET on the next business day; the prior period's non-removal activity and corrections close at BD1 20:00 ET, removals and removal corrections at BD2 17:00 ET, bulk upload 15:00 ET)",
+   "affects": [
+    "35.3 Governing source"
+   ],
+   "rationale": "IRM 2-01 has no single BD2 17:00 close: payment activity closes BD1 20:00 ET; only removals run to BD2 17:00 ET.",
+   "source": "fannie-mae-investor-reporting-manual-updated-04-08-26.txt p.11",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 10,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-3-cycles-jobs-and-receipts.md",
+   "process": "35.3",
+   "section_heading": "#### Business rules — rule 2 registry table, row investor_period_close",
+   "old_text": "| `investor_period_close` | 35.4 / 5.1 (`investor-reporting`) | period (month) | BD2 17:00 ET each month for the prior month | `<YYYY-MM>` | 35.4's close step that emits `investor_reporting_periods.closed` | `investor.period_close.run_completed` | `lar_daily` for the period's last business day | `FNMA_IRM_PERIOD_CLOSE_BD2_1700` |",
+   "new_text": "| `investor_period_close` | 35.4 / 5.1 (`investor-reporting`) | period (month) | BD2 17:00 ET each month for the prior month — the removal close; the period's non-removal LARs and corrections closed at BD1 20:00 ET (IRM 2-01) | `<YYYY-MM>` | 35.4's close step that emits `investor_reporting_periods.closed` | `investor.period_close.run_completed` | `lar_daily` for BD1 of the following month (the period's last non-removal LARs) | `FNMA_IRM_PERIOD_CLOSE_BD2_1700` |",
+   "affects": [
+    "35.3 registry row investor_period_close",
+    "35.3-T6"
+   ],
+   "rationale": "Same as amendment 10.",
+   "source": "fannie-mae-investor-reporting-manual-updated-04-08-26.txt p.11",
+   "test_change": "35.3-T6's blocked/unblocked semantics unchanged; the planner's depends_on literal for investor_period_close becomes the BD1 lar_daily run.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 11,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-4-month-end-and-year-end-close.md",
+   "process": "35.4",
+   "section_heading": "### Verified requirement — Fannie Mae period close and finality",
+   "old_text": "**Fannie Mae period close and finality (5.1, IRM April 8, 2026 edition, verified by 5.1 on 2026-09-09).** The reporting period \"will close at 5:00 p.m. eastern time on the second business day\" (LL-2026-05; IRM p. 11 for the LAR rail); after period close",
+   "new_text": "**Fannie Mae period close and finality (5.1; IRM 2-01, 11/13/2024, and 4-08, 04/08/2026 — re-read 2026-09-15).** The prior period's payment (non-removal) activity and its corrections must reach Fannie Mae \"no later than 8 p.m. eastern time on the first business day of the month following the reporting period\"; removal transactions processed on that day and removal corrections must reach Fannie Mae \"by 5 p.m. eastern time on the second business day of the month following the reporting period\" (IRM 2-01, p. 11; LL-2026-05 is not in the verification bundle); after period close",
+   "affects": [
+    "35.4 Verified requirement ¶1",
+    "35.4 rule 1"
+   ],
+   "rationale": "Same as amendment 10; the quoted LL sentence is not in the IRM.",
+   "source": "fannie-mae-investor-reporting-manual-updated-04-08-26.txt p.11, p.42",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 12,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-4-month-end-and-year-end-close.md",
+   "process": "35.4",
+   "section_heading": "#### Business rules — rule 1 chain table, row lar",
+   "old_text": "| `lar` | 5.1 | `eod_cutoff` | cycle `lar_daily`, the run for the period's last `business_days_fannie_et` day (5.1's LAR pass for every active loan through `period_end`, including IRED no-activity) → `investor.lar.run_completed{as_of_date = <that day>}` | global |",
+   "new_text": "| `lar` | 5.1 | `eod_cutoff` | cycle `lar_daily`, the run for BD1 of the following month (5.1's LAR pass for every active loan through `period_end`, including IRED no-activity — due 20:00 ET on BD1, IRM 2-01) → `investor.lar.run_completed{as_of_date = <BD1>}` | global |",
+   "affects": [
+    "35.4 rule 1 (lar)",
+    "35.4-T3",
+    "35.4-T4",
+    "35.4-T14"
+   ],
+   "rationale": "The last non-removal LARs of a period are due BD1 20:00 ET, so the step's unit is the BD1 run, not the period's last business day.",
+   "source": "fannie-mae-investor-reporting-manual-updated-04-08-26.txt p.11",
+   "test_change": "35.4-T3/T4/T14: the `lar` receipt's as_of_date is BD1 (2026-10-01 for September) and its expected_by 20:00 ET; `period_close` (removal close) keeps BD2 17:00 ET.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 13,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-4-month-end-and-year-end-close.md",
+   "process": "35.4",
+   "section_heading": "#### Business rules — rule 1 chain table, row period_close",
+   "old_text": "cycle `investor_period_close` (5.1 rule 10 close checklist)",
+   "new_text": "cycle `investor_period_close` (5.1 rule 10 close checklist; the removal close at BD2 17:00 ET, IRM 2-01)",
+   "affects": [
+    "35.4 rule 1 (period_close)"
+   ],
+   "rationale": "Same as amendment 13.",
+   "source": "fannie-mae-investor-reporting-manual-updated-04-08-26.txt p.11",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 14,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-10-the-refinance-close-of-the-loop.md",
+   "process": "35.10",
+   "section_heading": "### Verified requirement — Payoff processing and release",
+   "old_text": "the LAR action code 60 by the next Fannie Mae business day 20:00 ET",
+   "new_text": "the LAR action code 60 by the next Fannie Mae business day — 17:00 ET under Servicing Guide C-4.3-01 (04/08/2026, p. 236: a removal transaction \"by 5 p.m. eastern time on the next business day if the servicer processes the transaction in its system\"), 20:00 ET under IRM 2-01 (11/13/2024, p. 11) except 17:00 ET when that day is BD2; the platform holds the earlier 17:00 ET",
+   "affects": [
+    "35.10 Verified requirement ¶3",
+    "35.10 Worked example A"
+   ],
+   "rationale": "The two Fannie Mae texts in the bundle differ; the later-dated Guide topic is stricter.",
+   "source": "servicing-guide-08-12-26-final.txt p.250; fannie-mae-investor-reporting-manual-updated-04-08-26.txt p.11, p.19",
+   "test_change": "16.2's payoff-LAR timer (referenced) — due time 17:00 ET.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 15,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-10-the-refinance-close-of-the-loop.md",
+   "process": "35.10",
+   "section_heading": "#### Business rules — Worked example A",
+   "old_text": "LAR action code 60 due Mon 2027-02-01 20:00 ET",
+   "new_text": "LAR action code 60 due Mon 2027-02-01 17:00 ET (Servicing Guide C-4.3-01; the IRM's 20:00 ET is the later of the two texts)",
+   "affects": [
+    "35.10 Worked example A",
+    "35.10-T2"
+   ],
+   "rationale": "Same as amendment 15.",
+   "source": "servicing-guide-08-12-26-final.txt p.250",
+   "test_change": "35.10-T2 asserts no LAR time; if one is added, 17:00 ET.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 16,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-4-month-end-and-year-end-close.md",
+   "process": "35.4",
+   "section_heading": "#### Test cases — 35.4-T11",
+   "old_text": "arms `IRS_6050H_1098_FURNISH_0131` (due 2027-01-31)",
+   "new_text": "arms `IRS_6050H_1098_FURNISH_0131` (due Mon 2027-02-01: 31 January 2027 is a Sunday, and Pub. 1179 §4.6.3 treats a statement furnished by the first business day after as timely)",
+   "affects": [
+    "35.4-T11",
+    "7.1 IRS_6050H_1098_FURNISH_0131 (referenced)"
+   ],
+   "rationale": "A Sunday due date rolls to Monday; T11's 2027-01-31 is a day early.",
+   "source": "p1179.txt p.33",
+   "test_change": "35.4-T11 due_at assertion 2027-01-31 → 2027-02-01 (requires 7.1's timer to roll Saturday/Sunday/holiday dates forward).",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 17,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-4-month-end-and-year-end-close.md",
+   "process": "35.4",
+   "section_heading": "### Verified requirement — Tax-year information returns (dates)",
+   "old_text": "furnished by 31 January and e-filed by 31 March of the following year;",
+   "new_text": "furnished by 31 January (a Saturday, Sunday or legal-holiday date rolls to the first business day after — Pub. 1179 §4.6.3; Mon 2027-02-01 for tax year 2026) and e-filed by 31 March of the following year (the General Instructions' date, not in the verification bundle);",
+   "affects": [
+    "35.4 Verified requirement ¶5"
+   ],
+   "rationale": "Same as amendment 17; the e-file date is unverified in the bundle.",
+   "source": "p1179.txt p.33; f1098.txt p.1",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 18,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-2-documents-and-artifacts.md",
+   "process": "35.2",
+   "section_heading": "#### Business rules and calculations — rule 11",
+   "old_text": "renders the substitute statement: form title and tax year, the official box numbers and captions, the recipient/lender block, the payer block with the TIN truncated to its last four (`XXX-XX-1234`), the Pub. 1179 legends **[UNVERIFIED — exact text]**, money as `$1,234.56`.",
+   "new_text": "renders the substitute statement per Pub. 1179 (Rev. 07-2026) §4.1.3 and §4.4.1: the tax year, form number (1098) and form name displayed prominently together in one area; the official box numbers and captions; the recipient/lender block with Supermortgage's name, address, telephone number and TIN in full (the filer's TIN is never truncated); the payer block with the payer's TIN truncated to its last four (`XXX-XX-1234`); the direct-access telephone number of an individual who can answer questions about the statement; the two required legends verbatim — (1) \"The information in boxes 1 through 9 and 11 is important tax information and is being furnished to the IRS. If you are required to file a return, a negligence penalty or other sanction may be imposed on you if the IRS determines that an underpayment of tax results because you overstated a deduction for the mortgage interest or for these points, reported in boxes 1 and 6; or because you did not report the refund of interest (box 4); or because you claimed a nondeductible item.\" and (2) \"*Caution: The amount shown may not be fully deductible by you. Limits based on the loan amount and the cost and value of the secured property may apply. Also, you may only deduct interest to the extent it was incurred by you, actually paid by you, and not reimbursed by another person.\"; the Instructions for Payer/Borrower as on the official Copy B; money as `$1,234.56`.",
+   "affects": [
+    "35.2 rule 11",
+    "35.2-T12",
+    "35.2 Worked example B"
+   ],
+   "rationale": "Pub. 1179 §4.1.3 requires the form number, the filer's TIN, a direct-access telephone number and recipient instructions; §4.4.1 fixes the two legends.",
+   "source": "p1179.txt pp.24-25, 28; p.18",
+   "test_change": "35.2-T12 text-layer assertions gain the form number, the lender TIN, the telephone number and the two legends.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 19,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-2-documents-and-artifacts.md",
+   "process": "35.2",
+   "section_heading": "#### Test cases — 35.2-T12",
+   "old_text": "the payer TIN as `XXX-XX-1234` and no full TIN anywhere, the form title and tax year,",
+   "new_text": "the payer TIN as `XXX-XX-1234`, the recipient/lender TIN in full and no other full TIN, the tax year, form number and form name together in one area, a direct-access telephone number, the two Pub. 1179 §4.4.1 legends,",
+   "affects": [
+    "35.2-T12"
+   ],
+   "rationale": "Only the payee's TIN may be truncated; the filer's TIN must appear.",
+   "source": "p1179.txt p.18, p.24",
+   "test_change": "src/domain/operations-runtime/35-2.spec.test.ts 35.2-T12: assert the lender EIN is present in full and the payer TIN masked; assert the legends and telephone number.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 20,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-2-documents-and-artifacts.md",
+   "process": "35.2",
+   "section_heading": "### Open questions / decisions — 5",
+   "old_text": "5. Should the 1098 Copy B render the full TIN on the lender's copy? **Default: no copy this process renders carries a full TIN; the e-file record (35.4) carries it encrypted.**",
+   "new_text": "5. Resolved (Pub. 1179 §4.1.3, §2.2.1): the Copy B must carry the filer's (Supermortgage's) TIN in full — only the payer's TIN may be truncated; no copy this process renders carries a full payer TIN, and the e-file record (35.4) carries it encrypted.",
+   "affects": [
+    "35.2 open question 5"
+   ],
+   "rationale": "Same as amendment 20.",
+   "source": "p1179.txt p.18, p.24",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 21,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-2-documents-and-artifacts.md",
+   "process": "35.2",
+   "section_heading": "### Verified requirement — Form 1098 substitute statements",
+   "old_text": "**Form 1098 substitute statements (IRS Pub. 1179, General Rules and Specifications for Substitute Forms 1096, 1098, 1099, …)** — the Copy B furnished to the payer may be a substitute that carries the official box numbers and captions, the form title and year, the payer's truncated TIN and the required legends **[UNVERIFIED — Pub. 1179's revision for tax year 2026 and its exact legend text are to be confirmed by counsel before the first 1098 run; the e-file transmittal (7.1: IRIS/FIRE) is 35.4's, not this process's]**.",
+   "new_text": "**Form 1098 substitute statements (IRS Pub. 1179, Rev. 07-2026 — Rev. Proc. 2026-18, IRB 2026-30, §4.1.3 and §4.4.1; verified 2026-09-15).** The Copy B furnished to the payer may be a substitute if the tax year, form number and form name are displayed prominently together in one area; it must carry the same information as the official form (the name, address and TIN of the filer and of the recipient; the box numbers and captions titled substantially as on the official form), the direct-access telephone number of an individual who can answer questions about the statement, instructions to the recipient similar to the official form's, and the two §4.4.1 legends verbatim (rule 11); the payer's TIN may be truncated to its last four (§2.2.1), the filer's may not. The e-file transmittal (7.1: IRIS/FIRE) is 35.4's, not this process's.",
+   "affects": [
+    "35.2 Verified requirement ¶6"
+   ],
+   "rationale": "Marker resolved from the bundle's Pub. 1179.",
+   "source": "p1179.txt pp.1, 18, 24-25, 28",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 22,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-2-documents-and-artifacts.md",
+   "process": "35.2",
+   "section_heading": "#### Business rules — Worked example B (Box 2 marker)",
+   "old_text": "Box 2 (outstanding principal as of the origination date, the loan having originated in the year — **[UNVERIFIED — Instructions for Form 1098, Box 2, tax-year 2026 revision]**) = **$400,000.00**",
+   "new_text": "Box 2 (outstanding principal as of the origination date, the loan having originated in the year — Form 1098 (Rev. April 2025), Box 2: \"If the mortgage originated in the calendar year, shows the mortgage principal as of the date of origination\") = **$400,000.00**",
+   "affects": [
+    "35.2 Worked example B",
+    "35.2-T12"
+   ],
+   "rationale": "Marker resolved from the bundle's Form 1098 instructions (continuous-use Rev. April 2025).",
+   "source": "f1098.txt p.4",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 23,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-2-documents-and-artifacts.md",
+   "process": "35.2",
+   "section_heading": "### Verified requirement — Electronic records and signatures (A2-4.1-03)",
+   "old_text": "the borrower \"may not be required to use electronic records\"; paper notes \"may not be converted into eNotes\".",
+   "new_text": "a lender \"may not require a borrower to use remote notarization and must have other notary options available for borrowers upon request\" (the borrower's right to paper records is E-SIGN's, 15 U.S.C. 7001(c), via 7.4 — not Guide text); paper notes \"may not be converted into eNotes\".",
+   "affects": [
+    "35.2 Verified requirement ¶2"
+   ],
+   "rationale": "The quoted sentence does not appear in A2-4.1-03.",
+   "source": "selling-guide-09-02-26-highlighted.txt pp.89-94",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 24,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-2-documents-and-artifacts.md",
+   "process": "35.2",
+   "section_heading": "### Verified requirement — Electronic records and signatures (evidence list)",
+   "old_text": "electronic signatures must comply with ESIGN/UETA with retained evidence of \"the authenticated identity of the signer,\" attribution and date;",
+   "new_text": "electronic signatures must comply with ESIGN/UETA with retained evidence of \"the authenticated identity of the signer,\" attribution, the signer's express or implied agreement to use an electronic signature, the date, and the method (and, if applicable, the eSign vendor) of signing;",
+   "affects": [
+    "35.2 Verified requirement ¶2",
+    "35.2-T13"
+   ],
+   "rationale": "A2-4.1-03 lists five evidence items; the data model already stores all five.",
+   "source": "selling-guide-09-02-26-highlighted.txt p.93",
+   "test_change": "none (esign_signature_events already carries consent_affirmed and auth_method).",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 25,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-2-documents-and-artifacts.md",
+   "process": "35.2",
+   "section_heading": "### Sources",
+   "old_text": "- IRS Publication 1179 and Instructions for Form 1098 (tax-year 2026 revisions **[UNVERIFIED]**)",
+   "new_text": "- IRS Publication 1179 (Rev. 07-2026; Rev. Proc. 2026-18) §2.2.1, §4.1.3, §4.4.1; Form 1098 (Rev. April 2025) and its Instructions for Payer/Borrower — verified 2026-09-15",
+   "affects": [
+    "35.2 Sources"
+   ],
+   "rationale": "Markers resolved.",
+   "source": "p1179.txt p.1; f1098.txt pp.2-4",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 26,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-3-cycles-jobs-and-receipts.md",
+   "process": "35.3",
+   "section_heading": "| Governing source | (6.3)",
+   "old_text": "6.3 (Form 496 within 45 days; the daily three-way)",
+   "new_text": "6.3 (Servicing Guide F-1-03: the monthly Form 496/496A reconciliation and its retention — the 45-day completion is the form instructions' as 6.3 reads them; the daily three-way)",
+   "affects": [
+    "35.3 Governing source"
+   ],
+   "rationale": "The Guide text has no 45-day deadline and the topic is F-1-03.",
+   "source": "servicing-guide-08-12-26-final.txt p.561",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 27,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-3-cycles-jobs-and-receipts.md",
+   "process": "35.3",
+   "section_heading": "#### Business rules — rule 2 registry table, row form_496_monthly",
+   "old_text": "| after both closes; drafted by BD10, completed within 45 days |",
+   "new_text": "| after both closes; drafted by BD10 (6.3 policy), completed within 45 days (6.3's reading of the Form 496 instructions; Servicing Guide F-1-03 requires the monthly reconciliation and its retention) |",
+   "affects": [
+    "35.3 registry row form_496_monthly"
+   ],
+   "rationale": "Same as amendment 26.",
+   "source": "servicing-guide-08-12-26-final.txt p.561",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 28,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-3-cycles-jobs-and-receipts.md",
+   "process": "35.3",
+   "section_heading": "#### Business rules — rule 2 registry table, row form_496a_monthly",
+   "old_text": "| after `ledger_period_close`; completed within 45 days after month-end (F-1-20 Form 496A) |",
+   "new_text": "| after `ledger_period_close`; completed within 45 days after month-end (6.4's reading of the Form 496A instructions; Servicing Guide F-1-03) |",
+   "affects": [
+    "35.3 registry row form_496a_monthly"
+   ],
+   "rationale": "F-1-20 is 'Remitting and Accounting to Fannie Mae'; the Form 496A rule is F-1-03.",
+   "source": "servicing-guide-08-12-26-final.txt p.561, p.652",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 29,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-3-cycles-jobs-and-receipts.md",
+   "process": "35.3",
+   "section_heading": "| Governing source | (5.2)",
+   "old_text": "5.2 (Form 120 / A/A remittance BD1 16:00 ET)",
+   "new_text": "5.2 (Servicing Guide F-1-20: A/A collections received after the 4 p.m. ET CRS cut-off on the last work day are remitted on the first work day of the month; the electronic draft notice by BD3)",
+   "affects": [
+    "35.3 Governing source"
+   ],
+   "rationale": "'Form 120' does not exist; the source is F-1-20.",
+   "source": "servicing-guide-08-12-26-final.txt pp.653-654, 657",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 30,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-3-cycles-jobs-and-receipts.md",
+   "process": "35.3",
+   "section_heading": "#### Business rules — rule 2 registry table, row remittance",
+   "old_text": "| A/A: BD1 16:00 ET; draft notices BD3 12:00 ET; S/S per Form 120 |",
+   "new_text": "| A/A: BD1 16:00 ET (F-1-20: prior-month collections received after the 4 p.m. ET cut-off); draft notices BD3 (F-1-20; the 12:00 ET is 5.2's); S/S per F-1-20 (portfolio: 18th calendar day; MBS: per remittance cycle) |",
+   "affects": [
+    "35.3 registry row remittance"
+   ],
+   "rationale": "Same as amendment 29.",
+   "source": "servicing-guide-08-12-26-final.txt pp.653-655, 657",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 31,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-3-cycles-jobs-and-receipts.md",
+   "process": "35.3",
+   "section_heading": "| Governing source | (8.1)",
+   "old_text": "8.1 (Selling Guide C-4.1-01: Metro 2 snapshot as of month-end, built by 12:00 ET on the 1st)",
+   "new_text": "8.1 (Servicing Guide C-4.1-01, 07/15/2020: the status of each loan reported as of the last day of each month; built by 12:00 ET on the 1st is 8.1's schedule)",
+   "affects": [
+    "35.3 Governing source"
+   ],
+   "rationale": "C-4.1-01 is a Servicing Guide topic.",
+   "source": "servicing-guide-08-12-26-final.txt p.246",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 32,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-4-month-end-and-year-end-close.md",
+   "process": "35.4",
+   "section_heading": "### Verified requirement — Form 496 identity and deadline",
+   "old_text": "**Form 496 identity and deadline (6.3, Servicing Guide F-1-20 and the Form 496 instructions, verified by 6.3 on 2026-09-09).**",
+   "new_text": "**Form 496 identity and deadline (6.3, Servicing Guide F-1-03 and the Form 496 instructions, verified by 6.3 on 2026-09-09; F-1-03 re-read 2026-09-15 — the Guide requires the monthly Form 496/496A reconciliation and its retention, and the 45-day completion is the form instructions', which are not in the verification bundle).**",
+   "affects": [
+    "35.4 Verified requirement ¶2"
+   ],
+   "rationale": "Same as amendment 26.",
+   "source": "servicing-guide-08-12-26-final.txt p.561",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 33,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-4-month-end-and-year-end-close.md",
+   "process": "35.4",
+   "section_heading": "### Verified requirement — Form 496 identity and deadline (496A)",
+   "old_text": "The T&I form (6.4, F-1-20 Form 496A) closes on the same 45-day clock per T&I account.",
+   "new_text": "The T&I form (6.4, F-1-03 Form 496A) closes on the same 45-day clock per T&I account.",
+   "affects": [
+    "35.4 Verified requirement ¶2"
+   ],
+   "rationale": "Same as amendment 28.",
+   "source": "servicing-guide-08-12-26-final.txt p.561",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 34,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-4-month-end-and-year-end-close.md",
+   "process": "35.4",
+   "section_heading": "### Sources",
+   "old_text": "- Servicing Guide F-1-20 (Form 496/496A), C-4.3-01 and the Investor Reporting Manual (April 8, 2026) 4-08, C-4.1-01, A4-1-01, C-4.2-01 / F-1-23; 26 U.S.C. 6050H and 26 CFR 1.6050H-2; 26 U.S.C. 6049 — as verified by the sections cited above; not re-fetched by this file",
+   "new_text": "- Servicing Guide F-1-03 (Form 496/496A reconciliation), F-1-20 (remitting), C-4.3-01, C-4.1-01, A4-1-01, C-4.2-01 / F-1-23 and the Investor Reporting Manual (April 8, 2026) 2-01, 4-08 — re-read 2026-09-15; 26 U.S.C. 6050H and 26 CFR 1.6050H-2; 26 U.S.C. 6049 — as verified by the sections cited above",
+   "affects": [
+    "35.4 Sources"
+   ],
+   "rationale": "Cite corrections.",
+   "source": "servicing-guide-08-12-26-final.txt pp.246-250, 561, 652, 685-687; fannie-mae-investor-reporting-manual-updated-04-08-26.txt pp.11, 42",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 35,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-4-month-end-and-year-end-close.md",
+   "process": "35.4",
+   "section_heading": "### Verified requirement — Month-end credit snapshot",
+   "old_text": "8.1 builds it \"00:05 ET on the 1st\" as of `as_of_date` = month-end and transmits within 3 servicer business days.",
+   "new_text": "8.1 builds it \"00:05 ET on the 1st\" as of `as_of_date` = month-end and transmits within 3 servicer business days (8.1's schedule; C-4.1-01 sets no transmission deadline).",
+   "affects": [
+    "35.4 Verified requirement ¶3"
+   ],
+   "rationale": "Label the policy figure.",
+   "source": "servicing-guide-08-12-26-final.txt p.246",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 36,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-4-month-end-and-year-end-close.md",
+   "process": "35.4",
+   "section_heading": "### Verified requirement — QC cycle and STAR",
+   "old_text": "**QC cycle and STAR (18.1 A4-1-01; 18.3, verified by their files).**",
+   "new_text": "**QC cycle and STAR (18.1 — Servicing Guide A4-1-01 sets no cycle dates, so BD3/BD20 are 18.1's policy; 18.3, verified by their files).**",
+   "affects": [
+    "35.4 Verified requirement ¶4"
+   ],
+   "rationale": "A4-1-01 has no BD3/BD20 cycle.",
+   "source": "servicing-guide-08-12-26-final.txt p.138",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 37,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-4-month-end-and-year-end-close.md",
+   "process": "35.4",
+   "section_heading": "#### Business rules — rule 8",
+   "old_text": "3 federal business days after Fri 2026-12-31",
+   "new_text": "3 federal business days after Thu 2026-12-31",
+   "affects": [
+    "35.4 rule 8"
+   ],
+   "rationale": "2026-12-31 is a Thursday; the result (Wed 2027-01-06) is unchanged.",
+   "source": "calendar",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 38,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-5-the-installment-schedule-and-the-daily-cashiering-cycle.md",
+   "process": "35.5",
+   "section_heading": "### Verified requirement — Receipt date and the cut-off",
+   "old_text": "**Receipt date and the cut-off are per channel and local (2.1 rule 1; Reg Z §1026.36(c)(1)(i) and comment 36(c)(1)(i)-3).**",
+   "new_text": "**Receipt date and the cut-off are per channel and local (2.1 rule 1; Reg Z §1026.36(c)(1)(i) and comment 36(c)(1)(i)-3 for the date of receipt; §1026.36(c)(1)(iii) and comments 36(c)(1)(iii)-1 and -2 for the written cut-off hour).**",
+   "affects": [
+    "35.5 Verified requirement ¶5",
+    "35.5 rule 7"
+   ],
+   "rationale": "Comment 36(c)(1)(i)-3 defines the date of receipt; the cut-off hour is in the (c)(1)(iii) comments.",
+   "source": "12-cfr-part-1026-up-to-date-as-of-9-11-2026.txt pp.129-130, 989-990",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 39,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-5-the-installment-schedule-and-the-daily-cashiering-cycle.md",
+   "process": "35.5",
+   "section_heading": "### Sources",
+   "old_text": "- Reg Z 12 CFR §1026.36(c)(1) and comment 36(c)(1)(i)-3; §1026.41(d); Reg E §1005.10(d); Reg X §1024.33(c), §1024.35(c), §1024.36(b), §1024.39; Fannie Mae Servicing Guide C-1.1-01, C-1.1-03, F-1-09, A2-1-01 (as verified by 2.1, 2.3, 2.7 and 7.2 on their stated dates)",
+   "new_text": "- Reg Z 12 CFR §1026.36(c)(1)(i), (iii) and comments 36(c)(1)(i)-3, 36(c)(1)(iii)-1, -2; §1026.41(d)(6); Reg E §1005.10(d); Reg X §1024.33(c), §1024.35(c), §1024.36(b) and comment 35(c)-2, §1024.39; Fannie Mae Servicing Guide C-1.1-01, C-1.1-03, F-1-09 (re-read 2026-09-15)",
+   "affects": [
+    "35.5 Sources"
+   ],
+   "rationale": "Cite corrections; A2-1-01 dropped.",
+   "source": "12-cfr-part-1026-up-to-date-as-of-9-11-2026.txt; 12-cfr-part-1024-up-to-date-as-of-9-11-2026.txt; servicing-guide-08-12-26-final.txt",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 40,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-5-the-installment-schedule-and-the-daily-cashiering-cycle.md",
+   "process": "35.5",
+   "section_heading": "| Governing source |",
+   "old_text": "Fannie Mae Servicing Guide C-1.1-01, C-1.1-03, F-1-09 (allocation order, 30 days' interest on the UPB as of LPI), A2-1-01 / A2-1-05 (servicer identity in borrower-facing notices);",
+   "new_text": "Fannie Mae Servicing Guide C-1.1-01, C-1.1-03, F-1-09 (allocation order, 30 days' interest on the UPB as of LPI, lockbox deposits within one and two business days);",
+   "affects": [
+    "35.5 Governing source"
+   ],
+   "rationale": "A2-1-01 (General Servicer Duties) and A2-1-05 (Note Holder Status) state no notice-identity rule.",
+   "source": "servicing-guide-08-12-26-final.txt pp.73, 87, 222",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 41,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-5-the-installment-schedule-and-the-daily-cashiering-cycle.md",
+   "process": "35.5",
+   "section_heading": "### Verified requirement — Servicer identity in notices",
+   "old_text": "**Servicer identity in notices (Reg X §1024.35(c)/§1024.36(b) exclusive address; Reg Z §1026.41(d)(6) contact information; A2-1-01).** A servicer that designates an exclusive address for notices of error and information requests must state it on the periodic statement and in the hello notice; the statement carries the servicer's toll-free number and, if applicable, an e-mail or web address;",
+   "new_text": "**Servicer identity in notices (Reg X §1024.35(c)/§1024.36(b) and comment 35(c)-2 exclusive address; Reg Z §1026.41(d)(6) contact information).** A servicer that designates an exclusive address for notices of error must designate the same address for information requests and must provide it in the designating notice, on every periodic statement or coupon book, on any servicing website and in every §1024.39/§1024.41 notice that carries contact information (it may also be included with a notice of transfer); the statement carries the servicer's toll-free number and, if applicable, an e-mail or web address;",
+   "affects": [
+    "35.5 Verified requirement ¶6",
+    "35.5 rule 9"
+   ],
+   "rationale": "Comment 35(c)-2 lists the required contexts; the transfer notice is permissive.",
+   "source": "12-cfr-part-1024-up-to-date-as-of-9-11-2026.txt pp.42, 46, 118; 12-cfr-part-1026-up-to-date-as-of-9-11-2026.txt p.189",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 42,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-5-the-installment-schedule-and-the-daily-cashiering-cycle.md",
+   "process": "35.5",
+   "section_heading": "#### Business rules — rule 9",
+   "old_text": "Every servicing notice's servicer block (7.1 statements, 7.4, 4.x, 16.x, 11.x) is rendered from the loan's `servicer_profiles` row by `servicer_profile_id` as of the notice date;",
+   "new_text": "Every servicing notice's servicer block (7.1 statements, 7.4, 4.x, 16.x, 11.x) is rendered from the loan's `servicer_profiles` row by `servicer_profile_id` as of the notice date, and `exclusive_address` is printed on every periodic statement or coupon book and every 11.x/12.x (§1024.39/§1024.41) notice that carries contact information and posted on the servicing website (comment 35(c)-2);",
+   "affects": [
+    "35.5 rule 9",
+    "35.5-T13"
+   ],
+   "rationale": "Same as amendment 39.",
+   "source": "12-cfr-part-1024-up-to-date-as-of-9-11-2026.txt p.118",
+   "test_change": "35.5-T13's servicer-block assertion adds the exclusive address on 11.x/12.x notices.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 43,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-6-closing-funding-and-delivery-orchestration.md",
+   "process": "35.6",
+   "section_heading": "### Verified requirement — Purchase the business day after certification",
+   "old_text": "**Purchase the business day after certification; warehouse release effective by the purchase date (Selling Guide C2-2-04, C2-2-03; 29.4 `FNMA_C2_2_04_PURCHASE_EXPECTED_1BD`, `FNMA_C2_2_03_WAREHOUSE_RELEASE_BY_ACQUISITION_GATE`).** Whole loans are purchased \"the business day following\" certification; the warehouse lender's release (bailee terms, Form 2004A or the eNote Secured Party release) must be effective no later than the purchase date.",
+   "new_text": "**Purchase after certification; warehouse release effective by the purchase date (Selling Guide C2-2-04, C2-2-03, both 05/04/2022, re-read 2026-09-15; 29.4 `FNMA_C2_2_04_PURCHASE_EXPECTED_1BD`, `FNMA_C2_2_03_WAREHOUSE_RELEASE_BY_ACQUISITION_GATE`).** Fannie Mae funds whole-loan purchase proceeds once clean delivery data is in Loan Delivery by 9:00 p.m. ET, the document custodian has the package by first-morning delivery the following day and has certified it; data or documents received after the cut-off are funded \"on the business day following the date it receives these materials\" — 29.4's certification-plus-one-business-day expectation is an operating reading of that sequence, not a quotation; any warehouse lender's interest \"must be released no later than the date Fannie Mae acquires the note\" (bailee-letter procedure C1-2-05, or the eNote Secured Party release).",
+   "affects": [
+    "35.6 Verified requirement ¶3"
+   ],
+   "rationale": "C2-2-04's 'business day following' is the late-submission rule.",
+   "source": "selling-guide-09-02-26-highlighted.txt pp.993-995",
+   "test_change": "none (35.6-T10's expected_purchase_date 2026-11-17 stands as 29.4's expectation).",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 44,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-6-closing-funding-and-delivery-orchestration.md",
+   "process": "35.6",
+   "section_heading": "### Verified requirement — Purchase the business day after certification (VERIFIED tag)",
+   "old_text": "**VERIFIED** (29.4's rows; the C2-2-03 release text as 29.4 quotes it — the Selling Guide edition is 29.4's, not re-verified here).",
+   "new_text": "**VERIFIED** (Selling Guide 09/02/2026 edition, pp. 975–977, re-read 2026-09-15).",
+   "affects": [
+    "35.6 Verified requirement ¶3"
+   ],
+   "rationale": "Edition now verified.",
+   "source": "selling-guide-09-02-26-highlighted.txt pp.993-995",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 45,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-6-closing-funding-and-delivery-orchestration.md",
+   "process": "35.6",
+   "section_heading": "| Key deadlines |",
+   "old_text": "and the loan purchased within 45 days of the LPI due date (29.4);",
+   "new_text": "and the loan delivered no later than 45 days from the due date of the reported LPI (Selling Guide C2-2-03; 29.4's `FNMA_C2_2_DELIVERY_LPI_45`);",
+   "affects": [
+    "35.6 Key deadlines"
+   ],
+   "rationale": "The 45 days bound delivery acceptance, not purchase.",
+   "source": "selling-guide-09-02-26-highlighted.txt p.993",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 46,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-6-closing-funding-and-delivery-orchestration.md",
+   "process": "35.6",
+   "section_heading": "### Verified requirement — Purchase advice interest convention",
+   "old_text": "**Purchase advice interest convention [UNVERIFIED — inherited from 29.4 R3 / 27.2].**",
+   "new_text": "**Purchase advice interest convention [UNVERIFIED — inherited from 29.4 R3 / 27.2; Selling Guide C2-1.1-06 fixes the period (A/A: from the LPI date up to, but not including, the purchase date; prepaid interest deducted) but states no day-count basis].**",
+   "affects": [
+    "35.6 Verified requirement ¶6"
+   ],
+   "rationale": "Marker narrowed to what the bundle leaves open.",
+   "source": "selling-guide-09-02-26-highlighted.txt p.979",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 47,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-10-the-refinance-close-of-the-loop.md",
+   "process": "35.10",
+   "section_heading": "### Verified requirement — Escrow on payoff",
+   "old_text": "(b)(2) (24.4 cites it as (b)(2)(iii); the paragraph is one exception — [PARTIALLY VERIFIED — sub-paragraph numbering not re-checked against the eCFR here]): the servicer may instead credit the balance to the new loan's escrow account where \"the new lender … uses the same servicer for both loans\" and the borrower agrees in writing before the new loan's settlement.",
+   "new_text": "(b)(2)(iii) (re-read 2026-09-15 — 24.4's cite is right: (b)(2) permits the credit \"if the borrower agrees\", \"as of the date of the settlement of the new mortgage loan\", where the new loan's lender \"(iii) Uses the same servicer that serviced the prior mortgage loan to service the new mortgage loan\"; comment 34(b)-2 lets the borrower agree \"either orally or in writing\"): the servicer may instead credit the balance to the new loan's escrow account as of the new loan's settlement; the written `consents{kind=escrow_credit_to_new_loan}` captured before settlement is 30.3's and this platform's policy, stricter than the rule.",
+   "affects": [
+    "35.10 Verified requirement ¶2",
+    "35.10 rule 6"
+   ],
+   "rationale": "Reg X does not require the agreement to be written.",
+   "source": "12-cfr-part-1024-up-to-date-as-of-9-11-2026.txt pp.41-42, 117",
+   "test_change": "none (35.10-T3 already uses a written consent row).",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 48,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-10-the-refinance-close-of-the-loop.md",
+   "process": "35.10",
+   "section_heading": "#### Business rules — rule 6",
+   "old_text": "`credit_to_new_loan` requires a `consents{kind=escrow_credit_to_new_loan}` row captured at or before the new loan's settlement date (30.3's gate)",
+   "new_text": "`credit_to_new_loan` requires a `consents{kind=escrow_credit_to_new_loan}` row captured at or before the new loan's settlement date (30.3's gate — §1024.34(b)(2) itself accepts an oral or written agreement, comment 34(b)-2; the written row is policy)",
+   "affects": [
+    "35.10 rule 6"
+   ],
+   "rationale": "Same as amendment 45.",
+   "source": "12-cfr-part-1024-up-to-date-as-of-9-11-2026.txt p.117",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 49,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-9-default-operations-over-time.md",
+   "process": "35.9",
+   "section_heading": "### Verified requirement — Reg X §1024.41(f)(1)–(2), (g)",
+   "old_text": "**Reg X §1024.41(f)(1)–(2), (g) (12 CFR; the 2014 Mortgage Servicing Rules as amended 2016, in force) — verified through 13.1/13.2's verification, not re-read today [PARTIALLY VERIFIED — cited via 13.1:REGX_1024_41F1_120_DAY_GATE and 13.2:REGX_1024_41G_DUAL_TRACK_GATE].**",
+   "new_text": "**Reg X §1024.41(f)(1)–(2), (g) (12 CFR 1024, up to date as of 2026-09-11, pp. 65–66 — re-read 2026-09-15; VERIFIED against 13.1's `REGX_1024_41F1_120_DAY_GATE` and 13.2's `REGX_1024_41G_DUAL_TRACK_GATE`).**",
+   "affects": [
+    "35.9 Verified requirement ¶1"
+   ],
+   "rationale": "Marker resolved.",
+   "source": "12-cfr-part-1024-up-to-date-as-of-9-11-2026.txt pp.65-66",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 50,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-9-default-operations-over-time.md",
+   "process": "35.9",
+   "section_heading": "### Verified requirement — E-1.2-02 and E-3.2-05",
+   "old_text": "**Fannie Mae Servicing Guide E-1.2-02 (referral timing) and E-3.2-05 (firm acknowledgment within 2 business days) [PARTIALLY VERIFIED — cited via the 13.3 rows `FNMA_E1202_REFER_NO_EARLIER_121`, `FNMA_E1202_NONPR_REFER_BY_120`, `FNMA_E3205_FIRM_ACK_2BD`, `FNMA_E3205_MISSING_DOCS_3BD`].**",
+   "new_text": "**Fannie Mae Servicing Guide E-1.2-02 (05/10/2023, referral timing) and E-3.2-05 (04/10/2019, firm acknowledgment within two business days; missing documents within three) — re-read 2026-09-15; VERIFIED (13.3 rows `FNMA_E1202_REFER_NO_EARLIER_121`, `FNMA_E1202_NONPR_REFER_BY_120`, `FNMA_E3205_FIRM_ACK_2BD`, `FNMA_E3205_MISSING_DOCS_3BD`).**",
+   "affects": [
+    "35.9 Verified requirement ¶2"
+   ],
+   "rationale": "Marker resolved.",
+   "source": "servicing-guide-08-12-26-final.txt pp.421, 462",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 51,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-9-default-operations-over-time.md",
+   "process": "35.9",
+   "section_heading": "### Verified requirement — E-5 / F-1-05 and F-1-06",
+   "old_text": "**Fannie Mae Servicing Guide E-5 / F-1-05 (expense reimbursement: final claim within 60 days of the milestone) and F-1-06 (MI claim: file within 30 days on MI-insured liquidations; MICP participants' documents 10 business days before the filing deadline) [PARTIALLY VERIFIED — cited via 15.2's `FNMA_E501_EXPENSE_FINAL_60`, `FNMA_F106_MI_EXPENSE_FINAL_30` and 15.3's `FNMA_F106_MICP_DOCS_10BD`, `MI_MP_CLAIM_FILE_60`].**",
+   "new_text": "**Fannie Mae Servicing Guide E-5-01 (11/09/2016: the final request for expense reimbursement within 60 days of the applicable milestone) and F-1-06 (05/13/2026: for an insurer outside the MICP, or a liquidation before its MICP effective date, the MI claim is filed with the insurer within 30 days after the Mortgage Release settlement or the foreclosure sale — or after the redemption period expires; for an MICP participant the servicer uploads the claim documents no later than 10 business days before the master-policy filing deadline and Fannie Mae files; the final expense reimbursement through the CRS within 30 days following the sale or settlement) — re-read 2026-09-15; VERIFIED (15.2's `FNMA_E501_EXPENSE_FINAL_60`, `FNMA_F106_MI_EXPENSE_FINAL_30`; 15.3's `FNMA_F106_MICP_DOCS_10BD`, `MI_MP_CLAIM_FILE_60`).**",
+   "affects": [
+    "35.9 Verified requirement ¶5"
+   ],
+   "rationale": "Marker resolved; the MICP/non-MICP split is stated.",
+   "source": "servicing-guide-08-12-26-final.txt pp.522, 583-585",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 52,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-9-default-operations-over-time.md",
+   "process": "35.9",
+   "section_heading": "#### Business rules — rule 5",
+   "old_text": "when `actual_days` first reaches 70% of (allowable + credited) the engine emits nothing of its own — 13.5's `foreclosure.timeframe.at_risk` fires and its `FNMA_E3215_TIMEFRAME_WARNING_70` breach action (rule 8) sends the status demand.",
+   "new_text": "when `actual_days` first reaches 70% of (allowable + credited) — 13.5's own early-warning threshold; E-3.2-15 and A1-4.2-02 state no 70% mark — the engine emits nothing of its own: 13.5's `foreclosure.timeframe.at_risk` fires and its `FNMA_E3215_TIMEFRAME_WARNING_70` breach action (rule 8) sends the status demand.",
+   "affects": [
+    "35.9 rule 5"
+   ],
+   "rationale": "The 70% threshold is not Guide text.",
+   "source": "servicing-guide-08-12-26-final.txt pp.71-72, 473",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 53,
+   "batch": "35-consistency-pass"
+  },
+  {
+   "file": "spec/sections/35-operations-runtime/35-9-default-operations-over-time.md",
+   "process": "35.9",
+   "section_heading": "#### Business rules — rule 2(b)",
+   "old_text": "and 12.1's diligence follow-up when the last contact is 7 days old (REGX_1024_41B1_DILIGENCE_FOLLOWUP_7's cadence — the row is 12.1's, this is its caller)",
+   "new_text": "and 12.1's diligence follow-up when the last contact is 7 days old (REGX_1024_41B1_DILIGENCE_FOLLOWUP_7's cadence — 12.1's reading of §1024.41(b)(1)'s \"reasonable diligence\", which names no interval; the row is 12.1's, this is its caller)",
+   "affects": [
+    "35.9 rule 2(b)"
+   ],
+   "rationale": "§1024.41(b)(1) states no 7-day interval.",
+   "source": "12-cfr-part-1024-up-to-date-as-of-9-11-2026.txt p.60",
+   "test_change": "none.",
+   "old_text_verbatim": true,
+   "old_text_occurrences": 1,
+   "order": 54,
+   "batch": "35-consistency-pass"
   }
  ]
 }

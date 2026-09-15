@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Supermortgage — Desktop</title>
+<style>
+  :root {
+    --bg: #000000;
+    --fg: #ffffff;
+    --sub: #ececec;
+    --muted: #a3a3a3;
+    --rule: #4a4a4a;
+    --hair: #2a2a2a;
+    --surface: #1a1a1a;
+    --menu: #111111;
+    --red: #ff3c2e;
+    --red-2: #ff544a;
+    --positive: #2fae4a;
+    --caution: #e0a41f;
+    --info: #3a7bd5;
+    --display: Georgia, "Times New Roman", serif;
+    --ui: "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
+    --mono: Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--fg); font: 16px/1.5 var(--ui); }
+  button, input { font: inherit; }
+  a { color: var(--red); }
+
+  /* Standard website header */
+  .top {
+    position: sticky; top: 0; z-index: 20;
+    height: 82px;
+    display: flex; align-items: center; gap: 24px;
+    padding: 0 40px;
+    background: #000;
+    border-bottom: 1px solid var(--rule);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; flex: none; }
+  .mark { width: 26px; height: 26px; display: block; }
+  .word {
+    font-family: var(--display);
+    font-size: 20px;
+    letter-spacing: -0.015em;
+    line-height: 1;
+  }
+  .word i { font-style: normal; color: var(--red); }
+  nav.primary { display: flex; align-items: center; gap: 4px; flex: 1; }
+  nav.primary button {
+    appearance: none; background: transparent; color: var(--sub);
+    border: 0; height: 41px; padding: 0 16px; border-radius: 22px;
+    cursor: pointer; font-size: 14px; font-weight: 500;
+  }
+  nav.primary button:hover { color: #fff; background: #1a1a1a; }
+  nav.primary button[aria-current="page"] { color: #fff; background: #1a1a1a; }
+  .badge {
+    display: inline-flex; min-width: 18px; height: 18px; padding: 0 5px;
+    margin-left: 6px; border-radius: 99px; background: var(--red);
+    color: #fff; font-size: 11px; font-weight: 700; align-items: center; justify-content: center;
+  }
+  .who { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+  .who .ghost {
+    height: 41px; padding: 0 16px; border-radius: 22px;
+    border: 1px solid var(--rule); background: transparent; color: #fff; cursor: pointer;
+  }
+  .who .solid {
+    height: 41px; padding: 0 16px; border-radius: 22px;
+    border: 0; background: #fff; color: #000; font-weight: 600; cursor: pointer;
+  }
+
+  .page { max-width: 1120px; margin: 0 auto; padding: 36px 40px 80px; }
+  .kicker { font-size: 12px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+  h1 { font-family: var(--display); font-weight: 400; letter-spacing: -0.015em; font-size: 42px; line-height: 1.08; margin: 0 0 8px; }
+  .lede { color: var(--sub); font-size: 18px; max-width: 52ch; margin: 0 0 28px; }
+
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 32px; align-items: start; }
+  @media (max-width: 960px) { .layout { grid-template-columns: 1fr; } .aside { order: -1; } .top { padding: 0 20px; height: 72px; } .page { padding: 24px 20px 64px; } h1 { font-size: 32px; } }
+
+  .panel { background: var(--menu); border: 1px solid var(--hair); border-radius: 12px; padding: 20px; }
+  .panel h2 { font-size: 13px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 12px; }
+  .hero-num { font-family: var(--display); font-size: 48px; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1; }
+  .muted { color: var(--muted); }
+  .sub { color: var(--sub); }
+  .kv { display: grid; grid-template-columns: 1fr auto; gap: 8px 16px; margin: 0; }
+  .kv dt { color: var(--muted); }
+  .kv dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+  .row { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid var(--hair); }
+  .row:first-of-type { border-top: 0; padding-top: 0; }
+
+  .thread { display: flex; flex-direction: column; gap: 18px; }
+  .msg { max-width: 640px; }
+  .msg .meta { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .msg p { margin: 0; color: var(--sub); }
+  .msg.you { margin-left: auto; text-align: right; }
+  .msg.you p { color: #fff; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--rule); border-radius: 12px;
+    padding: 20px; max-width: 640px;
+  }
+  .card .kind { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+  .card h3 { font-family: var(--display); font-size: 24px; font-weight: 400; margin: 0 0 10px; }
+  .card p { margin: 0 0 14px; color: var(--sub); }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .btn {
+    height: 44px; padding: 0 18px; border-radius: 22px; border: 1px solid var(--rule);
+    background: transparent; color: #fff; cursor: pointer; font-weight: 500;
+  }
+  .btn.primary { background: #fff; color: #000; border-color: #fff; font-weight: 600; }
+  .btn.primary:hover { background: var(--sub); }
+  .btn.danger { background: var(--red); border-color: var(--red); color: #fff; }
+  .check { display: flex; gap: 10px; align-items: flex-start; color: var(--sub); font-size: 14px; margin: 12px 0; }
+  .check input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--red); }
+  input[type="text"] {
+    width: 100%; height: 44px; padding: 0 12px; border-radius: 8px;
+    border: 1px solid var(--rule); background: #000; color: #fff;
+  }
+
+  .composer {
+    margin-top: 24px; display: flex; gap: 8px; max-width: 640px;
+  }
+  .composer input { flex: 1; }
+  .pin {
+    margin: 8px 0 0; max-width: 640px; border: 1px dashed var(--rule);
+    border-radius: 12px; padding: 12px 16px; color: var(--sub); font-size: 14px;
+    display: flex; justify-content: space-between; gap: 12px; align-items: center;
+  }
+
+  .list button.item {
+    width: 100%; text-align: left; background: transparent; border: 0;
+    border-top: 1px solid var(--hair); padding: 14px 0; color: inherit; cursor: pointer;
+  }
+  .list button.item:first-child { border-top: 0; }
+  .list button.item[aria-current="true"] .t { color: var(--red); }
+  .list .t { display: block; font-weight: 600; }
+  .list .s { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
+
+  .status {
+    display: inline-flex; align-items: center; gap: 8px;
+    border: 1px solid var(--positive); color: #fff; border-radius: 99px;
+    padding: 4px 12px; font-size: 13px; font-weight: 600;
+  }
+  .status i { width: 8px; height: 8px; border-radius: 99px; background: var(--positive); display: block; }
+  .hidden { display: none !important; }
+  .note { font-size: 13px; color: var(--muted); margin-top: 16px; }
+</style>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="#" data-go="loan">
+      <svg class="mark" viewBox="0 0 26 26" aria-hidden="true">
+        <rect width="26" height="26" rx="4" fill="#FF3C2E"/>
+        <path d="M8 7.5h6.2c2.6 0 4.3 1.5 4.3 3.7 0 1.5-.8 2.6-2.1 3.2L18.8 18.5h-3.1l-2.1-3.7H11V18.5H8V7.5zm3 5.2h2.4c1.1 0 1.8-.6 1.8-1.4s-.7-1.4-1.8-1.4H11v2.8z" fill="#000"/>
+      </svg>
+      <span class="word">Super<i>mortgage</i></span>
+    </a>
+    <nav class="primary" aria-label="Primary">
+      <button type="button" data-go="apply">Apply</button>
+      <button type="button" data-go="chat">Chat</button>
+      <button type="button" data-go="loan" aria-current="page">My Loan</button>
+      <button type="button" data-go="tasks">Tasks<span class="badge" id="taskBadge">2</span></button>
+      <button type="button" data-go="account">Account</button>
+    </nav>
+    <div class="who">
+      <button class="ghost" type="button" data-go="account">Jordan Chen</button>
+      <button class="solid" type="button" data-go="chat">Message us</button>
+    </div>
+  </header>
+
+  <main class="page">
+    <!-- MY LOAN -->
+    <section id="view-loan">
+      <p class="kicker">Servicing · 1842 Cedar Ave, Phoenix</p>
+      <h1>Your loan</h1>
+      <p class="lede">Current. Next draft is October 1. Nothing here is a payoff quote — that is a written request.</p>
+      <div class="layout">
+        <div>
+          <div class="panel" style="margin-bottom:16px">
+            <h2>This month</h2>
+            <div class="hero-num">$2,412.18</div>
+            <p class="sub" style="margin:8px 0 18px">Drafts Oct 1 from Bank of America ··1234</p>
+            <div class="actions">
+              <button class="btn primary" data-go="tasks" data-task="pay">Make a payment</button>
+              <button class="btn" data-go="tasks" data-task="autopay">Autopay</button>
+            </div>
+            <p class="note">Pay and Autopay open the same cards the engine already has: payment.makeOneTime and autodraft.enroll. L1 before money moves.</p>
+          </div>
+          <div class="panel">
+            <h2>Loan</h2>
+            <dl class="kv">
+              <dt>Unpaid principal</dt><dd>$387,240.11</dd>
+              <dt>Note rate</dt><dd>6.375%</dd>
+              <dt>Escrow</dt><dd>$4,108.00</dd>
+              <dt>Next statement</dt><dd>Oct 15</dd>
+            </dl>
+          </div>
+        </div>
+        <aside class="aside panel">
+          <h2>File</h2>
+          <p class="status" style="margin-bottom:14px"><i></i> Current</p>
+          <div class="row"><span class="muted">Needed from you</span><button class="btn" style="height:32px;padding:0 12px" data-go="tasks">2</button></div>
+          <div class="row"><span class="muted">Rate watch</span><span>watching</span></div>
+          <div class="row"><span class="muted">Best available</span><span>5.875%</span></div>
+          <p class="note">Glance only. Cards do not live here.</p>
+        </aside>
+      </div>
+    </section>
+
+    <!-- CHAT -->
+    <section id="view-chat" class="hidden">
+      <p class="kicker">Conversation</p>
+      <h1>Chat</h1>
+      <p class="lede">Talk is talk. When the rules need a commitment, the card sits in this column — not off to the side.</p>
+      <div class="layout">
+        <div>
+          <div class="thread">
+            <div class="msg">
+              <div class="meta">Michelle · 9:14 AM</div>
+              <p>Your October draft is $2,412.18 on the 1st. If you want autopay from the account on file, I need your typed authorization — chat text is not enough.</p>
+            </div>
+            <div class="msg you">
+              <div class="meta">You · 9:16 AM</div>
+              <p>Yes, set that up.</p>
+            </div>
+            <article class="card" id="chatCard">
+              <div class="kind">ConsentCard · autodraft.enroll</div>
+              <h3>Authorize automatic payments</h3>
+              <p>Nacha / Reg E authorization. Amount $2,412.18 on the 1st from Bank of America ··1234. You can revoke any time.</p>
+              <label class="check"><input type="checkbox" id="authBox" /> I authorize Supermortgage to debit this account for the amount due each month.</label>
+              <label class="muted" style="display:block;margin-bottom:6px;font-size:13px">Type your name</label>
+              <input type="text" id="authName" placeholder="Jordan Chen" />
+              <div class="actions" style="margin-top:14px">
+                <button class="btn primary" id="authBtn" type="button">Authorize</button>
+                <button class="btn" type="button" data-go="tasks">Not now</button>
+              </div>
+            </article>
+          </div>
+          <div class="pin">Waiting on you — authorize automatic payments <button class="btn" style="height:32px;padding:0 12px" type="button" onclick="document.getElementById('authName').focus()">Review</button></div>
+          <form class="composer" onsubmit="return false">
+            <input placeholder="Message Michelle" />
+            <button class="btn primary" type="button">Send</button>
+          </form>
+        </div>
+        <aside class="aside panel">
+          <h2>File</h2>
+          <p class="status" style="margin-bottom:14px"><i></i> Current</p>
+          <div class="row"><span class="muted">Next draft</span><span>$2,412.18</span></div>
+          <div class="row"><span class="muted">Due</span><span>Oct 1</span></div>
+          <div class="row"><span class="muted">Needed</span><span>2</span></div>
+          <p class="note">This column is status. It does not host cards.</p>
+        </aside>
+      </div>
+    </section>
+
+    <!-- TASKS -->
+    <section id="view-tasks" class="hidden">
+      <p class="kicker">Needed from you</p>
+      <h1>Tasks</h1>
+      <p class="lede">The queue from borrower_record.needed_from_you. One card at a time, at a readable width.</p>
+      <div class="layout">
+        <div class="panel list" id="taskList">
+          <button class="item" aria-current="true" data-task="autopay" type="button">
+            <span class="t">Authorize automatic payments</span>
+            <span class="s">Consent · autodraft.enroll</span>
+          </button>
+          <button class="item" data-task="le" type="button">
+            <span class="t">Confirm you received the Loan Estimate</span>
+            <span class="s">Document · receipt</span>
+          </button>
+        </div>
+        <div>
+          <article class="card" id="task-autopay">
+            <div class="kind">ConsentCard</div>
+            <h3>Authorize automatic payments</h3>
+            <p>Same card as Chat. Resolves with typed name + checkbox via resolveCard.</p>
+            <div class="actions"><button class="btn primary" type="button" data-go="chat">Open in Chat</button></div>
+          </article>
+          <article class="card hidden" id="task-le">
+            <div class="kind">DocumentCard</div>
+            <h3>Loan Estimate</h3>
+            <p>Confirm receipt. This is not intent to proceed.</p>
+            <div class="actions"><button class="btn primary" type="button">Confirm receipt</button></div>
+          </article>
+          <article class="card hidden" id="task-pay">
+            <div class="kind">PaymentCard</div>
+            <h3>One-time payment</h3>
+            <p>payment.makeOneTime. Amount from the installment. L1 step-up before it posts.</p>
+            <div class="hero-num" style="font-size:36px;margin:8px 0 16px">$2,412.18</div>
+            <div class="actions"><button class="btn primary" type="button">Pay this amount</button></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- APPLY -->
+    <section id="view-apply" class="hidden">
+      <p class="kicker">Origination</p>
+      <h1>Application</h1>
+      <p class="lede">This file already funded. Servicing lives on My Loan. Progress below is the journey that already ran.</p>
+      <div class="layout">
+        <div class="panel">
+          <h2>Progress</h2>
+          <div class="row"><span>Application</span><span class="muted">done</span></div>
+          <div class="row"><span>Disclosures</span><span class="muted">done</span></div>
+          <div class="row"><span>Underwriting</span><span class="muted">done</span></div>
+          <div class="row"><span>Closing</span><span class="muted">done</span></div>
+          <div class="row"><span>Funded · boarded</span><span>current</span></div>
+        </div>
+        <aside class="panel">
+          <h2>Needed</h2>
+          <p class="sub">Two servicing items are open. They are not application conditions.</p>
+          <div class="actions" style="margin-top:12px"><button class="btn primary" data-go="tasks" type="button">Go to Tasks</button></div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ACCOUNT -->
+    <section id="view-account" class="hidden">
+      <p class="kicker">Party</p>
+      <h1>Account</h1>
+      <p class="lede">You, not the loan. Edits (party.updateContact) are a later slice.</p>
+      <div class="layout">
+        <div class="panel">
+          <h2>You</h2>
+          <dl class="kv">
+            <dt>Name</dt><dd>Jordan Chen</dd>
+            <dt>Email</dt><dd>jordan@example.com</dd>
+            <dt>Phone</dt><dd>··· 4412</dd>
+            <dt>Sign-in</dt><dd>password + passkey</dd>
+          </dl>
+        </div>
+        <aside class="panel">
+          <h2>Partner</h2>
+          <dl class="kv">
+            <dt>Servicer</dt><dd>Partner Bank</dd>
+            <dt>NMLS</dt><dd>123456</dd>
+          </dl>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+<script>
+  const views = ["loan","chat","tasks","apply","account"];
+  function show(id, task) {
+    views.forEach((v) => document.getElementById("view-" + v).classList.toggle("hidden", v !== id));
+    document.querySelectorAll("nav.primary button").forEach((b) => {
+      b.toggleAttribute("aria-current", b.getAttribute("data-go") === id);
+    });
+    if (task) selectTask(task);
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }
+  function selectTask(task) {
+    document.querySelectorAll("#taskList .item").forEach((b) => {
+      b.toggleAttribute("aria-current", b.getAttribute("data-task") === task);
+    });
+    ["autopay","le","pay"].forEach((t) => {
+      const el = document.getElementById("task-" + t);
+      if (el) el.classList.toggle("hidden", t !== task);
+    });
+  }
+  document.querySelectorAll("[data-go]").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.preventDefault();
+      show(el.getAttribute("data-go"), el.getAttribute("data-task"));
+    });
+  });
+  document.querySelectorAll("#taskList .item").forEach((b) => {
+    b.addEventListener("click", () => selectTask(b.getAttribute("data-task")));
+  });
+  document.getElementById("authBtn").addEventListener("click", () => {
+    const ok = document.getElementById("authBox").checked && document.getElementById("authName").value.trim().length > 1;
+    const card = document.getElementById("chatCard");
+    if (!ok) { card.querySelector("h3").textContent = "Name and checkbox required"; return; }
+    card.innerHTML = "<div class='kind'>Resolved · autodraft.enrolled</div><h3>Autopay is on</h3><p>Drafts the 1st from Bank of America ··1234. You can revoke from My Loan.</p>";
+    document.querySelector(".pin").classList.add("hidden");
+    const badge = document.getElementById("taskBadge");
+    badge.textContent = "1";
+  });
+</script>
+</body>
+</html>

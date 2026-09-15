@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 8027/8749 (91.7%): tids 2243/2457, tables 765/848, timers 2040/2095, notices 308/308, tools 1433/1578, figures 1238/1463; processes at 100%: 192/205",
+ "brief": "spec units built 8070/8749 (92.2%): tids 2249/2457, tables 774/848, timers 2043/2095, notices 308/308, tools 1437/1578, figures 1259/1463; processes at 100%: 192/205",
  "totals": {
   "tids": {
    "spec": 2457,
-   "built": 2243
+   "built": 2249
   },
   "tables": {
    "spec": 848,
-   "built": 765
+   "built": 774
   },
   "timers": {
    "spec": 2095,
-   "built": 2040
+   "built": 2043
   },
   "notices": {
    "spec": 308,
@@ -19,15 +19,15 @@
   },
   "tools": {
    "spec": 1578,
-   "built": 1433
+   "built": 1437
   },
   "figures": {
    "spec": 1463,
-   "built": 1238
+   "built": 1259
   },
   "units": {
    "spec": 8749,
-   "built": 8027
+   "built": 8070
   }
  },
  "sections": {
@@ -237,7 +237,7 @@
   },
   "35": {
    "spec": 715,
-   "built": 10,
+   "built": 53,
    "processes": 12,
    "done": 0
   }
@@ -8374,50 +8374,30 @@
    "title": "Persistence seam and the typed record",
    "tids": {
     "spec": 15,
-    "built": 0,
-    "todo": 15,
+    "built": 6,
+    "todo": 9,
     "missing": [
-     1,
-     2,
-     3,
      4,
      5,
-     6,
      7,
      8,
      9,
      10,
      11,
-     12,
      13,
-     14,
-     15
+     14
     ]
    },
    "tables": {
     "spec": 9,
-    "built": 0,
-    "missing": [
-     "entity_keys",
-     "entity_latest_scoped",
-     "entity_projections",
-     "outbox_dispatches",
-     "projection_gaps",
-     "projection_mismatches",
-     "projection_runs",
-     "service_snapshots",
-     "sweep_runs"
-    ]
+    "built": 9,
+    "missing": []
    },
    "timers": {
     "spec": 3,
-    "built": 0,
+    "built": 3,
     "armable": 3,
-    "missing": [
-     "SM_OUTBOX_DEAD_LETTER_REVIEW_1BD",
-     "SM_PROJECTION_LAG_DAILY",
-     "SM_SWEEP_HEARTBEAT_DAILY"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -8426,36 +8406,24 @@
    },
    "tools": {
     "spec": 8,
-    "built": 0,
+    "built": 4,
     "missing": [
-     "record.project",
-     "record.replay",
-     "record.gaps",
      "record.verify",
      "record.snapshot",
      "record.lease",
-     "outbox.dispatch",
-     "writeDecision"
+     "outbox.dispatch"
     ]
    },
    "figures": {
     "spec": 7,
-    "built": 0,
-    "missing": [
-     "$1,345.02",
-     "$1,612.34",
-     "$2,045.12",
-     "$248,043.23",
-     "$248,310.55",
-     "$267.32",
-     "$432.78"
-    ]
+    "built": 7,
+    "missing": []
    },
    "units": {
     "spec": 42,
-    "built": 0
+    "built": 29
    },
-   "pct": 0.0
+   "pct": 69.0
   },
   {
    "process": "35.2",
@@ -8628,22 +8596,16 @@
    },
    "figures": {
     "spec": 7,
-    "built": 0,
+    "built": 6,
     "missing": [
-     "$1,345.02",
-     "$1,612.34",
-     "$2,125.74",
-     "$248,310.55",
-     "$267.32",
-     "$432.78",
-     "$80.62"
+     "$2,125.74"
     ]
    },
    "units": {
     "spec": 40,
-    "built": 0
+    "built": 6
    },
-   "pct": 0.0
+   "pct": 15.0
   },
   {
    "process": "35.4",
@@ -8717,9 +8679,8 @@
    },
    "figures": {
     "spec": 19,
-    "built": 0,
+    "built": 1,
     "missing": [
-     "$0.00",
      "$1,233,000.00",
      "$1,250.00",
      "$1,253,050.55",
@@ -8742,9 +8703,9 @@
    },
    "units": {
     "spec": 55,
-    "built": 0
+    "built": 1
    },
-   "pct": 0.0
+   "pct": 1.8
   },
   {
    "process": "35.5",
@@ -8824,7 +8785,7 @@
    },
    "figures": {
     "spec": 53,
-    "built": 0,
+    "built": 1,
     "missing": [
      "$1,351.71",
      "$1,500.00",
@@ -8835,7 +8796,6 @@
      "$1,896.20",
      "$1,900.91",
      "$1,971.20",
-     "$1.00",
      "$10.24",
      "$100.00",
      "$17.27",
@@ -8883,9 +8843,9 @@
    },
    "units": {
     "spec": 97,
-    "built": 2
+    "built": 3
    },
-   "pct": 2.1
+   "pct": 3.1
   },
   {
    "process": "35.6",
@@ -8961,9 +8921,8 @@
    },
    "figures": {
     "spec": 40,
-    "built": 0,
+    "built": 1,
     "missing": [
-     "$0.00",
      "$1,067.72",
      "$1,096.67",
      "$1,240.00",
@@ -9007,9 +8966,9 @@
    },
    "units": {
     "spec": 80,
-    "built": 2
+    "built": 3
    },
-   "pct": 2.5
+   "pct": 3.8
   },
   {
    "process": "35.7",
@@ -9084,20 +9043,19 @@
    },
    "figures": {
     "spec": 5,
-    "built": 0,
+    "built": 1,
     "missing": [
      "$10,000.00",
      "$10,000.01",
      "$249,999.99",
-     "$250,000.00",
      "$260,000.00"
     ]
    },
    "units": {
     "spec": 44,
-    "built": 2
+    "built": 3
    },
-   "pct": 4.5
+   "pct": 6.8
   },
   {
    "process": "35.8",
@@ -9176,9 +9134,8 @@
    },
    "figures": {
     "spec": 22,
-    "built": 0,
+    "built": 2,
     "missing": [
-     "$1,345.02",
      "$1,352.94",
      "$1,665.00",
      "$1,785.43",
@@ -9186,7 +9143,6 @@
      "$2,192.57",
      "$2,412.90",
      "$227.23",
-     "$248,310.55",
      "$249,546.77",
      "$249,774.00",
      "$250,390.82",
@@ -9204,9 +9160,9 @@
    },
    "units": {
     "spec": 63,
-    "built": 0
+    "built": 2
    },
-   "pct": 0.0
+   "pct": 3.2
   },
   {
    "process": "35.9",
@@ -9400,9 +9356,8 @@
    },
    "figures": {
     "spec": 27,
-    "built": 0,
+    "built": 1,
     "missing": [
-     "$0.00",
      "$107.30",
      "$2,062.50",
      "$2,521.38",
@@ -9433,9 +9388,9 @@
    },
    "units": {
     "spec": 65,
-    "built": 0
+    "built": 1
    },
-   "pct": 0.0
+   "pct": 1.5
   },
   {
    "process": "35.11",
@@ -9608,10 +9563,9 @@
    },
    "figures": {
     "spec": 7,
-    "built": 0,
+    "built": 1,
     "missing": [
      "$1,250.00",
-     "$248,310.55",
      "$3,412.92",
      "$3,417.92",
      "$5.00",
@@ -9621,9 +9575,9 @@
    },
    "units": {
     "spec": 58,
-    "built": 2
+    "built": 3
    },
-   "pct": 3.4
+   "pct": 5.2
   }
  ]
 }

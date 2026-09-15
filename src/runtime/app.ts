@@ -3,10 +3,11 @@
  * Postgres through the loan-scoped unit of work.
  *
  *   execute(tool, loan, actor, input)
- *     hydrate entity rows (loan + global) → run the tool through CommandBus
- *     (allowlists, roles, money fields, guardrails, decision record) inside
- *     PgUnitOfWork.run → one transaction commits events, ledger sets, timers,
- *     decisions, entity versions and escalations — or nothing.
+ *     PgUnitOfWork.run: BEGIN, the scope's advisory lock (35.1 rule 7), hydrate the events, ledger sets, timers and the
+ *     bounded entity store (rule 6: the scope's latest rows, HISTORY_KINDS in full, the global rows), the expected-version
+ *     guard (rule 8) → run the tool through CommandBus (allowlists, roles, money fields, guardrails, decision record) →
+ *     one transaction commits events, ledger sets, timers, decisions, entity versions, their typed projections (rule 2:
+ *     row projectors before the events, fact projectors after) and escalations — or nothing.
  *
  *   sweep(now)
  *     the daily refinance check when a rate feed is wired (src/runtime/refi-daily.ts: once per calendar day at/after
@@ -33,11 +34,15 @@
  * `service(rt, …)` for one of those answers 501 until its section's service is given a persistence adapter.
  */
 import { randomUUID } from "node:crypto";
-import type { Db, Queryable } from "../infra/db/client.ts";
+import { transactionDb, type Db, type Queryable } from "../infra/db/client.ts";
 import { listDuDocuments, type DuDocumentSummary } from "../domain/underwriting/du/persist.ts";
 import { listDuPreflight, type PreflightResultRow } from "../domain/underwriting/du/preflight.ts";
 import { PgUnitOfWork, type UowResult, type CommittedListener } from "../infra/db/unit-of-work.ts";
 import { PgEntityRepository, type EntityScope } from "../infra/db/entities.ts";
+import { loadBoundedScoped, splitByScope } from "../domain/operations-runtime/seam/hydration.ts";
+import { checkExpectedVersions, expectedVersionsOf } from "../domain/operations-runtime/seam/guard.ts";
+import { takeGlobalLock } from "../domain/operations-runtime/seam/lock.ts";
+import { projectVersions } from "../domain/operations-runtime/seam/project.ts";
 import { PgApplicationRepository, type ApplicationInput, type ApplicationRecord } from "../infra/db/applications.ts";
 import { AgentRegistry } from "../app/agents.ts";
 import { CommandBus, type AgentRunInfo, type ExecuteResult } from "../app/commands.ts";
@@ -157,6 +162,8 @@ export class Runtime {
   readonly originationServices: OriginationServiceSet;
   private readonly bus: CommandBus;
   private readonly tools = new Map<string, ToolDef>();
+  /** The runtime behind a command view (itself for the real runtime): its `db` is the pool — the rare write that must outlive a refusal (34.4's fourth-requeue escalation, an expired kill-switch request) goes through `rt.root.db`. */
+  readonly root: Runtime;
   /** 32.12 backend delta: the Notice Registry's rendered notices for the life of the runtime (NoticeServiceDeps.notices) — a notice rendered by one command is readable by the next (17.2 runContentChecklist, the borrower flows' plain-language block). In-memory beside the `notices` table; the event log stays the record. */
   readonly noticeMemory = new Map<string, Notice>();
 
@@ -164,6 +171,7 @@ export class Runtime {
     this.db = deps.db; this.registry = deps.registry; this.agents = deps.agents ?? new AgentRegistry(); this.ports = deps.ports ?? fakePorts(); this.clock = deps.clock ?? systemClock;
     this.rateFeed = deps.rateFeed ?? null; this.reviewers = deps.reviewers ?? null; this.analystLlm = deps.analystLlm ?? null; this.logger = deps.logger;
     this.noticeRegistry = deps.notices ?? (() => { const r = buildRegistry(); publishAuthored(r); publishSection02(r); registerPreapprovalLetter(r); return r; })();   // 32.8: 2.x's own authored pieces (AUTODRAFT-*, LC-*, SUSP-*) beside the catalog   // DELTA-01: the preapproval letter beside the catalog
+    this.root = this;
     this.uow = new PgUnitOfWork(this.db, this.registry); this.entities = new PgEntityRepository(this.db); this.escalationRepo = new PgEscalationRepository(this.db); this.applications = new PgApplicationRepository(this.db);
     this.bus = new CommandBus(this.agents);
     this.originationServices = originationServices(this.clock);
@@ -176,6 +184,23 @@ export class Runtime {
   tool(process: string, name: string): ToolDef | undefined { return this.tools.get(toolKey(process, name)); }
   /** Post-commit hook: every event a unit of work persisted (tools, createApplication, the origination bridges, the sweep) — the borrower SSE stream's feed. */
   onCommitted(fn: CommittedListener): () => void { return this.uow.onCommitted(fn); }
+
+  /**
+   * This runtime as a command sees it (35.1 rule 7): the same registry, ports, agents and services, but every repository —
+   * `db`, `uow`, `entities`, `escalationRepo`, `applications` — on the command's own transaction, so a tool that reads a
+   * table or runs a unit of work of its own (a pass-shaped tool, 34.4's controls) works inside the command's transaction on
+   * the connection that holds its lock, never on a second pool connection (four commands holding four connections and each
+   * waiting for a fifth is the deadlock the pool of four otherwise allows). Events the nested units of work persist are
+   * published to the runtime's listeners when the command commits.
+   */
+  commandView(q: Queryable, nested: DomainEvent[]): Runtime {
+    const db = transactionDb(q, this.db);
+    const uow = new PgUnitOfWork(db, this.registry);
+    uow.onCommitted((events) => { nested.push(...events); });
+    const view: Runtime = Object.create(this) as Runtime;
+    Object.defineProperties(view, { db: { value: db }, uow: { value: uow }, entities: { value: new PgEntityRepository(db) }, escalationRepo: { value: new PgEscalationRepository(db) }, applications: { value: new PgApplicationRepository(db) }, root: { value: this.root } });
+    return view;
+  }
 
   async execute(req: ExecuteRequest): Promise<ExecuteResponse> {
     const def = this.tool(req.process, req.name);
@@ -191,28 +216,51 @@ export class Runtime {
   async executeDef(def: ToolDef, req: Omit<ExecuteRequest, "process" | "name">): Promise<ExecuteResponse> {
     const scope: EntityScope = { ...(req.loanId ? { loanId: req.loanId } : {}), ...(req.applicationId ? { applicationId: req.applicationId } : {}) };
     const store = new EntityStore();
-    store.seed(await this.entities.load(scope));
-    const mark = store.versionCount();
+    let mark = 0; let globalKeys: ReadonlySet<string> = new Set();
     let escalations: EscalationService | undefined;
-    // the scope's open escalations an earlier command persisted, so this one can complete them (21.6's reviewer decides the escalation `recommendDisposition` opened — 32.6 backend delta)
-    const openEscalations = await this.escalationRepo.openFor(scope);
     // writes a tool defers to the command's transaction (the borrower surface's UI-owned rows: card_instances, messages, deep_links — src/app/tools/section32-1.ts)
     const deferred: ((q: Queryable) => Promise<void>)[] = [];
+    // 35.1 rule 2 / rule 10: writes that must precede the command's events (1.1 boardLoan's boarding set — the rows the events reference)
+    const deferredBefore: ((q: Queryable) => Promise<void>)[] = [];
+    const expected = expectedVersionsOf(req.input);
+    // events persisted by units of work a tool runs inside this command (through the command view) — published once this command commits
+    const nested: DomainEvent[] = [];
     const r: UowResult<ExecuteResult<unknown>> = await this.uow.run(scope, async (uow) => {
+      const view = this.commandView(uow.q!, nested);
       // a loan-scoped command's events that name neither key are the loan's (the kernel store defaults the application key from the scope; the loan key is defaulted here)
       const ctx = uow.loanId ? { ...uow, events: withDefaultLoan(uow.events, uow.loanId) } : uow;
-      escalations = new EscalationService(ctx.events, ctx.clock); escalations.seed(openEscalations);
+      // the scope's open escalations an earlier command persisted, so this one can complete them (21.6's reviewer decides the escalation `recommendDisposition` opened — 32.6 backend delta)
+      escalations = new EscalationService(ctx.events, ctx.clock); escalations.seed(await this.escalationRepo.openFor(scope, uow.q));
       const notices = this.ports.printMail && this.ports.edelivery ? new NoticeService({ registry: this.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: this.ports.printMail, edelivery: this.ports.edelivery, notices: this.noticeMemory }) : undefined;
       // `agents` (the live registry, so a tool that delegates to another agent's tool keeps the allowlists and AI-off state), `db` (read-only lookups a borrower-surface tool needs) and `deferWrite` (a row committed with the command) ride on the services map
       // `runtime` (this) lets a pass-shaped tool (33.2 review.run / offer.deliver / offer.expire) run the runtime pass it wraps — its own units of work, sequential to this command's
-      const rt: ToolRuntime = { store, escalations, services: { ...this.originationServices.forCommand(ctx, store, escalations), agents: this.agents, db: this.db, runtime: this, deferWrite: (fn: (q: Queryable) => Promise<void>) => { deferred.push(fn); } }, ports: this.ports, ...(notices ? { notices } : {}) };
+      const rt: ToolRuntime = { store, escalations, services: { ...this.originationServices.forCommand(ctx, store, escalations), agents: this.agents, db: view.db, runtime: view, deferWrite: (fn: (q: Queryable) => Promise<void>) => { deferred.push(fn); }, deferBefore: (fn: (q: Queryable) => Promise<void>) => { deferredBefore.push(fn); } }, ports: this.ports, ...(notices ? { notices } : {}) };
       const cmd = bindTools(rt, this.agents, [def]).get(toolKey(def.process, def.name))!;
       return this.bus.execute(cmd, req.actor, req.input, ctx, { ...(req.run ? { run: req.run } : {}), ...(req.approvedBy ? { approvedBy: req.approvedBy } : {}) });
-    }, { clock: this.clock, commit: async (q) => {
-      await this.entities.save(store.versionsSince(mark), scope, q);
-      for (const e of escalations?.list() ?? []) await this.escalationRepo.save(e, q);
-      for (const fn of deferred) await fn(q);
-    } });
+    }, { clock: this.clock, globalLock: expected.length > 0,
+      // 35.1 rule 6 / rule 8: the bounded entity load on the command's connection after the lock, then the expected-version guard before the domain code runs
+      hydrated: async (uow) => { const loaded = await loadBoundedScoped(uow.q!, scope); store.seed(loaded.records); globalKeys = loaded.globalKeys; mark = store.versionCount(); checkExpectedVersions(store, expected); },
+      // 35.1 rule 2: the row projectors (a kind an event references by foreign key) run before events.append, from the versions this command wrote
+      before: async (q, info) => {
+        for (const fn of deferredBefore) await fn(q);
+        const { global, scoped } = splitByScope(store.versionsSince(mark), globalKeys);
+        // a global command that wrote a global row takes the platform lock before it persists (seam/lock.ts note); a declared read-then-bump took it before it read
+        if (!scope.loanId && !scope.applicationId && global.length && !expected.length) await takeGlobalLock(q);
+        await projectVersions(q, { phase: "before", versions: global, scope: {}, now: this.clock.now(), commandEventId: info.firstEventId });
+        await projectVersions(q, { phase: "before", versions: scoped, scope, now: this.clock.now(), commandEventId: info.firstEventId });
+      },
+      commit: async (q, info) => {
+        // a bumped global row stays global (rule 8: the guard and every other loan see one row); the rest is the command's scope
+        const { global, scoped } = splitByScope(store.versionsSince(mark), globalKeys);
+        await this.entities.save(global, null, q);
+        await this.entities.save(scoped, scope, q);
+        // 35.1 rule 2: the fact projectors after events, ledger sets, timers and decisions — one entity_projections row per typed version, in this transaction (lag 0)
+        await projectVersions(q, { phase: "commit", versions: global, scope: {}, now: this.clock.now(), commandEventId: info.firstEventId });
+        await projectVersions(q, { phase: "commit", versions: scoped, scope, now: this.clock.now(), commandEventId: info.firstEventId });
+        for (const e of escalations?.list() ?? []) await this.escalationRepo.save(e, q);
+        for (const fn of deferred) await fn(q);
+      } });
+    if (nested.length) this.uow.notifyCommitted(nested);
     return { output: r.result.output, ...(r.result.decisionId ? { decisionId: r.result.decisionId } : {}), event: r.result.event, events: r.events, timers: r.timers,
       decisions: r.decisions.map((d) => ({ id: d.id })), escalations: (escalations?.list() ?? []).map((e) => ({ id: e.id, kind: e.kind, ownerRole: e.ownerRole })) };
   }

@@ -8,7 +8,11 @@
 import type { Queryable } from "../../../infra/db/client.ts";
 
 type Row = Record<string, unknown>;
-export interface DuGraphBorrower extends Row { readonly id: string; readonly borrower_ordinal: number | null; readonly borrower_role: string; readonly legal_name: string; readonly party_id: string | null; readonly created_at: string; }
+export interface DuGraphBorrower extends Row {
+  readonly id: string; readonly borrower_ordinal: number | null; readonly borrower_role: string; readonly legal_name: string; readonly party_id: string | null; readonly created_at: string;
+  /** `application_borrowers` (0057): BorrowerBirthDate (`YYYY-MM-DD`), MaritalStatusType and CitizenshipResidencyType come from these three, not from a du_declarations row. */
+  readonly date_of_birth: string | null; readonly marital_status: string | null; readonly citizenship_status: string | null;
+}
 export interface DuGraphArc { readonly application_borrower_id: string; readonly role: string; readonly created_at: string; }
 export interface DuGraph {
   readonly application_id: string;
@@ -57,7 +61,7 @@ const arcsOf = async (q: Queryable, table: string, col: string, ids: readonly st
 export async function readDuGraph(q: Queryable, applicationId: string): Promise<DuGraph> {
   const app = (await q.query<{ id: string; du_casefile_id: string | null }>(`SELECT id::text AS id, du_casefile_id FROM applications WHERE id = $1`, [applicationId]))[0];
   if (!app) throw new RangeError(`no application ${applicationId}`);
-  const borrowers = await q.query<DuGraphBorrower>(`SELECT id::text AS id, borrower_ordinal, borrower_role, legal_name, party_id::text AS party_id, created_at::text AS created_at FROM application_borrowers WHERE application_id = $1 AND borrower_role IN ${BORROWING} ORDER BY borrower_ordinal, created_at, id`, [applicationId]);
+  const borrowers = await q.query<DuGraphBorrower>(`SELECT id::text AS id, borrower_ordinal, borrower_role, legal_name, party_id::text AS party_id, created_at::text AS created_at, date_of_birth::text AS date_of_birth, marital_status, citizenship_status FROM application_borrowers WHERE application_id = $1 AND borrower_role IN ${BORROWING} ORDER BY borrower_ordinal, created_at, id`, [applicationId]);
   const edgeIds = borrowers.map((b) => b.id);
   const assets = await q.query<Row & { id: string }>(`SELECT * FROM du_assets WHERE application_id = $1 AND retired_at IS NULL ${ORDER}`, [applicationId]);
   const properties = await q.query<Row & { asset_id: string }>(`SELECT * FROM du_owned_properties WHERE application_id = $1 ${ORDER}`, [applicationId]);

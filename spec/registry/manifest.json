@@ -11432,7 +11432,7 @@
    },
    {
     "n": 2,
-    "text": "Given sample DI-C09, when re-emitted, then the `RELATIONSHIPS` block carries exactly its arcs: the two-owner asset yields two `ASSET_IsAssociatedWith_ROLE` arcs, the two-obligor liability two `LIABILITY_IsAssociatedWith_ROLE` arcs, one `ASSET_IsAssociatedWith_LIABILITY`, and one `CURRENT_INCOME_ITEM_IsAssociatedWith_EMPLOYER` per employed income item."
+    "text": "Given sample DI-C09, when re-emitted, then the `RELATIONSHIPS` block carries exactly its arcs: the two two-owner assets each yield two `ASSET_IsAssociatedWith_ROLE` arcs, the two two-obligor liabilities each two `LIABILITY_IsAssociatedWith_ROLE` arcs, two `ASSET_IsAssociatedWith_LIABILITY` (each of those owned properties securing one of those liabilities), and one `CURRENT_INCOME_ITEM_IsAssociatedWith_EMPLOYER` per employed income item."
    },
    {
     "n": 3,
@@ -11444,7 +11444,7 @@
    },
    {
     "n": 5,
-    "text": "Given a required data point with no value, when emitted, then the emission is refused with `DU_REQUIRED_MISSING` naming the XPath; given a conditional data point whose condition statement is false for this loan, then its absence is accepted."
+    "text": "Given a required data point with no value, when emitted, then the emission is refused with `DU_REQUIRED_MISSING` naming the XPath; given a conditional data point whose condition statement is false for this loan, then its absence is accepted; given the same missing point on 23.1's `buildDuRequest` (the runtime's `conditionality = report`, Discrepancy 3), then the document is written without the point \u2014 never an empty element \u2014 and the gap names the XPath in `required_missing` on the request, the `du_documents` row and `du.document.emitted`."
    },
    {
     "n": 6,

@@ -17,15 +17,19 @@ import { defineTools, compute, escalate, decision, never, needsRole, humanWhen, 
 import type { CommandContext } from "../commands.ts";
 import { plainDate as D, type PlainDate } from "../../kernel/calendar/date.ts";
 import type { CreditReport } from "../../domain/verification/ops-22-2.ts";
-import { buildDuRequest, associateCredit, submitCasefile, receiveFindings, ingestOperatorFindings, evaluateResubmission, closedLoanSnapshotHash, closedLoanData, assertFinalSubmissionMatches, recordFinalSubmission, decisionRecord, RESUBMISSION_REVIEW_AFTER, RESUBMISSION_RATIONALE_AFTER,
+import { randomUUID } from "node:crypto";
+import { isUuid, type Queryable } from "../../infra/db/client.ts";
+import { DuEmitError, loadGraph } from "../../domain/underwriting/du/emit.ts";
+import { emitDuDocumentEmitted, emitDuDocumentRefused, persistDuDocument } from "../../domain/underwriting/du/persist.ts";
+import { buildDuRequestWithDocument, associateCredit, submitCasefile, receiveFindings, ingestOperatorFindings, evaluateResubmission, closedLoanSnapshotHash, closedLoanData, assertFinalSubmissionMatches, recordFinalSubmission, decisionRecord, RESUBMISSION_REVIEW_AFTER, RESUBMISSION_RATIONALE_AFTER,
   type DuCasefile, type DuSubmission, type DuPort, type DuRequest, type DuFindings, type UladSnapshot, type BorrowerIdentity, type SubmissionType, type SubmissionReason, type ReturnFileType, type ScoreModel } from "../../domain/underwriting/ops-23-1.ts";
 
 /** Missing-input refusals are RangeErrors (never TypeErrors) — src/app/tools.test.ts executes every tool with `{}`. */
 const need = (i: ToolInput, ...keys: string[]): void => { const missing = keys.filter((k) => i[k] === undefined || i[k] === null || i[k] === ""); if (missing.length) throw new RangeError(`23.1 tool needs ${missing.join(", ")}`); };
 const SNAPSHOT_CENTS = ["sales_price_cents", "appraised_value_cents", "loan_amount_cents", "subordinate_liens_cents", "heloc_limit_cents", "qualifying_income_cents", "total_obligations_cents", "verified_reserves_cents"] as const;
 const bigints = <T extends object>(o: T, keys: readonly string[]): T => { const out: Record<string, unknown> = { ...(o as Record<string, unknown>) }; for (const k of keys) if (out[k] !== undefined && out[k] !== null && typeof out[k] !== "bigint") out[k] = BigInt(String(out[k])); return out as T; };
-const snapshotIn = (i: ToolInput, k = "snapshot"): UladSnapshot => { const s = i[k]; if (!s || typeof s !== "object") throw new RangeError(`23.1 tool needs ${k} (the ULAD snapshot)`); return bigints(s as UladSnapshot, SNAPSHOT_CENTS); };
-const casefileIn = (i: ToolInput, rt: ToolRuntime): DuCasefile => { if (i.casefile && typeof i.casefile === "object") return i.casefile as DuCasefile; need(i, "casefile_id"); return rt.store.require("du_casefiles", str(i, "casefile_id")).data as unknown as DuCasefile; };
+export const snapshotIn = (i: ToolInput, k = "snapshot"): UladSnapshot => { const s = i[k]; if (!s || typeof s !== "object") throw new RangeError(`23.1 tool needs ${k} (the ULAD snapshot)`); return bigints(s as UladSnapshot, SNAPSHOT_CENTS); };
+export const casefileIn = (i: ToolInput, rt: ToolRuntime): DuCasefile => { if (i.casefile && typeof i.casefile === "object") return i.casefile as DuCasefile; need(i, "casefile_id"); return rt.store.require("du_casefiles", str(i, "casefile_id")).data as unknown as DuCasefile; };
 const submissionsOf = (i: ToolInput, rt: ToolRuntime, cf: DuCasefile): DuSubmission[] => (Array.isArray(i.prior) ? (i.prior as DuSubmission[]) : rt.store.list("du_submissions", (d) => d.casefile_id === cf.casefile_id).map((r) => r.data as unknown as DuSubmission).sort((a, b) => a.submission_number - b.submission_number));
 const persist = (rt: ToolRuntime, ctx: CommandContext, kind: string, id: string, data: object) => rt.store.put(kind, id, data as Record<string, unknown>, ctx.actor, ctx.now);
 const dateIn = (i: ToolInput, k: string): PlainDate | null => (typeof i[k] === "string" && i[k] ? D(str(i, k)) : null);
@@ -35,11 +39,36 @@ const NO_SUPPRESSION = never("CHANGE_SUPPRESSED", "23.1 guardrails: never suppre
 const NO_BORROWER_FINDINGS = never("FINDINGS_NOT_BORROWER_FACING", "23.1 guardrails: never disclose findings to the borrower (Fannie Mae-confidential; reasons reach the borrower via 21.6 notices)", (i) => i.deliver_to_borrower === true || i.recipient === "borrower" || i.channel === "borrower_portal", "DU findings are not borrower-deliverable");
 
 export const TOOLS_23_1: readonly ToolDef[] = defineTools("23.1", "underwriter", [
-  { name: "buildDuRequest", kind: "act", handler: compute((i, ctx, rt) => {
+  { name: "buildDuRequest", kind: "act", handler: compute(async (i, ctx, rt) => {
     const cf = casefileIn(i, rt); const snapshot = snapshotIn(i);
     const t = (str(i, "submission_type") || "credit_and_underwriting") as SubmissionType, reason = (str(i, "reason") || "initial") as SubmissionReason;
-    const req = buildDuRequest(cf, { submission_type: t, reason, built_at: (i.built_at as string | undefined) ?? ctx.now, snapshot, ...(Array.isArray(i.return_file_types) ? { return_file_types: i.return_file_types as ReturnFileType[] } : {}), ...(Array.isArray(i.validation_report_refs) ? { validation_report_refs: i.validation_report_refs as DuRequest["validation_report_refs"] } : {}), prior_submission_number: cf.submission_count || null });
-    return { request: req, request_hash: req.request_hash, return_file_types: req.return_file_types, mismo_version: req.mismo_version };
+    const built_at = (i.built_at as string | undefined) ?? ctx.now;
+    // 23.6: the request IS the DU Specification document, assembled from the 23.5 graph (loaded here when this runtime has a
+    // database and the application is a row) with the snapshot's deal facts laid over it; request_hash is the SHA-256 of its
+    // bytes. Rule 4 is REPORTED on this path, not refused — 23.6 "Discrepancies vs blueprint" (3), measured by 23.6-T5: the
+    // borrower flow does not yet collect every DU Map required point (the full TIN — application_borrowers keeps tin_last4 —
+    // the current residence's basis, the subject's estate type; the section 32 amendments the hand-off's Phase 7 names), so a
+    // strict build would refuse every live application at the DU moment. The gaps ride on the request (`document.gaps`), the
+    // documents row and the `du.document.emitted` payload (`required_missing`), and 23.7's SM_DU_PREFLIGHT_GATE holds a
+    // document that has any. The agent's own 23.6 assembleDuDocument tool refuses; a caller may pass conditionality: "refuse"
+    // here to get the same. The deviation ends, and this default becomes "refuse", when those amendments land.
+    const db = rt.services["db"] as Queryable | undefined;
+    const graph = db && isUuid(cf.application_id) ? await loadGraph(db, cf.application_id) : undefined;
+    const submission_number = (cf.submission_count || 0) + 1;
+    let built: ReturnType<typeof buildDuRequestWithDocument>;
+    try {
+      built = buildDuRequestWithDocument(cf, { submission_type: t, reason, built_at, snapshot, ...(graph ? { graph } : {}), conditionality: i.conditionality === "refuse" ? "refuse" : "report", ...(Array.isArray(i.return_file_types) ? { return_file_types: i.return_file_types as ReturnFileType[] } : {}), ...(Array.isArray(i.validation_report_refs) ? { validation_report_refs: i.validation_report_refs as DuRequest["validation_report_refs"] } : {}), prior_submission_number: cf.submission_count || null });
+    } catch (e) {
+      if (e instanceof DuEmitError) emitDuDocumentRefused(ctx.events, { application_id: cf.application_id, casefile_id: cf.casefile_id, submission_number, error: e, at: built_at }, ctx.actor);
+      throw e;
+    }
+    const { request: req, document } = built;
+    const du_document_id = randomUUID();
+    const row = { application_id: cf.application_id, casefile_id: cf.casefile_id, submission_number, document, document_id: req.document_id, du_document_id, emitted_at: built_at };
+    const defer = rt.services["deferWrite"] as ((fn: (q: Queryable) => Promise<void>) => void) | undefined;
+    if (defer && isUuid(cf.application_id)) defer(async (q) => { await persistDuDocument(q, row); });
+    emitDuDocumentEmitted(ctx.events, row, ctx.actor);
+    return { request: req, request_hash: req.request_hash, return_file_types: req.return_file_types, mismo_version: req.mismo_version, document_id: req.document_id, du_document_id, sha256: req.request_hash, container_count: document.stats.container_count, relationship_count: document.stats.relationship_count, required_missing: document.gaps.length, persisted: Boolean(defer && isUuid(cf.application_id)) };
   }), guardrails: [NO_ULAD_EDIT, never("REPORT_FOR_EVERY_BORROWER", "23.1 guardrails: never submit without a report for every borrower", (i) => i.skip_credit_association === true, "every borrower's credit report is associated before an underwriting submission")] },
   { name: "associateCredit", kind: "act", handler: compute((i, ctx, rt) => {
     const cf = casefileIn(i, rt); need(i, "reports", "borrowers");

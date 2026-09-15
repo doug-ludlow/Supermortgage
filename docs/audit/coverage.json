@@ -1,13 +1,13 @@
 {
- "brief": "spec units built 7965/7997 (99.6%): tids 2210/2232, tables 756/758, timers 2034/2035, notices 308/308, tools 1424/1431, figures 1233/1233; processes at 100%: 190/192",
+ "brief": "spec units built 7980/7997 (99.8%): tids 2220/2232, tables 757/758, timers 2034/2035, notices 308/308, tools 1428/1431, figures 1233/1233; processes at 100%: 191/192",
  "totals": {
   "tids": {
    "spec": 2232,
-   "built": 2210
+   "built": 2220
   },
   "tables": {
    "spec": 758,
-   "built": 756
+   "built": 757
   },
   "timers": {
    "spec": 2035,
@@ -19,7 +19,7 @@
   },
   "tools": {
    "spec": 1431,
-   "built": 1424
+   "built": 1428
   },
   "figures": {
    "spec": 1233,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 7997,
-   "built": 7965
+   "built": 7980
   }
  },
  "sections": {
@@ -165,9 +165,9 @@
   },
   "23": {
    "spec": 290,
-   "built": 258,
+   "built": 273,
    "processes": 7,
-   "done": 5
+   "done": 6
   },
   "24": {
    "spec": 314,
@@ -372,6 +372,7 @@
   "23.3",
   "23.4",
   "23.5",
+  "23.6",
   "24.1",
   "24.2",
   "24.3",
@@ -5969,27 +5970,14 @@
    "title": "Assemble and emit the DU Specification document (MISMO 3.4 B324 + DU/ULAD extensions)",
    "tids": {
     "spec": 12,
-    "built": 2,
-    "todo": 10,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     12
-    ]
+    "built": 12,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 1,
-    "built": 0,
-    "missing": [
-     "du_documents"
-    ]
+    "built": 1,
+    "missing": []
    },
    "timers": {
     "spec": 0,
@@ -6004,13 +5992,8 @@
    },
    "tools": {
     "spec": 4,
-    "built": 0,
-    "missing": [
-     "assembleDuDocument",
-     "validateDuDocumentAgainstSchema",
-     "diffDuDocumentAgainstSample",
-     "readDuDocument"
-    ]
+    "built": 4,
+    "missing": []
    },
    "figures": {
     "spec": 0,
@@ -6019,9 +6002,9 @@
    },
    "units": {
     "spec": 17,
-    "built": 2
+    "built": 17
    },
-   "pct": 11.8
+   "pct": 100.0
   },
   {
    "process": "23.7",

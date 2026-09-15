@@ -32,6 +32,7 @@
  *   du.return_file_format.confirmed{formats}                              [satisfies FNMA_DU_RETURN_FILE_16_17_RETIRE]
  */
 import { createHash, randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
 import { type PlainDate, plainDate as D, addDays, daysBetween, min as minDate } from "../../kernel/calendar/date.ts";
 import { wallClock } from "../../kernel/calendar/zoned.ts";
 import { Decimal, divRound, levelPayment, ratePercent, type Cents } from "../../kernel/money/index.ts";
@@ -42,6 +43,7 @@ import { assertDuSubmittable, b3210ToleranceCheck, dtiTenths, assertGateOpen as 
 import { assertGateOpen as assertDocumentGateOpen, type ReliedDocument } from "../verification/ops-22-1.ts";
 import { closeByGate } from "../verification/ops-22-3.ts";
 import { LTV_BANDS, MIN_MI_LTV_BANDS } from "../leads-pricing/ops-20-4.ts";
+import { assembleDuDocument, emptyGraph, withDeal, type DuDeal, type DuDocument, type DuGap, type DuGraph, type DuValue } from "./du/emit.ts";
 
 export type { ScoreModel };
 export const AGENT: Actor = { kind: "agent", id: "underwriter" };
@@ -61,7 +63,7 @@ const nonEmpty = (v: unknown, what: string): string => { if (typeof v !== "strin
 const emit = (events: EventStore, applicationId: string, type: string, payload: Record<string, unknown>, at: string, actor: Actor = AGENT): DomainEvent =>
   events.append({ type, applicationId, aggregate: { kind: "application", id: applicationId }, actor, occurredAt: at, payload: { application_id: applicationId, ...payload } });
 const sha256 = (s: string): string => createHash("sha256").update(s).digest("hex");
-/** Canonical JSON (sorted keys; bigint → decimal string) so two identical snapshots hash identically. */
+/** Canonical JSON (sorted keys; bigint → decimal string) so two identical snapshots hash identically — the closed-loan snapshot hash and the findings hash (rule 5). The request hash is not this: it is the SHA-256 of the emitted document's bytes (23.6 rule 6). */
 export function canonical(v: unknown): string {
   const norm = (x: unknown): unknown => typeof x === "bigint" ? x.toString() : Array.isArray(x) ? x.map(norm) : x && typeof x === "object" ? Object.fromEntries(Object.keys(x as object).sort().map((k) => [k, norm((x as Record<string, unknown>)[k])])) : x;
   return JSON.stringify(norm(v));
@@ -242,10 +244,86 @@ export function returnFileTypeGate(f: Record<string, unknown>): GateResult {
   if (!types.length) return { open: false, reason: "no return_file_types requested" };
   return { open: true };
 }
-export interface DuRequest { readonly casefile_id: string; readonly application_id: string; readonly submission_type: SubmissionType; readonly reason: SubmissionReason; readonly built_at: string; readonly built_on: PlainDate; readonly return_file_types: readonly ReturnFileType[]; readonly snapshot: UladSnapshot; readonly credit_association: readonly CreditAssociation[]; readonly automated_underwriting_case_identifier: string | null; readonly validation_report_refs: readonly { supplier_type: string; identifier: string; report_type: string }[]; readonly mismo_version: "3.4-B324"; readonly request_hash: string; readonly xml_document: string; }
-export interface BuildRequestInput { readonly submission_type: SubmissionType; readonly reason: SubmissionReason; readonly built_at: string; readonly snapshot: UladSnapshot; readonly return_file_types?: readonly ReturnFileType[]; readonly validation_report_refs?: DuRequest["validation_report_refs"]; readonly prior_submission_number?: number | null; }
-/** The DU Spec request (MISMO 3.4 Build 324 + DU extension) as a canonical document; `request_hash` covers the whole ULAD snapshot. */
+/** What 23.1 carries of the emitted document (23.6): the hash, the counts, and the DU Map gaps recorded under `conditionality: "report"`. JSON-safe — the bytes are `xml_document`. */
+export interface DuRequestDocument { readonly sha256: string; readonly container_count: number; readonly relationship_count: number; readonly borrower_count: number; readonly disputed_arcs_skipped: number; readonly required_missing: number; readonly gaps: readonly DuGap[]; }
+export interface DuRequest { readonly casefile_id: string; readonly application_id: string; readonly submission_type: SubmissionType; readonly reason: SubmissionReason; readonly built_at: string; readonly built_on: PlainDate; readonly return_file_types: readonly ReturnFileType[]; readonly snapshot: UladSnapshot; readonly credit_association: readonly CreditAssociation[]; readonly automated_underwriting_case_identifier: string | null; readonly validation_report_refs: readonly { supplier_type: string; identifier: string; report_type: string }[]; readonly mismo_version: "3.4-B324";
+  /** SHA-256 (hex) of `xml_document`'s UTF-8 bytes exactly as transmitted (23.6 rule 6). */
+  readonly request_hash: string;
+  /** The DU Specification document: MISMO 3.4 Build 324 XML with the DU and ULAD extensions (23.6). */
+  readonly xml_document: string;
+  /** The `documents` row the runtime persists the bytes under (du_submissions.request_document_id). */
+  readonly document_id: string;
+  readonly document: DuRequestDocument; }
+export interface BuildRequestInput { readonly submission_type: SubmissionType; readonly reason: SubmissionReason; readonly built_at: string; readonly snapshot: UladSnapshot; readonly return_file_types?: readonly ReturnFileType[]; readonly validation_report_refs?: DuRequest["validation_report_refs"]; readonly prior_submission_number?: number | null;
+  /** The 23.5 graph projected for the document (du/emit.ts `loadGraph` in the runtime; a fixture in tests). The snapshot's deal facts are laid over it (`dealFromSnapshot`); with no graph the document is the deal alone. */
+  readonly graph?: DuGraph;
+  /** 23.6 rule 4 at emission: `refuse` (default) throws DU_REQUIRED_MISSING; `report` records the gaps on `document.gaps` for 23.7's gate (src/app/tools/section23-1.ts says why the runtime passes it). */
+  readonly conditionality?: "refuse" | "report";
+  /** The documents row id to persist under; minted when absent. */
+  readonly document_id?: string; }
+
+// The snapshot's deal facts as the document's subject LOAN and COLLATERAL (23.6 Inputs: "the subject loan's terms,
+// the collateral" are 23.1's, not a 23.5 row's). Every mapping is a table over the vocabulary 20.4 / 23.1 use; a value
+// outside it leaves the data point ABSENT — never guessed — and rule 4 names the XPath (refused, or reported for 23.7).
+const LOAN_PURPOSE_DU: Readonly<Record<LoanPurpose, { readonly purpose: string; readonly cash_out: string | null }>> = { purchase: { purpose: "Purchase", cash_out: null }, limited_cash_out_refinance: { purpose: "Refinance", cash_out: "LimitedCashOut" }, cash_out_refinance: { purpose: "Refinance", cash_out: "CashOut" } };
+/** 20.4 `Occupancy` (primary | second_home | investment) and the snapshot spellings the fixtures and 32.x journeys use for the same three. */
+const OCCUPANCY_DU: Readonly<Record<string, string>> = { primary: "PrimaryResidence", principal_residence: "PrimaryResidence", principal: "PrimaryResidence", owner_occupied: "PrimaryResidence", second_home: "SecondHome", investment: "Investment" };
+/** 20.4 `PropertyType` (sfr | pud | condo | coop | manufactured_home) plus the snapshot spellings; the unit count is the type's for a one-unit type and stated by name for 2–4 units. */
+const UNITS_DU: Readonly<Record<string, number>> = { sfr: 1, sfr_detached: 1, sfr_attached: 1, pud: 1, condo: 1, coop: 1, manufactured_home: 1, manufactured: 1, townhouse: 1, "2_unit": 2, "3_unit": 3, "4_unit": 4 };
+/** 20.4 `Amortization`: fixed, or a 5/6, 7/6, 10/6 ARM — all fully amortizing (no interest-only, balloon or negative-amortization product is priced). */
+const AMORTIZATION_DU = (a: string): string | null => (a === "fixed" ? "Fixed" : /^arm(_|$)/.test(a) ? "AdjustableRate" : null);
+/** ORIGINATION_SYSTEMS/ORIGINATION_SYSTEM (conditional on the subject loan): the LOS is this platform; the vendor identifier is the partner-org System ID Fannie Mae assigned SM's TSP product (`du_casefiles.system_id_ref`). */
+export const LOAN_ORIGINATION_SYSTEM = { name: "Supermortgage", version: String((createRequire(import.meta.url)("../../../package.json") as { version: string }).version) } as const;
+export function dealFromSnapshot(s: UladSnapshot, system_id_ref: string): DuDeal {
+  const purpose = LOAN_PURPOSE_DU[s.loan_purpose];
+  const amortization = AMORTIZATION_DU(s.amortization);
+  const loan: Record<string, DuValue | null> = {
+    "AMORTIZATION/AMORTIZATION_RULE/AmortizationType": amortization,
+    "AMORTIZATION/AMORTIZATION_RULE/LoanAmortizationPeriodCount": Number.isInteger(s.loan_term) && s.loan_term > 0 ? s.loan_term : null,
+    "AMORTIZATION/AMORTIZATION_RULE/LoanAmortizationPeriodType": Number.isInteger(s.loan_term) && s.loan_term > 0 ? "Month" : null,
+    // Every product 20.4 prices amortizes fully (its Amortization type) and carries no temporary buydown, prepayment penalty or
+    // construction phase (no such row on any rate sheet; `permanent_buydown` is the snapshot's only buydown and is a rate fact,
+    // not a subsidy) — so the five LOAN_DETAIL indicators are the product's, derived, not defaulted.
+    "LOAN_DETAIL/BalloonIndicator": amortization === null ? null : false,
+    "LOAN_DETAIL/BorrowerCount": s.borrowers.length,
+    "LOAN_DETAIL/BuydownTemporarySubsidyFundingIndicator": amortization === null ? null : false,
+    "LOAN_DETAIL/ConstructionLoanIndicator": false,
+    "LOAN_DETAIL/InterestOnlyIndicator": amortization === null ? null : false,
+    "LOAN_DETAIL/NegativeAmortizationIndicator": amortization === null ? null : false,
+    "LOAN_DETAIL/PrepaymentPenaltyIndicator": amortization === null ? null : false,
+    "ORIGINATION_SYSTEMS/ORIGINATION_SYSTEM/LoanOriginationSystemName": LOAN_ORIGINATION_SYSTEM.name,
+    "ORIGINATION_SYSTEMS/ORIGINATION_SYSTEM/LoanOriginationSystemVendorIdentifier": system_id_ref || null,
+    "ORIGINATION_SYSTEMS/ORIGINATION_SYSTEM/LoanOriginationSystemVersionIdentifier": LOAN_ORIGINATION_SYSTEM.version,
+    "REFINANCE/RefinanceCashOutDeterminationType": purpose?.cash_out ?? null,
+    "TERMS_OF_LOAN/BaseLoanAmount": s.loan_amount_cents,
+    // 23.1's casefile is the partner's first-lien conventional loan sold to Fannie Mae (loans.lien defaults to first; subordinate
+    // financing reaches the snapshot as `subordinate_liens_cents` / `heloc_limit_cents`, somebody else's lien).
+    "TERMS_OF_LOAN/LienPriorityType": "FirstLien",
+    "TERMS_OF_LOAN/LoanPurposeType": purpose?.purpose ?? null,
+    "TERMS_OF_LOAN/MortgageType": "Conventional",
+    "TERMS_OF_LOAN/NoteRatePercent": /^\d+(\.\d{1,4})?$/.test(s.note_rate_pct) ? s.note_rate_pct : null,
+  };
+  const S = "DEAL_SETS/DEAL_SET/DEALS/DEAL/COLLATERALS/COLLATERAL/SUBJECT_PROPERTY";
+  const message: Record<string, DuValue | null> = {
+    [`${S}/PROPERTY_DETAIL/FinancedUnitCount`]: UNITS_DU[s.property_type] ?? null,
+    [`${S}/PROPERTY_DETAIL/PropertyUsageType`]: OCCUPANCY_DU[s.occupancy] ?? null,
+    [`${S}/PROPERTY_VALUATIONS/PROPERTY_VALUATION/PROPERTY_VALUATION_DETAIL/PropertyValuationAmount`]: s.appraised_value_cents,
+    [`${S}/SALES_CONTRACTS/SALES_CONTRACT/SALES_CONTRACT_DETAIL/SalesContractAmount`]: s.loan_purpose === "purchase" ? s.sales_price_cents : null,
+  };
+  const present = (o: Record<string, DuValue | null>): Record<string, DuValue> => Object.fromEntries(Object.entries(o).filter((e): e is [string, DuValue] => e[1] !== null));
+  return { loan: present(loan), message: present(message) };
+}
+
+/**
+ * The DU Spec request: the DU Specification document (23.6) assembled from the 23.5 graph with the snapshot's deal
+ * facts laid over it, `request_hash` = SHA-256 of its bytes. A refusal (DU_ENUM_NOT_SUPPORTED, DU_REQUIRED_MISSING,
+ * DU_LENGTH, DU_CHILD_NOT_IN_ORDER …) is a `DuEmitError` naming the XPath, and no request exists.
+ */
 export function buildDuRequest(casefile: DuCasefile, i: BuildRequestInput): DuRequest {
+  return buildDuRequestWithDocument(casefile, i).request;
+}
+/** `buildDuRequest` with the assembled `DuDocument` beside the request — the bus tool persists the bytes (du/persist.ts) without assembling twice. */
+export function buildDuRequestWithDocument(casefile: DuCasefile, i: BuildRequestInput): { request: DuRequest; document: DuDocument } {
   const built_on = civilDateEt(i.built_at);
   const return_file_types = i.return_file_types ?? DEFAULT_RETURN_FILE_TYPES;
   const g = returnFileTypeGate({ built_on, return_file_types });
@@ -253,9 +331,14 @@ export function buildDuRequest(casefile: DuCasefile, i: BuildRequestInput): DuRe
   if (i.submission_type !== "credit_only" && casefile.credit_association.length === 0) throw new DuRefused("CREDIT_NOT_ASSOCIATED", "guardrail: never submit without a report for every borrower", "associate every borrower's credit report before an underwriting submission");
   const missing = i.snapshot.borrowers.filter((b) => i.submission_type !== "credit_only" && !casefile.credit_association.some((a) => a.borrower_id === b.borrower_id)).map((b) => b.borrower_id);
   if (missing.length) throw new DuRefused("REPORT_MISSING_FOR_BORROWER", "DU job aid: a credit report must be available in DU for every borrower", `no association for borrower(s) ${missing.join(", ")}`, "22.2");
-  const body = { casefile_id: casefile.casefile_id, submission_type: i.submission_type, snapshot: i.snapshot, credit_association: casefile.credit_association.map((a) => ({ borrower_id: a.borrower_id, credit_agency_code: a.credit_agency_code, reference_number: a.reference_number, report_type: a.report_type })), validation_report_refs: i.validation_report_refs ?? [], automated_underwriting_case_identifier: i.prior_submission_number ? casefile.casefile_id : null };
-  const xml_document = canonical(body);
-  return { casefile_id: casefile.casefile_id, application_id: casefile.application_id, submission_type: i.submission_type, reason: i.reason, built_at: i.built_at, built_on, return_file_types, snapshot: i.snapshot, credit_association: casefile.credit_association, automated_underwriting_case_identifier: body.automated_underwriting_case_identifier, validation_report_refs: i.validation_report_refs ?? [], mismo_version: "3.4-B324", request_hash: sha256(xml_document), xml_document };
+  const submission_number = (i.prior_submission_number ?? 0) + 1;
+  const graph = withDeal(i.graph ?? emptyGraph(casefile.application_id), dealFromSnapshot(i.snapshot, casefile.system_id_ref));
+  const doc = assembleDuDocument(graph, { casefile_id: casefile.casefile_id, seller_number: casefile.seller_number, system_id_ref: casefile.system_id_ref }, { submission_number, submission_type: i.submission_type }, { conditionality: i.conditionality ?? "refuse" });
+  const xml_document = new TextDecoder().decode(doc.bytes);
+  return { document: doc, request: { casefile_id: casefile.casefile_id, application_id: casefile.application_id, submission_type: i.submission_type, reason: i.reason, built_at: i.built_at, built_on, return_file_types, snapshot: i.snapshot, credit_association: casefile.credit_association,
+    // Rule 8 (23.6): DU's own identifier on a resubmission, never ours.
+    automated_underwriting_case_identifier: submission_number > 1 ? graph.du_casefile_id : null, validation_report_refs: i.validation_report_refs ?? [], mismo_version: "3.4-B324", request_hash: doc.sha256, xml_document, document_id: i.document_id ?? randomUUID(),
+    document: { sha256: doc.sha256, container_count: doc.stats.container_count, relationship_count: doc.stats.relationship_count, borrower_count: doc.stats.borrower_count, disputed_arcs_skipped: doc.stats.disputed_arcs_skipped, required_missing: doc.gaps.length, gaps: doc.gaps } } };
 }
 
 // ============================================================ the fnma-du port (UNVERIFIED transport; fake for tests)
@@ -378,7 +461,7 @@ export async function submitCasefile(events: EventStore, port: DuPort, casefile:
   const r = i.request;
   const submission_number = casefile.submission_count + 1;
   const du_release_applied = duReleaseApplied(i.at);
-  const base: DuSubmission = { submission_id: randomUUID(), casefile_id: casefile.casefile_id, application_id: casefile.application_id, submission_number, submission_type: r.submission_type, reason: r.reason, request_document_id: `doc:du-request:${casefile.casefile_id}:${submission_number}`, request_hash: r.request_hash, du_version: DU_VERSION, du_release_applied,
+  const base: DuSubmission = { submission_id: randomUUID(), casefile_id: casefile.casefile_id, application_id: casefile.application_id, submission_number, submission_type: r.submission_type, reason: r.reason, request_document_id: r.document_id, request_hash: r.request_hash, du_version: DU_VERSION, du_release_applied,
     return_file_types: r.return_file_types, findings_document_id: null, findings_json_document_id: null, findings_pdf_document_id: null, submitted_at: i.at, acked_at: null, findings_received_at: null, status: "queued", error_code: null, error_message: null, recommendation: null, messages: [], risk_factors: {}, validation_results: [], value_acceptance_offer: null, mi_requirement: null,
     dti_du: null, ltv_du: null, cltv_du: null, hcltv_du: null, reserves_required_cents: null, total_funds_to_verify_cents: null, qualifying_rate: null, note_rate: r.snapshot.note_rate_pct, loan_amount_cents: r.snapshot.loan_amount_cents, is_final: false, closed_loan_snapshot_hash: r.reason === "final_closed_loan_match" ? closedLoanSnapshotHash(r.snapshot) : null, findings_hash: null,
     snapshot: r.snapshot, rationale: i.rationale ?? null, submitted_via: "di_channel", agent_run_id: i.agent_run_id ?? null, validation_report_refs: r.validation_report_refs };

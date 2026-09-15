@@ -22,6 +22,7 @@ import type { CreditReport, ScoreModel } from "../verification/ops-22-2.ts";
 import { createCasefile, associateCredit, buildDuRequest, submitCasefile, receiveFindings, ingestOperatorFindings, evaluateResubmission, assertFinalSubmissionMatches, recordFinalSubmission, archivalWatch, archivalClocks, policyGeneration, duReleaseApplied, detectIdentityChange, recordIdentityChange, recordImpactMemo, tagAdapterRelease, confirmReturnFileFormat, returnFileTypeGate, finalMatchGate, finalMatchFacts, closedLoanSnapshotHash,
   dtiBps, dtiTest, rateTest, loanAmountTest, refiAmountTolerance, reservesTest, incomeLimitedTest, closedLoanFieldsTest, ltvPct, llpaLtvBand, piCents, piUnrounded, decisionRecord, FakeDuPort, OutageDuPort, DuRefused, DI_OUTAGE_AFTER_MINUTES, AGENT,
   type DuCasefile, type DuSubmission, type UladSnapshot, type BorrowerIdentity, type DuRequest, type SubmissionReason, type SubmissionType } from "./ops-23-1.ts";
+import { FIXTURE_DU_CASEFILE_ID, refinanceFixtureGraph } from "./fixtures/du-refinance-fixture.ts";
 
 // ─────────────────────────────────────────────────────────────── fixtures (spec README: refinance Mon Oct 5, 2026; purchase Mon Oct 19, 2026)
 const B1: BorrowerIdentity = { borrower_id: "B1", last_name: "Rivera", suffix: null, ssn_last4: "1234" };
@@ -56,7 +57,10 @@ function harness(nowIso: string, opts: { port?: FakeDuPort | OutageDuPort; recom
   /** submit + findings in one run (the agent's end-to-end step). */
   const submit = async (cf: DuCasefile, s: UladSnapshot, prior: readonly DuSubmission[], o: { type?: SubmissionType; reason?: SubmissionReason; at?: string; note?: PlainDate | null; escalate?: boolean; built_at?: string; return_file_types?: DuRequest["return_file_types"] } = {}) => {
     const at = o.at ?? clock.now(); clock.set(at);
-    const request = buildDuRequest(cf, { submission_type: o.type ?? (prior.length ? "underwriting_only" : "credit_and_underwriting"), reason: o.reason ?? (prior.length ? "tolerance_breach" : "initial"), built_at: o.built_at ?? at, snapshot: s, prior_submission_number: prior.at(-1)?.submission_number ?? null, ...(o.return_file_types ? { return_file_types: o.return_file_types } : {}) });
+    // 23.6: the request is the DU Specification document assembled from the fixture's 23.5 graph (the snapshot's deal facts laid over it); a
+    // resubmission carries the identifier DU minted on the first ack (rule 8 — the FAKE port mints it in 23.7; the fixture stands in for that write).
+    const graph = refinanceFixtureGraph(s, { du_casefile_id: prior.length ? FIXTURE_DU_CASEFILE_ID : null });
+    const request = buildDuRequest(cf, { submission_type: o.type ?? (prior.length ? "underwriting_only" : "credit_and_underwriting"), reason: o.reason ?? (prior.length ? "tolerance_breach" : "initial"), built_at: o.built_at ?? at, snapshot: s, graph, prior_submission_number: prior.at(-1)?.submission_number ?? null, ...(o.return_file_types ? { return_file_types: o.return_file_types } : {}) });
     const r = await submitCasefile(events, port, cf, { request, at, prior, projected_note_date: o.note === undefined ? D("2026-11-06") : o.note, scif_facts: scifFacts(s), escalations: o.escalate ? escalations : null });
     if (r.outage) return { ...r, request, findings: null };
     const f = await port.fetchFindings(cf.casefile_id, r.submission.submission_number);
@@ -351,7 +355,7 @@ test("23.1-T13: Given the DI channel returns transport errors for 30 minutes on 
 test("23.1-T14: Given a request built on Dec 1, 2026 with `return_file_types` containing type 16, then the adapter rejects it before transmission (`FNMA_DU_RETURN_FILE_16_17_RETIRE`).", async () => {
   const h = harness("2026-12-01T15:00:00.000Z");
   const cf1 = h.associate(h.create(REFI, "2026-10-06T15:00:00.000Z"), REFI);
-  const build = (built_at: string, types: DuRequest["return_file_types"]) => buildDuRequest(cf1, { submission_type: "underwriting_only", reason: "data_change", built_at, snapshot: REFI, return_file_types: types });
+  const build = (built_at: string, types: DuRequest["return_file_types"]) => buildDuRequest(cf1, { submission_type: "underwriting_only", reason: "data_change", built_at, snapshot: REFI, graph: refinanceFixtureGraph(REFI), return_file_types: types });
   assert.throws(() => build("2026-12-01T15:00:00.000Z", ["json_v2", "16"]), (e: unknown) => e instanceof DuRefused && e.error_code === "FNMA_DU_RETURN_FILE_16_17_RETIRE" && /retired Nov 30, 2026/.test(e.message));
   assert.throws(() => build("2026-12-01T15:00:00.000Z", ["17"]), (e: unknown) => e instanceof DuRefused && e.error_code === "FNMA_DU_RETURN_FILE_16_17_RETIRE");
   assert.equal(h.port instanceof FakeDuPort ? h.port.requests.length : -1, 0);   // rejected before transmission
@@ -424,7 +428,7 @@ test("23.1 worked figures: P&I $3,402.62 (fixture $3,402.63) / $3,448.02, obliga
   await assert.rejects(h.submit(capped, { ...REFI, total_obligations_cents: 502_000n }, [sep24.submission, sep28.submission], { at: "2026-09-29T15:00:00.000Z" }), (e: unknown) => e instanceof DuRefused && e.error_code === "RESUBMISSION_CAP_REVIEW" && e.next === "underwriting_reviewer");
   await assert.rejects(h.submit({ ...capped, submission_count: 10 }, { ...REFI, total_obligations_cents: 502_000n }, [sep24.submission, sep28.submission], { at: "2026-09-29T15:00:00.000Z" }), (e: unknown) => e instanceof DuRefused && e.error_code === "RESUBMISSION_RATIONALE_REQUIRED");
   // guard: 21.1's SCIF gate blocks du.submit
-  const req = buildDuRequest(sep28.casefile, { submission_type: "underwriting_only", reason: "data_change", built_at: "2026-09-29T15:00:00.000Z", snapshot: { ...REFI, total_obligations_cents: 503_000n } });
+  const req = buildDuRequest(sep28.casefile, { submission_type: "underwriting_only", reason: "data_change", built_at: "2026-09-29T15:00:00.000Z", snapshot: { ...REFI, total_obligations_cents: 503_000n }, graph: refinanceFixtureGraph({ ...REFI, total_obligations_cents: 503_000n }) });
   await assert.rejects(submitCasefile(h.events, h.port, sep28.casefile, { request: req, at: "2026-09-29T15:00:00.000Z", prior: [sep24.submission, sep28.submission], projected_note_date: D("2026-11-06"), scif_facts: { borrowers: [{ id: "B1", scif_presented_at: "2026-10-05T16:00:00.000Z" }, { id: "B2" }] } }), (e: unknown) => e instanceof DuRefused && e.error_code === "SM_O21_SCIF_PRESENT_GATE" && /du\.submit blocked/.test(e.message));
   // guard: a report expiring before the projected note date blocks a non-refresh resubmission (22.2's four-month gate); the closed-loan-field rule is unconditional
   await assert.rejects(submitCasefile(h.events, h.port, sep28.casefile, { request: req, at: "2026-09-29T15:00:00.000Z", prior: [sep24.submission, sep28.submission], projected_note_date: D("2027-02-06"), scif_facts: scifFacts(REFI) }), /B1-1-03/);

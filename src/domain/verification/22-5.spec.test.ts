@@ -336,6 +336,9 @@ test("22.5-T10: (HELOC and revolving 5%) Given a HELOC with a $12,000.00 balance
   assert.equal(evaluateExclusion({ ...heloc, qualifying_payment_cents: 7_400n, payment_basis: "heloc_required_payment" }, "heloc_no_payment").include_in_dti, true);
   const card = selectPaymentBasis({ liability_type: "revolving", balance_cents: 300_000n, reported_payment_cents: null });
   assert.equal(card.qualifying_payment_cents, 15_000n); assert.equal(card.payment_basis, "revolving_5pct"); assert.equal(revolving5pct(300_000n), 15_000n); assert.equal(revolving5pct(123_450n), 6_173n);   // round_half_up(123,450 × 5 / 100) = 6,172.5 → 6,173
+  // B3-6-05 (DU): the greater of $10 or 5 % — a $100.00 balance → 1,000 cents, not 500; $200.00 → 1,000; $200.20 → 1,001
+  assert.equal(revolving5pct(10_000n), 1_000n); assert.equal(revolving5pct(20_000n), 1_000n); assert.equal(revolving5pct(20_020n), 1_001n); assert.equal(revolving5pct(0n), 1_000n);
+  const small = selectPaymentBasis({ liability_type: "revolving", balance_cents: 10_000n, reported_payment_cents: null }); assert.equal(small.qualifying_payment_cents, 1_000n); assert.equal(small.payment_basis, "revolving_5pct"); assert.match(small.rationale, /greater of \$10 or 5 %/);
   assert.equal(selectPaymentBasis({ liability_type: "revolving", balance_cents: 300_000n, reported_payment_cents: null }, { supplemental_statement_payment_cents: 9_000n }).payment_basis, "creditor_statement");   // a statement supporting < 5 %
   // through the bus: the HELOC that requires a payment is included at 7,400; imputing a payment on a zero-payment line is refused
   const h = harness(OCT5); await seedRefi(h);
@@ -356,6 +359,17 @@ test("22.5-T11: (paid by others / business debt) Given a co-signed auto loan wit
   assert.equal(late.include_in_dti, true); assert.equal(late.exclusion_reason, null); assert.match(late.why, /1 delinquent payment/);
   assert.throws(() => evaluateExclusion(cosigned, "paid_by_other_12m", { evidence_document_ids: ["DOC-checks-9m"], canceled_checks_months: 9 }), (e: unknown) => e instanceof LiabilityRefused && e.code === "NO_EXCLUSION_WITHOUT_EVIDENCE" && /12 required/.test(e.message));
   assert.throws(() => evaluateExclusion(cosigned, "paid_by_other_12m"), (e: unknown) => e instanceof LiabilityRefused && e.code === "NO_EXCLUSION_WITHOUT_EVIDENCE");
+  // B3-6-05 debts paid by others: a non-mortgage payer need not be obligated but must not be an interested party; a mortgage payer must be obligated on that mortgage, with no delinquencies and no rental income from the property used to qualify (the property still counts under B2-2-03)
+  const evidence12 = { evidence_document_ids: ["DOC-checks-12m"], canceled_checks_months: 12, payer_delinquencies_12m: 0 };
+  assert.equal(evaluateExclusion(cosigned, "paid_by_other_12m", { ...evidence12, payer_interested_party: true }).include_in_dti, true);
+  const otherMortgage = { ...blank("L-mtg-parent", "mortgage", "Mortgage on the parents' home (co-signed)", 18_000_000n), reported_payment_cents: 164_000n, qualifying_payment_cents: 164_000n, payment_basis: "mortgage_pitia" as const };
+  const mtgOk = evaluateExclusion(otherMortgage, "paid_by_other_12m", { ...evidence12, payer_obligated_on_debt: true, rental_income_used_from_property: false }); assert.equal(mtgOk.include_in_dti, false); assert.match(mtgOk.why, /financed property under B2-2-03/);
+  assert.equal(evaluateExclusion(otherMortgage, "paid_by_other_12m", { ...evidence12, payer_obligated_on_debt: false }).include_in_dti, true);
+  assert.equal(evaluateExclusion(otherMortgage, "paid_by_other_12m", { ...evidence12, payer_obligated_on_debt: true, rental_income_used_from_property: true }).include_in_dti, true);
+  // a debt secured by virtual currency is never excludable as secured_by_financial_asset (B3-6-05)
+  const secured = { ...blank("L-secured", "secured_by_financial_asset", "Loan against brokerage account", 2_000_000n), reported_payment_cents: 30_000n, qualifying_payment_cents: 30_000n, payment_basis: "credit_report" as const };
+  assert.equal(evaluateExclusion(secured, "secured_by_financial_asset", { loan_instrument_document_id: "DOC-pledge", collateral_kind: "financial_asset" }).include_in_dti, false);
+  const crypto = evaluateExclusion(secured, "secured_by_financial_asset", { loan_instrument_document_id: "DOC-pledge-btc", collateral_kind: "virtual_currency" }); assert.equal(crypto.include_in_dti, true); assert.match(crypto.why, /virtual currency/);
   const business = { ...blank("L-biz", "business_debt_personal_name", "Equipment loan (Desert LLC)", 3_000_000n), reported_payment_cents: 65_000n, qualifying_payment_cents: 65_000n, payment_basis: "credit_report" as const };
   const notDeducted = evaluateExclusion(business, "business_paid_12m_cashflow", { evidence_document_ids: ["DOC-company-checks"], company_checks_months: 12, cash_flow_deducted: false });
   assert.equal(notDeducted.include_in_dti, true); assert.match(notDeducted.why, /cash-flow analysis did not deduct/);
@@ -370,6 +384,7 @@ test("22.5-T11: (paid by others / business debt) Given a co-signed auto loan wit
   assert.equal((await h.run("computeDti", { stage: "pre_cd" })).obligations_cents, 455_999n);
   const inc = await h.run("evaluateExclusion", { liability_id: "L-cosigned", reason: "paid_by_other_12m", evidence_document_ids: ["DOC-checks-12m"], canceled_checks_months: 12, payer_delinquencies_12m: 1 }); assert.equal(inc.include_in_dti, true);
   assert.equal((await h.run("computeDti", { stage: "pre_cd" })).obligations_cents, 497_999n);
+  assert.equal((await h.run("evaluateExclusion", { liability_id: "L-cosigned", reason: "paid_by_other_12m", evidence_document_ids: ["DOC-checks-12m"], canceled_checks_months: 12, payer_delinquencies_12m: 0, payer_interested_party: true })).include_in_dti, true);   // the seller pays the sibling's car → not excludable
   await h.declare("L-biz", { liability_type: "business_debt_personal_name", creditor_name: "Equipment loan", balance_cents: "3000000", reported_payment_cents: "65000" });
   const biz = await h.run("evaluateExclusion", { liability_id: "L-biz", reason: "business_paid_12m_cashflow", evidence_document_ids: ["DOC-company-checks"], company_checks_months: 12, cash_flow_deducted: false }); assert.equal(biz.include_in_dti, true);
   await h.refused(h.run("evaluateExclusion", { liability_id: "L-biz", reason: "non_applicant_documented" }), "NO_NON_APPLICANT_EXCLUSION_WITHOUT_DOCS");

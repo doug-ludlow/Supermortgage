@@ -73,7 +73,7 @@
 20. **eNote wire/letter-type options in Loan Delivery under the eNote funding agreement (29.4-Q4).** Default per Fannie Mae's eMortgage team instruction captured in the onboarding runbook.
 21. **Fannie Mae Connect reports exposing Loan Delivery status (29.4-Q5).** Default: operator captures and custodian notices; add the report ingester when identified.
 22. **LQC data-validation response window (29.4-Q6).** Default 30 calendar days unless the request states otherwise; aligned with 28.2.
-23. **Master Servicer vs Servicing Agent field for the subservicer (29.4-Q7).** Default: partner Org ID as Master Servicer, SM as Servicing Agent, pending 30.1.
+23. **Master Servicer vs Servicing Agent field for the subservicer (29.4-Q7).** Default (aligned with 29.4-Q7 and 30.1-Q4): SM's Org ID as Master Servicer (C1-2-04 permits "the Servicer's MERS Org ID (or sub-servicer, if applicable)"), SM also as Servicing Agent/Delegatee, pending 30.1.
 24. **Operator staffing and daily cutoffs (29.4-Q8).** Default: SM staff under the partner's Technology Manager org; tasks due 15:00 MT (carrier 16:30 MT; data 9:00 p.m. ET); an 08:00 MT window for eNote-only loans; segregation between seller-org and warehouse-org operators.
 25. **Loan-age gate naming.** `FNMA_B2_1_5_02_LOAN_AGE_6M_PURCHASE_READY` (29.4) governs; 29.1's `FNMA_C1_1_01_LOAN_AGE_6M_GATE` is retired as an alias.
 

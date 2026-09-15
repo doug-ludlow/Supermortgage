@@ -8,7 +8,7 @@
  *   29.1.dailyLimit             FNMA_C2_1_1_03_DAILY_LIMIT_200M_GATE — facts: `executed_today_cents`, `amount_cents`, `daily_limit_cents`.
  *   29.1.beExtensionCap         FNMA_C2_1_2_02_BE_EXTENSION_CAP_30 — facts: `manual_extension_days`, `requested_days`, `closed`.
  *   29.1.mandExtensionCap       FNMA_C2_1_1_04_MAND_EXTENSION_CAP_30 — facts: `manual_extension_days`, `requested_days`.
- *   29.1.mandToleranceGate      FNMA_PEWL_MAND_TOLERANCE_GATE — facts: `original_amount_cents`, `purchased_cents`.
+ *   29.1.mandToleranceGate      FNMA_PEWL_MAND_TOLERANCE_GATE — facts: `original_amount_cents`, `purchased_cents`, `paired_off_cents` (after a partial pair-off the minimum is the revised commitment − $50, C2-2-01).
  *   29.1.deliveryCommitmentGate FNMA_C2_2_DELIVERY_COMMITMENT_EXPIRY — facts: `expires_on`, `today_et`, `custodian_receipt_possible_on` (29.4).
  */
 import { ok, no, b, n, c, s, arr, every, atMost, atLeast, within, daysBetween, addDays, addYears, type PlainDate, type Evaluator } from "../../app/evaluator-kit.ts";

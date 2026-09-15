@@ -22,7 +22,7 @@ import type { DecisionInput } from "../../infra/db/decisions.ts";
 import { checkFeeGate } from "../application/ops-21-4.ts";
 import { scoreBand } from "../leads-pricing/ops-20-4.ts";
 import {
-  CreditGateClosed, CreditRefused, applicableScore, assertDuSubmittable, assertGateOpen, b3210ToleranceCheck, chargeCreditReportFee, collectionsCondition, computeScores, dtiTenths, dtiText, expiresAt, newDebtImpact, refreshWindowStart, repullBy, scoreDisclosurePayloads, sfcAssertion, waitingPeriod, warnDate,
+  CreditGateClosed, CreditRefused, applicableScore, assertDuSubmittable, assertGateOpen, b3210ToleranceCheck, chargeCreditReportFee, classifyReport, collectionsCondition, computeScores, dtiTenths, dtiText, expiresAt, newDebtImpact, pastDueCondition, refreshWindowStart, repullBy, scoreDisclosurePayloads, sfcAssertion, validateOrder, waitingPeriod, warnDate,
   type BorrowerCredit, type CreditBureauPort, type CreditOrder, type CreditReport, type CreditReportResponse, type FreezeAction, type Repository,
 } from "./ops-22-2.ts";
 
@@ -118,6 +118,15 @@ test("22.2-T2: (single freeze) Given Borrower B's Experian file is frozen and EF
   const actions = d.actions as FreezeAction[]; assert.equal(actions.length, 1); assert.equal(actions[0]!.status, "open"); assert.equal(actions[0]!.repository, "exp");
   // SM_CREDIT_FREEZE_FOLLOWUP_2 anchors on borrower_notified_at (Tue Oct 6 MST) → +2 calendar days
   const t = h.timer("SM_CREDIT_FREEZE_FOLLOWUP_2")!; assert.equal(t.status, "armed"); assert.equal(t.anchorDate, "2026-10-06"); assert.equal(t.dueDate, "2026-10-08");
+  // State-machine guard (B3-5.1-01/B3-5.2-02): a requested tri-merge is usable with no freeze and credit data from one repository (documented no-hits), or exactly one freeze and two repositories with data; one frozen plus one no-hit is not usable
+  const tri = { report_type: "tri_merge_infile" as const, repositories_requested: ALL };
+  const noHits: BorrowerCredit = { borrower_id: B, scores: { efx: sc(698) }, returned: ["efx"], frozen: [], no_hit: ["exp", "tu"] };
+  assert.equal(classifyReport({ ...tri, borrowers: [borrowerA(), noHits] }).state, "usable");
+  assert.equal(classifyReport({ ...tri, borrowers: [borrowerA(), { ...noHits, no_hit: [] }] }).state, "two_repository");   // Q4: the reseller's no-hit response must be documented first
+  const frozenPlusNoHit: BorrowerCredit = { borrower_id: B, scores: { efx: sc(698) }, returned: ["efx"], frozen: ["exp"], no_hit: ["tu"] };
+  const bad = classifyReport({ ...tri, borrowers: [borrowerA(), frozenPlusNoHit] }); assert.equal(bad.state, "error"); assert.match(bad.reason, /one frozen repository plus a no-hit/); assert.equal(bad.escalate_underwriting_reviewer, true);
+  assert.equal(classifyReport({ ...tri, borrowers: [borrowerA(), frozenB] }).state, "usable");
+  assert.equal(classifyReport({ report_type: "tri_merge_infile", repositories_requested: ["efx", "tu"], borrowers: [borrowerA(), noHits] }).state, "error");   // never without a requested tri-merge
 });
 
 test("22.2-T3: (two freezes) Given freezes at EXP and TU, when parsed, then the report is `freeze_blocked`, `submitDu` is refused, and after `credit.freeze.lifted` on Wed Oct 7, 2026 the re-pull supersedes the Oct 5 report with `expires_at = Feb 7, 2027`.", async () => {
@@ -180,7 +189,7 @@ test("22.2-T4: (expiry gate) Given `report_date` Oct 5, 2026 and scheduled note 
 });
 
 test("22.2-T5: (model invariant) Given `applications.score_model = vantagescore_4`, when an order for Borrower B requests Classic FICO codes, then the order is rejected before transmission; and at delivery `SFC 067` is asserted present.", async () => {
-  const h = harness(mst("2026-10-05", "11:00"), OCT5, { score_model: "vantagescore_4" });
+  const h = harness(mst("2026-10-05", "11:00"), OCT5, { score_model: "vantagescore_4", vantagescore_4_approval_ref: "FNMA-CAT-VS4-2026-09-01" });
   h.prerequisites();
   const classicCodes = { efx: "Equifax Beacon 5.0", exp: "Experian/Fair Isaac Risk Model V2", tu: "TransUnion FICO Risk Score, Classic 04" };
   const e = await h.refused(h.run("orderCreditReport", { ...ORDER, borrower_ids: [B], score_model: "vantagescore_4", requested_model_codes: classicCodes, at: mst("2026-10-05", "10:52") }), "SCORE_MODEL_MISMATCH");
@@ -198,6 +207,11 @@ test("22.2-T5: (model invariant) Given `applications.score_model = vantagescore_
   const viaTool = await h.run("emitScoreDisclosureData", { op: "sfc", score_model: "vantagescore_4", sfc_codes: ["067", "007"] }); assert.equal(viaTool.sfc_067_present, true); assert.equal(viaTool.ok, true);
   // a mid-loan model change needs a full re-pull and a written decision
   await h.refused(h.run("orderCreditReport", { ...ORDER, change_score_model: true, score_model: "classic_fico" }), "SCORE_MODEL_CHANGE_NEEDS_DECISION");
+  // B3-5.1-01 (09/02/2026): VantageScore 4.0 is 'eligible for use by approved lenders' — without the partner's recorded approval evidence the order is refused before transmission (LL-2026-06 broad availability unverified in the bundle)
+  const h2 = harness(mst("2026-10-05", "11:00"), OCT5, { score_model: "vantagescore_4" }); h2.prerequisites();
+  const noApproval = await h2.refused(h2.run("orderCreditReport", { ...ORDER, score_model: "vantagescore_4", at: mst("2026-10-05", "10:52") }), "VANTAGESCORE_4_APPROVAL_REQUIRED"); assert.match(noApproval.citation, /approved lenders/); assert.equal(h2.bureau.orders.length, 0);
+  assert.throws(() => validateOrder({ application_id: APP, borrower_ids: [A], order_type: "tri_merge", score_model: "vantagescore_4", app_score_model: null, permissible_purpose: "credit_transaction_604a3A", certification_ref: "c", borrower_authorization_ref: "a", subscriber_code: SUBSCRIBER, trid_received: true, fee_handled: true, ordering_agent: "agent:verification" }), (e: unknown) => e instanceof CreditRefused && e.code === "VANTAGESCORE_4_APPROVAL_REQUIRED");
+  assert.equal(validateOrder({ application_id: APP, borrower_ids: [A], order_type: "tri_merge", score_model: "vantagescore_4", app_score_model: null, permissible_purpose: "credit_transaction_604a3A", certification_ref: "c", borrower_authorization_ref: "a", subscriber_code: SUBSCRIBER, trid_received: true, fee_handled: true, ordering_agent: "agent:verification", vantagescore_4_approval_ref: "FNMA-CAT-VS4-2026-09-01" }).score_model, "vantagescore_4");
 });
 
 test("22.2-T6: (collections by occupancy) Given collections of $3,200.00 and $2,150.00, when occupancy is second home, then a PTF condition \"pay $5,350.00 in full prior to or at closing\" is proposed; when occupancy is one-unit principal residence, then no payoff condition is proposed.", async () => {
@@ -209,6 +223,14 @@ test("22.2-T6: (collections by occupancy) Given collections of $3,200.00 and $2,
   assert.equal(collectionsCondition({ occupancy: "second_home", units: 1 }, [collections[0]!]), null);   // $3,200.00 alone ≤ $5,000
   assert.equal(collectionsCondition({ occupancy: "investment", units: 1 }, [{ ...collections[0]!, balance_cents: 25_000n }])!.amount_cents, 25_000n);   // investment: individual ≥ $250
   assert.equal(collectionsCondition({ occupancy: "investment", units: 1 }, [{ ...collections[0]!, balance_cents: 24_999n }]), null);
+  // B3-5.3-09: medical collection accounts are excluded from every limit and never require payoff; accounts reported as past due (not as collections) must be brought current on every occupancy
+  const medical = { borrower_id: A, creditor_name: "Mercy Hospital", kind: "collection" as const, balance_cents: 600_000n, medical: true };
+  assert.equal(collectionsCondition({ occupancy: "second_home", units: 1 }, [medical]), null); assert.equal(collectionsCondition({ occupancy: "investment", units: 1 }, [medical]), null);
+  assert.equal(collectionsCondition({ occupancy: "second_home", units: 1 }, [...collections, medical])!.amount_cents, 535_000n);   // $5,350.00 without the $6,000.00 medical account
+  const pastDue = { borrower_id: A, creditor_name: "Card Co", kind: "past_due" as const, balance_cents: 18_000n };
+  assert.equal(collectionsCondition({ occupancy: "second_home", units: 1 }, [pastDue]), null);
+  const bring = pastDueCondition([pastDue])!; assert.equal(bring.kind, "ptf_past_due_bring_current"); assert.equal(bring.amount_cents, 18_000n); assert.match(bring.text, /bring the past-due Card Co account current \(\$180\.00 past due\)/); assert.equal(bring.clear_by, "prior_to_or_at_closing");
+  assert.equal(pastDueCondition(collections), null);
   // through the DU message mapping on the purchase fixture (second home) and the refinance fixture (one-unit principal residence)
   const withCollections: Scenario = { ...OCT5, extra: { collections } };
   const h = harness(mst("2026-10-05", "11:00"), withCollections, { occupancy: "second_home", units: 1 });
@@ -220,23 +242,40 @@ test("22.2-T6: (collections by occupancy) Given collections of $3,200.00 and $2,
   const p2 = await h2.pull();
   const m2 = await h2.run("mapDuCreditMessages", { report_id: p2.id, du_messages: [], du_findings_received_at: mst("2026-10-06", "09:00") });
   assert.deepEqual(m2.conditions, []); assert.equal(h2.rt.store.list("conditions").length, 0);
+  // a one-unit principal residence with a $180.00 past-due card and a medical collection: no payoff condition, but the past-due account must be brought current
+  const h3 = harness(mst("2026-10-05", "11:00"), { ...OCT5, extra: { collections: [...collections, medical, pastDue] } }, { occupancy: "primary", units: 1 });
+  const p3 = await h3.pull();
+  const m3 = await h3.run("mapDuCreditMessages", { report_id: p3.id, du_messages: [], du_findings_received_at: mst("2026-10-06", "09:00") });
+  const c3 = m3.conditions as { kind: string; amount_cents: bigint }[]; assert.deepEqual(c3.map((c) => c.kind), ["ptf_past_due_bring_current"]); assert.equal(c3[0]!.amount_cents, 18_000n);
 });
 
-test("22.2-T7: (waiting period date basis) Given a Chapter 7 discharge Nov 20, 2022 and disbursement Nov 19, 2026, when evaluated, then the loan is not eligible; with disbursement Nov 20, 2026 the lender-confirmed basis passes while DU's report-date test (Oct 5, 2026) is recorded as failing with the written confirmation.", async () => {
+test("22.2-T7: (waiting period date basis) Given a Chapter 7 discharge Nov 20, 2022 and disbursement Nov 19, 2026, when evaluated, then the loan is not eligible; with disbursement Nov 20, 2026 DU's report-date test (Oct 5, 2026) still fails and the loan stays Ineligible until a new credit report dated on or after Nov 20, 2026 is obtained and the casefile is resubmitted (23.1); the disbursement-date confirmation alone does not make the loan deliverable.", async () => {
   const short = waitingPeriod({ kind: "chapter_7", event_date: D("2022-11-20"), report_date: D("2026-10-05"), scheduled_disbursement_date: D("2026-11-19") });
   assert.equal(short.years, 4); assert.equal(short.eligible_on, "2026-11-20"); assert.equal(short.eligible, false); assert.equal(short.du_test.passes, false); assert.equal(short.lender_test.passes, false); assert.equal(short.documented_basis, null); assert.equal(short.written_confirmation, null);
-  assert.match(short.recommendation!, /reschedule disbursement to Nov 20, 2026 or later \(1 day short\)/);
-  const ok = waitingPeriod({ kind: "chapter_7", event_date: D("2022-11-20"), report_date: D("2026-10-05"), scheduled_disbursement_date: D("2026-11-20") });
-  assert.equal(ok.eligible, true); assert.equal(ok.documented_basis, "lender_disbursement_date_confirmation");
-  assert.deepEqual(ok.du_test, { basis: "report_date", date: "2026-10-05", passes: false }); assert.deepEqual(ok.lender_test, { basis: "disbursement_date", date: "2026-11-20", passes: true });
-  assert.match(ok.written_confirmation!, /from the credit report date Oct 5, 2026 and recorded it as not met/); assert.match(ok.written_confirmation!, /B3-5\.3-09/); assert.match(ok.written_confirmation!, /Nov 20, 2026 is on\/after Nov 20, 2026/);
+  assert.equal(short.du_recommendation, "Ineligible"); assert.equal(short.deliverable, false); assert.match(short.recommendation!, /reschedule disbursement to Nov 20, 2026 or later \(1 day short\)/); assert.match(short.recommendation!, /new credit report dated on\/after Nov 20, 2026 and a 23\.1 resubmission/);
+  // disbursement Nov 20, 2026: DU tests the Oct 5, 2026 report date → still Ineligible; the disbursement-date confirmation alone does not make the loan deliverable (B3-5.3-09: complete dates that fail → Ineligible; the cure is an updated report resubmitted after the period has elapsed)
+  const nov20 = waitingPeriod({ kind: "chapter_7", event_date: D("2022-11-20"), report_date: D("2026-10-05"), scheduled_disbursement_date: D("2026-11-20") });
+  assert.equal(nov20.eligible, false); assert.equal(nov20.deliverable, false); assert.equal(nov20.du_recommendation, "Ineligible"); assert.equal(nov20.documented_basis, null); assert.equal(nov20.written_confirmation, null);
+  assert.deepEqual(nov20.du_test, { basis: "report_date", date: "2026-10-05", passes: false }); assert.deepEqual(nov20.lender_test, { basis: "disbursement_date", date: "2026-11-20", passes: true });
+  assert.deepEqual(nov20.cure, { new_credit_report_dated_on_or_after: "2026-11-20", resubmit_via: "23.1", manual_underwriting: "out of scope", disbursement_reschedule_sufficient: false });
+  assert.match(nov20.recommendation!, /Ineligible, not deliverable \(B3-5\.3-09\)/); assert.match(nov20.recommendation!, /rescheduling alone does not make the loan deliverable/);
+  // a new credit report dated Fri Nov 20, 2026 resubmitted through 23.1 → DU's report-date test passes → eligible on the report date
+  const repulled = waitingPeriod({ kind: "chapter_7", event_date: D("2022-11-20"), report_date: D("2026-11-20"), scheduled_disbursement_date: D("2026-11-20") });
+  assert.equal(repulled.eligible, true); assert.equal(repulled.deliverable, true); assert.equal(repulled.du_recommendation, "eligible"); assert.equal(repulled.documented_basis, "du_report_date"); assert.equal(repulled.cure, null);
+  assert.equal(waitingPeriod({ kind: "chapter_7", event_date: D("2022-11-20"), report_date: D("2026-11-19"), scheduled_disbursement_date: D("2026-11-20") }).eligible, false);   // a report dated one day before the period end still fails
+  // the lender's disbursement-date confirmation is the documented basis only where DU does not test the report's dates: incomplete dates, or a deed-in-lieu / preforeclosure / mortgage charge-off event
+  const incomplete = waitingPeriod({ kind: "chapter_7", event_date: D("2022-11-20"), report_date: D("2026-10-05"), scheduled_disbursement_date: D("2026-11-20"), dates_complete: false });
+  assert.equal(incomplete.eligible, true); assert.equal(incomplete.du_recommendation, "lender_confirms"); assert.equal(incomplete.documented_basis, "lender_disbursement_date_confirmation");
+  assert.match(incomplete.written_confirmation!, /from the credit report date Oct 5, 2026 and recorded it as not met/); assert.match(incomplete.written_confirmation!, /dates are incomplete/); assert.match(incomplete.written_confirmation!, /B3-5\.3-09/); assert.match(incomplete.written_confirmation!, /Nov 20, 2026 is on\/after Nov 20, 2026/);
+  const dil = waitingPeriod({ kind: "deed_in_lieu", event_date: D("2022-11-20"), report_date: D("2026-10-05"), scheduled_disbursement_date: D("2026-11-20") }); assert.equal(dil.eligible, true); assert.equal(dil.documented_basis, "lender_disbursement_date_confirmation"); assert.equal(dil.du_recommendation, "lender_confirms");
+  assert.equal(waitingPeriod({ kind: "deed_in_lieu", event_date: D("2022-11-20"), report_date: D("2026-10-05"), scheduled_disbursement_date: D("2026-11-19") }).eligible, false);
   // the refinance fixture's Thu Nov 12, 2026 disbursement also fails (8 days short); extenuating circumstances (2 years) → eligible from Nov 20, 2024
   const refi = waitingPeriod({ kind: "chapter_7", event_date: D("2022-11-20"), report_date: D("2026-10-05"), scheduled_disbursement_date: D("2026-11-12") }); assert.equal(refi.eligible, false); assert.match(refi.recommendation!, /8 days short/);
   const ext = waitingPeriod({ kind: "chapter_7", event_date: D("2022-11-20"), extenuating: true, report_date: D("2026-10-05"), scheduled_disbursement_date: D("2026-11-12") }); assert.equal(ext.eligible_on, "2024-11-20"); assert.equal(ext.documented_basis, "du_report_date");
   // through the tool
   const h = harness(mst("2026-10-05", "11:00"));
   const out = await h.run("mapDuCreditMessages", { op: "waiting_period", kind: "chapter_7", event_date: "2022-11-20", report_date: "2026-10-05", scheduled_disbursement_date: "2026-11-20" });
-  assert.equal(out.eligible, true); assert.equal((out.du_test as { passes: boolean }).passes, false); assert.ok(out.written_confirmation);
+  assert.equal(out.eligible, false); assert.equal(out.du_recommendation, "Ineligible"); assert.equal((out.du_test as { passes: boolean }).passes, false); assert.equal((out.cure as { new_credit_report_dated_on_or_after: string }).new_credit_report_dated_on_or_after, "2026-11-20"); assert.equal(out.written_confirmation, null);
 });
 
 test("22.2-T8: (inquiry → new debt) Given qualifying income 1,350,000 cents, obligations 513,000 cents, an inquiry dated Sept 12, 2026 and a borrower-reported new $612.40 monthly payment, when recorded, then `application_liabilities` gains the debt, DTI moves 38.0% → 42.5% (+4.5 points), and 23.1's tolerance check returns \"resubmission required\"; with a $150.00 payment DTI moves to 39.1% and the check returns \"no resubmission required\" while the final submission still includes the debt.", async () => {
@@ -273,6 +312,11 @@ test("22.2-T9: (pre-closing refresh window) Given consummation Fri Nov 6, 2026, 
   assert.equal(closed.open, false); assert.match(closed.reason!, /earlier than 2026-11-03/);
   assert.equal(evaluateGate("22.2.refreshPrecloseGate", { scheduled_consummation_date: "2026-11-06", refresh_report_date: "2026-11-03", refresh_report_type: "soft_refresh", alerts: [{ alert_id: "al-2", status: "verified_new_debt" }] }).open, false);
   assert.throws(() => assertGateOpen("SM_CREDIT_REFRESH_PRECLOSE_GATE", { scheduled_consummation_date: "2026-11-06", refresh_report_date: "2026-11-02", alerts: [] }), (e: unknown) => e instanceof CreditGateClosed && e.code === "SM_CREDIT_REFRESH_PRECLOSE_GATE");
+  // B3-6-02: the refresh must not be a new credit report — a tri-merge / RMCR pulled after the decision closes the gate with a 23.1 resubmission regardless of the 45%/3-point tolerance, until 23.1 has resubmitted (and a soft refresh / UDM snapshot is still the pre-closing product)
+  const hard = evaluateGate("22.2.refreshPrecloseGate", { scheduled_consummation_date: "2026-11-06", refresh_report_date: "2026-11-03", refresh_report_type: "tri_merge_infile", alerts: resolved }); assert.equal(hard.open, false); assert.match(hard.reason!, /re-underwritten — 23\.1 resubmission required regardless of the B3-2-10 45%\/3-point tolerance \(B3-6-02\)/);
+  const flagged = evaluateGate("22.2.refreshPrecloseGate", { scheduled_consummation_date: "2026-11-06", refresh_report_date: "2026-11-03", refresh_report_type: "soft_refresh", alerts: resolved, new_credit_report_after_decision: true }); assert.equal(flagged.open, false); assert.match(flagged.reason!, /B3-6-02/);
+  assert.equal(evaluateGate("22.2.refreshPrecloseGate", { scheduled_consummation_date: "2026-11-06", refresh_report_date: "2026-11-03", refresh_report_type: "soft_refresh", alerts: resolved, new_credit_report_after_decision: true, du_resubmitted_after_new_report: true }).open, true);
+  assert.equal(evaluateGate("22.2.refreshPrecloseGate", { scheduled_consummation_date: "2026-11-06", refresh_report_date: "2026-11-03", refresh_report_type: "rmcr", alerts: resolved, du_resubmitted_after_new_report: true }).open, false);   // resubmitted, but a hard report is never the refresh product
   // on the bus: the tri-merge Oct 5, the CD delivered Mon Nov 2 (arms the gate), the refresh ordered Tue Nov 3 → clean → gate open and the instance satisfied
   const tradelines = [{ borrower_id: A, creditor_name: "Visa", account_ref: "V-1", liability_kind: "revolving", monthly_payment_cents: 4_500n, balance_cents: 120_000n }];
   const h = harness(mst("2026-10-05", "11:00"), { ...OCT5, extra: { tradelines } }, { scheduled_consummation_date: "2026-11-06" });

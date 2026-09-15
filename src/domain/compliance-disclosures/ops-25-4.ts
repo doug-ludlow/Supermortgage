@@ -506,20 +506,24 @@ export function ownershipOverdue(row: OwnershipTransferNotice, asOf: PlainDate):
 
 // ============================================================ Form 1098 seeds (`tax_reporting_seeds` → servicing 7.1-A)
 export interface TaxReportingSeeds { readonly loan_id: string; readonly origination_date: PlainDate; readonly principal_at_origination_cents: Cents; readonly prepaid_interest_cents: Cents; readonly prepaid_interest_period: { from: PlainDate; to: PlainDate; days: number }; readonly points_paid_cents: Cents; readonly points_seller_paid_cents: Cents; readonly points_refinance_excluded_cents: Cents; readonly mi_premiums_paid_at_closing_cents: Cents; readonly property_address_id: string; readonly payer_of_record_borrower_id: string; readonly acquisition_date: null; readonly source_cd_disclosure_id: string; readonly handed_off_at: string | null; readonly tax_year: number; readonly box1_candidate_cents: Cents; readonly box6_candidate_cents: Cents; readonly seeds_hash: string; }
-/** rate% × principal × days / 365, rounded half-up at the end (spec: 19 days at $93.9726/day = $1,785.48; 12 days × $71.9589 = $863.51). */
+const rateParts = (ratePct: string): { rate: bigint; scale: bigint } => { need(typeof ratePct === "string" && /^\d+(\.\d+)?$/.test(ratePct), "ratePct must be a decimal string"); const [ip, fp = ""] = ratePct.split("."); return { rate: BigInt(ip + fp), scale: 10n ** BigInt(fp.length) }; };
+const roundHalfUpDiv = (num: bigint, den: bigint): bigint => (2n * num + den) / (2n * den);
+/** 26.3 `365_rounded_per_diem`: the per diem = principal × rate / 365, rounded half-up to the cent BEFORE multiplying — $560,000 at 6.125% → $93.9726… → $93.97; $412,000 at 6.375% → $71.9589… → $71.96. */
+export function perDiemCentsRounded(principalCents: Cents, ratePct: string): Cents { const { rate, scale } = rateParts(ratePct); return roundHalfUpDiv(principalCents * rate, scale * 100n * 365n); }
+/** Prepaid (odd-days) interest = rounded per diem × days — the amount actually collected at closing, which is what Form 1098 Box 1 ("mortgage interest received") reports: 19 × $93.97 = $1,785.43 (the unrounded $1,785.48 never appears on any artifact); 12 × $71.96 = $863.52. */
 export function prepaidInterestCents(principalCents: Cents, ratePct: string, days: number): Cents {
-  need(typeof ratePct === "string" && /^\d+(\.\d+)?$/.test(ratePct) && Number.isInteger(days) && days >= 0, "ratePct (decimal string) and integer days are required");
-  const [ip, fp = ""] = ratePct.split("."); const scale = 10n ** BigInt(fp.length); const rate = BigInt(ip + fp);
-  const num = principalCents * rate * BigInt(days); const den = scale * 100n * 365n;
-  return (2n * num + den) / (2n * den);
+  need(Number.isInteger(days) && days >= 0, "integer days are required");
+  return perDiemCentsRounded(principalCents, ratePct) * BigInt(days);
 }
-/** The unrounded per diem in dollars to four decimals (spec: $93.9726 / $71.9589) — the closing-year interest is rounded once, at the end, never per day (26.3's rounded per-diem convention is the funding figure, 25.1's the APR one). */
-export const perDiemCentsUnrounded = (principalCents: Cents, ratePct: string): string => { const c = prepaidInterestCents(principalCents * 10000n, ratePct, 1) / 100n; return `${(c / 10000n).toString()}.${(c % 10000n).toString().padStart(4, "0")}`; };
+/** The unrounded per diem in dollars to four decimals — illustration of the convention only ($93.9726 → $93.97; $71.9589 → $71.96): the seeds carry the rounded per diem × days, so the unrounded product is never on an artifact. */
+export const perDiemCentsUnrounded = (principalCents: Cents, ratePct: string): string => { const { rate, scale } = rateParts(ratePct); const c = roundHalfUpDiv(principalCents * 10000n * rate, scale * 100n * 365n) / 100n; return `${(c / 10000n).toString()}.${(c % 10000n).toString().padStart(4, "0")}`; };
+/** principal × pct / 100 to the cent (discount points stated as a percentage of principal). */
+const percentOfCents = (principalCents: Cents, pct: string): Cents => { const { rate, scale } = rateParts(pct); return roundHalfUpDiv(principalCents * rate, scale * 100n); };
 /** Box 6 points: purchase of the payer's principal residence, designated as points on the CD, computed as a % of principal, borrower-paid (seller-paid treated as paid by the payer); refinance points are never Box 6 ("Do not report as points … For refinancing"). */
 export function pointsSeed(i: { transaction_type: "purchase" | "refinance"; principal_cents: Cents; points_pct: string | null; borrower_paid_cents: Cents; seller_paid_cents?: Cents; designated_as_points_on_cd: boolean; principal_residence: boolean }): { points_paid_cents: Cents; points_seller_paid_cents: Cents; points_refinance_excluded_cents: Cents; box6_eligible: boolean; normalized_cd_label: string | null } {
   const seller = i.seller_paid_cents ?? 0n; const total = i.borrower_paid_cents + seller;
   if (i.transaction_type === "refinance") return { points_paid_cents: 0n, points_seller_paid_cents: 0n, points_refinance_excluded_cents: total, box6_eligible: false, normalized_cd_label: null };
-  const pctOk = !!i.points_pct && /^\d+(\.\d+)?$/.test(i.points_pct) && prepaidInterestCents(i.principal_cents * 365n, i.points_pct, 1) === total;
+  const pctOk = !!i.points_pct && /^\d+(\.\d+)?$/.test(i.points_pct) && percentOfCents(i.principal_cents, i.points_pct) === total;
   const eligible = i.designated_as_points_on_cd && i.principal_residence && pctOk && total > 0n;
   return { points_paid_cents: eligible ? total : 0n, points_seller_paid_cents: eligible ? seller : 0n, points_refinance_excluded_cents: 0n, box6_eligible: eligible, normalized_cd_label: eligible ? `Discount Points (${Number(i.points_pct).toFixed(3)}%)` : null };
 }

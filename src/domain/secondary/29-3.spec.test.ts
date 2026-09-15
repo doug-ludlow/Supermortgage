@@ -185,7 +185,7 @@ test("29.3-T4: Given `applications.score_model = vantagescore_4` for both borrow
   assert.equal(h2.ofType("delivery.correction.requested").at(-1)!.payload.owner_process, "22.2"); assert.equal(evaluateGate("29.3.sfc067Consistency", { borrower_score_models: ["vantagescore_4", "classic_fico"], sfc_codes: ["067"] }).open, false);
   assert.equal(h2.timer("FNMA_LL_2026_06_SFC_067_CONSISTENCY_GATE")!.status, "armed");
 });
-test("29.3-T5: Given a value-acceptance loan with the DU offer dated Wed Jul 8, 2026 and note date Fri Nov 6, 2026 (offer 3 months 29 days old), then SID 376 = `ValueAcceptance`, SFC 801 is included, SID 82 is blank and the gate opens; given the offer dated Mon Jul 6, 2026 (four months exceeded on Nov 6), then `FNMA_B4_1_4_10_VALUE_ACCEPTANCE_SFC_GATE` fails and 24.1 is notified.", () => {
+test("29.3-T5: Given a value-acceptance loan with the DU offer dated Wed Jul 8, 2026 and note date Fri Nov 6, 2026 (offer 3 months 29 days old), then SID 376 = `ValueAcceptance`, SFC 801 is included, SID 82 is blank and the gate opens; given the offer dated Sun Jul 5, 2026 (more than four months old on Nov 6 — an offer dated Jul 6 is exactly four months old and remains eligible under B4-1.4-10's \"not more than four months old on the date of the note\"), then `FNMA_B4_1_4_10_VALUE_ACCEPTANCE_SFC_GATE` fails and 24.1 is notified.", () => {
   const dd = valuationDeliveryData({ method: "value_acceptance" }, null); assert.deepEqual(dd.special_feature_codes, ["801"]);   // 24.1's deliveryData() supplies the code
   const va = (offer: string, ids: { application_id: string; loan_id: string }) => refiBase({ ...ids, valuation: { method: "value_acceptance", offer_date: D(offer), property_data_id: null, special_feature_codes: dd.special_feature_codes }, ucdp: null });
   const h = harness("2026-10-07T16:00:00.000Z", va("2026-07-08", { application_id: "APP-VA-1", loan_id: "L-VA-1" })); fundRefi(h);
@@ -196,13 +196,16 @@ test("29.3-T5: Given a value-acceptance loan with the DU offer dated Wed Jul 8, 
   assert.equal(out.status, "built", out.reason ?? ""); const b = out.build!;
   assert.equal(h.sid(b.points, "376")!.value, "ValueAcceptance"); assert.ok(b.sfcs.includes("801")); assert.equal(h.sid(b.points, "82")!.value, null); assert.equal(h.sid(b.points, "82")!.condition_evaluated, true); assert.equal(h.sid(b.points, "85")!.value, null);
   assert.equal(valueAcceptanceGate(file, b.sfcs).open, true); assert.equal(h.timer("FNMA_B4_1_4_10_VALUE_ACCEPTANCE_SFC_GATE")!.status, "satisfied"); assert.equal(row.identifier_snapshot!.ucdp_doc_file_id, null);
-  // Jul 6 → four months on Nov 6 = the note date: the offer is more than four months old (spec: "four months exceeded on Nov 6"); the build is refused and 24.1 notified.
-  assert.deepEqual(valueAcceptanceOfferAge(D("2026-07-06"), D("2026-11-06")), { stale: true, four_months_on: "2026-11-06" });
-  const h2 = harness("2026-10-07T16:00:00.000Z", va("2026-07-06", { application_id: "APP-VA-2", loan_id: "L-VA-2" })); fundRefi(h2);
+  // Jul 6 → four months on Nov 6 = the note date: "not more than four months old" (B4-1.4-10) — exactly four months old is still eligible (the gate opens)
+  assert.deepEqual(valueAcceptanceOfferAge(D("2026-07-06"), D("2026-11-06")), { stale: false, four_months_on: "2026-11-06" });
+  assert.deepEqual(evaluateGate("29.3.valueAcceptanceSfc", { valuation_method: "value_acceptance", offer_date: "2026-07-06", note_date: "2026-11-06", sfc_codes: ["127", "801"] }), { open: true });
+  // Jul 5 → four months on Nov 5 < the Nov 6 note date: the offer is more than four months old; the build is refused and 24.1 notified.
+  assert.deepEqual(valueAcceptanceOfferAge(D("2026-07-05"), D("2026-11-06")), { stale: true, four_months_on: "2026-11-05" });
+  const h2 = harness("2026-10-07T16:00:00.000Z", va("2026-07-05", { application_id: "APP-VA-2", loan_id: "L-VA-2" })); fundRefi(h2);
   h2.at("2026-11-13T16:42:00.000Z"); const row2 = h2.svc.open({ ...h2.file(), ucdp: null }); const out2 = h2.svc.assemble(row2.delivery_id);
   assert.equal(out2.status, "refused"); assert.equal(out2.gate, "FNMA_B4_1_4_10_VALUE_ACCEPTANCE_SFC_GATE"); assert.match(out2.reason!, /more than four months old/); assert.equal(h2.ofType("delivery.uldd.built").length, 0);
   const req = h2.ofType("delivery.correction.requested").at(-1)!; assert.equal(req.payload.owner_process, "24.1"); assert.equal(req.payload.kind, "appraisal_required");
-  assert.equal(evaluateGate("29.3.valueAcceptanceSfc", { valuation_method: "value_acceptance", offer_date: "2026-07-06", note_date: "2026-11-06", sfc_codes: ["127", "801"] }).open, false);
+  assert.equal(evaluateGate("29.3.valueAcceptanceSfc", { valuation_method: "value_acceptance", offer_date: "2026-07-05", note_date: "2026-11-06", sfc_codes: ["127", "801"] }).open, false);
   assert.equal(evaluateGate("29.3.valueAcceptanceSfc", { valuation_method: "traditional", note_date: "2026-11-06", sfc_codes: ["127", "801"] }).open, false);   // 801 without an exercised offer is equally inconsistent
   assert.equal(evaluateGate("29.3.valueAcceptanceSfc", { valuation_method: "value_acceptance", offer_date: "2026-07-08", note_date: "2026-11-06", sfc_codes: ["127"] }).open, false);   // the offer exercised without SFC 801
 });

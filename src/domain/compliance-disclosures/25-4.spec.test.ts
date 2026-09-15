@@ -19,7 +19,7 @@ import { verifyInitialStatementEvidence } from "../escrow/ops-3-1.ts";
 import { form1098Cycle } from "../notices/ops.ts";
 import { MODEL_B1 } from "../../notices/authored/section08.ts";
 import { composeClosingPackage, deliverPackage, recordPackageEvidence, runCdEscrowConsistency, evaluateEscrowWaiver, recordEscrowElection, renderStateEscrowNotice, utReserveOptionsGate, caImpoundStmtGate, ca2954Applies, interestOnEscrowRequired, checkPrivacyNotice, firstPaymentLetterDeadlines, firstPaymentLetterPayload, validateFirstPaymentLetterAutopay, firstPaymentLetterAmount, schedulePostClosingRun, completePostClosingRun,
-  evaluateOwnershipTransfer, ownershipNoticeDueDate, renderOwnershipNotice, sendOwnershipNotice, recordBorrowerReport, seedTaxReporting, handoffTaxReportingSeeds, prepaidInterestCents, perDiemCentsUnrounded, pointsSeed, paymentAddressAtClosing, checkJurisdiction, closingPackageGate, money, NTC, TIMER,
+  evaluateOwnershipTransfer, ownershipNoticeDueDate, renderOwnershipNotice, sendOwnershipNotice, recordBorrowerReport, seedTaxReporting, handoffTaxReportingSeeds, prepaidInterestCents, perDiemCentsRounded, perDiemCentsUnrounded, pointsSeed, paymentAddressAtClosing, checkJurisdiction, closingPackageGate, money, NTC, TIMER,
   type ComposeInput, type BorrowerPrivacyFact, type EscrowElection, type ClosingNoticeRun } from "./ops-25-4.ts";
 import { EVALUATORS_25_4 } from "./evaluators-25-4.ts";
 
@@ -292,22 +292,22 @@ test("25.4-T10: Given the purchase fixture with BPMI, when the borrower requests
   assert.equal(checklist.passed, true, checklist.blocking.map((b) => b.rule_id).join(", "));
 });
 
-test("25.4-T11: Given boarding on Thu Nov 12, 2026 for the refinance fixture, then `tax_reporting_seeds` = {origination_date 2026-11-06, principal 56000000, prepaid_interest 178548, points 0, mi_at_closing 0, acquisition_date null} and `SM_O64_1098_SEEDS_AT_BOARDING_GATE` opens; servicing 7.1-A produces a 2026 Form 1098 with Box 1 $1,785.48; given the purchase fixture with 0.500 borrower-paid points on $412,000, then `points_paid_cents = 206000` and prepaid interest $863.51.", () => {
+test("25.4-T11: Given boarding on Thu Nov 12, 2026 for the refinance fixture, then `tax_reporting_seeds` = {origination_date 2026-11-06, principal 56000000, prepaid_interest 178543, points 0, mi_at_closing 0, acquisition_date null} and `SM_O64_1098_SEEDS_AT_BOARDING_GATE` opens; servicing 7.1-A produces a 2026 Form 1098 with Box 1 $1,785.43; given the purchase fixture with 0.500 borrower-paid points on $412,000, then `points_paid_cents = 206000` and prepaid interest $863.52.", () => {
   const h = harness("2026-11-12T22:00:00.000Z");
   h.events.append({ type: "loan.boarded", loanId: LOAN, applicationId: APP, actor: { kind: "agent", id: "boarding" }, payload: { application_id: APP, loan_id: LOAN, source: "origination", boarded_at: "2026-11-12T22:00:00.000Z", funding_date: "2026-11-12", first_payment_date: "2027-01-01" } });
   assert.equal(h.timer(TIMER.seeds_gate)?.status, "armed");
   const seeds = seedTaxReporting({ loan_id: LOAN, note_date: CONSUMMATION_ON, disbursement_date: DISBURSEMENT, first_period_end: D("2026-11-30"), principal_cents: 56_000_000n, note_rate_pct: "6.125", points: { transaction_type: "refinance", principal_cents: 56_000_000n, points_pct: null, borrower_paid_cents: 0n, designated_as_points_on_cd: false, principal_residence: true }, mi_premiums_paid_at_closing_cents: 0n, property_address_id: "PROP-1", payer_of_record_borrower_id: "B-1", source_cd_disclosure_id: "CD-REFI-3" });
-  assert.equal(seeds.origination_date, "2026-11-06"); assert.equal(seeds.principal_at_origination_cents, 56_000_000n); assert.equal(seeds.prepaid_interest_cents, 178_548n); assert.equal(seeds.points_paid_cents, 0n); assert.equal(seeds.mi_premiums_paid_at_closing_cents, 0n); assert.equal(seeds.acquisition_date, null);
+  assert.equal(seeds.origination_date, "2026-11-06"); assert.equal(seeds.principal_at_origination_cents, 56_000_000n); assert.equal(seeds.prepaid_interest_cents, 178_543n);   // 19 × $93.97 (26.3 `365_rounded_per_diem`) — the amount actually collected, never the unrounded $1,785.48 assert.equal(seeds.points_paid_cents, 0n); assert.equal(seeds.mi_premiums_paid_at_closing_cents, 0n); assert.equal(seeds.acquisition_date, null);
   assert.deepEqual(seeds.prepaid_interest_period, { from: "2026-11-12", to: "2026-11-30", days: 19 }); assert.equal(seeds.tax_year, 2026);
   const h11 = handoffTaxReportingSeeds(h.events, { application_id: APP, loan_id: LOAN, seeds, handed_off_at: "2026-11-12T22:05:00.000Z" });
-  assert.equal(h11.gate_open, true); assert.equal(h11.event.type, "tax_reporting.seeds.handed_off"); assert.equal(h11.event.payload.prepaid_interest_cents, "178548"); assert.equal(h.timer(TIMER.seeds_gate)?.status, "satisfied");
-  // servicing 7.1-A: $1,785.48 ≥ $600 received in 2026 and accruing by Dec 31 → the 2026 Form 1098, furnished by Jan 31, 2027
+  assert.equal(h11.gate_open, true); assert.equal(h11.event.type, "tax_reporting.seeds.handed_off"); assert.equal(h11.event.payload.prepaid_interest_cents, "178543"); assert.equal(h.timer(TIMER.seeds_gate)?.status, "satisfied");
+  // servicing 7.1-A: $1,785.43 ≥ $600 received in 2026 (Box 1 = interest received) and accruing by Dec 31 → the 2026 Form 1098, furnished by Jan 31, 2027
   const f = form1098Cycle({ tax_year: 2026, interest_received_cents: seeds.prepaid_interest_cents, points_cents: 0n, upb_jan1_cents: seeds.principal_at_origination_cents, electronic: false });
-  assert.equal(f.box1_cents, 178_548n); assert.equal(f.box2_cents, 56_000_000n); assert.equal(f.furnish_by, "2027-01-31"); assert.equal(f.file_with_irs, true); assert.equal(money(f.box1_cents), "$1,785.48");
-  // purchase fixture: 0.500 borrower-paid points on $412,000 = $2,060.00 (Box 6); 12 days × ($412,000 × 0.06375 / 365) = $863.51 (Box 1)
+  assert.equal(f.box1_cents, 178_543n); assert.equal(f.box2_cents, 56_000_000n); assert.equal(f.furnish_by, "2027-01-31"); assert.equal(f.file_with_irs, true); assert.equal(money(f.box1_cents), "$1,785.43");
+  // purchase fixture: 0.500 borrower-paid points on $412,000 = $2,060.00 (Box 6); 12 days × round($412,000 × 0.06375 / 365 = $71.9589 → $71.96) = $863.52 (Box 1)
   const p = seedTaxReporting({ loan_id: PURCHASE_LOAN, note_date: D("2026-11-18"), disbursement_date: D("2026-11-19"), first_period_end: D("2026-11-30"), principal_cents: 41_200_000n, note_rate_pct: "6.375", points: { transaction_type: "purchase", principal_cents: 41_200_000n, points_pct: "0.500", borrower_paid_cents: 206_000n, designated_as_points_on_cd: true, principal_residence: true }, mi_premiums_paid_at_closing_cents: 0n, property_address_id: "PROP-2", payer_of_record_borrower_id: "B-P1", source_cd_disclosure_id: "CD-PURCH-2" });
-  assert.equal(p.points_paid_cents, 206_000n); assert.equal(p.prepaid_interest_cents, 86_351n); assert.equal(p.prepaid_interest_period.days, 12); assert.equal(p.box6_candidate_cents, 206_000n);
-  assert.equal(form1098Cycle({ tax_year: 2026, interest_received_cents: p.prepaid_interest_cents, points_cents: 0n, upb_jan1_cents: 41_200_000n, electronic: false }).box1_cents, 86_351n);
+  assert.equal(p.points_paid_cents, 206_000n); assert.equal(p.prepaid_interest_cents, 86_352n); assert.equal(p.prepaid_interest_period.days, 12); assert.equal(p.box6_candidate_cents, 206_000n);
+  assert.equal(form1098Cycle({ tax_year: 2026, interest_received_cents: p.prepaid_interest_cents, points_cents: 0n, upb_jan1_cents: 41_200_000n, electronic: false }).box1_cents, 86_352n);
   assert.equal(pointsSeed({ transaction_type: "refinance", principal_cents: 56_000_000n, points_pct: "0.750", borrower_paid_cents: 420_000n, designated_as_points_on_cd: true, principal_residence: true }).points_refinance_excluded_cents, 420_000n, "refinance points are never Box 6");
   assert.equal(pointsSeed({ transaction_type: "purchase", principal_cents: 41_200_000n, points_pct: "0.500", borrower_paid_cents: 0n, seller_paid_cents: 206_000n, designated_as_points_on_cd: true, principal_residence: true }).points_seller_paid_cents, 206_000n, "seller-paid points are treated as paid by the payer of record");
 });
@@ -363,7 +363,7 @@ test("25.4-T14: Given a borrower call on Mon Dec 14, 2026 reporting \"a letter f
   assert.deepEqual(paid.misdirected_payment_case, { kind: "misdirected_payment", owner_process: "2.x", amount_cents: 392_762n, sent_on: "2026-12-10" });
 });
 
-test("25.4 worked figures: example 3's aggregate analysis ($4,800.00 taxes in two $2,400.00 installments + $1,500.00 hazard → $525.00 monthly, $1,050.00 cushion, $1,875.00 initial deposit, $6,300.00 year-1 escrowed costs), the $3,927.62 first-payment amount, the purchase fixture's $2,060.00 points and $863.51 prepaid interest at $71.95 per diem", () => {
+test("25.4 worked figures: example 3's aggregate analysis ($4,800.00 taxes in two $2,400.00 installments + $1,500.00 hazard → $525.00 monthly, $1,050.00 cushion, $1,875.00 initial deposit, $6,300.00 year-1 escrowed costs), the $3,927.62 first-payment amount, the purchase fixture's $2,060.00 points and $863.52 prepaid interest at the rounded $71.96 per diem ($71.9589 unrounded, never on an artifact)", () => {
   const h = harness();
   const a = approvedAnalysis(h.events, D("2026-11-04"));
   assert.equal(EXAMPLE_3_LINES[0]!.estimated_annual_cents, 480_000n);                                        // $4,800.00 annual property taxes
@@ -379,9 +379,10 @@ test("25.4 worked figures: example 3's aggregate analysis ($4,800.00 taxes in tw
   assert.equal(c.result, "match"); assert.equal(c.blocks_gate, false);
   assert.equal(firstPaymentLetterAmount({ pi_cents: 340_262n, escrow_cents: 52_500n, mi_cents: 0n }).total_cents, 392_762n);              // $3,927.62 = P&I $3,402.62 + escrow $525.00
   assert.equal(money(392_762n), "$3,927.62"); assert.equal(money(187_500n), "$1,875.00"); assert.equal(money(105_000n), "$1,050.00"); assert.equal(money(630_000n), "$6,300.00");
-  assert.equal(prepaidInterestCents(56_000_000n, "6.125", 19), 178_548n);                                   // $1,785.48 = 19 × $93.9726
-  assert.equal(prepaidInterestCents(41_200_000n, "6.375", 12), 86_351n);                                    // $863.51 = 12 × $71.9589
+  assert.equal(perDiemCentsRounded(56_000_000n, "6.125"), 9_397n); assert.equal(perDiemCentsRounded(41_200_000n, "6.375"), 7_196n);   // $93.97 / $71.96 — 26.3 `365_rounded_per_diem`
+  assert.equal(prepaidInterestCents(56_000_000n, "6.125", 19), 178_543n);                                   // $1,785.43 = 19 × $93.97 (the unrounded 19 × $93.9726 = $1,785.48 is never used)
+  assert.equal(prepaidInterestCents(41_200_000n, "6.375", 12), 86_352n);                                    // $863.52 = 12 × $71.96
   assert.equal(perDiemCentsUnrounded(41_200_000n, "6.375"), "71.9589"); assert.equal(`$${perDiemCentsUnrounded(41_200_000n, "6.375").slice(0, 5)}`, "$71.95");   // $71.95(89) per diem
   assert.equal(pointsSeed({ transaction_type: "purchase", principal_cents: 41_200_000n, points_pct: "0.500", borrower_paid_cents: 206_000n, designated_as_points_on_cd: true, principal_residence: true }).points_paid_cents, 206_000n);   // $2,060.00 = 0.500% × $412,000
-  assert.equal(money(206_000n), "$2,060.00"); assert.equal(money(86_351n), "$863.51"); assert.equal(money(480_000n), "$4,800.00"); assert.equal(money(240_000n), "$2,400.00"); assert.equal(money(52_500n), "$525.00");
+  assert.equal(money(206_000n), "$2,060.00"); assert.equal(money(86_352n), "$863.52"); assert.equal(money(7_196n), "$71.96"); assert.equal(money(480_000n), "$4,800.00"); assert.equal(money(240_000n), "$2,400.00"); assert.equal(money(52_500n), "$525.00");
 });

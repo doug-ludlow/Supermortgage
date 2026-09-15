@@ -116,8 +116,8 @@ An examiner is shown, per application: the live graph as `readDuGraph` returns i
 
 ### Sources
 - Fannie Mae, DU Specification v1.9.3 — DU Map, Enumerations, Cardinality, ArcRoles tabs (workbook; not in tree).
-- Fannie Mae, DU Specification Test Case Suite, June 2026 — DI-C01 … DI-VA04 (eighteen cases; `corpus/samples/`).
-- MISMO Reference Model v3.4 Build 324 — `MISMO_3.4.0_B324.xsd` and companions (`corpus/xsd/`).
+- Fannie Mae, DU Specification Test Case Suite, June 2026 — DI-C01 … DI-VA04 (eighteen cases labelled "DU Spec 1.9.1"/"1.9" in the vendored file names, against workbook tables cited at v1.9.3; `src/infra/integrations/du-schema/samples/`).
+- MISMO Reference Model v3.4 Build 324 — `MISMO_3.4.0_B324.xsd` and companions (`src/infra/integrations/du-schema/xsd/`).
 - Fannie Mae, `DU_Wrapper_3.4.0_B324.xsd`, `DU_ExtensionV3_4.xsd`, `ULAD_ExtensionV3_4.xsd`.
 - Uniform Residential Loan Application (Form 1003), 1/2021 — sections 1a, 2, 3, 5.
 - Homestead-Mortgages `docs/du-graph.md`, `docs/du-readiness.md` (re-measured at `07e594f`, 2026-09-14).

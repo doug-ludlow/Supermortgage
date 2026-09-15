@@ -2768,6 +2768,10 @@
    {
     "n": 8,
     "text": "Given a DocuSign declined event, then status `signatures_declined`, `officer` escalation created, and no timer is deleted (cancelled with reason)."
+   },
+   {
+    "n": 9,
+    "text": "Given a $40B bank with no S&P or Moody's rating and IDC 80, when evaluated for A/A-only use, then eligible under IDC \u2265 75 / KBRA \u2265 C regardless of asset size; for S/S use, then ineligible (the \u2265 $30B S&P/Moody's test is not met); decision record lists the rule applied."
    }
   ],
   "tables": [
@@ -9524,6 +9528,7 @@
   "timers": [
    "FNMA_B2_1_3_03_CASHOUT_NOTE_SEASONING_12M",
    "FNMA_B2_1_3_03_TITLE_SEASONING_6M",
+   "FNMA_B2_1_3_04_CASHOUT_TO_LCOR_30D",
    "FNMA_C1_1_01_PREMIUM_RECAPTURE_120",
    "MA_183_28C_BORROWER_INTEREST_60M",
    "SM_REFI_OFFER_FREQUENCY_CAP",
@@ -9576,7 +9581,7 @@
    },
    {
     "n": 6,
-    "text": "Given an email opt-out received 2026-10-06, then `CANSPAM_7704_A4_OPTOUT_10BD.due_at = 2026-10-20` and `marketing_suppressions{email_optout}` is recorded the same day; an email queued 2026-10-07 is suppressed."
+    "text": "Given an email opt-out received 2026-10-06, then `CANSPAM_7704_A4_OPTOUT_10BD.due_at = 2026-10-21` and `marketing_suppressions{email_optout}` is recorded the same day; an email queued 2026-10-07 is suppressed."
    },
    {
     "n": 7,
@@ -10162,7 +10167,7 @@
    },
    {
     "n": 7,
-    "text": "Given the CD was provided Mon Nov 2, 2026 and the borrower locks Tue Nov 3 at 6.250 % with $700.00 points, then no `disclosure.le.revised` is produced; a `changed_circumstances{kind='rate_lock', reflected_on='cd'}` row is created; 25.2 receives the terms; and the borrower was warned before execution that the closing may move to Mon Nov 9."
+    "text": "Given the CD was provided Mon Nov 2, 2026 and the borrower locks Tue Nov 3 at 6.250 % with $700.00 points, then no `disclosure.le.revised` is produced; a `changed_circumstances{kind='rate_lock', reflected_on='cd'}` row is created; 25.2 receives the terms; and the borrower was warned before execution that the Fri Nov 6 closing holds only with confirmed receipt of the corrected CD on Tue Nov 3 (a mailed corrected CD would move consummation to Tue Nov 10)."
    },
    {
     "n": 8,
@@ -10531,7 +10536,7 @@
    },
    {
     "n": 7,
-    "text": "(waiting period date basis) Given a Chapter 7 discharge Nov 20, 2022 and disbursement Nov 19, 2026, when evaluated, then the loan is not eligible; with disbursement Nov 20, 2026 the lender-confirmed basis passes while DU's report-date test (Oct 5, 2026) is recorded as failing with the written confirmation."
+    "text": "(waiting period date basis) Given a Chapter 7 discharge Nov 20, 2022 and disbursement Nov 19, 2026, when evaluated, then the loan is not eligible; with disbursement Nov 20, 2026 DU's report-date test (Oct 5, 2026) still fails and the loan stays Ineligible until a new credit report dated on or after Nov 20, 2026 is obtained and the casefile is resubmitted (23.1); the disbursement-date confirmation alone does not make the loan deliverable."
    },
    {
     "n": 8,
@@ -10713,11 +10718,11 @@
    },
    {
     "n": 8,
-    "text": "(reserves with other financed properties) Given the purchase fixture with two financed rentals (UPB $250,000.00 and $160,000.00) and DU reserves $8,000.00, when computed, then `reserves_required = 1,620,000 cents`; given verified reserves $14,580.00, then 23.1's 90% test passes (`tolerance_90pct_ok`) but `SM_RESERVES_VERIFIED_GATE` remains closed until $16,200.00 is verified; given $14,500.00, then `B3_2_10_RESERVES_90PCT` resubmission is required."
+    "text": "(reserves with other financed properties) Given the purchase fixture (1-unit principal residence) with two financed rentals (UPB $250,000.00 and $160,000.00) and DU reserves $8,000.00, when computed, then `reserves_required = 800,000 cents` and `other_financed_reserves = 0`; given the same borrowers on a second-home subject, then `reserves_required = 1,620,000 cents`; given verified reserves $14,580.00, then 23.1's 90% test passes (`tolerance_90pct_ok`) but `SM_RESERVES_VERIFIED_GATE` remains closed until $16,200.00 is verified; given $14,500.00, then `B3_2_10_RESERVES_90PCT` resubmission is required."
    },
    {
     "n": 9,
-    "text": "(Community Seconds CLTV) Given an OHFA-type DPA second of $13,734.00 on the purchase fixture, when computed, then CLTV 92.998% \u2264 105%, `SFC 118` is emitted, the IPC band becomes 3%, and 22.5 receives `deferred_5y_or_more = true`; given the provider is the property seller, then `subordinate_financing.declared{ineligible_provider}` and the loan is restructured."
+    "text": "(Community Seconds CLTV) Given an OHFA-type DPA second of $13,734.00 on the purchase fixture, when computed, then CLTV 92.996% \u2264 105%, `SFC 118` is emitted, the IPC band becomes 3%, and 22.5 receives `deferred_5y_or_more = true`; given the provider is the property seller, then `subordinate_financing.declared{ineligible_provider}` and the loan is restructured."
    },
    {
     "n": 10,
@@ -10901,7 +10906,7 @@
    },
    {
     "n": 9,
-    "text": "(undisclosed REO) Given a $210,000 mortgage tradeline with no REO entry and a MERS MIN vested in the borrower, when the borrower documents an inherited rental, then `resolved_added_to_reo`, 22.5 adds PITIA $1,640.00, 23.2 recounts financed properties (2), 22.4 adds 2% of the other UPB to reserves, and 23.1 resubmits; given the borrower denies ownership and the deed shows a same-name relative, then `resolved_not_borrower` with the deed as evidence."
+    "text": "(undisclosed REO) Given a $210,000 mortgage tradeline with no REO entry and a MERS MIN vested in the borrower, when the borrower documents an inherited rental, then `resolved_added_to_reo`, 22.5 adds PITIA $1,640.00, 23.2 recounts financed properties (2), 22.4 adds no other-financed-property reserve because the subject is a principal residence (B3-4.1-01; the 2% add-on applies only to a second-home/investment subject), and 23.1 resubmits; given the borrower denies ownership and the deed shows a same-name relative, then `resolved_not_borrower` with the deed as evidence."
    },
    {
     "n": 10,
@@ -10986,7 +10991,7 @@
    },
    {
     "n": 2,
-    "text": "Given baseline DTI 38.00% on $12,000.00 income, when a $450.00/month liability is added Oct 20, 2026, then `du_resubmission_checks.result = resubmission_required` with `rule_code = B3_2_10_DTI_45_OR_3PT` (dti_after 41.75, delta 3.75) and `SM_DU_RESUBMIT_SLA_1BD` due Wed Oct 21, 2026; a $300.00 liability yields `within_tolerance` (40.50, delta 2.50) and `du.resubmission.waived`."
+    "text": "Given baseline DTI 38.00% on $12,000.00 income, when a $450.00/month liability is added Oct 20, 2026, then `du_resubmission_checks.result = resubmission_required` with `rule_code = B3_2_10_DTI_45_OR_3PT` (dti_after 41.75, delta 3.75) and `SM_DU_RESUBMIT_SLA_1BD` due Wed Oct 21, 2026; given the Guide's own rows, 46.00 \u2192 48.00 yields `within_tolerance` and 44.00 \u2192 46.00 yields `resubmission_required`; a $300.00 liability yields `within_tolerance` (40.50, delta 2.50) and `du.resubmission.waived`."
    },
    {
     "n": 3,
@@ -11049,6 +11054,7 @@
    "FNMA_B1_1_03_CREDIT_DOCS_4M",
    "FNMA_B3_2_01_DU_ARCHIVE_270",
    "FNMA_B3_2_01_DU_ARCHIVE_540",
+   "FNMA_B3_2_01_POST_CLOSING_NEW_CASEFILE_60",
    "FNMA_B3_2_02_DU_CLOSE_BY_GATE",
    "FNMA_B3_2_10_DU_FINAL_MATCH_GATE",
    "FNMA_DU_IMPACT_MEMO_SUPPORT_120",
@@ -11076,7 +11082,7 @@
   "tids": [
    {
     "n": 1,
-    "text": "Given findings Tue Oct 6, 2026 (refinance fixture) with 14 verification messages, 1 MI message (\"no MI\" at 70% LTV \u2192 none), 1 value-acceptance offer and 2 observations, when interpreted, then 14 PTD conditions are opened by 10:00 the same day (`SM_DU_CONDITIONS_SLA_4H` satisfied), `value_acceptance_offer = value_acceptance`, `sfc_required = {127, 007}`, and no borrower-facing text contains a DU message ID."
+    "text": "Given findings Tue Oct 6, 2026 (refinance fixture) with 14 verification messages, 1 MI message (\"no MI\" at 70% LTV \u2192 none), 1 value-acceptance offer and 2 observations, when interpreted, then 14 PTD conditions are opened by 10:00 the same day (`SM_DU_CONDITIONS_SLA_4H` satisfied), `value_acceptance_offer = value_acceptance`, `sfc_required = {127}` (801 is added only when value acceptance is exercised at delivery), and no borrower-facing text contains a DU message ID."
    },
    {
     "n": 2,
@@ -11283,7 +11289,7 @@
    },
    {
     "n": 9,
-    "text": "Given a $412,000 North Carolina loan, then `state_tests[NC].applies_by_size = false` (cap $300,000) and `result = not_applicable`; given a $290,000 NC loan with points and fees 5.2%, then `fail` and Fannie Mae ineligible."
+    "text": "Given a $412,000 North Carolina loan, then `state_tests[NC].applies_by_size = false` (cap $300,000) and `result = not_applicable`; given a $290,000 NC loan with points and fees 5.2%, then `fail`, `fnma_ineligible_if_fail = false`, `fnma_eligible` unaffected, and `STATE_HIGH_COST_GATE` routes to the `officer` (state law), not a Fannie Mae hard block."
    },
    {
     "n": 10,
@@ -11438,7 +11444,7 @@
   "tids": [
    {
     "n": 1,
-    "text": "Given each of the eighteen samples in `corpus/samples/`, when it is loaded into a 23.5 graph and re-emitted, then the emitted document validates against the vendored chain and matches the sample container-for-container and arc-for-arc after label normalization."
+    "text": "Given each of the eighteen samples in `src/infra/integrations/du-schema/samples/`, when it is loaded into a 23.5 graph and re-emitted, then the emitted document validates against the vendored chain and matches the sample container-for-container and arc-for-arc after label normalization."
    },
    {
     "n": 2,
@@ -12389,7 +12395,7 @@
    },
    {
     "n": 6,
-    "text": "Given a partner-originated existing loan with UPB $548,200.00, earned unpaid interest $2,100.55, refinancing costs $7,950.00 and amount financed $556,150.00, then `rescindable_amount_cents = -210055`, `applicability = exempt_same_creditor_no_new_money`, no notice is generated and `disburse` is not gated by rescission; given UPB $544,000.00, then `rescindable_amount_cents = 209945`, `form = h9`, and the H-9 states the increase of $2,099.45."
+    "text": "Given a partner-originated existing loan with UPB $548,200.00, earned unpaid interest $2,100.55, non-finance-charge refinancing costs $4,100.00 and amount financed $556,150.05, then `rescindable_amount_cents = 174950`, `applicability = rescindable_new_advance`, `form = h9`, the H-9 states the new advance of $1,749.50 and `disburse` is gated by `REGZ_1026_23_RESCISSION_3SBD_GATE`; given UPB $544,000.00, then `rescindable_amount_cents = 594950`, `form = h9`, and the H-9 states the increase of $5,949.50; given UPB $550,000.00, then `rescindable_amount_cents = -5050`, `applicability = exempt_same_creditor_no_new_money`, no notice is generated and `disburse` is not gated by rescission."
    },
    {
     "n": 7,
@@ -12401,7 +12407,7 @@
    },
    {
     "n": 9,
-    "text": "Given a rescission notice postmarked Tue Nov 10 received Fri Nov 13 after a Thu Nov 12 disbursement, then `valid = true`, `refund_due_at = 2026-12-03`, an unwind checklist opens, and `REGZ_1026_23D2_RESCISSION_REFUND_20` breaches on Dec 4 if `rescission.unwind.completed` has not fired."
+    "text": "Given a rescission notice postmarked Tue Nov 10 received Fri Nov 13 after a Thu Nov 12 disbursement, then `valid = true`, `refund_due_at = 2026-12-03`, an unwind checklist opens, and `REGZ_1026_23D2_RESCISSION_REFUND_20` breaches on Dec 4 if `rescission.unwind.started` (money returned and termination begun) has not fired; an unfinished recording alone is a sev 2 completion follow-up."
    },
    {
     "n": 10,
@@ -12492,7 +12498,7 @@
    },
    {
     "n": 11,
-    "text": "Given boarding on Thu Nov 12, 2026 for the refinance fixture, then `tax_reporting_seeds` = {origination_date 2026-11-06, principal 56000000, prepaid_interest 178548, points 0, mi_at_closing 0, acquisition_date null} and `SM_O64_1098_SEEDS_AT_BOARDING_GATE` opens; servicing 7.1-A produces a 2026 Form 1098 with Box 1 $1,785.48; given the purchase fixture with 0.500 borrower-paid points on $412,000, then `points_paid_cents = 206000` and prepaid interest $863.51."
+    "text": "Given boarding on Thu Nov 12, 2026 for the refinance fixture, then `tax_reporting_seeds` = {origination_date 2026-11-06, principal 56000000, prepaid_interest 178543, points 0, mi_at_closing 0, acquisition_date null} and `SM_O64_1098_SEEDS_AT_BOARDING_GATE` opens; servicing 7.1-A produces a 2026 Form 1098 with Box 1 $1,785.43; given the purchase fixture with 0.500 borrower-paid points on $412,000, then `points_paid_cents = 206000` and prepaid interest $863.52."
    },
    {
     "n": 12,
@@ -12601,7 +12607,7 @@
    },
    {
     "n": 12,
-    "text": "Given a Montana property, then Form 3158 is in the set and the closing instructions forbid a post-closing assignment to MERS; given Maine, Form 3749 is rendered for `signing_officer` execution."
+    "text": "Given a Montana property, then Form 3158 is in the set and the closing instructions forbid a post-closing assignment to MERS; given Maine, the mortgage carries no MERS-as-original-mortgagee language (`runDocumentQc` fails a Maine set whose mortgage names MERS as nominee \u2014 B8-7-01: such loans \"are ineligible for delivery to Fannie Mae\") and Form 3749 is rendered for `signing_officer` execution."
    },
    {
     "n": 13,
@@ -12927,7 +12933,7 @@
    },
    {
     "n": 12,
-    "text": "Given a Maine loan, then 26.1 renders Form 3749, the `signing_officer` executes it at closing, it is recorded promptly after the mortgage, `recorded_assignment_to_mers` is expected, and no other assignment (intervening, to Fannie Mae) exists on any loan in the population \u2014 a query for `closing_documents.kind` containing \"assignment\" outside Maine returns zero rows."
+    "text": "Given a Maine loan, then 26.1 renders Form 3749, the `signing_officer` executes it at closing, it is recorded promptly after the mortgage, `recorded_assignment_to_mers` is expected, and no other assignment (intervening, to Fannie Mae) exists on any non-CEMA loan in the population (NY CEMA loans carry their consolidated prior-lender assignments, which the query below excludes together with the Maine rows) \u2014 a query for `closing_documents.kind` containing \"assignment\" outside Maine and outside NY CEMA loans returns zero rows."
    },
    {
     "n": 13,
@@ -13680,7 +13686,7 @@
    },
    {
     "n": 12,
-    "text": "Given a mandatory commitment (price 101.250) with $4,600,000 purchased on Fri Dec 4, 2026 and a live price of 100.750, then a partial pair-off of $275,000 yields `cash_back_cents = 137,500`; with a live price of 101.750 it yields `fee_cents = 137,500`; a 10-day extension of the $400,000 remaining balance at the lowest PTR 5.625% costs `fee_cents = 62,500`."
+    "text": "Given a mandatory commitment (price 101.250) with $4,600,000 purchased on Fri Dec 4, 2026 and a live price of 100.750, then the pair-off is sized at the full undelivered $400,000 (a standalone $275,000 pair-off is refused as short of the C2-2-01 post-pair-off minimum \u2014 revised commitment \u2212 $50 \u2014 unless the other $125,000 is extended with it, C2-1.1-04) and yields `cash_back_cents = 200,000`; with a live price of 101.750 it yields `fee_cents = 200,000`; a 10-day extension of the $400,000 remaining balance at the lowest PTR 5.625% costs `fee_cents = 62,500`."
    },
    {
     "n": 13,
@@ -13771,7 +13777,7 @@
    },
    {
     "n": 8,
-    "text": "Given a Fannie Mae mandatory commitment of $4,000,000 at 101.250 expiring Mon Dec 7, 2026 with $3,600,000 expected deliverable and a live price of 102.250 on Fri Dec 4, then the package prices a $300,000 partial pair-off at `fee_cents = 300,000` and a 10-day extension of $400,000 at `fee_cents = 62,500`, recommends the extension when both late loans are at stage `cd_delivered`, and requires an `officer` decision before 5:00 p.m. ET Dec 7; with a live price of 100.250 the pair-off row shows `cash_back_cents = 300,000`."
+    "text": "Given a Fannie Mae mandatory commitment of $4,000,000 at 101.250 expiring Mon Dec 7, 2026 with $3,600,000 expected deliverable and a live price of 102.250 on Fri Dec 4, then the package prices a $400,000 pair-off at `fee_cents = 400,000` (a $300,000 pair-off that would leave $100,000 \"inside the tolerance\" is refused) and, as the alternative, a 10-day extension of the $400,000 at `fee_cents = 62,500`, recommends the extension when both late loans are at stage `cd_delivered`, and requires an `officer` decision before 5:00 p.m. ET Dec 7; with a live price of 100.250 the pair-off row shows `cash_back_cents = 400,000`."
    },
    {
     "n": 9,
@@ -13783,7 +13789,7 @@
    },
    {
     "n": 11,
-    "text": "Given a lock executed Wed Oct 7, 2026 that remains uncommitted (PE\u2013WL outage), then `SM_UNCOMMITTED_POSITION_5BD` is due Wed Oct 14, 2026 (Oct 8, 9, 13, 14 \u2014 Mon Oct 12 Columbus Day is a SIFMA close) and breaches sev 2 to the `officer` if still uncommitted."
+    "text": "Given a lock executed Wed Oct 7, 2026 that remains uncommitted (PE\u2013WL outage), then `SM_UNCOMMITTED_POSITION_5BD` is due Thu Oct 15, 2026 (Oct 8, 9, 13, 14, 15 \u2014 Mon Oct 12 Columbus Day is a SIFMA close) and breaches sev 2 to the `officer` if still uncommitted."
    },
    {
     "n": 12,
@@ -13865,7 +13871,7 @@
    },
    {
     "n": 5,
-    "text": "Given a value-acceptance loan with the DU offer dated Wed Jul 8, 2026 and note date Fri Nov 6, 2026 (offer 3 months 29 days old), then SID 376 = `ValueAcceptance`, SFC 801 is included, SID 82 is blank and the gate opens; given the offer dated Mon Jul 6, 2026 (four months exceeded on Nov 6), then `FNMA_B4_1_4_10_VALUE_ACCEPTANCE_SFC_GATE` fails and 24.1 is notified."
+    "text": "Given a value-acceptance loan with the DU offer dated Wed Jul 8, 2026 and note date Fri Nov 6, 2026 (offer 3 months 29 days old), then SID 376 = `ValueAcceptance`, SFC 801 is included, SID 82 is blank and the gate opens; given the offer dated Sun Jul 5, 2026 (more than four months old on Nov 6 \u2014 an offer dated Jul 6 is exactly four months old and remains eligible under B4-1.4-10's \"not more than four months old on the date of the note\"), then `FNMA_B4_1_4_10_VALUE_ACCEPTANCE_SFC_GATE` fails and 24.1 is notified."
    },
    {
     "n": 6,
@@ -13981,7 +13987,7 @@
    },
    {
     "n": 11,
-    "text": "Given a post-purchase discovery on Mon Mar 8, 2027 that the delivered representative score should be 754 rather than 762, then a `post_purchase_adjustments` row is opened with `repricing_eligible = true` (acquisition Nov 19, 2026 + 18 months = May 19, 2028), the PPA .csv and evidence are prepared, and processing is expected by Mon Mar 22, 2027 (10 `business_days_fannie_et` from Mar 9); given an LLPA delta of \u2212$50, no draft is expected ($100 minimum)."
+    "text": "Given a post-purchase discovery on Mon Mar 8, 2027 that the delivered representative score should be 754 rather than 762, then a `post_purchase_adjustments` row is opened with `repricing_eligible = true` (acquisition Nov 19, 2026 + 18 months = May 19, 2028), the PPA .csv and evidence are prepared, and processing is expected by Tue Mar 23, 2027 (10 `business_days_fannie_et` after Mar 9: Mar 10, 11, 12, 15, 16, 17, 18, 19, 22, 23); given an LLPA delta of \u2212$50, no draft is expected ($100 minimum)."
    },
    {
     "n": 12,
@@ -16607,7 +16613,7 @@
    },
    {
     "n": 12,
-    "text": "Given worked example B's `tax_forms_1098` row, when `documents.render{document_kind=irs_1098_copy_b}` runs, then the PDF's text layer shows `$5,743.99` in Box 1 and `$400,000.00` in Box 2, the payer TIN as `XXX-XX-1234` and no full TIN anywhere, the form title and tax year, and the row's `box1_cents = 574399` and `box2_cents = 40000000` are what the page reproduces; the monthly interest figures `$1,916.67`, `$1,914.67` and `$1,912.65` are the 2.1 allocations the box sums."
+    "text": "Given worked example B's `tax_forms_1098` row, when `documents.render{document_kind=irs_1098_copy_b}` runs, then the PDF's text layer shows `$5,743.99` in Box 1 and `$400,000.00` in Box 2, the payer TIN as `XXX-XX-1234`, the recipient/lender TIN in full and no other full TIN, the tax year, form number and form name together in one area, a direct-access telephone number, the two Pub. 1179 \u00a74.4.1 legends, and the row's `box1_cents = 574399` and `box2_cents = 40000000` are what the page reproduces; the monthly interest figures `$1,916.67`, `$1,914.67` and `$1,912.65` are the 2.1 allocations the box sums."
    },
    {
     "n": 13,
@@ -16815,7 +16821,7 @@
    },
    {
     "n": 11,
-    "text": "Given the December 2026 period with `period_close` and `ledger_period_close` completed and three reportable loans with 2026 `interest_due` credits from borrower funds of $23,412.55, $9,870.12 and $412.40 and no loan with escrow interest at or above $10.00 (`ioe_1099_loans = 0`), when the sweep first passes 2027-01-02 00:05 ET, then `close.tax_year{tax_year: 2026}` runs once, 7.1's `tax_year.closed{tax_year: 2026}` exists for each of the three loans and arms `IRS_6050H_1098_FURNISH_0131` (due 2027-01-31) and `IRS_6050H_1098_FILE_0331` per loan, a `tax_year_closes` row has `reportable_loans = 3` and `ledger_interest_sum_cents = 3369507n` ($33,695.07), a kind `tax_year` `close_periods` row for 2026 exists with steps `form_1098_furnish`, `form_1099_int_furnish`, `form_1098_file`, `form_1099_int_file`, `close.tax_year.closed{tax_year: 2026}` satisfies `SM_TAX_YEAR_CLOSE_3BD` (armed by `close.tax_year.planned` on the December open, `due_at` 2027-01-06 17:00 ET), and a second pass changes nothing."
+    "text": "Given the December 2026 period with `period_close` and `ledger_period_close` completed and three reportable loans with 2026 `interest_due` credits from borrower funds of $23,412.55, $9,870.12 and $412.40 and no loan with escrow interest at or above $10.00 (`ioe_1099_loans = 0`), when the sweep first passes 2027-01-02 00:05 ET, then `close.tax_year{tax_year: 2026}` runs once, 7.1's `tax_year.closed{tax_year: 2026}` exists for each of the three loans and arms `IRS_6050H_1098_FURNISH_0131` (due 2027-01-31) and `IRS_6050H_1098_FILE_0331` per loan, a `tax_year_closes` row has `reportable_loans = 3` and `ledger_interest_sum_cents = 3369507n` ($33,695.07), a kind `tax_year` `close_periods` row for 2026 exists with steps `form_1098_furnish`, `form_1099_int_furnish`, `form_1099_ac_furnish`, `form_1098_file`, `form_1099_int_file`, `form_1099_ac_file`, `close.tax_year.closed{tax_year: 2026}` satisfies `SM_TAX_YEAR_CLOSE_3BD` (armed by `close.tax_year.planned` on the December open, `due_at` 2027-01-06 17:00 ET), and a second pass changes nothing."
    },
    {
     "n": 12,

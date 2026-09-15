@@ -48,13 +48,14 @@ export const DOCUMENT_CLASSES: readonly DocumentClass[] = [
   ...cls("identity", "none", false, ["drivers_license", "passport", "state_id", "ssn_card", "permanent_resident_card", "ead", "itin_letter"]),
   ...cls("income_employment", "b3_3_2_01_paystub_30d", true, ["paystub"]),
   ...cls("income_employment", "b1_1_03_tax_year_table", true, ["w2", "form_1099"]),
-  ...cls("income_employment", "b1_1_03_4m", true, ["form_1005_voe", "employment_offer", "military_les", "ssa_award_letter", "pension_award_letter", "disability_award_letter", "leave_confirmation"]),
-  ...cls("income_employment", "du_validation_vendor_age", true, ["vvoe_record"]),
+  // B3-2-02 / B3-3.2-01: employment and income verification reports "must comply with Fannie Mae's standard age of credit document requirements as outlined in B1-1-03" — the vendor report's generation date carries the four-month rule (DU adds its own vendor-data age and Close by Date, 22.3).
+  ...cls("income_employment", "b1_1_03_4m", true, ["form_1005_voe", "voe_report", "voie_report", "employment_offer", "military_les", "ssa_award_letter", "pension_award_letter", "disability_award_letter", "leave_confirmation"]),
+  ...cls("income_employment", "none", true, ["vvoe_record"]),   // the platform's own verbal VOE record: timed by 22.3's note-date window (B3-3.1-04), not a paper age
   ...cls("income_employment", "none", false, ["divorce_decree", "support_order"]),
   ...cls("tax", "b1_1_03_tax_year_table", true, ["form_1040", "schedule_c", "schedule_e", "schedule_k1", "form_1065", "form_1120", "form_1120s", "irs_return_transcript", "irs_wage_income_transcript"]),
+  ...cls("tax", "du_validation_vendor_age", true, ["irs_transcript_du_validated"]),   // the only du_validation_vendor_age class: B3-2-02 waives the age rule "when DU issues the message that income has been validated"
   ...cls("tax", "none", false, ["form_4506c", "form_8821", "form_4868"]),
-  ...cls("assets", "b1_1_03_4m", true, ["bank_statement", "brokerage_statement", "retirement_statement", "form_1006_vod", "gift_transfer_evidence", "emd_evidence", "asset_sale_evidence"]),
-  ...cls("assets", "du_validation_vendor_age", true, ["voa_report"]),
+  ...cls("assets", "b1_1_03_4m", true, ["bank_statement", "brokerage_statement", "retirement_statement", "form_1006_vod", "voa_report", "gift_transfer_evidence", "emd_evidence", "asset_sale_evidence"]),   // B3-4.2-01: the asset verification report is dated in compliance with B1-1-03
   ...cls("assets", "none", false, ["gift_letter"]),
   ...cls("liabilities", "b1_1_03_4m", true, ["mortgage_statement", "heloc_statement", "student_loan_statement", "payoff_statement", "irs_installment_agreement"]),
   ...cls("property_purchase", "none", false, ["purchase_contract", "contract_addendum", "lease_agreement", "form_1007", "form_1025"]),

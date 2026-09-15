@@ -283,23 +283,28 @@ test("22.6-T8: (occupancy score) Given the purchase-variant signals (rent needed
   assert.equal(scoreOccupancy({ distance_subject_employer_km: 140, purchase_smaller_or_cheaper_than_current: true }).conclusion, "needs_explanation");
 });
 
-test("22.6-T9: (undisclosed REO) Given a $210,000 mortgage tradeline with no REO entry and a MERS MIN vested in the borrower, when the borrower documents an inherited rental, then `resolved_added_to_reo`, 22.5 adds PITIA $1,640.00, 23.2 recounts financed properties (2), 22.4 adds 2% of the other UPB to reserves, and 23.1 resubmits; given the borrower denies ownership and the deed shows a same-name relative, then `resolved_not_borrower` with the deed as evidence.", async () => {
+test("22.6-T9: (undisclosed REO) Given a $210,000 mortgage tradeline with no REO entry and a MERS MIN vested in the borrower, when the borrower documents an inherited rental, then `resolved_added_to_reo`, 22.5 adds PITIA $1,640.00, 23.2 recounts financed properties (2), 22.4 adds no other-financed-property reserve because the subject is a principal residence (B3-4.1-01; the 2% add-on applies only to a second-home/investment subject), and 23.1 resubmits; given the borrower denies ownership and the deed shows a same-name relative, then `resolved_not_borrower` with the deed as evidence.", async () => {
   const findings = [{ source: "credit_mortgage_tradelines", description: "mortgage tradeline opened 2021, $210,000", upb_cents: 21_000_000n, opened_year: 2021, on_reo_schedule: false }, { source: "mers_lookup", description: "4410 E Main St, Mesa, AZ 85205", min: "100012345678901234", vested_name: "Borrower A", on_reo_schedule: false }, { source: "servicing_book", description: "subject property (SM subserviced)", on_reo_schedule: true }];
   const h = harness(mst("2026-10-20", "09:00"));
   const d = await h.run("discoverReo", { borrower_id: A, findings });
   assert.equal(d.status, "discrepancy_open"); assert.equal(d.undisclosed_count, 2); assert.equal(d.event, "reo.discrepancy.detected");
   const check_id = (d.check as { check_id: string }).check_id;
   await h.refused(h.run("discoverReo", { op: "resolve", check_id, resolution: "added_to_reo", evidence_document_ids: [] }), "REO_RESOLUTION_NEEDS_EVIDENCE");
-  // inherited rental documented: PITIA $1,286.00 + $214.00 + $140.00 = $1,640.00 (22.5); financed properties 1 → 2 (23.2); reserves + 2 % × $210,000 = $4,200.00 (22.4); 23.1 resubmits
+  // inherited rental documented: PITIA $1,286.00 + $214.00 + $140.00 = $1,640.00 (22.5); financed properties 1 → 2 (23.2); no other-financed-property reserve on the principal-residence refinance fixture — the 2 % tier (2 % × $210,000 = $4,200.00) applies only to a second-home/investment subject (22.4, B3-4.1-01); 23.1 resubmits
   const r = await h.run("discoverReo", { op: "resolve", check_id, resolution: "added_to_reo", evidence_document_ids: ["doc-deed-inherit", "doc-mtg-stmt", "doc-lease"], financed_property_count_before: 1, property: { address: "4410 E Main St, Mesa, AZ 85205", upb_cents: 21_000_000n, rental: true, pitia: { pi_cents: 128_600n, taxes_cents: 21_400n, insurance_cents: 14_000n } } });
   assert.equal(r.status, "resolved_added_to_reo"); assert.equal(r.misstatement, "unintentional");
   const hand = r.handoffs as Record<string, Record<string, unknown>>;
   assert.equal(hand["22.5"]!.qualifying_payment_cents, 164_000n); assert.equal(hand["22.5"]!.payment_basis, "mortgage_pitia"); assert.equal(pitiaCents({ pi_cents: 128_600n, taxes_cents: 21_400n, insurance_cents: 14_000n }), 164_000n);
   assert.equal(hand["23.2"]!.financed_property_count, 2);
-  assert.equal(hand["22.4"]!.pct_bps, 200); assert.equal(hand["22.4"]!.pct_bps, otherFinancedPctBps(2)); assert.equal(hand["22.4"]!.reserves_add_on_cents, 420_000n); assert.equal(hand["22.4"]!.other_financed_upb_cents, 21_000_000n);
+  assert.equal(hand["22.4"]!.pct_bps, 0); assert.equal(hand["22.4"]!.reserves_add_on_cents, 0n); assert.equal(hand["22.4"]!.applies, false); assert.equal(hand["22.4"]!.subject_occupancy, "principal_residence"); assert.equal(hand["22.4"]!.tier_bps, 200); assert.equal(hand["22.4"]!.tier_bps, otherFinancedPctBps(2)); assert.equal(hand["22.4"]!.other_financed_upb_cents, 21_000_000n); assert.match(String(hand["22.4"]!.reason), /second home or investment property/);
   assert.equal(hand["23.1"]!.du_resubmission_required, true);
   const ev = h.ofType("reo.discrepancy.resolved")[0]!.payload as { pitia_cents: string; financed_property_count: number; reserves_add_on_cents: string; du_resubmission_required: boolean; status: string };
-  assert.equal(ev.status, "resolved_added_to_reo"); assert.equal(ev.pitia_cents, "164000"); assert.equal(ev.financed_property_count, 2); assert.equal(ev.reserves_add_on_cents, "420000"); assert.equal(ev.du_resubmission_required, true);
+  assert.equal(ev.status, "resolved_added_to_reo"); assert.equal(ev.pitia_cents, "164000"); assert.equal(ev.financed_property_count, 2); assert.equal(ev.reserves_add_on_cents, "0"); assert.equal(ev.du_resubmission_required, true);
+  // were the subject a second home, 22.4 would add 2 % × $210,000.00 = $4,200.00 (B3-4.1-01)
+  const h3 = harness(mst("2026-10-20", "09:00"), { app: { occupancy: "second_home" } });
+  const d3 = await h3.run("discoverReo", { borrower_id: A, findings });
+  const r3 = await h3.run("discoverReo", { op: "resolve", check_id: (d3.check as { check_id: string }).check_id, resolution: "added_to_reo", evidence_document_ids: ["doc-deed-inherit", "doc-mtg-stmt", "doc-lease"], financed_property_count_before: 1, property: { address: "4410 E Main St, Mesa, AZ 85205", upb_cents: 21_000_000n, rental: true, pitia: { pi_cents: 128_600n, taxes_cents: 21_400n, insurance_cents: 14_000n } } });
+  const hand3 = r3.handoffs as Record<string, Record<string, unknown>>; assert.equal(hand3["22.4"]!.pct_bps, 200); assert.equal(hand3["22.4"]!.reserves_add_on_cents, 420_000n); assert.equal(hand3["22.4"]!.applies, true); assert.equal(hand3["22.4"]!.subject_occupancy, "second_home");
   assert.equal((r.gate as { open: boolean }).open, false);   // the occupancy assessment is still to come on this application; the REO leg is resolved
   assert.equal(evaluateGate("22.6.occupancyReoGate", { occupancy_conclusion: "consistent", reo_status: "resolved_added_to_reo" }).open, true);
   // the borrower denies ownership and the deed shows a same-name relative → resolved_not_borrower with the deed as evidence

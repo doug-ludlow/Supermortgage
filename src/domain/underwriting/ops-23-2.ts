@@ -300,8 +300,9 @@ export function sfcAssembly(f: SfcFacts): string[] {
   if (f.counseling_credit) s.add("184");
   if (f.value_acceptance_exercised) s.add("801"); if (f.va_pd_exercised) s.add("774");
   if (f.high_balance) s.add(SFC_20_4.high_balance);
-  if (f.community_seconds) s.add("118"); if (f.temporary_buydown) s.add("009"); if (f.inter_vivos_trust) s.add("168"); if (f.texas_50a6) s.add("304");
-  if (f.transaction_type === "limited_cash_out") s.add(SFC_20_4.lcor);
+  if (f.community_seconds) s.add("118"); if (f.temporary_buydown) s.add("009"); if (f.inter_vivos_trust) s.add("168");
+  // B5-4.1-04: every Texas Section 50(a)(6) loan carries SFC 304 plus 003 (cash-out) or 007 (limited cash-out) "under Fannie Mae's policy" — 007 is not a general LCOR code, so a non-Texas LCOR carries neither.
+  if (f.texas_50a6) { s.add("304"); if (f.transaction_type === "cash_out") s.add("003"); if (f.transaction_type === "limited_cash_out") s.add(SFC_20_4.lcor); }
   return [...s].sort();
 }
 

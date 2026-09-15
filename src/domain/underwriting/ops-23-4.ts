@@ -48,7 +48,7 @@ export type Stage = "le" | "lock" | "cd" | "consummation" | "post_closing";
 export const STAGES: readonly Stage[] = ["le", "lock", "cd", "consummation", "post_closing"];
 export type LockKind = "initial" | "extension" | "relock" | "float_down" | "renegotiation";
 export interface LockRow { readonly lock_id: string; readonly kind: LockKind; readonly locked_at: string; readonly rate_pct: string; readonly product: "fixed" | "adjustable"; readonly term_years: number; readonly initial_fixed_years?: number | null; }
-/** The date the interest rate was (last) set on or before `as_of`: an extension keeps the prior rate-set date; a relock, float-down or renegotiation resets it (§1026.35(a)(1); comment 35(a)(2)-3 [PARTIALLY VERIFIED]). */
+/** The date the interest rate was (last) set on or before `as_of`: an extension keeps the prior rate-set date; a relock, float-down or renegotiation resets it (§1026.35(a)(1); comment 35(a)(2)-2 and comment 43(b)(4)-3: "The creditor should use the last date the interest rate is set before consummation"). */
 export function rateSetDate(locks: readonly LockRow[], as_of: PlainDate): { rate_set_date: PlainDate | null; lock: LockRow | null; superseded_lock_ids: string[] } {
   const setting = locks.filter((l) => l.kind !== "extension" && plainDate(l.locked_at.slice(0, 10)) <= as_of).sort((a, b) => (a.locked_at < b.locked_at ? -1 : 1));
   const last = setting.at(-1) ?? null;
@@ -188,10 +188,11 @@ export function aprTier(loan_amount_cents: Cents, lien: Lien, manufactured_home:
   return { apr_tier: "first_lien_lt_82775", apr_threshold_pts: Number(rs.apr_spread_tier_3) };
 }
 const PF_TIER_NAMES: readonly PfTier[] = ["pct3_ge_137958", "usd4139_82775_137957", "pct5_27592_82774", "usd1380_17245_27591", "pct8_lt_17245"];
-export function pfTier(total_loan_amount_cents: Cents, rs: QmRuleSet): { pf_tier: PfTier; cap_cents: Cents; cap_basis: string } {
+/** Rule 3: the tier is chosen by the note's face amount (§1026.43(b)(5) "loan amount"; comment 43(e)(3)(ii)-2) and a percentage tier is applied to the total loan amount, "which may be different than the loan amount". */
+export function pfTier(loan_amount_cents: Cents, total_loan_amount_cents: Cents, rs: QmRuleSet): { pf_tier: PfTier; cap_cents: Cents; cap_basis: string } {
   for (let k = 0; k < rs.pf_tiers.length; k++) {
     const t = rs.pf_tiers[k]!;
-    if (total_loan_amount_cents >= t.min_cents) return t.pct ? { pf_tier: PF_TIER_NAMES[k]!, cap_cents: floorPct(total_loan_amount_cents, t.pct), cap_basis: `floor(${t.pct}% × total loan amount ${total_loan_amount_cents})` } : { pf_tier: PF_TIER_NAMES[k]!, cap_cents: t.dollar_cents!, cap_basis: `$${(t.dollar_cents! / 100n).toString()} (2026 indexed)` };
+    if (loan_amount_cents >= t.min_cents) return t.pct ? { pf_tier: PF_TIER_NAMES[k]!, cap_cents: floorPct(total_loan_amount_cents, t.pct), cap_basis: `floor(${t.pct}% × total loan amount ${total_loan_amount_cents})` } : { pf_tier: PF_TIER_NAMES[k]!, cap_cents: t.dollar_cents!, cap_basis: `$${(t.dollar_cents! / 100n).toString()} (2026 indexed)` };
   }
   throw new RangeError("no points-and-fees tier matched");
 }
@@ -270,7 +271,7 @@ export function runQmTests(i: QmInput): QmRow {
   const rsv = ruleSet<QmRuleSet>("regz.qm.general.2021", i.as_of), rs = rsv.content;
   const apr = Number(dec(i.apr).toFixed(3, "HALF_UP"));
   const tier = aprTier(i.loan_amount_cents, i.lien, i.manufactured_home === true, rs);
-  const pt = pfTier(i.total.total_loan_amount_cents, rs);
+  const pt = pfTier(i.loan_amount_cents, i.total.total_loan_amount_cents, rs);
   const pf_pass = i.fees.pf_cents <= pt.cap_cents;
   const product = productTests(i.product, rs), product_tests_pass = Object.values(product).every(Boolean);
   const cv = considerVerifyStatus(i.consider_verify);
@@ -354,13 +355,13 @@ export interface StateDefinition {
   readonly pf_definition: "regz_1026_32" | "state_specific";
 }
 const usd = (d: string): Cents => Decimal.parse(d).toCents();
-/** Verified-requirement statutes: the Fannie Mae B2-1.5-02 table entries with quoted thresholds (NY § 6-l and § 6-m, NJ, MA, NC, GA, IL); AZ / OH have none (`state_tests = []`). */
+/** Verified-requirement statutes with quoted thresholds: the Fannie Mae B2-1.5-02 table entries (NY § 6-l and § 6-m, NJ, MA, GA, IL — the table's 12 states are AR, GA, IL, IN, KY, ME, MA, NJ, NM, NY, RI, TN; AR/IN/KY/ME/NM/RI/TN are in the jurisdiction backlog) plus North Carolina § 24-1.1E, which is *not* on the table: an NC fail is a state-law compliance failure routed to the `officer`, never a Fannie Mae ineligibility. AZ / OH have none (`state_tests = []`). */
 export const STATE_HIGH_COST_DEFINITIONS: readonly StateDefinition[] = [
   { state: "NY", statute: "N.Y. Banking Law § 6-l", definition: "high-cost home loan", verified: true, fnma_ineligible_if_fail: true, size_cap: { kind: "conforming_limit" }, reference_rate_series: "treasury_yield", apr: { first_lien_pts: "8", subordinate_pts: "9", comparator: "gt" }, pf: { pct: "5", min_total_loan_amount_cents: usd("50000"), small: { pct: "6", floor_cents: usd("1500"), cap_cents: null, lesser: false } }, pf_definition: "state_specific" },
   { state: "NY", statute: "N.Y. Banking Law § 6-m", definition: "subprime home loan", verified: true, fnma_ineligible_if_fail: true, size_cap: { kind: "conforming_limit" }, reference_rate_series: "pmms_ne", apr: { first_lien_pts: "1.75", subordinate_pts: "3.75", comparator: "gt" }, pf: { pct: "100", min_total_loan_amount_cents: 0n, small: null }, pf_definition: "regz_1026_32" },
   { state: "NJ", statute: "N.J.S.A. 46:10B-24", definition: "high-cost home loan", verified: true, fnma_ineligible_if_fail: true, size_cap: { kind: "fixed", cents: usd("350000") }, reference_rate_series: "hoepa_ref", apr: null, pf: { pct: "4.5", min_total_loan_amount_cents: usd("40000"), small: { pct: "6", floor_cents: null, cap_cents: usd("1000"), lesser: true } }, pf_definition: "state_specific" },
   { state: "MA", statute: "M.G.L. c. 183C § 2", definition: "high cost home mortgage loan", verified: true, fnma_ineligible_if_fail: true, size_cap: { kind: "none" }, reference_rate_series: "treasury_yield", apr: { first_lien_pts: "8", subordinate_pts: "9", comparator: "gt" }, pf: { pct: "5", min_total_loan_amount_cents: 0n, small: null }, pf_definition: "state_specific" },
-  { state: "NC", statute: "N.C.G.S. § 24-1.1E", definition: "high-cost home loan", verified: true, fnma_ineligible_if_fail: true, size_cap: { kind: "min_conforming_fixed", cents: usd("300000") }, reference_rate_series: "hoepa_ref", apr: null, pf: { pct: "5", min_total_loan_amount_cents: usd("20000"), small: { pct: "8", floor_cents: null, cap_cents: usd("1000"), lesser: true } }, pf_definition: "state_specific" },
+  { state: "NC", statute: "N.C.G.S. § 24-1.1E", definition: "high-cost home loan", verified: true, fnma_ineligible_if_fail: false, size_cap: { kind: "min_conforming_fixed", cents: usd("300000") }, reference_rate_series: "hoepa_ref", apr: null, pf: { pct: "5", min_total_loan_amount_cents: usd("20000"), small: { pct: "8", floor_cents: null, cap_cents: usd("1000"), lesser: true } }, pf_definition: "state_specific" },
   { state: "GA", statute: "O.C.G.A. § 7-6A-2", definition: "high-cost home loan", verified: false, fnma_ineligible_if_fail: true, size_cap: { kind: "conforming_limit" }, reference_rate_series: "hoepa_ref", apr: null, pf: { pct: "5", min_total_loan_amount_cents: usd("20000"), small: { pct: "8", floor_cents: null, cap_cents: usd("1000"), lesser: true } }, pf_definition: "state_specific" },
   { state: "IL", statute: "815 ILCS 137/10", definition: "high risk home loan", verified: false, fnma_ineligible_if_fail: true, size_cap: { kind: "none" }, reference_rate_series: "apor", apr: { first_lien_pts: "6", subordinate_pts: "8", comparator: "gt" }, pf: { pct: "5", min_total_loan_amount_cents: usd("20000"), small: { pct: "8", floor_cents: null, cap_cents: usd("1000"), lesser: true } }, pf_definition: "state_specific" },
 ];
@@ -370,7 +371,7 @@ export interface StateTest {
   readonly other_tests: Record<string, unknown>; readonly result: "not_applicable" | "pass" | "fail"; readonly fnma_ineligible_if_fail: boolean; readonly state_pf_definition_unverified: boolean;
 }
 export interface StateInput { readonly state: string; readonly loan_amount_cents: Cents; readonly total_loan_amount_cents: Cents; readonly pf_cents: Cents; readonly apr: string | number; readonly lien: Lien; readonly hoepa_apr_fail: boolean | null; readonly reference_rates?: { treasury_yield_pct?: string | null; pmms_ne_pct?: string | null; apor_pct?: string | null }; readonly conforming_limit_cents?: Cents; readonly as_of: PlainDate; readonly definitions?: readonly StateDefinition[]; }
-/** Rule 7: every definition for the property state — size scope, reference series, APR and points-and-fees triggers; a fail under a Fannie Mae-listed definition makes the loan ineligible (B2-1.5-02). */
+/** Rule 7: every definition for the property state — size scope, reference series, APR and points-and-fees triggers; a fail under a Fannie Mae-listed definition makes the loan ineligible (B2-1.5-02); a fail under a state-law-only definition (NC) leaves `fnma_eligible` unaffected and routes to the `officer` (STATE_HIGH_COST_GATE). */
 export function runStateHighCostTests(i: StateInput): StateTest[] {
   const conforming = i.conforming_limit_cents ?? ruleSet<HpmlRuleSet>("regz.hpml", i.as_of).content.conforming_limit_cents;
   const defs = (i.definitions ?? STATE_HIGH_COST_DEFINITIONS).filter((d) => d.state === i.state.toUpperCase());

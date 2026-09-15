@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { plainDate as D } from "../../kernel/calendar/date.ts";
-import { defaultCalendars } from "../../kernel/calendar/business.ts";
+import { addBusinessDays, defaultCalendars } from "../../kernel/calendar/business.ts";
 import { MemoryEventStore, FixedClock, type Actor, type DomainEvent } from "../../kernel/events/index.ts";
 import { MemoryLedger } from "../../kernel/ledger/ledger.ts";
 import { TimerEngine } from "../../kernel/timers/index.ts";
@@ -86,7 +86,7 @@ test("29.2-T1: Given best-efforts mode and three locks executed after 5:00 p.m. 
   assert.equal(seven.residual_shocks["25"], -1_500_000n, "+25 bp on $1,500,000 uncommitted at duration 4.0 → −$15,000");
   assert.equal(seven.residual_shocks["100"], -6_000_000n); assert.equal(seven.residual_shocks["-25"], 1_500_000n);
   assert.equal(uncommittedExposureCents(150_000_000n, 25, "4.0"), -1_500_000n);
-  // The three uncommitted locks each carry an SM_UNCOMMITTED_POSITION_5BD clock (Oct 14); the snapshot satisfied the 07:00 daily row and re-armed it for Oct 9.
+  // The three uncommitted locks each carry an SM_UNCOMMITTED_POSITION_5BD clock (Thu Oct 15 — five fannie_sifma business days across Columbus Day); the snapshot satisfied the 07:00 daily row and re-armed it for Oct 9.
   assert.equal(h.armed("SM_UNCOMMITTED_POSITION_5BD").length, 3);
   assert.equal(h.emitted("timer.satisfied").filter((e) => e.payload.code === "SM_PIPELINE_POSITION_DAILY_0700ET").length, 1);
   assert.deepEqual(h.armed("SM_PIPELINE_POSITION_DAILY_0700ET").map((t) => t.dueDate), ["2026-10-09"]);
@@ -228,21 +228,29 @@ test("29.2-T7: Given the Nov 2 position, when the rate-shock report runs, then t
   assert.equal(h.emitted("rate_shock.report.published").length, 1); assert.deepEqual(h.emitted("rate_shock.report.published")[0]!.payload.limits_breached, []);
   assert.equal(h.armed("SM_RATE_SHOCK_REPORT_DAILY").map((t) => t.dueDate).join(","), "2026-11-03");
 });
-test("29.2-T8: Given a Fannie Mae mandatory commitment of $4,000,000 at 101.250 expiring Mon Dec 7, 2026 with $3,600,000 expected deliverable and a live price of 102.250 on Fri Dec 4, then the package prices a $300,000 partial pair-off at `fee_cents = 300,000` and a 10-day extension of $400,000 at `fee_cents = 62,500`, recommends the extension when both late loans are at stage `cd_delivered`, and requires an `officer` decision before 5:00 p.m. ET Dec 7; with a live price of 100.250 the pair-off row shows `cash_back_cents = 300,000`.", async () => {
-  // Worked example 3: tolerance max($10,000, 2.5% × $4,000,000) = $100,000 → the $400,000 shortfall pairs off $300,000 and leaves $100,000 inside the tolerance.
+test("29.2-T8: Given a Fannie Mae mandatory commitment of $4,000,000 at 101.250 expiring Mon Dec 7, 2026 with $3,600,000 expected deliverable and a live price of 102.250 on Fri Dec 4, then the package prices a $400,000 pair-off at `fee_cents = 400,000` (a $300,000 pair-off that would leave $100,000 \"inside the tolerance\" is refused) and, as the alternative, a 10-day extension of the $400,000 at `fee_cents = 62,500`, recommends the extension when both late loans are at stage `cd_delivered`, and requires an `officer` decision before 5:00 p.m. ET Dec 7; with a live price of 100.250 the pair-off row shows `cash_back_cents = 400,000`.", async () => {
+  // Worked example 3: tolerance max($10,000, 2.5% × $4,000,000) = $100,000 — but a pair-off is measured from the original commitment amount (C2-1.1-02) and, once requested, the minimum delivery becomes the revised amount − $50 (C2-2-01): the whole $400,000 undelivered is paired off and nothing is left "inside the tolerance".
   assert.equal(mandatoryTolerance(400_000_000n).tolerance_cents, 10_000_000n);
   const base = { commitment_id: "c-mand-1", original_amount_cents: 400_000_000n, commitment_price: "101.250", expires_on: D("2026-12-07"), expected_deliverable_cents: 360_000_000n, late_balance_cents: 40_000_000n, extension_days: 10, min_ptr: "5.625", as_of: ET("2026-12-04", "09:00") };
   const d = commitmentPairOffOrExtend({ ...base, live_price: "102.250", late_loan_stages: ["cd_delivered", "cd_delivered"] });
-  assert.equal(d.pair_off.amount_cents, 30_000_000n); assert.equal(d.pair_off.fee_cents, 300_000n, "$300,000 × (102.250 − 101.250)/100 = $3,000.00"); assert.equal(d.pair_off.cash_back_cents, 0n); assert.equal(d.pair_off.remaining_undelivered_cents, 10_000_000n); assert.equal(d.pair_off.inside_tolerance, true);
+  assert.equal(d.pair_off.amount_cents, 40_000_000n); assert.equal(d.pair_off.fee_cents, 400_000n, "$400,000 × (102.250 − 101.250)/100 = $4,000.00"); assert.equal(d.pair_off.cash_back_cents, 0n); assert.equal(d.pair_off.undelivered_cents, 40_000_000n); assert.equal(d.pair_off.remaining_undelivered_cents, 0n);
+  assert.equal(d.pair_off.revised_commitment_cents, 360_000_000n); assert.equal(d.pair_off.post_pair_off_minimum_cents, 359_995_000n); assert.equal(d.pair_off.meets_post_pair_off_minimum, true); assert.equal(d.pair_off.extension_remainder_cents, 0n); assert.equal(d.pair_off.tolerance_low_cents, 390_000_000n);
   assert.equal(d.extension.fee_cents, 62_500n, "$400,000 × 0.05625/360 × 10 = $625.00"); assert.equal(d.extension.amount_cents, 40_000_000n); assert.equal(d.extension.days, 10);
   assert.equal(d.recommendation, "extension"); assert.equal(d.officer_decision_required, true); assert.equal(d.decide_by, ET("2026-12-07", "17:00"));
+  // a $300,000 pair-off that would leave $100,000 "inside the tolerance" is refused: the post-pair-off minimum would be $3,700,000 − $50 = $3,699,950 against $3,600,000 deliverable (C2-2-01)
+  assert.throws(() => commitmentPairOffOrExtend({ ...base, live_price: "102.250", late_loan_stages: ["cd_delivered", "cd_delivered"], requested_pair_off_cents: 30_000_000n }), (e: unknown) => e instanceof PipelineRefused && e.code === "FNMA_C2_2_01_POST_PAIR_OFF_MINIMUM" && /\$3,699,950\.00/.test(e.message) && /\$100,000\.00 with it/.test(e.message));
+  // … unless the other $100,000 is extended with it (C2-1.1-04: the sum of the extended and paired-off amounts equals the total remaining amount); a mismatched sum is refused
+  const combo = commitmentPairOffOrExtend({ ...base, live_price: "102.250", late_loan_stages: ["cd_delivered", "cd_delivered"], requested_pair_off_cents: 30_000_000n, extension_remainder_cents: 10_000_000n });
+  assert.equal(combo.pair_off.amount_cents, 30_000_000n); assert.equal(combo.pair_off.extension_remainder_cents, 10_000_000n); assert.equal(combo.pair_off.remaining_undelivered_cents, 0n); assert.equal(combo.pair_off.fee_cents, 300_000n); assert.equal(combo.pair_off.meets_post_pair_off_minimum, true);
+  assert.throws(() => commitmentPairOffOrExtend({ ...base, live_price: "102.250", late_loan_stages: ["ctc"], requested_pair_off_cents: 30_000_000n, extension_remainder_cents: 5_000_000n }), (e: unknown) => e instanceof PipelineRefused && e.code === "FNMA_C2_1_1_04_PAIR_OFF_EXTENSION_SUM");
   assert.equal(commitmentPairOffOrExtend({ ...base, live_price: "102.250", late_loan_stages: ["ctc", "cd_delivered"] }).recommendation, "pair_off");
   const up = commitmentPairOffOrExtend({ ...base, live_price: "100.250", late_loan_stages: ["ctc", "ctc"] });
-  assert.equal(up.pair_off.cash_back_cents, 300_000n, "rates rose 25 bp: cash back $3,000.00 (C2-1.1-04)"); assert.equal(up.pair_off.fee_cents, 0n); assert.equal(up.recommendation, "pair_off");
-  // The service opens the officer decision (the fnma_portal_operator executes in PE–WL through 29.1) before 5:00 p.m. ET on the expiration date.
+  assert.equal(up.pair_off.amount_cents, 40_000_000n); assert.equal(up.pair_off.cash_back_cents, 400_000n, "rates rose 25 bp: cash back $4,000.00 (C2-1.1-04)"); assert.equal(up.pair_off.fee_cents, 0n); assert.equal(up.recommendation, "pair_off");
+  // The service opens the officer decision (the fnma_portal_operator executes in PE–WL through 29.1) before the 5:00 p.m. ET pair-off cutoff on the expiration date.
   const h = mandatoryHarness(); h.clock.set(ET("2026-12-04", "09:00"));
   const pkg = h.svc.prepareCommitmentDecision({ ...base, live_price: "102.250", late_loan_stages: ["cd_delivered", "cd_delivered"] });
   const esc = h.escalations.list().find((e) => e.id === pkg.escalation_id)!; assert.equal(esc.kind, "officer"); assert.equal(esc.payload.task, "officer_commitment_decision"); assert.equal(esc.payload.decide_by, ET("2026-12-07", "17:00")); assert.equal(esc.payload.recommendation, "extension");
+  assert.deepEqual(esc.payload.pair_off, { amount_cents: "40000000", fee_cents: "400000", cash_back_cents: "0" });
 });
 test("29.2-T9: Given the September cohort of 118 locks with 21 fallouts, when the monthly review runs on the 3rd business day of October (Mon Oct 5, 2026), then realized pull-through 82.2% is compared with the predicted 80.5%, no recalibration is proposed, and the fallout reasons are published to 21.4; given a cohort realized at 68% against 80.5%, a recalibration proposal opens an `officer` escalation and 31.2 review, and hedge ratios move to the conservative band edge until approved.", async () => {
   // The 3rd fannie_sifma business day of October 2026 is Mon Oct 5 (Oct 1, 2, 5).
@@ -287,10 +295,10 @@ test("29.2-T10: Given `execution.mandatory_enabled=false`, when any tool attempt
   assert.ok(mtm.gl_export_document_id.startsWith("gl-export-")); assert.equal(h.emitted("mtm.run.completed").length, 1); assert.ok(b.rt.store.get("mark_to_market_runs", mtm.run_id));
   assert.equal(hedgeProgramEligibility({ product_code: "30yr_fixed_conforming", flags: { "execution.mandatory_enabled": false }, policy: h.svc.policy(), as_of: D("2026-10-08") }).execution, "best_efforts");
 });
-test("29.2-T11: Given a lock executed Wed Oct 7, 2026 that remains uncommitted (PE–WL outage), then `SM_UNCOMMITTED_POSITION_5BD` is due Wed Oct 14, 2026 (Oct 8, 9, 13, 14 — Mon Oct 12 Columbus Day is a SIFMA close) and breaches sev 2 to the `officer` if still uncommitted.", async () => {
-  // +5 fannie_sifma business days from Wed Oct 7 (Mon Oct 12 Columbus Day is a SIFMA close): Oct 8, 9, 13, 14, 15 → Thu Oct 15, 5:00 p.m. ET. The spec's "Wed Oct 14 (Oct 8, 9, 13, 14)" lists only four business days — the engine's calendar-correct fifth day is asserted (reported as a discrepancy).
+test("29.2-T11: Given a lock executed Wed Oct 7, 2026 that remains uncommitted (PE–WL outage), then `SM_UNCOMMITTED_POSITION_5BD` is due Thu Oct 15, 2026 (Oct 8, 9, 13, 14, 15 — Mon Oct 12 Columbus Day is a SIFMA close) and breaches sev 2 to the `officer` if still uncommitted.", async () => {
+  // +5 fannie_sifma business days from Wed Oct 7 (Mon Oct 12 Columbus Day is a SIFMA close): Oct 8 (1), Oct 9 (2), Oct 13 (3), Oct 14 (4), Oct 15 (5) → Thu Oct 15, 5:00 p.m. ET.
   assert.equal(uncommittedPositionDue(ET("2026-10-07", "12:19")).due_on, "2026-10-15"); assert.equal(uncommittedPositionDue(ET("2026-10-07", "12:19")).due_at, ET("2026-10-15", "17:00"));
-  assert.equal(uncommittedPositionDue(ET("2026-10-07", "12:19"), 4).due_on, "2026-10-14", "the spec's four listed days");
+  assert.equal(addBusinessDays(D("2026-10-07"), 5, fannieSifma), "2026-10-15"); assert.equal(fannieSifma.isBusinessDay(D("2026-10-12")), false);   // Columbus Day is a SIFMA close, not a business day
   const h = harness(ET("2026-10-07", "08:00"));
   h.lockExecuted({ lock_id: "L-fixture", locked_at: ET("2026-10-07", "12:19"), amount_cents: 56_000_000n });
   const t = h.armed("SM_UNCOMMITTED_POSITION_5BD"); assert.equal(t.length, 1); assert.equal(t[0]!.dueDate, "2026-10-15"); assert.equal(new Date(t[0]!.dueAt!).toISOString(), ET("2026-10-15", "17:00")); assert.equal(t[0]!.applicationId, APP);
@@ -349,7 +357,7 @@ test("29.2-T13: Given the partner's `hedge_policies.review_due_on = 2027-10-01` 
   assert.equal(h.svc.lock("L-after").hedge_program, true); assert.equal(h.svc.lock("L-after").state, "mandatory_pipeline");
 });
 
-test("29.2 worked figures: $2,240.00 / $5,040.00 / $7,280.00 IRLC components, $497.74 extension insurance, −$40,000.00 hedge mark, −$4,000.00 pair-off cost, $3,000.00 fee or cash back, $625.00 extension", () => {
+test("29.2 worked figures: $2,240.00 / $5,040.00 / $7,280.00 IRLC components, $497.74 extension insurance, −$40,000.00 hedge mark, −$4,000.00 pair-off cost, $4,000.00 fee or cash back, $625.00 extension", () => {
   // Worked example 1 (Oct 7 mark of the fixture loan): sale-price component $2,240.00, servicing component $5,040.00, IRLC fair value $7,280.00.
   const fv = irlcFairValue({ amount_cents: 56_000_000n, market_price: "101.375", lock_base_price: "100.875", probability: "0.80" });
   assert.equal(fv.irlc_sale_price_component_cents, 224_000n); assert.equal(fv.irlc_servicing_component_cents, 504_000n); assert.equal(fv.irlc_fv_cents, 728_000n);
@@ -366,11 +374,11 @@ test("29.2 worked figures: $2,240.00 / $5,040.00 / $7,280.00 IRLC components, $4
   // Worked example 2 rate-shock table: −100 bp hedge −$144,000, pipeline +$115,200, projected call $104,000; +100 bp under-hedge $800,000, net −$14,400.
   const rows = rateShockTable({ covered_amount_cents: 500_000_000n, expected_deliverable_cents: 360_000_000n, p_base: "0.80", hedge_face_cents: 360_000_000n, hedge_trade_price: "100.500", hedge_mark_price: "101.500", margin_posted_cents: 4_000_000n });
   assert.deepEqual([rows[0]!.hedge_value_cents, rows[0]!.pipeline_value_cents, rows[0]!.projected_margin_call_cents], [-14_400_000n, 11_520_000n, 10_400_000n]); assert.deepEqual([rows[6]!.under_hedge_cents, rows[6]!.net_value_cents], [80_000_000n, -1_440_000n]);
-  // Worked example 3 (Dec 4): tolerance $100,000; pair-off of $300,000 at 102.250 → fee $3,000.00; at 100.250 → cash back $3,000.00; 10-day extension of $400,000 at 5.625% → $625.00.
+  // Worked example 3 (Dec 4): tolerance $100,000, but the pair-off is the whole undelivered $400,000 (measured from the original amount, C2-1.1-02; post-pair-off minimum = revised − $50, C2-2-01): at 102.250 → fee $4,000.00; at 100.250 → cash back $4,000.00; 10-day extension of $400,000 at 5.625% → $625.00.
   assert.equal(mandatoryTolerance(400_000_000n).tolerance_cents, 10_000_000n);
   const d = commitmentPairOffOrExtend({ commitment_id: "c", original_amount_cents: 400_000_000n, commitment_price: "101.250", live_price: "102.250", expires_on: D("2026-12-07"), expected_deliverable_cents: 360_000_000n, late_balance_cents: 40_000_000n, late_loan_stages: ["cd_delivered", "cd_delivered"], extension_days: 10, min_ptr: "5.625", as_of: ET("2026-12-04", "09:00") });
-  assert.equal(d.pair_off.fee_cents, 300_000n); assert.equal(d.extension.fee_cents, 62_500n);
-  assert.equal(commitmentPairOffOrExtend({ commitment_id: "c", original_amount_cents: 400_000_000n, commitment_price: "101.250", live_price: "100.250", expires_on: D("2026-12-07"), expected_deliverable_cents: 360_000_000n, late_balance_cents: 40_000_000n, late_loan_stages: ["ctc"], extension_days: 10, min_ptr: "5.625", as_of: ET("2026-12-04", "09:00") }).pair_off.cash_back_cents, 300_000n);
+  assert.equal(d.pair_off.amount_cents, 40_000_000n); assert.equal(d.pair_off.fee_cents, 400_000n); assert.equal(d.pair_off.post_pair_off_minimum_cents, 359_995_000n); assert.equal(d.extension.fee_cents, 62_500n);
+  assert.equal(commitmentPairOffOrExtend({ commitment_id: "c", original_amount_cents: 400_000_000n, commitment_price: "101.250", live_price: "100.250", expires_on: D("2026-12-07"), expected_deliverable_cents: 360_000_000n, late_balance_cents: 40_000_000n, late_loan_stages: ["ctc"], extension_days: 10, min_ptr: "5.625", as_of: ET("2026-12-04", "09:00") }).pair_off.cash_back_cents, 400_000n);
   // Rule 3: the duration factor from paired price moves (whole loan +1.000 against TBA +1.000 → 1.0000; +0.900 against +1.000 → 0.9000).
   assert.equal(estimateDurationFactor([{ whole_loan_price: "101.250", hedge_price: "100.500" }, { whole_loan_price: "102.250", hedge_price: "101.500" }]).duration_factor, "1.0000");
   assert.equal(estimateDurationFactor([{ whole_loan_price: "101.250", hedge_price: "100.500" }, { whole_loan_price: "102.150", hedge_price: "101.500" }]).duration_factor, "0.9000");

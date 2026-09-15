@@ -663,14 +663,15 @@ export class DeliveryService {
     const event = this.emit(r, "wire.instruction.approved", { wire_instruction_id: w.wire_instruction_id, payee_code: w.payee_code, bailee_letter_name: i.entered_letter_name, receiver_type: w.receiver_type, letter_type: w.letter_type, status: "active", approved_by_operator_id: i.operator_id }, at);
     return { check, wire: next, event };
   }
-  /** C2-2-07: Form 482 (partner `officer` signs; dual approval with `funding_approver` on a beneficiary change) → three business days → payee code active. */
-  form482(i: { delivery_id: string; op: "submitted" | "activated"; wire_instruction_id: string; form_482_document_id?: string | null; signed_by_role?: string | null; beneficiary_changed?: boolean; funding_approver_approved?: boolean; at?: string }): DomainEvent {
+  /** C2-2-07: Form 482 (partner `officer` signs; dual approval with `funding_approver` on a beneficiary change). A change or deletion of an existing payee code → "Fannie Mae will make the requested change within three business days after receiving the valid and completed Form 482" → active (`FNMA_C2_2_07_PAYEE_CODE_CHANGE_3BD`); a new-code setup states no time frame — a prerequisite expectation only, no clock (29.4 discrepancy 7). */
+  form482(i: { delivery_id: string; op: "submitted" | "activated"; wire_instruction_id: string; purpose?: "new" | "change" | "delete"; form_482_document_id?: string | null; signed_by_role?: string | null; beneficiary_changed?: boolean; funding_approver_approved?: boolean; at?: string }): DomainEvent {
     const r = this.get(i.delivery_id); const at = i.at ?? this.now(); const w = this.wires.get(i.wire_instruction_id); if (!w) throw new RangeError(`no wire instruction ${i.wire_instruction_id}`);
     if (i.op === "submitted") {
       if (i.signed_by_role !== "officer") throw new DeliveryRefused("FORM_482_OFFICER_SIGNS", "C2-2-07 / 29.4 capacity: the partner's officer signs Forms 482/360", "Form 482 must be signed by the partner officer");
       if (i.beneficiary_changed && !i.funding_approver_approved) throw new DeliveryRefused("FORM_482_DUAL_APPROVAL", "29.4 wire fraud control: dual approval (officer + funding_approver) for any Form 482 that changes a beneficiary account", "funding_approver approval missing");
       this.wires.set(w.wire_instruction_id, { ...w, status: "pending", form_482_document_id: i.form_482_document_id ?? w.form_482_document_id, form_482_signed_by: "officer" });
-      return this.emit(r, "form_482.submitted", { wire_instruction_id: w.wire_instruction_id, payee_code: w.payee_code, form_482_document_id: i.form_482_document_id ?? null, submitted_on: etDate(at), active_expected_on: payeeCodeChangeDue(etDate(at), this.cal), account_details_transmitted: "never by e-mail" }, at);
+      const purpose = i.purpose ?? (w.status === "active" ? "change" : "new");   // an already-active code is being changed; a pending/inactive one is a new-code setup
+      return this.emit(r, "form_482.submitted", { wire_instruction_id: w.wire_instruction_id, payee_code: w.payee_code, purpose, form_482_document_id: i.form_482_document_id ?? null, submitted_on: etDate(at), active_expected_on: purpose === "new" ? null : payeeCodeChangeDue(etDate(at), this.cal), time_frame: purpose === "new" ? "C2-2-07 states no time frame for a new payee code — prerequisite expectation only" : "C2-2-07: within three business days after receiving the valid and completed Form 482", account_details_transmitted: "never by e-mail" }, at);
     }
     this.wires.set(w.wire_instruction_id, { ...w, status: "active", fnma_confirmation_call_at: at });
     return this.emit(r, "payee_code.activated", { wire_instruction_id: w.wire_instruction_id, payee_code: w.payee_code, activated_on: etDate(at) }, at);

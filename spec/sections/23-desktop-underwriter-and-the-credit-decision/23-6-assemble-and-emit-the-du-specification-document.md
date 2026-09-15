@@ -20,12 +20,12 @@
 
 **Conditionality** — the DU Map marks each data point required / optional / conditional, and a conditional one carries one of 85 condition statements verbatim (e.g. "Required when LoanPurposeType = Refinance"). `generated/conditionality.ts` keys them by statement. **[VERIFIED against the workbook; the statements are Fannie's words — see 23.5 for whether spec text may remain in tree.]**
 
-**Schema validity is necessary and nowhere near sufficient.** All of the following validate against the full chain: a dangling `xlink:to`, a duplicate `xlink:label`, an invented arcrole URI, duplicate `SequenceNumber`s, five borrowers, a deleted `RELATIONSHIPS` container, and a document with no `LOANS` and no `PARTY`. Each is a test in `corpus/src/__tests__/schema.test.ts`, so nobody later promotes `xmllint` to a gate. **[VERIFIED — the tests exist and pass.]**
+**Schema validity is necessary and nowhere near sufficient.** All of the following validate against the full chain: a dangling `xlink:to`, a duplicate `xlink:label`, an invented arcrole URI, duplicate `SequenceNumber`s, five borrowers, a deleted `RELATIONSHIPS` container, and a document with no `LOANS` and no `PARTY`. Each is a test in `src/infra/integrations/du-schema/schema.test.ts`, so nobody later promotes `xmllint` to a gate. **[VERIFIED — the tests exist and pass.]**
 
 **Discrepancies vs blueprint**: (1) 23.1's `mismo_version: "3.4-B324"` and `xml_document` names claimed an XML document that did not exist — this process makes the name true; `request_hash` becomes the SHA-256 of the emitted bytes. (2) 23.1's Integrations paragraph names "DU Spec request (MISMO 3.4 Build 324 with the DU extension data points)" — this process is that request; the transport stays in 23.1/23.7. (3) Rule 4 says a missing required point is a refusal, and the Trigger is every 23.1 submission; the runtime's 23.1 `buildDuRequest` (src/app/tools/section23-1.ts) assembles with `conditionality = report` instead, because the borrower flow does not yet collect every DU Map required point (the full TIN — `application_borrowers` keeps `tin_last4` — the current residence's basis, the subject's estate type: the section 32 amendments the hand-off's Phase 7 names), so a strict build would refuse every live application at the DU moment. The document is written with the point omitted, the gaps ride on the request (`document.gaps`), `du_documents.required_missing` and `du.document.emitted`, and 23.7's gate holds it (T5). The deviation ends when those amendments land and the runtime default becomes `refuse`.
 
 ### Operational prerequisites
-- `corpus/` vendored in tree (nine XSDs, eighteen samples, README naming provenance); `xmllint` on every runner.
+- `src/infra/integrations/du-schema/` vendored in tree (nine XSDs, eighteen samples, README naming provenance); `xmllint` on every runner.
 - `DU_SPEC_DIR` on the machine that regenerates the four workbook-derived tables (not on CI).
 - The MISMO EULA question (23.5) — blocks a production submission, not this build.
 
@@ -77,7 +77,7 @@ Jurisdiction overrides: none.
 #### Test cases and acceptance criteria
 | ID | Acceptance test |
 |---|---|
-| 23.6-T1 | Given each of the eighteen samples in `corpus/samples/`, when it is loaded into a 23.5 graph and re-emitted, then the emitted document validates against the vendored chain and matches the sample container-for-container and arc-for-arc after label normalization. |
+| 23.6-T1 | Given each of the eighteen samples in `src/infra/integrations/du-schema/samples/`, when it is loaded into a 23.5 graph and re-emitted, then the emitted document validates against the vendored chain and matches the sample container-for-container and arc-for-arc after label normalization. |
 | 23.6-T2 | Given sample DI-C09, when re-emitted, then the `RELATIONSHIPS` block carries exactly its arcs: the two two-owner assets each yield two `ASSET_IsAssociatedWith_ROLE` arcs, the two two-obligor liabilities each two `LIABILITY_IsAssociatedWith_ROLE` arcs, two `ASSET_IsAssociatedWith_LIABILITY` (each of those owned properties securing one of those liabilities), and one `CURRENT_INCOME_ITEM_IsAssociatedWith_EMPLOYER` per employed income item. |
 | 23.6-T3 | Given the refinance fixture (23.1-T1), when the document is emitted, then every container's children appear in `CHILD_ORDER` sequence, and moving any one child breaks schema validation. |
 | 23.6-T4 | Given a data point whose value is in the MISMO enumeration but not in `DU_ENUMERATIONS`, when emitted, then the emission is refused with `DU_ENUM_NOT_SUPPORTED` naming the XPath, and no `documents` row is written. |

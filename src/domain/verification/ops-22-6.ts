@@ -41,7 +41,7 @@ import { addBusinessDays, rollBack, creditor, federal, type Calendar } from "../
 import { wallClock } from "../../kernel/calendar/zoned.ts";
 import type { Actor, DomainEvent, EventStore } from "../../kernel/events/index.ts";
 import type { GateResult } from "../../app/evaluator-kit.ts";
-import { otherFinancedPctBps } from "./ops-22-4.ts";
+import { otherFinancedPctBps, otherFinancedReserves, type Occupancy as SubjectOccupancy } from "./ops-22-4.ts";
 import { FNMA_SELF_REPORT_ELEMENTS } from "../qc-audit/ops-18-5.ts";
 
 export const RULE_SET_VERSION = "22.6/2026-09-10";
@@ -497,17 +497,21 @@ export function discoverReo(events: EventStore, i: { application_id: string; bor
 }
 export interface PitiaComponents { readonly pi_cents: bigint; readonly taxes_cents: bigint; readonly insurance_cents: bigint; readonly hoa_cents?: bigint; }
 export const pitiaCents = (c: PitiaComponents): bigint => c.pi_cents + c.taxes_cents + c.insurance_cents + (c.hoa_cents ?? 0n);
-export interface ResolveReoInput { readonly resolution: "added_to_reo" | "not_borrower"; readonly evidence_document_ids: readonly string[]; readonly property?: { address: string; upb_cents: bigint; pitia: PitiaComponents; rental: boolean } | null; readonly financed_property_count_before: number; readonly at: string; readonly repeat_pattern?: boolean; }
-/** Added to the REO schedule → 22.5 adds the PITIA, 23.2 recounts financed properties, 22.4 adds the B3-4.1-01 percentage of the other UPB to reserves, 23.1 resubmits; documented as not the borrower's (deed shows a same-name relative) → contingent-liability rules. */
+export interface ResolveReoInput { readonly resolution: "added_to_reo" | "not_borrower"; readonly evidence_document_ids: readonly string[]; readonly property?: { address: string; upb_cents: bigint; pitia: PitiaComponents; rental: boolean } | null; readonly financed_property_count_before: number; readonly at: string; readonly repeat_pattern?: boolean;
+  /** The subject loan's occupancy: the B3-4.1-01 other-financed-property reserve applies only to a second-home/investment subject (default principal residence — the refinance fixture). */
+  readonly subject_occupancy?: SubjectOccupancy | "primary" | null; }
+/** Added to the REO schedule → 22.5 adds the PITIA, 23.2 recounts financed properties, 22.4 recomputes reserves (the B3-4.1-01 percentage of the other UPB only when the subject is a second home or investment property — 0 on the principal-residence fixture), 23.1 resubmits; documented as not the borrower's (deed shows a same-name relative) → contingent-liability rules. */
 export function resolveReoDiscrepancy(events: EventStore, check: ReoCheck, i: ResolveReoInput, actor: Actor = AGENT): { check: ReoCheck; event: DomainEvent; handoffs: Record<string, unknown>; misstatement: "unintentional" | "pattern_repeats" | null } {
   if (check.status !== "discrepancy_open") throw new RangeError(`REO check ${check.check_id} is ${check.status}, not discrepancy_open`);
   if (!i.evidence_document_ids.length) throw new ScreeningRefused("REO_RESOLUTION_NEEDS_EVIDENCE", "22.6 R8", "borrower explanation and documents (deed, statement, lease) are required");
   if (i.resolution === "added_to_reo") {
     if (!i.property) throw new RangeError("property (address, upb_cents, pitia) is required to add it to the REO schedule");
-    const pitia = pitiaCents(i.property.pitia); const count = i.financed_property_count_before + 1; const bps = otherFinancedPctBps(count); const reserves_add_on = (i.property.upb_cents * BigInt(bps)) / 10_000n;
-    const handoffs = { "22.5": { liability_type: "mortgage", qualifying_payment_cents: pitia, payment_basis: "mortgage_pitia", rental_income_rule: i.property.rental ? "B3-3.8 (grandfathered structure for applications before the effective date)" : null }, "23.2": { financed_property_count: count }, "22.4": { other_financed_upb_cents: i.property.upb_cents, pct_bps: bps, reserves_add_on_cents: reserves_add_on }, "23.1": { du_resubmission_required: true } };
+    const pitia = pitiaCents(i.property.pitia); const count = i.financed_property_count_before + 1; const tier_bps = otherFinancedPctBps(count);
+    const subject_occupancy: SubjectOccupancy = i.subject_occupancy === "second_home" || i.subject_occupancy === "investment" ? i.subject_occupancy : "principal_residence";
+    const ofr = otherFinancedReserves({ occupancy: subject_occupancy, financed_property_count: count, other_financed_upb_cents: i.property.upb_cents }); const bps = ofr.pct_bps; const reserves_add_on = ofr.cents;
+    const handoffs = { "22.5": { liability_type: "mortgage", qualifying_payment_cents: pitia, payment_basis: "mortgage_pitia", rental_income_rule: i.property.rental ? "B3-3.8 (grandfathered structure for applications before the effective date)" : null }, "23.2": { financed_property_count: count }, "22.4": { other_financed_upb_cents: i.property.upb_cents, subject_occupancy, applies: ofr.applies, tier_bps, pct_bps: bps, reserves_add_on_cents: reserves_add_on, reason: ofr.reason }, "23.1": { du_resubmission_required: true } };
     const next: ReoCheck = { ...check, status: "resolved_added_to_reo", evidence_document_ids: i.evidence_document_ids, resolved_at: i.at };
-    const event = emit(events, check.application_id, "reo.discrepancy.resolved", { check_id: check.check_id, borrower_id: check.borrower_id, status: "resolved_added_to_reo", property: i.property.address, upb_cents: String(i.property.upb_cents), pitia_cents: String(pitia), financed_property_count: count, reserves_pct_bps: bps, reserves_add_on_cents: String(reserves_add_on), du_resubmission_required: true, evidence_document_ids: i.evidence_document_ids, misstatement: i.repeat_pattern ? "pattern_repeats" : "unintentional" }, i.at, actor);
+    const event = emit(events, check.application_id, "reo.discrepancy.resolved", { check_id: check.check_id, borrower_id: check.borrower_id, status: "resolved_added_to_reo", property: i.property.address, upb_cents: String(i.property.upb_cents), pitia_cents: String(pitia), financed_property_count: count, subject_occupancy, reserves_pct_bps: bps, reserves_add_on_cents: String(reserves_add_on), du_resubmission_required: true, evidence_document_ids: i.evidence_document_ids, misstatement: i.repeat_pattern ? "pattern_repeats" : "unintentional" }, i.at, actor);
     return { check: next, event, handoffs, misstatement: i.repeat_pattern ? "pattern_repeats" : "unintentional" };
   }
   const next: ReoCheck = { ...check, status: "resolved_not_borrower", evidence_document_ids: i.evidence_document_ids, resolved_at: i.at };

@@ -41,7 +41,7 @@ import { Decimal } from "../../kernel/money/decimal.ts";
 import type { Actor, Clock, DomainEvent, EventStore } from "../../kernel/events/index.ts";
 import type { Breach } from "../../kernel/timers/engine.ts";
 import { EscalationService } from "../../app/escalations.ts";
-import { ET, SECONDARY_AGENT, bestEffortsExtensionFee, etDate, etInstant, fannieSifma, isSifmaEarlyClose, mandatoryExtensionFee, mandatoryPairOff, mandatoryTolerance } from "./ops-29-1.ts";
+import { ET, SECONDARY_AGENT, bestEffortsExtensionFee, etDate, etInstant, fannieSifma, isSifmaEarlyClose, mandatoryExtensionFee, mandatoryPairOff, mandatoryTolerance, pairOffSizing, postPairOffMinimum } from "./ops-29-1.ts";
 
 export { ET, SECONDARY_AGENT, fannieSifma };
 export const RULE_SET_VERSION_29_2 = "fnma.selling.2026-09-02+fnma.pewl.2025-02+finra.4210.2024-05-22+sifma.upm.ch7+sm.hedge_policy.v1";
@@ -256,22 +256,26 @@ export const uncommittedExposureCents = (lockedUncommittedCents: Cents, shockBps
 export const pairOffRiskCents = (rows: readonly { amount_cents: Cents; commitment_price: string; market_price: string }[]): Cents => rows.reduce((s, r) => s + mandatoryPairOff(r.amount_cents, r.commitment_price, r.market_price).fee_cents, 0n);
 /** Worked example 1: the 5-day extension quote recommended as insurance on a commitment whose closing sits inside its expiry only because of a rolled holiday — $610,000 × 5.875%/360 × 5 = $497.74 (29.1 rule 10 arithmetic). */
 export function extensionInsuranceQuote(maxAmountCents: Cents, maxPtrPct: string, days: number): { days: number; fee_cents: Cents; per_diem_cents: string } { const r = bestEffortsExtensionFee(maxAmountCents, maxPtrPct, days); return { days, fee_cents: r.fee_cents, per_diem_cents: r.per_diem_cents }; }
-/** Rule 11: the daily mandatory-commitment decision — a partial pair-off (29.1 rule 12) against a short extension of the late balance (per diem on the lowest PTR). */
-export interface CommitmentDecisionInput { readonly commitment_id: string; readonly original_amount_cents: Cents; readonly commitment_price: string; readonly live_price: string; readonly expires_on: PlainDate; readonly expected_deliverable_cents: Cents; readonly late_balance_cents: Cents; readonly late_loan_stages: readonly PipelineStage[]; readonly extension_days: number; readonly min_ptr: string; readonly as_of: string; }
-export interface CommitmentDecision { readonly pair_off: { amount_cents: Cents; fee_cents: Cents; cash_back_cents: Cents; remaining_undelivered_cents: Cents; inside_tolerance: boolean }; readonly extension: { days: number; amount_cents: Cents; fee_cents: Cents; per_diem_cents: string; new_expires_on: PlainDate }; readonly recommendation: "extension" | "pair_off"; readonly decide_by: string; readonly officer_decision_required: true; readonly rationale: string; }
+/** Rule 11: the daily mandatory-commitment decision — a pair-off of the whole undelivered amount (29.1 rule 12: measured from the original commitment amount, C2-1.1-02; once requested, the minimum delivery is the revised commitment − $50, C2-2-01, so nothing can be left "inside the tolerance") against a short extension of the late balance (per diem on the lowest PTR); a smaller pair-off is allowed only with an extension of the rest requested with it, the two summing to the total remaining amount (C2-1.1-04). */
+export interface CommitmentDecisionInput { readonly commitment_id: string; readonly original_amount_cents: Cents; readonly commitment_price: string; readonly live_price: string; readonly expires_on: PlainDate; readonly expected_deliverable_cents: Cents; readonly late_balance_cents: Cents; readonly late_loan_stages: readonly PipelineStage[]; readonly extension_days: number; readonly min_ptr: string; readonly as_of: string; readonly requested_pair_off_cents?: Cents | null; readonly extension_remainder_cents?: Cents; }
+export interface CommitmentDecision { readonly pair_off: { amount_cents: Cents; fee_cents: Cents; cash_back_cents: Cents; undelivered_cents: Cents; remaining_undelivered_cents: Cents; extension_remainder_cents: Cents; revised_commitment_cents: Cents; post_pair_off_minimum_cents: Cents; tolerance_low_cents: Cents; meets_post_pair_off_minimum: boolean }; readonly extension: { days: number; amount_cents: Cents; fee_cents: Cents; per_diem_cents: string; new_expires_on: PlainDate }; readonly recommendation: "extension" | "pair_off"; readonly decide_by: string; readonly officer_decision_required: true; readonly rationale: string; }
 export function commitmentPairOffOrExtend(i: CommitmentDecisionInput): CommitmentDecision {
   const tol = mandatoryTolerance(i.original_amount_cents);
-  const shortfall = i.original_amount_cents - i.expected_deliverable_cents;
-  const pairOffAmount = shortfall > tol.tolerance_cents ? shortfall - tol.tolerance_cents : 0n;
+  const shortfall = i.original_amount_cents - i.expected_deliverable_cents;   // the undelivered amount, measured from the original commitment amount (C2-1.1-02) — not from the low tolerance
+  const sizing = shortfall > 0n ? pairOffSizing({ original_amount_cents: i.original_amount_cents, purchased_cents: i.expected_deliverable_cents, paired_off_cents: 0n, requested_cents: i.requested_pair_off_cents ?? null, ...(i.extension_remainder_cents !== undefined ? { extension_remainder_cents: i.extension_remainder_cents } : {}) }) : null;
+  if (sizing && !sizing.allowed) throw new PipelineRefused(sizing.rule === "C2-1.1-04" ? "FNMA_C2_1_1_04_PAIR_OFF_EXTENSION_SUM" : "FNMA_C2_2_01_POST_PAIR_OFF_MINIMUM", sizing.reason ?? "pair-off sizing refused");
+  const pairOffAmount = sizing ? sizing.amount_cents : 0n; const extRemainder = sizing ? sizing.extension_remainder_cents : 0n;
+  const post = postPairOffMinimum(i.original_amount_cents, pairOffAmount);
   const po = pairOffAmount > 0n ? mandatoryPairOff(pairOffAmount, i.commitment_price, i.live_price) : { fee_cents: 0n, cash_back_cents: 0n };
   const ext = mandatoryExtensionFee(i.late_balance_cents, i.min_ptr, i.extension_days);
   const allLate = i.late_loan_stages.length > 0 && i.late_loan_stages.every((s) => s === "cd_delivered" || s === "consummated" || s === "funded");
   const recommendation: CommitmentDecision["recommendation"] = allLate ? "extension" : "pair_off";
   const decideOn = addBusinessDays(i.expires_on, -1, fannieSifma) < plainDate(etDate(i.as_of)) ? i.expires_on : i.expires_on;
-  return { pair_off: { amount_cents: pairOffAmount, fee_cents: po.fee_cents, cash_back_cents: po.cash_back_cents, remaining_undelivered_cents: shortfall - pairOffAmount, inside_tolerance: shortfall - pairOffAmount <= tol.tolerance_cents },
+  const undelivered = shortfall > 0n ? shortfall : 0n;
+  return { pair_off: { amount_cents: pairOffAmount, fee_cents: po.fee_cents, cash_back_cents: po.cash_back_cents, undelivered_cents: undelivered, remaining_undelivered_cents: undelivered - pairOffAmount - extRemainder, extension_remainder_cents: extRemainder, revised_commitment_cents: post.revised_commitment_cents, post_pair_off_minimum_cents: post.minimum_delivery_cents, tolerance_low_cents: tol.tolerance_low_cents, meets_post_pair_off_minimum: sizing ? sizing.allowed : i.expected_deliverable_cents >= tol.tolerance_low_cents },
     extension: { days: i.extension_days, amount_cents: i.late_balance_cents, fee_cents: ext.fee_cents, per_diem_cents: ext.per_diem_cents, new_expires_on: addBusinessDays(addDays(i.expires_on, i.extension_days), 0, fannieSifma) },
     recommendation, decide_by: etInstant(decideOn, isSifmaEarlyClose(decideOn) ? "14:00" : "17:00"), officer_decision_required: true,
-    rationale: allLate ? `late loans at stage ${[...new Set(i.late_loan_stages)].join("/")} (p ≥ 0.97): extend ${i.extension_days} days for ${formatCents(ext.fee_cents, { symbol: true })} rather than pair off for ${formatCents(po.fee_cents, { symbol: true })}` : `late loans not yet at cd_delivered: pair off ${dollars(pairOffAmount)} (${po.cash_back_cents > 0n ? `cash back ${formatCents(po.cash_back_cents, { symbol: true })}` : `fee ${formatCents(po.fee_cents, { symbol: true })}`})` };
+    rationale: allLate ? `late loans at stage ${[...new Set(i.late_loan_stages)].join("/")} (p ≥ 0.97): extend ${i.extension_days} days for ${formatCents(ext.fee_cents, { symbol: true })} rather than pair off the whole undelivered ${dollars(pairOffAmount)} for ${formatCents(po.fee_cents, { symbol: true })}` : `late loans not yet at cd_delivered: pair off the whole undelivered ${dollars(pairOffAmount)} (${po.cash_back_cents > 0n ? `cash back ${formatCents(po.cash_back_cents, { symbol: true })}` : `fee ${formatCents(po.fee_cents, { symbol: true })}`}; measured from the original amount, C2-1.1-02 — the post-pair-off minimum ${formatCents(post.minimum_delivery_cents, { symbol: true })} leaves nothing inside the tolerance, C2-2-01)` };
 }
 
 // ============================================================ Rule 7: rate shock; rule 8: liquidity
@@ -350,7 +354,7 @@ export function hedgeProgramEligibility(i: EligibilityInput): { eligible: boolea
 export function priceMoveTrigger(lastPrice: string, currentPrice: string, thresholdBps: number = PRICE_MOVE_THRESHOLD_BPS): { move_bps: string; triggered: boolean } {
   const move = dec(currentPrice).sub(dec(lastPrice)).mul(HUNDRED); return { move_bps: move.toFixed(1, "HALF_UP"), triggered: move.abs().cmp(dec(thresholdBps)) >= 0 };
 }
-/** `SM_UNCOMMITTED_POSITION_5BD`: +5 `business_days_fannie_et` from the lock's ET date, 5:00 p.m. ET (Wed Oct 7 → Wed Oct 14, 2026 across Columbus Day). */
+/** `SM_UNCOMMITTED_POSITION_5BD`: +5 `business_days_fannie_et` from the lock's ET date, 5:00 p.m. ET (Wed Oct 7 → Thu Oct 15, 2026: Oct 8, 9, 13, 14, 15 across Columbus Day Mon Oct 12, a SIFMA close). */
 export function uncommittedPositionDue(lockedAtIso: string, days: number = DEFAULT_HEDGE_POLICY.max_uncommitted_days, cal: Calendar = fannieSifma): { due_on: PlainDate; due_at: string } { const d = addBusinessDays(plainDate(etDate(lockedAtIso)), days, cal); return { due_on: d, due_at: etInstant(d, "17:00") }; }
 
 // ============================================================ Gate facts for the evaluator (SM_HEDGE_COVERAGE_BAND_GATE)

@@ -21,7 +21,7 @@ import type { UowContext } from "../../infra/db/unit-of-work.ts";
 import type { DecisionInput } from "../../infra/db/decisions.ts";
 import {
   FORMULAS, RegBViolation, IncomeRuleRefused, aduCap, assertUnderCalculatorCeiling, assessTrend, baseMonthly, baseSalary, bonusMonthly, businessVerificationWindow, calculateIncome, closeByGate, continuance3y, continuanceEndFromChildAge, evaluateContinuance, form4506cGate, form4506cValidUntil, grossUp, hourlyBase, hourlyClassification,
-  incomeCalculatorCeiling, offerOption2, offerStartWindow, orderTranscript, reassessCloseBy, recordCalculatorFindings, recordDuValidation, recordVvoe, regbCheck, selectOfferOption, signAuthorization, socialSecurity, subjectRental, supportIncome, totalQualifying, variableIncome, verifyBusinessExistence, vvoeAlternativeWindow, vvoeWindow, withinWindow,
+  incomeCalculatorCeiling, offerOption2, offerStartWindow, orderTranscript, reassessCloseBy, recordCalculatorFindings, recordDuValidation, recordVvoe, regbCheck, rentalRuleSet, returnsRequired, selectOfferOption, signAuthorization, socialSecurity, subjectRental, supportIncome, totalQualifying, variableIncome, vendorDataFloor, verifyBusinessExistence, vvoeAlternativeWindow, vvoeDeliveryEligibility, vvoeWindow, withinWindow,
 } from "./ops-22-3.ts";
 
 const AGENT: Actor = { kind: "agent", id: "verification" };
@@ -67,6 +67,18 @@ test("22.3-T1: (VVOE window, refinance) Given note date Fri Nov 6, 2026, when th
   assert.equal(withinWindow(vvoeWindow(D("2026-11-10")), D("2026-10-26")), false);
   // the employer's number never comes from a borrower-supplied document
   assert.throws(() => recordVvoe(h.events, { application_id: APP, borrower_id: B1, method: "verbal_human", employer_name: "Acme", phone_source: "borrower_paystub", contact_name: "Pat", contact_title: "HR", verifier_identity: "u-1", contacted_at: "2026-10-26", note_date: NOTE_DATE }), (e: unknown) => e instanceof IncomeRuleRefused && e.code === "VVOE_PHONE_SOURCE");
+  // B3-3.1-04 vendor note: a vendor_written verification must evidence vendor data no more than 35 days old as of the note date — Nov 6 → on/after Fri Oct 2, 2026; stale data is not within the window even when the pull is
+  assert.equal(vendorDataFloor(NOTE_DATE), "2026-10-02");
+  const vendorBase = { application_id: APP, borrower_id: B1, method: "vendor_written" as const, employer_name: "Acme Manufacturing", verifier_identity: "vendor:the-work-number", contacted_at: "2026-10-26T17:00:00.000Z", note_date: NOTE_DATE };
+  const stale = recordVvoe(h.events, { ...vendorBase, vendor_data_as_of: D("2026-09-30") }); assert.equal(stale.record.vendor_data_35d_ok, false); assert.equal(stale.record.within_window, false); assert.equal(stale.missed?.type, "vvoe.window.missed");
+  const freshVendor = recordVvoe(h.events, { ...vendorBase, vendor_data_as_of: D("2026-10-05") }); assert.equal(freshVendor.record.vendor_data_35d_ok, true); assert.equal(freshVendor.record.within_window, true); assert.equal(freshVendor.record.delivery_eligible, true);
+  assert.throws(() => recordVvoe(h.events, { ...vendorBase }), (e: unknown) => e instanceof IncomeRuleRefused && e.code === "VENDOR_DATA_AS_OF_REQUIRED");
+  // B3-3.1-04 post-closing alternative: obtained after closing up to delivery — delivery-eligible (29.x submitDelivery), never inside the consummation window (the SM overlay); without any timely or post-closing VVOE the loan is ineligible for sale
+  const post = recordVvoe(h.events, { application_id: APP, borrower_id: B1, method: "verbal_ai_voice", employer_name: "Acme Manufacturing", employer_phone: "602-555-0100", phone_source: "internet_listing", phone_source_evidence_document_id: "doc-listing-1", contact_name: "Pat HR", contact_title: "HR Manager", verifier_identity: "run-2", contacted_at: "2026-11-09T17:00:00.000Z", note_date: NOTE_DATE, post_closing: true, delivery_date: D("2026-11-20") });
+  assert.equal(post.record.post_closing, true); assert.equal(post.record.within_window, false); assert.equal(post.record.delivery_eligible, true); assert.equal(post.missed?.type, "vvoe.post_closing.recorded");
+  assert.deepEqual(vvoeDeliveryEligibility([early.record], D("2026-11-20")), { eligible: false, basis: null, reason: "B3-3.1-04: the verbal VOE (or allowable alternative) was not obtained prior to delivery — the loan is ineligible for sale to Fannie Mae" });
+  assert.equal(vvoeDeliveryEligibility([early.record, post.record], D("2026-11-20")).basis, "post_closing_before_delivery"); assert.equal(vvoeDeliveryEligibility([timely.record], D("2026-11-20")).basis, "within_window");
+  assert.equal(vvoeDeliveryEligibility([post.record], D("2026-11-08")).eligible, false);   // obtained after delivery
 });
 
 test("22.3-T2: (VVOE window across Veterans Day, purchase) Given closing Wed Nov 18, 2026, when computed, then `window_start = Tue Nov 3, 2026` (Nov 11 excluded) and the 15-business-day paystub alternative floor is Tue Oct 27, 2026.", () => {
@@ -127,11 +139,27 @@ test("22.3-T6: (hourly base) Given $32.50/hour and 40 guaranteed hours, when cal
   assert.equal(fixed.income_type, "base_hourly_fixed"); assert.equal(fixed.formula_version, FORMULAS.base_hourly_fixed); assert.equal(fixed.reclassified_to, null);
   assert.equal(hourlyClassification({ rate_cents: 3250n, hours_min: 28, hours_max: 44, guaranteed_hours_per_week: null }), "base_hourly_variable");
   const variable = hourlyBase({ rate_cents: 3250n, hours_min: 28, hours_max: 44, guaranteed_hours_per_week: null });
-  assert.equal(variable.reclassified_to, "base_hourly_variable"); assert.equal(variable.income_type, "base_hourly_variable"); assert.equal(variable.formula_version, FORMULAS.variable_trending); assert.equal(variable.reason, "reclassified_variable_hours");
-  // R3 applies to the reclassified source: trended on YTD vs prior-year earnings
+  assert.equal(variable.reclassified_to, "base_hourly_variable"); assert.equal(variable.income_type, "base_hourly_variable"); assert.equal(variable.formula_version, FORMULAS.variable_base_trending); assert.equal(variable.reason, "reclassified_variable_hours");
+  // R3 applies to the reclassified source under B3-3.3-01's variable-base table: stable/increasing → average of YTD and the previous year over ≥ 12 months
   const h = harness();
   const r = calculateIncome(h.events, { application_id: APP, borrower_id: B1, income_id: "inc-hourly", income_type: "base_hourly_variable", inputs: { ytd_cents: 855000n, ytd_months: 9, prior_year_cents: 1080000n, history_months: 24 } });
-  assert.equal(r.calculation.formula_version, FORMULAS.variable_trending); assert.equal(r.calculation.trend, "increasing"); assert.equal(r.calculation.monthly_qualifying_cents, 92143n);
+  assert.equal(r.calculation.formula_version, FORMULAS.variable_base_trending); assert.equal(r.calculation.trend, "increasing"); assert.equal(r.calculation.monthly_qualifying_cents, 92143n);
+  // a minimum 12-month history of variable income is required
+  assert.equal(variableIncome({ income_type: "base_hourly_variable", ytd_cents: 855000n, ytd_months: 9, prior_year_cents: 1080000n, history_months: 11 }).reason, "history_under_12_months");
+  // decreasing → confirm stabilization, then YTD ÷ months elapsed in the current year (B3-3.3-01) — 855,000 / 9 = 95,000; overtime under B3-3.3-02 keeps the since-stabilized formula (570,000 / 6 = 95,000)
+  const stab = { since: D("2026-04-01"), cents_since: 570000n, months_since: 6, evidence_document_ids: ["doc-paystubs-apr-sep"] };
+  const dec = variableIncome({ income_type: "base_hourly_variable", ytd_cents: 855000n, ytd_months: 9, prior_year_cents: 1440000n, history_months: 24, stabilization: stab });
+  assert.equal(dec.trend, "decreasing"); assert.equal(dec.stabilized_since, "2026-04-01"); assert.equal(dec.monthly_qualifying_cents, 95000n); assert.deepEqual(dec.steps.at(-1), { label: "round(ytd / 9 months elapsed in the current year)", cents: "95000" });
+  assert.equal(variableIncome({ income_type: "base_hourly_variable", ytd_cents: 900000n, ytd_months: 9, prior_year_cents: 1440000n, history_months: 24, stabilization: stab }).monthly_qualifying_cents, 100000n);   // 900,000 / 9, not 570,000 / 6
+  assert.equal(variableIncome({ income_type: "overtime", ytd_cents: 900000n, ytd_months: 9, prior_year_cents: 1440000n, history_months: 24, stabilization: stab }).monthly_qualifying_cents, 95000n);
+  assert.equal(variableIncome({ income_type: "base_hourly_variable", ytd_cents: 855000n, ytd_months: 9, prior_year_cents: 1440000n, history_months: 24, stabilization: null }).reason, "not_stabilized");
+  // Average Hours method: average monthly hours over ≥ 12 months × the current fixed hourly rate — 160.0 h × $32.50 = $5,200.00; 11 months of hours → unavailable
+  const avg = variableIncome({ income_type: "base_hourly_variable", ytd_cents: 855000n, ytd_months: 9, prior_year_cents: 1440000n, history_months: 24, average_hours: { avg_monthly_hours: 160, months_of_hours: 12, current_hourly_rate_cents: 3250n } });
+  assert.equal(avg.monthly_qualifying_cents, 520000n); assert.equal(avg.formula_version, FORMULAS.variable_base_average_hours); assert.equal(3250n * 160n, 520000n);
+  assert.equal(variableIncome({ income_type: "base_hourly_variable", ytd_cents: 855000n, ytd_months: 9, prior_year_cents: 1440000n, history_months: 24, average_hours: { avg_monthly_hours: 160, months_of_hours: 11, current_hourly_rate_cents: 3250n } }).reason, "history_under_12_months");
+  // pay raises for variable base income must be in place prior to closing
+  assert.throws(() => variableIncome({ income_type: "base_hourly_variable", ytd_cents: 855000n, ytd_months: 9, prior_year_cents: 1080000n, history_months: 24, pay_raise: { effective_date: D("2026-12-01"), closing_date: NOTE_DATE } }), (e: unknown) => e instanceof IncomeRuleRefused && e.code === "PAY_RAISE_NOT_IN_PLACE");
+  assert.equal(variableIncome({ income_type: "base_hourly_variable", ytd_cents: 855000n, ytd_months: 9, prior_year_cents: 1080000n, history_months: 24, pay_raise: { effective_date: D("2026-10-01"), closing_date: NOTE_DATE } }).monthly_qualifying_cents, 92143n);
 });
 
 test("22.3-T7: (Social Security gross-up) Given $2,000.00 SS retirement on the borrower's own record with no tax return, when calculated, then `nontaxable_cents = 30,000`, `gross_up_cents = 7,500`, qualifying 207,500 cents, `continuance_basis = retirement_own_record`.", () => {
@@ -186,6 +214,9 @@ test("22.3-T9: (rental 75% and experience) Given Form 1007 gross rent $2,400.00 
   const h = harness();
   const r = calculateIncome(h.events, { application_id: APP, borrower_id: B1, income_id: "inc-rent", income_type: "rental_subject", inputs: { gross_rent_cents: 240000n, pitia_cents: 165000n, transaction: "purchase", fair_rental_days: 365 } });
   assert.equal(r.calculation.monthly_qualifying_cents, 15000n); assert.equal(r.calculation.formula_version, FORMULAS.rental_subject);
+  // R5 rule-set switch: mandatory for applications on/after Nov 1, 2026 per Announcement SEL-2026-08 (not in the bundle; the Guide topics carry no effective-date sentence) — the Oct 5, 2026 refinance fixture is grandfathered, the platform applies B3-3.8 anyway (Q5)
+  const rs = rentalRuleSet(D("2026-10-05")); assert.equal(rs.mandatory, false); assert.equal(rs.rule_set, "B3-3.8.2026-09-02"); assert.equal(rs.mandatory_from, "2026-11-01"); assert.match(rs.source, /SEL-2026-08/); assert.match(rs.source, /not in the verification bundle/);
+  assert.equal(rentalRuleSet(D("2026-11-01")).mandatory, true);
 });
 
 test("22.3-T10: (ADU cap) Given total qualifying income 900,000 cents and ADU rent yielding 300,000 cents net, when applied, then ADU income is capped at 270,000 cents on a purchase/LCOR and excluded on a cash-out refinance.", () => {
@@ -288,6 +319,14 @@ test("22.3-T15: (Income Calculator ceiling) Given a calculator result of 812,500
   assert.equal(out.qualifying_cents, 812500n); assert.equal(h.rt.store.get("application_income", "inc-se")!.data.income_calculator_report_id, "IC-2026-000123");
   await refused(h.run("submitIncomeCalculator", { op: "override", income_id: "inc-se", qualifying_cents: "830000", calculator_result_cents: "812500", formula_version: FORMULAS.self_employment, rationale: "manual" }), "INCOME_CALCULATOR_CEILING");
   await refused(h.run("submitIncomeCalculator", { op: "override", income_id: "inc-se", qualifying_cents: "830000", calculator_result_cents: "812500", formula_version: FORMULAS.self_employment, rationale: "manual", bypass: true }), "INCOME_CALCULATOR_CEILING");
+  // B3-3.5-01 returns for the Schedule C borrower: (a) one year of personal AND business returns needs five years in existence per the 1003, ≥ 25% ownership for five consecutive years and a completed Form 1084; (b) with two years of personal returns the business returns are waived when personal funds cover the transaction, ≥ 5 years in the same business and increasing self-employment income
+  assert.deepEqual(returnsRequired({ business_years: 6, ownership_pct: 100, ownership_years: 6, form_1084_completed: true, income_increasing_two_years: false }), { years: 1, personal_return_years: 1, business_returns: "one_year", provision: "b3_3_5_01_one_year_personal_and_business", basis: "one year of personal and business returns: business in existence five years per the Form 1003, ≥ 25% ownership for the past five consecutive years, Form 1084 completed (B3-3.5-01)" });
+  assert.equal(returnsRequired({ business_years: 6, ownership_pct: 100, ownership_years: 4, form_1084_completed: true, income_increasing_two_years: false }).provision, "standard_two_years");   // ownership not five consecutive years
+  assert.equal(returnsRequired({ business_years: 6, ownership_pct: 100, income_increasing_two_years: true }).provision, "standard_two_years");   // increasing income alone is not the one-year provision
+  const waived = returnsRequired({ business_years: 6, ownership_pct: 100, income_increasing_two_years: true, personal_funds_cover_transaction: true, years_in_same_business: 6 });
+  assert.equal(waived.provision, "b3_3_5_01_business_returns_waived"); assert.equal(waived.personal_return_years, 2); assert.equal(waived.business_returns, "waived"); assert.equal(waived.years, 2);
+  assert.equal(returnsRequired({ business_years: 6, ownership_pct: 100, income_increasing_two_years: false, personal_funds_cover_transaction: true, years_in_same_business: 6 }).business_returns, "two_years");
+  assert.equal(returnsRequired({ business_years: 1, ownership_pct: 100, income_increasing_two_years: false, du_permits_one_year: true }).provision, "du_one_year");
 });
 
 test("22.3 worked figures: base $6,250.00, hourly $5,633.33, overtime $921.43 / $950.00, bonus $1,000.00, Social Security $2,075.00, child support $1,000.00, rental $350.00 / $150.00, ADU $2,700.00, total $9,246.43", () => {

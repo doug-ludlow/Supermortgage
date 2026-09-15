@@ -30,7 +30,7 @@ const TZ = "America/Phoenix";
 const PARTNER = "P-PARTNER";
 /** The refinance fixture: $560,000.00 LCOR, Phoenix AZ; two spouses on title, one borrower; existing loan originated in 2021 by another lender (subserviced by SM). */
 const CONSUMERS: RescissionConsumer[] = [{ consumer_id: "C-B", role: "borrower", ownership_interest: true, occupancy: "primary" }, { consumer_id: "C-S", role: "non_borrower_owner", ownership_interest: true, occupancy: "primary", ownership_basis: "spouse on title" }];
-const H8_INPUT: RescindabilityInput = { application_id: APP, transaction_type: "limited_cash_out", consumers: CONSUMERS, partner_id: PARTNER, existing_loan: { original_creditor_id: "L-OTHER-2021", upb_cents: 54_820_000n, earned_unpaid_finance_charge_cents: 210_055n, refinancing_costs_cents: 795_000n }, amount_financed_cents: 55_615_005n };
+const H8_INPUT: RescindabilityInput = { application_id: APP, transaction_type: "limited_cash_out", consumers: CONSUMERS, partner_id: PARTNER, existing_loan: { original_creditor_id: "L-OTHER-2021", upb_cents: 54_820_000n, earned_unpaid_finance_charge_cents: 210_055n, refinancing_costs_cents: 410_000n }, amount_financed_cents: 55_615_005n };
 const CONSUMMATION = "2026-11-06T17:30:00.000Z";   // 10:30 MST Fri Nov 6, 2026 (RON signing)
 const CREDITOR = { creditor_name: "Partner Bank, N.A.", designated_address: "100 Partner Plaza, Suite 400, Phoenix AZ 85004" };
 const signingNotices = (at = CONSUMMATION): NoticeDelivery[] => [{ consumer_id: "C-B", delivered_at: at, channel: "in_person", copies: 2, evidence_document_id: "DOC-RON-AUDIT-B" }, { consumer_id: "C-S", delivered_at: at, channel: "in_person", copies: 2, evidence_document_id: "DOC-RON-AUDIT-S" }];
@@ -62,7 +62,7 @@ function busFor(h: ReturnType<typeof harness>) {
 /** Run the fixture through the bus up to a started period (T1's Given). */
 async function startedOnBus(h: ReturnType<typeof harness>) {
   const b = busFor(h);
-  await b.run("determineRescindability", { application_id: APP, transaction_type: "limited_cash_out", consumers: CONSUMERS, partner_id: PARTNER, existing_loan: { original_creditor_id: "L-OTHER-2021", upb_cents: "54820000", earned_unpaid_finance_charge_cents: "210055", refinancing_costs_cents: "795000" }, amount_financed_cents: "55615005" });
+  await b.run("determineRescindability", { application_id: APP, transaction_type: "limited_cash_out", consumers: CONSUMERS, partner_id: PARTNER, existing_loan: { original_creditor_id: "L-OTHER-2021", upb_cents: "54820000", earned_unpaid_finance_charge_cents: "210055", refinancing_costs_cents: "410000" }, amount_financed_cents: "55615005" });
   const r = await b.run("computeRescissionPeriod", { application_id: APP, consummation_at: CONSUMMATION, time_zone: TZ, notice_deliveries: signingNotices(), material_disclosures: cdReceived("2026-11-02"), material_disclosures_accurate: true });
   return { ...b, period: r.output as RescissionPeriod & { handoff: ReturnType<typeof servicingHandoffFields> } };
 }
@@ -145,6 +145,7 @@ test("25.3-T3: Given consummation Wed Nov 25, 2026, then `expires_at = 2026-11-3
   // C2-2-01: first payment no later than two months after disbursement → Feb 1, 2027 at the latest; the platform sets Jan 1, 2027 with 31 days of per-diem interest (26.3 decides)
   const perDiem = perDiemInterestForDays(56_000_000n, "6.125", 31);
   assert.equal(perDiem.rounded_per_diem_cents, 9_397n);
+  assert.equal(perDiem.total_rounded_per_diem_cents, 291_307n);   // $2,913.07 = 31 × $93.97 (26.3 `365_rounded_per_diem`; the unrounded $2,913.15 is never on an artifact)
 });
 
 test("25.3-T4: Given consummation Mon Nov 9, 2026, then `expires_at = 2026-11-13T24:00` (Veterans Day excluded) and disbursement is scheduled Mon Nov 16 (weekend).", () => {
@@ -187,34 +188,54 @@ test("25.3-T5: Given the non-borrower spouse's copies delivered Mon Nov 9 (couri
   assert.equal(rescissionGate({ status: none.status, expires_at: null, reasonably_satisfied_at: null, waiver_id: null, now: "2026-12-01T00:00:00.000Z" }).open, false);
 });
 
-test("25.3-T6: Given a partner-originated existing loan with UPB $548,200.00, earned unpaid interest $2,100.55, refinancing costs $7,950.00 and amount financed $556,150.00, then `rescindable_amount_cents = -210055`, `applicability = exempt_same_creditor_no_new_money`, no notice is generated and `disburse` is not gated by rescission; given UPB $544,000.00, then `rescindable_amount_cents = 209945`, `form = h9`, and the H-9 states the increase of $2,099.45.", async () => {
-  const same: RescindabilityInput = { ...H8_INPUT, existing_loan: { original_creditor_id: PARTNER, upb_cents: 54_820_000n, earned_unpaid_finance_charge_cents: 210_055n, refinancing_costs_cents: 795_000n }, amount_financed_cents: 55_615_000n };
+test("25.3-T6: Given a partner-originated existing loan with UPB $548,200.00, earned unpaid interest $2,100.55, non-finance-charge refinancing costs $4,100.00 and amount financed $556,150.05, then `rescindable_amount_cents = 174950`, `applicability = rescindable_new_advance`, `form = h9`, the H-9 states the new advance of $1,749.50 and `disburse` is gated by `REGZ_1026_23_RESCISSION_3SBD_GATE`; given UPB $544,000.00, then `rescindable_amount_cents = 594950`, `form = h9`, and the H-9 states the increase of $5,949.50; given UPB $550,000.00, then `rescindable_amount_cents = -5050`, `applicability = exempt_same_creditor_no_new_money`, no notice is generated and `disburse` is not gated by rescission.", async () => {
+  // comment 23(f)-4: only the costs of the refinancing that are NOT finance charges ($4,100.00) are deducted — the $3,849.95 of prepaid finance charges is already out of the amount financed ($556,150.05 = $560,000.00 − $3,849.95) and is never deducted again
+  const same: RescindabilityInput = { ...H8_INPUT, existing_loan: { original_creditor_id: PARTNER, upb_cents: 54_820_000n, earned_unpaid_finance_charge_cents: 210_055n, refinancing_costs_cents: 410_000n }, amount_financed_cents: 55_615_005n };
   const r = determineRescindability(same);
-  assert.equal(r.original_creditor_match, true); assert.equal(r.rescindable_amount_cents, -210_055n); assert.equal(r.applicability, "exempt_same_creditor_no_new_money"); assert.equal(r.form, "none"); assert.equal(r.gated, false);
-  assert.throws(() => templateCodeFor(r.form), RangeError);   // no notice
-  const p = computeRescissionPeriod({ application_id: APP, rescindability: r, consummation_at: CONSUMMATION, time_zone: TZ, notice_deliveries: [], material_disclosures: [], material_disclosures_accurate: true });
-  assert.equal(p.status, "not_applicable"); assert.equal(p.expires_at, null);
-  assert.doesNotThrow(() => assertDisburseAllowed({ status: p.status, expires_at: null, reasonably_satisfied_at: null, waiver_id: null, now: "2026-11-06T18:00:00.000Z" }));
-  assert.deepEqual(disbursementHold(r, 55_615_000n), { held_cents: 0n, released_early_cents: 55_615_000n, basis: "not rescindable — no rescission hold" });
-  const h = harness("2026-11-06T17:35:00.000Z");
-  startPeriod(h.events, p);
-  assert.equal(h.timers.all().length, 0);   // no gate
-  // UPB $544,000.00 → new advance $2,099.45 → H-9 for the increase only
-  const h9 = determineRescindability({ ...same, existing_loan: { ...same.existing_loan!, upb_cents: 54_400_000n } });
-  assert.equal(h9.rescindable_amount_cents, 209_945n); assert.equal(h9.form, "h9"); assert.equal(h9.applicability, "rescindable_new_advance"); assert.equal(h9.gated, true);
-  const payload = rescissionNoticePayload({ form: "h9", consumer_id: "C-B", consumer_name: "Alex Borrower", transaction_date: D("2026-11-06"), expires_on: D("2026-11-10"), creditor: CREDITOR, rescindable_amount_cents: h9.rescindable_amount_cents, property_address: "1234 W Camelback Rd, Phoenix AZ 85015", copies: 2 });
-  assert.equal(payload.template_code, "NTC_REGZ_1026_23_H9"); assert.equal(payload.increase_cents, 209_945n);
+  assert.equal(r.original_creditor_match, true); assert.equal(r.rescindable_amount_cents, 174_950n); assert.equal(r.applicability, "rescindable_new_advance"); assert.equal(r.form, "h9"); assert.equal(r.gated, true); assert.match(r.rationale, /comment 23\(f\)-4/);
+  assert.equal(newAdvanceCents(55_615_005n, same.existing_loan!), 55_615_005n - (54_820_000n + 210_055n + 410_000n));   // 556,150.05 − (548,200.00 + 2,100.55 + 4,100.00) = 1,749.50
+  // the H-9 states the new advance of $1,749.50
   const reg = buildRegistry(); publishAuthored(reg);
   const v = reg.versionsOf("NTC_REGZ_1026_23_H9")[0]!;
+  const h9payload = (rescindable_amount_cents: bigint | null) => rescissionNoticePayload({ form: "h9", consumer_id: "C-B", consumer_name: "Alex Borrower", transaction_date: D("2026-11-06"), expires_on: D("2026-11-10"), creditor: CREDITOR, rescindable_amount_cents, property_address: "1234 W Camelback Rd, Phoenix AZ 85015", copies: 2 });
+  const payload = h9payload(r.rescindable_amount_cents);
+  assert.equal(payload.template_code, "NTC_REGZ_1026_23_H9"); assert.equal(payload.increase_cents, 174_950n);
   const rendered = render(v.source, payload);
-  assert.match(rendered.text, /The amount of the increase is \$2,099\.45/);
+  assert.match(rendered.text, /The amount of the increase is \$1,749\.50/);
   assert.match(rendered.text, /no later than midnight of November 10, 2026/);
   assert.equal(evaluateChecklist(v, payload, rendered).passed, true);
-  // the whole disbursement is still held (decision 25.3-Q3), and the agent may not split it
-  assert.equal(disbursementHold(h9, 55_615_000n).held_cents, 55_615_000n);
+  // `disburse` is gated by REGZ_1026_23_RESCISSION_3SBD_GATE: the three-business-day period runs and the ENTIRE disbursement waits for expiry (decision 25.3-Q3)
+  const p = computeRescissionPeriod({ application_id: APP, rescindability: r, consummation_at: CONSUMMATION, time_zone: TZ, notice_deliveries: signingNotices(), material_disclosures: cdReceived("2026-11-02"), material_disclosures_accurate: true });
+  assert.equal(p.status, "running"); assert.equal(p.expires_on, "2026-11-10");
+  assert.throws(() => assertDisburseAllowed({ status: p.status, expires_at: p.expires_at, reasonably_satisfied_at: null, waiver_id: null, now: "2026-11-09T18:00:00.000Z" }), (e: unknown) => e instanceof RescissionRefused && e.code === "REGZ_1026_23_RESCISSION_3SBD_GATE");
+  const hold = disbursementHold(r, 55_615_005n);
+  assert.equal(hold.held_cents, 55_615_005n); assert.equal(hold.released_early_cents, 0n); assert.match(hold.basis, /^H-9: only 174950 cents is rescindable but the whole disbursement is held/);
+  const h = harness("2026-11-06T17:35:00.000Z");
+  startPeriod(h.events, p);
+  assert.equal(h.timer("REGZ_1026_23_RESCISSION_3SBD_GATE")!.status, "armed");
+  // UPB $544,000.00 → the increase is $5,949.50 (H-9 for the increase only)
+  const h9 = determineRescindability({ ...same, existing_loan: { ...same.existing_loan!, upb_cents: 54_400_000n } });
+  assert.equal(h9.rescindable_amount_cents, 594_950n); assert.equal(h9.form, "h9"); assert.equal(h9.applicability, "rescindable_new_advance"); assert.equal(h9.gated, true);
+  assert.match(render(v.source, h9payload(h9.rescindable_amount_cents)).text, /The amount of the increase is \$5,949\.50/);
+  assert.equal(disbursementHold(h9, 55_615_005n).held_cents, 55_615_005n);
+  // UPB $550,000.00 → 556,150.05 − (550,000.00 + 2,100.55 + 4,100.00) = −$50.50 ≤ 0 → §1026.23(f)(2) exempt: no notice, no waiting period, no gate
+  const ex = determineRescindability({ ...same, existing_loan: { ...same.existing_loan!, upb_cents: 55_000_000n } });
+  assert.equal(ex.rescindable_amount_cents, -5_050n); assert.equal(ex.applicability, "exempt_same_creditor_no_new_money"); assert.equal(ex.form, "none"); assert.equal(ex.gated, false); assert.equal(ex.original_creditor_match, true);
+  assert.throws(() => templateCodeFor(ex.form), RangeError);   // no notice
+  const pe = computeRescissionPeriod({ application_id: APP, rescindability: ex, consummation_at: CONSUMMATION, time_zone: TZ, notice_deliveries: [], material_disclosures: [], material_disclosures_accurate: true });
+  assert.equal(pe.status, "not_applicable"); assert.equal(pe.expires_at, null);
+  assert.doesNotThrow(() => assertDisburseAllowed({ status: pe.status, expires_at: null, reasonably_satisfied_at: null, waiver_id: null, now: "2026-11-06T18:00:00.000Z" }));
+  assert.deepEqual(disbursementHold(ex, 55_615_005n), { held_cents: 0n, released_early_cents: 55_615_005n, basis: "not rescindable — no rescission hold" });
+  const h2 = harness("2026-11-06T17:35:00.000Z");
+  startPeriod(h2.events, pe);
+  assert.equal(h2.timers.all().length, 0);   // no gate
+  // guardrails: the agent may not split the H-9 disbursement, and H-9 is only for the original creditor
   const b = busFor(h);
-  await assert.rejects(b.run("determineRescindability", { application_id: APP, transaction_type: "limited_cash_out", consumers: CONSUMERS, partner_id: PARTNER, amount_financed_cents: "55615000", separate_disbursements: true }), (e: unknown) => e instanceof CommandRefused && e.code === "NO_SEPARATE_H9_DISBURSEMENT");
+  await assert.rejects(b.run("determineRescindability", { application_id: APP, transaction_type: "limited_cash_out", consumers: CONSUMERS, partner_id: PARTNER, amount_financed_cents: "55615005", separate_disbursements: true }), (e: unknown) => e instanceof CommandRefused && e.code === "NO_SEPARATE_H9_DISBURSEMENT");
   await assert.rejects(b.run("renderRescissionNotice", { application_id: APP, form: "h9", original_creditor_match: false, consumer_id: "C-B", consumer_name: "A", transaction_date: "2026-11-06", creditor_name: "P", designated_address: "x 85004", property_address: "y" }), (e: unknown) => e instanceof CommandRefused && e.code === "H9_ONLY_SAME_CREDITOR");
+  // through the bus: the applicability event carries the new advance
+  await b.run("determineRescindability", { application_id: APP, transaction_type: "limited_cash_out", consumers: CONSUMERS, partner_id: PARTNER, existing_loan: { original_creditor_id: PARTNER, upb_cents: "54820000", earned_unpaid_finance_charge_cents: "210055", refinancing_costs_cents: "410000" }, amount_financed_cents: "55615005" });
+  const det = h.ofType("rescission.applicability.determined").at(-1)!; assert.equal(det.payload.form, "h9"); assert.equal(det.payload.rescindable_amount_cents, "174950");
 });
 
 test("25.3-T7: Given a refinance of a second home (occupancy = second_home for every owner), then `applicability = not_principal_dwelling` and no notice or gate exists; given a purchase, `exempt_purchase_money`.", () => {
@@ -267,32 +288,60 @@ test("25.3-T8: Given a consumer statement typed into a template with pre-printed
   assert.deepEqual(disbursementTimingCompliance({ expires_at: row.expires_at, disbursed_at: "2026-11-09T16:00:00.000Z", reasonably_satisfied_at: null, waiver_id: row.waiver_id }), { compliant: true, violations: [] });
 });
 
-test("25.3-T9: Given a rescission notice postmarked Tue Nov 10 received Fri Nov 13 after a Thu Nov 12 disbursement, then `valid = true`, `refund_due_at = 2026-12-03`, an unwind checklist opens, and `REGZ_1026_23D2_RESCISSION_REFUND_20` breaches on Dec 4 if `rescission.unwind.completed` has not fired.", async () => {
+test("25.3-T9: Given a rescission notice postmarked Tue Nov 10 received Fri Nov 13 after a Thu Nov 12 disbursement, then `valid = true`, `refund_due_at = 2026-12-03`, an unwind checklist opens, and `REGZ_1026_23D2_RESCISSION_REFUND_20` breaches on Dec 4 if `rescission.unwind.started` (money returned and termination begun) has not fired; an unfinished recording alone is a sev 2 completion follow-up.", async () => {
   const h = harness("2026-11-13T18:00:00.000Z");
   const b = await startedOnBus(h);
   const r = await b.run("sweepInboundForRescission", { application_id: APP, op: "record_exercise", exercise_id: "X-1", consumer_id: "C-S", method: "mail", received_at: "2026-11-13T18:00:00.000Z", postmark_date: "2026-11-10", document_id: "DOC-RESCIND-1", disbursed_at: "2026-11-12T16:00:00.000Z", enote_registered: true, security_instrument_recorded: true });
   const out = r.output as { exercise: ReturnType<typeof evaluateExercise>; checklist: ReturnType<typeof unwindChecklist>; status: string };
   // a mailed notice is given when mailed: postmark Tue Nov 10 ≤ expiry Tue Nov 10 → valid even though received after funding
   assert.equal(out.exercise.valid, true); assert.equal(out.exercise.given_at, "2026-11-10"); assert.equal(out.exercise.received_on, "2026-11-13"); assert.equal(out.exercise.after_disbursement, true);
-  assert.equal(out.exercise.refund_due_at, "2026-12-03"); assert.equal(out.exercise.status, "validated"); assert.equal(out.status, "rescinded");
+  assert.equal(out.exercise.refund_due_at, "2026-12-03"); assert.equal(out.exercise.status, "validated"); assert.equal(out.status, "rescinded"); assert.equal(out.exercise.termination_begun_at, null);
   // one consumer's (the non-borrower spouse's) rescission rescinds the transaction for all
   assert.equal(b.rt.store.get("rescission_periods", `${APP}:rescission`)!.data.status, "rescinded");
   assert.ok(out.checklist.some((c) => /MERS eRegistry/.test(c.step)) && out.checklist.some((c) => /release \/ reconveyance/.test(c.step)) && out.checklist.some((c) => /reverse the payoff/.test(c.step)) && out.checklist.some((c) => /refund every amount/.test(c.step)));
-  assert.ok(out.checklist.some((c) => c.step === "complete by 2026-12-03 (received 2026-11-13 + 20 calendar days)"));
+  // the 20 days bound the return of the money and the START of the termination steps (comment 23(d)(2)-3), not the recording
+  assert.ok(out.checklist.some((c) => c.step.startsWith("return the money and begin the termination steps by 2026-12-03 (received 2026-11-13 + 20 calendar days") && /rescission\.unwind\.completed/.test(c.step)));
   assert.equal(h.escalations.list().filter((e) => e.kind === "officer").length, 1);
   const received = h.ofType("rescission.notice.received")[0]!; assert.equal(received.payload.valid, true); assert.equal(received.payload.given_at, "2026-11-10");
   assert.equal(h.ofType("rescission.exercised").length, 1);
   const refund = h.timer("REGZ_1026_23D2_RESCISSION_REFUND_20")!;
   assert.equal(refund.status, "armed"); assert.equal(refund.anchorDate, "2026-11-13"); assert.equal(refund.dueDate, "2026-12-03");
   assert.deepEqual(h.timers.evaluate("2026-12-03T20:00:00.000Z").map((x) => x.def.code), []);
+  // nothing started by Dec 4 → breach: sev 1 to `officer`, legal referral
   const breaches = h.timers.evaluate("2026-12-04T12:00:00.000Z");
   assert.deepEqual(breaches.map((x) => x.def.code), ["REGZ_1026_23D2_RESCISSION_REFUND_20"]); assert.equal(breaches[0]!.severity, 1); assert.ok(breaches[0]!.escalateTo.includes("officer"));
-  // the unwind completed in time satisfies the clock instead (officer sign-off)
+  assert.equal(h.ofType("rescission.unwind.started").length, 0);
+  // money returned Wed Nov 25 and the termination begun Fri Nov 27 (eNote reversal requested, release submitted; the county has not yet recorded it): `rescission.unwind.started` satisfies the clock — an unfinished recording alone is no legal breach, only a sev 2 completion follow-up
+  const h3 = harness("2026-11-13T18:00:00.000Z");
+  const b3 = await startedOnBus(h3);
+  await b3.run("sweepInboundForRescission", { application_id: APP, op: "record_exercise", exercise_id: "X-4", consumer_id: "C-S", method: "mail", received_at: "2026-11-13T18:00:00.000Z", postmark_date: "2026-11-10", document_id: "DOC-RESCIND-1", disbursed_at: "2026-11-12T16:00:00.000Z", enote_registered: true, security_instrument_recorded: true });
+  h3.clock.set("2026-11-27T19:00:00.000Z");
+  const s = await b3.run("sweepInboundForRescission", { application_id: APP, op: "start_unwind", exercise_id: "X-4", money_returned_at: "2026-11-25T20:00:00.000Z", termination_begun_at: "2026-11-27T19:00:00.000Z", termination_step: "MERS eRegistry reversal requested; release submitted for recording", refund_ledger_set_id: "LS-4" });
+  const so = s.output as { exercise: ReturnType<typeof evaluateExercise>; completion_open: boolean; follow_up_escalation_id: string };
+  assert.equal(so.exercise.status, "unwinding"); assert.equal(so.exercise.money_returned_at, "2026-11-25T20:00:00.000Z"); assert.equal(so.exercise.termination_begun_at, "2026-11-27T19:00:00.000Z"); assert.equal(so.exercise.security_terminated_at, null); assert.equal(so.completion_open, true);
+  const started = h3.ofType("rescission.unwind.started"); assert.equal(started.length, 1); assert.equal(started[0]!.payload.on_time, true); assert.equal(started[0]!.payload.money_returned_at, "2026-11-25T20:00:00.000Z"); assert.equal(started[0]!.payload.termination_begun_at, "2026-11-27T19:00:00.000Z"); assert.equal(started[0]!.applicationId, APP);
+  assert.equal(h3.timer("REGZ_1026_23D2_RESCISSION_REFUND_20")!.status, "satisfied");
+  assert.deepEqual(h3.timers.evaluate("2026-12-04T12:00:00.000Z"), []);
+  assert.equal(h3.ofType("rescission.unwind.completed").length, 0);
+  const follow = h3.escalations.list().find((e) => e.id === so.follow_up_escalation_id)!;
+  assert.equal(follow.kind, "officer"); assert.equal(follow.severity, "sev-2"); assert.equal((follow as { payload?: Record<string, unknown> }).payload?.follow_up, "rescission.unwind.completed");
+  assert.equal(b3.rt.store.get("rescission_exercises", "X-4")!.data.status, "unwinding");
+  // starting needs both facts — the money alone does not close the clock
+  await assert.rejects(b3.run("sweepInboundForRescission", { application_id: APP, op: "start_unwind", exercise_id: "X-4", money_returned_at: "2026-11-25T20:00:00.000Z", termination_step: "x" }), /termination_begun_at/);
+  // completion (release recorded Wed Dec 9, after day 20) under officer sign-off closes the exercise — on time, because the money and the start were within the 20 days
+  await assert.rejects(b3.run("sweepInboundForRescission", { application_id: APP, op: "complete_unwind", exercise_id: "X-4", completed_at: "2026-12-09T20:00:00.000Z", money_returned_at: "2026-11-25T20:00:00.000Z", security_terminated_at: "2026-12-09T19:00:00.000Z", release_document_id: "DOC-RECONVEY", enote_reversal_ref: "MERS-REV-4" }), (e: unknown) => e instanceof CommandRefused && e.code === "UNWIND_SIGNOFF_OFFICER");
+  const c = await b3.run("sweepInboundForRescission", { application_id: APP, op: "complete_unwind", exercise_id: "X-4", completed_at: "2026-12-09T20:00:00.000Z", money_returned_at: "2026-11-25T20:00:00.000Z", security_terminated_at: "2026-12-09T19:00:00.000Z", release_document_id: "DOC-RECONVEY", enote_reversal_ref: "MERS-REV-4", refund_ledger_set_id: "LS-4" }, OFFICER);
+  const co = c.output as { exercise: ReturnType<typeof evaluateExercise>; started_event_id: string | null };
+  assert.equal(co.exercise.status, "closed"); assert.equal(co.exercise.termination_begun_at, "2026-11-27T19:00:00.000Z"); assert.equal(co.exercise.security_terminated_at, "2026-12-09T19:00:00.000Z"); assert.equal(co.started_event_id, null);
+  const completed = h3.ofType("rescission.unwind.completed"); assert.equal(completed.length, 1); assert.equal(completed[0]!.payload.on_time, true); assert.equal(completed[0]!.payload.completed_within_20_days, false);
+  assert.equal(h3.ofType("rescission.unwind.started").length, 1);
+  // an unwind completed in time without a separate start: completeUnwind implies the start (money returned Nov 25, termination Nov 27) and satisfies the clock (officer sign-off)
   const h2 = harness("2026-11-13T18:00:00.000Z");
   const p2 = recordExercise(h2.events, fixturePeriod(), { exercise_id: "X-2", application_id: APP, consumer_id: "C-S", method: "mail", received_at: "2026-11-13T18:00:00.000Z", postmark_date: D("2026-11-10"), document_id: "DOC-RESCIND-1", written: true, disbursed_at: "2026-11-12T16:00:00.000Z" });
   assert.throws(() => completeUnwind(h2.events, p2.exercise, { completed_at: "2026-11-27T20:00:00.000Z", money_returned_at: "2026-11-25T20:00:00.000Z", security_terminated_at: "2026-11-27T19:00:00.000Z", release_document_id: "DOC-RECONVEY", enote_reversal_ref: "MERS-REV-1", refund_ledger_set_id: "LS-1", signed_off_by: AGENT }), (e: unknown) => e instanceof RescissionRefused && e.code === "UNWIND_OFFICER_SIGNOFF");
   const done = completeUnwind(h2.events, p2.exercise, { completed_at: "2026-11-27T20:00:00.000Z", money_returned_at: "2026-11-25T20:00:00.000Z", security_terminated_at: "2026-11-27T19:00:00.000Z", release_document_id: "DOC-RECONVEY", enote_reversal_ref: "MERS-REV-1", refund_ledger_set_id: "LS-1", signed_off_by: OFFICER });
-  assert.equal(done.exercise.status, "closed"); assert.equal(done.event.payload.on_time, true);
+  assert.equal(done.exercise.status, "closed"); assert.equal(done.event.payload.on_time, true); assert.equal(done.exercise.termination_begun_at, "2026-11-27T19:00:00.000Z");
+  assert.equal(done.started_event!.type, "rescission.unwind.started"); assert.equal(done.started_event!.payload.on_time, true);
   assert.equal(h2.timer("REGZ_1026_23D2_RESCISSION_REFUND_20")!.status, "satisfied");
   assert.deepEqual(h2.timers.evaluate("2026-12-04T12:00:00.000Z"), []);
   // a notice postmarked after expiry is not a valid exercise
@@ -385,27 +434,28 @@ test("25.3-T12: Given a phone call on day 3 at 23:30 saying \"I want to cancel\"
   await assert.rejects(b.run("classifyInboundDocument", { application_id: APP, text: "I want to cancel", channel: "phone", override_classification: "other" }), (e: unknown) => e instanceof CommandRefused && e.code === "CANCEL_IS_ALWAYS_A_CANDIDATE");
 });
 
-test("25.3 worked figures: examples A–E — the H-9 new-advance arithmetic ($548,200.00 / $2,100.55 / $7,950.00 = $3,850.00 + $4,100.00 / $556,150.00 → −$2,100.55; UPB $544,000.00 → $2,099.45 with $2,000.00 cash back), the (g) tolerances ($2,800.00 / $5,600.00) and the Thanksgiving per diem ($2,913.15)", () => {
-  // worked example E: costs of the refinancing $3,850.00 + $4,100.00 = $7,950.00
-  const costs = 385_000n + 410_000n;
-  assert.equal(costs, 795_000n);
-  const existing = { original_creditor_id: PARTNER, upb_cents: 54_820_000n, earned_unpaid_finance_charge_cents: 210_055n, refinancing_costs_cents: costs };
-  assert.equal(newAdvanceCents(55_615_000n, existing), -210_055n);   // 556,150.00 − (548,200.00 + 2,100.55 + 7,950.00) = −2,100.55
-  assert.equal(determineRescindability({ ...H8_INPUT, existing_loan: existing, amount_financed_cents: 55_615_000n }).applicability, "exempt_same_creditor_no_new_money");
-  const h9 = determineRescindability({ ...H8_INPUT, existing_loan: { ...existing, upb_cents: 54_400_000n }, amount_financed_cents: 55_615_000n });
-  assert.equal(h9.rescindable_amount_cents, 209_945n);   // 556,150.00 − (544,000.00 + 2,100.55 + 7,950.00) = 2,099.45
-  // the $2,000.00 cash back to the borrower is smaller than the rescindable new advance, and the entire disbursement is held regardless (decision 25.3-Q3)
-  const cashBack = 200_000n;
-  assert.ok(cashBack < h9.rescindable_amount_cents!);
-  assert.equal(disbursementHold(h9, 55_615_000n).held_cents, 55_615_000n); assert.notEqual(disbursementHold(h9, 55_615_000n).held_cents, cashBack);
+test("25.3 worked figures: examples A–E — the H-9 new-advance arithmetic under comment 23(f)-4 (UPB $548,200.00, earned unpaid interest $2,100.55, non-finance-charge costs $4,100.00; the $3,849.95 of prepaid finance charges is already out of the amount financed $556,150.05 → $1,749.50; UPB $544,000.00 → $5,949.50; UPB $550,000.00 → −$50.50, exempt), the (g) tolerances ($2,800.00 / $5,600.00) and the Thanksgiving per diem (31 × $93.97 = $2,913.07 — the unrounded $2,913.15 never appears on an artifact)", () => {
+  // worked example E: only the non-finance-charge costs of the refinancing are deducted (comment 23(f)-4); PFC $3,849.95 is already out of A = $560,000.00 − $3,849.95 = $556,150.05
+  const nonFinanceChargeCosts = 410_000n, pfc = 384_995n, amountFinanced = 56_000_000n - pfc;
+  assert.equal(amountFinanced, 55_615_005n);
+  const existing = { original_creditor_id: PARTNER, upb_cents: 54_820_000n, earned_unpaid_finance_charge_cents: 210_055n, refinancing_costs_cents: nonFinanceChargeCosts };
+  assert.equal(newAdvanceCents(amountFinanced, existing), 174_950n);   // 556,150.05 − (548,200.00 + 2,100.55 + 4,100.00) = 1,749.50
+  // deducting the prepaid finance charges again (the superseded "$3,850.00 + $4,100.00 = $7,950.00") would double-count them — never done
+  assert.equal(amountFinanced - (existing.upb_cents + existing.earned_unpaid_finance_charge_cents + nonFinanceChargeCosts + pfc), -210_045n); assert.notEqual(newAdvanceCents(amountFinanced, existing), -210_045n);
+  assert.equal(determineRescindability({ ...H8_INPUT, existing_loan: existing, amount_financed_cents: amountFinanced }).applicability, "rescindable_new_advance");
+  const h9 = determineRescindability({ ...H8_INPUT, existing_loan: { ...existing, upb_cents: 54_400_000n }, amount_financed_cents: amountFinanced });
+  assert.equal(h9.rescindable_amount_cents, 594_950n);   // 556,150.05 − (544,000.00 + 2,100.55 + 4,100.00) = 5,949.50
+  assert.equal(determineRescindability({ ...H8_INPUT, existing_loan: { ...existing, upb_cents: 55_000_000n }, amount_financed_cents: amountFinanced }).rescindable_amount_cents, -5_050n);   // UPB 550,000.00 → −50.50 → exempt (f)(2)
+  // the entire disbursement is held regardless of the size of the new advance (decision 25.3-Q3)
+  assert.equal(disbursementHold(h9, amountFinanced).held_cents, amountFinanced); assert.notEqual(disbursementHold(h9, amountFinanced).held_cents, h9.rescindable_amount_cents);
   // (g)(1)(i): max(0.5 % × $560,000.00, $100) = $2,800.00; (g)(2)(i): 1 % = $5,600.00
   assert.equal(materialDisclosureAccuracy({ disclosed_finance_charge_cents: 0n, actual_finance_charge_cents: 0n, face_amount_cents: 56_000_000n }).tolerance_cents, 280_000n);
   assert.equal(materialDisclosureAccuracy({ disclosed_finance_charge_cents: 0n, actual_finance_charge_cents: 0n, face_amount_cents: 56_000_000n, new_creditor_no_new_advance: true }).tolerance_cents, 560_000n);
-  // worked example B: Dec 1–31 = 31 days of per-diem interest on $560,000.00 at 6.125 %
+  // worked example B: Dec 1–31 = 31 days of per-diem interest on $560,000.00 at 6.125 % = 31 × $93.97 = $2,913.07 (26.3 `365_rounded_per_diem`)
   const pd = perDiemInterestForDays(56_000_000n, "6.125", 31);
-  assert.equal(pd.rounded_per_diem_cents, 9_397n);            // 26.3 `365_rounded_per_diem` (25.1 fixture: 19 × $93.97 = $1,785.43)
-  assert.equal(pd.total_unrounded_cents, 291_315n);           // the spec's $2,913.15 = 31 × 93.9726… rounded once at the end
-  assert.equal(pd.total_rounded_per_diem_cents, 291_307n);    // spec discrepancy: under the platform's cent-rounded per diem convention 31 × $93.97 = $2,913.07, not $2,913.15
+  assert.equal(pd.rounded_per_diem_cents, 9_397n);            // 25.1 fixture: 19 × $93.97 = $1,785.43
+  assert.equal(pd.total_rounded_per_diem_cents, 291_307n);    // $2,913.07 — the spec's figure
+  assert.equal(pd.total_unrounded_cents, 291_315n); assert.notEqual(pd.total_rounded_per_diem_cents, pd.total_unrounded_cents);   // 31 × 93.9726… = $2,913.15 never appears on any artifact (26.3-T2)
   // worked example A's refund clock: notice received Mon Nov 9, 2026 → due Sun Nov 29
   assert.equal(evaluateExercise(fixturePeriod(), { exercise_id: "X-A", application_id: APP, consumer_id: "C-B", method: "hand", received_at: "2026-11-09T18:00:00.000Z", document_id: "DOC-A", written: true }).refund_due_at, "2026-11-29");
 });

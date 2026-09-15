@@ -112,7 +112,7 @@ test("23.4-T2: Given the refinance fixture fee set (origination $1,995.00; prepa
   const t = computeTotalLoanAmount({ loan_amount_cents: 56_000_000n, prepaid_finance_charges_cents: c.prepaid_finance_charges_cents, pf_items: c.items });
   assert.equal(t.amount_financed_cents, 55_621_957n); assert.equal(t.financed_pf_items_cents, 0n); assert.equal(t.total_loan_amount_cents, 55_621_957n);
   const rs = ruleSet<QmRuleSet>("regz.qm.general.2021", D("2026-11-02")).content;
-  assert.deepEqual(pfTier(t.total_loan_amount_cents, rs), { pf_tier: "pct3_ge_137958", cap_cents: 1_668_658n, cap_basis: "floor(3% × total loan amount 55621957)" });   // floor(1668658.71)
+  assert.deepEqual(pfTier(56_000_000n, t.total_loan_amount_cents, rs), { pf_tier: "pct3_ge_137958", cap_cents: 1_668_658n, cap_basis: "floor(3% × total loan amount 55621957)" });   // floor(1668658.71)
   assert.equal(c.pf_cents, 199_500n);
   const by = Object.fromEntries(c.items.map((x) => [x.fee_item_id, x]));
   assert.equal(by["F-ORIG"]!.included, true); assert.equal(by["F-ORIG"]!.category, "b1_i_finance_charge"); assert.equal(by["F-ORIG"]!.exclusion, null);
@@ -229,14 +229,22 @@ test("23.4-T8: Given a $340,000 New Jersey loan with points and fees $15,640.00 
   const q2 = qmOf(1_530_000n); assert.equal(q2.cap_cents, 1_020_000n); assert.equal(q2.pf_pass, false); assert.equal(q2.qm_type, "not_qm"); assert.equal(fnmaEligibility(q2, false, pass).fnma_eligible, false);
 });
 
-test("23.4-T9: Given a $412,000 North Carolina loan, then `state_tests[NC].applies_by_size = false` (cap $300,000) and `result = not_applicable`; given a $290,000 NC loan with points and fees 5.2%, then `fail` and Fannie Mae ineligible.", () => {
+test("23.4-T9: Given a $412,000 North Carolina loan, then `state_tests[NC].applies_by_size = false` (cap $300,000) and `result = not_applicable`; given a $290,000 NC loan with points and fees 5.2%, then `fail`, `fnma_ineligible_if_fail = false`, `fnma_eligible` unaffected, and `STATE_HIGH_COST_GATE` routes to the `officer` (state law), not a Fannie Mae hard block.", () => {
   const big = runStateHighCostTests({ state: "NC", loan_amount_cents: 41_200_000n, total_loan_amount_cents: 40_427_453n, pf_cents: 980_000n, apr: "6.640", lien: "first", hoepa_apr_fail: false, as_of: D("2026-11-02") });
   assert.equal(big.length, 1); assert.equal(big[0]!.statute, "N.C.G.S. § 24-1.1E"); assert.equal(big[0]!.applies_by_size, false); assert.equal(big[0]!.size_cap_cents, 30_000_000n); assert.equal(big[0]!.result, "not_applicable");
   assert.equal(stateHighCostGate(big, "issueCD").open, true);
   const small = runStateHighCostTests({ state: "NC", loan_amount_cents: 29_000_000n, total_loan_amount_cents: 29_000_000n, pf_cents: 1_508_000n, apr: "6.640", lien: "first", hoepa_apr_fail: false, as_of: D("2026-11-02") });
   assert.equal(small[0]!.applies_by_size, true); assert.deepEqual(small[0]!.pf_test, { threshold_pct: "5", threshold_cents: 1_450_000n, pf_cents: 1_508_000n, fail: true }); assert.equal(small[0]!.result, "fail");
-  const el = fnmaEligibility({ fnma_spread_ok: true, pf_pass: true, spread: 0.62 }, false, small); assert.equal(el.fnma_eligible, false); assert.match(el.reasons[0]!, /NC high-cost home loan \(N\.C\.G\.S\. § 24-1\.1E\) — B2-1\.5-02/);
-  assert.deepEqual(stateHighCostGate(small, "consummate").blocking_codes, ["STATE_HIGH_COST_NC_FNMA_INELIGIBLE"]);
+  // § 24-1.1E is not on B2-1.5-02's state higher-priced table (AR, GA, IL, IN, KY, ME, MA, NJ, NM, NY, RI, TN): the fail is a state-law compliance failure, never a Fannie Mae ineligibility
+  assert.equal(small[0]!.fnma_ineligible_if_fail, false); assert.equal(small[0]!.state_pf_definition_unverified, false);
+  const el = fnmaEligibility({ fnma_spread_ok: true, pf_pass: true, spread: 0.62 }, false, small); assert.equal(el.fnma_eligible, true); assert.deepEqual(el.reasons, []);
+  // STATE_HIGH_COST_GATE: partner counsel's decision (`officer`), not a hard block — the officer's acceptance of the state-law risk opens it
+  const gate = stateHighCostGate(small, "consummate"); assert.equal(gate.open, false); assert.deepEqual(gate.blocking_codes, ["STATE_HIGH_COST_NC_COUNSEL_DECISION"]); assert.match(gate.reason!, /STATE_HIGH_COST_GATE blocks consummate/);
+  assert.equal(stateHighCostGate(small, "consummate", true).open, true); assert.equal(stateHighCostGate(small, "issueCD", true).open, true);
+  assert.equal(STATE_HIGH_COST_DEFINITIONS.find((d) => d.state === "NC")!.fnma_ineligible_if_fail, false); assert.deepEqual([...new Set(STATE_HIGH_COST_DEFINITIONS.filter((d) => d.fnma_ineligible_if_fail).map((d) => d.state))], ["NY", "NJ", "MA", "GA", "IL"]);
+  // a Fannie Mae-listed state still hard-blocks: the NJ worked example 4 fail carries the FNMA_INELIGIBLE code and fnma_eligible = false
+  const nj = runStateHighCostTests({ state: "NJ", loan_amount_cents: 34_000_000n, total_loan_amount_cents: 34_000_000n, pf_cents: 1_564_000n, apr: "6.640", lien: "first", hoepa_apr_fail: false, as_of: D("2026-11-02") });
+  assert.equal(nj[0]!.fnma_ineligible_if_fail, true); assert.deepEqual(stateHighCostGate(nj, "consummate", true).blocking_codes, ["STATE_HIGH_COST_NJ_FNMA_INELIGIBLE"]); assert.equal(fnmaEligibility({ fnma_spread_ok: true, pf_pass: true, spread: 0.62 }, false, nj).fnma_eligible, false);
 });
 
 test("23.4-T10: Given a lock on Wed Oct 7, 2026 and a relock on Mon Nov 2, 2026 at a new rate, then `rate_set_date = 2026-11-02` and the APOR row is re-selected from the table current on Nov 2; the Oct 7 row remains on the superseded `lock` stage record.", () => {
@@ -278,13 +286,15 @@ test("23.4-T11: Given the APOR table last ingested Mon Sept 21, 2026 and a lock-
 test("23.4-T12: Given a loan amount of $137,900 (below the 2026 first tier), then `apr_threshold_pts = 3.5` and `pf_tier = usd4139_82775_137957` with `cap_cents = 413900`; given $137,958, then 2.25 and 3%.", () => {
   const rs = ruleSet<QmRuleSet>("regz.qm.general.2021", D("2026-11-02")).content;
   assert.deepEqual(aprTier(13_790_000n, "first", false, rs), { apr_tier: "first_lien_82775_137957", apr_threshold_pts: 3.5 });
-  assert.deepEqual(pfTier(13_790_000n, rs), { pf_tier: "usd4139_82775_137957", cap_cents: 413_900n, cap_basis: "$4139 (2026 indexed)" });
+  assert.deepEqual(pfTier(13_790_000n, 13_790_000n, rs), { pf_tier: "usd4139_82775_137957", cap_cents: 413_900n, cap_basis: "$4139 (2026 indexed)" });
   assert.deepEqual(aprTier(13_795_800n, "first", false, rs), { apr_tier: "first_lien_ge_137958", apr_threshold_pts: 2.25 });
-  assert.deepEqual(pfTier(13_795_800n, rs), { pf_tier: "pct3_ge_137958", cap_cents: 413_874n, cap_basis: "floor(3% × total loan amount 13795800)" });
+  assert.deepEqual(pfTier(13_795_800n, 13_795_800n, rs), { pf_tier: "pct3_ge_137958", cap_cents: 413_874n, cap_basis: "floor(3% × total loan amount 13795800)" });
+  // comment 43(e)(3)(ii)-2: the tier follows the note's face amount; a percentage tier is applied to the (smaller) total loan amount — $137,958 note with $137,000.00 total → 3 % of $137,000.00 = $4,110.00; a $137,900 note stays in the $4,139 tier whatever the total
+  assert.deepEqual(pfTier(13_795_800n, 13_700_000n, rs), { pf_tier: "pct3_ge_137958", cap_cents: 411_000n, cap_basis: "floor(3% × total loan amount 13700000)" }); assert.deepEqual(pfTier(13_790_000n, 13_795_800n, rs), { pf_tier: "usd4139_82775_137957", cap_cents: 413_900n, cap_basis: "$4139 (2026 indexed)" });
   // the other tiers: $82,774 → 6.5 / 5 %; manufactured home < $137,958 → 6.5; subordinate liens
-  assert.equal(aprTier(8_277_400n, "first", false, rs).apr_threshold_pts, 6.5); assert.equal(pfTier(8_277_400n, rs).pf_tier, "pct5_27592_82774");
+  assert.equal(aprTier(8_277_400n, "first", false, rs).apr_threshold_pts, 6.5); assert.equal(pfTier(8_277_400n, 8_277_400n, rs).pf_tier, "pct5_27592_82774");
   assert.equal(aprTier(13_790_000n, "first", true, rs).apr_tier, "mh_lt_137958"); assert.equal(aprTier(13_790_000n, "subordinate", false, rs).apr_tier, "sub_ge_82775"); assert.equal(aprTier(8_000_000n, "subordinate", false, rs).apr_threshold_pts, 6.5);
-  assert.equal(pfTier(2_000_000n, rs).cap_cents, 138_000n); assert.equal(pfTier(1_700_000n, rs).pf_tier, "pct8_lt_17245");
+  assert.equal(pfTier(2_000_000n, 2_000_000n, rs).cap_cents, 138_000n); assert.equal(pfTier(1_700_000n, 1_700_000n, rs).pf_tier, "pct8_lt_17245");
   // the tier boundary on a real row: $137,900 at the fixture pricing
   const apor = selectApor(APOR_TABLES, { rate_set_date: D("2026-10-07"), term_years: 30, product: "fixed", stage: "cd", requested_on: D("2026-11-02") });
   const q = runQmTests({ application_id: "APP-SMALL", stage: "cd", apr_calculation_id: "APR-S", apr: "6.159", rate_set_date: D("2026-10-07"), apor, loan_amount_cents: 13_790_000n, total: computeTotalLoanAmount({ loan_amount_cents: 13_790_000n, prepaid_finance_charges_cents: 0n }), fees: { items: [], pf_cents: 300_000n, prepaid_finance_charges_cents: 0n, bona_fide_discount_points_excluded_cents: 0n, bona_fide: evaluateBonaFideDiscount({}), exclusions: [] }, product: PRODUCT_30Y, consider_verify: considerVerify(), lien: "first", as_of: D("2026-11-02"), determined_at: "2026-11-02T16:00:00.000Z" });
@@ -332,7 +342,7 @@ test("23.4 worked figures: refinance ($560,000 at 6.125%) and purchase ($412,000
   assert.equal(refi.total.amount_financed_cents, 55_621_957n); assert.equal(refi.qm.cap_cents, 1_668_658n);   // $16,686.58 = floor(3 % × $556,219.57)
   assert.equal(refi.qm.pf_cents, 199_500n); assert.equal(refi.qm.pf_pct, 0.3587);   // 0.36 %
   assert.equal(refi.fees.items.find((x) => x.fee_item_id === "F-CR")!.amount_cents, 7_500n); assert.equal(refi.fees.items.find((x) => x.fee_item_id === "F-TITLE")!.amount_cents, 180_000n); assert.equal(refi.fees.items.find((x) => x.fee_item_id === "F-REC")!.amount_cents, 9_500n);
-  // HOEPA 5 % of the total loan amount: the spec line reads "5% × $556,219.52 = $27,810.98" (typo for $556,219.57; 5 % of $556,219.57 = $27,810.98)
+  // HOEPA (rule 8): 0.139 ≤ 6.5 and $1,995 ≤ 5 % × $556,219.57 = $27,810.98 → not HOEPA
   assert.equal(refi.high_cost.hoepa.pf_test.base_cents, 55_621_957n); assert.equal(refi.high_cost.hoepa.pf_test.threshold_cents, 2_781_098n); assert.equal(refi.high_cost.hoepa.pf_test.fail, false);
   assert.equal(refi.high_cost.hoepa.apr_test.spread, 0.139);
   // 25.1's engine result the row cites: the fixture APR 6.159 (25.1 worked example 1, PFC $3,849.95 on its fuller fee list)
@@ -358,14 +368,14 @@ test("23.4 worked figures: refinance ($560,000 at 6.125%) and purchase ($412,000
   const apor = selectApor(APOR_TABLES, { rate_set_date: D("2026-10-21"), term_years: 30, product: "fixed", stage: "cd", requested_on: D("2026-11-02") });
   const njHoepa = runHoepaTests({ apr: "6.640", rate_set_date: D("2026-10-21"), apor, loan_amount_cents: 34_000_000n, total_loan_amount_cents: 34_000_000n, pf_cents: 1_564_000n, lien: "first", as_of: D("2026-11-02") });
   assert.equal(njHoepa.hoepa.pf_test.threshold_cents, 1_700_000n); assert.equal(njHoepa.is_hoepa, false);
-  const rs = ruleSet<QmRuleSet>("regz.qm.general.2021", D("2026-11-02")).content; assert.equal(pfTier(34_000_000n, rs).cap_cents, 1_020_000n);
+  const rs = ruleSet<QmRuleSet>("regz.qm.general.2021", D("2026-11-02")).content; assert.equal(pfTier(34_000_000n, 34_000_000n, rs).cap_cents, 1_020_000n);
   const nj = runStateHighCostTests({ state: "NJ", loan_amount_cents: 34_000_000n, total_loan_amount_cents: 34_000_000n, pf_cents: 1_564_000n, apr: "6.640", lien: "first", hoepa_apr_fail: njHoepa.hoepa.apr_test.fail, as_of: D("2026-11-02") });
   assert.equal(nj[0]!.pf_test.threshold_cents, 1_530_000n); assert.equal(nj[0]!.pf_test.pf_cents, 1_564_000n); assert.equal(nj[0]!.result, "fail");
   // NC $412,000 outside the $300,000 cap; NY APR 6.310 % vs PMMS northeast 6.20 % (0.11 < 1.75 → not § 6-m subprime) and vs Treasury 4.10 % + 8 = 12.10 (§ 6-l pass)
   assert.equal(runStateHighCostTests({ state: "NC", loan_amount_cents: 41_200_000n, total_loan_amount_cents: 40_427_453n, pf_cents: 980_000n, apr: "6.640", lien: "first", hoepa_apr_fail: false, as_of: D("2026-11-02") })[0]!.result, "not_applicable");
   const ny = runStateHighCostTests({ state: "NY", loan_amount_cents: 41_200_000n, total_loan_amount_cents: 40_427_453n, pf_cents: 980_000n, apr: "6.310", lien: "first", hoepa_apr_fail: false, reference_rates: { treasury_yield_pct: "4.10", pmms_ne_pct: "6.20" }, as_of: D("2026-11-02") });
   assert.equal(ny.length, 2); assert.deepEqual(ny.map((t) => t.result), ["pass", "pass"]); assert.equal(ny[0]!.apr_test.spread, 2.21); assert.equal(ny[0]!.apr_test.threshold, "8"); assert.equal(ny[1]!.apr_test.spread, 0.11); assert.equal(ny[1]!.apr_test.threshold, "1.75");
-  assert.equal(stateHighCostGate(ny, "issueCD").open, true); assert.equal(STATE_HIGH_COST_DEFINITIONS.filter((d) => d.fnma_ineligible_if_fail).length, 7);
+  assert.equal(stateHighCostGate(ny, "issueCD").open, true); assert.equal(STATE_HIGH_COST_DEFINITIONS.filter((d) => d.fnma_ineligible_if_fail).length, 6);   // NY § 6-l, NY § 6-m, NJ, MA, GA, IL — NC § 24-1.1E is state-law-only (not on B2-1.5-02's table)
   // an unverified statute (IL) blocks CD until an officer accepts the state risk; AZ / OH have no definitions
   const il = runStateHighCostTests({ state: "IL", loan_amount_cents: 41_200_000n, total_loan_amount_cents: 40_427_453n, pf_cents: 980_000n, apr: "6.640", lien: "first", hoepa_apr_fail: false, reference_rates: { apor_pct: "6.020" }, as_of: D("2026-11-02") });
   assert.equal(il[0]!.result, "pass"); assert.deepEqual(stateHighCostGate(il, "issueCD").blocking_codes, ["STATE_IL_PF_DEFINITION_UNVERIFIED"]); assert.equal(stateHighCostGate(il, "issueCD", true).open, true);

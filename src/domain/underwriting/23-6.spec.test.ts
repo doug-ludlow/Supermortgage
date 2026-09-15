@@ -88,7 +88,7 @@ async function newApplication(): Promise<string> {
 }
 const count = async (table: string, app: string): Promise<number> => Number((await db!.query<{ c: string }>(`SELECT count(*)::text AS c FROM ${table} WHERE application_id = $1`, [app]))[0]!.c);
 
-test("23.6-T1: Given each of the eighteen samples in `corpus/samples/`, when it is loaded into a 23.5 graph and re-emitted, then the emitted document validates against the vendored chain and matches the sample container-for-container and arc-for-arc after label normalization.", () => {
+test("23.6-T1: Given each of the eighteen samples in `src/infra/integrations/du-schema/samples/`, when it is loaded into a 23.5 graph and re-emitted, then the emitted document validates against the vendored chain and matches the sample container-for-container and arc-for-arc after label normalization.", () => {
   // Rule 7, all eighteen: loaded into a graph (containers by label, arcs from RELATIONSHIP), re-emitted STRICTLY (rule 4
   // refuses, so every sample is also a document with every required point present), validated against the vendored
   // chain, and diffed container for container, arc for arc after label normalization. A divergence names its XPath.

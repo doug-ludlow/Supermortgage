@@ -60,8 +60,8 @@ export const LIABILITY_SOURCES: readonly LiabilitySource[] = ["credit_report", "
 /** Alimony-type obligations: legal-document gate (B3-6-05) and the > 10 months rule. Only the first three may reduce income instead. */
 export const LEGAL_AGREEMENT_TYPES: readonly LiabilityType[] = ["alimony", "equalization_payment", "separate_maintenance", "child_support"];
 export const INCOME_REDUCTION_TYPES: readonly LiabilityType[] = ["alimony", "equalization_payment", "separate_maintenance"];
-/** Obligations the "more than ten monthly payments remaining" rule applies to (installment, garnishment, alimony-type); leases never (B3-6-05), IRS agreements never (included unless paid in full). */
-export const TEN_MONTH_RULE_TYPES: readonly LiabilityType[] = ["installment", "garnishment", "alimony", "child_support", "separate_maintenance", "equalization_payment", "other_recurring"];
+/** Obligations the "more than ten monthly payments remaining" rule applies to (installment, garnishment, alimony-type, and an IRS installment agreement — excludable only under the Debts Paid by Others or Installment Debt (≤ 10 payments) terms, B3-6-05); leases never (B3-6-05). */
+export const TEN_MONTH_RULE_TYPES: readonly LiabilityType[] = ["installment", "garnishment", "alimony", "child_support", "separate_maintenance", "equalization_payment", "other_recurring", "irs_installment"];
 export const RETENTION_CLASS = "fnma_loan_file_life_plus_4y";
 
 export interface Liability {
@@ -133,8 +133,9 @@ export interface BasisEvidence {
 export interface BasisSelection { readonly qualifying_payment_cents: Cents; readonly payment_basis: PaymentBasis; readonly alternatives: Record<string, string>; readonly condition: string | null; readonly rationale: string; readonly formula_version: string; }
 export const REVOLVING_PCT = 5n;
 export const STUDENT_PCT = 1n;
-/** B3-6-05: "5% of the outstanding balance" — round_half_up(balance × 5 / 100). */
-export const revolving5pct = (balance_cents: Cents): Cents => divRound(nonNeg(balance_cents, "balance_cents") * REVOLVING_PCT, 100n, "HALF_UP");
+/** B3-6-05 (DU casefiles): "the greater of $10 or 5% of the outstanding balance" — max(1,000, round_half_up(balance × 5 / 100)). */
+export const REVOLVING_FLOOR_CENTS = 1_000n;
+export const revolving5pct = (balance_cents: Cents): Cents => { const pct = divRound(nonNeg(balance_cents, "balance_cents") * REVOLVING_PCT, 100n, "HALF_UP"); return pct > REVOLVING_FLOOR_CENTS ? pct : REVOLVING_FLOOR_CENTS; };
 /** B3-6-05: "1% of the outstanding student loan balance" — round_half_up(balance / 100). */
 export const student1pct = (balance_cents: Cents): Cents => divRound(nonNeg(balance_cents, "balance_cents") * STUDENT_PCT, 100n, "HALF_UP");
 /** Rate "bps" as the spec writes them — thousandths of a percent (5.875 % → 5,875; 7.050 % → 7,050); DTI bps are hundredths (38.00 % → 3,800). */
@@ -156,7 +157,7 @@ export function selectPaymentBasis(l: Pick<Liability, "liability_type" | "balanc
     case "revolving":
       if (pos(reported)) return sel(reported, "credit_report", "reported minimum payment");
       if (pos(ev.supplemental_statement_payment_cents)) return sel(ev.supplemental_statement_payment_cents, "creditor_statement", "supplemental statement supports a payment of less than 5 %");
-      return sel(revolving5pct(l.balance_cents), "revolving_5pct", `no minimum reported and no supplemental documentation → 5 % of ${formatCents(l.balance_cents)} (B3-6-05)`);
+      return sel(revolving5pct(l.balance_cents), "revolving_5pct", `no minimum reported and no supplemental documentation → the greater of $10 or 5 % of ${formatCents(l.balance_cents)} (B3-6-05, DU)`);
     case "open_30_day": return sel(0n, "none", "open 30-day account: not included in DTI; balance added to funds to verify unless paid off with proof (B3-6-05/-07)");
     case "student_loan": {
       if (pos(reported)) return sel(reported, "credit_report", "monthly student loan payment provided on the credit report (B3-6-05)");
@@ -373,10 +374,14 @@ export interface ExclusionEvidence {
   readonly evidence_document_ids?: readonly string[]; readonly canceled_checks_months?: number; readonly payer_delinquencies_12m?: number; readonly company_checks_months?: number; readonly cash_flow_deducted?: boolean;
   readonly loan_instrument_document_id?: string | null; readonly court_order_document_id?: string | null; readonly executed_sales_contract_document_id?: string | null; readonly contingencies_cleared?: boolean; readonly settlement_statement_document_id?: string | null;
   readonly remaining_months?: number | null; readonly note_date?: PlainDate | null; readonly last_payment_month?: PlainDate | null; readonly qualifying_income_cents?: Cents | null; readonly revolving_utilization_pct?: number | null; readonly deferred_5y_or_more?: boolean; readonly rental_offset_income_id?: string | null;
+  /** Debts paid by others (B3-6-05): the payer must not be an interested party to the subject transaction (non-mortgage debt); for a mortgage debt the payer must be obligated on that mortgage and no rental income from the property may be used to qualify. */
+  readonly payer_interested_party?: boolean; readonly payer_obligated_on_debt?: boolean; readonly rental_income_used_from_property?: boolean;
+  /** Debts secured by financial assets: "Payment on any debt secured by virtual currency is an exception to the above policy and must be included" (B3-6-05). */
+  readonly collateral_kind?: "financial_asset" | "virtual_currency" | null;
 }
 export interface ExclusionResult { readonly liability: Liability; readonly include_in_dti: boolean; readonly exclusion_reason: ExclusionReason | null; readonly why: string; readonly funds_to_verify_delta_cents: Cents; readonly citation: string; }
 export const EVIDENCE_FOR: Partial<Record<ExclusionReason, string>> = {
-  paid_by_other_12m: "the most recent 12 months' canceled checks (or bank statements) from the other party with no delinquent payments",
+  paid_by_other_12m: "the most recent 12 months' canceled checks (or bank statements) from the other party making the payments with no delinquent payments; the payer is not an interested party to the subject transaction (non-mortgage debt); for a mortgage debt the payer is obligated on the mortgage and no rental income from the property is used to qualify",
   business_paid_12m_cashflow: "12 months of canceled company checks, no delinquency, and 22.3's cash-flow analysis taking the payment into consideration",
   secured_by_financial_asset: "a copy of the loan instrument showing the borrower's financial asset as collateral",
   court_assigned_contingent: "the court order assigning the debt to the other party (the creditor did not release the borrower)",
@@ -403,14 +408,23 @@ export function evaluateExclusion(l: Liability, reason: ExclusionReason, ev: Exc
     }
     case "paid_by_other_12m": {
       if (!ids.length || (ev.canceled_checks_months ?? 0) < 12) return refuse(reason, `${ev.canceled_checks_months ?? 0} months of the other party's canceled checks / statements on file (12 required)`);
-      return (ev.payer_delinquencies_12m ?? 0) > 0 ? included(`${ev.payer_delinquencies_12m} delinquent payment(s) in the 12-month history → not excludable`) : excluded("12-month third-party payment history with no delinquent payments");
+      if ((ev.payer_delinquencies_12m ?? 0) > 0) return included(`${ev.payer_delinquencies_12m} delinquent payment(s) in the 12-month history → not excludable`);
+      if (l.liability_type === "mortgage" || l.liability_type === "heloc") {
+        if (ev.payer_obligated_on_debt !== true) return included("mortgage debt paid by a party who is not obligated on that mortgage → the full PITIA stays in DTI (B3-6-05: the party making the payments must be obligated on the mortgage debt)");
+        if (ev.rental_income_used_from_property === true) return included("rental income from the property is used to qualify → the mortgage payment stays in DTI (B3-6-05)");
+        return excluded("mortgage debt: 12-month payment history from the party obligated on the mortgage with no delinquencies and no rental income from the property used to qualify (B3-6-05; the property still counts as a financed property under B2-2-03)");
+      }
+      if (ev.payer_interested_party === true) return included("the other party is an interested party to the subject transaction (such as the seller or real estate agent) → not excludable (B3-6-05)");
+      return excluded("12-month third-party payment history with no delinquent payments; the other party need not be obligated on the non-mortgage debt (B3-6-05)");
     }
     case "business_paid_12m_cashflow": {
       if (!ids.length || (ev.company_checks_months ?? 0) < 12) return refuse(reason, `${ev.company_checks_months ?? 0} months of canceled company checks on file (12 required)`);
       if ((ev.payer_delinquencies_12m ?? 0) > 0) return included("the account has a delinquency → the personal-name business debt stays in DTI");
       return ev.cash_flow_deducted ? excluded("12 months' company checks, no delinquency, and 22.3's cash-flow analysis took the payment into consideration") : included("22.3's cash-flow analysis did not deduct the payment → included (B3-6-05: the analysis must take the obligation into consideration)");
     }
-    case "secured_by_financial_asset": return ev.loan_instrument_document_id ? excluded("loan secured by the borrower's financial asset per the loan instrument") : refuse(reason, "no loan instrument on file");
+    case "secured_by_financial_asset":
+      if (ev.collateral_kind === "virtual_currency") return included("debt secured by virtual currency must be included (B3-6-05: 'Payment on any debt secured by virtual currency is an exception to the above policy and must be included when calculating the debt-to-income ratio')");
+      return ev.loan_instrument_document_id ? excluded("loan secured by the borrower's financial asset per the loan instrument") : refuse(reason, "no loan instrument on file");
     case "court_assigned_contingent": return ev.court_order_document_id ? excluded("contingent liability under a court-ordered assignment; the borrower is not required to count it") : refuse(reason, "no court order on file");
     case "non_applicant_documented": return ids.length ? excluded("documented as not the borrower's debt (non-applicant account)") : refuse(reason, "no documentation that the debt is not the borrower's");
     case "voluntary_payment": return ids.length ? excluded("voluntary payment with no written legal agreement") : refuse(reason, "no documentation that the payment is voluntary");
@@ -456,7 +470,8 @@ export function irsAgreementGate(f: Record<string, unknown>): GateResult {
   else if (status === "pending") { if (!doc) return { open: false, reason: "copy of the application for the installment agreement (terms, monthly payment, total due) required" }; }
   else return { open: false, reason: "agreement_status must be approved or pending" };
   if (f.paid_in_full === true) return { open: true };
-  return f.include_in_dti === true && f.payment_basis === "irs_agreement" ? { open: true } : { open: false, reason: "the monthly payment must be included in DTI with payment_basis = irs_agreement unless the amount owed is paid in full" };
+  if (f.include_in_dti === false && (f.exclusion_reason === "le_10_payments" || f.exclusion_reason === "paid_by_other_12m")) return { open: true };   // B3-6-05: excludable only under the Debts Paid by Others or Installment Debt (≤ 10 payments) terms
+  return f.include_in_dti === true && f.payment_basis === "irs_agreement" ? { open: true } : { open: false, reason: "the monthly payment must be included in DTI with payment_basis = irs_agreement unless the amount owed is paid in full or the Debts Paid by Others / Installment Debt (≤ 10 payments) terms are met (B3-6-05)" };
 }
 
 // ============================================================ R5 / B3-6-07 — debts paid off or paid down at or before closing

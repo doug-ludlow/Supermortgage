@@ -9,7 +9,7 @@
  *   fundingReleaseDate / fedwire   §1026.23(c) has no business-day condition on the disbursement day — the Fed holiday calendar does
  *   sweepChannels                  comment 23(c): "reasonably satisfied that the consumer has not rescinded"
  *   validateRescissionWaiver       §1026.23(e): consumer-authored, dated, signed by all; "Printed forms for this purpose are prohibited"
- *   evaluateExercise               §1026.23(a)(2): given when mailed (postmark) / delivered; (d)(2) 20 calendar days to unwind
+ *   evaluateExercise               §1026.23(a)(2): given when mailed (postmark) / delivered; (d)(2) 20 calendar days to return the money and BEGIN the termination (comment 23(d)(2)-3) — startUnwind / completeUnwind
  *   noticeAtSigningCheck           §1026.23(b)(1): two copies per consumer (one when electronic under E-SIGN — 25.3-Q1 delivers two anyway)
  *   classifyInboundDocument        an "I want to cancel" message is always a rescission candidate (oral = not a valid exercise)
  *
@@ -55,6 +55,7 @@ export type RescissionForm = "h8" | "h9" | "none";
 export type Occupancy = "primary" | "second_home" | "investment";
 export type TransactionType = "purchase" | "construction_initial" | "limited_cash_out" | "cash_out" | "rate_term" | "other";
 export interface RescissionConsumer { readonly consumer_id: string; readonly role: "borrower" | "non_borrower_owner"; readonly ownership_interest: boolean; readonly occupancy: Occupancy; readonly ownership_basis?: string; }
+/** The existing (paid-off) loan for the §1026.23(f)(2) same-creditor test. `refinancing_costs_cents` = the closing costs financed that are NOT finance charges (§1026.4(c)(7) charges, insurance premiums and similar — comment 23(f)-4); the prepaid finance charges are already out of the amount financed and are never deducted again (25.3 worked example E: $4,100.00, not $3,850.00 + $4,100.00). */
 export interface ExistingLoan { readonly original_creditor_id: string; readonly upb_cents: Cents; readonly earned_unpaid_finance_charge_cents: Cents; readonly refinancing_costs_cents: Cents; }
 export interface RescindabilityInput {
   readonly application_id: string; readonly transaction_type: TransactionType; readonly consumers: readonly RescissionConsumer[]; readonly partner_id: string;
@@ -63,11 +64,12 @@ export interface RescindabilityInput {
 }
 export interface Rescindability {
   readonly application_id: string; readonly applicability: RescissionApplicability; readonly form: RescissionForm; readonly original_creditor_match: boolean;
-  /** H-9: the new advance = amount financed − (UPB + earned unpaid finance charge + costs of the refinancing); null for a fully rescindable (H-8) transaction. */
+  /** H-9: the new advance = amount financed − (UPB + earned unpaid finance charge + the non-finance-charge costs of the refinancing — comment 23(f)-4); null for a fully rescindable (H-8) transaction. */
   readonly rescindable_amount_cents: Cents | null; readonly consumers: readonly RescissionConsumer[]; readonly gated: boolean; readonly citation: string; readonly rationale: string;
 }
 /** Consumers entitled to rescind: an ownership interest subject to the security interest in a dwelling that is THAT person's principal dwelling (§1026.2(a)(11); comment 23(a)(1)-2; decision Q6). */
 export const entitledConsumers = (consumers: readonly RescissionConsumer[]): RescissionConsumer[] => consumers.filter((c) => c.ownership_interest && c.occupancy === "primary");
+/** Comment 23(f)-4: "a new advance does not include amounts attributed solely to the costs of the refinancing … charges that are not finance charges"; finance charges "are not part of the amount financed" and so are never deducted — 556,150.05 − (548,200.00 + 2,100.55 + 4,100.00) = $1,749.50 on worked example E. */
 export const newAdvanceCents = (amount_financed_cents: Cents, x: ExistingLoan): Cents => amount_financed_cents - (x.upb_cents + x.earned_unpaid_finance_charge_cents + x.refinancing_costs_cents);
 export function determineRescindability(i: RescindabilityInput): Rescindability {
   need(i.consumers.length > 0, "at least one consumer with a title/vesting record (application_properties, title_orders)");
@@ -79,8 +81,8 @@ export function determineRescindability(i: RescindabilityInput): Rescindability 
   const match = !!x && (x.original_creditor_id === i.partner_id || (i.predecessor_creditor_ids ?? []).includes(x.original_creditor_id));
   if (x && match) {
     const advance = newAdvanceCents(i.amount_financed_cents, x);
-    if (advance <= 0n) return { ...base, original_creditor_match: true, rescindable_amount_cents: advance, applicability: "exempt_same_creditor_no_new_money", form: "none", gated: false, citation: "§1026.23(f)(2)", rationale: `same-creditor refinancing with no new advance: ${advance} = amount financed − (UPB + earned unpaid finance charge + refinancing costs) ≤ 0` };
-    return { ...base, original_creditor_match: true, rescindable_amount_cents: advance, applicability: "rescindable_new_advance", form: "h9", gated: true, citation: "§1026.23(f)(2) second sentence; comment 23(f)-4", rationale: `same-creditor refinancing: the new advance of ${advance} cents is rescindable (H-9)` };
+    if (advance <= 0n) return { ...base, original_creditor_match: true, rescindable_amount_cents: advance, applicability: "exempt_same_creditor_no_new_money", form: "none", gated: false, citation: "§1026.23(f)(2)", rationale: `same-creditor refinancing with no new advance: ${advance} = amount financed − (UPB + earned unpaid finance charge + non-finance-charge refinancing costs — comment 23(f)-4) ≤ 0` };
+    return { ...base, original_creditor_match: true, rescindable_amount_cents: advance, applicability: "rescindable_new_advance", form: "h9", gated: true, citation: "§1026.23(f)(2) second sentence; comment 23(f)-4", rationale: `same-creditor refinancing: the new advance of ${advance} cents = amount financed − (UPB + earned unpaid finance charge + non-finance-charge refinancing costs) is rescindable (H-9; comment 23(f)-4)` };
   }
   return { ...base, applicability: "rescindable_full", form: "h8", gated: true, citation: "§1026.23(a)(1); comment 23(f)-4 (exemption applies only to refinancings by the original creditor)", rationale: x ? `existing loan originated by ${x.original_creditor_id}, not the partner ${i.partner_id} — fully rescindable (H-8); Fannie Mae ownership of the existing loan does not change the original-creditor test` : "non-purchase-money transaction secured by a principal dwelling — fully rescindable (H-8)" };
 }
@@ -266,7 +268,7 @@ export function acceptRescissionWaiver(events: EventStore, period: RescissionPer
 // ============================================================ exercise and unwind (§1026.23(a)(2), (d))
 export type ExerciseMethod = "mail" | "email" | "portal" | "fax" | "hand";
 export interface ExerciseInput { readonly exercise_id: string; readonly application_id: string; readonly consumer_id: string; readonly method: ExerciseMethod; readonly received_at: string; readonly postmark_date?: PlainDate | null; readonly document_id: string; readonly written: boolean; readonly disbursed_at?: string | null; }
-export interface RescissionExercise { readonly exercise_id: string; readonly rescission_id: string; readonly application_id: string; readonly consumer_id: string; readonly received_at: string; readonly received_on: PlainDate; readonly given_at: PlainDate; readonly method: ExerciseMethod; readonly document_id: string; readonly valid: boolean; readonly invalid_reason: string | null; readonly refund_due_at: PlainDate; readonly security_terminated_at: string | null; readonly money_returned_at: string | null; readonly tender_status: "pending" | "tendered" | "court_modified"; readonly status: "received" | "validated" | "unwinding" | "closed" | "disputed"; readonly after_disbursement: boolean; }
+export interface RescissionExercise { readonly exercise_id: string; readonly rescission_id: string; readonly application_id: string; readonly consumer_id: string; readonly received_at: string; readonly received_on: PlainDate; readonly given_at: PlainDate; readonly method: ExerciseMethod; readonly document_id: string; readonly valid: boolean; readonly invalid_reason: string | null; readonly refund_due_at: PlainDate; readonly termination_begun_at: string | null; readonly security_terminated_at: string | null; readonly money_returned_at: string | null; readonly tender_status: "pending" | "tendered" | "court_modified"; readonly status: "received" | "validated" | "unwinding" | "closed" | "disputed"; readonly after_disbursement: boolean; }
 /** Valid if written, from a consumer entitled to rescind, and given (mailed: postmark; otherwise delivered to the designated place) on or before `expires_on` — or while the extended right is running. One consumer's rescission rescinds the transaction for all. */
 export function evaluateExercise(period: RescissionPeriod, i: ExerciseInput): RescissionExercise {
   const received_on = civilDate(i.received_at, period.time_zone);
@@ -280,7 +282,7 @@ export function evaluateExercise(period: RescissionPeriod, i: ExerciseInput): Re
   else if (period.status === "waived") invalid_reason = "the right was waived under §1026.23(e)";
   else if (!inPeriod && !extended) invalid_reason = `given ${given_at}, after the period expired ${period.expires_on ?? "(unstarted)"} and no extended right is running`;
   const valid = invalid_reason === null;
-  return { exercise_id: i.exercise_id, rescission_id: period.rescission_id, application_id: i.application_id, consumer_id: i.consumer_id, received_at: i.received_at, received_on, given_at, method: i.method, document_id: i.document_id, valid, invalid_reason, refund_due_at: addDays(received_on, 20), security_terminated_at: null, money_returned_at: null, tender_status: "pending", status: valid ? "validated" : "disputed", after_disbursement: !!i.disbursed_at && Date.parse(i.disbursed_at) < Date.parse(i.received_at) };
+  return { exercise_id: i.exercise_id, rescission_id: period.rescission_id, application_id: i.application_id, consumer_id: i.consumer_id, received_at: i.received_at, received_on, given_at, method: i.method, document_id: i.document_id, valid, invalid_reason, refund_due_at: addDays(received_on, 20), termination_begun_at: null, security_terminated_at: null, money_returned_at: null, tender_status: "pending", status: valid ? "validated" : "disputed", after_disbursement: !!i.disbursed_at && Date.parse(i.disbursed_at) < Date.parse(i.received_at) };
 }
 export interface UnwindItem { readonly step: string; readonly owner: string; readonly citation: string; }
 /** The 20-day unwind checklist (§1026.23(d)(2); comment 23(d)(2)-1 "Any amount"): differs by whether the loan funded, whether an eNote was registered and whether the security instrument was recorded. */
@@ -294,7 +296,7 @@ export function unwindChecklist(x: RescissionExercise, ctx: { disbursed: boolean
   items.push({ step: "return SM-borne third-party costs to the SM cost ledger; reverse origination_fees_receivable (balanced entries linked to rescission.unwind.completed)", owner: "funder", citation: "25.3 Outputs: Ledger" });
   if (ctx.purchased_by_fnma) items.push({ step: "repurchase from Fannie Mae (29.4); warehouse_advances.repaid_from = partner_repurchase", owner: "officer", citation: "27.1/29.4" });
   else items.push({ step: "withdraw from any commitment (29.1 pair-off rules); never deliver", owner: "officer", citation: "29.1" });
-  items.push({ step: `complete by ${x.refund_due_at} (received ${x.received_on} + 20 calendar days)`, owner: "officer", citation: "§1026.23(d)(2)" });
+  items.push({ step: `return the money and begin the termination steps by ${x.refund_due_at} (received ${x.received_on} + 20 calendar days — comment 23(d)(2)-3: the 20 days bound the start of the process; rescission.unwind.started); see recording/MERS through to completion (rescission.unwind.completed)`, owner: "officer", citation: "§1026.23(d)(2); comment 23(d)(2)-3" });
   return items;
 }
 export function recordExercise(events: EventStore, period: RescissionPeriod, i: ExerciseInput, actor: Actor = AGENT): { exercise: RescissionExercise; period: RescissionPeriod; events: readonly DomainEvent[] } {
@@ -305,12 +307,35 @@ export function recordExercise(events: EventStore, period: RescissionPeriod, i: 
   const exercised = events.append({ type: "rescission.exercised", ...base, payload: { application_id: period.application_id, rescission_id: period.rescission_id, exercise_id: exercise.exercise_id, consumer_id: exercise.consumer_id, refund_due_at: exercise.refund_due_at, after_disbursement: exercise.after_disbursement } });
   return { exercise, period: { ...period, status: "rescinded" }, events: [received, exercised] };
 }
-export interface UnwindEvidence { readonly completed_at: string; readonly money_returned_at: string; readonly security_terminated_at: string; readonly release_document_id: string | null; readonly enote_reversal_ref: string | null; readonly refund_ledger_set_id: string | null; readonly signed_off_by: Actor; }
-export function completeUnwind(events: EventStore, x: RescissionExercise, ev: UnwindEvidence): { exercise: RescissionExercise; event: DomainEvent } {
+export interface UnwindStart { readonly started_at?: string; readonly money_returned_at: string; readonly termination_begun_at: string; readonly termination_step: string; readonly refund_ledger_set_id?: string | null; readonly by: Actor; }
+/**
+ * §1026.23(d)(2) read with comment 23(d)(2)-3 ("The 20-day period for the creditor's action refers to the time within which the
+ * creditor must begin the process. It does not require all necessary steps to have been completed within that time, but the
+ * creditor is responsible for seeing the process through to completion."): the 20 days bound the RETURN of the money and the
+ * START of the security-interest termination steps. `rescission.unwind.started{money_returned_at, termination_begun_at}`
+ * satisfies REGZ_1026_23D2_RESCISSION_REFUND_20; recording/MERS completion is seen through to `rescission.unwind.completed`
+ * (a sev 2 follow-up while it stays open — the 25.3 tool opens it). A slow recorder is no longer a false legal breach.
+ */
+export function startUnwind(events: EventStore, x: RescissionExercise, ev: UnwindStart): { exercise: RescissionExercise; event: DomainEvent; completion_open: true } {
+  need(x.valid, "only a valid exercise is unwound");
+  need(typeof ev.money_returned_at === "string" && ev.money_returned_at.length >= 10 && typeof ev.termination_begun_at === "string" && ev.termination_begun_at.length >= 10, "money_returned_at and termination_begun_at are required — §1026.23(d)(2) binds both to the 20 days");
+  need(typeof ev.termination_step === "string" && ev.termination_step.length > 0, "the first termination step taken (wire cancelled / eNote reversal requested / release submitted for recording)");
+  const started_at = ev.started_at ?? (ev.money_returned_at > ev.termination_begun_at ? ev.money_returned_at : ev.termination_begun_at);
+  const on_time = ev.money_returned_at.slice(0, 10) <= x.refund_due_at && ev.termination_begun_at.slice(0, 10) <= x.refund_due_at;
+  const exercise: RescissionExercise = { ...x, money_returned_at: ev.money_returned_at, termination_begun_at: ev.termination_begun_at, status: "unwinding" };
+  const event = events.append({ type: "rescission.unwind.started", applicationId: x.application_id, actor: ev.by, occurredAt: started_at, payload: { application_id: x.application_id, rescission_id: x.rescission_id, exercise_id: x.exercise_id, money_returned_at: ev.money_returned_at, termination_begun_at: ev.termination_begun_at, termination_step: ev.termination_step, refund_ledger_set_id: ev.refund_ledger_set_id ?? null, refund_due_at: x.refund_due_at, on_time, completion_open: true } });
+  return { exercise, event, completion_open: true };
+}
+export interface UnwindEvidence { readonly completed_at: string; readonly money_returned_at: string; readonly security_terminated_at: string; readonly termination_begun_at?: string | null; readonly release_document_id: string | null; readonly enote_reversal_ref: string | null; readonly refund_ledger_set_id: string | null; readonly signed_off_by: Actor; }
+/** Completion under officer sign-off — release/reconveyance recorded or eNote/MIN voided (`rescission.unwind.completed`, the platform completion target). An unwind never marked started is started here from the same evidence (the termination began no later than it was completed), so the 20-day clock is closed by the start it implies. */
+export function completeUnwind(events: EventStore, x: RescissionExercise, ev: UnwindEvidence): { exercise: RescissionExercise; event: DomainEvent; started_event: DomainEvent | null } {
   if (!isOfficer(ev.signed_off_by)) throw new RescissionRefused("UNWIND_OFFICER_SIGNOFF", "25.3 automation class: the partner officer signs off on a rescission unwind", "unwind completion requires officer sign-off");
-  const exercise: RescissionExercise = { ...x, money_returned_at: ev.money_returned_at, security_terminated_at: ev.security_terminated_at, tender_status: "tendered", status: "closed" };
-  const event = events.append({ type: "rescission.unwind.completed", applicationId: x.application_id, actor: ev.signed_off_by, occurredAt: ev.completed_at, payload: { application_id: x.application_id, rescission_id: x.rescission_id, exercise_id: x.exercise_id, money_returned_at: ev.money_returned_at, security_terminated_at: ev.security_terminated_at, release_document_id: ev.release_document_id, enote_reversal_ref: ev.enote_reversal_ref, refund_ledger_set_id: ev.refund_ledger_set_id, on_time: ev.completed_at.slice(0, 10) <= x.refund_due_at } });
-  return { exercise, event };
+  const termination_begun_at = x.termination_begun_at ?? ev.termination_begun_at ?? ev.security_terminated_at;
+  const started = x.termination_begun_at ? null : startUnwind(events, x, { money_returned_at: ev.money_returned_at, termination_begun_at, termination_step: "recorded at completion — release/reconveyance recorded or eNote/MIN voided", refund_ledger_set_id: ev.refund_ledger_set_id, by: ev.signed_off_by });
+  const on_time = ev.money_returned_at.slice(0, 10) <= x.refund_due_at && termination_begun_at.slice(0, 10) <= x.refund_due_at;
+  const exercise: RescissionExercise = { ...(started ? started.exercise : x), money_returned_at: ev.money_returned_at, termination_begun_at, security_terminated_at: ev.security_terminated_at, tender_status: "tendered", status: "closed" };
+  const event = events.append({ type: "rescission.unwind.completed", applicationId: x.application_id, actor: ev.signed_off_by, occurredAt: ev.completed_at, payload: { application_id: x.application_id, rescission_id: x.rescission_id, exercise_id: x.exercise_id, money_returned_at: ev.money_returned_at, termination_begun_at, security_terminated_at: ev.security_terminated_at, release_document_id: ev.release_document_id, enote_reversal_ref: ev.enote_reversal_ref, refund_ledger_set_id: ev.refund_ledger_set_id, on_time, completed_within_20_days: ev.completed_at.slice(0, 10) <= x.refund_due_at } });
+  return { exercise, event, started_event: started?.event ?? null };
 }
 
 // ============================================================ notice at signing (§1026.23(b)(1); §1026.17(d)); inbound classification

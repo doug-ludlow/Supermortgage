@@ -20,7 +20,7 @@ import type { UowContext } from "../../infra/db/unit-of-work.ts";
 import type { DecisionInput } from "../../infra/db/decisions.ts";
 import type { CreditReport, ScoreModel } from "../verification/ops-22-2.ts";
 import { createCasefile, associateCredit, buildDuRequest, buildDuRequestWithDocument, submitCasefile, receiveFindings, ingestOperatorFindings, evaluateResubmission, assertFinalSubmissionMatches, recordFinalSubmission, archivalWatch, archivalClocks, policyGeneration, duReleaseApplied, detectIdentityChange, recordIdentityChange, recordImpactMemo, tagAdapterRelease, confirmReturnFileFormat, returnFileTypeGate, finalMatchGate, finalMatchFacts, closedLoanSnapshotHash,
-  dtiBps, dtiTest, rateTest, loanAmountTest, refiAmountTolerance, reservesTest, incomeLimitedTest, closedLoanFieldsTest, ltvPct, llpaLtvBand, piCents, piUnrounded, decisionRecord, duSubmitRequest, DuRefused, DI_OUTAGE_AFTER_MINUTES, AGENT,
+  dtiBps, dtiTest, fundsToCloseTest, rateTest, loanAmountTest, refiAmountTolerance, reservesTest, incomeLimitedTest, closedLoanFieldsTest, ltvPct, llpaLtvBand, piCents, piUnrounded, decisionRecord, duSubmitRequest, DuRefused, DI_OUTAGE_AFTER_MINUTES, AGENT,
   type DuCasefile, type DuSubmission, type UladSnapshot, type BorrowerIdentity, type DuRequest, type SubmissionReason, type SubmissionType } from "./ops-23-1.ts";
 import { FakeDuPort, OutageDuPort } from "../../infra/integrations/du.ts";
 import { refinanceFixtureGraph } from "./fixtures/du-refinance-fixture.ts";
@@ -122,7 +122,7 @@ test("23.1-T1: Given the refinance fixture with credit received Mon Oct 5, 2026 
   assert.equal(rec.policy_generation, "2026_09_26"); assert.equal(rec.du_release_applied, "2026_09_25"); assert.equal(rec.request_hash, r.submission.request_hash); assert.equal(rec.recommendation_after, "approve_eligible");
 });
 
-test("23.1-T2: Given baseline DTI 38.00% on $12,000.00 income, when a $450.00/month liability is added Oct 20, 2026, then `du_resubmission_checks.result = resubmission_required` with `rule_code = B3_2_10_DTI_45_OR_3PT` (dti_after 41.75, delta 3.75) and `SM_DU_RESUBMIT_SLA_1BD` due Wed Oct 21, 2026; a $300.00 liability yields `within_tolerance` (40.50, delta 2.50) and `du.resubmission.waived`.", async () => {
+test("23.1-T2: Given baseline DTI 38.00% on $12,000.00 income, when a $450.00/month liability is added Oct 20, 2026, then `du_resubmission_checks.result = resubmission_required` with `rule_code = B3_2_10_DTI_45_OR_3PT` (dti_after 41.75, delta 3.75) and `SM_DU_RESUBMIT_SLA_1BD` due Wed Oct 21, 2026; given the Guide's own rows, 46.00 → 48.00 yields `within_tolerance` and 44.00 → 46.00 yields `resubmission_required`; a $300.00 liability yields `within_tolerance` (40.50, delta 2.50) and `du.resubmission.waived`.", async () => {
   const h = harness("2026-10-06T15:00:00.000Z");
   const first = await firstRun(h);
   assert.equal(first.submission.dti_du, "38.00");
@@ -148,6 +148,23 @@ test("23.1-T2: Given baseline DTI 38.00% on $12,000.00 income, when a $450.00/mo
   const w = evaluateResubmission(h.events, first.casefile, { baseline: first.submission, candidate: with300, trigger_event: "liabilities.changed", at });
   assert.equal(w.result, "within_tolerance"); assert.equal(w.arithmetic.dti_after, "40.50"); assert.equal(w.arithmetic.dti_delta, "2.50"); assert.equal(w.event.type, "du.resubmission.waived"); assert.equal(w.event.payload.final_submission_will_carry_change, true);
   assert.equal(dtiBps(456_000n + 45_000n, 1_200_000n), 4175); assert.equal(dtiBps(456_000n + 30_000n, 1_200_000n), 4050);
+  // B3-2-10's own example rows on $12,000.00 income: "now exceed 45%" is a crossing, and the 3-point rise counts only while the recalculated DTI is ≤ 50
+  const inc = 1_200_000n, at2 = "2026-10-21T15:00:00.000Z";
+  const guide = (b: bigint, a: bigint) => dtiTest({ obligations_cents: b, income_cents: inc }, { obligations_cents: a, income_cents: inc });
+  const r4648 = guide(552_000n, 576_000n);   // 46.00 → 48.00: already above 45, +2.00 → No
+  assert.equal(r4648.dti_before, "46.00"); assert.equal(r4648.dti_after, "48.00"); assert.equal(r4648.delta, "2.00"); assert.equal(r4648.result, "within_tolerance"); assert.equal(r4648.exceeds_45, false); assert.equal(r4648.already_over_45, true); assert.equal(r4648.increase_3_points, false);
+  const r4446 = guide(528_000n, 552_000n);   // 44.00 → 46.00: crosses 45 → Yes
+  assert.equal(r4446.dti_before, "44.00"); assert.equal(r4446.dti_after, "46.00"); assert.equal(r4446.result, "resubmission_required"); assert.equal(r4446.rule_code, "B3_2_10_DTI_45_OR_3PT"); assert.equal(r4446.exceeds_45, true); assert.equal(r4446.increase_3_points, false);
+  assert.equal(guide(420_000n, 480_000n).result, "resubmission_required");   // 35 → 40: +5 → Yes
+  const r4650 = guide(552_000n, 600_000n);   // 46.00 → 50.00: +4.00 and 50 ≤ 50 → Yes
+  assert.equal(r4650.dti_after, "50.00"); assert.equal(r4650.result, "resubmission_required"); assert.equal(r4650.increase_3_points, true); assert.equal(r4650.over_50, false);
+  // the same rows through evaluateResubmission: the 46.00 % baseline waives +2.00 (du.resubmission.waived); the 44.00 % baseline crossing 45 resubmits
+  const base46: DuSubmission = { ...first.submission, snapshot: { ...REFI, total_obligations_cents: 552_000n } };
+  const w4648 = evaluateResubmission(h.events, first.casefile, { baseline: base46, candidate: { ...REFI, total_obligations_cents: 576_000n }, trigger_event: "liabilities.changed", at: at2 });
+  assert.equal(w4648.result, "within_tolerance"); assert.equal(w4648.arithmetic.dti_before, "46.00"); assert.equal(w4648.arithmetic.dti_after, "48.00"); assert.equal(w4648.event.type, "du.resubmission.waived");
+  const base44: DuSubmission = { ...first.submission, snapshot: { ...REFI, total_obligations_cents: 528_000n } };
+  const e4446 = evaluateResubmission(h.events, first.casefile, { baseline: base44, candidate: { ...REFI, total_obligations_cents: 552_000n }, trigger_event: "liabilities.changed", at: at2 });
+  assert.equal(e4446.result, "resubmission_required"); assert.deepEqual(e4446.rule_codes, ["B3_2_10_DTI_45_OR_3PT"]); assert.equal(e4446.arithmetic.dti_after, "46.00"); assert.equal(e4446.checks.find((c) => c.field === "liabilities")!.arithmetic.exceeds_45, true);
 });
 
 test("23.1-T3: Given a refinance loan amount of $560,000 (LTV 70.00%, LLPA column 60.01–70.00%), when the amount changes to $560,500, then the amount test passes (cap $500) but LTV becomes 70.0625%, which falls in the 70.01–75.00% LLPA column (LLPA Matrix 09.09.2026 nine LTV bands), so the check returns `resubmission_required` on the LLPA condition; when the amount changes to $565,600 the amount test fails outright (`B3_2_10_REFI_AMOUNT_500_1PCT`).", async () => {
@@ -401,6 +418,28 @@ test("23.1-T15: Given a HomeReady casefile submitted with $6,250.00 monthly qual
   assert.equal(ev2.result, "within_tolerance"); assert.deepEqual(ev2.checks.map((c) => c.rule_code), ["B3_2_10_DTI_45_OR_3PT"]); assert.equal(ev2.arithmetic.dti_after, "40.98"); assert.equal(ev2.arithmetic.dti_delta, "0.98"); assert.equal(ev2.event.type, "du.resubmission.waived");
   // not an income-limited product: the same increase is governed by DTI alone
   assert.equal(incomeLimitedTest(1_200_000n, 1_250_000n, false).rule_code, null);
+});
+
+test("23.1 B3-2-10 funds required to close (B3_2_10_FUNDS_TO_CLOSE, rule 4 `assets`) and the B3-2-01 post-closing window (FNMA_B3_2_01_POST_CLOSING_NEW_CASEFILE_60, reason post_closing_correction)", async () => {
+  // B3-2-10 "Assets — Funds Required to Close": DU's figure $22,000.00; actual $23,500.00; documented liquid assets $24,000.00 cover it → no resubmission; $23,000.00 leaves a $500.00 shortfall → resubmit (B3-2-02)
+  const ok = fundsToCloseTest(2_200_000n, 2_350_000n, 2_400_000n); assert.equal(ok.result, "within_tolerance"); assert.equal(ok.rule_code, null); assert.equal(ok.shortfall_cents, 0n); assert.match(ok.citation, /documented sufficient liquid assets/);
+  const short = fundsToCloseTest(2_200_000n, 2_350_000n, 2_300_000n); assert.equal(short.result, "resubmission_required"); assert.equal(short.rule_code, "B3_2_10_FUNDS_TO_CLOSE"); assert.equal(short.shortfall_cents, 50_000n); assert.match(short.citation, /document liquid assets to cover the additional amount/);
+  assert.equal(fundsToCloseTest(2_200_000n, 2_200_000n, 0n).result, "within_tolerance"); assert.equal(fundsToCloseTest(2_200_000n, 2_100_000n, 0n).rule_code, null);   // not above DU's figure → the row never fires
+  assert.throws(() => fundsToCloseTest(-1n, 0n, 0n), RangeError);
+  const h = harness("2026-10-20T15:00:00.000Z"); const first = await firstRun(h, PURCHASE, "2026-10-20T15:00:00.000Z");
+  const ev = evaluateResubmission(h.events, first.casefile, { baseline: first.submission, candidate: PURCHASE, trigger_event: "verification.received", at: "2026-10-26T15:00:00.000Z", du_funds_required_to_close_cents: 2_200_000n, actual_funds_required_to_close_cents: 2_350_000n, documented_liquid_assets_cents: 2_300_000n });
+  assert.equal(ev.result, "resubmission_required"); assert.deepEqual(ev.rule_codes, ["B3_2_10_FUNDS_TO_CLOSE"]); assert.equal(ev.reason, "tolerance_breach"); assert.equal(ev.event.type, "du.resubmission.required");
+  const row = ev.checks.find((c) => c.field === "assets")!; assert.equal(row.rule_code, "B3_2_10_FUNDS_TO_CLOSE"); assert.equal(row.result, "resubmission_required"); assert.equal(row.old_value, 2_200_000n); assert.equal(row.new_value, 2_350_000n); assert.equal(row.arithmetic.shortfall_cents, "50000"); assert.equal(ev.arithmetic.documented_liquid_assets, "2300000");
+  const covered = evaluateResubmission(h.events, first.casefile, { baseline: first.submission, candidate: PURCHASE, trigger_event: "verification.received", at: "2026-10-26T15:00:00.000Z", du_funds_required_to_close_cents: 2_200_000n, actual_funds_required_to_close_cents: 2_350_000n, documented_liquid_assets_cents: 2_400_000n });
+  assert.equal(covered.result, "within_tolerance"); assert.equal(covered.checks.find((c) => c.field === "assets")!.result, "within_tolerance"); assert.equal(covered.event.type, "du.resubmission.waived");
+  // B3-2-01: a new casefile after closing only when "the DU submission using the new loan casefile occurs no more than 60 days after closing (based on the note date)" — consummation Fri Nov 6, 2026 → due Tue Jan 5, 2027; the post-closing correction submission satisfies it
+  const hr = harness("2026-10-06T15:00:00.000Z"); const refi = await firstRun(hr);
+  hr.clock.set("2026-11-06T17:00:00.000Z");
+  hr.events.append({ type: "closing.consummated", applicationId: "APP-R", actor: { kind: "agent", id: "closer" }, occurredAt: "2026-11-06T17:00:00.000Z", payload: { application_id: "APP-R", closing_id: "CL-R", note_date: "2026-11-06", consummation_on: "2026-11-06", consummation_at: "2026-11-06T17:00:00.000Z" } });
+  const t = hr.byCode("FNMA_B3_2_01_POST_CLOSING_NEW_CASEFILE_60"); assert.equal(t.length, 1); assert.equal(t[0]!.dueDate, "2027-01-05"); assert.equal(t[0]!.status, "armed");
+  const corrected = await hr.submit(refi.casefile, { ...REFI, total_obligations_cents: 458_000n }, [refi.submission], { reason: "post_closing_correction", at: "2026-11-20T15:00:00.000Z", note: D("2026-11-06") });
+  assert.equal(corrected.submission.reason, "post_closing_correction"); assert.equal(corrected.submission.submission_type, "underwriting_only"); assert.equal(hr.emitted("du.submitted").at(-1)!.payload.reason, "post_closing_correction");
+  assert.equal(hr.byCode("FNMA_B3_2_01_POST_CLOSING_NEW_CASEFILE_60")[0]!.status, "satisfied");
 });
 
 test("23.1 worked figures: P&I $3,402.62 (fixture $3,402.63) / $3,448.02, obligations $4,560.00 → DTI 38.00 % (+$450.00 → 41.75 %), 1 % = $5,600.00 vs the $500 cap, reserves $8,000.00 → $7,300.00 / $7,100.00, archival Mar 29, 2028 / Aug 2, 2027, the Sept 25, 2026 cutover", async () => {

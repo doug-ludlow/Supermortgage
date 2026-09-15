@@ -210,10 +210,10 @@ export function priceLockDate(lock: LoanFile["lock"]): PlainDate {
   const rateChanging = [...lock.extensions].filter((e) => e.rate_changed).sort((a, b) => (a.on < b.on ? 1 : -1))[0];
   return rateChanging ? rateChanging.on : lock.locked_on;
 }
-/** B4-1.4-10: the offer is stale when the note date reaches four months after the offer date (Jul 8 → Nov 8 > Nov 6 opens; Jul 6 → Nov 6 = note date fails — the spec reads "not more than four months" as strictly inside the window). */
+/** B4-1.4-10: the offer must be "not more than four months old on the date of the note" — stale only when the note date is past four months after the offer date (Jul 8 → Nov 8 > Nov 6 opens; Jul 6 → Nov 6 = the note date is exactly four months old and still eligible; Jul 5 → Nov 5 < Nov 6 fails). */
 export function valueAcceptanceOfferAge(offer_date: PlainDate, note_date: PlainDate): { stale: boolean; four_months_on: PlainDate } {
   const four_months_on = addMonths(offer_date, VALUE_ACCEPTANCE_OFFER_MAX_MONTHS);
-  return { stale: note_date >= four_months_on, four_months_on };
+  return { stale: note_date > four_months_on, four_months_on };
 }
 /** ULDD Phase 5: SID 82 "the only reasonable values are 10 characters long"; "UAD 3.6 appraisals begin with a first digit of 2 or higher". */
 export function docFileIdCheck(doc_file_id: string | null, uad_version: string | null): { ok: boolean; reason: string | null } {

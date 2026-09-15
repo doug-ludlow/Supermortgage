@@ -13,7 +13,7 @@ import { EscalationService } from "../../app/escalations.ts";
 import { Decimal } from "../../kernel/money/decimal.ts";
 import { centsToDecimal, ratePercent } from "../../kernel/money/cents.ts";
 import { computeApr, countFirstPeriod, toleranceApplied, aprAccuracyTest, financeChargeAccuracyTest, classifyFinanceCharges, prepaidFinanceCharges, pointsAndFees, totalLoanAmount, pctOf, determineQm, determineHpml, determineHoepa, evaluateStateHighCost, checkLicenses, effectiveLicense, steeringOptionsTest, pricingExceptionTest, reviewPricingException, checkRespa8, esignConsentTest,
-  runTestSuite, deriveGate, evaluateComplianceGate, assertGateOpen, ComplianceGateBlocked, requestWaiver, testDefinition, ruleSet, aporAsOf, prepaidInterest, perDiem365Rounded, APR_CURE_PLAN, GATES,
+  runTestSuite, deriveGate, evaluateComplianceGate, assertGateOpen, ComplianceGateBlocked, requestWaiver, testDefinition, FNMA_B2_1_5_02_MAX_APR_APOR_SPREAD, ruleSet, aporAsOf, prepaidInterest, perDiem365Rounded, APR_CURE_PLAN, GATES,
   type AprCalculation, type ComplianceSnapshot, type FeeItemInput, type LicenseCheck, type LoanOptionsPresented, type ComplianceTestRow, type QmRuleSet, type HoepaRuleSet, type HpmlRuleSet } from "./ops-25-1.ts";
 import { EVALUATORS_25_1 } from "./evaluators-25-1.ts";
 
@@ -352,7 +352,7 @@ test("25.1-T14: Given a `compliance_waivers` request on `APR_1026_22_ACCURACY`, 
   assert.equal(h.timer("SM_O61_BLOCKING_FAILURE_REVIEW_1BD")!.status, "satisfied", "the cure (gate re-derived open) closes the review clock");
 });
 
-test("25.1 worked figures: fixture $560,000.00 at 6.125% → per diem $93.97 × 19 = $1,785.43 (unrounded $1,785.48), PFC $3,849.95 = $1,785.43 + $1,950.00 + $84.00 + $24.95 + $5.57, A $556,150.05, P&I $3,402.62 (unrounded $3,402.61…), payments $1,224,943.20, finance charge $668,793.15, points and fees $2,064.52; buydown 0.750 points $4,200.00 at 5.875% → P&I $3,312.61, unrounded prepaid $1,712.60 (per diem $90.13…), PFC $7,977.12, A $552,022.88, finance charge $640,516.72, APR 5.979; courier $60.00 → $668,853.15; flood determination $9.00 excluded (c)(7)(iv)", () => {
+test("25.1 worked figures: fixture $560,000.00 at 6.125% → per diem $93.97 × 19 = $1,785.43 (unrounded $1,785.48), PFC $3,849.95 = $1,785.43 + $1,950.00 + $84.00 + $24.95 + $5.57, A $556,150.05, P&I $3,402.62 (unrounded $3,402.61…), payments $1,224,943.20, finance charge $668,793.15, points and fees $2,064.52; buydown 0.750 points $4,200.00 at 5.875% → P&I $3,312.61, prepaid 19 × $90.14 = $1,712.66 (per diem $90.1370 → $90.14; the unrounded $1,712.60 is not used), PFC $7,977.18, A $552,022.82, finance charge $640,516.78, APR 5.978953 → 5.979; courier $60.00 → $668,853.15; flood determination $9.00 excluded (c)(7)(iv)", () => {
   // example 1 — 26.3 convention: the per diem is rounded to the cent before multiplying
   assert.equal(perDiem365Rounded(56_000_000n, "6.125"), 9_397n);
   const pi = prepaidInterest(56_000_000n, "6.125", D("2026-11-12"));
@@ -386,15 +386,30 @@ test("25.1 worked figures: fixture $560,000.00 at 6.125% → per diem $93.97 × 
   // example 2 — the borrower buys the rate down on Wed Nov 4: 0.750 points $4,200.00, 5.875%, P&I $3,312.61
   assert.equal(Decimal.parse("560000").mul(Decimal.parse("0.0075")).toCents(), 420_000n);
   const pi2 = prepaidInterest(56_000_000n, "5.875", D("2026-11-12"));
-  assert.equal(pi2.unrounded_product_cents, 171_260n, "the spec's 19 × $90.1370 = $1,712.60 (unrounded per diem)");
+  assert.equal(pi2.unrounded_product_cents, 171_260n, "19 × $90.1370 = $1,712.60 (unrounded per diem) — not used");
   assert.equal(centsToDecimal(56_000_000n).mul(ratePercent("5.875")).div(Decimal.fromInt(365)).toScaledInt(2, "DOWN"), 9_013n, "per diem $90.1370 (truncated $90.13)");
-  assert.equal(pi2.per_diem_cents, 9_014n); assert.equal(pi2.prepaid_interest_cents, 171_266n, "26.3 convention: $90.14 × 19 = $1,712.66 — the spec's $1,712.60 uses the unrounded per diem (discrepancy)");
-  const e2 = computeApr({ ...FIXTURE, note_rate_pct: "5.875", prepaid_finance_charges_cents: 797_712n, prepaid_interest_cents: 171_260n });
-  assert.equal(e2.pi_cents, 331_261n); assert.equal(e2.prepaid_finance_charges_cents, 171_260n + 195_000n + 8_400n + 2_495n + 557n + 420_000n); assert.equal(e2.amount_financed_cents, 55_202_288n); assert.equal(e2.finance_charge_cents, 64_051_672n); assert.equal(e2.apr_str, "5.978952"); assert.equal(e2.apr_disclosed_str, "5.979");
+  assert.equal(pi2.per_diem_cents, 9_014n); assert.equal(pi2.prepaid_interest_cents, 171_266n, "26.3 convention `365_rounded_per_diem`: round($90.1370) = $90.14 × 19 = $1,712.66");
+  const e2 = computeApr({ ...FIXTURE, note_rate_pct: "5.875", prepaid_finance_charges_cents: 797_718n, prepaid_interest_cents: 171_266n });
+  assert.equal(e2.pi_cents, 331_261n); assert.equal(e2.prepaid_finance_charges_cents, 171_266n + 195_000n + 8_400n + 2_495n + 557n + 420_000n); assert.equal(e2.prepaid_finance_charges_cents, 797_718n); assert.equal(e2.amount_financed_cents, 55_202_282n); assert.equal(e2.finance_charge_cents, 64_051_678n); assert.equal(e2.apr_str, "5.978953"); assert.equal(e2.apr_disclosed_str, "5.979");
   const acc2 = aprAccuracyTest({ disclosed_apr: "6.159", actual_apr: e2.apr_disclosed_str, transaction: { irregular_first_period: true }, disclosed_finance_charge_cents: 66_879_315n, actual_finance_charge_cents: e2.finance_charge_cents });
   assert.equal(acc2.apr_variance, 0.18); assert.equal(acc2.result, "fail", "a decrease beyond tolerance is still inaccurate — the finance charge changed by more than $100 so (a)(4) does not rescue it");
   // example 3 — the $60.00 courier fee the creditor required
   const courier = classifyFinanceCharges([{ fee_item_id: "F-COUR", service_code: "courier", amount_cents: 6_000n, paid_to: "Desert Title Agency LLC", paid_to_kind: "third_party", creditor_requires_charge: true }], { as_of: D("2026-11-06"), state: "AZ" })[0]!;
   assert.equal(courier.classification, "finance_charge"); assert.equal(courier.basis_citation, "§1026.4(a)(2)");
   assert.equal(computeApr({ ...FIXTURE, prepaid_finance_charges_cents: 384_995n + 6_000n }).finance_charge_cents, 66_885_315n);
+});
+
+test("25.1 Fannie Mae B2-1.5-02 (Selling Guide 09/02/2026, pp. 226–230): POINTS_FEES_3PCT_FNMA at delivery = points and fees ≤ 3% of the total loan amount (§1026.43(e)(3)(i) tiers) and APR − APOR ≤ 2.25% for ATR Covered Loans; no APOR table → error (blocks, not waivable)", () => {
+  const started_at = "2026-11-19T15:00:00.000Z";
+  const ok = rowOf(runTestSuite("delivery", snapshot("2026-11-19"), { started_at }).tests, "POINTS_FEES_3PCT_FNMA");
+  assert.equal(ok.result, "pass"); assert.equal(ok.evidence.spread, 0.139); assert.equal(ok.evidence.max_spread, "2.25"); assert.equal(ok.evidence.spread_ok, true); assert.equal(ok.evidence.points_and_fees_ok, true); assert.equal(ok.measured_value, "206452"); assert.equal(ok.threshold_value, "1668450");
+  assert.equal(FNMA_B2_1_5_02_MAX_APR_APOR_SPREAD, "2.25"); assert.match(testDefinition("POINTS_FEES_3PCT_FNMA").citation, /B2-1\.5-02 \(06\/05\/2024/); assert.doesNotMatch(testDefinition("POINTS_FEES_3PCT_FNMA").citation, /pending verification/);
+  // spread 2.30 > 2.25 → fail even though points and fees pass (an APR of 8.320 against APOR 6.020)
+  const fail = rowOf(runTestSuite("delivery", snapshot("2026-11-19", {}, { ...FIXTURE_APR, apr_disclosed_str: "8.320" }), { started_at }).tests, "POINTS_FEES_3PCT_FNMA");
+  assert.equal(fail.result, "fail"); assert.equal(fail.evidence.spread, 2.3); assert.equal(fail.evidence.spread_ok, false); assert.equal(fail.evidence.points_and_fees_ok, true); assert.match(fail.message, /APR − APOR spread 2\.3 vs 2\.25 .*EXCEEDED/);
+  // exactly 2.25 is allowed ("may not exceed 2.25%")
+  assert.equal(rowOf(runTestSuite("delivery", snapshot("2026-11-19", {}, { ...FIXTURE_APR, apr_disclosed_str: "8.270" }), { started_at }).tests, "POINTS_FEES_3PCT_FNMA").result, "pass");
+  // no APOR table for the rate-set week → error, like QM_1026_43 (the gate blocks; officer may not waive)
+  const err = rowOf(runTestSuite("delivery", snapshot("2026-11-19", { apor_tables: [] }), { started_at }).tests, "POINTS_FEES_3PCT_FNMA");
+  assert.equal(err.result, "error"); assert.equal(err.waivable, false); assert.match(err.message, /no APOR table for the rate-set week of 2026-10-07/);
 });

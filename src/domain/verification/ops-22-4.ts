@@ -136,31 +136,42 @@ export function statementStandardsMet(s: StatementStandard, method: Verification
 export type SourceKind = "payroll" | "government_benefit" | "tax_refund" | "transfer_verified_account" | "gift" | "grant" | "sale_of_asset" | "real_estate_proceeds" | "secured_loan" | "unsecured_loan" | "virtual_currency_exchange" | "business" | "unknown";
 export type DepositStatus = "not_applicable" | "flagged" | "sourced" | "partially_sourced" | "unsourced" | "waived_refinance" | "waived_du_validated";
 export const READILY_IDENTIFIABLE: readonly SourceKind[] = ["payroll", "government_benefit", "tax_refund", "transfer_verified_account"];
-export interface DepositSource { readonly cents: bigint; readonly kind: SourceKind; readonly readily_identifiable?: boolean; readonly evidence_document_ids?: readonly string[]; }
+export interface DepositSource { readonly cents: bigint; readonly kind: SourceKind; readonly readily_identifiable?: boolean; readonly evidence_document_ids?: readonly string[];
+  /** B3-4.2-02 when the borrower "may not have all of the documentation required": the borrower's written explanation is acceptable documentation only with the lender's written rationale in the loan file (reasonable judgment on the available documentation, DTI, income and credit profile). */
+  readonly written_explanation_document_id?: string | null; readonly rationale_memo_document_id?: string | null; readonly rationale?: string | null; }
 export interface DepositInput { readonly deposit_id: string; readonly asset_id: string; readonly posted_on: PlainDate; readonly amount_cents: bigint; readonly description_on_statement: string; readonly sources: readonly DepositSource[]; readonly du_message_id?: string | null; readonly needed_for_transaction?: boolean; }
 export interface DepositResult extends DepositInput {
   readonly readily_identifiable: boolean; readonly sourced_cents: bigint; readonly unsourced_cents: bigint; readonly large_deposit: boolean; readonly status: DepositStatus; readonly source_kind: SourceKind;
   readonly reduction_cents: bigint; readonly threshold_cents: bigint; readonly source_evidence_document_ids: string[]; readonly dti_link_liability: boolean;
+  /** Sources accepted on the borrower's written explanation plus the agent's rationale memo (B3-4.2-02) — the rationale goes to the decision record. */
+  readonly explanation_with_rationale: boolean; readonly rationale: string | null; readonly unsubstantiated_source_cents: bigint;
 }
 /** "A large deposit is defined as a single deposit that exceeds 50% of the total monthly qualifying income" — $8,200.00 → $4,100.00; $7,500.00 → $3,750.00. */
 export const largeDepositThreshold = (total_monthly_qualifying_income_cents: bigint): bigint => pctFloor(total_monthly_qualifying_income_cents, 50n);
+/** A source is substantiated by a readily identifiable printed source, the Guide-named evidence, or — where documentation is unavailable — the borrower's written explanation together with the lender's written rationale (B3-4.2-02); an explanation alone substantiates nothing (SM policy). */
+export const explanationWithRationale = (s: DepositSource): boolean => !!(s.written_explanation_document_id && s.rationale_memo_document_id && typeof s.rationale === "string" && s.rationale.trim());
+export const sourceSubstantiated = (s: DepositSource): boolean => s.readily_identifiable === true || READILY_IDENTIFIABLE.includes(s.kind) || (s.evidence_document_ids?.length ?? 0) > 0 || explanationWithRationale(s);
 export function evaluateDeposit(d: DepositInput, ctx: { transaction: Transaction; threshold_cents: bigint; du_validated?: boolean }): DepositResult {
-  const sourced_cents = minBig(d.amount_cents, sum(d.sources.map((s) => s.cents)));
+  const substantiated = d.sources.filter(sourceSubstantiated);
+  const sourced_cents = minBig(d.amount_cents, sum(substantiated.map((s) => s.cents)));
   const unsourced_cents = d.amount_cents - sourced_cents;
+  const unsubstantiated_source_cents = sum(d.sources.filter((s) => !sourceSubstantiated(s)).map((s) => s.cents));
   const readily_identifiable = d.sources.some((s) => s.readily_identifiable === true || READILY_IDENTIFIABLE.includes(s.kind));
   const source_kind: SourceKind = d.sources.length ? d.sources[0]!.kind : "unknown";
-  const evidence = d.sources.flatMap((s) => s.evidence_document_ids ?? []);
+  const evidence = substantiated.flatMap((s) => [...(s.evidence_document_ids ?? []), ...(explanationWithRationale(s) ? [s.written_explanation_document_id!, s.rationale_memo_document_id!] : [])]);
+  const explanation_with_rationale = substantiated.some(explanationWithRationale);
+  const rationale = substantiated.filter(explanationWithRationale).map((s) => s.rationale!.trim()).join("; ") || null;
   const dti_link_liability = d.sources.some((s) => s.kind === "unsecured_loan" || s.kind === "secured_loan");
-  const base = { ...d, readily_identifiable, sourced_cents, unsourced_cents, source_kind, threshold_cents: ctx.threshold_cents, source_evidence_document_ids: evidence, dti_link_liability };
+  const base = { ...d, readily_identifiable, sourced_cents, unsourced_cents, source_kind, threshold_cents: ctx.threshold_cents, source_evidence_document_ids: evidence, dti_link_liability, explanation_with_rationale, rationale, unsubstantiated_source_cents };
   // Refinances: "Documentation or explanation for large deposits is not required" (a deposit that evidences a new loan still opens a 22.5 liability).
   if (ctx.transaction !== "purchase") return { ...base, large_deposit: false, status: "waived_refinance", reduction_cents: 0n };
   // DU-validated accounts: only deposits named in a DU message are tested ("If no message is issued by DU, then no documentation … is required").
   if (ctx.du_validated && !d.du_message_id) return { ...base, large_deposit: false, status: "waived_du_validated", reduction_cents: 0n };
   // "only the unsourced portion must be used to calculate whether or not it must be considered a large deposit"; "exceeds" = strictly greater.
   const large_deposit = unsourced_cents > ctx.threshold_cents;
-  if (!large_deposit) return { ...base, large_deposit, status: unsourced_cents === 0n ? "sourced" : d.sources.length ? "sourced" : "not_applicable", reduction_cents: 0n };
+  if (!large_deposit) return { ...base, large_deposit, status: unsourced_cents === 0n ? "sourced" : substantiated.length ? "sourced" : "not_applicable", reduction_cents: 0n };
   const needed = d.needed_for_transaction !== false;
-  return { ...base, large_deposit, status: d.sources.length ? "partially_sourced" : "unsourced", reduction_cents: needed ? unsourced_cents : 0n };
+  return { ...base, large_deposit, status: substantiated.length ? "partially_sourced" : "unsourced", reduction_cents: needed ? unsourced_cents : 0n };
 }
 /** Evaluate every deposit on an account, apply the unsourced reduction to the account (R4 `unsourced_deposit_offset_cents`) and emit the deposit events. */
 export function evaluateDeposits(events: EventStore, asset: AssetRecord, deposits: readonly DepositInput[], ctx: { transaction: Transaction; total_monthly_qualifying_income_cents: bigint; du_validated?: boolean }, actor: Actor = AGENT): { asset: AssetRecord; deposits: DepositResult[]; threshold_cents: bigint; events: DomainEvent[] } {
@@ -170,7 +181,7 @@ export function evaluateDeposits(events: EventStore, asset: AssetRecord, deposit
     const r = evaluateDeposit(d, { transaction: ctx.transaction, threshold_cents, ...(ctx.du_validated !== undefined ? { du_validated: ctx.du_validated } : {}) });
     results.push(r);
     if (r.large_deposit) out.push(appEvent(events, asset.application_id, "asset.deposit.flagged_large", { deposit_id: r.deposit_id, asset_id: asset.asset_id, posted_on: r.posted_on, amount_cents: r.amount_cents, unsourced_cents: r.unsourced_cents, threshold_cents, status: r.status, du_message_id: r.du_message_id ?? null }, actor));
-    if (r.status === "sourced") out.push(appEvent(events, asset.application_id, "asset.deposit.sourced", { deposit_id: r.deposit_id, asset_id: asset.asset_id, source_kind: r.source_kind, sourced_cents: r.sourced_cents, unsourced_cents: r.unsourced_cents, readily_identifiable: r.readily_identifiable, source_evidence_document_ids: r.source_evidence_document_ids }, actor));
+    if (r.status === "sourced") out.push(appEvent(events, asset.application_id, "asset.deposit.sourced", { deposit_id: r.deposit_id, asset_id: asset.asset_id, source_kind: r.source_kind, sourced_cents: r.sourced_cents, unsourced_cents: r.unsourced_cents, readily_identifiable: r.readily_identifiable, source_evidence_document_ids: r.source_evidence_document_ids, explanation_with_rationale: r.explanation_with_rationale, rationale: r.rationale }, actor));
     if (r.reduction_cents > 0n) out.push(appEvent(events, asset.application_id, "asset.deposit.unsourced", { deposit_id: r.deposit_id, asset_id: asset.asset_id, reduction_cents: r.reduction_cents, unsourced_cents: r.unsourced_cents, threshold_cents }, actor));
   }
   const offset = sum(results.map((r) => r.reduction_cents));
@@ -377,7 +388,7 @@ export const securitiesLiquidationEvidenceRequired = (value_cents: bigint, neede
 // ============================================================ R6 — reserves (B3-4.1-01; DU findings)
 export type ReserveBasis = "du_findings" | "b3_4_1_01_occupancy" | "b3_4_1_01_multiple_financed" | "employment_offer_option_2" | "nontraditional_credit";
 export interface ReservesInput { readonly occupancy: Occupancy; readonly units: number; readonly transaction: Transaction; readonly dti_bps?: number; readonly qualifying_pitia_cents: bigint; readonly du_reserves_required_cents?: bigint | null; readonly other_financed_upb_cents?: readonly bigint[]; readonly financed_property_count?: number; readonly employment_offer_reserves_cents?: bigint; readonly nontraditional_credit_reserves_cents?: bigint; }
-export interface ReserveCalculation { readonly basis: ReserveBasis; readonly months: number; readonly pitia_cents: bigint; readonly formula_cents: bigint; readonly du_required_cents: bigint | null; readonly other_financed_upb_cents: bigint; readonly financed_property_count: number; readonly pct_bps: number; readonly other_financed_cents: bigint; readonly additional_cents: bigint; readonly required_cents: bigint; }
+export interface ReserveCalculation { readonly basis: ReserveBasis; readonly months: number; readonly pitia_cents: bigint; readonly formula_cents: bigint; readonly du_required_cents: bigint | null; readonly other_financed_upb_cents: bigint; readonly financed_property_count: number; readonly pct_bps: number; readonly other_financed_cents: bigint; readonly other_financed_applies: boolean; readonly other_financed_reason: string; readonly additional_cents: bigint; readonly required_cents: bigint; }
 export function reserveMonths(i: Pick<ReservesInput, "occupancy" | "units" | "transaction" | "dti_bps">): 0 | 2 | 6 {
   if (i.occupancy === "second_home") return 2;
   if (i.occupancy === "investment" || (i.occupancy === "principal_residence" && i.units >= 2) || (i.transaction === "cash_out" && (i.dti_bps ?? 0) > 4500)) return 6;
@@ -388,14 +399,22 @@ export function otherFinancedPctBps(financed_property_count: number): 0 | 200 | 
   if (financed_property_count <= 0) return 0; if (financed_property_count <= 4) return 200; if (financed_property_count <= 6) return 400; if (financed_property_count <= 10) return 600;
   throw new RangeError(`${financed_property_count} financed properties exceeds the DU maximum of ten (B2-2-03)`);
 }
+/** B3-4.1-01: "Additional reserves are required when a borrower has multiple financed properties and the subject loan is secured by a second home or investment property" — the 2 %/4 %/6 % add-on on the other properties' UPB applies only to a second-home/investment subject; 0 on a principal-residence subject. */
+export function otherFinancedReserves(i: { occupancy: Occupancy; financed_property_count: number; other_financed_upb_cents: bigint }): { applies: boolean; pct_bps: 0 | 200 | 400 | 600; tier_bps: 0 | 200 | 400 | 600; cents: bigint; reason: string } {
+  const tier = i.financed_property_count > 0 ? otherFinancedPctBps(i.financed_property_count) : 0;
+  const applies = (i.occupancy === "second_home" || i.occupancy === "investment") && i.other_financed_upb_cents > 0n;
+  if (!applies) return { applies: false, pct_bps: 0, tier_bps: tier, cents: 0n, reason: i.other_financed_upb_cents > 0n ? `subject is a ${i.occupancy.replace(/_/g, " ")}: no other-financed-property reserve (B3-4.1-01 — the add-on applies only when the subject loan is secured by a second home or investment property; the ${tier / 100}% tier for ${i.financed_property_count} financed properties is not applied)` : "no other financed properties" };
+  return { applies: true, pct_bps: tier, tier_bps: tier, cents: bpsFloor(i.other_financed_upb_cents, BigInt(tier)), reason: `${tier / 100}% of the aggregate UPB of financed properties other than the subject and the principal residence (${i.financed_property_count} financed properties; second-home/investment subject — B3-4.1-01)` };
+}
 export function reservesRequired(i: ReservesInput): ReserveCalculation {
   const months = reserveMonths(i); const formula_cents = BigInt(months) * i.qualifying_pitia_cents;
   const du = i.du_reserves_required_cents ?? null; const base = maxBig(du ?? 0n, formula_cents);
   const upbs = i.other_financed_upb_cents ?? []; const other_upb = sum(upbs); const count = i.financed_property_count ?? (upbs.length ? upbs.length + 1 : 0);
-  const pct_bps = upbs.length ? otherFinancedPctBps(count) : 0; const other_financed_cents = bpsFloor(other_upb, BigInt(pct_bps));
+  const ofr = otherFinancedReserves({ occupancy: i.occupancy, financed_property_count: count, other_financed_upb_cents: other_upb });
+  const pct_bps = ofr.pct_bps; const other_financed_cents = ofr.cents;
   const additional_cents = (i.employment_offer_reserves_cents ?? 0n) + (i.nontraditional_credit_reserves_cents ?? 0n);
-  const basis: ReserveBasis = upbs.length ? "b3_4_1_01_multiple_financed" : i.employment_offer_reserves_cents ? "employment_offer_option_2" : i.nontraditional_credit_reserves_cents ? "nontraditional_credit" : du !== null && du >= formula_cents ? "du_findings" : "b3_4_1_01_occupancy";
-  return { basis, months, pitia_cents: i.qualifying_pitia_cents, formula_cents, du_required_cents: du, other_financed_upb_cents: other_upb, financed_property_count: count, pct_bps, other_financed_cents, additional_cents, required_cents: base + other_financed_cents + additional_cents };
+  const basis: ReserveBasis = ofr.applies ? "b3_4_1_01_multiple_financed" : i.employment_offer_reserves_cents ? "employment_offer_option_2" : i.nontraditional_credit_reserves_cents ? "nontraditional_credit" : du !== null && du >= formula_cents ? "du_findings" : "b3_4_1_01_occupancy";
+  return { basis, months, pitia_cents: i.qualifying_pitia_cents, formula_cents, du_required_cents: du, other_financed_upb_cents: other_upb, financed_property_count: count, pct_bps, other_financed_cents, other_financed_applies: ofr.applies, other_financed_reason: ofr.reason, additional_cents, required_cents: base + other_financed_cents + additional_cents };
 }
 /** 23.1's B3-2-10 tolerance: verified reserves below 90 % of the findings' requirement force a resubmission; the SM gate needs the full amount. */
 export function reserveTolerance(verified_cents: bigint, required_cents: bigint): { sufficient: boolean; tolerance_90pct_ok: boolean; resubmission_required: boolean; resubmission_rule: "B3_2_10_RESERVES_90PCT" | null; shortfall_cents: bigint } {
@@ -405,7 +424,7 @@ export function reserveTolerance(verified_cents: bigint, required_cents: bigint)
 export function computeReserves(events: EventStore, i: ReservesInput & { application_id: string; verified_reserves_cents: bigint; worksheet_id?: string | null }, actor: Actor = AGENT): { calc: ReserveCalculation & { calc_id: string; verified_cents: bigint; tolerance_90pct_ok: boolean; sufficient: boolean; worksheet_id: string | null }; tolerance: ReturnType<typeof reserveTolerance>; event: DomainEvent; shortfall_event: DomainEvent | null } {
   const c = reservesRequired(i); const t = reserveTolerance(i.verified_reserves_cents, c.required_cents);
   const calc = { ...c, calc_id: ids("rsv"), verified_cents: i.verified_reserves_cents, tolerance_90pct_ok: t.tolerance_90pct_ok, sufficient: t.sufficient, worksheet_id: i.worksheet_id ?? null };
-  const event = appEvent(events, i.application_id, "reserves.computed", { calc_id: calc.calc_id, basis: c.basis, months: c.months, required_cents: c.required_cents, du_required_cents: c.du_required_cents, other_financed_cents: c.other_financed_cents, pct_bps: c.pct_bps, verified_cents: i.verified_reserves_cents, sufficient: t.sufficient, tolerance_90pct_ok: t.tolerance_90pct_ok, resubmission_rule: t.resubmission_rule }, actor);
+  const event = appEvent(events, i.application_id, "reserves.computed", { calc_id: calc.calc_id, basis: c.basis, months: c.months, required_cents: c.required_cents, du_required_cents: c.du_required_cents, other_financed_cents: c.other_financed_cents, other_financed_applies: c.other_financed_applies, occupancy: i.occupancy, pct_bps: c.pct_bps, verified_cents: i.verified_reserves_cents, sufficient: t.sufficient, tolerance_90pct_ok: t.tolerance_90pct_ok, resubmission_rule: t.resubmission_rule }, actor);
   const shortfall_event = t.sufficient ? null : appEvent(events, i.application_id, "reserves.shortfall", { calc_id: calc.calc_id, shortfall_cents: t.shortfall_cents, required_cents: c.required_cents, verified_cents: i.verified_reserves_cents, resubmission_required: t.resubmission_required, resubmission_rule: t.resubmission_rule, restructure_owner: "23.2" }, actor);
   return { calc, tolerance: t, event, shortfall_event };
 }
@@ -446,15 +465,22 @@ export function miCoverageBps(ltv_milli_pct: number): 0 | 1200 | 2500 | 3000 | 3
   const whole = Math.ceil(ltv_milli_pct / 1000);
   if (whole <= 80) return 0; if (whole <= 85) return 1200; if (whole <= 90) return 2500; if (whole <= 95) return 3000; return 3500;
 }
-export interface IpcTestInput { readonly sales_price_cents: bigint; readonly appraised_value_cents: bigint; readonly loan_amount_cents: bigint; readonly subordinate_cents?: bigint; readonly occupancy: Occupancy; readonly items: readonly IpcItem[]; readonly cltv_milli_pct?: number; }
-export interface IpcIteration { readonly iteration: number; readonly sales_price_cents: bigint; readonly ipc_base_cents: bigint; readonly cltv_milli_pct: number; readonly band_bps: number; readonly max_financing_concessions_cents: bigint; readonly financing_concessions_cents: bigint; readonly excess_cents: bigint; readonly adjusted_price_cents: bigint; readonly ltv_milli_pct: number; readonly mi_coverage_bps: number; }
-export interface IpcTest { readonly ok: boolean; readonly iterations: IpcIteration[]; readonly financing_concessions_cents: bigint; readonly sales_concessions_cents: bigint; readonly max_financing_concessions_cents: bigint; readonly excess_cents: bigint; readonly adjusted_price_cents: bigint; readonly ltv_milli_pct: number; readonly cltv_milli_pct: number; readonly band_bps: number; readonly mi_coverage_bps: number; readonly reclassified: boolean; readonly payment_abatement: boolean; readonly undisclosed: boolean; }
+export interface IpcTestInput { readonly sales_price_cents: bigint; readonly appraised_value_cents: bigint; readonly loan_amount_cents: bigint; readonly subordinate_cents?: bigint; readonly occupancy: Occupancy; readonly items: readonly IpcItem[]; readonly cltv_milli_pct?: number;
+  /** CD borrower-paid total closing costs (J) before credits, including prepaids — the base of B3-4.1-02's second cap ("financing concessions must be equal to or less than the sum of the borrower's closing costs"); null/undefined → the closing-cost cap is not evaluated. */
+  readonly borrower_closing_costs_cents?: bigint | null;
+  /** Interested-party-paid closing-cost items that are not on the borrower-paid J (beyond the buydown subsidy / HOA items among `items`). */
+  readonly interested_party_paid_closing_costs_cents?: bigint | null; }
+export interface IpcIteration { readonly iteration: number; readonly sales_price_cents: bigint; readonly ipc_base_cents: bigint; readonly cltv_milli_pct: number; readonly band_bps: number; readonly max_financing_concessions_cents: bigint; readonly closing_cost_cap_cents: bigint | null; readonly effective_limit_cents: bigint; readonly financing_concessions_cents: bigint; readonly excess_cents: bigint; readonly adjusted_price_cents: bigint; readonly ltv_milli_pct: number; readonly mi_coverage_bps: number; }
+export interface IpcTest { readonly ok: boolean; readonly iterations: IpcIteration[]; readonly financing_concessions_cents: bigint; readonly sales_concessions_cents: bigint; readonly max_financing_concessions_cents: bigint; readonly closing_cost_cap_cents: bigint | null; readonly effective_limit_cents: bigint; readonly binding_cap: "band" | "closing_costs"; readonly excess_cents: bigint; readonly adjusted_price_cents: bigint; readonly ltv_milli_pct: number; readonly cltv_milli_pct: number; readonly band_bps: number; readonly mi_coverage_bps: number; readonly reclassified: boolean; readonly payment_abatement: boolean; readonly undisclosed: boolean; }
 export function testIpcLimits(i: IpcTestInput): IpcTest {
   const sub = i.subordinate_cents ?? 0n;
   const financing = sum(i.items.filter((x) => x.counts_toward_limit && x.status !== "rejected").map((x) => x.amount_cents));
   const declaredSales = sum(i.items.filter((x) => x.kind === "sales_concession" || x.kind === "lender_incentive").map((x) => x.amount_cents));
   const undisclosed = i.items.some((x) => x.kind === "undisclosed_suspected" || !x.disclosed_on_settlement);
   const payment_abatement = i.items.some((x) => /abatement/i.test(String(x.kind)) || (x as { payment_abatement?: boolean }).payment_abatement === true);
+  // B3-4.1-02 second cap: Σ closing costs of the borrower's transaction incl. prepaids, counting the items the interested party pays (J before credits + the buydown subsidy cost / HOA ≤ 12 months among the counted items + other interested-party-paid closing-cost items); "Any amount exceeding the borrower's closing costs must be treated as a sales concession."
+  const ipcPaidClosingCostItems = sum(i.items.filter((x) => x.counts_toward_limit && x.status !== "rejected" && (x.kind === "buydown_subsidy" || x.kind === "hoa_prepaid")).map((x) => x.amount_cents));
+  const closing_cost_cap: bigint | null = i.borrower_closing_costs_cents === undefined || i.borrower_closing_costs_cents === null ? null : i.borrower_closing_costs_cents + ipcPaidClosingCostItems + (i.interested_party_paid_closing_costs_cents ?? 0n);
   const iterations: IpcIteration[] = [];
   let price = i.sales_price_cents - declaredSales; let excess = 0n; let band = 0; let lastCltv = i.cltv_milli_pct ?? 0;
   for (let n = 1; n <= 3; n++) {
@@ -462,25 +488,25 @@ export function testIpcLimits(i: IpcTestInput): IpcTest {
     const cltv = n === 1 && i.cltv_milli_pct !== undefined ? i.cltv_milli_pct : ratioMilliPct(i.loan_amount_cents + sub, base);
     const b = ipcBandBps(cltv, i.occupancy);
     if (n > 1 && b === band) break;   // the band can only tighten; the re-evaluation is stable once it stops moving (at most two iterations)
-    const max = bpsFloor(base, BigInt(b));
-    excess = maxBig(0n, financing - max);
+    const max = bpsFloor(base, BigInt(b)); const limit = closing_cost_cap === null ? max : minBig(max, closing_cost_cap);
+    excess = maxBig(0n, financing - limit);
     const adjusted = i.sales_price_cents - declaredSales - excess; const ltv = ratioMilliPct(i.loan_amount_cents, minBig(adjusted, i.appraised_value_cents));
-    iterations.push({ iteration: n, sales_price_cents: price, ipc_base_cents: base, cltv_milli_pct: cltv, band_bps: b, max_financing_concessions_cents: max, financing_concessions_cents: financing, excess_cents: excess, adjusted_price_cents: adjusted, ltv_milli_pct: ltv, mi_coverage_bps: miCoverageBps(ltv) });
+    iterations.push({ iteration: n, sales_price_cents: price, ipc_base_cents: base, cltv_milli_pct: cltv, band_bps: b, max_financing_concessions_cents: max, closing_cost_cap_cents: closing_cost_cap, effective_limit_cents: limit, financing_concessions_cents: financing, excess_cents: excess, adjusted_price_cents: adjusted, ltv_milli_pct: ltv, mi_coverage_bps: miCoverageBps(ltv) });
     lastCltv = cltv;
     if (excess === 0n) break;
     band = b; price = adjusted;
   }
   const last = iterations[iterations.length - 1]!; const first = iterations[0]!;
-  return { ok: first.excess_cents === 0n && !payment_abatement && !undisclosed, iterations, financing_concessions_cents: financing, sales_concessions_cents: declaredSales + last.excess_cents, max_financing_concessions_cents: first.max_financing_concessions_cents, excess_cents: first.excess_cents, adjusted_price_cents: first.adjusted_price_cents, ltv_milli_pct: first.ltv_milli_pct, cltv_milli_pct: lastCltv, band_bps: last.band_bps, mi_coverage_bps: first.mi_coverage_bps, reclassified: first.excess_cents > 0n, payment_abatement, undisclosed };
+  return { ok: first.excess_cents === 0n && !payment_abatement && !undisclosed, iterations, financing_concessions_cents: financing, sales_concessions_cents: declaredSales + last.excess_cents, max_financing_concessions_cents: first.max_financing_concessions_cents, closing_cost_cap_cents: closing_cost_cap, effective_limit_cents: first.effective_limit_cents, binding_cap: closing_cost_cap !== null && closing_cost_cap < first.max_financing_concessions_cents ? "closing_costs" : "band", excess_cents: first.excess_cents, adjusted_price_cents: first.adjusted_price_cents, ltv_milli_pct: first.ltv_milli_pct, cltv_milli_pct: lastCltv, band_bps: last.band_bps, mi_coverage_bps: first.mi_coverage_bps, reclassified: first.excess_cents > 0n, payment_abatement, undisclosed };
 }
 /** Run the IPC test and emit `ipc.limit.ok` (gate satisfied) or `ipc.limit.exceeded` + `ipc.excess.reclassified` (21.5 changed circumstance, 24.6 MI re-quote, 23.1 resubmission). */
 export function applyIpcTest(events: EventStore, application_id: string, i: IpcTestInput, actor: Actor = AGENT): { test: IpcTest; events: DomainEvent[]; hand_offs: string[] } {
   const t = testIpcLimits(i); const out: DomainEvent[] = []; const hand_offs: string[] = [];
   if (t.payment_abatement) hand_offs.push("23.2 (loans with any type of payment abatement are not eligible)");
-  if (t.ok) out.push(appEvent(events, application_id, "ipc.limit.ok", { max_financing_concessions_cents: t.max_financing_concessions_cents, financing_concessions_cents: t.financing_concessions_cents, band_bps: t.band_bps, cltv_milli_pct: t.cltv_milli_pct, ipc_base_cents: t.iterations[0]!.ipc_base_cents }, actor));
+  if (t.ok) out.push(appEvent(events, application_id, "ipc.limit.ok", { max_financing_concessions_cents: t.max_financing_concessions_cents, closing_cost_cap_cents: t.closing_cost_cap_cents, effective_limit_cents: t.effective_limit_cents, financing_concessions_cents: t.financing_concessions_cents, band_bps: t.band_bps, cltv_milli_pct: t.cltv_milli_pct, ipc_base_cents: t.iterations[0]!.ipc_base_cents }, actor));
   else if (t.reclassified) {
     const last = t.iterations[t.iterations.length - 1]!;
-    out.push(appEvent(events, application_id, "ipc.limit.exceeded", { max_financing_concessions_cents: t.max_financing_concessions_cents, financing_concessions_cents: t.financing_concessions_cents, excess_cents: t.excess_cents, band_bps: t.iterations[0]!.band_bps }, actor));
+    out.push(appEvent(events, application_id, "ipc.limit.exceeded", { max_financing_concessions_cents: t.max_financing_concessions_cents, closing_cost_cap_cents: t.closing_cost_cap_cents, effective_limit_cents: t.effective_limit_cents, binding_cap: t.binding_cap, financing_concessions_cents: t.financing_concessions_cents, excess_cents: t.excess_cents, band_bps: t.iterations[0]!.band_bps }, actor));
     out.push(appEvent(events, application_id, "ipc.excess.reclassified", { excess_cents: t.excess_cents, sales_concessions_cents: t.sales_concessions_cents, adjusted_price_cents: t.adjusted_price_cents, ltv_milli_pct: t.ltv_milli_pct, mi_coverage_bps: t.mi_coverage_bps, new_band_bps: last.band_bps, new_max_financing_concessions_cents: last.max_financing_concessions_cents, remaining_excess_cents: last.excess_cents, iterations: t.iterations.length, hand_off: ["21.5", "24.6", "23.1"], changed_circumstance: true }, actor));
     // 21.5's changed-circumstance record (rule 5(ii): the information received is the reclassification itself); 25.1's "cd"/"le" checkpoints re-run on the contract change.
     out.push(appEvent(events, application_id, "purchase_contracts.changed", { reason: "ipc_excess_reclassified", sales_price_cents: t.adjusted_price_cents, sales_concessions_cents: t.sales_concessions_cents, changed_circumstance_basis: "ipc_reclassification", owner: "21.5" }, actor));
@@ -492,7 +518,7 @@ export interface IpcCure { readonly option: "cap_credit_at_maximum" | "renegotia
 /** The compliant structures the agent presents (never chosen for the borrower/seller — the outcome is recorded as their decision; a term change → underwriting_reviewer counteroffer test). */
 export function ipcCures(t: IpcTest, i: IpcTestInput): IpcCure[] {
   const last = t.iterations[t.iterations.length - 1]!; const buydown = sum(i.items.filter((x) => x.kind === "buydown_subsidy").map((x) => x.amount_cents));
-  const cures: IpcCure[] = [{ option: "cap_credit_at_maximum", financing_concessions_cents: last.max_financing_concessions_cents, sales_price_cents: i.sales_price_cents, narrative: `cap the interested-party credit at ${money(last.max_financing_concessions_cents)} (${last.band_bps / 100}% band)` },
+  const cures: IpcCure[] = [{ option: "cap_credit_at_maximum", financing_concessions_cents: last.effective_limit_cents, sales_price_cents: i.sales_price_cents, narrative: `cap the interested-party credit at ${money(last.effective_limit_cents)} (${last.closing_cost_cap_cents !== null && last.closing_cost_cap_cents < last.max_financing_concessions_cents ? "the borrower's closing costs — B3-4.1-02 second cap" : `${last.band_bps / 100}% band`})` },
     { option: "renegotiate_price", financing_concessions_cents: t.financing_concessions_cents, sales_price_cents: last.adjusted_price_cents, narrative: `re-negotiate the price to ${money(last.adjusted_price_cents)} with the excess as a sales concession (LTV ${fmtMilliPct(last.ltv_milli_pct)})` }];
   if (buydown > 0n) cures.push({ option: "remove_buydown", financing_concessions_cents: t.financing_concessions_cents - buydown, sales_price_cents: i.sales_price_cents, narrative: `remove the interested-party-funded buydown (${money(buydown)})` });
   return cures;
@@ -699,8 +725,8 @@ export function assetGateResult(code: AssetGateCode, f: Record<string, unknown>)
     case "FNMA_B3_4_1_02_IPC_LIMIT_GATE": {
       if (typeof f.ok === "boolean") return f.ok ? { open: true } : { open: false, reason: "financing concessions exceed the band maximum (excess reclassified)" };
       if (f.sales_price_cents === undefined) return { open: false, reason: "IPC test inputs (price, appraised value, loan amount, items) are required" };
-      const t = testIpcLimits({ sales_price_cents: big(f.sales_price_cents), appraised_value_cents: big(f.appraised_value_cents), loan_amount_cents: big(f.loan_amount_cents), subordinate_cents: big(f.subordinate_cents), occupancy: (f.occupancy as Occupancy | undefined) ?? "principal_residence", items: (f.items as IpcItem[] | undefined) ?? [] });
-      return t.ok ? { open: true } : { open: false, reason: `financing concessions ${money(t.financing_concessions_cents)} exceed ${money(t.max_financing_concessions_cents)} (${t.iterations[0]!.band_bps / 100}% band) by ${money(t.excess_cents)}` };
+      const t = testIpcLimits({ sales_price_cents: big(f.sales_price_cents), appraised_value_cents: big(f.appraised_value_cents), loan_amount_cents: big(f.loan_amount_cents), subordinate_cents: big(f.subordinate_cents), occupancy: (f.occupancy as Occupancy | undefined) ?? "principal_residence", items: (f.items as IpcItem[] | undefined) ?? [], borrower_closing_costs_cents: f.borrower_closing_costs_cents === undefined || f.borrower_closing_costs_cents === null ? null : big(f.borrower_closing_costs_cents) });
+      return t.ok ? { open: true } : { open: false, reason: `financing concessions ${money(t.financing_concessions_cents)} exceed ${money(t.effective_limit_cents)} (${t.binding_cap === "closing_costs" ? "the borrower's closing costs, B3-4.1-02 second cap" : `${t.iterations[0]!.band_bps / 100}% band`}) by ${money(t.excess_cents)}` };
     }
     case "FNMA_B2_1_3_02_LCOR_CASHBACK_GATE": {
       if (f.transaction !== undefined && f.transaction !== "lcor") return { open: true };

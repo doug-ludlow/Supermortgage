@@ -66,6 +66,8 @@ export const FORMULAS = {
   base_salary: "B3-3.3-01.base_salary.v2026-03-04",
   base_hourly_fixed: "B3-3.3-01.base_hourly_fixed.v2026-03-04",
   variable_trending: "B3-3.3-02.variable_trending.v2026-03-04",
+  variable_base_trending: "B3-3.3-01.variable_base_trending.v2026-03-04",
+  variable_base_average_hours: "B3-3.3-01.variable_base_average_hours.v2026-03-04",
   bonus_annualized: "B3-3.3-02.bonus_annualized.v2026-03-04",
   employment_offer: "B3-3.3-03.employment_offer.v2026-03-04",
   temporary_leave: "B3-3.3-09.temporary_leave.v2026-03-04",
@@ -152,6 +154,10 @@ export interface EmploymentVerification {
   readonly contact_name: string | null; readonly contact_title: string | null; readonly verifier_identity: string; readonly contacted_at: string; readonly contacted_on: PlainDate;
   readonly employment_status: "active" | "on_leave" | "terminated" | "unknown"; readonly start_date_confirmed: PlainDate | null;
   readonly note_date_used: PlainDate; readonly window_start: PlainDate; readonly within_window: boolean; readonly recording_document_id: string | null; readonly transcript_document_id: string | null;
+  /** vendor_written: the vendor's data as-of date and B3-3.1-04's 35-calendar-day test ("no more than 35 days old as of the note date"). */
+  readonly vendor_data_as_of: PlainDate | null; readonly vendor_data_35d_ok: boolean | null;
+  /** B3-3.1-04 post-closing alternative: obtained after closing, up to the time of loan delivery — satisfies delivery eligibility (29.x), never the SM `consummate` overlay. */
+  readonly post_closing: boolean; readonly delivery_eligible: boolean;
 }
 export interface VvoeInput {
   readonly application_id: string; readonly borrower_id: string; readonly income_ids?: readonly string[]; readonly method: VvoeMethod; readonly employer_name: string;
@@ -159,7 +165,11 @@ export interface VvoeInput {
   readonly contact_name?: string | null; readonly contact_title?: string | null; readonly verifier_identity: string; readonly contacted_at: string;
   readonly employment_status?: EmploymentVerification["employment_status"]; readonly start_date_confirmed?: PlainDate | null; readonly note_date: PlainDate; readonly calendar?: Calendar;
   readonly recording_document_id?: string | null; readonly transcript_document_id?: string | null; readonly vvoe_id?: string;
+  readonly vendor_data_as_of?: PlainDate | null; readonly post_closing?: boolean; readonly delivery_date?: PlainDate | null;
 }
+/** B3-3.1-04 vendor note: "the verification must evidence that the information in the vendor's database was no more than 35 days old as of the note date". */
+export const VENDOR_DATA_MAX_AGE_DAYS = 35;
+export const vendorDataFloor = (noteDate: PlainDate): PlainDate => addDays(noteDate, -VENDOR_DATA_MAX_AGE_DAYS);
 /** The window opens (R1): the agent schedules the VVOE two creditor business days before the note date by default (edge case: survive small slips); arms SM_VVOE_SCHEDULE_2BD. */
 export function scheduleVvoe(events: EventStore, r: { application_id: string; borrower_id: string; method?: VvoeMethod; note_date: PlainDate; calendar?: Calendar; vvoe_id?: string }, actor: Actor = AGENT): { vvoe_id: string; window: VerificationWindow; scheduled_for: PlainDate; event: DomainEvent } {
   nonEmpty(r.application_id, "application_id"); nonEmpty(r.borrower_id, "borrower_id");
@@ -184,14 +194,25 @@ export function recordVvoe(events: EventStore, r: VvoeInput, actor: Actor = AGEN
   }
   const window = windowForMethod(r.method, r.note_date, r.calendar ?? creditor);
   const contacted_on = civilDate(r.contacted_at);
-  const within_window = withinWindow(window, contacted_on);
+  const vendor_data_as_of = r.method === "vendor_written" ? (r.vendor_data_as_of ?? null) : null;
+  if (r.method === "vendor_written" && !vendor_data_as_of) throw new IncomeRuleRefused("VENDOR_DATA_AS_OF_REQUIRED", "B3-3.1-04: the verification must evidence that the information in the vendor's database was no more than 35 days old as of the note date", "a vendor_written verification must state the vendor data as-of date");
+  const vendor_data_35d_ok = vendor_data_as_of ? vendor_data_as_of >= vendorDataFloor(r.note_date) : null;
+  const post_closing = r.post_closing === true;
+  const within_window = !post_closing && withinWindow(window, contacted_on) && vendor_data_35d_ok !== false;
+  const delivery_eligible = within_window || (post_closing && contacted_on > r.note_date && (r.delivery_date ? contacted_on <= r.delivery_date : true) && vendor_data_35d_ok !== false);
   const record: EmploymentVerification = { vvoe_id: r.vvoe_id ?? ids("vvoe"), application_id: r.application_id, borrower_id: r.borrower_id, income_ids: r.income_ids ?? [], method: r.method, employer_name: r.employer_name,
     employer_phone: r.employer_phone ?? null, phone_source: (r.phone_source as PhoneSource | undefined) ?? null, phone_source_evidence_document_id: r.phone_source_evidence_document_id ?? null, contact_name: r.contact_name ?? null, contact_title: r.contact_title ?? null,
     verifier_identity: r.verifier_identity, contacted_at: r.contacted_at, contacted_on, employment_status: r.employment_status ?? "active", start_date_confirmed: r.start_date_confirmed ?? null, note_date_used: r.note_date, window_start: window.window_start, within_window,
-    recording_document_id: r.recording_document_id ?? null, transcript_document_id: r.transcript_document_id ?? null };
-  const event = events.append({ type: "vvoe.completed", applicationId: r.application_id, actor, payload: { vvoe_id: record.vvoe_id, borrower_id: record.borrower_id, method: record.method, contacted_on, window_start: window.window_start, note_date_used: r.note_date, within_window, employment_status: record.employment_status, application_id: r.application_id } });
-  const missed = within_window ? null : events.append({ type: "vvoe.window.missed", applicationId: r.application_id, actor, payload: { vvoe_id: record.vvoe_id, borrower_id: record.borrower_id, contacted_on, window_start: window.window_start, note_date_used: r.note_date, application_id: r.application_id } });
+    recording_document_id: r.recording_document_id ?? null, transcript_document_id: r.transcript_document_id ?? null, vendor_data_as_of, vendor_data_35d_ok, post_closing, delivery_eligible };
+  const event = events.append({ type: "vvoe.completed", applicationId: r.application_id, actor, payload: { vvoe_id: record.vvoe_id, borrower_id: record.borrower_id, method: record.method, contacted_on, window_start: window.window_start, note_date_used: r.note_date, within_window, vendor_data_as_of, vendor_data_35d_ok, post_closing, delivery_eligible, employment_status: record.employment_status, application_id: r.application_id } });
+  const missed = within_window ? null : events.append({ type: post_closing ? "vvoe.post_closing.recorded" : "vvoe.window.missed", applicationId: r.application_id, actor, payload: { vvoe_id: record.vvoe_id, borrower_id: record.borrower_id, contacted_on, window_start: window.window_start, note_date_used: r.note_date, delivery_eligible, ...(vendor_data_as_of ? { vendor_data_as_of, vendor_data_35d_ok } : {}), application_id: r.application_id } });
   return { record, event, missed };
+}
+/** 29.x `submitDelivery` gate (B3-3.1-04): a VVOE inside the note-date window, or the post-closing alternative obtained up to the time of delivery; otherwise "the loan is ineligible for sale to Fannie Mae". */
+export function vvoeDeliveryEligibility(records: readonly Pick<EmploymentVerification, "within_window" | "post_closing" | "contacted_on" | "delivery_eligible">[], delivery_date: PlainDate | null = null): { eligible: boolean; basis: "within_window" | "post_closing_before_delivery" | null; reason: string | null } {
+  if (records.some((x) => x.within_window)) return { eligible: true, basis: "within_window", reason: null };
+  if (records.some((x) => x.post_closing && x.delivery_eligible && (delivery_date ? x.contacted_on <= delivery_date : true))) return { eligible: true, basis: "post_closing_before_delivery", reason: null };
+  return { eligible: false, basis: null, reason: "B3-3.1-04: the verbal VOE (or allowable alternative) was not obtained prior to delivery — the loan is ineligible for sale to Fannie Mae" };
 }
 /** DU employment validation with a Close by Date on/after the note date satisfies the VVOE gate (timer row: "or `du_validation` employment with Close by Date ≥ note date"). */
 export function vvoeFromDuValidation(events: EventStore, r: { application_id: string; borrower_id: string; employer_name: string; close_by_date: PlainDate; note_date: PlainDate; report_reference_id: string }, actor: Actor = AGENT): ReturnType<typeof recordVvoe> | null {
@@ -236,7 +257,7 @@ export function hourlyBase(h: HourlyInput): IncomeCalculation {
   nonNeg(h.rate_cents, "rate_cents");
   const cls = hourlyClassification(h);
   const inputs = { rate_cents: String(h.rate_cents), guaranteed_hours_per_week: h.guaranteed_hours_per_week ?? null, hours_min: h.hours_min ?? null, hours_max: h.hours_max ?? null };
-  if (cls === "base_hourly_variable") return calc({ income_type: "base_hourly_variable", formula_version: FORMULAS.variable_trending, inputs, steps: [{ label: "hours fluctuate beyond minor variances → variable base income (R3 trending applies)", cents: "0" }], monthly_qualifying_cents: 0n, reason: "reclassified_variable_hours", reclassified_to: "base_hourly_variable" });
+  if (cls === "base_hourly_variable") return calc({ income_type: "base_hourly_variable", formula_version: FORMULAS.variable_base_trending, inputs, steps: [{ label: "hours fluctuate beyond minor variances → variable base income (B3-3.3-01 variable-base rules: 12-month history; stable/increasing average of YTD and prior year; decreasing → stabilized then YTD ÷ months elapsed; or Average Hours × current rate — R3 base_hourly_variable branch)", cents: "0" }], monthly_qualifying_cents: 0n, reason: "reclassified_variable_hours", reclassified_to: "base_hourly_variable" });
   const hours = h.guaranteed_hours_per_week ?? h.avg_hours_per_week ?? h.hours_max!;
   const hoursTenths = BigInt(Math.round(hours * 10));                     // hours at 0.1 precision keep the arithmetic in integers
   const annual = h.rate_cents * hoursTenths * 52n;                          // ×10 scale
@@ -263,6 +284,10 @@ export function assessTrend(t: TrendInput): TrendResult {
 }
 export interface VariableIncomeInput extends TrendInput {
   readonly income_type?: IncomeType;
+  /** B3-3.3-01 Average Hours method for `base_hourly_variable`: average monthly hours over at least the most recent 12 months × the current fixed hourly rate. */
+  readonly average_hours?: { readonly avg_monthly_hours: number; readonly months_of_hours: number; readonly current_hourly_rate_cents: bigint } | null;
+  /** A pay raise used in the calculation must be in place prior to closing (B3-3.3-01). */
+  readonly pay_raise?: { readonly effective_date: PlainDate; readonly closing_date: PlainDate } | null;
   /** Paystub-level evidence of a flat run after a decline: the date it stabilised and the income received since. */
   readonly stabilization?: { readonly since: PlainDate; readonly cents_since: bigint; readonly months_since: number; readonly evidence_document_ids?: readonly string[] } | null;
   readonly history_months?: number | null; readonly offsetting_factors?: readonly string[] | null;
@@ -274,25 +299,44 @@ export interface VariableIncomeInput extends TrendInput {
 export function variableIncome(v: VariableIncomeInput): IncomeCalculation & { trend_detail: TrendResult } {
   const trend_detail = assessTrend(v);
   const income_type = v.income_type ?? "overtime";
+  // B3-3.3-01 (variable base income: a fixed hourly rate with fluctuating hours, or an hourly rate that varies) has its own table; B3-3.3-02 governs bonus/commission/overtime/tip.
+  const variableBase = income_type === "base_hourly_variable";
+  const formula_version = variableBase ? FORMULAS.variable_base_trending : FORMULAS.variable_trending;
+  const topic = variableBase ? "B3-3.3-01" : "B3-3.3-02";
   const history = v.history_months ?? null;
-  if (history !== null && history < 12) return { ...calc({ income_type, formula_version: FORMULAS.variable_trending, inputs: { ytd_cents: String(v.ytd_cents), ytd_months: v.ytd_months, prior_year_cents: String(v.prior_year_cents), history_months: history }, steps: [{ label: "history < 12 months → not eligible (B3-3.3-02)", cents: "0" }], monthly_qualifying_cents: 0n, trend: trend_detail.trend, reason: "history_under_12_months" }), trend_detail };
+  if (v.pay_raise && v.pay_raise.effective_date > v.pay_raise.closing_date) throw new IncomeRuleRefused("PAY_RAISE_NOT_IN_PLACE", "B3-3.3-01: any pay raises for variable base income must be in place prior to closing", `pay raise effective ${v.pay_raise.effective_date} is after the closing date ${v.pay_raise.closing_date}: use the rate in place`);
+  if (history !== null && history < 12) return { ...calc({ income_type, formula_version, inputs: { ytd_cents: String(v.ytd_cents), ytd_months: v.ytd_months, prior_year_cents: String(v.prior_year_cents), history_months: history }, steps: [{ label: `history < 12 months → not eligible (${topic}: a minimum 12-month history of variable income is required)`, cents: "0" }], monthly_qualifying_cents: 0n, trend: trend_detail.trend, reason: "history_under_12_months" }), trend_detail };
   const inputs = { ytd_cents: String(v.ytd_cents), ytd_months: v.ytd_months, prior_year_cents: String(v.prior_year_cents), stable_band_pct: trend_detail.band_pct, history_months: history, offsetting_factors: (v.offsetting_factors ?? []).join(";") || null };
+  if (variableBase && v.average_hours) {
+    // Average Hours: "multiply the average monthly hours (based on at least the most recent 12 months) by the current fixed hourly rate"
+    const a = v.average_hours; nonNeg(a.current_hourly_rate_cents, "average_hours.current_hourly_rate_cents");
+    if (!(a.months_of_hours >= 12)) return { ...calc({ income_type, formula_version: FORMULAS.variable_base_average_hours, inputs: { ...inputs, avg_monthly_hours: a.avg_monthly_hours, months_of_hours: a.months_of_hours, current_hourly_rate_cents: String(a.current_hourly_rate_cents) }, steps: [{ label: `${a.months_of_hours} months of hours < 12 → Average Hours method unavailable (B3-3.3-01)`, cents: "0" }], monthly_qualifying_cents: 0n, trend: trend_detail.trend, reason: "history_under_12_months" }), trend_detail };
+    const hoursTenths = BigInt(Math.round(a.avg_monthly_hours * 10));
+    const monthly = divRound(a.current_hourly_rate_cents * hoursTenths, 10n);
+    return { ...calc({ income_type, formula_version: FORMULAS.variable_base_average_hours, inputs: { ...inputs, avg_monthly_hours: a.avg_monthly_hours, months_of_hours: a.months_of_hours, current_hourly_rate_cents: String(a.current_hourly_rate_cents) }, steps: [{ label: `round(${a.avg_monthly_hours} average monthly hours over ${a.months_of_hours} months × current fixed hourly rate)`, cents: String(monthly) }], monthly_qualifying_cents: monthly, trend: trend_detail.trend }), trend_detail };
+  }
   const steps: CalcStep[] = [{ label: `ytd_monthly = ytd / ${v.ytd_months}`, cents: String(trend_detail.ytd_monthly_cents) }, { label: "prior_monthly = prior_year / 12", cents: String(trend_detail.prior_monthly_cents) }];
   if (trend_detail.trend !== "decreasing") {
     const total = v.ytd_cents + v.prior_year_cents;
     const monthly = Decimal.fromBigInt(total).div(monthsDec(v.ytd_months + 12)).toScaledInt(0, "HALF_UP");
     steps.push({ label: "ytd + prior_year", cents: String(total) }, { label: `round(total / ${v.ytd_months + 12})`, cents: String(monthly) });
-    return { ...calc({ income_type, formula_version: FORMULAS.variable_trending, inputs, steps, monthly_qualifying_cents: monthly, trend: trend_detail.trend }), trend_detail };
+    return { ...calc({ income_type, formula_version, inputs, steps, monthly_qualifying_cents: monthly, trend: trend_detail.trend }), trend_detail };
   }
   const s = v.stabilization ?? null;
   if (!s) {
-    steps.push({ label: "decreasing with no stabilization evidence → not eligible", cents: "0" });
-    return { ...calc({ income_type, formula_version: FORMULAS.variable_trending, inputs, steps, monthly_qualifying_cents: 0n, trend: "decreasing", reason: "not_stabilized" }), trend_detail };
+    steps.push({ label: `decreasing with no stabilization evidence → not eligible (${topic})`, cents: "0" });
+    return { ...calc({ income_type, formula_version, inputs, steps, monthly_qualifying_cents: 0n, trend: "decreasing", reason: "not_stabilized" }), trend_detail };
   }
   nonNeg(s.cents_since, "stabilization.cents_since");
+  if (variableBase) {
+    // B3-3.3-01 decreasing: confirm the current income level has stabilized, then "use the year-to-date income divided by months elapsed in the current year"
+    const monthly = Decimal.fromBigInt(v.ytd_cents).div(monthsDec(v.ytd_months)).toScaledInt(0, "HALF_UP");
+    steps.push({ label: `stabilized since ${s.since} (confirmed)`, cents: String(s.cents_since) }, { label: `round(ytd / ${v.ytd_months} months elapsed in the current year)`, cents: String(monthly) });
+    return { ...calc({ income_type, formula_version, inputs: { ...inputs, stabilized_since: s.since, cents_since_stabilized: String(s.cents_since), months_since_stabilized: s.months_since }, steps, monthly_qualifying_cents: monthly, trend: "decreasing", stabilized_since: s.since }), trend_detail };
+  }
   const monthly = Decimal.fromBigInt(s.cents_since).div(monthsDec(s.months_since)).toScaledInt(0, "HALF_UP");
   steps.push({ label: `income since ${s.since}`, cents: String(s.cents_since) }, { label: `round(since_stabilized / ${s.months_since})`, cents: String(monthly) });
-  return { ...calc({ income_type, formula_version: FORMULAS.variable_trending, inputs: { ...inputs, stabilized_since: s.since, cents_since_stabilized: String(s.cents_since), months_since_stabilized: s.months_since }, steps, monthly_qualifying_cents: monthly, trend: "decreasing", stabilized_since: s.since }), trend_detail };
+  return { ...calc({ income_type, formula_version, inputs: { ...inputs, stabilized_since: s.since, cents_since_stabilized: String(s.cents_since), months_since_stabilized: s.months_since }, steps, monthly_qualifying_cents: monthly, trend: "decreasing", stabilized_since: s.since }), trend_detail };
 }
 /** Bonus paid annually is annualised (÷ 12) for the trend comparison: $12,000.00 on Mar 31 → 100,000 cents per month. */
 export function bonusMonthly(annual_bonus_cents: bigint): { monthly_cents: bigint; formula_version: FormulaId } {
@@ -379,8 +423,9 @@ export const MANAGEMENT_EXPERIENCE_MONTHS = 12;
 export const FAIR_RENTAL_DAYS_FULL_YEAR = 365;
 export const MIN_LEASE_TERM_MONTHS = 6;
 /** B3-3.8 is mandatory for applications on/after Nov 1, 2026; earlier applications use it by platform default unless it removes income the prior rule allowed (Q5). */
-export function rentalRuleSet(applicationDate: PlainDate): { rule_set: "B3-3.8.2026-09-02" | "B3-3.4.prior"; mandatory: boolean } {
-  return { rule_set: "B3-3.8.2026-09-02", mandatory: applicationDate >= RENTAL_RULE_SET_MANDATORY_FROM };
+export const RENTAL_RULE_SET_SOURCE = "Announcement SEL-2026-08 (Sept 2, 2026): mandatory for applications dated on/after Nov 1, 2026 — the announcement is not in the verification bundle and B3-3.8-01/-02/-05 (09/02/2026) carry no effective-date sentence";
+export function rentalRuleSet(applicationDate: PlainDate): { rule_set: "B3-3.8.2026-09-02" | "B3-3.4.prior"; mandatory: boolean; mandatory_from: PlainDate; source: string } {
+  return { rule_set: "B3-3.8.2026-09-02", mandatory: applicationDate >= RENTAL_RULE_SET_MANDATORY_FROM, mandatory_from: RENTAL_RULE_SET_MANDATORY_FROM, source: RENTAL_RULE_SET_SOURCE };
 }
 export interface SubjectRentalInput { readonly gross_rent_cents: bigint; readonly pitia_cents: bigint; readonly transaction: "purchase" | "refinance"; readonly management_experience_months?: number | null; readonly fair_rental_days?: number | null; readonly lease_term_months?: number | null; readonly on_1040?: boolean; }
 export interface RentalResult { readonly net_cents: bigint; readonly anri_cents: bigint; readonly income_added_cents: bigint; readonly liability_added_cents: bigint; readonly offset_only: boolean; readonly experienced: boolean; readonly formula_version: FormulaId; readonly reason: string | null; }
@@ -493,7 +538,8 @@ export function formulaForType(t: IncomeType): FormulaId | null {
   switch (t) {
     case "base_salary": case "second_job": case "military_base": case "military_allowance": return FORMULAS.base_salary;
     case "base_hourly_fixed": return FORMULAS.base_hourly_fixed;
-    case "base_hourly_variable": case "overtime": case "bonus": case "commission": case "tip": case "seasonal": case "rsu": return FORMULAS.variable_trending;
+    case "base_hourly_variable": return FORMULAS.variable_base_trending;
+    case "overtime": case "bonus": case "commission": case "tip": case "seasonal": case "rsu": return FORMULAS.variable_trending;
     case "employment_offer": return FORMULAS.employment_offer;
     case "temporary_leave": return FORMULAS.temporary_leave;
     case "social_security_retirement": case "social_security_disability": case "social_security_survivor_dependent": return FORMULAS.social_security;
@@ -510,11 +556,28 @@ export function formulaForType(t: IncomeType): FormulaId | null {
 // ============================================================ R4 / R9 — self-employment, DU validation and the Income Calculator
 export const SELF_EMPLOYED_OWNERSHIP_PCT = 25;
 export const selfEmployed = (ownership_pct: number): boolean => pct(ownership_pct, "ownership_pct") >= SELF_EMPLOYED_OWNERSHIP_PCT;
-/** Years of returns required (B3-3.5-01): two unless the one-year conditions hold (business ≥ 5 consecutive years with ≥ 25% ownership and increasing income) or DU permits one year. */
-export function returnsRequired(s: { business_years: number; ownership_pct: number; income_increasing_two_years: boolean; du_permits_one_year?: boolean }): { years: 1 | 2; basis: string } {
-  if (s.du_permits_one_year) return { years: 1, basis: "DU message permits one year (23.2)" };
-  if (s.business_years >= 5 && selfEmployed(s.ownership_pct) && s.income_increasing_two_years) return { years: 1, basis: "business ≥ 5 consecutive years, ≥ 25% ownership, increasing self-employment income (B3-3.5-01)" };
-  return { years: 2, basis: "two years of signed federal income tax returns (B3-3.5-01)" };
+export interface ReturnsInput {
+  readonly business_years: number; readonly ownership_pct: number;
+  /** Consecutive years the borrower has held ≥ 25% (defaults to business_years). */ readonly ownership_years?: number | null;
+  readonly form_1084_completed?: boolean; readonly income_increasing_two_years: boolean;
+  /** Personal (not business) funds cover the down payment, closing costs and reserves. */ readonly personal_funds_cover_transaction?: boolean;
+  readonly years_in_same_business?: number | null; readonly du_permits_one_year?: boolean;
+}
+export interface ReturnsRequired { readonly years: 1 | 2; readonly personal_return_years: 1 | 2; readonly business_returns: "two_years" | "one_year" | "waived"; readonly provision: "du_one_year" | "b3_3_5_01_one_year_personal_and_business" | "b3_3_5_01_business_returns_waived" | "standard_two_years"; readonly basis: string; }
+/**
+ * B3-3.5-01's two distinct provisions: (a) one year of personal AND business returns when the business has been in existence five years per the Form 1003,
+ * the borrower has held ≥ 25% for the past five consecutive years and Form 1084 (or an equivalent cash-flow analysis) is completed; (b) with two years of
+ * personal returns the BUSINESS returns may be waived when personal funds cover down payment/closing costs/reserves, the borrower has been self-employed
+ * in the same business for at least five years and the personal returns show increasing self-employment income over the past two years; DU may permit one year.
+ */
+export function returnsRequired(s: ReturnsInput): ReturnsRequired {
+  if (s.du_permits_one_year) return { years: 1, personal_return_years: 1, business_returns: "one_year", provision: "du_one_year", basis: "DU message permits one year (23.2)" };
+  const ownershipYears = s.ownership_years ?? s.business_years;
+  if (s.business_years >= 5 && selfEmployed(s.ownership_pct) && ownershipYears >= 5 && s.form_1084_completed === true)
+    return { years: 1, personal_return_years: 1, business_returns: "one_year", provision: "b3_3_5_01_one_year_personal_and_business", basis: "one year of personal and business returns: business in existence five years per the Form 1003, ≥ 25% ownership for the past five consecutive years, Form 1084 completed (B3-3.5-01)" };
+  if (s.personal_funds_cover_transaction === true && (s.years_in_same_business ?? s.business_years) >= 5 && s.income_increasing_two_years)
+    return { years: 2, personal_return_years: 2, business_returns: "waived", provision: "b3_3_5_01_business_returns_waived", basis: "two years of personal returns with the business returns waived: personal funds cover down payment, closing costs and reserves; ≥ 5 years self-employed in the same business; personal returns show increasing self-employment income over the past two years (B3-3.5-01)" };
+  return { years: 2, personal_return_years: 2, business_returns: "two_years", provision: "standard_two_years", basis: "two years of signed federal income tax returns, individual and (per structure) business (B3-3.5-01)" };
 }
 /** Income Calculator ceiling (B3-3.1-03): qualifying ≤ the calculator result when the calculator was used; the Findings Report id is attached. */
 export function incomeCalculatorCeiling(c: { calculator_result_cents: bigint; agent_result_cents: bigint; findings_report_id: string }): { qualifying_cents: bigint; ceiling_applied: boolean; income_calculator_report_id: string; formula_version: FormulaId } {

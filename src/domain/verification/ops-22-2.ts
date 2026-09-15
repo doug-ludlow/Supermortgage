@@ -78,7 +78,9 @@ export interface FraudAlert { readonly borrower_id: string; readonly repository:
 export interface Inquiry { readonly borrower_id: string; readonly creditor_name: string; readonly inquiry_date: PlainDate; readonly repository: Repository; readonly subscriber_code?: string | null; readonly purpose?: string | null; }
 export interface DisputedTradeline { readonly borrower_id: string; readonly creditor_name: string; readonly account_ref: string; readonly medical: boolean; readonly du_message_id?: string | null; }
 export interface PublicRecord { readonly borrower_id: string; readonly kind: "judgment" | "lien" | "bankruptcy" | "foreclosure"; readonly status: "open" | "satisfied" | "discharged" | "dismissed"; readonly amount_cents: Cents; readonly date: PlainDate; }
-export interface CollectionAccount { readonly borrower_id: string; readonly creditor_name: string; readonly kind: "collection" | "charge_off"; readonly balance_cents: Cents; readonly mortgage_related?: boolean; }
+export interface CollectionAccount { readonly borrower_id: string; readonly creditor_name: string; readonly kind: "collection" | "charge_off" | "past_due"; readonly balance_cents: Cents; readonly mortgage_related?: boolean;
+  /** "Medical collection accounts are excluded from the limits below and are not required to be paid in full at or prior to closing" (B3-5.3-09). */
+  readonly medical?: boolean; }
 export interface MortgageTradeline { readonly borrower_id: string; readonly creditor_name: string; readonly worst_delinquency_days_at_last_report: number; readonly last_reported: PlainDate; }
 export interface KnownTradeline { readonly borrower_id: string; readonly creditor_name: string; readonly account_ref: string; readonly liability_kind: string; readonly monthly_payment_cents: Cents; readonly balance_cents: Cents; }
 export interface CraIdentity { readonly name: string; readonly address: string; readonly phone: string; }
@@ -119,6 +121,8 @@ export interface OrderInput {
   readonly requested_model_codes?: Partial<Record<Repository, string>> | null;
   readonly repositories?: readonly Repository[]; readonly permissible_purpose: PermissiblePurpose | string; readonly certification_ref: string; readonly borrower_authorization_ref: string; readonly subscriber_code: string;
   readonly trid_received: boolean; readonly fee_handled: boolean; readonly joint_intent_facts?: Record<string, unknown> | null; readonly bi_merge_flag?: boolean; readonly ordering_agent: string; readonly attempt?: number;
+  /** The partner's recorded VantageScore 4.0 approval evidence (`applications.vantagescore_4_approval_ref`; B3-5.1-01 09/02/2026: "eligible for use by approved lenders") — required for a `vantagescore_4` order. */
+  readonly vantagescore_4_approval_ref?: string | null;
 }
 const PURPOSE_FOR_ORDER: Record<OrderType, PermissiblePurpose> = { tri_merge: "credit_transaction_604a3A", rmcr: "credit_transaction_604a3A", soft_prequal: "consumer_initiated_604a3F", soft_refresh: "credit_transaction_604a3A", udm_enroll: "account_review_604a3A" };
 /** Validates an order before transmission — every refusal is a `CreditRefused` with the rule's citation; nothing reaches the reseller on a refusal. */
@@ -146,6 +150,8 @@ export function validateOrder(i: OrderInput): CreditOrder {
     if (want !== undefined && want !== null && want !== model_codes[r])
       throw new CreditRefused("SCORE_MODEL_MISMATCH", "LL-2026-06; B3-5.1-01 eligible score versions", `${REPOSITORY_NAMES[r]} request code ${JSON.stringify(want)} is not the ${i.score_model} version ${JSON.stringify(model_codes[r])}: rejected before transmission`);
   }
+  if (i.score_model === "vantagescore_4" && !(typeof i.vantagescore_4_approval_ref === "string" && i.vantagescore_4_approval_ref.trim()))
+    throw new CreditRefused("VANTAGESCORE_4_APPROVAL_REQUIRED", "B3-5.1-01 (09/02/2026): VantageScore 4.0 versions are 'eligible for use by approved lenders … contact their Fannie Mae customer account team'; 22.2 R1 / operational prerequisites (LL-2026-06 broad availability unverified in the bundle)", "no recorded VantageScore 4.0 approval evidence (applications.vantagescore_4_approval_ref): the order is refused before transmission");
   const joint = i.borrower_ids.length > 1;
   if (joint && hard) {
     const g = evaluateGate("21.1.jointIntentGate", i.joint_intent_facts ?? {});
@@ -202,25 +208,33 @@ export function creditReportExpiryGate(f: Record<string, unknown>): GateResult {
 
 // ============================================================ R4 — freezes (B3-5.1-01; FCRA §605A(i)) and report classification
 export interface Classification { readonly state: ReportState; readonly reason: string; readonly blocked_borrowers: readonly string[]; readonly two_repository_borrowers: readonly string[]; readonly escalate_underwriting_reviewer: boolean; }
-/** usable: every borrower has three repositories, or two with exactly one frozen (or a documented no-hit); freeze_blocked: any borrower frozen at ≥ 2; no_score: nobody scored; error: a borrower with < 2 repositories of data. */
+/**
+ * usable: a requested tri-merge where every borrower has either no frozen repository and credit data from at least one repository (the missing
+ * bureaus documented as no-hits — B3-5.1-01: "the credit report is still acceptable as long as credit data is available from one repository, and
+ * the lender requested a three in-file merged report"; Q4) or exactly one frozen repository and data from two (B3-5.1-01/B3-5.2-02);
+ * freeze_blocked: any borrower frozen at ≥ 2; error: one frozen plus one no-hit (data from a single repository) or no data at all;
+ * two_repository: no freeze, fewer than three repositories with data and the reseller's no-hit response not yet documented; no_score: nobody scored.
+ */
 export function classifyReport(r: { report_type: ReportType; repositories_requested: readonly Repository[]; borrowers: readonly BorrowerCredit[] }): Classification {
-  const blocked: string[] = [], two: string[] = [], thin: string[] = [];
+  const blocked: string[] = [], partial: string[] = [], thin: string[] = [], undocumentedNoHit: string[] = [];
   for (const b of r.borrowers) {
     if (b.frozen.length >= 2) { blocked.push(b.borrower_id); continue; }
-    const returned = b.returned.filter((x) => !b.frozen.includes(x));
-    if (returned.length < 2) { thin.push(b.borrower_id); continue; }
-    if (returned.length === 2) two.push(b.borrower_id);
+    const withData = b.returned.filter((x) => !b.frozen.includes(x));
+    if (b.frozen.length === 1 && withData.length < 2) { thin.push(b.borrower_id); continue; }   // one frozen plus one no-hit is not usable
+    if (withData.length < 1) { thin.push(b.borrower_id); continue; }
+    if (withData.length < 3) {
+      partial.push(b.borrower_id);
+      const missing = REPOSITORIES.filter((x) => !withData.includes(x) && !b.frozen.includes(x));
+      if (missing.some((x) => !(b.no_hit ?? []).includes(x))) undocumentedNoHit.push(b.borrower_id);
+    }
   }
-  if (blocked.length) return { state: "freeze_blocked", reason: `credit data frozen at two or more repositories for ${blocked.join(", ")}: not eligible until lifted (B3-5.1-01); submitDu refused`, blocked_borrowers: blocked, two_repository_borrowers: two, escalate_underwriting_reviewer: false };
-  if (thin.length) return { state: "error", reason: `only one repository returned data for ${thin.join(", ")}: two are required (B3-5.2-02) — freeze workflow plus RMCR consideration`, blocked_borrowers: thin, two_repository_borrowers: two, escalate_underwriting_reviewer: true };
+  if (blocked.length) return { state: "freeze_blocked", reason: `credit data frozen at two or more repositories for ${blocked.join(", ")}: not eligible until lifted (B3-5.1-01); submitDu refused`, blocked_borrowers: blocked, two_repository_borrowers: partial, escalate_underwriting_reviewer: false };
+  if (thin.length) return { state: "error", reason: `${thin.join(", ")}: one frozen repository plus a no-hit leaves credit data from a single repository (two are required when one is frozen — B3-5.1-01/B3-5.2-02) or no repository returned data — freeze workflow plus RMCR consideration`, blocked_borrowers: thin, two_repository_borrowers: partial, escalate_underwriting_reviewer: true };
   const sc = computeScores(r.borrowers);
-  if (sc.representative_score === null) return { state: "no_score", reason: "no borrower has a credit score: nontraditional path (23.2), 12-month asset report (22.4), lowest LLPA band", blocked_borrowers: [], two_repository_borrowers: two, escalate_underwriting_reviewer: false };
-  if (r.repositories_requested.length < 3 && HARD_PULL_ORDERS.includes(r.report_type === "rmcr" ? "rmcr" : "tri_merge")) return { state: "error", reason: "a three in-file merged report must have been requested (B3-5.1-01)", blocked_borrowers: [], two_repository_borrowers: two, escalate_underwriting_reviewer: true };
-  if (two.length) {
-    const noHitOnly = r.borrowers.filter((b) => two.includes(b.borrower_id) && b.frozen.length === 0);
-    if (noHitOnly.length) return { state: "two_repository", reason: `two repositories returned data for ${noHitOnly.map((b) => b.borrower_id).join(", ")} with no freeze: acceptable only with the reseller's no-hit evidence (B3-5.2-02; Q4)`, blocked_borrowers: [], two_repository_borrowers: two, escalate_underwriting_reviewer: false };
-    return { state: "usable", reason: `two repositories with exactly one frozen for ${two.join(", ")}: acceptable on a requested tri-merge (B3-5.1-01); applicable score = lower of the two`, blocked_borrowers: [], two_repository_borrowers: two, escalate_underwriting_reviewer: false };
-  }
+  if (sc.representative_score === null) return { state: "no_score", reason: "no borrower has a credit score: nontraditional path (23.2), 12-month asset report (22.4), lowest LLPA band", blocked_borrowers: [], two_repository_borrowers: partial, escalate_underwriting_reviewer: false };
+  if (r.repositories_requested.length < 3 && HARD_PULL_ORDERS.includes(r.report_type === "rmcr" ? "rmcr" : "tri_merge")) return { state: "error", reason: "a three in-file merged report must have been requested (B3-5.1-01)", blocked_borrowers: [], two_repository_borrowers: partial, escalate_underwriting_reviewer: true };
+  if (undocumentedNoHit.length) return { state: "two_repository", reason: `fewer than three repositories returned data for ${undocumentedNoHit.join(", ")} with no freeze: acceptable on a requested tri-merge as long as credit data is available from one repository (B3-5.1-01) once the reseller's no-hit response is documented (Q4)`, blocked_borrowers: [], two_repository_borrowers: partial, escalate_underwriting_reviewer: false };
+  if (partial.length) return { state: "usable", reason: `${partial.join(", ")}: fewer than three repositories with data on a requested tri-merge — acceptable (B3-5.1-01: two repositories with exactly one frozen, or documented no-hits with credit data from at least one repository); applicable score per B3-5.1-02 over the scores returned`, blocked_borrowers: [], two_repository_borrowers: partial, escalate_underwriting_reviewer: false };
   return { state: "usable", reason: "three repositories returned for every borrower", blocked_borrowers: [], two_repository_borrowers: [], escalate_underwriting_reviewer: false };
 }
 
@@ -297,11 +311,13 @@ const norm = (s: string): string => s.trim().toLowerCase().replace(/\s+/g, " ");
 export const COLLECTIONS_SECOND_HOME_OR_2_4_UNIT_AGGREGATE_CENTS = 500_000n;
 export const COLLECTIONS_INVESTMENT_INDIVIDUAL_CENTS = 25_000n;
 export const COLLECTIONS_INVESTMENT_AGGREGATE_CENTS = 100_000n;
-export interface Condition { readonly kind: "ptf_collections_payoff" | "ptf_public_record_payoff" | "dispute_documentation" | "du_ineligible_mortgage_delinquency"; readonly text: string; readonly amount_cents: Cents | null; readonly citation: string; readonly borrower_id?: string | null; readonly clear_by: "prior_to_or_at_closing" | "before_cd" | "before_du_final"; }
+export interface Condition { readonly kind: "ptf_collections_payoff" | "ptf_past_due_bring_current" | "ptf_public_record_payoff" | "dispute_documentation" | "du_ineligible_mortgage_delinquency"; readonly text: string; readonly amount_cents: Cents | null; readonly citation: string; readonly borrower_id?: string | null; readonly clear_by: "prior_to_or_at_closing" | "before_cd" | "before_du_final"; }
 export interface OccupancyFacts { readonly occupancy: Occupancy; readonly units: number; }
-/** One-unit principal residence: no payoff regardless of amount; 2–4 unit principal or second home: aggregate > $5,000; investment: individual ≥ $250 or aggregate > $1,000 (non-mortgage collections and charge-offs). */
+/** Accounts the occupancy limits test: non-mortgage collections and charge-offs; medical collection accounts "are excluded from the limits below and are not required to be paid in full" and accounts reported as past due (not as collections) go through pastDueCondition (B3-5.3-09). */
+export const countsTowardCollectionLimits = (c: CollectionAccount): boolean => !c.mortgage_related && !c.medical && c.kind !== "past_due";
+/** One-unit principal residence: no payoff regardless of amount; 2–4 unit principal or second home: aggregate > $5,000; investment: individual ≥ $250 or aggregate > $1,000 (non-mortgage, non-medical collections and charge-offs). */
 export function collectionsCondition(o: OccupancyFacts, collections: readonly CollectionAccount[]): Condition | null {
-  const eligible = collections.filter((c) => !c.mortgage_related);
+  const eligible = collections.filter(countsTowardCollectionLimits);
   const total = eligible.reduce((s, c) => s + c.balance_cents, 0n);
   if (!eligible.length) return null;
   const ptf = (why: string): Condition => ({ kind: "ptf_collections_payoff", text: `pay ${formatCents(total)} in full prior to or at closing`, amount_cents: total, citation: `B3-5.3-09 (${why})`, clear_by: "prior_to_or_at_closing" });
@@ -309,6 +325,13 @@ export function collectionsCondition(o: OccupancyFacts, collections: readonly Co
   if (o.occupancy === "primary" || o.occupancy === "second_home") return total > COLLECTIONS_SECOND_HOME_OR_2_4_UNIT_AGGREGATE_CENTS ? ptf(`${o.occupancy === "second_home" ? "second home" : "2–4 unit principal residence"}: collections and non-mortgage charge-offs totaling more than $5,000`) : null;
   const individual = eligible.some((c) => c.balance_cents >= COLLECTIONS_INVESTMENT_INDIVIDUAL_CENTS);
   return individual || total > COLLECTIONS_INVESTMENT_AGGREGATE_CENTS ? ptf("investment property: individual accounts ≥ $250 or accounts totaling more than $1,000") : null;
+}
+/** "Accounts that are reported as past due (not reported as collection accounts) must be brought current" (B3-5.3-09) — every occupancy, regardless of amount. */
+export function pastDueCondition(accounts: readonly CollectionAccount[]): Condition | null {
+  const past = accounts.filter((c) => c.kind === "past_due");
+  if (!past.length) return null;
+  const total = past.reduce((s, c) => s + c.balance_cents, 0n);
+  return { kind: "ptf_past_due_bring_current", text: `bring the past-due ${past.map((c) => c.creditor_name).join(", ")} account${past.length === 1 ? "" : "s"} current (${formatCents(total)} past due) prior to or at closing`, amount_cents: total, citation: "B3-5.3-09 (accounts reported as past due, not as collection accounts, must be brought current)", clear_by: "prior_to_or_at_closing" };
 }
 export const MORTGAGE_DELINQUENCY_LOOKBACK_MONTHS = 12;
 export const MORTGAGE_DELINQUENCY_INELIGIBLE_DAYS = 60;
@@ -335,6 +358,7 @@ export function mapDuCreditMessages(events: EventStore, report: CreditReport, i:
     }
   }
   const coll = collectionsCondition(i.occupancy, report.collections); if (coll) conditions.push(coll);
+  const pastDue = pastDueCondition(report.collections); if (pastDue) conditions.push(pastDue);
   for (const p of report.public_records.filter((p) => p.status === "open" && (p.kind === "judgment" || p.kind === "lien")))
     conditions.push({ kind: "ptf_public_record_payoff", text: `pay the open ${p.kind} of ${formatCents(p.amount_cents)} at or prior to closing (title clearance, 24.4)`, amount_cents: p.amount_cents, citation: "B3-5.3-09 judgments and liens", borrower_id: p.borrower_id, clear_by: "prior_to_or_at_closing" });
   const lates = mortgageDelinquencyIneligible(report.report_date, report.mortgage_tradelines);
@@ -356,19 +380,41 @@ export const WAITING_PERIOD_YEARS: Record<DerogatoryKind, { standard: number; ex
   chapter_7: { standard: 4, extenuating: 2 }, chapter_11: { standard: 4, extenuating: 2 }, chapter_13_discharge: { standard: 2, extenuating: 2 }, chapter_13_dismissal: { standard: 4, extenuating: 2 }, multiple_bankruptcy: { standard: 5, extenuating: 3 },
   foreclosure: { standard: 7, extenuating: 3 }, deed_in_lieu: { standard: 4, extenuating: 2 }, preforeclosure_sale: { standard: 4, extenuating: 2 }, mortgage_charge_off: { standard: 4, extenuating: 2 },
 };
-export interface WaitingPeriodResult { readonly kind: DerogatoryKind; readonly event_date: PlainDate; readonly years: number; readonly eligible_on: PlainDate; readonly du_test: { basis: "report_date"; date: PlainDate; passes: boolean }; readonly lender_test: { basis: "disbursement_date"; date: PlainDate; passes: boolean }; readonly eligible: boolean; readonly documented_basis: "du_report_date" | "lender_disbursement_date_confirmation" | null; readonly written_confirmation: string | null; readonly recommendation: string | null; }
-/** `end = event_date + years`; DU tests the report date, the lender confirms with the disbursement date when DU's test fails (B3-5.3-09) — the confirmation is written into the file. */
-export function waitingPeriod(i: { kind: DerogatoryKind; event_date: PlainDate; extenuating?: boolean; report_date: PlainDate; scheduled_disbursement_date: PlainDate }): WaitingPeriodResult {
+/** Events whose waiting period DU does not test from the report's dates: the lender's disbursement-date confirmation is the documented basis (B3-5.3-09 DU rows). */
+export const LENDER_DISBURSEMENT_CONFIRMATION_KINDS: readonly DerogatoryKind[] = ["deed_in_lieu", "preforeclosure_sale", "mortgage_charge_off"];
+export interface WaitingPeriodCure { readonly new_credit_report_dated_on_or_after: PlainDate; readonly resubmit_via: "23.1"; readonly manual_underwriting: "out of scope"; readonly disbursement_reschedule_sufficient: false; }
+export interface WaitingPeriodResult {
+  readonly kind: DerogatoryKind; readonly event_date: PlainDate; readonly years: number; readonly eligible_on: PlainDate; readonly dates_complete: boolean;
+  readonly du_test: { basis: "report_date"; date: PlainDate; passes: boolean }; readonly lender_test: { basis: "disbursement_date"; date: PlainDate; passes: boolean };
+  /** DU on the report's dates: `eligible` (report date on/after the period end), `Ineligible` (complete dates that fail — not deliverable until re-pulled and resubmitted), `lender_confirms` (dates incomplete, or a deed-in-lieu/preforeclosure/mortgage charge-off event: the disbursement-date confirmation applies). */
+  readonly du_recommendation: "eligible" | "Ineligible" | "lender_confirms";
+  readonly eligible: boolean; readonly deliverable: boolean; readonly documented_basis: "du_report_date" | "lender_disbursement_date_confirmation" | null; readonly written_confirmation: string | null; readonly cure: WaitingPeriodCure | null; readonly recommendation: string | null;
+}
+/**
+ * `end = event_date + years`. DU tests the report date; where the report's completion/discharge/dismissal dates are complete and fail that test the
+ * recommendation is Ineligible and the loan may not be delivered — the only cure is a new credit report dated on/after `end` resubmitted through 23.1
+ * (B3-5.3-09: "The lender may obtain an updated credit report and resubmit the loan casefile to DU after the required time has elapsed or manually
+ * underwrite the loan …"; manual underwriting is out of scope), so a rescheduled disbursement is necessary but not sufficient. The lender's
+ * disbursement-date confirmation is the documented basis only where DU does not test the dates (incomplete dates; deed-in-lieu/preforeclosure/mortgage charge-off).
+ */
+export function waitingPeriod(i: { kind: DerogatoryKind; event_date: PlainDate; extenuating?: boolean; report_date: PlainDate; scheduled_disbursement_date: PlainDate; dates_complete?: boolean }): WaitingPeriodResult {
   const w = WAITING_PERIOD_YEARS[i.kind]; if (!w) throw new RangeError(`unknown derogatory event kind ${JSON.stringify(i.kind)}`);
   const years = i.extenuating ? w.extenuating : w.standard;
   const eligible_on = addYears(i.event_date, years);
   const du = i.report_date >= eligible_on, lender = i.scheduled_disbursement_date >= eligible_on;
-  const eligible = du || lender;
-  const documented_basis = du ? "du_report_date" : lender ? "lender_disbursement_date_confirmation" : null;
-  return { kind: i.kind, event_date: i.event_date, years, eligible_on, du_test: { basis: "report_date", date: i.report_date, passes: du }, lender_test: { basis: "disbursement_date", date: i.scheduled_disbursement_date, passes: lender }, eligible, documented_basis,
-    written_confirmation: !du && lender ? `DU measured the ${i.kind.replace(/_/g, " ")} waiting period (${years} years from ${shortDate(i.event_date)}, ending ${shortDate(eligible_on)}) from the credit report date ${shortDate(i.report_date)} and recorded it as not met; the lender confirms per B3-5.3-09 that the scheduled disbursement date ${shortDate(i.scheduled_disbursement_date)} is on/after ${shortDate(eligible_on)}, so the waiting period is met.` : null,
-    recommendation: eligible ? null : `not eligible: reschedule disbursement to ${shortDate(eligible_on)} or later (${daysShort(i.scheduled_disbursement_date, eligible_on)} short)` };
+  const dates_complete = i.dates_complete !== false;
+  const lenderPath = !dates_complete || LENDER_DISBURSEMENT_CONFIRMATION_KINDS.includes(i.kind);
+  const base = { kind: i.kind, event_date: i.event_date, years, eligible_on, dates_complete, du_test: { basis: "report_date" as const, date: i.report_date, passes: du }, lender_test: { basis: "disbursement_date" as const, date: i.scheduled_disbursement_date, passes: lender } };
+  const reschedule = `reschedule disbursement to ${shortDate(eligible_on)} or later (${daysShort(i.scheduled_disbursement_date, eligible_on)} short)`;
+  if (du) return { ...base, du_recommendation: "eligible", eligible: true, deliverable: true, documented_basis: "du_report_date", written_confirmation: null, cure: null, recommendation: null };
+  if (lenderPath) return { ...base, du_recommendation: "lender_confirms", eligible: lender, deliverable: lender, documented_basis: lender ? "lender_disbursement_date_confirmation" : null, cure: null,
+    written_confirmation: lender ? `DU measured the ${i.kind.replace(/_/g, " ")} waiting period (${years} years from ${shortDate(i.event_date)}, ending ${shortDate(eligible_on)}) from the credit report date ${shortDate(i.report_date)} and recorded it as not met; because ${dates_complete ? "DU does not test this event from the report's dates" : "the report's completion/discharge/dismissal dates are incomplete"}, the lender confirms per B3-5.3-09 that the scheduled disbursement date ${shortDate(i.scheduled_disbursement_date)} is on/after ${shortDate(eligible_on)}, so the waiting period is met.` : null,
+    recommendation: lender ? null : `not eligible: ${reschedule}` };
+  const cure: WaitingPeriodCure = { new_credit_report_dated_on_or_after: eligible_on, resubmit_via: "23.1", manual_underwriting: "out of scope", disbursement_reschedule_sufficient: false };
+  return { ...base, du_recommendation: "Ineligible", eligible: false, deliverable: false, documented_basis: null, written_confirmation: null, cure,
+    recommendation: `not eligible: DU tests the credit report date ${shortDate(i.report_date)} against ${shortDate(eligible_on)} and the report's dates are complete → Ineligible, not deliverable (B3-5.3-09); cure: a new credit report dated on/after ${shortDate(eligible_on)} and a 23.1 resubmission${lender ? ` — the ${shortDate(i.scheduled_disbursement_date)} disbursement is on/after ${shortDate(eligible_on)} but rescheduling alone does not make the loan deliverable` : `; also ${reschedule}`}` };
 }
+
 const daysShort = (a: PlainDate, b: PlainDate): string => { const n = Math.round((Date.parse(b) - Date.parse(a)) / 86_400_000); return `${n} day${n === 1 ? "" : "s"}`; };
 
 // ============================================================ R8 — inquiries (B3-5.3-04/-09) and B3-2-10 tolerance (23.1)
@@ -465,12 +511,17 @@ export function recordUdmHeartbeat(events: EventStore, i: { application_id: stri
 export const REFRESH_WINDOW_BUSINESS_DAYS = 3;
 /** Earliest acceptable refresh date: three creditor business days before consummation (Fri Nov 6, 2026 → Tue Nov 3; Wed Nov 18 → Fri Nov 13). */
 export function refreshWindowStart(scheduled_consummation_date: PlainDate, cal: Calendar = creditor): PlainDate { return addBusinessDays(scheduled_consummation_date, -REFRESH_WINDOW_BUSINESS_DAYS, cal); }
-/** SM_CREDIT_REFRESH_PRECLOSE_GATE: a soft_refresh / udm_snapshot dated in [consummation − 3 creditor business days, consummation] with every alert resolved. */
+/** B3-6-02: "if the lender chooses to obtain a new credit report after the initial underwriting decision was made, the loan must be re-underwritten" — a 23.1 resubmission regardless of the B3-2-10 45%/3-point tolerance; the pre-closing product is a UDM snapshot or soft-inquiry refresh, never a new report. */
+export const HARD_PULL_REPORT_TYPES: readonly ReportType[] = ["tri_merge_infile", "rmcr"];
+export const NEW_REPORT_REUNDERWRITE_REASON = "a new credit report was obtained after the initial underwriting decision: the loan must be re-underwritten — 23.1 resubmission required regardless of the B3-2-10 45%/3-point tolerance (B3-6-02); the pre-closing product is a UDM snapshot or soft-inquiry refresh, never a new report";
+export const newReportForcesReunderwriting = (report_type: ReportType | string): boolean => (HARD_PULL_REPORT_TYPES as readonly string[]).includes(report_type);
+/** SM_CREDIT_REFRESH_PRECLOSE_GATE: a soft_refresh / udm_snapshot dated in [consummation − 3 creditor business days, consummation] with every alert resolved; a new credit report after the decision closes it until 23.1 has resubmitted (B3-6-02). */
 export function refreshPrecloseGate(f: Record<string, unknown>): GateResult {
   const consummation = typeof f.scheduled_consummation_date === "string" && f.scheduled_consummation_date ? (f.scheduled_consummation_date as PlainDate) : null;
   if (!consummation) return { open: false, reason: "scheduled_consummation_date is unknown" };
   const date = typeof f.refresh_report_date === "string" && f.refresh_report_date ? (f.refresh_report_date as PlainDate) : null;
   const type = String(f.refresh_report_type ?? "soft_refresh");
+  if ((f.new_credit_report_after_decision === true || newReportForcesReunderwriting(type)) && f.du_resubmitted_after_new_report !== true) return { open: false, reason: NEW_REPORT_REUNDERWRITE_REASON };
   if (!date) return { open: false, reason: `no soft refresh / UDM snapshot on file: order the refresh (window opens ${refreshWindowStart(consummation)})` };
   if (type !== "soft_refresh" && type !== "udm_snapshot") return { open: false, reason: `refresh report type ${type} is not soft_refresh/udm_snapshot` };
   const start = refreshWindowStart(consummation);

@@ -81,13 +81,13 @@ export type PolicyGeneration = "pre_2026_06_27" | "2026_06_27" | "2026_09_26";
 export type CasefileStatus = "draft" | "credit_associated" | "submitted" | "findings_received" | "resubmission_required" | "final" | "delivered" | "error" | "archive_warning" | "archived" | "superseded";
 export type SupersedeReason = "archived" | "borrower_identity_change" | "casefile_error";
 export type SubmissionType = "credit_only" | "credit_and_underwriting" | "underwriting_only";
-export type SubmissionReason = "initial" | "data_change" | "tolerance_breach" | "credit_refresh" | "validation_report_update" | "error_retry" | "final_closed_loan_match" | "delivery_correction";
+export type SubmissionReason = "initial" | "data_change" | "tolerance_breach" | "credit_refresh" | "validation_report_update" | "error_retry" | "final_closed_loan_match" | "delivery_correction" | "post_closing_correction";
 export type SubmissionStatus = "queued" | "sent" | "acked" | "findings_received" | "error" | "superseded";
 export type Recommendation = "approve_eligible" | "approve_ineligible" | "refer_with_caution" | "out_of_scope" | "error";
 export type ReturnFileType = "json_v2" | "pdf_standard" | "16" | "17" | "res" | "text" | "xml";
 export type LoanPurpose = "purchase" | "limited_cash_out_refinance" | "cash_out_refinance";
 export type CheckField = "note_rate" | "dti" | "income" | "liabilities" | "assets" | "reserves" | "loan_amount" | "ltv" | "cltv" | "occupancy" | "product" | "amortization" | "loan_term" | "property_type" | "loan_purpose" | "sales_price" | "appraised_value" | "borrower_identity" | "credit_report" | "validation_report" | "mi_coverage" | "llpa_band" | "eligibility_flag";
-export type RuleCode = "B3_2_10_RATE_DECREASE" | "B3_2_10_RATE_DECREASE_BUYDOWN" | "B3_2_10_DTI_45_OR_3PT" | "B3_2_10_DTI_OVER_50" | "B3_2_10_INCOME_LIMITED" | "B3_2_10_REFI_AMOUNT_500_1PCT" | "B3_2_10_REFI_AMOUNT_MINUS_5PCT" | "B3_2_10_PURCHASE_AMOUNT" | "B3_2_10_RESERVES_90PCT" | "B3_2_10_CLOSED_LOAN_FIELD" | "B3_2_10_LCOR_CASH_BACK" | "B3_2_01_CREDIT_EXPIRED" | "B3_2_02_VALIDATION_UPDATE" | "DU_JOBAID_IDENTITY_CHANGE";
+export type RuleCode = "B3_2_10_RATE_DECREASE" | "B3_2_10_RATE_DECREASE_BUYDOWN" | "B3_2_10_DTI_45_OR_3PT" | "B3_2_10_DTI_OVER_50" | "B3_2_10_INCOME_LIMITED" | "B3_2_10_REFI_AMOUNT_500_1PCT" | "B3_2_10_REFI_AMOUNT_MINUS_5PCT" | "B3_2_10_PURCHASE_AMOUNT" | "B3_2_10_RESERVES_90PCT" | "B3_2_10_FUNDS_TO_CLOSE" | "B3_2_10_CLOSED_LOAN_FIELD" | "B3_2_10_LCOR_CASH_BACK" | "B3_2_01_CREDIT_EXPIRED" | "B3_2_02_VALIDATION_UPDATE" | "DU_JOBAID_IDENTITY_CHANGE";
 export type CheckResult = "within_tolerance" | "resubmission_required" | "new_casefile_required" | "ineligible_change";
 export const CLOSED_LOAN_FIELDS = ["occupancy", "product", "amortization", "loan_term", "property_type", "loan_purpose", "sales_price", "appraised_value"] as const;
 export type ClosedLoanField = (typeof CLOSED_LOAN_FIELDS)[number];
@@ -620,15 +620,20 @@ export function dtiBps(obligations_cents: Cents, qualifying_income_cents: Cents)
   return Number(divRound(obligations_cents * 10_000n, qualifying_income_cents, "HALF_UP"));
 }
 export const dtiDisplay = (bps: number): string => `${Math.floor(bps / 100)}.${String(bps % 100).padStart(2, "0")}`;
-export interface DtiTest { readonly rule_code: "B3_2_10_DTI_45_OR_3PT" | "B3_2_10_DTI_OVER_50"; readonly result: CheckResult; readonly dti_before_bps: number; readonly dti_after_bps: number; readonly delta_bps: number; readonly dti_before: string; readonly dti_after: string; readonly delta: string; readonly exceeds_45: boolean; readonly increase_3_points: boolean; readonly over_50: boolean; readonly check_22_2: ToleranceCheck; readonly citation: string; }
-/** Rate increases and income/liability/asset changes: resubmit if DTI > 45.00 or rises ≥ 3.00 points; > 50.00 is ineligible (B3-6-02) → 23.2 restructuring. 22.2's tenths check is recorded alongside. */
+export interface DtiTest { readonly rule_code: "B3_2_10_DTI_45_OR_3PT" | "B3_2_10_DTI_OVER_50"; readonly result: CheckResult; readonly dti_before_bps: number; readonly dti_after_bps: number; readonly delta_bps: number; readonly dti_before: string; readonly dti_after: string; readonly delta: string;
+  /** B3-2-10 "now exceed 45%": the recalculated DTI crosses 45 (dti_B ≤ 45.00 and dti_C > 45.00); a DTI already above 45 does not re-trigger. */
+  readonly exceeds_45: boolean;
+  /** "increase by 3 percentage points or more (if the recalculated DTI ratio is 50% or less)". */
+  readonly increase_3_points: boolean; readonly already_over_45: boolean; readonly over_50: boolean; readonly check_22_2: ToleranceCheck; readonly citation: string; }
+/** Rate increases, credit-report payment/balance discrepancies, additional debts and verified income lower than the application: resubmit if the DTI crosses 45.00 (dti_B ≤ 45.00 < dti_C) or rises ≥ 3.00 points with dti_C ≤ 50.00 — the Guide's own rows: 35 → 40 Yes, 44 → 46 Yes, 46 → 48 No, 46 → 50 Yes; > 50.00 is ineligible (B3-6-02) → 23.2 restructuring. 22.2's tenths check is recorded alongside (its mirror reads "exceed" as a level, so it can differ on a DTI already above 45). */
 export function dtiTest(before: { obligations_cents: Cents; income_cents: Cents }, after: { obligations_cents: Cents; income_cents: Cents }): DtiTest {
   const b = dtiBps(before.obligations_cents, before.income_cents), a = dtiBps(after.obligations_cents, after.income_cents), delta = a - b;
-  const exceeds_45 = a > B3_2_10_DTI_LINE_BPS, increase_3_points = delta >= B3_2_10_DTI_INCREASE_BPS, over_50 = a > DU_MAX_DTI_BPS;
+  const already_over_45 = b > B3_2_10_DTI_LINE_BPS, over_50 = a > DU_MAX_DTI_BPS;
+  const exceeds_45 = !already_over_45 && a > B3_2_10_DTI_LINE_BPS, increase_3_points = delta >= B3_2_10_DTI_INCREASE_BPS && !over_50;
   const check_22_2 = b3210ToleranceCheck(dtiTenths(before.obligations_cents, before.income_cents), dtiTenths(after.obligations_cents, after.income_cents));
   const result: CheckResult = over_50 ? "ineligible_change" : exceeds_45 || increase_3_points ? "resubmission_required" : "within_tolerance";
-  return { rule_code: over_50 ? "B3_2_10_DTI_OVER_50" : "B3_2_10_DTI_45_OR_3PT", result, dti_before_bps: b, dti_after_bps: a, delta_bps: delta, dti_before: dtiDisplay(b), dti_after: dtiDisplay(a), delta: `${delta < 0 ? "-" : ""}${dtiDisplay(Math.abs(delta))}`, exceeds_45, increase_3_points, over_50, check_22_2,
-    citation: over_50 ? "B3-6-02: 'the maximum allowable DTI ratio is 50%' for DU loan casefiles" : "B3-2-10: resubmit when the recalculated DTI 'now exceeds 45%, or increase by 3 percentage points or more'" };
+  return { rule_code: over_50 ? "B3_2_10_DTI_OVER_50" : "B3_2_10_DTI_45_OR_3PT", result, dti_before_bps: b, dti_after_bps: a, delta_bps: delta, dti_before: dtiDisplay(b), dti_after: dtiDisplay(a), delta: `${delta < 0 ? "-" : ""}${dtiDisplay(Math.abs(delta))}`, exceeds_45, increase_3_points, already_over_45, over_50, check_22_2,
+    citation: over_50 ? "B3-6-02: 'the maximum allowable DTI ratio is 50%' for DU loan casefiles" : "B3-2-10: resubmit when the recalculated DTI ratio will 'now exceed 45%, or increase by 3 percentage points or more (if the recalculated DTI ratio is 50% or less)' — 35 → 40 Yes; 44 → 46 Yes; 46 → 48 No; 46 → 50 Yes" };
 }
 export interface RateTest { readonly rule_code: "B3_2_10_RATE_DECREASE" | "B3_2_10_RATE_DECREASE_BUYDOWN" | null; readonly result: CheckResult | null; readonly direction: "decrease" | "increase" | "unchanged"; readonly rate_before: string; readonly rate_after: string; readonly evaluate_dti: boolean; readonly citation: string; }
 /** Rate decrease: no resubmission unless from a permanent buydown; an increase is a trigger only through the DTI test (rule 5 resubmits before closing anyway). */
@@ -695,6 +700,17 @@ export function reservesTest(reserves_required_cents: Cents, reserves_verified_c
   const verified_pct = reserves_required_cents === 0n ? "100.00" : Decimal.ratio(reserves_verified_cents * 100n, reserves_required_cents, "HALF_UP").toFixed(2);
   return { rule_code: "B3_2_10_RESERVES_90PCT", result: reserves_verified_cents < threshold_cents ? "resubmission_required" : "within_tolerance", reserves_required_cents, reserves_verified_cents, threshold_cents, verified_pct, citation: "B3-2-10: no resubmission when documented reserves equal 'at least 90% of the Reserves Required to be Verified'" };
 }
+export interface FundsToCloseTest { readonly rule_code: "B3_2_10_FUNDS_TO_CLOSE" | null; readonly result: CheckResult; readonly du_funds_required_cents: Cents; readonly actual_funds_required_cents: Cents; readonly documented_liquid_assets_cents: Cents; readonly shortfall_cents: Cents; readonly citation: string; }
+/** B3-2-10 "Assets — Funds Required to Close": when the actual funds required exceed DU's figure, within tolerance only when documented liquid assets cover the actual amount (B3-2-02: "the lender must document liquid assets to cover the additional amount"); otherwise resubmit. */
+export function fundsToCloseTest(du_funds_required_cents: Cents, actual_funds_required_cents: Cents, documented_liquid_assets_cents: Cents): FundsToCloseTest {
+  if (du_funds_required_cents < 0n || actual_funds_required_cents < 0n || documented_liquid_assets_cents < 0n) throw new RangeError("funds to close and liquid assets must be ≥ 0");
+  const base = { du_funds_required_cents, actual_funds_required_cents, documented_liquid_assets_cents };
+  if (actual_funds_required_cents <= du_funds_required_cents) return { ...base, rule_code: null, result: "within_tolerance", shortfall_cents: 0n, citation: "B3-2-10: the actual funds required to close do not exceed DU's 'Funds Required to Close'" };
+  const shortfall_cents = documented_liquid_assets_cents >= actual_funds_required_cents ? 0n : actual_funds_required_cents - documented_liquid_assets_cents;
+  return shortfall_cents === 0n
+    ? { ...base, rule_code: null, result: "within_tolerance", shortfall_cents, citation: "B3-2-10 / B3-2-02: actual funds required exceed DU's 'Funds Required to Close' but 'the lender has documented sufficient liquid assets to cover the actual amount of assets required to close the transaction, no resubmission required'" }
+    : { ...base, rule_code: "B3_2_10_FUNDS_TO_CLOSE", result: "resubmission_required", shortfall_cents, citation: "B3-2-10: actual funds required exceed DU's 'Funds Required to Close' and documented liquid assets do not cover the actual amount — 'loan casefile must be resubmitted to DU' (B3-2-02: 'the lender must document liquid assets to cover the additional amount')" };
+}
 export interface IncomeLimitedTest { readonly rule_code: "B3_2_10_INCOME_LIMITED" | null; readonly result: CheckResult | null; readonly income_before_cents: Cents; readonly income_after_cents: Cents; readonly ami_retest: "23.2" | null; readonly evaluate_dti: boolean; readonly citation: string; }
 /** Income-limited products (HomeReady): resubmit when verified income is greater than the application indicates; a decrease is governed by the DTI test and 23.2 re-runs the AMI test. */
 export function incomeLimitedTest(income_before_cents: Cents, income_after_cents: Cents, income_limited_product: boolean): IncomeLimitedTest {
@@ -718,7 +734,9 @@ export function creditExpiryTest(expires_at: PlainDate, projected_note_date: Pla
 }
 
 // ============================================================ R4 — evaluateResubmission over baseline B and candidate C
-export interface ResubmissionInput { readonly baseline: DuSubmission; readonly candidate: UladSnapshot; readonly trigger_event: string; readonly at: string; readonly reserves_required_cents?: Cents | null; readonly verified_reserves_cents?: Cents | null; readonly credit_report_updated?: boolean; readonly validation_report_updated?: boolean; readonly credit_expires_at?: PlainDate | null; readonly projected_note_date?: PlainDate | null; readonly agent_decision_id?: string | null; }
+export interface ResubmissionInput { readonly baseline: DuSubmission; readonly candidate: UladSnapshot; readonly trigger_event: string; readonly at: string; readonly reserves_required_cents?: Cents | null; readonly verified_reserves_cents?: Cents | null;
+  /** B3-2-10 "Assets — Funds Required to Close" (rule 4 `assets`): DU's figure, the actual amount required, and the liquid assets documented (22.4). */
+  readonly du_funds_required_to_close_cents?: Cents | null; readonly actual_funds_required_to_close_cents?: Cents | null; readonly documented_liquid_assets_cents?: Cents | null; readonly credit_report_updated?: boolean; readonly validation_report_updated?: boolean; readonly credit_expires_at?: PlainDate | null; readonly projected_note_date?: PlainDate | null; readonly agent_decision_id?: string | null; }
 export interface ResubmissionEvaluation { readonly checks: readonly DuResubmissionCheck[]; readonly result: CheckResult; readonly rule_codes: readonly RuleCode[]; readonly reason: SubmissionReason | null; readonly submission_blocked: boolean; readonly restructure_hand_off: "23.2" | null; readonly ami_retest: "23.2" | null; readonly arithmetic: Record<string, unknown>; readonly event: DomainEvent; readonly casefile_status: CasefileStatus; }
 const ORDER: Record<CheckResult, number> = { within_tolerance: 0, resubmission_required: 1, new_casefile_required: 2, ineligible_change: 3 };
 /** Every B3-2-10 test over the diff; the worst result governs. `resubmission_required` → `du.resubmission.required`; `within_tolerance` → `du.resubmission.waived` (audit trail); `ineligible_change` → 23.2's restructuring loop, no submission until the structure changes. */
@@ -736,7 +754,7 @@ export function evaluateResubmission(events: EventStore, casefile: DuCasefile, i
   // income-limited products
   const inc = incomeLimitedTest(B.qualifying_income_cents, C.qualifying_income_cents, C.income_limited_product ?? B.income_limited_product ?? false);
   if (inc.rule_code && inc.result) row("income", inc.rule_code, inc.result, B.qualifying_income_cents, C.qualifying_income_cents, { ami_retest: inc.ami_retest }, inc.citation);
-  // DTI (rate increase, income, liabilities, assets)
+  // DTI (rate increase, credit-report discrepancies / additional debts, verified income lower than the application — never assets: those are the funds-to-close and reserves rows)
   const obligationsChanged = B.total_obligations_cents !== C.total_obligations_cents, incomeChanged = B.qualifying_income_cents !== C.qualifying_income_cents;
   if (rate.evaluate_dti || obligationsChanged || incomeChanged) {
     const d = dtiTest({ obligations_cents: B.total_obligations_cents, income_cents: B.qualifying_income_cents }, { obligations_cents: C.total_obligations_cents, income_cents: C.qualifying_income_cents });
@@ -757,6 +775,12 @@ export function evaluateResubmission(events: EventStore, casefile: DuCasefile, i
     const r = reservesTest(i.reserves_required_cents, i.verified_reserves_cents);
     Object.assign(arithmetic, { reserves_required: String(r.reserves_required_cents), reserves_verified: String(r.reserves_verified_cents) });
     row("reserves", r.rule_code, r.result, r.reserves_required_cents, r.reserves_verified_cents, { threshold_cents: String(r.threshold_cents), verified_pct: r.verified_pct }, r.citation);
+  }
+  // assets — funds required to close (B3-2-10 / B3-2-02)
+  if (i.du_funds_required_to_close_cents != null && i.actual_funds_required_to_close_cents != null && i.documented_liquid_assets_cents != null) {
+    const f = fundsToCloseTest(i.du_funds_required_to_close_cents, i.actual_funds_required_to_close_cents, i.documented_liquid_assets_cents);
+    Object.assign(arithmetic, { du_funds_required_to_close: String(f.du_funds_required_cents), actual_funds_required_to_close: String(f.actual_funds_required_cents), documented_liquid_assets: String(f.documented_liquid_assets_cents) });
+    if (f.actual_funds_required_cents > f.du_funds_required_cents) row("assets", f.rule_code ?? "B3_2_10_FUNDS_TO_CLOSE", f.result, f.du_funds_required_cents, f.actual_funds_required_cents, { documented_liquid_assets_cents: String(f.documented_liquid_assets_cents), shortfall_cents: String(f.shortfall_cents) }, f.citation);
   }
   // closed-loan fields (unconditional)
   const cl = closedLoanFieldsTest(B, C);

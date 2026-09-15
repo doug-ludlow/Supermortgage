@@ -112,7 +112,7 @@ Jurisdiction overrides: Colorado (SB 26-189 human-review/explanation content on 
 
 #### Outputs and artifacts
 - `decisions` rows and the AI decision record (`agent_decisions`), the conditional-approval letter (`documents`, retention `regb_25m` and `fnma_loan_file_life_plus_4y`), `condition_clearances`, `ctc_checklists`, `rep_warrant_relief`.
-- Internal underwriting summary (replaces Form 1008): a rendered document `DOC_SM_UNDERWRITING_SUMMARY` with the risk assessment, DU recommendation/casefile ID, income/asset/liability figures, ratios, collateral, conditions and clearances — kept in the permanent loan file alongside the final findings.
+- Internal underwriting summary (replaces Form 1008): a rendered document `DOC_SM_UNDERWRITING_SUMMARY` with the risk assessment, DU recommendation/casefile ID, income/asset/liability figures, ratios, collateral, conditions and clearances — kept in the permanent loan file alongside the final findings and DU's final Underwriting Analysis report (B3-2-04 — the internal summary does not substitute for it).
 - Hand-offs: to 21.6 (approval/counteroffer/denial/NOIA inputs with reasons), 25.2 (`ptd_cleared`), 26.1/26.3 (`clear_to_close`, `ptf_cleared`), 28.1 (selection feed), 28.3 (action taken), 29.3 (relief components/SFCs).
 - Reports: decision cycle times (findings → conditional approval → CTC), conditions per loan and aging, waiver log, reopened decisions, relief-eligibility coverage, fair-lending monitoring extracts (31.2).
 

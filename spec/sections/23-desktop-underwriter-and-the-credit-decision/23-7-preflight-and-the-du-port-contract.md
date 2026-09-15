@@ -14,7 +14,7 @@
 The XSD proves a document is lexically legal. DU's own rejection — days later, with no local symptom — is the only other feedback loop unless something between the two refuses the documents DU would refuse. This process is that something: a set of checks on the emitted document and the graph behind it that encode what the corpus and the Cardinality/ArcRoles tabs say DU actually requires, run before any bytes reach the port, each refusal naming the XPath and the rule. It also fixes the `DuPort` contract so the FAKE and a real Direct Integration adapter are interchangeable: the port takes the emitted bytes, returns DU's own casefile identifier on the first acknowledgement, and the findings ingest writes that identifier once and only once.
 
 ### Verified requirement (as of 2026-09-14)
-**What the XSD does not enforce (all VERIFIED by tests in `corpus/src/__tests__/schema.test.ts`)**: a dangling `xlink:to`; a duplicate `xlink:label`; an invented arcrole URI; duplicate `SequenceNumber`s within a container; five borrowers (DU allows four); a deleted `RELATIONSHIPS` container; a document with no `LOANS` and no `PARTY`. Each is a preflight refusal below.
+**What the XSD does not enforce (all VERIFIED by tests in `src/infra/integrations/du-schema/schema.test.ts`)**: a dangling `xlink:to`; a duplicate `xlink:label`; an invented arcrole URI; duplicate `SequenceNumber`s within a container; five borrowers (DU allows four); a deleted `RELATIONSHIPS` container; a document with no `LOANS` and no `PARTY`. Each is a preflight refusal below.
 
 **Cardinality tab** — container occurrence limits (171 XPaths), including four borrowers and 50 per `ASSETS`/`LIABILITIES`/`EXPENSES`. **[PARTIALLY VERIFIED — read from v1.9.3.]**
 
@@ -98,4 +98,4 @@ Per document: the `du_preflight_results` row with every check and its outcome, t
 - Fannie Mae, DU Specification v1.9.3 — Cardinality, ArcRoles tabs.
 - Fannie Mae, DU Specification Test Case Suite, June 2026.
 - Fannie Mae Selling Guide B3-2-01, B3-2-10; A2-2-04.
-- Homestead-Mortgages `corpus/src/__tests__/schema.test.ts`, `corpus/README.md`, `docs/du-graph.md` ("What schema validation does not buy you").
+- `src/infra/integrations/du-schema/schema.test.ts`, `src/infra/integrations/du-schema/README.md` (ported from the Homestead-Mortgages `corpus/`), `docs/du-graph.md` ("What schema validation does not buy you").

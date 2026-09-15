@@ -5,7 +5,7 @@
  *
  * The `disclosure` agent's rescission tools (spec "AI agent design"): determineRescindability, renderRescissionNotice,
  * deliverRescissionNotice, computeRescissionPeriod (op=compute|expire|accept_waiver|flag_extended|lapse_extended),
- * sweepInboundForRescission (op=sweep|close_allowance|record_exercise|complete_unwind), classifyInboundDocument
+ * sweepInboundForRescission (op=sweep|close_allowance|record_exercise|start_unwind|complete_unwind), classifyInboundDocument
  * (op=classify|log_oral_candidate), writeDecision. The `funder`'s assertGateOpen(REGZ_1026_23_RESCISSION_3SBD_GATE) /
  * releaseFunding and the `closer`'s unwindClosing are 26.3/26.2 tools that call ops-25-3.ts assertDisburseAllowed.
  * Guardrails encode the paragraph: never mark a notice delivered without per-consumer evidence; never compute the period
@@ -19,7 +19,7 @@ import { defineTools, compute, decision, never, needsRole, str, num, flag, cents
 import type { CommandContext } from "../commands.ts";
 import type { ToolRuntime } from "../tools.ts";
 import { plainDate as D, type PlainDate } from "../../kernel/calendar/date.ts";
-import { determineRescindability, recordApplicability, rescissionNoticePayload, recordNoticeDelivery, computeRescissionPeriod, startPeriod, expirePeriod, acceptRescissionWaiver, flagExtendedRight, lapseExtendedRight, sweepChannels, confirmNotRescinded, closeMailAllowance, recordExercise, unwindChecklist, completeUnwind, classifyInboundDocument, logOralCandidate, rescissionIdFor, servicingHandoffFields, templateCodeFor,
+import { determineRescindability, recordApplicability, rescissionNoticePayload, recordNoticeDelivery, computeRescissionPeriod, startPeriod, expirePeriod, acceptRescissionWaiver, flagExtendedRight, lapseExtendedRight, sweepChannels, confirmNotRescinded, closeMailAllowance, recordExercise, unwindChecklist, startUnwind, completeUnwind, classifyInboundDocument, logOralCandidate, rescissionIdFor, servicingHandoffFields, templateCodeFor,
   type RescindabilityInput, type RescissionConsumer, type ExistingLoan, type Rescindability, type RescissionPeriod, type NoticeDelivery, type MaterialDisclosureDelivery, type RescissionForm, type WaiverStatementInput, type InboundChannel, type InboundItem, type ExerciseInput, type RescissionExercise, type UnwindEvidence, type LapseReason, type CreditorDesignation } from "../../domain/compliance-disclosures/ops-25-3.ts";
 
 /** Missing-input refusals are RangeErrors (never TypeErrors) — src/app/tools.test.ts executes every tool with `{}`. */
@@ -106,13 +106,23 @@ export const TOOLS_25_3: readonly ToolDef[] = defineTools("25.3", "disclosure", 
         if (r.exercise.valid) rt.escalations.open({ kind: "officer", applicationId: application_id, payload: { reason: `rescission exercised by ${x.consumer_id}; refund due ${r.exercise.refund_due_at}`, checklist } }, ctx.actor);
         return { exercise: r.exercise, checklist, status: r.period.status, event_ids: r.events.map((e) => e.id) };
       }
+      if (op === "start_unwind") {
+        // §1026.23(d)(2) with comment 23(d)(2)-3: money returned and the termination BEGUN within the 20 days closes REGZ_1026_23D2_RESCISSION_REFUND_20; completion (recording/MERS) stays open as a sev 2 follow-up
+        need(i, "exercise_id", "money_returned_at", "termination_begun_at", "termination_step");
+        const rec = rt.store.require("rescission_exercises", str(i, "exercise_id"));
+        const row = rec.data as unknown as RescissionExercise;
+        const r = startUnwind(ctx.events, row, { ...(i.started_at ? { started_at: str(i, "started_at") } : {}), money_returned_at: str(i, "money_returned_at"), termination_begun_at: str(i, "termination_begun_at"), termination_step: str(i, "termination_step"), refund_ledger_set_id: (i.refund_ledger_set_id as string | undefined) ?? null, by: ctx.actor });
+        rt.store.put("rescission_exercises", r.exercise.exercise_id, { ...rec.data, ...r.exercise }, ctx.actor, ctx.now);
+        const follow = rt.escalations.open({ kind: "officer", applicationId: application_id, severity: "sev-2", payload: { reason: `rescission unwind started for ${row.exercise_id} (money returned ${r.exercise.money_returned_at}; termination begun ${r.exercise.termination_begun_at}) — completion (release/reconveyance recorded or eNote/MIN voided) still open`, exercise_id: row.exercise_id, follow_up: "rescission.unwind.completed", refund_due_at: row.refund_due_at } }, ctx.actor);
+        return { exercise: r.exercise, completion_open: true, follow_up_escalation_id: follow.id, event_id: r.event.id };
+      }
       if (op === "complete_unwind") {
         need(i, "exercise_id", "money_returned_at", "security_terminated_at");
         const row = rt.store.require("rescission_exercises", str(i, "exercise_id")).data as unknown as RescissionExercise;
         const ev: UnwindEvidence = { completed_at: str(i, "completed_at") || ctx.now, money_returned_at: str(i, "money_returned_at"), security_terminated_at: str(i, "security_terminated_at"), release_document_id: (i.release_document_id as string | undefined) ?? null, enote_reversal_ref: (i.enote_reversal_ref as string | undefined) ?? null, refund_ledger_set_id: (i.refund_ledger_set_id as string | undefined) ?? null, signed_off_by: ctx.actor };
         const r = completeUnwind(ctx.events, row, ev);
         rt.store.put("rescission_exercises", r.exercise.exercise_id, { ...r.exercise }, ctx.actor, ctx.now);
-        return { exercise: r.exercise, event_id: r.event.id };
+        return { exercise: r.exercise, event_id: r.event.id, started_event_id: r.started_event?.id ?? null };
       }
       if (op === "close_allowance") { const period = periodOf(rt, application_id); const ev = closeMailAllowance(ctx.events, period, str(i, "closed_at") || ctx.now, list<string>(i, "notices_received"), ctx.actor); return { closed: true, event_id: ev.id }; }
       need(i, "swept_at", "channels_checked");

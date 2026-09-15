@@ -14,8 +14,9 @@
  *                      `suspense.item.created{partial_payment}` arms FNMA_C1102_PARTIAL_BALANCE_30), the receipt is parked in
  *                      `suspense_unapplied`, the payment row is `held` and `balance_needed_cents` names the remainder.
  *
- * Nothing here decides a money figure: the engine's plan is the allocation; the state the caller passes is the loan's
- * cash state as the runtime builds it from `loan_terms`, `loans`, the ledger and the payment rows (src/runtime/servicing.ts).
+ * Nothing here decides a money figure: the engine's plan is the allocation; the state is the loan's cash state as the runtime
+ * builds it from `loan_terms`, `loans`, the `loan_installments` rows, the ledger and the payment rows — derived inside the command
+ * when the caller passes none (35.5 rules 4–5; src/domain/operations-runtime/cashiering-cycle.ts loanCashStateFromRows).
  * docs/ux/BACKEND-DELTAS.md (32.8) records this delta.
  */
 import { cents, str, num, type ToolDef, type ToolInput, type ToolRuntime } from "../tools.ts";
@@ -27,18 +28,26 @@ import { allocate } from "../../domain/cashiering/allocation.ts";
 import { decidePartial, type PartialContext } from "../../domain/cashiering/partials.ts";
 import { CashieringOps } from "../../domain/cashiering/ops.ts";
 import type { Designation, LoanCashState } from "../../domain/cashiering/types.ts";
+import type { Queryable } from "../../infra/db/client.ts";
+import { loanCashStateFromRows } from "../../domain/operations-runtime/cashiering-cycle.ts";
 
 const s = (c: Cents): string => c.toString();
 
 /** `payments.read/write{op=post, id, loan_id, state, custodial:{clearing, pi, ti}, days_delinquent?}` — see the header. */
-export function postReceivedPayment(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): unknown {
+export async function postReceivedPayment(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): Promise<unknown> {
   const id = str(i, "id") || str(i, "payment_id"); const rec = rt.store.get("payments", id); if (!rec) throw new RangeError(`no payment ${id} on this loan`);
   const pay = rec.data; const status = String(pay.status ?? "");
   if (status !== "received" && status !== "identified") throw new RangeError(`payment ${id} is ${status || "unknown"}, not received/identified`);
-  const state = i.state as LoanCashState | undefined; if (!state) throw new RangeError("post needs the loan's cash state");
-  const custodial = (i.custodial ?? {}) as { clearing?: string; pi?: string; ti?: string };
+  const loanId = String(pay.loan_id ?? ctx.loanId);
+  // 35.5 rule 5: a hosted caller passes no state — it is derived from the typed rows (rule 4) inside the command; the §2 unit harnesses keep passing theirs
+  let state = i.state as LoanCashState | undefined; let custodial = (i.custodial ?? {}) as { clearing?: string; pi?: string; ti?: string };
+  if (!state) {
+    const db = (rt.services as { db?: Queryable }).db; if (!db) throw new RangeError("post needs the loan's cash state (or the hosted runtime's database to derive it from the rows)");
+    const facts = await loanCashStateFromRows(db, loanId, D(ctx.now.slice(0, 10)), { store: rt.store, ledger: ctx.ledger });
+    state = facts.state; if (!custodial.clearing && facts.custodial) custodial = facts.custodial;
+  }
   if (!custodial.clearing || !custodial.pi || !custodial.ti) throw new RangeError("post needs custodial {clearing, pi, ti} account ids");
-  const loanId = String(pay.loan_id ?? ctx.loanId); const amount = cents(pay.amount_cents); const receivedOn = D(String(pay.received_on)); const creditedAsOf = D(String(pay.credited_as_of ?? pay.received_on));
+  const amount = cents(pay.amount_cents); const receivedOn = D(String(pay.received_on)); const creditedAsOf = D(String(pay.credited_as_of ?? pay.received_on));
   const designation = String(pay.designation ?? "contractual") as Designation;
   const plan = allocate(state, { payment_id: id, amount_cents: amount, received_on: receivedOn, credited_as_of: creditedAsOf, designation, ...(pay.curtailment_cents !== undefined ? { curtailment_cents: cents(pay.curtailment_cents) } : {}) });
   const loanAcct = (account: LoanAccount): AccountRef => ({ scope: "loan", loanId, account }); const cust = (custodialAccountId: string, account: CustodialAccount): AccountRef => ({ scope: "custodial", custodialAccountId, account });

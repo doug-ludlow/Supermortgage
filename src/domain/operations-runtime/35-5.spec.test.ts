@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { connect, type Db } from "../../infra/db/client.ts";
 import { testDatabase } from "../../infra/db/test-db.ts";
@@ -13,19 +13,28 @@ import { loadOverriddenRegistry } from "../timer-overrides.ts";
 import { FixedClock, type Actor } from "../../kernel/events/index.ts";
 import { plainDate as D } from "../../kernel/calendar/date.ts";
 import { levelPayment, ratePercent } from "../../kernel/money/cents.ts";
+import { wallClock } from "../../kernel/calendar/zoned.ts";
 import { CommandRefused } from "../../app/commands.ts";
 import { Runtime } from "../../runtime/app.ts";
+import { createApiServer, listen } from "../../runtime/server.ts";
+import { createLogger } from "../../runtime/log.ts";
+import { OffsetClock, advanceDemoClock } from "../../runtime/demo-clock.ts";
+import { boardTransferBatch } from "../../runtime/transfers.ts";
+import { DEMO_BATCH, generateDemoBatch } from "../boarding/demo-batch.ts";
+import { encodeTransferBatch } from "../boarding/tape-codec.ts";
 import { DEMO_NOTE } from "../../runtime/origination.ts";
 import { loanCashState, sendPeriodicStatement, servicingDailySweep } from "../../runtime/servicing.ts";
 import { delinquencyDailySweep } from "../../runtime/delinquency.ts";
 import { FAKE_SERVICER_CONTACT } from "../../runtime/borrower/flows/9-servicing-requests.ts";
 import { noteTermsHash, prepaidInterest } from "../orig-boarding/ops-30-2.ts";
-import { assessLateCharge, lateChargeAmount, lateChargeTerms, nsfFee } from "../cashiering/latecharges.ts";
+import { assessLateCharge, graceEnd, lateChargeAmount, lateChargeTerms, nsfFee } from "../cashiering/latecharges.ts";
 import { draftAmount, type Enrollment } from "../cashiering/autodraft.ts";
 import { EI_NOTICE_VARIANTS, writtenNoticeRequest } from "../early-intervention/ops-11-2.ts";
-import { CASHIERING_AGENT, registerReprojectionReactor, satisfyInstallments } from "./installments.ts";
+import { CASHIERING_AGENT, monthlyInterestBps, registerReprojectionReactor, satisfyInstallments } from "./installments.ts";
+import { cashieringDailyRun, loanCashStateFromRows, runCashieringUnit, selectBook } from "./cashiering-cycle.ts";
+import { ports35_5 } from "./ports-35-5.ts";
 import { FAKE_SERVICER_PROFILE_V1, STATE_DEFAULT_TIME_ZONE, servicerBlockFor } from "./servicing-config.ts";
-import { boardTapeLoan, fundDemoNote, fundDemoNoteRaw, linkBorrowerParty, partnerPartyOf, readEvents, readRows, readRuns, readTimer, rowsJson, seedCustodial, L1_TAPE, NY_TAPE, T7_TAPE } from "./harness-35-5.ts";
+import { boardTapeLoan, fundDemoNote, fundDemoNoteRaw, insertUnconfiguredLoan, linkBorrowerParty, partnerPartyOf, readEvents, readGlobalTimer, readRows, readRuns, readTimer, readUnitRuns, rowsJson, seedCustodial, writePayment, AZ_TAPE, L1_TAPE, NY_TAPE, SEED, T7_TAPE } from "./harness-35-5.ts";
 
 // The harness (src/domain/operations-runtime/harness-35-5.ts): this file's own database from the migrated template (0142/0143 in
 // place), one Runtime over it with a FixedClock the T-ids move, the fund path's partner party opened here, the transfer path's
@@ -36,6 +45,7 @@ const R = randomUUID().slice(0, 8);
 const clock = new FixedClock("2026-10-16T14:00:00.000Z");
 const COMPLIANCE: Actor = { kind: "human", id: `compliance-${R}`, role: "compliance" };
 const ANALYST: Actor = { kind: "human", id: `analyst-${R}`, role: "ops_analyst" };
+const TOKEN = `ops-${randomUUID()}`;
 let db: Db; let runtime: Runtime; let partnerPartyId = "";
 const loans = { t1: "", t2: "", t3: "", l1: "" };
 type Row = Record<string, unknown>;
@@ -216,14 +226,192 @@ test("35.5-T3: Given 7.2's Plan 4927 loan boarded at fund ($400,000.00 at 5.750%
   await assert.rejects(db.query(`UPDATE loan_installments SET pi_cents = pi_cents + 1 WHERE loan_id = $1 AND due_date = '2026-12-01'`, [loanId]), /SATISFIED_ROW_FROZEN/);
   await assert.rejects(db.query(`DELETE FROM loan_installments WHERE loan_id = $1 AND due_date = '2051-11-01'`, [loanId]), /append-only/);
 });
-test("35.5-T4: Given the 100-loan demo book (transfer-boarded, `origination_application_id IS NULL`) and one originated loan, when the `cashiering_daily` cycle runs for a day, then `cycle_runs` shows `units_total = 101`, every loan has one `cashiering_unit_runs` row with `outcome = done` for that `as_of_date`, `cashiering.daily.run_completed{loans: 101}` is appended exactly once and satisfies `SM_CASHIERING_DAILY_RECEIPT_1D`, and running the cycle again for the same day writes no payment, fee, ledger line or unit row (the second run's decision records name the existing rows).", { todo: true });
-test("35.5-T5: Given loan L-1 with a `payments` row in `received` for **$2,192.57** on 2026-09-03, when its unit runs on 2026-09-03, then 2.1 posts interest **$1,352.94**, principal **$227.23** and escrow **$612.40** with the balanced sets of 2.1 rule 8 (`rule_ref` on every line), row 2026-09-01 is `satisfied` with `satisfied_by_payment_id` set and `credited_as_of` 2026-09-03, and `POST /v1/loans/{id}/tools/2.1/payments.read%2Fwrite` with an `input.state` whose UPB differs from the ledger is refused `NO_CLIENT_STATE` before any write (contract test over `payments.read/write{op=post}`, `fees.assess{op=daily_run}` and `autodraft.read/write{op=amount_change_check}`).", { todo: true });
-test("35.5-T6: Given L-1's row 2026-09-01 unpaid past the 15-day grace (grace end Wed 2026-09-16), when the unit runs on 2026-09-17 in the loan's zone, then 2.7's `daily_run` assesses **$79.01** (`fees{late_charge, assessed_on 2026-09-17, grace_end_on 2026-09-16}`, Dr `late_charges` / Cr `late_charge_income` 7,901), `installment.due_date_reached` was emitted by the unit on 2026-09-01 and not by any borrower flow, and the unit on 2026-09-18 assesses nothing (`late_charge_run = false`).", { todo: true });
+test("35.5-T4: Given the 100-loan demo book (transfer-boarded, `origination_application_id IS NULL`) and one originated loan, when the `cashiering_daily` cycle runs for a day, then `cycle_runs` shows `units_total = 101`, every loan has one `cashiering_unit_runs` row with `outcome = done` for that `as_of_date`, `cashiering.daily.run_completed{loans: 101}` is appended exactly once and satisfies `SM_CASHIERING_DAILY_RECEIPT_1D`, and running the cycle again for the same day writes no payment, fee, ledger line or unit row (the second run's decision records name the existing rows).", { skip }, async () => {
+  // the 100-loan demo book through the transfer route on its transfer date, 2026-09-01 (six planted hard exceptions — seq 7, 13, 21, 34, 42, 58 — stay staged: 94 board)
+  clock.set("2026-09-01T16:00:00.000Z");
+  const demo = generateDemoBatch();
+  const batch = await boardTransferBatch(runtime, { ...DEMO_BATCH }, encodeTransferBatch(demo, demo.coborrowers), SEED);
+  assert.equal(batch.status, "boarded"); assert.equal(batch.loans.boarded, 94); assert.equal(batch.loans.staged, 100);
+  const demoIds = Object.values(batch.loan_ids);
+  assert.equal(await count(`SELECT count(*)::bigint AS c FROM loans WHERE id = ANY($1::uuid[]) AND boarded_at IS NOT NULL AND origination_application_id IS NULL`, [demoIds]), 94n);
+  // the whole book as of the day (rule 6's selector: every loan boarded by the as-of instant, no origination_application_id condition): the 94 demo loans plus the one
+  // originated loan boarded by then — T3's Plan 4927 (funded 2021-11-12); T1's note (funded 2026-11-12) and T-7 (boarded 2026-10-16) are not yet on the book on 2026-09-02.
+  // The spec's 101 assumes every demo loan boards; the count here is the fixture's 94 plus that one originated loan, and nothing is excluded for lacking an application
+  const AT = "2026-09-02T16:00:00.000Z";
+  const selected = await selectBook(db, D("2026-09-02"), AT); const book = selected.loans.length;
+  assert.equal(book, 94 + 1); assert.deepEqual(selected.unconfigured, []); assert.ok(selected.loans.some((l) => l.loan_id === loans.t3)); assert.ok(demoIds.filter((id) => selected.loans.some((l) => l.loan_id === id)).length === 94);
+  assert.ok(!selected.loans.some((l) => l.loan_id === loans.t1) && !selected.loans.some((l) => l.loan_id === loans.t2), "boarded after the as-of instant");
+  assert.equal(await count(`SELECT count(*)::bigint AS c FROM loans WHERE id = ANY($1::uuid[]) AND boarded_at > $2::timestamptz`, [[loans.t1, loans.t2], AT]), 2n);
+  assert.equal(await count(`SELECT count(*)::bigint AS c FROM loans WHERE id = ANY($1::uuid[]) AND origination_application_id IS NOT NULL`, [[loans.t3]]), 1n);
+  clock.set(AT);
+  const r1 = await cashieringDailyRun(runtime, "2026-09-02T16:00:00.000Z");
+  assert.deepEqual(r1.errors, []); assert.deepEqual(r1.skipped, []); assert.equal(r1.already, false); assert.equal(r1.as_of_date, "2026-09-02"); assert.equal(r1.loans, book); assert.equal(r1.units.done, book); assert.equal(r1.units.failed, 0);
+  const cycles = ports35_5(runtime).cycles;
+  const run = await cycles.run("cashiering_daily", "2026-09-02");
+  assert.ok(run); assert.equal(run.run_id, r1.run_id); assert.equal(run.units_total, book); assert.equal(run.units_done, book); assert.equal(run.units_dead, 0); assert.equal(run.status, "completed"); assert.equal(run.period_key, "2026-09-02");
+  const UNITS = `SELECT count(*)::bigint AS c FROM cashiering_unit_runs WHERE as_of_date = '2026-09-02' AND outcome = 'done'`;
+  assert.equal(await count(UNITS), BigInt(book)); assert.equal(await count(`SELECT count(DISTINCT loan_id)::bigint AS c FROM cashiering_unit_runs WHERE as_of_date = '2026-09-02' AND outcome = 'done'`), BigInt(book));
+  assert.equal(await count(`SELECT count(*)::bigint AS c FROM cashiering_unit_runs WHERE as_of_date = '2026-09-02' AND run_id = $1`, [r1.run_id]), BigInt(book));
+  assert.ok((await db.query<Row>(`SELECT decision_id FROM cashiering_unit_runs WHERE as_of_date = '2026-09-02' AND outcome = 'done'`)).every((u) => typeof u["decision_id"] === "string"), "every unit row names its decision");
+  // the receipt: appended exactly once, on the global subject with origination context, and it arms SM_CASHIERING_DAILY_RECEIPT_1D for the next day
+  const RECEIPTS = `SELECT id, payload, actor_id, aggregate_kind, aggregate_id FROM loan_events WHERE type = 'cashiering.daily.run_completed' AND payload->>'as_of_date' = '2026-09-02' ORDER BY sequence`;
+  const receipts = await db.query<Row>(RECEIPTS); assert.equal(receipts.length, 1); const receipt = receipts[0]!; const rp = receipt["payload"] as Row;
+  assert.equal(rp["loans"], book); assert.equal(rp["run_id"], r1.run_id); assert.equal(rp["units_done"], book); assert.equal(rp["units_dead"], 0); assert.equal(rp["posted"], 0); assert.equal(rp["origination"], true); assert.equal(receipt["actor_id"], "cashiering"); assert.equal(receipt["id"], r1.receipt_event_id);
+  // (T3's sweep on 2026-11-16 already ran the whole book once and armed the day's clock; this receipt satisfies that instance and arms the one for the day after 09-02 — one global instance armed at a time)
+  const g1 = await readGlobalTimer(db, "SM_CASHIERING_DAILY_RECEIPT_1D");
+  const armed1 = g1.filter((x) => x.status === "armed"); assert.equal(armed1.length, 1); const mine = armed1[0]!;
+  assert.equal(mine.anchor_date, "2026-09-02"); assert.equal(mine.due_date, "2026-09-03"); assert.equal(mine.armed_by_event_id, receipt["id"]); assert.equal(mine.subject_id, "*");
+  assert.ok(g1.filter((x) => x.status !== "armed").every((x) => x.status === "satisfied" && x.satisfied_by_event_id === receipt["id"]), "the earlier day's instance is satisfied by this receipt");
+  // the same day again: nothing posted, assessed or written — the second run's decisions name the existing unit rows (ONE_UNIT_PER_LOAN_PER_DAY)
+  const snapshot = async () => ({ cash: await count(`SELECT count(*)::bigint AS c FROM entity_records WHERE kind IN ('payments', 'fees', 'suspense_items')`), lines: await count(`SELECT count(*)::bigint AS c FROM ledger_lines`), units: await count(`SELECT count(*)::bigint AS c FROM cashiering_unit_runs`), events: await count(`SELECT count(*)::bigint AS c FROM loan_events WHERE type NOT IN ('command.executed')`), receipts: (await db.query<Row>(RECEIPTS)).length });
+  const before = await snapshot();
+  clock.set("2026-09-02T18:00:00.000Z");
+  const r2 = await cashieringDailyRun(runtime, "2026-09-02T18:00:00.000Z");
+  assert.equal(r2.already, true); assert.equal(r2.run_id, r1.run_id); assert.equal(r2.units.already, book); assert.equal(r2.units.done, 0); assert.deepEqual(r2.posted, []); assert.deepEqual(r2.errors, []); assert.equal(r2.receipt_event_id, null);
+  assert.deepEqual(await snapshot(), before, "a second run the same day writes no payment, fee, ledger line, unit row, event or receipt");
+  const unitByLoan = new Map((await db.query<{ loan_id: string; id: string }>(`SELECT loan_id, id FROM cashiering_unit_runs WHERE as_of_date = '2026-09-02' AND outcome = 'done'`)).map((u) => [u.loan_id, u.id]));
+  const decisions = await db.query<Row>(`SELECT loan_id, subject_kind, subject_id, rationale, rule_set_version FROM agent_decisions WHERE action = 'cashiering.run_unit' AND rule_code = 'ONE_UNIT_PER_LOAN_PER_DAY'`);
+  assert.equal(decisions.length, book);
+  assert.ok(decisions.every((d) => String(d["rationale"]).startsWith("ONE_UNIT_PER_LOAN_PER_DAY: unit ") && d["subject_kind"] === "cashiering_unit_run" && d["subject_id"] === unitByLoan.get(String(d["loan_id"])) && String(d["rationale"]).includes(String(d["subject_id"])) && d["rule_set_version"] === "cashiering.allocation.v1"), "each names the existing unit row");
+  const run2 = await cycles.run("cashiering_daily", "2026-09-02"); assert.ok(run2); assert.equal(run2.units_total, book); assert.equal(run2.units_done, book); assert.equal(run2.runs, 2);
+  // the next day's receipt satisfies the day's clock and re-arms it (recurring, global)
+  clock.set("2026-09-03T16:00:00.000Z");
+  const r3 = await cashieringDailyRun(runtime, "2026-09-03T16:00:00.000Z");
+  assert.equal(r3.already, false); assert.deepEqual(r3.errors, []); assert.equal(await count(`SELECT count(*)::bigint AS c FROM cashiering_unit_runs WHERE as_of_date = '2026-09-03' AND outcome = 'done'`), BigInt(book));
+  const g2 = await readGlobalTimer(db, "SM_CASHIERING_DAILY_RECEIPT_1D");
+  assert.equal(g2.length, g1.length + 1);
+  const first = g2.find((x) => x.id === mine.id)!; assert.equal(first.status, "satisfied"); assert.equal(first.satisfied_by_event_id, r3.receipt_event_id);
+  const armed2 = g2.filter((x) => x.status === "armed"); assert.equal(armed2.length, 1); assert.equal(armed2[0]!.anchor_date, "2026-09-03"); assert.equal(armed2[0]!.due_date, "2026-09-04"); assert.equal(armed2[0]!.armed_by_event_id, r3.receipt_event_id);
+});
+test("35.5-T5: Given loan L-1 with a `payments` row in `received` for **$2,192.57** on 2026-09-03, when its unit runs on 2026-09-03, then 2.1 posts interest **$1,352.94**, principal **$227.23** and escrow **$612.40** with the balanced sets of 2.1 rule 8 (`rule_ref` on every line), row 2026-09-01 is `satisfied` with `satisfied_by_payment_id` set and `credited_as_of` 2026-09-03, and `POST /v1/loans/{id}/tools/2.1/payments.read%2Fwrite` with an `input.state` whose UPB differs from the ledger is refused `NO_CLIENT_STATE` before any write (contract test over `payments.read/write{op=post}`, `fees.assess{op=daily_run}` and `autodraft.read/write{op=amount_change_check}`).", { skip }, async () => {
+  // 2.1's fixture L-1 through the transfer route: a tape that does not amortize to zero boards (worked example B), the run's variance is HF-005's exception to officer
+  const l1 = await boardTapeLoan(runtime, clock, L1_TAPE, `B-L1-T5-${R}`, D("2026-08-20")); const loanId = l1.loan_id;
+  await seedCustodial(db, await partnerPartyOf(db));
+  assert.equal(levelPayment(25_000_000n, ratePercent("6.500"), 360), 158_017n);
+  const run = (await readRuns(db, loanId))[0]!; assert.equal(run.pi_cents, 158_017n); assert.equal(run.upb_start_cents, 24_977_400n); assert.notEqual(run.maturity_variance_cents, 0n); assert.equal(run.rows, 300);
+  const esc = await db.query<Row>(`SELECT owner_role, payload FROM escalations WHERE loan_id = $1`, [loanId]); assert.equal(esc.length, 1); assert.equal(esc[0]!["owner_role"], "officer"); assert.equal((esc[0]!["payload"] as Row)["rule_code"], "HF-005");
+  const first = (await readRows(db, loanId))[0]!; assert.equal(first.due_date, "2026-09-01"); assert.equal(first.status, "due"); assert.equal(first.pi_cents, 158_017n); assert.equal(first.escrow_cents, 61_240n); assert.equal(first.upb_before_cents, 24_977_400n); assert.equal(first.interest_cents, 135_294n);
+  // the state the server derives from the rows (rule 4): the ledger's UPB, the tape's P&I, the LPI before the first unpaid row, the partner's custodial accounts
+  const before = await loanCashStateFromRows(db, loanId, D("2026-09-03"));
+  assert.equal(before.state.upb_cents, 24_977_400n); assert.equal(before.terms.pi_cents, 158_017n); assert.equal(before.state.lpi_date, "2026-08-01"); assert.equal(before.state.late_charge_pct, "5.000"); assert.ok(before.custodial); assert.equal(before.state.installments[0]!.due_date, "2026-09-01"); assert.equal(before.state.installments[0]!.status, "due"); assert.deepEqual(before.state.holds, []);
+  // the payments row in `received` for $2,192.57 on 2026-09-03, written through the cash-rows port (a uuid id)
+  const paymentId = await writePayment(runtime, loanId, { amount_cents: 219_257n, received_on: D("2026-09-03"), channel: "ach_debit_origin", instrument: "ach", designation: "contractual" });
+  assert.match(paymentId, /^[0-9a-f]{8}-/);
+  const received = await ports35_5(runtime).cashRows.receivedPayments(loanId); assert.equal(received.length, 1); assert.equal(received[0]!.id, paymentId); assert.equal(received[0]!.data["status"], "received"); assert.equal(received[0]!.data["amount_cents"], "219257");
+  assert.ok((await readEvents(db, loanId)).some((e) => e.type === "payment.received" && e.payload["payment_id"] === paymentId));
+  // its unit on 2026-09-03 through the bus tool: 2.1 posts interest $1,352.94, principal $227.23, escrow $612.40 with the rule-8 sets; the row is satisfied by the uuid, credited as of the receipt date
+  clock.set("2026-09-03T16:00:00.000Z");
+  const unit = await runtime.execute({ process: "35.5", name: "cashiering.run_unit", loanId, actor: CASHIERING_AGENT, input: { loan_id: loanId, as_of_date: "2026-09-03" } });
+  const out = unit.output as Row; assert.equal(out["outcome"], "done"); assert.deepEqual(out["posted"], [paymentId]); assert.equal(out["local_date"], "2026-09-03"); assert.equal(out["time_zone"], "America/Chicago"); assert.equal(out["interest_variance_cents"], "0");
+  const events = await readEvents(db, loanId);
+  const posted = events.find((e) => e.type === "payment.posted" && e.payload["payment_id"] === paymentId); assert.ok(posted);
+  assert.equal(posted.payload["interest_cents"], "135294"); assert.equal(posted.payload["principal_cents"], "22723"); assert.equal(posted.payload["escrow_cents"], "61240"); assert.equal(posted.payload["upb_after_cents"], "24954677"); assert.deepEqual(posted.payload["installments"], ["2026-09-01"]); assert.equal(posted.payload["credited_as_of"], "2026-09-03"); assert.equal(posted.actor_id, "cashiering");
+  assert.equal(135_294n + 22_723n + 61_240n, 219_257n);
+  assert.ok(events.some((e) => e.type === "command.executed" && e.payload["command"] === "payments.read/write" && e.actor_id === "cashiering"), "2.1's own command ran in the unit");
+  const sets = await db.query<{ id: string; description: string; total: bigint; lines: bigint; r8: boolean }>(`SELECT s.id, s.description, sum(l.amount_cents)::bigint AS total, count(*)::bigint AS lines, bool_and(l.rule_ref LIKE '2.1:r8:%') AS r8 FROM ledger_entry_sets s JOIN ledger_lines l ON l.set_id = s.id WHERE s.description LIKE '%' || $1 GROUP BY s.id, s.description ORDER BY s.description`, [paymentId]);
+  assert.equal(sets.length, 3); assert.ok(sets.every((x) => x.total === 0n && x.r8 && x.lines >= 2n), JSON.stringify(sets, (_k, v) => (typeof v === "bigint" ? v.toString() : v)));
+  assert.deepEqual(sets.map((x) => x.description.split(" ")[0]).sort(), ["allocation", "cash", "receipt"]);
+  assert.equal(await count(`SELECT count(*)::bigint AS c FROM ledger_lines WHERE set_id = ANY($1::uuid[]) AND (rule_ref IS NULL OR rule_ref NOT LIKE '2.1:r8:%')`, [sets.map((x) => x.id)]), 0n, "rule_ref on every line");
+  const row = (await readRows(db, loanId))[0]!; assert.equal(row.due_date, "2026-09-01"); assert.equal(row.status, "satisfied"); assert.equal(row.satisfied_by_payment_id, paymentId); assert.equal(row.credited_as_of, "2026-09-03"); assert.equal(row.interest_cents, 135_294n);
+  const satisfiedEvt = events.find((e) => e.type === "installment.satisfied"); assert.ok(satisfiedEvt); assert.equal(satisfiedEvt.payload["due_date"], "2026-09-01"); assert.equal(satisfiedEvt.payload["payment_id"], paymentId); assert.equal(satisfiedEvt.payload["credited_as_of"], "2026-09-03"); assert.equal(satisfiedEvt.payload["interest_variance_cents"], "0");
+  assert.equal(await count(`SELECT coalesce(sum(amount_cents), 0)::bigint AS c FROM ledger_lines WHERE scope = 'loan' AND loan_id = $1 AND account = 'principal'`, [loanId]), 24_954_677n);
+  const after = await loanCashStateFromRows(db, loanId, D("2026-09-03")); assert.equal(after.state.upb_cents, 24_954_677n); assert.equal(after.state.lpi_date, "2026-09-01"); assert.equal(after.received_payments.length, 0);
+  const units = await readUnitRuns(db, loanId); assert.equal(units.length, 1); assert.equal(units[0]!.outcome, "done"); assert.deepEqual(units[0]!.payments_posted, [paymentId]); assert.equal(units[0]!.as_of_date, "2026-09-03"); assert.equal(units[0]!.local_date, "2026-09-03"); assert.ok(units[0]!.decision_id);
+  const decision = (await db.query<Row>(`SELECT rule_set_version, action, subject_kind, subject_id FROM agent_decisions WHERE id = $1`, [units[0]!.decision_id]))[0]!;
+  assert.equal(decision["rule_set_version"], "cashiering.allocation.v1"); assert.equal(decision["action"], "cashiering.run_unit"); assert.equal(decision["subject_id"], units[0]!.id); assert.equal(unit.decisionId !== undefined, true);
+  // the contract (rule 5): the hosted route refuses a caller's own state before any write — 409 NO_CLIENT_STATE over the three state-deriving commands; no event, no line
+  const server = createApiServer({ runtime, apiToken: TOKEN, logger: createLogger("json", () => undefined), console: false });
+  const base = `http://127.0.0.1:${await listen(server, 0, "127.0.0.1")}`;
+  try {
+    const eventsBefore = await count(`SELECT count(*)::bigint AS c FROM loan_events WHERE loan_id = $1`, [loanId]); const linesBefore = await count(`SELECT count(*)::bigint AS c FROM ledger_lines`); const refusedBefore = await count(`SELECT count(*)::bigint AS c FROM loan_events WHERE type = 'command.refused'`);
+    const stateBad = { ...before.state, upb_cents: 1n };
+    const calls: [string, string, Record<string, unknown>][] = [["2.1", "payments.read/write", { op: "post", id: paymentId, state: stateBad, custodial: before.custodial }], ["2.7", "fees.assess", { op: "daily_run", state: stateBad, run_on: "2026-09-03" }], ["2.3", "autodraft.read/write", { op: "amount_change_check", id: "E-1", state: stateBad, next_amount_cents: "1", debit_on: "2026-10-01" }]];
+    for (const [p, name, input] of calls) {
+      const r = await fetch(`${base}/v1/loans/${loanId}/tools/${p}/${encodeURIComponent(name)}`, { method: "POST", headers: { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" }, body: JSON.stringify({ actor: CASHIERING_AGENT, input }, (_k, v: unknown) => (typeof v === "bigint" ? v.toString() : v)) });
+      const body = (await r.json()) as Row;
+      assert.equal(r.status, 409, `${p} ${name}: ${JSON.stringify(body)}`); assert.equal(body["error"], "refused"); assert.equal(body["code"], "NO_CLIENT_STATE"); assert.equal(body["command"], name);
+    }
+    assert.equal(await count(`SELECT count(*)::bigint AS c FROM loan_events WHERE loan_id = $1`, [loanId]), eventsBefore, "refused before any write: no event"); assert.equal(await count(`SELECT count(*)::bigint AS c FROM ledger_lines`), linesBefore); assert.equal(await count(`SELECT count(*)::bigint AS c FROM loan_events WHERE type = 'command.refused'`), refusedBefore, "the bus never ran");
+  } finally { await new Promise<void>((resolve) => server.close(() => resolve())); }
+});
+test("35.5-T6: Given L-1's row 2026-09-01 unpaid past the 15-day grace (grace end Wed 2026-09-16), when the unit runs on 2026-09-17 in the loan's zone, then 2.7's `daily_run` assesses **$79.01** (`fees{late_charge, assessed_on 2026-09-17, grace_end_on 2026-09-16}`, Dr `late_charges` / Cr `late_charge_income` 7,901), `installment.due_date_reached` was emitted by the unit on 2026-09-01 and not by any borrower flow, and the unit on 2026-09-18 assesses nothing (`late_charge_run = false`).", { skip }, async () => {
+  // a fresh L-1 (T5's is paid for September): row 2026-09-01 unpaid, grace 15 → grace end Wed 2026-09-16 (no roll), the assessment on the 17th in the loan's zone (America/Chicago)
+  const l1 = await boardTapeLoan(runtime, clock, L1_TAPE, `B-L1-T6-${R}`, D("2026-08-20")); const loanId = l1.loan_id;
+  assert.equal(graceEnd(D("2026-09-01"), 15), "2026-09-16");
+  const at = (d: string): string => `${d}T16:00:00.000Z`;
+  const outcomes: Record<string, Awaited<ReturnType<typeof runCashieringUnit>>> = {};
+  for (const d of ["2026-09-01", "2026-09-17", "2026-09-18"]) { clock.set(at(d)); outcomes[d] = await runCashieringUnit(runtime, { loan_id: loanId, as_of_date: D(d), as_of_instant: at(d) }); assert.equal(outcomes[d]!.outcome, "done", `${d}: ${outcomes[d]!.error ?? ""}`); assert.equal(outcomes[d]!.local_date, d); }
+  // 2.7's daily_run on 2026-09-17 assessed $79.01 on the P&I basis (2.7 example K): the fee row, its accrual set, the unit that ran it
+  const fees = await ports35_5(runtime).cashRows.feesFor(loanId); assert.equal(fees.length, 1); const fee = fees[0]!;
+  assert.equal(fee.data["fee_type"], "late_charge"); assert.equal(fee.data["amount_cents"], "7901"); assert.equal(fee.data["assessed_on"], "2026-09-17"); assert.equal(fee.data["grace_end_on"], "2026-09-16"); assert.equal(fee.data["installment_due_date"], "2026-09-01"); assert.equal(fee.data["state"], "assessed"); assert.equal(fee.data["loan_id"], loanId);
+  assert.equal(BigInt(String(fee.data["amount_cents"])), 7_901n); assert.equal(lateChargeAmount(158_017n, "5.000", null), 7_901n);
+  const accrual = await db.query<{ scope: string; account: string; amount_cents: bigint; rule_ref: string; effective_date: string }>(`SELECT l.scope, l.account, l.amount_cents, l.rule_ref, s.effective_date::text AS effective_date FROM ledger_lines l JOIN ledger_entry_sets s ON s.id = l.set_id WHERE s.description = $1 ORDER BY l.amount_cents DESC`, [`late charge accrual ${fee.id}`]);
+  assert.equal(accrual.length, 2);
+  assert.deepEqual(accrual.map((l) => ({ scope: l.scope, account: l.account, amount_cents: l.amount_cents, rule_ref: l.rule_ref })), [{ scope: "loan", account: "late_charges", amount_cents: 7_901n, rule_ref: "2.7:r1:accrual" }, { scope: "corporate", account: "late_charge_income", amount_cents: -7_901n, rule_ref: "2.7:r1:accrual" }]);
+  assert.equal(accrual[0]!.effective_date, "2026-09-17"); assert.equal(accrual[0]!.amount_cents + accrual[1]!.amount_cents, 0n);
+  const events = await readEvents(db, loanId);
+  const assessed = events.find((e) => e.type === "fee.assessed"); assert.ok(assessed); assert.equal(assessed.payload["fee_id"] ?? assessed.payload["id"], fee.id);
+  // `installment.due_date_reached` was emitted by the unit on 2026-09-01 (the cashiering agent) and by no borrower flow
+  const reached = events.filter((e) => e.type === "installment.due_date_reached");
+  assert.ok(reached.length >= 1); assert.ok(reached.every((e) => e.actor_id === "cashiering"), "every due-date event is the unit's"); assert.ok(reached.every((e) => e.actor_id !== "borrower-app"));
+  assert.equal(reached.filter((e) => e.payload["due_date"] === "2026-09-01").length, 1); assert.equal(reached.find((e) => e.payload["due_date"] === "2026-09-01")!.occurred_at ?? true, true);
+  const reachedRow = (await db.query<{ occurred_at: string; grace_end_on: string }>(`SELECT occurred_at::text AS occurred_at, payload->>'grace_end_on' AS grace_end_on FROM loan_events WHERE loan_id = $1 AND type = 'installment.due_date_reached' AND payload->>'due_date' = '2026-09-01'`, [loanId]))[0]!;
+  assert.equal(reachedRow.grace_end_on, "2026-09-16"); assert.ok(reachedRow.occurred_at.startsWith("2026-09-01"));
+  assert.ok((await db.query<{ status: string }>(`SELECT status::text AS status FROM timers WHERE loan_id = $1 AND code = 'NOTE_6A_LATE_CHARGE_GRACE_GATE'`, [loanId])).length >= 1, "2.7's grace gate armed on the unit's event");
+  // the unit rows: the 1st ran 2.7 (due reached), the 17th assessed, the 18th assessed nothing (late_charge_run = false)
+  const units = await readUnitRuns(db, loanId); assert.deepEqual(units.map((u) => u.as_of_date), ["2026-09-01", "2026-09-17", "2026-09-18"]);
+  const u01 = units[0]!, u17 = units[1]!, u18 = units[2]!;
+  assert.equal(u01.late_charge_run, true); assert.equal(u01.due_today, true); assert.deepEqual(u01.late_charge_fee_ids, []);
+  assert.equal(u17.late_charge_run, true); assert.equal(u17.grace_ended_yesterday, true); assert.equal(u17.due_today, false); assert.deepEqual(u17.late_charge_fee_ids, [fee.id]); assert.equal(u17.time_zone, "America/Chicago");
+  assert.equal(u18.late_charge_run, false); assert.equal(u18.grace_ended_yesterday, false); assert.deepEqual(u18.late_charge_fee_ids, []); assert.equal(outcomes["2026-09-18"]!.late_charge_run, false);
+  assert.equal(events.filter((e) => e.type === "command.executed" && e.payload["command"] === "fees.assess").length, 2, "2.7 ran on the 1st and the 17th, not the 18th");
+  const state = await loanCashStateFromRows(db, loanId, D("2026-09-18")); assert.equal(state.state.late_charges_due_cents, 7_901n); assert.equal(state.state.fees?.length, 1);
+});
 test("35.5-T7: Given lockbox `LBX-1` (cut-off 17:00 `America/Chicago`) and the FAKE bank's file for 2026-11-02 with items $2,192.57 (L-1, scanned 09:14), $1,500.00 (no scanline) and $2,308.50 (T-7, scanned 17:42) and control total **$6,001.07**, when `lockbox_ingest` runs, then `lockbox_batches` has one row with `items = 3`, `variance_cents = 0` and `status = posted`, item 1 is a `payments` row (`channel = lockbox`, `received_on` 2026-11-02, `status = identified`), item 2 is a `suspense_items` row (`source = lockbox`) with `lockbox.item.unidentified`, item 3 is a `payments` row with `received_on` 2026-11-03, three receipt sets Dr `clearing_cash` / Cr `suspense_unapplied` exist for 219,257, 150,000 and 230,850, `lockbox.batch.received` armed `FNMA_C1101_LOCKBOX_CLEARING_1BD`, `lockbox.batch.posted{posted: 2, unidentified: 1}` satisfied `SM_LOCKBOX_BATCH_POSTED_1BD`, the same file ingested again writes nothing, and the file with control total $6,000.07 leaves the batch in `variance` with no payment row and an `officer` escalation.", { todo: true });
 test("35.5-T8: Given L-1's active enrollment (draft day = due date, extra principal $100.00, validated) and the demo clock at Tue 2026-09-29 14:00 ET, when `ach_file_build` runs, then one `ach_files` row exists with one `ach_entries` row of **$2,292.57**, `effective_entry_date` 2026-10-01, description \"MORTGAGE PMT\" and `status = transmitted`, the file is a `documents` row with `sha256`, `ach.file.built` satisfied `SM_ACH_FILE_BUILD_1BD`; and given a second enrollment whose amount changed without a sent variable-amount notice and a third whose `validation_status = pending` (WEB), then neither has an entry and the build's decision names `REGE_1005_10D_VARIABLE_AMOUNT_NOTICE_10` and `NACHA_WEB_ACCOUNT_VALIDATION_GATE` as the refusals.", { todo: true });
 test("35.5-T9: Given the entry of T8 settled 2026-10-01 and posted by L-1's unit (interest **$1,351.71**, principal **$228.46**, escrow **$612.40**, curtailment **$100.00**, row 2026-10-01 `satisfied`), when the FAKE ODFI's return file for Mon 2026-10-05 carries R01 on its trace number and `ach_returns_ingest` runs, then `ach_return_files` has one row, `ach.return.received{code: R01}` and a `payment_reversals` row (`reason = returned_item`, `return_code = R01`) exist with the mirror set for $2,292.57, row 2026-10-01 is `due` again with `installment.restored`, UPB and LPI are back to $249,546.77 and 2026-09-01, a `fees{nsf_fee}` row of **$25.00** exists, a reinitiation `ach_entries` row of **$2,292.57** with description \"RETRY PYMT\", `effective_entry_date` Thu 2026-10-08 and `reinitiation_count = 1` exists, `ach.return.actioned{action: reversed_reinitiated}` satisfied `SM_ACH_RETURN_ACTIONED_1BD`, and the same return file ingested again writes nothing.", { todo: true });
 test("35.5-T10: Given the reinitiation of T9 is also returned R01 on 2026-10-12, when the return is actioned and the unit runs on 2026-10-17, then no further reinitiation is built (`NACHA_NSF_REINITIATION_180_MAX2` exhausted), the enrollment is `suspended_returns` with a hand-off escalation to `borrower-comms`, the 2026-10-17 run assesses **$79.01** on row 2026-10-01, and a second `fees{nsf_fee}` row exists for the second item; given instead a return coded R11, then no NSF fee exists and the corrected entry carries `reinitiation_of_entry_id`.", { todo: true });
-test("35.5-T11: Given loan P (AZ, `America/Phoenix`) and loan N (NY, `America/New_York`) each with a `due` row for 2026-10-01, when the planner's `as_of` is 2026-10-02T06:30:00Z, then N's `cashiering_unit_runs.local_date` is 2026-10-02 and P's is 2026-10-01, `installment.due_date_reached{due_date: 2026-10-01}` was emitted for P on that pass and for N on the earlier pass whose local date was 2026-10-01, `LOAN_LOCAL_TZ` no longer exists in `src/runtime` (grep = 0), and a loan with no `loan_servicing_configs` row is refused `CONFIG_REQUIRED` by the unit with nothing written.", { todo: true });
+test("35.5-T11: Given loan P (AZ, `America/Phoenix`) and loan N (NY, `America/New_York`) each with a `due` row for 2026-10-01, when the planner's `as_of` is 2026-10-02T06:30:00Z, then N's `cashiering_unit_runs.local_date` is 2026-10-02 and P's is 2026-10-01, `installment.due_date_reached{due_date: 2026-10-01}` was emitted for P on that pass and for N on the earlier pass whose local date was 2026-10-01, `LOAN_LOCAL_TZ` no longer exists in `src/runtime` (grep = 0), and a loan with no `loan_servicing_configs` row is refused `CONFIG_REQUIRED` by the unit with nothing written.", { skip }, async () => {
+  // loan P (AZ, America/Phoenix) and loan N (NY, America/New_York), each with a `due` row for 2026-10-01 (worked example F); a third loan inserted by hand with no configuration row
+  const p = await boardTapeLoan(runtime, clock, AZ_TAPE, `B-AZ-${R}`, D("2026-09-15")); const n = await boardTapeLoan(runtime, clock, NY_TAPE, `B-NY11-${R}`, D("2026-09-15"));
+  const zone = async (id: string): Promise<string> => String((await db.query<Row>(`SELECT time_zone FROM loan_servicing_configs WHERE loan_id = $1`, [id]))[0]!["time_zone"]);
+  assert.equal(await zone(p.loan_id), "America/Phoenix"); assert.equal(await zone(n.loan_id), "America/New_York");
+  for (const id of [p.loan_id, n.loan_id]) { const r = (await readRows(db, id))[0]!; assert.equal(r.due_date, "2026-10-01"); assert.equal(r.status, "due"); }
+  const orphan = await insertUnconfiguredLoan(db, await partnerPartyOf(db));
+  const orphanEvents = await count(`SELECT count(*)::bigint AS c FROM loan_events WHERE loan_id = $1`, [orphan]);
+  assert.equal(await count(`SELECT count(*)::bigint AS c FROM loan_servicing_configs WHERE loan_id = $1`, [orphan]), 0n);
+  // the earlier pass, 2026-10-01T04:30:00Z: 00:30 in New York (N's due date reached), 21:30 on the 30th in Phoenix (nothing for P)
+  clock.set("2026-10-01T04:30:00.000Z");
+  const r1 = await cashieringDailyRun(runtime, "2026-10-01T04:30:00.000Z");
+  assert.equal(r1.as_of_date, "2026-10-01"); assert.deepEqual(r1.errors, []); assert.deepEqual(r1.skipped, [{ loan_id: orphan, reason: "CONFIG_REQUIRED" }]);
+  // the planner's as_of 2026-10-02T06:30:00Z: 02:30 on the 2nd in New York, 23:30 on the 1st in Phoenix — P's due date reached on this pass
+  clock.set("2026-10-02T06:30:00.000Z");
+  const r2 = await cashieringDailyRun(runtime, "2026-10-02T06:30:00.000Z");
+  assert.equal(r2.as_of_date, "2026-10-02"); assert.deepEqual(r2.errors, []); assert.deepEqual(r2.skipped, [{ loan_id: orphan, reason: "CONFIG_REQUIRED" }]);
+  const unitsN = await readUnitRuns(db, n.loan_id); const unitsP = await readUnitRuns(db, p.loan_id);
+  assert.deepEqual(unitsN.map((u) => [u.as_of_date, u.local_date, u.time_zone, u.outcome]), [["2026-10-01", "2026-10-01", "America/New_York", "done"], ["2026-10-02", "2026-10-02", "America/New_York", "done"]]);
+  assert.deepEqual(unitsP.map((u) => [u.as_of_date, u.local_date, u.time_zone, u.outcome]), [["2026-10-01", "2026-09-30", "America/Phoenix", "done"], ["2026-10-02", "2026-10-01", "America/Phoenix", "done"]]);
+  assert.deepEqual(unitsN.map((u) => u.due_today), [true, false]); assert.deepEqual(unitsP.map((u) => u.due_today), [false, true]);
+  const reachedN = (await readEvents(db, n.loan_id)).filter((e) => e.type === "installment.due_date_reached"); const reachedP = (await readEvents(db, p.loan_id)).filter((e) => e.type === "installment.due_date_reached");
+  assert.equal(reachedN.length, 1); assert.equal(reachedN[0]!.payload["due_date"], "2026-10-01"); assert.equal(reachedN[0]!.actor_id, "cashiering");
+  assert.equal(reachedP.length, 1); assert.equal(reachedP[0]!.payload["due_date"], "2026-10-01"); assert.equal(reachedP[0]!.actor_id, "cashiering");
+  const at = async (id: string): Promise<string> => (await db.query<{ t: string }>(`SELECT occurred_at::text AS t FROM loan_events WHERE id = $1`, [id]))[0]!.t;
+  assert.ok((await at(reachedN[0]!.id)).startsWith("2026-10-01 04:30"), "N's on the earlier pass"); assert.ok((await at(reachedP[0]!.id)).startsWith("2026-10-02 06:30"), "P's on the 2026-10-02T06:30Z pass");
+  // the constant is gone from src/runtime (every .ts file under it; grep = 0)
+  const runtimeDir = fileURLToPath(new URL("../../runtime", import.meta.url));
+  const offenders = readdirSync(runtimeDir, { recursive: true }).map(String).filter((f) => f.endsWith(".ts")).filter((f) => readFileSync(`${runtimeDir}/${f}`, "utf8").includes("LOAN_LOCAL_TZ"));
+  assert.deepEqual(offenders, []);
+  // a loan with no loan_servicing_configs row is refused CONFIG_REQUIRED by the unit with nothing written: the daily run's failed rows name it, its log is untouched, the bus tool rejects
+  const orphanUnits = await readUnitRuns(db, orphan);
+  assert.deepEqual(orphanUnits.map((u) => [u.as_of_date, u.outcome, u.error_class, u.local_date, u.time_zone]), [["2026-10-01", "failed", "CONFIG_REQUIRED", null, null], ["2026-10-02", "failed", "CONFIG_REQUIRED", null, null]]);
+  assert.equal(await count(`SELECT count(*)::bigint AS c FROM loan_events WHERE loan_id = $1`, [orphan]), orphanEvents);
+  await assert.rejects(runtime.execute({ process: "35.5", name: "cashiering.run_unit", loanId: orphan, actor: CASHIERING_AGENT, input: { loan_id: orphan, as_of_date: "2026-10-02" } }), (e: unknown) => e instanceof CommandRefused && e.code === "CONFIG_REQUIRED");
+  assert.equal(await count(`SELECT count(*)::bigint AS c FROM loan_events WHERE loan_id = $1`, [orphan]), orphanEvents); assert.equal((await readUnitRuns(db, orphan)).length, 2);
+  assert.equal(await count(`SELECT count(*)::bigint AS c FROM agent_decisions WHERE loan_id = $1`, [orphan]), 0n);
+  // the counter job (11.1) reads the same rows in the same zones: it lists the orphan as skipped, never under a default zone
+  const dq = await delinquencyDailySweep(runtime, "2026-10-02T06:30:00.000Z", [p.loan_id, n.loan_id, orphan]);
+  assert.deepEqual(dq.skipped, [{ loan_id: orphan, reason: "CONFIG_REQUIRED" }]); assert.deepEqual(dq.loans.map((l) => l.loan_id), [n.loan_id], "N's row is past due on its day; P's day is still the 1st");
+});
 test("35.5-T12: Given both boarding paths, when a loan boards, then a `loan_servicing_configs` row exists in the same transaction with `time_zone` from the reviewed state map for `properties.state`, `jurisdiction_state`, `servicer_profile_id` = the active profile, `late_charge_terms` = 2.7's `lateChargeTerms` for the note and `jurisdiction_rules.rules.late_charge`, `nsf_fee_allowed` from `jurisdiction_rules.rules.nsf_fee`, and `loan.servicing_config.written` satisfied `SM_LOAN_SERVICING_CONFIG_AT_BOARD_0`; given a note late-charge rate above the state's `max_pct`, then `late_charge_terms.conflict` names it and the state's bound is what 2.7 assesses.", { skip }, async () => {
   assert.ok(loans.t1 && loans.t2, "T1's funded note and T2's tape T-7 are the two boarding paths");
   const v1 = await profileV1();
@@ -312,6 +500,67 @@ test("35.5-T13: Given the FAKE build's seeded `servicer_profiles` v1 (the former
   assert.equal(await count(`SELECT count(*)::bigint AS c FROM servicer_profiles WHERE version = 3`), 0n);
   assert.equal((await servicerBlockFor(db, loanId, D("2026-09-22"))).exclusive_address, "PO Box 9, Testville TX 75001");
 });
-test("35.5-T14: Given a 2.4 curtailment of $1,000.00 received on 2026-11-10 on T-7 (after row 2026-11-01 was satisfied), when the 2026-12-01 payment posts, then interest is `round_half_up((28,008,119 − 100,000) × 0.065 ÷ 12)` = $1,511.69 rather than the row's $1,517.11, the unit records the 542¢ difference against the row, and the schedule is re-projected only when 2.4's re-amortization activates new terms.", { todo: true });
-test("35.5-T15: Given the demo clock at 2026-10-01 12:00 ET and the fixture book, when `POST /v1/demo/advance {days: 3}` runs, then `cycle_runs` holds one `cashiering_daily` run per day 2026-10-02 … 2026-10-04 with `units_total` = the active book, each loan has exactly one `done` unit row per day, `cashiering.daily.run_completed` was appended three times with the three `as_of_date`s, and `SM_CASHIERING_DAILY_RECEIPT_1D` never breached.", { todo: true });
+test("35.5-T14: Given a 2.4 curtailment of $1,000.00 received on 2026-11-10 on T-7 (after row 2026-11-01 was satisfied), when the 2026-12-01 payment posts, then interest is `round_half_up((28,008,119 − 100,000) × 0.065 ÷ 12)` = $1,511.69 rather than the row's $1,517.11, the unit records the 542¢ difference against the row, and the schedule is re-projected only when 2.4's re-amortization activates new terms.", { skip }, async () => {
+  // T-7 as T2 boarded it (rows from 2026-11-01 under the boarding terms): the 2026-11-01 payment posts through its unit, then the $1,000.00 curtailment, then the 2026-12-01 payment
+  const loanId = loans.t2; assert.ok(loanId);
+  const runsBefore = await count(`SELECT count(*)::bigint AS c FROM installment_schedule_runs WHERE loan_id = $1`, [loanId]); assert.equal(runsBefore, 1n);
+  const at = (d: string): string => `${d}T16:00:00.000Z`;
+  clock.set(at("2026-11-01"));
+  const p1 = await writePayment(runtime, loanId, { amount_cents: 230_850n, received_on: D("2026-11-01"), channel: "lockbox", instrument: "check" });
+  const u1 = await runCashieringUnit(runtime, { loan_id: loanId, as_of_date: D("2026-11-01"), as_of_instant: at("2026-11-01") }); assert.equal(u1.outcome, "done", u1.error ?? ""); assert.deepEqual(u1.posted, [p1]); assert.equal(u1.interest_variance_cents, 0n);
+  const nov = (await readRows(db, loanId))[0]!; assert.equal(nov.due_date, "2026-11-01"); assert.equal(nov.status, "satisfied"); assert.equal(nov.satisfied_by_payment_id, p1);
+  assert.equal((await loanCashStateFromRows(db, loanId, D("2026-11-02"))).state.upb_cents, 28_008_119n); assert.equal(nov.upb_after_cents, 28_008_119n);
+  clock.set(at("2026-11-10"));
+  const p2 = await writePayment(runtime, loanId, { amount_cents: 100_000n, received_on: D("2026-11-10"), channel: "portal_onetime", instrument: "ach", designation: "curtailment" });
+  const u2 = await runCashieringUnit(runtime, { loan_id: loanId, as_of_date: D("2026-11-10"), as_of_instant: at("2026-11-10") }); assert.equal(u2.outcome, "done", u2.error ?? ""); assert.deepEqual(u2.posted, [p2]);
+  const curt = (await readEvents(db, loanId)).find((e) => e.type === "payment.posted" && e.payload["payment_id"] === p2); assert.ok(curt);
+  assert.equal(curt.payload["outcome"], "curtailment"); assert.equal(curt.payload["curtailment_cents"], "100000"); assert.deepEqual(curt.payload["installments"], []); assert.equal(curt.payload["upb_after_cents"], "27908119");
+  assert.equal((await loanCashStateFromRows(db, loanId, D("2026-11-11"))).state.upb_cents, 27_908_119n); assert.equal(28_008_119n - 100_000n, 27_908_119n);
+  // the 2026-12-01 payment: interest on the actual UPB (rule 4), $1,511.69, not the row's $1,517.11 — the 542¢ difference recorded against the row; the schedule is not re-projected
+  clock.set(at("2026-12-01"));
+  const p3 = await writePayment(runtime, loanId, { amount_cents: 230_850n, received_on: D("2026-12-01"), channel: "lockbox", instrument: "check" });
+  const u3 = await runCashieringUnit(runtime, { loan_id: loanId, as_of_date: D("2026-12-01"), as_of_instant: at("2026-12-01") }); assert.equal(u3.outcome, "done", u3.error ?? ""); assert.deepEqual(u3.posted, [p3]);
+  const posted = (await readEvents(db, loanId)).find((e) => e.type === "payment.posted" && e.payload["payment_id"] === p3); assert.ok(posted);
+  assert.equal(posted.payload["interest_cents"], "151169"); assert.equal(posted.payload["principal_cents"], "38451"); assert.equal(posted.payload["escrow_cents"], "41230"); assert.deepEqual(posted.payload["installments"], ["2026-12-01"]);
+  assert.equal(monthlyInterestBps(27_908_119n, 65000), 151_169n); assert.equal(151_711n - 151_169n, 542n); assert.equal(189_620n - 151_169n, 38_451n);
+  assert.equal(u3.interest_variance_cents, 542n);
+  const unit = (await readUnitRuns(db, loanId)).find((u) => u.as_of_date === "2026-12-01")!; assert.equal(unit.interest_variance_cents, 542n); assert.deepEqual(unit.payments_posted, [p3]);
+  const satisfied = (await readEvents(db, loanId)).find((e) => e.type === "installment.satisfied" && e.payload["due_date"] === "2026-12-01"); assert.ok(satisfied);
+  assert.equal(satisfied.payload["interest_variance_cents"], "542"); assert.equal(satisfied.payload["row_interest_cents"], "151711"); assert.equal(satisfied.payload["engine_interest_cents"], "151169"); assert.equal(satisfied.payload["payment_id"], p3);
+  const dec = (await db.query<Row>(`SELECT status::text AS status, interest_cents, principal_cents, interest_variance_cents, satisfied_by_payment_id FROM loan_installments WHERE loan_id = $1 AND due_date = '2026-12-01'`, [loanId]))[0]!;
+  assert.equal(dec["status"], "satisfied"); assert.equal(dec["interest_cents"], 151_711n); assert.equal(dec["principal_cents"], 37_909n); assert.equal(dec["interest_variance_cents"], 542n); assert.equal(dec["satisfied_by_payment_id"], p3);
+  assert.equal(await count(`SELECT count(*)::bigint AS c FROM installment_schedule_runs WHERE loan_id = $1`, [loanId]), 1n, "re-projected only when 2.4's re-amortization activates new terms");
+  assert.equal((await loanCashStateFromRows(db, loanId, D("2026-12-02"))).state.upb_cents, 27_908_119n - 38_451n);
+});
+test("35.5-T15: Given the demo clock at 2026-10-01 12:00 ET and the fixture book, when `POST /v1/demo/advance {days: 3}` runs, then `cycle_runs` holds one `cashiering_daily` run per day 2026-10-02 … 2026-10-04 with `units_total` = the active book, each loan has exactly one `done` unit row per day, `cashiering.daily.run_completed` was appended three times with the three `as_of_date`s, and `SM_CASHIERING_DAILY_RECEIPT_1D` never breached.", { skip }, async () => {
+  // the demo clock at 2026-10-01 12:00 ET over the fixture book (T4's demo batch and every loan this file boarded): a second Runtime over the same database with the OffsetClock the demo advance steps
+  const demoClock = new OffsetClock(new FixedClock("2026-10-01T16:00:00.000Z"));
+  const rt2 = new Runtime({ db, registry: loadOverriddenRegistry(), clock: demoClock });
+  assert.equal(demoClock.now(), "2026-10-01T16:00:00.000Z"); assert.equal(wallClock(Date.parse(demoClock.now()), "America/New_York").hour, 12);
+  const days = ["2026-10-02", "2026-10-03", "2026-10-04"] as const;
+  const r = await advanceDemoClock({ runtime: rt2, clock: demoClock, actor: "test:35.5-T15" }, { days: 3 });
+  assert.equal(r.advanced, true); assert.equal(r.complete, true); assert.equal(r.days_crossed, 3); assert.equal(r.to, "2026-10-04T16:00:00.000Z");
+  for (const d of days) assert.ok(r.steps.some((s) => s.date === d), `a step crossed ${d}`);
+  assert.ok(r.steps.every((s) => s.servicing_sweep !== null && s.servicing_sweep.errors === 0 && s.flows === "absent"), JSON.stringify(r.steps.map((s) => s.servicing_sweep)));
+  // one cashiering_daily run per day with units_total = the active book, every loan one done unit row per day
+  const book = (await selectBook(db, D("2026-10-04"), "2026-10-04T16:00:00.000Z")).loans.map((l) => l.loan_id); assert.ok(book.length >= 94 + 5, `the demo book, Plan 4927, both L-1s, P and N and the NY loan: ${book.length}`);
+  assert.ok(!book.includes(loans.t1) && !book.includes(loans.t2), "T1's note and T-7 board after 2026-10-04");
+  const cycles = ports35_5(rt2).cycles;
+  for (const d of days) {
+    const run = await cycles.run("cashiering_daily", d); assert.ok(run, d);
+    assert.equal(run.period_key, d); assert.equal(run.as_of_date, d); assert.equal(run.status, "completed"); assert.equal(run.units_total, book.length, d); assert.equal(run.units_done, run.units_total, d); assert.equal(run.units_dead, 0);
+    const done = await db.query<{ loan_id: string; c: bigint }>(`SELECT loan_id, count(*)::bigint AS c FROM cashiering_unit_runs WHERE as_of_date = $1 AND outcome = 'done' GROUP BY loan_id`, [d]);
+    assert.equal(done.length, book.length, `${d}: one done row per active loan`); assert.ok(done.every((x) => x.c === 1n), `${d}: exactly one`); assert.deepEqual(new Set(done.map((x) => x.loan_id)), new Set(book));
+  }
+  // the receipt appended once per day with the three as_of_dates; SM_CASHIERING_DAILY_RECEIPT_1D never breached — armed for the day after the last
+  const receipts = await db.query<{ d: string; c: bigint }>(`SELECT payload->>'as_of_date' AS d, count(*)::bigint AS c FROM loan_events WHERE type = 'cashiering.daily.run_completed' AND payload->>'as_of_date' = ANY($1::text[]) GROUP BY 1 ORDER BY 1`, [[...days]]);
+  assert.deepEqual(receipts, days.map((d) => ({ d, c: 1n })));
+  assert.equal(await count(`SELECT count(*)::bigint AS c FROM loan_events WHERE type = 'timer.breached' AND payload->>'code' = 'SM_CASHIERING_DAILY_RECEIPT_1D'`), 0n);
+  assert.equal(await count(`SELECT count(*)::bigint AS c FROM timers WHERE code = 'SM_CASHIERING_DAILY_RECEIPT_1D' AND status::text IN ('breached', 'satisfied_late')`), 0n);
+  assert.equal(await count(`SELECT count(*)::bigint AS c FROM escalations WHERE payload->>'timer_code' = 'SM_CASHIERING_DAILY_RECEIPT_1D'`), 0n);
+  const clocks = await readGlobalTimer(db, "SM_CASHIERING_DAILY_RECEIPT_1D");
+  const armed = clocks.filter((t) => t.status === "armed"); assert.equal(armed.length, 1); assert.equal(armed[0]!.anchor_date, "2026-10-04"); assert.equal(armed[0]!.due_date, "2026-10-05");
+  assert.ok(clocks.filter((t) => t.status !== "armed").every((t) => t.status === "satisfied"));
+  assert.ok(r.breaches >= 0 && r.due >= 0);
+});
 test("35.5-T16: Given any tool of this process, then no tool changed a money column of `loan_installments` on a `satisfied` row, of `payments`, `fees` or `ledger_lines` except through 2.1's, 2.7's or 2.3's own commands (contract test: the ledger's line count and sums before and after `installments.write`, `installments.reproject`, `lockbox.item.resolve`, `servicing_config.write` and `servicer_profile.write` are identical), every write left an `agent_decisions` row with `rule_set_version`, and a fee waiver, a variance resolution changing an amount, or a return-action override by an agent actor is refused with nothing written.", { todo: true });

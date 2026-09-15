@@ -10,6 +10,9 @@
  * on the src/domain/partner-book/timers-33-2.ts precedent (SM_PARTNER_BOOK_REVIEW_DAILY). The deadline rows of 35.5
  * parse and arm from the registry as written; SM_INSTALLMENT_REPROJECT_1BD alone takes an override (three spellings of one
  * trigger, below). `armServicingSideClocks` at the end arms this section's loan clocks on servicing-side events the engine skips.
+ * Emitter of the daily receipt: src/domain/operations-runtime/cashiering-cycle.ts electDailyReceipt — `cashiering.daily.run_completed{as_of_date,
+ * run_id, loans, posted, late_charges_assessed, amount_change_checks, units_total, units_done, units_dead, units_skipped, origination: true}` once per
+ * day in a global unit of work (35.3's `electReceipt` owns the literal at its merge).
  */
 import type { TimerDef, TimerRegistry } from "../../kernel/timers/registry.ts";
 import { isOriginationContext, type TimerEngine } from "../../kernel/timers/engine.ts";

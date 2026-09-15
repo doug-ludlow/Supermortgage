@@ -247,12 +247,12 @@ export async function readSchedule(q: Queryable, loanId: string, o: { from?: Pla
 }
 
 /** 2.1's `payment.posted` moved the rows: status `satisfied`, the payment's uuid, the credit date (the row trigger allows exactly these columns). The caller appends `installment.satisfied`. */
-export async function satisfyInstallments(q: Queryable, loanId: string, items: readonly { due_date: PlainDate; payment_id: string | null; credited_as_of: PlainDate; satisfied_on: PlainDate; interest_variance_cents?: Cents | null }[]): Promise<void> {
-  for (const it of items) await q.query(`UPDATE loan_installments SET status = 'satisfied', satisfied_on = $3, credited_as_of = $4, satisfied_by_payment_id = $5, interest_variance_cents = $6, updated_at = now() WHERE loan_id = $1 AND due_date = $2 AND status = 'due'`, [loanId, it.due_date, it.satisfied_on, it.credited_as_of, it.payment_id, it.interest_variance_cents ?? null]);
+export async function satisfyInstallments(q: Queryable, loanId: string, items: readonly { due_date: PlainDate; payment_id: string | null; credited_as_of: PlainDate; satisfied_on: PlainDate; interest_variance_cents?: Cents | null; status?: "satisfied" | "prepaid" }[]): Promise<void> {
+  for (const it of items) await q.query(`UPDATE loan_installments SET status = $7::installment_status, satisfied_on = $3, credited_as_of = $4, satisfied_by_payment_id = $5, interest_variance_cents = $6, updated_at = now() WHERE loan_id = $1 AND due_date = $2 AND status = 'due'`, [loanId, it.due_date, it.satisfied_on, it.credited_as_of, it.payment_id, it.interest_variance_cents ?? null, it.status ?? "satisfied"]);
 }
 /** 2.1's `payment.reversed` restored the rows to `due` (satisfied_on, credited_as_of, satisfied_by_payment_id cleared). The caller appends `installment.restored`. */
 export async function restoreInstallments(q: Queryable, loanId: string, items: readonly { due_date: PlainDate; payment_id?: string | null }[]): Promise<void> {
-  for (const it of items) await q.query(`UPDATE loan_installments SET status = 'due', satisfied_on = NULL, credited_as_of = NULL, satisfied_by_payment_id = NULL, interest_variance_cents = NULL, updated_at = now() WHERE loan_id = $1 AND due_date = $2 AND status = 'satisfied' AND ($3::uuid IS NULL OR satisfied_by_payment_id = $3::uuid)`, [loanId, it.due_date, it.payment_id ?? null]);
+  for (const it of items) await q.query(`UPDATE loan_installments SET status = 'due', satisfied_on = NULL, credited_as_of = NULL, satisfied_by_payment_id = NULL, interest_variance_cents = NULL, updated_at = now() WHERE loan_id = $1 AND due_date = $2 AND status IN ('satisfied', 'prepaid') AND ($3::uuid IS NULL OR satisfied_by_payment_id = $3::uuid)`, [loanId, it.due_date, it.payment_id ?? null]);
 }
 
 // ---------------------------------------------------------------- rule 3: the reprojection (`installments.reproject`; `installments.write` on a loan that has its rows)

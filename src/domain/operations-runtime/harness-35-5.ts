@@ -17,6 +17,8 @@ import { encodeTransferBatch, type TransferBatchData } from "../boarding/tape-co
 import type { StagedLoan } from "../boarding/types.ts";
 import type { LoanFundedPayload, OriginationSnapshot } from "../orig-boarding/ops-30-2.ts";
 import { boardTransferBatch, type TransferBatchSummary } from "../../runtime/transfers.ts";
+import { EntityStore } from "../../app/tools.ts";
+import { ports35_5, type NewPaymentRow } from "./ports-35-5.ts";
 import { demoFunded, demoSnapshot, fundApplication, type DemoOverrides, type FundApplicationResult } from "../../runtime/origination.ts";
 import type { Runtime } from "../../runtime/app.ts";
 
@@ -35,7 +37,9 @@ export interface TapeSpec {
 export const T7_TAPE: TapeSpec = { transferor_loan_number: "T-7", original_upb_cents: 30_000_000n, note_rate_pct: "6.500", original_term_months: 360, first_payment_date: D("2021-10-01"), maturity_date: D("2051-09-01"), next_due_date: D("2026-11-01"), upb_cents: 28_045_824n, pi_cents: 189_620n, escrow_payment_cents: 41_230n, state: "TX", city: "Austin", postal_code: "78701" };
 /** 2.1's fixture L-1 (worked example D): original $250,000.00 at 6.500%, 360, first payment 2021-09-01, maturity 2051-08-01, next due 2026-09-01, UPB $249,774.00, P&I $1,580.17, escrow $612.40, TX — a tape that does not amortize to zero (HF-005's exception on the run). */
 export const L1_TAPE: TapeSpec = { transferor_loan_number: "L-1", original_upb_cents: 25_000_000n, note_rate_pct: "6.500", original_term_months: 360, first_payment_date: D("2021-09-01"), maturity_date: D("2051-08-01"), next_due_date: D("2026-09-01"), upb_cents: 24_977_400n, pi_cents: 158_017n, escrow_payment_cents: 61_240n, state: "TX", city: "Houston", postal_code: "77002" };
-/** 35.5-T12's NY branch: a note late charge of 5.000% above NY's 2.000% bound (seed 0143), next due 2026-10-01. */
+/** 35.5-T11's loan P (worked example F): an AZ property (`America/Phoenix`, no DST), a `due` row for 2026-10-01 — the same note as T-7 sixty installments in. */
+export const AZ_TAPE: TapeSpec = { transferor_loan_number: "AZ-1", original_upb_cents: 30_000_000n, note_rate_pct: "6.500", original_term_months: 360, first_payment_date: D("2021-10-01"), maturity_date: D("2051-09-01"), next_due_date: D("2026-10-01"), upb_cents: amortizedBalance(30_000_000n, "6.500", 360, 60), pi_cents: 189_620n, escrow_payment_cents: 41_230n, state: "AZ", city: "Phoenix", postal_code: "85004" };
+/** 35.5-T12's NY branch (and T11's loan N): a note late charge of 5.000% above NY's 2.000% bound (seed 0143), next due 2026-10-01. */
 export const NY_TAPE: TapeSpec = { transferor_loan_number: "NY-1", original_upb_cents: 30_000_000n, note_rate_pct: "6.500", original_term_months: 360, first_payment_date: D("2021-10-01"), maturity_date: D("2051-09-01"), next_due_date: D("2026-10-01"), upb_cents: amortizedBalance(30_000_000n, "6.500", 360, 60), pi_cents: 189_620n, escrow_payment_cents: 41_230n, state: "NY", city: "Rochester", postal_code: "14604", late_charge_pct: "5.000", late_charge_grace_days: 15 };
 
 let seq = 0;
@@ -132,4 +136,27 @@ export async function linkBorrowerParty(db: Db, loanId: string, email: string | 
   const party = (await db.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, contact) VALUES ('borrower', $1, $2::jsonb) RETURNING id`, [b.legal_name, JSON.stringify(email ? { email } : {})]))[0]!.id;
   await db.query(`UPDATE borrowers SET party_id = $2 WHERE id = $1`, [b.id, party]);
   return party;
+}
+
+// ---------------------------------------------------------------- the daily cycle's fixtures and readers (G2)
+/** A received payment written through the cash-rows port in a loan unit of work (the fact 2.1 rule 1 records; the unit posts it): the uuid id. */
+export async function writePayment(rt: Runtime, loanId: string, row: Omit<NewPaymentRow, "loan_id">): Promise<string> {
+  const store = new EntityStore(); store.seed(await rt.entities.load({ loanId })); const mark = store.versionCount();
+  let id = "";
+  await rt.uow.run({ loanId }, (ctx) => { id = ports35_5(rt).cashRows.writeReceivedPayment(store, ctx, { ...row, loan_id: loanId }).payment_id; }, { clock: rt.clock, commit: (q) => rt.entities.save(store.versionsSince(mark), { loanId }, q) });
+  return id;
+}
+export interface UnitRunRead extends Record<string, unknown> { readonly id: string; readonly as_of_date: string; readonly local_date: string | null; readonly time_zone: string | null; readonly outcome: string; readonly error_class: string | null; readonly payments_posted: string[]; readonly late_charge_run: boolean; readonly late_charge_fee_ids: string[]; readonly amount_change_checks: string[]; readonly due_today: boolean; readonly grace_ended_yesterday: boolean; readonly interest_variance_cents: bigint | null; readonly decision_id: string | null; readonly run_id: string | null; }
+export const readUnitRuns = async (db: Db, loanId: string): Promise<UnitRunRead[]> => db.query<UnitRunRead>(`SELECT id, as_of_date::text AS as_of_date, local_date::text AS local_date, time_zone, outcome, error_class, payments_posted, late_charge_run, late_charge_fee_ids, amount_change_checks, due_today, grace_ended_yesterday, interest_variance_cents, decision_id, run_id FROM cashiering_unit_runs WHERE loan_id = $1 ORDER BY as_of_date, created_at`, [loanId]);
+export interface GlobalTimerRow extends Record<string, unknown> { readonly id: string; readonly code: string; readonly status: string; readonly subject_kind: string; readonly subject_id: string; readonly anchor_date: string; readonly due_date: string | null; readonly satisfied_by_event_id: string | null; readonly armed_by_event_id: string; }
+/** The global recurring clock's instances (loan_id NULL, subject global), oldest first. */
+export const readGlobalTimer = async (db: Db, code: string): Promise<GlobalTimerRow[]> => db.query<GlobalTimerRow>(`SELECT id, code, status::text AS status, subject_kind, subject_id, anchor_date::text AS anchor_date, due_date::text AS due_date, satisfied_by_event_id, armed_by_event_id FROM timers WHERE code = $1 AND subject_kind = 'global' ORDER BY armed_at, due_at`, [code]);
+/** A boarded loan inserted by hand with one `due` row and deliberately NO `loan_servicing_configs` row (the journey.ts:490-507 fixture pattern) — the table is append-only, so a real board's row cannot be removed. */
+export async function insertUnconfiguredLoan(db: Db, partnerPartyId: string): Promise<string> {
+  const prop = await db.query<{ id: string }>(`INSERT INTO properties (address_line1, city, state, postal_code, occupancy) VALUES ('1 Orphan Way', 'Houston', 'TX', '77002', 'owner_occupied') RETURNING id`);
+  const loan = await db.query<{ id: string }>(`INSERT INTO loans (fnma_loan_number, servicer_loan_number, transferor_loan_number, partner_party_id, property_id, status, instrument_date, origination_date, original_upb_cents, original_term_months, first_payment_date, maturity_date, boarded_at) VALUES ($1, $2, $3, $4, $5, 'active', '2021-08-02', '2021-08-02', 30000000, 360, '2021-10-01', '2051-09-01', '2026-09-15T14:00:00Z') RETURNING id`, [String(4_300_000_000 + Number(unique().slice(-9)) % 600_000_000).padStart(10, "0").slice(0, 10), `SM-ORPHAN-${unique()}`, `ORPHAN-${unique()}`, partnerPartyId, prop[0]!.id]);
+  const loanId = loan[0]!.id;
+  await db.query(`INSERT INTO loan_terms (loan_id, effective_from, source, amortization, note_rate_bps, pi_cents, escrow_payment_cents, escrowed, remittance_type, maturity_date, remaining_term_months) VALUES ($1, '2026-09-15', 'boarding', 'fixed', 65000, 189620, 41230, true, 'A/A', '2051-09-01', 300)`, [loanId]);
+  await db.query(`INSERT INTO loan_installments (loan_id, due_date, pi_cents, interest_cents, principal_cents, escrow_cents, status) VALUES ($1, '2026-10-01', 189620, 151915, 37705, 41230, 'due')`, [loanId]);
+  return loanId;
 }

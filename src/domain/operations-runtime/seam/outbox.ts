@@ -69,9 +69,6 @@ export interface DrainReport extends DrainCounts { readonly at: string; readonly
 export interface DrainDeps { readonly db: Db; readonly registry: TimerRegistry; readonly clock: Clock; readonly ports: Partial<Ports>; readonly adapters?: ReadonlyMap<string, OutboundAdapter>; readonly notify?: (events: readonly DomainEvent[]) => void; }
 export interface DrainOptions { readonly adapter?: string | null; readonly limit?: number; readonly runId?: string | null; }
 
-/** Due rows of one adapter, claimed `FOR UPDATE SKIP LOCKED` on the drain's own transaction (two drains never deliver the same message). */
-export const CLAIM_SQL = `SELECT id FROM integration_messages WHERE adapter = $1 AND status = 'queued' AND coalesce(next_attempt_at, created_at) <= $2 ORDER BY created_at LIMIT $3 FOR UPDATE SKIP LOCKED`;
-
 const sha = (v: unknown): string | null => (v === undefined ? null : createHash("sha256").update(toJson(v)).digest("hex"));
 
 /** Every adapter with a due queued row at `now` (or the one named). */
@@ -91,7 +88,8 @@ export async function drainOutbox(deps: DrainDeps, nowIso: string, o: DrainOptio
     const counts: DrainCounts = { claimed: 0, sent: 0, retried: 0, dead: 0, rejected: 0, fallback: 0 };
     const persisted = await deps.db.tx(async (q) => {
       const outbox = new PgOutbox(q); const tasks = new PgPortalTasks(q);
-      const claimed = await q.query<{ id: string }>(CLAIM_SQL, [name, nowIso, limit]);
+      // the claim: PgOutbox.due with the locking clause — two drains never deliver the same message
+      const claimed = await outbox.due(name, nowIso, limit, true);
       counts.claimed = claimed.length;
       if (!claimed.length) return [] as DomainEvent[];
       // the dead-letter clocks in play: restored into an engine so `integration.message.dead` arms and `integration.message.sent` satisfies
@@ -101,10 +99,11 @@ export async function drainOutbox(deps: DrainDeps, nowIso: string, o: DrainOptio
       engine.restore((await timerRepo.openGlobal()).filter((t) => t.code === DEAD_LETTER_CODE));
       const priorTimers = new Map(engine.all().map((t) => [t.id, t.status]));
       const dispatcher = new Dispatcher(outbox, tasks, DEFAULT_RETRY);
-      for (const { id } of claimed) {
-        const m = await outbox.get(id); if (!m) continue;
+      for (const m of claimed) {
         const startedAt = deps.clock.now();
-        const attemptNo = m.attempts + 1;
+        // one row per attempt at every message: the number continues from the rows already written (34.4's requeue resets the row's `attempts` to 0)
+        const prior = (await q.query<{ n: number }>(`SELECT coalesce(max(attempt_no), 0)::int AS n FROM outbox_dispatches WHERE message_id = $1`, [m.id]))[0]?.n ?? 0;
+        const attemptNo = Math.max(prior, m.attempts) + 1;
         const r: DispatchOutcome = await dispatcher.deliver(adapter, m, nowIso);
         const finishedAt = deps.clock.now();
         await q.query(`INSERT INTO outbox_dispatches (id, message_id, attempt_no, run_id, adapter, started_at, finished_at, outcome, failure_kind, error, response_sha256, next_attempt_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,

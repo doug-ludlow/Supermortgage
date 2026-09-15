@@ -65,10 +65,12 @@ if (mode === "sweep") {
     await flows.tick(runtime.clock.now());
     const report = await runtime.sweep();
     await flows.settle();
-    logger.info("sweep", { due: report.due, breaches: report.breaches.length, outbox: report.outbox, at: report.at, rate_feed: rateFeed.vendorName, refi: report.refi?.line ?? "no rate feed", fake_reviewers: report.reviewers?.line ?? "off" });
+    logger.info("sweep", { run_id: report.run_id, holder: report.holder, outcome: report.outcome, skipped_reason: report.skipped_reason, passes: report.passes.map((p) => `${p.name}:${p.duration_ms}ms`), outbox_dispatch: report.outbox_dispatch ? { claimed: report.outbox_dispatch.claimed, sent: report.outbox_dispatch.sent, retried: report.outbox_dispatch.retried, dead: report.outbox_dispatch.dead } : null, verify: report.verify ? { run_id: report.verify.run_id, gaps: report.verify.gaps, mismatches: report.verify.mismatches } : null,
+      due: report.due, breaches: report.breaches.length, outbox: report.outbox, at: report.at, rate_feed: rateFeed.vendorName, refi: report.refi?.line ?? "no rate feed", fake_reviewers: report.reviewers?.line ?? "off" });
     for (const b of report.breaches) logger.warn("timer breached", { ...b });
     await db.end();
-    process.exit(0);
+    // 35.1 rule 12: a firing that found the lease held exits 0; a run that could not take the lease (failed{lease_unavailable}) exits 1 so the next minute tries again
+    process.exit(report.outcome === "failed" ? 1 : 0);
   } catch (e) { logger.error("sweep failed", { error: e }); await db.end().catch(() => undefined); process.exit(1); }
 }
 

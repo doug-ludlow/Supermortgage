@@ -15,17 +15,22 @@
  *                          `projection.run_completed`; a money mismatch is a sev 1 `ciso` escalation and no correction.
  *   record.snapshot  act   {service_key, application_id | loan_id} — a service_snapshots row folded through the record.
  *   record.lease     read  {op: status | list} — the sweep lease's evidence (sweep_runs), never the lock.
- *   outbox.dispatch  act   {adapter?, limit?} — the sweep's own drain, runnable by hand.
+ *   outbox.dispatch  act   {adapter?, limit?} — the sweep's own drain, runnable by hand; {op: abandon, message_id, reason} —
+ *                          an ops_analyst abandons a dead letter (integration.message.abandoned; the review clock is cancelled).
  *   writeDecision    act   the decision row (records.v1; ids and column names only — NO_PII_IN_DECISION).
  *
  * Guardrails: NO_MONEY_FIELD_CHANGE (an input naming a `*_cents` override, `changes` or `data` is refused — a correction is
  * the owning section's officer command, rule 14), HOLD_BLOCKS_REPLAY (a scope under a legal hold is skipped as
  * key_conflict{hold: true} — the runner), NO_PII_IN_DECISION (the decision carries ids, counts and column names only).
  */
-import { defineTools, compute, decision, never, str, type ToolDef, type ToolInput } from "../tools.ts";
+import { defineTools, compute, decision, never, guard, str, PortUnavailable, type ToolDef, type ToolInput, type ToolRuntime } from "../tools.ts";
 import type { CommandContext } from "../commands.ts";
 import type { Queryable } from "../../infra/db/client.ts";
+import type { Runtime } from "../../runtime/app.ts";
 import { replayKind, gapsReport } from "../../domain/operations-runtime/seam/replay.ts";
+import { verifyRun } from "../../domain/operations-runtime/seam/verify.ts";
+import { leaseStatus, leaseList } from "../../domain/operations-runtime/seam/sweep.ts";
+import { drainOutbox, abandonDeadLetter } from "../../domain/operations-runtime/seam/outbox.ts";
 
 export const SEAM_PROCESS = "35.1";
 export const SEAM_AGENT = "security-records";
@@ -41,6 +46,12 @@ export const NO_MONEY_FIELD_CHANGE = never("NO_MONEY_FIELD_CHANGE", "35.1 rule 1
   (i) => namesMoney(i["overrides"]) || namesMoney(i["changes"]) || namesMoney(i["data"]) || Object.keys(i).some(moneyKey) || has(i, "correct") || has(i, "correction"),
   "the seam copies the owning section's version and never writes a money column by hand; a money correction is the owning section's officer command (2.1 for payments), not a replay override");
 
+const runtimeOf = (rt: ToolRuntime): Runtime => { const r = rt.services["runtime"] as Runtime | undefined; if (!r) throw new PortUnavailable("service:runtime"); return r; };
+/** The lease is never broken by a tool: an input asking to release, steal, reset or expire it is refused (LEASE_DIES_WITH_SESSION — no table row is ever the lock). */
+const LEASE_KEYS = ["release", "break", "steal", "force", "reset", "expire", "unlock", "kill"];
+const LEASE_DIES_WITH_SESSION = never("LEASE_DIES_WITH_SESSION", "35.1 rule 12 / guardrails: 'LEASE_DIES_WITH_SESSION (no table row is ever the lock)'; open question 3: 'the session lock is the lock and sweep_runs is the evidence'", (i) => LEASE_KEYS.some((k) => has(i, k)) || (typeof i["op"] === "string" && LEASE_KEYS.includes(i["op"])), "the lease is a session-level advisory lock that dies with its session; record.lease shows sweep_runs (status | list) and never breaks a lease");
+/** An abandonment is a named person's act (the Timers note: 'a dead letter is resolved by a send or by a named person's abandonment, never by time'). */
+const ABANDON_IS_HUMAN = guard("ABANDON_IS_HUMAN", "35.1 Timers note: `integration.message.abandoned{message_id, by, reason}` is 'an ops_analyst act through 34.4's controls'", (i, ctx) => (i["op"] === "abandon" && ctx.actor.kind !== "human" ? "abandoning a dead letter is an ops_analyst's act; an agent may not" : undefined));
 /** The command's transaction: every seam tool reads and writes inside it (a unit harness without a database refuses with a typed reason). */
 export const txOf = (ctx: CommandContext): Queryable => { if (!ctx.q) throw new RangeError("35.1 tools run inside a database command (PgUnitOfWork): no transaction on this context"); return ctx.q; };
 const asOfDateOf = (i: ToolInput, ctx: CommandContext): string => { const d = str(i, "as_of_date") || ctx.now.slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) throw new RangeError("as_of_date is a civil date YYYY-MM-DD"); return d; };
@@ -65,5 +76,16 @@ export const TOOLS_35_1: readonly ToolDef[] = defineTools(SEAM_PROCESS, SEAM_AGE
   { name: "record.project", kind: "act", ruleSetVersion: SEAM_RULE_SET_VERSION, guardrails: [NO_MONEY_FIELD_CHANGE], handler: replayHandler(true), decision: replayDecision },
   { name: "record.replay", kind: "act", ruleSetVersion: SEAM_RULE_SET_VERSION, guardrails: [NO_MONEY_FIELD_CHANGE], handler: replayHandler(false), decision: replayDecision },
   { name: "record.gaps", kind: "read", guardrails: [NO_MONEY_FIELD_CHANGE], handler: compute(async (i, ctx) => gapsReport(txOf(ctx), asOfDateOf(i, ctx))) },
+  { name: "record.verify", kind: "act", ruleSetVersion: SEAM_RULE_SET_VERSION, guardrails: [NO_MONEY_FIELD_CHANGE],
+    handler: compute(async (i, ctx, rt) => { const r = await verifyRun({ q: txOf(ctx), events: ctx.events, escalations: rt.escalations, actor: ctx.actor, now: ctx.now }, { as_of_date: asOfDateOf(i, ctx), kinds: Array.isArray(i["kinds"]) ? (i["kinds"] as unknown[]).map(String) : null, ...(typeof i["sample"] === "number" ? { sample: i["sample"] } : {}) }); const { event: _e, ...rest } = r; void _e; return rest; }),
+    decision: (i, output) => { const o = (output ?? {}) as Record<string, unknown>; return seamDecision({ subject: { kind: "run", id: String(o["run_id"] ?? "") }, action: "verify", versions: Number(o["rows_verified"] ?? 0), rows_written: 0, mismatches: Number(o["mismatches"] ?? 0), gaps: Number(o["gaps"] ?? 0), rationale: `verify ${String(o["as_of_date"] ?? str(i, "as_of_date"))}: ${String(o["kinds_checked"])} kind(s), ${String(o["rows_verified"])} row(s), ${String(o["mismatches"])} mismatch(es) escalated, ${String(o["gaps"])} gap(s) listed; nothing corrected` }); } },
+  { name: "record.lease", kind: "read", guardrails: [LEASE_DIES_WITH_SESSION, NO_MONEY_FIELD_CHANGE], handler: compute(async (i, ctx) => { const op = str(i, "op") || "status"; if (op === "status") return leaseStatus(txOf(ctx), ctx.now); if (op === "list") return { runs: await leaseList(txOf(ctx), typeof i["limit"] === "number" ? i["limit"] : 50) }; throw new RangeError("record.lease op is status or list"); }) },
+  { name: "outbox.dispatch", kind: "act", ruleSetVersion: SEAM_RULE_SET_VERSION, humanRoles: ["ops_analyst", "officer"], guardrails: [NO_MONEY_FIELD_CHANGE, ABANDON_IS_HUMAN],
+    handler: compute(async (i, ctx, rt) => {
+      if (i["op"] === "abandon") { const message_id = str(i, "message_id"); const reason = str(i, "reason"); if (!message_id || !reason) throw new RangeError("outbox.dispatch{op: abandon} needs message_id and reason"); const r = abandonDeadLetter({ events: ctx.events, timers: ctx.timers, actor: ctx.actor, now: ctx.now }, { message_id, reason }); return { message_id, abandoned: true, event_id: r.event.id, cancelled_timers: r.cancelled }; }
+      const runtime = runtimeOf(rt);
+      const r = await drainOutbox({ db: runtime.db, registry: runtime.registry, clock: runtime.clock, ports: runtime.ports, ...(runtime.outboxAdapters ? { adapters: runtime.outboxAdapters } : {}), notify: (ev) => runtime.uow.notifyCommitted(ev) }, ctx.now, { adapter: str(i, "adapter") || null, ...(typeof i["limit"] === "number" ? { limit: i["limit"] } : {}) });
+      const { events: _ev, ...rest } = r; void _ev; return { ...rest, events: r.events.length }; }),
+    decision: (i, output) => { const o = (output ?? {}) as Record<string, unknown>; return i["op"] === "abandon" ? seamDecision({ subject: { kind: "message", id: str(i, "message_id") }, action: "dispatch", rationale: `dead letter abandoned by a named person: ${str(i, "reason")}` }) : seamDecision({ subject: { kind: "run", id: String(o["at"] ?? "") }, action: "dispatch", versions: Number(o["claimed"] ?? 0), rows_written: Number(o["sent"] ?? 0), rationale: `drain: ${String(o["claimed"])} claimed, ${String(o["sent"])} sent, ${String(o["retried"])} retried, ${String(o["dead"])} dead` }); } },
   { name: "writeDecision", kind: "act", ruleSetVersion: SEAM_RULE_SET_VERSION, guardrails: [NO_MONEY_FIELD_CHANGE], handler: decision() },
 ]);

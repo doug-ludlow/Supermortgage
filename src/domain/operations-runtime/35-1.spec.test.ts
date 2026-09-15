@@ -23,6 +23,13 @@ import { compute, defineTools, str, type EntityRecord, type ToolDef } from "../.
 import { loadAgentsFile } from "../../app/agents.ts";
 import { TOOLS_35_1 } from "../../app/tools/section35-1.ts";
 import { StaleRecord } from "./seam/guard.ts";
+import { PgOutbox } from "../../infra/integrations/pg-outbox.ts";
+import { TransientFailure } from "../../infra/integrations/failures.ts";
+import type { OutboundAdapter, OutboxMessage } from "../../infra/integrations/outbox.ts";
+import { fakePortAdapter } from "./seam/outbox.ts";
+import { requeueMessage } from "../../runtime/controls/outbox.ts";
+import { createHash } from "node:crypto";
+import type { RuntimeDeps } from "../../runtime/app.ts";
 import { SCOPE_LOCK_SQL } from "./seam/lock.ts";
 import { HISTORY_KINDS } from "./projectors/index.ts";
 import type { LoanCashState } from "../cashiering/types.ts";
@@ -76,6 +83,15 @@ async function receivePayment(rt: Runtime, f: Fixture, paymentId: string, receiv
 }
 const postPayment = (rt: Runtime, f: Fixture, paymentId: string, state: LoanCashState = cashState(f.loanId)): Promise<unknown> =>
   rt.execute({ process: "2.1", name: "payments.read/write", loanId: f.loanId, actor: CASHIERING, input: { op: "post", id: paymentId, loan_id: f.loanId, state, custodial: f.custodial } });
+
+/** A side database of this file's own (a T-id that counts rows book-wide — twelve breaches, one gap, one mismatch — gets a clean book), with a runtime over it. */
+async function sideRuntime(suffix: string, deps: Partial<RuntimeDeps> = {}, clk: FixedClock = new FixedClock(NOW)): Promise<{ db: Db; rt: Runtime; make: (extra?: Partial<RuntimeDeps>) => Runtime; close: () => Promise<void> }> {
+  const side = await testDatabase(import.meta.url, { suffix });
+  const sdb = connect(side.url);
+  const make = (extra: Partial<RuntimeDeps> = {}): Runtime => new Runtime({ db: sdb, registry: loadOverriddenRegistry(), clock: clk, ...deps, ...extra });
+  return { db: sdb, rt: make(), make, close: async () => { await sdb.end(); await side.close(); } };
+}
+const sha256 = (s: string): string => createHash("sha256").update(s).digest("hex");
 
 /** A test-only command on the bus (Runtime.executeDef takes any ToolDef; a `system` actor needs no allowlist). */
 const testTool = (name: string, handler: ToolDef["handler"]): ToolDef => defineTools("35.1", "security-records", [{ name, kind: "act", handler: compute(handler) }])[0]!;
@@ -237,11 +253,145 @@ test("35.1-T6: Given one loan and two 2.1 posts of $2,045.12 started concurrentl
   const wa = windows.find((w) => w.loanId === g1.loanId)!; const wb = windows.find((w) => w.loanId === g2.loanId)!;
   assert.ok(wb.lockAt > wa.lockAt && wb.preCommitAt < wa.preCommitAt, `overlapping windows: ${JSON.stringify({ wa, wb })}`);
 });
-test("35.1-T7: Given twelve armed timers past due and two sweeps started concurrently, when both finish, then one `sweep_runs` row is `completed` and one is `skipped{lease_held}` with `sweep.run_skipped{holder}` logged, exactly twelve `timer.breached` events and twelve escalations exist (never twenty-four), the completed run's `passes` names every pass with a duration, `sweep.run_completed{run_id, as_of_date}` is logged once, and `SM_SWEEP_HEARTBEAT_DAILY` is satisfied by it and re-armed for the next day on the global subject.", { todo: true });
-test("35.1-T8: Given a queued FAKE `printMail` message and a queued message whose FAKE adapter is scripted to fail, when sweeps run at +0, +60 s, +180 s, +420 s, +900 s and +1,800 s (the `DEFAULT_RETRY` backoff instants), then the first message is `sent` on the first sweep with one `outbox_dispatches{attempt_no: 1, outcome: acked}` row and `integration.message.sent`, the failing message has five `outbox_dispatches` rows with `next_attempt_at` at the backoff instants and is `dead` after the fifth with `integration.message.dead{attempts: 5}`, a `human_portal_tasks` row and `SM_OUTBOX_DEAD_LETTER_REVIEW_1BD` armed; and when 34.4 requeues it and the adapter is un-scripted, then the next drain sends it and the clock is satisfied.", { todo: true });
+test("35.1-T7: Given twelve armed timers past due and two sweeps started concurrently, when both finish, then one `sweep_runs` row is `completed` and one is `skipped{lease_held}` with `sweep.run_skipped{holder}` logged, exactly twelve `timer.breached` events and twelve escalations exist (never twenty-four), the completed run's `passes` names every pass with a duration, `sweep.run_completed{run_id, as_of_date}` is logged once, and `SM_SWEEP_HEARTBEAT_DAILY` is satisfied by it and re-armed for the next day on the global subject.", { skip }, async () => {
+  const side = await sideRuntime("t7");
+  try {
+    const rtA = side.rt; const rtB = side.make();
+    const T0 = "2026-09-15T14:00:00.000Z";
+    // one completed sweep first: its `sweep.run_completed` arms SM_SWEEP_HEARTBEAT_DAILY on the global subject (the clock the concurrent run below satisfies and re-arms)
+    const first = await rtA.sweep(T0, { verify: false });
+    assert.equal(first.outcome, "completed");
+    const [armed] = await side.db.query<{ id: string; anchor_date: string; due_at: string; subject_kind: string }>(`SELECT id, anchor_date::text AS anchor_date, due_at::text AS due_at, subject_kind FROM timers WHERE code = 'SM_SWEEP_HEARTBEAT_DAILY' AND status = 'armed'`);
+    assert.ok(armed, "SM_SWEEP_HEARTBEAT_DAILY armed by the first completion"); assert.equal(armed.subject_kind, "global"); assert.equal(armed.anchor_date, "2026-09-15");
+    // twelve armed timers past due (real registry rows on the global subject, anchored yesterday, due an hour ago)
+    const [ev] = await side.db.query<{ id: string }>(`SELECT id FROM loan_events WHERE type = 'sweep.run_completed' LIMIT 1`);
+    const ids: string[] = [];
+    for (let k = 0; k < 12; k++) { const id = randomUUID(); ids.push(id); await side.db.query(`INSERT INTO timers (id, code, subject_kind, subject_id, armed_at, armed_by_event_id, anchor_date, due_date, due_at, status) VALUES ($1, 'SM_PROJECTION_LAG_DAILY', 'global', '*', $2, $3, '2026-09-14', '2026-09-15', $4, 'armed')`, [id, "2026-09-14T10:00:00.000Z", ev!.id, "2026-09-15T13:00:00.000Z"]); }
+    // two sweeps started concurrently (two runtimes, two dedicated sessions): one holds the lease and runs, the other finds it held
+    const T1 = "2026-09-15T14:05:00.000Z";
+    const a = rtA.sweep(T1, { verify: false, holder: "instance-a" });
+    await new Promise((r) => setTimeout(r, 40));
+    const b = rtB.sweep(T1, { verify: false, holder: "instance-b" });
+    const [ra, rb] = await Promise.all([a, b]);
+    const done = [ra, rb].find((r) => r.outcome === "completed")!; const skipped = [ra, rb].find((r) => r.outcome === "skipped")!;
+    assert.ok(done && skipped, `one completed and one skipped: ${ra.outcome} / ${rb.outcome}`);
+    assert.equal(skipped.skipped_reason, "lease_held");
+    const runs = await side.db.query<{ id: string; outcome: string; skipped_reason: string | null; holder: string; passes: { name: string; duration_ms: number }[] }>(`SELECT id, outcome, skipped_reason, holder, passes FROM sweep_runs WHERE id = ANY($1::uuid[])`, [[done.run_id, skipped.run_id]]);
+    assert.deepEqual(new Set(runs.map((r) => `${r.outcome}:${r.skipped_reason ?? ""}`)), new Set(["completed:", "skipped:lease_held"]));
+    const skippedEvents = await side.db.query<{ payload: { holder: string; run_id: string } }>(`SELECT payload FROM loan_events WHERE type = 'sweep.run_skipped' AND payload->>'run_id' = $1`, [skipped.run_id]);
+    assert.equal(skippedEvents.length, 1); assert.equal(skippedEvents[0]!.payload.holder, skipped.holder);
+    // exactly twelve breaches and twelve escalations — never twenty-four
+    assert.equal(await count(side.db, `FROM loan_events WHERE type = 'timer.breached' AND payload->>'timer_id' = ANY($1::text[])`, [ids]), 12);
+    assert.equal(await count(side.db, `FROM escalations WHERE sla_timer_id = ANY($1::uuid[])`, [ids]), 12);
+    assert.equal(await count(side.db, `FROM timers WHERE id = ANY($1::uuid[]) AND status = 'breached'`, [ids]), 12);
+    // the completed run's passes name every pass with a duration
+    const completedRow = runs.find((r) => r.outcome === "completed")!;
+    const names = completedRow.passes.map((p) => p.name);
+    for (const n of ["outbox.dispatch", "partner_book.review", "partner_book.readiness", "partner_book.daily_reports", "controls", "timers.breach", "partner_book.reminders", "partner_book.tape_late"]) assert.ok(names.includes(n), `pass ${n} in ${names.join(",")}`);
+    assert.ok(completedRow.passes.every((p) => typeof p.duration_ms === "number" && p.duration_ms >= 0));
+    assert.deepEqual(names, done.passes.map((p) => p.name));
+    // sweep.run_completed{run_id, as_of_date} logged once for the run
+    const completedEvents = await side.db.query<{ payload: { run_id: string; as_of_date: string } }>(`SELECT payload FROM loan_events WHERE type = 'sweep.run_completed' AND payload->>'run_id' = $1`, [done.run_id]);
+    assert.equal(completedEvents.length, 1); assert.equal(completedEvents[0]!.payload.as_of_date, "2026-09-15");
+    // SM_SWEEP_HEARTBEAT_DAILY: the instance the first run armed is satisfied by this run's receipt, and a fresh one is armed for the next day on the global subject
+    const [sat] = await side.db.query<{ status: string; satisfied_by_event_id: string }>(`SELECT status, satisfied_by_event_id FROM timers WHERE id = $1`, [armed.id]);
+    assert.equal(sat!.status, "satisfied");
+    const [satEv] = await side.db.query<{ payload: { run_id: string } }>(`SELECT payload FROM loan_events WHERE id = $1`, [sat!.satisfied_by_event_id]);
+    assert.equal(satEv!.payload.run_id, done.run_id);
+    const rearmed = await side.db.query<{ subject_kind: string; subject_id: string; anchor_date: string; due_date: string; loan_id: string | null }>(`SELECT subject_kind, subject_id, anchor_date::text AS anchor_date, due_date::text AS due_date, loan_id FROM timers WHERE code = 'SM_SWEEP_HEARTBEAT_DAILY' AND status = 'armed'`);
+    assert.equal(rearmed.length, 1); assert.deepEqual(rearmed[0], { subject_kind: "global", subject_id: "*", anchor_date: "2026-09-15", due_date: "2026-09-16", loan_id: null });
+  } finally { await side.close(); }
+});
+test("35.1-T8: Given a queued FAKE `printMail` message and a queued message whose FAKE adapter is scripted to fail, when sweeps run at +0, +60 s, +180 s, +420 s, +900 s and +1,800 s (the `DEFAULT_RETRY` backoff instants), then the first message is `sent` on the first sweep with one `outbox_dispatches{attempt_no: 1, outcome: acked}` row and `integration.message.sent`, the failing message has five `outbox_dispatches` rows with `next_attempt_at` at the backoff instants and is `dead` after the fifth with `integration.message.dead{attempts: 5}`, a `human_portal_tasks` row and `SM_OUTBOX_DEAD_LETTER_REVIEW_1BD` armed; and when 34.4 requeues it and the adapter is un-scripted, then the next drain sends it and the clock is satisfied.", { skip }, async () => {
+  const clk = new FixedClock("2026-09-15T14:00:00.000Z");
+  // the FAKE printMail adapter and one scripted to fail (a transient failure on every attempt until un-scripted)
+  let failing = true;
+  const scripted: OutboundAdapter = { name: "scripted", fallbackKind: "scripted_manual", async send(_p: unknown, m: OutboxMessage) { if (failing) throw new TransientFailure(`scripted outage (attempt ${m.attempts})`); return { delivered: true }; } };
+  const side = await sideRuntime("t8", {}, clk);
+  try {
+    const rt = side.make({ outboxAdapters: new Map<string, OutboundAdapter>([["printMail", fakePortAdapter("printMail", side.rt.ports.printMail, "print_mail_secondary_vendor")], ["scripted", scripted]]) });
+    const T0 = Date.parse("2026-09-15T14:00:00.000Z"); const at = (s: number): string => new Date(T0 + s * 1000).toISOString();
+    const outbox = new PgOutbox(side.db);
+    const ok = (await outbox.enqueue({ adapter: "printMail", idempotencyKey: `t8-ok-${randomUUID()}`, payload: { notice: "NTC_TEST", to: "1 Test St" }, payloadSummary: { kind: "test" } }, at(0))).message;
+    const bad = (await outbox.enqueue({ adapter: "scripted", idempotencyKey: `t8-bad-${randomUUID()}`, payload: { x: 1 }, payloadSummary: { kind: "test" } }, at(0))).message;
+    const sweepAt = async (sec: number) => { clk.set(at(sec)); return rt.sweep(at(sec), { verify: false }); };
+    const r0 = await sweepAt(0);
+    assert.equal(r0.outcome, "completed"); assert.equal(r0.outbox_dispatch?.sent, 1); assert.equal(r0.outbox_dispatch?.retried, 1);
+    // the first message is sent on the first sweep: one dispatch row {attempt_no: 1, outcome: acked} and integration.message.sent
+    const [okRow] = await side.db.query<{ status: string }>(`SELECT status FROM integration_messages WHERE id = $1`, [ok.id]);
+    assert.equal(okRow!.status, "acked");
+    const okD = await side.db.query<{ attempt_no: number; outcome: string }>(`SELECT attempt_no, outcome FROM outbox_dispatches WHERE message_id = $1`, [ok.id]);
+    assert.deepEqual(okD, [{ attempt_no: 1, outcome: "acked" }]);
+    assert.equal(await count(side.db, `FROM loan_events WHERE type = 'integration.message.sent' AND payload->>'message_id' = $1`, [ok.id]), 1);
+    // the failing message: retried at the DEFAULT_RETRY instants +60 s, +180 s, +420 s, +900 s and dead after the fifth attempt
+    for (const sec of [60, 180, 420, 900, 1800]) await sweepAt(sec);
+    const badD = await side.db.query<{ attempt_no: number; outcome: string; next_attempt_at: string | null }>(`SELECT attempt_no, outcome, next_attempt_at FROM outbox_dispatches WHERE message_id = $1 ORDER BY attempt_no`, [bad.id]);
+    assert.deepEqual(badD.map((d) => [d.attempt_no, d.outcome, d.next_attempt_at]), [[1, "retry", at(60)], [2, "retry", at(180)], [3, "retry", at(420)], [4, "retry", at(900)], [5, "dead", null]]);
+    const [badRow] = await side.db.query<{ status: string; attempts: number }>(`SELECT status, attempts FROM integration_messages WHERE id = $1`, [bad.id]);
+    assert.equal(badRow!.status, "dead"); assert.equal(badRow!.attempts, 5);
+    const dead = await side.db.query<{ payload: { attempts: number; dead_at: string } }>(`SELECT payload FROM loan_events WHERE type = 'integration.message.dead' AND payload->>'message_id' = $1`, [bad.id]);
+    assert.equal(dead.length, 1); assert.equal(dead[0]!.payload.attempts, 5); assert.equal(dead[0]!.payload.dead_at, at(900));
+    assert.equal(await count(side.db, `FROM human_portal_tasks WHERE integration_message_id = $1`, [bad.id]), 1);
+    const [clock] = await side.db.query<{ id: string; status: string; subject_kind: string; subject_id: string; anchor_date: string }>(`SELECT id, status, subject_kind, subject_id, anchor_date::text AS anchor_date FROM timers WHERE code = 'SM_OUTBOX_DEAD_LETTER_REVIEW_1BD' AND subject_id = $1`, [bad.id]);
+    assert.ok(clock, "SM_OUTBOX_DEAD_LETTER_REVIEW_1BD armed"); assert.equal(clock.status, "armed"); assert.equal(clock.subject_kind, "integration_message"); assert.equal(clock.anchor_date, "2026-09-15");
+    // 34.4 requeues it (an active ops_analyst) and the adapter is un-scripted: the next drain sends it and the clock is satisfied
+    const staffId = (await side.db.query<{ id: string }>(`INSERT INTO staff_users (email_hash, email_encrypted, legal_name, roles, status, enrolled_at) VALUES ($1, $2, 'Ana Lyst', ARRAY['ops_analyst'], 'active', $3) RETURNING id::text AS id`, [sha256("ana@example.test"), Buffer.from("FAKE-encrypted"), at(1800)]))[0]!.id;
+    const rq = await requeueMessage(rt, { id: bad.id, actor: { kind: "human", id: staffId, role: "ops_analyst" }, reason: "vendor restored" }, at(1860));
+    assert.equal(rq.status, "queued");
+    failing = false;
+    const r6 = await sweepAt(1920);
+    assert.equal(r6.outbox_dispatch?.sent, 1);
+    const [afterRow] = await side.db.query<{ status: string }>(`SELECT status FROM integration_messages WHERE id = $1`, [bad.id]);
+    assert.equal(afterRow!.status, "acked");
+    const [clockAfter] = await side.db.query<{ status: string }>(`SELECT status FROM timers WHERE id = $1`, [clock.id]);
+    assert.equal(clockAfter!.status, "satisfied");
+    assert.equal(await count(side.db, `FROM outbox_dispatches WHERE message_id = $1`, [bad.id]), 6);
+  } finally { await side.close(); }
+});
 test("35.1-T9: Given the hosted runtime, when `POST /v1/loans/{id}/tools/1.1/runValidation`, `POST /v1/applications/{id}/tools/30.2/snapshotOrigination` and `POST /v1/applications/{id}/tools/25.1/runToleranceTest{checkpoint: cd}` are called, then none answers 501 `not_wired`, the 25.1 result carries `delegated_to: \"21.5\"` and the `tolerance_test_id` of a `tolerance_tests` row 21.5's own tool (`21.5 runToleranceTest`) would have written for the same inputs, and `rt.services[\"tolerance-21-5\"] === rt.services[\"tolerance\"]` in a unit harness.", { todo: true });
 test("35.1-T10: Given a decoded transfer tape of three loans, when `1.1 boardLoan` runs on the bus for the batch, then the transaction wrote `transfer_batches`, `properties`, `loans`, `borrowers`, `loan_borrowers`, `loan_terms`, `transfer_batch_loans`, `boarding_validations`, `parties` (transferor and servicer, found-or-inserted) and `custodial_accounts` (P&I and T&I, found-or-inserted) with the same columns `POST /v1/transfers/batches` writes (a row-by-row comparison against a batch boarded through the route on a second database), the events, the 1.6 opening ledger sets, the armed timers, one escalation per hard exception, the global `transfer_batches` entity row and one `agent_decisions` row; and `boardTransferBatch` in src/runtime/transfers.ts refuses with `SEED_ONLY` under `ENVIRONMENT=production`.", { todo: true });
-test("35.1-T11: Given a command that writes a kind with no authored projector (`fee_gate_checks`) and one with a projector (`locks`), when the daily verify runs at 06:00 ET, then `locks` has its typed row and `entity_projections` row, `fee_gate_checks` has neither and one `projection_gaps{reason: no_projector, versions_unprojected: 1}` row names it, `record.gaps` lists it under `no_projector`, one `projection_runs{outcome: completed}` row and `projection.run_completed{gaps: 1, mismatches: 0}` exist, and `SM_PROJECTION_LAG_DAILY` is satisfied and re-armed; given the next day passes with no run, then the clock breaches and one sev 3 `ops_analyst` escalation names `SM_PROJECTION_LAG_DAILY`.", { todo: true });
+test("35.1-T11: Given a command that writes a kind with no authored projector (`fee_gate_checks`) and one with a projector (`locks`), when the daily verify runs at 06:00 ET, then `locks` has its typed row and `entity_projections` row, `fee_gate_checks` has neither and one `projection_gaps{reason: no_projector, versions_unprojected: 1}` row names it, `record.gaps` lists it under `no_projector`, one `projection_runs{outcome: completed}` row and `projection.run_completed{gaps: 1, mismatches: 0}` exist, and `SM_PROJECTION_LAG_DAILY` is satisfied and re-armed; given the next day passes with no run, then the clock breaches and one sev 3 `ops_analyst` escalation names `SM_PROJECTION_LAG_DAILY`.", { skip }, async () => {
+  const clk = new FixedClock("2026-09-16T12:00:00.000Z");
+  const side = await sideRuntime("t11", {}, clk);
+  try {
+    const rt = side.rt;
+    const partner = (await side.db.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, servicer_number) VALUES ('servicer', 'Lender T11', '123456711') RETURNING id`))[0]!.id;
+    const app = (await rt.createApplication({ partner_party_id: partner, channel: "organic", transaction_type: "purchase", occupancy: "primary", borrowers: [{ legal_name: "Casey Fixture" }] }, SYSTEM)).application;
+    // one command writes a kind with no authored projector (fee_gate_checks) and one with a projector (locks: 21.4's row)
+    const lockId = randomUUID(); const lineage = randomUUID();
+    const lock = { lock_id: lockId, application_id: app.id, lineage_id: lineage, version: 1, kind: "initial", supersedes_lock_id: null, status: "executed", requested_at: "2026-09-16T11:00:00.000Z", quote_id: randomUUID(), quote_id_fnma: null, mlo_approval_escalation_id: null, approved_at: "2026-09-16T11:05:00.000Z", mlo_nmlsr_id: "654321",
+      locked_at: "2026-09-16T11:10:00.000Z", rate_set_date: "2026-09-16", note_rate: "6.500", price: "100.125", points_cents: 0n, lender_credit_cents: 0n, lock_period_days: 45, expires_on: "2026-10-31", expires_at: "2026-11-01T00:00:00.000Z", expiry_roll_applied: false, time_zone: "America/Phoenix", product_code: "C30", loan_amount_cents: 56_000_000n,
+      worst_case_pricing_applied: false, extension_fee_cents: 0n, extension_payer: null, float_down_fee_cents: 0n, commitment_id: null, revised_le_disclosure_id: null, state_agreement_variant: null, property_state: "AZ", cancelled_reason: null, ny_expiry_notice_required: false, borrower_statement: "n/a", superseded_quote_ids: [], recorded_by: "agent:pricing" };
+    await rt.executeDef(testTool("t11-write", (_i, ctx, trt) => { trt.store.put("fee_gate_checks", "fgc-1", { application_id: app.id, gate: "REGZ_1026_19B_ARM_DISCLOSURE_GATE", passed: true }, ctx.actor, ctx.now); trt.store.put("locks", lockId, lock, ctx.actor, ctx.now); return {}; }), { loanId: "", applicationId: app.id, actor: SYSTEM, input: {} });
+    assert.equal(await count(side.db, `FROM locks WHERE lock_id = $1`, [lockId]), 1, "locks has its typed row");
+    assert.equal(await count(side.db, `FROM entity_projections WHERE kind = 'locks' AND entity_id = $1`, [lockId]), 1);
+    assert.equal(await count(side.db, `FROM entity_projections WHERE kind = 'fee_gate_checks'`), 0);
+    // the daily verify runs at 06:00 ET (10:00Z in September) from the sweep
+    const r = await rt.sweep("2026-09-16T10:00:00.000Z");
+    assert.equal(r.outcome, "completed"); assert.ok(r.verify, "the verify pass ran at 06:00 ET");
+    assert.equal(r.verify!.outcome, "completed"); assert.equal(r.verify!.gaps, 1); assert.equal(r.verify!.mismatches, 0);
+    const gaps = await side.db.query<{ kind: string; reason: string; versions_unprojected: number }>(`SELECT kind, reason, versions_unprojected FROM projection_gaps WHERE run_id = $1`, [r.verify!.run_id]);
+    assert.deepEqual(gaps, [{ kind: "fee_gate_checks", reason: "no_projector", versions_unprojected: 1 }]);
+    const g = await rt.execute({ process: "35.1", name: "record.gaps", loanId: "", actor: RECORDS, input: { as_of_date: "2026-09-16" } });
+    const listed = (g.output as { kinds: { kind: string; reason: string }[] }).kinds;
+    assert.ok(listed.some((k) => k.kind === "fee_gate_checks" && k.reason === "no_projector"), JSON.stringify(listed));
+    assert.equal(await count(side.db, `FROM projection_runs WHERE id = $1 AND outcome = 'completed'`, [r.verify!.run_id]), 1);
+    const [ev] = await side.db.query<{ payload: { gaps: number; mismatches: number; run_id: string } }>(`SELECT payload FROM loan_events WHERE type = 'projection.run_completed' AND payload->>'run_id' = $1`, [r.verify!.run_id]);
+    assert.equal(ev!.payload.gaps, 1); assert.equal(ev!.payload.mismatches, 0);
+    // SM_PROJECTION_LAG_DAILY is satisfied by the run's receipt (when a prior day's clock was armed) and re-armed for 06:00 ET tomorrow on the global subject
+    const armed = await side.db.query<{ status: string; anchor_date: string; due_date: string; due_at: string; subject_kind: string }>(`SELECT status, anchor_date::text AS anchor_date, due_date::text AS due_date, due_at::text AS due_at, subject_kind FROM timers WHERE code = 'SM_PROJECTION_LAG_DAILY' ORDER BY armed_at`);
+    assert.equal(armed.length, 1); assert.equal(armed[0]!.status, "armed"); assert.equal(armed[0]!.subject_kind, "global"); assert.equal(armed[0]!.anchor_date, "2026-09-16"); assert.equal(armed[0]!.due_date, "2026-09-17");
+    assert.equal(new Date(armed[0]!.due_at).toISOString(), "2026-09-17T10:00:00.000Z");
+    const r2 = await rt.sweep("2026-09-16T11:00:00.000Z");
+    assert.equal(r2.verify, null, "the verify runs once per calendar day");
+    // the next day passes with no run: the clock breaches and one sev 3 ops_analyst escalation names SM_PROJECTION_LAG_DAILY
+    clk.set("2026-09-17T10:30:00.000Z");
+    const r3 = await rt.sweep("2026-09-17T10:30:00.000Z", { verify: false });
+    assert.equal(r3.breaches.filter((b) => b.code === "SM_PROJECTION_LAG_DAILY").length, 1);
+    const esc = await side.db.query<{ severity: string; owner_role: string; payload: { timer_code: string } }>(`SELECT severity, owner_role, payload FROM escalations WHERE payload->>'timer_code' = 'SM_PROJECTION_LAG_DAILY'`);
+    assert.equal(esc.length, 1); assert.equal(esc[0]!.severity, "3"); assert.equal(esc[0]!.owner_role, "ops_analyst"); assert.equal(esc[0]!.payload.timer_code, "SM_PROJECTION_LAG_DAILY");
+  } finally { await side.close(); }
+});
 test("35.1-T12: Given a store id `fees-3` written on two loans and a projector for `fees` authored afterwards, when `record.replay{kind: fees}` runs twice, then the first run minted two `entity_keys` rows (one per scope) with distinct uuids, wrote two `fees` rows keyed by those uuids and one `entity_projections{phase: replay}` row per version and logged `record.replayed{rows}`; the second run wrote zero rows and zero events and its decision record says `rows_written: 0`; and both JSON versions still carry the id `fees-3`.", { skip }, async () => {
   // `fees-3` written on two loans (store ids repeat across scopes, 0115) before any projector ran for the kind — the versions stand in JSONB
   const fA = await loanFixture(); const fB = await loanFixture();
@@ -275,7 +425,35 @@ test("35.1-T12: Given a store id `fees-3` written on two loans and a projector f
   const vers = await db.query<{ id: string; data: { id: string } }>(`SELECT id, data FROM entity_records WHERE kind = 'fees' AND loan_id IN ($1, $2)`, [fA.loanId, fB.loanId]);
   assert.equal(vers.length, 2); for (const v of vers) { assert.equal(v.id, "fees-3"); assert.equal(v.data.id, "fees-3"); }
 });
-test("35.1-T13: Given the projected rows of worked example A, when a test's UPDATE of `payment_allocations` is refused by its trigger and the test instead UPDATEs `payments.amount_cents` to 204513 and the verify runs, then one `projection_mismatches{column_name: amount_cents, is_money: true, json_value: '204512', row_value: '204513'}` row exists, `projection.mismatch_found{is_money: true}` is logged, one sev 1 `ciso` escalation names the row ids and the owning process 2.1, the run wrote no correction (`payments.amount_cents` is still 204513 and no `record.replayed` event exists), and the run's `outcome` is `completed`.", { todo: true });
+test("35.1-T13: Given the projected rows of worked example A, when a test's UPDATE of `payment_allocations` is refused by its trigger and the test instead UPDATEs `payments.amount_cents` to 204513 and the verify runs, then one `projection_mismatches{column_name: amount_cents, is_money: true, json_value: '204512', row_value: '204513'}` row exists, `projection.mismatch_found{is_money: true}` is logged, one sev 1 `ciso` escalation names the row ids and the owning process 2.1, the run wrote no correction (`payments.amount_cents` is still 204513 and no `record.replayed` event exists), and the run's `outcome` is `completed`.", { skip }, async () => {
+  const side = await sideRuntime("t13");
+  try {
+    const rt = side.rt;
+    const f = await loanFixture(side.db);
+    const paymentId = randomUUID();
+    await receivePayment(rt, f, paymentId); await postPayment(rt, f, paymentId);
+    assert.equal(await count(side.db, `FROM payment_allocations WHERE payment_id = $1`, [paymentId]), 3);
+    // a test's UPDATE of payment_allocations is refused by its trigger; payments has none, so the test corrupts amount_cents by one cent
+    await assert.rejects(side.db.query(`UPDATE payment_allocations SET amount_cents = amount_cents + 1 WHERE payment_id = $1`, [paymentId]), /append-only/);
+    await side.db.query(`UPDATE payments SET amount_cents = 204513 WHERE id = $1`, [paymentId]);
+    const r = await rt.execute({ process: "35.1", name: "record.verify", loanId: "", actor: RECORDS, input: { as_of_date: "2026-09-15" } });
+    const o = r.output as { run_id: string; outcome: string; mismatches: number };
+    assert.equal(o.outcome, "completed"); assert.equal(o.mismatches, 1);
+    const rows = await side.db.query<{ column_name: string; is_money: boolean; json_value: string; row_value: string; escalation_id: string; target_id: string; entity_id: string }>(`SELECT column_name, is_money, json_value, row_value, escalation_id, target_id, entity_id FROM projection_mismatches WHERE run_id = $1`, [o.run_id]);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]!.column_name, "amount_cents"); assert.equal(rows[0]!.is_money, true); assert.equal(rows[0]!.json_value, "204512"); assert.equal(rows[0]!.row_value, "204513");
+    assert.ok(r.events.some((e) => e.type === "projection.mismatch_found" && (e.payload as { is_money: boolean }).is_money === true), "projection.mismatch_found{is_money: true} logged");
+    const [esc] = await side.db.query<{ severity: string; owner_role: string; kind: string; payload: Record<string, unknown> }>(`SELECT severity, owner_role, kind, payload FROM escalations WHERE id = $1`, [rows[0]!.escalation_id]);
+    assert.equal(esc!.severity, "1"); assert.equal(esc!.owner_role, "ciso"); assert.equal(esc!.kind, "sev1");
+    assert.equal(esc!.payload["target_id"], paymentId); assert.equal(esc!.payload["entity_id"], paymentId); assert.equal(esc!.payload["owning_process"], "2.1");
+    // no correction by the run: the corrupted cent stands, no record.replayed exists, the run is completed
+    const [pay] = await side.db.query<{ amount_cents: bigint }>(`SELECT amount_cents FROM payments WHERE id = $1`, [paymentId]);
+    assert.equal(pay!.amount_cents, 204_513n);
+    assert.equal(await count(side.db, `FROM loan_events WHERE type = 'record.replayed'`), 0);
+    const [run] = await side.db.query<{ outcome: string; mismatches: number }>(`SELECT outcome, mismatches FROM projection_runs WHERE id = $1`, [o.run_id]);
+    assert.equal(run!.outcome, "completed"); assert.equal(run!.mismatches, 1);
+  } finally { await side.close(); }
+});
 test("35.1-T14: Given an application with 80 events across 21.2, 21.4, 21.5, 25.2 and 29.1, when `record.snapshot{service_key: cd-25-2}` writes a `service_snapshots` row at `through_sequence = N` and six more 25.2 commands run, then the next command's `cd-25-2` instance hydrated from the snapshot plus the events after N and its `state_sha256` equals the hash of an instance hydrated by full replay; and given the snapshot's `state` is tampered with, then hydration discards it, replays in full, logs `service.snapshot.written` for a fresh one and opens a sev 2 `ciso` escalation.", { todo: true });
 test("35.1-T15: Given a money-field change proposed by the agent — `record.replay{kind: payments, overrides: {amount_cents: …}}` or any typed-row write that names a `*_cents` column not equal to the JSON version's — when no `officer` approval record exists, then the command is refused `NO_MONEY_FIELD_CHANGE` and nothing is written; and the seam's own tools (`record.project`, `record.replay`, `record.verify`, `record.snapshot`, `outbox.dispatch`) are absent from every money-field allowlist in `spec/registry/agents.json` (contract test).", { skip }, async () => {
   const before = { proj: await count(db, `FROM entity_projections`), keys: await count(db, `FROM entity_keys`), pay: await count(db, `FROM payments`), ev: await count(db, `FROM loan_events WHERE type = 'record.replayed'`), dec: await count(db, `FROM agent_decisions WHERE agent = 'security-records'`) };

@@ -47,13 +47,13 @@ function asText(spec: ColumnSpec, v: unknown): string | null {
 
 const moneyBearing = (m: ProjectorMap): boolean => Object.values(m.columns).some((c) => c.type === "money") || (m.children ?? []).some((c) => Object.values(c.columns).some((x) => x.type === "money"));
 
-/** The projected rows to verify for a kind: a sample of `sample` latest projections plus every projection of the day when the kind carries money. */
+/** The projected rows to verify for a kind — one per entity, its latest projected version (an upserted row holds the latest version's fields): a sample of `sample` entities plus every entity with a money-bearing row written that day. */
 async function sampleOf(q: Queryable, m: ProjectorMap, asOf: string, sample: number): Promise<ProjRow[]> {
-  const sql = `SELECT p.id AS projection_id, p.kind, p.entity_id, p.scope_key, p.version, p.target_table, p.target_id, r.data FROM entity_projections p JOIN entity_records r ON r.kind = p.kind AND r.id = p.entity_id AND r.scope_key = p.scope_key AND r.version = p.version WHERE p.kind = $1`;
-  const latest = await q.query<ProjRow>(`${sql} ORDER BY p.projected_at DESC, p.version DESC LIMIT $2`, [m.kind, sample]);
+  const latestPer = `SELECT DISTINCT ON (p.kind, p.entity_id, p.scope_key) p.id AS projection_id, p.kind, p.entity_id, p.scope_key, p.version, p.target_table, p.target_id, p.projected_at, r.data FROM entity_projections p JOIN entity_records r ON r.kind = p.kind AND r.id = p.entity_id AND r.scope_key = p.scope_key AND r.version = p.version WHERE p.kind = $1 ORDER BY p.kind, p.entity_id, p.scope_key, p.version DESC`;
+  const latest = await q.query<ProjRow>(`SELECT * FROM (${latestPer}) x ORDER BY x.projected_at DESC, x.version DESC LIMIT $2`, [m.kind, sample]);
   const seen = new Set(latest.map((r) => r.projection_id));
   const out = [...latest];
-  if (moneyBearing(m)) for (const r of await q.query<ProjRow>(`${sql} AND p.projected_at >= $2::date AND p.projected_at < ($2::date + interval '1 day') ORDER BY p.projected_at`, [m.kind, asOf])) if (!seen.has(r.projection_id)) { seen.add(r.projection_id); out.push(r); }
+  if (moneyBearing(m)) for (const r of await q.query<ProjRow>(`SELECT * FROM (${latestPer}) x WHERE x.projected_at >= $2::date AND x.projected_at < ($2::date + interval '1 day') ORDER BY x.projected_at`, [m.kind, asOf])) if (!seen.has(r.projection_id)) { seen.add(r.projection_id); out.push(r); }
   return out;
 }
 
@@ -64,13 +64,9 @@ async function compareRow(q: Queryable, m: ProjectorMap, p: ProjRow): Promise<{ 
   const [row] = await q.query<Record<string, unknown>>(`SELECT * FROM ${m.table} WHERE ${m.idColumn} = $1`, [p.target_id]);
   if (!row) return [{ column: m.idColumn, is_money: false, json: p.target_id, row: null }];
   const out: { column: string; is_money: boolean; json: string | null; row: string | null }[] = [];
-  const latest = (await q.query<{ version: number }>(`SELECT max(version)::int AS version FROM entity_records WHERE kind = $1 AND id = $2 AND scope_key = $3`, [p.kind, p.entity_id, p.scope_key]))[0]?.version ?? p.version;
-  // an upserted row holds the latest version's fields: an older version is compared only where the field is unchanged since (a later version overwrote the column on purpose)
-  const latestData = latest === p.version ? data : decodeEntityData((await q.query<{ data: unknown }>(`SELECT data FROM entity_records WHERE kind = $1 AND id = $2 AND scope_key = $3 AND version = $4`, [p.kind, p.entity_id, p.scope_key, latest]))[0]!.data);
   for (const [field, spec] of Object.entries(m.columns)) {
     const raw = spec.path ? spec.path.reduce<unknown>((cur, k) => (cur && typeof cur === "object" ? (cur as Record<string, unknown>)[k] : undefined), data) : data[field];
     if (raw === undefined || raw === null) continue;
-    if (m.mode === "upsert" && latest !== p.version && JSON.stringify(latestData[field], (_k, v) => (typeof v === "bigint" ? v.toString() : v)) !== JSON.stringify(raw, (_k, v) => (typeof v === "bigint" ? v.toString() : v))) continue;
     let json: string | null; try { json = asText(spec, columnValue(spec, raw)); } catch { continue; }   // a schema mismatch is a gap, not a mismatch
     const rv = asText(spec, row[spec.column]);
     if (json !== rv) out.push({ column: spec.column, is_money: spec.type === "money" || isMoneyColumn(spec.column), json, row: rv });
@@ -118,8 +114,6 @@ export async function verifyRun(ctx: VerifyContext, i: VerifyInput): Promise<Ver
           payload: { code: "PROJECTION_MISMATCH", run_id: runId, kind: p.kind, entity_id: p.entity_id, scope_key: p.scope_key, version: p.version, target_table: p.target_table, target_id: p.target_id, column: d.column, is_money: d.is_money, json_value: d.json, row_value: d.row, owning_process: owner,
             reason: d.is_money ? `a money column differs from the owning section's version: the correction is ${owner}'s officer command; the run wrote nothing (35.1 rule 13 / 14)` : `a typed column differs from the version; ${owner} owns the row` } }, ctx.actor);
         const id = randomUUID();
-        await q.query(`INSERT INTO projection_mismatches (id, run_id, kind, entity_id, scope_key, version, target_table, target_id, column_name, is_money, json_value, row_value, escalation_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-          [id, runId, p.kind, p.entity_id, p.scope_key, p.version, p.target_table, p.target_id, d.column, d.is_money, d.json, d.row, esc.id]);
         ctx.events.append({ type: "projection.mismatch_found", aggregate: { kind: "projection_run", id: runId }, actor: ctx.actor, payload: { run_id: runId, kind: p.kind, entity_id: p.entity_id, scope_key: p.scope_key, version: p.version, column: d.column, is_money: d.is_money, target_table: p.target_table, target_id: p.target_id, escalation_id: esc.id, owning_process: owner, mismatch_id: id } });
         mismatchRows.push({ id, kind: p.kind, entity_id: p.entity_id, scope_key: p.scope_key, version: p.version, target_table: p.target_table, target_id: p.target_id, column_name: d.column, is_money: d.is_money, json_value: d.json, row_value: d.row, escalation_id: esc.id, owner });
       }
@@ -129,13 +123,16 @@ export async function verifyRun(ctx: VerifyContext, i: VerifyInput): Promise<Ver
   const finishedAt = ctx.now;
   await q.query(`INSERT INTO projection_runs (id, as_of_date, started_at, finished_at, kinds_checked, rows_verified, mismatches, gaps, outcome, actor) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'completed', $9)`,
     [runId, i.as_of_date, startedAt, finishedAt, kinds.length, rowsVerified, mismatchRows.length, gapRows.length, `${ctx.actor.kind}:${ctx.actor.id}`]);
+  // the mismatch rows reference the run row (projection_mismatches.run_id → projection_runs): written once it exists, in the same transaction
+  for (const mm of mismatchRows) await q.query(`INSERT INTO projection_mismatches (id, run_id, kind, entity_id, scope_key, version, target_table, target_id, column_name, is_money, json_value, row_value, escalation_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+    [mm.id, runId, mm.kind, mm.entity_id, mm.scope_key, mm.version, mm.target_table, mm.target_id, mm.column_name, mm.is_money, mm.json_value, mm.row_value, mm.escalation_id]);
   for (const g of gapRows) {
     await q.query(`INSERT INTO projection_gaps (id, run_id, kind, scope_key, versions_unprojected, reason, detail, first_seen_at, as_of_date) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9)`,
       [randomUUID(), runId, g.kind, g.scopes === 1 ? "" : "", g.versions_unprojected, g.reason, JSON.stringify({ ...g.detail, scopes: g.scopes }), g.first_seen_at ?? finishedAt, i.as_of_date]);
     ctx.events.append({ type: "projection.gap_found", aggregate: { kind: "projection_run", id: runId }, actor: ctx.actor, payload: { run_id: runId, kind: g.kind, reason: g.reason, versions: g.versions_unprojected, scopes: g.scopes, as_of_date: i.as_of_date } });
   }
-  // the receipt SM_PROJECTION_LAG_DAILY arms on and is satisfied by (a platform clock: `origination: true` is the ≥ §20 arming convention of src/kernel/timers/engine.ts isOriginationContext, as 33.2's daily receipts carry it)
-  const event = ctx.events.append({ type: "projection.run_completed", aggregate: { kind: "projection_run", id: runId }, actor: ctx.actor, payload: { run_id: runId, as_of_date: i.as_of_date, kinds_checked: kinds.length, rows_verified: rowsVerified, mismatches: mismatchRows.length, gaps: gapRows.length, started_at: startedAt, finished_at: finishedAt, origination: true } });
+  // the receipt SM_PROJECTION_LAG_DAILY arms on and is satisfied by (a platform clock on the global subject; src/kernel/timers/engine.ts exempts §35 from the origination-context rule)
+  const event = ctx.events.append({ type: "projection.run_completed", aggregate: { kind: "projection_run", id: runId }, actor: ctx.actor, payload: { run_id: runId, as_of_date: i.as_of_date, kinds_checked: kinds.length, rows_verified: rowsVerified, mismatches: mismatchRows.length, gaps: gapRows.length, started_at: startedAt, finished_at: finishedAt } });
   return { run_id: runId, as_of_date: i.as_of_date, outcome: "completed", kinds_checked: kinds.length, rows_verified: rowsVerified, mismatches: mismatchRows.length, gaps: gapRows.length, gap_rows: gapRows.map((g) => ({ kind: g.kind, reason: g.reason, versions_unprojected: g.versions_unprojected })), mismatch_rows: mismatchRows, event };
 }
 

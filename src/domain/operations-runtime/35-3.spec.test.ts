@@ -16,6 +16,7 @@ import { NoticeService } from "../../notices/service.ts";
 import { StatementCycleService } from "../notices/ops-7-1.ts";
 import { Runtime } from "../../runtime/app.ts";
 import { createLogger } from "../../runtime/log.ts";
+import { loadDemoClock } from "../../runtime/demo-clock.ts";
 import { CYCLES } from "./runners.ts";
 import { EVT, def as cycleDef, selectors, type CycleDef } from "./cycles.ts";
 import { OPS_STEWARD, cyclesOf, cyclesSweepPass, installCycles } from "./service.ts";
@@ -207,26 +208,37 @@ test("35.3-T14: Given `SM_CYCLE_PLANNER_DAILY` armed on the global subject by th
 test("35.3-T15: Given the planner's last pass was on 2026-09-30 and the demo clock steps to 2026-10-01, when the first pass of October runs, then exactly one `ledger.month.ended{period_key: 2026-09, period_end: 2026-09-30}` exists on the global subject, a second October pass appends none, and 35.4's `SM_CLOSE_PERIOD_OPEN_BD1` is armed on it.", { skip }, async () => {
   await open("t15");
   try {
-    const { rt, clock } = runtimeAt("2026-09-30T16:00:00.000Z");   // the planner's last pass of September, 12:00 ET
+    // the demo clock (src/runtime/demo-clock.ts OffsetClock) over a fixed wall clock: the planner's last pass of September ran at 2026-09-30 12:00 ET with no offset
+    const base = new FixedClock("2026-09-30T16:00:00.000Z");
+    const clock = await loadDemoClock(db, { base });
+    const rt = new Runtime({ db, registry: loadOverriddenRegistry(), clock, logger, rateFeed: null, reviewers: null, analystLlm: null, databaseUrl: DB_URL });
+    installCycles(rt);
     const monthEnded = (): ReturnType<typeof events> => events(EVT.MONTH_ENDED, `AND payload->>'period_key' = '2026-09'`);
-    const sep = await cyclesSweepPass(rt, "2026-09-30T16:00:00.000Z", { drain: "all", cycle_codes: ["month_end"] });
-    assert.equal(sep.skipped, false); assert.equal((await monthEnded()).length, 0, "September's own month end is not October's business");
-    // the demo clock steps to 2026-10-01: the first pass of October plans month_end for 2026-09 and its single global unit appends ledger.month.ended exactly once
-    clock.set("2026-10-01T16:00:00.000Z");
+    const sep = await cyclesSweepPass(rt, clock.now(), { drain: "all", cycle_codes: ["month_end"] });
+    assert.equal(sep.skipped, false); assert.equal(sep.plan?.as_of_date, "2026-09-30"); assert.equal((await monthEnded()).length, 0, "September's own month end is not October's business");
+    // the demo clock steps to 2026-10-01 (one persisted demo_clock row — the offset the API instance advanced by; rule 10): the first pass of October re-reads it, plans month_end for 2026-09 and its single global unit appends ledger.month.ended exactly once
+    const step = await clock.step(db, "2026-10-01T16:00:00.000Z", { advance_id: randomUUID(), step: 1, steps: 1, kind: "day", actor: "test" });
+    assert.equal(Number(step.offset_ms), 86_400_000); assert.equal(clock.now(), "2026-10-01T16:00:00.000Z");
     const oct = await cyclesSweepPass(rt, "2026-10-01T16:00:00.000Z", { drain: "all", cycle_codes: ["month_end"] });
-    assert.equal(oct.skipped, false); assert.equal(oct.runs_opened, 1); assert.equal(oct.jobs_planned, 1); assert.equal(oct.units_done, 1); assert.equal(oct.units_dead, 0);
+    assert.equal(oct.skipped, false); assert.equal(oct.plan?.as_of_date, "2026-10-01"); assert.equal(oct.runs_opened, 1); assert.equal(oct.jobs_planned, 1); assert.equal(oct.units_done, 1); assert.equal(oct.units_dead, 0);
     let ended = await monthEnded();
     assert.equal(ended.length, 1);
     assert.equal(ended[0]!.payload["period_end"], "2026-09-30"); assert.equal(ended[0]!.payload["origination"], true); assert.equal(ended[0]!.loan_id, null); assert.equal(ended[0]!.actor_id, "ops-steward");
-    const run = (await db.query<Row>(`SELECT id::text AS id, status, units_total, units_done, receipt_id::text AS receipt_id FROM cycle_runs WHERE cycle_code = 'month_end' AND period_key = '2026-09'`))[0]!;
+    assert.equal(ended[0]!.occurred_at, "2026-10-01T16:00:00.000Z", "the unit's command runs on the demo clock");
+    const run = (await db.query<Row>(`SELECT id::text AS id, status, units_total, units_done, receipt_id::text AS receipt_id, demo_offset_ms::text AS demo_offset_ms, opened_at FROM cycle_runs WHERE cycle_code = 'month_end' AND period_key = '2026-09'`))[0]!;
     assert.equal(run["status"], "completed"); assert.equal(run["units_total"], 1); assert.equal(run["units_done"], 1); assert.ok(run["receipt_id"]);
+    assert.equal(run["demo_offset_ms"], "86400000", "the run records the persisted offset it was planned under"); assert.equal(run["opened_at"], "2026-10-01T16:00:00.000Z");
+    // the job's lease and timestamps are the wall clock's (the base), never the demo clock's (rule 6, D8)
+    assert.equal(await count(`jobs WHERE idempotency_key = 'month_end:2026-09:global' AND heartbeat_at = '2026-09-30T16:00:00.000Z'::timestamptz AND finished_at = '2026-09-30T16:00:00.000Z'::timestamptz`), 1);
     assert.equal(await count(`cycle_receipts WHERE run_id = $1 AND emitted_by LIKE 'unit:%'`, [run["id"]]), 1);
     assert.equal(await count(`jobs WHERE idempotency_key = 'month_end:2026-09:global' AND status = 'done' AND decision_id IS NOT NULL`), 1);
     assert.equal(await count(`agent_decisions WHERE agent = 'ops-steward' AND action = 'cycles.run_unit' AND subject_kind = 'month_end' AND subject_id = 'global' AND prompt_version = '35.3-v1' AND rule_set_version = 'cycles.v1' AND rationale LIKE 'month_end 2026-09 unit global:%'`), 1, "one decision for September's unit (the September-30 pass ran August's, the prior month of its own day)");
     assert.equal((await events("ledger.month_end.run_completed", `AND aggregate_id = $2`, [run["id"]])).length, 1);
     assert.equal((await events(EVT.RUN_COMPLETED, `AND aggregate_id = $2`, [run["id"]])).length, 1);
     // a second October pass appends none (the run and the job already exist)
-    const again = await cyclesSweepPass(rt, "2026-10-01T16:05:00.000Z", { drain: "all", cycle_codes: ["month_end"] });
+    base.set("2026-09-30T16:05:00.000Z");
+    assert.equal(clock.now(), "2026-10-01T16:05:00.000Z");
+    const again = await cyclesSweepPass(rt, clock.now(), { drain: "all", cycle_codes: ["month_end"] });
     assert.equal(again.skipped, false); assert.equal(again.runs_opened, 0); assert.equal(again.jobs_planned, 0); assert.equal(again.units_done, 0);
     ended = await monthEnded(); assert.equal(ended.length, 1);
     // 35.4's SM_CLOSE_PERIOD_OPEN_BD1 (anchor period_end, +1 business_days_fannie_et 17:00 ET) is armed on it, on the global subject: due 2026-10-01 17:00 ET

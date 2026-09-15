@@ -12,8 +12,13 @@
  *                     planned_by?}` → the counts, or `{skipped: true, holder}` when the lock is held (no decision then).
  *   cycles.receipt    read `{run_id}`: the receipt row, the two events with their sequences, the units' final job_events.
  *   jobs.list         read `{cycle_code?, status?, period_key?, loan_id?, run_id?, limit?}`.
+ *   jobs.requeue      act `{job_id, op: requeue | abandon, reason}` — an `ops_analyst`'s act on a `dead` unit (rule 7, the state
+ *                     machine): `humanRoles: ["ops_analyst"]` WITHOUT `humanOnly`, so an agent passes the bus's allow and is refused
+ *                     by the ROLE_REQUIRED guardrail naming the role (T13's code), a human without the role by the bus's ROLE_DENIED;
+ *                     `job.unit.resolved{job_id, by, disposition}` satisfies SM_JOB_DEAD_2H; decision `jobs.requeue:<op>` names the
+ *                     person (the bus adds `approvedBy`) and the reason.
  *   writeDecision     the kernel's decision row (src/app/tools.ts decision(); the section01.ts precedent).
- *   cycles.run_unit, cycles.retry, cycles.escalate, jobs.requeue land with the executor's commit group.
+ *   cycles.run_unit, cycles.retry and cycles.escalate land with the executor's commit group.
  *
  * Guardrails (the paragraph's list): NO_MONEY_FIELD (34.4's regex: no money key, `changes`, `data`, waiver or refund — rule 12),
  * NO_CLOCK_EDIT (34.4's keys: nothing here satisfies, extends, cancels or re-dates a timer — rule 12), UNIT_RUNS_AS_OWNER (an input
@@ -49,6 +54,7 @@ export const roleRequired = (when: (i: ToolInput) => boolean, what: string): Ret
 export const reasonRequired = (when: (i: ToolInput) => boolean): ReturnType<typeof guard> => guard("REASON_REQUIRED", "35.3 state machine: 'active ⇄ paused (ops_analyst with a reason, logged)'; rule 7: 'requeues with a reason'", (i) => (when(i) && !str(i, "reason") ? "a reason is required" : undefined));
 
 const isPauseOrResume = (i: ToolInput): boolean => i.op === "pause" || i.op === "resume";
+const always = (): boolean => true;
 const LIST_ROLES: readonly string[] = ["ops_analyst"];
 
 // ───────── the tools ─────────
@@ -71,5 +77,14 @@ export const TOOLS_35_3: readonly ToolDef[] = defineTools(CYCLES_PROCESS, OPS_ST
     handler: compute((i, _ctx, rt) => cyclesOf(runtimeOf(rt)).readReceipt(str(i, "run_id"))) },
   { name: "jobs.list", kind: "read", humanRoles: LIST_ROLES, guardrails: [NO_MONEY_FIELD, NO_CLOCK_EDIT],
     handler: compute((i, _ctx, rt) => cyclesOf(runtimeOf(rt)).listJobs({ cycle_code: str(i, "cycle_code") || null, status: str(i, "status") || null, period_key: str(i, "period_key") || null, loan_id: str(i, "loan_id") || null, run_id: str(i, "run_id") || null, ...(typeof i["limit"] === "number" ? { limit: i["limit"] } : {}) })) },
+  // rule 7 / T13: `humanRoles` without `humanOnly` — an agent reaches the guardrail and is refused ROLE_REQUIRED (never HUMAN_ONLY); a dead job only (JOB_NOT_DEAD otherwise); the reason is required
+  { name: "jobs.requeue", kind: "act", ruleSetVersion: "cycles.v1", humanRoles: LIST_ROLES, guardrails: [NO_MONEY_FIELD, NO_CLOCK_EDIT, UNIT_RUNS_AS_OWNER, roleRequired(always, "requeuing or abandoning a dead unit"), reasonRequired(always)],
+    handler: compute((i, ctx, rt) => {
+      const svc = cyclesOf(runtimeOf(rt)); const op = str(i, "op");
+      if (op === "requeue") return svc.requeueJob(ctx, rt, str(i, "job_id"), str(i, "reason"));
+      if (op === "abandon") return svc.abandonJob(ctx, rt, str(i, "job_id"), str(i, "reason"));
+      throw new RangeError("jobs.requeue op is requeue or abandon");
+    }),
+    decision: (i, output, ctx) => { const o = obj(output); return { action: `jobs.requeue:${str(i, "op")}`, subject: { kind: String(o["cycle_code"] ?? "job"), id: String(o["unit_id"] ?? str(i, "job_id")) }, rationale: `${str(i, "op")} of ${String(o["cycle_code"] ?? "")} ${String(o["period_key"] ?? "")} unit ${String(o["unit_id"] ?? "")} (job ${str(i, "job_id")}) by ${by(ctx)}: ${str(i, "reason")}` }; } },
   { name: "writeDecision", kind: "act", handler: decision() },
 ]);

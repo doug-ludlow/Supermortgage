@@ -1,5 +1,5 @@
 {
- "brief": "spec units built 8065/8756 (92.1%): tids 2249/2458, tables 770/848, timers 2054/2097, notices 308/308, tools 1438/1578, figures 1246/1467; processes at 100%: 192/205",
+ "brief": "spec units built 8066/8756 (92.1%): tids 2249/2458, tables 770/848, timers 2054/2097, notices 308/308, tools 1439/1578, figures 1246/1467; processes at 100%: 192/205",
  "totals": {
   "tids": {
    "spec": 2458,
@@ -19,7 +19,7 @@
   },
   "tools": {
    "spec": 1578,
-   "built": 1438
+   "built": 1439
   },
   "figures": {
    "spec": 1467,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 8756,
-   "built": 8065
+   "built": 8066
   }
  },
  "sections": {
@@ -237,7 +237,7 @@
   },
   "35": {
    "spec": 715,
-   "built": 41,
+   "built": 42,
    "processes": 12,
    "done": 0
   }
@@ -8595,12 +8595,11 @@
    },
    "tools": {
     "spec": 9,
-    "built": 5,
+    "built": 6,
     "missing": [
      "cycles.run_unit",
      "cycles.retry",
-     "cycles.escalate",
-     "jobs.requeue"
+     "cycles.escalate"
     ]
    },
    "figures": {
@@ -8617,9 +8616,9 @@
    },
    "units": {
     "spec": 40,
-    "built": 19
+    "built": 20
    },
-   "pct": 47.5
+   "pct": 50.0
   },
   {
    "process": "35.4",

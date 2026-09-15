@@ -11,12 +11,24 @@
  *                        `timers.openGlobal()` so SM_CYCLE_RUN_STALLED_1D arms in the same transaction (the breach pass's pattern,
  *                        app.ts) — then the reclaim, unblock, requeue, reconcile and overdue passes, and one
  *                        `cycles.plan.run_completed` on the command's own global batch (SM_CYCLE_PLANNER_DAILY's trigger and
- *                        satisfying event). A refused lock appends `cycles.plan.skipped{holder}` and returns.
- *   electReceipt         rule 5, exactly once: one global unit of work whose body re-reads the run (early return when a receipt
- *                        exists), appends the cycle's receipt literal and `cycle.run.completed{…, receipt_id}` on the `cycle_run`
- *                        aggregate (the hydrated stall clock is satisfied by the engine) and whose commit hook inserts
- *                        `cycle_receipts{run_id UNIQUE}` — a loser of a race hits 23505, its transaction rolls back and it returns
- *                        `{elected: false}` (D9); the hook also unblocks the dependents the receipt satisfied (D11).
+ *                        satisfying event). A refused lock appends `cycles.plan.skipped{holder}` and returns. Nothing in the
+ *                        command body opens another unit of work (D4 — under 35.1's rule 7 a nested global unit would wait on
+ *                        its own `uow:global` lock): the receipts the pass elects (a zero-unit run's — edge case 6 — and rule 5's
+ *                        reconciliation of a run whose counters are full with no row) ride the command's own batch
+ *                        (`electReceiptIn`: the events on `ctx.events`, the rows through `deferWrite`; the stall clock a
+ *                        `planCycle` armed after the command hydrated is restored into `ctx.timers` so the completion satisfies it).
+ *   electReceipt         rule 5, exactly once, the executor's shape: one global unit of work whose body re-reads the run (early
+ *                        return when a receipt exists), appends the cycle's receipt literal (unless the owner emits it — rule 2:
+ *                        `receipt_emitted_by: "owner"` for 35.1's, 35.2's and 35.12's cycles, whose election emits `cycle.run.completed`
+ *                        only) and `cycle.run.completed{…, receipt_id}` on the `cycle_run` aggregate (the hydrated stall clock is
+ *                        satisfied by the engine) and whose commit hook inserts `cycle_receipts{run_id UNIQUE}` — a loser of a race
+ *                        hits 23505, its transaction rolls back and it returns `{elected: false}` (D9); the hook also unblocks the
+ *                        dependents the receipt satisfied (D11). `electReceiptIn` is the same body for a command that is already
+ *                        a global unit of work (the planner's reconciliation, `jobs.requeue{op: abandon}` — OQ3).
+ *   requeueJob /         `jobs.requeue{op: requeue | abandon}` (rule 7, the state machine): an `ops_analyst`'s act on a `dead` unit —
+ *   abandonJob           `queued` again with `attempts 0` and `max_attempts 3`, or `abandoned` (counted `skipped` toward the run's
+ *                        total, a receipt when the run is now full); `job.unit.resolved{job_id, by, disposition}` on the job's
+ *                        aggregate is SM_JOB_DEAD_2H's satisfying event (the command is global, so the job's clock is hydrated).
  *   runExecutor          rule 6: claim `FOR UPDATE SKIP LOCKED LIMIT 20` by wall clock, `job.unit.claimed` per row, heartbeat every
  *                        30 s, stop claiming after the budget; `runClaimed` runs one unit — `in_command` through
  *                        `Runtime.executeDef(unitCommand)` under the unit's own scope so its events, ledger sets, timers, the
@@ -32,8 +44,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Queryable } from "../../infra/db/client.ts";
 import { toJson } from "../../infra/db/client.ts";
-import { MemoryEventStore, type Actor, type Clock } from "../../kernel/events/index.ts";
-import { TimerEngine } from "../../kernel/timers/engine.ts";
+import { MemoryEventStore, type Actor, type Clock, type DomainEvent, type EventStore } from "../../kernel/events/index.ts";
+import { TimerEngine, type TimerInstance } from "../../kernel/timers/engine.ts";
 import { wallClock } from "../../kernel/calendar/zoned.ts";
 import { type PlainDate, plainDate as D } from "../../kernel/calendar/date.ts";
 import { defaultCalendars } from "../../kernel/calendar/business.ts";
@@ -45,7 +57,7 @@ import type { Runtime } from "../../runtime/app.ts";
 import type { Logger } from "../../runtime/log.ts";
 import { CYCLES_VERSION, ET, EVT, cycleByCode, dependencyMet, expectedBy, monthOf, periodEndOf, periodKeysDue, priorMonthOf, type CycleDef, type PeriodDue, type Unit, type UnitContext } from "./cycles.ts";
 import { CYCLES } from "./runners.ts";
-import { CLAIM_LIMIT, EXECUTOR_BUDGET_MS, HEARTBEAT_MS, JOB_COLS, appendJobEvent, backoff, claimJobs, errorClassOf, heartbeat, plusMs, wallClockOf, type JobRow } from "./jobs.ts";
+import { CLAIM_LIMIT, EXECUTOR_BUDGET_MS, HEARTBEAT_MS, JOB_COLS, appendJobEvent, backoff, claimJobs, errorClassOf, getJob, heartbeat, plusMs, wallClockOf, type JobRow } from "./jobs.ts";
 import { PLANNER_LOCK_KEY, PgSessionLock, type SessionLock } from "./planner-lock.ts";
 import { CANCEL_STALL_ON } from "./timers-35-3.ts";
 
@@ -71,6 +83,11 @@ const asOfDateOf = (iso: string): PlainDate => wallClock(Date.parse(iso), ET).da
 const isOffsetClock = (c: Clock): c is Clock & { refresh(q: Queryable): Promise<unknown>; latestRow: { offset_ms: bigint | number } | null; base: Clock } => typeof (c as { refresh?: unknown }).refresh === "function" && "base" in c;
 const byOf = (a: Actor): string => (a.kind === "human" ? a.id : `${a.kind}:${a.id}`);
 const outcomeOf = (out: unknown): string => { if (out && typeof out === "object" && typeof (out as Row)["outcome"] === "string") return String((out as Row)["outcome"]); if (typeof out === "string") return out.slice(0, 200); return "ok"; };
+type Counters = { units_done: number; units_dead: number; units_skipped: number; units_total: number };
+const countersOf = (run: Row): Counters => ({ units_total: Number(run["units_total"]), units_done: Number(run["units_done"]), units_dead: Number(run["units_dead"]), units_skipped: Number(run["units_skipped"]) });
+/** Rule 5: `units_done + units_dead + units_skipped = units_total` and `units_dead = 0` — the run completes and the receipt is elected. */
+const countersFull = (c: Partial<Counters>): boolean => typeof c.units_total === "number" && (c.units_done ?? 0) + (c.units_dead ?? 0) + (c.units_skipped ?? 0) === c.units_total && (c.units_dead ?? 0) === 0;
+interface ReceiptPlan { readonly run_id: string; readonly cycle_code: string; readonly period_key: string; readonly as_of_date: string; readonly counters: Counters; readonly def: CycleDef | undefined }
 
 // ───────────────────────────── installation per runtime
 export interface CyclesHooks {
@@ -153,16 +170,16 @@ export class CyclesService {
           try {
             const r = await this.planCycle(def, period, { asOf, asOfDate, plannedBy, demoOffsetMs });
             periodKeys.push(`${def.cycle_code}:${period.period_key}`);
-            if (r.opened) { runsOpened += 1; jobsPlanned += r.jobs; }
-            // edge case 6: a run with no eligible unit is opened and completed in the same pass — the receipt of zeros is the day's evidence that the cycle looked
-            if (r.opened && r.units_total === 0) { const e = await this.electReceipt(r.run_id, `planner:${r.run_id}`); if (e.elected) receipts += 1; }
+            // the run's stall clock was armed and saved in planCycle's transaction, after this command hydrated: restored here so a completion appended below (a zero-unit run's receipt, edge case 6) satisfies it in this batch
+            if (r.opened) { runsOpened += 1; jobsPlanned += r.jobs; ctx.timers.restore(r.timers); }
           } catch (e) { const msg = e instanceof Error ? e.message : String(e); errors.push({ cycle_code: def.cycle_code, period_key: period.period_key, error: msg }); await this.registryError(def.cycle_code, errorClassOf(e) === "error" ? "plan_error" : errorClassOf(e), wall); this.log?.error("cycles.plan: cycle failed", { cycle_code: def.cycle_code, period_key: period.period_key, error: msg }); }
         }
       }
       reclaimed = await this.reclaimLeases(ctx, toolRt);
       unblocked = await this.unblock(ctx, toolRt);
       requeued = await this.requeueFailed(ctx, toolRt);
-      receipts += await this.reconcileReceipts();
+      // rule 5's reconciliation and edge case 6's zero-unit receipts, on this command's own batch (never a nested unit of work — D4)
+      receipts = await this.reconcileReceiptsIn(ctx, toolRt);
       overdue = await this.markOverdue(asOf, asOfDate);
     } finally { await lock.release(); }
     const out: PlanOutput = { skipped: false, holder: plannedBy, run_id: planRunId, as_of: asOf, as_of_date: asOfDate, planned_by: plannedBy, period_keys: periodKeys, runs_opened: runsOpened, jobs_planned: jobsPlanned, leases_reclaimed: reclaimed, unblocked, requeued, receipts_reconciled: receipts, overdue, errors, duration_ms: Date.now() - started };
@@ -188,17 +205,18 @@ export class CyclesService {
   private async registryError(code: string, errorClass: string, wall: string): Promise<void> { await this.rt.db.query(`UPDATE cycle_registry SET last_error_class = $2, updated_at = $3::timestamptz WHERE cycle_code = $1`, [code, errorClass, wall]).catch(() => undefined); }
 
   /** Rule 3: one transaction per (cycle, period) — idempotent by the run's and the jobs' unique keys; a new run appends `cycle.run.opened` (arming the stall clock). */
-  async planCycle(def: CycleDef, period: PeriodDue, meta: { asOf: string; asOfDate: PlainDate; plannedBy: string; demoOffsetMs: number }): Promise<{ opened: boolean; run_id: string; jobs: number; units_total: number }> {
+  async planCycle(def: CycleDef, period: PeriodDue, meta: { asOf: string; asOfDate: PlainDate; plannedBy: string; demoOffsetMs: number }): Promise<{ opened: boolean; run_id: string; jobs: number; units_total: number; timers: readonly TimerInstance[] }> {
     const rt = this.rt; const wall = this.wall();
+    const none = { persisted: [] as Awaited<ReturnType<typeof rt.uow.events.append>>, timers: [] as TimerInstance[] };
     const r = await rt.db.tx(async (q) => {
       const existing = (await q.query<{ id: string; units_total: number }>(`SELECT id::text AS id, units_total FROM cycle_runs WHERE cycle_code = $1 AND period_key = $2`, [def.cycle_code, period.period_key]))[0];
-      if (existing) return { opened: false, run_id: existing.id, jobs: 0, units_total: existing.units_total, persisted: [] as Awaited<ReturnType<typeof rt.uow.events.append>> };
+      if (existing) return { opened: false, run_id: existing.id, jobs: 0, units_total: existing.units_total, ...none };
       const units: Unit[] = await def.selector.select(q, { ...period, as_of_date: meta.asOfDate, as_of: meta.asOf });
       const runId = randomUUID();
       const inserted = await q.query<{ id: string }>(
         `INSERT INTO cycle_runs (id, cycle_code, period_key, as_of_date, planned_by, opened_at, units_total, status, demo_offset_ms) VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $7, 'planned', $8) ON CONFLICT (cycle_code, period_key) DO NOTHING RETURNING id::text AS id`,
         [runId, def.cycle_code, period.period_key, meta.asOfDate, meta.plannedBy, meta.asOf, units.length, String(meta.demoOffsetMs)]);
-      if (!inserted.length) return { opened: false, run_id: "", jobs: 0, units_total: units.length, persisted: [] as Awaited<ReturnType<typeof rt.uow.events.append>> };
+      if (!inserted.length) return { opened: false, run_id: "", jobs: 0, units_total: units.length, ...none };
       let jobs = 0;
       for (const u of units) {
         const input = { ...(u.input ?? {}) };
@@ -221,11 +239,12 @@ export class CyclesService {
       events.append({ type: EVT.RUN_OPENED, aggregate: { kind: "cycle_run", id: runId }, actor: OPS_STEWARD, occurredAt: meta.asOf,
         payload: { run_id: runId, cycle_code: def.cycle_code, period_key: period.period_key, as_of_date: meta.asOfDate, units_total: units.length, opened_at: meta.asOf, planned_by: meta.plannedBy, demo_offset_ms: meta.demoOffsetMs, origination: true } });
       const persisted = await rt.uow.events.append(events.since(0), q);
-      await rt.uow.timers.save(engine.all().filter((t) => !known.has(t.id)), q);
-      return { opened: true, run_id: runId, jobs, units_total: units.length, persisted };
+      const armed = engine.all().filter((t) => !known.has(t.id));
+      await rt.uow.timers.save(armed, q);
+      return { opened: true, run_id: runId, jobs, units_total: units.length, persisted, timers: armed };
     });
     rt.uow.notifyCommitted(r.persisted);
-    return { opened: r.opened, run_id: r.run_id, jobs: r.jobs, units_total: r.units_total };
+    return { opened: r.opened, run_id: r.run_id, jobs: r.jobs, units_total: r.units_total, timers: r.timers };
   }
 
   /** Rule 3: `running` jobs whose wall-clock lease expired go back to `queued` (the claim already counted the attempt) — `job.lease.expired` on the job's aggregate, the rows in the command's transaction. */
@@ -280,11 +299,11 @@ export class CyclesService {
     });
     return rows.length;
   }
-  /** Rule 5's reconciliation: every `planned` / `running` run whose counters are full with no dead unit and no receipt row gets its receipt with `emitted_by = planner:<run_id>`. */
-  async reconcileReceipts(): Promise<number> {
+  /** Rule 5's reconciliation (and edge case 6's zero-unit runs, opened this pass with nothing to run): every `planned` / `running` run whose counters are full with no dead unit and no receipt row gets its receipt with `emitted_by = planner:<run_id>`, on the planner command's own batch. */
+  async reconcileReceiptsIn(ctx: CommandContext, toolRt: ToolRuntime): Promise<number> {
     const rows = await this.rt.db.query<{ id: string }>(`SELECT r.id::text AS id FROM cycle_runs r LEFT JOIN cycle_receipts c ON c.run_id = r.id WHERE c.id IS NULL AND r.status IN ('planned', 'running') AND r.units_dead = 0 AND r.units_done + r.units_dead + r.units_skipped = r.units_total ORDER BY r.opened_at`);
     let n = 0;
-    for (const r of rows) { const e = await this.electReceipt(r.id, `planner:${r.id}`); if (e.elected) n += 1; }
+    for (const r of rows) { const e = await this.electReceiptIn(ctx, toolRt, r.id, `planner:${r.id}`); if (e.elected) n += 1; }
     return n;
   }
   /** Rule 11: `next_expected_by` from `expected_by_rule` and the calendar; `overdue_since` when the previous expectation passed with no receipt for its period (not while paused — OQ5). */
@@ -325,47 +344,112 @@ export class CyclesService {
   }
 
   // ───────────────────────────── the receipt (rule 5, RECEIPT_ONCE)
-  /** One global unit of work; the unique key on `cycle_receipts.run_id` is the race's last line (D9). */
+  /** Phase 2 of an election: the run as it stands (or `expect`, the counters a deferred write of the same command is about to leave — `abandonJob`), or why there is nothing to elect. */
+  private async receiptPlan(q: Queryable, runId: string, expect?: Counters): Promise<{ ok: true; plan: ReceiptPlan } | { ok: false; reason: ReceiptResult["reason"] }> {
+    const run = (await q.query<Row>(`SELECT id::text AS id, cycle_code, period_key, as_of_date::text AS as_of_date, units_total, units_done, units_dead, units_skipped, status FROM cycle_runs WHERE id = $1`, [runId]))[0];
+    if (!run) return { ok: false, reason: "no_run" };
+    if (run["status"] === "cancelled") return { ok: false, reason: "cancelled" };
+    if ((await q.query<{ n: string }>(`SELECT count(*)::text AS n FROM cycle_receipts WHERE run_id = $1`, [runId]))[0]!.n !== "0") return { ok: false, reason: "exists" };
+    const counters = expect ?? countersOf(run);
+    if (!countersFull(counters)) return { ok: false, reason: "not_full" };
+    const cycleCode = String(run["cycle_code"]);
+    return { ok: true, plan: { run_id: runId, cycle_code: cycleCode, period_key: String(run["period_key"]), as_of_date: String(run["as_of_date"]), counters, def: this.def(cycleCode) } };
+  }
+  /** `outcomes_sha256` over the ordered `(unit_id, status, decision_id)` triples, and the units that ever died (A3 / OQ3: the receipt's `units_dead` records every `job_events{dead}`; the run's counter is the current count that blocks completion). */
+  private async receiptOutcomes(q: Queryable, runId: string): Promise<{ sha: string; ever_dead: number }> {
+    const jobs = await q.query<{ unit_id: string; status: string; decision_id: string | null }>(`SELECT unit_id, status, decision_id::text AS decision_id FROM jobs WHERE run_id = $1 ORDER BY unit_id`, [runId]);
+    const sha = createHash("sha256").update(jobs.map((j) => `${j.unit_id}|${j.status}|${j.decision_id ?? ""}`).join("\n")).digest("hex");
+    const everDead = Number((await q.query<{ n: string }>(`SELECT count(DISTINCT e.job_id)::text AS n FROM job_events e JOIN jobs j ON j.id = e.job_id WHERE j.run_id = $1 AND e.kind = 'dead'`, [runId]))[0]!.n);
+    return { sha, ever_dead: everDead };
+  }
+  /** The receipt's events on the run's aggregate: the cycle's literal — unless its owner emits it (rule 2: 35.1's, 35.2's and 35.12's cycles keep their own; the election emits `cycle.run.completed` only) — then `cycle.run.completed{…, receipt_id}`; the hydrated stall clock is satisfied by the engine. */
+  private appendReceiptEvents(ctx: { readonly events: EventStore; readonly clock: Clock }, plan: ReceiptPlan, outcomes: { sha: string; ever_dead: number }, receiptId: string, emittedBy: string): { receipt: DomainEvent | null; generic: DomainEvent } {
+    const payload = { run_id: plan.run_id, cycle_code: plan.cycle_code, period_key: plan.period_key, as_of_date: plan.as_of_date, units_total: plan.counters.units_total, units_done: plan.counters.units_done, units_dead: outcomes.ever_dead, units_skipped: plan.counters.units_skipped, outcomes_sha256: outcomes.sha, completed_at: ctx.clock.now(), emitted_by: emittedBy, origination: true };
+    const receipt = plan.def?.receipt_emitted_by === "owner" ? null : ctx.events.append({ type: plan.def?.receipt_event ?? `${plan.cycle_code}.run_completed`, aggregate: { kind: "cycle_run", id: plan.run_id }, actor: OPS_STEWARD, payload });
+    const generic = ctx.events.append({ type: EVT.RUN_COMPLETED, aggregate: { kind: "cycle_run", id: plan.run_id }, actor: OPS_STEWARD, ...(receipt ? { causationId: receipt.id } : {}), payload: { ...payload, receipt_id: receiptId, receipt_event: plan.def?.receipt_event ?? null, receipt_emitted_by: plan.def?.receipt_emitted_by ?? "election" } });
+    return { receipt, generic };
+  }
+  /** The receipt's rows, inside the electing transaction after its events were appended (so the row can reference them): `cycle_receipts` (UNIQUE run_id — the race's last line), the run `completed`, the registry's last receipt, and the dependents this receipt satisfies (D11). The run is re-read under lock: a counter that moved since phase 2 refuses the election, and a row another election committed meanwhile is the unique key's 23505 — in the executor's own unit of work that is `{elected: false}`; on a command's batch it rolls the command back (the next planner pass reconciles; under 35.1's rule 7 the `uow:global` lock serialises the two and neither happens). */
+  private async receiptRows(q: Queryable, plan: ReceiptPlan, ids: { receipt: string | null; generic: string }, receiptId: string, emittedBy: string, wall: string): Promise<void> {
+    const run = (await q.query<Row>(`SELECT status, units_total, units_done, units_dead, units_skipped FROM cycle_runs WHERE id = $1 FOR UPDATE`, [plan.run_id]))[0];
+    if (!run || run["status"] === "cancelled" || !countersFull(countersOf(run))) throw new CyclesRefused("RECEIPT_NOT_FULL", { run_id: plan.run_id, ...(run ? countersOf(run) : {}) });
+    const c = countersOf(run); const o = await this.receiptOutcomes(q, plan.run_id);
+    await q.query(`INSERT INTO cycle_receipts (id, run_id, cycle_code, period_key, as_of_date, units_total, units_done, units_dead, units_skipped, outcomes_sha256, receipt_event_id, generic_event_id, emitted_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+      [receiptId, plan.run_id, plan.cycle_code, plan.period_key, plan.as_of_date, c.units_total, c.units_done, o.ever_dead, c.units_skipped, o.sha, ids.receipt, ids.generic, emittedBy]);
+    await q.query(`UPDATE cycle_runs SET status = 'completed', completed_at = $2::timestamptz, receipt_id = $3 WHERE id = $1`, [plan.run_id, wall, receiptId]);
+    await q.query(`UPDATE cycle_registry SET last_period_key = $2, last_run_id = $3, last_receipt_at = $4::timestamptz, overdue_since = NULL, last_error_class = NULL, updated_at = $4::timestamptz WHERE cycle_code = $1`, [plan.cycle_code, plan.period_key, plan.run_id, wall]);
+    // D11: the dependents this receipt satisfies are unblocked in the same transaction, so a same-day chain drains within one executor budget
+    for (const id of await this.readyBlocked(q)) await this.queueBlocked(q, id, OPS_STEWARD, wall);
+  }
+  /** The executor's election (rule 5's "second, global unit of work"): one global unit of work of its own, never nested; the unique key on `cycle_receipts.run_id` is the race's last line (D9). */
   async electReceipt(runId: string, emittedBy: string): Promise<ReceiptResult> {
     const rt = this.rt; const receiptId = randomUUID(); const wall = this.wall();
-    let elected = false; let reason: ReceiptResult["reason"] = "no_run"; let ids: { receipt: string; generic: string; cycle_code: string; period_key: string } | null = null;
+    const st: { plan: ReceiptPlan | null; ids: { receipt: string | null; generic: string } | null; reason: ReceiptResult["reason"] } = { plan: null, ids: null, reason: "no_run" };
     try {
       await rt.uow.run({}, async (ctx) => {
-        const run = (await rt.db.query<Row>(`SELECT id::text AS id, cycle_code, period_key, as_of_date::text AS as_of_date, units_total, units_done, units_dead, units_skipped, status FROM cycle_runs WHERE id = $1`, [runId]))[0];
-        if (!run) { reason = "no_run"; return; }
-        if (run["status"] === "cancelled") { reason = "cancelled"; return; }
-        if ((await rt.db.query<{ n: string }>(`SELECT count(*)::text AS n FROM cycle_receipts WHERE run_id = $1`, [runId]))[0]!.n !== "0") { reason = "exists"; return; }
-        const total = Number(run["units_total"]), done = Number(run["units_done"]), dead = Number(run["units_dead"]), skipped = Number(run["units_skipped"]);
-        if (dead !== 0 || done + dead + skipped !== total) { reason = "not_full"; return; }
-        const jobs = await rt.db.query<{ unit_id: string; status: string; decision_id: string | null }>(`SELECT unit_id, status, decision_id::text AS decision_id FROM jobs WHERE run_id = $1 ORDER BY unit_id`, [runId]);
-        const sha = createHash("sha256").update(jobs.map((j) => `${j.unit_id}|${j.status}|${j.decision_id ?? ""}`).join("\n")).digest("hex");
-        // A3 / OQ3: the receipt's `units_dead` records the units that ever died (a `job_events{dead}` row), the run's counter is the current count that blocks completion
-        const everDead = Number((await rt.db.query<{ n: string }>(`SELECT count(DISTINCT e.job_id)::text AS n FROM job_events e JOIN jobs j ON j.id = e.job_id WHERE j.run_id = $1 AND e.kind = 'dead'`, [runId]))[0]!.n);
-        const cycleCode = String(run["cycle_code"]); const periodKey = String(run["period_key"]);
-        const def = this.def(cycleCode);
-        const payload = { run_id: runId, cycle_code: cycleCode, period_key: periodKey, as_of_date: String(run["as_of_date"]), units_total: total, units_done: done, units_dead: everDead, units_skipped: skipped, outcomes_sha256: sha, completed_at: ctx.clock.now(), emitted_by: emittedBy, origination: true };
-        const receipt = ctx.events.append({ type: def?.receipt_event ?? `${cycleCode}.run_completed`, aggregate: { kind: "cycle_run", id: runId }, actor: OPS_STEWARD, payload });
-        const generic = ctx.events.append({ type: EVT.RUN_COMPLETED, aggregate: { kind: "cycle_run", id: runId }, actor: OPS_STEWARD, causationId: receipt.id, payload: { ...payload, receipt_id: receiptId } });
-        ids = { receipt: receipt.id, generic: generic.id, cycle_code: cycleCode, period_key: periodKey }; elected = true; reason = "elected";
-        return { receipt, generic, payload };
-      }, { clock: rt.clock, commit: async (q) => {
-        if (!elected || !ids) return;
-        const p = ids;
-        const run = (await q.query<Row>(`SELECT as_of_date::text AS as_of_date, units_total, units_done, units_skipped FROM cycle_runs WHERE id = $1`, [runId]))[0]!;
-        const everDead = Number((await q.query<{ n: string }>(`SELECT count(DISTINCT e.job_id)::text AS n FROM job_events e JOIN jobs j ON j.id = e.job_id WHERE j.run_id = $1 AND e.kind = 'dead'`, [runId]))[0]!.n);
-        const sha = createHash("sha256").update((await q.query<{ unit_id: string; status: string; decision_id: string | null }>(`SELECT unit_id, status, decision_id::text AS decision_id FROM jobs WHERE run_id = $1 ORDER BY unit_id`, [runId])).map((j) => `${j.unit_id}|${j.status}|${j.decision_id ?? ""}`).join("\n")).digest("hex");
-        await q.query(`INSERT INTO cycle_receipts (id, run_id, cycle_code, period_key, as_of_date, units_total, units_done, units_dead, units_skipped, outcomes_sha256, receipt_event_id, generic_event_id, emitted_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-          [receiptId, runId, p.cycle_code, p.period_key, String(run["as_of_date"]), Number(run["units_total"]), Number(run["units_done"]), everDead, Number(run["units_skipped"]), sha, p.receipt, p.generic, emittedBy]);
-        await q.query(`UPDATE cycle_runs SET status = 'completed', completed_at = $2::timestamptz, receipt_id = $3 WHERE id = $1`, [runId, wall, receiptId]);
-        await q.query(`UPDATE cycle_registry SET last_period_key = $2, last_run_id = $3, last_receipt_at = $4::timestamptz, overdue_since = NULL, last_error_class = NULL, updated_at = $4::timestamptz WHERE cycle_code = $1`, [p.cycle_code, p.period_key, runId, wall]);
-        // D11: the dependents this receipt satisfies are unblocked in the same transaction, so a same-day chain drains within one executor budget
-        for (const id of await this.readyBlocked(q)) await this.queueBlocked(q, id, OPS_STEWARD, wall);
-      } });
+        const p = await this.receiptPlan(rt.db, runId);
+        if (!p.ok) { st.reason = p.reason; return; }
+        const ev = this.appendReceiptEvents(ctx, p.plan, await this.receiptOutcomes(rt.db, runId), receiptId, emittedBy);
+        st.plan = p.plan; st.ids = { receipt: ev.receipt?.id ?? null, generic: ev.generic.id }; st.reason = "elected";
+      }, { clock: rt.clock, commit: async (q) => { if (st.plan && st.ids) await this.receiptRows(q, st.plan, st.ids, receiptId, emittedBy, wall); } });
     } catch (e) {
       if (isDup(e)) { this.log?.info("cycles: receipt raced, unique key held", { run_id: runId, emitted_by: emittedBy }); return { elected: false, run_id: runId, receipt_id: null, reason: "raced" }; }
       throw e;
     }
-    return { elected, run_id: runId, receipt_id: elected ? receiptId : null, reason };
+    const elected = st.reason === "elected";
+    return { elected, run_id: runId, receipt_id: elected ? receiptId : null, reason: st.reason };
+  }
+  /** The same election for a command that is itself a global unit of work (the planner's reconciliation; `jobs.requeue{op: abandon}`): the events on the command's batch, the rows through `deferWrite` — nothing nested (D4). A stall clock armed after the command hydrated (a run this very pass opened) is restored so the completion satisfies it here. */
+  async electReceiptIn(ctx: CommandContext, toolRt: ToolRuntime, runId: string, emittedBy: string, opts: { readonly expect?: Counters } = {}): Promise<ReceiptResult> {
+    const rt = this.rt; const receiptId = randomUUID(); const wall = this.wall();
+    const p = await this.receiptPlan(rt.db, runId, opts.expect);
+    if (!p.ok) return { elected: false, run_id: runId, receipt_id: null, reason: p.reason };
+    const known = new Set(ctx.timers.forSubject("cycle_run", runId).map((t) => t.id));
+    ctx.timers.restore((await rt.uow.timers.forSubject("cycle_run", runId)).filter((t) => (t.status === "armed" || t.status === "breached") && !known.has(t.id)));
+    const ev = this.appendReceiptEvents(ctx, p.plan, await this.receiptOutcomes(rt.db, runId), receiptId, emittedBy);
+    const plan = p.plan; const ids = { receipt: ev.receipt?.id ?? null, generic: ev.generic.id };
+    this.deferWrite(toolRt, (q) => this.receiptRows(q, plan, ids, receiptId, emittedBy, wall));
+    return { elected: true, run_id: runId, receipt_id: receiptId, reason: "elected" };
+  }
+
+  // ───────────────────────────── jobs.requeue (rule 7, the state machine — an ops_analyst's act on a dead unit)
+  private async deadJob(jobId: string): Promise<JobRow> {
+    const job = await getJob(this.rt.db, jobId);
+    if (!job) throw new CyclesRefused("JOB_NOT_FOUND", { job_id: jobId });
+    if (job.status !== "dead") throw new CyclesRefused("JOB_NOT_DEAD", { job_id: jobId, status: job.status });
+    return job;
+  }
+  /** `dead —(jobs.requeue{op: requeue}, ops_analyst)→ queued`: `attempts` reset to 0 and `max_attempts` 3 again (rule 7), `units_dead − 1`; `job.unit.resolved{disposition: requeued}` on the job's aggregate satisfies SM_JOB_DEAD_2H. The dead unit's escalation stays the owner role's to complete through 34.4. */
+  async requeueJob(ctx: CommandContext, toolRt: ToolRuntime, jobId: string, reason: string): Promise<Row> {
+    if (!reason) throw new RangeError("a requeue needs a reason");
+    const job = await this.deadJob(jobId); const by = byOf(ctx.actor); const wall = this.wall();
+    ctx.events.append({ type: EVT.RESOLVED, aggregate: { kind: "job", id: job.id }, actor: ctx.actor, payload: { job_id: job.id, run_id: job.run_id, cycle_code: job.cycle_code, period_key: job.period_key, unit_id: job.unit_id, by, reason, disposition: "requeued", attempts_before: job.attempts, error_class: job.last_error_class } });
+    this.deferWrite(toolRt, async (q) => {
+      const r = await q.query<{ id: string }>(`UPDATE jobs SET status = 'queued', attempts = 0, max_attempts = 3, run_after = NULL, lease_holder = NULL, lease_until = NULL, heartbeat_at = NULL, finished_at = NULL WHERE id = $1 AND status = 'dead' RETURNING id::text AS id`, [job.id]);
+      if (!r.length) throw new CyclesRefused("JOB_NOT_DEAD", { job_id: job.id });
+      await appendJobEvent(q, { job_id: job.id, kind: "requeued", attempt: 0, actor: ctx.actor, at: wall, detail: { reason, by, from: "dead", attempts_before: job.attempts, error_class: job.last_error_class } });
+      await q.query(`UPDATE cycle_runs SET units_dead = greatest(units_dead - 1, 0) WHERE id = $1`, [job.run_id]);
+    });
+    return { job_id: job.id, run_id: job.run_id, cycle_code: job.cycle_code, period_key: job.period_key, unit_id: job.unit_id, status: "queued", disposition: "requeued", by, reason };
+  }
+  /** `dead —(jobs.requeue{op: abandon}, ops_analyst)→ abandoned` (terminal): counted `skipped` toward the run's total (`units_dead − 1`, `units_skipped + 1`); `job.unit.resolved{disposition: abandoned}`; when the run is now full its receipt is elected on this command's batch (OQ3 — the receipt records `units_dead > 0`, evidence of what the cycle did not do). */
+  async abandonJob(ctx: CommandContext, toolRt: ToolRuntime, jobId: string, reason: string): Promise<Row> {
+    if (!reason) throw new RangeError("an abandonment needs a reason");
+    const job = await this.deadJob(jobId); const by = byOf(ctx.actor); const wall = this.wall();
+    ctx.events.append({ type: EVT.RESOLVED, aggregate: { kind: "job", id: job.id }, actor: ctx.actor, payload: { job_id: job.id, run_id: job.run_id, cycle_code: job.cycle_code, period_key: job.period_key, unit_id: job.unit_id, by, reason, disposition: "abandoned", attempts: job.attempts, error_class: job.last_error_class } });
+    const run = (await this.rt.db.query<Row>(`SELECT status, units_total, units_done, units_dead, units_skipped FROM cycle_runs WHERE id = $1`, [job.run_id]))[0];
+    this.deferWrite(toolRt, async (q) => {
+      const r = await q.query<{ id: string }>(`UPDATE jobs SET status = 'abandoned', finished_at = $2::timestamptz, lease_holder = NULL, lease_until = NULL WHERE id = $1 AND status = 'dead' RETURNING id::text AS id`, [job.id, wall]);
+      if (!r.length) throw new CyclesRefused("JOB_NOT_DEAD", { job_id: job.id });
+      await appendJobEvent(q, { job_id: job.id, kind: "abandoned", attempt: job.attempts, actor: ctx.actor, at: wall, error_class: job.last_error_class, detail: { reason, by } });
+      await q.query(`UPDATE cycle_runs SET units_dead = greatest(units_dead - 1, 0), units_skipped = units_skipped + 1 WHERE id = $1`, [job.run_id]);
+    });
+    let receipt: ReceiptResult | null = null;
+    if (run && run["status"] !== "cancelled") {
+      const c = countersOf(run); const expect: Counters = { ...c, units_dead: Math.max(c.units_dead - 1, 0), units_skipped: c.units_skipped + 1 };
+      if (countersFull(expect)) receipt = await this.electReceiptIn(ctx, toolRt, job.run_id, `unit:${job.id}`, { expect });
+    }
+    return { job_id: job.id, run_id: job.run_id, cycle_code: job.cycle_code, period_key: job.period_key, unit_id: job.unit_id, status: "abandoned", disposition: "abandoned", by, reason, receipt_id: receipt?.receipt_id ?? null };
   }
 
   // ───────────────────────────── the registry's operations (cycles.registry)
@@ -458,7 +542,6 @@ export function unitCommand(svc: CyclesService, def: CycleDef, job: JobRow, hold
 export function unitContextOf(def: CycleDef, job: JobRow, actor: Actor): UnitContext {
   return { job_id: job.id, run_id: job.run_id, cycle_code: def.cycle_code, period_key: job.period_key, period_end: periodEndOf(def, job.period_key), unit_id: job.unit_id, loan_id: job.loan_id, application_id: job.application_id, as_of_date: D(String(job.period_key).slice(0, 10).length === 10 ? String(job.period_key).slice(0, 10) : periodEndOf(def, job.period_key)), input: job.input ?? {}, actor, attempt: job.attempts };
 }
-const countersFull = (c: { units_done?: number; units_dead?: number; units_skipped?: number; units_total?: number }): boolean => typeof c.units_total === "number" && (c.units_done ?? 0) + (c.units_dead ?? 0) + (c.units_skipped ?? 0) === c.units_total && (c.units_dead ?? 0) === 0;
 
 export interface RunClaimedOptions { readonly electReceipt?: boolean; readonly actor?: Actor; }
 /** One claimed job through its runner (see the header) — returns the outcome for the executor's tally; never throws for a unit's own failure. */

@@ -1,5 +1,5 @@
 {
- "brief": "spec units built 7925/7926 (100.0%): tids 2194/2194, tables 743/744, timers 2034/2034, notices 308/308, tools 1413/1413, figures 1233/1233; processes at 100%: 188/189",
+ "brief": "spec units built 7926/7926 (100.0%): tids 2194/2194, tables 744/744, timers 2034/2034, notices 308/308, tools 1413/1413, figures 1233/1233; processes at 100%: 189/189",
  "totals": {
   "tids": {
    "spec": 2194,
@@ -7,7 +7,7 @@
   },
   "tables": {
    "spec": 744,
-   "built": 743
+   "built": 744
   },
   "timers": {
    "spec": 2034,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 7926,
-   "built": 7925
+   "built": 7926
   }
  },
  "sections": {
@@ -219,9 +219,9 @@
   },
   "32": {
    "spec": 354,
-   "built": 353,
+   "built": 354,
    "processes": 17,
-   "done": 16
+   "done": 17
   },
   "33": {
    "spec": 69,
@@ -416,6 +416,7 @@
   "32.12",
   "32.13",
   "32.14",
+  "32.16",
   "32.17",
   "32.18",
   "33.1",
@@ -7777,10 +7778,8 @@
    },
    "tables": {
     "spec": 3,
-    "built": 2,
-    "missing": [
-     "journey_progress"
-    ]
+    "built": 3,
+    "missing": []
    },
    "timers": {
     "spec": 0,
@@ -7805,9 +7804,9 @@
    },
    "units": {
     "spec": 45,
-    "built": 44
+    "built": 45
    },
-   "pct": 97.8
+   "pct": 100.0
   },
   {
    "process": "32.17",

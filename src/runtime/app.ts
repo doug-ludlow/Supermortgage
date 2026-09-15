@@ -71,7 +71,7 @@ import type { RateFeedPort } from "../infra/integrations/rates.ts";
 import type { FakeReviewers, FakeReviewerReport } from "../infra/integrations/reviewers.ts";
 import { originationServices, type OriginationServiceSet } from "./origination.ts";
 import { acquireSweepLease, defaultHolder, type SweepPass } from "../domain/operations-runtime/seam/sweep.ts";
-import { drainOutbox, type DrainReport } from "../domain/operations-runtime/seam/outbox.ts";
+import { drainOutbox, type DrainReport, type OutboxCompletion } from "../domain/operations-runtime/seam/outbox.ts";
 import { verifyRun, verifiedToday, recordFailedRun, type VerifyReport } from "../domain/operations-runtime/seam/verify.ts";
 import type { OutboundAdapter } from "../infra/integrations/outbox.ts";
 import { wallClock } from "../kernel/calendar/zoned.ts";
@@ -102,6 +102,10 @@ export interface RuntimeDeps {
   readonly outboxAdapters?: ReadonlyMap<string, OutboundAdapter>;
   /** 35.1 rule 12: the sweep lease holder's name (instance or job execution id); defaults to host:pid:random. */
   readonly instanceId?: string;
+  /** 35.1 rule 11: per-adapter completion hooks, run inside the dispatch transaction when a message is acked (a section appends its own event and updates its own row); keyed by adapter name. */
+  readonly outboxCompletions?: ReadonlyMap<string, OutboxCompletion>;
+  /** The database's connection string (main.ts passes config.databaseUrl): a job that needs a dedicated client (35.3's planner lock) opens it here; the sweep lease uses the pool's own. */
+  readonly databaseUrl?: string;
 }
 /** A command is scoped to a loan (`loanId`), to an application before funding (`applicationId`), or to both during the 30.2 hand-off. */
 export interface ExecuteRequest { readonly process: string; readonly name: string; readonly loanId: string; readonly applicationId?: string; readonly actor: Actor; readonly input: ToolInput; readonly run?: AgentRunInfo; readonly approvedBy?: Actor; }
@@ -184,6 +188,10 @@ export class Runtime {
   readonly logger: Logger | undefined;
   readonly outboxAdapters: ReadonlyMap<string, OutboundAdapter> | undefined;
   readonly instanceId: string;
+  readonly outboxCompletions: ReadonlyMap<string, OutboxCompletion> | undefined;
+  readonly databaseUrl: string | null;
+  /** The running sweep's `sweep_runs` id while `sweep` holds the lease (35.3's `cycle_runs.planned_by` reads `sweep:<id>`); null outside a run. */
+  sweepRunId: string | null = null;
   readonly uow: PgUnitOfWork;
   readonly entities: PgEntityRepository;
   readonly escalationRepo: PgEscalationRepository;
@@ -200,7 +208,7 @@ export class Runtime {
   constructor(deps: RuntimeDeps) {
     this.db = deps.db; this.registry = deps.registry; this.agents = deps.agents ?? new AgentRegistry(); this.ports = deps.ports ?? fakePorts(); this.clock = deps.clock ?? systemClock;
     this.rateFeed = deps.rateFeed ?? null; this.reviewers = deps.reviewers ?? null; this.analystLlm = deps.analystLlm ?? null; this.logger = deps.logger;
-    this.outboxAdapters = deps.outboxAdapters; this.instanceId = deps.instanceId ?? defaultHolder();
+    this.outboxAdapters = deps.outboxAdapters; this.instanceId = deps.instanceId ?? defaultHolder(); this.outboxCompletions = deps.outboxCompletions; this.databaseUrl = deps.databaseUrl ?? null;
     this.noticeRegistry = deps.notices ?? (() => { const r = buildRegistry(); publishAuthored(r); publishSection02(r); registerPreapprovalLetter(r); return r; })();   // 32.8: 2.x's own authored pieces (AUTODRAFT-*, LC-*, SUSP-*) beside the catalog   // DELTA-01: the preapproval letter beside the catalog
     this.root = this;
     this.uow = new PgUnitOfWork(this.db, this.registry); this.entities = new PgEntityRepository(this.db); this.escalationRepo = new PgEscalationRepository(this.db); this.applications = new PgApplicationRepository(this.db);
@@ -355,7 +363,7 @@ export class Runtime {
       this.logger?.[outcome === "skipped" ? "info" : "error"](`sweep ${outcome}`, { run_id: leased.runId, holder, reason: leased.reason, error: leased.error ?? null });
       return { at: nowIso, due: 0, breaches: [], outbox: [], ...notRun(leased.reason), run_id: leased.runId, holder, outcome, skipped_reason: leased.reason, passes: [], outbox_dispatch: null, verify: null };
     }
-    const lease = leased.lease; const runId = lease.runId;
+    const lease = leased.lease; const runId = lease.runId; this.sweepRunId = runId;
     await this.db.query(`INSERT INTO sweep_runs (id, holder, started_at, heartbeat_at, as_of_date, outcome) VALUES ($1, $2, $3, $3, $4, 'running')`, [runId, holder, nowIso, asOfDate]);
     const passes: SweepPass[] = [];
     const pass = async <T>(name: string, fn: () => Promise<T>, counts: (t: T) => Record<string, unknown>): Promise<T> => {
@@ -368,7 +376,7 @@ export class Runtime {
       pass(name, async () => { try { return await fn(); } catch (e) { const msg = e instanceof Error ? e.message : String(e); this.logger?.error(`${name} failed`, { at: nowIso, error: e }); return fallback(msg); } }, counts);
     try {
       // rule 11: the outbox, drained by every sweep — after the lease, before the passes (the drain's failure is the run's)
-      const outboxDispatch = await pass("outbox.dispatch", () => drainOutbox({ db: this.db, registry: this.registry, clock: this.clock, ports: this.ports, ...(this.outboxAdapters ? { adapters: this.outboxAdapters } : {}), notify: (ev) => this.uow.notifyCommitted(ev) }, nowIso, { runId }), (d) => ({ claimed: d.claimed, sent: d.sent, retried: d.retried, dead: d.dead, rejected: d.rejected, fallback: d.fallback }));
+      const outboxDispatch = await pass("outbox.dispatch", () => drainOutbox({ db: this.db, registry: this.registry, clock: this.clock, ports: this.ports, ...(this.outboxAdapters ? { adapters: this.outboxAdapters } : {}), ...(this.outboxCompletions ? { completions: this.outboxCompletions } : {}), notify: (ev) => this.uow.notifyCommitted(ev) }, nowIso, { runId }), (d) => ({ claimed: d.claimed, sent: d.sent, retried: d.retried, dead: d.dead, rejected: d.rejected, fallback: d.fallback }));
       const refi = this.rateFeed ? await logged("refi.daily", () => refiDailyRun(this, nowIso, { feed: this.rateFeed!, logger: this.logger }), (msg) => ({ at: nowIso, as_of_date: asOfDate as RefiDailyReport["as_of_date"], ran: false, reason: `failed: ${msg}`, rate_sheet: null, universe: { view_rows: 0, loaded: 0, unchanged: 0, skipped: [], monitored: { rows: 0, skipped: 0, open_offer: 0 } }, programs: [], line: `refi daily: failed (${msg})` } as RefiDailyReport), (r) => ({ ran: r.ran, programs: r.programs.length })) : null;
       // 33.2: the daily review of the partner book after the refinance check (it reads the day's run) — errors logged, never thrown
       const partnerBookReview = await logged("partner_book.review", () => partnerBookReviewRun(this, nowIso, { logger: this.logger, llm: this.analystLlm }), (msg) => ({ at: nowIso, as_of_date: asOfDate as ReviewRunReport["as_of_date"], ran: false, reason: `failed: ${msg}`, monitored_loans: 0, programs: [], line: `partner book review: failed (${msg})` } as ReviewRunReport), (r) => ({ ran: r.ran, monitored_loans: r.monitored_loans }));
@@ -431,7 +439,7 @@ export class Runtime {
     } catch (e) {
       await this.db.query(`UPDATE sweep_runs SET outcome = 'failed', finished_at = $2, heartbeat_at = $2, passes = $3::jsonb, skipped_reason = $4 WHERE id = $1`, [runId, this.clock.now(), JSON.stringify(passes), (e instanceof Error ? e.message : String(e)).slice(0, 500)]).catch(() => undefined);
       throw e;
-    } finally { await lease.release(); }
+    } finally { this.sweepRunId = null; await lease.release(); }
   }
 
   async ready(): Promise<boolean> { try { await this.db.query("SELECT 1"); return true; } catch { return false; } }

@@ -103,7 +103,8 @@ export function classifyVersion(r: EntityRecord): { reason: GapReason; detail: R
   catch (e) { if (e instanceof SchemaMismatch) return { reason: "schema_mismatch", detail: { column: e.column, problem: e.problem } }; throw e; }
 }
 
-const childRows = (data: Record<string, unknown>, field: string): Record<string, unknown>[] => (Array.isArray(data[field]) ? (data[field] as unknown[]).filter((x): x is Record<string, unknown> => !!x && typeof x === "object") : []);
+/** The child rows of a version: every object of an array field (2.1's `allocations[]`), or the one object of an object field (2.3's `reversal`). */
+const childRows = (data: Record<string, unknown>, field: string): Record<string, unknown>[] => { const v = data[field]; if (Array.isArray(v)) return v.filter((x): x is Record<string, unknown> => !!x && typeof x === "object"); return v && typeof v === "object" ? [v as Record<string, unknown>] : []; };
 
 /** Rule 5: one uuid per (kind, legacy_ref, scope_key), minted once, reused by every later version and by replay. A legacy ref that is already a uuid is its own. */
 export async function mintKey(q: Queryable, kind: string, legacyRef: string, scopeKey: string): Promise<string> {
@@ -126,15 +127,16 @@ async function writeRow(q: Queryable, map: ProjectorMap, id: string, row: Map<st
   await q.query(`INSERT INTO ${map.table} (${cols.join(", ")}) VALUES (${placeholders}) ON CONFLICT (${map.idColumn}) DO ${updates.length ? `UPDATE SET ${updates.join(", ")}` : "NOTHING"}`, vals);
 }
 
-async function writeChildren(q: Queryable, map: ProjectorMap, parentId: string, data: Record<string, unknown>): Promise<number> {
-  let n = 0;
+/** Writes every child row of the version; answers the child tables that took a new row (a re-projection's `DO NOTHING` writes none). */
+async function writeChildren(q: Queryable, map: ProjectorMap, parentId: string, data: Record<string, unknown>): Promise<string[]> {
+  const written: string[] = [];
   for (const c of map.children ?? []) for (const child of childRows(data, c.field)) {
     const row = rowOf(c, child);
     const cols = [c.parentColumn, ...row.keys()]; const vals = [parentId, ...row.values()];
     const r = await q.query(`INSERT INTO ${c.table} (${cols.join(", ")}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(", ")}) ON CONFLICT (${c.conflictColumns.join(", ")}) DO NOTHING RETURNING 1`, vals);
-    n += r.length;
+    if (r.length && !written.includes(c.table)) written.push(c.table);
   }
-  return n;
+  return written;
 }
 
 export async function projectVersions(q: Queryable, o: ProjectOptions): Promise<ProjectionOutcome> {
@@ -164,7 +166,7 @@ export async function projectVersions(q: Queryable, o: ProjectOptions): Promise<
         targetId = await mintKey(q, r.kind, r.id, scopeKey);
         await writeRow(q, map, targetId, row);
         const children = await writeChildren(q, map, targetId, data);
-        if (children > 0) targetTable = `${map.table}/${(map.children ?? []).map((c) => c.table).join("/")}`;
+        if (children.length) targetTable = `${map.table}/${children.join("/")}`;
       }
       const projectionId = randomUUID();
       await q.query(`INSERT INTO entity_projections (id, kind, entity_id, scope_key, version, target_table, target_id, mode, phase, projector_version, command_event_id, run_id, projected_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,

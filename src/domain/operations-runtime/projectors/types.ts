@@ -21,9 +21,9 @@ export interface ColumnSpec {
   readonly path?: readonly string[];
 }
 
-/** A child table written beside the row from an array field of the version (2.1's `allocations[]` → `payment_allocations`). */
+/** A child table written beside the row from an array field of the version (2.1's `allocations[]` → `payment_allocations`) or from one object field (2.3's `reversal` → `payment_reversals`). */
 export interface ChildMap {
-  /** The array field on the version. */
+  /** The array (or object) field on the version. */
   readonly field: string;
   readonly table: string;
   /** The child's column that references the parent row's uuid. */

@@ -23,10 +23,11 @@ import { compute, defineTools, str, type EntityRecord, type ToolDef } from "../.
 import { loadAgentsFile } from "../../app/agents.ts";
 import { TOOLS_35_1 } from "../../app/tools/section35-1.ts";
 import { StaleRecord } from "./seam/guard.ts";
+import { classifyVersion } from "./seam/project.ts";
 import { PgOutbox } from "../../infra/integrations/pg-outbox.ts";
 import { TransientFailure } from "../../infra/integrations/failures.ts";
 import type { OutboundAdapter, OutboxMessage } from "../../infra/integrations/outbox.ts";
-import { fakePortAdapter } from "./seam/outbox.ts";
+import { fakePortAdapter, type OutboxCompletion } from "./seam/outbox.ts";
 import { requeueMessage } from "../../runtime/controls/outbox.ts";
 import { createHash } from "node:crypto";
 import type { RuntimeDeps } from "../../runtime/app.ts";
@@ -39,7 +40,7 @@ import { ClosingDisclosureService } from "../compliance-disclosures/ops-25-2.ts"
 import { MemoryEventStore } from "../../kernel/events/index.ts";
 import { captureState, foldState, stateHash, SERVICE_STATE_EVENT } from "./seam/service-state.ts";
 import { SCOPE_LOCK_SQL } from "./seam/lock.ts";
-import { HISTORY_KINDS } from "./projectors/index.ts";
+import { HISTORY_KINDS, TYPED_AT_SOURCE_TABLES } from "./projectors/index.ts";
 import type { LoanCashState } from "../cashiering/types.ts";
 
 const { url: DB_URL, skip } = await testDatabase(import.meta.url);
@@ -307,7 +308,7 @@ test("35.1-T4: Given a tool whose handler writes a `payments` version, whose pro
   assert.equal(await count(db, `FROM loan_events WHERE type = 'service.state.changed' AND payload->>'service_key' = 'boarding' AND payload->'delta'->'fields'->'batches'->'set' @> $1::jsonb`, [JSON.stringify([[`B-T4-${paymentId.slice(0, 8)}`]])]), 0, "no delta of the failed command was recorded");
   assert.ok(batches >= 0);
 });
-test("35.1-T5: Given two `Runtime` instances A and B over one database and a third `Runtime` acting as the sweep job, when A runs 25.2 `prepareCd` for an application, B runs 25.2 `deliverCd` for the same disclosure id, and the sweep runtime deems an LE received on its mailbox-rule day, then B never answers `no CD`, the CD B delivered is the CD A prepared (same `disclosure_id`, `data_hash` and `cd_version`), the sweep's deeming was performed by `LoanEstimateService.deemReceived` on a hydrated instance (no hand-appended `disclosure.le.deemed_received` exists in src/runtime/origination.ts: contract test greps the file for the literal), and every stateful key in `originationServices` (`cd-25-2`, `delivery-29-3`, `delivery-29-4`, `secondary`, `tolerance`, `companion`, `orig-boarding`) yields a fresh instance per command whose state after `hydrate` equals the state the instance that wrote the events held.", { skip }, async () => {
+test("35.1-T5: Given two `Runtime` instances A and B over one database and a third `Runtime` acting as the sweep job, when A runs 25.2 `renderCd` for an application, B runs 25.2 `deliverDisclosure` for the same disclosure id, and the sweep runtime deems an LE received on its mailbox-rule day, then B never answers `no CD`, the CD B delivered is the CD A prepared (same `disclosure_id`, `data_hash` and `cd_version`), the sweep's deeming was performed by `LoanEstimateService.deemReceived` on a hydrated instance (no hand-appended `disclosure.le.deemed_received` exists in src/runtime/origination.ts: contract test greps the file for the literal), and every stateful key in `originationServices` (`cd-25-2`, `delivery-29-3`, `delivery-29-4`, `secondary`, `tolerance`, `companion`, `orig-boarding`) yields a fresh instance per command whose state after `hydrate` equals the state the instance that wrote the events held.", { skip }, async () => {
   const clk = new FixedClock("2026-10-05T23:10:00.000Z");
   const side = await sideRuntime("t5", {}, clk);
   try {
@@ -720,4 +721,60 @@ test("35.1-T15: Given a money-field change proposed by the agent — `record.rep
   const p351 = raw.processes.find((p) => p.process === "35.1")!;
   assert.match(p351.guardrails ?? "", /NO_MONEY_FIELD_CHANGE/);
   for (const p of raw.processes) if (p.process !== "35.1") for (const t of seam) assert.ok(!(p.guardrails ?? "").includes(t) || /never/.test(p.guardrails ?? ""), `${p.process}'s guardrails do not allow ${t} to touch money`);
+});
+
+// ───────── follow-ups asked by the 35.5 and 35.3 plans (open questions 13 and 14; not T-ids) ─────────
+test("35.1 follow-up (35.5 ask 1): 2.3's reversal on the payments version projects one payment_reversals row — reason, return code and the first mirror set copied; a re-projection is a no-op", { skip }, async () => {
+  const f = await loanFixture(); const paymentId = randomUUID();
+  await receivePayment(runtime, f, paymentId); await postPayment(runtime, f, paymentId);
+  const [alloc] = await db.query<{ ledger_entry_set_id: string }>(`SELECT ledger_entry_set_id FROM payment_allocations WHERE payment_id = $1 ORDER BY sequence LIMIT 1`, [paymentId]);
+  assert.ok(alloc?.ledger_entry_set_id, "the posted payment's first allocation set");
+  const reversedAt = "2026-09-20T15:00:00.000Z";
+  const reverse = (name: string) => runtime.executeDef(testTool(name, (_i, ctx, trt) => { const prev = trt.store.get("payments", paymentId)!; trt.store.put("payments", paymentId, { ...prev.data, status: "reversed", reversal: { reason: "returned_item", return_code: "R01", reversed_at: reversedAt, entry_set_ids: [alloc!.ledger_entry_set_id] } }, ctx.actor, ctx.now); return {}; }), { loanId: f.loanId, actor: RECORDS, input: {} });
+  await reverse("c4-reverse");
+  const rows = await db.query<{ reason: string; return_code: string; ledger_entry_set_id: string; reversed_at: Date; decision_id: string | null }>(`SELECT reason::text AS reason, return_code, ledger_entry_set_id, reversed_at, decision_id FROM payment_reversals WHERE payment_id = $1`, [paymentId]);
+  assert.equal(rows.length, 1);
+  assert.deepEqual([rows[0]!.reason, rows[0]!.return_code, rows[0]!.ledger_entry_set_id, rows[0]!.decision_id], ["returned_item", "R01", alloc!.ledger_entry_set_id, null]);
+  assert.equal(new Date(rows[0]!.reversed_at).toISOString(), reversedAt);
+  const [proj] = await db.query<{ target_table: string }>(`SELECT target_table FROM entity_projections WHERE kind = 'payments' AND entity_id = $1 ORDER BY version DESC LIMIT 1`, [paymentId]);
+  assert.equal(proj!.target_table, "payments/payment_reversals", "the reversed version wrote the child row; its allocations were already there (DO NOTHING)");
+  // the same reversal on a later version: ON CONFLICT (payment_id, reversed_at) DO NOTHING — still one row (rule 4)
+  await reverse("c4-reverse-again");
+  assert.equal(await count(db, `FROM payment_reversals WHERE payment_id = $1`, [paymentId]), 1);
+  assert.equal(await count(db, `FROM payments WHERE id = $1 AND status = 'reversed'`, [paymentId]), 1);
+});
+
+test("35.1 follow-up (35.5 asks 3 and 4): the autodraft_enrollments and suspense_items maps are authored against 0003's columns — a version that lacks a NOT NULL column is a schema_mismatch gap naming the column, never a guessed row; extra JSON fields ride along unmapped", { skip }, () => {
+  const enrollment = { enrollment_id: "enr-1", loan_id: randomUUID(), status: "active", authorization: { borrower_name: "Alex Borrower", routing: "021000021", account_last4: "1234", amount_rule: "full_periodic_payment", account_type: "checking" }, draft_day: 1, extra_principal_cents: "0", next_draft_on: "2026-10-01", validation_status: "pending" };
+  const c = classifyVersion({ kind: "autodraft_enrollments", id: "enr-1", version: 1, data: enrollment, updatedAt: NOW, updatedBy: "test" } as never);
+  assert.equal(c?.reason, "schema_mismatch"); assert.equal(c?.detail["column"], "borrower_id", "2.3's version carries no borrower_id (the first NOT NULL column it lacks)");
+  const lockbox = { loan_id: null, custodial_account_id: randomUUID(), source: "lockbox", reason_code: "unidentified_loan", amount_cents: "204512", received_on: "2026-09-16", status: "open", batch_id: "LB-2026-09-16-1", item_no: 7, receipt_entry_set_id: randomUUID() };
+  assert.equal(classifyVersion({ kind: "suspense_items", id: randomUUID(), version: 1, data: lockbox, updatedAt: NOW, updatedBy: "test" } as never), null, "35.5's lockbox suspense row projects; batch_id / item_no / receipt_entry_set_id stay in the JSON version");
+  const nsf = { loan_id: randomUUID(), fee_type: "nsf_fee", amount_cents: "2500", assessed_on: "2026-09-16", state: "assessed", returned_item_payment_id: randomUUID() };
+  assert.equal(classifyVersion({ kind: "fees", id: randomUUID(), version: 1, data: nsf, updatedAt: NOW, updatedBy: "test" } as never), null, "an nsf_fee with returned_item_payment_id projects; the extra field is unmapped");
+  for (const t of ["loan_installments", "lockbox_items", "ach_entries", "sweep_runs"]) assert.ok(TYPED_AT_SOURCE_TABLES.has(t), `${t} is declared typed-at-source (never compared by record.verify)`);
+});
+
+test("35.1 follow-up (35.5 ask 6, 35.3 asks A2 and A3): a per-adapter completion hook runs inside the dispatch transaction on ack (the section appends its own event); a failing hook never undoes the ack; Runtime.databaseUrl and Runtime.sweepRunId are exposed", { skip }, async () => {
+  const clk = new FixedClock("2026-09-16T14:00:00.000Z");
+  const side = await sideRuntime("c4", {}, clk);
+  try {
+    let runIdSeen = "";
+    const completions = new Map<string, OutboxCompletion>([
+      ["nacha", async (io, m, r) => { const p = m.payload as Record<string, unknown>; runIdSeen = io.runId ?? ""; io.events.append({ type: "ach.file.transmitted", aggregate: { kind: "ach_file", id: String(p["file_id"]) }, actor: { kind: "system", id: "sweep" }, payload: { file_id: p["file_id"], message_id: m.id, attempt: r.attempt, transmitted_at: io.now } }); await io.q.query(`SELECT 1`); }],
+      ["hooked", async () => { throw new Error("section bookkeeping failed"); }],
+    ]);
+    const rt = side.make({ databaseUrl: "postgresql://sm:sm@localhost/c4", outboxAdapters: new Map<string, OutboundAdapter>([["nacha", fakePortAdapter("nacha", side.rt.ports.printMail, "nacha_manual")], ["hooked", fakePortAdapter("hooked", side.rt.ports.printMail, "hooked_manual")]]), outboxCompletions: completions });
+    assert.equal(rt.databaseUrl, "postgresql://sm:sm@localhost/c4"); assert.equal(side.rt.databaseUrl, null); assert.equal(rt.sweepRunId, null);
+    const outbox = new PgOutbox(side.db);
+    const ach = (await outbox.enqueue({ adapter: "nacha", idempotencyKey: `c4-ach-${randomUUID()}`, payload: { file_id: "ACH-2026-09-16-1", file_name: "SM20260916.ach", document_id: randomUUID() }, payloadSummary: { kind: "ach_file" } }, clk.now())).message;
+    const hooked = (await outbox.enqueue({ adapter: "hooked", idempotencyKey: `c4-hooked-${randomUUID()}`, payload: { notice: "NTC_TEST", to: "1 Test St" }, payloadSummary: { kind: "test" } }, clk.now())).message;
+    const r = await rt.sweep(clk.now(), { verify: false });
+    assert.equal(r.outcome, "completed"); assert.equal(r.outbox_dispatch?.sent, 2); assert.equal(runIdSeen, r.run_id, "the hook sees the sweep run id"); assert.equal(rt.sweepRunId, null, "cleared after the run");
+    const [ev] = await side.db.query<{ payload: Record<string, unknown> }>(`SELECT payload FROM loan_events WHERE type = 'ach.file.transmitted' AND payload->>'message_id' = $1`, [ach.id]);
+    assert.equal(ev?.payload["file_id"], "ACH-2026-09-16-1"); assert.equal(ev?.payload["attempt"], 1);
+    for (const m of [ach, hooked]) assert.equal((await side.db.query<{ status: string }>(`SELECT status FROM integration_messages WHERE id = $1`, [m.id]))[0]!.status, "acked");
+    assert.equal(await count(side.db, `FROM loan_events WHERE type = 'integration.message.completion_failed' AND payload->>'message_id' = $1`, [hooked.id]), 1, "the failing hook is recorded beside the ack, never rolls it back");
+    assert.equal(await count(side.db, `FROM loan_events WHERE type = 'integration.message.sent' AND payload->>'message_id' = $1`, [hooked.id]), 1);
+  } finally { await side.close(); }
 });

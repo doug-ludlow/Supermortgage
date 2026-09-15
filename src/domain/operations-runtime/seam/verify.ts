@@ -16,7 +16,7 @@ import { decodeEntityData } from "../../../infra/db/entities.ts";
 import type { EntityRecord } from "../../../app/tools.ts";
 import type { EscalationService } from "../../../app/escalations.ts";
 import type { Actor, DomainEvent } from "../../../kernel/events/index.ts";
-import { PROJECTORS, projectorFor } from "../projectors/index.ts";
+import { PROJECTORS, TYPED_AT_SOURCE_TABLES, projectorFor } from "../projectors/index.ts";
 import type { ColumnSpec, ProjectorMap } from "../projectors/types.ts";
 import { columnValue, isMoneyColumn } from "./project.ts";
 import { gapsReport } from "./replay.ts";
@@ -30,7 +30,7 @@ export interface VerifyContext {
 }
 export interface VerifyInput { readonly as_of_date: string; readonly kinds?: readonly string[] | null; readonly sample?: number; }
 export interface MismatchRow { readonly id: string; readonly kind: string; readonly entity_id: string; readonly scope_key: string; readonly version: number; readonly target_table: string; readonly target_id: string | null; readonly column_name: string; readonly is_money: boolean; readonly json_value: string | null; readonly row_value: string | null; readonly escalation_id: string; readonly owner: string; }
-export interface VerifyReport { readonly run_id: string; readonly as_of_date: string; readonly outcome: "completed"; readonly kinds_checked: number; readonly rows_verified: number; readonly mismatches: number; readonly gaps: number; readonly gap_rows: { kind: string; reason: string; versions_unprojected: number }[]; readonly mismatch_rows: MismatchRow[]; readonly event: DomainEvent; }
+export interface VerifyReport { readonly run_id: string; readonly as_of_date: string; readonly outcome: "completed"; readonly typed_at_source_excluded: readonly string[]; readonly kinds_checked: number; readonly rows_verified: number; readonly mismatches: number; readonly gaps: number; readonly gap_rows: { kind: string; reason: string; versions_unprojected: number }[]; readonly mismatch_rows: MismatchRow[]; readonly event: DomainEvent; }
 
 type ProjRow = { projection_id: string; kind: string; entity_id: string; scope_key: string; version: number; target_table: string; target_id: string | null; data: unknown };
 
@@ -133,7 +133,7 @@ export async function verifyRun(ctx: VerifyContext, i: VerifyInput): Promise<Ver
   }
   // the receipt SM_PROJECTION_LAG_DAILY arms on and is satisfied by (a platform clock on the global subject; src/kernel/timers/engine.ts exempts §35 from the origination-context rule)
   const event = ctx.events.append({ type: "projection.run_completed", aggregate: { kind: "projection_run", id: runId }, actor: ctx.actor, payload: { run_id: runId, as_of_date: i.as_of_date, kinds_checked: kinds.length, rows_verified: rowsVerified, mismatches: mismatchRows.length, gaps: gapRows.length, started_at: startedAt, finished_at: finishedAt } });
-  return { run_id: runId, as_of_date: i.as_of_date, outcome: "completed", kinds_checked: kinds.length, rows_verified: rowsVerified, mismatches: mismatchRows.length, gaps: gapRows.length, gap_rows: gapRows.map((g) => ({ kind: g.kind, reason: g.reason, versions_unprojected: g.versions_unprojected })), mismatch_rows: mismatchRows, event };
+  return { run_id: runId, as_of_date: i.as_of_date, outcome: "completed", typed_at_source_excluded: [...TYPED_AT_SOURCE_TABLES].sort(), kinds_checked: kinds.length, rows_verified: rowsVerified, mismatches: mismatchRows.length, gaps: gapRows.length, gap_rows: gapRows.map((g) => ({ kind: g.kind, reason: g.reason, versions_unprojected: g.versions_unprojected })), mismatch_rows: mismatchRows, event };
 }
 
 /** A failed run inserts `failed` and no event (rule: "a failed run inserts failed and no event") — on its own connection, after the run's transaction rolled back. */

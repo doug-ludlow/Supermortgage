@@ -56,7 +56,7 @@ const rateFeed = rateFeedFromEnv(process.env); const reviewers = fakeReviewersFr
 // the demo clock (docs/DEPLOY.md "The demo clock"; src/runtime/demo-clock.ts): outside production every mode — serve, sweep, seed-demo — runs on the system clock plus the persisted demo offset (the latest demo_clock row), so the API, the sweep job and the flows agree on the instant; production is the system clock, full stop
 const demoClock = config.environment === "production" ? null : await loadDemoClock(db, { logger });
 const clock = demoClock ?? systemClock;
-const runtime = new Runtime({ db, registry: loadOverriddenRegistry(), rateFeed, reviewers, logger, clock });
+const runtime = new Runtime({ db, databaseUrl: config.databaseUrl, registry: loadOverriddenRegistry(), rateFeed, reviewers, logger, clock });
 
 if (mode === "sweep") {
   try {

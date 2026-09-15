@@ -32,6 +32,17 @@ function order(maps: readonly ProjectorMap[]): ProjectorMap[] {
 const ORDERED = order(ALL);
 for (const m of ORDERED) if (ALL.filter((x) => x.kind === m.kind).length > 1) throw new RangeError(`two projector maps for kind ${m.kind}`);
 
+/**
+ * Tables a section writes typed at source — no JSON kind, no map, never compared by the verify run (35.5's cashiering
+ * cycle set as its plan declares it, and the seam's own evidence). Declared here, not assumed: a map onto one of them is
+ * refused at startup, and `record.verify` reports the list as `typed_at_source_excluded`.
+ */
+export const TYPED_AT_SOURCE_TABLES: ReadonlySet<string> = new Set([
+  "loan_installments", "installment_schedule_runs", "loan_servicing_configs", "servicer_profiles", "cashiering_unit_runs", "lockbox_batches", "lockbox_items", "ach_files", "ach_entries", "ach_returns", "ach_nocs", "ach_return_files",
+  "entity_projections", "entity_keys", "projection_runs", "projection_gaps", "projection_mismatches", "service_snapshots", "sweep_runs", "outbox_dispatches",
+]);
+for (const m of ORDERED) if (TYPED_AT_SOURCE_TABLES.has(m.table)) throw new RangeError(`projector ${m.kind} maps onto ${m.table}, a typed-at-source table (35.1: no JSON kind, never compared)`);
+
 /** Every authored map, in the order a command runs them. */
 export const PROJECTORS: readonly ProjectorMap[] = ORDERED;
 export const PROJECTOR_BY_KIND: ReadonlyMap<string, ProjectorMap> = new Map(ORDERED.map((m) => [m.kind, m]));

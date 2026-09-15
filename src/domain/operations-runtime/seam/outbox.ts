@@ -23,7 +23,7 @@ import { Dispatcher, DEFAULT_RETRY, type DispatchOutcome, type OutboundAdapter, 
 import { AdapterUnavailable } from "../../../infra/integrations/failures.ts";
 import { LsduOutboundAdapter } from "../../../infra/integrations/fnma.ts";
 import type { Ports } from "../../../app/tools.ts";
-import { MemoryEventStore, type Actor, type Clock, type DomainEvent } from "../../../kernel/events/index.ts";
+import { MemoryEventStore, type Actor, type Clock, type DomainEvent, type EventStore } from "../../../kernel/events/index.ts";
 import { TimerEngine } from "../../../kernel/timers/engine.ts";
 import type { TimerRegistry } from "../../../kernel/timers/registry.ts";
 
@@ -66,7 +66,17 @@ export function portAdapters(ports: Partial<Ports>): Map<string, OutboundAdapter
 
 export interface DrainCounts { claimed: number; sent: number; retried: number; dead: number; rejected: number; fallback: number; }
 export interface DrainReport extends DrainCounts { readonly at: string; readonly adapters: { adapter: string; claimed: number; sent: number; retried: number; dead: number; rejected: number; fallback: number }[]; readonly events: DomainEvent[]; }
-export interface DrainDeps { readonly db: Db; readonly registry: TimerRegistry; readonly clock: Clock; readonly ports: Partial<Ports>; readonly adapters?: ReadonlyMap<string, OutboundAdapter>; readonly notify?: (events: readonly DomainEvent[]) => void; }
+/** What a completion hook sees: the dispatch transaction, the events it may append (persisted with the ack), the instant and the sweep run. */
+export interface OutboxCompletionIo { readonly q: Queryable; readonly events: EventStore; readonly now: string; readonly runId: string | null; }
+export interface OutboxCompletionResult { readonly outcome: "acked"; readonly attempt: number; readonly response: unknown; }
+/**
+ * A section's per-adapter completion hook (35.5's NACHA transmit: on `accepted` it appends `ach.file.transmitted` and sets
+ * `ach_files.transmitted_at`). It runs inside the dispatch transaction after the message is acked, under a savepoint: a hook
+ * that throws is rolled back to the savepoint and recorded as `integration.message.completion_failed` — the counterparty
+ * accepted the message, so the ack stands and nothing is re-sent.
+ */
+export type OutboxCompletion = (io: OutboxCompletionIo, message: OutboxMessage, result: OutboxCompletionResult) => Promise<void> | void;
+export interface DrainDeps { readonly db: Db; readonly registry: TimerRegistry; readonly clock: Clock; readonly ports: Partial<Ports>; readonly adapters?: ReadonlyMap<string, OutboundAdapter>; readonly completions?: ReadonlyMap<string, OutboxCompletion>; readonly notify?: (events: readonly DomainEvent[]) => void; }
 export interface DrainOptions { readonly adapter?: string | null; readonly limit?: number; readonly runId?: string | null; }
 
 const sha = (v: unknown): string | null => (v === undefined ? null : createHash("sha256").update(toJson(v)).digest("hex"));
@@ -109,7 +119,15 @@ export async function drainOutbox(deps: DrainDeps, nowIso: string, o: DrainOptio
         await q.query(`INSERT INTO outbox_dispatches (id, message_id, attempt_no, run_id, adapter, started_at, finished_at, outcome, failure_kind, error, response_sha256, next_attempt_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
           [randomUUID(), m.id, attemptNo, o.runId ?? null, name, startedAt, finishedAt, r.outcome, r.failure ?? null, r.message.error ?? null, sha(r.message.response), r.message.nextAttemptAt ?? null]);
         const aggregate = { kind: "integration_message", id: m.id };
-        if (r.outcome === "acked") { counts.sent++; events.append({ type: "integration.message.sent", aggregate, actor: SWEEP_ACTOR, payload: { message_id: m.id, adapter: name, attempt: attemptNo, loan_id: m.loanId ?? null, idempotency_key: m.idempotencyKey, sent_at: nowIso } }); }
+        if (r.outcome === "acked") {
+          counts.sent++; events.append({ type: "integration.message.sent", aggregate, actor: SWEEP_ACTOR, payload: { message_id: m.id, adapter: name, attempt: attemptNo, loan_id: m.loanId ?? null, idempotency_key: m.idempotencyKey, sent_at: nowIso } });
+          const hook = deps.completions?.get(name);
+          if (hook) {
+            await q.query("SAVEPOINT outbox_completion");
+            try { await hook({ q, events, now: nowIso, runId: o.runId ?? null }, r.message, { outcome: "acked", attempt: attemptNo, response: r.message.response }); await q.query("RELEASE SAVEPOINT outbox_completion"); }
+            catch (e) { await q.query("ROLLBACK TO SAVEPOINT outbox_completion"); events.append({ type: "integration.message.completion_failed", aggregate, actor: SWEEP_ACTOR, payload: { message_id: m.id, adapter: name, attempt: attemptNo, error: e instanceof Error ? e.message : String(e) } }); }
+          }
+        }
         else if (r.outcome === "retry") counts.retried++;
         else if (r.outcome === "rejected") { counts.rejected++; events.append({ type: "integration.message.rejected", aggregate, actor: SWEEP_ACTOR, payload: { message_id: m.id, adapter: name, attempts: attemptNo, error: r.message.error ?? null, loan_id: m.loanId ?? null } }); }
         else { if (r.outcome === "dead") counts.dead++; else counts.fallback++; events.append({ type: "integration.message.dead", aggregate, actor: SWEEP_ACTOR, payload: { message_id: m.id, adapter: name, attempts: attemptNo, error: r.message.error ?? null, dead_at: nowIso, failure: r.failure ?? null, outcome: r.outcome, human_portal_task_id: r.task?.id ?? null, loan_id: m.loanId ?? null } }); }

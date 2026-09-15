@@ -25,7 +25,7 @@ import { applySatisfiedOverrides_13_1 } from "../foreclosure/timers-13-1.ts";
 import { referralEligible, type Gates } from "../foreclosure/referral.ts";
 import { applyTransferTimerOverrides } from "./timers.ts";
 import { applySatisfiedOverrides_1_7 } from "./timers-1-7.ts";
-import { deemedReceived, transfereeAckDue, transfereeEvaluationDue, transfereeAppealDue, honorTransferorOffer, forbearanceCarryover, firstFilingGate } from "./lossmit-inflight.ts";
+import { deemedReceived, transfereeAckDue, transfereeEvaluationDue, transfereeAppealDue, honorTransferorOffer, forbearanceCarryover, forbearanceLimbs, firstFilingGate } from "./lossmit-inflight.ts";
 import { runCarryoverChecks, borrowerRequestAllowed, denialSendGate, reissueTimersForRuleSet, verifyCarryover, requestFromTransferor, appealReceived, assignAppealReviewer, honorTransferorOfferCase, CARRYOVER_CHECKS, type TransferorLossmitFile } from "./inbound.ts";
 import { inflightBoardingFacts, openInheritedCase, seedDelinquencyCounters, verifyBatchCarryover, smduCaseAccessChecked, closeAppealWindow, expireTransferorOffer, foreclosureReferralGate, type InheritedLossmitFile } from "./ops-1-7.ts";
 const REVIEWER = { kind: "human" as const, id: "u-rev", role: "lossmit_reviewer" };
@@ -235,13 +235,29 @@ test("1.7-T7: Given a transferor file missing the application's received date, t
   assert.equal(out.verified, true); assert.equal(k.rt.store.list("lossmit_carryover_checks").length, 10);
   await assert.rejects(k.run("requestFromTransferor", { case_id: "C-7", items: ["CO-02"], ask_borrower: true }), (e: unknown) => e instanceof CommandRefused && e.code === "TRANSFEROR_BEFORE_BORROWER");
 });
-test("1.7-T8: Given a forbearance history of 9 cumulative months starting Feb. 1, 2026, then a 3-month extension is allowed and a further extension is refused by `FNMA_LL_2026_01_FORBEARANCE_CUMULATIVE_12M` without an exception record.", () => {
+test("1.7-T8: Given a forbearance history of 9 cumulative months starting Feb. 1, 2026, then a 3-month extension is allowed and a further extension is refused by `FNMA_LL_2026_01_FORBEARANCE_CUMULATIVE_12M` without an exception record.", async () => {
+  // Servicing Guide D2-3.2-01 (04/08/2026; carries the LL-2026-01 rule): "must not be extended beyond a date that would exceed a cumulative term of 12 months as measured from the start date of the initial forbearance plan, or result in the mortgage loan becoming greater than 12 months delinquent" — two independent limbs.
+  // Limb 1 (cumulative 12 months from the Feb 1, 2026 initial start): 9 + 3 = 12 allowed; 12 + 3 refused; 9 + 6 → 3 months of room.
   assert.deepEqual(forbearanceCarryover(9, 3), { allowed_months: 3, exception_required: false });
   assert.deepEqual(forbearanceCarryover(12, 3), { allowed_months: 0, exception_required: true });
   assert.deepEqual(forbearanceCarryover(9, 6), { allowed_months: 3, exception_required: true });
-  assert.equal(evaluateGate("1.7.forbearanceCumulativeWithin12Months", { cumulative_months: 9, requested_months: 3 }).open, true);
-  const refused = evaluateGate("1.7.forbearanceCumulativeWithin12Months", { cumulative_months: 12, requested_months: 3 }); assert.equal(refused.open, false); assert.match(refused.reason!, /LL-2026-01/);
-  assert.equal(evaluateGate("1.7.forbearanceCumulativeWithin12Months", { cumulative_months: 12, requested_months: 3, fnma_exception_approved: true }).open, true);
+  // Limb 2 (not "greater than 12 months delinquent" at term end): the same 3-month extension of the 9-month history is allowed at 9 months delinquent (12 at term end) and refused at 10 (13 at term end) although the cumulative limb is met.
+  assert.deepEqual(forbearanceCarryover(9, 3, 9), { allowed_months: 3, exception_required: false });
+  assert.deepEqual(forbearanceCarryover(9, 3, 10), { allowed_months: 2, exception_required: true });
+  assert.deepEqual(forbearanceLimbs(9, 3, 10), { cumulative_room: 3, delinquency_room: 2, room: 2, projected_months_delinquent_at_term_end: 13, breached: ["delinquency_12m"] });
+  assert.deepEqual(forbearanceLimbs(12, 3, 9).breached, ["cumulative_12m"]); assert.deepEqual(forbearanceLimbs(12, 3, 10).breached, ["cumulative_12m", "delinquency_12m"]);
+  assert.equal(evaluateGate("1.7.forbearanceCumulativeWithin12Months", { cumulative_months: 9, requested_months: 3, months_delinquent_at_start: 9 }).open, true);
+  const refused = evaluateGate("1.7.forbearanceCumulativeWithin12Months", { cumulative_months: 12, requested_months: 3, months_delinquent_at_start: 9 }); assert.equal(refused.open, false); assert.match(refused.reason!, /12 months from the initial plan start.*D2-3\.2-01; LL-2026-01/);
+  const delq = evaluateGate("1.7.forbearanceCumulativeWithin12Months", { cumulative_months: 9, requested_months: 3, months_delinquent_at_start: 10 }); assert.equal(delq.open, false); assert.match(delq.reason!, /13 months delinquent at term end — greater than 12 months delinquent/);
+  assert.equal(evaluateGate("1.7.forbearanceCumulativeWithin12Months", { cumulative_months: 9, requested_months: 3, projected_months_delinquent_at_term_end: 12 }).open, true);
+  assert.equal(evaluateGate("1.7.forbearanceCumulativeWithin12Months", { cumulative_months: 9, requested_months: 3, projected_months_delinquent_at_term_end: 13 }).open, false);
+  assert.match(evaluateGate("1.7.forbearanceCumulativeWithin12Months", { cumulative_months: 9, requested_months: 3 }).reason!, /projected delinquency at term end unknown/);   // limb 2 is measured, never assumed
+  assert.equal(evaluateGate("1.7.forbearanceCumulativeWithin12Months", { cumulative_months: 12, requested_months: 3, months_delinquent_at_start: 10, fnma_exception_approved: true }).open, true);   // Fannie Mae's written approval (Forbearance Exception Request Template) opens the gate
+  assert.throws(() => assertGate("1.7.forbearanceCumulativeWithin12Months", { cumulative_months: 9, requested_months: 3, months_delinquent_at_start: 10 }), GateClosed);
+  // On the bus: evaluateOptions reports the room under both limbs when the delinquency at the increment's start is supplied.
+  const k = bus("2026-11-02T14:00:00.000Z", "L-8");
+  assert.deepEqual(((await k.run("evaluateOptions", { cumulative_forbearance_months: 9, requested_months: 3, months_delinquent_at_start: 10 })).output as { forbearance: unknown }).forbearance, { allowed_months: 2, exception_required: true });
+  assert.deepEqual(((await k.run("evaluateOptions", { cumulative_forbearance_months: 9, requested_months: 3, months_delinquent_at_start: 9 })).output as { forbearance: unknown }).forbearance, { allowed_months: 3, exception_required: false });
   // The gate arms from the real boarding path on the transferor's forbearance history (anchor = initial start date).
   const b = boardInherited({ application_present: true, application_received_on: D("2026-01-15"), completeness: "complete", ack_sent_on: D("2026-01-20"), ack_copy_document_id: "doc-ack", determination: { kind: "offer", sent_on: D("2026-01-28"), notice_document_id: "doc-offer" }, offer: { option: "forbearance", offered_at: D("2026-01-28"), acceptance_deadline: D("2026-02-11"), terms: { payment_cents: 0n } }, borrower_response: "accepted", forbearance_history: { initial_start_date: D("2026-02-01"), cumulative_months: 9, increments: [{ start: D("2026-02-01"), months: 3 }, { start: D("2026-05-01"), months: 3 }, { start: D("2026-08-01"), months: 3 }] } }, { application_status: "forbearance" });
   assert.deepEqual(b.payload.forbearance_history, { initial_start_date: "2026-02-01", cumulative_months: 9, increments: [{ start: "2026-02-01", months: 3 }, { start: "2026-05-01", months: 3 }, { start: "2026-08-01", months: 3 }] });

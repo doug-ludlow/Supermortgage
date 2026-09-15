@@ -363,7 +363,13 @@ function requestWithImminentDefault_11_5(i: ToolInput, ctx: CommandContext, rt: 
   const credit = f.credit && typeof f.credit === "object" && !Array.isArray(f.credit) ? (f.credit as Record<string, unknown>) : null;
   const e: ImminentDefaultEvaluation = { evaluation_date: evaluationDate, regx_days_delinquent: Number(f.regx_days_delinquent ?? 0), principal_residence: f.principal_residence !== false, brp_complete: f.brp_complete === true, oldest_doc_date: typeof f.oldest_doc_date === "string" ? D(f.oldest_doc_date) : evaluationDate, cash_reserves_cents: cents(f.cash_reserves_cents), hardship_type: typeof f.hardship_type === "string" ? f.hardship_type : null, hardship_documented: f.hardship_documented === true,
     ...(typeof f.pcs_distance_miles === "number" ? { pcs_distance_miles: f.pcs_distance_miles } : {}), ...(typeof f.was_principal_residence === "boolean" ? { was_principal_residence: f.was_principal_residence } : {}),
-    credit: credit ? { scores: Array.isArray(credit.scores) ? (credit.scores as number[]) : [], fico_date: D(String(credit.fico_date ?? evaluationDate)), delinquencies_30_in_6m: Number(credit.delinquencies_30_in_6m ?? 0), pitia_cents: cents(credit.pitia_cents), gross_income_cents: cents(credit.gross_income_cents) } : null };
+    // 11.5 rule 5: scores per borrower (the lowest representative score across all borrowers), the installment history the
+    // six-calendar-month delinquency window is counted from, and the F-1-12 housing expense (MI excluded) over gross income
+    credit: credit ? { scores: Array.isArray(credit.scores) ? (credit.scores as number[]) : [],
+      ...(Array.isArray(credit.borrowers) ? { borrowers: (credit.borrowers as Record<string, unknown>[]).map((b) => ({ ...(typeof b.borrower_id === "string" ? { borrower_id: b.borrower_id } : {}), scores: Array.isArray(b.scores) ? (b.scores as number[]) : [], ...(typeof b.income_used === "boolean" ? { income_used: b.income_used } : {}) })) } : {}),
+      fico_date: D(String(credit.fico_date ?? evaluationDate)), delinquencies_30_in_6m: Number(credit.delinquencies_30_in_6m ?? 0),
+      ...(Array.isArray(credit.delinquencies) ? { delinquencies: (credit.delinquencies as Record<string, unknown>[]).map((d) => ({ due_date: D(String(d.due_date)), max_days_past_due: Number(d.max_days_past_due ?? 0) })) } : {}),
+      housing_expense_cents: cents(credit.housing_expense_cents), gross_income_cents: cents(credit.gross_income_cents) } : null };
   const result = evaluateImminentDefault(e);
   const all = imminentDefaultEvents(e, result, { loan_id: loanId, ...(str(i, "state") ? { state: str(i, "state") } : {}), ai_influenced: i.ai_influenced !== false, brp_complete_on: typeof f.brp_complete_on === "string" ? D(f.brp_complete_on) : null });
   const awaitBrp = !e.brp_complete && f.await_brp !== false && result.outcome !== "rerouted_delinquent";

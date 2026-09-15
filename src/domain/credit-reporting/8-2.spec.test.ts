@@ -24,7 +24,7 @@ import { EntityStore, toolCommand, type ToolRuntime, type ToolInput } from "../.
 import { SECTION_08_TOOLS } from "../../app/tools/section08.ts";
 import { buildSnapshot, renderBase } from "./metro2.ts";
 import { CreditCycleRunner, CreditReportingRefused, applyOverlayCodes, oralDisputeIntake, linkedNoeDispute, audAndCycle, type BureauConfig } from "./ops.ts";
-import { DisputeCaseRunner, DisputeRefused, xbGateAssertion, etDate, RESULTS_TEMPLATE, FRIVOLOUS_TEMPLATE, RESPONSE_CODES } from "./ops-8-2.ts";
+import { DisputeCaseRunner, DisputeRefused, xbGateAssertion, etDate, rederivedCorrections, RESULTS_TEMPLATE, FRIVOLOUS_TEMPLATE, RESPONSE_CODES } from "./ops-8-2.ts";
 import { ACDV_RETURNED_STATUS, ACDV_SUBMITTED_STATUS, ACDV_NO_RESPONSE_STATUS, acdvClocks, type Bureau } from "./disputes.ts";
 import type { CreditLoanState, PriorHistory, Metro2Snapshot } from "./types.ts";
 
@@ -40,9 +40,10 @@ const RECIPIENTS = [{ partyId: "A", name: "Borrower A", mailingAddress: "1 Main 
 const PI = cents("1847.15"), ESCROW = cents("612.40"), PITI = PI + ESCROW;
 const RATE = ratePercent("6.25");
 function schedule(from: string, n: number) { return Array.from({ length: n }, (_, i) => ({ due_date: addMonths(D(from), i), amount_cents: PITI })); }
-function ledger(paidThrough: string): readonly AppliedInstallment[] {
+function ledger(paidThrough: string, extra: { received_on: string; amount_cents: bigint }[] = []): readonly AppliedInstallment[] {
   const inst = schedule("2025-03-01", 40);
-  return applyFifo(inst, inst.filter((i) => i.due_date <= D(paidThrough)).map((i) => ({ received_on: i.due_date, amount_cents: PITI }))).installments;
+  const pays = inst.filter((i) => i.due_date <= D(paidThrough)).map((i) => ({ received_on: i.due_date, amount_cents: PITI }));
+  return applyFifo(inst, [...pays, ...extra.map((e) => ({ received_on: D(e.received_on), amount_cents: e.amount_cents }))]).installments;
 }
 function state(asOf: string, installments: readonly AppliedInstallment[], prior: PriorHistory | Metro2Snapshot | null, over: Partial<CreditLoanState> = {}): CreditLoanState {
   return {
@@ -54,6 +55,14 @@ function state(asOf: string, installments: readonly AppliedInstallment[], prior:
   };
 }
 const PRIOR: PriorHistory = { php: "0".repeat(24), status: "11", dofd: null };
+/** 8.1 rule 1 re-derived month by month for the disputed period (8.2 rule 3(i)): Jan-31 → Feb-28 → Mar-31 → Apr-30, each carrying the prior snapshot's PHP (8.1 rule 4). */
+function rederive(led: readonly AppliedInstallment[], paidInFeb = 0n): Record<"feb" | "mar" | "apr", Metro2Snapshot> {
+  const jan = buildSnapshot(state("2027-01-31", led, PRIOR));
+  const feb = buildSnapshot(state("2027-02-28", led, jan, { payments_in_month_cents: paidInFeb, last_payment_on: paidInFeb > 0n ? D("2027-02-05") : D("2027-01-01") }));
+  const mar = buildSnapshot(state("2027-03-31", led, feb, { payments_in_month_cents: 0n }));
+  const apr = buildSnapshot(state("2027-04-30", led, mar, { payments_in_month_cents: 0n }));
+  return { feb, mar, apr };
+}
 /** SM-1001 current as of 2027-08-31 — the 8.1 snapshot logic the ACDV response is generated from (rule 4). */
 const currentSnapshot = (loanId = "SM-1001"): Metro2Snapshot => ({ ...buildSnapshot(state("2027-08-31", ledger("2027-08-01"), PRIOR)), loan_id: loanId });
 /** The rule-10 ACDV: control 2027091500123 from Experian, "disputes payment history", one check-copy image; CRA received 2027-09-12; Response Due Date 2027-10-01. */
@@ -144,32 +153,65 @@ test("8.2-T1: (ACDV happy path) Given an ACDV with Response Due Date 2027-10-01 
   assert.deepEqual(w.engine.evaluate("2027-10-02T04:00:00.000Z").map((b) => b.instance.code), ["SM_ACDV_POLL_15M"]);
 });
 
-test('8.2-T2: (ACDV modify + fan-out) Given lockbox evidence of a misposted Feb-5 deposit, then response "modify" with corrected Feb/Mar statuses, AUDs to the other three bureaus within 2 BD, `credit_reporting_corrections` and `payment.reapplied` posted, late charge reversed.', async () => {
+test('8.2-T2: (ACDV modify + fan-out) Given lockbox evidence of a misposted Feb-5 deposit, then response "modify" with corrected DOFD (03012027) and Amount Past Due (000002459 at 03-31, 000004919 at 04-30) while statuses 71/78 and the March PHP `1` are unchanged, AUDs to the other three bureaus within 2 BD, `credit_reporting_corrections` and `payment.reapplied` posted, late charge reversed.', async () => {
   const w = world(RECEIVED_AT);
   const id = await w.intake(acdvOf("2027091500124"));
   w.runner.recordEvidence({ dispute_id: id, evidence: [{ evidence_type: "payment_image", document_id: "doc-lockbox-deposit-2027-02-05", relied_upon: true }, { evidence_type: "allocation_trace", system_snapshot_id: "snap-suspense-2027-02-05", relied_upon: true }] });
-  const inv = w.runner.investigate({ dispute_id: id, determination: "modified", confidence: 0.95, requested_at: RECEIVED_AT, findings: [{ claim: "my February 2027 payment was mailed on Feb 3", finding: "the lockbox shows the $2,459.55 check deposited 2027-02-05 and misposted to suspense", effect: "changes_outcome", why: "the Feb-1 installment was paid within the grace period; Feb/Mar statuses 71 were wrong" }] });
+  // rule 3(i): the disputed months re-derived from primary records with 8.1 rule 1 — as furnished (Feb-1 unpaid) vs the lockbox truth
+  // (the $2,459.55 check received 2027-02-05 satisfies Feb-1 inside the grace period, so Mar-1 becomes the earliest unpaid installment)
+  const furnished = rederive(ledger("2027-01-01"));
+  const truth = rederive(ledger("2027-01-01", [{ received_on: "2027-02-05", amount_cents: 245955n }]), 245955n);
+  // 02-28: 11 either way with DOFD blank; Amount Past Due 2,459.55 → 0
+  assert.equal(furnished.feb.account_status, "11"); assert.equal(truth.feb.account_status, "11"); assert.equal(furnished.feb.dofd, null); assert.equal(truth.feb.dofd, null);
+  assert.equal(furnished.feb.amount_past_due_cents, 245955n); assert.equal(truth.feb.amount_past_due_cents, 0n);
+  // 03-31: 58 → 30 days past due — both in the 30–59 bucket → 71; DOFD 02012027 → 03012027; Amount Past Due 4,919.10 → 2,459.55
+  assert.deepEqual([furnished.mar.days_past_due, truth.mar.days_past_due], [58, 30]);
+  assert.equal(furnished.mar.account_status, "71"); assert.equal(truth.mar.account_status, "71");
+  assert.equal(furnished.mar.dofd, D("2027-02-01")); assert.equal(truth.mar.dofd, D("2027-03-01"));
+  assert.equal(furnished.mar.amount_past_due_cents, 491910n); assert.equal(truth.mar.amount_past_due_cents, 245955n);
+  // 04-30: 88 → 60 days — both 78; Amount Past Due 7,378.65 → 4,919.10; PHP pos.1 = Mar `1` and pos.2 = Feb `0` either way (8.1 rule 4)
+  assert.deepEqual([furnished.apr.days_past_due, truth.apr.days_past_due], [88, 60]);
+  assert.equal(furnished.apr.account_status, "78"); assert.equal(truth.apr.account_status, "78"); assert.equal(truth.apr.dofd, D("2027-03-01"));
+  assert.equal(furnished.apr.amount_past_due_cents, 737865n); assert.equal(truth.apr.amount_past_due_cents, 491910n);
+  assert.equal(furnished.apr.php.slice(0, 2), "10"); assert.equal(truth.apr.php, furnished.apr.php); assert.equal(truth.mar.php, furnished.mar.php);
+  const apd = (s: Metro2Snapshot) => renderBase(s).amount_past_due;
+  assert.deepEqual([furnished.feb, furnished.mar, furnished.apr].map(apd), ["000002459", "000004919", "000007378"]);
+  assert.deepEqual([truth.feb, truth.mar, truth.apr].map(apd), ["000000000", "000002459", "000004919"]);
+  assert.deepEqual([renderBase(furnished.mar).date_of_first_delinquency, renderBase(truth.mar).date_of_first_delinquency], ["02012027", "03012027"]);
+  // the corrected fields are DOFD and Amount Past Due — not the statuses, not the PHP
+  const fieldsChanged = rederivedCorrections([furnished.feb, furnished.mar, furnished.apr], [truth.feb, truth.mar, truth.apr]);
+  assert.deepEqual(fieldsChanged, [
+    { field: "date_of_first_delinquency", before: "2027-02-01", after: "2027-03-01" },
+    { field: "amount_past_due[2027-02]", before: "000002459", after: "000000000" },
+    { field: "amount_past_due[2027-03]", before: "000004919", after: "000002459" },
+    { field: "amount_past_due[2027-04]", before: "000007378", after: "000004919" },
+  ]);
+  assert.ok(!fieldsChanged.some((f) => /account_status|payment_history_profile/.test(f.field)), "statuses 71/78 and the March PHP `1` stand");
+  const inv = w.runner.investigate({ dispute_id: id, determination: "modified", confidence: 0.95, requested_at: RECEIVED_AT, findings: [{ claim: "my February 2027 payment was mailed on Feb 3", finding: "the lockbox shows the $2,459.55 check deposited 2027-02-05 and misposted to suspense", effect: "changes_outcome", why: "the Feb-1 installment was paid within the grace period: DOFD 02012027 and the Feb–Apr Amount Past Due were wrong; the 71/78 statuses stand because Mar-1 is 30/60 days past due" }] });
   assert.equal(inv.determination, "modified"); assert.equal(inv.review.required, false);
-  // rule 5: the corrections row (DOFD moves with evidence), the 4.1 `payment.reapply` and the late-charge reversal
+  // rule 5: the corrections row (DOFD moves later only with evidence — 8.1-T14), the 4.1 `payment.reapply` effective 2027-02-05 and the February late-charge reversal
   w.clock.set("2027-09-22T14:00:00.000Z");
-  const fix = w.runner.modifyCorrections(w.cycles, { dispute_id: id, correction: { fields_changed: [{ field: "account_status", before: "71", after: "11" }, { field: "payment_history_profile", before: "1", after: "0" }, { field: "date_of_first_delinquency", before: "2027-02-01", after: "2027-03-01" }], evidence_document_id: "doc-lockbox-deposit-2027-02-05", determined_on: D("2027-09-22") },
+  const fix = w.runner.modifyCorrections(w.cycles, { dispute_id: id, correction: { fields_changed: fieldsChanged, evidence_document_id: "doc-lockbox-deposit-2027-02-05", determined_on: D("2027-09-22") },
     reapply: { payment_id: "pay-lockbox-2027-02-05", deposited_on: D("2027-02-05"), amount_cents: 245955n, to_installment_due: D("2027-02-01"), from: "suspense" }, late_charges_assessed: [{ installment_due: D("2027-02-01"), assessed_on: D("2027-02-17"), amount_cents: 9236n }] });
   assert.deepEqual(fix.commands.map((c) => c.command), ["payment.reapply", "fee.reverse"]);
-  assert.equal(fix.commands[0]!.effective_date, "2027-02-05"); assert.equal(fix.commands[0]!.amount_cents, "245955");
-  assert.equal(fix.late_charges_reversed_cents, 9236n); assert.equal(fix.correction.aud_due, "2027-09-24");
+  assert.equal(fix.commands[0]!.effective_date, "2027-02-05"); assert.equal(fix.commands[0]!.amount_cents, "245955"); assert.equal(fix.commands[0]!.to_installment_due, "2027-02-01");
+  assert.equal(fix.commands[1]!.installment_due, "2027-02-01"); assert.equal(fix.late_charges_reversed_cents, 9236n); assert.equal(fix.correction.aud_due, "2027-09-24");
   const corr = w.events.ofType("credit.correction.created")[0]!;
-  assert.equal(corr.payload.source, "dispute_acdv"); assert.deepEqual((corr.payload.fields_changed as { field: string; after: string }[]).map((f) => [f.field, f.after]), [["account_status", "11"], ["payment_history_profile", "0"], ["date_of_first_delinquency", "2027-03-01"]]);
+  assert.equal(corr.payload.source, "dispute_acdv");
+  assert.deepEqual((corr.payload.fields_changed as { field: string; before: string; after: string }[]).map((f) => [f.field, f.before, f.after]), [["date_of_first_delinquency", "2027-02-01", "2027-03-01"], ["amount_past_due[2027-02]", "000002459", "000000000"], ["amount_past_due[2027-03]", "000004919", "000002459"], ["amount_past_due[2027-04]", "000007378", "000004919"]]);
   assert.equal(w.events.ofType("credit.dispute.servicing_correction.requested")[0]!.payload.late_charges_reversed_cents, "9236");
-  // "modify as indicated" with the corrected fields → `credit.dispute.responded{determination=modified}` arms the 2-BD fan-out (Wed 09-22 → Fri 09-24)
-  const response = w.runner.responsePayload({ control_number: "2027091500124", determination: "modified", snapshot: currentSnapshot(), party_id: "A", corrections: { account_status: "11", payment_history_profile: "0".repeat(24), date_of_first_delinquency: "03012027" } });
+  // "modify as indicated": the full field set as of the response date from the 8.1 snapshot logic (status 11 post-deferral, the current PHP untouched) with DOFD corrected → `credit.dispute.responded{determination=modified}` arms the 2-BD fan-out (Wed 09-22 → Fri 09-24)
+  const snapshot = currentSnapshot();
+  const response = w.runner.responsePayload({ control_number: "2027091500124", determination: "modified", snapshot, party_id: "A", corrections: { date_of_first_delinquency: "03012027" } });
   assert.equal(response.responseCode, RESPONSE_CODES.modified); assert.equal(response.accountFields.date_of_first_delinquency, "03012027");
-  const s = await w.run(AGENT, { op: "submit", determination: "modified", fields_changed: ["account_status", "payment_history_profile", "date_of_first_delinquency"], response });
+  assert.equal(response.accountFields.account_status, "11"); assert.equal(response.accountFields.payment_history_profile, snapshot.php); assert.equal(response.accountFields.amount_past_due, "000000000");
+  const s = await w.run(AGENT, { op: "submit", determination: "modified", fields_changed: ["date_of_first_delinquency", "amount_past_due"], response });
   const out = s.output as { data_changed: boolean; aud_to: Bureau[]; aud_due: string };
   assert.equal(out.data_changed, true); assert.deepEqual(out.aud_to, ["equifax", "transunion", "innovis"]); assert.equal(out.aud_due, "2027-09-24");
   const fan = w.armed("FCRA_1681S2B_D_OTHER_CRAS_AUD_BD2");
   assert.equal(fan.length, 1); assert.equal(fan[0]!.dueDate, "2027-09-24"); assert.equal(fan[0]!.dueDate, addBusinessDays(D("2027-09-22"), 2, servicer));
-  // AUDs to Equifax/TransUnion/Innovis on 2027-09-23: the first two do not close the clock, the last of the set does
-  const auds = await w.runner.submitAudFanOut(w.eoscar, { dispute_id: id, account_number: "SM-1001", bureaus: out.aud_to, fields: { account_status: "11", payment_history_profile: "0".repeat(24), date_of_first_delinquency: "03012027" }, reason: "8.2 dispute correction (misposted 2027-02-05 deposit)", now: "2027-09-23T15:00:00.000Z" });
+  // AUDs to Equifax/TransUnion/Innovis on 2027-09-23 carrying the corrected DOFD: the first two do not close the clock, the last of the set does
+  const auds = await w.runner.submitAudFanOut(w.eoscar, { dispute_id: id, account_number: "SM-1001", bureaus: out.aud_to, fields: { date_of_first_delinquency: "03012027", amount_past_due: "000000000" }, reason: "8.2 dispute correction (misposted 2027-02-05 deposit: DOFD and Amount Past Due)", now: "2027-09-23T15:00:00.000Z" });
   assert.deepEqual(auds.bureaus, ["equifax", "transunion", "innovis"]); assert.equal(auds.in_cycle, true);
   const submitted = w.events.ofType("eoscar.aud.submitted");
   assert.deepEqual(submitted.map((e) => [e.payload.bureau, e.payload.fan_out_complete]), [["equifax", false], ["transunion", false], ["innovis", true]]);

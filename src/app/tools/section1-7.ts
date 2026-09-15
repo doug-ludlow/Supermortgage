@@ -35,6 +35,8 @@ import { inflightBoardingFacts, openInheritedCase, seedDelinquencyCounters, veri
 const need = (i: ToolInput, ...keys: string[]): void => { for (const k of keys) if (i[k] === undefined || i[k] === null || i[k] === "") throw new RangeError(`${k} is required`); };
 const today = (i: ToolInput, ctx: { now: string }, k = "today"): PlainDate => D(str(i, k) || ctx.now.slice(0, 10));
 const loanOf = (i: ToolInput, ctx: { loanId: string }): string => str(i, "loan_id") || ctx.loanId;
+// D2-3.2-01 (LL-2026-01) forbearance room: limb 1 from the inherited cumulative months; limb 2 ("greater than 12 months delinquent" at term end) when the caller supplies months_delinquent_at_start.
+const forbearanceRoom = (i: ToolInput) => forbearanceCarryover(num(i, "cumulative_forbearance_months") || 0, num(i, "requested_months") || 0, i.months_delinquent_at_start === undefined || i.months_delinquent_at_start === null ? null : num(i, "months_delinquent_at_start"));
 const putChecks = (rt: Parameters<Parameters<typeof compute>[0]>[2], ctx: { actor: Parameters<typeof rt.store.put>[3]; now: string }, caseId: string, checks: readonly { code: string; title: string; result: string }[]): void => {
   for (const c of checks) rt.store.put("lossmit_carryover_checks", `${caseId}:${c.code}:${ctx.now}`, { case_id: caseId, check_code: `${c.code} ${c.title}`, result: c.result, requested_from_transferor_at: null, resolved_at: null }, ctx.actor, ctx.now);
 };
@@ -64,7 +66,7 @@ export const TOOLS_1_7: readonly ToolDef[] = defineTools("1.7", "lossmit-underwr
       const checks = file !== undefined && str(i, "case_id") ? verifyCarryover(ctx.events, { case_id: str(i, "case_id"), loan_id: loanOf(i, ctx) }, file, boardedOn, ctx.actor) : null;
       if (checks) putChecks(rt, ctx, str(i, "case_id"), checks.checks);
       return { ...(checks ? { status: checks.status, checks: checks.checks, failed: checks.failed, transferor_request_due: checks.transferor_request_due, borrower_request_allowed: checks.borrower_request_allowed, ask_order: checks.ask_order } : {}),
-        forbearance: forbearanceCarryover(num(i, "cumulative_forbearance_months") || 0, num(i, "requested_months") || 0), first_filing: firstFilingGate(i.reasonable_date ? D(str(i, "reasonable_date")) : null, today(i, ctx)), document_request_order: documentRequestOrder(flag(i, "transferor_failed")) }; }) },
+        forbearance: forbearanceRoom(i), first_filing: firstFilingGate(i.reasonable_date ? D(str(i, "reasonable_date")) : null, today(i, ctx)), document_request_order: documentRequestOrder(flag(i, "transferor_failed")) }; }) },
   { name: "computeDeemedDates", kind: "act", handler: compute((i, ctx) => {
       switch (i.op ?? "dates") {
         case "dates": { need(i, "transfer_date"); const T = D(str(i, "transfer_date")); const atT = flag(i, "subject_at_transferor"); return { deemed_received: deemedReceived(D(str(i, "transferor_received_on") || str(i, "transfer_date")), atT, T), ack_due: transfereeAckDue(T, atT), evaluation_due: transfereeEvaluationDue(T), ...(i.appeal_received_on ? { appeal_due: transfereeAppealDue(T, D(str(i, "appeal_received_on"))) } : {}) }; }
@@ -84,7 +86,7 @@ export const TOOLS_1_7: readonly ToolDef[] = defineTools("1.7", "lossmit-underwr
   { name: "evaluateOptions", kind: "act", handler: compute((i, ctx, rt) => {
       // SM_SMDU_CASE_ACCESS_T0: the inherited SMDU case answers under the partner's servicer number before any evaluation is submitted through it.
       if (i.op === "smdu_access") { need(i, "case_id", "smdu_case_id", "partner_servicer_number", "transfer_date"); return smduCaseAccessChecked(ctx.events, rt.escalations, { case_id: str(i, "case_id"), loan_id: loanOf(i, ctx), smdu_case_id: str(i, "smdu_case_id"), partner_servicer_number: str(i, "partner_servicer_number"), transfer_date: D(str(i, "transfer_date")), record: (i.record as SmduCaseRecord | null | undefined) ?? null, fnma_loan_number: (i.fnma_loan_number as string | undefined) ?? null }, today(i, ctx), ctx.actor); }
-      return { transferor_offer: i.accepted_on && i.accept_by ? honorTransferorOffer(D(str(i, "accepted_on")), D(str(i, "accept_by"))) : "none", forbearance: forbearanceCarryover(num(i, "cumulative_forbearance_months") || 0, num(i, "requested_months") || 0) }; }) },
+      return { transferor_offer: i.accepted_on && i.accept_by ? honorTransferorOffer(D(str(i, "accepted_on")), D(str(i, "accept_by"))) : "none", forbearance: forbearanceRoom(i) }; }) },
   { name: "draftNotice", kind: "act", handler: noticeOps("render"),
     // 1.7-T9: an AI-proposed denial cannot go out without a `lossmit_reviewer` approval record (the reviewer's decision id rides on the render).
     guardrails: [guard("DENIAL_NEEDS_LOSSMIT_REVIEWER", "1.7 agent design: `lossmit_reviewer` approves every denial/ineligibility and every appeal determination (personnel different from the evaluator)", (i, ctx) => /DENIAL|DENIED/.test(str(i, "template_code")) && ctx.actor.kind !== "human" && !str(i, "reviewer_approval_id") ? "a denial notice renders only with reviewer_approval_id — the lossmit_reviewer's approval record" : undefined)] },

@@ -290,10 +290,13 @@ test("6.3 timer table SM_RECON_DAILY_FEED_10AM: the 10:00 recurring row is satis
   await assert.rejects(b.run("bank.read_statement", RECON, {}), RangeError);
 });
 
-test("6.3 timer table FNMA_IRM102_SURPLUS_UNEXPLAINED_90: a Schedule 3 surplus (5.2 `fnma.shortage_surplus.surplus_identified{first_seen_on}`) is due explained in 90 calendar days; the documented `ledger.post_reclass{surplus_id}` appends `fnma.shortage_surplus.explained` and satisfies it", async () => {
+test("6.3 timer table FNMA_IRM102_SURPLUS_UNEXPLAINED_90: a Schedule 3 surplus (5.2 `fnma.shortage_surplus.surplus_identified{first_seen_on}`) is due explained 90 calendar days after the date it first appears on the Fannie Mae investor reporting system report (`first_seen_on`, not the servicer's identification date — IRM 1-02); the documented `ledger.post_reclass{surplus_id}` appends `fnma.shortage_surplus.explained` and satisfies it", async () => {
   const ctx = uow("2026-10-05T18:00:00.000Z"); const b = bus(ctx);
   ctx.events.append({ type: "fnma.shortage_surplus.surplus_identified", aggregate: PERIOD_AGG("2026-09"), actor: SYSTEM, payload: { period: "2026-09", remittance_type: "A/A", surplus_id: "ss-2026-09-aa", amount_cents: 20_000n, first_seen_on: "2026-10-05" } });
   const t = ctx.timers.byCode("FNMA_IRM102_SURPLUS_UNEXPLAINED_90")[0]!; assert.equal(t.anchorDate, "2026-10-05"); assert.equal(t.dueDate, "2027-01-03"); assert.deepEqual(t.subject, PERIOD_AGG("2026-09"));
+  // identification lagging the report: a surplus that first appeared on the 2026-09-03 Fannie Mae report and is identified by the servicer on 2026-10-05 (the event's date) is due 2026-09-03 + 90 calendar days = 2026-12-02 (5.2-T10), not 2027-01-03
+  ctx.events.append({ type: "fnma.shortage_surplus.surplus_identified", aggregate: PERIOD_AGG("2026-08"), actor: SYSTEM, payload: { period: "2026-08", remittance_type: "A/A", surplus_id: "ss-2026-08-aa", amount_cents: 5_000n, first_seen_on: "2026-09-03", identified_on: "2026-10-05" } });
+  const lag = ctx.timers.byCode("FNMA_IRM102_SURPLUS_UNEXPLAINED_90")[1]!; assert.equal(lag.anchorDate, "2026-09-03"); assert.equal(lag.dueDate, "2026-12-02"); assert.deepEqual(lag.subject, PERIOD_AGG("2026-08")); assert.equal(lag.status, "armed");
   const reclass = { entry_set: reclassSet("Fannie Mae over-draft $200.00 on loan 1234567890 refunded per C-3-01 documented claim", 20_000n), root_cause: "Fannie Mae adjustment for corrected LAR (5.1 correction 10/02) — Fannie Mae's error, refund claim C-3-01 paid 10/20", confidence: 0.99, evidence_refs: ["lsdu-adj-2026-10", "crs-refund-2026-10-20"], surplus_id: "ss-2026-09-aa", period: "2026-09", remittance_type: "A/A", amount_cents: 20_000n, aggregate: PERIOD_AGG("2026-09") };
   await assert.rejects(b.run("ledger.post_reclass", RECON, { ...reclass, root_cause: "unexplained" }), (e: unknown) => e instanceof CommandRefused && e.code === "NO_PLUG");
   assert.equal(t.status, "armed");

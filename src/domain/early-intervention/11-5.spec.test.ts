@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { plainDate as D } from "../../kernel/calendar/date.ts";
 import { evaluateGate } from "../../app/evaluators.ts";
-import { evaluate, hti, representativeScore, noticeDeadlines, evaluationEvents, smduSubmission, smduDecision, reviewerDecision, evaluationNoticeSent, offerAccepted, type Evaluation } from "./imminent-default.ts";
+import { evaluate, hti, representativeScore, loanLevelScore, delinquencyWindow, countDelinquencies30, housingExpense, grossMonthlyIncome, noticeDeadlines, evaluationEvents, smduSubmission, smduDecision, reviewerDecision, evaluationNoticeSent, offerAccepted, type Evaluation } from "./imminent-default.ts";
 import { adverseNoticeSchedule, counterofferAcceptance, bspSendCheck, brpCompleteness, coloradoDecisionFlow, smduB2bOutage, completePortalTask, evaluationMatrix, chapter13Substitution } from "./ops.ts";
 import { eiEngine, atEt, noonEt } from "./spec-harness.ts";
 import { buildRegistry, publishAuthored } from "../../notices/catalog.ts";
@@ -25,7 +25,9 @@ import { FakePrintMail } from "../../infra/integrations/delivery.ts";
 
 const BASE = { evaluation_date: D("2026-10-20"), regx_days_delinquent: 0, principal_residence: true, brp_complete: true, oldest_doc_date: D("2026-09-26"), cash_reserves_cents: 840000n, hardship_documented: true };
 const A: Evaluation = { ...BASE, hardship_type: "death_of_borrower_or_wage_earner" };
-const B: Evaluation = { ...BASE, hardship_type: "reduction_in_income", credit: { scores: [601, 612, 620], fico_date: D("2026-10-20"), delinquencies_30_in_6m: 1, pitia_cents: 241250n, gross_income_cents: 560000n } };
+// example B's installment history: the one 30-day delinquency is the June installment (due 2026-06-01, 34 days late); every other installment in the window was paid on time
+const B_INSTALLMENTS = [{ due_date: D("2026-04-01"), max_days_past_due: 0 }, { due_date: D("2026-05-01"), max_days_past_due: 0 }, { due_date: D("2026-06-01"), max_days_past_due: 34 }, { due_date: D("2026-07-01"), max_days_past_due: 0 }, { due_date: D("2026-08-01"), max_days_past_due: 0 }, { due_date: D("2026-09-01"), max_days_past_due: 0 }, { due_date: D("2026-10-01"), max_days_past_due: 0 }];
+const B: Evaluation = { ...BASE, hardship_type: "reduction_in_income", credit: { scores: [601, 612, 620], fico_date: D("2026-10-20"), delinquencies: B_INSTALLMENTS, housing_expense_cents: 241250n, gross_income_cents: 560000n } };
 
 test("11.5-T1: Given example A, then `eligible_hardship` with no credit pull, SMDU submitted by 2026-10-22, and the Evaluation Notice sent by 2026-10-26 (≤2026-11-19).", () => {
   const r = evaluate(A); assert.equal(r.outcome, "eligible_hardship"); if (r.outcome === "eligible_hardship") { assert.equal(r.path, "modification"); assert.deepEqual(r.tests, { occupancy: true, brp_complete: true, doc_age: true, cash_reserves: true }); }
@@ -60,8 +62,40 @@ test("11.5-T1: Given example A, then `eligible_hardship` with no credit pull, SM
 });
 test("11.5-T2: Given example B, then representative score 612, `delinquency_pass=false`, `hti_ratio=0.43080357`, `eligible_credit`; given income $6,031.25, then `hti_pass=false` and (with no other path) `ineligible` → reviewer.", () => {
   assert.equal(representativeScore([601, 612, 620]), 612);
+  // the housing expense per F-1-12: P&I $1,650.00 + escrowed taxes and insurance $612.50 + HOA $150.00 = $2,412.50 — MI is excluded (F-1-12 Note),
+  // so with an MI premium of $125.00 the expense is still 241,250 cents and the ratio is unchanged
+  const he = housingExpense({ principal_and_interest_cents: 165000n, real_estate_taxes_cents: 40000n, property_insurance_cents: 21250n, hoa_dues_cents: 15000n, mortgage_insurance_cents: 0n });
+  assert.equal(he.cents, 241250n); assert.equal(he.excluded_mi_cents, 0n);
+  const mi = housingExpense({ principal_and_interest_cents: 165000n, real_estate_taxes_cents: 40000n, property_insurance_cents: 21250n, hoa_dues_cents: 15000n, mortgage_insurance_cents: 12500n });
+  assert.equal(mi.cents, 241250n); assert.equal(mi.excluded_mi_cents, 12500n); assert.equal(hti(mi.cents, 560000n).ratio.toFixed(8), "0.43080357");
+  assert.equal(evaluate({ ...B, credit: { ...B.credit!, housing_expense_cents: mi.cents } }).outcome, "eligible_credit");
+  // the other F-1-12 lines: a non-escrowed annual bill at 1/12, ground rent, resale-restriction fees, special assessments, HOA net of unit utilities, co-op fee net of master utilities, escrow shortage
+  const full = housingExpense({ principal_and_interest_cents: 165000n, real_estate_taxes_annual_cents: 480000n, property_insurance_annual_cents: 255000n, flood_insurance_cents: 2500n, ground_rent_cents: 5000n, resale_restriction_fees_cents: 1000n, special_assessments_cents: 2000n, hoa_dues_cents: 15000n, hoa_unit_utility_cents: 3000n, coop_fee_cents: 0n, escrow_shortage_cents: 4000n, mortgage_insurance_cents: 9000n });
+  assert.deepEqual(full.lines, { principal_and_interest: 165000n, property_insurance: 21250n, flood_insurance: 2500n, real_estate_taxes: 40000n, ground_rent: 5000n, resale_restriction_fees: 1000n, special_assessments: 2000n, hoa_dues: 12000n, coop_fee: 0n, escrow_shortage: 4000n });
+  assert.equal(full.cents, 252750n); assert.equal(full.excluded_mi_cents, 9000n);
+  // gross monthly income $5,600.00 = 560,000 cents; on the modification track unemployment benefits and severance are excluded (F-1-12 Note), non-taxable income is grossed up 25 %
+  assert.deepEqual(grossMonthlyIncome([{ kind: "employment", cents: 560000n }, { kind: "unemployment_insurance", cents: 180000n }, { kind: "severance", cents: 250000n }]), { cents: 560000n, excluded: [{ kind: "unemployment_insurance", cents: 180000n }, { kind: "severance", cents: 250000n }] });
+  assert.equal(grossMonthlyIncome([{ kind: "employment", cents: 400000n }, { kind: "social_security", cents: 100000n, taxable: false }]).cents, 525000n);
   const h = hti(241250n, 560000n); assert.equal(h.ratio.toFixed(8), "0.43080357"); assert.equal(h.pass, true); assert.equal(h.display, "0.43");
+  // the two-delinquency test: six calendar months preceding the evaluation month (April–September 2026; October excluded); the June installment counts once → 1 < 2
+  assert.deepEqual(delinquencyWindow(D("2026-10-20")), { start: D("2026-04-01"), end: D("2026-09-30") });
+  const dq = countDelinquencies30(B_INSTALLMENTS, D("2026-10-20")); assert.equal(dq.count, 1); assert.deepEqual([...dq.counted], [D("2026-06-01")]);
   const r = evaluate(B); assert.equal(r.outcome, "eligible_credit"); if (r.outcome === "eligible_credit") { assert.equal(r.tests.delinquency, false); assert.equal(r.tests.hti, true); assert.equal(r.tests.fico, true); }
+  // boundary: an installment due in the evaluation month (October) that is 30 days late is not counted; the March installment precedes the window; a missed payment that ages to 60+ days counts once (D2-1-01 Note)
+  assert.equal(countDelinquencies30([...B_INSTALLMENTS.slice(0, 6), { due_date: D("2026-10-01"), max_days_past_due: 30 }], D("2026-10-20")).count, 1);
+  assert.equal(countDelinquencies30([{ due_date: D("2026-03-01"), max_days_past_due: 45 }, ...B_INSTALLMENTS], D("2026-10-20")).count, 1);
+  assert.equal(countDelinquencies30([{ due_date: D("2026-04-01"), max_days_past_due: 75 }, ...B_INSTALLMENTS.slice(1)], D("2026-10-20")).count, 2);   // April (aged to 60+, once) + June → passes with a low enough score
+  const twoDq: Evaluation = { ...B, credit: { ...B.credit!, delinquencies: [{ due_date: D("2026-04-01"), max_days_past_due: 75 }, ...B_INSTALLMENTS.slice(1)], gross_income_cents: 603125n } };
+  const r3 = evaluate(twoDq); assert.equal(r3.outcome, "eligible_credit"); if (r3.outcome === "eligible_credit") { assert.equal(r3.tests.delinquency, true); assert.equal(r3.tests.hti, false); }
+  // multiple borrowers: the lowest representative score across ALL borrowers (D2-1-01 Step 2 note) — a non-income co-borrower's 598 drives the ≤620 test
+  const multi = loanLevelScore([{ borrower_id: "B1", scores: [601, 612, 620], income_used: true }, { borrower_id: "B2", scores: [640, 598], income_used: false }]);
+  assert.equal(multi.score, 598); assert.deepEqual([...multi.by_borrower], [{ borrower_id: "B1", representative: 612, income_used: true }, { borrower_id: "B2", representative: 598, income_used: false }]);
+  assert.equal(evaluate({ ...B, credit: { ...B.credit!, borrowers: [{ scores: [601, 612, 620], income_used: true }, { scores: [640, 598], income_used: false }] } }).outcome, "eligible_credit");
+  // …and a non-income co-borrower cannot be left out to reach eligibility either way: income borrower 612 with a 660 co-borrower → 612 (still ≤620); income borrower 640 with a 598 non-income co-borrower → 598, eligible; 640 alone → fico_gt_620
+  assert.equal(loanLevelScore([{ scores: [612], income_used: true }, { scores: [660, 655, 670], income_used: false }]).score, 612);
+  assert.equal(evaluate({ ...B, credit: { ...B.credit!, borrowers: [{ scores: [640], income_used: true }, { scores: [598], income_used: false }] } }).outcome, "eligible_credit");
+  const high = evaluate({ ...B, credit: { ...B.credit!, borrowers: [{ scores: [640], income_used: true }] } }); assert.equal(high.outcome, "ineligible"); if (high.outcome === "ineligible") assert.deepEqual(high.failed, ["fico_gt_620"]);
+  const noScore = evaluate({ ...B, credit: { ...B.credit!, scores: [] } }); assert.equal(noScore.outcome, "ineligible"); if (noScore.outcome === "ineligible") assert.deepEqual(noScore.failed, ["ineligible_credit_unavailable"]);   // frozen file / no score obtainable
   const flat = hti(241250n, 603125n); assert.equal(flat.ratio.toFixed(8), "0.40000000"); assert.equal(flat.pass, false);   // not "greater than 40 %"
   const B2: Evaluation = { ...B, credit: { ...B.credit!, gross_income_cents: 603125n } };
   const r2 = evaluate(B2); assert.equal(r2.outcome, "ineligible"); if (r2.outcome === "ineligible") assert.deepEqual(r2.failed, ["delinquency_and_hti"]);
@@ -97,12 +131,17 @@ test('11.5-T6: Given PCS orders to a station 52.0 miles away on the liquidation 
   assert.equal(evaluate({ ...A, hardship_type: "distant_transfer_or_pcs_gt_50mi", pcs_distance_miles: 49.9, cash_reserves_cents: 4000000n }).outcome, "ineligible");
 });
 test("11.5-T7: Given a current borrower declined by SMDU on 2026-10-21 with no counteroffer, then a Form 182/Reg B combined notice is due 2026-11-19 (earlier of 11-19 and 11-20) and issues only after `lossmit_reviewer` approval.", () => {
-  const held = adverseNoticeSchedule({ declined_on: D("2026-10-21"), brp_complete_on: D("2026-10-20"), current_at_evaluation: true, counteroffer_accepted: false, reviewer_id: null });
+  // Form 182 runs 30 days from receipt of Fannie Mae's decision (D2-1-01) — received 2026-10-21 → 2026-11-20; Reg B from the complete BRP → 2026-11-19
+  const held = adverseNoticeSchedule({ decision_received_on: D("2026-10-21"), brp_complete_on: D("2026-10-20"), current_at_evaluation: true, counteroffer_accepted: false, reviewer_id: null });
   assert.equal(held.form182_due, D("2026-11-20")); assert.equal(held.regb_due, D("2026-11-19")); assert.equal(held.combined_due, D("2026-11-19")); assert.equal(held.can_issue, false); assert.match(held.blocked_by!, /reviewer_id/);
-  assert.equal(adverseNoticeSchedule({ declined_on: D("2026-10-21"), brp_complete_on: D("2026-10-20"), current_at_evaluation: true, counteroffer_accepted: false, reviewer_id: "reviewer-42" }).can_issue, true);
+  assert.equal(adverseNoticeSchedule({ decision_received_on: D("2026-10-21"), brp_complete_on: D("2026-10-20"), current_at_evaluation: true, counteroffer_accepted: false, reviewer_id: "reviewer-42" }).can_issue, true);
   const ev = smduDecision({ loan_id: "L-ID", decision: "declined", decided_on: D("2026-10-21"), current_at_evaluation: true, brp_complete_on: D("2026-10-20") });
-  assert.deepEqual(ev.map((e) => e.type), ["smdu.case.decided", "smdu.case.declined", "imminent_default.reviewer_pending"]); assert.equal(ev[1]!.payload.declined_on, D("2026-10-21")); assert.equal(ev[2]!.payload.reason, "smdu_declined");
-  // the registry: the decline arms FNMA_D2101_FORM182_ADVERSE_30 due 11-20 and REGB_1002_9_ADVERSE_ACTION_30 due 11-19 (the earlier
+  assert.deepEqual(ev.map((e) => e.type), ["smdu.case.decided", "smdu.case.declined", "imminent_default.reviewer_pending"]); assert.equal(ev[1]!.payload.declined_on, D("2026-10-21")); assert.equal(ev[1]!.payload.decision_received_on, D("2026-10-21")); assert.equal(ev[1]!.payload.form182_due, D("2026-11-20")); assert.equal(ev[2]!.payload.reason, "smdu_declined");
+  // a decision that reaches the servicer later than SMDU dated it is clocked from receipt: decided 10-21, received 10-23 → due 11-22
+  const late = smduDecision({ loan_id: "L-ID", decision: "declined", decided_on: D("2026-10-21"), received_on: D("2026-10-23"), current_at_evaluation: true, brp_complete_on: D("2026-10-20") });
+  assert.equal(late[1]!.payload.decision_received_on, D("2026-10-23")); assert.equal(late[1]!.payload.form182_due, D("2026-11-22"));
+  const lateEngine = eiEngine({ loanId: "L-ID" }); for (const e of late) lateEngine.emit(e.type, e.payload, noonEt("2026-10-23")); assert.equal(lateEngine.armed("FNMA_D2101_FORM182_ADVERSE_30")[0]!.dueDate, D("2026-11-22"));
+  // the registry: the decline arms FNMA_D2101_FORM182_ADVERSE_30 due 11-20 (receipt of the decision + 30) and REGB_1002_9_ADVERSE_ACTION_30 due 11-19 (the earlier
   // governs the combined notice); Form 182 satisfies both, and on the delinquent-but-<60-day path (no Form 182 clock) the 12.2 denial
   // notice carries the Reg B content and satisfies the Reg B clock
   const h = eiEngine({ loanId: "L-ID" }); for (const e of ev) h.emit(e.type, e.payload, noonEt("2026-10-21"));
@@ -117,10 +156,16 @@ test("11.5-T7: Given a current borrower declined by SMDU on 2026-10-21 with no c
   assert.equal(evaluateChecklist(v, v.samplePayload, render(v.source, v.samplePayload)).passed, true); const noReviewer = { ...v.samplePayload, reviewer_id: null }; assert.equal(evaluateChecklist(v, noReviewer, render(v.source, noReviewer)).passed, false);
 });
 test("11.5-T8: Given a counteroffer accepted on day 10 of the 14-day window, then `FNMA_D2101_FORM182_ADVERSE_30` is cancelled.", () => {
-  assert.deepEqual(counterofferAcceptance({ offer_sent_on: D("2026-10-23"), accepted_on: D("2026-11-02") }), { within_window: true, form182_timer: "cancelled" });
-  assert.equal(counterofferAcceptance({ offer_sent_on: D("2026-10-23"), accepted_on: D("2026-11-07") }).form182_timer, "running");
-  const acc = offerAccepted({ loan_id: "L-ID", offer_sent_on: D("2026-10-23"), accepted_on: D("2026-11-02") }); assert.equal(acc.events[0]!.type, "lossmit.offer.accepted"); assert.deepEqual([...acc.cancel_timers], ["FNMA_D2101_FORM182_ADVERSE_30"]); assert.deepEqual(acc.events[0]!.payload.cancel_timers, ["FNMA_D2101_FORM182_ADVERSE_30"]);
-  assert.deepEqual([...offerAccepted({ loan_id: "L-ID", offer_sent_on: D("2026-10-23"), accepted_on: D("2026-11-07") }).cancel_timers], []);
+  // decision received 2026-10-21 → Form 182 due 2026-11-20; counteroffer sent 10-23, accepted on day 10 (11-02): inside the 14-day window and inside the 30 days → cancelled
+  assert.deepEqual(counterofferAcceptance({ offer_sent_on: D("2026-10-23"), accepted_on: D("2026-11-02"), decision_received_on: D("2026-10-21") }), { within_window: true, within_30_of_decision: true, form182_timer: "cancelled" });
+  assert.equal(counterofferAcceptance({ offer_sent_on: D("2026-10-23"), accepted_on: D("2026-11-07"), decision_received_on: D("2026-10-21") }).form182_timer, "running");   // day 15
+  // D2-1-01 bounds the exception by the same 30 days: a counteroffer sent 11-12 and accepted on its day 10 (11-22) is inside the 14-day window but after 11-20 → the clock is not cancelled
+  assert.deepEqual(counterofferAcceptance({ offer_sent_on: D("2026-11-12"), accepted_on: D("2026-11-22"), decision_received_on: D("2026-10-21") }), { within_window: true, within_30_of_decision: false, form182_timer: "running" });
+  assert.equal(counterofferAcceptance({ offer_sent_on: D("2026-11-12"), accepted_on: D("2026-11-20"), decision_received_on: D("2026-10-21") }).form182_timer, "cancelled");   // day 30 itself is inside
+  const acc = offerAccepted({ loan_id: "L-ID", offer_sent_on: D("2026-10-23"), accepted_on: D("2026-11-02"), decision_received_on: D("2026-10-21") }); assert.equal(acc.events[0]!.type, "lossmit.offer.accepted"); assert.equal(acc.within_30_of_decision, true); assert.deepEqual([...acc.cancel_timers], ["FNMA_D2101_FORM182_ADVERSE_30"]); assert.deepEqual(acc.events[0]!.payload.cancel_timers, ["FNMA_D2101_FORM182_ADVERSE_30"]);
+  assert.deepEqual([...offerAccepted({ loan_id: "L-ID", offer_sent_on: D("2026-10-23"), accepted_on: D("2026-11-07"), decision_received_on: D("2026-10-21") }).cancel_timers], []);
+  assert.deepEqual([...offerAccepted({ loan_id: "L-ID", offer_sent_on: D("2026-11-12"), accepted_on: D("2026-11-22"), decision_received_on: D("2026-10-21") }).cancel_timers], []);   // outside the 30 days
+  const unknown = offerAccepted({ loan_id: "L-ID", offer_sent_on: D("2026-10-23"), accepted_on: D("2026-11-02") }); assert.equal(unknown.within_30_of_decision, null); assert.deepEqual([...unknown.cancel_timers], []);   // the cancellation table decides against the clock's due date
   // the registry: the decline (with the counteroffer) arms FNMA_D2101_FORM182_ADVERSE_30 and FNMA_D2205_ACCEPT_14; the acceptance on day 10
   // satisfies the 14-day clock and cancels the Form 182 clock (`counteroffer_accepted`); a day-15 acceptance leaves it running
   const h = eiEngine({ loanId: "L-ID" }); for (const e of smduDecision({ loan_id: "L-ID", decision: "declined", decided_on: D("2026-10-21"), current_at_evaluation: true, brp_complete_on: D("2026-10-20") })) h.emit(e.type, e.payload, noonEt("2026-10-21"));
@@ -130,6 +175,13 @@ test("11.5-T8: Given a counteroffer accepted on day 10 of the 14-day window, the
   assert.deepEqual(h.breachCodes(atEt("2026-11-21", "00:05")).filter((c) => /FORM182/.test(c)), []);
   const late = eiEngine({ loanId: "L-ID" }); for (const e of smduDecision({ loan_id: "L-ID", decision: "declined", decided_on: D("2026-10-21"), current_at_evaluation: true, brp_complete_on: D("2026-10-20") })) late.emit(e.type, e.payload, noonEt("2026-10-21"));
   for (const e of offerAccepted({ loan_id: "L-ID", offer_sent_on: D("2026-10-23"), accepted_on: D("2026-11-07") }).events) late.emit(e.type, e.payload, noonEt("2026-11-07")); assert.equal(late.byCode("FNMA_D2101_FORM182_ADVERSE_30")[0]!.status, "armed");
+  // the cancellation table applies the 30-day bound against the armed clock's due date (11-20) when the acceptance event carries no decision date:
+  // accepted 11-20 (day 10 of a counteroffer sent 11-10) → cancelled; accepted 11-22 (day 10 of one sent 11-12) → the clock stays, and breaches after 11-20
+  const edge = eiEngine({ loanId: "L-ID" }); for (const e of smduDecision({ loan_id: "L-ID", decision: "declined", decided_on: D("2026-10-21"), current_at_evaluation: true, brp_complete_on: D("2026-10-20") })) edge.emit(e.type, e.payload, noonEt("2026-10-21"));
+  for (const e of offerAccepted({ loan_id: "L-ID", offer_sent_on: D("2026-11-10"), accepted_on: D("2026-11-20") }).events) edge.emit(e.type, e.payload, noonEt("2026-11-20")); assert.equal(edge.byCode("FNMA_D2101_FORM182_ADVERSE_30")[0]!.status, "cancelled");
+  const after30 = eiEngine({ loanId: "L-ID" }); for (const e of smduDecision({ loan_id: "L-ID", decision: "declined", decided_on: D("2026-10-21"), current_at_evaluation: true, brp_complete_on: D("2026-10-20") })) after30.emit(e.type, e.payload, noonEt("2026-10-21"));
+  for (const e of offerAccepted({ loan_id: "L-ID", offer_sent_on: D("2026-11-12"), accepted_on: D("2026-11-22") }).events) after30.emit(e.type, e.payload, noonEt("2026-11-22"));
+  assert.notEqual(after30.byCode("FNMA_D2101_FORM182_ADVERSE_30")[0]!.status, "cancelled"); assert.deepEqual(after30.breachCodes(atEt("2026-11-21", "00:05")).filter((c) => /FORM182/.test(c)), ["FNMA_D2101_FORM182_ADVERSE_30"]);
 });
 test('11.5-T9: Given a borrower 12 days delinquent who has not asked for help, then any Form 745/BSP send is refused by `FNMA_D2101_NO_SOLICIT_LT30`; given the borrower asks "what help is there?" on a call, then the BSP is permitted with the request logged.', async () => {
   const refused = bspSendCheck({ regx_days: 12, borrower_asked_for_help: false });
@@ -194,10 +246,12 @@ test("11.5-T14: Given a Chapter 13 debtor, then bankruptcy schedules ≤90 days 
   assert.equal(chapter13Substitution({ chapter: 7, schedules_dated: D("2026-10-01"), evaluation_date: D("2026-10-20") }).communications, "borrower");
 });
 
-test("11.5 worked figures: PITIA $2,412.50 = $1,650.00 + $612.50 + $150.00; income $5,600.00 → HTI 0.43 passes; $6,031.25 → 0.40 fails; reserves $8,400.00", () => {
+test("11.5 worked figures: F-1-12 housing expense $2,412.50 = $1,650.00 + $612.50 + $150.00 (MI $0.00 excluded; with MI $125.00 still $2,412.50); income $5,600.00 → HTI 0.43 passes; $6,031.25 → 0.40 fails; reserves $8,400.00", () => {
   assert.equal(165000n + 61250n + 15000n, 241250n);
+  assert.equal(housingExpense({ principal_and_interest_cents: 165000n, real_estate_taxes_cents: 40000n, property_insurance_cents: 21250n, hoa_dues_cents: 15000n, mortgage_insurance_cents: 0n }).cents, 241250n);
+  assert.equal(housingExpense({ principal_and_interest_cents: 165000n, real_estate_taxes_cents: 40000n, property_insurance_cents: 21250n, hoa_dues_cents: 15000n, mortgage_insurance_cents: 12500n }).cents, 241250n);
   assert.equal(hti(241250n, 560000n).pass, true); assert.equal(hti(241250n, 560000n).display, "0.43"); assert.equal(hti(241250n, 603125n).pass, false);
   assert.ok(840000n < 2500000n);
-  const e: Evaluation = { evaluation_date: D("2026-10-20"), regx_days_delinquent: 0, principal_residence: true, brp_complete: true, oldest_doc_date: D("2026-09-26"), cash_reserves_cents: 840000n, hardship_type: "reduction_in_income", hardship_documented: true, credit: { scores: [601, 612, 620], fico_date: D("2026-10-20"), delinquencies_30_in_6m: 1, pitia_cents: 241250n, gross_income_cents: 603125n } };
+  const e: Evaluation = { evaluation_date: D("2026-10-20"), regx_days_delinquent: 0, principal_residence: true, brp_complete: true, oldest_doc_date: D("2026-09-26"), cash_reserves_cents: 840000n, hardship_type: "reduction_in_income", hardship_documented: true, credit: { scores: [601, 612, 620], fico_date: D("2026-10-20"), delinquencies_30_in_6m: 1, housing_expense_cents: 241250n, gross_income_cents: 603125n } };
   assert.equal(evaluate(e).outcome, "ineligible");
 });

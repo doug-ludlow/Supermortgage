@@ -39,7 +39,7 @@ import type { EscalationService, Escalation } from "../../app/escalations.ts";
 import type { NoticeService, Notice } from "../../notices/service.ts";
 import type { Recipient } from "../../notices/channel.ts";
 import { eoscarOutageRouting, type Acdv, type AcdvResponse, type Aud, type EoscarPort } from "../../infra/integrations/credit.ts";
-import { renderBase } from "./metro2.ts";
+import { renderBase, metro2Money } from "./metro2.ts";
 import type { Metro2Snapshot, Ccc } from "./types.ts";
 import {
   acdvClocks, directDisputeClocks, supplementationOpensNewCase, frivolousNoticeDue, requiresHumanReview, dueDatePlan, acdvCaseClose,
@@ -130,6 +130,32 @@ export interface CreditDispute {
 // ---------------------------------------------------------------------------
 // the runner: every event below is appended over the loan event log
 // ---------------------------------------------------------------------------
+/**
+ * Rule 3(i) / rule 10 ("modify" variant): the disputed months re-derived from primary records (8.1 `buildSnapshot`
+ * over the corrected ledger, month by month) diffed against what was furnished. Only fields that actually differ
+ * become `credit_reporting_corrections.fields_changed`: for a misposted receipt that satisfied the earliest
+ * installment inside the grace period that is DOFD (one entry — the delinquency's anchor moves 02012027 → 03012027)
+ * and the per-month Amount Past Due (nine-digit Metro 2 fields); Account Status and the PHP characters are left
+ * alone when the remaining installments keep the loan in the same 8.1 rule-1 bucket (Mar-1 is 30 days past due at
+ * 03-31 → 71, 60 at 04-30 → 78). Snapshots are paired by `as_of`; a month without a re-derived counterpart is an error.
+ */
+export function rederivedCorrections(furnished: readonly Metro2Snapshot[], rederived: readonly Metro2Snapshot[]): { field: string; before: string | null; after: string | null }[] {
+  const byMonth = new Map(rederived.map((s) => [s.as_of, s] as const));
+  const out: { field: string; before: string | null; after: string | null }[] = [];
+  let dofdBefore: PlainDate | null = null, dofdAfter: PlainDate | null = null;
+  for (const was of furnished) {
+    const now = byMonth.get(was.as_of); if (!now) throw new RangeError(`no re-derived snapshot for ${was.as_of}`);
+    const ym = was.as_of.slice(0, 7);
+    if (was.account_status !== now.account_status) out.push({ field: `account_status[${ym}]`, before: was.account_status, after: now.account_status });
+    const apdWas = metro2Money(was.amount_past_due_cents), apdNow = metro2Money(now.amount_past_due_cents);
+    if (apdWas !== apdNow) out.push({ field: `amount_past_due[${ym}]`, before: apdWas, after: apdNow });
+    if (was.php !== now.php) out.push({ field: `payment_history_profile[${ym}]`, before: was.php, after: now.php });
+    dofdBefore = dofdBefore ?? was.dofd; dofdAfter = dofdAfter ?? now.dofd;
+  }
+  if (dofdBefore !== dofdAfter) out.unshift({ field: "date_of_first_delinquency", before: dofdBefore, after: dofdAfter });
+  return out;
+}
+
 export class DisputeCaseRunner {
   private readonly events: EventStore;
   private readonly actor: Actor;

@@ -237,7 +237,14 @@ test("8.1-T8: (foreclosure/DIL/payoff) Given sale completed → 94 with Payment 
   const fc = buildSnapshot(state("2027-09-30", led, aprSnapshot(), { loan_id: "SM-1001", payments_in_month_cents: 0n, condition: { kind: "foreclosure_sale", closed_on: D("2027-09-20"), deficiency_pursued: false } }));
   assert.equal(fc.account_status, "94"); assert.equal(fc.payment_rating, "6", "231 days past due at the sale"); assert.equal(fc.current_balance_cents, 0n); assert.equal(fc.dofd, D("2027-02-01")); assert.equal(fc.date_closed, D("2027-09-20"));
   const dil = buildSnapshot(state("2027-09-30", led, aprSnapshot(), { loan_id: "SM-1002", payments_in_month_cents: 0n, condition: { kind: "deed_in_lieu", closed_on: D("2027-09-20") } }));
-  assert.equal(dil.account_status, "89"); assert.equal(dil.payment_rating, "6"); assert.equal(dil.current_balance_cents, 0n, "no deficiency by Fannie Mae policy"); assert.equal(dil.date_closed, D("2027-09-20"));
+  assert.equal(dil.account_status, "89"); assert.equal(dil.payment_rating, "6"); assert.equal(dil.current_balance_cents, 0n, "D2-3.3-02 deficiency waiver applies (no MI, or MI with delegation of authority to Fannie Mae)"); assert.equal(dil.date_closed, D("2027-09-20"));
+  // rule 7 (Mortgage Release row): with MI and no delegation of authority the waiver is not mandatory — a pursued deficiency (rare) keeps the balance ($293,063.94),
+  // Amount Past Due stays 0 (rule 9: APD > 0 with status 89 is a hard error) and the record still validates; an explicit `deficiency_pursued: false` is the default case
+  const dilMi = buildSnapshot(state("2027-09-30", led, aprSnapshot(), { loan_id: "SM-1002", payments_in_month_cents: 0n, condition: { kind: "deed_in_lieu", closed_on: D("2027-09-20"), deficiency_pursued: true } }));
+  assert.equal(dilMi.account_status, "89"); assert.equal(dilMi.payment_rating, "6"); assert.equal(dilMi.current_balance_cents, cents("293063.94")); assert.equal(dilMi.current_balance_cents, 29306394n);
+  assert.equal(dilMi.amount_past_due_cents, 0n); assert.equal(dilMi.date_closed, D("2027-09-20")); assert.ok(dilMi.final_reported); assert.deepEqual(validateSnapshot(dilMi), []);
+  assert.ok(dilMi.derivation.some((l) => /deficiency pursued.*D2-3.3-02/.test(l)));
+  assert.equal(buildSnapshot(state("2027-09-30", led, aprSnapshot(), { loan_id: "SM-1002", payments_in_month_cents: 0n, condition: { kind: "deed_in_lieu", closed_on: D("2027-09-20"), deficiency_pursued: false } })).current_balance_cents, 0n);
   const po = buildSnapshot(state("2027-09-30", ledger("2027-09-01"), julySnapshot(), { loan_id: "SM-1003", condition: { kind: "paid_in_full", closed_on: D("2027-09-10"), by_refinance: false } }));
   assert.equal(po.account_status, "13"); assert.equal(po.payment_rating, "0", "current at payoff"); assert.equal(po.dofd, null); assert.equal(po.current_balance_cents, 0n); assert.equal(po.date_closed, D("2027-09-10"));
   for (const s of [fc, dil, po]) { assert.ok(s.final_reported, s.account_status); assert.deepEqual(validateSnapshot(s), [], s.account_status); }

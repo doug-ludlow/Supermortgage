@@ -11,7 +11,9 @@ import { addBusinessDays, fannieEt, servicer } from "../../kernel/calendar/busin
 import { zonedEpochMs } from "../../kernel/calendar/zoned.ts";
 
 export type AccountUse = "A/A" | "S/A" | "S/S";
-export interface Depository { readonly name: string; readonly insured: boolean; readonly well_capitalized: boolean; readonly total_assets_cents: Cents; readonly ratings: { readonly sp_st?: string; readonly sp_lt?: string; readonly moodys_st?: string; readonly moodys_lt?: string; readonly idc?: number; readonly kbra?: string } }
+/** A4-1-02: a Federal Reserve Bank or Federal Home Loan Bank is eligible for every use without the rating test; anything else is a `depository_institution` (the default). */
+export type DepositoryKind = "depository_institution" | "federal_reserve_bank" | "federal_home_loan_bank";
+export interface Depository { readonly name: string; readonly kind?: DepositoryKind; readonly insured: boolean; readonly well_capitalized: boolean; readonly total_assets_cents: Cents; readonly ratings: { readonly sp_st?: string; readonly sp_lt?: string; readonly moodys_st?: string; readonly moodys_lt?: string; readonly idc?: number; readonly kbra?: string } }
 
 const SP_ST = ["A-3", "A-2", "A-1", "A-1+"], SP_LT = ["BBB-", "BBB", "BBB+", "A-", "A", "A+", "AA-", "AA", "AA+", "AAA"];
 const MO_ST = ["P-3", "P-2", "P-1"], MO_LT = ["Baa3", "Baa2", "Baa1", "A3", "A2", "A1", "Aa3", "Aa2", "Aa1", "Aaa"];
@@ -19,19 +21,28 @@ const KBRA = ["D", "E", "C-", "C", "C+", "B-", "B", "B+", "A-", "A", "A+"];
 const atLeast = (scale: readonly string[], v: string | undefined, floor: string) => v !== undefined && scale.indexOf(v) >= scale.indexOf(floor);
 export const LARGE_BANK_ASSETS_CENTS = 3_000_000_000_000n;   // $30B
 
-/** 6.1 rule 1 — pure eligibility test with the rule applied recorded. */
+/**
+ * 6.1 rule 1 — pure eligibility test with the rule applied recorded. `insured` ∧ `well_capitalized` ∧ ratingTest, where
+ * ratingTest depends on the account use (A4-1-02): for S/S use — ≥ $30B: S&P ST ≥ A-3 (else LT ≥ BBB-) ∨ Moody's ST ≥ P-3
+ * (else LT ≥ Baa3), < $30B: IDC ≥ 125 ∨ KBRA ≥ C+; for A/A and/or S/A use only — IDC ≥ 75 ∨ KBRA ≥ C regardless of asset
+ * size (the Guide states that standard as (a) + (b) + "75 (or better) by IDC … or C (or better) by KBRA" with no $30 billion
+ * branch, and does not say the S/S ratings suffice for it). A Federal Reserve Bank / FHLB is eligible without the rating test.
+ */
 export function evaluateDepositoryEligibility(d: Depository, use: AccountUse): { eligible: boolean; rule: string } {
+  if (d.kind === "federal_reserve_bank" || d.kind === "federal_home_loan_bank") return { eligible: true, rule: "Federal Reserve Bank / Federal Home Loan Bank: eligible for every use without the rating test" };
   if (!d.insured || !d.well_capitalized) return { eligible: false, rule: "insured ∧ well_capitalized" };
   const r = d.ratings;
-  if (d.total_assets_cents >= LARGE_BANK_ASSETS_CENTS) {
-    const sp = r.sp_st !== undefined ? atLeast(SP_ST, r.sp_st, "A-3") : atLeast(SP_LT, r.sp_lt, "BBB-");
-    const mo = r.moodys_st !== undefined ? atLeast(MO_ST, r.moodys_st, "P-3") : atLeast(MO_LT, r.moodys_lt, "Baa3");
-    return { eligible: sp || mo, rule: "≥$30B: S&P ST≥A-3|LT≥BBB- ∨ Moody's ST≥P-3|LT≥Baa3" };
+  if (use === "S/S") {
+    if (d.total_assets_cents >= LARGE_BANK_ASSETS_CENTS) {
+      const sp = r.sp_st !== undefined ? atLeast(SP_ST, r.sp_st, "A-3") : atLeast(SP_LT, r.sp_lt, "BBB-");
+      const mo = r.moodys_st !== undefined ? atLeast(MO_ST, r.moodys_st, "P-3") : atLeast(MO_LT, r.moodys_lt, "Baa3");
+      return { eligible: sp || mo, rule: "≥$30B S/S: S&P ST≥A-3|LT≥BBB- ∨ Moody's ST≥P-3|LT≥Baa3" };
+    }
+    const std = (r.idc ?? 0) >= 125 || atLeast(KBRA, r.kbra, "C+");
+    return std ? { eligible: true, rule: "<$30B S/S: IDC≥125 ∨ KBRA≥C+" } : { eligible: false, rule: "<$30B S/S: IDC≥125 ∨ KBRA≥C+ required" };
   }
-  const std = (r.idc ?? 0) >= 125 || atLeast(KBRA, r.kbra, "C+");
-  if (std) return { eligible: true, rule: "<$30B: IDC≥125 ∨ KBRA≥C+" };
-  if (use !== "S/S" && ((r.idc ?? 0) >= 75 || atLeast(KBRA, r.kbra, "C"))) return { eligible: true, rule: "<$30B A/A,S/A only: IDC≥75 ∨ KBRA≥C" };
-  return { eligible: false, rule: use === "S/S" ? "<$30B S/S: IDC≥125 ∨ KBRA≥C+ required" : "<$30B: IDC≥75 ∨ KBRA≥C" };
+  const aaSa = (r.idc ?? 0) >= 75 || atLeast(KBRA, r.kbra, "C");
+  return aaSa ? { eligible: true, rule: "A/A,S/A only (any asset size): IDC≥75 ∨ KBRA≥C" } : { eligible: false, rule: "A/A,S/A only (any asset size): IDC≥75 ∨ KBRA≥C required" };
 }
 
 export interface PlannedAccount { readonly kind: "pi" | "ti"; readonly remittance_type?: AccountUse; readonly pool_class?: "mbs" | "portfolio_mrs"; readonly is_drafting_account: boolean; }

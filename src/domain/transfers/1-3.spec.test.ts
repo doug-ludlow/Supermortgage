@@ -10,9 +10,10 @@ import { loadRegistry, TimerEngine } from "../../kernel/timers/index.ts";
 import { cents } from "../../kernel/money/cents.ts";
 import { EscalationService } from "../../app/escalations.ts";
 import { applyTransferTimerOverrides } from "./timers.ts";
+import { applySatisfiedOverrides_1_3 } from "./timers-1-3.ts";
 import { applyFifo, regxDaysDelinquent } from "../boarding/delinquency.ts";
 import { releaseGate, returnedMail, noticeRecipients, masterServicerOnlyExclusion, approvedPayload, cutoverPayload, planNoticeRun, noticeRunMailed, escalateBreach, orderSkipTrace, MS2_TEMPLATE } from "./inbound.ts";
-import { contentCheck, REQUIRED_CONTENT, noticeDates, runScheduledOn, protectedPayment } from "./respa.ts";
+import { contentCheck, REQUIRED_CONTENT, noticeDates, runScheduledOn, protectedPayment, forwardBy } from "./respa.ts";
 import { lateChargeReceivable } from "./reconciliation.ts";
 const OFFICER = { kind: "human" as const, id: "u-officer", role: "officer" };
 const AGENT: Actor = { kind: "agent", id: "transfer" };
@@ -103,6 +104,22 @@ test("1.3-T7: Given a payment received by the transferor Nov. 30, 2026 (day 61),
   assert.equal(protectedPayment(D("2026-11-30"), D("2026-12-01"), 15, D("2026-10-01")).protected, false);
   assert.equal(protectedPayment(D("2026-11-29"), D("2026-12-01"), 15, D("2026-10-01")).protected, true);   // day 60, same due date and grace
   assert.equal(protectedPayment(D("2026-11-30"), D("2026-12-01"), 15, D("2026-12-01")).protected, false);   // before the effective date: not in the window either
+  // §1024.33(c)(2) has no 60-day or due-date limit — only the (c)(1) late-treatment protection ends on day 61. The transferor must still "promptly" forward or return the
+  // payment, so the 1.3 row SM_1024_33C2_FORWARD_PROMPT_1 (`payment.received{received_by='transferor'}` → +1 servicer business day from `transferor_received_at`,
+  // satisfied by `payment.posted`) arms on the day-61 receipt exactly as it does inside the window.
+  assert.equal(forwardBy(D("2026-11-30")), "2026-12-01");                                                      // Mon Nov 30 → Tue Dec 1 (servicer calendar)
+  const clock = new FixedClock("2026-11-30T20:00:00.000Z"); const events = new MemoryEventStore(clock);
+  const reg = loadRegistry(); applySatisfiedOverrides_1_3(reg);                                                // the 1.3 registry row as the spec states it (the platform-wide definition of the shared code is 17.2's transferor-side spelling of the same duty)
+  const def = reg.get("SM_1024_33C2_FORWARD_PROMPT_1")!; const off = def.offsetParsed as { kind: string; n?: number; unit?: string };
+  assert.equal(def.process, "1.3"); assert.deepEqual([off.kind, off.n, off.unit], ["step", 1, "business_days_servicer"]); assert.ok(!/60|window|due/.test(def.trigger), "no 60-day or due-date condition on the forwarding trigger");
+  const timers = new TimerEngine(reg, events, { processes: ["1.3"] });
+  const p = protectedPayment(D("2026-11-30"), D("2026-12-01"), 15, D("2026-10-01"));
+  events.append({ type: "payment.received", loanId: "L-61", actor: { kind: "external", id: "transferor" }, payload: { received_by: "transferor", transferor_received_at: "2026-11-30", amount_cents: cents("2028.53"), protected: p.protected, day_of_window: 61 } });
+  const fwd = timers.byCode("SM_1024_33C2_FORWARD_PROMPT_1"); assert.equal(fwd.length, 1, "the forwarding clock arms on day 61");
+  assert.deepEqual([fwd[0]!.anchorDate, fwd[0]!.dueDate, fwd[0]!.status], ["2026-11-30", "2026-12-01", "armed"]);
+  clock.set("2026-12-01T15:00:00.000Z");
+  events.append({ type: "payment.posted", loanId: "L-61", actor: SYSTEM, payload: { credited_as_of: "2026-12-01", received_by: "transferor", transferor_received_at: "2026-11-30", protected: false } });   // after day 60 the payment posts as of Supermortgage receipt (no (c)(1) protection)
+  assert.equal(fwd[0]!.status, "satisfied");
 });
 test("1.3-T8: Given a returned hello notice, then a skip-trace order exists within 5 servicer business days and the original proof of mailing remains linked.", () => {
   const r = returnedMail({ id: "N-hello-7", proof_of_mailing_id: "pom-7" }, D("2026-10-20"));

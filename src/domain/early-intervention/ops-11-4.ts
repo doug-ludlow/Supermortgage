@@ -33,7 +33,7 @@
 import type { PlainDate } from "../../kernel/calendar/date.ts";
 import type { Actor, DomainEvent, EventStore } from "../../kernel/events/index.ts";
 import { evaluateGate } from "../../app/evaluators.ts";
-import { overshadows, communicationAllowed, type Overlay } from "./fdcpa.ts";
+import { overshadows, communicationAllowed, CEASE_NOTICE_MATRIX, type Overlay } from "./fdcpa.ts";
 import { dcEmailCheck, voicemailCheck } from "./ops.ts";
 
 export type OutboundChannel = "letter" | "statement" | "email" | "sms" | "voice" | "voicemail";
@@ -148,7 +148,8 @@ export function evaluateOutboundCommunication(ctx: GateContext, r: OutboundReque
   const push = (code: string, evaluator: string | null, g: { open: boolean; reason?: string }, action: GateEvaluation["action"] = "refuse"): void => { gates.push({ code, evaluator, open: g.open, reason: g.open ? null : g.reason ?? code, action: g.open ? null : action }); };
   if (r.overlay) {
     const dir = r.borrower_initiated ? "borrower_initiated" : "outbound_collection";
-    const kind = r.kind ?? (r.channel === "statement" ? "periodic_statement" : "collection");
+    // a Notice Registry template named in the permitted-notice matrix (11.4 rule 6) is its own row; otherwise the channel decides
+    const kind = r.kind ?? (r.template && r.template in CEASE_NOTICE_MATRIX ? r.template : r.channel === "statement" ? "periodic_statement" : "collection");
     const a = communicationAllowed(r.overlay, kind, dir);
     // the overlay that closed the door, in fdcpa.ts communicationAllowed's order (stay → attorney → dispute → cease)
     const o = r.overlay; const code = dir === "borrower_initiated" ? null : o.bankruptcy_stay ? "BANKRUPTCY_STAY" : o.attorney_represented ? "REGF_1006_6B2_ATTORNEY_GATE" : o.dispute_open && !a.allowed ? "REGF_1006_38_DISPUTE_CEASE_GATE" : o.cease_active && !a.allowed ? "REGF_1006_6C_CEASE_GATE" : null;

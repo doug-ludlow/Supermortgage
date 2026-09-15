@@ -22,8 +22,8 @@ import { lateChargeAmount } from "../cashiering/latecharges.ts";
 import { type Window, type Variant, type WindowEvent, type Cycle, openWindow, applyContact, applyBankruptcyPetition, installmentPaid, sweep, goodFaithDetermination, noticeCycle, variantFor, bspDueAfterQrpc, windowOpenedEvent, humanFallbackRequiredEvent, bkModifiedRequiredEvent, transfereeDeferredEvent, cycleEndReview, LIVE_DAYS, NOTICE_DAYS, FDCPA_CYCLE_DAYS, type EffortAttempt, type GoodFaithOutcome } from "./windows.ts";
 import { type ContactPlan, type PlanEvent, type PreDialChecks, newPlan, openPlanIfDue, recordAttempt, delinquencyResolved, newDelinquency, applyPetition, applyWrittenCease, dialRequest, planState, fnmaCadenceBreaches, ALL_CHECKS_PASS, FIRST_ATTEMPT_DAY } from "./plan.ts";
 import { promiseToPay, thirdPartyAuthorization, reasonCode } from "./qrpc.ts";
-import { overshadows, communicationAllowed, receiveCease, receiveDispute, resolveDispute, overlayOf, type FdcpaStatus, type FdcpaEvent } from "./fdcpa.ts";
-import { evaluate, solicitationGate, type Evaluation, type Result } from "./imminent-default.ts";
+import { overshadows, communicationAllowed, receiveCease, receiveDispute, resolveDispute, overlayOf, CEASE_NOTICE_MATRIX, type FdcpaStatus, type FdcpaEvent } from "./fdcpa.ts";
+import { evaluate, solicitationGate, FORM182_DAYS, type Evaluation, type Result } from "./imminent-default.ts";
 
 const MIN = 60_000;
 
@@ -421,7 +421,7 @@ export function disputeLifecycle(i: { status: FdcpaStatus; received_on: PlainDat
  * once, outbound collection communications are refused by the overlay while a borrower-initiated loss-mitigation call
  * is answered fully (2016 safe harbor).
  */
-export function writtenCease(i: { received_on: PlainDate; ack_sent_before: boolean; plan?: ContactPlan; fdcpa?: FdcpaStatus; bk_active?: boolean; debt_collector?: boolean; windows?: Window[] }): { plan: string; plan_events: PlanEvent[]; fdcpa_events: FdcpaEvent[]; ei_variant: Variant; cycle_days: number; next_cycle_end_from: (providedOn: PlainDate) => PlainDate; send_ack: boolean; ack_template: "NTC_REGF_1006_6C_CEASE_ACK"; borrower_initiated_lossmit_call: "answered_fully" | "refused"; outbound_collection_call: "refused" | "allowed"; gate: "REGF_1006_6C_CEASE_GATE"; windows_live: readonly string[] } {
+export function writtenCease(i: { received_on: PlainDate; ack_sent_before: boolean; plan?: ContactPlan; fdcpa?: FdcpaStatus; bk_active?: boolean; debt_collector?: boolean; windows?: Window[] }): { plan: string; plan_events: PlanEvent[]; fdcpa_events: FdcpaEvent[]; ei_variant: Variant; cycle_days: number; next_cycle_end_from: (providedOn: PlainDate) => PlainDate; send_ack: boolean; ack_template: "NTC_REGF_1006_6C_CEASE_ACK"; borrower_initiated_lossmit_call: "answered_fully" | "refused"; outbound_collection_call: "refused" | "allowed"; gate: "REGF_1006_6C_CEASE_GATE"; windows_live: readonly string[]; permitted_notices: readonly string[]; suppressed_notices: readonly string[] } {
   const plan = i.plan ?? (() => { const p = newPlan("loan"); openPlanIfDue(p, FIRST_ATTEMPT_DAY, i.received_on); return p; })();
   const planEvents = applyWrittenCease(plan, i.received_on);
   const fdcpaEvents = i.fdcpa ? receiveCease(i.fdcpa, { on: i.received_on, written: true }).events : [];
@@ -430,7 +430,9 @@ export function writtenCease(i: { received_on: PlainDate; ack_sent_before: boole
   const cycleDays = daysBetween(i.received_on, noticeCycle(i.received_on, variant, "probe").cycle_end_at);
   const windowsLive = i.windows ? (() => { const hit: string[] = []; for (const w of i.windows!) if (w.live === "open") { w.live = "exempt_fdcpa_cease"; hit.push(w.live); } return hit; })() : [];
   return { plan: planState(plan), plan_events: planEvents, fdcpa_events: fdcpaEvents, ei_variant: variant, cycle_days: cycleDays, next_cycle_end_from: (on) => addDays(on, FDCPA_CYCLE_DAYS), send_ack: !i.ack_sent_before, ack_template: "NTC_REGF_1006_6C_CEASE_ACK",
-    borrower_initiated_lossmit_call: communicationAllowed(overlay, "lossmit_response", "borrower_initiated").allowed ? "answered_fully" : "refused", outbound_collection_call: communicationAllowed(overlay, "collection_call", "outbound_collection").allowed ? "allowed" : "refused", gate: "REGF_1006_6C_CEASE_GATE", windows_live: windowsLive };
+    borrower_initiated_lossmit_call: communicationAllowed(overlay, "lossmit_response", "borrower_initiated").allowed ? "answered_fully" : "refused", outbound_collection_call: communicationAllowed(overlay, "collection_call", "outbound_collection").allowed ? "allowed" : "refused", gate: "REGF_1006_6C_CEASE_GATE", windows_live: windowsLive,
+    // 11.4 rule 6 / Q2: the per-notice matrix after the written cease — Reg Z settles the statement, (d) and (c) rows (amendment 88)
+    permitted_notices: Object.entries(CEASE_NOTICE_MATRIX).filter(([, r]) => r.permitted).map(([k]) => k), suppressed_notices: Object.entries(CEASE_NOTICE_MATRIX).filter(([, r]) => !r.permitted).map(([k]) => k) };
 }
 /**
  * 11.4-T8 — oral "stop calling": a TCPA revocation honored at commit (≤1 minute) on every consented dial/text/email
@@ -514,15 +516,23 @@ export function contactEngineChecks(i: { state: string; debt_collector: boolean;
 
 // ---- 11.5 imminent default ------------------------------------------------------
 
-/** 11.5-T7 — Form 182 (decline + 30) combined with the Reg B notice (complete BRP + 30): the earlier date governs; no issue without a reviewer. */
-export function adverseNoticeSchedule(i: { declined_on: PlainDate; brp_complete_on: PlainDate; current_at_evaluation: boolean; counteroffer_accepted: boolean; reviewer_id: string | null }): { form182_due: PlainDate | null; regb_due: PlainDate; combined_due: PlainDate; can_issue: boolean; blocked_by: string | null } {
-  const f = i.current_at_evaluation && !i.counteroffer_accepted ? addDays(i.declined_on, 30) : null; const r = addDays(i.brp_complete_on, 30);
+/**
+ * 11.5-T7 — Form 182 (30 days from receipt of Fannie Mae's decision, D2-1-01) combined with the Reg B notice (complete
+ * BRP + 30): the earlier date governs; no issue without a reviewer. `counteroffer_accepted` means a retention
+ * counteroffer accepted within that same 30-day period.
+ */
+export function adverseNoticeSchedule(i: { decision_received_on: PlainDate; brp_complete_on: PlainDate; current_at_evaluation: boolean; counteroffer_accepted: boolean; reviewer_id: string | null }): { form182_due: PlainDate | null; regb_due: PlainDate; combined_due: PlainDate; can_issue: boolean; blocked_by: string | null } {
+  const f = i.current_at_evaluation && !i.counteroffer_accepted ? addDays(i.decision_received_on, FORM182_DAYS) : null; const r = addDays(i.brp_complete_on, 30);
   return { form182_due: f, regb_due: r, combined_due: f !== null && f < r ? f : r, can_issue: i.reviewer_id !== null, blocked_by: i.reviewer_id === null ? "no adverse notice without reviewer_id" : null };
 }
-/** 11.5-T8 — a counteroffer accepted within the 14-day window cancels the Form 182 timer. */
-export function counterofferAcceptance(i: { offer_sent_on: PlainDate; accepted_on: PlainDate }): { within_window: boolean; form182_timer: "cancelled" | "running" } {
+/**
+ * 11.5-T8 — a counteroffer accepted within the 14-day window cancels the Form 182 timer, provided the acceptance also
+ * falls within 30 days of receipt of Fannie Mae's decision (D2-1-01: "accepts the counteroffer within the 30-day period").
+ */
+export function counterofferAcceptance(i: { offer_sent_on: PlainDate; accepted_on: PlainDate; decision_received_on: PlainDate }): { within_window: boolean; within_30_of_decision: boolean; form182_timer: "cancelled" | "running" } {
   const w = daysBetween(i.offer_sent_on, i.accepted_on) <= 14 && i.accepted_on >= i.offer_sent_on;
-  return { within_window: w, form182_timer: w ? "cancelled" : "running" };
+  const w30 = i.accepted_on <= addDays(i.decision_received_on, FORM182_DAYS);
+  return { within_window: w, within_30_of_decision: w30, form182_timer: w && w30 ? "cancelled" : "running" };
 }
 /** 11.5-T9 — Form 745/BSP below 30 days delinquent only on the borrower's own request, which is logged as the basis. */
 export function bspSendCheck(i: { regx_days: number; borrower_asked_for_help: boolean; request_logged_at?: string | null }): { permitted: boolean; refused_by: "FNMA_D2101_NO_SOLICIT_LT30" | null; basis: string | null } {

@@ -324,9 +324,10 @@ export interface RatingCheckInput {
 }
 export interface RatingCheckResult { readonly eligibility_status: EligibilityStatus; readonly results: { account_id: string; use: AccountUse; eligible: boolean; rule: string }[]; readonly next_check_due: PlainDate; readonly notify_by: PlainDate | null; readonly ineligible_detected: DomainEvent | null; readonly events: DomainEvent[]; }
 function failedTest(d: Depository, uses: readonly AccountUse[]): { agency: "sp" | "moodys" | "idc" | "kbra"; rating: string | number | null; floor: string | number } {
+  // rule 1 per A4-1-02: S/S at ≥ $30B → S&P/Moody's; S/S at < $30B → IDC 125 / KBRA C+; A/A–S/A only → IDC 75 / KBRA C at any asset size
   const r = d.ratings;
-  if (d.total_assets_cents >= LARGE_BANK_ASSETS_CENTS) return r.sp_st !== undefined || r.sp_lt !== undefined ? { agency: "sp", rating: r.sp_st ?? r.sp_lt ?? null, floor: r.sp_st !== undefined ? "A-3" : "BBB-" } : { agency: "moodys", rating: r.moodys_st ?? r.moodys_lt ?? null, floor: r.moodys_st !== undefined ? "P-3" : "Baa3" };
   const strict = uses.includes("S/S");
+  if (strict && d.total_assets_cents >= LARGE_BANK_ASSETS_CENTS) return r.sp_st !== undefined || r.sp_lt !== undefined ? { agency: "sp", rating: r.sp_st ?? r.sp_lt ?? null, floor: r.sp_st !== undefined ? "A-3" : "BBB-" } : { agency: "moodys", rating: r.moodys_st ?? r.moodys_lt ?? null, floor: r.moodys_st !== undefined ? "P-3" : "Baa3" };
   return r.idc !== undefined ? { agency: "idc", rating: r.idc, floor: strict ? 125 : 75 } : { agency: "kbra", rating: r.kbra ?? null, floor: strict ? "C+" : "C" };
 }
 /**

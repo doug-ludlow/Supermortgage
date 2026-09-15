@@ -15,7 +15,7 @@ import { EscalationService } from "../../app/escalations.ts";
 import { EntityStore, toolCommand, type ToolRuntime } from "../../app/tools.ts";
 import { SECTION_11_TOOLS } from "../../app/tools/section11.ts";
 import type { UowContext } from "../../infra/db/unit-of-work.ts";
-import { itemizationChecks, determineDebtCollector, fdcpaStatusAtBoarding, recordInitialCommunication, recordValidationSent, validationNoticeDue, validationPeriod, overlayOf } from "./fdcpa.ts";
+import { itemizationChecks, determineDebtCollector, fdcpaStatusAtBoarding, recordInitialCommunication, recordValidationSent, validationNoticeDue, validationPeriod, overlayOf, communicationAllowed } from "./fdcpa.ts";
 import { openWindow, noticeCycle } from "./windows.ts";
 import { newPlan, openPlanIfDue, recordAttempt } from "./plan.ts";
 import { disputeLifecycle, dcLoanEiNotice, writtenCease, oralCease, attorneyGate, furnishingGate, smsRndGate, dcEmailCheck, voicemailCheck, deceasedReport, assumedNameCheck, stateOverlay, contactEngineChecks, counterRun, type CallAttempt } from "./ops.ts";
@@ -165,6 +165,20 @@ test("11.4-T7: Given a written cease from the borrower on a DC loan, then 11.1's
   assert.equal(status.cease_scope, "written_full"); assert.equal(overlayOf(status).cease_active, true); assert.ok(r.fdcpa_events.some((e) => e.type === "fdcpa.cease.received" && e.payload.written === true));
   assert.deepEqual([...r.windows_live], ["exempt_fdcpa_cease"]); assert.equal(windows[0]!.live, "exempt_fdcpa_cease"); assert.equal(windows[0]!.notice, "open");   // (a) exempt; (b) survives as the fdcpa variant
   assert.equal(writtenCease({ received_on: D("2026-11-12"), ack_sent_before: true, plan, fdcpa: status, debt_collector: true }).send_ack, false);   // the acknowledgement goes once
+  // the permitted-notice matrix after the cease (rule 6 / Q2) — Reg Z settles three rows: the §1026.20(c) rate-adjustment notice is exempt once the consumer has
+  // sent an §805(c) notification (§1026.20(c)(1)(ii)(C)) and is suppressed (7.2 sends the Fannie Mae informational notice, 7.2-T11); the §1026.20(d)
+  // initial-adjustment notice (7.3) and §1026.41 periodic statements carry no cease exemption and are still sent
+  assert.ok(r.suppressed_notices.includes("NTC_REGZ_20C_ARM_ADJ") && r.suppressed_notices.includes("arm_rate_adjustment_notice"));
+  for (const k of ["NTC_REGZ_20D_ARM_INITIAL", "arm_initial_adjustment_notice", "periodic_statement", "NTC_REGZ_41_STMT_DELQ", "regx_ei_notice", "lossmit_response", "NTC_REGF_1006_6C_CEASE_ACK"]) assert.ok(r.permitted_notices.includes(k), k);
+  const armC = communicationAllowed(overlayOf(status), "NTC_REGZ_20C_ARM_ADJ", "outbound_collection"); assert.equal(armC.allowed, false); assert.match(armC.reason!, /1026\.20\(c\)\(1\)\(ii\)\(C\)/); assert.match(armC.reason!, /7\.2-T11/);
+  assert.equal(communicationAllowed(overlayOf(status), "NTC_REGZ_20D_ARM_INITIAL", "outbound_collection").allowed, true); assert.equal(communicationAllowed(overlayOf(status), "periodic_statement", "outbound_collection").allowed, true);
+  assert.equal(communicationAllowed({ dispute_open: true }, "NTC_REGZ_20C_ARM_ADJ", "outbound_collection").allowed, true);   // a §1006.38 dispute cease is not an §805(c) notification — no Reg Z exemption, the (c) notice goes
+  // …and on the outbound gate: a rendered NTC_REGZ_20C_ARM_ADJ letter is refused by REGF_1006_6C_CEASE_GATE while the (d) notice and the statement pass
+  const gctx = { events: uow().events, actor: DC_AGENT, now: "2026-11-11T16:00:00.000Z", loanId: "L-DC" };
+  const dc = "This communication is from a debt collector."; const ov = { overlay: overlayOf(status), ref_date: D("2026-11-11"), fdcpa_debt_collector: true as const, loan_id: "L-DC" };
+  const c = evaluateOutboundCommunication(gctx, { ...ov, channel: "letter", template: "NTC_REGZ_20C_ARM_ADJ", text: `Your interest rate is changing. ${dc}` }); assert.equal(c.allowed, false); assert.deepEqual([...c.refused_by], ["REGF_1006_6C_CEASE_GATE"]); assert.match(c.gates[0]!.reason!, /1026\.20\(c\)\(1\)\(ii\)\(C\)/);
+  assert.equal(evaluateOutboundCommunication(gctx, { ...ov, channel: "letter", template: "NTC_REGZ_20D_ARM_INITIAL", text: `Your first rate adjustment is coming. ${dc}` }).allowed, true);
+  assert.equal(evaluateOutboundCommunication(gctx, { ...ov, channel: "statement", template: "NTC_REGZ_41_STMT_DELQ", text: `Statement. ${dc}` }).allowed, true);
   // the registry: `fdcpa.cease.received{written=true}` arms the permanent cease gate, cancels the live-contact clock (`exempt_fdcpa_cease`,
   // §1024.39(d)(1)) and leaves the day-45 notice clock armed for the fdcpa variant; the plan's suspension cancels the cadence clocks
   const h = eiEngine({ loanId: "L-DC" }); for (const e of counterRun(D("2026-10-01"), D("2026-10-02")).events) h.emit(e.type, e.payload, atEt("2026-10-02", "00:05"));

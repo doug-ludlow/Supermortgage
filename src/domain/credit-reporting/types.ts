@@ -49,7 +49,8 @@ export type LoanCondition =
   | { readonly kind: "modification"; readonly new_term_months: number; readonly new_piti_cents: Cents }
   | { readonly kind: "deferral" }
   | { readonly kind: "foreclosure_sale"; readonly closed_on: PlainDate; readonly deficiency_pursued: boolean }
-  | { readonly kind: "deed_in_lieu"; readonly closed_on: PlainDate }
+  /** D2-3.3-02: the deficiency release is mandatory only without MI or with MI under delegation of authority to Fannie Mae (Current Balance 0); `deficiency_pursued` is true only in the rare MI-without-delegation case where a deficiency is actually pursued. */
+  | { readonly kind: "deed_in_lieu"; readonly closed_on: PlainDate; readonly deficiency_pursued?: boolean }
   | { readonly kind: "short_sale"; readonly closed_on: PlainDate; readonly foreclosure_started: boolean }
   | { readonly kind: "paid_in_full"; readonly closed_on: PlainDate; readonly by_refinance: boolean }
   | { readonly kind: "charge_off"; readonly closed_on: PlainDate; readonly charge_off_cents: Cents }

@@ -48,13 +48,38 @@ export function overshadows(text: string, validationEnd: PlainDate, refDate: Pla
   return issues;
 }
 export type Overlay = { dispute_open?: boolean; cease_active?: boolean; attorney_represented?: boolean; bankruptcy_stay?: boolean };
-export const PERMITTED_DURING_CEASE = new Set(["NTC_REGF_1006_6C_CEASE_ACK", "remedy_notice", "regx_ei_notice", "lossmit_response", "periodic_statement", "legally_required"]);
+/**
+ * 11.4 rule 6 / 11.4-Q2 — the permitted-notice matrix after a written cease (§1006.6(c)) and during a §1006.38 dispute
+ * cease, one row per communication kind (a kind is either a generic class or a Notice Registry template). Reg Z settles
+ * three rows: §1026.41 periodic statements and the §1026.20(d) initial-adjustment notice (7.3) carry no FDCPA cease
+ * exemption and continue; §1026.20(c)(1)(ii)(C) exempts the rate-adjustment notice once the consumer has sent an
+ * §805(c) notification, so `NTC_REGZ_20C_ARM_ADJ` is suppressed after a written cease (7.2-T11 sends the Fannie Mae
+ * informational rate-change notice instead). The rest (escrow, force-placed, transfer, remedy notices) stay per the
+ * counsel matrix. `during_dispute` marks a suppressed row that is nonetheless not a collection communication.
+ */
+export interface CeaseNoticeRow { readonly permitted: boolean; readonly during_dispute: boolean; readonly basis: string }
+export const CEASE_NOTICE_MATRIX: Readonly<Record<string, CeaseNoticeRow>> = {
+  NTC_REGF_1006_6C_CEASE_ACK: { permitted: true, during_dispute: true, basis: "§1006.6(c)(1)(i) — the acknowledgement, once" },
+  regx_ei_notice: { permitted: true, during_dispute: true, basis: "§1024.39(d)(3) modified early-intervention notice" },
+  remedy_notice: { permitted: true, during_dispute: true, basis: "§1006.6(c)(1)(ii)–(iii) notice that a specified remedy will be invoked — counsel matrix" },
+  lossmit_response: { permitted: true, during_dispute: true, basis: "response to a borrower-initiated loss-mitigation communication" },
+  periodic_statement: { permitted: true, during_dispute: true, basis: "Reg Z §1026.41 — no FDCPA cease exemption in §1026.41(e)" },
+  NTC_REGZ_41_STMT_STD: { permitted: true, during_dispute: true, basis: "Reg Z §1026.41 — no FDCPA cease exemption in §1026.41(e)" },
+  NTC_REGZ_41_STMT_DELQ: { permitted: true, during_dispute: true, basis: "Reg Z §1026.41 — no FDCPA cease exemption in §1026.41(e)" },
+  arm_initial_adjustment_notice: { permitted: true, during_dispute: true, basis: "Reg Z §1026.20(d) — exemption only for ARMs with terms of one year or less (7.3)" },
+  NTC_REGZ_20D_ARM_INITIAL: { permitted: true, during_dispute: true, basis: "Reg Z §1026.20(d) — exemption only for ARMs with terms of one year or less (7.3)" },
+  arm_rate_adjustment_notice: { permitted: false, during_dispute: true, basis: "Reg Z §1026.20(c)(1)(ii)(C) exempts the rate-adjustment notice once the consumer has sent an FDCPA §805(c) notification — suppressed; 7.2 sends the Fannie Mae informational rate-change notice (7.2-T11)" },
+  NTC_REGZ_20C_ARM_ADJ: { permitted: false, during_dispute: true, basis: "Reg Z §1026.20(c)(1)(ii)(C) exempts the rate-adjustment notice once the consumer has sent an FDCPA §805(c) notification — suppressed; 7.2 sends the Fannie Mae informational rate-change notice (7.2-T11)" },
+  legally_required: { permitted: true, during_dispute: true, basis: "escrow / force-placed / transfer notices — per the counsel matrix [PARTIALLY VERIFIED]" },
+};
+export const PERMITTED_DURING_CEASE: ReadonlySet<string> = new Set(Object.entries(CEASE_NOTICE_MATRIX).filter(([, r]) => r.permitted).map(([k]) => k));
+export const PERMITTED_DURING_DISPUTE: ReadonlySet<string> = new Set(Object.entries(CEASE_NOTICE_MATRIX).filter(([, r]) => r.during_dispute).map(([k]) => k));
 export function communicationAllowed(o: Overlay, kind: string, direction: "outbound_collection" | "borrower_initiated"): { allowed: boolean; reason?: string } {
   if (direction === "borrower_initiated") return { allowed: true };
   if (o.bankruptcy_stay) return { allowed: false, reason: "bankruptcy_stay" };
   if (o.attorney_represented) return { allowed: false, reason: "attorney_represented (§1006.6(b)(2))" };
-  if (o.dispute_open && !PERMITTED_DURING_CEASE.has(kind)) return { allowed: false, reason: "collection ceased pending verification (§1006.38)" };
-  if (o.cease_active && !PERMITTED_DURING_CEASE.has(kind)) return { allowed: false, reason: "written cease (§1006.6(c))" };
+  if (o.dispute_open && !PERMITTED_DURING_DISPUTE.has(kind)) return { allowed: false, reason: "collection ceased pending verification (§1006.38)" };
+  if (o.cease_active && !PERMITTED_DURING_CEASE.has(kind)) { const row = CEASE_NOTICE_MATRIX[kind]; return { allowed: false, reason: row ? `written cease (§1006.6(c)); ${row.basis}` : "written cease (§1006.6(c))" }; }
   return { allowed: true };
 }
 

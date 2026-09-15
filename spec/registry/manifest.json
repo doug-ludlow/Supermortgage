@@ -3676,7 +3676,7 @@
    },
    {
     "n": 2,
-    "text": "(ACDV modify + fan-out) Given lockbox evidence of a misposted Feb-5 deposit, then response \"modify\" with corrected Feb/Mar statuses, AUDs to the other three bureaus within 2 BD, `credit_reporting_corrections` and `payment.reapplied` posted, late charge reversed."
+    "text": "(ACDV modify + fan-out) Given lockbox evidence of a misposted Feb-5 deposit, then response \"modify\" with corrected DOFD (03012027) and Amount Past Due (000002459 at 03-31, 000004919 at 04-30) while statuses 71/78 and the March PHP `1` are unchanged, AUDs to the other three bureaus within 2 BD, `credit_reporting_corrections` and `payment.reapplied` posted, late charge reversed."
    },
    {
     "n": 3,

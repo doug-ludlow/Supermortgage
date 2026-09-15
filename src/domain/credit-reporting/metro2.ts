@@ -190,7 +190,14 @@ export function buildSnapshot(state: CreditLoanState, policy: CreditPolicy = DEF
       status = "94"; paymentRating = ratingAtClosing(c.closed_on); closed = c.closed_on; final = true; apd = 0n;
       if (!c.deficiency_pursued) balance = 0n;
       break;
-    case "deed_in_lieu": status = "89"; paymentRating = ratingAtClosing(c.closed_on); closed = c.closed_on; balance = 0n; apd = 0n; final = true; break;
+    case "deed_in_lieu":
+      // Rule 7 (Mortgage Release row) / D2-3.3-02: Current Balance 0 when the deficiency waiver applies (no MI, or MI with
+      // delegation of authority to Fannie Mae); otherwise (rare) the balance follows the MI/deficiency outcome, as the 94 row
+      // does. Amount Past Due is 0 either way (rule 9 hard error with status 89).
+      status = "89"; paymentRating = ratingAtClosing(c.closed_on); closed = c.closed_on; apd = 0n; final = true;
+      if (c.deficiency_pursued) trail.push(`mortgage release: deficiency pursued (MI without delegation of authority, D2-3.3-02) — balance ${balance} retained`);
+      else { balance = 0n; trail.push("mortgage release: D2-3.3-02 deficiency waiver — balance 0"); }
+      break;
     case "short_sale":
       status = c.foreclosure_started ? "65" : "13"; paymentRating = ratingAtClosing(c.closed_on); special = "AU";
       closed = c.closed_on; balance = 0n; apd = 0n; final = true; break;

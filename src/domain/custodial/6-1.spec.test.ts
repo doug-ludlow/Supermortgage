@@ -76,7 +76,7 @@ test("6.1-T1: Given a portfolio with A/A, S/A and S/S (MBS + MRS) loans, when th
 test("6.1-T2: Given a $12B bank with IDC 120 and KBRA C, when evaluated for S/S use, then ineligible; for A/A-only use, then eligible; decision record lists the rule applied.", () => {
   const bank = { name: "X", insured: true, well_capitalized: true, total_assets_cents: 1_200_000_000_000n, ratings: { idc: 120, kbra: "C" } };
   const ss = evaluateDepositoryEligibility(bank, "S/S"); assert.equal(ss.eligible, false); assert.match(ss.rule, /S\/S: IDC≥125 ∨ KBRA≥C\+/);
-  const aa = evaluateDepositoryEligibility(bank, "A/A"); assert.equal(aa.eligible, true); assert.equal(aa.rule, "<$30B A/A,S/A only: IDC≥75 ∨ KBRA≥C");
+  const aa = evaluateDepositoryEligibility(bank, "A/A"); assert.equal(aa.eligible, true); assert.equal(aa.rule, "A/A,S/A only (any asset size): IDC≥75 ∨ KBRA≥C");
   assert.equal(evaluateDepositoryEligibility({ ...bank, insured: false }, "A/A").rule, "insured ∧ well_capitalized");
   // the `depository.evaluate` tool returns the decision record with the rule applied
   const e = engine("2026-10-15T14:00:00.000Z", ["6.1"]); const { ctx, rt } = toolCtx(e, AGENT);
@@ -86,7 +86,7 @@ test("6.1-T2: Given a $12B bank with IDC 120 and KBRA C, when evaluated for S/S 
   const r = checkDepositoryRatings(e.events, { depository: { ...bank, id: "DEP-X" }, ratings_as_of: D("2026-10-15"), checked_on: D("2026-10-15"), accounts: [{ account_id: SS_MBS, use: "S/S" }, { account_id: "ARR-1:PI:AA", use: "A/A" }], fdic_as_of: D("2026-10-01") });
   assert.equal(r.eligibility_status, "ineligible"); assert.deepEqual(r.results.map((x) => x.eligible), [false, true]);
   const checked = e.events.ofType("custodial.depository.rating_checked"); assert.equal(checked.length, 2);
-  assert.match(String(checked[0]!.payload["rule"]), /S\/S: IDC≥125/); assert.equal(checked[1]!.payload["rule"], "<$30B A/A,S/A only: IDC≥75 ∨ KBRA≥C");
+  assert.match(String(checked[0]!.payload["rule"]), /S\/S: IDC≥125/); assert.equal(checked[1]!.payload["rule"], "A/A,S/A only (any asset size): IDC≥75 ∨ KBRA≥C");
   assert.deepEqual(r.ineligible_detected!.payload["failing_accounts"], [SS_MBS]); assert.equal(r.ineligible_detected!.payload["floor"], 125);
   assert.throws(() => tool("depository.evaluate").handler({}, ctx, rt), RangeError);
 });
@@ -244,6 +244,33 @@ test("6.1-T8: Given a DocuSign declined event, then status `signatures_declined`
   assert.throws(() => ingestCbamFormStatus(e.events, e.escalations, e.timers, { form_id: "F-1013-1", custodial_account_id: SS_MBS, form_kind: "1013", status: "signatures_declined", cbam_status: "In Effect", cbam_form_number: "CBAM-1013-0001" }, DOCUSIGN), /executed-document verification/);
 });
 
+test("6.1-T9: Given a $40B bank with no S&P or Moody's rating and IDC 80, when evaluated for A/A-only use, then eligible under IDC ≥ 75 / KBRA ≥ C regardless of asset size; for S/S use, then ineligible (the ≥ $30B S&P/Moody's test is not met); decision record lists the rule applied.", () => {
+  const bank = { name: "Z", insured: true, well_capitalized: true, total_assets_cents: 4_000_000_000_000n, ratings: { idc: 80 } };
+  assert.ok(bank.total_assets_cents >= 3_000_000_000_000n, "≥ $30,000,000,000.00 in cents — the S/S size branch, which A/A–S/A use does not have");
+  const aa = evaluateDepositoryEligibility(bank, "A/A"); assert.equal(aa.eligible, true); assert.equal(aa.rule, "A/A,S/A only (any asset size): IDC≥75 ∨ KBRA≥C");
+  const sa = evaluateDepositoryEligibility(bank, "S/A"); assert.equal(sa.eligible, true); assert.equal(sa.rule, aa.rule);
+  const ss = evaluateDepositoryEligibility(bank, "S/S"); assert.equal(ss.eligible, false); assert.match(ss.rule, /^≥\$30B S\/S: S&P ST≥A-3\|LT≥BBB- ∨ Moody's/);
+  // the A/A–S/A standard has no asset-size branch: IDC 74 / KBRA C- fail it at any size, IDC 75 / KBRA C pass it
+  assert.equal(evaluateDepositoryEligibility({ ...bank, ratings: { idc: 74 } }, "A/A").eligible, false); assert.equal(evaluateDepositoryEligibility({ ...bank, ratings: { idc: 75 } }, "A/A").eligible, true);
+  assert.equal(evaluateDepositoryEligibility({ ...bank, ratings: { kbra: "C" } }, "S/A").eligible, true); assert.equal(evaluateDepositoryEligibility({ ...bank, ratings: { kbra: "C-" } }, "S/A").eligible, false);
+  assert.equal(evaluateDepositoryEligibility({ ...bank, total_assets_cents: 1_200_000_000_000n, ratings: { idc: 80 } }, "A/A").rule, aa.rule, "same rule below $30B");
+  // the S/S ratings do not substitute for the A/A–S/A standard: a ≥ $30B bank rated only by S&P is eligible for S/S, not for A/A
+  const spOnly = { ...bank, ratings: { sp_st: "A-3" } };
+  assert.equal(evaluateDepositoryEligibility(spOnly, "S/S").eligible, true); assert.equal(evaluateDepositoryEligibility(spOnly, "A/A").eligible, false);
+  // a Federal Reserve Bank or Federal Home Loan Bank is eligible for every use without the rating test
+  for (const kind of ["federal_reserve_bank", "federal_home_loan_bank"] as const) for (const use of ["A/A", "S/A", "S/S"] as const) assert.equal(evaluateDepositoryEligibility({ name: kind, kind, insured: false, well_capitalized: false, total_assets_cents: 0n, ratings: {} }, use).eligible, true);
+  // decision record from the tool, and the rating monitor evaluating each account for its own use
+  const e = engine("2026-10-15T14:00:00.000Z", ["6.1"]); const { ctx, rt } = toolCtx(e, AGENT);
+  const d = tool("depository.evaluate").handler({ depository: bank, account_use: "A/A" }, ctx, rt) as { eligible: boolean; decision: { rule_applied: string; rule_set: string } };
+  assert.equal(d.eligible, true); assert.equal(d.decision.rule_applied, aa.rule); assert.equal(d.decision.rule_set, "rule_sets.fnma.custodial.2023-07");
+  const dss = tool("depository.evaluate").handler({ depository: bank, account_use: "S/S" }, ctx, rt) as { eligible: boolean; decision: { rule_applied: string } };
+  assert.equal(dss.eligible, false); assert.equal(dss.decision.rule_applied, ss.rule);
+  const r = checkDepositoryRatings(e.events, { depository: { ...bank, id: "DEP-Z" }, ratings_as_of: D("2026-10-15"), checked_on: D("2026-10-15"), accounts: [{ account_id: "ARR-1:PI:AA", use: "A/A" }, { account_id: SS_MBS, use: "S/S" }], fdic_as_of: D("2026-10-01") });
+  assert.deepEqual(r.results.map((x) => x.eligible), [true, false]); assert.equal(r.eligibility_status, "ineligible");
+  assert.deepEqual(r.ineligible_detected!.payload["failing_accounts"], [SS_MBS]); assert.ok(["sp", "moodys"].includes(String(r.ineligible_detected!.payload["agency"])), "the S/S failure is the S&P/Moody's test, not the IDC 75 test");
+  const aaOnly = checkDepositoryRatings(e.events, { depository: { ...bank, id: "DEP-Z" }, ratings_as_of: D("2026-10-15"), checked_on: D("2026-10-15"), accounts: [{ account_id: "ARR-1:PI:AA", use: "A/A" }], fdic_as_of: D("2026-10-01") });
+  assert.equal(aaOnly.eligibility_status, "eligible"); assert.equal(aaOnly.ineligible_detected, null);
+});
 test("6.1 rule 5 worked example → CUST-DEP-INELIG-v1 (A4-1-02): IDC 128 → 118 on Thu 2026-10-15, notify by Tue 10-20 17:00 ET, exposure = balance − $250,000, remedy plan; the notice passes its checklist only with the partner actually copied", () => {
   const p = ineligibleDepositoryPackage({ depository_name: "Depository X", aba: "021000021", agency: "idc", prior_rating: 128, new_rating: 118, floor: 125, detected_on: D("2026-10-15"), balances_cents: [{ account_id: "C-PI-SS-MBS", balance_cents: 170_000_000n }, { account_id: "C-TI-MAIN", balance_cents: 20_000_000n }], replacement_depository: "Depository Y", next_remittance_on: D("2026-11-18") });
   assert.equal(p.event, "custodial.depository.ineligible_detected"); assert.equal(p.account_status, "watch"); assert.equal(toIso(p.due_at_ms), at("2026-10-20", "17:00"));

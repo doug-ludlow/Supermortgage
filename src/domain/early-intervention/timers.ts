@@ -111,7 +111,7 @@ export function applyEarlyInterventionTimerOverrides(reg: TimerRegistry): void {
   o("REGF_1006_34_VALIDATION_PERIOD_30", { trigger: "`fdcpa.validation_notice.assumed_received`", anchorField: "assumed_receipt_on", why: "§11.4 timer table: `assumed_receipt_on` + 30 calendar days = `validation_period_end_on` (Reg F §1006.34(b)(5))." });
   o("SM_ID_SMDU_SUBMIT_2BD", { trigger: "`imminent_default.eligible`", anchorField: "eligibility_date", why: "§11.5 timer table: `eligible` → SMDU submission within 2 `business_days_servicer`; `imminent_default.eligible` is emitted by imminent-default.ts evaluationEvents." });
   o("SM_ID_REVIEWER_SLA_2BD", { trigger: "`imminent_default.reviewer_pending`", anchorField: "entry", why: "§11.5 timer table: `reviewer_pending` → reviewer decision within 2 `business_days_servicer`; emitted by evaluationEvents (ineligible) and smduDecision (declined)." });
-  o("FNMA_D2101_FORM182_ADVERSE_30", { trigger: "`smdu.case.declined{current_at_evaluation=true}`", anchorField: "declined_on", why: "§11.5 timer table: `smdu_declined` for a borrower current at evaluation → Form 182 within 30 calendar days of the decline (D2-1-01); `smdu.case.declined` is emitted by imminent-default.ts smduDecision, and an accepted counteroffer (`lossmit.offer.accepted{within_window=true, kind=counteroffer}`) cancels the timer through the cancellation table (11.5-T8) rather than gating its arming — acceptance is unknown at decline time." });
+  o("FNMA_D2101_FORM182_ADVERSE_30", { trigger: "`smdu.case.declined{current_at_evaluation=true}`", anchorField: "decision_received_on", why: "§11.5 timer table: `smdu_declined` for a borrower current at evaluation → Form 182 within 30 calendar days of receipt of Fannie Mae's decision (D2-1-01: 'within 30 days of receipt of Fannie Mae's decision'); `smdu.case.declined{decision_received_on}` is emitted by imminent-default.ts smduDecision, and a retention counteroffer accepted within the same 30 days (`lossmit.offer.accepted{within_window=true, kind=counteroffer}` on or before the clock's due date) cancels the timer through the cancellation table (11.5-T8) rather than gating its arming — acceptance is unknown at decline time." });
   o("REGB_1002_9_ADVERSE_ACTION_30", { trigger: "`imminent_default.reviewer_pending`", anchorField: "brp_complete_at", why: "§11.5 timer table: completed application (`brp_complete_at`) with an adverse outcome → adverse action notice within 30 calendar days of the complete date (Reg B §1002.9); the outcome is known only at the adverse determination (ineligible / smdu_declined → `imminent_default.reviewer_pending`), whose payload carries `brp_complete_at`." });
   applyEarlyInterventionSatisfiedOverrides(reg);
 }
@@ -190,6 +190,11 @@ const paidBeforeLiveDue = (inst: TimerInstance, e: DomainEvent): boolean => {
   const credited = typeof p.credited_as_of === "string" ? p.credited_as_of.slice(0, 10) : e.occurredAt.slice(0, 10);
   return credited <= addDays(inst.anchorDate, 36);
 };
+/** 11.5 rule 8: the counteroffer acceptance cancels the Form 182 clock only when it falls within the same 30 days (the armed instance's due date = receipt of Fannie Mae's decision + 30). */
+const acceptedWithin30OfDecision = (inst: TimerInstance, e: DomainEvent): boolean => {
+  const on = (e.payload as Payload).accepted_on;
+  return typeof on === "string" && inst.dueDate !== undefined && on <= inst.dueDate;
+};
 const paidBeforeDue = (inst: TimerInstance, e: DomainEvent): boolean => {
   const p = e.payload as Payload;
   if (typeof p.installment_due_date !== "string" || p.installment_due_date !== inst.anchorDate) return false;
@@ -216,7 +221,7 @@ export const EARLY_INTERVENTION_CANCELLATIONS: readonly TimerCancellation[] = [
   { code: "REGX_1024_39B_NOTICE_180_REPEAT", on: "`regx.ei_cycle.reviewed{repeat_required=false}`", reason: "lt45_at_cycle_end", why: "§1024.39(b)(1): <45 days delinquent at the end of the 180-day period → due 45 days after the payment due date for which the borrower remains delinquent (that window's REGX_1024_39B_WRITTEN_NOTICE_45); 11.2 rule 3 / 11.2-T4." },
   { code: "REGX_1024_39D_FDCPA_NOTICE_190", on: "`regx.ei_cycle.reviewed{repeat_required=false}`", reason: "lt45_at_cycle_end", why: "§1024.39(d)(3)(iii): <45 days delinquent at the end of the 180 days → the later of (45 days after the due date for which the borrower remains delinquent) and +190; the window timer carries the later date." },
   // 11.5 FNMA_D2101_FORM182_ADVERSE_30: "(no accepted counteroffer)"
-  { code: "FNMA_D2101_FORM182_ADVERSE_30", on: "`lossmit.offer.accepted{within_window=true, kind=counteroffer}`", reason: "counteroffer_accepted", why: "D2-1-01: Form 182 is due 'unless it offers a counteroffer the borrower accepts' (11.5-T8)." },
+  { code: "FNMA_D2101_FORM182_ADVERSE_30", on: "`lossmit.offer.accepted{within_window=true, kind=counteroffer}`", select: acceptedWithin30OfDecision, reason: "counteroffer_accepted", why: "D2-1-01: Form 182 is due 'unless the servicer offers the borrower another retention workout option and the borrower accepts the counteroffer within the 30-day period' — the acceptance must fall on or before the clock's due date (receipt of the decision + 30), not merely inside the 14-day acceptance window (11.5-T8)." },
 ];
 
 const isString = (x: unknown): x is string => typeof x === "string";

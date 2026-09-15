@@ -72,7 +72,8 @@ export async function storeDocument(deps: DocsDeps, i: StoreInput): Promise<Stor
   }
   const q = deps.q;
   // idempotency: the same render twice in one command (the same clock) is one row
-  if (i.template_code && i.payload_hash) {
+  // (a caller that names the id decided the identity itself — the render tool's pre-lookup, the sink, the upload route)
+  if (!i.id && i.template_code && i.payload_hash) {
     const found = await q.query<{ id: string; storage_status: DocumentRow["storage_status"]; storage_uri: string; stored_generation: string | null; sha256: string; byte_size: bigint | number }>(
       `SELECT id, storage_status, storage_uri, stored_generation, sha256, byte_size FROM documents WHERE template_code = $1 AND template_version IS NOT DISTINCT FROM $2 AND payload_hash = $3 AND loan_id IS NOT DISTINCT FROM $4 AND application_id IS NOT DISTINCT FROM $5 AND created_at = $6::timestamptz ORDER BY created_at LIMIT 1`,
       [i.template_code, i.template_version ?? null, i.payload_hash, i.loan_id ?? null, i.application_id ?? null, deps.now]);
@@ -105,7 +106,8 @@ export interface DrainOutcome { readonly document_id: string; readonly outcome: 
 export async function drainOne(deps: DocsDeps, documentId: string): Promise<DrainOutcome> {
   const q = deps.q;
   const d = await readDocument(q, documentId);
-  if (!d || d.storage_status !== "staged") return { document_id: documentId, outcome: "skipped", storage_uri: d?.storage_uri ?? null, stored_generation: d?.stored_generation ?? null, attempts: 0, error: null };
+  // only a row this process staged is drained: a row another section inserted with a foreign storage_uri (evidence://, report://, du://) is never swapped (the trigger would refuse it anyway)
+  if (!d || d.storage_status !== "staged" || !d.storage_uri.startsWith(WORM_PENDING)) return { document_id: documentId, outcome: "skipped", storage_uri: d?.storage_uri ?? null, stored_generation: d?.stored_generation ?? null, attempts: 0, error: d && !d.storage_uri.startsWith(WORM_PENDING) ? "foreign storage_uri" : null };
   const blob = (await q.query<{ content: Buffer | null; mime_type: string; staged_at: string; drain_attempts: number }>(`SELECT content, mime_type, staged_at, drain_attempts FROM document_blobs WHERE document_id = $1`, [documentId]))[0];
   if (!blob?.content) return { document_id: documentId, outcome: "skipped", storage_uri: d.storage_uri, stored_generation: null, attempts: blob?.drain_attempts ?? 0, error: "no staged bytes (a foreign storage_uri)" };
   const bytes = Buffer.isBuffer(blob.content) ? blob.content : Buffer.from(blob.content);
@@ -135,9 +137,10 @@ export async function drainOne(deps: DocsDeps, documentId: string): Promise<Drai
 
 /** The drain over every staged row in scope (the sweep's pass; `documents.store{op: "drain"}` by hand): oldest first, at most `limit`. */
 export async function drainStagedBlobs(deps: DocsDeps, scope: { loanId?: string; applicationId?: string } = {}, limit = 200): Promise<{ drained: number; failed: number; skipped: number; outcomes: DrainOutcome[] }> {
-  const where = scope.loanId ? `AND d.loan_id = $2` : scope.applicationId ? `AND d.application_id = $2` : "";
+  // one unit of work per scope: a loan's or an application's drain clock is hydrated only by that scope's unit of work, so a global drain touches keyless rows only
+  const where = scope.loanId ? `AND d.loan_id = $2` : scope.applicationId ? `AND d.application_id = $2` : "AND d.loan_id IS NULL AND d.application_id IS NULL";
   const params: unknown[] = [limit, ...(scope.loanId ? [scope.loanId] : scope.applicationId ? [scope.applicationId] : [])];
-  const rows = await deps.q.query<{ id: string }>(`SELECT d.id FROM documents d JOIN document_blobs b ON b.document_id = d.id WHERE d.storage_status = 'staged' AND b.content IS NOT NULL AND b.drain_attempts < ${DRAIN_MAX_ATTEMPTS} ${where} ORDER BY d.created_at LIMIT $1`, params);
+  const rows = await deps.q.query<{ id: string }>(`SELECT d.id FROM documents d JOIN document_blobs b ON b.document_id = d.id WHERE d.storage_status = 'staged' AND d.storage_uri LIKE 'worm_pending:%' AND b.content IS NOT NULL AND b.drain_attempts < ${DRAIN_MAX_ATTEMPTS} ${where} ORDER BY d.created_at LIMIT $1`, params);
   const outcomes: DrainOutcome[] = [];
   let drained = 0, failed = 0, skipped = 0;
   for (const r of rows) {

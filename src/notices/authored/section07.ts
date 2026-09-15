@@ -393,6 +393,20 @@ const STATEMENT_V11_STD_SAMPLE: Record<string, unknown> = {
   regx_days_delinquent: 16, reminder_panel: false, delinquency: null,
 };
 
+// ------------------------------------------------------------------ 7.1 periodic statement v1.2.0 (standard) — 35.2 T2: the amount-due box composes the regular monthly payment
+// The code stays 7.1's (35.2 owns no notice code). This revision is projection-driven — the box names the P&I, the escrow, the regular monthly payment,
+// the count of past-due installments and the late charge the owning process supplies (35.2 rule 12: reproduced to the cent, never recomputed) so a
+// reader of the page sees how the amount due is composed (§1026.41(d)(1)–(2)). The composition renders only when the payload carries `pi_cents`
+// (src/runtime/servicing.ts statementPayload does); every 1.1.0 rule is unchanged and the composition line is a warn rule. Counsel's re-approval of the
+// revised wording is 7.1's (the catalog's publishAuthored stamp is the authored-version convention, not a new approval).
+const STATEMENT_V12_SOURCE = STATEMENT_V11_SOURCE.replace(
+  `{{#block "amount_due" page=1 y=0.05 pt=16 bold}}Amount due {{money amount_due_cents}} — payment due date {{date due_date}}{{/block}}`,
+  `{{#block "amount_due" page=1 y=0.05 pt=16 bold}}Amount due {{money amount_due_cents}} — payment due date {{date due_date}}{{#if pi_cents}} · Regular monthly payment {{money monthly_payment_cents}} (principal and interest {{money pi_cents}} plus escrow {{money escrow_cents}}) · past-due payments: {{past_due_count}} · late charge {{money late_charges_due_cents}}{{/if}}{{/block}}`);
+const STATEMENT_V12_RULES: ContentRule[] = [...STATEMENT_V11_RULES,
+  R("d1-composition", "§1026.41(d)(1)–(2); 35.2 worked example A", "presence", "Regular monthly payment \\$[\\d,]+\\.\\d{2} \\(principal and interest \\$[\\d,]+\\.\\d{2} plus escrow \\$[\\d,]+\\.\\d{2}\\)", "the amount-due box composes the regular monthly payment from P&I and escrow", { severity: "warn", when: { present: "pi_cents" } })];
+const STATEMENT_V12_STD_SAMPLE: Record<string, unknown> = { ...STATEMENT_V11_STD_SAMPLE, pi_cents: 233_429n, monthly_payment_cents: 294_679n, escrow_cents: 61_250n, past_due_count: 1, late_charges_due_cents: 11_671n };
+export { STATEMENT_V12_SOURCE, STATEMENT_V12_RULES, STATEMENT_V12_STD_SAMPLE };
+
 // ------------------------------------------------------------------ 7.3 ARM initial (d) notice v1.1.0 (H-4(D)(3)/(4)) — adds (d)(2)(i) disclosure date and the (d)(2)(iv)(A) source of information about the index
 export const ARM_D_V11_SOURCE = `{{#block "date" page=1 y=0.02 pt=11}}Date of this disclosure: {{date disclosure_date}}{{/block}}
 {{#block "heading" page=1 y=0.05 pt=14 bold}}Important notice: your interest rate and payment will change on {{date change_date}}{{/block}}
@@ -424,6 +438,7 @@ export const ARM_D_V11_SAMPLE: Record<string, unknown> = { disclosure_date: "202
 
 const SECTION_07_SUPERSEDING_VERSIONS: readonly VersionInput[] = [
   V2("NTC_REGZ_41_STMT_STD", "1.1.0", "2026-09-02", STATEMENT_V11_SOURCE, STATEMENT_V11_RULES, STATEMENT_V11_STD_SAMPLE, "regz.periodic_statement.2018", "H-30(A), 2018 edition; 7.1 rule excerpt"),
+  V2("NTC_REGZ_41_STMT_STD", "1.2.0", "2026-09-17", STATEMENT_V12_SOURCE, STATEMENT_V12_RULES, STATEMENT_V12_STD_SAMPLE, "regz.periodic_statement.2018", "H-30(A), 2018 edition; 7.1 rule excerpt; 35.2 worked example A (amount-due composition)"),
   V2("NTC_REGZ_41_STMT_DELQ", "1.1.0", "2026-09-02", STATEMENT_V11_SOURCE, STATEMENT_V11_RULES, STATEMENT_V11_DELQ_SAMPLE, "regz.periodic_statement.2018", "H-30(B), 2018 edition; 7.1 rule excerpt"),
   V2("NTC_REGZ_20D_ARM_INITIAL", "1.1.0", "2026-09-02", ARM_D_V11_SOURCE, ARM_D_V11_RULES, ARM_D_V11_SAMPLE, "regz.arm_notices.2013", "H-4(D)(3)/(4); 7.3 worked example"),
 ];

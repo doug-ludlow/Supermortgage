@@ -18,7 +18,7 @@
  * Guardrails: BYTES_ARE_WRITE_ONCE, URI_SWAP_ONCE (the trigger's), VERIFY_STORED_BYTES_ONLY, HOLD_RELEASE_HUMAN_ONLY,
  * DISPOSE_NEEDS_OFFICER_ATTESTATION, NO_ENVELOPE_WITHOUT_CONSENT, NO_AGENT_SIGNS, NO_MONEY_FIELD, NO_PII_IN_DECISION.
  */
-import { defineTools, compute, never, guard, str, type ToolDef, type ToolInput, type ToolRuntime } from "../tools.ts";
+import { defineTools, compute, never, guard, str, PortUnavailable, type ToolDef, type ToolInput, type ToolRuntime } from "../tools.ts";
 import { CommandRefused, type CommandContext } from "../commands.ts";
 import { hasRole } from "../roles.ts";
 import { AGENT, PROCESS, RULE_SET_VERSION, need, txOf, inTx, blobsOf, isUuid, assertRetentionClass, DocumentsRefused, type DocsDeps } from "../../domain/operations-runtime/documents/shared.ts";
@@ -26,6 +26,13 @@ import { storeDocument, drainStagedBlobs } from "../../domain/operations-runtime
 import { placeHold, releaseHold } from "../../domain/operations-runtime/documents/hold.ts";
 import { disposeDocument } from "../../domain/operations-runtime/documents/dispose.ts";
 import { docsDecision } from "../../domain/operations-runtime/documents/decision.ts";
+import { render1098CopyB, boxesFromRow, SM_FILER, IRS_1098_TEMPLATE_CODE, IRS_1098_TEMPLATE_VERSION } from "../../domain/operations-runtime/documents/irs-1098.ts";
+import { GlyphUnsupported } from "../../infra/files/pdf.ts";
+import { payloadHash } from "../../notices/render.ts";
+import { plainDate as D } from "../../kernel/calendar/date.ts";
+import type { Recipient, ChannelContext } from "../../notices/channel.ts";
+import type { Runtime } from "../../runtime/app.ts";
+import type { PgArtifactSink } from "../../runtime/documents/notice-sink.ts";
 
 const has = (i: ToolInput, k: string): boolean => i[k] !== undefined && i[k] !== null && i[k] !== "";
 const moneyKey = (k: string): boolean => /_cents$/.test(k) || /^(amount|cents|upb|balance)$/.test(k);
@@ -53,7 +60,56 @@ export async function refusing<T>(tool: string, fn: () => Promise<T>): Promise<T
 const scopeOf = (ctx: CommandContext): { loan_id: string | null; application_id: string | null } => ({ loan_id: ctx.loanId || null, application_id: ctx.applicationId ?? null });
 const bytesOf = (i: ToolInput): Buffer | undefined => (typeof i["bytes_base64"] === "string" && i["bytes_base64"] ? Buffer.from(i["bytes_base64"], "base64") : Buffer.isBuffer(i["bytes"]) ? (i["bytes"] as Buffer) : undefined);
 
+const runtimeOf = (rt: ToolRuntime): Runtime => { const r = rt.services["runtime"] as Runtime | undefined; if (!r) throw new PortUnavailable("service:runtime"); return r; };
+
+/** `documents.render`: a notice through the Notice Registry (the sink renders, stages/stores and links `notices.document_id`), or a document kind of 35.2's own (the 1098 Copy B). */
+async function renderHandler(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): Promise<unknown> {
+  const kind = str(i, "document_kind");
+  if (!kind) need(i, "template_code");
+  if (kind === "irs_1098_copy_b") return render1098(i, ctx, rt);
+  if (kind) throw new RangeError(`documents.render: document_kind ${kind} is not one 35.2 renders (irs_1098_copy_b) — a notice is rendered by template_code`);
+  const notices = rt.notices; if (!notices) throw new PortUnavailable("notices");
+  const runtime = runtimeOf(rt);
+  const sink = rt.services["artifacts"] as PgArtifactSink | undefined;
+  const templateCode = str(i, "template_code");
+  const asOf = D(str(i, "as_of") || ctx.now.slice(0, 10));
+  const version = runtime.noticeRegistry.activeVersion(templateCode, asOf);
+  if (!version) throw new RangeError(`documents.render: no approved version of ${templateCode} in effect on ${asOf}`);
+  const payload = (i["payload"] as Record<string, unknown> | undefined) ?? {};
+  const s = scopeOf(ctx);
+  // idempotency (edge case): the same payload rendered twice at this clock on this subject is one row — the existing id is rendered under again, never re-stored
+  const hash = payloadHash(payload);
+  const existing = (await txOf(ctx, rt).query<{ id: string }>(`SELECT id FROM documents WHERE template_code = $1 AND template_version = $2 AND payload_hash = $3 AND loan_id IS NOT DISTINCT FROM $4 AND application_id IS NOT DISTINCT FROM $5 AND created_at = $6::timestamptz LIMIT 1`, [templateCode, version.version, hash, s.loan_id, s.application_id, ctx.now]))[0];
+  const documentId = existing?.id ?? sink?.idFor({ templateCode, version: version.version, payloadHash: hash, ...(s.loan_id ? { loanId: s.loan_id } : {}), ...(s.application_id ? { applicationId: s.application_id } : {}) });
+  if (existing && sink) sink.knownIds.add(existing.id);
+  let n;
+  try {
+    n = notices.render({ templateCode, ...(s.loan_id ? { loanId: s.loan_id } : {}), ...(s.application_id ? { applicationId: s.application_id } : {}), recipients: (i["recipients"] as readonly Recipient[] | undefined) ?? [], payload, asOf, ...(documentId ? { renderedDocumentId: documentId } : {}), ...(typeof i["case_id"] === "string" ? { caseId: i["case_id"] } : {}) });
+  } catch (e) { if (e instanceof GlyphUnsupported) throw new CommandRefused("documents.render", "GLYPH_UNSUPPORTED", "35.2 rule 2: a payload character outside WinAnsi is refused naming the character and the block; nothing is silently substituted", e.message); throw e; }
+  if (i["send"] === true) n = await notices.send(n.id, (i["channel_context"] as ChannelContext | undefined) ?? {});
+  const pdf = n.renderedDocumentId ? sink?.results.get(n.renderedDocumentId) : undefined;
+  return { document_id: n.renderedDocumentId ?? null, notice_id: n.id, status: n.status, held_reason: n.heldReason ?? null, template_code: templateCode, template_version: version.version, payload_hash: hash, existing: !!existing,
+    ...(pdf ? { sha256: pdf.sha256, byte_size: pdf.byte_size, page_count: pdf.page_count, placements: pdf.placements } : {}), checklist_passed: n.checklist.passed, deliveries: n.deliveries.map((d) => ({ attempt_no: d.attemptNo, channel: d.channel, vendor: d.vendor, vendor_piece_id: d.vendorPieceId })) };
+}
+/** The Form 1098 Copy B from the tax_forms_1098 row (35.2 rule 11): stored as a documents row under tax_4y; the figures are 7.1's. */
+async function render1098(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): Promise<unknown> {
+  need(i, "tax_form_1098_id", "payer", "direct_access_phone");
+  const payer = i["payer"] as { name?: unknown; address?: unknown; tin_last4?: unknown };
+  if (!payer || typeof payer !== "object" || typeof payer.name !== "string" || typeof payer.address !== "string" || typeof payer.tin_last4 !== "string") throw new RangeError("documents.render{irs_1098_copy_b}: payer {name, address, tin_last4} is required");
+  const q = txOf(ctx, rt);
+  const row = (await q.query<{ id: string; loan_id: string; tax_year: number; boxes: Record<string, unknown>; payer_party_id: string | null }>(`SELECT id, loan_id, tax_year, boxes, payer_party_id FROM tax_forms_1098 WHERE id = $1`, [str(i, "tax_form_1098_id")]))[0];
+  if (!row) throw new RangeError(`documents.render{irs_1098_copy_b}: no tax_forms_1098 row ${str(i, "tax_form_1098_id")}`);
+  const boxes = boxesFromRow(row.boxes);
+  const copy = render1098CopyB({ tax_year: Number(row.tax_year), boxes, filer: SM_FILER, payer: { name: payer.name, address: payer.address, tin_last4: payer.tin_last4 }, direct_access_phone: str(i, "direct_access_phone"), account_last4: str(i, "account_last4") || "0000", now: ctx.now });
+  const r = await inTx(ctx, rt, async (tq) => storeDocument({ ...depsOf(ctx, rt), q: tq }, { kind: "irs_1098_copy_b", bytes: copy.bytes, mime_type: "application/pdf", retention_class: "tax_4y", loan_id: row.loan_id, template_code: IRS_1098_TEMPLATE_CODE, template_version: IRS_1098_TEMPLATE_VERSION, payload_hash: copy.payload_hash, page_count: copy.page_count, text_layer: true, locale: "en", metadata: { title: `Form 1098 ${row.tax_year} Copy B`, tax_form_1098_id: row.id, tax_year: row.tax_year } }));
+  ctx.events.append({ type: "document.rendered", loanId: row.loan_id, aggregate: { kind: "document", id: r.document_id }, actor: ctx.actor, payload: { document_id: r.document_id, template_code: IRS_1098_TEMPLATE_CODE, template_version: IRS_1098_TEMPLATE_VERSION, payload_hash: copy.payload_hash, sha256: r.sha256, byte_size: r.byte_size, page_count: copy.page_count, tax_form_1098_id: row.id } });
+  return { document_id: r.document_id, sha256: r.sha256, byte_size: r.byte_size, page_count: copy.page_count, payload_hash: copy.payload_hash, storage_status: r.storage_status, placements: copy.placements, template_code: IRS_1098_TEMPLATE_CODE, template_version: IRS_1098_TEMPLATE_VERSION, tax_year: row.tax_year, box1_cents: boxes.box1_cents.toString(), box2_cents: boxes.box2_cents.toString(), existing: r.existing };
+}
+
 export const TOOLS_35_2: readonly ToolDef[] = defineTools(PROCESS, AGENT, [
+  { name: "documents.render", kind: "act", ruleSetVersion: RULE_SET_VERSION, guardrails: [],
+    handler: compute(async (i, ctx, rt) => refusing("documents.render", () => renderHandler(i, ctx, rt))),
+    decision: (i, output, ctx) => { const o = (output ?? {}) as Record<string, unknown>; return docsDecision({ subject: { kind: "document", id: String(o["document_id"] ?? "") }, action: "render", sha256: typeof o["sha256"] === "string" ? o["sha256"] : null, retention_class: str(i, "document_kind") === "irs_1098_copy_b" ? "tax_4y" : "life_of_loan_plus_4y", ...scopeOf(ctx), counts: { page_count: Number(o["page_count"] ?? 0) }, rationale: `rendered ${str(i, "document_kind") || str(i, "template_code")} ${String(o["template_version"] ?? "")} (payload ${String(o["payload_hash"] ?? "").slice(0, 12)}…)${o["notice_id"] ? ` for notice ${String(o["notice_id"])} (${String(o["status"])})` : ""}${o["existing"] === true ? "; idempotent: the row already existed at this clock" : ""}` }); } },
   { name: "documents.store", kind: "act", ruleSetVersion: RULE_SET_VERSION, guardrails: [NO_MONEY_FIELD, BYTES_ARE_WRITE_ONCE],
     handler: compute(async (i, ctx, rt) => refusing("documents.store", async () => {
       const op = str(i, "op") || "store";
@@ -67,7 +123,7 @@ export const TOOLS_35_2: readonly ToolDef[] = defineTools(PROCESS, AGENT, [
       const bytes = bytesOf(i);
       const s = scopeOf(ctx);
       return inTx(ctx, rt, async (q) => storeDocument({ ...depsOf(ctx, rt), q }, {
-        ...(has(i, "id") && isUuid(i["id"]) ? { id: i["id"] as string } : {}), kind: str(i, "kind"), ...(bytes ? { bytes } : { sha256: str(i, "sha256"), byte_size: Number(i["byte_size"] ?? NaN), vendor_storage_uri: str(i, "storage_uri") }),
+        ...(has(i, "id") && isUuid(i["id"]) ? { id: i["id"] as string } : {}), kind: str(i, "kind"), ...(bytes ? { bytes } : { sha256: str(i, "sha256"), byte_size: (Number.isInteger(i["byte_size"]) && Number(i["byte_size"]) > 0 ? Number(i["byte_size"]) : (() => { throw new RangeError("documents.store: a vendor-held artifact needs a positive integer byte_size"); })()), vendor_storage_uri: str(i, "storage_uri") }),
         mime_type: str(i, "mime_type"), retention_class: str(i, "retention_class"), loan_id: s.loan_id, application_id: s.application_id,
         metadata: (i["metadata"] as Record<string, unknown> | undefined) ?? {}, ...(typeof i["page_count"] === "number" ? { page_count: i["page_count"] } : {}),
         ...(has(i, "template_code") ? { template_code: str(i, "template_code"), template_version: str(i, "template_version") || null, payload_hash: str(i, "payload_hash") || null } : {}),
@@ -85,7 +141,7 @@ export const TOOLS_35_2: readonly ToolDef[] = defineTools(PROCESS, AGENT, [
       if (op === "release") return inTx(ctx, rt, async (q) => releaseHold({ ...depsOf(ctx, rt), q }, { document_id: str(i, "document_id"), reason: str(i, "reason"), matter_ref: str(i, "matter_ref") || null }));
       throw new RangeError(`documents.hold op ${op} is not place or release`);
     })),
-    decision: (i, output, ctx) => { const o = (output ?? {}) as Record<string, unknown>; return docsDecision({ subject: { kind: "document", id: str(i, "document_id") }, action: `hold.${str(i, "op") || "place"}`, hold: o["legal_hold"] === true, ...scopeOf(ctx), counts: { open_matters: Array.isArray(o["open_matters"]) ? (o["open_matters"] as unknown[]).length : 0 }, rationale: `${str(i, "op") || "place"} for matter ${String(o["matter_ref"] ?? str(i, "matter_ref"))} by ${ctx.actor.kind}:${ctx.actor.id}${ctx.actor.role ? ` (${ctx.actor.role})` : ""}` }); } },
+    decision: (i, output, ctx) => { const o = (output ?? {}) as Record<string, unknown>; return docsDecision({ subject: { kind: "document", id: str(i, "document_id") }, action: `hold.${str(i, "op") || "place"}`, hold: o["legal_hold"] === true, ...scopeOf(ctx), counts: { open_matters: Array.isArray(o["open_matters"]) ? (o["open_matters"] as unknown[]).length : 0 }, rationale: `${str(i, "op") || "place"}: document_holds row ${String(o["hold_id"] ?? "")} by ${ctx.actor.kind}:${ctx.actor.id}${ctx.actor.role ? ` (${ctx.actor.role})` : ""}` }); } },
   { name: "documents.dispose", kind: "act", ruleSetVersion: RULE_SET_VERSION, humanRoles: ["officer", "compliance"], guardrails: [NO_MONEY_FIELD],
     handler: compute(async (i, ctx, rt) => refusing("documents.dispose", async () => { need(i, "document_id", "disposal_run_id"); return inTx(ctx, rt, async (q) => disposeDocument({ ...depsOf(ctx, rt), q }, { document_id: str(i, "document_id"), disposal_run_id: str(i, "disposal_run_id") })); })),
     decision: (i, output, ctx) => { const o = (output ?? {}) as Record<string, unknown>; return docsDecision({ subject: { kind: "document", id: str(i, "document_id") }, action: "dispose", sha256: String(o["sha256"] ?? ""), ...scopeOf(ctx), rationale: `disposed under 19.1 run ${str(i, "disposal_run_id")} (officer attestation and WORM check on the log); the row is the tombstone` }); } },

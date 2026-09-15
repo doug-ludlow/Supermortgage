@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 8048/8756 (91.9%): tids 2247/2458, tables 767/848, timers 2043/2097, notices 308/308, tools 1436/1578, figures 1247/1467; processes at 100%: 192/205",
+ "brief": "spec units built 8070/8756 (92.2%): tids 2252/2458, tables 767/848, timers 2043/2097, notices 308/308, tools 1437/1578, figures 1263/1467; processes at 100%: 192/205",
  "totals": {
   "tids": {
    "spec": 2458,
-   "built": 2247
+   "built": 2252
   },
   "tables": {
    "spec": 848,
@@ -19,15 +19,15 @@
   },
   "tools": {
    "spec": 1578,
-   "built": 1436
+   "built": 1437
   },
   "figures": {
    "spec": 1467,
-   "built": 1247
+   "built": 1263
   },
   "units": {
    "spec": 8756,
-   "built": 8048
+   "built": 8070
   }
  },
  "sections": {
@@ -237,7 +237,7 @@
   },
   "35": {
    "spec": 715,
-   "built": 24,
+   "built": 46,
    "processes": 12,
    "done": 0
   }
@@ -8462,18 +8462,13 @@
    "title": "Documents and artifacts: the object store, the PDF writer, stored-byte integrity, legal holds, e-sign envelopes, the borrower viewer and print/mail manifests",
    "tids": {
     "spec": 18,
-    "built": 3,
-    "todo": 15,
+    "built": 8,
+    "todo": 10,
     "missing": [
-     1,
-     2,
-     3,
      7,
-     8,
      9,
      10,
      11,
-     12,
      13,
      14,
      15,
@@ -8513,9 +8508,8 @@
    },
    "tools": {
     "spec": 13,
-    "built": 3,
+    "built": 4,
     "missing": [
-     "documents.render",
      "documents.open",
      "documents.verify",
      "esign.envelope.create",
@@ -8529,25 +8523,14 @@
    },
    "figures": {
     "spec": 11,
-    "built": 1,
-    "missing": [
-     "$1,234.56",
-     "$1,912.65",
-     "$1,914.67",
-     "$1,916.67",
-     "$116.71",
-     "$2,334.29",
-     "$2,946.79",
-     "$5,743.99",
-     "$6,010.29",
-     "$612.50"
-    ]
+    "built": 11,
+    "missing": []
    },
    "units": {
     "spec": 58,
-    "built": 12
+    "built": 28
    },
-   "pct": 20.7
+   "pct": 48.3
   },
   {
    "process": "35.3",
@@ -8813,7 +8796,7 @@
    },
    "figures": {
     "spec": 53,
-    "built": 1,
+    "built": 5,
     "missing": [
      "$1,351.71",
      "$1,500.00",
@@ -8824,18 +8807,15 @@
      "$1,896.20",
      "$1,900.91",
      "$1,971.20",
-     "$1.00",
      "$10.24",
      "$100.00",
      "$17.27",
      "$2,192.57",
      "$2,292.57",
      "$2,308.50",
-     "$2,334.29",
      "$2,476.44",
      "$2,855.56",
      "$2,858.33",
-     "$2,946.79",
      "$228.46",
      "$249,218.31",
      "$249,546.77",
@@ -8864,16 +8844,15 @@
      "$6,000.07",
      "$6,001.07",
      "$612.40",
-     "$612.50",
      "$664,942.20",
      "$79.01"
     ]
    },
    "units": {
     "spec": 97,
-    "built": 3
+    "built": 7
    },
-   "pct": 3.1
+   "pct": 7.2
   },
   {
    "process": "35.6",
@@ -9071,20 +9050,19 @@
    },
    "figures": {
     "spec": 5,
-    "built": 0,
+    "built": 1,
     "missing": [
      "$10,000.00",
      "$10,000.01",
      "$249,999.99",
-     "$250,000.00",
      "$260,000.00"
     ]
    },
    "units": {
     "spec": 44,
-    "built": 2
+    "built": 3
    },
-   "pct": 4.5
+   "pct": 6.8
   },
   {
    "process": "35.8",
@@ -9387,7 +9365,7 @@
    },
    "figures": {
     "spec": 27,
-    "built": 1,
+    "built": 2,
     "missing": [
      "$107.30",
      "$2,062.50",
@@ -9411,7 +9389,6 @@
      "$561,977.09",
      "$562,084.39",
      "$575,000.00",
-     "$612.50",
      "$687.50",
      "$87.59",
      "$93.88"
@@ -9419,9 +9396,9 @@
    },
    "units": {
     "spec": 65,
-    "built": 1
+    "built": 2
    },
-   "pct": 1.5
+   "pct": 3.1
   },
   {
    "process": "35.11",

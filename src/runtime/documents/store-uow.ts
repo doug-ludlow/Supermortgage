@@ -19,9 +19,9 @@ export interface StoreScope { readonly loanId?: string; readonly applicationId?:
 export async function storeDocumentInUow(runtime: Runtime, scope: StoreScope, input: StoreInput, actor: Actor): Promise<StoreResult> {
   let result: StoreResult | undefined;
   let rehearsed = false;
+  const now = runtime.clock.now();   // one clock for the events, the row and the idempotency key
   await runtime.uow.run(scope, async (ctx) => {
     const q = (ctx as { q?: Queryable }).q;
-    const now = ctx.clock.now();
     if (q) { result = await storeDocument({ q, blobs: runtime.blobs, events: ctx.events, actor, now }, input); return; }
     // HEAD: rehearse on a savepoint that is rolled back — the events the store would append, under the id the real store below reuses
     const rehearsal = new MemoryEventStore(ctx.clock, scope);
@@ -36,7 +36,10 @@ export async function storeDocumentInUow(runtime: Runtime, scope: StoreScope, in
   }, { clock: runtime.clock, before: async (q) => {
     if (!rehearsed || !result || result.existing) return;
     const scratch = new MemoryEventStore(runtime.clock, scope);
-    result = await storeDocument({ q, blobs: runtime.blobs, events: scratch, actor, now: runtime.clock.now() }, { ...input, id: result.document_id });
+    const real = await storeDocument({ q, blobs: runtime.blobs, events: scratch, actor, now }, { ...input, id: result.document_id });
+    // the events already describe the rehearsal's outcome; a store that answered differently the second time (an outage between the two calls) rolls the unit back rather than commit a log that contradicts the row
+    if (real.storage_status !== result.storage_status) throw new Error(`STORE_OUTCOME_CHANGED: the object store answered ${real.storage_status} after rehearsing ${result.storage_status} for ${result.document_id}; nothing written`);
+    result = real;
   } });
   return result!;
 }

@@ -16,6 +16,19 @@ import { CommandRefused } from "../../app/commands.ts";
 import type { ToolInput } from "../../app/tools.ts";
 import { PgFakeBlobStore } from "../../infra/blobs/pg-fake-blob-store.ts";
 import type { FakePrintMail } from "../../infra/integrations/delivery.ts";
+import { FakePrintMail as FakePrintMailImpl, FakeEdelivery } from "../../infra/integrations/delivery.ts";
+import { MemoryEventStore } from "../../kernel/events/index.ts";
+import { buildRegistry, publishAuthored } from "../../notices/catalog.ts";
+import { NoticeService } from "../../notices/service.ts";
+import { render, money } from "../../notices/render.ts";
+import { evaluateChecklist } from "../../notices/checklist.ts";
+import { publishSection10 } from "../pmi/spec-harness.ts";
+import { textLayer, GlyphUnsupported } from "../../infra/files/pdf.ts";
+import { renderNoticePdf, blocksFromPlacements, payloadHash } from "./documents/render.ts";
+import { MemoryArtifactSink } from "../../runtime/documents/notice-sink.ts";
+import { LEGEND_1, LEGEND_2, SM_FILER } from "./documents/irs-1098.ts";
+import { monthlyInterest, ratePercent } from "../../kernel/money/cents.ts";
+import type { Recipient } from "../../notices/channel.ts";
 
 // ───────── the harness: this file's own database, one runtime over it, the FAKE object store (document_blobs), the FAKE ports
 const { url: DB_URL, skip } = await testDatabase(import.meta.url);
@@ -37,11 +50,35 @@ const run = (name: string, input: ToolInput, actor: Actor = RECORDS, scope: { lo
 const refused = (p: Promise<unknown>, code: string): Promise<void> => assert.rejects(p, (e: unknown) => { assert.ok(e instanceof CommandRefused, `expected CommandRefused ${code}, got ${(e as Error).message}`); assert.equal(e.code, code, e.message); return true; });
 const rejectsSql = (p: Promise<unknown>, re: RegExp): Promise<void> => assert.rejects(p, (e: unknown) => { assert.match((e as Error).message, re); return true; });
 async function loanFixture(): Promise<Fixture> {
-  return new PgLoanRepository(db).createFixture({ fnmaLoanNumber: uniq(), servicerLoanNumber: `SM-${randomUUID()}`, instrumentDate: D("2021-07-15"), originalUpbCents: 40_000_000n, originalTermMonths: 360, firstPaymentDate: D("2026-10-01"), maturityDate: D("2056-09-01") });
+  return new PgLoanRepository(db).createFixture({ fnmaLoanNumber: uniq(), servicerLoanNumber: `SM-${randomUUID()}`, instrumentDate: D("2021-07-15"), originalUpbCents: 25_000_000n, originalTermMonths: 360, firstPaymentDate: D("2026-10-01"), maturityDate: D("2056-09-01") });
 }
 /** A small but real PDF-shaped artifact for the store tests (the writer's own PDFs are T1's subject). */
 const PDF_BYTES = (tag: string): Buffer => Buffer.from(`%PDF-1.4\n% 35.2 fixture ${tag}\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n`, "latin1");
 const storeInput = (tag: string, extra: Record<string, unknown> = {}): ToolInput => ({ kind: "upload", bytes_base64: PDF_BYTES(tag).toString("base64"), mime_type: "application/pdf", retention_class: "life_of_loan_plus_4y", metadata: { filename: `${tag}.pdf` }, ...extra });
+
+// ───────── worked example A (7.1's own figures — 35.2 rule 12: reproduced to the cent, never recomputed) ─────────
+const PI = 233_429n;                       // $2,334.29 P&I
+const ESCROW = 61_250n;                    // $612.50
+const MONTHLY = PI + ESCROW;               // $2,946.79
+const LATE_CHARGE = (PI * 5n + 50n) / 100n; // 5% of P&I = 116.7145 → $116.71 (half-up)
+const AMOUNT_DUE = MONTHLY + MONTHLY + LATE_CHARGE; // the Sept 1 payment unreceived: $6,010.29 on the Oct 1 statement
+/** Worked example A's payload: the 1.2.0 statement sample's shape with the example's figures. */
+const PAYLOAD_A: Record<string, unknown> = {
+  statement_date: "2026-09-17", due_date: "2026-10-01", amount_due_cents: AMOUNT_DUE, computed_amount_due_cents: AMOUNT_DUE, late_fee_after_date: "2026-10-16", late_fee_cents: LATE_CHARGE,
+  principal_cents: 41_750n, interest_cents: 191_679n, escrow_cents: ESCROW, fees_since_last_cents: LATE_CHARGE, past_due_cents: MONTHLY, late_charges_due_cents: LATE_CHARGE,
+  pi_cents: PI, monthly_payment_cents: MONTHLY, past_due_count: 1,
+  payments_since_last: { total_cents: 0n, principal_cents: 0n, interest_cents: 0n, escrow_cents: 0n, fees_cents: 0n, suspense_cents: 0n },
+  ytd: { total_cents: 2_357_432n, principal_cents: 334_000n, interest_cents: 1_533_432n, escrow_cents: 490_000n, fees_cents: 0n, suspense_held_cents: 0n }, ytd_ledger_total_cents: 2_357_432n,
+  transactions: [{ date: "2026-09-17", description: "Late fee", amount_cents: LATE_CHARGE }], late_fee_debits: 1,
+  servicer_phone: "(800) 555-0100", servicer_address: "PO Box 1, Testville TX 75001", exclusive_address: "PO Box 2, Testville TX 75001", account_last4: "4321", upb_cents: 40_000_000n, rate_pct: "5.750", next_rate_change_date: "2031-10-01", prepay_penalty: false,
+  counselor_url: "consumerfinance.gov/find-a-housing-counselor", hud_phone: "(800) 569-4287", regx_days_delinquent: 16, borrower_name: "Bea Borrower", reminder_panel: false, delinquency: null,
+};
+const BEA = (): Recipient => ({ partyId: randomUUID(), name: "Bea Borrower", mailingAddress: "1 Test St, Testville TX 75001" });
+const STMT = "NTC_REGZ_41_STMT_STD";
+const registryWithAuthored = () => { const reg = buildRegistry(); publishAuthored(reg); return reg; };
+const activeStatementVersion = () => { const v = registryWithAuthored().activeVersion(STMT, D("2026-09-17")); assert.ok(v, "the statement template has a counsel-approved version in effect on 2026-09-17"); return v; };
+/** How many times `needle` occurs in `hay`. */
+const occurrences = (hay: string, needle: string): number => hay.split(needle).length - 1;
 
 test.before(async () => {
   if (skip) return;
@@ -53,9 +90,72 @@ test.before(async () => {
 test.after(async () => { if (!skip) await db.end(); });
 void ANALYST;
 
-test("35.2-T1: Given the `NTC_REGZ_41_STMT_STD` template at its counsel-approved version and worked example A's payload, when `documents.render` runs twice with the clock at 2026-09-17T05:00:00Z, then the two PDFs are byte-identical with one `sha256`, the file begins `%PDF-1.4`, every page's content stream carries a text layer from which the rendered `text` is recovered in reading order, and changing one payload field (the late charge) changes the hash.", { todo: true });
-test("35.2-T2: Given worked example A rendered through the command path, then a `documents` row exists with `mime_type = application/pdf`, `kind = rendered_notice`, `sha256` and `byte_size` equal to the bytes, `page_count ≥ 1`, `retention_class = life_of_loan_plus_4y`, `payload_hash` equal to the canonical payload hash, `notices.document_id` equals that row, exactly one `notice_checklist_results` row exists for the notice across render-then-send, and the text layer contains `$2,334.29`, `$612.50`, `$2,946.79`, `$116.71` and `$6,010.29` each exactly once in the amount-due box.", { todo: true });
-test("35.2-T3: Given 10.4's annual PMI disclosure for an MN property, when it renders, then the writer's placements report every body block at ≥ 12 pt and page 1, 10.4's checklist passes from those placements alone (no browser is started), and given the same template with a 10 pt body the checklist fails `layout` and the notice is `held`.", { todo: true });
+test("35.2-T1: Given the `NTC_REGZ_41_STMT_STD` template at its counsel-approved version and worked example A's payload, when `documents.render` runs twice with the clock at 2026-09-17T05:00:00Z, then the two PDFs are byte-identical with one `sha256`, the file begins `%PDF-1.4`, every page's content stream carries a text layer from which the rendered `text` is recovered in reading order, and changing one payload field (the late charge) changes the hash.", {}, async () => {
+  const v = activeStatementVersion();
+  assert.equal(v.version, "1.2.0"); assert.equal(v.plainLanguageStatus, "counsel_approved");
+  assert.equal(PI, 233_429n); assert.equal(ESCROW, 61_250n); assert.equal(MONTHLY, 294_679n); assert.equal(LATE_CHARGE, 11_671n); assert.equal(AMOUNT_DUE, 601_029n);
+  const p1 = renderNoticePdf(v, PAYLOAD_A, { now: T0 }); const p2 = renderNoticePdf(v, PAYLOAD_A, { now: T0 });
+  assert.ok(p1.bytes.equals(p2.bytes), "byte-identical"); assert.equal(p1.sha256, p2.sha256); assert.equal(p1.sha256, sha256(p1.bytes));
+  assert.equal(p1.bytes.subarray(0, 8).toString("latin1"), "%PDF-1.4");
+  const tl = textLayer(p1.bytes);
+  assert.equal(tl.pages.length, p1.page_count); assert.ok(p1.page_count >= 2, "the statement's transactions and counselor blocks are on page 2");
+  for (const page of tl.pages) assert.ok(page.length > 0, "every page's content stream carries a text layer");
+  assert.equal(tl.text, p1.text, "the rendered text is recovered in reading order (block order, line order)");
+  const order = tl.blocks.map((b) => b.id);
+  assert.deepEqual(order.slice(0, 3), ["amount_due", "late_fee", "explanation"], "reading order follows the block model");
+  assert.equal(p1.payload_hash, payloadHash(PAYLOAD_A));
+  const changed = renderNoticePdf(v, { ...PAYLOAD_A, late_fee_cents: 11_672n, late_charges_due_cents: 11_672n, fees_since_last_cents: 11_672n, amount_due_cents: AMOUNT_DUE + 1n, computed_amount_due_cents: AMOUNT_DUE + 1n }, { now: T0 });
+  assert.notEqual(changed.sha256, p1.sha256, "changing one payload field (the late charge) changes the hash");
+});
+test("35.2-T2: Given worked example A rendered through the command path, then a `documents` row exists with `mime_type = application/pdf`, `kind = rendered_notice`, `sha256` and `byte_size` equal to the bytes, `page_count ≥ 1`, `retention_class = life_of_loan_plus_4y`, `payload_hash` equal to the canonical payload hash, `notices.document_id` equals that row, exactly one `notice_checklist_results` row exists for the notice across render-then-send, and the text layer contains `$2,334.29`, `$612.50`, `$2,946.79`, `$116.71` and `$6,010.29` each exactly once in the amount-due box.", { skip }, async () => {
+  const f = await loanFixture();
+  const r = await run("documents.render", { template_code: STMT, payload: PAYLOAD_A, recipients: [BEA()], send: true }, RECORDS, { loanId: f.loanId });
+  const out = r.output as { document_id: string; notice_id: string; status: string; sha256: string; page_count: number; template_version: string };
+  assert.equal(out.status, "sent"); assert.equal(out.template_version, "1.2.0");
+  const id = out.document_id; assert.ok(id, "the render produced a document id");
+  const row = await one<{ mime_type: string; kind: string; sha256: string; byte_size: bigint; page_count: number; retention_class: string; payload_hash: string; storage_status: string; template_code: string; template_version: string; text_layer: boolean; loan_id: string; created_at: string }>(
+    `SELECT mime_type, kind, sha256, byte_size, page_count, retention_class::text AS retention_class, payload_hash, storage_status, template_code, template_version, text_layer, loan_id, created_at FROM documents WHERE id = $1`, [id]);
+  const bytes = (await blobs.get(id))!.bytes;
+  assert.equal(row.mime_type, "application/pdf"); assert.equal(row.kind, "rendered_notice"); assert.equal(row.sha256, sha256(bytes)); assert.equal(Number(row.byte_size), bytes.length); assert.equal(row.sha256, out.sha256);
+  assert.ok(row.page_count! >= 1); assert.equal(row.retention_class, "life_of_loan_plus_4y"); assert.equal(row.payload_hash, payloadHash(PAYLOAD_A)); assert.equal(row.storage_status, "stored");
+  assert.equal(row.template_code, STMT); assert.equal(row.template_version, "1.2.0"); assert.equal(row.text_layer, true); assert.equal(row.loan_id, f.loanId); assert.equal(row.created_at, T0);
+  const notice = await one<{ document_id: string | null; status: string; template_version: string }>(`SELECT document_id, status, template_version FROM notices WHERE id = $1`, [out.notice_id]);
+  assert.equal(notice.document_id, id, "notices.document_id names the row"); assert.equal(notice.status, "sent");
+  assert.equal(await count(`FROM notice_checklist_results WHERE notice_id = $1`, [out.notice_id]), 1, "exactly one checklist row across render-then-send");
+  assert.equal(await count(`FROM notice_deliveries WHERE notice_id = $1 AND rendered_document_id = $2`, [out.notice_id, id]), 1, "the mail delivery carries the rendered document");
+  assert.ok(r.events.some((e) => e.type === "document.rendered" && e.payload["document_id"] === id) && r.events.some((e) => e.type === "document.stored" && e.payload["document_id"] === id) && r.events.some((e) => e.type === "notice.sent"), "rendered, stored and sent on one log");
+  const tl = textLayer(bytes);
+  const box = tl.blocks.find((b) => b.id === "amount_due"); assert.ok(box, "the amount-due box is a block of the text layer");
+  for (const s of ["$2,334.29", "$612.50", "$2,946.79", "$116.71", "$6,010.29"]) assert.equal(occurrences(box.text, s), 1, `${s} exactly once in the amount-due box: ${box.text}`);
+  assert.equal(money(PI), "$2,334.29"); assert.equal(money(ESCROW), "$612.50"); assert.equal(money(MONTHLY), "$2,946.79"); assert.equal(money(LATE_CHARGE), "$116.71"); assert.equal(money(AMOUNT_DUE), "$6,010.29");
+  // the same payload rendered again at the same clock is the same row (edge case: a retry is one document)
+  const again = await run("documents.render", { template_code: STMT, payload: PAYLOAD_A, recipients: [BEA()] }, RECORDS, { loanId: f.loanId });
+  assert.equal((again.output as { document_id: string; existing: boolean }).document_id, id); assert.equal((again.output as { existing: boolean }).existing, true);
+  assert.equal(await count(`FROM documents WHERE template_code = $1 AND payload_hash = $2 AND loan_id = $3`, [STMT, payloadHash(PAYLOAD_A), f.loanId]), 1);
+});
+test("35.2-T3: Given 10.4's annual PMI disclosure for an MN property, when it renders, then the writer's placements report every body block at ≥ 12 pt and page 1, 10.4's checklist passes from those placements alone (no browser is started), and given the same template with a 10 pt body the checklist fails `layout` and the notice is `held`.", {}, async () => {
+  const reg = publishSection10(buildRegistry());
+  const mn = reg.activeVersion("NTC_HPA_4903A3_ANNUAL_MN", D("2027-02-20")); assert.ok(mn, "10.4's MN annual disclosure is published");
+  const pdf = renderNoticePdf(mn, mn.samplePayload, { now: "2027-02-20T12:00:00.000Z" });
+  for (const id of ["body", "mn_statutory", "contact"]) { const p = pdf.placements.find((x) => x.block_id === id); assert.ok(p, `placement for ${id}`); assert.ok(p.pt >= 12, `${id} at ${p.pt} pt`); assert.equal(p.page, 1); }
+  const rendered = render(mn.source, mn.samplePayload);
+  const fromPlacements = evaluateChecklist(mn, mn.samplePayload, { ...rendered, blocks: blocksFromPlacements(pdf.placements, rendered.blocks) });
+  assert.equal(fromPlacements.passed, true, "10.4's checklist passes from the placements alone (no browser)"); assert.ok(fromPlacements.results.some((r) => r.rule_id === "mn-12pt" && r.passed));
+  // the same template with a 10 pt body: the checklist fails `layout` and the notice is held. The version is drafted and published with an empty check on purpose —
+  // 7.1's "a failing block rule cannot be published" would otherwise refuse it — so the held path can be exercised.
+  const ten = mn.source.replace(/(\{\{#block "body"[^}]*pt=)12/, "$110");
+  assert.notEqual(ten, mn.source, "the body block's pt attribute was rewritten");
+  reg.draft({ templateCode: mn.templateCode, version: "1.0.0-t3-10pt", effectiveFrom: D("2027-01-01"), source: ten, contentRules: mn.contentRules, layoutRules: mn.layoutRules, samplePayload: mn.samplePayload, ruleSet: mn.ruleSet, ...(mn.sampleFormBasis ? { sampleFormBasis: mn.sampleFormBasis } : {}) });
+  reg.publish(mn.templateCode, "1.0.0-t3-10pt", "test", "2027-01-01T00:00:00.000Z", () => []);
+  const events = new MemoryEventStore(new FixedClock("2027-02-20T12:00:00.000Z"));
+  const sink = new MemoryArtifactSink(new FixedClock("2027-02-20T12:00:00.000Z"));
+  const svc = new NoticeService({ registry: reg, events, clock: new FixedClock("2027-02-20T12:00:00.000Z"), printMail: new FakePrintMailImpl(), edelivery: new FakeEdelivery(), artifacts: sink });
+  const n = svc.render({ templateCode: mn.templateCode, loanId: "L-T3", recipients: [BEA()], payload: mn.samplePayload, asOf: D("2027-02-20") });
+  assert.equal(n.templateVersion, "1.0.0-t3-10pt"); assert.equal(n.status, "held"); assert.match(n.heldReason ?? "", /mn-12pt/);
+  assert.ok(n.checklist.blocking.some((b) => b.rule_id === "mn-12pt" && !b.passed), "the layout rule failed from the writer's placement of a 10 pt body");
+  const held = sink.results.get(n.renderedDocumentId!); assert.ok(held); assert.equal(held.placements.find((p) => p.block_id === "body")!.pt, 10);
+  assert.ok(events.all().some((e) => e.type === "notice.held"));
+});
 test("35.2-T4: Given the FAKE blob store in outage, when `documents.store` runs, then the `documents` row is written with `storage_uri = worm_pending:<id>` and `storage_status = staged`, a `document_blobs` row holds the bytes, `document.staged` is logged and `SM_DOC_WORM_DRAIN_1D` is armed; when the outage clears and the drain runs, then `storage_uri` becomes `fake-blob://<id>#1`, `storage_status = stored`, `stored_generation = 1`, `document.stored` satisfies the clock; a second attempt to change `storage_uri` is refused by the trigger (`URI_SWAP_ONCE`) and a store whose re-read hash differs never swaps.", { skip }, async () => {
   const f = await loanFixture();
   // the object store is down: the row is staged with its bytes beside it, the clock arms
@@ -176,11 +276,57 @@ test("35.2-T6: Given `documents.hold{place}` by the agent with a `matter_ref`, t
   assert.equal((await one<{ legal_hold: boolean }>(`SELECT legal_hold FROM documents WHERE id = $1`, [id])).legal_hold, true, "still held for MATTER-3");
 });
 test("35.2-T7: Given three notices of one batch decided `mail`, when `mail.batch` runs, then one outbound `mail_manifests` row with `piece_count = 3` and a hashed manifest document exists, each `mail_manifest_pieces` row carries the piece's `document_id`, `sha256`, `page_count`, `sheets = ceil(page_count ÷ 2)`, mail class and address snapshot, one `integration_messages` row addresses the `print-mail` adapter with the batch id as idempotency key, and `SM_MAIL_MANIFEST_2BD` is armed; when the FAKE vendor's proof-of-mailing manifest is ingested, then `notice_deliveries.mailed_at`, `imb` and `mail_manifest_id` are set for all three (and `manifest_id` is the `notice_batches` id, 0009's FK), the inbound manifest is `reconciled`, `mail.manifest.ingested` satisfies the clock and `mail.piece.mailed` is logged three times.", { todo: true });
-test("35.2-T8: Given a Spanish-language notice whose payload contains `ñ`, `á`, `¿` and `—`, when it renders, then the text layer round-trips those characters exactly; given a payload containing a character outside WinAnsi (`≥`), then the render is refused `GLYPH_UNSUPPORTED` naming the character and the block and no row is written.", { todo: true });
+test("35.2-T8: Given a Spanish-language notice whose payload contains `ñ`, `á`, `¿` and `—`, when it renders, then the text layer round-trips those characters exactly; given a payload containing a character outside WinAnsi (`≥`), then the render is refused `GLYPH_UNSUPPORTED` naming the character and the block and no row is written.", {}, async () => {
+  const v = activeStatementVersion();
+  const ES = "Señor Peña — ¿está al día? Sí, año. Recibimos su pago; ¡gracias!";
+  const pdf = renderNoticePdf(v, { ...PAYLOAD_A, suspense_instructions: ES }, { now: T0 });
+  const tl = textLayer(pdf.bytes);
+  for (const ch of ["ñ", "á", "¿", "—", "¡"]) assert.ok(tl.text.includes(ch), `${ch} round-trips`);
+  assert.equal(tl.blocks.find((b) => b.id === "suspense")!.text, ES, "the text layer round-trips the Spanish text exactly");
+  assert.throws(() => renderNoticePdf(v, { ...PAYLOAD_A, suspense_instructions: "Saldo ≥ 12" }, { now: T0 }), (e: unknown) => e instanceof GlyphUnsupported && e.code === "GLYPH_UNSUPPORTED" && e.char === "≥" && e.block_id === "suspense" && /"≥"/.test(e.message) && /block suspense/.test(e.message));
+  // through the command path: the render is refused and no row is written
+  if (!skip) {
+    const f = await loanFixture();
+    const docs0 = await count(`FROM documents`); const notices0 = await count(`FROM notices`); const events0 = await count(`FROM loan_events WHERE loan_id = $1`, [f.loanId]); const blobs0 = await count(`FROM document_blobs`);
+    await refused(run("documents.render", { template_code: STMT, payload: { ...PAYLOAD_A, suspense_instructions: "Saldo ≥ 12" }, recipients: [BEA()] }, RECORDS, { loanId: f.loanId }), "GLYPH_UNSUPPORTED");
+    assert.equal(await count(`FROM documents`), docs0); assert.equal(await count(`FROM notices`), notices0); assert.equal(await count(`FROM loan_events WHERE loan_id = $1`, [f.loanId]), events0); assert.equal(await count(`FROM document_blobs`), blobs0);
+  }
+});
 test("35.2-T9: Given a borrower session at L2 whose party owns a stored statement, when the app requests `GET /v1/borrower/documents/{id}` and then the signed `…/content` URL, then the response is the stored bytes with `Content-Type: application/pdf`, `Cache-Control: private, no-store`, a hash equal to `documents.sha256`, a `document_access_log{purpose=borrower_view}` row and a `ui_events{document_opened}` row; a session of another party receives 404; an expired or altered signature receives 401; a `staged` document is served from `document_blobs` with `served_from = staged_blob`.", { todo: true });
 test("35.2-T10: Given 16.1 renders `NTC_REGZ_36C3_PAYOFF_STMT` for the fixture loan, then the PDF's text layer contains the 12-character verification token and the wire fraud warning, `payoff_statements.delivered_to[].evidence_document_id` names the `documents` row, and `GET /verify/{token}` answers the statement hash equal to that row's `sha256`, its good-through date and total, and writes `document_access_log{purpose=verify_portal}`.", { todo: true });
 test("35.2-T11: Given the FAKE store is told to alter one stored object's bytes, when the daily integrity unit completes, then a `document_integrity_runs` row counts it, a `document_integrity_findings{mismatch}` row carries the expected and actual hashes, `documents.verify_status = mismatch`, `document.integrity.mismatch` is logged, a sev 1 escalation to `ciso` exists, `documents.dispose` on it is refused (19.1-T12), the run never re-rendered anything (the writer is not invoked), and `document.integrity.run_completed` satisfies today's `SM_DOC_INTEGRITY_DAILY` and re-arms it for tomorrow at 02:30 ET.", { todo: true });
-test("35.2-T12: Given worked example B's `tax_forms_1098` row, when `documents.render{document_kind=irs_1098_copy_b}` runs, then the PDF's text layer shows `$5,743.99` in Box 1 and `$400,000.00` in Box 2, the payer TIN as `XXX-XX-1234`, the recipient/lender TIN in full and no other full TIN, the tax year, form number and form name together in one area, a direct-access telephone number, the two Pub. 1179 §4.4.1 legends, and the row's `box1_cents = 574399` and `box2_cents = 40000000` are what the page reproduces; the monthly interest figures `$1,916.67`, `$1,914.67` and `$1,912.65` are the 2.1 allocations the box sums.", { todo: true });
+test("35.2-T12: Given worked example B's `tax_forms_1098` row, when `documents.render{document_kind=irs_1098_copy_b}` runs, then the PDF's text layer shows `$5,743.99` in Box 1 and `$400,000.00` in Box 2, the payer TIN as `XXX-XX-1234`, the recipient/lender TIN in full and no other full TIN, the tax year, form number and form name together in one area, a direct-access telephone number, the two Pub. 1179 §4.4.1 legends, and the row's `box1_cents = 574399` and `box2_cents = 40000000` are what the page reproduces; the monthly interest figures `$1,916.67`, `$1,914.67` and `$1,912.65` are the 2.1 allocations the box sums.", { skip }, async () => {
+  // worked example B: 2.1's allocation, rounded half-up to the cent once per month
+  const rate = ratePercent("5.750");
+  const oct = monthlyInterest(40_000_000n, rate); assert.equal(oct, 191_667n);                       // 400,000.00 × 5.750% ÷ 12 = 1,916.6667 → $1,916.67
+  const upbNov = 40_000_000n - (PI - oct); assert.equal(upbNov, 39_958_238n);                        // principal 417.62
+  const nov = monthlyInterest(upbNov, rate); assert.equal(nov, 191_467n);                             // 399,582.38 × 5.750% ÷ 12 = 1,914.6656 → $1,914.67
+  const upbDec = upbNov - (PI - nov); assert.equal(upbDec, 39_916_276n);                              // principal 419.62
+  const dec = monthlyInterest(upbDec, rate); assert.equal(dec, 191_265n);                             // 399,162.76 × 5.750% ÷ 12 = 1,912.6549 → $1,912.65
+  const box1 = oct + nov + dec; assert.equal(box1, 574_399n); const box2 = 40_000_000n;
+  assert.equal(money(box1), "$5,743.99"); assert.equal(money(box2), "$400,000.00"); assert.equal(money(oct), "$1,916.67"); assert.equal(money(nov), "$1,914.67"); assert.equal(money(dec), "$1,912.65"); assert.equal(money(123_456n), "$1,234.56");
+  const f = await loanFixture();
+  const party = await one<{ id: string }>(`INSERT INTO parties (party_type, legal_name) VALUES ('borrower', 'Bea Borrower') RETURNING id`);
+  const form = await one<{ id: string }>(`INSERT INTO tax_forms_1098 (loan_id, tax_year, payer_party_id, boxes) VALUES ($1, 2026, $2, $3::jsonb) RETURNING id`, [f.loanId, party.id, JSON.stringify({ box1_cents: box1.toString(), box2_cents: box2.toString(), box3_origination_date: "2026-09-15" })]);
+  const r = await run("documents.render", { document_kind: "irs_1098_copy_b", tax_form_1098_id: form.id, payer: { name: "Bea Borrower", address: "1 Test St, Testville TX 75001", tin_last4: "1234" }, direct_access_phone: "(800) 555-0199", account_last4: "4321" }, RECORDS, { loanId: f.loanId });
+  const out = r.output as { document_id: string; box1_cents: string; box2_cents: string; sha256: string; placements: { block_id: string; page: number }[] };
+  assert.equal(out.box1_cents, "574399"); assert.equal(out.box2_cents, "40000000");
+  const row = await one<{ box1: string; box2: string }>(`SELECT boxes->>'box1_cents' AS box1, boxes->>'box2_cents' AS box2 FROM tax_forms_1098 WHERE id = $1`, [form.id]);
+  assert.equal(row.box1, "574399"); assert.equal(row.box2, "40000000");
+  const bytes = (await blobs.get(out.document_id))!.bytes; const tl = textLayer(bytes); const text = tl.text;
+  assert.ok(tl.blocks.find((b) => b.id === "box1")!.text.endsWith("$5,743.99"), "Box 1 shows $5,743.99"); assert.ok(tl.blocks.find((b) => b.id === "box2")!.text.endsWith("$400,000.00"), "Box 2 shows $400,000.00");
+  assert.ok(text.includes("PAYER'S/BORROWER'S TIN: XXX-XX-1234"), "the payer TIN truncated to its last four");
+  assert.ok(text.includes(`RECIPIENT'S/LENDER'S TIN: ${SM_FILER.tin}`), "the recipient/lender TIN in full");
+  assert.equal(text.match(/\b\d{3}-\d{2}-\d{4}\b/g), null, "no full SSN-shaped TIN anywhere"); assert.deepEqual(text.match(/\b\d{2}-\d{7}\b/g), [SM_FILER.tin], "the filer's EIN is the only full TIN");
+  const header = tl.blocks.find((b) => b.id === "header")!; assert.equal(header.text, "2026 Form 1098 Mortgage Interest Statement"); assert.equal(header.page, 1);
+  assert.ok(text.includes("Call (800) 555-0199 to reach an individual who can answer them"), "a direct-access telephone number");
+  assert.equal(tl.blocks.find((b) => b.id === "legend_1")!.text, LEGEND_1, "Pub. 1179 §4.4.1 legend (1) verbatim"); assert.equal(tl.blocks.find((b) => b.id === "legend_2")!.text, LEGEND_2, "Pub. 1179 §4.4.1 legend (2) verbatim");
+  assert.equal(LEGEND_1, "The information in boxes 1 through 9 and 11 is important tax information and is being furnished to the IRS. If you are required to file a return, a negligence penalty or other sanction may be imposed on you if the IRS determines that an underpayment of tax results because you overstated a deduction for the mortgage interest or for these points, reported in boxes 1 and 6; or because you did not report the refund of interest (box 4); or because you claimed a nondeductible item.");
+  assert.equal(LEGEND_2, "*Caution: The amount shown may not be fully deductible by you. Limits based on the loan amount and the cost and value of the secured property may apply. Also, you may only deduct interest to the extent it was incurred by you, actually paid by you, and not reimbursed by another person.");
+  assert.ok(text.includes("Instructions for Payer/Borrower"), "the instructions to the recipient"); assert.ok(tl.blocks.some((b) => b.id === "instructions_7" && /Box 2\. Shows the outstanding principal on the mortgage as of January 1/.test(b.text)), "the box-by-box instructions as on the official Copy B");
+  const doc = await one<{ kind: string; retention_class: string; template_code: string; sha256: string; storage_status: string }>(`SELECT kind, retention_class::text AS retention_class, template_code, sha256, storage_status FROM documents WHERE id = $1`, [out.document_id]);
+  assert.equal(doc.kind, "irs_1098_copy_b"); assert.equal(doc.retention_class, "tax_4y"); assert.equal(doc.template_code, "IRS_1098_COPY_B"); assert.equal(doc.sha256, sha256(bytes)); assert.equal(doc.storage_status, "stored");
+});
 test("35.2-T13: Given a borrower with an active E-SIGN consent covering `disclosure_ack` and a rendered CD, when `esign.envelope.create` and `esign.envelope.send` run, then the envelope is `sent`, `esign.envelope.sent` is logged and `SM_ESIGN_ENVELOPE_EXPIRY_30` is armed on `sent_at`; when the FAKE signer signs every required field through an L2 session, then `esign_signature_events` holds `viewed`, `authenticated`, `consent_affirmed`, one `field_signed` per field and `completed`, each with `auth_method`, `ip`, `user_agent` and a valid hash chain, a signed `documents` row exists with `supersedes_document_id` = the unsigned row and a different `sha256`, `esign_envelope_documents.signed_document_id` is set once, `evidence_document_id` names an audit-trail PDF whose text lists every event, and `esign.envelope.completed` satisfies the clock.", { todo: true });
 test("35.2-T14: Given a party with no active E-SIGN consent, when `esign.envelope.send` runs, then it is refused `NO_ENVELOPE_WITHOUT_CONSENT` and nothing is written; given a sent envelope whose signer emits `consent.esign.withdrawn`, then the envelope is `voided` with the reason and an audit-trail PDF; given a sent envelope untouched for 30 calendar days, then the breach voids it as `expired`, logs `esign.envelope.expired` and opens an `ops_analyst` escalation; a `completed` envelope refuses `esign.envelope.void`.", { todo: true });
 test("35.2-T15: Given 26.2's FAKE RON session completes worked example 1 of 26.2, when the platform's audit trail arrives, then `documents.store` writes it with `retention_class = fnma_enote_signing_life_plus_7y`, `signing_sessions.audit_trail_document_id` names the row and `audit_trail_hash` equals its `sha256`, the signed closing documents are rows with `closing_documents.signed_document_id` set, and 26.2's `SM_O72_AUDIT_TRAIL_BEFORE_FUNDING_GATE` evaluator opens on that hash.", { todo: true });

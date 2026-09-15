@@ -46,8 +46,9 @@ export async function disposeDocument(deps: DocsDeps, i: { document_id: string; 
   const g = disposalGuards({ op: "dispose", actor: deps.actor, disposal_run_id: i.disposal_run_id, attestation, worm, object_id: d.id });
   if (!g.allowed) throw new DocumentsRefused(g.code ?? "DISPOSAL_REFUSED", g.citation ?? "19.1 guardrails", `disposal of ${d.id} refused by 19.1's guards`);
   await q.query(`SELECT set_config('sm.disposal_run', $1, true)`, [i.disposal_run_id]);
-  await deps.blobs.delete(d.id, q);
+  // the tombstone first (the blob trigger permits content := NULL only for a row this run disposed), then the object goes
   await q.query(`UPDATE documents SET storage_status = 'disposed', disposed_at = $2::timestamptz, disposal_run_id = $3 WHERE id = $1`, [d.id, deps.now, i.disposal_run_id]);
+  await deps.blobs.delete(d.id, q);
   await q.query(`SELECT set_config('sm.disposal_run', '', true)`);
   deps.events.append({ type: "document.disposed", ...docKey(d), aggregate: { kind: "document", id: d.id }, actor: deps.actor, payload: { document_id: d.id, disposal_run_id: i.disposal_run_id, sha256: d.sha256, disposed_at: deps.now, attested_by: attestation.by } });
   return { document_id: d.id, disposal_run_id: i.disposal_run_id, disposed_at: deps.now, sha256: d.sha256 };

@@ -41,7 +41,7 @@ BEGIN
   IF NEW.content IS DISTINCT FROM OLD.content THEN
     IF NOT (NEW.content IS NULL AND OLD.content IS NOT NULL
             AND ((OLD.drained_at IS NOT NULL AND current_setting('sm.environment', true) = 'production')
-                 OR coalesce(current_setting('sm.disposal_run', true), '') <> '')) THEN
+                 OR (coalesce(current_setting('sm.disposal_run', true), '') <> '' AND EXISTS (SELECT 1 FROM documents d WHERE d.id = OLD.document_id AND d.storage_status = 'disposed' AND d.disposal_run_id::text = current_setting('sm.disposal_run', true))))) THEN
       RAISE EXCEPTION 'document_blobs_update_restricted: content is write-once; it is nulled only after a production drain or by the attested disposal run (document %)', OLD.document_id;
     END IF;
   END IF;

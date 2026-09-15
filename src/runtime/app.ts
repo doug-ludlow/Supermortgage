@@ -35,6 +35,7 @@
 import { randomUUID } from "node:crypto";
 import type { Db, Queryable } from "../infra/db/client.ts";
 import { PgFakeBlobStore, type ObjectStorePort } from "../infra/blobs/pg-fake-blob-store.ts";
+import { noticeServiceFor } from "./documents/notice-sink.ts";
 import { listDuDocuments, type DuDocumentSummary } from "../domain/underwriting/du/persist.ts";
 import { listDuPreflight, type PreflightResultRow } from "../domain/underwriting/du/preflight.ts";
 import { PgUnitOfWork, type UowResult, type CommittedListener } from "../infra/db/unit-of-work.ts";
@@ -203,20 +204,23 @@ export class Runtime {
     const openEscalations = await this.escalationRepo.openFor(scope);
     // writes a tool defers to the command's transaction (the borrower surface's UI-owned rows: card_instances, messages, deep_links — src/app/tools/section32-1.ts)
     const deferred: ((q: Queryable) => Promise<void>)[] = [];
+    const deferredLate: ((q: Queryable) => Promise<void>)[] = [];
     const r: UowResult<ExecuteResult<unknown>> = await this.uow.run(scope, async (uow) => {
       // a loan-scoped command's events that name neither key are the loan's (the kernel store defaults the application key from the scope; the loan key is defaulted here)
       const ctx = uow.loanId ? { ...uow, events: withDefaultLoan(uow.events, uow.loanId) } : uow;
       escalations = new EscalationService(ctx.events, ctx.clock); escalations.seed(openEscalations);
-      const notices = this.ports.printMail && this.ports.edelivery ? new NoticeService({ registry: this.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: this.ports.printMail, edelivery: this.ports.edelivery, notices: this.noticeMemory }) : undefined;
+      // 35.2: the Notice Registry with the artifact layer — every render becomes a stored PDF (PgArtifactSink); its rows are written after the command's other deferred writes (the card rows a borrower-surface tool defers)
+      const { notices, sink } = noticeServiceFor(this, ctx, req.actor, (fn) => { deferredLate.push(fn); });
       // `agents` (the live registry, so a tool that delegates to another agent's tool keeps the allowlists and AI-off state), `db` (read-only lookups a borrower-surface tool needs) and `deferWrite` (a row committed with the command) ride on the services map
       // `runtime` (this) lets a pass-shaped tool (33.2 review.run / offer.deliver / offer.expire) run the runtime pass it wraps — its own units of work, sequential to this command's
-      const rt: ToolRuntime = { store, escalations, services: { ...this.originationServices.forCommand(ctx, store, escalations), agents: this.agents, db: this.db, runtime: this, blobs: this.blobs, deferWrite: (fn: (q: Queryable) => Promise<void>) => { deferred.push(fn); } }, ports: this.ports, ...(notices ? { notices } : {}) };
+      const rt: ToolRuntime = { store, escalations, services: { ...this.originationServices.forCommand(ctx, store, escalations), agents: this.agents, db: this.db, runtime: this, blobs: this.blobs, ...(sink ? { artifacts: sink } : {}), deferWrite: (fn: (q: Queryable) => Promise<void>) => { deferred.push(fn); } }, ports: this.ports, ...(notices ? { notices } : {}) };
       const cmd = bindTools(rt, this.agents, [def]).get(toolKey(def.process, def.name))!;
       return this.bus.execute(cmd, req.actor, req.input, ctx, { ...(req.run ? { run: req.run } : {}), ...(req.approvedBy ? { approvedBy: req.approvedBy } : {}) });
     }, { clock: this.clock, commit: async (q) => {
       await this.entities.save(store.versionsSince(mark), scope, q);
       for (const e of escalations?.list() ?? []) await this.escalationRepo.save(e, q);
       for (const fn of deferred) await fn(q);
+      for (const fn of deferredLate) await fn(q);
     } });
     return { output: r.result.output, ...(r.result.decisionId ? { decisionId: r.result.decisionId } : {}), event: r.result.event, events: r.events, timers: r.timers,
       decisions: r.decisions.map((d) => ({ id: d.id })), escalations: (escalations?.list() ?? []).map((e) => ({ id: e.id, kind: e.kind, ownerRole: e.ownerRole })) };

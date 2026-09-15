@@ -43,7 +43,7 @@ import { BorrowerError, toBorrowerError } from "./errors.ts";
 import { serialize, type ShapeName } from "./serialize.ts";
 import { b64url, sha256, verifyAssertion, verifyRegistration } from "./webauthn.ts";
 import { FakeStripeIdentity, type StripeIdentityPort } from "./vendors/fake-stripe-identity.ts";
-import { FakeBlobStore, type BlobStorePort } from "./vendors/fake-blob-store.ts";
+import type { BlobStorePort } from "./vendors/fake-blob-store.ts";
 import { storeDocumentInUow } from "../documents/store-uow.ts";
 import { UPLOAD_MAX_BYTES, UPLOAD_MIME_TYPES } from "../../domain/operations-runtime/documents/shared.ts";
 import { FakeTruv, type IncomeConnectPort } from "./vendors/fake-truv.ts";
@@ -664,7 +664,7 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     if (file.bytes.length > UPLOAD_MAX_BYTES || !(UPLOAD_MIME_TYPES.has(file.mime_type) || (opts.environment !== "production" && file.mime_type === "application/json"))) throw new BorrowerError(415, "UNSUPPORTED_ARTIFACT", undefined, `${file.mime_type}, ${file.bytes.length} bytes: uploads are PDF, JPEG, PNG or TIFF up to 25 MB`);
     const documentId = randomUUID(); const digest = sha256(file.bytes).toString("hex");
     // 35.2 rule 4: the row and its staged bytes through documents.store in a unit of work (document.staged, the inline drain to the object store, document.stored) — the object store is document_blobs in every nonprod stage
-    const stored = await storeDocumentInUow(runtime, { applicationId }, { id: documentId, kind: "origination_document", bytes: file.bytes, mime_type: file.mime_type, retention_class: "life_of_loan_plus_4y", application_id: applicationId, received_from: ctx.party.id, page_count: 0,
+    const stored = await storeDocumentInUow(runtime, { applicationId }, { id: documentId, kind: "origination_document", bytes: file.bytes, mime_type: file.mime_type, retention_class: "life_of_loan_plus_4y", application_id: applicationId, received_from: ctx.party.id, page_count: null,
       intake: { doc_class: declared, source_channel: "borrower_upload", sender_identity: { party_id: ctx.party.id, session_id: ctx.session.session_id, filename: file.filename }, received_at: at, subject_borrower_id: subject.application_borrower_id }, metadata: { filename: file.filename, blob_store: blobs.vendorName } }, SYSTEM_ACTOR);
     void stored;
     // 22.1's intake op through the bus: document.received (+ the needs-list review clock); a duplicate hash links, never re-processes

@@ -56,6 +56,15 @@ export interface NoticeServiceDeps {
   readonly federalCalendar?: Calendar;
   /** 32.12 backend delta: a shared map so notices rendered in one unit of work are readable in the next (17.2's content checklist over a notice rendered by an earlier command; the borrower flows' NoticeCard plain-language block). Default: private to the instance. */
   readonly notices?: Map<string, Notice>;
+  /** 35.2: the artifact layer — every render becomes bytes (the in-repo PDF writer) whose placements are the layout facts the checklist evaluates, stored as a `documents` row the notice carries as `renderedDocumentId`. Absent → the block model alone (unit harnesses). */
+  readonly artifacts?: ArtifactSink;
+  /** 35.2: the persistence of the notice's row (notices, notice_checklist_results, notice_deliveries) — called after every transition's event; the runtime defers it to the command's transaction. */
+  readonly persist?: (n: Notice) => void;
+}
+
+/** 35.2 rule 3: the sink renders the block model to bytes and returns the layout facts (the writer's placements projected back onto the blocks) beside the document's identity; it may refuse (GLYPH_UNSUPPORTED) — then nothing is written. */
+export interface ArtifactSink {
+  rendered(input: { documentId: string; templateCode: string; version: TemplateVersion; payload: Record<string, unknown>; loanId?: string; applicationId?: string; caseId?: string }, rendered: Rendered): { document_id: string; sha256: string; byte_size: number; page_count: number; blocks: Rendered["blocks"] };
 }
 
 export class NoticeHeld extends Error {
@@ -77,11 +86,19 @@ export class NoticeService {
     const t = this.deps.registry.template(input.templateCode);
     const v: TemplateVersion | undefined = this.deps.registry.activeVersion(t.code, input.asOf);
     if (!v) throw new RangeError(`no approved version of ${t.code} in effect on ${input.asOf}`);
-    const rendered = render(v.source, input.payload);
+    let rendered = render(v.source, input.payload);
+    // 35.2: the bytes and the layout facts — the writer's placements are what the layout rules measure (rule 3); a refused glyph propagates and nothing is written
+    let renderedDocumentId = input.renderedDocumentId;
+    if (this.deps.artifacts) {
+      const documentId = input.renderedDocumentId ?? randomUUID();
+      const artifact = this.deps.artifacts.rendered({ documentId, templateCode: t.code, version: v, payload: input.payload, ...(input.loanId ? { loanId: input.loanId } : {}), ...(input.applicationId ? { applicationId: input.applicationId } : {}), ...(input.caseId ? { caseId: input.caseId } : {}) }, rendered);
+      rendered = { ...rendered, blocks: artifact.blocks };
+      renderedDocumentId = artifact.document_id;
+    }
     const checklist = evaluateChecklist(v, input.payload, rendered);
     const now = this.deps.clock.now();
     const n: Notice = { id: randomUUID(), templateCode: t.code, templateVersion: v.version, recipients: input.recipients, payload: input.payload, payloadHash: rendered.payloadHash, rendered, checklist, producedAt: now, status: "rendered", deliveries: [],
-      ...(input.loanId ? { loanId: input.loanId } : {}), ...(input.applicationId ? { applicationId: input.applicationId } : {}), ...(input.caseId ? { caseId: input.caseId } : {}), ...(input.renderedDocumentId ? { renderedDocumentId: input.renderedDocumentId } : {}) };
+      ...(input.loanId ? { loanId: input.loanId } : {}), ...(input.applicationId ? { applicationId: input.applicationId } : {}), ...(input.caseId ? { caseId: input.caseId } : {}), ...(renderedDocumentId ? { renderedDocumentId } : {}) };
     if (!checklist.passed) { n.status = "held"; n.heldReason = `checklist: ${checklist.blocking.map((r) => `${r.rule_id} (${r.citation})`).join(", ")}`; }
     else if (input.recipients.length === 0) { n.status = "held"; n.heldReason = "no recipients"; }
     this.notices.set(n.id, n);
@@ -158,5 +175,6 @@ export class NoticeService {
 
   private emit(type: string, n: Notice, payload: Record<string, unknown>): void {
     this.deps.events.append({ type, ...(n.loanId ? { loanId: n.loanId } : {}), ...(n.applicationId ? { applicationId: n.applicationId } : {}), aggregate: { kind: "notice", id: n.id }, actor: DISCLOSURES_AGENT, payload: { notice_id: n.id, template: n.templateCode, ...(n.applicationId ? { application_id: n.applicationId } : {}), ...payload } });
+    this.deps.persist?.(n);
   }
 }

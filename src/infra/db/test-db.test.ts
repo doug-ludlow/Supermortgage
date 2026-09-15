@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import pg from "pg";
 import { connect } from "./client.ts";
 import { TEMPLATE_PREFIX, adminUrlOf, migrationsHash, templateName, testDatabase, testDatabaseName, withDatabase } from "./test-db.ts";
+import { acquireJourneyLock } from "./test-lock.ts";
 
 const own = await testDatabase(import.meta.url);
 const { skip } = own;
@@ -74,4 +75,16 @@ test("test-db: an unreachable server skips with 'no Postgres at …', and throws
     if (saved.url === undefined) delete process.env["TEST_DATABASE_URL"]; else process.env["TEST_DATABASE_URL"] = saved.url;
     if (saved.req === undefined) delete process.env["REQUIRE_DB"]; else process.env["REQUIRE_DB"] = saved.req;
   }
+});
+
+test("test-lock: a lock taken through a file's own clone is held on the maintenance database, so two suites on different clones contend for one lock", { skip }, async () => {
+  const KEY = 32_999;   // a key no suite uses; the browser suites may be holding 32_003 while this runs
+  const held = await acquireJourneyLock(own.url, KEY);
+  const other = new pg.Client({ connectionString: withDatabase(own.url, "postgres") }); await other.connect();
+  try {
+    assert.equal((await other.query<{ ok: boolean }>("SELECT pg_try_advisory_lock($1) AS ok", [KEY])).rows[0]!.ok, false, "the maintenance database sees the lock — advisory locks are per database, and the clone's would serialise nothing");
+    await held.release();
+    assert.equal((await other.query<{ ok: boolean }>("SELECT pg_try_advisory_lock($1) AS ok", [KEY])).rows[0]!.ok, true, "released");
+    await other.query("SELECT pg_advisory_unlock($1)", [KEY]);
+  } finally { await other.end(); }
 });

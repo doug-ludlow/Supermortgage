@@ -8,11 +8,10 @@
 // appears, the tap resolves it. Skips without Postgres (not a spec unit).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import type Anthropic from "@anthropic-ai/sdk";
-import { connect, reachable, type Db } from "../../infra/db/client.ts";
+import { connect, type Db } from "../../infra/db/client.ts";
+import { testDatabase } from "../../infra/db/test-db.ts";
 import { decodeEntityData } from "../../infra/db/entities.ts";
 import { FixedClock } from "../../kernel/events/index.ts";
 import { plainDate as D } from "../../kernel/calendar/date.ts";
@@ -32,10 +31,7 @@ import { EXTRA_PRINCIPAL, SERVICING_ESIGN_SCOPES } from "../../runtime/borrower/
 import { servicingView, historyView, usd } from "../../runtime/borrower/agent/servicing-context.ts";
 import type { BorrowerRecord } from "../../runtime/borrower/record.ts";
 
-const DB_URL = process.env["SERVICING_CONVERSATION_TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_servicing_conversation_test";
-const ADMIN_URL = ((): string => { const u = new URL(DB_URL); u.pathname = "/postgres"; return u.toString(); })();   // the suite creates its own database in `before`: the probe is the server's admin database
-const up = await reachable(ADMIN_URL);
-const skip = up ? false : `no Postgres at ${ADMIN_URL}`;
+const { url: DB_URL, skip } = await testDatabase(import.meta.url);
 const TOKEN = "ops-" + randomUUID();
 const clock = new FixedClock("2026-09-10T16:00:00.000Z");
 type Json = Record<string, unknown>;
@@ -86,9 +82,6 @@ const knownFigures = new Set<string>();
 
 test.before(async () => {
   if (skip) return;
-  const name = new URL(DB_URL).pathname.slice(1); const admin = new URL(DB_URL); admin.pathname = "/postgres";
-  const a = connect(admin.toString()); await a.query(`DROP DATABASE IF EXISTS ${name}`); await a.query(`CREATE DATABASE ${name}`); await a.end();
-  execFileSync(fileURLToPath(new URL("../../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL);
   runtime = new Runtime({ db, registry: loadOverriddenRegistry(), clock });
   partnerPartyId = (await db.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, servicer_number, mers_org_id) VALUES ('servicer', $1, '123456789', '1000123') RETURNING id`, [`Partner Bank ${randomUUID().slice(0, 8)}`]))[0]!.id;

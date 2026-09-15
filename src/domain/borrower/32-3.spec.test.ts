@@ -14,11 +14,9 @@
 // T30), Dana — the purchase with a contract (T29), Lee — a lead-stage party (T15). Skips without a database.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
-import { connect, reachable, type Db } from "../../infra/db/client.ts";
-import { acquireJourneyLock, type TestLock } from "../../infra/db/test-lock.ts";
+import { connect, type Db } from "../../infra/db/client.ts";
+import { testDatabase } from "../../infra/db/test-db.ts";
 import { decodeEntityData } from "../../infra/db/entities.ts";
 import { loadOverriddenRegistry } from "../timer-overrides.ts";
 import { FixedClock } from "../../kernel/events/index.ts";
@@ -37,10 +35,7 @@ import { newDecisionFile } from "../application/ops-21-6.ts";
 import { wallClock } from "../../kernel/calendar/zoned.ts";
 import { plainDate } from "../../kernel/calendar/date.ts";
 
-const DB_URL = process.env["TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_test";
-const up = await reachable(DB_URL);
-if (!up && process.env["REQUIRE_DB"]) throw new Error(`REQUIRE_DB set but ${DB_URL} is not reachable`);
-const skip = up ? false : `no Postgres at ${DB_URL}`;
+const { url: DB_URL, skip } = await testDatabase(import.meta.url);
 const TOKEN = "ops-" + randomUUID();
 const R = randomUUID().slice(0, 8);
 const clock = new FixedClock("2026-09-10T16:00:00.000Z");
@@ -54,7 +49,6 @@ const DANA = { email: `dana-${R}@example.test`, name: "Dana Okafor", tin_last4: 
 const LEE = { email: `lee-${R}@example.test` };
 const sha = (s: string): string => createHash("sha256").update(s).digest("hex");
 
-let journeyLock: TestLock | undefined;
 let db: Db; let runtime: Runtime; let router: BorrowerRouter; let base = ""; let close: () => Promise<void> = async () => undefined; let partnerPartyId = "";
 let journey: Journey; let partyA = ""; let partyB = ""; let duSubmissionId = "";
 // per-party state the T-ids hand forward (the tests run in T order)
@@ -65,8 +59,6 @@ const dana = { appId: "", partyId: "", token: "", leadId: "" };
 
 test.before(async () => {
   if (skip) return;
-  journeyLock = await acquireJourneyLock(DB_URL);   // serialize journey-driving files on the shared test database
-  execFileSync(fileURLToPath(new URL("../../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL);
   runtime = new Runtime({ db, registry: loadOverriddenRegistry(), clock });
   const logger = createLogger("json", (line) => { if (process.env["FLOW_DEBUG"] && /flow|ERROR|error/.test(line)) process.stderr.write(line + "\n"); });
@@ -83,7 +75,7 @@ test.before(async () => {
   await journey.interview(); await journey.quoteAndLe(); await journey.orderCredit(); await settle();
   duSubmissionId = (await journey.duSubmitAndInterpret({ findings_at: MST("2026-10-06", "14:00"), interpreted_at: MST("2026-10-06", "14:12") })).submission_id; await settle();
 });
-test.after(async () => { if (!skip) { await close(); await journeyLock?.release(); } });
+test.after(async () => { if (!skip) { await close(); } });
 
 // ---------------------------------------------------------------- helpers
 type Reply = { status: number; body: Record<string, unknown> };

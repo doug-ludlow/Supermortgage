@@ -25,6 +25,18 @@ on:
     branches:
       - main
       - claude/mortgage-subservicer-builder-y9nr7e
+    # A push that changes only what the image does not carry ships nothing new: no build, no deploy, no walk.
+    # The image does carry spec/registry (the timer registry the tools run on), spec/sections/*/*.md (the agent
+    # turn hands the model the current step's rules — src/runtime/borrower/agent/rules.ts) and
+    # docs/ux/12-message-copy-library.md (src/runtime/borrower/channels.ts renders SMS, voice and talk copy
+    # from it) — see Dockerfile and .dockerignore — so those re-include below and deploy. Negations belong in
+    # `paths` (GitHub evaluates them in order; paths-ignore takes none). workflow_dispatch always deploys.
+    paths:
+      - "**"
+      - "!**/*.md"
+      - "!docs/**"
+      - "spec/sections/**/*.md"
+      - "docs/ux/12-message-copy-library.md"
 
 permissions:
   contents: read

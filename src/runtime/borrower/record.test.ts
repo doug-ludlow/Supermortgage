@@ -8,11 +8,9 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import { connect, reachable, type Db } from "../../infra/db/client.ts";
-import { acquireJourneyLock, type TestLock } from "../../infra/db/test-lock.ts";
+import { connect, type Db } from "../../infra/db/client.ts";
+import { testDatabase } from "../../infra/db/test-db.ts";
 import { loadOverriddenRegistry } from "../../domain/timer-overrides.ts";
 import { FixedClock } from "../../kernel/events/index.ts";
 import { Runtime } from "../app.ts";
@@ -23,22 +21,16 @@ import { FORBIDDEN_FIELDS } from "./serialize.ts";
 import { ALLOWED_TIMER_CODES, timerLabel } from "./record.ts";
 import { Journey } from "./fixtures/journey.ts";
 
-const DB_URL = process.env["TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_test";
-const up = await reachable(DB_URL);
-if (!up && process.env["REQUIRE_DB"]) throw new Error(`REQUIRE_DB set but ${DB_URL} is not reachable`);
-const skip = up ? false : `no Postgres at ${DB_URL}`;
+const { url: DB_URL, skip } = await testDatabase(import.meta.url);
 const TOKEN = "ops-" + randomUUID();
 const R = randomUUID().slice(0, 8);
 const clock = new FixedClock("2026-09-10T16:00:00.000Z");
 const EMAIL_A = `alex-${R}@example.test`; const EMAIL_B = `blake-${R}@example.test`;
 
-let journeyLock: TestLock | undefined;
 let db: Db; let runtime: Runtime; let base = ""; let close: () => Promise<void> = async () => undefined; let journey: Journey; let partyA = "";
 
 test.before(async () => {
   if (skip) return;
-  journeyLock = await acquireJourneyLock(DB_URL);   // serialize journey-driving files on the shared test database
-  execFileSync(fileURLToPath(new URL("../../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL);
   runtime = new Runtime({ db, registry: loadOverriddenRegistry(), clock });
   const server = createApiServer({ runtime, apiToken: TOKEN, logger: createLogger("json", () => undefined), console: false, borrower: { environment: "test", rpId: "localhost", allowedOrigins: ["http://localhost"], urlSecret: "test-secret" } });
@@ -48,7 +40,7 @@ test.before(async () => {
   journey = new Journey({ runtime, db, base, token: TOKEN, clock, borrowerEmail: EMAIL_A, coBorrowerEmail: EMAIL_B, partnerPartyId: partner[0]!.id });
   await journey.seedBook();
 });
-test.after(async () => { if (!skip) { await close(); await journeyLock?.release(); } });
+test.after(async () => { if (!skip) { await close(); } });
 
 type Reply = { status: number; body: Record<string, unknown> };
 async function api(method: string, path: string, body?: unknown, token?: string): Promise<Reply> {

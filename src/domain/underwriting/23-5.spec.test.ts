@@ -7,7 +7,7 @@
 // constraint triggers — so every case here writes rows through the pg client and asserts what the database refuses at
 // the statement or at COMMIT. Plain SQL is the point: a second writer who never read the spec still cannot produce a row
 // 23.6 cannot emit (T7 alone goes through the bus, because its subject is the command path the card resolves through). Own database
-// `<base>_23_5`, dropped and created per run.
+// from the harness (src/infra/db/test-db.ts), created EMPTY per run: this file stages the migrations itself.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -17,19 +17,15 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
-import { connect, reachable, type Db, type Queryable } from "../../infra/db/client.ts";
+import { connect, type Db, type Queryable } from "../../infra/db/client.ts";
+import { testDatabase } from "../../infra/db/test-db.ts";
 import { PgApplicationRepository } from "../../infra/db/applications.ts";
 import { Runtime } from "../../runtime/app.ts";
 import { loadOverriddenRegistry } from "../timer-overrides.ts";
 import { FixedClock, type Actor } from "../../kernel/events/index.ts";
 import { DU_ENUMERATIONS, DU_ASSET_TYPES_BY_SECTION } from "./du/generated/enums.ts";
 
-const BASE_URL = process.env["TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_test";
-const DB_URL = ((): string => { const u = new URL(BASE_URL); u.pathname = `${u.pathname}_23_5`; return u.toString(); })();
-const ADMIN_URL = ((): string => { const u = new URL(DB_URL); u.pathname = "/postgres"; return u.toString(); })();
-const up = await reachable(ADMIN_URL);
-if (!up && process.env["REQUIRE_DB"]) throw new Error(`REQUIRE_DB set but ${ADMIN_URL} is not reachable`);
-const skip = up ? false : `no Postgres at ${ADMIN_URL}`;
+const { url: DB_URL, skip } = await testDatabase(import.meta.url, { template: false });
 
 const MIGRATE_SH = fileURLToPath(new URL("../../../db/migrate.sh", import.meta.url));
 const MIGRATIONS_DIR = fileURLToPath(new URL("../../../db/migrations", import.meta.url));
@@ -41,8 +37,6 @@ let backfill: { tied: { app: string; borrower: string; co: string }; spouseOnly:
 
 test.before(async () => {
   if (skip) return;
-  const name = new URL(DB_URL).pathname.slice(1);
-  const a = connect(ADMIN_URL); await a.query(`DROP DATABASE IF EXISTS ${name}`); await a.query(`CREATE DATABASE ${name}`); await a.end();
   const env = { ...process.env, DATABASE_URL: DB_URL };
   // The schema as it stood before the du_graph migration first, so that migration's backfill runs over existing rows
   // the way it will in production: migrate.sh walks its own migrations/ directory, so a temporary copy of db/ holding

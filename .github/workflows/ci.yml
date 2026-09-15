@@ -3,8 +3,16 @@ on:
   push:
     branches: ["**"]
   pull_request:
+
+# A newer push to the same branch cancels the run the older one started.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
+  # Everything that is not a test suite and does not need the shards: typecheck, the spec audit ratchet,
+  # the name lint, the DU build check, the registry lint, and a clean migration of the schema.
+  checks:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -17,25 +25,86 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: "22", cache: npm }
       - run: npm ci
-      - name: xmllint on the runner (src/infra/integrations/du-schema throws without it; it never skips)
-        run: sudo apt-get update -q >/dev/null && sudo apt-get install -y -q libxml2-utils >/dev/null
+      - name: xmllint and psql on the runner (tools/build-du.mjs --verify follows XSD imports with xmllint; db/migrate.sh needs psql)
+        run: sudo apt-get update -q >/dev/null && sudo apt-get install -y -q libxml2-utils postgresql-client >/dev/null
       - run: npm run typecheck
-      - name: npm test
-        run: npm test 2>&1 | tee /tmp/npm-test.log; exit "${PIPESTATUS[0]}"
-      - name: failing tests, named (the TAP stream above is long; this is the part to read)
-        if: failure()
-        run: |
-          echo "## Failing tests" >> "$GITHUB_STEP_SUMMARY"
-          grep -n "^not ok" /tmp/npm-test.log | tee -a "$GITHUB_STEP_SUMMARY" || true
-          echo "--- detail (first three) ---"
-          for n in $(grep -n "^not ok" /tmp/npm-test.log | head -3 | cut -d: -f1); do sed -n "${n},$((n+40))p" /tmp/npm-test.log; echo "..."; done
+      - name: spec audit ratchet (docs/audit/baseline.json never falls)
+        run: python3 tools/audit.py --check
+      - name: one id grammar across sections 1–34
+        run: python3 tools/spec_lint_names.py
+      - run: npm run du:verify
       - run: npm run spec:lint
       - name: migrations apply cleanly
         env: { DATABASE_URL: postgresql://sm:sm@localhost:5432/supermortgage }
         run: |
-          sudo apt-get install -y -q postgresql-client >/dev/null
           db/migrate.sh
           db/migrate.sh | grep -c skip
+
+  # Every test suite, database-backed ones included, split four ways by `node --test --test-shard`.
+  # Each shard builds the migrated template once (tools/test-db-template.mts) and insists on Postgres with
+  # REQUIRE_DB=1, so a suite that cannot reach its database fails instead of skipping. Three of the suites
+  # (src/domain/borrower/32-13, 32-16.rail, 32-17) `next build` apps/borrower into .next-t13 and drive it with
+  # Playwright's Chromium from /opt/pw-browsers, so every shard installs the app and the browser (the shard a
+  # file lands in moves as files are added; installing everywhere is what keeps the partition free to move) and
+  # restores the build from a cache keyed on the app's sources.
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_USER: sm, POSTGRES_PASSWORD: sm, POSTGRES_DB: supermortgage }
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U sm" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      REQUIRE_DB: "1"
+      TEST_DATABASE_URL: postgresql://sm:sm@localhost:5432/supermortgage_test
+      # where the Chromium suites look for the browser (and, when present, chromium-1194/chrome-linux/chrome)
+      PLAYWRIGHT_BROWSERS_PATH: /opt/pw-browsers
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/borrower/package-lock.json
+      - run: npm ci
+      - name: xmllint and psql on the runner (src/infra/integrations/du-schema throws without xmllint; db/migrate.sh needs psql)
+        run: sudo apt-get update -q >/dev/null && sudo apt-get install -y -q libxml2-utils postgresql-client >/dev/null
+      - name: install the borrower app and Chromium (32-13, 32-16.rail and 32-17 build the app and drive it)
+        working-directory: apps/borrower
+        run: |
+          npm ci
+          sudo mkdir -p "$PLAYWRIGHT_BROWSERS_PATH" && sudo chown "$(id -u):$(id -g)" "$PLAYWRIGHT_BROWSERS_PATH"
+          npx playwright install --with-deps chromium
+      - name: restore the borrower app's standalone build (.next-t13) keyed on its sources
+        id: next-build
+        uses: actions/cache@v4
+        with:
+          path: apps/borrower/.next-t13
+          key: next-t13-${{ runner.os }}-${{ hashFiles('apps/borrower/app/**', 'apps/borrower/components/**', 'apps/borrower/lib/**', 'apps/borrower/fixtures/**', 'apps/borrower/*.ts', 'apps/borrower/*.json', 'apps/borrower/scripts/**') }}
+      - name: mark the restored build current (the suites rebuild when a source is newer than BUILD_ID; a fresh checkout is)
+        if: steps.next-build.outputs.cache-hit == 'true'
+        run: find apps/borrower/.next-t13 -exec touch {} +
+      - name: build the migrated test-database template once (every suite clones it)
+        run: node --experimental-strip-types tools/test-db-template.mts
+      - name: node --test shard ${{ matrix.shard }}/4
+        run: |
+          node --test --experimental-strip-types --test-shard=${{ matrix.shard }}/4 'src/**/*.test.ts' 2>&1 | tee /tmp/npm-test.log
+          exit "${PIPESTATUS[0]}"
+      - name: failing tests, named (the TAP stream above is long; this is the part to read)
+        if: failure()
+        run: |
+          echo "## Failing tests (shard ${{ matrix.shard }}/4)" >> "$GITHUB_STEP_SUMMARY"
+          grep -n "^not ok" /tmp/npm-test.log | tee -a "$GITHUB_STEP_SUMMARY" || true
+          echo "--- detail (first three) ---"
+          for n in $(grep -n "^not ok" /tmp/npm-test.log | head -3 | cut -d: -f1); do sed -n "${n},$((n+40))p" /tmp/npm-test.log; echo "..."; done
+
   image:
     # The container image the deploy workflow ships: build it, then run all three modes against Postgres.
     runs-on: ubuntu-latest

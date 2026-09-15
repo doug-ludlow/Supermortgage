@@ -4,14 +4,13 @@
 // (the taps, the FAKE vendors finishing on the tap) with the scripted model of 32-16.spec.test.ts behind the turn.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import type Anthropic from "@anthropic-ai/sdk";
-import { connect, reachable, type Db } from "../../infra/db/client.ts";
+import { connect, type Db } from "../../infra/db/client.ts";
+import { testDatabase } from "../../infra/db/test-db.ts";
 import { decodeEntityData } from "../../infra/db/entities.ts";
-import { acquireJourneyLock, type TestLock } from "../../infra/db/test-lock.ts";
 import { loadOverriddenRegistry } from "../timer-overrides.ts";
 import { FixedClock } from "../../kernel/events/index.ts";
 import { Runtime } from "../../runtime/app.ts";
@@ -27,10 +26,7 @@ import { decryptTin, tinCipherKey } from "../../infra/pii/tin.ts";
 import { reactDuGaps } from "../../runtime/borrower/flows/3-entry.ts";
 import type { FlowDeps, CardTrigger } from "../../runtime/borrower/flows/index.ts";
 
-const DB_URL = process.env["TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_test";
-const up = await reachable(DB_URL);
-if (!up && process.env["REQUIRE_DB"]) throw new Error(`REQUIRE_DB set but ${DB_URL} is not reachable`);
-const skip = up ? false : `no Postgres at ${DB_URL}`;
+const { url: DB_URL, skip } = await testDatabase(import.meta.url);
 const TOKEN = "ops-" + randomUUID();
 const R = randomUUID().slice(0, 8);
 const NOW = "2026-10-05T16:00:00.000Z";
@@ -71,15 +67,12 @@ function scriptedClient() {
 }
 const scripted = scriptedClient();
 
-let journeyLock: TestLock | undefined;
 let db: Db; let runtime: Runtime; let router: BorrowerRouter; let base = ""; let close: () => Promise<void> = async () => undefined; let partnerPartyId = "";
 /** The flow's own log lines about 32.18 rule 7's gaps (`borrower.flow.32-18.gap.*`) — T8 reads the platform-gap lines here. */
 const flowLog: string[] = [];
 
 test.before(async () => {
   if (skip) return;
-  journeyLock = await acquireJourneyLock(DB_URL);
-  execFileSync(fileURLToPath(new URL("../../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL);
   runtime = new Runtime({ db, registry: loadOverriddenRegistry(), clock });
   partnerPartyId = (await db.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, servicer_number, mers_org_id) VALUES ('servicer', $1, '123456789', '1000123') RETURNING id`, [`Partner Bank ${R}`]))[0]!.id;
@@ -90,7 +83,7 @@ test.before(async () => {
   base = `http://127.0.0.1:${await listen(server, 0, "127.0.0.1")}`;
   close = () => new Promise((resolve) => { router.hub.close(); server.closeAllConnections?.(); server.close(() => db.end().then(() => resolve())); });
 });
-test.after(async () => { if (!skip) { await router.flows?.settle(); await close(); await journeyLock?.release(); } });
+test.after(async () => { if (!skip) { await router.flows?.settle(); await close(); } });
 
 // ---------------------------------------------------------------- helpers over the borrower API
 type Reply = { status: number; body: Json };

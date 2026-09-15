@@ -147,7 +147,7 @@ platform with one id grammar, one registry, one audit and one kernel. The seam i
   `refi.opportunity.converted` event that links them.
 - **A second journey, the purchase.** src/runtime/purchase-lifecycle.test.ts drives the fixture
   src/runtime/borrower/fixtures/journey-purchase.ts (same shape as journey.ts: `PARTNER_ID`, `tool()`, `phases()`) on its
-  own database (`PURCHASE_TEST_DATABASE_URL`, dropped and created per run): an organic "still looking" lead (20.3) → the
+  own database (from src/infra/db/test-db.ts, dropped and recreated from the migrated template per run): an organic "still looking" lead (20.3) → the
   application with the property to be determined → the signed contract through 22.1 and 32.2's `application.confirmField`
   (`purchase_contracts`) → the six items and the Reg Z clock → LE / intent / lock (21.2, 21.4, 29.1) → the traditional
   appraisal and the Reg B copy (24.1, 24.2) → DU and the decision (23.x) → MI (24.6) → title (24.4) → the RON closing and

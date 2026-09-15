@@ -11,12 +11,10 @@
 // `fake_code` outside production). Skips without a database.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { toJson } from "../../infra/db/client.ts";
-import { connect, reachable, type Db } from "../../infra/db/client.ts";
-import { acquireJourneyLock, type TestLock } from "../../infra/db/test-lock.ts";
+import { testDatabase } from "../../infra/db/test-db.ts";
+import { connect, type Db } from "../../infra/db/client.ts";
 import { loadOverriddenRegistry } from "../timer-overrides.ts";
 import { FixedClock } from "../../kernel/events/index.ts";
 import { Runtime } from "../../runtime/app.ts";
@@ -49,12 +47,9 @@ import { GATED_CLASSES } from "./eval/checks.ts";
 import { selectVersion, selectedVersion, versionRow, GovernanceRefused, writeDailyMetrics, evaluateKillSwitch, resetKillSwitch, KILL_SWITCH_FLAGS, TRANSFERS_PER_SESSION_BAND, AI_SYSTEM_CODE as CONVERSATION_SYSTEM } from "./eval/governance.ts";
 import { evalDbReachable, openEvalHarness } from "./eval/harness.ts";
 
-const DB_URL = process.env["TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_test";
+const { url: DB_URL, skip } = await testDatabase(import.meta.url);
 /** T21's eval harness drops and recreates its own database beside this suite's (…_eval). */
 const EVAL_DB_URL = process.env["TEST_EVAL_DATABASE_URL"] ?? DB_URL.replace(/\/([^/]+)$/, "/$1_t21_eval");
-const up = await reachable(DB_URL);
-if (!up && process.env["REQUIRE_DB"]) throw new Error(`REQUIRE_DB set but ${DB_URL} is not reachable`);
-const skip = up ? false : `no Postgres at ${DB_URL}`;
 const TOKEN = "ops-" + randomUUID();
 const R = randomUUID().slice(0, 8);
 const NOW = "2026-09-12T16:00:00.000Z";
@@ -102,15 +97,12 @@ function scriptedClient() {
 }
 const scripted = scriptedClient();
 
-let journeyLock: TestLock | undefined;
 let db: Db; let runtime: Runtime; let router: BorrowerRouter; let base = ""; let close: () => Promise<void> = async () => undefined; let partnerPartyId = "";
 
 // ---------------------------------------------------------------- the shared setup (every Phase 0–4 T-id in this file drives the same server; T28's contract test reads
 // `skip`, `db`, `runtime`, `router`, `base`, `TOKEN`, `clock`, `partnerPartyId` from here and keeps its other helpers local)
 test.before(async () => {
   if (skip) return;
-  journeyLock = await acquireJourneyLock(DB_URL);   // the journey fixture's book rows are global
-  execFileSync(fileURLToPath(new URL("../../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL);
   runtime = new Runtime({ db, registry: loadOverriddenRegistry(), clock });
   partnerPartyId = (await db.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, servicer_number, mers_org_id) VALUES ('servicer', $1, '123456789', '1000123') RETURNING id`, [`Partner Bank ${R}`]))[0]!.id;
@@ -122,7 +114,7 @@ test.before(async () => {
   base = `http://127.0.0.1:${await listen(server, 0, "127.0.0.1")}`;
   close = () => new Promise((resolve) => { router.hub.close(); server.closeAllConnections?.(); server.close(() => db.end().then(() => resolve())); });
 });
-test.after(async () => { if (!skip) { await router.flows?.settle(); await close(); await journeyLock?.release(); } });
+test.after(async () => { if (!skip) { await router.flows?.settle(); await close(); } });
 
 // ---------------------------------------------------------------- helpers over the borrower API
 type Reply = { status: number; body: Json };

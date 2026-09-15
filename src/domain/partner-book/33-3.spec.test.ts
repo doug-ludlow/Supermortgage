@@ -9,10 +9,9 @@
 // and the eval personas' steps) with the scripted model of src/domain/borrower/eval/scripted-client.ts behind the turn. Own database `<base>_33_3`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import { connect, reachable, type Db } from "../../infra/db/client.ts";
+import { connect, type Db } from "../../infra/db/client.ts";
+import { testDatabase } from "../../infra/db/test-db.ts";
 import { decodeEntityData } from "../../infra/db/entities.ts";
 import { PgBorrowerUiRepository, type CardInstanceRow } from "../../infra/db/borrower-ui.ts";
 import type { Subject } from "../../infra/db/borrower-parties.ts";
@@ -42,12 +41,7 @@ import { scriptedClient, parseSituation, type Scene, type Situation } from "../b
 import { REFINANCE_PROFILE } from "../borrower/eval/personas.ts";
 import { DEMO_AS_OF, DEMO_PARTNER, demoBook, type DemoLoan } from "./fixtures/partner-book-demo.ts";
 
-const BASE_URL = process.env["TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_test";
-const DB_URL = ((): string => { const u = new URL(BASE_URL); u.pathname = `${u.pathname}_33_3`; return u.toString(); })();
-const ADMIN_URL = ((): string => { const u = new URL(DB_URL); u.pathname = "/postgres"; return u.toString(); })();
-const up = await reachable(ADMIN_URL);   // the database itself is dropped and created by the setup
-if (!up && process.env["REQUIRE_DB"]) throw new Error(`REQUIRE_DB set but ${ADMIN_URL} is not reachable`);
-const skip = up ? false : `no Postgres at ${ADMIN_URL}`;
+const { url: DB_URL, skip } = await testDatabase(import.meta.url);
 const TOKEN = "ops-" + randomUUID();
 type Json = Record<string, unknown>;
 /** The first day: 2026-09-15 07:20 America/New_York (EDT) — after 20.1's 06:30 run, 33.2's 07:00 review and this process's 07:15 pass. */
@@ -91,9 +85,6 @@ const loanN = (n: number): DemoLoan => book.loans.find((l) => l.n === n)!;
 
 test.before(async () => {
   if (skip) return;
-  const name = new URL(DB_URL).pathname.slice(1);
-  const a = connect(ADMIN_URL); await a.query(`DROP DATABASE IF EXISTS ${name}`); await a.query(`CREATE DATABASE ${name}`); await a.end();
-  execFileSync(fileURLToPath(new URL("../../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL);
   const logger = createLogger("json", (line) => { logLines.push(line); if (process.env["FLOW_DEBUG"] && /flow|error|unhandled|partner|readiness|"status":[45]/i.test(line)) process.stderr.write(line + "\n"); });
   runtime = new Runtime({ db, registry: loadOverriddenRegistry(), clock, logger, rateFeed: new FakeRateFeed(), reviewers: new FakeReviewers({ delaySeconds: 0 }), analystLlm: new AnthropicLlm({ client: analystScripted.client, model: "scripted" }) });

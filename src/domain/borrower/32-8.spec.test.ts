@@ -12,11 +12,9 @@
 // apps/borrower/tests/cards/flow-8-servicing-payments.test.tsx. Skips without a database.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import { connect, reachable, type Db } from "../../infra/db/client.ts";
-import { acquireJourneyLock, type TestLock } from "../../infra/db/test-lock.ts";
+import { connect, type Db } from "../../infra/db/client.ts";
+import { testDatabase } from "../../infra/db/test-db.ts";
 import { decodeEntityData } from "../../infra/db/entities.ts";
 import { loadOverriddenRegistry } from "../timer-overrides.ts";
 import { FixedClock } from "../../kernel/events/index.ts";
@@ -36,10 +34,7 @@ import { project, type ProjectedItem } from "../escrow/analysis.ts";
 import { assembleAtrEvidence, type AporTableRow, type FeeItem23, type LockRow, type ProductTerms, type ConsiderVerifyFactor } from "../underwriting/ops-23-4.ts";
 import type { FakeEdelivery } from "../../infra/integrations/delivery.ts";
 
-const DB_URL = process.env["TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_test";
-const up = await reachable(DB_URL);
-if (!up && process.env["REQUIRE_DB"]) throw new Error(`REQUIRE_DB set but ${DB_URL} is not reachable`);
-const skip = up ? false : `no Postgres at ${DB_URL}`;
+const { url: DB_URL, skip } = await testDatabase(import.meta.url);
 const TOKEN = "ops-" + randomUUID();
 const clock = new FixedClock("2026-09-10T16:00:00.000Z");
 const ESCROW = { kind: "agent" as const, id: "escrow" }; const CASHIERING = { kind: "agent" as const, id: "cashiering" }; const COMPLIANCE = { kind: "agent" as const, id: "compliance-tester" };
@@ -47,13 +42,10 @@ const ESCROW = { kind: "agent" as const, id: "escrow" }; const CASHIERING = { ki
 const PI = 340_262n, ESCROW_PMT = 68_750n, INSTALLMENT = PI + ESCROW_PMT;   // $3,402.62 + $687.50 = $4,090.12
 const LATE_CHARGE = 17_013n;   // 5% of P&I, HALF_UP (2.7: $170.13)
 
-let journeyLock: TestLock | undefined;
 let db: Db; let runtime: Runtime; let router: BorrowerRouter; let base = ""; let close: () => Promise<void> = async () => undefined; let partnerPartyId = "";
 
 test.before(async () => {
   if (skip) return;
-  journeyLock = await acquireJourneyLock(DB_URL);
-  execFileSync(fileURLToPath(new URL("../../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL);
   runtime = new Runtime({ db, registry: loadOverriddenRegistry(), clock });
   const logger = createLogger("json", (line) => { if (process.env["FLOW_DEBUG"] && /flow|ERROR/.test(line)) process.stderr.write(line + "\n"); });
@@ -64,7 +56,7 @@ test.before(async () => {
   const partner = await db.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, servicer_number, mers_org_id) VALUES ('servicer', $1, '123456789', '1000123') RETURNING id`, [`Partner Bank ${randomUUID().slice(0, 8)}`]);
   partnerPartyId = partner[0]!.id;
 });
-test.after(async () => { if (!skip) { await settle(); await close(); await journeyLock?.release(); } });
+test.after(async () => { if (!skip) { await settle(); await close(); } });
 
 // ---------------------------------------------------------------- helpers over the borrower API and the flows
 type Reply = { status: number; body: Record<string, unknown> };

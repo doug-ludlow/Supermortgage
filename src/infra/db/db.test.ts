@@ -1,8 +1,10 @@
 /**
- * Database-backed acceptance tests. They run against TEST_DATABASE_URL
- * (default postgresql://sm:sm@localhost/supermortgage_test) with every
- * migration applied, and skip cleanly when no Postgres answers — `npm test`
- * must pass on a laptop without one; `npm run test:db` insists on it.
+ * Database-backed acceptance tests. They run on this file's own database from
+ * src/infra/db/test-db.ts (a clone of the migrated template on the server named
+ * by TEST_DATABASE_URL, default postgresql://sm:sm@localhost/supermortgage_test)
+ * and skip cleanly when no Postgres answers — `npm test` must pass on a laptop
+ * without one; `npm run test:db` insists on it. The first test runs db/migrate.sh
+ * over the clone: every file is already applied, so it must skip them all.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -10,7 +12,8 @@ import { execFileSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import { connect, reachable, type Db } from "./client.ts";
+import { connect, type Db } from "./client.ts";
+import { testDatabase } from "./test-db.ts";
 import { PgEventRepository } from "./events.ts";
 import { PgLedgerRepository } from "./ledger.ts";
 import { PgTimerRepository } from "./timers.ts";
@@ -24,10 +27,7 @@ import { loadOverriddenRegistry } from "../../domain/timer-overrides.ts";
 import { CashieringService } from "../../domain/cashiering/service.ts";
 import type { LoanCashState } from "../../domain/cashiering/types.ts";
 
-const DB_URL = process.env["TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_test";
-const up = await reachable(DB_URL);
-if (!up && process.env["REQUIRE_DB"]) throw new Error(`REQUIRE_DB set but ${DB_URL} is not reachable`);
-const skip = up ? false : `no Postgres at ${DB_URL}`;
+const { url: DB_URL, skip } = await testDatabase(import.meta.url);
 
 let db: Db;
 let n = 0;

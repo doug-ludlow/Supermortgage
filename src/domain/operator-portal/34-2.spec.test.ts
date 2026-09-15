@@ -15,10 +15,9 @@
 // who is T1's homegrown account, T5's co-borrower and T6's fixture account.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
-import { connect, reachable, type Db } from "../../infra/db/client.ts";
+import { connect, type Db } from "../../infra/db/client.ts";
+import { testDatabase } from "../../infra/db/test-db.ts";
 import { PgBorrowerUiRepository } from "../../infra/db/borrower-ui.ts";
 import { loadOverriddenRegistry } from "../timer-overrides.ts";
 import { FixedClock } from "../../kernel/events/index.ts";
@@ -39,12 +38,7 @@ import { DIRECTORY_MODEL_VERSION, DIRECTORY_PROMPT_VERSION, DIRECTORY_RULE_SET_V
 import { EXPORT_DOCUMENT_KIND } from "../../runtime/directory/export.ts";
 import { EVIDENCE_SECTIONS } from "../../runtime/controls/evidence.ts";
 
-const BASE_URL = process.env["TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_test";
-const DB_URL = ((): string => { const u = new URL(BASE_URL); u.pathname = `${u.pathname}_34_2`; return u.toString(); })();
-const ADMIN_URL = ((): string => { const u = new URL(DB_URL); u.pathname = "/postgres"; return u.toString(); })();
-const up = await reachable(ADMIN_URL);   // the database itself is dropped and created by the setup
-if (!up && process.env["REQUIRE_DB"]) throw new Error(`REQUIRE_DB set but ${ADMIN_URL} is not reachable`);
-const skip = up ? false : `no Postgres at ${ADMIN_URL}`;
+const { url: DB_URL, skip } = await testDatabase(import.meta.url);
 const TOKEN = "ops-" + randomUUID();
 const R = randomUUID().slice(0, 8);
 type Json = Record<string, unknown>;
@@ -100,9 +94,6 @@ const logLines: string[] = [];
 
 test.before(async () => {
   if (skip) return;
-  const name = new URL(DB_URL).pathname.slice(1);
-  const a = connect(ADMIN_URL); await a.query(`DROP DATABASE IF EXISTS ${name}`); await a.query(`CREATE DATABASE ${name}`); await a.end();
-  execFileSync(fileURLToPath(new URL("../../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL);
   const logger = createLogger("json", (line) => { logLines.push(line); if (process.env["FLOW_DEBUG"] && /error|unhandled|directory|staff|"status":[45]/i.test(line)) process.stderr.write(line + "\n"); });
   runtime = new Runtime({ db, registry: loadOverriddenRegistry(), clock, logger, rateFeed: new FakeRateFeed(), reviewers: new FakeReviewers({ delaySeconds: 0 }), analystLlm: new AnthropicLlm({ client: analystScripted.client, model: "scripted" }) });

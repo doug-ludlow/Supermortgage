@@ -7,7 +7,7 @@
 // Skips without Postgres (not a spec unit).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { reachable } from "../infra/db/client.ts";
+import { testDatabase } from "../infra/db/test-db.ts";
 import { FixedClock } from "../kernel/events/index.ts";
 import { FakeReviewers, fakeReviewersFromEnv, fakeReviewerRolesFromEnv, FAKE_REVIEWER_ROLES, FAKE_HUMAN_AGENT_NAME } from "../infra/integrations/reviewers.ts";
 import { loadOverriddenRegistry } from "../domain/timer-overrides.ts";
@@ -16,9 +16,7 @@ import { PgConsoleStore } from "../console/pg-store.ts";
 import { MST } from "./borrower/fixtures/journey.ts";
 import { openRefiBook, type RefiBook } from "./borrower/fixtures/refi-book.ts";
 
-const DB_URL = process.env["FAKE_REVIEWERS_TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_fake_reviewers";
-const up = await reachable((() => { const u = new URL(DB_URL); u.pathname = "/postgres"; return u.toString(); })());   // the fixture creates the named database
-const skip = up ? false : `no Postgres at ${DB_URL}`;
+const { url: DB_URL, skip } = await testDatabase(import.meta.url, { provision: false });   // openRefiBook creates the named database
 type P = Record<string, unknown>;
 const clock = new FixedClock("2026-09-30T16:00:00.000Z");
 const DELAY_S = 20;

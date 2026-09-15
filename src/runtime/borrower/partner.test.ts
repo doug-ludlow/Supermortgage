@@ -7,10 +7,11 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 import { connect } from "../../infra/db/client.ts";
+import { testDatabase } from "../../infra/db/test-db.ts";
 import { entryPartner, partnerById } from "./partner.ts";
 
-const url = process.env["DATABASE_URL"]; const skip = url ? false : "DATABASE_URL unset";
-const db = url ? connect(url) : null;
+const { url, skip } = await testDatabase(import.meta.url);   // its own database (once DATABASE_URL, which REQUIRE_DB runs never set)
+const db = skip ? null : connect(url);
 const R = randomUUID().slice(0, 8);
 const made: string[] = [];
 const party = async (name: string): Promise<string> => { const r = (await db!.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, servicer_number, mers_org_id) VALUES ('servicer', $1, $2, '1000123') RETURNING id`, [name, String(100000000 + Math.floor(Math.random() * 899999999))]))[0]!.id; made.push(r); return r; };

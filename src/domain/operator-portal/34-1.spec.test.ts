@@ -11,10 +11,9 @@
 // `none`, the tiny CBOR encoder) are the borrower suites' (src/runtime/borrower/borrower.test.ts, 32-14).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { createHash, generateKeyPairSync, randomUUID, sign as cryptoSign } from "node:crypto";
-import { connect, reachable, type Db } from "../../infra/db/client.ts";
+import { connect, type Db } from "../../infra/db/client.ts";
+import { testDatabase } from "../../infra/db/test-db.ts";
 import { loadOverriddenRegistry } from "../timer-overrides.ts";
 import { FixedClock } from "../../kernel/events/index.ts";
 import { Runtime } from "../../runtime/app.ts";
@@ -25,12 +24,7 @@ import { b64url } from "../../runtime/borrower/webauthn.ts";
 import { bootstrapStaffAdmin, STAFF_IDLE_MINUTES, STAFF_LOCK_AFTER_FAILURES, STAFF_PASSWORD_MIN_LENGTH, STAFF_POSSESSION_MINUTES, STAFF_RULE_SET_VERSION, STAFF_MODEL_VERSION, STAFF_PROMPT_VERSION, STAFF_INVITATION_TEMPLATE } from "../../runtime/staff/auth.ts";
 import { ACCESS_REVIEW_DAYS } from "../../runtime/staff/roles.ts";
 
-const BASE_URL = process.env["TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_test";
-const DB_URL = ((): string => { const u = new URL(BASE_URL); u.pathname = `${u.pathname}_34_1`; return u.toString(); })();
-const ADMIN_URL = ((): string => { const u = new URL(DB_URL); u.pathname = "/postgres"; return u.toString(); })();
-const up = await reachable(ADMIN_URL);   // the database itself is dropped and created by the setup
-if (!up && process.env["REQUIRE_DB"]) throw new Error(`REQUIRE_DB set but ${ADMIN_URL} is not reachable`);
-const skip = up ? false : `no Postgres at ${ADMIN_URL}`;
+const { url: DB_URL, skip } = await testDatabase(import.meta.url);
 const TOKEN = "ops-" + randomUUID();
 const R = randomUUID().slice(0, 8);
 /** 2026-09-14 08:00 America/New_York; the review clock resolves end of day ET (src/kernel/timers/engine.ts endOfDay). */
@@ -59,9 +53,6 @@ const edelivery = (): FakeEdelivery => runtime.ports.edelivery as FakeEdelivery;
 
 test.before(async () => {
   if (skip) return;
-  const name = new URL(DB_URL).pathname.slice(1);
-  const a = connect(ADMIN_URL); await a.query(`DROP DATABASE IF EXISTS ${name}`); await a.query(`CREATE DATABASE ${name}`); await a.end();
-  execFileSync(fileURLToPath(new URL("../../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL);
   const logger = createLogger("json", (line) => { logLines.push(line); if (process.env["FLOW_DEBUG"] && /error|unhandled|staff|"status":[45]/i.test(line)) process.stderr.write(line + "\n"); });
   runtime = new Runtime({ db, registry: loadOverriddenRegistry(), clock, logger });

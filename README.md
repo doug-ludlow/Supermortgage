@@ -112,10 +112,15 @@ npm run audit             # the fractions above, regenerated into docs/audit/
 npm run spec:lint         # how much of the timer registry is mechanically armable and satisfiable
 ```
 
-Database-backed suites create their own database from `TEST_DATABASE_URL` (default `…/supermortgage_test`); run one on its own with
+Every database-backed suite calls `testDatabase(import.meta.url)` (src/infra/db/test-db.ts) and gets its own database —
+`supermortgage_t_<hash>_<file>` on the server named by `TEST_DATABASE_URL` (default `…/supermortgage_test`; the URL's
+database name prefixes every per-file name, so two checkouts sharing one server keep apart) — cloned in well under a second
+from `supermortgage_tpl_<hash of db/migrations>`, a template migrated once per server under an advisory lock. No suite
+runs `db/migrate.sh` itself and no two suites share a database, so `npm run test:db` (`REQUIRE_DB=1`, every suite, no
+skipping) runs the whole tree concurrently. Run one suite on its own with
 
 ```sh
-REQUIRE_DB=1 TEST_DATABASE_URL=postgresql://sm:sm@localhost/supermortgage_x node --experimental-strip-types --test src/domain/partner-book/33-1.spec.test.ts
+REQUIRE_DB=1 node --experimental-strip-types --test src/domain/partner-book/33-1.spec.test.ts
 ```
 
 ### Hosted runtime

@@ -11,11 +11,10 @@
 // are seeded as global entity rows (a state with no rows is unverified and fail-closed — NY). Skips without a database.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
-import { connect, reachable, type Db } from "../../infra/db/client.ts";
-import { acquireJourneyLock, type TestLock } from "../../infra/db/test-lock.ts";
+import { connect, type Db } from "../../infra/db/client.ts";
+import { testDatabase } from "../../infra/db/test-db.ts";
 import { decodeEntityData, encodeEntityData } from "../../infra/db/entities.ts";
 import { loadOverriddenRegistry } from "../timer-overrides.ts";
 import { FixedClock } from "../../kernel/events/index.ts";
@@ -40,10 +39,7 @@ import { PgConsoleStore } from "../../console/pg-store.ts";
 import { FUNNEL_STAGES } from "../../console/store.ts";
 import { FakeEdelivery } from "../../infra/integrations/delivery.ts";   // T20: what the e-delivery FAKE texted to a number
 
-const DB_URL = process.env["TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_test";
-const up = await reachable(DB_URL);
-if (!up && process.env["REQUIRE_DB"]) throw new Error(`REQUIRE_DB set but ${DB_URL} is not reachable`);
-const skip = up ? false : `no Postgres at ${DB_URL}`;
+const { url: DB_URL, skip } = await testDatabase(import.meta.url);
 const TOKEN = "ops-" + randomUUID();
 const R = randomUUID().slice(0, 8);
 const NOW = "2026-09-10T16:00:00.000Z";
@@ -54,14 +50,11 @@ const RATES = ["6.375", "6.250", "6.125", "6.000", "5.875"];   // the journey's 
 const phoneOf = (seed: string): string => `+1602555${(parseInt(createHash("sha256").update(seed).digest("hex").slice(0, 6), 16) % 10000).toString().padStart(4, "0")}`;
 type Json = Record<string, unknown>;
 
-let journeyLock: TestLock | undefined;
 let db: Db; let runtime: Runtime; let router: BorrowerRouter; let base = ""; let close: () => Promise<void> = async () => undefined; let partnerPartyId = ""; let partnerName = ""; let guaranteedPartnerId = "";
 let rateSheetId = "";
 
 test.before(async () => {
   if (skip) return;
-  journeyLock = await acquireJourneyLock(DB_URL);   // the rate sheet and the 31.1 registry rows are global rows
-  execFileSync(fileURLToPath(new URL("../../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL);
   runtime = new Runtime({ db, registry: loadOverriddenRegistry(), clock });
   partnerName = `Partner Bank ${R}`;
@@ -79,7 +72,7 @@ test.before(async () => {
   rateSheetId = `rs-t32-14-${R}`;
   await runtime.execute({ process: "20.4", name: "publishRateSheet", loanId: "", actor: PRICING, input: { rate_sheet_id: rateSheetId, partner_id: partnerPartyId, source: "pe_whole_loan_api", published_at: NOW, expires_at: new Date(Date.parse(NOW) + 12 * 3_600_000).toISOString(), prices: RATES.map((r) => ({ product_code: "FRM30", term_months: 360, note_rate_pct: r, lock_period_days: 45, price: "100.000" })) } });
 });
-test.after(async () => { if (!skip) { await close(); await journeyLock?.release(); } });
+test.after(async () => { if (!skip) { await close(); } });
 
 // ---------------------------------------------------------------- the 31.1 registry rows that open a state (global entity rows; a state with none is unverified → closed)
 async function seedStateReadiness(states: readonly string[]): Promise<void> {

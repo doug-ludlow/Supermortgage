@@ -7,10 +7,9 @@
  * loan's, the scope the daily run's `load_row` writes in too. Used by src/runtime/refi-daily.test.ts and src/runtime/reviewers.test.ts.
  */
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { connect, type Db } from "../../../infra/db/client.ts";
+import { provisionDatabase } from "../../../infra/db/test-db.ts";
 import { decodeEntityData } from "../../../infra/db/entities.ts";
 import { FixedClock } from "../../../kernel/events/index.ts";
 import { loadOverriddenRegistry } from "../../../domain/timer-overrides.ts";
@@ -44,9 +43,7 @@ export const WORKED_EXAMPLE_VENDOR_ROW = (loanId: string, partnerId: string, o: 
   regx_days_delinquent: 0, bankruptcy_active: false, foreclosure_referred: false, lossmit_plan_active: false, deceased_or_sii_pending: false, transfer_out_pending: false, refi_do_not_solicit: false, refi_last_offered_at: null, refi_offers_12m: 0, arm_first_adjustment_date: null }) as P;
 
 export async function openRefiBook(o: RefiBookOptions): Promise<RefiBook> {
-  const name = new URL(o.dbUrl).pathname.slice(1); const admin = new URL(o.dbUrl); admin.pathname = "/postgres";
-  const a = connect(admin.toString()); await a.query(`DROP DATABASE IF EXISTS ${name}`); await a.query(`CREATE DATABASE ${name}`); await a.end();
-  execFileSync(fileURLToPath(new URL("../../../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: o.dbUrl }, stdio: "pipe" });
+  await provisionDatabase(o.dbUrl);   // dropped and recreated from the migrated template (src/infra/db/test-db.ts)
   const db = connect(o.dbUrl);
   const lines: string[] = [];
   const logger = o.logger ?? createLogger("json", (line) => { lines.push(line); if (process.env["FLOW_DEBUG"] && /flow|error|refi|fake|"status":[45]/i.test(line)) process.stderr.write(line + "\n"); });

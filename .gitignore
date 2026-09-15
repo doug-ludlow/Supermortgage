@@ -8,5 +8,8 @@ coverage/
 # Python bytecode from the spec tools
 __pycache__/
 
+# tsc --incremental state (tsconfig.json tsBuildInfoFile)
+.cache/
+
 # node_modules as a directory or a symlink
 node_modules

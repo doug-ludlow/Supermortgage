@@ -1,13 +1,12 @@
 /**
- * The FAKE-model harness: the real runtime and borrower router on a dedicated database (drop / create / db/migrate.sh — the pattern
+ * The FAKE-model harness: the real runtime and borrower router on a dedicated database (dropped and recreated from the migrated template, src/infra/db/test-db.ts — the pattern
  * of src/runtime/borrower/talk.test.ts, so no other builder's test run is touched), the entry demo seeded, the scripted Messages API
  * client injected as `llm: { client, model }` on createBorrowerRouter (docs/ux/17 §3.6: no fake model — the same loop, scripted).
  * Shared by the e2e test (runner.test.ts) and `npm run eval:fake` (cli.ts).
  */
-import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { fileURLToPath } from "node:url";
 import { connect, reachable, type Db } from "../../../infra/db/index.ts";
+import { provisionDatabase } from "../../../infra/db/test-db.ts";
 import { FixedClock } from "../../../kernel/events/index.ts";
 import { loadOverriddenRegistry } from "../../timer-overrides.ts";
 import { Runtime } from "../../../runtime/app.ts";
@@ -48,9 +47,8 @@ export const evalDbReachable = (dbUrl = process.env["EVAL_DATABASE_URL"] ?? DEFA
 
 export async function openEvalHarness(o: HarnessOptions = {}): Promise<EvalHarness> {
   const dbUrl = o.dbUrl ?? process.env["EVAL_DATABASE_URL"] ?? DEFAULT_EVAL_DB_URL; const now = o.now ?? "2026-09-10T16:00:00.000Z";
-  const name = evalDbName(dbUrl); const admin = new URL(dbUrl); admin.pathname = "/postgres";
-  const a = connect(admin.toString()); await a.query(`DROP DATABASE IF EXISTS ${name}`); await a.query(`CREATE DATABASE ${name}`); await a.end();
-  execFileSync(fileURLToPath(new URL("../../../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: dbUrl }, stdio: "pipe" });
+  evalDbName(dbUrl);   // refuses a name that does not look disposable
+  await provisionDatabase(dbUrl);   // dropped and recreated from the migrated template (src/infra/db/test-db.ts)
   const db = connect(dbUrl);
   const runtime = new Runtime({ db, registry: loadOverriddenRegistry(), clock: new FixedClock(now) });
   const seeded = await seedEntryDemo(runtime, { states: [...(o.states ?? ["AZ", "CO"])], now });

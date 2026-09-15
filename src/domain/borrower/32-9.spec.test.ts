@@ -13,12 +13,11 @@
 // the real components in apps/borrower/tests/cards/flow-9-servicing-requests.test.tsx. Skips without a database.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { connect, reachable, type Db } from "../../infra/db/client.ts";
-import { acquireJourneyLock, type TestLock } from "../../infra/db/test-lock.ts";
+import { connect, type Db } from "../../infra/db/client.ts";
+import { testDatabase } from "../../infra/db/test-db.ts";
 import { decodeEntityData } from "../../infra/db/entities.ts";
 import type { UowContext, UowResult } from "../../infra/db/unit-of-work.ts";
 import { loadOverriddenRegistry } from "../timer-overrides.ts";
@@ -46,16 +45,12 @@ import { installmentLedger } from "../pmi/fixtures.ts";
 import { DOCUMENT_MATRIX } from "../servicing-requests/successor.ts";
 import { FAKE_SERVICER_CONTACT, NOTICE_CODES_32_9, classifyIntake, money } from "../../runtime/borrower/flows/9-servicing-requests.ts";
 
-const DB_URL = process.env["TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_test";
-const up = await reachable(DB_URL);
-if (!up && process.env["REQUIRE_DB"]) throw new Error(`REQUIRE_DB set but ${DB_URL} is not reachable`);
-const skip = up ? false : `no Postgres at ${DB_URL}`;
+const { url: DB_URL, skip } = await testDatabase(import.meta.url);
 const TOKEN = "ops-" + randomUUID();
 const clock = new FixedClock("2026-09-10T16:00:00.000Z");
 const INSURANCE: Actor = { kind: "agent", id: "insurance-property" }; const PMI: Actor = { kind: "agent", id: "pmi" }; const PAYOFF: Actor = { kind: "agent", id: "payoff-release" }; const CASE: Actor = { kind: "agent", id: "case" }; const DISCLOSURES: Actor = { kind: "agent", id: "disclosures" };
 const COPY_LIB = readFileSync(fileURLToPath(new URL("../../../docs/ux/12-message-copy-library.md", import.meta.url)), "utf8");
 
-let journeyLock: TestLock | undefined;
 let db: Db; let runtime: Runtime; let router: BorrowerRouter; let base = ""; let close: () => Promise<void> = async () => undefined; let partnerPartyId = "";
 let notices: NoticeService; let fpi: Fpi92Service; let flood: FloodDeps;
 
@@ -70,8 +65,6 @@ const noticesMap = new Map<string, Notice>();
 
 test.before(async () => {
   if (skip) return;
-  journeyLock = await acquireJourneyLock(DB_URL);
-  execFileSync(fileURLToPath(new URL("../../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL);
   runtime = new Runtime({ db, registry: loadOverriddenRegistry(), clock });
   const logger = createLogger("json", (line) => { if (process.env["FLOW_DEBUG"] === "all" || (process.env["FLOW_DEBUG"] && /flow|ERROR/.test(line))) process.stderr.write(line + "\n"); });
@@ -86,7 +79,7 @@ test.before(async () => {
   fpi = new Fpi92Service({ events: fwdEvents.proxy, clock, ledger: fwdLedger.proxy, actor: INSURANCE });
   flood = { events: fwdEvents.proxy, actor: INSURANCE, notices, ...(runtime.ports.lpi ? { lpi: runtime.ports.lpi } : {}) };
 });
-test.after(async () => { if (!skip) { await close(); await journeyLock?.release(); } });
+test.after(async () => { if (!skip) { await close(); } });
 
 // ---------------------------------------------------------------- helpers over the borrower API, the runtime and the tables
 type Reply = { status: number; body: Record<string, unknown> };

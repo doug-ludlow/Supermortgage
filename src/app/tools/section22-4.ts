@@ -14,15 +14,51 @@
 import { defineTools, compute, never, needsRole, cents, str, num, flag, type ToolDef, type ToolInput, type ToolRuntime } from "../tools.ts";
 import { CommandRefused, type CommandContext } from "../commands.ts";
 import { plainDate as D, type PlainDate } from "../../kernel/calendar/date.ts";
+import { isUuid, toJson, type Queryable } from "../../infra/db/client.ts";
+import { duTool, hasTransaction } from "./section23-5.ts";
+import { deterministicUuid, resolveBorrowerEdge } from "../../domain/underwriting/du/writer.ts";
+import { assetIdentityKeys, resolveIdentities, subjectPrefix } from "../../domain/underwriting/du/identity.ts";
 import { DocumentGateClosed, assertGateOpen, openRequest, scheduledNoteDate, type DocumentRequest, type NeedsListItem, type ReliedDocument } from "../../domain/verification/ops-22-1.ts";
 import {
   AGENT, RULE_SET_VERSION, AssetGateClosed, anticipatedSalesProceeds, applyIpcTest, assertAssetGateOpen, assetDecisionRecord, buildWorksheet, communitySecond, computeReserves, correctGiftLetter, declareAsset, declareSubordinateFinancing, donorInterestedPartyCheck, emdCheck, evaluateDeposits, finalizeAssets,
   ipcCures, lcorCashBack, lcorCures, monthlyPI, receiveAssetReport, receiveGiftLetter, reconcileToCd, recordCurtailment, recordIpc, reportDaysFor, retirementUse, saleProceedsGate, statementGate, statementRequestItem, usableCents, verifyAsset, verifyGiftTransfer, virtualCurrencyUsable, withUsable,
-  type AssetRecord, type AssetType, type CdLine, type CommunitySecondInput, type DepositInput, type DepositResult, type GiftKind, type GiftLetter, type GiftRecord, type GiftTransferEvidence, type IpcItem, type Occupancy, type ReservesInput, type StatementEvidence, type StatementStandard, type Transaction, type TransactionParty, type UsableAsset, type VerificationMethod, type Worksheet, type WorksheetInputs, type WorksheetStage,
+  type AssetRecord, type AssetType, type AssetVerification, type CdLine, type CommunitySecondInput, type DepositInput, type DepositResult, type GiftKind, type GiftLetter, type GiftRecord, type GiftTransferEvidence, type IpcItem, type Occupancy, type ReservesInput, type StatementEvidence, type StatementStandard, type Transaction, type TransactionParty, type UsableAsset, type VerificationMethod, type Worksheet, type WorksheetInputs, type WorksheetStage,
 } from "../../domain/verification/ops-22-4.ts";
 
 const need = (i: ToolInput, ...keys: string[]): void => { for (const k of keys) if (i[k] === undefined || i[k] === null || i[k] === "") throw new RangeError(`${k} is required`); };
 const appOf = (i: ToolInput, ctx: CommandContext): string => { const id = str(i, "application_id") || ctx.applicationId || ""; if (!id) throw new RangeError("application_id is required"); return id; };
+
+// ---- 23.5: a received asset report's accounts as du_assets rows with their owner arcs, through the 23.5 tools ----
+/** The vendor's account type (the Plaid FAKE's `account_type`) → the DU AssetType of a 2a deposit account (du_assets_deposit_account_shape). Unknown → refused, never guessed. */
+export const DU_ASSET_TYPE_FOR_ACCOUNT: Readonly<Record<string, string>> = { checking: "CheckingAccount", savings: "SavingsAccount", money_market: "MoneyMarketFund", cd: "CertificateOfDepositTimeDeposit", brokerage: "Stock", retirement: "RetirementFund", trust: "TrustAccount", life_insurance: "LifeInsurance", bond: "Bond", mutual_fund: "MutualFund" };
+async function writeAssetsToDuGraph(i: ToolInput, ctx: CommandContext, rt: ToolRuntime, app: string, v: AssetVerification): Promise<Record<string, unknown>> {
+  const defer = rt.services["deferWrite"] as (fn: (q: Queryable) => Promise<void>) => void;
+  const accounts = list<Record<string, unknown>>(i, "accounts"); const borrowerRef = str(i, "borrower_id");
+  // The `verifications` row (0081) the lineage columns name: 22.4's verification ids are strings (`<app>:<borrower>:assets:<ref>`), the table's key a uuid — derived from the id, so a re-receive of one report is one row.
+  const rowId = isUuid(v.verification_id) ? v.verification_id : deterministicUuid("verifications", v.verification_id);
+  const consent = isUuid(v.authorization_consent_id) ? v.authorization_consent_id : null;
+  // Tier 3 over this pull (identity.ts resolveIdentities): every row of one pull carries the same subject prefix, so equal content facts are an equal key — a placeholder subject finds the collisions before the borrower is resolved inside the transaction.
+  const plan = resolveIdentities(accounts.map((a) => assetIdentityKeys({ applicationBorrowerId: "pull", provider: v.supplier_code, itemId: optStr(a, "account_id") }, { kind: "DEPOSIT_ACCOUNT", holderName: optStr(a, "institution"), accountSubtype: optStr(a, "account_type"), accountIdentifier: optStr(a, "last4") })));
+  defer(async (q) => {
+    const borrower = await resolveBorrowerEdge(q, app, borrowerRef);
+    await q.query(`INSERT INTO verifications (verification_id, application_id, borrower_id, kind, component, supplier_code, report_reference_id, vendor_data_as_of, report_days, accounts, authorization_consent_id, supplemental)
+                   VALUES ($1, $2, $3, 'assets', 'assets', $4, $5, $6::date, $7, $8::jsonb, $9, $10)
+                   ON CONFLICT (verification_id) DO UPDATE SET report_reference_id = EXCLUDED.report_reference_id, vendor_data_as_of = EXCLUDED.vendor_data_as_of, accounts = EXCLUDED.accounts, report_days = EXCLUDED.report_days, received_at = now()`,
+      [rowId, app, borrower, v.supplier_code, v.report_reference_id, String(v.vendor_data_as_of), v.report_days, toJson(v.accounts), consent, v.supplemental]);
+  });
+  const assets: string[] = [];
+  for (const [k, a] of accounts.entries()) {
+    const type = DU_ASSET_TYPE_FOR_ACCOUNT[String(a["account_type"] ?? "")];
+    if (!type) throw new RangeError(`accounts[${k}].account_type is required to write the DU graph (one of ${Object.keys(DU_ASSET_TYPE_FOR_ACCOUNT).join("/")}); the report row was not written`);
+    const resolved = plan.rows[k]!;
+    const out = (await duTool(rt, ctx, "writeDuAsset", { application_id: app, ...(resolved.id ? { asset_id: resolved.id } : {}),
+      asset: { kind: "DEPOSIT_ACCOUNT", asset_type: type, institution_name: String(a["institution"] ?? "").slice(0, 150), account_last4: String(a["last4"] ?? "").slice(-4) || null, cash_or_market_value_cents: cents(a["balance_cents"]), source_verification_id: rowId, first_seen_verification_id: rowId, last_seen_verification_id: rowId, ...(resolved.ambiguousWith ? { identity_key: resolved.identityKey } : {}) },
+      owners: [{ application_borrower_id: borrowerRef }], match_on_identity: true, identity: { provider: v.supplier_code, item_id: optStr(a, "account_id"), facts: { kind: "DEPOSIT_ACCOUNT", holderName: optStr(a, "institution"), accountSubtype: optStr(a, "account_type"), accountIdentifier: optStr(a, "last4") } },
+      cites_decision_id: `verification.received:${v.verification_id}` })) as { asset_id: string };
+    assets.push(out.asset_id);
+  }
+  return { written: true, verification_row_id: rowId, assets, ambiguous: plan.ambiguous.map((g) => ({ identity_key: g.identityKey.replace(subjectPrefix("pull"), "p:<borrower>:"), row_ids: g.rowIds })) };
+}
 const at = (i: ToolInput, k: string, ctx: CommandContext): string => (typeof i[k] === "string" && i[k] ? String(i[k]) : ctx.now);
 const optDate = (i: Record<string, unknown>, k: string): PlainDate | null => (i[k] === undefined || i[k] === null || i[k] === "" ? null : D(String(i[k])));
 const optStr = (i: Record<string, unknown>, k: string): string | null => (typeof i[k] === "string" && i[k] ? String(i[k]) : null);
@@ -101,14 +137,19 @@ export const TOOLS_22_4: readonly ToolDef[] = defineTools("22.4", "verification"
     guardrails: [never("INELIGIBLE_SOURCE", "22.4 AI design guardrail (B3-4.3-20, B3-4.1-01): never accept cash-on-hand outside HomeReady, unsecured loans or non-vested options as funds", (i) => list<Record<string, unknown>>(i, "assets").some((a) => INELIGIBLE_TYPES.includes(String(a.asset_type) as AssetType) || (a.asset_type === "cash_on_hand_homeready" && !flag(i, "homeready"))), "declare the account the funds actually sit in; cash-on-hand only under the HomeReady election"),
       never("VIRTUAL_CURRENCY_UNCONVERTED", "B3-4.1-04: virtual currency must be exchanged into U.S. dollars and held in a U.S./state regulated institution before it counts", (i) => list<Record<string, unknown>>(i, "assets").some((a) => a.asset_type === "virtual_currency" || (a.asset_type === "virtual_currency_converted" && a.converted === false)), "declare it as virtual_currency_converted with the exchange and deposit evidence")] },
   // DU validation-service asset report (B3-2-02): op=order (default) issues the supplier order under the borrower's authorization (id = application, borrower, report_days, attempt); op=receive lands the report as `verification.received{kind=assets}` and records the `verifications` row.
-  { name: "orderAssetReport", kind: "act", handler: compute((i, ctx, rt) => {
+  { name: "orderAssetReport", kind: "act", handler: compute(async (i, ctx, rt) => {
       const app = appOf(i, ctx); need(i, "borrower_id", "authorization_consent_id"); const transaction = transactionOf(i, rt, app);
       const report_days = (i.report_days !== undefined ? num(i, "report_days") : reportDaysFor(transaction, flag(i, "for_income"))) as 30 | 60 | 90 | 365;
       if (i.op === "receive") {
         need(i, "supplier_code", "report_reference_id", "vendor_data_as_of", "report_document_id");
         const vid = optStr(i, "verification_id"); const r = receiveAssetReport(ctx.events, { ...(vid ? { verification_id: vid } : {}), application_id: app, borrower_id: str(i, "borrower_id"), supplier_code: str(i, "supplier_code"), report_reference_id: str(i, "report_reference_id"), report_days, accounts: list<{ institution: string; last4: string; balance_cents: bigint; period_start: PlainDate; period_end: PlainDate }>(i, "accounts").map((a) => ({ ...a, balance_cents: cents(a.balance_cents) })), large_deposit_messages: list<{ du_message_id: string; institution: string; last4: string; amount_cents: bigint }>(i, "large_deposit_messages").map((m) => ({ ...m, amount_cents: cents(m.amount_cents) })), supplemental: flag(i, "supplemental"), vendor_data_as_of: D(str(i, "vendor_data_as_of")), report_document_id: str(i, "report_document_id"), authorization_consent_id: str(i, "authorization_consent_id"), ...(optStr(i, "verification_id") ? { verification_id: str(i, "verification_id") } : {}) }, ctx.actor);
         rt.store.put("verifications", r.verification.verification_id, { ...r.verification, accounts: r.verification.accounts.map((a) => ({ ...a, balance_cents: String(a.balance_cents) })), large_deposit_messages: r.verification.large_deposit_messages.map((m) => ({ ...m, amount_cents: String(m.amount_cents) })) }, ctx.actor, ctx.now);
-        return { verification_id: r.verification.verification_id, kind: "assets", supplier_code: r.verification.supplier_code, report_reference_id: r.verification.report_reference_id, report_days, accounts: r.verification.accounts.length, large_deposit_messages: r.verification.large_deposit_messages.map((m) => m.du_message_id), event_id: r.event.id };
+        // 23.5: the report's accounts are the application's assets — one du_assets row per account with an owner arc from the pull's borrower, written through 23.5
+        // writeDuAsset in this command's transaction (the `verifications` row the lineage columns name goes first, in the same transaction). A re-pull matches on the
+        // identity key (identity.ts: the subject borrower's prefix, the vendor's account id where the adapter gives one, else institution + subtype + last four); two
+        // accounts of one pull the key cannot tell apart are refused a match (tier 3: `unmatched:` keys) and named in `du_graph.ambiguous` for the preflight.
+        const du_graph = hasTransaction(rt) && !flag(i, "skip_du_graph") ? await writeAssetsToDuGraph(i, ctx, rt, app, r.verification) : { written: false, reason: "no transaction in this runtime (a unit harness): the verifications record holds the accounts" };
+        return { verification_id: r.verification.verification_id, kind: "assets", supplier_code: r.verification.supplier_code, report_reference_id: r.verification.report_reference_id, report_days, accounts: r.verification.accounts.length, large_deposit_messages: r.verification.large_deposit_messages.map((m) => m.du_message_id), event_id: r.event.id, du_graph };
       }
       const attempt = num(i, "attempt") || 1; const order_id = `${app}|${str(i, "borrower_id")}|${report_days}|${attempt}`;
       const e = ctx.events.append({ type: "asset_report.ordered", applicationId: app, actor: ctx.actor, payload: { application_id: app, order_id, borrower_id: str(i, "borrower_id"), report_days, supplemental: flag(i, "supplemental"), institutions: list<string>(i, "institutions"), authorization_consent_id: str(i, "authorization_consent_id"), supplier_code: optStr(i, "supplier_code") ?? "truv", failover_supplier: optStr(i, "failover_supplier") ?? "plaid" } });

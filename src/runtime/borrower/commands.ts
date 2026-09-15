@@ -187,7 +187,7 @@ export class BorrowerCommands {
     const { subject: _s, ...args } = body;
     const input = await this.enrich(ctx, name, subject, { ...args, ...(cardInstanceId ? { card_instance_id: cardInstanceId } : {}) }, now);
     const process = PROCESS_OF.get(name) ?? "32.2";
-    const req = { process, name, loanId: subject.loan_id ?? "", ...(subject.application_id ? { applicationId: subject.application_id } : {}), actor: BORROWER_APP_ACTOR, input, run: { runId: `session:${ctx.session.session_id}`, modelVersion: "borrower-app api (deterministic)", promptVersion: process } };
+    const req = { process, name, loanId: subject.loan_id ?? "", ...(subject.application_id ? { applicationId: subject.application_id } : {}), actor: name === "application.answerDeclarations" ? ({ kind: "human", id: ctx.party.id, role: "borrower" } as Actor) : BORROWER_APP_ACTOR, input, run: { runId: `session:${ctx.session.session_id}`, modelVersion: "borrower-app api (deterministic)", promptVersion: process } };   // a declaration is the borrower's own act (23.5 rule 4): the session's human actor, never the app's agent
     let r;
     try { r = await this.runtime.execute(req); }
     catch (e) {

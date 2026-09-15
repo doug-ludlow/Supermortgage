@@ -15,6 +15,7 @@ import { defineTools, compute, decision, escalate, never, cents, str, flag, type
 import { CommandRefused, type CommandContext } from "../commands.ts";
 import { plainDate as D, type PlainDate } from "../../kernel/calendar/date.ts";
 import { scoreBand } from "../../domain/leads-pricing/ops-20-4.ts";
+import { duTool, hasTransaction } from "./section23-5.ts";
 import {
   CreditRefused, CreditGateClosed, SCORE_MODELS, assertDuSubmittable, assertGateOpen, buildReport, computeScores, decisionRecord, declineLift, detectFraudAlerts, detectFreezes, emitScoreDisclosureData, explainInquiry, liftFreeze,
   mapDuCreditMessages, markExpired, matchesKnownTradeline, openInquiryItems, parseReport, placeOrder, receiveRefresh, receiveUdmAlert, recordUdmHeartbeat, refreshPrecloseGate, resolveDispute, scheduleRepull, sfcAssertion, triageUdmAlert, validateOrder, waitingPeriod,
@@ -67,7 +68,13 @@ async function order(i: ToolInput, ctx: CommandContext, rt: ToolRuntime, order_t
   if (superseded) putReport(rt, superseded, ctx);
   putReport(rt, report, ctx);
   if (order_type === "tri_merge" || order_type === "rmcr") rt.store.put("applications", app, { ...a, score_model: res.score_model }, ctx.actor, ctx.now);
-  return { report, report_id: report.report_id, report_date: report.report_date, expires_at: report.expires_at, score_model: res.score_model, credit_reference_number: report.credit_reference_number, order: o, superseded_report_id: superseded?.report_id ?? null, events: [res.ordered.type, res.received.type, ...(res.score_model_event ? [res.score_model_event.type] : [])] };
+  // 23.5: a joint report (more than one borrower on the order) is the ROLE_SharesJointCreditReportWith_ROLE arc — the first borrower ordered is the
+  // group's primary (to_), every other one an additional borrower (from_) — written through 23.5 linkJointCreditReport in this command's transaction;
+  // a harness without one keeps the report's borrower_ids as the record (the tool refuses to write a row alone)
+  const du_joint_credit_links = report.borrower_ids.length > 1 && hasTransaction(rt) && !flag(i, "skip_du_graph")
+    ? await duTool(rt, ctx, "linkJointCreditReport", { application_id: app, primary: report.borrower_ids[0], additional: report.borrower_ids.slice(1), credit_report_id: report.report_id })
+    : null;
+  return { report, report_id: report.report_id, report_date: report.report_date, expires_at: report.expires_at, score_model: res.score_model, credit_reference_number: report.credit_reference_number, order: o, superseded_report_id: superseded?.report_id ?? null, events: [res.ordered.type, res.received.type, ...(res.score_model_event ? [res.score_model_event.type] : [])], du_joint_credit_links };
 }
 /** ops-22-2 refusals surface as CommandRefused with the same code and citation; a closed gate as its code. */
 const refusing = (defs: readonly Omit<ToolDef, "process" | "agent">[]): Omit<ToolDef, "process" | "agent">[] => defs.map((d) => ({ ...d, handler: async (i, ctx, rt) => { try { return await d.handler(i, ctx, rt); } catch (e) { if (e instanceof CreditRefused) throw new CommandRefused(d.name, e.code, e.citation, e.message); if (e instanceof CreditGateClosed) throw new CommandRefused(d.name, e.code, "22.2 timers and gates", e.reason); throw e; } } }));

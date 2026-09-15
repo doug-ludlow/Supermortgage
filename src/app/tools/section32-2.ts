@@ -28,13 +28,25 @@ import { AgentRegistry, loadAgentsFile } from "../agents.ts";
 import type { Queryable } from "../../infra/db/client.ts";
 import { isUuid, toJson } from "../../infra/db/client.ts";
 import { plainDate as D, addYears } from "../../kernel/calendar/date.ts";
+import { duTool, SELF_ATTESTED } from "./section23-5.ts";
+import { writeEmployer } from "../../domain/underwriting/du/writer.ts";
 
 export const BORROWER_APP = "borrower-app";
+/**
+ * The thirteen-item plain-language card (src/runtime/borrower/flows/3-entry.ts DECLARATIONS, in order) against the fourteen
+ * typed URLA section 5 columns of du_declarations (23.5): the transitional mapping the legacy `declarations[13]` record is
+ * derived from when a command carries the fourteen `answers`. Two columns have no list item (A intent_to_occupy and E the
+ * clean-energy lien) and one item has no column (alimony/child support is URLA 2d, an EXPENSE, not a declaration) — which is
+ * why the fourteen-question card (Phase 7) replaces the list rather than extending it.
+ */
+export const DECLARATION_COLUMN_FOR_LIST_ITEM: readonly (string | null)[] = [
+  "outstanding_judgments", "presently_delinquent", "party_to_lawsuit", "prior_property_deed_in_lieu_conveyed", "prior_property_short_sale_completed", "prior_property_foreclosure_completed", "bankruptcy",
+  "undisclosed_borrowed_funds", "undisclosed_credit_application", "undisclosed_mortgage_application", "undisclosed_comaker_of_note", null, "special_borrower_seller_relationship"];
 export const PROCESS = "32.2";
 
 /** Commands whose mapped domain tool does not exist on the bus yet (docs/ux/BACKEND-DELTAS.md) — implemented against the domain ops directly, noted in every response as `direct_to_ops`. */
 export const DIRECT_TO_OPS: Readonly<Record<string, string>> = {
-  "application.answerDeclarations": "21.1 has no declarations tool: the `declarations` row is written to the entity store with `application.declarations.answered`",
+  "application.answerDeclarations": "21.1 has no declarations tool: the thirteen-item card's `declarations` row is written to the entity store with `application.declarations.answered`; the fourteen typed `answers` (+ follow-ups, chapters, the written explanation) go through 23.5 assertDeclarations as the command's own actor — the borrower's session (du_declarations); a human act of the borrower role, refused to every agent, system or staff actor",
   "application.inviteParty": "21.1 has no inviteParty tool: the application_borrowers / parties / conversations rows are written with the command (`application.party.invited`)",
   "disclosure.acknowledgeReceipt": "for an LE: 21.2's receipt verb is a LoanEstimateService method, not a bus tool — `disclosure.le.received{receipt_evidence=esign_confirmed}` is appended and the disclosures row moved to received (a CD goes through 25.2 recordReceipt)",
   "counteroffer.respond": "a decline: 21.6 has no borrower-side decline tool — `counteroffer.declined` is appended for the underwriter's adverse path (an accept goes through 21.6 writeDecision{counteroffer_accept})",
@@ -151,8 +163,14 @@ async function confirmFields(i: ToolInput, ctx: CommandContext, rt: ToolRuntime,
       trid = await captureSix(rt, ctx, application_id, "income", amount.toString(), source === "borrower" ? "borrower" : "payroll_connection", borrower_id); await recordLeadTridItem(rt, ctx, i, "income", source, amount.toString());
       const employer = { name: get("employer")?.value ?? null, position: get("position")?.value ?? null, start_date: get("start_date")?.value ?? null, pay_frequency: get("pay_frequency")?.value ?? null, source: get("employer")?.source ?? source };
       const calculation = { source, confirmed_at: now, verification_id: str(i, "verification_id") || null, report_reference_id: str(i, "report_reference_id") || null, card_instance_id: cardId(i), variable_monthly_cents: cents(get("monthly_variable_cents")?.value ?? "0").toString(), other_income: get("other_income")?.value ?? "none", vendor: source === "payroll_connection" ? "FAKE:truv_income" : null };
-      if (abId) defer(rt, async (q) => { await q.query(`INSERT INTO application_income (application_id, application_borrower_id, source_kind, employer, monthly_amount_cents, qualifying, calculation) VALUES ($1, $2, 'base', $3::jsonb, $4, true, $5::jsonb)`, [application_id, abId, toJson(employer), amount.toString(), toJson(calculation)]); });
-      results["amount_cents"] = amount.toString(); results["source"] = source; break;
+      // 23.5 rule 2: the employment (the Truv FAKE's employer on the card, or the one the borrower typed) is an `employers` row — created or matched under EMPLOYER_IDENTITY_RULES
+      // (src/domain/underwriting/du/writer.ts writeEmployer) — and the income item names it: employer_id set, employment_income true, in the same transaction
+      const employerName = typeof employer.name === "string" && employer.name.trim() ? employer.name.trim() : null; const employerEin = get("employer_ein")?.value ?? null;
+      if (abId) defer(rt, async (q) => {
+        const e = employerName ? await writeEmployer(q, { applicationId: application_id, applicationBorrowerId: abId, displayName: employerName.slice(0, 150), ein: employerEin }) : null;
+        await q.query(`INSERT INTO application_income (application_id, application_borrower_id, source_kind, employer, monthly_amount_cents, qualifying, calculation, employer_id, employment_income) VALUES ($1, $2, 'base', $3::jsonb, $4, true, $5::jsonb, $6, $7)`, [application_id, abId, toJson({ ...employer, ...(e ? { employer_id: e.id, identity_key: e.identityKey } : {}) }), amount.toString(), toJson(calculation), e?.id ?? null, e !== null]);
+      });
+      results["amount_cents"] = amount.toString(); results["source"] = source; results["employment_income"] = employerName !== null && abId !== ""; break;
     }
     case "profile": {   // R4: four required taps and the Form 1103 language preference — each a ULAD-validated field on the borrower (T13: nothing without the tap)
       need_("citizenship_status"); need_("marital_status"); need_("dependents"); need_("military_service");
@@ -377,15 +395,27 @@ export const TOOLS_32_2: readonly ToolDef[] = defineTools(PROCESS, BORROWER_APP,
     if (i.loan_amount_sought !== undefined && i.loan_amount_sought !== null) extras["loan_amount_sought"] = await delegate(rt, ctx, "21.1", "captureField", { application_id, field: "loan_amount_sought", value: String(cents(i.loan_amount_sought)) });
     return ok("application.setGoal", { application_id, status: r["status"], application_date: r["application_date"], property_tbd: property["tbd"] === true, ...extras });
   }),
-  // application.answerDeclarations → the `declarations` row (all false = "none apply"); 21.1 names no declarations tool (DIRECT_TO_OPS)
-  cmd("application.answerDeclarations", "write", (i, ctx, rt) => {
-    const application_id = needApp(i, ctx); const declarations = list(i, "declarations");
-    if (declarations.length !== 13) throw new RangeError("declarations[13] is required (URLA Section 5; all false = none apply)");
+  // application.answerDeclarations → 23.5 assertDeclarations as the COMMAND's own actor when the command carries the fourteen typed
+  // `answers` (+ `follow_ups`, `bankruptcy_chapters`, `bankruptcy_explanation` — the fourteen-question card is 32.x's Phase 7), else the
+  // thirteen-item card's `declarations[13]` (all false = "none apply") into the entity store as before; both leave `application.declarations.answered`.
+  // A declaration is the borrower's own act (23.5 rule 4 / T6; 32.16 NEVER_PROPOSE_COMMANDS): the command is human-only in the borrower role, so the
+  // API executes it as the signed-in party's human actor (src/runtime/borrower/commands.ts runCommand) and every other caller — an allowlisted agent
+  // (HUMAN_ONLY), the platform (DU_DECLARATION_NOT_SELF_ATTESTED), staff (ROLE_DENIED) — is refused at the bus before anything runs. The input's
+  // `party_id` is never consulted: who declares is the actor, and the trigger du_declarations_are_self_attested judges it against the row's party.
+  cmd("application.answerDeclarations", "write", async (i, ctx, rt) => {
+    const application_id = needApp(i, ctx); const answers = obj(i, "answers"); const fourteen = Object.keys(answers).length > 0;
+    const declarations = fourteen ? DECLARATION_COLUMN_FOR_LIST_ITEM.map((col) => col !== null && answers[col] === "Yes") : list(i, "declarations");
+    if (declarations.length !== 13) throw new RangeError("declarations[13] or the fourteen typed answers is required (URLA Section 5; all false = none apply)");
     const borrower_id = str(i, "borrower_id") || "all"; const id = `${application_id}:${borrower_id}`;
-    const rec = rt.store.put("declarations", id, { application_id, borrower_id, declarations: declarations.map((d) => d === true), none_apply: declarations.every((d) => d !== true), answered_at: ctx.now, card_instance_id: cardId(i) }, ctx.actor, ctx.now);
-    ctx.events.append({ type: "application.declarations.answered", applicationId: application_id, aggregate: { kind: "declarations", id }, actor: ctx.actor, payload: { application_id, borrower_id, none_apply: rec.data["none_apply"], version: rec.version } });
-    return ok("application.answerDeclarations", { application_id, borrower_id, none_apply: rec.data["none_apply"] });
-  }),
+    let asserted: Record<string, unknown> | null = null;
+    if (fourteen) {
+      // duTool inherits ctx.actor for assertDeclarations (and refuses a caller naming one): the row's asserted_by_actor is this command's actor — the borrower's session
+      asserted = (await duTool(rt, ctx, "assertDeclarations", { application_id, ...(str(i, "application_borrower_id") ? { application_borrower_id: str(i, "application_borrower_id") } : {}), answers, follow_ups: obj(i, "follow_ups"), bankruptcy_chapters: list(i, "bankruptcy_chapters"), ...(typeof i["bankruptcy_explanation"] === "string" ? { bankruptcy_explanation: i["bankruptcy_explanation"] } : {}), ...(cardId(i) ? { card_instance_id: cardId(i) } : {}) })) as Record<string, unknown>;
+    }
+    const rec = rt.store.put("declarations", id, { application_id, borrower_id, declarations: declarations.map((d) => d === true), none_apply: declarations.every((d) => d !== true), answered_at: ctx.now, card_instance_id: cardId(i), asserted_in_du_graph: fourteen }, ctx.actor, ctx.now);
+    ctx.events.append({ type: "application.declarations.answered", applicationId: application_id, aggregate: { kind: "declarations", id }, actor: ctx.actor, payload: { application_id, borrower_id, none_apply: rec.data["none_apply"], version: rec.version, asserted_in_du_graph: fourteen } });
+    return ok("application.answerDeclarations", { application_id, borrower_id, none_apply: rec.data["none_apply"], asserted_in_du_graph: fourteen, ...(asserted ? { asserted_by: asserted["asserted_by"], bankruptcy_chapters: asserted["bankruptcy_chapters"] } : {}) });
+  }, { humanOnly: true, humanRoles: ["borrower"], guardrails: [SELF_ATTESTED] }),
   // application.answerDemographics → 21.1 askDemographics{collection_method=internet}; own party only; values never echoed
   cmd("application.answerDemographics", "write", async (i, ctx, rt) => {
     const application_id = needApp(i, ctx); need(i, "borrower_id");

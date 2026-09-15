@@ -5,8 +5,8 @@
 //
 // DB-backed: the invariants live in Postgres (db/migrations/*_du_graph.sql) — CHECKs, unique indexes and deferred
 // constraint triggers — so every case here writes rows through the pg client and asserts what the database refuses at
-// the statement or at COMMIT. No writer exists yet (Phase 4 brings `writeDuAsset` and its siblings); plain SQL is the
-// point: a second writer who never read the spec still cannot produce a row 23.6 cannot emit. Own database
+// the statement or at COMMIT. Plain SQL is the point: a second writer who never read the spec still cannot produce a row
+// 23.6 cannot emit (T7 alone goes through the bus, because its subject is the command path the card resolves through). Own database
 // `<base>_23_5`, dropped and created per run.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -19,6 +19,9 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { connect, reachable, type Db, type Queryable } from "../../infra/db/client.ts";
 import { PgApplicationRepository } from "../../infra/db/applications.ts";
+import { Runtime } from "../../runtime/app.ts";
+import { loadOverriddenRegistry } from "../timer-overrides.ts";
+import { FixedClock, type Actor } from "../../kernel/events/index.ts";
 import { DU_ENUMERATIONS, DU_ASSET_TYPES_BY_SECTION } from "./du/generated/enums.ts";
 
 const BASE_URL = process.env["TEST_DATABASE_URL"] ?? "postgresql://sm:sm@localhost/supermortgage_test";
@@ -340,7 +343,56 @@ test("23.5-T6: Given a declarations write whose `asserted_by_actor` is an agent 
   await assert.rejects(db.tx((q) => insertDeclaration(q, orphan, ownActor(b1.party_id))), refusedWith("DU_DECLARATION_NOT_SELF_ATTESTED"));
 });
 
-test("23.5-T7: Given a borrower's written bankruptcy explanation submitted on the declarations card, when the row is read back, then `bankruptcy_explanation` holds it verbatim.", { todo: true });
+test("23.5-T7: Given a borrower's written bankruptcy explanation submitted on the declarations card, when the row is read back, then `bankruptcy_explanation` holds it verbatim.", { skip }, async () => {
+  // The command path the card resolves through: the API executes 32.2's application.answerDeclarations AS the signed-in party's human actor
+  // (src/runtime/borrower/commands.ts runCommand — kind human, role borrower, id the session's party; never the borrower-app agent, never the
+  // client's claim), and it runs 23.5's assertDeclarations on the bus as that same actor (duTool inherits the command's actor and refuses a caller
+  // naming one); the write lands in the command's transaction and du_declarations_are_self_attested judges the actor there. Every other actor
+  // is refused at the bus before a row can exist — the input's `party_id` (the API's stamp, or a forged one) never says who declares.
+  const app = await newApplication(); const b = await newBorrower(app, "borrower");
+  const runtime = new Runtime({ db, registry: loadOverriddenRegistry(), clock: new FixedClock("2026-09-14T12:00:00.000Z") });
+  const explanation = "Chapter 7 in 2021 after my spouse's medical bills — discharged 2022-03-04; every account since has been paid on time.\n  Second line, with \"quotes\", a tab\tand an em dash — kept exactly as I typed it. ";
+  const answers = { intent_to_occupy: "Yes", undisclosed_borrowed_funds: "No", undisclosed_mortgage_application: "No", undisclosed_credit_application: "No", property_proposed_clean_energy_lien: "No", undisclosed_comaker_of_note: "No", outstanding_judgments: "No", presently_delinquent: "No", party_to_lawsuit: "No", prior_property_deed_in_lieu_conveyed: "No", prior_property_short_sale_completed: "No", prior_property_foreclosure_completed: "No", bankruptcy: "Yes", special_borrower_seller_relationship: "No" };
+  const input = { application_id: app, party_id: b.party_id, application_borrower_id: b.id, borrower_id: b.id, answers, follow_ups: { homeowner_past_three_years: "No" }, bankruptcy_chapters: ["ChapterSeven"], bankruptcy_explanation: explanation, card_instance_id: randomUUID() };
+  const run = (actor: { kind: string; id: string; role?: string }, extra: Record<string, unknown> = {}) => runtime.execute({ process: "32.2", name: "application.answerDeclarations", loanId: "", applicationId: app, actor: actor as Actor, input: { ...input, ...extra } });
+  const busRefused = (code: string) => (e: unknown): boolean => { assert.equal((e as Error).name, "CommandRefused", (e as Error).message); assert.equal((e as { code?: string }).code, code, (e as Error).message); return true; };
+  // Not the borrower: the app's own agent (allowlisted for the command, which is still a human act), the platform's sweep and an ops analyst —
+  // each carrying the borrower's party_id in the input as a forged claim — are refused at the bus, and no row exists afterwards.
+  await assert.rejects(run({ kind: "agent", id: "borrower-app" }), busRefused("HUMAN_ONLY"));
+  await assert.rejects(run({ kind: "system", id: "sweep" }), busRefused("DU_DECLARATION_NOT_SELF_ATTESTED"));
+  await assert.rejects(run({ kind: "human", id: "ops-1", role: "ops_analyst" }), busRefused("ROLE_DENIED"));
+  await assert.rejects(run({ kind: "human", id: "u-officer-1", role: "officer" }), busRefused("ROLE_DENIED"));
+  assert.equal(await count(`FROM du_declarations WHERE application_borrower_id = $1`, [b.id]), 0, "nothing of a refused command reached the table");
+  assert.equal(await count(`FROM loan_events WHERE application_id = $1 AND type = 'du.graph.declaration.asserted'`, [app]), 0, "and no event says otherwise");
+  // The borrower's own session: the command's actor is the row's actor, and every command.executed of the path — the nested 23.5 one included — names the borrower.
+  const r = await run(ownActor(b.party_id));
+  const out = r.output as Record<string, unknown>;
+  assert.equal(out["asserted_in_du_graph"], true); assert.equal(out["none_apply"], false);
+  assert.deepEqual(out["asserted_by"], ownActor(b.party_id), "the row's actor is the command's own — the borrower's session, not anything the input said");
+  assert.ok(r.events.some((e) => e.type === "du.graph.declaration.asserted" && e.actor.kind === "human" && e.actor.id === b.party_id), "du.graph.declaration.asserted by the borrower's own actor");
+  assert.ok(r.events.filter((e) => e.type === "command.executed").length >= 2 && r.events.filter((e) => e.type === "command.executed").every((e) => e.actor.kind === "human" && e.actor.id === b.party_id && e.actor.role === "borrower"), "the examiner's record (who asserted each declaration) shows the borrower because the borrower executed it — the outer 32.2 command and the nested 23.5 one");
+  assert.ok(r.events.some((e) => e.type === "application.declarations.answered"), "the flows' own event still follows (the demographics card)");
+  const row = (await db.query<{ bankruptcy_explanation: string; bankruptcy: string; asserted_by_actor: Record<string, unknown>; intent_to_occupy: string; homeowner_past_three_years: string | null }>(`SELECT bankruptcy_explanation, bankruptcy, asserted_by_actor, intent_to_occupy, homeowner_past_three_years FROM du_declarations WHERE application_borrower_id = $1`, [b.id]))[0]!;
+  assert.equal(row.bankruptcy_explanation, explanation, "verbatim — every character, the newline, the tab and the trailing space");
+  assert.equal(row.bankruptcy, "Yes"); assert.equal(row.intent_to_occupy, "Yes"); assert.equal(row.homeowner_past_three_years, "No");
+  assert.deepEqual(row.asserted_by_actor, ownActor(b.party_id));
+  assert.deepEqual((await db.query<{ chapter: string }>(`SELECT f.chapter FROM du_bankruptcy_filings f JOIN du_declarations d ON d.id = f.declaration_id WHERE d.application_borrower_id = $1`, [b.id])).map((x) => x.chapter), ["ChapterSeven"]);
+  assert.equal(await count(`FROM agent_decisions WHERE application_id = $1 AND agent = 'underwriter'`, [app]), 0, "no decision row of the 23.5 tool's own (23.5 AI agent design: the write cites the producing decision)");
+  // Re-asserting (the card answered again) rewrites the one row per borrower as the whole section 5 of this request: bankruptcy Yes → No sheds its
+  // chapters, 5a.A Yes → No sheds the follow-up it carried (written NULL — du_declarations_homeowner_follows_intent would refuse the row otherwise),
+  // and the new explanation is kept verbatim.
+  const again = "Second statement: nothing to add.";
+  await run(ownActor(b.party_id), { answers: { ...answers, bankruptcy: "No", intent_to_occupy: "No" }, follow_ups: {}, bankruptcy_chapters: [], bankruptcy_explanation: again, card_instance_id: randomUUID() });
+  assert.deepEqual((await db.query<{ e: string; n: string; i: string; h: string | null }>(`SELECT d.bankruptcy_explanation AS e, (SELECT count(*) FROM du_bankruptcy_filings f WHERE f.declaration_id = d.id)::text AS n, d.intent_to_occupy AS i, d.homeowner_past_three_years AS h FROM du_declarations d WHERE d.application_borrower_id = $1`, [b.id])), [{ e: again, n: "0", i: "No", h: null }]);
+  assert.equal(await count(`FROM du_declarations WHERE application_borrower_id = $1`, [b.id]), 1, "one row per borrower");
+  // The underwriter agent may not assert a declaration at all: the bus refuses it as a human act before any row is written (T6 is the database's own refusal of an agent actor).
+  await assert.rejects(runtime.execute({ process: "23.5", name: "assertDeclarations", loanId: "", applicationId: app, actor: { kind: "agent", id: "underwriter" }, input: { application_id: app, application_borrower_id: b.id, answers, bankruptcy_chapters: ["ChapterSeven"] } }), busRefused("HUMAN_ONLY"));
+  // And another borrower's own session naming this borrower's row is refused by the database with the spec's code (the same trigger T6 exercises), through the
+  // same command path — the borrower's party_id in the input (the forged claim) changes nothing, because the actor is what the trigger judges.
+  const other = await newBorrower(app, "co_borrower");
+  await assert.rejects(run(ownActor(other.party_id), { party_id: b.party_id }), refusedWith("DU_DECLARATION_NOT_SELF_ATTESTED"));
+  assert.equal((await db.query<{ e: string }>(`SELECT bankruptcy_explanation AS e FROM du_declarations WHERE application_borrower_id = $1`, [b.id]))[0]!.e, again, "nothing of the refused command reached the row");
+});
 
 test("23.5-T8: Given a borrower with a Prior residence and no Current one, when the transaction commits, then it is refused; given `residency_basis = Rent` and `monthly_rent_cents IS NULL`, then the CHECK refuses the row.", { skip }, async () => {
   const app = await newApplication(); const b = await newBorrower(app, "borrower");

@@ -198,7 +198,7 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
   const staff: StaffAuth | null = opts.staff ?? (opts.runtime ? new StaffAuth({ runtime: opts.runtime, environment, ...(opts.logger ? { logger: opts.logger } : {}) }) : null);
   const repo = opts.runtime ? new PgStaffRepository(opts.runtime.db) : null;
   // ───────── section 34's route tables, built once when the runtime exists (34.2 the directory, 34.3 book operations, 34.4 controls); the evidence packs' document store
-  const blobs: BlobStorePort | null = opts.blobs !== undefined ? opts.blobs : opts.runtime ? new FakeBlobStore() : null;
+  const blobs: BlobStorePort | null = opts.blobs !== undefined ? opts.blobs : opts.runtime ? opts.runtime.blobs : null;   // 35.2: the runtime's object store (document_blobs) — the per-process FakeBlobStore only when no runtime exists
   // 34.5's two reads share 34.2's table shape and dispatch (the role gate, the staff context, the outcome onto the action log)
   const DIRECTORY: readonly DirectoryRoute[] = opts.runtime ? [...directoryRoutes({ runtime: opts.runtime }), ...portalRoutes({ runtime: opts.runtime })] : [];
   const BOOK: readonly BookOpsRoute[] = opts.runtime ? bookOpsRoutes({ runtime: opts.runtime }) : [];

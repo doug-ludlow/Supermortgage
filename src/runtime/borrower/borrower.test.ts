@@ -262,7 +262,7 @@ test("documents: a multipart upload lands in `documents` and goes through 22.1's
   assert.equal(up.body["status"], "received"); assert.equal(up.body["quarantined"], false); assert.equal(up.body["doc_class"], "paystub");
   const docId = up.body["document_id"] as string;
   const [row] = await db.query<{ source_channel: string; application_id: string; subject_borrower_id: string; storage_uri: string; byte_size: bigint }>(`SELECT source_channel, application_id, subject_borrower_id, storage_uri, byte_size FROM documents WHERE id = $1`, [docId]);
-  assert.equal(row!.source_channel, "borrower_upload"); assert.equal(row!.application_id, appA); assert.equal(row!.subject_borrower_id, abA); assert.equal(row!.storage_uri, `fake-blob://${docId}`);
+  assert.equal(row!.source_channel, "borrower_upload"); assert.equal(row!.application_id, appA); assert.equal(row!.subject_borrower_id, abA); assert.equal(row!.storage_uri, `fake-blob://${docId}#1`);   // 35.2: the object store is document_blobs; the URI carries the drain-verified generation
   const ev = await db.query<{ payload: Record<string, unknown> }>(`SELECT payload FROM loan_events WHERE application_id = $1 AND type = 'document.received'`, [appA]);
   assert.ok(ev.some((e) => e.payload["document_id"] === docId && e.payload["source_channel"] === "borrower_upload"), "22.1's document.received on the application's log");
   // the signed URL: session-bound, 5 minutes, logged

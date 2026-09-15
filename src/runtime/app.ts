@@ -34,6 +34,7 @@
  */
 import { randomUUID } from "node:crypto";
 import type { Db, Queryable } from "../infra/db/client.ts";
+import { PgFakeBlobStore, type ObjectStorePort } from "../infra/blobs/pg-fake-blob-store.ts";
 import { listDuDocuments, type DuDocumentSummary } from "../domain/underwriting/du/persist.ts";
 import { listDuPreflight, type PreflightResultRow } from "../domain/underwriting/du/preflight.ts";
 import { PgUnitOfWork, type UowResult, type CommittedListener } from "../infra/db/unit-of-work.ts";
@@ -88,6 +89,8 @@ export interface RuntimeDeps {
   /** 33.2 rule 4: the refinance analyst's model (AnthropicLlm in deploy, the scripted client in tests; null / absent → the turn is skipped `model_off`, never the review). */
   readonly analystLlm?: AnalystLlm | null;
   readonly logger?: Logger;
+  /** 35.2: the object store every artifact's bytes live in — PgFakeBlobStore over `document_blobs` in every nonprod stage (two instances see one bucket); a Cloud Storage port in production (35.12). */
+  readonly blobs?: ObjectStorePort;
 }
 /** A command is scoped to a loan (`loanId`), to an application before funding (`applicationId`), or to both during the 30.2 hand-off. */
 export interface ExecuteRequest { readonly process: string; readonly name: string; readonly loanId: string; readonly applicationId?: string; readonly actor: Actor; readonly input: ToolInput; readonly run?: AgentRunInfo; readonly approvedBy?: Actor; }
@@ -144,6 +147,7 @@ export class Runtime {
   readonly agents: AgentRegistry;
   readonly ports: Partial<Ports>;
   readonly noticeRegistry: NoticeRegistry;
+  readonly blobs: ObjectStorePort;
   readonly clock: Clock;
   readonly rateFeed: RateFeedPort | null;
   readonly reviewers: FakeReviewers | null;
@@ -163,6 +167,7 @@ export class Runtime {
   constructor(deps: RuntimeDeps) {
     this.db = deps.db; this.registry = deps.registry; this.agents = deps.agents ?? new AgentRegistry(); this.ports = deps.ports ?? fakePorts(); this.clock = deps.clock ?? systemClock;
     this.rateFeed = deps.rateFeed ?? null; this.reviewers = deps.reviewers ?? null; this.analystLlm = deps.analystLlm ?? null; this.logger = deps.logger;
+    this.blobs = deps.blobs ?? new PgFakeBlobStore(this.db);
     this.noticeRegistry = deps.notices ?? (() => { const r = buildRegistry(); publishAuthored(r); publishSection02(r); registerPreapprovalLetter(r); return r; })();   // 32.8: 2.x's own authored pieces (AUTODRAFT-*, LC-*, SUSP-*) beside the catalog   // DELTA-01: the preapproval letter beside the catalog
     this.uow = new PgUnitOfWork(this.db, this.registry); this.entities = new PgEntityRepository(this.db); this.escalationRepo = new PgEscalationRepository(this.db); this.applications = new PgApplicationRepository(this.db);
     this.bus = new CommandBus(this.agents);
@@ -205,7 +210,7 @@ export class Runtime {
       const notices = this.ports.printMail && this.ports.edelivery ? new NoticeService({ registry: this.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: this.ports.printMail, edelivery: this.ports.edelivery, notices: this.noticeMemory }) : undefined;
       // `agents` (the live registry, so a tool that delegates to another agent's tool keeps the allowlists and AI-off state), `db` (read-only lookups a borrower-surface tool needs) and `deferWrite` (a row committed with the command) ride on the services map
       // `runtime` (this) lets a pass-shaped tool (33.2 review.run / offer.deliver / offer.expire) run the runtime pass it wraps — its own units of work, sequential to this command's
-      const rt: ToolRuntime = { store, escalations, services: { ...this.originationServices.forCommand(ctx, store, escalations), agents: this.agents, db: this.db, runtime: this, deferWrite: (fn: (q: Queryable) => Promise<void>) => { deferred.push(fn); } }, ports: this.ports, ...(notices ? { notices } : {}) };
+      const rt: ToolRuntime = { store, escalations, services: { ...this.originationServices.forCommand(ctx, store, escalations), agents: this.agents, db: this.db, runtime: this, blobs: this.blobs, deferWrite: (fn: (q: Queryable) => Promise<void>) => { deferred.push(fn); } }, ports: this.ports, ...(notices ? { notices } : {}) };
       const cmd = bindTools(rt, this.agents, [def]).get(toolKey(def.process, def.name))!;
       return this.bus.execute(cmd, req.actor, req.input, ctx, { ...(req.run ? { run: req.run } : {}), ...(req.approvedBy ? { approvedBy: req.approvedBy } : {}) });
     }, { clock: this.clock, commit: async (q) => {

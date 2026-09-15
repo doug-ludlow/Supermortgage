@@ -44,6 +44,8 @@ import { serialize, type ShapeName } from "./serialize.ts";
 import { b64url, sha256, verifyAssertion, verifyRegistration } from "./webauthn.ts";
 import { FakeStripeIdentity, type StripeIdentityPort } from "./vendors/fake-stripe-identity.ts";
 import { FakeBlobStore, type BlobStorePort } from "./vendors/fake-blob-store.ts";
+import { storeDocumentInUow } from "../documents/store-uow.ts";
+import { UPLOAD_MAX_BYTES, UPLOAD_MIME_TYPES } from "../../domain/operations-runtime/documents/shared.ts";
 import { FakeTruv, type IncomeConnectPort } from "./vendors/fake-truv.ts";
 import { FakePlaid, type AssetsConnectPort } from "./vendors/fake-plaid.ts";
 import { BorrowerRecordReader } from "./record.ts";
@@ -174,7 +176,7 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
   const rpId = opts.rpId ?? process.env["BORROWER_RP_ID"] ?? "localhost";
   const allowedOrigins = opts.allowedOrigins ?? (process.env["BORROWER_ORIGINS"] ? process.env["BORROWER_ORIGINS"].split(",").map((s) => s.trim()) : []);
   const stripe = opts.stripe ?? new FakeStripeIdentity((line) => logger.info("vendor", line));
-  const blobs = opts.blobs ?? new FakeBlobStore();
+  const blobs = opts.blobs ?? runtime.blobs;   // 35.2: the runtime's object store (document_blobs) — the per-process FakeBlobStore is a unit-test double only
   const urlSecret = opts.urlSecret ?? process.env["BORROWER_URL_SECRET"] ?? randomBytes(32).toString("hex");
   const returnUrlBase = opts.returnUrlBase ?? process.env["BORROWER_APP_URL"] ?? "https://app.supermortgage.example";
   const auth = new BorrowerAuth(runtime.db);
@@ -658,10 +660,13 @@ export function createBorrowerRouter(opts: BorrowerRouterOptions): BorrowerRoute
     const subject = assertSubject(ctx, { application_id: applicationId });
     const declared = fields["document_class"] || null;
     if (declared && !DOCUMENT_CLASSES.some((c) => c.code === declared)) throw new RangeError(`document_class ${declared} is not a 22.1 document class`);
+    // 35.2 edge case: a borrower upload larger than 25 MB or with a MIME type outside {pdf, jpeg, png, tiff} is refused UNSUPPORTED_ARTIFACT before any row is written (application/json is the FAKE contract fixture's format, 32.3 C1 — nonprod only)
+    if (file.bytes.length > UPLOAD_MAX_BYTES || !(UPLOAD_MIME_TYPES.has(file.mime_type) || (opts.environment !== "production" && file.mime_type === "application/json"))) throw new BorrowerError(415, "UNSUPPORTED_ARTIFACT", undefined, `${file.mime_type}, ${file.bytes.length} bytes: uploads are PDF, JPEG, PNG or TIFF up to 25 MB`);
     const documentId = randomUUID(); const digest = sha256(file.bytes).toString("hex");
-    const storageUri = await blobs.put(documentId, { bytes: file.bytes, mime_type: file.mime_type, filename: file.filename, stored_at: at });
-    await runtime.db.query(`INSERT INTO documents (id, kind, sha256, byte_size, storage_uri, mime_type, received_from, application_id, doc_class, source_channel, sender_identity, received_at, subject_borrower_id, page_count, metadata) VALUES ($1, 'origination_document', $2, $3, $4, $5, $6, $7, $8, 'borrower_upload', $9::jsonb, $10, $11, 0, $12::jsonb)`,
-      [documentId, digest, file.bytes.length, storageUri, file.mime_type, ctx.party.id, applicationId, declared, toJson({ party_id: ctx.party.id, session_id: ctx.session.session_id, filename: file.filename }), at, subject.application_borrower_id, toJson({ filename: file.filename, blob_store: blobs.vendorName })]);
+    // 35.2 rule 4: the row and its staged bytes through documents.store in a unit of work (document.staged, the inline drain to the object store, document.stored) — the object store is document_blobs in every nonprod stage
+    const stored = await storeDocumentInUow(runtime, { applicationId }, { id: documentId, kind: "origination_document", bytes: file.bytes, mime_type: file.mime_type, retention_class: "life_of_loan_plus_4y", application_id: applicationId, received_from: ctx.party.id, page_count: 0,
+      intake: { doc_class: declared, source_channel: "borrower_upload", sender_identity: { party_id: ctx.party.id, session_id: ctx.session.session_id, filename: file.filename }, received_at: at, subject_borrower_id: subject.application_borrower_id }, metadata: { filename: file.filename, blob_store: blobs.vendorName } }, SYSTEM_ACTOR);
+    void stored;
     // 22.1's intake op through the bus: document.received (+ the needs-list review clock); a duplicate hash links, never re-processes
     const r = await runtime.execute({ process: "22.1", name: "ingestDocument", loanId: "", applicationId, actor: SYSTEM_ACTOR,
       input: { application_id: applicationId, document_id: documentId, source_channel: "borrower_upload", sha256: digest, page_count: 0, declared_class: declared, subject_borrower_id: subject.application_borrower_id, applicant_borrower_ids: await auth.parties.applicationBorrowerIds(applicationId), sender_identity: { party_id: ctx.party.id, session_id: ctx.session.session_id }, received_at: at } });

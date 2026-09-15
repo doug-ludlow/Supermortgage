@@ -175,7 +175,8 @@ export function createApiServer(opts: ServerOptions): Server {
   // 34.1: the console resolves the staff session itself (cookie sm_staff / a session bearer) and honours the legacy x-actor-* headers only behind the ops bearer outside production — so /ops and its /api are dispatched before the token check below
   const consoleServer = opts.console === false ? null : createConsoleServer({ store: new PgConsoleStore(runtime.db, runtime.registry, runtime.agents, { fakeReviewers: runtime.reviewers ? { roles: runtime.reviewers.roles, delaySeconds: runtime.reviewers.delaySeconds } : null }), clock: runtime.clock, runtime, apiToken: opts.apiToken, environment: opts.borrower?.environment ?? process.env["ENVIRONMENT"] ?? "nonprod", logger });
   const authorized = (req: IncomingMessage): boolean => (opts.apiToken ? same(tokenOf(req), opts.apiToken) : true);
-  const borrower = opts.borrowerRouter ?? createBorrowerRouter({ runtime, logger, ...(opts.borrower ?? {}) });
+  // 35.2: the borrower router's object store is the runtime's (PgFakeBlobStore over document_blobs in every nonprod stage) unless the caller wires one
+  const borrower = opts.borrowerRouter ?? createBorrowerRouter({ runtime, logger, blobs: runtime.blobs, ...(opts.borrower ?? {}) });
   // the demo clock routes refuse in production (docs/DEPLOY.md "The demo clock"); the borrower options carry the environment main.ts read from ENVIRONMENT
   const environment = opts.borrower?.environment ?? process.env["ENVIRONMENT"] ?? "nonprod";
 

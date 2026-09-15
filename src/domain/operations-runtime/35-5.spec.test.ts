@@ -18,7 +18,7 @@ import { CommandRefused } from "../../app/commands.ts";
 import { Runtime } from "../../runtime/app.ts";
 import { createApiServer, listen } from "../../runtime/server.ts";
 import { createLogger } from "../../runtime/log.ts";
-import { OffsetClock, advanceDemoClock } from "../../runtime/demo-clock.ts";
+import { OffsetClock, type AdvanceReport } from "../../runtime/demo-clock.ts";
 import { boardTransferBatch } from "../../runtime/transfers.ts";
 import { DEMO_BATCH, generateDemoBatch } from "../boarding/demo-batch.ts";
 import { encodeTransferBatch } from "../boarding/tape-codec.ts";
@@ -538,10 +538,18 @@ test("35.5-T15: Given the demo clock at 2026-10-01 12:00 ET and the fixture book
   const rt2 = new Runtime({ db, registry: loadOverriddenRegistry(), clock: demoClock });
   assert.equal(demoClock.now(), "2026-10-01T16:00:00.000Z"); assert.equal(wallClock(Date.parse(demoClock.now()), "America/New_York").hour, 12);
   const days = ["2026-10-02", "2026-10-03", "2026-10-04"] as const;
-  const r = await advanceDemoClock({ runtime: rt2, clock: demoClock, actor: "test:35.5-T15" }, { days: 3 });
-  assert.equal(r.advanced, true); assert.equal(r.complete, true); assert.equal(r.days_crossed, 3); assert.equal(r.to, "2026-10-04T16:00:00.000Z");
+  // the spec's "when": `POST /v1/demo/advance {days: 3}` on the hosted API over rt2 — the route steps the OffsetClock through advanceDemoClock with the
+  // borrower flows' tick (flow 8's tick is servicingDailySweep → cashieringDailyRun), so each day crossed is one whole-book cashiering run plus the breach pass
+  const server = createApiServer({ runtime: rt2, apiToken: TOKEN, logger: createLogger("json", () => undefined), console: false });
+  const base = `http://127.0.0.1:${await listen(server, 0, "127.0.0.1")}`;
+  let r: AdvanceReport;
+  try {
+    const res = await fetch(`${base}/v1/demo/advance`, { method: "POST", headers: { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" }, body: JSON.stringify({ days: 3 }) });
+    const body = (await res.json()) as Row; assert.equal(res.status, 200, JSON.stringify(body)); r = body as unknown as AdvanceReport;
+  } finally { await new Promise<void>((resolve) => server.close(() => resolve())); }
+  assert.equal(r.advanced, true); assert.equal(r.complete, true); assert.equal(r.days_crossed, 3); assert.equal(r.to, "2026-10-04T16:00:00.000Z"); assert.equal(demoClock.now(), "2026-10-04T16:00:00.000Z");
   for (const d of days) assert.ok(r.steps.some((s) => s.date === d), `a step crossed ${d}`);
-  assert.ok(r.steps.every((s) => s.servicing_sweep !== null && s.servicing_sweep.errors === 0 && s.flows === "absent"), JSON.stringify(r.steps.map((s) => s.servicing_sweep)));
+  assert.ok(r.steps.every((s) => s.flows === "ticked" && !("error" in s.sweep)), JSON.stringify(r.steps.map((s) => [s.date, s.flows, s.sweep])));
   // one cashiering_daily run per day with units_total = the active book, every loan one done unit row per day
   const book = (await selectBook(db, D("2026-10-04"), "2026-10-04T16:00:00.000Z")).loans.map((l) => l.loan_id); assert.ok(book.length >= 94 + 5, `the demo book, Plan 4927, both L-1s, P and N and the NY loan: ${book.length}`);
   assert.ok(!book.includes(loans.t1) && !book.includes(loans.t2), "T1's note and T-7 board after 2026-10-04");

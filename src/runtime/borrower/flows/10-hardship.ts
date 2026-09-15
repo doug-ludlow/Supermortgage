@@ -36,7 +36,8 @@ import { wallClock } from "../../../kernel/calendar/zoned.ts";
 import { EntityStore } from "../../../app/tools.ts";
 import type { Recipient } from "../../../notices/channel.ts";
 import { delinquencyDailySweep } from "../../delinquency.ts";
-import { servicingConfigIfAny } from "../../../domain/operations-runtime/servicing-config.ts";
+import { CommandRefused } from "../../../app/commands.ts";
+import { loanLocalDate, servicingConfigFor } from "../../../domain/operations-runtime/servicing-config.ts";
 import { registerFlowTimers, timerLabel } from "../record.ts";
 import { FLOW_10_TIMER_ROWS, TPP_OFFER_TEMPLATE } from "./10-hardship-record.ts";
 import type { BorrowerFlow, FlowDeps, FlowReply, InboundMessage } from "./index.ts";
@@ -87,11 +88,10 @@ async function context(deps: FlowDeps, loanId: string): Promise<Ctx> {
   const store = new EntityStore(); store.seed(records);
   return { loanId, events, store, parties, facts, now: deps.runtime.clock.now() };
 }
-/** The loan's civil date (35.5 rule 9: its `loan_servicing_configs.time_zone`); a fixture loan boarded without a row reads the planner's ET day for its card copy — the money and day-count paths (the counter job, the cashiering unit) refuse instead. */
+/** The loan's civil date — 35.5 rule 9: `wallClock(instant, config.time_zone).date` from its `loan_servicing_configs` row in force on the planner's ET day; a loan with no row is refused CONFIG_REQUIRED (servicingConfigFor), never read under a default zone. */
 async function civilToday(deps: FlowDeps, loanId: string, nowIso: string): Promise<PlainDate> {
-  const et = wallClock(Date.parse(nowIso), "America/New_York").date;
-  const cfg = await servicingConfigIfAny(deps.runtime.db, loanId, et);
-  return cfg ? wallClock(Date.parse(nowIso), cfg.time_zone).date : et;
+  const cfg = await servicingConfigFor(deps.runtime.db, loanId, wallClock(Date.parse(nowIso), "America/New_York").date);
+  return loanLocalDate(cfg, nowIso);
 }
 const endOfDay = (d: string): string => new Date(`${d}T23:59:59-07:00`).toISOString();   // the loan-local day's end (America/Phoenix, no DST)
 const emailOf = (p: Party): string | undefined => { const c = p.contact ?? {}; const e = typeof c["email"] === "string" ? c["email"] : Array.isArray(c["emails"]) ? (c["emails"] as unknown[])[0] : undefined; return typeof e === "string" && e ? e : undefined; };
@@ -437,7 +437,9 @@ async function tick(deps: FlowDeps, nowIso: string): Promise<void> {
       AND NOT EXISTS (SELECT 1 FROM loan_events r WHERE r.loan_id = s.loan_id AND r.type IN ('lossmit.offer.responded', 'lossmit.offer.deemed_rejected') AND r.sequence > s.sequence AND (r.payload->>'evaluation_id' = s.payload->>'evaluation_id' OR r.payload->>'evaluation_id' IS NULL OR s.payload->>'evaluation_id' IS NULL))`);
   for (const o of open) {
     const ctx = await context(deps, o.loan_id); const ev = latestEvaluation(ctx, o.payload["evaluation_id"]); const acceptBy = typeof ev?.["accept_by"] === "string" ? String(ev["accept_by"]) : "";
-    const today = await civilToday(deps, o.loan_id, nowIso);
+    // 35.5 rule 9: the day is the loan's own; a loan without a configuration row has no civil date — its offer is left open and the refusal logged, never counted under a default zone
+    let today: PlainDate;
+    try { today = await civilToday(deps, o.loan_id, nowIso); } catch (err) { if (!(err instanceof CommandRefused)) throw err; deps.logger?.warn("borrower.flow.32-10.deemed_rejection.skipped", { loan_id: o.loan_id, code: err.code, error: err.message }); continue; }
     if (!acceptBy || today <= D(acceptBy)) continue;
     try { await exec(deps, o.loan_id, "12.2", "lossmit.evaluation.*", LOSSMIT, { op: "deemed_rejection", loan_id: o.loan_id, evaluation_id: ev?.["id"] ?? null, option: o.payload["option"] ?? ev?.["option"] ?? null, accept_by: acceptBy, window_days: ev?.["window_days"] ?? 14 }); }
     catch (err) { deps.logger?.error("borrower.flow.32-10.deemed_rejection", { loan_id: o.loan_id, error: err instanceof Error ? err.message : String(err) }); }

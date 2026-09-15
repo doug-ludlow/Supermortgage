@@ -24,14 +24,13 @@
  *     report the integration outbox backlog. Cloud Scheduler runs it every
  *     minute as the `sweep` job; the API also exposes it on POST /v1/sweep.
  *
- * Origination services (sections 20–31): `originationServices` (src/runtime/origination.ts) constructs ONE instance of
- * every stateful section service (25.2's ClosingDisclosureService, 29.1's CommitmentService, 29.3/29.4's delivery
- * services, 21.5's ToleranceService, 21.3's companion service) over forwarding stores that land in the executing
- * command's unit of work, plus the vendor fakes the ops files export (credit reseller, DU, identity/OFAC/fraud, AMC,
- * UCDP, EarlyCheck, PE–WL, warehouse bank, eRegistry, RON, title) and a 21.4 pricing port over 20.4's published sheets —
- * the same `services` keys the section tool files look up, so the HTTP path and the unit harnesses behave identically.
- * Servicing-side section services (BoardingService, CashieringService, …) are not wired yet: a tool that calls
- * `service(rt, …)` for one of those answers 501 until its section's service is given a persistence adapter.
+ * Section services: `originationServices` (src/runtime/origination.ts) constructs, per command, a fresh instance of every
+ * stateful section service (25.2's ClosingDisclosureService, 21.2's LoanEstimateService, 21.3, 21.5, 29.1, 29.3, 29.4, 30.2,
+ * and the servicing adapters `boarding`, `transfer`, `fpi`) hydrated from the record (35.1 rule 9: service_snapshots plus the
+ * `service.state.changed` deltas on the log), plus the vendor fakes the ops files export (credit reseller, DU, identity/OFAC/fraud,
+ * AMC, UCDP, EarlyCheck, PE–WL, warehouse bank, eRegistry, RON, title) and a 21.4 pricing port over 20.4's published sheets —
+ * the same `services` keys the section tool files look up (`tolerance-21-5` is `tolerance`; rule 10), so the HTTP path and the
+ * unit harnesses behave identically. A section service without an adapter (CashieringService, …) still answers 501 not_wired.
  */
 import { randomUUID } from "node:crypto";
 import { transactionDb, type Db, type Queryable } from "../infra/db/client.ts";
@@ -168,7 +167,8 @@ export function fakePorts(): Ports {
 /** The unit of work's store with the scope's loan stamped on every appended event that carries neither a loan nor an application key. */
 function withDefaultLoan(inner: MemoryEventStore, loanId: string): MemoryEventStore {
   const append: MemoryEventStore["append"] = (input) => inner.append(input.loanId === undefined && input.applicationId === undefined ? { ...input, loanId } : input);
-  return new Proxy(inner, { get: (target, prop, receiver) => (prop === "append" ? append : Reflect.get(target, prop, receiver)) });
+  // `rawStore`: the undefaulted store beneath (35.1: a servicing adapter's state delta is the platform's, not the loan's)
+  return new Proxy(inner, { get: (target, prop, receiver) => (prop === "append" ? append : prop === "rawStore" ? inner : Reflect.get(target, prop, receiver)) });
 }
 
 export class Runtime {
@@ -265,9 +265,12 @@ export class Runtime {
       const notices = this.ports.printMail && this.ports.edelivery ? new NoticeService({ registry: this.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: this.ports.printMail, edelivery: this.ports.edelivery, notices: this.noticeMemory }) : undefined;
       // `agents` (the live registry, so a tool that delegates to another agent's tool keeps the allowlists and AI-off state), `db` (read-only lookups a borrower-surface tool needs) and `deferWrite` (a row committed with the command) ride on the services map
       // `runtime` (this) lets a pass-shaped tool (33.2 review.run / offer.deliver / offer.expire) run the runtime pass it wraps — its own units of work, sequential to this command's
-      const rt: ToolRuntime = { store, escalations, services: { ...this.originationServices.forCommand(ctx, store, escalations), agents: this.agents, db: view.db, runtime: view, deferWrite: (fn: (q: Queryable) => Promise<void>) => { deferred.push(fn); }, deferBefore: (fn: (q: Queryable) => Promise<void>) => { deferredBefore.push(fn); } }, ports: this.ports, ...(notices ? { notices } : {}) };
+      // 35.1 rule 9: every stateful section service is a fresh instance hydrated from the record for this command (origination.ts forCommand); its delta is recorded after the command ran
+      const rt: ToolRuntime = { store, escalations, services: { ...await this.originationServices.forCommand(ctx, store, escalations), agents: this.agents, db: view.db, runtime: view, deferWrite: (fn: (q: Queryable) => Promise<void>) => { deferred.push(fn); }, deferBefore: (fn: (q: Queryable) => Promise<void>) => { deferredBefore.push(fn); } }, ports: this.ports, ...(notices ? { notices } : {}) };
       const cmd = bindTools(rt, this.agents, [def]).get(toolKey(def.process, def.name))!;
-      return this.bus.execute(cmd, req.actor, req.input, ctx, { ...(req.run ? { run: req.run } : {}), ...(req.approvedBy ? { approvedBy: req.approvedBy } : {}) });
+      const out = await this.bus.execute(cmd, req.actor, req.input, ctx, { ...(req.run ? { run: req.run } : {}), ...(req.approvedBy ? { approvedBy: req.approvedBy } : {}) });
+      this.originationServices.recordState(ctx);
+      return out;
     }, { clock: this.clock, globalLock: expected.length > 0,
       // 35.1 rule 6 / rule 8: the bounded entity load on the command's connection after the lock, then the expected-version guard before the domain code runs
       hydrated: async (uow) => { const loaded = await loadBoundedScoped(uow.q!, scope); store.seed(loaded.records); globalKeys = loaded.globalKeys; mark = store.versionCount(); checkExpectedVersions(store, expected); },

@@ -31,6 +31,7 @@ import { replayKind, gapsReport } from "../../domain/operations-runtime/seam/rep
 import { verifyRun } from "../../domain/operations-runtime/seam/verify.ts";
 import { leaseStatus, leaseList } from "../../domain/operations-runtime/seam/sweep.ts";
 import { drainOutbox, abandonDeadLetter } from "../../domain/operations-runtime/seam/outbox.ts";
+import { serviceSpec, writeSnapshot } from "../../runtime/origination.ts";
 
 export const SEAM_PROCESS = "35.1";
 export const SEAM_AGENT = "security-records";
@@ -87,5 +88,19 @@ export const TOOLS_35_1: readonly ToolDef[] = defineTools(SEAM_PROCESS, SEAM_AGE
       const r = await drainOutbox({ db: runtime.db, registry: runtime.registry, clock: runtime.clock, ports: runtime.ports, ...(runtime.outboxAdapters ? { adapters: runtime.outboxAdapters } : {}), notify: (ev) => runtime.uow.notifyCommitted(ev) }, ctx.now, { adapter: str(i, "adapter") || null, ...(typeof i["limit"] === "number" ? { limit: i["limit"] } : {}) });
       const { events: _ev, ...rest } = r; void _ev; return { ...rest, events: r.events.length }; }),
     decision: (i, output) => { const o = (output ?? {}) as Record<string, unknown>; return i["op"] === "abandon" ? seamDecision({ subject: { kind: "message", id: str(i, "message_id") }, action: "dispatch", rationale: `dead letter abandoned by a named person: ${str(i, "reason")}` }) : seamDecision({ subject: { kind: "run", id: String(o["at"] ?? "") }, action: "dispatch", versions: Number(o["claimed"] ?? 0), rows_written: Number(o["sent"] ?? 0), rationale: `drain: ${String(o["claimed"])} claimed, ${String(o["sent"])} sent, ${String(o["retried"])} retried, ${String(o["dead"])} dead` }); } },
+  // rule 9: `service_snapshots` is an accelerator only — the state folded through `through_sequence` (the log's last sequence on this command) with its sha256; hydration must reproduce a full replay from it or discards it
+  { name: "record.snapshot", kind: "act", ruleSetVersion: SEAM_RULE_SET_VERSION, guardrails: [NO_MONEY_FIELD_CHANGE],
+    handler: compute(async (i, ctx, rt) => {
+      const key = str(i, "service_key"); const spec = serviceSpec(key); if (!spec) throw new RangeError(`record.snapshot: ${key || "(none)"} is not a stateful service key (${["cd-25-2", "le-21-2", "companion", "tolerance", "secondary", "delivery-29-3", "delivery-29-4", "orig-boarding", "boarding", "transfer", "fpi"].join(", ")})`);
+      const q = txOf(ctx); const runtime = runtimeOf(rt);
+      const want = spec.scope === "application" ? str(i, "application_id") : spec.scope === "loan" ? str(i, "loan_id") : "";
+      const have = spec.scope === "application" ? ctx.applicationId ?? "" : spec.scope === "loan" ? ctx.loanId : "";
+      if (spec.scope !== "global" && (!want || want !== have)) throw new RangeError(`record.snapshot{service_key: ${key}} runs on the ${spec.scope}'s own command: ${spec.scope}_id must name the command's ${spec.scope}`);
+      const st = runtime.originationServices.stateOf(ctx, key); if (!st) throw new RangeError(`${key} is not live on this command`);
+      const through = ctx.events.all().reduce((m, e) => Math.max(m, e.sequence), 0);
+      const id = await writeSnapshot(q, spec, { ...(ctx.applicationId ? { applicationId: ctx.applicationId } : {}), ...(ctx.loanId ? { loanId: ctx.loanId } : {}) }, st.state, st.sha, through);
+      ctx.events.append({ type: "service.snapshot.written", actor: ctx.actor, aggregate: { kind: "service", id: key }, payload: { service_key: key, through_sequence: through, state_sha256: st.sha, snapshot_id: id, reason: "record.snapshot", application_id: ctx.applicationId ?? null, loan_id: ctx.loanId || null } });
+      return { snapshot_id: id, service_key: key, through_sequence: through, state_sha256: st.sha, application_id: ctx.applicationId ?? null, loan_id: ctx.loanId || null }; }),
+    decision: (i, output) => { const o = (output ?? {}) as Record<string, unknown>; return seamDecision({ subject: { kind: "kind", id: str(i, "service_key") }, action: "snapshot", state_sha256: String(o["state_sha256"] ?? ""), rationale: `snapshot of ${str(i, "service_key")} through sequence ${String(o["through_sequence"])}` }); } },
   { name: "writeDecision", kind: "act", ruleSetVersion: SEAM_RULE_SET_VERSION, guardrails: [NO_MONEY_FIELD_CHANGE], handler: decision() },
 ]);

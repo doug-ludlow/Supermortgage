@@ -225,6 +225,9 @@ export function lenderCreditShortfall(baselineCreditCents: Cents, actualCreditCe
   if (baselineCreditCents > 0n || actualCreditCents > 0n) throw new RangeError("lender credits are stated as non-positive cents (section J)");
   const s = actualCreditCents - baselineCreditCents; return s > 0n ? s : 0n;
 }
+/** 25.1 / 25.2's call shape (src/app/tools/section25-1.ts runToleranceTest, section25-2.ts runToleranceTest) — see ToleranceService.runToleranceTest. */
+export interface ToleranceCheckpointInput { readonly application_id: string; readonly checkpoint?: string; readonly stage?: string; readonly disclosure_id?: string; readonly fee_items?: unknown; readonly run_at?: string; }
+const CHECKPOINT_STAGE: Record<string, Stage> = { le: "le_revision", le_revision: "le_revision", cd: "cd_initial", cd_initial: "cd_initial", corrected_cd: "cd_corrected", cd_corrected: "cd_corrected", pre_funding: "pre_funding", post_consummation: "post_consummation", qc: "qc" };
 export interface ToleranceTestInput { readonly application_id: string; readonly stage: Stage; readonly run_at: string; readonly comparison_disclosure_id: string; readonly baseline_snapshot_id?: string; readonly actuals: readonly ActualItem[]; readonly lender_credit_actual_cents: Cents; readonly lender_credit_baseline_cents?: Cents; readonly review_threshold_cents?: Cents; readonly time_zone?: string; }
 /** The pure engine 25.1/25.2/28.x call: zero test, lender-credit test, 10 % aggregate, best-information review; `cure_cents = Σ zero excess + shortfall + ten_pct excess` (rule 9). */
 export function toleranceTest(items: readonly BaselineItem[], i: ToleranceTestInput): ToleranceTestRow {
@@ -540,7 +543,22 @@ export class ToleranceService {
   }
 
   // ---- step (7): the test at every stage, the cure, the refund
-  runToleranceTest(i: Omit<ToleranceTestInput, "review_threshold_cents" | "time_zone"> & { readonly review_threshold_cents?: Cents }): { test: ToleranceTestRow; event: DomainEvent } {
+  /**
+   * The test as 25.1 / 25.2 call it (`tolerance-21-5` is this instance under a second key — 35.1 rule 10): `{application_id,
+   * checkpoint: le | cd | corrected_cd | post_consummation, fee_items?, disclosure_id?, stage?}` — the checkpoint names the stage,
+   * the fee items are the actuals (a lender credit in section J is the lender-credit actual), the run is now; the answer carries
+   * `result`, `tolerance_test_id` and `test_code` beside the row and its event. The engine's own shape (`stage`, `actuals`, …) is
+   * unchanged for 21.5's tool.
+   */
+  runToleranceTest(i: (Omit<ToleranceTestInput, "review_threshold_cents" | "time_zone"> & { readonly review_threshold_cents?: Cents }) | ToleranceCheckpointInput): { test: ToleranceTestRow; event: DomainEvent; result: string; tolerance_test_id: string; test_code: "TRID_19E3_TOLERANCE" } {
+    if (!("actuals" in i)) {
+      const stage: Stage = i.stage && STAGES.includes(i.stage as Stage) ? (i.stage as Stage) : CHECKPOINT_STAGE[i.checkpoint ?? "cd"] ?? "cd_initial";
+      const items = Array.isArray(i.fee_items) ? (i.fee_items as Record<string, unknown>[]) : [];
+      const toCents = (v: unknown): Cents => (typeof v === "bigint" ? v : typeof v === "number" && Number.isInteger(v) ? BigInt(v) : typeof v === "string" && /^-?\d+$/.test(v) ? BigInt(v) : 0n);
+      const actuals: ActualItem[] = items.filter((f) => String(f["section"] ?? f["le_section"] ?? "") !== "J_lender_credit" && toCents(f["amount_cents"]) >= 0n).map((f) => ({ fee_code: String(f["fee_code"] ?? ""), amount_cents: toCents(f["amount_cents"]), ...(typeof f["paid_by"] === "string" ? { paid_by: f["paid_by"] as PaidBy } : {}) }));
+      const credit = items.filter((f) => String(f["section"] ?? f["le_section"] ?? "") === "J_lender_credit" || toCents(f["amount_cents"]) < 0n).reduce((a, f) => a + (toCents(f["amount_cents"]) < 0n ? -toCents(f["amount_cents"]) : toCents(f["amount_cents"])), 0n);
+      return this.runToleranceTest({ application_id: i.application_id, stage, run_at: i.run_at ?? this.clock.now(), comparison_disclosure_id: i.disclosure_id ?? `${i.checkpoint ?? stage}:${i.application_id}`, actuals, lender_credit_actual_cents: credit });
+    }
     const s = this.state(i.application_id);
     const test = toleranceTest(s.items, { ...i, lender_credit_baseline_cents: i.lender_credit_baseline_cents ?? s.lender_credit_baseline_cents, review_threshold_cents: i.review_threshold_cents ?? this.threshold, time_zone: this.calendar.time_zone, baseline_snapshot_id: i.baseline_snapshot_id ?? `${s.baseline_disclosure_id ?? "baseline"}@${s.items.filter((f) => f.baseline_reset_cc_id).map((f) => f.baseline_reset_cc_id).join("|") || "initial"}` });
     if (POST_CONSUMMATION_STAGES.includes(test.stage) && s.consummation_at === null) throw new ToleranceRefused("NOT_CONSUMMATED", "12 CFR 1026.19(f)(2)(v)", `stage ${test.stage} runs after consummation (closing.consummated not seen for ${i.application_id})`);
@@ -548,7 +566,7 @@ export class ToleranceService {
     const event = this.append("tolerance.test.completed", i.application_id, { test_id: test.test_id, stage: test.stage, status: test.status, total_excess_cents: S(test.total_excess_cents), cure_route: test.cure_route, run_at: test.run_at, run_on: test.run_on, comparison_disclosure_id: test.comparison_disclosure_id, zero_excess_cents: S(test.zero_results.reduce((a, z) => a + z.excess_cents, 0n)), lender_credit_shortfall_cents: S(test.lender_credit_result.shortfall_cents), ten_pct_excess_cents: S(test.ten_pct_result.excess_cents), engine_version: ENGINE_VERSION }, i.run_at);
     if (test.status === "escalated") this.esc.open({ kind: "sev2", applicationId: i.application_id, severity: "2", ownerRole: "compliance", payload: { code: "SM_TOLERANCE_CURE_REVIEW_SLA_1BD", test_id: test.test_id, escalated_to: ["compliance-sentinel"], total_excess_cents: S(test.total_excess_cents), review: "root cause; the cure still posts" } }, AGENT);
     if (test.cure_route === "refund_post_consummation" && this.ledger) this.ledger.post({ effectiveDate: test.run_on, description: `tolerance excess ${formatCents(test.total_excess_cents)} found after consummation (test ${test.test_id}) — refund payable to the borrower`, lines: [{ account: TOLERANCE_CURE_EXPENSE, amountCents: test.total_excess_cents, ruleRef: "21.5 rule 9: post-consummation excess refunded within 60 days (§1026.19(f)(2)(v))" }, { account: BORROWER_REFUNDS_PAYABLE, amountCents: -test.total_excess_cents, ruleRef: "21.5 baseline §5: borrower_refunds_payable" }] }, i.run_at);
-    return { test, event };
+    return { test, event, result: test.status, tolerance_test_id: test.test_id, test_code: "TRID_19E3_TOLERANCE" };
   }
   /** `compliance-sentinel` review of an escalated cure (root cause; closing not blocked). */
   recordCureReview(testId: string, r: { reviewer_id: string; outcome: "root_cause_recorded" | "no_action"; at?: string }): DomainEvent { const t = this.test(testId); nonEmpty(r.reviewer_id, "reviewer_id"); return this.append("tolerance.cure.reviewed", t.application_id, { test_id: testId, reviewer_role: "compliance-sentinel", reviewer_id: r.reviewer_id, outcome: r.outcome }, r.at); }

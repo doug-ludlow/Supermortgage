@@ -14,29 +14,30 @@ partner tape → accounts + invitation → daily review → offer → Yes → re
 
 Everything is built to the [specification](spec/) in `spec/sections/` — 33 sections, 185 processes — and measured against it. Nothing is "done" by assertion: a process is done when the audit says every one of its units is built, and the audit only counts a real test with the spec's exact wording.
 
-## Status (measured, 14 September 2026)
+## Status (measured, 15 September 2026)
 
 From `npm run audit` (`tools/audit.py`), which measures the tree against `spec/registry/manifest.json`, the spec in its own units. Regenerated into [docs/audit/COVERAGE.md](docs/audit/COVERAGE.md) on every run and ratcheted by `npm test` against [docs/audit/baseline.json](docs/audit/baseline.json): no total may fall, no process marked done may drop below 100%.
 
 | Unit of the spec | Built / spec |
 |---|---|
-| T-numbered acceptance tests, one verbatim `node:test` each | 2,158 / 2,165 |
-| Data-model tables created by a migration | 734 / 735 |
-| Timer codes the engine can arm and satisfy | 2,032 / 2,032 |
-| Notice templates authored with content rules | 307 / 307 |
-| Agent tools registered as commands on the bus | 1,392 / 1,392 |
+| T-numbered acceptance tests, one verbatim `node:test` each | 2,237 / 2,237 |
+| Data-model tables created by a migration | 758 / 758 |
+| Timer codes the engine can arm and satisfy | 2,035 / 2,035 |
+| Notice templates authored with content rules | 308 / 308 |
+| Agent tools registered as commands on the bus | 1,431 / 1,431 |
 | Worked-example money figures reproduced by a test | 1,233 / 1,233 |
-| **All spec units** | **7,856 / 7,864 (99.9%)** |
-| Processes at 100% of their units | 184 / 185 |
+| **All spec units** | **8,002 / 8,002 (100.0%)** |
+| Processes at 100% of their units | 192 / 192 |
 
 | Area | Sections | Units built / spec |
 |---|---|---|
 | Servicing | §1–§19 | 4,583 / 4,583 |
-| Origination | §20–§31 | 2,863 / 2,863 |
-| Borrower experience | §32 | 346 / 354 |
-| The partner book | §33 | 64 / 64 |
+| Origination | §20–§31 | 2,934 / 2,934 |
+| Borrower experience | §32 | 359 / 359 |
+| The partner book | §33 | 69 / 69 |
+| The operator portal | §34 | 57 / 57 |
 
-After every deploy a real browser with the real model walks the deployed demo and checks ten things a person must see work (`apps/borrower/tests/walk/demo-walk.mts`); a failed outcome fails the deploy. That walk, not the fractions, is the platform's claim that the surface works.
+After every deploy a real browser with the real model walks the deployed demo and checks twelve things a person must see work (`apps/borrower/tests/walk/demo-walk.mts`); a failed outcome fails the deploy. That walk, not the fractions, is the platform's claim that the surface works.
 
 ## What is here
 
@@ -70,9 +71,11 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the conventions that are no
 
 ## What is real and what is simulated
 
-Real: the platform, its data model (756 tables over 127 migrations), every rule and clock, the borrower and video surfaces, the model turns (Claude through `@anthropic-ai/sdk`), the Google Cloud deploy (Cloud Run, Cloud SQL, a load balancer with Cloud Armor, Cloud Scheduler running the sweep every minute), CI and the browser walk after every deploy.
+Real: the platform, its data model (776 tables over 137 migrations), every rule and clock, the borrower and video surfaces, the model turns (Claude through `@anthropic-ai/sdk`), the Google Cloud deploy (Cloud Run, Cloud SQL, a load balancer with Cloud Armor, Cloud Scheduler running the sweep every minute), CI and the browser walk after every deploy.
 
-Simulated, in every build stage so far: every outside vendor is an in-repo FAKE that behaves like the real one — Stripe Identity, Plaid, Truv, the credit bureau, Desktop Underwriter, FRED rates, e-mail and SMS, print and mail, e-vault, MERS, lockbox, e-OSCAR — and the partner's tape is a deterministic twelve-loan fixture in the partner's own layout. `INTEGRATIONS=fake` is the only mode that exists. Do not load real borrower data into the nonprod deploy; the production controls are listed in [docs/DEPLOY.md](docs/DEPLOY.md).
+Real, since 23.5–23.7 landed: the DU Specification document itself. What 23.1 hashes and would send is a MISMO 3.4 B324 file assembled from the relationship graph against tables generated from Fannie Mae's own specification, matching all eighteen of Fannie's sample submissions, and preflighted against the checks DU applies beyond the schema ([docs/du-graph.md](docs/du-graph.md)). What is not real is the transport: the port is a FAKE that validates the bytes with the same XSD chain, mints DU's casefile identifier itself, and answers with fixture findings.
+
+Simulated, in every build stage so far: every other outside vendor is an in-repo FAKE that behaves like the real one — Stripe Identity, Plaid, Truv, the credit bureau, the Desktop Underwriter transport, FRED rates, e-mail and SMS, print and mail, e-vault, MERS, lockbox, e-OSCAR — and the partner's tape is a deterministic twelve-loan fixture in the partner's own layout. `INTEGRATIONS=fake` is the only mode that exists. Do not load real borrower data into the nonprod deploy; the production controls are listed in [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ## Layout
 
@@ -142,7 +145,8 @@ The process is spec-first and measured; the rules are in [CLAUDE.md](CLAUDE.md).
 
 ## Next
 
-1. Regular tapes on 33.1: a loan that disappears from a later tape is held and resolved by a person, a late tape breaches a clock, a late e-mail gets a late invitation.
-2. Section 34, the operator portal: staff sign-in with roles, the account directory and every person's activity, partner book operations, evidence and controls. Internal only.
-3. The partner book seeded on the deployed demo and an eleventh walk outcome: a homeowner from the book signs in from the invitation, says Yes, and reaches DU.
-4. The path to production in [docs/DEPLOY.md](docs/DEPLOY.md), and the first real vendor adapter on the nonprod path.
+1. The Direct Integration transport to Desktop Underwriter — blocked on TSP onboarding and on Fannie Mae's DU Error Codes document; until then the port stays a FAKE that validates what it is sent.
+2. The two arcs whose endpoints disagree in Fannie's ArcRoles tab (`UNDERWRITING_VERIFICATION` to `ASSET` and to `EMPLOYER`): a question for Fannie Mae, never a guess ([docs/du-graph.md](docs/du-graph.md)).
+3. `COUNSELING_EVENT` on the graph before HomeReady is offered — an arc, so it cannot be added to a submission as an afterthought.
+4. Vendoring the DU Specification workbook the generator reads, so `npm run du:verify` compares against a copy the repository owns.
+5. The path to production in [docs/DEPLOY.md](docs/DEPLOY.md), and the first real vendor adapter on the nonprod path.

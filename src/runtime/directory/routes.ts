@@ -29,6 +29,7 @@ import type { Runtime } from "../app.ts";
 import { DIRECTORY_ROLES, EXPORT_ROLES, UNMASK_ROLES } from "./mask.ts";
 import { DirectorySearchRefused, queryHash } from "./search.ts";
 import { DirectoryRefused } from "./unmask.ts";
+import { LIST_PATH_RE, canonicalListFilters, listFiltersHash } from "./list.ts";
 
 export const DIRECTORY_PROCESS = "34.2";
 export const DIRECTORY_PATH = "/ops/api/directory";
@@ -37,7 +38,7 @@ export const DIRECTORY_PATH = "/ops/api/directory";
 export interface DirectoryStaff { readonly staff_user_id: string; readonly session_id: string | null; readonly role: string; readonly roles: readonly string[] }
 export interface DirectoryRouteContext { readonly url: URL; readonly staff: DirectoryStaff; readonly params?: Readonly<Record<string, string>>; /** the parsed JSON body when the server already read it; otherwise the handler reads the request */ readonly body?: unknown; readonly now?: string }
 /** What the action log needs from the handler (34.1 rule 4): ids and codes only. */
-export interface DirectoryRouteOutcome { readonly status: number; readonly command: string; readonly subject_kind: "party" | "search" | "export"; readonly subject_id: string | null; readonly result: "ok" | "refused" | "error"; readonly refusal_code?: string }
+export interface DirectoryRouteOutcome { readonly status: number; readonly command: string; readonly subject_kind: "party" | "search" | "export" | "list" | "staff_user"; readonly subject_id: string | null; readonly result: "ok" | "refused" | "error"; readonly refusal_code?: string }
 export interface DirectoryRoute { readonly method: "GET" | "POST"; readonly path: string; readonly pattern: RegExp; readonly roles: readonly string[]; readonly command: string; /** false: the query string carries a person's e-mail / phone / name and must reach the action log only through `directoryLoggedRoute` */ readonly logged_query: boolean; readonly handler: (req: IncomingMessage, res: ServerResponse, ctx: DirectoryRouteContext) => Promise<DirectoryRouteOutcome> }
 export interface DirectoryRouteDeps { readonly runtime: Runtime }
 
@@ -62,10 +63,12 @@ const LOGGED_NEVER = ["email", "phone", "name"];
  * The `route` the console's staff_actions row records: the path, `q` as its hash (T1: a query hash and no query text), no `email`,
  * `phone` or `name`. The console applies it to EVERY request before dispatch (review finding): a directory path that misses the
  * table — a wrong method, an unknown sub-path, a non-uuid party id — and the legacy `/api/loans?q=` search alike never write a typed
- * e-mail, phone or name into the five-year, append-only log.
+ * e-mail, phone or name into the five-year, append-only log. The accounts list (34.5, src/runtime/portal/routes.ts) is logged as its
+ * path with `filters_hash=<sha-256 of the canonical filters>` — the hash `directory.listed` carries — never the filters as typed.
  */
 export function directoryLoggedRoute(url: URL): string {
   const logged = new URL(url.toString());
+  if (LIST_PATH_RE.test(logged.pathname)) return `${logged.pathname}?filters_hash=${listFiltersHash(canonicalListFilters(logged.searchParams))}`;
   for (const k of LOGGED_NEVER) logged.searchParams.delete(k);
   const q = logged.searchParams.get("q");
   if (q) logged.searchParams.set("q", queryHash(q));   // an empty `q=` carries nothing and stays as typed

@@ -7390,6 +7390,33 @@
     "deadline": "Escalations carry the owning timer's severity and due date; the evidence pack for a request within 5 business days (18.2)"
   },
   {
+    "id": "34.5",
+    "title": "The portal's information architecture and the accounts list",
+    "section": 34,
+    "section_title": "The operator portal: staff sign-in, the account directory, partner book operations and evidence",
+    "words": 7914,
+    "timers": [],
+    "subsections": [
+      "Inputs and triggers",
+      "Data model",
+      "State machine",
+      "Timers and gates",
+      "Business rules and calculations",
+      "Integrations",
+      "Outputs and artifacts",
+      "AI agent design (AI-first)",
+      "Edge cases and failure modes",
+      "Test cases and acceptance criteria",
+      "Audit and evidence"
+    ],
+    "path": "sections/34-operator-portal/34-5-the-portal-s-information-architecture-and-the-accounts-list.md",
+    "auto": "c — a staff member opens an area, browses a list, reads a notice; the platform projects, masks, counts and logs",
+    "own": "Platform operator (the system of record for every account; the partner is lender of record on every application and servicer of record on every monitored loan, and the portal never presents Supermortgage as either)",
+    "trigger": "On every portal page a signed-in staff member (34.1) opens: Home on sign-in, the lists and the notice look on demand; nothing runs unprompted",
+    "source": "34.1 rules 2–4 (roles as the only authority; the actor on the bus; the log with the role); 34.2 rules 1–2 and 4 (one directory for every person; masking by role; the anti-enumeration cap); 32.14 (the funnel), 32.16 and 32.17 (the doors); 33.1 (partner-book parties); 35.3, 35.7 and 35.8 (the boards and screens the areas frame); 16 CFR §314.4(c)(1) and (c)(8) (least privilege; the activity of authorized users monitored and logged)",
+    "deadline": "None of its own; `LIST_VOLUME` opens one `compliance` escalation the day a person's paging crosses the threshold (rule 8)"
+  },
+  {
     "id": "35.1",
     "title": "Persistence seam and the typed record",
     "section": 35,

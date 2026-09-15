@@ -41,14 +41,14 @@ const runtimeOf = (rt: ToolRuntime): Runtime => { const r = rt.services["runtime
 /** The roles the projection is masked for: the bus actor's role when a person calls; an agent is always fully masked (ROLE_MASK). */
 const rolesOf = (ctx: CommandContext): string[] => (ctx.actor.kind === "human" && ctx.actor.role ? [ctx.actor.role] : []);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-interface StaffLook { readonly staff_user_id: string; readonly session_id: string | null }
+export interface StaffLook { readonly staff_user_id: string; readonly session_id: string | null }
 /**
  * 34.1 rule 3: the session's actor is the actor. `staff_user_id` is the BUS ACTOR's id — an input `staff_user_id` is never read, so
  * no look, unmask or export can be attributed to another staff member. `session_id` is honoured only when the row is the actor's
  * own open staff session (`staff_sessions.staff_user_id = actor, revoked_at IS NULL`); a session asserted for someone else, a
  * revoked one or none at all leaves the look session-less — and an unmask or an export then refuses SESSION_REQUIRED (below).
  */
-async function staffOf(i: ToolInput, ctx: CommandContext, rt: Runtime): Promise<StaffLook> {
+export async function staffOf(i: ToolInput, ctx: CommandContext, rt: Runtime): Promise<StaffLook> {
   const staff_user_id = ctx.actor.id;
   await requireStaffRow(ctx, rt);
   const claimed = str(i, "session_id");

@@ -168,6 +168,20 @@ curl -H "Authorization: Bearer ${TOKEN}" https://demo.supermortgage.com/ops
 The console is at <https://demo.supermortgage.com/ops> (the root of the host is the borrower thread, 32.14 §6.3) and needs the same
 bearer token.
 
+**The first operator-portal account (34.1 operational prerequisites).** `serve` reads `STAFF_BOOTSTRAP_ADMIN_EMAIL`
+(Terraform `staff_bootstrap_admin_email`, `infra/terraform/run.tf`) once at start and, while `staff_users` is empty, creates
+that account and sends `NTC_SM_STAFF_INVITATION` (the code is echoed on the sign-in page under `INTEGRATIONS=fake`); the
+same runs as `main.ts staff-bootstrap <email>`. Its roles come from `STAFF_BOOTSTRAP_ADMIN_ROLES` (`staff_bootstrap_admin_roles`,
+a comma list of `ops_analyst, officer, compliance, admin`; default on nonprod: all four), honoured **only when `ENVIRONMENT`
+is not `production`** — in production the row holds `admin` only whatever the setting says, the log line
+`staff-bootstrap: STAFF_BOOTSTRAP_ADMIN_ROLES ignored in production` says so, and the other roles are granted by a second
+admin's `staff.role.set` with a rationale from the Staff page. Nonprod only, once: when the table holds exactly the bootstrap
+row (invited by nobody) with a strict subset of the setting, the next start upgrades it through the real `staff.role.set`
+path (rationale `bootstrap roles (nonprod)`; `staff.role.changed` and a decision record are written; the row's sessions are
+revoked, so sign in again). A running nonprod that already has other staff rows gets the roles by re-creation — a fresh
+database, `db/migrate.sh`, `seed-demo`, then the bootstrap — never by a hand-written `DELETE` across the staff tables
+(`staff_actions` is the append-only five-year security log).
+
 Useful commands:
 
 ```sh

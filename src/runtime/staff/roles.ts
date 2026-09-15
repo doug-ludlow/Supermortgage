@@ -40,21 +40,48 @@ export function normalizeRoles(v: unknown): StaffRole[] {
 export const sameRoles = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((r) => b.includes(r));
 
 /**
- * Rule 3: the role the request acts under. `preferred` (the request's `x-staff-role` header / `role` field) wins when the
- * user holds it and the route accepts it; else the first of `required` the user holds; else the user's first role when the
- * route accepts any. A route that needs a role the user lacks answers 403 `ROLE_REQUIRED{role}` before any read.
+ * Rule 3's one declared order, least-privileged first (amended 2026-09-15, the portal proposal §3): the role a `GET` falls
+ * back to is the first of these the route accepts and the account holds — never the route's own first role, which would be
+ * privilege used because it is held, not because the function needs it (23 NYCRR 500.7(a)(3)).
  */
-export function chooseRole(held: readonly string[], required: readonly string[] | null, preferred?: string | null): string {
+export const ROLE_ORDER: readonly StaffRole[] = ["ops_analyst", "officer", "compliance", "admin"];
+/** Rule 3: a `read` (GET) may fall back to another held role; an `act` (POST / PUT / DELETE) never substitutes one — it answers the `act_as` offer. */
+export type RoleMode = "read" | "act";
+/**
+ * The accepted roles the account holds, least-privileged first (rule 3's `act_as` offer and the read fallback's order):
+ * the staff four in ROLE_ORDER, then any other accepted role the account holds (a tool's own human roles) in the account's order.
+ */
+export function actAsOffer(held: readonly string[], required: readonly string[] | null): string[] {
   const accepts = (r: string): boolean => !required || required.includes(r);
-  if (preferred) {
-    if (!held.includes(preferred)) throw new StaffError(403, "ROLE_REQUIRED", `the session does not hold role ${preferred}`, { role: preferred, held: [...held] });
-    if (!accepts(preferred)) throw new StaffError(403, "ROLE_REQUIRED", `this route needs ${required!.join(" or ")}, not ${preferred}`, { role: required![0], held: [...held] });
-    return preferred;
+  return [...ROLE_ORDER.filter((r) => held.includes(r) && accepts(r)), ...held.filter((r) => accepts(r) && !(ROLE_ORDER as readonly string[]).includes(r))];
+}
+/**
+ * Rule 3: the role the request acts under — the role returned is `acted_as`. `preferred` (the request's `x-staff-role` header /
+ * `role` field / `?role=` — the header's "Act as") wins when the account holds it and the route accepts it. When the account
+ * holds it but the route does not accept it: a `read` acts as the least-privileged accepted role the account holds (the order
+ * above) and the caller reports it as `acted_as`; an `act` is refused 403 `ROLE_REQUIRED{role, held, act_as: [the accepted
+ * roles the account holds]}` before any write — intent on an act is chosen, never inferred. A role the account does not hold
+ * is refused on either method (`act_as: []`), as is a route none of the held roles opens. With no preference, a `read` acts as the
+ * least-privileged accepted held role; an `act` is asked for under the session's default role — the least-privileged role it holds,
+ * the one `/api/me` reports (`actAsOffer(held, null)[0]`) — and is refused the same way when the route does not accept it: intent on
+ * an act is chosen, never inferred, so a header-less client never runs under a greater held authority. `mode` defaults to `act`
+ * (no substitution unless the caller says it is a read).
+ */
+export function chooseRole(held: readonly string[], required: readonly string[] | null, preferred?: string | null, opts: { readonly mode?: RoleMode } = {}): string {
+  const mode: RoleMode = opts.mode ?? "act";
+  const accepts = (r: string): boolean => !required || required.includes(r);
+  const offer = actAsOffer(held, required);
+  // an act naming no role is asked for under the session's default role (the least-privileged held role, the one /api/me reports) — never an inferred greater one
+  const asked = preferred || (mode === "act" ? actAsOffer(held, null)[0] ?? null : null);
+  if (asked) {
+    if (!held.includes(asked)) throw new StaffError(403, "ROLE_REQUIRED", `the session does not hold role ${asked}`, { role: asked, held: [...held], act_as: [] });
+    if (accepts(asked)) return asked;
+    if (mode === "read" && offer.length) return offer[0]!;
+    throw new StaffError(403, "ROLE_REQUIRED", `this route needs ${required!.join(" or ")}, not ${asked}${offer.length ? `; act as ${offer.join(" or ")}` : ""}`, { role: required![0], held: [...held], act_as: offer });
   }
-  if (!required) { const r = held[0]; if (!r) throw new StaffError(403, "ROLE_REQUIRED", "the account holds no role", { role: "ops_analyst", held: [] }); return r; }
-  const r = required.find((x) => held.includes(x));
-  if (!r) throw new StaffError(403, "ROLE_REQUIRED", `this route needs ${required.join(" or ")}`, { role: required[0], held: [...held] });
-  return r;
+  if (offer.length) return offer[0]!;
+  if (!required) throw new StaffError(403, "ROLE_REQUIRED", "the account holds no role", { role: "ops_analyst", held: [], act_as: [] });
+  throw new StaffError(403, "ROLE_REQUIRED", `this route needs ${required.join(" or ")}`, { role: required[0], held: [...held], act_as: [] });
 }
 
 // ───────── the invariants (rule 2; guardrails NO_SELF_ROLE_CHANGE, LAST_ADMIN_STAYS)

@@ -35,14 +35,14 @@ const book = demoBook();
 const maria = book.loans.find((l) => l.n === 1)!;
 let db: Db; let runtime: Runtime; let base = ""; let close: () => Promise<void> = async () => undefined;
 type Session = { token: string; session_id: string; staff_user_id: string };
-let admin: Session; let analyst: Session; let officer: Session; let compliance: Session;
+let admin: Session; let analyst: Session; let officer: Session; let compliance: Session; let dual: Session;   // dual: ops_analyst + compliance on one row (34.1 rule 3's fallback and act_as offer)
 let partnerId = ""; let importId = ""; let loan1 = ""; let mariaId = ""; let sweep: SweepReport;
 
-type Reply = { status: number; body: Json };
+type Reply = { status: number; body: Json; headers: Headers };
 async function api(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<Reply> {
   if (path.startsWith("/ops/api/")) sent += 1;   // every /ops/api request writes one staff_actions row — the doors included (34.1 rule 4), so the log's catch-up wait below counts them too
   const r = await fetch(base + path, { method, headers: { "content-type": "application/json", ...headers }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
-  const text = await r.text(); return { status: r.status, body: text ? (JSON.parse(text) as Json) : {} };
+  const text = await r.text(); return { status: r.status, body: text ? (JSON.parse(text) as Json) : {}, headers: r.headers };
 }
 const as = (s: Session, role?: string): Record<string, string> => ({ authorization: `Bearer ${s.token}`, ...(role ? { "x-staff-role": role } : {}) });
 async function enrolAndSignIn(email: string, password: string): Promise<Session> {
@@ -53,11 +53,11 @@ async function enrolAndSignIn(email: string, password: string): Promise<Session>
   return { token: s.body["token"] as string, session_id: s.body["session_id"] as string, staff_user_id: s.body["staff_user_id"] as string };
 }
 const count = async (sql: string, p: unknown[] = []): Promise<number> => Number((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM ${sql}`, p))[0]!.n);
-type ActionRow = { route: string; method: string; command: string | null; subject_kind: string | null; subject_id: string | null; result: string; refusal_code: string | null; staff_user_id: string | null; session_id: string | null };
+type ActionRow = { route: string; method: string; command: string | null; subject_kind: string | null; subject_id: string | null; result: string; refusal_code: string | null; role: string | null; staff_user_id: string | null; session_id: string | null };
 let sent = 0;   // every /ops/api request this suite made; the staff_actions row is inserted after the answer is on the wire, so the log is read once it has caught up
 const actions = async (where = "", p: unknown[] = []): Promise<ActionRow[]> => {
   for (let i = 0; i < 100 && (await count(`staff_actions`)) < sent; i++) await new Promise((r) => setTimeout(r, 20));
-  return db.query(`SELECT route, method, command, subject_kind, subject_id, result, refusal_code, staff_user_id::text AS staff_user_id, session_id::text AS session_id FROM staff_actions ${where} ORDER BY created_at, id`, p);
+  return db.query(`SELECT route, method, command, subject_kind, subject_id, result, refusal_code, role, staff_user_id::text AS staff_user_id, session_id::text AS session_id FROM staff_actions ${where} ORDER BY created_at, id`, p);
 };
 
 test.before(async () => {
@@ -72,10 +72,10 @@ test.before(async () => {
   const R = randomUUID().slice(0, 6);
   await bootstrapStaffAdmin(runtime, `ada.${R}@supermortgage.example`, { legal_name: "Ada Admin" });
   admin = await enrolAndSignIn(`ada.${R}@supermortgage.example`, "correct-horse-battery-1");
-  const people: [string, string, string[]][] = [[`ana.${R}@supermortgage.example`, "Ana Lyst", ["ops_analyst"]], [`ollie.${R}@supermortgage.example`, "Ollie Ficer", ["officer"]], [`cora.${R}@supermortgage.example`, "Cora Pliance", ["compliance"]]];
+  const people: [string, string, string[]][] = [[`ana.${R}@supermortgage.example`, "Ana Lyst", ["ops_analyst"]], [`ollie.${R}@supermortgage.example`, "Ollie Ficer", ["officer"]], [`cora.${R}@supermortgage.example`, "Cora Pliance", ["compliance"]], [`dee.${R}@supermortgage.example`, "Dee Dual", ["ops_analyst", "compliance"]]];
   for (const [email, legal_name, roles] of people) { const r = await api("POST", "/ops/api/staff/invite", { email, legal_name, roles }, as(admin)); assert.equal(r.status, 200, JSON.stringify(r.body)); }
   const sessions = await Promise.all(people.map(([email]) => enrolAndSignIn(email, "twelve-character-pass-1")));
-  analyst = sessions[0]!; officer = sessions[1]!; compliance = sessions[2]!;
+  analyst = sessions[0]!; officer = sessions[1]!; compliance = sessions[2]!; dual = sessions[3]!;
   // 34.3 rule 1: the upload through the console's multipart route as the analyst → 33.1 book.import with the person as actor
   const fd = new FormData();
   fd.set("partner_legal_name", DEMO_PARTNER.legal_name); fd.set("partner_nmlsr_id", DEMO_PARTNER.nmlsr_id); fd.set("partner_servicer_number", DEMO_PARTNER.servicer_number); fd.set("partner_mers_org_id", DEMO_PARTNER.mers_org_id);
@@ -89,9 +89,10 @@ test.before(async () => {
 });
 test.after(async () => { if (!skip) await close(); });
 
-test("the role gate answers 403 ROLE_REQUIRED{role, held} before any read or write on every section-34 table; an admin-only session touches no borrower; controls read for every role", { skip }, async () => {
+test("the role gate answers 403 ROLE_REQUIRED{role, held, act_as} before any read or write on every section-34 table; an admin-only session touches no borrower; controls read for every role; a held role the route refuses falls back on a GET (acted_as) and is offered on a POST (act_as)", { skip }, async () => {
   const searchedBefore = await count(`loan_events WHERE type = 'directory.searched'`);
-  const denied = async (r: Reply, role: string, held: string[]): Promise<void> => { assert.equal(r.status, 403, JSON.stringify(r.body)); assert.equal(r.body["code"], "ROLE_REQUIRED"); assert.equal(r.body["error"], "role_required"); assert.equal(r.body["role"], role); assert.deepEqual(r.body["held"], held); };
+  // 34.1 rule 3 (amended 2026-09-15): every refusal names the accepted roles the session holds (`act_as`, [] when none) and nothing acted (no x-acted-as)
+  const denied = async (r: Reply, role: string, held: string[], actAs: string[] = []): Promise<void> => { assert.equal(r.status, 403, JSON.stringify(r.body)); assert.equal(r.body["code"], "ROLE_REQUIRED"); assert.equal(r.body["error"], "role_required"); assert.equal(r.body["role"], role); assert.deepEqual(r.body["held"], held); assert.deepEqual(r.body["act_as"], actAs); assert.equal(r.headers.get("x-acted-as"), null); assert.equal("acted_as" in r.body, false); };
   await denied(await api("GET", "/ops/api/directory/search?q=Garcia", undefined, as(admin)), "ops_analyst", ["admin"]);
   assert.equal(await count(`loan_events WHERE type = 'directory.searched'`), searchedBefore, "refused before the read: no directory.searched");
   await denied(await api("GET", `/ops/api/directory/accounts/${mariaId}`, undefined, as(admin)), "ops_analyst", ["admin"]);
@@ -107,8 +108,15 @@ test("the role gate answers 403 ROLE_REQUIRED{role, held} before any read or wri
   await denied(await api("GET", "/ops/api/controls/evidence", undefined, as(analyst)), "compliance", ["ops_analyst"]);
   await denied(await api("POST", "/ops/api/controls/ai/intake/kill", { reason: "x" }, as(analyst)), "compliance", ["ops_analyst"]);
   await denied(await api("POST", `/ops/api/controls/outbox/${randomUUID()}/requeue`, {}, as(compliance)), "ops_analyst", ["compliance"]);
-  // a role the session holds but the route refuses, asked for by name (x-staff-role), is refused the same way
+  // a role the session does not hold, asked for by name (x-staff-role), is refused the same way on either method (act_as: nothing to offer)
   await denied(await api("GET", "/ops/api/controls/evidence", undefined, as(compliance, "ops_analyst")), "ops_analyst", ["compliance"]);
+  // 34.1 rule 3 (amended 2026-09-15; 34.1-T9): a role the session holds but the route does not accept, asked for by name — a GET acts as the least-privileged accepted role the session holds and names it (the x-acted-as header and, on a JSON object, acted_as); a POST is refused with the act_as offer, nothing written — never a silent substitution
+  const fell = await api("GET", "/ops/api/controls/evidence", undefined, as(dual, "ops_analyst")); assert.equal(fell.status, 200, JSON.stringify(fell.body).slice(0, 200)); assert.equal(fell.body["acted_as"], "compliance"); assert.equal(fell.headers.get("x-acted-as"), "compliance");
+  const packsBefore = await count(`evidence_packs`);
+  await denied(await api("POST", "/ops/api/controls/evidence", { subject: { loan_id: loan1 } }, as(dual, "ops_analyst")), "compliance", ["ops_analyst", "compliance"], ["compliance"]);
+  assert.equal(await count(`evidence_packs`), packsBefore, "refused before the write");
+  // every answer that acted names the role (34.1 rule 4: the row records it too — asserted on the log below); a preferred role the route accepts is the role
+  const named = await api("GET", "/ops/api/controls/timers", undefined, as(officer, "officer")); assert.equal(named.status, 200); assert.equal(named.headers.get("x-acted-as"), "officer"); assert.equal(named.body["acted_as"], "officer");
   for (const s of [admin, analyst, officer, compliance]) { const t = await api("GET", "/ops/api/controls/timers", undefined, as(s)); assert.equal(t.status, 200, JSON.stringify(t.body).slice(0, 200)); assert.ok((t.body["count"] as number) > 0, "the fixture book's clocks are listed"); }
   // the generic /v1 tool routes refuse every section-34 process outright (review finding: there the actor is whatever the body names — one holder of the ops bearer token must not trip the kill switch alone with two fabricated staff ids, nor attribute a look or an export to a staff id with no row); the console's session path is their only HTTP entry
   const forged = (role: string): Json => ({ kind: "human", id: randomUUID(), role });
@@ -119,12 +127,18 @@ test("the role gate answers 403 ROLE_REQUIRED{role, held} before any read or wri
   assert.equal(await count(`loan_events WHERE type LIKE 'ai.kill_switch.%'`), 0, "nothing requested"); assert.equal(await count(`loan_events WHERE type = 'directory.searched'`), searchedBefore, "no look attributed to a forged staff id");
   // every refusal above is one staff_actions row: refused, ROLE_REQUIRED, the person, the session
   const refused = (await actions(`WHERE refusal_code = 'ROLE_REQUIRED'`));
-  assert.equal(refused.length, 14, `${refused.length} ROLE_REQUIRED rows — one per refusal above`); assert.ok(refused.every((r) => r.result === "refused" && r.staff_user_id && r.session_id));
+  assert.equal(refused.length, 15, `${refused.length} ROLE_REQUIRED rows — one per refusal above`); assert.ok(refused.every((r) => r.result === "refused" && r.staff_user_id && r.session_id));
+  // rule 4 (migration 0139): the row carries the role that was asked for on a refusal (null when the request named none), the role that acted otherwise
+  const offeredRow = refused.find((r) => r.method === "POST" && r.route === "/ops/api/controls/evidence" && r.session_id === dual.session_id)!; assert.equal(offeredRow.role, "ops_analyst");
+  assert.equal(refused.find((r) => r.method === "GET" && r.route === "/ops/api/controls/evidence" && r.session_id === compliance.session_id)!.role, "ops_analyst", "the not-held role that was asked for");
+  assert.ok(refused.filter((r) => r.session_id === admin.session_id).every((r) => r.role === null), "the admin asked for no role by name");
+  const acted = await actions(`WHERE result = 'ok' AND session_id = $1 AND route = '/ops/api/controls/evidence'`, [dual.session_id]); assert.ok(acted.length >= 1); assert.ok(acted.every((r) => r.role === "compliance"), "the fallback role is the row's role");
+  const officerRow = (await actions(`WHERE result = 'ok' AND session_id = $1 AND route = '/ops/api/controls/timers'`, [officer.session_id])).at(-1)!; assert.equal(officerRow.role, "officer");
 });
 
 test("the action log (34.1 rule 4 / 34.2 rule 4): a search's route carries the query hash and no query text; every directory row names the command, the subject and the result", { skip }, async () => {
   const q = "Garcia";
-  const s = await api("GET", `/ops/api/directory/search?q=${encodeURIComponent(q)}`, undefined, as(analyst)); assert.equal(s.status, 200, JSON.stringify(s.body).slice(0, 300));
+  const s = await api("GET", `/ops/api/directory/search?q=${encodeURIComponent(q)}`, undefined, as(analyst)); assert.equal(s.status, 200, JSON.stringify(s.body).slice(0, 300)); assert.equal(s.headers.get("x-acted-as"), "ops_analyst", "a directory handler writes its own body; the header names the role that acted");
   assert.ok((s.body["results"] as Json[]).some((h) => h["party_id"] === mariaId && h["email"] === "m…@example.com"), "Maria listed with masked contact");
   const byEmail = await api("GET", `/ops/api/directory/search?q=${encodeURIComponent(maria.email!)}`, undefined, as(officer)); assert.equal(byEmail.status, 200);
   const a = await api("GET", `/ops/api/directory/accounts/${mariaId}`, undefined, as(analyst)); assert.equal(a.status, 200, JSON.stringify(a.body).slice(0, 300)); assert.equal(a.body["origin"], `partner book: ${DEMO_PARTNER.legal_name}`);
@@ -186,7 +200,7 @@ test("34.3 mounted: the book reads answer the analyst, the export is compliance'
   const report = (await api("GET", `/ops/api/partner-book/daily-report?partner=${partnerId}&as_of=2026-09-15`, undefined, as(analyst))).body; assert.equal(report["produced_by"], "sweep"); assert.equal((report["book"] as Json)["loans_monitored"], 12);
   // the export: the route (compliance) and the bus (the tool's EXPORT_IS_COMPLIANCE guardrail → 403 ROLE_REQUIRED with the role it names)
   const busDenied = await api("POST", "/ops/api/tools/34.3/book.daily_report", { input: { op: "export", partner_id: partnerId, as_of_date: "2026-09-15" } }, as(analyst));
-  assert.equal(busDenied.status, 403, JSON.stringify(busDenied.body)); assert.equal(busDenied.body["code"], "ROLE_REQUIRED"); assert.equal(busDenied.body["role"], "compliance"); assert.deepEqual(busDenied.body["held"], ["ops_analyst"]);
+  assert.equal(busDenied.status, 403, JSON.stringify(busDenied.body)); assert.equal(busDenied.body["code"], "ROLE_REQUIRED"); assert.equal(busDenied.body["role"], "compliance"); assert.deepEqual(busDenied.body["held"], ["ops_analyst"]); assert.deepEqual(busDenied.body["act_as"], []);
   assert.equal(await count(`documents WHERE kind = 'partner_book_daily_report'`), 0, "nothing exported by the refusal");
   const x = await api("POST", "/ops/api/partner-book/daily-report/export", { partner: partnerId, as_of: "2026-09-15" }, as(compliance)); assert.equal(x.status, 201, JSON.stringify(x.body).slice(0, 300)); assert.match(String(x.body["sha256"]), /^[0-9a-f]{64}$/);
   const xrow = (await actions(`WHERE command = 'book.daily_report:export'`))[0]!; assert.equal(xrow.subject_kind, "document"); assert.equal(xrow.subject_id, x.body["document_id"]); assert.equal(xrow.result, "ok");

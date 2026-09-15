@@ -16217,6 +16217,10 @@
    {
     "n": 8,
     "text": "Given the last access review 90 calendar days ago, when the sweep passes, then `SM_STAFF_ACCESS_REVIEW_90` reads `breached` with one `compliance` escalation; given `staff.access.review` recording keep/change/disable for every active user, then the changes are applied through `staff.role.set`/`staff.disable`, `staff.access_review.completed` is logged, the clock is satisfied and re-armed 90 days out."
+   },
+   {
+    "n": 9,
+    "text": "Given an account invited with roles `[ops_analyst, officer, compliance, admin]`, when it calls `GET /ops/api/queue` with `x-staff-role: admin`, then the route acts as `ops_analyst` (the least-privileged role the route accepts that the account holds, in the order ops_analyst < officer < compliance < admin), answers 200 with `acted_as: ops_analyst`, and the `staff_actions` row records `role = ops_analyst`; when it calls the same route with `x-staff-role: officer`, then it acts as `officer` and the row records `officer`; when it `POST`s a bus tool that declares `moneyFields` with `x-staff-role: ops_analyst`, then 403 `ROLE_REQUIRED{role: officer, act_as: [officer]}` before any write, no ledger, event or decision row is written, and the `staff_actions` row records `role = ops_analyst`, `result = refused`; given an account holding `[admin]` only, then `GET /ops/api/queue` answers 403 `ROLE_REQUIRED{role: ops_analyst, held: [admin], act_as: []}` before any read; given a fresh database, `ENVIRONMENT \u2260 production` and `STAFF_BOOTSTRAP_ADMIN_ROLES=ops_analyst,officer,compliance,admin`, when the bootstrap runs, then the first `staff_users` row holds those four roles and `staff.invited{roles}` records them; given `ENVIRONMENT = production` and the same setting, then the row holds `[admin]` only and the bootstrap log names the setting as ignored in production; and a second bootstrap with `staff_users` non-empty creates nothing; given `ENVIRONMENT \u2260 production`, the same setting and `staff_users` holding exactly one row \u2014 the bootstrap e-mail's, `invited_by` null \u2014 whose roles are a strict subset of the setting, when the bootstrap runs, then that row is upgraded through `staff.role.set` with the bootstrap's system actor and the rationale `bootstrap roles (nonprod)`, `staff.role.changed{roles_before, roles_after, by}` is logged with a decision record, the row's open sessions are revoked and no row is deleted; and no row is upgraded in production, with two or more rows present, or when the roles already equal the setting."
    }
   ],
   "tables": [
@@ -16372,6 +16376,89 @@
    "controls.outbox.requeue",
    "controls.ai.kill",
    "controls.evidence.pack"
+  ]
+ },
+ {
+  "process": "34.5",
+  "title": "The portal's information architecture and the accounts list",
+  "path": "sections/34-operator-portal/34-5-the-portal-s-information-architecture-and-the-accounts-list.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given the bootstrap account holding roles `[ops_analyst, officer, compliance, admin]` and the fixture book with two breached clocks, one open `ops_analyst` escalation, one open `officer` escalation, one held notice and one dead letter, when the account signs in and opens Home, then the page lists the clocks due within 24 hours and the breached clocks with code, subject and breach role, the open escalations counted by role, the work waiting for the session's held roles as one list where each row names the role it needs (both escalations, the held notice and the dead letter present), the dead-letter count, the roles a FAKE reviewer fills in this environment, and no request of the page was refused; given an account holding `[admin]` only, then Home answers 200 with the staff, access-review and controls tiles and one line naming the roles the other areas need, and its response carries no count or field derived from a borrower party, application or loan."
+   },
+   {
+    "n": 2,
+    "text": "Given the fixture book imported (twelve partner-book parties, eleven invited), one account created by e-mail and password, one by Google, one by the video door that identified, one video-door party with an open session that never identified, and one signed in by code, when an `ops_analyst` opens People & accounts with no filter, then every identified borrower party is listed once, newest first by creation, each row carrying the name, masked e-mail and phone, origin (`front door`, `video door` or `partner book: <partner>`), the doors used, status (`invited` or `active`), the e-mail verification state, the stage, the subjects' last-four identifiers, the partner, and the created, first-seen and last-seen instants; the un-identified video party is not a row and its placeholder application is no subject of any row; `directory.listed{staff_user_id, filters_hash, results}` is logged with no filter text; and no row carries an unmasked e-mail or phone, an SSN, a date of birth, a credential hash or a token."
+   },
+   {
+    "n": 3,
+    "text": "Given the same accounts, when the analyst filters by origin `front_door`, by door `oidc_google`, by status `invited`, by stage `application`, by partner, by created-since and by last-seen-since, then each filter returns only the matching rows and `directory.counts` for the same filters returns totals by origin, by status, by stage and by created day that equal the rows; given more than 50 matches, then the list pages by a cursor of 50, `next` returns the remainder, and no party appears twice across pages."
+   },
+   {
+    "n": 4,
+    "text": "Given the 100-loan transfer batch boarded without parties, a 21.1 interview application with no linked party, a lead created by `POST /v1/borrower/lead` that never authenticated, one video visit that ended before a name was given and one still open without a name, when an `ops_analyst`, an `officer` and a `compliance` session each open the \"Not yet an account\" tab, then the boarded borrowers and the interview are listed as `no account yet` with their kind (`boarded loan`, `interview`), the partner or the MLO of record, the created date and a last-four identifier only \u2014 no name, e-mail or phone; the lead is listed as `no account yet` with kind `lead`, its name when one was given, its e-mail and phone in full, its channel, its created date and its assurance level, the same to each of the three roles, each look logged as `directory.listed{staff_user_id, filters_hash, results}` carrying no name, e-mail or phone, and no route exports the tab or a lead (34.2's one-person export takes a party id only); an `admin` session is refused `ROLE_REQUIRED{role: ops_analyst}` before any read; both un-named video visits appear only in the count \"video visits, not identified\" and never as a row or a subject; the accounts tab of the same sessions stays masked; and when the lead later verifies and becomes a party, then it leaves this tab and appears in the accounts list with origin `front door` and its lead date as first contact."
+   },
+   {
+    "n": 5,
+    "text": "Given a partner-book account listed as `invited` and a front-door account with an application, when the analyst opens each from the list, then 34.2's account page opens unchanged (identity masked, subjects, sessions, consents, activity stream) with the actions that belong to it \u2014 re-send the invitation (33.1 `account.invite{kind: reminder}` with a reason, once; a second is refused `REMINDER_CAP_1`), unmask (shown as `needs: officer or compliance` to the analyst), export (shown as `needs: compliance`) \u2014 and each action taken runs on the bus with `actor = {human, <staff_user_id>, <role>}`, writes one `staff_actions` row carrying the role, and appears in the account's activity stream as its own event."
+   },
+   {
+    "n": 6,
+    "text": "Given applications on the fixture at `application` (a row with none of the four stage events), `decision` (`decision.issued`), `closing` (`clear_to_close.issued`) and `funded` (`loan.funded`), and one at `application` whose latest stage event is `application.trid_received`, when an `officer` opens Pipeline, then applications are listed by stage from lead to funded with the stage derived from the furthest of `application.trid_received`, `decision.issued`, `clear_to_close.issued` and `loan.funded` on the record (the events the `journey_progress` view reads), the per-stage counts sum to the number of applications, each row carries the borrower's masked name, the partner, the MLO of record, the channel, the application date and the next clock due, and each row opens the application page, which frames the record, the clocks, the escalations and the last ten acts and lists the stage's screen codes (`le_review`, `cd_review`, `conditions`, `closing_schedule`, `funding_release`) with the role each needs, from a static registry-shaped list."
+   },
+   {
+    "n": 7,
+    "text": "Given the boarded demo book, the funded origination and the monitored partner-book loans, when an `ops_analyst` opens Loans, then serviced loans are listed with status, UPB, next due date, delinquency bucket, escrow flag, open cases (loss mitigation, foreclosure, bankruptcy), an open payoff request, transfer status and the partner, each figure read from the ledger and the owning sections' rows and never computed by the list; the monitored loans appear as `monitored` rows whose link opens the Partner book loan page; filters by status, delinquency bucket and case kind return only the matching loans; a loan row links to its borrower's account page and the account page's subject links back to the loan page."
+   },
+   {
+    "n": 8,
+    "text": "Given one session per role (`ops_analyst`, `officer`, `compliance`, `admin`) and one session holding all four, when the portal renders its navigation and every area is opened through a real browser, then every link shown to a session answers 200 for that session, every area a session cannot open is absent from its navigation, a `GET` asked for with an `x-staff-role` the account holds but the route does not accept acts as the least-privileged accepted role the account holds and the response names it, a `POST` asked for with such a role is refused `ROLE_REQUIRED{role, act_as}` and the screen offers \"act as\" for each role in `act_as`, a role the account does not hold is refused `ROLE_REQUIRED{role}`, and no page renders a refusal string as its body."
+   },
+   {
+    "n": 9,
+    "text": "Given 34.1's action log with reads, writes and refusals by two staff members on two subjects, when `compliance` opens Oversight \u2192 Action log filtered by person, by subject and by date, then the rows list time, person id, role (from `staff_actions.role`), route, subject ids, the bus command, the result and the refusal code, the filters return only the matching rows, and no row carries a name, an e-mail, a phone number or a money figure; given an `ops_analyst`, then the same page lists only their own rows."
+   },
+   {
+    "n": 10,
+    "text": "Given the bundles `analyst = [ops_analyst]`, `servicing officer = [ops_analyst, officer]`, `compliance officer = [compliance]` and `administrator = [admin]`, when an `admin` invites a colleague with the bundle `servicing officer`, then `staff.invite` runs with the expanded roles, `staff.invited{roles}` carries the two roles and the decision's rationale names the bundle; when an admin defines a bundle pairing `compliance` with `officer` or `ops_analyst`, then it is refused `BUNDLE_SEPARATION`; when an admin applies a bundle to their own row, then `NO_SELF_ROLE_CHANGE`; given a bundle naming a role outside `STAFF_ROLES \u222a HUMAN_ROLES`, then it is refused `UNKNOWN_ROLE`."
+   },
+   {
+    "n": 11,
+    "text": "Given the six tools `portal.home`, `directory.list`, `directory.counts`, `pipeline.list`, `loans.list` and `notice.read`, then every table is identical before and after each tool except `staff_actions`, `access_log` and this process's own look events in `loan_events`; no `ledger_lines`, `timers`, `notices`, `parties`, `applications` or `loans` row changed (contract test); every request wrote one `staff_actions` row with ids and the role only; and every response passes 34.2-T6's contract (no full SSN, credential hash, session token or vendor payload in any field)."
+   },
+   {
+    "n": 12,
+    "text": "Given one `ops_analyst` session paging `directory.list` past 20 pages in one day, or reading more than 1,000 rows across `directory.list`, `pipeline.list` and `loans.list`, then one `compliance` escalation opens with the person id, the page and row counts and the day (`LIST_VOLUME`), a second day's paging opens a second, `directory.counts` never counts toward it, and the person named cannot complete the escalation (`SELF_SUBJECT`)."
+   },
+   {
+    "n": 13,
+    "text": "Given the owner holding `compliance` who unmasks 21 people in a day, then the 34.2 volume escalation opens naming their `staff_user_id`; their `controls.escalation.complete` on it is refused `SELF_SUBJECT`; with no other active `compliance` holder it is listed to `admin` as \"open until a second person\" and appears in the next access review's rationale; given a second `compliance` account, then that person completes it."
+   },
+   {
+    "n": 14,
+    "text": "Given a platform with one active staff account, when it runs `staff.access.review` with `keep` on its own row and a rationale naming the single-operator condition, then the review's `users` entry for that row reads `self_attested` and the clock is satisfied; given two active accounts, when one runs the review with `keep` on its own row, then it is refused `SELF_REVIEW` and nothing is written; when the other runs it, then it completes with no `self_attested` entry."
+   },
+   {
+    "n": 15,
+    "text": "Given a party with two sent notices and one held, when an `ops_analyst` opens a notice from the account page and from the loan page, then `notice.read` returns the rendered text as delivered with contact fields masked by role, `notice.read{staff_user_id, notice_id}` is logged, the look appears in the activity stream as `staff_look`, and given a `compliance` session with an open unmask, then the same text unmasked; no notice row changed."
+   },
+   {
+    "n": 16,
+    "text": "Given fixture loan L-1 with an assessed late charge, when the loan page's officer waiver action is taken as `ops_analyst`, then 403 `ROLE_REQUIRED{role: officer, act_as: []}` and no ledger, event or decision row is written; when the same session holds `officer` and takes it as `ops_analyst`, then `ROLE_REQUIRED{role: officer, act_as: [officer]}` and nothing is written; when it is taken as `officer` with a rationale, then 2.7's courtesy waiver tool runs on the bus with `actor = {human, <staff_user_id>, officer}`, the ledger set it writes balances with its own `rule_ref`, the decision record carries the rationale, and the `staff_actions` row records `officer`."
+   }
+  ],
+  "tables": [],
+  "timers": [],
+  "notices": [],
+  "agent": "security-records",
+  "tools": [
+   "portal.home",
+   "directory.list",
+   "directory.counts",
+   "pipeline.list",
+   "loans.list",
+   "notice.read"
   ]
  },
  {

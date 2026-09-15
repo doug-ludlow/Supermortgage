@@ -133,7 +133,7 @@ test("console: human actions are role-checked and leave events — officer compl
   } finally { s.server.close(); }
 });
 
-test("console: section 34 (34.2 directory, 34.3 book operations, 34.4 controls) is mounted from the core modules' own route tables with their roles; without a runtime those paths answer 501 RUNTIME_UNAVAILABLE", async () => {
+test("console: section 34 (34.2 directory, 34.3 book operations, 34.4 controls, 34.5 the portal) is mounted from the core modules' own route tables with their roles; without a runtime those paths answer 501 RUNTIME_UNAVAILABLE", async () => {
   // the tables are data: building them touches no database (the runtime is only held for the handlers)
   const rows = section34RouteTable({} as unknown as Runtime).map((r) => [r.section, r.method, r.path, r.roles.join("|"), r.command ?? ""]);
   assert.deepEqual(rows, [
@@ -166,7 +166,9 @@ test("console: section 34 (34.2 directory, 34.3 book operations, 34.4 controls) 
     ["34.4", "POST", "/ops/api/controls/ai/:code/reset", "compliance|admin", "controls.ai.kill"],
     ["34.4", "POST", "/ops/api/controls/evidence", "compliance", "controls.evidence.pack"],
     ["34.4", "GET", "/ops/api/controls/evidence", "compliance", ""],
-    ["34.4", "GET", "/ops/api/controls/evidence/:id", "compliance", ""]]);
+    ["34.4", "GET", "/ops/api/controls/evidence/:id", "compliance", ""],
+    ["34.5", "GET", "/ops/api/portal/home", "ops_analyst|officer|compliance|admin", "portal.home"],
+    ["34.5", "GET", "/ops/api/directory/list", "ops_analyst|officer|compliance", "directory.list"]]);
   // no route under /ops/api/controls/timers is anything but GET (34.4 rule 1); the search's query string is never logged as typed (34.2 rule 4)
   assert.ok(section34RouteTable({} as unknown as Runtime).every((r) => !r.path.startsWith("/ops/api/controls/timers") || r.method === "GET"));
   assert.equal(section34RouteTable({} as unknown as Runtime).find((r) => r.command === "directory.search")!.logged_query, false);

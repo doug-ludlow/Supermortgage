@@ -4,16 +4,21 @@
  * The actor (34.1 rule 3): every `/ops/api/*` (and legacy `/api/*`) request resolves the staff session from the `sm_staff`
  * cookie or `Authorization: Bearer <session token>` (src/runtime/staff/auth.ts StaffAuth.authenticate — 30-minute idle,
  * 12-hour absolute; 401 SESSION_EXPIRED once it lapsed) and acts as `{kind: human, id: staff_user_id, role}` for the route's
- * chosen role when the user holds it (`x-staff-role` / `?role=` / body `role` names the role among the ones held); a route that
- * needs a role the user lacks answers 403 ROLE_REQUIRED{role} before any read. The legacy header actor (`x-actor-id` /
+ * chosen role (src/runtime/staff/roles.ts chooseRole): the request's preferred role (`x-staff-role` / `?role=` / body `role` —
+ * the header's "Act as") when the account holds it and the route accepts it; on a GET a held role the route does not accept
+ * falls back to the least-privileged accepted role the account holds (ops_analyst < officer < compliance < admin) and every
+ * answer names the role that acted — the `x-acted-as` header and, on a JSON object, `acted_as`; on a POST / PUT / DELETE such a
+ * role is refused 403 ROLE_REQUIRED{role, held, act_as: [the accepted roles the account holds]} before any write (the screen
+ * offers "act as" and re-sends with the role named — intent on an act is chosen, never inferred); a role the account lacks is
+ * refused on either method (`act_as: []`), as is a route none of the held roles opens. The legacy header actor (`x-actor-id` /
  * `x-actor-role`) is honoured ONLY when the request carries the ops bearer token (the deploy workflow's own smoke calls — the
  * API_TOKEN as a bearer or the `sm_token` cookie /login sets) and ENVIRONMENT ≠ production; headers alone answer 401.
  *
  * The action log (rule 4): one `staff_actions` row per request — route (the query string without `email` / `phone` / `name`, a `q`
  * as its sha-256 — src/runtime/directory/routes.ts directoryLoggedRoute, applied before dispatch to every route), method, subject
- * ids, the bus command when one ran, the result (ok | refused | error) and the refusal code — a request that hits no route or a
- * disallowed method is `refused` with NOT_FOUND / METHOD_NOT_ALLOWED; ids only, never a name, an e-mail, a phone or a figure. The
- * 19.2 access log keeps its row too.
+ * ids, the bus command when one ran, the result (ok | refused | error), the refusal code and the role (migration 0139: the role
+ * that acted, or on a refusal the role that was asked for) — a request that hits no route or a disallowed method is `refused`
+ * with NOT_FOUND / METHOD_NOT_ALLOWED; ids only, never a name, an e-mail, a phone or a figure. The 19.2 access log keeps its row too.
  *
  * Routes (the spec's Inputs list; every `/api/*` path is also served at `/ops/api/*`):
  *   the door (no session)   POST /ops/api/auth/code {email} → {challenge_id, delivery, expires_at, fake_code?}   POST /ops/api/auth/verify {email, code} → the enrol/step token (never a session)
@@ -22,7 +27,7 @@
  *   on a session            POST /ops/api/auth/passkey/register-options   POST /ops/api/auth/passkey/register {challenge_id, credential, label?}   GET /ops/api/me
  *   admin                   GET /ops/api/staff   POST /ops/api/staff/invite {email, legal_name, roles}   PUT /ops/api/staff/{id}/roles {roles, rationale}   POST /ops/api/staff/{id}/disable {rationale}
  *   compliance | admin      POST /ops/api/staff/access-review {decisions: [{staff_user_id, decision, roles?}], rationale}   GET /ops/api/staff/access-reviews   GET /ops/api/staff/actions
- *   the bus                 POST /ops/api/tools/{process}/{name} {input, loan_id?, application_id?, role?} — the tool's human roles decide the role; 403 ROLE_REQUIRED before any write
+ *   the bus                 POST /ops/api/tools/{process}/{name} {input, loan_id?, application_id?, role?} — the tool's human roles decide the role (a tool that declares `moneyFields` is officer's here); 403 ROLE_REQUIRED{role, held, act_as} before any write, never a silent re-role
  *                           (for process 34.2 the session's `session_id` rides in the input: the directory tools honour it only as the actor's own open session)
  *   the legacy views        GET /api/dashboard | queue | loans | funnel | partner-book/holds | partner-book/loans/{id}/readiness | ai/*; POST /api/escalations/complete | portal-tasks/complete | notices/supersede | outbox/requeue | agents/ai-off | partner-book/imports (multipart → 33.1 book.import) | partner-book/resolve
  *
@@ -37,7 +42,9 @@
  *   34.4 controls           src/runtime/controls/routes.ts controlsRoutes — GET /ops/api/controls/timers[/{id}] | escalations[/{id}] | outbox[/{id}] | ai[/{code}] | evidence[/{id}],
  *                           POST …/escalations/{id}/complete, …/outbox/{id}/requeue, …/ai/{code}/kill | reset, …/evidence (compliance). Evidence packs are written to `blobs`
  *                           (ConsoleServerOptions.blobs; a FakeBlobStore of the console's own when none is given).
- * For each: the role gate answers 403 {error: role_required, code: ROLE_REQUIRED, role, held} BEFORE any read (34.1 rule 3 — `actAs` over the route's roles); the handler
+ *   34.5 the portal         src/runtime/portal/routes.ts portalRoutes — GET /ops/api/portal/home?kind= (every staff role; the least-privileged held role acts), GET /ops/api/directory/list?<filters>
+ *                           (the ops roles; logged as `?filters_hash=<sha-256>` — directoryLoggedRoute). The same table shape and dispatch as 34.2's.
+ * For each: the role gate answers 403 {error: role_required, code: ROLE_REQUIRED, role, held, act_as} BEFORE any read (34.1 rule 3 — `actAs` over the route's roles); the handler
  * receives the staff context {staff_user_id, session_id, role, roles}; its outcome (command, subject, result, refusal_code) completes the staff_actions row like every other route.
  */
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
@@ -56,25 +63,27 @@ import { isUuid, toJson } from "../infra/db/client.ts";
 import { loadAgentsFile } from "../app/agents.ts";
 import { StaffAuth, SIGNIN_STATUS, STAFF_ABSOLUTE_HOURS, type StaffContext, type SigninResult, type InviteResult } from "../runtime/staff/auth.ts";
 import { PgStaffRepository, emailHash, type StaffUserRow } from "../runtime/staff/repo.ts";
-import { StaffError, chooseRole, OPS_ROLES, ACCESS_REVIEW_ROLES, STAFF_ROLES } from "../runtime/staff/roles.ts";
+import { StaffError, chooseRole, actAsOffer, OPS_ROLES, ACCESS_REVIEW_ROLES, STAFF_ROLES } from "../runtime/staff/roles.ts";
 import { directoryRoutes, directoryLoggedRoute, matchDirectoryRoute, type DirectoryRoute } from "../runtime/directory/routes.ts";
 import { DirectoryRefused } from "../runtime/directory/unmask.ts";
 import { DirectorySearchRefused } from "../runtime/directory/search.ts";
 import { bookOpsRoutes, type BookOpsRoute } from "../runtime/book-ops/routes.ts";
 import { controlsRoutes, matchControlsRoute, type ControlsRoute } from "../runtime/controls/routes.ts";
+import { portalRoutes } from "../runtime/portal/routes.ts";
 import { FakeBlobStore, type BlobStorePort } from "../runtime/borrower/vendors/fake-blob-store.ts";
 
 /** `runtime` is what the 33.1 partner-book view, the 34.1 doors and the section-34 tables need (without it those routes answer 501); `apiToken` + `environment` gate the legacy header actor (rule 3); `blobs` is the document store 34.4's evidence packs are written to (the borrower router's when the host passes it; a FakeBlobStore of the console's own otherwise). */
 export interface ConsoleServerOptions { readonly store: ConsoleStore; readonly clock?: { now(): string }; readonly uiHtml?: string; readonly runtime?: Runtime; readonly apiToken?: string; readonly environment?: string; readonly staff?: StaffAuth; readonly logger?: Logger; readonly blobs?: BlobStorePort | null; }
 
 /** One mounted section-34 route as the report and the tests read it: the method, the spec's /ops/api path, the roles the gate admits, the bus command it logs (null for a plain read). */
-export interface MountedRoute { readonly section: "34.2" | "34.3" | "34.4"; readonly method: "GET" | "POST"; readonly path: string; readonly roles: readonly string[]; readonly command: string | null; readonly logged_query: boolean }
+export interface MountedRoute { readonly section: "34.2" | "34.3" | "34.4" | "34.5"; readonly method: "GET" | "POST"; readonly path: string; readonly roles: readonly string[]; readonly command: string | null; readonly logged_query: boolean }
 /** The three section-34 tables the console mounts, built from the core modules' own route tables (never a literal of the console's): the source of truth for what is served. */
 export function section34RouteTable(runtime: Runtime, blobs?: BlobStorePort | null): MountedRoute[] {
   const directory = directoryRoutes({ runtime }).map((r): MountedRoute => ({ section: "34.2", method: r.method, path: r.path, roles: [...r.roles], command: r.command, logged_query: r.logged_query }));
   const book = bookOpsRoutes({ runtime }).map((r): MountedRoute => ({ section: "34.3", method: r.method, path: r.path, roles: [...r.roles], command: r.path.endsWith("/resolve") ? "book.resolve" : r.path.endsWith("/export") ? "book.daily_report:export" : r.path.endsWith("/daily-report") ? "book.daily_report" : null, logged_query: true }));
   const controls = controlsRoutes({ runtime, blobs: blobs ?? null }).map((r): MountedRoute => ({ section: "34.4", method: r.method, path: `/ops${r.path}`, roles: [...r.roles], command: r.command, logged_query: true }));
-  return [...directory, ...book, ...controls];
+  const portal = portalRoutes({ runtime }).map((r): MountedRoute => ({ section: "34.5", method: r.method, path: r.path, roles: [...r.roles], command: r.command, logged_query: r.logged_query }));
+  return [...directory, ...book, ...controls, ...portal];
 }
 /** A book-ops route path (`{id}` segments) against a request path — both in the spec's `/ops/api/…` form. */
 function matchTemplate(template: string, actual: string): Record<string, string> | null {
@@ -150,7 +159,8 @@ async function monitoredLoans(rt: Runtime, partnerPartyId: string | null): Promi
 async function readinessRows(rt: Runtime, loanId: string): Promise<Record<string, unknown>[]> {
   return rt.db.query(`SELECT r.id::text AS id, r.party_id::text AS party_id, r.application_id::text AS application_id, r.as_of_date::text AS as_of_date, r.items, r.ready, r.missing, r.decision_id::text AS decision_id, r.created_at::text AS created_at FROM readiness_checks r LEFT JOIN LATERAL (SELECT max(e.sequence) AS seq FROM loan_events e WHERE e.loan_id = r.loan_id AND e.type = 'partner_book.readiness.checked' AND e.payload->>'readiness_check_id' = r.id::text) ev ON true WHERE r.loan_id = $1 ORDER BY r.created_at, ev.seq NULLS FIRST, r.id`, [loanId]);
 }
-const json = (res: ServerResponse, status: number, data: unknown, headers: Record<string, string> = {}): void => { res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...headers }); res.end(toJson(data)); };
+const sendJson = (res: ServerResponse, status: number, data: unknown, headers: Record<string, string> = {}): void => { res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...headers }); res.end(toJson(data)); };
+const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 
 /** The roles a tool's own role guardrail asks for (src/app/tools.ts needsRole answers "<why>; requires officer/compliance"), evaluated against the input and the actor alone — a guardrail that needs the command's stores throws and is left to the bus. */
 function roleGate(def: { guardrails?: readonly { refuse: (input: Record<string, unknown>, ctx: never) => string | undefined }[] }, input: Record<string, unknown>, actor: Actor): string[] | null {
@@ -189,10 +199,11 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
   const repo = opts.runtime ? new PgStaffRepository(opts.runtime.db) : null;
   // ───────── section 34's route tables, built once when the runtime exists (34.2 the directory, 34.3 book operations, 34.4 controls); the evidence packs' document store
   const blobs: BlobStorePort | null = opts.blobs !== undefined ? opts.blobs : opts.runtime ? new FakeBlobStore() : null;
-  const DIRECTORY: readonly DirectoryRoute[] = opts.runtime ? directoryRoutes({ runtime: opts.runtime }) : [];
+  // 34.5's two reads share 34.2's table shape and dispatch (the role gate, the staff context, the outcome onto the action log)
+  const DIRECTORY: readonly DirectoryRoute[] = opts.runtime ? [...directoryRoutes({ runtime: opts.runtime }), ...portalRoutes({ runtime: opts.runtime })] : [];
   const BOOK: readonly BookOpsRoute[] = opts.runtime ? bookOpsRoutes({ runtime: opts.runtime }) : [];
   const CONTROLS: readonly ControlsRoute[] = opts.runtime ? controlsRoutes({ runtime: opts.runtime, blobs }) : [];
-  const SECTION34_PREFIXES = ["/api/directory", "/api/partner-book/", "/api/controls"];
+  const SECTION34_PREFIXES = ["/api/directory", "/api/partner-book/", "/api/controls", "/api/portal/"];   // the trailing slash: the legacy /api/portal-tasks/* acts are not 34.5's
   let escalatesTo: Map<string, readonly string[]> | null = null;
   /** The roles a bus tool admits on the human path (src/app/tools.ts toolCommand's default: ops_analyst + officer + the process's escalation roles). */
   const toolRoles = (def: { humanRoles?: readonly string[]; process: string }): readonly string[] => { if (def.humanRoles) return def.humanRoles; escalatesTo ??= new Map(loadAgentsFile().processes.map((p) => [p.process, p.escalates_to] as const)); return [...new Set(["ops_analyst", "officer", ...(escalatesTo.get(def.process) ?? [])])]; };
@@ -215,12 +226,6 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
     const ctx = await staff.authenticate(token, now);
     return { actor: { kind: "human", id: ctx.user.id, role: ctx.user.roles[0] ?? "ops_analyst" }, staff: ctx, source: "session", held: ctx.user.roles };
   }
-  /** The route's chosen role (rule 3): the request's preferred role among the ones held, else the first the route accepts; 403 ROLE_REQUIRED otherwise. */
-  const actAs = (r: Resolved, req: IncomingMessage, url: URL, required: readonly string[] | null, preferredBody?: string): Actor => {
-    if (r.source === "header") { if (required && !required.includes(r.actor.role!)) throw new StaffError(403, "ROLE_REQUIRED", `this route needs ${required.join(" or ")}`, { role: required[0], held: r.held }); return r.actor; }
-    const preferred = preferredBody || String(req.headers["x-staff-role"] ?? "").trim() || url.searchParams.get("role") || null;
-    return { kind: "human", id: r.actor.id, role: chooseRole(r.held, required, preferred) };
-  };
   const staffOrThrow = (): { auth: StaffAuth; repo: PgStaffRepository; rt: Runtime } => { if (!staff || !repo || !opts.runtime) throw new StaffError(501, "STAFF_UNAVAILABLE", "staff sign-in needs the runtime (createConsoleServer({ runtime }))"); return { auth: staff, repo, rt: opts.runtime }; };
   const runtimeOrThrow = (): Runtime => { const rt = opts.runtime; if (!rt) throw new StaffError(501, "RUNTIME_UNAVAILABLE", "this route needs the runtime (createConsoleServer({ runtime }))"); return rt; };
   /** A staff row for the list and the review page — the e-mail masked, never a code or a token. */
@@ -232,6 +237,10 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
   return createServer(async (req, res) => {
     const now = clock.now();
     const url = new URL(req.url ?? "/", "http://console");
+    // rule 3 (amended 2026-09-15): the role that acted rides on every answer — the `x-acted-as` header (set on the response the moment the role is chosen, so a section-34 handler
+    // that writes its own body carries it too) and, on a JSON object, `acted_as`; a refusal before a role acted (ROLE_REQUIRED / ROLE_DENIED / READ_ONLY) carries neither
+    let actedAs: string | null = null;
+    const json = (res: ServerResponse, status: number, data: unknown, headers: Record<string, string> = {}): void => sendJson(res, status, actedAs && isObject(data) && !("acted_as" in data) ? { ...data, acted_as: actedAs } : data, headers);
     // "/" standalone (npm run console); "/ops" behind the API (32.14 §6.3); the JSON API at /api/* and /ops/api/* alike
     if (req.method === "GET" && ["/", "/index.html", "/ops", "/ops/", "/ops/index.html"].includes(url.pathname)) { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end(ui); return; }
     const path = url.pathname.startsWith("/ops/api/") ? url.pathname.slice(4) : url.pathname;
@@ -244,10 +253,26 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
     // directoryLoggedRoute: `email`, `phone` and `name` dropped, `q` as its sha-256 (the hash the directory.searched event carries) on every route.
     const logRoute = directoryLoggedRoute(url);
     let held: readonly string[] = [];
-    const action = { staff_user_id: null as string | null, session_id: null as string | null, subject_kind: null as string | null, subject_id: null as string | null, command: null as string | null, result: "ok" as "ok" | "refused" | "error", refusal_code: null as string | null };
+    const action = { staff_user_id: null as string | null, session_id: null as string | null, subject_kind: null as string | null, subject_id: null as string | null, command: null as string | null, result: "ok" as "ok" | "refused" | "error", refusal_code: null as string | null, role: null as string | null };
     const setSubject = (s: { kind: string | null; id: string | null }): void => { if (s.id && !action.subject_id) { action.subject_kind = s.kind; action.subject_id = s.id; } };
     // `logCode`: the action log's refusal_code when the wire answer is deliberately generic (the doors never enumerate accounts)
-    const refuse = (status: number, code: string, data: Record<string, unknown>, logCode: string = code): void => { action.result = status >= 500 ? "error" : "refused"; action.refusal_code = logCode; json(res, status, { error: code.toLowerCase(), code, ...data }); };
+    const refuse = (status: number, code: string, data: Record<string, unknown>, logCode: string = code): void => {
+      action.result = status >= 500 ? "error" : "refused"; action.refusal_code = logCode;
+      if (status === 403 && (code === "ROLE_REQUIRED" || code === "ROLE_DENIED" || code === "READ_ONLY")) { actedAs = null; res.removeHeader("x-acted-as"); }   // nothing acted
+      json(res, status, { error: code.toLowerCase(), code, ...data });
+    };
+    /**
+     * The route's chosen role (rule 3, src/runtime/staff/roles.ts chooseRole): the request's preferred role among the ones held when the route accepts it; a GET falls back to the
+     * least-privileged accepted held role, a POST / PUT / DELETE answers 403 ROLE_REQUIRED{role, held, act_as}. Rule 4: the row carries the role that acted — or, on a refusal, the
+     * role that was asked for. The deploy workflow's header actor keeps its role as named (no fallback: it holds one).
+     */
+    const actAs = (r: Resolved, required: readonly string[] | null, preferredBody?: string): Actor => {
+      const acted = (role: string): Actor => { action.role = role; actedAs = role; res.setHeader("x-acted-as", role); return { kind: "human", id: r.actor.id, role }; };
+      if (r.source === "header") { action.role = r.actor.role ?? null; if (required && !required.includes(r.actor.role!)) throw new StaffError(403, "ROLE_REQUIRED", `this route needs ${required.join(" or ")}`, { role: required[0], held: r.held, act_as: [] }); return acted(r.actor.role!); }
+      const preferred = preferredBody || String(req.headers["x-staff-role"] ?? "").trim() || url.searchParams.get("role") || null;
+      action.role = preferred;
+      return acted(chooseRole(r.held, required, preferred, { mode: method === "GET" || method === "HEAD" ? "read" : "act" }));
+    };
     /** A section-34 handler's answer (34.3 / 34.4 shape): the bus command and the subject onto the action log, the refusal code when it refused, the JSON on the wire. */
     const answer = (out: { status: number; body: unknown; command?: string | null; subject?: { kind: string; id: string } | null }): void => {
       if (out.command) action.command = out.command;
@@ -311,7 +336,7 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
       if (dir) {
         // rule 4 / NO_PII_IN_LOG: the row's route is already the logged form (directoryLoggedRoute above, before the gate — a refused request logs the hash too)
         const b = method === "POST" ? await body(req) : {};
-        const actor = actAs(r, req, url, [...dir.roles], str(b, "role"));
+        const actor = actAs(r, [...dir.roles], str(b, "role"));
         const out = await dir.handler(req, res, { url: new URL(opsPath + url.search, "http://console"), staff: { staff_user_id: actor.id, session_id: r.staff?.session.session_id ?? null, role: actor.role!, roles: r.held }, body: b, now });
         action.command = out.command; if (out.subject_id) { action.subject_kind = out.subject_kind; action.subject_id = out.subject_id; }
         action.result = out.result; action.refusal_code = out.refusal_code ?? null; return;
@@ -319,7 +344,7 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
       for (const route of BOOK) {
         if (route.method !== method) continue; const params = matchTemplate(route.path, opsPath); if (!params) continue;
         const b = method === "POST" ? await body(req) : {};
-        const actor = actAs(r, req, url, [...route.roles], str(b, "role"));
+        const actor = actAs(r, [...route.roles], str(b, "role"));
         const query = Object.fromEntries(url.searchParams); if (query["partner"] === undefined && query["partner_party_id"] !== undefined) query["partner"] = query["partner_party_id"];   // the console's older partner filter name
         answer(await route.handler({ params, query, body: b, staff: { staff_user_id: actor.id, role: actor.role!, session_id: r.staff?.session.session_id ?? null } })); return;
       }
@@ -327,27 +352,27 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
       if (ctl) {
         // every route is logged the directory's way (logRoute above), so a `logged_query === false` row (none in 34.4 today) needs nothing more
         const b = method === "POST" ? await body(req) : {};
-        const actor = actAs(r, req, url, [...ctl.route.roles], str(b, "role"));
+        const actor = actAs(r, [...ctl.route.roles], str(b, "role"));
         answer(await ctl.route.handler({ actor, params: ctl.params, query: url.searchParams, body: b, now })); return;
       }
       if (method === "GET") {
         if (path === "/api/me") {
-          const role = actAs(r, req, url, null).role!;
+          const role = actAs(r, null).role!;
           json(res, 200, { actor: { kind: "human", id: r.actor.id, role }, readOnly: r.source === "header" ? READ_ONLY_ROLES.has(role) : false, source: r.source, staff_user_id: r.staff?.user.id ?? null, legal_name: r.staff?.user.legal_name ?? null, roles: r.held, role,
             session: r.staff ? { session_id: r.staff.session.session_id, factors: r.staff.session.factors, created_at: r.staff.session.created_at, last_seen_at: r.staff.session.last_seen_at, expires_at: r.staff.session.expires_at } : null }); return;
         }
         // ───────── 34.1 admin: the staff list; compliance | admin: the reviews (with the clock) and the action log
-        if (path === "/api/staff") { actAs(r, req, url, ["admin"]); const { repo: sr } = staffOrThrow(); json(res, 200, { as_of: now, users: await Promise.all((await sr.users()).map((u) => publicUser(u, now))) }); return; }
+        if (path === "/api/staff") { actAs(r, ["admin"]); const { repo: sr } = staffOrThrow(); json(res, 200, { as_of: now, users: await Promise.all((await sr.users()).map((u) => publicUser(u, now))) }); return; }
         if (path === "/api/staff/access-reviews") {
-          actAs(r, req, url, [...ACCESS_REVIEW_ROLES]); const { repo: sr, rt } = staffOrThrow();
+          actAs(r, [...ACCESS_REVIEW_ROLES]); const { repo: sr, rt } = staffOrThrow();
           const clockRow = (await rt.db.query<{ id: string; status: string; due_at: string | null; due_date: string | null; armed_at: string; anchor_date: string }>(`SELECT id::text AS id, status::text AS status, due_at::text AS due_at, due_date::text AS due_date, armed_at::text AS armed_at, anchor_date::text AS anchor_date FROM timers WHERE code = 'SM_STAFF_ACCESS_REVIEW_90' ORDER BY armed_at DESC LIMIT 1`))[0] ?? null;
           const escalation = (await rt.db.query<{ id: string; opened_at: string; completed_at: string | null }>(`SELECT id::text AS id, opened_at::text AS opened_at, completed_at::text AS completed_at FROM escalations WHERE owner_role = 'compliance' AND payload->>'timer_code' = 'SM_STAFF_ACCESS_REVIEW_90' ORDER BY opened_at DESC LIMIT 1`))[0] ?? null;
           const active = (await sr.users()).filter((u) => u.status === "active");
           json(res, 200, { as_of: now, reviews: await sr.reviews(50), clock: clockRow ? { timer_id: clockRow.id, status: clockRow.status, due_at: clockRow.due_at, due_date: clockRow.due_date, armed_at: clockRow.armed_at, anchor_date: clockRow.anchor_date } : null, escalation, active_users: await Promise.all(active.map((u) => publicUser(u, now))) }); return;
         }
-        if (path === "/api/staff/actions") { actAs(r, req, url, ["admin", "compliance"]); const { repo: sr } = staffOrThrow(); const sid = url.searchParams.get("staff_user_id"); json(res, 200, { as_of: now, actions: await sr.actions({ staff_user_id: sid && UUID.test(sid) ? sid : null, subject_id: url.searchParams.get("subject_id"), since: url.searchParams.get("since"), limit: Number(url.searchParams.get("limit") ?? 200) || 200 }) }); return; }
+        if (path === "/api/staff/actions") { actAs(r, ["admin", "compliance"]); const { repo: sr } = staffOrThrow(); const sid = url.searchParams.get("staff_user_id"); json(res, 200, { as_of: now, actions: await sr.actions({ staff_user_id: sid && UUID.test(sid) ? sid : null, subject_id: url.searchParams.get("subject_id"), since: url.searchParams.get("since"), limit: Number(url.searchParams.get("limit") ?? 200) || 200 }) }); return; }
         // rule 2 ('admin manages staff users and roles and nothing else that touches a borrower') / rule 3 ('403 ROLE_REQUIRED before any read'): every borrower, queue, dashboard, funnel, conversation-trace and partner-book read is the ops roles' (ops_analyst | officer | compliance) — an admin-only session is refused here; the deploy workflow's header actor keeps its role as named
-        const actor = actAs(r, req, url, r.source === "header" ? null : [...OPS_ROLES]);
+        const actor = actAs(r, r.source === "header" ? null : [...OPS_ROLES]);
         // DELTA-28 (docs/ux/17 §6): the conversation trace — the most recent turns across parties, and one party's thread / cards / turns by party_id or e-mail
         if (path === "/api/ai/conversation/recent") {
           if (!store.aiRecentTurns) { json(res, 501, { error: "the conversation trace needs the Postgres console store" }); return; }
@@ -392,7 +417,7 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
           const { rt } = staffOrThrow();
           const b = await body(req); setSubject(subjectOf(path, b));
           const review = path === "/api/staff/access-review";
-          const actor = actAs(r, req, url, review ? [...ACCESS_REVIEW_ROLES] : ["admin"], str(b, "role"));
+          const actor = actAs(r, review ? [...ACCESS_REVIEW_ROLES] : ["admin"], str(b, "role"));
           const name = review ? "staff.access.review" : path === "/api/staff/invite" ? "staff.invite" : sm![2] === "roles" ? "staff.role.set" : "staff.disable";
           action.command = name;
           const targetId = sm ? decodeURIComponent(sm[1]!) : null; if (targetId && !UUID.test(targetId)) throw new RangeError("staff user id is a uuid");
@@ -414,11 +439,15 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
           const input = b["input"] && typeof b["input"] === "object" && !Array.isArray(b["input"]) ? (b["input"] as Record<string, unknown>) : {};
           setSubject(loanId ? { kind: "loan", id: loanId } : applicationId ? { kind: "application", id: applicationId } : subjectOf(path, input));
           action.command = name;
-          let actor = actAs(r, req, url, toolRoles(def), str(b, "role"));
-          // rule 3 / T4: a role gate the tool states as a guardrail (src/app/tools.ts needsRole — "…; requires officer") is answered 403 ROLE_REQUIRED{role} here, before the bus writes anything; a guardrail that needs the command's stores is left to the bus
+          // rule 2 ('waivers on money fields' are officer's) / rule 3 (34.1-T9, 34.5-T16): a tool that declares `moneyFields` is officer's on this surface — an analyst asking for it is
+          // refused with the `act_as` offer, never substituted (35.8's proposal path is later); every other tool admits its own human roles
+          const money = !!def.moneyFields?.length;
+          const actor = actAs(r, money ? ["officer"] : toolRoles(def), str(b, "role"));
+          // rule 3 / T4: a role gate the tool states as a guardrail (src/app/tools.ts needsRole — "…; requires officer") is answered 403 ROLE_REQUIRED{role, held, act_as} here, before the
+          // bus writes anything — `act_as` names the gated roles the account holds; the silent re-role of the actor to such a role (built 2026-09-14, retired 2026-09-15: intent on an act
+          // is chosen, never inferred — it converted an analyst's money act into an execution under an authority the person never selected) is gone. A guardrail that needs the command's stores is left to the bus
           const gated = roleGate(def, { ...(loanId ? { loan_id: loanId } : {}), ...input }, actor);
-          if (gated && !r.held.includes(gated[0]!)) throw new StaffError(403, "ROLE_REQUIRED", `${name} needs ${gated.join(" or ")}`, { role: gated[0], held: r.held });
-          if (gated && actor.role !== gated[0] && gated.some((g) => r.held.includes(g))) actor = { kind: "human", id: actor.id, role: gated.find((g) => r.held.includes(g))! };
+          if (gated && !gated.includes(actor.role!)) { const offer = actAsOffer(r.held, gated); throw new StaffError(403, "ROLE_REQUIRED", `${name} needs ${gated.join(" or ")}${offer.length ? `; act as ${offer.join(" or ")}` : ""}`, { role: gated[0], held: r.held, act_as: offer }); }
           // 34.2: the directory tools take the session from the input and honour it only as the actor's own open staff session (unmask / export refuse SESSION_REQUIRED without one; the account view unmasks only what that session holds) — the body's staff_user_id / unmask are ignored by the tools
           const session = process === "34.2" ? { session_id: r.staff?.session.session_id ?? null } : {};
           const out = await rt.execute({ process, name, loanId, ...(applicationId ? { applicationId } : {}), actor, input: { ...(loanId && input["loan_id"] === undefined ? { loan_id: loanId } : {}), ...(applicationId && input["application_id"] === undefined ? { application_id: applicationId } : {}), ...input, ...session } });
@@ -426,7 +455,7 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
         }
         if (method !== "POST") { refuse(405, "METHOD_NOT_ALLOWED", {}); return; }
         // ───────── the legacy console acts: the ops roles (rule 2: admin touches no borrower); a read-only header role changes nothing
-        const actor = actAs(r, req, url, r.source === "header" ? null : [...OPS_ROLES]);
+        const actor = actAs(r, r.source === "header" ? null : [...OPS_ROLES]);
         if (READ_ONLY_ROLES.has(actor.role!)) { refuse(403, "READ_ONLY", { reason: `${actor.role} is read-only` }); return; }
         // 33.1: the operator uploads the tape and the supplement; the portfolio agent loads, provisions and invites (src/runtime/partner-book.ts importPartnerBook); the actor is the console's human
         if (path === "/api/partner-book/imports") {
@@ -464,16 +493,16 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
     } catch (e) {
       if (e instanceof StaffError) refuse(e.status, e.code, { reason: e.message, ...e.extra }, e.logCode);
       // a tool's own ROLE_REQUIRED guardrail (34.3 book.daily_report{op: export} needs compliance; 34.2's unmask / export) is the spec's 403 with the role it names, not a 409
-      else if (e instanceof CommandRefused && e.code === "ROLE_REQUIRED") refuse(403, "ROLE_REQUIRED", { reason: e.message, command: e.command, citation: e.citation, role: /requires ([a-z_]+)/.exec(e.message)?.[1] ?? null, held: [...held] });
+      else if (e instanceof CommandRefused && e.code === "ROLE_REQUIRED") { const role = /requires ([a-z_]+)/.exec(e.message)?.[1] ?? null; refuse(403, "ROLE_REQUIRED", { reason: e.message, command: e.command, citation: e.citation, role, held: [...held], act_as: role ? actAsOffer(held, [role]) : [] }); }
       else if (e instanceof CommandRefused) { action.result = "refused"; action.refusal_code = e.code; json(res, 409, { error: "refused", command: e.command, code: e.code, citation: e.citation, reason: e.message }); }
-      else if (e instanceof RoleDenied) refuse(403, "ROLE_REQUIRED", { reason: e.message, role: e.required[0] });
+      else if (e instanceof RoleDenied) refuse(403, "ROLE_REQUIRED", { reason: e.message, role: e.required[0], held: [...held], act_as: actAsOffer(held, e.required) });
       // 34.2's typed refusals reaching the generic bus route (SESSION_REQUIRED, REASON_REQUIRED, NOT_FOUND…; QUERY_TOO_SHORT / NARROW_QUERY) keep their status and code — they extend RangeError, so they must be matched before it
       else if (e instanceof DirectoryRefused) refuse(e.status, e.code, { reason: e.message, ...e.extra });
       else if (e instanceof DirectorySearchRefused) refuse(e.code === "QUERY_TOO_SHORT" ? 400 : 422, e.code, { reason: e.message, matches: e.matches });
       else if (e instanceof RangeError || e instanceof SyntaxError) { action.result = "error"; action.refusal_code = "BAD_REQUEST"; json(res, 400, { error: e.message }); }
       else { action.result = "error"; action.refusal_code = "INTERNAL"; opts.logger?.error("console.request.failed", { path, error: e }); json(res, 500, { error: (e as Error).message }); }
     } finally {
-      // rule 4: one staff_actions row per request, ids only (the `email` query parameter is dropped from the route, a directory search's `q` is its hash; no name, phone, code, token or figure is ever set on `action`)
+      // rule 4: one staff_actions row per request, ids only (the `email` query parameter is dropped from the route, a directory search's `q` is its hash; no name, phone, code, token or figure is ever set on `action`) — with the role that acted, or on a refusal the role that was asked for (`action.role`, migration 0139)
       if (repo) { try { await repo.logAction({ ...action, at: now, route: logRoute, method }); } catch (err) { opts.logger?.error("staff_actions.write.failed", { path, error: err }); } }
     }
   });

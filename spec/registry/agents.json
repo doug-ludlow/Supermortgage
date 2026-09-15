@@ -120,6 +120,7 @@
     "31.3",
     "34.1",
     "34.2",
+    "34.5",
     "35.1",
     "35.2",
     "35.7"
@@ -167,6 +168,12 @@
     "directory.activity",
     "directory.unmask",
     "directory.export",
+    "portal.home",
+    "directory.list",
+    "directory.counts",
+    "pipeline.list",
+    "loans.list",
+    "notice.read",
     "record.project",
     "record.replay",
     "record.gaps",
@@ -205,16 +212,20 @@
     "fnma_portal_operator",
     "lossmit_reviewer",
     "compliance",
-    "ciso",
+    "appraiser",
+    "closing_attorney",
+    "funding_approver",
+    "mlo_of_record",
+    "notary",
+    "property_data_collector",
     "qc_officer",
+    "settlement_agent",
+    "underwriting_reviewer",
+    "ciso",
     "counsel",
     "bsa_officer",
-    "funding_approver",
     "human_agent",
-    "licensed_specialist",
-    "mlo_of_record",
-    "settlement_agent",
-    "underwriting_reviewer"
+    "licensed_specialist"
    ]
   },
   {
@@ -6685,7 +6696,7 @@
     "staff.disable",
     "staff.access.review"
    ],
-   "guardrails": "`TWO_FACTORS` (no session on one factor), `NO_SELF_ROLE_CHANGE`, `LAST_ADMIN_STAYS`, `NO_HEADER_ACTOR_IN_PRODUCTION`, `NO_PII_IN_LOG` (the action log carries ids only). Escalations: `compliance` on a late access review and on five failed sign-ins for one account in an hour; `admin` for nothing automatic.",
+   "guardrails": "`TWO_FACTORS` (no session on one factor), `NO_SELF_ROLE_CHANGE`, `LAST_ADMIN_STAYS`, `NO_HEADER_ACTOR_IN_PRODUCTION`, `NO_PII_IN_LOG` (the action log carries ids and the role only), `STAFF_ROLE_DISJOINT` (compliance \u27c2 officer once a second active account exists), `SELF_REVIEW` (rule 6), `ROLE_REQUIRED` with `act_as` on an act (rule 3; never a silent substitution). Escalations: `compliance` on a late access review and on five failed sign-ins for one account in an hour; `admin` for nothing automatic.",
    "escalates_to": [
     "compliance",
     "officer"
@@ -6745,6 +6756,36 @@
    "guardrails": "`NO_CLOCK_EDIT`, `ROLE_REQUIRED`, `TWO_PERSON_KILL`, `REQUEUE_CAP_3`, `NO_MONEY_FIELD`, `PACK_IS_STORED_ROWS` (nothing computed or summarized by a model in a pack). Escalations: `ops_analyst` on the fourth requeue; `compliance` when a kill switch stays tripped more than 24 hours.",
    "escalates_to": [
     "compliance"
+   ]
+  },
+  {
+   "process": "34.5",
+   "agent": "security-records",
+   "agents_named": [
+    "security-records"
+   ],
+   "tools": [
+    "portal.home",
+    "directory.list",
+    "directory.counts",
+    "pipeline.list",
+    "loans.list",
+    "notice.read"
+   ],
+   "guardrails": "`ROLE_MASK` (the projection is masked for the role before it leaves the tool), `LOG_EVERY_LOOK` (one log row and one event per page, filters hashed), `LIST_VOLUME` (rule 8), `NO_FULL_SSN`, `NO_SECRETS` (hashes, tokens, vendor payloads never projected), `READ_ONLY` (the tools write only their own log rows and events), `NO_MONEY_FIELD` (no figure is computed or written; the waiver is the owning section's officer tool), `NO_PII_IN_LOG` (ids, hashes and the role only). Escalations: `compliance` on `LIST_VOLUME`; nothing else automatic.",
+   "escalates_to": [
+    "appraiser",
+    "closing_attorney",
+    "compliance",
+    "fnma_portal_operator",
+    "funding_approver",
+    "mlo_of_record",
+    "notary",
+    "officer",
+    "property_data_collector",
+    "qc_officer",
+    "settlement_agent",
+    "underwriting_reviewer"
    ]
   },
   {

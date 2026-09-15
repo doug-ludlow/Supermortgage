@@ -16,7 +16,7 @@ import { NoticeService, NoticeHeld } from "../../notices/service.ts";
 import { FakePrintMail, FakeEdelivery } from "../../infra/integrations/delivery.ts";
 import { cycle, delinquencyBox, amountDue, lateFeeLine, reinstatementAmount, contractualPayment } from "./statement.ts";
 import { newConsent, verify } from "./esign.ts";
-import { tppStatement, bankruptcyStatementPlan, ceaseRequest, chargeOffSuspension, CHARGEOFF_TITLE, CHARGEOFF_ITEMS, reminderDecision, checklistHold, availabilityEmailBounce, form1098Cycle, statementRecipients, transferOutStatements, statementSuppressionRequest } from "./ops.ts";
+import { tppStatement, bankruptcyStatementPlan, ceaseRequest, chargeOffSuspension, CHARGEOFF_TITLE, CHARGEOFF_ITEMS, reminderDecision, checklistHold, availabilityEmailBounce, form1098Cycle, statementRecipients, transferOutStatements, statementSuppressionRequest, scheduledUpbAfter, CHARGEOFF_RESUMPTION_NOTE, TPP_DIFFERENT_AMOUNT_STATEMENT } from "./ops.ts";
 import { StatementCycleService } from "./ops-7-1.ts";
 
 const REG = loadOverriddenRegistry();
@@ -84,10 +84,20 @@ test(`7.1-T3: Given a $1,500.00 partial in suspense, then (d)(3) shows unapplied
   const without = { ...v.samplePayload, suspense_instructions: null };
   assert.deepEqual(evaluateChecklist(v, without, render(v.source, without)).blocking.map((b) => b.rule_id), ["d5-suspense"]);
 });
-test("7.1-T4: Given an active Flex Mod trial with TPP payment $2,100.00, then amount due = $2,100.00 and the explanation shows both $2,100.00 and the contractual $2,946.79; application per contract.", () => {
-  const s = tppStatement({ tpp_payment_cents: 210000n, contractual_payment_cents: 294679n, past_due_cents: 294679n, late_charges_cents: 11671n, fees_cents: 0n, suspense_cents: 0n, regx_days: 46 });
+test("7.1-T4: Given an active Flex Mod trial with TPP payment $2,100.00, then amount due = $2,100.00 and the explanation shows both $2,100.00 and the contractual $2,946.79 together with the mandatory statement that the amount due is being disclosed as a different amount because of the temporary loss mitigation program (front page, separate page or separate letter); application per contract.", () => {
+  const input = { tpp_payment_cents: 210000n, contractual_payment_cents: 294679n, past_due_cents: 294679n, late_charges_cents: 11671n, fees_cents: 0n, suspense_cents: 0n, regx_days: 46 };
+  const s = tppStatement(input);
   assert.equal(s.template, "NTC_REGZ_41_STMT_TPP"); assert.equal(s.amount_due_cents, 210000n);
   assert.deepEqual(s.explanation, { tpp_payment_cents: 210000n, contractual_payment_cents: 294679n }); assert.equal(s.application_basis, "contract"); assert.equal(s.delinquency_box, true);
+  // comment 41(d)(2)-2: the explanation must also say the amount due is disclosed as a different amount because of the temporary loss mitigation program — front page by default, else a separate enclosed page or a separate letter
+  assert.equal(s.different_amount_statement, TPP_DIFFERENT_AMOUNT_STATEMENT); assert.match(s.different_amount_statement, /amount due is being disclosed as a different amount because of your temporary loss mitigation program/); assert.equal(s.explanation_placement, "front_page");
+  assert.equal(tppStatement({ ...input, explanation_placement: "separate_page" }).explanation_placement, "separate_page"); assert.equal(tppStatement({ ...input, explanation_placement: "separate_letter" }).explanation_placement, "separate_letter");
+  // the NTC_REGZ_41_STMT_TPP template carries both amounts and the statement on the front page; its `different-amount` block rule refuses a template without it
+  const reg = published(); const v = reg.activeVersion("NTC_REGZ_41_STMT_TPP", D("2026-11-17"))!; const r = render(v.source, v.samplePayload);
+  assert.match(r.text, /Amount due under your trial period plan \$2,100\.00/); assert.match(r.text, /trial period plan payment is \$2,100\.00\. Your contractual payment is \$2,946\.79/); assert.match(r.text, /The amount due is being disclosed as a different amount because of your temporary loss mitigation program/); assert.match(r.text, /applied according to your loan contract/);
+  const check = evaluateChecklist(v, v.samplePayload, r); assert.equal(check.passed, true); assert.equal(check.results.find((x) => x.rule_id === "different-amount")!.passed, true);
+  const stripped = render(v.source.replace("The amount due is being disclosed as a different amount because of your temporary loss mitigation program (trial period plan). ", ""), v.samplePayload);
+  assert.doesNotMatch(stripped.text, /different amount/); assert.ok(evaluateChecklist(v, v.samplePayload, stripped).blocking.some((b) => b.rule_id === "different-amount"));
 });
 test("7.1-T5: Given a Chapter 13 case opened Oct 5, then the Nov cycle may use the single-statement exemption and the Dec cycle renders `NTC_REGZ_41_STMT_BK12_13` with post-petition amount due and pre-petition arrearage figures and no late-fee language.", () => {
   const p = bankruptcyStatementPlan({ chapter: "13", petition_on: D("2026-10-05"), docket_reference: "PACER 26-12345", cycles: [{ due_date: D("2026-11-01"), statement_date: D("2026-10-17"), statement_due_by: D("2026-10-20") }, { due_date: D("2026-12-01"), statement_date: D("2026-11-17"), statement_due_by: D("2026-11-20") }], post_petition_due_cents: 294679n, prepetition_arrearage_cents: 589358n });
@@ -128,13 +138,19 @@ test("7.1-T6: Given a written cease request received Oct 12 from the debtor's at
   assert.equal(prompt.status, "satisfied"); assert.equal(events.ofType("statement.sent").length, 0);
   assert.deepEqual(types(events, "L-1").filter((t) => t.startsWith("statement.")), ["statement.cycle.opened", "statement.cycle.exempt", "statement.cycle.closed"]);
 });
-test("7.1-T7: Given charge-off approved Nov 3, then `NTC_REGZ_41E6_CHARGEOFF_SUSPENSION` is sent by Dec 3 with the exact title and seven items; given a fee assessed Jan 10, then statements resume and the fee is reversed.", async () => {
+test("7.1-T7: Given charge-off approved Nov 3, then `NTC_REGZ_41E6_CHARGEOFF_SUSPENSION` is sent by Dec 3 with the exact title and the six (e)(6)(i)(B) explanations (charged off / no further fees or interest; no further statements; lien remains and consumer remains liable incl. property taxes; may be required to pay the balance in future; balance not cancelled or forgiven; loan may be purchased, assigned or transferred); given a fee assessed Jan 10, then statements resume and the fee is reversed.", async () => {
   const n = chargeOffSuspension({ approved_on: D("2026-11-03") });
   assert.equal(n.template, "NTC_REGZ_41E6_CHARGEOFF_SUSPENSION"); assert.equal(n.due_on, "2026-12-03"); assert.equal(n.title, CHARGEOFF_TITLE);
-  assert.equal(n.title, "Suspension of Statements & Notice of Charge Off — Retain This Copy for Your Records"); assert.equal(n.items.length, 7); assert.equal(n.exemption_lapsed, false);
-  assert.match(CHARGEOFF_ITEMS[6], /§1026\.41\(e\)\(6\)\(ii\)/);                                    // the seventh item is the (e)(6)(ii) resumption rule — (e)(6)(i)(B) lists six
+  assert.equal(n.title, "Suspension of Statements & Notice of Charge Off — Retain This Copy for Your Records"); assert.equal(n.items.length, 6); assert.equal(n.exemption_lapsed, false);
+  // the six (e)(6)(i)(B) explanations, in the rule's order; the (e)(6)(ii) resumption sentence is additional information, not a seventh item
+  assert.deepEqual(n.items.map((i) => i.split(" ").slice(0, 4).join(" ")), ["the loan has been", "we will no longer", "the lien on the", "you may be required", "the balance is not", "the loan may be"]);
+  assert.match(n.items[0]!, /charged off and we will not charge any additional fees or interest/); assert.match(n.items[1]!, /no longer provide a periodic statement/); assert.match(n.items[2]!, /lien on the property remains in place and you remain liable .* property taxes/); assert.match(n.items[3]!, /required to pay the balance in the future/); assert.match(n.items[4]!, /not being canceled or forgiven/); assert.match(n.items[5]!, /purchased, assigned, or transferred/);
+  assert.deepEqual([...CHARGEOFF_ITEMS], [...n.items]); assert.match(n.resumption_note, /§1026\.41\(e\)\(6\)\(ii\)/); assert.equal(n.resumption_note, CHARGEOFF_RESUMPTION_NOTE); assert.deepEqual([n.anchor_on, n.anchor_basis], ["2026-11-03", "charge-off date"]);
+  // §1026.41(e)(6)(i)(B) "within 30 days of charge-off or the most recent periodic statement": the later anchor governs — an earlier statement leaves Dec 3, a statement sent after charge-off re-anchors
+  assert.equal(chargeOffSuspension({ approved_on: D("2026-11-03"), last_statement_sent_on: D("2026-10-17") }).due_on, "2026-12-03"); assert.deepEqual([chargeOffSuspension({ approved_on: D("2026-11-03"), last_statement_sent_on: D("2026-11-17") }).due_on, chargeOffSuspension({ approved_on: D("2026-11-03"), last_statement_sent_on: D("2026-11-17") }).anchor_basis], ["2026-12-17", "most recent periodic statement"]);
   const reg = published(); const v = reg.activeVersion("NTC_REGZ_41E6_CHARGEOFF_SUSPENSION", D("2026-11-20"))!;
-  const r = render(v.source, v.samplePayload); assert.match(r.text, /^Suspension of Statements & Notice of Charge Off — Retain This Copy for Your Records/); assert.match(r.text, /\(7\) if any fee or interest is charged/); assert.equal(evaluateChecklist(v, v.samplePayload, r).passed, true);
+  const r = render(v.source, v.samplePayload); assert.match(r.text, /^Suspension of Statements & Notice of Charge Off — Retain This Copy for Your Records/); assert.match(r.text, /\(6\) the loan may be purchased, assigned, or transferred\. If any fee or interest is charged/); assert.doesNotMatch(r.text, /\(7\)/); assert.equal(evaluateChecklist(v, v.samplePayload, r).passed, true);
+  for (const item of ["(1) your mortgage loan has been charged off and we will not charge any additional fees or interest", "(2) we will no longer provide you a periodic statement", "(3) the lien on the property remains in place and you remain liable", "(4) you may be required to pay the balance on the account in the future", "(5) the balance on the account, $371,048.86, is not being canceled or forgiven", "(6) the loan may be purchased, assigned, or transferred"]) assert.ok(r.text.includes(item), item);
   const fee = chargeOffSuspension({ approved_on: D("2026-11-03"), fee_assessed_on: D("2027-01-10"), fee_cents: 2500n });
   assert.equal(fee.exemption_lapsed, true); assert.equal(fee.statements_resume, true); assert.equal(fee.fee_reversed_cents, 2500n);
   // REGZ_1026_41E6_CHARGEOFF_NOTICE_30: `loan.charged_off{charged_off_on=Nov 3}` (approval ingestion) → due Dec 3; the notice sent through the registry closes it
@@ -143,7 +159,7 @@ test("7.1-T7: Given charge-off approved Nov 3, then `NTC_REGZ_41E6_CHARGEOFF_SUS
   assert.throws(() => svc.recordChargeOff("L-1", { charged_off_on: D("2026-11-03"), approval_document_id: "co-approval-1", no_further_fees_or_interest: false, balance_cents: 37_104_886n }), /no further fees or interest/);
   assert.equal(engine.byCode("REGZ_1026_41E6_CHARGEOFF_NOTICE_30").length, 0);
   const co = svc.recordChargeOff("L-1", { charged_off_on: D("2026-11-03"), approval_document_id: "co-approval-1", no_further_fees_or_interest: true, balance_cents: 37_104_886n });
-  assert.equal(co.notice_due_by, "2026-12-03");
+  assert.deepEqual([co.notice_due_by, co.notice_anchor_on, co.notice_anchor_basis], ["2026-12-03", "2026-11-03", "charge-off date"]);   // no statement after Nov 3: the charge-off date is the anchor
   const t = engine.byCode("REGZ_1026_41E6_CHARGEOFF_NOTICE_30")[0]!; assert.equal(t.dueDate, "2026-12-03"); assert.equal(t.anchorDate, "2026-11-03"); assert.equal(t.status, "armed");
   clock.set("2026-11-20T15:00:00.000Z");
   const sent = await svc.sendChargeOffNotice("L-1", { charged_off_on: D("2026-11-03"), sent_on: D("2026-11-20"), recipients: [BEA], payload: { ...v.samplePayload, balance_cents: 37_104_886n } });
@@ -154,6 +170,29 @@ test("7.1-T7: Given charge-off approved Nov 3, then `NTC_REGZ_41E6_CHARGEOFF_SUS
   const lapsed = svc.recordChargeOffFeeAssessed("L-1", { charged_off_on: D("2026-11-03"), fee_assessed_on: D("2027-01-10"), fee_cents: 2500n });
   assert.deepEqual([lapsed.exemption_lapsed, lapsed.statements_resume, lapsed.fee_reversed_cents], [true, true, 2500n]);
   assert.equal((events.ofType("statement.exemption.lapsed")[0]!.payload as { fee_reversed_cents: string }).fee_reversed_cents, "2500");
+  // "or the most recent periodic statement": a periodic statement sent after charge-off (before the notice went out) re-anchors the deadline on the statement date (comment 41(e)(6)-2; 7.1 timer table)
+  const rg2 = rig("2026-11-03T20:00:00.000Z"); const p2 = pipeline(rg2);
+  const co2 = p2.svc.recordChargeOff("L-2", { charged_off_on: D("2026-11-03"), approval_document_id: "co-approval-2", no_further_fees_or_interest: true, balance_cents: 37_104_886n });
+  assert.deepEqual([co2.notice_due_by, co2.notice_anchor_on, co2.notice_anchor_basis], ["2026-12-03", "2026-11-03", "charge-off date"]);
+  const first = rg2.engine.byCode("REGZ_1026_41E6_CHARGEOFF_NOTICE_30")[0]!; assert.deepEqual([first.dueDate, first.status], ["2026-12-03", "armed"]);
+  rg2.clock.set("2026-11-17T14:00:00.000Z"); const sv = p2.reg.activeVersion("NTC_REGZ_41_STMT_STD", D("2026-11-17"))!;
+  const stmt = p2.svc.renderStatement("L-2", { cycle_due_date: D("2026-12-01"), statement_date: D("2026-11-17"), template: "NTC_REGZ_41_STMT_STD", variant: "standard", payload: sv.samplePayload, recipients: [BEA], reminder_panel: false });
+  assert.equal(stmt.status, "rendered"); await p2.svc.sendStatement(stmt.notice.id); p2.pm.runProduction("2026-11-17T15:00:00.000Z"); const job = p2.pm.jobs.get(`${stmt.notice.id}:1`)!;
+  p2.svc.recordStatementMailed(stmt.notice.id, { attempt_no: 1, mailed_at: job.mailedAt!, proof_of_mailing_id: job.proofOfMailingId! });
+  const re = rg2.events.ofType("loan.charged_off.notice_reanchored")[0]!; const rp = re.payload as Record<string, unknown>;
+  assert.deepEqual([rp.charged_off_on, rp.previous_anchor_on, rp.notice_anchor_on, rp.notice_anchor_basis, rp.notice_due_by, rp.statement_notice_id], ["2026-11-03", "2026-11-03", "2026-11-17", "most recent periodic statement", "2026-12-17", stmt.notice.id]);
+  assert.equal(first.status, "cancelled"); assert.match(first.cancelledReason ?? "", /re-anchored on the periodic statement sent 2026-11-17/); assert.deepEqual(rp.superseded_timer_ids, [first.id]);
+  const second = rg2.engine.byCode("REGZ_1026_41E6_CHARGEOFF_NOTICE_30").find((i) => i.status === "armed")!; assert.deepEqual([second.anchorDate, second.dueDate, second.armedByEventId], ["2026-11-17", "2026-12-17", re.id]);
+  // Dec 10 is 37 days after charge-off but 23 after the statement: the template's within-30 rule runs off the anchor and the re-anchored timer is satisfied on time
+  rg2.clock.set("2026-12-10T15:00:00.000Z");
+  const later = await p2.svc.sendChargeOffNotice("L-2", { charged_off_on: D("2026-11-03"), sent_on: D("2026-12-10"), recipients: [BEA], payload: { ...v.samplePayload, balance_cents: 37_104_886n } });
+  assert.equal(later.status, "sent"); assert.equal(second.status, "satisfied"); assert.equal(rg2.engine.byCode("REGZ_1026_41E6_CHARGEOFF_NOTICE_30").length, 2);
+  // a statement sent after the notice went out does not re-anchor anything (the obligation was met); nor does one dated before the current anchor
+  rg2.clock.set("2026-12-17T14:00:00.000Z");
+  const after = p2.svc.renderStatement("L-2", { cycle_due_date: D("2027-01-01"), statement_date: D("2026-12-17"), template: "NTC_REGZ_41_STMT_STD", variant: "standard", payload: sv.samplePayload, recipients: [BEA], reminder_panel: false });
+  await p2.svc.sendStatement(after.notice.id); p2.pm.runProduction("2026-12-17T15:00:00.000Z"); const job2 = p2.pm.jobs.get(`${after.notice.id}:1`)!;
+  p2.svc.recordStatementMailed(after.notice.id, { attempt_no: 1, mailed_at: job2.mailedAt!, proof_of_mailing_id: job2.proofOfMailingId! });
+  assert.equal(rg2.events.ofType("loan.charged_off.notice_reanchored").length, 1);
 });
 test("7.1-T8: Given the October payment unpaid on Oct 17 and no forbearance, then the Oct 17 statement carries the D2-2-03 panel and `FNMA_D2_2_03_PAYMENT_REMINDER_20` is satisfied; given the statement is held, then a standalone reminder is sent by Oct 20.", async () => {
   const sent = reminderDecision({ statement_date: D("2026-10-17"), month_payment_unpaid: true, forbearance_active: false, statement_held: false });
@@ -238,15 +277,17 @@ test("7.1-T12: Given e-delivery consent active and the availability email hard-b
   const b = availabilityEmailBounce({ consent: c, bounced_on: D("2026-12-03"), kind: "hard" });
   assert.equal(b.mail_paper_by, "2026-12-04"); assert.equal(b.consent_status, "suspect"); assert.equal(b.reverification_invite, true); assert.equal(b.timer, "SM_EMAIL_BOUNCE_SUSPECT_1BD"); assert.equal(b.satisfied_by, "notice.mailed{satisfies_timer=true}");
 });
-test("7.1-T13: Given tax year 2026 interest received $23,412.55 and Jan 1 UPB $371,048.86, then the 1098 shows box 1 $23,412.55, box 2 $371,048.86, is furnished by Jan 31, 2027 and e-filed by Mar 31, 2027; given electronic furnishing, then it remains accessible through Oct 15, 2027.", async () => {
-  const f = form1098Cycle({ tax_year: 2026, interest_received_cents: 2341255n, upb_jan1_cents: 37104886n, electronic: true });
-  assert.equal(f.box1_cents, 2341255n); assert.equal(f.box2_cents, 37104886n); assert.equal(f.furnish_by, "2027-01-31"); assert.equal(f.efile_by, "2027-03-31"); assert.equal(f.accessible_through, "2027-10-15"); assert.equal(f.template, "NTC_IRS_1098"); assert.equal(f.file_with_irs, true);
+test("7.1-T13: Given tax year 2026 interest received $23,412.55 and Jan 1, 2026 UPB $376,996.33 (the fixture loan's scheduled balance carried into 2026 — after the 49th payment due Dec 1, 2025 and before the Jan 1, 2026 payment; $371,048.86 is the balance after the 60th payment on Nov 1, 2026 and is NOT the Jan 1 figure), then the 1098 shows box 1 $23,412.55, box 2 $376,996.33, is furnished by Jan 31, 2027 and e-filed by Mar 31, 2027; given electronic furnishing, then it remains accessible through Oct 15, 2027.", async () => {
+  // box 2 is the principal "as of January 1 of the calendar year" (Form 1098 instructions): the fixture schedule ($400,000 at 5.750%, P&I $2,334.29) carries $376,996.33 into 2026 — after the 49th payment (Dec 1, 2025), before the Jan 1, 2026 payment; $371,048.86 is the balance after the 60th payment (Nov 1, 2026), not the Jan 1 figure
+  const JAN1_2026 = scheduledUpbAfter(40000000n, "5.750", 233429n, 49); assert.equal(JAN1_2026, 37699633n); assert.equal(scheduledUpbAfter(40000000n, "5.750", 233429n, 60), 37104886n); assert.notEqual(JAN1_2026, 37104886n);
+  const f = form1098Cycle({ tax_year: 2026, interest_received_cents: 2341255n, upb_jan1_cents: JAN1_2026, electronic: true });
+  assert.equal(f.box1_cents, 2341255n); assert.equal(f.box2_cents, 37699633n); assert.equal(f.furnish_by, "2027-01-31"); assert.equal(f.efile_by, "2027-03-31"); assert.equal(f.accessible_through, "2027-10-15"); assert.equal(f.template, "NTC_IRS_1098"); assert.equal(f.file_with_irs, true);
   assert.deepEqual(f.access_check_event, { type: "tax_form.1098.access_verified", payload: { tax_year: 2026, available: true } });
-  const paper = form1098Cycle({ tax_year: 2026, interest_received_cents: 2341255n, upb_jan1_cents: 37104886n, electronic: false }); assert.equal(paper.accessible_through, null); assert.equal(paper.access_check_event, null);
+  const paper = form1098Cycle({ tax_year: 2026, interest_received_cents: 2341255n, upb_jan1_cents: 37699633n, electronic: false }); assert.equal(paper.accessible_through, null); assert.equal(paper.access_check_event, null);
   // Jan 31, 2027 is a Sunday: the furnish deadline stays a calendar date (no business-day roll)
   assert.deepEqual(REG.get("IRS_6050H_1098_FURNISH_0131")!.offsetParsed, { kind: "calendar_day", day: 31, monthOffset: 0, month: 1, yearOffset: 0 });
   // below $600: furnished to the payer anyway (decision 5), filed only ≥ $600 — the checklist holds only a filed form under the threshold
-  const small = form1098Cycle({ tax_year: 2026, interest_received_cents: 50000n, upb_jan1_cents: 37104886n, electronic: false }); assert.equal(small.furnish_to_all_payers, true); assert.equal(small.file_with_irs, false);
+  const small = form1098Cycle({ tax_year: 2026, interest_received_cents: 50000n, upb_jan1_cents: 37699633n, electronic: false }); assert.equal(small.furnish_to_all_payers, true); assert.equal(small.file_with_irs, false);
   const nr = published(); const v = nr.activeVersion("NTC_IRS_1098", D("2027-01-15"))!;
   const furnishOnly = { ...v.samplePayload, box1_cents: 50000n, box1_cents_number: 50000, filed_with_irs: false };
   assert.equal(evaluateChecklist(v, furnishOnly, render(v.source, furnishOnly)).passed, true);
@@ -264,9 +305,9 @@ test("7.1-T13: Given tax year 2026 interest received $23,412.55 and Jan 1 UPB $3
   // satisfaction is proved against the registry patterns (eventMatches) on a store of its own
   const b = { clock: new FixedClock("2027-01-20T15:00:00.000Z"), events: new MemoryEventStore(new FixedClock("2027-01-20T15:00:00.000Z")) }; const pb = pipeline(b);
   const consent = newConsent("A", ["irs_estatement"], "v1.3", D("2026-10-02"), "portal"); if ("error" in consent) throw new Error(consent.error); verify(consent, true, true, D("2026-10-02"));
-  const fu = await pb.svc.furnish1098("L-1", { tax_year: 2026, interest_received_cents: 2341255n, upb_jan1_cents: 37104886n, furnished_on: D("2027-01-20"), recipients: [{ ...BEA, email: "bea@example.com", consent }], payload: v.samplePayload });
-  assert.deepEqual([fu.box1_cents, fu.box2_cents, fu.furnish_by, fu.efile_by, fu.channel, fu.accessible_through, fu.file_with_irs], [2341255n, 37104886n, "2027-01-31", "2027-03-31", "electronic", "2027-10-15", true]);
-  assert.match(fu.notice.rendered.text, /Box 1 Mortgage interest received from payer\(s\)\/borrower\(s\): \$23,412\.55\. Box 2 Outstanding mortgage principal as of January 1, 2026: \$371,048\.86/);
+  const fu = await pb.svc.furnish1098("L-1", { tax_year: 2026, interest_received_cents: 2341255n, upb_jan1_cents: 37699633n, furnished_on: D("2027-01-20"), recipients: [{ ...BEA, email: "bea@example.com", consent }], payload: v.samplePayload });
+  assert.deepEqual([fu.box1_cents, fu.box2_cents, fu.furnish_by, fu.efile_by, fu.channel, fu.accessible_through, fu.file_with_irs], [2341255n, 37699633n, "2027-01-31", "2027-03-31", "electronic", "2027-10-15", true]);
+  assert.match(fu.notice.rendered.text, /Box 1 Mortgage interest received from payer\(s\)\/borrower\(s\): \$23,412\.55\. Box 2 Outstanding mortgage principal as of January 1, 2026: \$376,996\.33/);
   assert.equal(fu.notice.deliveries[0]!.channel, "email_link"); assert.deepEqual([fu.furnished_on, fu.on_time], ["2027-01-20", true]);
   const furnished = fu.event; assert.deepEqual([furnished.type, (furnished.payload as { channel: string }).channel, (furnished.payload as { tax_year_end: string }).tax_year_end], ["tax_form.1098.furnished", "electronic", "2026-12-31"]);
   assert.equal(eventMatches(REG.get("IRS_6050H_1098_FURNISH_0131")!.satisfiedPattern!, furnished), true);
@@ -284,7 +325,7 @@ test("7.1-T13: Given tax year 2026 interest received $23,412.55 and Jan 1 UPB $3
   assert.equal(eventMatches(accessPattern, pb.svc.verify1098Access("L-1", { tax_year: 2026, checked_on: D("2027-06-01"), available: true, accessible_through: D("2027-10-15") })), true);
   assert.equal(eventMatches(accessPattern, pb.svc.verify1098Access("L-1", { tax_year: 2026, checked_on: D("2027-06-02"), available: false, accessible_through: D("2027-10-15") })), false);
   // paper furnishing (no consent) records channel=paper and no access window
-  const pp = await pb.svc.furnish1098("L-2", { tax_year: 2026, interest_received_cents: 50000n, upb_jan1_cents: 37104886n, furnished_on: D("2027-01-20"), recipients: [BEA], payload: v.samplePayload });
+  const pp = await pb.svc.furnish1098("L-2", { tax_year: 2026, interest_received_cents: 50000n, upb_jan1_cents: 37699633n, furnished_on: D("2027-01-20"), recipients: [BEA], payload: v.samplePayload });
   assert.deepEqual([pp.channel, pp.accessible_through, pp.file_with_irs], ["paper", null, false]);
 });
 test("7.1-T14: Given a confirmed successor without an executed acknowledgment, then no statement is addressed to the successor; given the acknowledgment executed, then the successor is added as a recipient on the next cycle.", () => {

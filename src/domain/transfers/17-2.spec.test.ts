@@ -386,7 +386,7 @@ test("17.2-T9: Given a `master_change_sub_retained` batch, then no goodbye run e
   assert.equal(engine.evaluate("2026-11-17T12:00:00.000Z").filter((x) => x.instance.subject.id === "B-fc" && superseded.includes(x.def.code)).length, 0, "no −15 breach on T−14 when (b)(3)(ii) applies");
   assert.equal(engine.evaluate("2027-01-01T12:00:00.000Z").find((x) => x.def.code === "REGX_1024_33B3_EXCEPTION_30")!.severity, 1);
 });
-test("17.2-T10: Given the transfer is cancelled Nov 20 after mailing, then a corrective notice is mailed by Nov 27 and the goodbye timer is cancelled with reason `transfer_cancelled`.", () => {
+test("17.2-T10: Given the transfer is cancelled Fri Nov 20, 2026 after mailing, then a corrective notice is mailed by Mon Nov 30 (+5 servicer business days: Nov 23, 24, 25, 27, 30 — Thanksgiving Nov 26 excluded) and the goodbye timer is cancelled with reason `transfer_cancelled`.", () => {
   const l = live("2026-10-20T15:00:00.000Z"); approveOut(l.events, "2026-12-01", "2026-12-01");
   const goodbye = l.engine.byCode("REGX_1024_33B3_GOODBYE_15")[0]!; assert.equal(goodbye.status, "armed"); assert.equal(goodbye.dueDate, "2026-11-16");
   l.clock.set("2026-11-20T15:00:00.000Z");   // goodbye run mailed Nov 16; the transfer is cancelled Fri Nov 20
@@ -398,7 +398,7 @@ test("17.2-T10: Given the transfer is cancelled Nov 20 after mailing, then a cor
   assert.equal(r.corrective.required, true); assert.equal(r.corrective.template, "NTC_REGX_1024_33B_CORRECTIVE"); assert.equal(r.corrective.escalation.kind, "officer");
   // Nov 20 is before the T−3 BD draft cancellation (Nov 25): the drafts are still in place and the notice says so
   assert.equal(r.corrective.ach_cancel_by, "2026-11-25"); assert.equal(r.corrective.drafts_cancelled, false);
-  // +5 servicer business days from Fri Nov 20 skips Thanksgiving (Thu Nov 26): Mon Nov 30 — the spec's "Nov 27" counted Thanksgiving as a business day
+  // +5 servicer business days from Fri Nov 20: Nov 23, 24, 25, 27, 30 — Thanksgiving (Thu Nov 26) is a federal holiday on the default servicer calendar, so the corrective notice is due Mon Nov 30 (Fri Nov 27 is a Fannie Mae closure only and counts)
   assert.equal(r.corrective.corrective_due, "2026-11-30");
   const corr = l.engine.byCode("SM_XFER_OUT_CORRECTIVE_NOTICE_5")[0]!; assert.equal(corr.status, "armed"); assert.equal(corr.dueDate, r.corrective.corrective_due); assert.equal(corr.armedByEventId, r.cancellation_event_id);
   // mailing the corrective notice satisfies the timer

@@ -63,11 +63,11 @@ function harness(nowIso = WIRE_AT) {
 }
 type H = ReturnType<typeof harness>;
 /** Receipt → posting → share → CRS 001 → LAR 60 → housekeeping for the worked example (A/A portfolio, 100% participation). */
-async function workedPayoff(h: H, o: { remittance_type?: "AA" | "SA" | "SS"; instructed_at?: string; autodraft?: boolean; mi_active?: boolean; fnma_advance_repay_cents?: bigint; amount?: bigint } = {}) {
+async function workedPayoff(h: H, o: { remittance_type?: "AA" | "SA" | "SS"; mbs_pool?: boolean; instructed_at?: string; autodraft?: boolean; mi_active?: boolean; fnma_advance_repay_cents?: bigint; amount?: bigint } = {}) {
   const type = o.remittance_type ?? "AA"; const amount = o.amount ?? EXACT; const repay = o.fnma_advance_repay_cents ?? 0n;
   h.receive(amount);
   const funds = await h.run("matchPayoffFunds", { loan_id: "L-1", amount_cents: amount, method: "wire", received_at: WIRE_AT, bank_reference: "Q-1187", remittance_type: type, quotes: QUOTES });
-  const posted = await h.run("postPayoff", { loan_id: "L-1", funds_id: funds.funds_id, amount_cents: amount, payoff_date: "2026-10-16", buckets: BUCKETS, remittance_type: type, note_rate_pct: "6.250", ptr_pct: "6.000", lpi_due: "2026-09-01", escrowed: true, autodraft: o.autodraft ?? true, mi_active: o.mi_active ?? true, fnma_advance_repay_cents: repay });
+  const posted = await h.run("postPayoff", { loan_id: "L-1", funds_id: funds.funds_id, amount_cents: amount, payoff_date: "2026-10-16", buckets: BUCKETS, remittance_type: type, note_rate_pct: "6.250", ptr_pct: "6.000", lpi_due: "2026-09-01", escrowed: true, autodraft: o.autodraft ?? true, mi_active: o.mi_active ?? true, fnma_advance_repay_cents: repay, mbs_pool: o.mbs_pool ?? false });
   const share = await h.run("computeFnmaPayoffShare", { settlement_id: posted.settlement_id, type, upb_cents: 19_950_000n, nib_cents: 0n, note_rate_pct: "6.250", ptr_pct: "6.000", lpi_due: "2026-09-01", payoff_on: "2026-10-16", fnma_advance_repay_cents: repay });
   const batch = type === "AA" ? await h.run("buildCrsBatch", { lender_id: "123456789", instructed_at: o.instructed_at ?? "2026-10-16T19:00:00.000Z", settlements: [{ loan_id: "L-1", settlement_id: posted.settlement_id, fnma_loan_number: "1234567890", remittance_type: "AA", fnma_share_cents: share.total_cents, fnma_advance_repay_cents: repay, payoff_on: D("2026-10-16") }] }) : null;
   const removal = await h.run("projectRemovalPayoff", { loan_id: "L-1", funds_id: funds.funds_id, settlement_id: posted.settlement_id, fnma_loan_number: "1234567890", principal_cents: 19_950_000n, nib_cents: 0n, interest_cents: share.interest_cents, payoff_date: "2026-10-16", processed_at: WIRE_AT });
@@ -115,13 +115,13 @@ test("16.2-T1: Given the worked example, when the $201,051.47 wire clears Fri 10
   assert.equal(ack.status, "accepted"); assert.equal(ack.supersedes_event_id, null); assert.equal(h.store.get("investor_events", String(r.removal.event_id))!.data.status, "accepted"); assert.ok(h.types().includes("investor_events.accepted"));
   await assert.rejects(h.run("projectRemovalPayoff", { op: "accept", loan_id: "L-1", event_id: r.removal.event_id, ack_reference: "" }), /ack_reference is required/);
 });
-test("16.2-T2: Given an S/S loan with the same facts, then `ss_interest_gap_cents` = 50558 and the November 18 draft matches UPB + $997.50; given the payoff is processed Mon 11/02 and reported 11/03, then no November interest is due.", async () => {
-  const ss = fnmaPayoffShare({ ...SHARE, type: "SS" });
+test("16.2-T2: Given an S/S MBS loan with the same facts, then `ss_interest_gap_cents` = 50558 and the November 18 draft matches UPB + $997.50; given the payoff is processed Mon 11/02 and reported 11/03, then no November interest is due.", async () => {
+  const ss = fnmaPayoffShare({ ...SHARE, type: "SS", mbs_pool: true });
   assert.equal(ss.ss_interest_gap_cents, 50_558n); assert.equal(ss.interest_cents, 99_750n); assert.equal(ss.total_cents, 19_950_000n + 99_750n);
   assert.equal(ss.scheduled_cycle_interest_cents, 99_750n, "September at PTR goes through the regular 10/18 draft, not the payoff draft"); assert.equal(ss.servicing_fee_cents, 6_205n, "rule 4: fee = collected at the note rate − due at PTR, for S/S too");
   assert.equal(fnmaDraftDate("SS", D("2026-10-16")), "2026-11-18");
-  const h = harness(); const r = await workedPayoff(h, { remittance_type: "SS" });
-  assert.equal(r.posted.servicer_funded_cents, 50_558n); assert.ok(h.ledger.sets().some((s) => s.lines.some((l) => acctName(l) === "payoff_interest_shortfall_expense" && l.amountCents === 50_558n)));
+  const h = harness(); const r = await workedPayoff(h, { remittance_type: "SS", mbs_pool: true });
+  assert.equal(r.posted.servicer_funded_cents, 50_558n); assert.equal(h.store.get("payoff_settlements", String(r.posted.settlement_id))!.data.mbs_pool, true); assert.ok(h.ledger.sets().some((s) => s.lines.some((l) => acctName(l) === "payoff_interest_shortfall_expense" && l.amountCents === 50_558n)));
   // the November 18 payoff draft = UPB + $997.50 (the settlement's fnma_share_cents); the custodial payable also carries September's $997.50 scheduled interest for the regular October-cycle draft; the fee is $62.05, not the September interest
   assert.equal(h.store.get("payoff_settlements", String(r.posted.settlement_id))!.data.fnma_share_cents, 19_950_000n + 99_750n);
   assert.equal(h.ledger.balance(custAcct("C-PI", "fnma_remittance_payable")), -(19_950_000n + 99_750n + 99_750n)); assert.equal(h.ledger.balance(custAcct("C-PI", "servicing_fee_withdrawable")), -6_205n);
@@ -129,13 +129,18 @@ test("16.2-T2: Given an S/S loan with the same facts, then `ss_interest_gap_cent
   await h.run("buildCrsBatch", { op: "confirm", loan_id: "L-1", settlement_id: r.posted.settlement_id, amount_cents: 19_950_000n + 99_750n, settled_on: "2026-11-18", remittance_type: "SS" });
   assert.equal(h.timer("FNMA_F120_PAYOFF_SS_CD18")!.status, "satisfied"); assert.equal(h.store.get("payoff_settlements", String(r.posted.settlement_id))!.data.status, "remitted");
   await assert.rejects(h.run("buildCrsBatch", { op: "confirm", loan_id: "L-1", settlement_id: r.posted.settlement_id, amount_cents: 19_950_000n, settled_on: "2026-11-18" }), /≠ payoff_settlements/);
-  // processed Mon 11/02 (BD1 of November on the fannie_et calendar) and reported Tue 11/03 (BD2): no November interest — derived from the calendar, never from a caller's flag
-  assert.equal(ssBd1Bd2Exception({ type: "SS", processed_on: D("2026-11-02"), reported_on: D("2026-11-03") }), true); assert.equal(ssBd1Bd2Exception({ type: "SS", processed_on: D("2026-11-03"), reported_on: D("2026-11-03") }), false); assert.equal(ssBd1Bd2Exception({ type: "SS", processed_on: D("2026-11-02"), reported_on: D("2026-11-04") }), false);
-  const bd1 = fnmaPayoffShare({ ...SHARE, type: "SS", payoff_on: D("2026-11-02"), processed_on: D("2026-11-02"), reported_on: D("2026-11-03") }); assert.equal(bd1.interest_cents, 0n); assert.equal(bd1.ss_interest_gap_cents, 0n); assert.equal(bd1.ss_bd1_bd2_exception, true);
-  assert.equal(fnmaPayoffShare({ ...SHARE, type: "SS", payoff_on: D("2026-11-02"), processed_on: D("2026-11-03"), reported_on: D("2026-11-03") }).interest_cents, 99_750n, "processed on BD2: the full November month at PTR is due");
+  // MBS S/S loan processed Mon 11/02 (BD1 of November on the fannie_et calendar) and reported Tue 11/03 (BD2): no November interest — derived from the calendar and the pool membership, never from a caller's flag
+  assert.equal(ssBd1Bd2Exception({ type: "SS", mbs_pool: true, processed_on: D("2026-11-02"), reported_on: D("2026-11-03") }), true); assert.equal(ssBd1Bd2Exception({ type: "SS", mbs_pool: true, processed_on: D("2026-11-03"), reported_on: D("2026-11-03") }), false); assert.equal(ssBd1Bd2Exception({ type: "SS", mbs_pool: true, processed_on: D("2026-11-02"), reported_on: D("2026-11-04") }), false);
+  assert.equal(ssBd1Bd2Exception({ type: "SS", mbs_pool: false, processed_on: D("2026-11-02"), reported_on: D("2026-11-03") }), false, "rule 4: the exception sits only in F-1-20's MBS bullet — portfolio S/S owes the full month");
+  const bd1 = fnmaPayoffShare({ ...SHARE, type: "SS", mbs_pool: true, payoff_on: D("2026-11-02"), processed_on: D("2026-11-02"), reported_on: D("2026-11-03") }); assert.equal(bd1.interest_cents, 0n); assert.equal(bd1.ss_interest_gap_cents, 0n); assert.equal(bd1.ss_bd1_bd2_exception, true);
+  assert.equal(fnmaPayoffShare({ ...SHARE, type: "SS", mbs_pool: true, payoff_on: D("2026-11-02"), processed_on: D("2026-11-03"), reported_on: D("2026-11-03") }).interest_cents, 99_750n, "processed on BD2: the full November month at PTR is due");
+  const portfolio = fnmaPayoffShare({ ...SHARE, type: "SS", mbs_pool: false, payoff_on: D("2026-11-02"), processed_on: D("2026-11-02"), reported_on: D("2026-11-03") }); assert.equal(portfolio.interest_cents, 99_750n, "portfolio S/S on BD1/BD2: full November month at PTR, $997.50"); assert.equal(portfolio.ss_bd1_bd2_exception, false); assert.equal(portfolio.ss_interest_gap_cents, 99_750n - interest(19_950_000n, "6.000", D("2026-09-01"), D("2026-11-02")).partial_cents, "the servicer funds the full month less the one PTR day (Nov 1) the borrower paid");
+  assert.equal(fnmaPayoffShare({ ...SHARE, type: "SS", payoff_on: D("2026-11-02"), processed_on: D("2026-11-02"), reported_on: D("2026-11-03") }).interest_cents, 99_750n, "pool membership unknown: treated as portfolio, full month owed");
   const b = harness("2026-11-02T15:00:00.000Z");
-  const viaBus = await b.run("computeFnmaPayoffShare", { type: "SS", upb_cents: 19_950_000n, nib_cents: 0n, note_rate_pct: "6.250", ptr_pct: "6.000", lpi_due: "2026-09-01", payoff_on: "2026-11-02", reported_on: "2026-11-03" });
+  const viaBus = await b.run("computeFnmaPayoffShare", { type: "SS", mbs_pool: true, upb_cents: 19_950_000n, nib_cents: 0n, note_rate_pct: "6.250", ptr_pct: "6.000", lpi_due: "2026-09-01", payoff_on: "2026-11-02", reported_on: "2026-11-03" });
   assert.equal(viaBus.interest_cents, 0n); assert.equal(viaBus.ss_bd1_bd2_exception, true);
+  const viaBusPortfolio = await b.run("computeFnmaPayoffShare", { type: "SS", pool_class: "portfolio", upb_cents: 19_950_000n, nib_cents: 0n, note_rate_pct: "6.250", ptr_pct: "6.000", lpi_due: "2026-09-01", payoff_on: "2026-11-02", reported_on: "2026-11-03" });
+  assert.equal(viaBusPortfolio.interest_cents, 99_750n, "portfolio S/S through the bus: no BD1/BD2 exception"); assert.equal(viaBusPortfolio.ss_bd1_bd2_exception, false);
   await assert.rejects(b.run("computeFnmaPayoffShare", { type: "SS", upb_cents: 19_950_000n, nib_cents: 0n, note_rate_pct: "6.250", ptr_pct: "6.000", lpi_due: "2026-09-01", payoff_on: "2026-11-16", processed_bd1_reported_bd2: true }), (e: unknown) => e instanceof CommandRefused && e.code === "LLM_NEVER_COMPUTES_MONEY");
 });
 test("16.2-T3: Given an S/A loan, then Fannie Mae's interest is $498.75 and the draft is monitored for Fri 11/20/2026.", async () => {

@@ -6,6 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { plainDate as D } from "../../kernel/calendar/date.ts";
 import { zonedEpochMs, toIso } from "../../kernel/calendar/zoned.ts";
+import { larDeadlineMs, iredSweepDate } from "../investor/period.ts";
 import { MemoryEventStore, FixedClock, SYSTEM } from "../../kernel/events/index.ts";
 import { loadRegistry, TimerEngine } from "../../kernel/timers/index.ts";
 import { evaluateGate } from "../../app/evaluators.ts";
@@ -73,7 +74,7 @@ test("17.3-T1: Given T = Dec 1, 2026, then deliverable due dates are: test Nov 1
   const mgic = miTransferNotices(T, ["MGIC", "Radian"]); assert.deepEqual(mgic.map((n) => [n.mi, n.timer, n.due, n.send_by]), [["MGIC", "MI_MGIC_TRANSFER_NOTICE_60", "2027-01-30", "2026-11-30"], ["Radian", "SM_XFER_OUT_MI_NOTICE_T1", "2027-01-30", "2026-11-30"]]);
   for (const n of mgic) events.append({ type: n.event.type, aggregate: BATCH, actor: SYSTEM, payload: { mi: n.event.mi, transfer_date: n.event.transfer_date }, occurredAt: "2026-12-01T15:00:00.000Z" });
   assert.equal(timers.byCode("MI_MGIC_TRANSFER_NOTICE_60").length, 1);   // Radian's pending notice does not arm MGIC's row
-  assert.deepEqual([due("FNMA_F1_11_CUSTODIAL_RECON_5BD"), due("FNMA_F1_11_SHORTAGE_SURPLUS_ADJ_30"), due("FNMA_F1_11_FINAL_ACCOUNTING_30"), due("MI_MGIC_TRANSFER_NOTICE_60"), due("SM_XFER_OUT_DEBRIEF_30")], ["2026-12-08", "2026-12-31", "2026-12-31", "2027-01-30", "2026-12-31"]);
+  assert.deepEqual([due("FNMA_F1_11_CUSTODIAL_RECON_5BD"), due("FNMA_F1_11_SHORTAGE_SURPLUS_ADJ_30"), due("SM_XFER_OUT_FINAL_ACCOUNTING_30"), due("MI_MGIC_TRANSFER_NOTICE_60"), due("SM_XFER_OUT_DEBRIEF_30")], ["2026-12-08", "2026-12-31", "2026-12-31", "2027-01-30", "2026-12-31"]);
   assert.equal(supportWindow({ transfer_date: T, today: D("2026-12-01") }).window_end, "2027-03-01");   // support window end Mon Mar 1, 2027 (T + 90 calendar days)
   assert.equal(timers.byCode("SM_XFER_OUT_SUPPORT_WINDOW_90")[0]!.note, "evaluator:17.3.supportWindowOpen");   // the window is a gate: open through Mar 1, 2027, closed after
   assert.equal(EVALUATORS_17_3["17.3.supportWindowOpen"]!({ today: "2027-03-01", transfer_date: "2026-12-01" }).open, true); assert.match(EVALUATORS_17_3["17.3.supportWindowOpen"]!({ today: "2027-03-02", transfer_date: "2026-12-01" }).reason!, /closed 2027-03-01/);
@@ -162,16 +163,21 @@ test("17.3-T5: Given events processed Nov 30 at 16:00 ET, then they are due 3:00
   assert.deepEqual(r.event_due_et, { date: "2026-12-01", hour: 3, minute: 0 }); assert.equal(toIso(r.event_due_ms), toIso(zonedEpochMs(D("2026-12-01"), "03:00", ET)));
   assert.equal(r.period_close_date, "2026-12-02"); assert.equal(toIso(r.period_close_ms), toIso(zonedEpochMs(D("2026-12-02"), "17:00", ET)));
   assert.equal(r.close_permitted, true); assert.equal(r.escalation, null);
+  // IRM 2-01 (business rule "Final-period reporting"): LARs processed Mon Nov 30 are due 8 p.m. ET Tue Dec 1 — removals too, because Dec 1 is BD1; the 5 p.m. ET cut-off applies only to a removal whose next
+  // business day is BD2 (one processed Dec 1 → 5 p.m. ET Wed Dec 2 — hypothetical here, postings freeze at COB T−1); the "no payment" day-22 LARs for November were due Fri Nov 20 (Nov 22, 2026 is a Sunday)
+  assert.deepEqual(r.lar_due_et, { date: "2026-12-01", hour: 20, minute: 0 }); assert.deepEqual(r.removal_due_et, { date: "2026-12-01", hour: 20, minute: 0 }); assert.equal(toIso(r.removal_due_ms), toIso(zonedEpochMs(D("2026-12-01"), "20:00", ET)));
+  assert.equal(toIso(larDeadlineMs(zonedEpochMs(D("2026-12-01"), "10:00", ET), true)), toIso(zonedEpochMs(D("2026-12-02"), "17:00", ET))); assert.equal(toIso(larDeadlineMs(zonedEpochMs(D("2026-12-01"), "10:00", ET), false)), toIso(zonedEpochMs(D("2026-12-02"), "20:00", ET)));
+  assert.equal(r.ired_date, "2026-11-20"); assert.equal(iredSweepDate(D("2026-11-30")), "2026-11-20");
   const late = finalPeriodClose({ transfer_date: T, processed_at_ms: processed, open_hard_rejects: 1, now_ms: zonedEpochMs(D("2026-12-02"), "16:00", ET) });
   assert.equal(late.close_permitted, false); assert.equal(late.escalation!.kind, "officer"); assert.equal(late.escalation!.severity, "sev1"); assert.match(late.escalation!.reason, /2026-12-02 16:00 ET/); assert.match(late.escalation!.reason, /FNMA_IRM_PERIOD_CLOSE_BD2_1700/);
   assert.equal(finalPeriodClose({ transfer_date: T, processed_at_ms: processed, open_hard_rejects: 1, now_ms: zonedEpochMs(D("2026-12-01"), "16:00", ET) }).escalation, null);   // BD1: still workable
   assert.equal(outboundSchedule(T).final_period_close, "2026-12-02 17:00 ET");
 });
-test("17.3-T6: Given the final accounting is not acked by Dec 31, 2026, then `FNMA_F1_11_FINAL_ACCOUNTING_30` breaches and an `officer` escalation exists; given the transferee has not reimbursed 541,109 cents 30 days after ack, then a demand letter draft exists.", async () => {
+test("17.3-T6: Given the final accounting is not acked by Dec 31, 2026, then `SM_XFER_OUT_FINAL_ACCOUNTING_30` breaches and an `officer` escalation exists; given the transferee has not reimbursed 541,109 cents 30 days after ack, then a demand letter draft exists.", async () => {
   const { events, timers } = engine(["1.6", "17.3"], "2026-12-01T14:00:00.000Z");
   events.append({ type: "transfer.batch.cutover_completed", aggregate: BATCH, actor: SYSTEM, payload: { transfer_date: "2026-12-01", direction: "out" } });
-  const fa = timers.byCode("FNMA_F1_11_FINAL_ACCOUNTING_30"); assert.equal(fa.length, 1); assert.equal(fa[0]!.dueDate, "2026-12-31");
-  const b = timers.evaluate("2027-01-01T05:00:00.000Z").find((x) => x.def.code === "FNMA_F1_11_FINAL_ACCOUNTING_30")!;
+  const fa = timers.byCode("SM_XFER_OUT_FINAL_ACCOUNTING_30"); assert.equal(fa.length, 1); assert.equal(fa[0]!.dueDate, "2026-12-31");
+  const b = timers.evaluate("2027-01-01T05:00:00.000Z").find((x) => x.def.code === "SM_XFER_OUT_FINAL_ACCOUNTING_30")!;
   assert.equal(fa[0]!.status, "breached"); assert.equal(b.severity, 1); assert.deepEqual([...b.escalateTo], ["officer"]);
   const w = finalAccountingWatch({ transfer_date: T, acked_on: null, today: D("2027-01-01") }); assert.equal(w.due, "2026-12-31"); assert.equal(w.breached, true); assert.equal(w.escalation!.kind, "officer"); assert.equal(w.escalation!.severity, "sev1");
   assert.equal(finalAccountingWatch({ transfer_date: T, acked_on: D("2026-12-31"), today: D("2027-01-01") }).breached, false);
@@ -183,15 +189,15 @@ test("17.3-T6: Given the final accounting is not acked by Dec 31, 2026, then `FN
   assert.equal(rw.due, "2027-01-30"); assert.equal(rw.breached, true); assert.deepEqual(rw.demand_letter_draft, { to: "transferee", via: "partner", amount_cents: 541_109n, receivable_account: "due_from_transferee", basis: "F-1-11 advances reimbursement due 2027-01-30 (30 days after the final accounting ack 2026-12-31)", status: "draft" });
   assert.equal(advanceReimbursementWatch({ acked_on: D("2026-12-31"), receivable_cents: 541_109n, reimbursed_on: D("2027-01-20"), today: D("2027-01-31") }).demand_letter_draft, null);
   events.append({ type: "ledger.posted", aggregate: BATCH, actor: SYSTEM, payload: { advance_reimbursement_in: true, amount_cents: "541109" } }); assert.equal(ar[0]!.status, "satisfied_late");
-  // on the bus: the (1.6; now owned) row is satisfied by the transferee's D31 ack — the final accounting climbs the ladder (officer-signed), is delivered, then acknowledged; the settlement posting satisfies the reimbursement clock
+  // on the bus: the policy row (SM_XFER_OUT_FINAL_ACCOUNTING_30 — F-1-11 sets no delivery deadline for the final accounting; 1.6 keeps FNMA_F1_11_FINAL_ACCOUNTING_30 for the transferee side) is satisfied by the transferee's D31 ack — the final accounting climbs the ladder (officer-signed), is delivered, then acknowledged; the settlement posting satisfies the reimbursement clock
   const bb = bus("2026-12-01T15:00:00.000Z");
   bb.events.append({ type: "transfer.batch.cutover_completed", aggregate: BATCH, actor: SYSTEM, payload: { direction: "out", transfer_date: "2026-12-01" } });
   await bb.run("planDeliverables", AGENT, { batch_id: BATCH.id, transfer_date: "2026-12-01" });
   await assert.rejects(bb.run("sendDeliverable", OFFICER, { batch_id: BATCH.id, kind: "D31", channel: "sftp" }), /only an attested deliverable can be delivered/);   // never generated: the ladder refuses the delivery
   assert.equal(await bb.refused("sendDeliverable", AGENT, { batch_id: BATCH.id, kind: "D31", channel: "sftp" }), "OFFICER_ATTESTATION");   // the final accounting is signed by the officer
-  await bb.deliver("D31", "2026-12-01", "2026-12-20T15:00:00.000Z"); assert.ok(bb.types().includes("transfer.final_accounting.delivered")); assert.deepEqual(bb.status("FNMA_F1_11_FINAL_ACCOUNTING_30"), ["armed"]);
+  await bb.deliver("D31", "2026-12-01", "2026-12-20T15:00:00.000Z"); assert.ok(bb.types().includes("transfer.final_accounting.delivered")); assert.deepEqual(bb.status("SM_XFER_OUT_FINAL_ACCOUNTING_30"), ["armed"]);
   const ack = await bb.run("ingestTransfereeAck", AGENT, { batch_id: BATCH.id, kind: "D31", ack_reference: "ACK-D31" }, "2026-12-31T15:00:00.000Z") as { status: string };
-  assert.equal(ack.status, "acked"); assert.deepEqual(bb.status("FNMA_F1_11_FINAL_ACCOUNTING_30"), ["satisfied"]); assert.ok(bb.types().includes("transfer.final_accounting.acked"));
+  assert.equal(ack.status, "acked"); assert.deepEqual(bb.status("SM_XFER_OUT_FINAL_ACCOUNTING_30"), ["satisfied"]); assert.ok(bb.types().includes("transfer.final_accounting.acked"));
   assert.deepEqual(bb.timers.byCode("SM_ADVANCE_REIMBURSEMENT_RECEIVABLE_30").map((t) => [t.dueDate, t.status]), [["2027-01-30", "armed"]]); assert.deepEqual(bb.timers.byCode("SM_XFER_OUT_ARCHIVE_MANIFEST_10").map((t) => t.dueDate), ["2027-01-15"]);
   const settle = await bb.run("runOutboundDqGate", AGENT, { op: "settlement", batch_id: BATCH.id, amount_cents: "541109", received_on: "2027-01-20" }, "2027-01-20T15:00:00.000Z") as { amount_cents: bigint; receivable_account: string };
   assert.equal(settle.amount_cents, 541_109n); assert.equal(settle.receivable_account, "due_from_transferee"); assert.deepEqual(bb.status("SM_ADVANCE_REIMBURSEMENT_RECEIVABLE_30"), ["satisfied"]); assert.ok(bb.types().includes("transfer.advances.reimbursed"));

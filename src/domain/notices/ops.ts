@@ -17,7 +17,7 @@
 import { addDays, addMonths, daysBetween, type PlainDate } from "../../kernel/calendar/date.ts";
 import { addBusinessDays, servicer } from "../../kernel/calendar/business.ts";
 import type { Cents } from "../../kernel/money/cents.ts";
-import { amountDue, reminderPanel, form1098, chargeOffNoticeDue } from "./statement.ts";
+import { amountDue, reminderPanel, form1098, chargeOffNoticeDue, chargeOffNoticeAnchor } from "./statement.ts";
 import { indexFreshForInitial, initialNoticeWindow, correction, scheduledUpbAfter, type IndexObs } from "./arm.ts";
 import { lar83DeadlineMs } from "../investor/period.ts";
 import { bounce, newConsent, type Consent } from "./esign.ts";
@@ -30,16 +30,19 @@ export { verifyArmAdjustment } from "./arm-verify.ts";
 // ---------------------------------------------------------------------------
 // 7.1 periodic statement
 // ---------------------------------------------------------------------------
-/** Comment 41(d)(1)-2 / (d)(2)-2 (7.1 rule 6): the TPP payment is the amount due; the explanation carries both amounts; application is shown per contract. */
-export function tppStatement(f: { tpp_payment_cents: Cents; contractual_payment_cents: Cents; past_due_cents: Cents; late_charges_cents: Cents; fees_cents: Cents; suspense_cents: Cents; regx_days: number }): { template: "NTC_REGZ_41_STMT_TPP"; amount_due_cents: Cents; explanation: { tpp_payment_cents: Cents; contractual_payment_cents: Cents }; application_basis: "contract"; delinquency_box: boolean } {
+/** Comment 41(d)(2)-2 (7.1 rule 6 / T4): the explanation "must also include an explanation that the amount due is being disclosed as a different amount because of the temporary loss mitigation program" — on the front page or, alternatively, on a separate page enclosed with the statement or in a separate letter. */
+export const TPP_DIFFERENT_AMOUNT_STATEMENT = "The amount due is being disclosed as a different amount because of your temporary loss mitigation program (trial period plan).";
+export type TppExplanationPlacement = "front_page" | "separate_page" | "separate_letter";
+/** Comment 41(d)(1)-2 / (d)(2)-2 (7.1 rule 6): the TPP payment is the amount due; the explanation carries both amounts together with the mandatory different-amount statement (front page by default; a separate enclosed page or a separate letter are the permitted alternatives); application is shown per contract. */
+export function tppStatement(f: { tpp_payment_cents: Cents; contractual_payment_cents: Cents; past_due_cents: Cents; late_charges_cents: Cents; fees_cents: Cents; suspense_cents: Cents; regx_days: number; explanation_placement?: TppExplanationPlacement }): { template: "NTC_REGZ_41_STMT_TPP"; amount_due_cents: Cents; explanation: { tpp_payment_cents: Cents; contractual_payment_cents: Cents }; different_amount_statement: string; explanation_placement: TppExplanationPlacement; application_basis: "contract"; delinquency_box: boolean } {
   const a = amountDue({ current_payment_cents: f.contractual_payment_cents, past_due_cents: f.past_due_cents, late_charges_cents: f.late_charges_cents, fees_cents: f.fees_cents, suspense_cents: f.suspense_cents, tpp_payment_cents: f.tpp_payment_cents });
-  return { template: "NTC_REGZ_41_STMT_TPP", amount_due_cents: a.amount_due_cents, explanation: { tpp_payment_cents: f.tpp_payment_cents, contractual_payment_cents: f.contractual_payment_cents }, application_basis: "contract", delinquency_box: f.regx_days > 45 };
+  return { template: "NTC_REGZ_41_STMT_TPP", amount_due_cents: a.amount_due_cents, explanation: { tpp_payment_cents: f.tpp_payment_cents, contractual_payment_cents: f.contractual_payment_cents }, different_amount_statement: TPP_DIFFERENT_AMOUNT_STATEMENT, explanation_placement: f.explanation_placement ?? "front_page", application_basis: "contract", delinquency_box: f.regx_days > 45 };
 }
 export interface StatementSentEvent { readonly type: "statement.sent"; readonly payload: { readonly cycle_due_date: PlainDate; readonly variant: string; readonly single_statement_exemption_used: boolean; readonly reminder_panel: boolean; readonly statement_date: PlainDate }; }
 /**
  * §1026.41(e)(5)(iv)(B) + (f) (7.1 rules 7–8): the first cycle after the petition may use the single-statement
  * exemption; the next must be the chapter's modified statement. `REGZ_1026_41E5IV_BK_TRANSITION_1` anchors on the
- * next `statement_due_by` after the event, runs one statement cycle (a month — comment 41(a)(2)-1) and is satisfied
+ * next `statement_due_by` after the event, runs one statement cycle (a month — comment 41(a)-2) and is satisfied
  * by the compliant statement, i.e. `statement.sent{single_statement_exemption_used=false}`.
  */
 export function bankruptcyStatementPlan(f: { chapter: "7" | "11" | "12" | "13"; petition_on: PlainDate; docket_reference: string | null; cycles: readonly { due_date: PlainDate; statement_date: PlainDate; statement_due_by?: PlainDate }[]; post_petition_due_cents: Cents; prepetition_arrearage_cents: Cents }): { cycles: { due_date: PlainDate; treatment: "single_statement_exemption" | "bk_modified"; template: "NTC_REGZ_41_STMT_BK12_13" | "NTC_REGZ_41_STMT_BK7_11" | null; amount_due_cents: Cents | null; prepetition_arrearage_cents: Cents | null; late_fee_language: false; foreclosure_language: false; legend: string | null; event: StatementSentEvent }[]; timer: { code: "REGZ_1026_41E5IV_BK_TRANSITION_1"; trigger: { type: "bankruptcy.status.changed"; payload: { next_statement_due_by: PlainDate | null; chapter: string; petition_date: PlainDate } }; compliant_statement_due_by: PlainDate | null } } {
@@ -77,16 +80,14 @@ export function statementSuppressionRequest(f: { reason: "returned_mail" | "fdcp
   return { allowed: true, refusal: null, exemption_basis: basis };
 }
 export const CHARGEOFF_TITLE = "Suspension of Statements & Notice of Charge Off — Retain This Copy for Your Records";
-/**
- * §1026.41(e)(6)(i)(B) lists six explanations; the spec's "seven items" (7.1-T7) is met by adding the (e)(6)(ii)
- * consequence — fees or interest charged during the suspension cannot be assessed retroactively and statements
- * resume — which is the one remaining disclosure the rule attaches to the suspension (spec discrepancy, audit notes).
- */
-export const CHARGEOFF_ITEMS = ["the loan has been charged off and we will not charge any additional fees or interest", "we will no longer provide a periodic statement for each billing cycle", "the lien on the property remains in place and you remain liable for the loan and any obligations arising from or related to the property, which may include property taxes", "you may be required to pay the balance in the future, for example upon sale of the property", "the balance is not being canceled or forgiven", "the loan may be purchased, assigned, or transferred", "if any fee or interest is charged after this notice, statements resume and no fee or interest charged during the suspension is assessed retroactively (§1026.41(e)(6)(ii))"] as const;
-/** §1026.41(e)(6) (7.1-T7): the charge-off notice within 30 days with the exact title and seven items; any fee or interest charged later lapses the exemption, statements resume and the fee is reversed. */
-export function chargeOffSuspension(f: { approved_on: PlainDate; fee_assessed_on?: PlainDate | null; fee_cents?: Cents }): { template: "NTC_REGZ_41E6_CHARGEOFF_SUSPENSION"; due_on: PlainDate; title: string; items: readonly string[]; exemption_lapsed: boolean; statements_resume: boolean; fee_reversed_cents: Cents } {
-  const lapsed = !!f.fee_assessed_on;
-  return { template: "NTC_REGZ_41E6_CHARGEOFF_SUSPENSION", due_on: chargeOffNoticeDue(f.approved_on), title: CHARGEOFF_TITLE, items: CHARGEOFF_ITEMS, exemption_lapsed: lapsed, statements_resume: lapsed, fee_reversed_cents: lapsed ? (f.fee_cents ?? 0n) : 0n };
+/** §1026.41(e)(6)(i)(B) (7.1-T7): the six explanations the suspension notice must carry, in the rule's order. */
+export const CHARGEOFF_ITEMS = ["the loan has been charged off and we will not charge any additional fees or interest", "we will no longer provide a periodic statement for each billing cycle", "the lien on the property remains in place and you remain liable for the loan and any obligations arising from or related to the property, which may include property taxes", "you may be required to pay the balance in the future, for example upon sale of the property", "the balance is not being canceled or forgiven", "the loan may be purchased, assigned, or transferred"] as const;
+/** §1026.41(e)(6)(ii): additional information the notice carries (not one of the six (e)(6)(i)(B) explanations) — a fee or interest charged later resumes statements and is never assessed retroactively. */
+export const CHARGEOFF_RESUMPTION_NOTE = "if any fee or interest is charged after this notice, statements resume and no fee or interest charged during the suspension is assessed retroactively (§1026.41(e)(6)(ii))";
+/** §1026.41(e)(6) (7.1-T7): the charge-off notice within 30 days of the later of charge-off and the most recent periodic statement ((e)(6)(i)(B); 7.1 timer table), with the exact title and the six explanations; any fee or interest charged later lapses the exemption, statements resume and the fee is reversed. */
+export function chargeOffSuspension(f: { approved_on: PlainDate; last_statement_sent_on?: PlainDate | null; fee_assessed_on?: PlainDate | null; fee_cents?: Cents }): { template: "NTC_REGZ_41E6_CHARGEOFF_SUSPENSION"; anchor_on: PlainDate; anchor_basis: "charge-off date" | "most recent periodic statement"; due_on: PlainDate; title: string; items: readonly string[]; resumption_note: string; exemption_lapsed: boolean; statements_resume: boolean; fee_reversed_cents: Cents } {
+  const lapsed = !!f.fee_assessed_on; const a = chargeOffNoticeAnchor(f.approved_on, f.last_statement_sent_on);
+  return { template: "NTC_REGZ_41E6_CHARGEOFF_SUSPENSION", anchor_on: a.anchor_on, anchor_basis: a.basis, due_on: chargeOffNoticeDue(f.approved_on, f.last_statement_sent_on), title: CHARGEOFF_TITLE, items: CHARGEOFF_ITEMS, resumption_note: CHARGEOFF_RESUMPTION_NOTE, exemption_lapsed: lapsed, statements_resume: lapsed, fee_reversed_cents: lapsed ? (f.fee_cents ?? 0n) : 0n };
 }
 /**
  * D2-2-03 (7.1 rule 10 / T8): a statement dated ≥ the 17th with the month's payment unpaid carries the panel and
@@ -207,8 +208,8 @@ export function composeEnvelope(docs: readonly { template: string; separate_docu
   });
   return { documents: out, pdf_count: pdf, envelope_count: 1, composer_log: `${docs.length} documents in one envelope: ${docs.map((d) => d.template).join(" + ")} (${pdf} PDF${pdf === 1 ? "" : "s"}; separate: ${docs.filter((d) => d.separate_document).map((d) => d.template).join(", ") || "none"})` };
 }
-/** §1026.20(d)(2)(xi) (T8): the state housing finance authority comes from `jurisdiction_rules` by property state. */
-export function stateHfaContact(state: string, rules: Record<string, { hfa_name: string; hfa_phone: string }>): { hfa_name: string; hfa_phone: string } { const r = rules[state]; if (!r) throw new RangeError(`no state HFA contact for ${state} in jurisdiction_rules`); return r; }
+/** §1026.20(d)(2)(xi) (T8): the (xi) block must carry the Bureau web site through which State housing finance authority contact information is accessed; naming the state HFA itself from `jurisdiction_rules.hfa_contact` is optional additional information — null when the state has no row. */
+export function stateHfaContact(state: string, rules: Record<string, { hfa_name: string; hfa_phone: string }>): { hfa_name: string; hfa_phone: string } | null { return rules[state] ?? null; }
 /** 7.3 rule 6 (T9): a term correction after sending → corrected (d) notice within 7 days when still ≥ 210 days out; otherwise rely on the (c) notice and document the discrepancy. */
 export function correctedInitialNotice(f: { sent_on: PlainDate; corrected_on: PlainDate; first_new_payment_due: PlainDate }): { action: "send_corrected_d_notice" | "rely_on_c_notice"; send_by: PlainDate | null; days_out: number } {
   const daysOut = daysBetween(f.corrected_on, f.first_new_payment_due);
@@ -287,13 +288,15 @@ export function oralPayoffRequest(f: { channel: "ai_voice" | "chat" | "phone"; c
  * federal clock is not tolled — absent authorization by day 7 the statement goes to the borrower of record, which
  * satisfies §1026.36(c)(3) for a consumer request (`payoff.statement.sent`), and the requester is told to obtain it.
  */
-export function authorizationRequest(f: { received_on: PlainDate; requester_type: "attorney" | "counselor" | "lender_or_title" | "unknown"; evidence: boolean; authorization_received_on?: PlainDate | null }): { classification: ReturnType<typeof requesterAuthorization>; request_notice: "NTC_PAYOFF_AUTHORIZATION_REQUEST" | null; request_send_by: PlainDate | null; federal_due: PlainDate; deliver_to: "requester" | "borrower_of_record"; requester_told_to_obtain_from_borrower: boolean; satisfying_event: { type: "payoff.statement.sent"; payload: { template: "NTC_REGZ_36C3_PAYOFF_STMT"; recipient: "requester" | "borrower_of_record" } } } {
+/** 7.6 rule 2 / T6: `deadline_federal` stays anchored on receipt — comment 36(c)(3)-1 lets the servicer verify identity/authorization "before the 'reasonable time' period begins to run," but §1026.36(c)(3) measures the seven-business-day outer limit "after receiving a written request" (conservative reading; the clock is not tolled). */
+export const PAYOFF_FEDERAL_CLOCK = { anchor: "receipt", tolled: false, verification_measures: "comment 36(c)(3)-1", basis: "§1026.36(c)(3): within a reasonable time, but in no case more than seven business days, after receiving a written request — verification/authorization measures (comment 36(c)(3)-1) defer only the reasonable-time period and do not move deadline_federal (conservative policy)" } as const;
+export function authorizationRequest(f: { received_on: PlainDate; requester_type: "attorney" | "counselor" | "lender_or_title" | "unknown"; evidence: boolean; authorization_received_on?: PlainDate | null }): { classification: ReturnType<typeof requesterAuthorization>; request_notice: "NTC_PAYOFF_AUTHORIZATION_REQUEST" | null; request_send_by: PlainDate | null; federal_due: PlainDate; federal_clock: typeof PAYOFF_FEDERAL_CLOCK; deliver_to: "requester" | "borrower_of_record"; requester_told_to_obtain_from_borrower: boolean; satisfying_event: { type: "payoff.statement.sent"; payload: { template: "NTC_REGZ_36C3_PAYOFF_STMT"; recipient: "requester" | "borrower_of_record" } } } {
   const c = requesterAuthorization(f.requester_type, f.evidence);
   const due = federalDeadline(f.received_on);
-  if (c !== "request_authorization_send_to_borrower") return { classification: c, request_notice: null, request_send_by: null, federal_due: due, deliver_to: "requester", requester_told_to_obtain_from_borrower: false, satisfying_event: { type: "payoff.statement.sent", payload: { template: "NTC_REGZ_36C3_PAYOFF_STMT", recipient: "requester" } } };
+  if (c !== "request_authorization_send_to_borrower") return { classification: c, request_notice: null, request_send_by: null, federal_due: due, federal_clock: PAYOFF_FEDERAL_CLOCK, deliver_to: "requester", requester_told_to_obtain_from_borrower: false, satisfying_event: { type: "payoff.statement.sent", payload: { template: "NTC_REGZ_36C3_PAYOFF_STMT", recipient: "requester" } } };
   const authorized = !!f.authorization_received_on && f.authorization_received_on <= due;
   const to = authorized ? "requester" : "borrower_of_record";
-  return { classification: c, request_notice: "NTC_PAYOFF_AUTHORIZATION_REQUEST", request_send_by: f.received_on, federal_due: due, deliver_to: to, requester_told_to_obtain_from_borrower: !authorized, satisfying_event: { type: "payoff.statement.sent", payload: { template: "NTC_REGZ_36C3_PAYOFF_STMT", recipient: to } } };
+  return { classification: c, request_notice: "NTC_PAYOFF_AUTHORIZATION_REQUEST", request_send_by: f.received_on, federal_due: due, federal_clock: PAYOFF_FEDERAL_CLOCK, deliver_to: to, requester_told_to_obtain_from_borrower: !authorized, satisfying_event: { type: "payoff.statement.sent", payload: { template: "NTC_REGZ_36C3_PAYOFF_STMT", recipient: to } } };
 }
 /** 7.6 rule 3 (T7): bankruptcy/foreclosure/disaster (documented, or an `officer`-approved "similar circumstances" category) → acknowledgment within 2 BD, statement target ≤ 10 BD; the reason and evidence are recorded. */
 export function reasonableTimePath(f: { received_on: PlainDate; reason: "bankruptcy" | "foreclosure" | "disaster" | "similar"; evidence_document_id: string | null; officer_approved?: boolean }): { reasonable_time_reason: "bankruptcy" | "foreclosure" | "disaster" | "similar"; evidence_document_id: string; ack_notice: "NTC_PAYOFF_REQUEST_ACK_DELAY"; ack_by: PlainDate; statement_by: PlainDate; timers: { ack: "SM_PAYOFF_DELAY_ACK_2BD"; statement: "REGZ_1026_36C3_PAYOFF_REASONABLE_10BD" }; event: { type: "payoff.request.reasonable_time_applied"; payload: { reason: string; evidence_document_id: string } } } {

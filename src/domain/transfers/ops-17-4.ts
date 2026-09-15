@@ -2,7 +2,7 @@
  * §17.4 operating rules over the §1.7/§17.4 calculators (lossmit-inflight.ts):
  * the open-case inventory and "pending" rule, the TO-01..TO-15 handoff checks,
  * the exported deadline table, the pre-T work-down window, post-transfer
- * forwarding ("promptly" = 1 servicer BD; same day near a deadline), the
+ * forwarding (the comments' "timely transfer" = 1 servicer BD by policy; same day near a deadline), the
  * foreclosure hold instruction and TO-11 gate export, retained NoE/RFI/complaint
  * ownership, trial payments straddling T (F-1-27), determinations proposed to
  * beat T (lossmit_reviewer record; never issued unreviewed), the bankruptcy

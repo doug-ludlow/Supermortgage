@@ -2251,7 +2251,7 @@
     "trigger": "`case.noe.opened` (any payment-related assertion)",
     "anchor": "receipt_date",
     "offset": "60 `calendar_days`",
-    "satisfied": "expiry",
+    "satisfied": "expiry, or `case.noe.exception_determined` for the excepted assertions (§1024.35(g)(1) lifts (i))",
     "breach": "`metro2.furnish` command checks `credit_reporting_suppressions`; block adverse data for the scoped payments"
   },
   {
@@ -2489,12 +2489,12 @@
     "code": "FNMA_A4_2_1_04_EMAIL_48H",
     "section": 4,
     "process": "4.3",
-    "kind": "deadline",
+    "kind": "deadline (policy target; the Guide standard is \"on average … within 48 hours\", measured monthly in `FNMA_A4_2_1_04_CALL_METRICS_MONTHLY`)",
     "trigger": "`communication.inbound.received` (email)",
     "anchor": "received_at",
-    "offset": "48 `hours` (new unit: hours)",
+    "offset": "48 `hours`",
     "satisfied": "reply sent",
-    "breach": "ops alert"
+    "breach": "ops alert (per-message miss is not itself a Guide breach; monthly average > 48h is)"
   },
   {
     "code": "FNMA_A4_2_1_04_CHAT_5MIN",
@@ -2515,7 +2515,7 @@
     "trigger": "month-end",
     "anchor": "—",
     "offset": "monthly",
-    "satisfied": "metrics report: ASA ≤60s, blockage ≤1%, abandonment ≤5%",
+    "satisfied": "metrics report: ASA ≤60s, blockage ≤1%, abandonment ≤5%, e-mail response average ≤48 hours",
     "breach": "`officer` report; remediation plan"
   },
   {
@@ -2633,8 +2633,8 @@
     "section": 4,
     "process": "4.4",
     "kind": "deadline",
-    "trigger": "`due_on_transfer.unenforceable.notified`",
-    "anchor": "notice date",
+    "trigger": "`due_on_transfer.unenforceable.notified` (only for loans acquired by Fannie Mae after June 1, 2007)",
+    "anchor": "Fannie Mae receipt of the notice (delivery evidence)",
     "offset": "60 `calendar_days`",
     "satisfied": "Fannie Mae non-objection or expiry",
     "breach": "proceed per Guide"
@@ -2731,7 +2731,7 @@
     "code": "FNMA_A4_2_1_04_EMAIL_48H",
     "section": 4,
     "process": "4.5",
-    "kind": "deadline",
+    "kind": "deadline (policy target; Guide standard is a 48-hour monthly average)",
     "trigger": "inbound email",
     "anchor": "received_at",
     "offset": "48 hours",
@@ -4284,7 +4284,7 @@
     "process": "7.1",
     "kind": "deadline",
     "trigger": "`loan.charged_off`",
-    "anchor": "charge-off date",
+    "anchor": "the later of the charge-off date and the date of the most recent periodic statement sent (§1026.41(e)(6)(i)(B): \"within 30 days of charge-off or the most recent periodic statement\" — either anchor satisfies; a `statement.sent` after charge-off re-anchors)",
     "offset": "+30 calendar_days",
     "satisfied": "`NTC_REGZ_41E6_CHARGEOFF_SUSPENSION` sent",
     "breach": "sev-1 (exemption lost; statements must resume)"
@@ -12782,7 +12782,7 @@
     "breach": "sev 1 → `officer`; transferee liability exposure"
   },
   {
-    "code": "FNMA_F1_11_FINAL_ACCOUNTING_30",
+    "code": "SM_XFER_OUT_FINAL_ACCOUNTING_30",
     "section": 17,
     "process": "17.3",
     "kind": "deadline",
@@ -13151,7 +13151,7 @@
     "kind": "deadline",
     "trigger": "`lossmit.document.received` / `lossmit.appeal.received` / `lossmit.offer.accepted/rejected` on a transferred loan",
     "anchor": "received_at",
-    "offset": "+1 business_days_servicer (\"promptly\")",
+    "offset": "+1 business_days_servicer (policy standard for the comments' \"timely transfer\")",
     "satisfied": "`post_transfer_forwardings.forwarded_at` with the transferee's ack",
     "breach": "sev 1 → Compliance Sentinel; `officer`"
   },

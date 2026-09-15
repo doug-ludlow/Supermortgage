@@ -39,7 +39,8 @@ test("4.3-T1/T3/T6/T7/T9: assignment day 45, not required for investment, releas
 });
 
 test("4.4-T1/T2/T3/T4/T5: successor timeline (10-08, 11-03), no probate for joint tenancy, no deed for divorce, additional documents, arm's-length sale", () => {
-  assert.deepEqual(SII.timeline(D("2026-10-01"), D("2026-10-20")), { documents_letter_due: "2026-10-08", confirmation_due: "2026-11-03" });
+  assert.deepEqual(SII.timeline(D("2026-10-01"), D("2026-10-20")), { documents_letter_due: "2026-10-08", confirmation_due: "2026-11-03", rfi_response_due: null });
+  assert.equal(SII.timeline(D("2026-10-01"), D("2026-10-20"), D("2026-10-02")).rfi_response_due, "2026-11-17");   // 30 federal BD from 10-02, Columbus Day and Veterans Day excluded
   assert.deepEqual(SII.requiredDocuments("joint_tenancy_survivor", ["recorded_deed"]), ["death_certificate"]); assert.equal(SII.determine("joint_tenancy_survivor", ["death_certificate", "recorded_deed"], true), "confirmed");
   assert.equal(SII.determine("divorce", ["divorce_decree", "separation_agreement"], true), "confirmed"); assert.ok(!SII.requiredDocuments("divorce", []).includes("recorded_deed"));
   assert.equal(SII.determine("death_relative", ["death_certificate", "recorded_deed", "will"], false), "additional_documents_required"); assert.equal(SII.determine("arms_length_sale", [], true), "not_successor");

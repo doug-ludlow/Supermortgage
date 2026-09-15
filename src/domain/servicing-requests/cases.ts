@@ -17,7 +17,7 @@ import { federalDays } from "./clocks.ts";
 // ---------------------------------------------------------------- 4.1 NoE
 export interface NoeAssertionInput { readonly id: string; readonly category: AssertionType; readonly description?: string; readonly period?: string; readonly amount_asserted_cents?: Cents; /** Rule 4: false only for the unidentifiable residue of an overbroad letter (the (g)(1)(ii) exception may attach to it alone). */ readonly identifiable?: boolean; }
 export interface NoeOpenInput { readonly case_id: string; readonly loan_id: string; readonly receipt_date: PlainDate; readonly receipt_at?: string; readonly state?: string | null; readonly assertions: readonly NoeAssertionInput[]; readonly foreclosure_sale_date?: PlainDate | null; readonly is_qwr?: boolean; readonly linked_case_ids?: readonly string[]; }
-export interface NoeOpenedAssertion { readonly id: string; readonly category: AssertionType; readonly profile: Deadlines["profile"]; readonly ack_due: PlainDate | null; readonly response_due: PlainDate; readonly extendable: boolean; readonly identifiable: boolean; }
+export interface NoeOpenedAssertion { readonly id: string; readonly category: AssertionType; readonly profile: Deadlines["profile"]; readonly ack_due: PlainDate | null; readonly response_due: PlainDate; readonly extendable: boolean; readonly identifiable: boolean; /** The payment period the assertion names (rule 9: the suppression scope). */ readonly period: string | null; }
 export interface NoeOpenedPayload extends Record<string, unknown> {
   readonly case_id: string; readonly receipt_date: PlainDate; readonly receipt_at: string | null; readonly state: string | null;
   readonly assertions: readonly NoeOpenedAssertion[];
@@ -37,7 +37,7 @@ export interface NoeOpenedPayload extends Record<string, unknown> {
 /** The `case.noe.opened` event payload: profiles are per assertion (rule 3), the trigger qualifiers are the union. */
 export function noeOpenedPayload(f: NoeOpenInput): NoeOpenedPayload {
   const sale = f.foreclosure_sale_date ?? null;
-  const assertions = f.assertions.map((a) => { const d = deadlines(a.category, f.receipt_date, { sale_date: sale }); return { id: a.id, category: a.category, profile: d.profile, ack_due: d.ack_due, response_due: d.response_due, extendable: d.extendable, identifiable: a.identifiable !== false }; });
+  const assertions = f.assertions.map((a) => { const d = deadlines(a.category, f.receipt_date, { sale_date: sale }); return { id: a.id, category: a.category, profile: d.profile, ack_due: d.ack_due, response_due: d.response_due, extendable: d.extendable, identifiable: a.identifiable !== false, period: a.period ?? null }; });
   const fc = f.assertions.some((a) => isForeclosureAssertion(a.category));
   const state = f.state ?? null;
   return {
@@ -72,6 +72,26 @@ export function suppressionRow(f: NoeOpenInput): SuppressionRow | null {
   if (!pay.length) return null;
   const periods = pay.map((a) => a.period).filter((p): p is string => !!p);
   return { loan_id: f.loan_id, case_id: f.case_id, scope: pay.some((a) => a.category === "b11") || !periods.length ? "all" : periods, starts_at: f.receipt_date, ends_at: addDays(f.receipt_date, 60), reason: "regx_1024_35_i" };
+}
+export interface SuppressionLift {
+  /** No payment-related assertion of the case remains under investigation: the row ended on the determination date. */
+  readonly ended: boolean;
+  readonly row: SuppressionRow & { readonly lifted_on: PlainDate | null; readonly lifted_reason: "regx_1024_35_g1_exception" | null; readonly lifted_assertion_ids: readonly string[] };
+  readonly remaining_assertion_ids: readonly string[];
+}
+/**
+ * §1024.35(g)(1) lifts (d), (e) *and (i)* for the excepted assertions (4.1 rule 4 / rule 9; 4.1-T7/T8/T9): once every
+ * payment-related assertion of the case is excepted the §1024.35(i) row ends on the determination date (`ends_at`,
+ * `lifted_on`); while a carved-out identifiable assertion is still under investigation ((g)(1)(ii) keeps (d), (e) and
+ * (i) for it) the row stays, narrowed to that assertion's payments.
+ */
+export function liftSuppressionOnException(row: SuppressionRow, opened: NoeOpenedPayload, exceptedIds: readonly string[], determinationDate: PlainDate): SuppressionLift {
+  const excepted = new Set(exceptedIds);
+  const remaining = opened.assertions.filter((a) => isPaymentRelated(a.category) && !excepted.has(a.id));
+  const lifted = opened.assertions.filter((a) => isPaymentRelated(a.category) && excepted.has(a.id)).map((a) => a.id);
+  if (!remaining.length) return { ended: true, row: { ...row, ends_at: determinationDate, lifted_on: determinationDate, lifted_reason: "regx_1024_35_g1_exception", lifted_assertion_ids: lifted }, remaining_assertion_ids: [] };
+  const periods = remaining.map((a) => a.period).filter((p): p is string => !!p);
+  return { ended: false, row: { ...row, scope: remaining.some((a) => a.category === "b11") || !periods.length ? "all" : periods, lifted_on: null, lifted_reason: null, lifted_assertion_ids: lifted }, remaining_assertion_ids: remaining.map((a) => a.id) };
 }
 /** Rule 6: re-date a misapplied payment — the original allocation is reversed and re-posted with `effective_date` = actual receipt (the ledger is never edited). */
 export function repostSet(original: EntrySet, effectiveDate: PlainDate, caseId: string): EntrySetInput {

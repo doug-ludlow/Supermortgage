@@ -23,7 +23,7 @@ import { addBusinessDays, servicer } from "../../kernel/calendar/business.ts";
 import { wallClock } from "../../kernel/calendar/zoned.ts";
 import type { Cents } from "../../kernel/money/cents.ts";
 import type { EntrySetInput, LineInput } from "../../kernel/ledger/ledger.ts";
-import { eventDeadlineMs, fannieBusinessDay } from "../investor/period.ts";
+import { eventDeadlineMs, fannieBusinessDay, larDeadlineMs, iredSweepDate } from "../investor/period.ts";
 import { deadlines as noeDeadlines, exceptionNoticeDue, type AssertionType, type Deadlines } from "../servicing-requests/noe.ts";
 import { outboundSchedule, finalPeriodCloseMs, transfereeRequestDue, finalAccountingDue, expectedWires, type LoanBalances } from "./reconciliation.ts";
 import { mersTransaction, mersClocks, form2009Overdue } from "./custody-mers.ts";
@@ -145,20 +145,21 @@ export function forwardingFile(fileDate: PlainDate, items: readonly { loan_id: s
 
 // ============================================================ T5 final-period close
 const ET = "America/New_York";
-/** Rule 17.3 final-period reporting: events processed ≤ T−1 are due 3:00 a.m. ET the next Fannie business day (LL-2026-05); the transfer month closes BD2 17:00 ET with zero open hard rejects — an open reject on the close day escalates to `officer`. */
-export function finalPeriodClose(i: { transfer_date: PlainDate; processed_at_ms: number; open_hard_rejects: number; now_ms: number }): { event_due_ms: number; event_due_et: { date: PlainDate; hour: number; minute: number }; period_close_ms: number; period_close_date: PlainDate; close_permitted: boolean; escalation: Escalation | null } {
+/** Rule 17.3 final-period reporting: events processed ≤ T−1 are due 3:00 a.m. ET the next Fannie business day (LL-2026-05); LARs 8 p.m. ET the next Fannie business day — a removal moves to 5 p.m. ET only when that next business day is BD2 of the month following the period (IRM 2-01: a removal processed T−1 = Mon Nov 30 is due 8 p.m. ET Tue Dec 1, BD1; one processed Dec 1 would be due 5 p.m. ET Wed Dec 2); the "no payment" day-22 LARs of the final period were due on calendar day 22 or, on a weekend/holiday, the preceding business day (IRM 2-01: Nov 22, 2026 is a Sunday → Fri Nov 20); the transfer month closes BD2 17:00 ET with zero open hard rejects — an open reject on the close day escalates to `officer`. */
+export function finalPeriodClose(i: { transfer_date: PlainDate; processed_at_ms: number; open_hard_rejects: number; now_ms: number }): { event_due_ms: number; event_due_et: { date: PlainDate; hour: number; minute: number }; lar_due_ms: number; lar_due_et: { date: PlainDate; hour: number; minute: number }; removal_due_ms: number; removal_due_et: { date: PlainDate; hour: number; minute: number }; ired_date: PlainDate; period_close_ms: number; period_close_date: PlainDate; close_permitted: boolean; escalation: Escalation | null } {
   const eventDue = eventDeadlineMs(i.processed_at_ms); const closeMs = finalPeriodCloseMs(i.transfer_date); const closeDate = fannieBusinessDay(i.transfer_date, 2);
+  const larDue = larDeadlineMs(i.processed_at_ms, false); const removalDue = larDeadlineMs(i.processed_at_ms, true); const ired = iredSweepDate(addDays(i.transfer_date, -1));   // the final period is the one containing T−1
   const nowEt = wallClock(i.now_ms, ET); const onCloseDay = nowEt.date >= closeDate;
   const esc: Escalation | null = i.open_hard_rejects > 0 && onCloseDay ? { kind: "officer", severity: "sev1", reason: `${i.open_hard_rejects} open hard reject(s) at ${nowEt.date} ${String(nowEt.hour).padStart(2, "0")}:${String(nowEt.minute).padStart(2, "0")} ET — the final period must close ${closeDate} 17:00 ET with zero open hard rejects (FNMA_IRM_PERIOD_CLOSE_BD2_1700)` } : null;
-  const d = wallClock(eventDue, ET);
-  return { event_due_ms: eventDue, event_due_et: { date: d.date, hour: d.hour, minute: d.minute }, period_close_ms: closeMs, period_close_date: closeDate, close_permitted: i.open_hard_rejects === 0, escalation: esc };
+  const d = wallClock(eventDue, ET); const l = wallClock(larDue, ET); const r = wallClock(removalDue, ET);
+  return { event_due_ms: eventDue, event_due_et: { date: d.date, hour: d.hour, minute: d.minute }, lar_due_ms: larDue, lar_due_et: { date: l.date, hour: l.hour, minute: l.minute }, removal_due_ms: removalDue, removal_due_et: { date: r.date, hour: r.hour, minute: r.minute }, ired_date: ired, period_close_ms: closeMs, period_close_date: closeDate, close_permitted: i.open_hard_rejects === 0, escalation: esc };
 }
 
 // ============================================================ T6 final accounting and advances reimbursement
-/** F-1-11: the final accounting (D31) is due T+30; unacked past that → sev 1 `officer`. */
-export function finalAccountingWatch(i: { transfer_date: PlainDate; acked_on: PlainDate | null; today: PlainDate }): { due: PlainDate; breached: boolean; timer: "FNMA_F1_11_FINAL_ACCOUNTING_30"; escalation: Escalation | null } {
+/** SM_XFER_OUT_FINAL_ACCOUNTING_30 (policy): the final accounting (D31) is due T+30 — the 30 days are borrowed from F-1-11's shortage/surplus adjustment-request window; F-1-11 sets no delivery deadline for the final accounting itself, only that the transferee reimburses advances "once it receives a final accounting" (1.6 keeps FNMA_F1_11_FINAL_ACCOUNTING_30 for the transferee side). Unacked past T+30 → sev 1 `officer`. */
+export function finalAccountingWatch(i: { transfer_date: PlainDate; acked_on: PlainDate | null; today: PlainDate }): { due: PlainDate; breached: boolean; timer: "SM_XFER_OUT_FINAL_ACCOUNTING_30"; escalation: Escalation | null } {
   const due = finalAccountingDue(i.transfer_date); const breached = !i.acked_on && i.today > due;
-  return { due, breached, timer: "FNMA_F1_11_FINAL_ACCOUNTING_30", escalation: breached ? { kind: "officer", severity: "sev1", reason: `final accounting (D31) not acknowledged by ${due}` } : null };
+  return { due, breached, timer: "SM_XFER_OUT_FINAL_ACCOUNTING_30", escalation: breached ? { kind: "officer", severity: "sev1", reason: `final accounting (D31) not acknowledged by ${due}` } : null };
 }
 /** Contract: the transferee reimburses advances within 30 days of the final accounting ack; past that the partner receives a demand-letter draft for the receivable. */
 export function advanceReimbursementWatch(i: { acked_on: PlainDate; receivable_cents: Cents; reimbursed_on: PlainDate | null; today: PlainDate }): { due: PlainDate; breached: boolean; timer: "SM_ADVANCE_REIMBURSEMENT_RECEIVABLE_30"; demand_letter_draft: { to: "transferee"; via: "partner"; amount_cents: Cents; receivable_account: "due_from_transferee"; basis: string; status: "draft" } | null } {

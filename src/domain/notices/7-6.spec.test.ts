@@ -12,7 +12,9 @@ import { buildRegistry, publishAuthored } from "../../notices/catalog.ts";
 import { render } from "../../notices/render.ts";
 import { evaluateChecklist } from "../../notices/checklist.ts";
 import { deadline, federalDeadline, businessDaysAfterRequest, payoff, perDiem, payoffBeforeScheduledPayment, requesterAuthorization } from "./payoff-statement.ts";
-import { payoffClockStart, oralPayoffRequest, authorizationRequest, reasonableTimePath, updatedPayoffStatement, successorPayoffRequest, noePayoffLink, scheduledUpbAfter } from "./ops.ts";
+import { payoffClockStart, oralPayoffRequest, authorizationRequest, reasonableTimePath, updatedPayoffStatement, successorPayoffRequest, noePayoffLink, scheduledUpbAfter, PAYOFF_FEDERAL_CLOCK } from "./ops.ts";
+import { divRound } from "../../kernel/money/decimal.ts";
+import { quote16 } from "../payoff/ops-16-1.ts";   // 16.1 engine: the same figure in two sections must agree (7.6 guardrail: figures come only from the 16.1 engine)
 
 const rig = (iso: string) => { const clock = new FixedClock(iso); const events = new MemoryEventStore(clock); const engine = new TimerEngine(loadOverriddenRegistry(), events, { processes: ["7.6"] }); return { clock, events, engine }; };
 const published = () => { const reg = buildRegistry(); publishAuthored(reg); return reg; };
@@ -60,10 +62,13 @@ test("7.6-T5: Given an oral request by AI voice, then a quote is given per 16.1,
   const clicked = oralPayoffRequest({ channel: "ai_voice", clicked_written_at: "2026-10-13T14:41:00-05:00" });
   assert.equal(clicked.timer_started, true); assert.equal(clicked.timer_started_at, "2026-10-13T14:41:00-05:00");
 });
-test("7.6-T6: Given a request from a title company without authorization, then an authorization request goes out the same day and, absent authorization by day 7, the statement is sent to the borrower of record and the timer is satisfied.", () => {
+test("7.6-T6: Given a request from a title company without authorization, then an authorization request goes out the same day; comment 36(c)(3)-1 lets the servicer take reasonable identity-verification/authorization measures \"before the 'reasonable time' period begins to run,\" but `deadline_federal` stays anchored on receipt (conservative reading of the seven-business-day outer limit, which §1026.36(c)(3) measures \"after receiving a written request\"), so absent authorization by day 7 from receipt the statement is sent to the borrower of record and the timer is satisfied.", () => {
   const r = authorizationRequest({ received_on: D("2026-10-13"), requester_type: "lender_or_title", evidence: false });
   assert.equal(r.classification, "request_authorization_send_to_borrower"); assert.equal(r.request_notice, "NTC_PAYOFF_AUTHORIZATION_REQUEST"); assert.equal(r.request_send_by, "2026-10-13");
   assert.equal(r.federal_due, "2026-10-22"); assert.equal(r.deliver_to, "borrower_of_record"); assert.equal(r.requester_told_to_obtain_from_borrower, true);
+  // comment 36(c)(3)-1 defers only the "reasonable time" period; deadline_federal stays seven servicer business days after receipt (the outer limit §1026.36(c)(3) measures "after receiving a written request") — not tolled by the verification measures
+  assert.deepEqual(r.federal_clock, PAYOFF_FEDERAL_CLOCK); assert.equal(r.federal_clock.anchor, "receipt"); assert.equal(r.federal_clock.tolled, false); assert.equal(r.federal_clock.verification_measures, "comment 36(c)(3)-1"); assert.match(r.federal_clock.basis, /after receiving a written request/);
+  assert.equal(businessDaysAfterRequest(D("2026-10-13"), r.federal_due), 7); assert.equal(r.federal_due, federalDeadline(D("2026-10-13")));
   assert.deepEqual(r.satisfying_event, { type: "payoff.statement.sent", payload: { template: "NTC_REGZ_36C3_PAYOFF_STMT", recipient: "borrower_of_record" } });
   assert.equal(authorizationRequest({ received_on: D("2026-10-13"), requester_type: "lender_or_title", evidence: false, authorization_received_on: D("2026-10-16") }).deliver_to, "requester");
   const reg = published(); const v = reg.activeVersion("NTC_PAYOFF_AUTHORIZATION_REQUEST", D("2026-10-13"))!;
@@ -97,18 +102,27 @@ test("7.6-T7: Given a loan in active foreclosure and firm fees pending, then `re
   const day11 = { ...day9, business_days_after_request: 11 }; assert.ok(evaluateChecklist(v, day11, render(v.source, day11)).blocking.some((b) => b.rule_id === "within-10bd-reasonable-time"));
   const ackV = reg.activeVersion("NTC_PAYOFF_REQUEST_ACK_DELAY", D("2026-10-14"))!; assert.equal(evaluateChecklist(ackV, ackV.samplePayload, render(ackV.source, ackV.samplePayload)).passed, true);
 });
-test("7.6-T8: Given UPB $371,048.86, rate 6.375% from Nov 1, paid-through Oct 31 and good-through Nov 20, 2026, then per diem $64.81, interest $1,296.13 and total $372,344.99 with escrow shown as refunded separately.", () => {
-  const p = payoff({ upb_cents: 37104886n, rate_pct: "6.375", paid_through: D("2026-10-31"), good_through: D("2026-11-20"), escrow_balance_cents: 183000n });
-  assert.equal(p.per_diem_cents, 6481n); assert.equal(p.days, 20); assert.equal(p.interest_cents, 129613n); assert.equal(p.total_cents, 37234499n);
+test("7.6-T8: Given UPB $371,048.86, rate 6.375% from Nov 1, paid-through Oct 31 and good-through Nov 20, 2026, then interest = 371,048.86 × 0.06375 ÷ 365 × 19 = $1,231.32 (19 days, Nov 1–19: funds are deemed received on the good-through date and F-1-09 accrues \"up to, but not including, the day the payoff funds were received\" — 16.1 rule 2; unrounded daily accrual, rounded once), the displayed per diem is $64.81 (display rounding only; never multiplied), and total $372,280.18 with escrow shown as refunded separately.", () => {
+  const figures = { upb_cents: 37104886n, rate_pct: "6.375", paid_through: D("2026-10-31"), good_through: D("2026-11-20"), escrow_balance_cents: 183000n };
+  const p = payoff(figures);
+  // 19 days (Nov 1–19): funds are deemed received on the Nov 20 good-through date (16.1 rule 2; F-1-09 "up to, but not including, the day the payoff funds were received"); accrual on the unrounded daily factor, rounded once: 371,048.86 × 0.06375 ÷ 365 × 19 = 1,231.3231 → $1,231.32; total $372,280.18
+  assert.equal(p.days, 19); assert.equal(p.interest_cents, divRound(37104886n * 6375n * 19n, 100_000n * 365n)); assert.equal(p.interest_cents, 123132n); assert.equal(p.total_cents, 37104886n + 123132n); assert.equal(p.total_cents, 37228018n);
+  // the displayed per diem $64.81 is display rounding only and is never multiplied: 19 × $64.81 = $1,231.39 ≠ $1,231.32 is tolerated by design
+  assert.equal(p.per_diem_cents, 6481n); assert.equal(p.per_diem_cents * BigInt(p.days), 123139n); assert.notEqual(p.per_diem_cents * BigInt(p.days), p.interest_cents);
   assert.equal(p.escrow_treatment, "refund_separately_20bd"); assert.equal(p.escrow_refund_cents, 183000n);
+  assert.equal(payoff({ ...figures, good_through: D("2026-11-01") }).days, 0);                                              // good through the day after paid-through: nothing accrues
+  // the same figure in two sections agrees: the 16.1 engine (accrual from lpi_due Nov 1, the day after paid-through) computes the same 19 days, $1,231.32 and $372,280.18
+  const q = quote16({ upb_cents: 37104886n, rate_pct: "6.375", lpi_due: D("2026-11-01"), good_through: D("2026-11-20") });
+  assert.deepEqual([q.interest.days_partial, q.interest.total_cents, q.per_diem_cents, q.total_cents], [19, p.interest_cents, p.per_diem_cents, p.total_cents]);
   const reg = published(); const v = reg.activeVersion("NTC_REGZ_36C3_PAYOFF_STMT", D("2026-10-15"))!;
   const r = render(v.source, v.samplePayload);
-  assert.match(r.text, /Total amount to pay your loan in full as of November 20, 2026: \$372,344\.99/); assert.match(r.text, /20 days at \$64\.81 per day, 365-day basis\) \$1,296\.13/); assert.match(r.text, /escrow balance of \$1,830\.00 is not deducted from the payoff and will be refunded within 20 business days after payoff/);
+  assert.match(r.text, /Total amount to pay your loan in full as of November 20, 2026: \$372,280\.18/); assert.match(r.text, /19 days at \$64\.81 per day, 365-day basis\) \$1,231\.32/); assert.match(r.text, /escrow balance of \$1,830\.00 is not deducted from the payoff and will be refunded within 20 business days after payoff/);
+  assert.equal(evaluateChecklist(v, v.samplePayload, r).passed, true); assert.deepEqual([v.samplePayload.days, v.samplePayload.interest_cents, v.samplePayload.total_cents], [19, 123132n, 37228018n]);
 });
 test("7.6-T9: Given an escrow tax disbursement advance posted after the statement but before the good-through date, then an updated statement is issued the same day and the original is marked superseded.", () => {
-  const u = updatedPayoffStatement({ original: { id: "stmt-1", good_through: D("2026-11-20"), total_cents: 37234499n }, change: { kind: "escrow_tax_disbursement_advance", posted_on: D("2026-11-05"), delta_cents: 412000n } });
-  assert.equal(u.updated, true); assert.equal(u.updated_on, "2026-11-05"); assert.equal(u.template, "NTC_PAYOFF_UPDATED_STMT"); assert.equal(u.original_status, "superseded"); assert.equal(u.new_total_cents, 37646499n); assert.equal(u.retained_original, true);
-  assert.equal(updatedPayoffStatement({ original: { id: "stmt-1", good_through: D("2026-11-20"), total_cents: 37234499n }, change: { kind: "fee", posted_on: D("2026-11-25"), delta_cents: 100n } }).updated, false);
+  const u = updatedPayoffStatement({ original: { id: "stmt-1", good_through: D("2026-11-20"), total_cents: 37228018n }, change: { kind: "escrow_tax_disbursement_advance", posted_on: D("2026-11-05"), delta_cents: 412000n } });
+  assert.equal(u.updated, true); assert.equal(u.updated_on, "2026-11-05"); assert.equal(u.template, "NTC_PAYOFF_UPDATED_STMT"); assert.equal(u.original_status, "superseded"); assert.equal(u.new_total_cents, 37640018n); assert.equal(u.retained_original, true);
+  assert.equal(updatedPayoffStatement({ original: { id: "stmt-1", good_through: D("2026-11-20"), total_cents: 37228018n }, change: { kind: "fee", posted_on: D("2026-11-25"), delta_cents: 100n } }).updated, false);
 });
 test("7.6-T10: Given a confirmed successor requests a payoff, then it is a consumer request (no authorization needed) and the statement is delivered to the successor.", () => {
   assert.deepEqual(successorPayoffRequest({ confirmed: true }), { classification: "consumer_request", deliver_to: "successor", authorization_needed: false });
@@ -121,10 +135,10 @@ test("7.6-T11: Given a NoE alleging an inaccurate payoff, then the 4.1 NoE case 
 test("7.6 worked example: UPB $371,048.86 after the Nov 1 payment (alternative $371,602.55 before it), per diem $64.81 at 6.375%, escrow $1,830.00 refunded separately", () => {
   assert.equal(perDiem(37104886n, "6.375"), 6481n);
   const p = payoff({ upb_cents: 37104886n, rate_pct: "6.375", paid_through: D("2026-10-31"), good_through: D("2026-11-20"), escrow_balance_cents: 183000n });
-  assert.equal(p.days, 20); assert.equal(p.per_diem_cents, 6481n); assert.equal(p.escrow_treatment, "refund_separately_20bd"); assert.equal(p.escrow_refund_cents, 183000n);
+  assert.equal(p.days, 19); assert.equal(p.interest_cents, 123132n); assert.equal(p.total_cents, 37228018n); assert.equal(p.per_diem_cents, 6481n); assert.equal(p.escrow_treatment, "refund_separately_20bd"); assert.equal(p.escrow_refund_cents, 183000n);   // Nov 1–19: funds deemed received on the Nov 20 good-through date (16.1 rule 2)
   // the alternative figure: 59 scheduled payments leave $371,602.55; the Nov 1 payment (interest at 5.750%, then principal) takes it to $371,048.86
   assert.equal(scheduledUpbAfter(40000000n, "5.750", 233429n, 59), 37160255n); assert.equal(scheduledUpbAfter(37160255n, "5.750", 233429n, 1), 37104886n);
   const alt = payoffBeforeScheduledPayment({ upb_before_payment_cents: 37160255n, old_rate_pct: "5.750", paid_through: D("2026-09-30"), change_date: D("2026-11-01"), new_rate_pct: "6.375", good_through: D("2026-11-20") });
-  assert.equal(alt.upb_cents, 37160255n); assert.deepEqual(alt.segments.map((s) => [s.from, s.through, s.rate_pct, s.days]), [["2026-09-30", "2026-10-31", "5.750", 31], ["2026-10-31", "2026-11-20", "6.375", 20]]);
+  assert.equal(alt.upb_cents, 37160255n); assert.deepEqual(alt.segments.map((s) => [s.from, s.through, s.rate_pct, s.days]), [["2026-09-30", "2026-10-31", "5.750", 31], ["2026-10-31", "2026-11-19", "6.375", 19]]);
   assert.equal(alt.segments[0]!.per_diem_cents, perDiem(37160255n, "5.750")); assert.equal(alt.total_cents, 37160255n + alt.interest_cents);
 });

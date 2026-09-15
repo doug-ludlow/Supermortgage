@@ -2795,7 +2795,7 @@
     "borrower-comms"
    ],
    "tools": [],
-   "guardrails": "cannot demand documents outside the matrix row; cannot deny for \"no assumption\" or \"not on the note\"; cannot disclose account details to a potential successor before confirmation beyond \u00a71024.36(i); cannot treat a confirmed successor as an obligor; must expedite when a loss-mit application is pending (comment -5).",
+   "guardrails": "cannot demand documents outside the matrix row; cannot deny for \"no assumption\" or \"not on the note\"; cannot require an exempt transferee to assume absent a release of liability or a modification (F-1-17); cannot disclose account details to a potential successor before confirmation beyond \u00a71024.36(i); cannot treat a confirmed successor as an obligor; must expedite when a loss-mit application is pending (comment -5).",
    "escalates_to": [
     "attorney",
     "human_agent",

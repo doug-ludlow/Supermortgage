@@ -51,8 +51,8 @@ import { EVALUATORS_7_3 } from "./evaluators-7-3.ts";
 export const TEMPLATE_D = "NTC_REGZ_20D_ARM_INITIAL" as const;
 export const TIMERS_7_3 = { not_before: "REGZ_1026_20D_INITIAL_NOTICE_NOT_BEFORE_240", deadline: "REGZ_1026_20D_INITIAL_NOTICE_210", index_recency: "REGZ_1026_20D_ESTIMATE_INDEX_15BD", file_check: "SM_ARM_INITIAL_FILE_CHECK_T0", separate_document: "SM_ARM_INITIAL_SEPARATE_DOC_GATE" } as const;
 export const EVALUATORS = { index_recency: "7.3.indexRecentEnoughForEstimate", separate_document: "7.3.separateDocumentEnforced" } as const;
-/** Rule 4 (xi): the CFPB and HUD contacts are fixed; the state HFA comes from `jurisdiction_rules.hfa_contact`. */
-export const COUNSELING = { cfpb_url: "consumerfinance.gov", hud_phone: "(800) 569-4287" } as const;
+/** Rule 4 (xi): the CFPB/HUD counselor site, the HUD number and the Bureau web site for State housing finance authority contact information are configured (`counseling.hfa_bureau_url`); the state HFA itself from `jurisdiction_rules.hfa_contact` is optional additional information (§1026.20(d)(2)(xi)). */
+export const COUNSELING = { cfpb_url: "consumerfinance.gov", hud_phone: "(800) 569-4287", hfa_bureau_url: "consumerfinance.gov" } as const;
 /** Edge "Boarded after T−210": the boarded loan sends within 5 servicer business days; the file check runs on the same clock. */
 export const FILE_CHECK_BUSINESS_DAYS = 5;
 /** Timer row: "`loan.boarded` (ARM within 300 days of first new payment due)". */
@@ -241,7 +241,7 @@ export function initialNoticePayload(terms: ArmTerms, row: ArmScheduleRow, est: 
     is_estimate: est.is_estimate, basis: est.is_estimate ? "estimate" : "actual", estimated_rate_pct: est.est_rate_pct, unrounded_pct: est.unrounded_pct, index_name: desc.name, index_date: est.index_effective_date, index_source: desc.source, index_value: est.index_value, margin_pct: terms.margin_pct,
     estimated_payment_cents: est.est_pi_cents, current_payment_cents: terms.current_pi_cents, current_rate_pct: terms.current_rate_pct,
     first_cap_pct: terms.initial_cap_pct, periodic_cap_pct: terms.periodic_cap_pct, lifetime_cap_pct: Decimal.parse(terms.initial_note_rate_pct).add(Decimal.parse(terms.lifetime_cap_pct)).toFixed(3), floor_pct: terms.margin_pct,
-    expected_upb_cents: est.expected_upb_cents, remaining_term_months: est.remaining_term_months, prepayment_penalty: false, toll_free: f.contact.servicer_phone, cfpb_url: COUNSELING.cfpb_url, hud_phone: COUNSELING.hud_phone, state_hfa_contact: `${hfa.hfa_name} ${hfa.hfa_phone}`, property_state: f.property_state,
+    expected_upb_cents: est.expected_upb_cents, remaining_term_months: est.remaining_term_months, prepayment_penalty: false, toll_free: f.contact.servicer_phone, cfpb_url: COUNSELING.cfpb_url, hud_phone: COUNSELING.hud_phone, hfa_bureau_url: COUNSELING.hfa_bureau_url, state_hfa_contact: hfa ? `${hfa.hfa_name} ${hfa.hfa_phone}` : null, property_state: f.property_state,
     index_age_business_days: f.index_age_business_days, days_before_first_payment: daysBetween(f.sent_on, row.first_new_payment_due), late_notice: f.late_notice, breach_attributable_to: f.breach_attributable_to,
     corrected: f.corrected != null, corrected_notice_date: f.corrected?.notice_date ?? null, corrected_field: f.corrected?.field ?? null, ...f.contact,
   };

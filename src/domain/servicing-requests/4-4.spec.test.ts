@@ -21,7 +21,8 @@ const notices = () => { const reg = buildRegistry(); publishAuthored(reg); retur
 const sent = (h: ReturnType<typeof harness>, template: string, caseId: string, extra: Record<string, unknown> = {}) => h.events.append({ type: "notice.sent", loanId: "L-1", actor: CASE_AGENT, payload: { template, case_id: caseId, notice_id: `n-${template}-${caseId}`, ...extra } });
 
 test("4.4-T1: Given the 2026-10-01 call scenario, then docs letter by 2026-10-08, confirmation by 2026-11-03 after documents on 2026-10-20, and the acknowledgment notice in the same mailing.", async () => {
-  assert.deepEqual(SII.timeline(D("2026-10-01"), D("2026-10-20")), { documents_letter_due: "2026-10-08", confirmation_due: "2026-11-03" });
+  assert.deepEqual(SII.timeline(D("2026-10-01"), D("2026-10-20")), { documents_letter_due: "2026-10-08", confirmation_due: "2026-11-03", rfi_response_due: null });
+  assert.equal(SII.timeline(D("2026-10-01"), D("2026-10-20"), D("2026-10-02")).rfi_response_due, "2026-11-17");   // rule 1: her 10-02 letter is an RFI answered within 30 federal BD — Columbus Day 10-12 and Veterans Day 11-11 excluded (Nov 16 = 29, Nov 17 = 30)
   const h = harness("2026-10-01T15:00:00.000Z");
   const opened = (await h.run("4.4", "sii.open", CASE_AGENT, { case_id: "sii-1", notice_source: "call", transfer_type: "death_relative", notice_date: "2026-10-01", transferor_borrower_id: "b-mother" })).output as { facilitate_due: string };
   assert.equal(opened.facilitate_due, "2026-10-05"); assert.equal(h.timer("REGX_1024_38B1VI_SII_FACILITATE_2")[0]!.dueDate, "2026-10-05");
@@ -37,8 +38,9 @@ test("4.4-T1: Given the 2026-10-01 call scenario, then docs letter by 2026-10-08
   assert.deepEqual([recv.sufficient, recv.determination_due], [true, "2026-11-03"]);
   assert.equal(h.timer("REGX_1024_38B1VI_SII_CONFIRM_10")[0]!.dueDate, "2026-11-03"); assert.equal(h.timer("REGX_1024_38B1VI_SII_ADDL_DOCS_5").length, 0);
   h.clock.set("2026-11-03T15:00:00.000Z");
-  const r = (await h.run("4.4", "sii.determine", CASE_AGENT, { case_id: "sii-1", determination: "confirmed", transfer_type: "death_relative", party_id: "p-daughter" })).output as { notice: string; obligor: boolean };
-  assert.deepEqual(r, { determination: "confirmed", notice: "NTC_REGX_38B1VI_SII_CONFIRMED", obligor: false } as unknown as typeof r); assert.equal(h.rt.store.get("parties", "p-daughter")!.data.role, "confirmed_successor");
+  const r = (await h.run("4.4", "sii.determine", CASE_AGENT, { case_id: "sii-1", determination: "confirmed", transfer_type: "death_relative", party_id: "p-daughter" })).output as { determination: string; notice: string; obligor: boolean; fnma_exempt_transaction: { item: string | null; regx_sii: boolean; exempt: boolean }; assumption_path_offered: boolean };
+  assert.deepEqual([r.determination, r.notice, r.obligor], ["confirmed", "NTC_REGX_38B1VI_SII_CONFIRMED", false]); assert.equal(h.rt.store.get("parties", "p-daughter")!.data.role, "confirmed_successor");
+  assert.deepEqual([r.fnma_exempt_transaction.item, r.fnma_exempt_transaction.regx_sii, r.fnma_exempt_transaction.exempt, r.assumption_path_offered], ["relative_of_deceased_occupying", true, true, true]);   // D1-4.1-02: a relative of the deceased borrower is an exempt transferee and a Reg X type-(2) successor; the assumption is offered, never required (F-1-17)
   assert.equal(h.timer("REGX_1024_38B1VI_SII_CONFIRM_10")[0]!.status, "satisfied"); assert.equal(h.timer("REGX_1024_32C_SII_ACK_NOTICE_SAME_DAY")[0]!.dueDate, "2026-11-03");   // the §1024.32(c) notice goes in the same mailing
   assert.equal(h.timer("FNMA_D1_4_1_02_INTERESTED_PARTY_NOTIFY_10")[0]!.dueDate, "2026-11-18");                                                                            // 10 servicer BD from Tue 11-03 (Veterans Day closed)
   sent(h, "NTC_REGX_38B1VI_SII_CONFIRMED", "sii-1", { mailing: "confirmation" }); assert.equal(h.timer("REGX_1024_32C_SII_ACK_NOTICE_SAME_DAY")[0]!.status, "armed");     // the confirmation letter alone is not the (c) notice
@@ -106,16 +108,39 @@ test("4.4-T5: Given a buyer under an arm's-length sale claiming successor status
   const unsigned = { ...v.samplePayload, officer_signoff: false }; assert.ok(evaluateChecklist(v, unsigned, render(v.source, unsigned)).blocking.some((b) => b.rule_id === "officer"));
   const offer = reg.activeVersion("NTC_FNMA_D1_4_1_02_ASSUMPTION_OFFER", D("2026-11-03"))!; const or = render(offer.source, offer.samplePayload);
   assert.match(or.text, /Servicing Guide D1-4.1-02/); assert.match(or.text, /declining does not affect your rights/); assert.equal(evaluateChecklist(offer, offer.samplePayload, or).passed, true);
+  // F-1-17 note: the offer says the assumption is optional for an exempt transferee absent a release of liability or a modification
+  assert.match(or.text, /does not require an exempt transferee to assume the loan except in connection with a release of the prior borrower's liability or a loan modification/); assert.match(or.text, /Assuming is your choice/);
+  const forced = render(offer.source.replace(/does not require an exempt transferee[^.]*\./, "requires an assumption agreement."), offer.samplePayload); assert.ok(evaluateChecklist(offer, offer.samplePayload, forced).blocking.some((b) => b.rule_id === "optional-unless"));
+  // D1-4.1-02: the exempt-transaction list is broader than the Reg X set — an arm's-length buyer who assumes in writing and occupies with the transferor is an exempt transferee (no review of the terms, no due-on-sale enforcement, assumption path offered) and still `not_successor` under §1024.31
+  const ex = SII.fnmaExemptTransaction({ transfer_type: "arms_length_sale", assumes_in_writing: true, co_occupies_with_transferor: true });
+  assert.deepEqual([ex.exempt, ex.item, ex.regx_sii, ex.due_on_sale_enforced, ex.review_terms, ex.creditworthiness_review, ex.assumption_required], [true, "natural_person_assumes_and_co_occupies", false, false, false, false, false]);
+  const plain = SII.fnmaExemptTransaction({ transfer_type: "arms_length_sale" }); assert.deepEqual([plain.exempt, plain.item, plain.due_on_sale_enforced], [false, null, true]);
+  assert.equal(SII.fnmaExemptTransaction({ transfer_type: "borrower_llc", purchased_by_fnma_on: D("2017-01-01") }).item, "borrower_controlled_llc"); assert.equal(SII.fnmaExemptTransaction({ transfer_type: "borrower_llc", purchased_by_fnma_on: D("2015-01-01") }).exempt, false);
+  assert.deepEqual([SII.fnmaExemptTransaction({ transfer_type: "death_relative", purchased_by_fnma_on: D("2015-01-01") }).occupancy_required, SII.fnmaExemptTransaction({ transfer_type: "death_relative", purchased_by_fnma_on: D("2016-06-01") }).occupancy_required], [true, false]);   // occupancy waived for loans purchased/securitized on/after 2016-06-01
+  assert.equal(SII.fnmaExemptTransaction({ transfer_type: "death_relative", purchased_by_fnma_on: D("2015-01-01"), occupies: false }).exempt, false);
+  assert.deepEqual([SII.fnmaExemptTransaction({ transfer_type: "divorce", release_of_liability_requested: true }).creditworthiness_review, SII.fnmaExemptTransaction({ transfer_type: "divorce", release_of_liability_requested: true }).assumption_required, SII.fnmaExemptTransaction({ transfer_type: "divorce" }).regx_sii], [true, true, true]);
+  assert.equal(SII.fnmaExemptTransaction({ transfer_type: "unrelated_coborrower", months_since_closing: 6, occupies: true }).exempt, false); assert.equal(SII.fnmaExemptTransaction({ transfer_type: "leasehold", lease_years: 3, purchase_option: false }).item, "leasehold_le_3y_no_option");
+  assert.equal(SII.FNMA_EXEMPT_ITEMS.length, 12); assert.equal(SII.REGX_SII_TYPES.size, 5);
+  const h2 = harness(); await h2.run("4.4", "sii.open", CASE_AGENT, { case_id: "sii-5b", notice_source: "letter", transfer_type: "arms_length_sale" });
+  await h2.approve(OFFICER, { approval_id: "appr-5b", case_id: "sii-5b", scope: "sii.determine", rationale: reason });
+  const d2 = (await h2.run("4.4", "sii.determine", CASE_AGENT, { case_id: "sii-5b", determination: "not_successor", transfer_type: "arms_length_sale", reason, officer_approval_id: "appr-5b", assumes_in_writing: true, co_occupies_with_transferor: true })).output as { notice: string; fnma_exempt_transaction: { exempt: boolean; item: string | null; due_on_sale_enforced: boolean }; assumption_path_offered: boolean };
+  assert.deepEqual([d2.notice, d2.fnma_exempt_transaction.exempt, d2.fnma_exempt_transaction.item, d2.fnma_exempt_transaction.due_on_sale_enforced, d2.assumption_path_offered], ["NTC_REGX_38B1VI_SII_NOT_SUCCESSOR", true, "natural_person_assumes_and_co_occupies", false, true]);
+  assert.deepEqual([h2.rt.store.get("sii_cases", "sii-5b")!.data.fnma_exempt_item, h2.rt.store.get("sii_cases", "sii-5b")!.data.regx_sii], ["natural_person_assumes_and_co_occupies", false]);
+  assert.deepEqual([h2.events.ofType("case.sii.determined")[0]!.payload.fnma_exempt_item, h2.events.ofType("case.sii.determined")[0]!.payload.regx_sii], ["natural_person_assumes_and_co_occupies", false]);
+  assert.equal(h.rt.store.get("sii_cases", "sii-5")!.data.fnma_exempt_item, null);   // the plain arm's-length buyer: not exempt either — a due-on-sale question
 });
 test("4.4-T6: Given confirmation and no returned acknowledgment, then periodic/escrow statements and EI notices to the successor are held while an RFI from the successor is answered on the 4.2 clock and a payoff request is answered within the Reg Z window (16.1).", () => {
   const r = postConfirmationRights({ confirmed_on: D("2026-11-03"), ack_returned_on: null, rfi_received_on: D("2026-11-05"), payoff_requested_on: D("2026-11-05") });
   assert.equal(r.statements_ei_escrow, "held"); assert.equal(r.rfi_response_due, "2026-12-21");   // 30 federal BD (Veterans Day, Thanksgiving excluded)
   assert.equal(r.payoff_due, "2026-11-17");                                                        // Reg Z §1026.36(c)(3): 7 business days from Thu 11-05 (Veterans Day 11-11 closed) → Tue 11-17
   assert.deepEqual(r.rights, { noe_rfi_payoff: true, statements_and_ei: false, obligor: false }); assert.equal(r.escrow_statement_addressee, false);
+  assert.deepEqual(r.transferor_borrower, { subpart_c: "all_applicable_requirements_continue", citation: "comment 30(d)-3" });   // rule 5: the transferor borrower (if living) keeps every subpart C right after the confirmation
+  assert.deepEqual(SII.transferorBorrowerRights(), r.transferor_borrower);
 });
 test("4.4-T7: Given the acknowledgment is returned, then statements start on the next cycle and the escrow annual statement includes the successor as addressee.", () => {
   const r = postConfirmationRights({ confirmed_on: D("2026-11-03"), ack_returned_on: D("2026-11-20") });
   assert.equal(r.statements_ei_escrow, "next_cycle"); assert.equal(r.escrow_statement_addressee, true); assert.equal(r.rights.statements_and_ei, true);
+  assert.equal(r.transferor_borrower.citation, "comment 30(d)-3");   // the acknowledgment changes what the successor receives, never what the transferor borrower keeps
 });
 test("4.4-T8: Given a potential successor submits a loss-mit application, then all SII policy timers halve and `lossmit_reviewer` sees the pending-confirmation flag; upon confirmation the 12.1 application is treated as received on the confirmation date.", async () => {
   const t = siiTimers({ identified_on: D("2026-10-01"), lossmit_pending: true, confirmed_on: D("2026-11-03") });
@@ -146,16 +171,35 @@ test("4.4-T9: Given a confirmed successor requests the payment history, then the
 });
 test("4.4-T10: Given an assumption is executed, then the `signing_officer` signature record exists, interested parties are notified within 10 servicer BD, MI approval is on file where MI exists, and the loan-data change (if any) is reported per 5.x.", async () => {
   const ok = assumptionExecuted({ executed_on: D("2026-12-01"), signing_officer_id: "so-1", mi_exists: true, mi_approval_on_file: true, terms_changed: false });
-  assert.deepEqual(ok, { ok: true, problems: [], notify_interested_parties_by: "2026-12-15", loan_data_change: false });
+  assert.deepEqual(ok, { ok: true, problems: [], notify_interested_parties_by: "2026-12-15", loan_data_change: false, assumption_required: false, assumption_basis: "optional_exempt_transferee", emortgage: false });
   assert.deepEqual(assumptionExecuted({ executed_on: D("2026-12-01"), signing_officer_id: null, mi_exists: true, mi_approval_on_file: false, terms_changed: true }).problems, ["signing_officer signature record missing", "MI company approval not on file"]);
+  // F-1-17 note: an exempt transferee assumes only with a release of liability or a modification (signed with the modification agreement)
+  assert.deepEqual([SII.assumptionRequirement({ release_of_liability: false, modification: false }).required, SII.assumptionRequirement({ release_of_liability: false, modification: false }).basis], [false, "optional_exempt_transferee"]);
+  assert.equal(SII.assumptionRequirement({ release_of_liability: true, modification: false }).basis, "release_of_liability"); assert.equal(SII.assumptionRequirement({ release_of_liability: false, modification: true }).basis, "modification");
+  assert.deepEqual([assumptionExecuted({ executed_on: D("2026-12-01"), signing_officer_id: "so-1", mi_exists: false, mi_approval_on_file: false, terms_changed: true, modification: true }).assumption_required, assumptionExecuted({ executed_on: D("2026-12-01"), signing_officer_id: "so-1", mi_exists: false, mi_approval_on_file: false, terms_changed: false, release_of_liability: true }).assumption_basis], [true, "release_of_liability"]);
+  // F-1-17 "Completing a Transfer of Ownership" note: for an eMortgage every assumption type updates the MERS eRegistry with notice of the agreement and delivers the executed agreement to Fannie Mae's eVault via MERS eDelivery — both are part of the assumption record
+  const em = assumptionExecuted({ executed_on: D("2026-12-01"), signing_officer_id: "so-1", mi_exists: false, mi_approval_on_file: false, terms_changed: false, emortgage: true, mers_eregistry_updated: false, evault_delivered: false });
+  assert.deepEqual([em.ok, em.emortgage, em.problems], [false, true, ["MERS eRegistry not updated with notice of the assumption agreement (F-1-17)", "executed assumption agreement not delivered to Fannie Mae's eVault via MERS eDelivery (F-1-17)"]]);
+  assert.equal(assumptionExecuted({ executed_on: D("2026-12-01"), signing_officer_id: "so-1", mi_exists: false, mi_approval_on_file: false, terms_changed: false, emortgage: true, mers_eregistry_updated: true, evault_delivered: true }).ok, true);
   const h = harness("2026-12-01T15:00:00.000Z");
   await h.run("4.4", "sii.open", CASE_AGENT, { case_id: "sii-10", notice_source: "letter", transfer_type: "death_relative" });
   await assert.rejects(h.run("4.4", "sii.interested_parties.notify", CASE_AGENT, { case_id: "sii-10", parties: [] }), refusedWith("INTERESTED_PARTIES"));
-  const n = (await h.run("4.4", "sii.due_on_transfer.notify", CASE_AGENT, { case_id: "sii-10", basis: "junior lien foreclosure; enforceability doubtful" })).output as { wait_until: string };
-  assert.equal(n.wait_until, "2027-01-30"); assert.equal(h.timer("FNMA_D1_4_1_02_FNMA_LEGAL_60")[0]!.dueDate, "2027-01-30");
+  // D1-4.1-02: the 60 days run from Fannie Mae's receipt of the notice (delivery evidence — the e-mail package's send date here), for a loan acquired by Fannie Mae after June 1, 2007
+  const n = (await h.run("4.4", "sii.due_on_transfer.notify", CASE_AGENT, { case_id: "sii-10", basis: "junior lien foreclosure; enforceability doubtful", fnma_acquired_on: "2012-03-15" })).output as { wait_until: string; notice_date: string; fnma_received_on: string };
+  assert.deepEqual([n.notice_date, n.fnma_received_on, n.wait_until], ["2026-12-01", "2026-12-01", "2027-01-30"]); assert.equal(h.timer("FNMA_D1_4_1_02_FNMA_LEGAL_60")[0]!.dueDate, "2027-01-30"); assert.equal(h.timer("FNMA_D1_4_1_02_FNMA_LEGAL_60")[0]!.anchorDate, "2026-12-01");
+  const notified = h.events.ofType("due_on_transfer.unenforceable.notified")[0]!; assert.deepEqual([notified.payload.notice_date, notified.payload.fnma_received_on, notified.payload.delivery_evidence, notified.payload.fnma_acquired_on], ["2026-12-01", "2026-12-01", "email_package", "2012-03-15"]);
   await assert.rejects(h.run("4.4", "sii.due_on_transfer.resolve", CASE_AGENT, { case_id: "sii-10", outcome: "maybe" }), refusedWith("FNMA_LEGAL_OUTCOME"));
   await h.run("4.4", "sii.due_on_transfer.resolve", CASE_AGENT, { case_id: "sii-10", outcome: "non_objection" }, "2027-01-10T15:00:00.000Z");
   assert.equal(h.timer("FNMA_D1_4_1_02_FNMA_LEGAL_60")[0]!.status, "satisfied");
+  // the authority exists only for loans acquired by Fannie Mae after June 1, 2007; a later receipt date (courier evidence) moves the 60-day anchor
+  const h3 = harness("2026-12-01T15:00:00.000Z"); await h3.run("4.4", "sii.open", CASE_AGENT, { case_id: "sii-10b", notice_source: "letter", transfer_type: "death_relative" });
+  await assert.rejects(h3.run("4.4", "sii.due_on_transfer.notify", CASE_AGENT, { case_id: "sii-10b", basis: "enforceability doubtful", fnma_acquired_on: "2006-11-30" }), refusedWith("FNMA_LEGAL_POST_2007_ONLY"));
+  await assert.rejects(h3.run("4.4", "sii.due_on_transfer.notify", CASE_AGENT, { case_id: "sii-10b", basis: "enforceability doubtful", fnma_acquired_on: "2007-06-01" }), refusedWith("FNMA_LEGAL_POST_2007_ONLY"));   // "after June 1, 2007"
+  await assert.rejects(h3.run("4.4", "sii.due_on_transfer.notify", CASE_AGENT, { case_id: "sii-10b", basis: "enforceability doubtful", fnma_acquired_on: "2007-06-02", fnma_received_on: "2026-11-30" }), refusedWith("FNMA_RECEIPT_BEFORE_SEND"));
+  assert.equal(h3.timer("FNMA_D1_4_1_02_FNMA_LEGAL_60").length, 0);
+  const n3 = (await h3.run("4.4", "sii.due_on_transfer.notify", CASE_AGENT, { case_id: "sii-10b", basis: "enforceability doubtful", fnma_acquired_on: "2007-06-02", fnma_received_on: "2026-12-03", delivery_evidence: "courier receipt 2026-12-03" })).output as { wait_until: string };
+  assert.equal(n3.wait_until, "2027-02-01"); assert.equal(h3.timer("FNMA_D1_4_1_02_FNMA_LEGAL_60")[0]!.dueDate, "2027-02-01"); assert.equal(h3.timer("FNMA_D1_4_1_02_FNMA_LEGAL_60")[0]!.anchorDate, "2026-12-03");
+  assert.deepEqual([h3.rt.store.get("sii_cases", "sii-10b")!.data.fnma_legal_received_on, h3.rt.store.get("sii_cases", "sii-10b")!.data.fnma_legal_notified_on], ["2026-12-03", "2026-12-01"]);
 });
 test("4.4-T11: Given a state with a counsel-unreviewed matrix row, then the (i)(2) examples letter is used and the case is flagged `matrix_gap` for counsel.", () => {
   const r = documentDescription(null);

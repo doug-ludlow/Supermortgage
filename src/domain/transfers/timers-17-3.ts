@@ -9,8 +9,10 @@
  * code (TimerRegistry.byCode) and an override cannot change the owning row's `process`, so the
  * transfer-out reading is merged into the code's single definition — a superset trigger where the
  * two rows key on the same event, a union satisfaction (`custody.shipment.*`, `enote.eregistry.*`)
- * where both directions report the same fact, and the 17.3 column outright for the three codes the
- * spec marks "(1.x; now owned)". The two "(5.1)" cross-references (FNMA_IRM_PERIOD_CLOSE_BD2_1700,
+ * where both directions report the same fact, and the 17.3 column outright for the two codes the
+ * spec marks "(1.4; now owned)". The final-accounting deadline is 17.3's own policy row
+ * (SM_XFER_OUT_FINAL_ACCOUNTING_30, formerly the shared FNMA_F1_11_FINAL_ACCOUNTING_30 — F-1-11 sets no delivery
+ * deadline for the final accounting; 1.6 keeps the FNMA code for the transferee side), so it needs no merge. The two "(5.1)" cross-references (FNMA_IRM_PERIOD_CLOSE_BD2_1700,
  * FNMA_LL202605_EVENT_NEXTBD_0300) keep the investor-reporting definitions: the final period is one
  * of 5.1's periods (ops-17-3 finalPeriodClose reproduces BD2 17:00 ET for 17.3-T5). The 1.4
  * participation-notes row is loan-level (`loan.boarded`), so planDeliverables{op=cutover} arms it
@@ -93,9 +95,14 @@ export function applySatisfiedOverrides_17_3(reg: TimerRegistry): void {
     why: "§17.3 timer table (1.5; partner submits removal/replacement): `transfer.batch.approved{direction=out, type∈sub_to_sub,sub_to_master}` — the §1.5 row keys on master_to_sub/sub_to_sub; the union arms the code for every batch type whose MIN Subservicer field changes (Procedures Manual 24.2: a resigning Member removes its Org ID). Satisfied by the batch-level `mers.txn.accepted{txn_type=min_update_subservicer, all_mins=true}` (§1.5 override) that verifyMersSnapshot{op=ack} records for all MINs." });
   o("MERS_PROC_TOS_INITIATE_T0", { trigger: "`transfer.batch.approved{type∈{servicing_sale_with_sub, servicing_sale}}`",
     why: "§17.3 timer table (1.5; partner initiates): `transfer.batch.approved{direction=out, type=servicing_sale}` — the §1.5 row keys on servicing_sale_with_sub; the union arms the seller-initiated TOS for both. Satisfied by `mers.tos.pending_received` (§1.5): MERS's acceptance of the partner's TOS initiation (`mers.txn.accepted{tos_initiate}` per MIN) puts the TOS in pending status, which verifyMersSnapshot{op=ack} records on the batch." });
-  // ---- final accounting — "(1.6; now owned)"
-  o("FNMA_F1_11_FINAL_ACCOUNTING_30", { satisfied: "`transfer.final_accounting.*{received_on is not null}`",
-    why: "§17.3 timer table (1.6; now owned): +30 calendar days from `transfer_date`, satisfied by `deliverable.acked{D31}` (final accounting incl. advances claimed, shortage/surplus, forwarded payments) — ingestTransfereeAck emits that event (it starts SM_ADVANCE_REIMBURSEMENT_RECEIVABLE_30 and SM_XFER_OUT_ARCHIVE_MANIFEST_10) together with `transfer.final_accounting.acked{received_on}`, the transferee's receipt of Supermortgage's accounting. The §1.6 row's `transfer.final_accounting.received{received_on}` is the transferor's accounting reaching Supermortgage (1.6-T6); both are 'the final accounting received' for the one definition the code can hold, and `transfer.final_accounting.delivered` (sendDeliverable, no received_on) does not close it." });
+  // ---- final accounting — SM_XFER_OUT_FINAL_ACCOUNTING_30 (policy; formerly the shared FNMA_F1_11_FINAL_ACCOUNTING_30)
+  // The row is grammar-clean and needs no override: `transfer.batch.cutover_completed` → anchor `transfer_date` +30 calendar days
+  // (a policy deadline — F-1-11 sets no delivery deadline for the final accounting; the 30 days are borrowed from its shortage/surplus
+  // adjustment-request window), satisfied by `deliverable.acked{D31}` (final accounting incl. advances claimed, shortage/surplus,
+  // forwarded payments), which ingestTransfereeAck emits on the batch together with `transfer.final_accounting.acked{received_on}`
+  // (it also starts SM_ADVANCE_REIMBURSEMENT_RECEIVABLE_30 and SM_XFER_OUT_ARCHIVE_MANIFEST_10); `transfer.final_accounting.delivered`
+  // (sendDeliverable) does not close it. §1.6's FNMA_F1_11_FINAL_ACCOUNTING_30 (`transfer.final_accounting.received`, the transferor's
+  // accounting reaching Supermortgage) is the transferee-side monitor and is no longer merged with this code.
   // ---- custodial accounts (A2-1-07; Supermortgage is the account holder of record — balances move, accounts do not)
   o("SM_XFER_OUT_CUSTODIAL_CLOSE_60", { anchorField: "recon_acked_on", satisfied: "`transfer.custodial_account.disposed{outcome∈{closed, recon_certificate_filed}}`",
     why: "§17.3 timer table: trigger 'FNMA_F1_11_CUSTODIAL_RECON_5BD satisfied and the T+30 adjustment window closed with no open variance' = `transfer.custodial_recon.acked{adjustment_window_closed=true, open_variance=false}` (runOutboundDqGate{op=custodial_window}, anchored on the reconciliation ack date it carries); +60 CD; fully-vacated account → zero balance confirmed, Forms 1013/1014 withdrawn in CBAM (human_portal_task, partner countersignature), depository account closed, closure letter filed = `closed`; account retaining loans → post-transfer reconciliation certificate filed = `recon_certificate_filed` (runOutboundDqGate{op=custodial_disposition})." });

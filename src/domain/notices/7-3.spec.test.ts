@@ -256,22 +256,25 @@ test("7.3-T7: Given the notice is co-mailed with the periodic statement, then it
   await assert.rejects(O.sendInitialNotice(bad.deps(), noFlag, { loan_id: LOAN, ...SEND }), /SM_ARM_INITIAL_SEPARATE_DOC_GATE: §1026\.20\(d\) notice must be its own document/);
   assert.deepEqual(bad.sentTemplates(LOAN), []);
 });
-test("7.3-T8: Given a Texas property, then the (xi) block names the Texas state housing finance authority from `jurisdiction_rules`.", async () => {
+test("7.3-T8: Given a Texas property, then the (xi) block carries the CFPB/HUD counselor-list web site, the HUD toll-free number and the Bureau web site through which State housing finance authority contact information is accessed (§1026.20(d)(2)(xi)); naming the Texas HFA itself from `jurisdiction_rules` is optional additional information.", async () => {
   const rules = { TX: { hfa_name: "Texas Department of Housing and Community Affairs", hfa_phone: "(800) 792-1119" }, CA: { hfa_name: "California Housing Finance Agency", hfa_phone: "(877) 922-5432" } };
-  assert.deepEqual(stateHfaContact("TX", rules), rules.TX); assert.throws(() => stateHfaContact("ZZ", rules), /no state HFA contact/);
-  // through the process: the (xi) block of the rendered notice carries the CFPB URL, the HUD number and the Texas HFA from jurisdiction_rules by property state
+  assert.deepEqual(stateHfaContact("TX", rules), rules.TX); assert.equal(stateHfaContact("ZZ", rules), null);   // optional: a state without a row names no HFA and nothing is invented
+  assert.equal(O.COUNSELING.hfa_bureau_url, "consumerfinance.gov"); assert.equal(O.COUNSELING.hud_phone, "(800) 569-4287");
+  // through the process: the (xi) block carries the CFPB URL, the HUD number and the Bureau HFA-contact web site; the Texas HFA from jurisdiction_rules is printed as additional information
   const r = rig("2026-01-15"); r.board("2026-01-15"); O.determineInitialNoticeStatus(r.deps(), { loan_id: LOAN, transferor_evidence: null });
   r.at("2026-04-20"); A.captureIndex(r.deps(), nyfed("2026-04-20", "3.64381")); O.requestInitialNoticeRender(r.deps(), { loan_id: LOAN });
   r.at("2026-04-21"); const s = await O.sendInitialNotice(r.deps(), r.notices, { loan_id: LOAN, ...SEND, property_state: "TX", hfa_rules: rules });
   const text = r.notices.get(s.notice_id).rendered.text;
-  assert.match(text, /CFPB: consumerfinance\.gov · HUD \(800\) 569-4287 · Texas Department of Housing and Community Affairs \(800\) 792-1119/);
-  assert.equal(s.payload.state_hfa_contact, "Texas Department of Housing and Community Affairs (800) 792-1119"); assert.equal(s.payload.property_state, "TX");
-  assert.equal(r.notices.get(s.notice_id).checklist.results.find((x) => x.rule_id === "xi-state-hfa")!.passed, true);
-  // a state without an HFA row in jurisdiction_rules refuses to render (no numbers or names from anywhere but the table)
+  assert.match(text, /CFPB: consumerfinance\.gov · HUD \(800\) 569-4287 · State housing finance authorities: consumerfinance\.gov · Texas Department of Housing and Community Affairs \(800\) 792-1119/);
+  assert.equal(s.payload.state_hfa_contact, "Texas Department of Housing and Community Affairs (800) 792-1119"); assert.equal(s.payload.hfa_bureau_url, "consumerfinance.gov"); assert.equal(s.payload.property_state, "TX");
+  const cl = r.notices.get(s.notice_id).checklist; for (const id of ["xi-cfpb-hud-hfa", "xi-hfa-bureau-site", "xi-state-hfa"]) assert.equal(cl.results.find((x) => x.rule_id === id)!.passed, true, id);
+  // a state without an HFA row still renders and passes: (xi) is met by the counselor site, the HUD number and the Bureau HFA web site — no HFA name or number from anywhere but the table
   const zz = rig("2026-01-15"); zz.board("2026-01-15"); O.determineInitialNoticeStatus(zz.deps(), { loan_id: LOAN, transferor_evidence: null });
   zz.at("2026-04-20"); A.captureIndex(zz.deps(), nyfed("2026-04-20", "3.64381")); O.requestInitialNoticeRender(zz.deps(), { loan_id: LOAN });
-  await assert.rejects(O.sendInitialNotice(zz.deps(), zz.notices, { loan_id: LOAN, ...SEND, property_state: "ZZ", hfa_rules: rules }), /no state HFA contact for ZZ in jurisdiction_rules/);
-  assert.deepEqual(zz.sentTemplates(LOAN), []);
+  zz.at("2026-04-21"); const s2 = await O.sendInitialNotice(zz.deps(), zz.notices, { loan_id: LOAN, ...SEND, property_state: "ZZ", hfa_rules: rules });
+  const t2 = zz.notices.get(s2.notice_id).rendered.text;
+  assert.match(t2, /CFPB: consumerfinance\.gov · HUD \(800\) 569-4287 · State housing finance authorities: consumerfinance\.gov/); assert.doesNotMatch(t2, /Texas Department|\(800\) 792-1119|null|undefined/);
+  assert.equal(s2.payload.state_hfa_contact, null); assert.equal(s2.payload.hfa_bureau_url, "consumerfinance.gov"); assert.equal(zz.notices.get(s2.notice_id).checklist.blocking.length, 0); assert.deepEqual(zz.sentTemplates(LOAN), ["NTC_REGZ_20D_ARM_INITIAL"]);
 });
 test("7.3-T9: Given the margin is corrected on 2026-04-28 after a 2026-04-21 send, then a corrected (d) notice is sent by 2026-05-05.", async () => {
   const p = correctedInitialNotice({ sent_on: D("2026-04-21"), corrected_on: D("2026-04-28"), first_new_payment_due: D("2026-12-01") });

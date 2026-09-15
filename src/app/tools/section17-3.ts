@@ -250,7 +250,7 @@ export const TOOLS_17_3: readonly ToolDef[] = defineTools("17.3", AGENT, [
       // D08: one transfer_out_custodial_recon_acks row (0044) per Supermortgage custodial account the acknowledgment covered — the T+30 window (op=custodial_window) and SM_XFER_OUT_CUSTODIAL_CLOSE_60 read the latest acked_on
       if (kind === "D08") for (const a of list<string>(i, "accounts_acked")) rt.store.put("transfer_out_custodial_recon_acks", `${str(i, "batch_id")}-${a}-${ackedOn}`, { batch_id: str(i, "batch_id"), custodial_account_id: a, deliverable_id: id, acked_on: ackedOn, ack_reference: str(i, "ack_reference") }, ctx.actor, ctx.now);
       let advances: { set_id: string | null; due_from_transferee_cents: bigint; reclassified_cents: bigint } | null = null;
-      if (kind === "D31") {   // FNMA_F1_11_FINAL_ACCOUNTING_30: the transferee received the accounting (received_on); with the loan balances given, the advances receivable is recognized (Dr due_from_transferee / Cr escrow_advances, corporate_advances) as of the ack
+      if (kind === "D31") {   // SM_XFER_OUT_FINAL_ACCOUNTING_30 (policy; formerly FNMA_F1_11_FINAL_ACCOUNTING_30 — F-1-11 sets no delivery deadline): the transferee received the accounting (received_on); with the loan balances given, the advances receivable is recognized (Dr due_from_transferee / Cr escrow_advances, corporate_advances) as of the ack
         const wl = list<Record<string, unknown>>(i, "loans").filter((l) => typeof l.loan_id === "string").map((l) => ({ ...balances(l), loan_id: String(l.loan_id) } as WireLoan));
         const set = wl.length ? advancesOnAckLedgerSet({ loans: wl, effective_date: D(ackedOn), batch_id: str(i, "batch_id") }) : null;
         const setId = set?.set ? ctx.ledger.post(set.set, ctx.now).id : null;

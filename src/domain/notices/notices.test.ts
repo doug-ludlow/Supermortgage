@@ -56,5 +56,5 @@ test("7.6 payoff mechanics: reasonable-time deadlines by reason, requester class
   const rt = PS.deadline(D("2026-10-13"), "TX", "bankruptcy"); assert.equal(rt.ack_by, "2026-10-15"); assert.equal(rt.due_on, "2026-10-27");
   assert.equal(PS.requesterAuthorization("lender_or_title", false), "request_authorization_send_to_borrower"); assert.equal(PS.requesterAuthorization("attorney", true), "authorized_agent"); assert.equal(PS.requesterAuthorization("confirmed_successor", false), "consumer_request");
   const p = PS.payoff({ upb_cents: cents("371048.86"), rate_pct: "6.375", paid_through: D("2026-10-31"), good_through: D("2026-11-20") });
-  assert.equal(p.per_diem_cents, 6_481n); assert.equal(p.days, 20); assert.equal(p.interest_cents, 129_613n); assert.equal(p.total_cents, cents("372344.99")); assert.equal(p.escrow_refund_cents, 0n);
+  assert.equal(p.per_diem_cents, 6_481n); assert.equal(p.days, 19); assert.equal(p.interest_cents, 123_132n); assert.equal(p.total_cents, cents("372280.18"));   // Nov 1–19 (funds deemed received on the good-through date — 16.1 rule 2); accrual on the unrounded factor assert.equal(p.escrow_refund_cents, 0n);
 });

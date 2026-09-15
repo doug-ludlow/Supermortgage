@@ -8,7 +8,7 @@ import { plainDate as D } from "../../kernel/calendar/date.ts";
 import { cents } from "../../kernel/money/cents.ts";
 void cents;
 import type { Episode } from "./continuity.ts";
-import { assignmentTrigger, callbackRequest, handleUtterance, accuracyHarness, callMetrics, routeCall, closeForTransferOut } from "./ops.ts";
+import { assignmentTrigger, callbackRequest, handleUtterance, accuracyHarness, callMetrics, routeCall, closeForTransferOut, noeRfiProcedureBlock } from "./ops.ts";
 import { SYSTEM } from "../../kernel/events/index.ts";
 import * as C from "./continuity.ts";
 import { eiNoticeAssignment, caSpocRequest } from "./ops.ts";
@@ -49,13 +49,23 @@ test("4.3-T2: Given no EI notice by day 45 (e.g., §1024.39 exemption), then ass
   assert.deepEqual(assignmentTrigger(D("2026-09-01"), true, null), { assign_by: "2026-10-16", basis: "day_45" });
   assert.deepEqual(assignmentTrigger(D("2026-09-01"), true, D("2026-10-09")), { assign_by: "2026-10-09", basis: "ei_notice" });
 });
-test("4.3-T3: Given an investment property, then `not_required` and no timer breach.", () => {
+test("4.3-T3: Given an investment property, then `not_required` and no timer breach.", async () => {
   assert.equal(C.assignmentDue(D("2026-09-01"), false), "not_required"); assert.deepEqual(assignmentTrigger(D("2026-09-01"), false, null), { assign_by: "not_required", basis: "not_required" });
   const h = harness("2026-09-02T14:00:00.000Z");
   h.events.append({ type: "loan.delinquency.started", loanId: "L-1", actor: SYSTEM, payload: { principal_residence: false, day_1: "2026-09-02" } });
   assert.equal(h.timer("REGX_1024_40A1_CONTACT_ASSIGN_45").length, 0);
   assert.deepEqual(h.ctx.timers.evaluate("2026-12-31T23:59:00.000Z"), []);
-  assert.equal(eiNoticeAssignment({ episode: null, requested_on: D("2026-10-09"), due_unpaid: D("2026-09-01"), principal_residence: false, default_team: TEAM }).assignment_due_at, "not_required");
+  const ei = eiNoticeAssignment({ episode: null, requested_on: D("2026-10-09"), due_unpaid: D("2026-09-01"), principal_residence: false, default_team: TEAM });
+  assert.equal(ei.assignment_due_at, "not_required");
+  // Fannie Mae A4-1-01 / A4-2.1-01: the contact-point requirement is not limited to principal residences — the standard team is still assigned (no Reg X named human required), basis `fnma_a4_2_1_01_dmm`, and no §1024.40 45-day clock arms
+  assert.deepEqual(C.contactPointRequirement(false), { regx_1024_40: "not_required", fnma_a4_2_1_01_dmm: "required", assign: true, named_human_required: false, basis: "fnma_a4_2_1_01_dmm" });
+  assert.deepEqual([C.contactPointRequirement(true).basis, C.contactPointRequirement(true).named_human_required], ["regx_1024_40", true]);
+  assert.deepEqual([ei.auto_assigned, ei.requirement.basis, ei.requirement.regx_1024_40], [true, "fnma_a4_2_1_01_dmm", "not_required"]);
+  const a = (await h.run("4.3", "continuity.assign", COMMS_AGENT, { team: "default", team_name: TEAM.team_name, direct_number: TEAM.direct_number, hours: TEAM.hours, principal_residence: false })).output as { basis: string; regx_status: string };
+  assert.deepEqual([a.basis, a.regx_status], ["fnma_a4_2_1_01_dmm", "not_required"]);
+  const ev = h.events.ofType("continuity.assigned")[0]!; assert.deepEqual([ev.payload.basis, ev.payload.regx_required, ev.payload.named_human, ev.payload.team], ["fnma_a4_2_1_01_dmm", false, null, TEAM.team_name]);
+  assert.deepEqual([h.rt.store.get("continuity_episodes", "ep-L-1")!.data.status, h.rt.store.get("continuity_episodes", "ep-L-1")!.data.regx_required], ["assigned", false]); assert.equal(h.timer("REGX_1024_40A1_CONTACT_ASSIGN_45").length, 0);
+  await assert.rejects(h.run("4.3", "continuity.assign", COMMS_AGENT, { episode_id: "ep-pr", team: "default", direct_number: TEAM.direct_number, principal_residence: true }), refusedWith("NAMED_HUMAN_REQUIRED"));   // a principal residence keeps the Reg X named human of record
 });
 test("4.3-T4: Given a borrower calls the direct line after hours, then a callback request is created and a live contact by the assigned team occurs within 1 servicer BD.", async () => {
   const r = callbackRequest({ called_at_local: "2026-10-09T21:30", staffed_from: "08:00", staffed_to: "20:00" });
@@ -170,11 +180,24 @@ test('4.3-T7: (CA) Given a §2924.15 loan and a chat message "can I get help wit
   await h.run("4.3", "continuity.ca_spoc.release", COMMS_AGENT, { reason: "options_exhausted", appeal_decided_on: "2026-11-20" }, "2026-11-20T15:00:00.000Z");
   assert.equal(h.timer("CA_CIV_2923_7_SPOC_UNTIL_EXHAUSTED_OR_CURRENT")[0]!.status, "satisfied");
 });
-test("4.3-T8: (accuracy) Given a scripted call asking the five (b)(1) facts, then every statement matches `lossmit_facts` for the loan (evaluation harness, 100% agreement required for release).", () => {
+test("4.3-T8: (accuracy) Given a scripted call asking the five (b)(1) facts, then every statement matches `lossmit_facts` for the loan (evaluation harness, 100% agreement required for release).", async () => {
   const facts = { options_available: ["repayment plan", "Flex Modification"], missing_documents: ["pay stubs"], application_status: "incomplete", foreclosure_referral: "not before day 121", deadline: "2026-10-24" };
-  const good = accuracyHarness([{ fact: "options_available", value: ["repayment plan", "Flex Modification"] }, { fact: "missing_documents", value: ["pay stubs"] }, { fact: "application_status", value: "incomplete" }, { fact: "foreclosure_referral", value: "not before day 121" }, { fact: "deadline", value: "2026-10-24" }], facts);
+  const five = [{ fact: "options_available", value: ["repayment plan", "Flex Modification"] }, { fact: "missing_documents", value: ["pay stubs"] }, { fact: "application_status", value: "incomplete" }, { fact: "foreclosure_referral", value: "not before day 121" }, { fact: "deadline", value: "2026-10-24" }];
+  const good = accuracyHarness(five, facts);
   assert.deepEqual(good, { agreement_pct: 100, release: true, mismatches: [] });
   const bad = accuracyHarness([{ fact: "deadline", value: "2026-10-31" }, { fact: "application_status", value: "incomplete" }], facts); assert.equal(bad.release, false); assert.deepEqual(bad.mismatches, ["deadline"]);
+  // §1024.40(b)(4): the view also carries the notice-of-error / information-request procedure block, and the scripted call's sixth question is answered from it
+  const proc = noeRfiProcedureBlock({ exclusive_address: "PO Box 2, Testville TX 75001", online_channel: "the secure message center" });
+  assert.match(proc.how_to_noe, /written notice of error[^.]*to PO Box 2, Testville TX 75001 or through the secure message center; we acknowledge it within 5 business days/); assert.match(proc.how_to_rfi, /written request for information[^.]*§1024\.36/);
+  assert.equal(proc.citation, "§1024.40(b)(4); §§1024.35, 1024.36"); assert.match(proc.oral_not_noe, /telephone call is not a notice of error/); assert.match(noeRfiProcedureBlock({}).how_to_noe, /address printed on your statement/);
+  const withProc = { ...facts, noe_rfi_procedure: proc };
+  assert.equal(accuracyHarness([...five, { fact: "noe_rfi_procedure", value: proc }], withProc).release, true);
+  assert.deepEqual(accuracyHarness([{ fact: "noe_rfi_procedure", value: { ...proc, how_to_noe: "just call us" } }], withProc).mismatches, ["noe_rfi_procedure"]);
+  const h = harness();
+  h.rt.store.put("lossmit_facts", "L-1", facts, COMMS_AGENT, h.clock.now()); h.rt.store.put("designated_addresses", "noe_rfi_exclusive", { kind: "noe_rfi_exclusive", address: "PO Box 2, Testville TX 75001", online_channel: "the secure message center" }, COMMS_AGENT, h.clock.now());
+  const view = (await h.run("4.3", "lossmit_facts.get", COMMS_AGENT, { loan_id: "L-1" })).output as { noe_rfi_procedure: typeof proc; options_available: string[] };
+  assert.deepEqual(view.noe_rfi_procedure, proc); assert.deepEqual(view.options_available, facts.options_available);
+  assert.equal((await h.run("4.3", "lossmit_facts.get", COMMS_AGENT, { loan_id: "L-none" })).output, null);
 });
 test("4.3-T9: (bankruptcy) Given a Chapter 13 filing, then reassignment to the bankruptcy-specialist team without a new episode.", async () => {
   const e: Episode = { status: "assigned", consecutive_on_time: 1, mode: "ai_first_named_human", team: "default" };
@@ -191,6 +214,12 @@ test("4.3-T10: (metrics) Given a month of CDRs with ASA 75s, then the A4-2.1-04 
   const m = callMetrics({ offered: 1000, answered_seconds: Array.from({ length: 900 }, () => 75), abandoned: 30, blocked: 5 });
   assert.equal(m.asa_seconds, 75); assert.deepEqual(m.misses, ["ASA 75s > 60s"]); assert.equal(m.officer_task, "a4_2_1_04_remediation");
   assert.equal(callMetrics({ offered: 1000, answered_seconds: [45, 50], abandoned: 30, blocked: 5 }).officer_task, null);
+  // A4-2.1-04: "on average, emails from borrowers must be responded to within 48 hours of receipt" — the monthly average in the same report is the Guide's test; a single 90-hour reply is a policy-clock miss, not a Guide breach
+  assert.equal(m.email_avg_hours, null);
+  const em = callMetrics({ offered: 1000, answered_seconds: [45, 50], abandoned: 30, blocked: 5, email_response_hours: [12, 30, 60, 90] });
+  assert.deepEqual([em.email_avg_hours, em.misses, em.officer_task], [48, [], null]);
+  const late = callMetrics({ offered: 1000, answered_seconds: [45, 50], abandoned: 30, blocked: 5, email_response_hours: [12, 30, 60, 100] });
+  assert.deepEqual([late.email_avg_hours, late.misses, late.officer_task], [50.5, ["e-mail average 50.5h > 48h"], "a4_2_1_04_remediation"]);
 });
 test("4.3-T11: (AI off) Given `continuity.ai_first=off` for state XX, then calls route to the human queue and the assignment record shows `human_team`.", () => {
   assert.deepEqual(routeCall("XX", new Set(["XX"])), { queue: "human", assignment_mode: "human_team" });

@@ -153,9 +153,9 @@ export function applyToZero(b: PayoffBuckets, amountCents: Cents): { lines: Appl
 }
 
 // ───── rule 4: Fannie Mae's share with the participation percentage ─────
-/** F-1-20 S/S exception, derived from the `fannie_et` calendar (never a caller flag): no full-month interest when the liquidation is processed on BD1 and reported to Fannie Mae by BD2 of that month. */
-export function ssBd1Bd2Exception(i: { type: RemittanceType; processed_on: PlainDate; reported_on?: PlainDate | null }): boolean {
-  if (i.type !== "SS") return false;
+/** F-1-20 S/S exception, derived from the `fannie_et` calendar (never a caller flag) and the loan's pool membership: no full-month interest only when the loan is in an MBS pool AND the liquidation is processed on BD1 and reported to Fannie Mae by BD2 of that month — a portfolio S/S loan always owes the full month (rule 4). */
+export function ssBd1Bd2Exception(i: { type: RemittanceType; mbs_pool: boolean; processed_on: PlainDate; reported_on?: PlainDate | null }): boolean {
+  if (i.type !== "SS" || !i.mbs_pool) return false;
   const bd1 = fannieBusinessDay(i.processed_on, 1), bd2 = fannieBusinessDay(i.processed_on, 2);
   return i.processed_on === bd1 && (i.reported_on ?? i.processed_on) <= bd2;
 }
@@ -168,7 +168,7 @@ export interface FnmaPayoffShare { principal_cents: Cents; interest_cents: Cents
  */
 export function fnmaPayoffShare(f: Omit<Parameters<typeof fnmaShare>[0], "processed_bd1_reported_bd2"> & { participation_pct?: string; processed_on?: PlainDate; reported_on?: PlainDate | null }): FnmaPayoffShare {
   const p = f.participation_pct ?? "100";
-  const exception = ssBd1Bd2Exception({ type: f.type, processed_on: f.processed_on ?? f.payoff_on, reported_on: f.reported_on ?? null });
+  const exception = ssBd1Bd2Exception({ type: f.type, mbs_pool: f.mbs_pool === true, processed_on: f.processed_on ?? f.payoff_on, reported_on: f.reported_on ?? null });
   const s = fnmaShare({ ...f, processed_bd1_reported_bd2: exception });
   const ptr = interest(f.upb_cents, f.ptr_pct, f.lpi_due, f.payoff_on);
   // servicer-funded PTR interest: S/S the full-month gap; S/A the half month beyond the PTR-equivalent of the days collected (worked example: $6.83); A/A none

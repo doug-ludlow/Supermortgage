@@ -12,7 +12,8 @@
  *     defect of the notice itself, the breach is recorded on the loan (ops-7-3 `sendInitialNotice`), so the rule is
  *     skipped and the breach attribution must be present instead;
  *   - a corrected (d) notice (rule 6 / T9) carries `corrected=true` and says which notice it replaces;
- *   - (xi) must name the state housing finance authority from `jurisdiction_rules.hfa_contact` (T8).
+ *   - (xi) carries the Bureau web site for State housing finance authority contacts (`hfa_bureau_url`); naming the state
+ *     HFA from `jurisdiction_rules.hfa_contact` is optional additional information, checked for shape only when present (T8).
  */
 import type { ContentRule, NoticeTemplate, VersionInput } from "../registry.ts";
 import { plainDate as D } from "../../kernel/calendar/date.ts";
@@ -34,7 +35,7 @@ export const ARM_D_V12_RULES: ContentRule[] = [
   R("iii-actual-unlabeled", "§1026.20(d)(2)(iii)", "absence", "\\(estimated\\)", "actual figures are not labeled as estimates", { when: { "==": [{ var: "is_estimate" }, false] } }),
   R("timing-window", "§1026.20(d)(1)", "data_range", "days_before_first_payment", "sent 210–240 days before the first new payment", { range: { min: 210, max: 240 }, when: { "!=": [{ var: "late_notice" }, true] } }),
   R("late-breach-recorded", "§1026.20(d)(1); 7.3 edge 'Boarded after T−210'", "data_equality", "breach_attributable_to", "a late (d) notice records who owns the breach", { predicate: { in: [{ var: "breach_attributable_to" }, ["transferor", "servicer"]] }, when: { "==": [{ var: "late_notice" }, true] } }),
-  R("xi-state-hfa", "§1026.20(d)(2)(xi); jurisdiction_rules.hfa_contact", "data_equality", "state_hfa_contact", "the state housing finance authority (name and telephone) from jurisdiction_rules by property state", { predicate: { matches: ["state_hfa_contact", "^\\S.+ \\(\\d{3}\\) \\d{3}-\\d{4}$"] } }),
+  R("xi-state-hfa", "§1026.20(d)(2)(xi); jurisdiction_rules.hfa_contact (optional additional information)", "data_equality", "state_hfa_contact", "when the state HFA is named from jurisdiction_rules it carries name and telephone (optional: (xi) itself requires only the Bureau web site)", { predicate: { matches: ["state_hfa_contact", "^\\S.+ \\(\\d{3}\\) \\d{3}-\\d{4}$"] }, when: { "!=": [{ var: "state_hfa_contact" }, null] } }),
   R("corrected-reference", "7.3 rule 6", "presence", "corrects and replaces the notice dated", "a corrected notice names the notice it replaces", { when: { "==": [{ var: "corrected" }, true] } }),
 ];
 export const ARM_D_V12_SAMPLE: Record<string, unknown> = { ...ARM_D_V11_SAMPLE, late_notice: false, breach_attributable_to: null, corrected: false, corrected_notice_date: null, corrected_field: null, basis: "estimate" };

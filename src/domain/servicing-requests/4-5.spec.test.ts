@@ -194,6 +194,9 @@ test("4.5-T10: (email SLA) Given an inbound email complaint at 09:00 ET Monday, 
   const inbound = h.events.ofType("communication.inbound.received"); assert.equal(inbound.length, 1);
   assert.equal(inbound[0]!.payload.channel, "email"); assert.equal(inbound[0]!.payload.case_id, "cmp-10"); assert.equal(inbound[0]!.occurredAt, "2026-09-14T13:00:00.000Z");   // anchored on receipt, not on case opening
   const def = loadOverriddenRegistry().get("FNMA_A4_2_1_04_EMAIL_48H")!;
+  // A4-2.1-04: the Guide standard is "on average … within 48 hours" — the per-message clock is a policy target (the row's kind qualifier), still a deadline for the engine; the monthly average is measured in 4.3's FNMA_A4_2_1_04_CALL_METRICS_MONTHLY
+  assert.equal(def.kindNorm, "deadline"); assert.match(def.kindQualifier ?? "", /policy target/); assert.match(def.overrideWhy ?? "", /on average, emails from borrowers must be responded to within 48 hours of receipt/);
+  assert.deepEqual(def.offsetParsed, { kind: "step", n: 48, unit: "hours" });
   const t = h.timer("FNMA_A4_2_1_04_EMAIL_48H")[0]!; assert.equal(t.armedByEventId, inbound[0]!.id); assert.equal(new Date(t.dueAt!).toISOString(), "2026-09-16T13:00:00.000Z");
   assert.ok(eventMatches(def.triggerPattern!, inbound[0]!));
   const emailBreaches = (at: string) => h.ctx.timers.evaluate(at).filter((b) => b.def.code === "FNMA_A4_2_1_04_EMAIL_48H").map((b) => b.def.code);

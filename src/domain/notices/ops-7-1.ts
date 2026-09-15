@@ -24,7 +24,7 @@ import type { TimerEngine } from "../../kernel/timers/engine.ts";
 import type { Cents } from "../../kernel/money/cents.ts";
 import { DISCLOSURES_AGENT, type NoticeService, type Notice } from "../../notices/service.ts";
 import type { Recipient, ChannelContext } from "../../notices/channel.ts";
-import { cycle, delinquencyBox, chargeOffNoticeDue, form1098 } from "./statement.ts";
+import { cycle, delinquencyBox, chargeOffNoticeDue, chargeOffNoticeAnchor, form1098 } from "./statement.ts";
 import { statementSuppressionRequest, chargeOffSuspension } from "./ops.ts";
 
 export const STATEMENT_TEMPLATES = ["NTC_REGZ_41_STMT_STD", "NTC_REGZ_41_STMT_DELQ", "NTC_REGZ_41_STMT_TPP", "NTC_REGZ_41_STMT_BK7_11", "NTC_REGZ_41_STMT_BK12_13"] as const;
@@ -33,6 +33,12 @@ export type StatementTemplate = (typeof STATEMENT_TEMPLATES)[number];
 export type StatementVariant = "standard" | "delinquent" | "tpp" | "accelerated" | "bk_ch7_11" | "bk_ch12_13" | "coupon_book" | "exempt_bk" | "exempt_charged_off" | "suppressed_transfer";
 export type ExemptReason = Parameters<typeof statementSuppressionRequest>[0]["reason"];
 export const PAYMENT_REMINDER_TIMER = "FNMA_D2_2_03_PAYMENT_REMINDER_20";
+const CHARGEOFF_NOTICE_TIMER = "REGZ_1026_41E6_CHARGEOFF_NOTICE_30";
+const CHARGEOFF_NOTICE_TEMPLATE = "NTC_REGZ_41E6_CHARGEOFF_SUSPENSION";
+/** A periodic statement sent after charge-off re-anchors the unsent (e)(6) notice (§1026.41(e)(6)(i)(B): "within 30 days of charge-off or the most recent periodic statement"); the registry override (timers-7-1.ts) arms on `loan.charged_off*`, so this event arms the fresh instance. */
+const CHARGEOFF_REANCHOR_EVENT = "loan.charged_off.notice_reanchored";
+/** The unsent (e)(6) notice's anchor as measured from the loan's events (`chargeOffNoticeAnchorOf`). */
+interface ChargeOffAnchorState { readonly charged_off_on: PlainDate; readonly notice_anchor_on: PlainDate; readonly notice_sent: boolean; }
 const OPS_ALERT_MINUTES = 5;
 const money = (c: Cents): string => c.toString();
 const dayOfMonth = (d: PlainDate): number => Number(d.slice(8, 10));
@@ -111,6 +117,8 @@ export class StatementCycleService {
     const sent = this.append("statement.sent", p.loanId, { cycle: p.cycle, cycle_due_date: p.cycle_due_date, statement_date: p.statement_date, variant: p.variant, template: p.template, notice_id: n.id, reminder_panel: p.reminder_panel, single_statement_exemption_used: p.single_statement_exemption_used, sent_at: via.mailed_at ?? n.sentAt ?? this.d.clock.now(), mailed_at: via.mailed_at, channel: via.channel, proof_of_mailing_id: via.proof_of_mailing_id });
     // REGZ_1026_41B_STATEMENT_PROMPT_4 closes on one resolution event for both "sent" and "exempt" (timers-7-1.ts).
     this.append("statement.cycle.closed", p.loanId, { cycle_due_date: p.cycle_due_date, outcome: "sent", notice_id: n.id, statement_date: p.statement_date, mailed_at: via.mailed_at }, sent.id);
+    // §1026.41(e)(6)(i)(B): a periodic statement sent after charge-off re-anchors the unsent suspension notice on the statement date (7.1 timer table).
+    this.reanchorChargeOffNotice(p.loanId, p.statement_date, n.id, sent.id);
     // D2-2-03 (rule 10): a statement carrying the reminder panel is the payment reminder; "dated ≤ 20th" is `on_time`.
     if (p.reminder_panel) this.append("payment.reminder.sent", p.loanId, { via: "statement_panel", sent_on: p.statement_date, on_time: dayOfMonth(p.statement_date) <= 20, notice_id: n.id }, sent.id);
     return sent;
@@ -126,18 +134,48 @@ export class StatementCycleService {
   }
 
   // ---------------------------------------------------------------- (e)(6) charge-off
-  /** Charge-off approval ingestion (12.9/15.x decision): `loan.charged_off{charged_off_on}` arms REGZ_1026_41E6_CHARGEOFF_NOTICE_30; only with the approval document and the (e)(6)(i)(A) no-further-fees condition. */
-  recordChargeOff(loanId: string, f: { charged_off_on: PlainDate; approval_document_id: string | null; no_further_fees_or_interest: boolean; balance_cents: Cents }): { notice_due_by: PlainDate; event_id: string } {
+  /** The (e)(6)(i)(B) anchor of the loan's charge-off notice as measured from its own events: the latest `loan.charged_off` / `loan.charged_off.notice_reanchored` payload's `notice_anchor_on`, and whether `NTC_REGZ_41E6_CHARGEOFF_SUSPENSION` already went out since; null when the loan is not charged off. */
+  private chargeOffNoticeAnchorOf(loanId: string): ChargeOffAnchorState | null {
+    const step = (s: ChargeOffAnchorState | null, e: DomainEvent): ChargeOffAnchorState | null => {
+      const p = e.payload as Record<string, unknown>;
+      if (e.type === "loan.charged_off") return { charged_off_on: p.charged_off_on as PlainDate, notice_anchor_on: (p.notice_anchor_on ?? p.charged_off_on) as PlainDate, notice_sent: false };
+      if (!s) return null;
+      if (e.type === CHARGEOFF_REANCHOR_EVENT) return { ...s, notice_anchor_on: p.notice_anchor_on as PlainDate };
+      if (e.type === "notice.sent" && p.template === CHARGEOFF_NOTICE_TEMPLATE) return { ...s, notice_sent: true };
+      return s;
+    };
+    return this.d.events.byLoan(loanId).reduce<ChargeOffAnchorState | null>(step, null);
+  }
+  /** The most recent periodic statement sent on the loan (its `statement.sent{statement_date}` history), for the (e)(6)(i)(B) anchor; a transferor's last statement may be passed in by the caller. */
+  private lastStatementSentOn(loanId: string, explicit: PlainDate | null | undefined): PlainDate | null {
+    const dates = this.d.events.byLoan(loanId).filter((e) => e.type === "statement.sent").map((e) => (e.payload as { statement_date: PlainDate }).statement_date).filter((d): d is PlainDate => typeof d === "string");
+    if (explicit) dates.push(explicit);
+    dates.sort();
+    return dates.length ? dates[dates.length - 1]! : null;
+  }
+  /** Charge-off approval ingestion (12.9/15.x decision): `loan.charged_off{charged_off_on, notice_anchor_on}` arms REGZ_1026_41E6_CHARGEOFF_NOTICE_30 on the later of the charge-off date and the most recent periodic statement (§1026.41(e)(6)(i)(B); 7.1 timer table); only with the approval document and the (e)(6)(i)(A) no-further-fees condition. */
+  recordChargeOff(loanId: string, f: { charged_off_on: PlainDate; approval_document_id: string | null; no_further_fees_or_interest: boolean; balance_cents: Cents; last_statement_sent_on?: PlainDate | null }): { notice_due_by: PlainDate; notice_anchor_on: PlainDate; notice_anchor_basis: "charge-off date" | "most recent periodic statement"; event_id: string } {
     if (!f.approval_document_id) throw new RangeError("a charge-off is recorded only with the approval document (7.1 guardrail: no exemption without linked evidence)");
     if (!f.no_further_fees_or_interest) throw new RangeError("§1026.41(e)(6)(i)(A): the exemption applies only when no further fees or interest will be charged");
     if (f.balance_cents < 0n) throw new RangeError("balance_cents must be ≥ 0");
-    const due = chargeOffNoticeDue(f.charged_off_on);
-    const e = this.append("loan.charged_off", loanId, { charged_off_on: f.charged_off_on, approval_document_id: f.approval_document_id, no_further_fees_or_interest: true, balance_cents: money(f.balance_cents), notice_due_by: due });
-    return { notice_due_by: due, event_id: e.id };
+    const last = this.lastStatementSentOn(loanId, f.last_statement_sent_on);
+    const a = chargeOffNoticeAnchor(f.charged_off_on, last); const due = chargeOffNoticeDue(f.charged_off_on, last);
+    const e = this.append("loan.charged_off", loanId, { charged_off_on: f.charged_off_on, approval_document_id: f.approval_document_id, no_further_fees_or_interest: true, balance_cents: money(f.balance_cents), last_statement_sent_on: last, notice_anchor_on: a.anchor_on, notice_anchor_basis: a.basis, notice_due_by: due });
+    return { notice_due_by: due, notice_anchor_on: a.anchor_on, notice_anchor_basis: a.basis, event_id: e.id };
   }
-  /** `NTC_REGZ_41E6_CHARGEOFF_SUSPENSION` within 30 days (exact title, seven items — the template's own rules); `notice.sent{template=…}` closes the timer. */
+  /** Comment 41(e)(6)-2 / 7.1 timer table: a periodic statement sent after charge-off (before the suspension notice went out) re-anchors the notice on the statement date — `loan.charged_off.notice_reanchored{notice_anchor_on}` arms a fresh REGZ_1026_41E6_CHARGEOFF_NOTICE_30 through the registry (trigger `loan.charged_off*`) and the superseded instance is cancelled. */
+  private reanchorChargeOffNotice(loanId: string, statementDate: PlainDate, noticeId: string, causationId: string): DomainEvent | null {
+    const co = this.chargeOffNoticeAnchorOf(loanId);
+    if (!co || co.notice_sent || statementDate <= co.notice_anchor_on) return null;
+    const open = this.d.timers ? this.d.timers.byCode(CHARGEOFF_NOTICE_TIMER).filter((i) => i.loanId === loanId && (i.status === "armed" || i.status === "breached")) : [];
+    const e = this.append(CHARGEOFF_REANCHOR_EVENT, loanId, { charged_off_on: co.charged_off_on, previous_anchor_on: co.notice_anchor_on, notice_anchor_on: statementDate, notice_anchor_basis: "most recent periodic statement", notice_due_by: chargeOffNoticeDue(co.charged_off_on, statementDate), statement_notice_id: noticeId, superseded_timer_ids: open.map((i) => i.id) }, causationId);
+    for (const i of open) this.d.timers!.cancel(i.id, `re-anchored on the periodic statement sent ${statementDate} (§1026.41(e)(6)(i)(B): within 30 days of charge-off or the most recent periodic statement)`, DISCLOSURES_AGENT);
+    return e;
+  }
+  /** `NTC_REGZ_41E6_CHARGEOFF_SUSPENSION` within 30 days of the (e)(6)(i)(B) anchor — the later of charge-off and the most recent periodic statement — with the exact title and the six explanations (the template's own rules; `days_after_anchor` feeds its within-30 rule); `notice.sent{template=…}` closes the timer. */
   async sendChargeOffNotice(loanId: string, f: { charged_off_on: PlainDate; sent_on: PlainDate; recipients: readonly Recipient[]; payload: Record<string, unknown> }, ctx: ChannelContext = {}): Promise<Notice> {
-    const n = this.d.notices.render({ templateCode: "NTC_REGZ_41E6_CHARGEOFF_SUSPENSION", loanId, recipients: f.recipients, payload: { ...f.payload, chargeoff_date: f.charged_off_on, days_after_chargeoff: daysBetween(f.charged_off_on, f.sent_on) }, asOf: f.sent_on });
+    const anchor = this.chargeOffNoticeAnchorOf(loanId)?.notice_anchor_on ?? f.charged_off_on;
+    const n = this.d.notices.render({ templateCode: CHARGEOFF_NOTICE_TEMPLATE, loanId, recipients: f.recipients, payload: { ...f.payload, chargeoff_date: f.charged_off_on, notice_anchor_on: anchor, notice_anchor_basis: anchor === f.charged_off_on ? "charge-off date" : "most recent periodic statement", days_after_chargeoff: daysBetween(f.charged_off_on, f.sent_on), days_after_anchor: daysBetween(anchor, f.sent_on) }, asOf: f.sent_on });
     return this.d.notices.send(n.id, ctx);
   }
   /** (e)(6)(ii): a fee or interest charged after the notice lapses the exemption — statements resume, the fee is reversed (T7). */

@@ -21,9 +21,15 @@ export function businessDaysAfterRequest(receivedOn: PlainDate, sentOn: PlainDat
 }
 export function perDiem(upb: Cents, ratePct: string): Cents { return divRound(upb * Decimal.parse(ratePct).unscaled, 100n * 365n * Decimal.ONE.unscaled, "HALF_UP"); }
 export interface PayoffFigures { readonly upb_cents: Cents; readonly rate_pct: string; readonly paid_through: PlainDate; readonly good_through: PlainDate; readonly nib_cents?: Cents; readonly late_charges_cents?: Cents; readonly fees_advances_cents?: Cents; readonly recording_fee_cents?: Cents; readonly credits_cents?: Cents; readonly escrow_balance_cents?: Cents; }
-/** Rule 4: escrow is never netted — the balance is refunded separately within 20 business days after payoff (§1024.34(b); 16.1 decision). */
+/**
+ * Rule 4 / T8: interest accrues from the day after the paid-through date up to, but not including, the good-through
+ * date — a statement good through G is computed as if funds were received on G (16.1 rule 2; F-1-09: "up to, but not
+ * including, the day the payoff funds were received"), so Nov 1–19 = 19 days for paid-through Oct 31 / good-through
+ * Nov 20. The accrual is on the unrounded daily factor, rounded once; the per diem is rounded for display only and is
+ * never multiplied. Escrow is never netted — refunded separately within 20 business days after payoff (§1024.34(b)).
+ */
 export function payoff(f: PayoffFigures): { per_diem_cents: Cents; days: number; interest_cents: Cents; total_cents: Cents; escrow_treatment: "refund_separately_20bd"; escrow_refund_cents: Cents } {
-  const days = daysBetween(f.paid_through, f.good_through);
+  const days = Math.max(0, daysBetween(f.paid_through, f.good_through) - 1);   // paid_through + 1 … good_through − 1
   const pd = perDiem(f.upb_cents, f.rate_pct);
   const interest = divRound(f.upb_cents * Decimal.parse(f.rate_pct).unscaled * BigInt(days), 100n * 365n * Decimal.ONE.unscaled, "HALF_UP");   // exact daily accrual, rounded once
   const total = f.upb_cents + interest + (f.nib_cents ?? 0n) + (f.late_charges_cents ?? 0n) + (f.fees_advances_cents ?? 0n) + (f.recording_fee_cents ?? 0n) - (f.credits_cents ?? 0n);
@@ -33,7 +39,8 @@ export function payoff(f: PayoffFigures): { per_diem_cents: Cents; days: number;
 export function payoffBeforeScheduledPayment(f: { upb_before_payment_cents: Cents; old_rate_pct: string; paid_through: PlainDate; change_date: PlainDate; new_rate_pct: string; good_through: PlainDate }): { upb_cents: Cents; segments: { from: PlainDate; through: PlainDate; rate_pct: string; days: number; per_diem_cents: Cents; interest_cents: Cents }[]; interest_cents: Cents; total_cents: Cents } {
   const seg = (from: PlainDate, through: PlainDate, rate: string) => { const days = daysBetween(from, through); const pd = perDiem(f.upb_before_payment_cents, rate); return { from, through, rate_pct: rate, days, per_diem_cents: pd, interest_cents: divRound(f.upb_before_payment_cents * Decimal.parse(rate).unscaled * BigInt(days), 100n * 365n * Decimal.ONE.unscaled, "HALF_UP") }; };
   const dayBeforeChange = addDays(f.change_date, -1);
-  const segments = [seg(f.paid_through, dayBeforeChange, f.old_rate_pct), seg(dayBeforeChange, f.good_through, f.new_rate_pct)];
+  // the same F-1-09 / 16.1 rule 2 day count as payoff(): the noticed-rate segment runs through good_through − 1 (funds deemed received on the good-through date)
+  const segments = [seg(f.paid_through, dayBeforeChange, f.old_rate_pct), seg(dayBeforeChange, addDays(f.good_through, -1), f.new_rate_pct)];
   const interest = segments.reduce((a, s) => a + s.interest_cents, 0n);
   return { upb_cents: f.upb_before_payment_cents, segments, interest_cents: interest, total_cents: f.upb_before_payment_cents + interest };
 }

@@ -9,6 +9,30 @@ export type AssertionType = "b1" | "b2" | "b3" | "b4" | "b5" | "b6" | "b7" | "b8
 export const isForeclosureAssertion = (t: AssertionType): boolean => t === "b9" || t === "b10";
 /** 4.1 rule 9: assertions touching a payment (b1–b3, b5 late-fee disputes, b11 delinquency disputes) write the §1024.35(i) suppression row. */
 export const isPaymentRelated = (t: AssertionType): boolean => t === "b1" || t === "b2" || t === "b3" || t === "b5" || t === "b11";
+/**
+ * Intake Router deterministic fallback for the §1024.35(b) categories (4.1 AI design: "any assertion that something
+ * was done wrong on the account is `noe` even without the words 'error' or 'dispute'"). (b)(4) is a failure to pay
+ * taxes, insurance premiums or other charges — including charges the borrower and servicer voluntarily agreed the
+ * servicer should collect and pay — timely under §1024.34(a) *or to refund an escrow account balance* under
+ * §1024.34(b), so an escrow-refund complaint is a covered error. Null when no category is recognisable (the Router's
+ * `needs_human` queue).
+ */
+export function classifyAssertion(text: string): AssertionType | null {
+  const t = text.toLowerCase();
+  if (/payoff (balance|statement|quote|amount|figure)/.test(t)) return "b6";
+  if (/(judgment|order of sale|conducted|held|scheduled) [^.]{0,40}(sale|foreclosure)|foreclosure sale/.test(t)) return "b10";
+  if (/(first|initial) (notice|filing)|referred? [^.]{0,20}to foreclosure|filed (a )?foreclosure|started foreclosure/.test(t)) return "b9";
+  if (/(refund|return|send back|owe)[^.]{0,60}escrow (account )?(balance|surplus|funds)|escrow (account )?(balance|surplus|funds)[^.]{0,60}(refund|return|sent back)/.test(t)) return "b4";
+  if (/(tax|taxes|insurance|premium|hoa|dues|charge)[^.]{0,60}(not|never|late|fail|didn'?t|did not|weren'?t|wasn'?t)[^.]{0,40}(paid|pay|remit|disburs)/.test(t) || /(not|never|late|fail|didn'?t|did not)[^.]{0,40}(paid|pay|remit|disburs)[^.]{0,60}(tax|taxes|insurance|premium|hoa|dues)/.test(t)) return "b4";
+  if (/(refused|rejected|returned|would not accept|didn'?t accept|did not accept)[^.]{0,40}payment/.test(t)) return "b1";
+  if (/(credit|credited|posted)[^.]{0,40}(as of|on the day|date (it was )?received|received on)/.test(t)) return "b3";
+  if (/(applied|allocat|posted|misappl)[^.]{0,60}(wrong|late|incorrect|to the wrong|on 20\d\d-)/.test(t) || /misapplied/.test(t)) return "b2";
+  if (/(fee|charge|late charge)[^.]{0,80}(not owed|never|without|no basis|shouldn'?t|should not|improper|unjustified|wasn'?t late|was not late)/.test(t)) return "b5";
+  if (/(loss[- ]mit|modification|forbearance|repayment plan)[^.]{0,80}(information|told|said|wrong|inaccurate)/.test(t)) return "b7";
+  if (/(transfer|new servicer|prior servicer|previous servicer)[^.]{0,80}(record|information|history|missing|wrong)/.test(t)) return "b8";
+  if (/(error|mistake|wrong|incorrect|dispute|shortage|delinquen|past due|behind)/.test(t)) return "b11";
+  return null;
+}
 /** 4.1 guardrails: corrections above `case.correction.max_cents` (default 500,000¢ = $5,000) need human (officer) approval. */
 export const CORRECTION_MAX_CENTS: Cents = 500_000n;
 

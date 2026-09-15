@@ -13,12 +13,24 @@ export function extendItem(d: ReturnType<typeof itemDeadlines>, noticeOn: PlainD
  * both Midtown Center, 1100 15th Street NW, Washington, DC 20005, 1-800-2FANNIE (1-800-232-6643); the six-digit pool number
  * is the trust identifier, given only when the borrower expressly asks for the trust name (comment 36(a)-2).
  */
-export const FNMA_OWNER_BLOCK = { version: "A4-1-03 (12/20/2023)", portfolio: "Fannie Mae", mbs: "Fannie Mae in its capacity as Trustee", address: "Midtown Center, 1100 15th Street NW, Washington, DC 20005", phone: "1-800-2FANNIE (1-800-232-6643)" } as const;
+export const FNMA_OWNER_BLOCK = { version: "A4-1-03 (12/20/2023)", portfolio: "Fannie Mae", mbs: "Fannie Mae in its capacity as Trustee", address: "Midtown Center, 1100 15th Street NW, Washington, DC 20005", phone: "1-800-2FANNIE (1-800-232-6643)", structured_deal_example: "Fannie Mae REMIC Trust 2005-W2", pfp_contact: "1-800-2FANNIE" } as const;
 export type Ownership = "fnma_portfolio" | "fnma_mbs_trust";
+/** A4-1-03: how the Trust identifier is stated — a standard MBS pool, a structured deal (REMIC/grantor trust), or a PFP pool. */
+export type TrustStructure = "standard_mbs" | "structured_deal" | "pfp_pool";
+/**
+ * A4-1-03 (4.2 rule 2): the Trust identifier, given only when the borrower expressly asks for the trust name — the
+ * six-digit pool number for a standard MBS pool; the designated trust name (e.g., Fannie Mae REMIC Trust 2005-W2) for a
+ * structured deal; the Fannie Mae contact number for the related Trust identifier of a loan in a PFP pool.
+ */
+export function trustIdentifier(structure: TrustStructure, poolNumber?: string, trustName?: string): string {
+  if (structure === "structured_deal") return trustName ?? "designated trust name available from Fannie Mae on request";
+  if (structure === "pfp_pool") return `PFP pool${poolNumber ? ` ${poolNumber}` : ""} — for the related Trust identifier contact Fannie Mae at ${FNMA_OWNER_BLOCK.pfp_contact}`;
+  return `Fannie Mae MBS pool ${poolNumber ?? "number available on request"}`;
+}
 /** The exact A4-1-03 block for the loan's ownership type; the "as of a date certain … may change" sentence is the template's. */
-export function ownerIdentity(ownership: Ownership, askedForTrustName = false, poolNumber?: string): string {
+export function ownerIdentity(ownership: Ownership, askedForTrustName = false, poolNumber?: string, structure: TrustStructure = "standard_mbs", trustName?: string): string {
   const name = ownership === "fnma_portfolio" ? FNMA_OWNER_BLOCK.portfolio : FNMA_OWNER_BLOCK.mbs;
-  const trust = ownership === "fnma_mbs_trust" && askedForTrustName ? ` (trust identifier: Fannie Mae MBS pool ${poolNumber ?? "number available on request"})` : "";
+  const trust = ownership === "fnma_mbs_trust" && askedForTrustName ? ` (trust identifier: ${trustIdentifier(structure, poolNumber, trustName)})` : "";
   return `${name}${trust}, ${FNMA_OWNER_BLOCK.address}, ${FNMA_OWNER_BLOCK.phone}`;
 }
 export function exception(f: { asks_for: "investor_guidelines" | "own_evaluation" | "records" | "call_recordings"; pages_est?: number; hours_est?: number; answered_same_item_within_12m?: boolean; received_on: PlainDate; transfer_out_or_discharge_on?: PlainDate | null }): "irrelevant" | "overbroad" | "duplicative" | "untimely" | null {

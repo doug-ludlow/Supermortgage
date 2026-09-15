@@ -132,7 +132,7 @@ Jurisdiction overrides: none on timing (§1024.33(d)); correspondence footers an
 - 17.2-T7 Given an escrowed loan transferred Dec 1, 2026, when the short-year statement is mailed Jan 29, 2027, then `REGX_1024_17I4_TRANSFEROR_SHORT_YEAR_60` is satisfied; Feb 1 → breached.
 - 17.2-T8 Given a scheduled ACH debit with settlement date Dec 1, then it is cancelled by Nov 25 (T-3 BD) and no debit settles on/after T.
 - 17.2-T9 Given a `master_change_sub_retained` batch, then no goodbye run exists and the exclusion record is present.
-- 17.2-T10 Given the transfer is cancelled Nov 20 after mailing, then a corrective notice is mailed by Nov 27 and the goodbye timer is cancelled with reason `transfer_cancelled`.
+- 17.2-T10 Given the transfer is cancelled Fri Nov 20, 2026 after mailing, then a corrective notice is mailed by Mon Nov 30 (+5 servicer business days: Nov 23, 24, 25, 27, 30 — Thanksgiving Nov 26 excluded) and the goodbye timer is cancelled with reason `transfer_cancelled`.
 
 #### Audit and evidence
 Rendered notices (hashes), checklist results, transferee data-block verification, proofs of mailing, return-mail/skip-trace records, `officer` release approvals, `misdirected_payments` with receipt dates, forwarding files and transferee acknowledgments, autodraft cancellation logs, short-year statements, timer histories and `agent_decisions` — the RESPA §6(f) defense file for the transferor period.

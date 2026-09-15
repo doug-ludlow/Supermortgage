@@ -2,7 +2,7 @@
  * §16.2 authored notice versions (V(code, source, rules, sample, ruleSet, formBasis) from ./section01.ts;
  * see ./section13.ts) and per-code channel/combination overrides. Spread by ./section16.ts.
  * Three policy letters the spec's Outputs name: the paid-in-full letter (payoff date, amounts applied,
- * escrow refund timing §1024.34(b)(1), short-year statement §1024.17(i)(4)(ii), release/recording timing
+ * escrow refund timing §1024.34(b)(1), short-year statement §1024.17(i)(4)(iii), release/recording timing
  * per `jurisdiction_rules.release`, MI/insurance/tax next steps, 1098 timing, contact for the recorded
  * release); the shortage demand (exact shortfall, per diem if applicable, deadline, consequences; never
  * more than a reliance-protected figure); and the overage refund advice (with the refund, within 10 BD,
@@ -22,7 +22,7 @@ const CONTACT = `{{#block "contact" page=1 y=0.85 pt=11}}Contact: {{team_name}},
 // ------------------------------------------------------------------ NTC_PAYOFF_PAID_IN_FULL
 const PIF = `${HEAD("Your mortgage loan has been paid in full")}
 {{#block "applied" page=1 y=0.18 pt=11}}We received {{money amount_received_cents}} on {{date payoff_date}} and applied it as follows: {{#each applied}}{{label}} {{money cents}}; {{/each}}total {{money amount_applied_cents}}. Your loan balance is now {{money balance_after_cents}} and your loan is paid in full as of {{date payoff_date}}.{{/block}}
-{{#block "escrow" page=1 y=0.32 pt=11}}{{#if escrowed}}Escrow account: your remaining escrow balance of {{money escrow_refund_cents}} will be refunded within 20 business days of the payoff date as required by 12 CFR 1024.34(b)(1), no later than {{date escrow_refund_by}}. A short-year escrow account statement will follow within 60 days of the payoff (12 CFR 1024.17(i)(4)(ii)), no later than {{date short_year_statement_by}}.{{else}}Escrow account: none was maintained on this loan; no escrow refund is due.{{/if}}{{/block}}
+{{#block "escrow" page=1 y=0.32 pt=11}}{{#if escrowed}}Escrow account: your remaining escrow balance of {{money escrow_refund_cents}} will be refunded within 20 business days of the payoff date as required by 12 CFR 1024.34(b)(1), no later than {{date escrow_refund_by}}. A short-year escrow account statement will follow within 60 days of the payoff (12 CFR 1024.17(i)(4)(iii)), no later than {{date short_year_statement_by}}.{{else}}Escrow account: none was maintained on this loan; no escrow refund is due.{{/if}}{{/block}}
 {{#block "release" page=1 y=0.46 pt=11}}Lien release: we will prepare, execute and record the release (satisfaction) of the mortgage with the {{release_county}} County recorder within {{release_days}} days of payoff as required by {{release_cite}}, no later than {{date release_by}}. You will receive a copy of the recorded release; there is no charge to you unless the recording fee was disclosed on your payoff statement.{{/block}}
 {{#block "next_steps" page=1 y=0.6 pt=11}}Next steps: {{#if mi_active}}your mortgage insurance ended with the payoff and any unearned premium will be refunded to you (Homeowners Protection Act). {{/if}}We have asked your property insurance carrier to remove {{mortgagee_name}} as mortgagee; you may also tell your agent. We have notified the taxing authorities that future tax bills should be sent to you. {{#if autodraft}}Your automatic payment authorization was terminated on {{date payoff_date}}; any debit that still occurs will be refunded within 10 business days. {{/if}}Form 1098: interest of {{money interest_1098_cents}} paid in {{tax_year}} will be reported on your Form 1098, mailed by January 31, {{tax_year_next}}.{{/block}}
 ${CONTACT}`;
@@ -33,7 +33,7 @@ const PIF_RULES = [DATE_RULE, CONTACT_RULE, NO_THREAT,
   R("applied-equals-received", "16.2 rule 3: amounts applied reconcile to the funds received (less any overage refunded separately)", "data_equality", "amount_applied_cents", "applied ≤ received", { predicate: { "<=": [{ var: "amount_applied_cents" }, { var: "amount_received_cents" }] } }),
   R("amounts-applied", "16.2 outputs: amounts applied", "presence", "applied it as follows: .+\\$[\\d,]+\\.\\d{2}", "application lines"),
   R("escrow-20bd", "12 CFR 1024.34(b)(1)", "conditional", "escrow_refund_by", "escrow refund date within 20 BD when escrowed", { when: { "==": [{ var: "escrowed" }, true] }, predicate: { and: [{ present: "escrow_refund_by" }, { ">": [{ var: "escrow_refund_cents" }, 0] }] } }),
-  R("escrow-text", "12 CFR 1024.34(b)(1); 12 CFR 1024.17(i)(4)(ii)", "conditional", "escrowed", "escrow refund and short-year statement timing", { when: { "==": [{ var: "escrowed" }, true] }, predicate: { present: "short_year_statement_by" } }),
+  R("escrow-text", "12 CFR 1024.34(b)(1); 12 CFR 1024.17(i)(4)(iii)", "conditional", "escrowed", "escrow refund and short-year statement timing", { when: { "==": [{ var: "escrowed" }, true] }, predicate: { present: "short_year_statement_by" } }),
   R("release-timing", "16.2 outputs: release/recording timing per jurisdiction_rules.release", "presence", "within \\d+ days of payoff as required by", "release timing and citation"),
   R("release-days", "jurisdiction_rules.release.deadline_days", "data_range", "release_days", "release deadline between 1 and 365 days", { range: { min: 1, max: 365 } }),
   R("form-1098", "C-4.2-01; 26 U.S.C. 6050H", "presence", "Form 1098", "1098 timing"),
@@ -78,7 +78,7 @@ const OVER_RULES = [DATE_RULE, CONTACT_RULE, NO_THREAT,
 const OVER_SAMPLE = { ...BASE, received_on: "2026-10-16", payoff_date: "2026-10-16", amount_received_cents: 20_131_647n, exact_total_cents: 20_105_147n, overage_cents: 26_500n, refund_cents: 26_500n, refund_method: "check", refund_payee: "A. Borrower", refund_issued_on: "2026-10-23", refund_bd_after_receipt: 5, applied_to_fees_cents: 0n };
 
 export const VERSIONS_16_2: VersionInput[] = [
-  V("NTC_PAYOFF_PAID_IN_FULL", PIF, PIF_RULES, PIF_SAMPLE, "sm.payoff.2026-09", "16.2 outputs (paid-in-full letter; F-1-09 satisfaction tasks; §1024.34(b)(1); §1024.17(i)(4)(ii))"),
+  V("NTC_PAYOFF_PAID_IN_FULL", PIF, PIF_RULES, PIF_SAMPLE, "sm.payoff.2026-09", "16.2 outputs (paid-in-full letter; F-1-09 satisfaction tasks; §1024.34(b)(1); §1024.17(i)(4)(iii))"),
   V("NTC_PAYOFF_SHORTAGE_DEMAND", SHORT, SHORT_RULES, SHORT_SAMPLE, "sm.payoff.2026-09", "16.2 rule 5 / outputs (shortage demand; 16.2-T4 $221.10 in Ohio)"),
   V("NTC_PAYOFF_OVERAGE_REFUND_ADVICE", OVER, OVER_RULES, OVER_SAMPLE, "sm.payoff.2026-09", "16.2 rule 2 / rule 10 (overage refund advice with the refund)"),
 ];

@@ -43,4 +43,8 @@ export function reminderPanel(statementDate: PlainDate, monthPaymentUnpaid: bool
   return { panel: needs && day >= 17, standalone_by: needs ? (statementDate.slice(0, 8) + "20") as PlainDate : null };
 }
 export function form1098(interestAppliedCents: Cents, pointsCents: Cents, govAssistanceInterestCents: Cents, upbJan1Cents: Cents): { box1_cents: Cents; box2_cents: Cents } { return { box1_cents: interestAppliedCents - pointsCents - govAssistanceInterestCents, box2_cents: upbJan1Cents }; }
-export function chargeOffNoticeDue(approvedOn: PlainDate): PlainDate { return addDays(approvedOn, 30); }
+/** §1026.41(e)(6)(i)(B) (7.1 timer table): the notice is due "within 30 days of charge-off or the most recent periodic statement" — the later of the two dates is the anchor (comment 41(e)(6)-2: a periodic statement provided under §1026.41(a) after charge-off restarts the obligation, so a `statement.sent` after charge-off re-anchors). */
+export function chargeOffNoticeAnchor(approvedOn: PlainDate, lastStatementSentOn?: PlainDate | null): { anchor_on: PlainDate; basis: "charge-off date" | "most recent periodic statement" } {
+  return lastStatementSentOn && lastStatementSentOn > approvedOn ? { anchor_on: lastStatementSentOn, basis: "most recent periodic statement" } : { anchor_on: approvedOn, basis: "charge-off date" };
+}
+export function chargeOffNoticeDue(approvedOn: PlainDate, lastStatementSentOn?: PlainDate | null): PlainDate { return addDays(chargeOffNoticeAnchor(approvedOn, lastStatementSentOn).anchor_on, 30); }

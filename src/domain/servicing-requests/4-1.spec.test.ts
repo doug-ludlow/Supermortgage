@@ -18,7 +18,11 @@ import type { CommandSpec } from "../../app/commands.ts";
 import type { ToolInput } from "../../app/tools.ts";
 import { FC_NOE_OPEN, withFcNoeGate, foreclosureHoldPackage } from "../../app/tools/section04.ts";
 import { harness, CASE_AGENT, OFFICER, ATTORNEY, refusedWith } from "./test-harness.ts";
+import { buildRegistry, publishAuthored } from "../../notices/catalog.ts";
+import { render } from "../../notices/render.ts";
+import { evaluateChecklist } from "../../notices/checklist.ts";
 void SYSTEM;
+const notices = () => { const reg = buildRegistry(); publishAuthored(reg); return reg; };
 const notice = (h: ReturnType<typeof harness>, template: string, caseId: string, extra: Record<string, unknown> = {}) => h.events.append({ type: "notice.sent", loanId: "L-1", actor: CASE_AGENT, payload: { template, case_id: caseId, notice_id: `n-${template}-${caseId}`, ...extra } });
 const noError = (assertion_id: string, snapshot: string) => ({ assertion_id, determination: "no_error", snapshot_ids: [snapshot], statement_of_reasons: "the record shows the servicer acted as the loan terms and the rule require" });
 
@@ -31,7 +35,11 @@ test("4.1-T1: (happy path) Given a written letter received 2026-09-04 asserting 
     { account: { scope: "loan", loanId: "L-1", account: "interest_due" }, amountCents: -124_217n, ruleRef: "2.1:r8" },
     { account: { scope: "loan", loanId: "L-1", account: "escrow" }, amountCents: -61_240n, ruleRef: "2.1:r8" }] });
   await assert.rejects(h.run("4.1", "case.noe.open", CASE_AGENT, { case_id: "noe-0", receipt_date: "2026-09-04", channel: "mail", assertions: [] }), refusedWith("NOE_NEEDS_ASSERTION"));
-  await h.run("4.1", "case.noe.open", CASE_AGENT, { case_id: "noe-1", receipt_date: "2026-09-04", channel: "mail", assertions: [{ id: "a1", category: "b2", description: "my 2026-03-01 payment was applied on 2026-03-17", period: "2026-03" }] });
+  // "when classified": the §1024.35(b) category comes from the letter's substance — the misapplied-payment assertion is (b)(2); an escrow-refund complaint is (b)(4) (§1024.34(b) refund of an escrow balance is a covered error, like an unpaid tax or premium)
+  assert.equal(N.classifyAssertion("my 2026-03-01 payment was applied on 2026-03-17"), "b2");
+  assert.equal(N.classifyAssertion("you never refunded my escrow account balance after I paid off the loan"), "b4"); assert.equal(N.classifyAssertion("you did not pay my property taxes on time"), "b4");
+  assert.equal(N.classifyAssertion("the late fee assessed in March was not owed"), "b5"); assert.equal(N.classifyAssertion("thank you for the statement"), null); assert.deepEqual(N.REQUIRED_RECORDS.b4, ["ledger", "escrow_analysis"]);
+  await h.run("4.1", "case.noe.open", CASE_AGENT, { case_id: "noe-1", receipt_date: "2026-09-04", channel: "mail", assertions: [{ id: "a1", category: N.classifyAssertion("my 2026-03-01 payment was applied on 2026-03-17"), description: "my 2026-03-01 payment was applied on 2026-03-17", period: "2026-03" }] });
   assert.equal(h.rt.store.get("cases", "noe-1")!.data.case_type, "noe"); assert.equal(h.rt.store.get("case_assertions", "noe-1:a1")!.data.category, "b2");
   const due = (code: string) => h.timer(code)[0]?.dueDate;
   assert.equal(due("REGX_1024_35D_NOE_ACK_5"), "2026-09-14"); assert.equal(due("REGX_1024_35E_NOE_RESPONSE_30"), "2026-10-20"); assert.equal(due("REGX_1024_35I_CREDIT_SUPPRESS_60"), "2026-11-03");
@@ -190,8 +198,12 @@ test("4.1-T7: (overbroad with carve-out) Given a 40-page pleading-style letter c
   const h = harness();
   await h.run("4.1", "case.noe.open", CASE_AGENT, { case_id: "noe-7", receipt_date: "2026-09-04", assertions: [{ id: "a1", category: "b5", description: "the late fee assessed in March was not owed" }, { id: "a2", category: "b11", identifiable: false, description: "40 pages of pleading-style allegations" }] });
   await assert.rejects(h.run("4.1", "case.noe.determine", CASE_AGENT, { case_id: "noe-7", assertion_id: "a1", determination: "exception", exception_basis: "overbroad" }), refusedWith("EXCEPTION_WITH_IDENTIFIABLE"));   // the record says a1 is identifiable
-  const ex = (await h.run("4.1", "case.noe.determine", CASE_AGENT, { case_id: "noe-7", assertion_id: "a2", determination: "exception", exception_basis: "overbroad" })).output as { exception_notice_due: string };
+  const ex = (await h.run("4.1", "case.noe.determine", CASE_AGENT, { case_id: "noe-7", assertion_id: "a2", determination: "exception", exception_basis: "overbroad" })).output as { exception_notice_due: string; suppression: { ended: boolean; scope: unknown; ends_at: string; remaining_assertion_ids: string[] } };
   assert.equal(ex.exception_notice_due, "2026-09-14"); assert.equal(h.timer("REGX_1024_35G2_NOE_EXCEPTION_NOTICE_5")[0]!.dueDate, "2026-09-14");
+  // §1024.35(g)(1)(ii): the overbroad exception attaches to the residue only — the carved-out late-fee assertion keeps (d), (e) and (i): the suppression row stays (60 days from receipt, scoped to a1's payments) and the gate stays armed until expiry
+  assert.deepEqual(ex.suppression, { ended: false, scope: "all", ends_at: "2026-11-03", remaining_assertion_ids: ["a1"] });
+  const sup7 = h.rt.store.get("credit_reporting_suppressions", "noe-7")!.data; assert.deepEqual([sup7.ends_at, sup7.lifted_on, sup7.lifted_reason, sup7.lifted_assertion_ids], ["2026-11-03", null, null, ["a2"]]);
+  assert.equal(h.timer("REGX_1024_35I_CREDIT_SUPPRESS_60")[0]!.status, "armed"); assert.equal(h.events.ofType("credit_reporting.suppression.expired").length, 0);
   await h.run("4.1", "case.noe.determine", CASE_AGENT, { case_id: "noe-7", assertion_id: "a1", determination: "error_found", records_consulted: ["fee_schedule", "jurisdiction_rules", "ledger"] });
   h.clock.set("2026-09-10T15:00:00.000Z"); h.events.append({ type: "notice.sent", loanId: "L-1", actor: CASE_AGENT, payload: { template: "NTC_REGX_35D_ACK", case_id: "noe-7" } });
   assert.equal(h.timer("REGX_1024_35G2_NOE_EXCEPTION_NOTICE_5")[0]!.status, "armed");                                          // the ack is not the (g)(2) notice
@@ -207,6 +219,11 @@ test("4.1-T8: (duplicative) Given the same escrow-shortage assertion answered 60
   const det = (await h.run("4.1", "case.noe.determine", CASE_AGENT, { case_id: "noe-8", assertion_id: "a1", determination: "exception", exception_basis: basis, why_not_material: "repeats the July argument; nothing not previously reviewed (comment 35(g)(1)(i)-1)" }, "2026-09-08T15:00:00.000Z")).output as { exception_notice_due: string };
   assert.equal(det.exception_notice_due, "2026-09-15"); assert.equal(N.exceptionNoticeDue(D("2026-09-08")), "2026-09-15");     // 5 federal BD after the 09-08 determination, not after receipt
   assert.equal(h.timer("REGX_1024_35G2_NOE_EXCEPTION_NOTICE_5")[0]!.dueDate, "2026-09-15"); assert.equal(h.rt.store.get("case_assertions", "noe-8:a1")!.data.exception_basis, "duplicative");
+  // §1024.35(g)(1) lifts (i) as well as (d) and (e): the only payment-related assertion is excepted, so the §1024.35(i) row ends on the determination date and the 60-day gate is satisfied by the lift (reason regx_1024_35_g1_exception), not by expiry
+  const sup8 = h.rt.store.get("credit_reporting_suppressions", "noe-8")!.data; assert.deepEqual([sup8.ends_at, sup8.lifted_on, sup8.lifted_reason, sup8.lifted_assertion_ids], ["2026-09-08", "2026-09-08", "regx_1024_35_g1_exception", ["a1"]]);
+  const lifted = h.events.ofType("credit_reporting.suppression.expired")[0]!; assert.deepEqual([lifted.payload.case_id, lifted.payload.reason, lifted.payload.ends_at, lifted.payload.lifted_assertion_ids], ["noe-8", "regx_1024_35_g1_exception", "2026-09-08", ["a1"]]);
+  assert.equal(h.timer("REGX_1024_35I_CREDIT_SUPPRESS_60")[0]!.status, "satisfied"); assert.equal(h.timer("REGX_1024_35I_CREDIT_SUPPRESS_60")[0]!.satisfiedByEventId, lifted.id);
+  assert.deepEqual(expireCreditSuppressions(h.events, [sup8 as { loan_id: string; case_id: string; ends_at: PlainDate; lifted_on: PlainDate | null }], D("2026-09-09")), []);   // the nightly sweep does not expire a lifted row a second time
   assert.equal(N.exception({ similarity_to_prior: 0.92, new_material_info: true, identifiable: true, received_on: D("2026-09-04") }), null);   // new bank statement → investigated
   const inv = (await h.run("4.1", "case.noe.determine", CASE_AGENT, { case_id: "noe-8", assertion_id: "a1", determination: "error_found", records_consulted: ["ledger", "escrow_analysis"] })).output as { exception_notice_due: string | null };
   assert.equal(inv.exception_notice_due, null); assert.equal(h.timer("REGX_1024_35G2_NOE_EXCEPTION_NOTICE_5").length, 1);
@@ -217,6 +234,9 @@ test("4.1-T9: (untimely) Given a discharge date 14 months before receipt, then u
   const untimely = N.exception({ similarity_to_prior: 0, new_material_info: false, identifiable: true, received_on: D("2026-09-04"), transfer_out_or_discharge_on: D("2025-07-04") }); assert.equal(untimely, "untimely");
   await h.run("4.1", "case.noe.determine", CASE_AGENT, { case_id: "noe-9", assertion_id: "a1", determination: "exception", exception_basis: untimely });
   assert.equal(h.events.ofType("case.noe.exception_determined")[0]!.payload.exception_basis, "untimely"); assert.equal(h.timer("REGX_1024_35G2_NOE_EXCEPTION_NOTICE_5")[0]!.dueDate, "2026-09-14");   // the (g)(2) notice ≤5 federal BD after the same-day determination
+  // the untimely determination lifts (i) too (§1024.35(g)(1)): the b2 suppression ends on the determination date and the gate is satisfied
+  const sup9 = h.rt.store.get("credit_reporting_suppressions", "noe-9")!.data; assert.deepEqual([sup9.ends_at, sup9.lifted_on, sup9.lifted_reason], ["2026-09-04", "2026-09-04", "regx_1024_35_g1_exception"]);
+  assert.equal(h.timer("REGX_1024_35I_CREDIT_SUPPRESS_60")[0]!.status, "satisfied"); assert.equal(h.events.ofType("credit_reporting.suppression.expired")[0]!.payload.reason, "regx_1024_35_g1_exception");
   assert.equal(N.exception({ similarity_to_prior: 0, new_material_info: false, identifiable: true, received_on: D("2026-09-04"), transfer_out_or_discharge_on: D("2025-10-04") }), null);           // 11 months → investigated
   assert.equal(N.exception({ similarity_to_prior: 0, new_material_info: false, identifiable: true, received_on: D("2026-09-04"), transfer_out_or_discharge_on: D("2025-07-04"), concerns_own_servicing: true }), null);   // rule 4: Supermortgage's own errors are never untimely on the transferor's date
 });
@@ -235,6 +255,30 @@ test("4.1-T10: (documents) Given a no-error response and a borrower's oral reque
   assert.equal(t.status, "armed");                                                                                               // the response letter is not the document copies
   h.events.append({ type: "notice.sent", loanId: "L-1", actor: CASE_AGENT, payload: { template: "NTC_REGX_35E4_WITHHELD", case_id: "noe-10", withheld: ["legal-memo-2026-09-10"] } });
   assert.equal(t.status, "satisfied");
+  // §1024.35(e)(5) (4.1 Outputs; mirror of 4.2 rule 5): a confirmed-successor requester gets the copies with the deceased borrower's location/contact and personal financial data omitted — the contents go through the redaction check before the copies are sent, within the same 15-day clock
+  const rs = documentRequest(D("2026-09-04"), [{ id: "ledger-2026-03", relied_on: true }], "confirmed_successor");
+  assert.deepEqual([rs.requester, rs.omissions, rs.copies_due], ["confirmed_successor", ["other_borrowers.location_contact", "other_borrowers.personal_financial"], "2026-09-28"]);
+  assert.deepEqual(documentRequest(D("2026-09-04"), []).omissions, ["successors.personal_data"]);                          // (e)(5)(i): a borrower requester never sees a successor's personal data
+  const h2 = harness();
+  await h2.run("4.1", "case.noe.open", CASE_AGENT, { case_id: "noe-10s", receipt_date: "2026-08-03", assertions: [{ id: "a1", category: "b2" }] });
+  await h2.run("4.1", "case.noe.determine", CASE_AGENT, { case_id: "noe-10s", ...noError("a1", "ledger-2026-03"), records_consulted: ["ledger", "payment_images", "allocation_rules"] });
+  await h2.run("4.1", "case.noe.respond", CASE_AGENT, { case_id: "noe-10s", template: "NTC_REGX_35E_NO_ERROR" }, "2026-09-01T15:00:00.000Z");
+  const docs = [{ id: "ledger-2026-03", relied_on: true }];
+  await assert.rejects(h2.run("4.1", "case.noe.documents.request", CASE_AGENT, { case_id: "noe-10s", requested_via: "written", requester_role: "confirmed_successor", documents: docs }, "2026-09-04T15:00:00.000Z"), refusedWith("E5_REDACTION_BEFORE_SEND"));   // nothing to check
+  const leaky = { ledger: { payment_history: [{ on: "2026-03-01", amount_cents: 245_457n }] }, deceased_borrower: { ssn: "123-45-6789", phone: "(555) 010-0000" } };
+  await assert.rejects(h2.run("4.1", "case.noe.documents.request", CASE_AGENT, { case_id: "noe-10s", requested_via: "written", requester_role: "confirmed_successor", documents: docs, document_contents: leaky }, "2026-09-04T15:00:00.000Z"), refusedWith("E5_REDACTION_BEFORE_SEND"));
+  assert.equal(h2.timer("REGX_1024_35E4_NOE_DOCS_15").length, 0);
+  const clean = { ledger: { loan_terms: { rate_pct: "6.500" }, status: "current", payment_history: [{ on: "2026-03-01", amount_cents: 245_457n }] }, deceased_borrower: {} };
+  const log = [{ field: "deceased_borrower.ssn", rule: "other_borrowers.personal_financial" }, { field: "deceased_borrower.phone", rule: "other_borrowers.location_contact" }];
+  const ok = (await h2.run("4.1", "case.noe.documents.request", CASE_AGENT, { case_id: "noe-10s", requested_via: "written", requester_role: "confirmed_successor", documents: docs, document_contents: clean, redaction_log: log }, "2026-09-04T15:00:00.000Z")).output as { copies_due: string; omissions: string[]; e5_redaction_check_passed: boolean };
+  assert.deepEqual([ok.copies_due, ok.omissions, ok.e5_redaction_check_passed], ["2026-09-28", ["other_borrowers.location_contact", "other_borrowers.personal_financial"], true]);
+  assert.equal(h2.timer("REGX_1024_35E4_NOE_DOCS_15")[0]!.dueDate, "2026-09-28");
+  assert.deepEqual(h2.rt.store.get("document_copy_requests", "noe-10s:2026-09-04")!.data.omissions_applied, { rules: ok.omissions, check_passed: true, redaction_log: log });
+  assert.deepEqual([h2.events.ofType("case.noe.document_copies.requested")[0]!.payload.requester_role, h2.events.ofType("case.noe.document_copies.requested")[0]!.payload.e5_redaction_check_passed], ["confirmed_successor", true]);
+  const v = notices().activeVersion("NTC_REGX_35E4_DOCS", D("2026-09-20"))!;
+  const p = { ...v.samplePayload, requester_role: "confirmed_successor", e5_redaction_check_passed: true }; assert.equal(evaluateChecklist(v, p, render(v.source, p)).passed, true);
+  const unchecked = { ...p, e5_redaction_check_passed: false }; assert.ok(evaluateChecklist(v, unchecked, render(v.source, unchecked)).blocking.some((b) => b.rule_id === "e5-omissions"));
+  assert.equal(evaluateChecklist(v, v.samplePayload, render(v.source, v.samplePayload)).results.find((r) => r.rule_id === "e5-omissions")!.skipped, true);   // a borrower requester: the (e)(5) rule does not apply
 });
 test("4.1-T11: (early correction) Given a clear posting error fixed on day 2 with the correction letter mailed on day 3, then ack/response timers cancel with reason `early_correction`.", async () => {
   const r = earlyCorrection(D("2026-09-04"), D("2026-09-08"), D("2026-09-09"));

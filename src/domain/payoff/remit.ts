@@ -15,10 +15,11 @@ export function variance(amount: Cents, exact: Cents, relianceState: boolean, wi
   return { variance_cents: v, disposition: relianceState && withinGoodThrough ? "reliance_absorbed" : "short_payoff_demand_1bd" };
 }
 export const APPLICATION_ORDER = ["accrued_interest", "principal", "nib_deferred", "nib_forborne", "escrow_advance", "late_charges", "nsf_other_fees", "corporate_advances", "recording_release_fee"] as const;
-export function fnmaShare(f: { type: "AA" | "SA" | "SS"; upb_cents: Cents; nib_cents: Cents; note_rate_pct: string; ptr_pct: string; lpi_due: PlainDate; payoff_on: PlainDate; participation?: string; processed_bd1_reported_bd2?: boolean }): { principal_cents: Cents; interest_cents: Cents; collected_interest_cents: Cents; servicing_fee_cents: Cents; ss_interest_gap_cents: Cents; total_cents: Cents } {
+export function fnmaShare(f: { type: "AA" | "SA" | "SS"; upb_cents: Cents; nib_cents: Cents; note_rate_pct: string; ptr_pct: string; lpi_due: PlainDate; payoff_on: PlainDate; participation?: string; mbs_pool?: boolean; processed_bd1_reported_bd2?: boolean }): { principal_cents: Cents; interest_cents: Cents; collected_interest_cents: Cents; servicing_fee_cents: Cents; ss_interest_gap_cents: Cents; total_cents: Cents } {
   const collected = interest(f.upb_cents, f.note_rate_pct, f.lpi_due, f.payoff_on).total_cents;
   let fnmaInt = payoffInterest(f.type, f.upb_cents, f.ptr_pct, f.lpi_due, f.payoff_on);
-  if (f.type === "SS" && f.processed_bd1_reported_bd2) fnmaInt = 0n;
+  // F-1-20: the BD1/BD2 exception sits only in the "MBS mortgage loans" bullet — a portfolio S/S payoff owes the full month at PTR regardless (16.2 rule 4).
+  if (f.type === "SS" && f.mbs_pool === true && f.processed_bd1_reported_bd2) fnmaInt = 0n;
   // S/S: Fannie Mae is owed a full month at PTR for the payoff month; the borrower paid only the partial days → servicer funds the gap (F-1-20).
   const ptrPartialCollected = interest(f.upb_cents, f.ptr_pct, f.lpi_due, f.payoff_on).partial_cents;
   const gap = f.type === "SS" && fnmaInt > 0n ? fnmaInt - ptrPartialCollected : 0n;

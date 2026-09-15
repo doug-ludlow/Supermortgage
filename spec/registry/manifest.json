@@ -3098,7 +3098,7 @@
    },
    {
     "n": 4,
-    "text": "Given an active Flex Mod trial with TPP payment $2,100.00, then amount due = $2,100.00 and the explanation shows both $2,100.00 and the contractual $2,946.79; application per contract."
+    "text": "Given an active Flex Mod trial with TPP payment $2,100.00, then amount due = $2,100.00 and the explanation shows both $2,100.00 and the contractual $2,946.79 together with the mandatory statement that the amount due is being disclosed as a different amount because of the temporary loss mitigation program (front page, separate page or separate letter); application per contract."
    },
    {
     "n": 5,
@@ -3110,7 +3110,7 @@
    },
    {
     "n": 7,
-    "text": "Given charge-off approved Nov 3, then `NTC_REGZ_41E6_CHARGEOFF_SUSPENSION` is sent by Dec 3 with the exact title and seven items; given a fee assessed Jan 10, then statements resume and the fee is reversed."
+    "text": "Given charge-off approved Nov 3, then `NTC_REGZ_41E6_CHARGEOFF_SUSPENSION` is sent by Dec 3 with the exact title and the six (e)(6)(i)(B) explanations (charged off / no further fees or interest; no further statements; lien remains and consumer remains liable incl. property taxes; may be required to pay the balance in future; balance not cancelled or forgiven; loan may be purchased, assigned or transferred); given a fee assessed Jan 10, then statements resume and the fee is reversed."
    },
    {
     "n": 8,
@@ -3134,7 +3134,7 @@
    },
    {
     "n": 13,
-    "text": "Given tax year 2026 interest received $23,412.55 and Jan 1 UPB $371,048.86, then the 1098 shows box 1 $23,412.55, box 2 $371,048.86, is furnished by Jan 31, 2027 and e-filed by Mar 31, 2027; given electronic furnishing, then it remains accessible through Oct 15, 2027."
+    "text": "Given tax year 2026 interest received $23,412.55 and Jan 1, 2026 UPB $376,996.33 (the fixture loan's scheduled balance carried into 2026 \u2014 after the 49th payment due Dec 1, 2025 and before the Jan 1, 2026 payment; $371,048.86 is the balance after the 60th payment on Nov 1, 2026 and is NOT the Jan 1 figure), then the 1098 shows box 1 $23,412.55, box 2 $376,996.33, is furnished by Jan 31, 2027 and e-filed by Mar 31, 2027; given electronic furnishing, then it remains accessible through Oct 15, 2027."
    },
    {
     "n": 14,
@@ -3314,7 +3314,7 @@
    },
    {
     "n": 8,
-    "text": "Given a Texas property, then the (xi) block names the Texas state housing finance authority from `jurisdiction_rules`."
+    "text": "Given a Texas property, then the (xi) block carries the CFPB/HUD counselor-list web site, the HUD toll-free number and the Bureau web site through which State housing finance authority contact information is accessed (\u00a71026.20(d)(2)(xi)); naming the Texas HFA itself from `jurisdiction_rules` is optional additional information."
    },
    {
     "n": 9,
@@ -3508,7 +3508,7 @@
    },
    {
     "n": 6,
-    "text": "Given a request from a title company without authorization, then an authorization request goes out the same day and, absent authorization by day 7, the statement is sent to the borrower of record and the timer is satisfied."
+    "text": "Given a request from a title company without authorization, then an authorization request goes out the same day; comment 36(c)(3)-1 lets the servicer take reasonable identity-verification/authorization measures \"before the 'reasonable time' period begins to run,\" but `deadline_federal` stays anchored on receipt (conservative reading of the seven-business-day outer limit, which \u00a71026.36(c)(3) measures \"after receiving a written request\"), so absent authorization by day 7 from receipt the statement is sent to the borrower of record and the timer is satisfied."
    },
    {
     "n": 7,
@@ -3516,7 +3516,7 @@
    },
    {
     "n": 8,
-    "text": "Given UPB $371,048.86, rate 6.375% from Nov 1, paid-through Oct 31 and good-through Nov 20, 2026, then per diem $64.81, interest $1,296.13 and total $372,344.99 with escrow shown as refunded separately."
+    "text": "Given UPB $371,048.86, rate 6.375% from Nov 1, paid-through Oct 31 and good-through Nov 20, 2026, then interest = 371,048.86 \u00d7 0.06375 \u00f7 365 \u00d7 19 = $1,231.32 (19 days, Nov 1\u201319: funds are deemed received on the good-through date and F-1-09 accrues \"up to, but not including, the day the payoff funds were received\" \u2014 16.1 rule 2; unrounded daily accrual, rounded once), the displayed per diem is $64.81 (display rounding only; never multiplied), and total $372,280.18 with escrow shown as refunded separately."
    },
    {
     "n": 9,
@@ -7876,7 +7876,7 @@
    },
    {
     "n": 2,
-    "text": "Given an S/S loan with the same facts, then `ss_interest_gap_cents` = 50558 and the November 18 draft matches UPB + $997.50; given the payoff is processed Mon 11/02 and reported 11/03, then no November interest is due."
+    "text": "Given an S/S MBS loan with the same facts, then `ss_interest_gap_cents` = 50558 and the November 18 draft matches UPB + $997.50; given the payoff is processed Mon 11/02 and reported 11/03, then no November interest is due."
    },
    {
     "n": 3,
@@ -8251,7 +8251,7 @@
    },
    {
     "n": 10,
-    "text": "Given the transfer is cancelled Nov 20 after mailing, then a corrective notice is mailed by Nov 27 and the goodbye timer is cancelled with reason `transfer_cancelled`."
+    "text": "Given the transfer is cancelled Fri Nov 20, 2026 after mailing, then a corrective notice is mailed by Mon Nov 30 (+5 servicer business days: Nov 23, 24, 25, 27, 30 \u2014 Thanksgiving Nov 26 excluded) and the goodbye timer is cancelled with reason `transfer_cancelled`."
    }
   ],
   "tables": [
@@ -8321,7 +8321,7 @@
    },
    {
     "n": 6,
-    "text": "Given the final accounting is not acked by Dec 31, 2026, then `FNMA_F1_11_FINAL_ACCOUNTING_30` breaches and an `officer` escalation exists; given the transferee has not reimbursed 541,109 cents 30 days after ack, then a demand letter draft exists."
+    "text": "Given the final accounting is not acked by Dec 31, 2026, then `SM_XFER_OUT_FINAL_ACCOUNTING_30` breaches and an `officer` escalation exists; given the transferee has not reimbursed 541,109 cents 30 days after ack, then a demand letter draft exists."
    },
    {
     "n": 7,
@@ -8370,7 +8370,6 @@
    "FNMA_DTJA_DOCS_SHIPPED_30",
    "FNMA_F1_11_CUSTODIAL_RECON_5BD",
    "FNMA_F1_11_ENOTE_SERVICING_AGENT_T0",
-   "FNMA_F1_11_FINAL_ACCOUNTING_30",
    "FNMA_F1_11_PARTICIPATION_NOTES_30",
    "FNMA_F1_11_SHORTAGE_SURPLUS_ADJ_30",
    "FNMA_F1_11_TRIAL_BALANCE_T1",
@@ -8391,6 +8390,7 @@
    "SM_XFER_OUT_CUSTODIAL_CLOSE_60",
    "SM_XFER_OUT_CUTOVER_FREEZE_T1",
    "SM_XFER_OUT_DEBRIEF_30",
+   "SM_XFER_OUT_FINAL_ACCOUNTING_30",
    "SM_XFER_OUT_FINAL_TAPE_1",
    "SM_XFER_OUT_FORM2009_HANDOFF_T0",
    "SM_XFER_OUT_FUNDS_WIRE_1",

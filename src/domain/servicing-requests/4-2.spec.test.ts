@@ -30,6 +30,11 @@ test("4.2-T1: Given a letter received 2026-09-04 asking for the owner, then `NTC
   assert.equal(block, "Fannie Mae, Midtown Center, 1100 15th Street NW, Washington, DC 20005, 1-800-2FANNIE (1-800-232-6643)");
   assert.equal(R.ownerIdentity("fnma_mbs_trust"), "Fannie Mae in its capacity as Trustee, Midtown Center, 1100 15th Street NW, Washington, DC 20005, 1-800-2FANNIE (1-800-232-6643)");
   assert.match(R.ownerIdentity("fnma_mbs_trust", true, "123456"), /Trustee \(trust identifier: Fannie Mae MBS pool 123456\), Midtown Center/); assert.equal(R.FNMA_OWNER_BLOCK.version, "A4-1-03 (12/20/2023)");
+  // A4-1-03 (4.2 rule 2): the Trust identifier on express request — the six-digit pool number for a standard MBS pool; the designated trust name for a structured deal; the Fannie Mae contact number for the related Trust identifier of a PFP pool; nothing unless expressly asked
+  assert.match(R.ownerIdentity("fnma_mbs_trust", true, undefined, "structured_deal", "Fannie Mae REMIC Trust 2005-W2"), /Trustee \(trust identifier: Fannie Mae REMIC Trust 2005-W2\), Midtown Center/);
+  assert.match(R.ownerIdentity("fnma_mbs_trust", true, "654321", "pfp_pool"), /Trustee \(trust identifier: PFP pool 654321 — for the related Trust identifier contact Fannie Mae at 1-800-2FANNIE\), Midtown Center/);
+  assert.equal(R.ownerIdentity("fnma_mbs_trust", false, "654321", "pfp_pool"), R.ownerIdentity("fnma_mbs_trust")); assert.equal(R.trustIdentifier("structured_deal"), "designated trust name available from Fannie Mae on request");
+  assert.equal(R.FNMA_OWNER_BLOCK.structured_deal_example, "Fannie Mae REMIC Trust 2005-W2");
   const v = notices().activeVersion("NTC_REGX_36A2_OWNER_IDENTITY", D("2026-09-21"))!;
   const payload = { ...v.samplePayload, owner_block: block, owner_block_version: R.FNMA_OWNER_BLOCK.version, as_of: "2026-09-21" };
   const rendered = render(v.source, payload);
@@ -37,9 +42,13 @@ test("4.2-T1: Given a letter received 2026-09-04 asking for the owner, then `NTC
   assert.equal(evaluateChecklist(v, payload, rendered).passed, true);
   const bad = { ...payload, owner_block: "Fannie Mae, 3900 Wisconsin Avenue NW" }; assert.ok(evaluateChecklist(v, bad, render(v.source, bad)).blocking.some((b) => b.rule_id === "fannie-mae-block"));
   const stale = { ...payload, owner_block_version: "A4-1-03 (2019)" }; assert.ok(evaluateChecklist(v, stale, render(v.source, stale)).blocking.some((b) => b.rule_id === "block-version"));
+  for (const [structure, pool, trust] of [["standard_mbs", "123456", undefined], ["structured_deal", undefined, "Fannie Mae REMIC Trust 2005-W2"], ["pfp_pool", "654321", undefined]] as const) {   // every A4-1-03 identifier variant passes the exact-block checklist
+    const pv = { ...payload, owner_block: R.ownerIdentity("fnma_mbs_trust", true, pool, structure, trust) }; const rv = render(v.source, pv); assert.equal(evaluateChecklist(v, pv, rv).passed, true, structure); assert.match(rv.text, /Trustee \(trust identifier: /);
+  }
   await assert.rejects(h.run("4.2", "rfi.respond", CASE_AGENT, { case_id: "rfi-1", item_ids: ["i1"], ownership: "fnma_portfolio", owner_block: block, template: "NTC_REGX_36A2_OWNER_IDENTITY" }), refusedWith("ITEMS_UNDETERMINED"));   // the item's determination comes first
   await h.run("4.2", "rfi.item.determine", CASE_AGENT, { case_id: "rfi-1", item_id: "i1", determination: "provided" });
   await assert.rejects(h.run("4.2", "rfi.respond", CASE_AGENT, { case_id: "rfi-1", item_ids: ["i1"], ownership: "fnma_portfolio", owner_block: "Fannie Mae, 3900 Wisconsin Avenue NW", template: "NTC_REGX_36A2_OWNER_IDENTITY" }), refusedWith("OWNER_BLOCK_VERSIONED"));
+  await assert.rejects(h.run("4.2", "rfi.respond", CASE_AGENT, { case_id: "rfi-1", item_ids: ["i1"], ownership: "fnma_mbs_trust", asked_for_trust_name: true, trust_structure: "structured_deal", trust_name: "Fannie Mae REMIC Trust 2005-W2", owner_block: R.ownerIdentity("fnma_mbs_trust", true, "123456"), template: "NTC_REGX_36A2_OWNER_IDENTITY" }), refusedWith("OWNER_BLOCK_VERSIONED"));   // a pool number is not a structured deal's designated trust name
   await h.run("4.2", "rfi.respond", CASE_AGENT, { case_id: "rfi-1", item_ids: ["i1"], ownership: "fnma_portfolio", owner_block: block, template: "NTC_REGX_36A2_OWNER_IDENTITY" }, "2026-09-21T15:00:00.000Z");
   assert.equal(h.timer("REGX_1024_36D_RFI_OWNER_10")[0]!.status, "satisfied"); assert.equal(h.events.ofType("case.rfi.responded")[0]!.payload.owner_block_version, R.FNMA_OWNER_BLOCK.version);
 });
@@ -122,7 +131,7 @@ test("4.2-T6: Given a confirmed successor requests the payment history, then the
   assert.equal(h.timer("REGX_1024_36D_RFI_RESPONSE_30")[0]!.status, "satisfied");
 });
 test("4.2-T7: Given a potential successor's letter naming the deceased borrower, then `NTC_REGX_36I_SII_DOCS` is sent within 5 federal BD (policy) and no later than 30; an `sii` case opens (4.4); no account information is disclosed.", async () => {
-  // 30 federal BD from 2026-10-02 excluding Columbus Day and Veterans Day is 2026-11-17 (the spec's hand-count of 11-13 is short by two days; flagged for the audit).
+  // 30 federal BD from 2026-10-02 excluding Columbus Day (10-12) and Veterans Day (11-11) is 2026-11-17 — the 4.4 rule 1 worked timeline's step-by-step count.
   assert.deepEqual(potentialSuccessorRfi(D("2026-10-02")), { notice: "NTC_REGX_36I_SII_DOCS", target_on: "2026-10-09", latest_on: "2026-11-17", opens_case: "sii", account_information_disclosed: false });
   const h = harness("2026-10-02T15:00:00.000Z");
   const p = (await h.run("4.2", "rfi.open", CASE_AGENT, { case_id: "rfi-7", receipt_date: "2026-10-02", is_potential_successor_request: true, transfer_type: "death_relative", party_id: "p-daughter", items: [{ id: "d", kind: "standard", description: "what do you need from me to be recognized after my mother's death" }] })).output as { sii_docs_due: string; sii_case_id: string; requester_role: string };

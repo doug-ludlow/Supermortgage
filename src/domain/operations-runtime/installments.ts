@@ -26,7 +26,7 @@ import type { Queryable } from "../../infra/db/client.ts";
 import { toJson } from "../../infra/db/client.ts";
 import type { PgDecisionRepository, DecisionInput } from "../../infra/db/decisions.ts";
 import { CommandRefused, type CommandContext } from "../../app/commands.ts";
-import type { EscalationService } from "../../app/escalations.ts";
+import { EscalationService } from "../../app/escalations.ts";
 import { str, type ToolInput, type ToolRuntime } from "../../app/tools.ts";
 import type { Actor, Clock, DomainEvent, EventStore } from "../../kernel/events/index.ts";
 import type { TimerEngine } from "../../kernel/timers/engine.ts";
@@ -257,57 +257,118 @@ export async function restoreInstallments(q: Queryable, loanId: string, items: r
 
 // ---------------------------------------------------------------- rule 3: the reprojection (`installments.reproject`; `installments.write` on a loan that has its rows)
 interface TermsRow { readonly id: string; readonly effective_from: PlainDate; readonly source: string; readonly note_rate_bps: number; readonly pi_cents: Cents; readonly escrow_payment_cents: Cents; readonly maturity_date: PlainDate; readonly amortization: string; }
+const TERMS_COLS = "id, effective_from::text AS effective_from, source, note_rate_bps, pi_cents, escrow_payment_cents, maturity_date::text AS maturity_date, amortization::text AS amortization";
+const termsOf = (r: Raw): TermsRow => ({ id: String(r.id), effective_from: D(String(r.effective_from)), source: String(r.source), note_rate_bps: Number(r.note_rate_bps), pi_cents: c(r.pi_cents), escrow_payment_cents: c(r.escrow_payment_cents), maturity_date: D(String(r.maturity_date)), amortization: String(r.amortization) });
 async function termsRow(q: Queryable, loanId: string, termsId: string | null): Promise<TermsRow | null> {
   const rows = termsId
-    ? await q.query<Raw>(`SELECT id, effective_from::text AS effective_from, source, note_rate_bps, pi_cents, escrow_payment_cents, maturity_date::text AS maturity_date, amortization::text AS amortization FROM loan_terms WHERE id = $1 AND loan_id = $2`, [termsId, loanId])
-    : await q.query<Raw>(`SELECT id, effective_from::text AS effective_from, source, note_rate_bps, pi_cents, escrow_payment_cents, maturity_date::text AS maturity_date, amortization::text AS amortization FROM loan_terms WHERE loan_id = $1 ORDER BY effective_from DESC, created_at DESC LIMIT 1`, [loanId]);
-  const r = rows[0]; if (!r) return null;
-  return { id: String(r.id), effective_from: D(String(r.effective_from)), source: String(r.source), note_rate_bps: Number(r.note_rate_bps), pi_cents: c(r.pi_cents), escrow_payment_cents: c(r.escrow_payment_cents), maturity_date: D(String(r.maturity_date)), amortization: String(r.amortization) };
+    ? await q.query<Raw>(`SELECT ${TERMS_COLS} FROM loan_terms WHERE id = $1 AND loan_id = $2`, [termsId, loanId])
+    : await q.query<Raw>(`SELECT ${TERMS_COLS} FROM loan_terms WHERE loan_id = $1 ORDER BY effective_from DESC, created_at DESC LIMIT 1`, [loanId]);
+  const r = rows[0]; return r ? termsOf(r) : null;
+}
+/** The typed version an earlier run projected from this very event (a re-run of the same trigger writes no second version). */
+async function termsRowByEvent(q: Queryable, loanId: string, eventId: string): Promise<TermsRow | null> {
+  const r = (await q.query<Raw>(`SELECT ${TERMS_COLS} FROM loan_terms WHERE loan_id = $1 AND source_event_id = $2 ORDER BY created_at DESC LIMIT 1`, [loanId, eventId]))[0];
+  return r ? termsOf(r) : null;
+}
+
+/**
+ * What a `loan_terms.*` event says the new version is, in its owner's spelling (none of the four emitters writes a typed `loan_terms` row —
+ * 7.2 ops-7-2.ts:486 `loan_terms.version.activated{effective_on, rate_pct, pi_cents, next_change_date, reason}`, 2.4 cashiering/ops.ts:230
+ * `loan_terms.activated{effective_on, new_pi_cents}`, 3.6 ops-3-6.ts:127 `loan_terms.versioned{effective_from, escrow_payment_cents, step_down_*}`,
+ * 12.8 ops-12-8.ts:325 `loan_terms.versioned{effective_date, rate_pct, term_months, ib_upb_cents}`); 7.2's expected UPB at the change date
+ * (`arm_adjustments.expected_upb_cents`) rides on its stored terms' `schedule_basis` when the store carries it.
+ */
+export interface TermsChange { readonly effective_from: PlainDate | null; readonly note_rate_bps: number | null; readonly pi_cents: Cents | null; readonly escrow_payment_cents: Cents | null; readonly upb_start_cents: Cents | null; readonly term_months: number | null; readonly next_change_date: PlainDate | null; readonly source: "arm_change" | "correction" | "reamortization" | "escrow_analysis" | "modification"; }
+export function termsChangeOf(e: DomainEvent, store?: Pick<ToolRuntime["store"], "get">): TermsChange {
+  const p = e.payload as Record<string, unknown>;
+  const date = (k: string): PlainDate | null => (typeof p[k] === "string" && /^\d{4}-\d{2}-\d{2}$/.test(p[k] as string) ? D(p[k] as string) : null);
+  const effective_from = date("effective_on") ?? date("effective_from") ?? date("effective_date");
+  const ratePct = typeof p.rate_pct === "string" ? p.rate_pct : typeof p.new_rate_pct === "string" ? p.new_rate_pct : null;
+  const pi = p.pi_cents ?? p.new_pi_cents;
+  const reason = String(p.reason ?? "");
+  const source: TermsChange["source"] = e.type === "loan_terms.version.activated" ? (reason === "arm_correction" ? "correction" : "arm_change") : e.type === "loan_terms.activated" ? "reamortization" : reason === "escrow_repayment_plan" || p.escrow_payment_cents !== undefined ? "escrow_analysis" : "modification";
+  const basis = e.loanId ? (store?.get("loan_terms", e.loanId)?.data?.schedule_basis as Record<string, unknown> | undefined) : undefined;
+  const basisUpb = basis && effective_from && typeof basis.from_due_date === "string" && basis.from_due_date === effective_from && basis.upb_cents !== undefined && basis.upb_cents !== null ? c(basis.upb_cents) : null;
+  return { effective_from, note_rate_bps: ratePct === null ? null : pctScaled(ratePct, 10_000), pi_cents: pi === undefined || pi === null ? null : c(pi), escrow_payment_cents: p.escrow_payment_cents === undefined || p.escrow_payment_cents === null ? null : c(p.escrow_payment_cents),
+    upb_start_cents: p.ib_upb_cents !== undefined && p.ib_upb_cents !== null ? c(p.ib_upb_cents) : basisUpb, term_months: p.term_months !== undefined && p.term_months !== null ? Number(p.term_months) : null, next_change_date: date("next_change_date"), source };
+}
+interface NewTermsVersion { readonly id: string; readonly prior_id: string; readonly effective_from: PlainDate; readonly source: string; readonly source_event_id: string; readonly note_rate_bps: number; readonly pi_cents: Cents; readonly escrow_payment_cents: Cents; readonly maturity_date: PlainDate; readonly remaining_term_months: number; readonly next_change_date: PlainDate | null; }
+/** The typed `loan_terms` version the event projects, copied from the prior version's other columns (the prior row closed at the new effective date). */
+async function insertTermsVersion(q: Queryable, loanId: string, v: NewTermsVersion): Promise<void> {
+  await q.query(`INSERT INTO loan_terms (id, loan_id, effective_from, source, source_event_id, amortization, note_rate_bps, pi_cents, escrow_payment_cents, escrowed, interest_method, remittance_type, late_charge_pct_bps, late_charge_grace_days, late_charge_max_cents, maturity_date, remaining_term_months, deferred_principal_cents, forborne_principal_cents, arm_index, arm_margin_bps, arm_initial_cap_bps, arm_periodic_cap_bps, arm_lifetime_cap_bps, arm_floor_bps, arm_lookback_days, arm_next_change_date, arm_change_frequency_months)
+    SELECT $1, loan_id, $2, $3, $4, amortization, $5, $6, $7, escrowed, interest_method, remittance_type, late_charge_pct_bps, late_charge_grace_days, late_charge_max_cents, $8, $9, deferred_principal_cents, forborne_principal_cents, arm_index, arm_margin_bps, arm_initial_cap_bps, arm_periodic_cap_bps, arm_lifetime_cap_bps, arm_floor_bps, arm_lookback_days, COALESCE($10::date, arm_next_change_date), arm_change_frequency_months
+    FROM loan_terms WHERE id = $11 AND loan_id = $12`, [v.id, v.effective_from, v.source, v.source_event_id, v.note_rate_bps, v.pi_cents, v.escrow_payment_cents, v.maturity_date, v.remaining_term_months, v.next_change_date, v.prior_id, loanId]);
+  await q.query(`UPDATE loan_terms SET effective_to = $2 WHERE id = $1 AND effective_to IS NULL AND effective_from < $2::date`, [v.prior_id, v.effective_from]);
 }
 
 export interface ReprojectInput { readonly loan_id: string; readonly terms_id?: string | null; readonly effective_from?: PlainDate | null; readonly source?: "reprojection" | "correction" | "fund" | "transfer"; readonly trigger_event_id?: string | null; }
-export interface ReprojectResult { readonly run_id: string; readonly terms_id: string; readonly effective_from: PlainDate; readonly rows_replaced: number; readonly rows_kept: number; readonly rows: number; readonly sha256: string; readonly first_due: PlainDate; readonly last_due: PlainDate; readonly maturity_variance_cents: Cents; readonly event_id: string; }
+export interface ReprojectResult { readonly run_id: string; readonly terms_id: string; readonly terms_version_written: boolean; readonly effective_from: PlainDate; readonly rows_replaced: number; readonly rows_kept: number; readonly rows: number; readonly sha256: string; readonly first_due: PlainDate; readonly last_due: PlainDate; readonly maturity_variance_cents: Cents; readonly event_id: string; }
 /**
- * Rule 3 inside a bus command (loan scope): reads the rows and the terms, refuses SATISFIED_ROW_FROZEN, projects the replaced rows from
- * the expected UPB, arms SM_INSTALLMENT_REPROJECT_1BD explicitly when the terms event carried no origination context, appends
- * `installment.schedule.reprojected`, and defers the run row and the rows to the command's commit (the decision id is read there by the
- * run's subject: the bus records the decision before the deferred writes run).
+ * Rule 3 inside a bus command (loan scope): the terms are a named `loan_terms` row, else the version the trigger event carries (its
+ * effective date, rate, P&I, escrow, expected UPB — written as the typed `loan_terms` version keyed by `source_event_id`, once), else the
+ * latest typed row; refuses SATISFIED_ROW_FROZEN, projects the replaced rows from the expected UPB, arms SM_INSTALLMENT_REPROJECT_1BD
+ * explicitly when the terms event carried no origination context, appends `installment.schedule.reprojected`, and defers the version,
+ * the run row and the rows to the command's commit (the decision id is read there by the run's subject: the bus records the decision
+ * before the deferred writes run).
  */
 export async function reprojectSchedule(db: Queryable, ctx: CommandContext, store: ToolRuntime["store"], registry: TimerRegistry, deferWrite: (fn: (q: Queryable) => Promise<void>) => void, i: ReprojectInput): Promise<ReprojectResult> {
   const command = "installments.reproject"; const loanId = i.loan_id;
   const existing = await readSchedule(db, loanId);
   if (!existing.length) refuse(command, "SCHEDULE_REQUIRED", "35.5 rule 1: no loans row without its rows", `loan ${loanId} has no installment rows — boarding writes the schedule; a loan without one is an officer exception`);
-  const terms = await termsRow(db, loanId, i.terms_id ?? null);
-  if (!terms) refuse(command, "SCHEDULE_REQUIRED", "35.5 rule 3: a reprojection needs a loan_terms row", `loan ${loanId}: no loan_terms${i.terms_id ? ` ${i.terms_id}` : ""}`);
-  const effectiveFrom = i.effective_from ?? terms.effective_from;
+  // the trigger: the named terms event, else the newest loan_terms.* event on the loan (2.4 / 7.2 / 3.6 / 12.8's spellings)
+  const byLoan = ctx.events.byLoan(loanId);
+  const termsEvent = (i.trigger_event_id ? byLoan.find((e) => e.id === i.trigger_event_id && e.type.startsWith("loan_terms.")) : undefined) ?? byLoan.filter((e) => e.type.startsWith("loan_terms.")).at(-1);
+  const named = i.terms_id ? await termsRow(db, loanId, i.terms_id) : null;
+  if (i.terms_id && !named) refuse(command, "SCHEDULE_REQUIRED", "35.5 rule 3: a reprojection needs a loan_terms row", `loan ${loanId}: no loan_terms ${i.terms_id}`);
+  const latest = named ?? (await termsRow(db, loanId, null));
+  if (!latest) refuse(command, "SCHEDULE_REQUIRED", "35.5 rule 3: a reprojection needs a loan_terms row", `loan ${loanId}: no loan_terms`);
+  const projectedBefore = !named && termsEvent ? await termsRowByEvent(db, loanId, termsEvent.id) : null;
+  const change = !named && !projectedBefore && termsEvent ? termsChangeOf(termsEvent, store) : null;
+  // the event's version applies when it postdates the typed row it changes (an event that names only a date re-projects the row it found)
+  const changes = !!change && change.effective_from !== null && change.effective_from > latest.effective_from && (change.note_rate_bps !== null || change.pi_cents !== null || change.escrow_payment_cents !== null || change.upb_start_cents !== null || change.term_months !== null);
+  const base: TermsRow = projectedBefore ?? latest;
+  const effectiveFrom = i.effective_from ?? (change?.effective_from ?? null) ?? base.effective_from;
   const frozen = existing.filter((r) => (r.status === "satisfied" || r.status === "prepaid") && r.due_date >= effectiveFrom);
   if (frozen.length) refuse(command, "SATISFIED_ROW_FROZEN", "35.5 rule 3: a satisfied row changes only through 2.1's reversal", `effective_from ${effectiveFrom} names ${frozen.length} satisfied/prepaid row(s) (${frozen.map((r) => r.due_date).join(", ")}) — reverse the payment first (2.1 rule 9) or move the effective date`);
   const kept = existing.filter((r) => r.due_date < effectiveFrom);
   const replaced = existing.filter((r) => r.due_date >= effectiveFrom);
   const firstReplaced = replaced[0]; const lastKept = kept[kept.length - 1];
-  const upbStart = firstReplaced?.upb_before_cents ?? lastKept?.upb_after_cents ?? null;
+  // the expected UPB at the effective date: the owner's figure when its event carries one (7.2's schedule basis, 12.8's IB UPB), else the first replaced row's opening UPB
+  const upbStart = (changes ? change!.upb_start_cents : null) ?? firstReplaced?.upb_before_cents ?? lastKept?.upb_after_cents ?? null;
   if (upbStart === null) refuse(command, "SCHEDULE_REQUIRED", "35.5 rule 3: the expected UPB at the effective date is the first replaced row's upb_before", `loan ${loanId}: no row carries an opening UPB at ${effectiveFrom}`);
   const firstDue = firstReplaced?.due_date ?? addMonths(lastKept!.due_date, 1);
   const firstSequence = firstReplaced?.sequence ?? (lastKept?.sequence ?? kept.length) + 1;
+  // the version projected: the event's figures over the prior version (rate, P&I — or the level payment over a new term —, escrow, maturity)
+  let terms: TermsRow = base; let newVersion: NewTermsVersion | null = null;
+  if (changes) {
+    const ch = change!;
+    const rateBps = ch.note_rate_bps ?? latest.note_rate_bps;
+    const maturity = ch.term_months !== null ? addMonths(firstDue, ch.term_months - 1) : latest.maturity_date;
+    const pi = ch.pi_cents ?? (ch.term_months !== null ? levelPayment(upbStart, ratePercent((rateBps / 10_000).toFixed(4)), ch.term_months) : latest.pi_cents);
+    terms = { id: randomUUID(), effective_from: ch.effective_from!, source: ch.source, note_rate_bps: rateBps, pi_cents: pi, escrow_payment_cents: ch.escrow_payment_cents ?? latest.escrow_payment_cents, maturity_date: maturity, amortization: latest.amortization };
+    newVersion = { id: terms.id, prior_id: latest.id, effective_from: terms.effective_from, source: terms.source, source_event_id: termsEvent!.id, note_rate_bps: rateBps, pi_cents: pi, escrow_payment_cents: terms.escrow_payment_cents, maturity_date: maturity, remaining_term_months: 0, next_change_date: ch.next_change_date };
+  }
   const escrowVersion = escrowVersionFrom(store.get("loan_terms", loanId)?.data);
   const projection = projectSchedule({ upb_start_cents: upbStart, first_due: firstDue, first_sequence: firstSequence, maturity_date: terms.maturity_date, pi_cents: terms.pi_cents, rate_bps: terms.note_rate_bps, escrow: (due) => escrowPortionOn({ escrow_payment_cents: terms.escrow_payment_cents, escrow_version: escrowVersion }, due) });
   if (!projection.rows.length) refuse(command, "SCHEDULE_REQUIRED", "35.5 rule 3", `loan ${loanId}: no installment between ${firstDue} and maturity ${terms.maturity_date}`);
+  if (newVersion) newVersion = { ...newVersion, remaining_term_months: projection.rows.length };
   const run_id = randomUUID(); const sha256 = scheduleSha256(projection.rows);
   const first = projection.rows[0]!; const last = projection.rows[projection.rows.length - 1]!;
-  // the four `loan_terms.*` spellings carry no origination context: arm the clock on the loan from the newest terms event before the satisfier
-  const termsEvent = ctx.events.byLoan(loanId).filter((e) => e.type.startsWith("loan_terms.")).at(-1);
+  // the four `loan_terms.*` spellings carry no origination context: arm the clock on the loan from the terms event before the satisfier (the reactor armed it already on its path — the guard keeps one instance)
   if (termsEvent) armServicingSideClocks(ctx.timers, registry, termsEvent, ["SM_INSTALLMENT_REPROJECT_1BD"]);
   const event = ctx.events.append({ type: SCHEDULE_REPROJECTED, loanId, actor: ctx.actor, ...(termsEvent ? { causationId: termsEvent.id } : {}),
-    payload: { loan_id: loanId, run_id, terms_id: terms.id, effective_from: effectiveFrom, rows_replaced: replaced.length, rows_kept: kept.length, rows: projection.rows.length, sha256, source: i.source ?? "reprojection", pi_cents: s(terms.pi_cents), rate_bps: terms.note_rate_bps, upb_start_cents: s(upbStart), maturity_variance_cents: s(projection.maturity_variance_cents) } });
+    payload: { loan_id: loanId, run_id, terms_id: terms.id, terms_version_written: newVersion !== null, effective_from: effectiveFrom, rows_replaced: replaced.length, rows_kept: kept.length, rows: projection.rows.length, sha256, source: i.source ?? "reprojection", pi_cents: s(terms.pi_cents), rate_bps: terms.note_rate_bps, upb_start_cents: s(upbStart), maturity_variance_cents: s(projection.maturity_variance_cents) } });
   const replacedValues = replaced.map((r) => ({ due_date: r.due_date, sequence: r.sequence, pi_cents: s(r.pi_cents), interest_cents: s(r.interest_cents), principal_cents: s(r.principal_cents), escrow_cents: s(r.escrow_cents), upb_before_cents: r.upb_before_cents === null ? null : s(r.upb_before_cents), upb_after_cents: r.upb_after_cents === null ? null : s(r.upb_after_cents), rate_bps: r.rate_bps, terms_id: r.terms_id, schedule_run_id: r.schedule_run_id, status: r.status }));
   const source = i.source ?? "reprojection";
+  const version = newVersion;
   deferWrite(async (q) => {
+    if (version) await insertTermsVersion(q, loanId, version);
     const decision = (await q.query<{ id: string }>(`SELECT id FROM agent_decisions WHERE subject_kind = 'installment_schedule_run' AND subject_id = $1 ORDER BY created_at DESC LIMIT 1`, [run_id]))[0]?.id ?? null;
     await insertScheduleRun(q, { id: run_id, loan_id: loanId, terms_id: terms.id, source, trigger_event_id: i.trigger_event_id ?? termsEvent?.id ?? null, first_due: first.due_date, last_due: last.due_date, rows: projection.rows.length, rows_replaced: replaced.length, rows_kept: kept.length, pi_cents: terms.pi_cents, rate_bps: terms.note_rate_bps, upb_start_cents: upbStart,
       total_interest_cents: projection.total_interest_cents, total_principal_cents: projection.total_principal_cents, maturity_variance_cents: projection.maturity_variance_cents, replaced: replacedValues, sha256, decision_id: decision });
     await persistScheduleRows(q, loanId, run_id, terms.id, projection.rows);
   });
-  return { run_id, terms_id: terms.id, effective_from: effectiveFrom, rows_replaced: replaced.length, rows_kept: kept.length, rows: projection.rows.length, sha256, first_due: first.due_date, last_due: last.due_date, maturity_variance_cents: projection.maturity_variance_cents, event_id: event.id };
+  return { run_id, terms_id: terms.id, terms_version_written: newVersion !== null, effective_from: effectiveFrom, rows_replaced: replaced.length, rows_kept: kept.length, rows: projection.rows.length, sha256, first_due: first.due_date, last_due: last.due_date, maturity_variance_cents: projection.maturity_variance_cents, event_id: event.id };
 }
 
 // ---------------------------------------------------------------- the bus tools (src/app/tools/section35-5.ts binds them)
@@ -345,18 +406,43 @@ export async function installmentsRead(i: ToolInput, _ctx: CommandContext, rt: T
 }
 
 // ---------------------------------------------------------------- the reactor: a terms change re-projects the schedule after the commit
-/** A post-commit reactor: any `loan_terms.*` event on a loan (2.4's activated, 7.2's version.activated, 3.6/12.8's versioned) runs `installments.reproject` on the bus. `settle()` awaits the in-flight runs (tests); errors are logged, never thrown into the committing command. */
+/**
+ * A post-commit reactor: any `loan_terms.*` event on a loan (2.4's activated, 7.2's version.activated, 3.6/12.8's versioned) first arms
+ * SM_INSTALLMENT_REPROJECT_1BD on the loan in its own unit of work (the engine skips this section's def on a servicing-side event —
+ * timers-35-5.ts), then runs `installments.reproject` on the bus. A refused reprojection (SATISFIED_ROW_FROZEN, SCHEDULE_REQUIRED) rolls
+ * its own unit of work back, leaves the clock armed to breach (sev 2 → officer) and opens rule 3's `officer` escalation at once; errors are
+ * logged, never thrown into the committing command. `settle()` awaits the in-flight runs (tests).
+ */
 export function registerReprojectionReactor(rt: Runtime, log: (msg: string, ctx: Record<string, unknown>) => void = (msg, ctx) => rt.logger?.warn(msg, ctx)): { settle(): Promise<void>; stop(): void } {
   const inflight = new Set<Promise<void>>();
   const stop = rt.onCommitted((events) => {
     for (const e of events) {
       if (!e.type.startsWith("loan_terms.") || !e.loanId) continue;
       const loanId = e.loanId;
-      const p = rt.execute({ process: "35.5", name: "installments.reproject", loanId, actor: CASHIERING_AGENT, input: { loan_id: loanId, trigger_event_id: e.id, source: "reprojection" } })
-        .then(() => undefined, (err: unknown) => { log("35.5 reprojection reactor: installments.reproject failed", { loan_id: loanId, event: e.type, error: err instanceof Error ? err.message : String(err) }); })
+      const p = reactToTermsEvent(rt, loanId, e, log)
+        .catch((err: unknown) => { log("35.5 reprojection reactor failed", { loan_id: loanId, event: e.type, error: err instanceof Error ? err.message : String(err) }); })
         .finally(() => { inflight.delete(p); });
       inflight.add(p);
     }
   });
   return { settle: async () => { while (inflight.size) await Promise.all([...inflight]); }, stop };
+}
+async function reactToTermsEvent(rt: Runtime, loanId: string, e: DomainEvent, log: (msg: string, ctx: Record<string, unknown>) => void): Promise<void> {
+  // 1. the clock, on the terms event, in its own unit of work — so a refused reprojection still leaves a clock to breach
+  await rt.uow.run({ loanId }, (ctx) => { armServicingSideClocks(ctx.timers, rt.registry, ctx.events.byLoan(loanId).find((x) => x.id === e.id) ?? e, ["SM_INSTALLMENT_REPROJECT_1BD"]); }, { clock: rt.clock });
+  // 2. the reprojection on the bus (allowlists, guardrails, the decision record)
+  try {
+    await rt.execute({ process: "35.5", name: "installments.reproject", loanId, actor: CASHIERING_AGENT, input: { loan_id: loanId, trigger_event_id: e.id, source: "reprojection" } });
+  } catch (err: unknown) {
+    log("35.5 reprojection reactor: installments.reproject failed", { loan_id: loanId, event: e.type, error: err instanceof Error ? err.message : String(err) });
+    if (!(err instanceof CommandRefused)) return;
+    // rule 3: "a reprojection that would change a satisfied row is refused (SATISFIED_ROW_FROZEN) and escalated to officer" — the refusal wrote nothing; the escalation is its own unit of work
+    const code = err.code; const reason = err.message;
+    let opened: EscalationService | undefined;
+    await rt.uow.run({ loanId }, (ctx) => {
+      opened = new EscalationService(ctx.events, ctx.clock);
+      opened.open({ kind: "officer", ownerRole: "officer", loanId, severity: "2", payload: { rule_code: code, process: "35.5", command: "installments.reproject", trigger_event_id: e.id, trigger_event_type: e.type, reason,
+        next: code === "SATISFIED_ROW_FROZEN" ? "reverse the payment first (2.1 rule 9) and re-post, or move the effective date — a satisfied row changes only through 2.1's reversal" : "officer review: the terms changed and the schedule still shows the prior P&I / rate" } }, CASHIERING_AGENT);
+    }, { clock: rt.clock, commit: async (q) => { for (const x of opened?.list() ?? []) await rt.escalationRepo.save(x, q); } });
+  }
 }

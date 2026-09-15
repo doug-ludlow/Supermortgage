@@ -20,7 +20,7 @@ import { loanCashState, sendPeriodicStatement, servicingDailySweep } from "../..
 import { delinquencyDailySweep } from "../../runtime/delinquency.ts";
 import { FAKE_SERVICER_CONTACT } from "../../runtime/borrower/flows/9-servicing-requests.ts";
 import { noteTermsHash, prepaidInterest } from "../orig-boarding/ops-30-2.ts";
-import { assessLateCharge, lateChargeAmount, lateChargeTerms } from "../cashiering/latecharges.ts";
+import { assessLateCharge, lateChargeAmount, lateChargeTerms, nsfFee } from "../cashiering/latecharges.ts";
 import { draftAmount, type Enrollment } from "../cashiering/autodraft.ts";
 import { EI_NOTICE_VARIANTS, writtenNoticeRequest } from "../early-intervention/ops-11-2.ts";
 import { CASHIERING_AGENT, registerReprojectionReactor, satisfyInstallments } from "./installments.ts";
@@ -41,7 +41,7 @@ const loans = { t1: "", t2: "", t3: "", l1: "" };
 type Row = Record<string, unknown>;
 const count = async (sql: string, params: unknown[] = []): Promise<bigint> => (await db.query<{ c: bigint }>(sql, params))[0]!.c;
 const sum = (xs: readonly Record<string, unknown>[], k: string): bigint => xs.reduce((a, r) => a + (r[k] as bigint), 0n);
-const profileV1 = async (): Promise<Row> => (await db.query<Row>(`SELECT id, legal_name, tin, toll_free_phone, servicer_address, exclusive_address, remittance_address, portal_url, counselor_url, hud_phone, status::text AS status, effective_from::text AS effective_from, effective_to::text AS effective_to, version FROM servicer_profiles WHERE version = 1 AND legal_name = 'Supermortgage LLC' ORDER BY created_at LIMIT 1`))[0]!;
+const profileV1 = async (): Promise<Row> => (await db.query<Row>(`SELECT id, legal_name, tin_encrypted, tin_last4, toll_free_phone, servicer_address, exclusive_address, remittance_address, portal_url, counselor_url, hud_phone, status::text AS status, effective_from::text AS effective_from, effective_to::text AS effective_to, version FROM servicer_profiles WHERE version = 1 AND legal_name = 'Supermortgage LLC' ORDER BY created_at LIMIT 1`))[0]!;
 
 test.before(async () => {
   if (skip) return;
@@ -147,15 +147,21 @@ test("35.5-T3: Given 7.2's Plan 4927 loan boarded at fund ($400,000.00 at 5.750%
   const row60 = before[59]!; assert.equal(row60.due_date, "2026-11-01"); assert.equal(row60.sequence, 60); assert.equal(row60.upb_after_cents, 37_104_886n);
   assert.equal(before[60]!.due_date, "2026-12-01"); assert.equal(before[60]!.rate_bps, 57500); assert.equal(before[60]!.upb_before_cents, 37_104_886n);
   const v1TermsId = row60.terms_id; const keptBefore = (await rowsJson(db, loanId)).slice(0, 60);
-  // 7.2 activates loan_terms v2 (arm_change, effective 2026-12-01, 6.375%, P&I $2,476.44 = levelPayment on the expected UPB over the remaining 300 months): the reactor runs installments.reproject on the bus after the commit
+  // 7.2 activates loan_terms v2 (arm_change, effective 2026-12-01, 6.375%, P&I $2,476.44 = levelPayment on the expected UPB over the remaining 300 months) under its own spelling
+  // (ops-7-2.ts:486 appends the event and stores the version; no emitter writes a typed loan_terms row): the reactor arms the clock and runs installments.reproject on the bus after the commit,
+  // and the reprojection writes the typed v2 keyed by the event (source_event_id) — the `terms_id` every replaced row and the run carry
   assert.equal(levelPayment(37_104_886n, ratePercent("6.375"), 300), 247_644n);
   clock.set("2026-11-15T15:00:00.000Z");
   const reactor = registerReprojectionReactor(runtime, () => undefined);
-  let v2Id = "";
   await runtime.uow.run({ loanId }, async (ctx) => {
     ctx.events.append({ type: "loan_terms.version.activated", loanId, actor: { kind: "agent", id: "disclosures" }, payload: { version: 2, effective_on: "2026-12-01", rate_pct: "6.375", pi_cents: "247644", payment_effective_due: "2026-12-01", next_change_date: "2027-11-01", reason: "arm_adjustment" } });
-  }, { clock, before: async (q) => { v2Id = (await q.query<{ id: string }>(`INSERT INTO loan_terms (loan_id, effective_from, source, amortization, note_rate_bps, pi_cents, escrow_payment_cents, escrowed, interest_method, remittance_type, late_charge_pct_bps, late_charge_grace_days, maturity_date, remaining_term_months) VALUES ($1, '2026-12-01', 'arm_change', 'arm', 63750, 247644, 61250, true, '30_360', 'A/A', 5000, 15, '2051-11-01', 300) RETURNING id`, [loanId]))[0]!.id; } });
-  await reactor.settle(); reactor.stop();
+  }, { clock });
+  await reactor.settle();
+  const termsRows = await db.query<Row>(`SELECT id, source, source_event_id, effective_from::text AS effective_from, effective_to::text AS effective_to, note_rate_bps, pi_cents, escrow_payment_cents, maturity_date::text AS maturity_date, remaining_term_months, amortization::text AS amortization, arm_next_change_date::text AS arm_next_change_date FROM loan_terms WHERE loan_id = $1 ORDER BY effective_from`, [loanId]);
+  assert.equal(termsRows.length, 2, "the boarding terms and the version 7.2's activation projected");
+  const v2 = termsRows[1]!; const v2Id = String(v2["id"]);
+  assert.equal(v2["source"], "arm_change"); assert.equal(v2["effective_from"], "2026-12-01"); assert.equal(v2["note_rate_bps"], 63750); assert.equal(v2["pi_cents"], 247_644n); assert.equal(v2["escrow_payment_cents"], 61_250n); assert.equal(v2["maturity_date"], "2051-11-01"); assert.equal(v2["remaining_term_months"], 300); assert.equal(v2["amortization"], "arm"); assert.equal(v2["arm_next_change_date"], "2027-11-01");
+  assert.equal(termsRows[0]!["id"], v1TermsId); assert.equal(termsRows[0]!["effective_to"], "2026-12-01", "the prior version closes at the change date");
   const runs = await readRuns(db, loanId); assert.equal(runs.length, 2); const run2 = runs[1]!;
   assert.equal(run2.source, "reprojection"); assert.equal(run2.rows_kept, 60); assert.equal(run2.rows_replaced, 300); assert.equal(run2.rows, 300); assert.equal(run2.terms_id, v2Id); assert.equal(run2.pi_cents, 247_644n); assert.equal(run2.rate_bps, 63750); assert.equal(run2.upb_start_cents, 37_104_886n); assert.equal(run2.replaced.length, 300); assert.ok(run2.decision_id);
   const after = await readRows(db, loanId); assert.equal(after.length, 360);
@@ -167,6 +173,7 @@ test("35.5-T3: Given 7.2's Plan 4927 loan boarded at fund ($400,000.00 at 5.750%
   const events = await readEvents(db, loanId);
   const activatedEvt = events.find((e) => e.type === "loan_terms.version.activated"); const reprojected = events.find((e) => e.type === "installment.schedule.reprojected");
   assert.ok(activatedEvt && reprojected); assert.equal(reprojected.payload["rows_kept"], 60); assert.equal(reprojected.payload["rows_replaced"], 300); assert.equal(reprojected.payload["terms_id"], v2Id); assert.equal(reprojected.payload["effective_from"], "2026-12-01"); assert.equal(reprojected.payload["run_id"], run2.id);
+  assert.equal(v2["source_event_id"], activatedEvt.id); assert.equal(reprojected.payload["terms_version_written"], true); assert.equal(run2.trigger_event_id, activatedEvt.id);
   const clockRows = await readTimer(db, loanId, "SM_INSTALLMENT_REPROJECT_1BD");
   assert.equal(clockRows.length, 1); assert.equal(clockRows[0]!.status, "satisfied"); assert.equal(clockRows[0]!.satisfied_by_event_id, reprojected.id); assert.equal(clockRows[0]!.armed_by_event_id, activatedEvt.id); assert.equal(clockRows[0]!.anchor_date, "2026-12-01");
   assert.ok(events.some((e) => e.type === "command.executed" && e.payload["command"] === "installments.reproject"));
@@ -184,9 +191,25 @@ test("35.5-T3: Given 7.2's Plan 4927 loan boarded at fund ($400,000.00 at 5.750%
   const noticed = afterSweep.find((e) => e.type === "notice.sent" && e.payload["kind"] === "variable_amount_10d");
   assert.ok(noticed, "2.3 rule 5: the changed draft amount needs the 10-day notice"); assert.equal(noticed.payload["amount_cents"], "308894"); assert.equal(noticed.payload["debit_on"], "2026-12-01"); assert.equal(noticed.payload["enrollment_id"], enrollment.id);
   assert.equal(await count(`SELECT count(*)::bigint AS c FROM installment_schedule_runs WHERE loan_id = $1`, [loanId]), 2n, "a unit never re-projects the schedule");
-  // the frozen branch: a reprojection whose effective date names a satisfied row is refused SATISFIED_ROW_FROZEN with no row changed
+  // the frozen branch: a reprojection whose effective date names a satisfied row is refused SATISFIED_ROW_FROZEN with no row changed —
+  // on the reactor's path (3.6's `loan_terms.versioned{effective_from}` naming the satisfied 2026-12-01 row) the refusal rolls its unit of work back, leaves the
+  // clock it armed to breach, writes no terms version and opens rule 3's officer escalation; and on the direct command
   await db.tx((q) => satisfyInstallments(q, loanId, [{ due_date: D("2026-12-01"), payment_id: randomUUID(), credited_as_of: D("2026-12-01"), satisfied_on: D("2026-12-01") }]));
   const frozenBefore = await rowsJson(db, loanId);
+  const escalationsBefore = await count(`SELECT count(*)::bigint AS c FROM escalations WHERE loan_id = $1`, [loanId]);
+  await runtime.uow.run({ loanId }, async (ctx) => {
+    ctx.events.append({ type: "loan_terms.versioned", loanId, actor: { kind: "agent", id: "escrow" }, payload: { version: 3, reason: "escrow_repayment_plan", plan_id: `plan-${R}`, escrow_payment_cents: "63000", effective_from: "2026-12-01", step_down_on: null, step_down_to_cents: "61250" } });
+  }, { clock });
+  await reactor.settle();
+  assert.deepEqual(await rowsJson(db, loanId), frozenBefore, "the refused reprojection changed no row"); assert.equal((await readRuns(db, loanId)).length, 2);
+  assert.equal(await count(`SELECT count(*)::bigint AS c FROM loan_terms WHERE loan_id = $1`, [loanId]), 2n, "no terms version is written by a refused reprojection");
+  const versionedEvt = (await readEvents(db, loanId)).find((e) => e.type === "loan_terms.versioned")!; assert.ok(versionedEvt);
+  const clocksAfter = await readTimer(db, loanId, "SM_INSTALLMENT_REPROJECT_1BD");
+  assert.equal(clocksAfter.length, 2); assert.equal(clocksAfter[0]!.status, "satisfied"); assert.equal(clocksAfter[1]!.status, "armed"); assert.equal(clocksAfter[1]!.armed_by_event_id, versionedEvt.id); assert.equal(clocksAfter[1]!.anchor_date, "2026-12-01");
+  const officer = await db.query<Row>(`SELECT owner_role, kind, status::text AS status, payload FROM escalations WHERE loan_id = $1 ORDER BY opened_at DESC LIMIT 1`, [loanId]);
+  assert.equal(await count(`SELECT count(*)::bigint AS c FROM escalations WHERE loan_id = $1`, [loanId]), escalationsBefore + 1n);
+  assert.equal(officer[0]!["owner_role"], "officer"); assert.equal((officer[0]!["payload"] as Row)["rule_code"], "SATISFIED_ROW_FROZEN"); assert.equal((officer[0]!["payload"] as Row)["trigger_event_id"], versionedEvt.id);
+  reactor.stop();
   await assert.rejects(runtime.execute({ process: "35.5", name: "installments.reproject", loanId, actor: CASHIERING_AGENT, input: { loan_id: loanId, terms_id: v2Id, effective_from: "2026-12-01" } }), (e: unknown) => e instanceof CommandRefused && e.code === "SATISFIED_ROW_FROZEN");
   assert.deepEqual(await rowsJson(db, loanId), frozenBefore); assert.equal((await readRuns(db, loanId)).length, 2);
   // the row trigger holds the same line without the tool: a money column of the satisfied row cannot be updated
@@ -219,6 +242,13 @@ test("35.5-T12: Given both boarding paths, when a loan boards, then a `loan_serv
     const timers = await readTimer(db, loanId, "SM_LOAN_SERVICING_CONFIG_AT_BOARD_0");
     assert.equal(timers.length, 1); assert.equal(timers[0]!.status, "satisfied"); assert.equal(timers[0]!.satisfied_by_event_id, written.id); assert.equal(timers[0]!.armed_by_event_id, boarded.id);
   }
+  // the jurisdiction row's nsf_fee block the TX config selects is what 2.7 rule 7 assesses on a returned item: min(2,500¢, cap) = $25.00 (worked example D: "L-1's jurisdiction allows it"), nothing where a jurisdiction forbids it
+  const txRules = (await db.query<{ rules: Row }>(`SELECT rules FROM jurisdiction_rules WHERE state = 'TX'`))[0]!.rules;
+  const txCfg = (await db.query<Row>(`SELECT nsf_fee_allowed FROM loan_servicing_configs WHERE loan_id = $1`, [loans.t2]))[0]!;
+  const txState = (await loanCashState(runtime, loans.t2, D("2026-10-05"))).state;
+  const nsf = nsfFee(txState, { allowed: txCfg["nsf_fee_allowed"] === true, cap_cents: BigInt(String((txRules["nsf_fee"] as Row)["cap_cents"])) }, { our_error: false, returned_on: D("2026-10-05"), payment_id: randomUUID() });
+  assert.ok(nsf); assert.equal(nsf.fee_type, "nsf_fee"); assert.equal(nsf.amount_cents, 2_500n); assert.equal((txRules["nsf_fee"] as Row)["cap_cents"], 2500);
+  assert.equal(nsfFee(txState, { allowed: false, cap_cents: 2_500n }, { our_error: false, returned_on: D("2026-10-05") }), null);
   // a note late-charge rate above the state's max_pct: the conflict is recorded and the state's bound is what 2.7 assesses
   const ny = await boardTapeLoan(runtime, clock, NY_TAPE, `B-NY-${R}`, D("2026-09-15"));
   const cfg = (await db.query<Row>(`SELECT * FROM loan_servicing_configs WHERE loan_id = $1`, [ny.loan_id]))[0]!;
@@ -239,7 +269,10 @@ test("35.5-T13: Given the FAKE build's seeded `servicer_profiles` v1 (the former
   await seedCustodial(db, await partnerPartyOf(db)); await linkBorrowerParty(db, loanId);
   // the seeded version 1 is the former constant's values (and the code's FAKE_SERVICER_PROFILE_V1 spells the same row)
   const v1 = await profileV1(); assert.equal(v1["status"], "active"); assert.equal(v1["effective_from"], "2020-01-01"); assert.equal(v1["effective_to"], null);
-  for (const k of ["legal_name", "tin", "toll_free_phone", "servicer_address", "exclusive_address", "remittance_address", "portal_url", "counselor_url", "hud_phone"] as const) assert.equal(v1[k], FAKE_SERVICER_PROFILE_V1[k], k);
+  for (const k of ["legal_name", "toll_free_phone", "servicer_address", "exclusive_address", "remittance_address", "portal_url", "counselor_url", "hud_phone"] as const) assert.equal(v1[k], FAKE_SERVICER_PROFILE_V1[k], k);
+  // the EIN at rest is the tree's encrypted pair (never the digits in a column): tin_last4 for display, tin_encrypted opened only for the rendered block
+  assert.equal(v1["tin_last4"], "6789"); assert.ok(v1["tin_encrypted"] instanceof Uint8Array && (v1["tin_encrypted"] as Uint8Array).length > 28); assert.ok(!Buffer.from(v1["tin_encrypted"] as Uint8Array).toString("latin1").includes("123456789"));
+  assert.equal(await count(`SELECT count(*)::bigint AS c FROM information_schema.columns WHERE table_name = 'servicer_profiles' AND column_name = 'tin'`), 0n);
   clock.set("2026-09-20T16:00:00.000Z");
   const s1 = await sendPeriodicStatement(runtime, loanId, { cycle_due_date: D("2026-10-01"), statement_date: D("2026-09-20") });
   const p1 = runtime.noticeMemory.get(s1.notice_id)!.payload;
@@ -249,7 +282,7 @@ test("35.5-T13: Given the FAKE build's seeded `servicer_profiles` v1 (the former
   assert.ok(!source.includes("SERVICER_CONTACT"), "the constant is gone from src/runtime/servicing.ts");
   // amendment 43 (batch 35-consistency-pass): the exclusive address rides on every 11.x/12.x notice that carries contact information — 11.2's written EI request sees it present
   const block = await servicerBlockFor(db, loanId, D("2026-09-20"));
-  assert.equal(block.exclusive_address, v1["exclusive_address"]); assert.equal(block.servicer_profile_id, v1["id"]);
+  assert.equal(block.exclusive_address, v1["exclusive_address"]); assert.equal(block.servicer_profile_id, v1["id"]); assert.equal(block.servicer_tin, FAKE_SERVICER_PROFILE_V1.tin, "the 1098's servicer TIN is the profile's, decrypted for the block only");
   const ei = writtenNoticeRequest({ template: Object.keys(EI_NOTICE_VARIANTS)[0]!, payload: { ...block, team_name: "Servicing Team", team_phone: block.servicer_phone }, active_assignment: null, requested_on: D("2026-09-20") });
   assert.equal(ei.gate.send_allowed, true); assert.ok(ei.event); assert.equal(ei.event.payload["exclusive_address_present"], true); assert.equal(ei.payload["exclusive_address"], v1["exclusive_address"]);
   // the 4.x / 9.x contact blocks (FAKE_SERVICER_CONTACT) carry the profile's fields
@@ -261,8 +294,9 @@ test("35.5-T13: Given the FAKE build's seeded `servicer_profiles` v1 (the former
   const decisionId = String(activated.payload["decision_id"]);
   const d = (await db.query<Row>(`SELECT rule_set_version, action, approved_role, approved_by, subject_id FROM agent_decisions WHERE id = $1`, [decisionId]))[0];
   assert.ok(d, "the activation's decision"); assert.equal(d["rule_set_version"], "35.5@config.v1"); assert.equal(d["action"], "servicer_profile.activate"); assert.equal(d["approved_role"], "compliance"); assert.equal(d["approved_by"], COMPLIANCE.id);
-  const v2 = (await db.query<Row>(`SELECT id, version, status::text AS status, effective_from::text AS effective_from, effective_to::text AS effective_to, exclusive_address, servicer_address, approved_by_decision_id FROM servicer_profiles WHERE version = 2 AND legal_name = 'Supermortgage LLC'`))[0]!;
+  const v2 = (await db.query<Row>(`SELECT id, version, status::text AS status, effective_from::text AS effective_from, effective_to::text AS effective_to, exclusive_address, servicer_address, approved_by_decision_id, tin_last4, tin_encrypted = (SELECT tin_encrypted FROM servicer_profiles WHERE version = 1 AND legal_name = 'Supermortgage LLC') AS same_tin FROM servicer_profiles WHERE version = 2 AND legal_name = 'Supermortgage LLC'`))[0]!;
   assert.equal(v2["status"], "active"); assert.equal(v2["effective_from"], "2026-09-21"); assert.equal(v2["exclusive_address"], "PO Box 9, Testville TX 75001"); assert.equal(v2["servicer_address"], v1["servicer_address"]); assert.equal(v2["approved_by_decision_id"], decisionId); assert.equal(d["subject_id"], v2["id"]);
+  assert.equal(v2["tin_last4"], "6789"); assert.equal(v2["same_tin"], true, "a version that keeps the EIN carries the prior blob unchanged"); assert.ok(!("tin" in activated.payload) && !("tin_encrypted" in activated.payload));
   const v1After = await profileV1(); assert.equal(v1After["status"], "superseded"); assert.equal(v1After["effective_to"], "2026-09-21");
   // today's statement still renders v1; tomorrow's renders v2
   const s2 = await sendPeriodicStatement(runtime, loanId, { cycle_due_date: D("2026-10-01"), statement_date: D("2026-09-20") });

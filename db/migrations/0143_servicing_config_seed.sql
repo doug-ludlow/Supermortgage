@@ -41,8 +41,10 @@ SELECT 'servicer', 'Supermortgage LLC', NULL, NULL, '{"fake": true}'::jsonb
 WHERE NOT EXISTS (SELECT 1 FROM parties WHERE party_type = 'servicer' AND legal_name = 'Supermortgage LLC' AND servicer_number IS NULL);
 
 -- ───────────────────────────── servicer_profiles v1 = the former SERVICER_CONTACT ─────────────────────────────
-INSERT INTO servicer_profiles (servicing_party_id, version, effective_from, effective_to, legal_name, dba, nmls_id, tin, toll_free_phone, servicer_address, exclusive_address, remittance_address, payment_requirements_version, portal_url, counselor_url, hud_phone, hours, languages, status)
-SELECT p.id, 1, '2020-01-01', NULL, 'Supermortgage LLC', NULL, 'FAKE-000000', '12-3456789', '(800) 555-0100', 'PO Box 1, Testville TX 75001', 'PO Box 2, Testville TX 75001', 'Supermortgage, PO Box 7, Testville TX 75001', 'SM-PR-v1',
+-- tin_encrypted: the former constant's FAKE EIN 12-3456789 under src/infra/pii/tin.ts's FAKE_TIN_CIPHER_KEY (AES-256-GCM iv‖tag‖ciphertext) — readable only
+-- where TIN_CIPHER_KEY is unset (non-production); a production key refuses it (CONFIG_REQUIRED) until `compliance` activates the go-live version.
+INSERT INTO servicer_profiles (servicing_party_id, version, effective_from, effective_to, legal_name, dba, nmls_id, tin_encrypted, tin_last4, toll_free_phone, servicer_address, exclusive_address, remittance_address, payment_requirements_version, portal_url, counselor_url, hud_phone, hours, languages, status)
+SELECT p.id, 1, '2020-01-01', NULL, 'Supermortgage LLC', NULL, 'FAKE-000000', decode('c1701c401c2bb8eaed0d3c22e495bf0d952af39824cedd7a382fc0f8e6022584869f9cd314', 'hex'), '6789', '(800) 555-0100', 'PO Box 1, Testville TX 75001', 'PO Box 2, Testville TX 75001', 'Supermortgage, PO Box 7, Testville TX 75001', 'SM-PR-v1',
        'https://portal.example.com/statements', 'consumerfinance.gov/find-a-housing-counselor', '(800) 569-4287', 'Mon-Fri 08:00-20:00 ET', ARRAY['en', 'es'], 'active'
 FROM parties p
 WHERE p.party_type = 'servicer' AND p.legal_name = 'Supermortgage LLC' AND p.servicer_number IS NULL

@@ -19,7 +19,10 @@
 -- FK deferrals (35.5 plan D5): loan_installments.satisfied_by_payment_id is a plain uuid — no typed `payments` row exists before
 -- 35.1's projector keeps a uuid legacy id as the typed id; 35.1 adds the FK. installment_schedule_runs.trigger_event_id is a plain
 -- uuid (the transfer path persists its events after the loan rows in the same transaction).
--- Money is bigint cents. Nothing here is a consumer identifier except servicer_profiles.tin, the servicer's own EIN (see its comment).
+-- Money is bigint cents. Every new table carries `retention_class` (the spec's Data model: retention life_of_loan_plus_4y unless stated;
+-- the 0127/0133 column convention). The only identifier here is the servicer's own EIN on servicer_profiles — stored as the tree's
+-- *_encrypted / _last4 pair (0001 borrowers.tin_encrypted, 0057 application_borrowers.tin_encrypted; src/infra/pii/tin.ts AES-256-GCM),
+-- the spec's "tin text (pii, encrypted)".
 BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS btree_gist;
@@ -45,6 +48,7 @@ CREATE TABLE installment_schedule_runs (
   replaced                 jsonb NOT NULL DEFAULT '[]',             -- the prior values of every replaced row (reprojection)
   sha256                   char(64) NOT NULL,                       -- over the written rows
   decision_id              uuid REFERENCES agent_decisions(id),
+  retention_class          retention_class NOT NULL DEFAULT 'life_of_loan_plus_4y',
   created_at               timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX installment_schedule_runs_loan_idx ON installment_schedule_runs(loan_id, created_at);
@@ -91,7 +95,8 @@ CREATE TABLE servicer_profiles (
   legal_name                    text NOT NULL,
   dba                           text,
   nmls_id                       text,
-  tin                           text,
+  tin_encrypted                 bytea,                                -- the servicer's EIN, AES-256-GCM iv‖tag‖ciphertext (src/infra/pii/tin.ts encryptTin under TIN_CIPHER_KEY)
+  tin_last4                     char(4),
   toll_free_phone               text NOT NULL,
   servicer_address              text NOT NULL,
   exclusive_address             text NOT NULL,                        -- §1024.35(c) NoE / §1024.36(b) RFI designation
@@ -104,21 +109,24 @@ CREATE TABLE servicer_profiles (
   languages                     text[] NOT NULL DEFAULT '{en}',
   status                        text NOT NULL CHECK (status IN ('draft', 'active', 'superseded')),
   approved_by_decision_id       uuid REFERENCES agent_decisions(id),
+  retention_class               retention_class NOT NULL DEFAULT 'life_of_loan_plus_4y',   -- the version every loan's notices rendered under (spec Data model: life_of_loan_plus_4y unless stated)
   created_at                    timestamptz NOT NULL DEFAULT now(),
   UNIQUE (servicing_party_id, version),
   CHECK (effective_to IS NULL OR effective_to > effective_from),
   -- exactly one active version per servicing party at any date
   EXCLUDE USING gist (servicing_party_id WITH =, daterange(effective_from, effective_to, '[)') WITH &&) WHERE (status = 'active')
 );
--- pii by the cashiering-row convention (0003 payments.payer_name): the servicer's own EIN as printed on every Form 1098, never a consumer identifier.
-COMMENT ON COLUMN servicer_profiles.tin IS 'pii';
+-- the servicer's own EIN as printed on every Form 1098 — encrypted at rest as the tree keeps every taxpayer identifier (0001 borrowers.tin_encrypted / tin_last4);
+-- the FAKE seed (0143) is encrypted under src/infra/pii/tin.ts's FAKE key, so a production key cannot read it and `compliance` must activate the go-live version.
+COMMENT ON COLUMN servicer_profiles.tin_encrypted IS 'pii';
+COMMENT ON COLUMN servicer_profiles.tin_last4 IS 'pii';
 COMMENT ON TABLE servicer_profiles IS '35.5 rule 9: append-only versions of the servicer identity every notice renders from; activation needs `compliance` and a decision; a version is superseded by a later version''s effective_from.';
 -- Append-only versions: an UPDATE may move `status` and `effective_to` only (the activation of a later version closes the prior row); DELETE never.
 CREATE OR REPLACE FUNCTION servicer_profiles_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF TG_OP = 'DELETE' THEN RAISE EXCEPTION 'servicer_profiles is append-only'; END IF;
   IF NEW.id IS DISTINCT FROM OLD.id OR NEW.servicing_party_id IS DISTINCT FROM OLD.servicing_party_id OR NEW.version IS DISTINCT FROM OLD.version OR NEW.effective_from IS DISTINCT FROM OLD.effective_from
-     OR NEW.legal_name IS DISTINCT FROM OLD.legal_name OR NEW.dba IS DISTINCT FROM OLD.dba OR NEW.nmls_id IS DISTINCT FROM OLD.nmls_id OR NEW.tin IS DISTINCT FROM OLD.tin OR NEW.toll_free_phone IS DISTINCT FROM OLD.toll_free_phone
+     OR NEW.legal_name IS DISTINCT FROM OLD.legal_name OR NEW.dba IS DISTINCT FROM OLD.dba OR NEW.nmls_id IS DISTINCT FROM OLD.nmls_id OR NEW.tin_encrypted IS DISTINCT FROM OLD.tin_encrypted OR NEW.tin_last4 IS DISTINCT FROM OLD.tin_last4 OR NEW.toll_free_phone IS DISTINCT FROM OLD.toll_free_phone
      OR NEW.servicer_address IS DISTINCT FROM OLD.servicer_address OR NEW.exclusive_address IS DISTINCT FROM OLD.exclusive_address OR NEW.remittance_address IS DISTINCT FROM OLD.remittance_address
      OR NEW.payment_requirements_version IS DISTINCT FROM OLD.payment_requirements_version OR NEW.portal_url IS DISTINCT FROM OLD.portal_url OR NEW.counselor_url IS DISTINCT FROM OLD.counselor_url
      OR NEW.hud_phone IS DISTINCT FROM OLD.hud_phone OR NEW.hours IS DISTINCT FROM OLD.hours OR NEW.languages IS DISTINCT FROM OLD.languages OR NEW.approved_by_decision_id IS DISTINCT FROM OLD.approved_by_decision_id
@@ -144,6 +152,7 @@ CREATE TABLE loan_servicing_configs (
   nsf_fee_allowed        boolean NOT NULL,                                                    -- jurisdiction_rules.rules.nsf_fee.allowed
   written_by             jsonb NOT NULL DEFAULT '{}',
   decision_id            uuid REFERENCES agent_decisions(id),
+  retention_class        retention_class NOT NULL DEFAULT 'life_of_loan_plus_4y',
   created_at             timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX loan_servicing_configs_loan_idx ON loan_servicing_configs(loan_id, effective_from DESC);

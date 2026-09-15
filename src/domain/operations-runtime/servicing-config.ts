@@ -27,6 +27,7 @@ import { plainDate as D, type PlainDate } from "../../kernel/calendar/date.ts";
 import { wallClock } from "../../kernel/calendar/zoned.ts";
 import type { Cents } from "../../kernel/money/cents.ts";
 import { lateChargeTerms } from "../cashiering/latecharges.ts";
+import { decryptTin, encryptTin, tinCipherKey, tinDigits } from "../../infra/pii/tin.ts";
 import { armServicingSideClocks } from "./timers-35-5.ts";
 import { CASHIERING_AGENT, MODEL_VERSION_DETERMINISTIC, PROMPT_VERSION_35_5, type BoardingProjectionContext, type BoardingProjectionDeps } from "./installments.ts";
 
@@ -50,7 +51,7 @@ export const STATE_DEFAULT_TIME_ZONE: Readonly<Record<string, string>> = {
 };
 
 // ---------------------------------------------------------------- the FAKE servicer profile (= migration 0143's version 1)
-/** The former `SERVICER_CONTACT` (src/runtime/servicing.ts at HEAD) plus the profile columns: the authored samples' values — never a real address, number or EIN. Identical to 0143's seeded row (35.5-T13 asserts it). */
+/** The former `SERVICER_CONTACT` (src/runtime/servicing.ts at HEAD) plus the profile columns: the authored samples' values — never a real address, number or EIN. Identical to 0143's seeded row (35.5-T13 asserts it; `tin` is the clear FAKE EIN the seed holds encrypted under the FAKE key). */
 export const FAKE_SERVICER_PROFILE_V1 = {
   legal_name: "Supermortgage LLC", dba: null, nmls_id: "FAKE-000000", tin: "12-3456789", toll_free_phone: "(800) 555-0100", servicer_address: "PO Box 1, Testville TX 75001", exclusive_address: "PO Box 2, Testville TX 75001",
   remittance_address: "Supermortgage, PO Box 7, Testville TX 75001", payment_requirements_version: "SM-PR-v1", portal_url: "https://portal.example.com/statements", counselor_url: "consumerfinance.gov/find-a-housing-counselor", hud_phone: "(800) 569-4287",
@@ -60,15 +61,17 @@ export const FAKE_SERVICER_PROFILE_V1 = {
 } as const;
 
 export interface ServicerProfileRow {
-  readonly id: string; readonly servicing_party_id: string; readonly version: number; readonly effective_from: PlainDate; readonly effective_to: PlainDate | null; readonly legal_name: string; readonly dba: string | null; readonly nmls_id: string | null; readonly tin: string | null;
+  readonly id: string; readonly servicing_party_id: string; readonly version: number; readonly effective_from: PlainDate; readonly effective_to: PlainDate | null; readonly legal_name: string; readonly dba: string | null; readonly nmls_id: string | null;
+  /** The servicer's EIN at rest: AES-256-GCM under TIN_CIPHER_KEY (src/infra/pii/tin.ts), never the digits; `tin_last4` for display. */
+  readonly tin_encrypted: Uint8Array | null; readonly tin_last4: string | null;
   readonly toll_free_phone: string; readonly servicer_address: string; readonly exclusive_address: string; readonly remittance_address: string; readonly payment_requirements_version: string | null; readonly portal_url: string; readonly counselor_url: string; readonly hud_phone: string;
   readonly hours: string | null; readonly languages: readonly string[]; readonly status: "draft" | "active" | "superseded"; readonly approved_by_decision_id: string | null;
 }
 type Raw = Record<string, unknown>;
-const profileOf = (r: Raw): ServicerProfileRow => ({ id: String(r.id), servicing_party_id: String(r.servicing_party_id), version: Number(r.version), effective_from: D(String(r.effective_from)), effective_to: r.effective_to ? D(String(r.effective_to)) : null, legal_name: String(r.legal_name), dba: (r.dba as string | null) ?? null, nmls_id: (r.nmls_id as string | null) ?? null, tin: (r.tin as string | null) ?? null,
+const profileOf = (r: Raw): ServicerProfileRow => ({ id: String(r.id), servicing_party_id: String(r.servicing_party_id), version: Number(r.version), effective_from: D(String(r.effective_from)), effective_to: r.effective_to ? D(String(r.effective_to)) : null, legal_name: String(r.legal_name), dba: (r.dba as string | null) ?? null, nmls_id: (r.nmls_id as string | null) ?? null, tin_encrypted: r.tin_encrypted instanceof Uint8Array ? r.tin_encrypted : null, tin_last4: (r.tin_last4 as string | null) ?? null,
   toll_free_phone: String(r.toll_free_phone), servicer_address: String(r.servicer_address), exclusive_address: String(r.exclusive_address), remittance_address: String(r.remittance_address), payment_requirements_version: (r.payment_requirements_version as string | null) ?? null, portal_url: String(r.portal_url), counselor_url: String(r.counselor_url), hud_phone: String(r.hud_phone),
   hours: (r.hours as string | null) ?? null, languages: Array.isArray(r.languages) ? (r.languages as string[]) : [], status: String(r.status) as ServicerProfileRow["status"], approved_by_decision_id: (r.approved_by_decision_id as string | null) ?? null });
-const PROFILE_COLS = "id, servicing_party_id, version, effective_from::text AS effective_from, effective_to::text AS effective_to, legal_name, dba, nmls_id, tin, toll_free_phone, servicer_address, exclusive_address, remittance_address, payment_requirements_version, portal_url, counselor_url, hud_phone, hours, languages, status, approved_by_decision_id";
+const PROFILE_COLS = "id, servicing_party_id, version, effective_from::text AS effective_from, effective_to::text AS effective_to, legal_name, dba, nmls_id, tin_encrypted, tin_last4, toll_free_phone, servicer_address, exclusive_address, remittance_address, payment_requirements_version, portal_url, counselor_url, hud_phone, hours, languages, status, approved_by_decision_id";
 
 /** The platform's own servicing party (0143: party_type servicer, legal_name 'Supermortgage LLC', no servicer number). */
 export async function platformServicingPartyId(q: Queryable): Promise<string | null> {
@@ -161,7 +164,14 @@ export const loanLocalDate = (cfg: Pick<ServicingConfigRow, "time_zone">, instan
 
 // ---------------------------------------------------------------- the servicer block every notice renders
 export interface ServicerBlock { readonly servicer_name: string; readonly servicer_tin: string; readonly servicer_phone: string; readonly servicer_address: string; readonly exclusive_address: string; readonly remittance_address: string; readonly portal_url: string; readonly counselor_url: string; readonly hud_phone: string; readonly servicer_profile_id: string; readonly servicer_profile_version: number; }
-export const blockOf = (p: ServicerProfileRow): ServicerBlock => ({ servicer_name: p.legal_name, servicer_tin: p.tin ?? "", servicer_phone: p.toll_free_phone, servicer_address: p.servicer_address, exclusive_address: p.exclusive_address, remittance_address: p.remittance_address, portal_url: p.portal_url, counselor_url: p.counselor_url, hud_phone: p.hud_phone, servicer_profile_id: p.id, servicer_profile_version: p.version });
+/** The EIN as printed (NN-NNNNNNN) from the profile's encrypted digits; a blob this environment's key cannot open (the FAKE seed under a production key) → CONFIG_REQUIRED: activate the go-live version. */
+export function servicerTinOf(p: Pick<ServicerProfileRow, "id" | "version" | "tin_encrypted">): string {
+  if (!p.tin_encrypted) return "";
+  let digits: string;
+  try { digits = decryptTin(p.tin_encrypted, tinCipherKey()); } catch { refuse("notice.render", "CONFIG_REQUIRED", "35.5 rule 9: the servicer profile's TIN is unreadable under this environment's TIN_CIPHER_KEY", `servicer profile v${p.version} (${p.id}) carries a TIN encrypted under another key — activate the go-live profile through servicer_profile.write`); }
+  return `${digits.slice(0, 2)}-${digits.slice(2)}`;
+}
+export const blockOf = (p: ServicerProfileRow): ServicerBlock => ({ servicer_name: p.legal_name, servicer_tin: servicerTinOf(p), servicer_phone: p.toll_free_phone, servicer_address: p.servicer_address, exclusive_address: p.exclusive_address, remittance_address: p.remittance_address, portal_url: p.portal_url, counselor_url: p.counselor_url, hud_phone: p.hud_phone, servicer_profile_id: p.id, servicer_profile_version: p.version });
 /**
  * The servicer identity in force on `asOf` for the loan: the profile version of the loan's configured servicing party (its config row's
  * profile → that profile's party), else — a loan boarded before rule 9 wrote configs (fixtures, partner-book imports) — the platform's own
@@ -177,12 +187,16 @@ export async function servicerBlockFor(q: Queryable, loanId: string, asOf: Plain
 }
 
 // ---------------------------------------------------------------- servicer_profile.write
-export interface ProfileDraft { readonly servicing_party_id: string; readonly version: number; readonly effective_from: PlainDate; readonly effective_to?: PlainDate | null; readonly legal_name: string; readonly dba?: string | null; readonly nmls_id?: string | null; readonly tin?: string | null; readonly toll_free_phone: string; readonly servicer_address: string; readonly exclusive_address: string; readonly remittance_address: string; readonly payment_requirements_version?: string | null; readonly portal_url: string; readonly counselor_url: string; readonly hud_phone: string; readonly hours?: string | null; readonly languages?: readonly string[]; readonly status: "draft" | "active"; readonly approved_by_decision_id?: string | null; }
+export interface ProfileDraft { readonly servicing_party_id: string; readonly version: number; readonly effective_from: PlainDate; readonly effective_to?: PlainDate | null; readonly legal_name: string; readonly dba?: string | null; readonly nmls_id?: string | null;
+  /** The EIN in clear (encrypted here at insert), or the prior version's blob and last4 copied unchanged when the version keeps it. */
+  readonly tin?: string | null; readonly tin_encrypted?: Uint8Array | null; readonly tin_last4?: string | null; readonly toll_free_phone: string; readonly servicer_address: string; readonly exclusive_address: string; readonly remittance_address: string; readonly payment_requirements_version?: string | null; readonly portal_url: string; readonly counselor_url: string; readonly hud_phone: string; readonly hours?: string | null; readonly languages?: readonly string[]; readonly status: "draft" | "active"; readonly approved_by_decision_id?: string | null; }
 /** One `servicer_profiles` row (draft, or the active row of a new version). */
 export async function insertServicerProfile(q: Queryable, p: ProfileDraft, id: string = randomUUID()): Promise<string> {
-  await q.query(`INSERT INTO servicer_profiles (id, servicing_party_id, version, effective_from, effective_to, legal_name, dba, nmls_id, tin, toll_free_phone, servicer_address, exclusive_address, remittance_address, payment_requirements_version, portal_url, counselor_url, hud_phone, hours, languages, status, approved_by_decision_id)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::text[], $20, $21)`,
-    [id, p.servicing_party_id, p.version, p.effective_from, p.effective_to ?? null, p.legal_name, p.dba ?? null, p.nmls_id ?? null, p.tin ?? null, p.toll_free_phone, p.servicer_address, p.exclusive_address, p.remittance_address, p.payment_requirements_version ?? null, p.portal_url, p.counselor_url, p.hud_phone, p.hours ?? null, [...(p.languages ?? ["en"])], p.status, p.approved_by_decision_id ?? null]);
+  const tinEncrypted = p.tin ? encryptTin(p.tin, tinCipherKey()) : p.tin_encrypted ? Buffer.from(p.tin_encrypted) : null;
+  const tinLast4 = p.tin ? tinDigits(p.tin).slice(-4) : p.tin_last4 ?? null;
+  await q.query(`INSERT INTO servicer_profiles (id, servicing_party_id, version, effective_from, effective_to, legal_name, dba, nmls_id, tin_encrypted, tin_last4, toll_free_phone, servicer_address, exclusive_address, remittance_address, payment_requirements_version, portal_url, counselor_url, hud_phone, hours, languages, status, approved_by_decision_id)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20::text[], $21, $22)`,
+    [id, p.servicing_party_id, p.version, p.effective_from, p.effective_to ?? null, p.legal_name, p.dba ?? null, p.nmls_id ?? null, tinEncrypted, tinLast4, p.toll_free_phone, p.servicer_address, p.exclusive_address, p.remittance_address, p.payment_requirements_version ?? null, p.portal_url, p.counselor_url, p.hud_phone, p.hours ?? null, [...(p.languages ?? ["en"])], p.status, p.approved_by_decision_id ?? null]);
   return id;
 }
 /** The activation write: the prior active version closed at the new effective date (status superseded — the only UPDATE the table allows), the new version's active row. */
@@ -252,10 +266,13 @@ export async function servicerProfileWrite(i: ToolInput, ctx: CommandContext, rt
   if (!Number.isInteger(version) || version <= 0) throw new RangeError("version must be a positive integer");
   const fields: Record<string, string | null> = {};
   for (const k of PROFILE_FIELDS) if (i[k] !== undefined) fields[k] = i[k] === null ? null : String(i[k]);
-  const pick = (k: (typeof PROFILE_FIELDS)[number], fallback: string): string => String(fields[k] ?? base?.[k] ?? fallback);
-  const optional = (k: (typeof PROFILE_FIELDS)[number], fallback: string | null): string | null => (k in fields ? fields[k]! : base?.[k] ?? fallback);
+  type CopiedField = Exclude<(typeof PROFILE_FIELDS)[number], "tin">;   // every profile field but the EIN copies from the version in force; the EIN travels as its blob (below)
+  const pick = (k: CopiedField, fallback: string): string => String(fields[k] ?? base?.[k] ?? fallback);
+  const optional = (k: CopiedField, fallback: string | null): string | null => (k in fields ? fields[k]! : base?.[k] ?? fallback);
   const languages = Array.isArray(i.languages) ? (i.languages as unknown[]).map(String) : base?.languages ?? [...FAKE_SERVICER_PROFILE_V1.languages];
-  const draft: ProfileDraft = { servicing_party_id: party, version, effective_from: effectiveFrom, legal_name: pick("legal_name", FAKE_SERVICER_PROFILE_V1.legal_name), dba: optional("dba", null), nmls_id: optional("nmls_id", null), tin: optional("tin", null),
+  // the EIN: given in clear → encrypted at insert; not given → the prior version's blob and last4 travel unchanged (never re-typed, never logged)
+  const tinClear = "tin" in fields ? fields["tin"] : null;
+  const draft: ProfileDraft = { servicing_party_id: party, version, effective_from: effectiveFrom, legal_name: pick("legal_name", FAKE_SERVICER_PROFILE_V1.legal_name), dba: optional("dba", null), nmls_id: optional("nmls_id", null), tin: tinClear, ...(tinClear ? {} : { tin_encrypted: base?.tin_encrypted ?? null, tin_last4: base?.tin_last4 ?? null }),
     toll_free_phone: pick("toll_free_phone", FAKE_SERVICER_PROFILE_V1.toll_free_phone), servicer_address: pick("servicer_address", FAKE_SERVICER_PROFILE_V1.servicer_address), exclusive_address: pick("exclusive_address", FAKE_SERVICER_PROFILE_V1.exclusive_address), remittance_address: pick("remittance_address", FAKE_SERVICER_PROFILE_V1.remittance_address),
     payment_requirements_version: optional("payment_requirements_version", null), portal_url: pick("portal_url", FAKE_SERVICER_PROFILE_V1.portal_url), counselor_url: pick("counselor_url", FAKE_SERVICER_PROFILE_V1.counselor_url), hud_phone: pick("hud_phone", FAKE_SERVICER_PROFILE_V1.hud_phone), hours: optional("hours", null), languages, status: op === "activate" ? "active" : "draft" };
   const profile_id = randomUUID(); const decision_id = randomUUID();

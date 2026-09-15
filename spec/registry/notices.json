@@ -619,7 +619,8 @@
    "25.4",
    "30.2",
    "32.7",
-   "32.8"
+   "32.8",
+   "35.2"
   ],
   "context": "- **Notice Registry v1** (Supermortgage; 6\u20138 weeks): template versions `NTC_REGZ_41_STMT_STD`, `_DELQ`, `_TPP`, `_BK7_11`, `_BK12_13`, `NTC_REGZ_41E6_CHARGEOFF_SUSPENSION`, `NTC_FNMA_D2_2_03_PAYMENT_REMINDER`, `NTC_IRS_1098`, `NTC_REGZ_41_STMT_AVAIL_EMAIL`; counsel approval of each version (H-30(A)/(B)/(E)/(F) basis); plain-language QA passed."
  },
@@ -845,7 +846,8 @@
    "16.1",
    "32.12",
    "32.2",
-   "32.9"
+   "32.9",
+   "35.2"
   ],
   "context": "- Notice Registry templates `NTC_REGZ_36C3_PAYOFF_STMT` (+ CA and FL variants), `NTC_PAYOFF_REQUEST_ACK_DELAY` (reasonable-time path), `NTC_PAYOFF_UPDATED_STMT`; counsel approved."
  },
@@ -2040,7 +2042,8 @@
   "mentions": [
    "16.3",
    "32.11",
-   "32.12"
+   "32.12",
+   "35.10"
   ],
   "context": "| `SM_BORROWER_RELEASE_NOTICE_5BD` | deadline (policy; FL \u00a7701.04(2) requires sending the recorded release) | `lien_release.recorded` | recorded_at | +5 BD | `NTC_LIEN_RELEASE_RECORDED` sent with the recorded image | sev-3 (sev-1 in FL) |"
  },

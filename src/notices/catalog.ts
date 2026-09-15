@@ -193,6 +193,19 @@ import { VERSIONS_34_4, OVERRIDES_34_4 } from "./authored/section34-4.ts";
 import { VERSIONS_23_5, OVERRIDES_23_5 } from "./authored/section23-5.ts";
 import { VERSIONS_23_6, OVERRIDES_23_6 } from "./authored/section23-6.ts";
 import { VERSIONS_23_7, OVERRIDES_23_7 } from "./authored/section23-7.ts";
+// ---- §35 process-owned files (scaffolded by tools/workflows/wire_orig.py)
+import { VERSIONS_35_1, OVERRIDES_35_1 } from "./authored/section35-1.ts";
+import { VERSIONS_35_2, OVERRIDES_35_2 } from "./authored/section35-2.ts";
+import { VERSIONS_35_3, OVERRIDES_35_3 } from "./authored/section35-3.ts";
+import { VERSIONS_35_4, OVERRIDES_35_4 } from "./authored/section35-4.ts";
+import { VERSIONS_35_5, OVERRIDES_35_5 } from "./authored/section35-5.ts";
+import { VERSIONS_35_6, OVERRIDES_35_6 } from "./authored/section35-6.ts";
+import { VERSIONS_35_7, OVERRIDES_35_7 } from "./authored/section35-7.ts";
+import { VERSIONS_35_8, OVERRIDES_35_8 } from "./authored/section35-8.ts";
+import { VERSIONS_35_9, OVERRIDES_35_9 } from "./authored/section35-9.ts";
+import { VERSIONS_35_10, OVERRIDES_35_10 } from "./authored/section35-10.ts";
+import { VERSIONS_35_11, OVERRIDES_35_11 } from "./authored/section35-11.ts";
+import { VERSIONS_35_12, OVERRIDES_35_12 } from "./authored/section35-12.ts";
 
 interface CatalogEntry { readonly code: string; readonly owner_process: string; readonly mentions: readonly string[]; readonly context: string; }
 
@@ -241,6 +254,7 @@ const OVERRIDES: Record<string, Partial<NoticeTemplate>> = {
   ...OVERRIDES_33_1, ...OVERRIDES_33_2, ...OVERRIDES_33_3,
   ...OVERRIDES_34_1, ...OVERRIDES_34_2, ...OVERRIDES_34_3, ...OVERRIDES_34_4,
   ...OVERRIDES_23_5, ...OVERRIDES_23_6, ...OVERRIDES_23_7,
+  ...OVERRIDES_35_1, ...OVERRIDES_35_2, ...OVERRIDES_35_3, ...OVERRIDES_35_4, ...OVERRIDES_35_5, ...OVERRIDES_35_6, ...OVERRIDES_35_7, ...OVERRIDES_35_8, ...OVERRIDES_35_9, ...OVERRIDES_35_10, ...OVERRIDES_35_11, ...OVERRIDES_35_12,
   NTC_REGZ_20D_ARM_INITIAL: { separateDocument: true, mayCombineWith: ["NTC_REGZ_41_STMT_STD", "NTC_REGZ_41_STMT_DELQ"], citation: "12 CFR 1026.20(d); H-4(D)(3)/(4)" },
   NTC_REGZ_20C_ARM_ADJ: { citation: "12 CFR 1026.20(c); H-4(D)(1)/(2)" },
   NTC_REGX_39B_EARLY_INTERVENTION: { mayCombineWith: ["NTC_FNMA_D2_2_05_BSP_FORM745"], citation: "12 CFR 1024.39(b); Appendix MS-4(A)" },
@@ -466,4 +480,5 @@ export const AUTHORED_VERSIONS: readonly VersionInput[] = [
   ...VERSIONS_33_1, ...VERSIONS_33_2, ...VERSIONS_33_3,
   ...VERSIONS_34_1, ...VERSIONS_34_2, ...VERSIONS_34_3, ...VERSIONS_34_4,
   ...VERSIONS_23_5, ...VERSIONS_23_6, ...VERSIONS_23_7,
+  ...VERSIONS_35_1, ...VERSIONS_35_2, ...VERSIONS_35_3, ...VERSIONS_35_4, ...VERSIONS_35_5, ...VERSIONS_35_6, ...VERSIONS_35_7, ...VERSIONS_35_8, ...VERSIONS_35_9, ...VERSIONS_35_10, ...VERSIONS_35_11, ...VERSIONS_35_12,
 ];

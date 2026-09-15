@@ -11,7 +11,8 @@ DIR = {20: 'leads-pricing', 21: 'application', 22: 'verification', 23: 'underwri
        26: 'closing', 27: 'warehouse', 28: 'qc-hmda', 29: 'secondary', 30: 'orig-boarding', 31: 'governance',
        32: 'borrower',  # §32 borrower experience (tools/import_ux.py): API-level node:test + Playwright driven from node:test
        33: 'partner-book',  # §33 the partner book: monitored loans, real accounts, daily refinance review and readiness
-       34: 'operator-portal'}  # §34 the operator portal: staff sign-in and roles, the directory, partner book operations, evidence and controls
+       34: 'operator-portal',  # §34 the operator portal: staff sign-in and roles, the directory, partner book operations, evidence and controls
+       35: 'operations-runtime'}  # §35 operations runtime: the persistence seam, documents, cycles, close, cashiering, orchestration, roles, screens, default ops, refinance close, stewardship, production posture
 # wiring series: (sections, marker, anchor process whose import/spread the block follows)
 SERIES = [(range(20, 32), '// ---- §20–§31 process-owned files (scaffolded by tools/workflows/wire_orig.py)', '13_9', 'foreclosure/timers-13-9.ts', 'foreclosure/evaluators-13-9.ts', 'section13-9.ts', 'authored/section13-9.ts'),
           (range(32, 33), '// ---- §32 process-owned files (scaffolded by tools/workflows/wire_orig.py)', '31_3', 'governance/timers-31-3.ts', 'governance/evaluators-31-3.ts', 'section31-3.ts', 'authored/section31-3.ts'),
@@ -19,7 +20,9 @@ SERIES = [(range(20, 32), '// ---- §20–§31 process-owned files (scaffolded b
           (range(34, 35), '// ---- §34 process-owned files (scaffolded by tools/workflows/wire_orig.py)', '33_3', 'partner-book/timers-33-3.ts', 'partner-book/evaluators-33-3.ts', 'section33-3.ts', 'authored/section33-3.ts'),
           # processes registered into a section after its series' block landed get a block of their own (an explicit process set wins over a
           # section range): 23.5–23.7 (the DU graph, document and preflight — the Homestead hand-off) anchored after the last §33 spread
-          ({'23.5', '23.6', '23.7'}, '// ---- §23.5–§23.7 process-owned files (scaffolded by tools/workflows/wire_orig.py)', '33_3', 'partner-book/timers-33-3.ts', 'partner-book/evaluators-33-3.ts', 'section33-3.ts', 'authored/section33-3.ts')]
+          ({'23.5', '23.6', '23.7'}, '// ---- §23.5–§23.7 process-owned files (scaffolded by tools/workflows/wire_orig.py)', '33_3', 'partner-book/timers-33-3.ts', 'partner-book/evaluators-33-3.ts', 'section33-3.ts', 'authored/section33-3.ts'),
+          # §35 (operations runtime) registered after the 23.5–23.7 block landed, so it anchors after the last §23.7 spread
+          (range(35, 36), '// ---- §35 process-owned files (scaffolded by tools/workflows/wire_orig.py)', '23_7', 'underwriting/timers-23-7.ts', 'underwriting/evaluators-23-7.ts', 'section23-7.ts', 'authored/section23-7.ts')]
 m = json.load(open(f'{R}/spec/registry/manifest.json'))
 procs = [p['process'] for p in m if int(p['process'].split('.')[0]) in DIR]
 def pdir(pid): return DIR[int(pid.split('.')[0])]

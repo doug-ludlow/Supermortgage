@@ -119,7 +119,10 @@
     "19.4",
     "31.3",
     "34.1",
-    "34.2"
+    "34.2",
+    "35.1",
+    "35.2",
+    "35.7"
    ],
    "tools": [
     "buildTrialBalance",
@@ -163,7 +166,37 @@
     "directory.account",
     "directory.activity",
     "directory.unmask",
-    "directory.export"
+    "directory.export",
+    "record.project",
+    "record.replay",
+    "record.gaps",
+    "record.verify",
+    "record.snapshot",
+    "record.lease",
+    "outbox.dispatch",
+    "documents.render",
+    "documents.store",
+    "documents.open",
+    "documents.verify",
+    "documents.hold",
+    "documents.dispose",
+    "esign.envelope.create",
+    "esign.envelope.send",
+    "esign.envelope.sign",
+    "esign.envelope.void",
+    "mail.batch",
+    "mail.manifest.ingest",
+    "mail.fallback",
+    "roles.grant",
+    "roles.revoke",
+    "roles.queue",
+    "roles.approve",
+    "roles.breakglass",
+    "principals.issue",
+    "principals.revoke",
+    "handover.plan",
+    "handover.enable",
+    "handover.board"
    ],
    "escalates_to": [
     "attorney",
@@ -171,7 +204,17 @@
     "signing_officer",
     "fnma_portal_operator",
     "lossmit_reviewer",
-    "compliance"
+    "compliance",
+    "ciso",
+    "qc_officer",
+    "counsel",
+    "bsa_officer",
+    "funding_approver",
+    "human_agent",
+    "licensed_specialist",
+    "mlo_of_record",
+    "settlement_agent",
+    "underwriting_reviewer"
    ]
   },
   {
@@ -186,7 +229,8 @@
     "6.3",
     "6.4",
     "6.5",
-    "15.4"
+    "15.4",
+    "35.4"
    ],
    "tools": [
     "loadTapeBalances",
@@ -253,14 +297,26 @@
     "matchRecoveries",
     "postRecoveryEntries",
     "buildIrrPackage",
-    "agingReport"
+    "agingReport",
+    "close.open",
+    "close.plan",
+    "close.step.start",
+    "close.step.complete",
+    "close.step.skip",
+    "close.board",
+    "close.attest",
+    "close.review",
+    "close.reopen",
+    "close.tax_year"
    ],
    "escalates_to": [
     "officer",
     "fnma_portal_operator",
     "human_agent",
     "attorney",
-    "licensed_specialist"
+    "licensed_specialist",
+    "compliance",
+    "qc_officer"
    ]
   },
   {
@@ -369,7 +425,8 @@
     "2.4",
     "2.5",
     "2.6",
-    "2.7"
+    "2.7",
+    "35.5"
    ],
    "tools": [
     "payments.read/write",
@@ -402,7 +459,19 @@
     "fees.read",
     "fees.assess",
     "fees.waive",
-    "fees.reverse"
+    "fees.reverse",
+    "installments.write",
+    "installments.reproject",
+    "installments.read",
+    "cashiering.run_unit",
+    "lockbox.ingest",
+    "lockbox.item.resolve",
+    "ach.file.build",
+    "ach.returns.ingest",
+    "ach.return.action",
+    "servicing_config.write",
+    "servicer_profile.write",
+    "writeDecision"
    ],
    "escalates_to": [
     "attorney",
@@ -411,7 +480,8 @@
     "licensed_specialist",
     "signing_officer",
     "fnma_portal_operator",
-    "lossmit_reviewer"
+    "lossmit_reviewer",
+    "compliance"
    ]
   },
   {
@@ -525,15 +595,36 @@
    "agent": "case",
    "processes": [
     "4.2",
-    "4.4"
+    "4.4",
+    "35.8"
    ],
-   "tools": [],
+   "tools": [
+    "work.queue",
+    "work.item.open",
+    "work.item.claim",
+    "work.item.release",
+    "work.item.close",
+    "work.item.cancel",
+    "work.screen.read",
+    "work.screen.derive",
+    "work.screen.act",
+    "work.action.propose",
+    "work.action.decide",
+    "work.log.recon",
+    "writeDecision"
+   ],
    "escalates_to": [
     "attorney",
     "human_agent",
     "officer",
     "lossmit_reviewer",
-    "signing_officer"
+    "signing_officer",
+    "compliance",
+    "funding_approver",
+    "mlo_of_record",
+    "qc_officer",
+    "settlement_agent",
+    "underwriting_reviewer"
    ]
   },
   {
@@ -585,18 +676,34 @@
     "7.1",
     "7.2",
     "7.3",
-    "7.5"
+    "7.5",
+    "35.6"
    ],
    "tools": [
     "computeArmAdjustment",
-    "verifyArmAdjustment"
+    "verifyArmAdjustment",
+    "orchestration.open",
+    "orchestration.pass",
+    "orchestration.step",
+    "orchestration.snapshot",
+    "orchestration.fund",
+    "orchestration.reconcile",
+    "orchestration.hold",
+    "orchestration.release",
+    "orchestration.unwind",
+    "orchestration.board",
+    "writeDecision"
    ],
    "escalates_to": [
     "attorney",
     "human_agent",
     "officer",
     "fnma_portal_operator",
-    "licensed_specialist"
+    "licensed_specialist",
+    "compliance",
+    "funding_approver",
+    "settlement_agent",
+    "underwriting_reviewer"
    ]
   },
   {
@@ -606,7 +713,8 @@
     "16.1",
     "16.2",
     "16.3",
-    "16.4"
+    "16.4",
+    "35.10"
    ],
    "tools": [
     "computePayoffQuote",
@@ -636,7 +744,20 @@
     "notifyBorrower",
     "computePenaltyExposure",
     "checkDeactivationEligibility",
-    "validateMinIntegrity"
+    "validateMinIntegrity",
+    "closeout.open",
+    "closeout.pass",
+    "closeout.quote",
+    "closeout.settle",
+    "closeout.escrow",
+    "closeout.lien_release",
+    "closeout.retire",
+    "closeout.notify_partner",
+    "closeout.confirm_partner",
+    "closeout.hold",
+    "closeout.resume",
+    "closeout.board",
+    "writeDecision"
    ],
    "escalates_to": [
     "attorney",
@@ -830,7 +951,8 @@
     "13.6",
     "13.7",
     "13.8",
-    "13.9"
+    "13.9",
+    "35.9"
    ],
    "tools": [
     "loan.get",
@@ -866,7 +988,21 @@
     "litigation.classify",
     "dmdc.batch.prepare",
     "dmdc.results.import",
-    "scra.case.get/open/close"
+    "scra.case.get/open/close",
+    "case.timeline",
+    "case.progress",
+    "case.refer",
+    "case.milestone.expect",
+    "case.milestone.record",
+    "docket.sync",
+    "docket.react",
+    "firm.dispatch",
+    "firm.inbound",
+    "breach.execute",
+    "breach.recon",
+    "claims.sweep",
+    "claims.package",
+    "writeDecision"
    ],
    "escalates_to": [
     "human_agent",
@@ -874,7 +1010,9 @@
     "attorney",
     "lossmit_reviewer",
     "fnma_portal_operator",
-    "signing_officer"
+    "signing_officer",
+    "compliance",
+    "counsel"
    ]
   },
   {
@@ -980,7 +1118,8 @@
     "18.7",
     "28.1",
     "28.2",
-    "31.2"
+    "31.2",
+    "35.11"
    ],
    "tools": [
     "ledger.recompute",
@@ -1031,7 +1170,18 @@
     "openOperatorEscalation",
     "openOfficerEscalation",
     "inventory.upsert",
-    "assess.draft"
+    "assess.draft",
+    "ops.cycles.watch",
+    "ops.exceptions.list",
+    "ops.exceptions.classify",
+    "ops.exceptions.requeue",
+    "ops.exceptions.assign",
+    "ops.exceptions.resolve",
+    "ops.report",
+    "ops.runbook.read",
+    "audit.hosted.run",
+    "audit.hosted.report",
+    "audit.persisted.count"
    ],
    "escalates_to": [
     "attorney",
@@ -1042,7 +1192,8 @@
     "compliance",
     "underwriting_reviewer",
     "bsa_officer",
-    "mlo_of_record"
+    "mlo_of_record",
+    "ciso"
    ]
   },
   {
@@ -1869,7 +2020,8 @@
    "agent": "compliance-sentinel",
    "processes": [
     "31.1",
-    "34.4"
+    "34.4",
+    "35.12"
    ],
    "tools": [
     "nmls.sync",
@@ -1881,7 +2033,21 @@
     "controls.escalation.complete",
     "controls.outbox.requeue",
     "controls.ai.kill",
-    "controls.evidence.pack"
+    "controls.evidence.pack",
+    "posture.record",
+    "posture.check",
+    "posture.drift.resolve",
+    "integrations.switch",
+    "integrations.status",
+    "backup.drill",
+    "data.scan",
+    "parallel_run.open",
+    "parallel_run.reconcile",
+    "parallel_run.disposition",
+    "parallel_run.close",
+    "go_live.check",
+    "go_live.attest",
+    "writeDecision"
    ],
    "escalates_to": [
     "attorney",
@@ -1891,7 +2057,10 @@
     "mlo_of_record",
     "officer",
     "underwriting_reviewer",
-    "compliance"
+    "compliance",
+    "ciso",
+    "funding_approver",
+    "qc_officer"
    ]
   },
   {
@@ -2018,6 +2187,28 @@
     "refi.open"
    ],
    "escalates_to": []
+  },
+  {
+   "agent": "ops-steward",
+   "processes": [
+    "35.3"
+   ],
+   "tools": [
+    "cycles.registry",
+    "cycles.plan",
+    "cycles.run_unit",
+    "cycles.receipt",
+    "cycles.retry",
+    "cycles.escalate",
+    "jobs.list",
+    "jobs.requeue",
+    "writeDecision"
+   ],
+   "escalates_to": [
+    "compliance",
+    "fnma_portal_operator",
+    "officer"
+   ]
   }
  ],
  "processes": [
@@ -6554,6 +6745,364 @@
    "guardrails": "`NO_CLOCK_EDIT`, `ROLE_REQUIRED`, `TWO_PERSON_KILL`, `REQUEUE_CAP_3`, `NO_MONEY_FIELD`, `PACK_IS_STORED_ROWS` (nothing computed or summarized by a model in a pack). Escalations: `ops_analyst` on the fourth requeue; `compliance` when a kill switch stays tripped more than 24 hours.",
    "escalates_to": [
     "compliance"
+   ]
+  },
+  {
+   "process": "35.1",
+   "agent": "security-records",
+   "agents_named": [
+    "security-records"
+   ],
+   "tools": [
+    "record.project",
+    "record.replay",
+    "record.gaps",
+    "record.verify",
+    "record.snapshot",
+    "record.lease",
+    "outbox.dispatch",
+    "writeDecision"
+   ],
+   "guardrails": "`PROJECTOR_NEVER_COMPUTES`, `NO_MONEY_FIELD_CHANGE`, `STALE_RECORD_REFUSES_WHOLE_COMMAND`, `REPLAY_IS_IDEMPOTENT`, `LEASE_DIES_WITH_SESSION`, `OUTBOX_RETRY_CAP_5`, `NO_PII_IN_DECISION` (ids and column names only), `HOLD_BLOCKS_REPLAY`. Escalations: `ops_analyst` for a day without a verify run or a sweep, a dead letter unreviewed, or a kind whose gap count grows two days running; `ciso` for a money-column mismatch (sev 1) or a snapshot that differs from replay (sev 2); `qc_officer` for a non-money mismatch; `officer` for the correction of any typed row that carries money, through the owning sec",
+   "escalates_to": [
+    "ciso",
+    "officer",
+    "qc_officer"
+   ]
+  },
+  {
+   "process": "35.10",
+   "agent": "payoff-release",
+   "agents_named": [
+    "payoff-release"
+   ],
+   "tools": [
+    "closeout.open",
+    "closeout.pass",
+    "closeout.quote",
+    "closeout.settle",
+    "closeout.escrow",
+    "closeout.lien_release",
+    "closeout.retire",
+    "closeout.notify_partner",
+    "closeout.confirm_partner",
+    "closeout.hold",
+    "closeout.resume",
+    "closeout.board",
+    "writeDecision"
+   ],
+   "guardrails": "`ONE_CLOSEOUT_PER_APPLICATION`, `NO_CLIENT_STATE`, `NO_MONEY_FIELD` (every figure is 16.1's, 16.2's or 24.4's; `disposeVariance` and a reversal are `officer` commands the agent may only propose), `NO_SETTLEMENT` (no retirement without `loan.paid_in_full` or a paid demand with evidence), `NO_DIRECT_STATUS_WRITE`, `ESCROW_CREDIT_NEEDS_CONSENT` (30.3's gate; absent \u2192 `refund`), `NO_NETTING`, `PARTNER_PAYLOAD_MINIMAL`, `OWNER_AGENT_ACTS` (each owning tool runs as its owning agent), `IDEMPOTENT_ON_FUNDED_EVENT`. Escalations: `officer` for `SM_REFI_PRIOR_SETTLE_1BD`, `SM_REFI_ESCROW_CREDIT_0`, a var",
+   "escalates_to": [
+    "attorney",
+    "officer",
+    "signing_officer"
+   ]
+  },
+  {
+   "process": "35.11",
+   "agent": "qc-audit",
+   "agents_named": [
+    "qc-audit"
+   ],
+   "tools": [
+    "ops.cycles.watch",
+    "ops.exceptions.list",
+    "ops.exceptions.classify",
+    "ops.exceptions.requeue",
+    "ops.exceptions.assign",
+    "ops.exceptions.resolve",
+    "ops.report",
+    "ops.runbook.read",
+    "audit.hosted.run",
+    "audit.hosted.report",
+    "audit.persisted.count",
+    "writeDecision"
+   ],
+   "guardrails": "`NEVER_COMPLETES_A_BREACH`, `NO_CLOCK_EDIT`, `AUTO_REQUEUE_CAP_1`, `CONFIDENCE_FLOOR_0_85`, `NO_MONEY_FIELD`, `NO_PAYLOAD_IN_EXCEPTION`, `REPORT_IS_COUNTS` (nothing summarized by a model in the report), `PROBE_NEVER_PRODUCTION`, `EXEC_KEYS_SEPARATE` (the exec columns never alter `totals` or `done`). Escalations: `ops_analyst` for a missed cycle, an adapter down past an hour, an untriaged exception, a dead unit; `compliance` for a second consecutive missed cycle, a FAKE actor in production, a day without an ops report; `qc_officer` for a stale hosted probe; `ciso` when the report's `documents.i",
+   "escalates_to": [
+    "ciso",
+    "compliance",
+    "officer",
+    "qc_officer"
+   ]
+  },
+  {
+   "process": "35.12",
+   "agent": "compliance-sentinel",
+   "agents_named": [
+    "compliance-sentinel"
+   ],
+   "tools": [
+    "posture.record",
+    "posture.check",
+    "posture.drift.resolve",
+    "integrations.switch",
+    "integrations.status",
+    "backup.drill",
+    "data.scan",
+    "parallel_run.open",
+    "parallel_run.reconcile",
+    "parallel_run.disposition",
+    "parallel_run.close",
+    "go_live.check",
+    "go_live.attest",
+    "writeDecision"
+   ],
+   "guardrails": "`POSTURE_IS_OBSERVED`, `NO_FAKE_IN_PRODUCTION` (35.7's), `VENDOR_OFF`, `TWO_PERSON_SWITCH`, `MONEY_VENDOR_SANDBOX_ONLY`, `NO_REAL_DATA_IN_NONPROD`, `REAL_DATA_REFUSED_IN_NONPROD`, `SYNTHETIC_REFUSED_IN_PRODUCTION`, `FINDING_CLOSES_BY_EVIDENCE`, `NO_MONEY_FIELD`, `NO_PII_IN_EVIDENCE`, `ROLE_REQUIRED`, `GO_LIVE_GATE`, `GO_LIVE_ITEM_OPEN`, `TWO_PERSON_GO_LIVE`, `PARALLEL_RUN_TOO_SHORT`, `PARALLEL_RUN_OPEN_DIFFS`, `PARALLEL_RUN_DIRTY_WEEK`, `NO_CLOCK_EDIT` (34.4's). Escalations: `ciso` for every posture drift, a failed or missed drill, a secret past 90 days and a canary failing three days; `compli",
+   "escalates_to": [
+    "ciso",
+    "compliance",
+    "counsel",
+    "funding_approver",
+    "officer",
+    "qc_officer"
+   ]
+  },
+  {
+   "process": "35.2",
+   "agent": "security-records",
+   "agents_named": [
+    "security-records"
+   ],
+   "tools": [
+    "documents.render",
+    "documents.store",
+    "documents.open",
+    "documents.verify",
+    "documents.hold",
+    "documents.dispose",
+    "esign.envelope.create",
+    "esign.envelope.send",
+    "esign.envelope.sign",
+    "esign.envelope.void",
+    "mail.batch",
+    "mail.manifest.ingest",
+    "mail.fallback"
+   ],
+   "guardrails": "`BYTES_ARE_WRITE_ONCE`, `URI_SWAP_ONCE`, `VERIFY_STORED_BYTES_ONLY`, `HOLD_RELEASE_HUMAN_ONLY`, `DISPOSE_NEEDS_OFFICER_ATTESTATION`, `NO_ENVELOPE_WITHOUT_CONSENT`, `NO_AGENT_SIGNS`, `NO_MONEY_FIELD`, `NO_PII_IN_DECISION`. Escalations: `ciso` sev 1 on any integrity mismatch or a missed daily run; `ops_analyst` on a blob not stored within a day, a manifest missing after two business days, an expired envelope and the in-house fallback; `compliance` on a hold-release request or a disposal blocked by a hold; `officer` for the disposal attestation.",
+   "escalates_to": [
+    "ciso",
+    "compliance",
+    "counsel",
+    "officer"
+   ]
+  },
+  {
+   "process": "35.3",
+   "agent": "ops-steward",
+   "agents_named": [
+    "ops-steward"
+   ],
+   "tools": [
+    "cycles.registry",
+    "cycles.plan",
+    "cycles.run_unit",
+    "cycles.receipt",
+    "cycles.retry",
+    "cycles.escalate",
+    "jobs.list",
+    "jobs.requeue",
+    "writeDecision"
+   ],
+   "guardrails": "`LEASE_DIES_WITH_SESSION`, `PLAN_IS_IDEMPOTENT`, `RECEIPT_ONCE`, `LEASE_IS_WALL_CLOCK`, `JOB_RETRY_CAP_3`, `NO_CLIENT_STATE`, `ROLE_REQUIRED` (requeue, abandon, pause, cancel are `ops_analyst`), `NO_MONEY_FIELD`, `NO_CLOCK_EDIT`, `NO_SILENT_CYCLE`, `UNIT_RUNS_AS_OWNER` (an input naming an actor or agent to run as is refused). Escalations: `ops_analyst` for a stalled run, a dead unit of a non-money cycle and a missed planner day; `officer` for a dead unit of `remittance`, `form_496_monthly` or `metro2_monthly`; `fnma_portal_operator` for a dead `lar_daily` unit; `compliance` when a paused cycle",
+   "escalates_to": [
+    "compliance",
+    "fnma_portal_operator",
+    "officer"
+   ]
+  },
+  {
+   "process": "35.4",
+   "agent": "custodial-recon",
+   "agents_named": [
+    "custodial-recon",
+    "qc-audit",
+    "investor-reporting"
+   ],
+   "tools": [
+    "close.open",
+    "close.plan",
+    "close.step.start",
+    "close.step.complete",
+    "close.step.skip",
+    "close.board",
+    "close.attest",
+    "close.review",
+    "close.reopen",
+    "close.tax_year",
+    "writeDecision"
+   ],
+   "guardrails": "`NO_PLUG` (no ledger, payment, reconciliation or `*_cents` write; no force/tolerance input), `RECEIPTS_ARE_OWNERS_EVENTS` (never emits a section's receipt), `REVIEWER_NOT_INDEPENDENT`, `OFFICER_APPROVAL_REQUIRED` (flag on), `OFFICER_REOPEN_ONLY`, `FINAL_STEPS_NEVER_RESET` (`lar`, `period_close`, `metro2_snapshot`), `SUCCESSOR_ATTESTED_NO_REOPEN`, `FLAG_FROM_CONFIG` (never from the request), `NO_CLOCK_EDIT` (the owners' timers are read, never satisfied or cancelled here). Escalations: `qc_officer` for a variance or confidence < 0.95; `ops_analyst` for a missed period open or a stalled step; `co",
+   "escalates_to": [
+    "compliance",
+    "fnma_portal_operator",
+    "officer",
+    "qc_officer"
+   ]
+  },
+  {
+   "process": "35.5",
+   "agent": "cashiering",
+   "agents_named": [
+    "cashiering"
+   ],
+   "tools": [
+    "installments.write",
+    "installments.reproject",
+    "installments.read",
+    "cashiering.run_unit",
+    "lockbox.ingest",
+    "lockbox.item.resolve",
+    "ach.file.build",
+    "ach.returns.ingest",
+    "ach.return.action",
+    "servicing_config.write",
+    "servicer_profile.write",
+    "writeDecision"
+   ],
+   "guardrails": "`SCHEDULE_REQUIRED` (no `loans` row without its rows), `SATISFIED_ROW_FROZEN`, `NO_CLIENT_STATE`, `ONE_UNIT_PER_LOAN_PER_DAY`, `CONTROL_TOTAL_MATCH` (no posting from a batch in variance), `GATES_ARE_2_3S` (an entry refused by a 2.3 gate is never forced), `MAX_2_REINITIATIONS_180`, `NSF_ONLY_WHERE_ALLOWED`, `CONFIG_REQUIRED` (no loan-local date without a config row), `NO_MONEY_FIELD` (no tool here changes a money field outside the owning engine's command with the owning role). Escalations: `officer` for a schedule that cannot be written at boarding, a stale schedule after a terms change, a miss",
+   "escalates_to": [
+    "compliance",
+    "officer"
+   ]
+  },
+  {
+   "process": "35.6",
+   "agent": "disclosures",
+   "agents_named": [
+    "disclosures"
+   ],
+   "tools": [
+    "orchestration.open",
+    "orchestration.pass",
+    "orchestration.step",
+    "orchestration.snapshot",
+    "orchestration.fund",
+    "orchestration.reconcile",
+    "orchestration.hold",
+    "orchestration.release",
+    "orchestration.unwind",
+    "orchestration.board",
+    "writeDecision"
+   ],
+   "guardrails": "`ONE_STEP_PER_PASS`, `PASS_IS_IDEMPOTENT`, `NO_CLIENT_STATE`, `OWNER_EMITS`, `HUMAN_ACTS_STAY_HUMAN`, `NO_GATE_RECOMPUTE`, `NO_CLOCK_EDIT`, `SNAPSHOT_CITES_SOURCES`, `FIXTURE_REFUSED_IN_PRODUCTION`, `THREE_SIDES_ONE_ADVICE`, `NO_MONEY_FIELD`. Escalations: `ops_analyst` for a stalled step, a failed step after three attempts, a snapshot gap, a missing daily receipt; `funding_approver` when a prepared wire waits past 26.3's hour; `fnma_portal_operator` for an open operator task; `underwriting_reviewer` for a reviewer-only condition; `settlement_agent` for a missing statement (26.3's `SM_O73_DISBU",
+   "escalates_to": [
+    "compliance",
+    "fnma_portal_operator",
+    "funding_approver",
+    "officer",
+    "settlement_agent",
+    "underwriting_reviewer"
+   ]
+  },
+  {
+   "process": "35.7",
+   "agent": "security-records",
+   "agents_named": [
+    "security-records"
+   ],
+   "tools": [
+    "roles.grant",
+    "roles.revoke",
+    "roles.queue",
+    "roles.approve",
+    "roles.breakglass",
+    "principals.issue",
+    "principals.revoke",
+    "handover.plan",
+    "handover.enable",
+    "handover.board",
+    "writeDecision"
+   ],
+   "guardrails": "`NO_SELF_ASSERTED_ACTOR`, `APPROVER_DISTINCT`, `APPROVER_NOT_SELF_ASSERTED`, `ROLE_DISJOINT`, `UNKNOWN_ROLE`, `NO_SELF_ROLE_CHANGE` (34.1's, inherited on `roles.grant`), `CONFIRMER_IS_HOLDER`, `NO_FAKE_IN_PRODUCTION`, `TWO_PERSON_HANDOVER`, `HANDOVER_NEEDS_HOLDER`, `NO_BREAKGLASS_INDEPENDENT_ROLE`, `SHARED_TOKEN_REFUSED_IN_PRODUCTION`, `NO_MONEY_FIELD`, `NO_CLOCK_EDIT` (the queue scan satisfies and arms only through its own events; it never touches a section's clock). Escalations: `compliance` for an unstaffed role, an unreviewed break-glass, a dormant grant and a stale board; `ciso` (sev 2, o",
+   "escalates_to": [
+    "attorney",
+    "bsa_officer",
+    "ciso",
+    "compliance",
+    "counsel",
+    "fnma_portal_operator",
+    "funding_approver",
+    "human_agent",
+    "licensed_specialist",
+    "lossmit_reviewer",
+    "mlo_of_record",
+    "officer",
+    "qc_officer",
+    "settlement_agent",
+    "signing_officer",
+    "underwriting_reviewer"
+   ]
+  },
+  {
+   "process": "35.8",
+   "agent": "case",
+   "agents_named": [
+    "case"
+   ],
+   "tools": [
+    "work.queue",
+    "work.item.open",
+    "work.item.claim",
+    "work.item.release",
+    "work.item.close",
+    "work.item.cancel",
+    "work.screen.read",
+    "work.screen.derive",
+    "work.screen.act",
+    "work.action.propose",
+    "work.action.decide",
+    "work.log.recon",
+    "writeDecision"
+   ],
+   "guardrails": "`NO_CLIENT_STATE` (rule 2), `ROLE_REQUIRED` (rule 4), `TWO_PERSON_MONEY` and `SAME_PERSON` (rule 5), `STALE_DERIVATION` (rule 6), `HUMAN_ONLY_ACT` (no agent executes a screen action), `NO_CLOCK_EDIT`, `NO_NOTICE_OF_OWN`, `NO_LEDGER_OF_OWN` (rule 11), `NO_PII_IN_LOG` (34.1). Escalations: `ops_analyst` for an aged item and a thrice-lapsed claim; `officer` for a pending money-field proposal and a five-day-old item; `compliance` for a reconciliation with orphans or a stale screen; `underwriting_reviewer`, `funding_approver`, `mlo_of_record`, `lossmit_reviewer`, `attorney`, `settlement_agent` are t",
+   "escalates_to": [
+    "attorney",
+    "compliance",
+    "funding_approver",
+    "human_agent",
+    "lossmit_reviewer",
+    "mlo_of_record",
+    "officer",
+    "qc_officer",
+    "settlement_agent",
+    "signing_officer",
+    "underwriting_reviewer"
+   ]
+  },
+  {
+   "process": "35.9",
+   "agent": "foreclosure-ops",
+   "agents_named": [
+    "foreclosure-ops",
+    "default-collections",
+    "lossmit-underwriter",
+    "bankruptcy-ops",
+    "claims-reo"
+   ],
+   "tools": [
+    "case.timeline",
+    "case.progress",
+    "case.refer",
+    "case.milestone.expect",
+    "case.milestone.record",
+    "docket.sync",
+    "docket.react",
+    "firm.dispatch",
+    "firm.inbound",
+    "breach.execute",
+    "breach.recon",
+    "claims.sweep",
+    "claims.package",
+    "writeDecision"
+   ],
+   "guardrails": "`NO_MONEY_FIELD`, `NO_LEGAL_ACT_UNREGISTERED`, `NO_CLOCK_EDIT` (34.4 rule 1), `GATES_RUN_NOT_ASSERTED`, `ACTION_MATCHES_CITED_TEXT`, `DOCKET_CONFIDENCE_0_85`, `ONE_ACTION_PER_BREACH`, `SECTION_STATUS_READ_ONLY`. Escalations: `officer` for referral decisions, write-offs and deferred breach actions; `attorney` for docket entries needing counsel, milestones overdue, gate refusals inside an action and every filing; `fnma_portal_operator` for P360 bulk uploads, PSA responses, IRT and MICP uploads; `compliance` for a reconciliation with missing or failed actions and for registry changes; `counsel` f",
+   "escalates_to": [
+    "attorney",
+    "compliance",
+    "counsel",
+    "fnma_portal_operator",
+    "officer"
    ]
   }
  ]

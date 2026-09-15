@@ -184,6 +184,19 @@ import { EVALUATORS_34_4 } from "../domain/operator-portal/evaluators-34-4.ts";
 import { EVALUATORS_23_5 } from "../domain/underwriting/evaluators-23-5.ts";
 import { EVALUATORS_23_6 } from "../domain/underwriting/evaluators-23-6.ts";
 import { EVALUATORS_23_7 } from "../domain/underwriting/evaluators-23-7.ts";
+// ---- §35 process-owned files (scaffolded by tools/workflows/wire_orig.py)
+import { EVALUATORS_35_1 } from "../domain/operations-runtime/evaluators-35-1.ts";
+import { EVALUATORS_35_2 } from "../domain/operations-runtime/evaluators-35-2.ts";
+import { EVALUATORS_35_3 } from "../domain/operations-runtime/evaluators-35-3.ts";
+import { EVALUATORS_35_4 } from "../domain/operations-runtime/evaluators-35-4.ts";
+import { EVALUATORS_35_5 } from "../domain/operations-runtime/evaluators-35-5.ts";
+import { EVALUATORS_35_6 } from "../domain/operations-runtime/evaluators-35-6.ts";
+import { EVALUATORS_35_7 } from "../domain/operations-runtime/evaluators-35-7.ts";
+import { EVALUATORS_35_8 } from "../domain/operations-runtime/evaluators-35-8.ts";
+import { EVALUATORS_35_9 } from "../domain/operations-runtime/evaluators-35-9.ts";
+import { EVALUATORS_35_10 } from "../domain/operations-runtime/evaluators-35-10.ts";
+import { EVALUATORS_35_11 } from "../domain/operations-runtime/evaluators-35-11.ts";
+import { EVALUATORS_35_12 } from "../domain/operations-runtime/evaluators-35-12.ts";
 
 export const EVALUATORS: Record<string, Evaluator> = {
   // ---- §1 transfers in
@@ -341,6 +354,7 @@ export const EVALUATORS: Record<string, Evaluator> = {
   ...EVALUATORS_33_1, ...EVALUATORS_33_2, ...EVALUATORS_33_3,
   ...EVALUATORS_34_1, ...EVALUATORS_34_2, ...EVALUATORS_34_3, ...EVALUATORS_34_4,
   ...EVALUATORS_23_5, ...EVALUATORS_23_6, ...EVALUATORS_23_7,
+  ...EVALUATORS_35_1, ...EVALUATORS_35_2, ...EVALUATORS_35_3, ...EVALUATORS_35_4, ...EVALUATORS_35_5, ...EVALUATORS_35_6, ...EVALUATORS_35_7, ...EVALUATORS_35_8, ...EVALUATORS_35_9, ...EVALUATORS_35_10, ...EVALUATORS_35_11, ...EVALUATORS_35_12,
 };
 
 export class UnknownEvaluator extends Error { constructor(ref: string) { super(`no evaluator registered for ${ref}`); this.name = "UnknownEvaluator"; } }

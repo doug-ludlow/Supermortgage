@@ -16363,5 +16363,1278 @@
    "controls.ai.kill",
    "controls.evidence.pack"
   ]
+ },
+ {
+  "process": "35.1",
+  "title": "Persistence seam and the typed record",
+  "path": "sections/35-operations-runtime/35-1-persistence-seam-and-the-typed-record.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given loan with UPB $248,310.55 at 6.500%, fixed P&I $1,612.34 and escrow payment $432.78, when 2.1 posts a conforming payment of $2,045.12 through the bus against Postgres, then one `payments` row exists with `amount_cents = 204512`, `retention = 'life_of_loan_plus_4y'` and the version's idempotency key, three `payment_allocations` rows carry `amount_cents` 134502 (interest, from 248,310.55 \u00d7 6.5% \u00f7 12 = 1,345.015479 \u2192 $1,345.02), 26732 (principal, $267.32) and 43278 (escrow, $432.78) with 2.1's `rule_ref` and the balanced set's `ledger_entry_set_id`, their sum is 204512, the version's UPB after is 24804323 ($248,043.23), the `entity_records` version and the typed rows carry identical values field by field, and one `entity_projections` row per version names `payments`/`payment_allocations`, `phase = commit` and the command's first event."
+   },
+   {
+    "n": 2,
+    "text": "Given a global `rate_sheets` row at version 3, when two commands each carry `expected_versions: [{rate_sheets, <id>, 3}]` and both write version 4, then the first commits and the second is refused `STALE_RECORD{kind: rate_sheets, id, expected: 3, current: 4}` with HTTP 409, and the refused command left no `loan_events` row, no `entity_records` row, no `agent_decisions` row and no ledger line (counts before and after are equal); given a command with no declared expectation whose commit collides on `entity_records`' primary key, then the same `STALE_RECORD` is returned and the transaction is rolled back whole."
+   },
+   {
+    "n": 3,
+    "text": "Given a loan whose `entity_records` hold 500 versions across 40 kinds including 12 versions of one `payments` row and 6 of one `counterparty_notifications` row, when any command runs, then the entity hydration issued exactly three queries (scoped latest, `HISTORY_KINDS` in full, global latest \u2014 asserted by a query-counting `Db`), the store holds one version of each non-history kind and every version of the two history kinds, `payments.history` (section02.ts:114) returns 12 versions in order, and 17.3's first-version gate (section17-3.ts:95) reads the first `counterparty_notifications` version's `status`."
+   },
+   {
+    "n": 4,
+    "text": "Given a tool whose handler writes a `payments` version, whose projector inserts the typed row, and which then throws, when the command runs, then the response is the tool's error, `payments` has no new row, `entity_records` and `entity_projections` have no new row, `loan_events` has no new event, and the next command on the same loan hydrates a `boarding` adapter whose maps equal those before the failed command (a hydrating adapter is rebuilt from the record, so a failed command cannot leave state in a Map)."
+   },
+   {
+    "n": 5,
+    "text": "Given two `Runtime` instances A and B over one database and a third `Runtime` acting as the sweep job, when A runs 25.2 `prepareCd` for an application, B runs 25.2 `deliverCd` for the same disclosure id, and the sweep runtime deems an LE received on its mailbox-rule day, then B never answers `no CD`, the CD B delivered is the CD A prepared (same `disclosure_id`, `data_hash` and `cd_version`), the sweep's deeming was performed by `LoanEstimateService.deemReceived` on a hydrated instance (no hand-appended `disclosure.le.deemed_received` exists in src/runtime/origination.ts: contract test greps the file for the literal), and every stateful key in `originationServices` (`cd-25-2`, `delivery-29-3`, `delivery-29-4`, `secondary`, `tolerance`, `companion`, `orig-boarding`) yields a fresh instance per command whose state after `hydrate` equals the state the instance that wrote the events held."
+   },
+   {
+    "n": 6,
+    "text": "Given one loan and two 2.1 posts of $2,045.12 started concurrently from two connections, when both commit, then the second waited on `pg_advisory_xact_lock(hashtext('uow'), hashtext(loan_id))` (its transaction start is after the first's commit), the ledger holds two balanced sets, the loan's UPB after equals the start minus both principal portions, no unique violation and no `STALE_RECORD` occurred; given two different loans posted concurrently, then their transaction windows overlap (neither waited)."
+   },
+   {
+    "n": 7,
+    "text": "Given twelve armed timers past due and two sweeps started concurrently, when both finish, then one `sweep_runs` row is `completed` and one is `skipped{lease_held}` with `sweep.run_skipped{holder}` logged, exactly twelve `timer.breached` events and twelve escalations exist (never twenty-four), the completed run's `passes` names every pass with a duration, `sweep.run_completed{run_id, as_of_date}` is logged once, and `SM_SWEEP_HEARTBEAT_DAILY` is satisfied by it and re-armed for the next day on the global subject."
+   },
+   {
+    "n": 8,
+    "text": "Given a queued FAKE `printMail` message and a queued message whose FAKE adapter is scripted to fail, when sweeps run at +0, +60 s, +180 s, +420 s, +900 s and +1,800 s (the `DEFAULT_RETRY` backoff instants), then the first message is `sent` on the first sweep with one `outbox_dispatches{attempt_no: 1, outcome: acked}` row and `integration.message.sent`, the failing message has five `outbox_dispatches` rows with `next_attempt_at` at the backoff instants and is `dead` after the fifth with `integration.message.dead{attempts: 5}`, a `human_portal_tasks` row and `SM_OUTBOX_DEAD_LETTER_REVIEW_1BD` armed; and when 34.4 requeues it and the adapter is un-scripted, then the next drain sends it and the clock is satisfied."
+   },
+   {
+    "n": 9,
+    "text": "Given the hosted runtime, when `POST /v1/loans/{id}/tools/1.1/runValidation`, `POST /v1/applications/{id}/tools/30.2/snapshotOrigination` and `POST /v1/applications/{id}/tools/25.1/runToleranceTest{checkpoint: cd}` are called, then none answers 501 `not_wired`, the 25.1 result carries `delegated_to: \"21.5\"` and the `tolerance_test_id` of a `tolerance_tests` row 21.5's own tool (`21.5 runToleranceTest`) would have written for the same inputs, and `rt.services[\"tolerance-21-5\"] === rt.services[\"tolerance\"]` in a unit harness."
+   },
+   {
+    "n": 10,
+    "text": "Given a decoded transfer tape of three loans, when `1.1 boardLoan` runs on the bus for the batch, then the transaction wrote `transfer_batches`, `properties`, `loans`, `borrowers`, `loan_borrowers`, `loan_terms`, `transfer_batch_loans`, `boarding_validations`, `parties` (transferor and servicer, found-or-inserted) and `custodial_accounts` (P&I and T&I, found-or-inserted) with the same columns `POST /v1/transfers/batches` writes (a row-by-row comparison against a batch boarded through the route on a second database), the events, the 1.6 opening ledger sets, the armed timers, one escalation per hard exception, the global `transfer_batches` entity row and one `agent_decisions` row; and `boardTransferBatch` in src/runtime/transfers.ts refuses with `SEED_ONLY` under `ENVIRONMENT=production`."
+   },
+   {
+    "n": 11,
+    "text": "Given a command that writes a kind with no authored projector (`fee_gate_checks`) and one with a projector (`locks`), when the daily verify runs at 06:00 ET, then `locks` has its typed row and `entity_projections` row, `fee_gate_checks` has neither and one `projection_gaps{reason: no_projector, versions_unprojected: 1}` row names it, `record.gaps` lists it under `no_projector`, one `projection_runs{outcome: completed}` row and `projection.run_completed{gaps: 1, mismatches: 0}` exist, and `SM_PROJECTION_LAG_DAILY` is satisfied and re-armed; given the next day passes with no run, then the clock breaches and one sev 3 `ops_analyst` escalation names `SM_PROJECTION_LAG_DAILY`."
+   },
+   {
+    "n": 12,
+    "text": "Given a store id `fees-3` written on two loans and a projector for `fees` authored afterwards, when `record.replay{kind: fees}` runs twice, then the first run minted two `entity_keys` rows (one per scope) with distinct uuids, wrote two `fees` rows keyed by those uuids and one `entity_projections{phase: replay}` row per version and logged `record.replayed{rows}`; the second run wrote zero rows and zero events and its decision record says `rows_written: 0`; and both JSON versions still carry the id `fees-3`."
+   },
+   {
+    "n": 13,
+    "text": "Given the projected rows of worked example A, when a test's UPDATE of `payment_allocations` is refused by its trigger and the test instead UPDATEs `payments.amount_cents` to 204513 and the verify runs, then one `projection_mismatches{column_name: amount_cents, is_money: true, json_value: '204512', row_value: '204513'}` row exists, `projection.mismatch_found{is_money: true}` is logged, one sev 1 `ciso` escalation names the row ids and the owning process 2.1, the run wrote no correction (`payments.amount_cents` is still 204513 and no `record.replayed` event exists), and the run's `outcome` is `completed`."
+   },
+   {
+    "n": 14,
+    "text": "Given an application with 80 events across 21.2, 21.4, 21.5, 25.2 and 29.1, when `record.snapshot{service_key: cd-25-2}` writes a `service_snapshots` row at `through_sequence = N` and six more 25.2 commands run, then the next command's `cd-25-2` instance hydrated from the snapshot plus the events after N and its `state_sha256` equals the hash of an instance hydrated by full replay; and given the snapshot's `state` is tampered with, then hydration discards it, replays in full, logs `service.snapshot.written` for a fresh one and opens a sev 2 `ciso` escalation."
+   },
+   {
+    "n": 15,
+    "text": "Given a money-field change proposed by the agent \u2014 `record.replay{kind: payments, overrides: {amount_cents: \u2026}}` or any typed-row write that names a `*_cents` column not equal to the JSON version's \u2014 when no `officer` approval record exists, then the command is refused `NO_MONEY_FIELD_CHANGE` and nothing is written; and the seam's own tools (`record.project`, `record.replay`, `record.verify`, `record.snapshot`, `outbox.dispatch`) are absent from every money-field allowlist in `spec/registry/agents.json` (contract test)."
+   }
+  ],
+  "tables": [
+   "entity_keys",
+   "entity_latest_scoped",
+   "entity_projections",
+   "outbox_dispatches",
+   "projection_gaps",
+   "projection_mismatches",
+   "projection_runs",
+   "service_snapshots",
+   "sweep_runs"
+  ],
+  "timers": [
+   "SM_OUTBOX_DEAD_LETTER_REVIEW_1BD",
+   "SM_PROJECTION_LAG_DAILY",
+   "SM_SWEEP_HEARTBEAT_DAILY"
+  ],
+  "notices": [],
+  "agent": "security-records",
+  "tools": [
+   "record.project",
+   "record.replay",
+   "record.gaps",
+   "record.verify",
+   "record.snapshot",
+   "record.lease",
+   "outbox.dispatch",
+   "writeDecision"
+  ]
+ },
+ {
+  "process": "35.2",
+  "title": "Documents and artifacts: the object store, the PDF writer, stored-byte integrity, legal holds, e-sign envelopes, the borrower viewer and print/mail manifests",
+  "path": "sections/35-operations-runtime/35-2-documents-and-artifacts.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given the `NTC_REGZ_41_STMT_STD` template at its counsel-approved version and worked example A's payload, when `documents.render` runs twice with the clock at 2026-09-17T05:00:00Z, then the two PDFs are byte-identical with one `sha256`, the file begins `%PDF-1.4`, every page's content stream carries a text layer from which the rendered `text` is recovered in reading order, and changing one payload field (the late charge) changes the hash."
+   },
+   {
+    "n": 2,
+    "text": "Given worked example A rendered through the command path, then a `documents` row exists with `mime_type = application/pdf`, `kind = rendered_notice`, `sha256` and `byte_size` equal to the bytes, `page_count \u2265 1`, `retention_class = life_of_loan_plus_4y`, `payload_hash` equal to the canonical payload hash, `notices.document_id` equals that row, exactly one `notice_checklist_results` row exists for the notice across render-then-send, and the text layer contains `$2,334.29`, `$612.50`, `$2,946.79`, `$116.71` and `$6,010.29` each exactly once in the amount-due box."
+   },
+   {
+    "n": 3,
+    "text": "Given 10.4's annual PMI disclosure for an MN property, when it renders, then the writer's placements report every body block at \u2265 12 pt and page 1, 10.4's checklist passes from those placements alone (no browser is started), and given the same template with a 10 pt body the checklist fails `layout` and the notice is `held`."
+   },
+   {
+    "n": 4,
+    "text": "Given the FAKE blob store in outage, when `documents.store` runs, then the `documents` row is written with `storage_uri = worm_pending:<id>` and `storage_status = staged`, a `document_blobs` row holds the bytes, `document.staged` is logged and `SM_DOC_WORM_DRAIN_1D` is armed; when the outage clears and the drain runs, then `storage_uri` becomes `fake-blob://<id>#1`, `storage_status = stored`, `stored_generation = 1`, `document.stored` satisfies the clock; a second attempt to change `storage_uri` is refused by the trigger (`URI_SWAP_ONCE`) and a store whose re-read hash differs never swaps."
+   },
+   {
+    "n": 5,
+    "text": "Given a stored `documents` row, then a raw `UPDATE` of `sha256`, `byte_size`, `kind`, `mime_type`, `retention_class` or `created_at` is refused by `documents_column_restricted`, a `DELETE` is refused, an `UPDATE` of `legal_hold` without `sm.document_hold` set to the row id is refused, and the migration adding the trigger leaves every \u00a71\u201334 test that inserts `documents` rows green."
+   },
+   {
+    "n": 6,
+    "text": "Given `documents.hold{place}` by the agent with a `matter_ref`, then `legal_hold = true`, a `document_holds{placed}` row and the FAKE store's hold reference exist and `document.hold.placed` is logged; `documents.dispose` on it is refused `HOLD_ACTIVE`; `documents.hold{release}` by the agent is refused `HOLD_RELEASE_HUMAN_ONLY`; by a human `compliance` actor with a reason it writes the `released` row before the flag clears and `document.hold.released` is logged."
+   },
+   {
+    "n": 7,
+    "text": "Given three notices of one batch decided `mail`, when `mail.batch` runs, then one outbound `mail_manifests` row with `piece_count = 3` and a hashed manifest document exists, each `mail_manifest_pieces` row carries the piece's `document_id`, `sha256`, `page_count`, `sheets = ceil(page_count \u00f7 2)`, mail class and address snapshot, one `integration_messages` row addresses the `print-mail` adapter with the batch id as idempotency key, and `SM_MAIL_MANIFEST_2BD` is armed; when the FAKE vendor's proof-of-mailing manifest is ingested, then `notice_deliveries.mailed_at`, `imb` and `mail_manifest_id` are set for all three (and `manifest_id` is the `notice_batches` id, 0009's FK), the inbound manifest is `reconciled`, `mail.manifest.ingested` satisfies the clock and `mail.piece.mailed` is logged three times."
+   },
+   {
+    "n": 8,
+    "text": "Given a Spanish-language notice whose payload contains `\u00f1`, `\u00e1`, `\u00bf` and `\u2014`, when it renders, then the text layer round-trips those characters exactly; given a payload containing a character outside WinAnsi (`\u2265`), then the render is refused `GLYPH_UNSUPPORTED` naming the character and the block and no row is written."
+   },
+   {
+    "n": 9,
+    "text": "Given a borrower session at L2 whose party owns a stored statement, when the app requests `GET /v1/borrower/documents/{id}` and then the signed `\u2026/content` URL, then the response is the stored bytes with `Content-Type: application/pdf`, `Cache-Control: private, no-store`, a hash equal to `documents.sha256`, a `document_access_log{purpose=borrower_view}` row and a `ui_events{document_opened}` row; a session of another party receives 404; an expired or altered signature receives 401; a `staged` document is served from `document_blobs` with `served_from = staged_blob`."
+   },
+   {
+    "n": 10,
+    "text": "Given 16.1 renders `NTC_REGZ_36C3_PAYOFF_STMT` for the fixture loan, then the PDF's text layer contains the 12-character verification token and the wire fraud warning, `payoff_statements.delivered_to[].evidence_document_id` names the `documents` row, and `GET /verify/{token}` answers the statement hash equal to that row's `sha256`, its good-through date and total, and writes `document_access_log{purpose=verify_portal}`."
+   },
+   {
+    "n": 11,
+    "text": "Given the FAKE store is told to alter one stored object's bytes, when the daily integrity unit completes, then a `document_integrity_runs` row counts it, a `document_integrity_findings{mismatch}` row carries the expected and actual hashes, `documents.verify_status = mismatch`, `document.integrity.mismatch` is logged, a sev 1 escalation to `ciso` exists, `documents.dispose` on it is refused (19.1-T12), the run never re-rendered anything (the writer is not invoked), and `document.integrity.run_completed` satisfies today's `SM_DOC_INTEGRITY_DAILY` and re-arms it for tomorrow at 02:30 ET."
+   },
+   {
+    "n": 12,
+    "text": "Given worked example B's `tax_forms_1098` row, when `documents.render{document_kind=irs_1098_copy_b}` runs, then the PDF's text layer shows `$5,743.99` in Box 1 and `$400,000.00` in Box 2, the payer TIN as `XXX-XX-1234` and no full TIN anywhere, the form title and tax year, and the row's `box1_cents = 574399` and `box2_cents = 40000000` are what the page reproduces; the monthly interest figures `$1,916.67`, `$1,914.67` and `$1,912.65` are the 2.1 allocations the box sums."
+   },
+   {
+    "n": 13,
+    "text": "Given a borrower with an active E-SIGN consent covering `disclosure_ack` and a rendered CD, when `esign.envelope.create` and `esign.envelope.send` run, then the envelope is `sent`, `esign.envelope.sent` is logged and `SM_ESIGN_ENVELOPE_EXPIRY_30` is armed on `sent_at`; when the FAKE signer signs every required field through an L2 session, then `esign_signature_events` holds `viewed`, `authenticated`, `consent_affirmed`, one `field_signed` per field and `completed`, each with `auth_method`, `ip`, `user_agent` and a valid hash chain, a signed `documents` row exists with `supersedes_document_id` = the unsigned row and a different `sha256`, `esign_envelope_documents.signed_document_id` is set once, `evidence_document_id` names an audit-trail PDF whose text lists every event, and `esign.envelope.completed` satisfies the clock."
+   },
+   {
+    "n": 14,
+    "text": "Given a party with no active E-SIGN consent, when `esign.envelope.send` runs, then it is refused `NO_ENVELOPE_WITHOUT_CONSENT` and nothing is written; given a sent envelope whose signer emits `consent.esign.withdrawn`, then the envelope is `voided` with the reason and an audit-trail PDF; given a sent envelope untouched for 30 calendar days, then the breach voids it as `expired`, logs `esign.envelope.expired` and opens an `ops_analyst` escalation; a `completed` envelope refuses `esign.envelope.void`."
+   },
+   {
+    "n": 15,
+    "text": "Given 26.2's FAKE RON session completes worked example 1 of 26.2, when the platform's audit trail arrives, then `documents.store` writes it with `retention_class = fnma_enote_signing_life_plus_7y`, `signing_sessions.audit_trail_document_id` names the row and `audit_trail_hash` equals its `sha256`, the signed closing documents are rows with `closing_documents.signed_document_id` set, and 26.2's `SM_O72_AUDIT_TRAIL_BEFORE_FUNDING_GATE` evaluator opens on that hash."
+   },
+   {
+    "n": 16,
+    "text": "Given a document rendered and stored on runtime A, when runtime B (a second `Runtime` over the same database, its own process) serves `\u2026/content` and runs `documents.verify` on it, then the bytes and hash are the stored ones \u2014 the FAKE object store is `document_blobs`, not process memory \u2014 and the borrower's `/doc/{id}` page renders the PDF with its text layer from that response."
+   },
+   {
+    "n": 17,
+    "text": "Given the FAKE print vendor in outage for two consecutive sweeps with a batch submitted, when `mail.fallback` runs, then a `mail_manifests{vendor=in_house}` row exists with one merged PDF per mail class whose page count is the sum of the pieces' plus one cover sheet each, `mail.batch.submitted{vendor=in_house}` is logged, an `ops_analyst` escalation names the batch, and the analyst's `mail.manifest.ingest` with `mailed_on` per piece writes `notice_deliveries.mailed_at` and satisfies `SM_MAIL_MANIFEST_2BD`."
+   },
+   {
+    "n": 18,
+    "text": "Given every 35.2 tool run over the fixture, then no ledger line and no money column changed (a contract test compares the ledger and every `*_cents` column before and after), `documents.dispose` without a 19.1 disposal run carrying an `officer` attestation is refused `DISPOSE_NEEDS_OFFICER_ATTESTATION`, an agent actor calling `esign.envelope.sign` is refused `NO_AGENT_SIGNS`, every state-changing tool left an `agent_decisions` row with `rule_set_version = docs.v1` and no decision row contains a TIN, an address or rendered text."
+   }
+  ],
+  "tables": [
+   "document_access_log",
+   "document_blobs",
+   "document_holds",
+   "document_integrity_findings",
+   "document_integrity_runs",
+   "documents",
+   "esign_envelope_documents",
+   "esign_envelopes",
+   "esign_signature_events",
+   "mail_manifest_pieces",
+   "mail_manifests",
+   "notice_deliveries"
+  ],
+  "timers": [
+   "SM_DOC_INTEGRITY_DAILY",
+   "SM_DOC_WORM_DRAIN_1D",
+   "SM_ESIGN_ENVELOPE_EXPIRY_30",
+   "SM_MAIL_MANIFEST_2BD"
+  ],
+  "notices": [],
+  "agent": "security-records",
+  "tools": [
+   "documents.render",
+   "documents.store",
+   "documents.open",
+   "documents.verify",
+   "documents.hold",
+   "documents.dispose",
+   "esign.envelope.create",
+   "esign.envelope.send",
+   "esign.envelope.sign",
+   "esign.envelope.void",
+   "mail.batch",
+   "mail.manifest.ingest",
+   "mail.fallback"
+  ]
+ },
+ {
+  "process": "35.3",
+  "title": "Cycles, jobs and receipts: the planner, the jobs table, `cycles.run_unit` on the bus and the registry of every scheduled cycle",
+  "path": "sections/35-operations-runtime/35-3-cycles-jobs-and-receipts.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given two sweeps started within the same minute against one database, when both call `cycles.plan`, then exactly one holds `pg_try_advisory_lock(35_003)` and appends `cycles.plan.run_completed`, the other appends `cycles.plan.skipped{holder}` and its remaining passes still run, and after the holder's dedicated client ends `pg_locks` shows no advisory lock with key 35003."
+   },
+   {
+    "n": 2,
+    "text": "Given a window with the `statements` cycle due for 12 loans and `cashiering_daily` due for the 100-loan fixture book, when `cycles.plan` runs twice for the same `as_of`, then `cycle_runs` has one row per `(cycle_code, period_key)`, `jobs` has exactly 112 rows with distinct `idempotency_key`s, `cycle.run.opened` was appended once per run, and the second pass appended no `cycle.run.opened` and inserted no row."
+   },
+   {
+    "n": 3,
+    "text": "Given one run of 100 queued units, when three executors claim concurrently with `FOR UPDATE SKIP LOCKED LIMIT 20` until the queue is empty, then every unit has exactly one `job_events{done}` row and one `agent_decisions` row naming the owner agent, no `unit_id` appears in two executors' claim logs, `cycle_runs.units_done = 100`, and one `cycle_receipts` row exists."
+   },
+   {
+    "n": 4,
+    "text": "Given a unit whose runner throws on every call, when the planner and executor run across four sweeps, then the job records attempts 1, 2, 3 with `run_after` 60 s and 120 s after the first two failures, the third failure appends `job.unit.dead{attempts: 3}`, `SM_JOB_DEAD_2H` is armed on the job, one escalation exists to the registry row's `escalation_role` naming `cycle_code`, `period_key` and `unit_id`, `cycle_runs.status` is still `running`, and no receipt was emitted."
+   },
+   {
+    "n": 5,
+    "text": "Given a run of 3 units, when the last unit's `UPDATE \u2026 RETURNING` reports the counters full, then one `cycle_receipts` row and one pair of events (the cycle's receipt literal and `cycle.run.completed`) exist; given the executor is stopped between the unit's commit and the receipt transaction, when the next planner pass reconciles, then the same single receipt row exists with `emitted_by = planner:<run_id>` and the events were appended once; given both race, then the unique key on `cycle_receipts.run_id` yields one row and one pair of events."
+   },
+   {
+    "n": 6,
+    "text": "Given `ledger.period.closed{period_key: 2026-09}` has been appended and `investor_reporting_periods.closed{period_key: 2026-09}` has not, when the planner runs, then the `form_496_monthly` job for `2026-09:<account>:A/A` is `blocked` and never claimed; when `investor_reporting_periods.closed{period_key: 2026-09}` is appended, then the next pass unblocks it (`job_events{unblocked}`) and the unit runs 6.3's chain."
+   },
+   {
+    "n": 7,
+    "text": "Given 10,000 armed timers due at or before `now`, when the breach pass runs, then it uses 20 transactions of at most 500 timers each, every one of the 10,000 has exactly one `timer.breached` event and one escalation, and a second pass started concurrently breaches none of them twice (the `FOR UPDATE SKIP LOCKED` page)."
+   },
+   {
+    "n": 8,
+    "text": "Given the demo clock at 2026-10-01 12:00 ET and the fixture book, when `POST /v1/demo/advance {days: 3}` runs, then `cycles.plan.run_completed` was appended three times with `as_of_date` 2026-10-02, 2026-10-03 and 2026-10-04, `cycle_runs` holds one `cashiering_daily` and one `delinquency_counters` run per day with `period_key` equal to that day and `demo_offset_ms` equal to the step's `demo_clock.offset_ms`, every receipt of day N precedes day N+1's `cycle.run.opened` in `loan_events.sequence`, and every `jobs.lease_until` written during the advance is within 5 minutes of the wall-clock `real_now`, not of `demo_now`."
+   },
+   {
+    "n": 9,
+    "text": "Given loan L with UPB $248,310.55, note rate 6.500%, P&I $1,612.34, escrow payment $432.78, an installment due 2026-10-01 unpaid past the 15-day grace and a late charge assessed at 5% of P&I, when the `statements` unit for `(L, 2026-10-01)` runs through `cycles.run_unit` on 2026-10-17, then the statement's late charge is $80.62, its interest portion $1,345.02, its principal portion $267.32 and its amount due $2,125.74, `statement.sent` and `job.unit.done` share one transaction (one `loan_events` batch), the decision names `disclosures`, exactly one `notices` row exists for `(L, 2026-10-01)` after a second plan and a second `cycles.run_unit` of the same job (refused `JOB_NOT_CLAIMABLE`), and the receipt reads `units_total 1, units_done 1`."
+   },
+   {
+    "n": 10,
+    "text": "Given a job claimed with `lease_until` 5 minutes ahead by an executor that then stops heartbeating, when `now()` passes `lease_until` and the planner runs, then the job is `queued` again, `job.lease.expired{holder, attempt: 1}` is appended, `attempts` is 1, and a second executor's claim runs it to `done` with `attempt: 2`; given the demo clock is advanced 30 days while the first lease is live, then the lease is not expired by the advance."
+   },
+   {
+    "n": 11,
+    "text": "Given a def registered with `expected_by_rule: same_day 23:59 ET` and no run ever, when the planner runs the next morning, then no `timers` row names the cycle (the engine arms only on a trigger event), `cycle_registry.overdue_since` is set to the first pass after 23:59 ET, `cycles.registry{op: list}` returns the row first with `next_expected_by` and `overdue_since`, and no escalation was opened by this process (35.11 opens it)."
+   },
+   {
+    "n": 12,
+    "text": "Given a run opened at 2026-10-01 12:00 ET with one unit `blocked` on an event that never arrives, when the sweep runs at 2026-10-02 12:01 ET, then `SM_CYCLE_RUN_STALLED_1D` breaches with one `ops_analyst` escalation whose payload names `cycle_code`, `period_key`, `units_done 0` and `units_total 1`; when the event arrives and the unit completes, then `cycle.run.completed` satisfies the clock as `satisfied_late` and the escalation is completable through 34.4 with the disposition `completed_late`."
+   },
+   {
+    "n": 13,
+    "text": "Given `cycles.run_unit` is called with an `input` carrying `state`, `custodial`, any `*_cents` key or `changes`, then it is refused `NO_CLIENT_STATE` before any row or event is written; given `jobs.requeue{op: requeue}` on a dead job by an actor `{kind: \"agent\"}`, then `ROLE_REQUIRED{ops_analyst}` and the job stays `dead`; given an `ops_analyst` requeues it with a reason, then `job.unit.resolved` is appended, the decision names the person and the reason, and the ledger and every money column are byte-identical before and after every 35.3 tool call in a contract test over all nine tools."
+   },
+   {
+    "n": 14,
+    "text": "Given `SM_CYCLE_PLANNER_DAILY` armed on the global subject by the first `cycles.plan.run_completed`, when a day passes with `cycles.plan` never completing (every pass `cycles.plan.skipped` because a test holds key 35003), then the clock breaches at 23:59 ET with one `ops_analyst` escalation and 35.1's `SM_SWEEP_HEARTBEAT_DAILY` did not breach; when the lock is released and a pass completes, then the clock is satisfied and re-armed for the next day and only one armed global instance of the code exists."
+   },
+   {
+    "n": 15,
+    "text": "Given the planner's last pass was on 2026-09-30 and the demo clock steps to 2026-10-01, when the first pass of October runs, then exactly one `ledger.month.ended{period_key: 2026-09, period_end: 2026-09-30}` exists on the global subject, a second October pass appends none, and 35.4's `SM_CLOSE_PERIOD_OPEN_BD1` is armed on it."
+   },
+   {
+    "n": 16,
+    "text": "Given the registered bus pair (`35.3`, `cycles.run_unit`) and a `metro2_monthly` job for `2026-09`, when it runs, then 8.1's snapshot builder is invoked with `as_of_date 2026-09-30` under the actor `{agent, credit-reporting}`, `credit.cycle.snapshot_completed` is appended by 8.1's own code (credit-reporting/ops.ts:214-218) in the same transaction as `job.unit.done`, no `(8.1, *)` bus pair was needed, and the decision record's `prompt_version` is `35.3-v1` with `subject_kind metro2_monthly`."
+   }
+  ],
+  "tables": [
+   "cycle_receipts",
+   "cycle_registry",
+   "cycle_runs",
+   "job_events",
+   "jobs"
+  ],
+  "timers": [
+   "SM_CYCLE_PLANNER_DAILY",
+   "SM_CYCLE_RUN_STALLED_1D",
+   "SM_JOB_DEAD_2H"
+  ],
+  "notices": [],
+  "agent": "ops-steward",
+  "tools": [
+   "cycles.registry",
+   "cycles.plan",
+   "cycles.run_unit",
+   "cycles.receipt",
+   "cycles.retry",
+   "cycles.escalate",
+   "jobs.list",
+   "jobs.requeue",
+   "writeDecision"
+  ]
+ },
+ {
+  "process": "35.4",
+  "title": "Month-end and year-end close: close periods, the dependency-ordered chain, the balance attestation, reopen, and the tax-year close that drives 1098 and 1099",
+  "path": "sections/35-operations-runtime/35-4-month-end-and-year-end-close.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given the demo book on the hosted runtime and the sweep's first run at/after 2026-10-01 00:05 ET, when 35.3's planner emits `ledger.month.ended{period_key: \"2026-09\", period_end: \"2026-09-30\"}` on the global subject and `close.open` runs, then exactly one `close_periods` row exists (kind month, period 2026-09, status open) with the 11 month-chain steps of rule 1 plus `eligibility` (September is a quarter-end) each carrying the table's `depends_on`, `eod_cutoff` is `planned` and `custodial_day_close`, `metro2_snapshot`, `lar`, `period_close`, `ledger_period_close`, `balance_attestation`, `form496`, `form496a`, `qc_cycle`, `star` and `eligibility` are `blocked`, `close.period.opened` is logged once, `SM_CLOSE_PERIOD_OPEN_BD1` (due 2026-10-01 17:00 ET) is satisfied and `SM_CLOSE_ATTEST_BD5` is armed with `due_at` 2026-10-07 17:00 ET; a second `close.open` for 2026-09 returns the same row, adds no step and logs no second `close.period.opened`."
+   },
+   {
+    "n": 2,
+    "text": "Given period 2026-09 open with `ledger.period.closed` recorded for every P&I account but no `investor_reporting_periods.closed{period: \"2026-09\", checklist_complete: true}`, when the planner runs, then no 35.3 `jobs` row exists for `form496`, `close.board{period: \"2026-09\"}` lists `form496` as `blocked` with `missing: [\"period_close\"]`, and `close.step.start{step: \"form496\"}` by hand is refused `STEP_BLOCKED{missing: [\"period_close\"]}` and writes nothing."
+   },
+   {
+    "n": 3,
+    "text": "Given period 2026-09 with `ledger.period.closed{period_end: \"2026-09-30\"}` for every P&I account and 5.1's `investor_reporting_periods.closed{period: \"2026-09\", checklist_complete: true}`, when the next sweep runs, then `form496` is `planned` with one 35.3 job per (custodial account \u00d7 remittance type), `close.step.started{step_id}` is logged when the first unit is claimed and `SM_CLOSE_STEP_STALLED_2BD` is armed on the period aggregate anchored on `started_at`; given only one of the two receipts, then `form496` is still `blocked`."
+   },
+   {
+    "n": 4,
+    "text": "Given the demo clock advanced from 2026-09-28 to 2026-11-16 with FAKE reviewers on, then `close_periods` rows exist for 2026-09 and 2026-10, every `close_period_events` receipt for each period was recorded once (unique `source_event_id`), for every step `completed_at` is at or after each of its dependencies' `completed_at` (no step completed before a dependency), 2026-09 reached `attested` no later than 2026-10-07 17:00 ET and `closed` once `form496`, `form496a`, `qc_cycle`, `star` and `eligibility` had their receipts, and the receipts appear in the journal in the order `eod_cutoff \u2192 custodial_day_close \u2192 lar \u2192 period_close \u2192 ledger_period_close \u2192 balance_attestation \u2192 form496`."
+   },
+   {
+    "n": 5,
+    "text": "Given the September 2026 S/S MBS P&I account with 6.3's worked-example balances \u2014 bank closing ledger $1,254,300.55, deposits in transit $12,450.00, composition L3 $8,120.40, L4 $45,000.00, L5 $0.00, L7 $3,210.15, L8 \u2212$22,580.00, L9 $1,233,000.00, L10 $0.00, L11 $0.00 \u2014 and a cashbook of 126,675,055 cents on `custodial_pi_cash`, when `close.attest` runs after `ledger_period_close`, `period_close` and `metro2_snapshot` completed with a passed `close.review` and an `officer` approval, then one `close_attestations` row has `adjusted_depository_cents = 126675055n` ($1,266,750.55), `composition_l12_cents = 126675055n`, `cashbook_cents = 126675055n`, `variance_cents === 0n` ($0.00), `composition_snapshot` = {L3: \"812040\", L4: \"4500000\", L5: \"0\", L7: \"321015\", L8: \"-2258000\", L9: \"123300000\", L10: \"0\", L11: \"0\"}, both decision ids and the officer approval id, `close.period.attested{attestation_id, variance_cents: \"0\"}` is logged, `SM_CLOSE_ATTEST_BD5` is satisfied, `close_periods.status = attested`, and 6.3's `FNMA_F496_PI_RECON_45` is still `armed` with `due_at` 2026-11-13 17:00."
+   },
+   {
+    "n": 6,
+    "text": "Given the same account with the cashbook at 126,675,055 cents but a bank closing ledger of $1,253,050.55 and no in-transit item explaining the $1,250.00, when `close.attest` runs, then a `close_attestations` row is written with `outcome = variance` and `variance_cents = -125000n`, one `qc_officer` escalation names the period, account and variance, `close.attestation.variance` is logged, `close_periods.status` stays `open`, the row counts of `ledger_lines`, `payments`, `reconciliations` and `reconciliation_items` are identical before and after, and `close.attest` called again with `force: true` (and separately with `tolerance_cents: \"125000\"`) is refused `NO_PLUG` with no row written."
+   },
+   {
+    "n": 7,
+    "text": "Given the `form496` step started 2026-10-05 10:00 ET with no `custodial.reconciliation.completed{kind: monthly_form_496}` since, when the sweep passes 2026-10-07 17:01 ET, then `SM_CLOSE_STEP_STALLED_2BD` is `breached`, exactly one `ops_analyst` escalation carries `{timer_code: \"SM_CLOSE_STEP_STALLED_2BD\", period: \"2026-09\", step: \"form496\"}`, `close.board` shows the step `stalled`, and 6.3's `FNMA_F496_PI_RECON_45` and `SM_F496_DRAFT_BD10` instances are unchanged (still `armed`, same `due_at`); when the receipt arrives 2026-10-09, then the step is `completed` and the stall label is gone."
+   },
+   {
+    "n": 8,
+    "text": "Given configuration `custodial.form496.human_approval = on`, when `close.attest` is called by the agent with a passed review and no `officer` approval record, then it is refused `OFFICER_APPROVAL_REQUIRED` and no attestation row, event or timer change exists; when an `agent_decisions` row by `{human, <id>, officer}` with action `close.attest.approve` for the period and account exists, then the attestation is written with `officer_approval_id` and `human_approval_flag = true`; given the flag off, then the attestation is written without an approval and `human_approval_flag = false`; given a request carrying `human_approval_on: false` while the configuration is on, then the request field is ignored and the call is refused `OFFICER_APPROVAL_REQUIRED`; given an `ops_analyst` actor calling `close.attest.approve`, then `ROLE_DENIED`."
+   },
+   {
+    "n": 9,
+    "text": "Given a preparer decision by `custodial-recon` run R1 for the September attestation, when `close.review` is called with run R1's id or with the preparer's credentials, then it is refused `REVIEWER_NOT_INDEPENDENT`; when `qc-audit` runs it under `reviewer_roles` credentials (35.7), then the review's own query over `ledger_lines` and `remittance_components` yields `cashbook_cents = 126675055n` and `composition_l12_cents = 126675055n`, the closing ledger is re-read from the stored statement document's bytes (35.2) as 125,430,055 cents, and a reviewer decision row with `rule_set_version: close.v1` exists."
+   },
+   {
+    "n": 10,
+    "text": "Given period 2026-09 `attested` at variance $0.00 (T5), when the depository restates the 9/30 statement to $1,253,050.55 because a $1,250.00 deposit was returned, then the agent's proposal writes a decision and no state change; `close.reopen{period: \"2026-09\", reason, trigger_event_id}` by an `officer` sets `status = reopened`, logs `close.period.reopened{by, reason}`, writes a `close_reopens` row with `steps_reset = [\"custodial_day_close\", \"ledger_period_close\", \"balance_attestation\", \"form496\", \"form496a\"]` and `steps_kept = [\"lar\", \"period_close\", \"metro2_snapshot\"]` (each relabelled `pre_reopen`), and after 2.1's `payment.reversed` for the $1,250.00 the re-attestation row shows `adjusted_depository_cents = 126550055n` ($1,265,500.55), L3 `687040` ($6,870.40), `composition_l12_cents = 126550055n`, `cashbook_cents = 126550055n`, `variance_cents === 0n`, `supersedes_attestation_id` = the T5 row's id, while the T5 row is byte-for-byte unchanged; a `close.reopen` by an agent or an `ops_analyst` is refused `OFFICER_REOPEN_ONLY`; a reopen of 2026-09 after 2026-10 is `attested` is refused `SUCCESSOR_ATTESTED_NO_REOPEN`."
+   },
+   {
+    "n": 11,
+    "text": "Given the December 2026 period with `period_close` and `ledger_period_close` completed and three reportable loans with 2026 `interest_due` credits from borrower funds of $23,412.55, $9,870.12 and $412.40 and no loan with escrow interest at or above $10.00 (`ioe_1099_loans = 0`), when the sweep first passes 2027-01-02 00:05 ET, then `close.tax_year{tax_year: 2026}` runs once, 7.1's `tax_year.closed{tax_year: 2026}` exists for each of the three loans and arms `IRS_6050H_1098_FURNISH_0131` (due 2027-01-31) and `IRS_6050H_1098_FILE_0331` per loan, a `tax_year_closes` row has `reportable_loans = 3` and `ledger_interest_sum_cents = 3369507n` ($33,695.07), a kind `tax_year` `close_periods` row for 2026 exists with steps `form_1098_furnish`, `form_1099_int_furnish`, `form_1098_file`, `form_1099_int_file`, `close.tax_year.closed{tax_year: 2026}` satisfies `SM_TAX_YEAR_CLOSE_3BD` (armed by `close.tax_year.planned` on the December open, `due_at` 2027-01-06 17:00 ET), and a second pass changes nothing."
+   },
+   {
+    "n": 12,
+    "text": "Given T11 and 7.1's 1098 run furnished all three forms (box 1 $23,412.55, $9,870.12, $412.40) and filed the two at or above $600.00, when the tax-year attestation runs, then the `close_attestations` row (kind tax_year) has `reportable_loans = 3`, `furnished_count = 3`, `filed_count = 2`, `box1_sum_cents = 3369507n`, `ledger_interest_sum_cents = 3369507n`, `variance_cents === 0n` and `outcome = attested`; given one form unfurnished, then `outcome = variance`, an `officer` escalation names the loan and the period stays `open`."
+   },
+   {
+    "n": 13,
+    "text": "Given every 35.4 tool on the bus, then a contract test runs each with a valid input against the fixture and asserts that the row counts and the `*_cents` columns of `ledger_lines`, `payments`, `reconciliations`, `reconciliation_items`, `remittance_components`, `investor_reporting_periods` and `tax_forms_1098` are identical before and after, that no 35.4 tool emits any event type outside the list in \"Outputs and artifacts\", that no `timers` row of another section's code changed status, and that every state-changing call left one `agent_decisions` row with `rule_set_version: close.v1` and `prompt_version: 35.4-v1`."
+   },
+   {
+    "n": 14,
+    "text": "Given two sweeps started within the same minute on 2026-10-02 (35.3's planner lock held by one), then one `close_periods` row and one step set exist for 2026-09, every receipt is journaled once, and `close.board{period: \"2026-09\"}` returns each step with `status`, `depends_on`, `missing`, `receipt_event_ids`, `owner_timer_code` and `owner_due_at` read from `timers` (`FNMA_F496_PI_RECON_45` \u2192 2026-11-13 17:00 for `form496`; `FNMA_A4101_QC_CYCLE_MONTHLY`'s BD20 for `qc_cycle`), the attestation summary and the reopen history; `close.board` is a read tool and a contract test shows no row changed across the call."
+   },
+   {
+    "n": 15,
+    "text": "Given period 2026-10 (period_end Sat 2026-10-31), when the planner runs at 2026-11-01 00:05 ET, then `ledger.month.ended{period_key: \"2026-10\", period_end: \"2026-10-31\"}` is emitted once, `SM_CLOSE_PERIOD_OPEN_BD1` has `due_at` Mon 2026-11-02 17:00 ET and `SM_CLOSE_ATTEST_BD5` Fri 2026-11-06 17:00 ET (`business_days_fannie_et`), `eod_cutoff` completes on 35.5's `cashiering.daily.run_completed{as_of_date: \"2026-10-31\"}` (a Saturday run), `metro2_snapshot` is `planned` no earlier than 2026-11-01 00:05 ET with `receipt_filter {as_of_date: \"2026-10-31\"}`, and no step of 2026-10 is planned before 2026-09's `balance_attestation` completed unless 2026-09 is `attested` (a period's `form496` may still be running)."
+   }
+  ],
+  "tables": [
+   "close_attestations",
+   "close_period_events",
+   "close_period_steps",
+   "close_periods",
+   "close_reopens",
+   "tax_year_closes"
+  ],
+  "timers": [
+   "SM_CLOSE_ATTEST_BD5",
+   "SM_CLOSE_PERIOD_OPEN_BD1",
+   "SM_CLOSE_STEP_STALLED_2BD",
+   "SM_TAX_YEAR_CLOSE_3BD"
+  ],
+  "notices": [],
+  "agent": "custodial-recon",
+  "tools": [
+   "close.open",
+   "close.plan",
+   "close.step.start",
+   "close.step.complete",
+   "close.step.skip",
+   "close.board",
+   "close.attest",
+   "close.review",
+   "close.reopen",
+   "close.tax_year",
+   "writeDecision"
+  ]
+ },
+ {
+  "process": "35.5",
+  "title": "The installment schedule and the daily cashiering cycle: `loan_installments` at fund and at transfer boarding, the whole-book 2.1/2.7/2.3 sweep, lockbox ingest, ACH origination and NACHA returns as cycles, and the per-loan jurisdiction, time-zone and servicer-identity configuration",
+  "path": "sections/35-operations-runtime/35-5-the-installment-schedule-and-the-daily-cashiering-cycle.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given the demo snapshot's note ($560,000.00 at 6.125%, 360 months, first payment 2027-01-01) funded through `POST /v1/applications/{id}/fund`, when the hand-off commits, then `loan_installments` has 360 rows for the loan in the same transaction as `loan.boarded`, the run row shows `pi_cents` **$3,402.62**, row 1 interest **$2,858.33** and principal **$544.29** with `upb_after_cents` **$559,455.71**, row 2 interest **$2,855.56** and principal **$547.06**, row 360 interest **$17.27**, principal **$3,384.35**, `pi_cents` **$3,401.62** and `absorbs_rounding = true`, \u03a3 `principal_cents` = **$560,000.00**, \u03a3 `interest_cents` = **$664,942.20**, `maturity_variance_cents = 0`, and `SM_INSTALLMENT_SCHEDULE_AT_BOARD_0` is satisfied by `installment.schedule.written` in the same commit."
+   },
+   {
+    "n": 2,
+    "text": "Given tape loan T-7 ($300,000.00 at 6.500%, 360 months, first payment 2021-10-01, next due 2026-11-01, UPB $280,458.24, P&I $1,896.20, escrow $412.30) boarded through `POST /v1/transfers/batches` on 2026-10-16, when the batch commits, then 299 rows exist from 2026-11-01 to 2051-09-01 with `sequence` 62 \u2026 360, HF-005 recomputes **$1,896.20** with difference 0\u00a2, row 2026-11-01 has interest **$1,519.15**, principal **$377.05**, escrow $412.30 and `upb_after_cents` **$280,081.19**, row 2026-12-01 has interest **$1,517.11** and principal **$379.09**, row 2051-09-01 has interest **$10.24**, principal **$1,890.67** and `pi_cents` **$1,900.91**, `maturity_variance_cents = 0`, and the delinquency counter job's selector (`JOIN loan_installments \u2026 status = 'due'`) returns the loan once 2026-11-01 has passed unpaid in its zone."
+   },
+   {
+    "n": 3,
+    "text": "Given 7.2's Plan 4927 loan boarded at fund ($400,000.00 at 5.750%, 360 months, first payment 2021-12-01, first change 2026-11-01), then the schedule's P&I is **$2,334.29** and row 60's `upb_after_cents` is **$371,048.86**; when 7.2 activates `loan_terms` v2 (`loan_terms.version.activated`, `arm_change`, `effective_on` 2026-12-01, 6.375%, P&I **$2,476.44**), then `installments.reproject` records `rows_kept = 60`, `rows_replaced = 300`, row 2026-12-01 has interest **$1,971.20**, principal **$505.24**, `upb_after_cents` **$370,543.62**, `rate_bps = 63750` and `terms_id` = v2, rows 1\u201360 are byte-identical to before, `installment.schedule.reprojected` satisfies `SM_INSTALLMENT_REPROJECT_1BD`, and a reprojection whose `effective_from` names a satisfied row is refused `SATISFIED_ROW_FROZEN` with no row changed."
+   },
+   {
+    "n": 4,
+    "text": "Given the 100-loan demo book (transfer-boarded, `origination_application_id IS NULL`) and one originated loan, when the `cashiering_daily` cycle runs for a day, then `cycle_runs` shows `units_total = 101`, every loan has one `cashiering_unit_runs` row with `outcome = done` for that `as_of_date`, `cashiering.daily.run_completed{loans: 101}` is appended exactly once and satisfies `SM_CASHIERING_DAILY_RECEIPT_1D`, and running the cycle again for the same day writes no payment, fee, ledger line or unit row (the second run's decision records name the existing rows)."
+   },
+   {
+    "n": 5,
+    "text": "Given loan L-1 with a `payments` row in `received` for **$2,192.57** on 2026-09-03, when its unit runs on 2026-09-03, then 2.1 posts interest **$1,352.94**, principal **$227.23** and escrow **$612.40** with the balanced sets of 2.1 rule 8 (`rule_ref` on every line), row 2026-09-01 is `satisfied` with `satisfied_by_payment_id` set and `credited_as_of` 2026-09-03, and `POST /v1/loans/{id}/tools/2.1/payments.read%2Fwrite` with an `input.state` whose UPB differs from the ledger is refused `NO_CLIENT_STATE` before any write (contract test over `payments.read/write{op=post}`, `fees.assess{op=daily_run}` and `autodraft.read/write{op=amount_change_check}`)."
+   },
+   {
+    "n": 6,
+    "text": "Given L-1's row 2026-09-01 unpaid past the 15-day grace (grace end Wed 2026-09-16), when the unit runs on 2026-09-17 in the loan's zone, then 2.7's `daily_run` assesses **$79.01** (`fees{late_charge, assessed_on 2026-09-17, grace_end_on 2026-09-16}`, Dr `late_charges` / Cr `late_charge_income` 7,901), `installment.due_date_reached` was emitted by the unit on 2026-09-01 and not by any borrower flow, and the unit on 2026-09-18 assesses nothing (`late_charge_run = false`)."
+   },
+   {
+    "n": 7,
+    "text": "Given lockbox `LBX-1` (cut-off 17:00 `America/Chicago`) and the FAKE bank's file for 2026-11-02 with items $2,192.57 (L-1, scanned 09:14), $1,500.00 (no scanline) and $2,308.50 (T-7, scanned 17:42) and control total **$6,001.07**, when `lockbox_ingest` runs, then `lockbox_batches` has one row with `items = 3`, `variance_cents = 0` and `status = posted`, item 1 is a `payments` row (`channel = lockbox`, `received_on` 2026-11-02, `status = identified`), item 2 is a `suspense_items` row (`source = lockbox`) with `lockbox.item.unidentified`, item 3 is a `payments` row with `received_on` 2026-11-03, three receipt sets Dr `clearing_cash` / Cr `suspense_unapplied` exist for 219,257, 150,000 and 230,850, `lockbox.batch.received` armed `FNMA_C1101_LOCKBOX_CLEARING_1BD`, `lockbox.batch.posted{posted: 2, unidentified: 1}` satisfied `SM_LOCKBOX_BATCH_POSTED_1BD`, the same file ingested again writes nothing, and the file with control total $6,000.07 leaves the batch in `variance` with no payment row and an `officer` escalation."
+   },
+   {
+    "n": 8,
+    "text": "Given L-1's active enrollment (draft day = due date, extra principal $100.00, validated) and the demo clock at Tue 2026-09-29 14:00 ET, when `ach_file_build` runs, then one `ach_files` row exists with one `ach_entries` row of **$2,292.57**, `effective_entry_date` 2026-10-01, description \"MORTGAGE PMT\" and `status = transmitted`, the file is a `documents` row with `sha256`, `ach.file.built` satisfied `SM_ACH_FILE_BUILD_1BD`; and given a second enrollment whose amount changed without a sent variable-amount notice and a third whose `validation_status = pending` (WEB), then neither has an entry and the build's decision names `REGE_1005_10D_VARIABLE_AMOUNT_NOTICE_10` and `NACHA_WEB_ACCOUNT_VALIDATION_GATE` as the refusals."
+   },
+   {
+    "n": 9,
+    "text": "Given the entry of T8 settled 2026-10-01 and posted by L-1's unit (interest **$1,351.71**, principal **$228.46**, escrow **$612.40**, curtailment **$100.00**, row 2026-10-01 `satisfied`), when the FAKE ODFI's return file for Mon 2026-10-05 carries R01 on its trace number and `ach_returns_ingest` runs, then `ach_return_files` has one row, `ach.return.received{code: R01}` and a `payment_reversals` row (`reason = returned_item`, `return_code = R01`) exist with the mirror set for $2,292.57, row 2026-10-01 is `due` again with `installment.restored`, UPB and LPI are back to $249,546.77 and 2026-09-01, a `fees{nsf_fee}` row of **$25.00** exists, a reinitiation `ach_entries` row of **$2,292.57** with description \"RETRY PYMT\", `effective_entry_date` Thu 2026-10-08 and `reinitiation_count = 1` exists, `ach.return.actioned{action: reversed_reinitiated}` satisfied `SM_ACH_RETURN_ACTIONED_1BD`, and the same return file ingested again writes nothing."
+   },
+   {
+    "n": 10,
+    "text": "Given the reinitiation of T9 is also returned R01 on 2026-10-12, when the return is actioned and the unit runs on 2026-10-17, then no further reinitiation is built (`NACHA_NSF_REINITIATION_180_MAX2` exhausted), the enrollment is `suspended_returns` with a hand-off escalation to `borrower-comms`, the 2026-10-17 run assesses **$79.01** on row 2026-10-01, and a second `fees{nsf_fee}` row exists for the second item; given instead a return coded R11, then no NSF fee exists and the corrected entry carries `reinitiation_of_entry_id`."
+   },
+   {
+    "n": 11,
+    "text": "Given loan P (AZ, `America/Phoenix`) and loan N (NY, `America/New_York`) each with a `due` row for 2026-10-01, when the planner's `as_of` is 2026-10-02T06:30:00Z, then N's `cashiering_unit_runs.local_date` is 2026-10-02 and P's is 2026-10-01, `installment.due_date_reached{due_date: 2026-10-01}` was emitted for P on that pass and for N on the earlier pass whose local date was 2026-10-01, `LOAN_LOCAL_TZ` no longer exists in `src/runtime` (grep = 0), and a loan with no `loan_servicing_configs` row is refused `CONFIG_REQUIRED` by the unit with nothing written."
+   },
+   {
+    "n": 12,
+    "text": "Given both boarding paths, when a loan boards, then a `loan_servicing_configs` row exists in the same transaction with `time_zone` from the reviewed state map for `properties.state`, `jurisdiction_state`, `servicer_profile_id` = the active profile, `late_charge_terms` = 2.7's `lateChargeTerms` for the note and `jurisdiction_rules.rules.late_charge`, `nsf_fee_allowed` from `jurisdiction_rules.rules.nsf_fee`, and `loan.servicing_config.written` satisfied `SM_LOAN_SERVICING_CONFIG_AT_BOARD_0`; given a note late-charge rate above the state's `max_pct`, then `late_charge_terms.conflict` names it and the state's bound is what 2.7 assesses."
+   },
+   {
+    "n": 13,
+    "text": "Given the FAKE build's seeded `servicer_profiles` v1 (the former `SERVICER_CONTACT` values), when 7.1's statement for L-1 renders, then its servicer block (name, phone, servicer address, exclusive address, remittance address, portal URL, counselor URL, HUD phone) equals v1's columns and `SERVICER_CONTACT` no longer exists in `src/runtime/servicing.ts`; when `compliance` activates v2 with a new exclusive address effective tomorrow, then today's statement still renders v1, tomorrow's renders v2, `servicer_profile.activated{version: 2}` carries the decision id, and an `ops_analyst` activating a version is refused `ROLE_DENIED` with nothing written."
+   },
+   {
+    "n": 14,
+    "text": "Given a 2.4 curtailment of $1,000.00 received on 2026-11-10 on T-7 (after row 2026-11-01 was satisfied), when the 2026-12-01 payment posts, then interest is `round_half_up((28,008,119 \u2212 100,000) \u00d7 0.065 \u00f7 12)` = $1,511.69 rather than the row's $1,517.11, the unit records the 542\u00a2 difference against the row, and the schedule is re-projected only when 2.4's re-amortization activates new terms."
+   },
+   {
+    "n": 15,
+    "text": "Given the demo clock at 2026-10-01 12:00 ET and the fixture book, when `POST /v1/demo/advance {days: 3}` runs, then `cycle_runs` holds one `cashiering_daily` run per day 2026-10-02 \u2026 2026-10-04 with `units_total` = the active book, each loan has exactly one `done` unit row per day, `cashiering.daily.run_completed` was appended three times with the three `as_of_date`s, and `SM_CASHIERING_DAILY_RECEIPT_1D` never breached."
+   },
+   {
+    "n": 16,
+    "text": "Given any tool of this process, then no tool changed a money column of `loan_installments` on a `satisfied` row, of `payments`, `fees` or `ledger_lines` except through 2.1's, 2.7's or 2.3's own commands (contract test: the ledger's line count and sums before and after `installments.write`, `installments.reproject`, `lockbox.item.resolve`, `servicing_config.write` and `servicer_profile.write` are identical), every write left an `agent_decisions` row with `rule_set_version`, and a fee waiver, a variance resolution changing an amount, or a return-action override by an agent actor is refused with nothing written."
+   }
+  ],
+  "tables": [
+   "ach_return_files",
+   "cashiering_unit_runs",
+   "installment_schedule_runs",
+   "loan_installments",
+   "loan_servicing_configs",
+   "lockbox_batches",
+   "lockbox_items",
+   "servicer_profiles"
+  ],
+  "timers": [
+   "SM_ACH_FILE_BUILD_1BD",
+   "SM_ACH_RETURN_ACTIONED_1BD",
+   "SM_CASHIERING_DAILY_RECEIPT_1D",
+   "SM_INSTALLMENT_REPROJECT_1BD",
+   "SM_INSTALLMENT_SCHEDULE_AT_BOARD_0",
+   "SM_LOAN_SERVICING_CONFIG_AT_BOARD_0",
+   "SM_LOCKBOX_BATCH_POSTED_1BD",
+   "SM_LOCKBOX_FILE_EXPECTED_1BD"
+  ],
+  "notices": [],
+  "agent": "cashiering",
+  "tools": [
+   "installments.write",
+   "installments.reproject",
+   "installments.read",
+   "cashiering.run_unit",
+   "lockbox.ingest",
+   "lockbox.item.resolve",
+   "ach.file.build",
+   "ach.returns.ingest",
+   "ach.return.action",
+   "servicing_config.write",
+   "servicer_profile.write",
+   "writeDecision"
+  ]
+ },
+ {
+  "process": "35.6",
+  "title": "Closing, funding and delivery orchestration: the state machine from clear-to-close through the CD, consummation, funding, the hand-off from the record, delivery, purchase-advice reconciliation and the warehouse paydown",
+  "path": "sections/35-operations-runtime/35-6-closing-funding-and-delivery-orchestration.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given an application on the hosted runtime whose log carries `application.trid_received`, an LE received under 21.2, the credit fee handled and a `consents` row of kind `blanket_verification_authorization` for both borrowers, when `orchestration.pass` runs, then 22.2 `orderCreditReport` and `parseCreditReport` ran as `verification` with `permissible_purpose`, `certification_ref`, `borrower_authorization_ref` and `subscriber_code` read from the consent row and the partner's `credit_authorizations` row (never from the request), a `credit_reports` row and `credit.representative_score.computed` are keyed by the application alone, `closing_orchestrations` has one row at step `credit_ordered`, and a second pass with no new event writes no row, no event and no decision."
+   },
+   {
+    "n": 2,
+    "text": "Given a usable representative score, when the pass runs, then in one sweep 23.1 `associateCredit`, `buildDuRequest` (23.6's `du.document.emitted`), 23.7 `runDuPreflight` (`du.preflight.passed`), 23.1 `submitCasefile` (`du.submitted`, `du.casefile_id.recorded`), `fetchFindings` (`du.findings.received{recommendation=approve_eligible}`), 23.2 `parseFindings{op: interpret}` and 23.3 `assessRisk` + `issueConditionalApproval` (`decision.issued`) ran as `underwriter`, the row is at `conditions_open` with the conditions 23.2 opened, and a contract test finds no `append(` of `du.submitted`, `clear_to_close.issued`, `closing.consummated`, `funding.authorized`, `loan.funded` or `loan.purchased` anywhere under `src/domain/operations-runtime/`."
+   },
+   {
+    "n": 3,
+    "text": "Given every condition cleared (the reviewer-only ones by an `underwriting_reviewer` \u2014 the FAKE reviewer after 20 s under `INTEGRATIONS=fake`), when the pass runs, then 23.3 `runCtcChecklist{op: ctc}` ran with `facts` built by `facts-35-6.ts` from the record (each item's source event id in the decision record), `issueClearToClose` appended `clear_to_close.issued{passed=true}` keyed by the application, `orchestration.opened` and `orchestration.step.entered{step: clear_to_close, clocked: false, waiting_on: borrower}` follow it, and no `SM_ORCH_STEP_STALLED_2BD` instance exists (the wait is the borrower's)."
+   },
+   {
+    "n": 4,
+    "text": "Given `closing.scheduled` for Fri Nov 6, 2026 14:00 MST from the borrower's slot (26.2 through 32.7), when the pass runs Mon Nov 2 09:00 MST, then 25.2's figure sources were recorded from 24.4's title order and 30.3's frozen analysis, `reconcileFigureSources` reconciled, 25.1 `computeApr` ran, CD v1 is a 35.2 `documents` row with a sha256, it was delivered to both consumers under their E-SIGN consents with receipts recorded from their acknowledgements the same day, `disclosure.cd.waiting_period.computed{earliest_consummation_date=2026-11-05}` exists, `REGZ_1026_19F1_CD_3SBD_GATE` is armed on the application, `SM_O62_CD_TARGET_4SBD` is satisfied, the row is `waiting_window{REGZ_1026_19F1_CD_3SBD_GATE}`; given a second borrower without E-SIGN consent, then that consumer's delivery is `mail` with a mailing proof and the earliest date is the deemed receipt's."
+   },
+   {
+    "n": 5,
+    "text": "Given the waiting period computed, when the pass runs Wed Nov 4, then it ordered 22.2 `orderRefresh{soft_refresh}` (Tue Nov 3), asserted 25.2's gate for Nov 6, read 22.4's `funds_to_close.reconciled` and 23.3's CTC gate, and ran 26.1 `computeNoteTerms`, `evaluateDocGenGates`, `takeClosingSnapshot`, `renderDocument`, `buildSmartDocENote`, `runDocumentQc` and `releaseToSettlementAgent` as `title-closing`: the eNote's `data_hash` equals the canonical note-terms hash for $3,402.62, Jan 1, 2027 \u2192 Dec 1, 2056, and `closing.documents.released` is on the log; given the credit refresh gate closed instead (an unresolved `verified_new_debt`), then the row is `held{gate_closed, SM_CREDIT_REFRESH_PRECLOSE_GATE}`, no 26.1 command ran and no document was rendered."
+   },
+   {
+    "n": 6,
+    "text": "Given the released set and the FAKE RON platform's session (identity proofing for both signers, start, the eNote created, the 1003 and the eNote signed 14:18 and 14:25/14:26 MST, the deed of trust acknowledged 14:36, the seal 14:41), when the pass polls the port, then 26.2's pre-session checks, `verifyEsignConsent`, `openSigningSession`, every `monitorSession` op, `validateAuthoritativeCopy{op: seal}`, `validateAuthoritativeCopy` and `registerENote` ran from the vendor's events (no operator JSON anywhere in the journal), `closing.consummated{note_date=2026-11-06}` is at 14:26 MST, `enote.registered` satisfies `MERS_PROC_ENOTE_REGISTER_1BD`, 26.3 `computeDates{op: open}` recorded `rescission_expires_at=2026-11-11T07:00:00.000Z`, `earliest_funding_date=2026-11-12`, `funding_type=dry`, 25.3's `rescission.period.started` exists, and after `ingestAuditTrail` and `reviewExecution` the row is at `execution_reviewed`, `waiting_window{REGZ_1026_23_RESCISSION_3SBD_GATE}`."
+   },
+   {
+    "n": 7,
+    "text": "Given 25.3's `rescission.confirmed_not_rescinded` at Wed Nov 11 08:00 MST and the settlement agent's statement requesting $556,852.07, when the pass runs Thu Nov 12 08:05 ET, then the worksheet was built from the consummated CD (gross $560,000.00; prepaid 19 \u00d7 $93.97 = $1,785.43; escrow deposit $2,062.50; lender credit $700.00; net $556,852.07 = 55,685,207 cents), `reconcileToSettlementStatement` passed, `evaluateFundingConditions` ran with every fact from the record (the decision record lists the source event or row of `hazard_effective`, `cpl`, `commitment`, `wire_verification`, `ptf_cleared`, `cash_to_close`, `rescission`, `qc_hold`, `ofac`), `funding.authorized` and, from 27.1 `approveAdvance` as `warehouse`, `warehouse.advance.approved` with advance $548,800.00 and partner contribution $8,052.07 are on the log; given instead a settlement statement whose escrow deposit is $1,665.00 against the CD's $2,062.50, then the row is `held{money_mismatch}` naming both figures and their sources, no `funding.authorized` exists and one `officer` escalation is open."
+   },
+   {
+    "n": 8,
+    "text": "Given the advance approved, when the pass runs 08:20 ET, then 26.3 `prepareWire` as `funder` prepared a wire of 55,685,207 cents (`funding.wire.prepared`) and the row is `waiting_human{funding_approver}`; an agent actor's `prepareWire{op: release}` is refused `ROLE_DENIED` and the pass never calls it (contract: no `op: \"release\"` literal under `src/domain/operations-runtime/`); when the FAKE `funding_approver` releases at 09:40 ET, then `funding.wire.released`, the bank's `funding.wire.accepted{imad}`, 27.1's `warehouse.advance.funded{advance_date=2026-11-12}`, `notifySettlementAgent{op: agent_receipt}` and, on the uploaded final settlement statement, `confirmDisbursement` \u2192 `loan.funded{disbursement_date=2026-11-12, per_diem_cents=9397, prepaid_interest_cents=178543, prepaid_days=19}` keyed by the application only, and `SM_O73_DUAL_CONTROL_RELEASE_1H` and `SM_O73_WIRE_CUTOFF_1300ET` are satisfied."
+   },
+   {
+    "n": 9,
+    "text": "Given `loan.funded`, when the same sweep's pass runs, then `funding_snapshots` has one row whose `sources` names a row or event for every top-level field of 30.2's `OriginationSnapshot` (`note` \u2190 26.1's eNote and `closing.consummated`; `final_cd` \u2190 the consummated CD version; `escrow_analysis` \u2190 30.3's refreshed analysis; `consents` \u2190 `consent.captured` rows; `documents` \u2190 35.2 rows; `min` \u2190 `enote.registered`; `warehouse_advance_id` \u2190 `warehouse.advance.funded`; `flood`, `hazard`, `mi`, `hpml`, `qm_type`, `ltv_pct`, `custody`, `trailing`, `property`, `borrowers`), `gaps = []`, `fixture_used = false`, `demoSnapshot` was not called (a spy on `src/runtime/origination.ts` exports), `orchestration.fund` produced ONE `loans` row with `origination_application_id`, `loan_terms` with `pi_cents = 340262`, `escrow_payment_cents = 68750`, `note_rate_bps = 61250`, a balanced opening set with principal 56,000,000, escrow 206,250 and prepaid interest 178,543 cents, OB-001\u2026OB-022 passing, `loan.staged` \u2026 `loan.boarded` carrying both ids, `SM_ORIG_BOARD_T1BD` and `SM_ORCH_HANDOFF_AFTER_FUNDED_4H` satisfied, and `POST /v1/applications/{id}/fund` on the same application answers `duplicate: true`; given `ENVIRONMENT=production` and a record missing 30.3's analysis, then the hand-off is refused `FIXTURE_REFUSED`, the row lists `escrow_analysis` in `gaps`, no `loans` row exists and one `ops_analyst` and one `compliance` escalation are open."
+   },
+   {
+    "n": 10,
+    "text": "Given `loan.boarded` on Thu Nov 12, when the pass runs Fri Nov 13 10:05 MST, then 29.3 built and froze the package (`delivery.uldd.built`, `earlycheck.completed{clean=true}`, `delivery.package.frozen`) as `secondary`, `SM_ORCH_DELIVERY_OPEN_2BD` is satisfied, 29.4 registered the delivery with Supermortgage's approved wire instruction and payee code, opened the operator task with `sla_due_at = 2026-11-16T15:00 MT`, eDelivered the eNote and requested the Transfer of Control the same day (`enote.transfer_of_control.requested{effective_date=2026-11-16}`, gate open), the row is `waiting_human{fnma_portal_operator}`; when the FAKE operator's evidence arrives 13:31 ET Mon Nov 16, then `delivery.submitted{fnma_loan_number}` exists, the custodian package is `evault_auto` with no documents, the eVault's auto-certification yields `custody.certified{purchase_ready_at=2026-11-16}` and `expected_purchase_date = 2026-11-17`."
+   },
+   {
+    "n": 11,
+    "text": "Given the FAKE Sellers API's advice (price 101.125, UPB 56,000,000, principal proceeds $566,300.00, interest \u2212$1,096.67, LLPA $700.00, net $564,503.33, purchase date 2026-11-19) and the collection bank's credit of 56,450,333 cents, when the pass runs, then 29.4 `ingestPurchaseAdvice` appended `loan.purchased` keyed by both ids with `variance_cents = 0`, 30.1 `matchPurchaseAdvice` was given the SAME `purchase_advices` row (its `net_proceeds_cents` = 56,450,333) and appended `loan.investor_updated` with `loans.fnma_loan_number` set and `loan_terms` v2 effective 2026-11-19, 27.2 `ingestReceipts` \u2192 `proceeds.received`, `matchProceeds` matched with variance $0.00, `postWaterfall` posted payoff $549,550.64 (principal $548,800.00 + interest $725.64 + fee $25.00), cost recovery $3,485.00, SM retained $1,415.00, partner residual $10,052.69 (`warehouse.advance.repaid`, `settlement.waterfall.posted`), `releaseCollateral` \u2192 `warehouse.secured_party.released{effective \u2264 2026-11-19}`, `purchase_reconciliations` is `reconciled` with the three sides, `orchestration.purchase.reconciled` satisfied `SM_ORCH_PURCHASE_RECON_1BD`, the row is `completed`, and `SELECT count(*) FROM loans WHERE origination_application_id = $1` is 1; given instead 30.1 fed a net of 56,590,333 cents, then `status = exception`, `sides.\"30.1\" = unmatched`, no waterfall was posted, no release exists and one sev-2 `officer` escalation carries 27.2's breakdown."
+   },
+   {
+    "n": 12,
+    "text": "Given 50 open orchestrations with a new fact each and two sweeps' passes started in the same minute, then every row was claimed by exactly one pass (`FOR UPDATE SKIP LOCKED`), each row has exactly one new `entered`/`command_run` journal entry, no owning event was appended twice, and a third pass with no new facts writes nothing; given a step whose owning command throws, then the journal has `command_failed{error_class}`, no other row of that unit of work exists, the next pass retries, and after the third failure the row is `held{failed}` with one `ops_analyst` escalation."
+   },
+   {
+    "n": 13,
+    "text": "Given a row entered `wire_released` at Thu Nov 12 13:00 ET with `clocked=true` (waiting on the settlement agent's statement) and no `confirmDisbursement` through Mon Nov 16, when the sweep runs Tue Nov 17, then `SM_ORCH_STEP_STALLED_2BD` is `breached` with one `ops_analyst` escalation whose payload names `application_id`, `step = wire_released` and `waiting_on = settlement_agent`; given the statement arrived Fri Nov 13, then the timer is `satisfied` by `orchestration.step.completed` and no escalation exists."
+   },
+   {
+    "n": 14,
+    "text": "Given a request to `orchestration.step` on the hosted API whose input carries `conditions`, `facts`, a `*_cents` field or `state`, then it is refused `NO_CLIENT_STATE` before any write; given a row whose next step is `documents_released` while 25.2's `assertGateOpen` answers closed, then it is `held{gate_closed}` and no 26.1 command ran; given a money-field change proposed by the agent (an `officer`-only snapshot override on `POST /fund`), when no `officer` approval record exists, then the command is refused and nothing is written; given any pass, then no `timers` row was satisfied, extended or cancelled by this process (a contract test over the timer repository's callers)."
+   },
+   {
+    "n": 15,
+    "text": "Given `rescission.exercised` on Mon Nov 9 (32.7's ChoiceCard through 25.3) on a row at `execution_reviewed`, when the pass runs, then 26.3 `openUnwind` ran, 26.4's MIN reversal request exists, no `warehouse.advance.requested`, `funding.authorized` or `loan.funded` was ever appended, no `loans` row exists, the row is `unwinding` and, on 26.3's `funding.unwind.completed`, `unwound` (terminal); given `funding.cancelled` after `funding.wire.accepted`, then `SM_O73_FUNDS_RETURN_2BD` is armed by 26.3 and the row is `unwinding` until 27.1 matches the returned funds."
+   },
+   {
+    "n": 16,
+    "text": "Given the purchase fixture (Columbus, OH; wet; paper note; the session Wed Nov 18 10:05 ET), when the pass runs Tue Nov 17 16:00 ET, then 26.3 `evaluateFundingConditions{op: pre_signing}` passed the pre-signing subset, the worksheet from the CD nets $412,000.00 \u2212 13 \u00d7 $71.96 ($935.48) \u2212 $1,240.00 + $515.00 = $410,339.52, 27.1's advance is $403,760.00 with partner contribution $6,579.52, the wire released by the FAKE `funding_approver` at 08:55 ET Nov 18 has value date 2026-11-18 (`SM_O73_WET_FUNDS_AT_TABLE_GATE` satisfied before the session), the execution review passed 11:40 ET, the disbursement authorization issued, and `loan.funded{disbursement_date=2026-11-18}`; after boarding the MOM registration is due Nov 25 (`MERS_PROC_MOM_REGISTER_7`) and the wet note's custodian delivery is due Wed Nov 25 (`SM_WH_WET_NOTE_DELIVERY_5BD`, Thanksgiving excluded)."
+   },
+   {
+    "n": 17,
+    "text": "Given the OH loan delivered Mon Nov 30, certified Tue Dec 1 and the advice dated Wed Dec 2 (price 101.000, LLPA waived, interest due lender $70.10, net wire $416,190.10) with the matching bank credit, when the pass runs, then the payoff is $404,852.72 (principal $403,760.00 + 14 days' interest $1,067.72 + $25.00), cost recovery $2,774.00, SM retained $831.00 (premium $4,120.00 \u2212 lender credit $515.00 \u2212 LLPA $0.00 \u2212 costs $2,774.00), partner residual $7,732.38, `purchase_reconciliations.status = reconciled`, `warehouse.bailee_letter.released{effective=2026-12-02}` exists, and `SM_WH_INTERIM_FUNDER_RELEASE_2BD` is armed by 27.2."
+   },
+   {
+    "n": 18,
+    "text": "Given the sweep at 06:00 ET, then 35.3's `closing_orchestration_daily` unit ran `orchestration.pass{op: daily_receipt}` once, `orchestration_daily_receipts` has one row for the date with `open`, `waiting_human`, `waiting_vendor`, `waiting_borrower`, `waiting_window`, `held`, `completed_today` and `fixture_used_today` matching a direct count of `closing_orchestrations`, `orchestration.daily.run_completed` satisfied and re-armed `SM_ORCH_OPEN_BOOK_DAILY` on the global subject (one armed instance), the board document is a 35.2 row, and `orchestration.board` returns every open row with `step`, `status`, `waiting_on`, the next owning clock due and the advance's dwell day."
+   },
+   {
+    "n": 19,
+    "text": "Given a row at `funded` on the demo clock at 2026-11-12 and `POST /v1/demo/advance{days: 3}`, then the pass ran inline per crossed day: `loan.staged`/`loan.boarded` dated 2026-11-12, `delivery.package.frozen` dated 2026-11-13, the operator task's SLA 2026-11-16 15:00 MT, `SM_ORCH_HANDOFF_AFTER_FUNDED_4H` and `SM_ORCH_DELIVERY_OPEN_2BD` satisfied, and `closing_orchestration_steps.sweep_run_id` differs per day."
+   }
+  ],
+  "tables": [
+   "closing_orchestration_steps",
+   "closing_orchestrations",
+   "funding_snapshots",
+   "orchestration_daily_receipts",
+   "purchase_reconciliations"
+  ],
+  "timers": [
+   "SM_ORCH_DELIVERY_OPEN_2BD",
+   "SM_ORCH_HANDOFF_AFTER_FUNDED_4H",
+   "SM_ORCH_OPEN_BOOK_DAILY",
+   "SM_ORCH_PURCHASE_RECON_1BD",
+   "SM_ORCH_STEP_STALLED_2BD"
+  ],
+  "notices": [],
+  "agent": "disclosures",
+  "tools": [
+   "orchestration.open",
+   "orchestration.pass",
+   "orchestration.step",
+   "orchestration.snapshot",
+   "orchestration.fund",
+   "orchestration.reconcile",
+   "orchestration.hold",
+   "orchestration.release",
+   "orchestration.unwind",
+   "orchestration.board",
+   "writeDecision"
+  ]
+ },
+ {
+  "process": "35.7",
+  "title": "Operating roles, identity and the FAKE handover: a person for every kernel role, credentials that cannot be self-asserted on `/v1`, reviewer-role disjointness, the role queues and the handover board",
+  "path": "sections/35-operations-runtime/35-7-operating-roles-identity-and-the-fake-handover.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given a fresh database, when every file under db/migrations is applied, then five new base tables exist (`to_regclass` non-null for `role_grants`, `role_queue_snapshots`, `role_handovers`, `breakglass_uses`, `api_principals`) and the base-table count (public + restricted_fl, the query of db.test.ts:40-46) equals the count taken just before this process's migration file plus 5 (776 at HEAD through 0137; the absolute number depends on which \u00a735 migrations precede it and is never asserted), `staff_users.reviewer_roles` exists with a CHECK whose literal list equals `HUMAN_ROLES` from src/app/roles.ts (twenty-two words, no `admin`), the three disjointness CHECKs exist, and every 34.1 T-id (`34.1-T1` \u2026 `34.1-T8`) passes unchanged."
+   },
+   {
+    "n": 2,
+    "text": "Given an active staff user holding `officer`, when an `admin` calls `roles.grant{role: qc_officer}` for that user, then it is refused `ROLE_DISJOINT{role: qc_officer, conflicts_with: [officer]}` and no `role_grants` row exists; given a direct `UPDATE staff_users SET reviewer_roles = '{qc_officer}'` on the same row, then Postgres raises the CHECK; given an active `ops_analyst` with no conflicting role, when the same grant is confirmed by a different `compliance` member within 10 minutes, then one `role_grants{action: grant, confirmed_by}` row, `role.granted`, an `identities` row with `privileged = true` and `entitlements.reviewer_roles = [qc_officer]`, and an `agent_decisions` row naming both people exist."
+   },
+   {
+    "n": 3,
+    "text": "Given a staff principal issued to person P who holds `mlo_of_record`, when `POST /v1/applications/{id}/tools/20.3/requestQuote` is sent under P's bearer with no body `actor`, then the command runs as `{human, <P.staff_user_id>, mlo_of_record}` and the event's `actor_id` is P's id; when the body carries `actor: {kind: human, id: <another id>, role: mlo_of_record}`, then 403 `NO_SELF_ASSERTED_ACTOR` and nothing ran; when a service principal sends `actor: {kind: human, \u2026}`, then 403 `NO_HUMAN_ROLE_ON_SERVICE_PRINCIPAL`; when the shared `API_TOKEN` is presented with `ENVIRONMENT=production`, then 403 `SHARED_TOKEN_REFUSED_IN_PRODUCTION`, and outside production the same request is honoured and its `staff_actions` row reads `surface = v1, source = shared_token`."
+   },
+   {
+    "n": 4,
+    "text": "Given officers A and B with their own principals and a 5.2 custodial advance transfer of $260,000.00 (26,000,000 cents, greater than the $250,000.00 threshold), when A submits it with `approvedBy: {kind: human, id: B, role: officer}` in the body, then it is refused `APPROVER_NOT_SELF_ASSERTED`; when A submits it without an approver, then it is refused `APPROVER_DISTINCT` with a `request_id`; when B calls `roles.approve{request_id}` under B's principal, then `dual_control.approved{requested_by: A, approved_by: B}` is logged and the transfer commits with `agent_decisions.approved_by = B` and `approved_role = officer`; when A calls `roles.approve` on A's own request, then `APPROVER_DISTINCT`; given the same transfer for $249,999.99 (24,999,999 cents), then A alone commits it and `approved_by = A`."
+   },
+   {
+    "n": 5,
+    "text": "Given a 3.7 payee remittance change for an existing payee of $10,000.01 (1,000,001 cents), when one `officer` submits it, then `APPROVER_DISTINCT` until a second officer's `roles.approve`; given the same change for exactly $10,000.00 (1,000,000 cents), then one officer commits it; given a new payee for $500.00, then two officers are required whatever the amount."
+   },
+   {
+    "n": 6,
+    "text": "Given the fixture book with two open `attorney` escalations, one 35.6 step in `waiting_human{funding_approver}` and a pending terms review, under `INTEGRATIONS=fake` with the FAKE set on, when the daily `roles.queue_scan` unit runs through `cycles.run_unit`, then twenty-two `role_queue_snapshots` rows exist for the scan with `attorney = {open_items: 2, holders: 0, fake: false, status: unstaffed}`, `funding_approver = {open_items: 1, fake: true, status: fake}` and `mlo_of_record = {open_items: 1, fake: true, status: fake}`, exactly one `role.queue.unstaffed{role: attorney}` is logged and `SM_ROLE_QUEUE_UNSTAFFED_1BD` is armed on `{environment, role: attorney}` with the due date one servicer business day after `detected_at`; a second scan the same day logs no second event and arms no second clock; when `roles.grant{role: attorney}` activates for a person, then `role.staffed{cause: grant}` satisfies the clock."
+   },
+   {
+    "n": 7,
+    "text": "Given `FAKE_REVIEWERS=off` and no holder of `funding_approver`, when a 26.3 wire waits for release for two sweeps, then nothing approves it, `roles.queue` shows `funding_approver` as `unstaffed` and `handover.board` shows the FAKE off for every role; given `ENVIRONMENT=production`, `INTEGRATIONS=fake` and `FAKE_REVIEWERS` unset, then the environment's FAKE set is empty (`fakeReviewerRolesFromEnv` returns `[]`), the reviewers' tick approves nothing, and the board shows `NO_FAKE_IN_PRODUCTION` as the reason."
+   },
+   {
+    "n": 8,
+    "text": "Given nonprod with a holder of `funding_approver` who signed in within 30 days, when `compliance` calls `handover.enable{role: funding_approver}` and a different `admin` confirms the `request_id` within 10 minutes, then `role_handovers{action: enabled, requested_by, confirmed_by, holders, pending_items}` and `handover.enabled` exist, `FakeReviewers.fills(\"funding_approver\")` is false on a second `Runtime` over the same database while the other five roles are still filled, and the console marks no `funding_approver` row \"\u2014 FAKE reviewer\"; when the requester confirms their own request, then `TWO_PERSON_HANDOVER`; when no confirmation arrives in 10 minutes, then `handover.request.expired` and the FAKE still fills the role."
+   },
+   {
+    "n": 9,
+    "text": "Given nonprod where nobody holds `settlement_agent` and the only `qc_officer` holder last signed in 45 days ago, when `handover.plan` runs, then its rows read `settlement_agent: HANDOVER_NEEDS_HOLDER{missing: holder}` and `qc_officer: HANDOVER_NEEDS_HOLDER{missing: signed_in_30d}`, `handover.enable` for either is refused with the same code, and after a `settlement_agent` grant and a fresh `qc_officer` sign-in both rows read `ready` with the holders' ids and the open-item counts."
+   },
+   {
+    "n": 10,
+    "text": "Given person P granted `underwriting_reviewer` in `reviewer_roles`, when P's session calls `POST /ops/api/tools/21.6/openReviewerEscalation` with `x-staff-role: underwriting_reviewer`, then the command commits with `actor = {human, <P.staff_user_id>, underwriting_reviewer}`, a `staff_actions` row carries `command = 21.6 openReviewerEscalation`, `role.exercised{grant_id}` is logged once (the second act logs none) and satisfies `SM_ROLE_GRANT_DORMANT_30D`; given a session that holds no such role, then 403 `ROLE_REQUIRED{underwriting_reviewer}` before any read (no `loan_events` row, no `agent_decisions` row)."
+   },
+   {
+    "n": 11,
+    "text": "Given a grant of `lossmit_reviewer` with no `role.exercised` for 30 calendar days, when the sweep's breach pass runs, then `SM_ROLE_GRANT_DORMANT_30D` breaches into one sev 3 `compliance` escalation naming the grant, the grant is still active, the board flags it `dormant`, and the next 34.1 access review's `keep` for that user without a `rationale` naming the grant is refused `DORMANT_GRANT_NEEDS_RATIONALE` while a `keep` with one succeeds and is recorded."
+   },
+   {
+    "n": 12,
+    "text": "Given an active `compliance` member C who holds no reviewer role, when C calls `roles.breakglass{role: attorney, subject: {loan_id: L}, reason}`, then `role_grants{action: breakglass, expires_at = used_at + 4 hours}`, a `breakglass_uses` row, `role.breakglass.used` and an armed `SM_ROLE_BREAKGLASS_REVIEW_1BD` exist; an `attorney` act by C on loan L commits and the same act on loan M is `ROLE_DENIED`; after 4 hours the act on L is `ROLE_DENIED` and `role.revoked{cause: breakglass_expired}` is logged; `roles.breakglass{role: qc_officer}` is refused `NO_BREAKGLASS_INDEPENDENT_ROLE`; a review by C is refused `APPROVER_DISTINCT`, a review by another `compliance` member logs `role.breakglass.reviewed` and satisfies the clock."
+   },
+   {
+    "n": 13,
+    "text": "Given an `admin` issues a staff principal for P with `scopes: {loans: [L1]}`, then the response carries the token once, `api_principals.token_hash` is its sha-256 and no column holds the token; a `/v1` command on L1 under it runs and on L2 answers 403 `PRINCIPAL_SCOPE`; after `principals.revoke` the next request is 401 `PRINCIPAL_REVOKED`; five presentations of the revoked token within an hour log one `principal.refused{count: 5}` and open one sev 2 `ciso` escalation, and a sixth opens no second one that hour; every request wrote a `staff_actions` row with `principal_id` and `surface = v1` and none contains the token."
+   },
+   {
+    "n": 14,
+    "text": "Given P holds `officer` in `roles`, `fnma_portal_operator` in `reviewer_roles`, an open session and an active principal, when an `admin` runs 34.1's `staff.disable` on P, then in the same transaction a `role_grants{action: revoke, cause: disabled}` row exists for `fnma_portal_operator`, the session and the principal are revoked, `identities.entitlements` for P is empty, and the next queue scan counts P among no role's holders."
+   },
+   {
+    "n": 15,
+    "text": "Given the nonprod fixture after T6 and T8, when `handover.board` runs, then it lists exactly twenty-two roles with status, holders, signed-in-within-30-days, dormant grants, FAKE on/off with the `enabled` instant for `funding_approver`, open items and the oldest wait, last exercised and today's FAKE approvals, the FAKE-approval total equals the sum of `approved` in the day's reviewers' reports (`FakeReviewerReport.actions`), and no field of the payload is an e-mail, a phone or a token (a contract test over every string in the response)."
+   },
+   {
+    "n": 16,
+    "text": "Given the first `role.queue.scan_completed{as_of_date: D}` on the global subject, then `SM_HANDOVER_BOARD_DAILY` is armed for D + 1 calendar day at 06:30 America/New_York through the `subject: \"global\"` override in src/domain/operations-runtime/timers-35-7.ts; the next day's completion satisfies and re-arms it; a day with no completion breaches it into one sev 3 `compliance` escalation, and `npm run spec:lint -- --verbose` lists the code as armable and satisfiable."
+   },
+   {
+    "n": 17,
+    "text": "Given any command of this process (`roles.*`, `principals.*`, `handover.*`), then no ledger line and no `*_cents` column of any table changed (counts and sums before and after every tool in a contract test are identical), no section timer was satisfied, extended or cancelled by it, and every action tool wrote one `agent_decisions` row naming the person and one `staff_actions` row."
+   }
+  ],
+  "tables": [
+   "api_principals",
+   "breakglass_uses",
+   "role_grants",
+   "role_handovers",
+   "role_queue_snapshots",
+   "staff_actions",
+   "staff_users"
+  ],
+  "timers": [
+   "SM_HANDOVER_BOARD_DAILY",
+   "SM_ROLE_BREAKGLASS_REVIEW_1BD",
+   "SM_ROLE_GRANT_DORMANT_30D",
+   "SM_ROLE_QUEUE_UNSTAFFED_1BD"
+  ],
+  "notices": [],
+  "agent": "security-records",
+  "tools": [
+   "roles.grant",
+   "roles.revoke",
+   "roles.queue",
+   "roles.approve",
+   "roles.breakglass",
+   "principals.issue",
+   "principals.revoke",
+   "handover.plan",
+   "handover.enable",
+   "handover.board",
+   "writeDecision"
+  ]
+ },
+ {
+  "process": "35.8",
+  "title": "Operator work screens: the per-loan and per-application work the console lacks, each screen a bus tool with server-derived inputs, the queue and the action log",
+  "path": "sections/35-operations-runtime/35-8-operator-work-screens.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given fixture loan L-1 with a `received` cheque of 219,257\u00a2 dated 2026-09-03, when an `ops_analyst` runs `work.screen.act{code: payment_post, action: post, decision: {payment_id}}`, then 2.1 posts interest **$1,352.94**, principal **$227.23**, escrow **$612.40** (total **$2,192.57**), UPB is **$249,546.77** and LPI 2026-09-01, the `work_derivations` row's `sources` names the `loan_installments` version and `ledger_lines.max_id` read, its `input_sha256` equals the 2.1 decision record's `inputs_snapshot_hash` and the sha-256 of the stored `work-derivation.json`, and exactly one `work_actions{status: executed}`, one `staff_actions{command: \"2.1 payments.read/write\"}` and one `work.action.executed` event exist."
+   },
+   {
+    "n": 2,
+    "text": "Given the same loan, when the decision payload carries any derived field (`state`, `custodial`, `installments`, `upb_cents`) or a field outside `decision_schema`, then the act is refused `NO_CLIENT_STATE{field}` before the deriver runs, no `work_derivations` row, no event and no ledger line exist, and `work_actions{status: refused}` plus `staff_actions{result: refused}` do."
+   },
+   {
+    "n": 3,
+    "text": "Given the posted payment of T1 and an R01 return, when an `ops_analyst` acts on `payment_reverse.reverse{payment_id, reason: returned_item, return_code: R01}`, then no ledger line is written, `work_actions{status: proposed}` and `work.action.proposed` exist, the item is `waiting_approval` and `SM_WORK_APPROVAL_1BD` is armed on `proposed_at`; when the same analyst calls `work.action.decide{approved}` then `SAME_PERSON`; when a distinct `officer` approves, then 2.1's mirror set restores UPB to **$249,774.00** and LPI to 2026-08-01, 2.7 assesses the late charge **$79.01** on the 2026-09-01 installment, the executed row carries `approval_of` = the proposal, `work_approvals` has one row, `agent_decisions.approved_by` names both people, and the timer is satisfied."
+   },
+   {
+    "n": 4,
+    "text": "Given a `proposed` reversal, when a second payment posts on the loan before the officer approves, then the approval's re-derivation differs, the act is refused `STALE_DERIVATION{proposal_sha256, current_sha256}`, the proposal is `declined` with that code, nothing is posted, and the item returns to `claimed`."
+   },
+   {
+    "n": 5,
+    "text": "Given 16.1 worked example A's loan (UPB **$248,310.55**, 6.500%, LPI 09/01/2026, late charge **$82.17**, release fee **$34.00**), when the borrower's request for good-through 2026-10-15 is acted through `payoff_quote.quote`, then the components are **$1,345.02** (September) and **$619.08** (14 October days), per diem **$44.22**, total **$250,390.82**, every figure came from the ledger and `loan_terms` (the decision payload has no cents field), two `work.screen.derive` calls on the same ledger snapshot return one `input_sha256`, and a decision naming `total_cents` is refused `NO_CLIENT_STATE{total_cents}`."
+   },
+   {
+    "n": 6,
+    "text": "Given the lifecycle fixture's orchestration at step `funding_authorized` (gross **$560,000.00**, per diem **$93.97**, prepaid interest **$1,785.43**, escrow deposit **$2,062.50** from the consummated CD per 35.6 rule 7a, lender credits **$700.00**), when a `funding_approver` acts on `funding_release.release{funding_id, wire_id}`, then the derived `evaluateFundingConditions` passed from the record, the wire released is **$556,852.07** (55,685,207 cents), 26.3's `funding.authorized` and the release event are keyed by the application, and the same act by the staff user who prepared the wire is refused `FOUR_EYES`; given a blocking condition on the record, then `GATE_CLOSED{codes}` and no release."
+   },
+   {
+    "n": 7,
+    "text": "Given an application with two open 23.3 conditions, when an `underwriting_reviewer` acts on `conditions.clear{condition_id, evidence_document_id}` for each and then `conditions.ctc`, then `condition.cleared` \u00d72 and `clear_to_close.issued` exist with the staff user as actor, 35.6's orchestration opens on the CTC, and the same three acts by an `ops_analyst` session are refused `ROLE_REQUIRED{underwriting_reviewer}` before any read of the condition rows (contract: the refusal precedes the projection query in the action log's timing and no derivation row exists)."
+   },
+   {
+    "n": 8,
+    "text": "Given the console's five item kinds on the fixture book plus one 35.3 `job.unit.dead`, one 35.6 `orchestration.held` and one proposal of T3, when `work.queue{role: ops_analyst}` runs, then every row carries a `screen_code` per rule 8, `required_role`, `opened_at` and `due_at`, the five console kinds match `GET /api/queue` for the same role row for row, each source has exactly one open item (a second sweep opens none), and `SM_WORK_ITEM_AGE_2BD` is armed on each item's `opened_at`."
+   },
+   {
+    "n": 9,
+    "text": "Given an open item, when analyst A claims it and analyst B claims it, then B is refused `CLAIMED_BY_OTHER{staff_user_id}` carrying A's id and no name; when 4 hours pass on the demo clock without A releasing, then `SM_WORK_ITEM_CLAIM_4H` breaches, the breach handler emits `work.item.claim_expired{lapses: 1}` and the item is `open`; after the third lapse an `ops_analyst` escalation exists and none before."
+   },
+   {
+    "n": 10,
+    "text": "Given an item opened 2026-09-14 (Monday) and left open, when the sweep crosses 2026-09-16 17:00 servicer time, then `SM_WORK_ITEM_AGE_2BD` breaches to a sev 2 `ops_analyst` escalation; when it crosses 2026-09-21, then `SM_WORK_ITEM_AGE_5BD` breaches to a sev 1 `officer` escalation and `role.queue.unstaffed{role}` is emitted; when the item is closed on 2026-09-15, then neither arms past `satisfied`."
+   },
+   {
+    "n": 11,
+    "text": "Given a day with T1's executed act, T2's refusal, T3's proposal and approval, when `work.log.recon{as_of_date}` runs, then `actions_checked = 4`, `orphans = 0`, `stale_screens = 0`, `work_log_recon_runs` has one row with a report document, and `work.log.recon.run_completed` satisfies and re-arms `SM_WORK_LOG_RECON_DAILY` on the global subject; given an executed `work_actions` row whose `staff_actions` row is deleted in the test fixture, then `orphans = 1` and a sev 3 `compliance` escalation names the action id."
+   },
+   {
+    "n": 12,
+    "text": "Given the bus registry loaded with 2.1's `payments.read/write` declaring `moneyFields` and the registered `payment_reverse` screen version, when the registry is changed in a test to add a role to the tool's `humanRoles`, then the next reconciliation reports `stale_screens = 1`, `work.screen.read` lists the screen's actions as `available: false, needs: re-registration`, `work.screen.act` answers `SCREEN_STALE{code, version}`, and after `work_screen_versions` gains version + 1 the actions are available again."
+   },
+   {
+    "n": 13,
+    "text": "Given a 12.2 loss-mitigation evaluation with outcome `deny`, when a `human_agent` acts on `lossmit_decision.decide{request_id, disposition: deny, denial_reasons}`, then 12.2's own routing sends the denial to `lossmit_reviewer` (the `SM_LM_REVIEWER_DENIAL_APPROVAL_2BD` clock arms) and no denial notice is sent by the screen; when the `lossmit_reviewer` approves through the same screen, then 12.2's denial event and notice exist with both actors and the screen wrote no notice code of its own (contract: no notice row has `producer = '35.8'`)."
+   },
+   {
+    "n": 14,
+    "text": "Given a 14.1 bankruptcy case and a trustee cheque of 150,000\u00a2 received 2026-09-10, when an `ops_analyst` acts on `bankruptcy_case.apply_trustee{case_id, amount_cents: \"150000\", received_on}`, then the act is `proposed` (money) and the ledger is untouched; when an `officer` approves, then 14.1's `bk.ledger.apply_trustee` posts a balanced set with `rule_ref` and the `amount_cents` in the derivation equals the person's figure (the one decision field the person is the source of), and `state`, `ledger_snapshot` and `plan` in the input came from the record."
+   },
+   {
+    "n": 15,
+    "text": "Given any screen action, then no `ledger_lines` row has `rule_ref LIKE '35.8%'`, no `notices` row was produced by this process, no `timers` row was written by it (contract test over every `work.*` tool: the timer, notice and ledger tables before and after each tool differ only by rows the dispatched owning tool wrote), and every `work.screen.act`, `work.item.claim`, `work.item.close` and `work.action.decide` by an agent actor is refused `HUMAN_ONLY_ACT`."
+   },
+   {
+    "n": 16,
+    "text": "Given a money-field change proposed by the agent \u2014 `work.action.propose` for `payment_reverse.reverse` or any decision payload naming a `*_cents` field the person is not the source of \u2014 when no `officer` approval record exists, then the command is refused and nothing is written beyond the proposal row; the `case` agent's `work.action.propose` never yields an `executed` row without a `work_approvals{decision: approved}` row by a human `officer`."
+   }
+  ],
+  "tables": [
+   "work_actions",
+   "work_approvals",
+   "work_derivations",
+   "work_item_events",
+   "work_items",
+   "work_log_recon_runs",
+   "work_screen_versions"
+  ],
+  "timers": [
+   "SM_WORK_APPROVAL_1BD",
+   "SM_WORK_ITEM_AGE_2BD",
+   "SM_WORK_ITEM_AGE_5BD",
+   "SM_WORK_ITEM_CLAIM_4H",
+   "SM_WORK_LOG_RECON_DAILY"
+  ],
+  "notices": [],
+  "agent": "case",
+  "tools": [
+   "work.queue",
+   "work.item.open",
+   "work.item.claim",
+   "work.item.release",
+   "work.item.close",
+   "work.item.cancel",
+   "work.screen.read",
+   "work.screen.derive",
+   "work.screen.act",
+   "work.action.propose",
+   "work.action.decide",
+   "work.log.recon",
+   "writeDecision"
+  ]
+ },
+ {
+  "process": "35.9",
+  "title": "Default operations over time: cases progressed by the cycles and the screens \u2014 referral, milestones, docket reactions, executed breach actions, claims filed",
+  "path": "sections/35-operations-runtime/35-9-default-operations-over-time.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given a boarded loan whose 13.3 `foreclosure.referral.sent` was committed on 2027-03-02, when the seam's post-commit hook and then `case.progress` run, then exactly one `case_timelines` row exists for that event (`event_id` unique; the second fold writes nothing) with `case_kind = foreclosure`, `status_before = prereferral`, `status_after = referred`, and `case.timeline{loan_id}` returns the loan's rows in `event_sequence` order with the case's current status."
+   },
+   {
+    "n": 2,
+    "text": "Given loan L-A (Florida judicial, allowable 720, UPB 18745000\u00a2, PTR 5.125%, LPI due 2025-03-01, one credited Chapter 13 delay of 84 days) and the firm's forecast sale 2027-11-02, when the daily unit runs on 2027-09-15, then 13.5's `comp_fee.exposure.updated` carries `actual_days = 928`, `credited_delay_days = 84`, `excess_days = 124`, `exposure_cents = 326368` and the forecast projection `452705`, and the same function returns `346164` for F-2-03 Example 1 (100,000 \u00d7 4.75% \u00d7 266 days)."
+   },
+   {
+    "n": 3,
+    "text": "Given loan L-B (UPB 16392044\u00a2, note rate 5.750%, paid to 2026-10-01, 30% BPMI, `servicer_direct`) with a sale held 2027-07-06 and the advances listed in worked example B, when `claims.sweep` opens the MI candidate on 2027-07-07 and `claims.package` runs, then 15.3's `mi_claim_calculations` row has `interest_cents = 719817` (9 \u00d7 78545 = 706905, plus the stub 5 \u00d7 25.8231 = 129.1155 \u2192 12912), advances 740660, `claim_amount_cents = 17852521`, `benefit_cents = 5355756`, `claim_candidates.legal_due_on = 2027-08-05`, `package_due_on = 2027-07-14`, and `case.claim.package_built` names a `documents` row with a sha256."
+   },
+   {
+    "n": 4,
+    "text": "Given the same loan's 571 candidate, when `claims.package` runs 15.2's validation and assembly, then `expense_claims.gross_cents = 832013`, `credits_cents = 75067` (258 \u00f7 365 \u00d7 106200), `net_cents = 756946`, every `expense_claim_lines` row satisfies `amount_cents = unit_price_cents \u00d7 quantity`, the MI premium line has `quantity = 9` and `unit_price_cents = 9817`, and `legal_due_on = 2027-08-05`."
+   },
+   {
+    "n": 5,
+    "text": "Given `FNMA_E3205_FIRM_ACK_2BD` breached on a referred case with no acknowledgment, when the sweep's breach pass runs, then in the same transaction an `escalations` row is opened as today, `breach_actions{outcome: executed, action_kind: message_firm, registry_version}` exists with `command_event_id` = a 13.6 `attorney.message.send{kind: ack_demand}` event, a `firm_dispatches{kind: ack_demand}` row points at an `integration_messages` row on the `law-firm` adapter, and `breach_action.executed` is logged with the decision record; a second sweep writes no second action (`timer_id` unique)."
+   },
+   {
+    "n": 6,
+    "text": "Given `FNMA_E3302_SALE_CERT_WINDOW_7_15` breached at \u22127 days on an uncertified sale, when the breach pass runs, then 13.2's `attorney.instruction.send{kind: postpone_sale}` ran (`attorney.instruction.sent` on the timeline, `attorney_instructions` row) and `breach_actions.outcome = executed`; given the same breach on a case under `BK_362_STAY_GATE`, then the instruction is refused, `breach_actions{outcome: refused, refusal_code: BK_362_STAY_GATE}` exists, an `attorney` escalation is open and later sweeps do not retry."
+   },
+   {
+    "n": 7,
+    "text": "Given a code with no `breach_action_registry` row (any 3.x clock) breached, when the breach pass runs, then the escalation opens exactly as src/runtime/app.ts:270-291 does today and `breach_actions{outcome: escalated_only, escalation_id}` records it; given a `breach.recon` on a day with one `timer.breached` that has no `breach_actions` row (inserted directly in the test), then `breach_action.recon.run_completed{missing: 1}` is logged and one `compliance` escalation is open."
+   },
+   {
+    "n": 8,
+    "text": "Given 13.1's gates open, a completed 13.4 review with outcome `refer`, a retained FAKE firm for the state and no hold, when the daily unit runs, then `case.referral.proposed` is logged, a 35.8 proposal on `foreclosure_case.refer` for `officer` exists and `SM_CASE_REFERRAL_DECISION_2BD` is armed; when an `officer` approves, then `case.referral.decided{decision: approve}` and 13.3's `foreclosure.referral.sent` are in one transaction, `attorney_referrals` has the package manifest, `firm_dispatches{kind: referral_package}` points at the outbox row, the clock is satisfied and `FNMA_E3205_FIRM_ACK_2BD` is armed; when instead a 12.1 application is received before the decision, then approval is refused and `case.referral.decided{decision: cancelled, cause: gate_closed}` is logged."
+   },
+   {
+    "n": 9,
+    "text": "Given a referral dispatched on Mon 2027-03-01 to the FAKE firm with `first_legal` default 45 days, when the outbox drains and the sweep advances through Tue 2027-03-02, then `firm.inbound{kind: ack}` produced 13.3's `foreclosure.referral.acknowledged`, `firm_dispatches.acknowledged_at` is set with `ack_source = fake`, expectation `referral_ack` is `satisfied`, and expectation `first_legal` exists with `expected_on = 2027-04-15`, `due_on = 2027-04-18`, `basis = firm_forecast`."
+   },
+   {
+    "n": 10,
+    "text": "Given expectation `first_legal` with `due_on = 2027-04-18` and no milestone recorded, when the daily unit runs on 2027-04-19, then its status is `due`, `case.milestone.due` is logged, one 35.8 `work_items` row exists with `source_kind = case_milestone`, `screen_code = foreclosure_case`, `required_role = attorney`, and `SM_CASE_MILESTONE_OVERDUE_5BD` is armed with `due_at` = 2027-04-18 + 5 servicer business days; when 13.3's `foreclosure.milestone.recorded{code: first_legal, source: dra}` is folded, then the expectation is `satisfied`, the item closes, the clock is satisfied and the next expectation is written."
+   },
+   {
+    "n": 11,
+    "text": "Given an open Chapter 13 case and `FakePacer.dockets` holding two new entries (`plan_confirmed` and a free-text objection), when `bk_docket_sync_daily` and then the daily unit run, then two `bankruptcy.docket.event.received{source: pcl}` events exist, `docket_reactions` has one row `{reaction_kind: status_change, needs_human: false}` with 14.1's `bankruptcy.status.changed` as `command_event_id` and `applied_at` set, and one row `{needs_human: true}` with a 35.8 item on `bankruptcy_case.docket` for `attorney`; `SM_DOCKET_REACTION_1BD` was armed and is satisfied by `case.docket.reacted`."
+   },
+   {
+    "n": 12,
+    "text": "Given a docket entry 14.1's classifier scores at 0.62, when `docket.react` runs, then no 14.1 write occurs, the reaction is `needs_human` and the entry's `applied_at` stays null until the `attorney` decides on the screen; given a `trustee_payment_received` entry naming an amount, then the reaction is `needs_human` regardless of confidence and no ledger line exists (the application is 35.8-T14's officer act)."
+   },
+   {
+    "n": 13,
+    "text": "Given the fixture book with three open foreclosure cases, one bankruptcy case, one claim candidate and two open early-intervention windows, when the sweep runs once after 05:30 ET, then 35.3's `cycle_runs` show `bk_docket_sync_daily`, `default_case_daily`, `claims_sweep_daily` and `dra_import_daily` for the day with receipts, one `default_case_daily_runs` row exists with `loans_scanned = 7`, `outcome = completed` and a stored report document, `default_case.daily.run_completed` and `breach_action.recon.run_completed` are logged once, and `SM_DEFAULT_CASE_DAILY` and `SM_BREACH_ACTION_RECON_DAILY` are re-armed for the next day; a second sweep the same day writes no second run (`as_of_date` unique)."
+   },
+   {
+    "n": 14,
+    "text": "Given the demo clock advanced 30 days over the fixture, then one `default_case_daily_runs` row per crossed day exists in date order, every expectation whose `due_on` fell in the window was marked `due` on that day (its `case.milestone.due` carries that `as_of_date`), the FAKE firm's milestone reports were folded on their forecast dates, and the same rows are produced by 30 hosted sweeps on consecutive days (the contract test compares the two runs' `case_timelines` and `case_milestone_expectations` by `(case_id, milestone_code, status, expected_on, due_on)`)."
+   },
+   {
+    "n": 15,
+    "text": "Given any command of this process, then the ledger and every money column of the sections' rows before and after are identical (contract test over `ledger_lines`, `advances`, `expense_claims`, `mi_claims`, `comp_fee_bills`), an input carrying `amount_cents`, `benefit_cents` or `exposure_cents` is refused `NO_MONEY_FIELD`, an attempt to register a `breach_action_registry` row whose `action_kind` the `cited_text` does not name is refused `ACTION_MATCHES_CITED_TEXT`, and a `compliance` registration without `officer` confirmation is refused."
+   },
+   {
+    "n": 16,
+    "text": "Given the timeline of loan L-A at any point, then no row of this process changed `foreclosure_cases.status` (the only writers of that column are 13.x tools \u2014 asserted by the `loan_events` actor and `agent_decisions.agent` on every transition), and a 13.x status the expectation map has no edge for (a test-injected `closed_cancelled` from `prereferral`) logs `case.status.unexpected` and opens an `ops_analyst` work item without altering the section's row."
+   },
+   {
+    "n": 17,
+    "text": "Given loan L-B boarded on the hosted runtime with 35.5's `loan_installments` (the installment due 2026-10-01 left `due`), a `loan_servicing_configs.time_zone` of America/Phoenix, no `regx_ei_windows` row and no hand-fed state, when the demo clock advances from 2026-10-01 to 2026-11-06 with 35.3 planning `delinquency_counters` after `cashiering_daily` each day, then `cycle_runs` holds one `delinquency_counters` run per crossed day with `period_key` equal to that day and a `cycle_receipts` row each, 11.1's `loan.delinquency.window_opened{due_date: \"2026-10-01\"}` is on L-B's log exactly once with the counter's actor `{agent, default-collections}` (delinquency.ts:26), a `regx_ei_windows` row is open for it, `REGX_1024_39A_LIVE_CONTACT_36` is armed on that window with `due_at` on the 36th day of delinquency as 11.1's row computes it in the loan's zone, `loan.delinquency.day_reached` is logged for each 11.1 milestone on the loan-local date, `default_case_daily` selected L-B from the open window on the day it opened, and running the same day's unit twice adds no event (35.3 rule 3)."
+   }
+  ],
+  "tables": [
+   "breach_action_registry",
+   "breach_actions",
+   "case_milestone_expectations",
+   "case_timelines",
+   "claim_candidates",
+   "default_case_daily_runs",
+   "docket_reactions",
+   "firm_dispatches"
+  ],
+  "timers": [
+   "SM_BREACH_ACTION_RECON_DAILY",
+   "SM_CASE_MILESTONE_OVERDUE_5BD",
+   "SM_CASE_REFERRAL_DECISION_2BD",
+   "SM_CLAIM_PACKAGE_5BD",
+   "SM_DEFAULT_CASE_DAILY",
+   "SM_DOCKET_REACTION_1BD"
+  ],
+  "notices": [],
+  "agent": "foreclosure-ops",
+  "tools": [
+   "case.timeline",
+   "case.progress",
+   "case.refer",
+   "case.milestone.expect",
+   "case.milestone.record",
+   "docket.sync",
+   "docket.react",
+   "firm.dispatch",
+   "firm.inbound",
+   "breach.execute",
+   "breach.recon",
+   "claims.sweep",
+   "claims.package",
+   "writeDecision"
+  ]
+ },
+ {
+  "process": "35.10",
+  "title": "The refinance close of the loop: the prior loan's payoff quote, settlement and ledger zeroing, lien release, escrow disposition and retirement \u2014 whether Supermortgage services it or a partner does \u2014 the partner's notification and the new loan linked, replacing the status flip",
+  "path": "sections/35-operations-runtime/35-10-the-refinance-close-of-the-loop.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given worked example A's prior loan on Postgres (UPB $559,455.71, 6.125%, LPI 2027-01-01, escrow $2,750.00) and its refinance application with `prior_loan_id`, when `closing.scheduled` lands with disbursement 2027-01-29 and only sweeps run, then `refinance_closeouts` reads `mode = serviced_same_servicer`, `step = quoted`, 16.1's `payoff_quotes` row carries per diem $93.88, interest $2,628.68, total $562,084.39 good through 2027-01-29, `payoff_requests.requester_type = refinancing_lender`, 24.4's `payoff_demands` row has `same_servicer = true`, `servicing_loan_id` = the prior loan and the same total, the statement document exists with its printed token, and no tool input in the journal carries `upb_cents`, `rate_pct` or `lpi_due` (they were derived)."
+   },
+   {
+    "n": 2,
+    "text": "Given T1 and `loan.funded` + `funding.disbursement.confirmed` with a settlement statement whose payoff line is $562,084.39, when the next sweep runs, then one balanced transfer set (`rule_ref 35.10:r4:transfer`) and one 2.1 receipt set exist, 16.2's `payoff_funds` reads `method = internal_transfer`, `status = cleared`, `variance_cents = 0`, `payoff_settlements` reads `paid_in_full` with interest $2,628.68, principal $559,455.71, PTR interest $2,521.38, servicing fee $107.30, the CRS 001 instruction is $561,977.09, `loan.paid_in_full{payoff_date: 2027-01-29}` is on the prior loan's log exactly once, every prior-loan account but `escrow` is zero, `loans.status = paid_off`, `prior_loan_retirements` has one row with `retired_on = 2027-01-29`, and a second sweep folding the same events writes no further set, row or event."
+   },
+   {
+    "n": 3,
+    "text": "Given T2 with a `consents{kind=escrow_credit_to_new_loan}` row captured 2027-01-22, then `escrow_treatment = credit_to_new_loan`, `escrow.credit_to_new_loan.posted{amount_cents: 275000}` is in the settlement transaction, the prior `escrow` account is zero, the new loan's opening escrow set carries $2,750.00 from the credit and $687.50 from cash to close against a CD initial deposit of $3,437.50, `REGX_1024_34B_PAYOFF_ESCROW_REFUND_20BD` and `SM_REFI_ESCROW_CREDIT_0` are `satisfied`, and no `disbursement.issued{payoff_refund}` exists."
+   },
+   {
+    "n": 4,
+    "text": "Given T2 with no such consent, then `escrow_treatment = refund`, no credit event exists, `REGX_1024_34B_PAYOFF_ESCROW_REFUND_20BD.due_at` = 2027-03-01, `disbursement.issued{kind: payoff_refund, amount_cents: 275000}` is issued after the 5-BD hold and before that date, the short-year statement is due 2027-03-30, the new loan's initial deposit stays $3,437.50, and the pass never proposed netting (`NO_NETTING` in the journal)."
+   },
+   {
+    "n": 5,
+    "text": "Given T2, then 16.3's `release_tasks` row exists for the prior loan with `instrument_type = deed_of_release_and_reconveyance`, `signatory_path = mers_signing_officer`, `STATE_LIEN_RELEASE_DEADLINE.due_at = 2027-02-28`, `SM_RELEASE_PREPARE_5BD.due_at = 2027-02-05`, the closeout is `waiting_human{signing_officer}` with `clocked = false` (no `SM_REFI_CLOSEOUT_STALLED_2BD` armed for that entry), and after the FAKE signing officer executes and the FAKE recorder records, `lien_release.recorded` moves the closeout on and 16.3's `NTC_LIEN_RELEASE_RECORDED` was sent by 16.3's tool, not by this process."
+   },
+   {
+    "n": 6,
+    "text": "Given worked example B's demo loan 1 imported `monitored` and its refinance application, when `closing.scheduled` lands with disbursement 2026-10-30, then `mode = monitored_partner`, 24.4's demand went to the partner as external servicer (`same_servicer = false`, `servicing_loan_id` = the monitored loan, `existing_servicer_party_id` = Northlight), the parsed statement carries principal $440,962.93 (October interest $2,666.59, principal $403.20 from $441,366.13), per diem $87.59, interest $2,540.11, total $443,503.04 good through 2026-10-30, `escrow_treatment = partner_obligation`, and no `payoff_requests`, `payoff_quotes` or ledger row exists for the loan."
+   },
+   {
+    "n": 7,
+    "text": "Given T6 and `funding.date.resynced` to 2026-11-02, then 24.4's planning figure is $443,765.81, `SM_PAYOFF_GOOD_THROUGH_GATE` reads closed, `closeout.quote` re-ran, the refreshed statement good through 2026-11-02 totals $443,765.81, the gate reads open, and the closeout journal shows two `command_run{24.4 requestPayoff}` entries with the second citing the resync event."
+   },
+   {
+    "n": 8,
+    "text": "Given T7 and `loan.funded` on 2026-11-02 with a settlement statement whose payoff line is $443,765.81 to Northlight's account of record with a wire reference, when the next sweep runs, then `payoff_demands.status = paid` with `payoff_posted_on = 2026-11-02`, `refinance.prior_loan.retired{mode: monitored_partner, remitted_to: partner_wire, payoff_total_cents: 44376581, evidence_document_id}` and `partner_book.loan.paid_off` (33.3's payload, `prior_status: monitored`) are on the prior loan's log once each, `loans.status = paid_off` with `retired_reason = refinance_partner`, no ledger line, `payoff_*` or `release_tasks` row exists for it, readiness rows stop (33.3-T6 passes unchanged), and `src/runtime/borrower/flows/16-readiness.ts` contains no `UPDATE loans` (contract grep)."
+   },
+   {
+    "n": 9,
+    "text": "Given T8, then one `integration_messages` row exists for adapter `partner-book.notify` with idempotency key `retirement:<prior_loan_id>` whose payload names NL-100001, 2026-11-02, 44376581 and the wire reference and contains no new-loan number, rate or amount, `partner_retirement_notifications{kind: notified}` exists, `SM_REFI_PARTNER_CONFIRM_21.due_at = 2026-11-23`; given a 33.1 tape of 2026-11-09 carrying NL-100001 as paid, then `partner_book.retirement.confirmed{source: tape}` satisfies it; given instead a tape of 2026-11-30 still carrying it active, then `disputed` is written, the timer is `breached`, an `ops_analyst` escalation names the loan and the tape status, and `book.resolve{paid_off}` writes `resolved{source: ops_resolve}`."
+   },
+   {
+    "n": 10,
+    "text": "Given T1 and `rescission.exercised` before funding, then the closeout is `unwound`, the quote is superseded, `payoff_demands.status = cancelled`, every closeout timer is `cancelled`, no ledger set touched the prior loan and it still reads `active`; given instead T2 and an agent-actor call to reverse the settlement, then it is refused `ROLE_DENIED` and nothing is written, while an `officer`'s reversal inside the finality window emits `payoff.reversed`, reopens the loan to `active`, clears `refinanced_by_loan_id`, appends a superseding `prior_loan_retirements` row and returns the closeout to `settling`."
+   },
+   {
+    "n": 11,
+    "text": "Given a closeout at `settling` with no `loan.paid_in_full` on the prior loan, when `closeout.retire` is called by any actor, then it is refused `NO_SETTLEMENT` and no row or event is written; given a hosted call to any `closeout.*` tool carrying `upb_cents`, `total_cents` or `buckets`, then it is refused `NO_CLIENT_STATE`; and a contract test finds no `UPDATE loans SET status` in `src/` outside `src/infra/db/loans.ts` (the 35.1 projector)."
+   },
+   {
+    "n": 12,
+    "text": "Given a settlement statement payoff line of $562,024.39 against 16.2's exact $562,084.39 (short $60.00, beyond the $50 tolerance), then 16.2 opens its short-payoff path, the closeout is `held{money_mismatch}` and `waiting_human{officer}`, `SM_REFI_PRIOR_SETTLE_1BD` stays `armed` and breaches to the `officer` after one servicer business day, the agent's journal shows `command_refused{16.2 disposeVariance, ROLE_DENIED}`, and an `officer`'s `disposeVariance` lets the next sweep retire the loan."
+   },
+   {
+    "n": 13,
+    "text": "Given two closeouts waiting on the FAKE partner's statement with the port `unavailable` for three servicer business days, then each has one `SM_REFI_CLOSEOUT_STALLED_2BD` breach, one `ops_analyst` escalation naming `application_id`, `prior_loan_id`, `step = awaiting_schedule \u2192 quote` and `waiting_on = payoff_demand`, and the journal's `command_failed` entries count three before `held{attempts}`."
+   },
+   {
+    "n": 14,
+    "text": "Given the lifecycle journey on the hosted runtime through `loan.funded` on the refinance application with no test code calling 16.1, 16.2, 16.3 or 3.5, when only `POST /v1/sweep` runs twice, then the prior loan reads `paid_off` with a `payoff_settlements` row, a `prior_loan_retirements` row, `loans.refinanced_by_loan_id` = the new loan and `applications.loan_id` = the same row, the new loan is `active` with `origination_application_id` = the application and `loan_terms.pi_cents` = $3,219.83, and the journey fixture's `payoff()` phase asserts those rows instead of executing tools."
+   },
+   {
+    "n": 15,
+    "text": "Given the demo book with closeouts in every mode and step, when the daily pass runs at 06:45 ET, then one `refinance_closeout_daily_receipts` row exists for the day with counts equal to a direct query of `refinance_closeouts` (open, by mode, by step, retired today, releases open, partners unconfirmed), `refinance.closeout.daily.run_completed` satisfies and re-arms `SM_REFI_CLOSEOUT_BOARD_DAILY` on the global subject, and 35.8's Refinance board renders the receipt."
+   }
+  ],
+  "tables": [
+   "partner_retirement_notifications",
+   "prior_loan_retirements",
+   "refinance_closeout_daily_receipts",
+   "refinance_closeout_steps",
+   "refinance_closeouts"
+  ],
+  "timers": [
+   "SM_REFI_CLOSEOUT_BOARD_DAILY",
+   "SM_REFI_CLOSEOUT_STALLED_2BD",
+   "SM_REFI_ESCROW_CREDIT_0",
+   "SM_REFI_PARTNER_CONFIRM_21",
+   "SM_REFI_PRIOR_SETTLE_1BD"
+  ],
+  "notices": [],
+  "agent": "payoff-release",
+  "tools": [
+   "closeout.open",
+   "closeout.pass",
+   "closeout.quote",
+   "closeout.settle",
+   "closeout.escrow",
+   "closeout.lien_release",
+   "closeout.retire",
+   "closeout.notify_partner",
+   "closeout.confirm_partner",
+   "closeout.hold",
+   "closeout.resume",
+   "closeout.board",
+   "writeDecision"
+  ]
+ },
+ {
+  "process": "35.11",
+  "title": "Operations stewardship and hosted measurement: the ops steward over cycles, exceptions and the outbox, the daily ops report, and the audit's hosted and persisted columns",
+  "path": "sections/35-operations-runtime/35-11-operations-stewardship-and-hosted-measurement.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given a `cycle_registry` row for `statements` (35.3 rule 2's def) with `next_expected_by` two hours in the past and no `cycle_receipts` row for its period key, when the steward's pass runs, then one `ops_exceptions` row `{source_kind: cycle_registry, source_id: \"statements:<period_key>\", kind: missed_cycle, status: triaged}` exists, `ops.cycle.missed{consecutive_misses: 1}` is logged, `SM_OPS_CYCLE_MISSED_2H` is armed on it, exactly one open `ops_analyst` escalation names the cycle and its runbook, and a second pass in the same minute adds no row, event or escalation."
+   },
+   {
+    "n": 2,
+    "text": "Given the exception of T1, when 35.3 emits `cycle.run.completed` for that cycle and period, then `ops.cycle.recovered` is logged, the exception is `resolved` with `resolved_at`, `SM_OPS_CYCLE_MISSED_2H` is `satisfied`, and the `ops_analyst` escalation is still open (the steward completed nothing)."
+   },
+   {
+    "n": 3,
+    "text": "Given the same cycle misses two consecutive period keys, when the steward detects the second, then `ops.cycle.missed{consecutive_misses: 2}` is logged and the breach action of `SM_OPS_CYCLE_MISSED_2H` opens a `sev1` escalation to `compliance` at its due instant (the timer-probe run of the override), while the first miss's breach opened `sev2` to `ops_analyst`."
+   },
+   {
+    "n": 4,
+    "text": "Given an adapter `fnma-lsdu` with four dead outcomes in the last 15 minutes and no successful send in the last hour, when `ops.exceptions.classify` runs on one of its dead messages, then the exception is `adapter_down` with confidence `0.95`, `signals = {D15: 4, S60: 0, A: 5, C: \"timeout\"}` is stored on the triage row, `ops.exception.classified` and `ops.exception.triaged` are logged, `SM_OPS_EXCEPTION_TRIAGE_1BD` is `satisfied` and `SM_OPS_ADAPTER_DOWN_1H` is armed on `classified_at`; no requeue happened."
+   },
+   {
+    "n": 5,
+    "text": "Given the adapter of T4 sends one message successfully 20 minutes later, when the steward's pass runs, then the dead message is requeued once with `outbox.requeued{by: \"agent:qc-audit\", auto: true, reason: \"adapter_recovered\"}`, `ops_exceptions.auto_requeues = 1`, the exception is `resolved` when `integration.message.sent` follows and `SM_OPS_ADAPTER_DOWN_1H` is `satisfied`; given instead no success within an hour, then the clock breaches with a `sev2` `ops_analyst` escalation naming the adapter and `D15`."
+   },
+   {
+    "n": 6,
+    "text": "Given a dead message with `failure_kind = http_5xx` and three successful sends of its adapter in the last hour, when classified, then it is `transient` with confidence `0.90` and is requeued automatically once; given it dies again, then the second `integration.message.dead` adds a triage row `escalated`, no second automatic requeue happens (`AUTO_REQUEUE_CAP_1`), and the exception is `assigned` to `ops_analyst`; given a hand requeue by an `ops_analyst` through 34.4, then 34.4 counts it as `requeue_no: 1` \u2014 the automatic one was not a hand requeue."
+   },
+   {
+    "n": 7,
+    "text": "Given a dead message with `failure_kind = validation` and `attempts = 5`, when classified, then it is `poison` with confidence `0.95`, `ops.exceptions.requeue{op: auto}` is refused `CONFIDENCE_FLOOR_0_85`-or-kind (the refusal names `poison`), a `requeue_proposed` triage row exists and the exception is `assigned` to `ops_analyst` with `ops.exception.assigned` logged; given an unclassifiable error, then `needs_person` with confidence `0.50` and the same assignment."
+   },
+   {
+    "n": 8,
+    "text": "Given open `sev1`\u2013`sev4` escalations, breached timers and dead units on the fixture, when the steward's pass runs ten times, then every escalation that was open is still open, every breached timer is still `breached` and no `escalation.completed` event carries an agent actor (contract test: `src/domain/operations-runtime/stewardship.ts` contains no call to any escalation completion or timer write; the guard `NEVER_COMPLETES_A_BREACH` refuses an input naming `escalation_id` with `complete`)."
+   },
+   {
+    "n": 9,
+    "text": "Given the day's state on the fixture, when `ops.report` runs twice with nothing changed, then one `ops_daily_reports` row exists for `(nonprod, <as_of_date>)` with every column of the Data model populated (counts and codes only; no payload, name or e-mail in the JSON), its `sha256` equals the sha256 of the canonical JSON, `ops.report.run_completed{changed: true}` then `{changed: false}` are logged, and `SM_OPS_REPORT_DAILY` is `satisfied` and re-armed for the next day; given one more dead message, then a third run appends a newer row with a different hash."
+   },
+   {
+    "n": 10,
+    "text": "Given 61 overrides over 340 decisions on day 1 and 52 over 310 on day 2 for a T1 agent, when the two days' reports run, then `ai_monitoring_metrics` holds `override_rate = 0.1794` and `0.1677` for those days, `recordOverrideRate` was called with each, the agent is AI-off after day 2 with a reason naming `17.9%, 16.8%`, and `ai.kill_switch.tripped{metric: override_rate}` is logged; given day 1 were 48 over 400 (`0.1200`), then nothing trips; given a day with zero decisions, then `decision_volume = 0`, a null rate, and the null day does not count as out of band."
+   },
+   {
+    "n": 11,
+    "text": "Given three FAKE approvals (`actor_id` starting `FAKE:`) on the day, when the report runs under `ENVIRONMENT = nonprod`, then `fake_approvals = 3`, `fake_roles` lists the roles and no escalation exists; when the same day is reported under `ENVIRONMENT = production`, then `ops.fake_in_production{count: 3}` is logged, one exception `{kind: fake_in_production}` exists and exactly one `sev1` escalation to `compliance` is open, and a second report run that day opens no second one."
+   },
+   {
+    "n": 12,
+    "text": "Given any tool of this process, when its input carries a money-shaped key (`amount_cents`, `waive`, `entry_set`, `refund`) or an escalation completion, then the command is refused `NO_MONEY_FIELD` or `NEVER_COMPLETES_A_BREACH` before any read, nothing is written, and the ledger and money columns before and after every stewardship route are identical in a contract test."
+   },
+   {
+    "n": 13,
+    "text": "Given the registry, when `ops.runbook.read{timer_code: \"SM_OPS_ADAPTER_DOWN_1H\"}` runs, then the reply carries the code, kind, trigger, anchor, offset, satisfied event, the breach text verbatim from the registry row, `owner_role: ops_analyst`, `severity: 2`, `process: 35.11` and this file's path; `{cycle_code}` returns the `cycle_registry` row with `expected_by_rule`; an unknown code is refused `UNKNOWN_CODE`."
+   },
+   {
+    "n": 14,
+    "text": "Given `PROBE_DATABASE_URL` reachable, when `audit.hosted.run{target: probe}` runs, then `supermortgage_probe` was dropped, created and migrated to the newest file under `db/migrations`, every `ALL_TOOLS` pair was posted with `{}` over HTTP as its own agent, no result is `errored`, the only `not_wired` results are tools of the service keys `boarding`, `orig-boarding` and `tolerance-21-5`, a `hosted_probe_runs` row and `docs/audit/hosted.json` carry `migration_head` equal to that newest file and one result per pair, and `audit.hosted.run_completed` is logged with the four counts summing to `tools_total`."
+   },
+   {
+    "n": 15,
+    "text": "Given a tool whose bus guard refuses the empty input (a typed `code`), when the probe classifies it `refused_typed`, then the probe database's row counts of `loan_events`, `entity_records`, `ledger_lines`, `timers`, `escalations` and `agent_decisions` are identical before and after that call (the unit of work rolled back); given a tool that answers 500, then it is `errored` and the run's `errored` count is above zero and T14 fails by name."
+   },
+   {
+    "n": 16,
+    "text": "Given `docs/audit/hosted.json` whose `migration_head` is `0136_du_preflight_results.sql` while the newest file is later, when `tools/audit.py --check` runs, then the brief prints `hosted: not measured (stale: 0136_du_preflight_results.sql vs <newest>)`, no exec total is compared and the exit code is 0; given a current `hosted.json` whose `hosted` total is one below `exec_totals.hosted.built`, then `--check` exits 1 naming `hosted`; given a process in `done` but not in `exec_done` with `hosted` below its `tools`, then `--check` exits 0; given a process in `exec_done` that drops below `hosted = tools` or `persisted = tables`, then `--check` exits 1 naming the process."
+   },
+   {
+    "n": 17,
+    "text": "Given `supermortgage_test` migrated and the journey files run under the journey lock, when `audit.persisted.count` runs, then `persisted_measurements` has one row per manifest table with `post_migrate_count`, `after_journey_count` and `delta`, `notice_templates` and `ai_systems` are `seeded_only` (delta 0, not counted), `loans`, `loan_events`, `payments`, `ledger_lines`, `timers`, `notices` and `applications` are `persisted`, a manifest table absent from the database is `missing_ddl`, `docs/audit/persisted.json` carries the run's `migration_head`, and `audit.persisted.run_completed{tables_with_rows}` equals the count of `persisted` verdicts."
+   },
+   {
+    "n": 18,
+    "text": "Given the \u00a735 journeys have run (35.5's daily cashiering year, 35.6's closing and funding, 35.9's default timeline, 35.10's refinance close) and the two lifecycle tests, when the persisted count runs, then `sections_complete` includes 2, 7 and 16 (every table those journeys declare as `expected` is `persisted` and `projection_gaps` for each is 0), every `expected` table with verdict `untouched` is listed in the run's output with the journey step that should have written it, and `docs/audit/COVERAGE.md` shows `hosted` and `persisted` columns on every process row and two exec totals lines after the six unit totals."
+   }
+  ],
+  "tables": [
+   "exception_triages",
+   "hosted_probe_runs",
+   "ops_daily_reports",
+   "ops_exceptions",
+   "persisted_measurement_runs",
+   "persisted_measurements"
+  ],
+  "timers": [
+   "SM_HOSTED_PROBE_WEEKLY",
+   "SM_OPS_ADAPTER_DOWN_1H",
+   "SM_OPS_CYCLE_MISSED_2H",
+   "SM_OPS_EXCEPTION_TRIAGE_1BD",
+   "SM_OPS_REPORT_DAILY"
+  ],
+  "notices": [],
+  "agent": "qc-audit",
+  "tools": [
+   "ops.cycles.watch",
+   "ops.exceptions.list",
+   "ops.exceptions.classify",
+   "ops.exceptions.requeue",
+   "ops.exceptions.assign",
+   "ops.exceptions.resolve",
+   "ops.report",
+   "ops.runbook.read",
+   "audit.hosted.run",
+   "audit.hosted.report",
+   "audit.persisted.count",
+   "writeDecision"
+  ]
+ },
+ {
+  "process": "35.12",
+  "title": "Production posture: a production environment apart from nonprod, private networking, a person behind every credential, secrets and data classes, `INTEGRATIONS` as a real switch per vendor, backups and the restore drill, the go-live checklist, the four-week parallel run, and no borrower data in nonprod",
+  "path": "sections/35-operations-runtime/35-12-production-posture.md",
+  "tids": [
+   {
+    "n": 1,
+    "text": "Given `INTEGRATIONS=real` and `ENVIRONMENT=production` with `integration_switches` rows `lockbox_bai2 = real(live)` and none for `eoscar`, when the runtime loads its config and constructs its ports, then `loadConfig` accepts `real`, the lockbox port is the adapter over the row's `secret_ref`, an 8.1 furnishing tool answers the typed refusal `VENDOR_OFF{eoscar}` before any row is written (events, ledger and `integration_messages` unchanged in the contract test), and no port of vendor `FAKE` exists; given `INTEGRATIONS=fake` with `ENVIRONMENT=production`, then the process refuses to start with `NO_FAKE_IN_PRODUCTION`."
+   },
+   {
+    "n": 2,
+    "text": "Given a `ciso` session requests `integrations.switch{environment: production, vendor: print_mail, mode: real, endpoint_class: live, secret_ref, egress_rule}` and a `compliance` session confirms the same `request_id` 4 minutes later, then one `integration_switches` row exists with both ids and `effective_at` = the confirmation, `integration.switched{from: off, to: real}` is logged, `integrations.status` shows `print_mail: real/live`, and a request confirmed by the requester is refused `TWO_PERSON_SWITCH`; given `environment: nonprod` and `vendor: ach_nacha` with `endpoint_class: live`, then `MONEY_VENDOR_SANDBOX_ONLY` and no row."
+   },
+   {
+    "n": 3,
+    "text": "Given the deploy workflow's service principal posts a manifest for `staging` with image digest `sha256:abc\u2026`, `migration_head 0137`, the terraform, secrets (names and version dates only) and runtime facts, then an `environment_manifests` row exists with an `env_hash`, a hashed `documents` row, `posture.recorded` is logged, a `posture.check` run follows within the same request, and a second identical manifest produces the same `env_hash`, a new check run and no new finding; a manifest whose `secrets` carries a value-shaped field is refused `NO_PII_IN_EVIDENCE` before any write."
+   },
+   {
+    "n": 4,
+    "text": "Given a `production` manifest shaped like nonprod at HEAD (`ipv4_enabled = true` per sql.tf:39, `availability_type = ZONAL` per sql.tf:18, `API_TOKEN` among the env names per server.ts:46-48, `integrations = fake` per run.tf:10, `roles/editor` on the deployer per bootstrap.sh:121, `waf_preview = true` per lb.tf:45), when `posture.check` runs, then exactly `PST-01`, `PST-02`, `PST-05`, `PST-07`, `PST-08` and `PST-10` fail among the controls those facts decide, `PST-03` and `PST-04` (SQL key, 90-day rotation) pass, six `posture_findings{opened}` rows and six `posture.drift.detected` events exist with sev 1 on `PST-01`, `PST-05`, `PST-10` and sev 2 on the others, six `SM_PROD_POSTURE_DRIFT_1BD` clocks are armed and six `ciso` escalations opened; given the same facts as a `nonprod` manifest, then only `PST-03`, `PST-04`, `PST-15` and `PST-17` are required and no finding opens."
+   },
+   {
+    "n": 5,
+    "text": "Given a production posture run completed for 2026-11-16, then `SM_PROD_POSTURE_DAILY` is armed on the global subject for 2026-11-17 05:30 America/New_York; when no run completes and the sweep passes 05:31 on the 17th, then the clock breaches sev 2 to `ciso` once; when the 17th's run completes, then it is satisfied and re-armed for the 18th; given the same day's run twice, then one clock and one receipt."
+   },
+   {
+    "n": 6,
+    "text": "Given an open `PST-02` finding, when a later production manifest reports `availability_type = REGIONAL` and its check passes, then `posture_findings{resolved, cause: manifest}` and `posture.drift.resolved` exist and the clock is satisfied; given an open `PST-08` finding and a 19.2 `control_exceptions` row approved by a `ciso` session with `expires_at` 6 months out, when `posture.drift.resolve{cause: exception}` runs, then the finding is `excepted`, the clock satisfied, and when the clock is advanced past `expires_at` with the check still failing, then a new finding opens; given `posture.drift.resolve` with no manifest and no exception, then `FINDING_CLOSES_BY_EVIDENCE` and no row."
+   },
+   {
+    "n": 7,
+    "text": "Given worked example B (backup 2026-11-16T07:00:00Z, target 13:42:00Z, newest event 13:41:48Z, started 14:00:00Z, completed 15:37:20Z, every table count equal, chains contiguous, sets balanced), when `backup.drill` records it with a distinct `witnessed_by`, then `restore_drills` has `rpo_observed_s = 12`, `rto_observed_s = 5840`, `result = passed`, `backup.restore_drill.passed` and 19.2's `backup_restore_test.passed` (aggregate `control:CTL-SEC-16`) are logged, a `control_test_results` row for the mapped 19.2 control exists, `SM_PROD_RESTORE_DRILL_90D` is satisfied and re-armed for 2027-02-14, and `NYDFS_500_16D_BACKUP_RESTORE_TEST_365` is satisfied by the same event; given one table whose clone count is short by one row, then `result = failed`, `backup.restore_drill.failed`, sev 1 to `ciso`, and neither clock is satisfied; given `witnessed_by = performed_by`, then refused."
+   },
+   {
+    "n": 8,
+    "text": "Given a nonprod database seeded by `seed-demo` (every `parties` and `transfer_batches` row `synthetic = true`) plus one `parties` row inserted with `synthetic = false`, when the daily `data.scan{kind: nonprod_real_data}` runs, then `data_scans.findings = [{table: parties, column: synthetic, rule: synthetic_marker, count: 1}]` and nothing else (no id, no name), `real_data_found = true`, `synthetic_coverage_pct` is the fixture's rows over rows + 1 to three decimals, `posture.real_data.detected` is logged, sev 1 to `compliance`, `SM_NONPROD_REAL_DATA_PURGE_1BD` is armed; when the database is rebuilt, a new manifest recorded and a clean scan carrying the `scan_id` runs, then `posture.real_data.purged` satisfies the clock and the finding is closed."
+   },
+   {
+    "n": 9,
+    "text": "Given `ENVIRONMENT=nonprod`, when `POST /v1/transfers/batches` is called with a tape lacking `X-Supermortgage-Synthetic: true`, then 409 `REAL_DATA_REFUSED_IN_NONPROD` and no row of any table is written; with the header, then the batch boards and every `parties` and `transfer_batches` row it wrote has `synthetic = true`; given `ENVIRONMENT=production` and the header, then 409 `SYNTHETIC_REFUSED_IN_PRODUCTION`; given production and a `parties` row with `synthetic = true`, when the `production_synthetic` scan runs, then `PST-11` fails and a sev 1 finding opens."
+   },
+   {
+    "n": 10,
+    "text": "Given an `officer` opens the parallel run for production with `incumbent_servicer = \"Incumbent\"` on `opened_on = 2026-11-02` over the three fixture loans, then `parallel_runs{opened}` has `planned_end_on = 2026-11-30` and `loan_count = 3`, `parallel_run.opened` is logged, `SM_PROD_GO_LIVE_ATTEST_GATE` is armed for 2026-11-30, and `go_live.attest` on 2026-11-29 is refused `GO_LIVE_GATE{not_before: 2026-11-30}`; given an `ops_analyst` opening a run, then `ROLE_REQUIRED{officer}`."
+   },
+   {
+    "n": 11,
+    "text": "Given worked example A's incumbent file for 2026-11-16 (loan 1 all fields equal with UPB **$248,310.55**; loan 2 late charges 0.00 against our 5.000% \u00d7 **$1,250.00** = **$62.50**; loan 3 escrow **$3,412.92** against our **$3,417.92**), when `parallel_run.reconcile` runs, then the day row has `comparisons = 24`, `matched = 22`, `mismatched = 2`, `mismatch_cents = 6750n` (**$67.50**), two `parallel_run_diffs{opened}` rows exist (`late_charges_accrued_cents` delta `6250n`; `escrow_balance_cents` delta `500n` = **$5.00**), `parallel_run.day.reconciled` carries the same figures, the daily report document is hashed, and the loans' ledger and money columns are byte-identical before and after."
+   },
+   {
+    "n": 12,
+    "text": "Given the run reconciled 2026-11-16, then `SM_PROD_PARALLEL_RUN_DAILY` is armed on the global subject for 2026-11-17 21:00 America/New_York; when the sweep passes 21:01 on the 17th with no reconciliation, then sev 2 to `officer`, and the run's clean-week count reads 0 from that day; when the 17th's file arrives at 22:30 and is reconciled, then the clock is satisfied for the 17th and re-armed for the 18th, and a second file for the 17th is refused `DAY_ALREADY_RECONCILED`."
+   },
+   {
+    "n": 13,
+    "text": "Given the two open diffs of T11, when an `ops_analyst` dispositions one, then `ROLE_REQUIRED{officer}`; when an `officer` dispositions loan 2 `timing` and loan 3 `theirs_right` with reasons, then two `parallel_run_diffs{dispositioned}` rows, two `parallel_run.diff.dispositioned` events and two decision records with the reasons exist; when the agent proposes `ours_right` for loan 3 with confidence 0.62, then the decision record holds the proposal and no diff row changes; and no ledger line, `fees` row or `loans` column changed in any of these calls."
+   },
+   {
+    "n": 14,
+    "text": "Given a run opened 2026-11-02 with every day reconciled, the last seven days (2026-11-24 \u2026 2026-11-30) at `mismatched = 0` on the six money fields and every diff dispositioned, when the officer closes it on 2026-11-30, then `parallel_runs{closed, outcome: passed, days: 28}` and `parallel_run.closed` exist and `GL-06` reads satisfied; given the same on 2026-11-29, then `PARALLEL_RUN_TOO_SHORT{days: 27}`; given one open diff, then `PARALLEL_RUN_OPEN_DIFFS{count: 1}`; given a money mismatch on 2026-11-27, then `PARALLEL_RUN_DIRTY_WEEK{days_clean: 3}`; given `abandoned` with a reason, then the gate is no longer satisfiable until a new run opens."
+   },
+   {
+    "n": 15,
+    "text": "Given production rows satisfying every item but `GL-05` (the `eoscar` switch is `off`), when `go_live.check` runs, then twelve items are answered with an `evidence_ref` each (`GL-01` the manifest id, `GL-02` the run id, `GL-03` the drill id, `GL-04` the 35.7 board scan id, `GL-06` the run id, `GL-07` the counsel document id, `GL-08` the thirty scan ids, `GL-09` the config rows, `GL-10` the two 35.4 attestations, `GL-11` the seven `ops_daily_reports` ids, `GL-12` the confirmation documents), `GL-05` is `open` naming `eoscar`, and `go_live.attest` is refused `GO_LIVE_ITEM_OPEN{GL-05}`; when `compliance` waives `GL-08` with a reason, then `waived` with the person; when anyone waives `GL-05`, then refused."
+   },
+   {
+    "n": 16,
+    "text": "Given every item satisfied or waived on 2026-11-30, when a `ciso` requests `go_live.attest` and a `compliance` session confirms within 10 minutes, then `go_live_checklists{GL-00, attested}` names both people and the `manifest_id`, `go_live.attested` is logged, `SM_PROD_GO_LIVE_ATTEST_GATE` is satisfied, and thereafter `integrations.switch{production, any vendor, mode: fake}` is refused `NO_FAKE_IN_PRODUCTION`; given the requester confirms, then `TWO_PERSON_GO_LIVE`; given a confirmation at 11 minutes, then the request has expired and nothing is attested."
+   },
+   {
+    "n": 17,
+    "text": "Given a production manifest whose `secrets` lists `supermortgage-tin-cipher-key` with `placeholder = true` and `supermortgage-api-token` with a version created 91 days ago, when `posture.check` runs, then `PST-09` fails sev 1 naming the secret and `PST-14` fails sev 2 with `observed.age_days = 91`, and the runtime under the same env refuses to start per src/infra/pii/tin.ts:17; given every secret current and no placeholder, then both pass."
+   },
+   {
+    "n": 18,
+    "text": "Given a production environment with three active `staff_users`, one of which has an active `staff_credentials` row of kind `password` and no `oidc_identities` row, when `posture.check` runs, then `PST-06` fails sev 1 with `observed = {password_credentials: 1, without_oidc: 1}` and no e-mail or name in the check row, the finding or the escalation; when that account's password credential is disabled and an OIDC identity bound (34.1's commands), then the next run passes and the finding resolves by manifest."
+   },
+   {
+    "n": 19,
+    "text": "Given any 35.12 route or cycle in a contract test over the fixture book, then the ledger, every `*_cents` column of `loans`, `fees`, `escrow_accounts` and `loan_installments`, and every `notices` row are identical before and after; every event and row this process wrote matches no e-mail, no name field and no 9-digit TIN pattern; every action route recorded a `staff_actions` row and an `agent_decisions` row naming the person and, where the rule requires, the confirmer."
+   }
+  ],
+  "tables": [
+   "data_scans",
+   "environment_manifests",
+   "go_live_checklists",
+   "integration_switches",
+   "parallel_run_diffs",
+   "parallel_runs",
+   "parties",
+   "posture_checks",
+   "posture_controls",
+   "posture_findings",
+   "restore_drills",
+   "transfer_batches"
+  ],
+  "timers": [
+   "SM_NONPROD_REAL_DATA_PURGE_1BD",
+   "SM_PROD_GO_LIVE_ATTEST_GATE",
+   "SM_PROD_PARALLEL_RUN_DAILY",
+   "SM_PROD_POSTURE_DAILY",
+   "SM_PROD_POSTURE_DRIFT_1BD",
+   "SM_PROD_RESTORE_DRILL_90D"
+  ],
+  "notices": [],
+  "agent": "compliance-sentinel",
+  "tools": [
+   "posture.record",
+   "posture.check",
+   "posture.drift.resolve",
+   "integrations.switch",
+   "integrations.status",
+   "backup.drill",
+   "data.scan",
+   "parallel_run.open",
+   "parallel_run.reconcile",
+   "parallel_run.disposition",
+   "parallel_run.close",
+   "go_live.check",
+   "go_live.attest",
+   "writeDecision"
+  ]
  }
 ]

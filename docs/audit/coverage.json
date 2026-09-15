@@ -1,33 +1,33 @@
 {
- "brief": "spec units built 8002/8002 (100.0%): tids 2237/2237, tables 758/758, timers 2035/2035, notices 308/308, tools 1431/1431, figures 1233/1233; processes at 100%: 192/192",
+ "brief": "spec units built 8012/8717 (91.9%): tids 2237/2438, tables 765/848, timers 2038/2093, notices 308/308, tools 1431/1572, figures 1233/1458; processes at 100%: 192/204",
  "totals": {
   "tids": {
-   "spec": 2237,
+   "spec": 2438,
    "built": 2237
   },
   "tables": {
-   "spec": 758,
-   "built": 758
+   "spec": 848,
+   "built": 765
   },
   "timers": {
-   "spec": 2035,
-   "built": 2035
+   "spec": 2093,
+   "built": 2038
   },
   "notices": {
    "spec": 308,
    "built": 308
   },
   "tools": {
-   "spec": 1431,
+   "spec": 1572,
    "built": 1431
   },
   "figures": {
-   "spec": 1233,
+   "spec": 1458,
    "built": 1233
   },
   "units": {
-   "spec": 8002,
-   "built": 8002
+   "spec": 8717,
+   "built": 8012
   }
  },
  "sections": {
@@ -234,6 +234,12 @@
    "built": 57,
    "processes": 4,
    "done": 4
+  },
+  "35": {
+   "spec": 715,
+   "built": 10,
+   "processes": 12,
+   "done": 0
   }
  },
  "done": [
@@ -8302,6 +8308,1262 @@
     "built": 12
    },
    "pct": 100.0
+  },
+  {
+   "process": "35.1",
+   "title": "Persistence seam and the typed record",
+   "tids": {
+    "spec": 15,
+    "built": 0,
+    "todo": 15,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15
+    ]
+   },
+   "tables": {
+    "spec": 9,
+    "built": 0,
+    "missing": [
+     "entity_keys",
+     "entity_latest_scoped",
+     "entity_projections",
+     "outbox_dispatches",
+     "projection_gaps",
+     "projection_mismatches",
+     "projection_runs",
+     "service_snapshots",
+     "sweep_runs"
+    ]
+   },
+   "timers": {
+    "spec": 3,
+    "built": 0,
+    "armable": 3,
+    "missing": [
+     "SM_OUTBOX_DEAD_LETTER_REVIEW_1BD",
+     "SM_PROJECTION_LAG_DAILY",
+     "SM_SWEEP_HEARTBEAT_DAILY"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 8,
+    "built": 0,
+    "missing": [
+     "record.project",
+     "record.replay",
+     "record.gaps",
+     "record.verify",
+     "record.snapshot",
+     "record.lease",
+     "outbox.dispatch",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 7,
+    "built": 0,
+    "missing": [
+     "$1,345.02",
+     "$1,612.34",
+     "$2,045.12",
+     "$248,043.23",
+     "$248,310.55",
+     "$267.32",
+     "$432.78"
+    ]
+   },
+   "units": {
+    "spec": 42,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "35.2",
+   "title": "Documents and artifacts: the object store, the PDF writer, stored-byte integrity, legal holds, e-sign envelopes, the borrower viewer and print/mail manifests",
+   "tids": {
+    "spec": 18,
+    "built": 0,
+    "todo": 18,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18
+    ]
+   },
+   "tables": {
+    "spec": 12,
+    "built": 2,
+    "missing": [
+     "document_access_log",
+     "document_blobs",
+     "document_holds",
+     "document_integrity_findings",
+     "document_integrity_runs",
+     "esign_envelope_documents",
+     "esign_envelopes",
+     "esign_signature_events",
+     "mail_manifest_pieces",
+     "mail_manifests"
+    ]
+   },
+   "timers": {
+    "spec": 4,
+    "built": 0,
+    "armable": 4,
+    "missing": [
+     "SM_DOC_INTEGRITY_DAILY",
+     "SM_DOC_WORM_DRAIN_1D",
+     "SM_ESIGN_ENVELOPE_EXPIRY_30",
+     "SM_MAIL_MANIFEST_2BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 13,
+    "built": 0,
+    "missing": [
+     "documents.render",
+     "documents.store",
+     "documents.open",
+     "documents.verify",
+     "documents.hold",
+     "documents.dispose",
+     "esign.envelope.create",
+     "esign.envelope.send",
+     "esign.envelope.sign",
+     "esign.envelope.void",
+     "mail.batch",
+     "mail.manifest.ingest",
+     "mail.fallback"
+    ]
+   },
+   "figures": {
+    "spec": 11,
+    "built": 0,
+    "missing": [
+     "$1,234.56",
+     "$1,912.65",
+     "$1,914.67",
+     "$1,916.67",
+     "$116.71",
+     "$2,334.29",
+     "$2,946.79",
+     "$400,000.00",
+     "$5,743.99",
+     "$6,010.29",
+     "$612.50"
+    ]
+   },
+   "units": {
+    "spec": 58,
+    "built": 2
+   },
+   "pct": 3.4
+  },
+  {
+   "process": "35.3",
+   "title": "Cycles, jobs and receipts: the planner, the jobs table, `cycles.run_unit` on the bus and the registry of every scheduled cycle",
+   "tids": {
+    "spec": 16,
+    "built": 0,
+    "todo": 16,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16
+    ]
+   },
+   "tables": {
+    "spec": 5,
+    "built": 0,
+    "missing": [
+     "cycle_receipts",
+     "cycle_registry",
+     "cycle_runs",
+     "job_events",
+     "jobs"
+    ]
+   },
+   "timers": {
+    "spec": 3,
+    "built": 0,
+    "armable": 3,
+    "missing": [
+     "SM_CYCLE_PLANNER_DAILY",
+     "SM_CYCLE_RUN_STALLED_1D",
+     "SM_JOB_DEAD_2H"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 9,
+    "built": 0,
+    "missing": [
+     "cycles.registry",
+     "cycles.plan",
+     "cycles.run_unit",
+     "cycles.receipt",
+     "cycles.retry",
+     "cycles.escalate",
+     "jobs.list",
+     "jobs.requeue",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 7,
+    "built": 0,
+    "missing": [
+     "$1,345.02",
+     "$1,612.34",
+     "$2,125.74",
+     "$248,310.55",
+     "$267.32",
+     "$432.78",
+     "$80.62"
+    ]
+   },
+   "units": {
+    "spec": 40,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "35.4",
+   "title": "Month-end and year-end close: close periods, the dependency-ordered chain, the balance attestation, reopen, and the tax-year close that drives 1098 and 1099",
+   "tids": {
+    "spec": 15,
+    "built": 0,
+    "todo": 15,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15
+    ]
+   },
+   "tables": {
+    "spec": 6,
+    "built": 0,
+    "missing": [
+     "close_attestations",
+     "close_period_events",
+     "close_period_steps",
+     "close_periods",
+     "close_reopens",
+     "tax_year_closes"
+    ]
+   },
+   "timers": {
+    "spec": 4,
+    "built": 0,
+    "armable": 4,
+    "missing": [
+     "SM_CLOSE_ATTEST_BD5",
+     "SM_CLOSE_PERIOD_OPEN_BD1",
+     "SM_CLOSE_STEP_STALLED_2BD",
+     "SM_TAX_YEAR_CLOSE_3BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 11,
+    "built": 0,
+    "missing": [
+     "close.open",
+     "close.plan",
+     "close.step.start",
+     "close.step.complete",
+     "close.step.skip",
+     "close.board",
+     "close.attest",
+     "close.review",
+     "close.reopen",
+     "close.tax_year",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 19,
+    "built": 0,
+    "missing": [
+     "$0.00",
+     "$1,233,000.00",
+     "$1,250.00",
+     "$1,253,050.55",
+     "$1,254,300.55",
+     "$1,265,500.55",
+     "$1,266,750.55",
+     "$10.00",
+     "$12,450.00",
+     "$22,580.00",
+     "$23,412.55",
+     "$3,210.15",
+     "$33,695.07",
+     "$412.40",
+     "$45,000.00",
+     "$6,870.40",
+     "$600.00",
+     "$8,120.40",
+     "$9,870.12"
+    ]
+   },
+   "units": {
+    "spec": 55,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "35.5",
+   "title": "The installment schedule and the daily cashiering cycle: `loan_installments` at fund and at transfer boarding, the whole-book 2.1/2.7/2.3 sweep, lockbox ingest, ACH origination and NACHA returns as cycles, and the per-loan jurisdiction, time-zone and servicer-identity configuration",
+   "tids": {
+    "spec": 16,
+    "built": 0,
+    "todo": 16,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16
+    ]
+   },
+   "tables": {
+    "spec": 8,
+    "built": 1,
+    "missing": [
+     "ach_return_files",
+     "cashiering_unit_runs",
+     "installment_schedule_runs",
+     "loan_servicing_configs",
+     "lockbox_batches",
+     "lockbox_items",
+     "servicer_profiles"
+    ]
+   },
+   "timers": {
+    "spec": 8,
+    "built": 1,
+    "armable": 8,
+    "missing": [
+     "SM_ACH_FILE_BUILD_1BD",
+     "SM_ACH_RETURN_ACTIONED_1BD",
+     "SM_CASHIERING_DAILY_RECEIPT_1D",
+     "SM_INSTALLMENT_REPROJECT_1BD",
+     "SM_INSTALLMENT_SCHEDULE_AT_BOARD_0",
+     "SM_LOAN_SERVICING_CONFIG_AT_BOARD_0",
+     "SM_LOCKBOX_BATCH_POSTED_1BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 12,
+    "built": 0,
+    "missing": [
+     "installments.write",
+     "installments.reproject",
+     "installments.read",
+     "cashiering.run_unit",
+     "lockbox.ingest",
+     "lockbox.item.resolve",
+     "ach.file.build",
+     "ach.returns.ingest",
+     "ach.return.action",
+     "servicing_config.write",
+     "servicer_profile.write",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 53,
+    "built": 0,
+    "missing": [
+     "$1,351.71",
+     "$1,500.00",
+     "$1,517.11",
+     "$1,519.15",
+     "$1,580.17",
+     "$1,890.67",
+     "$1,896.20",
+     "$1,900.91",
+     "$1,971.20",
+     "$1.00",
+     "$10.24",
+     "$100.00",
+     "$17.27",
+     "$2,192.57",
+     "$2,292.57",
+     "$2,308.50",
+     "$2,334.29",
+     "$2,476.44",
+     "$2,855.56",
+     "$2,858.33",
+     "$2,946.79",
+     "$228.46",
+     "$249,218.31",
+     "$249,546.77",
+     "$249,774.00",
+     "$25.00",
+     "$279,702.10",
+     "$280,081.19",
+     "$280,458.24",
+     "$3,088.94",
+     "$3,384.35",
+     "$3,401.62",
+     "$3,402.62",
+     "$300,000.00",
+     "$370,543.62",
+     "$371,048.86",
+     "$377.05",
+     "$379.09",
+     "$4.71",
+     "$400,000.00",
+     "$412.30",
+     "$505.24",
+     "$544.29",
+     "$547.06",
+     "$558,908.65",
+     "$559,455.71",
+     "$560,000.00",
+     "$6,000.07",
+     "$6,001.07",
+     "$612.40",
+     "$612.50",
+     "$664,942.20",
+     "$79.01"
+    ]
+   },
+   "units": {
+    "spec": 97,
+    "built": 2
+   },
+   "pct": 2.1
+  },
+  {
+   "process": "35.6",
+   "title": "Closing, funding and delivery orchestration: the state machine from clear-to-close through the CD, consummation, funding, the hand-off from the record, delivery, purchase-advice reconciliation and the warehouse paydown",
+   "tids": {
+    "spec": 19,
+    "built": 0,
+    "todo": 19,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18,
+     19
+    ]
+   },
+   "tables": {
+    "spec": 5,
+    "built": 0,
+    "missing": [
+     "closing_orchestration_steps",
+     "closing_orchestrations",
+     "funding_snapshots",
+     "orchestration_daily_receipts",
+     "purchase_reconciliations"
+    ]
+   },
+   "timers": {
+    "spec": 5,
+    "built": 2,
+    "armable": 5,
+    "missing": [
+     "SM_ORCH_OPEN_BOOK_DAILY",
+     "SM_ORCH_PURCHASE_RECON_1BD",
+     "SM_ORCH_STEP_STALLED_2BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 11,
+    "built": 0,
+    "missing": [
+     "orchestration.open",
+     "orchestration.pass",
+     "orchestration.step",
+     "orchestration.snapshot",
+     "orchestration.fund",
+     "orchestration.reconcile",
+     "orchestration.hold",
+     "orchestration.release",
+     "orchestration.unwind",
+     "orchestration.board",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 40,
+    "built": 0,
+    "missing": [
+     "$0.00",
+     "$1,067.72",
+     "$1,096.67",
+     "$1,240.00",
+     "$1,375.00",
+     "$1,415.00",
+     "$1,665.00",
+     "$1,785.43",
+     "$10,052.69",
+     "$2,062.50",
+     "$2,774.00",
+     "$25.00",
+     "$3,402.62",
+     "$3,485.00",
+     "$4,090.12",
+     "$403,760.00",
+     "$404,852.72",
+     "$410,339.52",
+     "$412,000.00",
+     "$416,120.00",
+     "$416,190.10",
+     "$515.00",
+     "$548,800.00",
+     "$549,550.64",
+     "$556,852.07",
+     "$557,249.57",
+     "$560,000.00",
+     "$564,503.33",
+     "$566,300.00",
+     "$6,579.52",
+     "$687.50",
+     "$7,732.38",
+     "$70.10",
+     "$700.00",
+     "$71.96",
+     "$725.64",
+     "$8,052.07",
+     "$831.00",
+     "$93.97",
+     "$935.48"
+    ]
+   },
+   "units": {
+    "spec": 80,
+    "built": 2
+   },
+   "pct": 2.5
+  },
+  {
+   "process": "35.7",
+   "title": "Operating roles, identity and the FAKE handover: a person for every kernel role, credentials that cannot be self-asserted on `/v1`, reviewer-role disjointness, the role queues and the handover board",
+   "tids": {
+    "spec": 17,
+    "built": 0,
+    "todo": 17,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17
+    ]
+   },
+   "tables": {
+    "spec": 7,
+    "built": 2,
+    "missing": [
+     "api_principals",
+     "breakglass_uses",
+     "role_grants",
+     "role_handovers",
+     "role_queue_snapshots"
+    ]
+   },
+   "timers": {
+    "spec": 4,
+    "built": 0,
+    "armable": 4,
+    "missing": [
+     "SM_HANDOVER_BOARD_DAILY",
+     "SM_ROLE_BREAKGLASS_REVIEW_1BD",
+     "SM_ROLE_GRANT_DORMANT_30D",
+     "SM_ROLE_QUEUE_UNSTAFFED_1BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 11,
+    "built": 0,
+    "missing": [
+     "roles.grant",
+     "roles.revoke",
+     "roles.queue",
+     "roles.approve",
+     "roles.breakglass",
+     "principals.issue",
+     "principals.revoke",
+     "handover.plan",
+     "handover.enable",
+     "handover.board",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 5,
+    "built": 0,
+    "missing": [
+     "$10,000.00",
+     "$10,000.01",
+     "$249,999.99",
+     "$250,000.00",
+     "$260,000.00"
+    ]
+   },
+   "units": {
+    "spec": 44,
+    "built": 2
+   },
+   "pct": 4.5
+  },
+  {
+   "process": "35.8",
+   "title": "Operator work screens: the per-loan and per-application work the console lacks, each screen a bus tool with server-derived inputs, the queue and the action log",
+   "tids": {
+    "spec": 16,
+    "built": 0,
+    "todo": 16,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16
+    ]
+   },
+   "tables": {
+    "spec": 7,
+    "built": 0,
+    "missing": [
+     "work_actions",
+     "work_approvals",
+     "work_derivations",
+     "work_item_events",
+     "work_items",
+     "work_log_recon_runs",
+     "work_screen_versions"
+    ]
+   },
+   "timers": {
+    "spec": 5,
+    "built": 0,
+    "armable": 5,
+    "missing": [
+     "SM_WORK_APPROVAL_1BD",
+     "SM_WORK_ITEM_AGE_2BD",
+     "SM_WORK_ITEM_AGE_5BD",
+     "SM_WORK_ITEM_CLAIM_4H",
+     "SM_WORK_LOG_RECON_DAILY"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 13,
+    "built": 0,
+    "missing": [
+     "work.queue",
+     "work.item.open",
+     "work.item.claim",
+     "work.item.release",
+     "work.item.close",
+     "work.item.cancel",
+     "work.screen.read",
+     "work.screen.derive",
+     "work.screen.act",
+     "work.action.propose",
+     "work.action.decide",
+     "work.log.recon",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 22,
+    "built": 0,
+    "missing": [
+     "$1,345.02",
+     "$1,352.94",
+     "$1,665.00",
+     "$1,785.43",
+     "$2,062.50",
+     "$2,192.57",
+     "$2,412.90",
+     "$227.23",
+     "$248,310.55",
+     "$249,546.77",
+     "$249,774.00",
+     "$250,390.82",
+     "$34.00",
+     "$44.22",
+     "$556,852.07",
+     "$560,000.00",
+     "$612.40",
+     "$619.08",
+     "$700.00",
+     "$79.01",
+     "$82.17",
+     "$93.97"
+    ]
+   },
+   "units": {
+    "spec": 63,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "35.9",
+   "title": "Default operations over time: cases progressed by the cycles and the screens \u2014 referral, milestones, docket reactions, executed breach actions, claims filed",
+   "tids": {
+    "spec": 17,
+    "built": 0,
+    "todo": 17,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17
+    ]
+   },
+   "tables": {
+    "spec": 8,
+    "built": 0,
+    "missing": [
+     "breach_action_registry",
+     "breach_actions",
+     "case_milestone_expectations",
+     "case_timelines",
+     "claim_candidates",
+     "default_case_daily_runs",
+     "docket_reactions",
+     "firm_dispatches"
+    ]
+   },
+   "timers": {
+    "spec": 6,
+    "built": 0,
+    "armable": 6,
+    "missing": [
+     "SM_BREACH_ACTION_RECON_DAILY",
+     "SM_CASE_MILESTONE_OVERDUE_5BD",
+     "SM_CASE_REFERRAL_DECISION_2BD",
+     "SM_CLAIM_PACKAGE_5BD",
+     "SM_DEFAULT_CASE_DAILY",
+     "SM_DOCKET_REACTION_1BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 14,
+    "built": 0,
+    "missing": [
+     "case.timeline",
+     "case.progress",
+     "case.refer",
+     "case.milestone.expect",
+     "case.milestone.record",
+     "docket.sync",
+     "docket.react",
+     "firm.dispatch",
+     "firm.inbound",
+     "breach.execute",
+     "breach.recon",
+     "claims.sweep",
+     "claims.package",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 27,
+    "built": 0,
+    "missing": [
+     "$1,062.00",
+     "$129.12",
+     "$163,920.44",
+     "$178,525.21",
+     "$180.00",
+     "$187,450.00",
+     "$2,300.00",
+     "$2,865.00",
+     "$2,914.60",
+     "$3,263.68",
+     "$3,461.64",
+     "$30.00",
+     "$385.00",
+     "$4,527.05",
+     "$53,557.56",
+     "$565.00",
+     "$6,000.00",
+     "$7,069.05",
+     "$7,198.17",
+     "$7,406.60",
+     "$7,569.46",
+     "$750.67",
+     "$785.45",
+     "$8,196.02",
+     "$8,320.13",
+     "$883.53",
+     "$98.17"
+    ]
+   },
+   "units": {
+    "spec": 72,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "35.10",
+   "title": "The refinance close of the loop: the prior loan's payoff quote, settlement and ledger zeroing, lien release, escrow disposition and retirement \u2014 whether Supermortgage services it or a partner does \u2014 the partner's notification and the new loan linked, replacing the status flip",
+   "tids": {
+    "spec": 15,
+    "built": 0,
+    "todo": 15,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15
+    ]
+   },
+   "tables": {
+    "spec": 5,
+    "built": 0,
+    "missing": [
+     "partner_retirement_notifications",
+     "prior_loan_retirements",
+     "refinance_closeout_daily_receipts",
+     "refinance_closeout_steps",
+     "refinance_closeouts"
+    ]
+   },
+   "timers": {
+    "spec": 5,
+    "built": 0,
+    "armable": 5,
+    "missing": [
+     "SM_REFI_CLOSEOUT_BOARD_DAILY",
+     "SM_REFI_CLOSEOUT_STALLED_2BD",
+     "SM_REFI_ESCROW_CREDIT_0",
+     "SM_REFI_PARTNER_CONFIRM_21",
+     "SM_REFI_PRIOR_SETTLE_1BD"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 13,
+    "built": 0,
+    "missing": [
+     "closeout.open",
+     "closeout.pass",
+     "closeout.quote",
+     "closeout.settle",
+     "closeout.escrow",
+     "closeout.lien_release",
+     "closeout.retire",
+     "closeout.notify_partner",
+     "closeout.confirm_partner",
+     "closeout.hold",
+     "closeout.resume",
+     "closeout.board",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 27,
+    "built": 0,
+    "missing": [
+     "$0.00",
+     "$107.30",
+     "$2,062.50",
+     "$2,521.38",
+     "$2,540.11",
+     "$2,628.68",
+     "$2,666.59",
+     "$2,750.00",
+     "$2,802.88",
+     "$3,069.79",
+     "$3,219.83",
+     "$3,437.50",
+     "$403.20",
+     "$440,962.93",
+     "$441,366.13",
+     "$443,503.04",
+     "$443,765.81",
+     "$450,000.00",
+     "$559,455.71",
+     "$560,000.00",
+     "$561,977.09",
+     "$562,084.39",
+     "$575,000.00",
+     "$612.50",
+     "$687.50",
+     "$87.59",
+     "$93.88"
+    ]
+   },
+   "units": {
+    "spec": 65,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "35.11",
+   "title": "Operations stewardship and hosted measurement: the ops steward over cycles, exceptions and the outbox, the daily ops report, and the audit's hosted and persisted columns",
+   "tids": {
+    "spec": 18,
+    "built": 0,
+    "todo": 18,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18
+    ]
+   },
+   "tables": {
+    "spec": 6,
+    "built": 0,
+    "missing": [
+     "exception_triages",
+     "hosted_probe_runs",
+     "ops_daily_reports",
+     "ops_exceptions",
+     "persisted_measurement_runs",
+     "persisted_measurements"
+    ]
+   },
+   "timers": {
+    "spec": 5,
+    "built": 0,
+    "armable": 5,
+    "missing": [
+     "SM_HOSTED_PROBE_WEEKLY",
+     "SM_OPS_ADAPTER_DOWN_1H",
+     "SM_OPS_CYCLE_MISSED_2H",
+     "SM_OPS_EXCEPTION_TRIAGE_1BD",
+     "SM_OPS_REPORT_DAILY"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 12,
+    "built": 0,
+    "missing": [
+     "ops.cycles.watch",
+     "ops.exceptions.list",
+     "ops.exceptions.classify",
+     "ops.exceptions.requeue",
+     "ops.exceptions.assign",
+     "ops.exceptions.resolve",
+     "ops.report",
+     "ops.runbook.read",
+     "audit.hosted.run",
+     "audit.hosted.report",
+     "audit.persisted.count",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 41,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "35.12",
+   "title": "Production posture: a production environment apart from nonprod, private networking, a person behind every credential, secrets and data classes, `INTEGRATIONS` as a real switch per vendor, backups and the restore drill, the go-live checklist, the four-week parallel run, and no borrower data in nonprod",
+   "tids": {
+    "spec": 19,
+    "built": 0,
+    "todo": 19,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18,
+     19
+    ]
+   },
+   "tables": {
+    "spec": 12,
+    "built": 2,
+    "missing": [
+     "data_scans",
+     "environment_manifests",
+     "go_live_checklists",
+     "integration_switches",
+     "parallel_run_diffs",
+     "parallel_runs",
+     "posture_checks",
+     "posture_controls",
+     "posture_findings",
+     "restore_drills"
+    ]
+   },
+   "timers": {
+    "spec": 6,
+    "built": 0,
+    "armable": 6,
+    "missing": [
+     "SM_NONPROD_REAL_DATA_PURGE_1BD",
+     "SM_PROD_GO_LIVE_ATTEST_GATE",
+     "SM_PROD_PARALLEL_RUN_DAILY",
+     "SM_PROD_POSTURE_DAILY",
+     "SM_PROD_POSTURE_DRIFT_1BD",
+     "SM_PROD_RESTORE_DRILL_90D"
+    ]
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 14,
+    "built": 0,
+    "missing": [
+     "posture.record",
+     "posture.check",
+     "posture.drift.resolve",
+     "integrations.switch",
+     "integrations.status",
+     "backup.drill",
+     "data.scan",
+     "parallel_run.open",
+     "parallel_run.reconcile",
+     "parallel_run.disposition",
+     "parallel_run.close",
+     "go_live.check",
+     "go_live.attest",
+     "writeDecision"
+    ]
+   },
+   "figures": {
+    "spec": 7,
+    "built": 0,
+    "missing": [
+     "$1,250.00",
+     "$248,310.55",
+     "$3,412.92",
+     "$3,417.92",
+     "$5.00",
+     "$62.50",
+     "$67.50"
+    ]
+   },
+   "units": {
+    "spec": 58,
+    "built": 2
+   },
+   "pct": 3.4
   }
  ]
 }

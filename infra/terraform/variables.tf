@@ -88,6 +88,12 @@ variable "borrower_default_partner_id" {
   default     = ""
 }
 
+variable "staff_bootstrap_admin_email" {
+  description = "34.1: the e-mail of the first operator-portal admin. The API reads it at start and, while the staff table is empty, creates that admin and sends NTC_SM_STAFF_INVITATION (echoed on the sign-in page under INTEGRATIONS=fake). A no-op once any staff row exists; empty disables the bootstrap."
+  type        = string
+  default     = "douglasludlow@gmail.com"
+}
+
 variable "llm_speed" {
   description = "32.16 DELTA-23: the agent turn's inference speed — standard, or fast for the Messages API's fast mode (opt-in: the same model at a higher price with its own rate limit)."
   type        = string

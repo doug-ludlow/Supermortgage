@@ -21,6 +21,8 @@ locals {
     BORROWER_DEFAULT_PARTNER_ID = var.borrower_default_partner_id
     # 32.14 DELTA-12: the OAuth redirect Google sends the code back to (the app's callback page, an allowed origin)
     GOOGLE_OAUTH_REDIRECT = "https://${var.api_hostname}/app/auth/google/callback"
+    # 34.1 operational prerequisites: the first admin — read once at start; creates the admin and sends the invitation only while no staff_users row exists (a no-op afterwards)
+    STAFF_BOOTSTRAP_ADMIN_EMAIL = var.staff_bootstrap_admin_email
   }
   cloudsql_volume = "cloudsql"
   cloudsql_mount  = "/cloudsql"

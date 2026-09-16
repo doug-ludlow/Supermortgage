@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 8146/8756 (93.0%): tids 2275/2458, tables 779/848, timers 2056/2097, notices 308/308, tools 1450/1578, figures 1278/1467; processes at 100%: 194/205",
+ "brief": "spec units built 8186/8756 (93.5%): tids 2292/2458, tables 784/848, timers 2059/2097, notices 308/308, tools 1461/1578, figures 1282/1467; processes at 100%: 195/205",
  "totals": {
   "tids": {
    "spec": 2458,
-   "built": 2275
+   "built": 2292
   },
   "tables": {
    "spec": 848,
-   "built": 779
+   "built": 784
   },
   "timers": {
    "spec": 2097,
-   "built": 2056
+   "built": 2059
   },
   "notices": {
    "spec": 308,
@@ -19,15 +19,15 @@
   },
   "tools": {
    "spec": 1578,
-   "built": 1450
+   "built": 1461
   },
   "figures": {
    "spec": 1467,
-   "built": 1278
+   "built": 1282
   },
   "units": {
    "spec": 8756,
-   "built": 8146
+   "built": 8186
   }
  },
  "sections": {
@@ -237,9 +237,9 @@
   },
   "35": {
    "spec": 715,
-   "built": 122,
+   "built": 162,
    "processes": 12,
-   "done": 2
+   "done": 3
   }
  },
  "done": [
@@ -436,7 +436,8 @@
   "34.3",
   "34.4",
   "35.1",
-  "35.3"
+  "35.3",
+  "35.7"
  ],
  "processes": [
   {
@@ -8912,48 +8913,20 @@
    "title": "Operating roles, identity and the FAKE handover: a person for every kernel role, credentials that cannot be self-asserted on `/v1`, reviewer-role disjointness, the role queues and the handover board",
    "tids": {
     "spec": 17,
-    "built": 0,
-    "todo": 17,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15,
-     16,
-     17
-    ]
+    "built": 17,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 7,
-    "built": 2,
-    "missing": [
-     "api_principals",
-     "breakglass_uses",
-     "role_grants",
-     "role_handovers",
-     "role_queue_snapshots"
-    ]
+    "built": 7,
+    "missing": []
    },
    "timers": {
     "spec": 4,
-    "built": 1,
+    "built": 4,
     "armable": 4,
-    "missing": [
-     "SM_ROLE_BREAKGLASS_REVIEW_1BD",
-     "SM_ROLE_GRANT_DORMANT_30D",
-     "SM_ROLE_QUEUE_UNSTAFFED_1BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -8962,36 +8935,19 @@
    },
    "tools": {
     "spec": 11,
-    "built": 0,
-    "missing": [
-     "roles.grant",
-     "roles.revoke",
-     "roles.queue",
-     "roles.approve",
-     "roles.breakglass",
-     "principals.issue",
-     "principals.revoke",
-     "handover.plan",
-     "handover.enable",
-     "handover.board",
-     "writeDecision"
-    ]
+    "built": 11,
+    "missing": []
    },
    "figures": {
     "spec": 5,
-    "built": 1,
-    "missing": [
-     "$10,000.00",
-     "$10,000.01",
-     "$249,999.99",
-     "$260,000.00"
-    ]
+    "built": 5,
+    "missing": []
    },
    "units": {
     "spec": 44,
-    "built": 4
+    "built": 44
    },
-   "pct": 9.1
+   "pct": 100.0
   },
   {
    "process": "35.8",

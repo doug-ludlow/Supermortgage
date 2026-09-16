@@ -7,8 +7,9 @@
 // findings interpreted; the LE only for T15), the 32.x flows reacting to the committed events, read the way the shell reads
 // it (the borrower API: record, thread, cards), plus the shell itself — the built Next.js app (apps/borrower, `.next-t13`,
 // shared with 32.13 and rebuilt when its sources are newer) pointed at this test's API through its proxy and driven with
-// Playwright's Chromium from /opt/pw-browsers at 1280 (≥ 1024: the rail beside the thread) and 390 px (the status strip and
-// the bottom sheet). Skips without a database.
+// Playwright's Chromium from /opt/pw-browsers at 1280 (≥ 1024: the rail beside the thread) and 390 px (the five-tab shell of
+// 01 §1.2 — a session lands on Chat; My Loan's badge and next event and the Tasks tab's needed count are the glance; the header's
+// "Your record" opens the rail as the record sheet). Skips without a database.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
@@ -156,7 +157,7 @@ async function inViewport(page: Page, sel: string): Promise<boolean> {
   const box = await page.locator(sel).first().boundingBox(); const vp = page.viewportSize()!;
   return !!box && box.y >= 0 && box.x >= 0 && box.y + box.height <= vp.height && box.x + box.width <= vp.width;
 }
-/** The shell rendered from this test's API: the shell region, the conversation with at least one line, the rail with Needed from you. */
+/** The shell rendered from this test's API: the shell region, the conversation with at least one line (on a phone the Chat tab), the rail with Needed from you (on a phone mounted behind the tabs as the record sheet). */
 async function openShell(token: string, width: number, path = "/app"): Promise<{ page: Page; ctx: Context }> {
   const p = await pageFor(token, width, path);
   await p.page.waitForSelector('[data-testid="shell"]', { timeout: 30_000 });
@@ -383,33 +384,40 @@ test("32.16-T15: Given a `DocumentCard{LE}` under Documents, when expanded, then
   await ctx.close();
 });
 
-test("32.16-T16: Given a phone width, then the status strip shows the badge, next event and needed count, and the sheet shows the same rail sections.", { skip }, async () => {
+test("32.16-T16: Given a phone width, then the tab shell shows the badge and next event (My Loan) and the needed count (the Tasks tab badge), and the record sheet shows the same rail sections.", { skip }, async () => {
   assert.ok(J, "T13 drove the journey to R8"); await fresh();
   const rec = await record(tokA, J.j.appId);
   const wide = await openShell(tokA, 1280);
   const sectionsWide = await wide.page.locator('[data-testid="record"] [data-record-section]').evaluateAll((els: unknown[]) => (els as { getAttribute(n: string): string | null }[]).map((e) => e.getAttribute("data-record-section")));
   await wide.ctx.close();
+  // the phone: the five-tab shell (01 §1.2) — a session lands on Chat (32.16 §2.0), the rail mounted behind the tabs as the record sheet
   const { page, ctx } = await openShell(tokA, 390);
-  // the status strip: badge, next event, the needed-from-you count — the record's own values, never counted here
-  const strip = page.getByTestId("status-strip"); assert.ok(await strip.isVisible(), "the status strip at 390");
-  assert.equal((await strip.getByTestId("status-badge").innerText()).trim().replace(/^[^\w]+/, ""), String((rec["status"] as Json)["badge"]));
-  const nextText = (await strip.getByTestId("strip-next").innerText()).trim(); const next = rec["next"] as Json | null;
-  if (next) assert.ok(nextText.includes(String(next["label"])), `next event on the strip: ${nextText}`); else assert.equal(nextText, "Nothing scheduled");
-  assert.match((await strip.getByTestId("strip-count").innerText()).trim(), new RegExp(`^${(rec["needed_from_you"] as unknown[]).length} `), "the needed-from-you count on the strip");
+  assert.equal(await page.locator('[data-testid="shell"][data-mobile-shell="1"][data-tab="chat"]').count(), 1, "the phone shell lands on Chat");
   assert.equal(await page.getByTestId("talk-to-person").count(), 0);
   assert.ok(await inViewport(page, '[data-testid="action-bar"]'), "the input bar in the viewport");
   assert.equal(await page.locator('[data-testid="thread"] article[data-card-kind]').count(), 0, "no card in the thread on a phone either — the sheet is the rail");
   assert.ok(await page.evaluate<boolean>("document.documentElement.scrollWidth <= 390 && document.body.scrollWidth <= 390"), "the page never scrolls sideways");
-  // the sheet: the same rail sections, in the same order, as beside the thread at 1280
-  await strip.click(); await page.waitForSelector('[data-testid="record"][data-open="true"]', { timeout: 15_000 });
+  // the at-a-glance line: My Loan's badge and next event, the Tasks tab's needed count — the record's own values, never counted here
+  await page.getByTestId("tab-loan").click(); await page.waitForSelector('[data-testid="shell"][data-tab="loan"]', { timeout: 15_000 });
+  const loan = page.getByTestId("tab-page-loan");
+  assert.equal((await loan.getByTestId("status-badge").innerText()).trim().replace(/^[^\w]+/, ""), String((rec["status"] as Json)["badge"]), "the record's badge on My Loan");
+  const nextText = (await loan.getByTestId("next-event").innerText()).trim(); const next = rec["next"] as Json | null;
+  if (next) assert.ok(nextText.includes(String(next["label"])), `next event on My Loan: ${nextText}`); else assert.equal(nextText, "Nothing scheduled");
+  const needed = (rec["needed_from_you"] as unknown[]).length; const tasksBadge = page.locator('[data-testid="tab-tasks"] .sm-tab-badge');
+  if (needed > 0) { assert.equal(await tasksBadge.getAttribute("aria-label"), `${needed} needed from you`, "the needed count on the Tasks tab"); assert.equal((await tasksBadge.innerText()).trim(), String(needed)); }
+  else assert.equal(await tasksBadge.count(), 0, "nothing counted when nothing is needed");
+  assert.ok(await page.evaluate<boolean>("document.documentElement.scrollWidth <= 390 && document.body.scrollWidth <= 390"), "My Loan never scrolls sideways");
+  // the sheet: the header's "Your record" opens it — the same rail sections, in the same order, as beside the thread at 1280
+  await page.getByRole("button", { name: "Your record" }).click(); await page.waitForSelector('[data-testid="record"][data-open="true"]', { timeout: 15_000 });
   const sectionsSheet = await page.locator('[data-testid="record"][data-open="true"] [data-record-section]').evaluateAll((els: unknown[]) => (els as { getAttribute(n: string): string | null }[]).map((e) => e.getAttribute("data-record-section")));
   assert.deepEqual(sectionsSheet, sectionsWide, "the sheet carries the same sections");
   for (const id of ["status", "progress", "needed", "documents"]) assert.ok(sectionsSheet.includes(id), `${id} on the sheet`);
   assert.ok(await page.locator('[data-testid="record"] [data-record-section="needed"]').isVisible());
   assert.equal((await page.locator('[data-testid="record"] [data-record-section="record"] [data-testid="progress-count"]').innerText()).trim(), `${(rec["journey_progress"] as Json)["done"]} of ${(rec["journey_progress"] as Json)["total"]}`);
-  // a reference chip opens the sheet at that card (32.16 §2.1: below 768 the rail is the bottom sheet and the chip opens it)
+  // a reference chip opens the sheet at that card (32.16 §2.1: below 768 the rail is the record sheet and the chip opens it)
   await page.getByRole("button", { name: "Close your record" }).click();
   await page.waitForSelector('[data-testid="record"][data-open="true"]', { timeout: 15_000, state: "detached" });   // closed = display:none, never "visible"
+  await page.getByTestId("tab-chat").click(); await page.waitForSelector('[data-testid="shell"][data-tab="chat"]', { timeout: 15_000 });
   const chip = page.locator('[data-testid="thread"] [data-testid="reference-chip"]').first();
   const chipCard = await chip.getAttribute("data-card-id");
   await chip.click();

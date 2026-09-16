@@ -71,6 +71,11 @@ import { bookOpsRoutes, type BookOpsRoute } from "../runtime/book-ops/routes.ts"
 import { controlsRoutes, matchControlsRoute, type ControlsRoute } from "../runtime/controls/routes.ts";
 import { portalRoutes } from "../runtime/portal/routes.ts";
 import { FakeBlobStore, type BlobStorePort } from "../runtime/borrower/vendors/fake-blob-store.ts";
+// 35.7: the roles routes, dual control on the tools route (rule 2), the break-glass held set (rule 8), the action log's surface/source
+import { rolesRoutes } from "../domain/operations-runtime/roles-35-7/routes.ts";
+import { executeWithControls } from "../domain/operations-runtime/roles-35-7/dual-control.ts";
+import { activeBreakglassOf, breakglassUsesOf } from "../domain/operations-runtime/roles-35-7/breakglass.ts";
+import { RolesRefused } from "../domain/operations-runtime/roles-35-7/refusals.ts";
 
 /** `runtime` is what the 33.1 partner-book view, the 34.1 doors and the section-34 tables need (without it those routes answer 501); `apiToken` + `environment` gate the legacy header actor (rule 3); `blobs` is the document store 34.4's evidence packs are written to (the borrower router's when the host passes it; a FakeBlobStore of the console's own otherwise). */
 export interface ConsoleServerOptions { readonly store: ConsoleStore; readonly clock?: { now(): string }; readonly uiHtml?: string; readonly runtime?: Runtime; readonly apiToken?: string; readonly environment?: string; readonly staff?: StaffAuth; readonly logger?: Logger; readonly blobs?: BlobStorePort | null; }
@@ -203,7 +208,9 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
   const DIRECTORY: readonly DirectoryRoute[] = opts.runtime ? [...directoryRoutes({ runtime: opts.runtime }), ...portalRoutes({ runtime: opts.runtime })] : [];
   const BOOK: readonly BookOpsRoute[] = opts.runtime ? bookOpsRoutes({ runtime: opts.runtime }) : [];
   const CONTROLS: readonly ControlsRoute[] = opts.runtime ? controlsRoutes({ runtime: opts.runtime, blobs }) : [];
-  const SECTION34_PREFIXES = ["/api/directory", "/api/partner-book/", "/api/controls", "/api/portal/"];   // the trailing slash: the legacy /api/portal-tasks/* acts are not 34.5's
+  // 35.7: the grants, the approvals, the break-glass, the principals and the handover (src/domain/operations-runtime/roles-35-7/routes.ts) — 34.4's table shape and dispatch
+  const ROLES: readonly ControlsRoute[] = opts.runtime ? rolesRoutes({ runtime: opts.runtime }) : [];
+  const SECTION34_PREFIXES = ["/api/directory", "/api/partner-book/", "/api/controls", "/api/portal/", "/api/roles", "/api/principals", "/api/handover"];   // the trailing slash: the legacy /api/portal-tasks/* acts are not 34.5's
   let escalatesTo: Map<string, readonly string[]> | null = null;
   /** The roles a bus tool admits on the human path (src/app/tools.ts toolCommand's default: ops_analyst + officer + the process's escalation roles). */
   const toolRoles = (def: { humanRoles?: readonly string[]; process: string }): readonly string[] => { if (def.humanRoles) return def.humanRoles; escalatesTo ??= new Map(loadAgentsFile().processes.map((p) => [p.process, p.escalates_to] as const)); return [...new Set(["ops_analyst", "officer", ...(escalatesTo.get(def.process) ?? [])])]; };
@@ -224,7 +231,8 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
     const token = sessionToken(req);
     if (!token) throw new StaffError(401, "AUTH_REQUIRED", h ? "x-actor-* headers are honoured only with the ops bearer token outside production; sign in" : "sign in");
     const ctx = await staff.authenticate(token, now);
-    return { actor: { kind: "human", id: ctx.user.id, role: ctx.user.roles[0] ?? "ops_analyst" }, staff: ctx, source: "session", held: ctx.user.roles };
+    // 35.7 rule 1: a session's actable set is roles ∪ reviewer_roles (chooseRole orders the staff four first, then the reviewer roles in the account's order)
+    return { actor: { kind: "human", id: ctx.user.id, role: ctx.user.roles[0] ?? "ops_analyst" }, staff: ctx, source: "session", held: [...ctx.user.roles, ...ctx.user.reviewer_roles.filter((r) => !(ctx.user.roles as readonly string[]).includes(r))] };
   }
   const staffOrThrow = (): { auth: StaffAuth; repo: PgStaffRepository; rt: Runtime } => { if (!staff || !repo || !opts.runtime) throw new StaffError(501, "STAFF_UNAVAILABLE", "staff sign-in needs the runtime (createConsoleServer({ runtime }))"); return { auth: staff, repo, rt: opts.runtime }; };
   const runtimeOrThrow = (): Runtime => { const rt = opts.runtime; if (!rt) throw new StaffError(501, "RUNTIME_UNAVAILABLE", "this route needs the runtime (createConsoleServer({ runtime }))"); return rt; };
@@ -348,11 +356,12 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
         const query = Object.fromEntries(url.searchParams); if (query["partner"] === undefined && query["partner_party_id"] !== undefined) query["partner"] = query["partner_party_id"];   // the console's older partner filter name
         answer(await route.handler({ params, query, body: b, staff: { staff_user_id: actor.id, role: actor.role!, session_id: r.staff?.session.session_id ?? null } })); return;
       }
-      const ctl = matchControlsRoute(CONTROLS, method, path);
+      const ctl = matchControlsRoute(CONTROLS, method, path) ?? matchControlsRoute(ROLES, method, path);
       if (ctl) {
         // every route is logged the directory's way (logRoute above), so a `logged_query === false` row (none in 34.4 today) needs nothing more
         const b = method === "POST" ? await body(req) : {};
-        const actor = actAs(r, [...ctl.route.roles], str(b, "role"));
+        // 35.7's routes: the body's `role` is the role being granted / handed over / broken into, never the "act as" preference (x-staff-role or ?role= carry that)
+        const actor = actAs(r, [...ctl.route.roles], ROLES.includes(ctl.route) ? "" : str(b, "role"));
         answer(await ctl.route.handler({ actor, params: ctl.params, query: url.searchParams, body: b, now })); return;
       }
       if (method === "GET") {
@@ -438,19 +447,38 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
           if (loanId && !isUuid(loanId)) throw new RangeError("loan_id must be the loan's uuid"); if (applicationId && !isUuid(applicationId)) throw new RangeError("application_id must be the application's uuid");
           const input = b["input"] && typeof b["input"] === "object" && !Array.isArray(b["input"]) ? (b["input"] as Record<string, unknown>) : {};
           setSubject(loanId ? { kind: "loan", id: loanId } : applicationId ? { kind: "application", id: applicationId } : subjectOf(path, input));
-          action.command = name;
+          action.command = `${process} ${name}`;   // 35.7 T10: the bus command with its process on the log row
+          // 35.7 rule 2: an approval is a record (roles.approve), never an input — a body approvedBy / input.approvals from a session is refused
+          // a body approvedBy is refused on every tool; input.approvals only where the tool declares dual control (29.2 fundMarginCall and 31.1 carry their own `approvals` data — not this process's to refuse)
+          if (b["approvedBy"] !== undefined || (def.dualControl && input["approvals"] !== undefined)) throw new RolesRefused(403, "APPROVER_NOT_SELF_ASSERTED", "an approval is a record written by a distinct verified person (roles.approve); a body approvedBy or input.approvals on a dual-control command is refused (35.7 rule 2)", {});
+          // 35.7 rule 8: a broken-into role counts as held for the matching subject only, while unexpired; named for another subject or after expiry it is ROLE_DENIED
+          let held35 = r.held; let breakglassRole: string | null = null;
+          if (r.staff) {
+            const uses = await breakglassUsesOf(rt.db, r.staff.user.id);
+            if (uses.length) {
+              const active = await activeBreakglassOf(rt.db, r.staff.user.id, now);
+              const preferred = str(b, "role") || String(req.headers["x-staff-role"] ?? "").trim() || null;
+              const matching = active.filter((u) => (u.subject_kind === "loan" && u.subject_id === loanId) || (u.subject_kind === "application" && u.subject_id === applicationId));
+              held35 = [...r.held, ...matching.map((u) => u.role).filter((x) => !r.held.includes(x))];
+              if (preferred && !held35.includes(preferred) && uses.some((u) => u.role === preferred)) { action.role = preferred; throw new RolesRefused(403, "ROLE_DENIED", `${preferred} was broken into for another subject or has expired; the acts under a break-glass are ordinary acts of that role on that subject only (35.7 rule 8)`, { role: preferred, subject: loanId ? { kind: "loan", id: loanId } : applicationId ? { kind: "application", id: applicationId } : null, held: [...r.held], act_as: [] }); }
+              if (preferred && matching.some((u) => u.role === preferred)) breakglassRole = preferred;
+            }
+          }
+          const r35: Resolved = held35 === r.held ? r : { ...r, held: held35 };
           // rule 2 ('waivers on money fields' are officer's) / rule 3 (34.1-T9, 34.5-T16): a tool that declares `moneyFields` is officer's on this surface — an analyst asking for it is
           // refused with the `act_as` offer, never substituted (35.8's proposal path is later); every other tool admits its own human roles
           const money = !!def.moneyFields?.length;
-          const actor = actAs(r, money ? ["officer"] : toolRoles(def), str(b, "role"));
+          const actor = actAs(r35, money ? ["officer"] : toolRoles(def), str(b, "role"));
           // rule 3 / T4: a role gate the tool states as a guardrail (src/app/tools.ts needsRole — "…; requires officer") is answered 403 ROLE_REQUIRED{role, held, act_as} here, before the
           // bus writes anything — `act_as` names the gated roles the account holds; the silent re-role of the actor to such a role (built 2026-09-14, retired 2026-09-15: intent on an act
           // is chosen, never inferred — it converted an analyst's money act into an execution under an authority the person never selected) is gone. A guardrail that needs the command's stores is left to the bus
           const gated = roleGate(def, { ...(loanId ? { loan_id: loanId } : {}), ...input }, actor);
-          if (gated && !gated.includes(actor.role!)) { const offer = actAsOffer(r.held, gated); throw new StaffError(403, "ROLE_REQUIRED", `${name} needs ${gated.join(" or ")}${offer.length ? `; act as ${offer.join(" or ")}` : ""}`, { role: gated[0], held: r.held, act_as: offer }); }
+          if (gated && !gated.includes(actor.role!)) { const offer = actAsOffer(r35.held, gated); throw new StaffError(403, "ROLE_REQUIRED", `${name} needs ${gated.join(" or ")}${offer.length ? `; act as ${offer.join(" or ")}` : ""}`, { role: gated[0], held: r35.held, act_as: offer }); }
           // 34.2: the directory tools take the session from the input and honour it only as the actor's own open staff session (unmask / export refuse SESSION_REQUIRED without one; the account view unmasks only what that session holds) — the body's staff_user_id / unmask are ignored by the tools
           const session = process === "34.2" ? { session_id: r.staff?.session.session_id ?? null } : {};
-          const out = await rt.execute({ process, name, loanId, ...(applicationId ? { applicationId } : {}), actor, input: { ...(loanId && input["loan_id"] === undefined ? { loan_id: loanId } : {}), ...(applicationId && input["application_id"] === undefined ? { application_id: applicationId } : {}), ...input, ...session } });
+          // 35.7 rule 2 / rule 9: dual control around the bus (a declared command past its threshold needs roles.approve's record — 409 APPROVER_DISTINCT{request_id}) and `role.exercised` after a commit under a granted or broken-into role
+          const grantRole = r.staff && actor.role && ((r.staff.user.reviewer_roles as readonly string[]).includes(actor.role) || breakglassRole === actor.role) ? actor.role : null;
+          const out = await executeWithControls(rt, { process, name, loanId, ...(applicationId ? { applicationId } : {}), actor, input: { ...(loanId && input["loan_id"] === undefined ? { loan_id: loanId } : {}), ...(applicationId && input["application_id"] === undefined ? { application_id: applicationId } : {}), ...input, ...session } }, { surface: "ops", source: r.source, requestId: str(b, "request_id") || null, grantRole });
           json(res, 200, { output: out.output, decisionId: out.decisionId ?? null, decisions: out.decisions, events: out.events, timers: out.timers, escalations: out.escalations, actor }); return;
         }
         if (method !== "POST") { refuse(405, "METHOD_NOT_ALLOWED", {}); return; }
@@ -503,7 +531,7 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
       else { action.result = "error"; action.refusal_code = "INTERNAL"; opts.logger?.error("console.request.failed", { path, error: e }); json(res, 500, { error: (e as Error).message }); }
     } finally {
       // rule 4: one staff_actions row per request, ids only (the `email` query parameter is dropped from the route, a directory search's `q` is its hash; no name, phone, code, token or figure is ever set on `action`) — with the role that acted, or on a refusal the role that was asked for (`action.role`, migration 0139)
-      if (repo) { try { await repo.logAction({ ...action, at: now, route: logRoute, method }); } catch (err) { opts.logger?.error("staff_actions.write.failed", { path, error: err }); } }
+      if (repo) { try { await repo.logAction({ ...action, at: now, route: logRoute, method, surface: "ops", source: action.session_id ? "session" : held.length ? "header" : null }); } catch (err) { opts.logger?.error("staff_actions.write.failed", { path, error: err }); } }
     }
   });
 }

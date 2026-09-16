@@ -28,6 +28,7 @@ import { refiDailyRun } from "../../../runtime/refi-daily.ts";
 import { partnerBookReviewRun } from "../../../runtime/partner-book-review.ts";
 import { readinessRun } from "../../../runtime/partner-book-readiness.ts";
 import { sweepDailyReports } from "../../../runtime/book-ops/routes.ts";
+import { ROLES_QUEUE_SCAN, scanCompletedOn } from "../roles-35-7/queue.ts";
 import { CreditCycleRunner, type CycleRecordInput, type BureauConfig } from "../../credit-reporting/ops.ts";
 import type { Bureau } from "../../credit-reporting/disputes.ts";
 import { graceEndFor } from "../../cashiering/latecharges.ts";
@@ -161,6 +162,8 @@ export const RUNNERS: Record<string, Runner> = {
   partner_book_review: pass(async (runtime, p) => { const r = await partnerBookReviewRun(runtime, p.as_of, { logger: runtime.logger, llm: runtime.analystLlm }); return { outcome: r.ran ? "ran" : `skipped:${r.reason ?? ""}`, detail: { monitored_loans: r.monitored_loans } }; }),
   partner_book_readiness: pass(async (runtime, p) => { const r = await readinessRun(runtime, p.as_of, { logger: runtime.logger }); return { outcome: r.ran ? "ran" : `skipped:${r.skipped ?? ""}`, detail: { checked: r.checked } }; }),
   partner_book_daily_report: pass(async (runtime, p) => { const r = await sweepDailyReports(runtime, p.as_of); return { outcome: r ? "ran" : "skipped", detail: {} }; }),
+  /** 35.7 (`security-records`): the daily role-queue scan as one unit — `scan_run_id` is this run's `cycle_runs.id` (35.7's CycleRunsPort then inserts nothing); its own `role.queue.scan_completed` is the receipt literal. */
+  "roles.queue_scan": pass(async (runtime, p) => { if (await scanCompletedOn(runtime.db, runtime.environment, p.as_of_date)) return { outcome: "already_today", detail: { as_of_date: p.as_of_date } }; const r = await ROLES_QUEUE_SCAN.run(runtime, { as_of: p.as_of_date, scan_run_id: p.job.run_id, planned_by: `cycles:${p.job.run_id}` }); return { outcome: r.completed ? "ran" : "skipped", detail: { rows: r.rows.length, unstaffed_raised: r.unstaffed_raised.length, staffed_raised: r.staffed_raised.length } }; }),
 };
 
 export const defaultCyclesConfig = (): CyclesConfig => ({ defs: CYCLES, selectors: SELECTORS, runners: RUNNERS, ports: {} });

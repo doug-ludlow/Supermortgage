@@ -46,7 +46,6 @@ import type { Notice } from "../notices/service.ts";
 import type { Clock, EventStore } from "../kernel/events/index.ts";
 import { NoticeService } from "../notices/service.ts";
 import { noticeServiceFor } from "./documents/notice-sink.ts";
-import type { Recipient } from "../notices/channel.ts";
 import type { Actor } from "../kernel/events/index.ts";
 import { plainDate as D, addMonths, type PlainDate } from "../kernel/calendar/date.ts";
 import { divRound } from "../kernel/money/decimal.ts";

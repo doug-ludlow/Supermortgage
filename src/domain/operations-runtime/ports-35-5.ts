@@ -158,7 +158,14 @@ export interface DocumentsPort {
   /** A stored file's bytes (the object store; the staged copy in `document_blobs` while the store is unreachable), or null when the store holds none. */
   read(q: Queryable, documentId: string): Promise<Buffer | null>;
 }
-/** 35.2's store on this runtime's object store (PgFakeBlobStore over `document_blobs` in every nonprod stage): the file's row `staged` with its bytes and, the store being reachable, `stored` at `fake-blob://<id>#<generation>` in the same transaction — the hash is the bytes (rule 1), staging first (rule 4). */
+/**
+ * The unit of work's own transaction, for a store that must run inside it: 35.2 timer table row 1 (SM_DOC_WORM_DRAIN_1D, armed on
+ * `document.staged`, satisfied by `document.stored`) arms only through the unit of work's TimerEngine — an event appended in a
+ * commit hook rides `rt.uow.events.append` past the timers already saved and arms no clock, so a store outage would leave the file
+ * staged with no breach clock. Absent only in a harness without a database.
+ */
+export function txOf(ctx: Pick<UowContext, "q">): Queryable { if (!ctx.q) throw new RangeError("35.5 stores a file inside its unit of work: the hosted runtime's UowContext.q is required"); return ctx.q; }
+/** 35.2's store on this runtime's object store (PgFakeBlobStore over `document_blobs` in every nonprod stage): the file's row `staged` with its bytes and, the store being reachable, `stored` at `fake-blob://<id>#<generation>` in the same transaction — the hash is the bytes (rule 1), staging first (rule 4). The 35.5 cycles store inside their unit of work (`txOf(ctx)`, `io = ctx.events`) so the drain clock arms and is satisfied there. */
 export function wormDocuments(rt: Runtime): DocumentsPort {
   return {
     async store(q, doc, io) {

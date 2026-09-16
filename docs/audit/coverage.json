@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 8139/8756 (93.0%): tids 2256/2458, tables 772/848, timers 2047/2097, notices 308/308, tools 1442/1578, figures 1314/1467; processes at 100%: 192/205",
+ "brief": "spec units built 8153/8756 (93.1%): tids 2260/2458, tables 772/848, timers 2049/2097, notices 308/308, tools 1445/1578, figures 1319/1467; processes at 100%: 193/205",
  "totals": {
   "tids": {
    "spec": 2458,
-   "built": 2256
+   "built": 2260
   },
   "tables": {
    "spec": 848,
@@ -11,7 +11,7 @@
   },
   "timers": {
    "spec": 2097,
-   "built": 2047
+   "built": 2049
   },
   "notices": {
    "spec": 308,
@@ -19,15 +19,15 @@
   },
   "tools": {
    "spec": 1578,
-   "built": 1442
+   "built": 1445
   },
   "figures": {
    "spec": 1467,
-   "built": 1314
+   "built": 1319
   },
   "units": {
    "spec": 8756,
-   "built": 8139
+   "built": 8153
   }
  },
  "sections": {
@@ -237,9 +237,9 @@
   },
   "35": {
    "spec": 715,
-   "built": 115,
+   "built": 129,
    "processes": 12,
-   "done": 0
+   "done": 1
   }
  },
  "done": [
@@ -434,7 +434,8 @@
   "34.1",
   "34.2",
   "34.3",
-  "34.4"
+  "34.4",
+  "35.5"
  ],
  "processes": [
   {
@@ -8746,14 +8747,9 @@
    "title": "The installment schedule and the daily cashiering cycle: `loan_installments` at fund and at transfer boarding, the whole-book 2.1/2.7/2.3 sweep, lockbox ingest, ACH origination and NACHA returns as cycles, and the per-loan jurisdiction, time-zone and servicer-identity configuration",
    "tids": {
     "spec": 16,
-    "built": 12,
-    "todo": 4,
-    "missing": [
-     8,
-     9,
-     10,
-     16
-    ]
+    "built": 16,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 8,
@@ -8762,12 +8758,9 @@
    },
    "timers": {
     "spec": 8,
-    "built": 6,
+    "built": 8,
     "armable": 8,
-    "missing": [
-     "SM_ACH_FILE_BUILD_1BD",
-     "SM_ACH_RETURN_ACTIONED_1BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -8776,29 +8769,19 @@
    },
    "tools": {
     "spec": 12,
-    "built": 9,
-    "missing": [
-     "ach.file.build",
-     "ach.returns.ingest",
-     "ach.return.action"
-    ]
+    "built": 12,
+    "missing": []
    },
    "figures": {
     "spec": 53,
-    "built": 48,
-    "missing": [
-     "$1,351.71",
-     "$100.00",
-     "$2,292.57",
-     "$228.46",
-     "$249,218.31"
-    ]
+    "built": 53,
+    "missing": []
    },
    "units": {
     "spec": 97,
-    "built": 83
+    "built": 97
    },
-   "pct": 85.6
+   "pct": 100.0
   },
   {
    "process": "35.6",

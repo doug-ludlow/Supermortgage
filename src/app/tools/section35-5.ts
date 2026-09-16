@@ -8,13 +8,16 @@
  * NO_MONEY_FIELD (no tool of this process changes a money field outside the owning engine's command), the `compliance` gates of
  * rule 9 (an explicit time zone or profile on a config row; every profile activation); the daily unit (`cashiering.run_unit`, rule set
  * `cashiering.allocation.v1`, NO_CLIENT_STATE); the lockbox cycle (`lockbox.ingest`, the agent's runner; `lockbox.item.resolve`, a human act of
- * `ops_analyst` / `officer` — CONTROL_TOTAL_MATCH and NO_MONEY_FIELD; src/domain/operations-runtime/lockbox.ts). The ACH cycle is G4's (ach.*).
+ * `ops_analyst` / `officer` — CONTROL_TOTAL_MATCH and NO_MONEY_FIELD; src/domain/operations-runtime/lockbox.ts); the ACH cycles (`ach.file.build`,
+ * `ach.returns.ingest`, the agent's runners; `ach.return.action`, the per-entry action whose override is `officer`'s — rule set `cashiering.returns.v1`,
+ * GATES_ARE_2_3S, MAX_2_REINITIATIONS_180, NSF_ONLY_WHERE_ALLOWED; src/domain/operations-runtime/ach.ts).
  */
 import { defineTools, decision, humanWhen, needsRole, never, type ToolDef, type ToolInput } from "../tools.ts";
 import { installmentsRead, installmentsReproject, installmentsWrite, MONEY_KEY, RULE_SET_SCHEDULE } from "../../domain/operations-runtime/installments.ts";
 import { RULE_SET_CONFIG, servicerProfileWrite, servicingConfigWrite } from "../../domain/operations-runtime/servicing-config.ts";
 import { RULE_SET_ALLOCATION, cashieringRunUnit } from "../../domain/operations-runtime/cashiering-cycle.ts";
 import { lockboxIngest, lockboxItemResolve, type BatchOutcome } from "../../domain/operations-runtime/lockbox.ts";
+import { RULE_SET_RETURNS, achFileBuild, achReturnAction, achReturnsIngest, actionRationale, buildRationale, ingestRationale, type ActionOutcome, type BuildReport, type ReturnsIngestReport } from "../../domain/operations-runtime/ach.ts";
 
 const moneyKeys = (i: ToolInput): string[] => Object.keys(i).filter((k) => MONEY_KEY.test(k));
 const NO_MONEY_FIELD = never("NO_MONEY_FIELD", "35.5 guardrails: no tool here changes a money field outside the owning engine's command with the owning role", (i) => moneyKeys(i).length > 0, "a money field on the input (the schedule is arithmetic on the note's terms; 2.1/2.7/2.3 own the cash)");
@@ -52,5 +55,14 @@ export const TOOLS_35_5: readonly ToolDef[] = defineTools("35.5", "cashiering", 
   // rule 7 / AI agent design: an unmatched item is resolved by a person (`ops_analyst`; `officer` when an amount changes — an amount here is NO_MONEY_FIELD for everyone: that is 6.5's command)
   { name: "lockbox.item.resolve", kind: "act", ruleSetVersion: RULE_SET_ALLOCATION, humanOnly: true, humanRoles: ["ops_analyst", "officer"], handler: lockboxItemResolve, guardrails: [NO_MONEY_FIELD],
     decision: (i, o) => ({ action: "lockbox.item.resolve", rationale: `cashiering.allocation.v1: lockbox item ${String(i.item_id ?? "")} ${out(o).loan_id ? `identified to loan ${String(out(o).loan_id)} (manual; payment ${String(out(o).payment_id ?? "")}${out(o).parked_on ? `, parked on ${String(out(o).parked_on)} until 2.1 posts it` : ""})` : `closed as ${String(out(o).disposition ?? i.disposition ?? "")}`}; ${String(i.reason ?? "")}`, subject: { kind: "lockbox_item", id: String(i.item_id ?? "") } }) },
+  // rule 8: the ACH cycles — the agent's runners (their own units of work, sequential to this command's); every gate is 2.3's (GATES_ARE_2_3S), named in the decision
+  { name: "ach.file.build", kind: "act", ruleSetVersion: RULE_SET_RETURNS, handler: achFileBuild, guardrails: [NO_MONEY_FIELD],
+    decision: (_i, o) => { const r = o as BuildReport; return { action: "ach.file.build", rationale: buildRationale(r), subject: r.file_id ? { kind: "ach_file", id: r.file_id } : { kind: "cycle_run", id: r.run_id }, ...(r.refused.length ? { ruleCode: "GATES_ARE_2_3S" } : {}) }; } },
+  { name: "ach.returns.ingest", kind: "act", ruleSetVersion: RULE_SET_RETURNS, handler: achReturnsIngest, guardrails: [NO_MONEY_FIELD],
+    decision: (_i, o) => { const r = o as ReturnsIngestReport; const processed = r.files.find((f) => f.status === "processed"); const dupOnly = r.files.length > 0 && r.files.every((f) => f.status === "duplicate"); return { action: "ach.returns.ingest", rationale: ingestRationale(r), subject: processed ? { kind: "ach_return_file", id: processed.file_id } : { kind: "cycle_run", id: r.run_id }, ...(dupOnly ? { ruleCode: "DUPLICATE_FILE" } : {}) }; } },
+  // rule 8 / AI agent design: the automatic action is the agent's (2.3 rule 7 through 2.3's own command); an override of it is `officer`'s; an NSF figure on the input is NO_MONEY_FIELD (2.7 rule 7 sets it)
+  { name: "ach.return.action", kind: "act", ruleSetVersion: RULE_SET_RETURNS, handler: achReturnAction,
+    guardrails: [NO_MONEY_FIELD, needsRole("RETURN_OVERRIDE_IS_OFFICER", "35.5 rule 8 / AI agent design: an override of an automatic return action is `officer`'s", (i) => i.action !== undefined && i.action !== null && i.action !== "", ["officer"], "an action override on a returned entry")],
+    decision: (i, o) => { const r = o as ActionOutcome; return { action: "ach.return.action", rationale: `${actionRationale(r)}${i.action ? ` (officer override: ${String(i.action)})` : ""}`, subject: { kind: "ach_entry", id: r.entry_id }, ...(r.action === "reversed_suspended" ? { ruleCode: "MAX_2_REINITIATIONS_180" } : r.nsf_refused?.startsWith("NSF_ONLY") ? { ruleCode: "NSF_ONLY_WHERE_ALLOWED" } : {}) }; } },
   { name: "writeDecision", kind: "act", handler: decision() },
 ]);

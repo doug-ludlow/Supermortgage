@@ -4,14 +4,15 @@
 // count it). Implement by replacing the todo line with a real test; never edit the name.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { connect, type Db } from "../../infra/db/client.ts";
 import { testDatabase } from "../../infra/db/test-db.ts";
 import { loadOverriddenRegistry } from "../timer-overrides.ts";
 import { FixedClock, type Actor } from "../../kernel/events/index.ts";
-import { plainDate as D } from "../../kernel/calendar/date.ts";
+import { plainDate as D, addDays } from "../../kernel/calendar/date.ts";
+import { addBusinessDays, federal } from "../../kernel/calendar/business.ts";
 import { levelPayment, ratePercent } from "../../kernel/money/cents.ts";
 import { wallClock } from "../../kernel/calendar/zoned.ts";
 import { CommandRefused } from "../../app/commands.ts";
@@ -28,15 +29,17 @@ import { delinquencyDailySweep } from "../../runtime/delinquency.ts";
 import { FAKE_SERVICER_CONTACT } from "../../runtime/borrower/flows/9-servicing-requests.ts";
 import { noteTermsHash, prepaidInterest } from "../orig-boarding/ops-30-2.ts";
 import { assessLateCharge, graceEnd, lateChargeAmount, lateChargeTerms, nsfFee } from "../cashiering/latecharges.ts";
-import { draftAmount, type Enrollment } from "../cashiering/autodraft.ts";
+import { draftAmount, settlementDateFor, type Enrollment } from "../cashiering/autodraft.ts";
+import type { FakeOdfi } from "../../infra/integrations/banking.ts";
 import { EI_NOTICE_VARIANTS, writtenNoticeRequest } from "../early-intervention/ops-11-2.ts";
 import { CASHIERING_AGENT, monthlyInterestBps, registerReprojectionReactor, satisfyInstallments } from "./installments.ts";
 import { cashieringDailyRun, loanCashStateFromRows, runCashieringUnit, selectBook } from "./cashiering-cycle.ts";
 import { ports35_5 } from "./ports-35-5.ts";
 import { LOCKBOXES, PgFakeLockboxQueue, itemIdempotencyKey, lockboxCutoff, receivedOnFor } from "./lockbox.ts";
+import { PgFakeOdfiQueue, enrollmentOf, fakeReturnFile, type ActionOutcome, type BuildReport, type ReturnsIngestReport } from "./ach.ts";
 import { encodeRemittance, parseRemittance, remittanceSha256 } from "../../infra/integrations/codecs/lockbox-remittance.ts";
 import { FAKE_SERVICER_PROFILE_V1, STATE_DEFAULT_TIME_ZONE, servicerBlockFor } from "./servicing-config.ts";
-import { boardTapeLoan, chicagoInstant, fundDemoNote, fundDemoNoteRaw, insertUnconfiguredLoan, linkBorrowerParty, partnerPartyOf, readBatches, readEvents, readEventsOfType, readGlobalTimer, readItems, readRows, readRuns, readSet, readSubjectTimer, readTimer, readUnitRuns, rowsJson, seedCustodial, writePayment, AZ_TAPE, L1_TAPE, NY_TAPE, SEED, T7_TAPE, type ItemRead, type SetLineRead } from "./harness-35-5.ts";
+import { boardTapeLoan, chicagoInstant, enrollmentData, fundDemoNote, fundDemoNoteRaw, insertUnconfiguredLoan, linkBorrowerParty, partnerPartyOf, readAchEntries, readAchFiles, readAchReturns, readBatches, readEvents, readEventsOfType, readGlobalTimer, readItems, readReturnFiles, readRows, readRuns, readSet, readSubjectTimer, readTimer, readUnitRuns, rowsJson, seedCustodial, writePayment, AZ_TAPE, L1_TAPE, NY_TAPE, SEED, T7_TAPE, type ItemRead, type SetLineRead } from "./harness-35-5.ts";
 
 // The harness (src/domain/operations-runtime/harness-35-5.ts): this file's own database from the migrated template (0142/0143 in
 // place), one Runtime over it with a FixedClock the T-ids move, the fund path's partner party opened here, the transfer path's
@@ -49,7 +52,17 @@ const COMPLIANCE: Actor = { kind: "human", id: `compliance-${R}`, role: "complia
 const ANALYST: Actor = { kind: "human", id: `analyst-${R}`, role: "ops_analyst" };
 const TOKEN = `ops-${randomUUID()}`;
 let db: Db; let runtime: Runtime; let partnerPartyId = "";
-const loans = { t1: "", t2: "", t3: "", l1: "" };
+const loans = { t1: "", t2: "", t3: "", l1: "", l1ach: "" };
+const OFFICER: Actor = { kind: "human", id: `officer-${R}`, role: "officer" };
+const sha256 = (v: string): string => createHash("sha256").update(v, "utf8").digest("hex");
+/** A fixture enrollment through 2.3's own `autodraft.read/write{op: write}` (the JSONB row 2.3 reads). */
+const writeEnrollment = (loanId: string, id: string, o: Parameters<typeof enrollmentData>[2]): Promise<unknown> => runtime.execute({ process: "2.3", name: "autodraft.read/write", loanId, actor: CASHIERING_AGENT, input: { op: "write", id, data: enrollmentData(id, loanId, o) } });
+const enrollmentRow = async (loanId: string, id: string): Promise<Row> => (await ports35_5(runtime).cashRows.enrollmentsFor(loanId)).find((e) => e.id === id)!.data;
+const eventsOn = async (loanId: string, type: string): Promise<{ id: string; payload: Row; actor_id: string; sequence: bigint }[]> => (await readEvents(db, loanId)).filter((e) => e.type === type);
+const documentOf = async (id: string): Promise<{ sha256: string; storage_uri: string; kind: string; retention_class: string; metadata: Row }> => (await db.query<{ sha256: string; storage_uri: string; kind: string; retention_class: string; metadata: Row }>(`SELECT sha256, storage_uri, kind, retention_class::text AS retention_class, metadata FROM documents WHERE id = $1`, [id]))[0]!;
+const fileBytes = async (documentId: string): Promise<string> => Buffer.from(String((await documentOf(documentId)).metadata["fake_bytes_b64"] ?? ""), "base64").toString("utf8");
+/** Σ ledger lines per (scope, account) over a list of entry sets. */
+const setTotals = async (setIds: readonly string[]): Promise<Record<string, bigint>> => Object.fromEntries((await db.query<{ k: string; total: bigint }>(`SELECT scope::text || ':' || account AS k, sum(amount_cents)::bigint AS total FROM ledger_lines WHERE set_id = ANY($1::uuid[]) GROUP BY 1 ORDER BY 1`, [[...setIds]])).map((r) => [r.k, r.total]));
 type Row = Record<string, unknown>;
 const count = async (sql: string, params: unknown[] = []): Promise<bigint> => (await db.query<{ c: bigint }>(sql, params))[0]!.c;
 const sum = (xs: readonly Record<string, unknown>[], k: string): bigint => xs.reduce((a, r) => a + (r[k] as bigint), 0n);
@@ -532,9 +545,235 @@ test("35.5-T7: Given lockbox `LBX-1` (cut-off 17:00 `America/Chicago`) and the F
   const row3 = (await db.query<Row>(`SELECT status, satisfied_by_payment_id, credited_as_of::text AS credited_as_of FROM loan_installments WHERE loan_id = $1 AND due_date = '2026-11-01'`, [t7.loan_id]))[0]!; assert.equal(row3["status"], "satisfied"); assert.equal(row3["satisfied_by_payment_id"], i3.payment_id); assert.equal(row3["credited_as_of"], "2026-11-03");
   assert.equal((await db.query<Row>(`SELECT set_id FROM ledger_lines GROUP BY set_id HAVING sum(amount_cents) <> 0`)).length, 0, "every set balanced");
 });
-test("35.5-T8: Given L-1's active enrollment (draft day = due date, extra principal $100.00, validated) and the demo clock at Tue 2026-09-29 14:00 ET, when `ach_file_build` runs, then one `ach_files` row exists with one `ach_entries` row of **$2,292.57**, `effective_entry_date` 2026-10-01, description \"MORTGAGE PMT\" and `status = transmitted`, the file is a `documents` row with `sha256`, `ach.file.built` satisfied `SM_ACH_FILE_BUILD_1BD`; and given a second enrollment whose amount changed without a sent variable-amount notice and a third whose `validation_status = pending` (WEB), then neither has an entry and the build's decision names `REGE_1005_10D_VARIABLE_AMOUNT_NOTICE_10` and `NACHA_WEB_ACCOUNT_VALIDATION_GATE` as the refusals.", { todo: true });
-test("35.5-T9: Given the entry of T8 settled 2026-10-01 and posted by L-1's unit (interest **$1,351.71**, principal **$228.46**, escrow **$612.40**, curtailment **$100.00**, row 2026-10-01 `satisfied`), when the FAKE ODFI's return file for Mon 2026-10-05 carries R01 on its trace number and `ach_returns_ingest` runs, then `ach_return_files` has one row, `ach.return.received{code: R01}` and a `payment_reversals` row (`reason = returned_item`, `return_code = R01`) exist with the mirror set for $2,292.57, row 2026-10-01 is `due` again with `installment.restored`, UPB and LPI are back to $249,546.77 and 2026-09-01, a `fees{nsf_fee}` row of **$25.00** exists, a reinitiation `ach_entries` row of **$2,292.57** with description \"RETRY PYMT\", `effective_entry_date` Thu 2026-10-08 and `reinitiation_count = 1` exists, `ach.return.actioned{action: reversed_reinitiated}` satisfied `SM_ACH_RETURN_ACTIONED_1BD`, and the same return file ingested again writes nothing.", { todo: true });
-test("35.5-T10: Given the reinitiation of T9 is also returned R01 on 2026-10-12, when the return is actioned and the unit runs on 2026-10-17, then no further reinitiation is built (`NACHA_NSF_REINITIATION_180_MAX2` exhausted), the enrollment is `suspended_returns` with a hand-off escalation to `borrower-comms`, the 2026-10-17 run assesses **$79.01** on row 2026-10-01, and a second `fees{nsf_fee}` row exists for the second item; given instead a return coded R11, then no NSF fee exists and the corrected entry carries `reinitiation_of_entry_id`.", { todo: true });
+test("35.5-T8: Given L-1's active enrollment (draft day = due date, extra principal $100.00, validated) and the demo clock at Tue 2026-09-29 14:00 ET, when `ach_file_build` runs, then one `ach_files` row exists with one `ach_entries` row of **$2,292.57**, `effective_entry_date` 2026-10-01, description \"MORTGAGE PMT\" and `status = transmitted`, the file is a `documents` row with `sha256`, `ach.file.built` satisfied `SM_ACH_FILE_BUILD_1BD`; and given a second enrollment whose amount changed without a sent variable-amount notice and a third whose `validation_status = pending` (WEB), then neither has an entry and the build's decision names `REGE_1005_10D_VARIABLE_AMOUNT_NOTICE_10` and `NACHA_WEB_ACCOUNT_VALIDATION_GATE` as the refusals.", { skip }, async () => {
+  // L-1 (worked example D) through the transfer route, September paid by its unit (2.1's example A: LPI 2026-09-01, UPB $249,546.77), a borrower party for 2.3's return notice
+  const l1 = await boardTapeLoan(runtime, clock, L1_TAPE, `B-L1-T8-${R}`, D("2026-08-20")); const loanId = l1.loan_id; loans.l1ach = loanId;
+  await seedCustodial(db, await partnerPartyOf(db)); await linkBorrowerParty(db, loanId, `l1-ach-${R}@example.test`);
+  clock.set("2026-09-03T16:00:00.000Z");
+  const sept = await writePayment(runtime, loanId, { amount_cents: 219_257n, received_on: D("2026-09-03"), channel: "ach_debit_origin", instrument: "ach", designation: "contractual" });
+  const u0 = await runCashieringUnit(runtime, { loan_id: loanId, as_of_date: D("2026-09-03"), as_of_instant: "2026-09-03T16:00:00.000Z" }); assert.equal(u0.outcome, "done", u0.error ?? ""); assert.deepEqual(u0.posted, [sept]);
+  const st0 = await loanCashStateFromRows(db, loanId, D("2026-09-04")); assert.equal(st0.state.upb_cents, 24_954_677n); assert.equal(st0.state.lpi_date, "2026-09-01");
+  const rows = await readRows(db, loanId); assert.equal(rows[0]!.due_date, "2026-09-01"); assert.equal(rows[0]!.status, "satisfied"); const octRow = rows[1]!; assert.equal(octRow.due_date, "2026-10-01"); assert.equal(octRow.status, "due"); assert.equal(octRow.pi_cents, 158_017n); assert.equal(octRow.escrow_cents, 61_240n);
+  // the enrollment (2.3 example E: draft day = due date, extra principal $100.00, validated) written through 2.3's own tool; 2.3 rule 4's amount over the October row; 2.3 rule 3's settlement date Thu 2026-10-01 = T+2 banking days from Tue 2026-09-29
+  const E1 = `E-L1-${R}`;
+  await writeEnrollment(loanId, E1, { draft_day: 1, extra_principal_cents: 10_000n, next_draft_on: D("2026-10-01"), last_debit_cents: 229_257n, last4: "1001" });
+  const view = enrollmentOf(E1, loanId, await enrollmentRow(loanId, E1)); assert.equal(view.e.status, "active"); assert.equal(view.e.validation_status, "validated"); assert.equal(view.raw_validation_status, "validated_api");
+  assert.equal(158_017n + 61_240n, 219_257n); assert.equal(219_257n + 10_000n, 229_257n); assert.equal(view.e.extra_principal_cents, 10_000n);
+  assert.equal(draftAmount(view.e, octRow.pi_cents + octRow.escrow_cents, 0n), 229_257n);
+  assert.equal(settlementDateFor(D("2026-10-01"), 1, 15, federal), "2026-10-01"); assert.equal(addBusinessDays(D("2026-09-29"), 2, federal), "2026-10-01"); assert.equal(addBusinessDays(D("2026-09-29"), 1, federal), "2026-09-30");
+  // the demo clock at Tue 2026-09-29 14:00 ET; `ach.file.build` through the bus as the cashiering agent
+  clock.set("2026-09-29T18:00:00.000Z"); assert.equal(wallClock(Date.parse(clock.now()), "America/New_York").hour, 14);
+  const filesBefore = (await readAchFiles(db)).length;
+  const r1 = await runtime.execute({ process: "35.5", name: "ach.file.build", loanId: "", actor: CASHIERING_AGENT, input: { as_of_date: "2026-09-29" } });
+  const o1 = r1.output as BuildReport;
+  assert.equal(o1.entries, 1); assert.equal(o1.total_debit_cents, "229257"); assert.ok(o1.file_id); assert.equal(o1.transmitted, true); assert.equal(o1.ack_status, "accepted"); assert.deepEqual(o1.window, { t1: "2026-09-30", t2: "2026-10-01" }); assert.deepEqual(o1.refused, []);
+  // one ach_files row: one entry, total debits $2,292.57, transmitted, the hash = sha256 of the stored file's bytes, the file a documents row with the same sha256 (staged for 35.2's WORM store, respa_5y)
+  const files = await readAchFiles(db); assert.equal(files.length, filesBefore + 1); const f = files.find((x) => x.id === o1.file_id)!; assert.ok(f);
+  assert.equal(f.entry_count, 1); assert.equal(f.total_debit_cents, 229_257n); assert.equal(f.total_credit_cents, 0n); assert.ok(f.transmitted_at); assert.equal(f.ack_status, "accepted"); assert.equal(f.file_id_modifier, "A"); assert.ok(f.document_id);
+  const doc = await documentOf(f.document_id!); const bytes = await fileBytes(f.document_id!);
+  assert.equal(doc.kind, "ach_file"); assert.equal(doc.retention_class, "respa_5y"); assert.ok(doc.storage_uri.startsWith("worm_pending:")); assert.equal(doc.sha256, f.hash); assert.equal(sha256(bytes), f.hash); assert.equal(o1.sha256, f.hash);
+  assert.ok(bytes.split("\n").filter(Boolean).every((line) => line.length === 94), "94-character NACHA records"); assert.ok(bytes.includes("MORTGAGE P"), "the batch header's 10-character company entry description"); assert.ok(bytes.includes("0000229257"));
+  // one ach_entries row: $2,292.57, effective 2026-10-01, "MORTGAGE PMT", transmitted, the loan and the enrollment key, a trace number, 2.3's idempotency key
+  const entries = await readAchEntries(db, loanId); assert.equal(entries.length, 1); const e = entries[0]!;
+  assert.equal(e.amount_cents, 229_257n); assert.equal(e.effective_entry_date, "2026-10-01"); assert.equal(e.company_entry_description, "MORTGAGE PMT"); assert.equal(e.status, "transmitted"); assert.equal(e.loan_id, loanId); assert.equal(e.enrollment_key, E1); assert.equal(e.file_id, f.id);
+  assert.equal(e.direction, "debit"); assert.equal(e.sec_code, "WEB"); assert.equal(e.reinitiation_count, 0); assert.equal(e.reinitiation_of_entry_id, null); assert.equal(e.settlement_date, null); assert.match(e.trace_number ?? "", /^\d{15}$/); assert.ok(bytes.includes(e.trace_number!));
+  assert.equal(e.idempotency_key, sha256(`${E1}|2026-10-01|229257|0`)); assert.deepEqual(o1.entry_ids, [e.id]);
+  // 2.3's own nacha.build_entry ran in the loan's unit of work (GATES_ARE_2_3S): its command.executed and its nacha_entries record
+  assert.ok((await eventsOn(loanId, "command.executed")).some((x) => x.payload["command"] === "nacha.build_entry" && x.payload["process"] === "2.3" && x.actor_id === "cashiering"));
+  assert.ok((await runtime.entities.load({ loanId })).some((x) => x.kind === "nacha_entries" && x.data["enrollment_id"] === E1 && x.data["settlement_date"] === "2026-10-01" && x.data["amount_cents"] === 229_257n), "2.3's own nacha_entries record (its bigint round-trips through the entity store)");
+  // the FAKE ODFI has the file; ach.file.built (global, origination context) armed SM_ACH_FILE_BUILD_1BD — anchor 2026-09-29, due the next banking day at 14:00 ET; ach.file.transmitted followed
+  const odfi = runtime.ports.nacha as FakeOdfi; assert.ok([...odfi.files.values()].some((x) => x.fileName === o1.file_name), "FakeOdfi.files has the file");
+  const built = (await readEventsOfType(db, "ach.file.built")).find((x) => x.payload["file_id"] === f.id); assert.ok(built);
+  assert.equal(built.payload["as_of_date"], "2026-09-29"); assert.equal(built.payload["entries"], 1); assert.equal(built.payload["total_debit_cents"], "229257"); assert.equal(built.payload["sha256"], f.hash); assert.equal(built.payload["origination"], true); assert.equal(built.loan_id, null); assert.equal(built.aggregate_kind, "ach_file"); assert.equal(built.aggregate_id, f.id); assert.equal(built.actor_id, "cashiering"); assert.equal(built.id, o1.built_event_id);
+  const transmitted = (await readEventsOfType(db, "ach.file.transmitted")).find((x) => x.payload["file_id"] === f.id); assert.ok(transmitted); assert.equal(transmitted.payload["transmitted_at"], clock.now()); assert.ok(transmitted.sequence > built.sequence);
+  const g1 = await readGlobalTimer(db, "SM_ACH_FILE_BUILD_1BD"); const armed1 = g1.filter((t) => t.status === "armed");
+  assert.equal(armed1.length, 1); assert.equal(armed1[0]!.armed_by_event_id, built.id); assert.equal(armed1[0]!.anchor_date, "2026-09-29"); assert.equal(armed1[0]!.due_date, "2026-09-30"); assert.equal(armed1[0]!.subject_id, "*");
+  const dueAt = (await db.query<{ due_at: string }>(`SELECT due_at::text AS due_at FROM timers WHERE id = $1`, [armed1[0]!.id]))[0]!.due_at; assert.ok(dueAt.startsWith("2026-09-30 18:00"), `14:00 ET on the next banking day: ${dueAt}`);
+  // the receipt (35.3's spelling) and the bus's decision: rule set cashiering.returns.v1, subject the file
+  assert.ok((await readEventsOfType(db, "ach.file_build.run_completed")).some((x) => x.payload["as_of_date"] === "2026-09-29" && x.payload["file_id"] === f.id && x.payload["run_id"] === o1.run_id && x.payload["origination"] === true));
+  assert.equal(r1.decisions.length, 1); const d1 = (await db.query<Row>(`SELECT rule_set_version, action, subject_kind, subject_id, rule_code FROM agent_decisions WHERE id = $1`, [r1.decisions[0]!.id]))[0]!;
+  assert.equal(d1["rule_set_version"], "cashiering.returns.v1"); assert.equal(d1["action"], "ach.file.build"); assert.equal(d1["subject_kind"], "ach_file"); assert.equal(d1["subject_id"], f.id); assert.equal(d1["rule_code"], null);
+  // a second enrollment whose amount changed without a sent variable-amount notice (E-2: the last debit was $2,192.57, the draft $2,292.57, no notice) and a third whose validation is pending (E-3, WEB): neither has an entry; the decision names 2.3's gates
+  const E2 = `E-2-${R}`; const E3 = `E-3-${R}`;
+  await writeEnrollment(loanId, E2, { draft_day: 1, extra_principal_cents: 10_000n, next_draft_on: D("2026-10-01"), last_debit_cents: 219_257n, last4: "2002" });
+  await writeEnrollment(loanId, E3, { draft_day: 1, extra_principal_cents: 0n, next_draft_on: D("2026-10-01"), last_debit_cents: null, validation_status: "pending", sec: "WEB", last4: "3003" });
+  const entriesBefore = await count(`SELECT count(*)::bigint AS c FROM ach_entries`); const linesBefore = await count(`SELECT count(*)::bigint AS c FROM ledger_lines`);
+  const r2 = await runtime.execute({ process: "35.5", name: "ach.file.build", loanId: "", actor: CASHIERING_AGENT, input: { as_of_date: "2026-09-29" } });
+  const o2 = r2.output as BuildReport;
+  assert.equal(o2.entries, 0); assert.equal(o2.file_id, null); assert.equal(o2.transmitted, false);
+  const byE = new Map(o2.refused.map((x) => [x.enrollment_id, x])); assert.equal(o2.refused.length, 2);
+  assert.equal(byE.get(E2)?.gate, "REGE_1005_10D_VARIABLE_AMOUNT_NOTICE_10"); assert.equal(byE.get(E2)?.code, "TEN_DAY_NOTICE"); assert.equal(byE.get(E3)?.gate, "NACHA_WEB_ACCOUNT_VALIDATION_GATE"); assert.equal(byE.get(E3)?.code, "2.3.accountValidated");
+  assert.ok(o2.skipped.some((x) => x.enrollment_id === E1 && x.reason === "already_built" && x.entry_id === e.id), "E-L1's entry is not built twice");
+  assert.equal(await count(`SELECT count(*)::bigint AS c FROM ach_entries`), entriesBefore); assert.equal((await readAchFiles(db)).length, files.length, "no empty file"); assert.equal(await count(`SELECT count(*)::bigint AS c FROM ledger_lines`), linesBefore);
+  assert.equal(await count(`SELECT count(*)::bigint AS c FROM ach_entries WHERE enrollment_key = ANY($1::text[])`, [[E2, E3]]), 0n);
+  assert.equal(r2.decisions.length, 1); const d2 = (await db.query<Row>(`SELECT rationale, rule_code, rule_set_version, subject_kind FROM agent_decisions WHERE id = $1`, [r2.decisions[0]!.id]))[0]!;
+  assert.ok(String(d2["rationale"]).includes("REGE_1005_10D_VARIABLE_AMOUNT_NOTICE_10") && String(d2["rationale"]).includes(E2), String(d2["rationale"])); assert.ok(String(d2["rationale"]).includes("NACHA_WEB_ACCOUNT_VALIDATION_GATE") && String(d2["rationale"]).includes(E3));
+  assert.equal(d2["rule_code"], "GATES_ARE_2_3S"); assert.equal(d2["rule_set_version"], "cashiering.returns.v1"); assert.equal(d2["subject_kind"], "cycle_run");
+  // the day's second `ach.file.built{entries: 0}` satisfied the first instance and re-armed the recurring clock (one armed at a time)
+  const g2 = await readGlobalTimer(db, "SM_ACH_FILE_BUILD_1BD");
+  assert.equal(g2.filter((t) => t.status === "armed").length, 1); assert.equal(g2.find((t) => t.id === armed1[0]!.id)!.status, "satisfied"); assert.equal(g2.find((t) => t.id === armed1[0]!.id)!.satisfied_by_event_id, o2.built_event_id);
+  assert.ok(o2.built_event_id);
+});
+test("35.5-T9: Given the entry of T8 settled 2026-10-01 and posted by L-1's unit (interest **$1,351.71**, principal **$228.46**, escrow **$612.40**, curtailment **$100.00**, row 2026-10-01 `satisfied`), when the FAKE ODFI's return file for Mon 2026-10-05 carries R01 on its trace number and `ach_returns_ingest` runs, then `ach_return_files` has one row, `ach.return.received{code: R01}` and a `payment_reversals` row (`reason = returned_item`, `return_code = R01`) exist with the mirror set for $2,292.57, row 2026-10-01 is `due` again with `installment.restored`, UPB and LPI are back to $249,546.77 and 2026-09-01, a `fees{nsf_fee}` row of **$25.00** exists, a reinitiation `ach_entries` row of **$2,292.57** with description \"RETRY PYMT\", `effective_entry_date` Thu 2026-10-08 and `reinitiation_count = 1` exists, `ach.return.actioned{action: reversed_reinitiated}` satisfied `SM_ACH_RETURN_ACTIONED_1BD`, and the same return file ingested again writes nothing.", { skip }, async () => {
+  const loanId = loans.l1ach; assert.ok(loanId, "T8's L-1"); const cash = ports35_5(runtime).cashRows;
+  const entry = (await readAchEntries(db, loanId))[0]!; assert.equal(entry.status, "transmitted"); const E1 = entry.enrollment_key!;
+  // the FAKE ODFI's settlement feed at the start of `ach_returns_ingest` on Thu 2026-10-01: the entry settles on its effective entry date → `ach.entry.settled`, a `payments` row in `received` (channel ach_debit_origin, received_on 2026-10-01, the $100.00 curtailment), the enrollment's last debit
+  clock.set("2026-10-01T13:00:00.000Z");
+  const ing1 = await runtime.execute({ process: "35.5", name: "ach.returns.ingest", loanId: "", actor: CASHIERING_AGENT, input: { as_of_date: "2026-10-01" } });
+  const o1 = ing1.output as ReturnsIngestReport; assert.equal(o1.files.length, 0); assert.equal(o1.settled.length, 1); assert.equal(o1.settled[0]!.entry_id, entry.id); assert.equal(o1.settled[0]!.settlement_date, "2026-10-01");
+  const settledRow = (await readAchEntries(db, loanId))[0]!; assert.equal(settledRow.status, "settled"); assert.equal(settledRow.settlement_date, "2026-10-01");
+  const received = await cash.receivedPayments(loanId); assert.equal(received.length, 1); const p1 = received[0]!; const pid = p1.id; assert.match(pid, /^[0-9a-f]{8}-/);
+  assert.equal(p1.data["channel"], "ach_debit_origin"); assert.equal(p1.data["received_on"], "2026-10-01"); assert.equal(p1.data["credited_as_of"], "2026-10-01"); assert.equal(p1.data["status"], "received"); assert.equal(p1.data["amount_cents"], "229257"); assert.equal(p1.data["curtailment_cents"], "10000"); assert.equal(p1.data["designation"], "contractual");
+  assert.equal(p1.data["ach_entry_id"], entry.id); assert.equal(p1.data["enrollment_id"], E1); assert.equal(p1.data["autodraft_trace"], entry.trace_number); assert.equal(p1.data["instrument"], "ach");
+  const settledEvt = (await eventsOn(loanId, "ach.entry.settled")).find((x) => x.payload["entry_id"] === entry.id); assert.ok(settledEvt); assert.equal(settledEvt.payload["settlement_date"], "2026-10-01"); assert.equal(settledEvt.payload["amount_cents"], "229257"); assert.equal(settledEvt.payload["payment_id"], pid); assert.equal(settledEvt.payload["curtailment_cents"], "10000");
+  assert.ok((await eventsOn(loanId, "payment.received")).some((x) => x.payload["payment_id"] === pid && x.payload["channel"] === "ach_debit_origin"));
+  const enr1 = await enrollmentRow(loanId, E1); assert.equal(enr1["last_debit_cents"], "229257"); assert.equal(enr1["next_draft_on"], "2026-11-02"); assert.equal(settlementDateFor(D("2026-11-01"), 1, 15, federal), "2026-11-02");
+  // L-1's unit on 2026-10-01 posts it: interest $1,351.71 on the UPB as of LPI, principal $228.46, escrow $612.40, curtailment $100.00 (2.4); row 2026-10-01 satisfied; UPB $249,218.31
+  const u1 = await runCashieringUnit(runtime, { loan_id: loanId, as_of_date: D("2026-10-01"), as_of_instant: "2026-10-01T16:00:00.000Z" }); assert.equal(u1.outcome, "done", u1.error ?? ""); assert.deepEqual(u1.posted, [pid]);
+  const posted = (await eventsOn(loanId, "payment.posted")).find((x) => x.payload["payment_id"] === pid); assert.ok(posted);
+  assert.equal(posted.payload["interest_cents"], "135171"); assert.equal(posted.payload["principal_cents"], "22846"); assert.equal(posted.payload["escrow_cents"], "61240"); assert.equal(posted.payload["curtailment_cents"], "10000"); assert.deepEqual(posted.payload["installments"], ["2026-10-01"]); assert.equal(posted.payload["credited_as_of"], "2026-10-01");
+  assert.equal(monthlyInterestBps(24_954_677n, 65000), 135_171n); assert.equal(158_017n - 135_171n, 22_846n); assert.equal(135_171n + 22_846n + 61_240n + 10_000n, 229_257n); assert.equal(24_954_677n - 22_846n - 10_000n, 24_921_831n);
+  // the loan's UPB after the posting is $249,218.31 (the installment's principal and the curtailment): the ledger and the state the server derives; 2.1's event carries the last applied installment's own upb_after (before the curtailment)
+  const stPosted = await loanCashStateFromRows(db, loanId, D("2026-10-02")); assert.equal(stPosted.state.upb_cents, 24_921_831n); assert.equal(stPosted.state.lpi_date, "2026-10-01");
+  assert.equal(await count(`SELECT coalesce(sum(amount_cents), 0)::bigint AS c FROM ledger_lines WHERE scope = 'loan' AND loan_id = $1 AND account = 'principal'`, [loanId]), 24_921_831n);
+  const octPosted = (await readRows(db, loanId)).find((r) => r.due_date === "2026-10-01")!; assert.equal(octPosted.status, "satisfied"); assert.equal(octPosted.satisfied_by_payment_id, pid); assert.equal(octPosted.credited_as_of, "2026-10-01");
+  const originalSets = (await cash.paymentById(loanId, pid))!.data["ledger_entry_set_ids"] as string[]; assert.equal(originalSets.length, 3);
+  const originalTotals = await setTotals(originalSets); assert.equal(originalTotals[`loan:principal`], -(22_846n + 10_000n)); assert.equal(originalTotals[`custodial:clearing_cash`], 0n);
+  // Mon 2026-10-05: the FAKE ODFI's return file carries R01 on the entry's trace number; `ach_returns_ingest` runs
+  const content = fakeReturnFile([{ trace_number: entry.trace_number!, amount_cents: 229_257n, code: "R01", returned_on: D("2026-10-05"), routing: "021000021", account: "FAKE1001", individual_id: "****1001", name: "Ada Fixture" }], D("2026-10-05"));
+  assert.ok(content.split("\n").filter(Boolean).every((line) => line.length === 94));
+  const q1 = await PgFakeOdfiQueue.postReturns(db, { as_of_date: "2026-10-05", file_name: "RET-20261005.ach", content, received_at: "2026-10-05T12:00:00.000Z" }); assert.equal(q1.sha256, sha256(content));
+  clock.set("2026-10-05T13:00:00.000Z");
+  const ing2 = await runtime.execute({ process: "35.5", name: "ach.returns.ingest", loanId: "", actor: CASHIERING_AGENT, input: { as_of_date: "2026-10-05" } });
+  const o2 = ing2.output as ReturnsIngestReport; assert.equal(o2.settled.length, 0); assert.equal(o2.files.length, 1); assert.equal(o2.returns, 1); assert.equal(o2.nocs, 0); assert.equal(o2.actioned, 1); assert.deepEqual(o2.errors, []);
+  const fo = o2.files[0]!; assert.equal(fo.status, "processed"); assert.equal(fo.matched, 1); assert.equal(fo.unmatched, 0); assert.equal(fo.items[0]!.action, "reversed_reinitiated"); assert.equal(fo.items[0]!.entry_id, entry.id);
+  // one ach_return_files row (sha256 = the file's, the stored document, processed), the ach_returns row, the entry `returned` R01
+  const rfiles = await readReturnFiles(db); assert.equal(rfiles.length, 1); const rf = rfiles[0]!;
+  assert.equal(rf.id, fo.file_id); assert.equal(rf.as_of_date, "2026-10-05"); assert.equal(rf.returns, 1); assert.equal(rf.nocs, 0); assert.equal(rf.entries_matched, 1); assert.equal(rf.entries_unmatched, 0); assert.equal(rf.sha256, q1.sha256); assert.ok(rf.processed_at); assert.equal(rf.file_name, "RET-20261005.ach");
+  const rdoc = await documentOf(rf.document_id!); assert.equal(rdoc.kind, "ach_return_file"); assert.equal(rdoc.sha256, q1.sha256); assert.ok(rdoc.storage_uri.startsWith("worm_pending:")); assert.equal(rdoc.retention_class, "respa_5y");
+  const rets = await readAchReturns(db, entry.id); assert.equal(rets.length, 1); assert.equal(rets[0]!.return_code, "R01"); assert.equal(rets[0]!.action_taken, "reversed_reinitiated"); assert.equal((rets[0]!.raw as Row)["original_trace"], entry.trace_number);
+  const returnedRow = (await readAchEntries(db, loanId)).find((x) => x.id === entry.id)!; assert.equal(returnedRow.status, "returned"); assert.equal(returnedRow.return_code, "R01"); assert.ok(returnedRow.returned_at);
+  // ach.return.received{code: R01} (this process's, with 2.3's fields and the anchor received_on) on the loan; ach.return_file.received on the file
+  const rec = (await eventsOn(loanId, "ach.return.received")).filter((x) => x.payload["entry_id"] === entry.id && x.payload["received_on"] === "2026-10-05"); assert.equal(rec.length, 1); const recEvt = rec[0]!;
+  assert.equal(recEvt.payload["code"], "R01"); assert.equal(recEvt.payload["reason_code"], "R01"); assert.equal(recEvt.payload["R01"], true); assert.equal(recEvt.payload["original_settlement_date"], "2026-10-01"); assert.equal(recEvt.payload["payment_id"], pid); assert.equal(recEvt.payload["origination"], true); assert.equal(recEvt.payload["return_file_id"], rf.id); assert.equal(recEvt.actor_id, "cashiering");
+  assert.ok((await readEventsOfType(db, "ach.return_file.received")).some((x) => x.payload["file_id"] === rf.id && x.payload["as_of_date"] === "2026-10-05" && x.payload["returns"] === 1 && x.payload["nocs"] === 0));
+  // the reversal (2.1 rule 9 through 2.3's own op=return): payment_reversals through the port — reason returned_item, return_code R01, the three mirror sets negating the original sets per account
+  const reversals = await cash.reversalsFor(loanId, pid); assert.equal(reversals.length, 1); assert.equal(reversals[0]!.reason, "returned_item"); assert.equal(reversals[0]!.return_code, "R01"); assert.equal(reversals[0]!.entry_set_ids.length, 3);
+  assert.equal((await cash.paymentById(loanId, pid))!.data["status"], "reversed");
+  const mirrorTotals = await setTotals(reversals[0]!.entry_set_ids);
+  for (const k of new Set([...Object.keys(originalTotals), ...Object.keys(mirrorTotals)])) assert.equal(mirrorTotals[k] ?? 0n, -(originalTotals[k] ?? 0n), `mirror of ${k}`);
+  assert.equal(mirrorTotals[`loan:principal`], 22_846n + 10_000n); assert.equal(mirrorTotals[`loan:escrow`], 61_240n); assert.equal(mirrorTotals[`loan:interest_due`], 135_171n);
+  assert.equal((await db.query<Row>(`SELECT set_id FROM ledger_lines WHERE set_id = ANY($1::uuid[]) GROUP BY set_id HAVING sum(amount_cents) <> 0`, [reversals[0]!.entry_set_ids])).length, 0, "every mirror set balanced");
+  assert.ok((await eventsOn(loanId, "payment.reversed")).some((x) => x.payload["payment_id"] === pid && x.payload["return_code"] === "R01" && x.payload["reason"] === "returned_item"));
+  // row 2026-10-01 `due` again with installment.restored; UPB and LPI back to $249,546.77 and 2026-09-01
+  const octRestored = (await readRows(db, loanId)).find((r) => r.due_date === "2026-10-01")!; assert.equal(octRestored.status, "due"); assert.equal(octRestored.satisfied_by_payment_id, null); assert.equal(octRestored.credited_as_of, null);
+  const restoredEvt = (await eventsOn(loanId, "installment.restored")).find((x) => x.payload["payment_id"] === pid); assert.ok(restoredEvt); assert.equal(restoredEvt.payload["due_date"], "2026-10-01"); assert.equal(restoredEvt.payload["return_code"], "R01");
+  const stBack = await loanCashStateFromRows(db, loanId, D("2026-10-06")); assert.equal(stBack.state.upb_cents, 24_954_677n); assert.equal(stBack.state.lpi_date, "2026-09-01");
+  assert.equal(await count(`SELECT coalesce(sum(amount_cents), 0)::bigint AS c FROM ledger_lines WHERE scope = 'loan' AND loan_id = $1 AND account = 'principal'`, [loanId]), 24_954_677n);
+  // the NSF fee through 2.7 rule 7: $25.00 = min(2,500¢, TX's cap) — L-1's configuration allows it; Dr nsf_fees / Cr nsf_fee_income with rule_ref 2.7:r7:nsf; fee.assessed{nsf_fee}
+  const fees = await cash.feesFor(loanId); const nsf = fees.filter((x) => x.data["fee_type"] === "nsf_fee"); assert.equal(nsf.length, 1); const fee = nsf[0]!;
+  assert.equal(fee.data["amount_cents"], "2500"); assert.equal(BigInt(String(fee.data["amount_cents"])), 2_500n); assert.equal(fee.data["returned_payment_id"], pid); assert.equal(fee.data["assessed_on"], "2026-10-05"); assert.equal(fee.data["state"], "assessed"); assert.equal(fee.data["loan_id"], loanId);
+  assert.equal((await db.query<Row>(`SELECT nsf_fee_allowed FROM loan_servicing_configs WHERE loan_id = $1`, [loanId]))[0]!["nsf_fee_allowed"], true);
+  const nsfSet = await db.query<{ scope: string; account: string; amount_cents: bigint; rule_ref: string; effective_date: string }>(`SELECT l.scope::text AS scope, l.account, l.amount_cents, l.rule_ref, s.effective_date::text AS effective_date FROM ledger_lines l JOIN ledger_entry_sets s ON s.id = l.set_id WHERE s.description = $1 ORDER BY l.amount_cents DESC`, [`nsf fee ${fee.id}`]);
+  assert.deepEqual(nsfSet.map((l) => [l.scope, l.account, l.amount_cents, l.rule_ref]), [["loan", "nsf_fees", 2_500n, "2.7:r7:nsf"], ["corporate", "nsf_fee_income", -2_500n, "2.7:r7:nsf"]]); assert.equal(nsfSet[0]!.effective_date, "2026-10-05");
+  assert.ok((await eventsOn(loanId, "fee.assessed")).some((x) => x.payload["fee_id"] === fee.id && x.payload["fee_type"] === "nsf_fee" && x.payload["return_code"] === "R01"));
+  // the reinitiation: $2,292.57 "RETRY PYMT", effective Thu 2026-10-08 (the third banking day after the return's settlement date, ≤ the penalty-free date 2026-10-16), reinitiation_count 1, built and unfiled
+  const entriesAfter = await readAchEntries(db, loanId); assert.equal(entriesAfter.length, 2); const retry = entriesAfter.find((x) => x.reinitiation_of_entry_id === entry.id)!; assert.ok(retry);
+  assert.equal(retry.amount_cents, 229_257n); assert.equal(retry.company_entry_description, "RETRY PYMT"); assert.equal(retry.effective_entry_date, "2026-10-08"); assert.equal(retry.reinitiation_count, 1); assert.equal(retry.status, "built"); assert.equal(retry.file_id, null); assert.equal(retry.trace_number, null); assert.equal(retry.enrollment_key, E1); assert.equal(retry.sec_code, "WEB");
+  assert.equal(addBusinessDays(D("2026-10-05"), 3, federal), "2026-10-08"); assert.ok(D("2026-10-08") <= addDays(D("2026-10-01"), 15)); assert.equal(retry.idempotency_key, sha256(`${E1}|2026-10-08|229257|1`));
+  const enr2 = await enrollmentRow(loanId, E1); assert.deepEqual(enr2["reinitiations"], ["2026-10-08"]); assert.equal(enr2["returns_on_current_installment"], 1); assert.equal(enr2["status"], "active");
+  assert.ok((await eventsOn(loanId, "ach.entry.reinitiation_scheduled")).some((x) => x.payload["retry_on"] === "2026-10-08" && x.payload["company_entry_description"] === "RETRY PYMT"), "2.3's own reinitiation event");
+  // ach.return.actioned{action: reversed_reinitiated} satisfied SM_ACH_RETURN_ACTIONED_1BD (armed by this process's ach.return.received, anchor received_on 2026-10-05, due the next banking day)
+  const act = (await eventsOn(loanId, "ach.return.actioned")).filter((x) => x.payload["entry_id"] === entry.id); assert.equal(act.length, 1); const actEvt = act[0]!;
+  assert.equal(actEvt.payload["action"], "reversed_reinitiated"); assert.equal(actEvt.payload["code"], "R01"); assert.equal(actEvt.payload["payment_id"], pid); assert.equal(actEvt.payload["nsf_fee_id"], fee.id); assert.equal(actEvt.payload["reinitiation_entry_id"], retry.id); assert.equal(actEvt.payload["retry_on"], "2026-10-08"); assert.equal(actEvt.payload["notice_template"], "AUTODRAFT-RETURN-v1"); assert.ok(actEvt.payload["notice_id"], "2.3's return notice went to the linked borrower");
+  const clocks = await readTimer(db, loanId, "SM_ACH_RETURN_ACTIONED_1BD"); assert.equal(clocks.length, 1);
+  assert.equal(clocks[0]!.status, "satisfied"); assert.equal(clocks[0]!.armed_by_event_id, recEvt.id); assert.equal(clocks[0]!.satisfied_by_event_id, actEvt.id); assert.equal(clocks[0]!.anchor_date, "2026-10-05"); assert.equal(clocks[0]!.subject_id, loanId);
+  assert.equal((await db.query<{ due_date: string }>(`SELECT due_date::text AS due_date FROM timers WHERE id = $1`, [clocks[0]!.id]))[0]!.due_date, "2026-10-06");
+  // the decisions: the return's own (cashiering.returns.v1, subject the entry) and the run's (the bus's)
+  const dAct = await db.query<Row>(`SELECT rule_set_version, subject_kind, subject_id, rationale FROM agent_decisions WHERE loan_id = $1 AND action = 'ach.return.action'`, [loanId]); assert.equal(dAct.length, 1);
+  assert.equal(dAct[0]!["rule_set_version"], "cashiering.returns.v1"); assert.equal(dAct[0]!["subject_kind"], "ach_entry"); assert.equal(dAct[0]!["subject_id"], entry.id); assert.ok(String(dAct[0]!["rationale"]).includes("reversed_reinitiated"));
+  assert.equal(ing2.decisions.length, 1); const dRun = (await db.query<Row>(`SELECT rule_set_version, action, subject_kind, subject_id FROM agent_decisions WHERE id = $1`, [ing2.decisions[0]!.id]))[0]!; assert.equal(dRun["rule_set_version"], "cashiering.returns.v1"); assert.equal(dRun["action"], "ach.returns.ingest"); assert.equal(dRun["subject_kind"], "ach_return_file"); assert.equal(dRun["subject_id"], rf.id);
+  assert.ok((await readEventsOfType(db, "ach.returns_ingest.run_completed")).some((x) => x.payload["as_of_date"] === "2026-10-05" && x.payload["returns"] === 1 && x.payload["actioned"] === 1 && x.payload["origination"] === true));
+  // the same return file ingested again writes nothing: no return file, return, entry, fee, ledger line, loan event or clock — the decision names the first file
+  const snapshot = async () => ({ files: await count(`SELECT count(*)::bigint AS c FROM ach_return_files`), returns: await count(`SELECT count(*)::bigint AS c FROM ach_returns`), entries: await count(`SELECT count(*)::bigint AS c FROM ach_entries`), lines: await count(`SELECT count(*)::bigint AS c FROM ledger_lines`), cash: await count(`SELECT count(*)::bigint AS c FROM entity_records WHERE kind IN ('payments', 'fees', 'autodraft_enrollments')`), loanEvents: await count(`SELECT count(*)::bigint AS c FROM loan_events WHERE loan_id = $1`, [loanId]), achEvents: await count(`SELECT count(*)::bigint AS c FROM loan_events WHERE type LIKE 'ach.return.%' OR type = 'ach.return_file.received' OR type = 'ach.entry.settled' OR type = 'ach.noc.received'`), timers: await count(`SELECT count(*)::bigint AS c FROM timers`), escalations: await count(`SELECT count(*)::bigint AS c FROM escalations`) });
+  const before = await snapshot();
+  const q2 = await PgFakeOdfiQueue.postReturns(db, { as_of_date: "2026-10-05", file_name: "RET-20261005-resend.ach", content, received_at: "2026-10-05T14:00:00.000Z" }); assert.equal(q2.sha256, q1.sha256);
+  const ing3 = await runtime.execute({ process: "35.5", name: "ach.returns.ingest", loanId: "", actor: CASHIERING_AGENT, input: { as_of_date: "2026-10-05" } });
+  const o3 = ing3.output as ReturnsIngestReport; assert.equal(o3.files.length, 1); assert.equal(o3.files[0]!.status, "duplicate"); assert.equal(o3.files[0]!.duplicate_of, rf.id); assert.deepEqual(o3.duplicates, [rf.id]); assert.equal(o3.returns, 0); assert.equal(o3.actioned, 0);
+  assert.deepEqual(await snapshot(), before, "the same return file again writes nothing");
+  assert.equal(ing3.decisions.length, 1); const d3 = (await db.query<Row>(`SELECT rule_code, subject_id, rationale FROM agent_decisions WHERE id = $1`, [ing3.decisions[0]!.id]))[0]!; assert.equal(d3["rule_code"], "DUPLICATE_FILE"); assert.ok(String(d3["rationale"]).includes(rf.id));
+  assert.equal(((await db.query<Row>(`SELECT metadata FROM documents WHERE id = $1`, [q2.document_id]))[0]!["metadata"] as Row)["status"], "duplicate");
+  // the table holds the line without the tool: the return file row is never changed or deleted
+  await assert.rejects(db.query(`UPDATE ach_return_files SET returns = 2 WHERE id = $1`, [rf.id]), /append-only|immutable|forbid/i); await assert.rejects(db.query(`DELETE FROM ach_return_files WHERE id = $1`, [rf.id]), /append-only|immutable|forbid/i);
+});
+test("35.5-T10: Given the reinitiation of T9 is also returned R01 on 2026-10-12, when the return is actioned and the unit runs on 2026-10-17, then no further reinitiation is built (`NACHA_NSF_REINITIATION_180_MAX2` exhausted), the enrollment is `suspended_returns` with a hand-off escalation to `borrower-comms`, the 2026-10-17 run assesses **$79.01** on row 2026-10-01, and a second `fees{nsf_fee}` row exists for the second item; given instead a return coded R11, then no NSF fee exists and the corrected entry carries `reinitiation_of_entry_id`.", { skip }, async () => {
+  const loanId = loans.l1ach; assert.ok(loanId, "T9's L-1"); const cash = ports35_5(runtime).cashRows;
+  const [original, retry] = await readAchEntries(db, loanId) as [Awaited<ReturnType<typeof readAchEntries>>[number], Awaited<ReturnType<typeof readAchEntries>>[number]]; assert.equal(original.status, "returned"); assert.equal(retry.status, "built"); const E1 = original.enrollment_key!;
+  // Tue 2026-10-06: the build carries the reinitiation alone (T+2 = Thu 2026-10-08; E-L1's next draft is November's, out of the window) and transmits it
+  clock.set("2026-10-06T18:00:00.000Z"); assert.equal(addBusinessDays(D("2026-10-06"), 2, federal), "2026-10-08");
+  const b1 = (await runtime.execute({ process: "35.5", name: "ach.file.build", loanId: "", actor: CASHIERING_AGENT, input: { as_of_date: "2026-10-06" } })).output as BuildReport;
+  assert.equal(b1.entries, 1); assert.deepEqual(b1.entry_ids, [retry.id]); assert.equal(b1.total_debit_cents, "229257"); assert.equal(b1.transmitted, true); assert.ok(b1.skipped.some((x) => x.enrollment_id === E1 && x.reason === "settlement_after_window" && x.settlement_date === "2026-11-02"));
+  const retryT = (await readAchEntries(db, loanId)).find((x) => x.id === retry.id)!; assert.equal(retryT.status, "transmitted"); assert.equal(retryT.file_id, b1.file_id); assert.match(retryT.trace_number ?? "", /^\d{15}$/); assert.notEqual(retryT.trace_number, original.trace_number); assert.equal(retryT.company_entry_description, "RETRY PYMT");
+  assert.ok((await fileBytes((await readAchFiles(db)).find((f) => f.id === b1.file_id)!.document_id!)).includes("RETRY PYMT"));
+  // Thu 2026-10-08: the retry settles (the feed) and L-1's unit posts it again (row 2026-10-01 satisfied by the second payment, the same figures)
+  clock.set("2026-10-08T13:00:00.000Z");
+  const i8 = (await runtime.execute({ process: "35.5", name: "ach.returns.ingest", loanId: "", actor: CASHIERING_AGENT, input: { as_of_date: "2026-10-08" } })).output as ReturnsIngestReport;
+  assert.equal(i8.settled.length, 1); assert.equal(i8.settled[0]!.entry_id, retry.id); const p2 = i8.settled[0]!.payment_id; assert.notEqual(p2, (await cash.reversalsFor(loanId, p2)).length ? "" : "x");
+  const u8 = await runCashieringUnit(runtime, { loan_id: loanId, as_of_date: D("2026-10-08"), as_of_instant: "2026-10-08T16:00:00.000Z" }); assert.equal(u8.outcome, "done", u8.error ?? ""); assert.deepEqual(u8.posted, [p2]);
+  const posted2 = (await eventsOn(loanId, "payment.posted")).find((x) => x.payload["payment_id"] === p2); assert.ok(posted2); assert.equal(posted2.payload["interest_cents"], "135171"); assert.equal(posted2.payload["principal_cents"], "22846"); assert.equal(posted2.payload["curtailment_cents"], "10000"); assert.deepEqual(posted2.payload["installments"], ["2026-10-01"]); assert.equal(posted2.payload["received_on"], "2026-10-08");
+  assert.equal((await loanCashStateFromRows(db, loanId, D("2026-10-09"))).state.upb_cents, 24_921_831n);
+  // Mon 2026-10-12: the reinitiation is also returned R01 → no further reinitiation (NACHA_NSF_REINITIATION_180_MAX2 exhausted: the second return on the installment), the enrollment suspended_returns, the borrower-comms hand-off, a second NSF fee for the second item
+  const r2content = fakeReturnFile([{ trace_number: retryT.trace_number!, amount_cents: 229_257n, code: "R01", returned_on: D("2026-10-12"), account: "FAKE1001", individual_id: "****1001", name: "Ada Fixture" }], D("2026-10-12"));
+  await PgFakeOdfiQueue.postReturns(db, { as_of_date: "2026-10-12", file_name: "RET-20261012.ach", content: r2content, received_at: "2026-10-12T12:00:00.000Z" });
+  clock.set("2026-10-12T13:00:00.000Z");
+  const i12 = (await runtime.execute({ process: "35.5", name: "ach.returns.ingest", loanId: "", actor: CASHIERING_AGENT, input: { as_of_date: "2026-10-12" } })).output as ReturnsIngestReport;
+  assert.equal(i12.returns, 1); assert.equal(i12.actioned, 1); assert.deepEqual(i12.errors, []); assert.equal(i12.files[0]!.items[0]!.action, "reversed_suspended");
+  assert.equal(await count(`SELECT count(*)::bigint AS c FROM ach_entries WHERE loan_id = $1`, [loanId]), 2n, "no third entry");
+  assert.equal((await readAchEntries(db, loanId)).find((x) => x.id === retry.id)!.status, "returned");
+  const enr = await enrollmentRow(loanId, E1); assert.equal(enr["status"], "suspended_returns"); assert.equal(enr["returns_on_current_installment"], 2);
+  const act2 = (await eventsOn(loanId, "ach.return.actioned")).find((x) => x.payload["entry_id"] === retry.id); assert.ok(act2); assert.equal(act2.payload["action"], "reversed_suspended"); assert.equal(act2.payload["reinitiation_entry_id"], null); assert.equal(act2.payload["payment_id"], p2); assert.ok(act2.payload["nsf_fee_id"]); assert.equal(act2.payload["enrollment_status"], "suspended_returns"); assert.ok(act2.payload["escalation_id"]);
+  const handoff = await db.query<Row>(`SELECT id, kind, owner_role, status::text AS status, payload FROM escalations WHERE loan_id = $1 AND owner_role = 'borrower-comms'`, [loanId]); assert.equal(handoff.length, 1);
+  assert.equal(handoff[0]!["kind"], "human_portal_task"); assert.equal(handoff[0]!["status"], "open"); assert.equal(handoff[0]!["id"], act2.payload["escalation_id"]); assert.equal((handoff[0]!["payload"] as Row)["rule_code"], "MAX_2_REINITIATIONS_180"); assert.equal((handoff[0]!["payload"] as Row)["timer_code"], "NACHA_NSF_REINITIATION_180_MAX2"); assert.equal((handoff[0]!["payload"] as Row)["enrollment_id"], E1);
+  assert.ok((await eventsOn(loanId, "autodraft.status.changed")).some((x) => x.payload["status"] === "suspended_returns" && x.payload["enrollment_id"] === E1), "2.3's own status change");
+  const nsfFees = (await cash.feesFor(loanId)).filter((x) => x.data["fee_type"] === "nsf_fee"); assert.equal(nsfFees.length, 2);
+  assert.ok(nsfFees.every((x) => x.data["amount_cents"] === "2500")); assert.deepEqual(new Set(nsfFees.map((x) => x.data["returned_payment_id"])).size, 2); assert.ok(nsfFees.some((x) => x.data["returned_payment_id"] === p2));
+  assert.equal((await readRows(db, loanId)).find((r) => r.due_date === "2026-10-01")!.status, "due"); assert.equal((await loanCashStateFromRows(db, loanId, D("2026-10-13"))).state.upb_cents, 24_954_677n);
+  const clocks = await readTimer(db, loanId, "SM_ACH_RETURN_ACTIONED_1BD"); assert.equal(clocks.length, 2); assert.ok(clocks.every((t) => t.status === "satisfied"));
+  const dSusp = (await db.query<Row>(`SELECT rule_code FROM agent_decisions WHERE loan_id = $1 AND action = 'ach.return.action' ORDER BY created_at DESC LIMIT 1`, [loanId]))[0]!; assert.equal(dSusp["rule_code"], "MAX_2_REINITIATIONS_180");
+  // the 2026-10-17 run (grace end Fri 2026-10-16) assesses $79.01 on row 2026-10-01 — the retry did not settle in time (2.3 rule 8)
+  assert.equal(graceEnd(D("2026-10-01"), 15), "2026-10-16");
+  clock.set("2026-10-17T16:00:00.000Z");
+  const u17 = await runCashieringUnit(runtime, { loan_id: loanId, as_of_date: D("2026-10-17"), as_of_instant: "2026-10-17T16:00:00.000Z" }); assert.equal(u17.outcome, "done", u17.error ?? ""); assert.equal(u17.late_charge_run, true); assert.equal(u17.grace_ended_yesterday, true); assert.equal(u17.late_charge_fee_ids.length, 1);
+  const lc = (await cash.feesFor(loanId)).filter((x) => x.data["fee_type"] === "late_charge"); assert.equal(lc.length, 1); const lcFee = lc[0]!;
+  assert.equal(lcFee.data["amount_cents"], "7901"); assert.equal(BigInt(String(lcFee.data["amount_cents"])), 7_901n); assert.equal(lcFee.data["installment_due_date"], "2026-10-01"); assert.equal(lcFee.data["assessed_on"], "2026-10-17"); assert.equal(lcFee.data["grace_end_on"], "2026-10-16"); assert.equal(lateChargeAmount(158_017n, "5.000", null), 7_901n); assert.equal(u17.late_charge_fee_ids[0], lcFee.id);
+  assert.equal((await cash.feesFor(loanId)).length, 3, "two NSF fees and one late charge");
+  // given instead a return coded R11 (our error): T-7 with its own enrollment — built Fri 2026-10-30 for Mon 2026-11-02 (the 1st is a Sunday), settled and posted, returned R11 on 2026-11-04 → no NSF fee, the corrected entry carries reinitiation_of_entry_id, action corrected_entry
+  const t7 = await boardTapeLoan(runtime, clock, T7_TAPE, `B-T7-T10-${R}`, D("2026-10-16")); const t7Id = t7.loan_id; await seedCustodial(db, await partnerPartyOf(db));
+  const E7 = `E-T7-${R}`; await writeEnrollment(t7Id, E7, { draft_day: 1, extra_principal_cents: 0n, next_draft_on: D("2026-11-01"), last_debit_cents: 230_850n, last4: "7007" });
+  assert.equal(settlementDateFor(D("2026-11-01"), 1, 15, federal), "2026-11-02"); assert.equal(addBusinessDays(D("2026-10-30"), 1, federal), "2026-11-02"); assert.equal(189_620n + 41_230n, 230_850n);
+  clock.set("2026-10-30T18:00:00.000Z");
+  const b7 = (await runtime.execute({ process: "35.5", name: "ach.file.build", loanId: "", actor: CASHIERING_AGENT, input: { as_of_date: "2026-10-30" } })).output as BuildReport;
+  assert.equal(b7.entries, 1); const e7 = (await readAchEntries(db, t7Id))[0]!; assert.deepEqual(b7.entry_ids, [e7.id]); assert.equal(e7.amount_cents, 230_850n); assert.equal(e7.effective_entry_date, "2026-11-02"); assert.equal(e7.status, "transmitted"); assert.equal(e7.company_entry_description, "MORTGAGE PMT");
+  assert.ok(!b7.entry_ids.includes(original.id) && !b7.entry_ids.includes(retry.id), "the suspended enrollment originates nothing");
+  clock.set("2026-11-02T13:00:00.000Z");
+  const i2 = (await runtime.execute({ process: "35.5", name: "ach.returns.ingest", loanId: "", actor: CASHIERING_AGENT, input: { as_of_date: "2026-11-02" } })).output as ReturnsIngestReport; assert.equal(i2.settled.length, 1); const p7 = i2.settled[0]!.payment_id;
+  const u2 = await runCashieringUnit(runtime, { loan_id: t7Id, as_of_date: D("2026-11-02"), as_of_instant: "2026-11-02T16:00:00.000Z" }); assert.equal(u2.outcome, "done", u2.error ?? ""); assert.deepEqual(u2.posted, [p7]);
+  const posted7 = (await eventsOn(t7Id, "payment.posted")).find((x) => x.payload["payment_id"] === p7); assert.ok(posted7); assert.deepEqual(posted7.payload["installments"], ["2026-11-01"]); assert.equal(posted7.payload["interest_cents"], "151915"); assert.equal(posted7.payload["principal_cents"], "37705");
+  const r11 = fakeReturnFile([{ trace_number: e7.trace_number!, amount_cents: 230_850n, code: "R11", returned_on: D("2026-11-04"), account: "FAKE7007", individual_id: "****7007", name: "Ada Fixture" }], D("2026-11-04"));
+  await PgFakeOdfiQueue.postReturns(db, { as_of_date: "2026-11-04", file_name: "RET-20261104.ach", content: r11, received_at: "2026-11-04T12:00:00.000Z" });
+  clock.set("2026-11-04T13:00:00.000Z");
+  const i4 = (await runtime.execute({ process: "35.5", name: "ach.returns.ingest", loanId: "", actor: CASHIERING_AGENT, input: { as_of_date: "2026-11-04" } })).output as ReturnsIngestReport;
+  assert.equal(i4.returns, 1); assert.equal(i4.actioned, 1); assert.deepEqual(i4.errors, []); assert.equal(i4.files[0]!.items[0]!.action, "corrected_entry");
+  const t7Entries = await readAchEntries(db, t7Id); assert.equal(t7Entries.length, 2); const corrected = t7Entries.find((x) => x.reinitiation_of_entry_id === e7.id)!; assert.ok(corrected, "the corrected entry carries reinitiation_of_entry_id");
+  assert.equal(corrected.amount_cents, 230_850n); assert.equal(corrected.status, "built"); assert.equal(corrected.reinitiation_count, 1); assert.equal(corrected.effective_entry_date, "2026-11-09"); assert.equal(addBusinessDays(D("2026-11-04"), 3, federal), "2026-11-09");
+  assert.equal(t7Entries.find((x) => x.id === e7.id)!.return_code, "R11");
+  assert.equal((await cash.feesFor(t7Id)).filter((x) => x.data["fee_type"] === "nsf_fee").length, 0, "no NSF fee on an R11");
+  const act7 = (await eventsOn(t7Id, "ach.return.actioned")).find((x) => x.payload["entry_id"] === e7.id); assert.ok(act7); assert.equal(act7.payload["action"], "corrected_entry"); assert.equal(act7.payload["code"], "R11"); assert.equal(act7.payload["nsf_fee_id"], null); assert.equal(act7.payload["reinitiation_entry_id"], corrected.id); assert.equal(act7.payload["payment_id"], p7);
+  assert.equal((await readRows(db, t7Id)).find((r) => r.due_date === "2026-11-01")!.status, "due", "the R11 reversal restored the row");
+  assert.ok((await eventsOn(t7Id, "ach.r11.resolved")).some((x) => x.payload["outcome"] === "corrected_reinitiated"), "2.3's own R11 resolution");
+  assert.equal((await readAchReturns(db, e7.id))[0]!.action_taken, "corrected_entry");
+  assert.equal((await db.query<Row>(`SELECT set_id FROM ledger_lines GROUP BY set_id HAVING sum(amount_cents) <> 0`)).length, 0, "every set balanced");
+});
 test("35.5-T11: Given loan P (AZ, `America/Phoenix`) and loan N (NY, `America/New_York`) each with a `due` row for 2026-10-01, when the planner's `as_of` is 2026-10-02T06:30:00Z, then N's `cashiering_unit_runs.local_date` is 2026-10-02 and P's is 2026-10-01, `installment.due_date_reached{due_date: 2026-10-01}` was emitted for P on that pass and for N on the earlier pass whose local date was 2026-10-01, `LOAN_LOCAL_TZ` no longer exists in `src/runtime` (grep = 0), and a loan with no `loan_servicing_configs` row is refused `CONFIG_REQUIRED` by the unit with nothing written.", { skip }, async () => {
   // loan P (AZ, America/Phoenix) and loan N (NY, America/New_York), each with a `due` row for 2026-10-01 (worked example F); a third loan inserted by hand with no configuration row
   const p = await boardTapeLoan(runtime, clock, AZ_TAPE, `B-AZ-${R}`, D("2026-09-15")); const n = await boardTapeLoan(runtime, clock, NY_TAPE, `B-NY11-${R}`, D("2026-09-15"));
@@ -735,4 +974,54 @@ test("35.5-T15: Given the demo clock at 2026-10-01 12:00 ET and the fixture book
   assert.ok(clocks.filter((t) => t.status !== "armed").every((t) => t.status === "satisfied"));
   assert.ok(r.breaches >= 0 && r.due >= 0);
 });
-test("35.5-T16: Given any tool of this process, then no tool changed a money column of `loan_installments` on a `satisfied` row, of `payments`, `fees` or `ledger_lines` except through 2.1's, 2.7's or 2.3's own commands (contract test: the ledger's line count and sums before and after `installments.write`, `installments.reproject`, `lockbox.item.resolve`, `servicing_config.write` and `servicer_profile.write` are identical), every write left an `agent_decisions` row with `rule_set_version`, and a fee waiver, a variance resolution changing an amount, or a return-action override by an agent actor is refused with nothing written.", { todo: true });
+test("35.5-T16: Given any tool of this process, then no tool changed a money column of `loan_installments` on a `satisfied` row, of `payments`, `fees` or `ledger_lines` except through 2.1's, 2.7's or 2.3's own commands (contract test: the ledger's line count and sums before and after `installments.write`, `installments.reproject`, `lockbox.item.resolve`, `servicing_config.write` and `servicer_profile.write` are identical), every write left an `agent_decisions` row with `rule_set_version`, and a fee waiver, a variance resolution changing an amount, or a return-action override by an agent actor is refused with nothing written.", { skip }, async () => {
+  // the state after T7 / T8: T7's posted batch (item 1 to its L-1, item 2 unidentified, item 3 to its T-7 — both loans with a satisfied row), the 2026-11-03 batch's unidentified item, T8/T9's returned entry
+  const batch = (await db.query<Row>(`SELECT id FROM lockbox_batches WHERE status = 'posted' AND items = 3 AND items_unidentified = 1 ORDER BY created_at LIMIT 1`))[0]!; assert.ok(batch);
+  const [i1, i2, i3] = await readItems(db, String(batch["id"])) as [ItemRead, ItemRead, ItemRead]; assert.equal(i2.disposition, "unidentified"); const l1 = i1.matched_loan_id!; const t7 = i3.matched_loan_id!; assert.ok(l1 && t7);
+  const i4 = (await db.query<ItemRead>(`SELECT id, disposition FROM lockbox_items WHERE disposition = 'unidentified' AND id <> $1 ORDER BY created_at LIMIT 1`, [i2.id]))[0]!; assert.ok(i4);
+  const entry = (await readAchEntries(db, loans.l1ach))[0]!; assert.equal(entry.status, "returned");
+  const OK = new Set(["cashiering.schedule.v1", "cashiering.allocation.v1", "cashiering.returns.v1", "35.5@config.v1"]);
+  const snapshot = async () => ({ lines: await count(`SELECT count(*)::bigint AS c FROM ledger_lines`), sum: await count(`SELECT coalesce(sum(amount_cents), 0)::bigint AS c FROM ledger_lines`), abs: await count(`SELECT coalesce(sum(abs(amount_cents)), 0)::bigint AS c FROM ledger_lines`), sets: await count(`SELECT count(*)::bigint AS c FROM ledger_entry_sets`),
+    satisfied: (await db.query<{ j: string }>(`SELECT to_jsonb(i)::text AS j FROM loan_installments i WHERE status IN ('satisfied', 'prepaid') ORDER BY loan_id, due_date`)).map((r) => r.j), fees: await count(`SELECT count(*)::bigint AS c FROM entity_records WHERE kind = 'fees'`), payments: await count(`SELECT count(*)::bigint AS c FROM entity_records WHERE kind = 'payments'`), returns: (await readAchReturns(db, entry.id)).map((r) => r.action_taken) });
+  const dueMoney = async (loanId: string): Promise<string[]> => (await db.query<{ j: string }>(`SELECT to_jsonb(json_build_object('due_date', due_date, 'sequence', sequence, 'pi_cents', pi_cents, 'interest_cents', interest_cents, 'principal_cents', principal_cents, 'escrow_cents', escrow_cents, 'upb_before_cents', upb_before_cents, 'upb_after_cents', upb_after_cents, 'rate_bps', rate_bps, 'terms_id', terms_id, 'absorbs_rounding', absorbs_rounding, 'status', status))::text AS j FROM loan_installments WHERE loan_id = $1 AND status = 'due' ORDER BY due_date`, [loanId])).map((r) => r.j);
+  const ruleSetOf = async (id: string): Promise<string> => String((await db.query<Row>(`SELECT rule_set_version FROM agent_decisions WHERE id = $1`, [id]))[0]?.["rule_set_version"]);
+  const before = await snapshot();
+  const unchanged = async (label: string, o: { payments?: boolean } = {}) => { const after = await snapshot(); assert.equal(after.lines, before.lines, `${label}: ledger line count`); assert.equal(after.sum, before.sum, `${label}: ledger sum`); assert.equal(after.abs, before.abs, `${label}: ledger |sum|`); assert.equal(after.sets, before.sets, `${label}: entry sets`); assert.deepEqual(after.satisfied, before.satisfied, `${label}: satisfied rows byte-identical`); assert.equal(after.fees, before.fees, `${label}: fees`); if (!o.payments) assert.equal(after.payments, before.payments, `${label}: payments`); assert.deepEqual(after.returns, before.returns, `${label}: return actions`); };
+  // installments.write{loan_id, source: transfer} on L-1 (its 2026-09-01 row satisfied): rule 3 from the first due row — the due rows' money columns identical, the satisfied rows untouched, a decision under cashiering.schedule.v1
+  const dueL1 = await dueMoney(l1); const runsL1 = await count(`SELECT count(*)::bigint AS c FROM installment_schedule_runs WHERE loan_id = $1`, [l1]);
+  const w = await runtime.execute({ process: "35.5", name: "installments.write", loanId: l1, actor: CASHIERING_AGENT, input: { loan_id: l1, source: "transfer" } });
+  assert.deepEqual(await dueMoney(l1), dueL1, "an idempotent re-run: identical due rows"); assert.equal(await count(`SELECT count(*)::bigint AS c FROM installment_schedule_runs WHERE loan_id = $1`, [l1]), runsL1 + 1n); await unchanged("installments.write");
+  assert.equal(w.decisions.length, 1); assert.equal(await ruleSetOf(w.decisions[0]!.id), "cashiering.schedule.v1");
+  // installments.reproject{loan_id, source: reprojection, effective_from: the first due row} on T-7 (its 2026-11-01 row satisfied — an effective date on it would be SATISFIED_ROW_FROZEN): the same result
+  const firstDueT7 = (await readRows(db, t7)).find((r) => r.status === "due")!.due_date; const dueT7 = await dueMoney(t7);
+  const rp = await runtime.execute({ process: "35.5", name: "installments.reproject", loanId: t7, actor: CASHIERING_AGENT, input: { loan_id: t7, source: "reprojection", effective_from: firstDueT7 } });
+  assert.deepEqual(await dueMoney(t7), dueT7); await unchanged("installments.reproject"); assert.equal(await ruleSetOf(rp.decisions[0]!.id), "cashiering.schedule.v1");
+  await assert.rejects(runtime.execute({ process: "35.5", name: "installments.reproject", loanId: t7, actor: CASHIERING_AGENT, input: { loan_id: t7, source: "reprojection", effective_from: "2026-11-01" } }), (e: unknown) => e instanceof CommandRefused && e.code === "SATISFIED_ROW_FROZEN"); await unchanged("installments.reproject (frozen)");
+  // lockbox.item.resolve{item_id, loan_id, reason} by an ops_analyst: the item becomes L-1's payment (a payments version), no ledger line, the decision under cashiering.allocation.v1
+  const rs = await runtime.execute({ process: "35.5", name: "lockbox.item.resolve", loanId: "", actor: ANALYST, input: { item_id: i2.id, loan_id: l1, reason: "payer letter names L-1" } });
+  assert.equal((rs.output as Row)["disposition"], "identified"); assert.ok((rs.output as Row)["payment_id"]); await unchanged("lockbox.item.resolve", { payments: true }); assert.equal(await count(`SELECT count(*)::bigint AS c FROM entity_records WHERE kind = 'payments'`), before.payments + 1n);
+  assert.equal(await ruleSetOf(rs.decisions[0]!.id), "cashiering.allocation.v1"); before.payments = before.payments + 1n;
+  // servicing_config.write{loan_id} by the agent: a new row with the same defaults (the zone, the jurisdiction, the terms), under 35.5@config.v1
+  const cfgBefore = (await db.query<Row>(`SELECT time_zone, time_zone_source, jurisdiction_state, nsf_fee_allowed, late_charge_terms FROM loan_servicing_configs WHERE loan_id = $1 ORDER BY effective_from DESC, created_at DESC LIMIT 1`, [l1]))[0]!; const cfgCount = await count(`SELECT count(*)::bigint AS c FROM loan_servicing_configs WHERE loan_id = $1`, [l1]);
+  const cw = await runtime.execute({ process: "35.5", name: "servicing_config.write", loanId: l1, actor: CASHIERING_AGENT, input: { loan_id: l1 } });
+  const cfgAfter = (await db.query<Row>(`SELECT time_zone, time_zone_source, jurisdiction_state, nsf_fee_allowed, late_charge_terms FROM loan_servicing_configs WHERE loan_id = $1 ORDER BY effective_from DESC, created_at DESC LIMIT 1`, [l1]))[0]!;
+  assert.deepEqual(cfgAfter, cfgBefore); assert.equal(await count(`SELECT count(*)::bigint AS c FROM loan_servicing_configs WHERE loan_id = $1`, [l1]), cfgCount + 1n); await unchanged("servicing_config.write"); assert.equal(await ruleSetOf(cw.decisions[0]!.id), "35.5@config.v1");
+  // servicer_profile.write{op: draft} by the agent: a draft version, its own decision under 35.5@config.v1, nothing rendered changes
+  const pw = await runtime.execute({ process: "35.5", name: "servicer_profile.write", loanId: "", actor: CASHIERING_AGENT, input: { op: "draft", dba: "Supermortgage Servicing (draft)", reason: "T16 contract" } });
+  const draft = pw.output as Row; assert.equal(draft["status"], "draft"); await unchanged("servicer_profile.write");
+  assert.equal(await ruleSetOf(String(draft["decision_id"])), "35.5@config.v1"); assert.equal((await db.query<Row>(`SELECT status::text AS status FROM servicer_profiles WHERE id = $1`, [draft["profile_id"]]))[0]!["status"], "draft");
+  // ach.return.action by the agent with no override: idempotent — the return was actioned (RETURN_ACTIONED), nothing written
+  await assert.rejects(runtime.execute({ process: "35.5", name: "ach.return.action", loanId: loans.l1ach, actor: CASHIERING_AGENT, input: { entry_id: entry.id } }), (e: unknown) => e instanceof CommandRefused && e.code === "RETURN_ACTIONED"); await unchanged("ach.return.action (actioned)");
+  // refused with nothing written: a fee waiver beyond 2.7 rule 5's courtesy limit by the agent (2.7's own guardrail — "requires officer"), a variance resolution naming an amount (NO_MONEY_FIELD, for the analyst and the officer alike — an amount is 6.5's command), a return-action override by an agent actor (officer only)
+  const fee = (await db.query<{ id: string; loan_id: string }>(`SELECT id, loan_id FROM entity_current WHERE kind = 'fees' AND data->>'fee_type' = 'late_charge' AND data->>'state' = 'assessed' ORDER BY id LIMIT 1`))[0]!; assert.ok(fee);
+  const feeVersions = await count(`SELECT count(*)::bigint AS c FROM entity_records WHERE kind = 'fees' AND id = $1`, [fee.id]);
+  await assert.rejects(runtime.execute({ process: "2.7", name: "fees.waive", loanId: fee.loan_id, actor: CASHIERING_AGENT, input: { fee_id: fee.id, reason: "courtesy", beyond_courtesy_limit: true } }), (e: unknown) => e instanceof CommandRefused && e.code === "COURTESY_LIMIT" && /officer/.test(e.message));
+  assert.equal(await count(`SELECT count(*)::bigint AS c FROM entity_records WHERE kind = 'fees' AND id = $1`, [fee.id]), feeVersions); assert.equal((await db.query<Row>(`SELECT data->>'state' AS st FROM entity_current WHERE kind = 'fees' AND id = $1`, [fee.id]))[0]!["st"], "assessed"); await unchanged("fees.waive");
+  for (const actor of [ANALYST, OFFICER]) await assert.rejects(runtime.execute({ process: "35.5", name: "lockbox.item.resolve", loanId: "", actor, input: { item_id: i4.id, loan_id: l1, reason: "wrong amount", amount_cents: "1" } }), (e: unknown) => e instanceof CommandRefused && e.code === "NO_MONEY_FIELD");
+  assert.equal((await db.query<Row>(`SELECT disposition FROM lockbox_items WHERE id = $1`, [i4.id]))[0]!["disposition"], "unidentified"); await unchanged("lockbox.item.resolve (amount)");
+  for (const actor of [CASHIERING_AGENT, ANALYST]) await assert.rejects(runtime.execute({ process: "35.5", name: "ach.return.action", loanId: loans.l1ach, actor, input: { entry_id: entry.id, action: "none_already_paid" } }), (e: unknown) => e instanceof CommandRefused && e.code === "RETURN_OVERRIDE_IS_OFFICER");
+  await assert.rejects(runtime.execute({ process: "35.5", name: "ach.return.action", loanId: loans.l1ach, actor: CASHIERING_AGENT, input: { entry_id: entry.id, nsf_fee_cents: "1" } }), (e: unknown) => e instanceof CommandRefused && e.code === "NO_MONEY_FIELD");
+  await unchanged("ach.return.action (override)");
+  assert.equal(await count(`SELECT count(*)::bigint AS c FROM agent_decisions WHERE rule_set_version LIKE 'cashiering.%' OR rule_set_version = '35.5@config.v1'`) > 0n ? 1n : 0n, 1n);
+  assert.ok([...OK].every((v) => typeof v === "string"));
+});

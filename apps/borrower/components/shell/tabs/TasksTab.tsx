@@ -1,9 +1,11 @@
 "use client";
 
 import type { BorrowerRecord } from "@/lib/types/record";
+import { copy } from "@/lib/copy";
 import { formatDate } from "@/lib/format";
 
-/** needed_from_you only. Completing an item opens Chat and focuses the card. */
+/** needed_from_you only. Completing an item opens Chat and focuses the card on the record sheet.
+ * Zero items is the record's own nothing-needed state (`needed_summary.copy_key` = `needs.none`, 32.13-T15), from the copy library. */
 export function TasksTab({
   record,
   onOpenTask,
@@ -12,8 +14,7 @@ export function TasksTab({
   onOpenTask: (cardInstanceId: string) => void;
 }) {
   const needed = record?.needed_from_you ?? [];
-  const servicing = record?.numbers?.phase === "post_funding" || record?.header.purpose === "Your loan";
-  const empty = servicing ? "Nothing needed this month." : "Nothing needed right now.";
+  const empty = copy(record?.needed_summary?.nothing_needed ? record.needed_summary.copy_key : "needs.none");
   const caption = record?.journey_progress
     ? `${record.header.purpose} · ${record.journey_progress.done} of ${record.journey_progress.total}`
     : record?.status

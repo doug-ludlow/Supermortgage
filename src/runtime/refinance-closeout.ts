@@ -110,7 +110,7 @@ export interface CloseoutPassReport { readonly at: string; readonly opened: numb
 export interface CloseoutPassOptions { readonly logger?: Logger | undefined; /** one application only (35.8's screens: closeout.pass{application_id}) */ readonly application_id?: string | null; readonly max_transitions?: number; }
 
 /** What a closeout tool answers the pass (the row's outcome after the command). */
-export interface StepOutcome { readonly outcome: "advanced" | "waiting" | "held" | "refused" | "failed" | "completed" | "unwound" | "cancelled" | "noop"; readonly step: string; readonly status: string; readonly detail?: string; }
+export interface StepOutcome { readonly outcome: "advanced" | "waiting" | "held" | "refused" | "failed" | "completed" | "unwound" | "cancelled" | "noop"; readonly step: string; readonly status: string; readonly detail?: string; /** a wait on a record row (no event): the pass keeps no fold marker and looks again next sweep */ readonly record_wait?: boolean; }
 
 async function journalFailure(rt: Runtime, c: CloseoutRow, tool: string, err: unknown, nowIso: string): Promise<CloseoutRow> {
   const msg = err instanceof Error ? err.message : String(err); const cls = err instanceof Error ? err.name : "Error";
@@ -162,7 +162,9 @@ export async function closeoutPass(rt: Runtime, nowIso: string, opts: CloseoutPa
           try {
             const store = new EntityStore(); store.seed(await rt.entities.load({ loanId: c.prior_loan_id, applicationId: c.application_id }));
             // rule 6: the credit follows 30.3's consent on the record now (captured after the quote, it still counts: the treatment is re-decided at settlement)
-            const credit = creditConsent(store, events, c.prior_loan_id, c.application_id) !== null && (c.escrow_balance_cents ?? 0n) > 0n ? c.escrow_balance_cents : null;
+            // rule 6: the credit is the ledger's escrow balance now (never the quote-time copy)
+            const ledgerEscrow = -BigInt((await rt.db.query<{ s: string }>(`SELECT coalesce(sum(amount_cents), 0)::text AS s FROM ledger_lines WHERE scope = 'loan' AND loan_id = $1 AND account = 'escrow'`, [c.prior_loan_id]))[0]!.s);
+            const credit = creditConsent(store, events, c.prior_loan_id, c.application_id) !== null && ledgerEscrow > 0n ? ledgerEscrow : null;
             const h = await rt.closeoutPorts.handoff.stageAndBoard(rt, { application_id: c.application_id, prior_loan_id: c.prior_loan_id, escrow_credit_cents: credit }, nowIso);
             if (h.ran) { handoffs += 1; continue; }   // loan.staged / loan.boarded are on the log now: re-read and fold them
           } catch (e) { c = await journalFailure(rt, c, "handoff", e, nowIso); failed += 1; break; }
@@ -197,6 +199,7 @@ export async function closeoutPass(rt: Runtime, nowIso: string, opts: CloseoutPa
         const out = r.output as StepOutcome;
         if (out.outcome === "failed") { failed += 1; c = await countFailure(rt, c, tool, nowIso, null); if (c.status === "held") held += 1; break; }
         if (out.outcome === "held") { held += 1; break; }
+        if (out.outcome === "waiting" && out.record_wait) break;
         if (out.outcome === "waiting" || out.outcome === "refused" || out.outcome === "noop") { await updateCloseout(rt.db, c.id, { last_event_sequence: BigInt(newest) }, nowIso); break; }
       } catch (e) {
         if (e instanceof CommandRefused) { log?.warn("refinance closeout: refused", { closeout_id: c.id, tool, code: e.code, reason: e.message }); failed += 1; await updateCloseout(rt.db, c.id, { last_event_sequence: BigInt(newest) }, nowIso); break; }
@@ -249,6 +252,8 @@ export function breachPayloadOf(armingPayload: Row | null): Row {
   if (!armingPayload) return {};
   const out: Row = {};
   for (const k of BREACH_PAYLOAD_KEYS) if (armingPayload[k] !== undefined && armingPayload[k] !== null) out[k] = armingPayload[k];
+  // a clocked wait entered on a transition (the port the step waits on) names it: `awaiting_schedule → quote`
+  if (typeof armingPayload["transition"] === "string") out["step"] = armingPayload["transition"];
   return out;
 }
 export const civilDate = (iso: string): PlainDate => D(iso.slice(0, 10));

@@ -24,7 +24,14 @@ import { createLogger } from "../../runtime/log.ts";
 import { CommandRefused } from "../../app/commands.ts";
 import { TOOLS_35_10 } from "../../app/tools/section35-10.ts";
 import { closeoutBoardRun, PAYOFF_RELEASE } from "../../runtime/refinance-closeout.ts";
-import { A } from "./closeout-35-10/worked-examples.ts";
+import { A, B } from "./closeout-35-10/worked-examples.ts";
+import { importPartnerBook } from "../../runtime/partner-book.ts";
+import { readinessSubjects } from "../../runtime/partner-book-readiness.ts";
+import { DEMO_AS_OF, DEMO_PARTNER, demoBook } from "../partner-book/fixtures/partner-book-demo.ts";
+import { writeXlsx } from "../../infra/files/xlsx.ts";
+import { M3_V1 } from "../partner-book/profiles/m3-v1.ts";
+import { monthlyInterest, ratePercent } from "../../kernel/money/cents.ts";
+import type { FakePartnerPayoffDemand } from "../../infra/integrations/partner-payoff.ts";
 import { seedDemoCloseouts } from "./closeout-35-10/demo.ts";
 import { renderRefinanceBoard, type BoardRow } from "./closeout-35-10/board.ts";
 import { boardCounts, receiptFor } from "./closeout-35-10/repo.ts";
@@ -138,6 +145,84 @@ async function recordCreditConsent(p: PriorA): Promise<void> {
   await runtime.execute({ process: "30.3", name: "buildEscrowLines", loanId: p.loanId, applicationId: p.appId, actor: { kind: "agent", id: "escrow" }, input: { op: "record_credit_agreement", application_id: p.appId, old_loan_id: p.loanId, borrower_id: borrowerId, captured_on: "2027-01-22", settlement_date: String(A.disbursement), evidence: { kind: "recorded_call", recorded_call_id: `call-${p.appId.slice(0, 8)}`, scripted_agreement_language_used: true, document_id: null } } });
 }
 
+// ───────── worked example B: the partner-book demo (Northlight, FAKE) imported monitored; loan 1 (NL-100001) and its refinance application ─────────
+const book = demoBook();
+const bytes = (s: string): Uint8Array => new TextEncoder().encode(s);
+const OPS: Actor = { kind: "human", id: "u-ops-analyst", role: "ops_analyst" };
+let partnerB: string | null = null;
+/** The demo book imported once (as of 2026-09-01; 12 monitored loans). */
+async function bookB(): Promise<string> {
+  if (partnerB) return partnerB;
+  clock.set(`${DEMO_AS_OF}T14:00:00.000Z`);
+  const imp = await importPartnerBook(runtime, { partner: DEMO_PARTNER, as_of_date: DEMO_AS_OF, profile: "m3-v1", tape: { filename: "partner-book-demo.xlsx", content: book.tape }, supplement: { filename: "partner-book-demo-supplement.csv", content: bytes(book.supplement) } }, OPS);
+  assert.equal(imp.status, "loaded", JSON.stringify(imp.report).slice(0, 400));
+  partnerB = imp.partner_party_id; return partnerB;
+}
+/** A later tape of the same book (as of `asOf`) with `servicing_status` rewritten for the named loans (33.1's re-upload). */
+async function laterTape(asOf: string, statuses: Record<string, string>): Promise<void> {
+  const partner = await bookB();
+  const col = M3_V1.columns.findIndex((c) => c.key === "servicing_status"); const num = M3_V1.columns.findIndex((c) => c.key === "servicer_loan_number");
+  const rows = book.tapeRows.map((r, k) => (k === 0 ? r : r.map((v, j) => (j === col && statuses[String(r[num])] !== undefined ? statuses[String(r[num])]! : v))));
+  clock.set(`${asOf}T14:00:00.000Z`);
+  const imp = await importPartnerBook(runtime, { partner: DEMO_PARTNER, as_of_date: asOf, profile: "m3-v1", tape: { filename: `partner-book-${asOf}.xlsx`, content: writeXlsx(rows, "M3") }, supplement: { filename: "partner-book-demo-supplement.csv", content: bytes(book.supplement) } }, OPS);
+  assert.equal(imp.status, "loaded", JSON.stringify(imp.report).slice(0, 400)); assert.equal(imp.partner_party_id, partner);
+}
+interface PriorB { readonly loanId: string; readonly number: string; readonly appId: string; readonly partner: string; readonly demandId: string; }
+/** Demo loan `n` (NL-10000n) monitored, its refinance application with `prior_loan_id`, and 26.2's schedule (consummation Mon 2026-10-26 → disbursement Fri 2026-10-30). */
+async function priorLoanB(n: number, o: { closingScheduled?: boolean } = {}): Promise<PriorB> {
+  const partner = await bookB();
+  const number = `NL-10000${n}`;
+  const loan = (await db.query<{ id: string; status: string; borrower: string }>(`SELECT l.id::text AS id, l.status::text AS status, coalesce((SELECT b.legal_name FROM loan_borrowers lb JOIN borrowers b ON b.id = lb.borrower_id WHERE lb.loan_id = l.id LIMIT 1), 'Demo Borrower') AS borrower FROM loans l WHERE l.servicer_loan_number = $1 AND l.partner_party_id = $2`, [number, partner]))[0]!;
+  assert.ok(loan, `${number} imported`); assert.equal(loan.status, "monitored");
+  const app = await runtime.createApplication({ partner_party_id: partner, channel: "refi_trigger", transaction_type: "limited_cash_out", occupancy: "primary", prior_loan_id: loan.id, borrowers: [{ legal_name: loan.borrower, tin_last4: "4321", contact: { email: `demo-${n}-${loan.id.slice(0, 6)}@example.test` } }], property: { address_line1: `${100 + n} Demo Refinance Way`, city: "Phoenix", state: "AZ", postal_code: "85004", county: "Maricopa" } }, INTAKE);
+  if (o.closingScheduled !== false) await scheduleClosing(app.application.id, String(B.consummation));
+  return { loanId: loan.id, number, appId: app.application.id, partner, demandId: `${app.application.id}:prior-loan:${loan.id}` };
+}
+// the spec's Given chain (T7 given T6, T8 given T7, T9 given T8) on one demo loan: each stage is built once per loan and reused by the next test (node:test runs this file's tests in order)
+const stageB = new Map<number, { quoted?: PriorB & { c: Json }; resynced?: PriorB & { c: Json; resyncId: string }; retired?: PriorB & { c: Json; evidenceId: string; wire: string } }>();
+const stage = (n: number) => { let x = stageB.get(n); if (!x) { x = {}; stageB.set(n, x); } return x; };
+/** T6's state: the closeout opened and quoted from the partner's statement on the sweep of Mon 2026-10-12 (worked example B: request_on). */
+async function quotedB(n = 1): Promise<PriorB & { c: Json }> {
+  const st = stage(n); if (st.quoted) return st.quoted;
+  const p = await priorLoanB(n);
+  await sweep(`${B.request_on}T16:00:00.000Z`);
+  st.quoted = { ...p, c: await closeoutOf(p.appId) }; return st.quoted;
+}
+/** 26.3's funding of the new loan on `disb` with the settlement statement's payoff line to the partner's account of record. */
+async function fundB(p: PriorB, disb: string, payoffLineCents: bigint): Promise<{ evidenceId: string; wire: string }> {
+  const now = `${disb}T18:00:00.000Z`; clock.set(now);
+  const fundingId = `fund-${p.appId.slice(0, 8)}`; const wire = `FEDWIRE-${p.appId.slice(0, 8)}`;
+  await runtime.entities.save([
+    { kind: "disclosures", id: `cd-${p.appId.slice(0, 8)}-1`, version: 1, updatedAt: now, updatedBy: "agent:disclosure", data: { application_id: p.appId, kind: "cd_final", cd_version: 1, status: "consummated", figures: { rate_pct: "6.500", loan_amount_cents: "45000000", pi_cents: "284412", monthly_escrow_cents: "61250", initial_escrow_payment_cents: "306250", term_months: 360 } } },
+    { kind: "fundings", id: fundingId, version: 1, updatedAt: now, updatedBy: "agent:funder", data: { application_id: p.appId, funding_id: fundingId, status: "disbursed", scheduled_funding_date: disb, gross_loan_cents: "45000000", note_rate_pct: "6.500" } },
+  ], { applicationId: p.appId });
+  const evidenceId = `doc-settlement-statement-${p.appId.slice(0, 8)}`;
+  await new PgEntityRepository(db).save([{ kind: "documents", id: evidenceId, version: 1, updatedAt: now, updatedBy: "agent:funder", data: { application_id: p.appId, kind: "settlement_statement", sha256: "fake", storage_uri: `fake://documents/${evidenceId}`, mime_type: "application/pdf", retention_class: "life_of_loan_plus_4y",
+    metadata: { payoff_lines: [{ payoff_demand_id: p.demandId, payee_party_id: p.partner, amount_cents: String(payoffLineCents), wire_reference: wire }] } } }], { applicationId: p.appId });
+  await runtime.uow.run({ applicationId: p.appId }, (u) => {
+    u.events.append({ type: "loan.funded", applicationId: p.appId, aggregate: { kind: "application", id: p.appId }, actor: FUNDER, payload: { application_id: p.appId, funding_id: fundingId, funded_at: now, funding_date: disb, disbursement_date: disb, wire_id: `IMAD-${disb.replace(/-/g, "")}-00${p.number.slice(-1)}`, funded_amount_cents: "45000000", per_diem_cents: "8014", prepaid_interest_cents: "0", interest_credit: false, rescission_expires_at: `${disb}T06:59:59.000Z`, first_payment_date: "2026-12-01", escrow_deposit_cents: "306250", source: "origination" } });
+    u.events.append({ type: "funding.disbursement.confirmed", applicationId: p.appId, aggregate: { kind: "application", id: p.appId }, actor: FUNDER, payload: { application_id: p.appId, funding_id: fundingId, disbursement_date: disb, source: "final_settlement_statement", evidence_document_id: evidenceId, confirmed_at: now } });
+  }, { clock });
+  return { evidenceId, wire };
+}
+/** T7's state: T6, the resync to Mon 2026-11-02 and the refreshed statement (sweep of Wed 2026-10-21: statement_date). */
+async function resyncedB(n = 1): Promise<PriorB & { c: Json; resyncId: string }> {
+  const st = stage(n); if (st.resynced) return st.resynced;
+  const p = await quotedB(n);
+  clock.set("2026-10-20T16:00:00.000Z");
+  const r = await runtime.uow.run({ applicationId: p.appId }, (u) => u.events.append({ type: "funding.date.resynced", applicationId: p.appId, aggregate: { kind: "application", id: p.appId }, actor: FUNDER, payload: { application_id: p.appId, funding_id: `fund-${p.appId.slice(0, 8)}`, old: String(B.disbursement), new: String(B.slipped_disbursement), disbursement_date: String(B.slipped_disbursement), reason: "settlement agent unavailable Friday" } }), { clock });
+  await sweep(`${B.statement_date}T16:00:00.000Z`);
+  st.resynced = { ...p, c: await closeoutOf(p.appId), resyncId: r.result.id }; return st.resynced;
+}
+/** T8's state: T7, funded on 2026-11-02 with the payoff line $443,765.81 wired to Northlight, then the sweep (the hand-off boards the new loan; the closeout settles, retires and notifies). */
+async function retiredB(n = 1): Promise<PriorB & { c: Json; evidenceId: string; wire: string }> {
+  const st = stage(n); if (st.retired) return st.retired;
+  const p = await resyncedB(n);
+  const { evidenceId, wire } = await fundB(p, String(B.slipped_disbursement), B.slipped_total_cents);
+  await sweep(`${B.slipped_disbursement}T19:00:00.000Z`);
+  st.retired = { ...p, c: await closeoutOf(p.appId), evidenceId, wire }; return st.retired;
+}
+
 test.before(async () => {
   if (skip) return;
   db = connect(DB_URL);
@@ -157,7 +242,6 @@ test("35.10-T1: Given worked example A's prior loan on Postgres (UPB $559,455.71
   assert.equal(quote["upb_cents"], A.upb_cents); assert.equal(quote["per_diem_cents"], A.per_diem_cents); assert.equal(quote["interest_cents"], A.interest_cents); assert.equal(quote["total_cents"], A.total_cents); assert.equal(quote["good_through"], String(A.disbursement)); assert.equal(quote["days_partial"], A.days_partial);
   assert.equal(BigInt(String(c["quoted_total_cents"])), A.total_cents); assert.equal(BigInt(String(c["per_diem_cents"])), A.per_diem_cents);
   const request = (await entity("payoff_requests", String(c["payoff_request_id"])))!; assert.ok(request, "payoff_requests row"); assert.equal(request["requester_type"], "refinancing_lender");
-  assert.equal((await db.query<{ t: string }>(`SELECT requester_type AS t FROM payoff_requests WHERE loan_id = $1`, [p.loanId]))[0]?.t ?? "refinancing_lender", "refinancing_lender");
   // 24.4's demand went to the servicer of record — this platform — for the same total
   const demand = (await entity("payoff_demands", String(c["payoff_demand_id"])))!; assert.ok(demand, "payoff_demands row");
   assert.equal(demand["same_servicer"], true); assert.equal(demand["servicing_loan_id"], p.loanId); assert.equal(demand["total_cents"], A.total_cents); assert.equal(demand["good_through_date"], String(A.disbursement)); assert.equal(demand["status"], "received");
@@ -259,7 +343,7 @@ test("35.10-T4: Given T2 with no such consent, then `escrow_treatment = refund`,
   const steps = await stepsOf(p.appId);
   assert.ok(steps.some((x) => x.detail["guardrail"] === "NO_NETTING" && x.command_name === "closeout.escrow"), "NO_NETTING journaled with the disposition");
   assert.ok(steps.some((x) => x.detail["guardrail"] === "NO_NETTING" && x.command_name === "issueRefund"), "NO_NETTING journaled with the refund");
-  assert.ok(steps.every((x) => JSON.stringify(x.detail).includes("net_against_shortfall_flag") === false || JSON.stringify(x.detail).includes("net_against_shortfall_flag")), "no netting proposal");
+  assert.ok(!steps.some((x) => x.kind === "command_run" && x.command_process === "3.5" && String(x.detail["op"] ?? "").includes("net")), "no netting proposal to 3.5");
 });
 test("35.10-T5: Given T2, then 16.3's `release_tasks` row exists for the prior loan with `instrument_type = deed_of_release_and_reconveyance`, `signatory_path = mers_signing_officer`, `STATE_LIEN_RELEASE_DEADLINE.due_at = 2027-02-28`, `SM_RELEASE_PREPARE_5BD.due_at = 2027-02-05`, the closeout is `waiting_human{signing_officer}` with `clocked = false` (no `SM_REFI_CLOSEOUT_STALLED_2BD` armed for that entry), and after the FAKE signing officer executes and the FAKE recorder records, `lien_release.recorded` moves the closeout on and 16.3's `NTC_LIEN_RELEASE_RECORDED` was sent by 16.3's tool, not by this process.", { skip }, async () => {
   const p = await settledA(); const c = p.c;
@@ -292,10 +376,108 @@ test("35.10-T5: Given T2, then 16.3's `release_tasks` row exists for the prior l
   assert.ok(executed.some((e) => e.payload["command"] === "notifyBorrower" && e.payload["process"] === "16.3"), "the notice command is 16.3's");
   assert.ok(!executed.some((e) => e.payload["process"] === "35.10" && String(e.payload["command"]).includes("notif")), "no 35.10 notice command");
 });
-test("35.10-T6: Given worked example B's demo loan 1 imported `monitored` and its refinance application, when `closing.scheduled` lands with disbursement 2026-10-30, then `mode = monitored_partner`, 24.4's demand went to the partner as external servicer (`same_servicer = false`, `servicing_loan_id` = the monitored loan, `existing_servicer_party_id` = Northlight), the parsed statement carries principal $440,962.93 (October interest $2,666.59, principal $403.20 from $441,366.13), per diem $87.59, interest $2,540.11, total $443,503.04 good through 2026-10-30, `escrow_treatment = partner_obligation`, and no `payoff_requests`, `payoff_quotes` or ledger row exists for the loan.", { todo: true });
-test("35.10-T7: Given T6 and `funding.date.resynced` to 2026-11-02, then 24.4's planning figure is $443,765.81, `SM_PAYOFF_GOOD_THROUGH_GATE` reads closed, `closeout.quote` re-ran, the refreshed statement good through 2026-11-02 totals $443,765.81, the gate reads open, and the closeout journal shows two `command_run{24.4 requestPayoff}` entries with the second citing the resync event.", { todo: true });
-test("35.10-T8: Given T7 and `loan.funded` on 2026-11-02 with a settlement statement whose payoff line is $443,765.81 to Northlight's account of record with a wire reference, when the next sweep runs, then `payoff_demands.status = paid` with `payoff_posted_on = 2026-11-02`, `refinance.prior_loan.retired{mode: monitored_partner, remitted_to: partner_wire, payoff_total_cents: 44376581, evidence_document_id}` and `partner_book.loan.paid_off` (33.3's payload, `prior_status: monitored`) are on the prior loan's log once each, `loans.status = paid_off` with `retired_reason = refinance_partner`, no ledger line, `payoff_*` or `release_tasks` row exists for it, readiness rows stop (33.3-T6 passes unchanged), and `src/runtime/borrower/flows/16-readiness.ts` contains no `UPDATE loans` (contract grep).", { todo: true });
-test("35.10-T9: Given T8, then one `integration_messages` row exists for adapter `partner-book.notify` with idempotency key `retirement:<prior_loan_id>` whose payload names NL-100001, 2026-11-02, 44376581 and the wire reference and contains no new-loan number, rate or amount, `partner_retirement_notifications{kind: notified}` exists, `SM_REFI_PARTNER_CONFIRM_21.due_at = 2026-11-23`; given a 33.1 tape of 2026-11-09 carrying NL-100001 as paid, then `partner_book.retirement.confirmed{source: tape}` satisfies it; given instead a tape of 2026-11-30 still carrying it active, then `disputed` is written, the timer is `breached`, an `ops_analyst` escalation names the loan and the tape status, and `book.resolve{paid_off}` writes `resolved{source: ops_resolve}`.", { todo: true });
+test("35.10-T6: Given worked example B's demo loan 1 imported `monitored` and its refinance application, when `closing.scheduled` lands with disbursement 2026-10-30, then `mode = monitored_partner`, 24.4's demand went to the partner as external servicer (`same_servicer = false`, `servicing_loan_id` = the monitored loan, `existing_servicer_party_id` = Northlight), the parsed statement carries principal $440,962.93 (October interest $2,666.59, principal $403.20 from $441,366.13), per diem $87.59, interest $2,540.11, total $443,503.04 good through 2026-10-30, `escrow_treatment = partner_obligation`, and no `payoff_requests`, `payoff_quotes` or ledger row exists for the loan.", { skip }, async () => {
+  const p = await quotedB(1); const c = p.c;
+  assert.equal(c["mode"], "monitored_partner", JSON.stringify((await stepsOf(p.appId)).map((x) => [x.kind, x.step, x.command_name, x.detail["error"] ?? null]))); assert.equal(c["step"], "quoted"); assert.equal(c["good_through"], String(B.disbursement));
+  // 24.4's demand went to the partner as the external servicer
+  const demand = (await entity("payoff_demands", String(c["payoff_demand_id"])))!; assert.ok(demand, "payoff_demands row");
+  assert.equal(demand["same_servicer"], false); assert.equal(demand["servicing_loan_id"], p.loanId); assert.equal(demand["existing_servicer_party_id"], p.partner);
+  const party = (await db.query<{ n: string }>(`SELECT legal_name AS n FROM parties WHERE id = $1`, [p.partner]))[0]!.n; assert.equal(party, DEMO_PARTNER.legal_name);
+  // the parsed statement: the October installment applied by the partner's system (interest $2,666.59, principal $403.20 from $441,366.13 → $440,962.93), per diem $87.59, 29 days to 2026-10-30
+  assert.equal(monthlyInterest(B.upb_tape_cents, ratePercent(B.note_rate_pct)), B.october_interest_cents);
+  assert.equal(B.pi_cents - B.october_interest_cents, B.october_principal_cents); assert.equal(B.upb_tape_cents - B.october_principal_cents, B.upb_after_october_cents);
+  assert.equal(demand["principal_cents"], B.upb_after_october_cents); assert.equal(demand["per_diem_cents"], B.per_diem_cents); assert.equal(demand["interest_cents"], B.interest_cents); assert.equal(demand["total_cents"], B.total_cents); assert.equal(demand["good_through_date"], String(B.disbursement)); assert.equal(demand["status"], "received");
+  assert.equal(BigInt(String(c["quoted_total_cents"])), B.total_cents); assert.equal(BigInt(String(c["per_diem_cents"])), B.per_diem_cents);
+  const fake = runtime.closeoutPorts.payoffDemand as FakePartnerPayoffDemand; const req = fake.requests.find((r) => r.servicer_loan_number === p.number)!; assert.ok(req, "the FAKE partner channel was asked"); assert.equal(req.statement_date, String(B.request_on));
+  assert.equal(c["escrow_treatment"], "partner_obligation");
+  assert.equal((await appEvents(p.appId, "payoff.escrow_treatment.decided")).at(-1)!.payload["escrow_treatment"], "partner_obligation");
+  // no servicing-side row for the monitored loan: no 16.1 request or quote, no ledger line
+  assert.equal(await count(db, `FROM entity_current WHERE kind = 'payoff_requests' AND (data->>'loan_id') = $1`, [p.loanId]), 0);
+  assert.equal(await count(db, `FROM entity_current WHERE kind = 'payoff_quotes' AND (data->>'loan_id') = $1`, [p.loanId]), 0);
+  assert.equal(await count(db, `FROM payoff_requests WHERE loan_id = $1`, [p.loanId]), 0);
+  assert.equal(await count(db, `FROM ledger_lines WHERE loan_id = $1`, [p.loanId]), 0);
+  assert.equal((await db.query<{ s: string }>(`SELECT status::text AS s FROM loans WHERE id = $1`, [p.loanId]))[0]!.s, "monitored");
+});
+test("35.10-T7: Given T6 and `funding.date.resynced` to 2026-11-02, then 24.4's planning figure is $443,765.81, `SM_PAYOFF_GOOD_THROUGH_GATE` reads closed, `closeout.quote` re-ran, the refreshed statement good through 2026-11-02 totals $443,765.81, the gate reads open, and the closeout journal shows two `command_run{24.4 requestPayoff}` entries with the second citing the resync event.", { skip }, async () => {
+  const p = await resyncedB(1); const c = p.c;
+  const steps = await stepsOf(p.appId);
+  assert.equal(c["step"], "quoted", JSON.stringify(steps.map((x) => [x.kind, x.step, x.command_name, x.detail["error"] ?? null])));
+  // 24.4 rule 6: the planning figure at the slipped date = $443,503.04 + 3 × $87.59 = $443,765.81 (never a funding figure)
+  const demand = (await entity("payoff_demands", String(c["payoff_demand_id"])))!;
+  assert.equal(demand["computed_total_at_disbursement_cents"], B.slipped_total_cents);
+  assert.equal(B.total_cents + 3n * B.per_diem_cents, B.slipped_total_cents);
+  // SM_PAYOFF_GOOD_THROUGH_GATE read closed against the first statement and open against the refreshed one
+  const { payoffGoodThroughGate } = await import("../property/ops-24-4.ts");
+  const first = { liability_id: `prior-loan:${p.loanId}`, status: "received", good_through_date: D(String(B.disbursement)) };
+  assert.equal(payoffGoodThroughGate({ payoffs: [first], disbursement_date: D(String(B.slipped_disbursement)) }).open, false, "closed: good-through 2026-10-30 < 2026-11-02");
+  assert.equal(demand["status"], "refreshed"); assert.equal(demand["good_through_date"], String(B.slipped_disbursement)); assert.equal(demand["total_cents"], B.slipped_total_cents); assert.equal(demand["interest_cents"], B.refreshed_interest_cents);
+  assert.equal(payoffGoodThroughGate({ payoffs: [{ liability_id: first.liability_id, status: String(demand["status"]), good_through_date: D(String(demand["good_through_date"])) }], disbursement_date: D(String(B.slipped_disbursement)) }).open, true, "open after the refresh");
+  assert.equal(c["good_through"], String(B.slipped_disbursement)); assert.equal(BigInt(String(c["quoted_total_cents"])), B.slipped_total_cents);
+  // the closeout journal: two command_run{24.4 requestPayoff}, the second citing the resync event
+  const requests = steps.filter((x) => x.kind === "command_run" && x.command_process === "24.4" && x.command_name === "requestPayoff");
+  assert.equal(requests.length, 2);
+  const cited = await db.query<{ t: string | null }>(`SELECT trigger_event_id::text AS t FROM refinance_closeout_steps WHERE application_id = $1 AND kind = 'command_run' AND command_process = '24.4' AND command_name = 'requestPayoff' ORDER BY created_at, id`, [p.appId]);
+  assert.equal(cited[1]!.t, p.resyncId, "the second request cites funding.date.resynced");
+  const refreshed = (await appEvents(p.appId, "payoff.demand.requested")); assert.equal(refreshed.length, 2); assert.equal(refreshed[1]!.payload["refresh"], true);
+  const fake = runtime.closeoutPorts.payoffDemand as FakePartnerPayoffDemand; assert.equal(fake.requests.filter((r) => r.servicer_loan_number === p.number).length, 2); assert.equal(fake.requests.filter((r) => r.servicer_loan_number === p.number)[1]!.refresh, true);
+});
+test("35.10-T8: Given T7 and `loan.funded` on 2026-11-02 with a settlement statement whose payoff line is $443,765.81 to Northlight's account of record with a wire reference, when the next sweep runs, then `payoff_demands.status = paid` with `payoff_posted_on = 2026-11-02`, `refinance.prior_loan.retired{mode: monitored_partner, remitted_to: partner_wire, payoff_total_cents: 44376581, evidence_document_id}` and `partner_book.loan.paid_off` (33.3's payload, `prior_status: monitored`) are on the prior loan's log once each, `loans.status = paid_off` with `retired_reason = refinance_partner`, no ledger line, `payoff_*` or `release_tasks` row exists for it, readiness rows stop (33.3-T6 passes unchanged), and `src/runtime/borrower/flows/16-readiness.ts` contains no `UPDATE loans` (contract grep).", { skip }, async () => {
+  const p = await retiredB(1); const c = p.c;
+  const steps = await stepsOf(p.appId);
+  assert.ok(["released_or_confirmed", "linked", "completed"].includes(String(c["step"])), `${c["step"]}: ${JSON.stringify(steps.map((x) => [x.kind, x.step, x.command_name, x.detail["error"] ?? null]))}`);
+  const demand = (await entity("payoff_demands", String(c["payoff_demand_id"])))!;
+  assert.equal(demand["status"], "paid"); assert.equal(demand["payoff_posted_on"], String(B.slipped_disbursement)); assert.equal(demand["wire_reference"], p.wire);
+  const retired = await loanEvents(p.loanId, "refinance.prior_loan.retired"); assert.equal(retired.length, 1); const rp = retired[0]!.payload;
+  assert.equal(rp["mode"], "monitored_partner"); assert.equal(rp["remitted_to"], "partner_wire"); assert.equal(String(rp["payoff_total_cents"]), String(B.slipped_total_cents)); assert.equal(rp["evidence_document_id"], p.evidenceId); assert.equal(rp["retired_on"], String(B.slipped_disbursement));
+  const paid = await loanEvents(p.loanId, "partner_book.loan.paid_off"); assert.equal(paid.length, 1); const pp = paid[0]!.payload;
+  assert.equal(pp["prior_status"], "monitored"); assert.equal(pp["status"], "paid_off"); assert.equal(pp["origination"], true); assert.equal(pp["application_id"], p.appId); assert.equal(pp["new_loan_id"], c["new_loan_id"]); assert.equal(pp["funding_date"], String(B.slipped_disbursement)); assert.equal(paid[0]!.actor_id, "payoff-release");
+  const row = (await db.query<{ s: string; r: string | null; by: string | null }>(`SELECT status::text AS s, retired_reason AS r, refinanced_by_loan_id::text AS by FROM loans WHERE id = $1`, [p.loanId]))[0]!;
+  assert.equal(row.s, "paid_off"); assert.equal(row.r, "refinance_partner"); assert.equal(row.by, c["new_loan_id"]);
+  // nothing servicing-side touched the monitored loan
+  assert.equal(await count(db, `FROM ledger_lines WHERE loan_id = $1`, [p.loanId]), 0);
+  assert.equal(await count(db, `FROM entity_current WHERE kind LIKE 'payoff_%' AND kind <> 'payoff_demands' AND (data->>'loan_id') = $1`, [p.loanId]), 0);
+  assert.equal(await count(db, `FROM entity_current WHERE kind = 'release_tasks' AND (data->>'loan_id') = $1`, [p.loanId]), 0);
+  assert.equal(await count(db, `FROM release_tasks WHERE loan_id = $1`, [p.loanId]), 0);
+  // readiness rows stop: the loan is no longer a subject of 33.3's pass (33.3-T6 holds), and the flow carries no status write (contract grep)
+  assert.ok(!(await readinessSubjects(db)).some((s) => s.loan_id === p.loanId), "not a readiness subject once retired");
+  const flow = readFileSync(join(SRC, "runtime/borrower/flows/16-readiness.ts"), "utf8");
+  assert.ok(!/UPDATE\s+loans/i.test(flow), "16-readiness.ts contains no UPDATE loans");
+});
+test("35.10-T9: Given T8, then one `integration_messages` row exists for adapter `partner-book.notify` with idempotency key `retirement:<prior_loan_id>` whose payload names NL-100001, 2026-11-02, 44376581 and the wire reference and contains no new-loan number, rate or amount, `partner_retirement_notifications{kind: notified}` exists, `SM_REFI_PARTNER_CONFIRM_21.due_at = 2026-11-23`; given a 33.1 tape of 2026-11-09 carrying NL-100001 as paid, then `partner_book.retirement.confirmed{source: tape}` satisfies it; given instead a tape of 2026-11-30 still carrying it active, then `disputed` is written, the timer is `breached`, an `ops_analyst` escalation names the loan and the tape status, and `book.resolve{paid_off}` writes `resolved{source: ops_resolve}`.", { skip }, async () => {
+  const p = await retiredB(1); const c = p.c;
+  // one outbox row to the partner's channel with the minimal payload: the loan number, the date, the amount, the wire reference — never the new loan's number, rate or amount
+  const msgs = await db.query<{ status: string; payload_summary: Json; loan_id: string | null }>(`SELECT status, payload_summary, loan_id::text AS loan_id FROM integration_messages WHERE adapter = 'partner-book.notify' AND idempotency_key = $1`, [`retirement:${p.loanId}`]);
+  assert.equal(msgs.length, 1); assert.equal(msgs[0]!.loan_id, p.loanId);
+  const payload = msgs[0]!.payload_summary["payload"] as Json; const text = JSON.stringify(payload);
+  assert.equal(payload["servicer_loan_number"], p.number); assert.equal(payload["payoff_date"], String(B.slipped_disbursement)); assert.equal(payload["amount_cents"], String(B.slipped_total_cents)); assert.equal(payload["wire_reference"], p.wire);
+  const newLoan = (await db.query<{ n: string }>(`SELECT servicer_loan_number AS n FROM loans WHERE id = $1`, [String(c["new_loan_id"])]))[0]!.n;
+  assert.ok(!text.includes(newLoan) && !text.includes("6.500") && !text.includes("45000000") && !/rate|note_rate|new_loan|funded_amount/.test(text), `minimal payload: ${text}`);
+  const notes = await db.query<{ kind: string; notified_on: string | null; integration_message_id: string | null }>(`SELECT kind, notified_on::text AS notified_on, integration_message_id::text AS integration_message_id FROM partner_retirement_notifications WHERE prior_loan_id = $1 ORDER BY created_at`, [p.loanId]);
+  assert.equal(notes[0]!.kind, "notified"); assert.equal(notes[0]!.notified_on, String(B.slipped_disbursement)); assert.ok(notes[0]!.integration_message_id);
+  const confirmClock = await timerRows("SM_REFI_PARTNER_CONFIRM_21", p.loanId); assert.equal(confirmClock.length, 1); assert.equal(confirmClock[0]!.status, "armed"); assert.equal(confirmClock[0]!.due_date, String(B.partner_confirm_due));
+  // a 33.1 tape of 2026-11-09 carrying NL-100001 as paid confirms the retirement
+  await laterTape(String(B.confirming_tape), { [p.number]: "Paid Off" });
+  await sweep(`${B.confirming_tape}T16:00:00.000Z`);
+  const confirmed = await loanEvents(p.loanId, "partner_book.retirement.confirmed"); assert.equal(confirmed.length, 1); assert.equal(confirmed[0]!.payload["source"], "tape");
+  assert.deepEqual((await timerRows("SM_REFI_PARTNER_CONFIRM_21", p.loanId)).map((t) => t.status), ["satisfied"]);
+  assert.ok((await db.query<{ kind: string }>(`SELECT kind FROM partner_retirement_notifications WHERE prior_loan_id = $1`, [p.loanId])).some((n) => n.kind === "confirmed"));
+  assert.ok(["linked", "completed"].includes(String((await closeoutOf(p.appId))["step"])));
+  // given instead (demo loan 2) a tape of 2026-11-30 still carrying the loan active: disputed, the clock breached, an ops_analyst escalation naming the loan and the tape status; book.resolve{paid_off} resolves it
+  const q = await retiredB(2);
+  assert.equal((await timerRows("SM_REFI_PARTNER_CONFIRM_21", q.loanId))[0]!.due_date, String(B.partner_confirm_due));
+  await laterTape(String(B.disputing_tape), { [p.number]: "Paid Off", [q.number]: "Active", "NL-100012": "Paid Off" });   // loan 2 still active on the partner's book (loan 12's payoff makes it a new tape)
+  await sweep(`${B.disputing_tape}T16:00:00.000Z`);
+  assert.deepEqual((await timerRows("SM_REFI_PARTNER_CONFIRM_21", q.loanId)).map((t) => t.status), ["breached"]);
+  const disputed = await loanEvents(q.loanId, "partner_book.retirement.disputed"); assert.equal(disputed.length, 1, JSON.stringify((await stepsOf(q.appId)).slice(-4).map((x) => [x.kind, x.step, x.command_name, x.detail]))); assert.equal(disputed[0]!.payload["tape_status"], "Active");
+  assert.ok((await db.query<{ kind: string }>(`SELECT kind FROM partner_retirement_notifications WHERE prior_loan_id = $1`, [q.loanId])).some((n) => n.kind === "disputed"));
+  const esc = await db.query<{ owner_role: string; payload: Json }>(`SELECT owner_role, payload FROM escalations WHERE loan_id = $1 AND payload->>'closeout_id' = $2 AND payload ? 'tape_status'`, [q.loanId, String(q.c["id"])]);
+  assert.equal(esc.length, 1); assert.equal(esc[0]!.owner_role, "ops_analyst"); assert.equal(esc[0]!.payload["tape_status"], "Active"); assert.equal(esc[0]!.payload["prior_loan_id"], q.loanId); assert.equal(esc[0]!.payload["servicer_loan_number"], q.number);
+  clock.set(`${B.disputing_tape}T18:00:00.000Z`);
+  await runtime.execute({ process: "33.1", name: "book.resolve", loanId: q.loanId, actor: OPS, input: { loan_id: q.loanId, resolution: "paid_off", reason: "the partner confirmed the payoff by phone; the tape lags" } });
+  await sweep(`${B.disputing_tape}T19:00:00.000Z`);
+  const resolved = await loanEvents(q.loanId, "partner_book.retirement.confirmed"); assert.equal(resolved.length, 1); assert.equal(resolved[0]!.payload["source"], "ops_resolve");
+  assert.ok((await db.query<{ kind: string }>(`SELECT kind FROM partner_retirement_notifications WHERE prior_loan_id = $1`, [q.loanId])).some((n) => n.kind === "resolved"));
+});
 test("35.10-T10: Given T1 and `rescission.exercised` before funding, then the closeout is `unwound`, the quote is superseded, `payoff_demands.status = cancelled`, every closeout timer is `cancelled`, no ledger set touched the prior loan and it still reads `active`; given instead T2 and an agent-actor call to reverse the settlement, then it is refused `ROLE_DENIED` and nothing is written, while an `officer`'s reversal inside the finality window emits `payoff.reversed`, reopens the loan to `active`, clears `refinanced_by_loan_id`, appends a superseding `prior_loan_retirements` row and returns the closeout to `settling`.", { skip }, async () => {
   // (a) T1 and 25.3's rescission before funding: the closeout unwinds — 16.1's quote superseded, 24.4's demand cancelled, every closeout clock cancelled, the ledger untouched, the loan active
   const a = await quotedA();
@@ -309,7 +491,7 @@ test("35.10-T10: Given T1 and `rescission.exercised` before funding, then the cl
   assert.equal(unwound["hold_reason"], "rescission.exercised"); assert.ok(unwound["completed_at"]);
   assert.equal((await loanEvents(a.loanId, "refinance.closeout.unwound")).length, 1);
   const statement = (await entity("payoff_statements", `ps-${String(a.c["quote_id"])}`))!; assert.ok(statement, "16.1's statement row"); assert.equal(statement["status"], "superseded");
-  const quote = (await entity("payoff_quotes", String(a.c["quote_id"])))!; assert.ok(quote["superseded_by_id"], "the quote is superseded (16.1 scheduleRecompute)");
+  const quote = (await entity("payoff_quotes", String(a.c["quote_id"])))!; assert.equal(quote["status"], "superseded", "the quote is superseded (16.1 scheduleRecompute{op: supersede})"); assert.equal(await count(db, `FROM entity_current WHERE kind = 'payoff_quotes' AND (data->>'supersedes_quote_id') = $1`, [String(a.c["quote_id"])]), 0, "no recompute row for an unwind");
   assert.equal((await entity("payoff_demands", String(a.c["payoff_demand_id"])))!["status"], "cancelled");
   assert.equal((await appEvents(a.appId, "payoff.demand.cancelled")).length, 1);
   const closeoutTimers = await db.query<{ code: string; status: string }>(`SELECT code, status::text AS status FROM timers WHERE code LIKE 'SM_REFI_%' AND code <> 'SM_REFI_CLOSEOUT_BOARD_DAILY' AND (loan_id = $1 OR application_id = $2)`, [a.loanId, a.appId]);
@@ -338,10 +520,10 @@ test("35.10-T10: Given T1 and `rescission.exercised` before funding, then the cl
   const retirements = await db.query<{ retired_on: string | null; retirement_event_id: string; settlement_id: string | null }>(`SELECT retired_on::text AS retired_on, retirement_event_id::text AS retirement_event_id, settlement_id FROM prior_loan_retirements WHERE prior_loan_id = $1 ORDER BY created_at`, [b.loanId]);
   assert.equal(retirements.length, 2, "a superseding retirement row"); assert.equal(retirements[0]!.retired_on, String(A.disbursement)); assert.equal(retirements[1]!.retired_on, null); assert.equal(retirements[1]!.retirement_event_id, rev.id);
   const after = await closeoutOf(b.appId);
-  assert.equal(after["step"], "settling"); assert.equal(after["status"], "open"); assert.equal(after["waiting_on"], "officer"); assert.equal(after["retirement_id"], null); assert.equal(after["settlement_id"], null); assert.equal(after["new_loan_id"], null);
+  assert.equal(after["step"], "settling"); assert.equal(after["status"], "held"); assert.equal(after["hold_reason"], "reversed"); assert.equal(after["waiting_on"], "officer"); assert.equal(after["retirement_id"], null); assert.equal(after["settlement_id"], null); assert.equal(after["new_loan_id"], null);
   assert.equal((await loanEvents(b.loanId, "loan.paid_in_full")).length, 1, "the original paid-in-full stays on the log; the reversal supersedes it");
   await sweep("2027-02-02T16:00:00.000Z");
-  assert.equal((await closeoutOf(b.appId))["step"], "settling", "the settlement waits on the officer after a reversal: no second transfer on its own");
+  assert.equal((await closeoutOf(b.appId))["step"], "settling", "the settlement waits on the officer after a reversal: no second transfer on its own"); assert.equal((await closeoutOf(b.appId))["status"], "held");
   assert.equal(await count(db, `FROM (SELECT DISTINCT s.id FROM ledger_lines l JOIN ledger_entry_sets s ON s.id = l.set_id WHERE l.rule_ref = '35.10:r4:transfer' AND s.description LIKE '%' || $1 || '%' AND s.reverses_set_id IS NULL) x`, [b.demandId]), 1, "one transfer, never re-posted");
 });
 test("35.10-T11: Given a closeout at `settling` with no `loan.paid_in_full` on the prior loan, when `closeout.retire` is called by any actor, then it is refused `NO_SETTLEMENT` and no row or event is written; given a hosted call to any `closeout.*` tool carrying `upb_cents`, `total_cents` or `buckets`, then it is refused `NO_CLIENT_STATE`; and a contract test finds no `UPDATE loans SET status` in `src/` outside `src/infra/db/loans.ts` (the 35.1 projector).", { skip }, async () => {
@@ -411,7 +593,26 @@ test("35.10-T12: Given a settlement statement payoff line of $562,024.39 against
   const settlement = (await entity("payoff_settlements", String(after["settlement_id"])))!; assert.equal(settlement["status"], "paid_in_full"); assert.equal(settlement["absorbed_shortage_cents"], A.total_cents - A.short_payoff_line_cents); assert.equal(settlement["shortage_disposition"], "servicer_absorbed");
   assert.equal(await count(db, `FROM prior_loan_retirements WHERE prior_loan_id = $1`, [p.loanId]), 1);
 });
-test("35.10-T13: Given two closeouts waiting on the FAKE partner's statement with the port `unavailable` for three servicer business days, then each has one `SM_REFI_CLOSEOUT_STALLED_2BD` breach, one `ops_analyst` escalation naming `application_id`, `prior_loan_id`, `step = awaiting_schedule → quote` and `waiting_on = payoff_demand`, and the journal's `command_failed` entries count three before `held{attempts}`.", { todo: true });
+test("35.10-T13: Given two closeouts waiting on the FAKE partner's statement with the port `unavailable` for three servicer business days, then each has one `SM_REFI_CLOSEOUT_STALLED_2BD` breach, one `ops_analyst` escalation naming `application_id`, `prior_loan_id`, `step = awaiting_schedule → quote` and `waiting_on = payoff_demand`, and the journal's `command_failed` entries count three before `held{attempts}`.", { skip }, async () => {
+  const fake = runtime.closeoutPorts.payoffDemand as FakePartnerPayoffDemand;
+  const a = await priorLoanB(3); const b = await priorLoanB(4);
+  fake.unavailable = true;
+  try {
+    // three servicer business days of sweeps (Mon 2026-10-12 … Wed 2026-10-14), the partner's statement channel out
+    for (const day of ["2026-10-12", "2026-10-13", "2026-10-14", "2026-10-15"]) await sweep(`${day}T16:00:00.000Z`);
+  } finally { fake.unavailable = false; }
+  for (const p of [a, b]) {
+    const c = await closeoutOf(p.appId); const steps = await stepsOf(p.appId);
+    assert.equal(c["status"], "held", JSON.stringify(steps.map((x) => [x.kind, x.step, x.detail]))); assert.equal(c["hold_reason"], "attempts"); assert.equal(c["waiting_on"], "payoff_demand"); assert.equal(c["step"], "awaiting_schedule");
+    const failed = steps.filter((x) => x.kind === "command_failed"); const held = steps.filter((x) => x.kind === "held");
+    assert.equal(failed.length, 3, "three command_failed entries"); assert.deepEqual(failed.map((x) => x.detail["attempt"]), [1, 2, 3]);
+    assert.equal(held.length, 1); assert.equal(held[0]!.detail["attempts"], 3, "held{attempts} on the third failure"); assert.equal(held[0]!.detail["reason"], "attempts");
+    const stalled = await db.query<{ status: string; due_date: string | null; anchor_date: string }>(`SELECT status::text AS status, due_date::text AS due_date, anchor_date::text AS anchor_date FROM timers WHERE code = 'SM_REFI_CLOSEOUT_STALLED_2BD' AND loan_id = $1`, [p.loanId]);
+    assert.equal(stalled.length, 1, "one stalled clock for the clocked wait on the port"); assert.equal(stalled[0]!.status, "breached"); assert.equal(stalled[0]!.anchor_date, "2026-10-12"); assert.equal(stalled[0]!.due_date, "2026-10-14");
+    const esc = await db.query<{ owner_role: string; payload: Json }>(`SELECT owner_role, payload FROM escalations WHERE loan_id = $1 AND payload->>'timer_code' = 'SM_REFI_CLOSEOUT_STALLED_2BD'`, [p.loanId]);
+    assert.equal(esc.length, 1); assert.equal(esc[0]!.owner_role, "ops_analyst"); assert.equal(esc[0]!.payload["application_id"], p.appId); assert.equal(esc[0]!.payload["prior_loan_id"], p.loanId); assert.equal(esc[0]!.payload["step"], "awaiting_schedule → quote"); assert.equal(esc[0]!.payload["waiting_on"], "payoff_demand");
+  }
+});
 test("35.10-T14: Given the lifecycle journey on the hosted runtime through `loan.funded` on the refinance application with no test code calling 16.1, 16.2, 16.3 or 3.5, when only `POST /v1/sweep` runs twice, then the prior loan reads `paid_off` with a `payoff_settlements` row, a `prior_loan_retirements` row, `loans.refinanced_by_loan_id` = the new loan and `applications.loan_id` = the same row, the new loan is `active` with `origination_application_id` = the application and `loan_terms.pi_cents` = $3,219.83, and the journey fixture's `payoff()` phase asserts those rows instead of executing tools.", { todo: true });
 test("35.10-T15: Given the demo book with closeouts in every mode and step, when the daily pass runs at 06:45 ET, then one `refinance_closeout_daily_receipts` row exists for the day with counts equal to a direct query of `refinance_closeouts` (open, by mode, by step, retired today, releases open, partners unconfirmed), `refinance.closeout.daily.run_completed` satisfies and re-arms `SM_REFI_CLOSEOUT_BOARD_DAILY` on the global subject, and 35.8's Refinance board renders the receipt.", { skip }, async () => {
   const partner = await partyId("Lender 35.10-T15");
@@ -419,7 +620,7 @@ test("35.10-T15: Given the demo book with closeouts in every mode and step, when
   assert.equal(demo.length, 18, "every mode × every step after `opened`");
   assert.deepEqual(await seedDemoCloseouts(db, partner, "2026-09-16T04:00:00.000Z"), demo, "the seed is idempotent");
   // the board clock's instances anchored on the two days of this test (earlier tests' sweeps produced their own days' receipts and instances)
-  const timers = async () => db.query<{ status: string; subject_kind: string; subject_id: string; anchor_date: string; due_date: string | null }>(`SELECT status::text AS status, subject_kind, subject_id, anchor_date::text AS anchor_date, due_date::text AS due_date FROM timers WHERE code = 'SM_REFI_CLOSEOUT_BOARD_DAILY' AND anchor_date IN ('2026-09-16', '2026-09-17') ORDER BY armed_at`);
+  const timers = async () => db.query<{ status: string; subject_kind: string; subject_id: string; anchor_date: string; due_date: string | null }>(`SELECT status::text AS status, subject_kind, subject_id, anchor_date::text AS anchor_date, due_date::text AS due_date FROM timers WHERE code = 'SM_REFI_CLOSEOUT_BOARD_DAILY' AND anchor_date IN ('2026-09-16', '2026-09-17') ORDER BY anchor_date`);
   assert.equal((await timers()).length, 0);
   assert.ok((await count(db, `FROM timers WHERE code = 'SM_REFI_CLOSEOUT_BOARD_DAILY' AND status IN ('armed', 'breached')`)) <= 1, "at most one open board clock at a time (re-armed daily; the earlier tests' clocks breached as this file's sweeps move between dates)");
   // 06:44 ET (10:44Z in September): the sweep's board pass does not run yet
@@ -455,6 +656,7 @@ test("35.10-T15: Given the demo book with closeouts in every mode and step, when
   let t = await timers();
   assert.equal(t.length, 1); assert.equal(t[0]!.status, "armed"); assert.equal(t[0]!.subject_kind, "global"); assert.equal(t[0]!.anchor_date, "2026-09-16"); assert.equal(t[0]!.due_date, "2026-09-17");
   // the next day's pass satisfies it and re-arms it on the global subject
+  clock.set("2026-09-17T10:45:00.000Z");
   const next = await closeoutBoardRun(runtime, "2026-09-17T10:45:00.000Z");
   assert.equal(next.ran, true); assert.equal(next.as_of_date, "2026-09-17");
   t = await timers();

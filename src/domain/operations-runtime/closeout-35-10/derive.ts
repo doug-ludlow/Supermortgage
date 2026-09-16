@@ -10,6 +10,7 @@
  */
 import type { Queryable } from "../../../infra/db/client.ts";
 import type { EntityStore } from "../../../app/tools.ts";
+import { rescissionExpiry, fundingReleaseDate } from "../../compliance-disclosures/ops-25-3.ts";
 import type { DomainEvent } from "../../../kernel/events/index.ts";
 import { plainDate as D, addDays, addMonths, type PlainDate } from "../../../kernel/calendar/date.ts";
 import type { Cents } from "../../../kernel/money/cents.ts";
@@ -86,9 +87,15 @@ export function projectedDisbursement(store: EntityStore, events: readonly Domai
   if (funding && dateOf(funding.data["scheduled_funding_date"])) return { date: dateOf(funding.data["scheduled_funding_date"])!, source: "26.3 funding calendar", funding_id: funding.id };
   const snap = store.list("closing_data_snapshots", (d) => d["application_id"] === applicationId).map((r) => (r.data["payload"] as Row | undefined)?.["scheduled_disbursement_date"]).find((v) => dateOf(v));
   if (snap) return { date: dateOf(snap)!, source: "26.1 closing snapshot", funding_id: null };
+  // 26.2's schedule alone: the earliest funding date is 25.3's — the rescission period from the note date (midnight of the third business day) and the first Fed business day after it (fundingReleaseDate); a non-rescindable closing funds on the note date's next business day the same way with no period
   const scheduled = [...app].reverse().find((e) => e.type === "closing.scheduled");
   const noteDate = scheduled ? dateOf(pl(scheduled)["scheduled_note_date"]) : null;
-  if (noteDate) return { date: addDays(noteDate, 4), source: "closing.scheduled + the rescission window (26.3 calendar not opened yet)", funding_id: null };
+  if (noteDate) {
+    const tz = s(pl(scheduled!)["time_zone"]) ?? "America/New_York";
+    const rescindable = pl(scheduled!)["rescindable"] !== false;
+    const expiresOn = rescindable ? rescissionExpiry(noteDate, tz).expires_on : noteDate;
+    return { date: fundingReleaseDate({ expires_on: expiresOn }).earliest_funding_date, source: rescindable ? "closing.scheduled + 25.3's rescission period (26.3 calendar not opened yet)" : "closing.scheduled + the next Fed business day (not rescindable)", funding_id: null };
+  }
   return null;
 }
 export function fundingIdFor(store: EntityStore, applicationId: string): string | null {

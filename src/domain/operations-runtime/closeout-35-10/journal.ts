@@ -27,7 +27,7 @@ export async function enterStep(io: JournalIo, c: CloseoutRow, step: CloseoutSte
   const waitingOn = o.waiting_on ?? null;
   const clocked = !(waitingOn !== null && UNCLOCKED_WAITS.has(waitingOn)) && !(o.status !== undefined && ["waiting_human", "waiting_partner", "waiting_window", "held"].includes(o.status));
   const row = await updateCloseout(io.q, c.id, { step, status: o.status ?? "open", waiting_on: waitingOn, step_attempts: 0 }, io.now);
-  const event = appendEvent(io, row, "refinance.closeout.step.entered", { step, clocked, entered_at: day(io.now), entered_at_iso: io.now, waiting_on: waitingOn, status: row.status }, o.trigger_event_id ?? null);
+  const event = appendEvent(io, row, "refinance.closeout.step.entered", { step, clocked, entered_at: day(io.now), entered_at_iso: io.now, waiting_on: waitingOn, status: row.status, ...(typeof o.detail?.["transition"] === "string" ? { transition: o.detail["transition"] } : {}) }, o.trigger_event_id ?? null);
   const entry = await appendStep(io.q, { closeout_id: c.id, application_id: c.application_id, prior_loan_id: c.prior_loan_id, step, kind: "entered", clocked, waiting_on: waitingOn, trigger_event_id: o.trigger_event_id ?? null, actor_kind: io.actor.kind, actor_id: io.actor.id, actor_role: io.actor.role ?? null, detail: { event_id: event.id, status: row.status, ...(o.detail ?? {}) }, sweep_run_id: io.sweepRunId }, io.now);
   return { row, event, entry };
 }

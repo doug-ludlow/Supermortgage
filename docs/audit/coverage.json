@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 8150/8756 (93.1%): tids 2268/2458, tables 779/848, timers 2050/2097, notices 308/308, tools 1454/1578, figures 1291/1467; processes at 100%: 193/205",
+ "brief": "spec units built 8164/8756 (93.2%): tids 2273/2458, tables 779/848, timers 2050/2097, notices 308/308, tools 1454/1578, figures 1300/1467; processes at 100%: 193/205",
  "totals": {
   "tids": {
    "spec": 2458,
-   "built": 2268
+   "built": 2273
   },
   "tables": {
    "spec": 848,
@@ -23,11 +23,11 @@
   },
   "figures": {
    "spec": 1467,
-   "built": 1291
+   "built": 1300
   },
   "units": {
    "spec": 8756,
-   "built": 8150
+   "built": 8164
   }
  },
  "sections": {
@@ -237,7 +237,7 @@
   },
   "35": {
    "spec": 715,
-   "built": 126,
+   "built": 140,
    "processes": 12,
    "done": 1
   }
@@ -8771,7 +8771,7 @@
    },
    "figures": {
     "spec": 53,
-    "built": 6,
+    "built": 7,
     "missing": [
      "$1,351.71",
      "$1,500.00",
@@ -8783,7 +8783,6 @@
      "$1,900.91",
      "$1,971.20",
      "$10.24",
-     "$100.00",
      "$17.27",
      "$2,192.57",
      "$2,292.57",
@@ -8824,9 +8823,9 @@
    },
    "units": {
     "spec": 97,
-    "built": 8
+    "built": 9
    },
-   "pct": 8.2
+   "pct": 9.3
   },
   {
    "process": "35.6",
@@ -9257,14 +9256,9 @@
    "title": "The refinance close of the loop: the prior loan's payoff quote, settlement and ledger zeroing, lien release, escrow disposition and retirement \u2014 whether Supermortgage services it or a partner does \u2014 the partner's notification and the new loan linked, replacing the status flip",
    "tids": {
     "spec": 15,
-    "built": 9,
-    "todo": 6,
+    "built": 14,
+    "todo": 1,
     "missing": [
-     6,
-     7,
-     8,
-     9,
-     13,
      14
     ]
    },
@@ -9291,30 +9285,22 @@
    },
    "figures": {
     "spec": 27,
-    "built": 12,
+    "built": 20,
     "missing": [
      "$2,062.50",
-     "$2,540.11",
-     "$2,666.59",
      "$2,802.88",
      "$3,069.79",
      "$3,219.83",
-     "$403.20",
-     "$440,962.93",
-     "$441,366.13",
-     "$443,503.04",
-     "$443,765.81",
      "$450,000.00",
      "$575,000.00",
-     "$612.50",
-     "$87.59"
+     "$612.50"
     ]
    },
    "units": {
     "spec": 65,
-    "built": 44
+    "built": 57
    },
-   "pct": 67.7
+   "pct": 87.7
   },
   {
    "process": "35.11",

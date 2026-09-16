@@ -47,6 +47,11 @@ for a process maps onto them one-to-one:
 7. **The AI path and the human path run the same validators.** `service.ts`
    is the only way to change state; the ops console and the agent both call
    it.
+8. **Retired units are recorded, never deleted:** a decision that retires part
+   of the spec is a dated record in `docs/decisions/` quoting the owner's
+   words. Each retired unit is one appended row of `spec/registry/retired.json`
+   citing that record, which the audit subtracts before it counts (never a
+   deleted test, never an edited baseline).
 
 ## Build order
 

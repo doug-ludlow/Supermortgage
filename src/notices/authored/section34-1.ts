@@ -13,8 +13,8 @@
  *                             employee about their own account; the sender's postal address is carried anyway).
  *
  * Tokens: `inviter_name` (the admin's legal name, or "The Supermortgage platform" for the bootstrap admin), `roles` (the roles
- * granted, comma-separated), `sign_in_url` (OPS_URL, else the app base + /ops), `platform_postal_address` (SERVICER_CONTACT
- * .servicer_address). Never a destination (the e-mail is "this e-mail", never spelled), never a borrower's name, loan, figure
+ * granted, comma-separated), `sign_in_url` (OPS_URL, else the app base + /ops), `platform_postal_address` (the FAKE servicer
+ * profile's servicer_address — FAKE_SERVICER_PROFILE_V1 in src/domain/operations-runtime/servicing-config.ts, 35.5 rule 9). Never a destination (the e-mail is "this e-mail", never spelled), never a borrower's name, loan, figure
  * or rate: T1 — "naming the inviter and the roles and no borrower data".
  */
 import type { ContentRule, NoticeTemplate, VersionInput } from "../registry.ts";

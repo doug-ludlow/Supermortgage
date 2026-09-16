@@ -21,7 +21,7 @@ Projection of sections 22.1 (documents and the needs-list loop), 22.2 (credit re
 ### Operational prerequisites
 - Vendor fakes: Stripe Identity, Plaid, Truv, IRS IVES, carrier connection, the RON platform, DU, EarlyCheck, telephony/SMS/e-mail and print/mail run against in-repo fakes in every build stage; every fake is named `FAKE` in code, docs and the console (README, "Vendor fakes"). No live vendor credential is a prerequisite of any build stage.
 - The partner's legal name and NMLSR ID (`partner.legal_name`, `partner.nmlsr_id`) and the `mlo_of_record` roster (31.1) — rendered wherever a disclosure or the SAFE Act requires them.
-- Feature flags consumed (32.2 §8): `origination.ai_mlo_intake` (default `assisted`), `origination.preapproval_program` (default on), `closing.enote_default`, `case.ai_path`, `theme` (dark default), `voice.in_app`, connector vendor toggles, `jurisdiction_rules`.
+- Feature flags consumed (32.2 §8): `origination.ai_mlo_intake` (default `assisted`), `origination.preapproval_program` (default on), `closing.enote_default`, `case.ai_path`, `theme` (light default with the designed skin), `voice.in_app`, connector vendor toggles, `jurisdiction_rules`.
 
 ### Build spec
 #### Inputs and triggers
@@ -29,7 +29,7 @@ Projection of sections 22.1 (documents and the needs-list loop), 22.2 (credit re
 
 #### Data model
 No UI-owned table is declared here (32.2 declares the seven UI-owned tables; this process writes `conversations` through the 32.2 command endpoints).
-- Baseline, read-only projection sources this process renders (owned by the sections in the Blueprint row; no table is re-declared): `application_liabilities`, `conditions`, `debt_payoff_plans`, `document_requests`, `parties`.
+- Baseline, read-only projection sources this process renders (owned by the sections in the Blueprint row; no table is re-declared): `application_liabilities`, `conditions`, `debt_payoff_plans`, `document_requests`, `du_asset_parties`, `du_assets`, `du_declarations`, `parties`.
 - Domain evidence rows are written by the owning command handler on a card resolve (32.1 §9); `ui_events` is the corroborating trail.
 
 #### State machine
@@ -39,6 +39,8 @@ Object-level, UI-owned (`card_instances.status`): `pending` —(the borrower res
 None owned by this process — the UX owns no timer; 32.2 §4 is the allow-list and its table holds the reference rows.
 
 Borrower-visible clocks this process renders (each owned by the process in parentheses; the label is the allow-list's): `SM_NEEDS_LIST_BORROWER_RESPONSE_5` (22.1), `SM_NEEDS_LIST_REVIEW_1BD` (22.1), `FNMA_B1_1_03_CREDIT_DOCS_4M` (22.1), `FNMA_B3_3_2_01_PAYSTUB_30D_GATE` (22.1), `SM_DOC_EXPIRY_WARN_14` (22.1), `FNMA_B3_3_1_04_VVOE_10BD` (22.3), `FNMA_B3_2_02_DU_CLOSE_BY_GATE` (22.3), `FCRA_605A_H_ALERT_CONTACT_GATE` (22.6), `SM_O21_JOINT_INTENT_GATE` (21.1), `SM_DU_CONDITIONS_SLA_4H` (23.2).
+
+Named as timers here but not registry codes (docs/ux/BACKEND-DELTAS.md): DU_PREFLIGHT_DUPLICATE_ASSET, PARTY_SCOPE.
 
 Jurisdiction overrides: none owned; state copy variants come from `jurisdiction_rules` through the owning process.
 

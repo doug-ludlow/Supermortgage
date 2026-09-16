@@ -21,7 +21,7 @@ import { refreshWindowStart } from "../verification/ops-22-2.ts";
 import { GATES } from "../compliance-disclosures/ops-25-1.ts";
 import { FACILITY_FIXTURE } from "../warehouse/ops-27-1.ts";
 import type { UnwindTrigger } from "../closing/ops-26-3.ts";
-import { SERVICER_CONTACT } from "../../runtime/servicing.ts";
+import { FAKE_SERVICER_PROFILE_V1 as SERVICER_CONTACT } from "./servicing-config.ts";   // 35.5 rule 9: the FAKE build's seeded servicer_profiles v1 (the former SERVICER_CONTACT values); 30.2 boards the profile
 import { productFacts, lockStatus, trustPoaGate, decisionStatus, templateVersionGate, eclosingFacts, dollars, custodialAccountIdFor, executionReviewUnrecoverable } from "./facts-35-6-b.ts";
 import { plainDate as D } from "../../kernel/calendar/date.ts";
 import { wetPreSigningFunding } from "./steps-35-6-e.ts";
@@ -205,7 +205,7 @@ const cdDelivered: StepDef = {
     const min = S(rec.payload("closing.scheduled")?.["min"]) ?? S(rec.entities("mers_registrations").at(-1)?.data["min"]);
     if (!setRow.data["snapshot_id"]) {
       const cdFigures = (cd.data["figures"] as Row | undefined) ?? {};
-      // the servicer is the platform's own contact record (SERVICER_CONTACT, the one 30.2 boards); the vesting is 24.4's title commitment; the product is 21.4's lock; the eClosing flags are 26.2's decision and rows
+      // the servicer is the platform's own contact record (the FAKE servicer profile v1 — 35.5's `servicer_profiles`, the one 30.2 boards); the vesting is 24.4's title commitment; the product is 21.4's lock; the eClosing flags are 26.2's decision and rows
       const product = productFacts(rec, terms); const titleVesting = (rec.last("title.commitment.received")?.payload["vesting"] as Row | undefined) ?? null; const eclosing = eclosingFacts(rec, closing);
       const vestingNames = ((titleVesting?.["names"] as unknown[] | undefined) ?? []).map(String);
       const snapshot: Row = { application_id: rec.app.id, cd_version: Number(cd.data["cd_version"] ?? 1), du_submission_number: String(rec.payload("du.findings.received")?.["submission_number"] ?? "1"), lock_id: String(terms.lock.payload["lock_id"]), partner: { legal_name: parties.partner_legal_name, nmlsr_id: parties.partner_nmlsr_id, mers_org_id: parties.partner_mers_org_id ?? "" }, mlo_of_record: { name: parties.mlo_name, nmlsr_id: parties.mlo_nmlsr_id }, servicer: { name: SERVICER_CONTACT.servicer_name, payment_address: SERVICER_CONTACT.servicer_address },
@@ -454,6 +454,8 @@ export async function fundingChain(ctx: StepContext, o: { stage: "pre_signing" |
     }
     // 26.3: the funding conditions with every fact from the record; then funding.authorized
     if (!rec.has("funding.authorized")) {
+      // rule 1 (a pass with no new fact writes nothing): the wet pre-signing subset is evaluated once the business day before the note date (26.3's SM_O73_CONDITIONS_EVAL_2BH wet anchor) and once more on the funding morning with the morning's facts — the passes between wait on the date
+      if (o.stage === "pre_signing" && rec.has("funding.conditions.evaluated", (p) => p["subset"] === "pre_signing" && p["passed"] === true) && civil(rec, now) < (S(funding["earliest_funding_date"]) ?? disbursement)) return { wait: { status: "waiting_window", waiting_on: "SM_O73_FUNDING_DATE", clocked: false } };
       const fc = fundingConditionFacts(rec, { as_of: now, funding_type: String(funding["funding_type"]), transaction_type: rec.app.transaction_type ?? "limited_cash_out", disbursement_date: disbursement, release_date: disbursement, note_date: S(funding["note_date"]) ?? closing.scheduled_note_date, authorized: false, loan_amount_cents: terms.loan_amount_cents.value, enote: closing.note_form === "enote", first_payment_date: S(funding["first_payment_date"]), rescission: resc.facts, rescission_source: resc.source, worksheet_reconciled: ws.data["reconciled"] === true, warehouse_advance_approved: null, ...(o.stage ? { stage: o.stage } : {}) });
       const conditions = await ctx.run<Row>({ process: "26.3", name: "evaluateFundingConditions", actor: FUNDER, input: { funding_id: fundingId, facts: fc.facts, ...(o.stage ? { op: o.stage } : {}) }, detail: { sources: fc.sources, ...(o.stage ? { subset: o.stage } : {}) } });
       if (conditions["passed"] !== true) { const pending = (conditions["pending_codes"] as string[] | undefined) ?? []; const blocking = (conditions["blocking_codes"] as string[] | undefined) ?? []; if (blocking.length) return { hold: { reason: "gate_closed", gate: String(blocking[0]), detail: { blocking, pending } } }; return { wait: { status: "open", waiting_on: pending[0] ?? "26.3", clocked: true } }; }

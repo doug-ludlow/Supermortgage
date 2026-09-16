@@ -21,7 +21,7 @@ Projection of sections the build-spec tests each UI test depends on (mapping und
 ### Operational prerequisites
 - Vendor fakes: Stripe Identity, Plaid, Truv, IRS IVES, carrier connection, the RON platform, DU, EarlyCheck, telephony/SMS/e-mail and print/mail run against in-repo fakes in every build stage; every fake is named `FAKE` in code, docs and the console (README, "Vendor fakes"). No live vendor credential is a prerequisite of any build stage.
 - The partner's legal name and NMLSR ID (`partner.legal_name`, `partner.nmlsr_id`) and the `mlo_of_record` roster (31.1) — rendered wherever a disclosure or the SAFE Act requires them.
-- Feature flags consumed (32.2 §8): `origination.ai_mlo_intake` (default `assisted`), `origination.preapproval_program` (default on), `closing.enote_default`, `case.ai_path`, `theme` (dark default), `voice.in_app`, connector vendor toggles, `jurisdiction_rules`.
+- Feature flags consumed (32.2 §8): `origination.ai_mlo_intake` (default `assisted`), `origination.preapproval_program` (default on), `closing.enote_default`, `case.ai_path`, `theme` (light default with the designed skin), `voice.in_app`, connector vendor toggles, `jurisdiction_rules`.
 
 ### Build spec
 #### Inputs and triggers
@@ -29,7 +29,7 @@ Projection of sections the build-spec tests each UI test depends on (mapping und
 
 #### Data model
 No UI-owned table is declared here (32.2 declares the seven UI-owned tables).
-- Baseline, read-only projection sources this process renders (owned by the sections in the Blueprint row; no table is re-declared): `applicant_demographics`, `application_assets`, `compliance_test_runs`, `consent_disclosure_versions`, `credit_authorizations`, `ctc_checklists`, `debt_payoff_plans`, `declarations`, `document_requests`, `documents`, `du_findings_interpretations`, `gift_records`, `payoff_quotes`, `prequalifications`, `pricing_quotes`, `refi_opportunities`.
+- Baseline, read-only projection sources this process renders (owned by the sections in the Blueprint row; no table is re-declared): `applicant_demographics`, `application_assets`, `assets`, `compliance_test_runs`, `consent_disclosure_versions`, `credit_authorizations`, `ctc_checklists`, `debt_payoff_plans`, `declarations`, `document_requests`, `documents`, `du_declarations`, `du_findings_interpretations`, `du_residences`, `gift_records`, `journey_progress`, `payoff_quotes`, `prequalifications`, `pricing_quotes`, `refi_opportunities`.
 - Domain evidence rows are written by the owning command handler on a card resolve (32.1 §9); `ui_events` is the corroborating trail.
 
 #### State machine
@@ -212,14 +212,14 @@ A file's screens are accepted when: all its tests pass; 32.13-T1…16 pass on th
 | 32.13-T5 | Cards commit, chat doesn't — Given a borrower message whose text matches a pending card's affirmative (e.g., "yes proceed", "lock it", "I agree"), then no command executes and the reply contains the deep link. |
 | 32.13-T6 | Party scoping — Given a co-borrower session, then the Record shows the other party's first name and `progress` booleans only; `applicant_demographics`, income and liabilities of the other party never appear. |
 | 32.13-T7 | Voice never consents — Given any `ConsentCard`, when a voice session affirms, then the card stays `pending` and the invitation link is sent. |
-| 32.13-T8 | Talk to a person — Given any screen, then a control emitting `human.request` is visible without scrolling; after `human.transfer.completed`, a `PersonCard{human_agent}` exists. |
+| 32.13-T8 | Talk to a person — Given any screen, then a control emitting `human.request` is visible without scrolling (the input bar; on a phone the Chat tab is in the Apply tab rail on every screen and its input bar is in the viewport); after `human.transfer.completed`, a `PersonCard{human_agent}` exists. |
 | 32.13-T9 | Money and rates — Given any rendered amount, then it is produced from cents via `Intl.NumberFormat` and any rate from a decimal string; no float arithmetic in the client. |
-| 32.13-T10 | Mobile parity — Given every card kind at 390 px, then it is operable and the status strip shows badge, next event and the needed-from-you count. |
-| 32.13-T11 | Deep links — Given an SMS deep link opened without a session, then L1 is required before any loan data renders; the token resolves to the card and expires at 7 days. |
-| 32.13-T12 | Degraded vendor — Given Truv returns an error, then the `ConnectCard` shows `failed` with the upload fallback and no error code is shown to the borrower. |
+| 32.13-T10 | Mobile parity — Given every card kind at 390 px, then it is operable in Tasks and Review, My Loan shows the badge and next event, and Tasks shows the needed count. |
+| 32.13-T11 | Deep links — Given an SMS deep link opened without a session, then L1 is required through `Account` with the token retained before any loan data renders, then the card renders on its step or in Tasks; the token expires at 7 days. |
+| 32.13-T12 | Degraded vendor — Given Truv returns an error, then the Connect step shows `failed` with the upload fallback and no error code is shown to the borrower. |
 | 32.13-T13 | Reading level — Given every string in 12 outside notice templates, then its Flesch-Kincaid grade ≤ 8. |
 | 32.13-T14 | Forbidden words — Given every string in 12, then none of the forbidden words appears outside its allowed keys. |
-| 32.13-T15 | Nothing-needed — Given zero `owner=you` items, then the nothing-needed state renders and no reminder is sent. |
+| 32.13-T15 | Nothing-needed — Given zero `owner=you` items, then Tasks renders the nothing-needed state and no reminder is sent. |
 | 32.13-T16 | Read-only after terminal — Given `denied | withdrawn | closed_incomplete | rescinded | paid_in_full → closed | transferred_out`, then no command except `case.open`, `human.request`, document download and contact update succeeds. |
 
 #### Audit and evidence

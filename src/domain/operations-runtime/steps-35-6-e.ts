@@ -23,6 +23,7 @@ type Row = Record<string, unknown>;
 const FUNDER = { kind: "agent", id: "funder" } as const;
 const CLOSER = { kind: "agent", id: "title-closing" } as const;
 const SECONDARY = { kind: "agent", id: "secondary" } as const;
+const POST_CLOSING = { kind: "agent", id: "post-closing" } as const;   // 26.4's allowlisted caller (the MIN registration in steps-35-6-b runs as it too)
 // steps-35-6-c.ts's helpers, kept local: this module is imported by steps-35-6-b.ts (the wet chain) and steps-35-6-c.ts (the paper path); importing c from here would evaluate c's step literals before b's `exitOn` exists
 const needClosing = (rec: OrchRecord): ClosingFacts => { const c = closingFacts(rec); if (!c) throw new RecordGap("closing.scheduled", "no closing on the record (26.2)"); return c; };
 const loanIdOf = (rec: OrchRecord): string | null => rec.loanId ?? S(rec.payload("loan.boarded")?.["loan_id"]) ?? S(rec.payload("loan.staged")?.["loan_id"]) ?? null;
@@ -47,6 +48,8 @@ export async function custodianParty(rec: OrchRecord): Promise<{ id: string; leg
 export async function wetPreSigningFunding(ctx: StepContext): Promise<StepOutcome | null> {
   let rec = ctx.rec; const closing = needClosing(rec); const now = ctx.now;
   if (fundingJurisdictionRule(closing.state).wet_dry !== "wet") return null;
+  // a rescindable loan (a refinance of the borrower's principal dwelling) has no table funding: 26.3's earliest funding date follows the rescission expiry (BEFORE_EARLIEST_FUNDING_DATE), so its funding runs on the dry-shaped path after the execution review — the session opens first
+  if (closing.rescindable) return null;
   if (rec.has("warehouse.advance.funded")) return null;
   // 26.3's SM_O73_CONDITIONS_EVAL_2BH (wet): the pre-signing run is scheduled for `closing.scheduled` − 1 business day (creditor calendar)
   const dayBefore = addBusinessDays(D(closing.scheduled_note_date), -1, creditor);
@@ -71,7 +74,9 @@ export async function wetPreSigningFunding(ctx: StepContext): Promise<StepOutcom
     if (r.wait || r.hold) return r;
     rec = await ctx.refresh();
   }
-  return bookAdvance(ctx);
+  // funds are at the table (funding.wire.accepted — SM_O73_WET_FUNDS_AT_TABLE_GATE satisfied): 27.1's advance package is handed to the funding_approver here but never holds the session; `wireReleased` re-arms the same wait after consummation
+  const booked = await bookAdvance(ctx);
+  return booked?.hold ? booked : null;
 }
 
 /**
@@ -151,22 +156,19 @@ export async function paperDelivery(ctx: StepContext, o: { loanId: string; deliv
     // the endorsement in blank is the partner's signing_officer's act (26.4 B8-3-04 / E-2-01): 26.4's `note_endorsements` row when the record carries one; else 26.4's gate is asserted — on a build stage whose FAKE reviewers fill `signing_officer` (35.7's owner decision) the FAKE signing officer's pre-executed allonge is recorded through 26.4 as that human actor, otherwise 26.4 routes the note to the endorsement desk and the row waits on the signing_officer; never the agent's signature
     let endorsement = rec.entities("note_endorsements").at(-1) ?? null;
     if (!endorsement) {
+      // 26.4 rule 2 / B8-3-04 / E-2-01: the endorsement in blank is the partner's signing_officer's act — never the agent's (rule 4 HUMAN_ACTS_STAY_HUMAN). The pass asserts 26.4's gate once with the
+      // note's facts: 26.4 routes the note to the endorsement desk (a `signing_officer` escalation, reason endorsement_cure, carrying the facts) and the row waits on that person. On a build stage whose
+      // FAKE reviewers fill `signing_officer` (35.7's owner decision) the FAKE signing officer acts from that queue on FakeReviewers.tick — a pre-executed allonge recorded through 26.4 as that human actor.
       const parties = await partyFacts(rec, closing); const terms = loanTerms(rec); const consummated = rec.last("closing.consummated");
       const note = { borrower_names: parties.borrower_names, note_date: S(consummated?.payload["note_date"]) ?? closing.scheduled_note_date, note_amount_cents: String(terms.loan_amount_cents.value), property_address: parties.property_address, property_state: closing.state, partner_legal_name: parties.partner_legal_name };
-      const fakeOfficer = ctx.rt.reviewers?.fills("signing_officer") === true ? { kind: "human", id: "FAKE:signing_officer", role: "signing_officer" } as const : null;
-      if (fakeOfficer) {
-        const allongeDoc = await storeDocument(ctx.rt.db, { kind: "allonge", application_id: rec.app.id, loan_id: o.loanId, text: JSON.stringify({ closing_document_id: noteDoc.id, endorsement: "in blank, without recourse", endorser: parties.partner_legal_name, signing_officer: fakeOfficer.id, identifiers: note }), retention_class: "life_of_loan_plus_4y", source: `${fakeOfficer.id} pre-executed allonge (FAKE signing officer)`, now, source_channel: "vendor_delivery" });
-        await ctx.run({ process: "26.4", name: "registerMin", actor: fakeOfficer, input: { op: "ensure_endorsement", endorsement: { id: `END-${rec.app.id.slice(0, 8)}`, closing_document_id: noteDoc.id, method: "allonge_pre_executed", endorsement_text: `PAY TO THE ORDER OF ______ WITHOUT RECOURSE ${parties.partner_legal_name} By: ______ Name: ______ Title: ______`, endorsee: "blank", signing_officer_party_id: fakeOfficer.id, signed_at: now, signature_kind: "wet", facsimile_authority: null, allonge_document_id: allongeDoc, allonge_identifiers: { borrower_names: note.borrower_names, note_date: note.note_date, note_amount_cents: note.note_amount_cents, property_address: note.property_address }, note_references_allonge: true, affixed_by_party_id: fakeOfficer.id, affixed_at: now, chain: [{ endorser: parties.partner_legal_name, endorsee: "blank", at: now }], partner_legal_name: parties.partner_legal_name }, note }, detail: { sources: { note: src("entity", `closing_documents:${noteDoc.id}`, "26.1"), allonge: src("table", `documents:${allongeDoc}`, "35.2"), ...parties.sources }, fake: fakeOfficer.id } });
-      } else {
-        await ctx.run({ process: "26.4", name: "registerMin", actor: WAREHOUSE, input: { op: "ensure_endorsement", note }, detail: { sources: { note: src("entity", `closing_documents:${noteDoc.id}`, "26.1"), ...parties.sources }, route: "endorsement_desk" } });
-        return { wait: { status: "waiting_human", waiting_on: "signing_officer", clocked: false } };
-      }
-      rec = await ctx.refresh(); endorsement = rec.entities("note_endorsements").at(-1) ?? null;
+      const open = await ctx.rt.db.query(`SELECT 1 FROM escalations WHERE application_id = $1 AND owner_role = 'signing_officer' AND completed_at IS NULL AND payload->>'reason' = 'endorsement_cure'`, [rec.app.id]);
+      if (!open.length) await ctx.run({ process: "26.4", name: "registerMin", actor: POST_CLOSING, input: { op: "ensure_endorsement", note, closing_document_id: noteDoc.id }, detail: { sources: { note: src("entity", `closing_documents:${noteDoc.id}`, "26.1"), ...parties.sources }, route: "endorsement_desk" } });
+      return { wait: { status: "waiting_human", waiting_on: "signing_officer", clocked: false } };
     }
     const signingOfficer = S(endorsement?.data["signing_officer_party_id"]);
     if (!signingOfficer) throw new RecordGap("note_endorsements", "no endorsement by the partner's signing_officer on the record (26.4)");
     const prePositioned = rec.has("warehouse.note.received"); const custodyMode = prePositioned ? "pre_positioned_at_fcc" : "shipped_package";
-    const pkg = await ctx.run<Row>({ process: "29.4", name: "prepareCustodianPackage", actor: SECONDARY, scope: { loanId: o.loanId }, input: { delivery_id: o.deliveryId, note_document_id: noteDoc.id, endorsement_signing_officer: signingOfficer, custody_mode: custodyMode }, detail: { sources: { note: src("entity", `closing_documents:${noteDoc.id}`, "26.1"), letter: src("entity", `bailee_letters:${letter.id}`, "27.1"), ...(endorsement ? { endorsement: src("entity", `note_endorsements:${endorsement.id}`, "26.4") } : { endorsement: src("platform", "FAKE signing_officer (35.7 nonprod role fill)", "35.6") }), ...(prePositioned ? { note_received: src("event", `warehouse.note.received:${rec.last("warehouse.note.received")!.id}`, "27.1") } : {}) } } });
+    const pkg = await ctx.run<Row>({ process: "29.4", name: "prepareCustodianPackage", actor: SECONDARY, scope: { loanId: o.loanId }, input: { delivery_id: o.deliveryId, note_document_id: noteDoc.id, endorsement_signing_officer: signingOfficer, custody_mode: custodyMode }, detail: { sources: { note: src("entity", `closing_documents:${noteDoc.id}`, "26.1"), letter: src("entity", `bailee_letters:${letter.id}`, "27.1"), endorsement: src("entity", `note_endorsements:${endorsement.id}`, "26.4"), ...(prePositioned ? { note_received: src("event", `warehouse.note.received:${rec.last("warehouse.note.received")!.id}`, "27.1") } : {}) } } });
     if (pkg["complete"] === false) return { hold: { reason: "gate_closed", gate: "E_2_01_CUSTODIAN_PACKAGE", detail: { missing: pkg["missing"] ?? [] } } };
     const shipmentId = `SHP-${rec.app.id.slice(0, 8)}`; const tracking = `TRK-${rec.app.id.slice(0, 8)}`; const custodian = await custodianParty(rec);
     if (!rec.has("warehouse.note.shipment_requested", (p) => p["shipment_id"] === shipmentId)) { await ctx.run({ process: "27.1", name: "trackCollateral", actor: WAREHOUSE, input: { op: "shipment_request", advance_id: advanceId, facility_id: String(advance.payload["facility_id"]), shipment_id: shipmentId, custodian_party_id: custodian.id }, detail: { sources: { letter: src("entity", `bailee_letters:${letter.id}`, "27.1") } } }); rec = await ctx.refresh(); }

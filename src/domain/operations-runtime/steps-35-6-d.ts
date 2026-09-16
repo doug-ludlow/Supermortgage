@@ -46,13 +46,14 @@ export const certifiedStep: StepDef = {
       await ctx.run({ process: "27.2", name: "forecastProceeds", actor: WAREHOUSE, scope: { loanId }, input: { op: "certified", loan_id: loanId, certification_date: String(cert.payload["certified_on"]) }, detail: { sources: { certified: src("event", `custody.certified:${cert.id}`, "29.4") } } });
       rec = await ctx.refresh();
     }
-    // the Purchase Advice Sellers API, polled once per pass for every advice date from 29.4's expected purchase date (the certification's `expected_purchase_date`) through today — an advice dated D that is first visible on D+1 is still found; 27.2 keys them by the seller loan number and skips the dates it already holds (idempotent by fnma loan number + advice date)
+    // the Purchase Advice Sellers API, polled once per pass for every advice date from 29.4's expected purchase date (the certification's `expected_purchase_date`) through today: the last three days every pass (an advice dated D that first appears on D+1 or D+2 is still found), an older date only until it has been polled once; 27.2 keys them by the seller loan number and skips the dates it already holds (idempotent by fnma loan number + advice date)
     let advice = settlementAdvice(rec, loanId);
     if (!advice) {
       const today = rec.etDate(now); const cert = rec.last("custody.certified", (p) => p["certified_on"] !== undefined);
       const from = S(cert?.payload["expected_purchase_date"]) ?? S(cert?.payload["certified_on"]) ?? today;
       const polled = (await ctx.rt.db.query<{ d: string }>(`SELECT DISTINCT detail->>'advice_date' AS d FROM closing_orchestration_steps WHERE application_id = $1 AND command_process = '27.2' AND command_name = 'pollPurchaseAdvices' AND kind = 'command_run' AND detail->>'advice_date' < $2`, [rec.app.id, today])).map((r) => r.d);
-      const dates: string[] = []; for (let d = from < today ? from : today; d <= today && dates.length < 14; d = addDays(plainDate(d), 1)) if (d === today || !polled.includes(d)) dates.push(d);
+      const recent = addDays(plainDate(today), -3);
+      const dates: string[] = []; for (let d = from < today ? from : today; d <= today && dates.length < 14; d = addDays(plainDate(d), 1)) if (d >= recent || !polled.includes(d)) dates.push(d);
       for (const d of dates) await ctx.run({ process: "27.2", name: "pollPurchaseAdvices", actor: WAREHOUSE, scope: { loanId }, input: { op: "sellers", advice_date: d }, detail: { port: "purchase_advice_api_sellers", advice_date: d, expected_purchase_date: from } });
       rec = await ctx.refresh(); advice = settlementAdvice(rec, loanId);
       if (!advice) return { wait: { status: "waiting_vendor", waiting_on: "sellers_api", clocked: true } };

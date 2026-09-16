@@ -43,11 +43,13 @@ import { PgNoticeRepository } from "../../infra/db/notices.ts";
 import type { EdeliveryPort, EdeliveryMessage } from "../../infra/integrations/delivery.ts";
 import { FakeEdelivery } from "../../infra/integrations/delivery.ts";
 import { plainDate } from "../../kernel/calendar/date.ts";
-import { SERVICER_CONTACT } from "../servicing.ts";
+import { FAKE_SERVICER_PROFILE_V1 } from "../../domain/operations-runtime/servicing-config.ts";
 import type { Runtime } from "../app.ts";
 import type { Logger } from "../log.ts";
 import { PgStaffRepository, emailHash, encryptEmail, decryptEmail, isEmail, normalizeEmail, newToken, hashToken, hashCode, staffEmailKey, type StaffUserRow, type StaffSessionRow, type StaffChallengeRow, type StaffFactor, type PasskeySecret } from "./repo.ts";
 import { StaffError, normalizeRoles, sameRoles, isSelfChange, wouldRemoveLastAdmin, planAccessReview, NO_SELF_ROLE_CHANGE, LAST_ADMIN_STAYS, type StaffRole, type ReviewInput, type ReviewEntry } from "./roles.ts";
+// 35.7 rule 9: the revocation cascade, the identities mirror and the dormant-grant rationale ride on 34.1's own acts, in their transactions
+import { assertDormantRationales, cascadeDisable, mirrorAfterRoleSet, reviewerRolesReview } from "../../domain/operations-runtime/roles-35-7/cascade.ts";
 
 export const STAFF_IDLE_MINUTES = 30;
 export const STAFF_ABSOLUTE_HOURS = 12;
@@ -343,7 +345,7 @@ export async function staffInvite(d: StaffActDeps, i: InviteInput): Promise<Invi
     const edelivery: EdeliveryPort = { send: (m: EdeliveryMessage, now: string) => real.send(m.noticeId === notice?.id ? { ...m, messageId: `staff_invite:${id}:${m.messageId.split(":").pop() ?? "1"}`, subject } : m, now), events: (since: string) => real.events(since) };
     const notices = new NoticeService({ registry: rt.noticeRegistry, events: d.events, clock: d.clock, printMail: rt.ports.printMail, edelivery, notices: rt.noticeMemory });
     const recipient: Recipient = { partyId: id, name: legal_name ?? "Colleague", mailingAddress: null, email: normalizeEmail(i.email) };
-    notice = notices.render({ templateCode: STAFF_INVITATION_TEMPLATE, recipients: [recipient], payload: { inviter_name, roles: roles.join(", "), sign_in_url: opsSignInUrl(), platform_postal_address: SERVICER_CONTACT.servicer_address }, asOf: plainDate(d.now.slice(0, 10)) });
+    notice = notices.render({ templateCode: STAFF_INVITATION_TEMPLATE, recipients: [recipient], payload: { inviter_name, roles: roles.join(", "), sign_in_url: opsSignInUrl(), platform_postal_address: FAKE_SERVICER_PROFILE_V1.servicer_address }, asOf: plainDate(d.now.slice(0, 10)) });
     if (notice.status === "held") held_reason = notice.heldReason ?? "held";
     else { try { const sent = await notices.send(notice.id); bounced = sent.deliveries.some((x) => x.emailStatus === "bounced"); } catch (e) { if (notice.deliveries.some((x) => x.emailStatus === "bounced")) bounced = true; else throw e; } }
     const n = notice;
@@ -416,6 +418,7 @@ export async function staffRoleSet(d: StaffActDeps, i: RoleSetInput, opts: { dec
     // edge cases: "Two admins disable each other simultaneously → LAST_ADMIN_STAYS refuses the second" — the invariant is re-checked under the admin rows' lock in the transaction that writes the change; a refusal rolls the command back
     if (demotesAdmin && wouldRemoveLastAdmin(await repo.lockActiveAdmins(q), user.id, after)) throw new CommandRefused("staff.role.set", LAST_ADMIN_STAYS.code, LAST_ADMIN_STAYS.citation, `removing admin from ${user.id} would leave no active admin (another change to the admins committed first)`);
     await repo.setRoles(user.id, after, q); await repo.revokeSessionsOf(user.id, d.now, q);
+    await mirrorAfterRoleSet(q, user.id, d.now);   // 35.7 rule 9: the identities mirror follows the staff roles in the same transaction
   });
   d.events.append({ type: "staff.role.changed", aggregate: { kind: "staff_user", id: user.id }, actor: d.actor, payload: P({ staff_user_id: user.id, roles_before: before, roles_after: after, by, sessions_revoked: open }) });
   if (opts.decide && d.decide) d.decide(staffDecision({ action: "staff.role.set", staff_user_id: user.id, roles_before: before, roles_after: after, rationale, by }));
@@ -435,12 +438,17 @@ export async function staffDisable(d: StaffActDeps, i: DisableInput, opts: { dec
   if (user.status === "active" && wouldRemoveLastAdmin(await repo.activeAdminIds(), user.id, [])) throw new CommandRefused("staff.disable", LAST_ADMIN_STAYS.code, LAST_ADMIN_STAYS.citation, `disabling ${user.id} would leave no active admin`);
   const open = (await repo.openSessionsOf(user.id, d.now)).map((s) => s.session_id);
   const disablesAdmin = user.status === "active" && user.roles.includes("admin");
+  const cascaded: Parameters<typeof d.events.append>[0][] = [];
   d.deferWrite(async (q) => {
     // edge cases: "Two admins disable each other simultaneously → LAST_ADMIN_STAYS refuses the second" — re-checked under the admin rows' lock in the writing transaction; the refusal rolls the command back
     if (disablesAdmin && wouldRemoveLastAdmin(await repo.lockActiveAdmins(q), user.id, [])) throw new CommandRefused("staff.disable", LAST_ADMIN_STAYS.code, LAST_ADMIN_STAYS.citation, `disabling ${user.id} would leave no active admin (another change to the admins committed first)`);
     await repo.disable(user.id, d.now, q); await repo.revokeSessionsOf(user.id, d.now, q);
+    // 35.7 rule 9: every reviewer role (a role_grants{revoke, cause: disabled} row each) and every principal of the person go in this transaction; the mirror row is emptied
+    cascaded.push(...(await cascadeDisable(q, { staff_user_id: user.id, by, actor: d.actor, now: d.now, sessions_revoked: open })));
   });
-  d.events.append({ type: "staff.disabled", aggregate: { kind: "staff_user", id: user.id }, actor: d.actor, payload: P({ staff_user_id: user.id, by, roles_before: user.roles, sessions_revoked: open }) });
+  d.events.append({ type: "staff.disabled", aggregate: { kind: "staff_user", id: user.id }, actor: d.actor, payload: P({ staff_user_id: user.id, by, roles_before: user.roles, reviewer_roles_before: user.reviewer_roles, sessions_revoked: open }) });
+  // the cascade's events (`role.revoked{cause: disabled}`, `principal.revoked{cause: disabled}`) are appended by the deferred write's caller: the runtime persists what the transaction returns — see cascadeEvents below
+  d.deferWrite(async (q) => { for (const e of cascaded) await appendCascadeEvent(q, e, d.now); });
   if (opts.decide && d.decide) d.decide(staffDecision({ action: "staff.disable", staff_user_id: user.id, roles_before: user.roles, roles_after: [], rationale, by }));
   return { staff_user_id: user.id, changed: true, roles_before: user.roles, sessions_revoked: open, by };
 }
@@ -451,21 +459,41 @@ export interface AccessReviewResult { readonly review_id: string; readonly revie
 export async function staffAccessReview(d: StaffActDeps, i: AccessReviewInput): Promise<AccessReviewResult> {
   const repo = new PgStaffRepository(d.db);
   await requireStaffActor(d, repo, "staff.access.review", ["compliance", "admin"]);
-  const active = (await repo.users()).filter((u) => u.status === "active").map((u) => ({ id: u.id, roles: u.roles }));
+  const active = (await repo.users()).filter((u) => u.status === "active").map((u) => ({ id: u.id, roles: u.roles, reviewer_roles: u.reviewer_roles }));
   const decisions = Array.isArray(i.decisions) ? i.decisions : [];
   const plan = planAccessReview(active, decisions);
   if (plan.unknown.length) throw new RangeError(`the review names users that are not active staff: ${plan.unknown.join(", ")}`);
   if (plan.missing.length) throw new RangeError(`the review must decide every active user; missing: ${plan.missing.join(", ")}`);
+  // 35.7 rule 9 (DORMANT_GRANT_NEEDS_RATIONALE): a keep for a user with a dormant grant names the grant in its rationale — refused before any plan is applied
+  await assertDormantRationales(d.db, decisions);
   const rationale = (typeof i.rationale === "string" && i.rationale.trim()) || "quarterly access review";
   const applied: { staff_user_id: string; decision: string; changed: boolean }[] = [];
+  const reviewerEvents: Parameters<typeof d.events.append>[0][] = [];
   for (const e of plan.changes) {
-    if (e.decision === "change") { const r = await staffRoleSet(d, { staff_user_id: e.staff_user_id, roles: e.roles_after, rationale: `access review: ${rationale}` }, { decide: true, viaReview: true }); applied.push({ staff_user_id: e.staff_user_id, decision: "change", changed: r.changed }); }
+    if (e.decision === "change") {
+      const r = sameRoles(e.roles_before, e.roles_after) ? { changed: false } : await staffRoleSet(d, { staff_user_id: e.staff_user_id, roles: e.roles_after, rationale: `access review: ${rationale}` }, { decide: true, viaReview: true });
+      // 35.7 rule 9: a change that drops a reviewer role revokes its grant with cause access_review in this transaction
+      if (e.reviewer_roles) { const uid = e.staff_user_id; const after = e.reviewer_roles; const env = d.runtime.environment; d.deferWrite(async (q) => { reviewerEvents.push(...(await reviewerRolesReview(q, { staff_user_id: uid, reviewer_roles_after: after, environment: env, by: byOf(d), actor: d.actor, now: d.now }))); }); }
+      applied.push({ staff_user_id: e.staff_user_id, decision: "change", changed: r.changed || !!e.reviewer_roles });
+    }
     else { const r = await staffDisable(d, { staff_user_id: e.staff_user_id, rationale: `access review: ${rationale}` }, { decide: true, viaReview: true }); applied.push({ staff_user_id: e.staff_user_id, decision: "disable", changed: r.changed }); }
   }
+  d.deferWrite(async (q) => { for (const e of reviewerEvents) await appendCascadeEvent(q, e, d.now); });
   const review_id = randomUUID(); const reviewed_by = byOf(d);
   d.deferWrite(async (q) => { await repo.insertReview({ id: review_id, reviewed_by: reviewed_by ?? (await repo.activeAdminIds())[0] ?? plan.entries[0]!.staff_user_id, reviewed_at: d.now, users: plan.entries }, q); });
   d.events.append({ type: "staff.access_review.completed", aggregate: { kind: "staff_access_review", id: review_id }, actor: d.actor, payload: P({ review_id, reviewed_by, reviewed_at: d.now, users: plan.entries, changes: plan.changes.length }) });
   return { review_id, reviewed_by, reviewed_at: d.now, users: plan.entries, changes: plan.changes.length, applied };
+}
+
+/**
+ * 35.7's cascade events are known only inside the writing transaction (the rows they name are inserted there), after the unit
+ * of work persisted the command's own events — so they are appended as rows by the deferred write itself (the
+ * src/runtime/controls/common.ts appendEvent pattern), in the same transaction as the rows they describe.
+ */
+async function appendCascadeEvent(q: Queryable, e: Parameters<EventStore["append"]>[0], nowIso: string): Promise<void> {
+  const a = e.aggregate ?? null;
+  await q.query(`INSERT INTO loan_events (type, occurred_at, loan_id, application_id, aggregate_kind, aggregate_id, actor_kind, actor_id, actor_role, payload) VALUES ($1, $2::timestamptz, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)`,
+    [e.type, e.occurredAt ?? nowIso, e.loanId ?? null, e.applicationId ?? null, a?.kind ?? null, a?.id ?? null, e.actor.kind, e.actor.id, e.actor.role ?? null, JSON.stringify(e.payload ?? {}, (_k, v) => (typeof v === "bigint" ? v.toString() : v))]);
 }
 
 // ───────── the first admin (Operational prerequisites: main.ts staff-bootstrap <email> / STAFF_BOOTSTRAP_ADMIN_EMAIL, with STAFF_BOOTSTRAP_ADMIN_ROLES outside production)

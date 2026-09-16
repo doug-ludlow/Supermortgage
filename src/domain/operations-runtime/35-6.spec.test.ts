@@ -559,7 +559,7 @@ async function ohInsurance(j: PurchaseJourney): Promise<void> {
   clock.set(EST("2026-11-02", "12:00"));
   const policy = { policy_id: `HZ-OH-${R}`, policy_kind: "hazard", policy_number: `HO-OH-2210-${R.slice(0, 4)}`, carrier: "Buckeye Mutual", coverage_dwelling_cents: "45000000", coverage_basis: "replacement_cost", roof_basis: "replacement_cost", coverage_form: "special", deductible_cents: "250000", per_peril_deductibles: [], ratings: [{ agency: "am_best", grade: "A" }], mortgagee_clause_text: OH_CLAUSE, named_insureds: OH_HOLDERS(j), effective_date: "2026-11-18", expiration_date: "2027-11-18", first_year_premium_cents: "114000", policy_in_force: true, premium_paid_at_closing: true, premium_on_cd: true, premium_paid_through: "2027-11-18", evidence_kind: "declarations", evidence_document_id: `DOC-HZ-OH-${R}` };
   const ad = await j.tool(scope, "24.5", "evaluateAdequacy", { policy, title_holders: OH_HOLDERS(j), partner: { legal_name: "Partner Bank" }, transaction_type: "purchase", disbursement_date: "2026-11-18", verified_at: clock.now() }, CLOSER_A);
-  assert.equal(ad.output["status"] ?? ad.output["result"] ?? "verified", ad.output["status"] ?? ad.output["result"] ?? "verified", JSON.stringify(ad.output).slice(0, 300));
+  assert.deepEqual(ad.output["deficiencies"], [], JSON.stringify(ad.output).slice(0, 300)); assert.equal(ad.output["status"], "verified", JSON.stringify(ad.output).slice(0, 300));
 }
 /** 30.3 for the OH purchase (30.2 worked example 2's escrow: county taxes $520.00 + hazard $95.00 = $615.00/month; the aggregate deposit $1,240.00 — the Franklin County bills as known bills, the hazard declarations), approved as `escrow`. */
 async function ohEscrowAnalysis(j: PurchaseJourney): Promise<void> {
@@ -1089,13 +1089,15 @@ test("35.6-T9: Given `loan.funded`, when the same sweep's pass runs, then `fundi
   // given ENVIRONMENT=production and a record missing 30.3's analysis: the hand-off is refused FIXTURE_REFUSED, the row lists escrow_analysis in gaps, no loans row, one ops_analyst and one compliance escalation
   const u = await newJourney(); await seedCreditAuthorizations(u);
   clock.set(MST("2026-10-05", "17:50")); await pass(clock.now(), u.appId);
-  process.env["ENVIRONMENT"] = "production";
+  // 35.7: the runtime is the one environment source (`ENVIRONMENT` read once at construction; 35.6's tools read `runtime.environment`) — this block flips that reading and restores it, as the former process.env flip did
+  const envSlot = runtime as unknown as { environment: string }; const wasEnv = envSlot.environment; envSlot.environment = "production";
   try {
     const built = await runtime.execute({ process: "35.6", name: "orchestration.snapshot", loanId: "", applicationId: u.appId, actor: OFFICER, input: {} });
     const out = built.output as P; assert.equal(out["refused_code"], "FIXTURE_REFUSED", JSON.stringify(out).slice(0, 300)); assert.ok((out["gaps"] as string[]).includes("escrow_analysis"), JSON.stringify(out["gaps"])); assert.equal(out["fixture_used"], false); assert.equal(out["environment"], "production");
     await assert.rejects(runtime.execute({ process: "35.6", name: "orchestration.fund", loanId: "", applicationId: u.appId, actor: OFFICER, input: { snapshot_id: out["snapshot_id"] } }), (e: unknown) => (e as { code?: string }).code === "FIXTURE_REFUSED");
-    const refused = await call("POST", `/v1/applications/${u.appId}/fund`, { actor: OFFICER }); assert.equal(refused.status, 409, JSON.stringify(refused.body).slice(0, 300)); assert.equal(refused.body["code"], "FIXTURE_REFUSED");
-  } finally { delete process.env["ENVIRONMENT"]; }
+    // the /v1 door in production (35.7 rule 2): the shared API_TOKEN opens nothing — the request never reaches /fund (its FIXTURE_REFUSED 409 maps the same tool refusal asserted above; a principal issued by 35.7 `principals.issue` would reach it)
+    const refused = await call("POST", `/v1/applications/${u.appId}/fund`, { actor: OFFICER }); assert.equal(refused.status, 403, JSON.stringify(refused.body).slice(0, 300)); assert.equal(refused.body["code"], "SHARED_TOKEN_REFUSED_IN_PRODUCTION");
+  } finally { envSlot.environment = wasEnv; }
   const urow = (await db.query<{ gaps: string[]; refused_code: string | null; fixture_used: boolean }>(`SELECT gaps, refused_code, fixture_used FROM funding_snapshots WHERE application_id = $1 ORDER BY built_at LIMIT 1`, [u.appId]))[0]!;
   assert.equal(urow.refused_code, "FIXTURE_REFUSED"); assert.ok(urow.gaps.includes("escrow_analysis")); assert.equal(urow.fixture_used, false);
   assert.equal(await n(`FROM loans WHERE origination_application_id = $1`, [u.appId]), 0);
@@ -1483,7 +1485,8 @@ test("35.6-T17: Given the OH loan delivered Mon Nov 30, certified Tue Dec 1 and 
   assert.equal(await issuedCount(), 1);
   // Mon Nov 30: 29.3's package and 29.4's registration (the custodian and the bailee letter on the delivery), the FAKE operator's submission → delivery.submitted Nov 30; the custodian package (the endorsed original note pre-positioned with the custodian, the cover letter, the bailee letter) under 27.1's shipment release tendered to the FAKE carrier the same day
   const deliveryId = `DLV-${appId.slice(0, 8)}`; fakesFor(runtime).carrier.script(deliveryId, { received_at: EST("2026-12-01", "08:00"), certified_at: EST("2026-12-01", "11:00") });
-  for (const at of ["09:00", "09:30", "10:00", "10:30"]) { clock.set(EST("2026-11-30", at)); await pass(clock.now(), appId); }
+  // the FAKE signing officer (35.7's nonprod fill) acts from 26.4's endorsement-desk queue item on the reviewers' tick, never inside the pass
+  for (const at of ["09:00", "09:30", "10:00", "10:30"]) { clock.set(EST("2026-11-30", at)); await reviewers.tick(runtime, clock.now()); await pass(clock.now(), appId); }
   const submitted = (await events(appId, "delivery.submitted")).at(-1)!; assert.ok(submitted, await jnOf(appId, 24)); assert.equal(iso(submitted.occurred_at).slice(0, 10), "2026-11-30", "delivered Mon Nov 30");
   // 29.4's row (the `deliveries` kind is shared with 25.2's UCD projection — keyed by delivery id)
   const delivery = (await db.query<{ data: unknown }>(`SELECT data FROM entity_current WHERE kind = 'deliveries' AND data->>'delivery_id' = $1`, [deliveryId])).map((r) => ({ id: deliveryId, data: decodeEntityData(r.data) as P }))[0]!; assert.ok(delivery, "29.4's delivery row"); assert.equal(delivery.data["note_form"], "paper"); assert.equal(delivery.data["bailee_letter_id"], letterId); assert.equal(delivery.data["custodian_fin"], "900000017");
@@ -1491,7 +1494,9 @@ test("35.6-T17: Given the OH loan delivered Mon Nov 30, certified Tue Dec 1 and 
   assert.equal((await events(appId, "warehouse.note.shipment_released")).length, 1, "27.1's shipment under the bailee letter (SM_WH_BAILEE_LETTER_GATE)");
   const jl = await journal(appId); const pkg = jl.find((x) => x.kind === "command_run" && x.command_process === "29.4" && x.command_name === "prepareCustodianPackage")!; assert.ok(pkg, await jnOf(appId, 24)); assert.equal(pkg.actor_id, "secondary");
   const endorsement = (await db.query<{ data: unknown }>(`SELECT data FROM entity_current WHERE kind = 'note_endorsements' AND id = $1`, [`END-${appId.slice(0, 8)}`])).map((r) => decodeEntityData(r.data) as P)[0]!; assert.ok(endorsement, "26.4: the note endorsed in blank (a pre-executed allonge) by the FAKE signing_officer before shipment"); assert.equal(endorsement["endorsee"], "blank"); assert.equal(endorsement["method"], "allonge_pre_executed"); assert.equal(endorsement["signing_officer_party_id"], "FAKE:signing_officer"); assert.equal(endorsement["signature_kind"], "wet");
-  const endorseRun = jl.find((x) => x.kind === "command_run" && x.command_process === "26.4" && x.command_op === "ensure_endorsement")!; assert.ok(endorseRun); assert.equal(endorseRun.actor_kind, "human"); assert.equal(endorseRun.actor_role, "signing_officer");
+  const desk = (await escalations(appId, "signing_officer")).filter((e) => e.payload["reason"] === "endorsement_cure"); assert.equal(desk.length, 1, "26.4 routed the note to the endorsement desk once (rule 1)"); assert.ok(desk[0]!.completed_at, "the FAKE signing officer completed the desk's queue item");
+  assert.equal(endorsement["signing_officer_party_id"], "FAKE:signing_officer"); assert.equal(endorsement["signature_kind"], "wet");
+  const gateRuns = jl.filter((x) => x.kind === "command_run" && x.command_process === "26.4" && x.command_op === "ensure_endorsement"); assert.equal(gateRuns.length, 1, "the pass asserted 26.4's gate once"); assert.equal(gateRuns[0]!.actor_kind, "agent", "the pass never signs (rule 4)"); assert.equal(gateRuns[0]!.actor_id, "post-closing");
   // Tue Dec 1: the custodian's receipt 08:00 and certification 11:00 (the carrier's and custodian's FAKE scans) → custody.certified Dec 1; 27.2 registered from the record, the forecast posted, the Sellers API polled (no advice yet)
   clock.set(EST("2026-12-01", "12:00")); await pass(clock.now(), appId);
   const cert = (await events(appId, "custody.certified")).find((e) => e.payload["certified_on"] !== undefined)!; assert.ok(cert, await jnOf(appId, 24)); assert.equal(cert.payload["certified_on"], "2026-12-01"); assert.equal(cert.payload["certification_kind"], "certified"); assert.equal(cert.payload["bailee_validation"], "passed");

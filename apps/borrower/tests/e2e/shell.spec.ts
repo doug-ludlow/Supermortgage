@@ -3,7 +3,8 @@
  *  - 32.16 §1 principle 8: no "Talk to a person" control while no person exists; the disclosure footer on every screen;
  *    the input bar is one input, Send and the attach icon.
  *  - 32.16 §2.1–2.2: the thread is conversation and chips; the cards live on the rail (T11) and resolve there.
- *  - T-X-10 Mobile parity: the status strip shows badge, next event and the needed-from-you count; the sheet is the rail.
+ *  - T-X-10 Mobile parity: the five-tab shell (01 §1.2) — a session lands on Chat; My Loan's status line shows the badge and next
+ *    event, the Tasks tab badge the needed-from-you count; the header's "Your record" opens the sheet, which is the rail.
  *  - axe on the dark theme (13 §1 component list; the 13 §6 "no AA violations" bar).
  */
 import { expect, test, type Page } from "@playwright/test";
@@ -56,7 +57,7 @@ for (const fixture of ["refinance", "servicing"]) {
         const thread = (await page.locator("main.sm-thread").boundingBox())!;
         const record = (await page.getByTestId("record").boundingBox())!;
         expect(Math.round((thread.width / (thread.width + record.width)) * 100)).toBe(58);
-        await expect(page.getByTestId("status-strip")).toBeHidden();
+        await expect(page.getByTestId("tab-nav")).toBeHidden();
         // the rail: Needed from you with the current ask expanded (its component), the sections in order; no default waiting bar
         const rail = page.getByTestId("record");
         await expect(rail.locator('[data-record-section="needed"]')).toBeVisible();
@@ -68,14 +69,18 @@ for (const fixture of ["refinance", "servicing"]) {
         expect(sections.filter((s) => order.includes(s!)).map((s) => order.indexOf(s!))).toEqual([...sections.filter((s) => order.includes(s!)).map((s) => order.indexOf(s!))].sort((a, b) => a - b));
         if (fixture === "refinance") await expect(rail.getByTestId("progress-count")).toHaveText("10 of 12");
       } else {
-        // T-X-10: status strip with badge, next event and needed-from-you count; Record as a bottom sheet
-        const strip = page.getByTestId("status-strip");
-        await expect(strip).toBeVisible();
-        await expect(strip.getByTestId("status-badge")).toBeVisible();
-        await expect(strip.getByTestId("strip-next")).not.toBeEmpty();
-        await expect(strip.getByTestId("strip-count")).toContainText(/needed/);
+        // T-X-10: the five-tab shell — a session lands on Chat with the tab rail in the viewport; My Loan's status line shows the badge and next
+        // event, the Tasks tab badge the needed-from-you count; the header's "Your record" opens the Record as the bottom sheet, which is the rail
+        await expect(page.getByTestId("shell")).toHaveAttribute("data-tab", "chat");
+        expect(await inViewport(page, "tab-nav")).toBe(true);
+        expect(await inViewport(page, "action-bar")).toBe(true);
         await expect(page.getByTestId("record")).toBeHidden();
-        await strip.click();
+        await page.getByTestId("tab-loan").click();
+        const loan = page.getByTestId("tab-page-loan");
+        await expect(loan.getByTestId("status-badge")).toBeVisible();
+        await expect(loan.getByTestId("next-event")).not.toBeEmpty();
+        if (fixture === "refinance") await expect(page.locator('[data-testid="tab-tasks"] .sm-tab-badge')).toHaveAttribute("aria-label", /needed from you$/);
+        await page.getByRole("button", { name: "Your record" }).click();
         await expect(page.getByTestId("record")).toBeVisible();
         await expect(page.getByTestId("record").locator('[data-record-section="needed"]')).toBeVisible();   // the sheet is the rail: the card first, the record behind "Your record"
         await expect(page.getByTestId("record").locator('[data-record-section="record"]')).toHaveAttribute("data-open", "false");
@@ -87,7 +92,7 @@ for (const fixture of ["refinance", "servicing"]) {
 
     test("cards resolve in place on the rail and the Record's needed-from-you updates", async ({ page }) => {
       const vp = page.viewportSize()!;
-      if (vp.width < 768) await page.getByTestId("status-strip").click(); // the sheet is the rail
+      if (vp.width < 768) await page.getByRole("button", { name: "Your record" }).click(); // the sheet is the rail
       const rail = page.getByTestId("record");
       if (fixture === "refinance") {
         // ConnectCard (Truv) under Needed from you: it waits behind "n more after this" until it is the ask (32.16 §2.2); open the line, expand its row, FAKE vendor marker and launch → in_progress
@@ -128,7 +133,7 @@ for (const fixture of ["refinance", "servicing"]) {
     test("axe: no WCAG 2.x A/AA violations on the dark theme", async ({ page }) => {
       await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
       const vp = page.viewportSize()!;
-      if (vp.width < 768) await page.getByTestId("status-strip").click(); // scan the bottom sheet too
+      if (vp.width < 768) await page.getByRole("button", { name: "Your record" }).click(); // scan the bottom sheet too
       const results = await // @axe-core/playwright bundles a newer playwright-core; the Page API used here is the same.
       new AxeBuilder({ page: page as never }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();
       const summary = results.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).slice(0, 5).join(" | ")}`);

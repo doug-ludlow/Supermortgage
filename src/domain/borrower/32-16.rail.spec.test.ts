@@ -1,4 +1,5 @@
-// 32.16 The conversational product — Phase 2, the rail (docs/ux/17 §2.1–2.3, DELTA-26): 32.16-T11 … 32.16-T16
+// 32.16 The conversational product — Phase 2, the rail (docs/ux/17 §2.1–2.3, DELTA-26): 32.16-T13 … 32.16-T16
+// (T11 and T12 — the rail at ≥ 1024 px and the reference chips — were retired 2026-09-16: docs/decisions/2026-09-16-apply-product.md, spec/registry/retired.json)
 // spec/sections/32-borrower-experience/32-16-the-conversational-product-an-account-then-a-conversation-wi.md
 // One node:test per T-id, named exactly as the spec (the Phase 0/1/3/4 T-ids live in 32-16.spec.test.ts, which another
 // builder owns; this file holds the Phase 2 tests so the two can be worked on side by side).
@@ -7,13 +8,11 @@
 // findings interpreted; the LE only for T15), the 32.x flows reacting to the committed events, read the way the shell reads
 // it (the borrower API: record, thread, cards), plus the shell itself — the built Next.js app (apps/borrower, `.next-t13`,
 // shared with 32.13 and rebuilt when its sources are newer) pointed at this test's API through its proxy and driven with
-// Playwright's Chromium from /opt/pw-browsers at 1280 (≥ 1024: the rail beside the thread) and 390 px (the status strip and
-// the bottom sheet). Skips without a database.
+// Playwright's Chromium from /opt/pw-browsers at 1280 (≥ 1024: the rail beside the thread) and 390 px (the five-tab shell of
+// 01 §1.2 — a session lands on Chat; My Loan's badge and next event and the Tasks tab's needed count are the glance; the header's
+// "Your record" opens the rail as the record sheet). Skips without a database.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { createRequire } from "node:module";
-import { cpSync, existsSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { connect, type Db } from "../../infra/db/client.ts";
@@ -28,13 +27,13 @@ import { createBorrowerRouter, type BorrowerRouter } from "../../runtime/borrowe
 import { Journey, MST } from "../../runtime/borrower/fixtures/journey.ts";
 import { deliverLeByConsent } from "../../runtime/borrower/flows/3-entry.ts";
 import { REFINANCE_STEPS, journeyProgress } from "../../runtime/borrower/journey-progress.ts";
+import { createHarness, type Context, type Page } from "./harness.ts";
 
 const { url: DB_URL, skip } = await testDatabase(import.meta.url);
 const TOKEN = "ops-" + randomUUID();
 const clock = new FixedClock("2026-09-10T16:00:00.000Z");
 const INTAKE = { kind: "agent" as const, id: "intake" };
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
-const APP_DIR = `${ROOT}apps/borrower/`; const DIST = ".next-t13"; const CHROME = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
 type Json = Record<string, unknown>;
 
 let db: Db; let runtime: Runtime; let router: BorrowerRouter; let base = ""; let close: () => Promise<void> = async () => undefined; let partnerPartyId = "";
@@ -69,7 +68,6 @@ async function signIn(destination: string): Promise<{ token: string; party_id: s
 }
 const settle = () => router.flows!.settle();
 const record = async (token: string, subject: string): Promise<Json> => { await settle(); const r = await api("GET", `/v1/borrower/record?subject=${subject}`, undefined, token); assert.equal(r.status, 200, JSON.stringify(r.body).slice(0, 600)); return r.body; };
-const thread = async (token: string): Promise<{ messages: Json[]; pinned_card: Json | null }> => { await settle(); const r = await api("GET", "/v1/borrower/thread?limit=500", undefined, token); assert.equal(r.status, 200, JSON.stringify(r.body).slice(0, 300)); return r.body as { messages: Json[]; pinned_card: Json | null }; };
 interface CardRow { card_instance_id: string; party_id: string; kind: string; status: string; copy_key: string; props: Json; evidence: Json | null; command_ref: string | null; created_at: string; resolved_at: string | null; subject_application_id: string | null; subject_loan_id: string | null }
 const cardsOf = async (partyId: string, where = ""): Promise<CardRow[]> => { await settle(); return db.query<CardRow & Record<string, unknown>>(`SELECT card_instance_id, party_id, kind, status, copy_key, props, evidence, command_ref, created_at, resolved_at, subject_application_id, subject_loan_id FROM card_instances WHERE party_id = $1 ${where} ORDER BY created_at`, [partyId]); };
 interface App { j: Journey; A: string; B: string; partyA: string; partyB: string }
@@ -108,64 +106,17 @@ function reviveCents(v: unknown): unknown {
   return v;
 }
 
-// ---------------------------------------------------------------- the shell: the built Next.js app on this test's API, driven with Playwright
-interface Locator { getByTestId(id: string): Locator; getByRole(role: string, o?: { name?: string | RegExp }): Locator; locator(sel: string, o?: { hasText?: string | RegExp }): Locator; allInnerTexts(): Promise<string[]>; evaluateAll<T>(fn: (els: unknown[]) => T): Promise<T>; count(): Promise<number>; first(): Locator; nth(i: number): Locator; click(o?: object): Promise<void>; fill(v: string): Promise<void>; check(): Promise<void>; boundingBox(): Promise<{ x: number; y: number; width: number; height: number } | null>; textContent(): Promise<string | null>; innerText(): Promise<string>; isVisible(): Promise<boolean>; getAttribute(name: string): Promise<string | null>; waitFor(o?: { timeout?: number; state?: string }): Promise<void> }
-interface Page { on(event: string, fn: (x: { text(): string; message?: string }) => void): void; goto(url: string, o?: { waitUntil?: string; timeout?: number }): Promise<unknown>; reload(o?: { waitUntil?: string }): Promise<unknown>; locator(sel: string, o?: { hasText?: string | RegExp }): Locator; getByTestId(id: string): Locator; getByRole(role: string, o?: { name?: string | RegExp }): Locator; evaluate<T>(fn: string): Promise<T>; viewportSize(): { width: number; height: number } | null; waitForSelector(sel: string, o?: { timeout?: number; state?: string }): Promise<unknown>; waitForTimeout(ms: number): Promise<void>; content(): Promise<string>; close(): Promise<void>; screenshot(o: { path: string; fullPage?: boolean }): Promise<unknown> }
-interface Context { addCookies(c: object[]): Promise<void>; newPage(): Promise<Page>; close(): Promise<void> }
-interface Browser { newContext(o: object): Promise<Context>; close(): Promise<void> }
-let appProc: ChildProcess | null = null; let appBase = ""; let browser: Browser | null = null; let appLog = "";
-function newestSource(dir: string): number {
-  let newest = 0;
-  for (const name of readdirSync(dir)) { if (name === "node_modules" || name.startsWith(".next") || name === "tests" || name === "playwright-report" || name === "test-results") continue; const p = `${dir}/${name}`; const st = statSync(p); if (st.isDirectory()) newest = Math.max(newest, newestSource(p)); else if (/\.(ts|tsx|css|json|mjs|mts)$/.test(name)) newest = Math.max(newest, st.mtimeMs); }
-  return newest;
-}
-/** The standalone build in `.next-t13` (an env-driven distDir so it never collides with the app's own `.next`), rebuilt when a source is newer — shared with 32.13's harness. */
-function ensureBuild(): void {
-  const buildId = `${APP_DIR}${DIST}/BUILD_ID`;
-  if (!existsSync(buildId) || statSync(buildId).mtimeMs < newestSource(APP_DIR.replace(/\/$/, ""))) {
-    const r = spawnSync("npx", ["next", "build"], { cwd: APP_DIR, env: { ...process.env, NEXT_DIST_DIR: DIST, NEXT_TELEMETRY_DISABLED: "1" }, stdio: "pipe", timeout: 300_000, encoding: "utf8" });
-    assert.equal(r.status, 0, `next build failed:\n${r.stdout}\n${r.stderr}`);
-  }
-  cpSync(`${APP_DIR}${DIST}/static`, `${APP_DIR}${DIST}/standalone/${DIST}/static`, { recursive: true });
-}
-async function shell(): Promise<string> {
-  if (appBase) return appBase;
-  ensureBuild();
-  const port = 3400 + Math.floor(Math.random() * 400);
-  appProc = spawn(process.execPath, [`${APP_DIR}${DIST}/standalone/server.js`], { cwd: `${APP_DIR}${DIST}/standalone`, env: { ...process.env, PORT: String(port), HOSTNAME: "127.0.0.1", API_BASE_URL: base, NODE_ENV: "production" }, stdio: ["ignore", "pipe", "pipe"] });
-  appProc.stdout?.on("data", (d: Buffer) => { appLog += d.toString(); }); appProc.stderr?.on("data", (d: Buffer) => { appLog += d.toString(); });
-  appBase = `http://127.0.0.1:${port}`;
-  const deadline = Date.now() + 60_000;
-  while (Date.now() < deadline) { try { const r = await fetch(`${appBase}/app`, { redirect: "manual" }); if (r.status < 500) return appBase; } catch { /* not up yet */ } await new Promise((r) => setTimeout(r, 250)); }
-  throw new Error(`the borrower app did not start on ${appBase}:\n${appLog.slice(-2000)}`);
-}
-async function stopShell(): Promise<void> { await browser?.close().catch(() => undefined); browser = null; appProc?.kill(); appProc = null; }
-async function pageFor(token: string | null, width: number, path = "/app"): Promise<{ page: Page; ctx: Context }> {
-  await shell();
-  process.env["PLAYWRIGHT_BROWSERS_PATH"] = "/opt/pw-browsers";
-  if (!browser) { const pw = createRequire(import.meta.url)(`${APP_DIR}node_modules/playwright`) as { chromium: { launch(o: object): Promise<Browser> } }; browser = await pw.chromium.launch({ headless: true, ...(existsSync(CHROME) ? { executablePath: CHROME } : {}) }); }
-  const ctx = await browser.newContext({ viewport: { width, height: width < 768 ? 844 : 800 }, ...(width < 768 ? { isMobile: true, hasTouch: true } : {}) });
-  if (token) await ctx.addCookies([{ name: "sm_borrower_session", value: token, domain: "127.0.0.1", path: "/app", httpOnly: true, secure: false, sameSite: "Strict" }]);
-  const page = await ctx.newPage(); const logs: string[] = [];
-  page.on("console", (m) => logs.push(`console: ${m.text()}`)); page.on("pageerror", (e) => logs.push(`pageerror: ${e.message ?? String(e)}`));
-  (page as Page & { logs: string[] }).logs = logs;
-  await page.goto(`${appBase}${path}`, { waitUntil: "load", timeout: 60_000 });   // never networkidle: the SSE stream stays open
-  return { page, ctx };
-}
-async function inViewport(page: Page, sel: string): Promise<boolean> {
-  const box = await page.locator(sel).first().boundingBox(); const vp = page.viewportSize()!;
-  return !!box && box.y >= 0 && box.x >= 0 && box.y + box.height <= vp.height && box.x + box.width <= vp.width;
-}
-/** The shell rendered from this test's API: the shell region, the conversation with at least one line, the rail with Needed from you. */
+// ---------------------------------------------------------------- the shell: the built Next.js app on this test's API, driven with Playwright (src/domain/borrower/harness.ts, shared with 32.13 and 32.19)
+const H = createHarness({ apiBase: () => base });
+const { pageFor, inViewportSel: inViewport, stopShell, appLog } = H;
+/** The shell rendered from this test's API: the shell region, the conversation with at least one line (on a phone the Chat tab), the rail with Needed from you (on a phone mounted behind the tabs as the record sheet). */
 async function openShell(token: string, width: number, path = "/app"): Promise<{ page: Page; ctx: Context }> {
   const p = await pageFor(token, width, path);
   await p.page.waitForSelector('[data-testid="shell"]', { timeout: 30_000 });
   try { await p.page.waitForSelector('[data-testid="thread"] .sm-msg', { timeout: 30_000 }); await p.page.waitForSelector('[data-testid="record"] [data-record-section="needed"]', { timeout: 30_000, state: "attached" }); }
-  catch (e) { const notice = await p.page.locator(".sm-error").allInnerTexts().catch(() => [] as string[]); throw new Error(`the shell did not render the thread: ${String(e)}; notices=${JSON.stringify(notice)}; logs=${JSON.stringify((p.page as Page & { logs?: string[] }).logs?.slice(-10))}; app=${appLog.slice(-800)}`); }
+  catch (e) { const notice = await p.page.locator(".sm-error").allInnerTexts().catch(() => [] as string[]); throw new Error(`the shell did not render the thread: ${String(e)}; notices=${JSON.stringify(notice)}; logs=${JSON.stringify((p.page as Page & { logs?: string[] }).logs?.slice(-10))}; app=${appLog().slice(-800)}`); }
   return p;
 }
-const railRow = (page: Page, cardId: string): Locator => page.locator(`[data-testid="record"] [data-rail-card="${cardId}"]`).first();
-async function expandRail(page: Page, cardId: string): Promise<void> { const row = railRow(page, cardId); await row.waitFor({ timeout: 30_000, state: "attached" }); if ((await row.getAttribute("data-expanded")) !== "true") await row.locator("> button").click(); }
 const SCREENSHOTS = `${ROOT}apps/borrower/test-results/32-16-rail`;
 
 // ---------------------------------------------------------------- the refinance journey at R8 (App J)
@@ -173,7 +124,7 @@ let J: App; let tokA = ""; let recordR8: Json;
 // the journey moves the clock by days between phases and sessions idle out after 30 minutes (01 §5): every test signs Alex in afresh
 const fresh = async (): Promise<string> => { tokA = (await signIn(J.A)).token; return tokA; };
 
-test("32.16-T13: Given the refinance fixture at R8, then `journey_progress` shows E1–R7 `done`, R8 `current`, and Progress renders \"7 of 12\".", { skip }, async () => {
+test("32.16-T13: Given the refinance fixture at R8, then `journey_progress` shows E1–R7 `done`, R8 `current`, and Tasks renders Progress \"7 of 12\" from `journey_progress`.", { skip: skip || "re-driven against the Apply product in Session 4 (32.19)" }, async () => {
   // the journey fixture to R8: the application (E1–E6 are the door: the lead, the disclosure, the goal, the identified and verified borrowers, the consents), the 21.1 interview (R1–R7, the six-item moment → application.trid_received), credit for both (R2), DU findings received and interpreted (R8 — no decision yet)
   J = await openApp();
   await J.j.quoteOnly();   // 20.4's quote and the credit-report fee handling (22.2 R1: no hard pull before the six items and the fee are recorded) — no LE yet
@@ -218,101 +169,7 @@ test("32.16-T13: Given the refinance fixture at R8, then `journey_progress` show
   await ctx.close();
 });
 
-test("32.16-T11: Given the shell at ≥ 1024 px, then no card component renders inside the thread; under Needed from you only the current ask is open, the other pending cards wait behind one \"n more after this\" line, and expanding one shows its component.", { skip }, async () => {
-  assert.ok(J, "T13 drove the journey to R8"); await fresh();
-  // two more asks the flows would raise on the way (the harness sends them through 32.1's send_card, as 32.13 does): a home ConfirmCard and an income ConnectCard
-  const home = await sendCard(J, J.partyA, "ConfirmCard", "refi.home.confirm", { title: "Confirm your home", fields: [{ path: "property_address", label: "Address", value: "100 N Central Ave, Phoenix, AZ 85004", source: "public_records" }], commits_to: "application_properties" });
-  const truv = await sendCard(J, J.partyA, "ConnectCard", "income.connect.purpose", { vendor: "truv_income", purpose_text: "Connect your payroll", what_we_get: ["employer", "pay"], fallback: { label: "Type it in" }, state: "not_started" }, "verification.connect");
-  const rec = await record(tokA, J.j.appId);
-  const t = await thread(tokA);
-  const pending = (await cardsOf(J.partyA, `AND status = 'pending'`)).filter((c) => !c.subject_application_id || c.subject_application_id === J.j.appId);
-  assert.ok(pending.length >= 2, `pending cards at R8: ${pending.map((c) => `${c.kind}:${c.copy_key}`).join(", ")}`);
-  const { page, ctx } = await openShell(tokA, 1280);
-  // ≥ 1024: the rail sits beside the thread; no card component anywhere in the thread — cards there are one-line reference chips
-  assert.ok((await page.getByTestId("record").boundingBox())!.x > 600, "the rail beside the thread at 1280");
-  assert.equal(await page.locator('[data-testid="thread"] article[data-card-kind]').count(), 0, "no card component inside the thread");
-  assert.ok((await page.locator('[data-testid="thread"] [data-testid="reference-chip"]').count()) >= 1, "the thread references its cards with chips");
-  assert.equal(await page.locator('[data-testid="thread"] .sm-msg-meta').count(), 0, "no sender/badge/timestamp row on the lines");
-  assert.equal(await page.locator('[data-testid="thread"] [data-copy-key="entry.disclosure.first"]').count(), 0, "the disclosure row is the footer, not a line in the log");
-  assert.ok(await page.getByTestId("footer-disclosure").isVisible(), "the disclosure footer");
-  assert.equal(await page.getByTestId("talk-to-person").count(), 0, "no Talk to a person control (32.16 §1 principle 8)");
-  // a card appears when it is needed, not when it exists: only the current ask (and a caution row) is on the rail; the other pending cards wait behind one "n more after this" line
-  const needed = page.locator('[data-testid="record"] [data-record-section="needed"]');
-  const rowsOf = () => needed.locator("[data-rail-card]").evaluateAll((els: unknown[]) => (els as { getAttribute(n: string): string | null }[]).map((e) => ({ id: e.getAttribute("data-rail-card"), expanded: e.getAttribute("data-expanded"), current: e.getAttribute("data-current-ask"), kind: e.getAttribute("data-card-kind"), tone: e.getAttribute("data-tone") })));
-  const before = await rowsOf();
-  const first = ((rec["needed_from_you"] as Json[])[0]?.["card_instance_id"] as string | undefined) ?? (t.pinned_card?.["card_instance_id"] as string | undefined);
-  assert.ok(first, "the API names the current ask");
-  assert.deepEqual(before.filter((r) => r.tone !== "caution").map((r) => r.id), [first], `only the current ask is on the rail before the line is opened: ${JSON.stringify(before)}`);
-  const later = needed.getByTestId("needs-later");
-  assert.equal(await later.count(), 1, "the one line for the cards that wait");
-  assert.match((await later.textContent()) ?? "", /^\D*\d+ more after this$/);
-  assert.equal(await later.getAttribute("aria-expanded"), "false");
-  // the rail is the card: everything else (header, status, progress, connections, documents, what we're doing, people, numbers, dates, property, loan) waits behind one collapsed "Your record" line
-  const recordSection = page.locator('[data-testid="record"] [data-record-section="record"]');
-  assert.equal(await recordSection.getAttribute("data-open"), "false", "Your record starts collapsed");
-  for (const sec of ["progress", "connections", "documents", "doing", "people", "numbers"]) { const el = recordSection.locator(`[data-record-section="${sec}"]`); if (await el.count()) assert.ok(!(await el.first().isVisible()), `${sec} is behind Your record`); }
-  assert.equal(await needed.locator(`[data-rail-card="${first}"] > button`).count(), 0, "the current ask is the card alone — no row line repeating its question");
-  await later.click();
-  const rows = await rowsOf();
-  // opened, every pending card has its row (informational kinds have their own sections: a status card under What we're doing, a person under People, a notice under Documents)
-  const INFORMATIONAL = new Set(["StatusCard", "NoticeCard", "PersonCard", "InviteCard"]);
-  for (const c of pending) {
-    if (INFORMATIONAL.has(c.kind)) { assert.equal(await page.locator(`[data-testid="record"] [data-rail-card="${c.card_instance_id}"]`).count(), 1, `${c.kind} ${c.copy_key} has its row on the rail`); continue; }
-    assert.ok(rows.some((r) => r.id === c.card_instance_id), `${c.kind} ${c.copy_key} under Needed from you`);
-  }
-  assert.ok(rows.some((r) => r.id === home) && rows.some((r) => r.id === truv));
-  // current ask first: the record's first needed item (the API's order — due first, then oldest), expanded by default; the others collapsed to one line
-  assert.equal(rows[0]!.id, first, `current ask first: ${JSON.stringify(rows)}`);
-  assert.equal(rows[0]!.current, "true"); assert.equal(rows[0]!.expanded, "true");
-  assert.equal(await needed.locator(`[data-rail-card="${first}"] article[data-card-id="${first}"]`).count(), 1, "the current ask shows its component");
-  const collapsed = rows.find((r) => r.expanded !== "true");
-  assert.ok(collapsed, "the other asks are one line each");
-  assert.equal(await needed.locator(`[data-rail-card="${collapsed.id}"] article`).count(), 0);
-  // expanding one shows its existing component (the same `article[data-card-kind]` the 01 §3 library renders), resolvable in place
-  await needed.locator(`[data-rail-card="${collapsed.id}"] > button`).click();
-  const article = needed.locator(`[data-rail-card="${collapsed.id}"] article[data-card-kind="${collapsed.kind}"]`);
-  await article.waitFor({ timeout: 15_000 });
-  assert.equal(await article.getAttribute("data-card-id"), collapsed.id);
-  assert.ok((await article.locator("button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])").count()) >= 1, "the component is operable in place");
-  assert.equal(await page.locator('[data-testid="thread"] article[data-card-kind]').count(), 0, "still no card in the thread");
-  assert.equal(await page.locator('[data-testid="card-error"]').count(), 0, "every card renders");
-  await page.screenshot({ path: `${SCREENSHOTS}/t11-rail-1280.png`, fullPage: false }).catch(() => undefined);
-  await ctx.close();
-});
-
-test("32.16-T12: Given a reference chip, when clicked, then the rail focuses and expands that `card_instance_id`; resolving it there updates the chip to its receipt.", { skip }, async () => {
-  assert.ok(J, "T13 drove the journey to R8"); await fresh();
-  // a regulated choice the assistant puts on the rail (a §2.3 evidence case): the reference in the thread is the message that carries the card
-  const cardId = await sendCard(J, J.partyA, "ChoiceCard", "refi.product.choice", { title: "Which loan?", options: [{ id: "frm30", label: "30-year fixed", is_primary: true }, { id: "frm15", label: "15-year fixed" }], command: "application.setProduct", command_args_by_option: { frm30: { product: "FRM30" }, frm15: { product: "FRM15" } } });
-  const t = await thread(tokA);
-  assert.ok(t.messages.some((m) => m["card_instance_id"] === cardId), "the thread carries the card's message");
-  const { page, ctx } = await openShell(tokA, 1280);
-  const chip = page.locator(`[data-testid="thread"] [data-testid="reference-chip"][data-card-id="${cardId}"]`);
-  await chip.waitFor({ timeout: 15_000 });
-  assert.match(await chip.innerText(), /Which loan\? →/, "the chip is the card's one-line reference");
-  // not on the rail until the chip is tapped: it is not the current ask (an older card is), so it waits behind "n more after this" — or, once that line is open, sits collapsed
-  const row = railRow(page, cardId);
-  assert.ok((await row.count()) === 0 || (await row.getAttribute("data-expanded")) === "false", "behind the line, or collapsed, before the tap");
-  await chip.click();
-  await page.waitForSelector(`[data-rail-card="${cardId}"][data-expanded="true"] article[data-card-id="${cardId}"]`, { timeout: 15_000 });
-  await page.waitForTimeout(600);   // the smooth scroll into view
-  assert.ok(await inViewport(page, `[data-rail-card="${cardId}"] article[data-card-id="${cardId}"]`), "the rail focused the card (in the viewport, expanded)");
-  assert.equal(await page.locator('[data-testid="thread"] article[data-card-kind]').count(), 0, "the tap opens the card on the rail, never in the thread");
-  // resolving it there — a tap on the rail, the API's resolveCard — updates the chip to the receipt
-  await page.locator(`[data-rail-card="${cardId}"] article`).getByRole("button", { name: "15-year fixed" }).click();
-  await page.waitForSelector(`[data-testid="thread"] [data-testid="chip-receipt"][data-card-id="${cardId}"]`, { timeout: 15_000 });
-  const receipt = page.locator(`[data-testid="thread"] [data-testid="chip-receipt"][data-card-id="${cardId}"]`);
-  assert.match(await receipt.innerText(), /Which loan\? — 15-year fixed/, "the receipt line: the card's title and the choice");
-  assert.equal(await page.locator(`[data-testid="thread"] [data-testid="reference-chip"][data-card-id="${cardId}"]`).count(), 0);
-  await settle();
-  const row2 = (await cardsOf(J.partyA, `AND card_instance_id = '${cardId}'`))[0]!;
-  assert.equal(row2.status, "resolved"); assert.equal((row2.evidence as Json)["option_id"], "frm15", "resolved through resolveCard with the tapped option");
-  assert.equal(await page.locator(`[data-testid="record"] [data-record-section="needed"] [data-rail-card="${cardId}"]`).count(), 0, "a resolved card leaves Needed from you");
-  await page.screenshot({ path: `${SCREENSHOTS}/t12-receipt-1280.png`, fullPage: false }).catch(() => undefined);
-  await ctx.close();
-});
-
-test("32.16-T14: Given `credit_reports.frozen_repositories` non-empty, then the rail shows a caution row with the lift-instructions card, and no toast or modal exists in the DOM.", { skip }, async () => {
+test("32.16-T14: Given `credit_reports.frozen_repositories` non-empty, then the You step shows the caution row with the lift-instructions card, and no toast or modal exists in the DOM.", { skip: skip || "re-driven against the Apply product in Session 4 (32.19)" }, async () => {
   assert.ok(J, "T13 drove the journey to R8");
   // 22.2's freeze workflow on the report: `frozen_repositories` non-empty → credit.freeze.detected with the borrower notice (the platform's fact). The borrower-facing lift
   // instructions are the `credit.freeze.lift` StatusCard 32.14's flow sends on a frozen soft pull; no origination flow raises it from the 22.2 detection yet, so the harness
@@ -340,7 +197,7 @@ test("32.16-T14: Given `credit_reports.frozen_repositories` non-empty, then the 
   await ctx.close();
 });
 
-test("32.16-T15: Given a `DocumentCard{LE}` under Documents, when expanded, then the viewer and \"Confirm receipt\" render and confirming writes `receipt_evidence = esign_confirmed` (32.3 32.3-T22 unchanged).", { skip }, async () => {
+test("32.16-T15: Given a `DocumentCard{LE}` under My Loan's documents, when expanded, then the viewer and \"Confirm receipt\" render and confirming writes `receipt_evidence = esign_confirmed` (32.3 32.3-T22 unchanged).", { skip: skip || "re-driven against the Apply product in Session 4 (32.19)" }, async () => {
   assert.ok(J, "T13 drove the journey to R8");
   // both parties' E-SIGN active (32.3 E6 by tap + the demonstration), the quote, the LE by the parties' consents (32.3's deliverLeByConsent → esign_portal) — the LE DocumentCard{requires_ack} per party
   await consentEsign(J, J.A, J.partyA, "Alex Borrower"); await consentEsign(J, J.B, J.partyB, "Blake Borrower");
@@ -383,33 +240,40 @@ test("32.16-T15: Given a `DocumentCard{LE}` under Documents, when expanded, then
   await ctx.close();
 });
 
-test("32.16-T16: Given a phone width, then the status strip shows the badge, next event and needed count, and the sheet shows the same rail sections.", { skip }, async () => {
+test("32.16-T16: Given a phone width, then the Apply tab shell shows the badge and next event on My Loan and the needed count on Tasks, and every rail section is reachable from Tasks or My Loan.", { skip: skip || "re-driven against the Apply product in Session 4 (32.19)" }, async () => {
   assert.ok(J, "T13 drove the journey to R8"); await fresh();
   const rec = await record(tokA, J.j.appId);
   const wide = await openShell(tokA, 1280);
   const sectionsWide = await wide.page.locator('[data-testid="record"] [data-record-section]').evaluateAll((els: unknown[]) => (els as { getAttribute(n: string): string | null }[]).map((e) => e.getAttribute("data-record-section")));
   await wide.ctx.close();
+  // the phone: the five-tab shell (01 §1.2) — a session lands on Chat (32.16 §2.0), the rail mounted behind the tabs as the record sheet
   const { page, ctx } = await openShell(tokA, 390);
-  // the status strip: badge, next event, the needed-from-you count — the record's own values, never counted here
-  const strip = page.getByTestId("status-strip"); assert.ok(await strip.isVisible(), "the status strip at 390");
-  assert.equal((await strip.getByTestId("status-badge").innerText()).trim().replace(/^[^\w]+/, ""), String((rec["status"] as Json)["badge"]));
-  const nextText = (await strip.getByTestId("strip-next").innerText()).trim(); const next = rec["next"] as Json | null;
-  if (next) assert.ok(nextText.includes(String(next["label"])), `next event on the strip: ${nextText}`); else assert.equal(nextText, "Nothing scheduled");
-  assert.match((await strip.getByTestId("strip-count").innerText()).trim(), new RegExp(`^${(rec["needed_from_you"] as unknown[]).length} `), "the needed-from-you count on the strip");
+  assert.equal(await page.locator('[data-testid="shell"][data-mobile-shell="1"][data-tab="chat"]').count(), 1, "the phone shell lands on Chat");
   assert.equal(await page.getByTestId("talk-to-person").count(), 0);
   assert.ok(await inViewport(page, '[data-testid="action-bar"]'), "the input bar in the viewport");
   assert.equal(await page.locator('[data-testid="thread"] article[data-card-kind]').count(), 0, "no card in the thread on a phone either — the sheet is the rail");
   assert.ok(await page.evaluate<boolean>("document.documentElement.scrollWidth <= 390 && document.body.scrollWidth <= 390"), "the page never scrolls sideways");
-  // the sheet: the same rail sections, in the same order, as beside the thread at 1280
-  await strip.click(); await page.waitForSelector('[data-testid="record"][data-open="true"]', { timeout: 15_000 });
+  // the at-a-glance line: My Loan's badge and next event, the Tasks tab's needed count — the record's own values, never counted here
+  await page.getByTestId("tab-loan").click(); await page.waitForSelector('[data-testid="shell"][data-tab="loan"]', { timeout: 15_000 });
+  const loan = page.getByTestId("tab-page-loan");
+  assert.equal((await loan.getByTestId("status-badge").innerText()).trim().replace(/^[^\w]+/, ""), String((rec["status"] as Json)["badge"]), "the record's badge on My Loan");
+  const nextText = (await loan.getByTestId("next-event").innerText()).trim(); const next = rec["next"] as Json | null;
+  if (next) assert.ok(nextText.includes(String(next["label"])), `next event on My Loan: ${nextText}`); else assert.equal(nextText, "Nothing scheduled");
+  const needed = (rec["needed_from_you"] as unknown[]).length; const tasksBadge = page.locator('[data-testid="tab-tasks"] .sm-tab-badge');
+  if (needed > 0) { assert.equal(await tasksBadge.getAttribute("aria-label"), `${needed} needed from you`, "the needed count on the Tasks tab"); assert.equal((await tasksBadge.innerText()).trim(), String(needed)); }
+  else assert.equal(await tasksBadge.count(), 0, "nothing counted when nothing is needed");
+  assert.ok(await page.evaluate<boolean>("document.documentElement.scrollWidth <= 390 && document.body.scrollWidth <= 390"), "My Loan never scrolls sideways");
+  // the sheet: the header's "Your record" opens it — the same rail sections, in the same order, as beside the thread at 1280
+  await page.getByRole("button", { name: "Your record" }).click(); await page.waitForSelector('[data-testid="record"][data-open="true"]', { timeout: 15_000 });
   const sectionsSheet = await page.locator('[data-testid="record"][data-open="true"] [data-record-section]').evaluateAll((els: unknown[]) => (els as { getAttribute(n: string): string | null }[]).map((e) => e.getAttribute("data-record-section")));
   assert.deepEqual(sectionsSheet, sectionsWide, "the sheet carries the same sections");
   for (const id of ["status", "progress", "needed", "documents"]) assert.ok(sectionsSheet.includes(id), `${id} on the sheet`);
   assert.ok(await page.locator('[data-testid="record"] [data-record-section="needed"]').isVisible());
   assert.equal((await page.locator('[data-testid="record"] [data-record-section="record"] [data-testid="progress-count"]').innerText()).trim(), `${(rec["journey_progress"] as Json)["done"]} of ${(rec["journey_progress"] as Json)["total"]}`);
-  // a reference chip opens the sheet at that card (32.16 §2.1: below 768 the rail is the bottom sheet and the chip opens it)
+  // a reference chip opens the sheet at that card (32.16 §2.1: below 768 the rail is the record sheet and the chip opens it)
   await page.getByRole("button", { name: "Close your record" }).click();
   await page.waitForSelector('[data-testid="record"][data-open="true"]', { timeout: 15_000, state: "detached" });   // closed = display:none, never "visible"
+  await page.getByTestId("tab-chat").click(); await page.waitForSelector('[data-testid="shell"][data-tab="chat"]', { timeout: 15_000 });
   const chip = page.locator('[data-testid="thread"] [data-testid="reference-chip"]').first();
   const chipCard = await chip.getAttribute("data-card-id");
   await chip.click();

@@ -13,9 +13,6 @@
 // "Your record" opens the rail as the record sheet). Skips without a database.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { createRequire } from "node:module";
-import { cpSync, existsSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { connect, type Db } from "../../infra/db/client.ts";
@@ -30,13 +27,13 @@ import { createBorrowerRouter, type BorrowerRouter } from "../../runtime/borrowe
 import { Journey, MST } from "../../runtime/borrower/fixtures/journey.ts";
 import { deliverLeByConsent } from "../../runtime/borrower/flows/3-entry.ts";
 import { REFINANCE_STEPS, journeyProgress } from "../../runtime/borrower/journey-progress.ts";
+import { createHarness, type Context, type Page } from "./harness.ts";
 
 const { url: DB_URL, skip } = await testDatabase(import.meta.url);
 const TOKEN = "ops-" + randomUUID();
 const clock = new FixedClock("2026-09-10T16:00:00.000Z");
 const INTAKE = { kind: "agent" as const, id: "intake" };
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
-const APP_DIR = `${ROOT}apps/borrower/`; const DIST = ".next-t13"; const CHROME = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
 type Json = Record<string, unknown>;
 
 let db: Db; let runtime: Runtime; let router: BorrowerRouter; let base = ""; let close: () => Promise<void> = async () => undefined; let partnerPartyId = "";
@@ -109,60 +106,15 @@ function reviveCents(v: unknown): unknown {
   return v;
 }
 
-// ---------------------------------------------------------------- the shell: the built Next.js app on this test's API, driven with Playwright
-interface Locator { getByTestId(id: string): Locator; getByRole(role: string, o?: { name?: string | RegExp }): Locator; locator(sel: string, o?: { hasText?: string | RegExp }): Locator; allInnerTexts(): Promise<string[]>; evaluateAll<T>(fn: (els: unknown[]) => T): Promise<T>; count(): Promise<number>; first(): Locator; nth(i: number): Locator; click(o?: object): Promise<void>; fill(v: string): Promise<void>; check(): Promise<void>; boundingBox(): Promise<{ x: number; y: number; width: number; height: number } | null>; textContent(): Promise<string | null>; innerText(): Promise<string>; isVisible(): Promise<boolean>; getAttribute(name: string): Promise<string | null>; waitFor(o?: { timeout?: number; state?: string }): Promise<void> }
-interface Page { on(event: string, fn: (x: { text(): string; message?: string }) => void): void; goto(url: string, o?: { waitUntil?: string; timeout?: number }): Promise<unknown>; reload(o?: { waitUntil?: string }): Promise<unknown>; locator(sel: string, o?: { hasText?: string | RegExp }): Locator; getByTestId(id: string): Locator; getByRole(role: string, o?: { name?: string | RegExp }): Locator; evaluate<T>(fn: string): Promise<T>; viewportSize(): { width: number; height: number } | null; waitForSelector(sel: string, o?: { timeout?: number; state?: string }): Promise<unknown>; waitForTimeout(ms: number): Promise<void>; content(): Promise<string>; close(): Promise<void>; screenshot(o: { path: string; fullPage?: boolean }): Promise<unknown> }
-interface Context { addCookies(c: object[]): Promise<void>; newPage(): Promise<Page>; close(): Promise<void> }
-interface Browser { newContext(o: object): Promise<Context>; close(): Promise<void> }
-let appProc: ChildProcess | null = null; let appBase = ""; let browser: Browser | null = null; let appLog = "";
-function newestSource(dir: string): number {
-  let newest = 0;
-  for (const name of readdirSync(dir)) { if (name === "node_modules" || name.startsWith(".next") || name === "tests" || name === "playwright-report" || name === "test-results") continue; const p = `${dir}/${name}`; const st = statSync(p); if (st.isDirectory()) newest = Math.max(newest, newestSource(p)); else if (/\.(ts|tsx|css|json|mjs|mts)$/.test(name)) newest = Math.max(newest, st.mtimeMs); }
-  return newest;
-}
-/** The standalone build in `.next-t13` (an env-driven distDir so it never collides with the app's own `.next`), rebuilt when a source is newer — shared with 32.13's harness. */
-function ensureBuild(): void {
-  const buildId = `${APP_DIR}${DIST}/BUILD_ID`;
-  if (!existsSync(buildId) || statSync(buildId).mtimeMs < newestSource(APP_DIR.replace(/\/$/, ""))) {
-    const r = spawnSync("npx", ["next", "build"], { cwd: APP_DIR, env: { ...process.env, NEXT_DIST_DIR: DIST, NEXT_TELEMETRY_DISABLED: "1" }, stdio: "pipe", timeout: 300_000, encoding: "utf8" });
-    assert.equal(r.status, 0, `next build failed:\n${r.stdout}\n${r.stderr}`);
-  }
-  cpSync(`${APP_DIR}${DIST}/static`, `${APP_DIR}${DIST}/standalone/${DIST}/static`, { recursive: true });
-}
-async function shell(): Promise<string> {
-  if (appBase) return appBase;
-  ensureBuild();
-  const port = 3400 + Math.floor(Math.random() * 400);
-  appProc = spawn(process.execPath, [`${APP_DIR}${DIST}/standalone/server.js`], { cwd: `${APP_DIR}${DIST}/standalone`, env: { ...process.env, PORT: String(port), HOSTNAME: "127.0.0.1", API_BASE_URL: base, NODE_ENV: "production" }, stdio: ["ignore", "pipe", "pipe"] });
-  appProc.stdout?.on("data", (d: Buffer) => { appLog += d.toString(); }); appProc.stderr?.on("data", (d: Buffer) => { appLog += d.toString(); });
-  appBase = `http://127.0.0.1:${port}`;
-  const deadline = Date.now() + 60_000;
-  while (Date.now() < deadline) { try { const r = await fetch(`${appBase}/app`, { redirect: "manual" }); if (r.status < 500) return appBase; } catch { /* not up yet */ } await new Promise((r) => setTimeout(r, 250)); }
-  throw new Error(`the borrower app did not start on ${appBase}:\n${appLog.slice(-2000)}`);
-}
-async function stopShell(): Promise<void> { await browser?.close().catch(() => undefined); browser = null; appProc?.kill(); appProc = null; }
-async function pageFor(token: string | null, width: number, path = "/app"): Promise<{ page: Page; ctx: Context }> {
-  await shell();
-  process.env["PLAYWRIGHT_BROWSERS_PATH"] = "/opt/pw-browsers";
-  if (!browser) { const pw = createRequire(import.meta.url)(`${APP_DIR}node_modules/playwright`) as { chromium: { launch(o: object): Promise<Browser> } }; browser = await pw.chromium.launch({ headless: true, ...(existsSync(CHROME) ? { executablePath: CHROME } : {}) }); }
-  const ctx = await browser.newContext({ viewport: { width, height: width < 768 ? 844 : 800 }, ...(width < 768 ? { isMobile: true, hasTouch: true } : {}) });
-  if (token) await ctx.addCookies([{ name: "sm_borrower_session", value: token, domain: "127.0.0.1", path: "/app", httpOnly: true, secure: false, sameSite: "Strict" }]);
-  const page = await ctx.newPage(); const logs: string[] = [];
-  page.on("console", (m) => logs.push(`console: ${m.text()}`)); page.on("pageerror", (e) => logs.push(`pageerror: ${e.message ?? String(e)}`));
-  (page as Page & { logs: string[] }).logs = logs;
-  await page.goto(`${appBase}${path}`, { waitUntil: "load", timeout: 60_000 });   // never networkidle: the SSE stream stays open
-  return { page, ctx };
-}
-async function inViewport(page: Page, sel: string): Promise<boolean> {
-  const box = await page.locator(sel).first().boundingBox(); const vp = page.viewportSize()!;
-  return !!box && box.y >= 0 && box.x >= 0 && box.y + box.height <= vp.height && box.x + box.width <= vp.width;
-}
+// ---------------------------------------------------------------- the shell: the built Next.js app on this test's API, driven with Playwright (src/domain/borrower/harness.ts, shared with 32.13 and 32.19)
+const H = createHarness({ apiBase: () => base });
+const { pageFor, inViewportSel: inViewport, stopShell, appLog } = H;
 /** The shell rendered from this test's API: the shell region, the conversation with at least one line (on a phone the Chat tab), the rail with Needed from you (on a phone mounted behind the tabs as the record sheet). */
 async function openShell(token: string, width: number, path = "/app"): Promise<{ page: Page; ctx: Context }> {
   const p = await pageFor(token, width, path);
   await p.page.waitForSelector('[data-testid="shell"]', { timeout: 30_000 });
   try { await p.page.waitForSelector('[data-testid="thread"] .sm-msg', { timeout: 30_000 }); await p.page.waitForSelector('[data-testid="record"] [data-record-section="needed"]', { timeout: 30_000, state: "attached" }); }
-  catch (e) { const notice = await p.page.locator(".sm-error").allInnerTexts().catch(() => [] as string[]); throw new Error(`the shell did not render the thread: ${String(e)}; notices=${JSON.stringify(notice)}; logs=${JSON.stringify((p.page as Page & { logs?: string[] }).logs?.slice(-10))}; app=${appLog.slice(-800)}`); }
+  catch (e) { const notice = await p.page.locator(".sm-error").allInnerTexts().catch(() => [] as string[]); throw new Error(`the shell did not render the thread: ${String(e)}; notices=${JSON.stringify(notice)}; logs=${JSON.stringify((p.page as Page & { logs?: string[] }).logs?.slice(-10))}; app=${appLog().slice(-800)}`); }
   return p;
 }
 const SCREENSHOTS = `${ROOT}apps/borrower/test-results/32-16-rail`;

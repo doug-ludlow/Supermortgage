@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 8188/8756 (93.5%): tids 2286/2458, tables 787/848, timers 2055/2097, notices 308/308, tools 1464/1578, figures 1288/1467; processes at 100%: 194/205",
+ "brief": "spec units built 8213/8756 (93.8%): tids 2289/2458, tables 787/848, timers 2055/2097, notices 308/308, tools 1466/1578, figures 1308/1467; processes at 100%: 194/205",
  "totals": {
   "tids": {
    "spec": 2458,
-   "built": 2286
+   "built": 2289
   },
   "tables": {
    "spec": 848,
@@ -19,15 +19,15 @@
   },
   "tools": {
    "spec": 1578,
-   "built": 1464
+   "built": 1466
   },
   "figures": {
    "spec": 1467,
-   "built": 1288
+   "built": 1308
   },
   "units": {
    "spec": 8756,
-   "built": 8188
+   "built": 8213
   }
  },
  "sections": {
@@ -237,7 +237,7 @@
   },
   "35": {
    "spec": 715,
-   "built": 164,
+   "built": 189,
    "processes": 12,
    "done": 2
   }
@@ -9098,12 +9098,9 @@
    "title": "Default operations over time: cases progressed by the cycles and the screens \u2014 referral, milestones, docket reactions, executed breach actions, claims filed",
    "tids": {
     "spec": 17,
-    "built": 10,
-    "todo": 7,
+    "built": 13,
+    "todo": 4,
     "missing": [
-     2,
-     3,
-     4,
      9,
      13,
      14,
@@ -9128,43 +9125,19 @@
    },
    "tools": {
     "spec": 14,
-    "built": 12,
-    "missing": [
-     "claims.sweep",
-     "claims.package"
-    ]
+    "built": 14,
+    "missing": []
    },
    "figures": {
     "spec": 27,
-    "built": 7,
-    "missing": [
-     "$1,062.00",
-     "$129.12",
-     "$178,525.21",
-     "$180.00",
-     "$2,300.00",
-     "$2,865.00",
-     "$3,263.68",
-     "$3,461.64",
-     "$385.00",
-     "$4,527.05",
-     "$565.00",
-     "$6,000.00",
-     "$7,069.05",
-     "$7,198.17",
-     "$7,406.60",
-     "$750.67",
-     "$785.45",
-     "$8,196.02",
-     "$883.53",
-     "$98.17"
-    ]
+    "built": 27,
+    "missing": []
    },
    "units": {
     "spec": 72,
-    "built": 43
+    "built": 68
    },
-   "pct": 59.7
+   "pct": 94.4
   },
   {
    "process": "35.10",

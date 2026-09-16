@@ -24,6 +24,7 @@ import { firmDispatch, firmInbound } from "../../domain/operations-runtime/defau
 import { breachExecute, breachRecon } from "../../domain/operations-runtime/default-35-9/breach.ts";
 import { docketReact, docketSync } from "../../domain/operations-runtime/default-35-9/docket.ts";
 import { caseRefer } from "../../domain/operations-runtime/default-35-9/referral.ts";
+import { claimsPackage, claimsSweep } from "../../domain/operations-runtime/default-35-9/claims.ts";
 
 const HUMANS = ["ops_analyst", "officer", "attorney", "compliance", "fnma_portal_operator", "counsel"] as const;
 const LEGAL_ACT = /^(file|filing|instruct_sale|sale_instruction|bid|bid_instruction|foreclose|evict)$/i;
@@ -65,5 +66,9 @@ export const TOOLS_35_9: readonly ToolDef[] = defineTools(PROCESS_35_9, AGENT_35
     handler: compute(breachExecute), decision: (i, output) => (s(i, "op") === "register" ? { action: "breach.registry.register", subject: { kind: "breach_action_registry", id: s(i, "timer_code") }, rationale: `${s(i, "action_kind")} registered for ${s(i, "timer_code")} v${String((output as Record<string, unknown> | undefined)?.["version"] ?? "")}` } : null) },
   { name: "breach.recon", kind: "act", humanRoles: ["compliance", "officer", "ops_analyst"], ruleSetVersion: RULE_SET_VERSION_35_9, guardrails: COMMON, handler: compute(breachRecon),
     decision: (i, output) => { const o = (output ?? {}) as Record<string, unknown>; return { action: "breach.recon", subject: { kind: "run", id: String(o["as_of_date"] ?? s(i, "as_of_date")) }, rationale: o["already"] ? "already reconciled today" : `breaches ${String(o["breaches"])}: executed ${String(o["executed"])}, deferred ${String(o["deferred"])}, escalated_only ${String(o["escalated_only"])}, refused ${String(o["refused"])}, failed ${String(o["failed"])}, missing ${String(o["missing"])}` }; } },
+  // rule 9: claims open on the milestone, package on the clock, file through the sections
+  { name: "claims.sweep", kind: "act", humanRoles: ["ops_analyst", "officer", "fnma_portal_operator"], ruleSetVersion: RULE_SET_VERSION_35_9, guardrails: COMMON, handler: compute(claimsSweep),
+    decision: (i, output) => { const o = (output ?? {}) as Record<string, unknown>; return { action: "claims.sweep", subject: { kind: "loan", id: s(i, "loan_id") }, rationale: `${String((o["opened"] as unknown[] | undefined)?.length ?? 0)} candidate(s) opened on ${String(o["as_of_date"] ?? "")} (legal due dates read from the 15.x clocks)` }; } },
+  { name: "claims.package", kind: "act", humanRoles: ["ops_analyst", "officer", "fnma_portal_operator"], ruleSetVersion: RULE_SET_VERSION_35_9, guardrails: COMMON, handler: compute(claimsPackage), decision: () => null },   // the package writes its own decision record (subject candidate)
   { name: "writeDecision", kind: "act", humanRoles: [...HUMANS], ruleSetVersion: RULE_SET_VERSION_35_9, guardrails: [NO_MONEY_FIELD], handler: decision() },
 ]);

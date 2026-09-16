@@ -20,11 +20,13 @@ import { PgLoanRepository, type Fixture } from "../../infra/db/loans.ts";
 import { loadOverriddenRegistry } from "../timer-overrides.ts";
 import type { Actor, Clock } from "../../kernel/events/index.ts";
 import { addBusinessDays, servicer } from "../../kernel/calendar/business.ts";
-import { plainDate as D, addDays, type PlainDate } from "../../kernel/calendar/date.ts";
+import { plainDate as D, addDays, daysBetween, type PlainDate } from "../../kernel/calendar/date.ts";
 import { Runtime } from "../../runtime/app.ts";
 import { createLogger } from "../../runtime/log.ts";
 import type { EntityRecord } from "../../app/tools.ts";
-import { EV, TIMERS_35_9, ENGINE_ACTOR } from "./default-35-9.ts";
+import { EV, TIMERS_35_9, ENGINE_ACTOR, EXAMPLE_A, EXAMPLE_B, EXAMPLE_C } from "./default-35-9.ts";
+import { exposureCents } from "../foreclosure/timeframes.ts";
+import { unearnedPremiumCredit } from "../reo/claims.ts";
 import { caseUuid } from "./default-35-9/store.ts";
 
 const { url: DB_URL, skip } = await testDatabase(import.meta.url);
@@ -129,6 +131,34 @@ async function seedBankruptcyCase(f: Fixture, caseNumber: string): Promise<strin
 }
 const pacerDockets = () => (runtime.ports.pacer as unknown as { dockets: Map<string, { seq: number; filedOn: string; kind: string; text: string }[]> }).dockets;
 
+// ───────── loan L-B (worked examples B and C): Texas non-judicial, sale held Tue 2027-07-06 (Fannie Mae acquired), 30% BPMI, servicer_direct ─────────
+const LB = { f: null as unknown as Fixture, caseId: "", firmId: "", saleEventId: "", ready: false, miCandidate: "", expenseCandidate: "" };
+async function lbFixture(): Promise<typeof LB> {
+  if (LB.ready) return LB;
+  clock.set("2027-07-06T20:00:00.000Z");
+  const f = await loanFixture("TX", 20_000_000n); const firmId = await seedFirm("TX");
+  const caseId = await seedForeclosureCase(f, "TX", "non_judicial", { firm_id: firmId, status: "sale_scheduled", lpi_due_date: "2026-11-01", sale_scheduled_at: "2027-07-06" });
+  const adv = (id: string, kind: string, amount: bigint, extra: Record<string, unknown> = {}) => rec("advances", `adv-${f.loanId}-${id}`, { id: `adv-${f.loanId}-${id}`, loan_id: f.loanId, kind, amount_cents: amount, paid_at: "2027-06-01", invoice_document_id: `inv-${id}`, allowable_code: null, borrower_recoverable: true, status: "outstanding", ...extra }, "agent:cashiering");
+  await runtime.entities.save([
+    rec("loans", f.loanId, { loan_id: f.loanId, upb_cents: 16_392_044n, note_rate_pct: "5.750", interest_paid_to: "2026-10-01", earliest_unpaid_due: "2026-11-01", state: "TX", principal_residence: true }, "agent:default-collections"),
+    rec("mi_policies", `mi-${f.loanId}`, { id: `mi-${f.loanId}`, loan_id: f.loanId, insurer_code: "FAKE-MI", insurer_name: "FAKE Mortgage Insurance", coverage_pct: "30", premium_plan: "bpmi_monthly", premium_amount_cents: 9_817n, status: "active", micp_participant: false }, "agent:pmi"),
+    // the advances as 15.1/9.x left them (worked example B's list; the MI premiums and the technology fee are on the ledger but excluded from the MI claim by 15.3)
+    adv("tax", "taxes", 291_460n, { paid_at: "2027-01-15" }),
+    adv("hazard", "hazard_premium", 106_200n, { paid_at: "2027-03-15", term_start: "2027-03-20", term_end: "2028-03-20" }),
+    adv("mi", "mi_premium", 88_353n, { quantity: 9, unit_price_cents: 9_817n, service_start: "2026-11-01", service_end: "2027-07-31" }),
+    adv("insp", "inspection", 18_000n, { quantity: 6, unit_price_cents: 3_000n, inspection_type: "exterior" }),
+    adv("pres", "preservation", 38_500n, { preservation_code: "winterization", hometracker_bid_id: `bid-${f.loanId}-pres` }),
+    adv("attyfee", "attorney_fee", 230_000n), adv("attycost", "attorney_cost", 56_500n),
+    adv("tech", "technology_fee", 2_500n), adv("einv", "einvoice", 500n),
+  ], f.loanId);
+  // 13.3 records the sale as its own act (fc.sale_completed): foreclosure.sale.completed{sale_on: 2027-07-06, outcome: fnma_acquired}
+  const r = await exec("13.6", "attorney.message.send", f.loanId, FC_OPS, { op: "fc.sale_completed", case_id: caseId, sale_on: "2027-07-06", outcome: "fnma_acquired", confirmation_required: false });
+  const sale = r.events.find((e) => e.type === "foreclosure.sale.completed"); assert.ok(sale, `13.3's sale event (${r.events.map((e) => e.type).join(",")})`);
+  await settle();
+  Object.assign(LB, { f, caseId, firmId, saleEventId: sale.id, ready: true });
+  return LB;
+}
+
 test("35.9-T1: Given a boarded loan whose 13.3 `foreclosure.referral.sent` was committed on 2027-03-02, when the seam's post-commit hook and then `case.progress` run, then exactly one `case_timelines` row exists for that event (`event_id` unique; the second fold writes nothing) with `case_kind = foreclosure`, `status_before = prereferral`, `status_after = referred`, and `case.timeline{loan_id}` returns the loan's rows in `event_sequence` order with the case's current status.", { skip }, async () => {
   const { f, caseId, eventId } = await t1Fixture();
   // the seam's post-commit hook folded 13.3's commit: exactly one row for the event, the case's kind and status before/after
@@ -153,9 +183,122 @@ test("35.9-T1: Given a boarded loan whose 13.3 `foreclosure.referral.sent` was c
   assert.equal(c.case_kind, "foreclosure"); assert.equal(c.current_status, "referred", "the case's current status is 13.3's row");
 });
 
-test("35.9-T2: Given loan L-A (Florida judicial, allowable 720, UPB 18745000¢, PTR 5.125%, LPI due 2025-03-01, one credited Chapter 13 delay of 84 days) and the firm's forecast sale 2027-11-02, when the daily unit runs on 2027-09-15, then 13.5's `comp_fee.exposure.updated` carries `actual_days = 928`, `credited_delay_days = 84`, `excess_days = 124`, `exposure_cents = 326368` and the forecast projection `452705`, and the same function returns `346164` for F-2-03 Example 1 (100,000 × 4.75% × 266 days).", { todo: true });
-test("35.9-T3: Given loan L-B (UPB 16392044¢, note rate 5.750%, paid to 2026-10-01, 30% BPMI, `servicer_direct`) with a sale held 2027-07-06 and the advances listed in worked example B, when `claims.sweep` opens the MI candidate on 2027-07-07 and `claims.package` runs, then 15.3's `mi_claim_calculations` row has `interest_cents = 719817` (9 × 78545 = 706905, plus the stub 5 × 25.8231 = 129.1155 → 12912), advances 740660, `claim_amount_cents = 17852521`, `benefit_cents = 5355756`, `claim_candidates.legal_due_on = 2027-08-05`, `package_due_on = 2027-07-14`, and `case.claim.package_built` names a `documents` row with a sha256.", { todo: true });
-test("35.9-T4: Given the same loan's 571 candidate, when `claims.package` runs 15.2's validation and assembly, then `expense_claims.gross_cents = 832013`, `credits_cents = 75067` (258 ÷ 365 × 106200), `net_cents = 756946`, every `expense_claim_lines` row satisfies `amount_cents = unit_price_cents × quantity`, the MI premium line has `quantity = 9` and `unit_price_cents = 9817`, and `legal_due_on = 2027-08-05`.", { todo: true });
+test("35.9-T2: Given loan L-A (Florida judicial, allowable 720, UPB 18745000¢, PTR 5.125%, LPI due 2025-03-01, one credited Chapter 13 delay of 84 days) and the firm's forecast sale 2027-11-02, when the daily unit runs on 2027-09-15, then 13.5's `comp_fee.exposure.updated` carries `actual_days = 928`, `credited_delay_days = 84`, `excess_days = 124`, `exposure_cents = 326368` and the forecast projection `452705`, and the same function returns `346164` for F-2-03 Example 1 (100,000 × 4.75% × 266 days).", { skip }, async () => {
+  // loan L-A: Florida judicial, allowable 720, UPB 18745000¢, PTR 5.125%, LPI due 2025-03-01, the Chapter 13 delay 2026-02-10 → 2026-05-05 (code 67 reported and accepted: 84 credited), the firm's forecast sale 2027-11-02
+  clock.set("2027-09-15T14:00:00.000Z");
+  const f = await loanFixture("FL", 18_745_000n); const firmId = await seedFirm("FL");
+  const caseId = await seedForeclosureCase(f, "FL", "judicial", { firm_id: firmId, status: "sale_scheduled", lpi_due_date: "2025-03-01", referral_sent_at: "2025-09-01", sale_scheduled_at: "2027-11-02" });
+  await runtime.entities.save([
+    rec("fc_timeframe_tracking", caseId, { case_id: caseId, loan_id: f.loanId, state: "FL", county: null, nyc: false, method_used: "judicial", method_preferred: "judicial", lpi_due_date: "2025-03-01", allowable_days: 720, exhibit_version: "2025-06-18", referral_sent_at: "2025-09-01", firm_id: firmId, sale_held_at: null, actual_days: null, credited_delay_days: 84, excess_days: 0, exposure_cents: null, exposure_as_of: null, status: "over_allowable", upb_cents: "18745000", ptr_pct: "5.125" }, "agent:foreclosure-ops"),
+    rec("fc_delay_credits", `credit-${caseId}-bk13`, { id: `credit-${caseId}-bk13`, case_id: caseId, loan_id: f.loanId, category: "bk13", status_code_reported: "67", begin_on: "2026-02-10", end_on: "2026-05-05", actual_days: 84, cap_days: 125, credited_days: 84, reported_timely: true, report_ack_id: "ack-67" }, "agent:foreclosure-ops"),
+  ], f.loanId);
+  const r = (await exec("35.9", "case.progress", f.loanId, OPS, { loan_id: f.loanId, as_of_date: "2027-09-15" })).output as { steps: Record<string, { ran: boolean; detail?: Record<string, unknown>; error?: string }> };
+  assert.equal(r.steps["exposure"]!.ran, true, JSON.stringify(r.steps["exposure"]));
+  await settle();
+  const ev = (await events("comp_fee.exposure.updated", f.loanId)).filter((e) => e.payload["basis"] === "daily_projection");
+  assert.equal(ev.length, 1, "13.5's comp_fee.exposure.updated, once for the day"); assert.equal(ev[0]!.actor_id, "foreclosure-ops");
+  const p = ev[0]!.payload as { actual_days: number; credited_delay_days: number; excess_days: number; exposure_cents: string; forecast: { sale_on: string; actual_days: number; excess_days: number; exposure_cents: string } };
+  assert.equal(p.actual_days, 928); assert.equal(p.credited_delay_days, 84); assert.equal(p.excess_days, 124);
+  assert.equal(BigInt(p.exposure_cents), 326_368n);                    // worked example A: 26.32003… × 124 = 3,263.6842… → $3,263.68
+  assert.equal(BigInt(p.exposure_cents), EXAMPLE_A.today.exposure_cents);
+  assert.equal(p.forecast.sale_on, "2027-11-02"); assert.equal(p.forecast.actual_days, 976); assert.equal(p.forecast.excess_days, 172);
+  assert.equal(BigInt(p.forecast.exposure_cents), 452_705n);           // the firm's forecast sale: $4,527.05
+  assert.equal(BigInt(p.forecast.exposure_cents), EXAMPLE_A.forecast.exposure_cents);
+  // the tracking row carries the day's projection (13.5's row, written by 13.5's method)
+  const t = (await rows<{ actual_days: string; excess_days: string; exposure_cents: string; exposure_as_of: string; updated_by: string }>(`SELECT data->>'actual_days' AS actual_days, data->>'excess_days' AS excess_days, data->>'exposure_cents' AS exposure_cents, data->>'exposure_as_of' AS exposure_as_of, updated_by FROM entity_current WHERE kind = 'fc_timeframe_tracking' AND id = $1`, [caseId]))[0]!;
+  assert.equal(t.actual_days, "928"); assert.equal(t.excess_days, "124"); assert.equal(t.exposure_cents, "326368"); assert.equal(t.exposure_as_of, "2027-09-15"); assert.equal(t.updated_by, "agent:foreclosure-ops");
+  // the same function reproduces F-2-03 Example 1 (13.5's figure) and the example's per-diem inputs
+  assert.equal(exposureCents(10_000_000n, "4.75", 266), 346_164n);
+  assert.equal(exposureCents(EXAMPLE_A.f203_example_1.upb_cents, EXAMPLE_A.f203_example_1.ptr_pct, EXAMPLE_A.f203_example_1.excess_days), EXAMPLE_A.f203_example_1.exposure_cents);
+  assert.equal(exposureCents(18_745_000n, "5.125", 124), 326_368n); assert.equal(exposureCents(18_745_000n, "5.125", 172), 452_705n);
+  assert.equal(EXAMPLE_A.upb_cents, 18_745_000n);                       // UPB $187,450.00
+  // the 70% mark and the exhaustion date as the example states them (13.5's thresholds over allowable + credits)
+  assert.equal(Math.ceil(0.7 * (720 + 84)), 563); assert.equal(addDays(D("2025-03-01"), 563), "2026-09-15"); assert.equal(addDays(D("2025-03-01"), 720 + 84 + 1), "2027-05-15");
+  // a second run the same day re-emits nothing
+  await exec("35.9", "case.progress", f.loanId, OPS, { loan_id: f.loanId, as_of_date: "2027-09-15" });
+  assert.equal((await events("comp_fee.exposure.updated", f.loanId)).filter((e) => e.payload["basis"] === "daily_projection").length, 1);
+});
+
+test("35.9-T3: Given loan L-B (UPB 16392044¢, note rate 5.750%, paid to 2026-10-01, 30% BPMI, `servicer_direct`) with a sale held 2027-07-06 and the advances listed in worked example B, when `claims.sweep` opens the MI candidate on 2027-07-07 and `claims.package` runs, then 15.3's `mi_claim_calculations` row has `interest_cents = 719817` (9 × 78545 = 706905, plus the stub 5 × 25.8231 = 129.1155 → 12912), advances 740660, `claim_amount_cents = 17852521`, `benefit_cents = 5355756`, `claim_candidates.legal_due_on = 2027-08-05`, `package_due_on = 2027-07-14`, and `case.claim.package_built` names a `documents` row with a sha256.", { skip }, async () => {
+  const { f, caseId } = await lbFixture();
+  // claims.sweep on Wed 2027-07-07 opens the MI candidate (and the 571 candidate T4 packages) from the timeline's sale milestone
+  clock.set("2027-07-07T14:00:00.000Z");
+  const swept = (await exec("35.9", "claims.sweep", f.loanId, FC_OPS, { loan_id: f.loanId, as_of_date: "2027-07-07" })).output as { opened: { candidate_id: string; claim_kind: string; legal_due_on: string; legal_due_source: string | null; package_due_on: string }[] };
+  await settle();
+  const mi = swept.opened.find((c) => c.claim_kind === "mi_claim")!; const exp = swept.opened.find((c) => c.claim_kind === "expense_571")!;
+  assert.ok(mi && exp, JSON.stringify(swept));
+  assert.equal(mi.legal_due_on, "2027-08-05", "the earlier of MI_MP_CLAIM_FILE_60 (2027-09-04) and FNMA_F106_MI_DIRECT_FILE_30 (2027-08-05) governs"); assert.equal(mi.legal_due_source, "FNMA_F106_MI_DIRECT_FILE_30");
+  assert.equal(mi.package_due_on, "2027-07-14");
+  const clocks60 = (await timers("MI_MP_CLAIM_FILE_60", f.loanId)).filter((t) => t.status === "armed"); assert.equal(clocks60.length, 1); assert.equal(clocks60[0]!.due_date, "2027-09-04");
+  const clocks30 = (await timers("FNMA_F106_MI_DIRECT_FILE_30", f.loanId)).filter((t) => t.status === "armed"); assert.equal(clocks30.length, 1); assert.equal(clocks30[0]!.due_date, "2027-08-05");
+  const cand = (await rows<{ legal_due_on: string; package_due_on: string; status: string; claim_id: string; milestone_date: string; case_id: string }>(`SELECT legal_due_on::text AS legal_due_on, package_due_on::text AS package_due_on, status, claim_id, milestone_date::text AS milestone_date, case_id::text AS case_id FROM claim_candidates WHERE id = $1::uuid`, [mi.candidate_id]))[0]!;
+  assert.equal(cand.legal_due_on, "2027-08-05"); assert.equal(cand.package_due_on, "2027-07-14"); assert.equal(cand.status, "opened"); assert.equal(cand.milestone_date, "2027-07-06"); assert.equal(cand.case_id, caseUuid(caseId));
+  assert.equal((await timers(TIMERS_35_9.claimPackage, f.loanId)).filter((t) => t.status === "armed").length, 2, "SM_CLAIM_PACKAGE_5BD armed per candidate opened");
+  // claims.package: 15.3's shadow claim (its figures), its package, the document with a sha256
+  const built = (await exec("35.9", "claims.package", f.loanId, FC_OPS, { candidate_id: mi.candidate_id })).output as { claim_id: string; document_id: string; sha256: string; claim_amount_cents: string; benefit_cents: string };
+  await settle();
+  const calc = (await rows<{ data: Record<string, unknown> }>(`SELECT data FROM entity_current WHERE kind = 'mi_claim_calculations' AND data->>'claim_id' = $1 ORDER BY version DESC LIMIT 1`, [built.claim_id]))[0]!.data;
+  const big = (v: unknown): bigint => BigInt(String(typeof v === "object" && v !== null && "$bigint" in (v as object) ? (v as { $bigint: string }).$bigint : v));
+  assert.equal(big(calc["interest_cents"]), 719_817n);                       // 9 × $785.45 = $7,069.05 + the 5-day stub $129.12 = $7,198.17
+  assert.equal(big(calc["monthly_interest_cents"]), 78_545n); assert.equal(Number(calc["stub_days"]), 5); assert.equal(big(calc["stub_cents"]), 12_912n); assert.equal(big(calc["monthly_interest_cents"]) * 9n, 706_905n);
+  assert.equal(big(calc["claim_amount_cents"]), 17_852_521n);               // $178,525.21 = 163,920.44 + 7,198.17 + 7,406.60
+  assert.equal(big(calc["claim_amount_cents"]) - 16_392_044n - 719_817n, 740_660n, "claimable advances $7,406.60");
+  assert.equal(big(calc["benefit_cents"]), 5_355_756n);                      // 30% × 178,525.21 = 53,557.563 → $53,557.56
+  assert.equal(big(calc["claim_amount_cents"]), EXAMPLE_B.claim_amount_cents); assert.equal(big(calc["benefit_cents"]), EXAMPLE_B.benefit_cents); assert.equal(big(calc["interest_cents"]), EXAMPLE_B.interest_cents);
+  assert.equal(EXAMPLE_B.advances.taxes_cents + EXAMPLE_B.advances.hazard_premium_cents + EXAMPLE_B.advances.inspections_cents + EXAMPLE_B.advances.preservation_cents + EXAMPLE_B.advances.attorney_total_cents, 740_660n);
+  assert.equal(EXAMPLE_B.advances.attorney_fee_cents + EXAMPLE_B.advances.attorney_costs_cents, 286_500n); assert.ok(286_500n < 600_000n, "attorney cap: min($6,000.00, 5% × UPB = $8,196.02) = $6,000.00");
+  assert.equal(16_392_044n * 5n / 100n + (16_392_044n * 5n % 100n >= 50n ? 1n : 0n), 819_602n); assert.equal(EXAMPLE_B.advances.five_pct_upb_cents, 819_602n); assert.equal(EXAMPLE_B.advances.attorney_cap_cents, 600_000n);
+  assert.equal(EXAMPLE_B.advances.inspection_unit_cents * 6n, 18_000n); assert.equal(EXAMPLE_B.upb_cents, 16_392_044n);
+  const lines = calc["lines"] as { kind: string; claimable: boolean }[]; assert.ok(lines.some((l) => l.kind === "mi_premium" && !l.claimable) && lines.some((l) => l.kind === "technology_fee" && !l.claimable), "MI premiums and technology fees excluded");
+  assert.equal(BigInt(built.claim_amount_cents), 17_852_521n); assert.equal(BigInt(built.benefit_cents), 5_355_756n);
+  // case.claim.package_built names a documents row with a sha256; the candidate is package_built; the 5-BD clock is satisfied
+  const pb = (await events(EV.claimPackageBuilt, f.loanId)).filter((e) => e.payload["candidate_id"] === mi.candidate_id);
+  assert.equal(pb.length, 1); assert.equal(pb[0]!.payload["document_id"], built.document_id); assert.equal(pb[0]!.payload["sha256"], built.sha256);
+  const doc = (await rows<{ sha256: string; retention_class: string; kind: string }>(`SELECT sha256, retention_class::text AS retention_class, kind FROM documents WHERE id = $1::uuid`, [built.document_id]))[0]!;
+  assert.equal(doc.sha256, built.sha256); assert.match(doc.sha256, /^[0-9a-f]{64}$/); assert.equal(doc.retention_class, "fnma_reporting_7y"); assert.equal(doc.kind, "mi_claim_package");
+  assert.equal((await rows<{ status: string; package_document_id: string }>(`SELECT status, package_document_id::text AS package_document_id FROM claim_candidates WHERE id = $1::uuid`, [mi.candidate_id]))[0]!.status, "package_built");
+  assert.equal((await rows<{ status: string; package_id: string | null }>(`SELECT data->>'status' AS status, data->>'package_id' AS package_id FROM entity_current WHERE kind = 'mi_claims' AND id = $1`, [built.claim_id]))[0]!.status, "docs_pending", "15.3's own package state");
+  Object.assign(LB, { miCandidate: mi.candidate_id, expenseCandidate: exp.candidate_id });
+});
+
+test("35.9-T4: Given the same loan's 571 candidate, when `claims.package` runs 15.2's validation and assembly, then `expense_claims.gross_cents = 832013`, `credits_cents = 75067` (258 ÷ 365 × 106200), `net_cents = 756946`, every `expense_claim_lines` row satisfies `amount_cents = unit_price_cents × quantity`, the MI premium line has `quantity = 9` and `unit_price_cents = 9817`, and `legal_due_on = 2027-08-05`.", { skip }, async () => {
+  const { f, expenseCandidate } = await lbFixture();
+  assert.ok(expenseCandidate, "T3 opened the 571 candidate");
+  clock.set("2027-07-08T14:00:00.000Z");
+  const cand = (await rows<{ legal_due_on: string; status: string }>(`SELECT legal_due_on::text AS legal_due_on, status FROM claim_candidates WHERE id = $1::uuid`, [expenseCandidate]))[0]!;
+  assert.equal(cand.legal_due_on, "2027-08-05", "FNMA_F106_MI_EXPENSE_FINAL_30 (MI-insured: 30 days) governs, earlier than the 60-day 2027-09-04");
+  assert.equal((await timers("FNMA_F106_MI_EXPENSE_FINAL_30", f.loanId)).filter((t) => t.status === "armed")[0]?.due_date, "2027-08-05");
+  const built = (await exec("35.9", "claims.package", f.loanId, FC_OPS, { candidate_id: expenseCandidate })).output as { claim_id: string; document_id: string; sha256: string; gross_cents: string; net_cents: string };
+  await settle();
+  const claim = (await rows<{ data: Record<string, unknown> }>(`SELECT data FROM entity_current WHERE kind = 'expense_claims' AND id = $1`, [built.claim_id]))[0]!.data;
+  const big = (v: unknown): bigint => BigInt(String(typeof v === "object" && v !== null && "$bigint" in (v as object) ? (v as { $bigint: string }).$bigint : v));
+  assert.equal(big(claim["gross"]), 832_013n);                                // $8,320.13 = 2,914.60 + 1,062.00 + 883.53 + 180.00 + 385.00 + 2,300.00 + 565.00 + 30.00
+  assert.equal(big(claim["net"]), 756_946n);                                  // $7,569.46 = 8,320.13 − 750.67
+  assert.equal(big(claim["gross"]) - big(claim["net"]), 75_067n);            // credits_cents = $750.67 (258 ÷ 365 × 1,062.00)
+  const credits = claim["credits"] as { kind: string; amount_cents: unknown }[];
+  assert.equal(credits.length, 1); assert.equal(credits[0]!.kind, "hazard_refund"); assert.equal(big(credits[0]!.amount_cents), 75_067n);
+  assert.equal(unearnedPremiumCredit(106_200n, D("2027-03-20"), D("2028-03-20"), D("2027-07-05")), 75_067n, "15.2's function: 258 unearned days from the sale date");
+  assert.equal(daysBetween(D("2027-07-06"), D("2028-03-20")), 258);
+  assert.equal(claim["status"], "package_ready", JSON.stringify(claim["exceptions"]));
+  // every line satisfies amount_cents = unit_price_cents × quantity (the lines this process derived from the advances rows, one per row; the MI premium line 9 × $98.17)
+  const decision = claim["lines"] as { advance_id: string; code: string; amount: unknown; validation: string }[];
+  assert.equal(decision.length, 9, decision.map((l) => `${l.code}:${l.validation}`).join(","));
+  for (const l of decision) assert.equal(l.validation, "pass", `${l.code}: ${JSON.stringify(l)}`);
+  const byAdvance = new Map(decision.map((l) => [l.advance_id, big(l.amount)]));
+  const advances = await rows<{ id: string; amount: string; quantity: string | null; unit: string | null }>(`SELECT id, data->'amount_cents'->>'$bigint' AS amount, data->>'quantity' AS quantity, data->'unit_price_cents'->>'$bigint' AS unit FROM entity_current WHERE kind = 'advances' AND data->>'loan_id' = $1`, [f.loanId]);
+  for (const a of advances) {
+    const quantity = Number(a.quantity ?? 1); const unit = a.unit !== null ? BigInt(a.unit) : BigInt(a.amount) / BigInt(quantity);
+    assert.equal(byAdvance.get(a.id), unit * BigInt(quantity), `${a.id}: amount_cents = unit_price_cents × quantity`);
+  }
+  const mi = advances.find((a) => a.id.endsWith("-mi"))!; assert.equal(mi.quantity, "9"); assert.equal(mi.unit, "9817"); assert.equal(byAdvance.get(mi.id), 88_353n);   // 9 × $98.17 = $883.53
+  assert.equal(byAdvance.get(advances.find((a) => a.id.endsWith("-tech"))!.id)! + byAdvance.get(advances.find((a) => a.id.endsWith("-einv"))!.id)!, 3_000n);   // technology + e-invoice $30.00
+  assert.equal(EXAMPLE_C.gross_cents, 832_013n); assert.equal(EXAMPLE_C.credits_cents, 75_067n); assert.equal(EXAMPLE_C.net_cents, 756_946n); assert.equal(EXAMPLE_C.lines.mi_premiums_cents, 88_353n); assert.equal(EXAMPLE_C.lines.mi_premium_unit_cents, 9_817n);
+  assert.equal(EXAMPLE_C.lines.taxes_cents + EXAMPLE_C.lines.hazard_premium_cents + EXAMPLE_C.lines.mi_premiums_cents + EXAMPLE_C.lines.inspections_cents + EXAMPLE_C.lines.preservation_cents + EXAMPLE_C.lines.attorney_fee_cents + EXAMPLE_C.lines.costs_cents + EXAMPLE_C.lines.technology_cents, 832_013n);
+  const pb = (await events(EV.claimPackageBuilt, f.loanId)).filter((e) => e.payload["candidate_id"] === expenseCandidate);
+  assert.equal(pb.length, 1); assert.equal(BigInt(String(pb[0]!.payload["gross_cents"])), 832_013n); assert.match(String(pb[0]!.payload["sha256"]), /^[0-9a-f]{64}$/);
+  assert.equal((await rows<{ status: string }>(`SELECT status FROM claim_candidates WHERE id = $1::uuid`, [expenseCandidate]))[0]!.status, "package_built");
+});
+
 test("35.9-T5: Given `FNMA_E3205_FIRM_ACK_2BD` breached on a referred case with no acknowledgment, when the sweep's breach pass runs, then in the same transaction an `escalations` row is opened as today, `breach_actions{outcome: executed, action_kind: message_firm, registry_version}` exists with `command_event_id` = a 13.6 `attorney.message.send{kind: ack_demand}` event, a `firm_dispatches{kind: ack_demand}` row points at an `integration_messages` row on the `law-firm` adapter, and `breach_action.executed` is logged with the decision record; a second sweep writes no second action (`timer_id` unique).", { skip }, async () => {
   // a referred case (13.3's referral on Tue 2027-03-02) the firm never acknowledges: FNMA_E3205_FIRM_ACK_2BD (sent_at + 2 servicer business days) breaches on the 5th
   clock.set("2027-03-02T15:00:00.000Z");

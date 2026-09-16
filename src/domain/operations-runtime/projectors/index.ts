@@ -40,6 +40,8 @@ for (const m of ORDERED) if (ALL.filter((x) => x.kind === m.kind).length > 1) th
 export const TYPED_AT_SOURCE_TABLES: ReadonlySet<string> = new Set([
   "loan_installments", "installment_schedule_runs", "loan_servicing_configs", "servicer_profiles", "cashiering_unit_runs", "lockbox_batches", "lockbox_items", "ach_files", "ach_entries", "ach_returns", "ach_nocs", "ach_return_files",
   "entity_projections", "entity_keys", "projection_runs", "projection_gaps", "projection_mismatches", "service_snapshots", "sweep_runs", "outbox_dispatches",
+  // 35.10: the closeout's own rows are written by its tools on the command's transaction (never a JSON kind)
+  "refinance_closeouts", "refinance_closeout_steps", "prior_loan_retirements", "partner_retirement_notifications", "refinance_closeout_daily_receipts",
 ]);
 for (const m of ORDERED) if (TYPED_AT_SOURCE_TABLES.has(m.table)) throw new RangeError(`projector ${m.kind} maps onto ${m.table}, a typed-at-source table (35.1: no JSON kind, never compared)`);
 

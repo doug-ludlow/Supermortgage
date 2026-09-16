@@ -743,7 +743,7 @@ test("32.13-T16: Read-only after terminal — Given `denied | withdrawn | closed
   assert.equal((await record(Rz.A, Rz.j.appId))["read_only"], true);
   // paid in full → closed: the main journey's loan is purchased, paid, then paid off (2.x → 16.x)
   await J.j.deliverAndPurchase(); await J.j.firstPayment(); await settle(); await snapshot("paying", J.j.loanId);
-  await J.j.payoff(); await settle();
+  await J.j.payoffDirect(); await settle();
   assert.ok((await loanEvents(J.j.loanId, "loan.paid_in_full")).length >= 1);
   assert.equal((await db.query<{ status: string }>(`SELECT status::text AS status FROM loans WHERE id = $1`, [J.j.loanId]))[0]!.status, "paid_off");
   assert.equal((await cardsOf(J.partyA, `AND status = 'pending'`)).length + (await cardsOf(J.partyB, `AND status = 'pending'`)).length, 0, "nothing pending once the loan is paid in full (32.13 flow)");

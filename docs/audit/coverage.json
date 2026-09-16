@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 8104/8756 (92.6%): tids 2260/2458, tables 775/848, timers 2046/2097, notices 308/308, tools 1446/1578, figures 1269/1467; processes at 100%: 192/205",
+ "brief": "spec units built 8106/8756 (92.6%): tids 2262/2458, tables 775/848, timers 2046/2097, notices 308/308, tools 1446/1578, figures 1269/1467; processes at 100%: 193/205",
  "totals": {
   "tids": {
    "spec": 2458,
-   "built": 2260
+   "built": 2262
   },
   "tables": {
    "spec": 848,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 8756,
-   "built": 8104
+   "built": 8106
   }
  },
  "sections": {
@@ -237,9 +237,9 @@
   },
   "35": {
    "spec": 715,
-   "built": 80,
+   "built": 82,
    "processes": 12,
-   "done": 0
+   "done": 1
   }
  },
  "done": [
@@ -434,7 +434,8 @@
   "34.1",
   "34.2",
   "34.3",
-  "34.4"
+  "34.4",
+  "35.2"
  ],
  "processes": [
   {
@@ -8461,12 +8462,9 @@
    "title": "Documents and artifacts: the object store, the PDF writer, stored-byte integrity, legal holds, e-sign envelopes, the borrower viewer and print/mail manifests",
    "tids": {
     "spec": 18,
-    "built": 16,
-    "todo": 2,
-    "missing": [
-     15,
-     18
-    ]
+    "built": 18,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 12,
@@ -8496,9 +8494,9 @@
    },
    "units": {
     "spec": 58,
-    "built": 56
+    "built": 58
    },
-   "pct": 96.6
+   "pct": 100.0
   },
   {
    "process": "35.3",

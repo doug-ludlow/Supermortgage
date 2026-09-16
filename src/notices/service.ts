@@ -72,6 +72,8 @@ export interface ArtifactSink {
 
 /** 35.2 rule 2: a payload character outside WinAnsi refuses the render (naming the character and the block) on every path that renders — a typed refusal, never a bare Error. */
 export class RenderRefused extends Error {
+  /** the command bus turns this into a CommandRefused on whatever tool rendered */
+  readonly busRefusal = true;
   readonly code = "GLYPH_UNSUPPORTED"; readonly citation = "35.2 rule 2: a character outside WinAnsi is refused naming the character and the block; nothing is silently substituted";
   readonly templateCode: string; readonly blockId: string; readonly char: string;
   constructor(templateCode: string, cause: GlyphUnsupported) { super(`${templateCode}: ${cause.message}`); this.name = "RenderRefused"; this.templateCode = templateCode; this.blockId = cause.block_id; this.char = cause.char; }

@@ -91,9 +91,15 @@ export async function expireEnvelopes(runtime: Runtime, nowIso: string): Promise
 export async function probeMailVendor(runtime: Runtime, nowIso: string): Promise<{ down: boolean; proposed: number }> {
   const pm = runtime.ports.printMail;
   if (!pm?.manifests) return { down: false, proposed: 0 };
-  try { await pm.manifests(nowIso); return { down: false, proposed: 0 }; }
-  catch (e) { if (!(e instanceof AdapterUnavailable)) throw e; }
-  const previously = (await runtime.db.query(`SELECT 1 FROM loan_events WHERE type = 'mail.vendor.unreachable' AND payload->>'at' < $1 LIMIT 1`, [nowIso])).length > 0;
+  const latest = (await runtime.db.query<{ type: string }>(`SELECT type FROM loan_events WHERE type IN ('mail.vendor.unreachable', 'mail.vendor.reachable') AND payload->>'at' < $1 ORDER BY sequence DESC LIMIT 1`, [nowIso]))[0]?.type ?? null;
+  let down = false;
+  try { await pm.manifests(nowIso); } catch (e) { if (!(e instanceof AdapterUnavailable)) throw e; down = true; }
+  if (!down) {
+    // a recovery after an outage is marked once, so the next outage's first sweep is a first sweep again
+    if (latest === "mail.vendor.unreachable") await runtime.uow.run({}, (ctx) => ctx.events.append({ type: "mail.vendor.reachable", aggregate: { kind: "mail_vendor", id: PRINT_MAIL_VENDOR }, actor: SYSTEM_DOCUMENTS, payload: { at: nowIso, adapter: PRINT_MAIL_VENDOR } }), { clock: runtime.clock });
+    return { down: false, proposed: 0 };
+  }
+  const previously = latest === "mail.vendor.unreachable";   // the sweep before this one found it unreachable too (rule 10: "adapter down two sweeps")
   await runtime.uow.run({}, (ctx) => ctx.events.append({ type: "mail.vendor.unreachable", aggregate: { kind: "mail_vendor", id: PRINT_MAIL_VENDOR }, actor: SYSTEM_DOCUMENTS, payload: { at: nowIso, adapter: PRINT_MAIL_VENDOR, consecutive: previously } }), { clock: runtime.clock });
   if (!previously) return { down: true, proposed: 0 };
   const stuck = await runtime.db.query<{ id: string; notice_batch_id: string }>(`SELECT m.id, m.notice_batch_id FROM mail_manifests m WHERE m.direction = 'outbound' AND m.vendor <> 'in_house' AND m.status = 'submitted' AND m.notice_batch_id IS NOT NULL

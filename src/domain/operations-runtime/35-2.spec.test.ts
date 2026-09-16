@@ -44,6 +44,8 @@ import { FIGURE_KEYS } from "../payoff/ops-16-1.ts";
 import { FakeEsignSigner } from "../../infra/integrations/esign.ts";
 import { verifyChain, signatureEvents } from "./documents/esign.ts";
 import { PgNoticeRepository } from "../../infra/db/notices.ts";
+import { ron26Harness, scheduledRon, signedRon, sealed, CLOSER } from "../closing/fixture-26-2.ts";
+import { evaluateGate } from "../../app/evaluators.ts";
 
 // ───────── the harness: this file's own database, one runtime over it, the FAKE object store (document_blobs), the FAKE ports
 const { url: DB_URL, skip } = await testDatabase(import.meta.url);
@@ -438,6 +440,9 @@ test("35.2-T7: Given three notices of one batch decided `mail`, when `mail.batch
   const t = b.timers.find((x) => x.code === "SM_MAIL_MANIFEST_2BD"); assert.ok(t, "SM_MAIL_MANIFEST_2BD is armed");
   assert.equal(t.status, "armed"); assert.deepEqual(t.subject, { kind: "mail_batch", id: bo.batch_id }); assert.equal(t.anchorDate, "2026-09-17"); assert.equal(t.dueDate, "2026-09-21");
   assert.ok(b.events.some((e) => e.type === "mail.batch.submitted" && e.payload["batch_id"] === bo.batch_id && e.payload["manifest_id"] === bo.manifest_id && e.payload["vendor"] === "FAKE" && e.payload["piece_count"] === 3 && e.payload["submitted_at"] === T0));
+  // before the vendor's production run its feed names none of the pieces: nothing is ingested, the clock keeps running
+  await refused(run("mail.manifest.ingest", { manifest_id: bo.manifest_id, source: "vendor" }), "NO_PROOF_OF_MAILING_YET");
+  assert.equal(await count(`FROM mail_manifests WHERE notice_batch_id = $1 AND direction = 'inbound'`, [bo.batch_id]), 0);
   // the vendor mails the pieces; its proof-of-mailing manifest is ingested
   printMail!.runProduction(T0);
   const g = await run("mail.manifest.ingest", { manifest_id: bo.manifest_id, source: "vendor" });
@@ -459,6 +464,26 @@ test("35.2-T7: Given three notices of one batch decided `mail`, when `mail.batch
   const again = await one<{ mail_manifest_id: string | null; mailed_at: string | null; imb: string | null }>(`SELECT mail_manifest_id, mailed_at, imb FROM notice_deliveries WHERE notice_id = $1 AND attempt_no = 1`, [notices[0]!.notice_id]);
   assert.equal(again.mail_manifest_id, bo.manifest_id); assert.ok(again.mailed_at && again.imb);
   await rejectsSql(db.query(`UPDATE mail_manifests SET status = 'mailed' WHERE id = $1`, [bo.manifest_id]), /forbid_mutation|append-only|immutable/i);
+  // 7.x's own batch (notice_batches + notice_deliveries.manifest_id, 0009): mail.batch{notice_batch_id} submits it once, reusing the batch id as the outbox key
+  const fourth = (await threeMailNotices(f.loanId))[0]!;
+  const batch7 = (await one<{ id: string }>(`INSERT INTO notice_batches (batch_type, business_date, counts, status) VALUES ('mail', '2026-09-17', '{}', 'open') RETURNING id`)).id;
+  await db.query(`UPDATE notice_deliveries SET manifest_id = $2 WHERE notice_id = $1`, [fourth.notice_id, batch7]);
+  const b7 = (await run("mail.batch", { notice_batch_id: batch7 })).output as { batch_id: string; manifest_id: string; piece_count: number };
+  assert.equal(b7.batch_id, batch7, "the 0009 batch is the batch"); assert.equal(b7.piece_count, 1);
+  assert.equal((await one<{ notice_batch_id: string }>(`SELECT notice_batch_id FROM mail_manifests WHERE id = $1`, [b7.manifest_id])).notice_batch_id, batch7);
+  assert.equal(await count(`FROM integration_messages WHERE adapter = 'print-mail' AND idempotency_key = $1`, [batch7]), 1);
+  await refused(run("mail.batch", { notice_batch_id: batch7 }), "BATCH_ALREADY_SUBMITTED");
+  // the edge case: the vendor's file names a piece the outbound manifest does not → an inbound row with notice_id = null and an ops_analyst escalation; notice_deliveries untouched
+  printMail!.runProduction(T0);
+  printMail!.injectProofOfMailing({ notice_id: fourth.notice_id, attempt_no: 7, vendor_piece_id: `${fourth.notice_id}:7`, imb: "0".repeat(31), mailed_on: "2026-09-17", mailed_at: T0, proof_of_mailing_id: "POM-STRAY", batch_id: batch7 });
+  const g7 = await run("mail.manifest.ingest", { manifest_id: b7.manifest_id, source: "vendor" });
+  const go7 = g7.output as { inbound_manifest_id: string; matched: number; unmatched: { notice_id: string; attempt_no: number }[]; reconciled: boolean; escalation_ids: string[] };
+  assert.equal(go7.matched, 1); assert.deepEqual(go7.unmatched, [{ notice_id: fourth.notice_id, attempt_no: 7 }]); assert.equal(go7.reconciled, false);
+  const stray = await one<{ notice_id: string | null; document_id: string | null; mail_class: string | null; attempt_no: number; imb: string }>(`SELECT notice_id, document_id, mail_class, attempt_no, imb FROM mail_manifest_pieces WHERE manifest_id = $1 AND attempt_no = 7`, [go7.inbound_manifest_id]);
+  assert.equal(stray.notice_id, null, "the inbound row is written with notice_id = null"); assert.equal(stray.document_id, null); assert.equal(stray.mail_class, null);
+  assert.equal(await count(`FROM notice_deliveries WHERE notice_id = $1 AND attempt_no = 7`, [fourth.notice_id]), 0, "nothing on notice_deliveries changes");
+  assert.equal(await count(`FROM escalations WHERE id = ANY($1::uuid[]) AND owner_role = 'ops_analyst' AND payload->>'kind' = 'manifest_unmatched_pieces'`, [go7.escalation_ids]), 1);
+  assert.ok((await one<{ mailed_at: string | null; mail_manifest_id: string | null }>(`SELECT mailed_at, mail_manifest_id FROM notice_deliveries WHERE notice_id = $1 AND attempt_no = 1`, [fourth.notice_id])).mailed_at, "the named piece is mailed");
 });
 test("35.2-T8: Given a Spanish-language notice whose payload contains `ñ`, `á`, `¿` and `—`, when it renders, then the text layer round-trips those characters exactly; given a payload containing a character outside WinAnsi (`≥`), then the render is refused `GLYPH_UNSUPPORTED` naming the character and the block and no row is written.", {}, async () => {
   const v = activeStatementVersion();
@@ -747,7 +772,32 @@ test("35.2-T14: Given a party with no active E-SIGN consent, when `esign.envelop
   await refused(run("esign.envelope.void", { envelope_id: completedEnvelopeId, reason: "x" }, RECORDS, { applicationId: completedApp }), "ENVELOPE_TERMINAL");
   assert.equal((await one<{ status: string }>(`SELECT status FROM esign_envelopes WHERE id = $1`, [completedEnvelopeId])).status, "completed");
 });
-test("35.2-T15: Given 26.2's FAKE RON session completes worked example 1 of 26.2, when the platform's audit trail arrives, then `documents.store` writes it with `retention_class = fnma_enote_signing_life_plus_7y`, `signing_sessions.audit_trail_document_id` names the row and `audit_trail_hash` equals its `sha256`, the signed closing documents are rows with `closing_documents.signed_document_id` set, and 26.2's `SM_O72_AUDIT_TRAIL_BEFORE_FUNDING_GATE` evaluator opens on that hash.", { todo: true });
+test("35.2-T15: Given 26.2's FAKE RON session completes worked example 1 of 26.2, when the platform's audit trail arrives, then `documents.store` writes it with `retention_class = fnma_enote_signing_life_plus_7y`, `signing_sessions.audit_trail_document_id` names the row and `audit_trail_hash` equals its `sha256`, the signed closing documents are rows with `closing_documents.signed_document_id` set, and 26.2's `SM_O72_AUDIT_TRAIL_BEFORE_FUNDING_GATE` evaluator opens on that hash.", { skip }, async () => {
+  clock.set(T0);
+  const app = await appFixture(`ron-${uniq()}@example.test`, { legal_name: "Ron Borrower", tin_last4: "5555", dob: "1980-05-05" });
+  // the platform's audit trail and the signed eNote arrive as bytes: documents.store writes both under the closing retention class on the application
+  const at = (await run("documents.store", storeInput("t15-audit-trail", { kind: "ron_audit_trail", retention_class: "fnma_enote_signing_life_plus_7y", metadata: { title: "RON audit trail", platform: "FAKE-RON" } }), RECORDS, { applicationId: app.id })).output as { document_id: string; sha256: string; storage_status: string };
+  const signed = (await run("documents.store", storeInput("t15-signed-enote", { kind: "signed_closing_document", retention_class: "fnma_enote_signing_life_plus_7y", metadata: { title: "eNote (signed)", closing_document_id: "DOC-ENOTE" } }), RECORDS, { applicationId: app.id })).output as { document_id: string; sha256: string };
+  assert.equal(at.storage_status, "stored");
+  for (const id of [at.document_id, signed.document_id]) { const d = await one<{ retention_class: string; application_id: string; sha256: string }>(`SELECT retention_class::text AS retention_class, application_id, sha256 FROM documents WHERE id = $1`, [id]); assert.equal(d.retention_class, "fnma_enote_signing_life_plus_7y"); assert.equal(d.application_id, app.id); }
+  assert.equal(at.sha256, sha256(PDF_BYTES("t15-audit-trail")));
+  // 26.2's worked example 1 on its own bus over this application: scheduled, signed (the eNote's signed row named), sealed; then the audit trail is ingested unchanged
+  const h = ron26Harness(app.id, "2026-11-02T17:00:00.000Z");
+  h.rt.store.put("closing_documents", "DOC-ENOTE", { closing_id: "CLS-1", kind: "enote", execution_status: "released" }, CLOSER, h.clock.now());
+  await scheduledRon(h, { application_id: app.id }); await signedRon(h, { enote_signed_document_id: signed.document_id }); await sealed(h);
+  h.at("2026-11-06T22:05:00.000Z");   // 15:05 MST: the platform's audit trail, tamper-sealed, hash-verified
+  const r = await h.run("ingestAuditTrail", { closing_id: "CLS-1", document_id: at.document_id, audit_trail_hash: at.sha256, platform_hash: at.sha256, recording_ref: "REC-PROOF-991", journal_ref: "J-2026-1187" });
+  assert.equal(r.retention_class, "fnma_enote_signing_life_plus_7y"); assert.equal(r.audit_trail_hash, at.sha256);
+  const session = h.rt.store.get("signing_sessions", "SES-1")!.data;
+  assert.equal(session.audit_trail_document_id, at.document_id, "signing_sessions.audit_trail_document_id names the documents row");
+  assert.equal(session.audit_trail_hash, (await one<{ sha256: string }>(`SELECT sha256 FROM documents WHERE id = $1`, [at.document_id])).sha256, "audit_trail_hash equals the row's sha256");
+  const enote = h.rt.store.get("closing_documents", "DOC-ENOTE")!.data;
+  assert.equal(enote.signed_document_id, signed.document_id, "closing_documents.signed_document_id names the signed row"); assert.ok(["signed", "tamper_sealed"].includes(String(enote.execution_status)), String(enote.execution_status));
+  assert.equal(evaluateGate("26.2.auditTrailBeforeFundingGate", await h.run("writeDecision", { op: "gate_facts", closing_id: "CLS-1" })).open, true, "26.2's funding gate opens on that hash");
+  assert.equal(h.timer("SM_O72_AUDIT_TRAIL_BEFORE_FUNDING_GATE")!.status, "satisfied"); assert.equal(h.ofType("closing.audit_trail.received")[0]!.payload["hash_verified"], true);
+  assert.equal((await h.run("ingestAuditTrail", { op: "funding_check", closing_id: "CLS-1" })).funding_allowed, true);
+  clock.set(T0);
+});
 test("35.2-T16: Given a document rendered and stored on runtime A, when runtime B (a second `Runtime` over the same database, its own process) serves `…/content` and runs `documents.verify` on it, then the bytes and hash are the stored ones — the FAKE object store is `document_blobs`, not process memory — and the borrower's `/doc/{id}` page renders the PDF with its text layer from that response.", { skip }, async () => {
   clock.set(T0);
   const f = await loanFixture();
@@ -837,4 +887,87 @@ test("35.2-T17: Given the FAKE print vendor in outage for two consecutive sweeps
   assert.ok(g.events.filter((e) => e.type === "mail.piece.mailed").length === 3);
   printMail!.outage = false; clock.set(T0);
 });
-test("35.2-T18: Given every 35.2 tool run over the fixture, then no ledger line and no money column changed (a contract test compares the ledger and every `*_cents` column before and after), `documents.dispose` without a 19.1 disposal run carrying an `officer` attestation is refused `DISPOSE_NEEDS_OFFICER_ATTESTATION`, an agent actor calling `esign.envelope.sign` is refused `NO_AGENT_SIGNS`, every state-changing tool left an `agent_decisions` row with `rule_set_version = docs.v1` and no decision row contains a TIN, an address or rendered text.", { todo: true });
+/** The contract test's snapshot (plan §12): every `*_cents` column of every base table in public and restricted_fl, and the ledger — count and a digest of the values. */
+async function snapshotMoney(): Promise<Record<string, string>> {
+  const cols = await db.query<{ table_schema: string; table_name: string; column_name: string }>(`SELECT c.table_schema, c.table_name, c.column_name FROM information_schema.columns c JOIN information_schema.tables t ON t.table_schema = c.table_schema AND t.table_name = c.table_name WHERE c.table_schema IN ('public', 'restricted_fl') AND t.table_type = 'BASE TABLE' AND c.column_name LIKE '%\\_cents' ESCAPE '\\' ORDER BY 1, 2, 3`);
+  const byTable = new Map<string, string[]>();
+  for (const c of cols) { const k = `${c.table_schema}.${c.table_name}`; byTable.set(k, [...(byTable.get(k) ?? []), c.column_name]); }
+  assert.ok(byTable.size > 100, `${byTable.size} tables carry money columns`);
+  const out: Record<string, string> = {};
+  for (const [t, cs] of byTable) {
+    const quoted = cs.map((c) => `"${c}"`); const r = (await db.query<{ n: string; h: string }>(`SELECT count(*)::text AS n, coalesce(md5(string_agg(concat_ws('|', ${quoted.map((c) => `${c}::text`).join(", ")}), ',' ORDER BY ${quoted.join(", ")})), '') AS h FROM ${t}`))[0]!;
+    out[t] = `${r.n}:${r.h}`;
+  }
+  const lines = (await db.query<{ n: string; h: string }>(`SELECT count(*)::text AS n, coalesce(md5(string_agg(id::text || ':' || amount_cents::text, ',' ORDER BY id)), '') AS h FROM ledger_lines`))[0]!; out["ledger_lines"] = `${lines.n}:${lines.h}`;
+  const sets = (await db.query<{ n: string; h: string }>(`SELECT count(*)::text AS n, coalesce(md5(string_agg(id::text, ',' ORDER BY id)), '') AS h FROM ledger_entry_sets`))[0]!; out["ledger_entry_sets"] = `${sets.n}:${sets.h}`;
+  return out;
+}
+test("35.2-T18: Given every 35.2 tool run over the fixture, then no ledger line and no money column changed (a contract test compares the ledger and every `*_cents` column before and after), `documents.dispose` without a 19.1 disposal run carrying an `officer` attestation is refused `DISPOSE_NEEDS_OFFICER_ATTESTATION`, an agent actor calling `esign.envelope.sign` is refused `NO_AGENT_SIGNS`, every state-changing tool left an `agent_decisions` row with `rule_set_version = docs.v1` and no decision row contains a TIN, an address or rendered text.", { skip }, async () => {
+  clock.set(T0); printMail!.outage = false;
+  let acts = 0;
+  const act = async (name: string, input: ToolInput, actor: Actor = RECORDS, scope: { loanId?: string; applicationId?: string } = {}): Promise<Record<string, unknown>> => { const r = await run(name, input, actor, scope); acts++; return r.output as Record<string, unknown>; };
+  // the fixture rows first (a loan, an application, a 1098 row, a consent and a session carry money columns of their own); the snapshot brackets the tools
+  const f = await loanFixture();
+  const payer = await one<{ id: string }>(`INSERT INTO parties (party_type, legal_name) VALUES ('borrower', 'Bea Borrower') RETURNING id`);
+  const form = await one<{ id: string }>(`INSERT INTO tax_forms_1098 (loan_id, tax_year, payer_party_id, boxes) VALUES ($1, 2026, $2, $3::jsonb) RETURNING id`, [f.loanId, payer.id, JSON.stringify({ box1_cents: "574399", box2_cents: "40000000", box3_origination_date: "2026-09-15" })]);
+  const email = `t18-${uniq()}@example.test`;
+  const app = await appFixture(email, { legal_name: "Avery Borrower", tin_last4: "6789", dob: "1985-06-15" }); const s = await signInL2App(email, { tin_last4: "6789", dob: "1985-06-15" });
+  const consentId = await esignConsent(s.party_id, app.id, ["disclosure_ack"]);
+  const before = await snapshotMoney();
+  const decisionsBefore = new Set((await db.query<{ id: string }>(`SELECT id FROM agent_decisions WHERE agent = 'security-records'`)).map((r) => r.id));
+  // documents.render: a statement and the 1098 Copy B
+  const stmt = await act("documents.render", { template_code: STMT, payload: { ...PAYLOAD_A, account_last4: "1818" }, recipients: [BEA()] }, RECORDS, { loanId: f.loanId });
+  await act("documents.render", { document_kind: "irs_1098_copy_b", tax_form_1098_id: form.id, payer: { name: "Bea Borrower", address: "1 Test St, Testville TX 75001", tin_last4: "1234" }, direct_access_phone: "(800) 555-0199", account_last4: "4321" }, RECORDS, { loanId: f.loanId });
+  // documents.store: stored inline, staged under outage, drained
+  const a = await act("documents.store", storeInput("t18-a"), RECORDS, { loanId: f.loanId });
+  blobs.outage = true; const b = await act("documents.store", storeInput("t18-b"), RECORDS, { loanId: f.loanId }); blobs.outage = false;
+  await act("documents.store", { op: "drain" }, RECORDS, { loanId: f.loanId });
+  // documents.open (a read: no decision), documents.verify run and one, documents.hold place and release
+  const opened = (await run("documents.open", { document_id: String(a["document_id"]), purpose: "staff_view" }, ANALYST, { loanId: f.loanId })).output as { sha256: string };
+  assert.equal(opened.sha256, a["sha256"]);
+  await act("documents.verify", { op: "run" });
+  await act("documents.verify", { op: "one", document_id: String(a["document_id"]) }, RECORDS, { loanId: f.loanId });
+  await act("documents.hold", { op: "place", document_id: String(b["document_id"]), reason: "subpoena", matter_ref: "MATTER-18" }, RECORDS, { loanId: f.loanId });
+  await act("documents.hold", { op: "release", document_id: String(b["document_id"]), reason: "matter closed" }, COMPLIANCE, { loanId: f.loanId });
+  // documents.dispose: refused without the officer's attestation; executed inside an attested, WORM-checked 19.1 run
+  await refused(run("documents.dispose", { document_id: String(a["document_id"]), disposal_run_id: randomUUID() }, OFFICER, { loanId: f.loanId }), "DISPOSE_NEEDS_OFFICER_ATTESTATION");
+  const runId = randomUUID();
+  await runtime.uow.run({}, (ctx) => {
+    ctx.events.append({ type: "disposal_run.attested", aggregate: { kind: "disposal_run", id: runId }, actor: OFFICER, payload: { run_id: runId, attested_by: OFFICER.id, attested_by_role: "officer", attested_at: clock.now() } });
+    ctx.events.append({ type: "worm_integrity.checked", aggregate: { kind: "disposal_run", id: runId }, actor: { kind: "system", id: "19.1" }, payload: { run_id: runId, run_halted: false, worm_available: true, failed_object_ids: [], disposal_blocked_object_ids: [] } });
+  }, { clock });
+  const disposed = await act("documents.dispose", { document_id: String(a["document_id"]), disposal_run_id: runId }, OFFICER, { loanId: f.loanId });
+  assert.equal((await one<{ storage_status: string }>(`SELECT storage_status FROM documents WHERE id = $1`, [disposed["document_id"]])).storage_status, "disposed");
+  // the four envelope tools: one completed by the FAKE signer, one voided; an agent never signs
+  const cd = await act("documents.render", { template_code: CD, payload: cdSample(), recipients: [] }, RECORDS, { applicationId: app.id });
+  const envelope = (documentId: string) => act("esign.envelope.create", { kind: "disclosure_ack", owner_process: "25.2", documents: [{ document_id: documentId, required_fields: [{ field_id: "sig1", signer_party_id: s.party_id, page: 1, kind: "signature" }] }], signers: [s.party_id], consent_ids: [consentId] }, RECORDS, { applicationId: app.id }).then((o) => String(o["id"]));
+  const e1 = await envelope(String(cd["document_id"])); await act("esign.envelope.send", { envelope_id: e1 }, RECORDS, { applicationId: app.id });
+  await refused(run("esign.envelope.sign", { envelope_id: e1, document_id: String(cd["document_id"]), signer_party_id: s.party_id, field_ids: ["sig1"], auth: { method: "session_l2", session_id: s.session_id, ip: "203.0.113.10", user_agent: "agent", typed_name: "x" } }, RECORDS, { applicationId: app.id }), "NO_AGENT_SIGNS");
+  const signer = new FakeEsignSigner(); const done = await signer.sign(runtime, { envelope_id: e1, session_id: s.session_id, party_id: s.party_id, typed_name: "Avery Borrower" }); assert.equal(done.completed, true); acts += done.results.length;
+  const e2 = await envelope(String(cd["document_id"])); await act("esign.envelope.send", { envelope_id: e2 }, RECORDS, { applicationId: app.id }); await act("esign.envelope.void", { envelope_id: e2, reason: "re-issued" }, RECORDS, { applicationId: app.id });
+  // the three mail tools: a vendor-mailed batch and an in-house one
+  const n1 = await threeMailNotices(f.loanId); acts += 3;
+  const b1 = await act("mail.batch", { notice_ids: n1.map((n) => n.notice_id) }); printMail!.runProduction(clock.now());
+  await act("mail.manifest.ingest", { manifest_id: String(b1["manifest_id"]), source: "vendor" });
+  const n2 = await threeMailNotices(f.loanId); acts += 3;
+  const b2 = await act("mail.batch", { notice_ids: n2.map((n) => n.notice_id) });
+  const fb = await act("mail.fallback", { batch_id: String(b2["batch_id"]) }, ANALYST);
+  await act("mail.manifest.ingest", { manifest_id: String(fb["manifest_id"]), source: "analyst", pieces: n2.map((n) => ({ notice_id: n.notice_id, attempt_no: 1, mailed_on: "2026-09-18", imb: null })) }, ANALYST);
+  // no money moved: every *_cents column and the ledger are what they were
+  const after = await snapshotMoney();
+  const changed = Object.keys({ ...before, ...after }).filter((k) => before[k] !== after[k]);
+  assert.deepEqual(changed, [], `no ledger line and no money column changed: ${changed.map((k) => `${k} ${before[k]} → ${after[k]}`).join("; ")}`);
+  // every state-changing tool left its decision record; a read (documents.open) and a refusal left none; nothing personal or rendered in any row
+  const rows = (await db.query<{ id: string; action: string; rationale: string; subject_kind: string; subject_id: string; rule_set_version: string; model_version: string; prompt_version: string }>(`SELECT id, action, rationale, subject_kind, subject_id, rule_set_version, model_version, prompt_version FROM agent_decisions WHERE agent = 'security-records' ORDER BY created_at, id`)).filter((r) => !decisionsBefore.has(r.id));
+  assert.equal(rows.length, acts, `${acts} act executions → ${rows.length} decision rows: ${rows.map((r) => r.action).join(", ")}`);
+  const actions = new Set(rows.map((r) => r.action));
+  for (const a of ["documents.render", "documents.store", "documents.drain", "documents.verify.verify", "documents.verify.one", "documents.hold.place", "documents.hold.release", "documents.dispose", "esign.envelope.envelope.create", "esign.envelope.envelope.send", "esign.envelope.envelope.sign", "esign.envelope.envelope.void", "mail.batch", "mail.ingest", "mail.fallback"]) assert.ok(actions.has(a), `a decision for ${a}: ${[...actions].join(", ")}`);
+  assert.equal(stmt["status"], "rendered");
+  for (const r of rows) {
+    assert.equal(r.rule_set_version, "docs.v1", r.action); assert.equal(r.model_version, "deterministic"); assert.equal(r.prompt_version, "35.2-v1");
+    const text = `${r.rationale} ${r.subject_id} ${r.action}`;
+    assert.doesNotMatch(text, /\b\d{3}-\d{2}-\d{4}\b/, `no TIN in ${r.action}`); assert.doesNotMatch(text, /\b\d{2}-\d{7}\b/, `no EIN in ${r.action}`);
+    assert.doesNotMatch(text, /1 Test St|PO Box|Testville|Camelback/, `no address in ${r.action}`); assert.doesNotMatch(text, /Amount due|Mortgage Interest Statement|Closing Disclosure|\$\d[\d,]*\.\d{2}/, `no rendered text or figure in ${r.action}`);
+    assert.doesNotMatch(text, /Bea Borrower|Avery Borrower|Cam Borrower|Dee Borrower/, `no name in ${r.action}`);
+  }
+});

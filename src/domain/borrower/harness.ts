@@ -42,7 +42,10 @@ export interface Locator {
   getAttribute(n: string): Promise<string | null>;
   inputValue(): Promise<string>;
 }
+/** A request the page made (Playwright's `Request`): the method, the URL and the JSON body when one was posted. */
+export interface PageRequest { method(): string; url(): string; postData(): string | null }
 export interface Page {
+  on(event: "request", fn: (r: PageRequest) => void): void;
   on(event: string, fn: (x: { text(): string; message?: string }) => void): void;
   goto(url: string, o?: { waitUntil?: string; timeout?: number }): Promise<unknown>;
   reload(o?: { waitUntil?: string }): Promise<unknown>;
@@ -60,6 +63,8 @@ export interface Page {
   url(): string;
   /** The console lines and page errors the harness collected (`pageFor` attaches the listeners). */
   logs?: string[];
+  /** 32.19: every API request the page made through its proxy (`/app/api/…`), as `METHOD path body` — what the page posted, and what it never posted. */
+  requests?: string[];
 }
 export interface Context { addCookies(c: object[]): Promise<void>; cookies(): Promise<{ name: string; value: string }[]>; addInitScript(script: string): Promise<void>; newPage(): Promise<Page>; close(): Promise<void> }
 export interface Browser { newContext(o: object): Promise<Context>; close(): Promise<void> }
@@ -126,9 +131,10 @@ export function createHarness(opts: HarnessOptions): Harness {
     if (!browser) { const pw = createRequire(import.meta.url)(`${APP_DIR}node_modules/playwright`) as { chromium: { launch(o: object): Promise<Browser> } }; browser = await pw.chromium.launch({ headless: true, ...(existsSync(CHROME) ? { executablePath: CHROME } : {}) }); }
     const ctx = await browser.newContext({ viewport: { width, height: width < 768 ? 844 : 800 }, ...(width < 768 ? { isMobile: true, hasTouch: true } : {}) });
     if (token) await ctx.addCookies([{ name: SESSION_COOKIE, value: token, domain: "127.0.0.1", path: "/app", httpOnly: true, secure: false, sameSite: "Strict" }]);
-    const page = await ctx.newPage(); const logs: string[] = [];
+    const page = await ctx.newPage(); const logs: string[] = []; const requests: string[] = [];
     page.on("console", (m) => logs.push(`console: ${m.text()}`)); page.on("pageerror", (e) => logs.push(`pageerror: ${e.message ?? String(e)}`));
-    page.logs = logs;
+    page.on("request", (r: PageRequest) => { const u = r.url(); const i = u.indexOf("/app/api/"); if (i >= 0) requests.push(`${r.method()} ${u.slice(i + "/app/api".length)} ${r.postData() ?? ""}`.trimEnd()); });
+    page.logs = logs; page.requests = requests;
     await page.goto(`${appBase}${path}`, { waitUntil: "load", timeout: 60_000 });   // never networkidle: the SSE stream stays open
     return { page, ctx };
   }

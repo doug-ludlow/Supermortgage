@@ -113,6 +113,44 @@ async function consentsStatement(page: Page): Promise<{ text: string; version: s
 }
 const seqOf = (evs: EventRow[], type: string, where: (p: Json) => boolean = () => true): number | null => { const e = evs.find((x) => x.type === type && where(x.payload)); return e ? Number(e.sequence) : null; };
 const closeAll = async (...pages: { ctx: Context }[]): Promise<void> => { for (const p of pages) await p.ctx.close(); };
+/** The API requests the page posted through its proxy (harness `page.requests`: `METHOD path body`), those matching `re`. */
+const posted = (page: Page, re: RegExp): string[] => (page.requests ?? []).filter((r) => r.startsWith("POST ") && re.test(r));
+const bodyOf = (line: string): Json => { const i = line.indexOf(" {"); return i >= 0 ? (JSON.parse(line.slice(i + 1)) as Json) : {}; };
+interface BorrowerRow { id: string; legal_name: string | null; date_of_birth: string | null; tin_last4: string | null; citizenship_status: string | null; marital_status: string | null; language_preference: string | null; prefill: Json }
+const borrowerOf = async (appId: string, partyId: string): Promise<BorrowerRow> => { const r = (await db.query<BorrowerRow & Record<string, unknown>>(`SELECT id, legal_name, date_of_birth::text AS date_of_birth, tin_last4, citizenship_status, marital_status, language_preference, prefill FROM application_borrowers WHERE application_id = $1 AND party_id = $2`, [appId, partyId]))[0]; assert.ok(r, "the application_borrowers row"); return r; };
+interface ResidenceRow { residency_type: string; residency_basis: string; monthly_rent_cents: string | null; address_line_text: string | null; city_name: string | null; state_code: string | null; postal_code: string | null; duration_months: number }
+const residencesOf = (abId: string) => db.query<ResidenceRow & Record<string, unknown>>(`SELECT residency_type, residency_basis, monthly_rent_cents::text AS monthly_rent_cents, address_line_text, city_name, state_code, postal_code, duration_months FROM du_residences WHERE application_borrower_id = $1 ORDER BY residency_type`, [abId]);
+const fieldOf = (c: CardRow | undefined, path: string): Json | undefined => ((c?.evidence?.["fields"] as Json[] | undefined) ?? []).find((f) => f["path"] === path);
+/** The addressed purchase's goal and property (T3's inputs) up to the You screen. */
+async function buyToYou(page: Page): Promise<void> {
+  await goal(page, "buy", "My primary home");
+  await fill(page, "Property address", "24 Juniper Lane, Austin, TX 78701"); await fill(page, "State", "TX"); await fill(page, "Price", "650000"); await fill(page, "Down payment", "130000");
+  await pick(page, "Do you own the land, or is it a leasehold?", "I own the land"); await pick(page, "Is there a PACE or clean-energy loan on the home?", "No");
+  await consentsStatement(page);
+  await continueTo(page, "you", "property");
+}
+/** The You screen: the name, the birth date, the SSN, "I live here as", the months (the prior panel when under 24), Continue → connect. */
+async function you(page: Page, o: { name: string; dob: string; ssn: string; basis?: "Own" | "Rent" | "Rent-free"; rent?: string; months: string; prior?: { street: string; city: string; state: string; zip: string; basis: "Own" | "Rent" | "Rent-free"; rent?: string; months: string } }): Promise<void> {
+  await page.waitForSelector('[data-testid="apply"][data-step="you"]', { timeout: 30_000 });
+  await fill(page, "Legal name", o.name); await fill(page, "Date of birth", o.dob); await fill(page, "Social Security number", o.ssn);
+  await page.getByRole("button", { name: new RegExp(`^${o.basis ?? "Own"}$`) }).first().click();
+  if (o.rent !== undefined) await fill(page, "Monthly rent", o.rent);
+  await fill(page, "Months at this address", o.months);
+  if (o.prior) {
+    await page.getByTestId("apply-prior-address").first().waitFor({ timeout: 10_000 });
+    await fill(page, "Prior street address", o.prior.street); await fill(page, "Prior city", o.prior.city); await fill(page, "Prior state", o.prior.state); await fill(page, "Prior ZIP code", o.prior.zip);
+    await pick(page, "How you lived there", o.prior.basis); if (o.prior.rent !== undefined) await fill(page, "Monthly rent there", o.prior.rent);
+    await fill(page, "Months you lived there", o.prior.months);
+  }
+  await continueTo(page, "connect", "you");
+}
+/** The Connect screen: the monthly income and the employer, "Connect and continue" → details. */
+async function connectStep(page: Page, income: string, employer: string): Promise<void> {
+  await page.waitForSelector('[data-testid="apply"][data-step="connect"]', { timeout: 30_000 });
+  await fill(page, "Monthly income", income); await fill(page, "Employer", employer);
+  assert.equal((await page.getByTestId("apply-continue").first().innerText()).trim(), "Connect and continue", "the CTA is apply.connect.cta");
+  await continueTo(page, "details", "connect");
+}
 
 test("32.19-T1: The door — Given a new browser with no cookies, when `/app` renders, then `[data-testid=\"apply\"][data-door=\"welcome\"]` renders on `.sm-proto` paper with the mark and a 430 px column at 1280 (full width at 390), no `thread`, `record` or `action-bar` test id exists, `footer.disclosure` is on the screen, Continue renders `data-door=\"intro\"`, \"Create an account\" renders `Account` in `sign_up`, and \"Already have an account?\" renders it in `sign_in`.", { skip }, async () => {
   const wide = await openApply(null, 1280); const { page } = wide;
@@ -341,13 +379,160 @@ test("32.19-T5: Refinance — Given Refinance my home with Lower payment, Pay of
     assert.equal(await page.getByLabel("Do you own the land, or is it a leasehold?", { exact: true }).first().inputValue(), "leasehold");
     assert.equal(await page.getByLabel("Is there a PACE or clean-energy loan on the home?", { exact: true }).first().inputValue(), "yes");
     assert.equal(await page.getByLabel("Current balance", { exact: true }).first().inputValue(), "300000");
+    // the You screen's Continue: the identity card's resolve captures current_address, and refi.home.confirm is sent with the SSN card on that event; the step then resolves it with the held address, estate type and lien
+    await page.getByTestId("apply-continue").first().click(); await page.waitForSelector('[data-testid="apply"][data-step="you"]', { timeout: 60_000 }); await noError(page, "property → you");
+    await you(page, { name: `Riley Ortega ${i}`, dob: "1979-03-02", ssn: "212-55-100" + i, basis: "Own", months: "60" });
+    const after = await cardsOf(a.party_id); const home = card(after, "refi.home.confirm"); assert.ok(home, `${purpose}: refi.home.confirm sent`); assert.equal(home.kind, "ConfirmCard"); assert.equal(home.status, "resolved", `${purpose}: refi.home.confirm resolved by the You step`);
+    assert.equal(home.evidence?.["edited"], true, "edited = true: the address, estate and lien were the page's edits over the card's values");
+    assert.equal(fieldOf(home, "property_address")?.["value_confirmed"], address); assert.equal(fieldOf(home, "estate_type")?.["value_confirmed"], "leasehold"); assert.equal(fieldOf(home, "existing_clean_energy_lien")?.["value_confirmed"], "yes");
+    const evs2 = await events(a.application_id);
+    const captured = seqOf(evs2, "application.field.captured", (p) => p["field"] === "current_address"); const six = seqOf(evs2, "application.six_item.captured", (p) => p["item"] === "property_address");
+    assert.ok(captured !== null, "application.field.captured{current_address} (the identity card's resolve)"); assert.ok(six !== null, `${purpose}: the six-item address on refi.home.confirm's resolve`); assert.ok(captured! < six!, "the home card came with the SSN card, on the current_address capture, and was resolved after it");
+    assert.ok(Number(home.seq) > Number(card(after, "identity.confirm.title")!.seq), "refi.home.confirm was sent after the identity card"); assert.ok(card(after, "identity.ssn.title"), "with the SSN card");
+    const rows = await propertiesOf(a.application_id); assert.equal(rows.length, 1, `${purpose}: one subject row`); const row = rows[0]!;
+    assert.equal(row.address_line1, `${10 + i} Elm Street`); assert.equal(row.city, "Phoenix"); assert.equal(row.state, "AZ"); assert.equal(row.postal_code, "85001"); assert.equal(row.estate_type, "leasehold"); assert.equal(row.existing_clean_energy_lien, true); assert.equal(row.is_subject, true);
+    await page.getByTestId("apply-tab-tasks").first().click(); await page.waitForSelector('[data-testid="apply-task-property"][data-done="true"]', { timeout: 30_000 });
     await ctx.close();
   }
-  // resolving refi.home.confirm (edited = true, the six-item address and the subject row) and Pay off sooner's FRM15 on refi.product.choice are the You and Review screens' taps — Sessions 2–3 (32.19 §5)
+  // Pay off sooner's FRM15 on refi.product.choice is the Review screen's tap — Session 3 (32.19 §5)
 });
-test("32.19-T6: You — Given the You screen with a legal name, a date of birth, an SSN, \"I live here as\" and the months, when Continue, then `POST /v1/borrower/identity/stripe/session {fake_complete: true}` ran on the pending `identity.stripe.purpose` card, `identity.confirm.title` was resolved with the typed values as edits (`source = borrower`) and the residence basis (one Current `du_residences` row), `identity.ssn.title` was resolved (`tin_last4` set, the SSN never echoed), a prior-address panel renders only when the months are under 24 and resolves `identity.prior_residence.title`, and the page posted no `credit.authorize` and needed no L2.", { todo: true });
-test("32.19-T7: Connect — Given the Connect screen with a monthly income and an employer, when Connect and continue, then `POST /v1/borrower/connect/truv_income/session {card_instance_id, fake_complete: true}` ran on the pending payroll card, `income.confirm.title` was resolved with the typed income and employer as edits (`application_income` with `employer_id` and `employment_income = true`; six-item `income`), `POST /v1/borrower/connect/plaid_assets/session` ran on the assets card (`verification.received{kind = assets}`, the card `connected`), and the page never posted `verification.connect`.", { todo: true });
-test("32.19-T8: Details — Given Details, when Continue with citizenship, marital status, dependents, military service and language, then `profile.title` resolves with the five fields (`application_borrowers.citizenship_status`, `marital_status`, `language_preference`); when Continue without citizenship, then the step stays with `.sm-error` and nothing is posted; given married, then `apply.details.spouse_later` renders and no `application.inviteParty` is posted.", { todo: true });
+test("32.19-T6: You — Given the You screen with a legal name, a date of birth, an SSN, \"I live here as\" and the months, when Continue, then `POST /v1/borrower/identity/stripe/session {fake_complete: true}` ran on the pending `identity.stripe.purpose` card, `identity.confirm.title` was resolved with the typed values as edits (`source = borrower`) and the residence basis (one Current `du_residences` row), `identity.ssn.title` was resolved (`tin_last4` set, the SSN never echoed), a prior-address panel renders only when the months are under 24 and resolves `identity.prior_residence.title`, and the page posted no `credit.authorize` and needed no L2.", { skip }, async () => {
+  const a = await account("t6"); const SSN = "123-45-6789"; const DIGITS = "123456789";
+  const { page, ctx } = await openApply(a.token, 390);
+  await buyToYou(page);
+  const before = await cardsOf(a.party_id); const connector = card(before, "identity.stripe.purpose"); assert.ok(connector); assert.equal(connector.status, "pending", "the identity connector is pending before Continue");
+  assert.equal(card(before, "identity.confirm.title"), undefined, "no identity card before the scan"); assert.equal(card(before, "identity.ssn.title"), undefined);
+  const authzBefore = (await events(a.application_id)).filter((e) => e.type === "credit.authorization.captured").length; assert.ok(authzBefore >= 1, "the goal tap wrote the authorization (32.17 rule 20)");
+  assert.equal(await page.locator('[data-testid="apply"] input[type="checkbox"]').count(), 0, "no credit checkbox on You");
+  // the prior-address panel renders only when the months are under 24
+  await fill(page, "Months at this address", "36"); assert.equal(await page.getByTestId("apply-prior-address").count(), 0, "no prior panel at 36 months");
+  await fill(page, "Months at this address", "24"); assert.equal(await page.getByTestId("apply-prior-address").count(), 0, "no prior panel at 24 months");
+  await fill(page, "Months at this address", "18"); assert.equal(await page.getByTestId("apply-prior-address").count(), 1, "the prior panel at 18 months");
+  await you(page, { name: "Taylor Reyes", dob: "1988-04-12", ssn: SSN, basis: "Rent", rent: "1850", months: "18", prior: { street: "9 Oak Avenue", city: "Dallas", state: "TX", zip: "75201", basis: "Own", months: "40" } });
+  // POST /v1/borrower/identity/stripe/session {application_id, fake_complete: true} ran on the pending identity.stripe.purpose card — the FAKE finished on the tap
+  const sessions = posted(page, /\/v1\/borrower\/identity\/stripe\/session/); assert.equal(sessions.length, 1, `one identity session: ${JSON.stringify(page.requests)}`);
+  assert.equal(bodyOf(sessions[0]!)["fake_complete"], true); assert.equal(bodyOf(sessions[0]!)["application_id"], a.application_id);
+  const cards = await cardsOf(a.party_id); const scan = card(cards, "identity.stripe.purpose"); assert.ok(scan); assert.equal(scan.card_instance_id, connector.card_instance_id, "the flow's own connector card, never a second one"); assert.equal(scan.status, "resolved"); assert.equal(scan.evidence?.["outcome"], "connected");
+  const started = await db.query<{ payload: Json }>(`SELECT payload FROM ui_events WHERE card_instance_id = $1 AND kind = 'connector_started'`, [scan.card_instance_id]); assert.equal(started[0]?.payload["vendor"], "stripe_identity");
+  const evs = await events(a.application_id); assert.ok(seqOf(evs, "identity.verified") !== null, "identity.verified (22.6)");
+  // identity.confirm.title resolved with the typed values as edits (source = borrower) and the residence basis: one Current du_residences row
+  const identity = card(cards, "identity.confirm.title"); assert.ok(identity, "the identity card"); assert.equal(identity.status, "resolved"); assert.equal(identity.command_ref, "application.confirmField"); assert.equal(identity.evidence?.["edited"], true);
+  assert.equal(fieldOf(identity, "legal_name")?.["value_confirmed"], "Taylor Reyes"); assert.equal(fieldOf(identity, "legal_name")?.["source"], "borrower"); assert.equal(fieldOf(identity, "date_of_birth")?.["value_confirmed"], "1988-04-12");
+  assert.equal(fieldOf(identity, "residency_basis")?.["value_confirmed"], "rent"); assert.equal(fieldOf(identity, "monthly_rent_cents")?.["value_confirmed"], "185000"); assert.equal(fieldOf(identity, "months_at_address")?.["value_confirmed"], "18");
+  assert.equal(fieldOf(identity, "current_address")?.["value_confirmed"], (identity.props["fields"] as Json[]).find((f) => f["path"] === "current_address")?.["value"], "the current address is the card's own (the ID's reading)");
+  const b = await borrowerOf(a.application_id, a.party_id);
+  assert.equal(b.legal_name, "Taylor Reyes"); assert.equal(b.date_of_birth, "1988-04-12"); assert.equal((b.prefill["legal_name"] as Json)["source"], "borrower", "the edited name is the borrower's"); assert.ok((b.prefill["legal_name"] as Json)["confirmed_at"]);
+  assert.ok(seqOf(evs, "application.six_item.captured", (p) => p["item"] === "name") !== null, "the six-item name"); assert.ok(seqOf(evs, "application.field.captured", (p) => p["field"] === "current_address") !== null);
+  const residences = await residencesOf(b.id); const current = residences.filter((r) => r.residency_type === "Current"); assert.equal(current.length, 1, "one Current du_residences row");
+  assert.equal(current[0]!.residency_basis, "Rent"); assert.equal(current[0]!.monthly_rent_cents, "185000"); assert.equal(current[0]!.duration_months, 18);
+  // identity.ssn.title resolved: tin_last4 set, the SSN never echoed — masked in the stored evidence, absent from every card, the thread and the page
+  const ssn = card(cards, "identity.ssn.title"); assert.ok(ssn, "the SSN card"); assert.equal(ssn.status, "resolved"); assert.equal(ssn.evidence?.["edited"], true);
+  assert.equal(fieldOf(ssn, "ssn")?.["value_confirmed"], "••••6789"); assert.equal(fieldOf(ssn, "ssn")?.["masked"], true);
+  assert.equal(b.tin_last4, "6789"); assert.ok(seqOf(evs, "application.six_item.captured", (p) => p["item"] === "ssn") !== null, "the six-item ssn");
+  const stored = JSON.stringify(cards.map((c) => [c.props, c.evidence])); assert.ok(!stored.includes(DIGITS) && !stored.includes(SSN), "no card carries the nine digits");
+  const thread = await api("GET", "/v1/borrower/thread?limit=500", undefined, a.token); assert.equal(thread.status, 200); const wire = JSON.stringify(thread.body); assert.ok(!wire.includes(DIGITS) && !wire.includes(SSN), "the thread never echoes the SSN");
+  const html = await page.content(); assert.ok(!html.includes(DIGITS) && !html.includes(SSN), "the page holds the digits only until the card is written");
+  assert.ok(!JSON.stringify(evs).includes(DIGITS), "no event payload carries the SSN");
+  const carried = (page.requests ?? []).filter((r) => r.includes(DIGITS) || r.includes(SSN)); assert.equal(carried.length, 1, `the digits crossed the wire once: ${JSON.stringify(carried.map((r) => r.split(" ").slice(0, 2).join(" ")))}`);
+  assert.ok(carried[0]!.startsWith(`POST /v1/borrower/cards/${ssn.card_instance_id}/resolve `), "…in the SSN card's resolve, never in another request");
+  // the prior-address panel's card: identity.prior_residence.title resolved — the Prior du_residences row with its own address
+  const prior = card(cards, "identity.prior_residence.title"); assert.ok(prior, "identity.prior_residence.title sent (18 < 24 months)"); assert.equal(prior.status, "resolved");
+  assert.equal(fieldOf(prior, "prior_address_line")?.["value_confirmed"], "9 Oak Avenue"); assert.equal(fieldOf(prior, "prior_residency_basis")?.["value_confirmed"], "own"); assert.equal(fieldOf(prior, "prior_months_at_address")?.["value_confirmed"], "40");
+  const priorRow = residences.find((r) => r.residency_type === "Prior"); assert.ok(priorRow, "the Prior du_residences row"); assert.equal(priorRow.address_line_text, "9 Oak Avenue"); assert.equal(priorRow.city_name, "Dallas"); assert.equal(priorRow.state_code, "TX"); assert.equal(priorRow.postal_code, "75201"); assert.equal(priorRow.residency_basis, "Own"); assert.equal(priorRow.duration_months, 40);
+  assert.ok(Number(prior.seq) > Number(ssn.seq), "the prior card rode with the SSN card, after it");
+  // the page posted no credit.authorize and needed no L2: no such request, no new authorization row, the session never stepped up to L2 (the FAKE scan raised L3)
+  assert.equal(posted(page, /commands\/credit\.authorize/).length, 0, "no credit.authorize from the page"); assert.equal(posted(page, /\/auth\/l2/).length, 0, "no L2 challenge");
+  assert.equal((await events(a.application_id)).filter((e) => e.type === "credit.authorization.captured").length, authzBefore, "no second authorization");
+  const levels = (await sessionsOf(a.party_id)).map((s) => s.level); assert.ok(!levels.includes("L2"), `no L2 session: ${levels.join(",")}`); assert.deepEqual([...new Set(levels)].sort(), ["L3"], "the one session, raised to L3 by the verified scan");
+  assert.equal(posted(page, /\/commands\//).length, 1, `the page's only command is the six-field confirmField of Property: ${JSON.stringify(posted(page, /\/commands\//))}`);
+  assert.equal(seqOf(evs, "credit.report.ordered"), null, "the pull waits for the six items (trid_received)");
+  // Tasks marks the credit-check task done from the SSN card's status
+  await page.getByTestId("apply-tab-tasks").first().click(); await page.waitForSelector('[data-testid="apply-task-you"][data-done="true"]', { timeout: 30_000 });
+  assert.equal(await page.getByTestId("apply-task-connect").first().getAttribute("data-done"), "false");
+  await ctx.close();
+});
+test("32.19-T7: Connect — Given the Connect screen with a monthly income and an employer, when Connect and continue, then `POST /v1/borrower/connect/truv_income/session {card_instance_id, fake_complete: true}` ran on the pending payroll card, `income.confirm.title` was resolved with the typed income and employer as edits (`application_income` with `employer_id` and `employment_income = true`; six-item `income`), `POST /v1/borrower/connect/plaid_assets/session` ran on the assets card (`verification.received{kind = assets}`, the card `connected`), and the page never posted `verification.connect`.", { skip }, async () => {
+  const a = await account("t7");
+  const { page, ctx } = await openApply(a.token, 390);
+  await buyToYou(page);
+  await you(page, { name: "Morgan Vale", dob: "1990-11-30", ssn: "321-54-9876", basis: "Own", months: "48" });
+  const before = await cardsOf(a.party_id); const payroll = card(before, "income.connect.purpose"); const assets = card(before, "assets.connect.purpose");
+  assert.ok(payroll && assets); assert.equal(payroll.status, "pending"); assert.equal(assets.status, "pending"); assert.equal(card(before, "income.confirm.title"), undefined, "no income card before the connection");
+  assert.equal(await page.getByRole("button", { name: /skip/i }).count(), 0, "no Skip in v1 (32.19 §2.5)");
+  const commandsBefore = posted(page, /\/commands\//).length;
+  await connectStep(page, "8500", "Acme Robotics");
+  // POST connect/truv_income/session {card_instance_id, fake_complete: true} on the pending payroll card; the route resolved the connector and 22.3 received the FAKE report
+  const truv = posted(page, /\/v1\/borrower\/connect\/truv_income\/session/); assert.equal(truv.length, 1, `one payroll session: ${JSON.stringify(page.requests)}`);
+  assert.deepEqual(bodyOf(truv[0]!), { card_instance_id: payroll.card_instance_id, fake_complete: true });
+  const cards = await cardsOf(a.party_id); const payrollAfter = card(cards, "income.connect.purpose"); assert.equal(payrollAfter?.status, "resolved"); assert.equal(payrollAfter?.evidence?.["vendor"], "truv_income"); assert.ok(payrollAfter?.evidence?.["report_reference_id"], "the FAKE report on the card");
+  const evs = await events(a.application_id);
+  assert.ok(seqOf(evs, "verification.received", (p) => p["kind"] === "income") !== null, "verification.received{income}");
+  // income.confirm.title resolved with the typed income and employer as edits over the report's figures
+  const income = card(cards, "income.confirm.title"); assert.ok(income, "the income card"); assert.equal(income.status, "resolved"); assert.equal(income.command_ref, "application.confirmField"); assert.equal(income.evidence?.["edited"], true);
+  assert.equal(fieldOf(income, "employer")?.["value_confirmed"], "Acme Robotics"); assert.equal(fieldOf(income, "monthly_base_cents")?.["value_confirmed"], "850000");
+  const shownEmployer = (income.props["fields"] as Json[]).find((f) => f["path"] === "employer")?.["value"]; assert.notEqual(shownEmployer, "Acme Robotics", "the typed employer differs from the FAKE report's (an edit)");
+  assert.equal((income.evidence?.["command_output"] as Json)["amount_cents"], "850000"); assert.equal((income.evidence?.["command_output"] as Json)["source"], "borrower", "an edited figure is the borrower's own statement"); assert.equal((income.evidence?.["command_output"] as Json)["employment_income"], true);
+  const b = await borrowerOf(a.application_id, a.party_id);
+  interface IncomeRow { monthly_amount_cents: string; employer: Json; employer_id: string | null; employment_income: boolean; calculation: Json; source_kind: string }
+  const rows = await db.query<IncomeRow & Record<string, unknown>>(`SELECT monthly_amount_cents::text AS monthly_amount_cents, employer, employer_id, employment_income, calculation, source_kind FROM application_income WHERE application_id = $1 AND application_borrower_id = $2`, [a.application_id, b.id]);
+  assert.equal(rows.length, 1, "one application_income row"); const row = rows[0]!;
+  assert.equal(row.monthly_amount_cents, "850000"); assert.equal(row.source_kind, "base"); assert.equal(row.employer["name"], "Acme Robotics"); assert.ok(row.employer_id, "employer_id set"); assert.equal(row.employment_income, true); assert.equal(row.calculation["source"], "borrower");
+  const employers = await db.query<{ id: string; display_name: string }>(`SELECT id, display_name FROM employers WHERE application_id = $1`, [a.application_id]); assert.equal(employers.length, 1); assert.equal(employers[0]!.id, row.employer_id); assert.equal(employers[0]!.display_name, "Acme Robotics");
+  assert.ok(seqOf(evs, "application.six_item.captured", (p) => p["item"] === "income") !== null, "the six-item income");
+  // POST connect/plaid_assets/session on the assets card: verification.received{assets}, the accounts as assets, the card connected
+  const plaid = posted(page, /\/v1\/borrower\/connect\/plaid_assets\/session/); assert.equal(plaid.length, 1, "one assets session"); assert.deepEqual(bodyOf(plaid[0]!), { card_instance_id: assets.card_instance_id, fake_complete: true });
+  const assetsAfter = card(cards, "assets.connect.purpose"); assert.equal(assetsAfter?.status, "resolved"); assert.equal(assetsAfter?.props["state"], "connected"); assert.equal(assetsAfter?.evidence?.["outcome"], "connected"); assert.ok(assetsAfter?.evidence?.["verification_id"]);
+  assert.ok(seqOf(evs, "verification.received", (p) => p["kind"] === "assets") !== null, "verification.received{kind = assets}");
+  assert.ok((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM application_assets WHERE application_id = $1`, [a.application_id]))[0]!.n !== "0", "the report's accounts as application_assets rows");
+  for (const id of [payroll.card_instance_id, assets.card_instance_id]) { const done = await db.query<{ payload: Json }>(`SELECT payload FROM ui_events WHERE card_instance_id = $1 AND kind = 'connector_completed'`, [id]); assert.equal(done[0]?.payload["outcome"], "connected", `connector_completed on ${id}`); }
+  // the page never posted verification.connect (the connectors finish on their session routes); its only command stays Property's confirmField
+  assert.equal(posted(page, /commands\/verification\.connect/).length, 0, `no verification.connect: ${JSON.stringify(posted(page, /\/commands\//))}`);
+  assert.equal(posted(page, /\/commands\//).length, commandsBefore, "no command posted by Connect");
+  // six-item income → the profile card is the next ask (Details)
+  assert.equal(card(cards, "profile.title")?.status, "pending", "profile.title sent on the six-item income");
+  await page.getByTestId("apply-tab-tasks").first().click(); await page.waitForSelector('[data-testid="apply-task-connect"][data-done="true"]', { timeout: 30_000 });
+  await ctx.close();
+});
+test("32.19-T8: Details — Given Details, when Continue with citizenship, marital status, dependents, military service and language, then `profile.title` resolves with the five fields (`application_borrowers.citizenship_status`, `marital_status`, `language_preference`); when Continue without citizenship, then the step stays with `.sm-error` and nothing is posted; given married, then `apply.details.spouse_later` renders and no `application.inviteParty` is posted.", { skip }, async () => {
+  const a = await account("t8");
+  const { page, ctx } = await openApply(a.token, 1280);
+  await buyToYou(page);
+  await you(page, { name: "Jordan Blake", dob: "1985-07-19", ssn: "456-78-1234", basis: "Rent-free", months: "30" });
+  await connectStep(page, "7200", "Northwind Traders");
+  const before = await cardsOf(a.party_id); const profile0 = card(before, "profile.title"); assert.ok(profile0, "profile.title pending on Details"); assert.equal(profile0.status, "pending"); assert.equal(profile0.kind, "ProfileCard");
+  const options = (path: string): string[] => ((profile0.props["fields"] as Json[]).find((f) => f["path"] === path)?.["options"] as Json[] | undefined ?? []).map((o) => String(o["id"]));
+  // Continue without citizenship: the step stays with .sm-error (copy, never a code) and nothing is posted
+  const postsBefore = (page.requests ?? []).filter((r) => r.startsWith("POST ")).length;
+  assert.equal(await page.getByLabel("Citizenship", { exact: true }).first().inputValue(), "", "no visual default counts as an answer");
+  await pick(page, "Marital status", "Married"); await fill(page, "Dependents", "2"); await pick(page, "Military service", "No"); await pick(page, "Language preference", "English");
+  await page.getByTestId("apply-continue").first().click();
+  await page.getByTestId("apply-error").first().waitFor({ timeout: 15_000 });
+  assert.equal(await attr(page, "data-step"), "details", "the step stays");
+  const err = (await page.getByTestId("apply-error").first().innerText()).trim(); assert.equal(err, "Answer the first four questions to continue.", "apply.details.required's copy"); assert.doesNotMatch(err, /^[A-Z_]{6,}$/);
+  assert.equal(await page.locator(".sm-error").count(), 1);
+  assert.equal((page.requests ?? []).filter((r) => r.startsWith("POST ")).length, postsBefore, "nothing was posted");
+  assert.equal(card(await cardsOf(a.party_id), "profile.title")?.status, "pending"); assert.equal((await borrowerOf(a.application_id, a.party_id)).citizenship_status, null);
+  // married: apply.details.spouse_later renders; no application.inviteParty is posted (the Invite control stays disabled)
+  const spouse = page.getByTestId("apply-spouse-later").first(); assert.ok(await spouse.isVisible()); assert.equal((await spouse.innerText()).trim(), "Your spouse's part comes later. Nothing to add now.");
+  assert.equal(await page.locator('[data-testid="apply"] .sm-invite[disabled]').count(), 1, "Invite is disabled in v1");
+  // Continue with the five: profile.title resolves with option_id submit and the card's own option ids
+  await pick(page, "Citizenship", "U.S. citizen");
+  await continueTo(page, "questions", "details");
+  const cards = await cardsOf(a.party_id); const profile = card(cards, "profile.title"); assert.ok(profile); assert.equal(profile.status, "resolved"); assert.equal(profile.command_ref, "application.confirmField");
+  const answers = Object.fromEntries(((profile.evidence?.["fields"] as Json[]) ?? []).map((f) => [String(f["path"]), String(f["value"])]));
+  assert.deepEqual(answers, { citizenship_status: "us_citizen", marital_status: "married", dependents: "2", military_service: "none", language_preference: "english" }, "the five fields");
+  for (const f of (profile.evidence?.["fields"] as Json[]) ?? []) assert.ok(f["answered_at"], `${String(f["path"])} answered_at`);
+  for (const [path, value] of Object.entries(answers)) if (options(path).length) assert.ok(options(path).includes(value), `${path}: ${value} is one of the card's option ids ${options(path).join("/")}`);
+  const resolves = posted(page, new RegExp(`/cards/${profile.card_instance_id}/resolve`)); assert.equal(resolves.length, 1); assert.equal(bodyOf(resolves[0]!)["option_id"], "submit");
+  const b = await borrowerOf(a.application_id, a.party_id); assert.equal(b.citizenship_status, "us_citizen"); assert.equal(b.marital_status, "married"); assert.equal(b.language_preference, "english");
+  // the five plain fields each went through 21.1 captureField (ULAD-validated; a plain field is an event, not an intake-record value): application.field.captured{field} ×5
+  const evs = await events(a.application_id);
+  for (const field of ["citizenship_status", "marital_status", "dependents", "military_service", "language_preference"]) assert.ok(seqOf(evs, "application.field.captured", (p) => p["field"] === field) !== null, `application.field.captured{${field}}`);
+  assert.equal(posted(page, /commands\/application\.inviteParty/).length, 0, "no inviteParty"); assert.equal(seqOf(evs, "application.party.invited"), null); assert.equal(cards.filter((c) => c.kind === "InviteCard").length, 0);
+  assert.ok(card(cards, "declarations.occupancy"), "the declarations sequence starts on the citizenship capture");
+  await page.getByTestId("apply-tab-tasks").first().click(); await page.waitForSelector('[data-testid="apply-task-details"][data-done="true"]', { timeout: 30_000 });
+  await ctx.close();
+});
 test("32.19-T9: Declarations — Given \"Do any apply?\", when None, then `declarations.occupancy`, `declarations.clean_energy_lien` and `declarations.title{none}` are resolved one at a time and the borrower's `du_declarations` row carries the fourteen typed answers (32.3-T14 unchanged); when Something applies, then each `declarations.item` card renders one question at a time and every Yes with its follow-up persists.", { todo: true });
 test("32.19-T10: Demographics — Given Demographics, when \"I do not wish to provide this information\", then `demographics.title` resolves with `[\"do_not_wish\"]` for ethnicity and race and `\"do_not_wish\"` for sex and `applicant_demographics.* = declined` with `collection_method = internet`; when answered, then only the card's own option ids are sent and the answers are never kept on the card.", { todo: true });
 test("32.19-T11: Review is a readiness view — Given Review, then it reads `record.status.badge` and the pending cards from `/v1/borrower/thread`, renders no control that names a submission, lists every pending card as a task, and its one CTA resolves the number cards (`refi.value.confirm`, `refi.loan_amount.confirm`, `refi.product.choice`, or `preapproval.target`); the screen's text contains none of \"DU\", \"Desktop Underwriter\", \"Fannie\", \"Approve\", \"Eligible\", \"Ineligible\", \"Refer\".", { todo: true });

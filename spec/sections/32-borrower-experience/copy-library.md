@@ -817,15 +817,31 @@ The rail and the thread (32.16 §2.1–2.2, DELTA-26). The rail's section names,
 - `apply.you.rent` — field — "Monthly rent" — *32.19 §2.2 you: only when renting.*
 - `apply.you.months` — field — "Months at this address" — *32.19 §2.2 you: under 24 opens the prior-address panel.*
 - `apply.you.prior` — heading — "Your prior address" — *32.19 §2.2 you: SQ-06.*
+- `apply.you.prior_street` — field — "Prior street address" — *32.19 §2.2 you: `identity.prior_residence.title.prior_address_line`.*
+- `apply.you.prior_city` — field — "Prior city" — *32.19 §2.2 you: `prior_city`.*
+- `apply.you.prior_state` — field — "Prior state" — helper: "Two letters, like TX" — *32.19 §2.2 you: `prior_state`.*
+- `apply.you.prior_zip` — field — "Prior ZIP code" — *32.19 §2.2 you: `prior_postal_code`.*
+- `apply.you.prior_basis` — field — "How you lived there" — options `Own` · `Rent` · `Rent-free` — *32.19 §2.2 you: `prior_residency_basis` (own · rent · living_rent_free).*
+- `apply.you.prior_rent` — field — "Monthly rent there" — *32.19 §2.2 you: `prior_monthly_rent_cents`, only when renting there.*
+- `apply.you.prior_months` — field — "Months you lived there" — *32.19 §2.2 you: `prior_months_at_address`.*
+- `apply.you.caution` — heading — "About your credit" — *32.19 §2.2 you / 32.16-T14: the caution row above a frozen bureau's lift card (`credit.freeze.lift`), never a toast or a modal.*
+- `apply.you.required` — refusal — "Fill in your name, birth date and months here." — *32.19 §3.0: a required field empty stays on the step; nothing is posted. The birth date is YYYY-MM-DD.*
+- `apply.you.ssn_invalid` — refusal — "Your Social Security number is nine digits." — *32.19 §3.0: checked before anything is posted.*
+- `apply.you.rent_required` — refusal — "Tell us the monthly rent." — *32.19 §3.0: the rent is required when the basis is Rent (`required_when`).*
+- `apply.you.prior_required` — refusal — "Fill in your prior address, how you lived there and the months." — *32.19 §3.0: the prior-residence panel's six fields.*
 - `apply.connect.title` — heading — "Connect once." — *32.19 §2.2 connect.*
 - `apply.connect.fake_note` — line — "Payroll and bank use FAKE vendors here. Type your monthly income and continue." — *32.19 §2.2: shown under SHOW_FAKE_MARKERS.*
 - `apply.connect.income` — field — "Monthly income" — *32.19 §2.2 connect.*
 - `apply.connect.employer` — field — "Employer" — *32.19 §2.2 connect: an edit on `income.confirm.title`.*
 - `apply.connect.cta` — button — "Connect and continue" — *32.19 §2.2 connect: the FAKE finishes on the tap.*
+- `apply.connect.required` — refusal — "Type your monthly income and employer." — *32.19 §3.0: nothing is posted without both.*
 - `apply.details.title` — heading — "A few facts." — *32.19 §2.2 details.*
 - `apply.details.citizenship` — field — "Citizenship" — options `U.S. citizen` · `Permanent resident` · `Non-permanent resident` — *32.19 §2.2 details.*
 - `apply.details.marital` — field — "Marital status" — options `Unmarried` · `Married` · `Separated` — *32.19 §2.2 details.*
 - `apply.details.dependents` — field — "Dependents" — *32.19 §2.2 details.*
+- `apply.details.military` — field — "Military service" — options `No` · `Currently serving on active duty` · `Retired, discharged or separated` · `Reserve or National Guard, never activated` · `Surviving spouse` — *32.19 §2.2 details: `profile.title.military_service` (none · active_duty · retired_or_separated · reserve_or_guard · surviving_spouse).*
+- `apply.details.language` — field — "Language preference" — options `English` · `Spanish` · `Chinese` · `Korean` · `Tagalog` · `Vietnamese` · `Other` · `I'd rather not say` — *32.19 §2.2 details: `profile.title.language_preference` (Form 1103); empty → `not_answered`.*
+- `apply.details.required` — refusal — "Answer the first four questions to continue." — *32.19 §3.0: the profile card's required four (citizenship, marital status, dependents, military service), checked before anything is posted.*
 - `apply.details.spouse_later` — line — "Your spouse's part comes later. Nothing to add now." — *32.19 §2.2: no `application.inviteParty` is posted.*
 - `apply.questions.title` — heading — "Do any apply?" — *32.19 §2.2 questions.*
 - `apply.questions.lead` — line — "Bankruptcy, foreclosure, lawsuits, alimony, borrowed funds." — *32.19 §2.2 questions: the list the declarations cover, one question at a time.*

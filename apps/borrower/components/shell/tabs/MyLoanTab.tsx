@@ -3,8 +3,11 @@
 import type { BorrowerRecord } from "@/lib/types/record";
 import { copy } from "@/lib/copy";
 import { formatMoney, formatRate, mask4 } from "@/lib/format";
+import { StatusBadgeView } from "@/components/record/sections";
+import { NextEvent } from "./NextEvent";
 
-/** Servicing glance from borrower_record. P0 is read-only — Pay/Autopay resolve in a later PR. */
+/** Servicing glance from borrower_record. P0 is read-only — Pay/Autopay resolve in a later PR.
+ * The status line is the phone's at-a-glance line (01 §1.2): the record's own badge and next event, never computed here. */
 export function MyLoanTab({ record }: { record?: BorrowerRecord }) {
   const numbers = record?.numbers;
   const post = numbers?.phase === "post_funding" ? numbers : undefined;
@@ -17,9 +20,8 @@ export function MyLoanTab({ record }: { record?: BorrowerRecord }) {
       <p className="sm-tab-lede">{record?.header.address_line ?? "Your loan"}</p>
       {record?.status ? (
         <p className="sm-tab-status">
-          <span className="sm-badge" data-tone={record.status.badge === "Current" ? "positive" : "info"}>
-            <span>○</span> {record.status.badge}
-          </span>
+          <StatusBadgeView badge={record.status.badge} />
+          <NextEvent record={record} />
           <span className="sm-tab-muted">{copy(record.status.one_liner, record.status.one_liner_tokens)}</span>
         </p>
       ) : (

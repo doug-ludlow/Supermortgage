@@ -4,7 +4,8 @@
  * 32.16 §1 principle 8 — the header is the brand and Sign in, nothing else (the way Rocket's is): the brand, the FAKE-mode
  * banner when the build shows FAKE markers, the loan switch for a party with more than one subject, the signed-in party's
  * first name, and Sign in when there is no session. No e-mail, no assurance level, no sentence: the AI disclosure is the
- * footer (`FooterDisclosure`). The rail opener stays for the drawer breakpoint (768–1023).
+ * footer (`FooterDisclosure`). The rail opener stays for the drawer breakpoint (768–1023) and opens the record sheet on a
+ * phone (< 768, the five-tab shell); it renders only while a session exists (no record to open before one).
  */
 import type { BorrowerMe } from "@/lib/types/record";
 import { SHOW_FAKE_MARKERS } from "@/lib/env";
@@ -16,7 +17,8 @@ export type HeaderProps = {
   onSubjectChange: (subject: string) => void;
   /** "connecting…" / "reconnecting…" while the SSE stream is not open. */
   streamLabel?: string;
-  onOpenRecord: () => void;
+  /** A session exists: "Your record" opens the rail as the drawer (768–1023) or the phone's sheet. Absent while signed out. */
+  onOpenRecord?: (() => void) | undefined;
   /** No session (or FAKE fixtures mode, so the screen can be demoed): show Sign in. */
   showSignIn: boolean;
   onSignIn: () => void;
@@ -68,9 +70,11 @@ export function Header({ fixturesMode, me, subject, onSubjectChange, streamLabel
           Sign out
         </button>
       ) : null}
-      <button type="button" className="sm-btn sm-drawer-btn" onClick={onOpenRecord} aria-haspopup="dialog">
-        Your record
-      </button>
+      {onOpenRecord ? (
+        <button type="button" className="sm-btn sm-drawer-btn" onClick={onOpenRecord} aria-haspopup="dialog">
+          Your record
+        </button>
+      ) : null}
     </header>
   );
 }

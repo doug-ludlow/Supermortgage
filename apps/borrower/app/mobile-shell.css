@@ -95,8 +95,13 @@
     grid-template-columns: minmax(0, 1fr);
     width: 100%;
   }
-  .sm-shell[data-mobile-shell="1"] .sm-record {
+  /* the record sheet is the rail (32.16 §2.2): mounted behind the tabs, shown only while open */
+  .sm-shell[data-mobile-shell="1"] .sm-record:not([data-open="true"]) {
     display: none;
+  }
+  /* the header's "Your record" opens the sheet on a phone (the drawer opener of 768–1023, kept) */
+  .sm-shell[data-mobile-shell="1"] .sm-drawer-btn {
+    display: inline-flex;
   }
   .sm-tab-nav {
     display: grid;

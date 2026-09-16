@@ -1,3 +1,4 @@
+import type { DualControlProbe } from "./tools.ts";
 /**
  * Command bus — the application layer every state change goes through
  * (ARCHITECTURE §"service.ts is the agent's tool surface"). A command
@@ -30,7 +31,7 @@ export interface CommandSpec<I, O> {
   /** Who may invoke: agents (through their allowlist) and/or humans with these roles; empty roles = any human. */
   readonly allow: { readonly agents?: boolean; readonly humanRoles?: readonly string[]; readonly humansAny?: boolean;
     /** 35.7 rule 2: declared dual control — the surfaces refuse the actor-as-own-approver default (commands.ts step 5) for such a command when the threshold holds; see src/domain/operations-runtime/roles-35-7/dual-control.ts. */
-    readonly dualControl?: { readonly role: string; readonly threshold: (input: I) => boolean } };
+    readonly dualControl?: { readonly role: string; readonly threshold: (input: I, probe: DualControlProbe) => boolean | Promise<boolean> } };
   readonly guardrails?: readonly Guardrail<I>[];
   /** Fields an agent may never change (checked against `input.changes` when present). */
   readonly moneyFields?: readonly string[];

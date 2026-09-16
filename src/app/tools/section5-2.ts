@@ -403,8 +403,21 @@ const explainVariance: Omit<ToolDef, "process" | "agent"> = { name: "explainVari
   decision: (i, out) => { const o = out as { class?: string; variance_cents?: bigint; draft_expectation_cents?: bigint; kind?: string; unexplained_cents?: bigint } | null; return { action: `explainVariance:${str(i, "op") || "classify"}`, rationale: o?.class ? `expected ${str(i, "expected_cents")}¢, notified ${str(i, "notified_cents")}¢, variance ${String(o.variance_cents)}¢, classification=${o.class}, draft expectation ${String(o.draft_expectation_cents)}¢` : o?.kind ? `Schedule 3 ${str(i, "period")}: ${o.kind} ${String(o.unexplained_cents)}¢` : str(i, "explanation") || `explainVariance:${str(i, "op")}` }; } };
 
 const postLedger: Omit<ToolDef, "process" | "agent"> = { name: "postLedger", kind: "write", ruleSetVersion: RULE_SET_VERSION, moneyFields: ["entry_set", "expected_draft_cents"],
-  // 35.7 rule 2 / rule 4: the second person for a transfer greater than $250,000 (strict) is an approval record by a distinct officer (roles.approve); the surfaces enforce it before the bus. Conservative: a fund_draft whose figures the input does not carry (a stored expectation, a bank-feed balance) asks for the record too; the daily > $1,000,000 clause needs the ledger and stays this guard's (one officer).
-  dualControl: { role: "officer", threshold: (i) => (fundOp(i) ? (i.expected_draft_cents === undefined || i.custodial_available_cents === undefined || fundShortfall(i).shortfall_cents > DUAL_CONTROL_SINGLE_TRANSFER_CENTS) : (custodialCorporateTransfer(i)?.cents ?? 0n) > DUAL_CONTROL_SINGLE_TRANSFER_CENTS) },
+  // 35.7 rule 2 / rule 4: the second person for a single transfer greater than $250,000.00 (strict) or a day's total greater than $1,000,000.00 is an approval record by a distinct officer (roles.approve); the surfaces enforce it before the bus on the figures this handler uses — a fund_draft's expectation from the scheduled remittances row and its balance from the custodial bank port when the input carries neither (fundDraftOp), the day's transfers from the loan's posted sets (dailyTransferCents).
+  dualControl: { role: "officer", threshold: async (i, probe) => {
+    let t: { cents: bigint } | null;
+    if (fundOp(i)) {
+      let expected = optCents(i, "expected_draft_cents"); let available = optCents(i, "custodial_available_cents");
+      if (expected === null) { const stored = (await probe.entities.current("remittances", optStr(i, "remittance_id") ?? `rem-${str(i, "period")}:${typeCode(str(i, "remittance_type"))}:${cycleOf(i)}`))?.data; expected = stored ? cents(stored["draft_expectation_cents"] ?? stored["amount_notified_cents"] ?? stored["amount_expected_cents"]) : null; }
+      if (available === null) { const bank = probe.ports["custodialBank"] as { intraday(id: string, at: string): Promise<{ closingLedgerCents?: bigint | null; openingLedgerCents?: bigint | null }> } | undefined; if (bank) { const st = await bank.intraday(str(i, "custodial_account_id"), probe.now); available = st.closingLedgerCents ?? st.openingLedgerCents ?? 0n; } }
+      if (expected === null || available === null) return false;   // the handler refuses the command itself (a missing figure), nothing to approve
+      const fd = fundingDecision(expected, available); t = fd.advance ? { cents: fd.shortfall_cents } : null;
+    } else t = custodialCorporateTransfer(i);
+    if (!t) return false;
+    const today = wallClock(Date.parse(probe.now), ET).date; let daily = 0n;
+    for (const set of await probe.ledgerSets()) { if (set.effectiveDate !== today) continue; const cust = set.lines.some((l) => l.account.scope === "custodial"), corp = set.lines.filter((l) => l.account.scope === "corporate"); if (cust && corp.length) daily += corp.reduce((s, l) => s + abs(l.amountCents), 0n); }
+    return t.cents > DUAL_CONTROL_SINGLE_TRANSFER_CENTS || daily + t.cents > DUAL_CONTROL_DAILY_CENTS;
+  } },
   handler: compute((i, ctx, rt) => {
     if (fundOp(i)) return fundDraftOp(i, ctx, rt);
     const set = i.entry_set as EntrySetInput | undefined;

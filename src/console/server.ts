@@ -449,7 +449,8 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
           setSubject(loanId ? { kind: "loan", id: loanId } : applicationId ? { kind: "application", id: applicationId } : subjectOf(path, input));
           action.command = `${process} ${name}`;   // 35.7 T10: the bus command with its process on the log row
           // 35.7 rule 2: an approval is a record (roles.approve), never an input — a body approvedBy / input.approvals from a session is refused
-          if (b["approvedBy"] !== undefined || input["approvals"] !== undefined) throw new RolesRefused(403, "APPROVER_NOT_SELF_ASSERTED", "an approval is a record written by a distinct verified person (roles.approve); a body approvedBy or input.approvals is refused (35.7 rule 2)", {});
+          // a body approvedBy is refused on every tool; input.approvals only where the tool declares dual control (29.2 fundMarginCall and 31.1 carry their own `approvals` data — not this process's to refuse)
+          if (b["approvedBy"] !== undefined || (def.dualControl && input["approvals"] !== undefined)) throw new RolesRefused(403, "APPROVER_NOT_SELF_ASSERTED", "an approval is a record written by a distinct verified person (roles.approve); a body approvedBy or input.approvals on a dual-control command is refused (35.7 rule 2)", {});
           // 35.7 rule 8: a broken-into role counts as held for the matching subject only, while unexpired; named for another subject or after expiry it is ROLE_DENIED
           let held35 = r.held; let breakglassRole: string | null = null;
           if (r.staff) {
@@ -530,7 +531,7 @@ export function createConsoleServer(opts: ConsoleServerOptions): Server {
       else { action.result = "error"; action.refusal_code = "INTERNAL"; opts.logger?.error("console.request.failed", { path, error: e }); json(res, 500, { error: (e as Error).message }); }
     } finally {
       // rule 4: one staff_actions row per request, ids only (the `email` query parameter is dropped from the route, a directory search's `q` is its hash; no name, phone, code, token or figure is ever set on `action`) — with the role that acted, or on a refusal the role that was asked for (`action.role`, migration 0139)
-      if (repo) { try { await repo.logAction({ ...action, at: now, route: logRoute, method, surface: "ops", source: action.staff_user_id ? "session" : held.length ? "header" : null }); } catch (err) { opts.logger?.error("staff_actions.write.failed", { path, error: err }); } }
+      if (repo) { try { await repo.logAction({ ...action, at: now, route: logRoute, method, surface: "ops", source: action.session_id ? "session" : held.length ? "header" : null }); } catch (err) { opts.logger?.error("staff_actions.write.failed", { path, error: err }); } }
     }
   });
 }

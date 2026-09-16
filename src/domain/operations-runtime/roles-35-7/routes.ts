@@ -15,7 +15,7 @@
  *   POST /ops/api/principals/{id}/revoke {rationale}                                admin                  → principals.revoke
  *   POST /ops/api/handover/plan {environment}                                       compliance | admin     → handover.plan
  *   POST /ops/api/handover/enable {environment, role, request_id?}                  compliance | admin     → handover.enable{request | confirm}
- *   POST /ops/api/handover/revert {environment, role, rationale}                    compliance | admin     → handover.enable{op: revert}
+ *   POST /ops/api/handover/revert {environment, role, rationale, request_id?}       compliance | admin     → handover.enable{op: revert} (one of the two people requests; the other confirms with request_id within 10 minutes)
  *   GET  /ops/api/handover/board?environment=                                       ops_analyst | officer | compliance | admin → handover.board
  * A RolesRefused (a StaffError) answers in the console's shape with its status, code and extras; a bus CommandRefused as 409.
  */
@@ -60,7 +60,7 @@ export function rolesRoutes(deps: { readonly runtime: Runtime }): ControlsRoute[
     { method: "POST", path: "/api/principals/:id/revoke", roles: ["admin"], command: "principals.revoke", handler: (r) => act("principals.revoke", r.actor, { principal_id: uuidParam(r.params, "id"), rationale: r.body["rationale"], ...env(r) }, { kind: "principal", id: r.params["id"]! }) },
     { method: "POST", path: "/api/handover/plan", roles: ["compliance", "admin"], command: "handover.plan", handler: (r) => act("handover.plan", r.actor, { ...env(r) }, null) },
     { method: "POST", path: "/api/handover/enable", roles: ["compliance", "admin"], command: "handover.enable", handler: (r) => act("handover.enable", r.actor, { ...(r.body["request_id"] ? { op: "confirm", request_id: s(r.body["request_id"]) } : { op: "request", role: r.body["role"] }), rationale: r.body["rationale"], ...env(r) }, isUuid(r.body["request_id"]) ? { kind: "request", id: r.body["request_id"] } : null) },
-    { method: "POST", path: "/api/handover/revert", roles: ["compliance", "admin"], command: "handover.enable", handler: (r) => act("handover.enable", r.actor, { op: "revert", role: r.body["role"], rationale: r.body["rationale"], ...env(r) }, null) },
+    { method: "POST", path: "/api/handover/revert", roles: ["compliance", "admin"], command: "handover.enable", handler: (r) => act("handover.enable", r.actor, { op: "revert", role: r.body["role"], ...(r.body["request_id"] ? { request_id: s(r.body["request_id"]) } : {}), rationale: r.body["rationale"], ...env(r) }, isUuid(r.body["request_id"]) ? { kind: "request", id: r.body["request_id"] } : null) },
     { method: "GET", path: "/api/handover/board", roles: BOARD_READ_ROLES, command: "handover.board", handler: (r) => read("handover.board", r.actor, { environment: r.query.get("environment") }) },
   ];
 }

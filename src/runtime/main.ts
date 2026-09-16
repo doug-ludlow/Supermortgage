@@ -101,7 +101,7 @@ if (mode === "staff-bootstrap") {
 }
 
 if (mode !== "serve") { logger.error(`unknown mode ${mode}; use serve | sweep | migrate | seed-demo | staff-bootstrap`); process.exit(2); }
-if (!config.apiToken) logger.warn("API_TOKEN is empty: every route is open (ALLOW_INSECURE_NO_TOKEN=1)");
+if (!config.apiToken) logger.warn("API_TOKEN is empty: /v1 admits only principals issued by principals.issue (35.7 rule 2); the ops console authenticates its own staff sessions (ALLOW_INSECURE_NO_TOKEN=1)");
 // 32.14: the Phase I partner from configuration (DELTA-15); Sign in with Google is the FAKE provider under INTEGRATIONS=fake (DELTA-12 — the real adapter is wired with the client secret when another INTEGRATIONS value exists)
 // 34.1: STAFF_BOOTSTRAP_ADMIN_EMAIL (and, outside production, STAFF_BOOTSTRAP_ADMIN_ROLES) is read once at start — the first admin is invited when no staff_users row exists, the nonprod one-row upgrade runs when it applies (a no-op otherwise; the e-mail is never logged)
 const bootstrapEmail = (process.env["STAFF_BOOTSTRAP_ADMIN_EMAIL"] ?? "").trim();

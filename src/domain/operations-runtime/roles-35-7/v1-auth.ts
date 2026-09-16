@@ -98,7 +98,7 @@ export class V1Auth {
    * Step 5. `accepted` is the tool's accepted roles (acceptedRoles(def)) or null for a route that takes any held role; the body's
    * `actor`/`approvedBy`/`input.approvals` are checked against the resolution. Under the shared token the body's actor stands (today's contract).
    */
-  async actorFor(c: PrincipalContext, i: { readonly method: string; readonly headers: IncomingMessage["headers"]; readonly body: Record<string, unknown>; readonly accepted: readonly string[] | null; readonly subject: Subject; readonly now: string; readonly fallback?: Actor }): Promise<ActorResolution> {
+  async actorFor(c: PrincipalContext, i: { readonly dualControl?: boolean; readonly method: string; readonly headers: IncomingMessage["headers"]; readonly body: Record<string, unknown>; readonly accepted: readonly string[] | null; readonly subject: Subject; readonly now: string; readonly fallback?: Actor }): Promise<ActorResolution> {
     const bodyActor = i.body["actor"];
     if (c.source === "shared_token") {
       const a = bodyActor === undefined ? i.fallback : actorOf(bodyActor);
@@ -107,7 +107,7 @@ export class V1Auth {
     }
     if (i.body["approvedBy"] !== undefined) throw new PrincipalRefused(403, "APPROVER_NOT_SELF_ASSERTED", "a body approvedBy is refused whatever it says: an approval is a record by roles.approve (35.7 rule 2)", { principal_id: c.principal!.id });
     const input = i.body["input"];
-    if (input && typeof input === "object" && (input as Record<string, unknown>)["approvals"] !== undefined) throw new PrincipalRefused(403, "APPROVER_NOT_SELF_ASSERTED", "input.approvals is refused: the second person is an approval record by roles.approve (35.7 rule 2)", { principal_id: c.principal!.id });
+    if (i.dualControl && input && typeof input === "object" && (input as Record<string, unknown>)["approvals"] !== undefined) throw new PrincipalRefused(403, "APPROVER_NOT_SELF_ASSERTED", "input.approvals is refused on a dual-control command: the second person is an approval record by roles.approve (35.7 rule 2)", { principal_id: c.principal!.id });
     const p = c.principal!;
     if (p.kind !== "staff") {
       const name = p.name;

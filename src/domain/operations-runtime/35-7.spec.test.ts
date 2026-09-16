@@ -343,6 +343,9 @@ test("35.7-T4: Given officers A and B with their own principals and a 5.2 custod
   const alone = await post(A, { input: { ...X, expected_draft_cents: "24999999", draft_date: "2026-09-25" } }); assert.equal(alone.status, 200, JSON.stringify(alone.body));
   const aloneDecisions = (await decisions("postLedger:fund_draft")).filter((d) => d.loan_id === f.loanId);
   assert.equal(aloneDecisions.length, 2); assert.equal(aloneDecisions[1]!.approved_by, ids["amy"]);
+  // exactly $250,000.00 (25,000,000 cents) is not greater than the threshold: A alone commits it too
+  const exact = await post(A, { input: { ...X, expected_draft_cents: "25000000", draft_date: "2026-09-28" } }); assert.equal(exact.status, 200, JSON.stringify(exact.body));
+  const exactDecisions = (await decisions("postLedger:fund_draft")).filter((d) => d.loan_id === f.loanId); assert.equal(exactDecisions.length, 3); assert.equal(exactDecisions[2]!.approved_by, ids["amy"]);
 });
 
 test("35.7-T5: Given a 3.7 payee remittance change for an existing payee of $10,000.01 (1,000,001 cents), when one `officer` submits it, then `APPROVER_DISTINCT` until a second officer's `roles.approve`; given the same change for exactly $10,000.00 (1,000,000 cents), then one officer commits it; given a new payee for $500.00, then two officers are required whatever the amount.", { skip }, async () => {
@@ -417,12 +420,15 @@ test("35.7-T7: Given `FAKE_REVIEWERS=off` and no holder of `funding_approver`, w
   await bootAdmin();
   const envOff = { INTEGRATIONS: "fake", FAKE_REVIEWERS: "off" } as NodeJS.ProcessEnv;
   assert.deepEqual(fakeReviewerRolesFromEnv(envOff), []);
-  const runtimeOff = new Runtime({ db, registry: loadOverriddenRegistry(), clock, logger, environment: "nonprod", env: envOff, reviewers: null });
+  // the runtime carries FAKE reviewers whose set resolves from the environment (FAKE_REVIEWERS=off → nothing): the tick runs and approves nothing
+  const runtimeOff = new Runtime({ db, registry: loadOverriddenRegistry(), clock, logger, environment: "nonprod", env: envOff, reviewers: new FakeReviewers({ delaySeconds: 0 }) });
   const app1 = (await db.query<{ id: string }>(`SELECT application_id::text AS id FROM loan_events WHERE type = 'terms.presentation.requested' AND payload->>'quote_id' = $1`, [`q-${R}`]))[0]!.id;
   // a 26.3 wire waiting for release: the funding_approver escalation the tool opens (section26-3.ts), saved as the runtime saves it
   const escId = await openEscalation({ kind: "funding_approver", ownerRole: "funding_approver", applicationId: app1, payload: { funding_id: `fnd-${R}`, wire_id: `w-${R}`, amount_cents: "100000", four_eyes_check: { preparer: "a", releaser: "b" }, sla: "SM_O73_DUAL_CONTROL_RELEASE_1H" } }, { kind: "system", id: "test-35.7" });
   const executedBefore = await count("loan_events WHERE type = 'command.executed' AND payload->>'command' = 'prepareWire'");
-  await runtimeOff.sweep(); clock.set(at(MIN)); await runtimeOff.sweep();
+  const sweepA = await runtimeOff.sweep(); clock.set(at(MIN)); const sweepB = await runtimeOff.sweep();
+  for (const rep of [sweepA, sweepB]) { assert.ok(rep.reviewers, "the tick ran"); assert.equal(rep.reviewers!.actions.filter((a) => a.outcome === "approved").length, 0, "the FAKE approved nothing with FAKE_REVIEWERS=off"); }
+  assert.deepEqual([...runtimeOff.reviewers!.roles], [], "the set resolved to nothing"); assert.equal(runtimeOff.reviewers!.fills("funding_approver"), false);
   assert.equal((await db.query<{ c: string | null }>(`SELECT completed_at::text AS c FROM escalations WHERE id = $1`, [escId]))[0]!.c, null, "nothing approved the wire");
   assert.equal(await count("loan_events WHERE type = 'command.executed' AND payload->>'command' = 'prepareWire'"), executedBefore);
   const q = await runtimeOff.execute({ process: "35.7", name: "roles.queue", loanId: "", actor: adminActor(), input: { environment: "nonprod", role: "funding_approver" } });
@@ -587,10 +593,13 @@ test("35.7-T12: Given an active `compliance` member C who holds no reviewer role
   assert.deepEqual(use, { grant_id: grantId, staff_user_id: ids["cara"], role: "attorney", subject_kind: "loan", subject_id: L.loanId, reason: "counsel unreachable, sale tomorrow" });
   const usedEv = (await events("role.breakglass.used")).filter((e) => e.payload["breakglass_id"] === bg); assert.equal(usedEv.length, 1); assert.equal(usedEv[0]!.aggregate_kind, "breakglass"); assert.equal(usedEv[0]!.aggregate_id, bg);
   const clockRows = await timers("SM_ROLE_BREAKGLASS_REVIEW_1BD", "AND subject_id = $2", [bg]); assert.equal(clockRows.length, 1); assert.equal(clockRows[0]!.status, "armed"); assert.equal(clockRows[0]!.due_date, addBusinessDays(D(wallClock(Date.parse(usedAt), "America/New_York").date), 1, servicer));
-  // an attorney act by C on L commits; the same act on M is ROLE_DENIED (19.2 timers.read: ciso | officer | attorney | ops_analyst on the bus; 4.1's case commands sit on the case agent's bus, not the runtime's)
+  // an attorney act by C on L commits; the same act on M is ROLE_DENIED (19.2 portal_task.create: ciso | officer | attorney | ops_analyst on the bus, an act that opens an escalation; 4.1's case commands sit on the case agent's bus, not the runtime's)
   let cTok = C.token;
-  const act = (loanId: string) => api("POST", "/ops/api/tools/19.2/timers.read", { loan_id: loanId, input: { op: "list", loan_id: loanId } }, { ...bearer(cTok), "x-staff-role": "attorney" });
+  const act = (loanId: string) => api("POST", "/ops/api/tools/19.2/portal_task.create", { loan_id: loanId, input: { portal: "fnma-servicing", owner_role: "attorney", loan_id: loanId } }, { ...bearer(cTok), "x-staff-role": "attorney" });
+  const escBefore = await count("escalations WHERE kind = 'human_portal_task' AND payload->>'portal' = 'fnma-servicing'");
   const onL = await act(L.loanId); assert.equal(onL.status, 200, JSON.stringify(onL.body)); assert.deepEqual(onL.body["actor"], { kind: "human", id: ids["cara"], role: "attorney" });
+  assert.equal(await count("escalations WHERE kind = 'human_portal_task' AND payload->>'portal' = 'fnma-servicing'"), escBefore + 1, "the act committed (the portal task's escalation row)");
+  assert.equal((await events("command.executed", "AND loan_id = $2", [L.loanId])).filter((e) => e.payload["command"] === "portal_task.create" && e.actor_id === ids["cara"] && e.actor_role === "attorney").length, 1);
   const onM = await act(M.loanId); assert.equal(onM.status, 403, JSON.stringify(onM.body)); assert.equal(onM.body["code"], "ROLE_DENIED"); assert.equal(onM.body["role"], "attorney");
   // qc_officer cannot be broken into
   const indep = await api("POST", "/ops/api/roles/breakglass", { role: "qc_officer", subject: { loan_id: L.loanId }, reason: "no" }, bearer(C.token));
@@ -782,6 +791,10 @@ test("35.7-T17: Given any command of this process (`roles.*`, `principals.*`, `h
   await run("handover.plan", "cara", "compliance", { environment: "nonprod" }, "act");
   const hreq = await run("handover.enable", "cara", "compliance", { op: "request", environment: "nonprod", role: "attorney" }, "act"); assert.equal(hreq["status"], "requested");
   await run("handover.enable", "ada", "admin", { op: "confirm", request_id: hreq["request_id"], environment: "nonprod" }, "act");
+  const rreq = await run("handover.enable", "cara", "compliance", { op: "revert", environment: "nonprod", role: "attorney", rationale: "T17 revert" }, "act"); assert.equal(rreq["status"], "revert_requested");
+  const rself = await api("POST", "/ops/api/tools/35.7/handover.enable", { input: { op: "revert", request_id: rreq["request_id"], environment: "nonprod" } }, { ...bearer(s.cara.token), "x-staff-role": "compliance" }); assert.equal(rself.status, 403, JSON.stringify(rself.body)); assert.equal(rself.body["code"], "TWO_PERSON_HANDOVER");
+  const rdone = await run("handover.enable", "ada", "admin", { op: "revert", request_id: rreq["request_id"], environment: "nonprod" }, "act"); assert.equal(rdone["status"], "reverted");
+  assert.equal(await count("role_handovers WHERE request_id = $1 AND action = 'reverted'", [rreq["request_id"]]), 1);
   await run("handover.board", "ada", "admin", { environment: "nonprod" }, "read");
   await run("writeDecision", "amy", "officer", { action: "roles.note", rationale: "T17: a generic decision row", subject: { kind: "staff_user", id: ids["tia"] } }, "act");
 });

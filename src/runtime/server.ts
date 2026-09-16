@@ -197,7 +197,7 @@ export function createApiServer(opts: ServerOptions): Server {
     /** The /v1 tool routes' actor (rule 2): the principal's, with the role the request names among the roles the person holds and the tool accepts. */
     const resolveActor = async (b: Record<string, unknown>, def: ReturnType<Runtime["tool"]>, subject: { loanId?: string | null; applicationId?: string | null }, process: string, fallback?: Actor): Promise<{ actor: Actor; grantRole: string | null }> => {
       const c = principal!; v1.scopeCheck(c, { ...subject, process });
-      const r = await v1.actorFor(c, { method, headers: req.headers, body: b, accepted: V1Auth.acceptedFor(def), subject, now: runtime.clock.now(), ...(fallback ? { fallback } : {}) });
+      const r = await v1.actorFor(c, { method, headers: req.headers, body: b, accepted: V1Auth.acceptedFor(def), dualControl: def?.dualControl !== undefined, subject, now: runtime.clock.now(), ...(fallback ? { fallback } : {}) });
       action.role = r.role; return { actor: r.actor, grantRole: r.grantRole };
     };
     try {

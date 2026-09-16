@@ -56,7 +56,8 @@ const dec = (kind: DecisionSubjectKind, idKey: string, action: (i: ToolInput, o:
   const o = obj(output);
   return rolesDecision({ subject: { kind, id: String(o[idKey] ?? str(i, idKey) ?? "") }, action: action(i, o), environment: String(o["environment"] ?? str(i, "environment") ?? ""), role: role ? role(i, o) : (o["role"] as string | undefined) ?? null, by: typeof o["by"] === "string" && o["by"] ? o["by"] : byOf(ctx.actor), by_role: ctx.actor.role ?? null, ...(confirmed ? { confirmed_by: confirmed(i, o) ?? null } : {}), reason: reason(i, o) }) as unknown as Decision;
 };
-const READ_ROLES = ["ops_analyst", "officer", "compliance", "admin"];
+const READ_ROLES = ["ops_analyst", "officer", "compliance", "admin"];   // handover.board (spec Inputs)
+const QUEUE_ROLES = ["ops_analyst", "compliance", "admin"];             // roles.queue (spec Inputs: no officer)
 
 export const TOOLS_35_7: readonly ToolDef[] = defineTools(PROCESS_35_7, ROLES_AGENT, [
   { name: "roles.grant", kind: "act", humanOnly: true, ruleSetVersion: ROLES_RULE_SET_VERSION, humanRoles: ["admin", "compliance"], guardrails: [...COMMON_GUARDS, UNKNOWN_ROLE, NO_SELF_ROLE_CHANGE],
@@ -68,7 +69,7 @@ export const TOOLS_35_7: readonly ToolDef[] = defineTools(PROCESS_35_7, ROLES_AG
   { name: "roles.revoke", kind: "act", humanOnly: true, ruleSetVersion: ROLES_RULE_SET_VERSION, humanRoles: ["admin"], guardrails: [...COMMON_GUARDS, NO_SELF_ROLE_CHANGE],
     handler: compute(async (i, ctx, rt) => revokeGrant(depsOf(ctx, rt), { grant_id: opt(i, "grant_id"), staff_user_id: opt(i, "staff_user_id"), role: opt(i, "role"), environment: envOf(i, rt), rationale: opt(i, "rationale") })),
     decision: dec("grant", "grant_id", () => "roles.revoke", (i, o) => `revoked ${String(o["role"])} from staff_user ${String(o["staff_user_id"])}; sessions revoked: ${(o["sessions_revoked"] as string[] | undefined)?.length ?? 0}; rationale: ${opt(i, "rationale") ?? "(none)"}`) },
-  { name: "roles.queue", kind: "read", ruleSetVersion: ROLES_RULE_SET_VERSION, humanRoles: READ_ROLES, guardrails: [NO_MONEY_FIELD, NO_CLOCK_EDIT],
+  { name: "roles.queue", kind: "read", ruleSetVersion: ROLES_RULE_SET_VERSION, humanRoles: QUEUE_ROLES, guardrails: [NO_MONEY_FIELD, NO_CLOCK_EDIT],
     handler: compute(async (i, _ctx, rt) => roleQueue(runtimeOf(rt), { environment: opt(i, "environment"), role: opt(i, "role"), page: Number(i["page"] ?? 1), page_size: Number(i["page_size"] ?? 100) })) },
   { name: "roles.approve", kind: "act", humanOnly: true, ruleSetVersion: ROLES_RULE_SET_VERSION, humanRoles: [...HUMAN_ROLES], guardrails: [...COMMON_GUARDS],
     handler: compute(async (i, ctx, rt) => approveRequest(depsOf(ctx, rt), { request_id: str(i, "request_id"), environment: envOf(i, rt) })),

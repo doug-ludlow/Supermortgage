@@ -55,7 +55,7 @@ export async function handoverRequest(q: Queryable, requestId: string): Promise<
   return { request, resolved: rows.find((r) => r.action === "enabled" || r.action === "expired" || r.action === "reverted") ?? null };
 }
 export async function staleHandoverRequests(q: Queryable, nowIso: string): Promise<HandoverRow[]> {
-  return q.query<HandoverRow & Record<string, unknown>>(`SELECT ${H_COLS} FROM role_handovers r WHERE r.action = 'requested' AND r.expires_at <= $1::timestamptz AND NOT EXISTS (SELECT 1 FROM role_handovers x WHERE x.request_id = r.request_id AND x.action IN ('enabled', 'expired', 'reverted')) ORDER BY r.expires_at`, [nowIso]);
+  return q.query<HandoverRow & Record<string, unknown>>(`SELECT ${H_COLS} FROM role_handovers r WHERE r.action IN ('requested', 'revert_requested') AND r.expires_at <= $1::timestamptz AND NOT EXISTS (SELECT 1 FROM role_handovers x WHERE x.request_id = r.request_id AND x.action IN ('enabled', 'reverted', 'expired', 'reverted')) ORDER BY r.expires_at`, [nowIso]);
 }
 export const expireHandoverRow = (q: Queryable, r: HandoverRow, nowIso: string): Promise<string> => writeHandoverRow(q, { environment: r.environment, role: r.role, action: "expired", request_id: r.request_id, requested_by: r.requested_by, confirmed_by: null, holders: r.holders, pending_items: r.pending_items, rationale: `no admin confirmation within ${CONFIRM_MINUTES} minutes (35.7 rule 7)`, effective_at: nowIso, expires_at: r.expires_at });
 export const handoverExpiredEvent = (r: HandoverRow, nowIso: string) => ({ type: "handover.request.expired", aggregate: handoverAggregate(r.environment, r.role), actor: { kind: "system" as const, id: "roles-35-7" }, payload: P({ request_id: r.request_id, environment: r.environment, role: r.role, requested_by: r.requested_by, requested_at: r.effective_at, expires_at: r.expires_at, expired_at: nowIso }) });
@@ -73,14 +73,15 @@ export async function handoverPlan(d: StaffActDeps, i: { environment: string; po
 }
 
 export interface EnableInput { readonly op: "request" | "confirm" | "revert"; readonly environment: string; readonly role?: string | null; readonly request_id?: string | null; readonly rationale?: string | null; readonly ports?: RolesPorts }
-export interface EnableResult { readonly status: "requested" | "enabled" | "already_enabled" | "reverted" | "recorded"; readonly environment: string; readonly role: string; readonly request_id: string | null; readonly requested_by: string | null; readonly confirmed_by: string | null; readonly holders: readonly string[]; readonly pending_items: number | null; readonly expires_at?: string; readonly effective_at: string; readonly by: string }
+export interface EnableResult { readonly status: "requested" | "enabled" | "already_enabled" | "revert_requested" | "reverted" | "recorded"; readonly environment: string; readonly role: string; readonly request_id: string | null; readonly requested_by: string | null; readonly confirmed_by: string | null; readonly holders: readonly string[]; readonly pending_items: number | null; readonly expires_at?: string; readonly effective_at: string; readonly by: string }
 /** `handover.enable` — request (compliance), confirm (a different admin, within 10 minutes), revert (nonprod only, the same two people). */
 export async function handoverEnable(d: StaffActDeps, i: EnableInput): Promise<EnableResult> {
   const rt = d.runtime; const what = `handover.enable:${i.op}`;
-  if (i.op === "request" || i.op === "revert") {
+  if (i.op === "revert") return revert(d, { environment: i.environment, role: i.role ?? null, request_id: i.request_id ?? null, rationale: i.rationale ?? null });
+  if (i.op === "request") {
     const role = s(i.role);
     if (!isKernelRole(role)) throw new RolesRefused(409, "UNKNOWN_ROLE", `${what}: ${role || "(none)"} is not one of the kernel's human roles`, { role });
-    if (i.op === "revert") return revert(d, { environment: i.environment, role, rationale: i.rationale ?? null });
+
     const requester = await requireActiveStaff(d.db, d.actor, ["compliance"], what, i.environment);
     const plan = (await planRows(rt, i.environment, i.ports)).find((r) => r.role === role)!;
     if (plan.plan !== "ready") throw new RolesRefused(409, "HANDOVER_NEEDS_HOLDER", `${role} in ${i.environment} has no holder who signed in within 30 days (missing: ${plan.missing})`, { role, missing: plan.missing, holders: plan.holders });
@@ -109,18 +110,44 @@ export async function handoverEnable(d: StaffActDeps, i: EnableInput): Promise<E
   d.events.append({ type: "handover.enabled", aggregate: handoverAggregate(request.environment, request.role), actor: d.actor, payload: P({ request_id: request.request_id, environment: request.environment, role: request.role, by: request.requested_by, confirmed_by: nameOf(d.actor), holders: plan.holders, pending_items: plan.open_items, production }) });
   return { status: production ? "recorded" : "enabled", environment: request.environment, role: request.role, request_id: request.request_id, requested_by: request.requested_by, confirmed_by: nameOf(d.actor), holders: plan.holders, pending_items: plan.open_items, effective_at: d.now, by: nameOf(d.actor) };
 }
-async function revert(d: StaffActDeps, i: { environment: string; role: string; rationale: string | null }): Promise<EnableResult> {
+async function revert(d: StaffActDeps, i: { environment: string; role: string | null; request_id: string | null; rationale: string | null }): Promise<EnableResult> {
   if (isProduction(i.environment)) throw new RolesRefused(409, "NO_FAKE_IN_PRODUCTION", `handover.revert does not exist in production: the FAKE set is empty there (35.7 rule 6)`, { environment: i.environment, role: i.role });
   const person = await requireActiveStaff(d.db, d.actor, ["compliance", "admin"], "handover.enable:revert", i.environment);
-  const rows = await d.db.query<HandoverRow & Record<string, unknown>>(`SELECT ${H_COLS} FROM role_handovers WHERE environment = $1 AND role = $2 AND action IN ('enabled', 'reverted') ORDER BY created_at DESC, id DESC LIMIT 1`, [i.environment, i.role]);
-  const last = rows[0];
-  if (!last || last.action !== "enabled") throw new RolesRefused(409, "NOT_ENABLED", `${i.role} in ${i.environment} is not handed over; nothing to revert`, { role: i.role });
+  // the confirmation of a revert request: the OTHER of the two people, within 10 minutes
+  if (i.request_id) {
+    const rows = await d.db.query<HandoverRow & Record<string, unknown>>(`SELECT ${H_COLS} FROM role_handovers WHERE request_id = $1 ORDER BY created_at DESC, id DESC`, [i.request_id]);
+    const req = rows.find((r) => r.action === "revert_requested"); const resolved = rows.find((r) => r.action === "reverted" || r.action === "expired");
+    if (!req) throw new RolesRefused(404, "REQUEST_NOT_FOUND", `no revert request ${i.request_id}`, { request_id: i.request_id });
+    if (resolved || Date.parse(req.expires_at ?? "") <= Date.parse(d.now)) throw new RolesRefused(409, "REQUEST_EXPIRED", `revert request ${req.request_id} ${resolved ? `was ${resolved.action}` : `expired at ${req.expires_at}`}; the handover stands`, { request_id: req.request_id, expires_at: req.expires_at });
+    const enabled = await lastEnabled(d.db, req.environment, req.role);
+    if (!enabled) throw new RolesRefused(409, "NOT_ENABLED", `${req.role} in ${req.environment} is not handed over; nothing to revert`, { role: req.role });
+    const two = [enabled.requested_by, enabled.confirmed_by].filter((x): x is string => !!x);
+    if (d.actor.kind === "human" && req.requested_by === d.actor.id) throw new RolesRefused(403, "TWO_PERSON_HANDOVER", `the revert of ${req.role} is two people's decision: ${d.actor.id} requested it and may not confirm it (35.7 rule 7)`, { request_id: req.request_id, role: req.role });
+    if (!person.fake && !two.includes(person.id)) throw new RolesRefused(403, "TWO_PERSON_HANDOVER", `the revert of ${req.role} is the same two people's (${two.join(", ")}) — ${person.id} was neither`, { role: req.role, requested_by: enabled.requested_by, confirmed_by: enabled.confirmed_by });
+    const holders = (await planRows(d.runtime, req.environment)).find((r) => r.role === req.role)?.holders ?? [];
+    d.deferWrite(async (q) => { await writeHandoverRow(q, { environment: req.environment, role: req.role, action: "reverted", request_id: req.request_id, requested_by: req.requested_by, confirmed_by: person.fake ? null : person.id, holders, pending_items: null, rationale: i.rationale ?? req.rationale, effective_at: d.now, expires_at: null, decision: { kind: "handover", id: `${req.environment}:${req.role}` } }); });
+    d.events.append({ type: "handover.reverted", aggregate: handoverAggregate(req.environment, req.role), actor: d.actor, payload: P({ request_id: req.request_id, environment: req.environment, role: req.role, by: req.requested_by, confirmed_by: nameOf(d.actor), enabled_by: enabled.requested_by, enabled_confirmed_by: enabled.confirmed_by, rationale: i.rationale ?? req.rationale }) });
+    return { status: "reverted", environment: req.environment, role: req.role, request_id: req.request_id, requested_by: req.requested_by, confirmed_by: nameOf(d.actor), holders, pending_items: null, effective_at: d.now, by: req.requested_by ?? nameOf(d.actor) };
+  }
+  // the request: one of the two people who enabled the handover asks; the other confirms within 10 minutes (handover.enable{op: revert, request_id})
+  const role = s(i.role);
+  if (!isKernelRole(role)) throw new RolesRefused(409, "UNKNOWN_ROLE", `handover.enable:revert: ${role || "(none)"} is not one of the kernel's human roles`, { role });
+  const last = await lastEnabled(d.db, i.environment, role);
+  if (!last) throw new RolesRefused(409, "NOT_ENABLED", `${role} in ${i.environment} is not handed over; nothing to revert`, { role });
   const two = [last.requested_by, last.confirmed_by].filter((x): x is string => !!x);
-  if (!person.fake && !two.includes(person.id)) throw new RolesRefused(403, "TWO_PERSON_HANDOVER", `the revert of ${i.role} is the same two people's (${two.join(", ")}) — ${person.id} was neither`, { role: i.role, requested_by: last.requested_by, confirmed_by: last.confirmed_by });
-  const holders = (await planRows(d.runtime, i.environment)).find((r) => r.role === i.role)?.holders ?? [];
-  d.deferWrite(async (q) => { await writeHandoverRow(q, { environment: i.environment, role: i.role, action: "reverted", request_id: last.request_id, requested_by: last.requested_by, confirmed_by: last.confirmed_by, holders, pending_items: null, rationale: i.rationale, effective_at: d.now, expires_at: null, decision: { kind: "handover", id: `${i.environment}:${i.role}` } }); });
-  d.events.append({ type: "handover.reverted", aggregate: handoverAggregate(i.environment, i.role), actor: d.actor, payload: P({ environment: i.environment, role: i.role, by: last.requested_by, confirmed_by: last.confirmed_by, reverted_by: nameOf(d.actor), rationale: i.rationale }) });
-  return { status: "reverted", environment: i.environment, role: i.role, request_id: last.request_id, requested_by: last.requested_by, confirmed_by: last.confirmed_by, holders, pending_items: null, effective_at: d.now, by: nameOf(d.actor) };
+  if (!person.fake && !two.includes(person.id)) throw new RolesRefused(403, "TWO_PERSON_HANDOVER", `the revert of ${role} is the same two people's (${two.join(", ")}) — ${person.id} was neither`, { role, requested_by: last.requested_by, confirmed_by: last.confirmed_by });
+  const open = (await d.db.query<HandoverRow & Record<string, unknown>>(`SELECT ${H_COLS} FROM role_handovers r WHERE r.environment = $1 AND r.role = $2 AND r.action = 'revert_requested' AND r.expires_at > $3::timestamptz AND NOT EXISTS (SELECT 1 FROM role_handovers x WHERE x.request_id = r.request_id AND x.action IN ('reverted', 'expired')) ORDER BY r.created_at DESC LIMIT 1`, [i.environment, role, d.now]))[0];
+  if (open) return { status: "revert_requested", environment: i.environment, role, request_id: open.request_id ?? null, requested_by: open.requested_by, confirmed_by: null, holders: open.holders, pending_items: null, ...(open.expires_at ? { expires_at: open.expires_at } : {}), effective_at: open.effective_at, by: open.requested_by ?? nameOf(d.actor) };
+  const request_id = randomUUID(); const expires_at = minutesAfter(d.now, CONFIRM_MINUTES);
+  const holders = (await planRows(d.runtime, i.environment)).find((r) => r.role === role)?.holders ?? [];
+  d.deferWrite(async (q) => { await writeHandoverRow(q, { environment: i.environment, role, action: "revert_requested", request_id, requested_by: person.fake ? null : person.id, confirmed_by: null, holders, pending_items: null, rationale: i.rationale, effective_at: d.now, expires_at, decision: { kind: "handover", id: `${i.environment}:${role}` } }); });
+  d.events.append({ type: "handover.revert.requested", aggregate: handoverAggregate(i.environment, role), actor: d.actor, payload: P({ request_id, environment: i.environment, role, by: nameOf(d.actor), expires_at, rationale: i.rationale }) });
+  return { status: "revert_requested", environment: i.environment, role, request_id, requested_by: nameOf(d.actor), confirmed_by: null, holders, pending_items: null, expires_at, effective_at: d.now, by: nameOf(d.actor) };
+}
+/** The latest enabled/reverted row of (environment, role); the handover stands only when it is `enabled`. */
+async function lastEnabled(q: Queryable, environment: string, role: string): Promise<HandoverRow | null> {
+  const rows = await q.query<HandoverRow & Record<string, unknown>>(`SELECT ${H_COLS} FROM role_handovers WHERE environment = $1 AND role = $2 AND action IN ('enabled', 'reverted') ORDER BY created_at DESC, id DESC LIMIT 1`, [environment, role]);
+  return rows[0]?.action === "enabled" ? rows[0] : null;
 }
 
 export interface BoardRow { readonly role: string; readonly status: string; readonly holders: readonly string[]; readonly holders_signed_in_30d: number; readonly dormant_grants: readonly { grant_id: string; staff_user_id: string }[]; readonly fake: boolean; readonly fake_since: string | null; readonly fake_reason: FakeReason; readonly open_items: number; readonly oldest_opened_at: string | null; readonly last_exercised_at: string | null; readonly fake_approvals_today: number; readonly plan: "ready" | "HANDOVER_NEEDS_HOLDER"; readonly missing: HandoverMissing | null }

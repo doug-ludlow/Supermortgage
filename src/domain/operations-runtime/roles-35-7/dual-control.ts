@@ -16,7 +16,8 @@
  * surface records `role.exercised` (exercised.ts).
  */
 import { createHash, randomUUID } from "node:crypto";
-import type { ToolDef, ToolInput } from "../../../app/tools.ts";
+import type { DualControlProbe, ToolDef, ToolInput } from "../../../app/tools.ts";
+import { PgLedgerRepository } from "../../../infra/db/ledger.ts";
 import type { Actor } from "../../../kernel/events/index.ts";
 import type { Queryable } from "../../../infra/db/client.ts";
 import { toJson } from "../../../infra/db/client.ts";
@@ -57,8 +58,10 @@ export async function executeWithControls(rt: Runtime, req: ExecuteRequest, c: C
   const command = `${req.process} ${req.name}`;
   const subject = req.loanId ? { kind: "loan", id: req.loanId } : req.applicationId ? { kind: "application", id: req.applicationId } : null;
   let out: ExecuteResponse;
-  if (def?.dualControl && req.actor.kind === "human" && def.dualControl.threshold(req.input)) {
-    const now = rt.clock.now(); const hash = inputHash(req.input);
+  const now = rt.clock.now();
+  const probe: DualControlProbe = { now, loanId: req.loanId || null, entities: rt.entities, ports: rt.ports as Record<string, unknown>, ledgerSets: () => (req.loanId ? new PgLedgerRepository(rt.db).setsForLoan(req.loanId) : Promise.resolve([])) };
+  if (def?.dualControl && req.actor.kind === "human" && (await def.dualControl.threshold(req.input, probe))) {
+    const hash = inputHash(req.input);
     let found = c.requestId ? await dualControlRequest(rt.db, c.requestId) : undefined;
     if (found && (found.command !== command || found.requested_by !== req.actor.id)) throw new RolesRefused(409, "APPROVAL_STALE", `request ${found.request_id} is for ${found.command} by ${found.requested_by}, not ${command} by ${req.actor.id}`, { request_id: found.request_id });
     if (found && found.input_hash !== hash) throw new RolesRefused(409, "APPROVAL_STALE", `request ${found.request_id} was approved for a different input; submit the input as approved or request anew`, { request_id: found.request_id });
@@ -73,11 +76,17 @@ export async function executeWithControls(rt: Runtime, req: ExecuteRequest, c: C
     const approver: Actor = { kind: "human", id: found.approved.approved_by, role: found.approved.approved_role };
     const requestId = found.request_id;
     const wrapped: ToolDef = { ...def, handler: async (input: ToolInput, ctx, r) => { const result = await def.handler(input, ctx, r); ctx.events.append({ type: "dual_control.consumed", aggregate: requestAggregate(requestId), actor: ctx.actor, payload: P({ request_id: requestId, command, approved_by: approver.id, approved_role: approver.role, consumed_at: ctx.now }) }); return result; } };
-    out = await rt.executeDef(wrapped, { ...req, input: { ...req.input, approvals: [approver] }, approvedBy: approver });
+    try { out = await rt.executeDef(wrapped, { ...req, input: { ...req.input, approvals: [approver] }, approvedBy: approver }); }
+    catch (e) {
+      // migration 0171: one `dual_control.consumed` per request — a concurrent resubmission of the same approval fails on the partial unique index and is refused as stale, the command's transaction rolled back whole
+      if (e instanceof Error && (e as { constraint?: string }).constraint === "loan_events_dual_control_consumed_once") throw new RolesRefused(409, "APPROVAL_STALE", `request ${requestId} was consumed by a concurrent submission`, { request_id: requestId });
+      throw e;
+    }
   } else {
     out = await rt.execute(req);
   }
-  if (c.grantRole && req.actor.kind === "human" && req.actor.role === c.grantRole && !STAFF_WORDS.includes(c.grantRole)) await recordExercise(rt, { staff_user_id: req.actor.id, role: c.grantRole, environment: rt.environment, command, subject, actor: req.actor }).catch(() => undefined);
+  // the exercise receipt (rule 9) rides after the command's commit in its own unit of work; a failed write is logged, never silent — the next act under the grant writes it (exercised.ts dedupes per grant)
+  if (c.grantRole && req.actor.kind === "human" && req.actor.role === c.grantRole && !STAFF_WORDS.includes(c.grantRole)) await recordExercise(rt, { staff_user_id: req.actor.id, role: c.grantRole, environment: rt.environment, command, subject, actor: req.actor }).catch((e: unknown) => { rt.logger?.error("role.exercised write failed", { staff_user_id: req.actor.id, role: c.grantRole, command, error: e instanceof Error ? e.message : String(e) }); });
   return out;
 }
 

@@ -47,6 +47,8 @@ import { AgentRegistry } from "../app/agents.ts";
 import { CommandBus, type AgentRunInfo, type ExecuteResult } from "../app/commands.ts";
 import { EntityStore, type Ports, type ToolDef, type ToolInput, type ToolRuntime } from "../app/tools.ts";
 import { CaseFolder } from "../domain/operations-runtime/default-35-9/folder.ts";
+import { LAW_FIRM_ADAPTER, lawFirmAdapter, lawFirmCompletion } from "../domain/operations-runtime/default-35-9/firm.ts";
+import { breachReconPass } from "../domain/operations-runtime/default-35-9/sweep.ts";
 import { ALL_TOOLS, bindTools, toolKey } from "../app/tools/index.ts";
 import { EscalationService, PgEscalationRepository } from "../app/escalations.ts";
 import { NoticeService, type Notice } from "../notices/service.ts";
@@ -64,7 +66,7 @@ import { FakeMetro2, FakeEoscar } from "../infra/integrations/credit.ts";
 import { FakeCustodian, FakeEvault } from "../infra/integrations/custody.ts";
 import { FakePrintMail, FakeEdelivery, FakeTelephony } from "../infra/integrations/delivery.ts";
 import { FakeFnmaLsdu, FakeFnmaServicingEvents, FakeFnmaSmdu, FakeFnmaP360, FakeFnmaConnect } from "../infra/integrations/fnma.ts";
-import { FakePacer, FakeDmdc, FakeErecording } from "../infra/integrations/legal.ts";
+import { FakePacer, FakeDmdc, FakeErecording, FakeLawFirm } from "../infra/integrations/legal.ts";
 import { FakeMers } from "../infra/integrations/mers.ts";
 import { FakeLpiTracking, FakeFlood, FakeTaxService, FakeMi } from "../infra/integrations/property.ts";
 import { FakeGoogleOidc } from "../infra/integrations/oidc.ts";
@@ -72,7 +74,7 @@ import type { RateFeedPort } from "../infra/integrations/rates.ts";
 import type { FakeReviewers, FakeReviewerReport } from "../infra/integrations/reviewers.ts";
 import { originationServices, type OriginationServiceSet } from "./origination.ts";
 import { acquireSweepLease, defaultHolder, type SweepPass } from "../domain/operations-runtime/seam/sweep.ts";
-import { drainOutbox, type DrainReport, type OutboxCompletion } from "../domain/operations-runtime/seam/outbox.ts";
+import { drainOutbox, portAdapters, type DrainReport, type OutboxCompletion } from "../domain/operations-runtime/seam/outbox.ts";
 import { verifyRun, verifiedToday, recordFailedRun, type VerifyReport } from "../domain/operations-runtime/seam/verify.ts";
 import type { OutboundAdapter } from "../infra/integrations/outbox.ts";
 import { wallClock } from "../kernel/calendar/zoned.ts";
@@ -126,6 +128,8 @@ export interface ExecuteResponse {
 }
 export interface SweepReport {
   readonly at: string;
+  /** 35.9 rule 7: the day's breach-action reconciliation (`breach.recon`), when the run reached it. */
+  readonly breach_recon?: Record<string, unknown> | null;
   readonly due: number;
   readonly breaches: readonly { loan_id: string | null; code: string; severity: number | null; escalate_to: readonly string[]; timer_id: string }[];
   readonly outbox: readonly { adapter: string; status: string; count: number }[];
@@ -173,7 +177,7 @@ export function fakePorts(): Ports {
   const lsdu = new FakeFnmaLsdu();
   return { lockbox: new FakeLockbox(), custodialBank: new FakeCustodialBank(), nacha: new FakeOdfi(), metro2: new FakeMetro2(), eoscar: new FakeEoscar(), custodian: new FakeCustodian(), evault: new FakeEvault(),
     printMail: new FakePrintMail(), edelivery: new FakeEdelivery(), telephony: new FakeTelephony(), lsdu, servicingEvents: new FakeFnmaServicingEvents(), smdu: new FakeFnmaSmdu(), p360: new FakeFnmaP360(),
-    connect: new FakeFnmaConnect(), pacer: new FakePacer(), dmdc: new FakeDmdc(), erecording: new FakeErecording(), mers: new FakeMers(), lpi: new FakeLpiTracking(), flood: new FakeFlood(), taxService: new FakeTaxService(), mi: new FakeMi(), oidc: new FakeGoogleOidc() };
+    connect: new FakeFnmaConnect(), pacer: new FakePacer(), dmdc: new FakeDmdc(), lawFirm: new FakeLawFirm(), erecording: new FakeErecording(), mers: new FakeMers(), lpi: new FakeLpiTracking(), flood: new FakeFlood(), taxService: new FakeTaxService(), mi: new FakeMi(), oidc: new FakeGoogleOidc() };
 }
 
 /** The unit of work's store with the scope's loan stamped on every appended event that carries neither a loan nor an application key. */
@@ -361,6 +365,20 @@ export class Runtime {
    * is satisfied and re-armed by the run that completes). No daily pass can fail the sweep: a failure is logged and reported;
    * the lease and the drain are the sweep's own, so their failure is the run's (`failed`, exit 1).
    */
+  /** The drain's adapters: the FAKE ports' (seam/outbox.ts), 35.9's `law-firm` over the lawFirm port, then the deps' overrides (35.1 rule 11: a test scripts a failing one). */
+  drainAdapters(): ReadonlyMap<string, OutboundAdapter> {
+    const m = new Map<string, OutboundAdapter>(portAdapters(this.ports));
+    m.set(LAW_FIRM_ADAPTER, lawFirmAdapter(this.ports.lawFirm));
+    for (const [k, v] of this.outboxAdapters ?? []) m.set(k, v);
+    return m;
+  }
+  /** The drain's completion hooks: 35.9's delivery stamp on `firm_dispatches`, then the deps' (per adapter name). */
+  drainCompletions(): ReadonlyMap<string, OutboxCompletion> {
+    const m = new Map<string, OutboxCompletion>([[LAW_FIRM_ADAPTER, lawFirmCompletion]]);
+    for (const [k, v] of this.outboxCompletions ?? []) m.set(k, v);
+    return m;
+  }
+
   async sweep(nowIso: string = this.clock.now(), opts: SweepOptions = {}): Promise<SweepReport> {
     const holder = opts.holder ?? this.instanceId;
     const asOfDate = wallClock(Date.parse(nowIso), "America/New_York").date;
@@ -391,7 +409,7 @@ export class Runtime {
       pass(name, async () => { try { return await fn(); } catch (e) { const msg = e instanceof Error ? e.message : String(e); this.logger?.error(`${name} failed`, { at: nowIso, error: e }); return fallback(msg); } }, counts);
     try {
       // rule 11: the outbox, drained by every sweep — after the lease, before the passes (the drain's failure is the run's)
-      const outboxDispatch = await pass("outbox.dispatch", () => drainOutbox({ db: this.db, registry: this.registry, clock: this.clock, ports: this.ports, ...(this.outboxAdapters ? { adapters: this.outboxAdapters } : {}), ...(this.outboxCompletions ? { completions: this.outboxCompletions } : {}), notify: (ev) => this.uow.notifyCommitted(ev) }, nowIso, { runId }), (d) => ({ claimed: d.claimed, sent: d.sent, retried: d.retried, dead: d.dead, rejected: d.rejected, fallback: d.fallback }));
+      const outboxDispatch = await pass("outbox.dispatch", () => drainOutbox({ db: this.db, registry: this.registry, clock: this.clock, ports: this.ports, adapters: this.drainAdapters(), completions: this.drainCompletions(), notify: (ev) => this.uow.notifyCommitted(ev) }, nowIso, { runId }), (d) => ({ claimed: d.claimed, sent: d.sent, retried: d.retried, dead: d.dead, rejected: d.rejected, fallback: d.fallback }));
       const refi = this.rateFeed ? await logged("refi.daily", () => refiDailyRun(this, nowIso, { feed: this.rateFeed!, logger: this.logger }), (msg) => ({ at: nowIso, as_of_date: asOfDate as RefiDailyReport["as_of_date"], ran: false, reason: `failed: ${msg}`, rate_sheet: null, universe: { view_rows: 0, loaded: 0, unchanged: 0, skipped: [], monitored: { rows: 0, skipped: 0, open_offer: 0 } }, programs: [], line: `refi daily: failed (${msg})` } as RefiDailyReport), (r) => ({ ran: r.ran, programs: r.programs.length })) : null;
       // 33.2: the daily review of the partner book after the refinance check (it reads the day's run) — errors logged, never thrown
       const partnerBookReview = await logged("partner_book.review", () => partnerBookReviewRun(this, nowIso, { logger: this.logger, llm: this.analystLlm }), (msg) => ({ at: nowIso, as_of_date: asOfDate as ReviewRunReport["as_of_date"], ran: false, reason: `failed: ${msg}`, monitored_loans: 0, programs: [], line: `partner book review: failed (${msg})` } as ReviewRunReport), (r) => ({ ran: r.ran, monitored_loans: r.monitored_loans }));
@@ -417,9 +435,11 @@ export class Runtime {
           } catch (e) { this.logger?.error("verify run failed", { at: nowIso, error: e }); await recordFailedRun(this.db, { as_of_date: asOfDate, started_at: nowIso, now: this.clock.now(), actor: { kind: "agent", id: "security-records" }, error: e instanceof Error ? e.message : String(e) }).catch(() => undefined); return null; }
         }, (v) => (v ? { run_id: v.run_id, gaps: v.gaps, mismatches: v.mismatches, rows_verified: v.rows_verified } : { failed: true }));
       }
+      // 35.9 rule 7: the day's breach-action reconciliation, once per calendar day, before the breach pass (a day whose reconciliation ran never breaches SM_BREACH_ACTION_RECON_DAILY) — errors logged, never thrown
+      const breachRecon = await logged("breach_action.recon", () => breachReconPass(this, nowIso, { runId }), () => null as Record<string, unknown> | null, (r) => (r ? { ran: r["already"] !== true, missing: r["missing"], failed: r["failed"] } : { failed: true }));
       // the breach pass: the due instances (any loan, or global) claimed FOR UPDATE SKIP LOCKED and restored into a fresh engine; evaluate breaches them and appends timer.breached under each timer's own loan — one transaction
       const breaches: SweepReport["breaches"][number][] = [];
-      const breachCommitted: DomainEvent[] = [];
+      const breachCommitted: DomainEvent[] = []; const breachNested: DomainEvent[] = [];
       const due = await pass("timers.breach", () => this.db.tx(async (q) => {
         const timerRepo = new PgTimerRepository(q);
         // SM_SWEEP_HEARTBEAT_DAILY breaches only inside a sweep (35.1 edge case 7): a run in progress on the clock's due day is the day's sweep and satisfies it minutes later; the clock breaches when its due day passed with no run at all (a demo advance that sweeps once a day at noon is not an outage)
@@ -441,11 +461,18 @@ export class Runtime {
         for (const e of escalations.list()) await this.escalationRepo.save(e, q);
         // 35.9 rule 7: every breach runs its registered action in the breach transaction — `breach.execute` on this transaction's
         // command view, after the escalation the pass opens today; a throw is logged and the pass still commits (outcome `failed` is the executor's own row)
+        const view = this.commandView(q, breachNested);
+        const opened = escalations.list();
+        for (const b of breaches) {
+          const esc = opened.find((e) => e.slaTimerId === b.timer_id);
+          try { await view.execute({ process: "35.9", name: "breach.execute", loanId: b.loan_id ?? "", actor: { kind: "system", id: "sweep" }, input: { timer_id: b.timer_id, timer_code: b.code, loan_id: b.loan_id, escalation_id: esc?.id ?? null, breached_at: nowIso } }); }
+          catch (e) { this.logger?.error("35.9 breach.execute failed", { at: nowIso, timer_id: b.timer_id, code: b.code, error: e instanceof Error ? e.message : String(e) }); }
+        }
         breachCommitted.push(...persisted);
         return claimed;
       }), (d) => ({ due: d.length, breaches: breaches.length }));
       // the listeners (the borrower flows, 35.9's folder) see the breach events and the executors' events once committed
-      if (breachCommitted.length) this.uow.notifyCommitted(breachCommitted);
+      if (breachCommitted.length || breachNested.length) this.uow.notifyCommitted([...breachCommitted, ...breachNested]);
       // 33.1 T10: the breach action of SM_PARTNER_BOOK_INVITATION_REMINDER_14 — one reminder on the same channel while the party has no session, then nothing more; never fails the sweep
       const partnerBookReminders = await logged("partner_book.reminders", async () => (await sendPartnerBookReminders(this, nowIso)).sent, () => 0, (n) => ({ sent: n }));
       // 33.1 T12 / rule 8: the breach action of SM_PARTNER_BOOK_TAPE_EXPECTED_7 — once per breached clock `partner_book.tape.late` beside the ops_analyst escalation the breach pass opened; a second sweep adds nothing
@@ -457,7 +484,7 @@ export class Runtime {
       await this.uow.run({}, (ctx) => ctx.events.append({ type: "sweep.run_completed", aggregate: { kind: "sweep_run", id: runId }, actor: { kind: "system", id: "sweep" }, payload: { run_id: runId, as_of_date: asOfDate, holder, duration_ms: durationMs, passes: passes.map((p) => p.name), due: due.length, breaches: breaches.length, outbox: outboxCounts } }),
         { clock: this.clock, commit: async (q) => { await q.query(`UPDATE sweep_runs SET outcome = 'completed', finished_at = $2, heartbeat_at = $2, passes = $3::jsonb, outbox = $4::jsonb WHERE id = $1`, [runId, this.clock.now(), JSON.stringify(passes), JSON.stringify(outboxCounts)]); } });
       return { at: nowIso, due: due.length, breaches, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })), refi, reviewers, roles, partner_book_review: partnerBookReview, partner_book_readiness: partnerBookReadiness, partner_book_reminders: partnerBookReminders, partner_book_tape_late: partnerBookTapeLate, partner_book_daily_reports: partnerBookDailyReports, controls,
-        run_id: runId, holder, outcome: "completed", skipped_reason: null, passes, outbox_dispatch: outboxDispatch, verify };
+        run_id: runId, holder, outcome: "completed", skipped_reason: null, passes, outbox_dispatch: outboxDispatch, verify, breach_recon: breachRecon };
     } catch (e) {
       await this.db.query(`UPDATE sweep_runs SET outcome = 'failed', finished_at = $2, heartbeat_at = $2, passes = $3::jsonb, skipped_reason = $4 WHERE id = $1`, [runId, this.clock.now(), JSON.stringify(passes), (e instanceof Error ? e.message : String(e)).slice(0, 500)]).catch(() => undefined);
       throw e;

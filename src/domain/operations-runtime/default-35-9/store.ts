@@ -10,7 +10,8 @@ import type { Queryable } from "../../../infra/db/client.ts";
 import { decodeEntityData } from "../../../infra/db/entities.ts";
 
 export type Row = Record<string, unknown>;
-export interface CurrentRow { readonly kind: string; readonly id: string; readonly version: number; readonly loan_id: string | null; readonly data: Row }
+/** A section row as the store holds it (an EntityRecord is one too: `loan_id` is the SQL view's scope column, absent on the command store's records). */
+export interface CurrentRow { readonly kind: string; readonly id: string; readonly version: number; readonly loan_id?: string | null; readonly data: Row }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isUuid = (s: unknown): s is string => typeof s === "string" && UUID.test(s);

@@ -208,7 +208,7 @@ INSERT INTO breach_action_registry (timer_code, owner_process, cited_text, actio
   ('FNMA_E3205_FIRM_ACK_2BD', '13.3', 'sev 2 → firm call; 13.6 scorecard', 'message_firm',
    '{"process": "13.6", "tool": "attorney.message.send", "kind": "ack_demand", "input_derivation": "ackDemandFromCase", "scorecard": true}', false),
   ('FNMA_E3302_SALE_CERT_WINDOW_7_15', '13.2', 'sev 1; postpone instruction auto-issued at −7 if uncertified', 'instruct_firm',
-   '{"process": "13.2", "tool": "attorney.instruction.send", "kind": "POSTPONE_SALE", "input_derivation": "postponeSaleFromCase", "gate_step": "sale_conduct"}', false),
+   '{"process": "13.2", "tool": "attorney.instruction.send", "kind": "POSTPONE_SALE", "input_derivation": "postponeSaleFromCase", "gate_step": "sale_schedule"}', false),
   ('FNMA_E3215_TIMEFRAME_WARNING_70', '13.5', 'firm status demand (13.6)', 'message_firm',
    '{"process": "13.6", "tool": "attorney.message.send", "kind": "status_demand", "input_derivation": "statusDemandFromCase", "set_flag": {"flag_table": "fc_timeframe_tracking", "flag_column": "status", "flag_value": "at_risk_70pct"}}', false),
   ('REGX_1024_41G_INSTRUCT_COUNSEL_1BD', '13.2', 'sev 1 → `attorney` escalation; `officer` informed', 'escalate',

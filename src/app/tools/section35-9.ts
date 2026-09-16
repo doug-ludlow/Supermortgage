@@ -20,6 +20,9 @@ import { compute, decision, defineTools, needsRole, never, type ToolDef, type To
 import { AGENT_35_9, PROCESS_35_9, REFUSALS, RULE_SET_VERSION_35_9, hasMoneyKey } from "../../domain/operations-runtime/default-35-9.ts";
 import { caseMilestoneExpect, caseMilestoneRecord, caseTimeline, s } from "../../domain/operations-runtime/default-35-9/commands.ts";
 import { caseProgress } from "../../domain/operations-runtime/default-35-9/daily.ts";
+import { firmDispatch, firmInbound } from "../../domain/operations-runtime/default-35-9/firm.ts";
+import { breachExecute, breachRecon } from "../../domain/operations-runtime/default-35-9/breach.ts";
+import { docketReact, docketSync } from "../../domain/operations-runtime/default-35-9/docket.ts";
 
 const HUMANS = ["ops_analyst", "officer", "attorney", "compliance", "fnma_portal_operator", "counsel"] as const;
 const LEGAL_ACT = /^(file|filing|instruct_sale|sale_instruction|bid|bid_instruction|foreclose|evict)$/i;
@@ -39,5 +42,22 @@ export const TOOLS_35_9: readonly ToolDef[] = defineTools(PROCESS_35_9, AGENT_35
     decision: (i, output) => { const o = (output ?? {}) as { expectation?: Record<string, unknown> }; return { action: s(i, "op") === "waive" ? "case.milestone.waive" : "case.milestone.expect", subject: { kind: "case", id: s(i, "case_id") }, rationale: s(i, "reason") || `${s(i, "milestone_code")} expected ${s(i, "expected_on")} (${s(i, "basis")}) — expectation ${String(o.expectation?.["id"] ?? "")}` }; } },
   { name: "case.milestone.record", kind: "act", humanRoles: ["attorney", "ops_analyst", "officer"], ruleSetVersion: RULE_SET_VERSION_35_9, guardrails: COMMON, handler: compute(caseMilestoneRecord),
     decision: (i) => ({ action: "case.milestone.record", subject: { kind: "case", id: s(i, "case_id") }, rationale: `${s(i, "milestone_code")} on ${s(i, "occurred_on")} reported by ${s(i, "source")} — recorded through 13.3, never fabricated` }) },
+  // rule 6: the docket sync (PACER through the port; 14.1 applies what it allows) and the reaction (deterministic where the section is, else counsel)
+  { name: "docket.sync", kind: "act", humanRoles: ["attorney", "ops_analyst", "officer"], ruleSetVersion: RULE_SET_VERSION_35_9, guardrails: COMMON, handler: compute(docketSync),
+    decision: (i, output) => { const o = (output ?? {}) as Record<string, unknown>; return { action: "docket.sync", subject: { kind: "case", id: String(o["case_id"] ?? s(i, "case_id")) }, rationale: `PACER since ${String(o["since"] ?? "")}: ${String(o["entries"] ?? 0)} entries, ${String((o["applied"] as unknown[] | undefined)?.length ?? 0)} applied by 14.1, ${String((o["stored"] as unknown[] | undefined)?.length ?? 0)} stored for reaction (synced: ${String(o["synced"])})` }; } },
+  { name: "docket.react", kind: "act", humanRoles: ["attorney", "ops_analyst", "officer"], ruleSetVersion: RULE_SET_VERSION_35_9, guardrails: [...COMMON, needsRole("DOCKET_DECISION_IS_COUNSEL", "35.9 rule 6: an entry below 0.85 confidence or outside the deterministic set is decided by `attorney` on the screen", (i) => s(i, "classification") !== "", ["attorney"], "the classification a person supplies is counsel's decision")],
+    handler: compute(docketReact), decision: () => null },   // the reaction writes its own decision record (subject docket_event, the classifier's confidence)
+  // rule 8: the firm as an outbox counterparty
+  { name: "firm.dispatch", kind: "act", humanRoles: ["attorney", "ops_analyst", "officer"], ruleSetVersion: RULE_SET_VERSION_35_9, guardrails: COMMON, handler: compute(firmDispatch),
+    decision: (i, output) => { const o = (output ?? {}) as Record<string, unknown>; return { action: `firm.dispatch:${s(i, "kind")}`, subject: { kind: "case", id: s(i, "case_id") }, rationale: `${s(i, "kind")} to ${String(o["firm_id"] ?? s(i, "firm_id"))} — outbox row ${String(o["integration_message_id"] ?? "")}${o["duplicate"] ? " (duplicate: the idempotency key exists)" : ""}` }; } },
+  { name: "firm.inbound", kind: "act", humanRoles: ["attorney", "ops_analyst", "officer"], ruleSetVersion: RULE_SET_VERSION_35_9, guardrails: COMMON, handler: compute(firmInbound),
+    decision: (i, output) => { const o = (output ?? {}) as Record<string, unknown>; return { action: `firm.inbound:${s(i, "kind")}`, subject: { kind: "firm", id: s(i, "firm_id") }, rationale: `${s(i, "kind")} from ${s(i, "firm_id")} (${s(i, "source") || "fake"}) → ${o["ingested"] ? `owning event ${String(o["owning_event_id"] ?? "")}` : "duplicate, nothing"}` }; } },
+  // rule 7: the executor and the reconciliation (the decision record is written by the executor itself — subject breach)
+  { name: "breach.execute", kind: "act", humanRoles: ["officer", "compliance"], ruleSetVersion: RULE_SET_VERSION_35_9, guardrails: [NO_MONEY_FIELD, NO_CLOCK_EDIT, SECTION_STATUS_READ_ONLY,
+      needsRole("REGISTRY_CHANGE_IS_COMPLIANCE", "35.9 rule 7: a registry row is added or re-versioned only by `compliance` with `officer` confirmation (dual control through 35.7)", (i) => s(i, "op") === "register", ["compliance"], "the executable set is explicit and reviewable")],
+    dualControl: { role: "officer", threshold: (i) => s(i, "op") === "register" },
+    handler: compute(breachExecute), decision: (i, output) => (s(i, "op") === "register" ? { action: "breach.registry.register", subject: { kind: "breach_action_registry", id: s(i, "timer_code") }, rationale: `${s(i, "action_kind")} registered for ${s(i, "timer_code")} v${String((output as Record<string, unknown> | undefined)?.["version"] ?? "")}` } : null) },
+  { name: "breach.recon", kind: "act", humanRoles: ["compliance", "officer", "ops_analyst"], ruleSetVersion: RULE_SET_VERSION_35_9, guardrails: COMMON, handler: compute(breachRecon),
+    decision: (i, output) => { const o = (output ?? {}) as Record<string, unknown>; return { action: "breach.recon", subject: { kind: "run", id: String(o["as_of_date"] ?? s(i, "as_of_date")) }, rationale: o["already"] ? "already reconciled today" : `breaches ${String(o["breaches"])}: executed ${String(o["executed"])}, deferred ${String(o["deferred"])}, escalated_only ${String(o["escalated_only"])}, refused ${String(o["refused"])}, failed ${String(o["failed"])}, missing ${String(o["missing"])}` }; } },
   { name: "writeDecision", kind: "act", humanRoles: [...HUMANS], ruleSetVersion: RULE_SET_VERSION_35_9, guardrails: [NO_MONEY_FIELD], handler: decision() },
 ]);

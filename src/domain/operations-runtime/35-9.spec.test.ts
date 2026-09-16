@@ -115,6 +115,11 @@ async function t1Fixture(): Promise<typeof T1> {
   return T1;
 }
 
+// ───────── the breach pass (rule 7): a referred case whose clock breaches, then the sweep ─────────
+const sweepAt = async (iso: string) => { clock.set(iso); const r = await runtime.sweep(iso); await settle(); return r; };
+const actionOfTimer = (timerId: string) => rows<{ id: string; outcome: string; action_kind: string; registry_version: number | null; command_event_id: string | null; escalation_id: string | null; refusal_code: string | null; work_item_id: string | null }>(`SELECT id::text AS id, outcome, action_kind, registry_version, command_event_id::text AS command_event_id, escalation_id::text AS escalation_id, refusal_code, work_item_id::text AS work_item_id FROM breach_actions WHERE timer_id = $1::uuid`, [timerId]);
+const escalationsFor = (loanId: string) => rows<{ id: string; kind: string; owner_role: string; status: string; sla_timer_id: string | null; payload: Record<string, unknown> }>(`SELECT id::text AS id, kind, owner_role, status, sla_timer_id::text AS sla_timer_id, payload FROM escalations WHERE loan_id = $1::uuid ORDER BY opened_at`, [loanId]);
+
 test("35.9-T1: Given a boarded loan whose 13.3 `foreclosure.referral.sent` was committed on 2027-03-02, when the seam's post-commit hook and then `case.progress` run, then exactly one `case_timelines` row exists for that event (`event_id` unique; the second fold writes nothing) with `case_kind = foreclosure`, `status_before = prereferral`, `status_after = referred`, and `case.timeline{loan_id}` returns the loan's rows in `event_sequence` order with the case's current status.", { skip }, async () => {
   const { f, caseId, eventId } = await t1Fixture();
   // the seam's post-commit hook folded 13.3's commit: exactly one row for the event, the case's kind and status before/after
@@ -142,9 +147,110 @@ test("35.9-T1: Given a boarded loan whose 13.3 `foreclosure.referral.sent` was c
 test("35.9-T2: Given loan L-A (Florida judicial, allowable 720, UPB 18745000¢, PTR 5.125%, LPI due 2025-03-01, one credited Chapter 13 delay of 84 days) and the firm's forecast sale 2027-11-02, when the daily unit runs on 2027-09-15, then 13.5's `comp_fee.exposure.updated` carries `actual_days = 928`, `credited_delay_days = 84`, `excess_days = 124`, `exposure_cents = 326368` and the forecast projection `452705`, and the same function returns `346164` for F-2-03 Example 1 (100,000 × 4.75% × 266 days).", { todo: true });
 test("35.9-T3: Given loan L-B (UPB 16392044¢, note rate 5.750%, paid to 2026-10-01, 30% BPMI, `servicer_direct`) with a sale held 2027-07-06 and the advances listed in worked example B, when `claims.sweep` opens the MI candidate on 2027-07-07 and `claims.package` runs, then 15.3's `mi_claim_calculations` row has `interest_cents = 719817` (9 × 78545 = 706905, plus the stub 5 × 25.8231 = 129.1155 → 12912), advances 740660, `claim_amount_cents = 17852521`, `benefit_cents = 5355756`, `claim_candidates.legal_due_on = 2027-08-05`, `package_due_on = 2027-07-14`, and `case.claim.package_built` names a `documents` row with a sha256.", { todo: true });
 test("35.9-T4: Given the same loan's 571 candidate, when `claims.package` runs 15.2's validation and assembly, then `expense_claims.gross_cents = 832013`, `credits_cents = 75067` (258 ÷ 365 × 106200), `net_cents = 756946`, every `expense_claim_lines` row satisfies `amount_cents = unit_price_cents × quantity`, the MI premium line has `quantity = 9` and `unit_price_cents = 9817`, and `legal_due_on = 2027-08-05`.", { todo: true });
-test("35.9-T5: Given `FNMA_E3205_FIRM_ACK_2BD` breached on a referred case with no acknowledgment, when the sweep's breach pass runs, then in the same transaction an `escalations` row is opened as today, `breach_actions{outcome: executed, action_kind: message_firm, registry_version}` exists with `command_event_id` = a 13.6 `attorney.message.send{kind: ack_demand}` event, a `firm_dispatches{kind: ack_demand}` row points at an `integration_messages` row on the `law-firm` adapter, and `breach_action.executed` is logged with the decision record; a second sweep writes no second action (`timer_id` unique).", { todo: true });
-test("35.9-T6: Given `FNMA_E3302_SALE_CERT_WINDOW_7_15` breached at −7 days on an uncertified sale, when the breach pass runs, then 13.2's `attorney.instruction.send{kind: postpone_sale}` ran (`attorney.instruction.sent` on the timeline, `attorney_instructions` row) and `breach_actions.outcome = executed`; given the same breach on a case under `BK_362_STAY_GATE`, then the instruction is refused, `breach_actions{outcome: refused, refusal_code: BK_362_STAY_GATE}` exists, an `attorney` escalation is open and later sweeps do not retry.", { todo: true });
-test("35.9-T7: Given a code with no `breach_action_registry` row (any 3.x clock) breached, when the breach pass runs, then the escalation opens exactly as src/runtime/app.ts:270-291 does today and `breach_actions{outcome: escalated_only, escalation_id}` records it; given a `breach.recon` on a day with one `timer.breached` that has no `breach_actions` row (inserted directly in the test), then `breach_action.recon.run_completed{missing: 1}` is logged and one `compliance` escalation is open.", { todo: true });
+test("35.9-T5: Given `FNMA_E3205_FIRM_ACK_2BD` breached on a referred case with no acknowledgment, when the sweep's breach pass runs, then in the same transaction an `escalations` row is opened as today, `breach_actions{outcome: executed, action_kind: message_firm, registry_version}` exists with `command_event_id` = a 13.6 `attorney.message.send{kind: ack_demand}` event, a `firm_dispatches{kind: ack_demand}` row points at an `integration_messages` row on the `law-firm` adapter, and `breach_action.executed` is logged with the decision record; a second sweep writes no second action (`timer_id` unique).", { skip }, async () => {
+  // a referred case (13.3's referral on Tue 2027-03-02) the firm never acknowledges: FNMA_E3205_FIRM_ACK_2BD (sent_at + 2 servicer business days) breaches on the 5th
+  clock.set("2027-03-02T15:00:00.000Z");
+  const f = await loanFixture("FL"); const firmId = await seedFirm("FL"); const caseId = await seedForeclosureCase(f, "FL", "judicial");
+  await sendReferral(f, caseId, firmId);
+  await settle();
+  const armed = (await timers("FNMA_E3205_FIRM_ACK_2BD", f.loanId)).filter((t) => t.status === "armed");
+  assert.equal(armed.length, 1); assert.equal(armed[0]!.due_date, "2027-03-04");
+  const timerId = armed[0]!.id;
+  const report = await sweepAt("2027-03-05T15:00:00.000Z");
+  assert.ok(report.breaches.some((b) => b.timer_id === timerId), "the breach pass evaluated the clock");
+  // in the same transaction: the escalation the pass opens today …
+  const esc = (await escalationsFor(f.loanId)).filter((e) => e.sla_timer_id === timerId);
+  assert.equal(esc.length, 1); assert.equal(esc[0]!.kind, "sev2"); assert.equal(esc[0]!.payload["timer_code"], "FNMA_E3205_FIRM_ACK_2BD");
+  // … the breach_actions row: executed, message_firm, the registry version, the 13.6 command event
+  const a = await actionOfTimer(timerId);
+  assert.equal(a.length, 1); assert.equal(a[0]!.outcome, "executed"); assert.equal(a[0]!.action_kind, "message_firm"); assert.equal(a[0]!.registry_version, 1); assert.equal(a[0]!.escalation_id, esc[0]!.id);
+  const cmd = await rows<{ type: string; payload: Record<string, unknown>; actor_id: string }>(`SELECT type, payload, actor_id FROM loan_events WHERE id = $1::uuid`, [a[0]!.command_event_id!]);
+  assert.equal(cmd[0]!.type, "attorney.message.sent"); assert.equal(cmd[0]!.payload["kind"], "ack_demand"); assert.equal(cmd[0]!.payload["firm_id"], firmId); assert.equal(cmd[0]!.actor_id, "foreclosure-ops");
+  assert.equal(await count(db, `FROM loan_events WHERE type = 'firm.scorecard.noted' AND loan_id = $1::uuid`, [f.loanId]), 1, "13.6's scorecard note");
+  // the dispatch row points at the outbox row on the law-firm adapter
+  const d = await rows<{ kind: string; firm_id: string; integration_message_id: string; adapter: string; idempotency_key: string; status: string }>(`SELECT d.kind, d.firm_id, d.integration_message_id::text AS integration_message_id, m.adapter, m.idempotency_key, m.status FROM firm_dispatches d JOIN integration_messages m ON m.id = d.integration_message_id WHERE d.loan_id = $1::uuid AND d.kind = 'ack_demand'`, [f.loanId]);
+  assert.equal(d.length, 1); assert.equal(d[0]!.adapter, "law-firm"); assert.equal(d[0]!.firm_id, firmId); assert.match(d[0]!.idempotency_key, /^firm:.*:ack_demand:/);
+  // breach_action.executed with the decision record
+  const ex = (await events(EV.breachActionExecuted, f.loanId)).filter((e) => e.payload["timer_id"] === timerId);
+  assert.equal(ex.length, 1); assert.equal(ex[0]!.payload["outcome"], "executed"); assert.equal(ex[0]!.payload["action_kind"], "message_firm");
+  const dec = await rows<{ action: string; rule_code: string; rule_set_version: string; subject_id: string }>(`SELECT action, rule_code, rule_set_version, subject_id FROM agent_decisions WHERE loan_id = $1::uuid AND action = 'breach.execute:message_firm' AND subject_id = $2`, [f.loanId, timerId]);
+  assert.equal(dec.length, 1); assert.equal(dec[0]!.rule_code, "FNMA_E3205_FIRM_ACK_2BD"); assert.equal(dec[0]!.rule_set_version, "default-ops.v1"); assert.equal(dec[0]!.subject_id, timerId);
+  // a second sweep writes no second action (timer_id unique)
+  await sweepAt("2027-03-05T15:01:00.000Z");
+  assert.equal((await actionOfTimer(timerId)).length, 1);
+  assert.equal(await count(db, `FROM firm_dispatches WHERE loan_id = $1::uuid AND kind = 'ack_demand'`, [f.loanId]), 1);
+});
+
+test("35.9-T6: Given `FNMA_E3302_SALE_CERT_WINDOW_7_15` breached at −7 days on an uncertified sale, when the breach pass runs, then 13.2's `attorney.instruction.send{kind: postpone_sale}` ran (`attorney.instruction.sent` on the timeline, `attorney_instructions` row) and `breach_actions.outcome = executed`; given the same breach on a case under `BK_362_STAY_GATE`, then the instruction is refused, `breach_actions{outcome: refused, refusal_code: BK_362_STAY_GATE}` exists, an `attorney` escalation is open and later sweeps do not retry.", { skip }, async () => {
+  // an uncertified sale scheduled by the firm for Mon 2027-05-10: FNMA_E3302_SALE_CERT_WINDOW_7_15 closes at −7 (2027-05-03)
+  clock.set("2027-03-02T15:00:00.000Z");
+  const f = await loanFixture("FL"); const firmId = await seedFirm("FL"); const caseId = await seedForeclosureCase(f, "FL", "judicial");
+  await sendReferral(f, caseId, firmId);
+  clock.set("2027-04-01T15:00:00.000Z");
+  await exec("13.2", "attorney.instruction.status", f.loanId, FC_OPS, { op: "firm_message", kind: "SALE_SCHEDULED", loan_id: f.loanId, case_id: caseId, firm_id: firmId, sale_at: "2027-05-10", method: "judicial" });
+  await settle();
+  const armed = (await timers("FNMA_E3302_SALE_CERT_WINDOW_7_15", f.loanId)).filter((t) => t.status === "armed");
+  assert.equal(armed.length, 1); assert.equal(armed[0]!.due_date, "2027-05-03");
+  const timerId = armed[0]!.id;
+  await sweepAt("2027-05-04T15:00:00.000Z");
+  const a = await actionOfTimer(timerId);
+  assert.equal(a.length, 1); assert.equal(a[0]!.outcome, "executed", JSON.stringify(a[0])); assert.equal(a[0]!.action_kind, "instruct_firm");
+  const sent = (await events("attorney.instruction.sent", f.loanId)).filter((e) => e.payload["kind"] === "POSTPONE_SALE");
+  assert.equal(sent.length, 1, "13.2's attorney.instruction.send{kind: postpone_sale} ran"); assert.equal(a[0]!.command_event_id, sent[0]!.id);
+  assert.equal(await count(db, `FROM case_timelines WHERE loan_id = $1::uuid AND event_id = $2::uuid`, [f.loanId, sent[0]!.id]), 1, "attorney.instruction.sent on the timeline");
+  const instr = await rows<{ kind: string; status: string }>(`SELECT data->>'kind' AS kind, data->>'status' AS status FROM entity_current WHERE kind = 'attorney_instructions' AND data->>'loan_id' = $1 AND data->>'kind' = 'POSTPONE_SALE'`, [f.loanId]);
+  assert.equal(instr.length, 1, "the attorney_instructions row"); assert.equal(instr[0]!.status, "sent");
+  assert.equal((await events("foreclosure.sale.postpone_instructed", f.loanId)).length, 1);
+  // the same breach on a case under the automatic stay: 13.1's gate refuses the instruction, nothing is sent, and later sweeps do not retry
+  const g = await loanFixture("FL"); const caseB = await seedForeclosureCase(g, "FL", "judicial");
+  clock.set("2027-03-02T15:00:00.000Z"); await sendReferral(g, caseB, firmId);
+  clock.set("2027-04-01T15:00:00.000Z");
+  await runtime.entities.save([rec("foreclosure_holds", `hold-${g.loanId}-bk_stay`, { id: `hold-${g.loanId}-bk_stay`, loan_id: g.loanId, case_id: caseB, kind: "bk_stay", status: "active", scope: ["refer", "first_notice", "judgment_motion", "sale_schedule", "sale_conduct", "eviction"], rule_citation: "11 U.S.C. §362(a)", opened_at: clock.now() }, "agent:bankruptcy-ops")], g.loanId);
+  await exec("13.2", "attorney.instruction.status", g.loanId, FC_OPS, { op: "firm_message", kind: "SALE_SCHEDULED", loan_id: g.loanId, case_id: caseB, firm_id: firmId, sale_at: "2027-05-10", method: "judicial" });
+  await settle();
+  const armedB = (await timers("FNMA_E3302_SALE_CERT_WINDOW_7_15", g.loanId)).filter((t) => t.status === "armed");
+  assert.equal(armedB.length, 1);
+  await sweepAt("2027-05-04T15:00:00.000Z");
+  const b = await actionOfTimer(armedB[0]!.id);
+  assert.equal(b.length, 1); assert.equal(b[0]!.outcome, "refused"); assert.equal(b[0]!.refusal_code, "BK_362_STAY_GATE"); assert.equal(b[0]!.command_event_id, null);
+  assert.equal((await events("attorney.instruction.sent", g.loanId)).length, 0, "the instruction was not sent");
+  assert.ok((await events("foreclosure.gate.refused", g.loanId)).some((e) => e.payload["code"] === "BK_362_STAY_GATE"), "13.x's refusal on the log");
+  const att = (await escalationsFor(g.loanId)).filter((e) => e.kind === "attorney" && e.status === "open" && e.payload["refusal_code"] === "BK_362_STAY_GATE");
+  assert.equal(att.length, 1, "an attorney escalation is open");
+  await sweepAt("2027-05-05T15:00:00.000Z"); await sweepAt("2027-05-06T15:00:00.000Z");
+  assert.equal((await actionOfTimer(armedB[0]!.id)).length, 1, "later sweeps do not retry (one action per breach instance)");
+  assert.equal((await events("attorney.instruction.sent", g.loanId)).length, 0);
+});
+
+test("35.9-T7: Given a code with no `breach_action_registry` row (any 3.x clock) breached, when the breach pass runs, then the escalation opens exactly as src/runtime/app.ts:270-291 does today and `breach_actions{outcome: escalated_only, escalation_id}` records it; given a `breach.recon` on a day with one `timer.breached` that has no `breach_actions` row (inserted directly in the test), then `breach_action.recon.run_completed{missing: 1}` is logged and one `compliance` escalation is open.", { skip }, async () => {
+  // a 3.x clock (REGX_1024_17G_INITIAL_STMT_45) with no breach_action_registry row, armed on a loan and past due
+  assert.equal(await count(db, `FROM breach_action_registry WHERE timer_code = 'REGX_1024_17G_INITIAL_STMT_45'`), 0);
+  clock.set("2027-06-01T15:00:00.000Z");
+  const f = await loanFixture("FL");
+  const ev = await runtime.uow.run({ loanId: f.loanId }, (ctx) => ctx.events.append({ type: "escrow.initial_statement.required", loanId: f.loanId, actor: { kind: "agent", id: "escrow" }, payload: { loan_id: f.loanId, reason: "settlement", settlement_date: "2027-04-01" } }), { clock });
+  const armed = (await timers("REGX_1024_17G_INITIAL_STMT_45", f.loanId)).filter((t) => t.status === "armed");
+  assert.equal(armed.length, 1, `the 3.x clock armed (${ev.events.map((e) => e.type).join(",")})`); assert.equal(armed[0]!.due_date, "2027-05-16");
+  const timerId = armed[0]!.id;
+  const before = await count(db, `FROM escalations`);
+  await sweepAt("2027-06-01T15:05:00.000Z");
+  // the escalation opens exactly as the pass does today (sev<n>, the row's escalate-to role, the timer payload) …
+  const esc = (await escalationsFor(f.loanId)).filter((e) => e.sla_timer_id === timerId);
+  assert.equal(esc.length, 1); assert.equal(esc[0]!.kind, "sev2"); assert.equal(esc[0]!.owner_role, "escrow"); assert.equal(esc[0]!.payload["timer_code"], "REGX_1024_17G_INITIAL_STMT_45"); assert.equal(esc[0]!.payload["timer_id"], timerId);
+  assert.ok((await count(db, `FROM escalations`)) > before);
+  // … and breach_actions records it as escalated_only with that escalation
+  const a = await actionOfTimer(timerId);
+  assert.equal(a.length, 1); assert.equal(a[0]!.outcome, "escalated_only"); assert.equal(a[0]!.escalation_id, esc[0]!.id); assert.equal(a[0]!.command_event_id, null); assert.equal(a[0]!.registry_version, null);
+  // the reconciliation: a timer.breached of the day inserted directly with no breach_actions row → missing: 1 and one compliance escalation
+  const t2 = await rows<{ id: string }>(`INSERT INTO timers (code, subject_kind, subject_id, loan_id, armed_at, armed_by_event_id, anchor_date, due_at, status, breached_at) VALUES ('REGX_1024_17G_INITIAL_STMT_45', 'loan', $1::text, $1::uuid, $2::timestamptz, $3::uuid, '2027-04-01', $2::timestamptz, 'breached', $2::timestamptz) RETURNING id::text AS id`, [f.loanId, clock.now(), ev.events[0]!.id]);
+  await db.query(`INSERT INTO loan_events (id, type, occurred_at, loan_id, actor_kind, actor_id, payload) VALUES (gen_random_uuid(), 'timer.breached', $1::timestamptz, $2::uuid, 'system', 'test-inserted', $3::jsonb)`, [clock.now(), f.loanId, JSON.stringify({ code: "REGX_1024_17G_INITIAL_STMT_45", timer_id: t2[0]!.id, severity: 2, escalate_to: ["escrow"], breach: "inserted directly" })]);
+  const complianceBefore = await count(db, `FROM escalations WHERE owner_role = 'compliance' AND status = 'open' AND payload->>'as_of_date' = '2027-06-01'`);
+  const r = (await exec("35.9", "breach.recon", "", OPS, { as_of_date: "2027-06-01", force: true })).output as { missing: number; breaches: number; escalated_only: number; escalation_id: string | null };
+  assert.equal(r.missing, 1); assert.ok(r.breaches >= 2); assert.ok(r.escalated_only >= 1);
+  const receipts = await rows<{ payload: Record<string, unknown> }>(`SELECT payload FROM loan_events WHERE type = $1 AND payload->>'as_of_date' = '2027-06-01' ORDER BY sequence DESC LIMIT 1`, [EV.breachReconCompleted]);
+  assert.equal(receipts[0]!.payload["missing"], 1);
+  assert.equal(await count(db, `FROM escalations WHERE owner_role = 'compliance' AND status = 'open' AND payload->>'as_of_date' = '2027-06-01'`), complianceBefore + 1, "one compliance escalation");
+});
+
 test("35.9-T8: Given 13.1's gates open, a completed 13.4 review with outcome `refer`, a retained FAKE firm for the state and no hold, when the daily unit runs, then `case.referral.proposed` is logged, a 35.8 proposal on `foreclosure_case.refer` for `officer` exists and `SM_CASE_REFERRAL_DECISION_2BD` is armed; when an `officer` approves, then `case.referral.decided{decision: approve}` and 13.3's `foreclosure.referral.sent` are in one transaction, `attorney_referrals` has the package manifest, `firm_dispatches{kind: referral_package}` points at the outbox row, the clock is satisfied and `FNMA_E3205_FIRM_ACK_2BD` is armed; when instead a 12.1 application is received before the decision, then approval is refused and `case.referral.decided{decision: cancelled, cause: gate_closed}` is logged.", { todo: true });
 test("35.9-T9: Given a referral dispatched on Mon 2027-03-01 to the FAKE firm with `first_legal` default 45 days, when the outbox drains and the sweep advances through Tue 2027-03-02, then `firm.inbound{kind: ack}` produced 13.3's `foreclosure.referral.acknowledged`, `firm_dispatches.acknowledged_at` is set with `ack_source = fake`, expectation `referral_ack` is `satisfied`, and expectation `first_legal` exists with `expected_on = 2027-04-15`, `due_on = 2027-04-18`, `basis = firm_forecast`.", { todo: true });
 test("35.9-T10: Given expectation `first_legal` with `due_on = 2027-04-18` and no milestone recorded, when the daily unit runs on 2027-04-19, then its status is `due`, `case.milestone.due` is logged, one 35.8 `work_items` row exists with `source_kind = case_milestone`, `screen_code = foreclosure_case`, `required_role = attorney`, and `SM_CASE_MILESTONE_OVERDUE_5BD` is armed with `due_at` = 2027-04-18 + 5 servicer business days; when 13.3's `foreclosure.milestone.recorded{code: first_legal, source: dra}` is folded, then the expectation is `satisfied`, the item closes, the clock is satisfied and the next expectation is written.", { skip }, async () => {
@@ -196,7 +302,53 @@ test("35.9-T11: Given an open Chapter 13 case and `FakePacer.dockets` holding tw
 test("35.9-T12: Given a docket entry 14.1's classifier scores at 0.62, when `docket.react` runs, then no 14.1 write occurs, the reaction is `needs_human` and the entry's `applied_at` stays null until the `attorney` decides on the screen; given a `trustee_payment_received` entry naming an amount, then the reaction is `needs_human` regardless of confidence and no ledger line exists (the application is 35.8-T14's officer act).", { todo: true });
 test("35.9-T13: Given the fixture book with three open foreclosure cases, one bankruptcy case, one claim candidate and two open early-intervention windows, when the sweep runs once after 05:30 ET, then 35.3's `cycle_runs` show `bk_docket_sync_daily`, `default_case_daily`, `claims_sweep_daily` and `dra_import_daily` for the day with receipts, one `default_case_daily_runs` row exists with `loans_scanned = 7`, `outcome = completed` and a stored report document, `default_case.daily.run_completed` and `breach_action.recon.run_completed` are logged once, and `SM_DEFAULT_CASE_DAILY` and `SM_BREACH_ACTION_RECON_DAILY` are re-armed for the next day; a second sweep the same day writes no second run (`as_of_date` unique).", { todo: true });
 test("35.9-T14: Given the demo clock advanced 30 days over the fixture, then one `default_case_daily_runs` row per crossed day exists in date order, every expectation whose `due_on` fell in the window was marked `due` on that day (its `case.milestone.due` carries that `as_of_date`), the FAKE firm's milestone reports were folded on their forecast dates, and the same rows are produced by 30 hosted sweeps on consecutive days (the contract test compares the two runs' `case_timelines` and `case_milestone_expectations` by `(case_id, milestone_code, status, expected_on, due_on)`).", { todo: true });
-test("35.9-T15: Given any command of this process, then the ledger and every money column of the sections' rows before and after are identical (contract test over `ledger_lines`, `advances`, `expense_claims`, `mi_claims`, `comp_fee_bills`), an input carrying `amount_cents`, `benefit_cents` or `exposure_cents` is refused `NO_MONEY_FIELD`, an attempt to register a `breach_action_registry` row whose `action_kind` the `cited_text` does not name is refused `ACTION_MATCHES_CITED_TEXT`, and a `compliance` registration without `officer` confirmation is refused.", { todo: true });
+test("35.9-T15: Given any command of this process, then the ledger and every money column of the sections' rows before and after are identical (contract test over `ledger_lines`, `advances`, `expense_claims`, `mi_claims`, `comp_fee_bills`), an input carrying `amount_cents`, `benefit_cents` or `exposure_cents` is refused `NO_MONEY_FIELD`, an attempt to register a `breach_action_registry` row whose `action_kind` the `cited_text` does not name is refused `ACTION_MATCHES_CITED_TEXT`, and a `compliance` registration without `officer` confirmation is refused.", { skip }, async () => {
+  // the contract: the ledger and every money column of the sections' rows are identical before and after each 35.9 command
+  clock.set("2027-07-01T15:00:00.000Z");
+  const f = await loanFixture("TX"); const firmId = await seedFirm("TX"); const caseId = await seedForeclosureCase(f, "TX", "non_judicial");
+  await runtime.entities.save([
+    rec("advances", `adv-${f.loanId}-tax`, { id: `adv-${f.loanId}-tax`, loan_id: f.loanId, kind: "taxes", amount_cents: 291_460n, paid_at: "2027-01-15", invoice_document_id: "inv-tax", allowable_code: "TAX", borrower_recoverable: true, status: "outstanding" }, "agent:cashiering"),
+    rec("comp_fee_bills", `bill-${f.loanId}`, { bill_id: `bill-${f.loanId}`, loan_id: f.loanId, period: "2027-06", amount_cents: 12_345n, upb_cents: 16_392_044n, days_billed: 10 }, "agent:foreclosure-ops"),
+    rec("mi_claims", `mi-${f.loanId}`, { id: `mi-${f.loanId}`, loan_id: f.loanId, status: "opened", expected_benefit_cents: 5_355_756n, filer: "servicer_direct" }, "agent:claims-reo"),
+    rec("expense_claims", `claim-${f.loanId}`, { id: `claim-${f.loanId}`, loan_id: f.loanId, status: "draft", gross: 832_013n, net: 756_946n, credits: [] }, "agent:claims-reo"),
+  ], f.loanId);
+  await sendReferral(f, caseId, firmId); await settle();
+  const money = async () => ({
+    ledger: (await rows<{ c: string; s: string }>(`SELECT count(*)::text AS c, coalesce(sum(amount_cents), 0)::text AS s FROM ledger_lines`))[0],
+    kinds: await rows<{ kind: string; versions: string; fingerprint: string }>(`SELECT kind, count(*)::text AS versions, md5(string_agg(data::text, '|' ORDER BY id, version)) AS fingerprint FROM entity_records WHERE kind IN ('advances', 'expense_claims', 'mi_claims', 'comp_fee_bills') AND loan_id = $1 GROUP BY kind ORDER BY kind`, [f.loanId]),
+  });
+  const commands: { name: string; input: Record<string, unknown>; actor?: Actor }[] = [
+    { name: "case.timeline", input: { loan_id: f.loanId } },
+    { name: "case.progress", input: { loan_id: f.loanId, as_of_date: "2027-07-01" } },
+    { name: "case.milestone.expect", input: { loan_id: f.loanId, case_id: caseId, milestone_code: "first_legal", expected_on: "2027-08-15", basis: "person", basis_ref: "the contract test" }, actor: FC_OPS },
+    { name: "firm.dispatch", input: { loan_id: f.loanId, case_id: caseId, kind: "message", payload: { subject: "contract test" } }, actor: FC_OPS },
+    { name: "breach.recon", input: { as_of_date: "2027-07-01" } },
+  ];
+  for (const c of commands) {
+    const before = await money();
+    await exec("35.9", c.name, c.name === "breach.recon" ? "" : f.loanId, c.actor ?? OPS, c.input);
+    await settle();
+    assert.deepEqual(await money(), before, `${c.name} moved no money column and no ledger line`);
+  }
+  // NO_MONEY_FIELD: an input carrying amount_cents, benefit_cents or exposure_cents is refused
+  for (const key of ["amount_cents", "benefit_cents", "exposure_cents"]) {
+    await assert.rejects(exec("35.9", "case.milestone.expect", f.loanId, FC_OPS, { loan_id: f.loanId, case_id: caseId, milestone_code: "judgment", expected_on: "2027-09-01", basis: "person", [key]: "100" }), (e: Error) => /NO_MONEY_FIELD/.test(e.message));
+    await assert.rejects(exec("35.9", "case.progress", f.loanId, OPS, { loan_id: f.loanId, as_of_date: "2027-07-01", changes: { [key]: 1n } }), (e: Error) => /NO_MONEY_FIELD/.test(e.message));
+  }
+  // ACTION_MATCHES_CITED_TEXT: a registration whose action_kind the cited_text does not name is refused (compliance with an officer's confirmation, otherwise well-formed)
+  const COMPLIANCE: Actor = { kind: "human", id: randomUUID(), role: "compliance" };
+  const approval = { approvals: [{ id: OFFICER.id, role: "officer" }] };
+  await assert.rejects(exec("35.9", "breach.execute", "", COMPLIANCE, { op: "register", timer_code: "SM_BK_DOCKET_SYNC_1BD", action_kind: "instruct_firm", action_spec: { process: "13.2", tool: "attorney.instruction.send" }, ...approval }), (e: Error) => /ACTION_MATCHES_CITED_TEXT/.test(e.message));
+  await assert.rejects(exec("35.9", "breach.execute", "", COMPLIANCE, { op: "register", timer_code: "SM_BK_DOCKET_SYNC_1BD", action_kind: "cancel_clock", action_spec: {}, ...approval }), (e: Error) => /NO_CLOCK_EDIT/.test(e.message));
+  // a compliance registration without officer confirmation is refused; with it, the row is re-versioned (the cited text names the sync)
+  await assert.rejects(exec("35.9", "breach.execute", "", COMPLIANCE, { op: "register", timer_code: "SM_BK_DOCKET_SYNC_1BD", action_kind: "run_tool", action_spec: { process: "35.9", tool: "docket.sync", input_derivation: "docketSyncFromCase" } }), (e: Error) => /REGISTRATION_NEEDS_OFFICER_CONFIRMATION/.test(e.message));
+  await assert.rejects(exec("35.9", "breach.execute", "", OPS, { op: "register", timer_code: "SM_BK_DOCKET_SYNC_1BD", action_kind: "run_tool", action_spec: {}, ...approval }), (e: Error) => /REGISTRY_CHANGE_IS_COMPLIANCE|ROLE/.test(e.message));
+  const ok = (await exec("35.9", "breach.execute", "", COMPLIANCE, { op: "register", timer_code: "SM_BK_DOCKET_SYNC_1BD", action_kind: "run_tool", action_spec: { process: "35.9", tool: "docket.sync", input_derivation: "docketSyncFromCase" }, ...approval })).output as { version: number };
+  assert.equal(ok.version, 2);
+  assert.equal((await rows<{ version: number; cited_text: string }>(`SELECT version, cited_text FROM breach_action_registry WHERE timer_code = 'SM_BK_DOCKET_SYNC_1BD'`))[0]!.version, 2);
+  assert.equal(await count(db, `FROM breach_action_registry`), 9, "re-versioned, never a second row");
+});
+
 const LA = { f: null as Fixture | null, caseId: "", firmId: "" };
 test("35.9-T16: Given the timeline of loan L-A at any point, then no row of this process changed `foreclosure_cases.status` (the only writers of that column are 13.x tools — asserted by the `loan_events` actor and `agent_decisions.agent` on every transition), and a 13.x status the expectation map has no edge for (a test-injected `closed_cancelled` from `prereferral`) logs `case.status.unexpected` and opens an `ops_analyst` work item without altering the section's row.", { skip }, async () => {
   // loan L-A: a Florida judicial case referred by 13.3 (its own tool, its own status write), read by this process's fold

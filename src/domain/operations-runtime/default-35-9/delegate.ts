@@ -16,7 +16,7 @@ let agentsFile: ReturnType<typeof loadAgentsFile> | undefined;
 let fallbackRegistry: AgentRegistry | undefined;
 const escalatesTo = (process: string): readonly string[] => { agentsFile ??= loadAgentsFile(); return agentsFile.processes.find((p: { process: string }) => p.process === process)?.escalates_to ?? []; };
 
-export interface Delegated { readonly output: unknown; readonly event_id: string; readonly decision_id: string | null }
+export interface Delegated { readonly output: unknown; /** The owning tool's first domain event (never the bus's own `command.*` literal); the command's first event when the tool emitted none. */ readonly event_id: string; readonly decision_id: string | null; readonly events: readonly { id: string; type: string }[] }
 /** Execute `<process> <name>` in this command's unit of work as `actor` (default: the tool's own agent). */
 export async function delegate(rt: ToolRuntime, ctx: CommandContext, process: string, name: string, input: ToolInput, actor?: Actor): Promise<Delegated> {
   const { ALL_TOOLS } = await import("../../../app/tools/index.ts");
@@ -27,8 +27,11 @@ export async function delegate(rt: ToolRuntime, ctx: CommandContext, process: st
   agents.registerTool(def.agent, def.name);
   const cmd = toolCommand(def, rt, escalatesTo(process));
   const as: Actor = actor ?? { kind: "agent", id: def.agent };
+  const mark = ctx.events.all().length;
   const r = await new CommandBus(agents).execute(cmd, as, input, ctx, ctx.run ? { run: ctx.run } : {});
-  return { output: r.output, event_id: r.event.id, decision_id: r.decisionId ?? null };
+  const appended = ctx.events.all().slice(mark).map((e) => ({ id: e.id, type: e.type }));
+  const domain = appended.find((e) => !e.type.startsWith("command.") && !e.type.startsWith("timer.") && !e.type.startsWith("escalation."));
+  return { output: r.output, event_id: domain?.id ?? r.event.id, decision_id: r.decisionId ?? null, events: appended };
 }
 export const GateClosed = _GateClosed;
 export const isGateClosed = (e: unknown): e is _GateClosed => e instanceof Error && e.name === "GateClosed";

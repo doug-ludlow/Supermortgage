@@ -516,8 +516,9 @@ test("35.11-T18: Given the §35 journeys have run (35.5's daily cashiering year,
   const dbs = o["journey_databases"] as { name: string; present: boolean }[]; assert.ok(dbs.some((d) => d.name === "35-11.spec.test.ts#t18" && d.present)); for (const n of ["35-5.spec.test.ts", "35-6.spec.test.ts", "35-9.spec.test.ts", "35-10.spec.test.ts"]) assert.ok(dbs.some((d) => d.name === n), `${n} named (present or not measured)`);
   // the audit shows the two exec columns on every process row and two exec totals lines after the six unit totals
   const md = readFileSync(`${ROOT}docs/audit/COVERAGE.md`, "utf8"); const lines = md.split("\n");
-  const header = lines.find((l) => l.startsWith("| Process |"))!; assert.equal(header, "| Process | T-ids | tables | timers | notices | tools | figures | hosted | persisted | units | % |");
-  const processRows = lines.filter((l) => /^\| \d+\.\d+ \|/.test(l)); assert.ok(processRows.length >= 200); for (const l of processRows) assert.equal(l.split("|").length - 2, 11, l);
+  const header = lines.find((l) => l.startsWith("| Process |"))!; // hosted and persisted after figures, before units (rule 12); `retired` after units is the audit's own column (spec/registry/README.md: a retired unit is neither spec nor built)
+  assert.equal(header, "| Process | T-ids | tables | timers | notices | tools | figures | hosted | persisted | units | retired | % |");
+  const processRows = lines.filter((l) => /^\| \d+\.\d+ \|/.test(l)); assert.ok(processRows.length >= 200); for (const l of processRows) assert.equal(l.split("|").length - 2, 12, l);
   const totalsStart = lines.indexOf("| Unit | Built / spec | % |"); const unitRows = lines.slice(totalsStart + 2, totalsStart + 8); assert.deepEqual(unitRows.map((l) => l.split("|")[1]!.trim()), ["tids", "tables", "timers", "notices", "tools", "figures"]);
   assert.equal(lines[totalsStart + 8]!.split("|")[1]!.trim(), "hosted (runs)"); assert.equal(lines[totalsStart + 9]!.split("|")[1]!.trim(), "persisted (runs)");});
 

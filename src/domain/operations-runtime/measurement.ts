@@ -127,7 +127,8 @@ export async function runHostedProbe(i: HostedProbeInput): Promise<HostedProbeRu
       const head = (await db.query<{ v: string }>(`SELECT version AS v FROM schema_migrations ORDER BY version DESC LIMIT 1`))[0]?.v ?? "";
       if (`${head}.sql` !== migration_head) throw new Error(`probe database migrated to ${head}, newest file ${migration_head}`);
       sharedToken = `probe-${randomUUID()}`;
-      runtime = new Runtime({ db, registry: loadOverriddenRegistry(), clock, logger, environment: PROBE_ENVIRONMENT, env: { INTEGRATIONS: "fake", ENVIRONMENT: PROBE_ENVIRONMENT } as NodeJS.ProcessEnv, reviewers: null, instanceId: `probe:${run_id.slice(0, 8)}` });
+      // databaseUrl: the probe database's own connection string — 35.3's planner lock (`cycles.plan`, and 35.5's cashiering unit through it) takes a dedicated session on it, as main.ts hands the hosted runtime config.databaseUrl; absent, those tools would answer 501 not_wired (35.3 D12) outside rule 13's three keys
+      runtime = new Runtime({ db, databaseUrl: url, registry: loadOverriddenRegistry(), clock, logger, environment: PROBE_ENVIRONMENT, env: { INTEGRATIONS: "fake", ENVIRONMENT: PROBE_ENVIRONMENT } as NodeJS.ProcessEnv, reviewers: null, instanceId: `probe:${run_id.slice(0, 8)}` });
       if (i.breakTool) { const def = ALL_TOOLS.find((t) => t.process === i.breakTool!.process && t.name === i.breakTool!.name); if (def) (runtime as unknown as { tools: Map<string, unknown> }).tools.set(`${def.process} ${def.name}`, { ...def, handler: () => { throw new Error("T15: a tool that answers 500"); } }); }
       server = createApiServer({ runtime, apiToken: sharedToken, logger, console: false });
       base = `http://127.0.0.1:${await listen(server, 0, "127.0.0.1")}`;

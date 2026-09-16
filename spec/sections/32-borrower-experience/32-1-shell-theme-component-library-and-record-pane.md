@@ -29,7 +29,7 @@ Projection of sections every section the borrower touches — 20–31 (originati
 
 #### Data model
 No UI-owned table is declared here (32.2 declares the seven UI-owned tables; this process writes `conversations`, `card_instances`, `deep_links`, `ui_events` through the 32.2 command endpoints).
-- Baseline, read-only projection sources this process renders (owned by the sections in the Blueprint row; no table is re-declared): `applicant_demographics`, `application_borrowers`, `application_income`, `application_properties`, `appraisals`, `autodraft_enrollments`, `closings`, `condition_clearances`, `conditions`, `consent_disclosure_versions`, `consents`, `contacts`, `credit_authorizations`, `disclosures`, `document_requests`, `documents`, `escrow_accounts`, `escrow_lines`, `intent_records`, `lead_interactions`, `loan_terms`, `loans`, `locks`, `mi_policies`, `notices`, `parties`, `pricing_quotes`, `project_reviews`, `refi_opportunities`, `timers`, `valuation_orders`.
+- Baseline, read-only projection sources this process renders (owned by the sections in the Blueprint row; no table is re-declared): `applicant_demographics`, `application_borrowers`, `application_income`, `application_properties`, `appraisals`, `autodraft_enrollments`, `closings`, `condition_clearances`, `conditions`, `consent_disclosure_versions`, `consents`, `contacts`, `credit_authorizations`, `disclosures`, `document_requests`, `documents`, `escrow_accounts`, `escrow_lines`, `intent_records`, `journey_progress`, `lead_interactions`, `loan_terms`, `loans`, `locks`, `mi_policies`, `notices`, `parties`, `pricing_quotes`, `project_reviews`, `refi_opportunities`, `timers`, `valuation_orders`.
 - Domain evidence rows are written by the owning command handler on a card resolve (32.1 §9); `ui_events` is the corroborating trail.
 
 #### State machine
@@ -49,7 +49,11 @@ Jurisdiction overrides: none owned; state copy variants come from `jurisdiction_
 
 ##### 1. Shell and layout
 
+> **Superseded on `/app` by 32.19 §2 (the Apply product) since 2026-09-16.** The Thread + Record + action bar shell of §1.1–§1.4 is no longer mounted on `/app`; §2 says what the surface is now. §1.5's routes stand (they land on Apply).
+
 ###### 1.1 Regions
+*Superseded on `/app` by 32.19 §2 (the Apply product) since 2026-09-16; the layout below stays the record of the conversational surface.*
+
 The shell has two regions and one persistent bar.
 
 - **Thread** (left) — the conversation. Messages from the `intake` agent (pre-funding) or `borrower-comms` agent (post-funding) and from the borrower. *Amended by docs/ux/32.16 §2.1 (DELTA-26):* no card renders in the thread — a card's one home is the rail (right), and the thread carries a one-line **reference chip** that focuses and expands it there, plus the **confirm chip** of a proposed value (32.16 §3.4); no sender label, badge or timestamp row on every line (provenance is an aria/hover detail); the automation disclosure is the footer of every screen (32.16 §1 principle 8), never a line in the log. The thread is still the navigation: the borrower never opens a menu to do something; the platform puts the card on the rail and references it, or they ask.
@@ -57,6 +61,8 @@ The shell has two regions and one persistent bar.
 - **Action bar** (bottom of Thread) — text input, Send, and attach (document upload → 22.1 intake). *Amended by docs/ux/32.16 §1 principle 8 and §2.4:* no **Talk to a person** control while no person exists (a borrower who asks is answered in words; `human.request` stays reachable by the word), and the microphone arrives with voice (17 Phase 3).
 
 ###### 1.2 Breakpoints
+*Superseded on `/app` by 32.19 §2 (the Apply product) since 2026-09-16; the layout below stays the record of the conversational surface.*
+
 | Width | Thread | Record |
 |---|---|---|
 | ≥ 1280 | 58% | 42%, fixed, independently scrollable |
@@ -65,6 +71,8 @@ The shell has two regions and one persistent bar.
 | < 768 (mobile) | 100%, as the Chat tab | **Five-tab shell** — Apply · Chat · My Loan · Tasks · Account in a fixed tab rail on every screen, signed in or out (sign-in lives on Account; the other tabs show a signed-out gate). My Loan's status line shows the status badge and next event, the Tasks tab badge "N needed from you"; the header's "Your record" (a Tasks row, a reference chip or a `?card=` link too) opens the Record as a bottom sheet — this rail, the same sections in the same order |
 
 ###### 1.3 Thread behavior
+*Superseded on `/app` by 32.19 §2 (the Apply product) since 2026-09-16; the layout below stays the record of the conversational surface.*
+
 - **Current ask.** *Amended by docs/ux/32.16 §2.1–2.2:* the current ask is the first row of the rail's Needed from you, expanded by default; a slim "Waiting on you: {{label}} →" line appears under the header only while the borrower has scrolled away from its reference in the thread. Over a 45-day purchase file the thread is long; the borrower must never scroll to find what is waiting on them.
 - **Cards are stateful.** A card renders from `card_instances` (32.2 §1.6) and updates in place when its state changes (e.g., `ConnectCard` → `connected`; `DocumentCard` → `received`). Resolved cards collapse to a one-line receipt ("Loan Estimate received Oct 22, 2026 9:41 AM").
 - **Grouping.** Consecutive system messages within 60 seconds group under one timestamp. Cards never group.
@@ -73,6 +81,8 @@ The shell has two regions and one persistent bar.
 - **Streaming.** Assistant text streams; cards render only when complete and their evidence schema is satisfied.
 
 ###### 1.4 Record behavior
+*Superseded on `/app` by 32.19 §2 (the Apply product) since 2026-09-16; the layout below stays the record of the conversational surface.*
+
 - Sections render in a fixed order; a section with no data is hidden, not empty.
 - Every dated item links to the thread message that produced it.
 - Numbers update in place on the projecting event (`lock.executed`, `disclosure.cd.delivered`, `payment.posted` …) with a 300 ms highlight.
@@ -86,6 +96,8 @@ The shell has two regions and one persistent bar.
 ##### 2. Theme — the designed surface (default), with the dark and light token sets beneath it
 
 Design tokens (CSS variables; Tailwind theme extension). Since 2026-09-15 the default surface is the designed prototype skin — light paper (`#f4f4f4`), the Super Red accent (`#bf242b`), the system sans, pill buttons — applied by `apps/borrower/app/prototype-theme.css` over the same components and the two token sets below, with `THEME_DEFAULT = light`; the dark tokens that follow remain the second set, selected by `data-theme`. The "black mono until it works" rule that preceded it is superseded: colour still carries state only where the tokens say so, and no card, thread or rail component changes with the skin.
+
+Since 2026-09-16 the product surface on `/app` is the Apply product (32.19 §2; `apps/borrower/components/apply`, tokens in `apply.css`); the Thread + Record + action bar shell of §1 is no longer mounted on `/app`; §3's card components remain the data layer, rendered inside the Apply chrome (Tasks, Review, Result); the dark set stays beneath, selected by `data-theme`.
 
 ```
 --sm-bg:            #0A0A0B   /* app background */

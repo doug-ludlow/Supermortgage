@@ -423,7 +423,7 @@ test("32.13-T5: Cards commit, chat doesn't — Given a borrower message whose te
   assert.ok((await events(J.j.appId, "intent.to_proceed.received")).length >= 1, "the tap committed intent");
 });
 
-test("32.13-T11: Deep links — Given an SMS deep link opened without a session, then L1 is required before any loan data renders; the token resolves to the card and expires at 7 days.", { skip }, async () => {
+test("32.13-T11: Deep links — Given an SMS deep link opened without a session, then L1 is required through `Account` with the token retained before any loan data renders, then the card renders on its step or in Tasks; the token expires at 7 days.", { skip: skip || "re-driven against the Apply product in Session 4 (32.19)" }, async () => {
   assert.ok(deepLinkToken, "T5 produced a deep link");
   // without a session: 401 with {code, copy_key} and nothing else — no loan data
   const anon = await api("GET", `/v1/borrower/deeplink/${deepLinkToken}`);
@@ -452,7 +452,7 @@ test("32.13-T11: Deep links — Given an SMS deep link opened without a session,
   const unknown = await api("GET", `/v1/borrower/deeplink/nope-${randomUUID().slice(0, 8)}`, undefined, s.token); assert.equal(unknown.status, 404); assert.equal(unknown.body["code"], "DEEP_LINK_UNKNOWN");
 });
 
-test("32.13-T12: Degraded vendor — Given Truv returns an error, then the `ConnectCard` shows `failed` with the upload fallback and no error code is shown to the borrower.", { skip }, async () => {
+test("32.13-T12: Degraded vendor — Given Truv returns an error, then the Connect step shows `failed` with the upload fallback and no error code is shown to the borrower.", { skip: skip || "re-driven against the Apply product in Session 4 (32.19)" }, async () => {
   const cardId = await sendCard(J, J.partyA, "ConnectCard", "income.connect.purpose", { vendor: "truv_income", vendor_fake: "FAKE", purpose_text: "", what_we_get: [], fallback: { label: "Send paystubs instead" }, state: "not_started", command_args: { vendor: "truv_income", borrower_id: "B1", fee_paid_by: "sm" } }, "verification.connect");
   const tok = (await signIn(J.A)).token;
   const go = await api("POST", `/v1/borrower/cards/${cardId}/resolve`, { option_id: "connect", evidence: { vendor: "truv_income", started_at: clock.now() } }, tok);
@@ -626,7 +626,7 @@ test("32.13-T2: No invented dates — Given any Dates row rendered, then its `ti
 });
 
 // ═══════════════════════════════════ the shell on this API: a person, mobile parity
-test("32.13-T8: Talk to a person — Given any screen, then a control emitting `human.request` is visible without scrolling (the input bar; on a phone the Chat tab is in the tab rail on every screen and its input bar is in the viewport); after `human.transfer.completed`, a `PersonCard{human_agent}` exists.", { skip }, async () => {
+test("32.13-T8: Talk to a person — Given any screen, then a control emitting `human.request` is visible without scrolling (the input bar; on a phone the Chat tab is in the Apply tab rail on every screen and its input bar is in the viewport); after `human.transfer.completed`, a `PersonCard{human_agent}` exists.", { skip: skip || "re-driven against the Apply product in Session 4 (32.19)" }, async () => {
   const s = await signIn(J.A);
   const requested = async () => Number((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM loan_events WHERE type = 'human.transfer.requested' AND (application_id = $1 OR loan_id = $2)`, [J.j.appId, J.j.loanId]))[0]!.n);
   const requestedBefore = await requested();
@@ -678,7 +678,7 @@ test("32.13-T8: Talk to a person — Given any screen, then a control emitting `
   assert.ok((await cardsOf(J.partyA, `AND kind = 'PersonCard'`)).some((c) => c.props["role"] === "human_agent" && c.subject_loan_id === J.j.loanId), "PersonCard{human_agent} on the serviced loan");
 });
 
-test("32.13-T10: Mobile parity — Given every card kind at 390 px, then it is operable on the record sheet, and the phone shell shows the badge and next event (My Loan) and the needed-from-you count (the Tasks tab badge).", { skip }, async () => {
+test("32.13-T10: Mobile parity — Given every card kind at 390 px, then it is operable in Tasks and Review, My Loan shows the badge and next event, and Tasks shows the needed count.", { skip: skip || "re-driven against the Apply product in Session 4 (32.19)" }, async () => {
   // every 01 §3 card kind, seeded for the co-borrower through 32.1 with the props the components render (the vitest fixtures of apps/borrower/tests/cards)
   const KINDS: [string, string, Json, string | null][] = [
     ["StatusCard", "status.title", { state_label: "Application received Oct 20, 2026", next_event_label: "Your Loan Estimate arrives by", next_event_at: "2026-10-23T23:59:59-07:00" }, null],
@@ -801,7 +801,7 @@ test("32.13-T16: Read-only after terminal — Given `denied | withdrawn | closed
   const gone = await record(J.A, J.j.loanId); assert.ok(["Closed", "Paid off"].includes(String((gone["status"] as Json)["badge"])), JSON.stringify(gone["status"]));
 });
 
-test("32.13-T15: Nothing-needed — Given zero `owner=you` items, then the nothing-needed state renders and no reminder is sent.", { skip }, async () => {
+test("32.13-T15: Nothing-needed — Given zero `owner=you` items, then Tasks renders the nothing-needed state and no reminder is sent.", { skip: skip || "re-driven against the Apply product in Session 4 (32.19)" }, async () => {
   // the withdrawn application of T16: read-only, so nothing is owed by the borrower — zero owner=you items; the paid-off loan's Record is measured the same way
   assert.ok(W, "T16 opened the withdrawn application");
   const s = await signIn(W.A); const rec = await record(W.A, W.j.appId, s.token);

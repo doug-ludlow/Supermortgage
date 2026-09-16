@@ -376,8 +376,8 @@ export async function stewardSweepPass(rt: Runtime, nowIso: string = rt.clock.no
 }
 
 /**
- * The breach pass's enrichers for this process's clocks (src/runtime/app.ts consults BREACH_ENRICHERS when it opens the
- * escalation of a breach, in the breach pass's own transaction): SM_OPS_ADAPTER_DOWN_1H's escalation names the adapter and the
+ * The breach pass's enrichers for this process's clocks (src/domain/operations-runtime/breach.ts pagedBreachPass — 35.3 rule 9's
+ * pages of 500, the pass Runtime.sweep runs — consults BREACH_ENRICHERS when it opens the escalation of a breach, in the page's own transaction): SM_OPS_ADAPTER_DOWN_1H's escalation names the adapter and the
  * dead count D15; SM_OPS_CYCLE_MISSED_2H's names the cycle, the period and `consecutive_misses`, and when `consecutive_misses ≥ 2`
  * the row's second clause makes it sev 1 → `compliance`. Reads only: the steward completes nothing, edits no clock and updates no
  * escalation (rule 1).

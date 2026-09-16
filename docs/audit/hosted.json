@@ -1,13 +1,13 @@
 {
- "run_id": "5c8aacc5-4632-41a8-9c2f-2bd47abd560c",
+ "run_id": "b4a9a241-1f97-49d9-b197-b8c30ec05974",
  "target": "probe",
  "database_name": "supermortgage_probe",
  "migration_head": "0231_seed_inventories.sql",
- "git_sha": "cd489e297c98d203f189bc2454e2e2c651a18e99",
- "as_of_date": "2026-09-15",
- "tools_total": 1464,
- "executed": 341,
- "refused_typed": 1123,
+ "git_sha": "a6916f930589b431a140016cddd7b8bdb5c0833c",
+ "as_of_date": "2026-09-16",
+ "tools_total": 1485,
+ "executed": 348,
+ "refused_typed": 1137,
  "not_wired": 0,
  "errored": 0,
  "results": [
@@ -8043,7 +8043,7 @@
    "process": "32.2",
    "name": "application.withdraw",
    "status": "refused_typed",
-   "code": "APPLICATION_TERMINAL"
+   "code": "BAD_REQUEST"
   },
   {
    "process": "32.2",
@@ -8653,6 +8653,132 @@
   },
   {
    "process": "35.1",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.3",
+   "name": "cycles.escalate",
+   "status": "refused_typed",
+   "code": "REASON_REQUIRED"
+  },
+  {
+   "process": "35.3",
+   "name": "cycles.plan",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.3",
+   "name": "cycles.receipt",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.3",
+   "name": "cycles.registry",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.3",
+   "name": "cycles.retry",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.3",
+   "name": "cycles.run_unit",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.3",
+   "name": "jobs.list",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.3",
+   "name": "jobs.requeue",
+   "status": "refused_typed",
+   "code": "ROLE_REQUIRED"
+  },
+  {
+   "process": "35.3",
+   "name": "writeDecision",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.5",
+   "name": "ach.file.build",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.5",
+   "name": "ach.return.action",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.5",
+   "name": "ach.returns.ingest",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.5",
+   "name": "cashiering.run_unit",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.5",
+   "name": "installments.read",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.5",
+   "name": "installments.reproject",
+   "status": "refused_typed",
+   "code": "SCHEDULE_REQUIRED"
+  },
+  {
+   "process": "35.5",
+   "name": "installments.write",
+   "status": "refused_typed",
+   "code": "SCHEDULE_REQUIRED"
+  },
+  {
+   "process": "35.5",
+   "name": "lockbox.ingest",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.5",
+   "name": "lockbox.item.resolve",
+   "status": "refused_typed",
+   "code": "HUMAN_ONLY"
+  },
+  {
+   "process": "35.5",
+   "name": "servicer_profile.write",
+   "status": "refused_typed",
+   "code": "BAD_REQUEST"
+  },
+  {
+   "process": "35.5",
+   "name": "servicing_config.write",
+   "status": "executed",
+   "code": null
+  },
+  {
+   "process": "35.5",
    "name": "writeDecision",
    "status": "executed",
    "code": null

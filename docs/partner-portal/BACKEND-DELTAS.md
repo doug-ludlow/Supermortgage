@@ -104,3 +104,6 @@ None yet. Append below; do not edit rows in place. A rejection is a new row with
 ## Open follow-ups
 
 None. When a session stops because a name is missing, the follow-up is the `DELTA-NN` row above, not a prose TODO in the code.
+## Open follow-ups
+
+None. When a session stops because a name is missing, the follow-up is the `DELTA-NN` row above, not a prose TODO in the code.

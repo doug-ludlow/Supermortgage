@@ -1,8 +1,9 @@
 /**
  * §35.11 rule 11 — the journey declarations the persisted count reads: which journey test files ran, and the tables each of their
  * steps writes (`expected`). A journey is a `node:test` file that drives a lifecycle through the hosted API on its own database
- * (src/infra/db/test-db.ts gives each file one, named from its path; the journey files keep it after the run, which is what the
- * count reads). `expected` is true for a manifest table a step names here; `sections_complete` lists every section all of whose
+ * (src/infra/db/test-db.ts gives each file one, named from its path and the checkout root; the harness drops it when the file's
+ * process exits unless KEEP_TEST_DB=1 — tools/persisted-count.ts runs the journeys with it set (PERSISTED_RUN_JOURNEYS=1) and reads
+ * their rows before dropping them). `expected` is true for a manifest table a step names here; `sections_complete` lists every section all of whose
  * expected tables are `persisted` (and no projection gap for the run).
  *
  * The two lifecycle journeys declare theirs here (the tables their steps commit through the bus: the sections' own DDL, by name);

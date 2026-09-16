@@ -51,8 +51,10 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
 import { CommandRefused, AiPathUnavailable } from "../app/commands.ts";
+import { refuseClientState } from "../domain/operations-runtime/cashiering-cycle.ts";
 import { CardRefused } from "../app/tools/section32-1.ts";
 import { RescissionRefused } from "../domain/compliance-disclosures/ops-25-3.ts";
+import { CyclesRefused } from "../domain/operations-runtime/service.ts";
 import { PortUnavailable } from "../app/tools.ts";
 // 35.11 rule 10: a port's own typed failure thrown by a tool (the FAKE bank's rejection of a date, a feed not yet refreshed) is a typed refusal the unit of work rolled back — never an unhandled 500
 import { AdapterUnavailable, PermanentRejection, TransientFailure } from "../infra/integrations/failures.ts";
@@ -233,6 +235,7 @@ export function createApiServer(opts: ServerOptions): Server {
         action.command = `${process} ${name}`; Object.assign(action, subjectIdOf(loanId, undefined));
         const { actor, grantRole } = await resolveActor(b, runtime.tool(process, name), { loanId: loanId || null }, process);
         const input = toolInput(b["input"]);
+        refuseClientState(process, name, input);   // 35.5 rule 5: the cash state is the server's (NO_CLIENT_STATE, 409, nothing written)
         const run = b["run"] as { runId?: unknown; modelVersion?: unknown; promptVersion?: unknown; confidence?: unknown } | undefined;
         const runInfo = run && typeof run.runId === "string" && typeof run.modelVersion === "string" && typeof run.promptVersion === "string"
           ? { runId: run.runId, modelVersion: run.modelVersion, promptVersion: run.promptVersion, ...(typeof run.confidence === "number" ? { confidence: run.confidence } : {}) } : undefined;
@@ -251,6 +254,7 @@ export function createApiServer(opts: ServerOptions): Server {
         const loanId = app.loan_id ?? "";
         const { actor, grantRole } = await resolveActor(b, runtime.tool(process, name), { loanId: loanId || null, applicationId }, process);
         const input = toolInput(b["input"]);
+        refuseClientState(process, name, input);   // 35.5 rule 5
         const run = b["run"] as { runId?: unknown; modelVersion?: unknown; promptVersion?: unknown; confidence?: unknown } | undefined;
         const runInfo = run && typeof run.runId === "string" && typeof run.modelVersion === "string" && typeof run.promptVersion === "string"
           ? { runId: run.runId, modelVersion: run.modelVersion, promptVersion: run.promptVersion, ...(typeof run.confidence === "number" ? { confidence: run.confidence } : {}) } : undefined;
@@ -410,6 +414,8 @@ export function createApiServer(opts: ServerOptions): Server {
       // a section's own typed refusal thrown by its tool (not a bus guardrail): the same 409 shape, its code and reason kept (32.5 T10, 32.7 T6)
       if (e instanceof CardRefused) { done(409, { error: "refused", code: e.code, reason: e.message }, { refused: e.code }); return; }
       if (e instanceof RescissionRefused) { done(409, { error: "refused", code: e.code, citation: e.citation, reason: e.message }, { refused: e.code }); return; }
+      // 35.3's own typed refusal (RUN_NOT_FOUND, JOB_NOT_DEAD, RECEIPT_ONCE, …): the same 409 shape with its code and detail — a typed refusal the unit of work rolled back, never a 500 (35.11 rule 10's `refused_typed`)
+      if (e instanceof CyclesRefused) { done(409, { error: "refused", code: e.code, reason: e.message, ...e.detail }, { refused: e.code }); return; }
       if (e instanceof BoardingRefused) { done(409, { error: "refused", command: "applications.fund", code: e.code, citation: "30.2 rule 2 / OB-018: boarding is refused until the source record is corrected", reason: e.message, application_id: e.applicationId, validations: e.validations }, { refused: e.code }); return; }
       if (e instanceof ApplicationNotFound) { done(404, { error: "no_such_application", reason: e.message }); return; }
       if (e instanceof RoleDenied) { done(403, { error: "role_denied", reason: e.message }); return; }

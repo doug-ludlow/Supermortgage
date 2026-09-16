@@ -275,3 +275,62 @@
   min-height: 42px;
 }
 .sm-fine { font-size: 12px; color: var(--muted); margin-top: 12px; }
+
+/* 32.19: the disclosure footer inside the column (32.16 principle 8), the tasks rows, a card hosted in the column, the badge, the account form on paper. */
+.sm-proto .sm-footer {
+  text-align: center;
+  color: var(--quiet);
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: -0.1px;
+  padding: 12px 20px calc(96px + env(safe-area-inset-bottom));
+  border: 0;
+  background: transparent;
+}
+.sm-proto .sm-footer p { margin: 0; }
+.sm-proto .sm-footer a { color: var(--muted); text-decoration: underline; }
+.sm-task { width: 100%; background: none; text-align: left; }
+.sm-task strong { color: var(--accent); font-weight: 600; }
+.sm-tasks-title { font-size: 24px; margin: 0 0 16px; }
+.sm-tasks-purpose { margin: 0 0 8px; }
+.sm-card-host { display: block; }
+.sm-card-host[data-expanded="true"] { border-color: var(--accent); }
+.sm-needed { margin: 0 0 12px; padding-left: 18px; font-size: 15px; color: var(--muted); }
+.sm-badge { display: inline-block; border-radius: 100px; padding: 4px 10px; background: var(--accent-soft); color: #842128; font-size: 13px; font-weight: 600; }
+.sm-proto .sm-signin {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+}
+.sm-proto .sm-signin h2 { font-size: 24px; line-height: 29px; letter-spacing: -0.65px; font-weight: 600; margin: 0 0 14px; }
+.sm-proto .sm-signin .sm-label { display: block; font-size: 15px; color: var(--muted); margin: 14px 0 4px; }
+.sm-proto .sm-signin .sm-input {
+  width: 100%;
+  border: 1px solid #bababc;
+  border-radius: 8px;
+  padding: 0 10px;
+  min-height: 44px;
+  background: var(--surface);
+  color: var(--text);
+}
+.sm-proto .sm-signin .sm-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  width: 100%;
+  border-radius: 100px;
+  padding: 10px 16px;
+  font-weight: 500;
+  border: 0;
+}
+.sm-proto .sm-signin .sm-btn-primary { background: var(--accent); color: #fff; margin-top: 18px; }
+.sm-proto .sm-signin .sm-btn-quiet { background: var(--bubble); color: var(--text); margin-top: 10px; }
+.sm-proto .sm-signin .sm-card-actions { display: grid; gap: 0; }
+.sm-proto .sm-signin .sm-source, .sm-proto .sm-signin .sm-muted { color: var(--muted); font-size: 13px; }
+.sm-proto .sm-signin .sm-account-link { color: var(--muted); font-size: 15px; }
+.sm-proto .sm-signin .sm-error { color: var(--accent); font-size: 15px; }
+.sm-proto .sm-signin .sm-fake { color: #842128; background: var(--accent-soft); border-radius: 6px; padding: 2px 6px; font-size: 13px; }

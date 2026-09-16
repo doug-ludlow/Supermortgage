@@ -6,7 +6,7 @@
  *   const { url: DB_URL, skip } = await testDatabase(import.meta.url);
  *
  * - The per-file database is named from the file's path under src/ (stable across machines and worktrees, ≤ 63
- *   chars, lowercase): `<base>_t_<8 hex of the path>_<dir>_<file>`, e.g. `supermortgage_t_1f2e3d4c_underwriting_23_6_spec`.
+ *   chars, lowercase): `<base>_t_<8 hex of the checkout root + the path under src/>_<dir>_<file>`, e.g. `supermortgage_t_1f2e3d4c_underwriting_23_6_spec`.
  *   `<base>` is the database named by TEST_DATABASE_URL (default postgresql://sm:sm@localhost/supermortgage_test)
  *   with a trailing `_test` dropped, so two checkouts sharing one server keep apart by pointing TEST_DATABASE_URL at
  *   different names; the URL's host and credentials are what every connection uses.
@@ -71,7 +71,8 @@ export function testDatabaseName(fileUrl: string, opts: { suffix?: string; base?
   const path = fileUrl.startsWith("file:") ? fileURLToPath(fileUrl) : fileUrl;
   const i = path.lastIndexOf("/src/");
   const rel = i >= 0 ? path.slice(i + 1) : path;
-  const hash = createHash("sha256").update(rel).digest("hex").slice(0, 8);
+  // the hash covers the checkout root too (the prefix before /src/), so the same file in two worktrees on one server never shares a clone
+  const hash = createHash("sha256").update(`${i >= 0 ? path.slice(0, i) : ""}|${rel}`).digest("hex").slice(0, 8);
   const parts = rel.split("/");
   const file = (parts[parts.length - 1] ?? "").replace(/\.test\.(ts|js|mts|mjs)$/, "");
   const dir = parts.length >= 2 ? parts[parts.length - 2]! : "";

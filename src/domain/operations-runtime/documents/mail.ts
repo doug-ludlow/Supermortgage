@@ -55,17 +55,22 @@ async function insertPieces(q: Queryable, manifestId: string, pieces: readonly (
 // ───────── mail.batch ─────────
 export interface BatchInput { readonly notice_ids?: readonly string[]; readonly notice_batch_id?: string | null; readonly mail_class?: string | null; }
 export interface BatchResult { readonly batch_id: string; readonly manifest_id: string; readonly document_id: string; readonly file_sha256: string; readonly piece_count: number; readonly sheet_count: number; readonly vendor: string; readonly submitted_at: string; readonly pieces: readonly PieceLine[]; readonly outbox_message_id: string; }
-interface DeliveryRow extends Record<string, unknown> { id: string; notice_id: string; attempt_no: number; channel: string; vendor_piece_id: string | null; }
+interface DeliveryRow extends Record<string, unknown> { id: string; notice_id: string; attempt_no: number; channel: string; vendor_piece_id: string | null; party_id?: string | null; }
 interface NoticeRow extends Record<string, unknown> { id: string; template_code: string; document_id: string | null; address_snapshot: { party_id?: string; name?: string; address?: string | null }[] | null; channel_decision: { partyId?: string; channel?: string; held?: string }[] | null; }
 /** The recipient a mail delivery went to: the k-th mail delivery (by attempt) is the k-th non-held mail decision's party (NoticeService.mail walks the decisions in order); its address is that party's snapshot entry. */
 function addressFor(n: NoticeRow, delivery: DeliveryRow, mailDeliveries: readonly DeliveryRow[]): { name: string; address: string } {
-  const decisions = (n.channel_decision ?? []).filter((d) => typeof d.channel === "string" && d.channel.startsWith("mail") && !d.held);
-  const k = mailDeliveries.findIndex((d) => d.id === delivery.id);
-  const party = decisions[k]?.partyId ?? null;
   const snapshot = n.address_snapshot ?? [];
-  const byParty = party ? snapshot.find((r) => r.party_id === party && r.address) : undefined;
-  const r = byParty ?? snapshot.find((x) => x.address) ?? snapshot[0];
-  if (!r?.address) throw new RangeError(`notice ${n.id} carries no mailing address for delivery ${delivery.attempt_no}`);
+  // the delivery names its recipient (0166); a row written before that column maps the k-th mail delivery to the k-th unheld mail decision, which holds only while every mail delivery is a decision
+  let party = delivery.party_id ?? null;
+  if (!party) {
+    const decisions = (n.channel_decision ?? []).filter((d) => typeof d.channel === "string" && d.channel.startsWith("mail") && !d.held);
+    const k = mailDeliveries.findIndex((d) => d.id === delivery.id);
+    if (decisions.length !== mailDeliveries.length) throw new RangeError(`notice ${n.id}: delivery ${delivery.attempt_no} names no recipient and its ${mailDeliveries.length} mail deliveries do not match its ${decisions.length} mail decisions — the address cannot be guessed`);
+    party = decisions[k]?.partyId ?? null;
+  }
+  const withAddress = snapshot.filter((x) => x.address);
+  const r = (party ? withAddress.find((x) => x.party_id === party) : undefined) ?? (withAddress.length === 1 ? withAddress[0] : undefined);
+  if (!r?.address) throw new RangeError(`notice ${n.id} carries no mailing address for delivery ${delivery.attempt_no}${party ? ` (party ${party})` : ""}`);
   return { name: r.name ?? "", address: r.address };
 }
 /** One piece per mail delivery awaiting a manifest: the notice's stored PDF, its hash and pages, the template's separate_document, the delivery's own recipient. */
@@ -80,7 +85,7 @@ async function piecesForDeliveries(q: Queryable, deliveries: readonly DeliveryRo
     const doc = await requireDocument(q, n.document_id);
     if (doc.storage_status === "disposed") throw new RangeError(`notice ${nid}: its document was disposed`);
     const t = (await q.query<{ separate_document: boolean }>(`SELECT separate_document FROM notice_templates WHERE code = $1`, [n.template_code]))[0];
-    const allMail = await q.query<DeliveryRow>(`SELECT id, notice_id, attempt_no, channel, vendor_piece_id FROM notice_deliveries WHERE notice_id = $1 AND channel LIKE 'mail%' ORDER BY attempt_no`, [nid]);
+    const allMail = await q.query<DeliveryRow>(`SELECT id, notice_id, attempt_no, channel, vendor_piece_id, party_id FROM notice_deliveries WHERE notice_id = $1 AND channel LIKE 'mail%' ORDER BY attempt_no`, [nid]);
     const pages = doc.page_count ?? 1;
     for (const d of ds.sort((a, b) => Number(a.attempt_no) - Number(b.attempt_no))) {
       const cls = mailClass ?? (d.channel === "mail_certified" ? "certified" : "first_class");
@@ -98,13 +103,13 @@ export async function mailBatch(deps: DocsDeps, i: BatchInput): Promise<BatchRes
     if (!isUuid(i.notice_batch_id)) throw new RangeError("notice_batch_id is a uuid");
     if (!(await q.query(`SELECT 1 FROM notice_batches WHERE id = $1`, [i.notice_batch_id])).length) throw new RangeError(`no notice_batches row ${i.notice_batch_id}`);
     if ((await q.query(`SELECT 1 FROM mail_manifests WHERE notice_batch_id = $1 AND direction = 'outbound' LIMIT 1`, [i.notice_batch_id])).length) throw new DocumentsRefused("BATCH_ALREADY_SUBMITTED", "35.2 rule 9: one outbound manifest per batch (the print-mail outbox key is the batch id); a piece the vendor did not mail is the fallback's", `batch ${i.notice_batch_id} already has its outbound manifest`);
-    deliveries = await q.query<DeliveryRow>(`SELECT id, notice_id, attempt_no, channel, vendor_piece_id FROM notice_deliveries WHERE manifest_id = $1 AND channel LIKE 'mail%' AND mail_manifest_id IS NULL AND mailed_at IS NULL ORDER BY notice_id, attempt_no`, [i.notice_batch_id]);
+    deliveries = await q.query<DeliveryRow>(`SELECT id, notice_id, attempt_no, channel, vendor_piece_id, party_id FROM notice_deliveries WHERE manifest_id = $1 AND channel LIKE 'mail%' AND mail_manifest_id IS NULL AND mailed_at IS NULL ORDER BY notice_id, attempt_no`, [i.notice_batch_id]);
     batchId = i.notice_batch_id;
   } else {
     const ids = [...new Set((i.notice_ids ?? []).map(String))];
     if (!ids.length) throw new RangeError("mail.batch needs notice_ids (or a notice_batch_id with mail deliveries awaiting a manifest)");
     for (const nid of ids) if (!isUuid(nid)) throw new RangeError(`notice id ${nid} is not a uuid`);
-    deliveries = await q.query<DeliveryRow>(`SELECT id, notice_id, attempt_no, channel, vendor_piece_id FROM notice_deliveries WHERE notice_id = ANY($1::uuid[]) AND channel LIKE 'mail%' AND manifest_id IS NULL ORDER BY notice_id, attempt_no`, [ids]);
+    deliveries = await q.query<DeliveryRow>(`SELECT id, notice_id, attempt_no, channel, vendor_piece_id, party_id FROM notice_deliveries WHERE notice_id = ANY($1::uuid[]) AND channel LIKE 'mail%' AND manifest_id IS NULL ORDER BY notice_id, attempt_no`, [ids]);
     const covered = new Set(deliveries.map((d) => d.notice_id));
     const missing = ids.filter((nid) => !covered.has(nid));
     if (missing.length) throw new RangeError(`notice ${missing[0]} has no mail delivery awaiting a manifest (its channel decision was not mail, or it is on a batch already)`);
@@ -153,7 +158,10 @@ export async function ingestManifest(deps: DocsDeps, port: PrintMailPort | undef
     for (const p of i.pieces) if (!isUuid(p.notice_id) || !Number.isInteger(p.attempt_no) || !/^\d{4}-\d{2}-\d{2}$/.test(String(p.mailed_on))) throw new RangeError(`piece ${String(p.notice_id)}:${String(p.attempt_no)} is malformed (mailed_on is YYYY-MM-DD)`);
     lines = i.pieces.map((p) => ({ notice_id: p.notice_id, attempt_no: p.attempt_no, mailed_on: String(p.mailed_on), mailed_at: null, imb: p.imb ?? null, vendor_piece_id: p.vendor_piece_id ?? null }));
   }
-  const fresh = lines.filter((l) => !mailed.has(`${l.notice_id}|${l.attempt_no}`));
+  // a foreign line an earlier file of this batch already flagged (its inbound row has notice_id null) is not flagged again: keyed by the vendor's piece id, else the IMB and attempt
+  const flaggedBefore = new Set((await q.query<{ vendor_piece_id: string | null; imb: string | null; attempt_no: number }>(`SELECT p.vendor_piece_id, p.imb, p.attempt_no FROM mail_manifest_pieces p JOIN mail_manifests i ON i.id = p.manifest_id WHERE i.direction = 'inbound' AND i.notice_batch_id IS NOT DISTINCT FROM $1 AND p.notice_id IS NULL`, [outbound.notice_batch_id])).map((r) => r.vendor_piece_id ?? `imb:${r.imb ?? ""}|${r.attempt_no}`));
+  const foreignKey = (l: { vendor_piece_id: string | null; imb: string | null; attempt_no: number }): string => l.vendor_piece_id ?? `imb:${l.imb ?? ""}|${l.attempt_no}`;
+  const fresh = lines.filter((l) => !mailed.has(`${l.notice_id}|${l.attempt_no}`) && (byKey.has(`${l.notice_id}|${l.attempt_no}`) || !flaggedBefore.has(foreignKey(l))));
   if (!fresh.length) throw new DocumentsRefused("NO_PROOF_OF_MAILING_YET", "35.2 rule 9 / SM_MAIL_MANIFEST_2BD: the vendor's file names no piece of this manifest that is not already mailed — nothing is ingested, the clock keeps running", `manifest ${outbound.id}: ${lines.length} line(s), none new`);
   const matched: (PieceLine & { imb: string | null; mailed_on: string; mailed_at: string | null })[] = []; const unmatched: { notice_id: string; attempt_no: number }[] = [];
   type InboundLine = PieceLine & { imb: string | null; mailed_on: string; mailed_at: string | null; known: boolean };

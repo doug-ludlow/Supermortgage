@@ -34,9 +34,11 @@ export class PgNoticeRepository {
     for (const d of n.deliveries) {
       // DELTA-08: an esign_portal delivery records the card that carried the document beside the rendered document (0111)
       // 35.2 rule 9: the upsert is additive — proof-of-mailing facts written by mail.manifest.ingest (mailed_at, imb, manifest_id, mail_manifest_id) are never overwritten by a later save of the in-memory notice
-      await q.query(`INSERT INTO notice_deliveries (notice_id, attempt_no, channel, vendor, vendor_piece_id, submitted_at, mailed_at, email_status, returned_at, return_reason, card_instance_id, rendered_document_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-        ON CONFLICT (notice_id, attempt_no) DO UPDATE SET mailed_at = coalesce(notice_deliveries.mailed_at, EXCLUDED.mailed_at), email_status = coalesce(EXCLUDED.email_status, notice_deliveries.email_status), returned_at = coalesce(notice_deliveries.returned_at, EXCLUDED.returned_at), return_reason = coalesce(notice_deliveries.return_reason, EXCLUDED.return_reason), rendered_document_id = coalesce(notice_deliveries.rendered_document_id, EXCLUDED.rendered_document_id)`,
-        [n.id, d.attemptNo, d.channel, d.vendor, d.vendorPieceId, d.submittedAt, d.mailedAt ?? null, d.emailStatus ?? null, d.returnedAt ?? null, d.returnReason ?? null, d.cardInstanceId ?? null, d.renderedDocumentId ?? null]);
+      // 35.2 (0166): the delivery's recipient rides the row so a mail piece finds its address without a positional guess; a party id that is not a uuid (a unit fixture's) leaves the column null
+      const partyId = typeof d.partyId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(d.partyId) ? d.partyId : null;
+      await q.query(`INSERT INTO notice_deliveries (notice_id, attempt_no, channel, vendor, vendor_piece_id, submitted_at, mailed_at, email_status, returned_at, return_reason, card_instance_id, rendered_document_id, party_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        ON CONFLICT (notice_id, attempt_no) DO UPDATE SET mailed_at = coalesce(notice_deliveries.mailed_at, EXCLUDED.mailed_at), email_status = coalesce(EXCLUDED.email_status, notice_deliveries.email_status), returned_at = coalesce(notice_deliveries.returned_at, EXCLUDED.returned_at), return_reason = coalesce(notice_deliveries.return_reason, EXCLUDED.return_reason), rendered_document_id = coalesce(notice_deliveries.rendered_document_id, EXCLUDED.rendered_document_id), party_id = coalesce(notice_deliveries.party_id, EXCLUDED.party_id)`,
+        [n.id, d.attemptNo, d.channel, d.vendor, d.vendorPieceId, d.submittedAt, d.mailedAt ?? null, d.emailStatus ?? null, d.returnedAt ?? null, d.returnReason ?? null, d.cardInstanceId ?? null, d.renderedDocumentId ?? null, partyId]);
     }
   }
   async statusOf(id: string): Promise<{ status: string; template_version: string; payload_hash: string } | undefined> {

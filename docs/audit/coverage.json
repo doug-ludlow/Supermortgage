@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 8106/8756 (92.6%): tids 2262/2458, tables 775/848, timers 2046/2097, notices 308/308, tools 1446/1578, figures 1269/1467; processes at 100%: 193/205",
+ "brief": "spec units built 8208/8756 (93.7%): tids 2294/2458, tables 789/848, timers 2053/2097, notices 308/308, tools 1465/1578, figures 1299/1467; processes at 100%: 195/205",
  "totals": {
   "tids": {
    "spec": 2458,
-   "built": 2262
+   "built": 2294
   },
   "tables": {
    "spec": 848,
-   "built": 775
+   "built": 789
   },
   "timers": {
    "spec": 2097,
-   "built": 2046
+   "built": 2053
   },
   "notices": {
    "spec": 308,
@@ -19,15 +19,15 @@
   },
   "tools": {
    "spec": 1578,
-   "built": 1446
+   "built": 1465
   },
   "figures": {
    "spec": 1467,
-   "built": 1269
+   "built": 1299
   },
   "units": {
    "spec": 8756,
-   "built": 8106
+   "built": 8208
   }
  },
  "sections": {
@@ -237,9 +237,9 @@
   },
   "35": {
    "spec": 715,
-   "built": 82,
+   "built": 184,
    "processes": 12,
-   "done": 1
+   "done": 3
   }
  },
  "done": [
@@ -435,7 +435,9 @@
   "34.2",
   "34.3",
   "34.4",
-  "35.2"
+  "35.1",
+  "35.2",
+  "35.7"
  ],
  "processes": [
   {
@@ -8375,50 +8377,20 @@
    "title": "Persistence seam and the typed record",
    "tids": {
     "spec": 15,
-    "built": 0,
-    "todo": 15,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15
-    ]
+    "built": 15,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 9,
-    "built": 0,
-    "missing": [
-     "entity_keys",
-     "entity_latest_scoped",
-     "entity_projections",
-     "outbox_dispatches",
-     "projection_gaps",
-     "projection_mismatches",
-     "projection_runs",
-     "service_snapshots",
-     "sweep_runs"
-    ]
+    "built": 9,
+    "missing": []
    },
    "timers": {
     "spec": 3,
-    "built": 0,
+    "built": 3,
     "armable": 3,
-    "missing": [
-     "SM_OUTBOX_DEAD_LETTER_REVIEW_1BD",
-     "SM_PROJECTION_LAG_DAILY",
-     "SM_SWEEP_HEARTBEAT_DAILY"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -8427,35 +8399,19 @@
    },
    "tools": {
     "spec": 8,
-    "built": 0,
-    "missing": [
-     "record.project",
-     "record.replay",
-     "record.gaps",
-     "record.verify",
-     "record.snapshot",
-     "record.lease",
-     "outbox.dispatch",
-     "writeDecision"
-    ]
+    "built": 8,
+    "missing": []
    },
    "figures": {
     "spec": 7,
-    "built": 1,
-    "missing": [
-     "$1,345.02",
-     "$1,612.34",
-     "$2,045.12",
-     "$248,043.23",
-     "$267.32",
-     "$432.78"
-    ]
+    "built": 7,
+    "missing": []
    },
    "units": {
     "spec": 42,
-    "built": 1
+    "built": 42
    },
-   "pct": 2.4
+   "pct": 100.0
   },
   {
    "process": "35.2",
@@ -8567,21 +8523,16 @@
    },
    "figures": {
     "spec": 7,
-    "built": 1,
+    "built": 6,
     "missing": [
-     "$1,345.02",
-     "$1,612.34",
-     "$2,125.74",
-     "$267.32",
-     "$432.78",
-     "$80.62"
+     "$2,125.74"
     ]
    },
    "units": {
     "spec": 40,
-    "built": 1
+    "built": 6
    },
-   "pct": 2.5
+   "pct": 15.0
   },
   {
    "process": "35.4",
@@ -8761,7 +8712,7 @@
    },
    "figures": {
     "spec": 53,
-    "built": 5,
+    "built": 8,
     "missing": [
      "$1,351.71",
      "$1,500.00",
@@ -8785,14 +8736,12 @@
      "$249,218.31",
      "$249,546.77",
      "$249,774.00",
-     "$25.00",
      "$279,702.10",
      "$280,081.19",
      "$280,458.24",
      "$3,088.94",
      "$3,384.35",
      "$3,401.62",
-     "$3,402.62",
      "$300,000.00",
      "$370,543.62",
      "$371,048.86",
@@ -8805,7 +8754,6 @@
      "$547.06",
      "$558,908.65",
      "$559,455.71",
-     "$560,000.00",
      "$6,000.07",
      "$6,001.07",
      "$612.40",
@@ -8815,9 +8763,9 @@
    },
    "units": {
     "spec": 97,
-    "built": 7
+    "built": 10
    },
-   "pct": 7.2
+   "pct": 10.3
   },
   {
    "process": "35.6",
@@ -8893,7 +8841,7 @@
    },
    "figures": {
     "spec": 40,
-    "built": 1,
+    "built": 6,
     "missing": [
      "$1,067.72",
      "$1,096.67",
@@ -8901,12 +8849,9 @@
      "$1,375.00",
      "$1,415.00",
      "$1,665.00",
-     "$1,785.43",
      "$10,052.69",
      "$2,062.50",
      "$2,774.00",
-     "$25.00",
-     "$3,402.62",
      "$3,485.00",
      "$4,090.12",
      "$403,760.00",
@@ -8920,7 +8865,6 @@
      "$549,550.64",
      "$556,852.07",
      "$557,249.57",
-     "$560,000.00",
      "$564,503.33",
      "$566,300.00",
      "$6,579.52",
@@ -8932,64 +8876,34 @@
      "$725.64",
      "$8,052.07",
      "$831.00",
-     "$93.97",
      "$935.48"
     ]
    },
    "units": {
     "spec": 80,
-    "built": 3
+    "built": 8
    },
-   "pct": 3.8
+   "pct": 10.0
   },
   {
    "process": "35.7",
    "title": "Operating roles, identity and the FAKE handover: a person for every kernel role, credentials that cannot be self-asserted on `/v1`, reviewer-role disjointness, the role queues and the handover board",
    "tids": {
     "spec": 17,
-    "built": 0,
-    "todo": 17,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15,
-     16,
-     17
-    ]
+    "built": 17,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 7,
-    "built": 2,
-    "missing": [
-     "api_principals",
-     "breakglass_uses",
-     "role_grants",
-     "role_handovers",
-     "role_queue_snapshots"
-    ]
+    "built": 7,
+    "missing": []
    },
    "timers": {
     "spec": 4,
-    "built": 0,
+    "built": 4,
     "armable": 4,
-    "missing": [
-     "SM_HANDOVER_BOARD_DAILY",
-     "SM_ROLE_BREAKGLASS_REVIEW_1BD",
-     "SM_ROLE_GRANT_DORMANT_30D",
-     "SM_ROLE_QUEUE_UNSTAFFED_1BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -8998,36 +8912,19 @@
    },
    "tools": {
     "spec": 11,
-    "built": 0,
-    "missing": [
-     "roles.grant",
-     "roles.revoke",
-     "roles.queue",
-     "roles.approve",
-     "roles.breakglass",
-     "principals.issue",
-     "principals.revoke",
-     "handover.plan",
-     "handover.enable",
-     "handover.board",
-     "writeDecision"
-    ]
+    "built": 11,
+    "missing": []
    },
    "figures": {
     "spec": 5,
-    "built": 1,
-    "missing": [
-     "$10,000.00",
-     "$10,000.01",
-     "$249,999.99",
-     "$260,000.00"
-    ]
+    "built": 5,
+    "missing": []
    },
    "units": {
     "spec": 44,
-    "built": 3
+    "built": 44
    },
-   "pct": 6.8
+   "pct": 100.0
   },
   {
    "process": "35.8",
@@ -9106,12 +9003,10 @@
    },
    "figures": {
     "spec": 22,
-    "built": 3,
+    "built": 7,
     "missing": [
-     "$1,345.02",
      "$1,352.94",
      "$1,665.00",
-     "$1,785.43",
      "$2,062.50",
      "$2,192.57",
      "$2,412.90",
@@ -9121,19 +9016,17 @@
      "$250,390.82",
      "$44.22",
      "$556,852.07",
-     "$560,000.00",
      "$612.40",
      "$619.08",
      "$700.00",
-     "$79.01",
-     "$93.97"
+     "$79.01"
     ]
    },
    "units": {
     "spec": 63,
-    "built": 3
+    "built": 7
    },
-   "pct": 4.8
+   "pct": 11.1
   },
   {
    "process": "35.9",
@@ -9216,7 +9109,7 @@
    },
    "figures": {
     "spec": 27,
-    "built": 0,
+    "built": 1,
     "missing": [
      "$1,062.00",
      "$129.12",
@@ -9229,7 +9122,6 @@
      "$2,914.60",
      "$3,263.68",
      "$3,461.64",
-     "$30.00",
      "$385.00",
      "$4,527.05",
      "$53,557.56",
@@ -9249,9 +9141,9 @@
    },
    "units": {
     "spec": 72,
-    "built": 0
+    "built": 1
    },
-   "pct": 0.0
+   "pct": 1.4
   },
   {
    "process": "35.10",
@@ -9327,7 +9219,7 @@
    },
    "figures": {
     "spec": 27,
-    "built": 2,
+    "built": 3,
     "missing": [
      "$107.30",
      "$2,062.50",
@@ -9347,7 +9239,6 @@
      "$443,765.81",
      "$450,000.00",
      "$559,455.71",
-     "$560,000.00",
      "$561,977.09",
      "$562,084.39",
      "$575,000.00",
@@ -9358,9 +9249,9 @@
    },
    "units": {
     "spec": 65,
-    "built": 2
+    "built": 3
    },
-   "pct": 3.1
+   "pct": 4.6
   },
   {
    "process": "35.11",
@@ -9533,21 +9424,20 @@
    },
    "figures": {
     "spec": 7,
-    "built": 1,
+    "built": 2,
     "missing": [
      "$1,250.00",
      "$3,412.92",
      "$3,417.92",
-     "$5.00",
      "$62.50",
      "$67.50"
     ]
    },
    "units": {
     "spec": 58,
-    "built": 3
+    "built": 4
    },
-   "pct": 5.2
+   "pct": 6.9
   }
  ]
 }

@@ -775,7 +775,10 @@ test("35.2-T14: Given a party with no active E-SIGN consent, when `esign.envelop
 test("35.2-T15: Given 26.2's FAKE RON session completes worked example 1 of 26.2, when the platform's audit trail arrives, then `documents.store` writes it with `retention_class = fnma_enote_signing_life_plus_7y`, `signing_sessions.audit_trail_document_id` names the row and `audit_trail_hash` equals its `sha256`, the signed closing documents are rows with `closing_documents.signed_document_id` set, and 26.2's `SM_O72_AUDIT_TRAIL_BEFORE_FUNDING_GATE` evaluator opens on that hash.", { skip }, async () => {
   clock.set(T0);
   const app = await appFixture(`ron-${uniq()}@example.test`, { legal_name: "Ron Borrower", tin_last4: "5555", dob: "1980-05-05" });
-  // the platform's audit trail and the signed eNote arrive as bytes: documents.store writes both under the closing retention class on the application
+  // the platform's audit trail and the signed eNote arrive as bytes: documents.store writes both under the closing retention class on the application.
+  // Stored at T0, before 26.2's Nov 6 session: the store is the bytes' arrival on this bus, 26.2's worked example runs on its own bus (ron26Harness) at its own
+  // clock; the 35.2 side asserts only what the T-id names (the retention class, the row's sha256 on signing_sessions, signed_document_id, the funding gate).
+  // Whether 26.2's ingestAuditTrail should call documents.store itself (one command, one clock) is an ask of 26.2 in the build report; here the row exists first and 26.2 names it.
   const at = (await run("documents.store", storeInput("t15-audit-trail", { kind: "ron_audit_trail", retention_class: "fnma_enote_signing_life_plus_7y", metadata: { title: "RON audit trail", platform: "FAKE-RON" } }), RECORDS, { applicationId: app.id })).output as { document_id: string; sha256: string; storage_status: string };
   const signed = (await run("documents.store", storeInput("t15-signed-enote", { kind: "signed_closing_document", retention_class: "fnma_enote_signing_life_plus_7y", metadata: { title: "eNote (signed)", closing_document_id: "DOC-ENOTE" } }), RECORDS, { applicationId: app.id })).output as { document_id: string; sha256: string };
   assert.equal(at.storage_status, "stored");
@@ -887,6 +890,39 @@ test("35.2-T17: Given the FAKE print vendor in outage for two consecutive sweeps
   assert.ok(g.events.filter((e) => e.type === "mail.piece.mailed").length === 3);
   printMail!.outage = false; clock.set(T0);
 });
+// Not a T-id: the seam with 35.1's dispatcher (rule 9 + 35.1 rule 11). The dispatcher dead-letters a message on AdapterUnavailable at its first attempt with
+// the `print_mail_secondary_vendor` portal task and no retry, so a manifest submitted during an outage shorter than rule 10's two sweeps would wait on a person
+// for a file the vendor can take again: the probe requeues it when the vendor answers, the next drain delivers it under the same idempotency key.
+test("35.2 seam: a manifest dead-lettered by a one-sweep print vendor outage is requeued when the vendor answers again and delivered by the next drain", { skip }, async () => {
+  clock.set(T0);
+  const f = await loanFixture();
+  const notices = await threeMailNotices(f.loanId);
+  printMail!.outage = true;
+  const bo = (await run("mail.batch", { notice_ids: notices.map((n) => n.notice_id) })).output as { batch_id: string; manifest_id: string; outbox_message_id: string };
+  const msg = async (): Promise<{ status: string; attempts: number }> => one<{ status: string; attempts: number }>(`SELECT status, attempts FROM integration_messages WHERE id = $1`, [bo.outbox_message_id]);
+  const tasks = async (): Promise<{ kind: string; status: string; completed_by: string | null }[]> => db.query<{ kind: string; status: string; completed_by: string | null }>(`SELECT kind, status, completed_by FROM human_portal_tasks WHERE integration_message_id = $1 ORDER BY opened_at`, [bo.outbox_message_id]);
+  // sweep 1, the vendor down: the drain dead-letters the file at once (35.1's rule), the probe marks the vendor unreachable — nothing is requeued while it is down
+  const rep1 = await runtime.sweep("2026-09-18T12:00:00.000Z");
+  assert.equal((await msg()).status, "dead", "35.1's dispatcher dead-letters on AdapterUnavailable"); assert.equal(rep1.documents?.mail_vendor_down, true); assert.equal(rep1.documents?.manifests_requeued, 0);
+  assert.deepEqual((await tasks()).map((t) => [t.kind, t.status]), [["print_mail_secondary_vendor", "open"]], "the outage's portal task is open");
+  assert.equal((await one<{ status: string }>(`SELECT status FROM timers WHERE code = 'SM_OUTBOX_DEAD_LETTER_REVIEW_1BD' AND subject_id = $1 ORDER BY armed_at DESC LIMIT 1`, [bo.outbox_message_id])).status, "armed");
+  // sweep 2, the vendor back: the probe requeues the dead manifest message (queued, attempts reset), completes the outage's task and logs the receipt on the batch
+  printMail!.outage = false;
+  const rep2 = await runtime.sweep("2026-09-18T13:00:00.000Z");
+  assert.equal(rep2.documents?.mail_vendor_down, false); assert.equal(rep2.documents?.manifests_requeued, 1, rep2.documents?.line);
+  const m2 = await msg(); assert.equal(m2.status, "queued"); assert.equal(m2.attempts, 0);
+  assert.deepEqual((await tasks()).map((t) => [t.kind, t.status, t.completed_by]), [["print_mail_secondary_vendor", "completed", "system:documents-sweep"]]);
+  const receipt = await one<{ payload: Record<string, unknown> }>(`SELECT payload FROM loan_events WHERE type = 'mail.manifest.requeued' AND payload->>'message_id' = $1`, [bo.outbox_message_id]);
+  assert.equal(receipt.payload["batch_id"], bo.batch_id); assert.equal(receipt.payload["manifest_id"], bo.manifest_id); assert.equal(receipt.payload["requeue_no"], 1);
+  assert.equal(await count(`FROM loan_events WHERE type = 'mail.vendor.reachable' AND payload->>'at' = '2026-09-18T13:00:00.000Z'`), 1, "the recovery is marked once");
+  // sweep 3: the drain delivers the same file under the batch id; the dead-letter clock is satisfied by integration.message.sent; the FAKE vendor holds the manifest once
+  const rep3 = await runtime.sweep("2026-09-18T14:00:00.000Z");
+  assert.equal((await msg()).status, "acked", "delivered by the next drain"); assert.equal(rep3.documents?.manifests_requeued, 0);
+  assert.equal((await one<{ status: string }>(`SELECT status FROM timers WHERE code = 'SM_OUTBOX_DEAD_LETTER_REVIEW_1BD' AND subject_id = $1 ORDER BY armed_at DESC LIMIT 1`, [bo.outbox_message_id])).status, "satisfied");
+  const held = printMail!.manifestFiles.get(bo.batch_id); assert.ok(held, "the vendor took the file"); assert.equal(held!.file.manifest_id, bo.manifest_id); assert.equal(held!.file.pieces.length, 3);
+  assert.equal(await count(`FROM escalations WHERE status = 'open' AND payload->>'proposal' = 'mail.fallback' AND payload->>'batch_id' = $1`, [bo.batch_id]), 0, "one sweep down proposes no fallback");
+  clock.set(T0);
+});
 /** The contract test's snapshot (plan §12): every `*_cents` column of every base table in public and restricted_fl, and the ledger — count and a digest of the values. */
 async function snapshotMoney(): Promise<Record<string, string>> {
   const cols = await db.query<{ table_schema: string; table_name: string; column_name: string }>(`SELECT c.table_schema, c.table_name, c.column_name FROM information_schema.columns c JOIN information_schema.tables t ON t.table_schema = c.table_schema AND t.table_name = c.table_name WHERE c.table_schema IN ('public', 'restricted_fl') AND t.table_type = 'BASE TABLE' AND c.column_name LIKE '%\\_cents' ESCAPE '\\' ORDER BY 1, 2, 3`);
@@ -900,6 +936,8 @@ async function snapshotMoney(): Promise<Record<string, string>> {
   }
   const lines = (await db.query<{ n: string; h: string }>(`SELECT count(*)::text AS n, coalesce(md5(string_agg(id::text || ':' || amount_cents::text, ',' ORDER BY id)), '') AS h FROM ledger_lines`))[0]!; out["ledger_lines"] = `${lines.n}:${lines.h}`;
   const sets = (await db.query<{ n: string; h: string }>(`SELECT count(*)::text AS n, coalesce(md5(string_agg(id::text, ',' ORDER BY id)), '') AS h FROM ledger_entry_sets`))[0]!; out["ledger_entry_sets"] = `${sets.n}:${sets.h}`;
+  // money that is not a *_cents column: the 1098's boxes (jsonb), keyed by row so a swap between rows shows too
+  const boxes = (await db.query<{ n: string; h: string }>(`SELECT count(*)::text AS n, coalesce(md5(string_agg(id::text || ':' || boxes::text, ',' ORDER BY id)), '') AS h FROM tax_forms_1098`))[0]!; out["tax_forms_1098.boxes"] = `${boxes.n}:${boxes.h}`;
   return out;
 }
 test("35.2-T18: Given every 35.2 tool run over the fixture, then no ledger line and no money column changed (a contract test compares the ledger and every `*_cents` column before and after), `documents.dispose` without a 19.1 disposal run carrying an `officer` attestation is refused `DISPOSE_NEEDS_OFFICER_ATTESTATION`, an agent actor calling `esign.envelope.sign` is refused `NO_AGENT_SIGNS`, every state-changing tool left an `agent_decisions` row with `rule_set_version = docs.v1` and no decision row contains a TIN, an address or rendered text.", { skip }, async () => {

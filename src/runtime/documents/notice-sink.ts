@@ -27,6 +27,9 @@ import type { ObjectStorePort } from "../../infra/blobs/pg-fake-blob-store.ts";
 import type { Runtime } from "../app.ts";
 import type { UowContext } from "../../infra/db/unit-of-work.ts";
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (v: string): boolean => UUID_RE.test(v);
+
 export const RENDERED_NOTICE_KIND = "rendered_notice";
 /** The retention class of a rendered notice: the template's own when the retention matrix defines it, else the loan file's (life_of_loan_plus_4y). */
 export const retentionFor = (templateRetention: string | undefined): string => (templateRetention && RETENTION_CLASSES.has(templateRetention) ? templateRetention : "life_of_loan_plus_4y");
@@ -100,11 +103,12 @@ export class PgArtifactSink implements ArtifactSink {
         if (v) await repo.saveVersion(v, q);
       }
       // a notice keyed by a loan the loans table does not hold (a unit fixture's loan id) cannot be a notices row; its document still is
-      if (n.loanId && !(await q.query(`SELECT 1 FROM loans WHERE id = $1`, [n.loanId])).length) return;
-      const caseOk = n.caseId ? (await q.query(`SELECT 1 FROM cases WHERE id = $1`, [n.caseId])).length > 0 : false;
+      if (n.loanId && !(isUuid(n.loanId) && (await q.query(`SELECT 1 FROM loans WHERE id = $1`, [n.loanId])).length)) return;
+      // a case id that is not a uuid (4.x cases keyed by a prefixed string, e.g. `noe-…`) is not a cases row: the notice keeps its loan, the column stays null
+      const caseOk = n.caseId && isUuid(n.caseId) ? (await q.query(`SELECT 1 FROM cases WHERE id = $1`, [n.caseId])).length > 0 : false;
       const deliveries = [] as Notice["deliveries"];
       for (const d of n.deliveries) {
-        const cardOk = d.cardInstanceId ? (await q.query(`SELECT 1 FROM card_instances WHERE card_instance_id = $1`, [d.cardInstanceId])).length > 0 : false;
+        const cardOk = d.cardInstanceId && isUuid(d.cardInstanceId) ? (await q.query(`SELECT 1 FROM card_instances WHERE card_instance_id = $1`, [d.cardInstanceId])).length > 0 : false;
         const { cardInstanceId: _c, ...rest } = d; void _c;
         deliveries.push(cardOk ? d : (rest as Notice["deliveries"][number]));
       }

@@ -54,7 +54,14 @@ import { CommandRefused, AiPathUnavailable } from "../app/commands.ts";
 import { CardRefused } from "../app/tools/section32-1.ts";
 import { RescissionRefused } from "../domain/compliance-disclosures/ops-25-3.ts";
 import { PortUnavailable } from "../app/tools.ts";
+import { StaleRecord } from "../domain/operations-runtime/seam/guard.ts";
 import { RoleDenied } from "../app/roles.ts";
+import { StaffError } from "./staff/roles.ts";
+import { PrincipalRefused } from "../domain/operations-runtime/roles-35-7/refusals.ts";
+// 35.7 rule 2: the /v1 door — every bearer resolved to a principal before the route; dual control around the tools; one staff_actions row per request
+import { V1Auth, actorOf, subjectIdOf, type PrincipalContext } from "../domain/operations-runtime/roles-35-7/v1-auth.ts";
+import { executeWithControls } from "../domain/operations-runtime/roles-35-7/dual-control.ts";
+import { currentFakeSet, envDefault } from "../domain/operations-runtime/roles-35-7/env.ts";
 import type { Actor } from "../kernel/events/index.ts";
 import { createConsoleServer } from "../console/server.ts";
 import { PgConsoleStore } from "../console/pg-store.ts";
@@ -129,7 +136,6 @@ async function partnerBookInput(req: IncomingMessage): Promise<PartnerBookImport
   return { partner: { legal_name: partner["legal_name"], nmlsr_id: partner["nmlsr_id"], ...(typeof partner["servicer_number"] === "string" && partner["servicer_number"] ? { servicer_number: partner["servicer_number"] } : {}), ...(typeof partner["mers_org_id"] === "string" && partner["mers_org_id"] ? { mers_org_id: partner["mers_org_id"] } : {}) },
     as_of_date: fields["as_of_date"], profile: "m3-v1", tape: files["tape"], ...(files["supplement"] ? { supplement: files["supplement"] } : {}) };
 }
-const ACTOR_KINDS = new Set(["human", "agent", "system"]);
 /**
  * Section 34 (review findings): none of the operator portal's tools (34.1 staff acts, 34.2 directory looks / unmask / export,
  * 34.3 book operations, 34.4 controls — the two-person kill switch, the evidence pack) runs on the generic tool routes — there
@@ -143,12 +149,6 @@ const ACTOR_KINDS = new Set(["human", "agent", "system"]);
  */
 const staffToolsOnly = (process: string): boolean => /^34\./.test(process);
 const STAFF_TOOLS_REFUSED = { error: "forbidden", code: "STAFF_TOOLS_ARE_SESSION_ONLY", hint: "section 34 tools (34.1 staff, 34.2 directory, 34.3 book operations, 34.4 controls) run only on the ops console's session routes (/ops/api/…); the first admin is `main.ts staff-bootstrap <email>`" };
-function actorOf(v: unknown): Actor {
-  const a = v as { kind?: unknown; id?: unknown; role?: unknown } | undefined;
-  if (!a || typeof a !== "object" || typeof a.kind !== "string" || !ACTOR_KINDS.has(a.kind) || typeof a.id !== "string" || !a.id) throw new RangeError("actor must be { kind: human|agent|system, id, role? }");
-  if (a.role !== undefined && typeof a.role !== "string") throw new RangeError("actor.role must be a string");
-  return { kind: a.kind as Actor["kind"], id: a.id, ...(typeof a.role === "string" ? { role: a.role } : {}) };
-}
 function tokenOf(req: IncomingMessage): string {
   const h = String(req.headers["authorization"] ?? "");
   if (h.toLowerCase().startsWith("bearer ")) return h.slice(7).trim();
@@ -174,21 +174,34 @@ export function createApiServer(opts: ServerOptions): Server {
   const { runtime, logger } = opts;
   // DELTA-30: the console's queue rows name the FAKE reviewer that will fill them (src/infra/integrations/reviewers.ts) when the runtime runs one
   // 34.1: the console resolves the staff session itself (cookie sm_staff / a session bearer) and honours the legacy x-actor-* headers only behind the ops bearer outside production — so /ops and its /api are dispatched before the token check below
-  const consoleServer = opts.console === false ? null : createConsoleServer({ store: new PgConsoleStore(runtime.db, runtime.registry, runtime.agents, { fakeReviewers: runtime.reviewers ? { roles: runtime.reviewers.roles, delaySeconds: runtime.reviewers.delaySeconds } : null }), clock: runtime.clock, runtime, apiToken: opts.apiToken, environment: opts.borrower?.environment ?? process.env["ENVIRONMENT"] ?? "nonprod", logger });
-  const authorized = (req: IncomingMessage): boolean => (opts.apiToken ? same(tokenOf(req), opts.apiToken) : true);
+  // 35.7 rule 6: the console's queue marking reads the CURRENT FAKE set from Postgres (the environment's default minus the roles handed over to a person)
+  const fakeResolve = (): Promise<readonly string[]> => currentFakeSet(runtime.db, runtime.environment, envDefault(runtime.env, runtime.environment).roles.filter((r) => runtime.reviewers!.defaultRoles.includes(r)));
+  const consoleServer = opts.console === false ? null : createConsoleServer({ store: new PgConsoleStore(runtime.db, runtime.registry, runtime.agents, { fakeReviewers: runtime.reviewers ? { roles: runtime.reviewers.roles, delaySeconds: runtime.reviewers.delaySeconds, resolve: fakeResolve } : null }), clock: runtime.clock, runtime, apiToken: opts.apiToken, environment: opts.borrower?.environment ?? runtime.environment, logger });
+  // 35.7 rule 2: the /v1 door — the shared API_TOKEN outside production (source shared_token), else an api_principals row (source principal); production refuses the shared token
+  const v1 = new V1Auth(runtime, { apiToken: opts.apiToken });
   // 35.2: the borrower router's object store is the runtime's (PgFakeBlobStore over document_blobs in every nonprod stage) unless the caller wires one
   const borrower = opts.borrowerRouter ?? createBorrowerRouter({ runtime, logger, blobs: runtime.blobs, ...(opts.borrower ?? {}) });
-  // the demo clock routes refuse in production (docs/DEPLOY.md "The demo clock"); the borrower options carry the environment main.ts read from ENVIRONMENT
-  const environment = opts.borrower?.environment ?? process.env["ENVIRONMENT"] ?? "nonprod";
+  // the demo clock routes refuse in production (docs/DEPLOY.md "The demo clock"); the runtime's environment is the one source (35.7), the borrower options may name it too
+  const environment = opts.borrower?.environment ?? runtime.environment;
 
   return createServer(async (req, res) => {
     const started = Date.now();
     const url = new URL(req.url ?? "/", "http://runtime");
     const method = req.method ?? "GET";
     const path = url.pathname;
+    // 35.7 (34.1 rule 4 on /v1): one staff_actions row per /v1 request — ids and codes only, never the token
+    let principal: PrincipalContext | null = null; let v1Route = false;
+    const action = { subject_kind: null as string | null, subject_id: null as string | null, command: null as string | null, result: "ok" as "ok" | "refused" | "error", refusal_code: null as string | null, role: null as string | null };
     const done = (status: number, body: unknown, extra: Record<string, unknown> = {}): void => {
+      if (status >= 400) { action.result = status >= 500 ? "error" : "refused"; const b = body as { code?: unknown } | null; action.refusal_code = b && typeof b === "object" && typeof b.code === "string" ? b.code : status === 401 ? "UNAUTHORIZED" : status === 404 ? "NOT_FOUND" : status >= 500 ? "INTERNAL" : "REFUSED"; }
       send(res, status, body);
       logger.info("http", { method, path, status, ms: Date.now() - started, ...extra });
+    };
+    /** The /v1 tool routes' actor (rule 2): the principal's, with the role the request names among the roles the person holds and the tool accepts. */
+    const resolveActor = async (b: Record<string, unknown>, def: ReturnType<Runtime["tool"]>, subject: { loanId?: string | null; applicationId?: string | null }, process: string, fallback?: Actor): Promise<{ actor: Actor; grantRole: string | null }> => {
+      const c = principal!; v1.scopeCheck(c, { ...subject, process });
+      const r = await v1.actorFor(c, { method, headers: req.headers, body: b, accepted: V1Auth.acceptedFor(def), dualControl: def?.dualControl !== undefined, subject, now: runtime.clock.now(), ...(fallback ? { fallback } : {}) });
+      action.role = r.role; return { actor: r.actor, grantRole: r.grantRole };
     };
     try {
       if (method === "GET" && path === "/healthz") { done(200, { ok: true }); return; }
@@ -206,7 +219,11 @@ export function createApiServer(opts: ServerOptions): Server {
       if (await borrower.handle(req, res, url, method)) return;
       // 32.14 §6.3 / 34.1: the ops console page lives at /ops and its JSON API at /ops/api/* (and the legacy /api/*); the console authenticates its own staff sessions (src/console/server.ts) — the ops token is one way in only for the deploy workflow's header actor
       if (consoleServer && (path === "/ops" || path === "/ops/" || path === "/ops/index.html" || path.startsWith("/ops/api/") || path.startsWith("/api/"))) { consoleServer.emit("request", req, res); return; }
-      if (!authorized(req)) { done(401, { error: "unauthorized", hint: "Authorization: Bearer <API_TOKEN>" }); return; }
+      v1Route = path.startsWith("/v1/");
+      // the tool routes' command and subject are on the row even when the door refuses the bearer (T13: a refused request names its command)
+      const pre = v1Route && method === "POST" ? /^\/v1\/(?:loans\/([^/]+)\/|applications\/([^/]+)\/)?tools\/([^/]+)\/([^/]+)$/.exec(path) : null;
+      if (pre) { action.command = `${decodeURIComponent(pre[3]!)} ${decodeURIComponent(pre[4]!)}`; Object.assign(action, subjectIdOf(pre[1] ? decodeURIComponent(pre[1]) : "", pre[2] ? decodeURIComponent(pre[2]) : undefined)); }
+      try { principal = await v1.resolve(req, runtime.clock.now()); } catch (e) { if (e instanceof PrincipalRefused && e.context) principal = e.context as PrincipalContext; throw e; }
       if (method === "GET" && path === "/v1/tools") { done(200, { tools: runtime.listTools() }); return; }
       let m: RegExpExecArray | null;
       if (method === "POST" && (m = /^\/v1\/(?:loans\/([^/]+)\/)?tools\/([^/]+)\/([^/]+)$/.exec(path))) {
@@ -215,12 +232,13 @@ export function createApiServer(opts: ServerOptions): Server {
         const process = decodeURIComponent(m[2]!); const name = decodeURIComponent(m[3]!);
         if (staffToolsOnly(process)) { done(403, STAFF_TOOLS_REFUSED, { tool: `${process} ${name}` }); return; }
         const b = await readJson(req);
-        const actor = actorOf(b["actor"]);
+        action.command = `${process} ${name}`; Object.assign(action, subjectIdOf(loanId, undefined));
+        const { actor, grantRole } = await resolveActor(b, runtime.tool(process, name), { loanId: loanId || null }, process);
         const input = toolInput(b["input"]);
         const run = b["run"] as { runId?: unknown; modelVersion?: unknown; promptVersion?: unknown; confidence?: unknown } | undefined;
         const runInfo = run && typeof run.runId === "string" && typeof run.modelVersion === "string" && typeof run.promptVersion === "string"
           ? { runId: run.runId, modelVersion: run.modelVersion, promptVersion: run.promptVersion, ...(typeof run.confidence === "number" ? { confidence: run.confidence } : {}) } : undefined;
-        const r = await runtime.execute({ process, name, loanId, actor, input: loanId && input["loan_id"] === undefined ? { ...input, loan_id: loanId } : input, ...(runInfo ? { run: runInfo } : {}), ...(b["approvedBy"] ? { approvedBy: actorOf(b["approvedBy"]) } : {}) });
+        const r = await executeWithControls(runtime, { process, name, loanId, actor, input: loanId && input["loan_id"] === undefined ? { ...input, loan_id: loanId } : input, ...(runInfo ? { run: runInfo } : {}), ...(principal!.source === "shared_token" && b["approvedBy"] ? { approvedBy: actorOf(b["approvedBy"]) } : {}) }, { surface: "v1", source: principal!.source, requestId: typeof b["request_id"] === "string" ? b["request_id"] : null, grantRole });
         done(200, r, { tool: `${process} ${name}`, loan_id: loanId || null, actor: `${actor.kind}:${actor.id}`, events: r.events.length }); return;
       }
       if (method === "POST" && (m = /^\/v1\/applications\/([^/]+)\/tools\/([^/]+)\/([^/]+)$/.exec(path))) {
@@ -229,20 +247,22 @@ export function createApiServer(opts: ServerOptions): Server {
         const process = decodeURIComponent(m[2]!); const name = decodeURIComponent(m[3]!);
         if (staffToolsOnly(process)) { done(403, STAFF_TOOLS_REFUSED, { tool: `${process} ${name}` }); return; }
         const b = await readJson(req);
-        const actor = actorOf(b["actor"]);
-        const input = toolInput(b["input"]);
+        action.command = `${process} ${name}`; Object.assign(action, subjectIdOf("", applicationId));
         const app = await runtime.applications.get(applicationId);
         if (!app) { done(404, { error: "no_such_application" }); return; }
         const loanId = app.loan_id ?? "";
+        const { actor, grantRole } = await resolveActor(b, runtime.tool(process, name), { loanId: loanId || null, applicationId }, process);
+        const input = toolInput(b["input"]);
         const run = b["run"] as { runId?: unknown; modelVersion?: unknown; promptVersion?: unknown; confidence?: unknown } | undefined;
         const runInfo = run && typeof run.runId === "string" && typeof run.modelVersion === "string" && typeof run.promptVersion === "string"
           ? { runId: run.runId, modelVersion: run.modelVersion, promptVersion: run.promptVersion, ...(typeof run.confidence === "number" ? { confidence: run.confidence } : {}) } : undefined;
-        const r = await runtime.execute({ process, name, loanId, applicationId, actor, input: { ...(loanId && input["loan_id"] === undefined ? { loan_id: loanId } : {}), ...(input["application_id"] === undefined ? { application_id: applicationId } : {}), ...input }, ...(runInfo ? { run: runInfo } : {}), ...(b["approvedBy"] ? { approvedBy: actorOf(b["approvedBy"]) } : {}) });
+        const r = await executeWithControls(runtime, { process, name, loanId, applicationId, actor, input: { ...(loanId && input["loan_id"] === undefined ? { loan_id: loanId } : {}), ...(input["application_id"] === undefined ? { application_id: applicationId } : {}), ...input }, ...(runInfo ? { run: runInfo } : {}), ...(principal!.source === "shared_token" && b["approvedBy"] ? { approvedBy: actorOf(b["approvedBy"]) } : {}) }, { surface: "v1", source: principal!.source, requestId: typeof b["request_id"] === "string" ? b["request_id"] : null, grantRole });
         done(200, r, { tool: `${process} ${name}`, application_id: applicationId, loan_id: loanId || null, actor: `${actor.kind}:${actor.id}`, events: r.events.length }); return;
       }
       if (method === "POST" && path === "/v1/applications") {
         const b = await readJson(req);
-        const actor = actorOf(b["actor"]);
+        action.command = "applications.create";
+        const { actor } = await resolveActor(b, undefined, {}, "applications");
         const a = b["application"] as Record<string, unknown> | undefined;
         if (!a || typeof a !== "object") throw new RangeError("application is required: { partner_party_id, channel, transaction_type, occupancy, borrowers: [{ legal_name }], property? }");
         for (const k of ["partner_party_id", "channel", "transaction_type", "occupancy"]) if (typeof a[k] !== "string" || !a[k]) throw new RangeError(`application.${k} is required`);
@@ -254,7 +274,8 @@ export function createApiServer(opts: ServerOptions): Server {
         const applicationId = decodeURIComponent(m[1]!);
         if (!isUuid(applicationId)) throw new RangeError("applicationId must be the application's uuid (applications.id)");
         const b = await readJson(req);
-        const actor = actorOf(b["actor"]);
+        action.command = "applications.fund"; Object.assign(action, subjectIdOf("", applicationId));
+        const { actor } = await resolveActor(b, undefined, { applicationId }, "fund");
         const app = await runtime.applications.get(applicationId);
         if (!app) { done(404, { error: "no_such_application" }); return; }
         const snapshotOverrides = (b["snapshot"] && typeof b["snapshot"] === "object" ? reviveCents(b["snapshot"]) : {}) as DemoOverrides;
@@ -274,7 +295,8 @@ export function createApiServer(opts: ServerOptions): Server {
         const applicationId = decodeURIComponent(m[1]!);
         if (!isUuid(applicationId)) throw new RangeError("applicationId must be the application's uuid (applications.id)");
         const b = await readJson(req);
-        const actor = actorOf(b["actor"]);
+        action.command = "applications.disclosures.le"; Object.assign(action, subjectIdOf("", applicationId));
+        const { actor } = await resolveActor(b, undefined, { applicationId }, "21.2");
         if (!b["render"] || typeof b["render"] !== "object" || !b["mlo"] || typeof b["mlo"] !== "object" || !b["delivery"] || typeof b["delivery"] !== "object") throw new RangeError("render, mlo { review_id, nmlsr_id } and delivery { channel } are required");
         // 32.5 T9: `delivery.deliveries[]` (one per consumer) rides through as-is — the bridge chooses LoanEstimateService.deliverPerBorrower; `delivery.channel` stays required as the governing channel
         const render = reviveCents(b["render"]) as Record<string, unknown>;
@@ -306,14 +328,16 @@ export function createApiServer(opts: ServerOptions): Server {
       }
       if (method === "POST" && path === "/v1/transfers/batches/demo") {
         const b = await readJson(req);
-        const actor = b["actor"] ? actorOf(b["actor"]) : { kind: "system" as const, id: "demo-seed" };
+        action.command = "transfers.batches.demo";
+        const { actor } = await resolveActor(b, undefined, {}, "transfers", { kind: "system", id: "demo-seed" });
         const demo = generateDemoBatch();
         const r = await boardTransferBatch(runtime, { ...DEMO_BATCH }, encodeTransferBatch(demo, demo.coborrowers), actor);
         done(200, r, { batch: r.batch_id, status: r.status, boarded: r.loans.boarded }); return;
       }
       if (method === "POST" && path === "/v1/transfers/batches") {
         const b = await readJson(req);
-        const actor = actorOf(b["actor"]);
+        action.command = "transfers.batches";
+        const { actor } = await resolveActor(b, undefined, {}, "transfers");
         const batch = b["batch"] as Record<string, unknown> | undefined; const files = b["files"] as Record<string, unknown> | undefined;
         if (!batch || typeof batch !== "object") throw new RangeError("batch is required: { batch_id, transfer_date, transferor_name, transferor_servicer_number, partner_servicer_number, transferor_mers_org_id, partner_mers_org_id, ... }");
         if (!files || typeof files !== "object" || typeof files["boarding_tape.final.csv"] !== "string") throw new RangeError("files must carry the tape CSV texts; boarding_tape.final.csv is required");
@@ -333,7 +357,8 @@ export function createApiServer(opts: ServerOptions): Server {
       }
       // 33.1 the partner book: the operator uploads the tape and the supplement (JSON content_base64 or multipart); the portfolio agent loads, provisions and invites — src/runtime/partner-book.ts
       if (method === "POST" && path === "/v1/partner-book/imports") {
-        const actorHeader = String(req.headers["x-actor-id"] ?? "");
+        action.command = "book.import"; v1.scopeCheck(principal!, { process: "33.1" });
+        const actorHeader = principal!.person?.id ?? String(req.headers["x-actor-id"] ?? "");
         const input = await partnerBookInput(req);
         const r = await importPartnerBook(runtime, input, { kind: "human", id: actorHeader || "ops", ...(req.headers["x-actor-role"] ? { role: String(req.headers["x-actor-role"]) } : { role: "ops_analyst" }) });
         done(200, r, { import: r.import_id, status: r.status, rows_total: r.rows_total, rows_loaded: r.rows_loaded, loans_created: r.loans_created, invitations_sent: r.invitations_sent }); return;
@@ -344,7 +369,8 @@ export function createApiServer(opts: ServerOptions): Server {
       // 33.1 rule 8: `book.resolve{loan_id, resolution ∈ paid_off | transferred_out | keep, reason}` — an ops_analyst act on the bus (x-actor-role defaults to ops_analyst; any other role is refused ROLE_DENIED)
       if (method === "POST" && (m = /^\/v1\/partner-book\/loans\/([^/]+)\/resolve$/.exec(path))) {
         const b = await readJson(req);
-        const actorHeader = String(req.headers["x-actor-id"] ?? "");
+        action.command = "book.resolve"; action.subject_kind = "loan"; action.subject_id = decodeURIComponent(m[1]!); v1.scopeCheck(principal!, { process: "33.1" });
+        const actorHeader = principal!.person?.id ?? String(req.headers["x-actor-id"] ?? "");
         const r = await resolvePartnerBookLoan(runtime, decodeURIComponent(m[1]!), { resolution: String(b["resolution"] ?? ""), reason: String(b["reason"] ?? "") }, { kind: "human", id: actorHeader || "ops", ...(req.headers["x-actor-role"] ? { role: String(req.headers["x-actor-role"]) } : { role: "ops_analyst" }) });
         done(200, { ...(r.output as Record<string, unknown>), events: r.events, decision_id: r.decision_id }, { loan: decodeURIComponent(m[1]!), resolution: String(b["resolution"] ?? "") }); return;
       }
@@ -368,16 +394,21 @@ export function createApiServer(opts: ServerOptions): Server {
         if (method === "GET" && path === "/v1/demo/clock") { done(200, await demoClockStatus(runtime.db, clock)); return; }
         if (method === "POST" && path === "/v1/demo/advance") {
           const b = await readJson(req);
-          const actor = b["actor"] ? actorOf(b["actor"]) : { kind: "human" as const, id: "ops" };
+          action.command = "demo.advance";
+          const { actor } = await resolveActor(b, undefined, {}, "demo", { kind: "human", id: "ops" });
           const r = await advanceDemoClock({ runtime, clock, flows: borrower.flows, logger, actor: `${actor.kind}:${actor.id}` }, { to: b["to"], days: b["days"], budget_ms: b["budget_ms"] });
           done(200, r, { advanced: r.advanced, complete: r.complete, from: r.from, to: r.to, days_crossed: r.days_crossed, steps: r.steps.length, steps_remaining: r.steps_remaining, due: r.due, breaches: r.breaches }); return;
         }
         done(404, { error: "not found" }); return;
       }
-      if (method === "POST" && path === "/v1/sweep") { if (borrower.flows) await borrower.flows.tick(runtime.clock.now()); const report = await runtime.sweep(); done(200, report, { due: report.due, breaches: report.breaches.length }); return; }
+      if (method === "POST" && path === "/v1/sweep") { action.command = "sweep"; v1.scopeCheck(principal!, { process: "sweep" }); if (borrower.flows) await borrower.flows.tick(runtime.clock.now()); const report = await runtime.sweep(); done(200, report, { due: report.due, breaches: report.breaches.length }); return; }
       done(404, { error: "not found" });
     } catch (e) {
       if (e instanceof CommandRefused) { done(409, { error: "refused", command: e.command, code: e.code, citation: e.citation, reason: e.message }, { refused: e.code }); return; }
+      // 35.1 rule 8: the expected-version guard (declared or mechanical) refuses the whole command — nothing was written; the API log carries the refusal (open question 5)
+      if (e instanceof StaleRecord) { done(409, e.toJSON(), { refused: e.code }); return; }
+      // 35.7: the typed refusals of the /v1 door (PRINCIPAL_*, NO_SELF_ASSERTED_ACTOR, SHARED_TOKEN_REFUSED_IN_PRODUCTION, …), of dual control (APPROVER_DISTINCT{request_id}) and of the roles' tools — status, code and extras
+      if (e instanceof StaffError) { done(e.status, { error: e.code.toLowerCase(), code: e.code, reason: e.message, ...e.extra }, { refused: e.code }); return; }
       // a section's own typed refusal thrown by its tool (not a bus guardrail): the same 409 shape, its code and reason kept (32.5 T10, 32.7 T6)
       if (e instanceof CardRefused) { done(409, { error: "refused", code: e.code, reason: e.message }, { refused: e.code }); return; }
       if (e instanceof RescissionRefused) { done(409, { error: "refused", code: e.code, citation: e.citation, reason: e.message }, { refused: e.code }); return; }
@@ -390,6 +421,9 @@ export function createApiServer(opts: ServerOptions): Server {
       if (e instanceof RangeError || e instanceof TypeError || e instanceof SyntaxError) { done(400, { error: "bad_request", reason: e.message }); return; }
       logger.error("unhandled", { method, path, error: e });
       done(500, { error: "internal" });
+    } finally {
+      // 35.7 (34.1 rule 4): every /v1 request leaves a staff_actions row — surface v1, the principal (or the shared token), ids and codes only, never the token
+      if (v1Route) { const q = new URL(url.toString()); q.searchParams.delete("email"); await v1.log({ context: principal, at: new Date(started).toISOString(), route: q.pathname + q.search, method, subject_kind: action.subject_kind, subject_id: action.subject_id, command: action.command, result: action.result, refusal_code: action.refusal_code, role: action.role }); }
     }
   });
 }

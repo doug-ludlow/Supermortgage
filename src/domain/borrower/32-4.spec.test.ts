@@ -15,8 +15,7 @@ import { connect, type Db } from "../../infra/db/client.ts";
 import { testDatabase } from "../../infra/db/test-db.ts";
 import { decodeEntityData } from "../../infra/db/entities.ts";
 import { loadOverriddenRegistry } from "../timer-overrides.ts";
-import { FixedClock, MemoryEventStore } from "../../kernel/events/index.ts";
-import { MemoryLedger } from "../../kernel/ledger/ledger.ts";
+import { FixedClock } from "../../kernel/events/index.ts";
 import { Runtime } from "../../runtime/app.ts";
 import { createApiServer, listen } from "../../runtime/server.ts";
 import { createLogger } from "../../runtime/log.ts";
@@ -94,10 +93,13 @@ async function deliverLe(j: Journey, delivery: Record<string, unknown>): Promise
   const r = await j.call("POST", `/v1/applications/${j.appId}/disclosures/le`, { actor: MLO, render, mlo: { review_id: `MR-LE-${j.R}`, nmlsr_id: "987654" }, delivery });
   await settle(); return r;
 }
-/** The runtime-wide 21.5 register (one ToleranceService per runtime, wired as `services.tolerance`) — read for the changed circumstance's status. */
-function tolerance(): ToleranceService {
-  const svc = runtime.originationServices.forCommand({ events: new MemoryEventStore(clock), clock, ledger: new MemoryLedger() }, new EntityStore(), new EscalationService(new MemoryEventStore(clock), clock));
-  return svc["tolerance"] as ToleranceService;
+/** The 21.5 register as a command sees it (35.1 rule 9: `services.tolerance` is rebuilt from the application's record before every command) — read for the changed circumstance's status. */
+async function tolerance(applicationId: string): Promise<ToleranceService> {
+  const r = await runtime.uow.run({ applicationId }, async (ctx) => {
+    const svc = await runtime.originationServices.forCommand(ctx, new EntityStore(), new EscalationService(ctx.events, clock));
+    return svc["tolerance"] as ToleranceService;
+  }, { clock });
+  return r.result;
 }
 const HUD = (snapshot_at: string, n = 12) => ({ snapshot_at, centroid: { lat: "33.5", long: "-112.0" }, agencies: Array.from({ length: n }, (_, k) => ({ agency_name: `Agency ${k + 1}`, phone: `555-01${String(k).padStart(2, "0")}`, street_address: `Street Address ${k + 1}`, street_address_2: "", city: "Phoenix", state: "AZ", zip: "85004", website: `site ${k + 1}`, email: `email ${k + 1}`, services: "Pre-purchase counseling", languages: "English; Spanish", distance_miles: String(((k * 7) % 12) + 1) })) });
 const A3 = (fee: string, from: string, to: string) => `the AMC reports information specific to the transaction that the creditor did not rely on when providing the original disclosures — ${fee} moves from ${from} to ${to} cents (new information specific to the consumer or transaction, §1026.19(e)(3)(iv)(A)(3))`;
@@ -201,7 +203,7 @@ test("32.4-T8: Given `changed_circumstances.evaluated_valid{kind=new_info}` 2 sp
     deliveries: [{ consumer_id: "B1", channel: "esign_portal", at: MST("2026-11-04", "11:30"), esign_consent_id: "ESIGN-B1" }, { consumer_id: "B2", channel: "esign_portal", at: MST("2026-11-04", "11:30"), esign_consent_id: "ESIGN-B2" }] }, DISCLOSURE);
   assert.equal(corrected.output["cd_version"], 2); assert.ok(corrected.events.some((e) => e.type === "disclosure.cd.corrected" && (e.payload as { cc_ids: string[] }).cc_ids.includes(main.ccT8)));
   assert.ok(corrected.events.some((e) => e.type === "changed_circumstance.reflected" && e.payload["cc_id"] === main.ccT8 && e.payload["reflected_on"] === "corrected_cd"), corrected.events.map((e) => e.type).join(","));
-  assert.equal(tolerance().cc(main.ccT8).status, "reflected_on_cd"); assert.equal(tolerance().cc(main.ccT8).revised_le_disclosure_id, main.cdV2);
+  const tol = await tolerance(main.j!.appId); assert.equal(tol.cc(main.ccT8).status, "reflected_on_cd"); assert.equal(tol.cc(main.ccT8).revised_le_disclosure_id, main.cdV2);
   await settle();
   assert.equal(((await record(A, j.appId))["documents"] as Record<string, unknown>[]).find((d) => d["disclosure_id"] === main.cdV2)?.["notice_code"], "NTC_REGZ_1026_38_CD_CORRECTED");
   // the receipts of the corrected CD so the consummation path (26.2) keeps the fixture's facts

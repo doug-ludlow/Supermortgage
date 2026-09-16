@@ -7,7 +7,8 @@
 // every 32.x flow (src/runtime/borrower/flows) reacting to the committed events — read the way the shell reads it (the
 // borrower API: me, record, thread, cards, commands, deep links, documents), plus the shell itself: the built Next.js app
 // (apps/borrower, `.next-t13`, rebuilt here when its sources are newer) pointed at this test's API through its proxy and
-// driven with Playwright's Chromium from /opt/pw-browsers at 1280 and 390 px (T-X-08, T-X-10, T-X-11, T-X-12, T-X-15).
+// driven with Playwright's Chromium from /opt/pw-browsers at 1280 and 390 px — the five-tab shell (01 §1.2: Apply · Chat · My Loan · Tasks ·
+// Account, the Record as the sheet the header's "Your record" opens) — (T-X-08, T-X-10, T-X-11, T-X-12, T-X-15).
 // The copy rules (T-X-13, T-X-14) are string assertions over copy-library.md. Tests run in journey order, not T-id order.
 // Skips without a database.
 import { test } from "node:test";
@@ -162,7 +163,7 @@ export function fleschKincaid(text: string): { grade: number; words: number; sen
 
 // ---------------------------------------------------------------- the shell: the built Next.js app on this test's API, driven with Playwright
 interface Locator { getByTestId(id: string): Locator; fill(value: string): Promise<void>; allInnerTexts(): Promise<string[]>; evaluateAll<T>(fn: (els: unknown[]) => T): Promise<T>; count(): Promise<number>; first(): Locator; nth(i: number): Locator; click(o?: object): Promise<void>; boundingBox(): Promise<{ x: number; y: number; width: number; height: number } | null>; textContent(): Promise<string | null>; isVisible(): Promise<boolean>; waitFor(o?: { state?: string; timeout?: number }): Promise<void>; getAttribute(n: string): Promise<string | null>; locator(sel: string, o?: { hasText?: string | RegExp }): Locator; all(): Promise<Locator[]>; innerText(): Promise<string> }
-interface Page { on(event: string, fn: (x: { text(): string; message?: string }) => void): void; goto(url: string, o?: { waitUntil?: string; timeout?: number }): Promise<unknown>; reload(o?: { waitUntil?: string }): Promise<unknown>; locator(sel: string, o?: { hasText?: string | RegExp }): Locator; getByTestId(id: string): Locator; evaluate<T>(fn: string): Promise<T>; viewportSize(): { width: number; height: number } | null; waitForTimeout(ms: number): Promise<void>; content(): Promise<string>; close(): Promise<void>; waitForSelector(sel: string, o?: { timeout?: number; state?: string }): Promise<unknown> }
+interface Page { on(event: string, fn: (x: { text(): string; message?: string }) => void): void; goto(url: string, o?: { waitUntil?: string; timeout?: number }): Promise<unknown>; reload(o?: { waitUntil?: string }): Promise<unknown>; locator(sel: string, o?: { hasText?: string | RegExp }): Locator; getByTestId(id: string): Locator; getByRole(role: string, o?: { name?: string | RegExp }): Locator; evaluate<T>(fn: string): Promise<T>; viewportSize(): { width: number; height: number } | null; waitForTimeout(ms: number): Promise<void>; content(): Promise<string>; close(): Promise<void>; waitForSelector(sel: string, o?: { timeout?: number; state?: string }): Promise<unknown> }
 interface Context { addCookies(c: object[]): Promise<void>; newPage(): Promise<Page>; close(): Promise<void> }
 interface Browser { newContext(o: object): Promise<Context>; close(): Promise<void> }
 let appProc: ChildProcess | null = null; let appBase = ""; let browser: Browser | null = null; let appLog = "";
@@ -625,7 +626,7 @@ test("32.13-T2: No invented dates — Given any Dates row rendered, then its `ti
 });
 
 // ═══════════════════════════════════ the shell on this API: a person, mobile parity
-test("32.13-T8: Talk to a person — Given any screen, then a control emitting `human.request` is visible without scrolling; after `human.transfer.completed`, a `PersonCard{human_agent}` exists.", { skip }, async () => {
+test("32.13-T8: Talk to a person — Given any screen, then a control emitting `human.request` is visible without scrolling (the input bar; on a phone the Chat tab is in the tab rail on every screen and its input bar is in the viewport); after `human.transfer.completed`, a `PersonCard{human_agent}` exists.", { skip }, async () => {
   const s = await signIn(J.A);
   const requested = async () => Number((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM loan_events WHERE type = 'human.transfer.requested' AND (application_id = $1 OR loan_id = $2)`, [J.j.appId, J.j.loanId]))[0]!.n);
   const requestedBefore = await requested();
@@ -655,11 +656,21 @@ test("32.13-T8: Talk to a person — Given any screen, then a control emitting `
   assert.match(await card.first().innerText(), /A person on your loan/);
   assert.equal(await page.getByTestId("talk-to-person").count(), 0);
   await ctx.close();
-  // 390: no control either; the input bar in the viewport, with the status strip
+  // 390: the five-tab shell (01 §1.2). A session lands on Chat (32.16 §2.0), where the input bar is — no control either. Every other tab keeps the
+  // fixed tab rail in the viewport, so the Chat tab, and with it the input bar, is one tap away without scrolling on every screen.
   const m = await openShell(s.token, 390);
+  assert.equal(await m.page.locator('[data-testid="shell"][data-mobile-shell="1"][data-tab="chat"]').count(), 1, "a session lands on the Chat tab");
   assert.equal(await m.page.getByTestId("talk-to-person").count(), 0, "no Talk to a person control at 390");
   assert.ok(await inViewport(m.page, "action-bar"), "the input bar is in the viewport at 390");
-  assert.ok(await m.page.getByTestId("status-strip").isVisible());
+  for (const t of ["tab-apply", "tab-loan", "tab-tasks", "tab-account"]) {
+    await m.page.getByTestId(t).click(); await m.page.waitForSelector(`[data-testid="shell"][data-tab="${t.slice(4)}"]`, { timeout: 15_000 });
+    assert.ok(await inViewport(m.page, "tab-chat"), `${t}: the Chat tab is in the viewport without scrolling`);
+    assert.equal(await m.page.getByTestId("talk-to-person").count(), 0, `${t}: no Talk to a person control`);
+  }
+  await m.page.getByTestId("tab-chat").click(); await m.page.waitForSelector('[data-testid="shell"][data-tab="chat"]', { timeout: 15_000 });
+  assert.ok(await inViewport(m.page, "action-bar"), "back on Chat the input bar is in the viewport");
+  assert.ok(await inViewport(m.page, "tab-nav"), "the tab rail is in the viewport");
+  assert.ok(await m.page.evaluate<boolean>("document.documentElement.scrollWidth <= 390 && document.body.scrollWidth <= 390"), "the page never scrolls sideways");
   await m.ctx.close();
   // the serviced loan: 11.3's contact log records the transfer to a person (the platform's `human_transferred`) — the same PersonCard on the loan
   const logged = await J.j.tool({ loan: J.j.loanId }, "11.3", "contact.log", { loan_id: J.j.loanId, mode: "human_voice", direction: "inbound", outcome: "human_transferred", party_id: J.partyA }, BORROWER_COMMS);
@@ -667,7 +678,7 @@ test("32.13-T8: Talk to a person — Given any screen, then a control emitting `
   assert.ok((await cardsOf(J.partyA, `AND kind = 'PersonCard'`)).some((c) => c.props["role"] === "human_agent" && c.subject_loan_id === J.j.loanId), "PersonCard{human_agent} on the serviced loan");
 });
 
-test("32.13-T10: Mobile parity — Given every card kind at 390 px, then it is operable and the status strip shows badge, next event and the needed-from-you count.", { skip }, async () => {
+test("32.13-T10: Mobile parity — Given every card kind at 390 px, then it is operable on the record sheet, and the phone shell shows the badge and next event (My Loan) and the needed-from-you count (the Tasks tab badge).", { skip }, async () => {
   // every 01 §3 card kind, seeded for the co-borrower through 32.1 with the props the components render (the vitest fixtures of apps/borrower/tests/cards)
   const KINDS: [string, string, Json, string | null][] = [
     ["StatusCard", "status.title", { state_label: "Application received Oct 20, 2026", next_event_label: "Your Loan Estimate arrives by", next_event_at: "2026-10-23T23:59:59-07:00" }, null],
@@ -694,19 +705,24 @@ test("32.13-T10: Mobile parity — Given every card kind at 390 px, then it is o
   for (const [kind, copyKey, props, ref] of KINDS) ids.set(kind, await sendCard(J, J.partyB, kind, copyKey, props, ref));
   assert.equal(ids.size, 19, "every 01 §3 card kind");
   const s = await signIn(J.B); const rec = await record(J.B, J.j.appId, s.token);
-  const { page, ctx } = await openShell(s.token, 390);
-  // the status strip: badge, next event, the needed-from-you count — the record's own numbers
-  const strip = page.getByTestId("status-strip"); assert.ok(await strip.isVisible(), "the status strip at 390");
-  assert.equal((await strip.getByTestId("status-badge").innerText()).trim().replace(/^[^\w]+/, ""), String((rec["status"] as Json)["badge"]));
-  const nextText = (await strip.getByTestId("strip-next").innerText()).trim(); const next = rec["next"] as Json | null;
-  if (next) assert.ok(nextText.includes(String(next["label"])), `next event on the strip: ${nextText}`); else assert.equal(nextText, "Nothing scheduled");
-  assert.match((await strip.getByTestId("strip-count").innerText()).trim(), new RegExp(`^${(rec["needed_from_you"] as unknown[]).length} `), "the needed-from-you count on the strip");
+  const { page, ctx } = await openShell(s.token, 390);   // the five-tab shell (01 §1.2): a session lands on Chat
+  assert.equal(await page.locator('[data-testid="shell"][data-mobile-shell="1"][data-tab="chat"]').count(), 1, "the phone shell, on Chat");
+  assert.ok(await page.evaluate<boolean>("document.documentElement.scrollWidth <= 390 && document.body.scrollWidth <= 390"), "Chat never scrolls sideways");
+  // the at-a-glance line: My Loan's status line carries the record's badge and next event, the Tasks tab badge the needed-from-you count — the record's own numbers, never counted here
+  await page.getByTestId("tab-loan").click(); await page.waitForSelector('[data-testid="shell"][data-tab="loan"]', { timeout: 15_000 });
+  const loan = page.getByTestId("tab-page-loan");
+  assert.equal((await loan.getByTestId("status-badge").innerText()).trim().replace(/^[^\w]+/, ""), String((rec["status"] as Json)["badge"]), "the record's badge on My Loan");
+  const nextText = (await loan.getByTestId("next-event").innerText()).trim(); const next = rec["next"] as Json | null;
+  if (next) assert.ok(nextText.includes(String(next["label"])), `next event on My Loan: ${nextText}`); else assert.equal(nextText, "Nothing scheduled");
+  const needed = (rec["needed_from_you"] as unknown[]).length; const tasksBadge = page.locator('[data-testid="tab-tasks"] .sm-tab-badge');
+  if (needed > 0) { assert.equal(await tasksBadge.getAttribute("aria-label"), `${needed} needed from you`, "the needed-from-you count on the Tasks tab"); assert.equal((await tasksBadge.innerText()).trim(), String(needed)); }
+  else assert.equal(await tasksBadge.count(), 0, "nothing counted when nothing is needed");
   // every card rendered (the 32.13 boundary would name any that could not), no horizontal scroll anywhere; every card kind inside 390 px and operable: its control is enabled (or the card is informational and visible)
   assert.deepEqual(await page.locator('[data-testid="card-error"]').evaluateAll((els: unknown[]) => (els as { getAttribute(n: string): string | null }[]).map((e) => `${e.getAttribute("data-card-kind")}: ${e.getAttribute("data-error")}`)), [], "every card renders");
   assert.ok(await page.evaluate<boolean>("document.documentElement.scrollWidth <= 390 && document.body.scrollWidth <= 390"), "the page never scrolls sideways");
   const INFORMATIONAL = new Set(["StatusCard", "NoticeCard", "PersonCard", "HandoffCard", "ChecklistCard"]);
-  // 32.16 §2.2: on a phone the bottom sheet is the rail — every card kind has a row there; expanding it renders the component
-  await strip.click(); await page.waitForSelector('[data-testid="record"][data-open="true"]', { timeout: 15_000 });
+  // 32.16 §2.2: on a phone the record sheet is the rail, opened by the header's "Your record" — every card kind has a row there; expanding it renders the component
+  await page.getByRole("button", { name: "Your record" }).click(); await page.waitForSelector('[data-testid="record"][data-open="true"]', { timeout: 15_000 });
   for (const [kind] of KINDS) await expandRail(page, ids.get(kind)!);
   for (const [kind] of KINDS) {
     const article = page.locator(`article[data-card-id="${ids.get(kind)!}"]`).first();
@@ -717,7 +733,7 @@ test("32.13-T10: Mobile parity — Given every card kind at 390 px, then it is o
     else assert.ok(await article.isVisible(), `${kind} is visible`);
     if (!INFORMATIONAL.has(kind)) { const ctl = article.locator("button:not([disabled]), a[href], input:not([disabled]):not([type=file]), select:not([disabled]), textarea:not([disabled])").first(); const cb = await ctl.boundingBox(); assert.ok(cb && cb.x >= 0 && cb.x + cb.width <= 390 + 1 && cb.height >= 16, `${kind}'s control is reachable (${JSON.stringify(cb)})`); }
   }
-  // the sheet (opened above by the strip) carries the rail's sections
+  // the sheet (opened above) carries the rail's sections
   assert.ok(await page.locator('[data-testid="record"] [data-record-section="status"]').isVisible());
   await ctx.close();
 });
@@ -797,12 +813,21 @@ test("32.13-T15: Nothing-needed — Given zero `owner=you` items, then the nothi
   clock.set(now);   // back to the session's own day (a session idles out across the two passes)
   assert.equal((await messagesOf(W.partyA)).length, msgs, "no reminder line"); assert.equal((await cardsOf(W.partyA)).length, cards, "no reminder card");
   assert.deepEqual((await record(W.A, W.j.appId, s.token))["needed_from_you"], []);
-  // the shell renders the nothing-needed state from the copy library, and the strip counts zero
+  // the shell renders the nothing-needed state from the copy library, and the phone counts zero
   const needsNone = copyEntries().find((e) => e.key === "needs.none"); assert.ok(needsNone?.text, "needs.none is authored");
   const { page, ctx } = await openShell(s.token, 1280);
   const none = page.getByTestId("needs-none"); await none.waitFor({ timeout: 30_000 });
   assert.equal((await none.innerText()).trim(), needsNone.text.trim());
   assert.equal(await page.locator('[data-testid="waiting-on-you"]').count(), 0, "no waiting-on-you line (32.16 §2.1)"); assert.equal(await page.locator('[data-testid="record"] [data-record-section="needed"] [data-rail-card]').count(), 0, "no row under Needed from you");
   await ctx.close();
-  const m = await openShell(s.token, 390); assert.match((await m.page.getByTestId("strip-count").innerText()).trim(), /^0 /); await m.ctx.close();
+  // the phone (01 §1.2): nothing counted on the Tasks tab, and the tab renders the same copy-library state; the record sheet shows the rail's nothing-needed row and no row under Needed from you
+  const m = await openShell(s.token, 390);
+  assert.equal(await m.page.locator('[data-testid="tab-tasks"] .sm-tab-badge').count(), 0, "no needed-from-you count on the Tasks tab");
+  await m.page.getByTestId("tab-tasks").click(); await m.page.waitForSelector('[data-testid="shell"][data-tab="tasks"]', { timeout: 15_000 });
+  assert.equal((await m.page.getByTestId("tasks-empty").innerText()).trim(), needsNone.text.trim(), "the Tasks tab renders needs.none");
+  assert.equal(await m.page.locator('[data-testid="waiting-on-you"]').count(), 0, "no waiting-on-you line on the phone");
+  await m.page.getByRole("button", { name: "Your record" }).click(); await m.page.waitForSelector('[data-testid="record"][data-open="true"]', { timeout: 15_000 });
+  assert.equal(await m.page.locator('[data-testid="record"] [data-record-section="needed"] [data-rail-card]').count(), 0, "no row under Needed from you on the sheet");
+  assert.equal((await m.page.locator('[data-testid="record"] [data-testid="needs-none"]').innerText()).trim(), needsNone.text.trim());
+  await m.ctx.close();
 });

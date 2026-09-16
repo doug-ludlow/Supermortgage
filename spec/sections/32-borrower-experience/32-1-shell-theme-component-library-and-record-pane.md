@@ -21,7 +21,7 @@ Projection of sections every section the borrower touches — 20–31 (originati
 ### Operational prerequisites
 - Vendor fakes: Stripe Identity, Plaid, Truv, IRS IVES, carrier connection, the RON platform, DU, EarlyCheck, telephony/SMS/e-mail and print/mail run against in-repo fakes in every build stage; every fake is named `FAKE` in code, docs and the console (README, "Vendor fakes"). No live vendor credential is a prerequisite of any build stage.
 - The partner's legal name and NMLSR ID (`partner.legal_name`, `partner.nmlsr_id`) and the `mlo_of_record` roster (31.1) — rendered wherever a disclosure or the SAFE Act requires them.
-- Feature flags consumed (32.2 §8): `origination.ai_mlo_intake` (default `assisted`), `origination.preapproval_program` (default on), `closing.enote_default`, `case.ai_path`, `theme` (dark default), `voice.in_app`, connector vendor toggles, `jurisdiction_rules`.
+- Feature flags consumed (32.2 §8): `origination.ai_mlo_intake` (default `assisted`), `origination.preapproval_program` (default on), `closing.enote_default`, `case.ai_path`, `theme` (light default with the designed skin), `voice.in_app`, connector vendor toggles, `jurisdiction_rules`.
 
 ### Build spec
 #### Inputs and triggers
@@ -61,8 +61,8 @@ The shell has two regions and one persistent bar.
 |---|---|---|
 | ≥ 1280 | 58% | 42%, fixed, independently scrollable |
 | 1024–1279 | 60% | 40% |
-| 768–1023 | 100% | Drawer from the right, opened by the status strip |
-| < 768 (mobile) | 100% | **Status strip** pinned under the header (status badge · next event · "N needed from you") → tap opens the Record as a bottom sheet |
+| 768–1023 | 100% | Drawer from the right, opened by the header's "Your record" |
+| < 768 (mobile) | 100%, as the Chat tab | **Five-tab shell** — Apply · Chat · My Loan · Tasks · Account in a fixed tab rail on every screen, signed in or out (sign-in lives on Account; the other tabs show a signed-out gate). My Loan's status line shows the status badge and next event, the Tasks tab badge "N needed from you"; the header's "Your record" (a Tasks row, a reference chip or a `?card=` link too) opens the Record as a bottom sheet — this rail, the same sections in the same order |
 
 ###### 1.3 Thread behavior
 - **Current ask.** *Amended by docs/ux/32.16 §2.1–2.2:* the current ask is the first row of the rail's Needed from you, expanded by default; a slim "Waiting on you: {{label}} →" line appears under the header only while the borrower has scrolled away from its reference in the thread. Over a 45-day purchase file the thread is long; the borrower must never scroll to find what is waiting on them.
@@ -83,9 +83,9 @@ The shell has two regions and one persistent bar.
 - Routes for external returns: `/return/{vendor}/{card_instance_id}` (Stripe, Plaid, Truv, RON), `/d/{deep_link_token}` (SMS/email deep links — §6.5), `/doc/{document_id}` (document viewer, authenticated).
 - No dashboard, no settings tree. Preferences (contact permissions, e-delivery, language, autopay) are cards the borrower can request ("change my autopay day") and that the platform offers when relevant.
 
-##### 2. Theme — dark (default)
+##### 2. Theme — the designed surface (default), with the dark and light token sets beneath it
 
-Design tokens (CSS variables; Tailwind theme extension). Light theme is a second token set only.
+Design tokens (CSS variables; Tailwind theme extension). Since 2026-09-15 the default surface is the designed prototype skin — light paper (`#f4f4f4`), the Super Red accent (`#bf242b`), the system sans, pill buttons — applied by `apps/borrower/app/prototype-theme.css` over the same components and the two token sets below, with `THEME_DEFAULT = light`; the dark tokens that follow remain the second set, selected by `data-theme`. The "black mono until it works" rule that preceded it is superseded: colour still carries state only where the tokens say so, and no card, thread or rail component changes with the skin.
 
 ```
 --sm-bg:            #0A0A0B   /* app background */

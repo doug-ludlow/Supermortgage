@@ -80,6 +80,12 @@ export const HOLD_RELEASE_HUMAN_ONLY = guard("HOLD_RELEASE_HUMAN_ONLY", "35.2 ru
 /** The command's document dependencies (transaction, store, events, escalations, actor, clock). */
 export const depsOf = (ctx: CommandContext, rt: ToolRuntime): DocsDeps => ({ q: txOf(ctx, rt), blobs: blobsOf(rt), events: ctx.events, escalations: rt.escalations, actor: ctx.actor, now: ctx.now });
 /** A handler-level refusal (a fact read from a row) rides the bus as a CommandRefused with the guardrail's code. */
+/** The decision rationale names a fixed vocabulary, never the caller's free text (the envelope row keeps the reason verbatim): a reason that names a known cause maps to it, anything else is `owner_request`. */
+const VOID_REASON_CLASSES: readonly { re: RegExp; cls: string }[] = [
+  { re: /consent\.esign\.withdrawn|withdr/i, cls: "consent_withdrawn" }, { re: /expir/i, cls: "expired" }, { re: /declin/i, cls: "declined" },
+  { re: /supersed|re-?issu|replac/i, cls: "superseded" }, { re: /cancel/i, cls: "application_cancelled" }, { re: /error|wrong|mistake|incorrect/i, cls: "issued_in_error" },
+];
+export function voidReasonClass(reason: string): string { return VOID_REASON_CLASSES.find((c) => c.re.test(reason))?.cls ?? "owner_request"; }
 export async function refusing<T>(tool: string, fn: () => Promise<T>): Promise<T> {
   try { return await fn(); }
   catch (e) {

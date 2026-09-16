@@ -6,7 +6,8 @@
  * DOCUMENT_CONTENT_UNAVAILABLE rather than pretending.
  */
 export interface StoredBlob { readonly bytes: Buffer; readonly mime_type: string; readonly filename: string | null; readonly stored_at: string; }
-export interface BlobStorePort { readonly vendorName: string; put(documentId: string, blob: StoredBlob): Promise<string>; get(documentId: string): Promise<StoredBlob | undefined>; }
+/** `q` (35.2): the caller's transaction when the object is written inside a command (the `documents` row is uncommitted on that connection); a store that keeps no table ignores it. */
+export interface BlobStorePort { readonly vendorName: string; put(documentId: string, blob: StoredBlob, q?: unknown): Promise<string>; get(documentId: string, q?: unknown): Promise<StoredBlob | undefined>; }
 
 export class FakeBlobStore implements BlobStorePort {
   readonly vendorName = "fake-blob";

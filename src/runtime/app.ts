@@ -19,7 +19,7 @@
  *     once per day at/after 07:15 ET over every candidate and every open refinance application from a monitored loan — one readiness_checks row each,
  *     `partner_book.readiness.run_completed` satisfying SM_PARTNER_BOOK_READINESS_DAILY), the FAKE reviewers when they are on (src/infra/integrations/reviewers.ts, DELTA-30: every
  *     pending human item older than the delay approved through its owning tool), then
- *     breach every armed timer whose due instant has passed (timer.breached
+ *     breach every armed timer whose due instant has passed, in pages of 500 (35.3 rule 9 — timer.breached
  *     events, an escalation per breach to the registry's escalation role) and
  *     report the integration outbox backlog. Cloud Scheduler runs it every
  *     minute as the `sweep` job; the API also exposes it on POST /v1/sweep.
@@ -34,6 +34,10 @@
  */
 import { randomUUID } from "node:crypto";
 import { transactionDb, type Db, type Queryable } from "../infra/db/client.ts";
+import { PgFakeBlobStore, type ObjectStorePort } from "../infra/blobs/pg-fake-blob-store.ts";
+import { noticeServiceFor } from "./documents/notice-sink.ts";
+import { documentsSweepPass, type DocumentsSweepReport } from "./documents/sweep.ts";
+import { ConsentWithdrawalListener } from "./documents/consent-listener.ts";
 import { listDuDocuments, type DuDocumentSummary } from "../domain/underwriting/du/persist.ts";
 import { listDuPreflight, type PreflightResultRow } from "../domain/underwriting/du/preflight.ts";
 import { PgUnitOfWork, type UowResult, type CommittedListener } from "../infra/db/unit-of-work.ts";
@@ -54,8 +58,7 @@ import { publishSection02 } from "../notices/authored/section02.ts";
 import { registerPreapprovalLetter } from "../notices/authored/section20-3.ts";
 import type { NoticeRegistry } from "../notices/registry.ts";
 import type { TimerRegistry } from "../kernel/timers/registry.ts";
-import { TimerEngine, type TimerInstance } from "../kernel/timers/engine.ts";
-import { PgTimerRepository } from "../infra/db/timers.ts";
+import type { TimerInstance } from "../kernel/timers/engine.ts";
 import type { Actor, Clock, DomainEvent } from "../kernel/events/index.ts";
 import { MemoryEventStore, systemClock } from "../kernel/events/index.ts";
 import { FakeLockbox, FakeCustodialBank, FakeOdfi } from "../infra/integrations/banking.ts";
@@ -63,7 +66,7 @@ import { FakeMetro2, FakeEoscar } from "../infra/integrations/credit.ts";
 import { FakeCustodian, FakeEvault } from "../infra/integrations/custody.ts";
 import { FakePrintMail, FakeEdelivery, FakeTelephony } from "../infra/integrations/delivery.ts";
 import { FakeFnmaLsdu, FakeFnmaServicingEvents, FakeFnmaSmdu, FakeFnmaP360, FakeFnmaConnect } from "../infra/integrations/fnma.ts";
-import { FakePacer, FakeDmdc, FakeErecording } from "../infra/integrations/legal.ts";
+import { FakePacer, FakeDmdc, FakeErecording, FakeLawFirm } from "../infra/integrations/legal.ts";
 import { FakeMers } from "../infra/integrations/mers.ts";
 import { FakeLpiTracking, FakeFlood, FakeTaxService, FakeMi } from "../infra/integrations/property.ts";
 import { FakeGoogleOidc } from "../infra/integrations/oidc.ts";
@@ -71,7 +74,11 @@ import type { RateFeedPort } from "../infra/integrations/rates.ts";
 import type { FakeReviewers, FakeReviewerReport } from "../infra/integrations/reviewers.ts";
 import { originationServices, type OriginationServiceSet } from "./origination.ts";
 import { acquireSweepLease, defaultHolder, type SweepPass } from "../domain/operations-runtime/seam/sweep.ts";
-import { drainOutbox, type DrainReport, type OutboxCompletion } from "../domain/operations-runtime/seam/outbox.ts";
+import { drainOutbox, portAdapters, type DrainReport, type OutboxCompletion } from "../domain/operations-runtime/seam/outbox.ts";
+import { CaseFolder } from "../domain/operations-runtime/default-35-9/folder.ts";
+import { LAW_FIRM_ADAPTER, lawFirmAdapter, lawFirmCompletion } from "../domain/operations-runtime/default-35-9/firm.ts";
+import { breachReconPass, dailyDue, defaultCaseDailyPass } from "../domain/operations-runtime/default-35-9/sweep.ts";
+import type { DailyRunReport } from "../domain/operations-runtime/default-35-9/daily-run.ts";
 import { verifyRun, verifiedToday, recordFailedRun, type VerifyReport } from "../domain/operations-runtime/seam/verify.ts";
 import type { OutboundAdapter } from "../infra/integrations/outbox.ts";
 import { wallClock } from "../kernel/calendar/zoned.ts";
@@ -82,8 +89,14 @@ import type { AnalystLlm } from "./partner-book-analyst.ts";
 import { notifyPartnerBookTapeLate, sendPartnerBookReminders } from "./partner-book.ts";
 import { sweepDailyReports, type SweepDailyReportsResult } from "./book-ops/routes.ts";
 import { escalateLongTrips, expireKillSwitchRequests } from "./controls/ai.ts";
+import { closeoutPass, closeoutBoardRun, closeoutBreachActions, closeoutPortsOf, withCloseoutAdapters, type CloseoutPorts, type CloseoutPassReport, type BoardRunReport } from "./refinance-closeout.ts";
+import { cyclesSweepPass, type CyclesSweepReport } from "../domain/operations-runtime/service.ts";
+import { pagedBreachPass, type BreachSummary } from "../domain/operations-runtime/breach.ts";
 import { rolesSweepPass, type RolesSweepReport } from "../domain/operations-runtime/roles-35-7/sweep.ts";
 import { posturePass, type PostureSweepReport } from "../domain/operations-runtime/posture-35-12/sweep.ts";
+// 35.11: the ops steward's pass (after the roles and verify passes and 35.9's daily pass, before the breach-action reconciliation and the breach pass — the spec's words: after 35.3's planner and executor, before `sweep.run_completed`); its two clocks' breach enrichers are consulted by breach.ts's paged breach pass
+import { stewardSweepPass, type StewardSweepReport } from "../domain/operations-runtime/stewardship.ts";
+import { closeSweepPass, type CloseSweepReport } from "../domain/operations-runtime/close-35-4/sweep.ts";
 import type { Logger } from "./log.ts";
 
 export interface RuntimeDeps {
@@ -100,6 +113,8 @@ export interface RuntimeDeps {
   /** 33.2 rule 4: the refinance analyst's model (AnthropicLlm in deploy, the scripted client in tests; null / absent → the turn is skipped `model_off`, never the review). */
   readonly analystLlm?: AnalystLlm | null;
   readonly logger?: Logger;
+  /** 35.2: the object store every artifact's bytes live in — PgFakeBlobStore over `document_blobs` in every nonprod stage (two instances see one bucket); a Cloud Storage port in production (35.12). */
+  readonly blobs?: ObjectStorePort;
   /** 35.7: the one environment source — `ENVIRONMENT` (nonprod | production | …); the FAKE set (rule 6), the grants' environment key, the /v1 door and the handover read it here. Defaults to process.env. */
   readonly environment?: string;
   /** 35.7: the environment variables the FAKE set's default is derived from (INTEGRATIONS, FAKE_REVIEWERS, ENVIRONMENT); a test passes its own. Defaults to process.env. */
@@ -110,8 +125,10 @@ export interface RuntimeDeps {
   readonly instanceId?: string;
   /** 35.1 rule 11: per-adapter completion hooks, run inside the dispatch transaction when a message is acked (a section appends its own event and updates its own row); keyed by adapter name. */
   readonly outboxCompletions?: ReadonlyMap<string, OutboxCompletion>;
-  /** The database's connection string (main.ts passes config.databaseUrl): a job that needs a dedicated client (35.3's planner lock) opens it here; the sweep lease uses the pool's own. */
+  /** The application database's connection string (main.ts passes config.databaseUrl): a job that needs a dedicated `pg.Client` for a session-level lock opens it here — 35.3's planner lock `35_003` (D12 / A2; the pool exposes no client); 35.1's sweep lease `35_001` uses the pool's own dedicated session. Absent → `cycles.plan` throws PortUnavailable("databaseUrl") and the sweep's cycles pass reports itself skipped. */
   readonly databaseUrl?: string;
+  /** 35.10: the closeout's ports on its neighbours (24.4's partner statement channel, 35.6's hand-off, the partner-book.notify adapter) — every default an in-repo FAKE (src/runtime/refinance-closeout.ts). */
+  readonly closeoutPorts?: Partial<CloseoutPorts>;
 }
 /** A command is scoped to a loan (`loanId`), to an application before funding (`applicationId`), or to both during the 30.2 hand-off. */
 export interface ExecuteRequest { readonly process: string; readonly name: string; readonly loanId: string; readonly applicationId?: string; readonly actor: Actor; readonly input: ToolInput; readonly run?: AgentRunInfo; readonly approvedBy?: Actor; }
@@ -127,7 +144,13 @@ export interface ExecuteResponse {
 export interface SweepReport {
   readonly at: string;
   readonly due: number;
-  readonly breaches: readonly { loan_id: string | null; code: string; severity: number | null; escalate_to: readonly string[]; timer_id: string }[];
+  readonly breaches: readonly BreachSummary[];
+  /** 35.3 rule 9: the breach pass's pages of 500 (one transaction each — src/domain/operations-runtime/breach.ts pagedBreachPass). */
+  readonly breach_pages: number;
+  /** 35.9 rule 7: the day's breach-action reconciliation (`breach.recon`), when the run reached it. */
+  readonly breach_recon?: Record<string, unknown> | null;
+  /** 35.9 Trigger & frequency: the day's default cycles (default-35-9/daily-run.ts) — once per calendar day at/after 05:30 ET, planned in dependency order through 35.3's engine and the run row written once the five receipts exist; `already: true` on a later sweep of the day; null when not due, skipped (no databaseUrl) or failed. */
+  readonly default_case_daily?: DailyRunReport | null;
   readonly outbox: readonly { adapter: string; status: string; count: number }[];
   /** The daily refinance check's report (null when no rate feed is wired). */
   readonly refi: RefiDailyReport | null;
@@ -143,12 +166,26 @@ export interface SweepReport {
   readonly partner_book_tape_late: number;
   /** 34.3 rule 6: the daily report per partner-day once 33.3's receipt exists, and from 07:45 ET the ops_analyst escalation for a day without its receipts (src/runtime/book-ops/routes.ts sweepDailyReports) — after the readiness pass; null when the hook failed. */
   readonly partner_book_daily_reports: SweepDailyReportsResult | null;
+  /** 35.10 rule 10: the refinance closeout pass (src/runtime/refinance-closeout.ts closeoutPass) — after the orchestration, before the breach pass; null when the pass failed. */
+  readonly refinance_closeout: CloseoutPassReport | null;
+  /** 35.10 rule 11: the Refinance board's daily receipt once a day at/after 06:45 ET (closeoutBoardRun). */
+  readonly refinance_board: BoardRunReport | null;
+  /** 35.10: the closeout clocks breached on this pass, journaled once each beside the sweep's escalation (closeoutBreachActions). */
+  readonly refinance_breaches: number;
   /** 34.4 rule 4: kill-switch requests no admin confirmed within 10 minutes expired on this pass, and the compliance escalations opened for switches tripped more than 24 hours (src/runtime/controls/ai.ts). */
   readonly controls: { readonly kill_requests_expired: number; readonly long_trips_escalated: number };
+  /** 35.3: the cycles pass — `cycles.plan` under its planner lock, then the executor (src/domain/operations-runtime/service.ts cyclesSweepPass); after 35.1's lease and outbox drain, before the section passes; `skipped: true` when the lock is held or no databaseUrl is configured; null when the caller asked for `{cycles: "skip"}` (the demo step runs it inline before the flows' tick) or the run was skipped. */
+  readonly cycles: CyclesSweepReport | null;
+  /** 35.2 rule 4: the staged-blob drain every sweep (and, with the e-sign and mail groups, the envelope expiry and the print vendor probe — src/runtime/documents/sweep.ts documentsSweepPass); null when the hook failed. */
+  readonly documents: DocumentsSweepReport | null;
   /** 35.7: the roles pass (src/domain/operations-runtime/roles-35-7/sweep.ts rolesSweepPass) — the daily queue scan at/after 06:30 ET, the re-scan of roles with open items, the break-glass / request / principal expiries; after the FAKE reviewers, before the breach pass; null when it failed. */
   readonly roles: RolesSweepReport | null;
   /** 35.12: the posture pass (src/domain/operations-runtime/posture-35-12/sweep.ts posturePass) — the stale two-person requests, the ports re-read under INTEGRATIONS=real, the daily check at/after 05:30 ET, the daily scan at/after 05:45 ET, the evening reconciliation, the vendor canaries; after the roles pass, before the verify and breach passes; null when it failed. */
   readonly posture: PostureSweepReport | null;
+  /** 35.11: the ops steward's pass (src/domain/operations-runtime/stewardship.ts stewardSweepPass) — the registry watch, the dead-message intake, the classification and the bounded requeue, the source-driven resolutions and, at/after 00:15 ET, the previous day's report; after the roles and verify passes and 35.9's daily pass (the last pass that plans and runs cycles, so the registry watch reads the day's receipts), before the breach-action reconciliation and the breach pass; null when it failed or the sweep was skipped. */
+  readonly stewardship: StewardSweepReport | null;
+  /** 35.4: the close pass (src/domain/operations-runtime/close-35-4/sweep.ts closeSweepPass) — after the breach pass; null when it failed. */
+  readonly close: CloseSweepReport | null;
   /** 35.1 rule 12: the run's `sweep_runs` row, its holder and outcome (`skipped{lease_held}` when another execution holds the lease; `failed{lease_unavailable}` when the dedicated client cannot connect). */
   readonly run_id: string;
   readonly holder: string;
@@ -164,7 +201,11 @@ export interface SweepReport {
 export interface SweepOptions {
   /** `false`: skip the daily verify pass (a test that lets SM_PROJECTION_LAG_DAILY breach). */
   readonly verify?: boolean;
+  /** `false`: skip 35.9's daily default pass (a test that lets SM_DEFAULT_CASE_DAILY breach, or drives the day's units by hand). */
+  readonly dailyCase?: boolean;
   readonly holder?: string;
+  /** `"skip"`: no cycles pass on this run — the demo step ran `cyclesSweepPass` inline per crossed day before the flows' tick (35.3 D13, src/runtime/demo-clock.ts). */
+  readonly cycles?: "run" | "skip";
 }
 /** The spec's schedule for the verify run: 06:00 America/New_York (35.1 "Trigger & frequency"). */
 export const VERIFY_AT_ET = "06:00";
@@ -175,8 +216,11 @@ export function fakePorts(): Ports {
   const lsdu = new FakeFnmaLsdu();
   return { lockbox: new FakeLockbox(), custodialBank: new FakeCustodialBank(), nacha: new FakeOdfi(), metro2: new FakeMetro2(), eoscar: new FakeEoscar(), custodian: new FakeCustodian(), evault: new FakeEvault(),
     printMail: new FakePrintMail(), edelivery: new FakeEdelivery(), telephony: new FakeTelephony(), lsdu, servicingEvents: new FakeFnmaServicingEvents(), smdu: new FakeFnmaSmdu(), p360: new FakeFnmaP360(),
-    connect: new FakeFnmaConnect(), pacer: new FakePacer(), dmdc: new FakeDmdc(), erecording: new FakeErecording(), mers: new FakeMers(), lpi: new FakeLpiTracking(), flood: new FakeFlood(), taxService: new FakeTaxService(), mi: new FakeMi(), oidc: new FakeGoogleOidc() };
+    connect: new FakeFnmaConnect(), pacer: new FakePacer(), dmdc: new FakeDmdc(), lawFirm: new FakeLawFirm(), erecording: new FakeErecording(), mers: new FakeMers(), lpi: new FakeLpiTracking(), flood: new FakeFlood(), taxService: new FakeTaxService(), mi: new FakeMi(), oidc: new FakeGoogleOidc() };
 }
+
+/** The breach escalation's owner role from the registry row's breach column (src/domain/operations-runtime/breach.ts, where the paged pass reads it; kept here for its callers). */
+export { resolveBreachRole } from "../domain/operations-runtime/breach.ts";
 
 /** The unit of work's store with the scope's loan stamped on every appended event that carries neither a loan nor an application key. */
 function withDefaultLoan(inner: MemoryEventStore, loanId: string): MemoryEventStore {
@@ -191,6 +235,7 @@ export class Runtime {
   readonly agents: AgentRegistry;
   readonly ports: Partial<Ports>;
   readonly noticeRegistry: NoticeRegistry;
+  readonly blobs: ObjectStorePort;
   readonly clock: Clock;
   readonly rateFeed: RateFeedPort | null;
   readonly reviewers: FakeReviewers | null;
@@ -202,12 +247,17 @@ export class Runtime {
   readonly outboxAdapters: ReadonlyMap<string, OutboundAdapter> | undefined;
   readonly instanceId: string;
   readonly outboxCompletions: ReadonlyMap<string, OutboxCompletion> | undefined;
+  /** 35.10's ports with their in-repo defaults (the FAKE partner statement channel, the fund-bridge hand-off, the FAKE partner-book.notify adapter). */
+  readonly closeoutPorts: CloseoutPorts;
+  /** The application database's connection string for a dedicated session-lock client (35.3 D12: the planner lock); null when the deps carry none. */
   readonly databaseUrl: string | null;
-  /** The running sweep's `sweep_runs` id while `sweep` holds the lease (35.3's `cycle_runs.planned_by` reads `sweep:<id>`); null outside a run. */
+  /** The running sweep's `sweep_runs` id while `sweep` holds the lease (35.3's `cycle_runs.planned_by` reads `sweep:<id>` — service.ts plannedByOf); null outside a run. */
   sweepRunId: string | null = null;
   readonly uow: PgUnitOfWork;
   readonly entities: PgEntityRepository;
   readonly escalationRepo: PgEscalationRepository;
+  /** 35.2 rule 8 / 7.4: `consent.esign.withdrawn` voids the party's open envelopes after the command that logged it committed. */
+  readonly consentWithdrawals: ConsentWithdrawalListener;
   readonly applications: PgApplicationRepository;
   /** The origination section services and vendor ports, one set for the life of the runtime (see origination.ts). */
   readonly originationServices: OriginationServiceSet;
@@ -215,20 +265,26 @@ export class Runtime {
   private readonly tools = new Map<string, ToolDef>();
   /** The runtime behind a command view (itself for the real runtime): its `db` is the pool — the rare write that must outlive a refusal (34.4's fourth-requeue escalation, an expired kill-switch request) goes through `rt.root.db`. */
   readonly root: Runtime;
+  /** 35.9 rule 1: the post-commit fold of the sections' events into `case_timelines` (started by main.ts for serve and sweep, by a test that asserts it; idle otherwise — the daily unit re-folds anything it missed). */
+  readonly caseFolder: CaseFolder;
   /** 32.12 backend delta: the Notice Registry's rendered notices for the life of the runtime (NoticeServiceDeps.notices) — a notice rendered by one command is readable by the next (17.2 runContentChecklist, the borrower flows' plain-language block). In-memory beside the `notices` table; the event log stays the record. */
   readonly noticeMemory = new Map<string, Notice>();
 
   constructor(deps: RuntimeDeps) {
     this.db = deps.db; this.registry = deps.registry; this.agents = deps.agents ?? new AgentRegistry(); this.ports = deps.ports ?? fakePorts(); this.clock = deps.clock ?? systemClock;
     this.rateFeed = deps.rateFeed ?? null; this.reviewers = deps.reviewers ?? null; this.analystLlm = deps.analystLlm ?? null; this.logger = deps.logger;
+    this.blobs = deps.blobs ?? new PgFakeBlobStore(this.db);
     this.env = deps.env ?? process.env; this.environment = deps.environment ?? this.env["ENVIRONMENT"] ?? "nonprod";
-    this.outboxAdapters = deps.outboxAdapters; this.instanceId = deps.instanceId ?? defaultHolder(); this.outboxCompletions = deps.outboxCompletions; this.databaseUrl = deps.databaseUrl ?? null;
+    this.closeoutPorts = closeoutPortsOf(deps.closeoutPorts);
+    this.outboxAdapters = withCloseoutAdapters(deps.outboxAdapters, this.closeoutPorts); this.instanceId = deps.instanceId ?? defaultHolder(); this.outboxCompletions = deps.outboxCompletions; this.databaseUrl = deps.databaseUrl ?? null;
     this.noticeRegistry = deps.notices ?? (() => { const r = buildRegistry(); publishAuthored(r); publishSection02(r); registerPreapprovalLetter(r); return r; })();   // 32.8: 2.x's own authored pieces (AUTODRAFT-*, LC-*, SUSP-*) beside the catalog   // DELTA-01: the preapproval letter beside the catalog
     this.root = this;
     this.uow = new PgUnitOfWork(this.db, this.registry); this.entities = new PgEntityRepository(this.db); this.escalationRepo = new PgEscalationRepository(this.db); this.applications = new PgApplicationRepository(this.db);
+    this.consentWithdrawals = new ConsentWithdrawalListener(this);
     this.bus = new CommandBus(this.agents);
     this.originationServices = originationServices(this.clock);
-    for (const t of ALL_TOOLS) { this.tools.set(toolKey(t.process, t.name), t); this.agents.registerTool(t.agent, t.name); }
+    this.caseFolder = new CaseFolder(this);
+    for (const t of ALL_TOOLS) { this.tools.set(toolKey(t.process, t.name), t); this.agents.registerTool(t.agent, t.name); for (const a of t.agents ?? []) this.agents.registerTool(a, t.name); }
   }
 
   listTools(): { process: string; name: string; agent: string; kind: string; humanOnly: boolean }[] {
@@ -278,17 +334,20 @@ export class Runtime {
     const expected = expectedVersionsOf(req.input);
     // events persisted by units of work a tool runs inside this command (through the command view) — published once this command commits
     const nested: DomainEvent[] = [];
+    // 35.2: the sink's notice rows after every tool's deferred writes (a delivery's card_instances row is one of those)
+    const deferredLate: ((q: Queryable) => Promise<void>)[] = [];
     const r: UowResult<ExecuteResult<unknown>> = await this.uow.run(scope, async (uow) => {
       const view = this.commandView(uow.q!, nested);
       // a loan-scoped command's events that name neither key are the loan's (the kernel store defaults the application key from the scope; the loan key is defaulted here)
       const ctx = uow.loanId ? { ...uow, events: withDefaultLoan(uow.events, uow.loanId) } : uow;
       // the scope's open escalations an earlier command persisted, so this one can complete them (21.6's reviewer decides the escalation `recommendDisposition` opened — 32.6 backend delta)
       escalations = new EscalationService(ctx.events, ctx.clock); escalations.seed(await this.escalationRepo.openFor(scope, uow.q));
-      const notices = this.ports.printMail && this.ports.edelivery ? new NoticeService({ registry: this.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: this.ports.printMail, edelivery: this.ports.edelivery, notices: this.noticeMemory }) : undefined;
+      // 35.2: the Notice Registry with the artifact layer — every render becomes a stored PDF (PgArtifactSink); the document row rides the command's deferred writes in push order, the notice rows after every tool's
+      const { notices, sink } = noticeServiceFor(this, ctx, req.actor, (fn) => { deferredLate.push(fn); }, (fn) => { deferred.push(fn); });
       // `agents` (the live registry, so a tool that delegates to another agent's tool keeps the allowlists and AI-off state), `db` (read-only lookups a borrower-surface tool needs) and `deferWrite` (a row committed with the command) ride on the services map
       // `runtime` (this) lets a pass-shaped tool (33.2 review.run / offer.deliver / offer.expire) run the runtime pass it wraps — its own units of work, sequential to this command's
       // 35.1 rule 9: every stateful section service is a fresh instance hydrated from the record for this command (origination.ts forCommand); its delta is recorded after the command ran
-      const rt: ToolRuntime = { store, escalations, services: { ...await this.originationServices.forCommand(ctx, store, escalations), agents: this.agents, db: view.db, runtime: view, deferWrite: (fn: (q: Queryable) => Promise<void>) => { deferred.push(fn); }, deferBefore: (fn: (q: Queryable) => Promise<void>) => { deferredBefore.push(fn); } }, ports: this.ports, ...(notices ? { notices } : {}) };
+      const rt: ToolRuntime = { store, escalations, services: { ...await this.originationServices.forCommand(ctx, store, escalations), agents: this.agents, db: view.db, runtime: view, blobs: this.blobs, ...(sink ? { artifacts: sink } : {}), deferWrite: (fn: (q: Queryable) => Promise<void>) => { deferred.push(fn); }, deferBefore: (fn: (q: Queryable) => Promise<void>) => { deferredBefore.push(fn); } }, ports: this.ports, ...(notices ? { notices } : {}) };
       const cmd = bindTools(rt, this.agents, [def]).get(toolKey(def.process, def.name))!;
       const out = await this.bus.execute(cmd, req.actor, req.input, ctx, { ...(req.run ? { run: req.run } : {}), ...(req.approvedBy ? { approvedBy: req.approvedBy } : {}) });
       this.originationServices.recordState(ctx);
@@ -315,6 +374,7 @@ export class Runtime {
         await projectVersions(q, { phase: "commit", versions: scoped, scope, now: this.clock.now(), commandEventId: info.firstEventId });
         for (const e of escalations?.list() ?? []) await this.escalationRepo.save(e, q);
         for (const fn of deferred) await fn(q);
+        for (const fn of deferredLate) await fn(q);
       } });
     if (nested.length) this.uow.notifyCommitted(nested);
     return { output: r.result.output, ...(r.result.decisionId ? { decisionId: r.result.decisionId } : {}), event: r.result.event, events: r.events, timers: r.timers,
@@ -350,16 +410,34 @@ export class Runtime {
   }
 
   /**
-   * The scheduled pass (35.1 rules 11–13): the lease first — `pg_try_advisory_lock(35_001)` on a dedicated session; a firing that
-   * finds it held writes `sweep_runs{skipped, lease_held}` and `sweep.run_skipped{holder}` and returns — then the holder writes
-   * `sweep_runs{running}`, drains the outbox, runs the passes (the daily refinance check when a rate feed is wired, 33.2's review,
-   * 33.3's readiness, 34.3's daily reports, 34.4's controls, the FAKE reviewers when on, the daily verify run at/after 06:00 ET —
-   * each timed, each heartbeated), breaches every armed timer past due at `nowIso` (claimed FOR UPDATE SKIP LOCKED, one
-   * escalation per breach to the registry's first escalation role, one transaction), and finishes with `completed` and
-   * `sweep.run_completed{run_id, as_of_date, holder, duration_ms, passes}` in its own final transaction (SM_SWEEP_HEARTBEAT_DAILY
-   * is satisfied and re-armed by the run that completes). No daily pass can fail the sweep: a failure is logged and reported;
-   * the lease and the drain are the sweep's own, so their failure is the run's (`failed`, exit 1).
+   * The scheduled pass (35.1 rules 11–13; 35.3 Inputs and triggers, rule 9): the lease first — `pg_try_advisory_lock(35_001)`
+   * on a dedicated session; a firing that finds it held writes `sweep_runs{skipped, lease_held}` and `sweep.run_skipped{holder}`
+   * and returns — then the holder writes `sweep_runs{running}`, drains the outbox, runs the cycles pass (`cycles.plan` under
+   * its own planner lock `35_003`, then the executor until the queue is empty or rule 6's 240 s budget is spent; a refused lock
+   * or a missing databaseUrl skips it and every other pass still runs), then the section passes (the daily refinance check when
+   * a rate feed is wired, 33.2's review, 33.3's readiness, 34.3's daily reports, 34.4's controls, the FAKE reviewers when on,
+   * 35.7's roles pass, the daily verify run at/after 06:00 ET — each timed, each heartbeated), breaches every armed timer past
+   * due at `nowIso` in pages of 500 (`FOR UPDATE SKIP LOCKED LIMIT 500`, one transaction per page until a page comes back
+   * short — src/domain/operations-runtime/breach.ts pagedBreachPass; one escalation per breach to the registry's escalation
+   * role, a 35.3 clock's from its registry row), and finishes with `completed` and `sweep.run_completed{run_id, as_of_date,
+   * holder, duration_ms, passes}` in its own final transaction (SM_SWEEP_HEARTBEAT_DAILY is satisfied and re-armed by the run
+   * that completes). No daily pass can fail the sweep: a failure is logged and reported; the lease and the drain are the
+   * sweep's own, so their failure is the run's (`failed`, exit 1).
    */
+  /** The drain's adapters: the FAKE ports' (seam/outbox.ts), 35.9's `law-firm` over the lawFirm port, then the deps' overrides (35.1 rule 11: a test scripts a failing one). */
+  drainAdapters(): ReadonlyMap<string, OutboundAdapter> {
+    const m = new Map<string, OutboundAdapter>(portAdapters(this.ports));
+    m.set(LAW_FIRM_ADAPTER, lawFirmAdapter(this.ports.lawFirm));
+    for (const [k, v] of this.outboxAdapters ?? []) m.set(k, v);
+    return m;
+  }
+  /** The drain's completion hooks: 35.9's delivery stamp on `firm_dispatches`, then the deps' (per adapter name). */
+  drainCompletions(): ReadonlyMap<string, OutboxCompletion> {
+    const m = new Map<string, OutboxCompletion>([[LAW_FIRM_ADAPTER, lawFirmCompletion]]);
+    for (const [k, v] of this.outboxCompletions ?? []) m.set(k, v);
+    return m;
+  }
+
   async sweep(nowIso: string = this.clock.now(), opts: SweepOptions = {}): Promise<SweepReport> {
     const holder = opts.holder ?? this.instanceId;
     const asOfDate = wallClock(Date.parse(nowIso), "America/New_York").date;
@@ -367,7 +445,7 @@ export class Runtime {
     const notRun = (reason: string) => ({ refi: null as RefiDailyReport | null, reviewers: null as FakeReviewerReport | null,
       partner_book_review: { at: nowIso, as_of_date: asOfDate as ReviewRunReport["as_of_date"], ran: false, reason, monitored_loans: 0, programs: [], line: `partner book review: not run (${reason})` } as ReviewRunReport,
       partner_book_readiness: { checked: 0, ready: 0, not_ready: 0, skipped: reason, as_of_date: asOfDate, ran: false, loans_skipped: [], line: `partner book readiness: not run (${reason})` } as ReadinessRunReport,
-      partner_book_reminders: 0, partner_book_tape_late: 0, partner_book_daily_reports: null, controls: { kill_requests_expired: 0, long_trips_escalated: 0 }, posture: null as PostureSweepReport | null });
+      partner_book_reminders: 0, partner_book_tape_late: 0, partner_book_daily_reports: null, refinance_closeout: null, refinance_board: null, refinance_breaches: 0, controls: { kill_requests_expired: 0, long_trips_escalated: 0 }, posture: null as PostureSweepReport | null });
     const leased = await acquireSweepLease(this.db, nowIso, holder);
     if (!leased.ok) {
       // rule 12: a firing that finds the lease held writes skipped{lease_held} and sweep.run_skipped, and exits 0; a lease that cannot be taken at all is failed{lease_unavailable}
@@ -375,7 +453,7 @@ export class Runtime {
       await this.db.query(`INSERT INTO sweep_runs (id, holder, started_at, heartbeat_at, finished_at, as_of_date, outcome, skipped_reason) VALUES ($1, $2, $3, $3, $3, $4, $5, $6)`, [leased.runId, holder, nowIso, asOfDate, outcome, leased.reason]);
       if (outcome === "skipped") await this.uow.run({}, (ctx) => ctx.events.append({ type: "sweep.run_skipped", aggregate: { kind: "sweep_run", id: leased.runId }, actor: { kind: "system", id: "sweep" }, payload: { run_id: leased.runId, holder, as_of_date: asOfDate, reason: leased.reason, lease_key: 35_001 } }), { clock: this.clock });
       this.logger?.[outcome === "skipped" ? "info" : "error"](`sweep ${outcome}`, { run_id: leased.runId, holder, reason: leased.reason, error: leased.error ?? null });
-      return { at: nowIso, due: 0, breaches: [], outbox: [], ...notRun(leased.reason), run_id: leased.runId, holder, outcome, skipped_reason: leased.reason, passes: [], outbox_dispatch: null, verify: null, roles: null };
+      return { at: nowIso, due: 0, breaches: [], breach_pages: 0, outbox: [], ...notRun(leased.reason), cycles: null, roles: null, close: null, stewardship: null, documents: null, run_id: leased.runId, holder, outcome, skipped_reason: leased.reason, passes: [], outbox_dispatch: null, verify: null };
     }
     const lease = leased.lease; const runId = lease.runId; this.sweepRunId = runId;
     await this.db.query(`INSERT INTO sweep_runs (id, holder, started_at, heartbeat_at, as_of_date, outcome) VALUES ($1, $2, $3, $3, $4, 'running')`, [runId, holder, nowIso, asOfDate]);
@@ -390,7 +468,11 @@ export class Runtime {
       pass(name, async () => { try { return await fn(); } catch (e) { const msg = e instanceof Error ? e.message : String(e); this.logger?.error(`${name} failed`, { at: nowIso, error: e }); return fallback(msg); } }, counts);
     try {
       // rule 11: the outbox, drained by every sweep — after the lease, before the passes (the drain's failure is the run's)
-      const outboxDispatch = await pass("outbox.dispatch", () => drainOutbox({ db: this.db, registry: this.registry, clock: this.clock, ports: this.ports, ...(this.outboxAdapters ? { adapters: this.outboxAdapters } : {}), ...(this.outboxCompletions ? { completions: this.outboxCompletions } : {}), notify: (ev) => this.uow.notifyCommitted(ev) }, nowIso, { runId }), (d) => ({ claimed: d.claimed, sent: d.sent, retried: d.retried, dead: d.dead, rejected: d.rejected, fallback: d.fallback }));
+      const outboxDispatch = await pass("outbox.dispatch", () => drainOutbox({ db: this.db, registry: this.registry, clock: this.clock, ports: this.ports, adapters: this.drainAdapters(), completions: this.drainCompletions(), notify: (ev) => this.uow.notifyCommitted(ev) }, nowIso, { runId }), (d) => ({ claimed: d.claimed, sent: d.sent, retried: d.retried, dead: d.dead, rejected: d.rejected, fallback: d.fallback }));
+      // 35.3 (Inputs and triggers): the cycles pass after the lease and the drain, before the section passes — `cycles.plan` under its planner lock (`cycle_runs.planned_by` = `sweep:<runId>` through this.sweepRunId), then the executor claims and runs every claimable unit until the queue is empty or rule 6's 240 s budget is spent; a refused lock or a missing databaseUrl skips it and every other pass still runs
+      const cycles: CyclesSweepReport | null = opts.cycles === "skip" ? null : await logged("cycles", () => cyclesSweepPass(this, nowIso, { execute: true }),
+        (msg) => ({ at: nowIso, skipped: true, reason: `failed: ${msg}`, holder: null, plan: null, executor: null, runs_opened: 0, jobs_planned: 0, units_done: 0, units_dead: 0, receipts: 0, line: `cycles: failed (${msg})` } as CyclesSweepReport),
+        (c) => ({ skipped: c.skipped, ...(c.reason ? { reason: c.reason } : {}), runs_opened: c.runs_opened, jobs_planned: c.jobs_planned, units_done: c.units_done, units_dead: c.units_dead, receipts: c.receipts }));
       const refi = this.rateFeed ? await logged("refi.daily", () => refiDailyRun(this, nowIso, { feed: this.rateFeed!, logger: this.logger }), (msg) => ({ at: nowIso, as_of_date: asOfDate as RefiDailyReport["as_of_date"], ran: false, reason: `failed: ${msg}`, rate_sheet: null, universe: { view_rows: 0, loaded: 0, unchanged: 0, skipped: [], monitored: { rows: 0, skipped: 0, open_offer: 0 } }, programs: [], line: `refi daily: failed (${msg})` } as RefiDailyReport), (r) => ({ ran: r.ran, programs: r.programs.length })) : null;
       // 33.2: the daily review of the partner book after the refinance check (it reads the day's run) — errors logged, never thrown
       const partnerBookReview = await logged("partner_book.review", () => partnerBookReviewRun(this, nowIso, { logger: this.logger, llm: this.analystLlm }), (msg) => ({ at: nowIso, as_of_date: asOfDate as ReviewRunReport["as_of_date"], ran: false, reason: `failed: ${msg}`, monitored_loans: 0, programs: [], line: `partner book review: failed (${msg})` } as ReviewRunReport), (r) => ({ ran: r.ran, monitored_loans: r.monitored_loans }));
@@ -400,6 +482,9 @@ export class Runtime {
       const partnerBookDailyReports = await logged("partner_book.daily_reports", () => sweepDailyReports(this, nowIso), () => null as SweepDailyReportsResult | null, (r) => ({ ran: r !== null }));
       // 34.4 rule 4: an unconfirmed kill-switch request expires at 10 minutes (logged, nothing trips); a switch tripped more than 24 hours opens one compliance escalation — errors logged, never thrown
       const controls = await logged("controls", async () => ({ kill_requests_expired: await expireKillSwitchRequests(this, nowIso), long_trips_escalated: (await escalateLongTrips(this, nowIso)).length }), () => ({ kill_requests_expired: 0, long_trips_escalated: 0 }), (c) => ({ ...c }));
+      // 35.10 rule 10: the refinance closeout pass after 35.6's orchestration (when it lands) and before the breach pass — every open closeout re-evaluated, the owners' tools run from the record; then the daily board once at/after 06:45 ET — errors logged, never thrown
+      const refinanceCloseout = await logged("refinance.closeout", () => closeoutPass(this, nowIso, { logger: this.logger }), () => null as CloseoutPassReport | null, (r) => (r ? { opened: r.opened, examined: r.examined, commands: r.commands, failed: r.failed } : { failed: true }));
+      const refinanceBoard = await logged("refinance.board", () => closeoutBoardRun(this, nowIso), () => null as BoardRunReport | null, (r) => ({ ran: r?.ran ?? false }));
       const reviewers = this.reviewers ? await logged("fake_reviewers", () => this.reviewers!.tick(this, nowIso), () => null as FakeReviewerReport | null, (r) => ({ ran: r !== null })) : null;
       // 35.7: the roles pass after the FAKE reviewers (a FAKE approval of the day is counted by the daily scan that follows) and before the verify and breach passes (a day's scan receipt never breaches) — errors logged, never thrown; runId = this run's sweep_runs id
       const roles = await logged("roles.sweep", () => rolesSweepPass(this, nowIso, { runId }), () => null as RolesSweepReport | null, (r) => (r ? { daily_scan: r.daily_scan, rescanned: r.rescanned, unstaffed_raised: r.unstaffed_raised.length, staffed_raised: r.staffed_raised.length } : { failed: true }));
@@ -418,42 +503,36 @@ export class Runtime {
           } catch (e) { this.logger?.error("verify run failed", { at: nowIso, error: e }); await recordFailedRun(this.db, { as_of_date: asOfDate, started_at: nowIso, now: this.clock.now(), actor: { kind: "agent", id: "security-records" }, error: e instanceof Error ? e.message : String(e) }).catch(() => undefined); return null; }
         }, (v) => (v ? { run_id: v.run_id, gaps: v.gaps, mismatches: v.mismatches, rows_verified: v.rows_verified } : { failed: true }));
       }
-      // the breach pass: the due instances (any loan, or global) claimed FOR UPDATE SKIP LOCKED and restored into a fresh engine; evaluate breaches them and appends timer.breached under each timer's own loan — one transaction
-      const breaches: SweepReport["breaches"][number][] = [];
-      const due = await pass("timers.breach", () => this.db.tx(async (q) => {
-        const timerRepo = new PgTimerRepository(q);
-        // SM_SWEEP_HEARTBEAT_DAILY breaches only inside a sweep (35.1 edge case 7): a run in progress on the clock's due day is the day's sweep and satisfies it minutes later; the clock breaches when its due day passed with no run at all (a demo advance that sweeps once a day at noon is not an outage)
-        const claimed = (await timerRepo.dueForUpdate(nowIso)).filter((t) => t.code !== "SM_SWEEP_HEARTBEAT_DAILY" || (t.dueDate ?? wallClock(t.dueAt ?? Date.parse(nowIso), "America/New_York").date) < asOfDate);
-        if (!claimed.length) return claimed;
-        const events = new MemoryEventStore(this.clock);
-        const engine = new TimerEngine(this.registry, events);
-        engine.restore(claimed);
-        const escalations = new EscalationService(events, this.clock);
-        for (const b of engine.evaluate(nowIso)) {
-          const sev = b.severity ?? 4;
-          const owner = b.escalateTo[0] ?? "ops_analyst";
-          escalations.open({ kind: `sev${sev}`, ownerRole: owner, ...(b.instance.loanId ? { loanId: b.instance.loanId } : {}), severity: String(sev), slaTimerId: b.instance.id,
-            payload: { timer_code: b.instance.code, timer_id: b.instance.id, due_at: b.instance.dueAt !== undefined ? new Date(b.instance.dueAt).toISOString() : null, breach: b.breachText } }, { kind: "system", id: "sweep" });
-          breaches.push({ loan_id: b.instance.loanId ?? null, code: b.instance.code, severity: b.severity, escalate_to: [...b.escalateTo], timer_id: b.instance.id });
-        }
-        const persisted = await this.uow.events.append(events.since(0), q);
-        await timerRepo.save(engine.all().filter((t) => t.status === "breached"), q);
-        for (const e of escalations.list()) await this.escalationRepo.save(e, q);
-        this.uow.notifyCommitted(persisted);
-        return claimed;
-      }), (d) => ({ due: d.length, breaches: breaches.length }));
+      // the breach pass (35.1 rule 12 + 35.3 rule 9): the due instances (any loan, or global) claimed FOR UPDATE SKIP LOCKED in pages of 500, one transaction per page, each page restored into a fresh engine; evaluate breaches them and appends timer.breached under each timer's own loan; SM_SWEEP_HEARTBEAT_DAILY on its own due day is left to this run's receipt (35.1 edge case 7 — breach.ts)
+      // 35.9 Trigger & frequency: the day's default cycles once per calendar day at/after 05:30 ET (docket sync, DRA import, the daily case unit, the claims sweep — planned in dependency order through 35.3's engine after the counters; the run row, the report, the receipt) — before the reconciliation and the breach pass, so a day whose run completed never breaches SM_DEFAULT_CASE_DAILY; errors logged, never thrown
+      const defaultCaseDaily = opts.dailyCase !== false && dailyDue(nowIso)
+        ? await logged("default_case.daily", () => defaultCaseDailyPass(this, nowIso, { runId }), () => null as DailyRunReport | null, (r) => (r ? { ran: !r.already, skipped: r.skipped ?? null, outcome: r.outcome, loans_scanned: r.loans_scanned } : { failed: true }))
+        : null;
+      // 35.11: the ops steward after the roles pass (the day's unstaffed queues and FAKE approvals are in its feeds) and after 35.9's daily pass — the last pass of the sweep that plans and runs cycles: `default_case_daily` is expected by 06:30 ET and planned by that pass at/after 05:30 ET, so the steward's registry watch (rule 2, `next_expected_by` before now with no receipt) reads the day's receipt on the first sweep after 06:30 instead of opening a missed-cycle exception the same sweep resolves — and before the breach pass (the day's report receipt never breaches; a clock it arms this minute is not due); every step its own unit of work, errors logged, never thrown
+      const stewardship = await logged("ops.steward", () => stewardSweepPass(this, nowIso, { runId }), () => null as StewardSweepReport | null, (r) => (r ? { cycles_opened: r.cycles?.opened.length ?? 0, dead_opened: r.intake?.dead_messages.opened ?? 0, classified: r.classified?.classified ?? 0, requeued: (r.classified?.requeued ?? 0) + (r.recovered_requeues?.requeued ?? 0), resolved: r.resolutions?.resolved ?? 0, report: r.report ? r.report.as_of_date : null, errors: r.errors.length } : { failed: true }));
+      // 35.9 rule 7: the day's breach-action reconciliation, once per calendar day, before the breach pass (a day whose reconciliation ran never breaches SM_BREACH_ACTION_RECON_DAILY) — errors logged, never thrown
+      const breachRecon = await logged("breach_action.recon", () => breachReconPass(this, nowIso, { runId }), () => null as Record<string, unknown> | null, (r) => (r ? { ran: r["already"] !== true, missing: r["missing"], failed: r["failed"] } : { failed: true }));
+      // the breach pass (35.1 rule 12 + 35.3 rule 9 + 35.9 rule 7): each page's transaction also runs `breach.execute` for every breach it evaluated (src/domain/operations-runtime/breach.ts)
+      const breach = await pass("timers.breach", () => pagedBreachPass(this, nowIso), (b) => ({ due: b.due, breaches: b.breaches.length, pages: b.pages, actions: b.actions }));
+      const breaches = breach.breaches;
       // 33.1 T10: the breach action of SM_PARTNER_BOOK_INVITATION_REMINDER_14 — one reminder on the same channel while the party has no session, then nothing more; never fails the sweep
+      // 35.4: the close pass after the breach pass (a stall breached this minute is labelled and named on its escalation in the same sweep): the month's trigger, the planning transaction, a due tax-year close, the inline units while 35.3's executor is absent — errors logged, never thrown
+      const close = await logged("close.plan", () => closeSweepPass(this, nowIso, { runId }), () => null as CloseSweepReport | null, (r) => (r ? { periods: r.plan.periods, opened: r.opened.length, receipts: r.plan.receipts, completed: r.plan.completed.length, inline_units: r.inline_units } : { failed: true }));
       const partnerBookReminders = await logged("partner_book.reminders", async () => (await sendPartnerBookReminders(this, nowIso)).sent, () => 0, (n) => ({ sent: n }));
       // 33.1 T12 / rule 8: the breach action of SM_PARTNER_BOOK_TAPE_EXPECTED_7 — once per breached clock `partner_book.tape.late` beside the ops_analyst escalation the breach pass opened; a second sweep adds nothing
       const partnerBookTapeLate = await logged("partner_book.tape_late", async () => (await notifyPartnerBookTapeLate(this, nowIso)).late, () => 0, (n) => ({ late: n }));
+      // 35.10: each breached closeout clock journaled once on its closeout beside the sweep's escalation — never fails the sweep
+      const refinanceBreaches = await logged("refinance.breach_actions", async () => (await closeoutBreachActions(this, nowIso)).journaled, () => 0, (n) => ({ journaled: n }));
+      // 35.2 rule 4: the staged-blob drain every sweep (one command per subject), the envelope expiry and the print vendor probe — after the breach pass and its actions (a document a breach action rendered on this run is staged and drained here), errors logged, never thrown
+      const documents = await logged("documents", () => documentsSweepPass(this, nowIso), () => null as DocumentsSweepReport | null, (d) => (d ? { drained: d.drained, envelopes_expired: d.envelopes_expired, fallback_proposed: d.fallback_proposed, vendor_down: d.mail_vendor_down } : { failed: true }));
       const outbox = await this.db.query<{ adapter: string; status: string; count: string }>(`SELECT adapter, status, count(*)::text AS count FROM integration_messages WHERE status IN ('queued', 'failed') GROUP BY adapter, status ORDER BY adapter, status`).catch(() => []);
       // rule 12: the receipt in its own final transaction — SM_SWEEP_HEARTBEAT_DAILY is satisfied and re-armed by the run that completes; the row is `completed`
       const durationMs = Date.now() - startedMs;
       const outboxCounts = { claimed: outboxDispatch.claimed, sent: outboxDispatch.sent, retried: outboxDispatch.retried, dead: outboxDispatch.dead };
-      await this.uow.run({}, (ctx) => ctx.events.append({ type: "sweep.run_completed", aggregate: { kind: "sweep_run", id: runId }, actor: { kind: "system", id: "sweep" }, payload: { run_id: runId, as_of_date: asOfDate, holder, duration_ms: durationMs, passes: passes.map((p) => p.name), due: due.length, breaches: breaches.length, outbox: outboxCounts } }),
+      await this.uow.run({}, (ctx) => ctx.events.append({ type: "sweep.run_completed", aggregate: { kind: "sweep_run", id: runId }, actor: { kind: "system", id: "sweep" }, payload: { run_id: runId, as_of_date: asOfDate, holder, duration_ms: durationMs, passes: passes.map((p) => p.name), due: breach.due, breaches: breaches.length, breach_pages: breach.pages, outbox: outboxCounts } }),
         { clock: this.clock, commit: async (q) => { await q.query(`UPDATE sweep_runs SET outcome = 'completed', finished_at = $2, heartbeat_at = $2, passes = $3::jsonb, outbox = $4::jsonb WHERE id = $1`, [runId, this.clock.now(), JSON.stringify(passes), JSON.stringify(outboxCounts)]); } });
-      return { at: nowIso, due: due.length, breaches, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })), refi, reviewers, roles, partner_book_review: partnerBookReview, partner_book_readiness: partnerBookReadiness, partner_book_reminders: partnerBookReminders, partner_book_tape_late: partnerBookTapeLate, partner_book_daily_reports: partnerBookDailyReports, controls, posture,
-        run_id: runId, holder, outcome: "completed", skipped_reason: null, passes, outbox_dispatch: outboxDispatch, verify };
+      return { at: nowIso, due: breach.due, breaches, breach_pages: breach.pages, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })), refi, reviewers, cycles, roles, close, stewardship, documents, partner_book_review: partnerBookReview, partner_book_readiness: partnerBookReadiness, partner_book_reminders: partnerBookReminders, partner_book_tape_late: partnerBookTapeLate, partner_book_daily_reports: partnerBookDailyReports, refinance_closeout: refinanceCloseout, refinance_board: refinanceBoard, refinance_breaches: refinanceBreaches, controls, posture,
+        run_id: runId, holder, outcome: "completed", skipped_reason: null, passes, outbox_dispatch: outboxDispatch, verify, breach_recon: breachRecon, default_case_daily: defaultCaseDaily };
     } catch (e) {
       await this.db.query(`UPDATE sweep_runs SET outcome = 'failed', finished_at = $2, heartbeat_at = $2, passes = $3::jsonb, skipped_reason = $4 WHERE id = $1`, [runId, this.clock.now(), JSON.stringify(passes), (e instanceof Error ? e.message : String(e)).slice(0, 500)]).catch(() => undefined);
       throw e;

@@ -197,7 +197,8 @@ function cbor(v: C): Buffer {
 const sha = (s: string | Buffer): Buffer => createHash("sha256").update(s).digest();
 const clientData = (type: string, challenge: string): string => b64url.encode(Buffer.from(JSON.stringify({ type, challenge, origin: "http://localhost" })));
 
-test("32.14-T1: Given a new browser with no cookies, when `/app` renders, then the first assistant content is `entry.disclosure.first`, a `leads` row exists at `L0_contact_unverified` with `party_id = null`, `lead.disclosure.delivered` and `consent.granted{kind=ai_disclosure_ack}` precede any other lead event, no `sessions` row exists, and the next step is the goal card with exactly `buy`, `lower_rate`, `cash_out`.", { skip }, async () => {
+// 32.14-T1 — retired 2026-09-16 (docs/decisions/2026-09-16-apply-product.md); kept as a regression test
+test("Given a new browser with no cookies, when `/app` renders, then the first assistant content is `entry.disclosure.first`, a `leads` row exists at `L0_contact_unverified` with `party_id = null`, `lead.disclosure.delivered` and `consent.granted{kind=ai_disclosure_ack}` precede any other lead event, no `sessions` row exists, and the next step is the goal card with exactly `buy`, `lower_rate`, `cash_out`.", { skip }, async () => {
   const sessionsBefore = await count("sessions"); const partiesBefore = await count("parties");
   const r = await api("POST", "/v1/borrower/lead", { action: "start", channel: "web_chat" });   // no cookie, no session: the root's first render
   assert.equal(r.status, 200, JSON.stringify(r.body));
@@ -229,7 +230,8 @@ test("32.14-T1: Given a new browser with no cookies, when `/app` renders, then t
   const second = await api("POST", "/v1/borrower/lead", { action: "start", channel: "web_chat" }, withLead(token as string)); assert.equal(second.status, 200); assert.equal(second.body["lead_id"], leadId); assert.ok(!("lead_token" in second.body));
 });
 
-test("32.14-T2: Given the lead answers state `CO`, then `co_admt.preuse_notice.delivered` is logged before `lead.range.shown`; given `UT` or `CA`, then a second `lead.disclosure.delivered{state_variant}` is logged before the next chip.", { skip }, async () => {
+// 32.14-T2 — retired 2026-09-16 (docs/decisions/2026-09-16-apply-product.md); kept as a regression test
+test("Given the lead answers state `CO`, then `co_admt.preuse_notice.delivered` is logged before `lead.range.shown`; given `UT` or `CA`, then a second `lead.disclosure.delivered{state_variant}` is logged before the next chip.", { skip }, async () => {
   // Colorado: the pre-use notice at the state step, before anything priced
   const co = await refiLead("CO");
   const coRange = await range(co.token); assert.equal(coRange.status, 200, JSON.stringify(coRange.body)); assert.ok(coRange.body["range"], "a range for CO");
@@ -250,7 +252,8 @@ test("32.14-T2: Given the lead answers state `CO`, then `co_admt.preuse_notice.d
   }
 });
 
-test("32.14-T3: Given the lead answers state `NY`, then `licensing.gate.blocked{state=NY}` is logged, the lead is `closed_lost{reason=state_not_licensed}`, the reply is `lead.state_closed`, and no range and no identity ask are rendered.", { skip }, async () => {
+// 32.14-T3 — retired 2026-09-16 (docs/decisions/2026-09-16-apply-product.md); kept as a regression test
+test("Given the lead answers state `NY`, then `licensing.gate.blocked{state=NY}` is logged, the lead is `closed_lost{reason=state_not_licensed}`, the reply is `lead.state_closed`, and no range and no identity ask are rendered.", { skip }, async () => {
   const l = await startLead();
   for (const [step, value] of [["goal", "lower_rate"], ["occupancy", "primary"]] as const) assert.equal((await answer(l.token, step, value)).status, 200);
   const r = await answer(l.token, "state", "NY"); assert.equal(r.status, 200, JSON.stringify(r.body));
@@ -272,7 +275,8 @@ test("32.14-T3: Given the lead answers state `NY`, then `licensing.gate.blocked{
   const again = await answer(l.token, "estimate", { value_estimate_cents: "50000000", stated_existing_balance_cents: "30000000" }); assert.equal(again.status, 409); assert.ok(["STATE_GATE_FIRST", "LEAD_CLOSED"].includes(String(again.body["code"])), JSON.stringify(again.body));
 });
 
-test("32.14-T4: Given the active rate sheet, when the range renders, then `lead.range.shown` carries the sheet's `FRM30` low and high, the rendered text contains an APR beside each rate and the not-a-commitment footer, `regz_1026_24.apr_stated = true` in the checklist result, and no tier, LLPA or borrower-specific figure appears; given the checklist fails, then no range is shown and the identity ask still renders.", { skip }, async () => {
+// 32.14-T4 — retired 2026-09-16 (docs/decisions/2026-09-16-apply-product.md); kept as a regression test
+test("Given the active rate sheet, when the range renders, then `lead.range.shown` carries the sheet's `FRM30` low and high, the rendered text contains an APR beside each rate and the not-a-commitment footer, `regz_1026_24.apr_stated = true` in the checklist result, and no tier, LLPA or borrower-specific figure appears; given the checklist fails, then no range is shown and the identity ask still renders.", { skip }, async () => {
   const l = await refiLead("AZ");
   const r = await range(l.token); assert.equal(r.status, 200, JSON.stringify(r.body));
   const rg = r.body["range"] as Json; assert.ok(rg, "a range");
@@ -308,7 +312,8 @@ test("32.14-T4: Given the active rate sheet, when the range renders, then `lead.
   assert.ok(!(await leadEvents(g.id)).some((e) => e.type === "lead.range.shown"), "no range shown on the refused lead");
 });
 
-test("32.14-T5: Given the goal tiles, then each resolves to exactly one `transaction_type` (`purchase`, `limited_cash_out`, `cash_out`); Buy asks contract status; refi and cash-out ask occupancy with no default tapped.", { skip }, async () => {
+// 32.14-T5 — retired 2026-09-16 (docs/decisions/2026-09-16-apply-product.md); kept as a regression test
+test("Given the goal tiles, then each resolves to exactly one `transaction_type` (`purchase`, `limited_cash_out`, `cash_out`); Buy asks contract status; refi and cash-out ask occupancy with no default tapped.", { skip }, async () => {
   const tiles = { buy: "purchase", lower_rate: "limited_cash_out", cash_out: "cash_out" } as const;
   const start = await startLead(); const goalStep = start.body["step"] as Json;
   assert.deepEqual((goalStep["options"] as Json[]).map((o) => [o["id"], o["transaction_type"]]), Object.entries(tiles), "each tile names exactly one transaction_type");
@@ -335,7 +340,8 @@ test("32.14-T5: Given the goal tiles, then each resolves to exactly one `transac
   const buyEst = (await state(buy.token)).body["step"] as Json; assert.deepEqual((buyEst["fields"] as Json[]).map((f) => f["id"]), ["price_range_cents", "down_payment_cents"]); assert.ok(!("limit" in buyEst));
 });
 
-test("32.14-T6: Given a lead at L0, when a client posts income, a name, an SSN, a demographic answer, marital status or citizenship as a lead fact, then `lead.answer` refuses with `L0_FACTS_ONLY` and nothing is written.", { skip }, async () => {
+// 32.14-T6 — retired 2026-09-16 (docs/decisions/2026-09-16-apply-product.md); kept as a regression test
+test("Given a lead at L0, when a client posts income, a name, an SSN, a demographic answer, marital status or citizenship as a lead fact, then `lead.answer` refuses with `L0_FACTS_ONLY` and nothing is written.", { skip }, async () => {
   const l = await startLead(); assert.equal((await answer(l.token, "goal", "lower_rate")).status, 200);
   const version = await entityVersion("leads", l.id); const before = (await leadEvents(l.id)).length; const lead = await entity("leads", l.id);
   const posts: Json[] = [
@@ -356,7 +362,7 @@ test("32.14-T6: Given a lead at L0, when a client posts income, a name, an SSN, 
   const ok = await answer(l.token, "occupancy", "primary"); assert.equal(ok.status, 200, JSON.stringify(ok.body));
 });
 
-test("32.14-T7: Given a lead with goal `limited_cash_out`, occupancy `primary`, state `AZ`, when the visitor verifies an SMS code with the lead cookie, then `lead.linked{party_id}` and `lead.authenticated{level=L1}` are logged, an `applications` row exists with `channel=organic`, `transaction_type=limited_cash_out`, `occupancy=primary`, the property `tbd` with state `AZ`, the thread shows the session's disclosure line then `entry.resumed`, and no goal card is sent.", { skip }, async () => {
+test("32.14-T7: Given a lead with goal `limited_cash_out`, occupancy `primary`, state `AZ`, when the visitor verifies an SMS code with the lead cookie, then `lead.linked{party_id}` and `lead.authenticated{level=L1}` are logged, an `applications` row exists with `channel=organic`, `transaction_type=limited_cash_out`, `occupancy=primary`, the property `tbd` with state `AZ`, the page lands on the Apply step the record is at, and no goal card is sent.", { skip }, async () => {
   const l = await refiLead("AZ"); assert.equal((await range(l.token)).status, 200);
   const phone = phoneOf(`t7-${R}`);
   const req = await api("POST", "/v1/borrower/auth/otp", { action: "request", channel: "sms", destination: phone }); assert.equal(req.status, 200, JSON.stringify(req.body));
@@ -420,7 +426,8 @@ test("32.14-T18: Given the funnel read model, when queried for a date range, the
   for (const k of keys) { assert.ok(ALL_ALLOWED_FIELDS.has(k), `${k} is allow-listed`); assert.ok(!FORBIDDEN_FIELDS.includes(k), k); }
 });
 
-test("32.14-T19: Given a lead created 91 days ago that never authenticated, when the inactivity sweep runs, then the lead is `expired`, its `lead_tokens` row is purged, and no `parties`, `sessions`, `conversations` or `messages` row was ever created for it.", { skip }, async () => {
+// 32.14-T19 — retired 2026-09-16 (docs/decisions/2026-09-16-apply-product.md); kept as a regression test
+test("Given a lead created 91 days ago that never authenticated, when the inactivity sweep runs, then the lead is `expired`, its `lead_tokens` row is purged, and no `parties`, `sessions`, `conversations` or `messages` row was ever created for it.", { skip }, async () => {
   const counts = async () => ({ parties: await count("parties"), sessions: await count("sessions"), conversations: await count("conversations"), messages: await count("messages") });
   const before = await counts();
   // 91 days ago: the visitor answered the goal and left
@@ -549,7 +556,7 @@ test("32.14-T11: Given a replayed or foreign `state`, or a `nonce` that does not
   // a start refuses a redirect outside the allowed origins (the FAKE identity hint itself is accepted here only because the provider is FAKE)
   const bad = await sapi("POST", "/v1/borrower/auth/oidc", { action: "start", provider: "google", redirect_uri: "https://evil.example/callback", fake: who }); assert.equal(bad.status, 400); assert.equal(bad.body["code"], "BAD_REQUEST");
 });
-test("32.14-T12: Given a first successful session, then no `auth.passkey.offer` line renders in any session (retired by 32.16 §0.4); given a registered passkey, when the visitor returns, then a successful assertion lands in the thread with the Record open to `next`.", { skip }, async () => {
+test("32.14-T12: Given a first successful session, then no `auth.passkey.offer` line renders in any session (retired by 32.16 §0.4); given a registered passkey, when the visitor returns, then a successful assertion lands on Apply.", { skip }, async () => {
   await journeyReady();
   const offer = `{{copy:${PASSKEY_OFFER_COPY_KEY}}}`;
   // Alex's first session was T8's Google sign-in: docs/ux/17 §0.4 retires the offer line — no session posts it, first or second
@@ -798,7 +805,7 @@ test("32.14-T15: Given `terms_presented`, when the borrower taps Not yet, then n
   for (const t of armed) if (!armedBeforeS4.has(t.code)) assert.ok(t.code.endsWith("_GATE") && t.due_at === null, `${t.code} is armed since S4 — not a clock a deferred lead carries`);
   assert.ok(!timers.some((t) => t.code === "REGB_1002_9_DECISION_30" || t.code === "REGZ_1026_19E1_LE_3BD"));
 });
-test("32.14-T16: Given a deep-link token for a pending card, when opened without a session, then the sign-in chooser renders with the token retained; after the code, `ui_events{deep_link_opened}` is written and the card is pinned; given an expired token, then `deep_link.expired` renders with the sign-in offer; given another party's token, then `error.party_scope` and no target is revealed.", { skip }, async () => {
+test("32.14-T16: Given a deep-link token for a pending card, when opened without a session, then the sign-in chooser is `Account` with the token retained; after the code, `ui_events{deep_link_opened}` is written and the card is on its step or in Tasks; given an expired token, then `deep_link.expired` renders with the sign-in offer; given another party's token, then `error.party_scope` and no target is revealed.", { skip }, async () => {
   await journeyReady();
   // a pending card for Alex (the intake agent's send_card) and the deep link a touch would carry
   const cardId = await sendCard(alex.partyId, journey.appId, "ChoiceCard", "entry.goal.question", { title: "", options: [{ id: "buy", label: "Buy a home" }, { id: "lower_rate", label: "Lower my rate or payment" }, { id: "cash_out", label: "Take cash out" }] });
@@ -829,7 +836,7 @@ test("32.14-T16: Given a deep-link token for a pending card, when opened without
   assert.equal((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM ui_events WHERE kind = 'deep_link_opened' AND party_id = $1`, [blake.partyId]))[0]!.n, "0");
   assert.equal((await sapi("GET", `/v1/borrower/deeplink/${link.token}`, undefined, s.token)).status, 200, "the link still resolves for its own party");
 });
-test("32.14-T17: Given a servicing-book borrower whose phone is on `application_borrowers.contact`, when they open Sign in and verify a code to that phone, then the session resolves to their existing party, the thread renders with the Record, and on-file numbers stay hidden until L2.", { skip }, async () => {
+test("32.14-T17: Given a servicing-book borrower whose phone is on `application_borrowers.contact`, when they open Sign in and verify a code to that phone, then the session resolves to their existing party and lands on My Loan with the record, and on-file numbers stay hidden until L2.", { skip }, async () => {
   await journeyReady();
   // the book's borrower: Alex on the refi-trigger application of the prior loan, the mobile on file beside the e-mail the earlier sessions used
   await db.query(`UPDATE application_borrowers SET contact = contact || $2::jsonb WHERE application_id = $1 AND contact->>'email' = $3`, [journey.appId, toJson({ phone: ALEX_PHONE }), EMAIL_A]);   // Alex's row by its e-mail: the journey's two borrower rows share a created_at, so `abIds[0]` is uuid-ordered (Blake in some runs)

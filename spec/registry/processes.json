@@ -7194,6 +7194,33 @@
     "deadline": "32.3 timeline: DU result 1–3 minutes after the application is complete (R8); 23.2's `SM_DU_CONDITIONS_SLA_4H` (conditions materialize within 4 hours)"
   },
   {
+    "id": "32.19",
+    "title": "The Apply product",
+    "section": 32,
+    "section_title": "Borrower experience",
+    "words": 10989,
+    "timers": [],
+    "subsections": [
+      "Inputs and triggers",
+      "Data model",
+      "State machine",
+      "Timers and gates",
+      "Business rules and calculations",
+      "Integrations",
+      "Outputs and artifacts",
+      "AI agent design (AI-first)",
+      "Edge cases and failure modes",
+      "Test cases and acceptance criteria",
+      "Audit and evidence"
+    ],
+    "path": "sections/32-borrower-experience/32-19-the-apply-product.md",
+    "auto": "c — the borrower states and confirms on the screens; every value is written by resolving the pending card (once, on the addressed purchase, by `application.confirmField`); the page decides nothing, posts no command from Chat and never names the underwriting run; the DU moment runs itself (32.18); `mlo_of_record` reviews terms under `origination.ai_mlo_intake=assisted`",
+    "own": "Lender (partner; projections of 20–31) · Servicer · Sub (projections of 1–19) — Supermortgage renders the borrower experience; the system of record stays with the owning process",
+    "trigger": "On `/app` for a browser with no session (the door), then on every session of the party: the nine steps of the organic application in order, My Loan for a loan subject, Tasks for every pending card; per party",
+    "source": "Projection of sections 21.1 (application intake: the six items, confirmField, the declarations and demographics), 20.3 (the preapproval request of the still-looking purchase), 22.2–22.4 (credit, income, assets — the connections and the report), 23.1 (DU: the moment the screens lead to), 32.2 (cards, commands, sessions, read models), 32.3 (the qualification cards the screens resolve), 32.14 (deep links, return pages, Google, the partner from configuration), 32.16 (the account, the footer, the turn behind Chat), 32.18 (the DU moment, the badge, the gap cards)",
+    "deadline": "none owned — the screens render `record.status.badge` and the pending cards and never a date; the DU moment's clocks are 23.x's (32.18)"
+  },
+  {
     "id": "33.1",
     "title": "The partner book import: the tape and the supplement become monitored loans and real accounts",
     "section": 33,

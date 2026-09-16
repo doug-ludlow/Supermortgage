@@ -182,11 +182,12 @@ test("35.7-T1: Given a fresh database, when every file under db/migrations is ap
   const baseTables = async (): Promise<number> => Number((await t1db.query<{ c: string }>(`SELECT count(*)::text AS c FROM information_schema.tables WHERE table_schema IN ('public', 'restricted_fl') AND table_type = 'BASE TABLE'`))[0]!.c);
   const before = await baseTables();
   for (const t of ["role_grants", "role_queue_snapshots", "role_handovers", "breakglass_uses", "api_principals"]) assert.equal((await t1db.query<{ r: string | null }>(`SELECT to_regclass($1)::text AS r`, [`public.${t}`]))[0]!.r, null, `${t} does not exist before 0170`);
-  // this process's file alone, then the count (a later §35 migration — 0240 onwards — adds its own tables after this one); the rest of db/migrations follows through migrate.sh
-  psql(["-f", `${dir}/${mine}`]); psql(["-c", `INSERT INTO schema_migrations(version) VALUES ('${mine.replace(/\.sql$/, "")}')`]);
+  // this process's own files next (0170, 0171), so the +5 is 35.7's alone — later §35 migrations (35.9's 0210, …) add their own tables after
+  for (const f of files) { if (!/^017\d_/.test(f)) continue; psql(["-f", `${dir}/${f}`]); psql(["-c", `INSERT INTO schema_migrations(version) VALUES ('${f.replace(/\.sql$/, "")}')`]); }
   const after = await baseTables();
-  execFileSync(`${ROOT}db/migrate.sh`, { env: { ...process.env, DATABASE_URL: t1.url }, stdio: "pipe" });
   assert.equal(after, before + 5, `five new base tables (before ${before}, after ${after})`);
+  // then every remaining file, as db/migrate.sh applies it
+  execFileSync(`${ROOT}db/migrate.sh`, { env: { ...process.env, DATABASE_URL: t1.url }, stdio: "pipe" });
   for (const t of ["role_grants", "role_queue_snapshots", "role_handovers", "breakglass_uses", "api_principals"]) assert.equal((await t1db.query<{ r: string | null }>(`SELECT to_regclass($1)::text AS r`, [`public.${t}`]))[0]!.r, t, `to_regclass non-null for ${t}`);
   // staff_users.reviewer_roles with a CHECK whose literal list equals HUMAN_ROLES (twenty-two words, no admin); the three disjointness CHECKs; the constraint trigger
   const [col] = await t1db.query<{ data_type: string; column_default: string }>(`SELECT data_type, column_default FROM information_schema.columns WHERE table_name = 'staff_users' AND column_name = 'reviewer_roles'`);

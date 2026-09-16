@@ -54,7 +54,7 @@ async function enrolAndSignIn(email: string, password: string): Promise<Session>
 }
 const count = async (sql: string, p: unknown[] = []): Promise<number> => Number((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM ${sql}`, p))[0]!.n);
 type ActionRow = { route: string; method: string; command: string | null; subject_kind: string | null; subject_id: string | null; result: string; refusal_code: string | null; role: string | null; staff_user_id: string | null; session_id: string | null };
-let sent = 0;   // every /ops/api request this suite made; the staff_actions row is inserted after the answer is on the wire, so the log is read once it has caught up
+let sent = 0;   // every /ops/api request this suite made; the console holds each answer until its staff_actions row is inserted (server.ts, rule 4 ordering), so this catch-up wait is a guard, not the mechanism
 const actions = async (where = "", p: unknown[] = []): Promise<ActionRow[]> => {
   for (let i = 0; i < 100 && (await count(`staff_actions`)) < sent; i++) await new Promise((r) => setTimeout(r, 20));
   return db.query(`SELECT route, method, command, subject_kind, subject_id, result, refusal_code, role, staff_user_id::text AS staff_user_id, session_id::text AS session_id FROM staff_actions ${where} ORDER BY created_at, id`, p);

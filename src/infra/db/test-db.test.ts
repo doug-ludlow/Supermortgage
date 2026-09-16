@@ -64,6 +64,25 @@ test("test-db: a second call for another file gets its own database, sub-second,
   try { assert.equal((await c.query("SELECT 1 FROM pg_database WHERE datname = $1", [other.name])).rowCount, 0, "close() drops the database"); } finally { await c.end(); }
 });
 
+test("test-db: a file's clone is dropped when its process ends without close() — nothing left on the server after a run; KEEP_TEST_DB=1 keeps it", { skip }, async () => {
+  const { spawnSync } = await import("node:child_process");
+  const fileUrl = "file:///x/src/infra/db/test-db.hook-probe.test.ts";
+  const name = testDatabaseName(fileUrl);   // the child names it from TEST_DATABASE_URL (or the default) exactly as this call does
+  const child = (env: Record<string, string>): string => {
+    const r = spawnSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", `import { testDatabase } from ${JSON.stringify(new URL("./test-db.ts", import.meta.url).href)}; const t = await testDatabase(${JSON.stringify(fileUrl)}); process.stdout.write(t.name);`], { env: { ...process.env, ...env }, encoding: "utf8", timeout: 60_000 });
+    assert.equal(r.status, 0, r.stderr);
+    return r.stdout.trim();
+  };
+  const c = new pg.Client({ connectionString: adminUrlOf(own.url) }); await c.connect();
+  try {
+    assert.equal(child({}), name);
+    assert.equal((await c.query("SELECT 1 FROM pg_database WHERE datname = $1", [name])).rowCount, 0, "dropped on beforeExit");
+    assert.equal(child({ KEEP_TEST_DB: "1" }), name);
+    assert.equal((await c.query("SELECT 1 FROM pg_database WHERE datname = $1", [name])).rowCount, 1, "kept under KEEP_TEST_DB");
+    await c.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
+  } finally { await c.end(); }
+});
+
 test("test-db: an unreachable server skips with 'no Postgres at …', and throws instead under REQUIRE_DB", async () => {
   const saved = { url: process.env["TEST_DATABASE_URL"], req: process.env["REQUIRE_DB"] };
   process.env["TEST_DATABASE_URL"] = "postgresql://sm:sm@127.0.0.1:1/supermortgage_test"; delete process.env["REQUIRE_DB"];

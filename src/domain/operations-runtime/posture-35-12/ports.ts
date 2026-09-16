@@ -31,6 +31,17 @@ export interface PosturePorts { readonly ourFigures?: OurFiguresPort; readonly c
 export const UNVERIFIED_ITEMS: readonly string[] = ["35.12/nydfs-500-16d-quarterly-policy", "35.12/parallel-run-policy", "35.12/gcp-terraform-attributes", "35.12/cloudsql-admin-api", "35.12/gcp-terraform-facts-fields", "35.12/incumbent-trial-balance-format", "35.12/vendor-canary", "35.12/secret-age-policy", "35.12/keyed-subject-override", "35.2/retention-matrix-unverified", "35.7/identity-provider-unverified"];
 
 const exists = async (q: Queryable, table: string): Promise<boolean> => (await q.query<{ r: string | null }>(`SELECT to_regclass($1)::text AS r`, [`public.${table}`]))[0]?.r !== null;
+/**
+ * A read over a sibling process's table in its own savepoint: the ports run inside the caller's unit of work (go_live.check's command), where a
+ * failed statement leaves the transaction aborted and every later read fails with 25P02 (`current transaction is aborted`) — the 35.3 `rowsOf`
+ * lesson; a plain try/catch cannot recover it. Outside a transaction the SAVEPOINT is refused and the read runs bare. A failed read is the
+ * fallback (an item stays `open`), never a failed checklist.
+ */
+async function guarded<T>(q: Queryable, fallback: T, read: () => Promise<T>): Promise<T> {
+  const sp = await q.query(`SAVEPOINT posture_port`).then(() => true, () => false);
+  try { const out = await read(); if (sp) await q.query(`RELEASE SAVEPOINT posture_port`); return out; }
+  catch { if (sp) await q.query(`ROLLBACK TO SAVEPOINT posture_port`).catch(() => undefined); return fallback; }
+}
 const big = (v: unknown): bigint => (v === null || v === undefined ? 0n : BigInt(String(v)));
 
 export const defaultOurFigures: OurFiguresPort = {
@@ -51,8 +62,13 @@ export const defaultOurFigures: OurFiguresPort = {
 };
 export const defaultCloseAttestations: CloseAttestationsPort = {
   async attestations(q, _environment, since) {
-    if (!(await exists(q, "close_attestations"))) return [];
-    try { return (await q.query<{ id: string; period: string; attested_at: string }>(`SELECT id::text AS id, coalesce(period, period_key, '')::text AS period, coalesce(attested_at, created_at)::text AS attested_at FROM close_attestations WHERE coalesce(attested_at, created_at) >= $1::timestamptz ORDER BY 3`, [since])).map((r) => ({ id: r.id, period: r.period, attested_at: r.attested_at })); } catch { return []; }
+    if (!(await exists(q, "close_periods"))) return [];
+    // 35.4's rows (db/migrations/0180): a month-end close is one `close_periods` row of kind `month` (period YYYY-MM, one per servicer number) that reached
+    // `attested` — 35.4 attest.ts patches `status`, `attested_at` and `current_attestation_id` when every P&I unit's `balance` attestation is in — so GL-10's
+    // "two month-end closes" are two periods, never two `close_attestations` rows of one period (one per custodial account and remittance type: a single
+    // October close over two accounts writes two); a `closed` period was attested first and still counts, a `reopened` one does not until it is re-attested.
+    // The id is the period's current attestation (T15: "GL-10 the two 35.4 attestations"); the runtime's own database is the environment's (no environment column)
+    return guarded(q, [], async () => (await q.query<{ id: string; period: string; attested_at: string }>(`SELECT DISTINCT ON (p.period) coalesce(p.current_attestation_id, p.id)::text AS id, p.period::text AS period, p.attested_at::text AS attested_at FROM close_periods p WHERE p.kind = 'month' AND p.status IN ('attested', 'closed') AND p.attested_at IS NOT NULL AND p.attested_at >= $1::timestamptz ORDER BY p.period, p.attested_at DESC`, [since])).map((r) => ({ id: r.id, period: r.period, attested_at: r.attested_at })));
   },
 };
 export const defaultRetentionMatrix: RetentionMatrixPort = {
@@ -64,18 +80,19 @@ export const defaultRetentionMatrix: RetentionMatrixPort = {
 export const defaultOpsDailyReports: OpsDailyReportsPort = {
   async reports(q, environment, since) {
     if (!(await exists(q, "ops_daily_reports"))) return [];
-    try { return (await q.query<{ id: string; as_of_date: string; fake_approvals: string }>(`SELECT id::text AS id, as_of_date::text AS as_of_date, coalesce(fake_approvals, 0)::text AS fake_approvals FROM ops_daily_reports WHERE coalesce(environment, $1) = $1 AND as_of_date >= $2::date ORDER BY as_of_date`, [environment, since])).map((r) => ({ id: r.id, as_of_date: r.as_of_date, fake_approvals: Number(r.fake_approvals) })); } catch { return []; }
+    // 35.11's rows (db/migrations/0230): one hashed row per environment-day per distinct content — the newest row of each day is the day's report
+    return guarded(q, [], async () => (await q.query<{ id: string; as_of_date: string; fake_approvals: string }>(`SELECT DISTINCT ON (as_of_date) id::text AS id, as_of_date::text AS as_of_date, fake_approvals::text AS fake_approvals FROM ops_daily_reports WHERE environment = $1 AND as_of_date >= $2::date ORDER BY as_of_date, created_at DESC`, [environment, since])).map((r) => ({ id: r.id, as_of_date: r.as_of_date, fake_approvals: Number(r.fake_approvals) })));
   },
 };
 export const defaultServicingConfig: ServicingConfigPort = {
   async status(q) {
     const missing = (await Promise.all(["loan_servicing_configs", "servicer_profiles"].map(async (t) => ((await exists(q, t)) ? null : t)))).filter((x): x is string => !!x);
     if (missing.length) return { config_rows: 0, profile_rows: 0, loans_without_config: -1, missing_tables: missing };
-    try {
+    return guarded(q, { config_rows: 0, profile_rows: 0, loans_without_config: -1, missing_tables: ["loan_servicing_configs?"] }, async () => {
       const [c] = await q.query<{ n: string }>(`SELECT count(*)::text AS n FROM loan_servicing_configs`); const [p] = await q.query<{ n: string }>(`SELECT count(*)::text AS n FROM servicer_profiles`);
       const [w] = await q.query<{ n: string }>(`SELECT count(*)::text AS n FROM loans l WHERE l.status::text IN ('active', 'boarded') AND NOT EXISTS (SELECT 1 FROM loan_servicing_configs c WHERE c.loan_id = l.id)`);
       return { config_rows: Number(c!.n), profile_rows: Number(p!.n), loans_without_config: Number(w!.n), missing_tables: [] };
-    } catch { return { config_rows: 0, profile_rows: 0, loans_without_config: -1, missing_tables: ["loan_servicing_configs?"] }; }
+    });
   },
 };
 export const defaultUnverifiedConfirmations: UnverifiedConfirmationsPort = {

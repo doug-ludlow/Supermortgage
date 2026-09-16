@@ -8,13 +8,16 @@
 // sheet), the account door through POST /v1/borrower/auth/account, the vendor's own calls played by the test (the custom-LLM
 // chat-completions request, the callbacks on the secret path), and the shell — the built Next.js app (apps/borrower, `.next-t13`,
 // shared with 32.13 / 32.16 and rebuilt when its sources are newer) driven with Playwright's Chromium from /opt/pw-browsers with
-// fake media devices — for the rail (T3, T4, T6, T10, T11, T12). T14 runs the cooperative persona through the eval harness
-// (src/domain/borrower/eval) with its `say` steps on the video endpoint. Skips without a database.
+// fake media devices — for the FAKE page's echoed greeting (T21). The video stage, the video door and the rail beside the call were
+// retired 2026-09-16 (docs/decisions/2026-09-16-apply-product.md; spec/registry/retired.json): those T-ids' Chromium tests are gone,
+// and the API-level parts the live T-ids build on — the door session (T17, T18, T25), the sessions T7 counts (T3, T4, T6) and the
+// eval run on the video endpoint (T14, src/domain/borrower/eval with its `say` steps on the chat-completions route) — stay as
+// untitled regression tests. Skips without a database.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createRequire } from "node:module";
-import { cpSync, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { cpSync, existsSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import type Anthropic from "@anthropic-ai/sdk";
@@ -30,7 +33,6 @@ import { createBorrowerRouter, type BorrowerRouter } from "../../runtime/borrowe
 import { seedEntryDemo } from "../../runtime/entry-seed.ts";
 import { copyText } from "../../runtime/borrower/channels.ts";
 import { LEAD_HEADER } from "../../runtime/borrower/lead-routes.ts";
-import { Journey, MST } from "../../runtime/borrower/fixtures/journey.ts";
 import { CALL_PROPERTIES, FakeTavus } from "../../infra/integrations/tavus.ts";
 import { conversationalContext, sha256 } from "../../app/tools/section32-17.ts";
 import { SYSTEM_PROMPT } from "../../runtime/borrower/agent/context.ts";
@@ -157,7 +159,7 @@ async function speak(videoToken: string, text: string | null, extra: { messages?
   const spoken = chunks.map((c) => String(((c["choices"] as Json[])?.[0]?.["delta"] as Json | undefined)?.["content"] ?? "")).join("");
   return { status: r.status, contentType: String(r.headers.get("content-type") ?? ""), chunks, text: spoken, done, raw };
 }
-const rowsOf = (id: string) => db.query<{ id: string; status: string; end_reason: string | null; transcript_ref: string | null; token_hash: string; vendor: string; vendor_conversation_id: string | null; vendor_persona_id: string | null; conversation_url: string | null; joined_at: string | null; ended_at: string | null }>(`SELECT id::text AS id, status, end_reason, transcript_ref, token_hash, vendor, vendor_conversation_id, vendor_persona_id, conversation_url, joined_at, ended_at FROM video_sessions WHERE video_session_id = $1 ORDER BY id`, [id]);
+const rowsOf = (id: string) => db.query<{ id: string; status: string; end_reason: string | null; transcript_ref: string | null; token_hash: string; vendor: string; vendor_conversation_id: string | null; vendor_persona_id: string | null; conversation_url: string | null; joined_at: string | null; ended_at: string | null }>(`SELECT id::text AS id, status, end_reason, transcript_ref, token_hash, vendor, vendor_conversation_id, vendor_persona_id, conversation_url, joined_at, ended_at FROM video_sessions WHERE video_session_id = $1 ORDER BY video_sessions.id`, [id]);   // the table's bigserial, not the `id::text` alias an unqualified ORDER BY id binds to (text order puts "10" before "9")
 const current = async (id: string) => (await rowsOf(id)).at(-1)!;
 const turnsOf = (partyId: string) => db.query<{ turn_id: string; message_id: string | null; reply_message_id: string | null; channel: string; latency_ms: number | null; guard_result: Json; tool_calls: Json[] }>(`SELECT turn_id, message_id, reply_message_id, channel, latency_ms, guard_result, tool_calls FROM agent_turns WHERE party_id = $1 ORDER BY created_at, turn_id`, [partyId]);
 const messagesOf = (conversationId: string) => db.query<{ message_id: string; sender: string; channel: string; body_text: string | null; card_instance_id: string | null; copy_tokens: Json | null }>(`SELECT message_id, sender, channel, body_text, card_instance_id, copy_tokens FROM messages WHERE conversation_id = $1 ORDER BY created_at, message_id`, [conversationId]);
@@ -226,20 +228,7 @@ async function pageFor(token: string | null, width: number, path = "/app/video")
   await page.goto(`${appBase}${path}`, { waitUntil: "load", timeout: 60_000 });
   return { page, ctx };
 }
-/** /app/video rendered from this test's API: the shell, the call pane live (the FAKE page in its frame), the rail with Needed from you. */
-async function openVideoShell(token: string, width: number): Promise<{ page: Page; ctx: Context }> {
-  const p = await pageFor(token, width);
-  await p.page.waitForSelector('[data-testid="shell"]', { timeout: 30_000 });
-  try { await p.page.waitForSelector('[data-testid="video-call"][data-phase="live"]', { timeout: 45_000 }); await p.page.waitForSelector('[data-testid="record"] [data-record-section="needed"]', { timeout: 30_000, state: "attached" }); }
-  catch (e) { const notice = await p.page.locator(".sm-error").allInnerTexts().catch(() => [] as string[]); throw new Error(`the video shell did not render: ${String(e)}; notices=${JSON.stringify(notice)}; logs=${JSON.stringify((p.page as Page & { logs?: string[] }).logs?.slice(-10))}; app=${appLog.slice(-800)}`); }
-  return p;
-}
 const SCREENSHOTS = `${ROOT}apps/borrower/test-results/32-17-video`;
-/** 32.17 rule 16: the rail is a drawer behind the header's Your record — open it before reading the rail. */
-async function openRail(page: Page): Promise<void> { await page.locator('[data-testid="header"] button[aria-haspopup="dialog"]').first().click(); await page.waitForSelector('[data-testid="record"][data-open="true"]', { timeout: 10_000 }); }
-/** A card that rose over the stage (a consent the goal's resolution opened, say) is set aside so the test can reach what is under it. */
-async function setAsideAsk(page: Page): Promise<void> { for (let i = 0; i < 6; i++) { const notNow = page.getByTestId("ask-not-now"); if (!(await notNow.count())) return; await notNow.first().click(); await page.waitForTimeout(300); } }
-
 // ---------------------------------------------------------------- the T-ids
 let A: { token: string; party_id: string; app_id: string; email: string }; let videoA: { id: string; videoToken: string; body: Json };
 
@@ -287,7 +276,8 @@ test("32.17-T2: Given the vendor posts a chat-completions request with the borro
   assert.ok((await decisionsOf("video.turn")).some((d) => d.rationale.includes(videoA.id)), "video.turn recorded the turn on the bus");
 });
 
-test("32.17-T3: Given \"I make about eight thousand two hundred a month\" in a video turn with the R3 income card pending, then the turn writes it (rule 21): `card_instances.props.proposal.fields[0] = {path: \"monthly_income\", value: \"820000\", source: \"borrower_stated_unconfirmed\"}`, the card resolved with `evidence.source = borrower_stated` and `committed_by = turn`, `application_income` gains the row — no Confirm on the rail, nothing rises over the stage for it, and the record drawer no longer lists it under Needed from you.", { skip }, async () => {
+// 32.17-T3 — retired 2026-09-16 (docs/decisions/2026-09-16-apply-product.md); kept as a regression test
+test("Given \"I make about eight thousand two hundred a month\" in a video turn with the R3 income card pending, then the turn writes it (rule 21): `card_instances.props.proposal.fields[0] = {path: \"monthly_income\", value: \"820000\", source: \"borrower_stated_unconfirmed\"}`, the card resolved with `evidence.source = borrower_stated` and `committed_by = turn`, `application_income` gains the row — no Confirm on the rail, nothing rises over the stage for it, and the record drawer no longer lists it under Needed from you.", { skip }, async () => {
   const b = await signedUpWithGoal("t3"); const cardId = await sendIncomeCard(b);
   const v = await openVideo(b.token); assert.equal(v.status, 201);
   const incomeRows = () => db.query<{ monthly_amount_cents: string }>(`SELECT monthly_amount_cents::text AS monthly_amount_cents FROM application_income WHERE application_id = $1 ORDER BY created_at`, [b.app_id]);
@@ -301,21 +291,11 @@ test("32.17-T3: Given \"I make about eight thousand two hundred a month\" in a v
   assert.deepEqual(((card.props["proposal"] as Json)["fields"] as Json[])[0], { path: "monthly_income", value: "820000", source: "borrower_stated_unconfirmed" });
   assert.equal(card.evidence!["source"], "borrower_stated"); assert.equal(card.evidence!["committed_by"], "turn");
   const after = await incomeRows(); assert.equal(after.length, before.length + 1); assert.equal(after.at(-1)!.monthly_amount_cents, "820000");
-  // the screen: no Confirm anywhere for it — nothing rises over the stage for a written fact; the drawer no longer lists it under Needed from you
-  const { page, ctx } = await openVideoShell(b.token, 1280);
-  await new Promise((res) => setTimeout(res, 1500));
-  assert.equal(await page.locator(`[data-testid="ask-overlay"][data-card-id="${cardId}"]`).count(), 0, "nothing rises for a written fact");
-  assert.equal(await page.getByTestId("confirm-chip-confirm").count(), 0, "no Confirm on the screen");
-  await openRail(page);
-  assert.equal(await page.locator(`[data-testid="record"] [data-record-section="needed"] [data-rail-card="${cardId}"]`).count(), 0, "not needed any more");
-  assert.equal(await page.locator('[data-testid="thread"]').count(), 0, "no thread on the video screen");
-  await page.screenshot({ path: `${SCREENSHOTS}/t3-written-1280.png`, fullPage: false }).catch(() => undefined);
-  await ctx.close();
 });
 
-test("32.17-T4: Given a video turn in which the model calls `card.request`, then no reference chip is written, a `card.sent` event reaches the session's SSE stream, and the rail focuses and expands that card.", { skip }, async () => {
+// 32.17-T4 — retired 2026-09-16 (docs/decisions/2026-09-16-apply-product.md); kept as a regression test
+test("Given a video turn in which the model calls `card.request`, then no reference chip is written, a `card.sent` event reaches the session's SSE stream, and the rail focuses and expands that card.", { skip }, async () => {
   const b = await signedUpWithGoal("t4"); const v = await openVideo(b.token); assert.equal(v.status, 201);
-  const { page, ctx } = await openVideoShell(b.token, 1280);
   scripted.use([{ when: /send you a paystub/i, calls: [{ name: "card_request", input: { kind: "upload", args: { document_class: "paystub" } } }], text: "I have put the upload card here on the rail for your paystub; tap it when you have the file, and the goal card stays the next thing we need." }]);
   let spoken: Awaited<ReturnType<typeof speak>> | undefined;
   const frame = await streamEvent(b.token, "card.sent", async () => { spoken = await speak(v.videoToken, "can I send you a paystub?"); });
@@ -328,18 +308,6 @@ test("32.17-T4: Given a video turn in which the model calls `card.request`, then
   const msgs = await messagesOf(conv); const reply = msgs.find((m) => m.sender === "agent" && m.channel === "video" && /upload card/.test(String(m.body_text)))!; assert.ok(reply);
   assert.equal(reply.card_instance_id, null, "no reference chip written on the reply");
   assert.equal(msgs.filter((m) => m.channel === "video" && m.card_instance_id === requested.card_instance_id).length, 0, "nothing in the video channel references the card (its own 32.1 home row is not a chip)");
-  // 32.17 rule 16: the requested card rose over the stage; the rail (the drawer) focused and expanded it (the page re-fetched on card.sent and focused the card it had not seen)
-  await page.locator(`[data-testid="ask-overlay"][data-card-id="${requested.card_instance_id}"][data-reason="requested"]`).waitFor({ timeout: 30_000 });
-  await openRail(page);
-  try { await page.waitForSelector(`[data-testid="record"] [data-rail-card="${requested.card_instance_id}"][data-expanded="true"] article[data-card-id="${requested.card_instance_id}"]`, { timeout: 30_000 }); }
-  catch (e) {
-    const rows = await page.locator('[data-testid="record"] [data-rail-card]').evaluateAll((els: unknown[]) => (els as { getAttribute(n: string): string | null; querySelector(s: string): unknown }[]).map((el) => ({ id: el.getAttribute("data-rail-card"), expanded: el.getAttribute("data-expanded"), kind: el.getAttribute("data-card-kind"), article: !!el.querySelector("article") })));
-    const later = await page.locator('[data-testid="record"] [data-testid="needs-later"]').evaluateAll((els: unknown[]) => (els as { getAttribute(n: string): string | null; textContent: string | null }[]).map((el) => ({ open: el.getAttribute("aria-expanded"), text: el.textContent })));
-    throw new Error(`the rail did not focus the requested card: ${String(e).split("\n")[0]}; rows=${JSON.stringify(rows)}; later=${JSON.stringify(later)}; logs=${JSON.stringify((page as Page & { logs?: string[] }).logs?.slice(-15))}`);
-  }
-  assert.equal(await page.locator('[data-testid="video-call"] article[data-card-kind]').count(), 0, "no card inside the call pane");
-  await page.screenshot({ path: `${SCREENSHOTS}/t4-card-sent-1280.png`, fullPage: false }).catch(() => undefined);
-  await ctx.close();
 });
 
 test("32.17-T5: Given a new video session, then `custom_greeting` is the disclosure line alone (automated, the partner as the lender, never Supermortgage as the lender) and the opening turn's text — `GET …/greeting` once it has landed — is the guarded first turn's rendered text: no `{{token}}`, the partner named as the lender, never Supermortgage as the lender, and the account door's first turn reused, never run twice.", { skip }, async () => {
@@ -365,7 +333,8 @@ test("32.17-T5: Given a new video session, then `custom_greeting` is the disclos
   assert.equal((await turnsOf(b.party_id)).filter((t) => t.reply_message_id !== null).length, 1, "no second first turn was run: the account door's is reused");
 });
 
-test("32.17-T6: Given a video turn in which the model shows rates, then the spoken text names each rate with its APR and the rail's Numbers carries the rates element (32.16 32.16-T7 unchanged).", { skip }, async () => {
+// 32.17-T6 — retired 2026-09-16 (docs/decisions/2026-09-16-apply-product.md); kept as a regression test
+test("Given a video turn in which the model shows rates, then the spoken text names each rate with its APR and the rail's Numbers carries the rates element (32.16 32.16-T7 unchanged).", { skip }, async () => {
   // a lead with the goal, the occupancy and the state, then the account (32.16-T7's path): the published range prices against it
   const ip = "10.17.6.1";
   const started = await api("POST", "/v1/borrower/lead", { action: "start", channel: "web_chat" }, {}, ip); assert.equal(started.status, 200, JSON.stringify(started.body));
@@ -386,15 +355,6 @@ test("32.17-T6: Given a video turn in which the model shows rates, then the spok
   const msgs = await messagesOf(conv); const element = msgs.find((x) => x.sender === "system" && x.channel === "video" && (x.copy_tokens as Json | null)?.["element"] === "rates")!; assert.ok(element, "the rates element row on messages{channel=video}");
   for (const k of ["low_rate", "low_apr", "high_rate", "high_apr"]) assert.equal(String((element.copy_tokens as Json)[k]), [m![1], m![2], m![3], m![4]][["low_rate", "low_apr", "high_rate", "high_apr"].indexOf(k)]);
   const turn = (await turnsOf(partyId)).find((t) => (t.guard_result["elements"] as string[] | undefined)?.includes("rates"))!; assert.ok(turn); assert.equal(turn.channel, "video"); assert.equal(turn.tool_calls[0]!["name"], "explain");
-  // the rail's Numbers carries the rates element (no thread to draw it in on /app/video)
-  const { page, ctx } = await openVideoShell(token, 1280);
-  await openRail(page);
-  const rates = page.locator('[data-testid="record"] [data-testid="rail-rates"] [data-testid="rates-element"]'); await rates.waitFor({ timeout: 30_000 });
-  const low = await rates.getByTestId("rates-low").innerText(); const high = await rates.getByTestId("rates-high").innerText();
-  assert.ok(low.includes(m![1]!) && low.includes(m![2]!), `low with its APR: ${low}`); assert.ok(high.includes(m![3]!) && high.includes(m![4]!), `high with its APR: ${high}`);
-  assert.ok((await rates.getByTestId("rates-footer").innerText()).includes("123456"));
-  await page.screenshot({ path: `${SCREENSHOTS}/t6-rates-1280.png`, fullPage: false }).catch(() => undefined);
-  await ctx.close();
 });
 
 test("32.17-T7: Given the persona and conversation bodies sent to the vendor for any session, then `layers.perception.perception_model = off`, `enable_recording = false`, no `tools`, no knowledge base, and `conversational_context` contains no record field beyond the borrower's first name and the partner's name (contract test).", { skip }, async () => {
@@ -474,72 +434,6 @@ test("32.17-T9: Given the vendor's `system.replica_joined` then `system.shutdown
   assert.ok((await decisionsOf("video.callback")).length >= 3, "every callback applied is an agent_decisions row");
 });
 
-test("32.17-T10: Given `GET /video` at the demo host, then `302` to `/app/video`; given `/app/video` without a session, then the account door of 32.16 §2.0, then the video screen with the disclosure footer, no composer, no microphone control of Supermortgage's own and no \"Talk to a person\" control.", { skip }, async () => {
-  // the demo host is the load balancer (infra/terraform/lb.tf): "/video" and "/video/*" answer 302 → /app/video beside the "/" → /app rule; the deploy workflow's smoke test checks it
-  const lb = readFileSync(`${ROOT}infra/terraform/lb.tf`, "utf8");
-  const rule = /path_rule \{\s*paths = \["\/video", "\/video\/\*"\]\s*url_redirect \{([\s\S]*?)\}/.exec(lb); assert.ok(rule, "the /video path rule");
-  assert.match(rule![1]!, /path_redirect\s*=\s*"\/app\/video"/); assert.match(rule![1]!, /redirect_response_code\s*=\s*"FOUND"/);
-  const deploy = readFileSync(`${ROOT}.github/workflows/deploy.yml`, "utf8"); assert.match(deploy, /\/video"\)"\s*\n\s*test "\$\{code\}" = "302" \|\| \{ echo "expected 302 from \/video/, "the smoke test for /video → 302");
-  // /app/video without a session: no account door (32.17 rule 11) — the call pane at once; starting the call opens the account and the rail follows
-  const { page, ctx } = await pageFor(null, 1280);
-  await page.waitForSelector('[data-testid="shell"]', { timeout: 30_000 });
-  assert.equal(await page.getByRole("heading", { name: copyText("auth.welcome_back") }).count(), 0, "no sign-in form in front of the call");
-  await page.waitForSelector('[data-testid="video-call"][data-phase="live"]', { timeout: 60_000 });
-  await page.screenshot({ path: `${SCREENSHOTS}/t10-door-1280.png`, fullPage: false }).catch(() => undefined);
-  await page.waitForSelector('[data-testid="record"] [data-record-section="needed"]', { timeout: 30_000, state: "attached" });
-  assert.ok(await page.getByTestId("footer-disclosure").isVisible(), "the disclosure footer");
-  assert.match((await page.getByTestId("footer-disclosure").innerText()), /NMLS #/);
-  assert.equal(await page.getByTestId("action-bar").count(), 0, "no composer"); assert.equal(await page.getByTestId("thread").count(), 0, "no thread");
-  assert.equal(await page.getByTestId("talk-to-person").count(), 0, "no Talk to a person");
-  assert.equal(await page.locator('[data-testid="shell"] button[aria-label*="icrophone" i], [data-testid="shell"] button[aria-label*="voice" i], [data-testid="mic"]').count(), 0, "no microphone control of Supermortgage's own (the call has its own)");
-  assert.equal(await page.getByTestId("video-frame").count(), 1, "the call is on the screen"); assert.equal(await page.locator('[data-testid="video-call"] article[data-card-kind]').count(), 0);
-  await page.screenshot({ path: `${SCREENSHOTS}/t10-video-1280.png`, fullPage: false }).catch(() => undefined);
-  await ctx.close();
-});
-
-test("32.17-T11: Given `TAVUS_API_KEY` unset, then `FakeTavus` (`FAKE`) opens the session, its `conversation_url` is local, its page posts each utterance through the same chat-completions endpoint and shows the streamed reply, and 32.17-T1 … 32.17-T9 pass against it.", { skip }, async () => {
-  assert.equal(process.env["TAVUS_API_KEY"] ?? "", "", "no vendor credential in this run");
-  assert.equal(fake.marker, "FAKE"); assert.ok(fake instanceof FakeTavus, "the FAKE opened every session above (T1 … T9 ran against it)");
-  assert.ok((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM video_sessions WHERE vendor <> 'FAKE'`))[0]!.n === "0");
-  const b = await signedUpWithGoal("t11");
-  scripted.use([{ when: /can i just type it/i, text: "You can — everything you say here goes through the same assistant, and the goal card on the rail is still the next thing we need." }]);
-  // the page opens the session itself (POST /v1/borrower/video/sessions after the camera and microphone are asked for) — the FAKE hands out its local page as conversation_url
-  const { page, ctx } = await openVideoShell(b.token, 1280);
-  await setAsideAsk(page);   // the consent the goal's resolution opened rose over the stage (rule 16); the FAKE page's own controls are under it
-  const v = { id: (await db.query<{ video_session_id: string }>(`SELECT video_session_id FROM v_video_sessions_current WHERE party_id = $1 ORDER BY id DESC LIMIT 1`, [b.party_id]))[0]!.video_session_id };
-  const row0 = await current(v.id); assert.equal(row0.vendor, "FAKE");
-  assert.ok(fake.bodies.filter((b) => b.op === "createConversation").length >= (process.env["NODE_TEST_NAME_PATTERN"] ? 1 : 7), "T1 … T9 opened their sessions at the FAKE, and this page its own (a name-pattern run has fewer)");
-  // the conversation_url is local: the app's own page, keyed on the per-session token; the frame shows it
-  assert.match(String(row0.conversation_url), /^http:\/\/127\.0\.0\.1:3999\/app\/video\/fake\/[A-Za-z0-9_-]+\?vs=[0-9a-f-]{36}$/);
-  assert.equal(await page.getByTestId("video-frame").getAttribute("src"), new URL(String(row0.conversation_url)).pathname + new URL(String(row0.conversation_url)).search, "the FAKE page in the call pane's frame, same origin");
-  const frame = page.frameLocator('[data-testid="video-frame"]');
-  await frame.getByTestId("fake-video-page").waitFor({ timeout: 30_000 });
-  assert.equal((await frame.getByTestId("fake-video-marker").innerText()).trim(), "FAKE video agent");
-  // the join callback the FAKE page triggered on open → the row is joined
-  const deadline = Date.now() + 20_000; while ((await current(v.id)).status !== "joined" && Date.now() < deadline) await new Promise((r) => setTimeout(r, 250));
-  assert.equal((await current(v.id)).status, "joined", "the FAKE page's join is the same callback");
-  const videoTurns = async () => (await turnsOf(b.party_id)).filter((t) => t.channel === "video");   // the fixed clock stamps every row alike: count by channel, never by order
-  const turnsBefore = (await videoTurns()).length;
-  // a card over the stage (rule 16: the ID card is the first need after the goal) covers the FAKE page's composer — "Not now" on each until the stage is clear, as a borrower typing would
-  for (let i = 0; i < 4 && (await page.getByTestId("ask-overlay").count()); i++) { await page.getByTestId("ask-not-now").click(); await new Promise((r) => setTimeout(r, 300)); }
-  await frame.getByTestId("fake-video-input").fill("can I just type it?"); await frame.getByTestId("fake-video-send").click();
-  await frame.locator('[data-testid="fake-video-replica"]', { hasText: /You can — everything you say here/ }).waitFor({ timeout: 30_000 });
-  await settle();
-  const turns = await videoTurns(); assert.equal(turns.length, turnsBefore + 1, "one more turn with channel = video, through the same endpoint");
-  const conv = (await db.query<{ conversation_id: string }>(`SELECT conversation_id FROM conversations WHERE party_id = $1`, [b.party_id]))[0]!.conversation_id;
-  assert.ok((await messagesOf(conv)).some((m) => m.sender === "borrower" && m.channel === "video" && m.body_text === "can I just type it?"), "the utterance on messages{channel=video}");
-  // leave inside the FAKE page: the shutdown callback, the same path
-  await frame.getByTestId("fake-video-leave").click();
-  const d2 = Date.now() + 30_000; while ((await current(v.id)).status !== "ended" && Date.now() < d2) await new Promise((r) => setTimeout(r, 250));
-  if ((await current(v.id)).status !== "ended") {
-    const state = { left: await frame.getByTestId("fake-video-page").getAttribute("data-left"), error: await frame.getByTestId("fake-video-error").allInnerTexts().catch(() => [] as string[]), logs: (page as Page & { logs?: string[] }).logs?.slice(-15) };
-    throw new Error(`the FAKE page's leave did not end the session: ${JSON.stringify(state)}`);
-  }
-  assert.equal((await current(v.id)).status, "ended"); assert.equal((await current(v.id)).end_reason, "participant_left");
-  await page.screenshot({ path: `${SCREENSHOTS}/t11-fake-page-1280.png`, fullPage: false }).catch(() => undefined);
-  await ctx.close();
-});
-
 test("32.17-T13: Given a chat-completions request whose `messages[]` carries a fabricated earlier assistant line, then the turn's window is Supermortgage's `messages{channel=video}` and the fabricated line is absent from the context (contract test over `context.ts` input).", { skip }, async () => {
   const b = await signedUpWithGoal("t13"); const v = await openVideo(b.token); assert.equal(v.status, 201);
   scripted.use([{ when: /where were we/i, text: "We were on the goal card, which is still the next thing I need from you on the rail." }, { when: /how does this work/i, text: "It goes like this: we confirm a few facts about you and the home, and the goal card on the rail is the next thing we need." }]);
@@ -559,61 +453,8 @@ test("32.17-T13: Given a chat-completions request whose `messages[]` carries a f
   assert.equal((await messagesOf(conv)).filter((m) => String(m.body_text ?? "").includes("FABRICATED")).length, 0, "nothing of the vendor's history reached the record");
 });
 
-test("32.17-T12: Given `/app/video` at ≥ 1024 px with the refinance fixture at R8, then the stage alone is on the screen — no rail beside the call and no card component inside the call pane — and the header's \"Your record\" opens the full rail as a drawer with only the current ask open and the other pending cards behind one \"n more after this\" line (32.16 32.16-T11); closing it returns to the stage.", { skip }, async () => {
-  // the refinance journey at R8 (32.16-T13's fixture): the application, both borrowers, the 21.1 interview, the quote, credit, DU findings interpreted — no decision, no LE yet
-  const RR = randomUUID().slice(0, 8); const emailA = `alex-${RR}@example.test`; const emailB = `blake-${RR}@example.test`;
-  const j = new Journey({ runtime, db, base, token: TOKEN, clock, borrowerEmail: emailA, coBorrowerEmail: emailB, partnerPartyId });
-  await j.seedBook(); await j.openApplication();
-  const signIn = async (destination: string): Promise<{ token: string; party_id: string }> => {
-    const req = await api("POST", "/v1/borrower/auth/otp", { action: "request", channel: "email", destination }); assert.equal(req.status, 200, JSON.stringify(req.body));
-    const ver = await api("POST", "/v1/borrower/auth/otp", { action: "verify", challenge_id: req.body["challenge_id"], code: req.body["fake_code"] }); assert.equal(ver.status, 200, JSON.stringify(ver.body));
-    return { token: ver.body["token"] as string, party_id: (ver.body["party"] as Json)["party_id"] as string };
-  };
-  const partyA = (await signIn(emailA)).party_id; await signIn(emailB);
-  await j.interview(); await settle();
-  await j.quoteOnly(); await j.orderCredit(MST("2026-10-05", "10:52")); await j.duSubmitAndInterpret({ findings_at: MST("2026-10-06", "14:00"), interpreted_at: MST("2026-10-06", "14:12") }); await settle();
-  const types = new Set((await db.query<{ type: string }>(`SELECT type FROM loan_events WHERE application_id = $1`, [j.appId])).map((e) => e.type));
-  assert.ok(types.has("du.findings.received") && !types.has("decision.issued"), "R8");
-  // two more asks on the way (32.16-T11's harness): a home ConfirmCard and an income ConnectCard through 32.1's send_card
-  const sendCard = async (kind: string, copy_key: string, props: Json, command_ref: string | null = null): Promise<string> => { const r = await runtime.execute({ process: "32.1", name: "send_card", loanId: "", applicationId: j.appId, actor: INTAKE_ACTOR, run: { runId: "test:32.17", modelVersion: "harness", promptVersion: "32.17" }, input: { party_id: partyA, kind, copy_key, props: { ...props, flow_key: `t12:${kind}:${randomUUID().slice(0, 8)}`, flow: "32.17-harness" }, command_ref, subject: { application_id: j.appId }, created_by: "agent:intake", rationale: `32.17 harness ${kind}` } }); await settle(); return (r.output as { card_instance_id: string }).card_instance_id; };
-  const home = await sendCard("ConfirmCard", "refi.home.confirm", { title: "Confirm your home", fields: [{ path: "property_address", label: "Address", value: "100 N Central Ave, Phoenix, AZ 85004", source: "public_records" }], commits_to: "application_properties" });
-  const truv = await sendCard("ConnectCard", "income.connect.purpose", { vendor: "truv_income", purpose_text: "Connect your payroll", what_we_get: ["employer", "pay"], fallback: { label: "Type it in" }, state: "not_started" }, "verification.connect");
-  const tokA = (await signIn(emailA)).token;
-  const rec = await api("GET", `/v1/borrower/record?subject=${j.appId}`, undefined, bearer(tokA)); assert.equal(rec.status, 200);
-  const pending = await db.query<{ card_instance_id: string; kind: string; copy_key: string }>(`SELECT card_instance_id, kind, copy_key FROM card_instances WHERE party_id = $1 AND status = 'pending' AND (subject_application_id IS NULL OR subject_application_id = $2)`, [partyA, j.appId]);
-  assert.ok(pending.length >= 2, `pending cards at R8: ${pending.map((c) => `${c.kind}:${c.copy_key}`).join(", ")}`);
-  const { page, ctx } = await openVideoShell(tokA, 1280);
-  // ≥ 1024: the stage alone — the call is the body's width, no rail beside it (32.17 rule 16), no card component inside the call pane
-  const call = (await page.getByTestId("video-call").boundingBox())!; const body = (await page.locator(".sm-body").boundingBox())!;
-  assert.ok(Math.abs(call.width - body.width) <= 2, `the stage is the body's width at 1280: call ${JSON.stringify(call)} body ${JSON.stringify(body)}`);
-  assert.equal(await page.getByTestId("record").boundingBox(), null, "no rail on the screen until asked for");
-  assert.equal(await page.locator('[data-testid="video-call"] article[data-card-kind]').count(), 0, "no card component inside the call pane");
-  // the header's Your record opens the full rail as a drawer
-  await page.locator('[data-testid="header"] button[aria-haspopup="dialog"]').first().click();
-  await page.waitForSelector('[data-testid="record"][data-open="true"]', { timeout: 10_000 });
-  const record = (await page.getByTestId("record").boundingBox())!; assert.ok(record.width < body.width * 0.6 && record.x > body.width / 2, `a drawer at the right: ${JSON.stringify(record)}`);
-  assert.equal(await page.locator('[data-testid="thread"]').count(), 0, "no thread"); assert.equal(await page.getByTestId("action-bar").count(), 0); assert.equal(await page.getByTestId("talk-to-person").count(), 0);
-  assert.ok(await page.getByTestId("footer-disclosure").isVisible());
-  // only the current ask is open; the other pending cards wait behind one "n more after this" line
-  const needed = page.locator('[data-testid="record"] [data-record-section="needed"]');
-  const rows = await needed.locator("[data-rail-card]").evaluateAll((els: unknown[]) => (els as { getAttribute(n: string): string | null }[]).map((e) => ({ id: e.getAttribute("data-rail-card"), expanded: e.getAttribute("data-expanded"), current: e.getAttribute("data-current-ask"), tone: e.getAttribute("data-tone") })));
-  const first = ((rec.body["needed_from_you"] as Json[])[0]?.["card_instance_id"] as string | undefined); assert.ok(first, "the API names the current ask");
-  assert.deepEqual(rows.filter((r) => r.tone !== "caution").map((r) => r.id), [first], `only the current ask before the line is opened: ${JSON.stringify(rows)}`);
-  assert.equal(rows[0]!.expanded, "true"); assert.equal(rows[0]!.current, "true");
-  assert.equal(await needed.locator(`[data-rail-card="${first}"] article[data-card-id="${first}"]`).count(), 1, "the current ask shows its component on the rail");
-  const later = needed.getByTestId("needs-later"); assert.equal(await later.count(), 1); assert.match((await later.textContent()) ?? "", /^\D*\d+ more after this$/); assert.equal(await later.getAttribute("aria-expanded"), "false");
-  await later.click();
-  const opened = await needed.locator("[data-rail-card]").evaluateAll((els: unknown[]) => (els as { getAttribute(n: string): string | null }[]).map((e) => e.getAttribute("data-rail-card")));
-  assert.ok(opened.includes(home) && opened.includes(truv), "the other asks wait behind the line");
-  assert.equal(await page.locator('[data-testid="video-call"] article[data-card-kind]').count(), 0, "still no card in the call pane");
-  await page.screenshot({ path: `${SCREENSHOTS}/t12-rail-1280.png`, fullPage: false }).catch(() => undefined);
-  await page.locator('[data-testid="record"] .sm-record-close').click();
-  await page.waitForSelector('[data-testid="record"][data-open="true"]', { state: "detached", timeout: 10_000 });
-  assert.equal(await page.getByTestId("record").boundingBox(), null, "closed: back to the stage alone");
-  await ctx.close();
-});
-
-test("32.17-T14: Given the cooperative refinance persona run through `/app/video` against the FAKE from account creation, then the run reaches the same milestone as 32.16 32.16-T21 with every fact written by the turn from what was said (`evidence.committed_by = turn`) or resolved by a tap on the rail, and `agent_turns.latency_ms` reported as p50 and p95 for `channel = video`.", { skip }, async () => {
+// 32.17-T14 — retired 2026-09-16 (docs/decisions/2026-09-16-apply-product.md); kept as a regression test
+test("Given the cooperative refinance persona run through `/app/video` against the FAKE from account creation, then the run reaches the same milestone as 32.16 32.16-T21 with every fact written by the turn from what was said (`evidence.committed_by = turn`) or resolved by a tap on the rail, and `agent_turns.latency_ms` reported as p50 and p95 for `channel = video`.", { skip }, async () => {
   assert.ok(await evalDbReachable(EVAL_DB_URL), `the eval database server at ${EVAL_DB_URL}`);
   // the eval harness (src/domain/borrower/eval): its own database, the scripted model with the persona's scenes, FakeTavus behind the video routes (no TAVUS_API_KEY)
   const h = await openEvalHarness({ dbUrl: EVAL_DB_URL });
@@ -661,7 +502,7 @@ test("32.17-T14: Given the cooperative refinance persona run through `/app/video
   } finally { await h.close(); }
 });
 
-// ---------------------------------------------------------------- the video door (32.17 rules 11–14): T15–T18
+// ---------------------------------------------------------------- the video door (32.17 rules 11–14, retired 2026-09-16 as a door): the door session stays as the fixture T17, T18 and T25 build on
 const IDENTITY_KEY = "identity.contact.title";
 const identityCardIn = (c: SceneCtx): string => { const cards = (c.situation["pending_cards"] as Json[] | undefined) ?? []; return String(cards.find((x) => x["copy_key"] === IDENTITY_KEY)?.["card_instance_id"] ?? ""); };
 const SAY_NAME: Scene = { when: /my name is dana reyes/i, text: "Nice to meet you, Dana Reyes. What's the best e-mail address for you? It's how you get back into this conversation if we're cut off." };
@@ -671,7 +512,8 @@ const SAY_EMAIL: Scene = { when: /dana dot reyes at example dot test/i, calls: (
 const HELLO_AGAIN: Scene = { when: /hello again/i, text: "Welcome back, {{party.first_name}}. The next thing I need from you is on the rail." };
 let door: { token: string; party_id: string; session_id: string; video_id: string; videoToken: string; greeting: string };
 
-test("32.17-T15: Given `/app/video` with no session, when the visitor starts the call, then `POST /v1/borrower/video/sessions` without a bearer opens a provisional account — a `parties` row named `Borrower (video)` with no contact, a `sessions` row with `auth_method = video` at L1, the organic application and the goal card — and the video session on it, the response carrying the session token once and `opened_account = true`; no sign-in form was shown, and a second open with that session resumes the same party with a fresh greeting.", { skip }, async () => {
+// 32.17-T15 — retired 2026-09-16 (docs/decisions/2026-09-16-apply-product.md); kept as a regression test
+test("Given `/app/video` with no session, when the visitor starts the call, then `POST /v1/borrower/video/sessions` without a bearer opens a provisional account — a `parties` row named `Borrower (video)` with no contact, a `sessions` row with `auth_method = video` at L1, the organic application and the goal card — and the video session on it, the response carrying the session token once and `opened_account = true`; no sign-in form was shown, and a second open with that session resumes the same party with a fresh greeting.", { skip }, async () => {
   scripted.use([SAY_NAME, SAY_EMAIL, HELLO_AGAIN]);
   const r = await api("POST", "/v1/borrower/video/sessions", {}, {}, "10.17.201.7"); await settle();
   assert.equal(r.status, 201, JSON.stringify(r.body).slice(0, 300));
@@ -689,20 +531,6 @@ test("32.17-T15: Given `/app/video` with no session, when the visitor starts the
   const g = await greetingOf(String(r.body["video_session_id"]), r.body["token"] as string); assert.equal(g.status, 200); assert.equal(g.body["ready"], true, JSON.stringify(g.body));
   door = { token: r.body["token"] as string, party_id, session_id: session.session_id, video_id: String(r.body["video_session_id"]), videoToken: m![1]!, greeting: `${String(r.body["greeting"] ?? "")} ${String(g.body["text"] ?? "")}`.trim() };
   assert.equal((await current(door.video_id)).status, "created");
-  // the shell: no sign-in form in front of the call — the call pane live at once, the rail beside it once the call has opened the account
-  const conversationsBefore = fake.bodies.filter((b) => b.op === "createConversation").length;
-  const { page, ctx } = await pageFor(null, 1280);
-  await page.waitForSelector('[data-testid="shell"]', { timeout: 30_000 });
-  assert.equal(await page.getByRole("heading", { name: copyText("auth.welcome_back") }).count(), 0, "no sign-in form");
-  await page.waitForSelector('[data-testid="video-call"][data-phase="live"]', { timeout: 60_000 });
-  await page.waitForSelector('[data-testid="record"] [data-record-section="needed"]', { timeout: 30_000, state: "attached" });
-  assert.equal(await page.locator('main form input[type="password"]').count(), 0);
-  // one call for one visit: the shell's loading (the account's subject, the record, the cards) never re-opens the call — one conversation at the vendor, the pane still live on it
-  await new Promise((r) => setTimeout(r, 2500)); await settle();
-  assert.equal(fake.bodies.filter((b) => b.op === "createConversation").length - conversationsBefore, 1, "one vendor conversation for the page's visit");
-  assert.equal(await page.locator('[data-testid="video-call"][data-phase="live"]').count(), 1, "the call still live");
-  await page.screenshot({ path: `${SCREENSHOTS}/t15-door-1280.png`, fullPage: false }).catch(() => undefined);
-  await ctx.close();
   // a second open on the same session: the same party, no second account, a fresh greeting (the "borrower is back" turn once there are words; the first turn's words before that)
   const partiesBefore = await count("parties");
   const again = await api("POST", "/v1/borrower/video/sessions", {}, bearer(door.token)); await settle();
@@ -714,7 +542,8 @@ test("32.17-T15: Given `/app/video` with no session, when the visitor starts the
 });
 const isUuidLike = (s: string): boolean => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 
-test("32.17-T16: Given the video-door session, then the first need on the rail is the identity ConfirmCard (`identity.contact.title`, paths `legal_name` and `email`) ahead of the goal card, the greeting asks the borrower's name with no first name spoken, and a spoken \"My name is Dana Reyes\" proposes nothing yet (the card needs both, and a proposal of the name alone is refused as `PROPOSAL_INCOMPLETE`) and the reply says the name back and asks for the e-mail next; nothing is written to `parties` before the e-mail is heard.", { skip }, async () => {
+// 32.17-T16 — retired 2026-09-16 (docs/decisions/2026-09-16-apply-product.md); kept as a regression test
+test("Given the video-door session, then the first need on the rail is the identity ConfirmCard (`identity.contact.title`, paths `legal_name` and `email`) ahead of the goal card, the greeting asks the borrower's name with no first name spoken, and a spoken \"My name is Dana Reyes\" proposes nothing yet (the card needs both, and a proposal of the name alone is refused as `PROPOSAL_INCOMPLETE`) and the reply says the name back and asks for the e-mail next; nothing is written to `parties` before the e-mail is heard.", { skip }, async () => {
   assert.ok(door, "T15 opened the door");
   const cards = await db.query<{ card_instance_id: string; kind: string; copy_key: string; status: string; props: Json }>(`SELECT card_instance_id, kind, copy_key, status, props FROM card_instances WHERE party_id = $1 ORDER BY created_at`, [door.party_id]);
   assert.equal(cards[0]!.copy_key, IDENTITY_KEY, `the identity card first: ${cards.map((c) => c.copy_key).join(", ")}`); assert.equal(cards[0]!.kind, "ConfirmCard"); assert.equal(cards[0]!.status, "pending");
@@ -794,87 +623,6 @@ test("32.17-T18: Given any turn on the app or the video, then the system prompt 
   assert.match(door.greeting, /I'm Michelle/); assert.ok(door.greeting.includes(partnerName));
 });
 
-test("32.17-T19: Given `/app/video` at ≥ 1024 px on a live call (the FAKE stands in), then the stage fills the left column — the replica's frame is the column's width with no border and no vendor chrome — the borrower's own camera is a picture-in-picture tile in a corner of the stage, the controls under it are Supermortgage's own (mute, camera, leave), and the join options for a live room carry the borrower's first name as the display name (\"You\" with none on file) with no vendor pre-join screen (contract over `joinOptionsFor`).", { skip }, async () => {
-  // the join options (apps/borrower/lib/video/join.ts): the vendor's room joined by the page's own client with the first name as the display name — never an e-mail, never the placeholder — and never the vendor's pre-join page
-  // the app's module, loaded by path at run time (the app is its own TypeScript project; the root program does not compile it)
-  const joinModule = `${ROOT}apps/borrower/lib/video/join.ts`;
-  const { displayNameOf, joinOptionsFor } = (await import(joinModule)) as { displayNameOf: (n: string | null) => string; joinOptionsFor: (s: { conversation_url: string | null; borrower_camera?: "on" | "off" }, n: string | null) => { url: string; userName: string; startVideoOff: boolean; startAudioOff: boolean } | null };
-  const live = { conversation_url: "https://tavus.daily.co/cabc123", borrower_camera: "on" as const };
-  assert.deepEqual(joinOptionsFor(live, "Dana"), { url: live.conversation_url, userName: "Dana", startVideoOff: false, startAudioOff: false });
-  assert.equal(joinOptionsFor(live, null)!.userName, "You"); assert.equal(joinOptionsFor(live, "dana@example.test")!.userName, "You"); assert.equal(joinOptionsFor(live, "Borrower")!.userName, "You");
-  assert.equal(joinOptionsFor({ ...live, borrower_camera: "off" }, "Dana")!.startVideoOff, true);
-  assert.equal(joinOptionsFor({ conversation_url: "/app/video/fake/tok", borrower_camera: "on" }, "Dana"), null, "the FAKE page is a frame, not a room");
-  assert.equal(displayNameOf("Dana Reyes"), "Dana");
-  const src = readFileSync(`${ROOT}apps/borrower/components/video/LiveCall.tsx`, "utf8");
-  assert.match(src, /createCallObject\(/, "call-object mode: the page renders the tracks, never the vendor's page"); assert.doesNotMatch(src, /createFrame\(|showLeaveButton|iframe/i, "no prebuilt frame, no pre-join screen");
-  // the stage under the FAKE: the column's width edge to edge, no border, the picture-in-picture tile in a corner, the page's own controls
-  const b = await signUp("t19");
-  const { page, ctx } = await openVideoShell(b.token, 1280);
-  const main = (await page.locator("main.sm-video-main").boundingBox())!; const stage = (await page.getByTestId("video-live").boundingBox())!; const frame = (await page.getByTestId("video-frame").boundingBox())!;
-  assert.ok(main && stage && frame, "the column, the stage and the replica's frame");
-  assert.ok(Math.abs(stage.width - main.width) <= 2 && Math.abs(frame.width - main.width) <= 2, `the stage and the frame are the column's width: main=${main.width} stage=${stage.width} frame=${frame.width}`);
-  assert.ok(stage.height >= main.height * 0.7, `the stage is most of the column: main=${main.height} stage=${stage.height}`);
-  type Styled = { ownerDocument: { defaultView: { getComputedStyle(e: unknown): { borderTopWidth: string; paddingLeft: string } } } };
-  assert.equal(await page.getByTestId("video-frame").evaluateAll((els) => { const e = els[0] as Styled; return e.ownerDocument.defaultView.getComputedStyle(e).borderTopWidth; }), "0px", "no frame around the replica");
-  assert.equal(await page.getByTestId("video-live").evaluateAll((els) => { const e = els[0] as Styled; return e.ownerDocument.defaultView.getComputedStyle(e).paddingLeft; }), "0px", "edge to edge");
-  const pip = page.getByTestId("video-pip"); await pip.waitFor({ state: "visible", timeout: 20_000 });
-  const tile = (await pip.boundingBox())!;
-  assert.ok(tile.width < stage.width / 3 && tile.height < stage.height / 2, `a tile, not a pane: ${tile.width}×${tile.height} in ${stage.width}×${stage.height}`);
-  assert.ok(tile.x + tile.width <= stage.x + stage.width + 1 && tile.y + tile.height <= stage.y + stage.height + 1 && tile.x > stage.x + stage.width / 2, "in the stage's right-hand corner");
-  assert.ok(await pip.locator("video").evaluateAll((vs) => (vs[0] as { srcObject: unknown } | undefined)?.srcObject !== null), "the borrower's own camera in the tile");
-  assert.equal(await page.locator('[data-testid="video-call"] button[aria-label*="Enter your name" i], [data-testid="video-call"] input[placeholder*="name" i]').count(), 0, "no vendor pre-join");
-  assert.equal((await page.getByTestId("video-leave").count()) + (await page.frameLocator('[data-testid="video-frame"]').getByTestId("fake-video-leave").count()), 1, "one leave, the page's own (the FAKE page carries it in its frame; the live call's controls carry it)");
-  await page.screenshot({ path: `${SCREENSHOTS}/t19-stage-1280.png`, fullPage: false }).catch(() => undefined);
-  await ctx.close();
-});
-
-test("32.17-T20: Given `/app/video` on a live call with the goal chosen and a typed income card pending, then a card only a tap can answer (the ID scan the goal opened) is on the screen on its own and \"Not now\" sets it aside; with only speakable cards left, nothing is on the screen until Michelle asks for one; when a spoken income figure is heard, the turn writes it (rule 21) — the card resolves with `committed_by = turn`, nothing rises over the stage for it and no Confirm is on the screen — and the stage moves to the next tap-only ask.", { skip }, async () => {
-  // the rule as a pure function (apps/borrower/lib/video/ask.ts), loaded by path at run time
-  const askModule = `${ROOT}apps/borrower/lib/video/ask.ts`;
-  const ask = (await import(askModule)) as { riseReason: (c: { card_instance_id: string; kind: string; props: Json } | null) => string | null; askRises: (c: { card_instance_id: string; kind: string; props: Json }, d: Set<string>) => string | null; askStamp: (c: { card_instance_id: string; kind: string; props: Json }) => string };
-  const goal = { card_instance_id: "g", kind: "ChoiceCard", props: {} }; const income = { card_instance_id: "i", kind: "ConfirmCard", props: { proposal: { proposed_at: "2026-09-13T10:00:00Z", fields: [] } } };
-  assert.equal(ask.riseReason(goal), null, "a choice with no proposal stays off the screen"); assert.equal(ask.riseReason(income), "proposal"); assert.equal(ask.riseReason({ ...goal, props: { requested_by: "card.request" } }), "requested");
-  assert.equal(ask.riseReason({ card_instance_id: "c", kind: "ConnectCard", props: {} }), "tap_only"); assert.equal(ask.riseReason({ card_instance_id: "c", kind: "ConsentCard", props: {} }), "tap_only"); assert.equal(ask.riseReason(null), null);
-  assert.equal(ask.askRises(income, new Set([ask.askStamp(income)])), null, "set aside under its stamp"); assert.equal(ask.askRises({ ...income, props: { proposal: { proposed_at: "2026-09-13T10:05:00Z" } } }, new Set([ask.askStamp(income)])), "proposal", "a new proposal is a new stamp");
-  // the screen: the goal chosen (its consents and the payroll connector are tap-only asks) and a typed income card (a confirm — speakable)
-  const b = await signedUpWithGoal("t20", "lower_rate");
-  const was = clock.now(); clock.set(new Date(Date.parse(was) + 60_000).toISOString());   // the typed income card a minute after the goal's consents (relative to the clock as an earlier test left it): the record's order (by created_at) is then the conversation's, not a tie
-  const incomeId = await sendIncomeCard(b);
-  try {
-  scripted.use([{ when: /eight thousand two hundred a month/i, calls: (c) => [{ name: "card_propose", input: { card_instance_id: String(((c.situation["pending_cards"] as Json[]) ?? []).find((x) => x["copy_key"] === "income.confirm.title")?.["card_instance_id"] ?? ""), fields: [{ path: "monthly_income", value: "820000" }] } }], text: "I heard {{proposal.monthly_income}} a month — it's on the card here, tap Confirm so it counts." }]);
-  const v = await openVideo(b.token); assert.equal(v.status, 201);
-  const { page, ctx } = await openVideoShell(b.token, 1280);
-  // a card only a tap can answer is on the screen on its own; Not now sets each aside, and nothing changes
-  const tapOnly = page.getByTestId("ask-overlay");
-  try { await tapOnly.waitFor({ state: "visible", timeout: 30_000 }); }
-  catch (e) {
-    const rec = await api("GET", `/v1/borrower/record?subject=${b.app_id}`, undefined, bearer(b.token));
-    const needed = ((rec.body["needed_from_you"] as Json[]) ?? []).slice(0, 4).map((n) => ({ kind: n["kind"], card: n["card_instance_id"], label: n["label_copy_key"] ?? n["label"], due: n["due_at"] }));
-    const pending = await db.query<{ kind: string; copy_key: string; created_at: string }>(`SELECT kind, copy_key, created_at FROM card_instances WHERE party_id = $1 AND status = 'pending' ORDER BY created_at`, [b.party_id]);
-    const shell = await page.locator('[data-testid="shell"]').evaluateAll((els) => (els[0] as { outerHTML: string }).outerHTML.slice(0, 1500));
-    throw new Error(`no card rose over the stage: ${String(e).split("\n")[0]}; record.status=${rec.status}; needed=${JSON.stringify(needed)}; pending=${JSON.stringify(pending)}; logs=${JSON.stringify((page as Page & { logs?: string[] }).logs?.slice(-8))}; shell=${shell}`);
-  }
-  assert.equal(await tapOnly.getAttribute("data-reason"), "tap_only", `a consent or connector the goal opened: ${await tapOnly.getAttribute("data-card-id")}`);
-  const firstAside = String(await tapOnly.getAttribute("data-card-id"));
-  await setAsideAsk(page);
-  assert.equal((await cardRow(firstAside)).status, "pending", "nothing changed by Not now");
-  // with only speakable cards left (the income confirm), nothing is on the screen until a proposal
-  assert.equal(await page.getByTestId("ask-overlay").count(), 0, "no card on the screen before a proposal");
-  assert.equal(await page.locator('[data-testid="shell"] article[data-card-kind]:visible').count(), 0, "no card component on the screen at all (the drawer's are off the screen)");
-  // the spoken figure → proposed into the income card → written by the turn (rule 21): the card resolves, nothing rises for it, no Confirm anywhere
-  const r = await speak(v.videoToken, "I make about eight thousand two hundred a month"); assert.equal(r.status, 200);
-  const deadline = Date.now() + 20_000; let row = await cardRow(incomeId);
-  while (row.status !== "resolved" && Date.now() < deadline) { await new Promise((res) => setTimeout(res, 250)); row = await cardRow(incomeId); }
-  await settle();
-  assert.equal(row.status, "resolved", `the turn wrote it: ${JSON.stringify(row.props["commit_refused"] ?? null)}`); assert.equal(row.evidence!["committed_by"], "turn");
-  await new Promise((res) => setTimeout(res, 1000));
-  assert.equal(await page.locator(`[data-testid="ask-overlay"][data-card-id="${incomeId}"]`).count(), 0, "nothing rises over the stage for a written fact");
-  assert.equal(await page.getByRole("button", { name: /^Confirm$/ }).count(), 0, "no Confirm on the screen");
-  await page.screenshot({ path: `${SCREENSHOTS}/t20-written-1280.png`, fullPage: false }).catch(() => undefined);
-  await ctx.close();
-  } finally { clock.set(was); }
-});
-
 test("32.17-T21: Given a new video session, then the open answers with `opening_turn = pending` and the vendor's `custom_greeting` = the disclosure line before the opening turn has landed (`GET …/greeting` → `ready = false` until it does), the stream carries `video.session.greeting` when it lands and the greeting then reads `ready = true` with the turn's rendered text and its `reply_message_id`; on `/app/video` under the FAKE the replica's page shows that text once as its echoed line (`data-echo`); with nothing new to say (a reply already standing, nobody having spoken since) the standing reply is the one spoken, never a second first turn.", { skip }, async () => {
   const b = await signUp("t21");
   // the open answers before the opening turn lands: the stream's greeting frame arrives while the open runs (the response itself is written before the turn's reply), and the greeting reads ready only then
@@ -909,70 +657,6 @@ test("32.17-T21: Given a new video session, then the open answers with `opening_
   await ctx.close();
   // nothing new to say: the account's first turn already stands and nobody has spoken since — the standing reply is spoken, no second first turn is run
   assert.equal((await turnsOf(b.party_id)).filter((t) => t.reply_message_id !== null).length, 1, "one turn for the account, however many calls opened on it");
-});
-
-test("32.17-T22: Given `/app/video` on a live call at L1 with the goal tapped, then the hard-pull authorization was written on that tap at L1 — `credit.authorization.captured{hard_pull}` once, naming the goal card, no `requires_level` and no `gate` anywhere, no ConsentCard on the record, the session still L1 and no vendor session opened on the ID card — and the first card over the stage is the ID card, never a consent.", { skip }, async () => {
-  const b = await signedUpWithGoal("t22", "lower_rate");
-  const goal = (await db.query<{ card_instance_id: string; status: string; props: Json }>(`SELECT card_instance_id, status, props FROM card_instances WHERE party_id = $1 AND copy_key = 'entry.goal.question'`, [b.party_id]))[0]!; assert.equal(goal.status, "resolved");
-  assert.equal((await db.query(`SELECT 1 FROM card_instances WHERE party_id = $1 AND kind = 'ConsentCard'`, [b.party_id])).length, 0, "no ConsentCard on the record (rule 20)");
-  assert.equal((await db.query(`SELECT 1 FROM card_instances WHERE party_id = $1 AND (props ? 'requires_level' OR props ? 'gate')`, [b.party_id])).length, 0, "no level and no gate on any card (rule 18)");
-  const captured = await db.query<{ payload: Json }>(`SELECT payload FROM loan_events WHERE application_id = $1 AND type = 'credit.authorization.captured' AND payload->>'kind' = 'hard_pull'`, [b.app_id]);
-  assert.equal(captured.length, 1, "one hard-pull capture from the goal's tap (20.3's own hard_application row stands beside it)"); assert.equal(captured[0]!.payload["card_instance_id"], goal.card_instance_id, "naming the goal card");
-  assert.equal((await db.query<{ level: string }>(`SELECT level FROM sessions WHERE party_id = $1 ORDER BY created_at DESC LIMIT 1`, [b.party_id]))[0]!.level, "L1", "no step-up asked");
-  const identity = (await db.query<{ card_instance_id: string; props: Json }>(`SELECT card_instance_id, props FROM card_instances WHERE party_id = $1 AND copy_key = 'identity.stripe.purpose' AND status = 'pending'`, [b.party_id]))[0]!; assert.ok(identity, "the ID card waits as a step of its own"); assert.equal(identity.props["vendor_session_id"], undefined, "no identity session opened for the pull");
-  const v = await openVideo(b.token); assert.equal(v.status, 201);
-  const { page, ctx } = await openVideoShell(b.token, 1280);
-  const overlay = page.getByTestId("ask-overlay");
-  try { await overlay.waitFor({ state: "visible", timeout: 30_000 }); }
-  catch (e) { const pending = await db.query<{ kind: string; copy_key: string }>(`SELECT kind, copy_key FROM card_instances WHERE party_id = $1 AND status = 'pending' ORDER BY created_at`, [b.party_id]); throw new Error(`no card rose over the stage: ${String(e).split("\n")[0]}; pending=${JSON.stringify(pending)}; logs=${JSON.stringify((page as Page & { logs?: string[] }).logs?.slice(-8))}`); }
-  assert.equal(await overlay.getAttribute("data-card-id"), identity.card_instance_id, "the first card over the stage is the ID card, never a consent");
-  assert.equal(await overlay.locator('article[data-card-kind="ConsentCard"]').count(), 0);
-  await page.screenshot({ path: `${SCREENSHOTS}/t22-first-ask-1280.png`, fullPage: false }).catch(() => undefined);
-  await ctx.close();
-});
-
-test("32.17-T23: Given `/app/video` on a live call with the goal chosen (its tap carried the consents — rule 20), then the identity `ConnectCard{stripe_identity}` rises reading \"Verify with Stripe Identity\" and one tap resolves it — `identity.verified` logged, the session at L3, the card's evidence `outcome = connected`, one identity card on the record and nothing posted by the page — then the payroll `ConnectCard{truv_income}` rises reading \"Confirm income with Truv\" and one tap resolves it — `verification.received{kind=income}` logged, `props.state = connected`, a `verification_id` on the card — and each card leaves the stage for the next ask.", { skip }, async () => {
-  const b = await signedUpWithGoal("t23", "lower_rate");
-  // the consents rode the goal's tap (rule 20, T24): the connectors are the record's next needs
-  assert.equal((await db.query(`SELECT 1 FROM card_instances WHERE party_id = $1 AND kind = 'ConsentCard' AND status = 'pending'`, [b.party_id])).length, 0, "no consent to tap first");
-  const pendingOf = async (copyKey: string) => (await db.query<{ card_instance_id: string; props: Json }>(`SELECT card_instance_id, props FROM card_instances WHERE party_id = $1 AND copy_key = $2 AND status = 'pending'`, [b.party_id, copyKey]))[0]!;
-  const identity = await pendingOf("identity.stripe.purpose"); assert.ok(identity, "the flow sent the identity card with the consents"); assert.equal(identity.props["vendor"], "stripe_identity"); assert.equal(identity.props["state"], "not_started");
-  const income = await pendingOf("income.connect.purpose"); assert.ok(income, "the flow sent the payroll card"); assert.equal(income.props["vendor"], "truv_income");
-  const v = await openVideo(b.token); assert.equal(v.status, 201);
-  const { page, ctx } = await openVideoShell(b.token, 1280);
-  const overlay = page.getByTestId("ask-overlay");
-  const webhooks: string[] = []; (page as unknown as { on(event: "request", fn: (r: { url(): string }) => void): void }).on("request", (r) => { if (r.url().includes("/v1/webhooks/")) webhooks.push(r.url()); });
-  const riseOf = async (id: string, what: string) => {
-    for (let i = 0; i < 8; i++) {
-      try { await overlay.waitFor({ state: "visible", timeout: 30_000 }); }
-      catch (e) { const pending = await db.query<{ kind: string; copy_key: string }>(`SELECT kind, copy_key FROM card_instances WHERE party_id = $1 AND status = 'pending' ORDER BY created_at`, [b.party_id]); throw new Error(`${what} did not rise (round ${i}): ${String(e).split("\n")[0]}; pending=${JSON.stringify(pending)}; logs=${JSON.stringify((page as Page & { logs?: string[] }).logs?.slice(-8))}`); }
-      if ((await overlay.getAttribute("data-card-id")) === id) return;
-      await page.getByTestId("ask-not-now").click(); await new Promise((r) => setTimeout(r, 300));
-    }
-    throw new Error(`${what} did not rise; on the stage: ${await overlay.getAttribute("data-card-id")}`);
-  };
-  const tapped = async (id: string, button: string, what: string) => {
-    await overlay.getByRole("button", { name: button }).click();
-    try { await page.locator(`[data-testid="ask-overlay"][data-card-id="${id}"]`).waitFor({ state: "detached", timeout: 20_000 }); }
-    catch (e) { const err = await overlay.locator(".sm-error, [data-testid=\"connect-state\"]").allInnerTexts().catch(() => [] as string[]); throw new Error(`${what} did not leave the stage: ${String(e).split("\n")[0]}; card=${JSON.stringify(err)}; row=${JSON.stringify(await cardRow(id))}`); }
-    await settle();
-  };
-  // the ID scan: one tap, verified — the FAKE finished on the tap through the webhook's own settlement
-  await riseOf(identity.card_instance_id, "the identity card");
-  await tapped(identity.card_instance_id, "Verify with Stripe Identity", "the identity card");
-  const idRow = await cardRow(identity.card_instance_id); assert.equal(idRow.status, "resolved", "the identity card resolved"); assert.equal(idRow.evidence?.["outcome"], "connected", "verified on the card");
-  assert.equal((await db.query<{ level: string }>(`SELECT level FROM sessions WHERE party_id = $1 ORDER BY created_at DESC LIMIT 1`, [b.party_id]))[0]!.level, "L3", "the tap verified the session");
-  assert.ok((await db.query(`SELECT 1 FROM loan_events WHERE application_id = $1 AND type = 'identity.verified'`, [b.app_id])).length >= 1, "identity.verified logged");
-  assert.equal((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM card_instances WHERE party_id = $1 AND copy_key = 'identity.stripe.purpose'`, [b.party_id]))[0]!.n, "1", "one identity card on the record, never a second");
-  assert.deepEqual(webhooks, [], "nothing posted by the page");
-  // the income connection: one tap, connected — 22.3's receive on the order the tap placed
-  await riseOf(income.card_instance_id, "the income card");
-  await tapped(income.card_instance_id, "Confirm income with Truv", "the income card");
-  const incRow = await cardRow(income.card_instance_id); assert.equal(incRow.status, "resolved", "the income card resolved"); assert.equal(incRow.props["state"], "connected", "connected on the card"); assert.ok(incRow.evidence?.["verification_id"], `a verification_id on the card: ${JSON.stringify(incRow.evidence)}`);
-  assert.ok((await db.query(`SELECT 1 FROM loan_events WHERE application_id = $1 AND type = 'verification.received' AND payload->>'kind' = 'income'`, [b.app_id])).length >= 1, "verification.received{income} logged");
-  assert.deepEqual(webhooks, [], "nothing posted by the page");
-  await page.screenshot({ path: `${SCREENSHOTS}/t23-connectors-1280.png`, fullPage: false }).catch(() => undefined);
-  await ctx.close();
 });
 
 test("32.17-T24: Given a new account's goal card, then it carries the consents statement (`props.statement`, `statement_version = consents-on-goal-2026-09`) and its tap writes the three rows for the party — `consents{esign}` `pending_verification` with the verification e-mail sent, `consents{tcpa_sms}` `active`, `credit.authorization.captured{hard_pull}` naming the goal card — each `method = single_tap` with no typed name; no ConsentCard is sent for them and none is on the record.", { skip }, async () => {
@@ -1017,42 +701,4 @@ test("32.17-T25: Given a fact the turn wrote from what was said, when the borrow
   assert.equal((idCard.props["commit_refused"] as Json)["code"], "IDENTITY_ALREADY_ON_FILE", JSON.stringify(idCard.props["commit_refused"] ?? null)); assert.equal((idCard.props["commit_refused"] as Json)["copy_key"], "identity.contact.already_on_file");
   assert.equal(((idCard.props["proposal"] as Json)["fields"] as Json[]).find((f) => f["path"] === "legal_name")!["value"], "Dana Reyes", "the written name stays the card's proposal");
   assert.equal((await db.query<{ legal_name: string }>(`SELECT legal_name FROM parties WHERE id = $1`, [door.party_id]))[0]!.legal_name, "Dana Reyes", "nothing changed");
-});
-
-test("32.17-T26: Given `/app/video` on a live call with the goal chosen, when the borrower taps \"Verify with Stripe Identity\" and the card leaves the stage, then the page posts `POST …/continue` for that card and Michelle speaks next without being spoken to: one agent turn with no borrower words (its `agent_turns` row has `message_id = null`, no borrower message is added to the thread), the reply in the thread as an agent turn naming the next ask, its rendered text echoed once on the call (on the FAKE page: a second `data-echo` replica line after the greeting, word for word the route's `text`); `POST …/continue` for a card still pending is refused `CARD_PENDING`, for another party's card `NOT_FOUND`.", { skip }, async () => {
-  const b = await signedUpWithGoal("t26", "lower_rate");
-  const pendingOf = async (copyKey: string) => (await db.query<{ card_instance_id: string; props: Json }>(`SELECT card_instance_id, props FROM card_instances WHERE party_id = $1 AND copy_key = $2 AND status = 'pending'`, [b.party_id, copyKey]))[0]!;
-  const identity = await pendingOf("identity.stripe.purpose"); assert.ok(identity, "the flow sent the identity card"); const income = await pendingOf("income.connect.purpose"); assert.ok(income, "the flow sent the payroll card");
-  // the continuation's scene: no borrower words — the situation names the card just finished; the model leads on to the next ask
-  const NEXT = "Your ID is verified, thank you. Next is your income: tap Confirm income with Truv and it comes straight from payroll, nothing to type.";
-  scripted.use([{ when: /just finished the ConnectCard "identity\.stripe\.purpose"/i, text: NEXT }]);
-  const v = await openVideo(b.token); assert.equal(v.status, 201);
-  // before the tap: a pending card cannot continue the call; another party's card is not found
-  const early = await api("POST", `/v1/borrower/video/sessions/${v.id}/continue`, { card_instance_id: identity.card_instance_id }, bearer(b.token)); assert.equal(early.status, 409, JSON.stringify(early.body)); assert.equal(early.body["code"], "CARD_PENDING");
-  const other = await signedUpWithGoal("t26-other", "buy"); const otherCard = (await db.query<{ card_instance_id: string }>(`SELECT card_instance_id FROM card_instances WHERE party_id = $1 AND status <> 'pending' LIMIT 1`, [other.party_id]))[0]!;
-  const notMine = await api("POST", `/v1/borrower/video/sessions/${v.id}/continue`, { card_instance_id: otherCard.card_instance_id }, bearer(b.token)); assert.equal(notMine.status, 404, JSON.stringify(notMine.body)); assert.equal(notMine.body["code"], "NOT_FOUND");
-  const convId = (await db.query<{ conversation_id: string }>(`SELECT conversation_id FROM conversations WHERE party_id = $1`, [b.party_id]))[0]!.conversation_id;
-  const borrowerLinesBefore = (await messagesOf(convId)).filter((m) => m.sender === "borrower").length; const turnsBefore = (await turnsOf(b.party_id)).filter((t) => t.reply_message_id !== null).length;
-  const { page, ctx } = await openVideoShell(b.token, 1280);
-  const overlay = page.getByTestId("ask-overlay"); const fakePage = page.frameLocator('[data-testid="video-frame"]');
-  const continues: string[] = []; (page as unknown as { on(event: "request", fn: (r: { url(): string; method(): string }) => void): void }).on("request", (r) => { if (/\/continue$/.test(r.url()) && r.method() === "POST") continues.push(r.url()); });
-  for (let i = 0; i < 8; i++) { await overlay.waitFor({ state: "visible", timeout: 30_000 }); if ((await overlay.getAttribute("data-card-id")) === identity.card_instance_id) break; await page.getByTestId("ask-not-now").click(); await new Promise((r) => setTimeout(r, 300)); }
-  assert.equal(await overlay.getAttribute("data-card-id"), identity.card_instance_id, "the identity card on the stage");
-  // the greeting goes first (rule 17); then the tap, the card leaves the stage, and Michelle speaks next — the continuation's line, echoed once on the FAKE page
-  await fakePage.locator('[data-testid="fake-video-replica"][data-echo="1"]').first().waitFor({ timeout: 30_000 });
-  await overlay.getByRole("button", { name: "Verify with Stripe Identity" }).click();
-  await page.locator(`[data-testid="ask-overlay"][data-card-id="${identity.card_instance_id}"]`).waitFor({ state: "detached", timeout: 20_000 });
-  await fakePage.locator('[data-testid="fake-video-replica"][data-echo="1"]', { hasText: /Your ID is verified/ }).waitFor({ timeout: 30_000 });
-  await settle();
-  assert.equal(continues.length, 1, `one POST …/continue for the tap: ${JSON.stringify(continues)}`); assert.match(continues[0]!, new RegExp(`/v1/borrower/video/sessions/[^/]+/continue$`));
-  const echoed = await fakePage.locator('[data-testid="fake-video-replica"][data-echo="1"]').allInnerTexts();
-  assert.equal(echoed.length, 2, `the greeting, then the continuation: ${JSON.stringify(echoed)}`); assert.equal(echoed[1]!.trim(), NEXT, "the continuation's line, word for word");
-  // the thread: the reply as an agent turn with no borrower words — no borrower message added, the agent_turns row with message_id = null
-  const msgs = await messagesOf(convId); const reply = [...msgs].reverse().find((m) => m.sender === "agent" && (m.copy_tokens as Json | null)?.["source"] === "agent_turn")!; assert.ok(reply, "the continuation's reply in the thread");
-  assert.equal(reply.body_text, NEXT); assert.equal(reply.channel, "video");
-  assert.equal(msgs.filter((m) => m.sender === "borrower").length, borrowerLinesBefore, "no borrower message was added by the tap");
-  const turns = (await turnsOf(b.party_id)).filter((t) => t.reply_message_id !== null); assert.equal(turns.length, turnsBefore + 1, "one turn for the continuation"); const cont = turns.find((t) => t.reply_message_id === reply.message_id)!; assert.ok(cont); assert.equal(cont.message_id, null, "no borrower message behind the turn");
-  assert.equal((await cardRow(identity.card_instance_id)).status, "resolved", "the tap stands");
-  await page.screenshot({ path: `${SCREENSHOTS}/t26-continue-1280.png`, fullPage: false }).catch(() => undefined);
-  await ctx.close();
 });

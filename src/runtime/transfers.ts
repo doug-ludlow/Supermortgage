@@ -30,6 +30,8 @@ import { BoardingService, type BatchLoan, type Scorecard } from "../domain/board
 import type { BatchContext, ExternalPositions, FnmaPosition, MersRecord } from "../domain/boarding/types.ts";
 import { decodeTransferBatch, type TransferBatchFiles } from "../domain/boarding/tape-codec.ts";
 import { EscalationService } from "../app/escalations.ts";
+import { wallClock } from "../kernel/calendar/zoned.ts";
+import { onLoanBoardedProject, onLoanBoardedPersist, tapeBoardedFacts } from "../domain/operations-runtime/boarding-hook.ts";
 import type { Runtime } from "./app.ts";
 
 export interface TransferBatchInput {
@@ -137,6 +139,15 @@ export async function boardTransferBatch(rt: Runtime, input: TransferBatchInput,
     // ---- persist: rows first (the events reference them), then the log, ledger, timers, escalations
     const upbTotal = staged.reduce((s, bl) => s + (bl.staged.upb_cents ?? 0n), 0n);
     await insertBoardingRows(q, { uuid, input, transferorParty, partnerParty, staged, boardedIds, boardedAt: clock.now(), ruleSetVersion: ctx.rule_set_version, synthetic });
+    // 35.5 rules 1 and 9: the installment schedule and the servicing configuration in this transaction, after the boarding set (the run names the
+    // loan_terms row insertBoardingRows wrote — persistBoardingSchedule reads it back), against the batch's log, engine and clock
+    // (src/domain/operations-runtime/boarding-hook.ts); a refusal (SCHEDULE_REQUIRED, CONFIG_REQUIRED) rolls the batch back
+    const boardedOn = wallClock(Date.parse(clock.now()), "America/New_York").date;
+    for (const bl of staged) {
+      if (!boardedIds.has(bl.id)) continue;
+      const projected = await onLoanBoardedProject(q, { events, timers, clock }, tapeBoardedFacts(bl.id, bl.staged, input.transfer_date, boardedOn), { registry: rt.registry, escalations, batchId: uuid });
+      await onLoanBoardedPersist(q, rt.uow.decisions, projected);
+    }
     const persisted = await rt.uow.events.append(events.since(0), q);
     for (const set of ledger.sets()) await rt.uow.ledger.post(set, q);
     await rt.uow.timers.save(timers.all(), q);

@@ -11,6 +11,7 @@
  */
 import { randomUUID } from "node:crypto";
 import type { Actor } from "../../kernel/events/index.ts";
+import type { Queryable } from "../../infra/db/client.ts";
 import type { Runtime } from "../app.ts";
 import { ControlsRefused, appendEvent, clampLimit, isUuid, requireStaffRole, s, type Row } from "./common.ts";
 
@@ -32,7 +33,7 @@ export interface OutboxFilter { readonly adapter?: string | null; readonly statu
 
 const SELECT = `SELECT m.id::text AS id, m.adapter, m.direction::text AS direction, m.idempotency_key, m.status, m.attempts, m.error, m.loan_id::text AS loan_id, m.document_id::text AS document_id,
     m.created_at::text AS created_at, m.last_attempt_at::text AS last_attempt_at, m.next_attempt_at::text AS next_attempt_at, m.sent_at::text AS sent_at, m.acked_at::text AS acked_at,
-    coalesce((SELECT jsonb_agg(jsonb_build_object('by', r.actor_id, 'role', r.actor_role, 'at', r.occurred_at) ORDER BY r.sequence) FROM loan_events r WHERE r.type = 'outbox.requeued' AND r.payload->>'message_id' = m.id::text), '[]'::jsonb) AS requeued_by,
+    coalesce((SELECT jsonb_agg(jsonb_build_object('by', r.actor_id, 'role', r.actor_role, 'at', r.occurred_at) ORDER BY r.sequence) FROM loan_events r WHERE r.type = 'outbox.requeued' AND r.payload->>'message_id' = m.id::text AND r.actor_kind = 'human' AND coalesce((r.payload->>'auto')::boolean, false) = false), '[]'::jsonb) AS requeued_by,
     (SELECT e.id::text FROM escalations e WHERE e.completed_at IS NULL AND e.payload->>'message_id' = m.id::text AND e.payload->>'code' = 'REQUEUE_CAP_3' ORDER BY e.opened_at DESC LIMIT 1) AS cap_escalation_id
   FROM integration_messages m`;
 const toRow = (r: Row): OutboxRow => {
@@ -57,6 +58,11 @@ export async function listOutbox(rt: Runtime, f: OutboxFilter = {}): Promise<{ a
 export async function getOutboxMessage(rt: Runtime, id: string): Promise<OutboxRow | null> {
   if (!isUuid(id)) throw new RangeError("message id is a uuid");
   const r = (await rt.db.query<Row>(`${SELECT} WHERE m.id = $1::uuid`, [id]))[0]; return r ? toRow(r) : null;
+}
+
+/** The one writer of the requeue reset (rule 3's UPDATE): status queued, attempts 0, next_attempt_at now, error cleared — a dead or failed message only. 35.11's bounded automatic requeue (rule 4) calls it with `auto: true` on its own event; the cap above counts human `by` only. */
+export async function resetForRequeue(q: Queryable, messageId: string, nowIso: string): Promise<{ id: string }[]> {
+  return q.query<{ id: string }>(`UPDATE integration_messages SET status = 'queued', attempts = 0, next_attempt_at = $2::timestamptz, error = NULL WHERE id = $1::uuid AND status = ANY($3::text[]) RETURNING id::text AS id`, [messageId, nowIso, [...REQUEUEABLE]]);
 }
 
 export interface RequeueResult { readonly message_id: string; readonly adapter: string; readonly status: "queued"; readonly requeue_no: number; readonly requeues_left: number; readonly by: string; readonly by_role: string | null; readonly at: string; readonly event_id: string; }
@@ -84,7 +90,7 @@ export async function requeueMessage(rt: Runtime, i: { id: string; actor: Actor;
   if (!REQUEUEABLE.includes(m.status)) throw new ControlsRefused(409, "NOT_REQUEUEABLE", `message ${m.id} is ${m.status}; only a dead or failed message is requeued`, { status: m.status });
   const requeueNo = m.requeues + 1;
   const eventId = await rt.db.tx(async (q) => {
-    const rows = await q.query<{ id: string }>(`UPDATE integration_messages SET status = 'queued', attempts = 0, next_attempt_at = $2::timestamptz, error = NULL WHERE id = $1::uuid AND status = ANY($3::text[]) RETURNING id::text AS id`, [m.id, nowIso, [...REQUEUEABLE]]);
+    const rows = await resetForRequeue(q, m.id, nowIso);
     if (!rows.length) throw new ControlsRefused(409, "NOT_REQUEUEABLE", `message ${m.id} changed under the request`, {});
     const ev = await appendEvent(q, { type: "outbox.requeued", actor: i.actor, loan_id: m.loan_id, aggregate: { kind: "integration_message", id: m.id }, occurred_at: nowIso, payload: { message_id: m.id, adapter: m.adapter, idempotency_key: m.idempotency_key, from_status: m.status, requeue_no: requeueNo, cap: REQUEUE_CAP, by: i.actor.id, by_role: i.actor.role ?? null, reason: i.reason?.trim() || null } });
     return ev.id;

@@ -142,6 +142,8 @@ test.after(async () => { if (!skip) await MAIN.close(); });
 type EventRow = { type: string; actor_kind: string; actor_id: string; actor_role: string | null; aggregate_kind: string | null; aggregate_id: string | null; loan_id: string | null; payload: Json; sequence: string; occurred_at: string };
 const events = async (db: Db, type: string, where = "", params: unknown[] = []): Promise<EventRow[]> => db.query<EventRow>(`SELECT type, actor_kind::text AS actor_kind, actor_id, actor_role, aggregate_kind, aggregate_id, loan_id::text AS loan_id, payload, sequence::text AS sequence, occurred_at::text AS occurred_at FROM loan_events WHERE type = $1 ${where} ORDER BY sequence`, [type, ...params]);
 const count = async (db: Db, sql: string, params: unknown[] = []): Promise<number> => Number((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM ${sql}`, params))[0]!.n);
+/** The `parties` rows the nonprod scan examines (scans.ts SCANNED_PARTIES): every row but the platform's own servicing party, which db/migrations/0143 (35.5 rule 9) seeds in every database with no marker — neither seed-demo's nor the tape's row. */
+const SCANNED = `parties p WHERE NOT EXISTS (SELECT 1 FROM servicer_profiles sp WHERE sp.servicing_party_id = p.id)`;
 type TimerRow = { id: string; code: string; status: string; subject_kind: string; subject_id: string; anchor_date: string; due_date: string | null; due_at: string | null; satisfied_at: string | null; breached_at: string | null; note: string | null };
 const timers = async (db: Db, code: string, where = "", params: unknown[] = []): Promise<TimerRow[]> => db.query<TimerRow>(`SELECT id::text AS id, code, status::text AS status, subject_kind, subject_id, anchor_date::text AS anchor_date, due_date::text AS due_date, due_at::text AS due_at, satisfied_at::text AS satisfied_at, breached_at::text AS breached_at, note FROM timers WHERE code = $1 ${where} ORDER BY armed_at, id`, [code, ...params]);
 type FindingRowT = { id: string; finding_id: string; environment: string; control_code: string; action: string; check_id: string | null; severity: string; detected_at: string; resolved_at: string | null; cause: string | null; exception_id: string | null; by: string | null; decision_id: string | null };
@@ -583,9 +585,9 @@ test("35.12-T8: Given a nonprod database seeded by `seed-demo` (every `parties` 
     const demo = generateDemoBatch();
     await boardTransferBatch(w.runtime, { ...DEMO_BATCH }, encodeTransferBatch(demo, demo.coborrowers), { kind: "system", id: "seed-demo" }, { synthetic: true });
     const entry = await seedEntryDemo(w.runtime, {}); await seedPartnerBookDemo(w.runtime, { partner_id: entry.partner_id });
-    const parties = await count(db, "parties"); const batches = await count(db, "transfer_batches");
+    const parties = await count(db, SCANNED); const batches = await count(db, "transfer_batches");
     assert.ok(parties > 3 && batches >= 1, `${parties} parties, ${batches} batches seeded`);
-    assert.equal(await count(db, "parties WHERE synthetic = false"), 0, "every seeded parties row is synthetic"); assert.equal(await count(db, "transfer_batches WHERE synthetic = false"), 0, "every seeded transfer_batches row is synthetic");
+    assert.equal(await count(db, `${SCANNED} AND p.synthetic = false`), 0, "every seeded parties row is synthetic"); assert.equal(await count(db, "transfer_batches WHERE synthetic = false"), 0, "every seeded transfer_batches row is synthetic");
     // plus one parties row inserted with synthetic = false (a real person slipped in outside the doors)
     const [real] = await db.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, contact, synthetic) VALUES ('borrower', 'Real Person', '{"email": "real.person@example.test"}'::jsonb, false) RETURNING id::text AS id`);
     w.clock.set("2026-11-16T10:46:00Z");
@@ -628,7 +630,7 @@ test("35.12-T9: Given `ENVIRONMENT=nonprod`, when `POST /v1/transfers/batches` i
     // with the header: the batch boards and every parties and transfer_batches row it wrote has synthetic = true
     const ok = await p.api("POST", "/v1/transfers/batches", body, { authorization: `Bearer ${TOKEN}`, "x-supermortgage-synthetic": "true" });
     assert.equal(ok.status, 200, JSON.stringify(ok.body).slice(0, 400)); assert.ok(((ok.body["loans"] as Json)["boarded"] as number) > 0, "the batch boards");
-    assert.ok((await count(db, "transfer_batches")) >= 1); assert.equal(await count(db, "transfer_batches WHERE synthetic = false"), 0); assert.ok((await count(db, "parties")) >= 2); assert.equal(await count(db, "parties WHERE synthetic = false"), 0);
+    assert.ok((await count(db, "transfer_batches")) >= 1); assert.equal(await count(db, "transfer_batches WHERE synthetic = false"), 0); assert.ok((await count(db, SCANNED)) >= 2); assert.equal(await count(db, `${SCANNED} AND p.synthetic = false`), 0);
     // production and the header: 409 SYNTHETIC_REFUSED_IN_PRODUCTION (a production runtime over the same database; the door admits a service principal, never the shared token)
     await p.invite("ada", []); const svc = await p.servicePrincipal(`tape-${R}`, ["transfers", "35."]);
     const prod = new Runtime({ db, registry: loadOverriddenRegistry(), clock: w.clock, logger, environment: "production", env: { INTEGRATIONS: "real", ENVIRONMENT: "production" } as NodeJS.ProcessEnv, reviewers: null });

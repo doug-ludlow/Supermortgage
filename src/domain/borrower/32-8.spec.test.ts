@@ -25,7 +25,8 @@ import { createApiServer, listen } from "../../runtime/server.ts";
 import { createLogger } from "../../runtime/log.ts";
 import { createBorrowerRouter, type BorrowerRouter } from "../../runtime/borrower/routes.ts";
 import { Journey, MST } from "../../runtime/borrower/fixtures/journey.ts";
-import { sendPeriodicStatement, furnishForm1098, servicingParties, recipientsOf, loanCashState, SERVICER_CONTACT } from "../../runtime/servicing.ts";
+import { sendPeriodicStatement, furnishForm1098, servicingParties, recipientsOf, loanCashState } from "../../runtime/servicing.ts";
+import { FAKE_SERVICER_PROFILE_V1 } from "../operations-runtime/servicing-config.ts";
 import { SERVICING_ESIGN_SCOPES, AUTODRAFT_DISCLOSURE_VERSION } from "../../runtime/borrower/flows/8-servicing-payments.ts";
 import { esignVerificationToken } from "../../app/tools/section32-2.ts";
 import { authorizationDefects, variableAmountNoticeStatus, type Authorization, type Enrollment } from "../cashiering/autodraft.ts";
@@ -116,7 +117,7 @@ async function analysis(loanId: string, o: { id: string; type: "annual" | "inter
   await settle();
   return { decision, target, approved: approved.output as P };
 }
-const CONTACT = { servicer_phone: SERVICER_CONTACT.servicer_phone, exclusive_address: SERVICER_CONTACT.exclusive_address };
+const CONTACT = { servicer_phone: FAKE_SERVICER_PROFILE_V1.toll_free_phone, exclusive_address: FAKE_SERVICER_PROFILE_V1.exclusive_address };   // the seeded servicer_profiles v1 (35.5 rule 9) — the former SERVICER_CONTACT values
 
 // ═══════════════════════════════════ the loan (one journey, boarded once; every T-id continues its chronology)
 const main: { j?: Journey; A: string; B: string; partyA: string; partyB: string; loanId: string; enrollmentId: string; suspenseItemId: string; shortageAnalysisId: string } = { A: "", B: "", partyA: "", partyB: "", loanId: "", enrollmentId: "", suspenseItemId: "", shortageAnalysisId: "" };

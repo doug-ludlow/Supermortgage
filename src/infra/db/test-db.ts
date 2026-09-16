@@ -19,6 +19,9 @@
  *   migration sets differ share the catalogue, and a build here that retired "the others" would pull the template out
  *   from under the other checkout mid-run (CREATE DATABASE … TEMPLATE then fails with 3D000, which nobody retries).
  *   Stale templates are retired only by `pruneTemplates`, run on request: `tools/test-db-template.mts --prune`.
+ * - The clone is the file's for the length of its process and is dropped on `beforeExit` — after the last test, the
+ *   file's own `after` hooks and its pool's `end()` — so a suite run leaves no `_t_` database on the server (a full run
+ *   used to leave ~90 clones, 45 MB each, and filled the disk); `close()` drops it earlier, KEEP_TEST_DB=1 keeps it.
  * - The skip semantics are the ones every suite had: the server unreachable → `skip` carries "no Postgres at …" for
  *   the `{ skip }` option, unless REQUIRE_DB is set, in which case the call throws and the file fails.
  */
@@ -195,6 +198,11 @@ export async function testDatabase(fileUrl: string, opts: TestDatabaseOptions = 
   const up = await reachable(adminUrl);
   if (!up && process.env["REQUIRE_DB"]) throw new Error(`REQUIRE_DB set but ${adminUrl} is not reachable`);
   const skip = up ? false : `no Postgres at ${adminUrl}`;
-  if (!skip && opts.provision !== false) await provisionDatabase(url, opts.template === false ? { template: false } : {});
+  if (!skip && opts.provision !== false) {
+    await provisionDatabase(url, opts.template === false ? { template: false } : {});
+    // the clone is dropped when the file's process has nothing left to run (after every test and `after` hook, once
+    // the pools are closed) — the run leaves no database behind; KEEP_TEST_DB=1 keeps it for a look afterwards
+    if (!process.env["KEEP_TEST_DB"]) process.once("beforeExit", () => { void dropDatabase(url).catch(() => undefined); });
+  }
   return { url, name, adminUrl, skip, close: async () => { if (!skip) await dropDatabase(url).catch(() => undefined); } };
 }

@@ -33,9 +33,17 @@ const n = async (q: Queryable, sql: string, params: unknown[] = []): Promise<num
 /** Marked rows over examined rows × 100, half-up to three decimals (parties ∪ transfer_batches); null when nothing was examined. */
 export const coveragePct = (marked: number, examined: number): string | null => (examined === 0 ? null : (Math.round((marked / examined) * 100_000) / 1000).toFixed(3));
 
+/**
+ * The nonprod marker rule examines every `parties` row but the platform's own servicing party: 35.5 rule 9's `servicer_profiles.servicing_party_id`
+ * ("Supermortgage LLC", party_type servicer, seeded by db/migrations/0143 in every build stage as the platform's own identity) is not a
+ * borrower, a counterparty or a person — neither synthetic nor a production writer's row — so it is outside both counts (the finding and the
+ * coverage denominator). The production inverse scan (`parties.synthetic = true` → PST-11) is unchanged.
+ */
+export const SCANNED_PARTIES = `parties p WHERE NOT EXISTS (SELECT 1 FROM servicer_profiles sp WHERE sp.servicing_party_id = p.id)`;
+
 async function nonprodRules(q: Queryable, environment: string, nowIso: string): Promise<{ findings: ScanFinding[]; tables: number; rows: number; coverage: string | null }> {
   const findings: ScanFinding[] = [];
-  const parties = await n(q, `SELECT count(*)::text AS n FROM parties`); const partiesReal = await n(q, `SELECT count(*)::text AS n FROM parties WHERE synthetic = false`);
+  const parties = await n(q, `SELECT count(*)::text AS n FROM ${SCANNED_PARTIES}`); const partiesReal = await n(q, `SELECT count(*)::text AS n FROM ${SCANNED_PARTIES} AND p.synthetic = false`);
   if (partiesReal) findings.push({ table: "parties", column: "synthetic", rule: "synthetic_marker", count: partiesReal });
   const batches = await n(q, `SELECT count(*)::text AS n FROM transfer_batches`); const batchesReal = await n(q, `SELECT count(*)::text AS n FROM transfer_batches WHERE synthetic = false`);
   if (batchesReal) findings.push({ table: "transfer_batches", column: "synthetic", rule: "synthetic_marker", count: batchesReal });

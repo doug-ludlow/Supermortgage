@@ -52,7 +52,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { timingSafeEqual } from "node:crypto";
 import { CommandRefused, AiPathUnavailable } from "../app/commands.ts";
 import { CardRefused } from "../app/tools/section32-1.ts";
-import { orchestrationByApplication } from "../domain/operations-runtime/orchestration-35-6.ts";
+import { orchestrationByApplication, orchestrationOwnsHandoff } from "../domain/operations-runtime/orchestration-35-6.ts";
+import { hasRole } from "../app/roles.ts";
 import { SnapshotRefused } from "../domain/operations-runtime/snapshot-35-6.ts";
 import { RescissionRefused } from "../domain/compliance-disclosures/ops-25-3.ts";
 import { PortUnavailable } from "../app/tools.ts";
@@ -257,8 +258,12 @@ export function createApiServer(opts: ServerOptions): Server {
         const app = await runtime.applications.get(applicationId);
         if (!app) { done(404, { error: "no_such_application" }); return; }
         // 35.6 rule 6: an orchestrated application funds through `orchestration.snapshot` + `orchestration.fund` — the snapshot from the record, an officer's `snapshot` overrides only (NO_CLIENT_STATE otherwise), a `funded` override never (26.3's loan.funded is read from the log); a second call is the duplicate receipt
-        if (await orchestrationByApplication(runtime.db, applicationId)) {
-          const input: Record<string, unknown> = { ...(b["snapshot"] !== undefined ? { snapshot: b["snapshot"] } : {}), ...(b["funded"] !== undefined ? { funded: b["funded"] } : {}) };
+        const orch = await orchestrationByApplication(runtime.db, applicationId);
+        if ((orch && orchestrationOwnsHandoff(orch)) || environment === "production") {
+          // rule 2 / rule 6: refused before anything is written — a `snapshot` correction is an officer's; `funded` is never a client's
+          if (b["snapshot"] !== undefined && !hasRole(actor, ["officer"])) { done(409, { error: "refused", command: "orchestration.fund", code: "NO_CLIENT_STATE", citation: "35.6 rule 6: snapshot overrides only from an officer actor", reason: `a snapshot override is an officer's correction (${actor.kind}:${actor.id})` }, { refused: "NO_CLIENT_STATE" }); return; }
+          if (b["funded"] !== undefined) { done(409, { error: "refused", command: "orchestration.fund", code: "NO_CLIENT_STATE", citation: "35.6 rule 2 / rule 6: 26.3's loan.funded is read from the log", reason: "a `funded` payload is never a client's" }, { refused: "NO_CLIENT_STATE" }); return; }
+          const input: Record<string, unknown> = { ...(b["snapshot"] !== undefined ? { snapshot: b["snapshot"] } : {}) };
           if (!app.loan_id) { const snap = await runtime.execute({ process: "35.6", name: "orchestration.snapshot", loanId: "", applicationId, actor, input: {} }); input["snapshot_id"] = (snap.output as { snapshot_id: string | null }).snapshot_id; }
           const r = await runtime.execute({ process: "35.6", name: "orchestration.fund", loanId: "", applicationId, actor, input });
           const out = r.output as Record<string, unknown>;

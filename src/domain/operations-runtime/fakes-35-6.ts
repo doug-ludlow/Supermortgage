@@ -105,6 +105,8 @@ export class FakePortalOperator {
   }
 }
 /** The eVault (FAKE): auto-certifies an eNote delivery when polled after the submission (C1-2-04 auto-certification the same day). */
+/** The UCD collection (FAKE): Fannie Mae's Uniform Closing Dataset collection accepts a generated submission over DI — the casefile id keyed to the DU casefile, no critical edits (25.2 ask: a `fnma-ucd` port on the runtime). */
+export class FakeUcdCollection { readonly vendorName = FAKE_VENDOR; respond(ucdSubmissionId: string, duCasefileId: string): { status: "accepted"; casefile_id_ucd: string; critical_edit_failures: number; feedback_messages: string[] } { void ucdSubmissionId; return { status: "accepted", casefile_id_ucd: duCasefileId, critical_edit_failures: 0, feedback_messages: [] }; } }
 export class FakeEvaultCertifier { readonly vendorName = FAKE_VENDOR; certifies(submittedAt: string, nowIso: string): boolean { return Date.parse(nowIso) >= Date.parse(submittedAt); } }
 /** The carrier (FAKE): a paper package tendered on day D is scanned received the next business morning and certified by the custodian the morning after; a test may script the two instants per delivery. */
 export class FakeCarrier {
@@ -118,7 +120,7 @@ export class FakeCarrier {
   }
 }
 
-export interface Fakes35_6 { readonly ron: FakeRonSessionFeed; readonly settlementAgent: FakeSettlementAgent; readonly bank: FakeFundingBank; readonly printMail: FakePrintMail; readonly operator: FakePortalOperator; readonly evault: FakeEvaultCertifier; readonly carrier: FakeCarrier; readonly roles: readonly string[]; readonly delaySeconds: number; fills(role: string): boolean }
+export interface Fakes35_6 { readonly ron: FakeRonSessionFeed; readonly settlementAgent: FakeSettlementAgent; readonly bank: FakeFundingBank; readonly printMail: FakePrintMail; readonly operator: FakePortalOperator; readonly evault: FakeEvaultCertifier; readonly ucd: FakeUcdCollection; readonly carrier: FakeCarrier; readonly roles: readonly string[]; readonly delaySeconds: number; fills(role: string): boolean }
 const sets = new WeakMap<Runtime, Fakes35_6>();
 /** The build stage as the runtime states it (`root.environment`) or ENVIRONMENT names it; `nonprod` when neither does. Read fresh on every call (rule 6's production refusal is decided per hand-off). */
 export function environmentOf(rt: Runtime): string {
@@ -134,7 +136,7 @@ export function fakesFor(rt: Runtime): Fakes35_6 {
   const off = environment === "production" || environment === "prod" || (env["FAKE_REVIEWERS"] ?? "").trim().toLowerCase() === "off" || (env["INTEGRATIONS"] ?? "fake") !== "fake";
   const delay = Number(env["FAKE_REVIEWER_DELAY_S"] ?? FAKE_35_6_DELAY_S_DEFAULT);
   const roles = off ? [] : FAKE_35_6_ROLES;
-  const f: Fakes35_6 = { ron: new FakeRonSessionFeed(), settlementAgent: new FakeSettlementAgent(), bank: new FakeFundingBank(), printMail: new FakePrintMail(), operator: new FakePortalOperator(Number.isFinite(delay) ? delay : FAKE_35_6_DELAY_S_DEFAULT), evault: new FakeEvaultCertifier(), carrier: new FakeCarrier(), roles, delaySeconds: Number.isFinite(delay) ? delay : FAKE_35_6_DELAY_S_DEFAULT, fills: (role) => roles.includes(role) };
+  const f: Fakes35_6 = { ron: new FakeRonSessionFeed(), settlementAgent: new FakeSettlementAgent(), bank: new FakeFundingBank(), printMail: new FakePrintMail(), operator: new FakePortalOperator(Number.isFinite(delay) ? delay : FAKE_35_6_DELAY_S_DEFAULT), evault: new FakeEvaultCertifier(), ucd: new FakeUcdCollection(), carrier: new FakeCarrier(), roles, delaySeconds: Number.isFinite(delay) ? delay : FAKE_35_6_DELAY_S_DEFAULT, fills: (role) => roles.includes(role) };
   sets.set(root, f);
   return f;
 }

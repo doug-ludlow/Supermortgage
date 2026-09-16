@@ -93,6 +93,9 @@ function rowOf(r: Row): OrchRow {
 }
 const ORCH_COLS = "id, application_id, loan_id, transaction_type, funding_type, note_form, closing_type, rescindable, step, status, waiting_on, hold_reason, scheduled_consummation_at, consummation_at, rescission_expires_at, earliest_funding_date::text AS earliest_funding_date, funded_at, staged_at, boarded_at, package_frozen_at, delivered_at, certified_at, purchased_at, reconciled_at, completed_at, funding_id, warehouse_advance_id, delivery_id, purchase_advice_id, funding_snapshot_id, purchase_reconciliation_id, last_event_sequence, step_attempts, lease_holder, lease_until, last_pass_as_of, opened_at, updated_at";
 
+/** Rule 6: the pass owns 30.2's hand-off once its row has reached `funded` (or beyond); an application whose row is still upstream (or has none) funds through the demo/legacy path the fixtures use. */
+export function orchestrationOwnsHandoff(row: OrchRow): boolean { return stepIndex(row.step) >= stepIndex("funded") || row.status === "completed" || environmentOf35_6() === "production"; }
+const environmentOf35_6 = (): string => process.env["ENVIRONMENT"] ?? "nonprod";
 export async function orchestrationByApplication(q: Queryable, applicationId: string): Promise<OrchRow | null> {
   const rows = await q.query<Row>(`SELECT ${ORCH_COLS} FROM closing_orchestrations WHERE application_id = $1`, [applicationId]);
   return rows[0] ? rowOf(rows[0]) : null;

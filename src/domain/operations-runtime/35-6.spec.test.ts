@@ -26,6 +26,7 @@ import { createLogger } from "../../runtime/log.ts";
 import { FakeReviewers } from "../../infra/integrations/reviewers.ts";
 import { Journey, MST, EST, OFFICER } from "../../runtime/borrower/fixtures/journey.ts";
 import { custodialAccountIdFor } from "./facts-35-6-b.ts";
+import { EntityStore } from "../../app/tools.ts";
 import { DEMO_SNAPSHOT_CALLS } from "../../runtime/origination.ts";
 import { FACILITY_FIXTURE } from "../warehouse/ops-27-1.ts";
 import { runOrchestrationPass, orchestrationByApplication, dailyReceipt, orchestrationBoard, EV } from "./orchestration-35-6.ts";
@@ -70,6 +71,8 @@ const n = async (sql: string, params: unknown[] = []): Promise<number> => Number
 const events = (appId: string, type?: string) => db.query<{ id: string; type: string; loan_id: string | null; application_id: string | null; occurred_at: string; sequence: string; payload: P; actor_kind: string; actor_id: string; actor_role: string | null }>(`SELECT id, type, loan_id, application_id, occurred_at::text AS occurred_at, sequence::text AS sequence, payload, actor_kind, actor_id, actor_role FROM loan_events WHERE (application_id = $1 OR loan_id = (SELECT loan_id FROM applications WHERE id = $1)) AND ($2::text IS NULL OR type = $2) ORDER BY sequence`, [appId, type ?? null]);
 const entity = async (kind: string, id: string): Promise<P | null> => { const rows = await db.query<{ data: unknown }>(`SELECT data FROM entity_current WHERE kind = $1 AND id = $2`, [kind, id]); return rows[0] ? decodeEntityData(rows[0].data) : null; };
 const entitiesOf = async (kind: string, appId: string): Promise<{ id: string; data: P }[]> => (await db.query<{ id: string; data: unknown }>(`SELECT id, data FROM entity_current WHERE kind = $1 AND data->>'application_id' = $2`, [kind, appId])).map((r) => ({ id: r.id, data: decodeEntityData(r.data) as P }));
+/** 29.4's rows keyed by delivery id (delivery_operator_tasks, custodian_certifications carry no application_id — they hang off the delivery). */
+const entitiesByDelivery = async (kind: string, deliveryId: string): Promise<{ id: string; data: P }[]> => (await db.query<{ id: string; data: unknown }>(`SELECT id, data FROM entity_current WHERE kind = $1 AND data->>'delivery_id' = $2`, [kind, deliveryId])).map((r) => ({ id: r.id, data: decodeEntityData(r.data) as P }));
 const journal = (appId: string) => db.query<{ step: string; kind: string; clocked: boolean; waiting_on: string | null; command_process: string | null; command_name: string | null; command_op: string | null; actor_kind: string | null; actor_id: string | null; actor_role: string | null; decision_id: string | null; refusal_code: string | null; error_class: string | null; detail: P; sweep_run_id: string | null; trigger_event_id: string | null; created_at: string }>(`SELECT step, kind, clocked, waiting_on, command_process, command_name, command_op, actor_kind, actor_id, actor_role, decision_id, refusal_code, error_class, detail, sweep_run_id, trigger_event_id, created_at::text AS created_at FROM closing_orchestration_steps WHERE application_id = $1 ORDER BY created_at, id`, [appId]);
 const timers = (appId: string, code: string) => db.query<{ status: string; due_date: string | null; due_at: string | null; loan_id: string | null; application_id: string | null; subject_kind: string; subject_id: string }>(`SELECT status::text AS status, due_date::text AS due_date, due_at::text AS due_at, loan_id, application_id, subject_kind, subject_id FROM timers WHERE code = $2 AND (application_id = $1 OR loan_id = (SELECT loan_id FROM applications WHERE id = $1)) ORDER BY armed_at`, [appId, code]);
 const decisions = (appId: string) => db.query<{ id: string; agent: string; action: string; rationale: string }>(`SELECT id, agent, action, rationale FROM agent_decisions WHERE application_id = $1 ORDER BY created_at, id`, [appId]);
@@ -88,7 +91,7 @@ const ORDER_PAYLOAD = { address: "100 N Central Ave, Phoenix AZ 85004", legal_de
 /** A journey (the lifecycle fixture) over this file's runtime: the book, the application, the interview (trid), the LE received under 21.2, the credit fee handled. */
 async function newJourney(): Promise<Journey> {
   const j = new Journey({ runtime, db, base, token: TOKEN, clock, borrowerEmail: `alex.${randomUUID().slice(0, 8)}@example.test`, coBorrowerEmail: `blake.${randomUUID().slice(0, 8)}@example.test`, partnerPartyId });
-  await j.seedBook(); await j.openApplication(); await seedDemographics(j); await interviewWithJointIntent(j); await j.quoteAndLe();
+  await seedWireInstruction(); await seedAporTables(); await j.seedBook(); await j.openApplication(); await seedDemographics(j); await interviewWithJointIntent(j); await j.quoteAndLe(); await seedHmda(j);
   return j;
 }
 /** 21.1's restricted demographics row per application borrower (0057 restricted_fl.applicant_demographics — the interview's HMDA questions; the only demographics table 30.2 reads): borrower A self-reported, borrower B "information not provided" — never derived. */
@@ -96,6 +99,26 @@ async function seedDemographics(j: Journey): Promise<void> {
   const at = MST("2026-10-05", "10:35");
   await db.query(`INSERT INTO restricted_fl.applicant_demographics (application_borrower_id, ethnicity, race, sex, age, declined_ethnicity, declined_race, declined_sex, visual_observation_used, collection_channel, collected_at) VALUES ($1, $2::jsonb, $3::jsonb, $4, $5, false, false, false, false, 'telephone', $6)`, [j.abIds[0], JSON.stringify(["not_hispanic_or_latino"]), JSON.stringify(["white"]), "female", 41, at]);
   await db.query(`INSERT INTO restricted_fl.applicant_demographics (application_borrower_id, ethnicity, race, sex, age, declined_ethnicity, declined_race, declined_sex, visual_observation_used, collection_channel, collected_at) VALUES ($1, NULL, NULL, NULL, $2, true, true, true, false, 'telephone', $3)`, [j.abIds[1], 40, at]);
+}
+/** 28.3's HMDA record and ULI for the application (the partner's LEI + the loan identifier + the check digit) — 29.3's ULDD reads `hmda.uli.assigned{uli}`. */
+async function seedHmda(j: Journey): Promise<void> {
+  const scope = { app: j.appId }; const lei = "5493001KJTIIGC8Y1R12";
+  await j.tool(scope, "28.3", "createRecord", { partner_id: j.PARTNER_ID, lei, sequence: Number(BigInt(`0x${j.appId.replace(/-/g, "").slice(0, 6)}`) % 900000n) + 1, application_date: "2026-10-05", transaction_type: "limited_cash_out", occupancy: "primary", loan_amount_cents: "56000000", property_type: "sfr", total_units: 1, nmlsr_id: "123456", property: { street_address: "100 N Central Ave", city: "Phoenix", state: "AZ", zip: "85004" } }, OFFICER);
+  await j.tool(scope, "28.3", "assignUli", { partner_id: j.PARTNER_ID, lei, application_date: "2026-10-05", transaction_type: "limited_cash_out", sequence: Number(BigInt(`0x${j.appId.replace(/-/g, "").slice(0, 6)}`) % 900000n) + 1 }, OFFICER);
+}
+/** SM's approved warehouse-lender wire instruction as 29.4 lists it (`wire_instructions`, status active — Fannie Mae Form 482, the bailee Letter Name = 27.1's facility letter name): a platform row, seeded once. */
+/** 23.4's FFIEC APOR table rows as the owner's `apor_tables` entities (global; `aporTables()` reads them when a caller passes none) — the pass's consummation-stage run reads them from the record. */
+async function seedAporTables(): Promise<void> {
+  if ((await db.query(`SELECT 1 FROM entity_current WHERE kind = 'apor_tables' AND id = 'T-2026-10-05'`)).length) return;
+  const store = new EntityStore();
+  for (const t of APOR_TABLES()) store.put("apor_tables", t.table_id, { ...t } as unknown as Record<string, unknown>, OFFICER, "2026-10-05T13:05:00.000Z");
+  await runtime.entities.save(store.versionsSince(0), null);
+}
+async function seedWireInstruction(): Promise<void> {
+  if ((await db.query(`SELECT 1 FROM entity_current WHERE kind = 'wire_instructions' AND id = 'wire-sm-warehouse'`)).length) return;
+  const store = new EntityStore();
+  store.put("wire_instructions", "wire-sm-warehouse", { wire_instruction_id: "wire-sm-warehouse", partner_id: partnerPartyId, payee_code: "SMWH1", receiver_type: "warehouse_lender", warehouse_lender_org_id: FACILITY_FIXTURE.fnma_warehouse_lender_id, letter_type: "bailee", bailee_letter_name: FACILITY_FIXTURE.bailee_letter_name, status: "active", form_482_document_id: "doc-482-sm", form_482_signed_by: "officer", fnma_confirmation_call_at: "2026-09-15T14:30:00.000Z", approved_by_warehouse_at: "2026-09-15T15:00:00.000Z", approved_by_operator_id: "u-op-warehouse" }, OFFICER, "2026-09-15T15:00:00.000Z");
+  await runtime.entities.save(store.versionsSince(0), null);
 }
 /** The journey's 21.1 interview (a5) with both borrowers' joint-intent affirmations at 10:20/10:22 MST (§1002.7(d), 21.1's own tool) before the six items at 10:41 — the joint-intent facts 22.2 reads from the record. */
 async function interviewWithJointIntent(j: Journey): Promise<void> {
@@ -340,14 +363,18 @@ async function driveTo(j: Journey, target: "execution_reviewed" | "wire_released
 const APPRAISER = "PARTY-APPRAISER-1";
 const APPRAISAL_PACKAGE = { uad_version: "3.6", has_xml: true, has_pdf: true, has_images: true, lender_client_party_id: "PARTY-PARTNER", partner_party_id: "PARTY-PARTNER", appraiser_party_id: APPRAISER, ordered_appraiser_party_id: APPRAISER, appraiser_license_active: true, ordered_form: "1004", form: "1004" };
 const APPRAISAL_CHECKLIST = { closed_comparables: 3, adjustments_explained: true, market_conditions_consistent: true, gla_sqft: 2140, application_gla_sqft: 2140, units: 1, application_units: 1, condition_rating: "C3", quality_rating: "Q3", subject_to: false, narrative: "The subject is a well-maintained single-family residence in an established subdivision; sales activity is stable." };
-const SSR = (at: string) => ({ gse: "fnma", status: "successful", doc_file_id: "1200000123456", findings: [], cu_score: 1.9, cu_flags: NO_CU_FLAGS, result_at: at, api_correlation_id: "ucdp-fixture" });
 const COPY_RECIPIENT = (partyId: string, name: string, email: string) => ({ partyId, name, mailingAddress: "100 N Central Ave, Phoenix AZ 85004", email, consent: { party_id: partyId, classes: ["origination_decisions", "disclosures.origination", "flood_notice"], disclosure_version: "esign-2026-09", status: "active", consented_on: "2026-10-05", soft_bounces_30d: 0 } });
 async function valuationCopy(j: Journey): Promise<void> {
   const scope = { app: j.appId }; const APPRAISAL = `APR-${j.R}`;
   clock.set(MST("2026-11-02", "14:20"));
   await j.tool(scope, "24.2", "ingestReport", { appraisal_id: APPRAISAL, version_no: 1, package: APPRAISAL_PACKAGE, appraised_value_cents: "80000000", effective_date: "2026-11-01", appraiser_party_id: APPRAISER, received_at: MST("2026-11-02", "14:20"), valuation_order_id: j.valuationOrderId }, VALUATION);
+  clock.set(MST("2026-11-02", "15:05"));
+  await j.tool(scope, "24.2", "submitUcdp", { appraisal_id: APPRAISAL, version_no: 1, package_hash: `sha256:appraisal-r-${j.R}-v1` }, VALUATION);
+  clock.set(MST("2026-11-02", "15:07"));
+  const polled = await j.tool(scope, "24.2", "pollFindings", { appraisal_id: APPRAISAL, version_no: 1 }, VALUATION);
+  assert.equal((polled.output["routing"] as { route: string }).route, "successful", JSON.stringify(polled.output["routing"]));
   clock.set(MST("2026-11-03", "09:00"));
-  await j.tool(scope, "24.2", "applyReviewChecklist", { appraisal_id: APPRAISAL, version_no: 1, checklist: APPRAISAL_CHECKLIST, transaction_type: "refinance", loan_amount_cents: "56000000", consummation_on: "2026-11-06", fnma_ssr: SSR(MST("2026-11-02", "15:07")) }, VALUATION);
+  await j.tool(scope, "24.2", "applyReviewChecklist", { appraisal_id: APPRAISAL, version_no: 1, checklist: APPRAISAL_CHECKLIST, transaction_type: "refinance", loan_amount_cents: "56000000", consummation_on: "2026-11-06" }, VALUATION);
   clock.set(MST("2026-11-03", "10:00"));
   const payload = { partner_name: "Partner Bank, N.A.", borrower_names: ["Alex Borrower", "Blake Borrower"], property_address: "100 N Central Ave, Phoenix AZ 85004", loan_number_last4: "0917", mlo_name: "Jordan Rivera", mlo_nmlsr_id: "987654", contact_phone: "1-800-555-0142", notice_date: "2026-11-03", completion_at: "2026-11-03", earliest_consummation: "2026-11-06", consummation_scheduled_on: "2026-11-06", revision: false, includes_rov_disclosure: true, valuation_count: 1, valuations: [{ kind_label: "Uniform Residential Appraisal Report (Form 1004, UAD 3.6)", developed_at: "2026-11-01", version_no: 1 }] };
   const copy = await j.tool(scope, "24.2", "deliverNotice", { template_code: "NTC_REGB_1002_14_VALUATION_COPY", payload, recipients: [COPY_RECIPIENT("B1", "Alex Borrower", j.o.borrowerEmail), COPY_RECIPIENT("B2", "Blake Borrower", j.o.coBorrowerEmail)], appraisal_id: APPRAISAL, version: 1, is_final_version: true, channel: "electronic", esign_consent_verified: true, receipt_evidence: "esign_confirmed", consummation_on: "2026-11-06", valuation_ids: [`VAL-${APPRAISAL}-v1`] }, VALUATION);
@@ -786,7 +813,41 @@ test("35.6-T9: Given `loan.funded`, when the same sweep's pass runs, then `fundi
   assert.equal((await escalations(u.appId, "compliance")).filter((e) => !e.completed_at && e.payload["reason"] === "FIXTURE_REFUSED").length, 1);
 });
 
-test("35.6-T10: Given `loan.boarded` on Thu Nov 12, when the pass runs Fri Nov 13 10:05 MST, then 29.3 built and froze the package (`delivery.uldd.built`, `earlycheck.completed{clean=true}`, `delivery.package.frozen`) as `secondary`, `SM_ORCH_DELIVERY_OPEN_2BD` is satisfied, 29.4 registered the delivery with Supermortgage's approved wire instruction and payee code, opened the operator task with `sla_due_at = 2026-11-16T15:00 MT`, eDelivered the eNote and requested the Transfer of Control the same day (`enote.transfer_of_control.requested{effective_date=2026-11-16}`, gate open), the row is `waiting_human{fnma_portal_operator}`; when the FAKE operator's evidence arrives 13:31 ET Mon Nov 16, then `delivery.submitted{fnma_loan_number}` exists, the custodian package is `evault_auto` with no documents, the eVault's auto-certification yields `custody.certified{purchase_ready_at=2026-11-16}` and `expected_purchase_date = 2026-11-17`.", { todo: true });
+test("35.6-T10: Given `loan.boarded` on Thu Nov 12, when the pass runs Fri Nov 13 10:05 MST, then 29.3 built and froze the package (`delivery.uldd.built`, `earlycheck.completed{clean=true}`, `delivery.package.frozen`) as `secondary`, `SM_ORCH_DELIVERY_OPEN_2BD` is satisfied, 29.4 registered the delivery with Supermortgage's approved wire instruction and payee code, opened the operator task with `sla_due_at = 2026-11-16T15:00 MT`, eDelivered the eNote and requested the Transfer of Control the same day (`enote.transfer_of_control.requested{effective_date=2026-11-16}`, gate open), the row is `waiting_human{fnma_portal_operator}`; when the FAKE operator's evidence arrives 13:31 ET Mon Nov 16, then `delivery.submitted{fnma_loan_number}` exists, the custodian package is `evault_auto` with no documents, the eVault's auto-certification yields `custody.certified{purchase_ready_at=2026-11-16}` and `expected_purchase_date = 2026-11-17`.", { skip }, async () => {
+  const j = await chainJourney(); const appId = j.appId; const loanId = (await row(appId)).loan_id!; assert.ok(loanId);
+  const boardedEv = (await events(appId, "loan.boarded")).at(-1)!; assert.ok(boardedEv, "Given loan.boarded on Thu Nov 12"); assert.equal(boardedEv.occurred_at.slice(0, 10), "2026-11-12");
+  // 25.1's own pre-delivery run that morning (the compliance-tester's checkpoint; the pass's 25.2 gate assertion reuses it within its freshness window)
+  await complianceAt(j, MST("2026-11-13", "09:30"), "SM_O61_COMPLIANCE_PASS_DELIVERY_GATE", "cd");
+  // when the pass runs Fri Nov 13 10:05 MST
+  clock.set(MST("2026-11-13", "10:05")); const r = await pass(clock.now(), appId);
+  const runs = await db.query<{ id: string; data: P }>(`SELECT id, data FROM entity_current WHERE kind = 'compliance_test_runs' AND data->>'application_id' = $1`, [appId]);
+  const jl = await journal(appId); const fail = JSON.stringify(runs.map((r) => [r.id, r.data["gate"], r.data["checkpoint"], r.data["status"], r.data["gate_open"], r.data["completed_at"]])).slice(0, 1200) + JSON.stringify(jl.filter((x) => ["boarded", "package_frozen"].includes(x.step)).map((x) => [x.step, x.kind, x.command_process, x.command_name, x.command_op, x.error_class, x.refusal_code, x.detail["message"] ?? x.detail["reason"] ?? x.detail["gap"] ?? null])).slice(0, 3000);
+  assert.equal(r.rows[0]!.wrote, true, `${JSON.stringify(r).slice(0, 300)} ${fail}`);
+  // 29.3 built and froze the package as `secondary`
+  const c293 = jl.filter((x) => x.kind === "command_run" && x.command_process === "29.3"); assert.ok(c293.length >= 5, fail); for (const x of c293) assert.equal(x.actor_id, "secondary", `${x.command_name} as secondary`);
+  for (const t of ["delivery.uldd.built", "delivery.package.frozen"]) assert.equal((await events(appId, t)).length, 1, `${t}: ${fail}`);
+  const ec = (await events(appId, "earlycheck.completed")).filter((e) => e.payload["file_kind"] !== "du_spec_3_4"); assert.ok(ec.length >= 1); assert.equal(ec.at(-1)!.payload["clean"], true);
+  const t2bd = await timers(appId, "SM_ORCH_DELIVERY_OPEN_2BD"); assert.equal(t2bd.length, 1, JSON.stringify(t2bd)); assert.equal(t2bd[0]!.status, "satisfied");
+  // 29.4 registered the delivery with Supermortgage's approved wire instruction and payee code; the operator task's SLA; the eNote eDelivered and the Transfer of Control requested the same day
+  const dlv = (await entitiesOf("deliveries", appId)).find((d) => typeof d.data["delivery_id"] === "string")!; assert.ok(dlv, fail); assert.equal(dlv.data["wire_instruction_id"], "wire-sm-warehouse"); assert.equal(dlv.data["payee_code"], "SMWH1"); assert.equal(dlv.data["loan_id"], loanId); assert.ok(dlv.data["package_id"]);
+  const task = (await entitiesByDelivery("delivery_operator_tasks", String(dlv.data["delivery_id"]))).find((t) => t.data["kind"] === "import_and_submit")!; assert.ok(task, fail); assert.equal(task.data["sla_due_at"], MST("2026-11-16", "15:00"));
+  assert.equal((await events(appId, "enote.edelivered")).length, 1);
+  // C1-2-04 through 29.4's gate: the request's effective date is its request date — requested the same day as the eDelivery (Fri Nov 13), re-requested for the submission day (Mon Nov 16, the spec's effective_date)
+  const toc = (await events(appId, "enote.transfer_of_control.requested")).at(-1)!; assert.ok(toc); assert.equal(toc.payload["effective_date"], "2026-11-13"); assert.equal(toc.payload["same_day"], true); assert.equal(toc.occurred_at.slice(0, 10), "2026-11-13");
+  const req = jl.find((x) => x.kind === "command_run" && x.command_name === "requestEnoteTransfer" && x.command_op === "transfer")!; assert.ok(req); assert.ok(!String(JSON.stringify(req.detail)).includes('"open":false'));
+  let o = await row(appId); assert.equal(o.step, "package_frozen", fail); assert.equal(o.status, "waiting_human"); assert.equal(o.waiting_on, "fnma_portal_operator");
+  // when the FAKE operator's evidence arrives 13:31 ET Mon Nov 16
+  clock.set(EST("2026-11-16", "13:31")); const r2 = await pass(clock.now(), appId);
+  const jl2 = await journal(appId); const fail2 = JSON.stringify(jl2.filter((x) => ["package_frozen", "delivered"].includes(x.step)).map((x) => [x.step, x.kind, x.command_name, x.command_op, x.actor_id, x.error_class, x.refusal_code, x.detail["message"] ?? x.detail["reason"] ?? x.detail["gap"] ?? null])).slice(0, 3000);
+  assert.equal(r2.rows[0]!.wrote, true, `${JSON.stringify(r2).slice(0, 300)} ${fail2}`);
+  const toc2 = (await events(appId, "enote.transfer_of_control.requested")).at(-1)!; assert.equal(toc2.payload["effective_date"], "2026-11-16"); assert.equal(toc2.payload["same_day"], true); assert.equal(toc2.occurred_at.slice(0, 10), "2026-11-16");
+  const sub = (await events(appId, "delivery.submitted")).at(-1)!; assert.ok(sub, fail2); assert.match(String(sub.payload["fnma_loan_number"]), /^\d{10}$/); assert.equal(sub.loan_id, loanId);
+  const ev = jl2.find((x) => x.kind === "command_run" && x.command_name === "parseOperatorEvidence")!; assert.ok(ev); assert.equal(ev.actor_kind, "human"); assert.equal(ev.actor_role, "fnma_portal_operator");
+  const cert = (await entitiesByDelivery("custodian_certifications", String(dlv.data["delivery_id"]))).at(-1)!; assert.ok(cert, fail2); assert.equal(cert.data["custody_mode"], "evault_auto"); assert.deepEqual(cert.data["package_document_ids"] ?? [], []);
+  const certified = (await events(appId, "custody.certified")).at(-1)!; assert.ok(certified, fail2); assert.equal(certified.payload["purchase_ready_at"], "2026-11-16");
+  const dlv2 = (await entitiesOf("deliveries", appId)).find((d) => typeof d.data["delivery_id"] === "string")!; assert.equal(dlv2.data["expected_purchase_date"], "2026-11-17", JSON.stringify(dlv2.data).slice(0, 400));
+  o = await row(appId); assert.equal(o.step, "certified", fail2);
+});
 
 test("35.6-T11: Given the FAKE Sellers API's advice (price 101.125, UPB 56,000,000, principal proceeds $566,300.00, interest −$1,096.67, LLPA $700.00, net $564,503.33, purchase date 2026-11-19) and the collection bank's credit of 56,450,333 cents, when the pass runs, then 29.4 `ingestPurchaseAdvice` appended `loan.purchased` keyed by both ids with `variance_cents = 0`, 30.1 `matchPurchaseAdvice` was given the SAME `purchase_advices` row (its `net_proceeds_cents` = 56,450,333) and appended `loan.investor_updated` with `loans.fnma_loan_number` set and `loan_terms` v2 effective 2026-11-19, 27.2 `ingestReceipts` → `proceeds.received`, `matchProceeds` matched with variance $0.00, `postWaterfall` posted payoff $549,550.64 (principal $548,800.00 + interest $725.64 + fee $25.00), cost recovery $3,485.00, SM retained $1,415.00, partner residual $10,052.69 (`warehouse.advance.repaid`, `settlement.waterfall.posted`), `releaseCollateral` → `warehouse.secured_party.released{effective ≤ 2026-11-19}`, `purchase_reconciliations` is `reconciled` with the three sides, `orchestration.purchase.reconciled` satisfied `SM_ORCH_PURCHASE_RECON_1BD`, the row is `completed`, and `SELECT count(*) FROM loans WHERE origination_application_id = $1` is 1; given instead 30.1 fed a net of 56,590,333 cents, then `status = exception`, `sides.\"30.1\" = unmatched`, no waterfall was posted, no release exists and one sev-2 `officer` escalation carries 27.2's breakdown.", { todo: true });
 

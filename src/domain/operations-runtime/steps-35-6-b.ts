@@ -529,9 +529,6 @@ export const closingSteps: readonly StepDef[] = [
 ];
 export const fundingSteps: readonly StepDef[] = [fundingAuthorized, wireReleased];
 export const deliverySteps: readonly StepDef[] = [
-  { name: "boarded", exit: exitOn("delivery.package.frozen"), clocked: () => true },
-  { name: "package_frozen", exit: exitOn("delivery.submitted"), clocked: () => true },
-  { name: "delivered", exit: exitOn("custody.certified"), clocked: () => true },
   { name: "certified", exit: exitOn("loan.purchased"), clocked: () => true },
   { name: "purchased", exit: exitOn("orchestration.purchase.reconciled"), clocked: () => true },
 ];
@@ -560,4 +557,4 @@ export const unwindStep: StepDef = {
     return { wait: { status: "unwinding", waiting_on: "26.3" } };
   },
 };
-export { plus, exitOn, DISCLOSURE, ESCROW, S, civil };
+export { plus, exitOn, DISCLOSURE, ESCROW, COMPLIANCE, S, civil, recordSnapshot };

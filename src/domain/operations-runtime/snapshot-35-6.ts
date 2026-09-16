@@ -19,7 +19,6 @@ import type { Runtime } from "../../runtime/app.ts";
 import type { Actor, DomainEvent } from "../../kernel/events/index.ts";
 import type { OriginationSnapshot, OrigBorrower, OrigConsent, OrigDocument } from "../orig-boarding/ops-30-2.ts";
 import { plainDate as D, type PlainDate } from "../../kernel/calendar/date.ts";
-import { decryptTin, tinCipherKey } from "../../infra/pii/tin.ts";
 import { demoSnapshot, fundApplication, fundedFromLog, type FundApplicationResult } from "../../runtime/origination.ts";
 import { loadRecord, src, type OrchRecord, type Source, RecordGap } from "./facts-35-6.ts";
 import { closingFacts, partyFacts, loanTerms, escrowFacts, cdRow, productFacts, ltvPct, type ClosingFacts } from "./facts-35-6-b.ts";
@@ -60,6 +59,13 @@ export function canonical(v: unknown): unknown {
   return v;
 }
 export const snapshotHash = (s: OriginationSnapshot): string => createHash("sha256").update(JSON.stringify(canonical(s))).digest("hex");
+/** The stored form: the borrowers' dates of birth absent (re-read from application_borrowers at the hand-off; the TIN is already the last four). */
+export const redactForStorage = (s: OriginationSnapshot): OriginationSnapshot => ({ ...s, borrowers: s.borrowers.map((b) => ({ ...b, dob: null })) });
+/** The hand-off form: the dates of birth back from 21.1's rows (by the borrower's application_borrowers id). */
+async function rehydrate(rt: Runtime, applicationId: string, s: OriginationSnapshot): Promise<OriginationSnapshot> {
+  const rows = await rt.db.query<{ id: string; date_of_birth: string | null }>(`SELECT id::text AS id, date_of_birth::text AS date_of_birth FROM application_borrowers WHERE application_id = $1`, [applicationId]);
+  return { ...s, borrowers: s.borrowers.map((b) => { const r = rows.find((x) => x.id === b.party_id); return r?.date_of_birth ? { ...b, dob: D(r.date_of_birth) } : b; }) };
+}
 /** The stored row back into 30.2's types: every `*_cents` a bigint again (nested), dates as PlainDate strings. */
 export function reviveSnapshot(v: unknown): unknown {
   if (Array.isArray(v)) return v.map(reviveSnapshot);
@@ -69,28 +75,28 @@ export function reviveSnapshot(v: unknown): unknown {
 
 // ───────────────────────────── the record → the snapshot ─────────────────────────────
 async function borrowersFromRecord(rt: Runtime, rec: OrchRecord, prov: Provenance): Promise<OrigBorrower[]> {
-  const rows = await rt.db.query<{ id: string; borrower_role: string; legal_name: string; tin_encrypted: Uint8Array | null; date_of_birth: string | null; language_preference: string | null; contact: Row | null; borrower_ordinal: number | null }>(
-    `SELECT id::text AS id, borrower_role, legal_name, tin_encrypted, date_of_birth::text AS date_of_birth, language_preference, contact, borrower_ordinal FROM application_borrowers WHERE application_id = $1 ORDER BY borrower_ordinal NULLS LAST, created_at`, [rec.app.id]);
+  // PII discipline (0190 header; 32.18 rule 7): the snapshot carries the TIN's last four only (30.2 boards `tin_last4`; 23.6 alone reads the cipher) and the date of birth is re-read from application_borrowers at the hand-off — neither leaves this builder in full
+  const rows = await rt.db.query<{ id: string; borrower_role: string; legal_name: string; tin_last4: string | null; date_of_birth: string | null; language_preference: string | null; contact: Row | null; borrower_ordinal: number | null }>(
+    `SELECT id::text AS id, borrower_role, legal_name, tin_last4, date_of_birth::text AS date_of_birth, language_preference, contact, borrower_ordinal FROM application_borrowers WHERE application_id = $1 ORDER BY borrower_ordinal NULLS LAST, created_at`, [rec.app.id]);
   if (!rows.length) { prov.gap("borrowers", "no application_borrowers rows (21.1)"); return []; }
-  const demo = await rt.db.query<{ application_borrower_id: string; race: unknown; ethnicity: unknown; sex: string | null; age: number | null; declined_race: boolean; declined_ethnicity: boolean; declined_sex: boolean; collection_channel: string | null }>(
-    `SELECT application_borrower_id::text AS application_borrower_id, race, ethnicity, sex, age, declined_race, declined_ethnicity, declined_sex, collection_channel FROM restricted_fl.applicant_demographics WHERE application_borrower_id = ANY($1::uuid[])`, [rows.map((r) => r.id)]);
-  // the TIN cipher key: the FAKE key outside production, TIN_CIPHER_KEY in production — without it every TIN is a gap (never a fixture value)
-  let key: Buffer | null = null; try { key = tinCipherKey(); } catch { key = null; }
+  const demo = await rt.db.query<{ application_borrower_id: string; race: unknown; ethnicity: unknown; sex: string | null; age: number | null; declined_race: boolean; declined_ethnicity: boolean; declined_sex: boolean; visual_observation_used: boolean; collection_channel: string | null }>(
+    `SELECT application_borrower_id::text AS application_borrower_id, race, ethnicity, sex, age, declined_race, declined_ethnicity, declined_sex, visual_observation_used, collection_channel FROM restricted_fl.applicant_demographics WHERE application_borrower_id = ANY($1::uuid[])`, [rows.map((r) => r.id)]);
   const out: OrigBorrower[] = [];
   rows.forEach((r, k) => {
     const d = demo.find((x) => x.application_borrower_id === r.id) ?? null;
     const contact = r.contact ?? {};
     const address = S(contact["mailing_address"]) ?? (contact["address"] && typeof contact["address"] === "object" ? Object.values(contact["address"] as Row).filter(Boolean).join(", ") : null);
-    let tin: string | null = null;
-    if (r.tin_encrypted && key) { try { tin = decryptTin(r.tin_encrypted, key); } catch { tin = null; } }
-    if (!tin) prov.gap(`borrowers[${k}].tin`, `application_borrowers ${r.id} carries no TIN (21.1)`);
+    const tin = r.tin_last4 && /^\d{4}$/.test(r.tin_last4) ? r.tin_last4 : null;
+    if (!tin) prov.gap(`borrowers[${k}].tin`, `application_borrowers ${r.id} carries no TIN (21.1 / 32.2 confirmField{ssn})`);
     if (!r.date_of_birth) prov.gap(`borrowers[${k}].dob`, `application_borrowers ${r.id} carries no date of birth (21.1)`);
     const list = (v: unknown): readonly string[] | null => (Array.isArray(v) ? v.map(String) : typeof v === "string" && v ? [v] : null);
     // 21.1 applicant_demographics (restricted): self-reported when the borrower answered; "information not provided" when declined — never inferred (30.2 INFERRED_DEMOGRAPHICS)
-    const demographics: OrigBorrower["demographics"] = d
+    // a visually observed row (lawful only in person, 0057) is neither self-reported nor "not provided" as 30.2 types them — a gap, never relabelled
+    if (d?.visual_observation_used) prov.gap(`borrowers[${k}].demographics`, `applicant_demographics for application_borrower ${r.id} was visually observed (collection_channel ${d.collection_channel}); 30.2 boards self-reported or not-provided answers only`);
+    const demographics: OrigBorrower["demographics"] = d && !d.visual_observation_used
       ? { race: d.declined_race || !list(d.race)?.length ? "not_provided" : list(d.race)!, ethnicity: d.declined_ethnicity || !list(d.ethnicity)?.length ? "not_provided" : list(d.ethnicity)!, sex: d.declined_sex || !d.sex ? "not_provided" : d.sex, age: d.age, preferred_language: r.language_preference, collected_via: d.declined_race && d.declined_ethnicity && d.declined_sex ? "not_provided" : "self_reported" }
       : { race: "not_provided", ethnicity: "not_provided", sex: "not_provided", age: null, preferred_language: r.language_preference, collected_via: "not_provided" };
-    if (d) prov.table(`borrowers[${k}].demographics`, `restricted_fl.applicant_demographics:${r.id}`, "21.1"); else prov.gap(`borrowers[${k}].demographics`, `no restricted_fl.applicant_demographics row for application_borrower ${r.id} (21.1)`);
+    if (d && !d.visual_observation_used) prov.table(`borrowers[${k}].demographics`, `restricted_fl.applicant_demographics:${r.id}`, "21.1"); else if (!d) prov.gap(`borrowers[${k}].demographics`, `no restricted_fl.applicant_demographics row for application_borrower ${r.id} (21.1)`);
     prov.table(`borrowers[${k}]`, `application_borrowers:${r.id}`, "21.1");
     out.push({ party_id: r.id, legal_name: r.legal_name, tin, dob: r.date_of_birth ? D(r.date_of_birth) : null, phone: S(contact["phone"]) ?? S(contact["mobile"]), email: S(contact["email"]), mailing_address: address, language_preference: r.language_preference, acp_enrolled: contact["acp_enrolled"] === true, role: r.borrower_role === "coborrower" || k > 0 ? "coborrower" : "borrower", demographics });
   });
@@ -126,7 +132,7 @@ async function documentsFromRecord(rt: Runtime, rec: OrchRecord, closing: Closin
   const kindOf = (k: string, cls: string | null): string => (k === "enote" || k === "note" ? "note" : k === "closing_disclosure" || k === "closing_disclosure_final" ? "closing_disclosure_final" : k === "loan_estimate" || k === "le" ? "loan_estimate" : k === "deed_of_trust" || k === "mortgage" ? "security_instrument" : cls === "security_instrument" ? "security_instrument" : k);
   for (const r of rows) { const kind = kindOf(r.kind, r.doc_class); out.push({ id: r.id, kind, sha256: r.sha256, custody: kind === "note" ? (custodyKind === "enote" ? "evault" : "custodian") : "platform", ...(kind === "recorded_security_instrument" ? { recorded: true } : {}) }); }
   // 26.1's rendered set: the note (eNote or paper), the security instrument, the final 1003 — `closing_documents` rows carry the render hash (documents rows of the same id when 26.1 stored them)
-  for (const d of rec.entities("closing_documents", (x) => !closing || x["set_id"] === undefined || x["set_id"] === closing.document_set_id || true)) {
+  for (const d of rec.entities("closing_documents")) {
     if (out.some((o) => o.id === d.id)) continue;
     const k = String(d.data["kind"]); const kind = k === "enote" || k === "note" ? "note" : k === "security_instrument" || k === "deed_of_trust" || k === "mortgage" ? "security_instrument" : k;
     const sha = S(d.data["render_hash"]) ?? S(d.data["sha256"]) ?? S(d.data["data_hash"]); if (!sha) continue;
@@ -210,7 +216,7 @@ export async function buildFundingSnapshot(rt: Runtime, applicationId: string, o
   // ── hazard: 24.5's verified hazard policy (26.3's FC_HAZARD item reads the same event)
   const hazard = rec.last("insurance.policy.verified", (p) => p["policy_kind"] === "hazard" || p["kind"] === "hazard");
   let hazardOut: OriginationSnapshot["hazard"] | null = null;
-  if (hazard && isDate(hazard.payload["expiration_date"])) { hazardOut = { verified: true, mortgagee_clause_partner_isaoa_co_sm: hazard.payload["mortgagee_clause_ok"] !== false && hazard.payload["mortgagee_clause_partner_isaoa_co_sm"] !== false, expires_on: D(String(hazard.payload["expiration_date"])) }; prov.event("hazard", hazard, "24.5"); }
+  if (hazard && isDate(hazard.payload["expiration_date"])) { hazardOut = { verified: true, mortgagee_clause_partner_isaoa_co_sm: hazard.payload["mortgagee_clause_partner_isaoa_co_sm"] === true, expires_on: D(String(hazard.payload["expiration_date"])) }; prov.event("hazard", hazard, "24.5"); }
   else prov.gap("hazard", "no insurance.policy.verified{hazard} with an expiration date (24.5)");
   // ── flood: 24.5's determination, LOL enrollment, coverage
   const flood = rec.last("flood.determination.received"); const lol = rec.last("flood.lol.enrolled"); const floodCov = rec.last("flood.coverage.verified");
@@ -252,7 +258,7 @@ export async function buildFundingSnapshot(rt: Runtime, applicationId: string, o
   } else prov.gap("property", "no application_properties subject row (21.1)");
   const trailingRows = await rt.db.query<{ kind: string; status: string; received_at: string | null }>(`SELECT kind, status, received_at::text AS received_at FROM trailing_documents WHERE application_id = $1`, [rec.app.id]);
   const trailing = { recorded_security_instrument_received: trailingRows.some((t) => /recorded_security_instrument|recorded_mortgage|recorded_deed/.test(t.kind) && !!t.received_at), final_title_policy_received: trailingRows.some((t) => /final_title_policy/.test(t.kind) && !!t.received_at) };
-  prov.table("trailing", trailingRows.length ? `trailing_documents:${trailingRows.length} rows` : "trailing_documents: none yet (26.4 opens them at funding)", "26.4");
+  prov.table("trailing", `trailing_documents:application_id=${rec.app.id} (${trailingRows.length} rows)`, "26.4");
   const parcel = rec.entities("tax_parcels").find((p) => !property?.apn || p.data["apn"] === property.apn || p.id === property.apn) ?? rec.entities("tax_parcels").at(-1) ?? null;
   const parcelVerified = !!parcel; if (parcel) prov.entity("tax_service_parcel_verified", "tax_parcels", parcel.id, parcel.version, "24.4"); else prov.derived("tax_service_parcel_verified", "no tax_parcels row (24.4 lookupParcel not run): unverified", "24.4");
   const stmtSent = rec.last("escrow.statement.sent"); const stmtRow = rec.entity("disclosures", `initial_escrow_stmt:${rec.app.id}`);
@@ -268,30 +274,30 @@ export async function buildFundingSnapshot(rt: Runtime, applicationId: string, o
   // ── assemble; in nonprod a gap is filled from demoSnapshot (fixture_used); the fixture is never read when the record is complete
   const gaps = [...prov.gaps];
   const fixture = gaps.length && environment !== "production" ? demoSnapshot(app, { partner_name: partnerName }) : null;
-  const fill = <K extends keyof OriginationSnapshot>(k: K, v: OriginationSnapshot[K] | null): OriginationSnapshot[K] => (v !== null ? v : fixture ? fixture[k] : (null as unknown as OriginationSnapshot[K]));
+  let fixtureTaken = false;
+  const fill = <K extends keyof OriginationSnapshot>(k: K, v: OriginationSnapshot[K] | null): OriginationSnapshot[K] => { if (v !== null) return v; if (fixture) { fixtureTaken = true; return fixture[k]; } return null as unknown as OriginationSnapshot[K]; };
+  const fx = <T,>(v: T | null | undefined, k: keyof OriginationSnapshot): T | null => { if (v !== null && v !== undefined) return v; if (fixture) { fixtureTaken = true; return fixture[k] as unknown as T; } return null; };
   const snapshot: OriginationSnapshot = {
     application_id: app.id, partner_id: app.partner_party_id, partner_name: partnerName, partner_mers_org_id: partnerOrg,
     loan_purpose: purchase ? "purchase" : "refinance", rescindable, rescission_expires_at: rescissionExpires,
-    note: fill("note", note), closing: fill("closing", closingOut), final_cd: fill("final_cd", finalCd), escrow_analysis: escrow ?? (gaps.includes("escrow_analysis") && fixture ? fixture.escrow_analysis : null),
-    hpml, qm_type: S(qmEv?.payload["qm_type"]) ?? (fixture ? fixture.qm_type : ""), ltv_pct: ltv ?? (fixture ? fixture.ltv_pct : ""),
-    mi: miOut ?? (gaps.includes("mi") && fixture ? fixture.mi : null), hazard: fill("hazard", hazardOut), flood: fill("flood", floodOut), min: fill("min", min), custody: fill("custody", custody),
-    warehouse_advance_id: S(advanceFunded?.payload["advance_id"]) ?? (fixture ? fixture.warehouse_advance_id : null),
-    borrowers: borrowers.length ? borrowers : (fixture ? fixture.borrowers : []), consents: cons.consents.length ? cons.consents : (gaps.includes("consents") && fixture ? fixture.consents : []), disclosure_versions: Object.keys(cons.versions).length ? cons.versions : (fixture ? fixture.disclosure_versions : {}),
-    property: fill("property", property), documents: documents.length ? documents : (fixture ? fixture.documents : []), trailing, tax_service_parcel_verified: parcelVerified, initial_escrow_statement_delivered: stmtDelivered, ach_autopay_elected: cons.ach,
+    note: fill("note", note), closing: fill("closing", closingOut), final_cd: fill("final_cd", finalCd), escrow_analysis: escrow ?? (gaps.includes("escrow_analysis") ? fx(null, "escrow_analysis") : null),
+    hpml, qm_type: S(qmEv?.payload["qm_type"]) ?? fx(null, "qm_type") ?? "", ltv_pct: ltv ?? fx(null, "ltv_pct") ?? "",
+    mi: miOut ?? (gaps.includes("mi") ? fx(null, "mi") : null), hazard: fill("hazard", hazardOut), flood: fill("flood", floodOut), min: fill("min", min), custody: fill("custody", custody),
+    warehouse_advance_id: S(advanceFunded?.payload["advance_id"]) ?? fx(null, "warehouse_advance_id"),
+    borrowers: borrowers.length ? borrowers : (fx(null, "borrowers") ?? []), consents: cons.consents.length ? cons.consents : (gaps.includes("consents") ? fx(null, "consents") ?? [] : []), disclosure_versions: Object.keys(cons.versions).length ? cons.versions : (fx(null, "disclosure_versions") ?? {}),
+    property: fill("property", property), documents: documents.length ? documents : (fx(null, "documents") ?? []), trailing, tax_service_parcel_verified: parcelVerified, initial_escrow_statement_delivered: stmtDelivered, ach_autopay_elected: cons.ach,
   };
-  const fixtureUsed = !!fixture;
-  if (process.env["ORCH_SNAPSHOT_DUMP"]) { const { appendFileSync } = await import("node:fs"); appendFileSync(process.env["ORCH_SNAPSHOT_DUMP"], JSON.stringify({ application_id: app.id, gaps, sources: prov.sources, snapshot: canonical(snapshot) }) + "\n"); }
+  const fixtureUsed = fixtureTaken;
   const refused = environment === "production" && gaps.length ? "FIXTURE_REFUSED" : null;
-  const hash = snapshotHash(snapshot);
+  const stored = redactForStorage(snapshot); const hash = snapshotHash(stored);
   const orch = await orchestrationByApplication(rt.db, app.id);
   const escalations: SnapshotEscalation[] = refused ? [
     { kind: "ops_analyst", ownerRole: "ops_analyst", severity: "sev2", payload: { reason: "FIXTURE_REFUSED", application_id: app.id, gaps, environment } },
     { kind: "compliance", ownerRole: "compliance", severity: "sev2", payload: { reason: "FIXTURE_REFUSED", application_id: app.id, gaps, environment, rule: "35.6 rule 6: no fixture in production" } }] : [];
   let snapshotId: string | null = null; let eventId: string | null = null;
   if (o.persist) {
-    const stored = JSON.stringify(canonical(snapshot));
     const row = await rt.db.query<{ id: string }>(`INSERT INTO funding_snapshots (application_id, orchestration_id, snapshot_hash, snapshot, sources, gaps, fixture_used, environment, built_at, built_by, refused_code) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6::text[], $7, $8, $9, $10::jsonb, $11) RETURNING id::text AS id`,
-      [app.id, orch?.id ?? null, hash, stored, JSON.stringify(prov.sources), gaps, fixtureUsed, environment, o.now, JSON.stringify({ kind: o.actor.kind, id: o.actor.id, role: (o.actor as { role?: string }).role ?? null }), refused]);
+      [app.id, orch?.id ?? null, hash, JSON.stringify(canonical(stored)), JSON.stringify(prov.sources), gaps, fixtureUsed, environment, o.now, JSON.stringify({ kind: o.actor.kind, id: o.actor.id, role: (o.actor as { role?: string }).role ?? null }), refused]);
     snapshotId = row[0]!.id;
     const r = await rt.uow.run({ applicationId: app.id, ...(rec.loanId ? { loanId: rec.loanId } : {}) }, (ctx) => ctx.events.append({ type: EV.snapshotBuilt, applicationId: app.id, ...(rec.loanId ? { loanId: rec.loanId } : {}), aggregate: { kind: "funding_snapshot", id: snapshotId! }, actor: ORCH_ACTOR, occurredAt: o.now, payload: { snapshot_id: snapshotId, application_id: app.id, orchestration_id: orch?.id ?? null, snapshot_hash: hash, gaps, fixture_used: fixtureUsed, environment, refused_code: refused, sources: Object.keys(prov.sources).length } }), { clock: rt.clock });
     eventId = r.events[0]?.id ?? null;
@@ -318,7 +324,18 @@ export async function fundFromSnapshot(rt: Runtime, applicationId: string, o: { 
   }
   const funded = await fundedFromLog(rt, applicationId);
   if (!funded) throw new SnapshotRefused("NO_LOAN_FUNDED", `no loan.funded on the application's log (26.3's confirmDisbursement) — the hand-off has nothing to board`);
-  const r = await fundApplication(rt, applicationId, snapshot, funded, o.actor);
-  return { ...r, snapshot_id: row.id, snapshot_hash: overridden.length ? snapshotHash(snapshot) : row.snapshot_hash, overridden };
+  const r = await fundApplication(rt, applicationId, await rehydrate(rt, applicationId, snapshot), funded, o.actor);
+  let snapshotId = row.id; let hash = row.snapshot_hash;
+  if (overridden.length && !r.duplicate) {
+    // the replacement row: the officer's corrected snapshot as the hand-off used it (the overridden paths sourced to the officer), linked to 30.2's loan.staged
+    const stored = redactForStorage(snapshot); hash = snapshotHash(stored);
+    const staged = (await rt.db.query<{ id: string }>(`SELECT id::text AS id FROM loan_events WHERE application_id = $1 AND type = 'loan.staged' ORDER BY sequence DESC LIMIT 1`, [applicationId]))[0]?.id ?? null;
+    const prior = (await rt.db.query<{ sources: Record<string, Source>; orchestration_id: string | null; environment: string; fixture_used: boolean }>(`SELECT sources, orchestration_id::text AS orchestration_id, environment, fixture_used FROM funding_snapshots WHERE id = $1`, [row.id]))[0]!;
+    const sources = { ...prior.sources, ...Object.fromEntries(overridden.map((k) => [k, src("derived", `officer override (${o.actor.kind}:${o.actor.id}) replacing funding_snapshots:${row.id}`, "35.6")])) };
+    const ins = await rt.db.query<{ id: string }>(`INSERT INTO funding_snapshots (application_id, orchestration_id, snapshot_hash, snapshot, sources, gaps, fixture_used, environment, built_at, built_by, fund_event_id, refused_code) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6::text[], $7, $8, $9, $10::jsonb, $11, NULL) RETURNING id::text AS id`,
+      [applicationId, prior.orchestration_id, hash, JSON.stringify(canonical(stored)), JSON.stringify(sources), [], prior.fixture_used, prior.environment, o.now, JSON.stringify({ kind: o.actor.kind, id: o.actor.id, role: (o.actor as { role?: string }).role ?? null }), staged]);
+    snapshotId = ins[0]!.id;
+  }
+  return { ...r, snapshot_id: snapshotId, snapshot_hash: hash, overridden };
 }
 export type { PlainDate };

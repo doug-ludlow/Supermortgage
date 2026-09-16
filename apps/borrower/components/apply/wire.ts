@@ -127,7 +127,10 @@ async function goalCardOf(ctx: FlushContext): Promise<AnyCardInstance | null> {
 }
 
 export async function commitProperty(ctx: FlushContext): Promise<FlushResult> {
-  const { draft, applicationId } = ctx;
+  const { applicationId } = ctx;
+  // the branch: the draft's intent, else the record's purpose (a reload after the goal tap — the card is resolved and the page holds no intent)
+  const purpose = ctx.record?.header.purpose;
+  const draft: Draft = ctx.draft.intent === null && (purpose === "Buying" || purpose === "Refinancing") ? { ...ctx.draft, intent: purpose === "Buying" ? "purchase" : "refinance", refiGoal: ctx.record?.subject.transaction_type === "cash_out" ? "cash" : ctx.draft.refiGoal } : ctx.draft;
   const option = goalOptionOf(draft);
   if (!option) throw new StepError("apply.goal.required");
   if (!applicationId) throw new StepError("apply.property.waiting");
@@ -235,9 +238,12 @@ export async function commitYou(ctx: FlushContext): Promise<FlushResult> {
       outcomes.push(await resolveFirst([card], "identity.prior_residence.title", fieldsEvidence(card, edits, now())));
     }
   }
-  // (5) the refinance's home card, held since Property: the address, estate type and lien → the six-item address and the subject row
+  // (5) the refinance's home card, held since Property: the address, estate type and lien → the six-item address and the subject row.
+  // The card rides the identity tap's `application.field.captured{current_address}` asynchronously, so on a refinance it is awaited — by the draft's intent, or by the
+  // record's purpose when the draft is empty (a reload between Property and You: the answers are asked again on the card, and the API refuses a bare tap — 32.19-T13).
   const fresh = await loadCards();
-  const home = draft.intent === "refinance" ? await cardOf(fresh, "refi.home.confirm") : pending(fresh, "refi.home.confirm") ?? null;
+  const refinance = draft.intent === "refinance" || (draft.intent === null && ctx.record?.header.purpose === "Refinancing");
+  const home = refinance ? await cardOf(fresh, "refi.home.confirm") : pending(fresh, "refi.home.confirm") ?? null;
   if (home) {
     const state = stateOf(draft);
     const edits: Record<string, string> = {};

@@ -160,31 +160,9 @@ export function fleschKincaid(text: string): { grade: number; words: number; sen
   return { grade: Math.round(grade * 10) / 10, words: words.length, sentences, syllables: syl };
 }
 
-// ---------------------------------------------------------------- the shell: the built Next.js app on this test's API, driven with Playwright (src/domain/borrower/harness.ts, shared with 32.16's rail suite and 32.19)
+// ---------------------------------------------------------------- the Apply product (32.19): the built Next.js app on this test's API, driven with Playwright (src/domain/borrower/harness.ts, shared with 32.16's rail suite and 32.19)
 const H = createHarness({ apiBase: () => base });
-const { pageFor, openApply, inViewport, stopShell, appLog } = H;
-/** 32.16 §2.2: a card's home is its rail row; expanding it (client state) renders the existing component. The current ask is open by default; the other
- * pending cards wait behind "n more after this" and the reference sections start collapsed (32.16-T11), so the row is revealed first: the line, then its section. */
-async function expandRail(page: Page, cardId: string): Promise<void> {
-  const sel = `[data-rail-card="${cardId}"]`;
-  const later = page.getByTestId("needs-later").first();
-  if ((await page.locator(sel).count()) === 0 && (await later.count()) && (await later.getAttribute("aria-expanded")) === "false") await later.click();
-  const row = page.locator(sel).first(); await row.waitFor({ state: "attached", timeout: 30_000 });
-  const sections = row.locator("xpath=ancestor::section[@data-record-section]");   // outermost first: "Your record", then the card's own section
-  for (let k = 0; k < (await sections.count()); k++) { const sec = sections.nth(k); if ((await sec.getAttribute("data-open")) === "false") await sec.locator("> h2 > button").click(); }
-  if (!(await row.isVisible()) && (await later.count()) && (await later.getAttribute("aria-expanded")) === "false") await later.click();
-  await row.waitFor({ state: "visible", timeout: 30_000 });
-  if ((await row.getAttribute("data-expanded")) !== "true") await row.locator("> button").click();
-}
-/** The shell's thread rendered from this test's API: the shell region, then the conversation with at least one message. */
-async function openShell(token: string, width: number): Promise<{ page: Page; ctx: Context }> {
-  const p = await pageFor(token, width);
-  await p.page.waitForSelector('[data-testid="shell"]', { timeout: 30_000 });
-  try { await p.page.waitForSelector('[data-testid="thread"] .sm-msg', { timeout: 30_000 }); }
-  catch (e) { const notice = await p.page.locator(".sm-error").allInnerTexts().catch(() => [] as string[]); const failed = await p.page.locator('[data-testid="card-error"]').evaluateAll((els: unknown[]) => (els as { getAttribute(n: string): string | null }[]).map((e) => `${e.getAttribute("data-card-kind")}: ${e.getAttribute("data-error")}`)).catch(() => [] as string[]); (p.page as Page & { logs?: string[] }).logs?.push(`card errors=${JSON.stringify(failed)}`); throw new Error(`the shell rendered no thread: ${e instanceof Error ? e.message.split("\n")[0] : String(e)}; notice=${JSON.stringify(notice)}; page logs=${JSON.stringify((p.page as Page & { logs?: string[] }).logs?.slice(-10))}; app log=${appLog().slice(-1500)}`); }
-  return p;
-}
-
+const { pageFor, openApply, inViewport, inViewportSel, stopShell, appLog } = H;
 // ---------------------------------------------------------------- the main journey (App J) and the snapshots T2 measures
 let J: App; let W: App; let leadInteraction = ""; let deepLinkToken = ""; let deepLinkCard = ""; let deepLinkCreatedAt = "";
 interface Snapshot { label: string; subject: { application_id: string | null; loan_id: string | null }; record: Json; timers: { code: string; status: string; due_at: string | null }[]; published: Record<string, string | null> }
@@ -377,15 +355,16 @@ test("32.13-T5: Cards commit, chat doesn't — Given a borrower message whose te
   assert.ok((await events(J.j.appId, "intent.to_proceed.received")).length >= 1, "the tap committed intent");
 });
 
-test("32.13-T11: Deep links — Given an SMS deep link opened without a session, then L1 is required through `Account` with the token retained before any loan data renders, then the card renders on its step or in Tasks; the token expires at 7 days.", { skip: skip || "re-driven against the Apply product in Session 4 (32.19)" }, async () => {
+test("32.13-T11: Deep links — Given an SMS deep link opened without a session, then L1 is required through `Account` with the token retained before any loan data renders, then the card renders on its step or in Tasks; the token expires at 7 days.", { skip }, async () => {
   assert.ok(deepLinkToken, "T5 produced a deep link");
   // without a session: 401 with {code, copy_key} and nothing else — no loan data
   const anon = await api("GET", `/v1/borrower/deeplink/${deepLinkToken}`);
   assert.equal(anon.status, 401); assert.equal(anon.body["code"], "AUTH_REQUIRED"); assert.deepEqual(Object.keys(anon.body).sort(), ["code", "copy_key"]); assert.equal(anon.body["copy_key"], "auth.sign_in");
-  // the link page itself renders no loan data before L1: a code field, no card, no address, no amount
+  // the link page itself renders Account (sign in) with the token retained and no loan data before L1: no card, no address, no amount, no Apply screen
   const { page, ctx } = await pageFor(null, 390, `/app/d/${deepLinkToken}`);
   await page.waitForSelector("#otp", { timeout: 30_000 });
-  assert.equal(await page.locator("article[data-card-kind]").count(), 0, "no card renders before L1");
+  assert.equal(await page.locator(`[data-testid="deep-link"][data-deep-link-token="${deepLinkToken}"] [data-testid="account"][data-mode="sign_in"]`).count(), 1, "Account, with the token retained");
+  assert.equal(await page.locator("article[data-card-kind]").count(), 0, "no card renders before L1"); assert.equal(await page.getByTestId("apply").count(), 0, "no Apply screen before L1");
   const html = await page.content(); assert.ok(!html.includes("Central Ave") && !/\$\d/.test(html.replace(/<script[\s\S]*?<\/script>/g, "")), "no address or amount before L1");
   await ctx.close();
   // L1 (a code) — the token resolves to the card and the party
@@ -395,6 +374,18 @@ test("32.13-T11: Deep links — Given an SMS deep link opened without a session,
   const row = (await db.query<{ created_at: string; expires_at: string; party_id: string }>(`SELECT created_at, expires_at, party_id FROM deep_links WHERE token = $1`, [deepLinkToken]))[0]!;
   assert.equal(row.party_id, J.partyA); assert.equal(DEEP_LINK_DAYS, 7);
   assert.equal(Date.parse(row.expires_at) - Date.parse(row.created_at), 7 * 24 * 3600 * 1000, "expires 7 days after creation"); assert.equal(new Date(row.expires_at).toISOString(), ok.body["expires_at"]);
+  // then the card renders on its step or in Tasks (32.19 §3.3): T5's card was tapped since (resolved — nothing to render), so a link to a pending card of the party, minted by the same
+  // repository the reply used (createDeepLink), is opened with the session: /app/d/{token} → /app?card={id} → the card's copy key names no step → Tasks with the card expanded
+  const pendingId = await sendCard(J, J.partyA, "ChoiceCard", "intent.title", { title: "Ready to proceed?", options: [{ id: "proceed", label: "Yes, proceed", is_primary: true }, { id: "later", label: "Not yet" }], command: "intent.record", command_args_by_option: { proceed: { statement_text: "I want to proceed" }, later: {} } }, "intent.record");
+  const link = await router.ui.createDeepLink({ party_id: J.partyA, target: { card_instance_id: pendingId }, now: clock.now() });
+  const opened = await pageFor(s.token, 390, `/app/d/${link.token}`);
+  await opened.page.waitForURL(/\/app\?card=/, { timeout: 60_000 });
+  assert.equal(new URL(opened.page.url()).searchParams.get("card"), pendingId, "the target card on /app?card=");
+  await opened.page.waitForSelector('[data-testid="apply"][data-tab="tasks"]', { timeout: 60_000 });
+  const host = opened.page.locator(`[data-testid="apply-tasks-hosted"] [data-testid="apply-card-${pendingId}"]`); await host.waitFor({ timeout: 30_000 });
+  assert.equal(await host.getAttribute("data-expanded"), "true", "the card is the focused one in Tasks"); assert.equal(await host.locator('article[data-card-kind="ChoiceCard"]').count(), 1, "rendered through components/cards");
+  assert.equal(await opened.page.getByTestId("apply-error").count(), 0);
+  await opened.ctx.close();
   // another party's session never resolves it
   const other = await api("GET", `/v1/borrower/deeplink/${deepLinkToken}`, undefined, (await signIn(J.B)).token); assert.equal(other.status, 403); assert.equal(other.body["code"], "PARTY_SCOPE");
   // at 7 days it is gone: a link minted 7 days and a minute before now (the same repository, the same 7-day rule) answers 410 and nothing else
@@ -406,7 +397,7 @@ test("32.13-T11: Deep links — Given an SMS deep link opened without a session,
   const unknown = await api("GET", `/v1/borrower/deeplink/nope-${randomUUID().slice(0, 8)}`, undefined, s.token); assert.equal(unknown.status, 404); assert.equal(unknown.body["code"], "DEEP_LINK_UNKNOWN");
 });
 
-test("32.13-T12: Degraded vendor — Given Truv returns an error, then the Connect step shows `failed` with the upload fallback and no error code is shown to the borrower.", { skip: skip || "re-driven against the Apply product in Session 4 (32.19)" }, async () => {
+test("32.13-T12: Degraded vendor — Given Truv returns an error, then the Connect step shows `failed` with the upload fallback and no error code is shown to the borrower.", { skip }, async () => {
   const cardId = await sendCard(J, J.partyA, "ConnectCard", "income.connect.purpose", { vendor: "truv_income", vendor_fake: "FAKE", purpose_text: "", what_we_get: [], fallback: { label: "Send paystubs instead" }, state: "not_started", command_args: { vendor: "truv_income", borrower_id: "B1", fee_paid_by: "sm" } }, "verification.connect");
   const tok = (await signIn(J.A)).token;
   const go = await api("POST", `/v1/borrower/cards/${cardId}/resolve`, { option_id: "connect", evidence: { vendor: "truv_income", started_at: clock.now() } }, tok);
@@ -426,13 +417,19 @@ test("32.13-T12: Degraded vendor — Given Truv returns an error, then the Conne
   const msgs = await messagesOf(J.partyA); assert.ok(msgs.some((m) => m.body_text === "{{copy:connect.failed.fallback}}" && m.card_instance_id === cardId), "the fallback line");
   const upload = (await cardsOf(J.partyA, `AND kind = 'UploadCard' AND status = 'pending'`)).find((c) => c.props["fallback_for_card_instance_id"] === cardId);
   assert.ok(upload, "an UploadCard is the fallback"); assert.equal(upload.copy_key, "income.upload.fallback"); assert.equal(upload.command_ref, "document.upload");
-  // in the shell: the ConnectCard reads failed with the documents path, the code nowhere on the page
-  const { page, ctx } = await openShell(tok, 1280);
-  await expandRail(page, cardId); await expandRail(page, upload.card_instance_id);
-  const article = page.locator(`article[data-card-id="${cardId}"]`).first(); await article.waitFor({ timeout: 30_000 });
-  const text = await article.innerText(); assert.match(text, /Couldn't connect|documents instead/i); assert.ok(!/TRUV_ERR|ITEM_LOGIN_REQUIRED|provider outage/.test(await page.content()), "no vendor code on the page");
-  assert.ok((await page.locator(`article[data-card-id="${upload.card_instance_id}"]`).count()) >= 1, "the UploadCard renders");
-  assert.equal(await page.locator('[data-testid="card-error"]').count(), 0, "every card renders");
+  // on the Apply product (32.19 §2.2 connect): Tasks → the Connect step hosts the failed ConnectCard itself — `failed` with the documents fallback — and the UploadCard beside it; no vendor code anywhere on the page
+  const { page, ctx } = await openApply(tok, 1280);
+  await page.getByTestId("apply-tab-tasks").first().click(); await page.waitForSelector('[data-testid="apply-task-connect"]', { timeout: 30_000 });
+  await page.getByTestId("apply-task-connect").first().click(); await page.waitForSelector('[data-testid="apply"][data-step="connect"]', { timeout: 30_000 });
+  const host = page.locator(`[data-testid="apply"][data-step="connect"] [data-testid="apply-card-${cardId}"]`).first(); await host.waitFor({ timeout: 30_000 });
+  const article = host.locator(`article[data-card-id="${cardId}"]`).first(); await article.waitFor({ timeout: 30_000 });
+  assert.equal(await article.getAttribute("data-card-kind"), "ConnectCard", "the ConnectCard component on the step");
+  assert.match((await article.getByTestId("connect-state").innerText()).trim(), /Couldn't connect — we'll take documents instead/, "the Connect step shows failed");
+  assert.equal(await article.getByRole("button", { name: "Send paystubs instead" }).count(), 1, "the upload fallback on the card"); assert.equal(await article.getByRole("button", { name: "Try Truv again" }).count(), 1);
+  const uploadHost = page.locator(`[data-testid="apply"][data-step="connect"] [data-testid="apply-card-${upload.card_instance_id}"] article[data-card-kind="UploadCard"]`); assert.equal(await uploadHost.count(), 1, "the UploadCard renders on the step");
+  assert.ok(!/TRUV_ERR|ITEM_LOGIN_REQUIRED|provider outage/.test(await page.content()), "no vendor code on the page");
+  assert.equal(await page.locator('[data-testid="card-error"]').count(), 0, "every card renders"); assert.equal(await page.getByTestId("apply-error").count(), 0, "no error line");
+  assert.equal(await page.locator('[data-testid="apply"] article[data-card-kind="ConnectCard"]').count(), 1, "only the failed connection is hosted as a card (the others are rows)");
   await ctx.close();
 });
 
@@ -580,18 +577,21 @@ test("32.13-T2: No invented dates — Given any Dates row rendered, then its `ti
 });
 
 // ═══════════════════════════════════ the shell on this API: a person, mobile parity
-test("32.13-T8: Talk to a person — Given any screen, then a control emitting `human.request` is visible without scrolling (the input bar; on a phone the Chat tab is in the Apply tab rail on every screen and its input bar is in the viewport); after `human.transfer.completed`, a `PersonCard{human_agent}` exists.", { skip: skip || "re-driven against the Apply product in Session 4 (32.19)" }, async () => {
+test("32.13-T8: Talk to a person — Given any screen, then a control emitting `human.request` is visible without scrolling (the input bar; on a phone the Chat tab is in the Apply tab rail on every screen and its input bar is in the viewport); after `human.transfer.completed`, a `PersonCard{human_agent}` exists.", { skip }, async () => {
   const s = await signIn(J.A);
   const requested = async () => Number((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM loan_events WHERE type = 'human.transfer.requested' AND (application_id = $1 OR loan_id = $2)`, [J.j.appId, J.j.loanId]))[0]!.n);
   const requestedBefore = await requested();
-  // 32.16 §1 principle 8 (docs/ux/17, amended): there is NO "Talk to a person" control while no person exists — the borrower asks in words and
-  // the same `human.request` command runs from the input bar (commands.ts: "human" → human.request → human.transfer.requested)
-  const { page, ctx } = await openShell(s.token, 1280);
+  // 32.16 §1 principle 8 (docs/ux/17, amended): there is NO "Talk to a person" control while no person exists — the borrower asks in words and the same
+  // `human.request` command runs from the input bar (commands.ts: "human" → human.request → human.transfer.requested). On the Apply product (32.19 §2.3) the
+  // input bar is Chat's composer in the fixed dock: POST /v1/borrower/messages only.
+  const { page, ctx } = await openApply(s.token, 1280);
   assert.equal(await page.getByTestId("talk-to-person").count(), 0, "no Talk to a person control (32.16 §1 principle 8)");
-  assert.ok(await inViewport(page, "action-bar"), "the input bar is in the viewport at 1280");
-  await page.getByTestId("action-bar").locator("input[type=text], input:not([type])").first().fill("human"); await page.getByTestId("send").click(); await page.waitForTimeout(1500); await settle();
+  await page.getByTestId("apply-tab-chat").first().click(); await page.waitForSelector('[data-testid="apply"][data-tab="chat"]', { timeout: 15_000 });
+  assert.ok(await inViewportSel(page, ".sm-composer input"), "the input bar is in the viewport at 1280");
+  await page.locator(".sm-composer input").first().fill("human"); await page.locator(".sm-composer input").first().press("Enter"); await page.waitForTimeout(1500); await settle();
   assert.equal(await requested(), requestedBefore + 1, "the word emits human.request → human.transfer.requested");
-  assert.ok(await inViewport(page, "action-bar"), "still in the viewport after the thread grew");
+  const posts = (page.requests ?? []).filter((r) => r.startsWith("POST ")); assert.equal(posts.length, 1, `one POST from Chat: ${JSON.stringify(posts)}`); assert.ok(posts[0]!.startsWith("POST /v1/borrower/messages "), "POST /v1/borrower/messages only — no command, no card");
+  assert.ok(await inViewportSel(page, ".sm-composer input"), "still in the viewport after the thread grew");
   // the person joins: 20.3's warm transfer on the session's interaction, then the delta op `human_joined` → human.transfer.completed
   const lead = await entity("leads", J.j.appId); const interactions = (lead?.["interactions"] as { interaction_id: string }[] | undefined) ?? [];
   leadInteraction = interactions.at(-1)!.interaction_id; assert.ok(leadInteraction, "the session opened a 20.3 interaction");
@@ -603,27 +603,26 @@ test("32.13-T8: Talk to a person — Given any screen, then a control emitting `
   const person = (await cardsOf(J.partyA, `AND kind = 'PersonCard'`)).filter((c) => c.props["role"] === "human_agent" && c.props["name"] === "Sam");
   assert.equal(person.length, 1, "PersonCard{human_agent} for the person who joined"); assert.equal(person[0]!.copy_key, "person.human_agent"); assert.equal(person[0]!.status, "resolved", "no action: filed as read");
   assert.equal((await cardsOf(J.partyB, `AND kind = 'PersonCard'`)).filter((c) => c.props["role"] === "human_agent" && c.props["name"] === "Sam").length, 1, "the co-borrower sees the same person");
-  await page.reload({ waitUntil: "load" }); await page.waitForSelector('[data-testid="thread"] .sm-msg', { timeout: 30_000 });
-  // 32.16 §2.2: the person's card lives under People on the rail (expanded on click); the thread carries its reference
-  await expandRail(page, person[0]!.card_instance_id);
-  const card = page.locator('article[data-card-kind="PersonCard"]', { hasText: "Sam" }); assert.ok((await card.count()) >= 1, "the PersonCard for the person who joined renders in the shell (beside 32.5's pending-name card)");
-  assert.match(await card.first().innerText(), /A person on your loan/);
+  // Chat reads the thread's own lines through the copy library (a `{{copy:…}}` line renders as text, never a token): the borrower's own word and the API's thread.human_requested reply
+  await page.reload({ waitUntil: "load" }); await page.waitForSelector('[data-testid="apply"][data-tab]', { timeout: 30_000 });
+  await page.getByTestId("apply-tab-chat").first().click(); await page.waitForSelector('[data-testid="apply-chat"] .sm-msg', { timeout: 30_000 });
+  const chat = await page.getByTestId("apply-chat").first().innerText();
+  assert.match(chat, /\bhuman\b/, "the borrower's own line"); assert.match(chat, /Bringing a person in now\. They'll pick up right here\./, "thread.human_requested's text on Chat"); assert.doesNotMatch(chat, /\{\{copy:/, "no raw copy token");
   assert.equal(await page.getByTestId("talk-to-person").count(), 0);
   await ctx.close();
-  // 390: the five-tab shell (01 §1.2). A session lands on Chat (32.16 §2.0), where the input bar is — no control either. Every other tab keeps the
-  // fixed tab rail in the viewport, so the Chat tab, and with it the input bar, is one tap away without scrolling on every screen.
-  const m = await openShell(s.token, 390);
-  assert.equal(await m.page.locator('[data-testid="shell"][data-mobile-shell="1"][data-tab="chat"]').count(), 1, "a session lands on the Chat tab");
+  // 390: the five-tab chrome (32.19 §2.3). Every tab keeps the fixed rail in the viewport, so the Chat tab — and with it the input bar — is one tap away without scrolling on every screen.
+  const m = await openApply(s.token, 390);
+  assert.equal(await m.page.locator('[data-testid="apply"][data-tab="apply"]').count(), 1, "a session lands on Apply");
   assert.equal(await m.page.getByTestId("talk-to-person").count(), 0, "no Talk to a person control at 390");
-  assert.ok(await inViewport(m.page, "action-bar"), "the input bar is in the viewport at 390");
-  for (const t of ["tab-apply", "tab-loan", "tab-tasks", "tab-account"]) {
-    await m.page.getByTestId(t).click(); await m.page.waitForSelector(`[data-testid="shell"][data-tab="${t.slice(4)}"]`, { timeout: 15_000 });
-    assert.ok(await inViewport(m.page, "tab-chat"), `${t}: the Chat tab is in the viewport without scrolling`);
+  for (const t of ["apply", "loan", "tasks", "account"]) {
+    await m.page.getByTestId(`apply-tab-${t}`).first().click(); await m.page.waitForSelector(`[data-testid="apply"][data-tab="${t}"]`, { timeout: 15_000 });
+    assert.ok(await inViewport(m.page, "apply-tab-chat"), `${t}: the Chat tab is in the viewport without scrolling`);
     assert.equal(await m.page.getByTestId("talk-to-person").count(), 0, `${t}: no Talk to a person control`);
+    assert.ok(await m.page.evaluate<boolean>("document.documentElement.scrollWidth <= 390 && document.body.scrollWidth <= 390"), `${t}: the page never scrolls sideways`);
   }
-  await m.page.getByTestId("tab-chat").click(); await m.page.waitForSelector('[data-testid="shell"][data-tab="chat"]', { timeout: 15_000 });
-  assert.ok(await inViewport(m.page, "action-bar"), "back on Chat the input bar is in the viewport");
-  assert.ok(await inViewport(m.page, "tab-nav"), "the tab rail is in the viewport");
+  await m.page.getByTestId("apply-tab-chat").first().click(); await m.page.waitForSelector('[data-testid="apply"][data-tab="chat"]', { timeout: 15_000 });
+  assert.ok(await inViewportSel(m.page, ".sm-composer input"), "on Chat the input bar is in the viewport at 390");
+  assert.ok(await inViewportSel(m.page, ".sm-tabs"), "the tab rail is in the viewport");
   assert.ok(await m.page.evaluate<boolean>("document.documentElement.scrollWidth <= 390 && document.body.scrollWidth <= 390"), "the page never scrolls sideways");
   await m.ctx.close();
   // the serviced loan: 11.3's contact log records the transfer to a person (the platform's `human_transferred`) — the same PersonCard on the loan
@@ -632,7 +631,30 @@ test("32.13-T8: Talk to a person — Given any screen, then a control emitting `
   assert.ok((await cardsOf(J.partyA, `AND kind = 'PersonCard'`)).some((c) => c.props["role"] === "human_agent" && c.subject_loan_id === J.j.loanId), "PersonCard{human_agent} on the serviced loan");
 });
 
-test("32.13-T10: Mobile parity — Given every card kind at 390 px, then it is operable in Tasks and Review, My Loan shows the badge and next event, and Tasks shows the needed count.", { skip: skip || "re-driven against the Apply product in Session 4 (32.19)" }, async () => {
+test("32.13-T10: Mobile parity — Given every card kind at 390 px, then it is operable in Tasks and Review, My Loan shows the badge and next event, and Tasks shows the needed count.", { skip: skip || "My Loan shows no application record by docs/ux/18 §2.3 (owner call)" }, async () => {
+  // My Loan for a party with an application and no loan shows no application record (docs/ux/18 §2.3, owner call), so this sentence's "My Loan shows the badge and next event" has no Apply screen to measure on yet; the old shell's helpers stay here, with the test, until the owner decides.
+    /** 32.16 §2.2: a card's home is its rail row; expanding it (client state) renders the existing component. The current ask is open by default; the other
+   * pending cards wait behind "n more after this" and the reference sections start collapsed (32.16-T11), so the row is revealed first: the line, then its section. */
+  async function expandRail(page: Page, cardId: string): Promise<void> {
+    const sel = `[data-rail-card="${cardId}"]`;
+    const later = page.getByTestId("needs-later").first();
+    if ((await page.locator(sel).count()) === 0 && (await later.count()) && (await later.getAttribute("aria-expanded")) === "false") await later.click();
+    const row = page.locator(sel).first(); await row.waitFor({ state: "attached", timeout: 30_000 });
+    const sections = row.locator("xpath=ancestor::section[@data-record-section]");   // outermost first: "Your record", then the card's own section
+    for (let k = 0; k < (await sections.count()); k++) { const sec = sections.nth(k); if ((await sec.getAttribute("data-open")) === "false") await sec.locator("> h2 > button").click(); }
+    if (!(await row.isVisible()) && (await later.count()) && (await later.getAttribute("aria-expanded")) === "false") await later.click();
+    await row.waitFor({ state: "visible", timeout: 30_000 });
+    if ((await row.getAttribute("data-expanded")) !== "true") await row.locator("> button").click();
+  }
+  /** The shell's thread rendered from this test's API: the shell region, then the conversation with at least one message. */
+  async function openShell(token: string, width: number): Promise<{ page: Page; ctx: Context }> {
+    const p = await pageFor(token, width);
+    await p.page.waitForSelector('[data-testid="shell"]', { timeout: 30_000 });
+    try { await p.page.waitForSelector('[data-testid="thread"] .sm-msg', { timeout: 30_000 }); }
+    catch (e) { const notice = await p.page.locator(".sm-error").allInnerTexts().catch(() => [] as string[]); const failed = await p.page.locator('[data-testid="card-error"]').evaluateAll((els: unknown[]) => (els as { getAttribute(n: string): string | null }[]).map((e) => `${e.getAttribute("data-card-kind")}: ${e.getAttribute("data-error")}`)).catch(() => [] as string[]); (p.page as Page & { logs?: string[] }).logs?.push(`card errors=${JSON.stringify(failed)}`); throw new Error(`the shell rendered no thread: ${e instanceof Error ? e.message.split("\n")[0] : String(e)}; notice=${JSON.stringify(notice)}; page logs=${JSON.stringify((p.page as Page & { logs?: string[] }).logs?.slice(-10))}; app log=${appLog().slice(-1500)}`); }
+    return p;
+  }
+
   // every 01 §3 card kind, seeded for the co-borrower through 32.1 with the props the components render (the vitest fixtures of apps/borrower/tests/cards)
   const KINDS: [string, string, Json, string | null][] = [
     ["StatusCard", "status.title", { state_label: "Application received Oct 20, 2026", next_event_label: "Your Loan Estimate arrives by", next_event_at: "2026-10-23T23:59:59-07:00" }, null],

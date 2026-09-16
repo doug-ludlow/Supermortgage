@@ -34,6 +34,10 @@ export type StepProps = {
   setTab: (t: Tab) => void;
   /** A card hosted inside a step (a caution row's lift card, a declarations question, the demographics card, Tasks' orphans) resolves through the same API call as the steps' own taps. */
   onResolveCard: (cardInstanceId: string, req: ResolveRequest) => Promise<void>;
+  /** `?card=` (docs/ux/18 §3.3): the card the page was opened on — its row on the step is marked expanded. */
+  focusedCard?: string | null;
+  /** A ConnectCard hosted on the Connect step (a failed connection's "Try again"): the FAKE session route, never `verification.connect` (docs/ux/18 §3.0). */
+  onLaunchVendor?: (vendor: string, cardInstanceId: string) => Promise<{ vendor_session_id: string; outcome?: string }>;
 };
 
 function Continue({ busy, onContinue, disabled = false, labelKey = "apply.continue" }: { busy: boolean; onContinue: () => void; disabled?: boolean; labelKey?: string }) {
@@ -233,10 +237,32 @@ export function YouStep({ step, draft, cards, record, busy, patch, onContinue, o
   );
 }
 
-export function ConnectStep({ draft, busy, patch, onContinue }: StepProps) {
+/** A ConnectCard's state as the step reads it: the stored outcome once resolved, else the card's own `state` (the vendor webhook moves it — 32.1 §3.4). */
+const connectStateOf = (card: AnyCardInstance): string => (card.kind === "ConnectCard" ? (card.status === "resolved" ? String((card.evidence as { outcome?: string } | undefined)?.outcome ?? card.props.state) : card.props.state) : "");
+
+/**
+ * Connect (docs/ux/18 §2.2): the monthly income and the employer over the step's connector cards. Each ConnectCard of the step
+ * (payroll, assets) is a row — `apply-card-{id}` with its state — so a return (`/app/return/{vendor}/{card}` → `?card=`) lands on
+ * it; a connection the vendor failed (`state = failed`, 32.13-T12) is hosted as the card component itself: "Try again" runs the
+ * FAKE session route, the fallback is the card's own document ask, and the UploadCard 13-cross-cutting sent for it renders beside
+ * it — no error code reaches the borrower (the component shows none). The CTA runs the two FAKE sessions and the income card.
+ */
+export function ConnectStep({ step, draft, cards, record, busy, patch, onContinue, onResolveCard, focusedCard, onLaunchVendor }: StepProps) {
+  const connectors = cards.filter((c) => c.kind === "ConnectCard" && stepOfCopyKey(c.copy_key) === step && !isGapCard(c)).sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
+  const uploads = cards.filter((c) => c.kind === "UploadCard" && c.status === "pending" && stepOfCopyKey(c.copy_key) === step);
   return (
     <Bubble titleKey="apply.connect.title">
       {SHOW_FAKE_MARKERS ? <p className="sm-lead" data-copy-key="apply.connect.fake_note"><span className="sm-fake">{copy("apply.connect.fake_note")}</span></p> : null}
+      {connectors.map((c) => {
+        const state = connectStateOf(c);
+        if (c.status === "pending" && state === "failed") return <HostedCard key={c.card_instance_id} card={c} record={record} busy={busy} expanded={focusedCard === c.card_instance_id} onResolveCard={onResolveCard} onLaunchVendor={onLaunchVendor} />;
+        return (
+          <div key={c.card_instance_id} className="sm-row sm-connector" data-testid={`apply-card-${c.card_instance_id}`} data-copy-key={c.copy_key} data-state={state} data-expanded={focusedCard === c.card_instance_id ? "true" : "false"}>
+            <span data-copy-key={c.copy_key}>{copy(c.copy_key)}</span>
+          </div>
+        );
+      })}
+      {uploads.map((c) => <HostedCard key={c.card_instance_id} card={c} record={record} busy={busy} expanded={focusedCard === c.card_instance_id} onResolveCard={onResolveCard} />)}
       <Field copyKey="apply.connect.income" value={draft.income} inputMode="decimal" onChange={(income) => patch({ income })} />
       <Field copyKey="apply.connect.employer" value={draft.employer} onChange={(employer) => patch({ employer })} />
       <Continue busy={busy} onContinue={onContinue} labelKey="apply.connect.cta" />
@@ -288,11 +314,11 @@ export function DetailsStep({ draft, cards, busy, patch, onContinue }: StepProps
 }
 
 /** A `components/cards` card inside the column (docs/ux/18 §2.2: the protocol renderers are the data layer, rendered inside the Apply chrome): the card's own component, resolving through the page's one resolve path. `apply-card-{id}` is the test hook. */
-export function HostedCard({ card, record, busy = false, expanded = false, onResolveCard, onOpen }: { card: AnyCardInstance; record: BorrowerRecord | null; busy?: boolean; expanded?: boolean; onResolveCard: StepProps["onResolveCard"]; onOpen?: (target: { card_instance_id?: string; document_id?: string }) => void }) {
+export function HostedCard({ card, record, busy = false, expanded = false, onResolveCard, onOpen, onLaunchVendor }: { card: AnyCardInstance; record: BorrowerRecord | null; busy?: boolean; expanded?: boolean; onResolveCard: StepProps["onResolveCard"]; onOpen?: (target: { card_instance_id?: string; document_id?: string }) => void; onLaunchVendor?: StepProps["onLaunchVendor"] }) {
   return (
     <div className="sm-card-host" data-testid={`apply-card-${card.card_instance_id}`} data-copy-key={card.copy_key} data-gap={isGapCard(card) ? "true" : undefined} data-expanded={expanded ? "true" : "false"}>
       {isGapCard(card) ? <p className="sm-lead" data-copy-key="application.gap.resend">{copy("application.gap.resend")}</p> : null}
-      <Card card={card} timezone={record?.timezone ?? "America/Phoenix"} busy={busy} onResolve={(req) => onResolveCard(card.card_instance_id, req)} onOpen={onOpen} />
+      <Card card={card} timezone={record?.timezone ?? "America/Phoenix"} busy={busy} onResolve={(req) => onResolveCard(card.card_instance_id, req)} onOpen={onOpen} onLaunchVendor={onLaunchVendor} />
     </div>
   );
 }

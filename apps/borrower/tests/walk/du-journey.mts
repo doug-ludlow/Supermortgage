@@ -1,6 +1,8 @@
 /**
- * The deploy walk's twelfth outcome (demo-walk.mts): a fresh borrower driven to the DU moment over the borrower API alone —
- * the taps and the FAKE connector sessions, never a message to the model — then the DU-side facts read through the ops API.
+ * The DU-side verdict of the deploy walk (demo-walk.mts outcomes 3 and 5 — the DU moment reached from the Apply screens; the
+ * screens are driven by apply-journey.mts) read through the ops API: `duVerdict` and `waitForDuMoment`. `driveToDuMoment` is the
+ * API-only journey (the taps and the FAKE connector sessions, never a message to the model) the old twelfth outcome ran and a dry
+ * run against a local API can still use.
  *
  * The journey is src/domain/borrower/32-18.spec.test.ts's `toDu` helper (signedUpWithGoal / identity / typeSsn / home /
  * income / assets / aboutYouAndSixItems) restated over an `ApiFn`, so the same steps run through the page's same-origin

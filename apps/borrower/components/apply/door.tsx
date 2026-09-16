@@ -9,6 +9,7 @@
  * Every rendered string is a copy key.
  */
 import { Account } from "@/components/account/Account";
+import { MessageBody } from "@/components/flows/3-entry";
 import { DocumentsSection, LoanSection, NextSection, NumbersSection, PeopleSection, PropertySection, StatusSection, type RecordLink } from "@/components/record/sections";
 import { copy, copyOptions } from "@/lib/copy";
 import { formatDate } from "@/lib/format";
@@ -102,7 +103,9 @@ export function TabScreens(p: TabProps) {
       <div className="sm-chat" data-testid="apply-chat">
         {lines.length === 0 ? <p className="sm-lead" data-copy-key="apply.chat.empty">{copy("apply.chat.empty")}</p> : null}
         {lines.map((m) => (
-          <div key={m.message_id} className={m.sender === "borrower" ? "sm-msg me" : "sm-msg"} data-sender={m.sender}>{m.body_text}</div>
+          <div key={m.message_id} className={m.sender === "borrower" ? "sm-msg me" : "sm-msg"} data-sender={m.sender}>
+            <MessageBody text={m.body_text ?? ""} partnerLegalName={p.me.partner.legal_name} tokens={m.copy_tokens} />{/* a `{{copy:key}}` line renders the copy library's text (the thread's own renderer), never the token */}
+          </div>
         ))}
       </div>
     );

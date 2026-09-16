@@ -109,14 +109,6 @@ function reviveCents(v: unknown): unknown {
 // ---------------------------------------------------------------- the shell: the built Next.js app on this test's API, driven with Playwright (src/domain/borrower/harness.ts, shared with 32.13 and 32.19)
 const H = createHarness({ apiBase: () => base });
 const { pageFor, openApply, inViewportSel: inViewport, stopShell, appLog } = H;
-/** The shell rendered from this test's API: the shell region, the conversation with at least one line (on a phone the Chat tab), the rail with Needed from you (on a phone mounted behind the tabs as the record sheet). */
-async function openShell(token: string, width: number, path = "/app"): Promise<{ page: Page; ctx: Context }> {
-  const p = await pageFor(token, width, path);
-  await p.page.waitForSelector('[data-testid="shell"]', { timeout: 30_000 });
-  try { await p.page.waitForSelector('[data-testid="thread"] .sm-msg', { timeout: 30_000 }); await p.page.waitForSelector('[data-testid="record"] [data-record-section="needed"]', { timeout: 30_000, state: "attached" }); }
-  catch (e) { const notice = await p.page.locator(".sm-error").allInnerTexts().catch(() => [] as string[]); throw new Error(`the shell did not render the thread: ${String(e)}; notices=${JSON.stringify(notice)}; logs=${JSON.stringify((p.page as Page & { logs?: string[] }).logs?.slice(-10))}; app=${appLog().slice(-800)}`); }
-  return p;
-}
 const SCREENSHOTS = `${ROOT}apps/borrower/test-results/32-16-rail`;
 
 // ---------------------------------------------------------------- the refinance journey at R8 (App J)
@@ -203,7 +195,16 @@ test("32.16-T14: Given `credit_reports.frozen_repositories` non-empty, then the 
   await ctx.close();
 });
 
-test("32.16-T15: Given a `DocumentCard{LE}` under My Loan's documents, when expanded, then the viewer and \"Confirm receipt\" render and confirming writes `receipt_evidence = esign_confirmed` (32.3 32.3-T22 unchanged).", { skip: skip || "re-driven against the Apply product in Session 4 (32.19)" }, async () => {
+test("32.16-T15: Given a `DocumentCard{LE}` under My Loan's documents, when expanded, then the viewer and \"Confirm receipt\" render and confirming writes `receipt_evidence = esign_confirmed` (32.3 32.3-T22 unchanged).", { skip: skip || "My Loan shows no application record by docs/ux/18 §2.3 (owner call)" }, async () => {
+  // 32.19 Session 4: this sentence puts the badge, the next event and the LE document under My Loan for a party with an application and no loan; docs/ux/18 §2.3 / T-18-15 make that party's My Loan `apply.loan.empty` (owner call whether My Loan also shows the application record). The old shell's helper stays here, with the test, until then.
+  /** The shell rendered from this test's API: the shell region, the conversation with at least one line (on a phone the Chat tab), the rail with Needed from you (on a phone mounted behind the tabs as the record sheet). */
+  async function openShell(token: string, width: number, path = "/app"): Promise<{ page: Page; ctx: Context }> {
+    const p = await pageFor(token, width, path);
+    await p.page.waitForSelector('[data-testid="shell"]', { timeout: 30_000 });
+    try { await p.page.waitForSelector('[data-testid="thread"] .sm-msg', { timeout: 30_000 }); await p.page.waitForSelector('[data-testid="record"] [data-record-section="needed"]', { timeout: 30_000, state: "attached" }); }
+    catch (e) { const notice = await p.page.locator(".sm-error").allInnerTexts().catch(() => [] as string[]); throw new Error(`the shell did not render the thread: ${String(e)}; notices=${JSON.stringify(notice)}; logs=${JSON.stringify((p.page as Page & { logs?: string[] }).logs?.slice(-10))}; app=${appLog().slice(-800)}`); }
+    return p;
+  }
   assert.ok(J, "T13 drove the journey to R8");
   // both parties' E-SIGN active (32.3 E6 by tap + the demonstration), the quote, the LE by the parties' consents (32.3's deliverLeByConsent → esign_portal) — the LE DocumentCard{requires_ack} per party
   await consentEsign(J, J.A, J.partyA, "Alex Borrower"); await consentEsign(J, J.B, J.partyB, "Blake Borrower");
@@ -246,7 +247,16 @@ test("32.16-T15: Given a `DocumentCard{LE}` under My Loan's documents, when expa
   await ctx.close();
 });
 
-test("32.16-T16: Given a phone width, then the Apply tab shell shows the badge and next event on My Loan and the needed count on Tasks, and every rail section is reachable from Tasks or My Loan.", { skip: skip || "re-driven against the Apply product in Session 4 (32.19)" }, async () => {
+test("32.16-T16: Given a phone width, then the Apply tab shell shows the badge and next event on My Loan and the needed count on Tasks, and every rail section is reachable from Tasks or My Loan.", { skip: skip || "My Loan shows no application record by docs/ux/18 §2.3 (owner call)" }, async () => {
+  // 32.19 Session 4: this sentence puts the badge, the next event and the LE document under My Loan for a party with an application and no loan; docs/ux/18 §2.3 / T-18-15 make that party's My Loan `apply.loan.empty` (owner call whether My Loan also shows the application record). The old shell's helper stays here, with the test, until then.
+  /** The shell rendered from this test's API: the shell region, the conversation with at least one line (on a phone the Chat tab), the rail with Needed from you (on a phone mounted behind the tabs as the record sheet). */
+  async function openShell(token: string, width: number, path = "/app"): Promise<{ page: Page; ctx: Context }> {
+    const p = await pageFor(token, width, path);
+    await p.page.waitForSelector('[data-testid="shell"]', { timeout: 30_000 });
+    try { await p.page.waitForSelector('[data-testid="thread"] .sm-msg', { timeout: 30_000 }); await p.page.waitForSelector('[data-testid="record"] [data-record-section="needed"]', { timeout: 30_000, state: "attached" }); }
+    catch (e) { const notice = await p.page.locator(".sm-error").allInnerTexts().catch(() => [] as string[]); throw new Error(`the shell did not render the thread: ${String(e)}; notices=${JSON.stringify(notice)}; logs=${JSON.stringify((p.page as Page & { logs?: string[] }).logs?.slice(-10))}; app=${appLog().slice(-800)}`); }
+    return p;
+  }
   assert.ok(J, "T13 drove the journey to R8"); await fresh();
   const rec = await record(tokA, J.j.appId);
   const wide = await openShell(tokA, 1280);

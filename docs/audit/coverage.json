@@ -1,9 +1,9 @@
 {
- "brief": "spec units built 8465/8787 (96.3%): tids 2345/2480, tables 814/852, timers 2078/2097, notices 308/309, tools 1513/1579, figures 1407/1470; processes at 100%: 199/212; retired 27",
+ "brief": "spec units built 8468/8787 (96.4%): tids 2348/2480, tables 814/852, timers 2078/2097, notices 308/309, tools 1513/1579, figures 1407/1470; processes at 100%: 199/212; retired 27",
  "totals": {
   "tids": {
    "spec": 2480,
-   "built": 2345
+   "built": 2348
   },
   "tables": {
    "spec": 852,
@@ -27,7 +27,7 @@
   },
   "units": {
    "spec": 8787,
-   "built": 8465
+   "built": 8468
   }
  },
  "retired": {
@@ -394,7 +394,7 @@
   },
   "32": {
    "spec": 350,
-   "built": 346,
+   "built": 349,
    "processes": 18,
    "done": 17
   },
@@ -8431,12 +8431,9 @@
    "title": "The Apply product",
    "tids": {
     "spec": 18,
-    "built": 14,
-    "todo": 4,
+    "built": 17,
+    "todo": 1,
     "missing": [
-     13,
-     16,
-     17,
      18
     ]
    },
@@ -8468,9 +8465,9 @@
    },
    "units": {
     "spec": 18,
-    "built": 14
+    "built": 17
    },
-   "pct": 77.8,
+   "pct": 94.4,
    "retired": []
   },
   {

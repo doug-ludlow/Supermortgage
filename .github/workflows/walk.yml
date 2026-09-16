@@ -1,9 +1,10 @@
 name: walk
-# The demo walk on demand (docs/ux/17 §8.7): the same script deploy.yml runs after every deploy, against the demo as it is now —
-# the twelve outcomes of apps/borrower/tests/walk/demo-walk.mts. Outcome 12 (the DU moment) reads the application's record through
-# the ops API with the deployed API token: this workflow takes it from the repository secret WALK_OPS_TOKEN (Settings → Secrets →
-# Actions; the value of `gcloud secrets versions access latest --secret supermortgage-api-token`). When the secret is missing the
-# outcome fails loudly ("WALK_OPS_TOKEN not provided …") — it never passes by default.
+# The demo walk on demand (docs/ux/18; PLAN §4): the same script deploy.yml runs after every deploy, against the demo as it is now —
+# the ten outcomes of apps/borrower/tests/walk/demo-walk.mts on the Apply product. Outcomes 3–5 (the DU moment from the screens, the
+# preapproval request, the cash-out refinance) read the application's record through the ops API with the deployed API token: this
+# workflow takes it from the repository secret WALK_OPS_TOKEN (Settings → Secrets → Actions; the value of `gcloud secrets versions
+# access latest --secret supermortgage-api-token`). When the secret is missing those outcomes fail loudly ("WALK_OPS_TOKEN not
+# provided …") — they never pass by default. Outcome 9 needs the partner book a `seed_demo=true` deploy imports.
 on:
   workflow_dispatch:
     inputs:
@@ -14,7 +15,7 @@ on:
         type: string
 jobs:
   walk:
-    name: demo walk (real browser, real model)
+    name: demo walk (real browser, the Apply product)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -31,7 +32,7 @@ jobs:
         env:
           DEMO_BASE: ${{ inputs.base }}
           WALK_OUT: walk-out
-          WALK_OPS_TOKEN: ${{ secrets.WALK_OPS_TOKEN }} # outcome 12; unset → that outcome is NOT ok by name
+          WALK_OPS_TOKEN: ${{ secrets.WALK_OPS_TOKEN }} # outcomes 3–5; unset → those outcomes are NOT ok by name
         run: node --experimental-strip-types tests/walk/demo-walk.mts
       - name: Keep the screenshots and the report
         if: always()

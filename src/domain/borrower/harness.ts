@@ -44,8 +44,12 @@ export interface Locator {
 }
 /** A request the page made (Playwright's `Request`): the method, the URL and the JSON body when one was posted. */
 export interface PageRequest { method(): string; url(): string; postData(): string | null }
+/** Playwright's `Route` as the suites use it: continue the request with extra headers (32.19-T16 supplies the FAKE OIDC marker a nonprod bundle sends itself). */
+export interface RouteHandle { request(): { headers(): Record<string, string>; url(): string }; continue(o?: { headers?: Record<string, string> }): Promise<void> }
 export interface Page {
   on(event: "request", fn: (r: PageRequest) => void): void;
+  route(url: string | RegExp, handler: (route: RouteHandle) => void | Promise<void>): Promise<void>;
+  waitForURL(url: string | RegExp | ((u: URL) => boolean), o?: { timeout?: number; waitUntil?: string }): Promise<void>;
   on(event: string, fn: (x: { text(): string; message?: string }) => void): void;
   goto(url: string, o?: { waitUntil?: string; timeout?: number }): Promise<unknown>;
   reload(o?: { waitUntil?: string }): Promise<unknown>;

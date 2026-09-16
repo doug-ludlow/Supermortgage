@@ -5,19 +5,18 @@
  * Google FAKE identity form → `authOidcStart` → the redirect; no code chooser, no passkey — docs/ux/17 §0.4), the Google
  * callback page, the deep-link page (S5/T16: no session → the sign-in form with the token retained; 404/410 → `deep_link.*`
  * with the sign-in offer; another party's token → the API's refusal and no target), the return page, the `?card=` pin, the
- * `auth.passkey.offer` inline action, the `auth.add_mobile` prompt (codes stay for the mobile) and the header's Sign in.
+ * `auth.passkey.offer` inline action and the header's Sign in (the `auth.add_mobile` prompt left with the Shell — 32.19 Session 4).
  */
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api, ApiRequestError } from "@/lib/api/client";
-import { copy, copyExtra, copyOptions } from "@/lib/copy";
+import { copy, copyOptions } from "@/lib/copy";
 import { SignIn } from "@/components/shell/SignIn";
 import { DeepLink, appRoute } from "@/components/shell/DeepLink";
 import { GoogleCallback } from "@/components/shell/GoogleCallback";
 import { ReturnRedirect } from "@/components/shell/ReturnRedirect";
 import { Header } from "@/components/shell/Header";
-import { AddMobilePrompt } from "@/components/shell/AddMobile";
 import { Thread, currentAsk } from "@/components/shell/Thread";
 import { accountSignIn } from "@/lib/api/account";
 import { PENDING_DEEP_LINK } from "@/lib/auth/passkey";
@@ -227,41 +226,7 @@ describe("32.14 — the thread: ?card= pins, the passkey offer line", () => {
   });
 });
 
-describe("32.14 S3 — auth.add_mobile after Google, and the header", () => {
-  it("party.updateContact{phone} then a code to the number; the FAKE code is marked; Not now never blocks", async () => {
-    vi.mocked(api.command).mockResolvedValue({});
-    vi.mocked(api.authOtpRequest).mockResolvedValue({ challenge_id: "ch-m", delivery: "FAKE", expires_at: "x", fake_code: "135791" });
-    vi.mocked(api.authOtpVerify).mockResolvedValue({ level: "L1", session: "cookie" });
-    const onDone = vi.fn();
-    const first = render(<AddMobilePrompt onDone={onDone} />);
-    expect(screen.getByRole("heading", { name: copy("auth.add_mobile") })).toBeInTheDocument();
-    expect(screen.getByText(copyExtra("auth.add_mobile", "helper")!)).toBeInTheDocument();
-    const [sendLabel = "", notNowLabel = ""] = copyOptions("auth.add_mobile");
-    await user.type(screen.getByLabelText(copy("auth.sms.field")), "6025550100");
-    await user.click(screen.getByRole("button", { name: sendLabel }));
-    await waitFor(() => expect(api.authOtpRequest).toHaveBeenCalledWith("sms", "6025550100"));
-    expect(api.command).toHaveBeenCalledWith("party.updateContact", { phone: "6025550100" });
-    expect(screen.getByTestId("fake-code")).toHaveTextContent("135791");
-    await user.type(screen.getByLabelText(copy("auth.code.enter", { destination: "6025550100" })), "135791");
-    await user.click(screen.getByRole("button", { name: continueLabel }));
-    await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
-    expect(api.authOtpVerify).toHaveBeenCalledWith("ch-m", "135791");
-    expect(window.sessionStorage.getItem("sm_add_mobile_done")).toBe("1");
-    first.unmount();
-    window.sessionStorage.clear();
-    const onDone2 = vi.fn();
-    render(<AddMobilePrompt onDone={onDone2} />);
-    await user.click(screen.getAllByRole("button", { name: notNowLabel })[0]!);
-    expect(onDone2).toHaveBeenCalledTimes(1);
-  });
-  it("a refusal renders the API's copy key inline and the prompt stays dismissable", async () => {
-    vi.mocked(api.command).mockRejectedValue(apiError(403, "FRESH_L1_REQUIRED", "auth.fresh_code"));
-    render(<AddMobilePrompt onDone={vi.fn()} />);
-    await user.type(screen.getByLabelText(copy("auth.sms.field")), "6025550100");
-    await user.click(screen.getByRole("button", { name: copyOptions("auth.add_mobile")[0]! }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(copy("auth.fresh_code"));
-    expect(screen.getByRole("button", { name: copyOptions("auth.add_mobile")[1]! })).toBeEnabled();
-  });
+describe("32.14 S3 — the header", () => {
   it("the header shows Sign in when there is no session, and no phone number (the FAKE placeholder number is gone)", async () => {
     const onSignIn = vi.fn();
     render(<Header fixturesMode={false} onSubjectChange={noop} onOpenRecord={noop} showSignIn onSignIn={onSignIn} />);

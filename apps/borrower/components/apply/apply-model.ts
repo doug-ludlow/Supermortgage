@@ -135,6 +135,9 @@ export const STEP_OF_COPY_KEY: Readonly<Record<string, Step>> = {
   "income.connect.purpose": "connect",
   "income.confirm.title": "connect",
   "assets.connect.purpose": "connect",
+  "income.upload.fallback": "connect",   // 32.13-T12: a failed payroll connection's document fallback (13-cross-cutting) is the Connect step's
+  "documents.upload.fallback": "connect",   // the other connectors' fallback (assets), the same step
+  "preapproval.intro": "property",   // the still-looking purchase's intro line (a StatusCard — never a task; `?card=` lands on Property)
   "profile.title": "details",
   "demographics.title": "demographics",
   "refi.value.confirm": "review",
@@ -145,8 +148,14 @@ export const STEP_OF_COPY_KEY: Readonly<Record<string, Step>> = {
   "conditions.checklist": "result",   // the ChecklistCard when it comes (32.3 R8)
 };
 export function stepOfCopyKey(copyKey: string): Step | undefined {
+  const listed = STEP_OF_COPY_KEY[copyKey];
+  if (listed) return listed;
+  // the families docs/ux/18 §3.3 names by prefix: `identity.*` → you, `income.*` / `assets.*` → connect, `declarations.*` → questions, `preapproval.*` → property (the target is Review's, listed above)
   if (copyKey.startsWith("declarations.")) return "questions";
-  return STEP_OF_COPY_KEY[copyKey];
+  if (copyKey.startsWith("identity.")) return "you";
+  if (copyKey.startsWith("income.") || copyKey.startsWith("assets.")) return "connect";
+  if (copyKey.startsWith("preapproval.")) return "property";
+  return undefined;
 }
 /** 32.18 rule 7: a card the assembly re-sent for a gap it found (`flow_key` `…:gap:<emission>`) — hosted in Tasks and listed on Review/Result with the copy library's `application.gap.resend` line, never folded back into a step's form. */
 export function isGapCard(card: AnyCardInstance): boolean {

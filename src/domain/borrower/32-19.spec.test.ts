@@ -30,7 +30,8 @@ import type { FlowDeps, CardTrigger } from "../../runtime/borrower/flows/index.t
 import { DU_DECLARATION_ANSWERS } from "../underwriting/du/writer.ts";
 import { DEMO_AS_OF, demoBook } from "../partner-book/fixtures/partner-book-demo.ts";
 import { duVerdict, waitForDuMoment, type OpsRecord } from "../../../apps/borrower/tests/walk/du-journey.mts";
-import { createHarness, type Context, type Locator, type Page } from "./harness.ts";
+import { readFileSync } from "node:fs";
+import { APP_DIR, createHarness, type Context, type Locator, type Page } from "./harness.ts";
 
 const { url: DB_URL, skip } = await testDatabase(import.meta.url);
 const TOKEN = "ops-" + randomUUID();
@@ -40,7 +41,7 @@ type Json = Record<string, unknown>;
 
 let db: Db; let runtime: Runtime; let router: BorrowerRouter; let base = ""; let close: () => Promise<void> = async () => undefined; let partnerPartyId = "";
 const H = createHarness({ apiBase: () => base });
-const { pageFor, openApply, stopShell } = H;
+const { pageFor, openApply, stopShell, inViewportSel } = H;
 
 let browserLock: TestLock | undefined;
 test.before(async () => {
@@ -67,14 +68,14 @@ async function api(method: string, path: string, body?: unknown, token?: string,
 const settle = () => router.flows!.settle();
 let ipN = 0;
 /** The account door over the API from its own IP (ACCOUNT_PER_HOUR = 20 per IP): the session token (the proxy's cookie value) and the party; `landSession` created the organic application. */
-async function account(label: string): Promise<{ email: string; token: string; party_id: string; application_id: string }> {
-  const R = randomUUID().slice(0, 8); const email = `${label}-${R}@example.test`; ipN += 1;
-  const r = await api("POST", "/v1/borrower/auth/account", { action: "create", email, password: `pw-${label}-${R}` }, undefined, { "x-forwarded-for": `10.19.${Math.floor(ipN / 200) + 1}.${(ipN % 200) + 1}` });
+async function account(label: string): Promise<{ email: string; password: string; token: string; party_id: string; application_id: string }> {
+  const R = randomUUID().slice(0, 8); const email = `${label}-${R}@example.test`; const password = `pw-${label}-${R}`; ipN += 1;
+  const r = await api("POST", "/v1/borrower/auth/account", { action: "create", email, password }, undefined, { "x-forwarded-for": `10.19.${Math.floor(ipN / 200) + 1}.${(ipN % 200) + 1}` });
   assert.equal(r.status, 200, JSON.stringify(r.body));
   await settle();
   const party_id = (r.body["party"] as Json)["party_id"] as string;
   const app = await applicationOf(party_id); assert.ok(app, "landSession created the organic application");
-  return { email, token: r.body["token"] as string, party_id, application_id: app.id };
+  return { email, password, token: r.body["token"] as string, party_id, application_id: app.id };
 }
 interface AppRow { id: string; channel: string; transaction_type: string; occupancy: string }
 const applicationOf = async (partyId: string): Promise<AppRow | undefined> => (await db.query<AppRow & Record<string, unknown>>(`SELECT a.id, a.channel::text AS channel, a.transaction_type::text AS transaction_type, a.occupancy::text AS occupancy FROM applications a JOIN application_borrowers ab ON ab.application_id = a.id WHERE ab.party_id = $1 ORDER BY a.created_at LIMIT 1`, [partyId]))[0];
@@ -86,9 +87,9 @@ const events = async (appId: string): Promise<EventRow[]> => { await settle(); r
 /** 32.2's `declarations` entity (`<app>:B1`): the thirteen-item list and `none_apply`. */
 const intakeDeclarations = async (appId: string): Promise<Json | null> => { const rows = await db.query<{ data: unknown }>(`SELECT data FROM entity_current WHERE kind = 'declarations' AND id = $1`, [`${appId}:B1`]); return rows[0] ? (decodeEntityData(rows[0].data) as Json) : null; };
 /** A card through 32.1's `send_card` as the intake agent (the flows' own seam, 32.13's helper): a 33.x card with no step of its own for Tasks to host. */
-async function sendCard(appId: string, partyId: string, kind: string, copy_key: string, props: Json, command_ref: string | null): Promise<string> {
+async function sendCard(appId: string, partyId: string, kind: string, copy_key: string, props: Json, command_ref: string | null, extra: Json = {}): Promise<string> {
   const r = await runtime.execute({ process: "32.1", name: "send_card", loanId: "", applicationId: appId, actor: { kind: "agent", id: "intake" }, run: { runId: "test:32.19", modelVersion: "harness", promptVersion: "32.19" },
-    input: { party_id: partyId, kind, copy_key, props: { ...props, flow_key: `t19:${kind}:${randomUUID().slice(0, 8)}`, flow: "32.19-harness" }, command_ref, subject: { application_id: appId }, created_by: "agent:intake", rationale: `32.19 harness ${kind}` } });
+    input: { party_id: partyId, kind, copy_key, props: { ...props, flow_key: `t19:${kind}:${randomUUID().slice(0, 8)}`, flow: "32.19-harness" }, command_ref, subject: { application_id: appId }, created_by: "agent:intake", rationale: `32.19 harness ${kind}`, ...extra } });
   await settle(); return (r.output as { card_instance_id: string }).card_instance_id;
 }
 const intake = async (appId: string): Promise<Json | null> => { const rows = await db.query<{ data: unknown }>(`SELECT data FROM entity_current WHERE kind = 'applications' AND id = $1`, [appId]); return rows[0] ? (decodeEntityData(rows[0].data) as Json) : null; };
@@ -246,6 +247,14 @@ const DU_WORDS = /\bDU\b|Desktop Underwriter|Fannie|\bApprove|\bEligible\b|\bIne
 const TASKS = ["property", "you", "connect", "details", "questions", "demographics", "review"] as const;
 const usd = (c: bigint): string => { const whole = (c / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ","); return `$${whole}.${(c % 100n).toString().padStart(2, "0")}`; };
 /** Accounts later tests reuse (a fresh context, the token): T4's still-looking purchase (every task done, nothing pending — the nothing-needed state), T12's refinance at the DU moment (the report's cards for Tasks). */
+/** axe-core (apps/borrower's own copy) run inside the page: the serious and critical violations of WCAG 2.x A/AA, as `id (impact): targets` (32.19-T17). */
+const AXE_SOURCE = readFileSync(`${APP_DIR}node_modules/axe-core/axe.min.js`, "utf8");
+async function axeSerious(page: Page): Promise<string[]> {
+  await page.evaluate<unknown>(`(function () { if (!window.axe) { ${AXE_SOURCE}\n } return typeof window.axe; })()`);
+  return page.evaluate<string[]>(`window.axe.run(document, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"] } }).then((r) => r.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => v.id + " (" + v.impact + "): " + v.nodes.map((n) => n.target.join(" ")).slice(0, 5).join(" | ")))`);
+}
+/** Scroll an element to the middle of the viewport (a long form's CTA sits below the fold at 390; the dock is fixed over the bottom, so "in the viewport" is measured against it). */
+const scrollTo = (page: Page, sel: string): Promise<unknown> => page.evaluate<unknown>(`(function () { const el = document.querySelector(${JSON.stringify(sel)}); if (el) el.scrollIntoView({ block: "center" }); return !!el; })()`);
 let tbdAccount: { token: string; party_id: string; application_id: string } | null = null;
 let refiAccount: { token: string; party_id: string; application_id: string } | null = null;
 
@@ -860,7 +869,84 @@ test("32.19-T12: The DU moment from the screens — Given Buy with an address or
   refiAccount = { token: r.token, party_id: r.party_id, application_id: r.application_id };
   await R.ctx.close();
 });
-test("32.19-T13: Errors stay on the step — Given a required field empty, then the step stays with `.sm-error` and nothing is posted; given a `409 CARD_FIELD_REQUIRED` or a refusal `{code, copy_key}` from the API, then the step stays and `.sm-error` renders `copy(copy_key)`, never the code.", { todo: true });
+test("32.19-T13: Errors stay on the step — Given a required field empty, then the step stays with `.sm-error` and nothing is posted; given a `409 CARD_FIELD_REQUIRED` or a refusal `{code, copy_key}` from the API, then the step stays and `.sm-error` renders `copy(copy_key)`, never the code.", { skip }, async () => {
+  const postsOf = (page: Page): number => (page.requests ?? []).filter((r) => r.startsWith("POST ")).length;
+  /** Continue with a required field empty: the step stays, one `.sm-error` with the refusal's copy (never a code), nothing posted. */
+  const stays = async (page: Page, step: string, text: string, what: string): Promise<void> => {
+    const before = postsOf(page);
+    await page.getByTestId("apply-continue").first().click(); await page.getByTestId("apply-error").first().waitFor({ timeout: 15_000 });
+    assert.equal(await attr(page, "data-step"), step, `${what}: the step stays`);
+    const err = (await page.getByTestId("apply-error").first().innerText()).trim(); assert.equal(err, text, `${what}: copy(copy_key)`); assert.doesNotMatch(err, /^[A-Z_]{6,}$/, `${what}: never the code`); assert.doesNotMatch(err, /[A-Z]{3,}_[A-Z_]+/);
+    assert.equal(await page.locator(".sm-error").count(), 1, `${what}: one .sm-error`); assert.equal(postsOf(page), before, `${what}: nothing was posted`);
+  };
+  // ── a required field empty on Property (the address), You (the SSN, then the name), Connect (the income): the local refusals of docs/ux/18 §3.0 — the step stays, nothing posted (Details' is 32.19-T8's)
+  const a = await account("t13"); const { page, ctx } = await openApply(a.token, 390);
+  await goal(page, "buy", "My primary home");
+  await fill(page, "State", "TX"); await fill(page, "Price", "650000"); await fill(page, "Down payment", "130000"); await pick(page, "Do you own the land, or is it a leasehold?", "I own the land"); await pick(page, "Is there a PACE or clean-energy loan on the home?", "No");
+  await consentsStatement(page);
+  await stays(page, "property", "Fill in each field before you continue.", "Property without the address");
+  const cards0 = await cardsOf(a.party_id); assert.equal(card(cards0, "entry.goal.question")?.status, "pending", "the goal card was not tapped"); assert.equal((await propertiesOf(a.application_id)).length, 0, "no subject row");
+  await fill(page, "Property address", "24 Juniper Lane, Austin, TX 78701"); await continueTo(page, "you", "property");
+  await fill(page, "Legal name", "Casey Lin"); await fill(page, "Date of birth", "1990-01-15"); await fill(page, "Months at this address", "60");
+  await stays(page, "you", "Your Social Security number is nine digits.", "You without the SSN");
+  assert.equal(posted(page, /identity\/stripe\/session/).length, 0, "no identity session before the refusal clears"); assert.equal(card(await cardsOf(a.party_id), "identity.stripe.purpose")?.status, "pending");
+  await fill(page, "Social Security number", "123-45-6789"); await fill(page, "Legal name", "");
+  await stays(page, "you", "Fill in your name, birth date and months here.", "You without the name");
+  await you(page, { name: "Casey Lin", dob: "1990-01-15", ssn: "123-45-6789", basis: "Own", months: "60" });
+  await fill(page, "Employer", "Lin Robotics");
+  await stays(page, "connect", "Type your monthly income and employer.", "Connect without the income");
+  assert.equal(posted(page, /connect\/truv_income\/session/).length, 0, "no payroll session before the refusal clears"); assert.equal(card(await cardsOf(a.party_id), "income.connect.purpose")?.status, "pending");
+  await ctx.close();
+  // ── a 409 CARD_FIELD_REQUIRED from the API: the refinance's home card asks the estate type and the clean-energy lien it requires (3-entry.ts refi.home.confirm required_paths).
+  // A reload on You empties the draft (the address, estate and lien held since Property — 32.19 §3.0 draft-and-flush), so You's Continue resolves the identity and SSN cards and then posts
+  // refi.home.confirm with the card's own empty answers → the API refuses 409 CARD_FIELD_REQUIRED → the step stays on You and .sm-error renders copy(thread.card_field_required), never the code;
+  // the identity and SSN writes stand; Property re-answered completes the home card on the next Continue (resolve-first: no second identity session, no second SSN tap).
+  const r = await account("t13-refi"); const R = await openApply(r.token, 390); const rp = R.page;
+  await goal(rp, "refi", "My primary home", "Lower payment");
+  await fill(rp, "Property address", "40 Mesa Court, Phoenix, AZ 85004"); await fill(rp, "State", "AZ"); await fill(rp, "About what is it worth?", "500000"); await fill(rp, "Current balance", "300000");
+  await pick(rp, "Do you own the land, or is it a leasehold?", "I own the land"); await pick(rp, "Is there a PACE or clean-energy loan on the home?", "No");
+  await consentsStatement(rp); await continueTo(rp, "you", "refinance property");
+  await rp.reload({ waitUntil: "load" }); await rp.waitForSelector('[data-testid="apply"][data-tab="apply"][data-step="goal"]', { timeout: 30_000 });   // the draft is React state: gone with the reload
+  await rp.getByTestId("apply-tab-tasks").first().click(); await rp.waitForSelector('[data-testid="apply-task-you"]', { timeout: 30_000 }); await rp.getByTestId("apply-task-you").first().click(); await rp.waitForSelector('[data-testid="apply"][data-step="you"]', { timeout: 30_000 });
+  await fill(rp, "Legal name", "Riley Ortega"); await fill(rp, "Date of birth", "1979-03-02"); await fill(rp, "Social Security number", "212-55-1000"); await rp.getByRole("button", { name: /^Own$/ }).first().click(); await fill(rp, "Months at this address", "60");
+  const postsBefore = postsOf(rp);
+  await rp.getByTestId("apply-continue").first().click(); await rp.getByTestId("apply-error").first().waitFor({ timeout: 90_000 });
+  assert.equal(await attr(rp, "data-step"), "you", "the step stays on You");
+  const err = (await rp.getByTestId("apply-error").first().innerText()).trim();
+  assert.equal(err, "Pick an answer for each item so it counts — nothing is submitted without your tap.", "copy(thread.card_field_required) — the copy key of CARD_FIELD_REQUIRED (copy-keys.ts)"); assert.doesNotMatch(err, /CARD_FIELD_REQUIRED|[A-Z]{3,}_[A-Z_]+/, "never the code");
+  assert.doesNotMatch(await rp.locator('[data-testid="apply"]').first().innerText(), /CARD_FIELD_REQUIRED/, "the code is nowhere on the screen");
+  const after = await cardsOf(r.party_id); const home = card(after, "refi.home.confirm"); assert.ok(home, "refi.home.confirm was sent with the SSN card"); assert.equal(home.status, "pending", "the refused card stays pending"); assert.equal(home.evidence, null, "nothing was written on the refusal");
+  assert.equal(card(after, "identity.confirm.title")?.status, "resolved", "the identity write stands"); assert.equal(card(after, "identity.ssn.title")?.status, "resolved", "the SSN write stands");
+  const refused = posted(rp, new RegExp(`/cards/${home.card_instance_id}/resolve`)); assert.equal(refused.length, 1, "the page posted the home card's resolve once"); assert.ok(postsOf(rp) > postsBefore);
+  const sent = ((bodyOf(refused[0]!)["evidence"] as Json)["fields"] as Json[]); assert.equal(sent.find((f) => f["path"] === "estate_type")?.["value_confirmed"], "", "the estate type went out empty (the draft was gone)"); assert.equal(sent.find((f) => f["path"] === "existing_clean_energy_lien")?.["value_confirmed"], "");
+  // the API's own answer to that body: 409 {code: CARD_FIELD_REQUIRED, copy_key: thread.card_field_required} — what the page rendered as copy(copy_key)
+  const replay = await api("POST", `/v1/borrower/cards/${home.card_instance_id}/resolve`, bodyOf(refused[0]!), r.token);
+  assert.equal(replay.status, 409, JSON.stringify(replay.body)); assert.equal(replay.body["code"], "CARD_FIELD_REQUIRED"); assert.equal(replay.body["copy_key"], "thread.card_field_required"); assert.deepEqual(Object.keys(replay.body).sort(), ["code", "copy_key"], "the refusal carries {code, copy_key} and nothing else");
+  assert.equal(seqOf(await events(r.application_id), "application.six_item.captured", (p) => p["item"] === "property_address"), null, "no six-item address on the refusal");
+  // the recovery: Property again (the two answers), then You's Continue completes the home card — the identity and SSN cards are not tapped twice
+  await rp.getByTestId("apply-tab-tasks").first().click(); await rp.waitForSelector('[data-testid="apply-task-property"]', { timeout: 30_000 }); await rp.getByTestId("apply-task-property").first().click(); await rp.waitForSelector('[data-testid="apply"][data-step="property"]', { timeout: 30_000 });
+  await fill(rp, "Property address", "40 Mesa Court, Phoenix, AZ 85004"); await fill(rp, "State", "AZ"); await pick(rp, "Do you own the land, or is it a leasehold?", "I own the land"); await pick(rp, "Is there a PACE or clean-energy loan on the home?", "No");
+  await continueTo(rp, "you", "property again"); await continueTo(rp, "connect", "you again");
+  const done = await cardsOf(r.party_id); const homeDone = card(done, "refi.home.confirm")!; assert.equal(homeDone.status, "resolved", "the home card resolved on the return"); assert.equal(fieldOf(homeDone, "estate_type")?.["value_confirmed"], "fee_simple"); assert.equal(fieldOf(homeDone, "existing_clean_energy_lien")?.["value_confirmed"], "no");
+  assert.equal(done.filter((c) => c.copy_key === "identity.confirm.title").length, 1); assert.equal(posted(rp, /identity\/stripe\/session/).length, 1, "one identity session in all"); assert.equal(posted(rp, new RegExp(`/cards/${card(done, "identity.ssn.title")!.card_instance_id}/resolve`)).length, 1, "the SSN card tapped once");
+  assert.ok(seqOf(await events(r.application_id), "application.six_item.captured", (p) => p["item"] === "property_address") !== null, "the six-item address on the recovery");
+  // ── a refusal {code, copy_key} from the API on a hosted card (a second tap on a resolved card is idempotent, never a refusal — commands.ts): a card whose expiry has passed is still
+  // listed pending, so Tasks hosts it; its tap → 409 CARD_NOT_PENDING ("the card expired") → Tasks stays and .sm-error renders copy(thread.card_not_pending), never the code
+  const expiredId = await sendCard(r.application_id, r.party_id, "ChoiceCard", "intent.title", { title: "Ready to proceed?", options: [{ id: "proceed", label: "Yes, proceed", is_primary: true }, { id: "later", label: "Not yet" }], command: "intent.record", command_args_by_option: { proceed: { statement_text: "I want to proceed" }, later: {} } }, "intent.record", { expires_at: new Date(Date.parse(clock.now()) - 60_000).toISOString() });
+  await rp.getByTestId("apply-tab-tasks").first().click(); await rp.waitForSelector('[data-testid="apply-tasks"]', { timeout: 30_000 });
+  const expiredHost = rp.locator(`[data-testid="apply-tasks-hosted"] [data-testid="apply-card-${expiredId}"]`).first(); await expiredHost.waitFor({ timeout: 30_000 });
+  await expiredHost.getByRole("button", { name: /^Yes, proceed$/ }).first().click();
+  await rp.getByTestId("apply-error").first().waitFor({ timeout: 15_000 });
+  assert.equal(await attr(rp, "data-tab"), "tasks", "Tasks stays");
+  const stale = (await rp.getByTestId("apply-error").first().innerText()).trim(); assert.equal(stale, "That step is closed. If something changed, tell me and we'll open it again.", "copy(thread.card_not_pending)"); assert.doesNotMatch(stale, /CARD_NOT_PENDING|[A-Z]{3,}_[A-Z_]+/, "never the code");
+  assert.doesNotMatch(await rp.locator('[data-testid="apply"]').first().innerText(), /CARD_NOT_PENDING/);
+  const tapped = posted(rp, new RegExp(`/cards/${expiredId}/resolve`)); assert.equal(tapped.length, 1, "the page posted the tap once");
+  const replay2 = await api("POST", `/v1/borrower/cards/${expiredId}/resolve`, bodyOf(tapped[0]!), r.token); assert.equal(replay2.status, 409, JSON.stringify(replay2.body)); assert.equal(replay2.body["code"], "CARD_NOT_PENDING"); assert.equal(replay2.body["copy_key"], "thread.card_not_pending"); assert.deepEqual(Object.keys(replay2.body).sort(), ["code", "copy_key"]);
+  assert.equal((await cardsOf(r.party_id)).find((c) => c.card_instance_id === expiredId)?.status, "expired", "the API moved the card to expired on the tap; nothing was written");
+  assert.equal(seqOf(await events(r.application_id), "intent.to_proceed.received"), null, "no intent recorded");
+  assert.equal(posted(rp, /\/commands\//).length, 0, "the refinance page posted no command in all of this");
+  await R.ctx.close();
+});
 test("32.19-T14: Tasks — Given the seven tasks, then each row's done state is derived from the card statuses (never remembered), a tap jumps to the step, a pending card with no step of its own (a gap card, `credit.liabilities.confirm`, `refi.current_loan.confirm`, a 33.3 refi_trigger card) renders in Tasks through the card component and resolves there, and the nothing-needed state renders when nothing is pending (32.13-T15).", { skip }, async () => {
   assert.ok(refiAccount, "T12 drove the refinance to the DU moment"); const a = refiAccount;
   const { page, ctx } = await openApply(a.token, 390);   // a fresh context: nothing remembered, every row derived from the API's cards
@@ -981,6 +1067,173 @@ test("32.19-T15: My Loan, Chat, Account — Given a fresh account, then My Loan 
   await hp.getByTestId("apply-sign-out").first().click(); await hp.waitForSelector('[data-testid="apply"][data-door="welcome"]', { timeout: 30_000 });
   await H2.ctx.close();
 });
-test("32.19-T16: Deep links, returns, `?card=` — Given `/app/d/{token}` without a session, then `Account` renders with the token retained and after the session `/app?card={id}` lands on the step that owns the card's copy key (`STEP_OF_COPY_KEY`) or on Tasks with the card expanded; `/app/return/{vendor}/{card}` and `/app/auth/google/callback` land the same way; an unknown or another party's card lands on Apply with no card and no data revealed.", { todo: true });
-test("32.19-T17: The chrome at 390 — Given every Apply screen at 390 px, then the five tabs and the primary CTA are in the viewport, `document.documentElement.scrollWidth ≤ 390`, `footer.disclosure` is present, the mark and the paper tokens are `apply.css`'s, and axe reports no serious violation at 390 and at 1280.", { todo: true });
+test("32.19-T16: Deep links, returns, `?card=` — Given `/app/d/{token}` without a session, then `Account` renders with the token retained and after the session `/app?card={id}` lands on the step that owns the card's copy key (`STEP_OF_COPY_KEY`) or on Tasks with the card expanded; `/app/return/{vendor}/{card}` and `/app/auth/google/callback` land the same way; an unknown or another party's card lands on Apply with no card and no data revealed.", { skip }, async () => {
+  const a = await account("t16");
+  const goalCard = card(await cardsOf(a.party_id), "entry.goal.question")!; assert.equal(goalCard.status, "pending");
+  const ADDRESS = "24 Juniper Lane, Austin, TX 78701";
+  /** `/app?card={id}` (or a route that redirects to it) landed: the tab and step, the focused row/host when the step or Tasks renders one, no error. */
+  const landed = async (page: Page, what: string, where: { tab: string; step?: string; hosted?: string; card?: string }): Promise<void> => {
+    await page.waitForURL(/\/app\?card=/, { timeout: 60_000 });
+    // the root's data-card is set once the cards are loaded and the focus applied (the goal step renders before that — waiting on the step alone races the focus)
+    try { await page.waitForSelector(`[data-testid="apply"][data-tab="${where.tab}"]${where.step ? `[data-step="${where.step}"]` : ""}${where.card ? `[data-card="${where.card}"]` : ""}`, { timeout: 60_000 }); }
+    catch (e) { throw new Error(`${what}: did not land on ${JSON.stringify(where)} (tab=${await attr(page, "data-tab")} step=${await attr(page, "data-step")} url=${page.url()}); error=${JSON.stringify(await page.getByTestId("apply-error").allInnerTexts().catch(() => []))}; ${String(e).split("\n")[0]}`); }
+    if (where.hosted) { const host = page.locator(`[data-testid="apply-card-${where.hosted}"]`).first(); await host.waitFor({ timeout: 30_000 }); assert.equal(await host.getAttribute("data-expanded"), "true", `${what}: the card is the focused one`); }
+    await noError(page, what);
+  };
+  // ── /app/d/{token} without a session: the deep-link page renders Account (sign in) with the token retained; nothing of the loan before L1 (32.13-T11)
+  const link = await router.ui.createDeepLink({ party_id: a.party_id, target: { card_instance_id: goalCard.card_instance_id }, now: clock.now() });
+  assert.equal((await api("GET", `/v1/borrower/deeplink/${link.token}`)).status, 401, "the API refuses the token without a session");
+  const anon = await pageFor(null, 390, `/app/d/${link.token}`);
+  await anon.page.waitForSelector(`[data-testid="deep-link"][data-deep-link-token="${link.token}"] [data-testid="account"][data-mode="sign_in"]`, { timeout: 30_000 });
+  assert.equal(await anon.page.locator("#otp").count(), 1, "the sign-in root (32.13-T11's selector)"); assert.equal(await anon.page.locator("article[data-card-kind]").count(), 0, "no card before L1"); assert.equal(await anon.page.getByTestId("apply").count(), 0, "no Apply screen before L1");
+  const html = (await anon.page.content()).replace(/<script[\s\S]*?<\/script>/g, ""); assert.ok(!html.includes(goalCard.card_instance_id) && !/\$\d/.test(html) && !html.includes("Buy a home"), "no card id, amount or ask before L1");
+  assert.equal((await anon.ctx.cookies()).filter((c) => c.name === "sm_borrower_session").length, 0, "no session cookie yet");
+  // the session through Account's own form → the same token resolves → /app?card={goal} → the goal step (STEP_OF_COPY_KEY entry.goal.question → goal)
+  await anon.page.locator('[data-testid="account-form"] input[type="email"]').fill(a.email); await anon.page.locator('[data-testid="account-form"] input[type="password"]').fill(a.password);
+  await anon.page.locator('[data-testid="account-form"] button[type="submit"]').first().click();
+  await landed(anon.page, "the deep link after the session", { tab: "apply", step: "goal", card: goalCard.card_instance_id });
+  assert.equal(new URL(anon.page.url()).searchParams.get("card"), goalCard.card_instance_id, "the resolved target is the card");
+  assert.equal(anon.page.requests?.filter((r) => r.startsWith(`GET /v1/borrower/deeplink/${link.token}`)).length, 2, "the token was asked twice: before and after L1");
+  const sessions = await sessionsOf(a.party_id); assert.ok(sessions.some((x) => x.auth_method === "password" && x.level === "L1"), "L1 through Account (password)");
+  assert.equal((await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM ui_events WHERE kind = 'deep_link_opened' AND party_id = $1`, [a.party_id]))[0]!.n, "1", "ui_events{deep_link_opened} once, after L1");
+  await anon.ctx.close();
+  // ── ?card= for the cards each step owns: the addressed purchase to You, then the connector cards; a resolved card (the goal) shows its step done; a card with no step lands on Tasks with the card expanded
+  const P = await openApply(a.token, 390); await buyToYou(P.page); await P.ctx.close();
+  const cards1 = await cardsOf(a.party_id);
+  const identity = card(cards1, "identity.stripe.purpose")!; const payroll = card(cards1, "income.connect.purpose")!; const assets = card(cards1, "assets.connect.purpose")!;
+  for (const [c, step, what] of [[identity, "you", "identity.stripe.purpose → you"], [payroll, "connect", "income.connect.purpose → connect"], [assets, "connect", "assets.connect.purpose → connect"]] as const) {
+    const p = await pageFor(a.token, 390, `/app?card=${c.card_instance_id}`);
+    await landed(p.page, what, { tab: "apply", step, card: c.card_instance_id, ...(step === "connect" ? { hosted: c.card_instance_id } : {}) });
+    if (step === "connect") assert.equal(await p.page.locator(`[data-testid="apply-card-${c.card_instance_id}"]`).first().getAttribute("data-state"), "not_started", "the row carries the card's state");
+    await p.ctx.close();
+  }
+  const g = await pageFor(a.token, 390, `/app?card=${goalCard.card_instance_id}`); await landed(g.page, "the resolved goal card", { tab: "apply", step: "goal", card: goalCard.card_instance_id });
+  assert.equal(card(cards1, "entry.goal.question")?.status, "resolved");
+  await g.page.getByTestId("apply-tab-tasks").first().click(); await g.page.waitForSelector('[data-testid="apply-task-property"][data-done="true"]', { timeout: 30_000 });   // a resolved card shows its step done
+  await g.ctx.close();
+  const offerId = await sendCard(a.application_id, a.party_id, "OfferCard", "offer.card", { refi_opportunity_id: randomUUID(), current_rate: "7.000", offered_rate: "6.125", apr: "6.201", new_pi_payment_cents: "340262", monthly_savings_cents: "37630", costs_to_borrower_cents: "0", lender_legal_name: "Partner Bank", mlo_name: "Jordan Rivera", mlo_nmlsr_id: "987654", expires_at: "2027-03-01T00:00:00-07:00", not_a_commitment_text: "This is not a commitment to lend;", rates_change_daily_text: "rates change daily." }, null);
+  const o = await pageFor(a.token, 390, `/app?card=${offerId}`); await landed(o.page, "a card with no step → Tasks", { tab: "tasks", hosted: offerId, card: offerId });
+  assert.equal(await o.page.locator(`[data-testid="apply-tasks-hosted"] [data-testid="apply-card-${offerId}"] article[data-card-kind="OfferCard"]`).count(), 1, "hosted through components/cards, expanded");
+  await o.ctx.close();
+  // ── /app/return/{vendor}/{card} lands the same way (ReturnRedirect → /app?card=)
+  const ret = await pageFor(a.token, 390, `/app/return/plaid_assets/${assets.card_instance_id}`);
+  await landed(ret.page, "the vendor return", { tab: "apply", step: "connect", hosted: assets.card_instance_id, card: assets.card_instance_id });
+  assert.equal(card(await cardsOf(a.party_id), "assets.connect.purpose")?.status, "pending", "the return never resolves the card (01 §3.4)");
+  await ret.ctx.close();
+  // ── /app/auth/google/callback lands the same way: the FAKE Google round trip's return leg with the pending deep link Account kept in sessionStorage (S5) → /app/d/{token} → /app?card= on the card's step.
+  // The nonprod bundle sends the FAKE provider's marker itself (SHOW_FAKE_MARKERS); this production build under test does not, so the marker is added at the page's proxy edge, as the environment would.
+  const link2 = await router.ui.createDeepLink({ party_id: a.party_id, target: { card_instance_id: payroll.card_instance_id }, now: clock.now() });
+  const start = await api("POST", "/v1/borrower/auth/oidc", { action: "start", provider: "google", redirect_uri: "http://localhost/app/auth/google/callback", fake: { email: a.email, email_verified: true, name: "Deep Link" } });
+  assert.equal(start.status, 200, JSON.stringify(start.body)); const au = new URL(start.body["authorization_url"] as string); const code = au.searchParams.get("code")!; const oauthState = au.searchParams.get("state")!; assert.ok(code && oauthState);
+  const gc = await pageFor(null, 390, "/app");
+  await gc.ctx.addInitScript(`if (!window.localStorage.getItem("t16_seeded")) { window.localStorage.setItem("t16_seeded", "1"); window.sessionStorage.setItem("sm_pending_deep_link", ${JSON.stringify(link2.token)}); }`);   // once: an init script runs on every navigation, and the callback page takes the item
+  await gc.page.route(/\/app\/api\/v1\/borrower\/auth\/oidc/, (route) => route.continue({ headers: { ...route.request().headers(), "x-fake-oidc": "FAKE" } }));
+  await gc.page.goto(`${H.appBase()}/app/auth/google/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(oauthState)}`, { waitUntil: "load", timeout: 60_000 });
+  await landed(gc.page, "the Google callback", { tab: "apply", step: "connect", hosted: payroll.card_instance_id, card: payroll.card_instance_id });
+  assert.ok(gc.page.requests?.some((r) => r.startsWith("POST /v1/borrower/auth/oidc ") && r.includes('"callback"')), "the callback page posted {action: callback}");
+  assert.ok((await sessionsOf(a.party_id)).some((x) => x.auth_method === "oidc_google"), "the Google session on the same party (resolved by the verified e-mail)");
+  assert.equal(await gc.page.evaluate<string | null>("window.sessionStorage.getItem('sm_pending_deep_link')"), null, "the pending link was taken");
+  await gc.ctx.close();
+  // ── an unknown card, or another party's: Apply with no card and no data revealed
+  const b = await account("t16-b");
+  for (const [id, what] of [[randomUUID(), "an unknown card"], [payroll.card_instance_id, "another party's card"]] as const) {
+    const p = await openApply(b.token, 390, `/app?card=${id}`);
+    await p.page.waitForSelector('[data-testid="apply"][data-tab="apply"][data-step="goal"]', { timeout: 30_000 });
+    await p.page.locator('[data-testid="apply-continue"]').first().waitFor({ timeout: 30_000 }); await p.page.waitForTimeout(1500);   // the cards load; the focus effect ignores an id that is not the party's
+    assert.equal(await attr(p.page, "data-card"), null, `${what}: nothing focused`);
+    assert.equal(await p.page.locator('[data-testid^="apply-card-"]').count(), 0, `${what}: no card`); await noError(p.page, what);
+    const text = await p.page.locator("body").first().innerText(); assert.ok(!text.includes(ADDRESS) && !text.includes("Juniper") && !text.includes(a.email), `${what}: nothing of the other party`);
+    await p.page.getByTestId("apply-tab-tasks").first().click(); await p.page.waitForSelector('[data-testid="apply-tasks"]', { timeout: 30_000 });
+    assert.equal(await p.page.locator('[data-testid="apply-tasks-hosted"]').count(), 0, `${what}: nothing hosted`); assert.equal(await p.page.getByTestId("apply-task-property").first().getAttribute("data-done"), "false");
+    await p.ctx.close();
+  }
+  const theirs = await api("POST", `/v1/borrower/cards/${payroll.card_instance_id}/resolve`, { option_id: "connect", evidence: { vendor: "truv_income", started_at: clock.now() } }, b.token);
+  assert.ok(theirs.status >= 400 && theirs.status < 500, `another party's card cannot be resolved: ${theirs.status}`); assert.deepEqual(Object.keys(theirs.body).sort(), ["code", "copy_key"], "the refusal reveals nothing");
+  assert.equal(card(await cardsOf(a.party_id), "income.connect.purpose")?.status, "pending", "the card did not move");
+});
+test("32.19-T17: The chrome at 390 — Given every Apply screen at 390 px, then the five tabs and the primary CTA are in the viewport, `document.documentElement.scrollWidth ≤ 390`, `footer.disclosure` is present, the mark and the paper tokens are `apply.css`'s, and axe reports no serious violation at 390 and at 1280.", { skip }, async () => {
+  const TAB_IDS = ["apply", "chat", "loan", "tasks", "account"];
+  /** One screen: the tokens, the footer, no sideways scroll, the five tabs (signed in) and the primary control in the viewport — not under the fixed dock — and axe with no serious violation. */
+  const check = async (page: Page, what: string, cta: string | null, o: { signedIn?: boolean } = {}): Promise<void> => {
+    const width = page.viewportSize()!.width;
+    assert.equal(await page.evaluate<boolean>(`document.documentElement.scrollWidth <= ${width} && document.body.scrollWidth <= ${width}`), true, `${what}: scrollWidth ≤ ${width}`);
+    assert.equal(await page.getByTestId("footer-disclosure").count(), 1, `${what}: footer.disclosure present`);
+    assert.equal(await page.evaluate<string>("getComputedStyle(document.querySelector('.sm-phone')).backgroundColor"), "rgb(252, 252, 252)", `${what}: the paper token (apply.css --paper)`);
+    assert.equal(await page.evaluate<string>("getComputedStyle(document.querySelector('.sm-mark-s')).color"), "rgb(191, 36, 43)", `${what}: the mark in the accent (apply.css --accent)`);
+    assert.ok(await page.locator(".sm-mark .sm-mark-s").first().isVisible(), `${what}: the mark`);
+    if (o.signedIn !== false) { for (const id of TAB_IDS) assert.ok(await inViewportSel(page, `[data-testid="apply-tab-${id}"]`), `${what}: the ${id} tab in the viewport`); }
+    if (cta) {
+      await scrollTo(page, cta);
+      assert.ok(await inViewportSel(page, cta), `${what}: the primary control (${cta}) in the viewport`);
+      const box = (await page.locator(cta).first().boundingBox())!; const dock = o.signedIn === false ? null : await page.locator(".sm-dock").first().boundingBox();
+      const inDock = await page.evaluate<boolean>(`!!document.querySelector(${JSON.stringify(cta)})?.closest(".sm-dock")`);   // Chat's composer lives in the dock itself
+      if (dock && !inDock) assert.ok(box.y + box.height <= dock.y + 1, `${what}: the control is not under the dock (control bottom ${box.y + box.height}, dock top ${dock.y})`);
+    }
+    const serious = await axeSerious(page); assert.deepEqual(serious, [], `${what} at ${width}: axe serious/critical violations`);
+  };
+  const a = await account("t17");
+  // the door at 390: welcome, intro, the account form
+  const d = await openApply(null, 390);
+  await check(d.page, "welcome", '[data-testid="apply-continue"]', { signedIn: false });
+  await d.page.getByTestId("apply-continue").first().click(); await d.page.waitForSelector('[data-testid="apply"][data-door="intro"]', { timeout: 30_000 });
+  await check(d.page, "intro", '[data-testid="apply-continue"]', { signedIn: false });
+  await d.page.getByRole("button", { name: "Create an account" }).first().click(); await d.page.waitForSelector('[data-testid="account"][data-mode="sign_up"]', { timeout: 30_000 });
+  await check(d.page, "account", '[data-testid="account-form"] button[type="submit"]', { signedIn: false });
+  await d.ctx.close();
+  // the nine steps at 390, driven in order (the addressed purchase to the DU moment), each measured before its Continue
+  const { page, ctx } = await openApply(a.token, 390);
+  await check(page, "goal", '[data-testid="apply-continue"]');
+  await goal(page, "buy", "My primary home");
+  await fill(page, "Property address", "24 Juniper Lane, Austin, TX 78701"); await fill(page, "State", "TX"); await fill(page, "Price", "650000"); await fill(page, "Down payment", "130000");
+  await pick(page, "Do you own the land, or is it a leasehold?", "I own the land"); await pick(page, "Is there a PACE or clean-energy loan on the home?", "No"); await consentsStatement(page);
+  await check(page, "property", '[data-testid="apply-continue"]');
+  await continueTo(page, "you", "property");
+  await check(page, "you", '[data-testid="apply-continue"]');
+  await you(page, { name: "Sky Alvarez", dob: "1989-05-05", ssn: "706-78-9012", basis: "Own", months: "60" });
+  await check(page, "connect", '[data-testid="apply-continue"]');
+  await connectStep(page, "8000", "Alvarez Studio");
+  await check(page, "details", '[data-testid="apply-continue"]');
+  await detailsStep(page);
+  await hostedCard(page, "declarations.occupancy");
+  await check(page, "questions", '[data-testid="apply"] .sm-card-host button');
+  await declarationsNone(page);
+  await hostedCard(page, "demographics.title");
+  await check(page, "demographics", '[data-testid="apply"] .sm-card-host button.sm-btn-primary');
+  await demographicsStep(page, { decline: true });
+  await page.waitForSelector('[data-testid="apply-continue"][data-copy-key="apply.review.confirm"]', { timeout: 60_000 });
+  await check(page, "review", '[data-testid="apply-continue"]');
+  await confirmNumbers(page);
+  await check(page, "result", '[data-testid="apply-back"]');
+  // the four tabs at 390
+  await page.getByTestId("apply-tab-chat").first().click(); await page.waitForSelector('[data-testid="apply"][data-tab="chat"]', { timeout: 30_000 });
+  await check(page, "chat", ".sm-composer input");
+  await page.getByTestId("apply-tab-loan").first().click(); await page.waitForSelector('[data-testid="apply-loan-empty"]', { timeout: 30_000 });
+  await check(page, "loan", null);
+  await page.getByTestId("apply-tab-tasks").first().click(); await page.waitForSelector('[data-testid="apply-tasks"]', { timeout: 30_000 });
+  await check(page, "tasks", '[data-testid="apply-task-property"]');
+  await page.getByTestId("apply-tab-account").first().click(); await page.waitForSelector('[data-testid="apply-sign-out"]', { timeout: 30_000 });
+  await check(page, "account tab", '[data-testid="apply-sign-out"]');
+  await ctx.close();
+  // at 1280: the door and every screen again (the steps reached through Tasks on the same file), axe on each; the column is the 430 px one
+  const wide = await openApply(null, 1280);
+  await check(wide.page, "welcome", '[data-testid="apply-continue"]', { signedIn: false });
+  await wide.page.getByTestId("apply-continue").first().click(); await wide.page.waitForSelector('[data-testid="apply"][data-door="intro"]', { timeout: 30_000 });
+  await check(wide.page, "intro", '[data-testid="apply-continue"]', { signedIn: false });
+  await wide.page.getByRole("button", { name: "Already have an account?" }).first().click(); await wide.page.waitForSelector('[data-testid="account"][data-mode="sign_in"]', { timeout: 30_000 });
+  await check(wide.page, "account (sign in)", '[data-testid="account-form"] button[type="submit"]', { signedIn: false });
+  await wide.ctx.close();
+  const W = await openApply(a.token, 1280); const wp = W.page;
+  const column = await wp.locator(".sm-phone").first().boundingBox(); assert.ok(column && Math.round(column.width) === 430, `a 430 px column at 1280 (${column?.width})`);
+  await check(wp, "goal", '[data-testid="apply-continue"]');
+  for (const t of TASKS) {
+    await wp.getByTestId("apply-tab-tasks").first().click(); await wp.waitForSelector(`[data-testid="apply-task-${t}"]`, { timeout: 30_000 });
+    await wp.getByTestId(`apply-task-${t}`).first().click(); await wp.waitForSelector(`[data-testid="apply"][data-step="${t}"]`, { timeout: 30_000 });
+    await check(wp, `${t} (1280)`, t === "review" ? null : '[data-testid="apply-continue"]');
+  }
+  for (const [tab, wait, cta] of [["chat", '[data-testid="apply-chat"]', ".sm-composer input"], ["loan", '[data-testid="apply-loan-empty"]', null], ["tasks", '[data-testid="apply-tasks"]', '[data-testid="apply-task-property"]'], ["account", '[data-testid="apply-sign-out"]', '[data-testid="apply-sign-out"]']] as const) {
+    await wp.getByTestId(`apply-tab-${tab}`).first().click(); await wp.waitForSelector(wait, { timeout: 30_000 });
+    await check(wp, `${tab} (1280)`, cta);
+  }
+  await W.ctx.close();
+});
 test("32.19-T18: Every string is a copy key — Given every string the Apply screens render, then it is a key of copy-library.md (the `apply.*` family) rendered through `lib/copy`, no `.tsx` under `components/apply` contains a sentence literal, and 32.13-T13/T14 pass over the new keys.", { todo: true });

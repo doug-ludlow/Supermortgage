@@ -422,17 +422,20 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------
-  # The demo walk (docs/ux/17 §8.7): after every deploy, a real browser with the
-  # real model creates a fresh account on the deployed demo and checks the twelve
-  # things a person must see work (apps/borrower/tests/walk/demo-walk.mts). The
-  # screenshots and report.json are the artifact "demo-walk" — the only claim of
-  # "working" the surface accepts. A failed outcome fails this job, never the
-  # deploy that preceded it. Outcome 12 (the DU moment) reads the application's
-  # record through the ops API, so the job authenticates to Google Cloud the way
-  # the deploy job does and reads the API token out of Secret Manager into
-  # WALK_OPS_TOKEN (masked); without it the outcome fails by name, never passes.
+  # The demo walk (docs/ux/18; PLAN §4): after every deploy, a real browser drives
+  # the Apply product on the deployed demo — fresh accounts through the door, the
+  # nine screens to the DU moment — and checks the ten things a person must see
+  # work (apps/borrower/tests/walk/demo-walk.mts). The screenshots and report.json
+  # are the artifact "demo-walk" — the only claim of "working" the surface
+  # accepts. A failed outcome fails this job, never the deploy that preceded it.
+  # Outcomes 3–5 (the DU moment, the preapproval request, the cash-out refinance)
+  # read the application's record through the ops API, so the job authenticates
+  # to Google Cloud the way the deploy job does and reads the API token out of
+  # Secret Manager into WALK_OPS_TOKEN (masked); without it those outcomes fail by
+  # name, never pass. Outcome 9 needs the partner book a `seed_demo=true` dispatch
+  # imports; an unseeded book fails, never passes.
   walk:
-    name: demo walk (real browser, real model)
+    name: demo walk (real browser, the Apply product)
     needs: [terraform, deploy]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -447,7 +450,7 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v2
 
-      - name: Read the API token for outcome 12 (the ops record of the DU moment)
+      - name: Read the API token for outcomes 3–5 (the ops record of the DU moment)
         env:
           API_TOKEN_SECRET: ${{ needs.terraform.outputs.api_token_secret }}
         run: |

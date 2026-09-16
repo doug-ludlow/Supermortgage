@@ -37,7 +37,7 @@ From `npm run audit` (`tools/audit.py`), which measures the tree against `spec/r
 | The partner book | §33 | 69 / 69 |
 | The operator portal | §34 | 57 / 57 |
 
-After every deploy a real browser with the real model walks the deployed demo and checks twelve things a person must see work (`apps/borrower/tests/walk/demo-walk.mts`); a failed outcome fails the deploy. That walk, not the fractions, is the platform's claim that the surface works.
+After every deploy a real browser walks the Apply product on the deployed demo and checks ten things a person must see work (`apps/borrower/tests/walk/demo-walk.mts`); a failed outcome fails the deploy. That walk, not the fractions, is the platform's claim that the surface works.
 
 ## What is here
 

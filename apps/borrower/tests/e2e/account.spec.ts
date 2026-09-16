@@ -2,9 +2,10 @@
  * 32.16 §2.0 (DELTA-29) e2e over the fixtures build at 1280 and 390 px: the account routes (/app/sign-up, /app/sign-in,
  * /app/reset) with `page.route` canned answers for `POST /v1/borrower/auth/account` (no API; the proxy would turn `token`
  * into the HttpOnly cookie). What is asserted is what the borrower sees: the disclosure line first on the sign-up, e-mail +
- * password + Google and nothing else (no code chooser, no passkey), create → /app with the thread at once (no code); an e-mail
- * already on file for someone's record → the code step with the FAKE code → /app; the sign-in refusals by copy key (auth.password_wrong, auth.account_locked, account.exists), EMAIL_UNVERIFIED →
- * the code step; the reset to account.reset.done; axe AA on each screen.
+ * password + Google and nothing else (no code chooser, no passkey), create → /app on the Apply product at once (no code — 32.19,
+ * the old thread shell is unmounted); an e-mail already on file for someone's record → the code step with the FAKE code → /app;
+ * the sign-in refusals by copy key (auth.password_wrong, auth.account_locked, account.exists), EMAIL_UNVERIFIED → the code step;
+ * the reset to account.reset.done; axe AA on each screen.
  */
 import { expect, test, type Page, type Route } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
@@ -80,7 +81,7 @@ async function axeClean(page: Page) {
 }
 
 test.describe("32.16 §2.0 — create an account", () => {
-  test("the disclosure footer outside the form (32.16 §1 principle 8), then e-mail + password + Google and nothing else; create → /app with the thread at once, no code; axe", async ({ page }) => {
+  test("the disclosure footer outside the form (32.16 §1 principle 8), then e-mail + password + Google and nothing else; create → /app on Apply at once, no code; axe", async ({ page }) => {
     const calls = await cannedApi(page, { signedIn: false });
     await page.goto("/app/sign-up");
     const form = page.locator("#otp");
@@ -104,13 +105,14 @@ test.describe("32.16 §2.0 — create an account", () => {
     await form.getByLabel(copy("account.password.field")).fill(PASSWORD);
     await form.getByRole("button", { name: copy("account.create.button") }).click();
     await page.waitForURL(/\/app\/?$/);
-    await expect(page.getByTestId("thread")).toBeVisible(); // the fixtures build lands on the recorded thread; the disclosure as the session's first message is the API's fact (32.16-T25)
-    await expect(page.getByTestId("action-bar")).toBeVisible();
+    await expect(page.getByTestId("apply")).toHaveAttribute("data-tab", "apply");   // 32.19: the session lands on the Apply product (the canned `me` lists no subject, so no step yet); the disclosure as the session's first message is the API's fact (32.16-T25)
+    await expect(page.getByTestId("thread")).toHaveCount(0);
+    await expect(page.getByTestId("action-bar")).toHaveCount(0);
     expect(calls.find((c) => c.path === "v1/borrower/auth/account" && c.body.action === "create")!.body).toMatchObject({ email: "maya@example.com", password: PASSWORD });
     expect(calls.filter((c) => c.path === "v1/borrower/auth/account").map((c) => c.body.action)).toEqual(["create"]); // no verify_email: the session opened on create
   });
 
-  test("an e-mail already on file for someone's record → the code step (account.on_file, the FAKE code) → /app with the thread; axe", async ({ page }) => {
+  test("an e-mail already on file for someone's record → the code step (account.on_file, the FAKE code) → /app on Apply; axe", async ({ page }) => {
     const calls = await cannedApi(page, { signedIn: false });
     await page.goto("/app/sign-up");
     const form = page.locator("#otp");
@@ -130,7 +132,7 @@ test.describe("32.16 §2.0 — create an account", () => {
     await code.fill(CODE);
     await form.getByRole("button", { name: continueLabel }).click();
     await page.waitForURL(/\/app\/?$/);
-    await expect(page.getByTestId("thread")).toBeVisible();
+    await expect(page.getByTestId("apply")).toHaveAttribute("data-tab", "apply");
     expect(calls.find((c) => c.path === "v1/borrower/auth/account" && c.body.action === "verify_email")!.body).toMatchObject({ challenge_id: "ch-create" });
   });
 
@@ -170,7 +172,7 @@ test.describe("32.16 §2.0 — sign in", () => {
     await form.getByLabel(copy("account.password.field")).fill(PASSWORD);
     await form.getByRole("button", { name: copy("account.signin.button") }).click();
     await page.waitForURL(/\/app\/?$/);
-    await expect(page.getByTestId("thread")).toBeVisible();
+    await expect(page.getByTestId("apply")).toHaveAttribute("data-tab", "apply");
   });
 
   test("EMAIL_UNVERIFIED → auth.email_unverified over the code step (a fresh code was sent); the code opens the session", async ({ page }) => {
@@ -186,7 +188,7 @@ test.describe("32.16 §2.0 — sign in", () => {
     await form.getByLabel(copy("auth.code.enter", { destination: "unverified@example.com" })).fill(CODE);
     await form.getByRole("button", { name: continueLabel }).click();
     await page.waitForURL(/\/app\/?$/);
-    await expect(page.getByTestId("thread")).toBeVisible();
+    await expect(page.getByTestId("apply")).toHaveAttribute("data-tab", "apply");
     expect(calls.find((c) => c.path === "v1/borrower/auth/account" && c.body.action === "verify_email")!.body).toMatchObject({ challenge_id: "ch-unverified", code: CODE });
   });
 });

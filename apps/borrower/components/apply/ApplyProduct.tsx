@@ -16,7 +16,7 @@ import type { BorrowerMe, BorrowerRecord, ThreadMessage } from "@/lib/types/reco
 import { EMPTY, doneFrom, pending, pendingDeclaration, resolved, stepOfCard, uniqueCards, type Door, type Draft, type Step, type Tab } from "./apply-model";
 import { DoorScreens, TabScreens } from "./door";
 import { StepScreen } from "./steps";
-import { flush, loadCards, messageOf, waitAfterDeclaration } from "./wire";
+import { flush, loadCards, messageOf, vendorSession, waitAfterDeclaration } from "./wire";
 import "./apply.css";
 
 const TABS: readonly Tab[] = ["apply", "chat", "loan", "tasks", "account"];
@@ -57,6 +57,9 @@ export function ApplyProduct({ initialCard }: { initialCard?: string }) {
       let rec: BorrowerRecord | null = null;
       try { rec = await api.record(subject); } catch (e) { if (!(e instanceof ApiRequestError)) throw e; rec = null; }   // a subject with no record yet (the API's refusal before the interview) is not an error to show; anything else is
       setRecord(rec);
+      // the draft's branch from the record when the page has none (a reload after the goal tap): the purpose, the cash-out choice and the occupancy the tap wrote — the screens keep their branch and the steps' commits their shapes (docs/ux/18 §3.0 draft-and-flush); "faster" is the draft's alone (no fact on the record names it)
+      const purpose = rec?.header.purpose; const tt = rec?.subject.transaction_type; const occ = rec?.subject.occupancy;
+      if (purpose === "Buying" || purpose === "Refinancing") setDraft((d) => (d.intent === null ? { ...d, intent: purpose === "Buying" ? "purchase" : "refinance", refiGoal: tt === "cash_out" ? "cash" : d.refiGoal, occupancy: occ ?? d.occupancy } : d));
     } else setRecord(null);
     const thread = await api.thread();
     setCards(uniqueCards(thread.cards));
@@ -126,6 +129,8 @@ export function ApplyProduct({ initialCard }: { initialCard?: string }) {
   const onResolveCard = async (cardInstanceId: string, req: ResolveRequest): Promise<void> => {
     await run(async () => {
       const card = cards.find((c) => c.card_instance_id === cardInstanceId);
+      // a hosted ConnectCard's "Try again" (32.13-T12): the FAKE session route settles the card itself (`launchVendor`), so the component's follow-up resolve is skipped once the card is no longer pending — never `verification.connect` from the page
+      if (card?.kind === "ConnectCard" && req.option_id === "connect" && !pending(await loadCards(), card.copy_key)) { await refresh(); return; }
       await api.resolveCard(cardInstanceId, req);
       const declaration = card?.copy_key.startsWith("declarations.") === true;
       const after = declaration ? await waitAfterDeclaration(cardInstanceId) : null;
@@ -133,6 +138,14 @@ export function ApplyProduct({ initialCard }: { initialCard?: string }) {
       if (declaration && tab === "apply" && step === "questions" && after && !pendingDeclaration(after) && (pending(after, "demographics.title") || resolved(after, "demographics.title"))) setStep("demographics");
       if (card?.copy_key === "demographics.title" && tab === "apply" && step === "demographics") setStep("review");
     });
+  };
+
+  /** A hosted ConnectCard's launch: the vendor's FAKE session on the card (`fake_complete: true`; the route resolves the card and orders the verification), the same call the Connect step's CTA makes (docs/ux/18 §3.0). */
+  const launchVendor = async (vendor: string, cardInstanceId: string): Promise<{ vendor_session_id: string; outcome?: string }> => {
+    if (vendor === "stripe_identity") { if (!applicationId) throw new ApiRequestError(409, { code: "SUBJECT_REQUIRED", copy_key: "error.not_yours" }); const r = await vendorSession("identity", applicationId) as { vendor_session_id: string; outcome?: string; status?: string }; return { vendor_session_id: r.vendor_session_id, ...(r.outcome || r.status ? { outcome: r.outcome ?? r.status } : {}) }; }
+    if (vendor !== "truv_income" && vendor !== "plaid_assets") throw new ApiRequestError(404, { code: "COMMAND_UNKNOWN", copy_key: "error.generic" });
+    const r = await vendorSession(vendor, cardInstanceId) as { vendor_session_id: string; outcome?: string };
+    return { vendor_session_id: r.vendor_session_id, ...(r.outcome ? { outcome: r.outcome } : {}) };
   };
 
   const onSignOut = () => run(async () => {
@@ -180,11 +193,11 @@ export function ApplyProduct({ initialCard }: { initialCard?: string }) {
     if (!me) return <DoorScreens door={door} accountMode={accountMode} setDoor={setDoor} setAccountMode={setAccountMode} onSession={() => void run(landed)} />;
     if (tab !== "apply") return <TabScreens tab={tab} me={me} record={record} cards={cards} messages={messages} draft={draft} done={done} focusedCard={focusedCard} setTab={setTab} setStep={setStep} onSignOut={onSignOut} onResolveCard={onResolveCard} openCard={setFocusedCard} busy={busy} />;
     if (!applicationId) return null;   // a loan-only party (33.x): no step and no goal card on Apply (owner decision 6)
-    return <StepScreen step={step} draft={draft} cards={cards} record={record} busy={busy} patch={patch} onContinue={onContinue} setStep={setStep} setTab={setTab} onResolveCard={onResolveCard} />;
+    return <StepScreen step={step} draft={draft} cards={cards} record={record} busy={busy} patch={patch} onContinue={onContinue} setStep={setStep} setTab={setTab} onResolveCard={onResolveCard} focusedCard={focusedCard} onLaunchVendor={launchVendor} />;
   };
 
   return (
-    <div className="sm-proto" data-testid="apply" data-door={booted && !signedIn ? door : undefined} data-tab={signedIn ? tab : undefined} data-step={showStep ? step : undefined}>
+    <div className="sm-proto" data-testid="apply" data-door={booted && !signedIn ? door : undefined} data-tab={booted && signedIn ? tab : undefined} data-step={booted && showStep ? step : undefined} data-card={booted && signedIn && focusedCard ? focusedCard : undefined}>
       <div className="sm-phone">
         <header className="sm-top">
           <button type="button" className="sm-mark" aria-label={copy("apply.door.title")} onClick={() => { setTab("apply"); if (!signedIn) setDoor("welcome"); }}>
@@ -198,7 +211,7 @@ export function ApplyProduct({ initialCard }: { initialCard?: string }) {
           {error ? <p className="sm-error" role="status" data-testid="apply-error">{error}</p> : null}
         </main>
         <FooterDisclosure partner={me?.partner} />
-        {signedIn ? (
+        {booted && signedIn ? (
           <footer className="sm-dock">
             {tab === "chat" ? (
               <form className="sm-composer" onSubmit={sendChat}>

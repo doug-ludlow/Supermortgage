@@ -111,7 +111,9 @@ async function owner(cx: Cx, o: OwnerCall): Promise<OwnerResult> {
   try {
     const r = await cx.runtime.execute(req);
     const decision_id = r.decisions[0]?.id ?? null;
-    await journal(cx.io, cx.c, "command_run", { command, trigger_event_id: o.trigger ?? cx.trigger, decision_id, actor: o.actor, detail: { ...(o.note ? { note: o.note } : {}), events: r.events.map((e) => e.type), input_keys: Object.keys(o.input).sort() } });
+    // rule 3 / T1: the figures and record facts the pass derived for the owner (never taken from a caller) are journaled apart from the rest of the owner's input
+    const keys = Object.keys(o.input).sort(); const derived = keys.filter((k) => CLIENT_STATE_KEYS.includes(k));
+    await journal(cx.io, cx.c, "command_run", { command, trigger_event_id: o.trigger ?? cx.trigger, decision_id, actor: o.actor, detail: { ...(o.note ? { note: o.note } : {}), events: r.events.map((e) => e.type), input_keys: keys.filter((k) => !derived.includes(k)), ...(derived.length ? { derived_from_record: derived } : {}) } });
     return { ok: true, output: (r.output ?? {}) as Row, events: r.events, decision_id };
   } catch (e) {
     if (e instanceof CommandRefused) { await journal(cx.io, cx.c, "command_refused", { command, trigger_event_id: o.trigger ?? cx.trigger, refusal_code: e.code, actor: o.actor, detail: { reason: e.message.slice(0, 500), citation: e.citation } }); return { ok: false, code: e.code, message: e.message, refused: true }; }

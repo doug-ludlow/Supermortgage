@@ -506,7 +506,7 @@ test("35.8-T8: Given the console's five item kinds on the fixture book plus one 
 });
 
 test("35.8-T9: Given an open item, when analyst A claims it and analyst B claims it, then B is refused `CLAIMED_BY_OTHER{staff_user_id}` carrying A's id and no name; when 4 hours pass on the demo clock without A releasing, then `SM_WORK_ITEM_CLAIM_4H` breaches, the breach handler emits `work.item.claim_expired{lapses: 1}` and the item is `open`; after the third lapse an `ops_analyst` escalation exists and none before.", { skip }, async () => {
-  const item = T8_ITEMS.find((x) => x["source_kind"] === "escalation")!; const id = item["id"] as string;
+  const item = T8_ITEMS.find((x) => x["source_kind"] === "escalation" && x["required_role"] === "ops_analyst")!; assert.ok(item, "an analyst's escalation item from T8"); const id = item["id"] as string;   // the analyst's item, whatever order the rows come in
   const a = await api("POST", `/ops/api/work/items/${id}/claim`, {}, bearer(await fresh("ana"), "ops_analyst")); assert.equal(a.status, 200, JSON.stringify(a.body));
   const b = await api("POST", `/ops/api/work/items/${id}/claim`, {}, bearer(await fresh("bob"), "ops_analyst"));
   assert.equal(b.status, 409, JSON.stringify(b.body)); assert.equal(b.body["code"], "CLAIMED_BY_OTHER"); assert.equal(b.body["staff_user_id"], ids["ana"]); assertIdsOnly(b.body, "CLAIMED_BY_OTHER");

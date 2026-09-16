@@ -153,13 +153,26 @@ async function clearingAccountOf(db: Queryable, partnerPartyId: string): Promise
 }
 /**
  * The lockbox's own clearing account for an item no loan claims (6.5's suspense is keyed by the custodial account the funds sit in): the batch is one bank
- * deposit, so it is the clearing account of the batch's identified loans' partner when they share one, else the platform's servicing party's.
+ * deposit into the lockbox's account, so it is the clearing account of the partner whose loans remit to this lockbox — the batch's identified loans'
+ * partner when they share one, else the partner of the loans whose configuration names the lockbox (rule 9 `loan_servicing_configs.lockbox_id`; a file
+ * of only unidentified checks is the ordinary lockbox day and must still land in 6.5's suspense), else — a lockbox serving more than one partner —
+ * the platform servicing party's own clearing account (the lockbox is Supermortgage's P.O. box), opened on first use in the FAKE build until 6.1
+ * wires the lockbox-level account. Null only without a platform servicing party (0143's seed) — CUSTODIAL_REQUIRED, the batch unwritten.
  */
-async function lockboxClearingAccount(db: Queryable, items: readonly ItemPlan[]): Promise<string | null> {
+async function lockboxClearingAccount(db: Queryable, lockboxId: string, items: readonly ItemPlan[]): Promise<string | null> {
   const partners = [...new Set(items.filter((it) => it.disposition === "identified" && it.partner_party_id).map((it) => it.partner_party_id!))];
   if (partners.length === 1) return clearingAccountOf(db, partners[0]!);
+  const configured = await db.query<{ partner_party_id: string }>(
+    `SELECT DISTINCT l.partner_party_id FROM loans l JOIN LATERAL (SELECT lockbox_id FROM loan_servicing_configs c WHERE c.loan_id = l.id ORDER BY c.effective_from DESC, c.created_at DESC LIMIT 1) cfg ON true
+       WHERE cfg.lockbox_id = $1 AND l.boarded_at IS NOT NULL AND l.status::text <> ALL($2::text[])`, [lockboxId, [...EXCLUDED_STATUSES]]);
+  if (configured.length === 1) return clearingAccountOf(db, configured[0]!.partner_party_id);
   const platform = await platformServicingPartyId(db);
-  return platform ? clearingAccountOf(db, platform) : null;
+  if (!platform) return null;
+  const own = await clearingAccountOf(db, platform); if (own) return own;
+  // the FAKE build's lockbox account when the lockbox serves more than one partner: the platform servicing party's clearing row, opened on first use exactly as the
+  // boarding runtimes open a partner's clearing row (src/runtime/transfers.ts custodialAccount; src/runtime/origination.ts's funding clearing) — 6.1 wires the real
+  // lockbox-level account (bank, title, Form 496) and replaces this row's opening with its own command
+  return (await db.query<{ id: string }>(`INSERT INTO custodial_accounts (partner_party_id, kind, remittance_type) VALUES ($1, 'clearing', 'A/A') RETURNING id`, [platform]))[0]!.id;
 }
 
 // ---------------------------------------------------------------- the runner
@@ -229,7 +242,7 @@ async function ingestOneFile(rt: Runtime, lockbox: LockboxConfig, cutoff: { cuto
     }
     if (variance === 0n) {
       for (const it of items) if (it.disposition === "identified") { it.clearing = await clearingAccountOf(rt.db, it.partner_party_id!); if (!it.clearing) refuse("lockbox.ingest", "CUSTODIAL_REQUIRED", "35.5 rule 5 / 2.1 rule 8: the receipt set debits the partner's clearing custodial account (custodial_accounts by partner_party_id)", `item ${it.item_no} of ${f.file_name}: loan ${it.loan_id} has no clearing custodial account`); }
-      if (items.some((it) => it.disposition === "unidentified")) { lockboxClearing = await lockboxClearingAccount(rt.db, items); if (!lockboxClearing) refuse("lockbox.ingest", "CUSTODIAL_REQUIRED", "35.5 rule 7 / 6.5: an unidentified item's suspense is keyed by the clearing custodial account the funds sit in", `${f.file_name}: no clearing custodial account for lockbox ${lockbox.id}'s unidentified items`); }
+      if (items.some((it) => it.disposition === "unidentified")) { lockboxClearing = await lockboxClearingAccount(rt.db, lockbox.id, items); if (!lockboxClearing) refuse("lockbox.ingest", "CUSTODIAL_REQUIRED", "35.5 rule 7 / 6.5: an unidentified item's suspense is keyed by the clearing custodial account the funds sit in (the partner whose loans remit to the lockbox — rule 9 lockbox_id)", `${f.file_name}: no clearing custodial account for lockbox ${lockbox.id}'s unidentified items (no partner's loans remit to it alone and the platform servicing party — 0143's seed — is absent)`); }
     }
     const identifiedCount = items.filter((it) => it.disposition === "identified").length; const unidentifiedCount = items.length - identifiedCount;
     received = ctx.events.append({ type: BATCH_RECEIVED, aggregate: agg(batchId), actor: CASHIERING_AGENT, payload: { lockbox_id: lockbox.id, batch_id: batchId, file_name: f.file_name, sha256: f.sha256, file_hash: f.sha256, receipt_date: receiptDate, lockbox_receipt_date: receiptDate, received_on: receiptDate, received_at: f.received_at, received_by: "lockbox_agent", items: items.length, item_count: items.length,

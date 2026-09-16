@@ -78,26 +78,32 @@ export const derivePaymentReverse: Deriver = async (c) => {
   const pid = str(c.decision, "payment_id");
   const pay = facts.store.get("payments", pid)?.data; if (!pay || pay["loan_id"] !== loanId) throw new WorkRefused(404, "NOT_FOUND", `no payment ${pid} on this loan`, { payment_id: pid });
   if (pay["status"] !== "posted") throw new WorkRefused(409, "NOT_POSTED", `payment ${pid} is ${s(pay["status"])}, not posted`, { payment_id: pid, status: s(pay["status"]) });
-  const input: Row = { op: "reverse", id: pid, loan_id: loanId, state: facts.state, custodial: facts.custodial, reason: str(c.decision, "reason"), return_code: str(c.decision, "return_code") || null, nsf_fee: c.decision["nsf_fee"] === true, run_on: today(c.now),
+  const input: Row = { op: "reverse", id: pid, loan_id: loanId, state: facts.state, custodial: facts.custodial, reason: str(c.decision, "reason"), return_code: str(c.decision, "return_code") || null, nsf_fee: c.decision["nsf_fee"] === true,
     allocation: pay["allocation"] ?? null, ledger_entry_set_ids: pay["ledger_entry_set_ids"] ?? [] };
   return { input, sources: await loanSources(c, loanId) };
 };
 
 // ---------------------------------------------------------------- 16.1 (worked example C)
-/** The county release recording fee by property state (16.1 worked example A: Ohio **$34.00**, marked [UNVERIFIED] there; `jurisdiction_rules.payoff` once 16.x keeps it as data). */
+/** The county release recording fee by property state: the `jurisdiction_rules` record keyed by the state (`data.payoff.release_recording_fee_cents`, 16.x's data) when one is on the record, else this default (16.1 worked example A: Ohio **$34.00**, marked [UNVERIFIED] there). */
 export const RELEASE_RECORDING_FEE_CENTS: Readonly<Record<string, bigint>> = { OH: 3_400n, TX: 2_600n, CA: 2_000n, FL: 1_850n, NY: 6_200n, NC: 2_600n, MA: 7_500n, AZ: 3_000n };
+export function releaseRecordingFeeCents(store: EntityStore, state: string): { cents: bigint; source: string } {
+  const rules = store.get("jurisdiction_rules", state)?.data ?? store.list("jurisdiction_rules", (d) => d["state"] === state).at(-1)?.data;
+  const v = (rules?.["payoff"] as Row | undefined)?.["release_recording_fee_cents"];
+  if (v !== undefined && v !== null && /^-?\d+$/.test(String(v))) return { cents: BigInt(String(v)), source: `jurisdiction_rules:${state}` };
+  return { cents: RELEASE_RECORDING_FEE_CENTS[state] ?? 0n, source: "default:16.1-A" };
+}
 export const derivePayoffQuote: Deriver = async (c) => {
   const loanId = loanOf(c); const facts = await loanCashState(c.rt, loanId, today(c.now));
   const [prop] = await c.q.query<{ state: string | null }>(`SELECT pr.state FROM loans l JOIN properties pr ON pr.id = l.property_id WHERE l.id = $1`, [loanId]);
   const state = prop?.state ?? "OH";
   const lpi = facts.state.lpi_date ?? addMonths(facts.loan.first_payment_date, -1);
-  const sources = await loanSources(c, loanId);
+  const sources = await loanSources(c, loanId, ["payments", "fees", "loan_terms", "jurisdiction_rules"]);
   const maxId = (sources["ledger_lines"] as Row)["max_id"];
   const n = Number((await c.q.query<{ n: string }>(`SELECT count(*)::text AS n FROM entity_records WHERE loan_id = $1 AND kind = 'payoff_quotes'`, [loanId]).catch(() => [{ n: "0" }]))[0]?.n ?? 0);
   const delivery = str(c.decision, "delivery");
   const input: Row = { loan_id: loanId, quote_id: `pq-${loanId.slice(0, 8)}-${n + 1}`, request_id: `pr-${loanId.slice(0, 8)}-${n + 1}`, quote_type: "statement", written: true, channel: delivery === "portal" ? "portal" : delivery === "fax" ? "fax" : "mail", received_on: today(c.now),
     requester_type: str(c.decision, "requester_kind"), good_through: str(c.decision, "good_through"), delivery_channel_requested: delivery, state,
-    upb_cents: facts.balances.principal, rate_pct: (facts.terms.note_rate_bps / 10_000).toFixed(3), lpi_due: lpi, late_charges_cents: facts.state.late_charges_due_cents, recording_fee_cents: RELEASE_RECORDING_FEE_CENTS[state] ?? 0n,
+    upb_cents: facts.balances.principal, rate_pct: (facts.terms.note_rate_bps / 10_000).toFixed(3), lpi_due: lpi, late_charges_cents: facts.state.late_charges_due_cents, recording_fee_cents: releaseRecordingFeeCents(c.store, state).cents, recording_fee_source: releaseRecordingFeeCents(c.store, state).source,
     escrow_balance_cents: facts.balances.escrow, ledger_snapshot_id: `ledger-lines:${s(maxId ?? "0")}`, ...(facts.terms.escrow_version ? {} : {}) };
   return { input, sources };
 };
@@ -121,8 +127,9 @@ export const deriveFundingRelease: Deriver = async (c) => {
   const facts: ConditionFacts = { ...base, as_of: c.now, funding: { ...base.funding, authorized: base.funding?.authorized ?? String(funding["status"] ?? "").includes("authorized") }, warehouse_advance_approved: base.warehouse_advance_approved ?? String(funding["warehouse_status"] ?? funding["status"] ?? "").includes("approved"), worksheet: base.worksheet ?? { reconciled: worksheet?.["reconciled"] === true || worksheet?.["reconciled_to_cd"] === true } };
   const conditions = evaluateFundingConditions(fundingId, facts);
   if (!conditions.passed) throw new WorkRefused(409, "GATE_CLOSED", `funding conditions block the release: ${conditions.blocking_codes.join(", ")}`, { codes: [...conditions.blocking_codes], pending: [...conditions.pending_codes], funding_id: fundingId });
-  const input: Row = { op: "release", funding_id: fundingId, wire_id: wireId, bank_ref: `SM-${wireId.slice(0, 12)}-${today(c.now).replace(/-/g, "")}`, released_at: c.now, amount_cents: cs(wire["amount_cents"]),
-    conditions: { checklist_id: conditions.checklist_id, passed: conditions.passed, blocking_codes: [...conditions.blocking_codes], evaluated_at: conditions.evaluated_at }, rescission: base.rescission ?? null, ptf: base.ptf ?? null, cash_to_close: base.cash_to_close ?? null, orchestration_id: orchestration?.orchestration_id ?? null };
+  // nothing of the clock in the derived input: the bank reference is the wire's, the release instant is the executing command's `now` (26.3 stamps it), and the checklist is named by its funding and outcome — a proposal re-derived at approval must hash the same when the record has not moved (rule 6)
+  const input: Row = { op: "release", funding_id: fundingId, wire_id: wireId, bank_ref: `SM-${wireId}`, amount_cents: cs(wire["amount_cents"]),
+    conditions: { passed: conditions.passed, blocking_codes: [...conditions.blocking_codes], pending_codes: [...conditions.pending_codes], item_codes: conditions.items.map((x) => `${x.code}:${x.status}`) }, rescission: base.rescission ?? null, ptf: base.ptf ?? null, cash_to_close: base.cash_to_close ?? null, orchestration_id: orchestration?.orchestration_id ?? null };
   const sources = { ...(await applicationSources(c, applicationId, ["fundings", "funding_wires", "funding_worksheets", "funding_facts", "funding_conditions"])), orchestration_id: orchestration?.orchestration_id ?? null, orchestration_step: orchestration?.step ?? null };
   return { input, sources };
 };
@@ -194,8 +201,12 @@ export const deriveLossmitNotify: Deriver = async (c) => {
   const dets = Array.isArray(ev.data["determinations"]) ? (ev.data["determinations"] as Row[]) : [];
   const denied = dets.filter((d) => d["result"] === "denied").map((d) => ({ name: s(d["option"]), reason: (Array.isArray(d["reason_codes"]) ? (d["reason_codes"] as unknown[]).map(String) : []).join(", ") || "not eligible", investor_name: "Fannie Mae", investor_requirement: (Array.isArray(d["reason_codes"]) ? (d["reason_codes"] as unknown[]).map(String) : []).join(", ") || null }));
   const state = s(ev.data["state"]) || null;
+  // the servicer-side fields of the template (the SPOC, the addresses, the HUD lines, the appeal procedure) are the template version's own defaults until 12.x keeps a servicer profile; every borrower- and decision-side field is the record's
+  const tv = c.rt.noticeRegistry.activeVersion("NTC_REGX_41C1_DENIAL", today(c.now)); const sample = tv?.samplePayload ?? {};
+  const servicerSide = Object.fromEntries(Object.entries(sample).filter(([k]) => /^(spoc_|servicer_|exclusive_|hud_|hope_|appeal_how|ai_notice|next_steps|other_available)/.test(k)));
+  const appealDays = state === "CA" ? 30 : 14;
   const input: Row = { template_code: "NTC_REGX_41C1_DENIAL", loan_id: loanId, option: s(ev.data["option"]) || denied[0]?.name || "modification", criterion: denied[0]?.reason ?? "not eligible", reviewer_approval_id: s(ev.data["reviewer_approval_id"]), recipients: recipientsOf(parties),
-    payload: { denied, investor_name: "Fannie Mae", not_evaluated_other_criteria: true, ...(state ? { state } : {}), appeal_days: 30, appeal_by: addDays(today(c.now), 30), evaluation_id: ev.id, decided_on: today(c.now) } };
+    payload: { ...servicerSide, complete_date: s(ev.data["complete_at"] ?? ev.data["complete_on"]) || today(c.now), denied, investor_based: denied.length > 0, investor_name: "Fannie Mae", not_evaluated_other_criteria: true, ...(state ? { state } : {}), state_block: null, credit_score_used: false, days_after_complete: 0, appeal_days: appealDays, appeal_by: addDays(today(c.now), appealDays), ai_notice_required: true, evaluation_id: ev.id, decided_on: today(c.now) } };
   return { input, sources: await loanSources(c, loanId, ["lossmit_evaluations"]) };
 };
 
@@ -213,6 +224,7 @@ export const deriveBkApplyTrustee: Deriver = async (c) => {
   const input: Row = { loan_id: loanId, case_id: kase.id, amount_cents: cs(c.decision["amount_cents"]), received_on: str(c.decision, "received_on"), received_at: `${str(c.decision, "received_on")}T12:00:00.000Z`, payer_type: "trustee",
     ledgers: { prepetition_arrearage_cents: ledger_snapshot["prepetition_arrearage_cents"], postpetition: ledger_snapshot["postpetition"], postpetition_suspense_cents: ledger_snapshot["postpetition_suspense_cents"] }, ledger_snapshot,
     plan, schedule: plan["schedule"] ?? [], note: plan["note"] ?? null, claim: k["claim"] ?? plan["claim"] ?? null, chapter: s(k["chapter"]) || "13", plan_designation: s(k["plan_designation"] ?? plan["designation"]) || null, conduit_district: k["conduit_district"] === true, case_number_full: s(k["case_number_full"]) || null, claim_no: s(k["claim_no"]) || null, designation: s(k["voucher_designation"]) || null,
+    ...(facts.custodial ? { custodial: { pi_account_id: facts.custodial.pi, ti_account_id: facts.custodial.ti } } : {}),
     state: { upb_cents: cs(facts.state.upb_cents), lpi_date: facts.state.lpi_date, installments_due: facts.state.installments.filter((x) => x.status === "due").length } };
   return { input, sources: await loanSources(c, loanId, ["bankruptcy_cases", "payments", "fees", "loan_terms"]) };
 };

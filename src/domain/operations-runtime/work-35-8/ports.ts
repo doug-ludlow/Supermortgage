@@ -15,6 +15,8 @@
  */
 import { randomUUID } from "node:crypto";
 import type { Queryable } from "../../../infra/db/client.ts";
+import type { EventStore } from "../../../kernel/events/index.ts";
+import type { Runtime } from "../../../runtime/app.ts";
 import { toJson } from "../../../infra/db/client.ts";
 import { sha256Hex } from "../../../app/canonical.ts";
 import type { Row } from "./types.ts";
@@ -26,8 +28,8 @@ export interface OrchestrationPort {
   forApplication(q: Queryable, applicationId: string): Promise<OrchestrationView | null>;
   /** The held steps the queue opens as `orchestration_held` items. */
   held(q: Queryable): Promise<readonly { id: string; application_id: string; role: string; since: string }[]>;
-  /** 35.6 rule: the orchestration opens on the clear-to-close (35.8-T7) — the port records it (35.6's own tool once it lands). */
-  openOnCtc(q: Queryable, i: { application_id: string; at: string; by: string }): Promise<{ orchestration_id: string } | null>;
+  /** 35.6 rule: the orchestration opens on the clear-to-close (35.8-T7) — 35.6's `orchestration.open` on the bus once it is registered; until then the seam's own literal (`orchestration.opened`, keyed by the application) so the hand-off is on the record 35.6 reads. */
+  openOnCtc(d: { q: Queryable; rt: Runtime; events: EventStore }, i: { application_id: string; at: string; by: string }): Promise<{ orchestration_id: string } | null>;
   /** The release through 35.6 when it is registered (`orchestration.release`), else null and the screen dispatches 26.3 `prepareWire{op: release}` itself. */
   readonly releaseTool: { process: string; name: string } | null;
 }
@@ -65,7 +67,12 @@ export const defaultOrchestration: OrchestrationPort = {
     const rows = await q.query<Row>(`SELECT h.id::text AS id, h.application_id::text AS application_id, h.payload, h.occurred_at::text AS since FROM loan_events h WHERE h.type = 'orchestration.held' AND NOT EXISTS (SELECT 1 FROM loan_events r WHERE r.type = 'orchestration.released' AND r.application_id = h.application_id AND r.sequence > h.sequence)`);
     return rows.map((r) => { const p = (r["payload"] as Row) ?? {}; return { id: String(p["orchestration_id"] ?? r["id"]), application_id: String(r["application_id"]), role: String(p["role"] ?? p["waiting_on"] ?? "ops_analyst"), since: String(r["since"]) }; });
   },
-  async openOnCtc() { return null; },
+  async openOnCtc(d, i) {
+    const orchestration_id = randomUUID();
+    if (d.rt.tool("35.6", "orchestration.open")) { const r = await d.rt.execute({ process: "35.6", name: "orchestration.open", loanId: "", applicationId: i.application_id, actor: { kind: "system", id: "work-35-8" }, input: { application_id: i.application_id, cause: "clear_to_close.issued", by: i.by } }); const o = (r.output ?? {}) as Row; return { orchestration_id: String(o["orchestration_id"] ?? orchestration_id) }; }
+    d.events.append({ type: "orchestration.opened", applicationId: i.application_id, aggregate: { kind: "closing_orchestration", id: orchestration_id }, actor: { kind: "system", id: "work-35-8" }, payload: { orchestration_id, application_id: i.application_id, cause: "clear_to_close.issued", step: "opened", opened_at: i.at, by: i.by, source: "35.8 conditions.ctc (35.6 pending)" } });
+    return { orchestration_id };
+  },
 };
 export const defaultJobs: JobsPort = {
   async dead(q) {

@@ -49,7 +49,7 @@ const deferOf = (rt: ToolRuntime): ItemDeps["deferWrite"] => { const f = rt.serv
 const portsOf = (rt: ToolRuntime): WorkPorts | undefined => rt.services["work_ports"] as WorkPorts | undefined;
 const sessionOf = (i: ToolInput): string | null => (typeof i["session_id"] === "string" && isUuid(i["session_id"]) ? i["session_id"] : null);
 const actDeps = (i: ToolInput, ctx: CommandContext, rt: ToolRuntime): ActDeps => ({ rt: runtimeOf(rt), q: dbOf(rt), store: rt.store, events: ctx.events, now: ctx.now, actor: ctx.actor, escalations: rt.escalations, deferWrite: deferOf(rt), sessionId: sessionOf(i), ...(portsOf(rt) ? { ports: portsOf(rt)! } : {}) });
-const itemDeps = (i: ToolInput, ctx: CommandContext, rt: ToolRuntime): ItemDeps => ({ db: dbOf(rt), events: ctx.events, now: ctx.now, actor: ctx.actor, deferWrite: deferOf(rt), sessionId: sessionOf(i) });
+const itemDeps = (i: ToolInput, ctx: CommandContext, rt: ToolRuntime): ItemDeps => ({ db: dbOf(rt), events: ctx.events, now: ctx.now, actor: ctx.actor, deferWrite: deferOf(rt), sessionId: sessionOf(i), registry: runtimeOf(rt).registry });
 const held = async (ctx: CommandContext, rt: ToolRuntime): Promise<string[]> => heldRoles(dbOf(rt), ctx.actor);
 
 // ---- guardrails (rule 11 / 34.1): the input's own keys, never a store

@@ -15,7 +15,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { connect, type Db } from "../../infra/db/client.ts";
 import { testDatabase } from "../../infra/db/test-db.ts";
 import { loadOverriddenRegistry } from "../timer-overrides.ts";
-import { FixedClock, type Actor } from "../../kernel/events/index.ts";
+import { FixedClock, MemoryEventStore, type Actor } from "../../kernel/events/index.ts";
+import { openCondition } from "../underwriting/ops-23-2.ts";
+import { CTC_ITEM_CODES } from "../underwriting/ops-23-3.ts";
 import { plainDate as D } from "../../kernel/calendar/date.ts";
 import { Runtime } from "../../runtime/app.ts";
 import { createApiServer, listen } from "../../runtime/server.ts";
@@ -59,6 +61,7 @@ const UMA = person("uma");   // ops_analyst → underwriting_reviewer (T7)
 const FIN = person("fin");   // ops_analyst → funding_approver (T6)
 const LIN = person("lin");   // ops_analyst → lossmit_reviewer (T13)
 const HAL = person("hal");   // ops_analyst → human_agent (T13)
+const FAY = person("fay");   // ops_analyst → funding_approver, the wire's preparer (T6)
 const ids: Record<string, string> = {};
 const sessions: Record<string, { token: string; session_id: string }> = {};
 
@@ -108,7 +111,7 @@ async function invite(tag: string, p: { email: string; name: string; password: s
   ids[tag] = await enrol(p); sessions[tag] = await signIn(p);
   return ids[tag]!;
 }
-const PEOPLE: Record<string, { email: string; name: string; password: string }> = { ada: ADA, ana: ANA, bob: BOB, otto: OTTO, cara: CARA, uma: UMA, fin: FIN, lin: LIN, hal: HAL };
+const PEOPLE: Record<string, { email: string; name: string; password: string }> = { ada: ADA, ana: ANA, bob: BOB, otto: OTTO, cara: CARA, uma: UMA, fin: FIN, lin: LIN, hal: HAL, fay: FAY };
 /** A fresh session for the person (the clock moves days between T-ids and 34.1 rule 5 idles a session out). */
 async function fresh(tag: string): Promise<string> { sessions[tag] = await signIn(PEOPLE[tag]!); return sessions[tag]!.token; }
 const adminActor = (): Actor => ({ kind: "human", id: ids["ada"]!, role: "admin" });
@@ -142,7 +145,7 @@ const sha256hex = (s: string): string => createHash("sha256").update(s).digest("
 const balance = async (loanId: string, account: string): Promise<bigint> => BigInt((await db.query<{ s: string }>(`SELECT coalesce(sum(amount_cents), 0)::text AS s FROM ledger_lines WHERE scope = 'loan' AND loan_id = $1 AND account = $2`, [loanId, account]))[0]!.s);
 /** Every string in a payload: the contract that no e-mail, phone, name or token reaches a screen (35.7-T15's pattern). */
 const strings = (v: unknown, out: string[] = []): string[] => { if (typeof v === "string") out.push(v); else if (Array.isArray(v)) v.forEach((x) => strings(x, out)); else if (v && typeof v === "object") Object.values(v as Json).forEach((x) => strings(x, out)); return out; };
-const assertIdsOnly = (payload: unknown, where: string): void => { for (const s of strings(payload)) assert.doesNotMatch(s, /@|^\+?\d{10,}$|^[A-Za-z0-9_-]{43}$| Person$/, `${where}: no e-mail, phone, name or token: ${s}`); };
+const assertIdsOnly = (payload: unknown, where: string): void => { for (const s of strings(payload)) assert.doesNotMatch(s, /@|^\+?\d{10,}$|^(?=.*[a-z])(?=.*[A-Z])[A-Za-z0-9_-]{43}$| Person$/, `${where}: no e-mail, phone, name or token: ${s}`); };
 
 // ---------------------------------------------------------------- fixtures
 type Loan = { loanId: string; partnerPartyId: string; custodial: { clearing: string; pi: string; ti: string } };
@@ -188,7 +191,7 @@ const fixtureL1 = async (): Promise<Loan> => {
   return L1;
 };
 const sub = (l: Loan) => ({ kind: "loan", id: l.loanId });
-void HOUR; void MIN; void at; void SCREENS; void workQueue; void D_GROSS_LOAN_CENTS; void D_PER_DIEM_CENTS; void D_PREPAID_INTEREST_CENTS; void D_ESCROW_DEPOSIT_CENTS; void D_HAND_FED_ESCROW_CENTS; void D_LENDER_CREDITS_CENTS; void D_NET_WIRE_CENTS; void UMA; void FIN; void LIN; void HAL; void CASE; void items; void read; void derive; void grant;
+void HOUR; void MIN; void at; void SCREENS; void workQueue; void CASE; void items; void read; void derive; void grant;
 
 let T1_ACTION = ""; let T3_PROPOSAL = ""; let T3_EXECUTED = "";
 test("35.8-T1: Given fixture loan L-1 with a `received` cheque of 219,257¢ dated 2026-09-03, when an `ops_analyst` runs `work.screen.act{code: payment_post, action: post, decision: {payment_id}}`, then 2.1 posts interest **$1,352.94**, principal **$227.23**, escrow **$612.40** (total **$2,192.57**), UPB is **$249,546.77** and LPI 2026-09-01, the `work_derivations` row's `sources` names the `loan_installments` version and `ledger_lines.max_id` read, its `input_sha256` equals the 2.1 decision record's `inputs_snapshot_hash` and the sha-256 of the stored `work-derivation.json`, and exactly one `work_actions{status: executed}`, one `staff_actions{command: \"2.1 payments.read/write\"}` and one `work.action.executed` event exist.", { skip }, async () => {
@@ -329,6 +332,8 @@ test("35.8-T5: Given 16.1 worked example A's loan (UPB **$248,310.55**, 6.500%, 
   assert.equal(C_UPB_CENTS, 24_831_055n); assert.equal(C_ESCROW_BALANCE_CENTS, 241_290n);
   await runtime.entities.save([{ kind: "fees", id: `fee-lc-${R}`, data: { loan_id: l.loanId, fee_type: "late_charge", installment_due_date: "2026-08-01", amount_cents: "8217", state: "assessed", assessed_on: "2026-08-17", grace_end_on: "2026-08-16", collected_cents: "0" }, version: 1, updatedAt: clock.now(), updatedBy: "agent:cashiering" }], { loanId: l.loanId });
   assert.equal(C_LATE_CHARGE_CENTS, 8_217n); assert.equal(C_RECORDING_FEE_CENTS, 3_400n);
+  // the county release recording fee is 16.x's data on the record (`jurisdiction_rules` keyed by state), read by the deriver — never a constant of 35.8's
+  await runtime.entities.save([{ kind: "jurisdiction_rules", id: "OH", data: { state: "OH", payoff: { release_recording_fee_cents: "3400", source: "16.1 worked example A [UNVERIFIED]" } }, version: 1, updatedAt: clock.now(), updatedBy: "agent:payoff" }], {});
   const decision = { requester_kind: "borrower", good_through: "2026-10-15", delivery: "portal" };
   const d1 = await derive("ana", "ops_analyst", "payoff_quote", sub(l), "quote", decision); assert.equal(d1.status, 200, JSON.stringify(d1.body));
   const d2 = await derive("ana", "ops_analyst", "payoff_quote", sub(l), "quote", decision); assert.equal(d2.status, 200);
@@ -349,8 +354,100 @@ test("35.8-T5: Given 16.1 worked example A's loan (UPB **$248,310.55**, 6.500%, 
   assert.equal(bad.status, 409, JSON.stringify(bad.body)); assert.equal(bad.body["code"], "NO_CLIENT_STATE"); assert.equal(bad.body["field"], "total_cents");
 });
 
-test("35.8-T6: Given the lifecycle fixture's orchestration at step `funding_authorized` (gross **$560,000.00**, per diem **$93.97**, prepaid interest **$1,785.43**, escrow deposit **$2,062.50** from the consummated CD per 35.6 rule 7a, lender credits **$700.00**), when a `funding_approver` acts on `funding_release.release{funding_id, wire_id}`, then the derived `evaluateFundingConditions` passed from the record, the wire released is **$556,852.07** (55,685,207 cents), 26.3's `funding.authorized` and the release event are keyed by the application, and the same act by the staff user who prepared the wire is refused `FOUR_EYES`; given a blocking condition on the record, then `GATE_CLOSED{codes}` and no release.", { todo: true });
-test("35.8-T7: Given an application with two open 23.3 conditions, when an `underwriting_reviewer` acts on `conditions.clear{condition_id, evidence_document_id}` for each and then `conditions.ctc`, then `condition.cleared` ×2 and `clear_to_close.issued` exist with the staff user as actor, 35.6's orchestration opens on the CTC, and the same three acts by an `ops_analyst` session are refused `ROLE_REQUIRED{underwriting_reviewer}` before any read of the condition rows (contract: the refusal precedes the projection query in the action log's timing and no derivation row exists).", { todo: true });
+test("35.8-T6: Given the lifecycle fixture's orchestration at step `funding_authorized` (gross **$560,000.00**, per diem **$93.97**, prepaid interest **$1,785.43**, escrow deposit **$2,062.50** from the consummated CD per 35.6 rule 7a, lender credits **$700.00**), when a `funding_approver` acts on `funding_release.release{funding_id, wire_id}`, then the derived `evaluateFundingConditions` passed from the record, the wire released is **$556,852.07** (55,685,207 cents), 26.3's `funding.authorized` and the release event are keyed by the application, and the same act by the staff user who prepared the wire is refused `FOUR_EYES`; given a blocking condition on the record, then `GATE_CLOSED{codes}` and no release.", { skip }, async () => {
+  await invite("fin", FIN, ["ops_analyst"]); await grant("fin", "funding_approver");
+  await invite("fay", FAY, ["ops_analyst"]); await grant("fay", "funding_approver");
+  const l = await fixtureL1(); const back = "2026-09-22T16:00:00.000Z";
+  // the lifecycle fixture (src/runtime/lifecycle.test.ts a13) on the bus: the funder opens the funding on the consummation, builds the worksheet from the consummated CD, reconciles, evaluates, authorizes, prepares the wire
+  const app = await runtime.createApplication({ partner_party_id: l.partnerPartyId, channel: "organic", transaction_type: "limited_cash_out", occupancy: "primary", borrowers: [{ legal_name: "Applicant Six" }] }, { kind: "system", id: "test" }); const appId = app.application.id; const sub6 = { kind: "application", id: appId };
+  const FUNDER: Actor = { kind: "agent", id: "funder" }; const FUNDING_ID = `F-${R}`; const WIRE_ID = `W-${R}`; const AGENT_PARTY = "P-ESCROW-AZ-1";
+  const EST = (date: string, hhmm: string): string => new Date(`${date}T${hhmm}:00-05:00`).toISOString(); const MST = (date: string, hhmm: string): string => new Date(`${date}T${hhmm}:00-07:00`).toISOString();
+  const f26 = (name: string, input: Json, actor: Actor = FUNDER) => tool("26.3", name, actor, input, { applicationId: appId });
+  try {
+    clock.set(EST("2026-11-11", "11:00"));
+    const open = await f26("computeDates", { op: "open", funding_id: FUNDING_ID, state: "AZ", transaction_type: "limited_cash_out", time_zone: "America/Phoenix", consummation_at: MST("2026-11-06", "14:26"), review_completed_on: "2026-11-09", partner_id: "partner-1", partner_loan_number: "PL-1001", gross_loan_cents: "56000000", note_rate_pct: "6.125", note_first_payment_date: "2027-01-01" });
+    const cal = (open.output as Json)["calendar"] as Json; assert.equal(cal["earliest_funding_date"], "2026-11-12"); assert.equal(cal["funding_type"], "dry");
+    // 35.6 rule 7a: the escrow deposit is the consummated CD's initial escrow payment — $2,062.50 on the record, never 26.3's hand-fed $1,665.00
+    await runtime.entities.save([{ kind: "closing_disclosures", id: `CD-${R}`, data: { application_id: appId, version: 1, status: "consummated", figures: { gross_loan_cents: "56000000", prepaid_interest_cents: "178543", initial_escrow_deposit_cents: "206250", lender_credits_cents: "70000" } }, version: 1, updatedAt: clock.now(), updatedBy: "system:test" }], { applicationId: appId });
+    const cd = (await runtime.entities.load({ applicationId: appId })).find((r) => r.kind === "closing_disclosures")!.data; const cdFigures = cd["figures"] as Json;
+    assert.equal(cdFigures["initial_escrow_deposit_cents"], "206250"); assert.equal(D_ESCROW_DEPOSIT_CENTS, 206_250n); assert.equal(D_HAND_FED_ESCROW_CENTS, 166_500n); assert.notEqual(cdFigures["initial_escrow_deposit_cents"], D_HAND_FED_ESCROW_CENTS.toString());
+    await f26("buildFundingWorksheet", { funding_id: FUNDING_ID, version: 1, cd_version: 1, gross_loan_cents: cdFigures["gross_loan_cents"], prepaid_interest_cents: cdFigures["prepaid_interest_cents"], escrow_deposit_cents: cdFigures["initial_escrow_deposit_cents"], lender_credits_cents: cdFigures["lender_credits_cents"] });
+    assert.equal(D_GROSS_LOAN_CENTS, 56_000_000n); assert.equal(D_PREPAID_INTEREST_CENTS, 178_543n); assert.equal(D_LENDER_CREDITS_CENTS, 70_000n); assert.equal(D_PER_DIEM_CENTS, 9_397n);
+    assert.equal((D_GROSS_LOAN_CENTS * 6125n + 50_000n) / 100_000n / 365n, 9_397n, "per diem 560,000.00 × 0.06125 ÷ 365 = 93.9726 → $93.97"); assert.equal(19n * D_PER_DIEM_CENTS, D_PREPAID_INTEREST_CENTS, "prepaid interest 19 days × $93.97 = $1,785.43");
+    assert.equal(D_GROSS_LOAN_CENTS - D_PREPAID_INTEREST_CENTS - D_ESCROW_DEPOSIT_CENTS + D_LENDER_CREDITS_CENTS, D_NET_WIRE_CENTS); assert.equal(D_NET_WIRE_CENTS, 55_685_207n);
+    const rec = await f26("reconcileToSettlementStatement", { funding_id: FUNDING_ID, worksheet_id: `${FUNDING_ID}:ws:1`, agent_requested_net_cents: "55685207" }); assert.equal(((rec.output as Json)["item"] as Json)["status"], "pass");
+    clock.set(EST("2026-11-12", "08:05"));
+    const FACTS = (as_of: string): Json => ({ as_of, funding: { funding_type: "dry", transaction_type: "limited_cash_out", disbursement_date: "2026-11-12", release_date: "2026-11-12", note_date: "2026-11-06", authorized: false },
+      loan: { ltv_pct: 70, sfha: false, project: false, enote: true, tx_50a6: false, record_before_fund: false }, execution: { review_passed: true, all_docs_signed: true, blocking_defects: 0, package_returned: true }, cd: { consummated_version: 1, delivered_with_receipt: true, signed_copy_in_documents: true }, identity: { all_signers_proofed: true },
+      rescission: { status: "expired_not_rescinded", expires_at: "2026-11-11T07:00:00.000Z", reasonably_satisfied_at: "2026-11-11T15:00:00.000Z", waiver_id: null, now: as_of }, hazard: { hazard_status: "verified", effective_date: "2026-11-12", transaction_type: "refinance", policy_in_force: true },
+      title: { cpl_open: true, commitment_open: true }, vvoe: { verified_on: "2026-11-04", self_employed: false }, credit_refresh_open: true, compliance_disburse_open: true, ptf: { ptf_cleared: true }, cash_to_close: { worksheet: { reconciled_to_cd: true, sufficient: true } }, gifts: [], wire: { verified_at: "2026-11-03T15:00:00.000Z", blocks_disbursement: false, callback_number_source: "alta_registry", as_of },
+      payoffs: [{ liability_id: "L-PRIOR", status: "received", good_through_date: "2026-11-13" }], first_payment: { first_payment_date: "2027-01-01" }, audit_trail_open: true, enote: { registered: true, secured_party_set: true }, qc_hold: false, commitment: { active: true, expires_on: "2026-12-07" }, worksheet: { reconciled: true }, fraud: { fraud_hold: false, ofac_clear: true } });
+    const conditions = await f26("evaluateFundingConditions", { funding_id: FUNDING_ID, facts: FACTS(clock.now()) }); assert.equal((conditions.output as Json)["passed"], true, JSON.stringify((conditions.output as Json)["blocking_codes"]));
+    clock.set(EST("2026-11-12", "08:12"));
+    await f26("requestWarehouseAdvance", { funding_id: FUNDING_ID, conditions: conditions.output, rescission: (FACTS(clock.now()) as Json)["rescission"], fraud_hold: { fraud_hold: false }, ptf: { ptf_cleared: true }, cash_to_close: { worksheet: { reconciled_to_cd: true, sufficient: true } }, gifts: [] });
+    assert.equal(await count(`loan_events WHERE application_id = $1 AND type = 'funding.authorized' AND loan_id IS NULL`, [appId]), 1, "26.3's funding.authorized keyed by the application");
+    await f26("requestWarehouseAdvance", { funding_id: FUNDING_ID, op: "advance_approved", advance_id: `ADV-${R}` });
+    clock.set(EST("2026-11-12", "08:20"));
+    const VERIFIED_WIRE = { verification_id: `WV-${R}`, beneficiary_party_id: AGENT_PARTY, beneficiary_name: "Escrow Co Trust Account", instructions_hash: "h-verified", verified_at: "2026-11-03T15:00:00.000Z", expires_at: "2026-12-03T15:00:00.000Z", blocks_disbursement: false, change_detected_at: null, callback_number_source: "alta_registry", cpl_agent_party_id: AGENT_PARTY, ofac_screen_ref: "OFAC-1", ofac_clear: true };
+    const wire = await f26("prepareWire", { funding_id: FUNDING_ID, wire_id: WIRE_ID, record: VERIFIED_WIRE, instructions_hash: VERIFIED_WIRE.instructions_hash, instructions_source: "verified_record", value_date: "2026-11-12", prepared_at: clock.now(), run_id: "run-funder-1", editors: [ids["fay"]!], borrower_last_name: "Six", property_short: "100 N Central Ave, Phoenix AZ", funding_account_ref_hash: "sha256:funding", closing_documents: [] });
+    assert.equal(BigInt(String(((wire.output as Json)["wire"] as Json)["amount_cents"])), D_NET_WIRE_CENTS, "the wire is the worksheet's net");
+    // the record's funding-condition facts (26.x keeps them; the deriver runs 26.3 evaluateFundingConditions over them, never over the person's payload) — first with a blocking condition
+    const facts = (extra: Json, version: number) => runtime.entities.save([{ kind: "funding_facts", id: FUNDING_ID, data: { ...FACTS(clock.now()), ...extra, application_id: appId }, version, updatedAt: clock.now(), updatedBy: "system:test" }], { applicationId: appId });
+    await facts({ fraud: { fraud_hold: true, ofac_clear: true } }, 1);
+    clock.set(EST("2026-11-12", "09:30"));
+    const closed = await act("fin", "funding_approver", "funding_release", sub6, "release", { funding_id: FUNDING_ID, wire_id: WIRE_ID });
+    assert.equal(closed.status, 409, JSON.stringify(closed.body)); assert.equal(closed.body["code"], "GATE_CLOSED"); assert.ok(Array.isArray(closed.body["codes"]) && (closed.body["codes"] as string[]).length >= 1, "GATE_CLOSED{codes}");
+    assert.equal(await count(`loan_events WHERE application_id = $1 AND type LIKE 'funding.wire.%release%'`, [appId]), 0, "no release");
+    // the record cleared: the staff user who prepared the wire (an editor) is refused by 26.3's four-eyes rule
+    await facts({}, 2);
+    const same = await act("fay", "funding_approver", "funding_release", sub6, "release", { funding_id: FUNDING_ID, wire_id: WIRE_ID });
+    assert.equal(same.status, 409, JSON.stringify(same.body)); assert.equal(same.body["code"], "FOUR_EYES"); assert.equal(same.body["cause"], "RELEASE_BY_EDITOR");
+    const [refusedRow] = await workActions(`id = $1`, [same.body["action_id"]]); assert.equal(refusedRow!["status"], "refused"); assert.equal(refusedRow!["refusal_code"], "RELEASE_BY_EDITOR");
+    // a distinct funding_approver releases $556,852.07
+    clock.set(EST("2026-11-12", "09:40"));
+    const r = await act("fin", "funding_approver", "funding_release", sub6, "release", { funding_id: FUNDING_ID, wire_id: WIRE_ID });
+    assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body["status"], "executed"); assert.equal(r.body["tool"], "prepareWire");
+    const out = r.body["output"] as Json; const w = out["wire"] as Json; assert.equal(w["status"], "released"); assert.equal(w["amount_cents"], "55685207"); assert.equal(BigInt(w["amount_cents"] as string), D_NET_WIRE_CENTS);
+    const input = JSON.parse((await db.query<{ document: string }>(`SELECT metadata->>'document' AS document FROM documents WHERE id = $1`, [r.body["document_id"]]))[0]!.document) as Json;
+    assert.equal((input["conditions"] as Json)["passed"], true, "the derived evaluateFundingConditions passed from the record"); assert.equal(input["op"], "release"); assert.ok(!("amount_cents" in { funding_id: FUNDING_ID, wire_id: WIRE_ID }), "the person never typed a figure");
+    const release = await db.query<{ type: string; application_id: string | null; loan_id: string | null }>(`SELECT type, application_id::text AS application_id, loan_id::text AS loan_id FROM loan_events WHERE application_id = $1 AND type LIKE 'funding.%' AND type LIKE '%release%'`, [appId]);
+    assert.ok(release.length >= 1, "the release event"); for (const e of release) { assert.equal(e.application_id, appId); assert.equal(e.loan_id, null); }
+  } finally { clock.set(back); }
+});
+test("35.8-T7: Given an application with two open 23.3 conditions, when an `underwriting_reviewer` acts on `conditions.clear{condition_id, evidence_document_id}` for each and then `conditions.ctc`, then `condition.cleared` ×2 and `clear_to_close.issued` exist with the staff user as actor, 35.6's orchestration opens on the CTC, and the same three acts by an `ops_analyst` session are refused `ROLE_REQUIRED{underwriting_reviewer}` before any read of the condition rows (contract: the refusal precedes the projection query in the action log's timing and no derivation row exists).", { skip }, async () => {
+  await invite("uma", UMA, ["ops_analyst"]); await grant("uma", "underwriting_reviewer");
+  const l = await fixtureL1();
+  const app = await runtime.createApplication({ partner_party_id: l.partnerPartyId, channel: "organic", transaction_type: "purchase", occupancy: "primary", borrowers: [{ legal_name: "Applicant Seven" }] }, { kind: "system", id: "test" }); const appId = app.application.id; const sub7 = { kind: "application", id: appId };
+  // two open 23.3 conditions on the record (23.2's openCondition, the DU income template: a pay stub and a W-2) and the conditional approval of record
+  const mem = new MemoryEventStore(clock);
+  const cond = (n: number) => openCondition(mem, { application_id: appId, submission_id: "SUB-1", template_code: "COND_DU_VERIFY_INCOME_BASE", category: "income", stage: "ptd", text: "Your lender needs your most recent pay stub covering 30 days and your W-2 for the most recent year.", internal_text: `DU V100${n}`, du_message_id: `V100${n}`, evidence_kinds: ["paystub", "w2"], auto_clear_rule: "B3-3.2-01/DU:paystub_30d_w2_1y", requires_role: null, opened_at: clock.now(), message_ids: [`V100${n}`] }).condition;   // 23.2 keys the condition id on the DU message: two messages, two conditions
+  const c1 = cond(1); const c2 = cond(2); const decisionId = `CD-${R}`;
+  const decision = { decision_id: decisionId, application_id: appId, kind: "conditional_approval", du_submission_id: "SUB-1", interpretation_id: null, risk_assessment: { tier: "standard" }, inputs_hash: "sha256:fixture", evidence_document_ids: [], rule_set_versions: {}, model_version: "deterministic", prompt_version: "23.3-v1", rationale: "fixture", confidence: 1, conditions_snapshot: [], reviewer_id: null, reviewer_action: "none", reviewer_at: null, decided_at: clock.now(), decided_by: "agent:underwriter", valid_until: "2026-12-31", validity_component: "credit", status: "active", regb_notice_kind: "none", notice_id: null, ctc_at: null, ctc_checklist_id: null, ptf_cleared_at: null, reopen_cause: null, note_date: "2026-10-15", du_used: { qualifying_income_cents: "1200000" }, verified: { income_cents: "1200000" } };
+  await runtime.entities.save([{ kind: "conditions", id: c1.condition_id, data: c1 as unknown as Json, version: 1, updatedAt: clock.now(), updatedBy: "agent:underwriter" }, { kind: "conditions", id: c2.condition_id, data: c2 as unknown as Json, version: 1, updatedAt: clock.now(), updatedBy: "agent:underwriter" }, { kind: "credit_decisions", id: decisionId, data: decision, version: 1, updatedAt: clock.now(), updatedBy: "agent:underwriter" }], { applicationId: appId });
+  const doc = async (kind: string, metadata: Json): Promise<string> => (await db.query<{ id: string }>(`INSERT INTO documents (application_id, kind, sha256, byte_size, storage_uri, mime_type, metadata) VALUES ($1, $2, $3, 10, $4, 'application/pdf', $5::jsonb) RETURNING id::text AS id`, [appId, kind, sha256hex(`${kind}-${randomUUID()}`), `fake-blob://${randomUUID()}`, JSON.stringify(metadata)]))[0]!.id;
+  const paystub = await doc("paystub", { document_date: "2026-09-20", classified_at: clock.now(), is_credit_document: true, verification_id: "ver-inc-1" });
+  await doc("w2", { document_date: "2026-01-31", tax_year: 2025, classified_at: clock.now(), is_credit_document: true, verification_id: "ver-w2-2025" });
+  for (const code of CTC_ITEM_CODES) if (!["CTC_PTD_ALL_CLEARED", "CTC_NO_OPEN_INVESTIGATION", "CTC_DECISION_VALID", "CTC_REGB_TIMING"].includes(code)) await doc("ctc_evidence", { ctc_item: code, classified_at: clock.now() });
+  // an ops_analyst session: ROLE_REQUIRED{underwriting_reviewer} before any read of the condition rows — no derivation row, the refusal in the action log
+  for (const [action, decisionPayload] of [["clear", { condition_id: c1.condition_id, evidence_document_id: paystub }], ["clear", { condition_id: c2.condition_id, evidence_document_id: paystub }], ["ctc", {}]] as const) {
+    const r = await act("ana", "ops_analyst", "conditions", sub7, action, decisionPayload as Json);
+    assert.equal(r.status, 403, JSON.stringify(r.body)); assert.equal(r.body["code"], "ROLE_REQUIRED"); assert.equal(r.body["role"], "underwriting_reviewer"); assert.ok((r.body["held"] as string[]).includes("ops_analyst")); assert.deepEqual(r.body["act_as"], []);
+    const [row] = await workActions(`id = $1`, [r.body["action_id"]]); assert.equal(row!["status"], "refused"); assert.equal(row!["refusal_code"], "ROLE_REQUIRED"); assert.equal(row!["derivation_id"], null);
+    const sa = await staffActionsAtLeast(1, `subject_kind = 'work_action' AND subject_id = $1`, [r.body["action_id"]]); assert.equal(sa[0]!.result, "refused"); assert.equal(sa[0]!.refusal_code, "ROLE_REQUIRED"); assert.equal(sa[0]!.role, "ops_analyst");
+  }
+  assert.equal(await count(`work_derivations WHERE subject_id = $1`, [appId]), 0, "no derivation row: the refusal precedes the projection query");
+  // the underwriting_reviewer clears both and issues the CTC: condition.cleared ×2 and clear_to_close.issued with the staff user as actor
+  for (const c of [c1, c2]) { const r = await act("uma", "underwriting_reviewer", "conditions", sub7, "clear", { condition_id: c.condition_id, evidence_document_id: paystub, note: "pay stub and W-2 on file" }); assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body["tool"], "clearCondition"); }
+  const cleared = await events("condition.cleared", "AND application_id = $2", [appId]); assert.equal(cleared.length, 2); for (const e of cleared) { assert.equal(e.actor_kind, "human"); assert.equal(e.actor_id, ids["uma"]); }
+  const ctc = await act("uma", "underwriting_reviewer", "conditions", sub7, "ctc", {}); assert.equal(ctc.status, 200, JSON.stringify(ctc.body)); assert.equal(ctc.body["tool"], "issueClearToClose");
+  const issued = await events("clear_to_close.issued", "AND application_id = $2", [appId]); assert.equal(issued.length, 1); assert.equal(issued[0]!.actor_id, ids["uma"]); assert.equal(issued[0]!.payload["passed"], true);
+  const input = JSON.parse((await db.query<{ document: string }>(`SELECT metadata->>'document' AS document FROM documents WHERE id = $1`, [ctc.body["document_id"]]))[0]!.document) as Json;
+  assert.equal(((input["checklist"] as Json)["passed"]), true, "23.3's runCtcChecklist ran in the deriver"); assert.equal(Object.keys(input).includes("decision"), true);
+  // 35.6's orchestration opens on the CTC (through the port: the seam's literal until 35.6's tool lands)
+  const opened = await events("orchestration.opened", "AND application_id = $2", [appId]); assert.equal(opened.length, 1); assert.equal(opened[0]!.payload["cause"], "clear_to_close.issued");
+  const screen = await read("uma", "underwriting_reviewer", "funding_release", sub7); assert.equal(screen.status, 200, JSON.stringify(screen.body)); assert.equal(((screen.body["projection"] as Json)["orchestration"] as Json)["orchestration_id"], opened[0]!.payload["orchestration_id"]);
+  assertIdsOnly(screen.body, "the funding_release screen");
+});
 
 let T8_ITEMS: Json[] = []; let APP_ID = "";
 test("35.8-T8: Given the console's five item kinds on the fixture book plus one 35.3 `job.unit.dead`, one 35.6 `orchestration.held` and one proposal of T3, when `work.queue{role: ops_analyst}` runs, then every row carries a `screen_code` per rule 8, `required_role`, `opened_at` and `due_at`, the five console kinds match `GET /api/queue` for the same role row for row, each source has exactly one open item (a second sweep opens none), and `SM_WORK_ITEM_AGE_2BD` is armed on each item's `opened_at`.", { skip }, async () => {
@@ -388,7 +485,8 @@ test("35.8-T8: Given the console's five item kinds on the fixture book plus one 
   assert.ok(all.some((x) => x["source_kind"] === "approval_pending" && x["source_id"] === prop.body["action_id"] && x["required_role"] === "officer"), "the proposal is an approval_pending item");
   // the five console kinds match GET /api/queue for the same role row for row
   const console = await api("GET", "/ops/api/queue?role=ops_analyst", undefined, bearer(await fresh("ana"), "ops_analyst")); assert.equal(console.status, 200);
-  const consoleRows = console.body as unknown as Json[];
+  // the console still lists this process's own clocks and their escalations (SM_WORK_*); those are the queue's bookkeeping, never its sources (items.ts isOwnBookkeeping)
+  const consoleRows = (console.body as unknown as Json[]).filter((c) => !(c["kind"] === "breached_timer" && /^SM_WORK_/.test(String(c["title"]))) && !(c["kind"] === "escalation" && /^SM_WORK_/.test(String((c["detail"] as Json | undefined)?.["timer_code"] ?? ""))));
   const five = rows.filter((r) => ["escalation", "portal_task", "held_notice", "dead_letter", "breached_timer"].includes(r["source_kind"] as string));
   const missing = five.filter((r) => !consoleRows.some((c) => c["id"] === r["source_id"]));
   const missingTimers = missing.length ? await db.query<Json>(`SELECT id::text AS id, code, status::text AS status, breached_at::text AS breached_at FROM timers WHERE id::text = ANY($1::text[])`, [missing.map((r) => r["source_id"])]) : [];
@@ -505,8 +603,73 @@ test("35.8-T12: Given the bus registry loaded with 2.1's `payments.read/write` d
   } finally { if (original === undefined) delete def.humanRoles; else def.humanRoles = original; await registerScreens(runtime, db, clock.now()); }
 });
 
-test("35.8-T13: Given a 12.2 loss-mitigation evaluation with outcome `deny`, when a `human_agent` acts on `lossmit_decision.decide{request_id, disposition: deny, denial_reasons}`, then 12.2's own routing sends the denial to `lossmit_reviewer` (the `SM_LM_REVIEWER_DENIAL_APPROVAL_2BD` clock arms) and no denial notice is sent by the screen; when the `lossmit_reviewer` approves through the same screen, then 12.2's denial event and notice exist with both actors and the screen wrote no notice code of its own (contract: no notice row has `producer = '35.8'`).", { todo: true });
-test("35.8-T14: Given a 14.1 bankruptcy case and a trustee cheque of 150,000¢ received 2026-09-10, when an `ops_analyst` acts on `bankruptcy_case.apply_trustee{case_id, amount_cents: \"150000\", received_on}`, then the act is `proposed` (money) and the ledger is untouched; when an `officer` approves, then 14.1's `bk.ledger.apply_trustee` posts a balanced set with `rule_ref` and the `amount_cents` in the derivation equals the person's figure (the one decision field the person is the source of), and `state`, `ledger_snapshot` and `plan` in the input came from the record.", { todo: true });
+test("35.8-T13: Given a 12.2 loss-mitigation evaluation with outcome `deny`, when a `human_agent` acts on `lossmit_decision.decide{request_id, disposition: deny, denial_reasons}`, then 12.2's own routing sends the denial to `lossmit_reviewer` (the `SM_LM_REVIEWER_DENIAL_APPROVAL_2BD` clock arms) and no denial notice is sent by the screen; when the `lossmit_reviewer` approves through the same screen, then 12.2's denial event and notice exist with both actors and the screen wrote no notice code of its own (contract: no notice row has `producer = '35.8'`).", { skip }, async () => {
+  await invite("hal", HAL, ["ops_analyst"]); await grant("hal", "human_agent");
+  await invite("lin", LIN, ["ops_analyst"]); await grant("lin", "lossmit_reviewer");
+  clock.set(at(HOUR));
+  const l = await loanFixture({ upbCents: 25_000_000n, firstPaymentDate: "2026-08-01", state: "TX" }); const sub13 = sub(l);
+  // the borrower party the denial notice is addressed to (never on a screen: the deriver reads it, the notice tool prints it)
+  const [party] = await db.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, contact) VALUES ('borrower', 'Borrower Thirteen', '{}'::jsonb) RETURNING id::text AS id`);
+  const [b] = await db.query<{ id: string }>(`INSERT INTO borrowers (legal_name, tin_last4, party_id) VALUES ('Borrower Thirteen', '1313', $1) RETURNING id::text AS id`, [party!.id]);
+  await db.query(`INSERT INTO loan_borrowers (loan_id, borrower_id, role, is_primary) VALUES ($1, $2, 'borrower', true)`, [l.loanId, b!.id]);
+  // 12.2's evaluation on the record with the outcome the engine reached
+  const evalId = `eval-13-${R}`; const LOSSMIT: Actor = { kind: "agent", id: "lossmit-underwriter" };
+  await tool("12.2", "lossmit.evaluation.*", LOSSMIT, { op: "start", id: evalId, loan_id: l.loanId, complete_on: "2026-09-01", state: "TX", option: "flex_mod", basis: "complete_application" }, { loanId: l.loanId });
+  const noticesBefore = await count(`notices WHERE loan_id = $1`, [l.loanId]);
+  // the human_agent decides `deny`: 12.2's own routing sends the denial to the lossmit_reviewer — the clock arms, no notice is sent by the screen
+  const deny = await act("hal", "human_agent", "lossmit_decision", sub13, "decide", { request_id: evalId, disposition: "deny", denial_reasons: ["AFFORD_REPAY_150"] });
+  assert.equal(deny.status, 200, JSON.stringify(deny.body)); assert.equal(deny.body["tool"], "lossmit.evaluation.*"); const dOut = deny.body["output"] as Json; assert.equal(dOut["status"], "reviewer_pending"); assert.equal(dOut["has_denial"], true);
+  const sla = await timers("SM_LM_REVIEWER_DENIAL_APPROVAL_2BD", "AND loan_id = $2", [l.loanId]); assert.equal(sla.length, 1, JSON.stringify({ all: await timers("SM_LM_REVIEWER_DENIAL_APPROVAL_2BD"), out: dOut, events: (await db.query<Json>(`SELECT type, loan_id::text AS loan_id, payload FROM loan_events WHERE loan_id = $1 AND type LIKE 'lossmit.%'`, [l.loanId])) })); assert.equal(sla[0]!.status, "armed");
+  assert.equal(await count(`notices WHERE loan_id = $1`, [l.loanId]), noticesBefore, "no denial notice is sent by the screen");
+  const drafted = await events("lossmit.evaluation.decision_drafted", "AND loan_id = $2", [l.loanId]); assert.equal(drafted.length, 1); assert.equal(drafted[0]!.actor_id, ids["hal"]); assert.equal(drafted[0]!.payload["has_denial"], true);
+  // the lossmit_reviewer approves through the same screen; the denial notice is 12.2's own, dispatched as an action
+  const review = await act("lin", "lossmit_reviewer", "lossmit_decision", sub13, "review", { request_id: evalId, decision: "approved" });
+  assert.equal(review.status, 200, JSON.stringify(review.body)); const rOut = review.body["output"] as Json; assert.equal(rOut["status"], "decided"); assert.ok(rOut["reviewer_approval_id"]);
+  assert.equal((await timers("SM_LM_REVIEWER_DENIAL_APPROVAL_2BD", "AND loan_id = $2", [l.loanId]))[0]!.status, "satisfied");
+  const reviewed = await db.query<{ type: string; actor_id: string }>(`SELECT type, actor_id FROM loan_events WHERE loan_id = $1 AND type LIKE 'lossmit.evaluation.%' AND actor_id = $2`, [l.loanId, ids["lin"]]); assert.ok(reviewed.length >= 1, "12.2's decision event by the reviewer");
+  const notify = await act("lin", "lossmit_reviewer", "lossmit_decision", sub13, "notify", { request_id: evalId });
+  assert.equal(notify.status, 200, JSON.stringify(notify.body)); assert.equal(notify.body["process"], "12.2"); assert.equal(notify.body["tool"], "notice.render_send");
+  // 12.2's notice is the Notice Registry's (src/notices/service.ts: `notice.rendered` then `notice.sent` on the loan, the rendered notice in the runtime's notice memory); the screen wrote none of its own
+  const noticeEvents = await db.query<{ type: string; actor_id: string; payload: Json }>(`SELECT type, actor_id, payload FROM loan_events WHERE loan_id = $1 AND type IN ('notice.rendered', 'notice.sent', 'notice.held') ORDER BY sequence`, [l.loanId]);
+  const denialNotice = noticeEvents.filter((e) => e.payload["template"] === "NTC_REGX_41C1_DENIAL");
+  assert.ok(denialNotice.some((e) => e.type === "notice.rendered"), `12.2's denial notice rendered: ${JSON.stringify(noticeEvents.map((e) => [e.type, e.payload["template"]]))} out=${JSON.stringify(notify.body["output"])}`);
+  assert.ok(denialNotice.some((e) => e.type === "notice.sent"), "12.2's denial notice sent");
+  assert.ok([...runtime.noticeMemory.values()].some((n) => n.templateCode === "NTC_REGX_41C1_DENIAL" && n.loanId === l.loanId), "the rendered notice is in the registry's memory");
+  assert.equal(await count(`notices WHERE loan_id = $1 AND payload->>'producer' = '35.8'`, [l.loanId]), 0, "no notice row has producer = 35.8");
+  assert.equal(await count(`notices WHERE loan_id = $1`, [l.loanId]), noticesBefore, "the screen wrote no notice row of its own");
+  for (const e of noticeEvents) assert.notEqual(e.payload["producer"], "35.8", "no notice event names 35.8 as its producer");
+  const commands = await staffActionsAtLeast(3, `subject_kind = 'work_action' AND subject_id = ANY($1::text[])`, [[deny.body["action_id"], review.body["action_id"], notify.body["action_id"]]]);
+  assert.deepEqual(commands.map((x) => x.command).sort(), ["12.2 lossmit.evaluation.*", "12.2 lossmit.evaluation.*", "12.2 notice.render_send"]);
+  assert.deepEqual([...new Set(commands.map((x) => x.staff_user_id))].sort(), [ids["hal"], ids["lin"]].sort(), "both actors");
+  assertIdsOnly(deny.body, "the decide answer"); assertIdsOnly(review.body, "the review answer");
+});
+test("35.8-T14: Given a 14.1 bankruptcy case and a trustee cheque of 150,000¢ received 2026-09-10, when an `ops_analyst` acts on `bankruptcy_case.apply_trustee{case_id, amount_cents: \"150000\", received_on}`, then the act is `proposed` (money) and the ledger is untouched; when an `officer` approves, then 14.1's `bk.ledger.apply_trustee` posts a balanced set with `rule_ref` and the `amount_cents` in the derivation equals the person's figure (the one decision field the person is the source of), and `state`, `ledger_snapshot` and `plan` in the input came from the record.", { skip }, async () => {
+  clock.set(at(HOUR));
+  const l = await loanFixture({ upbCents: 26_000_000n, firstPaymentDate: "2026-08-01" }); const sub14 = sub(l); const caseId = `BK-14-${R}`;
+  // 14.1's case on the record: the ledgers, the plan (schedule, note), the claim
+  const schedule = [{ due: "2026-09-01", payment_number: 62, pi_cents: "158017", escrow_cents: "61240", amount_cents: "219257" }, { due: "2026-10-01", payment_number: 63, pi_cents: "158017", escrow_cents: "61240", amount_cents: "219257" }];
+  const plan = { schedule, note: { original_upb_cents: "26000000", rate_pct: "6.500", term_months: 360, pi_cents: "158017" }, designation: "post-petition" };
+  const claim = { total_cents: "438514", components: [{ component: "interest", installment_due: "2026-07-01", cents: "140833" }, { component: "principal", installment_due: "2026-07-01", cents: "17184" }, { component: "interest", installment_due: "2026-08-01", cents: "140740" }, { component: "principal", installment_due: "2026-08-01", cents: "17277" }, { component: "escrow_deficiency", installment_due: null, cents: "122480" }] };
+  const ledgers = { prepetition_arrearage_cents: "438514", postpetition: [{ due: "2026-09-01", amount_cents: "219257", paid_cents: "0" }, { due: "2026-10-01", amount_cents: "219257", paid_cents: "0" }], postpetition_suspense_cents: "0" };
+  await runtime.entities.save([{ kind: "bankruptcy_cases", id: caseId, data: { loan_id: l.loanId, case_id: caseId, chapter: "13", status: "active", case_number_full: "26-12345-ABC", conduit_district: true, plan_designation: "post-petition", ledgers, plan, claim }, version: 1, updatedAt: clock.now(), updatedBy: "agent:bankruptcy-ops" }], { loanId: l.loanId });
+  const linesBefore = await count(`ledger_lines WHERE loan_id = $1`, [l.loanId]);
+  // the trustee cheque of 150,000¢ received 2026-09-10 — the one figure the person is the source of; the act is money: proposed
+  const prop = await act("ana", "ops_analyst", "bankruptcy_case", sub14, "apply_trustee", { case_id: caseId, amount_cents: "150000", received_on: "2026-09-10" });
+  assert.equal(prop.status, 200, JSON.stringify(prop.body)); assert.equal(prop.body["status"], "proposed"); assert.equal(prop.body["money"], true); assert.equal(prop.body["tool"], "bk.ledger.apply_trustee");
+  assert.equal(await count(`ledger_lines WHERE loan_id = $1`, [l.loanId]), linesBefore, "the ledger is untouched");
+  const derivation = JSON.parse((await db.query<{ document: string }>(`SELECT metadata->>'document' AS document FROM documents WHERE id = $1`, [prop.body["document_id"]]))[0]!.document) as Json;
+  assert.equal(derivation["amount_cents"], "150000", "the amount in the derivation equals the person's figure");
+  assert.deepEqual(derivation["plan"], plan, "plan from the record"); assert.equal((derivation["ledger_snapshot"] as Json)["prepetition_arrearage_cents"], "438514"); assert.deepEqual((derivation["ledgers"] as Json)["postpetition"], ledgers.postpetition);
+  assert.equal((derivation["state"] as Json)["upb_cents"], "26000000", "state from the ledger"); assert.equal(derivation["case_number_full"], "26-12345-ABC");
+  // a distinct officer approves: 14.1 posts a balanced set with rule_ref
+  const ok = await decide("otto", prop.body["action_id"] as string, "approved", "trustee voucher verified");
+  assert.equal(ok.status, 200, JSON.stringify(ok.body)); assert.equal(ok.body["decision"], "approved");
+  const sets = await db.query<{ set_id: string; sum: string; n: string; refs: string[] }>(`SELECT set_id::text AS set_id, sum(amount_cents)::text AS sum, count(*)::text AS n, array_agg(rule_ref) AS refs FROM ledger_lines WHERE set_id IN (SELECT DISTINCT set_id FROM ledger_lines WHERE loan_id = $1 AND rule_ref LIKE '14.1:%') GROUP BY set_id`, [l.loanId]);
+  assert.ok(sets.length >= 1, "14.1's postings"); for (const st of sets) { assert.equal(st.sum, "0", `balanced set ${st.set_id}`); assert.ok(st.refs.every((r) => r.startsWith("14.1:")), "every line carries 14.1's rule_ref"); }
+  assert.ok((await count(`ledger_lines WHERE loan_id = $1 AND account = 'bk_trustee_clearing'`, [l.loanId])) >= 1, "posted to bk_trustee_clearing");
+  const [executed] = await workActions(`id = $1`, [ok.body["executed_action_id"]]); assert.equal(executed!["status"], "executed"); assert.equal(executed!["approval_of"], prop.body["action_id"]);
+  assertIdsOnly(prop.body, "the proposal answer");
+});
 
 test("35.8-T15: Given any screen action, then no `ledger_lines` row has `rule_ref LIKE '35.8%'`, no `notices` row was produced by this process, no `timers` row was written by it (contract test over every `work.*` tool: the timer, notice and ledger tables before and after each tool differ only by rows the dispatched owning tool wrote), and every `work.screen.act`, `work.item.claim`, `work.item.close` and `work.action.decide` by an agent actor is refused `HUMAN_ONLY_ACT`.", { skip }, async () => {
   const l = await fixtureL1();

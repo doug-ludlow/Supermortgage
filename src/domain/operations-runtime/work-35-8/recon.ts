@@ -4,7 +4,7 @@
  * subject_kind = work_action), its `agent_decisions` row and its `command_event_id`; a `refused` row has its `staff_actions`
  * row and no event; every `derivation_id` resolves to a stored document whose sha-256 equals `input_sha256` (35.2's
  * `documents.verify`); every current `work_screen_versions` row still matches the registry now loaded (a mismatch is a
- * stale screen). The run also counts the day's `sole_officer_money_acts` — executed money-field actions with no
+ * stale screen) and, for a row whose `staff_actions` row exists, fills `staff_action_id` once (0201). The run also counts the day's `sole_officer_money_acts` — executed money-field actions with no
  * `approval_of`, an officer acting alone under rule 5 (34.1 rule 6's access review lists them for the quarter). One
  * `work_log_recon_runs` row, a report document, `work.log.recon.run_completed{…}` (SM_WORK_LOG_RECON_DAILY's satisfier and
  * re-trigger on the global subject) and, when orphans or stale screens > 0, a sev 3 `compliance` escalation with the report.
@@ -28,16 +28,18 @@ export interface ReconResult { readonly run_id: string; readonly as_of_date: str
 export async function logRecon(d: ReconDeps, i: { as_of_date: string }): Promise<ReconResult> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(i.as_of_date)) throw new RangeError("as_of_date is a date (YYYY-MM-DD)");
   const ports = portsOf(d.ports);
-  const rows = await d.q.query<Row>(`SELECT id::text AS id, status, screen_code, screen_version, action_code, derivation_id::text AS derivation_id, command_event_id::text AS command_event_id, agent_decision_id::text AS agent_decision_id, approval_of::text AS approval_of, role, actor_id FROM work_actions WHERE (created_at AT TIME ZONE 'America/New_York')::date = $1::date ORDER BY created_at, id`, [i.as_of_date]);
+  const rows = await d.q.query<Row>(`SELECT id::text AS id, status, screen_code, screen_version, action_code, derivation_id::text AS derivation_id, command_event_id::text AS command_event_id, agent_decision_id::text AS agent_decision_id, approval_of::text AS approval_of, staff_action_id::text AS staff_action_id, role, actor_id FROM work_actions WHERE (created_at AT TIME ZONE 'America/New_York')::date = $1::date ORDER BY created_at, id`, [i.as_of_date]);
   const orphans: { action_id: string; why: string }[] = [];
   const versions = await currentScreens(d.q);
   const moneyOf = (code: string, version: number, action: string): boolean => { const v = versions.find((x) => x.code === code); const a = (v && v.version === version ? v : null)?.actions.find((x) => x.code === action); return a?.money === true; };
-  let soleOfficer = 0;
+  let soleOfficer = 0; let linked = 0;
   for (const r of rows) {
     const id = String(r["id"]); const status = String(r["status"]);
     // the console keys the request's row to the act; an approved proposal's executed row is the decide request's, keyed to the proposal (approval_of)
-    const [sa] = await d.q.query<{ n: string }>(`SELECT count(*)::text AS n FROM staff_actions WHERE subject_kind = 'work_action' AND subject_id = ANY($1::text[])`, [[id, ...(r["approval_of"] ? [String(r["approval_of"])] : [])]]);
-    const hasStaff = Number(sa?.n ?? 0) > 0;
+    const staffRows = await d.q.query<{ id: string }>(`SELECT id::text AS id FROM staff_actions WHERE subject_kind = 'work_action' AND subject_id = ANY($1::text[]) ORDER BY at LIMIT 1`, [[id, ...(r["approval_of"] ? [String(r["approval_of"])] : [])]]);
+    const hasStaff = staffRows.length > 0;
+    // the link the act could not carry at insert (the console's row lands after the answer): filled once, here (0201 admits NULL → value)
+    if (hasStaff && !r["staff_action_id"]) { const said = staffRows[0]!.id; d.deferWrite(async (q) => { await q.query(`UPDATE work_actions SET staff_action_id = $2 WHERE id = $1 AND staff_action_id IS NULL`, [id, said]); }); linked += 1; }
     if (status === "executed") {
       if (!hasStaff) orphans.push({ action_id: id, why: "no staff_actions row" });
       if (!r["agent_decision_id"]) orphans.push({ action_id: id, why: "no agent_decisions row" });
@@ -62,7 +64,7 @@ export async function logRecon(d: ReconDeps, i: { as_of_date: string }): Promise
   const staleCount = staleTools.size || stale.length;
   const orphanIds = [...new Set(orphans.map((o) => o.action_id))];
   const run_id = randomUUID(); const report_document_id = randomUUID();
-  const report = { run_id, as_of_date: i.as_of_date, actions_checked: rows.length, orphans: orphanIds.length, orphan_details: orphans, stale_screens: staleCount, stale_codes: stale, stale_tools: [...staleTools], sole_officer_money_acts: soleOfficer, checked: rows.map((r) => ({ action_id: String(r["id"]), status: String(r["status"]), screen_code: String(r["screen_code"]), action_code: String(r["action_code"]) })), produced_at: d.now };
+  const report = { run_id, as_of_date: i.as_of_date, actions_checked: rows.length, orphans: orphanIds.length, orphan_details: orphans, stale_screens: staleCount, stale_codes: stale, stale_tools: [...staleTools], sole_officer_money_acts: soleOfficer, staff_actions_linked: linked, checked: rows.map((r) => ({ action_id: String(r["id"]), status: String(r["status"]), screen_code: String(r["screen_code"]), action_code: String(r["action_code"]) })), produced_at: d.now };
   d.deferWrite(async (q) => {
     await ports.documents.store(q, { id: report_document_id, kind: RECON_DOCUMENT_KIND, text: toJson(report), loan_id: null, application_id: null, retention_class: "security_logs_5y", metadata: { run_id, as_of_date: i.as_of_date }, now: d.now });
     await q.query(`INSERT INTO work_log_recon_runs (id, as_of_date, actions_checked, orphans, stale_screens, sole_officer_money_acts, outcome, report_document_id, created_at) VALUES ($1, $2::date, $3, $4, $5, $6, 'completed', $7, $8::timestamptz)`, [run_id, i.as_of_date, rows.length, orphanIds.length, staleCount, soleOfficer, report_document_id, d.now]);

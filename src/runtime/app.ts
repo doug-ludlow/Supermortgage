@@ -279,7 +279,8 @@ export class Runtime {
     const expected = expectedVersionsOf(req.input);
     // events persisted by units of work a tool runs inside this command (through the command view) — published once this command commits
     const nested: DomainEvent[] = [];
-    const r: UowResult<ExecuteResult<unknown>> = await this.uow.run(scope, async (uow) => {
+    let r: UowResult<ExecuteResult<unknown>>;
+    try { r = await this.uow.run(scope, async (uow) => {
       const view = this.commandView(uow.q!, nested);
       // a loan-scoped command's events that name neither key are the loan's (the kernel store defaults the application key from the scope; the loan key is defaulted here)
       const ctx = uow.loanId ? { ...uow, events: withDefaultLoan(uow.events, uow.loanId) } : uow;
@@ -316,7 +317,13 @@ export class Runtime {
         await projectVersions(q, { phase: "commit", versions: scoped, scope, now: this.clock.now(), commandEventId: info.firstEventId });
         for (const e of escalations?.list() ?? []) await this.escalationRepo.save(e, q);
         for (const fn of deferred) await fn(q);
-      } });
+      } }); }
+    catch (e) {
+      // 35.8 rule 7 (34.4's precedent for the rare write that must outlive a refusal): a refusal that carries `afterRollback` writes its audit rows here — after this command's transaction rolled back and its connection returned to the pool, never on a second connection while the first is held (the pool-of-four deadlock the note on commandView describes)
+      const after = (e as { afterRollback?: (db: Db) => Promise<void> } | null)?.afterRollback;
+      if (typeof after === "function") await after(this.root.db).catch((err: unknown) => { this.logger?.error("refusal audit write failed", { error: err }); });
+      throw e;
+    }
     if (nested.length) this.uow.notifyCommitted(nested);
     return { output: r.result.output, ...(r.result.decisionId ? { decisionId: r.result.decisionId } : {}), event: r.result.event, events: r.events, timers: r.timers,
       decisions: r.decisions.map((d) => ({ id: d.id })), escalations: (escalations?.list() ?? []).map((e) => ({ id: e.id, kind: e.kind, ownerRole: e.ownerRole })) };

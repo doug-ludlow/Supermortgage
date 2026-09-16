@@ -4,7 +4,7 @@
  *
  *   the screens       twelve codes, each a read projection plus named actions, every action a call to the owning section's
  *                     bus tool with the engine inputs derived server-side (rule 1, rule 2).
- *   the queue         one open item per source (rule 8); a claim is one person for CLAIM_HOURS (rule 9).
+ *   the queue         one open item per source (rule 8); a claim is one person until SM_WORK_ITEM_CLAIM_4H lapses it (rule 9).
  *   the numbers       4 hours (the claim), 2 and 5 business days (the item's age), 1 business day (an approval) — the registry
  *                     rows arm them; nothing here computes a deadline.
  *   WorkRefused       the process's own refusal (a StaffError so the console answers it in its shape): NO_CLIENT_STATE,
@@ -22,7 +22,7 @@ export const WORK_PROMPT_VERSION = "35.8-v1";
 export const DERIVATION_DOCUMENT_KIND = "work-derivation.json";
 export const RECON_DOCUMENT_KIND = "work-log-recon.json";
 
-export const CLAIM_HOURS = 4;
+export const CLAIM_TIMER_CODE = "SM_WORK_ITEM_CLAIM_4H";
 export const CLAIM_LAPSES_BEFORE_ESCALATION = 3;
 export const ERRORS_BEFORE_ESCALATION = 3;
 

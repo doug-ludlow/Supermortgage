@@ -20,7 +20,7 @@ import { randomUUID } from "node:crypto";
 import type { Queryable } from "../../../infra/db/client.ts";
 import { toJson } from "../../../infra/db/client.ts";
 import type { Actor, EventStore } from "../../../kernel/events/index.ts";
-import type { EntityStore } from "../../../app/tools.ts";
+import { EntityStore } from "../../../app/tools.ts";
 import { CommandRefused } from "../../../app/commands.ts";
 import { canonicalJson, canonicalSha256 } from "../../../app/canonical.ts";
 import type { Runtime } from "../../../runtime/app.ts";
@@ -38,6 +38,12 @@ import * as ev from "./events.ts";
 import { DERIVATION_DOCUMENT_KIND, ERRORS_BEFORE_ESCALATION, PROCESS_35_8, WorkRefused, actorId, isUuid, obj, s, type ActionStatus, type Row, type Subject } from "./types.ts";
 
 export interface ActDeps { readonly rt: Runtime; readonly q: Queryable; readonly store: EntityStore; readonly events: EventStore; readonly now: string; readonly actor: Actor; readonly escalations: EscalationService; readonly deferWrite: (fn: (q: Queryable) => Promise<void>) => void; readonly sessionId?: string | null; readonly ports?: WorkPorts; readonly held?: readonly string[] }
+type Write = (q: Queryable) => Promise<void>;
+/** The rows a refusal keeps (rule 7; edge case 1: the derivation "remains as evidence of what was attempted"): written with the command when it commits, or after the rollback through the runtime's hook (src/runtime/app.ts executeDef `afterRollback`) when it refuses — never on a second pool connection while the command holds one. */
+interface Outlive { readonly writes: Write[] }
+const outliveOf = (): Outlive => ({ writes: [] });
+/** A WorkRefused that carries its audit writes for the runtime to run after the rollback. */
+const withAfterRollback = (e: WorkRefused, writes: readonly Write[]): WorkRefused => Object.assign(e, { afterRollback: async (db: Queryable) => { for (const w of writes) await w(db); } });
 export interface WorkAction { readonly id: string; readonly work_item_id: string | null; readonly screen_code: string; readonly screen_version: number; readonly action_code: string; readonly subject_kind: string; readonly subject_id: string; readonly loan_id: string | null; readonly application_id: string | null; readonly staff_user_id: string | null; readonly actor_id: string; readonly role: string | null; readonly decision_payload: Row; readonly decision_sha256: string; readonly derivation_id: string | null; readonly process: string; readonly tool: string; readonly status: ActionStatus; readonly refusal_code: string | null; readonly command_event_id: string | null; readonly agent_decision_id: string | null; readonly approval_of: string | null; readonly input_sha256: string | null; readonly created_at: string }
 export const ACTION_COLS = `id::text AS id, work_item_id::text AS work_item_id, screen_code, screen_version, action_code, subject_kind, subject_id, loan_id::text AS loan_id, application_id::text AS application_id, staff_user_id::text AS staff_user_id, actor_id, role, decision_payload, decision_sha256, derivation_id::text AS derivation_id, process, tool, status, refusal_code, command_event_id::text AS command_event_id, agent_decision_id::text AS agent_decision_id, approval_of::text AS approval_of, input_sha256, created_at::text AS created_at`;
 export const toAction = (r: Row): WorkAction => ({ id: String(r["id"]), work_item_id: (r["work_item_id"] as string | null) ?? null, screen_code: String(r["screen_code"]), screen_version: Number(r["screen_version"]), action_code: String(r["action_code"]), subject_kind: String(r["subject_kind"]), subject_id: String(r["subject_id"]), loan_id: (r["loan_id"] as string | null) ?? null, application_id: (r["application_id"] as string | null) ?? null, staff_user_id: (r["staff_user_id"] as string | null) ?? null, actor_id: String(r["actor_id"]), role: (r["role"] as string | null) ?? null, decision_payload: obj(r["decision_payload"]), decision_sha256: String(r["decision_sha256"]), derivation_id: (r["derivation_id"] as string | null) ?? null, process: String(r["process"]), tool: String(r["tool"]), status: String(r["status"]) as ActionStatus, refusal_code: (r["refusal_code"] as string | null) ?? null, command_event_id: (r["command_event_id"] as string | null) ?? null, agent_decision_id: (r["agent_decision_id"] as string | null) ?? null, approval_of: (r["approval_of"] as string | null) ?? null, input_sha256: (r["input_sha256"] as string | null) ?? null, created_at: String(r["created_at"]) });
@@ -105,21 +111,36 @@ async function itemFor(d: ActDeps, itemId: string | null, subject: Subject): Pro
 }
 
 // ---------------------------------------------------------------- the derivation (rule 3)
+/** The stored form of a derived input (Data model: "PII never stored — ids, codes and cents strings only"): a recipient list is kept as party ids; a name, address, e-mail or phone anywhere in the input is dropped. The tool receives the full input (a notice tool prints the address); the record, the hash and the dry-run answer carry the redacted form. */
+const PII_KEYS = /^(name|legal_name|first_name|last_name|email|e_mail|phone|phone_number|mailing_address|mailingAddress|address|address_line1|address_line2|street|ssn|tin|account_number|routing_number)$/;
+export function redactForRecord(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(redactForRecord);
+  if (v && typeof v === "object" && !(v instanceof Date)) {
+    const o = v as Row; const out: Row = {};
+    for (const [k, x] of Object.entries(o)) { if (PII_KEYS.test(k)) continue; out[k] = k === "recipients" && Array.isArray(x) ? x.map((r) => ({ party_id: obj(r)["partyId"] ?? obj(r)["party_id"] ?? null, redacted: true })) : redactForRecord(x); }
+    return out;
+  }
+  return v;
+}
 export interface StoredDerivation { readonly derivation_id: string; readonly document_id: string; readonly input_sha256: string; readonly canonical: string; readonly derived: Derived }
 async function derive(d: ActDeps, r: Resolved, subject: Subject, decision: Row): Promise<Derived> {
   const fn = DERIVERS[r.action.deriver]; if (!fn) throw new WorkRefused(501, "DERIVER_MISSING", `no deriver ${r.action.deriver}`, { action: r.action.code });
   const c: DeriveContext = { rt: d.rt, store: d.store, q: d.q, now: d.now, actor: d.actor, subject, decision, ports: portsOf(d.ports), environment: d.rt.environment };
   return fn(c);
 }
-/** Rule 3: the canonical JSON the tool will receive, hashed and stored through 35.2 as `work-derivation.json` with its sources — written through the root pool so it survives a refusal (edge case 1). */
-async function storeDerivation(d: ActDeps, r: Resolved, subject: Subject, keys: { loan_id: string | null; application_id: string | null }, derived: Derived): Promise<StoredDerivation> {
-  const canonical = canonicalJson(derived.input); const input_sha256 = canonicalSha256(derived.input);
-  const derivation_id = randomUUID();
-  const ports = portsOf(d.ports); const root = d.rt.root.db;
-  const doc = await ports.documents.store(root, { kind: DERIVATION_DOCUMENT_KIND, text: canonical, loan_id: keys.loan_id, application_id: keys.application_id, retention_class: "life_of_loan_plus_4y", metadata: { derivation_id, screen_code: r.screen.code, action_code: r.action.code, deriver: r.action.deriver, deriver_version: r.action.deriver_version, subject, sources: derived.sources }, now: d.now });
-  await root.query(`INSERT INTO work_derivations (id, screen_code, action_code, deriver, deriver_version, subject_kind, subject_id, sources, input_sha256, document_id, derived_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11::timestamptz)`,
-    [derivation_id, r.screen.code, r.action.code, r.action.deriver, r.action.deriver_version, subject.kind, subject.id, toJson(derived.sources), input_sha256, doc.document_id, d.now]);
-  return { derivation_id, document_id: doc.document_id, input_sha256, canonical, derived };
+/** Rule 3: the canonical JSON the tool will receive (its stored, redacted form), hashed and stored through 35.2 as `work-derivation.json` with its sources — with the command, or after a refusal's rollback (edge case 1: the evidence of what was attempted remains). */
+async function storeDerivation(d: ActDeps, o: Outlive, r: Resolved, subject: Subject, keys: { loan_id: string | null; application_id: string | null }, derived: Derived): Promise<StoredDerivation> {
+  const stored = redactForRecord(derived.input);
+  const canonical = canonicalJson(stored); const input_sha256 = canonicalSha256(stored);
+  const derivation_id = randomUUID(); const document_id = randomUUID();
+  const ports = portsOf(d.ports);
+  const write: Write = async (q) => {
+    await ports.documents.store(q, { id: document_id, kind: DERIVATION_DOCUMENT_KIND, text: canonical, loan_id: keys.loan_id, application_id: keys.application_id, retention_class: "life_of_loan_plus_4y", metadata: { derivation_id, screen_code: r.screen.code, action_code: r.action.code, deriver: r.action.deriver, deriver_version: r.action.deriver_version, subject, sources: derived.sources }, now: d.now });
+    await q.query(`INSERT INTO work_derivations (id, screen_code, action_code, deriver, deriver_version, subject_kind, subject_id, sources, input_sha256, document_id, derived_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11::timestamptz)`,
+      [derivation_id, r.screen.code, r.action.code, r.action.deriver, r.action.deriver_version, subject.kind, subject.id, toJson(derived.sources), input_sha256, document_id, d.now]);
+  };
+  d.deferWrite(write); o.writes.push(write);
+  return { derivation_id, document_id, input_sha256, canonical, derived };
 }
 /** `work.screen.derive` — the dry run: the derived input, its hash and sources; the derivation row and document, nothing else. */
 export async function screenDerive(d: ActDeps, i: { code: string; action: string; subject: Subject; decision: Row }): Promise<{ derivation_id: string; document_id: string; input_sha256: string; sources: Row; input: Row; screen_code: string; action_code: string; process: string; tool: string }> {
@@ -127,7 +148,7 @@ export async function screenDerive(d: ActDeps, i: { code: string; action: string
   const keys = await subjectExists(d, i.subject);
   validateDecision(r.action, i.decision);
   const derived = await derive(d, r, i.subject, i.decision);
-  const st = await storeDerivation(d, r, i.subject, keys, derived);
+  const st = await storeDerivation(d, outliveOf(), r, i.subject, keys, derived);
   return { derivation_id: st.derivation_id, document_id: st.document_id, input_sha256: st.input_sha256, sources: derived.sources, input: JSON.parse(st.canonical) as Row, screen_code: r.screen.code, action_code: r.action.code, process: r.action.process, tool: r.action.tool };
 }
 
@@ -139,22 +160,32 @@ function actionParams(d: ActDeps, x: RowInput): unknown[] {
   return [id, x.item?.id ?? null, x.r.screen.code, x.r.version.version, x.r.action.code, x.subject.kind, x.subject.id, x.keys.loan_id, x.keys.application_id, staffId(actor), actorId(actor), d.sessionId ?? null, actor.role ?? null, toJson(x.decision), canonicalSha256(x.decision), x.derivation_id, x.r.action.process, x.r.action.tool, x.status, x.refusal_code ?? null, x.command_event_id ?? null, x.agent_decision_id ?? null, x.approval_of ?? null, x.input_sha256, d.now];
 }
 /** The refused / errored row, written through the root pool so it outlives the rollback (rule 7), then the refusal itself. */
-async function refuse(d: ActDeps, x: Omit<RowInput, "status">, e: WorkRefused | CommandRefused | Error): Promise<never> {
+/** A section's own refusal class (FundingRefused, DecisionRefused, PostClosingRefused, …): an Error carrying its code — the owning tool refused, with its code. */
+const sectionCode = (e: unknown): string | null => { if (!(e instanceof Error) || e instanceof WorkRefused || e instanceof CommandRefused) return null; const c = (e as unknown as { code?: unknown }).code; return typeof c === "string" && c ? c : null; };
+/** 26.3's four-eyes refusals (rule 7) as the screen answers them — FOUR_EYES{cause}; the row keeps the tool's code (edge case 1). */
+const FOUR_EYES_CODES = new Set(["RELEASE_BY_EDITOR", "FOUR_EYES_FAILED", "RELEASE_NEEDS_FUNDING_APPROVER"]);
+async function refuse(d: ActDeps, o: Outlive, x: Omit<RowInput, "status">, e: WorkRefused | CommandRefused | Error): Promise<never> {
   const id = randomUUID();
-  const code = e instanceof WorkRefused ? e.code : e instanceof CommandRefused ? e.code : e.name || "Error";
-  const status: ActionStatus = e instanceof WorkRefused || e instanceof CommandRefused ? "refused" : "error";
-  await d.rt.root.db.query(insertActionSql, actionParams(d, { ...x, id, status, refusal_code: code }));
+  const sc = sectionCode(e);
+  const code = e instanceof WorkRefused ? e.code : e instanceof CommandRefused ? e.code : sc ?? (e.name || "Error");
+  const status: ActionStatus = e instanceof WorkRefused || e instanceof CommandRefused || sc !== null ? "refused" : "error";
+  const params = actionParams(d, { ...x, id, status, refusal_code: code });
+  const rt = d.rt.root;
+  const writes: Write[] = [...o.writes, async (q) => { await q.query(insertActionSql, params); }];
   if (status === "error" && x.item) {
-    // edge case: a sev 3 ops_analyst escalation after the third error on one item — its own global unit of work on the root runtime (outside the rolled-back command)
-    const [n] = await d.rt.root.db.query<{ n: string }>(`SELECT count(*)::text AS n FROM work_actions WHERE work_item_id = $1 AND status = 'error'`, [x.item.id]);
-    if (Number(n?.n ?? 0) >= ERRORS_BEFORE_ESCALATION) {
+    // edge case: a sev 3 ops_analyst escalation after the third error on one item — its own global unit of work after the rollback
+    const item = x.item;
+    writes.push(async (q) => {
+      const [n] = await q.query<{ n: string }>(`SELECT count(*)::text AS n FROM work_actions WHERE work_item_id = $1 AND status = 'error'`, [item.id]);
+      if (Number(n?.n ?? 0) < ERRORS_BEFORE_ESCALATION) return;
       let es: EscalationService | undefined;
-      await d.rt.root.uow.run({}, (ctx) => { es = new EscalationService(ctx.events, ctx.clock); es.open({ kind: "sev3", ownerRole: "ops_analyst", ...(x.keys.loan_id ? { loanId: x.keys.loan_id } : {}), ...(x.keys.application_id ? { applicationId: x.keys.application_id } : {}), severity: "3", payload: { work_item_id: x.item!.id, action_id: id, errors: Number(n?.n ?? 0), screen_code: x.r.screen.code, action_code: x.r.action.code, error_class: code } }, d.actor); ctx.events.append(ev.actionRefused(id, d.actor, { code, screen_code: x.r.screen.code, action_code: x.r.action.code, tool: x.r.action.tool })); }, { clock: d.rt.clock, commit: async (q) => { for (const e of es?.list() ?? []) await d.rt.root.escalationRepo.save(e, q); } }).catch(() => undefined);
-    }
+      await rt.uow.run({}, (ctx) => { es = new EscalationService(ctx.events, ctx.clock); es.open({ kind: "sev3", ownerRole: "ops_analyst", ...(x.keys.loan_id ? { loanId: x.keys.loan_id } : {}), ...(x.keys.application_id ? { applicationId: x.keys.application_id } : {}), severity: "3", payload: { work_item_id: item.id, action_id: id, errors: Number(n?.n ?? 0), screen_code: x.r.screen.code, action_code: x.r.action.code, error_class: code } }, d.actor); ctx.events.append(ev.actionRefused(id, d.actor, { code, screen_code: x.r.screen.code, action_code: x.r.action.code, tool: x.r.action.tool })); }, { clock: rt.clock, commit: async (qq) => { for (const esc of es?.list() ?? []) await rt.escalationRepo.save(esc, qq); } });
+    });
   }
-  if (e instanceof WorkRefused) throw new WorkRefused(e.status, e.code, e.message, { ...e.extra, action_id: id });
-  if (e instanceof CommandRefused) throw new WorkRefused(409, e.code, e.message, { action_id: id, command: e.command, citation: e.citation, tool_code: e.code });
-  throw new WorkRefused(500, "TOOL_ERROR", `${x.r.action.process} ${x.r.action.tool} failed: ${e.name}`, { action_id: id, error_class: e.name });
+  if (e instanceof WorkRefused) throw withAfterRollback(new WorkRefused(e.status, e.code, e.message, { ...e.extra, action_id: id }), writes);
+  if (e instanceof CommandRefused) throw withAfterRollback(new WorkRefused(409, e.code, e.message, { action_id: id, command: e.command, citation: e.citation, tool_code: e.code }), writes);
+  if (sc !== null) throw withAfterRollback(new WorkRefused(409, FOUR_EYES_CODES.has(sc) ? "FOUR_EYES" : sc, e.message, { action_id: id, tool_code: sc, cause: sc, citation: (e as { citation?: string }).citation ?? null }), writes);
+  throw withAfterRollback(new WorkRefused(500, "TOOL_ERROR", `${x.r.action.process} ${x.r.action.tool} failed: ${e.name}`, { action_id: id, error_class: e.name }), writes);
 }
 
 // ---------------------------------------------------------------- work.screen.read (rule 1)
@@ -218,19 +249,21 @@ async function dispatch(d: ActDeps, r: Resolved, keys: { loan_id: string | null;
   return { output: out.output, command_event_id: out.events[0]?.id ?? null, agent_decision_id: out.decisions[0]?.id ?? null, events: out.events.map((e) => e.type) };
 }
 export async function screenAct(d: ActDeps, i: ActInput, mode: "act" | "propose" = "act"): Promise<ActResult> {
+  const o = outliveOf();
   const r = await resolveAction(d, i.code, i.action);
-  if (mode === "act") await requireRole(d, r.action);
+  // rule 4: the role check precedes every read of the subject's rows; its refusal is still a row in the action log (T7: "the refusal precedes the projection query in the action log's timing and no derivation row exists") — keyed to the subject when it exists, unkeyed otherwise
+  if (mode === "act") { try { await requireRole(d, r.action); } catch (e) { if (!(e instanceof WorkRefused)) throw e; const keys = await subjectExists(d, i.subject).catch(() => ({ loan_id: null, application_id: null })); return refuse(d, o, { item: null, r, subject: i.subject, keys, decision: i.decision, derivation_id: null, input_sha256: null }, e); } }
   const keys = await subjectExists(d, i.subject);
   const base = { item: null as WorkItem | null, r, subject: i.subject, keys, decision: i.decision, derivation_id: null as string | null, input_sha256: null as string | null };
-  if (r.stale) return refuse(d, base, new WorkRefused(409, "SCREEN_STALE", `screen ${r.screen.code} version ${r.version.version} is stale: re-register it`, { screen_code: r.screen.code, version: r.version.version }));
-  if (!r.action.registered) return refuse(d, base, new WorkRefused(501, "TOOL_UNREGISTERED", `${r.action.process} ${r.action.tool} is not on the bus`, { process: r.action.process, tool: r.action.tool }));
+  if (r.stale) return refuse(d, o, base, new WorkRefused(409, "SCREEN_STALE", `screen ${r.screen.code} version ${r.version.version} is stale: re-register it`, { screen_code: r.screen.code, version: r.version.version }));
+  if (!r.action.registered) return refuse(d, o, base, new WorkRefused(501, "TOOL_UNREGISTERED", `${r.action.process} ${r.action.tool} is not on the bus`, { process: r.action.process, tool: r.action.tool }));
   let item: WorkItem | null = null;
-  try { item = await itemFor(d, i.work_item_id ?? null, i.subject); } catch (e) { if (e instanceof WorkRefused) return refuse(d, base, e); throw e; }
+  try { item = await itemFor(d, i.work_item_id ?? null, i.subject); } catch (e) { if (e instanceof WorkRefused) return refuse(d, o, base, e); throw e; }
   const x = { ...base, item };
-  try { validateDecision(r.action, i.decision); } catch (e) { if (e instanceof WorkRefused) return refuse(d, x, e); throw e; }
+  try { validateDecision(r.action, i.decision); } catch (e) { if (e instanceof WorkRefused) return refuse(d, o, x, e); throw e; }
   let derived: Derived;
-  try { derived = await derive(d, r, i.subject, i.decision); } catch (e) { if (e instanceof WorkRefused || e instanceof CommandRefused) return refuse(d, x, e); if (e instanceof RangeError) return refuse(d, x, new WorkRefused(400, "BAD_REQUEST", e.message)); throw e; }
-  const st = await storeDerivation(d, r, i.subject, keys, derived);
+  try { derived = await derive(d, r, i.subject, i.decision); } catch (e) { if (e instanceof WorkRefused || e instanceof CommandRefused) return refuse(d, o, x, e); if (e instanceof RangeError) return refuse(d, o, x, new WorkRefused(400, "BAD_REQUEST", e.message)); throw e; }
+  const st = await storeDerivation(d, o, r, i.subject, keys, derived);
   const y = { ...x, derivation_id: st.derivation_id, input_sha256: st.input_sha256 };
   const common = { screen_code: r.screen.code, screen_version: r.version.version, action_code: r.action.code, process: r.action.process, tool: r.action.tool, derivation_id: st.derivation_id, document_id: st.document_id, input_sha256: st.input_sha256, sources: derived.sources, work_item_id: item?.id ?? null, money: r.action.money };
   // rule 5: a money-field action executes only for an officer; anyone else — and the agent's propose — writes a proposal for a distinct officer
@@ -241,14 +274,16 @@ export async function screenAct(d: ActDeps, i: ActInput, mode: "act" | "propose"
     if (item) await setItemStatus(itemDeps(d), item.id, "waiting_approval", "approval_waiting", `proposal ${id}`);
     return { action_id: id, status: "proposed", ...common, proposed_at: d.now };
   }
-  return executeDerived(d, y, st, common, d.actor, undefined, null);
+  return executeDerived(d, o, y, st, common, d.actor, undefined, null);
 }
-const itemDeps = (d: ActDeps): ItemDeps => ({ db: d.q, events: d.events, now: d.now, actor: d.actor, deferWrite: d.deferWrite, sessionId: d.sessionId ?? null });
-async function executeDerived(d: ActDeps, y: Omit<RowInput, "status">, st: StoredDerivation, common: Omit<ActResult, "action_id" | "status">, actor: Actor, approvedBy: Actor | undefined, approvalOf: string | null): Promise<ActResult> {
+const itemDeps = (d: ActDeps): ItemDeps => ({ db: d.q, events: d.events, now: d.now, actor: d.actor, deferWrite: d.deferWrite, sessionId: d.sessionId ?? null, registry: d.rt.registry });
+async function executeDerived(d: ActDeps, o: Outlive, y: Omit<RowInput, "status">, st: StoredDerivation, common: Omit<ActResult, "action_id" | "status">, actor: Actor, approvedBy: Actor | undefined, approvalOf: string | null): Promise<ActResult> {
   const r = y.r; const id = randomUUID();
   let out: Awaited<ReturnType<typeof dispatch>>;
   try { out = await dispatch(d, r, y.keys, st.derived.input, actor, approvedBy); }
-  catch (e) { if (e instanceof CommandRefused || e instanceof WorkRefused) return refuse(d, { ...y, actor, approval_of: approvalOf }, e); if (e instanceof RangeError) return refuse(d, { ...y, actor, approval_of: approvalOf }, new WorkRefused(400, "BAD_REQUEST", e.message)); return refuse(d, { ...y, actor, approval_of: approvalOf }, e instanceof Error ? e : new Error(String(e))); }
+  catch (e) { if (e instanceof CommandRefused || e instanceof WorkRefused) return refuse(d, o, { ...y, actor, approval_of: approvalOf }, e); if (e instanceof RangeError && sectionCode(e) === null) return refuse(d, o, { ...y, actor, approval_of: approvalOf }, new WorkRefused(400, "BAD_REQUEST", e.message)); return refuse(d, o, { ...y, actor, approval_of: approvalOf }, e instanceof Error ? e : new Error(String(e))); }
+  // 35.6: the closing orchestration opens on the clear-to-close (T7) — through the port (35.6's own tool once it lands; the seam's literal until then)
+  if (r.screen.code === "conditions" && r.action.code === "ctc" && y.keys.application_id) await portsOf(d.ports).orchestration.openOnCtc({ q: d.q, rt: d.rt, events: d.events }, { application_id: y.keys.application_id, at: d.now, by: actorId(actor) });
   d.deferWrite(async (q) => { await q.query(insertActionSql, actionParams(d, { ...y, id, status: "executed", command_event_id: out.command_event_id, agent_decision_id: out.agent_decision_id, approval_of: approvalOf, actor })); });
   rawEvents(d).append(ev.actionExecuted(id, actor, { screen_code: r.screen.code, action_code: r.action.code, process: r.action.process, tool: r.action.tool, by: actorId(actor), role: actor.role ?? null, input_sha256: st.input_sha256, command_event_id: out.command_event_id, approval_of: approvalOf }));
   return { action_id: id, status: "executed", ...common, output: out.output, command_event_id: out.command_event_id, agent_decision_id: out.agent_decision_id, events: out.events, approval_of: approvalOf };
@@ -277,25 +312,31 @@ export async function actionDecide(d: ActDeps, i: { action_id: string; decision:
     if (item) await setItemStatus(itemDeps(d), item.id, "claimed", "claimed", `declined ${p.id}`);
     return { action_id: p.id, decision: "declined", executed_action_id: null, proposal_sha256: p.input_sha256 ?? "", current_sha256: null, work_item_id: item?.id ?? null };
   }
-  // rule 6: approval re-derives; a changed record refuses STALE_DERIVATION and declines the proposal for a fresh one
-  const derived = await derive(d, r, subject, p.decision_payload);
-  const current = canonicalSha256(derived.input);
+  // rule 6: approval re-derives; a changed record refuses STALE_DERIVATION and declines the proposal for a fresh one — over the subject's records loaded now on this transaction (the decide command is global-scoped; its own store holds the global rows)
+  const store = new EntityStore(); store.seed(await d.rt.entities.load(keys.loan_id ? { loanId: keys.loan_id } : keys.application_id ? { applicationId: keys.application_id } : {}));
+  const dd: ActDeps = { ...d, store };
+  const derived = await derive(dd, r, subject, p.decision_payload);
+  const current = canonicalSha256(redactForRecord(derived.input));   // the proposal's hash is over the stored (redacted) form — rule 6 compares like with like
   if (current !== p.input_sha256) {
     approvalRow("declined", "STALE_DERIVATION", null);
     rawEvents(d).append(ev.actionDecided(p.id, d.actor, { decision: "declined", by: actorId(d.actor), executed_action_id: null, code: "STALE_DERIVATION" }));
     if (item) await setItemStatus(itemDeps(d), item.id, "claimed", "claimed", `STALE_DERIVATION ${p.id}`);
     return { action_id: p.id, decision: "declined", refused: true, code: "STALE_DERIVATION", executed_action_id: null, proposal_sha256: p.input_sha256 ?? "", current_sha256: current, work_item_id: item?.id ?? null };
   }
-  const st = await storeDerivation(d, r, subject, keys, derived);
+  const o = outliveOf();
+  const st = await storeDerivation(dd, o, r, subject, keys, derived);
   const y = { item, r, subject, keys, decision: p.decision_payload, derivation_id: st.derivation_id, input_sha256: st.input_sha256 };
   const common = { screen_code: r.screen.code, screen_version: r.version.version, action_code: r.action.code, process: r.action.process, tool: r.action.tool, derivation_id: st.derivation_id, document_id: st.document_id, input_sha256: st.input_sha256, sources: derived.sources, work_item_id: item?.id ?? null, money: r.action.money };
   // the executor is the approver; `approved_by` names both people (rule 5: approved_by = {proposer, approver}) — ids only
   const both: Actor = { kind: "human", id: `${p.actor_id};${actorId(d.actor)}`, role: "officer" };
   let exec: ActResult;
-  try { exec = await executeDerived(d, y, st, common, d.actor, both, p.id); }
+  try { exec = await executeDerived(dd, o, y, st, common, d.actor, both, p.id); }
   catch (e) {
-    // the owning tool refused the approved act: the proposal resolves `declined` with the tool's code (edge case 1); the refused row already landed through the root pool
-    if (e instanceof WorkRefused) { await d.rt.root.db.query(`UPDATE work_actions SET status = 'declined', refusal_code = $2 WHERE id = $1 AND status = 'proposed'`, [p.id, e.code]); await d.rt.root.db.query(`INSERT INTO work_approvals (work_action_id, approver_staff_user_id, approver_actor_id, proposer_actor_id, session_id, role, decision, reason, executed_action_id, created_at) VALUES ($1, $2, $3, $4, $5, 'officer', 'declined', $6, NULL, $7::timestamptz)`, [p.id, staffId(d.actor), actorId(d.actor), p.actor_id, d.sessionId ?? null, e.code, d.now]); }
+    // the owning tool refused the approved act: the proposal resolves `declined` with the tool's code (edge case 1) — written with the refused row after the rollback
+    if (e instanceof WorkRefused) {
+      const code = e.code; const prior = (e as WorkRefused & { afterRollback?: (db: Queryable) => Promise<void> }).afterRollback;
+      Object.assign(e, { afterRollback: async (db: Queryable) => { if (prior) await prior(db); await db.query(`UPDATE work_actions SET status = 'declined', refusal_code = $2 WHERE id = $1 AND status = 'proposed'`, [p.id, code]); await db.query(`INSERT INTO work_approvals (work_action_id, approver_staff_user_id, approver_actor_id, proposer_actor_id, session_id, role, decision, reason, executed_action_id, created_at) VALUES ($1, $2, $3, $4, $5, 'officer', 'declined', $6, NULL, $7::timestamptz)`, [p.id, staffId(d.actor), actorId(d.actor), p.actor_id, d.sessionId ?? null, code, d.now]); } });
+    }
     throw e;
   }
   approvalRow("approved", i.reason ?? null, exec.action_id);

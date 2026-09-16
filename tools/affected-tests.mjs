@@ -26,11 +26,13 @@
  *                                                  → src/runtime/**\/*.test.ts + src/console/*.test.ts (the
  *                                                     agent turn reads the step's rules from spec/sections,
  *                                                     channels.ts renders copy from docs/ux/12)
- *   apps/borrower/**                               → the three suites that build the app and drive it under
- *                                                     Chromium: src/domain/borrower/32-13, 32-16.rail, 32-17
+ *   apps/borrower/**                               → the app's own gates (apps/borrower typecheck, lint, test:unit);
+ *                                                     the Chromium suites only with --browser
  *   other spec/**, docs/**, *.md                   → nothing
  *   anything else under src/** or tools/**\/*.ts   → everything (unknown reach is treated as total reach)
  *   anything else                                  → nothing
+ * Browser-driven suites (every file that takes acquireBrowserLock: they serialize on one Chromium and rebuild the
+ * app) are left out of the commit gate and run at landing (`npm test`) and in CI; `--browser` puts them back.
  * Every run appends `npm run typecheck` and `python3 tools/audit.py --check`.
  */
 import { execFileSync, spawnSync } from "node:child_process";
@@ -41,6 +43,7 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const argv = process.argv.slice(2);
 const flag = (name) => { const i = argv.indexOf(name); return i === -1 ? null : (argv[i + 1] ?? null); };
 const listOnly = argv.includes("--list");
+const withBrowser = argv.includes("--browser");
 const base = flag("--base") ?? "HEAD~1";
 
 // --- changed files ---------------------------------------------------------------------------------------
@@ -69,7 +72,7 @@ for (const m of block[1].matchAll(/(\d+)\s*:\s*\[([^\]]*)\]/g)) {
 // --- decide ----------------------------------------------------------------------------------------------
 const EVERYTHING = "src/**/*.test.ts";
 const RUNTIME_SUITES = ["src/runtime/**/*.test.ts", "src/console/*.test.ts"];
-const CHROMIUM_SUITES = ["src/domain/borrower/32-13.spec.test.ts", "src/domain/borrower/32-16.rail.spec.test.ts", "src/domain/borrower/32-17.spec.test.ts"];
+const CHROMIUM_SUITES = ["src/domain/borrower/32-13.spec.test.ts", "src/domain/borrower/32-16.rail.spec.test.ts", "src/domain/borrower/32-17.spec.test.ts", "src/domain/borrower/32-19.spec.test.ts"];
 const decisions = []; // { file, reason, suites: string[] | "everything" | [] }
 for (const file of changed) {
   let d;
@@ -86,7 +89,7 @@ for (const file of changed) {
   else if (/^src\/(runtime|console)\//.test(file)) d = { reason: "runtime/console", suites: RUNTIME_SUITES };
   else if (/^spec\/sections\//.test(file)) d = { reason: "a process file: the agent turn reads its rules (src/runtime/borrower/agent/rules.ts)", suites: RUNTIME_SUITES };
   else if (file === "docs/ux/12-message-copy-library.md") d = { reason: "the copy library channels.ts renders from", suites: RUNTIME_SUITES };
-  else if (/^apps\/borrower\//.test(file)) d = { reason: "borrower app: the suites that build it and drive it under Chromium", suites: CHROMIUM_SUITES };
+  else if (/^apps\/borrower\//.test(file)) d = { reason: "borrower app: its own typecheck, lint and unit tests (the Chromium suites only with --browser)", suites: withBrowser ? CHROMIUM_SUITES : [], app: true };
   else if (/^(spec|docs)\//.test(file) || /\.md$/.test(file)) d = { reason: "spec/docs/markdown the runtime does not read: no suite", suites: [] };
   else if (/^src\//.test(file) || /^tools\/.*\.ts$/.test(file)) d = { reason: "unknown reach under src/ or tools/: reaches every suite", suites: "everything" };
   else d = { reason: "outside the test surface: no suite", suites: [] };
@@ -95,14 +98,21 @@ for (const file of changed) {
 
 const everything = decisions.some((d) => d.suites === "everything");
 const patterns = everything ? [EVERYTHING] : [...new Set(decisions.flatMap((d) => d.suites))].sort();
-const suites = [...new Set(patterns.flatMap((p) => globSync(p, { cwd: root })))].sort();
+const expanded = [...new Set(patterns.flatMap((p) => globSync(p, { cwd: root })))].sort();
+// a browser-driven suite is one that takes the Chromium lock (read from the source, never a list kept here)
+const isBrowser = (f) => /\bacquireBrowserLock\b/.test(readFileSync(new URL(f, new URL("../", import.meta.url)), "utf8"));
+const browserSuites = withBrowser ? [] : expanded.filter(isBrowser);
+const suites = expanded.filter((f) => !browserSuites.includes(f));
+const appGates = decisions.some((d) => d.app);
 
 // --- report ----------------------------------------------------------------------------------------------
 console.log(`affected-tests: ${changed.length} changed file(s) (${explicit !== -1 ? "from --files" : `git diff ${base} + working tree`})`);
 for (const d of decisions) console.log(`  ${d.file}\n      → ${d.suites === "everything" ? "EVERYTHING" : d.suites.length ? d.suites.join(", ") : "nothing"}  (${d.reason})`);
-if (everything) console.log(`decision: run every suite (${suites.length} files)`);
+if (browserSuites.length) console.log(`left out (browser-driven; run at landing with npm test, or here with --browser): ${browserSuites.join(", ")}`);
+if (everything) console.log(`decision: run every non-browser suite (${suites.length} files)`);
 else if (suites.length) console.log(`decision: run ${suites.length} suite(s):\n  ${suites.join("\n  ")}`);
 else console.log("decision: no suite reached; typecheck and the audit ratchet still run");
+if (appGates) console.log("apps/borrower changed: npm run typecheck && npm run lint && npm run test:unit in apps/borrower");
 console.log("always: npm run typecheck; python3 tools/audit.py --check");
 if (listOnly) process.exit(0);
 
@@ -112,7 +122,8 @@ function run(cmd, args) {
   const r = spawnSync(cmd, args, { cwd: root, stdio: "inherit", env: process.env });
   if (r.status !== 0) { console.error(`affected-tests: ${cmd} exited ${r.status}`); process.exit(r.status ?? 1); }
 }
-if (suites.length) run("node", ["--test", "--experimental-strip-types", ...(everything ? [EVERYTHING] : suites)]);
+if (suites.length) run("node", ["--test", "--experimental-strip-types", ...suites]);
+if (appGates) for (const script of ["typecheck", "lint", "test:unit"]) run("npm", ["--prefix", "apps/borrower", "run", script]);
 run("npm", ["run", "typecheck"]);
 run("python3", ["tools/audit.py", "--check"]);
 console.log("\naffected-tests: all gates passed");

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Re-run only the suites a change can reach, then the two gates that always run (typecheck and the spec
- * audit ratchet). The full `npm test` stays the bar before anything reaches main; this is the laptop loop.
+ * audit ratchet). This is the commit gate (CLAUDE.md, owner's call 2026-09-16); CI runs the whole suite on every push,
+ * and the full local `npm test` is for landing a branch.
  *
  *   npm run test:affected                    # changed files: git diff HEAD~1 + the working tree
  *   npm run test:affected -- --base main     # changed files: git diff main...HEAD + the working tree

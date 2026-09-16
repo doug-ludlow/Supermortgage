@@ -469,9 +469,10 @@ test("34.1-T6: Given every request of a session (reads and writes), then one `st
   const noChange = await api("PUT", `/ops/api/staff/${oliId}/roles`, { roles: ["ops_analyst", "officer"], rationale: "unchanged" }, bearer(admin.token)); assert.equal(noChange.status, 200); assert.equal(noChange.body["changed"], false);
   const mine = await api("GET", `/ops/api/staff/actions?staff_user_id=${adaId}&limit=50`, undefined, bearer(admin.token)); assert.equal(mine.status, 200, JSON.stringify(mine.body));
   // the row lands after the response is on the wire (the console's finally block): wait for the log to catch up with the requests sent
-  for (let i = 0; i < 50 && (await count(`staff_actions`)) < sent.length; i++) await new Promise((r) => setTimeout(r, 20));
+  for (let i = 0; i < 50 && (await count(`staff_actions WHERE surface = 'ops'`)) < sent.length; i++) await new Promise((r) => setTimeout(r, 20));
   type Row = { id: string; staff_user_id: string | null; session_id: string | null; at: string; route: string; method: string; subject_kind: string | null; subject_id: string | null; command: string | null; result: string; refusal_code: string | null };
-  const rows = await db.query<Row>(`SELECT id::text AS id, staff_user_id::text AS staff_user_id, session_id::text AS session_id, at::text AS at, route, method, subject_kind, subject_id, command, result, refusal_code FROM staff_actions ORDER BY at, id`);
+  // 35.7 (migration 0170) logs every /v1 request on the same table with surface = v1; this T-id is the portal's: one row per /ops/api request (surface ops — the two /v1 probes of the rules-1–3 test are v1 rows)
+  const rows = await db.query<Row>(`SELECT id::text AS id, staff_user_id::text AS staff_user_id, session_id::text AS session_id, at::text AS at, route, method, subject_kind, subject_id, command, result, refusal_code FROM staff_actions WHERE surface = 'ops' ORDER BY at, id`);
   // one row per request: the multiset of (method, route) the suite sent equals the table's
   const key = (x: { method: string; route: string }): string => `${x.method} ${x.route}`;
   assert.equal(rows.length, sent.length, `one staff_actions row per request (${rows.length} rows, ${sent.length} requests)`);
@@ -487,9 +488,9 @@ test("34.1-T6: Given every request of a session (reads and writes), then one `st
   const verify = rows.filter((r) => r.route === "/ops/api/auth/verify" && r.result === "ok"); assert.ok(verify.every((r) => r.staff_user_id !== null && r.session_id === null && r.subject_kind === "staff_user"));
   const signins = rows.filter((r) => r.route === "/ops/api/auth/signin"); assert.ok(signins.every((r) => r.command === "staff.signin"));
   assert.ok(signins.some((r) => r.result === "ok" && r.session_id !== null)); assert.ok(signins.some((r) => r.result === "refused" && r.refusal_code === "ACCOUNT_LOCKED" && r.staff_user_id === oliId)); assert.ok(signins.some((r) => r.result === "refused" && r.refusal_code === "PASSWORD_WRONG"));
-  const gated = rows.filter((r) => r.route === "/ops/api/tools/20.2/planChannels" && r.refusal_code === "ROLE_REQUIRED"); assert.ok(gated.length >= 3); assert.ok(gated.every((r) => r.result === "refused" && r.command === "planChannels" && r.staff_user_id === oliId && r.session_id !== null));
+  const gated = rows.filter((r) => r.route === "/ops/api/tools/20.2/planChannels" && r.refusal_code === "ROLE_REQUIRED"); assert.ok(gated.length >= 3); assert.ok(gated.every((r) => r.result === "refused" && r.command === "20.2 planChannels" && r.staff_user_id === oliId && r.session_id !== null));
   assert.ok(rows.some((r) => r.route === "/ops/api/tools/20.2/planChannels" && r.refusal_code === "AUTH_REQUIRED" && r.command === null && r.staff_user_id === null), "the headers-only call is logged too, no one named");
-  assert.ok(rows.some((r) => r.route === "/ops/api/tools/20.2/planChannels" && r.result === "ok" && r.command === "planChannels" && r.staff_user_id === oraId));
+  assert.ok(rows.some((r) => r.route === "/ops/api/tools/20.2/planChannels" && r.result === "ok" && r.command === "20.2 planChannels" && r.staff_user_id === oraId));
   assert.ok(rows.some((r) => r.route === `/ops/api/staff/${adaId}/roles` && r.result === "refused" && r.refusal_code === "NO_SELF_ROLE_CHANGE" && r.command === "staff.role.set" && r.subject_id === adaId));
   assert.ok(rows.some((r) => r.route === `/ops/api/staff/${adaId}/disable` && r.result === "refused" && r.refusal_code === "LAST_ADMIN_STAYS" && r.command === "staff.disable" && r.staff_user_id === beaId && r.subject_id === adaId));
   assert.ok(rows.some((r) => r.route === `/ops/api/staff/${beaId}/disable` && r.result === "ok" && r.command === "staff.disable" && r.staff_user_id === adaId && r.subject_id === beaId));
@@ -702,7 +703,7 @@ test("34.1-T9: Given an account invited with roles `[ops_analyst, officer, compl
   assert.equal(money.status, 403, JSON.stringify(money.body)); assert.equal(money.body["code"], "ROLE_REQUIRED"); assert.equal(money.body["role"], "officer"); assert.deepEqual(money.body["act_as"], ["officer"]); assert.deepEqual(money.body["held"], FOUR);
   assert.equal(money.headers.get("x-acted-as"), null, "nothing acted"); assert.equal("acted_as" in money.body, false);
   assert.deepEqual(await tally(), before, "no ledger, event or decision row is written");
-  assert.deepEqual(await actionRow("/ops/api/tools/10.1/ledger.post", quinn.session_id), { role: "ops_analyst", result: "refused", refusal_code: "ROLE_REQUIRED", command: "ledger.post" });
+  assert.deepEqual(await actionRow("/ops/api/tools/10.1/ledger.post", quinn.session_id), { role: "ops_analyst", result: "refused", refusal_code: "ROLE_REQUIRED", command: "10.1 ledger.post" });   // 35.7 T10: the tools route logs the command with its process ("20.2 campaign.approve" — 0127's own example)
   // asked for as admin (held, not accepted, an act): the same offer — an act never substitutes an authority the person did not name; as officer it is the officer's, and the bus (not this gate) answers the tool's own input checks
   const asAdminAct = await api("POST", "/ops/api/tools/10.1/ledger.post", { input: { amount_cents: "100" }, role: "admin" }, bearer(quinn.token)); assert.equal(asAdminAct.status, 403, JSON.stringify(asAdminAct.body)); assert.deepEqual([asAdminAct.body["role"], asAdminAct.body["act_as"]], ["officer", ["officer"]]);
   assert.deepEqual(await tally(), before);
@@ -713,7 +714,7 @@ test("34.1-T9: Given an account invited with roles `[ops_analyst, officer, compl
   assert.equal(unnamed.status, 403, JSON.stringify(unnamed.body)); assert.equal(unnamed.body["code"], "ROLE_REQUIRED"); assert.deepEqual([unnamed.body["role"], unnamed.body["held"], unnamed.body["act_as"]], ["officer", FOUR, ["officer"]]);
   assert.equal(unnamed.headers.get("x-acted-as"), null, "nothing acted"); assert.equal("acted_as" in unnamed.body, false);
   assert.deepEqual(await tally(), before, "no ledger, event or decision row is written under an inferred officer");
-  assert.deepEqual(await actionRow("/ops/api/tools/10.1/ledger.post?t9=unnamed", quinn.session_id), { role: null, result: "refused", refusal_code: "ROLE_REQUIRED", command: "ledger.post" }, "no role was asked for by name");
+  assert.deepEqual(await actionRow("/ops/api/tools/10.1/ledger.post?t9=unnamed", quinn.session_id), { role: null, result: "refused", refusal_code: "ROLE_REQUIRED", command: "10.1 ledger.post" }, "no role was asked for by name");
   // an account holding [admin] only asking for the money tool: the role it needs, held [admin], nothing to act as
   const notHeld = await api("POST", "/ops/api/tools/10.1/ledger.post", { input: { amount_cents: "100" } }, bearer(ada.token)); assert.equal(notHeld.status, 403, JSON.stringify(notHeld.body)); assert.deepEqual([notHeld.body["code"], notHeld.body["role"], notHeld.body["held"], notHeld.body["act_as"]], ["ROLE_REQUIRED", "officer", ["admin"], []]);
   assert.deepEqual(await tally(), before);

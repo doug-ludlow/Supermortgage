@@ -83,6 +83,7 @@ import { notifyPartnerBookTapeLate, sendPartnerBookReminders } from "./partner-b
 import { sweepDailyReports, type SweepDailyReportsResult } from "./book-ops/routes.ts";
 import { escalateLongTrips, expireKillSwitchRequests } from "./controls/ai.ts";
 import { rolesSweepPass, type RolesSweepReport } from "../domain/operations-runtime/roles-35-7/sweep.ts";
+import { closeSweepPass, type CloseSweepReport } from "../domain/operations-runtime/close-35-4/sweep.ts";
 import type { Logger } from "./log.ts";
 
 export interface RuntimeDeps {
@@ -146,6 +147,8 @@ export interface SweepReport {
   readonly controls: { readonly kill_requests_expired: number; readonly long_trips_escalated: number };
   /** 35.7: the roles pass (src/domain/operations-runtime/roles-35-7/sweep.ts rolesSweepPass) — the daily queue scan at/after 06:30 ET, the re-scan of roles with open items, the break-glass / request / principal expiries; after the FAKE reviewers, before the breach pass; null when it failed. */
   readonly roles: RolesSweepReport | null;
+  /** 35.4: the close pass (src/domain/operations-runtime/close-35-4/sweep.ts closeSweepPass) — after the breach pass; null when it failed. */
+  readonly close: CloseSweepReport | null;
   /** 35.1 rule 12: the run's `sweep_runs` row, its holder and outcome (`skipped{lease_held}` when another execution holds the lease; `failed{lease_unavailable}` when the dedicated client cannot connect). */
   readonly run_id: string;
   readonly holder: string;
@@ -372,7 +375,7 @@ export class Runtime {
       await this.db.query(`INSERT INTO sweep_runs (id, holder, started_at, heartbeat_at, finished_at, as_of_date, outcome, skipped_reason) VALUES ($1, $2, $3, $3, $3, $4, $5, $6)`, [leased.runId, holder, nowIso, asOfDate, outcome, leased.reason]);
       if (outcome === "skipped") await this.uow.run({}, (ctx) => ctx.events.append({ type: "sweep.run_skipped", aggregate: { kind: "sweep_run", id: leased.runId }, actor: { kind: "system", id: "sweep" }, payload: { run_id: leased.runId, holder, as_of_date: asOfDate, reason: leased.reason, lease_key: 35_001 } }), { clock: this.clock });
       this.logger?.[outcome === "skipped" ? "info" : "error"](`sweep ${outcome}`, { run_id: leased.runId, holder, reason: leased.reason, error: leased.error ?? null });
-      return { at: nowIso, due: 0, breaches: [], outbox: [], ...notRun(leased.reason), run_id: leased.runId, holder, outcome, skipped_reason: leased.reason, passes: [], outbox_dispatch: null, verify: null, roles: null };
+      return { at: nowIso, due: 0, breaches: [], outbox: [], ...notRun(leased.reason), run_id: leased.runId, holder, outcome, skipped_reason: leased.reason, passes: [], outbox_dispatch: null, verify: null, roles: null, close: null };
     }
     const lease = leased.lease; const runId = lease.runId; this.sweepRunId = runId;
     await this.db.query(`INSERT INTO sweep_runs (id, holder, started_at, heartbeat_at, as_of_date, outcome) VALUES ($1, $2, $3, $3, $4, 'running')`, [runId, holder, nowIso, asOfDate]);
@@ -438,6 +441,8 @@ export class Runtime {
         return claimed;
       }), (d) => ({ due: d.length, breaches: breaches.length }));
       // 33.1 T10: the breach action of SM_PARTNER_BOOK_INVITATION_REMINDER_14 — one reminder on the same channel while the party has no session, then nothing more; never fails the sweep
+      // 35.4: the close pass after the breach pass (a stall breached this minute is labelled and named on its escalation in the same sweep): the month's trigger, the planning transaction, a due tax-year close, the inline units while 35.3's executor is absent — errors logged, never thrown
+      const close = await logged("close.plan", () => closeSweepPass(this, nowIso, { runId }), () => null as CloseSweepReport | null, (r) => (r ? { periods: r.plan.periods, opened: r.opened.length, receipts: r.plan.receipts, completed: r.plan.completed.length, inline_units: r.inline_units } : { failed: true }));
       const partnerBookReminders = await logged("partner_book.reminders", async () => (await sendPartnerBookReminders(this, nowIso)).sent, () => 0, (n) => ({ sent: n }));
       // 33.1 T12 / rule 8: the breach action of SM_PARTNER_BOOK_TAPE_EXPECTED_7 — once per breached clock `partner_book.tape.late` beside the ops_analyst escalation the breach pass opened; a second sweep adds nothing
       const partnerBookTapeLate = await logged("partner_book.tape_late", async () => (await notifyPartnerBookTapeLate(this, nowIso)).late, () => 0, (n) => ({ late: n }));
@@ -447,7 +452,7 @@ export class Runtime {
       const outboxCounts = { claimed: outboxDispatch.claimed, sent: outboxDispatch.sent, retried: outboxDispatch.retried, dead: outboxDispatch.dead };
       await this.uow.run({}, (ctx) => ctx.events.append({ type: "sweep.run_completed", aggregate: { kind: "sweep_run", id: runId }, actor: { kind: "system", id: "sweep" }, payload: { run_id: runId, as_of_date: asOfDate, holder, duration_ms: durationMs, passes: passes.map((p) => p.name), due: due.length, breaches: breaches.length, outbox: outboxCounts } }),
         { clock: this.clock, commit: async (q) => { await q.query(`UPDATE sweep_runs SET outcome = 'completed', finished_at = $2, heartbeat_at = $2, passes = $3::jsonb, outbox = $4::jsonb WHERE id = $1`, [runId, this.clock.now(), JSON.stringify(passes), JSON.stringify(outboxCounts)]); } });
-      return { at: nowIso, due: due.length, breaches, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })), refi, reviewers, roles, partner_book_review: partnerBookReview, partner_book_readiness: partnerBookReadiness, partner_book_reminders: partnerBookReminders, partner_book_tape_late: partnerBookTapeLate, partner_book_daily_reports: partnerBookDailyReports, controls,
+      return { at: nowIso, due: due.length, breaches, outbox: outbox.map((o) => ({ adapter: o.adapter, status: o.status, count: Number(o.count) })), refi, reviewers, roles, close, partner_book_review: partnerBookReview, partner_book_readiness: partnerBookReadiness, partner_book_reminders: partnerBookReminders, partner_book_tape_late: partnerBookTapeLate, partner_book_daily_reports: partnerBookDailyReports, controls,
         run_id: runId, holder, outcome: "completed", skipped_reason: null, passes, outbox_dispatch: outboxDispatch, verify };
     } catch (e) {
       await this.db.query(`UPDATE sweep_runs SET outcome = 'failed', finished_at = $2, heartbeat_at = $2, passes = $3::jsonb, skipped_reason = $4 WHERE id = $1`, [runId, this.clock.now(), JSON.stringify(passes), (e instanceof Error ? e.message : String(e)).slice(0, 500)]).catch(() => undefined);

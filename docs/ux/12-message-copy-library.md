@@ -868,6 +868,21 @@ The rail and the thread (32.16 §2.1–2.2, DELTA-26). The rail's section names,
 - `apply.account.signed_in` — label — "Signed in" — *32.19 §2.3: when the party has no first name yet.*
 - `apply.account.sign_out` — button — "Sign out" — *32.19 §2.3: `POST auth/sign-out`; the next load is the door.*
 - `apply.chat.placeholder` — field — "Message" — helper: "Ask Supermortgage" — *32.19 §2.3: the composer; `POST /v1/borrower/messages` only.*
+- `apply.chat.empty` — line — "Ask anything about your loan or application." — *32.19 §2.3: the Chat tab before the first line.*
+- `apply.questions.waiting` — line — "Loading your questions…" — *32.19 §2.2 questions: shown while the first declarations card is awaited from the flows.*
+- `apply.questions.done` — line — "Your answers are in." — *32.19 §2.2 questions: the sequence's last tap ran the command; Continue goes on.*
+- `apply.questions.answer_first` — refusal — "Answer the question on the card first." — *32.19 §3.0: Continue never skips a pending declarations card; nothing is posted.*
+- `apply.demographics.done` — line — "Thanks. That part is done." — *32.19 §2.2 demographics: the card is resolved; Continue goes on.*
+- `apply.demographics.answer_first` — refusal — "Answer or decline on the card first." — *32.19 §3.0: the demographics card is pending; nothing is posted.*
+- `apply.review.products` — labels — "Loan type" — options `30-year fixed` · `15-year fixed` — *32.19 §2.2 review: FRM30, or FRM15 for Pay off sooner (`refi.product.choice`).*
+- `apply.review.required` — refusal — "Fill in the numbers above first." — *32.19 §3.0: the value, the balance or the down payment is empty; nothing is posted.*
+- `apply.result.waiting` — line — "Your application is in. We are checking it now." — *32.19 §2.2 result: before the copy library's `du.running` card arrives.*
+- `apply.tasks.journey_label` — label — "Progress" — *32.19 §2.3 / 32.16-T13: beside `journey_progress`.*
+- `apply.tasks.journey` — line — "{{done}} of {{total}}" — *32.19 §2.3 / 32.16-T13: `journey_progress` as the API derives it ("7 of 12").*
+- `apply.tasks.needed_count` — line — "{{count}} needed from you" — *32.19 §2.3 / 32.16-T16: `needed_summary.count`, the record's own number.*
+- `apply.loan.servicer` — label — "Serviced by" — *32.19 §2.3 My Loan: the servicer of record (33.1 rule 6).*
+- `apply.loan.number` — line — "Loan ending in {{last4}}" — *32.19 §2.3 My Loan: the loan's last four, never the number.*
+- `apply.loan.nothing_scheduled` — line — "Nothing scheduled" — *32.19 §2.3 My Loan: no next event on the record.*
 
 ## Channel variants (rules)
 - **SMS**: first sentence + deep link; never a number the borrower hasn't seen in-app first (no rates, balances or payoff figures by SMS); STOP footer on the first message of a thread.

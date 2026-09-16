@@ -124,6 +124,10 @@ export function toRecord(api: Json): BorrowerRecord {
     header: { address_line: address, purpose, loan_label: subject.label },
     timezone: str(api.time_zone) || "America/Phoenix",
     ...(api.read_only === true ? { read_only: true } : {}),
+    // 32.5 §1 / 32.13-T15: the one count the API keeps (zero → `needs.none`), passed through as it came
+    ...(api.needed_summary && typeof api.needed_summary === "object" ? { needed_summary: { count: typeof obj(api.needed_summary).count === "number" ? (obj(api.needed_summary).count as number) : 0, nothing_needed: obj(api.needed_summary).nothing_needed === true, copy_key: (str(obj(api.needed_summary).copy_key) === "needs.none" ? "needs.none" : "needs.title") as "needs.title" | "needs.none" } } : {}),
+    // 33.1 rule 6 (32.19 My Loan): the monitored loan's block — the servicer of record, the loan's last four, the facts' as-of date; nothing computed here
+    ...(api.partner_book && typeof api.partner_book === "object" ? { partner_book: { partner_party_id: str(obj(api.partner_book).partner_party_id) || null, partner_name: str(obj(api.partner_book).partner_name) || null, loan_last4: str(obj(api.partner_book).loan_last4) || null, as_of_date: str(obj(api.partner_book).as_of_date) || null, monitored: true as const } } : {}),
   };
 }
 

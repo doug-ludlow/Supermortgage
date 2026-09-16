@@ -64,7 +64,7 @@ const escapeLike = (s: string): string => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 const NOT_A_PERSON = unidentifiedVideoPartySql("parties");
 
 /** The rows of `parties` (borrower) matching the query, with which fields matched — the expression indexes of 0128 serve the three prefix predicates. */
-async function matchParties(db: Queryable, c: ReturnType<typeof classifyQuery>): Promise<Row[]> {
+async function matchParties(db: Queryable, c: ReturnType<typeof classifyQuery>, raw: string): Promise<Row[]> {
   const pre = `${escapeLike(c.value)}%`;
   if (c.kind === "last4") {
     return db.query<Row>(`SELECT id::text AS party_id, legal_name, contact, false AS m_name, false AS m_email,
@@ -75,10 +75,16 @@ async function matchParties(db: Queryable, c: ReturnType<typeof classifyQuery>):
       ORDER BY legal_name, id LIMIT ${SEARCH_MAX_RESULTS + 1}`, [c.value]);
   }
   if (c.kind === "phone") {
-    return db.query<Row>(`SELECT id::text AS party_id, legal_name, contact, false AS m_name, false AS m_email, true AS m_phone, false AS m_party
+    // a run of digits is a phone fragment AND may be the first characters of a party id (a uuid whose leading hex digits are all numeric — about
+    // one id in forty at eight characters): the text branch's id-prefix predicate rides along, so "searchable by id prefix" holds for every id
+    const idPre = /^\d+$/.test(raw.trim()) ? `${escapeLike(raw.trim())}%` : null;
+    return db.query<Row>(`SELECT id::text AS party_id, legal_name, contact, false AS m_name, false AS m_email,
+        (directory_e164(contact->>'phone') LIKE $1 OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(contact->'phones') = 'array' THEN contact->'phones' ELSE '[]'::jsonb END) ph WHERE directory_e164(ph) LIKE $1)) AS m_phone,
+        ($2::text IS NOT NULL AND id::text LIKE $2::text) AS m_party
       FROM parties WHERE party_type = 'borrower' AND NOT ${NOT_A_PERSON} AND (directory_e164(contact->>'phone') LIKE $1
-        OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(contact->'phones') = 'array' THEN contact->'phones' ELSE '[]'::jsonb END) ph WHERE directory_e164(ph) LIKE $1))
-      ORDER BY legal_name, id LIMIT ${SEARCH_MAX_RESULTS + 1}`, [pre]);
+        OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(contact->'phones') = 'array' THEN contact->'phones' ELSE '[]'::jsonb END) ph WHERE directory_e164(ph) LIKE $1)
+        OR ($2::text IS NOT NULL AND id::text LIKE $2::text))
+      ORDER BY legal_name, id LIMIT ${SEARCH_MAX_RESULTS + 1}`, [pre, idPre]);
   }
   if (c.kind === "email") {
     return db.query<Row>(`SELECT id::text AS party_id, legal_name, contact, false AS m_name, true AS m_email, false AS m_phone, false AS m_party
@@ -148,7 +154,7 @@ export async function directorySearch(db: Queryable, input: DirectorySearchInput
   const q = String(input.q ?? "").trim();
   if (q.length < SEARCH_MIN_CHARS) throw new DirectorySearchRefused("QUERY_TOO_SHORT", `a directory search needs at least ${SEARCH_MIN_CHARS} characters`);
   const c = classifyQuery(q);
-  const [parties, loans, apps] = await Promise.all([matchParties(db, c), matchLoans(db, c), matchApplications(db, c)]);
+  const [parties, loans, apps] = await Promise.all([matchParties(db, c, q), matchLoans(db, c), matchApplications(db, c)]);
   const matched = new Map<string, { row: Row | null; on: Set<DirectorySearchHit["matched_on"][number]> }>();
   for (const r of parties) { const on = new Set<DirectorySearchHit["matched_on"][number]>(); if (r.m_name) on.add("name"); if (r.m_email) on.add("email"); if (r.m_phone) on.add("phone"); if (r.m_party) on.add("party_id"); matched.set(r.party_id, { row: r, on }); }
   const noAccount: DirectoryNoAccountHit[] = [];

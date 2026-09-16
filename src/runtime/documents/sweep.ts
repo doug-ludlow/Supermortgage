@@ -18,6 +18,7 @@ import type { Runtime } from "../app.ts";
 import type { Actor } from "../../kernel/events/index.ts";
 import type { Queryable } from "../../infra/db/client.ts";
 import { EscalationService } from "../../app/escalations.ts";
+import { MemoryEventStore } from "../../kernel/events/index.ts";
 import { closeEnvelope } from "../../domain/operations-runtime/documents/esign.ts";
 import { AdapterUnavailable } from "../../infra/integrations/failures.ts";
 
@@ -67,13 +68,19 @@ export async function expireEnvelopes(runtime: Runtime, nowIso: string): Promise
   let expired = 0;
   for (const r of rows) {
     try {
-      let escalations: EscalationService | null = null;
-      await runtime.uow.run({ ...(r.loan_id ? { loanId: r.loan_id } : {}), ...(r.application_id ? { applicationId: r.application_id } : {}) }, async (ctx) => {
-        const q = (ctx as { q?: Queryable }).q ?? runtime.db;
-        await closeEnvelope({ q, blobs: runtime.blobs, events: ctx.events, actor: SYSTEM_DOCUMENTS, now: nowIso }, { envelope_id: r.envelope_id, outcome: "expired", reason: "SM_ESIGN_ENVELOPE_EXPIRY_30", timer_id: r.timer_id });
+      // one transaction (the sweep's breach-pass precedent): the `expired` signature event, the audit-trail document, the frozen envelope row, `esign.envelope.expired` and the escalation commit together or not at all
+      const key = { ...(r.loan_id ? { loanId: r.loan_id } : {}), ...(r.application_id ? { applicationId: r.application_id } : {}) };
+      const persisted = await runtime.db.tx(async (q: Queryable) => {
+        const events = new MemoryEventStore(runtime.clock, key);
+        await closeEnvelope({ q, blobs: runtime.blobs, events, actor: SYSTEM_DOCUMENTS, now: nowIso }, { envelope_id: r.envelope_id, outcome: "expired", reason: "SM_ESIGN_ENVELOPE_EXPIRY_30", timer_id: r.timer_id });
+        const escalations = new EscalationService(events, runtime.clock);
         const open = await q.query(`SELECT 1 FROM escalations WHERE sla_timer_id = $1 AND owner_role = 'ops_analyst' AND status = 'open'`, [r.timer_id]);
-        if (!open.length) { escalations = new EscalationService(ctx.events, runtime.clock); escalations.open({ kind: "sev3", ownerRole: "ops_analyst", severity: "3", slaTimerId: r.timer_id, ...(r.loan_id ? { loanId: r.loan_id } : {}), ...(r.application_id ? { applicationId: r.application_id } : {}), payload: { kind: "envelope_expired", envelope_id: r.envelope_id, timer_id: r.timer_id, timer_code: "SM_ESIGN_ENVELOPE_EXPIRY_30", breach: "the envelope is voided as expired; the owning process is told by event and falls back to mail or re-issues" } }, SYSTEM_DOCUMENTS); }
-      }, { clock: runtime.clock, commit: async (q) => { for (const e of escalations?.list() ?? []) await runtime.escalationRepo.save(e, q); } });
+        if (!open.length) escalations.open({ kind: "sev3", ownerRole: "ops_analyst", severity: "3", slaTimerId: r.timer_id, ...key, payload: { kind: "envelope_expired", envelope_id: r.envelope_id, timer_id: r.timer_id, timer_code: "SM_ESIGN_ENVELOPE_EXPIRY_30", breach: "the envelope is voided as expired; the owning process is told by event and falls back to mail or re-issues" } }, SYSTEM_DOCUMENTS);
+        const saved = await runtime.uow.events.append(events.since(0), q);
+        for (const e of escalations.list()) await runtime.escalationRepo.save(e, q);
+        return saved;
+      });
+      runtime.uow.notifyCommitted(persisted);
       expired++;
     } catch (e) { runtime.logger?.error("envelope expiry failed", { at: nowIso, envelope_id: r.envelope_id, error: e }); }
   }

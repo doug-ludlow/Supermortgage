@@ -29,16 +29,16 @@ export const SIGNED_KIND = "signed_document";
 export interface RequiredField { readonly field_id: string; readonly signer_party_id: string; readonly page: number; readonly kind: "signature" | "initials" | "date" | "checkbox"; }
 export interface EnvelopeRow extends Record<string, unknown> {
   id: string; application_id: string | null; loan_id: string | null; owner_process: string; kind: string; vendor: string; status: string; signer_party_ids: string[]; consent_ids: string[]; created_by_actor: string;
-  sent_at: string | null; completed_at: string | null; voided_at: string | null; void_reason: string | null; expires_on: string | null; evidence_document_id: string | null; evidence_sha256: string | null; retention_class: string; created_at: string;
+  sent_at: string | null; completed_at: string | null; voided_at: string | null; void_reason: string | null; expires_on: string | null; evidence_document_id: string | null; evidence_sha256: string | null; chain_head: string | null; retention_class: string; created_at: string;
 }
 export interface EnvelopeDocumentRow extends Record<string, unknown> { id: string; envelope_id: string; sequence: number; document_id: string; required_fields: RequiredField[]; signed_document_id: string | null; signed_sha256: string | null; signed_at: string | null; }
 export interface SignatureEventRow extends Record<string, unknown> {
   id: string; seq: string; envelope_id: string; document_id: string | null; signer_party_id: string | null; kind: string; at: string; auth_method: string; ip: string | null; user_agent: string | null; field_id: string | null; page: number | null; typed_name: string | null;
-  document_sha256_at_event: string | null; prev_event_hash: string | null; event_hash: string; payload: Record<string, unknown>;
+  document_sha256_at_event: string | null; prev_event_hash: string | null; event_hash: string; vendor_event_ref: string | null; payload: Record<string, unknown>;
 }
 export interface SignerAuth { readonly method: string; readonly session_id?: string | null; readonly ip?: string | null; readonly user_agent?: string | null; readonly typed_name?: string | null; }
 
-const ENVELOPE_COLUMNS = "id, application_id, loan_id, owner_process, kind, vendor, status, signer_party_ids, consent_ids, created_by_actor, sent_at, completed_at, voided_at, void_reason, expires_on::text AS expires_on, evidence_document_id, evidence_sha256, retention_class::text AS retention_class, created_at";
+const ENVELOPE_COLUMNS = "id, application_id, loan_id, owner_process, kind, vendor, status, signer_party_ids, consent_ids, created_by_actor, sent_at, completed_at, voided_at, void_reason, expires_on::text AS expires_on, evidence_document_id, evidence_sha256, chain_head, retention_class::text AS retention_class, created_at";
 const isUuid = (s: unknown): s is string => typeof s === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 const envKey = (e: EnvelopeRow) => ({ ...(e.loan_id ? { loanId: e.loan_id } : {}), ...(e.application_id ? { applicationId: e.application_id } : {}) });
 const retentionFor = (ownerProcess: string): string => (ownerProcess.startsWith("26.") ? "fnma_enote_signing_life_plus_7y" : "esign_consent_life_of_loan_plus_4y");
@@ -47,37 +47,45 @@ const plusDays = (iso: string, days: number): string => { const d = new Date(iso
 export async function readEnvelope(q: Queryable, id: string): Promise<EnvelopeRow | undefined> { return (await q.query<EnvelopeRow>(`SELECT ${ENVELOPE_COLUMNS} FROM esign_envelopes WHERE id = $1`, [id]))[0]; }
 export async function requireEnvelope(q: Queryable, id: string): Promise<EnvelopeRow> { if (!isUuid(id)) throw new RangeError(`envelope_id ${id} is not a uuid`); const e = await readEnvelope(q, id); if (!e) throw new RangeError(`no esign_envelopes row ${id}`); return e; }
 export async function envelopeDocuments(q: Queryable, envelopeId: string): Promise<EnvelopeDocumentRow[]> { return q.query<EnvelopeDocumentRow>(`SELECT id, envelope_id, sequence, document_id, required_fields, signed_document_id, signed_sha256, signed_at FROM esign_envelope_documents WHERE envelope_id = $1 ORDER BY sequence`, [envelopeId]); }
-export async function signatureEvents(q: Queryable, envelopeId: string): Promise<SignatureEventRow[]> { return q.query<SignatureEventRow>(`SELECT id, seq::text AS seq, envelope_id, document_id, signer_party_id, kind, at, auth_method, host(ip) AS ip, user_agent, field_id, page, typed_name, document_sha256_at_event, prev_event_hash, event_hash, payload FROM esign_signature_events WHERE envelope_id = $1 ORDER BY seq`, [envelopeId]); }
+export async function signatureEvents(q: Queryable, envelopeId: string): Promise<SignatureEventRow[]> { return q.query<SignatureEventRow>(`SELECT id, seq::text AS seq, envelope_id, document_id, signer_party_id, kind, at, auth_method, host(ip) AS ip, user_agent, field_id, page, typed_name, document_sha256_at_event, prev_event_hash, event_hash, vendor_event_ref, payload FROM esign_signature_events WHERE envelope_id = $1 ORDER BY seq`, [envelopeId]); }
 
 // ───────── the chained evidence (A2-4.1-03) ─────────
-export interface SignatureEventInput { readonly envelope_id: string; readonly document_id?: string | null; readonly signer_party_id?: string | null; readonly kind: string; readonly at: string; readonly auth_method: string; readonly ip?: string | null; readonly user_agent?: string | null; readonly field_id?: string | null; readonly page?: number | null; readonly typed_name?: string | null; readonly document_sha256_at_event?: string | null; readonly payload?: Record<string, unknown>; }
-/** The hashed view of an event: the row minus `event_hash`, the strings exactly as bound, chained through the previous row's hash. */
+export interface SignatureEventInput { readonly envelope_id: string; readonly document_id?: string | null; readonly signer_party_id?: string | null; readonly kind: string; readonly at: string; readonly auth_method: string; readonly ip?: string | null; readonly user_agent?: string | null; readonly field_id?: string | null; readonly page?: number | null; readonly typed_name?: string | null; readonly document_sha256_at_event?: string | null; readonly vendor_event_ref?: string | null; readonly payload?: Record<string, unknown>; }
+const IP_RE = /^(\d{1,3}(\.\d{1,3}){3}|[0-9a-f:]+)$/i;
+/** The hashed view of an event: the row minus `event_hash` — every typed column exactly as stored, the payload the row carries and the vendor ref — chained through the previous row's hash. */
 export function hashedView(i: SignatureEventInput, prev: string | null): Record<string, unknown> {
-  return { envelope_id: i.envelope_id, document_id: i.document_id ?? null, signer_party_id: i.signer_party_id ?? null, kind: i.kind, at: i.at, auth_method: i.auth_method, ip: i.ip ?? null, user_agent: i.user_agent ?? null, field_id: i.field_id ?? null, page: i.page ?? null, typed_name: i.typed_name ?? null, document_sha256_at_event: i.document_sha256_at_event ?? null, prev_event_hash: prev };
+  const payload: Record<string, unknown> = { ...(i.payload ?? {}) }; delete payload["hashed"];
+  return { envelope_id: i.envelope_id, document_id: i.document_id ?? null, signer_party_id: i.signer_party_id ?? null, kind: i.kind, at: i.at, auth_method: i.auth_method, ip: i.ip ?? null, user_agent: i.user_agent ?? null, field_id: i.field_id ?? null, page: i.page ?? null, typed_name: i.typed_name ?? null, document_sha256_at_event: i.document_sha256_at_event ?? null, vendor_event_ref: i.vendor_event_ref ?? null, payload, prev_event_hash: prev };
 }
 export const eventHash = (hashed: Record<string, unknown>): string => sha256Hex(canonicalJson(hashed));
 /** One append-only row: the hash covers the canonical JSON of `payload.hashed` (stored verbatim beside the typed columns) and chains to the previous row. */
 export async function appendSignatureEvent(q: Queryable, i: SignatureEventInput): Promise<{ id: string; event_hash: string; prev_event_hash: string | null }> {
   if (!AUTH_METHODS.has(i.auth_method)) throw new RangeError(`auth_method ${i.auth_method} is not one the evidence records`);
+  if (i.ip && !IP_RE.test(i.ip)) throw new RangeError(`ip ${i.ip} is not an address the evidence can store`);   // hash what is stored: never null an ip the chain would carry
+  const env = (await q.query<{ retention_class: string }>(`SELECT retention_class::text AS retention_class FROM esign_envelopes WHERE id = $1`, [i.envelope_id]))[0];
+  if (!env) throw new RangeError(`no esign_envelopes row ${i.envelope_id}`);
   const prev = (await q.query<{ event_hash: string }>(`SELECT event_hash FROM esign_signature_events WHERE envelope_id = $1 ORDER BY seq DESC LIMIT 1`, [i.envelope_id]))[0]?.event_hash ?? null;
   const hashed = hashedView(i, prev); const hash = eventHash(hashed);
-  const ip = i.ip && /^[0-9a-f.:]+$/i.test(i.ip) ? i.ip : null;
-  const r = await q.query<{ id: string }>(`INSERT INTO esign_signature_events (envelope_id, document_id, signer_party_id, kind, at, auth_method, ip, user_agent, field_id, page, typed_name, document_sha256_at_event, prev_event_hash, event_hash, payload) VALUES ($1, $2, $3, $4, $5::timestamptz, $6, $7::inet, $8, $9, $10, $11, $12, $13, $14, $15::jsonb) RETURNING id`,
-    [i.envelope_id, i.document_id ?? null, i.signer_party_id ?? null, i.kind, i.at, i.auth_method, ip, i.user_agent ?? null, i.field_id ?? null, i.page ?? null, i.typed_name ?? null, i.document_sha256_at_event ?? null, prev, hash, toJson({ ...(i.payload ?? {}), hashed })]);
+  const r = await q.query<{ id: string }>(`INSERT INTO esign_signature_events (envelope_id, document_id, signer_party_id, kind, at, auth_method, ip, user_agent, field_id, page, typed_name, document_sha256_at_event, prev_event_hash, event_hash, vendor_event_ref, payload, retention_class) VALUES ($1, $2, $3, $4, $5::timestamptz, $6, $7::inet, $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb, $17::retention_class) RETURNING id`,
+    [i.envelope_id, i.document_id ?? null, i.signer_party_id ?? null, i.kind, i.at, i.auth_method, i.ip ?? null, i.user_agent ?? null, i.field_id ?? null, i.page ?? null, i.typed_name ?? null, i.document_sha256_at_event ?? null, prev, hash, i.vendor_event_ref ?? null, toJson({ ...(i.payload ?? {}), hashed }), env.retention_class]);
   return { id: r[0]!.id, event_hash: hash, prev_event_hash: prev };
 }
-/** The chain re-verified from the rows: every hash recomputes from its own `payload.hashed`, every link names the previous hash, the typed columns agree with what was hashed. */
-export function verifyChain(rows: readonly SignatureEventRow[]): { ok: boolean; head: string | null; count: number; failures: string[] } {
+/** The chain re-verified from the rows: every hash recomputes from its own `payload.hashed`, every link names the previous hash, every typed column and the payload agree with what was hashed, and the head is the one the envelope recorded when given. */
+export function verifyChain(rows: readonly SignatureEventRow[], expectedHead?: string | null): { ok: boolean; head: string | null; count: number; failures: string[] } {
   const failures: string[] = []; let prev: string | null = null;
   for (const r of rows) {
     const hashed = (r.payload["hashed"] ?? null) as Record<string, unknown> | null;
     if (!hashed) { failures.push(`${r.id}: no hashed view`); continue; }
     if (eventHash(hashed) !== r.event_hash) failures.push(`${r.id}: event_hash does not recompute`);
     if ((hashed["prev_event_hash"] ?? null) !== prev || (r.prev_event_hash ?? null) !== prev) failures.push(`${r.id}: prev_event_hash does not chain`);
-    for (const k of ["envelope_id", "document_id", "signer_party_id", "kind", "auth_method", "field_id", "typed_name", "document_sha256_at_event", "user_agent"] as const) if ((hashed[k] ?? null) !== (r[k] ?? null)) failures.push(`${r.id}: ${k} differs from the hashed view`);
+    for (const k of ["envelope_id", "document_id", "signer_party_id", "kind", "auth_method", "ip", "user_agent", "field_id", "typed_name", "document_sha256_at_event", "vendor_event_ref"] as const) if ((hashed[k] ?? null) !== (r[k] ?? null)) failures.push(`${r.id}: ${k} differs from the hashed view`);
+    if ((hashed["page"] ?? null) !== (r.page === null || r.page === undefined ? null : Number(r.page))) failures.push(`${r.id}: page differs from the hashed view`);
+    const stored: Record<string, unknown> = { ...r.payload }; delete stored["hashed"];
+    if (canonicalJson(hashed["payload"] ?? {}) !== canonicalJson(stored)) failures.push(`${r.id}: payload differs from the hashed view`);
     if (Date.parse(String(hashed["at"])) !== Date.parse(r.at)) failures.push(`${r.id}: at differs from the hashed view`);
     prev = r.event_hash;
   }
+  if (expectedHead !== undefined && expectedHead !== null && expectedHead !== prev) failures.push(`the chain's head ${prev ?? "none"} is not the recorded head ${expectedHead} (a truncated tail?)`);
   return { ok: failures.length === 0, head: prev, count: rows.length, failures };
 }
 
@@ -92,7 +100,9 @@ export async function createEnvelope(deps: DocsDeps, key: { loan_id: string | nu
     if (!isUuid(d.document_id)) throw new RangeError("documents[].document_id is a uuid");
     const row = await requireDocument(deps.q, d.document_id);
     if (row.storage_status === "disposed") throw new RangeError(`document ${d.document_id} was disposed`);
-    for (const f of d.required_fields ?? []) { if (!f.field_id || !FIELD_KINDS.has(f.kind) || !isUuid(f.signer_party_id) || !Number.isInteger(f.page) || f.page < 1) throw new RangeError(`required field ${String(f.field_id)} is malformed`); if (!i.signers.includes(f.signer_party_id)) throw new RangeError(`field ${f.field_id} names a signer who is not on the envelope`); }
+    if (row.mime_type !== "application/pdf" || row.render_engine !== "sm-pdf") throw new DocumentsRefused("UNSIGNABLE_DOCUMENT", "35.2 rule 8: the signed document is the unsigned bytes plus the per-field stamps and a signature page — only a PDF the platform's writer produced can carry them; a received file is signed by re-rendering it", `document ${d.document_id} is ${row.mime_type} rendered by ${row.render_engine ?? "another engine"}`);
+    for (const f of d.required_fields ?? []) { if (!f.field_id || !FIELD_KINDS.has(f.kind) || !isUuid(f.signer_party_id) || !Number.isInteger(f.page) || f.page < 1) throw new RangeError(`required field ${String(f.field_id)} is malformed`); if (!i.signers.includes(f.signer_party_id)) throw new RangeError(`field ${f.field_id} names a signer who is not on the envelope`); if (row.page_count !== null && f.page > row.page_count) throw new RangeError(`field ${f.field_id} names page ${f.page} of a ${row.page_count}-page document`); }
+    if ((d.required_fields ?? []).some((f, k, all) => all.findIndex((x) => x.field_id === f.field_id) !== k)) throw new RangeError(`document ${d.document_id} names a field id twice`);
   }
   const id = randomUUID(); const owner = i.owner_process ?? "35.2";
   const expiresOn = i.expires_on ?? plusDays(deps.now, ENVELOPE_EXPIRY_DAYS);
@@ -110,7 +120,7 @@ export async function createEnvelope(deps: DocsDeps, key: { loan_id: string | nu
 export async function consentsCovering(q: Queryable, e: EnvelopeRow): Promise<{ party_id: string; consent_id: string | null }[]> {
   const out: { party_id: string; consent_id: string | null }[] = [];
   for (const party of e.signer_party_ids) {
-    const rows = await q.query<{ id: string }>(`SELECT id FROM consents WHERE kind = 'esign' AND status = 'active' AND granted AND revoked_at IS NULL AND party_id = $1 AND $2 = ANY(scope) AND (cardinality($3::uuid[]) = 0 OR id = ANY($3::uuid[])) ORDER BY captured_at DESC LIMIT 1`, [party, e.kind, e.consent_ids]);
+    const rows = await q.query<{ id: string }>(`SELECT id FROM consents WHERE kind = 'esign' AND status = 'active' AND granted AND revoked_at IS NULL AND party_id = $1 AND $2 = ANY(scope) ORDER BY (id = ANY($3::uuid[])) DESC, captured_at DESC LIMIT 1`, [party, e.kind, e.consent_ids]);   // the ids named at create are preferred, any active covering consent of the party serves
     out.push({ party_id: party, consent_id: rows[0]?.id ?? null });
   }
   return out;
@@ -138,7 +148,8 @@ async function assertSession(q: Queryable, auth: SignerAuth, signer: string, now
   if (auth.method !== "session_l2" && auth.method !== "session_l3") throw new DocumentsRefused("SESSION_LEVEL", "35.2 rule 8: esign.envelope.sign requires an authenticated borrower session at L2 or above (32.14)", `auth.method ${auth.method} is not a session`);
   if (!isUuid(auth.session_id)) throw new DocumentsRefused("SESSION_LEVEL", "35.2 rule 8: esign.envelope.sign requires an authenticated borrower session at L2 or above (32.14)", "auth.session_id is not a session id");
   const s = (await q.query<{ level: string; party_id: string; expires_at: string; revoked_at: string | null }>(`SELECT level, party_id, expires_at, revoked_at FROM sessions WHERE session_id = $1`, [auth.session_id]))[0];
-  if (!s || s.party_id !== signer || (s.level !== "L2" && s.level !== "L3") || s.revoked_at || Date.parse(s.expires_at) <= Date.parse(now)) throw new DocumentsRefused("SESSION_LEVEL", "35.2 rule 8: esign.envelope.sign requires an authenticated borrower session at L2 or above (32.14), the signer's own, unexpired and unrevoked", `session ${auth.session_id} does not authenticate ${signer} at L2`);
+  const claimed = auth.method === "session_l3" ? "L3" : "L2";
+  if (!s || s.party_id !== signer || s.revoked_at || Date.parse(s.expires_at) <= Date.parse(now) || (claimed === "L3" ? s.level !== "L3" : s.level !== "L2" && s.level !== "L3")) throw new DocumentsRefused("SESSION_LEVEL", "35.2 rule 8: esign.envelope.sign requires an authenticated borrower session at L2 or above (32.14), the signer's own, unexpired and unrevoked — and the evidence names the level the session really holds", `session ${auth.session_id} does not authenticate ${signer} at ${claimed}`);
 }
 
 /** The signed document: the unsigned bytes with a stamp at every signed field and a signature page listing every field, signer, time and auth method. */
@@ -221,9 +232,9 @@ export async function signFields(deps: DocsDeps, i: SignInput): Promise<SignResu
     await deps.q.query(`UPDATE esign_envelope_documents SET signed_document_id = $2, signed_sha256 = $3, signed_at = $4::timestamptz WHERE id = $1 AND signed_document_id IS NULL`, [d.id, stored.document_id, stored.sha256, deps.now]);
     signedIds.push(stored.document_id);
   }
-  await appendSignatureEvent(deps.q, { envelope_id: e.id, kind: "completed", at: deps.now, auth_method: "none", signer_party_id: i.signer_party_id, payload: { signed_document_ids: signedIds } });
+  await appendSignatureEvent(deps.q, { ...common, kind: "completed", document_id: doc.document_id, payload: { signed_document_ids: signedIds } });
   const evidence = await storeEvidence(deps, { ...e, status: "completed", completed_at: deps.now }, deps.now);
-  await deps.q.query(`UPDATE esign_envelopes SET status = 'completed', completed_at = $2::timestamptz, evidence_document_id = $3, evidence_sha256 = $4 WHERE id = $1`, [e.id, deps.now, evidence.document_id, evidence.sha256]);
+  await deps.q.query(`UPDATE esign_envelopes SET status = 'completed', completed_at = $2::timestamptz, evidence_document_id = $3, evidence_sha256 = $4, chain_head = $5 WHERE id = $1`, [e.id, deps.now, evidence.document_id, evidence.sha256, evidence.head]);
   deps.events.append({ type: "esign.envelope.completed", ...envKey(e), aggregate: { kind: "esign_envelope", id: e.id }, actor: deps.actor, payload: { envelope_id: e.id, signed_document_ids: signedIds, evidence_document_id: evidence.document_id, evidence_sha256: evidence.sha256, chain_head: evidence.head, completed_at: deps.now } });
   return { envelope_id: e.id, document_id: doc.document_id, status: "completed", fields_signed: signedNow, remaining: 0, completed: true, signed_document_ids: signedIds, evidence_document_id: evidence.document_id, chain_head: evidence.head };
 }
@@ -234,10 +245,10 @@ export interface VoidResult { readonly envelope_id: string; readonly status: str
 export async function closeEnvelope(deps: DocsDeps, i: { envelope_id: string; outcome: "voided" | "expired" | "declined"; reason: string; timer_id?: string | null; signer_party_id?: string | null }): Promise<VoidResult> {
   const e = await requireEnvelope(deps.q, i.envelope_id);
   if (TERMINAL.has(e.status)) throw new DocumentsRefused("ENVELOPE_TERMINAL", "35.2 state machine: a completed envelope is never voided; a terminal envelope never changes — a correction is a new envelope", `envelope ${e.id} is ${e.status}`);
-  if (i.outcome !== "voided" && e.status === "draft") throw new RangeError(`a draft envelope is voided, not ${i.outcome}`);
+  if (e.status === "draft") throw new RangeError(`envelope ${e.id} was never sent: a draft is not ${i.outcome}, it is simply never sent (a correction is a new envelope)`);
   await appendSignatureEvent(deps.q, { envelope_id: e.id, kind: i.outcome, at: deps.now, auth_method: "none", signer_party_id: i.signer_party_id ?? null, payload: { reason: i.reason, ...(i.timer_id ? { timer_id: i.timer_id } : {}), by: `${deps.actor.kind}:${deps.actor.id}` } });
   const evidence = await storeEvidence(deps, { ...e, status: i.outcome, voided_at: deps.now, void_reason: i.reason }, deps.now);
-  await deps.q.query(`UPDATE esign_envelopes SET status = $2, voided_at = $3::timestamptz, void_reason = $4, evidence_document_id = $5, evidence_sha256 = $6 WHERE id = $1`, [e.id, i.outcome, deps.now, i.reason, evidence.document_id, evidence.sha256]);
+  await deps.q.query(`UPDATE esign_envelopes SET status = $2, voided_at = $3::timestamptz, void_reason = $4, evidence_document_id = $5, evidence_sha256 = $6, chain_head = $7 WHERE id = $1`, [e.id, i.outcome, deps.now, i.reason, evidence.document_id, evidence.sha256, evidence.head]);
   const type = i.outcome === "expired" ? "esign.envelope.expired" : i.outcome === "declined" ? "esign.envelope.declined" : "esign.envelope.voided";
   deps.events.append({ type, ...envKey(e), aggregate: { kind: "esign_envelope", id: e.id }, actor: deps.actor, payload: { envelope_id: e.id, reason: i.reason, ...(i.timer_id ? { timer_id: i.timer_id } : {}), evidence_document_id: evidence.document_id, owner_process: e.owner_process, kind: e.kind, signer_party_ids: e.signer_party_ids } });
   return { envelope_id: e.id, status: i.outcome, reason: i.reason, evidence_document_id: evidence.document_id, evidence_sha256: evidence.sha256 };

@@ -37,6 +37,7 @@ import type { Db, Queryable } from "../infra/db/client.ts";
 import { PgFakeBlobStore, type ObjectStorePort } from "../infra/blobs/pg-fake-blob-store.ts";
 import { noticeServiceFor } from "./documents/notice-sink.ts";
 import { documentsSweepPass, type DocumentsSweepReport } from "./documents/sweep.ts";
+import { ConsentWithdrawalListener } from "./documents/consent-listener.ts";
 import { listDuDocuments, type DuDocumentSummary } from "../domain/underwriting/du/persist.ts";
 import { listDuPreflight, type PreflightResultRow } from "../domain/underwriting/du/preflight.ts";
 import { PgUnitOfWork, type UowResult, type CommittedListener } from "../infra/db/unit-of-work.ts";
@@ -160,6 +161,8 @@ export class Runtime {
   readonly uow: PgUnitOfWork;
   readonly entities: PgEntityRepository;
   readonly escalationRepo: PgEscalationRepository;
+  /** 35.2 rule 8 / 7.4: `consent.esign.withdrawn` voids the party's open envelopes after the command that logged it committed. */
+  readonly consentWithdrawals: ConsentWithdrawalListener;
   readonly applications: PgApplicationRepository;
   /** The origination section services and vendor ports, one set for the life of the runtime (see origination.ts). */
   readonly originationServices: OriginationServiceSet;
@@ -174,6 +177,7 @@ export class Runtime {
     this.blobs = deps.blobs ?? new PgFakeBlobStore(this.db);
     this.noticeRegistry = deps.notices ?? (() => { const r = buildRegistry(); publishAuthored(r); publishSection02(r); registerPreapprovalLetter(r); return r; })();   // 32.8: 2.x's own authored pieces (AUTODRAFT-*, LC-*, SUSP-*) beside the catalog   // DELTA-01: the preapproval letter beside the catalog
     this.uow = new PgUnitOfWork(this.db, this.registry); this.entities = new PgEntityRepository(this.db); this.escalationRepo = new PgEscalationRepository(this.db); this.applications = new PgApplicationRepository(this.db);
+    this.consentWithdrawals = new ConsentWithdrawalListener(this);
     this.bus = new CommandBus(this.agents);
     this.originationServices = originationServices(this.clock);
     for (const t of ALL_TOOLS) { this.tools.set(toolKey(t.process, t.name), t); this.agents.registerTool(t.agent, t.name); }

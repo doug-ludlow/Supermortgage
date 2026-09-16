@@ -49,7 +49,7 @@ import { mailBatch, ingestManifest, mailFallback } from "../../domain/operations
 import { wallClock } from "../../kernel/calendar/zoned.ts";
 import { docsDecision } from "../../domain/operations-runtime/documents/decision.ts";
 import { render1098CopyB, boxesFromRow, SM_FILER, IRS_1098_TEMPLATE_CODE, IRS_1098_TEMPLATE_VERSION } from "../../domain/operations-runtime/documents/irs-1098.ts";
-import { GlyphUnsupported } from "../../infra/files/pdf.ts";
+import { GlyphUnsupported, PdfNotOwn } from "../../infra/files/pdf.ts";
 import { RenderRefused } from "../../notices/service.ts";
 import { retentionFor } from "../../runtime/documents/notice-sink.ts";
 import { payloadHash } from "../../notices/render.ts";
@@ -85,6 +85,7 @@ export async function refusing<T>(tool: string, fn: () => Promise<T>): Promise<T
   catch (e) {
     if (e instanceof DocumentsRefused) throw new CommandRefused(tool, e.code, e.citation, e.message);
     if (e instanceof Error && /^(URI_SWAP_ONCE)/.test(e.message)) throw new CommandRefused(tool, "URI_SWAP_ONCE", "35.2 guardrails: URI_SWAP_ONCE — storage_uri changes once, from worm_pending:<id> to the stored URI", e.message);
+    if (e instanceof PdfNotOwn) throw new CommandRefused(tool, "UNSIGNABLE_DOCUMENT", "35.2 rule 8 / rule 10: only a PDF the platform's writer produced takes stamps, signature pages and cover sheets", e.message);
     throw e;
   }
 }

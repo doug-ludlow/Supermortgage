@@ -563,6 +563,10 @@ export class Journey {
     const b = await db.query<{ id: string }>(`INSERT INTO borrowers (legal_name, tin_last4, party_id) VALUES ($1, $2, $3) RETURNING id`, [o.legal_name ?? "Alex Borrower", o.tin_last4 ?? "6789", partyId]);
     await db.query(`INSERT INTO loan_borrowers (loan_id, borrower_id, role, is_primary) VALUES ($1, $2, 'borrower', true)`, [loanId, b[0]!.id]);
     await db.query(`INSERT INTO loan_terms (loan_id, effective_from, source, amortization, note_rate_bps, pi_cents, escrow_payment_cents, escrowed, remittance_type, maturity_date, remaining_term_months) VALUES ($1, '2024-11-01', 'boarding', 'fixed', 7000, 375875, 68750, true, 'A/A', '2054-10-01', 360)`, [loanId]);
+    // 35.5 rule 9: a boarded loan's loan-local day and servicer block come from its `loan_servicing_configs` row (no default zone) — the fixture's Phoenix property, the seeded FAKE servicer profile (0143), the note's late-charge terms within AZ's bound
+    await db.query(`INSERT INTO loan_servicing_configs (loan_id, effective_from, time_zone, time_zone_source, jurisdiction_state, servicer_profile_id, lockbox_id, channels_enabled, late_charge_terms, nsf_fee_allowed, written_by)
+      SELECT $1, '2025-01-15', 'America/Phoenix', 'state_default', 'AZ', sp.id, 'LBX-1', ARRAY['lockbox', 'ach_debit_origin', 'portal_onetime'], '{"pct": "5.000", "grace_days": 15, "conflict": null}'::jsonb, true, '{"actor": "fixture:journey.adoptPriorLoan", "at": "fixture"}'::jsonb
+        FROM servicer_profiles sp WHERE sp.status = 'active' AND sp.effective_from <= '2025-01-15' ORDER BY sp.version DESC LIMIT 1`, [loanId]);
     await db.query(`UPDATE loans SET principal_residence = true, fdcpa_debt_collector_flag = $2, regx_days_delinquent_at_boarding = $3, default_status_at_boarding = $4 WHERE id = $1`, [loanId, o.fdcpa_debt_collector === true, o.regx_days_delinquent_at_boarding ?? 0, (o.regx_days_delinquent_at_boarding ?? 0) > 0]);
     if (o.first_unpaid_due) {
       const first = new Date(`${o.first_unpaid_due}T12:00:00Z`);

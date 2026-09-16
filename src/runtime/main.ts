@@ -26,6 +26,7 @@ import { Runtime } from "./app.ts";
 import { createApiServer, listen } from "./server.ts";
 import { boardTransferBatch } from "./transfers.ts";
 import { generateDemoBatch, DEMO_BATCH } from "../domain/boarding/demo-batch.ts";
+import { registerReprojectionReactor } from "../domain/operations-runtime/installments.ts";
 import { encodeTransferBatch } from "../domain/boarding/tape-codec.ts";
 import { seedEntryDemo } from "./entry-seed.ts";
 import { seedPartnerBookDemo } from "./partner-book.ts";
@@ -59,6 +60,11 @@ const demoClock = config.environment === "production" ? null : await loadDemoClo
 const clock = demoClock ?? systemClock;
 // 35.1/35.3: the database URL rides on the runtime for the dedicated clients the pool cannot lend — the sweep lease (`pg_try_advisory_lock(35_001)`) and the planner lock (`pg_try_advisory_lock(35_003)`) on the application database
 const runtime = new Runtime({ db, databaseUrl: config.databaseUrl, registry: loadOverriddenRegistry(), rateFeed, reviewers, logger, clock, environment: config.environment, env: process.env });
+// 35.5 rule 3: every committed `loan_terms.*` event (2.4, 7.2, 3.6, 12.8) re-projects the loan's installment schedule through `installments.reproject` on the bus
+registerReprojectionReactor(runtime);
+
+// 35.9 rule 1: the sections' committed events are folded into the case timelines by the post-commit hook (serve and sweep)
+if (mode === "sweep" || mode === "serve") runtime.caseFolder.start();
 
 if (mode === "sweep") {
   try {
@@ -67,6 +73,7 @@ if (mode === "sweep") {
     await flows.tick(runtime.clock.now());
     const report = await runtime.sweep();
     await flows.settle();
+    await runtime.caseFolder.settle();
     logger.info("sweep", { run_id: report.run_id, holder: report.holder, outcome: report.outcome, skipped_reason: report.skipped_reason, passes: report.passes.map((p) => `${p.name}:${p.duration_ms}ms`), outbox_dispatch: report.outbox_dispatch ? { claimed: report.outbox_dispatch.claimed, sent: report.outbox_dispatch.sent, retried: report.outbox_dispatch.retried, dead: report.outbox_dispatch.dead } : null, verify: report.verify ? { run_id: report.verify.run_id, gaps: report.verify.gaps, mismatches: report.verify.mismatches } : null,
       due: report.due, breaches: report.breaches.length, outbox: report.outbox, at: report.at, rate_feed: rateFeed.vendorName, refi: report.refi?.line ?? "no rate feed", fake_reviewers: report.reviewers?.line ?? "off" });
     for (const b of report.breaches) logger.warn("timer breached", { ...b });

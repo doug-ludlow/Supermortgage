@@ -1,17 +1,17 @@
 {
- "brief": "spec units built 8259/8796 (93.9%): tids 2307/2489, tables 789/852, timers 2064/2097, notices 308/309, tools 1474/1579, figures 1317/1470; processes at 100%: 196/211",
+ "brief": "spec units built 8404/8787 (95.6%): tids 2318/2480, tables 804/852, timers 2075/2097, notices 308/309, tools 1500/1579, figures 1399/1470; processes at 100%: 198/212; retired 27",
  "totals": {
   "tids": {
-   "spec": 2489,
-   "built": 2307
+   "spec": 2480,
+   "built": 2318
   },
   "tables": {
    "spec": 852,
-   "built": 789
+   "built": 804
   },
   "timers": {
    "spec": 2097,
-   "built": 2064
+   "built": 2075
   },
   "notices": {
    "spec": 309,
@@ -19,16 +19,191 @@
   },
   "tools": {
    "spec": 1579,
-   "built": 1474
+   "built": 1500
   },
   "figures": {
    "spec": 1470,
-   "built": 1317
+   "built": 1399
   },
   "units": {
-   "spec": 8796,
-   "built": 8259
+   "spec": 8787,
+   "built": 8404
   }
+ },
+ "retired": {
+  "count": 27,
+  "by_kind": {
+   "tids": 27,
+   "tables": 0,
+   "timers": 0,
+   "notices": 0,
+   "tools": 0,
+   "figures": 0
+  },
+  "rows": [
+   {
+    "unit_id": "32.9-T9",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "spoken payoff request (voice)"
+   },
+   {
+    "unit_id": "32.14-T1",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the anonymous minute \u2014 already retired in 32.16 \u00a70.4 prose, inert until now"
+   },
+   {
+    "unit_id": "32.14-T2",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the anonymous minute \u2014 already retired in 32.16 \u00a70.4 prose, inert until now"
+   },
+   {
+    "unit_id": "32.14-T3",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the anonymous minute \u2014 already retired in 32.16 \u00a70.4 prose, inert until now"
+   },
+   {
+    "unit_id": "32.14-T4",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the anonymous minute \u2014 already retired in 32.16 \u00a70.4 prose, inert until now"
+   },
+   {
+    "unit_id": "32.14-T5",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the anonymous minute \u2014 already retired in 32.16 \u00a70.4 prose, inert until now"
+   },
+   {
+    "unit_id": "32.14-T6",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the anonymous minute \u2014 already retired in 32.16 \u00a70.4 prose, inert until now"
+   },
+   {
+    "unit_id": "32.14-T19",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the anonymous minute \u2014 already retired in 32.16 \u00a70.4 prose, inert until now"
+   },
+   {
+    "unit_id": "32.16-T11",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the rail at \u2265 1024 px and reference chips"
+   },
+   {
+    "unit_id": "32.16-T12",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the rail at \u2265 1024 px and reference chips"
+   },
+   {
+    "unit_id": "32.16-T17",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "in-app voice turns"
+   },
+   {
+    "unit_id": "32.16-T18",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "in-app voice turns"
+   },
+   {
+    "unit_id": "32.16-T20",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "in-app voice turns"
+   },
+   {
+    "unit_id": "32.17-T3",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the video stage"
+   },
+   {
+    "unit_id": "32.17-T4",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the rail beside the call"
+   },
+   {
+    "unit_id": "32.17-T6",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the rail beside the call"
+   },
+   {
+    "unit_id": "32.17-T10",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the video door"
+   },
+   {
+    "unit_id": "32.17-T11",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "Michelle"
+   },
+   {
+    "unit_id": "32.17-T12",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the video stage"
+   },
+   {
+    "unit_id": "32.17-T14",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the video door"
+   },
+   {
+    "unit_id": "32.17-T15",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the video door"
+   },
+   {
+    "unit_id": "32.17-T16",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the video door"
+   },
+   {
+    "unit_id": "32.17-T19",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the video stage"
+   },
+   {
+    "unit_id": "32.17-T20",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the video stage"
+   },
+   {
+    "unit_id": "32.17-T22",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the video stage"
+   },
+   {
+    "unit_id": "32.17-T23",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "the video stage"
+   },
+   {
+    "unit_id": "32.17-T26",
+    "decision": "docs/decisions/2026-09-16-apply-product.md",
+    "date": "2026-09-16",
+    "reason": "Michelle"
+   }
+  ]
  },
  "sections": {
   "1": {
@@ -218,9 +393,9 @@
    "done": 3
   },
   "32": {
-   "spec": 359,
-   "built": 359,
-   "processes": 17,
+   "spec": 350,
+   "built": 337,
+   "processes": 18,
    "done": 17
   },
   "33": {
@@ -237,9 +412,9 @@
   },
   "35": {
    "spec": 715,
-   "built": 235,
+   "built": 402,
    "processes": 12,
-   "done": 4
+   "done": 6
   },
   "36": {
    "spec": 40,
@@ -443,7 +618,9 @@
   "34.4",
   "35.1",
   "35.3",
+  "35.5",
   "35.7",
+  "35.9",
   "35.10"
  ],
  "processes": [
@@ -486,7 +663,8 @@
     "spec": 41,
     "built": 41
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "1.2",
@@ -527,7 +705,8 @@
     "spec": 28,
     "built": 28
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "1.3",
@@ -568,7 +747,8 @@
     "spec": 33,
     "built": 33
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "1.4",
@@ -609,7 +789,8 @@
     "spec": 38,
     "built": 38
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "1.5",
@@ -650,7 +831,8 @@
     "spec": 32,
     "built": 32
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "1.6",
@@ -691,7 +873,8 @@
     "spec": 37,
     "built": 37
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "1.7",
@@ -732,7 +915,8 @@
     "spec": 41,
     "built": 41
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "2.1",
@@ -773,7 +957,8 @@
     "spec": 37,
     "built": 37
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "2.2",
@@ -814,7 +999,8 @@
     "spec": 32,
     "built": 32
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "2.3",
@@ -855,7 +1041,8 @@
     "spec": 41,
     "built": 41
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "2.4",
@@ -896,7 +1083,8 @@
     "spec": 30,
     "built": 30
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "2.5",
@@ -937,7 +1125,8 @@
     "spec": 23,
     "built": 23
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "2.6",
@@ -978,7 +1167,8 @@
     "spec": 24,
     "built": 24
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "2.7",
@@ -1019,7 +1209,8 @@
     "spec": 38,
     "built": 38
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "3.1",
@@ -1060,7 +1251,8 @@
     "spec": 26,
     "built": 26
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "3.2",
@@ -1101,7 +1293,8 @@
     "spec": 65,
     "built": 65
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "3.3",
@@ -1142,7 +1335,8 @@
     "spec": 45,
     "built": 45
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "3.4",
@@ -1183,7 +1377,8 @@
     "spec": 19,
     "built": 19
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "3.5",
@@ -1224,7 +1419,8 @@
     "spec": 31,
     "built": 31
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "3.6",
@@ -1265,7 +1461,8 @@
     "spec": 37,
     "built": 37
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "3.7",
@@ -1306,7 +1503,8 @@
     "spec": 46,
     "built": 46
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "3.8",
@@ -1347,7 +1545,8 @@
     "spec": 32,
     "built": 32
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "3.9",
@@ -1388,7 +1587,8 @@
     "spec": 35,
     "built": 35
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "4.1",
@@ -1429,7 +1629,8 @@
     "spec": 59,
     "built": 59
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "4.2",
@@ -1470,7 +1671,8 @@
     "spec": 35,
     "built": 35
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "4.3",
@@ -1511,7 +1713,8 @@
     "spec": 41,
     "built": 41
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "4.4",
@@ -1552,7 +1755,8 @@
     "spec": 35,
     "built": 35
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "4.5",
@@ -1593,7 +1797,8 @@
     "spec": 35,
     "built": 35
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "5.1",
@@ -1634,7 +1839,8 @@
     "spec": 47,
     "built": 47
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "5.2",
@@ -1675,7 +1881,8 @@
     "spec": 82,
     "built": 82
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "5.3",
@@ -1716,7 +1923,8 @@
     "spec": 35,
     "built": 35
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "5.4",
@@ -1757,7 +1965,8 @@
     "spec": 42,
     "built": 42
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "5.5",
@@ -1798,7 +2007,8 @@
     "spec": 27,
     "built": 27
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "5.6",
@@ -1839,7 +2049,8 @@
     "spec": 30,
     "built": 30
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "5.7",
@@ -1880,7 +2091,8 @@
     "spec": 31,
     "built": 31
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "6.1",
@@ -1921,7 +2133,8 @@
     "spec": 28,
     "built": 28
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "6.2",
@@ -1962,7 +2175,8 @@
     "spec": 18,
     "built": 18
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "6.3",
@@ -2003,7 +2217,8 @@
     "spec": 55,
     "built": 55
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "6.4",
@@ -2044,7 +2259,8 @@
     "spec": 29,
     "built": 29
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "6.5",
@@ -2085,7 +2301,8 @@
     "spec": 40,
     "built": 40
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "7.1",
@@ -2126,7 +2343,8 @@
     "spec": 56,
     "built": 56
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "7.2",
@@ -2167,7 +2385,8 @@
     "spec": 46,
     "built": 46
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "7.3",
@@ -2208,7 +2427,8 @@
     "spec": 20,
     "built": 20
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "7.4",
@@ -2249,7 +2469,8 @@
     "spec": 31,
     "built": 31
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "7.5",
@@ -2290,7 +2511,8 @@
     "spec": 22,
     "built": 22
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "7.6",
@@ -2331,7 +2553,8 @@
     "spec": 31,
     "built": 31
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "8.1",
@@ -2372,7 +2595,8 @@
     "spec": 49,
     "built": 49
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "8.2",
@@ -2413,7 +2637,8 @@
     "spec": 35,
     "built": 35
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "8.3",
@@ -2454,7 +2679,8 @@
     "spec": 47,
     "built": 47
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "9.1",
@@ -2495,7 +2721,8 @@
     "spec": 32,
     "built": 32
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "9.2",
@@ -2536,7 +2763,8 @@
     "spec": 32,
     "built": 32
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "9.3",
@@ -2577,7 +2805,8 @@
     "spec": 15,
     "built": 15
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "9.4",
@@ -2618,7 +2847,8 @@
     "spec": 13,
     "built": 13
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "9.5",
@@ -2659,7 +2889,8 @@
     "spec": 28,
     "built": 28
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "9.6",
@@ -2700,7 +2931,8 @@
     "spec": 34,
     "built": 34
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "9.7",
@@ -2741,7 +2973,8 @@
     "spec": 50,
     "built": 50
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "9.8",
@@ -2782,7 +3015,8 @@
     "spec": 34,
     "built": 34
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "9.9",
@@ -2823,7 +3057,8 @@
     "spec": 35,
     "built": 35
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "10.1",
@@ -2864,7 +3099,8 @@
     "spec": 51,
     "built": 51
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "10.2",
@@ -2905,7 +3141,8 @@
     "spec": 39,
     "built": 39
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "10.3",
@@ -2946,7 +3183,8 @@
     "spec": 14,
     "built": 14
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "10.4",
@@ -2987,7 +3225,8 @@
     "spec": 26,
     "built": 26
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "10.5",
@@ -3028,7 +3267,8 @@
     "spec": 37,
     "built": 37
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "10.6",
@@ -3069,7 +3309,8 @@
     "spec": 31,
     "built": 31
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "11.1",
@@ -3110,7 +3351,8 @@
     "spec": 60,
     "built": 60
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "11.2",
@@ -3151,7 +3393,8 @@
     "spec": 50,
     "built": 50
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "11.3",
@@ -3192,7 +3435,8 @@
     "spec": 48,
     "built": 48
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "11.4",
@@ -3233,7 +3477,8 @@
     "spec": 51,
     "built": 51
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "11.5",
@@ -3274,7 +3519,8 @@
     "spec": 43,
     "built": 43
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "12.1",
@@ -3315,7 +3561,8 @@
     "spec": 52,
     "built": 52
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "12.2",
@@ -3356,7 +3603,8 @@
     "spec": 49,
     "built": 49
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "12.3",
@@ -3397,7 +3645,8 @@
     "spec": 27,
     "built": 27
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "12.4",
@@ -3438,7 +3687,8 @@
     "spec": 44,
     "built": 44
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "12.5",
@@ -3479,7 +3729,8 @@
     "spec": 52,
     "built": 52
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "12.6",
@@ -3520,7 +3771,8 @@
     "spec": 50,
     "built": 50
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "12.7",
@@ -3561,7 +3813,8 @@
     "spec": 26,
     "built": 26
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "12.8",
@@ -3602,7 +3855,8 @@
     "spec": 65,
     "built": 65
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "12.9",
@@ -3643,7 +3897,8 @@
     "spec": 64,
     "built": 64
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "13.1",
@@ -3684,7 +3939,8 @@
     "spec": 29,
     "built": 29
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "13.2",
@@ -3725,7 +3981,8 @@
     "spec": 35,
     "built": 35
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "13.3",
@@ -3766,7 +4023,8 @@
     "spec": 68,
     "built": 68
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "13.4",
@@ -3807,7 +4065,8 @@
     "spec": 35,
     "built": 35
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "13.5",
@@ -3848,7 +4107,8 @@
     "spec": 29,
     "built": 29
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "13.6",
@@ -3889,7 +4149,8 @@
     "spec": 48,
     "built": 48
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "13.7",
@@ -3930,7 +4191,8 @@
     "spec": 30,
     "built": 30
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "13.8",
@@ -3971,7 +4233,8 @@
     "spec": 35,
     "built": 35
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "13.9",
@@ -4012,7 +4275,8 @@
     "spec": 44,
     "built": 44
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "14.1",
@@ -4053,7 +4317,8 @@
     "spec": 107,
     "built": 107
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "14.2",
@@ -4094,7 +4359,8 @@
     "spec": 52,
     "built": 52
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "14.3",
@@ -4135,7 +4401,8 @@
     "spec": 47,
     "built": 47
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "14.4",
@@ -4176,7 +4443,8 @@
     "spec": 18,
     "built": 18
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "15.1",
@@ -4217,7 +4485,8 @@
     "spec": 69,
     "built": 69
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "15.2",
@@ -4258,7 +4527,8 @@
     "spec": 63,
     "built": 63
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "15.3",
@@ -4299,7 +4569,8 @@
     "spec": 67,
     "built": 67
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "15.4",
@@ -4340,7 +4611,8 @@
     "spec": 42,
     "built": 42
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "16.1",
@@ -4381,7 +4653,8 @@
     "spec": 62,
     "built": 62
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "16.2",
@@ -4422,7 +4695,8 @@
     "spec": 59,
     "built": 59
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "16.3",
@@ -4463,7 +4737,8 @@
     "spec": 51,
     "built": 51
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "16.4",
@@ -4504,7 +4779,8 @@
     "spec": 25,
     "built": 25
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "17.1",
@@ -4545,7 +4821,8 @@
     "spec": 42,
     "built": 42
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "17.2",
@@ -4586,7 +4863,8 @@
     "spec": 40,
     "built": 40
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "17.3",
@@ -4627,7 +4905,8 @@
     "spec": 75,
     "built": 75
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "17.4",
@@ -4668,7 +4947,8 @@
     "spec": 47,
     "built": 47
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "18.1",
@@ -4709,7 +4989,8 @@
     "spec": 43,
     "built": 43
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "18.2",
@@ -4750,7 +5031,8 @@
     "spec": 24,
     "built": 24
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "18.3",
@@ -4791,7 +5073,8 @@
     "spec": 19,
     "built": 19
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "18.4",
@@ -4832,7 +5115,8 @@
     "spec": 28,
     "built": 28
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "18.5",
@@ -4873,7 +5157,8 @@
     "spec": 24,
     "built": 24
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "18.6",
@@ -4914,7 +5199,8 @@
     "spec": 18,
     "built": 18
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "18.7",
@@ -4955,7 +5241,8 @@
     "spec": 25,
     "built": 25
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "19.1",
@@ -4996,7 +5283,8 @@
     "spec": 47,
     "built": 47
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "19.2",
@@ -5037,7 +5325,8 @@
     "spec": 84,
     "built": 84
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "19.3",
@@ -5078,7 +5367,8 @@
     "spec": 58,
     "built": 58
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "19.4",
@@ -5119,7 +5409,8 @@
     "spec": 36,
     "built": 36
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "20.1",
@@ -5160,7 +5451,8 @@
     "spec": 58,
     "built": 58
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "20.2",
@@ -5201,7 +5493,8 @@
     "spec": 45,
     "built": 45
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "20.3",
@@ -5242,7 +5535,8 @@
     "spec": 41,
     "built": 41
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "20.4",
@@ -5283,7 +5577,8 @@
     "spec": 47,
     "built": 47
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "21.1",
@@ -5324,7 +5619,8 @@
     "spec": 38,
     "built": 38
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "21.2",
@@ -5365,7 +5661,8 @@
     "spec": 36,
     "built": 36
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "21.3",
@@ -5406,7 +5703,8 @@
     "spec": 75,
     "built": 75
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "21.4",
@@ -5447,7 +5745,8 @@
     "spec": 47,
     "built": 47
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "21.5",
@@ -5488,7 +5787,8 @@
     "spec": 43,
     "built": 43
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "21.6",
@@ -5529,7 +5829,8 @@
     "spec": 43,
     "built": 43
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "22.1",
@@ -5570,7 +5871,8 @@
     "spec": 45,
     "built": 45
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "22.2",
@@ -5611,7 +5913,8 @@
     "spec": 41,
     "built": 41
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "22.3",
@@ -5652,7 +5955,8 @@
     "spec": 55,
     "built": 55
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "22.4",
@@ -5693,7 +5997,8 @@
     "spec": 110,
     "built": 110
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "22.5",
@@ -5734,7 +6039,8 @@
     "spec": 54,
     "built": 54
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "22.6",
@@ -5775,7 +6081,8 @@
     "spec": 64,
     "built": 64
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "23.1",
@@ -5816,7 +6123,8 @@
     "spec": 51,
     "built": 51
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "23.2",
@@ -5857,7 +6165,8 @@
     "spec": 58,
     "built": 58
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "23.3",
@@ -5898,7 +6207,8 @@
     "spec": 44,
     "built": 44
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "23.4",
@@ -5939,7 +6249,8 @@
     "spec": 66,
     "built": 66
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "23.5",
@@ -5980,7 +6291,8 @@
     "spec": 37,
     "built": 37
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "23.6",
@@ -6021,7 +6333,8 @@
     "spec": 17,
     "built": 17
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "23.7",
@@ -6062,7 +6375,8 @@
     "spec": 17,
     "built": 17
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "24.1",
@@ -6103,7 +6417,8 @@
     "spec": 41,
     "built": 41
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "24.2",
@@ -6144,7 +6459,8 @@
     "spec": 51,
     "built": 51
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "24.3",
@@ -6185,7 +6501,8 @@
     "spec": 40,
     "built": 40
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "24.4",
@@ -6226,7 +6543,8 @@
     "spec": 67,
     "built": 67
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "24.5",
@@ -6267,7 +6585,8 @@
     "spec": 52,
     "built": 52
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "24.6",
@@ -6308,7 +6627,8 @@
     "spec": 63,
     "built": 63
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "25.1",
@@ -6349,7 +6669,8 @@
     "spec": 75,
     "built": 75
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "25.2",
@@ -6390,7 +6711,8 @@
     "spec": 52,
     "built": 52
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "25.3",
@@ -6431,7 +6753,8 @@
     "spec": 44,
     "built": 44
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "25.4",
@@ -6472,7 +6795,8 @@
     "spec": 63,
     "built": 63
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "26.1",
@@ -6513,7 +6837,8 @@
     "spec": 74,
     "built": 74
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "26.2",
@@ -6554,7 +6879,8 @@
     "spec": 51,
     "built": 51
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "26.3",
@@ -6595,7 +6921,8 @@
     "spec": 77,
     "built": 77
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "26.4",
@@ -6636,7 +6963,8 @@
     "spec": 46,
     "built": 46
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "27.1",
@@ -6677,7 +7005,8 @@
     "spec": 87,
     "built": 87
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "27.2",
@@ -6718,7 +7047,8 @@
     "spec": 110,
     "built": 110
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "28.1",
@@ -6759,7 +7089,8 @@
     "spec": 53,
     "built": 53
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "28.2",
@@ -6800,7 +7131,8 @@
     "spec": 68,
     "built": 68
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "28.3",
@@ -6841,7 +7173,8 @@
     "spec": 39,
     "built": 39
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "28.4",
@@ -6882,7 +7215,8 @@
     "spec": 65,
     "built": 65
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "29.1",
@@ -6923,7 +7257,8 @@
     "spec": 61,
     "built": 61
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "29.2",
@@ -6964,7 +7299,8 @@
     "spec": 59,
     "built": 59
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "29.3",
@@ -7005,7 +7341,8 @@
     "spec": 44,
     "built": 44
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "29.4",
@@ -7046,7 +7383,8 @@
     "spec": 67,
     "built": 67
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "30.1",
@@ -7087,7 +7425,8 @@
     "spec": 51,
     "built": 51
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "30.2",
@@ -7128,7 +7467,8 @@
     "spec": 59,
     "built": 59
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "30.3",
@@ -7169,7 +7509,8 @@
     "spec": 55,
     "built": 55
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "30.4",
@@ -7210,7 +7551,8 @@
     "spec": 53,
     "built": 53
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "31.1",
@@ -7251,7 +7593,8 @@
     "spec": 43,
     "built": 43
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "31.2",
@@ -7292,7 +7635,8 @@
     "spec": 42,
     "built": 42
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "31.3",
@@ -7333,7 +7677,8 @@
     "spec": 55,
     "built": 55
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "32.1",
@@ -7374,7 +7719,8 @@
     "spec": 3,
     "built": 3
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "32.2",
@@ -7415,7 +7761,8 @@
     "spec": 94,
     "built": 94
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "32.3",
@@ -7456,7 +7803,8 @@
     "spec": 32,
     "built": 32
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "32.4",
@@ -7497,7 +7845,8 @@
     "spec": 10,
     "built": 10
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "32.5",
@@ -7538,7 +7887,8 @@
     "spec": 13,
     "built": 13
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "32.6",
@@ -7579,7 +7929,8 @@
     "spec": 12,
     "built": 12
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "32.7",
@@ -7620,7 +7971,8 @@
     "spec": 13,
     "built": 13
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "32.8",
@@ -7661,14 +8013,15 @@
     "spec": 11,
     "built": 11
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "32.9",
    "title": "Servicing: insurance, PMI, ARM, life events, requests",
    "tids": {
-    "spec": 11,
-    "built": 11,
+    "spec": 10,
+    "built": 10,
     "todo": 0,
     "missing": []
    },
@@ -7699,10 +8052,13 @@
     "missing": []
    },
    "units": {
-    "spec": 11,
-    "built": 11
+    "spec": 10,
+    "built": 10
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": [
+    "32.9-T9"
+   ]
   },
   {
    "process": "32.10",
@@ -7743,7 +8099,8 @@
     "spec": 11,
     "built": 11
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "32.11",
@@ -7784,7 +8141,8 @@
     "spec": 10,
     "built": 10
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "32.12",
@@ -7825,7 +8183,8 @@
     "spec": 8,
     "built": 8
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "32.13",
@@ -7866,14 +8225,15 @@
     "spec": 16,
     "built": 16
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "32.14",
    "title": "Entry, sign-up and sign-in",
    "tids": {
-    "spec": 20,
-    "built": 20,
+    "spec": 13,
+    "built": 13,
     "todo": 0,
     "missing": []
    },
@@ -7904,17 +8264,26 @@
     "missing": []
    },
    "units": {
-    "spec": 26,
-    "built": 26
+    "spec": 19,
+    "built": 19
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": [
+    "32.14-T1",
+    "32.14-T2",
+    "32.14-T3",
+    "32.14-T4",
+    "32.14-T5",
+    "32.14-T6",
+    "32.14-T19"
+   ]
   },
   {
    "process": "32.16",
    "title": "The conversational product: an account, then a conversation, with cards only when the rules need one",
    "tids": {
-    "spec": 32,
-    "built": 32,
+    "spec": 27,
+    "built": 27,
     "todo": 0,
     "missing": []
    },
@@ -7945,17 +8314,24 @@
     "missing": []
    },
    "units": {
-    "spec": 45,
-    "built": 45
+    "spec": 40,
+    "built": 40
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": [
+    "32.16-T11",
+    "32.16-T12",
+    "32.16-T17",
+    "32.16-T18",
+    "32.16-T20"
+   ]
   },
   {
    "process": "32.17",
    "title": "The video agent: the same conversation, face to face, with the cards on the rail",
    "tids": {
-    "spec": 26,
-    "built": 26,
+    "spec": 12,
+    "built": 12,
     "todo": 0,
     "missing": []
    },
@@ -7986,10 +8362,26 @@
     "missing": []
    },
    "units": {
-    "spec": 32,
-    "built": 32
+    "spec": 18,
+    "built": 18
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": [
+    "32.17-T3",
+    "32.17-T4",
+    "32.17-T6",
+    "32.17-T10",
+    "32.17-T11",
+    "32.17-T12",
+    "32.17-T14",
+    "32.17-T15",
+    "32.17-T16",
+    "32.17-T19",
+    "32.17-T20",
+    "32.17-T22",
+    "32.17-T23",
+    "32.17-T26"
+   ]
   },
   {
    "process": "32.18",
@@ -8030,7 +8422,64 @@
     "spec": 12,
     "built": 12
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
+  },
+  {
+   "process": "32.19",
+   "title": "The Apply product",
+   "tids": {
+    "spec": 18,
+    "built": 5,
+    "todo": 13,
+    "missing": [
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 18,
+    "built": 5
+   },
+   "pct": 27.8,
+   "retired": []
   },
   {
    "process": "33.1",
@@ -8071,7 +8520,8 @@
     "spec": 30,
     "built": 30
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "33.2",
@@ -8112,7 +8562,8 @@
     "spec": 27,
     "built": 27
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "33.3",
@@ -8153,7 +8604,8 @@
     "spec": 12,
     "built": 12
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "34.1",
@@ -8194,7 +8646,8 @@
     "spec": 21,
     "built": 21
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "34.2",
@@ -8235,7 +8688,8 @@
     "spec": 13,
     "built": 13
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "34.3",
@@ -8276,7 +8730,8 @@
     "spec": 12,
     "built": 12
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "34.4",
@@ -8317,7 +8772,8 @@
     "spec": 12,
     "built": 12
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "34.5",
@@ -8377,7 +8833,8 @@
     "spec": 22,
     "built": 5
    },
-   "pct": 22.7
+   "pct": 22.7,
+   "retired": []
   },
   {
    "process": "35.1",
@@ -8418,7 +8875,8 @@
     "spec": 42,
     "built": 42
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "35.2",
@@ -8500,25 +8958,22 @@
    },
    "figures": {
     "spec": 11,
-    "built": 1,
+    "built": 5,
     "missing": [
-     "$1,234.56",
      "$1,912.65",
      "$1,914.67",
      "$1,916.67",
      "$116.71",
-     "$2,334.29",
-     "$2,946.79",
-     "$400,000.00",
      "$5,743.99",
      "$6,010.29"
     ]
    },
    "units": {
     "spec": 58,
-    "built": 4
+    "built": 8
    },
-   "pct": 6.9
+   "pct": 13.8,
+   "retired": []
   },
   {
    "process": "35.3",
@@ -8559,7 +9014,8 @@
     "spec": 40,
     "built": 40
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "35.4",
@@ -8659,59 +9115,28 @@
     "spec": 55,
     "built": 1
    },
-   "pct": 1.8
+   "pct": 1.8,
+   "retired": []
   },
   {
    "process": "35.5",
    "title": "The installment schedule and the daily cashiering cycle: `loan_installments` at fund and at transfer boarding, the whole-book 2.1/2.7/2.3 sweep, lockbox ingest, ACH origination and NACHA returns as cycles, and the per-loan jurisdiction, time-zone and servicer-identity configuration",
    "tids": {
     "spec": 16,
-    "built": 0,
-    "todo": 16,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15,
-     16
-    ]
+    "built": 16,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 8,
-    "built": 1,
-    "missing": [
-     "ach_return_files",
-     "cashiering_unit_runs",
-     "installment_schedule_runs",
-     "loan_servicing_configs",
-     "lockbox_batches",
-     "lockbox_items",
-     "servicer_profiles"
-    ]
+    "built": 8,
+    "missing": []
    },
    "timers": {
     "spec": 8,
-    "built": 2,
+    "built": 8,
     "armable": 8,
-    "missing": [
-     "SM_ACH_FILE_BUILD_1BD",
-     "SM_ACH_RETURN_ACTIONED_1BD",
-     "SM_INSTALLMENT_REPROJECT_1BD",
-     "SM_INSTALLMENT_SCHEDULE_AT_BOARD_0",
-     "SM_LOAN_SERVICING_CONFIG_AT_BOARD_0",
-     "SM_LOCKBOX_BATCH_POSTED_1BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -8720,78 +9145,20 @@
    },
    "tools": {
     "spec": 12,
-    "built": 0,
-    "missing": [
-     "installments.write",
-     "installments.reproject",
-     "installments.read",
-     "cashiering.run_unit",
-     "lockbox.ingest",
-     "lockbox.item.resolve",
-     "ach.file.build",
-     "ach.returns.ingest",
-     "ach.return.action",
-     "servicing_config.write",
-     "servicer_profile.write",
-     "writeDecision"
-    ]
+    "built": 12,
+    "missing": []
    },
    "figures": {
     "spec": 53,
-    "built": 8,
-    "missing": [
-     "$1,351.71",
-     "$1,500.00",
-     "$1,517.11",
-     "$1,519.15",
-     "$1,580.17",
-     "$1,890.67",
-     "$1,896.20",
-     "$1,900.91",
-     "$1,971.20",
-     "$10.24",
-     "$17.27",
-     "$2,192.57",
-     "$2,292.57",
-     "$2,308.50",
-     "$2,334.29",
-     "$2,476.44",
-     "$2,855.56",
-     "$2,946.79",
-     "$228.46",
-     "$249,218.31",
-     "$249,546.77",
-     "$249,774.00",
-     "$279,702.10",
-     "$280,081.19",
-     "$280,458.24",
-     "$3,088.94",
-     "$3,384.35",
-     "$3,401.62",
-     "$300,000.00",
-     "$370,543.62",
-     "$371,048.86",
-     "$377.05",
-     "$379.09",
-     "$4.71",
-     "$400,000.00",
-     "$412.30",
-     "$505.24",
-     "$544.29",
-     "$547.06",
-     "$558,908.65",
-     "$6,000.07",
-     "$6,001.07",
-     "$612.40",
-     "$664,942.20",
-     "$79.01"
-    ]
+    "built": 53,
+    "missing": []
    },
    "units": {
     "spec": 97,
-    "built": 11
+    "built": 97
    },
-   "pct": 11.3
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "35.6",
@@ -8905,7 +9272,8 @@
     "spec": 80,
     "built": 12
    },
-   "pct": 15.0
+   "pct": 15.0,
+   "retired": []
   },
   {
    "process": "35.7",
@@ -8946,7 +9314,8 @@
     "spec": 44,
     "built": 44
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "35.8",
@@ -9024,84 +9393,45 @@
    },
    "figures": {
     "spec": 22,
-    "built": 6,
+    "built": 13,
     "missing": [
-     "$1,352.94",
      "$1,665.00",
-     "$2,192.57",
      "$2,412.90",
-     "$227.23",
-     "$249,546.77",
-     "$249,774.00",
      "$250,390.82",
      "$34.00",
      "$44.22",
      "$556,852.07",
-     "$612.40",
      "$619.08",
      "$700.00",
-     "$79.01",
      "$82.17"
     ]
    },
    "units": {
     "spec": 63,
-    "built": 7
+    "built": 14
    },
-   "pct": 11.1
+   "pct": 22.2,
+   "retired": []
   },
   {
    "process": "35.9",
    "title": "Default operations over time: cases progressed by the cycles and the screens \u2014 referral, milestones, docket reactions, executed breach actions, claims filed",
    "tids": {
     "spec": 17,
-    "built": 0,
-    "todo": 17,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15,
-     16,
-     17
-    ]
+    "built": 17,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 8,
-    "built": 0,
-    "missing": [
-     "breach_action_registry",
-     "breach_actions",
-     "case_milestone_expectations",
-     "case_timelines",
-     "claim_candidates",
-     "default_case_daily_runs",
-     "docket_reactions",
-     "firm_dispatches"
-    ]
+    "built": 8,
+    "missing": []
    },
    "timers": {
     "spec": 6,
-    "built": 1,
+    "built": 6,
     "armable": 6,
-    "missing": [
-     "SM_BREACH_ACTION_RECON_DAILY",
-     "SM_CASE_MILESTONE_OVERDUE_5BD",
-     "SM_CASE_REFERRAL_DECISION_2BD",
-     "SM_CLAIM_PACKAGE_5BD",
-     "SM_DOCKET_REACTION_1BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -9110,61 +9440,20 @@
    },
    "tools": {
     "spec": 14,
-    "built": 0,
-    "missing": [
-     "case.timeline",
-     "case.progress",
-     "case.refer",
-     "case.milestone.expect",
-     "case.milestone.record",
-     "docket.sync",
-     "docket.react",
-     "firm.dispatch",
-     "firm.inbound",
-     "breach.execute",
-     "breach.recon",
-     "claims.sweep",
-     "claims.package",
-     "writeDecision"
-    ]
+    "built": 14,
+    "missing": []
    },
    "figures": {
     "spec": 27,
-    "built": 1,
-    "missing": [
-     "$1,062.00",
-     "$129.12",
-     "$163,920.44",
-     "$178,525.21",
-     "$180.00",
-     "$187,450.00",
-     "$2,300.00",
-     "$2,865.00",
-     "$2,914.60",
-     "$3,263.68",
-     "$3,461.64",
-     "$385.00",
-     "$4,527.05",
-     "$53,557.56",
-     "$565.00",
-     "$6,000.00",
-     "$7,069.05",
-     "$7,198.17",
-     "$7,406.60",
-     "$7,569.46",
-     "$750.67",
-     "$785.45",
-     "$8,196.02",
-     "$8,320.13",
-     "$883.53",
-     "$98.17"
-    ]
+    "built": 27,
+    "missing": []
    },
    "units": {
     "spec": 72,
-    "built": 2
+    "built": 72
    },
-   "pct": 2.8
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "35.10",
@@ -9205,7 +9494,8 @@
     "spec": 65,
     "built": 65
    },
-   "pct": 100.0
+   "pct": 100.0,
+   "retired": []
   },
   {
    "process": "35.11",
@@ -9291,7 +9581,8 @@
     "spec": 41,
     "built": 0
    },
-   "pct": 0.0
+   "pct": 0.0,
+   "retired": []
   },
   {
    "process": "35.12",
@@ -9388,7 +9679,8 @@
     "spec": 58,
     "built": 7
    },
-   "pct": 12.1
+   "pct": 12.1,
+   "retired": []
   },
   {
    "process": "36.1",
@@ -9447,7 +9739,8 @@
     "spec": 14,
     "built": 0
    },
-   "pct": 0.0
+   "pct": 0.0,
+   "retired": []
   },
   {
    "process": "36.2",
@@ -9494,7 +9787,8 @@
     "spec": 5,
     "built": 0
    },
-   "pct": 0.0
+   "pct": 0.0,
+   "retired": []
   },
   {
    "process": "36.3",
@@ -9545,7 +9839,8 @@
     "spec": 8,
     "built": 0
    },
-   "pct": 0.0
+   "pct": 0.0,
+   "retired": []
   },
   {
    "process": "36.4",
@@ -9592,7 +9887,8 @@
     "spec": 5,
     "built": 0
    },
-   "pct": 0.0
+   "pct": 0.0,
+   "retired": []
   },
   {
    "process": "36.5",
@@ -9639,7 +9935,8 @@
     "spec": 5,
     "built": 0
    },
-   "pct": 0.0
+   "pct": 0.0,
+   "retired": []
   },
   {
    "process": "36.6",
@@ -9684,7 +9981,8 @@
     "spec": 3,
     "built": 0
    },
-   "pct": 0.0
+   "pct": 0.0,
+   "retired": []
   }
  ]
 }

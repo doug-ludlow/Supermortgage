@@ -27,6 +27,7 @@
  *   complaint + assertion of error                 4.5 `complaint.open` and 4.1 `case.noe.open` (linked); NTC_COMPLAINT_ACK + NTC_REGX_35D_ACK (T11)
  */
 import { randomUUID } from "node:crypto";
+import { FAKE_SERVICER_PROFILE_V1 } from "../../../domain/operations-runtime/servicing-config.ts";
 import type { Actor, DomainEvent } from "../../../kernel/events/index.ts";
 import { addMonths, addDays, type PlainDate } from "../../../kernel/calendar/date.ts";
 import { wallClock } from "../../../kernel/calendar/zoned.ts";
@@ -54,8 +55,8 @@ const pl = (e: DomainEvent): P => e.payload as P;
 const USD = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 export const money = (cents: string | bigint | number | null | undefined): string => (cents === null || cents === undefined || cents === "" ? "" : USD.format(Number(BigInt(String(cents))) / 100));
 
-/** The servicer contact block the owning notices print — the FAKE servicer of every build stage (fixture values; never a real address or number). */
-export const FAKE_SERVICER_CONTACT = { servicer_phone: "(800) 555-0100", servicer_address: "PO Box 1, Testville TX 75001", exclusive_address: "PO Box 2, Testville TX 75001", online_channel: "the secure message center in the Supermortgage app", insurance_email: "insurance@example.test", error_resolution_address: "Supermortgage Error Resolution, PO Box 2, Testville TX 75001" } as const;
+/** The servicer contact block the owning notices print — the FAKE servicer of every build stage: the seeded `servicer_profiles` version 1's values (35.5 rule 9, src/domain/operations-runtime/servicing-config.ts; never a real address or number). */
+export const FAKE_SERVICER_CONTACT = { servicer_phone: FAKE_SERVICER_PROFILE_V1.toll_free_phone, servicer_address: FAKE_SERVICER_PROFILE_V1.servicer_address, exclusive_address: FAKE_SERVICER_PROFILE_V1.exclusive_address, online_channel: "the secure message center in the Supermortgage app", insurance_email: "insurance@example.test", error_resolution_address: `Supermortgage Error Resolution, ${FAKE_SERVICER_PROFILE_V1.exclusive_address}` } as const;
 
 /** Notice codes this flow puts on cards (the owning process's rendered document; 02 §5). */
 export const NOTICE_CODES_32_9 = { fpi_first: "INS_FPI_FIRST_MS3A", fpi_reminder_no_info: "INS_FPI_REMINDER_NOINFO_MS3B", fpi_reminder_insufficient: "INS_FPI_REMINDER_INSUFF_MS3C", fpi_refund_confirm: "INS_FPI_CANCEL_REFUND_CONFIRM", flood_map_change: "INS_FLOOD_MAP_CHANGE_NOTICE", pmi_cancelled: "NTC_HPA_4904A_CANCELLED", arm_initial: "NTC_REGZ_20D_ARM_INITIAL", sii_docs: "NTC_REGX_38B1VI_SII_DOCS", noe_ack: "NTC_REGX_35D_ACK", complaint_ack: "NTC_COMPLAINT_ACK", payoff_statement: "NTC_REGZ_36C3_PAYOFF_STMT" } as const;

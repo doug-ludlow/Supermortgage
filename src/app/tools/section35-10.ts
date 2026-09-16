@@ -42,7 +42,8 @@ import type { Queryable } from "../../infra/db/client.ts";
 import { PgOutbox } from "../../infra/integrations/pg-outbox.ts";
 import type { Runtime } from "../../runtime/app.ts";
 import { closeoutPass, closeoutBoardRun, PAYOFF_RELEASE, ET } from "../../runtime/refinance-closeout.ts";
-import { loanCashState, SERVICER_CONTACT } from "../../runtime/servicing.ts";
+import { loanCashState } from "../../runtime/servicing.ts";
+import { servicerBlockFor } from "../../domain/operations-runtime/servicing-config.ts";
 import { wallClock } from "../../kernel/calendar/zoned.ts";
 import { plainDate as D, addDays, type PlainDate } from "../../kernel/calendar/date.ts";
 import type { Actor, DomainEvent } from "../../kernel/events/index.ts";
@@ -561,8 +562,10 @@ async function lienRelease(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): 
       const task = cx.store.get("release_tasks", cx.c.release_task_id)?.data ?? {};
       const instrumentTitle = String(task["instrument_type"] ?? "release").split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
       const security = securityInstrumentFor(cx.store, cx.c.prior_loan_id, facts.state);
-      // the notice's payload from the record: 16.3's task row (instrument, recording office and reference), the loans / properties rows, the FAKE servicer contact block every servicing notice carries
-      const payload = { ...SERVICER_CONTACT, team_name: "Payoff & Lien Release Team", team_phone: SERVICER_CONTACT.servicer_phone, toll_free: SERVICER_CONTACT.servicer_phone, website: SERVICER_CONTACT.portal_url, account_last4: facts.servicer_loan_number.slice(-4), borrower_name: facts.borrower_names[0] ?? "Borrower of record", property_address: facts.property_address,
+      // the notice's payload from the record: 16.3's task row (instrument, recording office and reference), the loans / properties rows, and the servicer block every servicing notice carries — the loan's
+      // `servicer_profiles` version in force on the notice date (35.5 rule 9: CONFIG_REQUIRED when none is in force, never a constant), read on the command's own connection
+      const block = await servicerBlockFor(cx.q, cx.c.prior_loan_id, civilDay(cx.ctx.now));
+      const payload = { ...block, team_name: "Payoff & Lien Release Team", team_phone: block.servicer_phone, toll_free: block.servicer_phone, website: block.portal_url, account_last4: facts.servicer_loan_number.slice(-4), borrower_name: facts.borrower_names[0] ?? "Borrower of record", property_address: facts.property_address,
         payoff_date: payoffOn, instrument_title: instrumentTitle, security_instrument_title: security === "deed_of_trust" ? "Deed of Trust" : security === "security_deed" ? "Security Deed" : "Mortgage", original_recording_date: facts.instrument_date, original_recording_reference: String(task["original_recording_reference"] ?? `Instrument recorded ${facts.instrument_date} (${facts.county ?? facts.state})`),
         recording_office: `${facts.county ?? facts.state} County Recorder`, recorded_date: String(pl(recorded)["recorded_at"] ?? pl(recorded)["recorded_on"] ?? civilDay(cx.ctx.now)), recording_reference: String(pl(recorded)["recording_reference"] ?? task["recording_reference"] ?? ""), escrow_refund_cents: c(([...cx.events].reverse().find((e) => e.type === "disbursement.issued" && e.loanId === cx.c.prior_loan_id && pl(e)["kind"] === "payoff_refund")?.payload as Row | undefined)?.["amount_cents"] ?? 0n), min: facts.min ? (/^\d{18}$/.test(facts.min) ? `${facts.min.slice(0, 7)}-${facts.min.slice(7, 17)}-${facts.min.slice(17)}` : facts.min) : "", note_return_note: "" };   // the MIN as MERS prints it (7-10-1)
       await owner(cx, { process: "16.3", name: "notifyBorrower", actor: PAYOFF_RELEASE, scope: "loan", trigger: recorded.id, input: { loan_id: cx.c.prior_loan_id, op: "release_recorded", release_task_id: cx.c.release_task_id, recorded_document_id: String(pl(recorded)["recorded_document_id"] ?? ""), consent_on_file: false, recipients: (facts.borrower_names.length ? facts.borrower_names : ["Borrower of record"]).map((n, k) => ({ partyId: `borrower-${k + 1}`, name: n, mailingAddress: facts.property_address })), payload } });

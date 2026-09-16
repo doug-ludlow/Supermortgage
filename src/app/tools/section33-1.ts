@@ -38,7 +38,7 @@ import type { EdeliveryPort, EdeliveryMessage, EdeliveryStatus } from "../../inf
 import { INVESTOR_FIELDS } from "../../domain/leads-pricing/ops-20-1.ts";
 import { M3_V1, type Fact, type RowException } from "../../domain/partner-book/profiles/m3-v1.ts";
 import { type ParsedBook, type ParsedRow, type ExistingParty, type PartyResolution, type LoanDerivation, type GapKind, type GapCounts, emptyGaps, contactDestinations, deriveLoanRows, destinationHash, factsEqual, firstNameOf, lastFour, parseBook, profileById, readTabular, resolveParty, rowsWithExceptions } from "../../domain/partner-book/import.ts";
-import { SERVICER_CONTACT } from "../../runtime/servicing.ts";
+import { FAKE_SERVICER_PROFILE_V1 } from "../../domain/operations-runtime/servicing-config.ts";
 
 type P = Record<string, unknown>;
 const PROCESS_33_1 = "33.1"; const PORTFOLIO = "portfolio";
@@ -234,7 +234,7 @@ export async function sendInvitation(deps: InvitationDeps, inv: InvitationInput)
   const last4 = lastFour(inv.servicer_loan_number);
   const messageId = invitationMessageId(inv.import_id, inv.party_id, inv.channel, inv.kind);
   const hash = destinationHash(inv.destination);
-  const payload: P = { partner_legal_name: inv.partner_legal_name, loan_last4: last4, first_name: firstNameOf(inv.display_name), sign_in_url: signInUrl(), platform_postal_address: SERVICER_CONTACT.servicer_address, channel: inv.channel, sms: inv.channel === "sms", kind: inv.kind };
+  const payload: P = { partner_legal_name: inv.partner_legal_name, loan_last4: last4, first_name: firstNameOf(inv.display_name), sign_in_url: signInUrl(), platform_postal_address: FAKE_SERVICER_PROFILE_V1.servicer_address, channel: inv.channel, sms: inv.channel === "sms", kind: inv.kind };
   const recipient: Recipient = { partyId: inv.party_id, name: inv.display_name, mailingAddress: null, ...(inv.channel === "email" ? { email: inv.destination } : {}) };
   const n: Notice = deps.notices.render({ templateCode: INVITATION_TEMPLATE, loanId: inv.loan_id, recipients: [recipient], payload, asOf: plainDate(now.slice(0, 10)) });
   if (n.status === "held") return { notice_id: n.id, message_id: messageId, sent_at: now, bounced: false, destination_hash: hash, held_reason: n.heldReason ?? "held" };

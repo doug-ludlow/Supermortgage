@@ -31,6 +31,9 @@ export const CUSTODIAL_ACCOUNTS = [
   "clearing_cash", "custodial_pi_cash", "custodial_ti_cash", "custodial_ti_unapplied_cash", "transfer_in_clearing",
   // §6.2 interest pending / §15.3 remittance payable
   "interest_pending", "fnma_remittance_payable",
+  // §35.5 rule 7 / §6.5: the credit side of a lockbox item's receipt set when no loan is identified — 6.5's suspense on the clearing account
+  // (0003 suspense_items.custodial_account_id), released to the loan's `suspense_unapplied` when 2.1 posts the item once it is identified
+  "suspense_unapplied",
   // §30.2 per-loan funding clearing and the pre-purchase T&I account (30.1 prerequisite)
   "origination_funding_clearing", "custodial_ti_prepurchase_cash",
   // §27.1/27.2 warehouse funding, collection and haircut-reserve bank accounts

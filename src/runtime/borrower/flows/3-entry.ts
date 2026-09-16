@@ -118,7 +118,9 @@ function partiesFor(ctx: Ctx, borrowerId: unknown): readonly Party[] {
   const own = ctx.parties.filter((p) => p.application_borrower_id === borrowerId || intakeBorrowerId(ctx, p) === borrowerId);
   return own.length ? own : ctx.parties;
 }
-const isTbd = (ctx: Ctx): boolean => !ctx.property?.address_line1;
+/** 32.19 §2.2 (DELTA-36): the address the goal tap carries (`args.property.address` → setGoal → 21.1's intake record `property_address`) counts as the file's address for the reactions that ask whether the purchase is TBD — `propertyFacts` writes the subject row only on the home card's / confirmField's resolve, which on an addressed purchase follows the goal tap (21.1 refuses a capture before the interview is open). A TBD placeholder in the record (21.1 rule 2's forms) stays TBD. */
+const intakeAddress = (ctx: Ctx): string | null => { const a = (ctx.store.get("applications", ctx.appId)?.data as P | undefined)?.["property_address"]; return typeof a === "string" && a.trim() !== "" && !/^\s*(tbd|to be determined|n\/?a)\s*$/i.test(a) ? a : null; };
+const isTbd = (ctx: Ctx): boolean => !ctx.property?.address_line1 && !intakeAddress(ctx);
 /** A refi-trigger lead (20.1/20.2 → 20.3's own consents, prequalification and conversion) arrives with its E1–E6 done by the owning process; this flow's asks are for the leads that open their application here (organic / referral). */
 const asksHere = (ctx: Ctx): boolean => ctx.app?.channel !== "refi_trigger";
 const isPurchase = (ctx: Ctx): boolean => ctx.app?.transaction_type === "purchase";

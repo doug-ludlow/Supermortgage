@@ -276,6 +276,8 @@ export class Runtime {
     const deferred: ((q: Queryable) => Promise<void>)[] = [];
     // 35.1 rule 2 / rule 10: writes that must precede the command's events (1.1 boardLoan's boarding set — the rows the events reference)
     const deferredBefore: ((q: Queryable) => Promise<void>)[] = [];
+    // the aggregate subjects whose clocks this command hydrates (ToolDef.timerSubjects — 35.8's work items and proposals, never read by every global command)
+    const subjects = def.timerSubjects ? [...await def.timerSubjects(req.input, this.db)] : [];
     const expected = expectedVersionsOf(req.input);
     // events persisted by units of work a tool runs inside this command (through the command view) — published once this command commits
     const nested: DomainEvent[] = [];
@@ -295,7 +297,7 @@ export class Runtime {
       const out = await this.bus.execute(cmd, req.actor, req.input, ctx, { ...(req.run ? { run: req.run } : {}), ...(req.approvedBy ? { approvedBy: req.approvedBy } : {}) });
       this.originationServices.recordState(ctx);
       return out;
-    }, { clock: this.clock, globalLock: expected.length > 0,
+    }, { clock: this.clock, globalLock: expected.length > 0, ...(subjects.length ? { subjects } : {}),
       // 35.1 rule 6 / rule 8: the bounded entity load on the command's connection after the lock, then the expected-version guard before the domain code runs
       hydrated: async (uow) => { const loaded = await loadBoundedScoped(uow.q!, scope); store.seed(loaded.records); globalKeys = loaded.globalKeys; mark = store.versionCount(); checkExpectedVersions(store, expected); },
       // 35.1 rule 2: the row projectors (a kind an event references by foreign key) run before events.append, from the versions this command wrote

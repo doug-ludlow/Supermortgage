@@ -104,10 +104,10 @@ const byOf = (a: Actor): string => actorId(a);
 const staffId = (a: Actor): string | null => (a.kind === "human" && isUuid(a.id) ? a.id : null);
 const logEvent = (d: ItemDeps, itemId: string, kind: string, reason: string | null = null): void => d.deferWrite(async (q) => { await q.query(`INSERT INTO work_item_events (work_item_id, kind, staff_user_id, session_id, role, reason, at) VALUES ($1, $2, $3, $4, $5, $6, $7::timestamptz)`, [itemId, kind, staffId(d.actor), d.sessionId ?? null, d.actor.role ?? null, reason, d.now]); });
 
-export interface OpenItemInput { readonly screen_code: string; readonly subject_kind: string; readonly subject_id: string; readonly loan_id?: string | null; readonly application_id?: string | null; readonly source_kind: SourceKind; readonly source_id: string; readonly required_role: string; readonly opened_at?: string; readonly due_at?: string | null }
+export interface OpenItemInput { readonly screen_code: string; readonly subject_kind: string; readonly subject_id: string; readonly loan_id?: string | null; readonly application_id?: string | null; readonly source_kind: SourceKind; readonly source_id: string; readonly required_role: string; readonly opened_at?: string; readonly due_at?: string | null; readonly known_absent?: boolean }
 /** `work.item.open` — once per source while open (the unique index); an existing open item is returned unchanged (`opened: false`). */
 export async function openItem(d: ItemDeps, i: OpenItemInput): Promise<{ item: WorkItem; opened: boolean }> {
-  const existing = await openItemFor(d.db, i.source_kind, i.source_id);
+  const existing = i.known_absent ? null : await openItemFor(d.db, i.source_kind, i.source_id);
   if (existing) return { item: existing, opened: false };
   const id = randomUUID(); const opened_at = i.opened_at ?? d.now;
   const item: WorkItem = { id, screen_code: i.screen_code, subject_kind: i.subject_kind, subject_id: i.subject_id, loan_id: i.loan_id ?? null, application_id: i.application_id ?? null, source_kind: i.source_kind, source_id: i.source_id, required_role: i.required_role, status: "open", claimed_by: null, claimed_at: null, claim_expires_at: null, claim_lapses: 0, opened_at, due_at: i.due_at ?? null, closed_at: null, closed_by: null, disposition: null };
@@ -214,9 +214,9 @@ export async function queuePass(rt: Runtime, now: string, o: { ports?: WorkPorts
   if (toOpen.length || toClose.length) {
     await rt.uow.run({}, async (ctx) => {
       const d: ItemDeps = { db: ctx.q!, events: ctx.events, now, actor: SWEEP_ACTOR, deferWrite: (fn) => { writes.push(fn); } };
-      for (const x of toOpen) { const r = await openItem(d, x); if (r.opened) opened += 1; }
+      for (const x of toOpen) { const r = await openItem(d, { ...x, known_absent: true }); if (r.opened) opened += 1; }   // the pass computed `have` above: no per-item existence read
       for (const r of toClose) { await closeRow(d, r, "source_closed", null, null); closed += 1; }
-    }, { clock: rt.clock, commit: async (q) => { for (const fn of writes) await fn(q); writes.length = 0; } });
+    }, { clock: rt.clock, subjects: toClose.map((r) => ({ kind: "work_item", id: r.id })), commit: async (q) => { for (const fn of writes) await fn(q); writes.length = 0; } });
   }
   return { opened, closed, sources: sources.length, cancelled_reopened: 0 };
 }

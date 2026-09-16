@@ -45,7 +45,7 @@ export async function workSweepPass(rt: Runtime, nowIso: string = rt.clock.now()
   const stale = await rt.db.query<{ id: string; work_item_id: string | null; breached_at: string }>(`SELECT a.id::text AS id, a.work_item_id::text AS work_item_id, t.breached_at::text AS breached_at FROM work_actions a JOIN timers t ON t.subject_kind = 'work_action' AND t.subject_id = a.id::text AND t.code = 'SM_WORK_APPROVAL_1BD' AND t.status = 'breached' WHERE a.status = 'proposed'`);
   const expired = stale.filter((p) => { const breachedOn = wallClock(Date.parse(p.breached_at), ET).date; return addBusinessDays(breachedOn, 1, servicer) <= asOf; });
   if (expired.length) {
-    await rt.uow.run({}, async (ctx) => { for (const p of expired) ctx.events.append(ev.actionDecided(p.id, WORK_SWEEP_ACTOR, { decision: "expired", by: null, executed_action_id: null, code: "SM_WORK_APPROVAL_1BD" })); }, { clock: rt.clock, commit: async (q) => {
+    await rt.uow.run({}, async (ctx) => { for (const p of expired) ctx.events.append(ev.actionDecided(p.id, WORK_SWEEP_ACTOR, { decision: "expired", by: null, executed_action_id: null, code: "SM_WORK_APPROVAL_1BD" })); }, { clock: rt.clock, subjects: expired.flatMap((p) => [{ kind: "work_action", id: p.id }, ...(p.work_item_id ? [{ kind: "work_item", id: p.work_item_id }] : [])]), commit: async (q) => {
       for (const p of expired) {
         await q.query(`UPDATE work_actions SET status = 'expired', refusal_code = 'SM_WORK_APPROVAL_1BD' WHERE id = $1 AND status = 'proposed'`, [p.id]);
         if (p.work_item_id) { await q.query(`UPDATE work_items SET status = 'claimed', updated_at = $2::timestamptz WHERE id = $1 AND status = 'waiting_approval'`, [p.work_item_id, nowIso]); await q.query(`INSERT INTO work_item_events (work_item_id, kind, reason, at) VALUES ($1, 'claimed', $2, $3::timestamptz)`, [p.work_item_id, `proposal ${p.id} expired`, nowIso]); }
@@ -78,12 +78,14 @@ export async function workBreachPass(rt: Runtime, nowIso: string = rt.clock.now(
     }, { clock: rt.clock, commit: async (q) => { for (const fn of writes) await fn(q); for (const e of es?.list() ?? []) await rt.escalationRepo.save(e, q); } });
   }
   // (4) SM_WORK_ITEM_AGE_5BD breached → role.queue.unstaffed{role} (35.7's literal) once per breached clock
-  const aged = await rt.db.query<{ timer_id: string; item_id: string }>(`SELECT t.id::text AS timer_id, t.subject_id AS item_id FROM timers t WHERE t.code = 'SM_WORK_ITEM_AGE_5BD' AND t.status = 'breached' AND t.subject_kind = 'work_item' AND NOT EXISTS (SELECT 1 FROM loan_events e WHERE e.type = 'role.queue.unstaffed' AND e.payload->>'timer_id' = t.id::text)`);
+  // handled once per breached clock: the item's own `unstaffed` event names the timer (0202; indexed by item and kind — never a scan of loan_events payloads)
+  const aged = await rt.db.query<{ timer_id: string; item_id: string }>(`SELECT t.id::text AS timer_id, t.subject_id AS item_id FROM timers t WHERE t.code = 'SM_WORK_ITEM_AGE_5BD' AND t.status = 'breached' AND t.subject_kind = 'work_item' AND NOT EXISTS (SELECT 1 FROM work_item_events e WHERE e.work_item_id::text = t.subject_id AND e.kind = 'unstaffed' AND e.reason = 'timer:' || t.id::text)`);
   const unstaffed: string[] = [];
   if (aged.length) {
+    const marks: ((q: Queryable) => Promise<void>)[] = [];
     await rt.uow.run({}, async (ctx) => {
-      for (const a of aged) { const it = await getItem(ctx.q!, a.item_id); if (!it) continue; unstaffed.push(it.required_role); ctx.events.append(ev.roleQueueUnstaffed(WORK_SWEEP_ACTOR, { role: it.required_role, item_id: it.id, timer_id: a.timer_id, environment: rt.environment })); }
-    }, { clock: rt.clock });
+      for (const a of aged) { const it = await getItem(ctx.q!, a.item_id); if (!it) continue; unstaffed.push(it.required_role); ctx.events.append(ev.roleQueueUnstaffed(WORK_SWEEP_ACTOR, { role: it.required_role, item_id: it.id, timer_id: a.timer_id, environment: rt.environment })); marks.push(async (q) => { await q.query(`INSERT INTO work_item_events (work_item_id, kind, reason, at) VALUES ($1, 'unstaffed', $2, $3::timestamptz)`, [it.id, `timer:${a.timer_id}`, nowIso]); }); }
+    }, { clock: rt.clock, commit: async (q) => { for (const fn of marks) await fn(q); } });
   }
   // (5) the queue pass — after the breach pass, so the escalations and breached clocks this sweep produced are items now (rule 8: "the queue refreshes every sweep")
   const queue = await queuePass(rt, nowIso, { ...(o.ports ? { ports: o.ports } : {}) });

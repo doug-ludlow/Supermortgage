@@ -66,14 +66,14 @@ const KINDS = [["queue", "My queue"], ["escalation", "Escalations"], ["portal_ta
  * shows only what the session's held roles open: nothing on it is a link to a refusal. Pipeline and the Operations boards arrive with increment 2.
  */
 const NAV = [
-  ["Work", [["home", "Home", STAFF_ROLES, null], ...KINDS.slice(1).map(([k, label]) => ["home", label, OPS, k]), ["work", "Work items", OPS, null]]],
+  ["Work", [["home", "Home", STAFF_ROLES, null], ...KINDS.slice(1).map(([k, label]) => ["home", label, OPS, k])]],
   ["Records", [["people", "People & accounts", OPS, null], ["loans", "Loans", OPS, null], ["book", "Partner book", OPS, null]]],
   ["Oversight", [["dashboard", "Compliance Sentinel", OPS, null], ["controls", "Controls", STAFF_ROLES, null], ["agents", "Agents & AI path", OPS, null], ["ai", "AI conversations", OPS, null]]],
   ["Staff", [["staff", "Staff & roles", ["admin"], null], ["access_review", "Access review", ["compliance", "admin"], null]]],
 ];
-const VIEWS = new Set(NAV.flatMap(([, links]) => links.map(([v]) => v)));
+const VIEWS = new Set([...NAV.flatMap(([, links]) => links.map(([v]) => v)), "work"]);   // 35.8's work items: a view of the Home area (34.5 rule 1 fixes the sidebar's links per role; the queue opens from Home)
 /** A record view belongs to the area it opened from (the sidebar's active link). */
-const AREA_OF = { loan: "loans", directory: "people", directory_account: "people", book_import: "book", book_loan: "book", controls_clock: "controls", controls_pack: "controls", ai_party: "ai", queue: "home", kind: "home" };
+const AREA_OF = { loan: "loans", directory: "people", directory_account: "people", book_import: "book", book_loan: "book", controls_clock: "controls", controls_pack: "controls", ai_party: "ai", queue: "home", kind: "home", work: "home" };
 let renders = 0;
 const money = (c) => { const n = BigInt(c); const neg = n < 0n; const a = neg ? -n : n; return (neg ? "-$" : "$") + (a / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + "." + (a % 100n).toString().padStart(2, "0"); };
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -256,7 +256,8 @@ async function renderHome(m) {
   if (!state.kind) state.home = h;
   const q = h.my_queue; const c = h.counts; const cl = h.clocks; const es = h.escalations;
   let html = `<h2>Home <span class="muted">— as of ${when(h.as_of)} · you hold ${esc((h.roles || []).join(", "))} · this read acted as ${esc(h.acted_as)}</span></h2>`;
-  if (q) html += `<h2 data-section="my_queue">My queue <span class="muted">— ${q.count} item(s) waiting for ${esc((h.ops_roles || []).join(", "))}</span></h2>`
+  if (q) html += `<p data-work-items><a href="#work">Work items</a> <span class="muted">— the operator work queue: one item per source, claimed and closed here, its screens read through the tools (35.8)</span></p>`
+    + `<h2 data-section="my_queue">My queue <span class="muted">— ${q.count} item(s) waiting for ${esc((h.ops_roles || []).join(", "))}</span></h2>`
     + `${kindForm}<span class="muted">Every held role's work in one list; each row names the role it needs. "Act as" filters nothing here — it is the role an act is sent under.</span></form>`
     + homeQueueTable(q.rows);
   html += `<div class="tiles">` + (cl ? tile("Clocks due in 24h", cl.counts.due_24h, cl.counts.due_24h ? "warn" : "") + tile("Clocks breached", cl.counts.breached, cl.counts.breached ? "bad" : "") : "")

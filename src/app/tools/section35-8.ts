@@ -29,7 +29,7 @@
  * confidence: 1, rationale}.
  */
 import { randomUUID } from "node:crypto";
-import { defineTools, compute, decision, never, str, PortUnavailable, type ToolDef, type ToolInput, type ToolRuntime } from "../tools.ts";
+import { defineTools, compute, decision, never, str, PortUnavailable, type ToolDef, type ToolInput, type ToolRuntime, type TimerSubject, type TimerSubjectDb } from "../tools.ts";
 import type { CommandContext } from "../commands.ts";
 import type { Queryable } from "../../infra/db/client.ts";
 import { toJson } from "../../infra/db/client.ts";
@@ -49,6 +49,15 @@ const deferOf = (rt: ToolRuntime): ItemDeps["deferWrite"] => { const f = rt.serv
 const portsOf = (rt: ToolRuntime): WorkPorts | undefined => rt.services["work_ports"] as WorkPorts | undefined;
 const sessionOf = (i: ToolInput): string | null => (typeof i["session_id"] === "string" && isUuid(i["session_id"]) ? i["session_id"] : null);
 const actDeps = (i: ToolInput, ctx: CommandContext, rt: ToolRuntime): ActDeps => ({ rt: runtimeOf(rt), q: dbOf(rt), store: rt.store, events: ctx.events, now: ctx.now, actor: ctx.actor, escalations: rt.escalations, deferWrite: deferOf(rt), sessionId: sessionOf(i), ...(portsOf(rt) ? { ports: portsOf(rt)! } : {}) });
+/** The clocks a command hydrates by subject (src/infra/db/timers.ts SUBJECT_HYDRATED_KINDS): the item's for the item tools and an act that names its item, the proposal's and its item's for the decide. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const uuidOf = (v: unknown): string | null => (typeof v === "string" && UUID_RE.test(v) ? v : null);
+const itemSubjects = (i: ToolInput): TimerSubject[] => { const id = uuidOf(i["item_id"]) ?? uuidOf(i["work_item_id"]); return id ? [{ kind: "work_item", id }] : []; };
+const decideSubjects = async (i: ToolInput, db: TimerSubjectDb): Promise<TimerSubject[]> => {
+  const id = uuidOf(i["action_id"]); if (!id) return [];
+  const [r] = await db.query<{ work_item_id: string | null }>(`SELECT work_item_id::text AS work_item_id FROM work_actions WHERE id = $1`, [id]);
+  return [{ kind: "work_action", id }, ...(r?.work_item_id ? [{ kind: "work_item", id: r.work_item_id }] : [])];
+};
 const itemDeps = (i: ToolInput, ctx: CommandContext, rt: ToolRuntime): ItemDeps => ({ db: dbOf(rt), events: ctx.events, now: ctx.now, actor: ctx.actor, deferWrite: deferOf(rt), sessionId: sessionOf(i), registry: runtimeOf(rt).registry });
 const held = async (ctx: CommandContext, rt: ToolRuntime): Promise<string[]> => heldRoles(dbOf(rt), ctx.actor);
 
@@ -82,26 +91,26 @@ export const TOOLS_35_8: readonly ToolDef[] = defineTools(PROCESS_35_8, WORK_AGE
     handler: compute(async (i, ctx, rt) => { const sub = subjectOf(i); const kind = str(i, "source_kind") || "manual"; const role = str(i, "required_role") || ctx.actor.role || "ops_analyst";
       return openItem(itemDeps(i, ctx, rt), { screen_code: str(i, "screen_code"), subject_kind: sub.kind, subject_id: sub.id, loan_id: sub.kind === "loan" ? sub.id : null, application_id: sub.kind === "application" ? sub.id : null, source_kind: kind as never, source_id: str(i, "source_id") || `manual:${randomUUID()}`, required_role: role, ...(str(i, "due_at") ? { due_at: str(i, "due_at") } : {}) }); }),
     decision: itemDecision("work.item.open") },
-  { name: "work.item.claim", kind: "act", ...HUMAN_ONLY, ruleSetVersion: WORK_RULE_SET_VERSION, humanRoles: ALL_ROLES, guardrails: COMMON,
+  { name: "work.item.claim", kind: "act", ...HUMAN_ONLY, timerSubjects: itemSubjects, ruleSetVersion: WORK_RULE_SET_VERSION, humanRoles: ALL_ROLES, guardrails: COMMON,
     handler: compute(async (i, ctx, rt) => claimItem(itemDeps(i, ctx, rt), await held(ctx, rt), str(i, "item_id"))), decision: itemDecision("work.item.claim") },
-  { name: "work.item.release", kind: "act", ...HUMAN_ONLY, ruleSetVersion: WORK_RULE_SET_VERSION, humanRoles: ALL_ROLES, guardrails: COMMON,
+  { name: "work.item.release", kind: "act", ...HUMAN_ONLY, timerSubjects: itemSubjects, ruleSetVersion: WORK_RULE_SET_VERSION, humanRoles: ALL_ROLES, guardrails: COMMON,
     handler: compute(async (i, ctx, rt) => releaseItem(itemDeps(i, ctx, rt), str(i, "item_id"))), decision: itemDecision("work.item.release") },
-  { name: "work.item.close", kind: "act", ...HUMAN_ONLY, ruleSetVersion: WORK_RULE_SET_VERSION, humanRoles: ALL_ROLES, guardrails: COMMON,
+  { name: "work.item.close", kind: "act", ...HUMAN_ONLY, timerSubjects: itemSubjects, ruleSetVersion: WORK_RULE_SET_VERSION, humanRoles: ALL_ROLES, guardrails: COMMON,
     handler: compute(async (i, ctx, rt) => closeItem(itemDeps(i, ctx, rt), await held(ctx, rt), { item_id: str(i, "item_id"), disposition: str(i, "disposition"), reason: str(i, "reason") || null, evidence_document_id: str(i, "evidence_document_id") || null })), decision: itemDecision("work.item.close") },
-  { name: "work.item.cancel", kind: "act", ...HUMAN_ONLY, ruleSetVersion: WORK_RULE_SET_VERSION, humanRoles: ["ops_analyst"], guardrails: COMMON,
+  { name: "work.item.cancel", kind: "act", ...HUMAN_ONLY, timerSubjects: itemSubjects, ruleSetVersion: WORK_RULE_SET_VERSION, humanRoles: ["ops_analyst"], guardrails: COMMON,
     handler: compute(async (i, ctx, rt) => cancelItem(itemDeps(i, ctx, rt), { item_id: str(i, "item_id"), reason: str(i, "reason") })), decision: itemDecision("work.item.cancel") },
   { name: "work.screen.read", kind: "read", ruleSetVersion: WORK_RULE_SET_VERSION, humanRoles: ALL_ROLES, guardrails: COMMON,
     handler: compute(async (i, ctx, rt) => screenRead(actDeps(i, ctx, rt), { code: str(i, "code"), subject: subjectOf(i) })) },
   { name: "work.screen.derive", kind: "act", ruleSetVersion: WORK_RULE_SET_VERSION, humanRoles: ALL_ROLES, guardrails: COMMON,
     handler: compute(async (i, ctx, rt) => screenDerive(actDeps(i, ctx, rt), { code: str(i, "code"), action: str(i, "action"), subject: subjectOf(i), decision: obj(i["decision"]) })),
     decision: (i, output, ctx) => { const o = obj(output); return workDecision("work.screen.derive", { kind: "work_derivation", id: String(o["derivation_id"] ?? "") }, { screen_code: o["screen_code"] ?? str(i, "code"), action_code: o["action_code"] ?? str(i, "action"), subject_kind: obj(i["subject"])["kind"] ?? null, subject_id: obj(i["subject"])["id"] ?? null, input_sha256: o["input_sha256"] ?? null, tool: `${String(o["process"])} ${String(o["tool"])}`, role: ctx.actor.role ?? null, by: actorId(ctx.actor) }, "dry run: the derived input, its hash and sources; no write beyond the derivation"); } },
-  { name: "work.screen.act", kind: "act", ...HUMAN_ONLY, ruleSetVersion: WORK_RULE_SET_VERSION, humanRoles: ALL_ROLES, guardrails: COMMON,
+  { name: "work.screen.act", kind: "act", ...HUMAN_ONLY, timerSubjects: itemSubjects, ruleSetVersion: WORK_RULE_SET_VERSION, humanRoles: ALL_ROLES, guardrails: COMMON,
     handler: compute(async (i, ctx, rt) => screenAct(actDeps(i, ctx, rt), { code: str(i, "code"), action: str(i, "action"), subject: subjectOf(i), decision: obj(i["decision"]), work_item_id: str(i, "work_item_id") || null, rationale: str(i, "rationale") || null }, "act")),
     decision: actDecision("work.screen.act") },
-  { name: "work.action.propose", kind: "act", ruleSetVersion: WORK_RULE_SET_VERSION, humanRoles: ALL_ROLES, guardrails: COMMON,
+  { name: "work.action.propose", kind: "act", timerSubjects: itemSubjects, ruleSetVersion: WORK_RULE_SET_VERSION, humanRoles: ALL_ROLES, guardrails: COMMON,
     handler: compute(async (i, ctx, rt) => screenAct(actDeps(i, ctx, rt), { code: str(i, "code"), action: str(i, "action"), subject: subjectOf(i), decision: obj(i["decision"]), work_item_id: str(i, "work_item_id") || null, rationale: str(i, "rationale") || null }, "propose")),
     decision: actDecision("work.action.propose") },
-  { name: "work.action.decide", kind: "act", ...HUMAN_ONLY, ruleSetVersion: WORK_RULE_SET_VERSION, humanRoles: ["officer"], guardrails: COMMON,
+  { name: "work.action.decide", kind: "act", ...HUMAN_ONLY, timerSubjects: decideSubjects, ruleSetVersion: WORK_RULE_SET_VERSION, humanRoles: ["officer"], guardrails: COMMON,
     handler: compute(async (i, ctx, rt) => { const decision = str(i, "decision"); if (decision !== "approved" && decision !== "declined") throw new RangeError("decision ∈ {approved, declined}"); return actionDecide(actDeps(i, ctx, rt), { action_id: str(i, "action_id"), decision, reason: str(i, "reason") || null }); }),
     decision: actDecision("work.action.decide") },
   { name: "work.log.recon", kind: "act", ruleSetVersion: WORK_RULE_SET_VERSION, humanRoles: ["compliance", "admin"], guardrails: COMMON,

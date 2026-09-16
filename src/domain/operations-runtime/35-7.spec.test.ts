@@ -182,9 +182,11 @@ test("35.7-T1: Given a fresh database, when every file under db/migrations is ap
   const baseTables = async (): Promise<number> => Number((await t1db.query<{ c: string }>(`SELECT count(*)::text AS c FROM information_schema.tables WHERE table_schema IN ('public', 'restricted_fl') AND table_type = 'BASE TABLE'`))[0]!.c);
   const before = await baseTables();
   for (const t of ["role_grants", "role_queue_snapshots", "role_handovers", "breakglass_uses", "api_principals"]) assert.equal((await t1db.query<{ r: string | null }>(`SELECT to_regclass($1)::text AS r`, [`public.${t}`]))[0]!.r, null, `${t} does not exist before 0170`);
-  execFileSync(`${ROOT}db/migrate.sh`, { env: { ...process.env, DATABASE_URL: t1.url }, stdio: "pipe" });
+  // this process's file alone for the "after" count (db/migrate.sh would apply every later §35 file too — 35.8's 0200 adds seven tables of its own); the rest follow so the 34.1 child run below sees the whole schema
+  psql(["-f", `${dir}/${mine}`]); psql(["-c", `INSERT INTO schema_migrations(version) VALUES ('${mine.replace(/\.sql$/, "")}')`]);
   const after = await baseTables();
   assert.equal(after, before + 5, `five new base tables (before ${before}, after ${after})`);
+  execFileSync(`${ROOT}db/migrate.sh`, { env: { ...process.env, DATABASE_URL: t1.url }, stdio: "pipe" });
   for (const t of ["role_grants", "role_queue_snapshots", "role_handovers", "breakglass_uses", "api_principals"]) assert.equal((await t1db.query<{ r: string | null }>(`SELECT to_regclass($1)::text AS r`, [`public.${t}`]))[0]!.r, t, `to_regclass non-null for ${t}`);
   // staff_users.reviewer_roles with a CHECK whose literal list equals HUMAN_ROLES (twenty-two words, no admin); the three disjointness CHECKs; the constraint trigger
   const [col] = await t1db.query<{ data_type: string; column_default: string }>(`SELECT data_type, column_default FROM information_schema.columns WHERE table_name = 'staff_users' AND column_name = 'reviewer_roles'`);

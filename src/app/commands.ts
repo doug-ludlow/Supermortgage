@@ -1,4 +1,5 @@
 import type { DualControlProbe } from "./tools.ts";
+import { canonicalSha256 } from "./canonical.ts";
 /**
  * Command bus — the application layer every state change goes through
  * (ARCHITECTURE §"service.ts is the agent's tool surface"). A command
@@ -30,6 +31,8 @@ export interface CommandSpec<I, O> {
   readonly agent: string;                      // owning agent
   /** Who may invoke: agents (through their allowlist) and/or humans with these roles; empty roles = any human. */
   readonly allow: { readonly agents?: boolean; readonly humanRoles?: readonly string[]; readonly humansAny?: boolean;
+    /** The refusal code for an agent actor on a human-only command (default HUMAN_ONLY; 35.8's screens name HUMAN_ONLY_ACT). */
+    readonly humanOnlyCode?: string;
     /** 35.7 rule 2: declared dual control — the surfaces refuse the actor-as-own-approver default (commands.ts step 5) for such a command when the threshold holds; see src/domain/operations-runtime/roles-35-7/dual-control.ts. */
     readonly dualControl?: { readonly role: string; readonly threshold: (input: I, probe: DualControlProbe) => boolean | Promise<boolean> } };
   readonly guardrails?: readonly Guardrail<I>[];
@@ -75,7 +78,7 @@ export class CommandBus {
       if (state.off) refuse("AI_OFF", "18.1 kill switch / AI-off mode", state.why ?? "AI path disabled");
       // 2. allowlist
       if (!this.agents.allows(actor.id, cmd.name)) refuse("NOT_ALLOWLISTED", `${cmd.process} agent tool allowlist`, `${actor.id} may not call ${cmd.name}`);
-      if (!cmd.allow.agents) refuse("HUMAN_ONLY", `${cmd.process} guardrails`, `${cmd.name} is a human act`);
+      if (!cmd.allow.agents) refuse(cmd.allow.humanOnlyCode ?? "HUMAN_ONLY", `${cmd.process} guardrails`, `${cmd.name} is a human act`);
     } else if (actor.kind === "human") {
       if (!cmd.allow.humansAny && !(cmd.allow.humanRoles && hasRole(actor, cmd.allow.humanRoles))) refuse("ROLE_DENIED", `${cmd.process} guardrails`, new RoleDenied(actor, cmd.allow.humanRoles ?? ["human"], cmd.name).message);
     } else if (actor.kind !== "system") {
@@ -95,7 +98,8 @@ export class CommandBus {
     const d = cmd.decision ? cmd.decision(input, output, ctx) : null;
     if (d) {
       const approver = opts.approvedBy ?? (actor.kind === "human" ? actor : undefined);
-      uow.decide({ ...d, agent: cmd.agent, ruleSetVersion: cmd.ruleSetVersion, ...(opts.run ? { modelVersion: opts.run.modelVersion, promptVersion: opts.run.promptVersion, ...(opts.run.confidence !== undefined ? { confidence: opts.run.confidence } : {}) } : {}),
+      // 35.8 rule 3: the hash of the canonical input the tool received rides on every decision record (agent_decisions.inputs_snapshot_hash, migration 0200)
+      uow.decide({ ...d, agent: cmd.agent, ruleSetVersion: cmd.ruleSetVersion, inputsSnapshotHash: canonicalSha256(input), ...(opts.run ? { modelVersion: opts.run.modelVersion, promptVersion: opts.run.promptVersion, ...(opts.run.confidence !== undefined ? { confidence: opts.run.confidence } : {}) } : {}),
         ...(approver ? { approvedBy: approver.id, ...(approver.role ? { approvedRole: approver.role } : {}) } : {}) });
       decisionId = "queued";
     }

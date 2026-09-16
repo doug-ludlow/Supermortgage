@@ -1,33 +1,33 @@
 {
- "brief": "spec units built 8153/8756 (93.1%): tids 2260/2458, tables 772/848, timers 2049/2097, notices 308/308, tools 1445/1578, figures 1319/1467; processes at 100%: 193/205",
+ "brief": "spec units built 8290/8796 (94.2%): tids 2308/2489, tables 791/852, timers 2065/2097, notices 308/309, tools 1473/1579, figures 1345/1470; processes at 100%: 196/211",
  "totals": {
   "tids": {
-   "spec": 2458,
-   "built": 2260
+   "spec": 2489,
+   "built": 2308
   },
   "tables": {
-   "spec": 848,
-   "built": 772
+   "spec": 852,
+   "built": 791
   },
   "timers": {
    "spec": 2097,
-   "built": 2049
+   "built": 2065
   },
   "notices": {
-   "spec": 308,
+   "spec": 309,
    "built": 308
   },
   "tools": {
-   "spec": 1578,
-   "built": 1445
+   "spec": 1579,
+   "built": 1473
   },
   "figures": {
-   "spec": 1467,
-   "built": 1319
+   "spec": 1470,
+   "built": 1345
   },
   "units": {
-   "spec": 8756,
-   "built": 8153
+   "spec": 8796,
+   "built": 8290
   }
  },
  "sections": {
@@ -237,9 +237,15 @@
   },
   "35": {
    "spec": 715,
-   "built": 129,
+   "built": 266,
    "processes": 12,
-   "done": 1
+   "done": 4
+  },
+  "36": {
+   "spec": 40,
+   "built": 0,
+   "processes": 6,
+   "done": 0
   }
  },
  "done": [
@@ -435,7 +441,10 @@
   "34.2",
   "34.3",
   "34.4",
-  "35.5"
+  "35.1",
+  "35.3",
+  "35.5",
+  "35.7"
  ],
  "processes": [
   {
@@ -8375,50 +8384,20 @@
    "title": "Persistence seam and the typed record",
    "tids": {
     "spec": 15,
-    "built": 0,
-    "todo": 15,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15
-    ]
+    "built": 15,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 9,
-    "built": 0,
-    "missing": [
-     "entity_keys",
-     "entity_latest_scoped",
-     "entity_projections",
-     "outbox_dispatches",
-     "projection_gaps",
-     "projection_mismatches",
-     "projection_runs",
-     "service_snapshots",
-     "sweep_runs"
-    ]
+    "built": 9,
+    "missing": []
    },
    "timers": {
     "spec": 3,
-    "built": 0,
+    "built": 3,
     "armable": 3,
-    "missing": [
-     "SM_OUTBOX_DEAD_LETTER_REVIEW_1BD",
-     "SM_PROJECTION_LAG_DAILY",
-     "SM_SWEEP_HEARTBEAT_DAILY"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -8427,36 +8406,19 @@
    },
    "tools": {
     "spec": 8,
-    "built": 0,
-    "missing": [
-     "record.project",
-     "record.replay",
-     "record.gaps",
-     "record.verify",
-     "record.snapshot",
-     "record.lease",
-     "outbox.dispatch",
-     "writeDecision"
-    ]
+    "built": 8,
+    "missing": []
    },
    "figures": {
     "spec": 7,
-    "built": 0,
-    "missing": [
-     "$1,345.02",
-     "$1,612.34",
-     "$2,045.12",
-     "$248,043.23",
-     "$248,310.55",
-     "$267.32",
-     "$432.78"
-    ]
+    "built": 7,
+    "missing": []
    },
    "units": {
     "spec": 42,
-    "built": 0
+    "built": 42
    },
-   "pct": 0.0
+   "pct": 100.0
   },
   {
    "process": "35.2",
@@ -8504,10 +8466,9 @@
    },
    "timers": {
     "spec": 4,
-    "built": 0,
+    "built": 1,
     "armable": 4,
     "missing": [
-     "SM_DOC_INTEGRITY_DAILY",
      "SM_DOC_WORM_DRAIN_1D",
      "SM_ESIGN_ENVELOPE_EXPIRY_30",
      "SM_MAIL_MANIFEST_2BD"
@@ -8552,56 +8513,29 @@
    },
    "units": {
     "spec": 58,
-    "built": 6
+    "built": 7
    },
-   "pct": 10.3
+   "pct": 12.1
   },
   {
    "process": "35.3",
    "title": "Cycles, jobs and receipts: the planner, the jobs table, `cycles.run_unit` on the bus and the registry of every scheduled cycle",
    "tids": {
     "spec": 16,
-    "built": 0,
-    "todo": 16,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15,
-     16
-    ]
+    "built": 16,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 5,
-    "built": 0,
-    "missing": [
-     "cycle_receipts",
-     "cycle_registry",
-     "cycle_runs",
-     "job_events",
-     "jobs"
-    ]
+    "built": 5,
+    "missing": []
    },
    "timers": {
     "spec": 3,
-    "built": 0,
+    "built": 3,
     "armable": 3,
-    "missing": [
-     "SM_CYCLE_PLANNER_DAILY",
-     "SM_CYCLE_RUN_STALLED_1D",
-     "SM_JOB_DEAD_2H"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -8610,37 +8544,19 @@
    },
    "tools": {
     "spec": 9,
-    "built": 0,
-    "missing": [
-     "cycles.registry",
-     "cycles.plan",
-     "cycles.run_unit",
-     "cycles.receipt",
-     "cycles.retry",
-     "cycles.escalate",
-     "jobs.list",
-     "jobs.requeue",
-     "writeDecision"
-    ]
+    "built": 9,
+    "missing": []
    },
    "figures": {
     "spec": 7,
-    "built": 0,
-    "missing": [
-     "$1,345.02",
-     "$1,612.34",
-     "$2,125.74",
-     "$248,310.55",
-     "$267.32",
-     "$432.78",
-     "$80.62"
-    ]
+    "built": 7,
+    "missing": []
    },
    "units": {
     "spec": 40,
-    "built": 0
+    "built": 40
    },
-   "pct": 0.0
+   "pct": 100.0
   },
   {
    "process": "35.4",
@@ -8825,10 +8741,9 @@
    },
    "timers": {
     "spec": 5,
-    "built": 2,
+    "built": 3,
     "armable": 5,
     "missing": [
-     "SM_ORCH_OPEN_BOOK_DAILY",
      "SM_ORCH_PURCHASE_RECON_1BD",
      "SM_ORCH_STEP_STALLED_2BD"
     ]
@@ -8857,7 +8772,7 @@
    },
    "figures": {
     "spec": 40,
-    "built": 4,
+    "built": 6,
     "missing": [
      "$1,067.72",
      "$1,096.67",
@@ -8865,7 +8780,6 @@
      "$1,375.00",
      "$1,415.00",
      "$1,665.00",
-     "$1,785.43",
      "$10,052.69",
      "$2,062.50",
      "$2,774.00",
@@ -8893,64 +8807,34 @@
      "$725.64",
      "$8,052.07",
      "$831.00",
-     "$93.97",
      "$935.48"
     ]
    },
    "units": {
     "spec": 80,
-    "built": 6
+    "built": 9
    },
-   "pct": 7.5
+   "pct": 11.2
   },
   {
    "process": "35.7",
    "title": "Operating roles, identity and the FAKE handover: a person for every kernel role, credentials that cannot be self-asserted on `/v1`, reviewer-role disjointness, the role queues and the handover board",
    "tids": {
     "spec": 17,
-    "built": 0,
-    "todo": 17,
-    "missing": [
-     1,
-     2,
-     3,
-     4,
-     5,
-     6,
-     7,
-     8,
-     9,
-     10,
-     11,
-     12,
-     13,
-     14,
-     15,
-     16,
-     17
-    ]
+    "built": 17,
+    "todo": 0,
+    "missing": []
    },
    "tables": {
     "spec": 7,
-    "built": 2,
-    "missing": [
-     "api_principals",
-     "breakglass_uses",
-     "role_grants",
-     "role_handovers",
-     "role_queue_snapshots"
-    ]
+    "built": 7,
+    "missing": []
    },
    "timers": {
     "spec": 4,
-    "built": 0,
+    "built": 4,
     "armable": 4,
-    "missing": [
-     "SM_HANDOVER_BOARD_DAILY",
-     "SM_ROLE_BREAKGLASS_REVIEW_1BD",
-     "SM_ROLE_GRANT_DORMANT_30D",
-     "SM_ROLE_QUEUE_UNSTAFFED_1BD"
-    ]
+    "missing": []
    },
    "notices": {
     "spec": 0,
@@ -8959,36 +8843,19 @@
    },
    "tools": {
     "spec": 11,
-    "built": 0,
-    "missing": [
-     "roles.grant",
-     "roles.revoke",
-     "roles.queue",
-     "roles.approve",
-     "roles.breakglass",
-     "principals.issue",
-     "principals.revoke",
-     "handover.plan",
-     "handover.enable",
-     "handover.board",
-     "writeDecision"
-    ]
+    "built": 11,
+    "missing": []
    },
    "figures": {
     "spec": 5,
-    "built": 1,
-    "missing": [
-     "$10,000.00",
-     "$10,000.01",
-     "$249,999.99",
-     "$260,000.00"
-    ]
+    "built": 5,
+    "missing": []
    },
    "units": {
     "spec": 44,
-    "built": 3
+    "built": 44
    },
-   "pct": 6.8
+   "pct": 100.0
   },
   {
    "process": "35.8",
@@ -9031,14 +8898,13 @@
    },
    "timers": {
     "spec": 5,
-    "built": 0,
+    "built": 1,
     "armable": 5,
     "missing": [
      "SM_WORK_APPROVAL_1BD",
      "SM_WORK_ITEM_AGE_2BD",
      "SM_WORK_ITEM_AGE_5BD",
-     "SM_WORK_ITEM_CLAIM_4H",
-     "SM_WORK_LOG_RECON_DAILY"
+     "SM_WORK_ITEM_CLAIM_4H"
     ]
    },
    "notices": {
@@ -9067,29 +8933,25 @@
    },
    "figures": {
     "spec": 22,
-    "built": 8,
+    "built": 12,
     "missing": [
-     "$1,345.02",
      "$1,665.00",
-     "$1,785.43",
      "$2,062.50",
      "$2,412.90",
-     "$248,310.55",
      "$250,390.82",
      "$34.00",
      "$44.22",
      "$556,852.07",
      "$619.08",
      "$700.00",
-     "$82.17",
-     "$93.97"
+     "$82.17"
     ]
    },
    "units": {
     "spec": 63,
-    "built": 8
+    "built": 13
    },
-   "pct": 12.7
+   "pct": 20.6
   },
   {
    "process": "35.9",
@@ -9134,14 +8996,13 @@
    },
    "timers": {
     "spec": 6,
-    "built": 0,
+    "built": 1,
     "armable": 6,
     "missing": [
      "SM_BREACH_ACTION_RECON_DAILY",
      "SM_CASE_MILESTONE_OVERDUE_5BD",
      "SM_CASE_REFERRAL_DECISION_2BD",
      "SM_CLAIM_PACKAGE_5BD",
-     "SM_DEFAULT_CASE_DAILY",
      "SM_DOCKET_REACTION_1BD"
     ]
    },
@@ -9172,7 +9033,7 @@
    },
    "figures": {
     "spec": 27,
-    "built": 0,
+    "built": 1,
     "missing": [
      "$1,062.00",
      "$129.12",
@@ -9185,7 +9046,6 @@
      "$2,914.60",
      "$3,263.68",
      "$3,461.64",
-     "$30.00",
      "$385.00",
      "$4,527.05",
      "$53,557.56",
@@ -9205,9 +9065,9 @@
    },
    "units": {
     "spec": 72,
-    "built": 0
+    "built": 2
    },
-   "pct": 0.0
+   "pct": 2.8
   },
   {
    "process": "35.10",
@@ -9449,13 +9309,11 @@
    },
    "timers": {
     "spec": 6,
-    "built": 0,
+    "built": 2,
     "armable": 6,
     "missing": [
      "SM_NONPROD_REAL_DATA_PURGE_1BD",
      "SM_PROD_GO_LIVE_ATTEST_GATE",
-     "SM_PROD_PARALLEL_RUN_DAILY",
-     "SM_PROD_POSTURE_DAILY",
      "SM_PROD_POSTURE_DRIFT_1BD",
      "SM_PROD_RESTORE_DRILL_90D"
     ]
@@ -9487,10 +9345,9 @@
    },
    "figures": {
     "spec": 7,
-    "built": 2,
+    "built": 3,
     "missing": [
      "$1,250.00",
-     "$248,310.55",
      "$3,412.92",
      "$3,417.92",
      "$67.50"
@@ -9498,9 +9355,305 @@
    },
    "units": {
     "spec": 58,
-    "built": 4
+    "built": 7
    },
-   "pct": 6.9
+   "pct": 12.1
+  },
+  {
+   "process": "36.1",
+   "title": "Partner identity, doors, roles, action log, tenant scope",
+   "tids": {
+    "spec": 8,
+    "built": 0,
+    "todo": 8,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8
+    ]
+   },
+   "tables": {
+    "spec": 4,
+    "built": 0,
+    "missing": [
+     "partner_actions",
+     "partner_credentials",
+     "partner_sessions",
+     "partner_users"
+    ]
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "NTC_SM_PARTNER_USER_INVITE"
+    ]
+   },
+   "tools": {
+    "spec": 1,
+    "built": 0,
+    "missing": [
+     "partner.user.invite"
+    ]
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 14,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "36.2",
+   "title": "Partner tape drop on book.import: the upload with its report, the import history, the status line and the holds",
+   "tids": {
+    "spec": 5,
+    "built": 0,
+    "todo": 5,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 5,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "36.3",
+   "title": "The eligibility board: three buckets projected from the daily review",
+   "tids": {
+    "spec": 5,
+    "built": 0,
+    "todo": 5,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 3,
+    "built": 0,
+    "missing": [
+     "$3,069.79",
+     "$441,366.13",
+     "$605,000.00"
+    ]
+   },
+   "units": {
+    "spec": 8,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "36.4",
+   "title": "The refinance pipeline feed: members in motion, projected from the rows that already exist",
+   "tids": {
+    "spec": 5,
+    "built": 0,
+    "todo": 5,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 5,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "36.5",
+   "title": "Home, the daily report and the two-mode loan page",
+   "tids": {
+    "spec": 5,
+    "built": 0,
+    "todo": 5,
+    "missing": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 5,
+    "built": 0
+   },
+   "pct": 0.0
+  },
+  {
+   "process": "36.6",
+   "title": "The post-refinance serviced pane contract: dark in V1, one refusal everywhere",
+   "tids": {
+    "spec": 3,
+    "built": 0,
+    "todo": 3,
+    "missing": [
+     1,
+     2,
+     3
+    ]
+   },
+   "tables": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "timers": {
+    "spec": 0,
+    "built": 0,
+    "armable": 0,
+    "missing": []
+   },
+   "notices": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "tools": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "figures": {
+    "spec": 0,
+    "built": 0,
+    "missing": []
+   },
+   "units": {
+    "spec": 3,
+    "built": 0
+   },
+   "pct": 0.0
   }
  ]
 }

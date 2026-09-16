@@ -176,7 +176,7 @@ async function lockboxClearingAccount(db: Queryable, lockboxId: string, items: r
 }
 
 // ---------------------------------------------------------------- the runner
-export interface IngestInput { readonly lockbox_id: string; readonly as_of_date: PlainDate; }
+export interface IngestInput { readonly lockbox_id: string; readonly as_of_date: PlainDate; /** 35.3's run when the planner dispatched the unit (busToolRunner hands it); a by-hand run mints its own. */ readonly run_id?: string | null; }
 export interface ItemOutcome { readonly item_id: string; readonly item_no: number; readonly amount_cents: string; readonly received_on: PlainDate; readonly after_cutoff: boolean; readonly disposition: Disposition; readonly match_method: MatchMethod; readonly loan_id: string | null; readonly payment_id: string | null; readonly suspense_item_id: string | null; }
 export interface BatchOutcome {
   readonly batch_id: string; readonly sha256: string; readonly file_name: string; readonly receipt_date: PlainDate; readonly items: number; readonly control_total_cents: string; readonly sum_cents: string; readonly variance_cents: string;
@@ -194,10 +194,11 @@ const decisionRecord = (b: Pick<BatchOutcome, "batch_id" | "sha256" | "posted" |
 export async function ingestLockboxFile(rt: Runtime, input: IngestInput, opts: { recordDecision: boolean } = { recordDecision: true }): Promise<IngestReport> {
   const lockbox = LOCKBOXES[input.lockbox_id];
   if (!lockbox) refuse("lockbox.ingest", "LOCKBOX_UNKNOWN", "35.5 rule 7: lockbox_ingest runs per lockbox (the payment_channels-level P.O. box + bank)", `no lockbox ${input.lockbox_id} is configured`);
-  const ports = ports35_5(rt); const now = rt.clock.now();
+  const now = rt.clock.now();
   const cutoff = await lockboxCutoff(rt.db, lockbox);
   const files = await rt.db.tx((q) => PgFakeLockboxQueue.fetch(q, lockbox.id, now));
-  const run = await ports.cycles.openRun(CYCLE_LOCKBOX_INGEST, `${lockbox.id}:${input.as_of_date}`, input.as_of_date, files.length, `lockbox.ingest:${now}`);
+  // the run: 35.3's `cycle_runs` row when the planner dispatched this unit (`input.run_id`), else this by-hand run's own id
+  const run = { run_id: input.run_id ?? randomUUID() };
   const batches: BatchOutcome[] = [];
   for (const f of files) {
     try { batches.push(await ingestOneFile(rt, lockbox, cutoff, f, input, opts)); }
@@ -205,8 +206,7 @@ export async function ingestLockboxFile(rt: Runtime, input: IngestInput, opts: {
   }
   const posted = batches.reduce((a, b) => a + b.posted, 0); const unidentified = batches.reduce((a, b) => a + b.unidentified, 0); const variance = batches.filter((b) => b.status === "variance").length;
   const duplicates = batches.filter((b) => b.status === "duplicate").map((b) => b.duplicate_of!);
-  await ports.cycles.completeRun(run.run_id, { units_done: batches.filter((b) => b.status !== "duplicate").length, units_dead: 0, units_skipped: duplicates.length });
-  // the run's receipt (35.3's spelling, emitted here so the registry finds it; deleted at 35.3's merge — plan §9 R1)
+  // the run's receipt: the registry row's literal, emitted by this owner (35.3 rule 2 `receipt_emitted_by: owner` — the election appends `cycle.run.completed` only)
   const receipt = await rt.uow.run({}, (ctx) => ctx.events.append({ type: INGEST_RUN_COMPLETED, aggregate: { kind: "cycle_run", id: run.run_id }, actor: CASHIERING_AGENT,
     payload: { lockbox_id: lockbox.id, as_of_date: input.as_of_date, run_id: run.run_id, cycle_code: CYCLE_LOCKBOX_INGEST, period_key: `${lockbox.id}:${input.as_of_date}`, files: files.length, batches: batches.map((b) => b.batch_id), posted, unidentified, variance, duplicates, origination: true } }), { clock: rt.clock });
   return { lockbox_id: lockbox.id, as_of_date: input.as_of_date, run_id: run.run_id, files: files.length, batches, posted, unidentified, variance, duplicates, receipt_event_id: receipt.result.id };
@@ -234,7 +234,7 @@ async function ingestOneFile(rt: Runtime, lockbox: LockboxConfig, cutoff: { cuto
   let bound: BoundUnit | undefined; let received: DomainEvent | undefined; let escalationId: string | null = null; let documentId: string | null = null; let lockboxClearing: string | null = null;
   const items: ItemPlan[] = [];
   await rt.uow.run({}, async (uow) => {
-    bound = bindUnit(rt, opened, uow); const ctx = bound.ctx;
+    bound = await bindUnit(rt, opened, uow); const ctx = bound.ctx;
     for (const it of parsed.items) {
       const id = await identifyItem(rt, bound, batchId, it); const ro = receivedOnFor(it.scanned_at, receiptDate, cutoff.cutoff_time, cutoff.cutoff_tz);
       const hit = id.hit; const identified = hit !== null && serviced(hit);
@@ -285,7 +285,7 @@ async function receiveIdentifiedItem(rt: Runtime, lockbox: LockboxConfig, batchI
   const opened = await openUnit(rt, { loanId });
   let bound: BoundUnit | undefined; let paymentId = "";
   await rt.uow.run({ loanId }, async (uow) => {
-    bound = bindUnit(rt, opened, uow); const ctx = bound.ctx;
+    bound = await bindUnit(rt, opened, uow); const ctx = bound.ctx;
     const key = itemIdempotencyKey(batchId, it.item_no, it.amount_cents, it.received_on);
     const dup = bound.store.list("payments", (d) => d.loan_id === loanId && d.idempotency_key === key)[0];
     if (dup) { paymentId = dup.id; return; }
@@ -293,7 +293,7 @@ async function receiveIdentifiedItem(rt: Runtime, lockbox: LockboxConfig, batchI
     const receipt = ctx.ledger.post({ effectiveDate: it.received_on, description: `receipt ${paymentId}`, lines: [{ account: cust(it.clearing!, "clearing_cash"), amountCents: it.amount_cents, ruleRef: RULE_REF_RECEIPT }, { account: { scope: "loan", loanId, account: "suspense_unapplied" }, amountCents: -it.amount_cents, ruleRef: RULE_REF_RECEIPT }] }, ctx.clock.now());
     ports.cashRows.writeReceivedPayment(bound.store, ctx, { payment_id: paymentId, loan_id: loanId, amount_cents: it.amount_cents, received_on: it.received_on, credited_as_of: it.received_on, channel: "lockbox", instrument: "check", designation: "contractual", status: "identified", idempotency_key: key, payer_name: it.payer || null, check_number: it.check_no || null, source_batch_id: batchId, source_item_id: String(it.item_no), received_at: it.scanned_at, receipt_entry_set_id: receipt.id, ledger_entry_set_ids: [receipt.id], match_method: it.match_method, scanline: it.scanline || null });
     ctx.events.append({ type: ITEM_IDENTIFIED, loanId, aggregate: agg(batchId), actor: CASHIERING_AGENT, causationId: receivedEventId, payload: { lockbox_id: lockbox.id, batch_id: batchId, item_no: it.item_no, item_id: it.id, loan_id: loanId, payment_id: paymentId, amount_cents: s(it.amount_cents), received_on: it.received_on, after_cutoff: it.after_cutoff, match_method: it.match_method, loan_number_read: it.loan_number_read, receipt_entry_set_id: receipt.id, clearing_account_id: it.clearing } });
-  }, { clock: rt.clock, commit: async (q) => { if (bound) await commitUnit(q, rt, bound); await q.query(`UPDATE lockbox_items SET payment_id = $2, disposition = 'identified' WHERE id = $1`, [it.id, paymentId]); } });
+  }, { clock: rt.clock, commit: async (q, info) => { if (bound) await commitUnit(q, rt, bound, info); await q.query(`UPDATE lockbox_items SET payment_id = $2, disposition = 'identified' WHERE id = $1`, [it.id, paymentId]); } });
   it.payment_id = paymentId;
 }
 
@@ -303,14 +303,14 @@ async function receiveUnidentifiedItems(rt: Runtime, lockbox: LockboxConfig, bat
   const opened = await openUnit(rt, {});
   let bound: BoundUnit | undefined; const ids = new Map<string, string>();
   await rt.uow.run({}, async (uow) => {
-    bound = bindUnit(rt, opened, uow); const ctx = bound.ctx;
+    bound = await bindUnit(rt, opened, uow); const ctx = bound.ctx;
     for (const it of items) {
       const receipt = ctx.ledger.post({ effectiveDate: it.received_on, description: `receipt lockbox ${batchId}#${it.item_no}`, lines: [{ account: cust(clearing, "clearing_cash"), amountCents: it.amount_cents, ruleRef: RULE_REF_RECEIPT }, { account: cust(clearing, "suspense_unapplied"), amountCents: -it.amount_cents, ruleRef: RULE_REF_RECEIPT }] }, ctx.clock.now());
       const { suspense_item_id } = ports.cashRows.writeSuspenseItem(bound.store, ctx, { loan_id: null, amount_cents: it.amount_cents, received_on: it.received_on, source: "lockbox", reason_code: "unidentified_loan", batch_id: batchId, item_no: it.item_no, receipt_entry_set_id: receipt.id, custodial_account_id: clearing, payer_name: it.payer || null, check_number: it.check_no || null, scanline: it.scanline || null, loan_number_read: it.loan_number_read });
       ids.set(it.id, suspense_item_id);
       ctx.events.append({ type: ITEM_UNIDENTIFIED, aggregate: agg(batchId), actor: CASHIERING_AGENT, causationId: receivedEventId, payload: { lockbox_id: lockbox.id, batch_id: batchId, item_no: it.item_no, item_id: it.id, suspense_item_id, amount_cents: s(it.amount_cents), received_on: it.received_on, after_cutoff: it.after_cutoff, scanline: it.scanline, loan_number_read: it.loan_number_read, match_method: it.match_method, matched_loan_id: it.loan_id, loan_status: it.loan_status, receipt_entry_set_id: receipt.id, custodial_account_id: clearing, route: "6.5 suspense_items{source=lockbox, reason_code=unidentified_loan}" } });
     }
-  }, { clock: rt.clock, commit: async (q) => { if (bound) await commitUnit(q, rt, bound); for (const it of items) await q.query(`UPDATE lockbox_items SET suspense_item_id = $2, disposition = 'unidentified' WHERE id = $1`, [it.id, ids.get(it.id) ?? null]); } });
+  }, { clock: rt.clock, commit: async (q, info) => { if (bound) await commitUnit(q, rt, bound, info); for (const it of items) await q.query(`UPDATE lockbox_items SET suspense_item_id = $2, disposition = 'unidentified' WHERE id = $1`, [it.id, ids.get(it.id) ?? null]); } });
   for (const it of items) it.suspense_item_id = ids.get(it.id) ?? null;
 }
 
@@ -321,7 +321,7 @@ export async function lockboxIngest(i: ToolInput, _ctx: CommandContext, rt: Tool
   const lockboxId = str(i, "lockbox_id"); if (!lockboxId) throw new RangeError("lockbox_id is required");
   const asOf = str(i, "as_of_date"); if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) throw new RangeError("as_of_date (YYYY-MM-DD) is required");
   const runtime = (rt.services as Services).runtime; if (!runtime) throw new RangeError("lockbox.ingest needs the hosted runtime (services.runtime)");
-  return ingestLockboxFile(runtime, { lockbox_id: lockboxId, as_of_date: D(asOf) }, { recordDecision: false });
+  return ingestLockboxFile(runtime, { lockbox_id: lockboxId, as_of_date: D(asOf), run_id: str(i, "run_id") || null }, { recordDecision: false });
 }
 
 /**
@@ -370,7 +370,7 @@ export async function lockboxItemResolve(i: ToolInput, ctx: CommandContext, rt: 
   else {
     // a global command (no loan scope): the loan's rows in the loan's own unit of work, sequential to this command's (the 33.2 pass-shaped precedent)
     const opened = await openUnit(runtime, { loanId }); let bound: BoundUnit | undefined;
-    await runtime.uow.run({ loanId }, async (uow) => { bound = bindUnit(runtime, opened, uow); write(bound.store, bound.ctx); }, { clock: runtime.clock, commit: async (q) => { if (bound) await commitUnit(q, runtime, bound); await rowUpdate(q); } });
+    await runtime.uow.run({ loanId }, async (uow) => { bound = await bindUnit(runtime, opened, uow); write(bound.store, bound.ctx); }, { clock: runtime.clock, commit: async (q, info) => { if (bound) await commitUnit(q, runtime, bound, info); await rowUpdate(q); } });
   }
   return { item_id: item.id, batch_id: item.batch_id, disposition: "identified", match_method: "manual", loan_id: loanId, payment_id: paymentId, suspense_item_id: item.suspense_item_id, amount_cents: s(item.amount_cents), parked_on: parkedOn };
 }

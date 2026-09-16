@@ -141,7 +141,7 @@ export async function confirmKillSwitch(rt: Runtime, i: { request_id: string; ac
   const req = (await killRequests(rt, {}, nowIso)).find((r) => r.request_id === (i.request_id ?? "").trim());
   if (!req) throw new ControlsRefused(404, "NO_SUCH_REQUEST", `no kill-switch request ${i.request_id}`);
   if (req.status === "confirmed") throw new ControlsRefused(409, "REQUEST_CLOSED", `request ${req.request_id} was confirmed by ${req.confirmed_by} at ${req.resolved_at}`, { confirmed_by: req.confirmed_by });
-  if (req.status === "expired") { await expireKillSwitchRequests(rt, nowIso); throw new ControlsRefused(409, "REQUEST_EXPIRED", `request ${req.request_id} expired at ${req.expires_at}; nothing ${req.action === "trip" ? "tripped" : "reset"} — ask compliance for a new request`, { request_id: req.request_id, expires_at: req.expires_at }); }
+  if (req.status === "expired") { await expireKillSwitchRequests(rt.root, nowIso); throw new ControlsRefused(409, "REQUEST_EXPIRED", `request ${req.request_id} expired at ${req.expires_at}; nothing ${req.action === "trip" ? "tripped" : "reset"} — ask compliance for a new request`, { request_id: req.request_id, expires_at: req.expires_at }); }
   if (i.actor.kind === "human" && i.actor.id === req.by) throw new ControlsRefused(403, "TWO_PERSON_KILL", `the kill switch is two people's decision: ${req.by} requested it and may not confirm it`, { request_id: req.request_id, requested_by: req.by });
   const type = req.action === "trip" ? "ai.kill_switch.tripped" : "ai.kill_switch.reset";
   const why = `kill switch tripped by ${req.by} (compliance), confirmed by ${i.actor.id} (admin): ${req.reason} (18.1 / 34.4 rule 4)`;

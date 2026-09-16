@@ -101,22 +101,26 @@ export function wouldRemoveLastAdmin(activeAdminIds: readonly string[], targetSt
 
 // ───────── the access review (rule 6)
 export type ReviewDecision = "keep" | "change" | "disable";
-export interface ReviewInput { readonly staff_user_id: string; readonly decision: ReviewDecision; readonly roles?: readonly string[] }
-export interface ReviewEntry { readonly staff_user_id: string; readonly roles_before: readonly StaffRole[]; readonly decision: ReviewDecision; readonly roles_after: readonly StaffRole[] }
+/** 35.7 rule 9: `rationale` (a keep on a user with a dormant grant must name the grant — DORMANT_GRANT_NEEDS_RATIONALE) and `reviewer_roles` (a change that drops one revokes the grant with cause access_review). */
+export interface ReviewInput { readonly staff_user_id: string; readonly decision: ReviewDecision; readonly roles?: readonly string[]; readonly rationale?: string | null; readonly reviewer_roles?: readonly string[] }
+export interface ReviewEntry { readonly staff_user_id: string; readonly roles_before: readonly StaffRole[]; readonly decision: ReviewDecision; readonly roles_after: readonly StaffRole[]; readonly rationale?: string | null; readonly reviewer_roles?: readonly string[] }
 export interface ReviewPlan { readonly entries: ReviewEntry[]; readonly changes: ReviewEntry[]; readonly missing: string[]; readonly unknown: string[] }
 /**
  * Every active user needs a decision (keep | change{roles} | disable); the plan lists what changes (run through
  * staff.role.set / staff.disable by the tool) and refuses nothing itself — `missing` and `unknown` are the caller's to reject.
  */
-export function planAccessReview(active: readonly { id: string; roles: readonly string[] }[], decisions: readonly ReviewInput[]): ReviewPlan {
+export function planAccessReview(active: readonly { id: string; roles: readonly string[]; reviewer_roles?: readonly string[] }[], decisions: readonly ReviewInput[]): ReviewPlan {
   const byId = new Map(active.map((u) => [u.id, u] as const));
   const entries: ReviewEntry[] = []; const unknown: string[] = [];
   for (const d of decisions) {
     const u = byId.get(d.staff_user_id); if (!u) { unknown.push(d.staff_user_id); continue; }
     const before = normalizeRoles(u.roles.length ? u.roles : ["ops_analyst"]).filter((r) => u.roles.includes(r));
-    if (d.decision === "keep") entries.push({ staff_user_id: u.id, roles_before: before, decision: "keep", roles_after: before });
-    else if (d.decision === "disable") entries.push({ staff_user_id: u.id, roles_before: before, decision: "disable", roles_after: [] });
-    else if (d.decision === "change") { const after = normalizeRoles(d.roles); entries.push({ staff_user_id: u.id, roles_before: before, decision: sameRoles(before, after) ? "keep" : "change", roles_after: after }); }
+    // 35.7 rule 9: the entry records the reviewer roles the decision names, else the ones the person holds (35.7 T11: the review names the grant kept)
+    const explicit = Array.isArray(d.reviewer_roles);
+    const extra = { ...(typeof d.rationale === "string" && d.rationale.trim() ? { rationale: d.rationale.trim() } : {}), ...(explicit ? { reviewer_roles: [...d.reviewer_roles!].map(String) } : u.reviewer_roles?.length ? { reviewer_roles: [...u.reviewer_roles] } : {}) };
+    if (d.decision === "keep") entries.push({ staff_user_id: u.id, roles_before: before, decision: "keep", roles_after: before, ...extra });
+    else if (d.decision === "disable") entries.push({ staff_user_id: u.id, roles_before: before, decision: "disable", roles_after: [], ...extra });
+    else if (d.decision === "change") { const after = normalizeRoles(d.roles ?? before); entries.push({ staff_user_id: u.id, roles_before: before, decision: sameRoles(before, after) && !explicit ? "keep" : "change", roles_after: after, ...extra }); }
     else throw new RangeError(`decision for ${d.staff_user_id} must be keep, change or disable`);
   }
   const decided = new Set(entries.map((e) => e.staff_user_id));

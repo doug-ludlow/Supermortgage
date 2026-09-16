@@ -15,15 +15,16 @@ export class PgConsoleStore implements ConsoleStore {
   private readonly registry: TimerRegistry;
   private readonly agents: AgentRegistry;
   /** DELTA-30: the FAKE reviewers the runtime runs (roles they fill, the delay) — a pending queue row one of them will fill says so; null when they are off. */
-  private readonly fakeReviewers: { readonly roles: readonly string[]; readonly delaySeconds: number } | null;
-  constructor(db: Db, registry: TimerRegistry, agents: AgentRegistry, opts: { fakeReviewers?: { readonly roles: readonly string[]; readonly delaySeconds: number } | null } = {}) { this.db = db; this.registry = registry; this.agents = agents; this.fakeReviewers = opts.fakeReviewers ?? null; }
+  private readonly fakeReviewers: { readonly roles: readonly string[]; readonly delaySeconds: number; readonly resolve?: () => Promise<readonly string[]> } | null;
+  /** `fakeReviewers.resolve` (35.7 rule 6): the environment's CURRENT FAKE set read from Postgres per query (the default minus the roles handed over to a person), so the queue marking agrees with the reviewers' tick; absent → the static `roles`. */
+  constructor(db: Db, registry: TimerRegistry, agents: AgentRegistry, opts: { fakeReviewers?: { readonly roles: readonly string[]; readonly delaySeconds: number; readonly resolve?: () => Promise<readonly string[]> } | null } = {}) { this.db = db; this.registry = registry; this.agents = agents; this.fakeReviewers = opts.fakeReviewers ?? null; }
 
   private async items(now: string, loanId?: string): Promise<QueueItem[]> {
     const lf = loanId ? " AND loan_id = $1" : "";
     const p = loanId ? [loanId] : [];
     const out: QueueItem[] = [];
-    // DELTA-30: a pending item whose owner role a FAKE reviewer fills says so on the queue row (the FAKE approves it after the delay; FAKE_REVIEWERS=off leaves it to a person)
-    const fakeRoles = this.fakeReviewers?.roles ?? []; const fakeDelay = this.fakeReviewers?.delaySeconds ?? 0;
+    // DELTA-30: a pending item whose owner role a FAKE reviewer fills says so on the queue row (the FAKE approves it after the delay; FAKE_REVIEWERS=off leaves it to a person); 35.7: the set is the current one from Postgres when a resolver is wired
+    const fakeRoles = this.fakeReviewers ? (this.fakeReviewers.resolve ? await this.fakeReviewers.resolve().catch(() => this.fakeReviewers!.roles) : this.fakeReviewers.roles) : []; const fakeDelay = this.fakeReviewers?.delaySeconds ?? 0;
     for (const r of await this.db.query<Row>(`SELECT id, kind, owner_role, loan_id, severity, opened_at, payload FROM escalations WHERE completed_at IS NULL${lf} ORDER BY opened_at`, p)) {
       const fake = fakeRoles.includes(s(r["owner_role"])) && !/^sev[1-4]$/.test(s(r["kind"]));
       out.push({ id: s(r["id"]), kind: "escalation", title: `${s(r["kind"])} escalation${(r["payload"] as Row)["command"] ? ` — ${s((r["payload"] as Row)["command"])}` : ""}${fake ? " — FAKE reviewer" : ""}`, ownerRole: s(r["owner_role"]), openedAt: s(r["opened_at"]), detail: fake ? { ...(r["payload"] as Row), fake_reviewer: { role: s(r["owner_role"]), approves_after_s: fakeDelay, marker: "FAKE" } } : (r["payload"] as Row), ...(r["loan_id"] ? { loanId: s(r["loan_id"]) } : {}), ...(r["severity"] ? { severity: s(r["severity"]) } : {}) });

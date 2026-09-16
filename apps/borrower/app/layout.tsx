@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
+import "./mobile-shell.css";
+import "./prototype-theme.css";
 import { THEME_DEFAULT } from "@/lib/env";
 
 export const metadata: Metadata = {
@@ -13,10 +15,10 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#0A0A0B",
+  themeColor: "#f4f4f4",
 };
 
-/** Dark is the default (00 §3, 01 §2); light is a second token set selected by data-theme only. */
+/** Designed prototype surface is the default. */
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" data-theme={THEME_DEFAULT}>

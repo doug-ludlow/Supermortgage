@@ -35,6 +35,7 @@ import { systemClock } from "../kernel/events/index.ts";
 import { loadDemoClock } from "./demo-clock.ts";
 import { rateFeedFromEnv } from "../infra/integrations/rates.ts";
 import { fakeReviewersFromEnv } from "../infra/integrations/reviewers.ts";
+import { bootstrapReviewerRoles } from "../domain/operations-runtime/roles-35-7/bootstrap.ts";
 import { BorrowerFlows } from "./borrower/flows/index.ts";
 import { PgBorrowerUiRepository } from "../infra/db/borrower-ui.ts";
 import { bootstrapStaffAdmin } from "./staff/auth.ts";
@@ -57,7 +58,8 @@ const rateFeed = rateFeedFromEnv(process.env); const reviewers = fakeReviewersFr
 // the demo clock (docs/DEPLOY.md "The demo clock"; src/runtime/demo-clock.ts): outside production every mode — serve, sweep, seed-demo — runs on the system clock plus the persisted demo offset (the latest demo_clock row), so the API, the sweep job and the flows agree on the instant; production is the system clock, full stop
 const demoClock = config.environment === "production" ? null : await loadDemoClock(db, { logger });
 const clock = demoClock ?? systemClock;
-const runtime = new Runtime({ db, registry: loadOverriddenRegistry(), rateFeed, reviewers, logger, clock });
+// 35.1/35.3: the database URL rides on the runtime for the dedicated clients the pool cannot lend — the sweep lease (`pg_try_advisory_lock(35_001)`) and the planner lock (`pg_try_advisory_lock(35_003)`) on the application database
+const runtime = new Runtime({ db, databaseUrl: config.databaseUrl, registry: loadOverriddenRegistry(), rateFeed, reviewers, logger, clock, environment: config.environment, env: process.env });
 // 35.5 rule 3: every committed `loan_terms.*` event (2.4, 7.2, 3.6, 12.8) re-projects the loan's installment schedule through `installments.reproject` on the bus
 registerReprojectionReactor(runtime);
 
@@ -68,10 +70,12 @@ if (mode === "sweep") {
     await flows.tick(runtime.clock.now());
     const report = await runtime.sweep();
     await flows.settle();
-    logger.info("sweep", { due: report.due, breaches: report.breaches.length, outbox: report.outbox, at: report.at, rate_feed: rateFeed.vendorName, refi: report.refi?.line ?? "no rate feed", fake_reviewers: report.reviewers?.line ?? "off" });
+    logger.info("sweep", { run_id: report.run_id, holder: report.holder, outcome: report.outcome, skipped_reason: report.skipped_reason, passes: report.passes.map((p) => `${p.name}:${p.duration_ms}ms`), outbox_dispatch: report.outbox_dispatch ? { claimed: report.outbox_dispatch.claimed, sent: report.outbox_dispatch.sent, retried: report.outbox_dispatch.retried, dead: report.outbox_dispatch.dead } : null, verify: report.verify ? { run_id: report.verify.run_id, gaps: report.verify.gaps, mismatches: report.verify.mismatches } : null,
+      due: report.due, breaches: report.breaches.length, outbox: report.outbox, at: report.at, rate_feed: rateFeed.vendorName, refi: report.refi?.line ?? "no rate feed", fake_reviewers: report.reviewers?.line ?? "off" });
     for (const b of report.breaches) logger.warn("timer breached", { ...b });
     await db.end();
-    process.exit(0);
+    // 35.1 rule 12: a firing that found the lease held exits 0; a run that could not take the lease (failed{lease_unavailable}) exits 1 so the next minute tries again
+    process.exit(report.outcome === "failed" ? 1 : 0);
   } catch (e) { logger.error("sweep failed", { error: e }); await db.end().catch(() => undefined); process.exit(1); }
 }
 
@@ -103,11 +107,13 @@ if (mode === "staff-bootstrap") {
 }
 
 if (mode !== "serve") { logger.error(`unknown mode ${mode}; use serve | sweep | migrate | seed-demo | staff-bootstrap`); process.exit(2); }
-if (!config.apiToken) logger.warn("API_TOKEN is empty: every route is open (ALLOW_INSECURE_NO_TOKEN=1)");
+if (!config.apiToken) logger.warn("API_TOKEN is empty: /v1 admits only principals issued by principals.issue (35.7 rule 2); the ops console authenticates its own staff sessions (ALLOW_INSECURE_NO_TOKEN=1)");
 // 32.14: the Phase I partner from configuration (DELTA-15); Sign in with Google is the FAKE provider under INTEGRATIONS=fake (DELTA-12 — the real adapter is wired with the client secret when another INTEGRATIONS value exists)
 // 34.1: STAFF_BOOTSTRAP_ADMIN_EMAIL (and, outside production, STAFF_BOOTSTRAP_ADMIN_ROLES) is read once at start — the first admin is invited when no staff_users row exists, the nonprod one-row upgrade runs when it applies (a no-op otherwise; the e-mail is never logged)
 const bootstrapEmail = (process.env["STAFF_BOOTSTRAP_ADMIN_EMAIL"] ?? "").trim();
 if (bootstrapEmail) { try { const r = await bootstrapStaffAdmin(runtime, bootstrapEmail, { logger, roles: process.env["STAFF_BOOTSTRAP_ADMIN_ROLES"], environment: config.environment }); logger.info("staff-bootstrap (STAFF_BOOTSTRAP_ADMIN_EMAIL)", { created: r.created, upgraded: r.upgraded, staff_user_id: r.staff_user_id, roles: r.roles, reason: r.reason }); } catch (e) { logger.error("staff-bootstrap failed (STAFF_BOOTSTRAP_ADMIN_EMAIL)", { error: e }); } }
+// 35.7 (34.5 decision Q2): on nonprod the owner's enrolled account may hold every grantable reviewer role, granted by FAKE:admin and confirmed by FAKE:compliance through the real roles.grant path — STAFF_BOOTSTRAP_REVIEWER_ROLES=all | a comma list; refused in production
+if (bootstrapEmail && (process.env["STAFF_BOOTSTRAP_REVIEWER_ROLES"] ?? "").trim() && config.environment !== "production" && config.environment !== "prod") { try { const r = await bootstrapReviewerRoles(runtime, bootstrapEmail, { roles: process.env["STAFF_BOOTSTRAP_REVIEWER_ROLES"], logger }); logger.info("35.7 reviewer-role bootstrap", { staff_user_id: r.staff_user_id, granted: r.granted, skipped: r.skipped, reason: r.reason }); } catch (e) { logger.error("35.7 reviewer-role bootstrap failed", { error: e }); } }
 const server = createApiServer({ runtime, apiToken: config.apiToken, logger, borrower: { environment: config.environment, defaultPartnerId: config.borrowerDefaultPartnerId, talk: { apiKey: config.talk.apiKey, model: config.talk.model, effort: config.talk.effort }, llm: { apiKey: config.llm.apiKey, model: config.llm.model, effort: config.llm.effort, speed: config.llm.speed, promptVersion: config.llm.promptVersion }, video: { tavusApiKey: config.video.tavusApiKey, replicaId: config.video.replicaId, callbackSecret: config.video.callbackSecret, borrowerCamera: config.video.borrowerCamera, publicApiUrl: config.video.publicApiUrl, joinTimeoutS: config.video.joinTimeoutS } } });
 // 32.17: the video agent's vendor — FakeTavus (FAKE) unless TAVUS_API_KEY is set; the vendor is the face and the voice only, the brain stays here (src/runtime/borrower/video-routes.ts)
 logger.info("video agent vendor", { vendor: config.video.tavusApiKey ? "tavus" : "FAKE", replica: config.video.replicaId || (config.video.tavusApiKey ? "first stock replica" : "FAKE"), callback_secret: config.video.callbackSecret ? "configured" : "random per process (FAKE in-process callbacks only)", borrower_camera: config.video.borrowerCamera });

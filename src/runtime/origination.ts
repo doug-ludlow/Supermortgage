@@ -31,6 +31,7 @@
  *     servicing-loan-number sequence skips numbers already allocated.
  */
 import { lookupFakeAssetReport } from "./borrower/vendors/fake-plaid.ts";
+import type { DomainEvent as KernelEvent } from "../kernel/events/index.ts";
 import { createHash, randomUUID } from "node:crypto";
 import type { Queryable } from "../infra/db/client.ts";
 import { toJson } from "../infra/db/client.ts";
@@ -133,8 +134,9 @@ export async function fundApplication(rt: Runtime, applicationId: string, snapsh
   const r = await rt.uow.run(scope, async (ctx) => {
     escalations = new EscalationService(ctx.events, ctx.clock);
     const notices = rt.ports.printMail && rt.ports.edelivery ? new NoticeService({ registry: rt.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: rt.ports.printMail, edelivery: rt.ports.edelivery }) : undefined;
-    const res = await boardFundedApplication({ events: ctx.events, ledger: ledgerFor(ctx.ledger, clearingId), clock: ctx.clock, ext, timers: ctx.timers, escalations, ...(notices ? { notices } : {}), prepurchaseTiAccountId: tiPrepurchaseId, loanIdFor: () => loanId },
-      snapshot, funded);
+    // 35.1 rule 9 / 10: the `orig-boarding` instance is hydrated from the application's record with this hand-off's deps, and its delta is recorded with the command
+    const services = await rt.originationServices.forCommand(ctx, store, escalations, { origBoarding: { ledger: ledgerFor(ctx.ledger, clearingId), ext, ...(notices ? { notices } : {}), prepurchaseTiAccountId: tiPrepurchaseId, loanIdFor: () => loanId } });
+    const res = await boardFundedApplication(services["orig-boarding"] as OriginationBoardingService, snapshot, funded);
     if (res.refusal !== null) {
       const hard = res.validations.filter((v) => v.severity === "hard" && v.result === "fail" && !v.resolved).map((v) => v.code);
       throw new BoardingRefused(applicationId, hard.length ? "BOARDING_HARD_FAILURE" : "RESCISSION_NOT_EXPIRED", res.refusal, res.validations);
@@ -146,9 +148,10 @@ export async function fundApplication(rt: Runtime, applicationId: string, snapsh
     // 35.5 rules 1 and 9: the installment schedule and the servicing configuration in the same transaction as `loan.boarded` — projected here
     // (events, clocks, decisions prepared), persisted by the commit hook once the `before` hook has written loans / loan_terms v1
     const m = rec.mapped; const t = m.loan_terms;
-    boarding35 = await onLoanBoardedProject(rt.db, ctx, { loan_id: loanId, source: "fund", terms_id: null, upb_cents: m.loans.original_loan_amount_cents, first_due: m.loans.first_payment_date, first_payment_date: m.loans.first_payment_date, maturity_date: m.loans.maturity_date,
+    boarding35 = await onLoanBoardedProject(ctx.q ?? rt.db, ctx, { loan_id: loanId, source: "fund", terms_id: null, upb_cents: m.loans.original_loan_amount_cents, first_due: m.loans.first_payment_date, first_payment_date: m.loans.first_payment_date, maturity_date: m.loans.maturity_date,
       original_upb_cents: m.loans.original_loan_amount_cents, original_term_months: t.original_term_months, note_rate_pct: t.note_rate, note_rate_bps: pctToScaled(t.note_rate, 10_000), pi_cents: t.pi_cents, escrow_payment_cents: t.escrow_payment_cents + t.mi_premium_cents, amortization: t.amortization_type,
       state: snapshot.property.state ?? null, late_charge_pct: (pctToScaled(t.late_charge_pct, 1000) / 1000).toFixed(3), late_charge_grace_days: t.late_charge_grace_days, boarded_on: wallClock(Date.parse(rec.boarded_at ?? ctx.clock.now()), "America/New_York").date }, { registry: rt.registry, escalations });
+    rt.originationServices.recordState(ctx);
     return res;
   }, {
     clock: rt.clock,
@@ -258,19 +261,23 @@ export function demoFunded(applicationId: string, overrides: Partial<LoanFundedP
 
 // ───────────────────────────── the origination services the hosted runtime constructs ─────────────────────────────
 //
-// The section tool files (src/app/tools/section2x-y.ts) read their domain services from `ToolRuntime.services` and, when a
-// service is absent, build one over the unit of work's event store (`svcOf(rt, ctx)`), keyed by the ToolRuntime object. The
-// hosted Runtime builds a fresh ToolRuntime per command, so a service built that way is gone by the next HTTP call — a CD
-// prepared by one call would be "no CD" to the next. The runtime therefore constructs ONE instance of each stateful service
-// per Runtime, over forwarding stores: every `events.append` / `clock.now` / `escalations.open` / `ledger.post` the service
-// makes lands in the unit of work of the command that is executing, so persistence and keying are exactly what a tool
-// gets. The vendor ports (credit reseller, DU, identity, OFAC, AMC, UCDP, EarlyCheck, PE–WL, warehouse bank, eRegistry,
-// RON, title) are the in-memory fakes the ops files export (INTEGRATIONS=fake) — the same set the unit harnesses wire, so
-// the HTTP path and the unit path behave identically.
-import type { EventStore, DomainEvent as KernelEvent, EventInput, EventPattern, Subscriber, Clock } from "../kernel/events/index.ts";
+// 35.1 rule 9: a stateful service is rebuilt from the record before every command. `forCommand` constructs a fresh instance of
+// every stateful section service per command over the unit of work's own event store, clock, ledger and escalations, and
+// hydrates it from the record (src/domain/operations-runtime/seam/service-state.ts: the latest `service_snapshots` row plus the
+// `service.state.changed` deltas after it, checked against a full replay); `recordState` appends one delta per service whose
+// state the command changed, in the command's transaction. Nothing survives the command but the record. The vendor ports
+// (credit reseller, DU, identity, OFAC, AMC, UCDP, EarlyCheck, PE–WL, warehouse bank, eRegistry, RON, title) are the in-memory
+// fakes the ops files export (INTEGRATIONS=fake) — one set per Runtime, the same set the unit harnesses wire.
+//
+// Rule 10: `tolerance-21-5` is the `tolerance` instance under a second key (the same object); `orig-boarding` is the
+// OriginationBoardingService hydrated from the application's record; `boarding` is the BoardingService adapter (its
+// external positions and clearing account are set per batch by 1.1's boardLoan on the bus — `boarding-deps`); `transfer`
+// and `fpi` are the other two servicing adapters of the same contract.
+import type { EventStore, Clock } from "../kernel/events/index.ts";
 import type { PlainDate } from "../kernel/calendar/date.ts";
-import type { EscalationInput, Escalation } from "../app/escalations.ts";
+import type { EscalationService as EscalationServiceType } from "../app/escalations.ts";
 import { type EntityStore as EntityStoreType } from "../app/tools.ts";
+import type { UowContext } from "../infra/db/unit-of-work.ts";
 import { ClosingDisclosureService } from "../domain/compliance-disclosures/ops-25-2.ts";
 import { DeliveryService } from "../domain/secondary/ops-29-4.ts";
 import { DeliveryBuildService, FakeEarlyCheck } from "../domain/secondary/ops-29-3.ts";
@@ -278,6 +285,11 @@ import { CommitmentService, FakePewl, FakeSalesDesk } from "../domain/secondary/
 import { ToleranceService } from "../domain/application/ops-21-5.ts";
 import { CompanionDisclosureService } from "../domain/application/ops-21-3.ts";
 import { LoanEstimateService, AGENT as LE_AGENT, PHOENIX_CREDITOR, civilDate, type LeRenderInput, type EsignConsent, type DeliveryChannel } from "../domain/application/ops-21-2.ts";
+import { OriginationBoardingService, type OrigBoardingDeps } from "../domain/orig-boarding/ops-30-2.ts";
+import { BoardingService, type BoardingDeps } from "../domain/boarding/service.ts";
+import type { ExternalPositions } from "../domain/boarding/types.ts";
+import { TransferBatchService } from "../domain/transfers/inbound.ts";
+import { Fpi92Service } from "../domain/insurance/ops-9-2.ts";
 import { FixturePricing, type PricingPort, type RateSheet as LockRateSheet } from "../domain/application/ops-21-4.ts";
 import type { RateSheet as PricedRateSheet } from "../domain/leads-pricing/ops-20-4.ts";
 import { fakeDuMessages } from "../domain/underwriting/ops-23-1.ts";
@@ -290,38 +302,7 @@ import { FakeTitleVendor, FakeWireVerification, FakeAltaRegistry, FakeStateDoi }
 import { FakeERegistry26, FakeRonPlatform, type ERegistryPort26, type ERegistryAck } from "../domain/closing/ops-26-2.ts";
 import { FakeWarehouseBank, FakeWarehouseCustodian, FakeERegistry } from "../domain/warehouse/ops-27-1.ts";
 import type { LoanLookupPort } from "../domain/leads-pricing/ops-20-1.ts";
-
-/** An EventStore that delegates to the unit of work currently executing — the stateful services hold this one for life. */
-class ForwardingEventStore implements EventStore {
-  private active: EventStore | null = null;
-  /** Subscriptions the services registered (21.5 subscribes to `*` at construction) — re-attached to every unit of work that becomes current. */
-  private readonly subs: { pattern: string | EventPattern; fn: Subscriber }[] = [];
-  set current(store: EventStore | null) { this.active = store; if (store) for (const s of this.subs) store.subscribe(s.pattern, s.fn); }
-  get current(): EventStore | null { return this.active; }
-  private req(): EventStore { if (!this.active) throw new Error("no unit of work is executing (origination service used outside a command)"); return this.active; }
-  append<P extends Record<string, unknown>>(input: EventInput<P>): KernelEvent<P> { return this.req().append(input); }
-  byLoan(loanId: string): readonly KernelEvent[] { return this.active?.byLoan(loanId) ?? []; }
-  ofType(type: string): readonly KernelEvent[] { return this.active?.ofType(type) ?? []; }
-  all(): readonly KernelEvent[] { return this.active?.all() ?? []; }
-  subscribe(pattern: string | EventPattern, fn: Subscriber): () => void { const s = { pattern, fn }; this.subs.push(s); this.active?.subscribe(pattern, fn); return () => { const k = this.subs.indexOf(s); if (k >= 0) this.subs.splice(k, 1); }; }
-}
-class ForwardingClock implements Clock { current: Clock; constructor(fallback: Clock) { this.current = fallback; } now(): string { return this.current.now(); } }
-class ForwardingLedger implements Ledger {
-  current: Ledger | null = null;
-  private req(): Ledger { if (!this.current) throw new Error("no unit of work is executing"); return this.current; }
-  post(input: EntrySetInput, postedAt?: string): EntrySet { return this.req().post(input, postedAt); }
-  reverse(setId: string, effectiveDate: PlainDate, reason: string, postedAt?: string): EntrySet { return this.req().reverse(setId, effectiveDate, reason, postedAt); }
-  balance(a: AccountRef, asOf?: PlainDate): Cents { return this.req().balance(a, asOf); }
-  sets(): readonly EntrySet[] { return this.req().sets(); }
-  linesFor(a: AccountRef): readonly Line[] { return this.req().linesFor(a); }
-}
-/** The escalation opener the services hold: opens on the executing command's EscalationService (persisted with that command). */
-class ForwardingEscalations {
-  current: EscalationService | null = null;
-  open(input: EscalationInput, by: Actor): Escalation { if (!this.current) throw new Error("no unit of work is executing"); return this.current.open(input, by); }
-  get opened(): readonly Escalation[] { return this.current?.opened ?? []; }
-  list(): readonly Escalation[] { return this.current?.list() ?? []; }
-}
+import { STATE_VERSION, SERVICE_STATE_EVENT, captureState, diffState, foldState, restoreState, stateHash, type EncodedState, type ServiceSpec, type SnapshotRow } from "../domain/operations-runtime/seam/service-state.ts";
 
 /** 22.2's reseller port for INTEGRATIONS=fake: the refinance fixture's tri-merge (A 742/751/760, B 698/712/705, Classic FICO), any borrower order answered. */
 export class FixtureCreditBureau implements CreditBureauPort {
@@ -363,40 +344,152 @@ export function pricingFromStore(store: EntityStoreType): PricingPort | null {
   return new FixturePricing(mapped);
 }
 
-export interface OriginationServiceSet {
-  /** The `services` map for one command: the runtime-wide instances plus the per-command adapters (pricing over this command's store). */
-  forCommand(ctx: { events: EventStore; clock: Clock; ledger: Ledger }, store: EntityStoreType, escalations: EscalationService): Record<string, unknown>;
-  readonly events: ForwardingEventStore; readonly clock: ForwardingClock;
+/** The stateful services and the fields that are their state (the Maps the spec cites: ops-25-2.ts:343-351, ops-21-2.ts:292-294, ops-21-3.ts:374-375, ops-21-5.ts:294, ops-29-1.ts:412-413, ops-29-3.ts:536-543, ops-29-4.ts:427, ops-30-2.ts:501, boarding/service.ts:85-91, transfers/inbound.ts:168-172, insurance/ops-9-2.ts:93-96). */
+export const STATEFUL_SERVICES: readonly ServiceSpec[] = [
+  { key: "cd-25-2", scope: "application", fields: ["rows", "receipts", "sources", "checks", "ucds", "waivers", "closings", "deliveries", "tolerance_runs"] },
+  { key: "le-21-2", scope: "application", fields: ["rows", "breaches", "apps"] },
+  { key: "companion", scope: "application", fields: ["rows", "apps", "counseling_lists"] },
+  { key: "tolerance", scope: "application", fields: ["apps"] },
+  { key: "secondary", scope: "application", fields: ["rows", "modifications", "extensions", "pairOffs", "overDeliveries", "feeDrafts", "priceCaptures", "queue", "packages", "posted", "policy"] },
+  { key: "delivery-29-3", scope: "application", fields: ["deliveries", "points", "assignments", "runs", "edits", "packages", "decisions", "documents", "propertyAudit"] },
+  { key: "delivery-29-4", scope: "application", fields: ["rows", "tasks", "certifications", "wires", "advices", "ppas", "relief", "observed"] },
+  { key: "orig-boarding", scope: "application", fields: ["byApp", "rows", "seq", "validationSeq"] },
+  { key: "boarding", scope: "global", fields: ["batches", "tapes", "loans", "decisions", "boardedLoanNumbers", "validationSeq", "escrowAcks"] },
+  { key: "transfer", scope: "global", fields: ["batches", "portalTasks"] },
+  { key: "fpi", scope: "loan", fields: ["cases", "placements", "requests", "charges"] },
+];
+/** Every stateful key, `tolerance-21-5` included (the same object as `tolerance`). */
+export const STATEFUL_KEYS: readonly string[] = [...STATEFUL_SERVICES.map((s) => s.key), "tolerance-21-5"];
+const GLOBAL_KEYS = STATEFUL_SERVICES.filter((s) => s.scope === "global").map((s) => s.key);
+
+const NO_EXT: ExternalPositions = { fnma: () => undefined, trialBalanceUpb: () => undefined, mers: () => undefined, licensed: (s) => DEFAULT_LICENSED_STATES.includes(s), onPlatform: () => false };
+/** 1.1's boardLoan on the bus sets the batch's external positions and clearing account before staging (rule 10). */
+export interface BoardingDepsHandle { setExternal(ext: ExternalPositions): void; setClearingAccount(id: string): void; readonly deps: BoardingDeps; }
+
+interface Live { readonly spec: ServiceSpec; readonly svc: object; readonly before: EncodedState; readonly beforeSha: string; }
+const liveByStore = new WeakMap<object, Live[]>();
+
+export interface ForCommandOptions {
+  /** fundApplication's deps for the `orig-boarding` instance (its external positions, the pre-purchase T&I account, the loan id) — the instance is still hydrated from the record. */
+  readonly origBoarding?: Partial<OrigBoardingDeps>;
 }
+export interface OriginationServiceSet {
+  /** The `services` map for one command: fresh, hydrated instances of every stateful service plus the runtime-wide vendor fakes and the per-command adapters (pricing over this command's store). */
+  forCommand(ctx: UowContext & { events: EventStore }, store: EntityStoreType, escalations: EscalationServiceType, opts?: ForCommandOptions): Promise<Record<string, unknown>>;
+  /** After the command ran: one `service.state.changed` per service whose state changed, appended on the command's store (persisted with it). Returns the keys that changed. */
+  recordState(ctx: UowContext & { events: EventStore }): string[];
+  /** The hydrated state hash of one key on a command (a test's witness), null when the key is not live on that command. */
+  stateOf(ctx: { events: EventStore }, key: string): { sha: string; state: EncodedState } | null;
+}
+
+type SnapshotQueryRow = { service_key: string; through_sequence: bigint | number; state: EncodedState; state_sha256: string };
+async function loadSnapshots(ctx: UowContext): Promise<Map<string, SnapshotRow>> {
+  if (!ctx.q) return new Map();
+  const rows = await ctx.q.query<SnapshotQueryRow>(`SELECT DISTINCT ON (service_key) service_key, through_sequence, state, state_sha256 FROM service_snapshots WHERE ($1::uuid IS NOT NULL AND application_id = $1) OR ($2::uuid IS NOT NULL AND loan_id = $2) OR (application_id IS NULL AND loan_id IS NULL AND service_key = ANY($3::text[])) ORDER BY service_key, through_sequence DESC`,
+    [ctx.applicationId ?? null, ctx.loanId || null, GLOBAL_KEYS]);
+  return new Map(rows.map((r) => [r.service_key, { through_sequence: Number(r.through_sequence), state: r.state, state_sha256: r.state_sha256 }]));
+}
+/** The servicing adapters' deltas live wherever the command that changed them was scoped (a batch is boarded by a global command, corrected by a loan's): one query finds them all. */
+async function loadGlobalServiceEvents(ctx: UowContext): Promise<readonly KernelEvent[]> {
+  if (!ctx.q) return [];
+  const rows = await ctx.q.query<Record<string, unknown>>(`SELECT id, sequence, type, occurred_at, loan_id, application_id, aggregate_kind, aggregate_id, actor_kind, actor_id, actor_role, payload, causation_id, correlation_id FROM loan_events WHERE type = $1 AND payload->>'service_key' = ANY($2::text[]) ORDER BY sequence`, [SERVICE_STATE_EVENT, GLOBAL_KEYS]);
+  return rows.map((r) => ({ id: String(r["id"]), sequence: Number(r["sequence"]), type: String(r["type"]), occurredAt: String(r["occurred_at"]), actor: { kind: r["actor_kind"] as Actor["kind"], id: String(r["actor_id"]), ...(r["actor_role"] ? { role: String(r["actor_role"]) } : {}) }, payload: r["payload"] as Record<string, unknown>,
+    ...(r["loan_id"] ? { loanId: String(r["loan_id"]) } : {}), ...(r["application_id"] ? { applicationId: String(r["application_id"]) } : {}), ...(r["aggregate_kind"] ? { aggregate: { kind: String(r["aggregate_kind"]), id: String(r["aggregate_id"]) } } : {}) }));
+}
+
 /** One set per Runtime: the same keys the section tool files look up (`services.<key>`). */
 export function originationServices(clock: Clock): OriginationServiceSet {
-  const events = new ForwardingEventStore(); const fclock = new ForwardingClock(clock); const ledger = new ForwardingLedger(); const esc = new ForwardingEscalations();
-  const escAsService = esc as unknown as EscalationService;   // the services call only `open` (and read `opened`/`list`)
   const warehouse = { bank: new FakeWarehouseBank(), registry: new FakeERegistry(), custodian: new FakeWarehouseCustodian() };
   const fixed: Record<string, unknown> = {
-    // stateful section services, forwarding into the executing unit of work
-    "cd-25-2": new ClosingDisclosureService({ events, clock: fclock, escalations: esc }),
-    "delivery-29-4": new DeliveryService({ events, clock: fclock, escalations: escAsService, registry: warehouse.registry }),
-    "delivery-29-3": new DeliveryBuildService({ events, clock: fclock, escalations: escAsService, earlycheck: new FakeEarlyCheck() }),
-    secondary: new CommitmentService({ events, clock: fclock, ledger, escalations: escAsService, pewl: new FakePewl({ price: "100.875" }), salesDesk: new FakeSalesDesk() }),
-    tolerance: new ToleranceService({ events, clock: fclock, ledger, escalations: esc }),
-    companion: new CompanionDisclosureService({ events, clock: fclock, escalations: esc }),
-    // vendor ports (INTEGRATIONS=fake)
-    credit_bureau: new FixtureCreditBureau(fclock), "fnma-du": new FakeDuPort(fclock, { assetReport: lookupFakeAssetReport, messages: fakeDuMessages }),   // 32.18 rule 5: the FAKE validation service reads the FAKE Plaid's reports
+    // vendor ports (INTEGRATIONS=fake) — one per runtime
+    credit_bureau: new FixtureCreditBureau(clock), "fnma-du": new FakeDuPort(clock, { assetReport: lookupFakeAssetReport, messages: fakeDuMessages }),   // 32.18 rule 5: the FAKE validation service reads the FAKE Plaid's reports
     identity_vendor: new PassingIdentityVendor(), cbsv: new FakeCbsv(), ofac_screener: new FakeOfacScreener(), fraud_tool: new FakeFraudTool(), mers: new FakeMersSearch(),
     amc: new FakeAmc(), propertyData: new FakePropertyDataApi(), ucdp: new FakeUcdp(), title: new FakeTitleVendor(), wire_verification: new FakeWireVerification(), alta_registry: new FakeAltaRegistry(), state_doi: new FakeStateDoi(),
     "26.2.eregistry": new UniqueERegistry26(), "26.2.ron": new FakeRonPlatform(), earlycheck: new FakeEarlyCheck(), pewl: new FakePewl({ price: "100.875" }), warehouse,
-    fnma_loan_lookup: { lookup: (_loanId: string) => ({ owned: false, checked_at: fclock.now() }) } satisfies LoanLookupPort,
+    fnma_loan_lookup: { lookup: (_loanId: string) => ({ owned: false, checked_at: clock.now() }) } satisfies LoanLookupPort,
   };
+  const construct = (key: string, ctx: UowContext & { events: EventStore }, escalations: EscalationServiceType, opts: ForCommandOptions, handles: Record<string, unknown>): object => {
+    const events = ctx.events; const c = ctx.clock; const ledger = ctx.ledger;
+    switch (key) {
+      case "cd-25-2": return new ClosingDisclosureService({ events, clock: c, escalations });
+      case "le-21-2": return new LoanEstimateService({ events, clock: c, escalations });
+      case "companion": return new CompanionDisclosureService({ events, clock: c, escalations, timers: ctx.timers });
+      case "tolerance": return new ToleranceService({ events, clock: c, ledger, escalations });
+      case "secondary": return new CommitmentService({ events, clock: c, ledger, escalations, pewl: new FakePewl({ price: "100.875" }), salesDesk: new FakeSalesDesk() });
+      case "delivery-29-3": return new DeliveryBuildService({ events, clock: c, escalations, earlycheck: fixed["earlycheck"] as FakeEarlyCheck });
+      case "delivery-29-4": return new DeliveryService({ events, clock: c, escalations, registry: warehouse.registry });
+      case "orig-boarding": return new OriginationBoardingService({ events, ledger, clock: c, timers: ctx.timers, escalations, ext: { licensed: (st) => DEFAULT_LICENSED_STATES.includes(st), onPlatform: () => false, mers: () => undefined }, prepurchaseTiAccountId: "", ...(opts.origBoarding ?? {}) });
+      case "boarding": {
+        const ext: ExternalPositions = { fnma: (n) => holder.ext.fnma(n), trialBalanceUpb: (n) => holder.ext.trialBalanceUpb(n), mers: (m) => holder.ext.mers(m), licensed: (st) => holder.ext.licensed(st), onPlatform: (k, v) => holder.ext.onPlatform(k, v) };
+        const deps: BoardingDeps & { clearingAccountId: string } = { events, ledger, ext, clock: c, clearingAccountId: "", loanIdFor: (bl) => bl.id };
+        const handle: BoardingDepsHandle = { setExternal: (e) => { holder.ext = e; }, setClearingAccount: (id) => { deps.clearingAccountId = id; }, deps };
+        handles["boarding-deps"] = handle;
+        return new BoardingService(deps);
+      }
+      case "transfer": return new TransferBatchService({ events, clock: c });
+      case "fpi": return new Fpi92Service({ events, clock: c, timers: ctx.timers, ledger });
+      default: throw new RangeError(`no stateful service ${key}`);
+    }
+  };
+  const holder: { ext: ExternalPositions } = { ext: NO_EXT };
   return {
-    events, clock: fclock,
-    forCommand(ctx, store, escalations) {
-      events.current = ctx.events; fclock.current = ctx.clock; ledger.current = ctx.ledger; esc.current = escalations;
+    async forCommand(ctx, store, escalations, opts = {}) {
+      holder.ext = NO_EXT;
+      const history = ctx.events.all();
+      const snapshots = await loadSnapshots(ctx);
+      const globalEvents = await loadGlobalServiceEvents(ctx);
+      const live: Live[] = []; const instances: Record<string, unknown> = {}; const handles: Record<string, unknown> = {};
+      for (const spec of STATEFUL_SERVICES) {
+        const svc = construct(spec.key, ctx, escalations, opts, handles);
+        const empty = captureState(svc, spec.fields);
+        const h = foldState(empty, spec.key, spec.scope === "global" ? globalEvents : history, snapshots.get(spec.key) ?? null);
+        restoreState(svc, spec.fields, h.state);
+        if (h.snapshot_discarded && ctx.q) {
+          // rule 9: the snapshot did not reproduce the replay — discarded, a fresh one written from the replay, a `ciso` sev 2 opens
+          const fresh = await writeSnapshot(ctx.q, spec, ctx, h.state, h.sha, h.through_sequence);
+          ctx.events.append({ type: "service.snapshot.written", actor: { kind: "system", id: "seam" }, payload: { service_key: spec.key, through_sequence: h.through_sequence, state_sha256: h.sha, snapshot_id: fresh, reason: "snapshot_discarded", application_id: ctx.applicationId ?? null, loan_id: ctx.loanId || null } });
+          escalations.open({ kind: "sev2", ownerRole: "ciso", severity: "2", ...(ctx.applicationId ? { applicationId: ctx.applicationId } : {}), ...(ctx.loanId ? { loanId: ctx.loanId } : {}), payload: { code: "SNAPSHOT_DIFFERS_FROM_REPLAY", service_key: spec.key, through_sequence: h.through_sequence, replay_sha256: h.replay_sha, reason: "a service_snapshots row did not reproduce the full replay of the record (35.1 rule 9): discarded; the record stands; a fresh snapshot was written" } }, { kind: "system", id: "seam" });
+        }
+        live.push({ spec, svc, before: h.state, beforeSha: h.sha });
+        instances[spec.key] = svc;
+      }
+      liveByStore.set(ctx.events, live);
       const pricing = pricingFromStore(store);
-      return { ...fixed, ...(pricing ? { pricing } : {}) };
+      return { ...fixed, ...instances, ...handles, "tolerance-21-5": instances["tolerance"], ...(pricing ? { pricing } : {}) };
+    },
+    recordState(ctx) {
+      const live = liveByStore.get(ctx.events) ?? [];
+      const changed: string[] = [];
+      for (const l of live) {
+        const after = captureState(l.svc, l.spec.fields);
+        const delta = diffState(l.before, after);
+        if (!delta) continue;
+        const sha = stateHash(after);
+        // a servicing adapter's delta is the platform's (one batch, many loans): it names no loan; an origination service's rides the command's application — and its loan too on and after the hand-off (30.2's id grammar: everything after `loan.staged` carries the loan)
+        const raw = (ctx.events as { rawStore?: EventStore }).rawStore ?? ctx.events;
+        const keyed = l.spec.scope === "global" ? {} : { ...(ctx.applicationId ? { applicationId: ctx.applicationId } : {}), ...(ctx.loanId ? { loanId: ctx.loanId } : {}) };
+        (l.spec.scope === "global" ? raw : ctx.events).append({ type: SERVICE_STATE_EVENT, actor: { kind: "system", id: "seam" }, aggregate: { kind: "service", id: l.spec.key }, ...keyed, payload: { service_key: l.spec.key, state_sha256: sha, before_sha256: l.beforeSha, delta, version: STATE_VERSION } });
+        changed.push(l.spec.key);
+      }
+      return changed;
+    },
+    stateOf(ctx, key) {
+      const l = (liveByStore.get(ctx.events) ?? []).find((x) => x.spec.key === key);
+      if (!l) return null;
+      const state = captureState(l.svc, l.spec.fields); return { sha: stateHash(state), state };
     },
   };
 }
+
+/** One service_snapshots row (append-only; `record.snapshot` and a discarded snapshot's replacement). Returns its id. */
+export async function writeSnapshot(q: Queryable, spec: ServiceSpec, scope: { applicationId?: string; loanId?: string }, state: EncodedState, sha: string, throughSequence: number): Promise<string> {
+  const id = randomUUID();
+  await q.query(`INSERT INTO service_snapshots (id, service_key, application_id, loan_id, through_sequence, state, state_sha256, projector_version) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)`,
+    [id, spec.key, spec.scope === "application" ? scope.applicationId ?? null : null, spec.scope === "loan" ? scope.loanId || null : null, throughSequence, JSON.stringify(state), sha, STATE_VERSION]);
+  return id;
+}
+export const serviceSpec = (key: string): ServiceSpec | undefined => STATEFUL_SERVICES.find((s) => s.key === key);
+export type { PlainDate };
 
 // ───────────────────────────── 21.2's LE delivery (the runtime's own command until 21.2 puts deliver/recordReceipt on the bus) ─────────────────────────────
 export interface LoanEstimateDeliveryInput {
@@ -420,11 +513,11 @@ export async function deliverLoanEstimate(rt: Runtime, applicationId: string, in
   let escalations: EscalationService | undefined; let out!: Awaited<ReturnType<typeof deliverLoanEstimate>>;
   const r = await rt.uow.run({ applicationId }, async (ctx) => {
     escalations = new EscalationService(ctx.events, ctx.clock);
-    // the runtime-wide section services (21.3 companions, 21.5 tolerance, 25.2) observe this unit of work like any command's: `fee.baseline.set` and the `disclosure.le.*` events reach them
-    rt.originationServices.forCommand(ctx, store, escalations);
+    // the section services (21.3 companions, 21.5 tolerance, 25.2, 21.2's own) hydrated from the record observe this unit of work like any command's: `fee.baseline.set` and the `disclosure.le.*` events reach them (35.1 rule 9)
+    const services = await rt.originationServices.forCommand(ctx, store, escalations);
     const trid = ctx.events.ofType("application.trid_received").filter((e) => e.applicationId === applicationId).at(-1);
     if (!trid) throw new RangeError("no application.trid_received on the application's log (21.1's six items first)");
-    const svc = new LoanEstimateService({ events: ctx.events, clock: ctx.clock, escalations });
+    const svc = services["le-21-2"] as LoanEstimateService;
     const a = svc.onTridReceived(applicationId, String(trid.payload["trid_received_at"] ?? trid.occurredAt));
     const row = svc.render({ ...input.render, application_id: applicationId });
     svc.openMloReview(row.disclosure_id);
@@ -435,6 +528,7 @@ export async function deliverLoanEstimate(rt: Runtime, applicationId: string, in
     const rec = input.delivery.receipt; const final = rec ? svc.recordReceipt(row.disclosure_id, rec) : svc.get(row.disclosure_id);
     store.put("disclosures", row.disclosure_id, { application_id: applicationId, kind: "le", le_version: 1, status: final.status, data_hash: row.data_hash, issued_on: final.issued_on, effective_receipt_date: final.effective_receipt_date, delivery_channel: final.delivery_channel, ...(final.deliveries ? { deliveries: final.deliveries } : {}) }, actor, ctx.clock.now());
     out = { disclosure_id: row.disclosure_id, data_hash: row.data_hash, status: final.status, issued_on: final.issued_on, effective_receipt_date: final.effective_receipt_date, le_due_on: a.le_due_on, events: 0 };
+    rt.originationServices.recordState(ctx);
     return out;
   }, { clock: rt.clock, commit: async (q) => { await rt.entities.save(store.versionsSince(mark), { applicationId }, q); for (const e of escalations?.list() ?? []) await rt.escalationRepo.save(e, q); } });
   return { ...out, events: r.events.length };
@@ -449,6 +543,8 @@ const PRICING_AGENT: Actor = { kind: "agent", id: "pricing" };
  * day; `SM_LOCK_EXPIRY_DEADLINE` → `expireLock{op: expire}` at the expiration instant), run once per pass over every application.
  * Nothing here computes a date: the deemed date is the one 21.2 wrote on `disclosure.le.issued`, the warning/expiry days are the
  * Timer Engine's own `due_date`/`due_at`. Called by the borrower flows' tick (src/runtime/borrower/flows) and by POST /v1/sweep.
+ * 35.1 rule 9: the deeming is `deemReceived` on the `le-21-2` instance hydrated from the application's record — the service
+ * appends its own events; an LE the record does not hold (delivered before the seam) is reported, never re-appended by hand.
  */
 export async function originationDailySweep(rt: Runtime, nowIso: string = rt.clock.now()): Promise<OriginationSweepReport> {
   const report: OriginationSweepReport = { at: nowIso, deemed: [], warned: [], expired: [] };
@@ -460,17 +556,23 @@ export async function originationDailySweep(rt: Runtime, nowIso: string = rt.clo
     const disclosureId = String(row.payload["disclosure_id"] ?? ""); const deemedOn = String(row.payload["deemed_receipt_date"] ?? "");
     if (!disclosureId || !deemedOn || today < deemedOn) continue;
     const applicationId = row.application_id;
-    const store = new EntityStore(); store.seed(await rt.entities.load({ applicationId })); const mark = store.versionCount();
-    let escalations: EscalationService | undefined;
+    const store = new EntityStore(); let mark = 0;
+    let escalations: EscalationService | undefined; let deemed = false;
     await rt.uow.run({ applicationId }, async (ctx) => {
-      escalations = new EscalationService(ctx.events, ctx.clock); rt.originationServices.forCommand(ctx, store, escalations);
-      // exactly the two events `LoanEstimateService.deemReceived` appends (ops-21-2.ts): the effective receipt date is the row's own deemed date
-      ctx.events.append({ type: "disclosure.le.deemed_received", applicationId, aggregate: { kind: "disclosure", id: disclosureId }, actor: LE_AGENT, payload: { application_id: applicationId, disclosure_id: disclosureId, deemed_receipt_date: deemedOn, effective_receipt_date: deemedOn } });
-      ctx.events.append({ type: "disclosure.le.received", applicationId, aggregate: { kind: "disclosure", id: disclosureId }, actor: LE_AGENT, payload: { application_id: applicationId, disclosure_id: disclosureId, evidence: "mailbox_rule", received_on: null, effective_receipt_date: deemedOn } });
+      escalations = new EscalationService(ctx.events, ctx.clock);
+      store.seed(await rt.entities.load({ applicationId })); mark = store.versionCount();
+      const services = await rt.originationServices.forCommand(ctx, store, escalations);
+      const le = services["le-21-2"] as LoanEstimateService;
+      let known = true; try { le.get(disclosureId); } catch { known = false; }
+      if (!known) { rt.logger?.warn("LE deeming skipped: the record holds no le-21-2 row for the disclosure (delivered before the seam)", { application_id: applicationId, disclosure_id: disclosureId }); return; }
+      const r = le.deemReceived(disclosureId, D(deemedOn));
+      if (r.receipt_evidence !== "mailbox_rule") return;
+      deemed = true;
       const cur = store.get("disclosures", disclosureId);
       if (cur) store.put("disclosures", disclosureId, { ...cur.data, status: "deemed_received", effective_receipt_date: deemedOn, receipt_evidence: "mailbox_rule" }, LE_AGENT, ctx.clock.now());
+      rt.originationServices.recordState(ctx);
     }, { clock: rt.clock, commit: async (q) => { await rt.entities.save(store.versionsSince(mark), { applicationId }, q); for (const e of escalations?.list() ?? []) await rt.escalationRepo.save(e, q); } });
-    report.deemed.push(disclosureId);
+    if (deemed) report.deemed.push(disclosureId);
   }
   // 21.4: the warning day (the engine's due_date) and the expiration instant (the engine's due_at) — the playbook runs through 21.4's own tool.
   // Only while the application is still the subject: once 30.2 has linked its loan (applications.loan_id) the lock was consummated (`closing.consummated`

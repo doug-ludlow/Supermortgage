@@ -29,8 +29,9 @@ export class PgOutbox implements Outbox {
       [randomUUID(), input.adapter, direction, input.idempotencyKey, direction === "out" ? "queued" : "received", toJson(summary), now, input.loanId ?? null, input.sourceEventId ?? null]);
     return { message: rowToMessage(rows[0]!), duplicate: false };
   }
-  async due(adapter: string, now: string, limit = 100): Promise<OutboxMessage[]> {
-    return (await this.db.query<Row>(`SELECT * FROM integration_messages WHERE adapter = $1 AND status = 'queued' AND coalesce(next_attempt_at, created_at) <= $2 ORDER BY created_at LIMIT $3`, [adapter, now, limit])).map(rowToMessage);
+  /** Due rows of one adapter; `lock: true` (35.1 rule 11, on a transaction) claims them `FOR UPDATE SKIP LOCKED` so concurrent drains each take distinct messages. */
+  async due(adapter: string, now: string, limit = 100, lock = false): Promise<OutboxMessage[]> {
+    return (await this.db.query<Row>(`SELECT * FROM integration_messages WHERE adapter = $1 AND status = 'queued' AND coalesce(next_attempt_at, created_at) <= $2 ORDER BY created_at LIMIT $3${lock ? " FOR UPDATE SKIP LOCKED" : ""}`, [adapter, now, limit])).map(rowToMessage);
   }
   async update(m: OutboxMessage): Promise<void> {
     await this.db.query(`UPDATE integration_messages SET status = $2, attempts = $3, last_attempt_at = $4, next_attempt_at = $5, sent_at = $6, acked_at = $7, error = $8, response = $9::jsonb WHERE id = $1`,

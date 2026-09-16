@@ -16,10 +16,36 @@ export interface Queryable {
   query<R extends Record<string, unknown> = Record<string, unknown>>(sql: string, params?: readonly unknown[]): Promise<R[]>;
 }
 
+/** A connection of its own, outside the pool — the sweep's session-level lease (35.1 rule 12: LEASE_DIES_WITH_SESSION). */
+export interface DedicatedClient extends Queryable { end(): Promise<void>; }
+
 export interface Db extends Queryable {
   /** Run `fn` in a transaction; commit on return, roll back on throw. */
   tx<T>(fn: (q: Queryable) => Promise<T>): Promise<T>;
+  /** A dedicated session (a new client, not a pool member): the caller ends it. */
+  dedicated(): Promise<DedicatedClient>;
   end(): Promise<void>;
+}
+
+/**
+ * The command's own connection as a `Db` (35.1 rule 7: everything a command reads or writes is inside its transaction, on
+ * the connection that holds its lock): `query` runs on the transaction; `tx` is a savepoint inside it (released on return,
+ * rolled back to on throw), so a unit of work a tool runs from within a command commits with the command or not at all and
+ * never waits on a second pool connection; `dedicated` is the pool's (a session of its own).
+ */
+export function transactionDb(q: Queryable, outer: Db): Db {
+  let depth = 0;
+  return {
+    query: (sql, params) => q.query(sql, params),
+    async tx<T>(fn: (inner: Queryable) => Promise<T>): Promise<T> {
+      const sp = `cmd_sp_${++depth}`;
+      await q.query(`SAVEPOINT ${sp}`);
+      try { const out = await fn(q); await q.query(`RELEASE SAVEPOINT ${sp}`); return out; }
+      catch (e) { await q.query(`ROLLBACK TO SAVEPOINT ${sp}`).catch(() => undefined); throw e; }
+    },
+    dedicated: () => outer.dedicated(),
+    end: async () => undefined,
+  };
 }
 
 /** JSON with bigint → string, so event payloads and decision evidence can carry cents. */
@@ -32,7 +58,13 @@ export const isUuid = (s: unknown): s is string => typeof s === "string" && UUID
 
 class PoolDb implements Db {
   private readonly pool: pg.Pool;
-  constructor(connectionString: string) { this.pool = new pg.Pool({ connectionString, max: 4 }); }
+  private readonly connectionString: string;
+  constructor(connectionString: string) { this.connectionString = connectionString; this.pool = new pg.Pool({ connectionString, max: 4 }); }
+  async dedicated(): Promise<DedicatedClient> {
+    const client = new pg.Client({ connectionString: this.connectionString });
+    await client.connect();
+    return { query: async (sql, params = []) => (await client.query(sql, [...params])).rows, end: () => client.end() };
+  }
   async query<R extends Record<string, unknown>>(sql: string, params: readonly unknown[] = []): Promise<R[]> {
     const res = await this.pool.query(sql, [...params]);
     return res.rows as R[];

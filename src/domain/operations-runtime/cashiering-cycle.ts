@@ -18,10 +18,16 @@
  *                                     accrual set (Dr late_charges / Cr late_charge_income, rule_ref 2.7:r1:accrual) per assessed fee; (c) 2.3's
  *                                     amount-change check per active enrollment within 31 days; `cashiering.unit.completed`, the decision and
  *                                     the `cashiering_unit_runs` row. A `payment_holds` row → (b)–(c) `skipped_hold`. A throw → a `failed` row.
- *   cashieringDailyRun(rt, nowIso)    the whole-book selector (no origination_application_id condition), a unit per loan under the lease port,
- *                                     the cycle row (CyclePort), and the receipt `cashiering.daily.run_completed{…, origination: true}` once per
- *                                     day (satisfies and re-arms SM_CASHIERING_DAILY_RECEIPT_1D); a loan with no configuration row → a `failed`
- *                                     CONFIG_REQUIRED unit row and nothing else.
+ *   cashieringUnitIn(toolRt, ctx, unit)  the `cashiering_daily` unit INSIDE `cycles.run_unit`'s command (35.3 rule 5 / rule 6 here: one transaction
+ *                                     with the job's `done` write — src/domain/operations-runtime/cycles-35-5.ts attaches it to the registry row):
+ *                                     the same steps on the command's store, ledger, events and deferred writes; the loan's local date is its zone
+ *                                     at the run's planned instant (`cycle_runs.opened_at`).
+ *   cashieringDailyRun(rt, nowIso)    the whole book's day through 35.3's engine: `cycles.plan{cycle_codes: [cashiering_daily]}` (one run per day,
+ *                                     one job per loan of rule 6's selector — no origination_application_id condition), the executor drained for the
+ *                                     cycle, the receipt `cashiering.daily.run_completed{…}` elected by the last unit (satisfies and re-arms
+ *                                     SM_CASHIERING_DAILY_RECEIPT_1D); a boarded loan with no configuration row is never a unit — it gets a `failed`
+ *                                     CONFIG_REQUIRED unit row and nothing else (rule 9); a day already run again runs every loan's unit by hand,
+ *                                     which finds its `done` row and records only the decision naming it (ONE_UNIT_PER_LOAN_PER_DAY).
  *   cashieringRunUnit(i, ctx, rt)     the bus tool `cashiering.run_unit{loan_id, as_of_date, as_of_instant?, job_id?, run_id?}`: the same
  *                                     steps on the command's own unit of work (the decision is the bus's).
  *
@@ -35,7 +41,6 @@ import type { UowContext } from "../../infra/db/unit-of-work.ts";
 import { CommandRefused, type CommandContext } from "../../app/commands.ts";
 import { EntityStore, str, type ToolInput, type ToolRuntime } from "../../app/tools.ts";
 import type { Ledger } from "../../kernel/ledger/ledger.ts";
-import type { DomainEvent } from "../../kernel/events/index.ts";
 import { plainDate as D, addDays, addMonths, type PlainDate } from "../../kernel/calendar/date.ts";
 import { wallClock } from "../../kernel/calendar/zoned.ts";
 import type { Cents } from "../../kernel/money/cents.ts";
@@ -46,12 +51,12 @@ import { recipientsOf, servicingParties } from "../../runtime/servicing-parties.
 import { CASHIERING_AGENT, MODEL_VERSION_DETERMINISTIC, PROMPT_VERSION_35_5, escrowPortionOn, escrowVersionFrom, readSchedule, satisfyInstallments, type InstallmentRow, type LoanTerms } from "./installments.ts";
 import { loanLocalDate, servicingConfigFor, servicingConfigIfAny, type ServicingConfigRow } from "./servicing-config.ts";
 import { bindUnit, commitUnit, executeInUnit, openUnit, type BoundUnit } from "./in-process.ts";
-import { ports35_5 } from "./ports-35-5.ts";
 
 export const RULE_SET_ALLOCATION = "cashiering.allocation.v1";
 export const CYCLE_CASHIERING_DAILY = "cashiering_daily";
 /** Event literals this file emits. */
 export const UNIT_COMPLETED = "cashiering.unit.completed";
+/** The day's receipt literal — the registry row's (`cycles.ts`), elected by 35.3's last unit (rule 5); kept here as the name 35.4's `eod_cutoff` and this process's clock wait on. */
 export const DAILY_RECEIPT = "cashiering.daily.run_completed";
 export const INSTALLMENT_SATISFIED = "installment.satisfied";
 const DUE_DATE_REACHED = "installment.due_date_reached";
@@ -304,7 +309,7 @@ export async function runCashieringUnit(rt: Runtime, input: UnitInput): Promise<
   try {
     const opened = await openUnit(rt, { loanId });
     let bound: BoundUnit | undefined; let outcome: UnitOutcome | undefined;
-    await rt.uow.run({ loanId }, async (uow) => { bound = bindUnit(rt, opened, uow); outcome = await runUnitSteps(rt, bound, input, { recordDecision: true }); return outcome; }, { clock: rt.clock, commit: async (q) => { if (bound) await commitUnit(q, rt, bound); } });
+    await rt.uow.run({ loanId }, async (uow) => { bound = await bindUnit(rt, opened, uow); outcome = await runUnitSteps(rt, bound, input, { recordDecision: true }); return outcome; }, { clock: rt.clock, commit: async (q, info) => { if (bound) await commitUnit(q, rt, bound, info); } });
     return outcome!;
   } catch (e) {
     const errorClass = e instanceof CommandRefused ? e.code : e instanceof Error ? e.name : "Error"; const message = e instanceof Error ? e.message : String(e);
@@ -314,20 +319,37 @@ export async function runCashieringUnit(rt: Runtime, input: UnitInput): Promise<
   }
 }
 
-// ---------------------------------------------------------------- the bus tool `cashiering.run_unit`
+// ---------------------------------------------------------------- the bus tool `cashiering.run_unit` and the cycle's unit
 type Services = { runtime?: Runtime; deferWrite?: (fn: (q: Queryable) => Promise<void>) => void };
+/** The unit bound to a command already running (`cashiering.run_unit` on the bus, or `cycles.run_unit`'s command): the command's own store, escalations, context and deferred writes. */
+function boundToCommand(loanId: string, ctx: CommandContext, rt: ToolRuntime): { runtime: Runtime; bound: BoundUnit } {
+  const services = rt.services as Services; const runtime = services.runtime; const deferWrite = services.deferWrite;
+  if (!runtime || !deferWrite) throw new RangeError("the cashiering unit needs the hosted runtime (services.runtime, services.deferWrite)");
+  return { runtime, bound: { scope: { loanId }, store: rt.store, mark: 0, openEscalations: [], globalKeys: new Set(), deferred: [], ctx, escalations: rt.escalations, toolRt: rt, deferWrite } };
+}
+/**
+ * The `cashiering_daily` unit inside `cycles.run_unit`'s command (35.3 rule 5: the unit's events, ledger sets, timers, the decisions, the
+ * job's `done` write and the run's counters commit in ONE transaction; rule 6 here: one unit of work per loan per day). The loan's local
+ * date is its zone at the run's planned instant (`cycle_runs.opened_at` — rule 10's `as_of`, never the clock read again); the 35.5 decision
+ * (`cashiering.run_unit` under cashiering.allocation.v1, the unit row's subject) is recorded beside 35.3's own (rule 8: "plus whatever
+ * decisions the owner's command writes").
+ */
+export async function cashieringUnitIn(toolRt: ToolRuntime, ctx: CommandContext, unit: { readonly loan_id: string; readonly as_of_date: PlainDate; readonly job_id: string; readonly run_id: string }): Promise<UnitOutcome> {
+  const { runtime, bound } = boundToCommand(unit.loan_id, ctx, toolRt);
+  const opened = (await runtime.db.query<{ at: Date | string | null }>(`SELECT opened_at AS at FROM cycle_runs WHERE id = $1`, [unit.run_id]))[0]?.at ?? null;
+  const asOfInstant = opened ? new Date(opened).toISOString() : ctx.now;
+  return runUnitSteps(runtime, bound, { loan_id: unit.loan_id, as_of_date: unit.as_of_date, as_of_instant: asOfInstant, job_id: unit.job_id, run_id: unit.run_id }, { recordDecision: true });
+}
 /** `cashiering.run_unit{loan_id, as_of_date, as_of_instant?, job_id?, run_id?}` on the command's own unit of work — the steps above; the decision is the bus's (subject = the unit row). */
 export async function cashieringRunUnit(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): Promise<unknown> {
   const loanId = str(i, "loan_id"); if (!loanId) throw new RangeError("loan_id is required");
   const asOf = str(i, "as_of_date"); if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) throw new RangeError("as_of_date (YYYY-MM-DD) is required");
-  const services = rt.services as Services; const runtime = services.runtime; const deferWrite = services.deferWrite;
-  if (!runtime || !deferWrite) throw new RangeError("cashiering.run_unit needs the hosted runtime (services.runtime, services.deferWrite)");
-  const bound: BoundUnit = { scope: { loanId }, store: rt.store, mark: 0, openEscalations: [], deferred: [], ctx, escalations: rt.escalations, toolRt: rt, deferWrite };
+  const { runtime, bound } = boundToCommand(loanId, ctx, rt);
   const o = await runUnitSteps(runtime, bound, { loan_id: loanId, as_of_date: D(asOf), ...(str(i, "as_of_instant") ? { as_of_instant: str(i, "as_of_instant") } : {}), job_id: str(i, "job_id") || null, run_id: str(i, "run_id") || null }, { recordDecision: false });
   return { ...o, interest_variance_cents: s(o.interest_variance_cents) };
 }
 
-// ---------------------------------------------------------------- the whole-book daily run and its receipt
+// ---------------------------------------------------------------- the whole-book daily run (35.3's engine) and its report
 export interface CashieringDailyReport {
   readonly at: string; readonly as_of_date: PlainDate; readonly run_id: string; readonly already: boolean; readonly loans: number;
   readonly posted: string[]; readonly late_charge_runs: string[]; readonly amount_change_checks: string[]; readonly errors: { loan_id: string; step: string; error: string }[]; readonly skipped: { loan_id: string; reason: string }[];
@@ -336,7 +358,8 @@ export interface CashieringDailyReport {
 /**
  * The selector of rule 6: every loan boarded by the as-of instant (`boarded_at <= as_of`, the book as the planner saw it) and not paid off /
  * transferred out / repurchased / charged off — no origination_application_id condition — with its configuration row in force on the day;
- * a boarded loan without a row is listed separately (CONFIG_REQUIRED, rule 9).
+ * a boarded loan without a row is listed separately (CONFIG_REQUIRED, rule 9). The registry's `cashiering_daily` selector (cycles.ts
+ * `active_loans_configured`) is this read for the planner's day.
  */
 export async function selectBook(db: Queryable, asOf: PlainDate, asOfInstant: string): Promise<{ loans: { loan_id: string; time_zone: string }[]; unconfigured: string[] }> {
   const loans = await db.query<{ loan_id: string; time_zone: string }>(`SELECT l.id AS loan_id, cfg.time_zone FROM loans l JOIN LATERAL (SELECT time_zone FROM loan_servicing_configs c WHERE c.loan_id = l.id AND c.effective_from <= $1::date ORDER BY c.effective_from DESC, c.created_at DESC LIMIT 1) cfg ON true
@@ -344,43 +367,65 @@ export async function selectBook(db: Queryable, asOf: PlainDate, asOfInstant: st
   const unconfigured = await db.query<{ loan_id: string }>(`SELECT l.id AS loan_id FROM loans l WHERE l.boarded_at IS NOT NULL AND l.boarded_at <= $3::timestamptz AND l.status::text <> ALL($2::text[]) AND NOT EXISTS (SELECT 1 FROM loan_servicing_configs c WHERE c.loan_id = l.id AND c.effective_from <= $1::date) ORDER BY l.boarded_at, l.created_at`, [asOf, EXCLUDED_STATUSES, asOfInstant]);
   return { loans, unconfigured: unconfigured.map((r) => r.loan_id) };
 }
+interface TypedRun extends Row { readonly id: string; readonly status: string; readonly units_total: number; readonly units_done: number; readonly units_dead: number; readonly units_skipped: number; }
+const typedRun = async (db: Queryable, asOf: PlainDate): Promise<TypedRun | undefined> => (await db.query<TypedRun>(`SELECT id::text AS id, status::text AS status, units_total, units_done, units_dead, units_skipped FROM cycle_runs WHERE cycle_code = $1 AND period_key = $2`, [CYCLE_CASHIERING_DAILY, asOf]))[0];
+/** Rule 9: a boarded loan with no configuration row never runs — one `failed` CONFIG_REQUIRED unit row per day names it, no event, nothing else. */
+async function recordUnconfigured(rt: Runtime, loans: readonly string[], asOf: PlainDate, runId: string | null): Promise<void> {
+  for (const loanId of loans) {
+    const prior = (await rt.db.query<{ id: string }>(`SELECT id FROM cashiering_unit_runs WHERE loan_id = $1 AND as_of_date = $2 AND outcome = 'failed' AND error_class = 'CONFIG_REQUIRED' LIMIT 1`, [loanId, asOf]))[0];
+    if (!prior) await rt.db.tx((q) => insertUnitRun(q, { id: randomUUID(), loan_id: loanId, as_of_date: asOf, job_id: null, run_id: runId, time_zone: null, local_date: null, payments_posted: [], late_charge_run: false, late_charge_fee_ids: [], amount_change_checks: [], due_today: false, grace_ended_yesterday: false, outcome: "failed", error_class: "CONFIG_REQUIRED", duration_ms: 0, interest_variance_cents: null, decision_id: null }));
+  }
+}
+/**
+ * The whole book's cashiering day through 35.3's engine — see the header. The report reads the day's `cashiering_unit_runs` rows of the run and
+ * the run's jobs: a unit that died (35.3 rule 7: three attempts, or an `unavailable` failure) is an error of the pass, never a silent skip.
+ */
 export async function cashieringDailyRun(rt: Runtime, nowIso: string = rt.clock.now()): Promise<CashieringDailyReport> {
-  const asOf = etDate(nowIso); const ports = ports35_5(rt);
+  const asOf = etDate(nowIso);
   const book = await selectBook(rt.db, asOf, nowIso);
   const report = { at: nowIso, as_of_date: asOf, run_id: "", already: false, loans: book.loans.length, posted: [] as string[], late_charge_runs: [] as string[], amount_change_checks: [] as string[], errors: [] as CashieringDailyReport["errors"], skipped: [] as CashieringDailyReport["skipped"], units: { done: 0, already: 0, skipped_hold: 0, failed: 0 }, receipt_event_id: null as string | null };
-  const leased = await ports.runLease.withRunLease(CYCLE_CASHIERING_DAILY, async () => {
-    const run = await ports.cycles.openRun(CYCLE_CASHIERING_DAILY, asOf, asOf, book.loans.length, `sweep:${nowIso}`);
-    report.run_id = run.run_id; report.already = run.already;
-    // a boarded loan with no configuration row: refused CONFIG_REQUIRED — one failed unit row per day, no event, nothing else (rule 9)
-    for (const loanId of book.unconfigured) {
-      report.skipped.push({ loan_id: loanId, reason: "CONFIG_REQUIRED" });
-      const prior = (await rt.db.query<{ id: string }>(`SELECT id FROM cashiering_unit_runs WHERE loan_id = $1 AND as_of_date = $2 AND outcome = 'failed' AND error_class = 'CONFIG_REQUIRED' LIMIT 1`, [loanId, asOf]))[0];
-      if (!prior) await rt.db.tx((q) => insertUnitRun(q, { id: randomUUID(), loan_id: loanId, as_of_date: asOf, job_id: null, run_id: run.run_id, time_zone: null, local_date: null, payments_posted: [], late_charge_run: false, late_charge_fee_ids: [], amount_change_checks: [], due_today: false, grace_ended_yesterday: false, outcome: "failed", error_class: "CONFIG_REQUIRED", duration_ms: 0, interest_variance_cents: null, decision_id: null }));
-    }
+  for (const loanId of book.unconfigured) report.skipped.push({ loan_id: loanId, reason: "CONFIG_REQUIRED" });
+  const existing = await typedRun(rt.db, asOf);
+  if (existing && existing.status === "completed") {
+    // the day already ran: every loan's unit by hand finds its `done` row and records only the decision naming it (ONE_UNIT_PER_LOAN_PER_DAY) — nothing planned, nothing posted
+    report.already = true; report.run_id = existing.id;
     for (const l of book.loans) {
-      const o = await runCashieringUnit(rt, { loan_id: l.loan_id, as_of_date: asOf, as_of_instant: nowIso, run_id: run.run_id });
-      if (o.outcome === "failed") { report.units.failed += 1; report.errors.push({ loan_id: l.loan_id, step: o.error_class ?? "unit", error: o.error ?? "failed" }); continue; }
-      if (o.outcome === "already_done") { report.units.already += 1; continue; }
-      if (o.outcome === "skipped_hold") report.units.skipped_hold += 1; else report.units.done += 1;
-      report.posted.push(...o.posted); if (o.late_charge_run) report.late_charge_runs.push(l.loan_id); report.amount_change_checks.push(...o.amount_change_checks);
+      const o = await runCashieringUnit(rt, { loan_id: l.loan_id, as_of_date: asOf, as_of_instant: nowIso, run_id: existing.id });
+      if (o.outcome === "already_done") report.units.already += 1;
+      else if (o.outcome === "failed") { report.units.failed += 1; report.errors.push({ loan_id: l.loan_id, step: o.error_class ?? "unit", error: o.error ?? "failed" }); }
+      else { if (o.outcome === "skipped_hold") report.units.skipped_hold += 1; else report.units.done += 1; report.posted.push(...o.posted); if (o.late_charge_run) report.late_charge_runs.push(l.loan_id); report.amount_change_checks.push(...o.amount_change_checks); }
     }
-    const doneRows = Number((await rt.db.query<{ c: string }>(`SELECT count(*)::text AS c FROM cashiering_unit_runs WHERE as_of_date = $1 AND outcome IN ('done', 'skipped_hold') AND loan_id = ANY($2::uuid[])`, [asOf, book.loans.map((l) => l.loan_id)]))[0]!.c);
-    await ports.cycles.completeRun(run.run_id, { units_done: doneRows, units_dead: report.units.failed, units_skipped: book.unconfigured.length });
-    // the receipt election (35.3 rule 5): once per day — a rerun of the same period elects nothing
-    if (!run.already) {
-      const late = Number((await rt.db.query<{ c: string }>(`SELECT coalesce(sum(cardinality(late_charge_fee_ids)), 0)::text AS c FROM cashiering_unit_runs WHERE as_of_date = $1 AND outcome = 'done'`, [asOf]))[0]!.c);
-      report.receipt_event_id = (await electDailyReceipt(rt, { as_of_date: asOf, run_id: run.run_id, loans: book.loans.length, posted: report.posted.length, late_charges_assessed: late, amount_change_checks: report.amount_change_checks.length, units_total: book.loans.length, units_done: doneRows, units_dead: report.units.failed, units_skipped: book.unconfigured.length })).id;
-    }
+    await recordUnconfigured(rt, book.unconfigured, asOf, existing.id);
     return report;
-  });
-  if ("skipped" in leased && (leased as { skipped?: string }).skipped === "lease_held") return { ...report, errors: [{ loan_id: "", step: "lease", error: "lease held" }] };
+  }
+  // a runtime without a databaseUrl (a unit harness; the hosted runtime always carries one — src/runtime/main.ts) has no planner lock (35.3 rule 1: a dedicated session), so the day
+  // runs as the by-hand path does: every loan's unit in its own unit of work, no run row and no receipt — the same steps, the same rows, and the sweep's cycles pass is skipped on such a runtime too
+  if (!rt.databaseUrl) {
+    for (const l of book.loans) {
+      const o = await runCashieringUnit(rt, { loan_id: l.loan_id, as_of_date: asOf, as_of_instant: nowIso });
+      if (o.outcome === "already_done") report.units.already += 1;
+      else if (o.outcome === "failed") { report.units.failed += 1; report.errors.push({ loan_id: l.loan_id, step: o.error_class ?? "unit", error: o.error ?? "failed" }); }
+      else { if (o.outcome === "skipped_hold") report.units.skipped_hold += 1; else report.units.done += 1; report.posted.push(...o.posted); if (o.late_charge_run) report.late_charge_runs.push(l.loan_id); report.amount_change_checks.push(...o.amount_change_checks); }
+    }
+    await recordUnconfigured(rt, book.unconfigured, asOf, null);
+    return report;
+  }
+  // 35.3 rules 1, 3: the planner (under its lock) opens the day's run and one job per loan of the selector — idempotent; then rule 6's executor drains the cycle's queue
+  // (the engine is reached lazily: the registry's module graph — service.ts → runners.ts → cycles-35-5.ts — imports this file for the unit, so a static import here would be a cycle)
+  const { cyclesOf, runExecutor } = await import("./service.ts");
+  const plan = await cyclesOf(rt).plan({ as_of: nowIso, cycle_codes: [CYCLE_CASHIERING_DAILY] });
+  if (plan.skipped) { report.errors.push({ loan_id: "", step: "planner", error: `planner lock held by ${plan.holder ?? "another pass"}` }); return report; }
+  await runExecutor(rt, { drain: "all", cycleCodes: [CYCLE_CASHIERING_DAILY] });
+  const run = await typedRun(rt.db, asOf);
+  if (!run) { report.errors.push({ loan_id: "", step: "planner", error: `no cashiering_daily run for ${asOf} after the planner pass (${plan.errors.map((e) => e.error).join("; ") || "no error reported"})` }); return report; }
+  report.run_id = run.id;
+  const rows = await rt.db.query<{ loan_id: string; outcome: string; payments_posted: string[]; late_charge_run: boolean; late_charge_fee_ids: string[]; amount_change_checks: string[] }>(`SELECT loan_id, outcome, payments_posted, late_charge_run, late_charge_fee_ids, amount_change_checks FROM cashiering_unit_runs WHERE as_of_date = $1 AND run_id = $2 AND outcome IN ('done', 'skipped_hold') ORDER BY created_at`, [asOf, run.id]);
+  for (const r of rows) { if (r.outcome === "skipped_hold") report.units.skipped_hold += 1; else report.units.done += 1; report.posted.push(...r.payments_posted); if (r.late_charge_run) report.late_charge_runs.push(r.loan_id); report.amount_change_checks.push(...r.amount_change_checks); }
+  const failed = await rt.db.query<{ loan_id: string | null; unit_id: string; status: string; last_error_class: string | null; last_error: string | null }>(`SELECT loan_id::text AS loan_id, unit_id, status, last_error_class, last_error FROM jobs WHERE run_id = $1 AND status IN ('failed', 'dead') ORDER BY created_at`, [run.id]);
+  for (const j of failed) { report.units.failed += 1; report.errors.push({ loan_id: j.loan_id ?? j.unit_id, step: j.last_error_class ?? j.status, error: j.last_error ?? j.status }); }
+  await recordUnconfigured(rt, book.unconfigured, asOf, run.id);
+  report.receipt_event_id = (await rt.db.query<{ id: string | null }>(`SELECT receipt_event_id::text AS id FROM cycle_receipts WHERE run_id = $1`, [run.id]))[0]?.id ?? null;
   return report;
-}
-/** `cashiering.daily.run_completed{…, origination: true}` on the global subject: SM_CASHIERING_DAILY_RECEIPT_1D's trigger and satisfier (re-armed for the next day); 35.4's `eod_cutoff` receipt. Deleted at 35.3's merge (its `electReceipt` owns the literal — plan §9 R1). */
-export async function electDailyReceipt(rt: Runtime, r: { as_of_date: PlainDate; run_id: string; loans: number; posted: number; late_charges_assessed: number; amount_change_checks: number; units_total: number; units_done: number; units_dead: number; units_skipped: number }): Promise<DomainEvent> {
-  const res = await rt.uow.run({}, (ctx) => ctx.events.append({ type: DAILY_RECEIPT, aggregate: { kind: "cycle_run", id: r.run_id }, actor: CASHIERING_AGENT,
-    payload: { as_of_date: r.as_of_date, run_id: r.run_id, cycle_code: CYCLE_CASHIERING_DAILY, period_key: r.as_of_date, loans: r.loans, posted: r.posted, late_charges_assessed: r.late_charges_assessed, amount_change_checks: r.amount_change_checks, units_total: r.units_total, units_done: r.units_done, units_dead: r.units_dead, units_skipped: r.units_skipped, origination: true } }), { clock: rt.clock });
-  return res.result;
 }
 
 export { CASHIERING_AGENT, EXCLUDED_STATUSES };

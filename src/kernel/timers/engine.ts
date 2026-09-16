@@ -54,9 +54,11 @@ export interface AnchorResolver {
   (def: TimerDef, event: DomainEvent): PlainDate | undefined;
 }
 
-/** Default anchor resolution: `payload[anchorField]` as an ISO date, else the event's own date. */
+/** Default anchor resolution: `payload[anchorField]` as an ISO date — the first present of the def's `anchorFields` when an override names the fact's spellings across emitters — else the event's own date. */
 export const defaultAnchorResolver: AnchorResolver = (def, event) => {
-  const fromPayload = def.anchorField ? (event.payload as Record<string, unknown>)[def.anchorField] : undefined;
+  const payload = event.payload as Record<string, unknown>;
+  const field = def.anchorFields?.find((k) => typeof payload[k] === "string") ?? def.anchorField;
+  const fromPayload = field ? payload[field] : undefined;
   if (typeof fromPayload === "string" && /^\d{4}-\d{2}-\d{2}$/.test(fromPayload)) return plainDate(fromPayload);
   // Timestamps anchor on their Eastern-time civil date (Fannie Mae and Reg X cut-offs are ET / servicer-local).
   if (typeof fromPayload === "string" && /^\d{4}-\d{2}-\d{2}T/.test(fromPayload)) return wallClock(Date.parse(fromPayload), "America/New_York").date;
@@ -229,7 +231,7 @@ export class TimerEngine {
 /** Sections 20–31 (origination) define timers that share servicing event names (`loan.boarded`, `loan.paid_in_full`, …):
  *  they arm only for an event that carries origination context — an application id, or a payload that names one — so a
  *  transferred-in loan on the servicing side never picks up an origination clock (one product, two contexts). */
-export function isOriginationDef(def: { readonly process: string }): boolean { return Number(def.process.split(".")[0]) >= 20; }
+export function isOriginationDef(def: { readonly process: string }): boolean { const n = Number(def.process.split(".")[0]); return n >= 20 && n !== 35; }   // §35 (operations runtime) is the platform's: its receipts (sweep.run_completed, projection.run_completed, integration.message.*) carry no application
 export function isOriginationContext(e: DomainEvent): boolean {
   if (e.applicationId) return true;
   if (e.aggregate?.kind === "application") return true;

@@ -204,7 +204,7 @@ export async function settleTransmittedEntries(rt: Runtime, asOf: PlainDate): Pr
     const loanId = entry.loan_id!; const settlementDate = entry.effective_entry_date;
     const opened = await openUnit(rt, { loanId }); let bound: BoundUnit | undefined; let settled: SettledEntry | undefined;
     await rt.uow.run({ loanId }, async (uow) => {
-      bound = bindUnit(rt, opened, uow); const ctx = bound.ctx;
+      bound = await bindUnit(rt, opened, uow); const ctx = bound.ctx;
       const rec = entry.enrollment_key ? bound.store.get("autodraft_enrollments", entry.enrollment_key) : undefined;
       const view = rec ? enrollmentOf(rec.id, loanId, rec.data) : null;
       const extra = view?.e.extra_principal_cents ?? 0n;
@@ -224,14 +224,14 @@ export async function settleTransmittedEntries(rt: Runtime, asOf: PlainDate): Pr
       }
       settled = { entry_id: entry.id, loan_id: loanId, payment_id: w.payment_id, settlement_date: settlementDate, amount_cents: s(entry.amount_cents), duplicate: w.duplicate };
       bound.deferWrite(async (q) => { await q.query(`UPDATE ach_entries SET status = 'settled', settlement_date = $2 WHERE id = $1 AND status IN ('transmitted', 'acknowledged')`, [entry.id, settlementDate]); });
-    }, { clock: rt.clock, commit: async (q) => { if (bound) await commitUnit(q, rt, bound); } });
+    }, { clock: rt.clock, commit: async (q, info) => { if (bound) await commitUnit(q, rt, bound, info); } });
     if (settled) out.push(settled);
   }
   return out;
 }
 
 // ---------------------------------------------------------------- the file build (`ach_file_build`)
-export interface BuildInput { readonly as_of_date: PlainDate; }
+export interface BuildInput { readonly as_of_date: PlainDate; /** 35.3's run when the planner dispatched the unit (busToolRunner hands it); a by-hand run mints its own. */ readonly run_id?: string | null; }
 export interface BuildRefusal { readonly enrollment_id: string; readonly loan_id: string; readonly gate: string; readonly code: string; readonly reason: string; readonly entry_id: string | null; }
 export interface BuildSkip { readonly enrollment_id: string; readonly loan_id: string; readonly reason: string; readonly settlement_date: PlainDate | null; readonly entry_id: string | null; }
 export interface BuildReport {
@@ -250,7 +250,8 @@ export const buildRationale = (r: Pick<BuildReport, "as_of_date" | "file_id" | "
 export async function buildAchFile(rt: Runtime, input: BuildInput, opts: { recordDecision: boolean } = { recordDecision: true }): Promise<BuildReport> {
   const asOf = input.as_of_date; const ports = ports35_5(rt); const now = rt.clock.now();
   const t1 = addBusinessDays(asOf, 1, federal); const t2 = addBusinessDays(asOf, 2, federal);
-  const run = await ports.cycles.openRun(CYCLE_ACH_FILE_BUILD, asOf, asOf, 1, `ach.file.build:${now}`);
+  // the run: 35.3's `cycle_runs` row when the planner dispatched this unit (`input.run_id`), else this by-hand run's own id
+  const run = { run_id: input.run_id ?? randomUUID() };
   const retransmitted = await retransmitDeferred(rt, now);
   const refused: BuildRefusal[] = []; const skipped: BuildSkip[] = []; const candidates: Candidate[] = [];
   // (A) every active enrollment on the book: the installment its next draft pays, 2.3 rule 3's settlement date, 2.3 rule 4's amount; in the window → 2.3's own nacha.build_entry in the loan's unit of work
@@ -276,9 +277,9 @@ export async function buildAchFile(rt: Runtime, input: BuildInput, opts: { recor
     const opened = await openUnit(rt, { loanId }); let bound: BoundUnit | undefined;
     try {
       await rt.uow.run({ loanId }, async (uow) => {
-        bound = bindUnit(rt, opened, uow);
+        bound = await bindUnit(rt, opened, uow);
         await executeInUnit(rt, bound, { process: "2.3", name: "nacha.build_entry", actor: CASHIERING_AGENT, input: { enrollment_id: e.id, loan_id: loanId, amount_cents: s(amount), settlement_date: settlement, sec_code: e.authorization.sec, enrollment_status: e.status, facts: { validation_status: view.raw_validation_status, due_date: dueRow.due_date, settlement_date: settlement, grace_days: grace }, variable_amount: variableAmount, ten_day_notice_satisfied: notice.ok, nsf_reinitiations: e.reinitiations.length, installment_due_date: dueRow.due_date, company_entry_description: DESCRIPTION_DRAFT } });
-      }, { clock: rt.clock, commit: async (q) => { if (bound) await commitUnit(q, rt, bound); } });
+      }, { clock: rt.clock, commit: async (q, info) => { if (bound) await commitUnit(q, rt, bound, info); } });
     } catch (err) {
       if (!(err instanceof CommandRefused)) throw err;
       refused.push({ enrollment_id: e.id, loan_id: loanId, gate: GATE_NAMES[err.code] ?? err.code, code: err.code, reason: err.message, entry_id: null });
@@ -306,7 +307,6 @@ export async function buildAchFile(rt: Runtime, input: BuildInput, opts: { recor
       if (opts.recordDecision) ctx.decide({ agent: CASHIERING_AGENT.id, action: "ach.file.build", rationale: `${buildRationale(rep)} — ${toJson(buildRecord(rep))}`, ruleSetVersion: RULE_SET_RETURNS, subject: { kind: "cycle_run", id: run.run_id }, ...(refused.length ? { ruleCode: "GATES_ARE_2_3S" } : {}), confidence: 1, modelVersion: MODEL_VERSION_DETERMINISTIC, promptVersion: PROMPT_VERSION_35_5 });
       return ev;
     }, { clock: rt.clock });
-    await ports.cycles.completeRun(run.run_id, { units_done: 1, units_dead: 0, units_skipped: 0 });
     const receipt = await electBuildReceipt(rt, { ...rep, built_event_id: built.result.id });
     return { ...rep, built_event_id: built.result.id, receipt_event_id: receipt.id };
   }
@@ -343,7 +343,6 @@ export async function buildAchFile(rt: Runtime, input: BuildInput, opts: { recor
   } });
   // (E) transmit through the port (35.1's outbox replaces it): accepted → the entries transmitted, `ach.file.transmitted`; rejected → officer; deferred → the next build retries with the same document
   const tx = await transmitFile(rt, { file_id: fileId, file_name: fileName, content, entries: traced.length }, now);
-  await ports.cycles.completeRun(run.run_id, { units_done: 1, units_dead: 0, units_skipped: 0 });
   const full: Omit<BuildReport, "receipt_event_id"> = { ...rep, document_id: documentId, built_event_id: built.result.id, transmitted: tx.status === "accepted", ack_status: tx.status, transmit_reason: tx.reason, transmitted_event_id: tx.event_id };
   const receipt = await electBuildReceipt(rt, full);
   return { ...full, receipt_event_id: receipt.id };
@@ -360,7 +359,7 @@ async function transmitFile(rt: Runtime, f: { file_id: string; file_name: string
   await rt.db.tx((q) => q.query(`UPDATE ach_files SET ack_status = $2 WHERE id = $1`, [f.file_id, ack.status]));
   if (ack.status === "rejected") {
     const opened = await openUnit(rt, {}); let bound: BoundUnit | undefined;
-    await rt.uow.run({}, async (uow) => { bound = bindUnit(rt, opened, uow); bound.escalations.open({ kind: "officer", ownerRole: "officer", severity: "2", payload: { rule_code: "ACH_FILE_REJECTED", file_id: f.file_id, file_name: f.file_name, reason: ack.reason ?? null, next: "the ODFI rejected the file: fix the entries and rebuild (the entries stay built)" } }, CASHIERING_AGENT); }, { clock: rt.clock, commit: async (q) => { if (bound) await commitUnit(q, rt, bound); } });
+    await rt.uow.run({}, async (uow) => { bound = await bindUnit(rt, opened, uow); bound.escalations.open({ kind: "officer", ownerRole: "officer", severity: "2", payload: { rule_code: "ACH_FILE_REJECTED", file_id: f.file_id, file_name: f.file_name, reason: ack.reason ?? null, next: "the ODFI rejected the file: fix the entries and rebuild (the entries stay built)" } }, CASHIERING_AGENT); }, { clock: rt.clock, commit: async (q, info) => { if (bound) await commitUnit(q, rt, bound, info); } });
   }
   return { status: ack.status, reason: ack.reason ?? null, event_id: null };
 }
@@ -378,7 +377,7 @@ async function retransmitDeferred(rt: Runtime, now: string): Promise<string[]> {
     if (!b64) {
       await rt.db.tx((q) => q.query(`UPDATE ach_files SET ack_status = 'deferred_unretrievable' WHERE id = $1 AND ack_status = 'deferred'`, [r.id]));
       const opened = await openUnit(rt, {}); let bound: BoundUnit | undefined;
-      await rt.uow.run({}, async (uow) => { bound = bindUnit(rt, opened, uow); bound.escalations.open({ kind: "officer", ownerRole: "officer", severity: "2", payload: { rule_code: "ACH_FILE_RETRANSMIT_UNAVAILABLE", file_id: r.id, file_name: fileName, entries: r.entry_count, next: "the deferred file's bytes are not in the document store, so the build cannot retransmit it: its entries stay built on the file — rebuild them for the ODFI once it is reachable" } }, CASHIERING_AGENT); }, { clock: rt.clock, commit: async (q) => { if (bound) await commitUnit(q, rt, bound); } });
+      await rt.uow.run({}, async (uow) => { bound = await bindUnit(rt, opened, uow); bound.escalations.open({ kind: "officer", ownerRole: "officer", severity: "2", payload: { rule_code: "ACH_FILE_RETRANSMIT_UNAVAILABLE", file_id: r.id, file_name: fileName, entries: r.entry_count, next: "the deferred file's bytes are not in the document store, so the build cannot retransmit it: its entries stay built on the file — rebuild them for the ODFI once it is reachable" } }, CASHIERING_AGENT); }, { clock: rt.clock, commit: async (q, info) => { if (bound) await commitUnit(q, rt, bound, info); } });
       continue;
     }
     const tx = await transmitFile(rt, { file_id: r.id, file_name: fileName, content: Buffer.from(b64, "base64").toString("utf8"), entries: r.entry_count }, now);
@@ -386,7 +385,7 @@ async function retransmitDeferred(rt: Runtime, now: string): Promise<string[]> {
   }
   return out;
 }
-/** `ach.file_build.run_completed{…, origination: true}` — 35.3's spelling, emitted here so the registry finds it (deleted at 35.3's merge — plan §9 R1). */
+/** `ach.file_build.run_completed{…, origination: true}` — the registry row's literal, emitted by this owner (35.3 rule 2 `receipt_emitted_by: owner`: the election appends `cycle.run.completed` only). */
 async function electBuildReceipt(rt: Runtime, r: Omit<BuildReport, "receipt_event_id">): Promise<DomainEvent> {
   const res = await rt.uow.run({}, (ctx) => ctx.events.append({ type: BUILD_RUN_COMPLETED, aggregate: { kind: "cycle_run", id: r.run_id }, actor: CASHIERING_AGENT,
     payload: { as_of_date: r.as_of_date, run_id: r.run_id, cycle_code: CYCLE_ACH_FILE_BUILD, period_key: r.as_of_date, file_id: r.file_id, entries: r.entries, total_debit_cents: r.total_debit_cents, refused: r.refused.length, skipped: r.skipped.length, transmitted: r.transmitted, ack_status: r.ack_status, retransmitted: r.retransmitted, origination: true } }), { clock: rt.clock });
@@ -540,7 +539,7 @@ export const actionRationale = (o: Pick<ActionOutcome, "entry_id" | "code" | "ac
   `cashiering.returns.v1: entry ${o.entry_id} returned ${o.code} on ${o.returned_on} → ${o.action}${o.override ? " (officer override)" : ""}${o.payment_id ? ` (payment ${o.payment_id} reversed, 2.1 rule 9)` : " (no posted payment)"}; nsf_fee ${o.nsf_fee_id ? `${o.nsf_fee_id} ${o.nsf_fee_cents}¢` : o.nsf_refused ?? "none"}; reinitiation ${o.reinitiation_entry_id ? `${o.reinitiation_entry_id} on ${o.retry_on}` : o.retry_suppressed ? `none (the retry 2.3 scheduled for ${o.retry_suppressed} is not built)` : "none"}; enrollment ${o.enrollment_status}${o.escalation_id ? `; borrower-comms hand-off ${o.escalation_id}` : ""}`;
 
 // ---------------------------------------------------------------- the return-file ingest (`ach_returns_ingest`)
-export interface IngestInput { readonly as_of_date: PlainDate; }
+export interface IngestInput { readonly as_of_date: PlainDate; readonly run_id?: string | null; }
 export interface ReturnOutcome { readonly return_id: string | null; readonly entry_id: string | null; readonly loan_id: string | null; readonly trace: string; readonly code: string; readonly kind: "return" | "noc"; readonly amount_cents: string; readonly matched: boolean; readonly action: ReturnAction | null; readonly error: string | null; readonly received_event_id: string | null; readonly actioned_event_id: string | null; }
 export interface ReturnFileOutcome { readonly file_id: string; readonly sha256: string; readonly file_name: string; readonly as_of_date: PlainDate; readonly status: "processed" | "duplicate"; readonly duplicate_of: string | null; readonly returns: number; readonly nocs: number; readonly matched: number; readonly unmatched: number; readonly items: readonly ReturnOutcome[]; readonly received_event_id: string | null; readonly document_id: string | null; }
 export interface ReturnsIngestReport { readonly as_of_date: PlainDate; readonly run_id: string; readonly settled: readonly SettledEntry[]; readonly files: readonly ReturnFileOutcome[]; readonly returns: number; readonly nocs: number; readonly actioned: number; readonly errors: readonly { entry_id: string | null; trace: string; error: string }[]; readonly duplicates: readonly string[]; readonly receipt_event_id: string; }
@@ -550,7 +549,7 @@ export const ingestRationale = (r: Pick<ReturnsIngestReport, "as_of_date" | "run
 /** The `ach_returns_ingest` unit for a banking day (rule 8) — see the header. */
 export async function ingestReturnFile(rt: Runtime, input: IngestInput, opts: { recordDecision: boolean } = { recordDecision: true }): Promise<ReturnsIngestReport> {
   const asOf = input.as_of_date; const ports = ports35_5(rt); const now = rt.clock.now();
-  const run = await ports.cycles.openRun(CYCLE_ACH_RETURNS_INGEST, asOf, asOf, 1, `ach.returns.ingest:${now}`);
+  const run = { run_id: input.run_id ?? randomUUID() };
   // (A) the settlement feed: what settled by today becomes the loan's received payment (its next unit posts it)
   const settled = await settleTransmittedEntries(rt, asOf);
   const files: ReturnFileOutcome[] = []; const errors: ReturnsIngestReport["errors"][number][] = [];
@@ -574,10 +573,10 @@ export async function ingestReturnFile(rt: Runtime, input: IngestInput, opts: { 
       if (it.kind === "noc") {
         const opened = await openUnit(rt, { loanId }); let bound: BoundUnit | undefined; let ev: DomainEvent | undefined; const nocId = randomUUID();
         await rt.uow.run({ loanId }, async (uow) => {
-          bound = bindUnit(rt, opened, uow);
+          bound = await bindUnit(rt, opened, uow);
           ev = bound.ctx.events.append({ type: NOC_RECEIVED, loanId, aggregate: enrollmentAgg(entry.enrollment_key!), actor: CASHIERING_AGENT, payload: { noc_id: nocId, entry_id: entry.id, enrollment_id: entry.enrollment_key, code: it.code, change_code: it.code, corrected_data: it.correctedData ?? null, trace, received_on: asOf, return_file_id: fileId, next: "the enrollment's account fields are corrected on the next build (2.3 rule 2 validation by warranty); no payment effect" } });
           bound.deferWrite(async (q) => { await q.query(`INSERT INTO ach_nocs (id, entry_id, change_code, corrected_data, received_at, action_taken) VALUES ($1, $2, $3, $4::jsonb, $5, 'recorded')`, [nocId, entry.id, it.code, toJson({ corrected_data: it.correctedData ?? null, trace, return_file_id: fileId }), now]); });
-        }, { clock: rt.clock, commit: async (q) => { if (bound) await commitUnit(q, rt, bound); } });
+        }, { clock: rt.clock, commit: async (q, info) => { if (bound) await commitUnit(q, rt, bound, info); } });
         items.push({ return_id: nocId, entry_id: entry.id, loan_id: loanId, trace, code: it.code, kind: "noc", amount_cents: s(it.amountCents), matched: true, action: null, error: null, received_event_id: ev?.id ?? null, actioned_event_id: null });
         continue;
       }
@@ -590,18 +589,18 @@ export async function ingestReturnFile(rt: Runtime, input: IngestInput, opts: { 
         const paymentId = (await rt.entities.load({ loanId })).filter((x) => x.kind === "payments" && x.data.ach_entry_id === entry.id).sort((a, b) => b.version - a.version)[0]?.id ?? null;
         const opened = await openUnit(rt, { loanId }); let bound: BoundUnit | undefined;
         await rt.uow.run({ loanId }, async (uow) => {
-          bound = bindUnit(rt, opened, uow);
+          bound = await bindUnit(rt, opened, uow);
           receivedEv = bound.ctx.events.append({ type: RETURN_RECEIVED, loanId, aggregate: enrollmentAgg(entry.enrollment_key!), actor: CASHIERING_AGENT, payload: { return_id: returnId, entry_id: entry.id, enrollment_id: entry.enrollment_key, code: it.code, reason_code: it.code, return_code: it.code, [it.code]: true, payment_id: paymentId, received_on: asOf, returned_on: asOf, return_settlement_date: asOf, original_settlement_date: entry.settlement_date ?? entry.effective_entry_date, trace, amount_cents: s(entry.amount_cents), return_file_id: fileId, company_entry_description: entry.company_entry_description, reinitiation_count: entry.reinitiation_count, origination: true } });
           bound.deferWrite(async (q) => {
             await q.query(`UPDATE ach_entries SET status = 'returned', return_code = $2, returned_at = $3 WHERE id = $1 AND status IN ('transmitted', 'acknowledged', 'settled', 'built')`, [entry.id, it.code, now]);
             await q.query(`INSERT INTO ach_returns (id, entry_id, return_code, received_at, action_taken, raw) VALUES ($1, $2, $3, $4, NULL, $5::jsonb)`, [returnId, entry.id, it.code, now, toJson({ kind: it.kind, code: it.code, original_trace: trace, amount_cents: s(it.amountCents), individual_id: it.individualId, return_date: it.returnDate ?? null, return_file_id: fileId, as_of_date: asOf })]);
           });
-        }, { clock: rt.clock, commit: async (q) => { if (bound) await commitUnit(q, rt, bound); } });
+        }, { clock: rt.clock, commit: async (q, info) => { if (bound) await commitUnit(q, rt, bound, info); } });
       }
       // (C) 2.3 rule 7 in the next loan unit of work; a throw leaves the return received and the clock armed to breach (sev 2 → officer)
       try {
         const opened = await openUnit(rt, { loanId }); let bound: BoundUnit | undefined; let outcome: ActionOutcome | undefined;
-        await rt.uow.run({ loanId }, async (uow) => { bound = bindUnit(rt, opened, uow); outcome = await actionReturn(rt, bound, { entry_id: entry.id, as_of: asOf, return_file_id: fileId }, { recordDecision: true }); }, { clock: rt.clock, commit: async (q) => { if (bound) await commitUnit(q, rt, bound); } });
+        await rt.uow.run({ loanId }, async (uow) => { bound = await bindUnit(rt, opened, uow); outcome = await actionReturn(rt, bound, { entry_id: entry.id, as_of: asOf, return_file_id: fileId }, { recordDecision: true }); }, { clock: rt.clock, commit: async (q, info) => { if (bound) await commitUnit(q, rt, bound, info); } });
         items.push({ return_id: outcome!.return_id, entry_id: entry.id, loan_id: loanId, trace, code: it.code, kind: "return", amount_cents: s(it.amountCents), matched: true, action: outcome!.action, error: null, received_event_id: receivedEv?.id ?? null, actioned_event_id: outcome!.actioned_event_id });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -613,7 +612,7 @@ export async function ingestReturnFile(rt: Runtime, input: IngestInput, opts: { 
     // (D) the file stored and its row written once processed, with `ach.return_file.received` (an unmatched return is the officer's)
     let documentId: string | null = null; const openedG = await openUnit(rt, {}); let boundG: BoundUnit | undefined;
     const fileEv = await rt.uow.run({}, async (uow) => {
-      boundG = bindUnit(rt, openedG, uow);
+      boundG = await bindUnit(rt, openedG, uow);
       const ev = boundG.ctx.events.append({ type: RETURN_FILE_RECEIVED, aggregate: { kind: ACH_RETURN_FILE_KIND, id: fileId }, actor: CASHIERING_AGENT, payload: { file_id: fileId, as_of_date: asOf, file_name: f.file_name, sha256: f.sha256, returns: returnsN, nocs: nocsN, entries_matched: matched, entries_unmatched: unmatched, received_at: f.received_at, actioned: items.filter((x) => x.action).length, errors: errors.length, origination: true } });
       for (const x of items.filter((y) => !y.matched)) boundG.escalations.open({ kind: "officer", ownerRole: "officer", severity: "2", payload: { rule_code: "RETURN_UNMATCHED", return_file_id: fileId, trace: x.trace, code: x.code, amount_cents: x.amount_cents, next: "a return with no entry of ours: reconcile with the ODFI" } }, CASHIERING_AGENT);
       return ev;
@@ -628,10 +627,9 @@ export async function ingestReturnFile(rt: Runtime, input: IngestInput, opts: { 
   }
   const returns = files.reduce((a, f) => a + f.returns, 0); const nocs = files.reduce((a, f) => a + f.nocs, 0); const actioned = files.reduce((a, f) => a + f.items.filter((x) => x.action).length, 0);
   const duplicates = files.filter((f) => f.status === "duplicate").map((f) => f.duplicate_of!);
-  await ports.cycles.completeRun(run.run_id, { units_done: files.filter((f) => f.status === "processed").length + (files.length ? 0 : 1), units_dead: errors.length, units_skipped: duplicates.length });
   const partial = { as_of_date: asOf, run_id: run.run_id, settled, files, returns, nocs, actioned, errors, duplicates };
   if (opts.recordDecision && (files.some((f) => f.status === "processed") || settled.length)) await rt.uow.run({}, (ctx) => { ctx.decide({ agent: CASHIERING_AGENT.id, action: "ach.returns.ingest", rationale: ingestRationale(partial), ruleSetVersion: RULE_SET_RETURNS, subject: files.find((f) => f.status === "processed") ? { kind: ACH_RETURN_FILE_KIND, id: files.find((f) => f.status === "processed")!.file_id } : { kind: "cycle_run", id: run.run_id }, confidence: 1, modelVersion: MODEL_VERSION_DETERMINISTIC, promptVersion: PROMPT_VERSION_35_5 }); }, { clock: rt.clock });
-  // the run's receipt (35.3's spelling, emitted here so the registry finds it; deleted at 35.3's merge — plan §9 R1)
+  // the run's receipt: the registry row's literal, emitted by this owner (35.3 rule 2 `receipt_emitted_by: owner`)
   const receipt = await rt.uow.run({}, (ctx) => ctx.events.append({ type: RETURNS_RUN_COMPLETED, aggregate: { kind: "cycle_run", id: run.run_id }, actor: CASHIERING_AGENT,
     payload: { as_of_date: asOf, run_id: run.run_id, cycle_code: CYCLE_ACH_RETURNS_INGEST, period_key: asOf, settled: settled.length, files: files.length, file_ids: files.map((f) => f.file_id), returns, nocs, actioned, errors: errors.length, duplicates, origination: true } }), { clock: rt.clock });
   return { ...partial, receipt_event_id: receipt.result.id };
@@ -644,12 +642,12 @@ const runtimeOf = (rt: ToolRuntime, name: string): Runtime => { const runtime = 
 /** `ach.file.build{as_of_date}` — the runner through `services.runtime` (its own units of work, sequential to this command's); the decision is the bus's. */
 export async function achFileBuild(i: ToolInput, _ctx: CommandContext, rt: ToolRuntime): Promise<unknown> {
   const asOf = asOfOf(i);
-  return buildAchFile(runtimeOf(rt, "ach.file.build"), { as_of_date: asOf }, { recordDecision: false });
+  return buildAchFile(runtimeOf(rt, "ach.file.build"), { as_of_date: asOf, run_id: str(i, "run_id") || null }, { recordDecision: false });
 }
 /** `ach.returns.ingest{as_of_date}` — the runner through `services.runtime`; every return's own action decision is recorded in its loan's unit of work, the run's is the bus's. */
 export async function achReturnsIngest(i: ToolInput, _ctx: CommandContext, rt: ToolRuntime): Promise<unknown> {
   const asOf = asOfOf(i);
-  return ingestReturnFile(runtimeOf(rt, "ach.returns.ingest"), { as_of_date: asOf }, { recordDecision: false });
+  return ingestReturnFile(runtimeOf(rt, "ach.returns.ingest"), { as_of_date: asOf, run_id: str(i, "run_id") || null }, { recordDecision: false });
 }
 /** `ach.return.action{entry_id, action?}` on the command's own (loan-scoped) unit of work — 2.3 rule 7 for the entry; an `action` override is `officer`'s (the def's guardrail); the decision is the bus's; the action's day is the ET civil date of the clock (plan D8), the return's its own row's. */
 export async function achReturnAction(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): Promise<unknown> {
@@ -658,6 +656,6 @@ export async function achReturnAction(i: ToolInput, ctx: CommandContext, rt: Too
   if (action && !RETURN_ACTIONS.includes(action as ReturnAction)) throw new RangeError(`action must be one of ${RETURN_ACTIONS.join(", ")}`);
   const services = rt.services as Services; const runtime = services.runtime; const deferWrite = services.deferWrite;
   if (!runtime || !deferWrite) throw new RangeError("ach.return.action needs the hosted runtime (services.runtime, services.deferWrite)");
-  const bound: BoundUnit = { scope: { loanId: ctx.loanId }, store: rt.store, mark: 0, openEscalations: [], deferred: [], ctx, escalations: rt.escalations, toolRt: rt, deferWrite };
+  const bound: BoundUnit = { scope: { loanId: ctx.loanId }, store: rt.store, mark: 0, openEscalations: [], globalKeys: new Set(), deferred: [], ctx, escalations: rt.escalations, toolRt: rt, deferWrite };
   return actionReturn(runtime, bound, { entry_id: entryId, action: action ? (action as ReturnAction) : null, as_of: etDate(ctx.now), actor: ctx.actor }, { recordDecision: false });
 }

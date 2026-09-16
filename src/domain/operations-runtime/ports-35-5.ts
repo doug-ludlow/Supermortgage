@@ -1,24 +1,25 @@
 /**
- * §35.5 — the ports this process reads and writes cash through, per runtime (build plan v2 §4). The defaults are the seam to the
- * lanes not yet in the tree: 35.1 (the typed cash rows, the sweep lease, the outbox), 35.3 (the cycle rows and the receipt election)
- * and 35.2 (`documents.store`). Either replace a default here at merge or call `installPorts35_5(rt, {...})` after `new Runtime(...)`.
+ * §35.5 — the ports this process reads and writes cash through, per runtime (build plan v2 §4). At the 35.1 / 35.3 merge two seams
+ * closed: the sweep lease is 35.1's (`pg_try_advisory_lock(35_001)` — no lease port here) and the cycle rows are 35.3's typed
+ * `cycle_runs` (the planner opens them, the executor's last unit elects the receipt — `CyclePort` only reads). The rest stay:
+ * `installPorts35_5(rt, {...})` after `new Runtime(...)` replaces one (a test double, 35.2's WORM store when it lands).
  *
  *   CashRowsPort   `payments`, `suspense_items`, `fees`, `autodraft_enrollments` — read through the entity store (the unit's overlay
  *                  wins over the database) and written JSONB in the exact shapes 2.x write today (section2-3.ts settle for an ACH-settled
  *                  payment, section2-1.ts for a suspense item, section02.ts feeRecord for a fee); 35.1's projectors copy them unchanged.
- *   CyclePort      `cycle_runs`-shaped global entity rows (kind `cycle_runs`, id `<cycle_code>:<period_key>`) until 35.3's typed rows;
- *                  `openRun` answers `already: true` for a period that has a run (a rerun over a grown book lifts `units_total`, never lowers it).
- *   RunLeasePort   a pass-through: the whole sweep runs under 35.1's `pg_try_advisory_lock(35_001)` once merged — no second lease exists.
+ *   CyclePort      a read of 35.3's `cycle_runs` row for `(cycle_code, period_key)` — what a T-id asserts a day's run with.
  *   DocumentsPort  the baseline `documents` row (`storage_uri = worm_pending:<id>`, `metadata.storage_status = staged`) 35.2 recognises.
  *   TransmitPort   `ports.nacha.transmit` directly; 35.1's outbox replaces it (`integration_messages{adapter: nacha}`).
  *
+ * The set is keyed by `Runtime.root` (35.1 open question 8: a tool sees a command view — an `Object.create` of the runtime whose
+ * db / uow run on the command's connection — so a port installed on the runtime answers through every view of it; the 35.3 lesson).
  * Tests read through the port, never the JSONB store directly. Money is bigint cents; dates are PlainDate.
  */
 import { createHash, randomUUID } from "node:crypto";
 import type { Queryable } from "../../infra/db/client.ts";
 import { toJson } from "../../infra/db/client.ts";
 import { decodeEntityData } from "../../infra/db/entities.ts";
-import { EntityStore, PortUnavailable, type EntityRecord } from "../../app/tools.ts";
+import { EntityStore, PortUnavailable } from "../../app/tools.ts";
 import type { UowContext } from "../../infra/db/unit-of-work.ts";
 import type { Actor } from "../../kernel/events/index.ts";
 import type { PlainDate } from "../../kernel/calendar/date.ts";
@@ -128,41 +129,18 @@ export function jsonbCashRows(rt: Runtime): CashRowsPort {
   };
 }
 
-// ---------------------------------------------------------------- 35.1 seam: the sweep lease (pass-through)
-export interface RunLeasePort { withRunLease<T>(name: string, fn: () => Promise<T>): Promise<T | { skipped: "lease_held"; holder: string | null }>; }
-export const passThroughLease: RunLeasePort = { withRunLease: (_name, fn) => fn() };
-
-// ---------------------------------------------------------------- 35.3 seam: the cycle rows
-export interface CycleRunView { readonly run_id: string; readonly cycle_code: string; readonly period_key: string; readonly as_of_date: PlainDate; readonly status: "running" | "completed"; readonly units_total: number; readonly units_done: number; readonly units_dead: number; readonly units_skipped: number; readonly planned_by: string; readonly opened_at: string; readonly completed_at: string | null; readonly runs: number; }
+// ---------------------------------------------------------------- 35.3's cycle rows (typed, read only)
+export interface CycleRunView { readonly run_id: string; readonly cycle_code: string; readonly period_key: string; readonly as_of_date: PlainDate; readonly status: "planned" | "running" | "completed" | "cancelled"; readonly units_total: number; readonly units_done: number; readonly units_dead: number; readonly units_skipped: number; readonly planned_by: string; readonly opened_at: string; readonly completed_at: string | null; readonly receipt_id: string | null; }
 export interface CyclePort {
-  openRun(cycle_code: string, period_key: string, as_of_date: PlainDate, units_total: number, planned_by: string): Promise<{ run_id: string; already: boolean }>;
-  completeRun(run_id: string, counters: { units_done: number; units_dead: number; units_skipped: number }): Promise<void>;
+  /** 35.3's `cycle_runs` row for `(cycle_code, period_key)` — the planner's row, the executor's counters (rule 3's unique key: one per period). */
   run(cycle_code: string, period_key: string): Promise<CycleRunView | undefined>;
 }
-const CYCLE_KIND = "cycle_runs";
-const viewOf = (r: EntityRecord): CycleRunView => { const d = r.data; return { run_id: String(d.run_id), cycle_code: String(d.cycle_code), period_key: String(d.period_key), as_of_date: String(d.as_of_date) as PlainDate, status: d.status === "completed" ? "completed" : "running", units_total: Number(d.units_total ?? 0), units_done: Number(d.units_done ?? 0), units_dead: Number(d.units_dead ?? 0), units_skipped: Number(d.units_skipped ?? 0), planned_by: String(d.planned_by ?? ""), opened_at: String(d.opened_at ?? ""), completed_at: (d.completed_at as string | null) ?? null, runs: Number(d.runs ?? 1) }; };
-/** The default (plan D12): `cycle_runs`-shaped global entity rows, one version per open / complete (the transfers.ts:169 global-row precedent). */
-export function entityCycleRuns(rt: Runtime): CyclePort {
-  const key = (cycle: string, period: string): string => `${cycle}:${period}`;
-  const put = async (id: string, data: Row): Promise<void> => {
-    const cur = await rt.entities.current(CYCLE_KIND, id);
-    const rec: EntityRecord = { kind: CYCLE_KIND, id, version: (cur?.version ?? 0) + 1, data: { ...(cur?.data ?? {}), ...data }, updatedAt: rt.clock.now(), updatedBy: `${CASHIERING_AGENT.kind}:${CASHIERING_AGENT.id}` };
-    await rt.db.tx((q) => rt.entities.save([rec], null, q));
-  };
+export function typedCycleRuns(rt: Runtime): CyclePort {
   return {
-    async openRun(cycle_code, period_key, as_of_date, units_total, planned_by) {
-      const id = key(cycle_code, period_key); const cur = await rt.entities.current(CYCLE_KIND, id);
-      if (cur) { const total = Math.max(Number(cur.data.units_total ?? 0), units_total); await put(id, { units_total: total, status: "running", runs: Number(cur.data.runs ?? 1) + 1, reopened_at: rt.clock.now(), reopened_by: planned_by }); return { run_id: String(cur.data.run_id), already: true }; }
-      const run_id = randomUUID();
-      await put(id, { run_id, cycle_code, period_key, as_of_date, planned_by, opened_at: rt.clock.now(), units_total, units_done: 0, units_dead: 0, units_skipped: 0, status: "running", completed_at: null, runs: 1, demo_offset_ms: 0 });
-      return { run_id, already: false };
+    async run(cycle_code, period_key) {
+      const r = (await rt.db.query<Row>(`SELECT id::text AS run_id, cycle_code, period_key, as_of_date::text AS as_of_date, status, units_total, units_done, units_dead, units_skipped, planned_by, opened_at::text AS opened_at, completed_at::text AS completed_at, receipt_id::text AS receipt_id FROM cycle_runs WHERE cycle_code = $1 AND period_key = $2`, [cycle_code, period_key]))[0];
+      return r ? { run_id: String(r.run_id), cycle_code: String(r.cycle_code), period_key: String(r.period_key), as_of_date: String(r.as_of_date) as PlainDate, status: String(r.status) as CycleRunView["status"], units_total: Number(r.units_total), units_done: Number(r.units_done), units_dead: Number(r.units_dead), units_skipped: Number(r.units_skipped), planned_by: String(r.planned_by ?? ""), opened_at: String(r.opened_at ?? ""), completed_at: (r.completed_at as string | null) ?? null, receipt_id: (r.receipt_id as string | null) ?? null } : undefined;
     },
-    async completeRun(run_id, counters) {
-      const found = await rt.db.query<{ id: string }>(`SELECT id FROM entity_current WHERE kind = $1 AND data->>'run_id' = $2`, [CYCLE_KIND, run_id]);
-      const id = found[0]?.id; if (!id) throw new RangeError(`no cycle run ${run_id}`);
-      await put(id, { ...counters, status: "completed", completed_at: rt.clock.now() });
-    },
-    async run(cycle_code, period_key) { const cur = await rt.entities.current(CYCLE_KIND, key(cycle_code, period_key)); return cur ? viewOf(cur) : undefined; },
   };
 }
 
@@ -192,10 +170,12 @@ export function directNachaTransmit(rt: Runtime): TransmitPort {
   } };
 }
 
-// ---------------------------------------------------------------- the set, per runtime
-export interface Ports35_5 { readonly cashRows: CashRowsPort; readonly cycles: CyclePort; readonly runLease: RunLeasePort; readonly documents: DocumentsPort; readonly transmit: TransmitPort; }
+// ---------------------------------------------------------------- the set, per runtime (keyed by Runtime.root — a command view answers with its runtime's ports)
+export interface Ports35_5 { readonly cashRows: CashRowsPort; readonly cycles: CyclePort; readonly documents: DocumentsPort; readonly transmit: TransmitPort; }
 const installed = new WeakMap<Runtime, Partial<Ports35_5>>();
-export function defaultPorts35_5(rt: Runtime): Ports35_5 { return { cashRows: jsonbCashRows(rt), cycles: entityCycleRuns(rt), runLease: passThroughLease, documents: baselineDocuments, transmit: directNachaTransmit(rt) }; }
-/** Replace one or more ports for this runtime (35.1 / 35.2 / 35.3 at their merge; a test double). */
-export function installPorts35_5(rt: Runtime, impl: Partial<Ports35_5>): void { installed.set(rt, { ...(installed.get(rt) ?? {}), ...impl }); }
-export function ports35_5(rt: Runtime): Ports35_5 { return { ...defaultPorts35_5(rt), ...(installed.get(rt) ?? {}) }; }
+const rootOf = (rt: Runtime): Runtime => (rt as { readonly root?: Runtime }).root ?? rt;
+export function defaultPorts35_5(rt: Runtime): Ports35_5 { return { cashRows: jsonbCashRows(rt), cycles: typedCycleRuns(rt), documents: baselineDocuments, transmit: directNachaTransmit(rt) }; }
+/** Replace one or more ports for this runtime (35.2 at its merge; a test double) — installed on the root, seen through every command view. */
+export function installPorts35_5(rt: Runtime, impl: Partial<Ports35_5>): void { const root = rootOf(rt); installed.set(root, { ...(installed.get(root) ?? {}), ...impl }); }
+/** The ports bound to `rt` (a view's reads ride the command's connection) with the root's installed overrides. */
+export function ports35_5(rt: Runtime): Ports35_5 { return { ...defaultPorts35_5(rt), ...(installed.get(rootOf(rt)) ?? {}) }; }

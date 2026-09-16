@@ -15,13 +15,14 @@ const { skip } = own;
 
 test("test-db: the per-file name is stable, lowercase, ≤ 63 chars, unique per path, and carries the base database's name", () => {
   const a = testDatabaseName("file:///anywhere/src/domain/underwriting/23-6.spec.test.ts");
-  assert.equal(a, testDatabaseName("file:///elsewhere/src/domain/underwriting/23-6.spec.test.ts"), "the same path under src/ names the same database on every checkout");
+  assert.equal(a, testDatabaseName("file:///anywhere/src/domain/underwriting/23-6.spec.test.ts"), "the same file in the same checkout names the same database on every run");
+  assert.notEqual(a, testDatabaseName("file:///elsewhere/src/domain/underwriting/23-6.spec.test.ts"), "the same path under src/ in another checkout (a worktree on the same server) names a different database, so concurrent runs never share a clone");
   assert.match(a, /^supermortgage_t_[0-9a-f]{8}_underwriting_23_6_spec$/);
   assert.notEqual(a, testDatabaseName("file:///x/src/domain/underwriting/23-7.spec.test.ts"));
   assert.notEqual(testDatabaseName("file:///x/src/a/db.test.ts"), testDatabaseName("file:///x/src/b/db.test.ts"), "two files of one name in different directories differ (the hash is over the path)");
   const long = testDatabaseName("file:///x/src/domain/some-very-long-directory-name-indeed/an-extremely-long-file-name-that-goes-on-and-on.spec.test.ts", { base: "postgresql://sm:sm@localhost/supermortgage_a_rather_long_base_name_test", suffix: "_t21_eval" });
   assert.ok(long.length <= 63, `${long} (${long.length})`); assert.match(long, /^[a-z0-9_]+_t21_eval$/);
-  assert.equal(testDatabaseName("file:///x/src/domain/borrower/eval/runner.test.ts", { suffix: "_eval", base: "postgresql://sm:sm@localhost/supermortgage_test" }), "supermortgage_t_9b960bcd_eval_runner_eval");
+  assert.match(testDatabaseName("file:///x/src/domain/borrower/eval/runner.test.ts", { suffix: "_eval", base: "postgresql://sm:sm@localhost/supermortgage_test" }), /^supermortgage_t_[0-9a-f]{8}_eval_runner_eval$/);
   assert.equal(testDatabaseName("file:///x/src/runtime/runtime.test.ts", { base: "postgresql://sm:sm@localhost:5432/supermortgage_ci" }).split("_t_")[0], "supermortgage_ci", "TEST_DATABASE_URL's database name (less a trailing _test) prefixes every per-file name, so two checkouts on one server keep apart");
   assert.equal(withDatabase("postgresql://u:p@host:5433/whatever?sslmode=disable", "x_y"), "postgresql://u:p@host:5433/x_y?sslmode=disable");
   assert.equal(adminUrlOf("postgresql://u:p@host:5433/whatever"), "postgresql://u:p@host:5433/postgres");
@@ -61,6 +62,25 @@ test("test-db: a second call for another file gets its own database, sub-second,
   } finally { await other.close(); }
   const c = new pg.Client({ connectionString: adminUrlOf(other.url) }); await c.connect();
   try { assert.equal((await c.query("SELECT 1 FROM pg_database WHERE datname = $1", [other.name])).rowCount, 0, "close() drops the database"); } finally { await c.end(); }
+});
+
+test("test-db: a file's clone is dropped when its process ends without close() — nothing left on the server after a run; KEEP_TEST_DB=1 keeps it", { skip }, async () => {
+  const { spawnSync } = await import("node:child_process");
+  const fileUrl = "file:///x/src/infra/db/test-db.hook-probe.test.ts";
+  const name = testDatabaseName(fileUrl);   // the child names it from TEST_DATABASE_URL (or the default) exactly as this call does
+  const child = (env: Record<string, string>): string => {
+    const r = spawnSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", `import { testDatabase } from ${JSON.stringify(new URL("./test-db.ts", import.meta.url).href)}; const t = await testDatabase(${JSON.stringify(fileUrl)}); process.stdout.write(t.name);`], { env: { ...process.env, ...env }, encoding: "utf8", timeout: 60_000 });
+    assert.equal(r.status, 0, r.stderr);
+    return r.stdout.trim();
+  };
+  const c = new pg.Client({ connectionString: adminUrlOf(own.url) }); await c.connect();
+  try {
+    assert.equal(child({}), name);
+    assert.equal((await c.query("SELECT 1 FROM pg_database WHERE datname = $1", [name])).rowCount, 0, "dropped on beforeExit");
+    assert.equal(child({ KEEP_TEST_DB: "1" }), name);
+    assert.equal((await c.query("SELECT 1 FROM pg_database WHERE datname = $1", [name])).rowCount, 1, "kept under KEEP_TEST_DB");
+    await c.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
+  } finally { await c.end(); }
 });
 
 test("test-db: an unreachable server skips with 'no Postgres at …', and throws instead under REQUIRE_DB", async () => {

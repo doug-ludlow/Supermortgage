@@ -27,7 +27,23 @@
  *                                        through the registry — paper without the consent (`tax_form.1098.furnished{channel=paper}`).
  *
  * Money is bigint cents; dates are PlainDate; every figure comes from the tables, the ledger or the owning engine.
+ * 35.3 (the cycle engine) runs the same bodies as units: the `cashiering_daily` unit is 35.5's `cashiering.run_unit` steps INSIDE
+ * `cycles.run_unit`'s command (src/domain/operations-runtime/cashiering-cycle.ts cashieringUnitIn — one transaction with `job.unit.done`);
+ * `statementUnitIn` / `form1098UnitIn` are the statement and 1098 bodies over a caller-supplied event store, clock and
+ * deferred-write hook, so the `statements` / `form_1098` cycles run them INSIDE `cycles.run_unit`'s command (one transaction with
+ * `job.unit.done` — 35.3 rule 5, T9) while `sendPeriodicStatement` / `furnishForm1098` keep running them in their own unit of work.
+ * The statement's `notices` row (template, version, notice, deliveries — the staff/auth.ts precedent) rides the same hook, so a
+ * statement is a row an examiner can read beside its events. D13: `servicingDailySweep` yields to the cycle once the registry
+ * projects an active `cashiering_daily` row with a runner (`deferred_to_cycle`), so a loan's day runs once.
+ *
+ * Money is bigint cents; dates are PlainDate; every figure comes from the tables, the ledger or the owning engine.
  */
+import type { Queryable } from "../infra/db/client.ts";
+import { PgNoticeRepository } from "../infra/db/notices.ts";
+import { type ToolRuntime, PortUnavailable } from "../app/tools.ts";
+import type { CommandContext } from "../app/commands.ts";
+import type { Notice } from "../notices/service.ts";
+import type { Clock, EventStore } from "../kernel/events/index.ts";
 import { NoticeService } from "../notices/service.ts";
 import type { Actor } from "../kernel/events/index.ts";
 import { plainDate as D, addMonths, type PlainDate } from "../kernel/calendar/date.ts";
@@ -58,16 +74,24 @@ const s = (v: Cents): string => v.toString();
 export async function loanCashState(rt: Runtime, loanId: string, asOf: PlainDate): Promise<LoanFacts> { return loanCashStateFromRows(rt.db, loanId, asOf); }
 
 // ---------------------------------------------------------------- the daily sweep
-export interface ServicingSweepReport { readonly at: string; readonly loans: number; readonly posted: string[]; readonly late_charge_runs: string[]; readonly amount_change_checks: string[]; readonly errors: { loan_id: string; step: string; error: string }[]; }
+export interface ServicingSweepReport { readonly at: string; readonly loans: number; readonly posted: string[]; readonly late_charge_runs: string[]; readonly amount_change_checks: string[]; readonly errors: { loan_id: string; step: string; error: string }[]; /** 35.3 D13: the pass yielded to the registered cycle (its units run the same body through the executor) */ readonly deferred_to_cycle?: string | null; }
+/** 35.3 D13: true when `cycle_registry` projects an active row for the cycle with a runner (the table lands with 35.3's migration; absent → false, the pass runs as it always has). */
+export async function cycleOwnsPass(rt: Runtime, cycleCode: string): Promise<boolean> {
+  try { return (await rt.db.query<{ n: string }>(`SELECT count(*)::text AS n FROM cycle_registry WHERE cycle_code = $1 AND status = 'active' AND unit_runner IS NOT NULL`, [cycleCode]))[0]!.n !== "0"; }
+  catch (e) { if ((e as { code?: unknown } | null)?.code === "42P01") return false; throw e; }
+}
 /**
- * 35.5 rule 6: the whole book's cashiering units for the day (src/domain/operations-runtime/cashiering-cycle.ts cashieringDailyRun — one unit of
- * work per loan per day, 2.1 posting, 2.7's daily run and 2.3's amount-change check in-process, the `cashiering_daily` cycle row and the day's receipt
- * `cashiering.daily.run_completed`), reported in the shape the flows and the demo advance read. A loan without a configuration row is skipped
- * (CONFIG_REQUIRED, its own failed unit row) and is not an error of the pass.
+ * 35.5 rule 6: the whole book's cashiering units for the day — one unit per loan per day over every boarded loan (no origination_application_id
+ * condition), each 2.1 posting, 2.7's daily run and 2.3's amount-change check in one transaction, the `cashiering_daily` run and the day's receipt
+ * `cashiering.daily.run_completed` — reported in the shape the flows and the demo advance read. 35.3 D13: once the registry projects an active
+ * `cashiering_daily` row with a runner (the first planner pass), the cycle's units are the day's run — the sweep's cycles pass and the demo step
+ * plan and drain them — and this direct pass yields (`deferred_to_cycle`), so a loan's day runs once; until then (a runtime that has never
+ * planned) the pass plans and drains the day's cycle itself (src/domain/operations-runtime/cashiering-cycle.ts cashieringDailyRun).
  */
 export async function servicingDailySweep(rt: Runtime, nowIso: string = rt.clock.now()): Promise<ServicingSweepReport> {
+  if (await cycleOwnsPass(rt, "cashiering_daily")) return { at: nowIso, loans: 0, posted: [], late_charge_runs: [], amount_change_checks: [], errors: [], deferred_to_cycle: "cashiering_daily" };
   const r = await cashieringDailyRun(rt, nowIso);
-  return { at: r.at, loans: r.loans, posted: r.posted, late_charge_runs: r.late_charge_runs, amount_change_checks: r.amount_change_checks, errors: r.errors };
+  return { at: r.at, loans: r.loans, posted: r.posted, late_charge_runs: r.late_charge_runs, amount_change_checks: r.amount_change_checks, errors: r.errors, deferred_to_cycle: null };
 }
 
 // ---------------------------------------------------------------- 7.1: the periodic statement run
@@ -103,54 +127,84 @@ const usd = (v: Cents): string => USD.format(Number(v) / 100);
 /** The FAKE print/mail vendor's production run (a real vendor manifests overnight; the fake mails on request) — the paper piece leaves the same day. */
 const runProduction = (rt: Runtime, nowIso: string): void => { const pm = rt.ports.printMail as { runProduction?: (now: string) => void } | undefined; pm?.runProduction?.(nowIso); };
 
-/** 7.1's cycle run for one statement — see the header. Returns the facts the flow and the tests read back. */
-export async function sendPeriodicStatement(rt: Runtime, loanId: string, input: StatementRunInput): Promise<StatementRunResult> {
-  const nowIso = input.now ?? rt.clock.now(); const statementDate = input.statement_date ?? D(nowIso.slice(0, 10));
+/** The unit's I/O: the event store the events go on (a unit of work's, or `cycles.run_unit`'s command context), its clock, and the hook a row rides the same transaction through (the unit of work's commit, or `toolRt.services.deferWrite`). */
+export interface UnitIo { readonly events: EventStore; readonly clock: Clock; readonly defer: (fn: (q: Queryable) => Promise<void>) => void; }
+/** The unit I/O of a `cycles.run_unit` command: the command's events and clock, its `deferWrite` (src/runtime/app.ts executeDef). */
+export function unitIoOf(toolRt: ToolRuntime, ctx: CommandContext): UnitIo {
+  const defer = toolRt.services["deferWrite"] as UnitIo["defer"] | undefined;
+  if (!defer) throw new PortUnavailable("service:deferWrite");
+  return { events: ctx.events, clock: ctx.clock, defer };
+}
+/** The notice's rows — template, active version, the notice, its checklist and deliveries (the staff/auth.ts precedent) — written by the transaction the unit commits in. */
+export async function persistNotice(rt: Runtime, n: Notice, asOf: PlainDate, q: Queryable): Promise<void> {
+  const nr = new PgNoticeRepository(rt.db);
+  const t = rt.noticeRegistry.template(n.templateCode); await nr.upsertTemplate(t, q);
+  const v = rt.noticeRegistry.activeVersion(t.code, asOf); if (v) await nr.saveVersion(v, q);
+  await nr.saveNotice(n, q);
+}
+/** 7.1's statement body over the caller's event store — see the header. The consents' `suspect` update and the notice rows ride `io.defer`. */
+export async function statementUnitIn(rt: Runtime, io: UnitIo, loanId: string, input: StatementRunInput): Promise<Omit<StatementRunResult, "events">> {
+  const nowIso = input.now ?? io.clock.now(); const statementDate = input.statement_date ?? D(nowIso.slice(0, 10));
   if (!rt.ports.printMail || !rt.ports.edelivery) throw new RangeError("print/mail and e-delivery ports are not wired");
   const facts = await loanCashState(rt, loanId, statementDate); const parties = await servicingParties(rt, loanId);
   const block = await servicerBlockFor(rt.db, loanId, statementDate);   // 35.5 rule 9: the servicer identity as of the statement date (CONFIG_REQUIRED when none is in force)
   const suspect: { party_id: string; consent_id: string | null }[] = [];
-  let result: StatementRunResult | null = null;
-  const r = await rt.uow.run({ loanId, ...(facts.loan.origination_application_id ? { applicationId: facts.loan.origination_application_id } : {}) }, async (ctx) => {
-    const notices = new NoticeService({ registry: rt.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: rt.ports.printMail!, edelivery: rt.ports.edelivery!, notices: rt.noticeMemory });   // the runtime's notice memory (32.12): the rendered statement / 1098 is readable after the run like any command's notice
-    const cycles = new StatementCycleService({ events: ctx.events, clock: ctx.clock, notices });
-    const recipients = recipientsOf(parties);
-    // comment 41(c)-3: the availability e-mail goes to every party whose active consent covers periodic statements; a hard bounce flips that party's consent to suspect (7.4 rule 8) before the statement's own channel decision
-    const electronic = recipients.filter((x) => x.consent?.status === "active" && x.consent.classes.includes("periodic_statements") && x.email);
-    let availabilityId: string | null = null; const bounced: string[] = [];
-    if (electronic.length) {
-      const avail = notices.render({ templateCode: "NTC_REGZ_41_STMT_AVAIL_EMAIL", loanId, recipients: electronic, payload: { statement_date: statementDate, account_last4: facts.loan.servicer_loan_number.slice(-4), portal_url: block.portal_url, consent_status: "active", servicer_phone: block.servicer_phone }, asOf: statementDate });
-      const sent = await notices.send(avail.id); availabilityId = sent.id;
-      for (const d of sent.deliveries) if (d.emailStatus === "bounced") {
-        const party = parties.find((p) => p.party_id === d.partyId); bounced.push(d.partyId);
-        recordBounceSuspect({ events: ctx.events }, { loan_id: loanId, party_id: d.partyId, consent_id: party?.consent_ids.esign ?? null, notice_id: sent.id, template: sent.templateCode, bounced_at: d.submittedAt, fallback_mailed_at: nowIso });
-        suspect.push({ party_id: d.partyId, consent_id: party?.consent_ids.esign ?? null });
-      }
+  const notices = new NoticeService({ registry: rt.noticeRegistry, events: io.events, clock: io.clock, printMail: rt.ports.printMail, edelivery: rt.ports.edelivery, notices: rt.noticeMemory });   // the runtime's notice memory (32.12): the rendered statement / 1098 is readable after the run like any command's notice
+  const cycles = new StatementCycleService({ events: io.events, clock: io.clock, notices });
+  const recipients = recipientsOf(parties);
+  // comment 41(c)-3: the availability e-mail goes to every party whose active consent covers periodic statements; a hard bounce flips that party's consent to suspect (7.4 rule 8) before the statement's own channel decision
+  const electronic = recipients.filter((x) => x.consent?.status === "active" && x.consent.classes.includes("periodic_statements") && x.email);
+  let availabilityId: string | null = null; const bounced: string[] = []; let availability: Notice | null = null;
+  if (electronic.length) {
+    const avail = notices.render({ templateCode: "NTC_REGZ_41_STMT_AVAIL_EMAIL", loanId, recipients: electronic, payload: { statement_date: statementDate, account_last4: facts.loan.servicer_loan_number.slice(-4), portal_url: block.portal_url, consent_status: "active", servicer_phone: block.servicer_phone }, asOf: statementDate });
+    const sent = await notices.send(avail.id); availabilityId = sent.id; availability = sent;
+    for (const d of sent.deliveries) if (d.emailStatus === "bounced") {
+      const party = parties.find((p) => p.party_id === d.partyId); bounced.push(d.partyId);
+      recordBounceSuspect({ events: io.events }, { loan_id: loanId, party_id: d.partyId, consent_id: party?.consent_ids.esign ?? null, notice_id: sent.id, template: sent.templateCode, bounced_at: d.submittedAt, fallback_mailed_at: nowIso });
+      suspect.push({ party_id: d.partyId, consent_id: party?.consent_ids.esign ?? null });
     }
-    const rendered = cycles.renderStatement(loanId, { cycle_due_date: input.cycle_due_date, statement_date: statementDate, template: "NTC_REGZ_41_STMT_STD", variant: "standard", payload: statementPayload(facts, parties[0]?.legal_name ?? "Borrower", statementDate, input.cycle_due_date, block), recipients, reminder_panel: false, ...(input.cycle !== undefined ? { cycle: input.cycle } : {}) });
-    if (rendered.status === "held") throw new RangeError(`statement held: ${rendered.held_reason}`);
-    const out = await cycles.sendStatement(rendered.notice.id);
-    let mailedAt: string | null = null; let channel: "electronic" | "mail" = "electronic";
-    if (out.awaiting === "vendor_manifest") {
-      // the paper statement: the FAKE print/mail vendor's production run is the same day (7.4 rule 8: "same-day mail of the affected notice"); the manifest closes the cycle with `statement.sent{mailed_at}`
-      runProduction(rt, nowIso); mailedAt = nowIso; channel = "mail";
-      const attempt = out.notice.deliveries.find((d) => d.channel.startsWith("mail"))!.attemptNo;
-      cycles.recordStatementMailed(rendered.notice.id, { attempt_no: attempt, mailed_at: nowIso, proof_of_mailing_id: `POM-${rendered.notice.id}:${attempt}` });
-    }
-    for (const partyId of bounced) {
-      ctx.events.append({ type: "statement.bounced", loanId, actor: STATEMENT_AGENT, payload: { cycle_due_date: input.cycle_due_date, statement_date: statementDate, party_id: partyId, availability_notice_id: availabilityId, notice_id: rendered.notice.id, reason: "hard bounce" } });
-      ctx.events.append({ type: "statement.fallback_mailed", loanId, actor: STATEMENT_AGENT, payload: { cycle_due_date: input.cycle_due_date, statement_date: statementDate, party_id: partyId, notice_id: rendered.notice.id, mailed_at: mailedAt, same_day: mailedAt !== null && mailedAt.slice(0, 10) === nowIso.slice(0, 10), consent_status: "suspect" } });
-    }
-    result = { notice_id: rendered.notice.id, availability_notice_id: availabilityId, channel, bounced_party_ids: bounced, mailed_at: mailedAt, statement_date: statementDate, events: [] };
+  }
+  const rendered = cycles.renderStatement(loanId, { cycle_due_date: input.cycle_due_date, statement_date: statementDate, template: "NTC_REGZ_41_STMT_STD", variant: "standard", payload: statementPayload(facts, parties[0]?.legal_name ?? "Borrower", statementDate, input.cycle_due_date, block), recipients, reminder_panel: false, ...(input.cycle !== undefined ? { cycle: input.cycle } : {}) });
+  if (rendered.status === "held") throw new RangeError(`statement held: ${rendered.held_reason}`);
+  const out = await cycles.sendStatement(rendered.notice.id);
+  let mailedAt: string | null = null; let channel: "electronic" | "mail" = "electronic";
+  if (out.awaiting === "vendor_manifest") {
+    // the paper statement: the FAKE print/mail vendor's production run is the same day (7.4 rule 8: "same-day mail of the affected notice"); the manifest closes the cycle with `statement.sent{mailed_at}`
+    runProduction(rt, nowIso); mailedAt = nowIso; channel = "mail";
+    const attempt = out.notice.deliveries.find((d) => d.channel.startsWith("mail"))!.attemptNo;
+    cycles.recordStatementMailed(rendered.notice.id, { attempt_no: attempt, mailed_at: nowIso, proof_of_mailing_id: `POM-${rendered.notice.id}:${attempt}` });
+  }
+  for (const partyId of bounced) {
+    io.events.append({ type: "statement.bounced", loanId, actor: STATEMENT_AGENT, payload: { cycle_due_date: input.cycle_due_date, statement_date: statementDate, party_id: partyId, availability_notice_id: availabilityId, notice_id: rendered.notice.id, reason: "hard bounce" } });
+    io.events.append({ type: "statement.fallback_mailed", loanId, actor: STATEMENT_AGENT, payload: { cycle_due_date: input.cycle_due_date, statement_date: statementDate, party_id: partyId, notice_id: rendered.notice.id, mailed_at: mailedAt, same_day: mailedAt !== null && mailedAt.slice(0, 10) === nowIso.slice(0, 10), consent_status: "suspect" } });
+  }
+  const statement = out.notice; const availabilityNotice = availability;
+  io.defer(async (q) => {
+    for (const x of suspect) await q.query(`UPDATE consents SET status = 'suspect' WHERE party_id = $1 AND kind = 'esign' AND status = 'active'`, [x.party_id]);
+    if (availabilityNotice) await persistNotice(rt, availabilityNotice, statementDate, q);
+    await persistNotice(rt, statement, statementDate, q);
+  });
+  return { notice_id: rendered.notice.id, availability_notice_id: availabilityId, channel, bounced_party_ids: bounced, mailed_at: mailedAt, statement_date: statementDate };
+}
+
+/** 7.1's cycle run for one statement — see the header. Returns the facts the flow and the tests read back. */
+export async function sendPeriodicStatement(rt: Runtime, loanId: string, input: StatementRunInput): Promise<StatementRunResult> {
+  const loan = (await rt.db.query<{ app: string | null }>(`SELECT origination_application_id::text AS app FROM loans WHERE id = $1`, [loanId]))[0];
+  if (!loan) throw new RangeError(`no loan ${loanId}`);
+  const deferred: ((q: Queryable) => Promise<void>)[] = [];
+  let result: Omit<StatementRunResult, "events"> | null = null;
+  const r = await rt.uow.run({ loanId, ...(loan.app ? { applicationId: loan.app } : {}) }, async (ctx) => {
+    result = await statementUnitIn(rt, { events: ctx.events, clock: ctx.clock, defer: (fn) => { deferred.push(fn); } }, loanId, input);
     return result;
-  }, { clock: rt.clock, commit: async (q) => { for (const x of suspect) await q.query(`UPDATE consents SET status = 'suspect' WHERE party_id = $1 AND kind = 'esign' AND status = 'active'`, [x.party_id]); } });
-  return { ...(result as unknown as StatementRunResult), events: r.events.map((e) => ({ type: e.type, payload: e.payload as Record<string, unknown> })) };
+  }, { clock: rt.clock, commit: async (q) => { for (const fn of deferred) await fn(q); } });
+  return { ...(result as unknown as Omit<StatementRunResult, "events">), events: r.events.map((e) => ({ type: e.type, payload: e.payload as Record<string, unknown> })) };
 }
 
 // ---------------------------------------------------------------- 7.1-A / 7.4 rule 11: Form 1098
 export interface Form1098Result { readonly notice_id: string; readonly channel: "electronic" | "paper"; readonly gate_open: boolean; readonly box1_cents: string; readonly box2_cents: string; readonly furnished_on: PlainDate; }
-export async function furnishForm1098(rt: Runtime, loanId: string, input: { tax_year: number; furnished_on?: PlainDate; now?: string }): Promise<Form1098Result> {
-  const nowIso = input.now ?? rt.clock.now(); const on = input.furnished_on ?? D(nowIso.slice(0, 10)); const y = input.tax_year;
+/** The Form 1098 body over the caller's event store (35.3's `form_1098` unit; `furnishForm1098`'s own unit of work) — the notice rows ride `io.defer`. */
+export async function form1098UnitIn(rt: Runtime, io: UnitIo, loanId: string, input: { tax_year: number; furnished_on?: PlainDate; now?: string }): Promise<Form1098Result> {
+  const nowIso = input.now ?? io.clock.now(); const on = input.furnished_on ?? D(nowIso.slice(0, 10)); const y = input.tax_year;
   if (!rt.ports.printMail || !rt.ports.edelivery) throw new RangeError("print/mail and e-delivery ports are not wired");
   const facts = await loanCashState(rt, loanId, on); const parties = await servicingParties(rt, loanId); const payer = parties[0];
   if (!payer) throw new RangeError("no borrower party on the loan");
@@ -159,16 +213,24 @@ export async function furnishForm1098(rt: Runtime, loanId: string, input: { tax_
   const interest = (await rt.db.query<{ s: string }>(`SELECT coalesce(-sum(l.amount_cents), 0)::text AS s FROM ledger_lines l JOIN ledger_entry_sets e ON e.id = l.set_id WHERE l.scope = 'loan' AND l.loan_id = $1 AND l.account = 'interest_due' AND l.amount_cents < 0 AND e.effective_date >= $2::date AND e.effective_date < $3::date`, [loanId, `${y}-01-01`, `${y + 1}-01-01`]))[0]!.s;
   const upbJan1 = (await rt.db.query<{ s: string }>(`SELECT coalesce(sum(l.amount_cents), 0)::text AS s FROM ledger_lines l JOIN ledger_entry_sets e ON e.id = l.set_id WHERE l.scope = 'loan' AND l.loan_id = $1 AND l.account = 'principal' AND e.effective_date < $2::date`, [loanId, `${y}-01-01`]))[0]!.s;
   const prop = (await rt.db.query<Row>(`SELECT pr.address_line1, pr.city, pr.state, pr.postal_code FROM loans l JOIN properties pr ON pr.id = l.property_id WHERE l.id = $1`, [loanId]))[0];
+  const notices = new NoticeService({ registry: rt.noticeRegistry, events: io.events, clock: io.clock, printMail: rt.ports.printMail, edelivery: rt.ports.edelivery, notices: rt.noticeMemory });
+  const cycles = new StatementCycleService({ events: io.events, clock: io.clock, notices });
+  const gate = requestForm1098Furnish({ events: io.events }, { loan_id: loanId, tax_year: y, party_id: payer.party_id, channel: "electronic", consents: parties.flatMap((p) => (p.irs_estatement ? [p.irs_estatement] : [])) });
+  const out = await cycles.furnish1098(loanId, { tax_year: y, interest_received_cents: c(interest), upb_jan1_cents: c(upbJan1), furnished_on: on, recipients: recipientsOf(parties, "irs_estatement"),
+    payload: { servicer_name: block.servicer_name, servicer_tin: block.servicer_tin, payer_name: payer.legal_name, account_number: facts.loan.servicer_loan_number, property_address: prop ? `${String(prop.address_line1)}, ${String(prop.city)}, ${String(prop.state)} ${String(prop.postal_code)}` : payer.mailing_address ?? "", box3_origination_date: facts.loan.instrument_date, box4_cents: 0n, box5_cents: 0n, box6_cents: 0n, box10_cents: 0n, box11_acquisition_date: null, servicer_phone: block.servicer_phone, servicer_address: block.servicer_address, exclusive_address: block.exclusive_address } });
+  if (out.channel === "paper") runProduction(rt, nowIso);
+  const notice = out.notice;
+  io.defer(async (q) => { await persistNotice(rt, notice, on, q); });
+  return { notice_id: out.notice.id, channel: out.channel, gate_open: gate.gate_open, box1_cents: s(out.box1_cents), box2_cents: s(out.box2_cents), furnished_on: on };
+}
+export async function furnishForm1098(rt: Runtime, loanId: string, input: { tax_year: number; furnished_on?: PlainDate; now?: string }): Promise<Form1098Result> {
+  const loan = (await rt.db.query<{ app: string | null }>(`SELECT origination_application_id::text AS app FROM loans WHERE id = $1`, [loanId]))[0];
+  if (!loan) throw new RangeError(`no loan ${loanId}`);
+  const deferred: ((q: Queryable) => Promise<void>)[] = [];
   let result: Form1098Result | null = null;
-  await rt.uow.run({ loanId, ...(facts.loan.origination_application_id ? { applicationId: facts.loan.origination_application_id } : {}) }, async (ctx) => {
-    const notices = new NoticeService({ registry: rt.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: rt.ports.printMail!, edelivery: rt.ports.edelivery!, notices: rt.noticeMemory });   // the runtime's notice memory (32.12): the rendered statement / 1098 is readable after the run like any command's notice
-    const cycles = new StatementCycleService({ events: ctx.events, clock: ctx.clock, notices });
-    const gate = requestForm1098Furnish({ events: ctx.events }, { loan_id: loanId, tax_year: y, party_id: payer.party_id, channel: "electronic", consents: parties.flatMap((p) => (p.irs_estatement ? [p.irs_estatement] : [])) });
-    const out = await cycles.furnish1098(loanId, { tax_year: y, interest_received_cents: c(interest), upb_jan1_cents: c(upbJan1), furnished_on: on, recipients: recipientsOf(parties, "irs_estatement"),
-      payload: { servicer_name: block.servicer_name, servicer_tin: block.servicer_tin, payer_name: payer.legal_name, account_number: facts.loan.servicer_loan_number, property_address: prop ? `${String(prop.address_line1)}, ${String(prop.city)}, ${String(prop.state)} ${String(prop.postal_code)}` : payer.mailing_address ?? "", box3_origination_date: facts.loan.instrument_date, box4_cents: 0n, box5_cents: 0n, box6_cents: 0n, box10_cents: 0n, box11_acquisition_date: null, servicer_phone: block.servicer_phone, servicer_address: block.servicer_address, exclusive_address: block.exclusive_address } });
-    if (out.channel === "paper") runProduction(rt, nowIso);
-    result = { notice_id: out.notice.id, channel: out.channel, gate_open: gate.gate_open, box1_cents: s(out.box1_cents), box2_cents: s(out.box2_cents), furnished_on: on };
+  await rt.uow.run({ loanId, ...(loan.app ? { applicationId: loan.app } : {}) }, async (ctx) => {
+    result = await form1098UnitIn(rt, { events: ctx.events, clock: ctx.clock, defer: (fn) => { deferred.push(fn); } }, loanId, input);
     return result;
-  }, { clock: rt.clock });
+  }, { clock: rt.clock, commit: async (q) => { for (const fn of deferred) await fn(q); } });
   return result as unknown as Form1098Result;
 }

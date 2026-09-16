@@ -72,7 +72,8 @@ export async function requeueMessage(rt: Runtime, i: { id: string; actor: Actor;
     let escalationId = m.cap_escalation_id;
     if (!escalationId) {
       escalationId = randomUUID();
-      await rt.db.tx(async (q) => {
+      // the escalation outlives the refusal that follows: written on the root runtime's pool, not on the refused command's transaction (35.1: a refusal writes nothing of its own)
+      await rt.root.db.tx(async (q) => {
         await rt.escalationRepo.save({ id: escalationId!, kind: "sev4", ownerRole: "ops_analyst", ...(m.loan_id ? { loanId: m.loan_id } : {}), severity: "4", openedAt: nowIso, openedBy: `${i.actor.kind}:${i.actor.id}`, status: "open",
           payload: { code: "REQUEUE_CAP_3", message_id: m.id, adapter: m.adapter, idempotency_key: m.idempotency_key, status: m.status, requeues: m.requeues, attempted_by: i.actor.id, attempted_role: i.actor.role ?? null, reason: `a fourth hand requeue of ${m.adapter} message ${m.id} was refused (34.4 rule 3); the adapter or the message needs a person`, error: m.error } }, q);
         await appendEvent(q, { type: "escalation.created", actor: i.actor, loan_id: m.loan_id, aggregate: { kind: "escalation", id: escalationId! }, occurred_at: nowIso, payload: { escalation_id: escalationId, kind: "sev4", owner_role: "ops_analyst", severity: "4", code: "REQUEUE_CAP_3", message_id: m.id, adapter: m.adapter, requeues: m.requeues, by: i.actor.id } });

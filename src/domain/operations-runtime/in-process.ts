@@ -3,14 +3,22 @@
  * loan-day, the 2.1 / 2.7 / 2.3 commands executed inside it as bus commands (allowlists, guardrails, `command.executed`, the decision
  * record) — never a nested `Runtime.execute`, so a unit is one transaction and 35.1's per-loan lock has one holder.
  *
- *   openUnit(rt, scope)               before the unit of work: the entity store seeded from the scope's rows, the mark, the scope's open
- *                                     escalations, the deferred writes — what src/runtime/app.ts executeDef prepares for a hosted command.
- *   bindUnit(rt, opened, uow)         inside the unit of work: the ToolRuntime the commands see (store, escalations, notices, `services`:
- *                                     the origination services, agents, db, runtime, deferWrite) over the unit's context.
+ *   openUnit(rt, scope)               before the unit of work: the scope, the empty store and the deferred writes — what src/runtime/app.ts
+ *                                     executeDef prepares for a hosted command (the rows are read inside the transaction, below).
+ *   bindUnit(rt, opened, uow)         inside the unit of work, after its lock: the scope's records by the loan / application index (one query — see
+ *                                     the note in the body on why not 35.1's `entity_latest_scoped` load), the scope's
+ *                                     open escalations, and the ToolRuntime the commands see (store, escalations, notices, `services`: agents,
+ *                                     db, runtime, deferWrite) over the unit's context — no stateful section service (35.1 rule 9's
+ *                                     `forCommand` is the hosted command's; the 2.1 / 2.7 / 2.3 / 6.5 commands a unit runs read none).
  *   executeInUnit(rt, bound, req)     one bus command on that runtime: `toolCommand(def, …)` (src/app/tools.ts) + `CommandBus.execute`.
- *   commitUnit(q, rt, bound, scope)   the commit hook: entity versions, escalations, the deferred writes — in the unit's transaction.
+ *   commitUnit(q, rt, bound)          the commit hook, what executeDef's commit persists for a hosted command: the entity versions split by
+ *                                     scope (rule 8: a bumped global row stays global), 35.1 rule 2's projectors — the row phase, then the
+ *                                     fact phase — in the unit's transaction (a typed `payments` row 0151's FK on
+ *                                     `loan_installments.satisfied_by_payment_id` needs exists before the deferred write that names it),
+ *                                     the escalations, the deferred writes.
  *
- * Shared by the daily unit (cashiering-cycle.ts) and, in the later groups, the lockbox and ACH runners.
+ * Shared by the daily unit (cashiering-cycle.ts) and the lockbox and ACH runners (lockbox.ts, ach.ts). A unit run INSIDE `cycles.run_unit`'s
+ * command (the `cashiering_daily` cycle) needs none of this: the command's own store, hooks and projectors are the unit's (cashieringUnitIn).
  */
 import type { Queryable } from "../../infra/db/client.ts";
 import type { EntityScope } from "../../infra/db/entities.ts";
@@ -23,8 +31,10 @@ import { NoticeService } from "../../notices/service.ts";
 import type { Actor } from "../../kernel/events/index.ts";
 import { MemoryEventStore } from "../../kernel/events/index.ts";
 import type { Runtime } from "../../runtime/app.ts";
+import { splitByScope } from "./seam/hydration.ts";
+import { projectVersions } from "./seam/project.ts";
 
-export interface OpenedUnit { readonly scope: EntityScope; readonly store: EntityStore; readonly mark: number; readonly openEscalations: readonly Escalation[]; readonly deferred: ((q: Queryable) => Promise<void>)[]; }
+export interface OpenedUnit { readonly scope: EntityScope; readonly store: EntityStore; mark: number; openEscalations: readonly Escalation[]; globalKeys: ReadonlySet<string>; readonly deferred: ((q: Queryable) => Promise<void>)[]; }
 export interface BoundUnit extends OpenedUnit { readonly ctx: UowContext; readonly escalations: EscalationService; readonly toolRt: ToolRuntime; readonly deferWrite: (fn: (q: Queryable) => Promise<void>) => void; }
 
 /** The unit of work's store with the scope's loan stamped on every appended event that carries neither a loan nor an application key (app.ts withDefaultLoan). */
@@ -33,17 +43,25 @@ export function withDefaultLoan(inner: MemoryEventStore, loanId: string): Memory
   return new Proxy(inner, { get: (target, prop, receiver) => (prop === "append" ? append : Reflect.get(target, prop, receiver)) });
 }
 
-export async function openUnit(rt: Runtime, scope: EntityScope): Promise<OpenedUnit> {
-  const store = new EntityStore(); store.seed(await rt.entities.load(scope));
-  return { scope, store, mark: store.versionCount(), openEscalations: await rt.escalationRepo.openFor(scope), deferred: [] };
+/** The unit before its transaction: nothing is read here — the rows are hydrated inside the transaction, after the lock (35.1 rules 6 and 7). */
+export async function openUnit(_rt: Runtime, scope: EntityScope): Promise<OpenedUnit> {
+  return { scope, store: new EntityStore(), mark: 0, openEscalations: [], globalKeys: new Set(), deferred: [] };
 }
 
-export function bindUnit(rt: Runtime, opened: OpenedUnit, uow: UowContext): BoundUnit {
+export async function bindUnit(rt: Runtime, opened: OpenedUnit, uow: UowContext): Promise<BoundUnit> {
   const ctx: UowContext = uow.loanId ? { ...uow, events: withDefaultLoan(uow.events, uow.loanId) } : uow;
+  // the unit's rows, read after its lock: the scope's records (and the global ones) by the loan / application index — one query on entity_records.
+  // (35.1 rule 6's `entity_latest_scoped` load is the hosted command's: its DISTINCT ON re-sorts every record for each read, which a whole-book
+  // pass of 94 loan-days a day cannot afford — the demo advance's 45 days have a 240 s budget; a unit's scope is one loan, its history small)
+  const q = uow.q;
+  opened.store.seed(await rt.entities.load(opened.scope));
+  opened.mark = opened.store.versionCount();
+  opened.openEscalations = await rt.escalationRepo.openFor(opened.scope, q);
   const escalations = new EscalationService(ctx.events, ctx.clock); escalations.seed(opened.openEscalations);
   const notices = rt.ports.printMail && rt.ports.edelivery ? new NoticeService({ registry: rt.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: rt.ports.printMail, edelivery: rt.ports.edelivery, notices: rt.noticeMemory }) : undefined;
   const deferWrite = (fn: (q: Queryable) => Promise<void>): void => { opened.deferred.push(fn); };
-  const toolRt: ToolRuntime = { store: opened.store, escalations, services: { ...rt.originationServices.forCommand(ctx, opened.store, escalations), agents: rt.agents, db: rt.db, runtime: rt, deferWrite }, ports: rt.ports, ...(notices ? { notices } : {}) };
+  // no stateful section service rides here (35.1 rule 9's `forCommand` is the hosted command's): a 35.5 unit runs 2.1 / 2.7 / 2.3 / 6.5 commands, none of which reads one, and rebuilding eleven services per loan-day would cost the demo advance its budget
+  const toolRt: ToolRuntime = { store: opened.store, escalations, services: { agents: rt.agents, db: rt.db, runtime: rt, deferWrite }, ports: rt.ports, ...(notices ? { notices } : {}) };
   return { ...opened, ctx, escalations, toolRt, deferWrite };
 }
 
@@ -60,9 +78,17 @@ export async function executeInUnit(rt: Runtime, bound: BoundUnit, req: InUnitRe
   return new CommandBus(rt.agents).execute(cmd, req.actor, req.input, bound.ctx);
 }
 
-/** The unit's commit hook: what executeDef's commit persists for a hosted command (entities, escalations, the deferred writes). */
-export async function commitUnit(q: Queryable, rt: Runtime, bound: BoundUnit): Promise<void> {
-  await rt.entities.save(bound.store.versionsSince(bound.mark), bound.scope, q);
+/** The unit's commit hook: what executeDef's commit persists for a hosted command (the entity versions by scope, 35.1's projectors in both phases, the escalations, the deferred writes). */
+export async function commitUnit(q: Queryable, rt: Runtime, bound: BoundUnit, info: { readonly firstEventId?: string | null } = {}): Promise<void> {
+  const { global, scoped } = splitByScope(bound.store.versionsSince(bound.mark), bound.globalKeys);
+  const now = rt.clock.now(); const commandEventId = info.firstEventId ?? null;
+  // 35.1 rule 2: the row projectors (a kind a typed table references by foreign key), then the entity records, then the fact projectors — one transaction
+  await projectVersions(q, { phase: "before", versions: global, scope: {}, now, commandEventId });
+  await projectVersions(q, { phase: "before", versions: scoped, scope: bound.scope, now, commandEventId });
+  await rt.entities.save(global, null, q);
+  await rt.entities.save(scoped, bound.scope, q);
+  await projectVersions(q, { phase: "commit", versions: global, scope: {}, now, commandEventId });
+  await projectVersions(q, { phase: "commit", versions: scoped, scope: bound.scope, now, commandEventId });
   for (const e of bound.escalations.list()) await rt.escalationRepo.save(e, q);
   for (const fn of bound.deferred) await fn(q);
 }

@@ -448,5 +448,18 @@
       "35.8",
       "35.9"
     ]
+  },
+  {
+    "n": 36,
+    "title": "The servicing partner portal: partner identity, the tape drop, the eligibility board, the refinance pipeline, home and reports, and the serviced pane contract",
+    "path": "sections/36-servicing-partner-portal",
+    "processes": [
+      "36.1",
+      "36.2",
+      "36.3",
+      "36.4",
+      "36.5",
+      "36.6"
+    ]
   }
 ]

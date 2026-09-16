@@ -71,7 +71,7 @@ const profileV1 = async (): Promise<Row> => (await db.query<Row>(`SELECT id, leg
 test.before(async () => {
   if (skip) return;
   db = connect(DB_URL);
-  runtime = new Runtime({ db, registry: loadOverriddenRegistry(), clock });
+  runtime = new Runtime({ db, registry: loadOverriddenRegistry(), clock, databaseUrl: DB_URL });   // databaseUrl: 35.3's planner lock (`pg_try_advisory_lock(35_003)`) on a dedicated client — the daily run plans through the engine
   partnerPartyId = (await db.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, servicer_number, mers_org_id) VALUES ('servicer', $1, $2, '1000123') RETURNING id`, [`Partner Bank ${R}`, String(100_000_000 + Math.floor(Math.random() * 899_999_999))]))[0]!.id;
 });
 test.after(async () => { if (!skip) await db.end(); });
@@ -219,7 +219,7 @@ test("35.5-T3: Given 7.2's Plan 4927 loan boarded at fund ($400,000.00 at 5.750%
   // the frozen branch: a reprojection whose effective date names a satisfied row is refused SATISFIED_ROW_FROZEN with no row changed —
   // on the reactor's path (3.6's `loan_terms.versioned{effective_from}` naming the satisfied 2026-12-01 row) the refusal rolls its unit of work back, leaves the
   // clock it armed to breach, writes no terms version and opens rule 3's officer escalation; and on the direct command
-  await db.tx((q) => satisfyInstallments(q, loanId, [{ due_date: D("2026-12-01"), payment_id: randomUUID(), credited_as_of: D("2026-12-01"), satisfied_on: D("2026-12-01") }]));
+  await db.tx((q) => satisfyInstallments(q, loanId, [{ due_date: D("2026-12-01"), payment_id: null, credited_as_of: D("2026-12-01"), satisfied_on: D("2026-12-01") }]));   // a row satisfied by hand (no typed payment behind it — 35.1's 0151 FK names one when set): the frozen-row rule is the point
   const frozenBefore = await rowsJson(db, loanId);
   const escalationsBefore = await count(`SELECT count(*)::bigint AS c FROM escalations WHERE loan_id = $1`, [loanId]);
   await runtime.uow.run({ loanId }, async (ctx) => {
@@ -288,7 +288,7 @@ test("35.5-T4: Given the 100-loan demo book (transfer-boarded, `origination_appl
   const decisions = await db.query<Row>(`SELECT loan_id, subject_kind, subject_id, rationale, rule_set_version FROM agent_decisions WHERE action = 'cashiering.run_unit' AND rule_code = 'ONE_UNIT_PER_LOAN_PER_DAY'`);
   assert.equal(decisions.length, book);
   assert.ok(decisions.every((d) => String(d["rationale"]).startsWith("ONE_UNIT_PER_LOAN_PER_DAY: unit ") && d["subject_kind"] === "cashiering_unit_run" && d["subject_id"] === unitByLoan.get(String(d["loan_id"])) && String(d["rationale"]).includes(String(d["subject_id"])) && d["rule_set_version"] === "cashiering.allocation.v1"), "each names the existing unit row");
-  const run2 = await cycles.run("cashiering_daily", "2026-09-02"); assert.ok(run2); assert.equal(run2.units_total, book); assert.equal(run2.units_done, book); assert.equal(run2.runs, 2);
+  const run2 = await cycles.run("cashiering_daily", "2026-09-02"); assert.ok(run2); assert.equal(run2.units_total, book); assert.equal(run2.units_done, book); assert.equal(run2.run_id, r1.run_id, "35.3 rule 3: the same (cycle, period) is one run — the rerun opened nothing");
   // the next day's receipt satisfies the day's clock and re-arms it (recurring, global)
   clock.set("2026-09-03T16:00:00.000Z");
   const r3 = await cashieringDailyRun(runtime, "2026-09-03T16:00:00.000Z");
@@ -938,11 +938,12 @@ test("35.5-T14: Given a 2.4 curtailment of $1,000.00 received on 2026-11-10 on T
 test("35.5-T15: Given the demo clock at 2026-10-01 12:00 ET and the fixture book, when `POST /v1/demo/advance {days: 3}` runs, then `cycle_runs` holds one `cashiering_daily` run per day 2026-10-02 … 2026-10-04 with `units_total` = the active book, each loan has exactly one `done` unit row per day, `cashiering.daily.run_completed` was appended three times with the three `as_of_date`s, and `SM_CASHIERING_DAILY_RECEIPT_1D` never breached.", { skip }, async () => {
   // the demo clock at 2026-10-01 12:00 ET over the fixture book (T4's demo batch and every loan this file boarded): a second Runtime over the same database with the OffsetClock the demo advance steps
   const demoClock = new OffsetClock(new FixedClock("2026-10-01T16:00:00.000Z"));
-  const rt2 = new Runtime({ db, registry: loadOverriddenRegistry(), clock: demoClock });
+  const rt2 = new Runtime({ db, registry: loadOverriddenRegistry(), clock: demoClock, databaseUrl: DB_URL });
   assert.equal(demoClock.now(), "2026-10-01T16:00:00.000Z"); assert.equal(wallClock(Date.parse(demoClock.now()), "America/New_York").hour, 12);
   const days = ["2026-10-02", "2026-10-03", "2026-10-04"] as const;
-  // the spec's "when": `POST /v1/demo/advance {days: 3}` on the hosted API over rt2 — the route steps the OffsetClock through advanceDemoClock with the
-  // borrower flows' tick (flow 8's tick is servicingDailySweep → cashieringDailyRun), so each day crossed is one whole-book cashiering run plus the breach pass
+  // the spec's "when": `POST /v1/demo/advance {days: 3}` on the hosted API over rt2 — the route steps the OffsetClock through advanceDemoClock: each day crossed is
+  // 35.3's cycles pass inline (the planner's `cashiering_daily` run, its units drained, the receipt elected — 35.3 rule 10), the flows' tick (servicingDailySweep yields
+  // to the cycle, 35.3 D13) and the breach pass
   const server = createApiServer({ runtime: rt2, apiToken: TOKEN, logger: createLogger("json", () => undefined), console: false });
   const base = `http://127.0.0.1:${await listen(server, 0, "127.0.0.1")}`;
   let r: AdvanceReport;
@@ -959,10 +960,14 @@ test("35.5-T15: Given the demo clock at 2026-10-01 12:00 ET and the fixture book
   const cycles = ports35_5(rt2).cycles;
   for (const d of days) {
     const run = await cycles.run("cashiering_daily", d); assert.ok(run, d);
-    assert.equal(run.period_key, d); assert.equal(run.as_of_date, d); assert.equal(run.status, "completed"); assert.equal(run.units_total, book.length, d); assert.equal(run.units_done, run.units_total, d); assert.equal(run.units_dead, 0);
+    // the active book as the day's planner saw it: a (cycle, period) is planned once (35.3 rule 3 — T11 planned 2026-10-02 before T12's NY loan and T13's L-1 were boarded into the past by this file's rewound clock; they join the next day's run), so the day's units are the book's loans that existed at its plan
+    const planned = (await db.query<{ id: string }>(`SELECT l.id FROM loans l WHERE l.id = ANY($1::uuid[]) AND l.created_at <= (SELECT r.created_at FROM cycle_runs WHERE r.id = $2)`.replace("FROM cycle_runs WHERE r.id", "FROM cycle_runs r WHERE r.id"), [(await selectBook(db, D(d), `${d}T16:00:00.000Z`)).loans.map((l) => l.loan_id), run.run_id])).map((r) => r.id);
+    assert.ok(planned.length >= 94 + 3, `${d}: the demo book and the loans boarded before the day's plan (${planned.length})`);
+    assert.equal(run.period_key, d); assert.equal(run.as_of_date, d); assert.equal(run.status, "completed"); assert.equal(run.units_total, planned.length, d); assert.equal(run.units_done, run.units_total, d); assert.equal(run.units_dead, 0);
     const done = await db.query<{ loan_id: string; c: bigint }>(`SELECT loan_id, count(*)::bigint AS c FROM cashiering_unit_runs WHERE as_of_date = $1 AND outcome = 'done' GROUP BY loan_id`, [d]);
-    assert.equal(done.length, book.length, `${d}: one done row per active loan`); assert.ok(done.every((x) => x.c === 1n), `${d}: exactly one`); assert.deepEqual(new Set(done.map((x) => x.loan_id)), new Set(book));
+    assert.equal(done.length, planned.length, `${d}: one done row per active loan`); assert.ok(done.every((x) => x.c === 1n), `${d}: exactly one`); assert.deepEqual(new Set(done.map((x) => x.loan_id)), new Set(planned));
   }
+  assert.equal((await cycles.run("cashiering_daily", "2026-10-04"))!.units_total, book.length, "by the last day every loan of the book is a unit");
   // the receipt appended once per day with the three as_of_dates; SM_CASHIERING_DAILY_RECEIPT_1D never breached — armed for the day after the last
   const receipts = await db.query<{ d: string; c: bigint }>(`SELECT payload->>'as_of_date' AS d, count(*)::bigint AS c FROM loan_events WHERE type = 'cashiering.daily.run_completed' AND payload->>'as_of_date' = ANY($1::text[]) GROUP BY 1 ORDER BY 1`, [[...days]]);
   assert.deepEqual(receipts, days.map((d) => ({ d, c: 1n })));

@@ -17,6 +17,7 @@
 import type { Queryable } from "../../infra/db/client.ts";
 import type { PgDecisionRepository } from "../../infra/db/decisions.ts";
 import type { PlainDate } from "../../kernel/calendar/date.ts";
+import type { StagedLoan } from "../boarding/types.ts";
 import { projectBoarding, persistBoardingSchedule, type BoardingProjectionContext, type BoardingProjectionDeps, type BoardingScheduleFacts, type ProjectedSchedule } from "./installments.ts";
 import { projectServicingConfig, persistProjectedConfig, type ProjectedConfig } from "./servicing-config.ts";
 
@@ -30,6 +31,20 @@ export interface BoardedLoanFacts extends BoardingScheduleFacts {
   readonly boarded_on: PlainDate;
 }
 export interface BoardingProjection { readonly schedule: ProjectedSchedule; readonly config: ProjectedConfig; }
+
+const pctToBps = (pct: string | null, scale: number): number | null => (pct === null ? null : Math.round(Number(pct) * scale));
+/**
+ * The facts of a transfer-boarded loan from its tape (1.1's canonical StagedLoan): the rows from the tape's UPB and next due date
+ * (worked example B), the note's late-charge terms, the property's state — shared by the seed route (src/runtime/transfers.ts
+ * boardTransferBatch) and the bus path (src/app/tools/section01.ts `1.1 boardLoan{batch, files}`, 35.1 rule 10) so both boarding
+ * paths write the same schedule and configuration (rule 1). `terms_id` is null: the `loan_terms` row is the boarding set's and
+ * `persistBoardingSchedule` reads it back after that set is written.
+ */
+export function tapeBoardedFacts(loanId: string, s: StagedLoan, transferDate: PlainDate, boardedOn: PlainDate): BoardedLoanFacts {
+  return { loan_id: loanId, source: "transfer", terms_id: null, upb_cents: s.upb_cents ?? 0n, first_due: s.next_due_date ?? transferDate, first_payment_date: s.first_payment_date ?? s.instrument_date, maturity_date: s.maturity_date ?? transferDate,
+    original_upb_cents: s.original_upb_cents, original_term_months: s.original_term_months, note_rate_pct: s.note_rate_pct ?? "0", note_rate_bps: pctToBps(s.note_rate_pct, 10_000) ?? 0, pi_cents: s.pi_cents, escrow_payment_cents: s.escrow_payment_cents, amortization: s.amortization,
+    state: s.property.state, late_charge_pct: ((pctToBps(s.late_charge_pct, 1000) ?? 5000) / 1000).toFixed(3), late_charge_grace_days: s.late_charge_grace_days ?? 15, boarded_on: boardedOn };
+}
 
 export async function onLoanBoardedProject(q: Queryable, ctx: BoardingProjectionContext, f: BoardedLoanFacts, deps: BoardingProjectionDeps): Promise<BoardingProjection> {
   const schedule = projectBoarding(ctx, f, deps);

@@ -79,6 +79,8 @@ import { createBorrowerRouter, parseMultipart, type BorrowerRouter, type Borrowe
 import { holdsOf, importPartnerBook, listPartnerBookImports, partnerBookReport, partnerBookStatus, resolvePartnerBookLoan, seedPartnerBookDemo, type PartnerBookImportInput } from "./partner-book.ts";
 import { seedEntryDemo } from "./entry-seed.ts";
 import { OffsetClock, advanceDemoClock, demoClockStatus } from "./demo-clock.ts";
+/** 35.12 Inputs and triggers: the /v1 posture routes as aliases of the process's tools (the body is the input). */
+const POSTURE_V1_ROUTES: Readonly<Record<string, string>> = { "/v1/posture/manifests": "posture.record", "/v1/posture/check": "posture.check", "/v1/posture/scans": "data.scan" };
 
 export interface ServerOptions { readonly runtime: Runtime; readonly apiToken: string; readonly logger: Logger; readonly console?: boolean;
   /** The borrower API's own dependencies (vendor fakes, rpId, environment); defaults to the FAKE vendors. */
@@ -222,6 +224,16 @@ export function createApiServer(opts: ServerOptions): Server {
       try { principal = await v1.resolve(req, runtime.clock.now()); } catch (e) { if (e instanceof PrincipalRefused && e.context) principal = e.context as PrincipalContext; throw e; }
       if (method === "GET" && path === "/v1/tools") { done(200, { tools: runtime.listTools() }); return; }
       let m: RegExpExecArray | null;
+      // 35.12 Inputs: the deploy workflow's `POST /v1/posture/manifests` (posture.record, under a 35.7 service principal), `POST /v1/posture/check` and
+      // `POST /v1/posture/scans` (the cycle or a compliance principal) — the body IS the tool input; the same door, bus and staff_actions row as the tool routes
+      const postureAlias = method === "POST" ? POSTURE_V1_ROUTES[path] : undefined;
+      if (postureAlias) {
+        const b = await readJson(req);
+        action.command = `35.12 ${postureAlias}`;
+        const { actor, grantRole } = await resolveActor({}, runtime.tool("35.12", postureAlias), {}, "35.12");
+        const r = await executeWithControls(runtime, { process: "35.12", name: postureAlias, loanId: "", actor, input: toolInput(b) }, { surface: "v1", source: principal!.source, requestId: null, grantRole });
+        done(200, r, { tool: `35.12 ${postureAlias}`, actor: `${actor.kind}:${actor.id}`, events: r.events.length }); return;
+      }
       if (method === "POST" && (m = /^\/v1\/(?:loans\/([^/]+)\/)?tools\/([^/]+)\/([^/]+)$/.exec(path))) {
         const loanId = m[1] ? decodeURIComponent(m[1]) : "";
         if (loanId && !isUuid(loanId)) throw new RangeError("loanId must be the loan's uuid (loans.id)");

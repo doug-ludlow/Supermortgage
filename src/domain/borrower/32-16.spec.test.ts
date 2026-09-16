@@ -459,13 +459,14 @@ test("32.16-T10: Given the 18.1 kill switch tripped for `intake`, then the turn 
   assert.equal(await router.agent!.bypassed("intake"), null);
   const back = await message(two.token, "is this thing on?"); assert.match(String(back.reply["body_text"]), /^It is/); assert.equal((back.reply["copy_tokens"] as Json)["source"], "agent_turn");
 });
-test("32.16-T11: Given the shell at ≥ 1024 px, then no card component renders inside the thread; under Needed from you only the current ask is open, the other pending cards wait behind one \"n more after this\" line, and expanding one shows its component.", { todo: true });
-test("32.16-T12: Given a reference chip, when clicked, then the rail focuses and expands that `card_instance_id`; resolving it there updates the chip to its receipt.", { todo: true });
-test("32.16-T13: Given the refinance fixture at R8, then `journey_progress` shows E1–R7 `done`, R8 `current`, and Progress renders \"7 of 12\".", { todo: true });
-test("32.16-T14: Given `credit_reports.frozen_repositories` non-empty, then the rail shows a caution row with the lift-instructions card, and no toast or modal exists in the DOM.", { todo: true });
-test("32.16-T15: Given a `DocumentCard{LE}` under Documents, when expanded, then the viewer and \"Confirm receipt\" render and confirming writes `receipt_evidence = esign_confirmed` (32.3 32.3-T22 unchanged).", { todo: true });
-test("32.16-T16: Given a phone width, then the tab shell shows the badge and next event (My Loan) and the needed count (the Tasks tab badge), and the record sheet shows the same rail sections.", { todo: true });
-test("32.16-T17: Given an in-app voice turn proposing the home-confirm values, when the borrower says \"yes\", then the card resolves through `resolve_card_by_evidence` with `card_instance_events{kind: voice_attestation, utterance_id, transcript_ref}` and `messages.voice_turn = true`.", { skip }, async () => {
+// 32.16-T11 — retired 2026-09-16 (docs/decisions/2026-09-16-apply-product.md); not counted, never scaffolded
+// 32.16-T12 — retired 2026-09-16 (docs/decisions/2026-09-16-apply-product.md); not counted, never scaffolded
+test("32.16-T13: Given the refinance fixture at R8, then `journey_progress` shows E1–R7 `done`, R8 `current`, and Tasks renders Progress \"7 of 12\" from `journey_progress`.", { todo: true });
+test("32.16-T14: Given `credit_reports.frozen_repositories` non-empty, then the You step shows the caution row with the lift-instructions card, and no toast or modal exists in the DOM.", { todo: true });
+test("32.16-T15: Given a `DocumentCard{LE}` under My Loan's documents, when expanded, then the viewer and \"Confirm receipt\" render and confirming writes `receipt_evidence = esign_confirmed` (32.3 32.3-T22 unchanged).", { todo: true });
+test("32.16-T16: Given a phone width, then the Apply tab shell shows the badge and next event on My Loan and the needed count on Tasks, and every rail section is reachable from Tasks or My Loan.", { todo: true });
+// 32.16-T17 — retired 2026-09-16 (docs/decisions/2026-09-16-apply-product.md); kept as a regression test
+test("Given an in-app voice turn proposing the home-confirm values, when the borrower says \"yes\", then the card resolves through `resolve_card_by_evidence` with `card_instance_events{kind: voice_attestation, utterance_id, transcript_ref}` and `messages.voice_turn = true`.", { skip }, async () => {
   const b = await signedUpWithGoal("t17");
   const cardId = await sendCard(b, "ConfirmCard", "refi.home.confirm", "application.confirmField", { ...HOME_PROPS, flow_key: `refi.home:${b.app_id}` }, "32.3 E5: the home");
   const turnsBefore = (await turnsOf(b.party_id)).length;
@@ -524,7 +525,8 @@ test("32.16-T17: Given an in-app voice turn proposing the home-confirm values, w
   const spareRow = await cardRow(spare); assert.equal(spareRow.status, "pending"); assert.equal(((spareRow.props["proposal"] as Json)["fields"] as Json[])[0]!["value"], "85000000");
   const v4 = await voice(b.token, "yes please"); assert.equal((v4.body["attested"] as Json)["card_instance_id"], spare); assert.equal(((await cardRow(spare)).evidence!["fields"] as Json[])[0]!["value"], "85000000", "the yes attested the corrected read-back");
 });
-test("32.16-T18: Given a pending `ConsentCard` on a voice turn, when the borrower says \"I agree\", then nothing resolves and the reply is `voiceConsentLink` with the deep link.", { skip }, async () => {
+// 32.16-T18 — retired 2026-09-16 (docs/decisions/2026-09-16-apply-product.md); kept as a regression test
+test("Given a pending `ConsentCard` on a voice turn, when the borrower says \"I agree\", then nothing resolves and the reply is `voiceConsentLink` with the deep link.", { skip }, async () => {
   const b = await signedUpWithGoal("t18");
   // E6's E-SIGN ConsentCard as the flows send it (32.3 E6 / 7.4): a consent never takes words (01 §3.5, NOT_VOICE) — a spoken "I agree" is answered with the card's link
   const consentId = await sendCard(b, "ConsentCard", "consent.esign.title", "consent.capture", { consent_kind: "esign", disclosure_version_id: "NTC_ESIGN_7001C_DISCLOSURE", scope: ["disclosures", "notices"], affirmation_method: "checkbox_with_text", title: "", body_text: "", footer_text: "", requires_typed_name: true, verification_state: "none", flow_key: `consent.esign:${b.app_id}`, command_args: { kind: "esign", method: "checkbox_with_text", scope: ["disclosures", "notices"], disclosure_version_id: "NTC_ESIGN_7001C_DISCLOSURE", purpose: "informational" } }, "32.3 E6 E-SIGN");
@@ -579,7 +581,8 @@ test("32.16-T19: Given a phone-line session, then the first spoken content is `e
   const turns = await db.query<{ channel: string; message_id: string | null; reply_message_id: string | null }>(`SELECT channel, message_id, reply_message_id FROM agent_turns WHERE party_id = $1 ORDER BY created_at`, [partyId]);
   assert.equal(turns.length, Number(turnsBefore) + 1); assert.equal(turns.at(-1)!.channel, "voice"); assert.equal(turns.at(-1)!.message_id, utterance.message_id); assert.equal(turns.at(-1)!.reply_message_id, reply.message_id);
 });
-test("32.16-T20: Given STT returns low confidence three times on the SSN step, then the reply is the deep link and no proposal is written.", { skip }, async () => {
+// 32.16-T20 — retired 2026-09-16 (docs/decisions/2026-09-16-apply-product.md); kept as a regression test
+test("Given STT returns low confidence three times on the SSN step, then the reply is the deep link and no proposal is written.", { skip }, async () => {
   const b = await signedUpWithGoal("t20");
   // the SSN step: every other pending card of the goal's reactions is closed so the SSN ConfirmCard (as afterIdentity sends it) is the current ask
   for (const c of await db.query<{ card_instance_id: string }>(`SELECT card_instance_id FROM card_instances WHERE party_id = $1 AND status = 'pending'`, [b.party_id])) await router.ui.transitionCard(c.card_instance_id, "cancelled", "test:32.16-T20", NOW);
@@ -810,7 +813,7 @@ test("32.16-T25: Given e-mail + password on the account screen with an e-mail on
   const replay = await account({ action: "verify_email", challenge_id: unverified.body["challenge_id"], code: unverified.body["fake_code"] }, IP); assert.equal(replay.status, 401); assert.equal(replay.body["code"], "OTP_INVALID");
   assert.equal((await sessionsOf(onFileParty)).length, 1);
 });
-test("32.16-T26: Given Continue with Google with `email_verified = true`, then a session opens with `auth_method: oidc_google` keyed on `sub`; with `email_verified = false` the sign-in is refused (`OIDC_EMAIL_UNVERIFIED`); a Google e-mail already on file lands in that party's thread.", { skip }, async () => {
+test("32.16-T26: Given Continue with Google with `email_verified = true`, then a session opens with `auth_method: oidc_google` keyed on `sub`; with `email_verified = false` the sign-in is refused (`OIDC_EMAIL_UNVERIFIED`); a Google e-mail already on file lands on that party's Apply / My Loan.", { skip }, async () => {
   // (i) a verified Google e-mail nobody has: the session is L1 with auth_method oidc_google, keyed on the provider's sub (oidc_identities), no code on the session; the thread says the disclosure and asks the goal
   const emailA = `t26-a-${R}@example.test`; const subA = fakeOidcSubject(emailA);
   const started = await oidcStart({ email: emailA, email_verified: true, name: "Gabi Google" }); assert.equal(started.status, 200, JSON.stringify(started.body)); assert.equal(started.body["delivery"], "FAKE");
@@ -1119,7 +1122,7 @@ test("32.16-T31: Given the first turn with the goal card pending, then the model
   const row = (await db.query<{ prompt_version: string }>(`SELECT prompt_version FROM agent_turns WHERE party_id = $1 ORDER BY created_at DESC LIMIT 1`, [a.party_id]))[0]!; assert.equal(row.prompt_version, "32.16-p7");
 });
 
-test("32.16-T32: Given the agent turn configured, when an account is created and the borrower then types \"yes\" and \"I want a human\", then the thread carries no flow copy line and no flow-sent chip, the first reply carries the goal card, `pinned_card` is the card the model placed last, and both typed lines are answered by the turn (no deep-link line, no fixed human line).", { skip }, async () => {
+test("32.16-T32: Given the agent turn configured, when an account is created and the borrower then types \"yes\" and \"I want a human\", then the thread carries no flow copy line and no flow-sent chip, the first reply on Chat names the Apply step, `pinned_card` is the goal card, and both typed lines are answered by the turn (no deep-link line, no fixed human line).", { skip }, async () => {
   scripted.use([
     { when: /^yes\.?$/i, text: "Got it. Pick the one that fits on the card here and we'll take it from there." },
     { when: /want a human/i, text: "No one is live right now, but I can set up a callback, log a written question, or open a case — which would you like?" },

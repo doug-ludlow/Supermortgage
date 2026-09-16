@@ -4,7 +4,7 @@
 resource "google_cloud_scheduler_job" "sweep" {
   name        = "supermortgage-sweep-every-minute"
   region      = var.region
-  description = "Runs the supermortgage-sweep Cloud Run job (due timers + integration outbox)."
+  description = "Runs the supermortgage-sweep Cloud Run job (one Runtime.sweep pass: the cycles, the daily runs, the queues, due timers, the outbox)."
   schedule    = "* * * * *"
   time_zone   = "America/New_York" # the spec's wall-clock zone
 

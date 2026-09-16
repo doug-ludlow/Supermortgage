@@ -1,5 +1,5 @@
 output "load_balancer_ip" {
-  description = "Static IPv4 address of the external Application Load Balancer. Point the api/console A records here."
+  description = "Static IPv4 address of the external Application Load Balancer. Point the demo A record here (api_hostname and console_hostname default to one name)."
   value       = google_compute_global_address.lb.address
 }
 
@@ -57,7 +57,7 @@ output "secret_names" {
 }
 
 output "api_token_secret" {
-  description = "Secret Manager secret ID of the API token, on its own for the deploy workflow's demo walk (outcome 12 reads the DU record through the ops API): gcloud secrets versions access latest --secret <this>"
+  description = "Secret Manager secret ID of the API token, on its own for the deploy workflow's demo walk (outcomes 3–5 read the application's record through the ops API): gcloud secrets versions access latest --secret <this>"
   value       = google_secret_manager_secret.api_token.secret_id
 }
 
@@ -74,8 +74,8 @@ output "sweep_job" {
 output "godaddy_dns_records" {
   description = <<-EOT
     Enter these A records in GoDaddy DNS for supermortgage.com (the value of
-    var.domain): My Products -> the domain -> DNS -> Add New Record. Only these
-    hostnames move to Google Cloud; the apex (@) record and anything else on the
+    var.domain): My Products -> the domain -> DNS -> Add New Record. Only this
+    hostname (one record when api and console share a name) moves to Google Cloud; the apex (@) record and anything else on the
     domain stay exactly where they are today. The managed certificate provisions
     automatically once every name resolves to this IP (allow up to 60 minutes).
   EOT

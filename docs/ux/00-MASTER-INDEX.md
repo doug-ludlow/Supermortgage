@@ -34,6 +34,7 @@ The ops-console, partner-facing surfaces, and the portfolio-onboarding path (tra
 | `15-entry-sign-up-and-sign-in.md` | Entry, sign-up and sign-in — the doors (deep links, return pages, Google), the partner from configuration, link my loan; process 32.14 |
 | `17-the-conversational-product.md` | The conversational product: an account, then a conversation, with cards only when the rules need one — process 32.16 |
 | `18-the-apply-product.md` | The Apply product: the door, the nine steps and the five tabs on `/app` — the borrower surface on `/app` since 2026-09-16; process 32.19 |
+| `BACKEND-DELTAS.md` | The ledger of what the UI needed the backend to add (DELTA-01…37), each with where it lives and whether it is built; every chapter's build prompt points at it |
 
 ## 2. Principles (fixed)
 

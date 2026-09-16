@@ -151,7 +151,7 @@ resource "google_compute_url_map" "https" {
     name            = "supermortgage"
     default_service = google_compute_backend_service.api.id
 
-    # 32.14 §6.3: the root of the host is the borrower thread. "/" answers 302 → /app; the
+    # 32.19: the root of the host is the Apply product. "/" answers 302 → /app; the
     # ops console page is at /ops on the API service; everything else stays on the API.
     path_rule {
       paths = ["/"]

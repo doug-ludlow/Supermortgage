@@ -109,7 +109,7 @@ resource "google_secret_manager_secret_iam_member" "runtime_google_oauth_client_
 }
 
 # Talk (src/runtime/borrower/talk.ts): the conversational entry's model key. Set by hand in
-# Secret Manager (docs/DEPLOY.md "Talk"); the placeholder version reads as unset and the
+# Secret Manager (docs/DEPLOY.md "The borrower surfaces"); the placeholder version reads as unset and the
 # route answers 503 TALK_NOT_CONFIGURED until a real version exists.
 resource "google_secret_manager_secret" "anthropic_api_key" {
   secret_id = "supermortgage-anthropic-api-key"
@@ -140,7 +140,7 @@ resource "google_secret_manager_secret_iam_member" "runtime_anthropic_api_key" {
 
 # 32.17 — the video agent (src/runtime/borrower/video-routes.ts): the Tavus API key and the
 # secret path segment of the vendor's callback URL. Set by hand in Secret Manager
-# (docs/DEPLOY.md "The video agent"); the placeholder reads as unset — the FAKE vendor stands
+# (docs/DEPLOY.md "The borrower surfaces"); the placeholder reads as unset — the FAKE vendor stands
 # in (every build stage), and the callback path answers 404 to everything.
 resource "google_secret_manager_secret" "tavus_api_key" {
   secret_id = "supermortgage-tavus-api-key"

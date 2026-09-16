@@ -1,4 +1,4 @@
-# One image, three modes. The service and both jobs share the runtime service
+# One image, four modes (serve, sweep, migrate, seed-demo). The service and the jobs share the runtime service
 # account, the two secrets and the Cloud SQL socket volume; only the argument
 # (serve / migrate / sweep) differs.
 

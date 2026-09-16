@@ -494,7 +494,7 @@ jobs:
             echo "|---|---|---|---|"
             echo "${DNS_RECORDS}" | jq -r '.[] | "| \(.type) | \(.name) | \(.value) | \(.ttl) |"'
             echo
-            echo "Once both records resolve, the managed certificate provisions (up to 60 minutes) and these answer:"
+            echo "Once the record resolves, the managed certificate provisions (up to 60 minutes) and these answer:"
             echo
             echo "- https://${API_HOSTNAME}/healthz"
             echo "- https://${CONSOLE_HOSTNAME}/"

@@ -2,6 +2,8 @@
 
 Read this file end to end before touching a file. Then follow **Session 0** exactly.
 
+> Status, 2026-09-16: Session 0 has run. The six process files and the section README exist under `spec/sections/36-servicing-partner-portal/`, are registered, and are scaffolded as todo tests; the audit measures section 36 at 0/40 units (`| 36 |` in `docs/audit/COVERAGE.md`). The next session is 36.1's code, in the build order the section README states.
+
 This is not a greenfield product. Supermortgage already originates, services, and daily-reviews a partner book. What is missing is a **tenanted B2B surface** for the servicer partner. You will author spec section 36, project the existing 33/34 engines through a new `/v1/partner/*` API, and ship `apps/partner`. You will not rebuild refinance scoring, tape parsing, invitations, or servicing.
 
 If a name you need is not in these instructions, in `spec/sections/33-partner-book/`, in `spec/sections/34-operator-portal/`, or in the files listed under **Must-read before any code**, stop and write the gap into `docs/partner-portal/BACKEND-DELTAS.md`. Do not invent a table, timer, notice, command, role, verdict, or filter.

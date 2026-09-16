@@ -3,18 +3,21 @@
 This is the owner's runbook. It assumes you have never used Google Cloud. Follow
 the steps in order; each one tells you exactly what to click or paste.
 
-What you end up with, in one Google Cloud project:
+What you end up with, in one Google Cloud project (every row is a resource in `infra/terraform/`):
 
 | Piece | What it is |
 |---|---|
-| Cloud Run service `supermortgage-api` | the HTTP server (`serve` mode), 1..10 instances |
-| Cloud Run job `supermortgage-migrate` | applies `db/migrations/*.sql`; run before every deploy |
-| Cloud Run job `supermortgage-sweep` | one pass every minute (Cloud Scheduler): the borrower flows' scheduled tick, the daily refinance check (06:30 ET), the FAKE reviewers, due timers and the outbox |
-| Cloud SQL (PostgreSQL 16) `supermortgage-nonprod` | the database, encrypted with a customer-managed key, daily backups + point-in-time recovery |
-| Secret Manager | `supermortgage-database-url`, `supermortgage-api-token` (also `supermortgage-anthropic-api-key`, `supermortgage-tavus-api-key`, `supermortgage-video-callback-secret` — placeholders until set by hand) |
-| Artifact Registry `supermortgage` | container images built by GitHub Actions |
-| Global HTTPS load balancer + Cloud Armor | `demo.supermortgage.com` (API and console on one name), Google-managed certificate, rate limiting |
-| Cloud Run service `supermortgage-borrower` | the borrower app (`apps/borrower`, Next.js standalone from `Dockerfile.borrower`, built with `--build-arg NEXT_PUBLIC_ENVIRONMENT=<environment>` so a nonprod bundle shows the FAKE vendor paths the `INTEGRATIONS=fake` API expects — Google sign-in included), served at `https://demo.supermortgage.com/app` by a `/app/*` URL-map rule to its own serverless NEG — infrastructure and the second build/deploy job are in `docs/ux/deploy-borrower.patch`, applied after review |
+| Cloud Run service `supermortgage-api` | the HTTP server (`serve` mode: the API and the ops console), `min_instances` 1 to `max_instances` 10 by default (`variables.tf`), ingress from the load balancer only (`run.tf`) |
+| Cloud Run service `supermortgage-borrower` | the borrower app (`apps/borrower`, Next.js standalone from `Dockerfile.borrower`, basePath `/app`), `borrower_min_instances` 1 to `borrower_max_instances` 10 by default; built with three build args — `NEXT_PUBLIC_ENVIRONMENT=<environment>` (a nonprod bundle shows the FAKE vendor paths the `INTEGRATIONS=fake` API expects, Google sign-in included), `NEXT_PUBLIC_PARTNER_LEGAL_NAME` and `NEXT_PUBLIC_PARTNER_NMLSR_ID` (the disclosure footer's partner before a session exists) — served at `https://demo.supermortgage.com/app` by the `/app`, `/app/*` URL-map rule to its own serverless NEG and backend |
+| Cloud Run job `supermortgage-migrate` | applies `db/migrations/*.sql` (`migrate` mode); run before every deploy |
+| Cloud Run job `supermortgage-sweep` | one sweep minute (`sweep` mode): the borrower flows' scheduled tick, then `Runtime.sweep()` — the outbox drain, the cycles pass, the daily refinance check, the partner-book passes, the FAKE reviewers, the roles / work / posture / orchestration passes, the record verify, the breach pass and the rest, in the order "The sweep" below lists |
+| Cloud Run job `supermortgage-seed-demo` | boards the 100-loan demo transfer batch, the entry demo and the partner book (`seed-demo` mode, idempotent); run on demand |
+| Cloud Scheduler `supermortgage-sweep-every-minute` | starts the sweep job on `* * * * *` in `America/New_York` with a 180 s attempt deadline (`scheduler.tf`) |
+| Cloud SQL (PostgreSQL 16) `supermortgage-nonprod` | the database, encrypted with a customer-managed key (KMS key ring `supermortgage-nonprod`, key `supermortgage-sql`, `kms.tf`), `ssl_mode = "ENCRYPTED_ONLY"`, a public IP with no authorized networks (only the Cloud Run socket path reaches it, `sql.tf`), daily backups + point-in-time recovery |
+| Secret Manager | `supermortgage-database-url` and `supermortgage-api-token` (written by Terraform), plus five secrets Terraform creates with the placeholder first version `unset` for you to replace by hand: `supermortgage-anthropic-api-key`, `supermortgage-tavus-api-key`, `supermortgage-video-callback-secret`, `supermortgage-google-oauth-client-id`, `supermortgage-google-oauth-client-secret` (`secrets.tf`) |
+| Artifact Registry `supermortgage` | the `api` and `borrower` container images built by GitHub Actions |
+| Global HTTPS load balancer + Cloud Armor | `demo.supermortgage.com` (the API, the console and the borrower app on one name), a Google-managed certificate; Cloud Armor with the preconfigured SQLi / XSS WAF rules in `preview = true` (logged, not enforced) and an enforced rate limit of 300 requests per 60 s per source IP; the URL map sends `/` → 302 `/app`, `/video` and `/video/*` → 302 `/app/video`, `/app` and `/app/*` to the borrower backend and everything else to the API backend (`lb.tf`) |
+| Three service accounts | `runtime` (the API service and the three jobs), `borrower` (the borrower app; reads only the API token secret) and `scheduler` (holds `run.invoker` on the sweep job alone) — `iam.tf` |
 
 Everything is created by Terraform (`infra/terraform/`) from a GitHub Actions
 workflow (`.github/workflows/deploy.yml`). The only thing you run by hand is a
@@ -37,8 +40,10 @@ one-time bootstrap script.
    (or create) one. Nothing below can be created until this is done.
 
 Rough nonprod cost with the defaults: Cloud SQL `db-custom-1-3840` zonal
-(about $50/month), one always-on Cloud Run instance (about $30/month), the load
-balancer forwarding rules (about $18/month), plus cents for the rest.
+(about $50/month), two always-on Cloud Run instances — the API service (about
+$30/month, CPU always allocated) and the borrower app's minimum instance
+(`cpu_idle = true`, 512Mi) — the load balancer forwarding rules (about
+$18/month), plus cents for the rest.
 
 ## 2. Run the bootstrap script in Cloud Shell
 
@@ -74,7 +79,7 @@ created the `supermortgage-deployer` service account, and set up Workload
 Identity Federation so GitHub Actions can act as that service account with no
 downloaded key file.
 
-## 3. Set the five GitHub repository variables
+## 3. Set the GitHub repository variables (and the two optional secrets)
 
 The script ends with a block like this:
 
@@ -91,7 +96,30 @@ The script ends with a block like this:
 Open <https://github.com/doug-ludlow/Supermortgage/settings/variables/actions>,
 click **New repository variable**, and add each of the five, name and value
 exactly as printed. These are *Variables*, not *Secrets*: none of them is
-sensitive, and there are no keys to store anywhere.
+sensitive, and authentication to Google Cloud is Workload Identity Federation,
+so no cloud key is stored in GitHub.
+
+Two more repository variables are optional; the borrower image's build reads
+them and falls back to the demo partner when they are unset
+(`deploy.yml` "docker build (borrower)"; `Dockerfile.borrower`):
+
+| Variable | Build arg | Default when unset |
+|---|---|---|
+| `PARTNER_LEGAL_NAME` | `NEXT_PUBLIC_PARTNER_LEGAL_NAME` | `Partner Bank` |
+| `PARTNER_NMLSR_ID` | `NEXT_PUBLIC_PARTNER_NMLSR_ID` | `123456` |
+
+Two repository **secrets** (Settings → Secrets → Actions) are read by the
+pipelines, both optional and both missing until you add them:
+
+- `POSTURE_PRINCIPAL_TOKEN` — a 35.7 service-principal token, issued once with
+  `principals.issue`. The deploy job's "Record the environment manifest" step
+  posts the environment manifest under it; without the secret the step prints
+  a notice and skips (§4).
+- `WALK_OPS_TOKEN` — the value of
+  `gcloud secrets versions access latest --secret supermortgage-api-token`, read
+  only by the on-demand `walk.yml` workflow (§4 "The demo walk"). The deploy
+  workflow's own walk job reads the token out of Secret Manager and does not
+  need this secret.
 
 ## 4. Run the deploy workflow
 
@@ -102,43 +130,145 @@ Either push a commit to `main` or to
 2. Click **Run workflow**, leave `environment` as `nonprod`, click the green
    **Run workflow** button.
 
-The jobs run in order: `preflight` (checks the variables), `terraform`
-(creates everything in Google Cloud; the first run takes 15-25 minutes, mostly
-Cloud SQL), `build image`, `migrate database`, `deploy`.
+**A docs-only push ships nothing.** The `push` trigger's `paths` filter
+(`deploy.yml`) excludes `**/*.md` and `docs/**`, so a push that changes only
+Markdown or `docs/` runs no build, no deploy and no walk. Two exceptions are
+re-included because the image carries them: `spec/sections/**/*.md` (the agent
+turn hands the model the current step's rules) and
+`docs/ux/12-message-copy-library.md` (the runtime renders SMS, voice and talk
+copy from it). `workflow_dispatch` always deploys.
+
+The job graph (`deploy.yml` header: preflight -> terraform -> build (api +
+borrower, in parallel) -> migrate -> deploy):
+
+1. `preflight` — checks the five variables; when one is missing the run stops
+   here quietly instead of failing.
+2. `terraform` — creates or updates everything in Google Cloud (the first run
+   takes 15-25 minutes, mostly Cloud SQL) and collects the outputs the later
+   jobs read (the artifact repo, the load balancer IP, the hostnames, the DNS
+   records, the API token's secret name).
+3. `build image` and `build borrower image` — run in parallel, both needing
+   only `terraform`. Each pushes an image tagged with the commit SHA and with
+   the branch slug to Artifact Registry.
+4. `migrate database` — needs `terraform` and `build`: points the
+   `supermortgage-migrate` job at the new API image and executes it with
+   `--wait`.
+5. `deploy` — needs `terraform`, `build`, `build-borrower` and `migrate`:
+   points the sweep and seed-demo jobs at the new API image, deploys
+   `supermortgage-api` and `supermortgage-borrower`, then runs the steps below.
+6. `demo walk` — needs `terraform` and `deploy`; described in "The demo walk".
+
+Inside `deploy`, after the two services are deployed:
+
+- **Record the environment manifest (35.12 posture.record)** —
+  `continue-on-error`. With `POSTURE_PRINCIPAL_TOKEN` set, the step gathers an
+  environment manifest of facts (the image digest, the migration head from the
+  checkout, Cloud SQL's IP / PITR / CMEK settings, the service's env names and
+  ingress, each `supermortgage-*` secret's name and latest-version creation
+  time — never a payload — and the demo clock's status code) and posts it to
+  `POST /v1/posture/manifests` under that token; `posture.record` hashes it,
+  runs the posture check and opens drift findings. Without the secret the step
+  prints a notice and exits 0. A failure never fails the deploy.
+- **Three smoke steps**, each `continue-on-error`, each pinning the hostname to
+  the load balancer IP with `--resolve` so they work before DNS propagates but
+  with TLS fully verified, so they pass only once the DNS record exists and the
+  managed certificate has provisioned:
+  1. `/healthz` → 200;
+  2. `/app` (the borrower app) → 200;
+  3. `/` → 302, `/video` → 302, `/ops` → 200 (the staff sign-in page is public
+     by design, 34.1 rule 1) and `/ops/api/me` → 401 without a staff session.
+- **Board the demo transfer batch** — only on a `workflow_dispatch` with
+  `seed_demo` ticked (executes `supermortgage-seed-demo` with `--wait`).
+- **Job summary** — prints the images, the Cloud SQL connection name, the load
+  balancer IP and the DNS record for the next step.
 
 The `deploy` job's **Summary** (click the run, then the summary at the top)
-prints the load balancer IP and the DNS records for the next step. The
-"Smoke test" step is expected to show a warning on the first run: it cannot
-pass until DNS and the certificate are in place.
+prints the load balancer IP and the DNS record for the next step. The three
+smoke steps are expected to show a warning on the first run: they cannot pass
+until DNS and the certificate are in place.
+
+### The demo walk
+
+After every deploy the `walk` job (`deploy.yml`; `timeout-minutes: 30`) drives
+the Apply product on the deployed demo in a real Chromium browser:
+`node --experimental-strip-types tests/walk/demo-walk.mts` from `apps/borrower`,
+with `DEMO_BASE` set to the deployed hostname. It creates fresh accounts through
+the door and checks the ten things a person must see work
+(`apps/borrower/tests/walk/demo-walk.mts`):
+
+1. A fresh window reaches the light door: welcome on the paper, none of the old
+   shell, the disclosure footer; Continue → intro; "Create an account" → the
+   account form with Google; "Already have an account?" → the sign-in form.
+2. Creating an account lands on Apply at the goal step; `GET /me` through the
+   page's proxy lists the application; no error line.
+3. Buy with an address reaches the DU moment from the screens: goal → property
+   → you → connect → details → the declarations → the demographics → "Confirm
+   these numbers", with the DU-side facts read through the ops API.
+4. Buy, still looking, ends at the preapproval request.
+5. Refinance, cash out: `transaction_type` cash_out on the ops record, value,
+   balance, cash out and its purpose collected, the same DU verdict.
+6. Errors stay on the step, in copy.
+7. My Loan is empty for a fresh account; Tasks marks the done rows and a tap
+   jumps to the step.
+8. Sign out works: the next load is the door; a second fresh context sees
+   nothing of the first person.
+9. A partner-book homeowner (33.1) signs in by code and lands on My Loan.
+10. Returns and `?card=` land on the card.
+
+Outcomes 3–5 read the application's record through the ops API
+(`GET /v1/applications/{id}` with the API token), so the job authenticates to
+Google Cloud the way the deploy job does, reads the token out of Secret Manager
+(`api_token_secret` from the terraform outputs) into `WALK_OPS_TOKEN` and masks
+it; without the token those outcomes fail by name
+("WALK_OPS_TOKEN not provided …"), never pass. Outcome 9 needs the partner book
+a `seed_demo=true` dispatch imports; an unseeded book fails, never passes. Every
+step leaves a screenshot and the verdicts land in `report.json`; both are kept
+as the run artifact `demo-walk` for 14 days, and the job summary lists
+`<passed> of 10 outcomes hold on <base>` with one line per outcome. A failed
+outcome fails the walk job, never the `deploy` job that preceded it. The walk
+takes about two and a half minutes (deploy run 189 on 2026-09-16 read 10 of 10
+in 2 min 28 s).
+
+The same walk runs on demand from
+<https://github.com/doug-ludlow/Supermortgage/actions/workflows/walk.yml>
+(`.github/workflows/walk.yml`; `timeout-minutes: 25`): **Run workflow** with
+any base URL (default `https://demo.supermortgage.com`). That workflow does not
+authenticate to Google Cloud; it takes `WALK_OPS_TOKEN` from the repository
+secret of that name (§3), and without it outcomes 3–5 are NOT ok by name.
 
 ## 5. Point DNS at the load balancer (GoDaddy)
 
-Only two hostnames move to Google Cloud. The apex `supermortgage.com`, `www`,
+Only one hostname moves to Google Cloud: `demo.supermortgage.com`
+(`api_hostname` and `console_hostname` both default to it in
+`infra/terraform/variables.tf`, and the record list is `distinct()` over the
+two, so Terraform emits one A record). The apex `supermortgage.com`, `www`,
 email and anything else on the domain stay exactly where they are.
 
 1. Log in at <https://dcc.godaddy.com/manage/> (My Products), find
    **supermortgage.com** and click **DNS** (on the cPanel-hosted product page it
    is **Domain -> Manage DNS**).
-2. Click **Add New Record** twice and enter, using the IP from the workflow
+2. Click **Add New Record** and enter, using the IP from the workflow
    summary (or `terraform output load_balancer_ip`):
 
    | Type | Name | Value | TTL |
    |---|---|---|---|
-   | A | `api` | `<load balancer IP>` | 600 seconds |
-   | A | `console` | `<load balancer IP>` | 600 seconds |
+   | A | `demo` | `<load balancer IP>` | 600 seconds |
 
-   If an `api` or `console` record already exists, edit it instead of adding a
-   duplicate.
+   If a `demo` record already exists, edit it instead of adding a duplicate.
 3. Wait. DNS propagates in a few minutes; the Google-managed certificate then
-   provisions itself, which takes anywhere from 10 to 60 minutes. Check with:
+   provisions itself, which takes anywhere from 10 to 60 minutes. The
+   certificate's name is `supermortgage-cert-<8 hex characters>` (a hash of the
+   hostnames, `infra/terraform/lb.tf`; a hostname change creates a new
+   certificate under a new name), so list it rather than guessing the name:
 
    ```sh
-   gcloud compute ssl-certificates describe supermortgage-cert \
+   gcloud compute ssl-certificates list --project supermortgage-nonprod
+   gcloud compute ssl-certificates describe <name from the list> \
      --project supermortgage-nonprod --format 'value(managed.status,managed.domainStatus)'
    ```
 
-   You want `ACTIVE` and both domains `ACTIVE`. `PROVISIONING` means keep
-   waiting; `FAILED_NOT_VISIBLE` means the DNS records are not pointing at the
+   You want `ACTIVE` and the domain `ACTIVE`. `PROVISIONING` means keep
+   waiting; `FAILED_NOT_VISIBLE` means the DNS record is not pointing at the
    load balancer yet.
 
 ## 6. Verify
@@ -148,7 +278,9 @@ From any machine:
 ```sh
 curl -i https://demo.supermortgage.com/healthz     # HTTP/2 200
 curl -i https://demo.supermortgage.com/readyz      # 200 once Postgres answers
-curl -i https://demo.supermortgage.com/ops         # 401 without a token (the root / answers 302 → /app, the borrower thread)
+curl -i https://demo.supermortgage.com/             # 302 → /app, the Apply product (32.19)
+curl -i https://demo.supermortgage.com/ops         # 200: the staff sign-in page (34.1 rule 1)
+curl -i https://demo.supermortgage.com/ops/api/me  # 401 AUTH_REQUIRED without a staff session
 ```
 
 Read the API token (generated by Terraform and stored in Secret Manager) in
@@ -158,15 +290,23 @@ Cloud Shell:
 gcloud secrets versions access latest --secret supermortgage-api-token --project supermortgage-nonprod
 ```
 
-and use it:
+and use it on the API routes (`/v1/*`, the route list is the comment block at
+the top of `src/runtime/server.ts`):
 
 ```sh
 TOKEN="$(gcloud secrets versions access latest --secret supermortgage-api-token --project supermortgage-nonprod)"
-curl -H "Authorization: Bearer ${TOKEN}" https://demo.supermortgage.com/ops
+curl -H "Authorization: Bearer ${TOKEN}" https://demo.supermortgage.com/v1/tools
 ```
 
-The console is at <https://demo.supermortgage.com/ops> (the root of the host is the borrower thread, 32.14 §6.3) and needs the same
-bearer token.
+The console is at <https://demo.supermortgage.com/ops> (the root of the host
+answers 302 → `/app`, the Apply product) and is gated by a staff session: every
+`/ops/api/*` request resolves the session from the `sm_staff` cookie or an
+`Authorization: Bearer <session token>` (`src/console/server.ts`, 34.1 rule 3).
+The shared ops bearer token opens the console only together with the
+`x-actor-id` / `x-actor-role` headers, and only outside production — that path
+exists for the deploy workflow's own calls (`src/runtime/server.ts` route
+comment); in production the headers open nothing (403
+`NO_HEADER_ACTOR_IN_PRODUCTION`).
 
 **The first operator-portal account (34.1 operational prerequisites).** `serve` reads `STAFF_BOOTSTRAP_ADMIN_EMAIL`
 (Terraform `staff_bootstrap_admin_email`, `infra/terraform/run.tf`) once at start and, while `staff_users` is empty, creates
@@ -214,6 +354,46 @@ Your own batch goes to `POST /v1/transfers/batches` with `{ actor, batch, files 
 `fixtures/transfer-batch-demo/LAYOUT.md`; `GET /v1/transfers/batches/<batch_id>` returns the
 scorecard afterwards.
 
+## The sweep
+
+One sweep minute is what the `supermortgage-sweep` job runs each minute and what `POST /v1/sweep` runs on the
+service (`src/runtime/main.ts` `sweep` mode): the borrower flows' scheduled `tick` first — every 32.x flow's scheduled
+pass (`originationDailySweep`, `servicingDailySweep`, `delinquencyDailySweep`, the card expiries) — then
+`Runtime.sweep()`, then the flows `settle` the reactions the sweep's commits queued. The flows' tick belongs to the
+entry point (and to the demo clock's step, below), not to `Runtime.sweep` itself.
+
+`Runtime.sweep()` (`src/runtime/app.ts`) first takes the sweep lease (`acquireSweepLease`, the advisory lock
+`35_001`) and writes one `sweep_runs` row per firing whose `outcome` is `running`, then `completed`, `skipped` or
+`failed`. A firing that finds the lease held writes the row as `skipped{lease_held}`, appends `sweep.run_skipped`
+and exits 0 (35.1 rule 12); a lease that cannot be taken at all is `failed{lease_unavailable}`. Holding the lease,
+it runs these passes in this order, each heartbeating the lease and timed into the row's `passes` (a pass marked
+"logged" logs its failure and carries on; the others fail the run):
+
+1. `outbox.dispatch` — the integration outbox drained (35.1 rule 11; its failure is the run's);
+2. `cycles` — 35.3's `cycles.plan` under its planner lock and the executor running every claimable unit until the
+   queue is empty or the 240 s budget is spent (logged);
+3. `refi.daily` — the daily refinance check (`src/runtime/refi-daily.ts`, below; logged);
+4. `partner_book.review` (33.2), 5. `partner_book.readiness` (33.3), 6. `partner_book.daily_reports` (34.3) — logged;
+7. `controls` — 34.4: unconfirmed kill-switch requests expired at 10 minutes, a switch tripped over 24 hours escalated (logged);
+8. `fake_reviewers` — the FAKE reviewers' tick (DELTA-30; only when wired; logged);
+9. `roles.sweep` (35.7), 10. `work.sweep` (35.8), 11. `posture.sweep` (35.12), 12. `orchestration.pass` (35.6),
+   13. `orchestration.daily_receipt` (once per platform day at/after 06:00 ET), 14. `refinance.closeout` and
+   15. `refinance.board` (35.10) — logged;
+16. `record.verify` — once per calendar day at/after `VERIFY_AT_ET` (06:00 America/New_York): the gaps, the
+    mismatches and their escalations, one `projection_runs` row, `projection.run_completed`;
+17. `default_case.daily` — 35.9's day, once per calendar day (logged);
+18. `ops.steward` (35.11) and 19. `breach_action.recon` (35.9 rule 7) — logged;
+20. `timers.breach` — the breach pass: the due timer instances claimed `FOR UPDATE SKIP LOCKED` in pages of 500, one
+    transaction per page, `timer.breached` appended and `breach.execute` run for each;
+21. `work.breaches` (35.8's breach actions), 22. `close.plan` (35.4), 23. `partner_book.reminders` (33.1 T10),
+    24. `partner_book.tape_late` (33.1 T12), 25. `refinance.breach_actions` (35.10), 26. `documents` (35.2 rule 4:
+    the staged-blob drain, the envelope expiry, the print vendor probe) — logged;
+27. the receipt: `sweep.run_completed` in its own final transaction, satisfying and re-arming
+    `SM_SWEEP_HEARTBEAT_DAILY`, and the row set to `completed` with its `passes` and outbox counts.
+
+An exception from a non-logged pass sets the row to `failed` with the message and re-throws; the lease is released
+either way.
+
 ## The demo clock
 
 Outside production the runtime's clock is the system clock plus a persisted offset (`src/runtime/demo-clock.ts`,
@@ -228,17 +408,21 @@ in production** (`ENVIRONMENT=production` runs on the system clock, full stop).
 - `GET /v1/demo/clock` → `{ now, real_now, offset_ms, offset_days, date, zone, rows, latest, following, max_advance_days, default_budget_ms }`.
 - `POST /v1/demo/advance` with `{ "days": 45 }` or `{ "to": "2026-10-25T16:00:00Z" }` (exactly one; `actor` and
   `budget_ms` optional). For every America/New_York calendar day crossed the clock steps to that day (noon ET) and
-  runs the sweep minute in the order the wall clock runs it (the `sweep` job, `POST /v1/sweep`): the borrower flows'
-  `tick` — every flow's scheduled pass: `originationDailySweep`, `servicingDailySweep` (2.1 posting, the 2.7
-  late-charge runs, the 2.3 amount check) and the December `irs_estatement` ask, `delinquencyDailySweep` (the 11.x
-  counter), the card expiries — then `Runtime.sweep()`, which runs the refinance daily run
-  (`src/runtime/refi-daily.ts`, when a rate feed is wired) and the FAKE reviewers before its breach pass, then the
-  flows settle the reactions the breaches queued — and last steps to the target and runs it once more. Each step is
-  one `demo_clock` row written before its passes, so a crash leaves the clock on the last swept day. A single advance
-  covers at most 400 days; a target at or before now is a no-op (`advanced: false`, nothing written), so re-posting
-  the same target changes nothing; the clock never moves backwards. The answer lists every step with what it ran.
+  runs the sweep minute with one reordering against the wall clock's (35.3 rule 10; `runSweepMinute` in
+  `src/runtime/demo-clock.ts`): first 35.3's cycles pass, ahead of the flows' tick — the persisted offset re-read,
+  `cycles.plan{as_of: step.at}` planned by `demo:<advance_id>`, the day's queued units drained to completion inline with
+  no 240 s budget — then the borrower flows' `tick` and `settle` (every flow's scheduled pass: `originationDailySweep`,
+  `servicingDailySweep` — 2.1 posting, the 2.7 late-charge runs, the 2.3 amount check — and the December
+  `irs_estatement` ask, `delinquencyDailySweep` — the 11.x counter — the card expiries), then
+  `runtime.sweep(step.at, { cycles: "skip" })` — the passes of "The sweep" above with its own cycles pass skipped: the
+  refinance daily run, the FAKE reviewers, the breach pass and the rest — then the flows settle once more so the
+  reactions the breaches queued have run before the step is reported — and last steps to the target and runs it once
+  more. Each step is one `demo_clock` row written before its passes, so a crash leaves the clock on the last swept
+  day. A single advance covers at most 400 days; a target at or before now is a no-op (`advanced: false`, nothing
+  written), so re-posting the same target changes nothing; the clock never moves backwards. The answer lists every
+  step with what it ran.
 - **Long advances.** The whole advance runs inside the one request. Forty-five steps take about five seconds on the
-  demo book without the rate feed; with the refinance run and the reviewers a 400-day advance can outlive Cloud Run's
+  demo book with the FAKE feed; with the refinance run and the reviewers a 400-day advance can outlive Cloud Run's
   request timeout (the deploy sets none, so the default 300 s applies). So an advance spends at most `budget_ms`
   stepping (default 240 s; the body may lower it) and then stops *between* steps, answering `complete: false`,
   `steps_remaining` and the clock standing on the last swept day; re-POST the same `to` (or `GET /v1/demo/clock`
@@ -262,14 +446,17 @@ clock adopts another instance's advance unasked, and a spent budget stops betwee
 ## The daily refinance check (20.1 `SM_REFI_TRIGGER_DAILY`)
 
 Every sweep (the `supermortgage-sweep` job each minute, and `POST /v1/sweep`) runs
-`src/runtime/refi-daily.ts` before its breach pass. Once per calendar day, at or after
+`src/runtime/refi-daily.ts` as its third pass, after `outbox.dispatch` and `cycles` and before
+the breach pass ("The sweep" above). A rate feed is always wired (`rateFeedFromEnv` in
+`src/runtime/main.ts`): the FAKE unless `RATE_FEED=fred`. Once per calendar day, at or after
 06:30 America/New_York, it:
 
 1. publishes the day's rate sheet through `20.4 publishRateSheet` (`rs-<date>-<vendor>`,
    once per day) from the rate feed — the FAKE feed (`src/infra/integrations/rates.ts`,
    the 20.1 worked-example grid, the same every day) unless `RATE_FEED=fred`, which reads
    Freddie Mac's weekly 30-year average from FRED's `MORTGAGE30US` series over https
-   (`FRED_API_KEY` optional: with a key the JSON API, without it the public CSV) and
+   (`FRED_API_KEY` optional: with a key the JSON API, without it the public CSV;
+   `FRED_SERIES` optionally names another series) and
    builds the sheet's grid around it; `RATE_FEED_FAKE_SHIFT_BPS=-25` moves the FAKE grid;
 2. builds the universe from the investor-blind view `v_refi_universe` — every active loan
    on the book, joined at run time to the ledger balance, unpaid installments, the boarding
@@ -302,7 +489,10 @@ QC's prefunding hold (`28.1 openReview` + `closeReview{no_defect}`), the funding
 wire release (`26.3 prepareWire{op=release}`), and the person a transfer reaches
 (`20.3 deliverDisclosure{op=human_joined}` on a lead, `4.3 human.transfer{op=complete}` on a loan
 or application); any other escalation a FAKE role owns is completed the way the console's
-queue completes it. Queues, roles, guardrails and decision rows are unchanged — the review id
+queue completes it. The FAKE officer also approves the 33.1 partner-book offers
+(`fakeOfficerFromEnv` in `src/runtime/partner-book-offers.ts`: never in production, nor under
+`FAKE_REVIEWERS=off`, nor under any `INTEGRATIONS` other than `fake`). Queues, roles, guardrails
+and decision rows are unchanged — the review id
 is `FAKE-MR-…`, the person's name "FAKE reviewer (Supermortgage)", the notes say "FAKE reviewer",
 and the console's queue row of a pending item a FAKE will fill reads "— FAKE reviewer".
 `FAKE_REVIEWERS=off` leaves every queue to a person. Timer breaches (`sev1`–`sev4`
@@ -314,7 +504,8 @@ Origination runs on the same service. `POST /v1/applications` opens an applicati
 channel, transaction type, occupancy, borrowers, subject property, the prior loan for a refinance) and returns the
 row with `application.started` and the origination timers it armed; `POST /v1/applications/{id}/tools/{process}/{name}`
 executes an agent tool in application scope (same body as the loan route); `GET /v1/applications/{id}` reads the
-record (row, events, open timers, decisions) and, once 30.2 has funded it, the `loan_id` it became. A loan created
+record (row, events, open timers, decisions) and, once 30.2 has funded it, the `loan_id` it became;
+`GET /v1/applications` lists the newest applications. A loan created
 from an application answers on the loan routes like any transferred-in loan.
 
 The origination tools run against the runtime's own service set (see ARCHITECTURE.md, "One product"): one instance
@@ -343,8 +534,13 @@ and every refusal is `{ code, gate?, copy_key }`.
 
 Environment: `ENVIRONMENT=production` turns off the FAKE code echo (below); `BORROWER_RP_ID` (WebAuthn relying-party id,
 default `localhost`) and `BORROWER_ORIGINS` (comma-separated allowed origins) must name the borrower app's host;
-`BORROWER_URL_SECRET` signs the short-lived document URLs (random per process when unset — set it when there is more
-than one instance); `BORROWER_APP_URL` is the base of the vendor return routes (`/return/{vendor}/{card_instance_id}`).
+`BORROWER_APP_URL` is the base of the vendor return routes (`/return/{vendor}/{card_instance_id}`).
+`BORROWER_URL_SECRET` signs the short-lived document URLs. **When it is unset the secret is random per process**
+(`randomBytes(32)` in `src/runtime/borrower/routes.ts`), Terraform does not set it (`borrower_api_env` in
+`infra/terraform/run.tf` carries the four variables above and the staff bootstrap ones, nothing else) and
+`max_instances` defaults to 10, so today a signed document URL minted by one instance is refused by another: a
+borrower whose next request lands elsewhere gets a refusal, not the bytes. Setting the secret on the API service is
+the fix.
 
 **Every vendor behind the borrower API is a FAKE in nonprod.** Each one is a port with an in-memory test double that
 logs `vendor: "FAKE"`; the swap is one constructor argument on `createApiServer({ borrower: { … } })`:
@@ -353,6 +549,8 @@ logs `vendor: "FAKE"`; the swap is one constructor argument on `createApiServer(
 |---|---|---|---|
 | One-time codes (SMS / e-mail) | `FakeEdelivery` (src/infra/integrations/delivery.ts) — the platform's own e-delivery port carries the code; the response says `delivery: "FAKE"` and, outside production, echoes the code as `fake_code` | log `borrower.otp.requested … vendor: "FAKE"` | a real `EdeliveryPort` (Twilio / SES) wired through `Runtime.ports.edelivery` — the same swap the notices need |
 | Stripe Identity (L3) | `FakeStripeIdentity` (src/runtime/borrower/vendors/fake-stripe-identity.ts): sessions `vs_FAKE_…`, the webhook needs `stripe-signature: FAKE`, the "document" reads back the application's own name / DOB / address | log `stripe_identity … vendor: "FAKE"`; response `delivery: "FAKE"` | a `StripeIdentityPort` over VerificationSessions.create + `Stripe-Signature` HMAC verification with `STRIPE_WEBHOOK_SECRET` |
+| Assets connector (`ConnectCard{vendor=plaid_assets}`, 22.4 supplier `plaid`) | `FakePlaid` (src/runtime/borrower/vendors/fake-plaid.ts): a session completes on the tap (`fake_complete`, 32.17 rule 19) or on the webhook `asset_report.ready`; the report is deterministic — two accounts and twelve months of payroll deposits from the fixture employer — and is what the FAKE DU validates income and assets against | every call logs `vendor: "FAKE"` | an `AssetsConnectPort` over Plaid Link + the Assets API (`/asset_report/create` with `days_requested` 365, the `PRODUCT_READY` webhook, the report token as the DU validation service identifier) |
+| Payroll / income connector (`ConnectCard{vendor=truv_income}`, 22.3 supplier TRUV) | `FakeTruv` (src/runtime/borrower/vendors/fake-truv.ts): a session completes on the webhook `voie.report.ready`; the report is deterministic (employer, pay frequency, monthly base and variable pay, year-to-date) unless the webhook body overrides it | every call logs `vendor: "FAKE"` | an `IncomeConnectPort` over the Truv API (Link tokens, `verification.report` webhooks with the Truv-Signature HMAC) |
 | Passkey attestation | src/runtime/borrower/webauthn.ts verifies challenges, rpIdHash, flags, signCount and the ES256 / RS256 signature for real; the attestation *statement* is accepted unverified | `attestation_verified: "FAKE"` in the registration response | `@simplewebauthn/server` (`verifyRegistrationResponse` / `verifyAuthenticationResponse`) if attestation policy matters |
 | Document bytes | `FakeBlobStore` (src/runtime/borrower/vendors/fake-blob-store.ts): in memory, per instance; `documents.storage_uri = fake-blob://…` | `metadata.blob_store = "fake-blob"` | a `BlobStorePort` over Cloud Storage (CMEK bucket per environment; signed URLs minted by the service account) |
 
@@ -367,10 +565,30 @@ The proof is `node --test src/runtime/borrower/borrower.test.ts` on its own data
 
 ## 7. What is and is not real in nonprod
 
-- **`INTEGRATIONS=fake`.** Every vendor integration (lockbox/BAI2, e-OSCAR,
-  P360/SMDU/LSDU, print-and-mail, e-vault, MERS) is a test double inside the
-  container. Nothing leaves the environment; nothing is reported to a bureau or
-  to Fannie Mae. `fake` is the only value that exists today.
+- **`INTEGRATIONS=fake`.** `INTEGRATIONS` is `fake` or `real`; any other value refuses at
+  start (`src/runtime/config.ts`, 35.12 rule 4). Under `fake` — what `run.tf` sets on
+  nonprod — every vendor integration (lockbox/BAI2, e-OSCAR, P360/SMDU/LSDU,
+  print-and-mail, e-vault, MERS, and the rest) is a test double inside the container;
+  nothing is reported to a bureau or to Fannie Mae. A process whose `ENVIRONMENT` is
+  `production` (or `prod`) refuses `fake` at start with `NO_FAKE_IN_PRODUCTION`
+  (`config.ts`; `buildPorts` in `src/domain/operations-runtime/posture-35-12/real-ports.ts`).
+- **`INTEGRATIONS=real`** reads each vendor's mode from the `integration_switches` table
+  (`real-ports.ts` `switchesInForce`): fifteen vendors are switchable (`VENDOR_PORTS`), a
+  vendor with no row — or switched `off` — gets an `OffPort` whose every call answers
+  `VENDOR_OFF{vendor}`, a vendor switched `fake` keeps its FAKE (never in production), and a
+  vendor switched `real` with no adapter in this build answers `REAL_ADAPTER_MISSING{vendor}`
+  per call, nothing attempted, nothing written. The one real adapter in the tree is
+  `RealLockbox` for `lockbox_bai2` (`REAL_ADAPTER_VENDORS`), which reads the bank portal's
+  `{url, token}` from the `GcpSecretManager` vault (Secret Manager over REST under the
+  metadata server's token) — so today `real` means one real vendor and fourteen switches
+  that refuse by name.
+- **What leaves the environment.** With the placeholder `unset` in the FRED, Anthropic and
+  Tavus settings nothing leaves the environment. Once set, these calls go out: `RATE_FEED=fred`
+  reads FRED's `MORTGAGE30US` series over https once a day for the rate sheet (`src/infra/integrations/rates.ts`);
+  a real `supermortgage-anthropic-api-key` version sends Talk turns and the 32.16 agent turns to
+  Anthropic's Messages API ("The borrower surfaces" below); a real `supermortgage-tavus-api-key`
+  version creates video conversations at Tavus and takes its callbacks; and a real OAuth client
+  sends Sign in with Google to Google's discovery, token and JWKS endpoints.
 - **Do not load borrower data.** Nonprod has no data-classification controls,
   its access is a single shared bearer token, and its logs are readable by
   everyone with project Viewer. Use synthetic loans only.
@@ -378,10 +596,10 @@ The proof is `node --test src/runtime/borrower/borrower.test.ts` on its own data
   so the first Terraform run can create everything. That is acceptable for a
   throwaway nonprod project and not for anything holding real data.
 - **Cloud Armor WAF rules are in preview**: SQLi/XSS signatures are logged,
-  not enforced. The rate limit (300 requests/minute per IP) is enforced.
+  not enforced. The rate limit (300 requests per 60 s per IP) is enforced.
 - **Cloud SQL has a public IP with no authorized networks.** Only the Cloud
-  Run socket path (IAM-authorized, TLS-only) can reach it. Prod should not
-  have a public IP at all.
+  Run socket path (IAM-authorized) can reach it, and `ssl_mode = "ENCRYPTED_ONLY"`
+  refuses plaintext even on the socket path. Prod should not have a public IP at all.
 
 ### Path to prod
 
@@ -398,7 +616,10 @@ there, and the same workflow with `environment=prod`, plus:
 4. CMEK on the Artifact Registry repository and on any Cloud Storage buckets
    the application gains.
 5. Cloud Armor rules out of preview, with an allowlist for known partner IPs.
-6. Real `INTEGRATIONS` adapters, each behind its own secret and egress rule.
+6. `INTEGRATIONS=real` with a real adapter per vendor behind its own secret and
+   egress rule, each thrown with `integrations.switch` — a production process
+   refuses `fake` at start, and a `real` switch with no adapter refuses per call
+   (§7 above).
 7. Org policies: `iam.allowedPolicyMemberDomains`, `sql.restrictPublicIp`,
    `compute.requireShieldedVm`, and audit-log sinks to a locked bucket.
 
@@ -426,14 +647,28 @@ then re-run the workflow. (Projects created under a personal Google account
 have no organization and never hit this.)
 
 **Certificate stuck in `PROVISIONING` / `FAILED_NOT_VISIBLE`.** DNS is not
-pointing at the load balancer yet, or only one of the two names is. Check
+pointing at the load balancer yet. Check that
 `dig +short demo.supermortgage.com`
-both return the load balancer IP, then wait up to 60 minutes. The certificate
+returns the load balancer IP, then wait up to 60 minutes. The certificate
 retries on its own; nothing needs re-running.
 
-**Smoke test warning in the deploy job.** Same cause as above; it is
-`continue-on-error` for that reason. Re-run the workflow (or just `curl`) once
-the certificate is `ACTIVE`.
+**A smoke step warns in the deploy job** — "Smoke test /healthz", "Smoke test
+/app (borrower)" or "Smoke test / (302 to /app) and /ops (console)". Same cause
+as above; all three are `continue-on-error` for that reason. Re-run the workflow
+(or just `curl`) once the certificate is `ACTIVE`. The third step also fails
+when `/` or `/video` does not answer 302, `/ops` does not answer 200 or
+`/ops/api/me` answers anything but 401 — its log names which.
+
+**The `demo walk` job is red.** The likeliest red job after a green deploy: it
+runs the ten outcomes of "The demo walk" (§4) and a walk under ten fails the job,
+not the deploy. Open the run's artifact `demo-walk` — the screenshots and
+`report.json`, whose `checks[]` name each outcome and its `detail` — and the job
+summary's one line per outcome. Outcomes 3–5 NOT ok with
+"WALK_OPS_TOKEN not provided" means the token step did not run (in `deploy.yml`
+it is read from Secret Manager; in `walk.yml` from the repository secret
+`WALK_OPS_TOKEN`, §3). Outcome 9 NOT ok means the partner book is not seeded:
+run the deploy with `seed_demo` ticked (or the seed-demo job) and re-run the
+walk from `walk.yml`.
 
 **`migrate database` job fails.** Read the job's logs:
 
@@ -522,48 +757,36 @@ skipped by the fallback, `/v1/borrower/me` reads a record that names it as
 unnamed (the app then shows `NEXT_PUBLIC_PARTNER_LEGAL_NAME`), and the seed-demo
 job creates "Partner Bank (FAKE demo)" when no other servicer party exists.
 
-## Talk: the entry as one conversation
+## The borrower surfaces
 
-`POST /v1/borrower/talk` (`src/runtime/borrower/talk.ts`) and the page at
-`https://demo.supermortgage.com/app/talk` run the anonymous minute and sign-in as
-a conversation with Claude. The model only talks and calls tools; every fact goes
-through the same 32.14 tools the chips use (`lead.answer`, `lead.requestRange`),
-after the range the visitor is handed to Create account (no code by text or e-mail —
-docs/ux/17 §2.0; the lead cookie rides to /app/sign-up and the session resumes
-from its answers), every line a regulation wants verbatim is
-rendered by the API from the copy library, and the model's own sentence passes a
-guard (no figure it did not get from a tool, none of the forbidden words).
+**The entry is the Apply product at `/app` (32.19, docs/ux/18).** A browser with no
+session sees the door — `welcome` → `intro` ("What is Supermortgage?") → `account`
+(`apps/borrower/components/apply/door.tsx`; the owner's decision of 2026-09-16, item 4:
+two informational screens precede the account form, nothing personal asked before it) —
+then the nine steps `goal`, `property`, `you`, `connect`, `details`, `questions`,
+`demographics`, `review`, `result` in one phone column under five tabs: Apply, Chat,
+My Loan, Tasks, Account (`components/apply/apply-model.ts`). `/app/sign-up` and
+`/app/sign-in` remain as the account screen's two modes (`sign_up` / `sign_in`);
+`/app/reset` resets a password; Continue with Google is on the account screen (the
+FAKE provider under `INTEGRATIONS=fake`; the real one once the OAuth client exists,
+"Sign in with Google" above). The old Thread shell (`apps/borrower/components/shell`,
+`Thread.tsx` and the rest) is still in the tree and is not mounted.
 
-It needs one secret: an Anthropic API key, as a new version of the secret
-Terraform created with a placeholder first version:
+**Talk.** `/app/talk` redirects to `/app` (`apps/borrower/app/talk/page.tsx`; the
+decision's item 5) and the anonymous minute of 32.14 is retired (the decision's
+"What retires" table, the 32.14 row: T1–T6 and T19). `POST /v1/borrower/talk`
+(`src/runtime/borrower/talk.ts`) still exists on the API: the model only talks and calls
+tools, and without a key the route answers `503 TALK_NOT_CONFIGURED` while everything
+else keeps working.
 
-```sh
-printf '%s' '<api key>' | gcloud secrets versions add supermortgage-anthropic-api-key --data-file=- --project supermortgage-nonprod
-```
-
-The API service reads it as `ANTHROPIC_API_KEY` (`latest`); the placeholder
-`unset` reads as "not configured" and the talk route answers `503
-TALK_NOT_CONFIGURED` while everything else keeps working. Redeploy (or restart
-the revision) after adding the version. Optional: `TALK_MODEL` (default
-`claude-opus-5`) and `TALK_EFFORT` (`low`, the default, `medium` or `high`) on
-the API service. Each turn is one or a few Messages API calls; the system prompt
-is cached across turns.
-
-## The video agent (32.17)
-
-`https://demo.supermortgage.com/video` answers 302 → `/app/video` (infra/terraform/lb.tf, beside the
-`/` → `/app` rule; the deploy workflow's smoke test checks it). `/app/video` is the 32.16 shell with the
-thread replaced by a Tavus Conversational Video Interface replica that speaks the same words the agent
-turn would have typed — the account door first, the rail beside the call, the disclosure footer under it
-(`src/runtime/borrower/video-routes.ts`, `apps/borrower/components/video`). The vendor is the face and the
-voice only: its persona's language model is a *custom LLM* pointed at this API's own
-`POST /v1/video/llm/{token}/chat/completions`, keyed per video session, with perception off and recording
-off; every spoken turn is a 32.16 turn with `channel = video` (`agent_turns`, `messages{channel=video}`).
-
-Without a vendor key the FAKE stands in — `FakeTavus` (`FAKE`, in every build stage): its
-`conversation_url` is the app's own page `/app/video/fake/{token}`, which posts each utterance through the
-same chat-completions endpoint and triggers the same callbacks. The boot log says which
-(`video agent vendor {vendor: "FAKE" | "tavus"}`).
+**The video agent (32.17).** `https://demo.supermortgage.com/video` answers 302 →
+`/app/video` (`infra/terraform/lb.tf`, beside the `/` → `/app` rule; the deploy
+workflow's third smoke step checks it). `/app/video` stays mounted but is linked from
+nowhere, so 32.17-T21 stays live (the decision's item 7 and "What stays live"); the
+video door, the video stage and the rail beside the call are retired (the decision's
+32.17 row). Without a vendor key the FAKE stands in — `FakeTavus`
+(`src/infra/integrations/tavus.ts`, `FAKE`, in every build stage); the boot log says
+which (`video_agent: "FAKE" | "tavus"`).
 
 Turning the live vendor on takes two secrets, as new versions of the placeholders Terraform created:
 
@@ -583,21 +806,36 @@ reaches the vendor: the persona's system prompt is a one-line pointer, the conve
 borrower's first name and the partner's name, and the vendor's transcript is kept as a reference on
 `video_sessions.transcript_ref`, never as the record.
 
-## The account is the front door (32.16 Phase 0)
+**The Anthropic key.** One secret powers both Talk and the 32.16 agent turn (Chat), as a
+new version of the secret Terraform created with a placeholder first version:
 
-`https://demo.supermortgage.com/app` opens on the sign-in screen; `/app/sign-up` creates an account
-(e-mail + password → an L1 session at once; a six-digit code first only when the e-mail is already on file for
-someone's record), `/app/reset` resets a password.
-Continue with Google is on both screens (the FAKE provider under `INTEGRATIONS=fake`; the real one once the
-OAuth client exists, "Sign in with Google" above). The anonymous minute of 32.14 is no longer rendered
-(docs/ux/17 §0.4); its API routes remain. The disclosure footer on every screen (docs/ux/17 §1 principle 8:
-`footer.disclosure` — the AI notice, the partner's name and NMLS ID, the NMLS consumer access link and
-`/app/disclosures`) names the partner from the build arguments `NEXT_PUBLIC_PARTNER_LEGAL_NAME` (repository
-variable `PARTNER_LEGAL_NAME`, "Partner Bank" when unset) and `NEXT_PUBLIC_PARTNER_NMLSR_ID` (repository
-variable `PARTNER_NMLSR_ID`, "123456" — the demo partner — when unset) because no session exists yet to read
-them from; once signed in the footer takes both from `/v1/borrower/me`'s `partner`, as the thread does. Codes are delivered by the e-delivery adapter (the FAKE echoes the code on
-nonprod, as the OTP route does). A password session opens without a fresh code, so a money command still
-asks for one (`FRESH_L1_COMMANDS`).
+```sh
+printf '%s' '<api key>' | gcloud secrets versions add supermortgage-anthropic-api-key --data-file=- --project supermortgage-nonprod
+```
+
+The API service reads it as `ANTHROPIC_API_KEY` (`latest`); the placeholder `unset` reads
+as "not configured" (`src/runtime/config.ts`). Redeploy (or restart the revision) after
+adding the version. Talk takes `TALK_MODEL` (default `claude-opus-5`) and `TALK_EFFORT`
+(`low`, the default, `medium` or `high`); the agent turn takes `LLM_MODEL` (falls back to
+`TALK_MODEL`), `LLM_EFFORT` (`low`, the default, `medium` or `high`), `LLM_SPEED`
+(`standard`, the default, or `fast` for the Messages API's fast mode — Terraform sets it
+from the `llm_speed` variable, `infra/terraform/run.tf` / `variables.tf`) and
+`LLM_PROMPT_VERSION`. The boot log line `serving` names both as `claude:<model>` or
+"not configured".
+
+**The disclosure footer and the partner's name.** The footer on every screen
+(docs/ux/17 §1 principle 8: `footer.disclosure` — the AI notice, the partner's name and
+NMLS ID, the NMLS consumer access link and `/app/disclosures`) names the partner from the
+build arguments `NEXT_PUBLIC_PARTNER_LEGAL_NAME` (repository variable `PARTNER_LEGAL_NAME`,
+"Partner Bank" when unset) and `NEXT_PUBLIC_PARTNER_NMLSR_ID` (repository variable
+`PARTNER_NMLSR_ID`, "123456" — the demo partner — when unset) because no session exists yet
+to read them from (`deploy.yml` "docker build (borrower)"; `Dockerfile.borrower`); once
+signed in the footer takes both from `/v1/borrower/me`'s `partner`, as the Apply product
+does. Codes are delivered by the e-delivery adapter (the FAKE echoes the code on nonprod,
+as the OTP route does). A password session opens without a fresh code, so a money command
+still asks for one (`FRESH_L1_COMMANDS` in `src/runtime/borrower/commands.ts`:
+`payment.makeOneTime`, `payment.extraPrincipal`, `autodraft.enroll`, `autodraft.change`,
+`autodraft.pause`, `autodraft.revoke`, `escrow.electShortage`, `party.updateContact`).
 
 ## The conversation trace (docs/ux/17 §6, DELTA-28's console view)
 

@@ -1022,6 +1022,9 @@ test("35.5-T16: Given any tool of this process, then no tool changed a money col
   for (const actor of [CASHIERING_AGENT, ANALYST]) await assert.rejects(runtime.execute({ process: "35.5", name: "ach.return.action", loanId: loans.l1ach, actor, input: { entry_id: entry.id, action: "none_already_paid" } }), (e: unknown) => e instanceof CommandRefused && e.code === "RETURN_OVERRIDE_IS_OFFICER");
   await assert.rejects(runtime.execute({ process: "35.5", name: "ach.return.action", loanId: loans.l1ach, actor: CASHIERING_AGENT, input: { entry_id: entry.id, nsf_fee_cents: "1" } }), (e: unknown) => e instanceof CommandRefused && e.code === "NO_MONEY_FIELD");
   await unchanged("ach.return.action (override)");
-  assert.equal(await count(`SELECT count(*)::bigint AS c FROM agent_decisions WHERE rule_set_version LIKE 'cashiering.%' OR rule_set_version = '35.5@config.v1'`) > 0n ? 1n : 0n, 1n);
-  assert.ok([...OK].every((v) => typeof v === "string"));
+  // every write of this process's tools (the T-ids before this one and the calls above) left an agent_decisions row under one of its rule sets — none without rule_set_version
+  const TOOLS = ["installments.write", "installments.reproject", "cashiering.run_unit", "lockbox.ingest", "lockbox.item.resolve", "ach.file.build", "ach.returns.ingest", "ach.return.action", "servicing_config.write", "servicer_profile.draft", "servicer_profile.activate"];   // servicer_profile.write records per op
+  const written = await db.query<{ action: string; rule_set_version: string | null; n: bigint }>(`SELECT action, rule_set_version, count(*)::bigint AS n FROM agent_decisions WHERE action = ANY($1::text[]) GROUP BY 1, 2 ORDER BY 1, 2`, [TOOLS]);
+  assert.deepEqual([...new Set(written.map((w) => w.action))].sort(), [...TOOLS].sort(), "a decision row for every tool of this process that wrote");
+  for (const w of written) assert.ok(w.rule_set_version !== null && OK.has(w.rule_set_version), `${w.action}: rule_set_version ${String(w.rule_set_version)} (${w.n} rows)`);
 });

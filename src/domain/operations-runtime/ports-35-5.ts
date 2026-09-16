@@ -169,12 +169,14 @@ export function entityCycleRuns(rt: Runtime): CyclePort {
 // ---------------------------------------------------------------- 35.2 seam: documents.store
 export interface StoredDocument { readonly document_id: string; readonly sha256: string; }
 export interface DocumentsPort { store(q: Queryable, doc: { kind: string; bytes: Uint8Array | string; mime_type: string; retention_class?: string; loan_id?: string | null; metadata?: Row }): Promise<StoredDocument>; }
-/** The baseline `documents` row 35.2 recognises (35.2 rule 4: `storage_uri = worm_pending:<id>`, `storage_status: staged`); the bytes ride in the metadata (≤ 4 KB) until 35.2's WORM store. */
+/** The FAKE stage keeps a file's bytes in the row's metadata up to this size (a NACHA file for the demo book is ~10 KB; a deferred ACH file is retransmitted from them — ach.ts retransmitDeferred escalates one it cannot find); 35.2's WORM store keeps every file. */
+export const FAKE_BYTES_MAX = 1 << 20;
+/** The baseline `documents` row 35.2 recognises (35.2 rule 4: `storage_uri = worm_pending:<id>`, `storage_status: staged`); the bytes ride in the metadata (≤ FAKE_BYTES_MAX) until 35.2's WORM store. */
 export const baselineDocuments: DocumentsPort = {
   async store(q, doc) {
     const bytes = typeof doc.bytes === "string" ? Buffer.from(doc.bytes, "utf8") : Buffer.from(doc.bytes);
     const sha256 = createHash("sha256").update(bytes).digest("hex"); const id = randomUUID();
-    const metadata = { ...(doc.metadata ?? {}), storage_status: "staged", fake_store: "35.5", ...(bytes.length <= 4096 ? { fake_bytes_b64: bytes.toString("base64") } : {}) };
+    const metadata = { ...(doc.metadata ?? {}), storage_status: "staged", fake_store: "35.5", ...(bytes.length <= FAKE_BYTES_MAX ? { fake_bytes_b64: bytes.toString("base64") } : {}) };
     await q.query(`INSERT INTO documents (id, kind, sha256, byte_size, storage_uri, mime_type, retention_class, metadata, loan_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)`, [id, doc.kind, sha256, bytes.length, `worm_pending:${id}`, doc.mime_type, doc.retention_class ?? "life_of_loan_plus_4y", toJson(metadata), doc.loan_id ?? null]);
     return { document_id: id, sha256 };
   },

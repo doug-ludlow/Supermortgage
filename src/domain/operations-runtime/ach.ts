@@ -55,7 +55,7 @@ import { nsfFee } from "../cashiering/latecharges.ts";
 import type { Runtime } from "../../runtime/app.ts";
 import { recipientsOf, servicingParties } from "../../runtime/servicing-parties.ts";
 import { CASHIERING_AGENT, MODEL_VERSION_DETERMINISTIC, PROMPT_VERSION_35_5, readSchedule, type InstallmentRow } from "./installments.ts";
-import { EXCLUDED_STATUSES, loanCashStateFromRows } from "./cashiering-cycle.ts";
+import { EXCLUDED_STATUSES, etDate, loanCashStateFromRows } from "./cashiering-cycle.ts";
 import { jurisdictionRulesFor, servicingConfigIfAny } from "./servicing-config.ts";
 import { bindUnit, commitUnit, executeInUnit, openUnit, type BoundUnit } from "./in-process.ts";
 import { ports35_5 } from "./ports-35-5.ts";
@@ -364,13 +364,23 @@ async function transmitFile(rt: Runtime, f: { file_id: string; file_name: string
   }
   return { status: ack.status, reason: ack.reason ?? null, event_id: null };
 }
-/** A file the ODFI deferred (an outage) is retransmitted by the next build with the same stored document. */
+/**
+ * A file the ODFI deferred (an outage) is retransmitted by the next build with the same stored document; one whose bytes the store no
+ * longer holds is never retried silently — `ack_status = 'deferred_unretrievable'` and one `officer` escalation (its entries stay `built`
+ * on the file; 35.1's outbox keeps the payload and 35.2's WORM store every file, so the branch is the FAKE stage's).
+ */
 async function retransmitDeferred(rt: Runtime, now: string): Promise<string[]> {
   const rows = await rt.db.query<{ id: string; entry_count: number; metadata: Row | null }>(`SELECT f.id, f.entry_count, d.metadata FROM ach_files f LEFT JOIN documents d ON d.id = f.document_id WHERE f.transmitted_at IS NULL AND f.ack_status = 'deferred' ORDER BY f.built_at`);
   const out: string[] = [];
   for (const r of rows) {
-    const b64 = r.metadata && typeof r.metadata.fake_bytes_b64 === "string" ? r.metadata.fake_bytes_b64 : null; if (!b64) continue;
     const fileName = String(r.metadata?.file_name ?? `SM-ACH-${r.id}.ach`);
+    const b64 = r.metadata && typeof r.metadata.fake_bytes_b64 === "string" ? r.metadata.fake_bytes_b64 : null;
+    if (!b64) {
+      await rt.db.tx((q) => q.query(`UPDATE ach_files SET ack_status = 'deferred_unretrievable' WHERE id = $1 AND ack_status = 'deferred'`, [r.id]));
+      const opened = await openUnit(rt, {}); let bound: BoundUnit | undefined;
+      await rt.uow.run({}, async (uow) => { bound = bindUnit(rt, opened, uow); bound.escalations.open({ kind: "officer", ownerRole: "officer", severity: "2", payload: { rule_code: "ACH_FILE_RETRANSMIT_UNAVAILABLE", file_id: r.id, file_name: fileName, entries: r.entry_count, next: "the deferred file's bytes are not in the document store, so the build cannot retransmit it: its entries stay built on the file — rebuild them for the ODFI once it is reachable" } }, CASHIERING_AGENT); }, { clock: rt.clock, commit: async (q) => { if (bound) await commitUnit(q, rt, bound); } });
+      continue;
+    }
     const tx = await transmitFile(rt, { file_id: r.id, file_name: fileName, content: Buffer.from(b64, "base64").toString("utf8"), entries: r.entry_count }, now);
     if (tx.status === "accepted") out.push(r.id);
   }
@@ -384,13 +394,21 @@ async function electBuildReceipt(rt: Runtime, r: Omit<BuildReport, "receipt_even
 }
 
 // ---------------------------------------------------------------- the return action (2.3 rule 7 for one entry, on an open loan unit of work)
+/** `as_of` is the action's own day (the ingest's as-of date; the ET civil date of the clock for the hosted tool); the return's date is the `ach_returns` row's. */
 export interface ActionInput { readonly entry_id: string; readonly action?: ReturnAction | null; readonly as_of: PlainDate; readonly actor?: Actor; readonly return_file_id?: string | null; }
 export interface ActionOutcome {
-  readonly entry_id: string; readonly loan_id: string; readonly enrollment_id: string; readonly code: string; readonly action: ReturnAction; readonly payment_id: string | null; readonly reversed: boolean; readonly reversal_entry_set_ids: readonly string[]; readonly restored_due_dates: readonly string[];
-  readonly nsf_fee_id: string | null; readonly nsf_fee_cents: string | null; readonly nsf_refused: string | null; readonly reinitiation_entry_id: string | null; readonly retry_on: PlainDate | null; readonly enrollment_status: string; readonly escalation_id: string | null; readonly notice_id: string | null; readonly notice_template: string | null; readonly return_id: string; readonly actioned_event_id: string;
+  readonly entry_id: string; readonly loan_id: string; readonly enrollment_id: string; readonly code: string; readonly action: ReturnAction; readonly override: ReturnAction | null; readonly returned_on: PlainDate; readonly payment_id: string | null; readonly reversed: boolean; readonly reversal_entry_set_ids: readonly string[]; readonly restored_due_dates: readonly string[];
+  readonly nsf_fee_id: string | null; readonly nsf_fee_cents: string | null; readonly nsf_refused: string | null; readonly reinitiation_entry_id: string | null; readonly retry_on: PlainDate | null; readonly retry_suppressed: PlainDate | null; readonly enrollment_status: string; readonly escalation_id: string | null; readonly notice_id: string | null; readonly notice_template: string | null; readonly return_id: string; readonly actioned_event_id: string;
 }
-const actionRecord = (o: ActionOutcome): Row => ({ entry_id: o.entry_id, loan_id: o.loan_id, action: "ach.return.action", inputs: { return_code: o.code, as_of: null }, outputs: { action: o.action, payment_id: o.payment_id, nsf_fee_id: o.nsf_fee_id, reinitiation_entry_id: o.reinitiation_entry_id, retry_on: o.retry_on, enrollment_status: o.enrollment_status, escalation_id: o.escalation_id }, rule_set_version: RULE_SET_RETURNS, model_version: MODEL_VERSION_DETERMINISTIC, prompt_version: PROMPT_VERSION_35_5, confidence: 1 });
-/** 2.3 rule 7 applied to one returned entry (the ingest received it: status `returned`, its `ach_returns` row unactioned) — see the header. Throws CommandRefused with nothing written. */
+const actionRecord = (o: ActionOutcome): Row => ({ entry_id: o.entry_id, loan_id: o.loan_id, action: "ach.return.action", inputs: { return_code: o.code, returned_on: o.returned_on, override: o.override }, outputs: { action: o.action, payment_id: o.payment_id, nsf_fee_id: o.nsf_fee_id, reinitiation_entry_id: o.reinitiation_entry_id, retry_on: o.retry_on, retry_suppressed: o.retry_suppressed, enrollment_status: o.enrollment_status, escalation_id: o.escalation_id }, rule_set_version: RULE_SET_RETURNS, model_version: MODEL_VERSION_DETERMINISTIC, prompt_version: PROMPT_VERSION_35_5, confidence: 1 });
+/**
+ * 2.3 rule 7 applied to one returned entry (the ingest received it: status `returned`, its `ach_returns` row unactioned) — see the header.
+ * The return's date is the `ach_returns` row's (the ingest's as-of): the retry counts from the return's settlement date and the NSF fee is
+ * assessed on it whichever day the action runs. An `officer` override (`none_already_paid`: the borrower paid otherwise; `reversed_suspended`)
+ * still reverses the returned payment (2.1 rule 9 — the credit bounced) and assesses 2.7's fee, builds no retry — the one 2.3's disposition
+ * scheduled leaves the enrollment's reinitiation counter (never built) — and `reversed_suspended` suspends the enrollment with the
+ * `borrower-comms` hand-off. Throws CommandRefused with nothing written.
+ */
 export async function actionReturn(rt: Runtime, u: BoundUnit, i: ActionInput, opts: { recordDecision: boolean }): Promise<ActionOutcome> {
   const command = "ach.return.action"; const ctx = u.ctx; const actor = i.actor ?? CASHIERING_AGENT; const ports = ports35_5(rt);
   const entry = await readEntry(rt.db, i.entry_id); if (!entry) throw new RangeError(`no ach entry ${i.entry_id}`);
@@ -402,6 +420,8 @@ export async function actionReturn(rt: Runtime, u: BoundUnit, i: ActionInput, op
   if (!ret) refuse(command, "RETURN_REQUIRED", "35.5 rule 8", `entry ${entry.id} has no ach_returns row`);
   if (ret.action_taken) refuse(command, "RETURN_ACTIONED", "35.5 rule 8: one action per return (idempotent by the ach_returns row)", `return ${ret.id} on entry ${entry.id} was actioned (${ret.action_taken})`);
   const code = ret.return_code;
+  // the return's own date (the ingest's as-of, on the ach_returns row) — 2.3 rule 7's retry counts from the return's settlement date, the NSF fee is assessed on it — whichever day the action runs
+  const returnedOn: PlainDate = typeof ret.raw?.as_of_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(ret.raw.as_of_date) ? D(ret.raw.as_of_date) : i.as_of;
   if (i.action && !RETURN_ACTIONS.includes(i.action)) throw new RangeError(`action must be one of ${RETURN_ACTIONS.join(", ")}`);
   if (i.action && i.action !== "none_already_paid" && i.action !== "reversed_suspended") throw new RangeError(`action override must be none_already_paid or reversed_suspended — the return code decides the rest (2.3 rule 7)`);
   const rec = u.store.get("autodraft_enrollments", entry.enrollment_key);
@@ -419,9 +439,9 @@ export async function actionReturn(rt: Runtime, u: BoundUnit, i: ActionInput, op
   const recipients = recipientsOf(await servicingParties(rt, loanId));
   const installmentDue = posted && Array.isArray(payment!.data.installments) ? String((payment!.data.installments as string[])[0] ?? "") : "";
   // the fee 2.7 rule 7 would assess (for the notice's figure; assessed below when 2.3's disposition says so)
-  const previewFee = nsfAllowed && !ourError && (code === "R01" || code === "R09") ? nsfFee(facts.state, { allowed: true, cap_cents: nsfCap }, { our_error: false, returned_on: i.as_of, ...(payment ? { payment_id: payment.id } : {}) }) : null;
+  const previewFee = nsfAllowed && !ourError && (code === "R01" || code === "R09") ? nsfFee(facts.state, { allowed: true, cap_cents: nsfCap }, { our_error: false, returned_on: returnedOn, ...(payment ? { payment_id: payment.id } : {}) }) : null;
   // 2.3's own command, in-process: the reversal (2.1 rule 9), `payment.reversed`, the rows restored (installments.restore), the return notice, the enrollment's status and retry
-  const r = await executeInUnit(rt, u, { process: "2.3", name: "autodraft.read/write", actor, input: { op: "return", id: entry.enrollment_key, loan_id: loanId, code, returned_on: i.as_of, original_entry_on: entry.settlement_date ?? entry.effective_entry_date, ...(posted ? { payment_id: payment!.id } : {}), trace: entry.trace_number ?? undefined, amount_cents: s(entry.amount_cents), retry_banking_days: RETRY_BANKING_DAYS,
+  const r = await executeInUnit(rt, u, { process: "2.3", name: "autodraft.read/write", actor, input: { op: "return", id: entry.enrollment_key, loan_id: loanId, code, returned_on: returnedOn, original_entry_on: entry.settlement_date ?? entry.effective_entry_date, ...(posted ? { payment_id: payment!.id } : {}), trace: entry.trace_number ?? undefined, amount_cents: s(entry.amount_cents), retry_banking_days: RETRY_BANKING_DAYS,
     ...(installmentDue ? { installment_due_date: installmentDue } : {}), defect_ours: ourError, authorization_valid: true, ...(previewFee ? { nsf_fee_cents: s(previewFee.amount_cents) } : {}), periodic_payment_cents: s(entry.amount_cents), recipients } });
   const out = (r.output ?? {}) as Row; const d = (out.disposition ?? {}) as Row;
   const retryOn = typeof d.retry_on === "string" && d.retry_on ? D(d.retry_on) : null; const enrollmentAction = String(d.enrollment_action ?? "none"); const retryRefused = typeof d.refused === "string" ? d.refused : null;
@@ -439,7 +459,7 @@ export async function actionReturn(rt: Runtime, u: BoundUnit, i: ActionInput, op
       const head = (await rt.db.query<{ description: string }>(`SELECT description FROM ledger_entry_sets WHERE id = $1`, [setId]))[0]; if (!head) continue;
       const lines = await rt.db.query<{ scope: string; account: string; loan_id: string | null; custodial_account_id: string | null; amount_cents: bigint; rule_ref: string }>(`SELECT scope::text AS scope, account, loan_id, custodial_account_id, amount_cents, rule_ref FROM ledger_lines WHERE set_id = $1 ORDER BY sequence`, [setId]);
       if (!lines.length) continue;
-      const mirror = ctx.ledger.post({ effectiveDate: i.as_of, description: `REVERSAL of ${head.description}: returned item ${code} (${payment!.id})`, reversesSetId: setId,
+      const mirror = ctx.ledger.post({ effectiveDate: returnedOn, description: `REVERSAL of ${head.description}: returned item ${code} (${payment!.id})`, reversesSetId: setId,
         lines: lines.map((l) => ({ account: (l.scope === "loan" ? { scope: "loan", loanId: String(l.loan_id), account: l.account } : l.scope === "custodial" ? { scope: "custodial", custodialAccountId: String(l.custodial_account_id), account: l.account } : { scope: "corporate", account: l.account }) as AccountRef, amountCents: -BigInt(String(l.amount_cents)), ruleRef: l.rule_ref, memo: `reversal: returned item ${code} (${payment!.id})` })) }, ctx.clock.now());
       completed.push(mirror.id);
     }
@@ -447,7 +467,7 @@ export async function actionReturn(rt: Runtime, u: BoundUnit, i: ActionInput, op
   }
   const restored = posted && Array.isArray(payment!.data.installments) ? (payment!.data.installments as string[]) : [];
   // a return before the payment was posted (Edge cases): the row is `returned` before any allocation, nothing to reverse
-  if (unposted) u.store.put("payments", payment!.id, { ...payment!.data, status: "returned", returned: { return_code: code, returned_on: i.as_of, entry_id: entry.id } }, actor, ctx.clock.now());
+  if (unposted) u.store.put("payments", payment!.id, { ...payment!.data, status: "returned", returned: { return_code: code, returned_on: returnedOn, entry_id: entry.id } }, actor, ctx.clock.now());
   // the action: the officer's override, else 2.3's disposition
   let action: ReturnAction;
   if (i.action === "none_already_paid") action = "none_already_paid";
@@ -457,16 +477,25 @@ export async function actionReturn(rt: Runtime, u: BoundUnit, i: ActionInput, op
   else if (enrollmentAction === "correct_and_reinitiate") action = "corrected_entry";
   else if (enrollmentAction === "suspended_returns" || enrollmentAction === "paused") action = "reversed_suspended";
   else action = retryOn && !retryRefused && entry.reinitiation_count < MAX_REINITIATIONS ? "reversed_reinitiated" : "reversed_suspended";
+  // an officer's override that builds no retry: the retry 2.3's disposition scheduled (its date on the enrollment's `reinitiations`, 2.3 rule 7's counter of reinitiations made) is never built, so it leaves the counter
+  let retrySuppressed: PlainDate | null = null;
+  if (i.action && retryOn && action !== "reversed_reinitiated" && action !== "corrected_entry") {
+    const cur = u.store.get("autodraft_enrollments", entry.enrollment_key)!;
+    const list = Array.isArray(cur.data.reinitiations) ? [...(cur.data.reinitiations as string[])] : []; const k = list.lastIndexOf(retryOn); if (k >= 0) list.splice(k, 1);
+    u.store.put("autodraft_enrollments", cur.id, { ...cur.data, reinitiations: list, version_at: ctx.clock.now() }, actor, ctx.clock.now());
+    retrySuppressed = retryOn;
+  }
+  const effectiveRetryOn = retrySuppressed ? null : retryOn;
   // the NSF fee (2.7 rule 7 through 2.7's own op): only where allowed, min(2,500¢, cap), once per returned item, never for R11 or our error
   let nsfFeeId: string | null = null; let nsfCents: string | null = null; let nsfRefused: string | null = null;
   if (d.assess_nsf_fee === true) {
     if (!nsfAllowed) nsfRefused = `NSF_ONLY_WHERE_ALLOWED: ${cfg ? `${cfg.jurisdiction_state} does not allow an NSF fee (loan_servicing_configs.nsf_fee_allowed = false)` : "no configuration row (CONFIG_REQUIRED)"}`;
     else {
       const ops = new CashieringOps({ events: ctx.events, clock: { now: () => ctx.clock.now() }, actor });
-      const fee = ops.assessNsf(facts.state, { allowed: true, cap_cents: nsfCap }, { our_error: ourError, returned_on: i.as_of, return_code: code, ...(payment ? { payment_id: payment.id } : {}) });
+      const fee = ops.assessNsf(facts.state, { allowed: true, cap_cents: nsfCap }, { our_error: ourError, returned_on: returnedOn, return_code: code, ...(payment ? { payment_id: payment.id } : {}) });
       if (fee) {
         ports.cashRows.writeFee(u.store, ctx, { ...fee, loan_id: loanId });
-        ctx.ledger.post({ effectiveDate: i.as_of, description: `nsf fee ${fee.id}`, lines: [{ account: loanAcct(loanId, "nsf_fees"), amountCents: fee.amount_cents, ruleRef: RULE_REF_NSF }, { account: { scope: "corporate", account: "nsf_fee_income" }, amountCents: -fee.amount_cents, ruleRef: RULE_REF_NSF }] }, ctx.clock.now());
+        ctx.ledger.post({ effectiveDate: returnedOn, description: `nsf fee ${fee.id}`, lines: [{ account: loanAcct(loanId, "nsf_fees"), amountCents: fee.amount_cents, ruleRef: RULE_REF_NSF }, { account: { scope: "corporate", account: "nsf_fee_income" }, amountCents: -fee.amount_cents, ruleRef: RULE_REF_NSF }] }, ctx.clock.now());
         nsfFeeId = fee.id; nsfCents = s(fee.amount_cents);
       } else nsfRefused = "2.7 rule 7: not assessed (already assessed once for this returned item, or an overlay)";
     }
@@ -478,18 +507,19 @@ export async function actionReturn(rt: Runtime, u: BoundUnit, i: ActionInput, op
     reinitiationId = randomUUID();
     reinitiation = { id: reinitiationId, loan_id: loanId, enrollment_key: entry.enrollment_key, sec_code: entry.sec_code, amount_cents: entry.amount_cents, effective_entry_date: retryOn, company_entry_description: typeof d.company_entry_description === "string" && d.company_entry_description ? d.company_entry_description : DESCRIPTION_RETRY, trace_number: null, file_id: null, status: "built", reinitiation_of_entry_id: entry.id, reinitiation_count: count, idempotency_key: sha256(`${entry.enrollment_key}|${retryOn}|${s(entry.amount_cents)}|${count}`) };
   }
-  // the enrollment's status after 2.3's op (its own save); the MAX-2 exhaustion 2.3 refused becomes `suspended_returns` with the borrower-comms hand-off (rule 8)
+  // the enrollment's status after 2.3's op (its own save); the MAX-2 exhaustion 2.3 refused — or the officer's `reversed_suspended` override — becomes `suspended_returns` with the borrower-comms hand-off (rule 8)
   let enrollmentStatus = String(u.store.get("autodraft_enrollments", entry.enrollment_key)?.data.status ?? rec.data.status ?? "active");
   let escalationId: string | null = null;
-  if (action === "reversed_suspended" && !i.action && code !== "R11" && enrollmentStatus === "active") {
+  const suspendedReason = i.action ? "RETURN_OVERRIDE" : "MAX_2_REINITIATIONS_180";
+  if (action === "reversed_suspended" && enrollmentStatus === "active") {
     const cur = u.store.get("autodraft_enrollments", entry.enrollment_key)!;
-    u.store.put("autodraft_enrollments", cur.id, { ...cur.data, status: "suspended_returns", suspended_on: i.as_of, suspended_reason: "MAX_2_REINITIATIONS_180", version_at: ctx.clock.now() }, actor, ctx.clock.now());
-    ctx.events.append({ type: "autodraft.status.changed", loanId, aggregate: enrollmentAgg(entry.enrollment_key), actor, payload: { enrollment_id: entry.enrollment_key, status: "suspended_returns", return_code: code, reason: "MAX_2_REINITIATIONS_180", refused: retryRefused } });
+    u.store.put("autodraft_enrollments", cur.id, { ...cur.data, status: "suspended_returns", suspended_on: returnedOn, suspended_reason: suspendedReason, version_at: ctx.clock.now() }, actor, ctx.clock.now());
+    ctx.events.append({ type: "autodraft.status.changed", loanId, aggregate: enrollmentAgg(entry.enrollment_key), actor, payload: { enrollment_id: entry.enrollment_key, status: "suspended_returns", return_code: code, reason: suspendedReason, refused: retryRefused, override: i.action ?? null } });
     enrollmentStatus = "suspended_returns";
   }
   if (action === "reversed_suspended") {
-    const esc = u.escalations.open({ kind: "human_portal_task", ownerRole: "borrower-comms", loanId, severity: "3", payload: { rule_code: "MAX_2_REINITIATIONS_180", timer_code: "NACHA_NSF_REINITIATION_180_MAX2", enrollment_id: entry.enrollment_key, entry_id: entry.id, return_code: code, payment_id: payment?.id ?? null, enrollment_status: enrollmentStatus, returns_on_current_installment: Number(u.store.get("autodraft_enrollments", entry.enrollment_key)?.data.returns_on_current_installment ?? 0), refused: retryRefused,
-      next: "no further reinitiation is built (2.3 rule 7: at most two within 180 days; the second return on one installment suspends the enrollment) — contact the borrower for a new payment method or a reconfirmation (borrower-comms hand-off)" } }, actor);
+    const esc = u.escalations.open({ kind: "human_portal_task", ownerRole: "borrower-comms", loanId, severity: "3", payload: { rule_code: suspendedReason, timer_code: "NACHA_NSF_REINITIATION_180_MAX2", enrollment_id: entry.enrollment_key, entry_id: entry.id, return_code: code, payment_id: payment?.id ?? null, enrollment_status: enrollmentStatus, returns_on_current_installment: Number(u.store.get("autodraft_enrollments", entry.enrollment_key)?.data.returns_on_current_installment ?? 0), refused: retryRefused, override: i.action ?? null,
+      next: i.action ? "the officer suspended the enrollment on this return (no reinitiation) — contact the borrower for a new payment method or a reconfirmation (borrower-comms hand-off)" : "no further reinitiation is built (2.3 rule 7: at most two within 180 days; the second return on one installment suspends the enrollment) — contact the borrower for a new payment method or a reconfirmation (borrower-comms hand-off)" } }, actor);
     escalationId = esc.id;
   }
   const returnId = ret.id; const rein = reinitiation;
@@ -498,13 +528,16 @@ export async function actionReturn(rt: Runtime, u: BoundUnit, i: ActionInput, op
     if (rein) await insertEntry(q, rein);
   });
   const notice_id = typeof out.notice_id === "string" ? out.notice_id : null; const notice_template = typeof out.notice_template === "string" ? out.notice_template : null;
-  const actioned = ctx.events.append({ type: RETURN_ACTIONED, loanId, aggregate: enrollmentAgg(entry.enrollment_key), actor, causationId: r.event.id, payload: { entry_id: entry.id, payment_id: posted ? payment!.id : null, code, return_code: code, action, nsf_fee_id: nsfFeeId, nsf_fee_cents: nsfCents, nsf_refused: nsfRefused, reinitiation_entry_id: reinitiationId, retry_on: retryOn, enrollment_id: entry.enrollment_key, enrollment_status: enrollmentStatus, reversed: reversalSets.length > 0, reversal_entry_set_ids: reversalSets, restored_due_dates: restored, return_id: returnId, return_file_id: i.return_file_id ?? null, escalation_id: escalationId, notice_id, notice_template, override: i.action ?? null, actioned_on: i.as_of } });
-  const o: ActionOutcome = { entry_id: entry.id, loan_id: loanId, enrollment_id: entry.enrollment_key, code, action, payment_id: posted ? payment!.id : null, reversed: reversalSets.length > 0, reversal_entry_set_ids: reversalSets, restored_due_dates: restored, nsf_fee_id: nsfFeeId, nsf_fee_cents: nsfCents, nsf_refused: nsfRefused, reinitiation_entry_id: reinitiationId, retry_on: retryOn, enrollment_status: enrollmentStatus, escalation_id: escalationId, notice_id, notice_template, return_id: returnId, actioned_event_id: actioned.id };
-  if (opts.recordDecision) ctx.decide({ agent: CASHIERING_AGENT.id, action: "ach.return.action", rationale: `${actionRationale(o)} — ${toJson(actionRecord(o))}`, ruleSetVersion: RULE_SET_RETURNS, loanId, subject: { kind: "ach_entry", id: entry.id }, ...(action === "reversed_suspended" ? { ruleCode: "MAX_2_REINITIATIONS_180" } : nsfRefused?.startsWith("NSF_ONLY") ? { ruleCode: "NSF_ONLY_WHERE_ALLOWED" } : {}), confidence: 1, modelVersion: MODEL_VERSION_DETERMINISTIC, promptVersion: PROMPT_VERSION_35_5, ...(actor.kind === "human" ? { approvedBy: actor.id, ...(actor.role ? { approvedRole: actor.role } : {}) } : {}) });
+  const actioned = ctx.events.append({ type: RETURN_ACTIONED, loanId, aggregate: enrollmentAgg(entry.enrollment_key), actor, causationId: r.event.id, payload: { entry_id: entry.id, payment_id: posted ? payment!.id : null, code, return_code: code, action, nsf_fee_id: nsfFeeId, nsf_fee_cents: nsfCents, nsf_refused: nsfRefused, reinitiation_entry_id: reinitiationId, retry_on: effectiveRetryOn, retry_suppressed: retrySuppressed, enrollment_id: entry.enrollment_key, enrollment_status: enrollmentStatus, reversed: reversalSets.length > 0, reversal_entry_set_ids: reversalSets, restored_due_dates: restored, return_id: returnId, return_file_id: i.return_file_id ?? null, escalation_id: escalationId, notice_id, notice_template, override: i.action ?? null, returned_on: returnedOn, actioned_on: i.as_of } });
+  const o: ActionOutcome = { entry_id: entry.id, loan_id: loanId, enrollment_id: entry.enrollment_key, code, action, override: i.action ?? null, returned_on: returnedOn, payment_id: posted ? payment!.id : null, reversed: reversalSets.length > 0, reversal_entry_set_ids: reversalSets, restored_due_dates: restored, nsf_fee_id: nsfFeeId, nsf_fee_cents: nsfCents, nsf_refused: nsfRefused, reinitiation_entry_id: reinitiationId, retry_on: effectiveRetryOn, retry_suppressed: retrySuppressed, enrollment_status: enrollmentStatus, escalation_id: escalationId, notice_id, notice_template, return_id: returnId, actioned_event_id: actioned.id };
+  if (opts.recordDecision) ctx.decide({ agent: CASHIERING_AGENT.id, action: "ach.return.action", rationale: `${actionRationale(o)} — ${toJson(actionRecord(o))}`, ruleSetVersion: RULE_SET_RETURNS, loanId, subject: { kind: "ach_entry", id: entry.id }, ...(actionRuleCode(o) ? { ruleCode: actionRuleCode(o)! } : {}), confidence: 1, modelVersion: MODEL_VERSION_DETERMINISTIC, promptVersion: PROMPT_VERSION_35_5, ...(actor.kind === "human" ? { approvedBy: actor.id, ...(actor.role ? { approvedRole: actor.role } : {}) } : {}) });
   return o;
 }
-export const actionRationale = (o: Pick<ActionOutcome, "entry_id" | "code" | "action" | "payment_id" | "nsf_fee_id" | "nsf_fee_cents" | "nsf_refused" | "reinitiation_entry_id" | "retry_on" | "enrollment_status" | "escalation_id">): string =>
-  `cashiering.returns.v1: entry ${o.entry_id} returned ${o.code} → ${o.action}${o.payment_id ? ` (payment ${o.payment_id} reversed, 2.1 rule 9)` : " (no posted payment)"}; nsf_fee ${o.nsf_fee_id ? `${o.nsf_fee_id} ${o.nsf_fee_cents}¢` : o.nsf_refused ?? "none"}; reinitiation ${o.reinitiation_entry_id ? `${o.reinitiation_entry_id} on ${o.retry_on}` : "none"}; enrollment ${o.enrollment_status}${o.escalation_id ? `; borrower-comms hand-off ${o.escalation_id}` : ""}`;
+/** The decision's rule code: MAX_2_REINITIATIONS_180 when 2.3's limit suspended the enrollment (never for an officer's override), NSF_ONLY_WHERE_ALLOWED when the jurisdiction refused the fee. */
+export const actionRuleCode = (o: Pick<ActionOutcome, "action" | "override" | "nsf_refused">): string | null =>
+  o.action === "reversed_suspended" && !o.override ? "MAX_2_REINITIATIONS_180" : o.nsf_refused?.startsWith("NSF_ONLY") ? "NSF_ONLY_WHERE_ALLOWED" : null;
+export const actionRationale = (o: Pick<ActionOutcome, "entry_id" | "code" | "action" | "override" | "returned_on" | "payment_id" | "nsf_fee_id" | "nsf_fee_cents" | "nsf_refused" | "reinitiation_entry_id" | "retry_on" | "retry_suppressed" | "enrollment_status" | "escalation_id">): string =>
+  `cashiering.returns.v1: entry ${o.entry_id} returned ${o.code} on ${o.returned_on} → ${o.action}${o.override ? " (officer override)" : ""}${o.payment_id ? ` (payment ${o.payment_id} reversed, 2.1 rule 9)` : " (no posted payment)"}; nsf_fee ${o.nsf_fee_id ? `${o.nsf_fee_id} ${o.nsf_fee_cents}¢` : o.nsf_refused ?? "none"}; reinitiation ${o.reinitiation_entry_id ? `${o.reinitiation_entry_id} on ${o.retry_on}` : o.retry_suppressed ? `none (the retry 2.3 scheduled for ${o.retry_suppressed} is not built)` : "none"}; enrollment ${o.enrollment_status}${o.escalation_id ? `; borrower-comms hand-off ${o.escalation_id}` : ""}`;
 
 // ---------------------------------------------------------------- the return-file ingest (`ach_returns_ingest`)
 export interface IngestInput { readonly as_of_date: PlainDate; }
@@ -618,7 +651,7 @@ export async function achReturnsIngest(i: ToolInput, _ctx: CommandContext, rt: T
   const asOf = asOfOf(i);
   return ingestReturnFile(runtimeOf(rt, "ach.returns.ingest"), { as_of_date: asOf }, { recordDecision: false });
 }
-/** `ach.return.action{entry_id, action?}` on the command's own (loan-scoped) unit of work — 2.3 rule 7 for the entry; an `action` override is `officer`'s (the def's guardrail); the decision is the bus's. */
+/** `ach.return.action{entry_id, action?}` on the command's own (loan-scoped) unit of work — 2.3 rule 7 for the entry; an `action` override is `officer`'s (the def's guardrail); the decision is the bus's; the action's day is the ET civil date of the clock (plan D8), the return's its own row's. */
 export async function achReturnAction(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): Promise<unknown> {
   const entryId = str(i, "entry_id"); if (!entryId) throw new RangeError("entry_id is required");
   const action = str(i, "action");
@@ -626,5 +659,5 @@ export async function achReturnAction(i: ToolInput, ctx: CommandContext, rt: Too
   const services = rt.services as Services; const runtime = services.runtime; const deferWrite = services.deferWrite;
   if (!runtime || !deferWrite) throw new RangeError("ach.return.action needs the hosted runtime (services.runtime, services.deferWrite)");
   const bound: BoundUnit = { scope: { loanId: ctx.loanId }, store: rt.store, mark: 0, openEscalations: [], deferred: [], ctx, escalations: rt.escalations, toolRt: rt, deferWrite };
-  return actionReturn(runtime, bound, { entry_id: entryId, action: action ? (action as ReturnAction) : null, as_of: D(ctx.now.slice(0, 10)), actor: ctx.actor }, { recordDecision: false });
+  return actionReturn(runtime, bound, { entry_id: entryId, action: action ? (action as ReturnAction) : null, as_of: etDate(ctx.now), actor: ctx.actor }, { recordDecision: false });
 }

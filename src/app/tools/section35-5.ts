@@ -17,7 +17,7 @@ import { installmentsRead, installmentsReproject, installmentsWrite, MONEY_KEY, 
 import { RULE_SET_CONFIG, servicerProfileWrite, servicingConfigWrite } from "../../domain/operations-runtime/servicing-config.ts";
 import { RULE_SET_ALLOCATION, cashieringRunUnit } from "../../domain/operations-runtime/cashiering-cycle.ts";
 import { lockboxIngest, lockboxItemResolve, type BatchOutcome } from "../../domain/operations-runtime/lockbox.ts";
-import { RULE_SET_RETURNS, achFileBuild, achReturnAction, achReturnsIngest, actionRationale, buildRationale, ingestRationale, type ActionOutcome, type BuildReport, type ReturnsIngestReport } from "../../domain/operations-runtime/ach.ts";
+import { RULE_SET_RETURNS, achFileBuild, achReturnAction, achReturnsIngest, actionRationale, actionRuleCode, buildRationale, ingestRationale, type ActionOutcome, type BuildReport, type ReturnsIngestReport } from "../../domain/operations-runtime/ach.ts";
 
 const moneyKeys = (i: ToolInput): string[] => Object.keys(i).filter((k) => MONEY_KEY.test(k));
 const NO_MONEY_FIELD = never("NO_MONEY_FIELD", "35.5 guardrails: no tool here changes a money field outside the owning engine's command with the owning role", (i) => moneyKeys(i).length > 0, "a money field on the input (the schedule is arithmetic on the note's terms; 2.1/2.7/2.3 own the cash)");
@@ -63,6 +63,6 @@ export const TOOLS_35_5: readonly ToolDef[] = defineTools("35.5", "cashiering", 
   // rule 8 / AI agent design: the automatic action is the agent's (2.3 rule 7 through 2.3's own command); an override of it is `officer`'s; an NSF figure on the input is NO_MONEY_FIELD (2.7 rule 7 sets it)
   { name: "ach.return.action", kind: "act", ruleSetVersion: RULE_SET_RETURNS, handler: achReturnAction,
     guardrails: [NO_MONEY_FIELD, needsRole("RETURN_OVERRIDE_IS_OFFICER", "35.5 rule 8 / AI agent design: an override of an automatic return action is `officer`'s", (i) => i.action !== undefined && i.action !== null && i.action !== "", ["officer"], "an action override on a returned entry")],
-    decision: (i, o) => { const r = o as ActionOutcome; return { action: "ach.return.action", rationale: `${actionRationale(r)}${i.action ? ` (officer override: ${String(i.action)})` : ""}`, subject: { kind: "ach_entry", id: r.entry_id }, ...(r.action === "reversed_suspended" ? { ruleCode: "MAX_2_REINITIATIONS_180" } : r.nsf_refused?.startsWith("NSF_ONLY") ? { ruleCode: "NSF_ONLY_WHERE_ALLOWED" } : {}) }; } },
+    decision: (i, o) => { const r = o as ActionOutcome; const ruleCode = actionRuleCode(r); return { action: "ach.return.action", rationale: `${actionRationale(r)}${i.action ? ` (officer override: ${String(i.action)})` : ""}`, subject: { kind: "ach_entry", id: r.entry_id }, ...(ruleCode ? { ruleCode } : {}) }; } },
   { name: "writeDecision", kind: "act", handler: decision() },
 ]);

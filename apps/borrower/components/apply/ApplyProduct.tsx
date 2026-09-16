@@ -1,1 +1,3 @@
-see-file
+"use client";
+
+export { ApplyProduct } from "./ApplyWizard";

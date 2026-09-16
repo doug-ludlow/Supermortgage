@@ -89,7 +89,7 @@ export const configFromEnv = (env: NodeJS.ProcessEnv): ConfigPort => ({
 });
 export const servicerFromDb = (env: NodeJS.ProcessEnv): ServicerNumberPort => ({
   async servicerNumber(q) {
-    const r = await q.query<{ n: string | null }>(`SELECT servicer_number AS n FROM parties WHERE party_type = 'servicer' AND servicer_number IS NOT NULL ORDER BY created_at LIMIT 1`).catch(() => [] as { n: string | null }[]);
+    const r = await q.query<{ n: string | null }>(`SELECT servicer_number AS n FROM parties WHERE party_type = 'servicer' AND servicer_number IS NOT NULL ORDER BY created_at LIMIT 1`);   // never caught: a failed query inside the command's transaction poisons it, and parties.servicer_number is the baseline's (0001)
     return r[0]?.n ?? env[SERVICER_NUMBER_ENV] ?? DEFAULT_SERVICER_NUMBER;
   },
 });

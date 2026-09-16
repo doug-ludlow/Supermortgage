@@ -40,7 +40,7 @@ export async function boardOf(q: Queryable, i: { period?: string; tax_year?: num
 
 async function boardStep(q: Queryable, p: ClosePeriodRow, s: CloseStepRow, byCode: Map<string, CloseStepRow>): Promise<BoardStep> {
   const missing = s.depends_on.filter((c) => { const x = byCode.get(c); return x ? !DONE.has(x.status) : true; });
-  const receipts = await q.query<{ id: string }>(`SELECT source_event_id::text AS id FROM close_period_events WHERE step_id = $1 AND type = 'close.receipt.recorded' AND source_event_id IS NOT NULL ORDER BY occurred_at`, [s.id]);
+  const receipts = await q.query<{ id: string }>(`SELECT source_event_id::text AS id FROM close_period_events WHERE step_id = $1 AND type = 'close.receipt.recorded' AND source_event_id IS NOT NULL ORDER BY occurred_at, seq`, [s.id]);
   const stall = (await q.query<{ id: string; status: string; due_at: string | null }>(`SELECT id::text AS id, status::text AS status, to_char(due_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS due_at FROM timers WHERE code = 'SM_CLOSE_STEP_STALLED_2BD' AND subject_kind = 'close_period' AND subject_id = $1 ORDER BY armed_at DESC LIMIT 1`, [stepAggregate(p.servicer_number, p.period, s.code).id]))[0] ?? null;
   const owner_due_at = s.owner_timer_code ? (s.owner_timer_code === "SM_CLOSE_ATTEST_BD5" || s.owner_timer_code === "SM_TAX_YEAR_CLOSE_3BD" ? await ownClock(q, s.owner_timer_code, p) : await ownerDueAt(q, s.owner_timer_code, p)) : null;
   const status = s.status === "running" && stall?.status === "breached" ? "stalled" : s.status;

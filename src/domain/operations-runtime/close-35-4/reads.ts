@@ -19,13 +19,13 @@ export const filedLoans = (loans: readonly { interest_cents: bigint }[]): number
 /** 3.9: the loans whose escrow interest credited in the year is at or above $10.00 per borrower (the `corporate_expense_escrow_interest` debits are the corporate side; the loan side is the `escrow` credit whose rule_ref names 3.9). */
 export async function ioe1099Loans(q: Queryable, taxYear: number): Promise<{ loan_id: string; interest_cents: bigint }[]> {
   const rows = await q.query<{ loan_id: string; s: string }>(`SELECT l.loan_id::text AS loan_id, (-sum(l.amount_cents))::text AS s FROM ledger_lines l JOIN ledger_entry_sets e ON e.id = l.set_id
-    WHERE l.scope = 'loan' AND l.account = 'escrow' AND l.amount_cents < 0 AND l.rule_ref LIKE '3.9%' AND e.effective_date >= $1::date AND e.effective_date < $2::date GROUP BY l.loan_id ORDER BY l.loan_id`, [`${taxYear}-01-01`, `${taxYear + 1}-01-01`]);
+    WHERE l.scope = 'loan' AND l.account IN ('escrow', 'escrow_liability') AND l.amount_cents < 0 AND l.rule_ref LIKE '%3.9%' AND e.effective_date >= $1::date AND e.effective_date < $2::date GROUP BY l.loan_id ORDER BY l.loan_id`, [`${taxYear}-01-01`, `${taxYear + 1}-01-01`]);
   return rows.map((r) => ({ loan_id: r.loan_id, interest_cents: big(r.s) })).filter((r) => r.interest_cents >= IRS_1099_INT_FLOOR);
 }
 /** Rule 10: the 1099-A/C set — a 15.x acquisition (redemption ended, Mortgage Release accepted, third-party sale), a known abandonment, or a discharge of debt in the year; read from the sections' own events (no 15.x typed row at HEAD). */
 export async function form1099AcLoans(q: Queryable, taxYear: number): Promise<{ loan_id: string; kind: "A" | "C"; event_type: string; event_id: string }[]> {
   const rows = await q.query<{ loan_id: string; type: string; id: string }>(`SELECT loan_id::text AS loan_id, type, id::text AS id FROM loan_events WHERE loan_id IS NOT NULL AND occurred_at >= $1::timestamptz AND occurred_at < $2::timestamptz
-    AND type IN ('foreclosure.sale.completed', 'foreclosure.sale.third_party', 'reo.acquired', 'mortgage_release.accepted', 'redemption.expired', 'property.abandoned', 'debt.discharged', 'charge_off.discharged') ORDER BY occurred_at`, [`${taxYear}-01-01T05:00:00.000Z`, `${taxYear + 1}-01-01T05:00:00.000Z`]);
+    AND type IN ('foreclosure.sale.completed', 'foreclosure.sale.third_party', 'reo.acquired', 'mortgage_release.accepted', 'mortgage_release.completed', 'redemption.expired', 'property.abandoned', 'debt.discharged', 'charge_off.discharged') ORDER BY occurred_at`, [`${taxYear}-01-01T05:00:00.000Z`, `${taxYear + 1}-01-01T05:00:00.000Z`]);
   const seen = new Set<string>(); const out: { loan_id: string; kind: "A" | "C"; event_type: string; event_id: string }[] = [];
   for (const r of rows) { const kind = /discharg/.test(r.type) ? "C" : "A"; const k = `${r.loan_id}:${kind}`; if (seen.has(k)) continue; seen.add(k); out.push({ loan_id: r.loan_id, kind, event_type: r.type, event_id: r.id }); }
   return out;

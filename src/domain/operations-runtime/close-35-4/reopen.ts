@@ -46,7 +46,7 @@ export async function reopenTool(i: ToolInput, ctx: CommandContext, rt: ToolRunt
   const steps = await stepsOf(q, p.id);
   const resetDone: StepCode[] = []; const kept: StepCode[] = [];
   for (const s of steps) {
-    if (reset.includes(s.code)) {
+    if (reset.includes(s.code) && s.status !== "skipped") {   // rule 9 resets what was completed; a skipped step (the officer's decision) stays skipped
       await patchStep(q, s.id, { status: "blocked", received: 0, started_at: null, completed_at: null, cycle_run_id: null, receipts_from: ctx.now, skipped_reason: null, last_error: null }, ctx.now);
       await journal(q, { close_period_id: p.id, step_id: s.id, type: "close.step.reset", actor: ctx.actor, occurred_at: ctx.now, payload: { period: p.period, step: s.code, reason, prior_status: s.status } });
       resetDone.push(s.code);

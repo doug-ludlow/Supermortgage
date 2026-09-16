@@ -7,9 +7,14 @@
  *      sweep_runs row — was in the month that ended), so a fresh install never opens a month it never lived through;
  *   2. one planning transaction (plan.ts) under the global lock — receipts, transitions, the roll-up;
  *   3. a December period's `tax_year_close` step that is due runs `close.tax_year` as its own command (this process's own unit);
- *   4. when 35.3's executor is absent (no `jobs` table), the units planned this pass run inline through runners.ts (the
- *      owning sections' commands under their own actors), then one more planning transaction records their receipts;
- *      with 35.3 present its executor runs the jobs and the next sweep records them.
+ *   4. in rounds until a round moves nothing: this process's own steps (runners.ts STEP_RUNNERS — 6.3's day close of
+ *      the month's last day while 35.3's executor is absent, and the balance attestation: prepare → qc-audit review →
+ *      the officer's approval record → attest), the FAKE neighbours' stand-in receipts for owners not in this tree
+ *      (fake-neighbours.ts; nonprod with the FAKE reviewers on, never production) and, when 35.3's executor is absent
+ *      (no `jobs` table), the units planned this pass through runners.ts CLOSE_RUNNERS (the owning sections' commands
+ *      under their own actors); each round ends with one more planning transaction that records the receipts. With
+ *      35.3 present its executor runs the jobs and the next sweep records them. `CLOSE_SWEEP_RUNNERS=off` leaves all of
+ *      it to the operators (the hand-driven acceptance scenarios).
  * Nothing here moves money or a section's clock (rule 12).
  */
 import { EscalationService } from "../../../app/escalations.ts";
@@ -20,10 +25,15 @@ import { openClosePeriod } from "./open.ts";
 import { planPeriods, type PlanReport, type UnitsToRun } from "./plan.ts";
 import { closePorts } from "./ports.ts";
 import { GLOBAL_AGG, PLANNER_ACTOR } from "./types.ts";
-import { runUnitsInline } from "./runners.ts";
-import { periodByKey } from "./store.ts";
+import { runStepsInline, runUnitsInline } from "./runners.ts";
+import { fakeNeighbourReceipts, fakeNeighbourRunners, fakeOfficer } from "./fake-neighbours.ts";
+import { PERIOD_COLS, periodByKey } from "./store.ts";
+import type { ClosePeriodRow } from "./types.ts";
 
-export interface CloseSweepReport { readonly at: string; readonly as_of_date: string; readonly servicer_number: string; readonly month_ended_emitted: string | null; readonly opened: readonly string[]; readonly plan: PlanReport; readonly tax_year_closed: readonly number[]; readonly inline_units: number; readonly line: string }
+/** Rounds per pass: the month chain is six deep (eod_cutoff → … → balance_attestation → form496), a reopen adds one. */
+const MAX_ROUNDS = 8;
+
+export interface CloseSweepReport { readonly at: string; readonly as_of_date: string; readonly servicer_number: string; readonly month_ended_emitted: string | null; readonly opened: readonly string[]; readonly plan: PlanReport; readonly tax_year_closed: readonly number[]; readonly inline_units: number; readonly rounds: number; readonly line: string }
 
 export async function closeSweepPass(rt: Runtime, nowIso: string = rt.clock.now(), o: { runId?: string | null; inline?: boolean } = {}): Promise<CloseSweepReport> {
   const asOf = etDate(nowIso);
@@ -63,14 +73,30 @@ export async function closeSweepPass(rt: Runtime, nowIso: string = rt.clock.now(
     const r = await rt.execute({ process: "35.4", name: "close.tax_year", loanId: "", actor: PLANNER_ACTOR, input: { tax_year: ty } });
     if ((r.output as { ran?: boolean } | null)?.ran) taxYearClosed.push(ty);
   }
-  // 4. inline units while 35.3's executor is absent
-  let inline = 0;
-  if (o.inline !== false && plan.units_to_run.length && !(await ports.cycles.executorPresent(rt.db))) {
-    inline = await runUnitsInline(rt, plan.units_to_run as UnitsToRun[], nowIso);
-    if (inline > 0) { const again = await planOnce(rt, nowIso, servicer, plannedBy); mergeInto(plan, again); }
+  // 4. this process's own steps and, while 35.3's executor is absent, the planned units inline — in rounds, each followed by
+  //    one more planning transaction, until a round moves nothing (a whole month's chain in one pass where the receipts
+  //    allow; a step whose not_before or owner is still ahead waits for a later pass). Never in a pass that only verifies.
+  let inline = 0; let rounds = 0;
+  // `CLOSE_SWEEP_RUNNERS=off`: the operators (or the acceptance fixtures) run the owners by hand and the sweep only plans and records
+  if (o.inline !== false && (rt.env["CLOSE_SWEEP_RUNNERS"] ?? "").trim().toLowerCase() !== "off") {
+    const executorPresent = await ports.cycles.executorPresent(rt.db);
+    const officer = await fakeOfficer(rt);
+    const fakeRunners = await fakeNeighbourRunners(rt);
+    let units: UnitsToRun[] = plan.units_to_run as UnitsToRun[];
+    for (rounds = 1; rounds <= MAX_ROUNDS; rounds++) {
+      const open = await rt.db.query<ClosePeriodRow>(`SELECT ${PERIOD_COLS} FROM close_periods WHERE servicer_number = $1 AND status <> 'closed' ORDER BY kind, period`, [servicer]);
+      let moved = await fakeNeighbourReceipts(rt, open, nowIso);
+      moved += await runStepsInline(rt, open, nowIso, { runId: o.runId ?? "sweep", officer, executorPresent });
+      if (!executorPresent && units.length) moved += await runUnitsInline(rt, units, nowIso, fakeRunners);
+      if (!moved) break;
+      inline += moved;
+      const again = await planOnce(rt, nowIso, servicer, plannedBy); mergeInto(plan, again);
+      for (const ty of [...new Set(again.tax_year_closes_due)]) { const r = await rt.execute({ process: "35.4", name: "close.tax_year", loanId: "", actor: PLANNER_ACTOR, input: { tax_year: ty } }); if ((r.output as { ran?: boolean } | null)?.ran) taxYearClosed.push(ty); }
+      units = again.units_to_run as UnitsToRun[];
+    }
   }
-  const line = `close ${asOf}: periods=${plan.periods} opened=[${opened.join(",")}] receipts=${plan.receipts} planned=[${plan.planned.join(",")}] started=[${plan.started.join(",")}] completed=[${plan.completed.join(",")}] stalled=[${plan.stalled.join(",")}] closed=[${plan.closed.join(",")}] tax_year_closed=[${taxYearClosed.join(",")}] inline_units=${inline}`;
-  return { at: nowIso, as_of_date: asOf, servicer_number: servicer, month_ended_emitted: emitted, opened, plan, tax_year_closed: taxYearClosed, inline_units: inline, line };
+  const line = `close ${asOf}: periods=${plan.periods} opened=[${opened.join(",")}] receipts=${plan.receipts} planned=[${plan.planned.join(",")}] started=[${plan.started.join(",")}] completed=[${plan.completed.join(",")}] stalled=[${plan.stalled.join(",")}] closed=[${plan.closed.join(",")}] tax_year_closed=[${taxYearClosed.join(",")}] inline_units=${inline} rounds=${rounds}`;
+  return { at: nowIso, as_of_date: asOf, servicer_number: servicer, month_ended_emitted: emitted, opened, plan, tax_year_closed: taxYearClosed, inline_units: inline, rounds, line };
 }
 
 /** One planning transaction: the global lock, the receipts, the transitions, the roll-up; escalations saved with it. */

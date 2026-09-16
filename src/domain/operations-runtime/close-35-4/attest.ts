@@ -52,7 +52,11 @@ async function unitOf(q: Queryable, i: ToolInput, p: ClosePeriodRow): Promise<{ 
   const units = await piUnits(q, p.period);
   const account = str(i, "custodial_account_id");
   const type = str(i, "remittance_type");
-  if (account) { const u = units.find((x) => x.custodial_account_id === account && (!type || x.remittance_type === type)) ?? { custodial_account_id: account, remittance_type: type || units.find((x) => x.custodial_account_id === account)?.remittance_type || "S/S" }; return u; }
+  if (account) {
+    const u = units.find((x) => x.custodial_account_id === account && (!type || x.remittance_type === type));
+    if (!u) throw new CloseRefused("UNKNOWN_UNIT", "35.4 rule 6: the attestation is per (P&I custodial account × remittance type) of the period", `${account}${type ? ` (${type})` : ""} is not a P&I unit of ${p.period}: ${units.map((x) => `${x.custodial_account_id} (${x.remittance_type})`).join(", ") || "none"}`);
+    return u;
+  }
   if (units.length === 1) return units[0]!;
   throw new RangeError(`custodial_account_id is required (${units.length} P&I units in ${p.period})`);
 }
@@ -97,22 +101,30 @@ export async function attestTool(i: ToolInput, ctx: CommandContext, rt: ToolRunt
   if (op !== "attest") throw new RangeError("close.attest op is prepare | approve | attest");
   // FLAG_FROM_CONFIG: a request field `human_approval_on` is ignored, never read (discrepancy 3)
   const step = await stepOf(q, p.id, "balance_attestation"); if (!step) throw new RangeError(`period ${p.period} has no balance_attestation step`);
+  // the state machine: an attestation is written on an open or reopened period whose step is planned or running — an attested or closed period is terminal until a reopen (rule 9: "the re-attestation is a new row with supersedes_attestation_id" only after `close.reopen`)
+  if (!["open", "reopened"].includes(p.status) || !["planned", "running"].includes(step.status)) throw new CloseRefused("PERIOD_NOT_OPEN", "35.4 state machine: 'attested —(every remaining step completed or skipped)→ closed', terminal 'until a reopen'; rule 9: a re-attestation follows `close.reopen`", `${p.period} is ${p.status} and balance_attestation is ${step.status}: reopen the period (officer) before a new attestation`, { period_status: p.status, step_status: step.status });
   const all = await stepsOf(q, p.id); const byCode = new Map(all.map((x) => [x.code, x]));
   const missing = step.depends_on.filter((c) => { const x = byCode.get(c); return x ? !["completed", "skipped", "pre_reopen"].includes(x.status) : true; });
   if (missing.length) throw new CloseRefused("STEP_BLOCKED", "35.4 state machine: 'open —(close.attest: every step in balance_attestation.depends_on completed …)→ attested'", `balance_attestation is blocked on ${missing.join(", ")}`, { missing });
   const preparer = has(i, "preparer_decision_id") ? await decisionById(q, str(i, "preparer_decision_id")) : await latestDecision(q, "close.attest.prepare", subject.id);
+  if (preparer && preparer.subject_id !== subject.id) throw new CloseRefused("PREPARER_DECISION_REQUIRED", "35.4 rule 7 / AI agent design: the decisions name the period and account — a decision for another period or unit is not this unit's", `preparer decision ${preparer.id} is for ${preparer.subject_id}, not ${subject.id}`);
   if (!preparer || preparer.action !== "close.attest.prepare") throw new CloseRefused("PREPARER_DECISION_REQUIRED", "35.4 AI agent design: 'the agent prepares the balance attestation … writes the preparer decision and calls close.attest'", `no preparer decision for ${p.period} ${unit.custodial_account_id} (${unit.remittance_type})`);
   const review = has(i, "reviewer_decision_id") ? await decisionById(q, str(i, "reviewer_decision_id")) : await latestDecision(q, "close.review", subject.id);
   const rr = review ? recordOf(review) : {};
+  if (review && review.subject_id !== subject.id) throw new CloseRefused("REVIEW_REQUIRED", "35.4 rule 6: the review is of this unit's preparer decision — a review for another period or unit is not this unit's", `review ${review.id} is for ${review.subject_id}, not ${subject.id}`);
   if (!review || review.action !== "close.review" || rr["preparer_decision_id"] !== preparer.id) throw new CloseRefused("REVIEW_REQUIRED", "35.4 rule 6: 'qc-audit reviews before the attestation is written'", `no independent review of preparer decision ${preparer.id}`);
   if (rr["outcome"] !== "passed") throw new CloseRefused("REVIEW_FAILED", "35.4 rule 6: the reviewer 're-derives cashbook and composition_l12 … re-reads the statement's closing ledger from the stored document … and writes its own decision'", `the review ${review.id} did not pass: ${String(rr["reason"] ?? "figures differ")}`);
   const flag = await ports.config.humanApprovalOn(q, p.period, p.period_end);
   let approval: DecisionRow | undefined;
   if (flag) {
     approval = has(i, "officer_approval_id") ? await decisionById(q, str(i, "officer_approval_id")) : await latestDecision(q, "close.attest.approve", subject.id, "AND approved_role = 'officer'");
+    if (approval && approval.subject_id !== subject.id) throw new CloseRefused("OFFICER_APPROVAL_REQUIRED", "35.4 rule 7: the approval record names 'the period and account'", `approval ${approval.id} is for ${approval.subject_id}, not ${subject.id}`);
     if (!approval || approval.action !== "close.attest.approve" || approval.approved_role !== "officer") throw new CloseRefused("OFFICER_APPROVAL_REQUIRED", "35.4 rule 7: 'when on, the attestation needs an officer approval record (agent_decisions by a human actor with role officer, action close.attest.approve, naming the period and account) or it is refused OFFICER_APPROVAL_REQUIRED'", `custodial.form496.human_approval is on for ${p.period} and no officer approval record exists for ${unit.custodial_account_id} (${unit.remittance_type})`);
   }
   const f = await computeFigures(q, unit, p);
+  // rule 6: the reviewed figures are the written figures — a posting or a composition correction since the review makes it stale (the agent prepares again and qc-audit reviews again)
+  const stale = [["cashbook_cents", f.cashbook_cents.toString()], ["composition_l12_cents", f.composition_l12_cents.toString()], ["closing_ledger_reread_cents", f.bank_closing_ledger_cents?.toString() ?? null]].filter(([k, v]) => String(rr[k as string] ?? null) !== String(v));
+  if (stale.length) throw new CloseRefused("REVIEW_STALE", "35.4 rule 6: 'qc-audit reviews before the attestation is written' — the review re-derives the cashbook, L12 and the statement's closing ledger; the attestation writes the figures the review passed", `the book moved since review ${review.id}: ${stale.map(([k]) => k).join(", ")} differ`, { stale: stale.map(([k]) => k) });
   const prep = recordOf(preparer);
   const confidence = typeof prep["confidence"] === "number" ? (prep["confidence"] as number) : 0;
   const evidence = Array.isArray(prep["evidence_document_ids"]) ? (prep["evidence_document_ids"] as unknown[]).map(String) : [];
@@ -145,11 +157,11 @@ export async function attestTool(i: ToolInput, ctx: CommandContext, rt: ToolRunt
   const packageId = await packageDocument(q, p, id, { attestation: record, preparer_decision_id: preparer.id, reviewer_decision_id: review.id, officer_approval_id: approval?.id ?? null }, ctx.now);
   await journal(q, { close_period_id: p.id, step_id: step.id, type: "close.period.attested", actor: ctx.actor, occurred_at: ctx.now, payload: { attestation_id: id, custodial_account_id: unit.custodial_account_id, remittance_type: unit.remittance_type, variance_cents: "0", package_document_id: packageId, period_attested: allAttested } });
   if (allAttested) {
-    ctx.events.append({ type: "close.period.attested", aggregate: periodAggregate(servicer, p.period), actor: ctx.actor, payload: { close_period_id: p.id, period: p.period, attestation_id: id, variance_cents: "0", custodial_account_id: unit.custodial_account_id, remittance_type: unit.remittance_type, package_document_id: packageId, supersedes_attestation_id: supersedes, units: units.length } });
+    const ev = ctx.events.append({ type: "close.period.attested", aggregate: periodAggregate(servicer, p.period), actor: ctx.actor, payload: { close_period_id: p.id, period: p.period, attestation_id: id, variance_cents: "0", custodial_account_id: unit.custodial_account_id, remittance_type: unit.remittance_type, package_document_id: packageId, supersedes_attestation_id: supersedes, units: units.length } });
     await patchStep(q, step.id, { status: "completed", started_at: step.started_at ?? ctx.now, completed_at: ctx.now, received: units.length, expected_receipts: units.length }, ctx.now);
+    await journal(q, { close_period_id: p.id, step_id: step.id, type: "close.receipt.recorded", source_event_id: ev.id, actor: ctx.actor, occurred_at: ctx.now, payload: { step: "balance_attestation", unit: `${unit.custodial_account_id}:${unit.remittance_type}`, event_type: "close.period.attested", event_occurred_at: ctx.now, units: units.length } });   // the step's receipt is this process's own event, journaled like every other receipt (the planner's later scan finds it recorded)
     await journal(q, { close_period_id: p.id, step_id: step.id, type: "close.step.completed", actor: ctx.actor, occurred_at: ctx.now, payload: { period: p.period, step: "balance_attestation", attestation_id: id } });
     await patchPeriod(q, p.id, { status: "attested", attested_at: ctx.now, current_attestation_id: id }, ctx.now);
-    if (supersedes && p.current_reopen_id) await q.query(`UPDATE close_periods SET current_reopen_id = current_reopen_id WHERE id = $1`, [p.id]);
   } else if (step.status !== "running") {
     await patchStep(q, step.id, { status: "running", started_at: step.started_at ?? ctx.now }, ctx.now);
   }

@@ -30,7 +30,15 @@ export async function taxYearTool(i: ToolInput, ctx: CommandContext, rt: ToolRun
   const ty = Number(i["tax_year"]); if (!Number.isInteger(ty) || ty < 2000) throw new RangeError("tax_year must be a calendar year");
   const runtime = runtimeOf(rt); const servicer = await closePorts(runtime).servicer.servicerNumber(q);
   const existing = (await q.query<{ id: string; reportable_loans: number; ioe_1099_loans: number; form_1099_ac_loans: number; ledger_interest_sum_cents: string; tax_year_close_period_id: string | null }>(`SELECT id::text AS id, reportable_loans, ioe_1099_loans, form_1099_ac_loans, ledger_interest_sum_cents::text AS ledger_interest_sum_cents, tax_year_close_period_id::text AS tax_year_close_period_id FROM tax_year_closes WHERE tax_year = $1`, [ty]))[0];
-  if (existing) return { ran: false, tax_year: ty, tax_year_close_id: existing.id, reportable_loans: existing.reportable_loans, ioe_1099_loans: existing.ioe_1099_loans, form_1099_ac_loans: existing.form_1099_ac_loans, ledger_interest_sum_cents: existing.ledger_interest_sum_cents, tax_year_close_period_id: existing.tax_year_close_period_id };
+  if (existing) {
+    // a reopen of December resets `tax_year_close` with the rest of the downstream steps (rule 9); the tax year is closed once (rule 10), so the re-run re-completes the step against the row it wrote
+    const dec = await periodByKey(q, "month", `${ty}-12`, servicer); const st = dec ? await stepOf(q, dec.id, "tax_year_close") : undefined;
+    if (dec && st && st.status !== "completed") {
+      await patchStep(q, st.id, { status: "completed", started_at: st.started_at ?? ctx.now, completed_at: ctx.now, received: 1 }, ctx.now);
+      await journal(q, { close_period_id: dec.id, step_id: st.id, type: "close.step.completed", actor: ctx.actor, occurred_at: ctx.now, payload: { period: dec.period, step: "tax_year_close", tax_year: ty, tax_year_close_id: existing.id, note: "re-completed after a reopen: the tax year closed once" } });
+    }
+    return { ran: false, tax_year: ty, tax_year_close_id: existing.id, reportable_loans: existing.reportable_loans, ioe_1099_loans: existing.ioe_1099_loans, form_1099_ac_loans: existing.form_1099_ac_loans, ledger_interest_sum_cents: existing.ledger_interest_sum_cents, tax_year_close_period_id: existing.tax_year_close_period_id };
+  }
   const december = await periodByKey(q, "month", `${ty}-12`, servicer, true);
   if (!december) throw new CloseRefused("TAX_YEAR_NOT_READY", "35.4 rule 10: 'On the December period's tax_year_close step'", `no December ${ty} close period`);
   const step = await stepOf(q, december.id, "tax_year_close");
@@ -66,6 +74,7 @@ export async function taxYearTool(i: ToolInput, ctx: CommandContext, rt: ToolRun
   await q.query(`INSERT INTO tax_year_closes (id, tax_year, december_close_period_id, tax_year_close_period_id, reportable_loans, ioe_1099_loans, form_1099_ac_loans, ledger_interest_sum_cents, filing_list_document_id, receipt_event_id, closed_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
     [closeId, ty, december.id, opened.period.id, reportable.length, ioeLoans, ac.length, ledgerSum, docId, ev.id, ctx.now]);
   await patchStep(q, step.id, { status: "completed", started_at: step.started_at ?? ctx.now, completed_at: ctx.now, received: 1 }, ctx.now);
+  await journal(q, { close_period_id: december.id, step_id: step.id, type: "close.receipt.recorded", source_event_id: ev.id, actor: ctx.actor, occurred_at: ctx.now, payload: { period: december.period, step: "tax_year_close", event_type: "close.tax_year.closed", tax_year: ty } });   // the step's receipt is this process's own event, journaled like every other receipt
   await journal(q, { close_period_id: december.id, step_id: step.id, type: "close.tax_year.closed", actor: ctx.actor, occurred_at: ctx.now, payload: { tax_year: ty, tax_year_close_id: closeId, reportable_loans: reportable.length, ioe_1099_loans: ioeLoans, form_1099_ac_loans: ac.length, ledger_interest_sum_cents: ledgerSum.toString(), event_id: ev.id } });
   await journal(q, { close_period_id: december.id, step_id: step.id, type: "close.step.completed", actor: ctx.actor, occurred_at: ctx.now, payload: { period: december.period, step: "tax_year_close", tax_year: ty } });
   await writeCloseDecision(ctx, { action: "close.tax_year", subject: { kind: "tax_year", id: String(ty) }, record: { period: december.period, servicer_number: servicer, tax_year: ty, action: "tax_year_close", tax_year_close_id: closeId, reportable_loans: reportable.length, ioe_1099_loans: ioeLoans, form_1099_ac_loans: ac.length, ledger_interest_sum_cents: ledgerSum.toString(), filing_list_document_id: docId, tax_year_close_period_id: opened.period.id }, rationale: `tax year ${ty} closed: ${reportable.length} reportable loan(s), ledger interest ${ledgerSum} cents, ${ioeLoans} 1099-INT loan(s), ${ac.length} 1099-A/C loan(s)`, evidenceDocumentIds: [docId] });

@@ -36,7 +36,7 @@ import { CYCLES, SELECTORS, monthEnd, type CycleDef, type Selector } from "./cyc
 import type { JobRow } from "./jobs.ts";
 
 export interface UnitOutcome { readonly outcome: string; readonly detail?: Record<string, unknown>; }
-export interface UnitContext { readonly rt: ToolRuntime; readonly ctx: CommandContext; readonly runtime: Runtime; readonly def: CycleDef; readonly job: JobRow; readonly as_of: string; readonly as_of_date: PlainDate; }
+export interface UnitContext { readonly rt: ToolRuntime; readonly ctx: CommandContext; readonly runtime: Runtime; readonly def: CycleDef; readonly job: JobRow; /** the owning section's agent (rule 8) — the actor of every act the unit performs */ readonly owner: Actor; readonly as_of: string; readonly as_of_date: PlainDate; }
 export interface PassContext { readonly def: CycleDef; readonly job: JobRow; readonly as_of: string; readonly as_of_date: PlainDate; }
 export type Runner = { readonly kind: "unit"; run(u: UnitContext): Promise<UnitOutcome> } | { readonly kind: "pass"; pass(runtime: Runtime, p: PassContext): Promise<UnitOutcome> };
 /** Ports for facts other sections supply (in-repo defaults): 8.1's per-loan Metro 2 records for a cycle (default: none — the book's snapshots are 8.1's/35.4's to supply). */
@@ -121,7 +121,7 @@ export const RUNNERS: Record<string, Runner> = {
   metro2_monthly: unit(async (u) => {
     const asOf = monthEnd(u.job.period_key); const cycleId = `metro2-${u.job.period_key}`;
     const records = u.runtime.cycles.ports.metro2Records ? await u.runtime.cycles.ports.metro2Records(u.runtime.db, asOf) : [];
-    const runner = new CreditCycleRunner(u.ctx.events, u.ctx.actor);
+    const runner = new CreditCycleRunner(u.ctx.events, u.owner);
     const b = runner.build({ cycle_id: cycleId, as_of: asOf, records, config: FAKE_BUREAU_CONFIG });
     return { outcome: b.status, detail: { cycle_id: cycleId, as_of_date: asOf, record_count: b.record_count, omitted: b.omitted.length, exceptions: b.exceptions.length } };
   }),
@@ -129,10 +129,12 @@ export const RUNNERS: Record<string, Runner> = {
   form_496_monthly: unit(async (u) => {
     const accountId = s(u.job.input["custodial_account_id"] ?? u.job.unit_id.split(":")[0]); const period = s(u.job.input["period"] ?? u.job.period_key.split(":")[0]);
     const f = await custodialFacts(u, accountId, monthEnd(period));
+    // rule 8: the facts are the owner's — Section I is the bank's closing ledger from 6.3's statement of record; without one the draft cannot be true, so the unit fails (dead after the retries, escalated to the row's officer) rather than draft from the cashbook
+    if (f.bank === null) throw new RangeError(`no bank statement of record for custodial account ${accountId} as of ${monthEnd(period)}: 6.3 bank.read_statement first`);
     // 6.3 rule 6: the composition by remittance type (reconciliation.ts form496SS / form496SA / form496AA) — the cashbook on its collected line, every other line zero until 6.3's own preparer fills them; the identity L12 = cashbook = adjusted depository holds
     const rt = s(u.job.input["remittance_type"] ?? "A/A"); const kind = rt === "S/S" ? "ss" : rt === "S/A" ? "sa" : "aa";
     const composition = kind === "ss" ? { L3_prepaid_net: 0n, L4_curtailments: 0n, L5_interest_fundings: 0n, L7_payoff_fixed_net: 0n, L8_delinquent_net: 0n, L9_fnma_receivable: 0n, L10_variances: 0n, L11_other: f.cashbook } : kind === "sa" ? { L2_principal_current: f.cashbook, L3_prepaid_net: 0n, L4_curtailments: 0n, L6_interest_gain_loss: 0n, L11_other: 0n } : { L1_collected_not_remitted: f.cashbook, L11_other: 0n };
-    const r = await u.runtime.runOnBus(u.ctx, u.rt, { process: "6.3", name: "form496.generate", actor: CUSTODIAL_RECON, input: { kind, period, custodial_account_id: accountId, remittance_type: rt, section_i: { bank_closing_ledger_cents: f.bank ?? f.cashbook, deposits_in_transit_cents: 0n, disbursements_in_transit_cents: 0n, adjustments_cents: 0n }, cashbook_cents: f.cashbook, composition, section_iii: [], preparer_run_id: `35.3:${u.job.run_id}` } });
+    const r = await u.runtime.runOnBus(u.ctx, u.rt, { process: "6.3", name: "form496.generate", actor: CUSTODIAL_RECON, input: { kind, period, custodial_account_id: accountId, remittance_type: rt, section_i: { bank_closing_ledger_cents: f.bank, deposits_in_transit_cents: 0n, disbursements_in_transit_cents: 0n, adjustments_cents: 0n }, cashbook_cents: f.cashbook, composition, section_iii: [], preparer_run_id: `35.3:${u.job.run_id}` } });
     const o = (r.output ?? {}) as Record<string, unknown>;
     return { outcome: s(o["status"] ?? "drafted"), detail: { reconciliation_id: s(o["id"]), period, custodial_account_id: accountId } };
   }),
@@ -154,7 +156,7 @@ export const RUNNERS: Record<string, Runner> = {
   /** 35.1 (`security-records`): the daily verify run on the unit's transaction (rule 13 of 35.1); once per day — a second unit the same day records `already_today`. */
   projection_verify: unit(async (u) => {
     if (await verifiedToday(u.ctx.q!, u.as_of_date)) return { outcome: "already_today", detail: { as_of_date: u.as_of_date } };
-    const r = await verifyRun({ q: u.ctx.q!, events: u.ctx.events, escalations: u.rt.escalations, actor: u.ctx.actor, now: u.ctx.now }, { as_of_date: u.as_of_date });
+    const r = await verifyRun({ q: u.ctx.q!, events: u.ctx.events, escalations: u.rt.escalations, actor: u.owner, now: u.ctx.now }, { as_of_date: u.as_of_date });
     return { outcome: "ran", detail: { run_id: r.run_id, gaps: r.gaps, mismatches: r.mismatches, rows_verified: r.rows_verified } };
   }),
   // ---- the sweep-body passes (20.1, 33.2, 33.3, 34.3): unchanged code, wrapped as one unit each (idempotent per day)

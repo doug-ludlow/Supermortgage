@@ -248,6 +248,8 @@ test("35.3-T6: Given `ledger.period.closed{period_key: 2026-09}` has been append
   try {
     const f = await new PgLoanRepository(s.db).createFixture({ fnmaLoanNumber: `8${String(Date.now() % 1_000_000_000).padStart(9, "0")}`, servicerLoanNumber: `SM-T6-${randomUUID().slice(0, 8)}`, instrumentDate: D("2021-07-15"), originalUpbCents: 25_000_000n, originalTermMonths: 360, firstPaymentDate: D("2021-09-01"), maturityDate: D("2051-08-01") });
     await appendGlobal(s.rt, "ledger.period.closed", { period_key: "2026-09", period_end: "2026-09-30", custodial_account_id: f.custodial.pi }, { kind: "custodial_account", id: f.custodial.pi });
+    // 6.3's statement of record for the account (the row bank.read_statement stores): Section I of the Form 496 draft is the bank's closing ledger, never the cashbook
+    await s.rt.executeDef({ name: "t6.statement", process: "35.3", agent: "ops-steward", kind: "act", handler: (_i, ctx, trt) => { trt.store.put("bank_statements", `stmt-${f.custodial.pi}-2026-09-30`, { custodial_account_id: f.custodial.pi, format: "bai2", as_of_date: "2026-09-30", file_id: "FAKE-BAI2-2026-09-30", control_totals_ok: true, quarantined: false, closing_ledger_cents: 0n, closing_available_cents: 0n, parsed_at: ctx.now }, ctx.actor, ctx.now); return {}; } }, { loanId: "", actor: OPS, input: {} });
     const key = `2026-09:${f.custodial.pi}:A/A`;
     const plan = await planCycles(s.rt, { as_of: NOW, planned_by: "test", cycle_codes: ["form_496_monthly"] });
     assert.equal(plan.jobs_planned, 1, JSON.stringify(plan));

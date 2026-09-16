@@ -17,7 +17,7 @@ import type { Runtime } from "../../../runtime/app.ts";
 import { plainDate as D, addDays, type PlainDate } from "../../../kernel/calendar/date.ts";
 import { fannieEt } from "../../../kernel/calendar/business.ts";
 import { wallClock, zonedEpochMs } from "../../../kernel/calendar/zoned.ts";
-import { CYCLES_VERSION, EV, OPS_STEWARD, PLANNER_LOCK_KEY, defaultPeriods, idempotencyKey, periodEnd, type CycleDef, type CycleWindow, type Dependency, type Unit } from "./cycles.ts";
+import { CYCLES_VERSION, EV, OPS_STEWARD, PLANNER_LOCK_KEY, defaultPeriods, idempotencyKey, periodEnd, priorMonthKey, type CycleDef, type CycleWindow, type Dependency, type Unit } from "./cycles.ts";
 import { jobEvent, type JobRow, JOB_COLS } from "./jobs.ts";
 import { emitReceipt } from "./receipt.ts";
 
@@ -39,13 +39,15 @@ export interface PlanReport {
   readonly errors: { cycle_code: string; error_class: string; error: string }[]; readonly duration_ms: number;
 }
 
+/** The n-th Fannie Mae business day after `d` (IRM 2-01: BD1 is the first business day of the following month). */
+export function nextBusinessDay(d: PlainDate, n: number): PlainDate { let x = d; for (let k = n; k > 0; k--) { x = addDays(x, 1); while (!fannieEt.isBusinessDay(x)) x = addDays(x, 1); } return x; }
 /** Rule 11 / the registry's `expected_by_rule`: `same_day HH:MM ET` (the period's day at HH:MM), `BDn HH:MM ET` (n Fannie business days after the period end), `+n calendar_days` (23:59 ET); anything else reads as `same_day 23:59 ET`. */
 export function expectedByMs(rule: string, periodKey: string): number {
   const end = periodEnd(periodKey);
   let m = /^same_day\s+(\d{2}:\d{2})\s*ET$/i.exec(rule.trim());
   if (m) return zonedEpochMs(end, m[1]!, ET);
   m = /^BD(\d+)\s+(\d{2}:\d{2})\s*ET$/i.exec(rule.trim());
-  if (m) { let d = end; for (let n = Number(m[1]); n > 0; n--) { d = addDays(d, 1); while (!fannieEt.isBusinessDay(d)) d = addDays(d, 1); } return zonedEpochMs(d, m[2]!, ET); }
+  if (m) return zonedEpochMs(nextBusinessDay(end, Number(m[1])), m[2]!, ET);
   m = /^\+(\d+)\s+calendar_days$/i.exec(rule.trim());
   if (m) return zonedEpochMs(addDays(end, Number(m[1])), "23:59", ET);
   return zonedEpochMs(end, "23:59", ET);
@@ -57,8 +59,8 @@ export async function dependencySatisfied(q: Queryable, dep: Dependency, unit: {
     const head = unit.period_key.split(":")[0]!;
     return (await q.query(`SELECT 1 FROM loan_events WHERE type = $1 AND payload->>$2 = $3 LIMIT 1`, [dep.event, dep.key, head])).length > 0;
   }
-  const period = dep.period === "as_of_date" ? w.as_of_date : dep.period === "period_end" ? periodEnd(unit.period_key) : unit.period_key.split(":")[0]!;
-  return (await q.query(`SELECT 1 FROM cycle_receipts WHERE cycle_code = $1 AND period_key = $2 LIMIT 1`, [dep.cycle_code, period])).length > 0;
+  const period = dep.period === "as_of_date" ? w.as_of_date : dep.period === "period_end" ? periodEnd(unit.period_key) : dep.period === "bd1_next" ? nextBusinessDay(periodEnd(unit.period_key), 1) : unit.period_key.split(":")[0]!;
+  return (await q.query(`SELECT 1 FROM cycle_receipts WHERE cycle_code = $1 AND (period_key = $2 OR period_key LIKE $2 || ':%') LIMIT 1`, [dep.cycle_code, period])).length > 0;
 }
 async function depsSatisfied(q: Queryable, def: CycleDef, unit: { period_key: string }, w: CycleWindow): Promise<boolean> {
   for (const d of def.depends_on) if (!(await dependencySatisfied(q, d, unit, w))) return false;
@@ -188,18 +190,19 @@ export async function planCycles(rt: Runtime, o: PlanOptions): Promise<PlanRepor
     // rule 5: reconcile — every open run whose counters are full and no receipt row (the crash between the unit's commit and the receipt transaction)
     const full = await rt.db.query<{ id: string }>(`SELECT r.id FROM cycle_runs r WHERE r.status IN ('planned', 'running') AND r.units_done + r.units_dead + r.units_skipped >= r.units_total AND r.units_dead = 0 AND NOT EXISTS (SELECT 1 FROM cycle_receipts c WHERE c.run_id = r.id) ORDER BY r.opened_at`);
     for (const r of full) if (await emitReceipt(rt, r.id, `planner:${r.id}`)) base.receipts_reconciled += 1;
-    // rule 11: next_expected_by / overdue_since on every active row (NO_SILENT_CYCLE): the most recent period the planner could have planned (a pass ran on or before its last day) whose expected_by has passed and has no receipt; a paused row is never overdue (open question 5); a def whose runner has not landed is the registry's `runner_missing` finding, not an overdue clock
+    // rule 11: next_expected_by / overdue_since on every active row (NO_SILENT_CYCLE). The expectation is the grammar's own period (a day cycle's day, a month cycle's prior month — whatever units the day held), so a unit-driven cycle (remittance, ledger_period_close, …) is measured on its calendar too; a receipt for the period or for any of its `<period>:<unit>` keys counts. A cycle whose grammar has no calendar (billing_cycle, tax_year, event) is clocked by its owner's timer, not here. A paused row is never overdue (open question 5); a def whose runner has not landed is the registry's `runner_missing` finding, not an overdue clock.
     const nowMs = Date.parse(asOf);
-    const firstPass = firstPassDate === w.as_of_date && !(await rt.db.query(`SELECT 1 FROM loan_events WHERE type = $1 LIMIT 1`, [EV.plan_completed])).length ? null : firstPassDate;
+    const firstPass = (await rt.db.query<{ d: string | null }>(`SELECT min(payload->>'as_of_date') AS d FROM loan_events WHERE type = $1`, [EV.plan_completed]))[0]?.d ?? null;
+    const grammarPeriods = (def: CycleDef, win: CycleWindow): string[] => (def.period_grammar === "day" ? [win.as_of_date] : def.period_grammar === "month" ? [priorMonthKey(win.as_of_date)] : []);
     const yesterday: CycleWindow = { as_of: asOf, as_of_date: addDays(w.as_of_date, -1) };
     for (const def of rt.cycles.defs) {
       if (!active.has(def.cycle_code)) continue;
-      const current = defaultPeriods(def, w)[0] ?? null;
+      const current = grammarPeriods(def, w)[0] ?? null;
       const runnerMissing = def.runner !== "none" && !rt.cycles.runners[def.runner];
-      const candidates = runnerMissing || !firstPass ? [] : [...new Set([...defaultPeriods(def, w), ...defaultPeriods(def, yesterday)])].filter((k) => periodEnd(k) >= D(firstPass));
+      const candidates = runnerMissing || !firstPass ? [] : [...new Set([...grammarPeriods(def, w), ...grammarPeriods(def, yesterday)])].filter((k) => periodEnd(k) >= D(firstPass));
       const due = candidates.filter((k) => expectedByMs(def.expected_by, k) <= nowMs).sort((a, b) => expectedByMs(def.expected_by, b) - expectedByMs(def.expected_by, a))[0] ?? null;
       let overdue = false;
-      if (due) overdue = (await rt.db.query(`SELECT 1 FROM cycle_receipts WHERE cycle_code = $1 AND period_key = $2 LIMIT 1`, [def.cycle_code, due])).length === 0;
+      if (due) overdue = (await rt.db.query(`SELECT 1 FROM cycle_receipts WHERE cycle_code = $1 AND (period_key = $2 OR period_key LIKE $2 || ':%') LIMIT 1`, [def.cycle_code, due])).length === 0;
       await rt.db.query(`UPDATE cycle_registry SET next_period_key = $2, next_expected_by = $3, overdue_since = CASE WHEN $4::boolean THEN coalesce(overdue_since, $5::timestamptz) ELSE NULL END, updated_at = $5 WHERE cycle_code = $1`, [def.cycle_code, current, current ? new Date(expectedByMs(def.expected_by, current)).toISOString() : null, overdue, asOf]);
       if (overdue) base.overdue.push(def.cycle_code);
     }

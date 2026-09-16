@@ -43,34 +43,41 @@ export interface UnitRunReport { readonly job_id: string; readonly run_id: strin
 export const runUnitHandler = async (i: ToolInput, ctx: CommandContext, rt: ToolRuntime): Promise<UnitRunReport> => {
   const runtime = runtimeOf(rt); const q = ctx.q; if (!q) throw new RangeError("cycles.run_unit runs inside a database command (PgUnitOfWork): no transaction on this context");
   const jobId = str(i, "job_id"); if (!jobId) throw new RangeError("cycles.run_unit needs job_id");
-  const job = await loadJob(q, jobId, true); if (!job) throw new RangeError(`no job ${jobId}`);
+  // no row lock across the unit: the claim (status running + holder) is the guard, so the executor's heartbeat can extend the lease while the unit runs (rule 6)
+  const job = await loadJob(q, jobId, false); if (!job) throw new RangeError(`no job ${jobId}`);
   const holder = str(i, "holder") || `${ctx.actor.kind}:${ctx.actor.id}`;
+  const def = defOf(runtime.cycles.defs, job.cycle_code); if (!def) throw new RunnerMissing(job.cycle_code);
+  // rule 8: the unit runs as the owning section's agent — the executor's command already carries it; a hand-run command (ops-steward, a person) stamps the owner on the unit's events and its runner's acts
+  const owner: Actor = ctx.actor.kind === "agent" && ctx.actor.id === def.owner_agent ? ctx.actor : { kind: "agent", id: def.owner_agent };
   let attempt = job.attempts;
   if (job.status === "queued" && (job.run_after === null || Date.parse(job.run_after) <= Date.now())) {
-    // by hand: claim inline (the same lease as the executor's claim, wall clock)
-    const [claimed] = await q.query<{ attempts: number; lease_until: string }>(`UPDATE jobs SET status = 'running', lease_holder = $2, lease_until = now() + interval '${LEASE_MINUTES} minutes', heartbeat_at = now(), attempts = attempts + 1 WHERE id = $1 RETURNING attempts, lease_until::text AS lease_until`, [jobId, holder]);
-    attempt = claimed!.attempts;
-    await jobEvent(q, jobId, "claimed", { attempt, holder, actor: ctx.actor });
-    ctx.events.append({ type: EV.unit_claimed, aggregate: { kind: "job", id: jobId }, actor: ctx.actor, payload: { job_id: jobId, holder, lease_until: claimed!.lease_until, attempt } });
+    // by hand: claim inline, atomically (the same lease as the executor's claim, wall clock); a concurrent claim wins the row and this call is refused
+    const [claimed] = await q.query<{ attempts: number; lease_until: string }>(`UPDATE jobs SET status = 'running', lease_holder = $2, lease_until = now() + interval '${LEASE_MINUTES} minutes', heartbeat_at = now(), attempts = attempts + 1 WHERE id = $1 AND status = 'queued' RETURNING attempts, lease_until::text AS lease_until`, [jobId, holder]);
+    if (!claimed) throw new CommandRefused(RUN_UNIT_TOOL, "JOB_NOT_CLAIMABLE", "35.3 rule 6: a queued job is claimed once", `job ${jobId} was claimed by another executor`);
+    attempt = claimed.attempts;
+    await jobEvent(q, jobId, "claimed", { attempt, holder, actor: owner });
+    ctx.events.append({ type: EV.unit_claimed, aggregate: { kind: "job", id: jobId }, actor: owner, payload: { job_id: jobId, holder, lease_until: claimed.lease_until, attempt } });
     await q.query(`UPDATE cycle_runs SET status = 'running' WHERE id = $1 AND status = 'planned'`, [job.run_id]);
-  } else if (job.status !== "running" || (str(i, "holder") && job.lease_holder !== holder)) {
+  } else if (job.status !== "running" || job.lease_holder !== holder) {
+    // a job that is done, dead, blocked, failed before its run_after, or running under another executor's lease is not this call's to run
     throw new CommandRefused(RUN_UNIT_TOOL, "JOB_NOT_CLAIMABLE", "35.3 state machine / worked example A: a second `cycles.run_unit` of the same job is refused JOB_NOT_CLAIMABLE", `job ${jobId} is ${job.status}${job.lease_holder ? ` (held by ${job.lease_holder})` : ""}`);
   }
-  const def = defOf(runtime.cycles.defs, job.cycle_code); if (!def) throw new RunnerMissing(job.cycle_code);
   const runner = runtime.cycles.runners[def.runner]; if (!runner) throw new RunnerMissing(def.runner);
   const asOfDate = wallClock(Date.parse(ctx.now), "America/New_York").date;
   const t0 = Date.now(); const decisionId = randomUUID();
   const outcome: UnitOutcome = runner.kind === "pass"
     ? (i["pass"] && typeof i["pass"] === "object" ? { outcome: String((i["pass"] as Record<string, unknown>)["outcome"] ?? "ran"), detail: i["pass"] as Record<string, unknown> } : await runner.pass(runtime.root, { def, job, as_of: ctx.now, as_of_date: asOfDate }))
-    : await runner.run({ rt, ctx, runtime, def, job, as_of: ctx.now, as_of_date: asOfDate });
+    : await runner.run({ rt, ctx, runtime, def, job, owner, as_of: ctx.now, as_of_date: asOfDate });
   const durationMs = Date.now() - t0;
-  ctx.events.append({ type: EV.unit_done, aggregate: { kind: "job", id: jobId }, actor: ctx.actor, payload: { job_id: jobId, run_id: job.run_id, cycle_code: job.cycle_code, period_key: job.period_key, unit_id: job.unit_id, decision_id: decisionId, attempt, outcome: outcome.outcome, duration_ms: durationMs } });
+  ctx.events.append({ type: EV.unit_done, aggregate: { kind: "job", id: jobId }, actor: owner, payload: { job_id: jobId, run_id: job.run_id, cycle_code: job.cycle_code, period_key: job.period_key, unit_id: job.unit_id, decision_id: decisionId, attempt, outcome: outcome.outcome, duration_ms: durationMs } });
   // rule 5: the commit hook (35.1's fact-projector phase — the same transaction as the unit's events, ledger sets, timers and decision)
   const defer = deferOf(rt);
   const commitWrites = async (cq: import("../../../infra/db/client.ts").Queryable): Promise<void> => {
-    await cq.query(`UPDATE jobs SET status = 'done', decision_id = $2, finished_at = now(), lease_holder = NULL, lease_until = NULL, last_error_class = NULL, last_error = NULL WHERE id = $1`, [jobId, decisionId]);
+    // the lease is the guard here too: a job whose lease was reclaimed and taken by another executor while this unit ran is not marked done twice (done is terminal; no unit counts twice)
+    const mine = await cq.query(`UPDATE jobs SET status = 'done', decision_id = $2, finished_at = now(), lease_holder = NULL, lease_until = NULL, last_error_class = NULL, last_error = NULL WHERE id = $1 AND status = 'running' AND lease_holder = $3 RETURNING id`, [jobId, decisionId, holder]);
+    if (!mine.length) throw new CommandRefused(RUN_UNIT_TOOL, "JOB_NOT_CLAIMABLE", "35.3 rule 6: the lease expired and another executor took the unit; this run is rolled back whole", `job ${jobId} is no longer held by ${holder}`);
     const [c] = await cq.query<RunCounters>(`UPDATE cycle_runs SET units_done = units_done + 1, status = CASE WHEN status = 'planned' THEN 'running' ELSE status END WHERE id = $1 RETURNING units_total, units_done, units_dead, units_skipped, status, cycle_code, period_key, as_of_date::text AS as_of_date`, [job.run_id]);
-    await jobEvent(cq, jobId, "done", { attempt, holder, actor: ctx.actor, detail: { decision_id: decisionId, duration_ms: durationMs, outcome: outcome.outcome, counters: c ? { units_total: c.units_total, units_done: c.units_done, units_dead: c.units_dead, units_skipped: c.units_skipped } : null } });
+    await jobEvent(cq, jobId, "done", { attempt, holder, actor: owner, detail: { decision_id: decisionId, duration_ms: durationMs, outcome: outcome.outcome, counters: c ? { units_total: c.units_total, units_done: c.units_done, units_dead: c.units_dead, units_skipped: c.units_skipped } : null } });
   };
   if (defer) defer(commitWrites); else await commitWrites(q);
   return { job_id: jobId, run_id: job.run_id, cycle_code: job.cycle_code, period_key: job.period_key, unit_id: job.unit_id, decision_id: decisionId, outcome: outcome.outcome, detail: outcome.detail ?? null, duration_ms: durationMs, attempt };
@@ -99,14 +106,17 @@ export async function claimJobs(rt: Runtime, holder: string, limit: number = CLA
   return { claimed, holder };
 }
 
-export interface FailureReport { readonly job_id: string; readonly status: "failed" | "dead"; readonly attempt: number; readonly error_class: string; readonly error: string; readonly run_after: string | null; readonly escalation_id: string | null; }
+export interface FailureReport { readonly job_id: string; readonly status: "failed" | "dead"; readonly attempt: number; readonly error_class: string; readonly error: string; readonly run_after: string | null; readonly escalation_id: string | null; /** the lease had been reclaimed and the job re-run elsewhere: nothing was booked */ readonly stale?: boolean; }
 /** Rule 7: a throw → `failed` with `run_after = now() + 60 s · 2^(attempt−1)` (cap 15 min), or `dead` at the third attempt / an `unavailable` or `runner_missing` failure — `job.unit.dead` (SM_JOB_DEAD_2H on the job), `units_dead + 1`, one escalation to the registry row's `escalation_role`. The message is stored; the input payload is not. */
 export async function recordFailure(rt: Runtime, job: JobRow, holder: string, e: unknown, def: CycleDef | undefined): Promise<FailureReport> {
   const c = classifyError(e);
   const dead = c.dead_now || job.attempts >= job.max_attempts;
-  let escalations: EscalationService | undefined; let escalationId: string | null = null; let runAfter: string | null = null;
+  let escalations: EscalationService | undefined; let escalationId: string | null = null; let runAfter: string | null = null; let stale = false;
   await rt.uow.run({}, async (ctx) => {
     const q = ctx.q!;
+    // only the job this executor still holds moves (done is terminal; a lease reclaimed and re-run elsewhere is not this failure's to book)
+    const held = await q.query(`SELECT 1 FROM jobs WHERE id = $1 AND status = 'running' AND lease_holder = $2 FOR UPDATE`, [job.id, holder]);
+    if (!held.length) { stale = true; return; }
     if (dead) {
       await q.query(`UPDATE jobs SET status = 'dead', last_error_class = $2, last_error = $3, finished_at = now(), lease_holder = NULL, lease_until = NULL WHERE id = $1`, [job.id, c.error_class, c.message]);
       await q.query(`UPDATE cycle_runs SET units_dead = units_dead + 1, status = CASE WHEN status = 'planned' THEN 'running' ELSE status END WHERE id = $1`, [job.run_id]);
@@ -126,7 +136,8 @@ export async function recordFailure(rt: Runtime, job: JobRow, holder: string, e:
       ctx.events.append({ type: EV.unit_failed, aggregate: { kind: "job", id: job.id }, actor: OPS_STEWARD, payload: { job_id: job.id, run_id: job.run_id, cycle_code: job.cycle_code, period_key: job.period_key, unit_id: job.unit_id, attempt: job.attempts, error_class: c.error_class, run_after: runAfter } });
     }
   }, { clock: rt.clock, commit: async (q) => { for (const e of escalations?.list() ?? []) await rt.escalationRepo.save(e, q); } });
-  return { job_id: job.id, status: dead ? "dead" : "failed", attempt: job.attempts, error_class: c.error_class, error: c.message, run_after: runAfter, escalation_id: escalationId };
+  if (stale) rt.logger?.warn("cycles: a unit's failure arrived after its lease was reclaimed; not booked", { job_id: job.id, holder, error_class: c.error_class });
+  return { job_id: job.id, status: dead ? "dead" : "failed", attempt: job.attempts, error_class: c.error_class, error: c.message, run_after: runAfter, escalation_id: escalationId, stale };
 }
 
 export type UnitResult = { readonly job_id: string; readonly status: "done"; readonly report: UnitRunReport; readonly receipt: ReceiptResult | null } | { readonly job_id: string; readonly status: "failed" | "dead"; readonly failure: FailureReport };

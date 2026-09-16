@@ -3,8 +3,11 @@
 import type { BorrowerRecord } from "@/lib/types/record";
 import { copy } from "@/lib/copy";
 import { formatMoney, formatRate } from "@/lib/format";
+import { StatusBadgeView } from "@/components/record/sections";
+import { NextEvent } from "./NextEvent";
 
-/** Origination glance from borrower_record. Journey is progress only — not a checklist of invented steps. */
+/** Origination glance from borrower_record. Journey is progress only — not a checklist of invented steps.
+ * The status line is the phone's at-a-glance line (01 §1.2): the record's own badge and next event, never computed here. */
 export function ApplyTab({
   record,
   onOpenTask,
@@ -23,9 +26,8 @@ export function ApplyTab({
       <p className="sm-tab-lede">{record?.header.purpose ?? "Application"} · {record?.header.loan_label ?? "No file yet"}</p>
       {record?.status ? (
         <p className="sm-tab-status">
-          <span className="sm-badge" data-tone="info">
-            <span>○</span> {record.status.badge}
-          </span>
+          <StatusBadgeView badge={record.status.badge} />
+          <NextEvent record={record} />
           <span className="sm-tab-muted">{copy(record.status.one_liner, record.status.one_liner_tokens)}</span>
         </p>
       ) : (
@@ -76,7 +78,7 @@ export function ApplyTab({
       <section className="sm-record-section">
         <h2>Needed from you</h2>
         {needed.length === 0 ? (
-          <p className="sm-tab-muted">Nothing needed right now.</p>
+          <p className="sm-tab-muted">{copy(record?.needed_summary?.nothing_needed ? record.needed_summary.copy_key : "needs.none")}</p>
         ) : (
           <ul className="sm-list">
             {needed.map((n) => (

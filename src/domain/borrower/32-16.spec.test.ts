@@ -464,7 +464,7 @@ test("32.16-T12: Given a reference chip, when clicked, then the rail focuses and
 test("32.16-T13: Given the refinance fixture at R8, then `journey_progress` shows E1–R7 `done`, R8 `current`, and Progress renders \"7 of 12\".", { todo: true });
 test("32.16-T14: Given `credit_reports.frozen_repositories` non-empty, then the rail shows a caution row with the lift-instructions card, and no toast or modal exists in the DOM.", { todo: true });
 test("32.16-T15: Given a `DocumentCard{LE}` under Documents, when expanded, then the viewer and \"Confirm receipt\" render and confirming writes `receipt_evidence = esign_confirmed` (32.3 32.3-T22 unchanged).", { todo: true });
-test("32.16-T16: Given a phone width, then the status strip shows the badge, next event and needed count, and the sheet shows the same rail sections.", { todo: true });
+test("32.16-T16: Given a phone width, then the tab shell shows the badge and next event (My Loan) and the needed count (the Tasks tab badge), and the record sheet shows the same rail sections.", { todo: true });
 test("32.16-T17: Given an in-app voice turn proposing the home-confirm values, when the borrower says \"yes\", then the card resolves through `resolve_card_by_evidence` with `card_instance_events{kind: voice_attestation, utterance_id, transcript_ref}` and `messages.voice_turn = true`.", { skip }, async () => {
   const b = await signedUpWithGoal("t17");
   const cardId = await sendCard(b, "ConfirmCard", "refi.home.confirm", "application.confirmField", { ...HOME_PROPS, flow_key: `refi.home:${b.app_id}` }, "32.3 E5: the home");

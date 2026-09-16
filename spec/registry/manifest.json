@@ -15547,7 +15547,7 @@
    },
    {
     "n": 8,
-    "text": "Talk to a person \u2014 Given any screen, then a control emitting `human.request` is visible without scrolling; after `human.transfer.completed`, a `PersonCard{human_agent}` exists."
+    "text": "Talk to a person \u2014 Given any screen, then a control emitting `human.request` is visible without scrolling (the input bar; on a phone the Chat tab is in the tab rail on every screen and its input bar is in the viewport); after `human.transfer.completed`, a `PersonCard{human_agent}` exists."
    },
    {
     "n": 9,
@@ -15555,7 +15555,7 @@
    },
    {
     "n": 10,
-    "text": "Mobile parity \u2014 Given every card kind at 390 px, then it is operable and the status strip shows badge, next event and the needed-from-you count."
+    "text": "Mobile parity \u2014 Given every card kind at 390 px, then it is operable on the record sheet, and the phone shell shows the badge and next event (My Loan) and the needed-from-you count (the Tasks tab badge)."
    },
    {
     "n": 11,
@@ -15755,7 +15755,7 @@
    },
    {
     "n": 16,
-    "text": "Given a phone width, then the status strip shows the badge, next event and needed count, and the sheet shows the same rail sections."
+    "text": "Given a phone width, then the tab shell shows the badge and next event (My Loan) and the needed count (the Tasks tab badge), and the record sheet shows the same rail sections."
    },
    {
     "n": 17,

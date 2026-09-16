@@ -55,7 +55,7 @@ import { enterStep, completeStep, journal, civilDay, type JournalIo } from "../.
 import { modeFor, fold, before, type Folded } from "../../domain/operations-runtime/closeout-35-10/machine.ts";
 import { priorLoanFacts, partnerTerms, projectedDisbursement, fundingIdFor, settlementPayoffLine, authorizationDocument, liabilityIdFor, creditConsent, cdInitialDeposit, securityInstrumentFor, remittedTo, pl, type PriorLoanFacts, type RecordIo } from "../../domain/operations-runtime/closeout-35-10/derive.ts";
 import { renderRefinanceBoard } from "../../domain/operations-runtime/closeout-35-10/board.ts";
-import { PROCESS, AGENT, RULE_SET_VERSION, PROMPT_VERSION, PARTNER_NOTIFY_ADAPTER, retirementIdempotencyKey, type CloseoutRow, type CloseoutStep, type CloseoutDecision, type EscrowTreatment, type CloseoutMode } from "../../domain/operations-runtime/closeout-35-10/types.ts";
+import { PROCESS, AGENT, RULE_SET_VERSION, PROMPT_VERSION, PARTNER_NOTIFY_ADAPTER, retirementIdempotencyKey, type CloseoutRow, type CloseoutStep, type CloseoutDecision, type PriorStatus, type EscrowTreatment, type CloseoutMode } from "../../domain/operations-runtime/closeout-35-10/types.ts";
 import type { StepOutcome } from "../../runtime/refinance-closeout.ts";
 
 type Row = Record<string, unknown>;
@@ -126,7 +126,7 @@ const outcome = (c: CloseoutRow, o: StepOutcome["outcome"], detail?: string): St
 function decisionOf(c: CloseoutRow, o: string, detail: string | null, command: CloseoutDecision["command"] = null, ownerDecisionId: string | null = null, figures: Partial<CloseoutDecision["figures"]> = {}): CloseoutDecision {
   return { closeout_id: c.id, application_id: c.application_id, prior_loan_id: c.prior_loan_id, mode: c.mode, step: c.step, command, trigger_event_id: null, owner_decision_id: ownerDecisionId, figures: { quoted_total_cents: S(c.quoted_total_cents), per_diem_cents: S(c.per_diem_cents), exact_total_cents: null, variance_cents: null, ...figures }, rule_set_version: RULE_SET_VERSION, model_version: "deterministic", prompt_version: PROMPT_VERSION, confidence: 1, rationale: `${o}${detail ? `: ${detail}` : ""}` };
 }
-const decisionFn = (name: string) => (_i: ToolInput, output: unknown) => { const o = (output ?? {}) as Row; const d = o["decision"] as CloseoutDecision | undefined; return d ? { action: name, rationale: JSON.stringify(d), subject: { kind: "refinance_closeout", id: d.closeout_id }, ruleCode: PROCESS } : null; };
+const decisionFn = (name: string) => (_i: ToolInput, output: unknown) => { const o = (output ?? {}) as Row; const d = o["decision"] as CloseoutDecision | undefined; if (o["outcome"] === "noop" || o["outcome"] === "waiting") return null; return d ? { action: name, rationale: JSON.stringify(d), subject: { kind: "refinance_closeout", id: d.closeout_id }, ruleCode: PROCESS } : null; };
 async function hold(cx: Cx, reason: string, o: { status?: CloseoutRow["status"]; waiting_on?: string | null; detail?: Row } = {}): Promise<StepOutcome & { closeout_id: string; decision: CloseoutDecision }> {
   cx.c = await updateCloseout(cx.q, cx.c.id, { status: o.status ?? "held", hold_reason: reason, waiting_on: o.waiting_on ?? cx.c.waiting_on }, cx.ctx.now);
   await journal(cx.io, cx.c, "held", { waiting_on: cx.c.waiting_on, detail: { reason, ...(o.detail ?? {}) } });
@@ -177,9 +177,19 @@ async function open(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): Promise
   const priorPartner = (await q.query<{ p: string | null }>(`SELECT partner_party_id::text AS p FROM loans WHERE id = $1`, [app.prior_loan_id]))[0]?.p ?? app.partner_party_id;
   // rule 1 / edge cases: a prior loan that cannot be retired (paid_off, transferred_out, staged) or one already in an open closeout → cancelled + an ops_analyst escalation
   const other = await openCloseoutOnPriorLoan(q, app.prior_loan_id);
+  const priorStatus = String(app.status ?? "") as PriorStatus;
+  if (!other && "cancel" in m && priorStatus === "paid_off") {
+    // edge case: the prior loan is already paid off (a plain payoff, or an earlier refinance) → completed{already_retired} with the existing settlement id; nothing to quote, settle or release
+    const settlement = (await q.query<{ id: string }>(`SELECT id FROM entity_current WHERE kind = 'payoff_settlements' AND (data->>'loan_id') = $1 ORDER BY updated_at DESC LIMIT 1`, [app.prior_loan_id]))[0]?.id ?? null;
+    const partnerBook = (await q.query<{ n: string }>(`SELECT count(*)::text AS n FROM partner_book_facts WHERE loan_id = $1`, [app.prior_loan_id]))[0]!.n !== "0";
+    const row = await insertCloseout(q, { application_id: applicationId, prior_loan_id: app.prior_loan_id, partner_party_id: priorPartner, mode: partnerBook ? "monitored_partner" : "serviced_same_servicer", prior_status_at_open: priorStatus, step: "completed", status: "completed", hold_reason: "already_retired", now: ctx.now });
+    if (settlement) await updateCloseout(q, row.id, { settlement_id: settlement, completed_at: ctx.now }, ctx.now); else await updateCloseout(q, row.id, { completed_at: ctx.now }, ctx.now);
+    await journal(io, row, "completed", { step: "completed", detail: { reason: "already_retired", prior_status: priorStatus, settlement_id: settlement } });
+    return { ...outcome({ ...row, settlement_id: settlement }, "completed", "already_retired"), closeout_id: row.id };
+  }
   if ("cancel" in m || other) {
     const reason = other ? "prior_loan_in_closeout" : "cancel" in m ? m.cancel : "prior_not_retirable";
-    const row = await insertCloseout(q, { application_id: applicationId, prior_loan_id: app.prior_loan_id, partner_party_id: priorPartner, mode: other ? other.mode : "serviced_same_servicer", prior_status_at_open: other ? other.prior_status_at_open : "active", step: "opened", status: "cancelled", hold_reason: reason, now: ctx.now });
+    const row = await insertCloseout(q, { application_id: applicationId, prior_loan_id: app.prior_loan_id, partner_party_id: priorPartner, mode: other ? other.mode : "serviced_same_servicer", prior_status_at_open: other ? other.prior_status_at_open : priorStatus || "active", step: "opened", status: "cancelled", hold_reason: reason, now: ctx.now });
     await journal(io, row, "cancelled", { detail: { reason, prior_status: app.status, other_closeout_id: other?.id ?? null } });
     rt.escalations.open({ kind: "sev3", ownerRole: "ops_analyst", loanId: app.prior_loan_id, applicationId, payload: { reason, application_id: applicationId, prior_loan_id: app.prior_loan_id, prior_status: app.status, other_closeout_id: other?.id ?? null, closeout_id: row.id } }, ctx.actor);
     await runtime.uow.run({ loanId: app.prior_loan_id, applicationId }, (u) => u.events.append({ type: "refinance.closeout.unwound", loanId: app.prior_loan_id!, applicationId, aggregate: { kind: "refinance_closeout", id: row.id }, actor: ctx.actor, payload: { closeout_id: row.id, application_id: applicationId, prior_loan_id: app.prior_loan_id, reason, terminal: "cancelled", origination: true } }), { clock: runtime.clock });
@@ -304,6 +314,7 @@ async function settle(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): Promi
   const funded = cx.f.funded; const confirmed = cx.f.confirmed;
   if (!funded || !confirmed) return outcome(cx.c, "waiting", "loan.funded and funding.disbursement.confirmed are not both on the log");
   const disbursement = D(String(pl(funded)["disbursement_date"]).slice(0, 10));
+  if (cx.c.step === "quoted" && cx.c.good_through && disbursement > cx.c.good_through) { await journal(cx.io, cx.c, "waiting", { waiting_on: "16.1", detail: { reason: "the disbursement date is past the quote's good-through: the quote re-runs before the settlement (rule 2)", good_through: cx.c.good_through, disbursement_date: disbursement } }); return outcome(cx.c, "waiting", "quote stale: re-quote first"); }
   const evidenceId = String(pl(confirmed)["evidence_document_id"] ?? "");
   // rule 4 / IDEMPOTENT_ON_FUNDED_EVENT: the closeout's loan-scoped restatement of 26.3's application-scoped loan.funded — once (SM_REFI_PRIOR_SETTLE_1BD arms on it)
   if (cx.c.step === "quoted") {
@@ -335,7 +346,7 @@ async function settle(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): Promi
     if (!transfer.ok) return outcome(cx.c, transfer.refused ? "refused" : "failed", transfer.message);
     const receipt = await owner(cx, { process: "2.1", name: "ledger.post", actor: CASHIERING, scope: "loan", trigger: funded.id, input: { loan_id: cx.c.prior_loan_id, via: "payment.post", entry_set: { effectiveDate: disbursement, description: `receipt payoff transfer ${cx.c.payoff_demand_id ?? cx.c.id}`, lines: [{ account: { scope: "custodial", custodialAccountId: facts.custodial.clearing, account: "clearing_cash" }, amountCents: line.amount_cents, ruleRef: "2.1:r8:receipt" }, { account: { scope: "loan", loanId: cx.c.prior_loan_id, account: "suspense_unapplied" }, amountCents: -line.amount_cents, ruleRef: "2.1:r8:receipt" }] } } });
     if (!receipt.ok) return outcome(cx.c, receipt.refused ? "refused" : "failed", receipt.message);
-    const matched = await owner(cx, { process: "16.2", name: "matchPayoffFunds", actor: PAYOFF_RELEASE, scope: "loan", trigger: funded.id, input: { loan_id: cx.c.prior_loan_id, amount_cents: line.amount_cents, method: "internal_transfer", received_at: `${disbursement}T${wallClock(Date.parse(cx.ctx.now), ET).hour >= 0 ? cx.ctx.now.slice(11) : "16:00:00.000Z"}`, bank_reference: cx.c.quote_id ?? line.wire_reference ?? "", remittance_type: facts.remittance_type, settlement_date: disbursement } });
+    const matched = await owner(cx, { process: "16.2", name: "matchPayoffFunds", actor: PAYOFF_RELEASE, scope: "loan", trigger: funded.id, input: { loan_id: cx.c.prior_loan_id, amount_cents: line.amount_cents, method: "internal_transfer", received_at: `${disbursement}T${cx.ctx.now.slice(11)}`, bank_reference: cx.c.quote_id ?? line.wire_reference ?? "", remittance_type: facts.remittance_type, settlement_date: disbursement } });
     if (!matched.ok) return outcome(cx.c, matched.refused ? "refused" : "failed", matched.message);
     const fundsId = String(matched.output["funds_id"]);
     cx.c = await updateCloseout(cx.q, cx.c.id, { funds_id: fundsId, payoff_date: disbursement }, cx.ctx.now);
@@ -408,7 +419,10 @@ async function escrow(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): Promi
   if (treatment === "refund" && !cx.c.refund_disbursement_id && cx.c.retirement_id && cx.c.payoff_date) {
     const holdState = finalDisbursementHold({ payoff_date: cx.c.payoff_date, today: cx.asOf, in_flight: [] });
     if (!holdState.refund_may_issue) return outcome(cx.c, "waiting", `3.5's 5-BD in-flight hold: the refund issues from ${holdState.gate_opens_on}`);
-    const amount = cx.c.escrow_balance_cents ?? 0n;
+    // rule 6: the refund is the ledger's escrow balance now (a tax or insurance disbursement between the quote and today changes it), never the quote-time copy
+    const facts = await priorLoanFacts(recordIo(cx), cx.c.prior_loan_id, cx.asOf);
+    const amount = facts.escrow_balance_cents > 0n ? facts.escrow_balance_cents : 0n;
+    if (amount === 0n) { cx.c = await updateCloseout(cx.q, cx.c.id, { refund_disbursement_id: `${cx.c.prior_loan_id}:none` }, cx.ctx.now); await journal(cx.io, cx.c, "skipped", { step: "escrow_disposed", command: { process: "3.5", name: "issueRefund" }, detail: { reason: "no escrow balance left to refund" } }); await completeIfDone(cx); return outcome(cx.c, "advanced", "no escrow balance: nothing to refund"); }
     const r = await owner(cx, { process: "3.5", name: "issueRefund", actor: ESCROW, scope: "loan", input: { loan_id: cx.c.prior_loan_id, kind: "payoff_refund", amount_cents: amount, escrow_balance_after_payoff_cents: amount, in_flight: [], payoff_date: cx.c.payoff_date, due_on: cx.asOf, method: "check", payee_kind: "borrower" }, note: "3.5's refund of the prior escrow balance after the in-flight hold (§1024.34(b)(1)); the amount is the ledger's escrow balance 16.2 left pending" });
     if (!r.ok) return outcome(cx.c, r.refused ? "refused" : "failed", r.message);
     const issued = r.events.find((e) => e.type === "disbursement.issued") ?? null;
@@ -460,7 +474,7 @@ async function retire(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): Promi
     else {
       const deposit = cdInitialDeposit(cx.store, cx.events, cx.c.application_id) ?? cx.c.escrow_balance_cents ?? 0n;
       const tiPre = facts!.ti_prepurchase_id ?? (await cx.q.query<{ id: string }>(`SELECT id::text AS id FROM custodial_accounts WHERE partner_party_id = $1 AND kind = 'ti_prepurchase' ORDER BY created_at LIMIT 1`, [facts!.partner_party_id]))[0]?.id ?? null;
-      const credit = await owner(cx, { process: "30.3", name: "buildEscrowLines", actor: ESCROW, scope: "both", trigger: retired.id, input: { op: "post_credit_transfer", application_id: cx.c.application_id, old_loan_id: cx.c.prior_loan_id, new_loan_id: newLoan, consent_id: cx.c.escrow_consent_id, payoff_date: payoffDate, settlement_date: payoffDate, old_balance_after_final_disbursements_cents: cx.c.escrow_balance_cents ?? 0n, target_at_start_cents: deposit, fnma_ti_account_id: facts!.custodial!.ti, ...(tiPre ? { custodial_ti_prepurchase_id: tiPre } : {}) }, note: "30.3 rule 8: the prior escrow balance credited to the new loan as of settlement (§1024.34(b)(2)(iii)); the balance is the ledger's, the target the CD's" });
+      const credit = await owner(cx, { process: "30.3", name: "buildEscrowLines", actor: ESCROW, scope: "both", trigger: retired.id, input: { op: "post_credit_transfer", application_id: cx.c.application_id, old_loan_id: cx.c.prior_loan_id, new_loan_id: newLoan, consent_id: cx.c.escrow_consent_id, payoff_date: payoffDate, settlement_date: payoffDate, old_balance_after_final_disbursements_cents: facts!.escrow_balance_cents ?? 0n, target_at_start_cents: deposit, fnma_ti_account_id: facts!.custodial!.ti, ...(tiPre ? { custodial_ti_prepurchase_id: tiPre } : {}) }, note: "30.3 rule 8: the prior escrow balance credited to the new loan as of settlement (§1024.34(b)(2)(iii)); the balance is the ledger's, the target the CD's" });
       if (credit.ok) {
         const ev = credit.events.find((e) => e.type === "escrow.credit_to_new_loan.posted") ?? null;
         cx.c = await updateCloseout(cx.q, cx.c.id, { escrow_credit_event_id: ev?.id ?? null }, cx.ctx.now);

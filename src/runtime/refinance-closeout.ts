@@ -30,8 +30,8 @@ import type { Actor, DomainEvent } from "../kernel/events/index.ts";
 import type { Cents } from "../kernel/money/cents.ts";
 import { CommandRefused } from "../app/commands.ts";
 import { closeoutByApplication, openCloseouts, applicationsWithoutCloseout, updateCloseout, appendStep } from "../domain/operations-runtime/closeout-35-10/repo.ts";
-import { fold, next, MAX_ATTEMPTS, type Next } from "../domain/operations-runtime/closeout-35-10/machine.ts";
-import { creditConsent, cdInitialDeposit, fundingIdFor } from "../domain/operations-runtime/closeout-35-10/derive.ts";
+import { fold, next, before, MAX_ATTEMPTS, type Next } from "../domain/operations-runtime/closeout-35-10/machine.ts";
+import { creditConsent, cdInitialDeposit, fundingIdFor, projectedDisbursement } from "../domain/operations-runtime/closeout-35-10/derive.ts";
 import { AGENT, PROCESS, type CloseoutRow } from "../domain/operations-runtime/closeout-35-10/types.ts";
 import { finalDisbursementHold } from "../domain/escrow/ops-3-5.ts";
 import { prepaidInterest, type LoanFundedPayload } from "../domain/orig-boarding/ops-30-2.ts";
@@ -110,17 +110,23 @@ export interface StepOutcome { readonly outcome: "advanced" | "waiting" | "held"
 
 async function journalFailure(rt: Runtime, c: CloseoutRow, tool: string, err: unknown, nowIso: string): Promise<CloseoutRow> {
   const msg = err instanceof Error ? err.message : String(err); const cls = err instanceof Error ? err.name : "Error";
+  return countFailure(rt, c, tool, nowIso, { error_class: cls, error: msg });
+}
+/** Rule 10: a failure on a step counts toward `held{attempts}` (MAX_ATTEMPTS) — a thrown error journals `command_failed` here; an owner tool's failure was journaled by the tool itself (`owner()`), so only the attempt is counted. */
+async function countFailure(rt: Runtime, c: CloseoutRow, tool: string, nowIso: string, thrown: { error_class: string; error: string } | null): Promise<CloseoutRow> {
   const attempts = c.step_attempts + 1;
   const held = attempts >= MAX_ATTEMPTS;
   // the pass's own short unit of work (rt.root.db: the failure must outlive the failed command)
   const row = await rt.db.tx(async (q) => {
-    await appendStep(q, { closeout_id: c.id, application_id: c.application_id, prior_loan_id: c.prior_loan_id, step: c.step, kind: "command_failed", waiting_on: c.waiting_on, command_process: PROCESS, command_name: tool, actor_kind: PAYOFF_RELEASE.kind, actor_id: PAYOFF_RELEASE.id, error_class: cls, detail: { error: msg.slice(0, 500), attempt: attempts, waiting_on: c.waiting_on }, sweep_run_id: rt.root.sweepRunId }, nowIso);
-    if (held) await appendStep(q, { closeout_id: c.id, application_id: c.application_id, prior_loan_id: c.prior_loan_id, step: c.step, kind: "held", waiting_on: c.waiting_on, actor_kind: PAYOFF_RELEASE.kind, actor_id: PAYOFF_RELEASE.id, detail: { reason: "attempts", attempts }, sweep_run_id: rt.root.sweepRunId }, nowIso);
+    if (thrown) await appendStep(q, { closeout_id: c.id, application_id: c.application_id, prior_loan_id: c.prior_loan_id, step: c.step, kind: "command_failed", waiting_on: c.waiting_on, command_process: PROCESS, command_name: tool, actor_kind: PAYOFF_RELEASE.kind, actor_id: PAYOFF_RELEASE.id, error_class: thrown.error_class, detail: { error: thrown.error.slice(0, 500), attempt: attempts, waiting_on: c.waiting_on }, sweep_run_id: rt.root.sweepRunId }, nowIso);
+    if (held) await appendStep(q, { closeout_id: c.id, application_id: c.application_id, prior_loan_id: c.prior_loan_id, step: c.step, kind: "held", waiting_on: c.waiting_on, actor_kind: PAYOFF_RELEASE.kind, actor_id: PAYOFF_RELEASE.id, detail: { reason: "attempts", attempts, tool }, sweep_run_id: rt.root.sweepRunId }, nowIso);
     return updateCloseout(q, c.id, held ? { step_attempts: attempts, status: "held", hold_reason: "attempts" } : { step_attempts: attempts }, nowIso);
   });
-  rt.logger?.warn("refinance closeout: command failed", { closeout_id: c.id, application_id: c.application_id, tool, attempt: attempts, held, error: msg });
+  rt.logger?.warn("refinance closeout: command failed", { closeout_id: c.id, application_id: c.application_id, tool, attempt: attempts, held, error: thrown?.error ?? "owner tool failed (journaled by the tool)" });
   return row;
 }
+/** Rule 10's fold marker: the newest event on the closeout's subject that is not the bus's own audit (`command.*`) — a run with nothing newer than `last_event_sequence` is not a run. */
+const newestSequence = (events: readonly DomainEvent[]): number => events.reduce((m, e) => (e.type.startsWith("command.") ? m : Math.max(m, e.sequence)), 0);
 
 export async function closeoutPass(rt: Runtime, nowIso: string, opts: CloseoutPassOptions = {}): Promise<CloseoutPassReport> {
   const log = opts.logger ?? rt.logger; const asOf = wallClock(Date.parse(nowIso), ET).date;
@@ -153,29 +159,36 @@ export async function closeoutPass(rt: Runtime, nowIso: string, opts: CloseoutPa
         }
       }
       const store = new EntityStore(); store.seed(await rt.entities.load({ loanId: c.prior_loan_id, applicationId: c.application_id }));
-      const covers = c.good_through && c.projected_disbursement_date ? c.good_through >= c.projected_disbursement_date : null;
-      const resyncedTo = f.resynced ? String((f.resynced.payload as Row)["disbursement_date"] ?? (f.resynced.payload as Row)["new"] ?? "") : null;
-      const goodThroughCovers = resyncedTo && c.good_through ? c.good_through >= resyncedTo : covers;
+      const disb = projectedDisbursement(store, events, c.application_id);
+      const goodThroughCovers = c.good_through && disb ? c.good_through >= disb.date : null;
       const disposed = f.disposeVariance !== null;
-      let n: Next = next(c, f, { newLoanLinked: !!c.new_loan_id, goodThroughCovers, disposed });
-      // the new loan staged but not linked yet (35.6 stages later than the settlement, or before it): the current step's tool folds the link
-      const stagedUnlinked = f.staged && f.staged.loanId && !c.new_loan_id;
       // the escrow refund after the 5-BD in-flight hold (3.5's clock; the pass issues it once the gate opens — never a write while it waits)
-      const refundDue = c.mode === "serviced_same_servicer" && c.escrow_treatment === "refund" && !c.refund_disbursement_id && c.payoff_date && c.retirement_id && finalDisbursementHold({ payoff_date: c.payoff_date, today: asOf, in_flight: [] }).refund_may_issue;
-      if (n.kind === "wait" && refundDue) n = { kind: "run", tool: "closeout.escrow", trigger: null, reason: "the 5-BD in-flight hold elapsed: 3.5's refund issues" };
-      if (n.kind === "wait" && stagedUnlinked) n = { kind: "run", tool: c.step === "released_or_confirmed" && c.mode === "monitored_partner" ? "closeout.confirm_partner" : c.step === "released_or_confirmed" ? "closeout.lien_release" : "closeout.retire", trigger: f.staged!.id, reason: "loan.staged names the new loan: link it" };
+      const refundElected = c.mode === "serviced_same_servicer" && c.escrow_treatment === "refund" && !c.refund_disbursement_id && !!c.payoff_date && !!c.retirement_id;
+      const refundDue = refundElected ? finalDisbursementHold({ payoff_date: c.payoff_date!, today: asOf, in_flight: [] }).refund_may_issue : null;
+      let n: Next = next(c, f, { newLoanLinked: !!c.new_loan_id, goodThroughCovers, disposed, refundDue });
+      if (refundDue === true && (n.kind === "wait" || (n.kind === "run" && n.tool !== "closeout.escrow"))) n = { kind: "run", tool: "closeout.escrow", trigger: null, reason: "the 5-BD in-flight hold elapsed: 3.5's refund issues" };
+      // the new loan staged but not linked yet (35.6 stages later than the settlement, or before it): the current step's own tool folds the link (linkIfStaged), never a step it has not reached
+      const stagedUnlinked = f.staged && f.staged.loanId && !c.new_loan_id;
+      if (n.kind === "wait" && stagedUnlinked) {
+        const linkTool = before(c.step, "settling") ? "closeout.quote" : before(c.step, "retired") ? "closeout.settle" : c.mode === "monitored_partner" ? (c.step === "retired" ? "closeout.notify_partner" : "closeout.confirm_partner") : c.step === "retired" ? "closeout.lien_release" : "closeout.retire";
+        n = { kind: "run", tool: linkTool, trigger: f.staged!.id, reason: "loan.staged names the new loan: link it" };
+      }
       if (n.kind === "wait") break;
+      // rule 10: no command when nothing is new — the fold marker (`last_event_sequence`) set by the last run that waited; a time-driven run (the refund gate) is the exception
+      const newest = newestSequence(events);
+      const timeDriven = n.kind === "run" && n.tool === "closeout.escrow" && refundDue === true;
+      if (!timeDriven && c.last_event_sequence !== null && BigInt(newest) <= c.last_event_sequence) break;
       const tool = n.kind === "unwind" ? "closeout.quote" : n.kind === "reverse" ? "closeout.settle" : n.tool;
       const input = { application_id: c.application_id, prior_loan_id: c.prior_loan_id, trigger_event_id: n.trigger, reason: "reason" in n ? n.reason : "payoff.reversed", ...(n.kind === "unwind" ? { op: "unwind" } : n.kind === "reverse" ? { op: "reversal" } : {}) };
       try {
         const r = await rt.execute({ process: PROCESS, name: tool, loanId: c.prior_loan_id, applicationId: c.application_id, actor: PAYOFF_RELEASE, input });
         commands += 1;
         const out = r.output as StepOutcome;
-        if (out.outcome === "failed") { failed += 1; }
+        if (out.outcome === "failed") { failed += 1; c = await countFailure(rt, c, tool, nowIso, null); if (c.status === "held") held += 1; break; }
         if (out.outcome === "held") { held += 1; break; }
-        if (out.outcome === "waiting" || out.outcome === "refused" || out.outcome === "noop" || out.outcome === "failed") break;
+        if (out.outcome === "waiting" || out.outcome === "refused" || out.outcome === "noop") { await updateCloseout(rt.db, c.id, { last_event_sequence: BigInt(newest) }, nowIso); break; }
       } catch (e) {
-        if (e instanceof CommandRefused) { log?.warn("refinance closeout: refused", { closeout_id: c.id, tool, code: e.code, reason: e.message }); failed += 1; break; }
+        if (e instanceof CommandRefused) { log?.warn("refinance closeout: refused", { closeout_id: c.id, tool, code: e.code, reason: e.message }); failed += 1; await updateCloseout(rt.db, c.id, { last_event_sequence: BigInt(newest) }, nowIso); break; }
         c = await journalFailure(rt, c, tool, e, nowIso); failed += 1; break;
       }
     }

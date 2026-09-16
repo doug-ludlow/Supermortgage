@@ -52,7 +52,8 @@ export type Next =
   | { readonly kind: "reverse"; readonly trigger: string }
   | { readonly kind: "wait"; readonly waiting_on: string | null; readonly reason: string };
 /** What the pass runs next for an open closeout (rule 10; the state machine). `held` rows wait for closeout.resume or the condition to clear. */
-export function next(c: CloseoutRow, f: Folded, opts: { newLoanLinked: boolean; goodThroughCovers: boolean | null; disposed: boolean }): Next {
+/** `refundDue`: null when no refund is elected or it issued; false while 3.5's 5-BD in-flight hold runs; true once the gate is open and the refund has not issued. */
+export function next(c: CloseoutRow, f: Folded, opts: { newLoanLinked: boolean; goodThroughCovers: boolean | null; disposed: boolean; refundDue?: boolean | null }): Next {
   if (c.status === "held") return { kind: "wait", waiting_on: c.waiting_on, reason: `held{${c.hold_reason ?? "manual"}}` };
   if (f.unwind && before(c.step, "settling")) return { kind: "unwind", trigger: f.unwind.id, reason: f.unwind.type };
   if (f.reversed && !before(c.step, "settled") && c.step !== "settling" && c.settlement_id) return { kind: "reverse", trigger: f.reversed.id };
@@ -62,8 +63,9 @@ export function next(c: CloseoutRow, f: Folded, opts: { newLoanLinked: boolean; 
       if (f.funded) return { kind: "run", tool: "closeout.quote", trigger: f.funded.id, reason: "loan.funded with no closing schedule on the record (the fund bridge's direct path): the disbursement date is the funding date" };
       return { kind: "wait", waiting_on: "26.2", reason: "the application's own pipeline (closing.scheduled)" };
     case "quoted":
+      // a disbursement past the quote's good-through (26.3's resync, or the funding itself landing later) re-runs the quote before anything settles (rule 2: the figure at the disbursement date is 16.1's / 24.4's, never a stale one)
+      if (opts.goodThroughCovers === false) return { kind: "run", tool: "closeout.quote", trigger: (f.resynced ?? f.funded)?.id ?? null, reason: `${f.resynced ? "funding.date.resynced" : "the disbursement date"} past good-through: the quote re-runs` };
       if (f.funded && f.confirmed) return { kind: "run", tool: "closeout.settle", trigger: f.funded.id, reason: "loan.funded + funding.disbursement.confirmed" };
-      if (f.resynced && opts.goodThroughCovers === false) return { kind: "run", tool: "closeout.quote", trigger: f.resynced.id, reason: "funding.date.resynced past good-through: the quote re-runs" };
       return { kind: "wait", waiting_on: "rescission_window", reason: "35.6 owns the wait to loan.funded" };
     case "settling":
       if (c.mode === "serviced_same_servicer" && c.funds_id && !f.paidInFull && !opts.disposed) return { kind: "wait", waiting_on: "officer", reason: "16.2 found a variance nobody disposed (disposeVariance is the officer's)" };
@@ -74,7 +76,10 @@ export function next(c: CloseoutRow, f: Folded, opts: { newLoanLinked: boolean; 
     case "released_or_confirmed":
       if (c.mode === "serviced_same_servicer") return f.recorded ? { kind: "run", tool: "closeout.lien_release", trigger: f.recorded.id, reason: "lien_release.recorded moves the closeout on" } : { kind: "wait", waiting_on: c.waiting_on ?? "signing_officer", reason: "16.3's clocks own the release" };
       return f.partnerConfirmed ? { kind: "run", tool: "closeout.confirm_partner", trigger: f.partnerConfirmed.id, reason: "the partner confirmed" } : { kind: "run", tool: "closeout.confirm_partner", trigger: null, reason: "read the partner's tape" };
-    case "linked": return { kind: "run", tool: "closeout.retire", trigger: null, reason: "every step done: complete" };
+    case "linked":
+      if (opts.refundDue === true) return { kind: "run", tool: "closeout.escrow", trigger: null, reason: "the 5-BD in-flight hold elapsed: 3.5's refund issues, then the closeout completes" };
+      if (opts.refundDue === false) return { kind: "wait", waiting_on: "3.5", reason: "3.5's 5-BD in-flight hold before the escrow refund" };
+      return { kind: "run", tool: "closeout.retire", trigger: null, reason: "every step done: complete" };
     default: return { kind: "wait", waiting_on: c.waiting_on, reason: `step ${c.step}` };
   }
 }

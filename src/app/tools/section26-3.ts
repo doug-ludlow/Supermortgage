@@ -157,7 +157,11 @@ export const TOOLS_26_3: readonly ToolDef[] = defineTools("26.3", "funder", [
       const f = fundingOf(rt, i);
       const r = confirmDisbursement(ctx.events, f, { disbursement_date: dateIn(i, "disbursement_date"), confirmed_at: at(i, ctx, "confirmed_at"), source: str(i, "source") as DisbursementSource, evidence_document_id: (i.evidence_document_id as string | undefined) ?? null, escrow_deposit_cents: cents(i.escrow_deposit_cents) });
       putFunding(rt, ctx, r.funding);
-      return { funding: r.funding, loan_funded: r.loan_funded, event_ids: r.events.map((e) => e.id) }; }),
+      // 35.10 rule 4: the final settlement statement's payoff line(s) for the liens paid from proceeds ride on the evidence document (metadata.payoff_lines[{payoff_demand_id, payee_party_id, amount_cents, wire_reference}]) — the refinance closeout settles the prior loan from that line, matched to 24.4's demand
+      const lines = Array.isArray(i.payoff_lines) ? (i.payoff_lines as Record<string, unknown>[]).map((l) => ({ payoff_demand_id: (l.payoff_demand_id as string | null) ?? null, payee_party_id: (l.payee_party_id as string | null) ?? null, amount_cents: String(cents(l.amount_cents) ?? 0n), wire_reference: (l.wire_reference as string | null) ?? null, liability_id: (l.liability_id as string | null) ?? null })) : null;
+      const evidenceId = (i.evidence_document_id as string | undefined) ?? null;
+      if (lines && evidenceId) { const doc = rt.store.get("documents", evidenceId)?.data ?? { kind: "settlement_statement", application_id: f.application_id, storage_uri: `fake://documents/${evidenceId}`, mime_type: "application/pdf", retention_class: "life_of_loan_plus_4y" }; rt.store.put("documents", evidenceId, { ...doc, metadata: { ...((doc["metadata"] as Record<string, unknown> | undefined) ?? {}), payoff_lines: lines, disbursement_date: String(i.disbursement_date) } }, ctx.actor, ctx.now); }
+      return { funding: r.funding, loan_funded: r.loan_funded, event_ids: r.events.map((e) => e.id), payoff_lines: lines }; }),
     guardrails: [never("CONFIRMATION_SOURCE_REQUIRED", "26.3 state machine: `disbursed` requires a disbursement confirmation source", (i) => i.source !== undefined && !["final_settlement_statement", "recording_confirmation", "agent_attestation", "bank_debit_trace"].includes(String(i.source)), "final settlement statement, recording confirmation, agent attestation or bank debit trace")] },
   { name: "postLedger", kind: "act", handler: compute((i, ctx, rt) => {
       need(i, "funding_id", "effective_date");

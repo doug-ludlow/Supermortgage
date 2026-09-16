@@ -6,7 +6,7 @@ import type { PlainDate } from "../../../kernel/calendar/date.ts";
 import type { Cents } from "../../../kernel/money/cents.ts";
 
 export type CloseoutMode = "serviced_same_servicer" | "monitored_partner";
-export type PriorStatus = "active" | "monitored";
+export type PriorStatus = "active" | "monitored" | "paid_off" | "staged" | "transferred_out" | "foreclosed" | "reo" | "repurchased" | "charged_off";   // loans.status as read once at closeout.open (rule 1); a closeout runs only from active | monitored, the rest cancel or complete{already_retired}
 /** The state machine's steps, in order; `held`, `unwound` and `cancelled` are statuses, not steps. */
 export type CloseoutStep = "opened" | "awaiting_schedule" | "quoted" | "settling" | "settled" | "escrow_disposed" | "retired" | "released_or_confirmed" | "linked" | "completed";
 export const STEP_ORDER: readonly CloseoutStep[] = ["opened", "awaiting_schedule", "quoted", "settling", "settled", "escrow_disposed", "retired", "released_or_confirmed", "linked", "completed"];

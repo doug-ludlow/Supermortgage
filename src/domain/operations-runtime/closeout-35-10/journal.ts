@@ -14,7 +14,7 @@ import type { CloseoutRow, CloseoutStep, CloseoutStatus, StepKind, StepRow } fro
 export const ET = "America/New_York";
 export const CLOSEOUT_AGGREGATE = "refinance_closeout";
 /** The steps a person, a statutory window, the partner's tape or 35.6 owns — no SM_REFI_CLOSEOUT_STALLED_2BD arms while waiting there (Data model: `clocked`). */
-export const UNCLOCKED_WAITS: ReadonlySet<string> = new Set(["borrower", "signing_officer", "officer", "ops_analyst", "attorney", "partner", "partner_tape", "rescission_window", "35.6", "erecording", "SM_REFI_PARTNER_CONFIRM_21", "orchestration"]);
+export const UNCLOCKED_WAITS: ReadonlySet<string> = new Set(["borrower", "signing_officer", "officer", "ops_analyst", "attorney", "partner", "partner_tape", "rescission_window", "35.6", "erecording", "SM_REFI_PARTNER_CONFIRM_21", "orchestration", "26.2", "26.3", "16.1", "35.5", "33.1", "3.5", "30.3", "settlement_agent", "custodial_accounts"]);
 
 export interface JournalIo { readonly q: Queryable; readonly events: EventStore; readonly actor: Actor; readonly now: string; readonly sweepRunId: string | null; }
 const day = (iso: string) => wallClock(Date.parse(iso), ET).date;

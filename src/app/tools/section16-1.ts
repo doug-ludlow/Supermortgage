@@ -240,6 +240,16 @@ export const TOOLS_16_1: readonly ToolDef[] = defineTools("16.1", AGENT, [
       const loanId = str(i, "loan_id"); const sid = str(i, "statement_id"); const now = optDate(i, "today") ?? today(ctx.now);
       const stored = rt.store.get("payoff_statements", sid)?.data ?? null; if (!stored) throw new RangeError(`no payoff_statements row ${sid}: a recompute updates an issued statement`);
       const quoteId = String(stored.quote_id); const quote = rt.store.get("payoff_quotes", quoteId)?.data ?? null; if (!quote) throw new RangeError(`no payoff_quotes row ${quoteId} behind statement ${sid}`);
+      if (str(i, "op") === "supersede") {
+        // 35.10 T10 (a refinance unwound: rescission, a cancelled funding, a withdrawal): the statement's purpose ended — the quote and the statement are superseded as of the trigger with no recompute
+        // (no figure changed), no update to send (nobody is paying off) and no SM_PAYOFF_STMT_UPDATE_1BD, whatever the good-through; a later request is a new intake
+        const reasonText = str(i, "reason") || str(i, "trigger_event") || "superseded";
+        if (stored.status === "superseded") return { recompute: false, superseded: true, quote_id: quoteId, reason: reasonText };
+        rt.store.put("payoff_quotes", quoteId, { ...quote, status: "superseded", superseded_at: ctx.now, superseded_reason: reasonText, superseded_by_id: null }, ctx.actor, ctx.now);
+        rt.store.put("payoff_statements", sid, { ...stored, status: "superseded", superseded_by: null, superseded_reason: reasonText, superseded_at: ctx.now }, ctx.actor, ctx.now);
+        ctx.events.append({ type: "payoff.statement.superseded", loanId, actor: ctx.actor, payload: { statement_id: sid, superseded_by: null, quote_id: quoteId, due_by: null, recipients: 0, reason: reasonText, trigger: str(i, "trigger_event"), occurred_on: str(i, "occurred_on") } });
+        return { recompute: false, superseded: true, quote_id: quoteId, reason: reasonText };
+      }
       const statement: ActiveStatement = { id: sid, sent_on: D(String(stored.sent_on ?? stored.rendered_on ?? now)), good_through: D(String(stored.good_through)), total_cents: cents(stored.total_cents), recipients: ((stored.delivered_to as { party_id: string; channel: string; email?: string; address?: string }[] | undefined) ?? []).map((d) => ({ party_id: d.party_id, channel: d.channel, ...(d.email ? { email: d.email } : {}), ...(d.address ? { address: d.address } : {}) })) };
       // the calculator on the post-event ledger: the original components with the stated changes (a reversed installment restores the UPB and LPI, a fee assessment adds its line …), the same ledger snapshot discipline as the original
       const merged = recomputedComponents(quote.components as Components, componentChanges(i)); const rates = (i.rate_segments as RateInForce[] | undefined) ?? (quote.rate_segments_in_force as RateInForce[] | null | undefined) ?? null;

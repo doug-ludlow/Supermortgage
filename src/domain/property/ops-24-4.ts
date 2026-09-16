@@ -67,7 +67,7 @@ export const sha = (s: string): string => "sha256:" + createHash("sha256").updat
 
 // ============================================================ event recorders
 export interface EventCtx { readonly application_id: string; readonly loan_id?: string | null; readonly actor?: Actor; readonly at?: string; }
-function appEvent(events: EventStore, c: EventCtx, type: string, payload: Record<string, unknown>): DomainEvent {
+export function appEvent(events: EventStore, c: EventCtx, type: string, payload: Record<string, unknown>): DomainEvent {
   need(!!c.application_id, "application_id is required (every 24.4 event carries it so the origination timers arm)");
   return events.append({ type, applicationId: c.application_id, ...(c.loan_id ? { loanId: c.loan_id } : {}), actor: c.actor ?? AGENT_24_4, ...(c.at ? { occurredAt: c.at } : {}), payload: { application_id: c.application_id, source: "origination", ...payload } });
 }
@@ -344,7 +344,7 @@ export function cplBeforeFundingGate(f: CplFacts): GateOutcome & { cpl_addressee
 }
 
 // ============================================================ R6–R8 payoffs
-export interface PayoffStatementInput { readonly principal_cents: Cents; readonly rate_pct: string; readonly interest_paid_through: PlainDate; readonly per_diem_cents: Cents; readonly good_through_date: PlainDate; readonly fees_cents?: Cents; readonly recording_fee_cents?: Cents; readonly escrow_shortage_cents?: Cents; readonly credits_cents?: Cents; readonly statement_date: PlainDate; readonly short_payoff?: boolean; readonly stated_total_cents?: Cents | null; }
+export interface PayoffStatementInput { readonly principal_cents: Cents; readonly rate_pct: string; readonly interest_paid_through: PlainDate; readonly per_diem_cents: Cents; readonly good_through_date: PlainDate; readonly fees_cents?: Cents; readonly recording_fee_cents?: Cents; readonly escrow_shortage_cents?: Cents; readonly credits_cents?: Cents; readonly statement_date: PlainDate; readonly short_payoff?: boolean; readonly stated_total_cents?: Cents | null; /** the servicer's printed interest line (16.1 prints interest accrued on the unrounded daily factor); absent → days × the printed per diem */ readonly stated_interest_cents?: Cents | null; }
 export interface ParsedPayoff { readonly interest_days: number; readonly interest_cents: Cents; readonly fees_cents: Cents; readonly total_cents: Cents; readonly computed_per_diem_cents: Cents; readonly per_diem_reconciles: boolean; readonly per_diem_difference_cents: Cents; readonly stated_total_matches: boolean | null; readonly short_payoff: boolean; readonly status: "received" | "rejected"; }
 export const PER_DIEM_TOLERANCE_CENTS: Cents = 2n;
 /** Rule 6 arithmetic: interest from paid-through + 1 through good-through = days × per diem; total = principal + interest + fees + shortage − credits. Per diem reconciled to the note rate (±$0.02) — the servicer's figure is never "corrected". */
@@ -352,7 +352,8 @@ export function parsePayoffStatement(s: PayoffStatementInput): ParsedPayoff {
   need(s.principal_cents > 0n, "principal_cents must be positive"); need(isDate(s.good_through_date) && isDate(s.interest_paid_through), "good_through_date and interest_paid_through must be dates");
   const days = daysBetween(s.interest_paid_through, s.good_through_date);
   need(days >= 0, "good_through_date precedes interest_paid_through");
-  const interest = BigInt(days) * s.per_diem_cents;
+  // rule 6: the servicer's figure is never corrected — a printed interest line is taken as printed (35.10: 16.1's statement accrues on the unrounded factor), else days × the printed per diem
+  const interest = s.stated_interest_cents !== undefined && s.stated_interest_cents !== null ? s.stated_interest_cents : BigInt(days) * s.per_diem_cents;
   const fees = (s.fees_cents ?? 0n) + (s.recording_fee_cents ?? 0n);
   const total = s.principal_cents + interest + fees + (s.escrow_shortage_cents ?? 0n) - (s.credits_cents ?? 0n);
   const computed = servicerPerDiem(s.principal_cents, s.rate_pct);
@@ -365,7 +366,7 @@ export function computePayoffAtDate(p: { total_cents: Cents; per_diem_cents: Cen
   const extra = Math.max(0, daysBetween(p.good_through_date, on));
   return { total_at_cents: p.total_cents + BigInt(extra) * p.per_diem_cents, extra_days: extra, planning_only: true, stale: extra > 0 };
 }
-export type PayoffStatus = "requested" | "received" | "stale" | "refreshed" | "funded" | "rejected";
+export type PayoffStatus = "requested" | "received" | "stale" | "refreshed" | "funded" | "rejected" | "paid" | "cancelled";   // paid / cancelled: 35.10 rule 7 / T10 — the settlement statement's payoff line paid to the servicer of record; the demand cancelled on an unwind
 /** Rule 6 refresh triggers: disbursement past good-through, a payment posted on the old loan, or a statement > 30 days old. */
 export function payoffStaleness(p: { status: PayoffStatus; good_through_date: PlainDate | null; statement_date: PlainDate | null; disbursement_date: PlainDate | null; payment_posted_since?: boolean; as_of: PlainDate }): { stale: boolean; reasons: string[] } {
   const reasons: string[] = [];
@@ -389,11 +390,12 @@ export function payoffGoodThroughGate(f: { payoffs: readonly { liability_id: str
 export function payoffFollowUpDue(requestedOn: PlainDate): PlainDate { return addBusinessDays(requestedOn, 7, creditor); }
 /** Open question 6 (dry states): request good-through = planned disbursement + 5 calendar days. */
 export function requestedGoodThrough(plannedDisbursement: PlainDate, dryState: boolean): PlainDate { return dryState ? addDays(plannedDisbursement, 5) : plannedDisbursement; }
-export type EscrowTreatment = "refund_by_servicer" | "credit_to_new_loan" | "net_against_shortage";
+export type EscrowTreatment = "refund_by_servicer" | "credit_to_new_loan" | "net_against_shortage" | "partner_obligation";   // partner_obligation: an external servicer refunds under its own §1024.34(b)(1) duty (35.10 rule 6); Supermortgage holds none of it
 export interface EscrowTreatmentInput { readonly same_servicer: boolean; readonly payoff_posted_on: PlainDate; readonly escrow_balance_cents: Cents; readonly consent: { kind: string; captured_at: PlainDate } | null; readonly settlement_date: PlainDate; readonly initial_escrow_deposit_cents: Cents | null; readonly payoff_shortfall_cents?: Cents; readonly net_against_shortfall_flag?: boolean; }
 /** Rule 7: (a) 3.5 refund within 20 federal business days of the payoff posting; (b) with the `escrow_credit_to_new_loan` consent (§1024.34(b)(2)(iii), same servicer) credit the balance against 30.3's initial deposit — no refund check; (c) netting only under `escrow.payoff.net_against_shortfall`. */
 export function decideEscrowTreatment(i: EscrowTreatmentInput): { escrow_treatment: EscrowTreatment; refund_due_on: PlainDate | null; refund_method: "check" | "ach" | "credit_to_new_loan" | null; credited_cents: Cents; new_initial_deposit_cents: Cents | null; refund_check_issued: boolean; excess_refund_cents: Cents; consent_gate: Record<string, unknown>; rule_ref: string } {
-  need(i.same_servicer, "escrow treatment is decided only in the same-servicer case (§1024.34(b)(2)(iii)); an external servicer refunds under its own (b)(1) duty");
+  // an external servicer refunds under its own (b)(1) duty: the balance is the partner's obligation, nothing is credited or issued here (35.10 rule 6)
+  if (!i.same_servicer) return { escrow_treatment: "partner_obligation", refund_due_on: payoffRefundDue(i.payoff_posted_on), refund_method: null, credited_cents: 0n, new_initial_deposit_cents: i.initial_escrow_deposit_cents, refund_check_issued: false, excess_refund_cents: 0n, consent_gate: {}, rule_ref: "§1024.34(b)(1) — the existing servicer's own duty; nothing held here" };
   need(i.escrow_balance_cents >= 0n, "escrow_balance_cents cannot be negative");
   const gate = creditAgreementGateFacts(i.consent && i.consent.kind === "escrow_credit_to_new_loan" ? { kind: "escrow_credit_to_new_loan", captured_at: i.consent.captured_at } : null, i.settlement_date);
   if (i.net_against_shortfall_flag && (i.payoff_shortfall_cents ?? 0n) > 0n) {
@@ -562,19 +564,19 @@ export function recordWireVerification(events: EventStore, c: EventCtx, v: WireV
 export function recordCplReceived(events: EventStore, c: EventCtx, i: { order_id: string; cpl_document_id: string; cpl_date: PlainDate | null } & ReturnType<typeof cplBeforeFundingGate>): DomainEvent {
   return appEvent(events, c, "cpl.received", { order_id: i.order_id, cpl_document_id: i.cpl_document_id, cpl_date: i.cpl_date, cpl_addressee_ok: i.cpl_addressee_ok && i.open, cpl_agent_ok: i.cpl_agent_ok, reasons: [...i.reasons] });
 }
-export interface PayoffRequestInput { readonly application_id: string; readonly liability_id: string; readonly same_servicer: boolean; readonly servicing_loan_id?: string | null; readonly existing_servicer_party_id: string; readonly requested_at: string; readonly requested_on: PlainDate; readonly request_channel: string; readonly written_authorization_document_id: string | null; readonly requested_good_through: PlainDate; readonly state: string; readonly refresh?: boolean; }
+export interface PayoffRequestInput { readonly application_id: string; readonly liability_id: string; readonly same_servicer: boolean; readonly servicing_loan_id?: string | null; readonly existing_servicer_party_id: string; readonly requested_at: string; readonly requested_on: PlainDate; readonly request_channel: string; readonly written_authorization_document_id: string | null; readonly requested_good_through: PlainDate; readonly state: string; readonly refresh?: boolean; /** 16.1's requester type on the same-servicer intake: `lender_or_title` (rule 7), or `refinancing_lender` when the refinance closeout (35.10) requests on the borrower's behalf (comment 36(c)(3)-1) */ readonly requester_type?: "lender_or_title" | "refinancing_lender"; }
 /** requestPayoff: external servicer → written demand (`payoff.demand.requested{same_servicer=false}` arms the 7-BD follow-up); same servicer → 16.1's `payoffRequestIntake` on the existing loan (7.6's `payoff.request.received` arms REGZ_1026_36C3_PAYOFF_STMT_7BD). */
-export function requestPayoff(events: EventStore, c: EventCtx, i: PayoffRequestInput): { demand_event: DomainEvent; servicing_event: DomainEvent | null; servicing_intake: PayoffRequestReceived | null; follow_up_due: PlainDate | null; status: "requested" } {
+export function requestPayoff(events: EventStore, c: EventCtx, i: PayoffRequestInput): { demand_event: DomainEvent; servicing_event: DomainEvent | null; servicing_intake: PayoffRequestReceived | null; servicing_row: Record<string, unknown> | null; follow_up_due: PlainDate | null; status: "requested" } {
   need(!!i.written_authorization_document_id, "a written payoff request needs the borrower's authorization on file (comment 36(c)(3)-1)");
-  let servicing: DomainEvent | null = null; let intake: PayoffRequestReceived | null = null;
+  let servicing: DomainEvent | null = null; let intake: PayoffRequestReceived | null = null; let servicingRow: Record<string, unknown> | null = null;
   if (i.same_servicer) {
     need(!!i.servicing_loan_id, "same_servicer needs the servicing loan id (16.1)");
-    const r = payoffRequestIntake({ request_id: `PR-${i.application_id}-${i.liability_id}${i.refresh ? "-refresh" : ""}`, loan_id: i.servicing_loan_id!, channel: "api", written: true, received_at: i.requested_at, received_on: i.requested_on, state: i.state, requester_type: "lender_or_title", authorization_evidence: true, requested_good_through: i.requested_good_through });
-    intake = r.event;
+    const r = payoffRequestIntake({ request_id: `PR-${i.application_id}-${i.liability_id}${i.refresh ? "-refresh" : ""}`, loan_id: i.servicing_loan_id!, channel: "api", written: true, received_at: i.requested_at, received_on: i.requested_on, state: i.state, requester_type: i.requester_type ?? "lender_or_title", authorization_evidence: true, requested_good_through: i.requested_good_through });
+    intake = r.event; servicingRow = r.row as unknown as Record<string, unknown>;
     servicing = events.append({ type: r.event.type, loanId: i.servicing_loan_id!, applicationId: i.application_id, actor: c.actor ?? AGENT_24_4, ...(c.at ? { occurredAt: c.at } : {}), payload: { ...r.event.payload, requested_by: "origination", application_id: i.application_id } });
   }
   const demand = appEvent(events, c, "payoff.demand.requested", { liability_id: i.liability_id, same_servicer: i.same_servicer, servicing_loan_id: i.servicing_loan_id ?? null, existing_servicer_party_id: i.existing_servicer_party_id, requested_at: i.requested_at, requested_on: i.requested_on, request_channel: i.same_servicer ? "servicing_16_1" : i.request_channel, requested_good_through: i.requested_good_through, refresh: i.refresh === true, written_authorization_document_id: i.written_authorization_document_id, follow_up_timer: i.same_servicer ? "REGZ_1026_36C3_PAYOFF_STMT_7BD (16.1)" : "SM_PAYOFF_DEMAND_FOLLOWUP_7BD" });
-  return { demand_event: demand, servicing_event: servicing, servicing_intake: intake, follow_up_due: i.same_servicer ? null : payoffFollowUpDue(i.requested_on), status: "requested" };
+  return { demand_event: demand, servicing_event: servicing, servicing_intake: intake, servicing_row: servicingRow, follow_up_due: i.same_servicer ? null : payoffFollowUpDue(i.requested_on), status: "requested" };
 }
 export function recordPayoffStatement(events: EventStore, c: EventCtx, i: { liability_id: string; statement_document_id: string; statement_date: PlainDate; good_through_date: PlainDate; parsed: ParsedPayoff; disbursement_date: PlainDate | null; refresh: boolean; received_at: string }): DomainEvent {
   const covers = i.disbursement_date !== null && i.good_through_date >= i.disbursement_date;

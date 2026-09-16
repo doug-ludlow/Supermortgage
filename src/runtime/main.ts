@@ -63,6 +63,9 @@ const runtime = new Runtime({ db, databaseUrl: config.databaseUrl, registry: loa
 // 35.5 rule 3: every committed `loan_terms.*` event (2.4, 7.2, 3.6, 12.8) re-projects the loan's installment schedule through `installments.reproject` on the bus
 registerReprojectionReactor(runtime);
 
+// 35.9 rule 1: the sections' committed events are folded into the case timelines by the post-commit hook (serve and sweep)
+if (mode === "sweep" || mode === "serve") runtime.caseFolder.start();
+
 if (mode === "sweep") {
   try {
     // the 32.x flows react to what this pass commits (the 20.1 offer → the MLO review request → the FAKE review → the OfferCard) and run their own scheduled tick first, as POST /v1/sweep does
@@ -70,6 +73,7 @@ if (mode === "sweep") {
     await flows.tick(runtime.clock.now());
     const report = await runtime.sweep();
     await flows.settle();
+    await runtime.caseFolder.settle();
     logger.info("sweep", { run_id: report.run_id, holder: report.holder, outcome: report.outcome, skipped_reason: report.skipped_reason, passes: report.passes.map((p) => `${p.name}:${p.duration_ms}ms`), outbox_dispatch: report.outbox_dispatch ? { claimed: report.outbox_dispatch.claimed, sent: report.outbox_dispatch.sent, retried: report.outbox_dispatch.retried, dead: report.outbox_dispatch.dead } : null, verify: report.verify ? { run_id: report.verify.run_id, gaps: report.verify.gaps, mismatches: report.verify.mismatches } : null,
       due: report.due, breaches: report.breaches.length, outbox: report.outbox, at: report.at, rate_feed: rateFeed.vendorName, refi: report.refi?.line ?? "no rate feed", fake_reviewers: report.reviewers?.line ?? "off" });
     for (const b of report.breaches) logger.warn("timer breached", { ...b });

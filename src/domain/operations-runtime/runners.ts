@@ -29,6 +29,8 @@
  *                  refiDailyRunner, partnerBookReviewRunner, partnerBookReadinessRunner, partnerBookDailyReportRunner
  *                                            the four sweep-body functions (app.ts) wrapped as one unit each — unchanged code,
  *                                            idempotent by their own day gates, so the board and `expected_by` cover them
+ *                  RUNNERS_35_9              35.9's four case cycles (cycles-35-9.ts): `docket.sync`, the DRA import from the law-firm port,
+ *                                            `case.progress`, `claims.sweep` + `claims.package` — each the owner's bus tool as `foreclosure-ops`
  *                  busToolRunner(p, name)    the generic unit for a sibling process's cycle: `rt.execute({process, name, …})` as the
  *                                            owner agent when the pair is registered on the bus, else `runner_missing` — sibling
  *                                            processes light their cycles up at merge without touching cycles.ts
@@ -49,6 +51,7 @@ import type { AppliedInstallment } from "../boarding/delinquency.ts";
 import { loanCashState, statementUnitIn, form1098UnitIn, unitIoOf } from "../../runtime/servicing.ts";
 import { cashieringDailyRunner, cashieringDailyReceipt } from "./cycles-35-5.ts";
 import { delinquencyUnitIn } from "../../runtime/delinquency.ts";
+import { RUNNERS_35_9 } from "./cycles-35-9.ts";
 import { refiDailyRun } from "../../runtime/refi-daily.ts";
 import { partnerBookReviewRun } from "../../runtime/partner-book-review.ts";
 import { readinessRun } from "../../runtime/partner-book-readiness.ts";
@@ -201,7 +204,8 @@ const RUNNERS: Readonly<Record<string, NamedRunner>> = {
   projection_verify: busToolRunner("35.1", "record.verify"), document_integrity: busToolRunner("35.2", "documents.verify", { op: "run" }),   // 35.2: the daily integrity unit is `documents.verify{op: run}` (section35-2.ts) — the owner emits `document.integrity.run_completed` and re-arms SM_DOC_INTEGRITY_DAILY
   "roles.queue_scan": busToolRunner("35.7", "roles.queue_scan"), work_log_recon: busToolRunner("35.8", "work.log.recon"),
   "posture.check": busToolRunner("35.12", "posture.check"), "data.scan": busToolRunner("35.12", "data.scan"), "parallel_run.reconcile": busToolRunner("35.12", "parallel_run.reconcile"),
-  dra_import_daily: busToolRunner("13.6", "dra.snapshot.import"),
+  // 35.9's four case cycles (cycles-35-9.ts): docket.sync, the DRA import from the law-firm port, case.progress, claims.sweep + claims.package — as the foreclosure-ops agent
+  ...RUNNERS_35_9,
   lockbox_ingest: busToolRunner("35.5", "lockbox.ingest"), ach_file_build: busToolRunner("35.5", "ach.file.build"), ach_returns_ingest: busToolRunner("35.5", "ach.returns.ingest"),
   closing_orchestration_daily: busToolRunner("35.6", "orchestration.pass", { op: "daily_receipt" }),
   warehouse_daily_accrual: busToolRunner("27.1", "accrueInterest"), warehouse_borrowing_base: busToolRunner("27.1", "computeBorrowingBase"),

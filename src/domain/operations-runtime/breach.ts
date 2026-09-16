@@ -15,11 +15,19 @@
  * `cycle_code, period_key, unit_id, error_class`) so the escalation names what stalled (T12); every other clock's payload is
  * what it always was: `timer_code, timer_id, due_at, breach`.
  *
+ * 35.9 rule 7 ("Every breach runs its registered action in the breach transaction"): after a page's escalations are saved, the
+ * page's transaction runs `breach.execute{timer_id}` for each breach it evaluated, on a command view of that transaction
+ * (src/domain/operations-runtime/default-35-9/sweep.ts executeBreachActions) — the executor's own row records the outcome, a
+ * throw is logged and the page still commits; the post-commit listeners hear the page's breaches and the executors' events
+ * together once the page lands.
+ *
  * 35.1 edge case 7: `SM_SWEEP_HEARTBEAT_DAILY` can only breach inside a sweep, so a run in progress on the clock's due day is
  * the day's sweep and satisfies it minutes later (`sweep.run_completed`, app.ts); the clock breaches when its due day passed
  * with no run at all (a demo advance that sweeps once a day at noon is not an outage). A page leaves that instance armed
  * (`deferred`) and it is not counted as due.
  */
+import { breachPayloadOf } from "./closeout-35-10/breach.ts";
+type Row = Record<string, unknown>;
 import type { DomainEvent } from "../../kernel/events/index.ts";
 import { MemoryEventStore } from "../../kernel/events/index.ts";
 import { TimerEngine, type TimerInstance } from "../../kernel/timers/engine.ts";
@@ -28,6 +36,7 @@ import type { PlainDate } from "../../kernel/calendar/date.ts";
 import { EscalationService } from "../../app/escalations.ts";
 import type { Runtime } from "../../runtime/app.ts";
 import { breachRoleFor_35_3, enrichBreach_35_3 } from "./timers-35-3.ts";
+import { executeBreachActions } from "./default-35-9/sweep.ts";
 
 /** Rule 9's page: 500 due timers per transaction. */
 export const BREACH_PAGE_SIZE = 500;
@@ -47,6 +56,8 @@ export interface PagedBreachReport {
   /** 35.1 edge case 7: SM_SWEEP_HEARTBEAT_DAILY instances due on the run's own day, left armed for this run's receipt. */
   readonly deferred: number;
   readonly breaches: readonly BreachSummary[];
+  /** 35.9 rule 7: `breach.execute` calls the pages made (one per breach evaluated, minus the loans whose lock was held). */
+  readonly actions: number;
 }
 
 /** 35.1 edge case 7: the heartbeat clock on its own due day is this run's to satisfy, never to breach — true when the page must leave it armed. */
@@ -66,12 +77,12 @@ export function resolveBreachRole(b: { readonly escalateTo: readonly string[] })
 }
 
 /** One page: the due rows locked for this transaction, breached, persisted, escalated — `rows: 0` when nothing was left; `deferred` counts the heartbeat instance a page leaves armed (35.1 edge case 7). */
-async function breachPage(rt: Runtime, nowIso: string, pageSize: number, asOfDate: PlainDate): Promise<{ rows: number; deferred: number; breaches: BreachSummary[]; persisted: DomainEvent[] }> {
+async function breachPage(rt: Runtime, nowIso: string, pageSize: number, asOfDate: PlainDate, executeActions: boolean): Promise<{ rows: number; deferred: number; breaches: BreachSummary[]; persisted: DomainEvent[]; actions: number }> {
   return rt.db.tx(async (q) => {
     const claimed = await rt.uow.timers.duePage(nowIso, pageSize, q);
     const due = claimed.filter((t) => !deferredToThisRun(t, asOfDate, nowIso));
     const deferred = claimed.length - due.length;
-    if (!due.length) return { rows: 0, deferred, breaches: [], persisted: [] };
+    if (!due.length) return { rows: 0, deferred, breaches: [], persisted: [], actions: 0 };
     // the due instances (any loan, or global) restored into a fresh engine: evaluate breaches them and appends timer.breached under each timer's own loan
     const events = new MemoryEventStore(rt.clock);
     const engine = new TimerEngine(rt.registry, events);
@@ -83,7 +94,9 @@ async function breachPage(rt: Runtime, nowIso: string, pageSize: number, asOfDat
       const fallback = resolveBreachRole(b) ?? "ops_analyst";
       const cycles = b.def.process === CYCLES_PROCESS_ID;
       const owner = cycles ? await breachRoleFor_35_3(q, b.instance, fallback) : fallback;
-      const extra = cycles ? await enrichBreach_35_3(q, b.instance) : {};
+      // 35.10 T13: a closeout clock's escalation names its closeout (the arming step event's application_id, prior_loan_id, step, waiting_on)
+      const refi = !cycles && b.instance.code.startsWith("SM_REFI_") ? breachPayloadOf((await q.query<{ payload: Row }>(`SELECT payload FROM loan_events WHERE id = $1`, [b.instance.armedByEventId]))[0]?.payload ?? null) : {};
+      const extra = cycles ? await enrichBreach_35_3(q, b.instance) : refi;
       escalations.open({ kind: `sev${sev}`, ownerRole: owner, ...(b.instance.loanId ? { loanId: b.instance.loanId } : {}), severity: String(sev), slaTimerId: b.instance.id,
         payload: { timer_code: b.instance.code, timer_id: b.instance.id, due_at: b.instance.dueAt !== undefined ? new Date(b.instance.dueAt).toISOString() : null, breach: b.breachText, ...extra } }, { kind: "system", id: "sweep" });
       breaches.push({ loan_id: b.instance.loanId ?? null, code: b.instance.code, severity: b.severity, escalate_to: [...b.escalateTo], timer_id: b.instance.id });
@@ -91,17 +104,21 @@ async function breachPage(rt: Runtime, nowIso: string, pageSize: number, asOfDat
     const persisted = await rt.uow.events.append(events.since(0), q);
     await rt.uow.timers.save(engine.all().filter((t) => t.status === "breached"), q);
     for (const e of escalations.list()) await rt.escalationRepo.save(e, q);
-    return { rows: due.length, deferred, breaches, persisted };
+    // 35.9 rule 7: the registered action of every breach on this page, in this transaction, after the escalation the pass opened
+    const nested: DomainEvent[] = [];
+    const actions = executeActions ? await executeBreachActions(rt, q, nowIso, breaches, escalations.list(), nested) : 0;
+    return { rows: due.length, deferred, breaches, persisted: [...persisted, ...nested], actions };
   });
 }
 
 /** Rule 9: the breach pass in pages of `pageSize` (500), one transaction per page, until a page comes back short; the post-commit listeners hear each page as it lands. */
-export async function pagedBreachPass(rt: Runtime, nowIso: string = rt.clock.now(), opts: { readonly pageSize?: number } = {}): Promise<PagedBreachReport> {
+export async function pagedBreachPass(rt: Runtime, nowIso: string = rt.clock.now(), opts: { readonly pageSize?: number; /** `false`: no `breach.execute` per breach (a 35.3 test of the pages alone) */ readonly executeActions?: boolean } = {}): Promise<PagedBreachReport> {
   const pageSize = Math.max(1, Math.floor(opts.pageSize ?? BREACH_PAGE_SIZE));
   const asOfDate = wallClock(Date.parse(nowIso), "America/New_York").date;
-  const byPage: number[] = []; const breaches: BreachSummary[] = []; let probes = 0; let deferred = 0;
+  const byPage: number[] = []; const breaches: BreachSummary[] = []; let probes = 0; let deferred = 0; let actions = 0;
   for (;;) {
-    const page = await breachPage(rt, nowIso, pageSize, asOfDate);
+    const page = await breachPage(rt, nowIso, pageSize, asOfDate, opts.executeActions !== false);
+    actions += page.actions;
     if (page.persisted.length) rt.uow.notifyCommitted(page.persisted);
     deferred = Math.max(deferred, page.deferred);   // the same armed instance comes back on every page; count it once
     if (page.rows === 0) { probes += 1; break; }
@@ -110,5 +127,5 @@ export async function pagedBreachPass(rt: Runtime, nowIso: string = rt.clock.now
     if (!page.breaches.length) { rt.logger?.error("breach pass: a page of due timers breached nothing — stopping", { at: nowIso, rows: page.rows, page: byPage.length }); break; }
     if (page.rows + page.deferred < pageSize) break;
   }
-  return { at: nowIso, page_size: pageSize, pages: byPage.length, probes, due: byPage.reduce((a, n) => a + n, 0), by_page: byPage, deferred, breaches };
+  return { at: nowIso, page_size: pageSize, pages: byPage.length, probes, due: byPage.reduce((a, n) => a + n, 0), by_page: byPage, deferred, breaches, actions };
 }

@@ -360,13 +360,13 @@ export const TOOLS_33_1: readonly ToolDef[] = defineTools(PROCESS_33_1, PORTFOLI
            FROM loans l WHERE l.id = $1`, [loanId]))[0];
       if (!loan) throw new RangeError(`no loan ${loanId}`);
       if (!loan.partner_party_id || loan.last_as_of_date === null) throw new RangeError(`loan ${loanId} is not on a partner book (no partner_book_facts row)`);
-      if (loan.status !== "monitored") throw new RangeError(`loan ${loanId} is ${loan.status}, not monitored — nothing to resolve (33.1 rule 8)`);
+      // 35.10 rule 8: a loan the refinance closeout retired (paid_off through the projector) whose partner tape still carries it active is a `partner_book.retirement.disputed` on its log — the analyst
+      // resolves that dispute here with `paid_off` (the closeout confirms on the resolved event); any other status is nothing to resolve
+      const disputed = loan.status === "paid_off" && resolution === "paid_off" && ctx.events.all().some((e) => e.type === "partner_book.retirement.disputed" && e.loanId === loanId) && !ctx.events.all().some((e) => e.type === "partner_book.retirement.confirmed" && e.loanId === loanId);
+      if (loan.status !== "monitored" && !disputed) throw new RangeError(`loan ${loanId} is ${loan.status}, not monitored — nothing to resolve (33.1 rule 8)`);
       const onHold = loan.partner_as_of_date !== null && loan.last_as_of_date < loan.partner_as_of_date;
-      if (resolution !== "keep") {
-        // the status moves in the command's transaction, from `monitored` only (the state machine's transition; a refinance that funded first wins)
-        const defer = rt.services["deferWrite"] as ((fn: (q: Queryable) => Promise<void>) => void) | undefined; if (!defer) throw new PortUnavailable("service:deferWrite");
-        defer(async (q) => { await q.query(`UPDATE loans SET status = $2 WHERE id = $1 AND status = 'monitored'`, [loanId, resolution]); });
-      }
+      // the status moves in the command's transaction, from `monitored` only (the state machine's transition; a refinance that funded first wins):
+      // the 35.1 projector (src/infra/db/loans.ts projectStatus) reads `partner_book.loan.resolved{status}` below — no direct write here (35.10 NO_DIRECT_STATUS_WRITE)
       ctx.events.append({ type: "partner_book.loan.resolved", loanId, aggregate: { kind: "loan", id: loanId }, actor: ctx.actor,
         payload: { loan_id: loanId, servicer_loan_number: loan.servicer_loan_number, partner_id: loan.partner_party_id, resolution, reason, last_as_of_date: loan.last_as_of_date, partner_as_of_date: loan.partner_as_of_date, was_on_hold: onHold, ...(resolution === "keep" ? { hold_lifted_days: KEEP_LIFTS_HOLD_DAYS } : { status: resolution }), origination: true } });
       return { loan_id: loanId, servicer_loan_number: loan.servicer_loan_number, resolution, status: resolution === "keep" ? "monitored" : resolution, was_on_hold: onHold, last_as_of_date: loan.last_as_of_date, partner_as_of_date: loan.partner_as_of_date, ...(resolution === "keep" ? { hold_lifted_days: KEEP_LIFTS_HOLD_DAYS } : {}) };

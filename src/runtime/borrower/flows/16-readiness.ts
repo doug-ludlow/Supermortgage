@@ -37,8 +37,11 @@
  *                                                               open refinance application with no pending scan card (the edge case "an identity
  *                                                               verified on an earlier application has expired → stale; the scan card is asked once
  *                                                               more"; the state machine's present → stale): the daily pass itself orders nothing
- *   loan.boarded / loan.funded (the refinance application)    → rule 5: UPDATE loans SET status = 'paid_off' on the monitored prior loan +
- *                                                               `partner_book.loan.paid_off`; readiness rows stop for that loan (the sweep and this
+ *   loan.boarded / loan.funded (the refinance application)    → rule 5 as 35.10 builds it: the monitored prior loan is retired by the refinance
+ *                                                               closeout (src/domain/operations-runtime/closeout-35-10: closeout.retire emits
+ *                                                               `partner_book.loan.paid_off` with this flow's payload once the partner's demand is paid
+ *                                                               from the settlement statement, and the 35.1 projector flips loans.status — nothing here
+ *                                                               writes it); readiness rows stop for that loan (the sweep and this
  *                                                               flow only check a loan that is still `monitored`); a withdrawn / denied / cancelled
  *                                                               application (the event — nothing writes applications.status) is no longer this flow's
  *                                                               (`appContext` null): a late event on it writes no row
@@ -284,17 +287,9 @@ async function onEngaged(deps: FlowDeps, loanId: string, e: DomainEvent): Promis
 }
 
 // ---------------------------------------------------------------- rule 5: the refinance funded → the monitored loan paid off; rows stop
-async function paidOff(deps: FlowDeps, ctx: AppCtx, e: DomainEvent): Promise<void> {
-  // the status is read now, not from the batch's context: loan.funded and loan.boarded commit together and the first write settles it (one event, once)
-  const status = (await deps.runtime.db.query<{ status: string }>(`SELECT status::text AS status FROM loans WHERE id = $1`, [ctx.loanId]))[0]?.status ?? null;
-  if (status !== "monitored") return;
-  const p = pl(e); const newLoanId = e.loanId ?? s(p["loan_id"]) ?? null;
-  await deps.runtime.uow.run({ loanId: ctx.loanId }, async (uctx) => {
-    uctx.events.append({ type: LOAN_PAID_OFF_EVENT, loanId: ctx.loanId, aggregate: { kind: "loan", id: ctx.loanId }, actor: READINESS,
-      payload: { loan_id: ctx.loanId, application_id: ctx.appId, new_loan_id: newLoanId, funding_date: s(p["funding_date"]) ?? null, disbursement_date: s(p["disbursement_date"]) ?? null, servicing_loan_number: s(p["servicing_loan_number"]) ?? null, funded_event: e.type, funded_event_id: e.id, prior_status: "monitored", status: "paid_off", origination: true } });
-  }, { clock: deps.runtime.clock, before: async (q) => { await q.query(`UPDATE loans SET status = 'paid_off' WHERE id = $1 AND status = 'monitored'`, [ctx.loanId]); } });
-  deps.logger?.info("borrower.flow.33-3.loan.paid_off", { loan_id: ctx.loanId, application_id: ctx.appId, new_loan_id: newLoanId, by: e.type });
-}
+// (35.10: the retirement is the closeout's — `partner_book.loan.paid_off` is emitted by closeout.retire with this payload, and the status is the 35.1
+// projector's on `refinance.prior_loan.retired{mode: monitored_partner}`; this flow only stops writing readiness rows once the loan is no longer monitored)
+export const PAID_OFF_PAYLOAD_KEYS = ["loan_id", "application_id", "new_loan_id", "funding_date", "disbursement_date", "servicing_loan_number", "funded_event", "funded_event_id", "prior_status", "status", "origination"] as const;
 
 // ---------------------------------------------------------------- the reactions
 const LOAN_EVENTS = new Set(["refi.opportunity.engaged"]);
@@ -307,7 +302,7 @@ async function reactApp(deps: FlowDeps, ctx: AppCtx, e: DomainEvent): Promise<vo
     case "credit.authorization.captured": await creditPull(deps, ctx); return;
     case "application.six_item.captured": if (p["item"] === "ssn") await creditPull(deps, ctx); if (p["item"] === "income") await duMoment(deps, ctx); return;
     case "verification.received": await incomeCard(deps, ctx, e); await duMoment(deps, ctx); return;   // 32.3 R3's income card, then 32.18 rule 3: the income or the assets report may be the last prerequisite
-    case "loan.boarded": case "loan.funded": await paidOff(deps, ctx, e); return;
+    case "loan.boarded": case "loan.funded": return;   // 35.10: the closeout retires the prior loan on the sweep (closeout.retire); nothing to do here
     case "partner_book.readiness.checked": await reaskScan(deps, ctx, e); return;
     default: return;
   }

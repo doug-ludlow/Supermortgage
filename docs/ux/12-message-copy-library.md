@@ -771,6 +771,105 @@ The rail and the thread (32.16 §2.1–2.2, DELTA-26). The rail's section names,
 - `video.fake.listen` — button — "Speak" — *32.17: the Web Speech API input when the browser has one.*
 - `video.rail_confirm.hint` — line — "Said on the call — tap Confirm so it counts, or Edit it here." — *32.17 discrepancy (1): the confirm loop confirms on the rail — the pending card's row shows the stated values with Confirm and Edit; only the tap resolves (evidence.source = borrower_stated).*
 
+## The Apply product (32.19)
+<!-- docs/ux/18: every string the Apply screens render is a key here (the prototype's words); no "DU", "Desktop Underwriter", "Fannie", "Approve", "Eligible", "Ineligible" or "Refer" in any key. -->
+- `apply.door.title` — heading — "Supermortgage" — *32.19 §2.1: the welcome screen.*
+- `apply.door.tagline` — line — "The Self-Improving Mortgage" — *32.19 §2.1: under the mark on the welcome screen.*
+- `apply.door.what` — heading — "What is Supermortgage?" — *32.19 §2.1: the intro screen.*
+- `apply.door.what_body` — line — "Automatic refinancing. When a better rate is worth it, the file is assembled without you starting over." — *32.19 §2.1.*
+- `apply.door.what_more` — line — "One relationship from the first application through the life of the loan." — *32.19 §2.1: the intro's second paragraph.*
+- `apply.door.create` — button — "Create an account" — *32.19 §2.1: → `Account mode="sign_up"`.*
+- `apply.door.have_account` — button — "Already have an account?" — *32.19 §2.1: → `Account mode="sign_in"`.*
+- `apply.door.sign_in_instead` — button — "Sign in instead" — *32.19 §2.1: under the sign-up form.*
+- `apply.continue` — button — "Continue" — *32.19: the primary control of the door screens and every step; `data-testid="apply-continue"`.*
+- `apply.tabs` — nav — "Main navigation" — options `Apply` · `Chat` · `My Loan` · `Tasks` · `Account` — *32.19 §2.3: the five tabs in `.sm-dock`; the text is the rail's accessible name.*
+- `apply.invite` — button — "Invite" — *32.19 §3.4: disabled in v1 (co-borrower out of v1).*
+- `apply.goal.question` — heading — "Are you looking to:" — *32.19 §2.2 goal.*
+- `apply.goal.buy` — choice — "Buy a home" — *32.19 §2.2 goal: `draft.intent = purchase`.*
+- `apply.goal.refi` — choice — "Refinance my home" — *32.19 §2.2 goal: `draft.intent = refinance`.*
+- `apply.goal.refi_purpose` — label — "What should the new loan do?" — options `Lower payment` · `Pay off sooner` · `Take cash out` — *32.19 §2.4: lower_rate · lower_rate with FRM15 · cash_out.*
+- `apply.goal.occupancy` — label — "This home is" — options `My primary home` · `A second home` · `An investment property` — *32.19 §2.2: primary · second_home · investment on the goal tap's args.*
+- `apply.goal.required` — refusal — "Choose Buy a home or Refinance my home." — *32.19 §3.0: a required choice missing stays on the step; nothing is posted.*
+- `apply.property.next` — heading — "Your next home." — *32.19 §2.2 property (purchase).*
+- `apply.property.current` — heading — "Your current home." — *32.19 §2.4 property (refinance).*
+- `apply.property.have_address` — switch — "I have an address" — *32.19 §2.2: the address branch.*
+- `apply.property.still_looking` — switch — "Still looking" — *32.19 §2.3: `draft.shopping = true`.*
+- `apply.property.address` — field — "Property address" — helper: "24 Juniper Lane, Austin, TX 78701" — *32.19: the six-item address; the helper is the placeholder.*
+- `apply.property.state` — field — "State" — helper: "Two letters, like TX" — *32.19: `args.property.state` on the goal tap.*
+- `apply.property.price` — field — "Price" — *32.19 §2.2: held in the draft until Review (`refi.value.confirm`).*
+- `apply.property.down` — field — "Down payment" — *32.19 §2.2: held in the draft (DELTA-32).*
+- `apply.property.price_low` — field — "Price range — low" — *32.19 §2.3: `preapproval.where.price_min_cents`.*
+- `apply.property.price_high` — field — "Price range — high" — *32.19 §2.3: `preapproval.where.price_max_cents`.*
+- `apply.property.first_time` — field — "First-time buyer?" — options `Yes` · `No` — *32.19 §2.3: `preapproval.where.first_time_buyer`.*
+- `apply.property.value` — field — "About what is it worth?" — *32.19 §2.4: held for `refi.value.confirm`.*
+- `apply.property.balance` — field — "Current balance" — *32.19 §2.4: held for `refi.current_loan.confirm`.*
+- `apply.property.cash_out` — field — "Cash out" — *32.19 §2.4: only when the purpose is cash; folded into the loan amount (DELTA-33).*
+- `apply.property.required` — refusal — "Fill in each field before you continue." — *32.19 §3.0: a required field empty stays on the step; nothing is posted.*
+- `apply.property.waiting` — line — "Setting up your application…" — *32.19 §3.0: shown while the goal card is awaited after the account door.*
+- `apply.you.title` — heading — "You, then credit." — *32.19 §2.2 you.*
+- `apply.you.credit_note` — line — "Your credit is pulled once the six facts are on file — nothing more to sign here." — *32.19 §2.2: no checkbox; the goal tap wrote the authorization (32.17 rule 20).*
+- `apply.you.legal_name` — field — "Legal name" — *32.19 §2.2 you.*
+- `apply.you.dob` — field — "Date of birth" — helper: "YYYY-MM-DD" — *32.19 §2.2 you.*
+- `apply.you.ssn` — field — "Social Security number" — *32.19 §2.2 you: typed once, never echoed.*
+- `apply.you.basis` — field — "I live here as" — options `Own` · `Rent` · `Rent-free` — *32.19 §2.2 you: `residency_basis`.*
+- `apply.you.rent` — field — "Monthly rent" — *32.19 §2.2 you: only when renting.*
+- `apply.you.months` — field — "Months at this address" — *32.19 §2.2 you: under 24 opens the prior-address panel.*
+- `apply.you.prior` — heading — "Your prior address" — *32.19 §2.2 you: SQ-06.*
+- `apply.you.prior_street` — field — "Prior street address" — *32.19 §2.2 you: `identity.prior_residence.title.prior_address_line`.*
+- `apply.you.prior_city` — field — "Prior city" — *32.19 §2.2 you: `prior_city`.*
+- `apply.you.prior_state` — field — "Prior state" — helper: "Two letters, like TX" — *32.19 §2.2 you: `prior_state`.*
+- `apply.you.prior_zip` — field — "Prior ZIP code" — *32.19 §2.2 you: `prior_postal_code`.*
+- `apply.you.prior_basis` — field — "How you lived there" — options `Own` · `Rent` · `Rent-free` — *32.19 §2.2 you: `prior_residency_basis` (own · rent · living_rent_free).*
+- `apply.you.prior_rent` — field — "Monthly rent there" — *32.19 §2.2 you: `prior_monthly_rent_cents`, only when renting there.*
+- `apply.you.prior_months` — field — "Months you lived there" — *32.19 §2.2 you: `prior_months_at_address`.*
+- `apply.you.caution` — heading — "About your credit" — *32.19 §2.2 you / 32.16-T14: the caution row above a frozen bureau's lift card (`credit.freeze.lift`), never a toast or a modal.*
+- `apply.you.required` — refusal — "Fill in your name, birth date and months here." — *32.19 §3.0: a required field empty stays on the step; nothing is posted. The birth date is YYYY-MM-DD.*
+- `apply.you.ssn_invalid` — refusal — "Your Social Security number is nine digits." — *32.19 §3.0: checked before anything is posted.*
+- `apply.you.rent_required` — refusal — "Tell us the monthly rent." — *32.19 §3.0: the rent is required when the basis is Rent (`required_when`).*
+- `apply.you.prior_required` — refusal — "Fill in your prior address, how you lived there and the months." — *32.19 §3.0: the prior-residence panel's six fields.*
+- `apply.connect.title` — heading — "Connect once." — *32.19 §2.2 connect.*
+- `apply.connect.fake_note` — line — "Payroll and bank use FAKE vendors here. Type your monthly income and continue." — *32.19 §2.2: shown under SHOW_FAKE_MARKERS.*
+- `apply.connect.income` — field — "Monthly income" — *32.19 §2.2 connect.*
+- `apply.connect.employer` — field — "Employer" — *32.19 §2.2 connect: an edit on `income.confirm.title`.*
+- `apply.connect.cta` — button — "Connect and continue" — *32.19 §2.2 connect: the FAKE finishes on the tap.*
+- `apply.connect.required` — refusal — "Type your monthly income and employer." — *32.19 §3.0: nothing is posted without both.*
+- `apply.details.title` — heading — "A few facts." — *32.19 §2.2 details.*
+- `apply.details.citizenship` — field — "Citizenship" — options `U.S. citizen` · `Permanent resident` · `Non-permanent resident` — *32.19 §2.2 details.*
+- `apply.details.marital` — field — "Marital status" — options `Unmarried` · `Married` · `Separated` — *32.19 §2.2 details.*
+- `apply.details.dependents` — field — "Dependents" — *32.19 §2.2 details.*
+- `apply.details.military` — field — "Military service" — options `No` · `Currently serving on active duty` · `Retired, discharged or separated` · `Reserve or National Guard, never activated` · `Surviving spouse` — *32.19 §2.2 details: `profile.title.military_service` (none · active_duty · retired_or_separated · reserve_or_guard · surviving_spouse).*
+- `apply.details.language` — field — "Language preference" — options `English` · `Spanish` · `Chinese` · `Korean` · `Tagalog` · `Vietnamese` · `Other` · `I'd rather not say` — *32.19 §2.2 details: `profile.title.language_preference` (Form 1103); empty → `not_answered`.*
+- `apply.details.required` — refusal — "Answer the first four questions to continue." — *32.19 §3.0: the profile card's required four (citizenship, marital status, dependents, military service), checked before anything is posted.*
+- `apply.details.spouse_later` — line — "Your spouse's part comes later. Nothing to add now." — *32.19 §2.2: no `application.inviteParty` is posted.*
+- `apply.questions.title` — heading — "Do any apply?" — *32.19 §2.2 questions.*
+- `apply.questions.lead` — line — "Bankruptcy, foreclosure, lawsuits, alimony, borrowed funds." — *32.19 §2.2 questions: the list the declarations cover, one question at a time.*
+- `apply.questions.one_at_a_time` — line — "Follow-ups come one at a time." — *32.19 §2.2 questions.*
+- `apply.questions.none` — choice — "None of these apply" — *32.19 §2.2 questions.*
+- `apply.questions.some` — choice — "Something applies" — *32.19 §2.2 questions.*
+- `apply.demographics.title` — heading — "Demographics" — *32.19 §2.2 demographics.*
+- `apply.demographics.lead` — line — "Required to collect. You may decline each answer." — *32.19 §2.2 demographics.*
+- `apply.review.title` — heading — "Almost there." — *32.19 §2.2 review (owner decision 1).*
+- `apply.review.rows` — labels — "What we have" — options `Purpose` · `Home` · `Name` · `Income` — *32.19 §2.2 review.*
+- `apply.review.numbers` — heading — "The numbers" — options `Value` · `Loan amount` · `Product` — *32.19 §2.2 review: the last number cards.*
+- `apply.review.consents_note` — line — "You agreed to e-sign, texts and the credit check when you left the home screen." — *32.19 §2.2 review: the three consents were written at the goal tap.*
+- `apply.review.status` — label — "File status" — *32.19 §2.2 review: beside `record.status.badge`.*
+- `apply.review.needed` — heading — "Still needed" — *32.19 §2.2 review: every pending card, as a task.*
+- `apply.review.confirm` — button — "Confirm these numbers" — *32.19 §2.2 review: the one CTA; nothing submits.*
+- `apply.review.tbd` — line — "When you have an address, add it here and we'll finish." — *32.19 §2.3 review (still looking).*
+- `apply.result.title` — heading — "We're checking your application." — *32.19 §2.2 result (owner decision 1).*
+- `apply.result.back` — button — "Back to review" — *32.19 §2.2 result.*
+- `apply.loan.title` — heading — "No loan yet" — *32.19 §2.3 My Loan for a party with no loan subject.*
+- `apply.loan.empty` — line — "After this application funds, your loan will live here." — *32.19 §2.3: no dollar sign, no digit.*
+- `apply.tasks.title` — heading — "Tasks" — *32.19 §2.3.*
+- `apply.tasks.purpose` — label — "Your mortgage" — options `Buy a home` · `Refinance` — *32.19 §2.3: the Tasks card's title by intent; the text when no intent is chosen.*
+- `apply.tasks.progress` — line — "{{done}} of {{total}} complete" — *32.19 §2.3: derived from the card statuses.*
+- `apply.tasks.rows` — labels — "Your tasks" — options `Your home` · `Credit check` · `Income & assets` · `Your details` · `Declarations` · `Demographics` · `Review` — *32.19 §2.3: the seven `TASKS` rows in order.*
+- `apply.tasks.done` — label — "Done" — *32.19 §2.3: `data-done="true"`.*
+- `apply.account.title` — heading — "Account" — *32.19 §2.3.*
+- `apply.account.signed_in` — label — "Signed in" — *32.19 §2.3: when the party has no first name yet.*
+- `apply.account.sign_out` — button — "Sign out" — *32.19 §2.3: `POST auth/sign-out`; the next load is the door.*
+- `apply.chat.placeholder` — field — "Message" — helper: "Ask Supermortgage" — *32.19 §2.3: the composer; `POST /v1/borrower/messages` only.*
+
 ## Channel variants (rules)
 - **SMS**: first sentence + deep link; never a number the borrower hasn't seen in-app first (no rates, balances or payoff figures by SMS); STOP footer on the first message of a thread.
 - **E-mail**: full text; subject = the card title; marketing e-mails carry the CAN-SPAM footer and the `partner` postal address.

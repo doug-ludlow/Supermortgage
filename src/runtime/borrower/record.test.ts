@@ -203,7 +203,7 @@ test("paid off (d, e): after the first installment UPB $559,455.71 and payments_
   const payments = await api("GET", `/v1/borrower/history/payments?subject=${loanId}`, undefined, await tok(EMAIL_A)); assert.equal(payments.status, 200, JSON.stringify(payments.body).slice(0, 300));
   const rows = payments.body["rows"] as Record<string, unknown>[]; const p = rows.find((r) => r["payment_id"] === `PAY-${loanId.slice(0, 8)}`)!;
   assert.equal(p["status"], "posted"); assert.equal(p["amount_cents"], "409012"); assert.deepEqual(p["allocation"], { principal_cents: "54429", interest_cents: "285833", escrow_cents: "68750", fees_cents: "0" });
-  await journey.payoff();
+  await journey.payoffDirect();
   const rec = await record(EMAIL_A, loanId);
   assert.equal((rec["status"] as { badge: string; state_source: string }).badge, "Paid off"); assert.equal((rec["status"] as { state_source: string }).state_source, "loans.status=paid_off");
   const numbers = rec["numbers"] as Record<string, unknown>; assert.equal(numbers["upb_cents"], "0"); assert.equal(numbers["next_payment"], null);

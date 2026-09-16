@@ -14,7 +14,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { connect, type Db } from "../../infra/db/client.ts";
 import { testDatabase, withDatabase, baseTestDatabaseUrl, dropDatabase } from "../../infra/db/test-db.ts";
@@ -184,7 +184,9 @@ test("35.7-T1: Given a fresh database, when every file under db/migrations is ap
   for (const t of ["role_grants", "role_queue_snapshots", "role_handovers", "breakglass_uses", "api_principals"]) assert.equal((await t1db.query<{ r: string | null }>(`SELECT to_regclass($1)::text AS r`, [`public.${t}`]))[0]!.r, null, `${t} does not exist before 0170`);
   execFileSync(`${ROOT}db/migrate.sh`, { env: { ...process.env, DATABASE_URL: t1.url }, stdio: "pipe" });
   const after = await baseTables();
-  assert.equal(after, before + 5, `five new base tables (before ${before}, after ${after})`);
+  // db/migrate.sh applies every later file too: the five of 0170 plus the tables the §35 migrations after 0171 create (0230: 35.11's six) — the absolute number moves with them, the five are checked by name below
+  const later = files.filter((f) => f > "0171_operating_roles_controls.sql").reduce((n, f) => n + (readFileSync(`${dir}/${f}`, "utf8").match(/^CREATE TABLE\s/gm)?.length ?? 0), 0);
+  assert.equal(after, before + 5 + later, `five new base tables (before ${before}, after ${after}, later migrations ${later})`);
   for (const t of ["role_grants", "role_queue_snapshots", "role_handovers", "breakglass_uses", "api_principals"]) assert.equal((await t1db.query<{ r: string | null }>(`SELECT to_regclass($1)::text AS r`, [`public.${t}`]))[0]!.r, t, `to_regclass non-null for ${t}`);
   // staff_users.reviewer_roles with a CHECK whose literal list equals HUMAN_ROLES (twenty-two words, no admin); the three disjointness CHECKs; the constraint trigger
   const [col] = await t1db.query<{ data_type: string; column_default: string }>(`SELECT data_type, column_default FROM information_schema.columns WHERE table_name = 'staff_users' AND column_name = 'reviewer_roles'`);

@@ -54,6 +54,8 @@ import { CommandRefused, AiPathUnavailable } from "../app/commands.ts";
 import { CardRefused } from "../app/tools/section32-1.ts";
 import { RescissionRefused } from "../domain/compliance-disclosures/ops-25-3.ts";
 import { PortUnavailable } from "../app/tools.ts";
+// 35.11 rule 10: a port's own typed failure thrown by a tool (the FAKE bank's rejection of a date, a feed not yet refreshed) is a typed refusal the unit of work rolled back — never an unhandled 500
+import { AdapterUnavailable, PermanentRejection, TransientFailure } from "../infra/integrations/failures.ts";
 import { StaleRecord } from "../domain/operations-runtime/seam/guard.ts";
 import { RoleDenied } from "../app/roles.ts";
 import { StaffError } from "./staff/roles.ts";
@@ -414,6 +416,9 @@ export function createApiServer(opts: ServerOptions): Server {
       if (e instanceof AiPathUnavailable) { done(503, { error: "ai_path_unavailable", reason: e.message }); return; }
       if (e instanceof ToolNotFound) { done(404, { error: "no_such_tool", reason: e.message }); return; }
       if (e instanceof PortUnavailable) { done(501, { error: "not_wired", reason: e.message }); return; }
+      if (e instanceof PermanentRejection) { done(409, { error: "refused", code: `PORT_REJECTED:${e.code}`, kind: "rejected", reason: e.message, details: [...e.details] }, { refused: `PORT_REJECTED:${e.code}` }); return; }
+      if (e instanceof TransientFailure) { done(409, { error: "refused", code: "PORT_TRANSIENT", kind: "transient", retryable: true, reason: e.message }, { refused: "PORT_TRANSIENT" }); return; }
+      if (e instanceof AdapterUnavailable) { done(409, { error: "refused", code: "PORT_UNAVAILABLE", kind: "unavailable", fallback: e.fallbackKind, reason: e.message }, { refused: "PORT_UNAVAILABLE" }); return; }
       if (e instanceof RangeError || e instanceof TypeError || e instanceof SyntaxError) { done(400, { error: "bad_request", reason: e.message }); return; }
       logger.error("unhandled", { method, path, error: e });
       done(500, { error: "internal" });

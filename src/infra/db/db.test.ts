@@ -38,13 +38,13 @@ async function fixture(db: Db): Promise<Fixture> {
   return new PgLoanRepository(db).createFixture({ fnmaLoanNumber: uniq(), servicerLoanNumber: `SM-${randomUUID()}`, instrumentDate: D("2021-07-15"), originalUpbCents: 26_000_000n, originalTermMonths: 360, firstPaymentDate: D("2021-09-01"), maturityDate: D("2051-08-01") });
 }
 
-test("migrations: every file under db/migrations is applied to the test database (789 tables: public + restricted_fl)", { skip }, async () => {
+test("migrations: every file under db/migrations is applied to the test database (795 tables: public + restricted_fl)", { skip }, async () => {
   execFileSync(fileURLToPath(new URL("../../../db/migrate.sh", import.meta.url)), { env: { ...process.env, DATABASE_URL: DB_URL }, stdio: "pipe" });
   db = connect(DB_URL);
   const [m] = await db.query<{ c: bigint }>(`SELECT count(*)::bigint AS c FROM schema_migrations`);
   assert.equal(m!.c, BigInt(readdirSync(fileURLToPath(new URL("../../../db/migrations", import.meta.url))).filter((f) => f.endsWith(".sql")).length));
   const [t] = await db.query<{ c: bigint }>(`SELECT count(*)::bigint AS c FROM information_schema.tables WHERE table_schema IN ('public', 'restricted_fl') AND table_type = 'BASE TABLE'`);
-  assert.equal(t!.c, 789n);   // the count a fresh `db/migrate.sh` run produces through 0171: 784 through 0150 (0150 adds 35.1's eight seam tables) plus 0170's five (35.7: role_grants, role_queue_snapshots, role_handovers, breakglass_uses, api_principals); 0137–0141, 0151–0169 and 0171 create no table; the absolute number moves with every §35 migration that adds a table
+  assert.equal(t!.c, 795n);   // the count a fresh `db/migrate.sh` run produces through 0230: 789 through 0171 plus 0230's six (35.11: ops_exceptions, exception_triages, ops_daily_reports, hosted_probe_runs, persisted_measurement_runs, persisted_measurements); 784 through 0150 (0150 adds 35.1's eight seam tables) plus 0170's five (35.7: role_grants, role_queue_snapshots, role_handovers, breakglass_uses, api_principals); 0137–0141, 0151–0169 and 0171 create no table; the absolute number moves with every §35 migration that adds a table
 });
 
 test("staff_users.reviewer_roles CHECK equals HUMAN_ROLES (ROLE_LIST_DRIFT: a migration that adds a role the kernel lacks fails here — 35.7 rule 1)", { skip }, async () => {

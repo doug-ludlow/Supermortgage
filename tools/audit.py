@@ -23,10 +23,28 @@
 """
 import re, glob, json, os, sys, collections, subprocess
 root = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
-AUDIT = os.path.join(root, 'docs/audit')
+AUDIT = (sys.argv[sys.argv.index('--audit-dir') + 1] if '--audit-dir' in sys.argv and sys.argv.index('--audit-dir') + 1 < len(sys.argv) else None) or os.environ.get('AUDIT_DIR') or os.path.join(root, 'docs/audit')
 os.makedirs(AUDIT, exist_ok=True)
 manifest = json.load(open(os.path.join(root, 'spec/registry/manifest.json')))
 UNITS = ('tids', 'tables', 'timers', 'notices', 'tools', 'figures')
+# 35.11 rule 12: the two execution columns — hosted (a tool executed or typed-refused through the hosted API: docs/audit/hosted.json,
+# tools/hosted-probe.ts) and persisted (a table with rows after the journeys beyond the post-migrate count: docs/audit/persisted.json,
+# tools/persisted-count.ts). Measured only when the file exists and its migration_head is the newest file under db/migrations;
+# otherwise "not measured (stale: …)" — a stale probe never fails the build, it only stops the claim. Never part of `units`, `totals` or `done`.
+EXEC_UNITS = ('hosted', 'persisted')
+NEWEST_MIGRATION = sorted(f for f in os.listdir(os.path.join(root, 'db/migrations')) if f.endswith('.sql'))[-1]
+def load_exec(name):
+    p = os.path.join(AUDIT, name + '.json')
+    if not os.path.exists(p): return None, f'{name}: not measured (no {name}.json)'
+    try: d = json.load(open(p))
+    except Exception as e: return None, f'{name}: not measured (unreadable {name}.json: {e})'
+    head = d.get('migration_head')
+    if head != NEWEST_MIGRATION: return None, f'{name}: not measured (stale: {head} vs {NEWEST_MIGRATION})'
+    return d, None
+hosted_data, hosted_note = load_exec('hosted')
+persisted_data, persisted_note = load_exec('persisted')
+hosted_ok = {(r['process'], r['name']) for r in hosted_data.get('results', []) if r.get('status') in ('executed', 'refused_typed')} if hosted_data else set()
+persisted_ok = {r['table'] for r in persisted_data.get('tables', []) if r.get('verdict') == 'persisted'} if persisted_data else set()
 SECTION_DIR = {1: ['boarding', 'transfers'], 2: ['cashiering'], 3: ['escrow'], 4: ['servicing-requests'], 5: ['investor'], 6: ['custodial'], 7: ['notices'], 8: ['credit-reporting'],
                9: ['insurance'], 10: ['pmi'], 11: ['early-intervention'], 12: ['lossmit'], 13: ['foreclosure'], 14: ['bankruptcy'], 15: ['reo'], 16: ['payoff'], 17: ['transfers'], 18: ['qc-audit'], 19: ['data-security'],
                20: ['leads-pricing'], 21: ['application'], 22: ['verification'], 23: ['underwriting'], 24: ['property'], 25: ['compliance-disclosures'], 26: ['closing'], 27: ['warehouse'], 28: ['qc-hmda'], 29: ['secondary'], 30: ['orig-boarding'], 31: ['governance'], 32: ['borrower'], 33: ['partner-book'], 34: ['operator-portal'], 35: ['operations-runtime']}
@@ -91,6 +109,8 @@ for p in manifest:
          'notices': {'spec': len(p['notices']), 'built': len(notices_ok), 'missing': [c for c in p['notices'] if c not in notices_ok]},
          'tools': {'spec': len(p['tools']), 'built': len(tools_ok), 'missing': [t for t in p['tools'] if t not in tools_ok]},
          'figures': {'spec': len(figs), 'built': len(figs_ok), 'missing': [f for f in figs if f not in figs_ok]}}
+    r['hosted'] = {'spec': len(p['tools']), 'built': len([t for t in p['tools'] if (pid, t) in hosted_ok]) if hosted_data else 0, 'measured': hosted_data is not None}
+    r['persisted'] = {'spec': len(p['tables']), 'built': len([n for n in p['tables'] if n in persisted_ok]) if persisted_data else 0, 'measured': persisted_data is not None}
     spec_n = sum(r[u]['spec'] for u in UNITS); built_n = sum(r[u]['built'] for u in UNITS)
     r['units'] = {'spec': spec_n, 'built': built_n}
     r['pct'] = round(100 * built_n / spec_n, 1) if spec_n else 100.0
@@ -105,9 +125,15 @@ by_section = collections.OrderedDict()
 for r in rows:
     s = by_section.setdefault(int(r['process'].split('.')[0]), {'spec': 0, 'built': 0, 'processes': 0, 'done': 0})
     s['spec'] += r['units']['spec']; s['built'] += r['units']['built']; s['processes'] += 1; s['done'] += r['process'] in done
+exec_totals = {u: {'spec': sum(r[u]['spec'] for r in rows), 'built': sum(r[u]['built'] for r in rows)} for u in EXEC_UNITS}
+exec_measured = {'hosted': hosted_data is not None, 'persisted': persisted_data is not None}
+exec_notes = [n for n in (hosted_note, persisted_note) if n]
+exec_done = [r['process'] for r in rows if exec_measured['hosted'] and exec_measured['persisted'] and r['hosted']['built'] == r['hosted']['spec'] and r['persisted']['built'] == r['persisted']['spec']]
+def exec_frac(u): return frac(exec_totals[u]) if exec_measured[u] else 'not measured'
 brief = (f"spec units built {frac(totals['units'])} ({pct(totals['units'])}%): "
          + ', '.join(f"{u} {frac(totals[u])}" for u in UNITS)
-         + f"; processes at 100%: {len(done)}/{len(rows)}")
+         + f"; processes at 100%: {len(done)}/{len(rows)}"
+         + '; ' + ', '.join(n if n else f"{u} {exec_frac(u)}" for u, n in (('hosted', hosted_note), ('persisted', persisted_note))))
 
 BASELINE = os.path.join(AUDIT, 'baseline.json')
 def check():
@@ -122,12 +148,25 @@ def check():
         if r is None: errs.append(f"process {pid} marked done is not in the manifest")
         elif r['units']['built'] != r['units']['spec']:
             errs.append(f"process {pid} is marked done but is at {frac(r['units'])} units: " + '; '.join(f"{u} {frac(r[u])}" for u in UNITS if r[u]['built'] != r[u]['spec']))
+    # 35.11 rule 12: the exec columns ratchet separately — each compared only when its own file is current; a stale probe stops the claim, never the build
+    for u, v in b.get('exec_totals', {}).items():
+        if u not in EXEC_UNITS or not exec_measured.get(u): continue
+        cur = exec_totals[u]['built']
+        if cur < v['built']: errs.append(f"{u} fell to {cur}/{exec_totals[u]['spec']} (exec baseline {v['built']}/{v['spec']})")
+    for pid in b.get('exec_done', []):
+        r = next((r for r in rows if r['process'] == pid), None)
+        if r is None: errs.append(f"process {pid} in exec_done is not in the manifest"); continue
+        for u in EXEC_UNITS:
+            if exec_measured[u] and r[u]['built'] < r[u]['spec']: errs.append(f"process {pid} is in exec_done but {u} is {frac(r[u])}")
     return errs
 
 args = sys.argv[1:]
 if '--baseline' in args:
     prev = json.load(open(BASELINE)) if os.path.exists(BASELINE) else {}
-    json.dump({'totals': totals, 'done': sorted(set(prev.get('done', [])) | set(done), key=lambda s: [int(x) for x in s.split('.')])}, open(BASELINE, 'w'), indent=1)
+    prev_exec = prev.get('exec_totals', {})
+    new_exec = {u: (exec_totals[u] if exec_measured[u] else prev_exec.get(u, {'spec': exec_totals[u]['spec'], 'built': 0})) for u in EXEC_UNITS}
+    new_exec_done = sorted(set(prev.get('exec_done', [])) | set(exec_done), key=lambda s: [int(x) for x in s.split('.')]) if exec_measured['hosted'] and exec_measured['persisted'] else prev.get('exec_done', [])
+    json.dump({'totals': totals, 'done': sorted(set(prev.get('done', [])) | set(done), key=lambda s: [int(x) for x in s.split('.')]), 'exec_totals': new_exec, 'exec_done': new_exec_done}, open(BASELINE, 'w'), indent=1)
     print('baseline written: ' + brief); sys.exit(0)
 if '--check' in args:
     errs = check()
@@ -160,15 +199,16 @@ if '--strict' in args:
                 print(f"  {r['process']:5} {frac(r['units'])}  " + '  '.join(f"{u} {frac(r[u])}" for u in UNITS if r[u]['built'] != r[u]['spec']))
     sys.exit(0)
 
-json.dump({'brief': brief, 'totals': totals, 'sections': {str(k): v for k, v in by_section.items()}, 'done': done, 'processes': rows}, open(os.path.join(AUDIT, 'coverage.json'), 'w'), indent=1)
+json.dump({'brief': brief, 'totals': totals, 'exec_totals': exec_totals, 'exec_measured': exec_measured, 'exec_notes': exec_notes, 'exec_done': exec_done, 'sections': {str(k): v for k, v in by_section.items()}, 'done': done, 'processes': rows}, open(os.path.join(AUDIT, 'coverage.json'), 'w'), indent=1)
 with open(os.path.join(AUDIT, 'COVERAGE.md'), 'w') as f:
     f.write('# Spec coverage\n\nGenerated by `npm run audit` from `spec/registry/manifest.json`; do not edit. Each unit is one thing the spec names: a T-numbered test, a data-model table, a timer code (armable, satisfiable, and its trigger and satisfied events emitted by source), a notice template, an agent tool on the command bus, or a worked-example figure.\n\n')
     f.write(f'**{brief}**\n\n## Totals\n\n| Unit | Built / spec | % |\n|---|---|---|\n')
     for u in UNITS: f.write(f"| {u} | {frac(totals[u])} | {pct(totals[u])} |\n")
-    f.write(f"| **all units** | **{frac(totals['units'])}** | **{pct(totals['units'])}** |\n\n## Sections\n\n| § | Units built / spec | % | Processes at 100% |\n|---|---|---|---|\n")
+    for u in EXEC_UNITS: f.write(f"| {u} (runs) | {frac(exec_totals[u]) if exec_measured[u] else 'not measured'} | {pct(exec_totals[u]) if exec_measured[u] else '—'} |\n")
+    f.write(f"| **all units** | **{frac(totals['units'])}** | **{pct(totals['units'])}** |\n\n\n\n| § | Units built / spec | % | Processes at 100% |\n|---|---|---|---|\n")
     for k, s in by_section.items(): f.write(f"| {k} | {s['built']}/{s['spec']} | {round(100*s['built']/s['spec'],1) if s['spec'] else 100} | {s['done']}/{s['processes']} |\n")
-    f.write('\n## Processes\n\n| Process | T-ids | tables | timers | notices | tools | figures | units | % |\n|---|---|---|---|---|---|---|---|---|\n')
-    for r in rows: f.write(f"| {r['process']} | {frac(r['tids'])} | {frac(r['tables'])} | {frac(r['timers'])} | {frac(r['notices'])} | {frac(r['tools'])} | {frac(r['figures'])} | {frac(r['units'])} | {r['pct']} |\n")
+    f.write('\n## Processes\n\nThe six spec units are what "built" counts; `hosted` (tools executed or typed-refused through the hosted API) and `persisted` (tables with rows after the journeys) are what "runs" counts (35.11 rule 12): ' + ('; '.join(exec_notes) if exec_notes else f"hosted from {hosted_data.get('migration_head')} / {hosted_data.get('as_of_date')}, persisted from {persisted_data.get('migration_head')} / {persisted_data.get('as_of_date')}") + '.\n\n| Process | T-ids | tables | timers | notices | tools | figures | hosted | persisted | units | % |\n|---|---|---|---|---|---|---|---|---|---|---|\n')
+    for r in rows: f.write(f"| {r['process']} | {frac(r['tids'])} | {frac(r['tables'])} | {frac(r['timers'])} | {frac(r['notices'])} | {frac(r['tools'])} | {frac(r['figures'])} | {frac(r['hosted']) if exec_measured['hosted'] else '—'} | {frac(r['persisted']) if exec_measured['persisted'] else '—'} | {frac(r['units'])} | {r['pct']} |\n")
 print(brief)
 print('  by section: ' + '  '.join(f"§{k}:{s['built']}/{s['spec']}" for k, s in by_section.items()))
 print(f"  T-ids scaffolded as todo (not counted): {sum(r['tids']['todo'] for r in rows)}; timers armable but not satisfiable: {sum(r['timers']['armable'] - r['timers']['built'] for r in rows)}")

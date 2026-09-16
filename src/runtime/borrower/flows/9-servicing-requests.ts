@@ -34,6 +34,7 @@ import type { ToolDef } from "../../../app/tools.ts";
 import { EntityStore } from "../../../app/tools.ts";
 import { SECTION_04_CASE_COMMANDS } from "../../../app/tools/section04.ts";
 import { DOCUMENT_MATRIX, type TransferType } from "../../../domain/servicing-requests/successor.ts";
+import { servicerBlockAsOf } from "../../servicing.ts";
 import type { AssertionType } from "../../../domain/servicing-requests/noe.ts";
 import { VALUATION_FEES_CENTS } from "../../../domain/pmi/ops-10-1.ts";
 import type { Recipient } from "../../../notices/channel.ts";
@@ -366,7 +367,11 @@ async function caseCards(deps: FlowDeps, ctx: Ctx, e: DomainEvent): Promise<void
 
 // ---------------------------------------------------------------- the message paths (Intake Router → the owning case command → the card the borrower commits by)
 async function partyOf(deps: FlowDeps, partyId: string): Promise<Party | undefined> { return (await deps.runtime.db.query<Party & Record<string, unknown>>(`SELECT id AS party_id, legal_name, contact FROM parties WHERE id = $1`, [partyId]))[0]; }
-function contactPayload(party: Party, facts: LoanFacts | null): P { return { ...FAKE_SERVICER_CONTACT, borrower_name: party.legal_name, account_last4: (facts?.servicer_loan_number ?? "").slice(-4) || "0000", property_address: facts?.property_address ?? "" }; }
+/** 35.5 rule 9: the servicer block of every 4.x notice is the `servicer_profiles` version in force on the day (the FAKE constant keeps the fields the profile does not carry: the message-center channel, the insurance mailbox, the error-resolution line); `block` is the day's profile. */
+function contactPayload(party: Party, facts: LoanFacts | null, block: Partial<Record<string, unknown>> = {}): P { return { ...FAKE_SERVICER_CONTACT, ...block, borrower_name: party.legal_name, account_last4: (facts?.servicer_loan_number ?? "").slice(-4) || "0000", property_address: facts?.property_address ?? "" }; }
+async function servicerBlockToday(deps: FlowDeps, today: PlainDate): Promise<Partial<Record<string, unknown>>> {
+  try { const b = await servicerBlockAsOf(deps.runtime.db, today); return { servicer_phone: b.servicer_phone, servicer_address: b.servicer_address, exclusive_address: b.exclusive_address, error_resolution_address: `${b.servicer_name} Error Resolution, ${b.exclusive_address}` }; } catch { return {}; }
+}
 
 async function onMessage(deps: FlowDeps, m: InboundMessage): Promise<FlowReply | null> {
   const c = classifyIntake(m.text);
@@ -376,6 +381,7 @@ async function onMessage(deps: FlowDeps, m: InboundMessage): Promise<FlowReply |
   const ctx = await context(deps, loanId); const today = civilToday(m.at);
   const party = ctx.parties.find((x) => x.party_id === m.party_id) ?? (await partyOf(deps, m.party_id));
   if (!party) return null;
+  const block = await servicerBlockToday(deps, today);
   const receipt = { receipt_date: today, receipt_at: m.at, state: ctx.facts?.state ?? null, channel: m.channel };
   switch (c.kind) {
     case "sii_inquiry": {
@@ -394,14 +400,14 @@ async function onMessage(deps: FlowDeps, m: InboundMessage): Promise<FlowReply |
         const r = await caseCmd(deps, loanId, "4.5", "complaint.open", { case_id: complaintId, received_on: today, received_at: m.at, state: ctx.facts?.state ?? null, channel: m.channel === "voice" ? "voice_transcript" : "web_form", source: "borrower_direct", text: m.text, flags: [] });
         noeId = (r.output["linked_noe_case_id"] as string | null) ?? (both ? `noe-${complaintId}` : null);
         await caseCmd(deps, loanId, "4.5", "complaint.acknowledge", { case_id: complaintId, channel: "written" });
-        await caseCmd(deps, loanId, "4.1", "case.notice.send", { case_id: complaintId, template: NOTICE_CODES_32_9.complaint_ack, recipients: [recipientFor(party, ctx.facts)], payload: { ...contactPayload(party, ctx.facts), received_on: today, response_by: (await timerRow(deps, loanId, "SM_COMPLAINT_RESOLVE_15"))?.due_date ?? addDays(today, 15), ny: ctx.facts?.state === "NY", business_days_after_receipt: 0 } });
+        await caseCmd(deps, loanId, "4.1", "case.notice.send", { case_id: complaintId, template: NOTICE_CODES_32_9.complaint_ack, recipients: [recipientFor(party, ctx.facts)], payload: { ...contactPayload(party, ctx.facts, block), received_on: today, response_by: (await timerRow(deps, loanId, "SM_COMPLAINT_RESOLVE_15"))?.due_date ?? addDays(today, 15), ny: ctx.facts?.state === "NY", business_days_after_receipt: 0 } });
       }
       if (c.kind !== "complaint" || (noeId && m.channel !== "voice")) {
         // 4.1: any assertion that something was done wrong is a notice of error (a written channel — the app counts as written); the §1024.35(i) suppression row follows a payment-related assertion
         noeId = noeId ?? `noe-${loanId.slice(0, 8)}-${randomUUID().slice(0, 8)}`;
         const r = await caseCmd(deps, loanId, "4.1", "case.noe.open", { case_id: noeId, ...receipt, assertions: [{ id: "a1", category: c.assertion_category ?? "b11", description: m.text, identifiable: true }], ...(complaintId ? { linked_case_ids: [complaintId] } : {}), message_id: m.message_id });
         const assertions = (r.output["assertions"] as { id: string; response_due: string }[] | undefined) ?? [];
-        await caseCmd(deps, loanId, "4.1", "case.notice.send", { case_id: noeId, template: NOTICE_CODES_32_9.noe_ack, recipients: [recipientFor(party, ctx.facts)], payload: { ...contactPayload(party, ctx.facts), received_on: today, business_days_after_receipt: 0, assertions: assertions.map((a, n) => ({ n: n + 1, text: m.text, response_due: a.response_due })) } });
+        await caseCmd(deps, loanId, "4.1", "case.notice.send", { case_id: noeId, template: NOTICE_CODES_32_9.noe_ack, recipients: [recipientFor(party, ctx.facts)], payload: { ...contactPayload(party, ctx.facts, block), received_on: today, business_days_after_receipt: 0, assertions: assertions.map((a, n) => ({ n: n + 1, text: m.text, response_due: a.response_due })) } });
       }
       return { copy_key: both ? "case.complaint.with_noe" : "case.ack" };
     }

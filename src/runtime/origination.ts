@@ -49,6 +49,7 @@ import { makeMin } from "../domain/boarding/min.ts";
 import { PARTNER_ORG } from "../domain/boarding/fixtures.ts";
 import { boardFundedApplication, noteTermsHash, ORIGINATION_CONSENT_CLASSES, SERVICING_CONSENT_CLASSES, type LetterRecord, type LoanFundedPayload, type OrigExternal, type OrigValidation, type OriginationSnapshot } from "../domain/orig-boarding/ops-30-2.ts";
 import { DEFAULT_LICENSED_STATES } from "./transfers.ts";
+import { planBoardingWrites, persistBoardingWrites, appendBoardingWritten, type BoardingWritePlan } from "../domain/operations-runtime/boarding-writes.ts";
 import type { Runtime } from "./app.ts";
 
 export class ApplicationNotFound extends Error { constructor(id: string) { super(`no application ${id}`); this.name = "ApplicationNotFound"; } }
@@ -128,6 +129,8 @@ export async function fundApplication(rt: Runtime, applicationId: string, snapsh
 
   let escalations: EscalationService | undefined;
   let outcome: Awaited<ReturnType<typeof boardFundedApplication>> | undefined;
+  let boardingPlan: BoardingWritePlan | null = null;
+  const termsId = randomUUID();
   const r = await rt.uow.run(scope, async (ctx) => {
     escalations = new EscalationService(ctx.events, ctx.clock);
     const notices = rt.ports.printMail && rt.ports.edelivery ? new NoticeService({ registry: rt.noticeRegistry, events: ctx.events, clock: ctx.clock, printMail: rt.ports.printMail, edelivery: rt.ports.edelivery }) : undefined;
@@ -140,6 +143,14 @@ export async function fundApplication(rt: Runtime, applicationId: string, snapsh
     }
     outcome = res;
     const rec = res.service.record(applicationId);
+    // 35.5 rules 1 and 9: the installment schedule and the servicing configuration are part of the boarding transaction — planned here from the mapped note (HF-005: a P&I more than a cent from the level payment refuses the board), their rows written in `before` after `loans` / `loan_terms`, their events on this log so the board-0 clocks are satisfied in this commit
+    if (rec.boarded_at) {
+      const m = rec.mapped; const t = m.loan_terms;
+      boardingPlan = await planBoardingWrites(ctx.q!, { loan_id: loanId, terms_id: termsId, source: "fund", state: m.properties.state, note_rate_bps: pctToScaled(t.note_rate, 10_000), pi_cents: t.pi_cents, escrow_payment_cents: t.escrow_payment_cents + t.mi_premium_cents, first_payment_date: m.loans.first_payment_date, maturity_date: m.loans.maturity_date, upb_cents: m.loans.original_loan_amount_cents,
+        original_upb_cents: m.loans.original_loan_amount_cents, original_term_months: t.original_term_months, late_charge: { pct: t.late_charge_pct, grace_days: t.late_charge_grace_days }, boarded_on: funded.disbursement_date, written_by: { actor: `${actor.kind}:${actor.id}`, path: "fund", application_id: applicationId } }, { refuse: true });
+      const boardedEvent = ctx.events.all().find((e) => e.type === "loan.boarded" && e.loanId === loanId);
+      appendBoardingWritten(ctx.events, boardingPlan, BOARDING_ACTOR, boardedEvent ? { causationId: boardedEvent.id } : {});
+    }
     const summary: Record<string, unknown> = { application_id: applicationId, loan_id: loanId, servicing_loan_number: res.servicing_loan_number, status: res.status, validations: res.validations, opening_entry_set_id: res.ledger_set?.id ?? null, letters: res.letters, funded_event_id: rec.funded_event_id, boarded_at: rec.boarded_at ?? null, snapshot_hash: rec.mapped.snapshot_hash };
     store.put(ENTITY_KIND, applicationId, summary, actor, ctx.clock.now());
     rt.originationServices.recordState(ctx);
@@ -147,7 +158,7 @@ export async function fundApplication(rt: Runtime, applicationId: string, snapsh
   }, {
     clock: rt.clock,
     // the rows the events reference, written first in the same transaction
-    before: async (q) => { await insertServicingRows(q, app, outcome!, { loanId, partnerPartyId, tiPrepurchaseId, tiIsNew, clearingId, funded, snapshot }); await rt.applications.linkLoan(applicationId, loanId, q); await rt.applications.setStatus(applicationId, "funded", q); },
+    before: async (q) => { await insertServicingRows(q, app, outcome!, { loanId, partnerPartyId, tiPrepurchaseId, tiIsNew, clearingId, funded, snapshot, termsId }); if (boardingPlan) await persistBoardingWrites(q, boardingPlan); await rt.applications.linkLoan(applicationId, loanId, q); await rt.applications.setStatus(applicationId, "funded", q); },
     commit: async (q) => {
       await rt.entities.save(store.versionsSince(mark), scope, q);
       for (const e of escalations?.list() ?? []) await rt.escalationRepo.save(e, q);
@@ -157,7 +168,7 @@ export async function fundApplication(rt: Runtime, applicationId: string, snapsh
   return { application_id: applicationId, loan_id: loanId, servicing_loan_number: res.servicing_loan_number, status: res.status, validations: res.validations, opening_entry_set_id: res.ledger_set?.id ?? null, timers: r.timers, letters: res.letters, duplicate: false, events: r.events.length };
 }
 
-interface RowInputs { readonly loanId: string; readonly partnerPartyId: string; readonly tiPrepurchaseId: string; readonly tiIsNew: boolean; readonly clearingId: string; readonly funded: LoanFundedPayload; readonly snapshot: OriginationSnapshot; }
+interface RowInputs { readonly loanId: string; readonly partnerPartyId: string; readonly tiPrepurchaseId: string; readonly tiIsNew: boolean; readonly clearingId: string; readonly funded: LoanFundedPayload; readonly snapshot: OriginationSnapshot; /** 35.5: the boarded `loan_terms` row's id, pre-minted so the schedule can name it. */ readonly termsId: string; }
 /** loans, borrowers + loan_borrowers (application_borrowers.borrower_id set), the property (application_properties.property_id set), loan_terms v1, the custodial accounts, boarding_validations. */
 async function insertServicingRows(q: Queryable, app: ApplicationRecord, res: Awaited<ReturnType<typeof boardFundedApplication>>, i: RowInputs): Promise<void> {
   const rec = res.service.record(app.id); const m = rec.mapped; const s = i.snapshot;
@@ -183,10 +194,10 @@ async function insertServicingRows(q: Queryable, app: ApplicationRecord, res: Aw
   }
   if (boarded) {
     const t = m.loan_terms; const a = t.arm ?? {};
-    await q.query(`INSERT INTO loan_terms (loan_id, effective_from, source, source_event_id, amortization, note_rate_bps, pi_cents, escrow_payment_cents, escrowed, interest_method, remittance_type, late_charge_pct_bps, late_charge_grace_days, maturity_date, remaining_term_months, arm_index, arm_margin_bps, arm_initial_cap_bps, arm_periodic_cap_bps, arm_lifetime_cap_bps, arm_lookback_days)
-      VALUES ($1, $2, 'boarding', $3, $4, $5, $6, $7, $8, '30_360', 'A/A', $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+    await q.query(`INSERT INTO loan_terms (id, loan_id, effective_from, source, source_event_id, amortization, note_rate_bps, pi_cents, escrow_payment_cents, escrowed, interest_method, remittance_type, late_charge_pct_bps, late_charge_grace_days, maturity_date, remaining_term_months, arm_index, arm_margin_bps, arm_initial_cap_bps, arm_periodic_cap_bps, arm_lifetime_cap_bps, arm_lookback_days)
+      VALUES ($19, $1, $2, 'boarding', $3, $4, $5, $6, $7, $8, '30_360', 'A/A', $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
       [i.loanId, i.funded.disbursement_date, rec.funded_event_id, t.amortization_type, pctToScaled(t.note_rate, 10_000), t.pi_cents, t.escrow_payment_cents + t.mi_premium_cents, s.escrow_analysis !== null, pctToScaled(t.late_charge_pct, 1000), t.late_charge_grace_days, m.loans.maturity_date, t.original_term_months,
-        a.index ?? null, a.margin_bps ?? null, a.initial_cap_bps ?? null, a.periodic_cap_bps ?? null, a.lifetime_cap_bps ?? null, a.lookback_days ?? null]);
+        a.index ?? null, a.margin_bps ?? null, a.initial_cap_bps ?? null, a.periodic_cap_bps ?? null, a.lifetime_cap_bps ?? null, a.lookback_days ?? null, i.termsId]);
   }
   for (const v of res.validations) await q.query(`INSERT INTO boarding_validations (batch_loan_id, application_id, run_id, rule_code, severity, result, expected, actual, message, rule_set_version) VALUES (NULL, $1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9)`,
     [app.id, v.run_id, v.code, v.severity, v.result, v.expected === undefined ? null : toJson(v.expected), v.actual === undefined ? null : toJson(v.actual), v.message ?? null, v.rule_set_version]);

@@ -168,6 +168,13 @@ function toolInput(v: unknown): Record<string, unknown> {
   if (typeof v !== "object" || Array.isArray(v)) throw new RangeError("input must be a JSON object");
   return reviveCents(v) as Record<string, unknown>;
 }
+/** 35.5 rule 5: the engine commands whose state is derived server-side; a caller-supplied `state` or `custodial` is refused NO_CLIENT_STATE before any write. */
+const CLIENT_STATE_OPS: Record<string, Set<string>> = { "2.1 payments.read/write": new Set(["post"]), "2.7 fees.assess": new Set(["daily_run"]), "2.3 autodraft.read/write": new Set(["amount_change_check"]) };
+function clientStateRefused(process: string, name: string, input: Record<string, unknown>): boolean {
+  const ops = CLIENT_STATE_OPS[`${process} ${name}`]; if (!ops) return false;
+  const op = typeof input["op"] === "string" ? input["op"] : "";
+  return ops.has(op) && (input["state"] !== undefined || input["custodial"] !== undefined);
+}
 const same = (a: string, b: string): boolean => a.length === b.length && a.length > 0 && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 
 export function createApiServer(opts: ServerOptions): Server {
@@ -214,6 +221,8 @@ export function createApiServer(opts: ServerOptions): Server {
         const b = await readJson(req);
         const actor = actorOf(b["actor"]);
         const input = toolInput(b["input"]);
+        // 35.5 rule 5 (NO_CLIENT_STATE): the hosted route never lets a caller post, assess or check against its own cash state — the engines derive it from the typed rows inside the command; a typed refusal before any write
+        if (clientStateRefused(process, name, input)) { done(409, { error: "refused", command: name, code: "NO_CLIENT_STATE", citation: "35.5 rule 5 / guardrails: `payments.read/write{op=post}`, `fees.assess{op=daily_run}` and `autodraft.read/write{op=amount_change_check}` derive `LoanCashState` inside the command from the typed rows; the hosted route refuses an `input.state` / `input.custodial`", reason: `${process} ${name}: input.state / input.custodial are not accepted on the hosted route — the command derives the loan's cash state from loan_installments, the ledger and the typed payments and fees` }, { refused: "NO_CLIENT_STATE" }); return; }
         const run = b["run"] as { runId?: unknown; modelVersion?: unknown; promptVersion?: unknown; confidence?: unknown } | undefined;
         const runInfo = run && typeof run.runId === "string" && typeof run.modelVersion === "string" && typeof run.promptVersion === "string"
           ? { runId: run.runId, modelVersion: run.modelVersion, promptVersion: run.promptVersion, ...(typeof run.confidence === "number" ? { confidence: run.confidence } : {}) } : undefined;

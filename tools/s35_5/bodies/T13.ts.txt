@@ -1,0 +1,38 @@
+  const today = "2026-09-15"; const tomorrow = "2026-09-16";
+  const rt = rtAt(`${today}T14:00:00.000Z`);
+  const f = await l1Fixture(rt);
+  // the seeded v1 carries the former SERVICER_CONTACT values
+  const v1 = (await servicerProfileVersions(db)).find((v) => v.version === 1)!;
+  assert.equal(v1.legal_name, FAKE_SERVICER_CONTACT.servicer_name); assert.equal(v1.toll_free_phone, FAKE_SERVICER_CONTACT.servicer_phone); assert.equal(v1.servicer_address, FAKE_SERVICER_CONTACT.servicer_address); assert.equal(v1.exclusive_address, FAKE_SERVICER_CONTACT.exclusive_address); assert.equal(v1.remittance_address, FAKE_SERVICER_CONTACT.remittance_address); assert.equal(v1.portal_url, FAKE_SERVICER_CONTACT.portal_url); assert.equal(v1.counselor_url, FAKE_SERVICER_CONTACT.counselor_url); assert.equal(v1.hud_phone, FAKE_SERVICER_CONTACT.hud_phone);
+  assert.equal(v1.tin_last4, "6789"); assert.equal(v1.status, "active"); assert.equal(v1.effective_from, "2020-01-01");
+  // 7.1's statement for L-1 renders the block from v1's columns
+  const run1 = await sendPeriodicStatement(rt, f.loanId, { cycle_due_date: D("2026-10-01") });
+  const st1 = rt.noticeMemory.get(run1.notice_id)!; assert.ok(st1, "the rendered statement is readable");
+  const block = (p: Record<string, unknown>) => ({ name: p["servicer_name"], phone: p["servicer_phone"], servicer_address: p["servicer_address"], exclusive_address: p["exclusive_address"], remittance_address: p["remittance_address"], portal_url: p["portal_url"], counselor_url: p["counselor_url"], hud_phone: p["hud_phone"] });
+  assert.deepEqual(block(st1.payload), { name: v1.legal_name, phone: v1.toll_free_phone, servicer_address: v1.servicer_address, exclusive_address: v1.exclusive_address, remittance_address: v1.remittance_address, portal_url: v1.portal_url, counselor_url: v1.counselor_url, hud_phone: v1.hud_phone });
+  assert.equal(st1.payload["servicer_profile_id"], v1.id); assert.equal(st1.payload["servicer_profile_version"], 1);
+  // `SERVICER_CONTACT` no longer exists in src/runtime/servicing.ts
+  const servicingSrc = readFileSync(new URL("../../runtime/servicing.ts", import.meta.url), "utf8");
+  assert.equal(/SERVICER_CONTACT/.test(servicingSrc), false, "SERVICER_CONTACT is gone from src/runtime/servicing.ts");
+  // compliance activates v2 with a new exclusive address effective tomorrow
+  const newExclusive = "PO Box 9, Testville TX 75001";
+  const act = await rt.execute({ process: "35.5", name: "servicer_profile.write", loanId: "", actor: COMPLIANCE, input: { op: "activate", effective_from: tomorrow, exclusive_address: newExclusive } });
+  const ao = act.output as Record<string, unknown>; assert.equal(ao["version"], 2); assert.equal(ao["effective_from"], tomorrow); assert.equal(ao["exclusive_address"], newExclusive);
+  const versions = await servicerProfileVersions(db); assert.equal(versions.length, 2);
+  const v2 = versions.find((v) => v.version === 2)!; assert.equal(v2.status, "active"); assert.equal(v2.exclusive_address, newExclusive); assert.equal(v2.legal_name, v1.legal_name); assert.equal(v2.approved_by_decision_id, ao["decision_id"]);
+  const v1after = versions.find((v) => v.version === 1)!; assert.equal(v1after.effective_to, tomorrow); assert.equal(v1after.status, "active", "v1 still governs today");
+  // `servicer_profile.activated{version: 2}` carries the decision id — the decision row exists, approved by compliance
+  const activated = act.events.find((e) => e.type === "servicer_profile.activated")!; assert.equal(activated.payload["version"], 2); assert.equal(activated.payload["decision_id"], ao["decision_id"]); assert.equal(activated.payload["effective_from"], tomorrow);
+  const decision = await one<Record<string, unknown>>(db, `SELECT agent, action, rule_set_version, approved_by, approved_role FROM agent_decisions WHERE id = $1`, [ao["decision_id"]]);
+  assert.equal(decision["agent"], "cashiering"); assert.equal(decision["action"], "servicer_profile.activate"); assert.equal(decision["rule_set_version"], "cashiering.schedule.v1"); assert.equal(decision["approved_by"], COMPLIANCE.id); assert.equal(decision["approved_role"], "compliance");
+  // today's statement still renders v1; tomorrow's renders v2
+  const run2 = await sendPeriodicStatement(rt, f.loanId, { cycle_due_date: D("2026-10-01"), cycle: 2 });
+  assert.equal(rt.noticeMemory.get(run2.notice_id)!.payload["exclusive_address"], v1.exclusive_address); assert.equal(rt.noticeMemory.get(run2.notice_id)!.payload["servicer_profile_version"], 1);
+  const rtTomorrow = rtAt(`${tomorrow}T14:00:00.000Z`);
+  const run3 = await sendPeriodicStatement(rtTomorrow, f.loanId, { cycle_due_date: D("2026-10-01"), cycle: 3 });
+  const st3 = rtTomorrow.noticeMemory.get(run3.notice_id)!; assert.equal(st3.payload["exclusive_address"], newExclusive); assert.equal(st3.payload["servicer_profile_version"], 2); assert.equal(st3.payload["servicer_profile_id"], v2.id); assert.equal(st3.payload["servicer_phone"], v1.toll_free_phone, "the unchanged fields carry over");
+  // an ops_analyst activating a version is refused ROLE_DENIED with nothing written
+  const versionsBefore = await count(db, `FROM servicer_profiles`); const decisionsBefore = await count(db, `FROM agent_decisions WHERE action = 'servicer_profile.activate'`);
+  await assert.rejects(rt.execute({ process: "35.5", name: "servicer_profile.write", loanId: "", actor: OPS_ANALYST, input: { op: "activate", effective_from: "2026-09-20", exclusive_address: "PO Box 10, Testville TX 75001" } }), (e: Error & { code?: string }) => e.code === "ROLE_DENIED");
+  assert.equal(await count(db, `FROM servicer_profiles`), versionsBefore); assert.equal(await count(db, `FROM agent_decisions WHERE action = 'servicer_profile.activate'`), decisionsBefore);
+  assert.equal(await count(db, `FROM loan_events WHERE type = 'servicer_profile.activated'`), 1);

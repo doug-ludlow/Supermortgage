@@ -1,0 +1,39 @@
+  const rules = async (state: string): Promise<{ allowed: boolean }> => { const r = await db.query<{ rules: Record<string, unknown> }>(`SELECT rules FROM jurisdiction_rules WHERE state = $1`, [state]); const nsf = (r[0]?.rules?.["nsf_fee"] ?? null) as { allowed?: boolean } | null; return { allowed: nsf ? nsf.allowed !== false : false }; };
+  // the fund path (AZ property, the demo note's 5.00% / 15-day late-charge terms)
+  const s = await serverAt(NOW);
+  let fundLoan = ""; let gaLoan = "";
+  try {
+    fundLoan = (await fundDemoNote(s)).loanId;
+    const v1 = (await servicerProfileVersions(db)).find((v) => v.version === 1)!; assert.equal(v1.id, FAKE_SERVICER_PROFILE_V1_ID); assert.equal(v1.status, "active");
+    // a note late-charge rate above the state's max_pct: the conflict is named and the state's bound is what 2.7 assesses (GA: max 4%)
+    await db.query(`INSERT INTO jurisdiction_rules (state, licensed, rules) VALUES ('GA', true, '{"late_charge": {"max_pct": "4", "min_grace_days": 15}}'::jsonb) ON CONFLICT (state) DO UPDATE SET rules = jurisdiction_rules.rules || EXCLUDED.rules`);
+    gaLoan = (await fundDemoNote(s, { property: { address_line1: "9 Peachtree St", city: "Atlanta", state: "GA", postal_code: "30303", county: "Fulton" } })).loanId;
+  } finally { await s.close(); }
+  const v1 = (await servicerProfileVersions(db)).find((v) => v.version === 1)!;
+  for (const [loanId, expectTz, expectState, boardedOn] of [[fundLoan, "America/Phoenix", "AZ", "2026-11-12"], [gaLoan, "America/New_York", "GA", "2026-11-12"]] as const) {
+    const cfg = await one<Record<string, unknown>>(db, `SELECT time_zone, time_zone_source, jurisdiction_state, servicer_profile_id::text AS servicer_profile_id, late_charge_terms, nsf_fee_allowed, effective_from::text AS effective_from, created_at FROM loan_servicing_configs WHERE loan_id = $1`, [loanId]);
+    assert.equal(cfg["time_zone"], expectTz); assert.equal(cfg["time_zone"], STATE_TIME_ZONES[expectState]); assert.equal(cfg["time_zone_source"], "state_default"); assert.equal(cfg["jurisdiction_state"], expectState); assert.equal(cfg["servicer_profile_id"], v1.id); assert.equal(cfg["effective_from"], boardedOn);
+    assert.equal(cfg["nsf_fee_allowed"], (await rules(expectState)).allowed, "`nsf_fee_allowed` from jurisdiction_rules.rules.nsf_fee");
+    const lc = cfg["late_charge_terms"] as Record<string, unknown>; assert.equal(lc["grace_days"], 15);
+    // in the same transaction as the board: the config event is on the boarded event's commit and satisfies the board-0 clock
+    const boarded = (await events(loanId, "loan.boarded"))[0]!; const written = (await events(loanId, "loan.servicing_config.written"))[0]!;
+    assert.equal(written.occurred_at, boarded.occurred_at); assert.equal(written.payload["time_zone"], expectTz); assert.equal(written.payload["servicer_profile_id"], v1.id);
+    const t = await timer("SM_LOAN_SERVICING_CONFIG_AT_BOARD_0", loanId); assert.equal(t.length, 1); assert.equal(t[0]!.status, "satisfied"); assert.equal(t[0]!.satisfied_by_event_id, written.id);
+  }
+  const azLc = (await one<{ late_charge_terms: Record<string, unknown> }>(db, `SELECT late_charge_terms FROM loan_servicing_configs WHERE loan_id = $1`, [fundLoan])).late_charge_terms;
+  assert.equal(azLc["pct"], "5.00"); assert.equal(azLc["conflict"], null, "AZ has no late-charge bound on file: the note's terms stand");
+  const gaLc = (await one<{ late_charge_terms: Record<string, unknown> }>(db, `SELECT late_charge_terms FROM loan_servicing_configs WHERE loan_id = $1`, [gaLoan])).late_charge_terms;
+  assert.equal(gaLc["pct"], "4"); const conflict = gaLc["conflict"] as Record<string, unknown>; assert.equal(conflict["state"], "GA"); assert.equal(conflict["applied"], "lower_cap"); assert.deepEqual(conflict["note"], { pct: "5.00", grace_days: 15 }); assert.equal(conflict["cap"], "4%/15 days");
+  const facts = await loanCashState(runtime, gaLoan, D("2027-01-01"));
+  assert.equal(facts.state.late_charge_pct, "4", "the state's bound is what 2.7 assesses"); assert.equal(lateChargeAmount(A.pi, facts.state.late_charge_pct!, null), 13_610n); assert.equal(lateChargeAmount(A.pi, "5.00", null), 17_013n);
+  assert.equal((await loanCashState(runtime, fundLoan, D("2027-01-01"))).state.late_charge_pct, "5.00");
+  // the transfer path (T-7 in TX)
+  const s2 = await serverAt("2026-10-16T15:00:00.000Z");
+  try {
+    const { loanId } = await boardT7(s2);
+    const cfg = await loanServicingConfig(db, loanId, D("2026-10-16"));
+    assert.equal(cfg.time_zone, "America/Chicago"); assert.equal(cfg.jurisdiction_state, "TX"); assert.equal(cfg.servicer_profile_id, v1.id); assert.equal(cfg.effective_from, "2026-10-16"); assert.equal(cfg.late_charge_terms.pct, "5"); assert.equal(cfg.late_charge_terms.grace_days, 15); assert.equal(cfg.nsf_fee_allowed, (await rules("TX")).allowed);
+    const boarded = (await events(loanId, "loan.boarded"))[0]!; const written = (await events(loanId, "loan.servicing_config.written"))[0]!;
+    assert.equal(written.occurred_at, boarded.occurred_at);
+    const t = await timer("SM_LOAN_SERVICING_CONFIG_AT_BOARD_0", loanId); assert.equal(t[0]!.status, "satisfied"); assert.equal(t[0]!.satisfied_by_event_id, written.id);
+  } finally { await s2.close(); }

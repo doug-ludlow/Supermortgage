@@ -69,7 +69,8 @@ export async function openRefiBook(o: RefiBookOptions): Promise<RefiBook> {
   const journey = new Journey({ runtime, db, base, token, clock: o.clock, borrowerEmail, coBorrowerEmail: `blake-${randomUUID().slice(0, 8)}@example.test`, partnerPartyId });
   await journey.seedBook();
   const partyId = (await signIn()).party_id;
-  const loanId = await journey.adoptPriorLoan(partyId);
+  // 24 payments made (Nov 2024 – Oct 2026), the Nov 1, 2026 installment next due: the worked example's servicing facts as the Oct 1, 2026 run re-derives them (35.5: the schedule rows carry the history)
+  const loanId = await journey.adoptPriorLoan(partyId, { first_unpaid_due: "2026-11-01" });
   await db.query(`UPDATE loan_terms SET note_rate_bps = 70000, pi_cents = 375896, remaining_term_months = NULL WHERE loan_id = $1`, [loanId]);
   // the 32.14 demo seed: the partner's program, the LLPA matrix, the FAKE cost schedule, an active sheet, and the roster row (M-FAKE-DEMO, "A. Lee (FAKE demo MLO)", NMLSR 222333) 32.11's `mloOfRecord` names for AZ
   const seeded = await seedEntryDemo(runtime, { partner_id: partnerPartyId, states: ["AZ"], now: o.clock.now() });

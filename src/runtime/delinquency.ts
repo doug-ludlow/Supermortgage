@@ -21,28 +21,44 @@ import { wallClock } from "../kernel/calendar/zoned.ts";
 import { delinquencyCounterJob } from "../domain/early-intervention/ops-11-1.ts";
 import { sweepDelinquencyCounters } from "../domain/foreclosure/ops-13-1.ts";
 import type { Runtime } from "./app.ts";
+import { loanServicingConfig, loanLocalDate } from "../domain/operations-runtime/servicing-config.ts";
 
-/** The counter job runs as the 11.1 collections agent; the loan-local civil day is the property's (AZ book: America/Phoenix). */
+/** The counter job runs as the 11.1 collections agent; the loan-local civil day is the loan's `loan_servicing_configs.time_zone` (35.5 rule 9) — never a constant. */
 export const COUNTER_JOB_ACTOR: Actor = { kind: "agent", id: "default-collections" };
-export const LOAN_LOCAL_TZ = "America/Phoenix";
+/** The planner's civil date (America/New_York): the report's `today` and the day a loan without a configuration row is listed under. */
+const PLANNER_ZONE = "America/New_York";
+/** 35.5 rule 9: a loan's civil date at an instant — its configuration's zone; a loan with no row is a typed refusal (CONFIG_REQUIRED), never a default zone. */
+export async function loanCivilDate(rt: Runtime, loanId: string, nowIso: string): Promise<PlainDate> {
+  const cfg = await loanServicingConfig(rt.db, loanId, wallClock(Date.parse(nowIso), PLANNER_ZONE).date);
+  return loanLocalDate(cfg.time_zone, nowIso);
+}
 
 export interface DelinquencySweepReport {
   readonly at: string;
   readonly today: PlainDate;
-  readonly loans: { loan_id: string; earliest_unpaid_due: PlainDate | null; regx_days_delinquent: number; windows_opened: PlainDate[]; milestone: number | null; events: string[] }[];
+  readonly loans: { loan_id: string; local_date: PlainDate; time_zone: string; earliest_unpaid_due: PlainDate | null; regx_days_delinquent: number; windows_opened: PlainDate[]; milestone: number | null; events: string[] }[];
+  /** 35.5 rule 9: loans with an unpaid row but no `loan_servicing_configs` row — no loan-local date, no count (CONFIG_REQUIRED). */
+  readonly skipped_no_config: string[];
 }
 
-type Row = Record<string, unknown> & { loan_id: string; principal_residence: boolean | null; fdcpa_debt_collector_flag: boolean | null; state: string | null; occupancy: string | null; unpaid: string[] | null };
+type Row = Record<string, unknown> & { loan_id: string; principal_residence: boolean | null; fdcpa_debt_collector_flag: boolean | null; state: string | null; occupancy: string | null; time_zone: string | null; unpaid: string[] | null };
 
 export async function delinquencyDailySweep(rt: Runtime, nowIso: string = rt.clock.now(), only?: readonly string[]): Promise<DelinquencySweepReport> {
-  const today = wallClock(Date.parse(nowIso), LOAN_LOCAL_TZ).date;
-  const report: DelinquencySweepReport = { at: nowIso, today, loans: [] };
+  const plannerDate = wallClock(Date.parse(nowIso), PLANNER_ZONE).date;
+  const report: DelinquencySweepReport = { at: nowIso, today: plannerDate, loans: [], skipped_no_config: [] };
+  // 35.5 rule 9: the loan-local civil date is the configuration's zone; the unpaid rows are filtered per loan below, on that date (a row due "today" in Phoenix is not yet past due while it is in New York)
   const rows = await rt.db.query<Row>(
-    `SELECT l.id AS loan_id, l.principal_residence, l.fdcpa_debt_collector_flag, pr.state, pr.occupancy::text AS occupancy, array_agg(i.due_date::text ORDER BY i.due_date) AS unpaid
-       FROM loans l JOIN loan_installments i ON i.loan_id = l.id AND i.status = 'due' AND i.due_date < $1::date LEFT JOIN properties pr ON pr.id = l.property_id
-      WHERE l.status = 'active' AND ($2::uuid[] IS NULL OR l.id = ANY($2::uuid[])) GROUP BY l.id, pr.state, pr.occupancy ORDER BY l.created_at`, [today, only && only.length ? [...only] : null]);
+    `SELECT l.id AS loan_id, l.principal_residence, l.fdcpa_debt_collector_flag, pr.state, pr.occupancy::text AS occupancy,
+            (SELECT c.time_zone FROM loan_servicing_configs c WHERE c.loan_id = l.id AND c.effective_from <= $1::date ORDER BY c.effective_from DESC, c.created_at DESC LIMIT 1) AS time_zone,
+            array_agg(i.due_date::text ORDER BY i.due_date) AS unpaid
+       FROM loans l JOIN loan_installments i ON i.loan_id = l.id AND i.status = 'due' AND i.due_date < ($1::date + 1) LEFT JOIN properties pr ON pr.id = l.property_id
+      WHERE l.status = 'active' AND ($2::uuid[] IS NULL OR l.id = ANY($2::uuid[])) GROUP BY l.id, pr.state, pr.occupancy ORDER BY l.created_at`, [plannerDate, only && only.length ? [...only] : null]);
   for (const row of rows) {
     const loanId = row.loan_id;
+    if (!row.time_zone) { report.skipped_no_config.push(loanId); continue; }
+    const today = loanLocalDate(row.time_zone, nowIso);
+    const unpaidBeforeToday = (row.unpaid ?? []).filter((d) => d < today);
+    if (!unpaidBeforeToday.length) continue;
     const spine = await rt.uow.events.byLoan(loanId);
     const of = (type: string) => spine.filter((e) => e.type === type);
     const windowsOpened = of("loan.delinquency.window_opened").map((e) => String(e.payload["due_date"])).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).map((d) => D(d));
@@ -52,7 +68,7 @@ export async function delinquencyDailySweep(rt: Runtime, nowIso: string = rt.clo
     const fdcpaCease = of("fdcpa.cease.received").some((e) => e.payload["written"] === true);
     const qrpc = of("contact.qrpc.established").length > 0;
     const principalResidence = row.principal_residence !== false && row.occupancy !== "investment" && row.occupancy !== "second_home";
-    const unpaid = (row.unpaid ?? []).map((d) => D(d));
+    const unpaid = unpaidBeforeToday.map((d) => D(d));
     const store = new EntityStore(); store.seed(await rt.entities.load({ loanId })); const mark = store.versionCount();
     let escalations: EscalationService | undefined;
     let out: DelinquencySweepReport["loans"][number] | undefined;
@@ -66,7 +82,7 @@ export async function delinquencyDailySweep(rt: Runtime, nowIso: string = rt.clo
       for (const e of r.events) ctx.events.append({ type: e.type, loanId, actor: COUNTER_JOB_ACTOR, payload: e.payload });
       // 13.1: `delinquency.counters.updated` + the 120-day gate (opens 00:05 loan-local on day 121; closes when the loan is current)
       const s = sweepDelinquencyCounters({ events: ctx.events, store, escalations }, { loan_id: loanId, today, actor: COUNTER_JOB_ACTOR, now: ctx.clock.now() });
-      out = { loan_id: loanId, earliest_unpaid_due: r.earliest_unpaid_due, regx_days_delinquent: r.regx_days_delinquent, windows_opened: r.windows_opened, milestone: r.milestone, events: [...r.events.map((e) => e.type), ...s.events] };
+      out = { loan_id: loanId, local_date: today, time_zone: row.time_zone!, earliest_unpaid_due: r.earliest_unpaid_due, regx_days_delinquent: r.regx_days_delinquent, windows_opened: r.windows_opened, milestone: r.milestone, events: [...r.events.map((e) => e.type), ...s.events] };
     }, { clock: rt.clock, commit: async (q) => { await rt.entities.save(store.versionsSince(mark), { loanId }, q); for (const e of escalations?.list() ?? []) await rt.escalationRepo.save(e, q); } });
     if (out) report.loans.push(out);
   }

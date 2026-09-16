@@ -1,0 +1,147 @@
+// 35.5 The installment schedule and the daily cashiering cycle: `loan_installments` at fund and at transfer boarding, the whole-book 2.1/2.7/2.3 sweep, lockbox ingest, ACH origination and NACHA returns as cycles, and the per-loan jurisdiction, time-zone and servicer-identity configuration
+// spec/sections/35-operations-runtime/35-5-the-installment-schedule-and-the-daily-cashiering-cycle.md
+// One node:test per T-id, named exactly as the spec (assembled by tools/s35_5/gen_spec_test.py from the manifest's text;
+// the bodies live in tools/s35_5/bodies). `todo: true` = not implemented yet (tools/audit.py does not count it).
+//
+// Every T-id runs against Postgres (operational prerequisite: "every T-id here runs against Postgres" — REQUIRE_DB=1 in CI);
+// the file has its own database (src/infra/db/test-db.ts). Every money figure below is one the spec states, asserted to the
+// cent against the rows, the ledger or the events the build wrote — never a hand-fed figure the test then reads back.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { connect, type Db, type Queryable } from "../../infra/db/client.ts";
+import { testDatabase } from "../../infra/db/test-db.ts";
+import { PgLoanRepository, type Fixture } from "../../infra/db/loans.ts";
+import { loadOverriddenRegistry } from "../../domain/timer-overrides.ts";
+import { FixedClock, type Actor } from "../../kernel/events/index.ts";
+import { plainDate as D, addMonths, type PlainDate } from "../../kernel/calendar/date.ts";
+import { levelPayment, type Cents } from "../../kernel/money/cents.ts";
+import { Decimal } from "../../kernel/money/decimal.ts";
+import { Runtime, type RuntimeDeps } from "../../runtime/app.ts";
+import { createApiServer, listen } from "../../runtime/server.ts";
+import { createLogger } from "../../runtime/log.ts";
+import { compute, defineTools, type ToolDef } from "../../app/tools.ts";
+import { noteTermsHash } from "../orig-boarding/ops-30-2.ts";
+import { generateDemoBatch, DEMO_BATCH } from "../boarding/demo-batch.ts";
+import { encodeTransferBatch, type TransferBatchData } from "../boarding/tape-codec.ts";
+import type { StagedLoan, Installment, HistoricalPayment } from "../boarding/types.ts";
+import { boardTransferBatch, type TransferBatchInput } from "../../runtime/transfers.ts";
+import { sendPeriodicStatement, loanCashState } from "../../runtime/servicing.ts";
+import { fundApplication, demoSnapshot, demoFunded } from "../../runtime/origination.ts";
+import { lateChargeAmount } from "../cashiering/latecharges.ts";
+import { delinquencyDailySweep } from "../../runtime/delinquency.ts";
+import { projectSchedule, readInstallments, scheduleRuns, rowInterest, levelPaymentBps, INSTALLMENT_EVENTS } from "./installments.ts";
+import { FAKE_SERVICER_CONTACT, FAKE_SERVICER_PROFILE_V1_ID, servicerProfileVersions, loanServicingConfig, STATE_TIME_ZONES } from "./servicing-config.ts";
+
+const { url: DB_URL, skip } = await testDatabase(import.meta.url);
+const TOKEN = "t-" + randomUUID();
+/** The file's base instant: after the demo hand-off's funding (2026-11-12T18:40Z) so `POST /v1/applications/{id}/fund` boards the demo note. */
+const NOW = "2026-11-16T15:00:00.000Z";
+const CASHIERING: Actor = { kind: "agent", id: "cashiering" };
+const SYSTEM: Actor = { kind: "system", id: "test" };
+const FUNDING: Actor = { kind: "human", id: "u-funder", role: "funding_approver" };
+const OFFICER: Actor = { kind: "human", id: "u-officer-1", role: "officer" };
+const COMPLIANCE: Actor = { kind: "human", id: "u-compliance-1", role: "compliance" };
+const OPS_ANALYST: Actor = { kind: "human", id: "u-analyst-1", role: "ops_analyst" };
+
+let db: Db; let runtime: Runtime; let base = ""; let close: () => Promise<void> = async () => undefined;
+let n = 0;
+const uniq = (): string => `${Date.now() % 1_000_000}${(n++).toString().padStart(3, "0")}`.padStart(10, "0");
+const count = async (q: Queryable, sql: string, params: unknown[] = []): Promise<number> => Number((await q.query<{ c: string }>(`SELECT count(*)::text AS c ${sql}`, params))[0]!.c);
+const one = async <T extends Record<string, unknown>>(q: Queryable, sql: string, params: unknown[] = []): Promise<T> => { const r = await q.query<T>(sql, params); assert.ok(r[0], `no row: ${sql}`); return r[0]!; };
+const big = (v: unknown): Cents => BigInt(String(v));
+const call = async (method: string, path: string, body?: unknown, at: string = base): Promise<{ status: number; body: Record<string, unknown> }> => {
+  const r = await fetch(at + path, { method, headers: { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" }, ...(body !== undefined ? { body: JSON.stringify(body, (_k, v) => (typeof v === "bigint" ? v.toString() : v)) } : {}) });
+  return { status: r.status, body: (await r.json()) as Record<string, unknown> };
+};
+/** A runtime over this file's database on its own clock (the boarding, the unit and the statement each run "on" a stated day). */
+const rtAt = (iso: string, deps: Partial<RuntimeDeps> = {}): Runtime => new Runtime({ db, registry: loadOverriddenRegistry(), clock: new FixedClock(iso), ...deps });
+/** The same, with an HTTP door (T1, T2, T5 and T15 drive the routes). */
+async function serverAt(iso: string, deps: Partial<RuntimeDeps> = {}): Promise<{ rt: Runtime; base: string; close: () => Promise<void> }> {
+  const rt = rtAt(iso, deps);
+  const server = createApiServer({ runtime: rt, apiToken: TOKEN, logger: createLogger("json", () => undefined) });
+  const b = `http://127.0.0.1:${await listen(server, 0, "127.0.0.1")}`;
+  return { rt, base: b, close: () => new Promise((resolve) => server.close(() => resolve())) };
+}
+/** An ad-hoc tool on the bus (a test's way to append an event a sibling process would have emitted, inside a real command on the loan). */
+const testTool = (name: string, handler: Parameters<typeof compute>[0]): ToolDef => defineTools("35.5", "cashiering", [{ name, kind: "act", handler: compute(handler) }])[0]!;
+const events = async (loanId: string, type?: string): Promise<{ id: string; type: string; payload: Record<string, unknown>; actor_kind: string; actor_id: string; occurred_at: string }[]> =>
+  db.query(`SELECT id::text AS id, type, payload, actor_kind, actor_id, occurred_at::text AS occurred_at FROM loan_events WHERE loan_id = $1 AND ($2::text IS NULL OR type = $2) ORDER BY sequence`, [loanId, type ?? null]);
+const timer = async (code: string, loanId: string | null): Promise<{ status: string; anchor_date: string; due_date: string | null; satisfied_by_event_id: string | null }[]> =>
+  db.query(`SELECT status::text AS status, anchor_date::text AS anchor_date, due_date::text AS due_date, satisfied_by_event_id::text AS satisfied_by_event_id FROM timers WHERE code = $1 AND ($2::uuid IS NULL OR loan_id = $2) ORDER BY armed_at`, [code, loanId]);
+
+test.before(async () => {
+  if (skip) return;
+  db = connect(DB_URL);
+  runtime = rtAt(NOW);
+  const server = createApiServer({ runtime, apiToken: TOKEN, logger: createLogger("json", () => undefined) });
+  base = `http://127.0.0.1:${await listen(server, 0, "127.0.0.1")}`;
+  close = () => new Promise((resolve) => server.close(() => db.end().then(() => resolve())));
+});
+test.after(async () => { if (!skip) await close(); });
+
+// ───────── worked example A: the demo hand-off's note (every figure is the spec's; the test asserts the rows the build wrote) ─────────
+const A = { upb: 56_000_000n, rate_bps: 61_250, pi: 340_262n, row1_interest: 285_833n, row1_principal: 54_429n, row1_after: 55_945_571n, row2_interest: 285_556n, row2_principal: 54_706n, row2_after: 55_890_865n, row360_interest: 1_727n, row360_principal: 338_435n, row360_pi: 340_162n, sum_interest: 66_494_220n } as const;
+// ───────── worked example B: tape loan T-7 ─────────
+const B = { original: 30_000_000n, rate_bps: 65_000, pi: 189_620n, escrow: 41_230n, upb: 28_045_824n, row62_interest: 151_915n, row62_principal: 37_705n, row62_after: 28_008_119n, row63_interest: 151_711n, row63_principal: 37_909n, row63_after: 27_970_210n, row360_interest: 1_024n, row360_principal: 189_067n, row360_pi: 190_091n, absorbed: 471n } as const;
+// ───────── worked example C: 7.2's Plan 4927 ARM ─────────
+const C = { original: 40_000_000n, rate_bps: 57_500, pi: 233_429n, row60_after: 37_104_886n, v2_rate_bps: 63_750, v2_pi: 247_644n, row61_interest: 197_120n, row61_principal: 50_524n, row61_after: 37_054_362n, escrow: 61_250n, next_draft: 308_894n, last_debit: 294_679n } as const;
+// ───────── worked example D / 2.7 example K: fixture L-1 ─────────
+const L1 = { original: 25_000_000n, rate_bps: 65_000, pi: 158_017n, escrow: 61_240n, payment: 219_257n, upb: 24_977_400n, interest_sep: 135_294n, principal_sep: 22_723n, upb_after_sep: 24_954_677n, interest_oct: 135_171n, principal_oct: 22_846n, curtailment: 10_000n, upb_after_oct: 24_921_831n, draft: 229_257n, nsf_fee: 2_500n, late_charge: 7_901n } as const;
+// ───────── worked example E: lockbox LBX-1 ─────────
+const E = { item1: 219_257n, item2: 150_000n, item3: 230_850n, control: 600_107n, control_short: 600_007n, variance: 100n } as const;
+
+/** The demo snapshot's note funded through the route on a bare application (the record carries no CD; the FAKE snapshot fills it; `final_cd.pi_cents` is the note's P&I). */
+async function fundDemoNote(at: { rt: Runtime; base: string }, overrides: { snapshot?: Record<string, unknown>; funded?: Record<string, unknown>; property?: Record<string, unknown> } = {}): Promise<{ appId: string; loanId: string; fund: Record<string, unknown> }> {
+  const partner = (await db.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, servicer_number) VALUES ('servicer', $1, $2) RETURNING id`, [`Lender ${randomUUID().slice(0, 6)}`, "123456789"]))[0]!.id;
+  const app = (await at.rt.createApplication({ partner_party_id: partner, channel: "organic", transaction_type: "limited_cash_out", occupancy: "primary", borrowers: [{ legal_name: "Alex Borrower", borrower_role: "borrower" }], property: { address_line1: "100 N Central Ave", city: "Phoenix", state: "AZ", postal_code: "85004", county: "Maricopa", property_type: "sfr", units: 1, ...(overrides.property ?? {}) } }, SYSTEM)).application;
+  const r = await call("POST", `/v1/applications/${app.id}/fund`, { actor: FUNDING, snapshot: { final_cd: { document_id: "DOC-CD", pi_cents: "340262", monthly_escrow_cents: "68750", initial_escrow_deposit_cents: "206250", prepaid_interest_cents: "178543", prepaid_interest_days: 19, compliance_tests_passed: true }, ...(overrides.snapshot ?? {}) }, ...(overrides.funded ? { funded: overrides.funded } : {}) }, at.base);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  return { appId: app.id, loanId: String(r.body["loan_id"]), fund: r.body };
+}
+
+/** Tape loan T-7 (worked example B) as a one-loan transfer batch: original $300,000.00 at 6.500% / 360, first payment 2021-10-01, 61 installments paid through 2026-10-01, next due 2026-11-01, tape UPB $280,458.24, P&I $1,896.20, escrow $412.30. */
+function tapeT7(numbering: { prefix: string; fnma: string; min_seq: number }, state = "TX", loanNumber = "T-7"): TransferBatchData & { coborrowers: Map<string, string> } {
+  const demo = generateDemoBatch(DEMO_BATCH.seed, { prefix: numbering.prefix, fnma_base: 5_100_000_000, min_sequence_base: numbering.min_seq });
+  const template = demo.loans.find((l) => !l.bankruptcy.active && !l.foreclosure.active && !l.lossmit.in_process && !l.scra.active && l.amortization === "fixed" && l.deferred_principal_cents === 0n && l.escrowed)!;
+  const first = D("2021-10-01"); const installments: Installment[] = []; const payments: HistoricalPayment[] = [];
+  for (let k = 0; k < 62; k++) { const due = addMonths(first, k); installments.push({ due_date: due, amount_cents: B.pi + B.escrow }); if (k < 61) payments.push({ received_on: due, amount_cents: B.pi + B.escrow }); }
+  const loan: StagedLoan = { ...template, transferor_loan_number: loanNumber, fnma_loan_number: numbering.fnma, min: null, mers_eligible: false, remittance_type: "A/A", upb_cents: B.upb, next_due_date: D("2026-11-01"), note_rate_pct: "6.500", pi_cents: B.pi, escrow_payment_cents: B.escrow,
+    maturity_date: D("2051-09-01"), original_term_months: 360, original_upb_cents: B.original, instrument_date: D("2021-08-16"), origination_date: D("2021-08-16"), first_payment_date: first, interest_method: "30_360", amortization: "fixed", escrowed: true, escrow_balance_cents: B.escrow * 3n,
+    escrow_lines: [{ line_type: "county_tax", annual_amount_cents: 494_760n, next_due_date: D("2027-01-31") }], escrow_sign_consistent: true, last_escrow_analysis_date: D("2026-06-01"), late_charge_pct: "5", late_charge_grace_days: 15, deferred_principal_cents: 0n, forborne_principal_cents: 0n, nib_separated: true,
+    bankruptcy: { active: false }, foreclosure: { active: false }, lossmit: { in_process: false }, scra: { active: false }, borrower: { legal_name: "Taylor Seven", tin: "000-77-0007", email: "taylor.seven@example.test" }, property: { address_line1: "7 Tape Rd", city: "Austin", state, postal_code: "78701", occupancy: "owner_occupied" },
+    custody: { custodian: "Bank Custodian NA", certification_status: "certified" }, consents: { esign_evidence: true, tcpa_voice_evidence: true }, tax_parcel_verified: true, hazard_policy_expires: D("2027-06-01"), mi: { flag: false }, flood_determination_life_of_loan: true, sii: { present: false, complete: true },
+    unapplied_cents: 0n, fair_lending_present: true, acp_enrolled: false, fees_advances_cents: 0n, fees_itemized: true, corporate_advances_cents: 0n, late_charges_due_cents: 0n, mers_investor_is_fnma: null, installments, payments };
+  return { loans: [loan], fnma: [{ fnma_loan_number: numbering.fnma, on_approved_list: true, remittance_type: "A/A", upb_cents: B.upb }], trialBalance: [{ transferor_loan_number: loanNumber, fnma_loan_number: numbering.fnma, upb_cents: B.upb }], mers: [], images: demo.images.filter((x) => x.transferor_loan_number === template.transferor_loan_number).map((x) => ({ ...x, transferor_loan_number: loanNumber })), fairLending: [{ transferor_loan_number: loanNumber, ethnicity: "Not provided", race: "Not provided", sex: "Not provided", age: "44", preferred_language: "en" }], coborrowers: new Map() };
+}
+const tapeInput = (batchId: string, transferDate: PlainDate): TransferBatchInput => ({ ...DEMO_BATCH, batch_id: batchId, transfer_date: transferDate, respa_effective_date: transferDate, sale_date: D("2026-09-16") });
+/** T-7 boarded through the transfer route on 2026-10-16 (worked example B); the loan id from the batch summary. */
+async function boardT7(at: { rt: Runtime; base: string }, state = "TX"): Promise<{ loanId: string; batchId: string; summary: Record<string, unknown> }> {
+  // the tape's loan number is T-7; each boarding of the fixture in this file carries its own suffix (loans.servicer_loan_number `SM-<transferor number>` is unique on the platform)
+  const loanNumber = `T-7-${uniq().slice(-5)}`;
+  const batchId = `B-T7-${randomUUID().slice(0, 8)}`; const tape = tapeT7({ prefix: `T7${uniq().slice(-4)}`, fnma: uniq(), min_seq: 900 + n }, state, loanNumber);
+  const r = await call("POST", "/v1/transfers/batches", { actor: SYSTEM, batch: tapeInput(batchId, D("2026-10-16")), files: encodeTransferBatch(tape, tape.coborrowers) }, at.base);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const loanIds = r.body["loan_ids"] as Record<string, string>; const loanId = loanIds[loanNumber]!;
+  assert.equal((r.body["loans"] as Record<string, number>)["boarded"], 1, JSON.stringify(r.body["hard_by_loan"]));
+  return { loanId, batchId, summary: r.body };
+}
+
+/** Fixture L-1 (2.1 rule 11 / worked example D): $250,000 at 6.500% from 2021-09-01, LPI 2026-08-01, UPB $249,774.00 as an opening set, P&I $1,580.17, escrow $612.40 — its schedule from the next due date and its configuration written by the 35.5 tools; a borrower party for the notices. */
+async function l1Fixture(rt: Runtime, opts: { state?: string; nextDue?: PlainDate; nsf?: boolean } = {}): Promise<Fixture & { partyId: string }> {
+  const state = opts.state ?? "AZ"; const nextDue = opts.nextDue ?? D("2026-09-01");
+  const f = await new PgLoanRepository(db).createFixture({ fnmaLoanNumber: uniq(), servicerLoanNumber: `SM-${randomUUID()}`, instrumentDate: D("2021-07-15"), originalUpbCents: L1.original, originalTermMonths: 360, firstPaymentDate: D("2021-09-01"), maturityDate: D("2051-08-01"), property: { line1: "1 Fixture Way", city: state === "AZ" ? "Phoenix" : "Testville", state, postalCode: "85004" } });
+  await db.query(`INSERT INTO loan_terms (loan_id, effective_from, source, amortization, note_rate_bps, pi_cents, escrow_payment_cents, escrowed, interest_method, remittance_type, late_charge_pct_bps, late_charge_grace_days, maturity_date, remaining_term_months) VALUES ($1, '2021-07-15', 'boarding', 'fixed', $2, $3, $4, true, '30_360', 'A/A', 5000, 15, '2051-08-01', 300)`, [f.loanId, L1.rate_bps, L1.pi.toString(), L1.escrow.toString()]);
+  await db.query(`UPDATE loans SET boarded_at = '2026-08-15T12:00:00Z', principal_residence = true WHERE id = $1`, [f.loanId]);
+  if (opts.nsf !== false) await db.query(`INSERT INTO jurisdiction_rules (state, licensed, rules) VALUES ($1, true, '{"nsf_fee": {"allowed": true, "cap_cents": null}}'::jsonb) ON CONFLICT (state) DO UPDATE SET rules = jurisdiction_rules.rules || EXCLUDED.rules`, [state]);
+  // 1.6's opening set: the tape's UPB as of the LPI (the ledger's principal balance is the engine's UPB)
+  await rt.uow.run({ loanId: f.loanId }, (ctx) => ctx.ledger.post({ effectiveDate: D("2026-08-15"), description: "opening balance (fixture L-1)", lines: [{ account: { scope: "loan", loanId: f.loanId, account: "principal" }, amountCents: L1.upb, ruleRef: "1.6:opening:principal" }, { account: { scope: "custodial", custodialAccountId: f.custodial.clearing, account: "transfer_in_clearing" }, amountCents: -L1.upb, ruleRef: "1.6:opening:clearing" }] }, ctx.clock.now()), { clock: rt.clock });
+  await rt.execute({ process: "35.5", name: "installments.write", loanId: f.loanId, actor: CASHIERING, input: { loan_id: f.loanId, source: "transfer", next_due_date: nextDue } });
+  await rt.execute({ process: "35.5", name: "servicing_config.write", loanId: f.loanId, actor: CASHIERING, input: { loan_id: f.loanId } });
+  const party = (await db.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, contact) VALUES ('other', 'Alex Borrower', '{"email": "alex.l1@example.test"}'::jsonb) RETURNING id`))[0]!.id;
+  const b = (await db.query<{ id: string }>(`INSERT INTO borrowers (legal_name, tin_last4, party_id) VALUES ('Alex Borrower', '6789', $1) RETURNING id`, [party]))[0]!.id;
+  await db.query(`INSERT INTO loan_borrowers (loan_id, borrower_id, role, is_primary) VALUES ($1, $2, 'borrower', true)`, [f.loanId, b]);
+  return { ...f, partyId: party };
+}

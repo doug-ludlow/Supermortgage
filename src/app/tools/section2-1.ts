@@ -27,23 +27,32 @@ import { allocate } from "../../domain/cashiering/allocation.ts";
 import { decidePartial, type PartialContext } from "../../domain/cashiering/partials.ts";
 import { CashieringOps } from "../../domain/cashiering/ops.ts";
 import type { Designation, LoanCashState } from "../../domain/cashiering/types.ts";
+import { paymentRowIdFor, satisfyRows } from "../../domain/operations-runtime/installments.ts";
 
 const s = (c: Cents): string => c.toString();
 
 /** `payments.read/write{op=post, id, loan_id, state, custodial:{clearing, pi, ti}, days_delinquent?}` — see the header. */
-export function postReceivedPayment(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): unknown {
+export async function postReceivedPayment(i: ToolInput, ctx: CommandContext, rt: ToolRuntime): Promise<unknown> {
   const id = str(i, "id") || str(i, "payment_id"); const rec = rt.store.get("payments", id); if (!rec) throw new RangeError(`no payment ${id} on this loan`);
   const pay = rec.data; const status = String(pay.status ?? "");
   if (status !== "received" && status !== "identified") throw new RangeError(`payment ${id} is ${status || "unknown"}, not received/identified`);
-  const state = i.state as LoanCashState | undefined; if (!state) throw new RangeError("post needs the loan's cash state");
-  const custodial = (i.custodial ?? {}) as { clearing?: string; pi?: string; ti?: string };
+  const loanId = String(pay.loan_id ?? ctx.loanId);
+  // 35.5 rule 5: on a database command the cash state is derived from the typed rows inside this transaction (the rows, the ledger as this command sees it, the store's payments and fees) — a caller's `state` is used only where there is no transaction (the §2 unit harnesses)
+  let state = i.state as LoanCashState | undefined; let custodial = (i.custodial ?? {}) as { clearing?: string; pi?: string; ti?: string };
+  if (ctx.q && loanId && (!state || !custodial.clearing || !custodial.pi || !custodial.ti)) {
+    const { loanFactsFrom, balancesFromLedger } = await import("../../runtime/servicing.ts");
+    const facts = await loanFactsFrom(ctx.q, { loanId, asOf: D(String(pay.received_on ?? ctx.now.slice(0, 10))), store: rt.store, balances: balancesFromLedger(ctx.ledger, loanId) });
+    state = state ?? facts.state; if (!custodial.clearing || !custodial.pi || !custodial.ti) custodial = facts.custodial ?? custodial;
+  }
+  if (!state) throw new RangeError("post needs the loan's cash state");
   if (!custodial.clearing || !custodial.pi || !custodial.ti) throw new RangeError("post needs custodial {clearing, pi, ti} account ids");
-  const loanId = String(pay.loan_id ?? ctx.loanId); const amount = cents(pay.amount_cents); const receivedOn = D(String(pay.received_on)); const creditedAsOf = D(String(pay.credited_as_of ?? pay.received_on));
+  const amount = cents(pay.amount_cents); const receivedOn = D(String(pay.received_on)); const creditedAsOf = D(String(pay.credited_as_of ?? pay.received_on));
   const designation = String(pay.designation ?? "contractual") as Designation;
   const plan = allocate(state, { payment_id: id, amount_cents: amount, received_on: receivedOn, credited_as_of: creditedAsOf, designation, ...(pay.curtailment_cents !== undefined ? { curtailment_cents: cents(pay.curtailment_cents) } : {}) });
   const loanAcct = (account: LoanAccount): AccountRef => ({ scope: "loan", loanId, account }); const cust = (custodialAccountId: string, account: CustodialAccount): AccountRef => ({ scope: "custodial", custodialAccountId, account });
   const post = (description: string, lines: { account: AccountRef; amountCents: Cents; ruleRef: string }[]) => ctx.ledger.post({ effectiveDate: creditedAsOf, description, lines }, ctx.now);
-  const receipt = post(`receipt ${id}`, [{ account: cust(custodial.clearing, "clearing_cash"), amountCents: amount, ruleRef: "2.1:r8:receipt" }, { account: loanAcct("suspense_unapplied"), amountCents: -amount, ruleRef: "2.1:r8:receipt" }]);
+  // 35.5 rule 7: a lockbox item's receipt set (Dr clearing_cash / Cr suspense_unapplied) was posted at ingest on its receipt date — the posting run reuses it and never posts the receipt twice
+  const receipt = typeof pay.receipt_entry_set_id === "string" && pay.receipt_entry_set_id ? { id: pay.receipt_entry_set_id } : post(`receipt ${id}`, [{ account: cust(custodial.clearing, "clearing_cash"), amountCents: amount, ruleRef: "2.1:r8:receipt" }, { account: loanAcct("suspense_unapplied"), amountCents: -amount, ruleRef: "2.1:r8:receipt" }]);
   // posted when an installment applied — or when the item is a designated curtailment on a current loan (2.4 rule 2 / F-1-09: applied the
   // same day with no installment, allocation outcome `curtailment`, exactly as CashieringService.post does); only a true partial (n = 0 and
   // nothing designated) takes the 2.2 hold below. A set carries no zero-amount line (the ledger refuses one), so an all-curtailment
@@ -62,6 +71,8 @@ export function postReceivedPayment(i: ToolInput, ctx: CommandContext, rt: ToolR
       .filter(([, c]) => c !== 0n).map(([bucket, amount_cents, rule_ref], k) => ({ sequence: k + 1, bucket, amount_cents, rule_ref, ledger_entry_set_id: alloc.id, installment_due_date: firstDue, credited_as_of: creditedAsOf }));
     rt.store.put("payments", id, { ...pay, status: "posted", allocation_outcome: plan.outcome, installments, credited_as_of: creditedAsOf, allocation: { interest_cents: s(interest), principal_cents: s(principal), escrow_cents: s(escrow), late_charge_cents: s(plan.late_charge_cents), curtailment_cents: s(plan.curtailment_cents), to_suspense_cents: s(plan.to_suspense_cents) }, allocations, upb_after_cents: upbAfter, ledger_entry_set_ids: [receipt.id, alloc.id, split.id], posted_at: ctx.now }, ctx.actor, ctx.now);
     for (const x of plan.installments) ctx.events.append({ type: "payment.applied", loanId, aggregate: { kind: "payment", id }, actor: ctx.actor, payload: { payment_id: id, installment_due_date: x.due_date, due_date: x.due_date, interest_cents: s(x.interest_cents), principal_cents: s(x.principal_cents), escrow_cents: s(x.escrow_cents), upb_after_cents: s(x.upb_after_cents), credited_as_of: creditedAsOf, kind: x.kind, full_periodic_payment: true, allocation_outcome: plan.outcome } });
+    // 35.5 rule 4 / state machine: the applied installments' rows move `due` → `satisfied` (`prepaid` for a prepaid application) in 2.1's own transaction, logged as `installment.satisfied`
+    if (ctx.q && plan.installments.length) { const payment_row_id = await paymentRowIdFor(ctx.q, rt.store, loanId, id); for (const kind of ["contractual", "prepaid"] as const) { const dues = plan.installments.filter((x) => (x.kind === "prepaid") === (kind === "prepaid")).map((x) => x.due_date); if (dues.length) await satisfyRows(ctx.q, ctx.events, ctx.actor, { loan_id: loanId, due_dates: dues, payment_id: id, payment_row_id, credited_as_of: creditedAsOf, satisfied_on: receivedOn, kind: kind === "prepaid" ? "prepaid" : "satisfied" }); } }
     ctx.events.append({ type: "payment.posted", loanId, aggregate: { kind: "payment", id }, actor: ctx.actor, payload: { payment_id: id, loan_id: loanId, outcome: plan.outcome, amount_cents: s(amount), received_on: receivedOn, credited_as_of: creditedAsOf, channel: pay.channel ?? null, installments, interest_cents: s(interest), principal_cents: s(principal), escrow_cents: s(escrow), late_charge_cents: s(plan.late_charge_cents), curtailment_cents: s(plan.curtailment_cents), upb_after_cents: s(plan.installments.length ? plan.installments[plan.installments.length - 1]!.upb_after_cents : plan.next.upb_cents), rule_path: plan.rule_path.join(" → "), ledger_entry_set_ids: [receipt.id, alloc.id, split.id] } });
     return { payment_id: id, outcome: plan.outcome, installments, interest_cents: s(interest), principal_cents: s(principal), escrow_cents: s(escrow), to_suspense_cents: s(plan.to_suspense_cents), entry_set_ids: [receipt.id, alloc.id, split.id] };
   }

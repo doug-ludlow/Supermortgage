@@ -38,7 +38,7 @@ import type { EdeliveryPort, EdeliveryMessage, EdeliveryStatus } from "../../inf
 import { INVESTOR_FIELDS } from "../../domain/leads-pricing/ops-20-1.ts";
 import { M3_V1, type Fact, type RowException } from "../../domain/partner-book/profiles/m3-v1.ts";
 import { type ParsedBook, type ParsedRow, type ExistingParty, type PartyResolution, type LoanDerivation, type GapKind, type GapCounts, emptyGaps, contactDestinations, deriveLoanRows, destinationHash, factsEqual, firstNameOf, lastFour, parseBook, profileById, readTabular, resolveParty, rowsWithExceptions } from "../../domain/partner-book/import.ts";
-import { SERVICER_CONTACT } from "../../runtime/servicing.ts";
+import { FAKE_SERVICER_CONTACT as SERVICER_CONTACT } from "../../domain/operations-runtime/servicing-config.ts";   // 35.5 rule 9: the FAKE build's servicer_profiles v1 values (the platform's own postal address on an invitation)
 
 type P = Record<string, unknown>;
 const PROCESS_33_1 = "33.1"; const PORTFOLIO = "portfolio";

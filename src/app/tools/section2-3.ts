@@ -34,6 +34,7 @@ import type { Cents } from "../../kernel/money/cents.ts";
 import { CashieringOps } from "../../domain/cashiering/ops.ts";
 import { authorizationDefects, variableAmountNoticeStatus, type Authorization, type Enrollment, type ReturnCode } from "../../domain/cashiering/autodraft.ts";
 import type { Notice } from "../../notices/service.ts";
+import { paymentRowIdFor, restoreRows } from "../../domain/operations-runtime/installments.ts";
 
 type Handler = (i: ToolInput, ctx: CommandContext, rt: ToolRuntime) => unknown;
 const KIND = "autodraft_enrollments";
@@ -111,7 +112,9 @@ async function handleReturn(i: ToolInput, ctx: CommandContext, rt: ToolRuntime):
     const sets = Array.isArray(pay.ledger_entry_set_ids) ? [...(pay.ledger_entry_set_ids as string[])].reverse() : []; const reversed: string[] = [];
     for (const setId of sets) { try { reversed.push(ctx.ledger.reverse(setId, returnedOn, `returned item ${code} (${payment_id})`, ctx.now).id); } catch { /* already reversed */ } }
     rt.store.put("payments", payment_id, { ...pay, status: "reversed", reversal: { reason: "returned_item", return_code: code, reversed_at: ctx.now, entry_set_ids: reversed } }, ctx.actor, ctx.now);
-    ctx.events.append({ type: "payment.reversed", loanId, aggregate: { kind: "payment", id: payment_id }, actor: ctx.actor, payload: { payment_id, loan_id: loanId, reason: "returned_item", return_code: code, reversed_on: returnedOn, amount_cents: amount !== null ? s(amount) : (pay.amount_cents as string | undefined) ?? null, enrollment_id: e.id, installment_due_date: str(i, "installment_due_date") || (pay.installment_due_date as string | undefined) || null } });
+    ctx.events.append({ type: "payment.reversed", loanId, aggregate: { kind: "payment", id: payment_id }, actor: ctx.actor, payload: { payment_id, loan_id: loanId, reason: "returned_item", return_code: code, reversed_on: returnedOn, amount_cents: amount !== null ? s(amount) : (pay.amount_cents as string | undefined) ?? null, enrollment_id: e.id, installment_due_date: str(i, "installment_due_date") || (pay.installment_due_date as string | undefined) || null, installments: Array.isArray(pay.installments) ? pay.installments : [] } });
+    // 35.5 rule 4 / state machine: the installments the returned payment had satisfied are `due` again (`installment.restored`) in this transaction
+    if (ctx.q) await restoreRows(ctx.q, ctx.events, ctx.actor, { loan_id: loanId, payment_id, payment_row_id: await paymentRowIdFor(ctx.q, rt.store, loanId, payment_id), due_dates: Array.isArray(pay.installments) ? (pay.installments as string[]).map((d) => D(d)) : null, reason: `returned_item ${code}` });
   }
   let notice: Notice | null = null;
   if (d.notice) notice = await sendNotice(i, ctx, rt, d.notice, { ...contact(i, e), amount_cents: amount ?? cents((rt.store.get("payments", payment_id)?.data.amount_cents as string | undefined) ?? "0"), settlement_date: original ?? returnedOn, returned_on: returnedOn, return_code: code, return_reason: RETURN_REASON[code] ?? "returned", installment_due_date: str(i, "installment_due_date") || original || returnedOn,

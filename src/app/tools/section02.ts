@@ -230,7 +230,11 @@ const p27: ToolDef[] = defineTools("2.7", "cashiering", [
       // (arms NOTE_6A_LATE_CHARGE_GRACE_GATE) and the engine's decision for the ones whose grace end was yesterday (the once-only, credited-funds and overlay rules run inside assessLateCharge).
       if (i.op === "daily_run") {
         const r = withLcOps(ctx).dailyRun(state, D(str(i, "run_on") || ctx.now.slice(0, 10)), { unposted_receipts_on_or_before_grace: Number(i.unposted_receipts_on_or_before_grace ?? 0) });
-        for (const d of r.decisions) if (d.outcome === "assessed" || d.outcome === "accrued_suspended") rt.store.put("fees", d.fee.id, feeRecord({ ...d.fee, loan_id: state.loan_id }), ctx.actor, ctx.now);
+        for (const d of r.decisions) if (d.outcome === "assessed" || d.outcome === "accrued_suspended") {
+          // 35.5-T6 / 2.7 rule 1: the assessed charge is receivable on the loan and income to the servicer — Dr late_charges / Cr late_charge_income, one balanced set per fee, in this command (a suspended accrual books nothing until released)
+          const set = d.outcome === "assessed" && state.loan_id ? ctx.ledger.post({ effectiveDate: d.fee.assessed_on, description: `late charge ${d.fee.id} (installment ${d.fee.installment_due_date ?? "—"})`, lines: [{ account: { scope: "loan", loanId: state.loan_id, account: "late_charges" }, amountCents: d.fee.amount_cents, ruleRef: "2.7:r1:assessment" }, { account: { scope: "corporate", account: "late_charge_income" }, amountCents: -d.fee.amount_cents, ruleRef: "2.7:r1:assessment" }] }, ctx.now) : null;
+          rt.store.put("fees", d.fee.id, feeRecord({ ...d.fee, loan_id: state.loan_id, ...(set ? { ledger_entry_set_id: set.id } : {}) }), ctx.actor, ctx.now);
+        }
         return { due_reached: r.due_reached, decisions: r.decisions.map((d) => ({ outcome: d.outcome, grace_end_on: d.grace_end_on, ...(d.outcome === "assessed" || d.outcome === "accrued_suspended" ? { fee: feeRecord({ ...d.fee }) } : {}), ...(d.outcome === "not_assessed" ? { reason: d.reason } : {}) })) };
       }
       // Rule 1: the credited-funds test is the engine's (receivedTowardBasis from the installment's status/credited_as_of) unless the caller carries the credited figure.

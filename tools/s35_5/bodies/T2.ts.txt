@@ -1,0 +1,25 @@
+  const s = await serverAt("2026-10-16T15:00:00.000Z");
+  try {
+    const { loanId } = await boardT7(s);
+    const rows = await readInstallments(db, loanId);
+    assert.equal(rows.length, 299); assert.equal(rows[0]!.due_date, "2026-11-01"); assert.equal(rows[298]!.due_date, "2051-09-01");
+    assert.equal(rows[0]!.sequence, 62); assert.equal(rows[298]!.sequence, 360);
+    // HF-005: the level payment on the original terms is the tape's P&I to the cent (difference 0¢)
+    assert.equal(levelPaymentBps(B.original, B.rate_bps, 360), B.pi); assert.equal(levelPayment(B.original, Decimal.parse("0.065"), 360), B.pi);
+    const written = (await events(loanId, INSTALLMENT_EVENTS.written))[0]!; assert.equal(written.payload["hf005_difference_cents"], "0"); assert.equal(written.payload["source"], "transfer"); assert.equal(written.payload["upb_start_cents"], "28045824");
+    const r62 = rows[0]!, r63 = rows[1]!, r360 = rows[298]!;
+    assert.equal(r62.upb_before_cents, B.upb); assert.equal(r62.interest_cents, B.row62_interest); assert.equal(r62.principal_cents, B.row62_principal); assert.equal(r62.escrow_cents, B.escrow); assert.equal(r62.upb_after_cents, B.row62_after); assert.equal(r62.pi_cents, B.pi);
+    assert.equal(r63.due_date, "2026-12-01"); assert.equal(r63.interest_cents, B.row63_interest); assert.equal(r63.principal_cents, B.row63_principal); assert.equal(r63.upb_after_cents, B.row63_after);
+    assert.equal(r360.interest_cents, B.row360_interest); assert.equal(r360.principal_cents, B.row360_principal); assert.equal(r360.pi_cents, B.row360_pi); assert.equal(r360.absorbs_rounding, true); assert.equal(r360.pi_cents - B.pi, B.absorbed, "the final row absorbs $4.71 of rounding");
+    const run = (await scheduleRuns(db, loanId))[0]!; assert.equal(run.rows, 299); assert.equal(run.maturity_variance_cents, 0n); assert.equal(run.source, "transfer");
+    // the tape's UPB is what the note's own schedule leaves after 61 rows (28,045,824¢), and the run's hash is the rows'
+    const fromNote = projectSchedule({ upb_cents: B.original, note_rate_bps: B.rate_bps, pi_cents: B.pi, escrow_cents: B.escrow, first_due: D("2021-10-01"), sequence_start: 1, maturity_date: D("2051-09-01") });
+    assert.equal(fromNote.rows[60]!.upb_after_cents, B.upb); assert.equal(fromNote.rows.length, 360); assert.equal(B.original, 30_000_000n);
+    assert.equal(projectSchedule({ upb_cents: B.upb, note_rate_bps: B.rate_bps, pi_cents: B.pi, escrow_cents: B.escrow, first_due: D("2026-11-01"), sequence_start: 62, maturity_date: D("2051-09-01") }).sha256, run.sha256);
+    // the delinquency counter job's selector (`JOIN loan_installments … status = 'due'`) returns the loan once 2026-11-01 has passed unpaid in its zone (TX: America/Chicago) — not before
+    const before = await delinquencyDailySweep(rtAt("2026-11-01T23:00:00.000Z"), "2026-11-01T23:00:00.000Z", [loanId]);   // 18:00 Chicago on the due date: not yet past due
+    assert.equal(before.loans.length, 0);
+    const after = await delinquencyDailySweep(rtAt("2026-11-02T12:00:00.000Z"), "2026-11-02T12:00:00.000Z", [loanId]);
+    assert.equal(after.loans.length, 1); assert.equal(after.loans[0]!.loan_id, loanId); assert.equal(after.loans[0]!.earliest_unpaid_due, "2026-11-01"); assert.equal(after.loans[0]!.time_zone, "America/Chicago"); assert.equal(after.loans[0]!.local_date, "2026-11-02");
+    assert.ok(after.loans[0]!.windows_opened.includes(D("2026-11-01")), "the Reg X window opened for 2026-11-01");
+  } finally { await s.close(); }

@@ -1,0 +1,47 @@
+  // boarded at fund on 2021-10-15 (the note's first payment 2021-12-01 is within C2-2-01's window of that disbursement)
+  const s = await serverAt("2021-10-20T15:00:00.000Z");
+  const armNote = { amount_cents: "40000000", note_rate_pct: "5.750", term_months: 360, first_payment_date: "2021-12-01", maturity_date: "2051-11-01", note_date: "2021-10-15", late_charge_pct: "5.00", late_charge_grace_days: 15, amortization: "arm", arm: { index: "SOFR_30D_AVG", margin_bps: 275, initial_cap_bps: 200, periodic_cap_bps: 100, lifetime_cap_bps: 500, lookback_days: 45, first_change_date: "2026-11-01", rounding: "nearest_eighth" } };
+  let loanId = "";
+  try {
+    const funded = await fundDemoNote(s, { snapshot: { note: armNote, closing: { consummation_date: "2021-10-15", note_terms_hash: noteTermsHash({ amount_cents: C.original, note_rate_pct: "5.750", term_months: 360, first_payment_date: D("2021-12-01"), maturity_date: D("2051-11-01"), late_charge_pct: "5.00", late_charge_grace_days: 15 }) }, rescission_expires_at: "2021-10-14T06:59:59.000Z",
+      final_cd: { document_id: "DOC-CD", pi_cents: "233429", monthly_escrow_cents: "61250", initial_escrow_deposit_cents: "183750", prepaid_interest_cents: "0", prepaid_interest_days: 0, compliance_tests_passed: true },
+      escrow_analysis: { source: "origination", type: "initial", required_start_balance_cents: "61250", cushion_cents: "122500", monthly_escrow_cents: "61250", lines: [{ line_type: "county_tax", annual_amount_cents: "735000", monthly_cents: "61250" }], status: "active" }, hazard: { verified: true, mortgagee_clause_partner_isaoa_co_sm: true, expires_on: "2022-10-15" } },
+      funded: { funded_at: "2021-10-15T18:40:00.000Z", funding_date: "2021-10-15", disbursement_date: "2021-10-15", funded_amount_cents: "40000000", per_diem_cents: "0", prepaid_interest_cents: "0", interest_credit: true, rescission_expires_at: "2021-10-14T06:59:59.000Z" } });
+    loanId = funded.loanId;
+  } finally { await s.close(); }
+  const before = await readInstallments(db, loanId);
+  assert.equal(before.length, 360); assert.equal(before[0]!.due_date, "2021-12-01");
+  const run1 = (await scheduleRuns(db, loanId))[0]!; assert.equal(run1.pi_cents, C.pi, "the schedule's P&I is $2,334.29"); assert.equal(levelPaymentBps(C.original, C.rate_bps, 360), C.pi); assert.equal(C.original, 40_000_000n);
+  assert.equal(before[59]!.due_date, "2026-11-01"); assert.equal(before[59]!.upb_after_cents, C.row60_after, "row 60's UPB after is $371,048.86 — 7.2's expected UPB");
+  assert.ok(before.every((r) => r.escrow_cents === C.escrow && r.rate_bps === C.rate_bps));
+  // 7.2 activates v2 on the change date: `loan_terms.version.activated{version: 2, effective_on: 2026-11-01, rate_pct: 6.375, pi_cents: 247644, payment_effective_due: 2026-12-01, reason: arm_adjustment}` (ops-7-2.ts makeEffective's shape)
+  const rt = rtAt("2026-11-01T16:00:00.000Z");
+  assert.equal(levelPaymentBps(C.row60_after, C.v2_rate_bps, 300), C.v2_pi, "7.2's new P&I is $2,476.44 on the expected UPB over 300 months");
+  const activated = await rt.executeDef(testTool("arm.activate.v2", (_i, ctx) => { const e = ctx.events.append({ type: "loan_terms.version.activated", loanId, aggregate: { kind: "loan_terms", id: loanId }, actor: { kind: "agent", id: "disclosures" }, payload: { version: 2, effective_on: "2026-11-01", rate_pct: "6.375", pi_cents: "247644", payment_effective_due: "2026-12-01", next_change_date: "2027-05-01", reason: "arm_adjustment" } }); return { event_id: e.id }; }), { loanId, actor: SYSTEM, input: {} });
+  const triggerId = String((activated.output as { event_id: string }).event_id);
+  const armedT = await timer("SM_INSTALLMENT_REPROJECT_1BD", loanId); assert.equal(armedT.length, 1); assert.equal(armedT[0]!.status, "armed"); assert.equal(armedT[0]!.anchor_date, "2026-11-01");
+  const re = await rt.execute({ process: "35.5", name: "installments.reproject", loanId, actor: CASHIERING, input: { loan_id: loanId, trigger_event_id: triggerId } });
+  const o = re.output as Record<string, unknown>;
+  assert.equal(o["rows_kept"], 60); assert.equal(o["rows_replaced"], 300); assert.equal(o["effective_from"], "2026-12-01"); assert.equal(o["rate_bps"], C.v2_rate_bps); assert.equal(o["pi_cents"], "247644");
+  const after = await readInstallments(db, loanId);
+  const r61 = after[60]!; assert.equal(r61.due_date, "2026-12-01"); assert.equal(r61.upb_before_cents, C.row60_after); assert.equal(r61.interest_cents, C.row61_interest); assert.equal(r61.principal_cents, C.row61_principal); assert.equal(r61.upb_after_cents, C.row61_after); assert.equal(r61.rate_bps, 63_750); assert.equal(r61.pi_cents, C.v2_pi);
+  assert.equal(r61.terms_id, o["terms_id"], "`terms_id` = v2");
+  const v2 = await one<Record<string, unknown>>(db, `SELECT source, effective_from::text AS effective_from, note_rate_bps, pi_cents::text AS pi_cents, source_event_id::text AS source_event_id FROM loan_terms WHERE id = $1`, [o["terms_id"]]);
+  assert.equal(v2["source"], "arm_change"); assert.equal(v2["effective_from"], "2026-12-01"); assert.equal(v2["note_rate_bps"], 63_750); assert.equal(v2["pi_cents"], "247644"); assert.equal(v2["source_event_id"], triggerId);
+  assert.deepEqual(JSON.stringify(after.slice(0, 60), (_k, v) => (typeof v === "bigint" ? v.toString() : v)), JSON.stringify(before.slice(0, 60), (_k, v) => (typeof v === "bigint" ? v.toString() : v)), "rows 1–60 are byte-identical");
+  assert.ok(after.slice(60).every((r) => r.terms_id === o["terms_id"] && r.rate_bps === 63_750 && r.schedule_run_id === o["run_id"]));
+  const run2 = (await scheduleRuns(db, loanId)).find((r) => r.id === o["run_id"])!; assert.equal(run2.rows_kept, 60); assert.equal(run2.rows_replaced, 300); assert.equal(run2.trigger_event_id, triggerId); assert.equal(run2.source, "reprojection");
+  const replaced = await one<{ replaced: Record<string, unknown>[] }>(db, `SELECT replaced FROM installment_schedule_runs WHERE id = $1`, [o["run_id"]]); assert.equal(replaced.replaced.length, 300); assert.equal(replaced.replaced[0]!["due_date"], "2026-12-01"); assert.equal(replaced.replaced[0]!["pi_cents"], "233429");
+  const reprojected = (await events(loanId, INSTALLMENT_EVENTS.reprojected))[0]!; assert.equal(reprojected.payload["rows_kept"], 60); assert.equal(reprojected.payload["rows_replaced"], 300); assert.equal(reprojected.payload["trigger_event_id"], triggerId);
+  const satisfied = await timer("SM_INSTALLMENT_REPROJECT_1BD", loanId); assert.equal(satisfied[0]!.status, "satisfied"); assert.equal(satisfied[0]!.satisfied_by_event_id, reprojected.id);
+  assert.ok(re.decisions.length >= 1, "the reprojection left its decision record");
+  // a second run on the same terms event writes nothing (idempotent per trigger)
+  const again = await rt.execute({ process: "35.5", name: "installments.reproject", loanId, actor: CASHIERING, input: { loan_id: loanId, trigger_event_id: triggerId } });
+  assert.equal((again.output as Record<string, unknown>)["reprojected"], false); assert.equal((await scheduleRuns(db, loanId)).length, 2);
+  // a reprojection whose `effective_from` names a satisfied row is refused SATISFIED_ROW_FROZEN with no row changed
+  await db.query(`UPDATE loan_installments SET status = 'satisfied', satisfied_on = '2026-12-01', credited_as_of = '2026-12-01' WHERE loan_id = $1 AND due_date = '2026-12-01'`, [loanId]);
+  const snapshot = JSON.stringify(await readInstallments(db, loanId), (_k, v) => (typeof v === "bigint" ? v.toString() : v));
+  await assert.rejects(rt.execute({ process: "35.5", name: "installments.reproject", loanId, actor: OFFICER, input: { loan_id: loanId, effective_from: "2026-12-01", note_rate_bps: 63_750, pi_cents: 247_644n } }), (e: Error & { code?: string }) => e.code === "SATISFIED_ROW_FROZEN");
+  assert.equal(JSON.stringify(await readInstallments(db, loanId), (_k, v) => (typeof v === "bigint" ? v.toString() : v)), snapshot, "no row changed");
+  assert.equal((await scheduleRuns(db, loanId)).length, 2, "no run row written by the refused reprojection");
+  assert.equal(await count(db, `FROM loan_terms WHERE loan_id = $1`, [loanId]), 2, "no terms row written by the refused reprojection");

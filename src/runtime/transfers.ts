@@ -31,6 +31,8 @@ import type { BatchContext, ExternalPositions, FnmaPosition, MersRecord } from "
 import { decodeTransferBatch, type TransferBatchFiles } from "../domain/boarding/tape-codec.ts";
 import { EscalationService } from "../app/escalations.ts";
 import type { Runtime } from "./app.ts";
+import { planBoardingWrites, persistBoardingWrites, appendBoardingWritten, lateChargePctFromBps, type BoardingLoanFacts, type BoardingWritePlan } from "../domain/operations-runtime/boarding-writes.ts";
+import { BOARDING_AGENT as BOARDING_ACTOR_35 } from "../domain/boarding/service.ts";
 
 export interface TransferBatchInput {
   readonly batch_id: string;
@@ -134,7 +136,15 @@ export async function boardTransferBatch(rt: Runtime, input: TransferBatchInput,
 
     // ---- persist: rows first (the events reference them), then the log, ledger, timers, escalations
     const upbTotal = staged.reduce((s, bl) => s + (bl.staged.upb_cents ?? 0n), 0n);
-    await insertBoardingRows(q, { uuid, input, transferorParty, partnerParty, staged, boardedIds, boardedAt: clock.now(), ruleSetVersion: ctx.rule_set_version });
+    const termsIds = await insertBoardingRows(q, { uuid, input, transferorParty, partnerParty, staged, boardedIds, boardedAt: clock.now(), ruleSetVersion: ctx.rule_set_version });
+    // 35.5 rules 1 and 9: the installment schedule and the servicing configuration in the boarding transaction, their events on the same log (the board-0 clocks are satisfied in this commit)
+    for (const bl of boarded) {
+      const plan = await planBoardingWrites(q, boardingFacts(bl, termsIds.get(bl.id)!, input.transfer_date, actor));
+      await persistBoardingWrites(q, plan);
+      const boardedEvent = events.all().find((e) => e.type === "loan.boarded" && e.loanId === bl.id);
+      appendBoardingWritten(events, plan, BOARDING_ACTOR_35, boardedEvent ? { causationId: boardedEvent.id } : {});
+      for (const x of plan.exceptions) escalations.open({ kind: x.code === "SCHEDULE_REQUIRED" ? "sev1" : "sev2", ownerRole: x.code === "SCHEDULE_REQUIRED" ? "officer" : "compliance", loanId: bl.id, batchId: uuid, severity: x.code === "SCHEDULE_REQUIRED" ? "1" : "2", payload: { code: x.code, reason: x.message, transferor_loan_number: bl.staged.transferor_loan_number } }, BOARDING_ACTOR_35);
+    }
     const persisted = await rt.uow.events.append(events.since(0), q);
     for (const set of ledger.sets()) await rt.uow.ledger.post(set, q);
     await rt.uow.timers.save(timers.all(), q);
@@ -150,14 +160,23 @@ export async function boardTransferBatch(rt: Runtime, input: TransferBatchInput,
   });
 }
 
-export interface BoardingRowInputs { readonly uuid: string; readonly input: TransferBatchInput; readonly transferorParty: string; readonly partnerParty: string; readonly staged: readonly BatchLoan[]; readonly boardedIds: ReadonlySet<string>; readonly boardedAt: string; readonly ruleSetVersion: string; }
+/** 35.5 rule 1 / rule 9: what the schedule and the configuration read off a boarded tape loan (StagedLoan) — the tape's UPB as of the LPI, its next due date, P&I, escrow, rate, the note's late-charge terms and the property's state. */
+export function boardingFacts(bl: BatchLoan, termsId: string, transferDate: PlainDate, actor: Actor): BoardingLoanFacts {
+  const s = bl.staged;
+  return { loan_id: bl.id, terms_id: termsId, source: "transfer", state: s.property.state, note_rate_bps: pctToBps(s.note_rate_pct, 10_000) ?? 0, pi_cents: s.pi_cents, escrow_payment_cents: s.escrow_payment_cents, first_payment_date: s.first_payment_date, maturity_date: s.maturity_date, upb_cents: s.upb_cents,
+    next_due_date: s.next_due_date, original_upb_cents: s.original_upb_cents, original_term_months: s.original_term_months, late_charge: { pct: s.late_charge_pct ?? lateChargePctFromBps(null), grace_days: s.late_charge_grace_days ?? 15 }, boarded_on: transferDate, written_by: { actor: `${actor.kind}:${actor.id}`, path: "transfer", batch_loan_id: bl.id } };
+}
+export type { BoardingWritePlan };
+
+export interface BoardingRowInputs { readonly uuid: string; readonly input: TransferBatchInput; readonly transferorParty: string; readonly partnerParty: string; readonly staged: readonly BatchLoan[]; readonly boardedIds: ReadonlySet<string>; readonly boardedAt: string; readonly ruleSetVersion: string; /** 35.5: pre-minted `loan_terms` ids per boarded loan (the bus path plans the schedule before the rows land). */ readonly termsIds?: ReadonlyMap<string, string>; }
 /**
  * The boarding set (35.1 rule 10): `transfer_batches`, then per staged loan `properties`, `loans`, `borrowers`, `loan_borrowers`,
  * `loan_terms` (boarded loans), `transfer_batch_loans` and `boarding_validations` — the rows the events reference, written before
  * the log. The seed route writes them in its own transaction; `1.1 boardLoan` on the bus writes them in the command's `before` hook.
  */
-export async function insertBoardingRows(q: Queryable, r: BoardingRowInputs): Promise<void> {
+export async function insertBoardingRows(q: Queryable, r: BoardingRowInputs): Promise<Map<string, string>> {
   const { uuid, input, transferorParty, partnerParty, staged, boardedIds } = r;
+  const termsIds = new Map<string, string>();   // loan id → the boarded loan_terms row id (35.5: the schedule's `terms_id`)
   const upbTotal = staged.reduce((s, bl) => s + (bl.staged.upb_cents ?? 0n), 0n);
   const escrowTotal = staged.reduce((s, bl) => s + bl.staged.escrow_balance_cents, 0n);
   const boarded = staged.filter((bl) => boardedIds.has(bl.id));
@@ -178,10 +197,11 @@ export async function insertBoardingRows(q: Queryable, r: BoardingRowInputs): Pr
     await q.query(`INSERT INTO loan_borrowers (loan_id, borrower_id, role, is_primary) VALUES ($1, $2, 'borrower', true)`, [bl.id, b[0]!.id]);
     if (isBoarded) {
       const a = s.arm ?? {};
-      await q.query(`INSERT INTO loan_terms (loan_id, effective_from, source, amortization, note_rate_bps, pi_cents, escrow_payment_cents, escrowed, interest_method, remittance_type, late_charge_pct_bps, late_charge_grace_days, maturity_date, remaining_term_months, deferred_principal_cents, forborne_principal_cents, arm_index, arm_margin_bps, arm_initial_cap_bps, arm_periodic_cap_bps, arm_lifetime_cap_bps, arm_lookback_days)
-        VALUES ($1, $2, 'boarding', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)`,
+      const termsId = r.termsIds?.get(bl.id) ?? randomUUID(); termsIds.set(bl.id, termsId);
+      await q.query(`INSERT INTO loan_terms (id, loan_id, effective_from, source, amortization, note_rate_bps, pi_cents, escrow_payment_cents, escrowed, interest_method, remittance_type, late_charge_pct_bps, late_charge_grace_days, maturity_date, remaining_term_months, deferred_principal_cents, forborne_principal_cents, arm_index, arm_margin_bps, arm_initial_cap_bps, arm_periodic_cap_bps, arm_lifetime_cap_bps, arm_lookback_days)
+        VALUES ($22, $1, $2, 'boarding', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)`,
         [bl.id, input.transfer_date, s.amortization, pctToBps(s.note_rate_pct, 10_000) ?? 0, s.pi_cents ?? 0n, s.escrow_payment_cents, s.escrowed, s.interest_method ?? "30_360", s.remittance_type ?? "A/A", pctToBps(s.late_charge_pct, 1000), s.late_charge_grace_days, s.maturity_date ?? input.transfer_date,
-          s.first_payment_date && s.next_due_date && s.original_term_months !== null ? s.original_term_months - monthsBetween(s.first_payment_date, s.next_due_date) : null, s.deferred_principal_cents, s.forborne_principal_cents, a.index ?? null, a.margin_bps ?? null, a.initial_cap_bps ?? null, a.periodic_cap_bps ?? null, a.lifetime_cap_bps ?? null, a.lookback_days ?? null]);
+          s.first_payment_date && s.next_due_date && s.original_term_months !== null ? s.original_term_months - monthsBetween(s.first_payment_date, s.next_due_date) : null, s.deferred_principal_cents, s.forborne_principal_cents, a.index ?? null, a.margin_bps ?? null, a.initial_cap_bps ?? null, a.periodic_cap_bps ?? null, a.lifetime_cap_bps ?? null, a.lookback_days ?? null, termsId]);
     }
     await q.query(`INSERT INTO transfer_batch_loans (id, batch_id, transferor_loan_number, fnma_loan_number, min, loan_id, boarding_status, boarding_hold, default_status_at_boarding, regx_days_delinquent_at_boarding, fnma_delinquency_status_at_boarding, fdcpa_debt_collector_flag, lossmit_in_process, fc_active, bk_active, scra_active, sii_present, emortgage, acp_enrolled)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
@@ -190,6 +210,7 @@ export async function insertBoardingRows(q: Queryable, r: BoardingRowInputs): Pr
     for (const v of bl.validations) await q.query(`INSERT INTO boarding_validations (batch_loan_id, run_id, rule_code, severity, result, expected, actual, message, rule_set_version) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9)`,
       [bl.id, runId, v.code, v.severity, v.result, v.expected === undefined ? null : toJson(v.expected), v.actual === undefined ? null : toJson(v.actual), v.message ?? null, r.ruleSetVersion]);
   }
+  return termsIds;
 }
 
 /** The transferor and the servicer parties, found or inserted (rule 10: the same rows the seed route writes). */

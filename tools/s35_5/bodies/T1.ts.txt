@@ -1,0 +1,34 @@
+  const s = await serverAt(NOW);
+  try {
+    const { appId, loanId } = await fundDemoNote(s);
+    // 360 rows in the boarding transaction: the run row and the rows exist, the boarded event and the schedule event share the commit
+    const rows = await readInstallments(db, loanId);
+    assert.equal(rows.length, 360);
+    const runs = await scheduleRuns(db, loanId); assert.equal(runs.length, 1); const run = runs[0]!;
+    assert.equal(run.source, "fund"); assert.equal(run.rows, 360); assert.equal(run.pi_cents, A.pi); assert.equal(run.maturity_variance_cents, 0n);
+    assert.equal(levelPayment(A.upb, Decimal.parse("0.06125"), 360), A.pi, "the level payment is the note's P&I ($3,402.62)");
+    const r1 = rows[0]!, r2 = rows[1]!, r360 = rows[359]!;
+    assert.equal(r1.due_date, "2027-01-01"); assert.equal(r1.sequence, 1); assert.equal(r1.upb_before_cents, A.upb); assert.equal(r1.interest_cents, A.row1_interest); assert.equal(r1.principal_cents, A.row1_principal); assert.equal(r1.upb_after_cents, A.row1_after); assert.equal(r1.pi_cents, A.pi); assert.equal(r1.absorbs_rounding, false);
+    assert.equal(r2.due_date, "2027-02-01"); assert.equal(r2.interest_cents, A.row2_interest); assert.equal(r2.principal_cents, A.row2_principal); assert.equal(r2.upb_after_cents, A.row2_after);
+    assert.equal(r360.due_date, "2056-12-01"); assert.equal(r360.sequence, 360); assert.equal(r360.interest_cents, A.row360_interest); assert.equal(r360.principal_cents, A.row360_principal); assert.equal(r360.pi_cents, A.row360_pi); assert.equal(r360.absorbs_rounding, true); assert.equal(r360.upb_after_cents, 0n);
+    assert.equal(rows.reduce((a, r) => a + r.principal_cents, 0n), A.upb, "Σ principal = $560,000.00");
+    assert.equal(rows.reduce((a, r) => a + r.interest_cents, 0n), A.sum_interest, "Σ interest = $664,942.20");
+    assert.equal(rowInterest(A.upb, A.rate_bps), A.row1_interest);
+    assert.ok(rows.every((r) => r.status === "due" && r.terms_id !== null && r.schedule_run_id === run.id && r.rate_bps === A.rate_bps));
+    // the same transaction as `loan.boarded`: one commit — the schedule event follows the boarded event on the loan's log at the same instant, and the clock it satisfies was armed by that boarded event
+    const boarded = (await events(loanId, "loan.boarded"))[0]!; const written = (await events(loanId, INSTALLMENT_EVENTS.written))[0]!;
+    assert.equal(written.payload["run_id"], run.id); assert.equal(written.payload["rows"], 360); assert.equal(written.payload["pi_cents"], "340262"); assert.equal(written.payload["source"], "fund"); assert.equal(written.payload["sha256"], run.sha256);
+    assert.equal(written.occurred_at, boarded.occurred_at, "one commit, one instant");
+    const t = await timer("SM_INSTALLMENT_SCHEDULE_AT_BOARD_0", loanId); assert.equal(t.length, 1); assert.equal(t[0]!.status, "satisfied"); assert.equal(t[0]!.satisfied_by_event_id, written.id); assert.equal(t[0]!.anchor_date, "2026-11-16", "anchored on the boarding instant's civil date (offset 0)");
+    assert.equal(await count(db, `FROM loan_events WHERE loan_id = $1 AND type = 'installment.schedule.written'`, [loanId]), 1);
+    // and the transaction is one: a database that refuses the schedule run row boards nothing — no `loans` row, no `loan.boarded`, no rows (rule 1: "no `loans` row is committed without its rows")
+    const faulty = { query: db.query.bind(db), dedicated: db.dedicated.bind(db), end: async () => undefined, tx: <T,>(fn: (q: Queryable) => Promise<T>): Promise<T> => db.tx((q) => fn({ query: (sql: string, params?: readonly unknown[]) => (sql.includes("INSERT INTO installment_schedule_runs") ? Promise.reject(new Error("FAULT: schedule run row refused")) : q.query(sql, params)) })) } as unknown as Db;
+    const faultyRt = new Runtime({ db: faulty, registry: loadOverriddenRegistry(), clock: new FixedClock(NOW) });
+    const partner = (await db.query<{ id: string }>(`INSERT INTO parties (party_type, legal_name, servicer_number) VALUES ('servicer', 'Lender F', '123456789') RETURNING id`))[0]!.id;
+    const app2 = (await faultyRt.createApplication({ partner_party_id: partner, channel: "organic", transaction_type: "limited_cash_out", occupancy: "primary", borrowers: [{ legal_name: "Alex Borrower", borrower_role: "borrower" }], property: { address_line1: "100 N Central Ave", city: "Phoenix", state: "AZ", postal_code: "85004", county: "Maricopa", property_type: "sfr", units: 1 } }, SYSTEM)).application;
+    await assert.rejects(fundApplication(faultyRt, app2.id, demoSnapshot(app2), demoFunded(app2.id), FUNDING), /FAULT: schedule run row refused/);
+    assert.equal(await count(db, `FROM loans WHERE origination_application_id = $1`, [app2.id]), 0, "no loans row without its schedule");
+    assert.equal(await count(db, `FROM loan_events WHERE application_id = $1 AND type = 'loan.boarded'`, [app2.id]), 0);
+    assert.equal(await count(db, `FROM loan_installments i JOIN loans l ON l.id = i.loan_id WHERE l.origination_application_id = $1`, [app2.id]), 0);
+    void appId;
+  } finally { await s.close(); }

@@ -19,6 +19,8 @@ import { newDecisionFile } from "../../../domain/application/ops-21-6.ts";
 import { REFI_OFFER_SAMPLE } from "../../../notices/authored/section20-2.ts";
 import type { Runtime } from "../../app.ts";
 import { loanCashState } from "../../servicing.ts";
+import { planBoardingWrites, persistBoardingWrites } from "../../../domain/operations-runtime/boarding-writes.ts";
+import { plainDate as D, addDays } from "../../../kernel/calendar/date.ts";
 
 type Actor = { kind: "agent" | "human" | "system"; id: string; role?: string };
 export const INTAKE: Actor = { kind: "agent", id: "intake" }; const PRICING: Actor = { kind: "agent", id: "pricing" }; const DISCLOSURE: Actor = { kind: "agent", id: "disclosure" }; const VERIFICATION: Actor = { kind: "agent", id: "verification" }; const UNDERWRITER: Actor = { kind: "agent", id: "underwriter" }; const VALUATION: Actor = { kind: "agent", id: "valuation" }; const CLOSER: Actor = { kind: "agent", id: "title-closing" }; const FUNDER: Actor = { kind: "agent", id: "funder" }; const FRAUD_RISK: Actor = { kind: "agent", id: "fraud-risk" }; const COMPLIANCE: Actor = { kind: "agent", id: "compliance-tester" }; const FUNDING: Actor = { kind: "agent", id: "funding" }; export const CASHIERING: Actor = { kind: "agent", id: "cashiering" }; const PAYOFF: Actor = { kind: "agent", id: "payoff-release" };
@@ -498,15 +500,19 @@ export class Journey {
     const db = this.o.db; const loanId = this.priorLoanId; assert.ok(loanId, "seedBook() first");
     const b = await db.query<{ id: string }>(`INSERT INTO borrowers (legal_name, tin_last4, party_id) VALUES ($1, $2, $3) RETURNING id`, [o.legal_name ?? "Alex Borrower", o.tin_last4 ?? "6789", partyId]);
     await db.query(`INSERT INTO loan_borrowers (loan_id, borrower_id, role, is_primary) VALUES ($1, $2, 'borrower', true)`, [loanId, b[0]!.id]);
-    await db.query(`INSERT INTO loan_terms (loan_id, effective_from, source, amortization, note_rate_bps, pi_cents, escrow_payment_cents, escrowed, remittance_type, maturity_date, remaining_term_months) VALUES ($1, '2024-11-01', 'boarding', 'fixed', 7000, 375875, 68750, true, 'A/A', '2054-10-01', 360)`, [loanId]);
+    const termsId = randomUUID();
+    await db.query(`INSERT INTO loan_terms (id, loan_id, effective_from, source, amortization, note_rate_bps, pi_cents, escrow_payment_cents, escrowed, remittance_type, maturity_date, remaining_term_months) VALUES ($2, $1, '2024-11-01', 'boarding', 'fixed', 70000, 375875, 68750, true, 'A/A', '2054-10-01', 360)`, [loanId, termsId]);
     await db.query(`UPDATE loans SET principal_residence = true, fdcpa_debt_collector_flag = $2, regx_days_delinquent_at_boarding = $3, default_status_at_boarding = $4 WHERE id = $1`, [loanId, o.fdcpa_debt_collector === true, o.regx_days_delinquent_at_boarding ?? 0, (o.regx_days_delinquent_at_boarding ?? 0) > 0]);
-    if (o.first_unpaid_due) {
-      const first = new Date(`${o.first_unpaid_due}T12:00:00Z`);
-      for (let k = 0; k < (o.unpaid_months ?? 1); k += 1) {
-        const d = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + k, first.getUTCDate())).toISOString().slice(0, 10);
-        await db.query(`INSERT INTO loan_installments (loan_id, due_date, pi_cents, interest_cents, principal_cents, escrow_cents, status) VALUES ($1, $2::date, 375875, 329583, 46292, 68750, 'due') ON CONFLICT (loan_id, due_date) DO NOTHING`, [loanId, d]);
-      }
-    }
+    // 35.5 rules 1 and 9: the prior loan's whole schedule (the tape's terms: $565,000 / 7.000% / 360 from 2024-11-01 — row 1 is 329,583 / 46,292) and its servicing configuration, as a boarding would have written them;
+    // the months before `first_unpaid_due` stand satisfied (the transferor's history), the rest `due` — the counter job reads them, 2.1 posts against them
+    await db.tx(async (q) => {
+      const plan = await planBoardingWrites(q, { loan_id: loanId, terms_id: termsId, source: "transfer", state: "AZ", note_rate_bps: 70_000, pi_cents: 375_875n, escrow_payment_cents: 68_750n, first_payment_date: D("2024-11-01"), maturity_date: D("2054-10-01"), upb_cents: 56_500_000n, original_upb_cents: 56_500_000n, original_term_months: 360,
+        late_charge: { pct: "5", grace_days: 15 }, boarded_on: D("2025-01-15"), written_by: { actor: "system:journey-fixture", path: "transfer" } });
+      await persistBoardingWrites(q, plan);
+      // without `first_unpaid_due` the loan is current at adoption: every row due through the clock's civil date stands satisfied (what the on-the-fly state used to imply — the next due is the first row after today)
+      const paidBefore = o.first_unpaid_due ?? addDays(D(this.clock.now().slice(0, 10)), 1);
+      await q.query(`UPDATE loan_installments SET status = 'satisfied', satisfied_on = due_date, credited_as_of = due_date WHERE loan_id = $1 AND due_date < $2::date`, [loanId, paidBefore]);
+    });
     return loanId;
   }
 }

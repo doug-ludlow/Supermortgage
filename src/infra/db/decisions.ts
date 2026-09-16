@@ -7,6 +7,8 @@ import { randomUUID } from "node:crypto";
 import type { Queryable } from "./client.ts";
 
 export interface DecisionInput {
+  /** A pre-minted row id (35.5: an event that must carry its decision's id names it before the row is written); the repository mints one otherwise. */
+  readonly id?: string;
   readonly agent: string;
   readonly action: string;
   readonly rationale: string;
@@ -46,7 +48,7 @@ export class PgDecisionRepository {
   private readonly db: Queryable;
   constructor(db: Queryable) { this.db = db; }
 
-  async record(d: DecisionInput, q: Queryable = this.db, id: string = randomUUID()): Promise<DecisionRecord> {
+  async record(d: DecisionInput, q: Queryable = this.db, id: string = d.id ?? randomUUID()): Promise<DecisionRecord> {
     const rows = await q.query<Row>(
       `INSERT INTO agent_decisions (id, agent, loan_id, subject_kind, subject_id, rule_code, action, evidence_document_ids, confidence, rule_set_version, model_version, prompt_version, rationale, approved_by, approved_role, event_id, application_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::uuid[], $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING *`,

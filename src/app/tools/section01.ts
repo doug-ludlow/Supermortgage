@@ -22,7 +22,9 @@ import { expectedWires, wireVariance, classifyVariance, absorbNeedsOfficer, isBo
 import type { Queryable } from "../../infra/db/client.ts";
 import type { CommandContext } from "../commands.ts";
 import type { ToolRuntime } from "../tools.ts";
-import { batchUuid, insertBoardingRows, partyId, custodialAccount, DEFAULT_LICENSED_STATES, type TransferBatchInput } from "../../runtime/transfers.ts";
+import { batchUuid, insertBoardingRows, boardingFacts, partyId, custodialAccount, DEFAULT_LICENSED_STATES, type TransferBatchInput } from "../../runtime/transfers.ts";
+import { randomUUID } from "node:crypto";
+import { planBoardingWrites, persistBoardingWrites, appendBoardingWritten } from "../../domain/operations-runtime/boarding-writes.ts";
 import type { BoardingDepsHandle } from "../../runtime/origination.ts";
 import { decodeTransferBatch, type TransferBatchFiles } from "../../domain/boarding/tape-codec.ts";
 import type { BatchContext, FnmaPosition, MersRecord } from "../../domain/boarding/types.ts";
@@ -102,7 +104,16 @@ async function boardBatchOnBus(i: ToolInput, ctx: CommandContext, rt: ToolRuntim
   }
   // the boarding set, written before the events in the command's own transaction (rule 2 / rule 10)
   const boardedAt = ctx.now;
-  deferBefore((qq) => insertBoardingRows(qq, { uuid, input, transferorParty, partnerParty, staged, boardedIds, boardedAt, ruleSetVersion: bctx.rule_set_version }));
+  const termsIds = new Map(boarded.map((bl) => [bl.id, randomUUID()] as const));
+  deferBefore((qq) => insertBoardingRows(qq, { uuid, input, transferorParty, partnerParty, staged, boardedIds, boardedAt, ruleSetVersion: bctx.rule_set_version, termsIds }).then(() => undefined));
+  // 35.5 rules 1 and 9: the schedule and the servicing configuration planned now (jurisdiction_rules and the active servicer profile read on this transaction), their rows written after the boarding set, their events on this command's log
+  for (const bl of boarded) {
+    const plan = await planBoardingWrites(q, boardingFacts(bl, termsIds.get(bl.id)!, input.transfer_date, ctx.actor));
+    deferBefore((qq) => persistBoardingWrites(qq, plan));
+    const boardedEvent = ctx.events.all().find((e) => e.type === "loan.boarded" && e.loanId === bl.id);
+    appendBoardingWritten(ctx.events, plan, ctx.actor, boardedEvent ? { causationId: boardedEvent.id } : {});
+    for (const x of plan.exceptions) rt.escalations.open({ kind: x.code === "SCHEDULE_REQUIRED" ? "sev1" : "sev2", ownerRole: x.code === "SCHEDULE_REQUIRED" ? "officer" : "compliance", loanId: bl.id, batchId: uuid, severity: x.code === "SCHEDULE_REQUIRED" ? "1" : "2", payload: { code: x.code, reason: x.message, transferor_loan_number: bl.staged.transferor_loan_number } }, ctx.actor);
+  }
   const hardByLoan: Record<string, string[]> = {};
   for (const bl of staged) { const codes = bl.validations.filter((v) => v.severity === "hard" && v.result === "fail").map((v) => v.code); if (codes.length) hardByLoan[bl.staged.transferor_loan_number] = codes; }
   const upbTotal = staged.reduce((sum, bl) => sum + (bl.staged.upb_cents ?? 0n), 0n);

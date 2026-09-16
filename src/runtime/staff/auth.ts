@@ -43,7 +43,7 @@ import { PgNoticeRepository } from "../../infra/db/notices.ts";
 import type { EdeliveryPort, EdeliveryMessage } from "../../infra/integrations/delivery.ts";
 import { FakeEdelivery } from "../../infra/integrations/delivery.ts";
 import { plainDate } from "../../kernel/calendar/date.ts";
-import { SERVICER_CONTACT } from "../servicing.ts";
+import { FAKE_SERVICER_CONTACT as SERVICER_CONTACT } from "../../domain/operations-runtime/servicing-config.ts";   // 35.5 rule 9: the FAKE build's servicer_profiles v1 values (the platform's own postal address on a staff invitation)
 import type { Runtime } from "../app.ts";
 import type { Logger } from "../log.ts";
 import { PgStaffRepository, emailHash, encryptEmail, decryptEmail, isEmail, normalizeEmail, newToken, hashToken, hashCode, staffEmailKey, type StaffUserRow, type StaffSessionRow, type StaffChallengeRow, type StaffFactor, type PasskeySecret } from "./repo.ts";
